@@ -9,6 +9,11 @@ import {
   type MotionTag,
 } from "../pet-anim";
 import { get_calibrated_motion_pools } from "../pet-state/PetStateMachine";
+import {
+  createPetEngine,
+  resolveBackendFromEnv,
+  type PetEngine,
+} from "../pet-engine";
 
 interface Live2DCanvasProps {
   modelPath: string;
@@ -200,6 +205,14 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
   // v3: AnimationOverlay instance — per Live2DCanvas mount. dispose()
   // called from cleanupRef so HMR / StrictMode double-mount can't leak.
   const overlayRef = useRef<AnimationOverlay | null>(null);
+  // S1 (Live2D rewrite 2026-05-28): PetEngine abstraction. The legacy
+  // "live2d" backend wraps pixi-live2d-display; "null" backend swaps in a
+  // stub CoreModelLike + falls through to the Canvas2D fallback character.
+  // Resolved once at mount; flipping the env requires a dev restart.
+  const engineRef = useRef<PetEngine | null>(null);
+  const backendRef = useRef(resolveBackendFromEnv(
+    (import.meta as any).env?.VITE_PET_ENGINE as string | undefined,
+  ));
   // v3: face frame state. Updated by ResizeObserver + window resize + once
   // on model load. Drives both hit-zone DOM and overlay.setFaceCenter via
   // a single source `computeFaceFrame`.
@@ -487,6 +500,23 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
     let rafId = 0;
 
     async function init() {
+      // S1: null backend path — skip PixiJS + Live2D entirely, fall through
+      // to the Canvas2D fallback character. Wires the NullPetEngine into
+      // overlay so AnimationOverlay still accepts setMotionPlayer/setEmotion
+      // calls without crashing. Pet-anim writes go to the stub CoreModel
+      // and are silently discarded — this is the test surface for proving
+      // the abstraction has no leaks beyond pet-anim.
+      if (backendRef.current === "null") {
+        console.warn("[Live2D] VITE_PET_ENGINE=null → skipping Live2D init, using Canvas2D fallback");
+        const engine = createPetEngine("null");
+        engineRef.current = engine;
+        overlayRef.current?.setMotionPlayer((group, idx) => {
+          engine.playMotion(group, idx);
+        });
+        modeRef.current = "canvas2d";
+        startCanvas2D();
+        return;
+      }
       try {
         console.warn("[Live2D] starting PixiJS...");
         const PIXI = await import("pixi.js");
@@ -548,15 +578,15 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
 
         pixiApp.stage.addChild(model);
         modelRef.current = model;
+        // S1: wrap the loaded pixi-live2d-display model as a PetEngine.
+        // Future slices replace this adapter; pet-anim never sees the swap.
+        const engine = createPetEngine("live2d", { live2dModel: model });
+        engineRef.current = engine;
 
         // Inject motion player into the overlay so motionPool/FR-5 can
-        // drive real Idle/TapBody groups.
+        // drive real Idle/TapBody groups via the engine adapter.
         overlayRef.current?.setMotionPlayer((group, idx) => {
-          try {
-            model.motion?.(group, idx, 2);
-          } catch (err) {
-            console.warn("[Live2D] motion player failed:", group, idx, err);
-          }
+          engine.playMotion(group, idx);
         });
         // Push the freshly-loaded model into the face-frame computation.
         const ff = faceFrameRef.current;
@@ -768,6 +798,9 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
       destroyed = true;
       cancelAnimationFrame(rafId);
       modelRef.current = null;
+      // S1: release the PetEngine (forwards to underlying backend destroy).
+      engineRef.current?.destroy();
+      engineRef.current = null;
       // v3: dispose the overlay so HMR + StrictMode unmounts don't leak.
       overlayRef.current?.dispose();
       overlayRef.current = null;
