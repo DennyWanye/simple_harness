@@ -7,8 +7,8 @@
 #   powershell -File scripts/preview-vite.ps1 -Backend live2d
 #   powershell -File scripts/preview-vite.ps1 -Backend null
 param(
-    [ValidateSet('live2d', 'null')]
-    [string]$Backend = 'live2d',
+    [ValidateSet('sprite')]
+    [string]$Backend = 'sprite',
     [int]$Port = 5473
 )
 $ErrorActionPreference = "Stop"

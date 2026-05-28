@@ -5,27 +5,24 @@ import type { CoreModelLike } from '../pet-anim'
 
 export type { CoreModelLike }
 
-export type PetEngineBackend = 'live2d' | 'null'
-
 /**
- * Canonical runtime-accessible union of known backends. Kept here (not in
- * index.ts) so tests can import a value from this module — purely-typed
- * modules get stripped by esbuild and any RED test against them would pass
- * spuriously.
+ * Backends shipped today (post-S5 Live2D-removal 2026-05-28):
+ *  - 'sprite' (default) — self-rendered Canvas2D character ([Live2DCanvas
+ *    startCanvas2D]), 100% original code, zero copyright risk.
+ *
+ * Future:
+ *  - 'mesh' — WebGL2 mesh-deformation renderer (future slice, optional
+ *    upgrade for better expressiveness).
+ *
+ * Removed:
+ *  - 'live2d' — deleted with cubismcore + pixi-live2d-display + Hiyori
+ *    assets in S5. The CoreModelLike abstraction stays so a future
+ *    backend can plug in without touching pet-anim.
  */
-export const PET_ENGINE_BACKENDS: readonly PetEngineBackend[] = ['live2d', 'null'] as const
+export type PetEngineBackend = 'sprite'
 
-/**
- * Abstraction over the underlying character runtime. pet-anim's
- * AnimationOverlay only ever talks to CoreModelLike, so swapping
- * engines is a one-line factory change.
- *
- * S1 introduces two backends:
- *  - 'live2d' — wraps pixi-live2d-display (legacy, copyright-laden)
- *  - 'null'   — placeholder sprite for the rewrite period
- *
- * S3 adds 'deskpet-mesh' (WebGL2 self-rendered). S5 deletes 'live2d'.
- */
+export const PET_ENGINE_BACKENDS: readonly PetEngineBackend[] = ['sprite'] as const
+
 export interface PetEngine {
   readonly backend: PetEngineBackend
   /**

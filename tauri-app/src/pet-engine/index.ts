@@ -3,29 +3,23 @@
 
 import type { PetEngine, PetEngineBackend, CoreModelLike } from './types'
 import { PET_ENGINE_BACKENDS } from './types'
-import { NullPetEngine } from './NullPetEngine'
-import { Live2DPetEngineAdapter } from './Live2DPetEngineAdapter'
+import { SpritePetEngine } from './SpritePetEngine'
 
 export type { PetEngine, PetEngineBackend, CoreModelLike }
-export { PET_ENGINE_BACKENDS, NullPetEngine, Live2DPetEngineAdapter }
+export { PET_ENGINE_BACKENDS, SpritePetEngine }
 
 export interface PetEngineFactoryOpts {
-  /** Required when backend === 'live2d': the already-loaded pixi-live2d-display model. */
-  live2dModel?: any
+  /* Reserved for future backends that need init data (e.g. a future
+     'mesh' backend may take a .dpet model handle). 'sprite' takes none. */
 }
 
 export function createPetEngine(
   backend: PetEngineBackend,
-  opts: PetEngineFactoryOpts = {},
+  _opts: PetEngineFactoryOpts = {},
 ): PetEngine {
   switch (backend) {
-    case 'null':
-      return new NullPetEngine()
-    case 'live2d':
-      if (!opts.live2dModel) {
-        throw new Error('[pet-engine] live2d backend requires opts.live2dModel')
-      }
-      return new Live2DPetEngineAdapter(opts.live2dModel)
+    case 'sprite':
+      return new SpritePetEngine()
     default: {
       const _exhaustive: never = backend
       throw new Error(`[pet-engine] unknown backend: ${String(_exhaustive)}`)
@@ -37,11 +31,12 @@ const KNOWN: ReadonlySet<string> = new Set<PetEngineBackend>(PET_ENGINE_BACKENDS
 
 /**
  * Resolve VITE_PET_ENGINE (or any string source) into a known backend.
- * Defaults to 'live2d' (zero-regression). Unknown values warn-and-fallback.
+ * Defaults to 'sprite' (the only shipped backend post-S5). Unknown
+ * values warn and still fall through to 'sprite'.
  */
 export function resolveBackendFromEnv(raw: string | undefined): PetEngineBackend {
-  if (!raw) return 'live2d'
+  if (!raw) return 'sprite'
   if (KNOWN.has(raw)) return raw as PetEngineBackend
-  console.warn(`[pet-engine] unknown VITE_PET_ENGINE="${raw}", falling back to live2d`)
-  return 'live2d'
+  console.warn(`[pet-engine] unknown VITE_PET_ENGINE="${raw}", falling back to sprite`)
+  return 'sprite'
 }

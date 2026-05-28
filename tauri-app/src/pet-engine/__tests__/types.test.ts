@@ -6,25 +6,25 @@ import { PET_ENGINE_BACKENDS } from '../types'
 import type { PetEngine, PetEngineBackend, CoreModelLike } from '../types'
 
 describe('PetEngine type', () => {
-  it('exports PET_ENGINE_BACKENDS as the canonical runtime union', () => {
-    expect(PET_ENGINE_BACKENDS).toEqual(['live2d', 'null'])
+  it('exports PET_ENGINE_BACKENDS as the canonical runtime union (sprite-only post-S5)', () => {
+    expect(PET_ENGINE_BACKENDS).toEqual(['sprite'])
   })
 
   it('exposes a CoreModelLike via getCoreModel()', () => {
     const stub: PetEngine = {
-      backend: 'null',
+      backend: 'sprite',
       getCoreModel: () => null,
       playMotion: () => {},
       setExpression: () => {},
       destroy: () => {},
     }
-    expect(stub.backend).toBe('null')
+    expect(stub.backend).toBe('sprite')
     expect(stub.getCoreModel()).toBeNull()
   })
 
-  it('PetEngineBackend is a closed union of "live2d" | "null"', () => {
-    const valid: PetEngineBackend[] = ['live2d', 'null']
-    expect(valid).toHaveLength(2)
+  it('PetEngineBackend is a closed union with "sprite" the only member', () => {
+    const valid: PetEngineBackend[] = ['sprite']
+    expect(valid).toHaveLength(1)
   })
 
   it('CoreModelLike re-export matches pet-anim contract', () => {

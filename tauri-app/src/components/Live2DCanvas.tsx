@@ -4,7 +4,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import {
   AnimationOverlay,
-  type CoreModelLike,
   type InteractionKind,
   type MotionTag,
 } from "../pet-anim";
@@ -194,21 +193,19 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
   // Use ref for mode to avoid re-render killing the render loop. We don't
   // expose this as React state because the render loop captures it once and
   // toggling it would otherwise tear down + re-init the whole pipeline.
-  const modeRef = useRef<"loading" | "live2d" | "canvas2d">("loading");
+  const modeRef = useRef<"loading" | "canvas2d">("loading");
   const cleanupRef = useRef<(() => void) | null>(null);
   const mouthRef = useRef(mouthOpenY);
   mouthRef.current = mouthOpenY;
-  // Live2D model instance (set once init() succeeds). Kept on a ref so that
-  // imperative methods can reach it without blowing up the render loop via
-  // re-renders.
-  const modelRef = useRef<any>(null);
+  // S5: modelRef removed together with the pixi-live2d-display path.
+  // The engine is now the single source for the runtime model.
   // v3: AnimationOverlay instance — per Live2DCanvas mount. dispose()
   // called from cleanupRef so HMR / StrictMode double-mount can't leak.
   const overlayRef = useRef<AnimationOverlay | null>(null);
-  // S1 (Live2D rewrite 2026-05-28): PetEngine abstraction. The legacy
-  // "live2d" backend wraps pixi-live2d-display; "null" backend swaps in a
-  // stub CoreModelLike + falls through to the Canvas2D fallback character.
-  // Resolved once at mount; flipping the env requires a dev restart.
+  // S5 (Live2D removal 2026-05-29): PetEngine abstraction. Only the
+  // 'sprite' backend ships today; resolveBackendFromEnv warns-and-falls
+  // back for any other VITE_PET_ENGINE value. Future slices may add a
+  // 'mesh' backend; pet-anim never sees the swap.
   const engineRef = useRef<PetEngine | null>(null);
   const backendRef = useRef(resolveBackendFromEnv(
     (import.meta as any).env?.VITE_PET_ENGINE as string | undefined,
@@ -234,22 +231,10 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
     ref,
     () => ({
       setExpression(name: string) {
-        const model = modelRef.current;
-        if (!model) return;
-        try {
-          model.expression?.(name);
-        } catch (err) {
-          console.warn("[Live2D] setExpression failed:", name, err);
-        }
+        engineRef.current?.setExpression(name);
       },
       playMotion(group: string) {
-        const model = modelRef.current;
-        if (!model) return;
-        try {
-          model.motion?.(group, undefined, 2);
-        } catch (err) {
-          console.warn("[Live2D] playMotion failed:", group, err);
-        }
+        engineRef.current?.playMotion(group);
       },
       setBlinkRate(hz: number) {
         overlayRef.current?.setBlinkHz(Math.max(0, Number.isFinite(hz) ? hz : 0));
@@ -456,12 +441,12 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
       get: () => overlayRef.current?.getAnimationDebug(),
     });
     if (import.meta.env.DEV) {
-      const model = modelRef.current;
+      // S5: bench uses the engine's CoreModelLike (post-Live2D removal).
       w["__deskpet_anim_bench"] = {
         applyToOnce: (t: number) => {
-          const m = modelRef.current ?? model;
-          if (m && overlayRef.current) {
-            overlayRef.current.applyTo((m as any).internalModel?.coreModel as CoreModelLike, t);
+          const core = engineRef.current?.getCoreModel();
+          if (core && overlayRef.current) {
+            overlayRef.current.applyTo(core, t);
           }
         },
       };
@@ -496,192 +481,27 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
     if (modeRef.current !== "loading") return;
 
     let destroyed = false;
-    let pixiApp: any = null;
     let rafId = 0;
 
     async function init() {
-      // S1: null backend path — skip PixiJS + Live2D entirely, fall through
-      // to the Canvas2D fallback character. Wires the NullPetEngine into
-      // overlay so AnimationOverlay still accepts setMotionPlayer/setEmotion
-      // calls without crashing. Pet-anim writes go to the stub CoreModel
-      // and are silently discarded — this is the test surface for proving
-      // the abstraction has no leaks beyond pet-anim.
-      if (backendRef.current === "null") {
-        console.warn("[Live2D] VITE_PET_ENGINE=null → skipping Live2D init, using Canvas2D fallback");
-        const engine = createPetEngine("null");
-        engineRef.current = engine;
-        overlayRef.current?.setMotionPlayer((group, idx) => {
-          engine.playMotion(group, idx);
-        });
-        modeRef.current = "canvas2d";
-        startCanvas2D();
-        return;
-      }
-      try {
-        console.warn("[Live2D] starting PixiJS...");
-        const PIXI = await import("pixi.js");
-        (window as any).PIXI = PIXI;
-
-        if (destroyed) return;
-
-        const dpr = window.devicePixelRatio || 1;
-        const renderW = Math.round(size.w * dpr);
-        const renderH = Math.round(size.h * dpr);
-
-        pixiApp = new PIXI.Application({
-          width: renderW,
-          height: renderH,
-          backgroundAlpha: 0,
-          antialias: true,
-          preserveDrawingBuffer: true,
-          resolution: 1,
-        });
-
-        if (destroyed) { pixiApp.destroy(true); return; }
-
-        try {
-          pixiApp.stage.eventMode = "none";
-          pixiApp.stage.interactiveChildren = false;
-          pixiApp.renderer?.events?.destroy?.();
-        } catch { /* ignore */ }
-
-        document.querySelectorAll<HTMLCanvasElement>("canvas[data-pet-live2d]")
-          .forEach((stale) => {
-            try { stale.parentNode?.removeChild(stale); } catch { /* ignore */ }
-          });
-        const pixiCanvas = pixiApp.view as HTMLCanvasElement;
-        pixiCanvas.setAttribute("data-pet-live2d", "1");
-        pixiCanvas.style.cssText = "position:fixed;top:-9999px;left:-9999px;pointer-events:none;";
-        document.body.appendChild(pixiCanvas);
-
-        console.warn("[Live2D] PixiJS created, loading cubism4...");
-        const { Live2DModel } = await import("pixi-live2d-display/cubism4");
-        if (destroyed) return;
-
-        console.warn("[Live2D] loading model:", modelPath);
-        const model = await Promise.race([
-          Live2DModel.from(modelPath),
-          new Promise((_, rej) => setTimeout(() => rej(new Error("timeout 15s")), 15000)),
-        ]) as any;
-
-        if (destroyed) return;
-        console.warn("[Live2D] model loaded:", model.width, "x", model.height);
-
-        model.autoInteract = false;
-
-        const scaleX = (renderW * 0.85) / model.width;
-        const scaleY = (renderH * 0.7) / model.height;
-        const scale = Math.min(scaleX, scaleY);
-        model.scale.set(scale);
-        model.x = (renderW - model.width * scale) / 2;
-        model.y = (renderH - model.height * scale) * 0.25;
-
-        pixiApp.stage.addChild(model);
-        modelRef.current = model;
-        // S1: wrap the loaded pixi-live2d-display model as a PetEngine.
-        // Future slices replace this adapter; pet-anim never sees the swap.
-        const engine = createPetEngine("live2d", { live2dModel: model });
-        engineRef.current = engine;
-
-        // Inject motion player into the overlay so motionPool/FR-5 can
-        // drive real Idle/TapBody groups via the engine adapter.
-        overlayRef.current?.setMotionPlayer((group, idx) => {
-          engine.playMotion(group, idx);
-        });
-        // Push the freshly-loaded model into the face-frame computation.
-        const ff = faceFrameRef.current;
-        overlayRef.current?.setFaceCenter(ff.face_center_x, ff.face_center_y, ff.face_radius_css);
-
-        try {
-          (window as any).__deskpet_play_motion = (group: string, idx?: number) => {
-            try {
-              model.motion?.(group, idx, 2);
-            } catch (err) {
-              console.warn("[Live2D] indexed motion failed:", group, idx, err);
-            }
-          };
-        } catch { /* ignore */ }
-
-        modeRef.current = "live2d";
-        console.warn("[Live2D] render loop starting");
-
-        const TARGET_FPS = 30;
-        const FRAME_INTERVAL = 1000 / TARGET_FPS;
-        let frameCount = 0;
-        let lastFpsTime = performance.now();
-        let lastFrameTime = 0;
-        let pendingBlob = false;
-        let currentBlobUrl: string | null = null;
-
-        function renderLoop(timestamp: number) {
-          if (destroyed) return;
-
-          const delta = timestamp - lastFrameTime;
-          if (delta >= FRAME_INTERVAL && !pendingBlob) {
-            lastFrameTime = timestamp - (delta % FRAME_INTERVAL);
-            frameCount++;
-
-            const now = performance.now();
-            if (now - lastFpsTime >= 1000) {
-              onFpsUpdate?.(Math.round((frameCount * 1000) / (now - lastFpsTime)));
-              frameCount = 0;
-              lastFpsTime = now;
-            }
-
-            // v3: hand control to AnimationOverlay. mouth_open_y is the
-            // only legacy param still pushed in-place here; everything
-            // else (blink, perlin, gaze, saccade, tilt) is overlay-owned.
-            try {
-              const coreModel = (model as any).internalModel?.coreModel as
-                | CoreModelLike
-                | undefined;
-              if (coreModel && overlayRef.current) {
-                overlayRef.current.setMouthOpenY(mouthRef.current);
-                overlayRef.current.applyTo(coreModel, timestamp);
-              }
-            } catch { /* ignore if model structure differs */ }
-
-            if (imgRef.current && pixiApp?.view) {
-              pendingBlob = true;
-              try {
-                (pixiApp.view as HTMLCanvasElement).toBlob(
-                  (blob: Blob | null) => {
-                    pendingBlob = false;
-                    if (destroyed || !blob || !imgRef.current) return;
-                    if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
-                    currentBlobUrl = URL.createObjectURL(blob);
-                    imgRef.current.src = currentBlobUrl;
-                    // v3: record visual latency — pair this frame with
-                    // the oldest pending click event (FIFO per §3.8).
-                    overlayRef.current?.recordVisualFrameTs(performance.now());
-                  },
-                  "image/webp",
-                  0.8,
-                );
-              } catch {
-                pendingBlob = false;
-              }
-            }
-          }
-
-          rafId = requestAnimationFrame(renderLoop);
-        }
-        rafId = requestAnimationFrame(renderLoop);
-
-      } catch (err) {
-        console.warn("[Live2D] failed:", err);
-        try {
-          const pixiCanvas = pixiApp?.view as HTMLCanvasElement;
-          if (pixiCanvas?.parentNode) pixiCanvas.parentNode.removeChild(pixiCanvas);
-          pixiApp?.destroy(true);
-        } catch { /* ignore */ }
-        pixiApp = null;
-
-        if (!destroyed) {
-          modeRef.current = "canvas2d";
-          startCanvas2D();
-        }
-      }
+      // S5 (Live2D removal 2026-05-29): the only shipping backend is
+      // 'sprite'. Wires the SpritePetEngine into pet-anim and hands
+      // rendering off to startCanvas2D — a 100%-original Canvas2D
+      // character with zero copyright risk. The legacy PixiJS +
+      // Live2DModel path was deleted together with the cubismcore /
+      // pixi-live2d-display deps and the Hiyori assets.
+      console.warn("[pet-engine] sprite backend → Canvas2D character");
+      const engine = createPetEngine(backendRef.current);
+      engineRef.current = engine;
+      overlayRef.current?.setMotionPlayer((group, idx) => {
+        engine.playMotion(group, idx);
+      });
+      // Keep face-frame in sync so hit-zone DOM + overlay gaze share
+      // the same source of truth (PRD §6.0 v3).
+      const ff = faceFrameRef.current;
+      overlayRef.current?.setFaceCenter(ff.face_center_x, ff.face_center_y, ff.face_radius_css);
+      modeRef.current = "canvas2d";
+      startCanvas2D();
     }
 
     // Canvas2D fallback — unchanged from pre-v3, just a fallback character.
@@ -797,18 +617,13 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
     cleanupRef.current = () => {
       destroyed = true;
       cancelAnimationFrame(rafId);
-      modelRef.current = null;
-      // S1: release the PetEngine (forwards to underlying backend destroy).
+      // S5: release the PetEngine. No more PixiJS canvas to clean up —
+      // the Canvas2D character lives off the imgRef Blob URL pipeline.
       engineRef.current?.destroy();
       engineRef.current = null;
       // v3: dispose the overlay so HMR + StrictMode unmounts don't leak.
       overlayRef.current?.dispose();
       overlayRef.current = null;
-      try {
-        const pixiCanvas = pixiApp?.view as HTMLCanvasElement;
-        if (pixiCanvas?.parentNode) pixiCanvas.parentNode.removeChild(pixiCanvas);
-        pixiApp?.destroy(true);
-      } catch { /* ignore */ }
     };
 
     return () => {
