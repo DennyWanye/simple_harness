@@ -75,6 +75,32 @@ export interface SupervisorAlertEntry {
   received_at: number;
 }
 
+/** 2026-05-31 restore — single-snapshot of "how full is this session's
+ *  context". All numbers are LLM-authoritative (from ``usage.prompt_tokens``
+ *  of the most recent response) except ``context_window`` / thresholds
+ *  which come from the resolved ``ModelContextInfo``. */
+export interface ContextUsageSnapshot {
+  session_id: string;
+  model: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cached_tokens: number;
+  context_window: number;
+  /** Practical ceiling = window × effective_pct (typically 0.95). */
+  effective_ceiling: number;
+  /** Suggested compact threshold = window × compact_at_pct. Ring turns
+   *  orange when prompt_tokens crosses this line. */
+  compact_at: number;
+  /** "Recall sweet-spot" upper-bound — past this point the model's needle
+   *  recall degrades sharply. Shown as a yellow tick on the ring. */
+  recall_sweet: number;
+  updated_at: number;
+  /** True when this snapshot is a model-only stub emitted before any LLM
+   *  turn has happened (prompt_tokens=0). UI may render this slightly
+   *  dimmer than a real measured snapshot. */
+  stub?: boolean;
+}
+
 export interface SessionState {
   base_session_id: string;
   code_session_id: string | null;
@@ -83,6 +109,11 @@ export interface SessionState {
   messages: Message[];
   todos: Todo[];
   token_usage: { prompt: number; completion: number };
+  /** 2026-05-31 restore — Claude-Code-style context-usage snapshot pushed
+   * by backend after every LLM turn (and once on connect via
+   * `context_usage_request`). Drives ring gauge + breakdown modal.
+   * `null` = never received → ring renders dimmed. */
+  context_usage?: ContextUsageSnapshot | null;
   status: SessionStatus;
   last_activity: number;
   inflight: boolean;
@@ -174,6 +205,7 @@ const blank_session = (sid: string): SessionState => ({
   messages: [],
   todos: [],
   token_usage: { prompt: 0, completion: 0 },
+  context_usage: null,
   status: "idle",
   last_activity: Date.now(),
   inflight: false,

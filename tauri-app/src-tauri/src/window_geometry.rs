@@ -222,20 +222,24 @@ pub fn get_saved_window_geometry() -> Option<WindowGeometry> {
     load()
 }
 
+/// 2026-05-31 restore — Defense in depth：本命令以前同时 `win.set_size(...)`
+/// 和 `save(...)`。commit 14a58f5 (fix(window): remove front-end resize
+/// feedback loop) 已删了前端调用方，但本命令的 set_size 自身仍是潜在反馈源
+/// —— 任何前端误调（甚至外部工具调用）都会把 webview client-area 当 outer
+/// size 重设 → 缩水反馈环。
+///
+/// 修复：去掉 `win.set_size` 调用，命令变成纯写盘。运行时尺寸调整由用户手动
+/// 拖拽 + `WindowEvent::Resized → ResizeDebouncer` 这一条权威路径负责。本命令
+/// 仅供未来「explicit set」场景使用（写盘记录用户意图），不直接驱动 OS。
 #[tauri::command]
 pub fn set_window_geometry(
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     width: u32,
     height: u32,
 ) -> Result<(), String> {
     if width < MIN_W || height < MIN_H || width > MAX_W || height > MAX_H {
         return Err(format!("out of range: {width}x{height}"));
     }
-    let Some(win) = app.get_webview_window("main") else {
-        return Err("main window missing".into());
-    };
-    win.set_size(LogicalSize::new(width as f64, height as f64))
-        .map_err(|e| e.to_string())?;
     save(WindowGeometry { width, height }).map_err(|e| e.to_string())?;
     Ok(())
 }

@@ -135,6 +135,13 @@ async function open_socket() {
         type: "session_messages_load",
         payload: { session_id: target, limit: 200 },
       }));
+      // 2026-05-31 restore — pull cached context-usage so ring gauge
+      // hydrates immediately on (re)connect instead of waiting for the
+      // next LLM turn.
+      ws?.send(JSON.stringify({
+        type: "context_usage_request",
+        payload: { session_id: target },
+      }));
     }
   };
   ws.onmessage = (ev) => {
@@ -213,6 +220,21 @@ function dispatch(msg: any) {
       } else {
         store.push_message(sid, { role: role as any, text: chunk });
       }
+      break;
+    }
+    case "context_usage": {
+      // 2026-05-31 restore — Claude-Code-style ring gauge update.
+      const p = msg.payload || {};
+      const target_sid = p.session_id || sid;
+      store.upsert(target_sid, { context_usage: p });
+      break;
+    }
+    case "chat_v2_user_echo": {
+      // 2026-05-31 restore — multi-window sync: a peer window typed a user
+      // message. Backend skips originator, so receiving means peer-origin
+      // → directly push to local store.
+      const text = msg.payload?.text;
+      if (text) store.push_message(sid, { role: "user", text });
       break;
     }
     case "chat_v2_final": {

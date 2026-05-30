@@ -25,6 +25,8 @@ import type {
 import { codePanelWS } from "./ws";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ChangeModelModal } from "./ChangeModelModal";
+import { ContextRing } from "../components/ContextRing";
+import { ContextBreakdownModal } from "../components/ContextBreakdownModal";
 import {
   useProvidersStore,
   build_provider_dropdown_options,
@@ -126,6 +128,8 @@ function severity_border(score: number): { color: string; pulse: boolean } {
 export function SessionGridView({ onSelectSession }: { onSelectSession: () => void }) {
   const sessions = useSessionsStore((s) => s.sessions);
   const set_active = useSessionsStore((s) => s.set_active);
+  // 2026-05-31 restore — per-tile breakdown modal: open one at a time keyed by sid.
+  const [contextSid, setContextSid] = useState<string | null>(null);
 
   // P5-S3: cross-window broadcast — when the user clicks the pet's
   // supervisor bubble, the pet posts `pet_focus_session_clicked` on a
@@ -235,9 +239,22 @@ export function SessionGridView({ onSelectSession }: { onSelectSession: () => vo
                   name: s.project_name,
                 })
               }
+              onOpenContextModal={(sid) => setContextSid(sid)}
             />
           ))}
         </div>
+      )}
+
+      {/* 2026-05-31 restore — shared per-tile context breakdown modal */}
+      {contextSid && (
+        <ContextBreakdownModal
+          open={!!contextSid}
+          onClose={() => setContextSid(null)}
+          sessionId={contextSid}
+          snapshot={sessions[contextSid]?.context_usage ?? null}
+          send={(m) => codePanelWS.send(m)}
+          onMessage={(fn) => codePanelWS.on_message(fn)}
+        />
       )}
 
       {pending_delete && (
@@ -288,6 +305,8 @@ interface TileProps {
   /** Open the project in the full single-chat view. */
   onOpenFull: () => void;
   onDelete: () => void;
+  /** 2026-05-31 restore — click the tile's context ring → open breakdown. */
+  onOpenContextModal?: (sid: string) => void;
 }
 
 function Tile({
@@ -302,6 +321,7 @@ function Tile({
   session,
   onOpenFull,
   onDelete,
+  onOpenContextModal,
 }: TileProps) {
   // P5-S3 — severity-driven border. Recomputes whenever session state
   // changes (zustand selector subscription via parent already triggers
@@ -580,6 +600,13 @@ function Tile({
             ? `${session.preferred_model} ✎`
             : "默认模型 ✎"}
         </button>
+        {/* 2026-05-31 restore — per-tile context ring */}
+        <ContextRing
+          snapshot={session.context_usage}
+          size={16}
+          onClick={() => onOpenContextModal?.(session.base_session_id)}
+          style={{ marginLeft: 4 }}
+        />
       </div>
 
       {/* Todos block */}

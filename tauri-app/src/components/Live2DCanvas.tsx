@@ -206,6 +206,13 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
   // v3: AnimationOverlay instance — per Live2DCanvas mount. dispose()
   // called from cleanupRef so HMR / StrictMode double-mount can't leak.
   const overlayRef = useRef<AnimationOverlay | null>(null);
+  // 2026-05-31 restore — Pixi Application ref so the resize effect (below)
+  // can call renderer.resize() + re-scale + re-center the model whenever
+  // the window changes shape. Without this the renderer's backing buffer
+  // stays at the init-time dimensions and CSS stretches it to fit the new
+  // container → if the aspect ratio changes the character looks squashed
+  // (left/right pinch when window goes wider).
+  const pixiAppRef = useRef<any>(null);
   // v3: face frame state. Updated by ResizeObserver + window resize + once
   // on model load. Drives both hit-zone DOM and overlay.setFaceCenter via
   // a single source `computeFaceFrame`.
@@ -395,6 +402,36 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [petWidth]);
 
+  // 2026-05-31 restore — react to size changes: resize the Pixi renderer's
+  // backing buffer AND recompute the model's scale + centering so the
+  // character doesn't get squashed when the window aspect ratio shifts.
+  // Without this, init() picks one renderW/renderH and sticks with it;
+  // any later resize just stretches the same backing texture via CSS,
+  // producing the left/right pinch the user reported after dragging the
+  // window wider.
+  useEffect(() => {
+    const app = pixiAppRef.current;
+    const model = modelRef.current;
+    if (!app || !model) return;
+    const dpr = window.devicePixelRatio || 1;
+    const renderW = Math.round(size.w * dpr);
+    const renderH = Math.round(size.h * dpr);
+    try {
+      app.renderer?.resize?.(renderW, renderH);
+    } catch (e) {
+      console.warn("[Live2D] renderer.resize failed:", e);
+    }
+    // Equal-aspect rescale: Math.min keeps the model proportionally
+    // sized — wider window → more breathing room, never horizontal
+    // stretch. Mirrors the init() formula so the steady state matches.
+    const scaleX = (renderW * 0.85) / model.width;
+    const scaleY = (renderH * 0.7) / model.height;
+    const scale = Math.min(scaleX, scaleY);
+    model.scale.set(scale);
+    model.x = (renderW - model.width * scale) / 2;
+    model.y = (renderH - model.height * scale) * 0.25;
+  }, [size.w, size.h]);
+
   // FIX-R3: pre-load Tauri window startDragging so the manual drag
   // handler can call it synchronously during the gesture.
   useEffect(() => {
@@ -541,6 +578,7 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
         });
 
         if (destroyed) { pixiApp.destroy(true); return; }
+        // Expose for the resize-rescale effect.
         pixiAppRef.current = pixiApp;
 
         try {

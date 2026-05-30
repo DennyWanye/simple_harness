@@ -38,6 +38,7 @@ import {
 import { PetCelebrationBubble } from "./pet-anim/PetCelebrationBubble";
 import { PetDNDBadge } from "./pet-anim/PetDNDBadge";
 import { MemoryPanel } from "./components/MemoryPanel";
+import { ContextBreakdownModal } from "./components/ContextBreakdownModal";
 import { ContextTracePanel } from "./components/ContextTracePanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { DialogBar } from "./components/DialogBar";
@@ -535,6 +536,14 @@ function App() {
         type: "session_messages_load",
         payload: { session_id: "default", limit: 200 },
       });
+      // 2026-05-31 restore — pull cached context-usage on connect so the
+      // ring gauge in toolbar hydrates immediately.
+      try {
+        ch.send({
+          type: "context_usage_request",
+          payload: { session_id: "default" },
+        });
+      } catch { /* best-effort */ }
       historyLoadedRef.current = true;
     } catch (e) {
       console.warn("[Pet] session_messages_load send failed:", e);
@@ -554,6 +563,8 @@ function App() {
 
   // S14 — memory management panel toggle.
   const [memoryOpen, setMemoryOpen] = useState(false);
+  // 2026-05-31 restore — context-usage breakdown modal (ring drill-down).
+  const [contextModalOpen, setContextModalOpen] = useState(false);
   // P4-S11 §16.5 — ContextTrace panel (decision timeline + token budget)
   const [traceOpen, setTraceOpen] = useState(false);
 
@@ -737,6 +748,24 @@ function App() {
             ...prev,
             { role: "assistant", text: `${ok} ${tool} 结果` },
           ]);
+        }
+        break;
+      }
+      case "context_usage": {
+        // 2026-05-31 restore — context-usage ring update from backend.
+        const cu = (lastMessage as any).payload;
+        if (cu?.session_id) {
+          useSessionsStore.getState().ensure(cu.session_id);
+          useSessionsStore.getState().upsert(cu.session_id, { context_usage: cu });
+        }
+        break;
+      }
+      case "chat_v2_user_echo": {
+        // 2026-05-31 restore — multi-window sync: peer typed a user message.
+        // Backend skips originator so receiving means peer-origin → push.
+        const echoText = (lastMessage as any).payload?.text;
+        if (typeof echoText === "string" && echoText.length > 0) {
+          setMessages((prev) => [...prev, { role: "user", text: echoText }]);
         }
         break;
       }
@@ -1920,6 +1949,8 @@ function App() {
         connectionState={state}
         routeKind={routeKind}
         topOffset={petError ? 66 : undefined}
+        contextUsage={sessions["default"]?.context_usage ?? null}
+        onContextRingClick={() => setContextModalOpen(true)}
       />
 
       {/* S14 memory management overlay */}
@@ -1928,6 +1959,25 @@ function App() {
         onClose={() => setMemoryOpen(false)}
         sessionId="default"
         getChannel={getControlChannel}
+      />
+
+      {/* 2026-05-31 restore — Context usage breakdown (ring drill-down) */}
+      <ContextBreakdownModal
+        open={contextModalOpen}
+        onClose={() => setContextModalOpen(false)}
+        sessionId="default"
+        snapshot={sessions["default"]?.context_usage ?? null}
+        send={(m) => {
+          const ch = getControlChannel();
+          if (ch) {
+            try { ch.send(m); } catch (e) { console.warn("[ContextModal] send failed:", e); }
+          }
+        }}
+        onMessage={(fn) => {
+          const ch = getControlChannel();
+          if (!ch) return () => {};
+          return ch.onMessage(fn);
+        }}
       />
 
       {/* P4-S11 ContextTrace overlay */}

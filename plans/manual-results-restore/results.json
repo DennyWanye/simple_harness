@@ -1,0 +1,42 @@
+{
+  "passes": [
+    {
+      "id": "F1",
+      "msg": "DEFAULT_BASE_URL = https://chinzy.com"
+    },
+    {
+      "id": "F1b",
+      "msg": "RECHARGE_URL → chinzy.com"
+    },
+    {
+      "id": "F1c",
+      "msg": "DEVICE_CONSOLE_URL → chinzy.com"
+    },
+    {
+      "id": "F5-main",
+      "msg": "1 ring(s) mounted, label=\"Context usage: 0%\", title=\"gpt-5.5 · 0 / 29k (0.0%)\""
+    },
+    {
+      "id": "F5b",
+      "msg": "Breakdown modal opened, 4 section rows"
+    },
+    {
+      "id": "F2",
+      "msg": "All 4 filter tabs removed (0 chips)"
+    },
+    {
+      "id": "F5d",
+      "msg": "Panel ring mounted, label=\"Context usage: 0%\""
+    }
+  ],
+  "fails": [
+    {
+      "id": "F4",
+      "msg": "Canvas 601x1137 != expected 1346x1137 (renderer.resize NOT firing on size change)"
+    },
+    {
+      "id": "F3",
+      "msg": "Window shrank by undefinedw x undefinedh"
+    }
+  ]
+}
