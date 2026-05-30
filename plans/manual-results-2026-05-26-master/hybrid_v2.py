@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
 """Hybrid v2: CDP element.focus() + windows-mcp real Clipboard + Ctrl+V keyboard.
 
 CDP 只做 element 状态管理（focus 一行 JS call）。

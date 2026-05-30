@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
 """CDP 全套真测 runner. 利用 WebView2 remote debugging 突破 windows-mcp 注入边界.
 
 测试 case:

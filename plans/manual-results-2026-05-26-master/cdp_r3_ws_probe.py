@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
 """R3-1 终极诊断：用 CDP 拿 webview 内的 ControlChannel 状态，
 让它 send "你好" 并收 backend reply。
 

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
 """走完 onboarding wizard via CDP Runtime.evaluate.
 
 绕过 windows-mcp input injection 限制 — 直接通过 WebView2 的

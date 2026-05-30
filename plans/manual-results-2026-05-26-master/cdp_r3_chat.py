@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
 """R3-1 真测：通过 CDP 注入"你好" 到桌宠主输入框 + 触发 send + 收 LLM 回复。
 
 绕过 windows-mcp WebView2 边界，用 CDP Runtime.evaluate 直接操纵 React DOM。

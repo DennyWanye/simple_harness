@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
 """B1/B2/B5 真生成测试 — close all dialogs first then send + auto-approve."""
 import asyncio
 import json

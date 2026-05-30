@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
 """所有 manual test cases via windows-mcp 真物理输入 (hybrid_v2 模式).
 
 每个 case 都遵守：

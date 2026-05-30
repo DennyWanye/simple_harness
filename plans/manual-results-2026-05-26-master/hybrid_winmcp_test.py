@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
 """Hybrid 真测：CDP 只查坐标，**真正的输入用 windows-mcp 物理工具链**.
 
 CDP 不做 click/eval input — 只做：

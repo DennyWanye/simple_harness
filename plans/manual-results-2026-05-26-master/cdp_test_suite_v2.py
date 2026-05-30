@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
 """CDP 真测 round 2 — 补完 B1/B2/B5 + TC-04 + 重测 TC-09.
 
 策略:

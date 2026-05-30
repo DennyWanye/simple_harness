@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
 """B1/B2/B5 v3 — 用更明确 prompt 让 LLM 直接 function-call office tools."""
 import asyncio
 import json

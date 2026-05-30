@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
 """R3-1 诊断：看 chat-input 的 React state、check input value, look for messages in DOM."""
 import asyncio
 import json

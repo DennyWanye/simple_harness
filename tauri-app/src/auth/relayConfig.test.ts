@@ -20,7 +20,8 @@ describe("T5-3 · RECHARGE_URL", () => {
 
 describe("relayConfig constants", () => {
   it("DEVICE_CONSOLE_URL is https + relay domain", () => {
-    expect(DEVICE_CONSOLE_URL).toMatch(/^https:\/\/.*the relay\.com/);
+    expect(DEVICE_CONSOLE_URL).toMatch(/^https:\/\//);
+    expect(DEVICE_CONSOLE_URL).toContain("your-llm-relay.example.com");
   });
 
   it("PREFERRED_MODEL is the beta default model", () => {
