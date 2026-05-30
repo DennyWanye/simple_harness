@@ -41,6 +41,21 @@ hiddenimports: list[str] = []
 hiddenimports += collect_submodules("faster_whisper")
 hiddenimports += collect_submodules("ctranslate2")
 hiddenimports += collect_submodules("silero_vad")
+# 2026-05-30 P0 bug fix #10: deskpet/tools/__init__.py uses pkgutil
+# .iter_modules to dynamically discover + import every tool module
+# (excel_tools, doc_tools, ppt_tools, image_tools, etc). PyInstaller's
+# static analysis can't see these — without explicit hidden_imports the
+# office tools (excel_create / doc_create / ppt_create) NEVER reach the
+# registry → LLM tool list lacks them → B1/B2/B5 (and many others) fail.
+# Discovered via CDP-driven prompt asking LLM to enumerate tools.
+hiddenimports += collect_submodules("deskpet.tools")
+hiddenimports += collect_submodules("deskpet.skills")
+hiddenimports += collect_submodules("deskpet.memory")
+hiddenimports += collect_submodules("deskpet.agent")
+hiddenimports += collect_submodules("deskpet.mcp")
+hiddenimports += collect_submodules("deskpet.permissions")
+hiddenimports += collect_submodules("deskpet.commands")
+hiddenimports += collect_submodules("providers")
 hiddenimports += ["sqlite_vec"]                    # P4-S20: L3 vector recall
 hiddenimports += [
     "tzdata",                   # zoneinfo needs this on Windows
