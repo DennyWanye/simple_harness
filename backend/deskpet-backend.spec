@@ -79,6 +79,14 @@ datas += [
     # with any tests that still touch the legacy path.
     ("memory/migrations", "memory/migrations"),    # legacy path
     ("deskpet/memory/migrations", "deskpet/memory/migrations"),  # canonical
+    # 2026-05-30 P0 bug fix #7: ship builtin skills directory.
+    # Production install had `skill.reload_ok count=0` because PyInstaller
+    # never bundled `deskpet/skills/builtin/` (it's a data tree, not a
+    # Python module). Result: B1-B10 skill tests all failed — LLM真选
+    # skill_invoke 但 SkillLoader 找不到 excel-generate / doc-edit / ppt-
+    # generate 等 → 没文件生成 → fake completion 漏网。
+    # Discovered via CDP-driven R3-3 test + backend log skill.reload_ok=0.
+    ("deskpet/skills/builtin", "deskpet/skills/builtin"),
     # P4-S21 #12: ship the unified-schema config.toml so seed_user_config_if_missing
     # has a source to seed from / migrate legacy installs against. Without this,
     # frozen builds with no <exe_dir>/config.toml returned None and the migration
