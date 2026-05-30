@@ -312,6 +312,7 @@ registry.register(
     permission_category="write_file",
     dangerous=True,
     source="builtin",
+    concurrency_safe=False,  # G3: mutates FactsStore — serialize
 )
 
 
@@ -518,6 +519,7 @@ registry.register(
     handler=_memory_write_handle,
     permission_category="write_file",
     source="builtin",
+    concurrency_safe=False,  # G3: mutates FactsStore — serialize
 )
 registry.register(
     name="memory_read",

@@ -456,11 +456,13 @@ def _register() -> None:
         from .registry import registry
 
         registry.register("doc_create", "office", _CREATE_SCHEMA, _handle_create,
-                           permission_category="write_file", timeout_seconds=30.0)
+                           permission_category="write_file", timeout_seconds=30.0,
+                           concurrency_safe=False)  # G3: writes .docx to disk
         registry.register("doc_read", "office", _READ_SCHEMA, _handle_read,
                            permission_category="read_file", timeout_seconds=20.0)
         registry.register("doc_edit", "office", _EDIT_SCHEMA, _handle_edit,
-                           permission_category="write_file", timeout_seconds=30.0)
+                           permission_category="write_file", timeout_seconds=30.0,
+                           concurrency_safe=False)  # G3: mutates .docx on disk
     except Exception:  # noqa: BLE001
         pass
 

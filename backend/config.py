@@ -883,6 +883,10 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
     # 子表（同 [memory.v2] 模式：_load_section 平铺，子表单独 dispatch）。
     if "tools" in raw:
         config.tools = _load_tools(raw["tools"])
+    # Companion+Code v1/v2 — [features] flat dataclass 解析。
+    # 包含 slash_commands / goal_mode / agent_parallel 3 flag（默认 OFF）.
+    if "features" in raw:
+        config.features = _load_section(FeaturesConfig, raw["features"])
     # P4-S15: stash the raw parsed TOML so consumers (MCP bootstrap, agent
     # bootstrap, etc.) can pick out their sections without us bolting on
     # a dataclass for each one.
