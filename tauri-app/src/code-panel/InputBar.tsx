@@ -19,6 +19,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 
 import { useSessionsStore, chatLimiter } from "../stores/sessionsStore";
+import { BACKEND_PORT } from "../backendPort";
 import { codePanelWS } from "./ws";
 import { SlashDropdown, type SlashCommand } from "./SlashDropdown";
 import { ArgHintBar, type ArgSchema } from "./ArgHintBar";
@@ -43,8 +44,12 @@ async function fetchCommands(): Promise<SlashCommand[]> {
   if (_cachedCommandsPromise !== null) return _cachedCommandsPromise;
   _cachedCommandsPromise = (async () => {
     try {
-      // backend port — match codePanelWS host (config-aware)
-      const resp = await fetch("/api/commands/help");
+      // WI-T2-B fix v2.1: backend 绝对 URL，复用 backendPort.ts 单一源.
+      // 相对路径在 Tauri WebView2 (tauri://) 或 vite dev 跨 5473→8400 都失效；
+      // 必须显式 http://127.0.0.1:${BACKEND_PORT}/api/... 走 CORS.
+      const resp = await fetch(
+        `http://127.0.0.1:${BACKEND_PORT}/api/commands/help`,
+      );
       if (!resp.ok) return [];
       const data = await resp.json();
       const out: SlashCommand[] = Array.isArray(data.commands) ? data.commands : [];

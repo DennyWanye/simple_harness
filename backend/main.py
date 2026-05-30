@@ -2158,15 +2158,13 @@ app = FastAPI(title="Desktop Pet Backend", version="0.2.0", lifespan=lifespan)
 # fetch() to http://127.0.0.1:8100 is cross-origin and blocked without this.
 # WebSocket connections are NOT subject to CORS, only HTTP (POST /config/cloud).
 from fastapi.middleware.cors import CORSMiddleware
+# v2 fix: regex 模式支持任意 vite dev port (worktree-aware 隔离场景).
+# 默认 5173；v2 worktree 用 5473；其他 worktree 用 5273/5373/5573 等.
+# allow_origin_regex 覆盖所有 localhost / 127.0.0.1 + 任意端口 + Tauri.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "tauri://localhost",
-        "https://tauri.localhost",
-        "http://localhost:5173",   # Vite dev server (browser E2E testing)
-        "http://127.0.0.1:5173",
-    ],
-    allow_methods=["POST", "GET"],
+    allow_origin_regex=r"^(tauri://localhost|https://tauri\.localhost|http://(localhost|127\.0\.0\.1):\d+)$",
+    allow_methods=["POST", "GET", "OPTIONS"],
     allow_headers=["Content-Type", "X-Shared-Secret"],
 )
 
