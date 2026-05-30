@@ -506,36 +506,13 @@ function App() {
     return () => window.clearInterval(id);
   }, []);
 
-  // 2026-05-26: 前端兜底持久化 — 用 window.addEventListener("resize")
-  // + 防抖调 set_window_geometry。Rust 侧的 WindowEvent::Resized 也会触发
-  // 同样的写盘逻辑（lib.rs:218），两路冗余确保不丢；同一尺寸重复 save 是
-  // idempotent，文件被覆盖成相同内容，无副作用。
-  useEffect(() => {
-    let timer: number | null = null;
-    const persist = () => {
-      const w = Math.round(window.innerWidth);
-      const h = Math.round(window.innerHeight);
-      if (w < 240 || h < 360) return;
-      import("@tauri-apps/api/core")
-        .then(({ invoke }) =>
-          invoke("set_window_geometry", { width: w, height: h }).catch(() => {
-            // command 可能不存在（旧 Rust 二进制）— 静默忽略
-          }),
-        )
-        .catch(() => {
-          /* not under Tauri */
-        });
-    };
-    const onResize = () => {
-      if (timer != null) window.clearTimeout(timer);
-      timer = window.setTimeout(persist, 800);
-    };
-    window.addEventListener("resize", onResize);
-    return () => {
-      window.removeEventListener("resize", onResize);
-      if (timer != null) window.clearTimeout(timer);
-    };
-  }, []);
+  // 2026-05-31: 删除前端 resize → invoke("set_window_geometry") 兜底循环。
+  // 该 useEffect 是"拉伸后自动缩小两次"的根因 —— set_window_geometry 命令
+  // 内部调用 win.set_size(LogicalSize)，会再触发一次 WindowEvent::Resized，
+  // 而 window.innerWidth (CSS inner) 与 set_size (outer) 在 DPI/边框场景
+  // 下相差几像素，每轮收缩一些 → 用户感知"缩小两次"后稳定。
+  // 持久化已由 Rust 端 ResizeDebouncer（lib.rs WindowEvent::Resized 钩子）
+  // 独家负责，不需要前端冗余写盘。
 
   // Control channel (text chat + interrupt + emotion/action events)
   const { state, lastMessage, sendChatV2, sendInterrupt, getChannel: getControlChannel } =
