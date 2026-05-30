@@ -1,0 +1,71 @@
+{
+  "generated": "2026-05-31 00:14:51",
+  "results": [
+    {
+      "case": "R3-1 winmcp 真发你好",
+      "status": "FAIL",
+      "detail": "paste reached input but value mismatch after 3 retries: ''",
+      "ts": "00:13:47"
+    },
+    {
+      "case": "R3-2 toolbar 已连接 + FPS",
+      "status": "PASS",
+      "detail": "{'has_connected': True, 'has_fps': True, 'no_unknown_service': True}",
+      "ts": "00:13:49"
+    },
+    {
+      "case": "R3-3 winmcp 真发 skill 触发",
+      "status": "FAIL",
+      "detail": "paste reached input but value mismatch after 3 retries: ''",
+      "ts": "00:13:57"
+    },
+    {
+      "case": "R5-1 账户 pill (winmcp Enter)",
+      "status": "PARTIAL",
+      "detail": "Enter sent but no panel content detected",
+      "ts": "00:14:02"
+    },
+    {
+      "case": "TC-04 winmcp 真发输入 + Enter",
+      "status": "FAIL",
+      "detail": "paste reached input but value mismatch after 3 retries: ''",
+      "ts": "00:14:12"
+    },
+    {
+      "case": "TC-08 winmcp 真按 settings",
+      "status": "PARTIAL",
+      "detail": "Enter sent but no dialog",
+      "ts": "00:14:14"
+    },
+    {
+      "case": "TC-09 winmcp 真按 mic",
+      "status": "PARTIAL",
+      "detail": "Enter sent but no state change: before={'title': '按住录音', 'cls': ''} after={'title': '按住录音', 'cls': ''}",
+      "ts": "00:14:17"
+    },
+    {
+      "case": "TC-10 winmcp 真按消息 → 互斥",
+      "status": "FAIL",
+      "detail": "visBefore=True, visAfter=True",
+      "ts": "00:14:18"
+    },
+    {
+      "case": "B1 excel_create (winmcp)",
+      "status": "FAIL",
+      "detail": "paste reached input but value mismatch after 3 retries: ''",
+      "ts": "00:14:31"
+    },
+    {
+      "case": "B2 doc_create (winmcp)",
+      "status": "FAIL",
+      "detail": "paste reached input but value mismatch after 3 retries: ''",
+      "ts": "00:14:41"
+    },
+    {
+      "case": "B5 ppt_create (winmcp)",
+      "status": "FAIL",
+      "detail": "paste reached input but value mismatch after 3 retries: ''",
+      "ts": "00:14:51"
+    }
+  ]
+}

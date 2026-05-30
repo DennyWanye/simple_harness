@@ -1,0 +1,10 @@
+Connected: http://tauri.localhost/
+
+chat-input CSS=(157,252) size=194x38 window-on-screen=(1088,432) dpr=2.129999876022339
+→ Target logical (PowerShell DPI-unaware): (1245,684)
+windows-mcp click: code=0 out=DOWN=1 UP=1
+Active element after winmcp click: {'isChatInput': False, 'activeTagName': 'BODY', 'activeTestId': None}
+  [✗] Hybrid windows-mcp click → focus                   FAIL — click landed but focus not on chat-input: active={'isChatInput': False, 'activeTagName': 'BODY', 'activeTestId': None}
+windows-mcp paste: code=0 out=
+chat-input.value after paste: ''
+  [✗] Hybrid windows-mcp paste → input value             FAIL — Ctrl+V did not inject; chat-input.value=''

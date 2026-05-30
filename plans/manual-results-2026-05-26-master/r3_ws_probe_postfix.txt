@@ -1,0 +1,43 @@
+Connecting: http://tauri.localhost/
+Secret probe:
+{
+  "result": {
+    "type": "object",
+    "value": {
+      "found": null,
+      "keys": [
+        "showSaveFilePicker",
+        "__TAURI_IIFE__",
+        "__TAURI__",
+        "__TAURI_PLUGIN_AUTOSTART__",
+        "__TAURI_PLUGIN_CLIPBOARD_MANAGER__",
+        "__TAURI_PLUGIN_DIALOG__",
+        "__TAURI_PLUGIN_OPENER__",
+        "__TAURI_PLUGIN_UPDATER__",
+        "__deskpet_metrics_emit",
+        "__deskpet_anim_metrics",
+        "__deskpet_anim_debug",
+        "__deskpet_play_motion"
+      ]
+    }
+  }
+}
+
+Tauri invoke probe:
+{
+  "result": {
+    "type": "object",
+    "value": {
+      "method": "tauri_invoke",
+      "secret": "ae0123bb03d6bf2c9d321ac3d0240a07"
+    }
+  }
+}
+
+Got secret: ae0123bb...
+Connecting to backend ws: ws://127.0.0.1:8100/ws/control?secret=ae0123bb03d6bf2c9d321ac3d0240a07&session_i...
+first frame: {"type":"startup_status","degraded":false,"errors":[]}
+
+Frame types: ['chat_v2_delta', 'chat_v2_delta', 'chat_v2_delta', 'chat_v2_delta', 'chat_v2_delta', 'chat_v2_delta', 'chat_v2_delta', 'chat_v2_delta', 'chat_v2_delta', 'chat_v2_delta', 'chat_v2_delta', 'chat_v2_delta', 'chat_v2_delta', 'chat_v2_delta', 'chat_v2_delta', 'chat_v2_final']
+Final text: 你好呀～我在呢 🐾  
+今天想一起做点什么？

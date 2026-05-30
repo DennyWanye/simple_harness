@@ -1,0 +1,43 @@
+Connecting: http://tauri.localhost/
+Secret probe:
+{
+  "result": {
+    "type": "object",
+    "value": {
+      "found": null,
+      "keys": [
+        "showSaveFilePicker",
+        "__TAURI_IIFE__",
+        "__TAURI__",
+        "__TAURI_PLUGIN_AUTOSTART__",
+        "__TAURI_PLUGIN_CLIPBOARD_MANAGER__",
+        "__TAURI_PLUGIN_DIALOG__",
+        "__TAURI_PLUGIN_OPENER__",
+        "__TAURI_PLUGIN_UPDATER__",
+        "__deskpet_metrics_emit",
+        "__deskpet_anim_metrics",
+        "__deskpet_anim_debug",
+        "__deskpet_play_motion"
+      ]
+    }
+  }
+}
+
+Tauri invoke probe:
+{
+  "result": {
+    "type": "object",
+    "value": {
+      "method": "tauri_invoke",
+      "secret": "b77dc368a194f48656a50cfee00e2276"
+    }
+  }
+}
+
+Got secret: b77dc368...
+Connecting to backend ws: ws://127.0.0.1:8100/ws/control?secret=b77dc368a194f48656a50cfee00e2276&session_i...
+first frame: {"type":"startup_status","degraded":false,"errors":[]}
+ERROR: {'error': "Unknown service 'session_goal_store'. Valid: ['agent_engine', 'asr_engine', 'auto_resume', 'billing_ledger', 'code_mode', 'context_assembler', 'embedder', 'facts_store', 'file_memory', 'image_worker', 'llm_engine', 'mcp_manager', 'memory_manager', 'memory_store', 'nudge_queue', 'provider_registry', 'session_activity', 'session_db', 'skill_loader', 'supervisor', 'tool_circuit_breaker', 'tool_router', 'tts_engine', 'vad_engine', 'vector_worker', 'watchdog']", 'detail': 'ValueError', 'session_id': 'cdp-r3-probe'}
+
+Frame types: ['chat_v2_error']
+Final text: 

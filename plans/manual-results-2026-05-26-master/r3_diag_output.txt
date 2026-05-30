@@ -1,0 +1,57 @@
+Connecting: http://tauri.localhost/
+{
+  "result": {
+    "type": "object",
+    "value": {
+      "chat_input_value": "",
+      "chat_input_placeholder": "和桌宠说点什么…",
+      "send_button_disabled": true,
+      "matches": [
+        {
+          "text": "按住下方按钮说话，或输入消息开始聊天…",
+          "tag": "DIV"
+        },
+        {
+          "text": "按住下方按钮说话，或输入消息开始聊天…",
+          "tag": "DIV"
+        }
+      ],
+      "styled": [
+        {
+          "tag": "DIV",
+          "cls": "bp-dialog-bar",
+          "text": "按住下方按钮说话，或输入消息开始聊天…",
+          "visible": true
+        }
+      ],
+      "error_overlays": [
+        {
+          "text": "⚠\nUnknown service 'session_goal_store'. Valid: ['agent_engine', 'asr_engine', 'auto_resume', 'billing_ledger', 'code_mode', 'context_assembler', 'embedder', 'facts_store', 'file_memory', 'image_worker"
+        }
+      ]
+    }
+  }
+}
+
+Send again:
+{
+  "result": {
+    "type": "object",
+    "value": {
+      "ok": true,
+      "value_was": "你好",
+      "value_after": "你好"
+    }
+  }
+}
+
+Body text (first 2000 chars):
+⚠
+Unknown service 'session_goal_store'. Valid: ['agent_engine', 'asr_engine', 'auto_resume', 'billing_ledger', 'code_mode', 'context_assembler', 'embedder', 'facts_store', 'file_memory', 'image_worker', 'llm_engine', 'mcp_manager', 'memory_manager', 'memory_store', 'nudge_queue', 'provider_registry', 'session_activity', 'session_db', 'skill_loader', 'supervisor', 'tool_circuit_breaker', 'tool_router', 'tts_engine', 'vad_engine', 'vector_worker', 'watchdog'] — ValueError
+✕
+消息
+按住下方按钮说话，或输入消息开始聊天…
+发送
+开机启动
+30 FPS
+已连接

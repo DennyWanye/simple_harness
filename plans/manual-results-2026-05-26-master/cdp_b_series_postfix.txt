@@ -1,0 +1,29 @@
+Connected: http://tauri.localhost/
+
+
+── B1 excel-generate ──
+  close dialogs: {'closed': 0, 'dialogs_remaining': 0}
+  send: {'ok': True, 'value_sent': '用 excel_create 工具帮我做一个简单的开支统计 xlsx 文件，含日期、餐饮、交通、合计 4 列，3 行示例数据'}
+  [~] B1 excel-generate                  PARTIAL — artifact card in DOM but file not found in dirs; snippet=消息
+做好啦～不过先说明一下：excel_create 工具调用失败了，报错是：
+
+> unknown permission category: 'execute_c
+
+── B2 doc-edit (新建) ──
+  close dialogs: {'closed': 0, 'dialogs_remaining': 0}
+  send: {'ok': True, 'value_sent': '用 doc_create 工具帮我新建一份事假请假条 docx 文件，含标题、称呼、正文、落款'}
+  [~] B2 doc-edit (新建)                   PARTIAL — artifact card in DOM but file not found in dirs; snippet=消息
+做好啦～不过先说明一下：excel_create 工具调用失败了，报错是：
+
+> unknown permission category: 'execute_c
+
+── B5 ppt-generate ──
+  close dialogs: {'closed': 0, 'dialogs_remaining': 0}
+  send: {'ok': True, 'value_sent': "用 ppt_create 工具帮我生成 pptx 文件，主题'DeskPet R3-1 测试报告'，4 页足够"}
+  [~] B5 ppt-generate                    PARTIAL — artifact card in DOM but file not found in dirs; snippet=消息
+做好啦～不过先说明一下：excel_create 工具调用失败了，报错是：
+
+> unknown permission category: 'execute_c
+
+=== B-series Summary ===
+PASS: 0  FAIL: 0  PARTIAL: 3

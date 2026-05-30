@@ -1,0 +1,19 @@
+Connected: http://tauri.localhost/
+
+
+── B1 excel-generate (direct tool) ──
+  prompt: 请直接调用 excel_create 函数（不要通过 skill_invoke）生成一个本月开支统计 xlsx，列：日期、餐饮、交通、合计，3 行示例数据。
+  send: {'ok': True}
+  [✓] B1 excel-generate (direct tool)    PASS    — artifact: deskpet-excel-1780156684.xlsx size=5259 path=C:\Users\24378\AppData\Local\Temp\claude\deskpet-excel-1780156684.xlsx
+
+── B2 doc-edit (direct tool) ──
+  prompt: 请直接调用 doc_create 函数（不要通过 skill_invoke）新建一份事假请假条 docx，含标题/称呼/正文/落款。
+  send: {'ok': True}
+  [✓] B2 doc-edit (direct tool)          PASS    — artifact: deskpet-doc-1780156698.docx size=36955 path=C:\Users\24378\AppData\Local\Temp\claude\deskpet-doc-1780156698.docx
+
+── B5 ppt-generate (direct tool) ──
+  prompt: 请直接调用 ppt_create 函数（不要通过 skill_invoke）生成 pptx，主题 DeskPet 测试报告，4 页。
+  send: {'ok': True}
+  [✓] B5 ppt-generate (direct tool)      PASS    — artifact: deskpet-ppt-1780156715.pptx size=33441 path=C:\Users\24378\AppData\Local\Temp\claude\deskpet-ppt-1780156715.pptx
+
+=== Summary === PASS:3 FAIL:0

@@ -1,0 +1,16 @@
+Connected: http://tauri.localhost/
+
+  [✓] TC-04.1 主输入框 → send                PASS    — reply detected=True, before color=rgba(255, 255, 255, 0.05)
+
+── B1 excel-generate ──
+  [~] B1 excel-generate                  PARTIAL — UI says generated but file not found in artifact dirs; snippet=你决定。开启时 AutoResumeOrchestrator 会带着 hint 重跑 1-2 次，跑通就静默；都跑不通才弹窗。 |  | 数据目录 |  | DeskPet 的聊天历史、配置、S
+
+── B2 doc-edit 新建 ──
+  [~] B2 doc-edit 新建                     PARTIAL — UI says generated but file not found; snippet=你决定。开启时 AutoResumeOrchestrator 会带着 hint 重跑 1-2 次，跑通就静默；都跑不通才弹窗。 |  | 数据目录 |  | DeskPet 的聊天历史、配置、SQLite 数据库和设
+
+── B5 ppt-generate ──
+  [~] B5 ppt-generate                    PARTIAL — UI says generated but file not found; snippet=你决定。开启时 AutoResumeOrchestrator 会带着 hint 重跑 1-2 次，跑通就静默；都跑不通才弹窗。 |  | 数据目录 |  | DeskPet 的聊天历史、配置、SQLite 数据库和设
+  [✓] TC-09 mic 切录音态 v2                  PASS    — before bgColor=rgba(0, 0, 0, 0) → after=rgba(255, 255, 255, 0.07); titles: '停止录音'→'按住录音'
+
+=== Round 2 Summary ===
+PASS: 2  FAIL: 0  PARTIAL: 3  SKIP: 0
