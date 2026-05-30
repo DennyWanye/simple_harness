@@ -74,8 +74,40 @@ import { getEmotionParams, type EmotionCode } from './emotionMapper'
 import type { WelcomeIntensity } from './idleWatcher'
 import { poseForEdge, type Edge } from './edgeWatcher'
 import type { DNDReason } from './dndDetector'
+// 2026-05-31 — fun interactions: 12 best-practice observers (drag squash,
+// tap burst, region tap, long-press pet, cursor lean, shy, dizzy spin,
+// time-of-day mood, idle fidget, double-tap surprise).
+import {
+  createFunInteractionCtx,
+  dragKinematicsBegin,
+  dragKinematicsEnd,
+  dragKinematicsUpdate,
+  dragKinematicsSample,
+  dragSpringBackBegin,
+  dragSpringBackSample,
+  cursorProximityLean,
+  shyAwayUpdate,
+  circleDizzyUpdate,
+  circleDizzySample,
+  tapBurstAdd,
+  regionAwareClassify,
+  longPressBegin,
+  longPressEnd,
+  longPressSample,
+  rapidDoubleTapAdd,
+  rapidDoubleTapSample,
+  timeOfDayMood,
+  idleFidgetMarkInteraction,
+  idleFidgetMaybeTrigger,
+  clamp,
+  type FunInteractionCtx,
+  type ClickRegion,
+  type FaceFrameLike,
+  type TapBurstIntensity,
+} from './funInteractions'
 
 export type { MotionTag, InteractionKind, DragState, EmotionCode, WelcomeIntensity, VisemeFrame, Edge, DNDReason }
+export type { ClickRegion, FaceFrameLike, TapBurstIntensity, FunInteractionCtx } from './funInteractions'
 
 export interface CoreModelLike {
   getParameterIndex(name: string): number
@@ -203,6 +235,17 @@ export class AnimationOverlay {
   private celebration_active_until = -Infinity
   /** Marker: red supervisor alert active (AC-10-03 — DND must NOT suppress). */
   private red_alert_active = false
+
+  // 2026-05-31 fun interactions — single aggregated context for the 12
+  // best-practice observers. Mutations all happen through the setters
+  // below + applyTo()'s end-of-frame consumer.
+  private fun_ctx: FunInteractionCtx = createFunInteractionCtx()
+  /** Snapshot of the current face frame in CSS px, fed from setFaceCenter. */
+  private fun_face_cx_css = 0
+  private fun_face_cy_css = 0
+  private fun_face_radius_css = 0
+  /** Optional motion player for fidget triggers — re-uses motion_player. */
+  private fun_fidget_last_t = 0
 
   constructor(opts: OverlayOpts = {}) {
     const rng = opts.rng ?? Math.random
@@ -537,8 +580,107 @@ export class AnimationOverlay {
     }
   }
 
+  // ───────── 2026-05-31 fun interactions setters (PRD §6.13 best-practice pack) ─────────
+
+  /** Pointer down on the pet — begin drag + tap-burst + long-press tracking. */
+  funPointerDown(client_x: number, client_y: number, now_t: number): void {
+    if (!Number.isFinite(now_t)) return
+    this.fun_ctx.drag = dragKinematicsBegin(this.fun_ctx.drag, client_x, client_y, now_t)
+    this.fun_ctx.long = longPressBegin(this.fun_ctx.long, now_t)
+    // Tap-burst added on UP (treat full down→up as a tap).
+    this.fun_ctx.fidget = idleFidgetMarkInteraction(this.fun_ctx.fidget, now_t)
+  }
+
+  /** Pointer move while pressed — feed kinematics. */
+  funPointerMove(client_x: number, client_y: number, now_t: number): void {
+    if (!Number.isFinite(now_t)) return
+    if (this.fun_ctx.drag.active) {
+      this.fun_ctx.drag = dragKinematicsUpdate(this.fun_ctx.drag, client_x, client_y, now_t)
+    }
+  }
+
+  /** Pointer up — end drag, trigger spring back, finalize tap burst. */
+  funPointerUp(now_t: number): { burst_count: number; burst_intensity: TapBurstIntensity; double_tap: boolean } {
+    if (!Number.isFinite(now_t)) return { burst_count: 0, burst_intensity: 'look_up', double_tap: false }
+    const last_sample = dragKinematicsSample(this.fun_ctx.drag)
+    if (this.fun_ctx.drag.active && Math.abs(last_sample.squash_delta) > 0.02) {
+      this.fun_ctx.spring = dragSpringBackBegin(last_sample.squash_delta, now_t)
+    }
+    this.fun_ctx.drag = dragKinematicsEnd(this.fun_ctx.drag)
+    this.fun_ctx.long = longPressEnd(this.fun_ctx.long)
+    // Tap burst window separate from rapid-double-tap window.
+    const cutoff = now_t - this.burst_window_ms
+    this.burst_taps = this.burst_taps.filter(t => t >= cutoff)
+    this.burst_taps.push(now_t)
+    const count = this.burst_taps.length
+    let intensity: TapBurstIntensity = 'look_up'
+    if (count >= 5) intensity = 'annoyed'
+    else if (count >= 3) intensity = 'blush'
+    else if (count >= 2) intensity = 'curious'
+    const r = rapidDoubleTapAdd(this.fun_ctx.rapid, now_t)
+    this.fun_ctx.rapid = r.ctx
+    return { burst_count: count, burst_intensity: intensity, double_tap: r.triggered }
+  }
+  private burst_taps: number[] = []
+  private burst_window_ms = 800
+
+  /** Window-level pointer move (cursor proximity / shy / dizzy). */
+  funCursorMove(client_x: number, client_y: number, now_t: number): boolean {
+    if (!Number.isFinite(now_t)) return false
+    if (this.fun_face_radius_css <= 0) return false
+    // Shy-away check.
+    const shy = shyAwayUpdate(
+      this.fun_ctx.shy,
+      client_x,
+      client_y,
+      this.fun_face_cx_css,
+      this.fun_face_cy_css,
+      this.fun_face_radius_css,
+      now_t,
+    )
+    this.fun_ctx.shy = shy.ctx
+    // Circle-dizzy check.
+    const c = circleDizzyUpdate(
+      this.fun_ctx.circle,
+      client_x,
+      client_y,
+      this.fun_face_cx_css,
+      this.fun_face_cy_css,
+      this.fun_face_radius_css,
+      now_t,
+    )
+    this.fun_ctx.circle = c.ctx
+    return shy.triggered || c.triggered
+  }
+
+  /** Region classify a click (head/face/torso/legs). */
+  funClassifyRegion(client_x: number, client_y: number, frame: FaceFrameLike): ClickRegion {
+    return regionAwareClassify(client_x, client_y, frame)
+  }
+
+  /** Per-frame fidget tick. Returns motion kind if triggered, else null.
+   *  Caller plays it via motion_player. */
+  funFidgetTick(now_t: number): 'yawn' | 'stretch' | 'look_around' | null {
+    if (!Number.isFinite(now_t)) return null
+    if (now_t - this.fun_fidget_last_t < 1000) return null // throttle
+    this.fun_fidget_last_t = now_t
+    const r = idleFidgetMaybeTrigger(this.fun_ctx.fidget, now_t)
+    this.fun_ctx.fidget = r.ctx
+    return r.trigger
+  }
+
+  /** Mark a user interaction (chat input / click / key) — resets idle fidget. */
+  funMarkInteraction(now_t: number): void {
+    if (!Number.isFinite(now_t)) return
+    this.fun_ctx.fidget = idleFidgetMarkInteraction(this.fun_ctx.fidget, now_t)
+  }
+
   // ───────── gaze ─────────
   setFaceCenter(cx_css: number, cy_css: number, radius_css: number): void {
+    // Keep fun-interaction face snapshot in sync.
+    this.fun_face_cx_css = cx_css
+    this.fun_face_cy_css = cy_css
+    this.fun_face_radius_css = radius_css
     this.gazeState = this.gaze.setFaceFrame(this.gazeState, cx_css, cy_css, radius_css)
   }
 
@@ -892,6 +1034,87 @@ export class AnimationOverlay {
         setParam('ParamEyeROpen', eyeOpenPulse)
         setParam('ParamBrowLY', 0.5 * sf)
         setParam('ParamBrowRY', 0.5 * sf)
+      }
+    }
+
+    // ───────── 2026-05-31 step 8: fun interactions delta layer ─────────
+    // Layered after all v1+v2 logic so it adds on top without breaking
+    // existing tests. Each block guards its own no-op when inactive.
+    {
+      // a) drag kinematics: squash/stretch + lean + hair trail.
+      const dk = dragKinematicsSample(this.fun_ctx.drag)
+      if (dk.squash_delta !== 0) addParam('ParamBustY', dk.squash_delta)
+      if (dk.lean_delta_deg !== 0) addParam('ParamBodyAngleX', dk.lean_delta_deg)
+      if (dk.hair_trail_delta !== 0) addParam('ParamHairFront', dk.hair_trail_delta)
+
+      // b) spring back (BustY only) after release.
+      const sb = dragSpringBackSample(this.fun_ctx.spring, now_t)
+      if (sb.squash_delta !== 0) addParam('ParamBustY', sb.squash_delta)
+
+      // c) cursor proximity lean (only if no drag active).
+      if (!this.fun_ctx.drag.active && this.fun_face_radius_css > 0) {
+        // Use last cursor position from gaze tracker if available; otherwise
+        // skip (proximity needs a cursor sample which funCursorMove provides).
+        // For now we rely on lazy update from funCursorMove + a cached cursor
+        // pos in shy ctx (last_x/last_y).
+        const sx = this.fun_ctx.shy.last_x
+        const sy = this.fun_ctx.shy.last_y
+        if (Number.isFinite(sx) && Number.isFinite(sy)) {
+          const prox = cursorProximityLean(sx, sy, this.fun_face_cx_css, this.fun_face_cy_css)
+          if (prox.lean_delta_deg !== 0) addParam('ParamBodyAngleX', prox.lean_delta_deg)
+          if (prox.head_pitch_delta_deg !== 0) addParam('ParamAngleY', prox.head_pitch_delta_deg)
+        }
+      }
+
+      // d) shy away — quick blush + slight head tilt away from cursor.
+      if (now_t < this.fun_ctx.shy.triggered_until_t) {
+        const remain = clamp((this.fun_ctx.shy.triggered_until_t - now_t) / 400, 0, 1)
+        addParam('ParamCheek', 0.7 * remain)
+        addParam('ParamAngleZ', 6 * remain)
+        addParam('ParamEyeLSmile', 0.3 * remain)
+        addParam('ParamEyeRSmile', 0.3 * remain)
+      }
+
+      // e) circle dizzy — head sin shake + eyes spiral.
+      const cz = circleDizzySample(this.fun_ctx.circle, now_t)
+      if (cz.angle_z_delta !== 0) addParam('ParamAngleZ', cz.angle_z_delta)
+      if (cz.eye_x_delta !== 0) {
+        addParam('ParamEyeBallX', cz.eye_x_delta)
+        addParam('ParamEyeBallY', cz.eye_x_delta * 0.5)
+      }
+
+      // f) long press petting — gradual Cheek + EyeSmile ramp.
+      const lp = longPressSample(this.fun_ctx.long, now_t)
+      if (lp.petting) {
+        addParam('ParamCheek', 0.6 * lp.intensity)
+        addParam('ParamEyeLSmile', 0.8 * lp.intensity)
+        addParam('ParamEyeRSmile', 0.8 * lp.intensity)
+        addParam('ParamMouthForm', 0.4 * lp.intensity)
+        // Slight head pitch down (looks comfortable).
+        addParam('ParamAngleY', -3 * lp.intensity)
+      }
+
+      // g) rapid double tap surprise.
+      const dt = rapidDoubleTapSample(this.fun_ctx.rapid, now_t)
+      if (dt.factor > 0) {
+        addParam('ParamEyeLOpen', 0.4 * dt.factor)
+        addParam('ParamEyeROpen', 0.4 * dt.factor)
+        addParam('ParamBrowLY', 0.8 * dt.factor)
+        addParam('ParamBrowRY', 0.8 * dt.factor)
+        addParam('ParamBodyAngleZ', Math.sin(now_t * 0.04) * 3 * dt.factor)
+      }
+
+      // h) time of day mood — recompute every 60s.
+      if (now_t - this.fun_ctx.time_mood_at_t > 60_000 || this.fun_ctx.time_mood_at_t === 0) {
+        const hour = new Date().getHours()
+        this.fun_ctx.time_mood = timeOfDayMood(hour)
+        this.fun_ctx.time_mood_at_t = now_t
+      }
+      if (this.fun_ctx.time_mood.cheek_extra !== 0) addParam('ParamCheek', this.fun_ctx.time_mood.cheek_extra)
+      if (this.fun_ctx.time_mood.eye_open_mul !== 1) {
+        // Apply to current eye open via mul.
+        mulParam('ParamEyeLOpen', this.fun_ctx.time_mood.eye_open_mul)
+        mulParam('ParamEyeROpen', this.fun_ctx.time_mood.eye_open_mul)
       }
     }
 

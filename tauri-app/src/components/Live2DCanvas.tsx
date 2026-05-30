@@ -112,6 +112,18 @@ export interface Live2DHandle {
   ) => void;
   /** v2 PRD §6.1: full v2 debug surface. */
   getV2Debug: () => ReturnType<AnimationOverlay["getV2Debug"]>;
+  /** 2026-05-31 fun: pointer down on the pet (begins drag/longPress/burst). */
+  funPointerDown: (clientX: number, clientY: number, now_t: number) => void;
+  /** 2026-05-31 fun: pointer move during hold (drag kinematics). */
+  funPointerMove: (clientX: number, clientY: number, now_t: number) => void;
+  /** 2026-05-31 fun: pointer up — ends drag, returns burst classification. */
+  funPointerUp: (now_t: number) => {
+    burst_count: number;
+    burst_intensity: import("../pet-anim/funInteractions").TapBurstIntensity;
+    double_tap: boolean;
+  };
+  /** 2026-05-31 fun: any user activity (chat input / app focus / etc.). */
+  funMarkInteraction: (now_t: number) => void;
 }
 
 interface FaceFrame {
@@ -206,13 +218,6 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
   // v3: AnimationOverlay instance — per Live2DCanvas mount. dispose()
   // called from cleanupRef so HMR / StrictMode double-mount can't leak.
   const overlayRef = useRef<AnimationOverlay | null>(null);
-  // 2026-05-31 restore — Pixi Application ref so the resize effect (below)
-  // can call renderer.resize() + re-scale + re-center the model whenever
-  // the window changes shape. Without this the renderer's backing buffer
-  // stays at the init-time dimensions and CSS stretches it to fit the new
-  // container → if the aspect ratio changes the character looks squashed
-  // (left/right pinch when window goes wider).
-  const pixiAppRef = useRef<any>(null);
   // v3: face frame state. Updated by ResizeObserver + window resize + once
   // on model load. Drives both hit-zone DOM and overlay.setFaceCenter via
   // a single source `computeFaceFrame`.
@@ -364,6 +369,25 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
           }
         );
       },
+      // 2026-05-31 fun interactions
+      funPointerDown(clientX, clientY, now_t) {
+        overlayRef.current?.funPointerDown(clientX, clientY, now_t);
+      },
+      funPointerMove(clientX, clientY, now_t) {
+        overlayRef.current?.funPointerMove(clientX, clientY, now_t);
+      },
+      funPointerUp(now_t) {
+        return (
+          overlayRef.current?.funPointerUp(now_t) ?? {
+            burst_count: 0,
+            burst_intensity: "look_up" as const,
+            double_tap: false,
+          }
+        );
+      },
+      funMarkInteraction(now_t) {
+        overlayRef.current?.funMarkInteraction(now_t);
+      },
     }),
     [],
   );
@@ -463,6 +487,8 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
     if (!overlay) return;
     const onMove = (e: PointerEvent): void => {
       overlay.setGazeTarget(e.clientX, e.clientY, e.timeStamp);
+      // 2026-05-31 fun: feed shy-away + circle-dizzy observers.
+      overlay.funCursorMove?.(e.clientX, e.clientY, e.timeStamp);
     };
     const onBlur = (): void => {
       overlay.clearGazeTarget(performance.now());
@@ -917,8 +943,14 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
           // mousedown+up without movement falls through to onClick
           // (preserving the click pulse).
           dragStartRef.current = { x: e.clientX, y: e.clientY };
+          // 2026-05-31 fun: kick off drag/longPress/burst observer.
+          overlayRef.current?.funPointerDown(e.clientX, e.clientY, e.timeStamp);
         }}
         onPointerMove={(e) => {
+          // 2026-05-31 fun: feed pointermove into drag kinematics (only when
+          // pressed — funPointerDown sets ctx.active true; sample is no-op
+          // when inactive).
+          overlayRef.current?.funPointerMove(e.clientX, e.clientY, e.timeStamp);
           const start = dragStartRef.current;
           if (!start) return;
           const dx = e.clientX - start.x;
@@ -945,10 +977,13 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
           dragStartRef.current = null;
           // v2 A1: tell overlay drag ended → spring_back begins.
           overlayRef.current?.setDragState("idle", e.timeStamp);
+          // 2026-05-31 fun: ends drag + classify tap burst.
+          overlayRef.current?.funPointerUp(e.timeStamp);
         }}
         onPointerCancel={(e) => {
           dragStartRef.current = null;
           overlayRef.current?.setDragState("idle", e.timeStamp);
+          overlayRef.current?.funPointerUp(e.timeStamp);
         }}
         onClick={(e) => {
           const ts = e.timeStamp;
