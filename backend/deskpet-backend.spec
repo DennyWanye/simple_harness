@@ -50,12 +50,6 @@ hiddenimports += collect_submodules("silero_vad")
 # Discovered via CDP-driven prompt asking LLM to enumerate tools.
 hiddenimports += collect_submodules("deskpet.tools")
 hiddenimports += collect_submodules("deskpet.skills")
-hiddenimports += collect_submodules("deskpet.memory")
-hiddenimports += collect_submodules("deskpet.agent")
-hiddenimports += collect_submodules("deskpet.mcp")
-hiddenimports += collect_submodules("deskpet.permissions")
-hiddenimports += collect_submodules("deskpet.commands")
-hiddenimports += collect_submodules("providers")
 hiddenimports += ["sqlite_vec"]                    # P4-S20: L3 vector recall
 hiddenimports += [
     "tzdata",                   # zoneinfo needs this on Windows

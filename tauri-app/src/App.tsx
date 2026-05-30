@@ -1130,12 +1130,11 @@ function App() {
     const occInterval = window.setInterval(async () => {
       const now = performance.now();
       try {
-        const w = await import("@tauri-apps/api/window").then((m) =>
-          m.getCurrentWindow(),
-        );
+        const { getCurrentWindow, currentMonitor } = await import("@tauri-apps/api/window");
+        const w = getCurrentWindow();
         const pos = await w.outerPosition();
         const size = await w.outerSize();
-        const monitor = await w.currentMonitor();
+        const monitor = await currentMonitor();
         if (!monitor) return;
         const petRect = {
           x: pos.x,
@@ -1182,13 +1181,13 @@ function App() {
     let cancelled = false;
     (async () => {
       try {
-        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const { getCurrentWindow, currentMonitor } = await import("@tauri-apps/api/window");
         const w = getCurrentWindow();
         const off = await w.onMoved(async () => {
           try {
             const pos = await w.outerPosition();
             const size = await w.outerSize();
-            const monitor = await w.currentMonitor();
+            const monitor = await currentMonitor();
             if (!monitor) return;
             const edge: Edge = pickEdge(
               { x: pos.x, y: pos.y, w: size.width, h: size.height },
@@ -1246,13 +1245,13 @@ function App() {
       "mousemove",
       "wheel",
       "pointermove",
-      "visibilitychange",
       "focus",
       "blur",
     ];
     for (const ev of events) {
       window.addEventListener(ev, onActivity, { passive: true });
     }
+    document.addEventListener("visibilitychange", onActivity, { passive: true });
     // Seed: first mount counts as activity so we don't immediately enter low_energy.
     idleStateRef.current = idleWatcherRef.current.notifyActivity(
       idleStateRef.current,
@@ -1262,6 +1261,7 @@ function App() {
       for (const ev of events) {
         window.removeEventListener(ev, onActivity);
       }
+      document.removeEventListener("visibilitychange", onActivity);
     };
   }, []);
 
