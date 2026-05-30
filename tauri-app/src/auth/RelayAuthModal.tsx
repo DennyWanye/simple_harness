@@ -236,11 +236,21 @@ export function RelayAuthModal({
       aria-modal="true"
       aria-label={mode === "login" ? "登录" : "注册"}
       style={overlayStyle}
+      // 2026-05-30 bug fix：modal overlay 用 position:fixed/inset:0 全覆盖桌宠
+      // 主窗口，挡住了 App.tsx 桌宠壳上的 data-tauri-drag-region → 用户在
+      // 登录窗显示时无法移动桌宠。给 overlay 加 drag-region 让 mousedown
+      // 透传给 Tauri；form 加 drag-region="false" 让表单内点击/拖选输入
+      // 正常工作。click handler 仍 work（Tauri 区分 drag vs click 用阈值）。
+      data-tauri-drag-region
       onClick={(e) => {
         if (e.target === e.currentTarget && !busy) onClose(false);
       }}
     >
-      <form style={modalStyle} onSubmit={handleSubmit}>
+      <form
+        style={modalStyle}
+        onSubmit={handleSubmit}
+        data-tauri-drag-region="false"
+      >
         <header
           style={{
             display: "flex",
