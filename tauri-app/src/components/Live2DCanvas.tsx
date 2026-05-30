@@ -13,6 +13,12 @@ import {
   resolveBackendFromEnv,
   type PetEngine,
 } from "../pet-engine";
+import {
+  drawSpriteCharacter,
+  drawProceduralCharacter,
+  loadSpriteImage,
+  type CharacterFrame,
+} from "./petCharacter";
 
 interface Live2DCanvasProps {
   modelPath: string;
@@ -521,7 +527,17 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
       let lastFpsTime = performance.now();
       let eyeBlinkTimer = 0;
       let isBlinking = false;
-      const cs = Math.min(width / 300, height / 450, 1);
+      // S6: try to load an external portrait sprite. Until it resolves
+      // (or if it's absent / 404s) we draw the procedural chibi
+      // placeholder. Drop a transparent-bg PNG at
+      // public/assets/pet/character.png and it gets picked up
+      // automatically on next load — that's the "real artwork" path.
+      let spriteImg: HTMLImageElement | null = null;
+      void loadSpriteImage("/assets/pet/character.png").then((img) => {
+        spriteImg = img;
+        if (img) console.warn("[pet] external sprite loaded:", img.naturalWidth, "x", img.naturalHeight);
+        else console.warn("[pet] no external sprite — using procedural chibi placeholder");
+      });
 
       function draw(ts: number) {
         if (destroyed) return;
@@ -536,65 +552,20 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
           lastFpsTime = now;
         }
 
-        ctx.save();
-        ctx.translate(width / 2, height * 0.38);
-        ctx.scale(cs, cs);
-        const by = Math.sin(ts / 1500) * 3, bo = Math.sin(ts / 800) * 2;
-
-        ctx.fillStyle = "rgba(0,0,0,0.15)";
-        ctx.beginPath(); ctx.ellipse(0, 140 + by, 55, 10, 0, 0, Math.PI * 2); ctx.fill();
-        const tw = Math.sin(ts / 300) * 15;
-        ctx.strokeStyle = "rgba(99,102,241,0.8)"; ctx.lineWidth = 8; ctx.lineCap = "round";
-        ctx.beginPath(); ctx.moveTo(45, 85 + by); ctx.quadraticCurveTo(75 + tw, 55 + by, 70 + tw * 1.5, 25 + by); ctx.stroke();
-        ctx.fillStyle = "rgba(99,102,241,0.9)"; roundRect(ctx, -55, 50 + by, 110, 80, 22);
-        ctx.fillStyle = "rgba(129,140,248,0.3)"; roundRect(ctx, -40, 55 + by, 80, 25, 12);
-        ctx.fillStyle = "rgba(129,140,248,0.9)";
-        ctx.beginPath(); ctx.ellipse(-35, 130 + by, 18, 10, -0.1, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.ellipse(35, 130 + by, 18, 10, 0.1, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = "rgba(99,102,241,0.95)";
-        ctx.beginPath(); ctx.arc(0, bo, 65, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = "rgba(99,102,241,0.95)";
-        ctx.beginPath(); ctx.moveTo(-55, -20 + bo); ctx.lineTo(-70, -70 + bo); ctx.lineTo(-25, -45 + bo); ctx.closePath(); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(55, -20 + bo); ctx.lineTo(70, -70 + bo); ctx.lineTo(25, -45 + bo); ctx.closePath(); ctx.fill();
-        ctx.fillStyle = "rgba(196,181,253,0.7)";
-        ctx.beginPath(); ctx.moveTo(-52, -25 + bo); ctx.lineTo(-63, -60 + bo); ctx.lineTo(-32, -42 + bo); ctx.closePath(); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(52, -25 + bo); ctx.lineTo(63, -60 + bo); ctx.lineTo(32, -42 + bo); ctx.closePath(); ctx.fill();
+        // Self-driven blink scheduler (~every 3.2s, ~140ms closed).
         eyeBlinkTimer += 16;
-        if (eyeBlinkTimer > 3000 && !isBlinking) { isBlinking = true; eyeBlinkTimer = 0; }
-        if (isBlinking && eyeBlinkTimer > 150) { isBlinking = false; eyeBlinkTimer = 0; }
-        const ey = -8 + bo, eo = isBlinking ? 0.1 : 1;
-        ctx.fillStyle = "#fff";
-        ctx.beginPath(); ctx.ellipse(-24, ey, 16, 18 * eo, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.ellipse(24, ey, 16, 18 * eo, 0, 0, Math.PI * 2); ctx.fill();
-        if (!isBlinking) {
-          const px = Math.sin(ts / 2000) * 4, py = Math.cos(ts / 3000) * 2;
-          ctx.fillStyle = "#1e1b4b";
-          ctx.beginPath(); ctx.arc(-24 + px, ey + py, 8, 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.arc(24 + px, ey + py, 8, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = "rgba(255,255,255,0.9)";
-          ctx.beginPath(); ctx.arc(-20 + px, ey - 4 + py, 4, 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.arc(28 + px, ey - 4 + py, 3, 0, Math.PI * 2); ctx.fill();
-        }
-        ctx.fillStyle = "rgba(251,191,207,0.45)";
-        ctx.beginPath(); ctx.ellipse(-42, 12 + bo, 14, 8, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.ellipse(42, 12 + bo, 14, 8, 0, 0, Math.PI * 2); ctx.fill();
-        const mOpen = mouthRef.current;
-        ctx.fillStyle = "rgba(196,181,253,0.8)";
-        ctx.beginPath(); ctx.moveTo(0, 8 + bo); ctx.lineTo(-5, 14 + bo); ctx.lineTo(5, 14 + bo); ctx.closePath(); ctx.fill();
-        if (mOpen > 0.05) {
-          ctx.fillStyle = "rgba(67,56,202,0.6)";
-          ctx.beginPath(); ctx.ellipse(0, 20 + bo, 8, 4 + mOpen * 10, 0, 0, Math.PI * 2); ctx.fill();
-        } else {
-          ctx.strokeStyle = "#4338ca"; ctx.lineWidth = 2; ctx.lineCap = "round";
-          ctx.beginPath(); ctx.arc(-8, 16 + bo, 8, -0.3, Math.PI * 0.7); ctx.stroke();
-          ctx.beginPath(); ctx.arc(8, 16 + bo, 8, Math.PI * 0.3, Math.PI + 0.3); ctx.stroke();
-        }
-        ctx.strokeStyle = "rgba(200,200,220,0.5)"; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.moveTo(-30, 10 + bo); ctx.lineTo(-65, 5 + bo); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(-30, 16 + bo); ctx.lineTo(-65, 18 + bo); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(30, 10 + bo); ctx.lineTo(65, 5 + bo); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(30, 16 + bo); ctx.lineTo(65, 18 + bo); ctx.stroke();
-        ctx.restore();
+        if (!isBlinking && eyeBlinkTimer > 3200) { isBlinking = true; eyeBlinkTimer = 0; }
+        if (isBlinking && eyeBlinkTimer > 140) { isBlinking = false; eyeBlinkTimer = 0; }
+
+        const frame: CharacterFrame = {
+          w: width,
+          h: height,
+          t: ts,
+          mouthOpen: mouthRef.current,
+          blink: isBlinking ? 1 : 0,
+        };
+        if (spriteImg) drawSpriteCharacter(ctx, spriteImg, frame);
+        else drawProceduralCharacter(ctx, frame);
 
         canvas.toBlob(
           (blob) => {
