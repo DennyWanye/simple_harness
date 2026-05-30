@@ -197,6 +197,12 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
   // imperative methods can reach it without blowing up the render loop via
   // re-renders.
   const modelRef = useRef<any>(null);
+  // 2026-05-31: PixiJS Application instance ref. Needed so the size-change
+  // effect (line ~390) can call pixiApp.renderer.resize() + recompute model
+  // scale/position when the user resizes the host window. Without this the
+  // PixiJS canvas stays at its mount-time physical size and the <img>
+  // CSS-stretches the snapshot → character looks distorted ("人物被拉伸").
+  const pixiAppRef = useRef<any>(null);
   // v3: AnimationOverlay instance — per Live2DCanvas mount. dispose()
   // called from cleanupRef so HMR / StrictMode double-mount can't leak.
   const overlayRef = useRef<AnimationOverlay | null>(null);
@@ -478,6 +484,33 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
     };
   }, []);
 
+  // 2026-05-31: resize PixiJS renderer + reposition Live2D model when host
+  // window changes size. Without this the PixiJS canvas keeps its mount-time
+  // physical dimensions, the <img> CSS-stretches the snapshot, and Hiyori
+  // looks visually distorted as the user drags the window taller/wider.
+  // Guards: only acts after init (modelRef set + pixiAppRef set); recompute
+  // uniform scale = Math.min(sx, sy) so the character keeps aspect ratio.
+  useEffect(() => {
+    const pixiApp = pixiAppRef.current;
+    const model = modelRef.current;
+    if (!pixiApp || !model) return;
+    const dpr = window.devicePixelRatio || 1;
+    const renderW = Math.round(size.w * dpr);
+    const renderH = Math.round(size.h * dpr);
+    try {
+      pixiApp.renderer?.resize?.(renderW, renderH);
+    } catch (err) {
+      console.warn("[Live2D] renderer.resize failed:", err);
+      return;
+    }
+    const scaleX = (renderW * 0.85) / model.width;
+    const scaleY = (renderH * 0.7) / model.height;
+    const scale = Math.min(scaleX, scaleY);
+    model.scale.set(scale);
+    model.x = (renderW - model.width * scale) / 2;
+    model.y = (renderH - model.height * scale) * 0.25;
+  }, [size.w, size.h]);
+
   // Main init — runs once
   useEffect(() => {
     if (modeRef.current !== "loading") return;
@@ -508,6 +541,7 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
         });
 
         if (destroyed) { pixiApp.destroy(true); return; }
+        pixiAppRef.current = pixiApp;
 
         try {
           pixiApp.stage.eventMode = "none";
@@ -768,6 +802,7 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
       destroyed = true;
       cancelAnimationFrame(rafId);
       modelRef.current = null;
+      pixiAppRef.current = null;
       // v3: dispose the overlay so HMR + StrictMode unmounts don't leak.
       overlayRef.current?.dispose();
       overlayRef.current = null;
