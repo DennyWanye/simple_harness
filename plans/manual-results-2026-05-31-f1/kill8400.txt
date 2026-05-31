@@ -1,0 +1,7 @@
+﻿pid=37840 name=python.exe deskpet_match=True cmd="C:\Users\24378\AppData\Local\Python\pythoncore-3.11-64\python.exe" main.py
+  -> killed, still_alive=False
+pid=45344 name=python.exe deskpet_match=True cmd=G:\projects\deskpet\backend\.venv\Scripts\python.exe -X utf8 -m deskpet.mem
+  -> killed, still_alive=False
+pid=36212 already gone
+8400_now=FREE
+codex_40756=ALIVE (untouched)

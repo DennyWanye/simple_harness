@@ -1,0 +1,12 @@
+﻿=== cargo/rustc/link (tauri build) ===
+none
+=== deskpet.exe ===
+none
+=== orphan python children (my backend embedder workers, parent gone) ===
+python pid=45344 ppid=37840 cmd=G:\projects\deskpet\backend\.venv\Scripts\python.exe -X utf8 -m deskpet.memory.e
+python pid=36212 ppid=45344 cmd="C:\Users\24378\AppData\Local\Python\pythoncore-3.11-64\python.exe" -X utf8 -m d
+=== cmd wrapper run-tauri (pid 51440) ===
+wrapper_51440_alive=False
+=== ports 8500/5573 final ===
+8500=LISTEN
+5573=FREE

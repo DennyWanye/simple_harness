@@ -1,0 +1,11 @@
+﻿=== port 8500 (my backend) ===
+8500 LISTEN pid=48564 (python)
+=== port 5573 (my vite) ===
+5573 = none
+=== deskpet.exe (my tauri window, if built) ===
+deskpet = none (still compiling or not up)
+=== cargo/rustc (my tauri build) ===
+cargo/rustc/link = none
+=== PROTECTED — must NOT kill ===
+codex live2d node pid 40756 alive=True
+orphan 8400 backend alive=True pid=37840
