@@ -2,6 +2,9 @@
 
 本地部署的桌面语音宠物：Live2D 桌宠 + 全本地语音交互管线（VAD → ASR → LLM → TTS）。
 
+> 📊 **项目整体状态一页看清**: [`STATUS/status.md`](./STATUS/status.md) —
+> 所有并行 worktree / 功能模块完成度 / 最近里程碑 / 已知问题。
+
 ---
 
 > ## 🔑 开发期登录测试凭据
