@@ -295,7 +295,7 @@ rerank             = false   # WI-M1.3 cross-encoder 重排
 enhanced_retriever = false   # WI-M1.4 facts 进 RRF（依赖 facts_extract）
 chunking           = false   # WI-M1.5 长消息切块
 query_rewrite      = false   # WI-M1.5 短查询改写
-workspace_memory   = false   # WI-M1.6 code 工作记忆
+workspace_memory   = true    # WI-M1.6 code 工作记忆（F4 2026-05-31: 出厂默认开，code 模式读文件进 workspace_state 供跨轮召回。dataclass 默认仍 False 保字节级契约）
 reflection         = false   # WI-M1.7 反思 / skill memory
 
 [memory.v2.facts]

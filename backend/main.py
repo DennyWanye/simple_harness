@@ -1115,44 +1115,54 @@ try:
     if _facts_store is not None:
         service_context.register("facts_store", _facts_store)
 
-    # Stage 2 WI-S2.1a / D6 v2：memory_forget 工具 bind。模块在 tools
-    # discovery 时已 register 到 registry，这里注入实例依赖。
-    # R8 v2：forgotten_at 列 ALTER 失败时强制关 memory_forget flag。
-    if config.memory.v2.memory_forget and _facts_store is not None:
-        _forget_avail = True
+    # F3 (2026-05-31)：memory_tools.bind() 注入的 _facts_store 是
+    # memory_search / memory_write / memory_read / memory_forget **四个工具
+    # 共用**的（都在 tools/memory_tools.py 模块级共享同一 _facts_store）。
+    # 旧实现把整段 bind 包在 `if config.memory.v2.memory_forget` 里 →
+    # forget flag 默认 False 时，连只读的 memory_search（WI-T3.1 基础工具，
+    # 与 forget 无关）也 not bound。这是 flag 误连坐 bug。
+    #
+    # 修法：facts_store 在就 bind（让 4 个工具都可用）；forget 的**危险性**
+    # 单独由两道闸控制，不靠这个 flag：
+    #   1. enable_natural_language —— 仅 memory_forget flag 开 + forget 配置
+    #      开时才允许自然语言模式（query=...）；否则 _forget_by_query 返 skipped。
+    #   2. forget 工具 register 时的 dangerous=True + 用户显式确认。
+    #   fact_id 模式（最直接、最少歧义）本就永远开放（见 memory_tools._forget_by_id）。
+    # R8 v2：forgotten_at 列 ALTER 失败 → 关掉自然语言 forget（fact_id 仍可用）。
+    if _facts_store is not None:
+        _forget_nl = bool(
+            config.memory.v2.memory_forget
+            and config.memory.v2.forget.enable_natural_language
+        )
         try:
             from deskpet.memory.schema_v2_migrator import (
                 alter_failures as _alter_failures2,
             )
             if _alter_failures2().get("forgotten_at"):
-                _forget_avail = False
+                _forget_nl = False
                 logger.warning(
-                    "p4_memory_forget_force_disabled",
+                    "p4_memory_forget_nl_force_disabled",
                     reason="forgotten_at column unavailable",
                 )
         except Exception:  # noqa: BLE001
             pass
-        if _forget_avail:
-            try:
-                from deskpet.tools import memory_tools as _memory_tools
-                _memory_tools.bind(
-                    facts_store=_facts_store,
-                    embedder=_embedder,
-                    llm_call=_make_str_llm_call(local_llm),
-                    enable_natural_language=(
-                        config.memory.v2.forget.enable_natural_language
-                    ),
-                )
-                logger.info(
-                    "p4_memory_forget_tool_bound",
-                    enable_natural_language=(
-                        config.memory.v2.forget.enable_natural_language
-                    ),
-                )
-            except Exception as _mf_exc:  # noqa: BLE001
-                logger.warning(
-                    "p4_memory_forget_bind_failed", error=str(_mf_exc),
-                )
+        try:
+            from deskpet.tools import memory_tools as _memory_tools
+            _memory_tools.bind(
+                facts_store=_facts_store,
+                embedder=_embedder,
+                llm_call=_make_str_llm_call(local_llm),
+                enable_natural_language=_forget_nl,
+            )
+            logger.info(
+                "p4_memory_tools_bound",
+                forget_natural_language=_forget_nl,
+                memory_forget_flag=config.memory.v2.memory_forget,
+            )
+        except Exception as _mf_exc:  # noqa: BLE001
+            logger.warning(
+                "p4_memory_tools_bind_failed", error=str(_mf_exc),
+            )
 
     # OpenSpec 2026-05-16-async-image-gen: ImageGenerationWorker —
     # generate_image submits a job and returns instantly; this worker
