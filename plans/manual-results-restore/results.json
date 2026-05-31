@@ -2,15 +2,15 @@
   "passes": [
     {
       "id": "F1",
-      "msg": "DEFAULT_BASE_URL = https://chinzy.com"
+      "msg": "DEFAULT_BASE_URL = https://your-llm-relay.example.com"
     },
     {
       "id": "F1b",
-      "msg": "RECHARGE_URL → chinzy.com"
+      "msg": "RECHARGE_URL → your-llm-relay.example.com"
     },
     {
       "id": "F1c",
-      "msg": "DEVICE_CONSOLE_URL → chinzy.com"
+      "msg": "DEVICE_CONSOLE_URL → your-llm-relay.example.com"
     },
     {
       "id": "F5-main",
