@@ -148,18 +148,24 @@ function computeFaceFrame(
   innerWidth: number,
   modelScaleFactor = 1,
 ): FaceFrame {
-  const left = innerWidth - petWidth + petWidth * 0.25;
-  const width = Math.max(40, petWidth * 0.5 * modelScaleFactor);
-  const top = innerHeight * 0.2;
-  const height = Math.max(40, innerHeight * 0.6 * modelScaleFactor);
+  // 2026-05-31 fun-ux: 扩大 hit-zone 覆盖整个角色可见区（头顶→脚），
+  // 之前只覆盖脸+躯干中间 50%×60% 的窄带，用户点裙子/腿/头发/手臂都没
+  // 反应。现在覆盖角色整列宽 × 几乎全高，点哪都能触发交互。
+  // face_center 仍锁在脸部（用于 gaze 凝视 + proximity/shy/dizzy 计算）。
+  const left = innerWidth - petWidth;
+  const width = Math.max(40, petWidth * modelScaleFactor);
+  const top = innerHeight * 0.05;
+  const height = Math.max(40, innerHeight * 0.9 * modelScaleFactor);
   return {
     left,
     top,
     width,
     height,
+    // 脸约在角色立绘的上部 ~22% 处（Hiyori 全身站姿）。
     face_center_x: left + width / 2,
-    face_center_y: top + height * 0.3,
-    face_radius_css: Math.min(width, height) * 0.5,
+    face_center_y: top + height * 0.22,
+    // face_radius 用角色宽的一半（脸 + 周边的合理凝视/害羞判定半径）。
+    face_radius_css: Math.max(60, width * 0.5),
   };
 }
 

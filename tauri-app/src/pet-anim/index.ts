@@ -246,6 +246,12 @@ export class AnimationOverlay {
   private fun_face_radius_css = 0
   /** Optional motion player for fidget triggers — re-uses motion_player. */
   private fun_fidget_last_t = 0
+  /** 2026-05-31 fun-ux H3: motion 触发节流 — 关键交互(双击/长按满/晕眩)
+   *  触发 Live2D 整体动作，但加冷却避免每帧重复 play。 */
+  private fun_last_motion_t = -Infinity
+  /** 记录上一帧 double-tap / dizzy 是否已触发过 motion，做边沿检测。 */
+  private fun_double_tap_motion_fired = false
+  private fun_dizzy_motion_fired = false
 
   constructor(opts: OverlayOpts = {}) {
     const rng = opts.rng ?? Math.random
@@ -1041,10 +1047,23 @@ export class AnimationOverlay {
     // Layered after all v1+v2 logic so it adds on top without breaking
     // existing tests. Each block guards its own no-op when inactive.
     {
+      // 2026-05-31 fun-ux: 幅度全面加大让形变肉眼可见 + 关键交互接 motion。
+      const playFunMotion = (group: string, idx: number): void => {
+        // 节流 600ms，避免每帧重复 play 同一 motion。
+        if (now_t - this.fun_last_motion_t < 600) return
+        this.fun_last_motion_t = now_t
+        if (this.motion_player) {
+          try { this.motion_player(group, idx) } catch { /* ignore */ }
+        }
+      }
+
       // a) drag kinematics: squash/stretch + lean + hair trail.
       const dk = dragKinematicsSample(this.fun_ctx.drag)
       if (dk.squash_delta !== 0) addParam('ParamBustY', dk.squash_delta)
-      if (dk.lean_delta_deg !== 0) addParam('ParamBodyAngleX', dk.lean_delta_deg)
+      if (dk.lean_delta_deg !== 0) {
+        addParam('ParamBodyAngleX', dk.lean_delta_deg)
+        addParam('ParamAngleX', dk.lean_delta_deg * 0.6)  // 头也跟着倾
+      }
       if (dk.hair_trail_delta !== 0) addParam('ParamHairFront', dk.hair_trail_delta)
 
       // b) spring back (BustY only) after release.
@@ -1053,55 +1072,66 @@ export class AnimationOverlay {
 
       // c) cursor proximity lean (only if no drag active).
       if (!this.fun_ctx.drag.active && this.fun_face_radius_css > 0) {
-        // Use last cursor position from gaze tracker if available; otherwise
-        // skip (proximity needs a cursor sample which funCursorMove provides).
-        // For now we rely on lazy update from funCursorMove + a cached cursor
-        // pos in shy ctx (last_x/last_y).
         const sx = this.fun_ctx.shy.last_x
         const sy = this.fun_ctx.shy.last_y
         if (Number.isFinite(sx) && Number.isFinite(sy)) {
           const prox = cursorProximityLean(sx, sy, this.fun_face_cx_css, this.fun_face_cy_css)
-          if (prox.lean_delta_deg !== 0) addParam('ParamBodyAngleX', prox.lean_delta_deg)
-          if (prox.head_pitch_delta_deg !== 0) addParam('ParamAngleY', prox.head_pitch_delta_deg)
+          if (prox.lean_delta_deg !== 0) addParam('ParamBodyAngleX', prox.lean_delta_deg * 1.6)
+          if (prox.head_pitch_delta_deg !== 0) addParam('ParamAngleY', prox.head_pitch_delta_deg * 1.6)
         }
       }
 
-      // d) shy away — quick blush + slight head tilt away from cursor.
+      // d) shy away — 加大: 满脸红 + 明显侧头 + 眯眼笑。
       if (now_t < this.fun_ctx.shy.triggered_until_t) {
-        const remain = clamp((this.fun_ctx.shy.triggered_until_t - now_t) / 400, 0, 1)
-        addParam('ParamCheek', 0.7 * remain)
-        addParam('ParamAngleZ', 6 * remain)
-        addParam('ParamEyeLSmile', 0.3 * remain)
-        addParam('ParamEyeRSmile', 0.3 * remain)
+        const remain = clamp((this.fun_ctx.shy.triggered_until_t - now_t) / 800, 0, 1)
+        addParam('ParamCheek', 1.0 * remain)
+        addParam('ParamAngleZ', 14 * remain)
+        addParam('ParamBodyAngleZ', 8 * remain)
+        addParam('ParamEyeLSmile', 0.6 * remain)
+        addParam('ParamEyeRSmile', 0.6 * remain)
       }
 
-      // e) circle dizzy — head sin shake + eyes spiral.
+      // e) circle dizzy — 加大头摇 + 眼旋 + 触发 motion。
       const cz = circleDizzySample(this.fun_ctx.circle, now_t)
-      if (cz.angle_z_delta !== 0) addParam('ParamAngleZ', cz.angle_z_delta)
+      const dizzyActive = now_t < this.fun_ctx.circle.spin_until_t
+      if (cz.angle_z_delta !== 0) addParam('ParamAngleZ', cz.angle_z_delta * 1.5)
       if (cz.eye_x_delta !== 0) {
-        addParam('ParamEyeBallX', cz.eye_x_delta)
-        addParam('ParamEyeBallY', cz.eye_x_delta * 0.5)
+        addParam('ParamEyeBallX', cz.eye_x_delta * 1.5)
+        addParam('ParamEyeBallY', cz.eye_x_delta * 0.8)
+      }
+      if (dizzyActive && !this.fun_dizzy_motion_fired) {
+        this.fun_dizzy_motion_fired = true
+        playFunMotion('TapBody', 0)  // 整体动一下
+      } else if (!dizzyActive) {
+        this.fun_dizzy_motion_fired = false
       }
 
-      // f) long press petting — gradual Cheek + EyeSmile ramp.
+      // f) long press petting — 加大: 满脸红 + 满眯眼 + 满笑 + 低头。
       const lp = longPressSample(this.fun_ctx.long, now_t)
       if (lp.petting) {
-        addParam('ParamCheek', 0.6 * lp.intensity)
-        addParam('ParamEyeLSmile', 0.8 * lp.intensity)
-        addParam('ParamEyeRSmile', 0.8 * lp.intensity)
-        addParam('ParamMouthForm', 0.4 * lp.intensity)
-        // Slight head pitch down (looks comfortable).
-        addParam('ParamAngleY', -3 * lp.intensity)
+        addParam('ParamCheek', 1.0 * lp.intensity)
+        addParam('ParamEyeLSmile', 1.0 * lp.intensity)
+        addParam('ParamEyeRSmile', 1.0 * lp.intensity)
+        addParam('ParamMouthForm', 0.7 * lp.intensity)
+        addParam('ParamAngleY', -7 * lp.intensity)
+        addParam('ParamBodyAngleY', -4 * lp.intensity)  // 身体也微微缩(舒服)
       }
 
-      // g) rapid double tap surprise.
+      // g) rapid double tap surprise — 加大: 大眼 + 高扬眉 + 明显体抖 + motion。
       const dt = rapidDoubleTapSample(this.fun_ctx.rapid, now_t)
       if (dt.factor > 0) {
-        addParam('ParamEyeLOpen', 0.4 * dt.factor)
-        addParam('ParamEyeROpen', 0.4 * dt.factor)
-        addParam('ParamBrowLY', 0.8 * dt.factor)
-        addParam('ParamBrowRY', 0.8 * dt.factor)
-        addParam('ParamBodyAngleZ', Math.sin(now_t * 0.04) * 3 * dt.factor)
+        addParam('ParamEyeLOpen', 0.6 * dt.factor)
+        addParam('ParamEyeROpen', 0.6 * dt.factor)
+        addParam('ParamBrowLY', 1.2 * dt.factor)
+        addParam('ParamBrowRY', 1.2 * dt.factor)
+        addParam('ParamMouthOpenY', 0.4 * dt.factor)  // 张嘴 "啊!"
+        addParam('ParamBodyAngleZ', Math.sin(now_t * 0.05) * 8 * dt.factor)
+        if (!this.fun_double_tap_motion_fired) {
+          this.fun_double_tap_motion_fired = true
+          playFunMotion('TapBody', 0)
+        }
+      } else {
+        this.fun_double_tap_motion_fired = false
       }
 
       // h) time of day mood — recompute every 60s.
@@ -1112,7 +1142,6 @@ export class AnimationOverlay {
       }
       if (this.fun_ctx.time_mood.cheek_extra !== 0) addParam('ParamCheek', this.fun_ctx.time_mood.cheek_extra)
       if (this.fun_ctx.time_mood.eye_open_mul !== 1) {
-        // Apply to current eye open via mul.
         mulParam('ParamEyeLOpen', this.fun_ctx.time_mood.eye_open_mul)
         mulParam('ParamEyeROpen', this.fun_ctx.time_mood.eye_open_mul)
       }

@@ -323,7 +323,8 @@ describe('rapidDoubleTap', () => {
     const f1 = rapidDoubleTapSample(ctx, 1200).factor
     const f2 = rapidDoubleTapSample(ctx, 1500).factor
     expect(f1).toBeGreaterThan(f2)
-    const f3 = rapidDoubleTapSample(ctx, 2000).factor
+    // surprise 持续 1100ms（2026-05-31 fun-ux 延长），1200+1100=2300 后归零。
+    const f3 = rapidDoubleTapSample(ctx, 2400).factor
     expect(f3).toBe(0)
   })
 })

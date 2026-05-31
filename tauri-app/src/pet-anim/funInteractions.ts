@@ -122,18 +122,17 @@ export function dragKinematicsEnd(ctx: DragKinematicsCtx): DragKinematicsCtx {
   return { ...ctx, active: false };
 }
 
-/** Read current frame's output. Returns zeros when inactive. */
+/** Read current frame's output. Returns zeros when inactive.
+ *  2026-05-31 fun-ux: 幅度 ×2~3 让形变肉眼可见（之前太微妙）。 */
 export function dragKinematicsSample(ctx: DragKinematicsCtx): DragKinematicsOutput {
   if (!ctx.active) return { squash_delta: 0, lean_delta_deg: 0, hair_trail_delta: 0 };
-  // Squash: positive when being lifted (negative vy = moving up), bounded.
-  // Heuristic: vy in px/s. -2000 px/s upward yank → ~0.25 stretch.
-  const vy_norm = clamp(-ctx.vy / 2000, -0.5, 1.0);
-  const squash_delta = clamp(vy_norm * 0.3, -0.15, 0.3);
-  // Lean: body lags behind horizontal drag → tilt opposite to vx direction.
-  // vx 1500 px/s → ~6° lean.
-  const lean_delta_deg = clamp(-ctx.vx / 250, -8, 8);
-  // Hair trail: opposite x-velocity, capped.
-  const hair_trail_delta = clamp(-ctx.vx / 1200, -1, 1);
+  // Squash: positive when being lifted (negative vy = moving up). 加大到 ±0.7。
+  const vy_norm = clamp(-ctx.vy / 1500, -0.8, 1.2);
+  const squash_delta = clamp(vy_norm * 0.6, -0.4, 0.7);
+  // Lean: body trails horizontal drag. 加大到 ±18°。
+  const lean_delta_deg = clamp(-ctx.vx / 120, -18, 18);
+  // Hair trail: opposite x-velocity. 加大到 ±2.5。
+  const hair_trail_delta = clamp(-ctx.vx / 500, -2.5, 2.5);
   return { squash_delta, lean_delta_deg, hair_trail_delta };
 }
 
@@ -332,7 +331,8 @@ export function shyAwayUpdate(
       last_t: now_t,
       last_x: cursor_x,
       last_y: cursor_y,
-      triggered_until_t: triggered ? now_t + 400 : ctx.triggered_until_t,
+      // 2026-05-31 fun-ux: 害羞反应 400→800ms 更明显。
+      triggered_until_t: triggered ? now_t + 800 : ctx.triggered_until_t,
     },
     triggered,
   };
@@ -505,7 +505,8 @@ export function rapidDoubleTapAdd(
     ctx: {
       ...ctx,
       last_tap_t: now_t,
-      surprise_until_t: triggered ? now_t + 600 : ctx.surprise_until_t,
+      // 2026-05-31 fun-ux: 惊讶持续 600→1100ms 让用户看清。
+      surprise_until_t: triggered ? now_t + 1100 : ctx.surprise_until_t,
     },
     triggered,
   };
@@ -513,7 +514,7 @@ export function rapidDoubleTapAdd(
 
 export function rapidDoubleTapSample(ctx: RapidDoubleTapCtx, now_t: number): { factor: number } {
   if (now_t >= ctx.surprise_until_t) return { factor: 0 };
-  const remain = (ctx.surprise_until_t - now_t) / 600;
+  const remain = (ctx.surprise_until_t - now_t) / 1100;
   return { factor: clamp(remain, 0, 1) };
 }
 
