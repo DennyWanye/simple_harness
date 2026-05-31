@@ -101,7 +101,72 @@ stage 路径解析 / stage2 beats stage1 / **entity 路确定性**（纯 regex+L
 stage1 默认 gate 一直 FAIL（主 checkout 原版同样复现，commit 历史遗留）。
 本次 F2 不动 stage1 baseline。
 
+---
+
+## 隔离环境复跑验证（2026-05-31，与另一并行任务同时进行）
+
+用户要求"创建隔离环境跑，不可与并行任务冲突（前后端等）"，并选了**两者都做**
+（自动化 + F1 真机端到端）。本次在 worktree `deskpet-stage2-f1f2` 上完成，
+**全程 in-process（tempfile 临时 db + `.venv`），零端口绑定**，与并行的
+`live2d-rewrite` codex 任务及 orphan 8400 backend **零冲突**（8400 全程 ALIVE
+未被触碰；我未开任何端口）。
+
+### 阶段1 — 自动化（隔离 worktree 实跑）
+
+确认跑的是 worktree 代码而非主 checkout：`per_component_timeout_s` 标记
+主 checkout=0 / worktree=8；`zh_fixture_stage2.py` 仅 worktree 存在。
+
+| 套件 | 结果 |
+|---|---|
+| `test_f1_fanout_isolation.py` | **5 passed** |
+| `test_eval_gate_stage2.py` | **7 passed** |
+| `test_eval_gate_strict.py`（既有回归） | **11 passed** |
+| `test_deskpet_context_assembler.py`（既有回归） | **35 passed** |
+
+eval_gate 命令行实跑（`--json` 解析）：
+
+| 命令 | qa | hit@5 | exit | 说明 |
+|---|---|---|---|---|
+| `--stage=stage1` | 35 | 0.4286 | 0 | |
+| `--stage=stage2` | 45 | 0.5556 | 0 | == baseline |
+| `--stage=stage2 --strict` | 45 | 0.5556 | **1** | 持平不算提升，strict 正确拒绝 |
+
+hit@5 stage2 − stage1 = **+0.1270**（与钉死 baseline 一致）。
+
+### 阶段2 — F1 真组件栈端到端（非 stub）
+
+新增 [`backend/scripts/verify_f1_realstack.py`](backend/scripts/verify_f1_realstack.py)：
+用**生产工厂** `build_default_assembler` 造真 assembler + 真 `Embedder`（mock
+缺权重，仍是生产类）+ 真 `WorkspaceMemoryStore`，seed 一条真文件动作
+（`record_action(read, README.md)`），调真 `registry.fanout`（`assemble()`
+内部就是 `self._registry.fanout`，assembler.py:208）。**实跑 exit=0**：
+
+```
+workspace_memory: status=ok, has_content=true   ← code-mode 真文件动作进 fanout 产物
+persona / time:   status=ok
+memory:           no_memory_manager   (本测试未注入 memory_manager，符合预期)
+tool:             no_registry         (符合预期)
+全部 6 组件:       各带 duration_ms + status   ← F1 per-component 计时生效
+```
+
+这是 round-3 bug#4 修复后的**真组件栈**佐证：workspace_memory 经真 fanout 返回
+真内容、不被别的组件拖垮，且每组件独立带计时（可定位慢组件）。慢组件单独
+timeout、不饿死快组件的隔离机制本身，另由阶段1 的 5 个 stub 单测在同一个真
+`ComponentRegistry` 类上钉死。
+
+### 诚实边界说明
+
+本次 F1 验证走的是**真组件栈 in-process**路线（生产工厂 + 真 store + 真 fanout），
+**不是**起 Tauri + backend 的 GUI code-mode 两轮对话。原因：用户明确要求与并行
+任务**强隔离**，而起完整 Tauri 会和并行的 `live2d-rewrite`（同为 Tauri）抢
+WebView2 / 端口 / 窗口焦点资源。GUI 级两轮 code-mode 真测（抓 backend log 确认
+`fanout_timed_out` 在真运行栈消失）需在并行任务结束、可独占资源时单独补做。
+
+---
+
 ## 结论
 
 F1（per-component 隔离 + 诊断）+ F2（stage2 召回量化，hit@5 +0.1270，strict
 不再形同虚设）**全部完成**，新增 12 测试 + 修复既有 8 测试，0 功能回归。
+隔离环境复跑（阶段1 自动化 58 passed + 阶段2 F1 真组件栈 exit 0）**全绿**，
+与并行任务零冲突。
