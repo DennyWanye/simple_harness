@@ -62,17 +62,22 @@ Screenshot Cursor Position: (3455,1356)   ✓ 光标精确落在 × 按钮上
 
 ### Step 4: SendInput 注入成功但 WebView2 不响应
 
-3 次不同 workaround（CLAUDE.md 要求 retry ≥3）：
+4 次不同 workaround（CLAUDE.md 要求 retry ≥3，做满 4 次排除焦点假设）：
 
 | # | workaround | SendInput 返回 | 登录窗关闭？ |
 |---|-----------|---------------|------------|
 | 1 | SetCursorPos + 老 `mouse_event` API | — | ❌ |
 | 2 | SetCursorPos + `SendInput` LEFTDOWN/UP (60ms 间隔) | down=1 up=1 ✓ | ❌ |
 | 3 | `SendInput` MOVE_ABSOLUTE + DOWN + UP 完整序列 | ret=3 ✓ | ❌ |
+| 4 | **AttachThreadInput 强制焦点 + SetForegroundWindow + SendInput** | `SetForeground=True, fg_now==target=267256` ✓ | ❌ |
 
 **SendInput 每次都注入成功（返回值 ≥1），但 Token Relay 登录窗每次都没关闭。**
 
-观察到的部分响应：第 3 次后桌宠 Live2D 立绘表情变了（闭眼）—— 印证 `Live2DCanvas.tsx:421` 的注释 *"even with ignore_cursor_events=true the WebView JS still receives pointermove"*。**即 webview 收到了 `pointermove`（表情响应），但合成 `click` 不触发。**
+**第 4 次的关键价值 — 排除了焦点假设**：我一度怀疑 click 不响应是因为桌宠窗口没输入焦点（我在 Claude 窗口操作）。第 4 次用 `AttachThreadInput` 绕过 SetForegroundWindow 限制，**确认桌宠 main 窗口真的成为 foreground**（`fg_now == target == 267256`），但 SendInput click 仍不触发。**焦点不是真因。**
+
+观察到的部分响应：每次 SendInput 后桌宠 Live2D 立绘表情变了（闭眼 / 害羞捂脸）—— 印证 `Live2DCanvas.tsx:421` 的注释 *"even with ignore_cursor_events=true the WebView JS still receives pointermove"*。**即 webview 收到了 `pointermove`（表情响应），但合成 `click` 不触发。**
+
+**4 因素全部排除**：✅ 坐标对（DPI 校准）✅ 落点对（WindowFromPoint 桌宠 webview）✅ 焦点对（fg_now==target）✅ 注入成功（SendInput≥1）→ **唯一剩下的就是 Chromium 拒合成 click**。
 
 ---
 
