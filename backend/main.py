@@ -3829,6 +3829,27 @@ async def control_channel(ws: WebSocket):
                             elif _cfg_models:
                                 _model_ids = _cfg_models
                                 _source = "config"
+                # Fallback: provider_registry chain 为空时（典型场景：用户登录
+                # 中转站后，relay provider 只是前端"虚拟项"、不走 settings_providers_add
+                # 注册进 backend registry，见 SettingsProviders.tsx），用当前
+                # local_llm（登录后经 update_cloud_config 已切到中转站 base_url+key）
+                # 拉中转站 /models。这样登录中转站即可在 code 模式换模型，无需手动
+                # 再"添加 Provider"。
+                if not _model_ids and local_llm is not None:
+                    _ll_base = str(getattr(local_llm, "base_url", "") or "")
+                    _ll_key = getattr(local_llm, "api_key", None)
+                    # 跳过本地 ollama（localhost）—— 它的 /models 是本地小模型，
+                    # 不是中转站目录，且 key 通常是占位 "ollama"。
+                    if _ll_base and "localhost" not in _ll_base and "127.0.0.1" not in _ll_base:
+                        try:
+                            from llm.model_catalog import fetch_models as _fm2
+                            _live_ll = await _fm2(_ll_base, _ll_key, timeout=8.0)
+                        except Exception:
+                            _live_ll = []
+                        if _live_ll:
+                            _model_ids = _live_ll
+                            _source = "live-local_llm"
+                            _base_url = _ll_base
                 from llm.model_catalog import build_catalog as _bc
                 await ws.send_json({
                     "type": "code_models_list_response",
