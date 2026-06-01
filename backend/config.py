@@ -433,9 +433,20 @@ def _load_tools(raw_tools: dict) -> ToolsConfig:
     raw = dict(raw_tools)
     raw_lm = dict(raw.pop("last_mile", {}) or {})
     raw_v = dict(raw.pop("verifier", {}) or {})
+    raw.pop("web", None)  # [tools.web] 由 tools/_config.py 单独加载，非 ToolsConfig 字段
     last_mile = _load_section(ToolsLastMileConfig, raw_lm)
     verifier = _load_section(ToolsVerifierConfig, raw_v)
-    return ToolsConfig(last_mile=last_mile, verifier=verifier)
+    # WI-T5.1 v3: 顶层 [tools] 字段（disabled_toolsets 等）此前被漏读 → 配了不生效。
+    # 显式补读，使 config.toml 的 toolset 门控 / dangerous 白名单 / 默认超时真正生效。
+    return ToolsConfig(
+        last_mile=last_mile,
+        verifier=verifier,
+        disabled_toolsets=list(raw.get("disabled_toolsets", []) or []),
+        disabled_toolsets_schema_only=list(raw.get("disabled_toolsets_schema_only", []) or []),
+        dangerous_tools_allowlist=list(raw.get("dangerous_tools_allowlist", []) or []),
+        default_timeout_seconds=float(raw.get("default_timeout_seconds", 60.0) or 60.0),
+        strict_unknown_toolset=bool(raw.get("strict_unknown_toolset", False)),
+    )
 
 
 def _validate_flag_invariants(cfg: AppConfig) -> None:

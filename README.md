@@ -410,6 +410,10 @@ Schema 版本从 v9 升级到 v10。
 项目的设计文档、调研报告、内测就绪材料的速查表。代码改动遵循
 spec-first：3+ 文件的改动先有 plan/spec，再有实现。
 
+> 🧪 **手工测试用例索引**: [`testcase/index.md`](./testcase/index.md) —
+> 登记所有需人工一步步执行（带预期结果）的 testcase；每份用例写清测试范围、
+> 目的、步骤与判定。新增手工测试请在该索引登记。
+
 ### Companion + Code 模式升级 v1（2026-05-25）
 
 给 DeskPet 加 3 个 **superpowers 级**能力：`/<skill_name>` 命令触发 skill、

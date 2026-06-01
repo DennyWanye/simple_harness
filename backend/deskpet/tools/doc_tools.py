@@ -69,6 +69,20 @@ def _coerce(obj: Any) -> Optional[Any]:
 # doc_create
 # ---------------------------------------------------------------------------
 def _add_element(document, el: dict[str, Any]) -> None:
+    # 兼容 LLM 常用的简写格式：element 无 "type" 字段，而是直接用
+    # {heading:"...",level:N} / {paragraph:"..."} / {table:[...]} 作 key。
+    # 归一到标准 {type,text} 后再走下面的渲染分支（否则 type 缺省 paragraph、
+    # text 取不到 → 渲染出空段落，整篇 docx 正文为空）。
+    if "type" not in el:
+        for _k in ("heading", "paragraph", "table", "page_break"):
+            if _k in el:
+                el = dict(el)
+                el["type"] = _k
+                if _k in ("heading", "paragraph") and "text" not in el:
+                    el["text"] = el[_k]
+                elif _k == "table" and "rows" not in el:
+                    el["rows"] = el[_k]
+                break
     etype = (el.get("type") or "paragraph").lower()
     if etype == "heading":
         level = int(el.get("level", 1))
