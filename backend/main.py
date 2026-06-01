@@ -2704,7 +2704,17 @@ async def health():
         "status": "degraded" if errors else "ok",
         "secret_hint": SHARED_SECRET[:4] + "...",
         "strategy": llm._strategy.value,
-        "cloud_configured": llm._cloud is not None,
+        # P4-S20-LLM-Unified 修: 旧 `llm._cloud` 是 HybridRouter 的废弃字段,
+        # unified schema 重构后恒为 None → /health 永远误报 cloud_configured=false
+        # (即便 backend 实际有云端 key)。改为读真实生效的 local_llm: base_url
+        # 非本地 + 有真 key(非 ollama 占位) = 已配云端。
+        "cloud_configured": bool(
+            local_llm is not None
+            and "localhost" not in str(getattr(local_llm, "base_url", ""))
+            and "127.0.0.1" not in str(getattr(local_llm, "base_url", ""))
+            and getattr(local_llm, "api_key", None)
+            and getattr(local_llm, "api_key", "") != "ollama"
+        ),
         "startup_errors": errors,
     }
 
