@@ -1,5 +1,30 @@
 # memory 工具 flag 门控缺陷（F3 / F4）
 
+## ✅ 真机 GUI 终验（2026-06-01，已修复 + 确证生效）
+
+> 在含 F3/F4 修复的 **master 代码**真启动栈上，用户**手工**在 Code 模式
+> 建 `G:\projects\test-research-helper` 项目会话 + 发两轮对话，AI 抓 8100
+> backend + state.db 取证。隔离 userdata：`deskpet/.dev-userdata-f3f4verify`。
+
+| 验证项 | 基线(修复前/发消息前) | 终验结果(修复后) | 判定 |
+|---|---|---|---|
+| **F3** `memory_search` | 旧代码返回 `{"ok":false,"error":"memory_search not bound"}` | 第二轮真调 `memory_search` → 返回 `{"ok":true,"results":[],"count":0}`（真执行 facts.search，0 条因新 db 无 facts，**但工具已可用**） | ✅ PASS |
+| **F4** `workspace_state` | 表**不存在**（messages=0） | read_file 后表创建 + **1 行**：`path=test-research-helper/README.md, last_action=read, byte_size=1582` | ✅ PASS |
+
+**启动级铁证**（backend 真启动日志，旧代码不会出现）：
+```
+[backend_launch] Dev backend_dir=G:\projects\deskpet\backend   ← 跑含修复的 master
+p4_memory_tools_bound  memory_forget_flag=False                ← F3: flag 关着工具照样 bound
+p4_workspace_memory_ready                                       ← F4: workspace store 真注入
+```
+
+**端到端佐证**（真 LLM 真链路）：第一轮桌宠 read_file 读 ResearchFlow README
+准确总结；第二轮不重读、调 memory_search、基于上下文答出 README 的"已知问题"5 条。
+→ F3/F4 在**真实运行栈 + 真模拟人工操作**下端到端确证。这是最硬的一层（非单测/
+非 import/非启动日志，而是真桌宠+真 LLM+真 state.db）。
+
+---
+
 ## gen-1 基线定性（2026-05-31 查实，决定"是 bug 还是功能没接"）
 
 | | 定性 | git 依据 |
