@@ -1,6 +1,6 @@
 # DeskPet — 全局项目状态
 
-> **最后更新**: 2026-05-31
+> **最后更新**: 2026-06-01
 > **维护方式**: 每完成一个里程碑 / 合并一个 worktree 后更新本文件。
 > **用途**: 一页看清整个项目（所有并行工作流）的当前状态。新 session / 子代理
 > 接手前先读这里。
@@ -43,7 +43,7 @@
 |---|---|---|
 | **语音管线** (VAD/ASR/LLM/TTS) | ✅ 生产可用 | `README.md` Quick Start |
 | **桌宠 supervisor** (P5-S1) | ✅ 生产可用 | `README.md` §桌宠 supervisor |
-| **长期记忆 + 自动总结** (P4-S20-D / memory-v2) | ✅ Stage 1/2 ship；F1/F2/F3/F4 followup 全修（未 merge）| `README.md` §长期记忆 + [memory-system-status](../plans/2026-05-23-memory-system-status.md) |
+| **长期记忆 + 自动总结** (P4-S20-D / memory-v2) | ✅ Stage 1/2 ship；F1-F5 全修（F5 召回缺陷分词+向量两层修复，master 直提）；严测 G1-G6 / 22 用例全绿 | `README.md` §长期记忆 + [memory-system-status](../plans/2026-05-23-memory-system-status.md) + [严测 spec](../plans/2026-06-01-memory-system-rigorous-test-spec.md) |
 | **工具层** (registry + 权限 + 熔断 + last-mile + v3) | ✅ 生产可用 | [tool-layer-optimization-v3](../plans/2026-05-24-tool-layer-optimization-v3/) |
 | **fake-completion VerifyGate** | ✅ 接电（shadow 默认） | [v3 §WI-T2.1](../plans/2026-05-24-tool-layer-optimization-v3/00-PRD.md) |
 | **技能系统** (SkillLoader + 14 builtin) | ✅ 生产可用 | `docs/SKILLS.md` |
@@ -59,6 +59,7 @@
 
 | 日期 | 里程碑 |
 |---|---|
+| 2026-06-01 | **记忆系统严测（4 Phase / G1-G6，22 新用例 master 直提）**：真机 GUI 终验推翻草率 PASS，挖出并**全修 F5**（facts.search/workspace.recall/find_by_entities 的 `LIKE '%整串%'` → 自然语言 query 永不命中）：① 分词 OR LIKE（`text_tokenize.py`）② memory_search 向量优先（真 BGE-M3）。G5 戳破 eval_gate hit@5 字面驱动（mock==real Δ=0）。G6 钉死 embedding 列真写入 + 写入并发不变量。CI 跑真 embedder。详 [memory-system-rigorous-test-spec](../plans/2026-06-01-memory-system-rigorous-test-spec.md) |
 | 2026-05-31 | memory Stage2 followup F1/F2 完成 + 真机 GUI 真测挖出并修复 F3（memory_search 误连坐 forget flag）/F4（code 工作记忆出厂默认开，保字节级契约）；单测全绿，未 merge |
 | 2026-05-31 | companion-code v2（slash/goal/team/partition/cache）全套 + 真桌宠 WebView2 E2E PASS；fun-ux 12 交互 merge；dev-worktree.ps1 跑源码修复 |
 | 2026-05-27 | OSS 开源准备（LICENSE / SPDX / 凭据脱敏 / CI 适配） |
