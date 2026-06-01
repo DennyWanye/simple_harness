@@ -72,14 +72,22 @@ _HIT_TOLERANCE = 0.02
 _TOKEN_GROWTH_MAX = 1.30
 
 
-async def run_eval(*, top_k: int = 20, stage: str = "stage1") -> dict:
-    """seed fixture → mock embedder backfill → Retriever → MetricsRunner。
+async def run_eval(
+    *, top_k: int = 20, stage: str = "stage1", embedder_mode: str = "mock"
+) -> dict:
+    """seed fixture → embedder backfill → Retriever → MetricsRunner。
 
     F2 (memory-stage2-followup)：``stage`` 决定召回器与 fixture。
       * ``stage1``（默认，向后兼容）：35 条 message-recall QA + 裸 Retriever。
       * ``stage2``：35 条 + 10 条 entity-targeted QA + EnhancedRetriever
         (enhanced_retriever + entity_path)，让 entity 路真正参与召回，
         ``--strict`` 因此能量化验证 Stage 2 召回提升。
+
+    G5.2 (记忆严测 2026-06-01)：``embedder_mode``。
+      * ``"mock"``（默认，向后兼容 + 可复现 gate）：hash 向量，确定性、无权重。
+      * ``"real"``：真 BGE-M3（子进程 worker）。用于量化"mock 伪装语义"的
+        confound —— 对比 real vs mock 的 hit@5，暴露 mock 数字虚高/虚低。
+        需本地有权重；CI gate 跑 real 须确保权重落盘。
     """
     from deskpet.memory.eval.metrics import MetricsRunner
     from deskpet.memory.embedder import Embedder
@@ -101,8 +109,16 @@ async def run_eval(*, top_k: int = 20, stage: str = "stage1") -> dict:
 
         sdb = SessionDB(db_path=db_path)
         await sdb.initialize()
-        # mock embedder —— 确定性、无需权重。
-        embedder = Embedder(model_path=None, use_mock_when_missing=True)
+        if embedder_mode == "real":
+            # 真 BGE-M3：子进程 worker（裸 import 会段错误）。
+            _model_dir = (
+                r"C:/Users/24378/AppData/Local/deskpet/models/bge-m3-int8"
+            )
+            embedder = Embedder(model_path=Path(_model_dir),
+                                use_mock_when_missing=False)
+        else:
+            # mock embedder —— 确定性、无需权重。
+            embedder = Embedder(model_path=None, use_mock_when_missing=True)
         await embedder.warmup()
         # 把 fixture 消息的向量补齐，让 Retriever 的 vec 路也参与 RRF。
         vw = VectorWorker(embedder=embedder, session_db=sdb)
@@ -135,11 +151,18 @@ async def run_eval(*, top_k: int = 20, stage: str = "stage1") -> dict:
 
         runner = MetricsRunner(
             db_path, retriever,
-            config_snapshot={"mode": mode, "embedder": "mock", "stage": stage},
+            config_snapshot={
+                "mode": mode, "embedder": embedder_mode, "stage": stage,
+            },
         )
         report = await runner.run(top_k=top_k)
         out = report.as_dict()
         out["_seed"] = seed_info
+        out["_embedder_mode"] = embedder_mode
+        try:
+            await embedder.close()
+        except Exception:  # noqa: BLE001
+            pass
         return out
 
 
