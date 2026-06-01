@@ -127,7 +127,10 @@ export function messageForCode(code: RelayErrorCode, fallback?: string): string 
     case "EXPIRED_TOKEN":
       return "登录状态已失效，请重新登录。";
     case "NETWORK_ERROR":
-      return "网络连接失败，请检查网络后重试。";
+      // 2026-06-01: 登录走中转站 chinzy.com，国内常因网络代理/VPN 无法
+      // 直连而 fetch 抛 NETWORK_ERROR。把这条提示写得更可操作，避免用户
+      // 误以为是账号问题（实测：切换 VPN 后即恢复正常）。
+      return "网络连接失败 —— 无法访问中转站。请检查网络代理 / VPN 是否能访问 chinzy.com，切换后重试。";
     case "UPSTREAM_ERROR":
     case "UPSTREAM_UNAVAILABLE":
       return "中转站服务暂时不可用，请稍后再试。";
