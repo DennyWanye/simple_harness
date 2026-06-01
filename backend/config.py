@@ -872,6 +872,12 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
         config.vad = _load_section(VADConfig, raw["vad"])
     if "voice" in raw:
         config.voice = _load_section(VoiceConfig, raw["voice"])
+    # Companion + Code 升级 v1 功能开关 [features] — 此前 load_config 漏读该段
+    # (和 _load_tools 漏读 disabled_toolsets 同类 bug), 导致 slash_commands /
+    # goal_mode / agent_parallel 在 config.toml 配了也不生效(config.features
+    # 永远是默认全 False)。补读使这三个功能能真正开启。
+    if "features" in raw:
+        config.features = _load_section(FeaturesConfig, raw["features"])
     if "memory" in raw:
         # [memory.v2] / [memory.v2.facts] 是嵌套子表，_load_section 只做
         # 平铺解析 —— 先把 v2 pop 出来单独构建，再装回。
