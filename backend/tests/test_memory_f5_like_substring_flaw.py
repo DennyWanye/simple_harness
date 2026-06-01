@@ -27,13 +27,16 @@ plans/2026-05-31-memory-tools-flag-gating-bugs.md §F5）：用户在 code 模�
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 import pytest_asyncio
 
+from deskpet.memory.embedder import Embedder
 from deskpet.memory.facts import FactsStore
 from deskpet.memory.workspace import WorkspaceMemoryStore
+from deskpet.tools import memory_tools as _mt
 
 # F5 修复后改 True，本文件的"currently misses"测试会失败 → 提示改成正向版本。
 EXPECT_NL_QUERY_HITS = False
@@ -182,3 +185,56 @@ async def test_g2_4b_workspace_recall_exact_substring_always_works(
     hits = await ws_store.recall("Header", session_id="s1")
     assert len(hits) == 1, "精确子串 'Header' 必须命中 path（F5 修复后仍须保持）"
     assert "Header" in hits[0]["path"]
+
+
+# ----------------------------------------------------------------------
+# G2.5 — F5 ② 层（纯语义）：memory_search 向量优先（真 BGE-M3）+ mock 对照
+# ----------------------------------------------------------------------
+@pytest.mark.asyncio
+@pytest.mark.model_required
+async def test_g2_5_memory_search_vector_semantic_real(tmp_path: Path) -> None:
+    """F5 ② 层修复验证：真 embedder 下 memory_search 向量优先召回纯语义。
+
+    存"我家养了一只橘猫"+"今天股票涨了三个点"，query"宠物"（文本零重叠）。
+    LIKE 路（G2.1）下"宠物"必 0 命中；向量路下"橘猫"语义相关 → 排第一。
+    断言：retrieval=vector（确实走了向量）+ 橘猫 rank 在股票之前。
+    """
+    e = Embedder(
+        model_path=Path(
+            r"C:/Users/24378/AppData/Local/deskpet/models/bge-m3-int8"
+        ),
+        use_mock_when_missing=False,
+    )
+    await e.warmup()
+    try:
+        fs = FactsStore(tmp_path / "f.db", embedder=e)
+        await fs.upsert(
+            category="profile", subject="user", key="pet",
+            value="我家养了一只橘猫", confidence=0.9,
+            source_msg_id=1, evidence="x",
+        )
+        await fs.upsert(
+            category="profile", subject="user", key="stock",
+            value="今天股票涨了三个点", confidence=0.9,
+            source_msg_id=2, evidence="y",
+        )
+        _mt.bind(facts_store=fs, embedder=e, llm_call=None,
+                 enable_natural_language=False)
+        r = json.loads(
+            await _mt._memory_search_handle({"query": "宠物", "top_k": 3}, "t")
+        )
+        assert r["ok"] is True
+        # 走了向量路（非 LIKE）
+        assert r.get("retrieval") == "vector", (
+            f"embedder 可用时应走向量路: {r.get('retrieval')}"
+        )
+        vals = [x["value"] for x in r["results"]]
+        assert any("橘猫" in v for v in vals), f"语义应召回'橘猫': {vals}"
+        # rank 断言：语义相关的橘猫排在无关的股票之前
+        cat_i = next(i for i, v in enumerate(vals) if "橘猫" in v)
+        stock_i = next((i for i, v in enumerate(vals) if "股票" in v), 999)
+        assert cat_i < stock_i, f"'橘猫'应排在'股票'之前: {vals}"
+    finally:
+        _mt.bind(facts_store=None, embedder=None, llm_call=None,  # type: ignore[arg-type]
+                 enable_natural_language=False)
+        await e.close()
