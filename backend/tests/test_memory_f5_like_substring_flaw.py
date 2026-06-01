@@ -110,27 +110,38 @@ async def test_g2_2_workspace_recall_nl_query_currently_misses(
 
 
 @pytest.mark.asyncio
-async def test_g2_2b_workspace_recall_english_nl_query_currently_misses(
+async def test_g2_2b_workspace_recall_descriptive_query_now_hits(
     ws_store: WorkspaceMemoryStore,
 ) -> None:
-    """复现终验原样：英文描述性 query 同样搜不出（更贴近实际 agent 行为）。"""
+    """复现真机终验那条，F5 分词修复后**应命中**（正向断言，已翻转）。
+
+    2026-06-01 真机终验 agent 传 query
+    "test-research-helper README.md file access read touch"，旧整串 LIKE
+    匹配不到 path → 0 命中（钉死过）。F5 Step 1 分词 OR LIKE 修复后：query
+    分出 test-research-helper / README / ... 等词，path 含 README + 路径段
+    → 命中。这是 F5 ① 层（词在但整串不匹配）修复的核心证据。
+
+    注：纯语义 / 跨语言（"宠物"↔"橘猫"，见 G2.1/G2.2）分词仍修不了，
+    那属 F5 ② 层，须走向量召回（Step 2）。
+    """
     await ws_store.record_action(
         session_id="s1",
         path="G:/projects/test-research-helper/README.md",
         action="read",
         content="# ResearchFlow",
     )
-    # agent 真实传过的那种 query 形态
     hits = await ws_store.recall(
         "test-research-helper README.md file access read touch",
         session_id="s1",
     )
-    if EXPECT_NL_QUERY_HITS:
-        assert hits, "F5 已修复：描述性 query 应召回 README"
-    else:
-        assert hits == [], (
-            "F5 现状：整串 query 含 'file access read touch' 等词，path 不含整串 → 0 命中"
-        )
+    # F5 ① 修复后：分词命中 path 里的 README / test-research-helper
+    assert hits, (
+        "F5 分词修复后：描述性 query 应分词命中 README（真机终验那条）。"
+        "若为空说明分词 OR LIKE 回归。"
+    )
+    assert any("README" in h["path"] for h in hits), (
+        f"应召回 README.md 那条: {[h['path'] for h in hits]}"
+    )
 
 
 # ----------------------------------------------------------------------
