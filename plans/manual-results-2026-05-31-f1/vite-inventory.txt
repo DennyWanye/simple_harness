@@ -1,0 +1,10 @@
+﻿=== all vite/node listening ===
+node pid=28428 LISTEN :6505
+node pid=39984 LISTEN :5573
+=== deskpet ===
+deskpet pid=24500
+=== cmd wrappers (tauri) ===
+cmd pid=46476
+cmd pid=36732
+=== cargo ===
+cargo pid=43496

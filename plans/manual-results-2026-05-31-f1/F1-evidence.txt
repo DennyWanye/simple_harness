@@ -1,0 +1,12 @@
+﻿===== F1 关键证据 grep =====
+--- (A) fanout_timed_out 全体塌陷 (F1 修掉的旧 bug，期望: 0 行 或 仅单组件) ---
+命中行数=0
+--- (B) assembler / component_done / duration_ms (F1 新增 per-component 计时) ---
+命中行数=1
+  INFO:__main__:event='p4_services_registered' level='info' timestamp='2026-05-31T09:37:49.989983Z' l1_dir='G:\\projects\\deskpet-stage2-f1f2\\.dev-userdata\\data
+--- (C) chat turn / LLM 出站 (证明真跑了一轮) ---
+命中行数=4
+  INFO:deskpet.agent.watchdog:watchdog started (scan_interval=60s, stuck_threshold=900s, dedup=720s)
+  WARNING:__main__:event='p5s2_provider_chain_resolve_failed sid=%s err=%s 鈥?falling back to legacy single-provider path' level='warning' timestamp='2026-05-31T10
+  INFO:__main__:event='verify_gate_init mode=%s patterns=%d path=%s' level='info' timestamp='2026-05-31T10:40:47.202318Z' positional_args=('shadow', 5, WindowsPat
+  INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s extra_body=%s' level='info' timestamp='202

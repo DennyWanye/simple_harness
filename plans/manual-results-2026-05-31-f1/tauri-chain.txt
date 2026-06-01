@@ -1,0 +1,11 @@
+﻿=== deskpet.exe (Tauri main window) ===
+deskpet pid=45792
+=== frozen backend (deskpet-backend.exe) ===
+=== cargo / tauri cmd wrappers ===
+cmd-wrapper pid=41628 cmd="C:\WINDOWS\system32\cmd.exe" /c npx tauri dev --no-watch --config "{\
+cmd-wrapper pid=48688 cmd=C:\WINDOWS\system32\cmd.exe /d /s /c tauri dev --no-watch --config ^^^
+cargo pid=38364
+=== KEEP ALIVE: vite 5573 ===
+vite_5573=UP pid 39984
+=== 8500 state ===
+8500=FREE

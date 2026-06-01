@@ -1,0 +1,9 @@
+﻿killed=deskpet:24500, backend8500:52516, vite5573:39984
+=== after ===
+deskpet=0
+cargo/rustc=0
+port_5573=FREE
+port_5173=FREE
+port_8500=FREE
+=== protected (must survive) ===
+claude_app_24552=True
