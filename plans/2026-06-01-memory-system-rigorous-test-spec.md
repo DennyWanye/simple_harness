@@ -151,3 +151,22 @@
 1. 修 pytest `testpaths`（消除 collection 15 errors）
 2. 建分支 `feat/memory-rigorous-tests`（若选新分支）
 3. 确认真 embedder 测试 helper（统一用 Embedder 子进程封装的 fixture，禁裸 import）
+
+---
+
+## 8. 完成状态（每 Phase 跑完勾选 — 2026-06-01）
+
+> 分支决策最终改为 **master 直接做**（非 §5 倾向的新分支）。
+
+| Phase | 内容 | 状态 | commit | 测试文件 |
+|---|---|---|---|---|
+| **Phase 0** | pyproject `testpaths` 修 15 collection errors | ✅ | `b51ecba` | `pyproject.toml` |
+| **Phase 1 (P0)** | G1 检索有效性 + G2 F5 钉死 + G3 工具端到端 | ✅ | `8b58016` / `9165bbb` / `489b3b7` | `test_memory_retrieval_effectiveness.py` · `test_memory_f5_like_substring_flaw.py` · `test_memory_tools_e2e.py` |
+| **Phase 2** | 修 F5（① 分词 OR LIKE `text_tokenize.py` ② memory_search 向量优先），G2 转正向 | ✅ | `14de2d6` / `bce612a` | `facts.py` · `workspace.py` · `memory_tools.py` · `text_tokenize.py` |
+| **Phase 3 (P1)** | G4 flag 矩阵契约 + G5 真 embedder 对照（戳破 eval_gate 字面驱动 Δ=0）| ✅ | `30ec38e` / `ea3fe58` | `test_memory_g4_flag_matrix.py` · `test_memory_g5_mock_vs_real_embedder.py` |
+| **Phase 4 (P2)** | G6 写入边界（embedding 列真写入 + hash/并发不变量）| ✅ | `db1f1b8` | `test_memory_g6_write_boundaries.py` |
+| **Phase 4 (P2)** | **性能基线**（检索延迟基线 + 回归护栏）| ✅ | _本次_ | `test_memory_perf_baseline.py` |
+
+**结果**：24 mock 用例 + 真 BGE-M3 子集（G1.1/G1.5/G2.5/G5.2/G6.1）全绿，无跨文件污染。
+**最大收获**：真机 GUI 终验推翻草率 PASS → 挖出 F5（`LIKE '%整串%'` 自然语言永不命中）→ 全修。
+**Deferred**（独立 followup）：workspace 向量召回需加 `embedding` 列（schema 变更），未做。
