@@ -251,7 +251,10 @@ class FactsStore:
                 return None
             arr = await emb.encode([f"{key}: {value}"])
         except Exception as exc:  # noqa: BLE001
-            log.debug("FactsStore embed failed: %s", exc)
+            # embedding 算不出 → 该 fact embedding 列留 NULL，向量召回永远
+            # 跳过它（facts 无 backfill，比 messages 更糟）。warning 让"fact
+            # 静默退化成只能 LIKE 召回"可见（审计 FATAL-B / hunter FATAL-3）。
+            log.warning("FactsStore embed failed (embedding left NULL): %s", exc)
             return None
         try:
             import numpy as _np
@@ -260,7 +263,10 @@ class FactsStore:
                 return None
             return _np.asarray(arr[0], dtype=_np.float32).tobytes()
         except Exception as exc:  # noqa: BLE001
-            log.debug("FactsStore embed serialize failed: %s", exc)
+            log.warning(
+                "FactsStore embed serialize failed (embedding left NULL): %s",
+                exc,
+            )
             return None
 
     async def _ensure_schema(self) -> None:
