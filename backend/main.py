@@ -2807,6 +2807,16 @@ async def api_commands_help():
                  "description": "目标描述; 'clear' 清除", "required": False},
             ],
         },
+        {
+            # superpowers A2 — 让 /prefs 出现在 InputBar 的 `/` 自动补全下拉里
+            # (此前只在 dispatcher + /help 文本里，下拉候选漏了它 → 不可发现)。
+            "name": "prefs",
+            "description": "查看/清除偏好记忆 (空参列出; clear [intent|plan] 清除)",
+            "args_schema": [
+                {"name": "subcommand", "type": "string",
+                 "description": "'clear' 或 'clear intent' / 'clear plan'", "required": False},
+            ],
+        },
     ]
 
     # Skills — list_skills 返回 SkillMeta 的 dict 形式；args_schema 从
