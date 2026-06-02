@@ -176,3 +176,6 @@ plans/*.docx
 
 # Phase 7.5: local-only review of leaked credential history (delete after verify)
 .leaked-creds-review.tmp
+
+# v2 worktree — userdata 临时配置（windows-mcp 实机验证用，不入库）
+backend/userdata_v2/

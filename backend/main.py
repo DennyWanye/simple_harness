@@ -2217,15 +2217,13 @@ app = FastAPI(title="Desktop Pet Backend", version="0.2.0", lifespan=lifespan)
 # fetch() to http://127.0.0.1:8100 is cross-origin and blocked without this.
 # WebSocket connections are NOT subject to CORS, only HTTP (POST /config/cloud).
 from fastapi.middleware.cors import CORSMiddleware
+# v2 fix: regex 模式支持任意 vite dev port (worktree-aware 隔离场景).
+# 默认 5173；v2 worktree 用 5473；其他 worktree 用 5273/5373/5573 等.
+# allow_origin_regex 覆盖所有 localhost / 127.0.0.1 + 任意端口 + Tauri.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "tauri://localhost",
-        "https://tauri.localhost",
-        "http://localhost:5173",   # Vite dev server (browser E2E testing)
-        "http://127.0.0.1:5173",
-    ],
-    allow_methods=["POST", "GET"],
+    allow_origin_regex=r"^(tauri://localhost|https://tauri\.localhost|http://(localhost|127\.0\.0\.1):\d+)$",
+    allow_methods=["POST", "GET", "OPTIONS"],
     allow_headers=["Content-Type", "X-Shared-Secret"],
 )
 
@@ -2773,6 +2771,137 @@ async def api_skills_list():
         "builtins": builtins,
         "skills": skills,
     }
+
+
+@app.get("/api/commands/help")
+async def api_commands_help():
+    """WI-T2-B5 v2 — InputBar autocomplete 拉所有可用 slash command 列表.
+
+    Returns:
+        {
+          "feature_enabled": bool,
+          "commands": [
+            {name, description, args_schema: [{name, type, description, required}]},
+            ...
+          ]
+        }
+    """
+    enabled = bool(getattr(
+        getattr(config, "features", None), "slash_commands", False,
+    ))
+    if not enabled:
+        return {"feature_enabled": False, "commands": []}
+
+    # Builtin commands (hardcoded args schema)
+    commands: list[dict[str, Any]] = [
+        {
+            "name": "help",
+            "description": "列出所有可用命令 + skill",
+            "args_schema": [],
+        },
+        {
+            "name": "goal",
+            "description": "设置 session 级长期目标 (空参或 clear 清除/显状态)",
+            "args_schema": [
+                {"name": "text", "type": "string",
+                 "description": "目标描述; 'clear' 清除", "required": False},
+            ],
+        },
+    ]
+
+    # Skills — list_skills 返回 SkillMeta 的 dict 形式；args_schema 从
+    # frontmatter 解析（如果有），否则给空 list（用户自由输入参数）
+    _sl = service_context.get("skill_loader")
+    if _sl is not None:
+        try:
+            for s in _sl.list_skills():
+                meta_args = s.get("args") or s.get("arguments") or []
+                arg_schema: list[dict[str, Any]] = []
+                if isinstance(meta_args, list):
+                    for a in meta_args:
+                        if isinstance(a, str):
+                            arg_schema.append({
+                                "name": a, "type": "string",
+                                "description": "", "required": False,
+                            })
+                        elif isinstance(a, dict):
+                            arg_schema.append({
+                                "name": str(a.get("name", "")),
+                                "type": str(a.get("type", "string")),
+                                "description": str(a.get("description", ""))[:120],
+                                "required": bool(a.get("required", False)),
+                            })
+                commands.append({
+                    "name": s.get("name") or "",
+                    "description": (s.get("description") or "")[:120],
+                    "args_schema": arg_schema,
+                })
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("/api/commands/help failed: %s", exc)
+
+    return {"feature_enabled": True, "commands": commands}
+
+
+@app.get("/api/commands/{name}/schema")
+async def api_command_schema(name: str):
+    """WI-T2-B5 v2 — 单命令 arg schema 详情（autocomplete arg-hint 用）.
+
+    Returns:
+        {name, description, args_schema} 或 404
+    """
+    enabled = bool(getattr(
+        getattr(config, "features", None), "slash_commands", False,
+    ))
+    if not enabled:
+        return Response(status_code=403, content="feature disabled")
+
+    # Builtin lookup
+    name_lower = name.strip("/ ").lower()
+    builtin_map = {
+        "help": {"description": "列出所有可用命令", "args_schema": []},
+        "goal": {
+            "description": "设置 session 级长期目标",
+            "args_schema": [
+                {"name": "text", "type": "string", "description": "目标描述",
+                 "required": False},
+            ],
+        },
+    }
+    if name_lower in builtin_map:
+        b = builtin_map[name_lower]
+        return {"name": name_lower, **b}
+
+    # Skill lookup
+    _sl = service_context.get("skill_loader")
+    if _sl is not None:
+        try:
+            for s in _sl.list_skills():
+                if (s.get("name") or "").lower() == name_lower:
+                    meta_args = s.get("args") or s.get("arguments") or []
+                    arg_schema = []
+                    if isinstance(meta_args, list):
+                        for a in meta_args:
+                            if isinstance(a, str):
+                                arg_schema.append({
+                                    "name": a, "type": "string",
+                                    "description": "", "required": False,
+                                })
+                            elif isinstance(a, dict):
+                                arg_schema.append({
+                                    "name": str(a.get("name", "")),
+                                    "type": str(a.get("type", "string")),
+                                    "description": str(a.get("description", ""))[:120],
+                                    "required": bool(a.get("required", False)),
+                                })
+                    return {
+                        "name": name_lower,
+                        "description": (s.get("description") or "")[:120],
+                        "args_schema": arg_schema,
+                    }
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("/api/commands/%s/schema failed: %s", name_lower, exc)
+
+    return Response(status_code=404, content=f"unknown command: {name_lower}")
 
 
 @app.get("/health")
