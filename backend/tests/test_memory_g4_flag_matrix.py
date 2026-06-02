@@ -94,20 +94,43 @@ def test_g4_2_f4_invariant_toml_true_dataclass_false() -> None:
 
 
 # ----------------------------------------------------------------------
-# G4.3 — config.toml 其余 flag 仍 False（F4 只动 workspace_memory）
+# G4.3 — config.toml 出厂开集合（审计 #4 点亮语义记忆栈 + F4 工作记忆）
 # ----------------------------------------------------------------------
-def test_g4_3_other_flags_still_false_in_toml() -> None:
-    """F4 只动 workspace_memory；config.toml 里其余列出的 flag 仍 false。"""
+# 2026-06-02 审计 #4：config.toml 出厂开的 v2 flag 集合。dataclass 默认仍全
+# False（字节契约，见 G4.1）；这里是出厂运行配置层。改这个集合 = 改"出厂默认
+# 开哪些 v2 功能"，需同步本断言。
+_FACTORY_ON_FLAGS = {
+    "workspace_memory",    # F4 (2026-05-31) code 工作记忆
+    "facts_extract",       # 审计 #4 写入端事实抽取
+    "enhanced_retriever",  # 审计 #4 facts 进 RRF
+    "cross_key_merge",     # 审计 #4 跨 key 冲突消解
+}
+
+
+def test_g4_3_factory_on_set_matches_audit_decision() -> None:
+    """config.toml [memory.v2]：出厂开的 flag 恰为 _FACTORY_ON_FLAGS，其余 false。
+
+    审计 #4（2026-06-02）点亮 facts_extract + enhanced_retriever + cross_key_merge
+    （F4 已开 workspace_memory）。dataclass 默认仍全 False（G4.1 钉住字节契约），
+    出厂运行行为靠本 toml。这条钉住"哪些出厂开"，防误开/漏开/误关。
+    """
     raw = tomllib.loads(_REPO_CONFIG.read_text(encoding="utf-8"))
     toml_v2 = raw.get("memory", {}).get("v2", {})
     for flag, val in toml_v2.items():
         if not isinstance(val, bool):
             continue
-        if flag == "workspace_memory":
-            continue  # F4 故意开
-        assert val is False, (
-            f"config.toml [memory.v2] {flag}={val} —— 预期 False"
-            f"（F4 只动 workspace_memory，其余应保持 gen-1 默认）"
+        if flag in _FACTORY_ON_FLAGS:
+            assert val is True, (
+                f"config.toml [memory.v2] {flag} 应出厂开（审计 #4 / F4），实际 {val}"
+            )
+        else:
+            assert val is False, (
+                f"config.toml [memory.v2] {flag}={val} —— 非出厂开集合，应为 False"
+            )
+    # 反向：出厂开集合里的 flag 都得在 toml 真出现（防漏配）。
+    for flag in _FACTORY_ON_FLAGS:
+        assert flag in toml_v2, (
+            f"出厂开 flag {flag} 未出现在 config.toml [memory.v2]（漏配）"
         )
 
 
