@@ -271,7 +271,16 @@ function dispatch(msg: any) {
         role: "plan" as any,
         plan_rationale: p.rationale,
         plan_steps: p.steps,
+        // superpowers 决策2: 硬门开 → 渲染 [执行]/[取消] 按钮等确认
+        plan_awaiting_confirm: !!p.awaiting_confirm,
+        plan_sid: sid,
       } as any);
+      break;
+    }
+    case "chat_v2_plan_cancelled": {
+      // superpowers 决策2: 用户点[取消] 或 后端超时 → 清按钮 + 回 idle
+      store.resolve_plan(sid);
+      store.upsert(sid, { status: "idle", inflight: false });
       break;
     }
     case "chat_v2_interrupted": {

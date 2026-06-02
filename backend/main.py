@@ -622,7 +622,8 @@ def _make_str_llm_call(provider, *, max_tokens: int = 512):
 # 等前端点 [执行]/[取消] → plan_confirm WS handler set_result → 继续/取消。
 # 后台任务 await 不阻塞 WS recv loop，所以无需抽取 ReAct 块（最小改动）。
 # 单用户桌宠：按 session_id key 足够（code session id 唯一；门只在 code 模式触发）。
-_PLAN_CONFIRM_WAITERS: dict[str, "asyncio.Future[str]"] = {}
+# value = {"fut": Future[str], "text": 原始任务文本}（text 供 Layer 1B 计划记忆记录）。
+_PLAN_CONFIRM_WAITERS: dict[str, dict] = {}
 
 
 # ─── WI-T2.1 v3 build_agent 工厂（接电 VerifyGate）─────────────────
@@ -1495,6 +1496,23 @@ async def lifespan(app: FastAPI):
                 logger.warning("p4_embedder_warmup_failed", error=str(exc))
         # fire-and-forget; we deliberately don't await
         asyncio.create_task(_embedder_warmup_bg())
+    # superpowers Layer 1B — PreferenceMemory（BGE-M3 语义偏好记忆）。
+    # flag OFF（默认）→ 不构造 → plan-confirm 门每次都等确认（现状）。
+    # 需要真 embedder（embed 接口）；mock 也能跑（向量稳定可匹配）。
+    if bool(getattr(config.features, "preference_memory", False)) and _emb is not None:
+        try:
+            from deskpet.agent.preference_memory import PreferenceMemory
+            _pref_mem = PreferenceMemory(
+                _paths.user_data_dir() / "preference_memory.json",
+                _emb.embed,
+            )
+            service_context.register("preference_memory", _pref_mem)
+            logger.info(
+                "preference_memory_ready entries=%d",
+                len(_pref_mem.list_entries()),
+            )
+        except Exception as _pm_exc:  # noqa: BLE001
+            logger.warning("preference_memory_init_failed error=%s", _pm_exc)
     # P4-S15: VectorWorker — starts after SessionDB is initialised so the
     # vec0 schema is in place. After start, wire its enqueue() onto the
     # SessionDB write-hook so new chat turns auto-embed.
@@ -3728,11 +3746,20 @@ async def control_channel(ws: WebSocket):
                 _csid = payload.get("session_id") or session_id
                 _decision = payload.get("decision") or "go"
                 _waiter = _PLAN_CONFIRM_WAITERS.get(_csid)
-                if _waiter is not None and not _waiter.done():
-                    _waiter.set_result("go" if _decision == "go" else "cancel")
+                _fut = _waiter.get("fut") if _waiter else None
+                if _fut is not None and not _fut.done():
+                    _fut.set_result("go" if _decision == "go" else "cancel")
                     logger.info(
                         "plan_confirm_received sid=%s decision=%s", _csid, _decision
                     )
+                    # Layer 1B: 用户批准 → 记计划记忆,下次相似任务自动确认。
+                    if _decision == "go":
+                        _pref = service_context.get("preference_memory")
+                        _task_text = (_waiter or {}).get("text")
+                        if _pref is not None and _task_text:
+                            asyncio.create_task(
+                                _pref.record(_task_text, "approved", "plan")
+                            )
                 else:
                     logger.info(
                         "plan_confirm_no_waiter sid=%s (timed out / already resolved)",
@@ -4853,6 +4880,7 @@ async def control_channel(ws: WebSocket):
                             getattr(config.features, "plan_confirm_gate", False)
                         ) and _in_code_mode
                         _awaiting_confirm = False
+                        _auto_confirmed = False
                         try:
                             from agent.plan import (
                                 maybe_extract_plan as _maybe_plan,
@@ -4865,6 +4893,21 @@ async def control_channel(ws: WebSocket):
                                 in_code_mode=_in_code_mode,
                             )
                             if _plan is not None:
+                                # Layer 1B 计划记忆: 语义相似且以往批准过 → 自动确认,
+                                # 跳过等待(决策2 "记下来后续直接做")。
+                                if _gate_on:
+                                    _pref = service_context.get("preference_memory")
+                                    if _pref is not None:
+                                        try:
+                                            _pm_hit = await _pref.match(_text, "plan")
+                                            if _pm_hit is not None:
+                                                _auto_confirmed = True
+                                                logger.info(
+                                                    "plan_confirm_auto_approved sid=%s score=%.3f",
+                                                    _sid, float(_pm_hit.get("score", 0.0)),
+                                                )
+                                        except Exception as _pm_e:  # noqa: BLE001
+                                            logger.debug("pref_match_failed error=%s", _pm_e)
                                 _plan_evt = {
                                     "type": "chat_v2_plan",
                                     "payload": {
@@ -4874,8 +4917,9 @@ async def control_channel(ws: WebSocket):
                                             {"title": s.title, "detail": s.detail}
                                             for s in _plan.steps
                                         ],
-                                        # 决策2: 硬门开时前端渲染 [执行]/[取消] 按钮
-                                        "awaiting_confirm": _gate_on,
+                                        # 决策2: 硬门开且未自动确认时前端渲染 [执行]/[取消]
+                                        "awaiting_confirm": _gate_on and not _auto_confirmed,
+                                        "auto_confirmed": _auto_confirmed,
                                     },
                                 }
                                 await _ws.send_json(_plan_evt)
@@ -4888,7 +4932,7 @@ async def control_channel(ws: WebSocket):
                                 while _insert_at < len(_msgs) and _msgs[_insert_at].get("role") == "system":
                                     _insert_at += 1
                                 _msgs.insert(_insert_at, _plan_msg)
-                                _awaiting_confirm = _gate_on
+                                _awaiting_confirm = _gate_on and not _auto_confirmed
                         except Exception as _exc:  # noqa: BLE001
                             logger.debug("p4s25_plan_skipped error=%s", _exc)
 
@@ -4899,7 +4943,11 @@ async def control_channel(ws: WebSocket):
                             _confirm_fut: "asyncio.Future[str]" = (
                                 asyncio.get_event_loop().create_future()
                             )
-                            _PLAN_CONFIRM_WAITERS[_sid] = _confirm_fut
+                            # 存 {fut, text}: plan_confirm handler 用 text 记 Layer 1B
+                            # 计划记忆（用户点[执行]→record approved）。
+                            _PLAN_CONFIRM_WAITERS[_sid] = {
+                                "fut": _confirm_fut, "text": _text,
+                            }
                             logger.info("plan_confirm_gate_awaiting sid=%s", _sid)
                             try:
                                 _decision = await asyncio.wait_for(

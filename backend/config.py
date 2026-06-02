@@ -335,10 +335,19 @@ class FeaturesConfig:
       check + 未达成自动 continue（WI-B 系列）。OFF 时 SessionGoalStore 不构造。
     * ``agent_parallel`` — 启 ``agent_parallel`` 工具暴露给 LLM（WI-C 系列）。
       OFF 时工具不出现在 schemas，子代理并发能力不可用。
+    * ``plan_confirm_gate`` — superpowers Layer 1A/1B 决策2：code 模式非平凡任务
+      先出 plan（已有 maybe_extract_plan）并**等用户点[执行]确认再跑 ReAct**（硬门）。
+      OFF（默认）时 plan 仍展示但 auto-confirm（现状字节级一致）。前端需配合
+      渲染 [执行]/[取消] 按钮（chat_v2_plan.awaiting_confirm + plan_confirm WS）。
+    * ``preference_memory`` — superpowers Layer 1B：BGE-M3 语义偏好记忆。计划记忆
+      让 plan-confirm 硬门对"语义相似且以往批准过"的任务**自动确认**（决策2 的
+      "记下来后续直接做"）。OFF（默认）时不构造 PreferenceMemory，门每次都等确认。
     """
     slash_commands: bool = False
     goal_mode: bool = False
     agent_parallel: bool = False
+    plan_confirm_gate: bool = False
+    preference_memory: bool = False
 
 
 @dataclass

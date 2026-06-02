@@ -50,6 +50,8 @@ _VALID_SERVICES = frozenset({
     # whitelist 里。
     "session_goal_store",  # SessionGoalStore — companion+code goal tracking
     "goal_checker",        # GoalChecker — LLM-based goal completion check
+    # --- superpowers Layer 1B — 偏好记忆（计划/意图，BGE-M3 语义匹配）---------
+    "preference_memory",   # PreferenceMemory — plan-confirm 自动确认 + 意图记忆
 })
 
 @dataclass
@@ -89,6 +91,8 @@ class ServiceContext:
     # --- Companion+Code v1 --------------------------------------------------
     session_goal_store: Any | None = None
     goal_checker: Any | None = None
+    # --- superpowers Layer 1B ------------------------------------------------
+    preference_memory: Any | None = None
 
     def register(self, name: str, provider: Any) -> None:
         if name not in _VALID_SERVICES:

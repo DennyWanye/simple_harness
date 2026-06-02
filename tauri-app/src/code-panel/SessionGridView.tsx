@@ -434,6 +434,19 @@ function Tile({
     )
     .slice(-3);
 
+  // superpowers 决策2 plan-confirm 硬门: 有 awaiting 的 plan 消息 → tile 内
+  // 渲染 [执行]/[取消] 确认栏（tile 预览不走 MessageBubble，所以在这里渲染）。
+  const awaiting_plan = messages.find(
+    (m) => m.role === "plan" && m.plan_awaiting_confirm,
+  );
+  const decide_plan = (decision: "go" | "cancel") => {
+    codePanelWS.send({
+      type: "plan_confirm",
+      payload: { session_id, decision },
+    });
+    useSessionsStore.getState().resolve_plan(session_id, awaiting_plan?.id);
+  };
+
   return (
     <div
       data-severity-score={Math.round(_score)}
@@ -691,6 +704,69 @@ function Tile({
           ))
         )}
       </div>
+
+      {/* superpowers 决策2 plan-confirm 硬门: 计划等确认栏 */}
+      {awaiting_plan && (
+        <div
+          data-testid="plan-confirm-bar"
+          style={{
+            margin: "6px 0",
+            padding: "8px 10px",
+            background: "rgba(37, 99, 235, 0.12)",
+            border: "1px solid rgba(37, 99, 235, 0.5)",
+            borderRadius: 8,
+            fontSize: 11.5,
+            color: "#dbeafe",
+          }}
+        >
+          <div style={{ fontWeight: 600, color: "#93c5fd", marginBottom: 4 }}>
+            📋 计划 ({(awaiting_plan.plan_steps ?? []).length} 步) — 确认后执行
+          </div>
+          <ol style={{ margin: "0 0 8px", paddingLeft: 18, lineHeight: 1.4 }}>
+            {(awaiting_plan.plan_steps ?? []).slice(0, 6).map((s, i) => (
+              <li key={i}>
+                <strong style={{ color: "#e2e8f0" }}>{s.title}</strong>
+              </li>
+            ))}
+          </ol>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              type="button"
+              data-testid="plan-confirm-go"
+              onClick={() => decide_plan("go")}
+              style={{
+                flex: 1,
+                background: "#2563eb",
+                color: "#fff",
+                border: "none",
+                borderRadius: 6,
+                padding: "5px 10px",
+                fontSize: 11.5,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              ▶ 执行
+            </button>
+            <button
+              type="button"
+              data-testid="plan-confirm-cancel"
+              onClick={() => decide_plan("cancel")}
+              style={{
+                background: "rgba(148, 163, 184, 0.2)",
+                color: "#e2e8f0",
+                border: "1px solid rgba(148, 163, 184, 0.3)",
+                borderRadius: 6,
+                padding: "5px 12px",
+                fontSize: 11.5,
+                cursor: "pointer",
+              }}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Input bar */}
       <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
