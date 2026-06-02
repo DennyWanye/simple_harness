@@ -80,13 +80,22 @@ async def mock_embedder():
 
 @pytest_asyncio.fixture
 async def real_embedder():
-    """真 BGE-M3（子进程 worker，非裸 import）。仅 model_required 测试用。"""
-    e = Embedder(
-        model_path=Path(
-            r"C:/Users/24378/AppData/Local/deskpet/models/bge-m3-int8"
-        ),
-        use_mock_when_missing=False,
-    )
+    """真 BGE-M3（子进程 worker，非裸 import）。仅 model_required 测试用。
+
+    模型路径走 resolver 稳健解析（用户把数据迁到 F 盘后 C: 路径会空 → 此前
+    硬编码会整批 ERROR；见 tests/_model_path.py）。找不到 → skip，绝不退回 mock。
+    """
+    import sys as _sys
+
+    _sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from _model_path import resolve_bge_m3
+
+    model = resolve_bge_m3()
+    if model is None:
+        pytest.skip(
+            "BGE-M3 模型未在任何已知位置找到；装模型或设 DESKPET_BGE_M3_DIR 后再跑"
+        )
+    e = Embedder(model_path=model, use_mock_when_missing=False)
     await e.warmup()
     yield e
     await e.close()

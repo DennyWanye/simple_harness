@@ -60,12 +60,15 @@ async def test_g6_1_facts_upsert_writes_embedding_real(tmp_path: Path) -> None:
     若 embedding 没写入，vector_search 会跳过该行 → 向量召回永远空（F5 ②
     层就失效）。这条钉死"写入端真的算并存了向量"。
     """
-    e = Embedder(
-        model_path=Path(
-            r"C:/Users/24378/AppData/Local/deskpet/models/bge-m3-int8"
-        ),
-        use_mock_when_missing=False,
-    )
+    import sys as _sys
+
+    _sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from _model_path import resolve_bge_m3
+
+    model = resolve_bge_m3()
+    if model is None:
+        pytest.skip("BGE-M3 模型未找到；装模型或设 DESKPET_BGE_M3_DIR 后再跑")
+    e = Embedder(model_path=model, use_mock_when_missing=False)
     await e.warmup()
     try:
         fs = FactsStore(tmp_path / "f.db", embedder=e)

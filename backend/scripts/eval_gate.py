@@ -110,11 +110,12 @@ async def run_eval(
         sdb = SessionDB(db_path=db_path)
         await sdb.initialize()
         if embedder_mode == "real":
-            # 真 BGE-M3：子进程 worker（裸 import 会段错误）。
-            _model_dir = (
-                r"C:/Users/24378/AppData/Local/deskpet/models/bge-m3-int8"
-            )
-            embedder = Embedder(model_path=Path(_model_dir),
+            # 真 BGE-M3：子进程 worker（裸 import 会段错误）。模型路径走 app
+            # 自己的解析（paths.user_models_dir 读 DESKPET_MODEL_ROOT / portable
+            # / LocalAppData），不再硬编码 C: —— 用户把数据迁到 F 盘后硬编码会
+            # 找不到（2026-06-02 踩到）。调用方可设 DESKPET_MODEL_ROOT 覆盖。
+            from paths import user_models_dir
+            embedder = Embedder(model_path=user_models_dir() / "bge-m3-int8",
                                 use_mock_when_missing=False)
         else:
             # mock embedder —— 确定性、无需权重。

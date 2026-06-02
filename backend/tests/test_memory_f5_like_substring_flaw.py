@@ -199,12 +199,15 @@ async def test_g2_5_memory_search_vector_semantic_real(tmp_path: Path) -> None:
     LIKE 路（G2.1）下"宠物"必 0 命中；向量路下"橘猫"语义相关 → 排第一。
     断言：retrieval=vector（确实走了向量）+ 橘猫 rank 在股票之前。
     """
-    e = Embedder(
-        model_path=Path(
-            r"C:/Users/24378/AppData/Local/deskpet/models/bge-m3-int8"
-        ),
-        use_mock_when_missing=False,
-    )
+    import sys as _sys
+
+    _sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from _model_path import resolve_bge_m3
+
+    model = resolve_bge_m3()
+    if model is None:
+        pytest.skip("BGE-M3 模型未找到；装模型或设 DESKPET_BGE_M3_DIR 后再跑")
+    e = Embedder(model_path=model, use_mock_when_missing=False)
     await e.warmup()
     try:
         fs = FactsStore(tmp_path / "f.db", embedder=e)

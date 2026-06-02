@@ -29,13 +29,28 @@ pytestmark = pytest.mark.model_required
 
 
 @pytest.mark.asyncio
-async def test_g5_2_eval_gate_mock_equals_real_proves_literal_driven() -> None:
+async def test_g5_2_eval_gate_mock_equals_real_proves_literal_driven(
+    monkeypatch,
+) -> None:
     """stage1 eval_gate 的 hit@5：mock ≈ real → 证明字面驱动、非语义。
 
     若 DELTA 明显 > 0（real 远高于 mock）→ 说明 fixture 确实测了语义，
     那时这个断言会失败，提示"hit@5 其实反映语义召回，G5.2 结论需更新"。
     实测 DELTA = 0.0000，故钉死"字面驱动"。
     """
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    _sys.path.insert(0, str(_Path(__file__).resolve().parent))
+    from _model_path import resolve_bge_m3
+
+    model = resolve_bge_m3()
+    if model is None:
+        pytest.skip("BGE-M3 模型未找到；装模型或设 DESKPET_MODEL_ROOT 后再跑")
+    # eval_gate real 分支走 paths.user_models_dir()（读 DESKPET_MODEL_ROOT）。
+    # 指到解析出的模型父目录，让 eval_gate 找到模型（用户迁 F 盘后 C: 路径空）。
+    monkeypatch.setenv("DESKPET_MODEL_ROOT", str(model.parent))
+
     from scripts.eval_gate import run_eval
 
     mock = await run_eval(stage="stage1", embedder_mode="mock")
