@@ -92,7 +92,10 @@ docs/EVIDENCE/screenshot_*.png
 # Per-distribution installer payloads built ad-hoc for friends/testers.
 # Regeneratable from the bundle scripts; not source.
 codex-installer-for-friend.zip
-.dev-userdata/
+# dev 运行时用户数据目录（state.db / billing.db / metrics / receipts 等运行时
+# 产物，含本地数据，永不入库）。通配覆盖 .dev-userdata/ 及 .dev-userdata-f3f4verify/
+# 这类带后缀的临时验证副本（2026-06-02）。
+.dev-userdata*/
 
 # WI-T1.7 last-mile dev 端到端 metrics validation 临时目录 (2026-05-23)
 .dev-metrics-validation/
