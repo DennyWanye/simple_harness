@@ -321,4 +321,22 @@ A1/A4 在顺序波次 2）。
 - 波次 1 合并验证：`pytest test_superpowers_edgecases + test_preference_memory + test_verify_gate_code_patterns`
   = **40 passed**。
 
-_（波次 2 A1/A2/A4 + 波次 2.5 B2/B3 + 波次 3 C1/C3 待 me 顺序做）_
+### 波次 2（A1/A2/A4，opus 子代理顺序）— 完成 ✅ commit `84ed4ae`
+- A1 意图记忆：纯函数 + 9 测；A2 /prefs：后端 10 测 + 前端 15 vitest + 修复历史"slash 结果静默丢"
+  bug；A4 plan 持久化三层 + 6 测（含 SW-1 全新 DB 自建表）。复验 py_compile + 37 测 + tsc 0 错 + 15 vitest。
+
+### 波次 2.5（B2/B3 merge）— 完成 ✅
+- **B2**：`feat/memory-stage2-followup-f1f2` 0 commits ahead → **已并入 master，closed**（未 merge）。
+- **B3**：`feat/companion-code-v2` 9 commits，merge-tree vs 当前 master 仍 0 冲突 → merge `84b8ce0`。
+  引入 agent/team/ + SlashDropdown/ArgHintBar（`/` 自动补全下拉，与 A2 slash 结果渲染互补）。
+  **B3§4 复核：config.py 出厂 flag 默认全未变** + py_compile OK + tsc 0 错。**本地 commit，未 push**。
+  ⚠️ 遗留：merge 前移开的 `plans/2026-05-25-.../10-...md.premerge-bak` 与 merge 版本不同，留早上看。
+
+### 波次 3（C1/C3）— 完成 ✅
+- **C1 全套 backend pytest baseline**：**2331 passed / 1 failed(test-isolation flake) / 11 skipped**。
+  唯一失败 `test_e2e_ppt_artifacts_in_envelope` **单独跑 PASS** → 测试间状态污染(非代码 bug、非回归)，
+  归 flaky-isolation，留早上（低优）。无代码 bug。同时验证 B3 merge 未破坏。
+- **C3**：tsc **0 错误**（验 3 次）+ py_compile 全绿。项目未配 ruff（无后端 lint 工具）。
+- ⚠️ A3 报的 `test_t1_11` flaky（load_config mtime 缓存）本轮全套未复现，已 spawn_task 跟踪，留早上。
+
+**实现阶段全部 11 FEAT 完成。下一步：完成度评估子代理对照本 spec 逐条核对。**
