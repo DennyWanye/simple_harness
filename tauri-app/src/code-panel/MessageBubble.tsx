@@ -71,6 +71,9 @@ export function MessageBubble({ msg }: Props) {
           result={msg.tool_result ?? ""}
         />
       );
+    case "slash_result":
+      // FEAT-A2: /help /goal /prefs /skill 结果（ws.ts 已格式化成纯文本）。
+      return <SlashResultBubble text={msg.text ?? ""} />;
     case "error":
       return <ErrorBanner text={msg.text ?? "(unknown error)"} />;
     default:
@@ -536,6 +539,33 @@ function ReasoningBubble({ text }: { text: string }) {
         }}
       >
         💭 {text}
+      </div>
+    </div>
+  );
+}
+
+function SlashResultBubble({ text }: { text: string }) {
+  return (
+    <div style={{ display: "flex", margin: "8px 0" }}>
+      <div
+        data-bp-selectable=""
+        data-testid="slash-result-bubble"
+        style={{
+          maxWidth: "92%",
+          background: "rgba(15, 23, 42, 0.85)",
+          color: "#cbd5e1",
+          padding: "8px 12px",
+          borderRadius: "12px 12px 12px 2px",
+          fontSize: 12.5,
+          lineHeight: 1.55,
+          border: "1px solid rgba(99, 102, 241, 0.35)",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          fontFamily:
+            'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
+        }}
+      >
+        {text}
       </div>
     </div>
   );

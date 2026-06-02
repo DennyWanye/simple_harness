@@ -2343,6 +2343,38 @@ async def _emit_context_usage(
         logger.debug("context_usage_emit_failed sid=%s err=%s", session_id, exc)
 
 
+# superpowers Layer 1B WI-A1 — 意图记忆纯函数（module 顶层，便于单测直接 import）。
+# 注入侧 hint 文案 + record 侧 label 判定从主循环抽出，使得行为可被
+# ``from main import _build_intent_hint, _intent_label_from_turn`` 单测。
+_INTENT_HINT_ASK = (
+    "[偏好记忆] 用户以往把这类消息当纯提问处理——"
+    "直接回答，不要调用工具修改任何东西。"
+)
+_INTENT_HINT_TASK = (
+    "[偏好记忆] 用户以往把这类消息当派活——"
+    "按工作流先澄清/计划再执行。"
+)
+
+
+def _build_intent_hint(label: str) -> str | None:
+    """意图记忆注入侧：把匹配到的意图 label 映射成 system hint 文案。
+
+    - ``"ask"`` → 纯提问 hint（直接回答别动手）。
+    - ``"task"`` → 派活 hint（进工作流先澄清/计划）。
+    - 其它（含 None/未知）→ None（不注入，守"出厂字节级不变"）。
+    """
+    if label == "ask":
+        return _INTENT_HINT_ASK
+    if label == "task":
+        return _INTENT_HINT_TASK
+    return None
+
+
+def _intent_label_from_turn(had_tool_call: bool) -> str:
+    """意图记忆 record 侧：本轮真调过工具 → "task"，否则纯回答 → "ask"。"""
+    return "task" if had_tool_call else "ask"
+
+
 def _approx_tokens(text: str | None) -> int:
     """Cheap heuristic for token count without a tokenizer dependency.
     Mirrors the rule-of-thumb tiktoken-ish ~3.5 chars/token for mixed CJK+
@@ -3653,9 +3685,32 @@ async def control_channel(ws: WebSocket):
                             "session_messages_load_failed",
                             error=str(exc), session_id=target_sid,
                         )
+                # FEAT-A4: 带回 awaiting plan（不塞进被白名单 3659 过滤的 messages
+                # 流，单独挂 payload.plan）。前端 rehydration 据此重建 plan card +
+                # [执行]/[取消] 栏。只在 awaiting 时附；否则字段缺省 → 旧行为不变。
+                _plan_payload: dict[str, Any] | None = None
+                if sdb is not None:
+                    try:
+                        _sp = await sdb.get_session_plan(target_sid)
+                        if _sp is not None and _sp.get("awaiting"):
+                            _plan_payload = {
+                                "rationale": _sp.get("rationale") or "",
+                                "steps": _sp.get("steps") or [],
+                                "awaiting": True,
+                            }
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug(
+                            "session_plan_load_failed sid=%s err=%s",
+                            target_sid, exc,
+                        )
+                _msgs_payload: dict[str, Any] = {
+                    "session_id": target_sid, "messages": msgs,
+                }
+                if _plan_payload is not None:
+                    _msgs_payload["plan"] = _plan_payload
                 await ws.send_json({
                     "type": "session_messages_response",
-                    "payload": {"session_id": target_sid, "messages": msgs},
+                    "payload": _msgs_payload,
                 })
 
             elif msg_type == "slash_command":
@@ -3689,10 +3744,12 @@ async def control_channel(ws: WebSocket):
                         from deskpet.commands import dispatch_slash_command
                         _slash_skill_loader = service_context.get("skill_loader")
                         _slash_goal_store = service_context.get("session_goal_store")
+                        _slash_pref_mem = service_context.get("preference_memory")
                         _slash_result = await dispatch_slash_command(
                             cmd_name, cmd_args, target_sid,
                             skill_loader=_slash_skill_loader,
                             session_goal_store=_slash_goal_store,
+                            session_pref_memory=_slash_pref_mem,
                         )
                     except Exception as _slash_exc:  # noqa: BLE001
                         logger.warning(
@@ -3765,6 +3822,17 @@ async def control_channel(ws: WebSocket):
                         "plan_confirm_no_waiter sid=%s (timed out / already resolved)",
                         _csid,
                     )
+                # FEAT-A4: 不论 go/cancel（含无 waiter 的 already-resolved），用户
+                # 已对 plan 做出裁决 → 清 sidecar awaiting 标记。与 _run_chat
+                # finally 重复但幂等，覆盖"finally 尚未跑到"的竞态窗口。
+                _sdb_pc = service_context.get("session_db")
+                if _sdb_pc is not None:
+                    try:
+                        await _sdb_pc.clear_session_plan_awaiting(_csid)
+                    except Exception as _pc_e:  # noqa: BLE001
+                        logger.debug(
+                            "plan_confirm_clear_failed sid=%s err=%s", _csid, _pc_e
+                        )
 
             elif msg_type == "code_session_delete":
                 # P4-S24 followup: user clicked 🗑️ on a project tile / sidebar
@@ -4807,6 +4875,33 @@ async def control_channel(ws: WebSocket):
                                 _sid, str(_p6_exc)[:200],
                             )
 
+                        # superpowers Layer 1B WI-A1 — 意图记忆 hint 注入。
+                        # 匹配以往同类消息的意图(ask/task)，注入 system hint 引导
+                        # persona：纯提问别动手 / 派活进工作流。决策1"记下来后续直接做"。
+                        # 仅 code 模式 + pref_mem 存在 + 非 sentinel；命中才注入。
+                        if _in_code_mode and not _is_sentinel:
+                            _pref_im = service_context.get("preference_memory")
+                            if _pref_im is not None:
+                                try:
+                                    _im = await _pref_im.match(_text, "intent")
+                                    _im_hint = _build_intent_hint(
+                                        _im.get("label") if _im is not None else ""
+                                    )
+                                    if _im_hint:
+                                        _ins = 0
+                                        while (_ins < len(_msgs)
+                                               and _msgs[_ins].get("role") == "system"):
+                                            _ins += 1
+                                        _msgs.insert(_ins, {"role": "system",
+                                                            "content": _im_hint})
+                                        logger.info(
+                                            "intent_memory_hint sid=%s label=%s score=%.3f",
+                                            _sid, _im.get("label"),
+                                            float(_im.get("score", 0.0)),
+                                        )
+                                except Exception as _im_e:  # noqa: BLE001
+                                    logger.debug("intent_memory_match_failed: %s", _im_e)
+
                         # Inject project root into per-session tool-arg
                         # context so glob/grep can run without the LLM
                         # restating the path every call. Cleared when
@@ -4933,6 +5028,28 @@ async def control_channel(ws: WebSocket):
                                     _insert_at += 1
                                 _msgs.insert(_insert_at, _plan_msg)
                                 _awaiting_confirm = _gate_on and not _auto_confirmed
+                                # FEAT-A4: awaiting plan 持久化到 session_plans
+                                # sidecar，使 F5/HMR rehydration 后 [执行]/[取消]
+                                # 栏能恢复。try/except 只 log 不阻断 plan 门。
+                                if _awaiting_confirm:
+                                    _sdb_plan = service_context.get("session_db")
+                                    if _sdb_plan is not None:
+                                        try:
+                                            await _sdb_plan.upsert_session_plan(
+                                                _sid,
+                                                _plan.rationale,
+                                                [
+                                                    {"title": s.title,
+                                                     "detail": s.detail}
+                                                    for s in _plan.steps
+                                                ],
+                                                True,
+                                            )
+                                        except Exception as _sp_e:  # noqa: BLE001
+                                            logger.warning(
+                                                "session_plan_upsert_failed sid=%s err=%s",
+                                                _sid, str(_sp_e)[:200],
+                                            )
                         except Exception as _exc:  # noqa: BLE001
                             logger.debug("p4s25_plan_skipped error=%s", _exc)
 
@@ -4958,6 +5075,18 @@ async def control_channel(ws: WebSocket):
                                 logger.info("plan_confirm_gate_timeout sid=%s", _sid)
                             finally:
                                 _PLAN_CONFIRM_WAITERS.pop(_sid, None)
+                                # FEAT-A4: 不论 go / cancel / timeout，plan 都不再
+                                # awaiting → 清 sidecar 标记（幂等，重复无害）。
+                                # 统一收口在 finally，确保三条出路都覆盖。
+                                _sdb_clr = service_context.get("session_db")
+                                if _sdb_clr is not None:
+                                    try:
+                                        await _sdb_clr.clear_session_plan_awaiting(_sid)
+                                    except Exception as _clr_e:  # noqa: BLE001
+                                        logger.debug(
+                                            "session_plan_clear_failed sid=%s err=%s",
+                                            _sid, _clr_e,
+                                        )
                             if _decision != "go":
                                 _cancel_evt = {
                                     "type": "chat_v2_plan_cancelled",
@@ -5062,12 +5191,17 @@ async def control_channel(ws: WebSocket):
                             except Exception:
                                 pass
 
+                        # WI-A1: 本轮是否真调过工具 — 决定意图记忆记 task/ask。
+                        _had_tool_call = False
                         async for ev in _agent.run(
                             _msgs,
                             session_id=_sid,
                             stream=True,
                             provider_chain=_provider_chain,
                         ):
+                            # WI-A1: track tool usage for intent memory.
+                            if isinstance(ev, _TCEv) and getattr(ev, "tool_call", None):
+                                _had_tool_call = True
                             # P5-S1: bump activity BEFORE forwarding so the
                             # watchdog sees the latest event even if the
                             # WS send fails. Best-effort — never let a
@@ -5291,6 +5425,17 @@ async def control_channel(ws: WebSocket):
                                 }
                                 await _ws.send_json(_final_msg)
                                 await _broadcast_default_chat_peers(_ws, _final_msg)
+                                # WI-A1: 记意图记忆 — 本轮真调过工具→"task"，纯回答
+                                # →"ask"。仅 code 模式 + pref_mem + 非 sentinel。
+                                # fire-and-forget，不阻塞 final。record 内部去重。
+                                if _in_code_mode and not _is_sentinel:
+                                    _pref_rec = service_context.get("preference_memory")
+                                    if _pref_rec is not None and _text:
+                                        asyncio.create_task(_pref_rec.record(
+                                            _text,
+                                            _intent_label_from_turn(_had_tool_call),
+                                            "intent",
+                                        ))
                                 # 2026-05-28 context-usage ring: snapshot
                                 # actual LLM prompt_tokens + model window
                                 # and push to all peers.

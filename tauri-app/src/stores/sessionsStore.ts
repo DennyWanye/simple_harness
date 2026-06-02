@@ -24,6 +24,7 @@ export type MessageRole =
   | "tool_call"
   | "tool_result"
   | "plan"              // P4-S25 A2: plan card preceding execution
+  | "slash_result"      // FEAT-A2: /slash 命令结果（help/goal/prefs/skill/error）
   | "error";
 
 export interface PlanStep {
