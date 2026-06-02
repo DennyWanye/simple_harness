@@ -167,6 +167,16 @@ case:   TC-M-XX
 
 ---
 
+## windows-mcp 真机执行状态（过夜）
+- **环境已备好**：dev app 已重启（跑 dev 源码 + CDP 9222 + 全 flag ON）、windows-mcp 工具已加载、
+  Desktop Pet 窗口已定位（585×930，companion 聊天界面）。
+- **未实跑 11 case**：Code 模式面板需从 pet 工具栏打开 → WebView2 + DPI 150% + 双屏 + 截图降采样，
+  盲坐标点击 11 个 case 极易产出**错误/虚假证据**。按 CLAUDE.md HARD CONSTRAINT「绕过/糊弄得来的
+  PASS 是负价值」+ 真机需有人值守，**故意不在无人值守 + 巨大 context 下硬点造假**。
+- **建议**：用户在场时按本文档逐 case 真机跑（关键 case：TC-M3/M4 plan 门、TC-M6/M7 /prefs、
+  TC-M8 slash 下拉、TC-M5 自动确认、TC-M9 刷新持久化）。所有功能已有单测 + 完成度审计 11/11 背书，
+  真机是「用户视角最终确认」。
+
 ## 测试副产物清理
 测试中创建的 `MANUAL_T*.md` 在对应 case 测完后删除；`/prefs clear` 已清偏好；不留垃圾。
 
