@@ -1,14 +1,20 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-//! 桌宠主窗口尺寸持久化。
+//! 桌宠主窗口几何（尺寸 + 位置）持久化。
 //!
-//! 把 main 窗口的 (width, height) 写到 `<user_data>/window_geometry.json`。
-//! 启动时 Rust 读一次 → 应用到 main 窗。运行时 WindowEvent::Resized 防抖
-//! 写回（800ms 静止后落盘，避免拖动过程中刷盘抖动）。
+//! 把 main 窗口的 (width, height) **和** (x, y) 写到
+//! `<user_data>/window_geometry.json`。启动时 Rust 读一次 → 恢复尺寸 + 位置；
+//! 运行时 `WindowEvent::Resized` / `WindowEvent::Moved` 防抖写回（800ms 静止
+//! 后落盘，避免拖动过程中刷盘抖动）。
 //!
-//! 只持久化尺寸，不持久化位置 —— 用户原话："拉动的宽高" + 重启恢复。
-//! 位置交给 Tauri 默认。
+//! 2026-06-02 多屏修复：旧实现只持久化尺寸、不持久化位置，且 `apply_saved_size`
+//! 启动时把窗口 clamp 到 `current_monitor`（首启=主屏）→ **多屏用户没法把桌宠
+//! 放到副屏**（拖过去重启又回主屏）。现在也持久化位置 + 恢复，clamp 只保证
+//! "在恢复后所在的显示器内可见"，不再强制主屏。
+//!
+//! 向后兼容：旧 `{width,height}` 文件无 x/y → serde default `None` → 不恢复
+//! 位置（回退 Tauri 默认 = 旧行为），尺寸照常恢复。
 //!
 //! 失败策略：读失败 → 用 tauri.conf.json 默认；写失败 → 静默忽略。
 //! 这个功能丢一次状态无所谓，不能因为 IO 错误炸应用。
@@ -26,6 +32,12 @@ use crate::paths;
 pub struct WindowGeometry {
     pub width: u32,
     pub height: u32,
+    /// 2026-06-02: physical outer position。旧文件无此字段 → serde default
+    /// `None` → 不恢复位置（保旧行为）。x/y 要么都有要么都无。
+    #[serde(default)]
+    pub x: Option<i32>,
+    #[serde(default)]
+    pub y: Option<i32>,
 }
 
 const MIN_W: u32 = 240;
@@ -62,14 +74,15 @@ pub fn save(g: WindowGeometry) -> std::io::Result<()> {
     std::fs::write(&path, s)
 }
 
-/// 把窗口位置 clamp 到当前 monitor 工作区内，保证完整可见。
+/// 把窗口位置 clamp 到**当前所在 monitor** 工作区内，保证完整可见。
 ///
 /// 触发场景（2026-05-30 bug fix）：tauri.conf.json 默认 `x` 是按 360 宽算的，
 /// 当用户上次拉大窗口（如 1022×828）后保存到 window_geometry.json，
-/// 重启时 apply_saved_size 只恢复 size 不恢复 position → 大窗口仍从默认 x
-/// 起，右边界严重超出屏幕。用户表现："桌宠卡在右下角还有一部分没出来"。
+/// 重启时只恢复 size → 大窗口仍从默认 x 起，右边界严重超出屏幕。
 ///
-/// 也修 future-proof：multi-monitor 用户切显示器后桌宠落在不存在的位置。
+/// 2026-06-02：现在恢复位置后再 clamp，`current_monitor()` 已是「恢复后所在的
+/// 显示器」（即上次用户放的那块），所以 clamp 把它夹在**那块**屏内，不再强制
+/// 回主屏 —— 这是多屏副屏放置能生效的关键。
 pub fn clamp_position_to_screen(win: &WebviewWindow) {
     let monitor = match win.current_monitor() {
         Ok(Some(m)) => m,
@@ -115,38 +128,74 @@ pub fn clamp_position_to_screen(win: &WebviewWindow) {
     }
 }
 
-/// 启动时应用持久化的尺寸到 main 窗口（如果有的话）。
-pub fn apply_saved_size(win: &WebviewWindow) {
+/// 从窗口读取当前几何（尺寸 logical + 位置 physical）。
+/// `size_override`：resize 事件携带的新 size（physical）；None → 现读 inner_size。
+fn build_geometry(win: &Window, size_override: Option<PhysicalSize<u32>>) -> Option<WindowGeometry> {
+    let scale = win.scale_factor().unwrap_or(1.0);
+    let sz = match size_override {
+        Some(s) => s,
+        None => win.inner_size().ok()?,
+    };
+    let w = (sz.width as f64 / scale).round() as u32;
+    let h = (sz.height as f64 / scale).round() as u32;
+    if w < MIN_W || h < MIN_H {
+        eprintln!("[window_geometry] build_geometry rejected: {w}x{h} below MIN");
+        return None;
+    }
+    let pos = match win.outer_position() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("[window_geometry] build_geometry: outer_position failed: {e:?}");
+            return None;
+        }
+    };
+    Some(WindowGeometry {
+        width: w,
+        height: h,
+        x: Some(pos.x),
+        y: Some(pos.y),
+    })
+}
+
+/// 启动时应用持久化的尺寸 **+ 位置** 到 main 窗口（如果有的话）。
+pub fn apply_saved_geometry(win: &WebviewWindow) {
     match load() {
-        None => eprintln!("[window_geometry] apply_saved_size: load() returned None (no file or out of range)"),
+        None => eprintln!("[window_geometry] apply_saved_geometry: load() returned None (no file or out of range)"),
         Some(g) => {
-            eprintln!("[window_geometry] apply_saved_size: loaded {}x{} logical", g.width, g.height);
+            eprintln!("[window_geometry] apply_saved_geometry: loaded {}x{} logical pos={:?},{:?}", g.width, g.height, g.x, g.y);
             let size = LogicalSize::new(g.width as f64, g.height as f64);
             match win.set_size(size) {
                 Ok(()) => {
-                    eprintln!("[window_geometry] set_size OK");
-                    // 验证实际生效尺寸
                     if let Ok(actual) = win.inner_size() {
-                        eprintln!("[window_geometry] verify inner_size after set: {}x{} physical", actual.width, actual.height);
+                        eprintln!("[window_geometry] set_size OK, inner_size now {}x{} physical", actual.width, actual.height);
                     }
                 }
                 Err(e) => eprintln!("[window_geometry] set_size failed: {e:?}"),
             }
+            // 2026-06-02: 恢复上次所在显示器的位置（旧文件无 x/y → 跳过）。
+            if let (Some(x), Some(y)) = (g.x, g.y) {
+                eprintln!("[window_geometry] restoring position ({x},{y})");
+                if let Err(e) = win.set_position(PhysicalPosition::new(x, y)) {
+                    eprintln!("[window_geometry] set_position failed: {e:?}");
+                }
+            }
         }
     }
-    // 不论是否恢复了 size，都 clamp 一次 position —— 也修 conf.json
-    // 默认 x 在小屏上落到屏外的情况。
+    // 不论是否恢复了 size/pos，都 clamp 一次 —— 现在 clamp 到「恢复后所在的
+    // 显示器」（上次那块），不强制主屏；也修 conf.json 默认 x 落屏外的情况。
     clamp_position_to_screen(win);
 }
 
 #[derive(Default)]
 struct DebouncerState {
-    last_resize_at: Option<Instant>,
+    last_event_at: Option<Instant>,
     pending: Option<WindowGeometry>,
     timer_armed: bool,
 }
 
 /// 防抖落盘。挂在 Tauri app state 上，单例。clone() 廉价（Arc）。
+/// 同时服务 resize（尺寸变）和 move（位置变）—— 名字保留 `ResizeDebouncer`
+/// 以免改动 lib.rs 的 manage()/try_state() 类型签名。
 #[derive(Clone, Default)]
 pub struct ResizeDebouncer {
     state: Arc<Mutex<DebouncerState>>,
@@ -157,26 +206,31 @@ impl ResizeDebouncer {
         Self::default()
     }
 
+    /// resize 事件：尺寸来自事件 payload（physical），位置现读。
     pub fn on_resize(&self, win: &Window, physical: PhysicalSize<u32>) {
-        let scale = win.scale_factor().unwrap_or(1.0);
-        let w = (physical.width as f64 / scale).round() as u32;
-        let h = (physical.height as f64 / scale).round() as u32;
-        eprintln!("[window_geometry] on_resize physical={}x{} scale={} logical={}x{}", physical.width, physical.height, scale, w, h);
-        if w < MIN_W || h < MIN_H {
-            eprintln!("[window_geometry] rejected: below MIN_W={} MIN_H={}", MIN_W, MIN_H);
-            return;
-        }
-        // 2026-05-30 bug fix：用户拖大窗口时，如果右/下边超出屏幕，
-        // 立即把窗口往左/上移回屏内，避免"卡在右下角部分超屏"。
-        // 用 webview_windows() 查找 main 窗口（Window 没暴露 label，要走 AppHandle）
+        eprintln!("[window_geometry] on_resize physical={}x{}", physical.width, physical.height);
+        // 2026-05-30 bug fix：拖大窗口时若超屏，立即 clamp 回屏内。
         if let Some(main) = win.app_handle().get_webview_window("main") {
             clamp_position_to_screen(&main);
         }
-        let g = WindowGeometry { width: w, height: h };
+        if let Some(g) = build_geometry(win, Some(physical)) {
+            self.schedule_save(g);
+        }
+    }
 
+    /// 2026-06-02: move 事件 → 持久化位置（桌宠记住用户放的显示器）。
+    /// 尺寸现读（拖动不改尺寸，但一并存以保持文件完整）。
+    pub fn on_move(&self, win: &Window) {
+        if let Some(g) = build_geometry(win, None) {
+            eprintln!("[window_geometry] on_move pos=({:?},{:?})", g.x, g.y);
+            self.schedule_save(g);
+        }
+    }
+
+    fn schedule_save(&self, g: WindowGeometry) {
         let arm_timer = {
             let mut st = self.state.lock().unwrap();
-            st.last_resize_at = Some(Instant::now());
+            st.last_event_at = Some(Instant::now());
             st.pending = Some(g);
             if st.timer_armed {
                 false
@@ -195,18 +249,18 @@ impl ResizeDebouncer {
             std::thread::sleep(Duration::from_millis(DEBOUNCE_MS));
             let to_save = {
                 let mut st = state_clone.lock().unwrap();
-                match st.last_resize_at {
+                match st.last_event_at {
                     Some(t) if t.elapsed() >= Duration::from_millis(DEBOUNCE_MS) => {
                         let g = st.pending.take();
                         st.timer_armed = false;
-                        st.last_resize_at = None;
+                        st.last_event_at = None;
                         g
                     }
                     _ => continue,
                 }
             };
             if let Some(g) = to_save {
-                eprintln!("[window_geometry] flushing {}x{} to disk", g.width, g.height);
+                eprintln!("[window_geometry] flushing {}x{} pos={:?},{:?} to disk", g.width, g.height, g.x, g.y);
                 match save(g) {
                     Ok(()) => eprintln!("[window_geometry] saved OK"),
                     Err(e) => eprintln!("[window_geometry] save failed: {e:?}"),
@@ -223,14 +277,9 @@ pub fn get_saved_window_geometry() -> Option<WindowGeometry> {
 }
 
 /// 2026-05-31 restore — Defense in depth：本命令以前同时 `win.set_size(...)`
-/// 和 `save(...)`。commit 14a58f5 (fix(window): remove front-end resize
-/// feedback loop) 已删了前端调用方，但本命令的 set_size 自身仍是潜在反馈源
-/// —— 任何前端误调（甚至外部工具调用）都会把 webview client-area 当 outer
-/// size 重设 → 缩水反馈环。
-///
-/// 修复：去掉 `win.set_size` 调用，命令变成纯写盘。运行时尺寸调整由用户手动
-/// 拖拽 + `WindowEvent::Resized → ResizeDebouncer` 这一条权威路径负责。本命令
-/// 仅供未来「explicit set」场景使用（写盘记录用户意图），不直接驱动 OS。
+/// 和 `save(...)`。commit 14a58f5 已删了前端调用方，但 set_size 自身仍是潜在
+/// 反馈源。修复：去掉 `win.set_size`，命令变成纯写盘。运行时尺寸/位置调整由
+/// 用户拖拽 + `WindowEvent::Resized/Moved → ResizeDebouncer` 这一条权威路径负责。
 #[tauri::command]
 pub fn set_window_geometry(
     _app: tauri::AppHandle,
@@ -240,6 +289,8 @@ pub fn set_window_geometry(
     if width < MIN_W || height < MIN_H || width > MAX_W || height > MAX_H {
         return Err(format!("out of range: {width}x{height}"));
     }
-    save(WindowGeometry { width, height }).map_err(|e| e.to_string())?;
+    // 仅显式设尺寸时，位置维持已存值（读旧文件取 x/y；无则 None）。
+    let (x, y) = load().map(|g| (g.x, g.y)).unwrap_or((None, None));
+    save(WindowGeometry { width, height, x, y }).map_err(|e| e.to_string())?;
     Ok(())
 }
