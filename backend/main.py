@@ -617,6 +617,14 @@ def _make_str_llm_call(provider, *, max_tokens: int = 512):
     return _call
 
 
+# ─── superpowers Layer 1A/1B 决策2：plan-confirm 硬门 ────────────────
+# code 模式非平凡任务出 plan 后，_run_chat（后台任务）在此 Future 上 await，
+# 等前端点 [执行]/[取消] → plan_confirm WS handler set_result → 继续/取消。
+# 后台任务 await 不阻塞 WS recv loop，所以无需抽取 ReAct 块（最小改动）。
+# 单用户桌宠：按 session_id key 足够（code session id 唯一；门只在 code 模式触发）。
+_PLAN_CONFIRM_WAITERS: dict[str, "asyncio.Future[str]"] = {}
+
+
 # ─── WI-T2.1 v3 build_agent 工厂（接电 VerifyGate）─────────────────
 #
 # Testability refactor: AgentLoop 构造逻辑从 chat handler inline 抽出，
@@ -799,8 +807,11 @@ try:
 
     # P4-S15: SessionDB at <data>/state.db, side-by-side with the legacy
     # memory.db. on_message_written hook will be wired to VectorWorker.enqueue
-    # in lifespan once the worker has started, so embeddings backfill
-    # automatically as new turns hit the DB.
+    # in lifespan once the worker has started, so **new** turns auto-embed as
+    # they hit the DB. NOTE: live enqueue only covers new turns — it does NOT
+    # backfill gaps (worker drop / encode failure / historical NULL rows). The
+    # lifespan fires an explicit backfill_missing() task after worker start to
+    # close those gaps (2026-06-02 audit FATAL-A); see _vector_backfill_bg.
     _state_db_path = _l1_dir / "state.db"
     _session_db = _SessionDB(db_path=_state_db_path)
 
@@ -1536,6 +1547,26 @@ async def lifespan(app: FastAPI):
                 "p4_vector_worker_ready",
                 facts_extract=config.memory.v2.facts_extract,
             )
+            # 2026-06-02 记忆审计 FATAL-A 修复：自动 backfill 安全网。
+            # 在此之前 backfill_missing() 只在手动脚本（scripts/backfill_vectors）
+            # 里调，lifespan 从不调用 —— 任何 embedding 缺口（worker 关机丢最后
+            # 一批 / encode 失败 / 子进程崩）都会让 messages.embedding 永久 IS
+            # NULL 且无声，向量召回永远漏掉这些消息（"刚说的话下次不记得"）。
+            # 桌宠用户永远不会手动跑脚本。这里在 worker 起来后 fire-and-forget
+            # 跑一次回填：backfill_missing 内部自带 embedder warmup + 分批 sleep
+            # 礼让实时 enqueue（vector_worker.py:198-208），不阻塞冷启动。
+            async def _vector_backfill_bg() -> None:
+                try:
+                    # 等 embedder 暖机 + 冷启动峰值过去再回填，别和首轮抢资源。
+                    await asyncio.sleep(60.0)
+                    _n = await _vw.backfill_missing()
+                    if _n:
+                        logger.info("p4_vector_backfill_done", processed=_n)
+                except Exception as _bf_exc:  # noqa: BLE001
+                    logger.warning(
+                        "p4_vector_backfill_failed", error=str(_bf_exc)
+                    )
+            asyncio.create_task(_vector_backfill_bg())
         except Exception as exc:
             logger.warning("p4_vector_worker_start_failed", error=str(exc))
     # 记忆系统升级 WI-M1.7: reflection 低频定时任务。flag reflection 开 →
@@ -3689,6 +3720,25 @@ async def control_channel(ws: WebSocket):
                 await ws.send_json(_interrupt_evt)
                 await _broadcast_default_chat_peers(ws, _interrupt_evt)
 
+            elif msg_type == "plan_confirm":
+                # superpowers 决策2 — plan-confirm 硬门的用户裁决。
+                # 前端 PlanCard 的 [执行]/[取消] 按钮发来 {session_id, decision}。
+                # set_result 唤醒挂在 _PLAN_CONFIRM_WAITERS 上的 _run_chat 协程。
+                payload = raw.get("payload", {}) or {}
+                _csid = payload.get("session_id") or session_id
+                _decision = payload.get("decision") or "go"
+                _waiter = _PLAN_CONFIRM_WAITERS.get(_csid)
+                if _waiter is not None and not _waiter.done():
+                    _waiter.set_result("go" if _decision == "go" else "cancel")
+                    logger.info(
+                        "plan_confirm_received sid=%s decision=%s", _csid, _decision
+                    )
+                else:
+                    logger.info(
+                        "plan_confirm_no_waiter sid=%s (timed out / already resolved)",
+                        _csid,
+                    )
+
             elif msg_type == "code_session_delete":
                 # P4-S24 followup: user clicked 🗑️ on a project tile / sidebar
                 # entry and confirmed the dialog. Drop the in-memory state
@@ -4793,9 +4843,16 @@ async def control_channel(ws: WebSocket):
                         # requests, do a structured-output plan call BEFORE
                         # the ReAct loop. The plan is sent to the frontend
                         # for visibility and injected into the message stack
-                        # so the LLM stays anchored. Auto-confirm (no user
-                        # gate) for now — the 停止 button is the escape
-                        # hatch if the plan looks wrong.
+                        # so the LLM stays anchored.
+                        #
+                        # superpowers Layer 1A/1B 决策2 — plan-confirm 硬门:
+                        # features.plan_confirm_gate ON 时,出 plan 后 emit
+                        # awaiting_confirm + await 用户点 [执行]/[取消] 再跑 ReAct。
+                        # OFF（默认）= 旧 auto-confirm 行为（停止 按钮是逃生口）。
+                        _gate_on = bool(
+                            getattr(config.features, "plan_confirm_gate", False)
+                        ) and _in_code_mode
+                        _awaiting_confirm = False
                         try:
                             from agent.plan import (
                                 maybe_extract_plan as _maybe_plan,
@@ -4817,6 +4874,8 @@ async def control_channel(ws: WebSocket):
                                             {"title": s.title, "detail": s.detail}
                                             for s in _plan.steps
                                         ],
+                                        # 决策2: 硬门开时前端渲染 [执行]/[取消] 按钮
+                                        "awaiting_confirm": _gate_on,
                                     },
                                 }
                                 await _ws.send_json(_plan_evt)
@@ -4829,8 +4888,49 @@ async def control_channel(ws: WebSocket):
                                 while _insert_at < len(_msgs) and _msgs[_insert_at].get("role") == "system":
                                     _insert_at += 1
                                 _msgs.insert(_insert_at, _plan_msg)
+                                _awaiting_confirm = _gate_on
                         except Exception as _exc:  # noqa: BLE001
                             logger.debug("p4s25_plan_skipped error=%s", _exc)
+
+                        # 决策2 plan-confirm 硬门：在 plan 展示后挂起，等前端确认。
+                        # _run_chat 是后台 task → 此 await 不阻塞 WS recv loop，
+                        # plan_confirm handler 会 set_result 唤醒本协程。
+                        if _awaiting_confirm:
+                            _confirm_fut: "asyncio.Future[str]" = (
+                                asyncio.get_event_loop().create_future()
+                            )
+                            _PLAN_CONFIRM_WAITERS[_sid] = _confirm_fut
+                            logger.info("plan_confirm_gate_awaiting sid=%s", _sid)
+                            try:
+                                _decision = await asyncio.wait_for(
+                                    _confirm_fut, timeout=900
+                                )
+                            except asyncio.TimeoutError:
+                                _decision = "cancel"
+                                logger.info("plan_confirm_gate_timeout sid=%s", _sid)
+                            finally:
+                                _PLAN_CONFIRM_WAITERS.pop(_sid, None)
+                            if _decision != "go":
+                                _cancel_evt = {
+                                    "type": "chat_v2_plan_cancelled",
+                                    "payload": {"session_id": _sid},
+                                }
+                                await _ws.send_json(_cancel_evt)
+                                await _broadcast_default_chat_peers(_ws, _cancel_evt)
+                                _sa_cancel = (
+                                    service_context.get("session_activity")
+                                    if _in_code_mode else None
+                                )
+                                if _sa_cancel is not None:
+                                    try:
+                                        await _sa_cancel.set_status(_sid, "idle")
+                                    except Exception:  # noqa: BLE001
+                                        pass
+                                logger.info(
+                                    "plan_confirm_gate_cancelled sid=%s", _sid
+                                )
+                                return
+                            logger.info("plan_confirm_gate_go sid=%s", _sid)
 
                         # P5-S2 Hook A: completion guard probe.
                         #
