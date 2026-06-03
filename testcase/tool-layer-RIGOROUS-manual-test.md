@@ -1,7 +1,9 @@
 # 工具层 极其严格 手工测试文档（Tool Layer — Rigorous Manual Test）
 
-> **状态**: v3（已纳入 opus 第 1、2 轮挑战修正 + **测试设计期发现并修复 1 个真 bug**：
->   agent_parallel/computer_use 非法 permission_category；待第 3 轮）
+> **状态**: **v4 — GO（opus 子代理挑战迭代 ×3 完成，最终门裁决 GO 无阻塞）**。
+>   3 轮共修：R1 工具名/toolset/dangerous/模式前提/flag 前置矩阵等硬错；R2 坐实 5 悬案 +
+>   **测试设计期发现并修复 1 个真 bug**（agent_parallel/computer_use 非法 permission_category，gate 必拒）；
+>   R3 验证修复正确 + 收尾。可供 windows-mcp 真机照测。
 > **被测**: DeskPet 工具层全部生产功能 —— 全部工具 + 中间件横切（权限门 / 熔断 /
 >   last-mile artifact+receipt / verify gate / 错误信封）+ 配置开关 + 已修 bug 回归 + 健壮性边角。
 > **测试人立场**: 严谨测试员，**默认怀疑"它能用"**。每个 case 必须满足"判定证据"列出的**全部**
@@ -100,6 +102,7 @@
 ## TC-8 web_fetch（web，network category）— both
 - 操作：`抓取 https://example.com 的内容`。
 - 证据：L2 含 example.com 真实文案（"Example Domain"）+ L3 `web_fetch` dispatch。FAIL：返回臆造内容。
+- 注（R3）：network category **非 default-allow**（gate `_DEFAULT_ALLOW` 仅 read_file）→ web_fetch/web_search **可能弹橙窗**（或走缓存放行）；本 case 验 dispatch+结果，弹窗有无不作判据。
 
 ## TC-8b web_extract_article / web_crawl / web_read_sitemap（web，R1-M1 补）— both
 - 操作：分别 `提取这篇文章正文 <某新闻URL>` / `爬取 <站点> 的页面` / `读取 <站点>/sitemap.xml`。
@@ -134,7 +137,7 @@
 
 ## TC-15 todo_write（**toolset=code**，被 code_tools 覆盖，R1-W7）— code
 - 操作：`做一个三步计划：先看代码、再改、最后测`。
-- 证据：L2 tile todos 区 3 条 + 状态随执行更新 + L3 `todo_write` dispatch。（禁它需 `disabled_toolsets=["code"]`）
+- 证据：L2 tile todos 区 3 条 + 状态随执行更新 + L3 `todo_write` dispatch（状态推进时可顺带观察 `todo_complete` dispatch）。（禁它需 `disabled_toolsets=["code"]`）
 
 ## TC-16 agent（code）/ TC-17 agent_parallel（**control**，需 `[features] agent_parallel=true`，R1-M7）— code
 - TC-16：`用一个子代理分析项目目录结构并总结` → L3 `agent` dispatch + 子 session。
@@ -212,7 +215,7 @@
 ## TC-28 verify gate（off/shadow/strict，R1-WK2 前置）— code
 - **前置铁律**：mode≠off **必须**同时 `emit_receipts=true`，否则启动抛 VG-INVARIANT-1 ConfigError（起不来）。
 - off：触发"声称做完"任务 → 直接完成（基线）。
-- shadow：同任务 → 完成（不拦），日志精确出现 `verify_gate shadow: N unmatched claims (would block in strict)`（verify_gate.py:311）。
+- shadow：同任务 → 完成（不拦），日志精确出现 `verify_gate shadow: N unmatched claims (would block in strict)`（verify_gate.py:311-314）。
 - strict：验**不误杀真任务** — 真建文件任务 → 完成、**无** `verify_gate_nudge_injected`；日志 `verify_gate_init mode=strict`。
 - 证据：shadow L3 上述原文 + 任务完成；strict L3 mode=strict + 真任务不被拦。★真"拦 fake"由单测覆盖。**测后恢复基线**。
 
