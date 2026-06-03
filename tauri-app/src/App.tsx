@@ -1184,43 +1184,69 @@ function App() {
   // in Live2DCanvas (already wired to setDragState).
   useEffect(() => {
     let unlisten: (() => void) | null = null;
+    let snapTimer: number | null = null;
     let cancelled = false;
     (async () => {
       try {
         const { getCurrentWindow, currentMonitor } = await import("@tauri-apps/api/window");
         const w = getCurrentWindow();
         const off = await w.onMoved(async () => {
-          try {
-            const pos = await w.outerPosition();
-            const size = await w.outerSize();
-            const monitor = await currentMonitor();
-            if (!monitor) return;
-            const edge: Edge = pickEdge(
-              { x: pos.x, y: pos.y, w: size.width, h: size.height },
-              { width: monitor.size.width, height: monitor.size.height },
-              100,
-            );
-            const now = performance.now();
-            liveRef.current?.setEdgeAttached(edge, now);
-            if (edge !== null) {
-              // Snap by re-positioning slightly out past edge.
-              const { snapTarget } = await import("./pet-anim/edgeWatcher");
-              const t = snapTarget(
-                { x: pos.x, y: pos.y, w: size.width, h: size.height },
-                { width: monitor.size.width, height: monitor.size.height },
-                edge,
-                10,
-              );
-              if (t) {
-                const { PhysicalPosition } = await import(
-                  "@tauri-apps/api/window"
-                );
-                await w.setPosition(new PhysicalPosition(t.x, t.y));
-              }
-            }
-          } catch {
-            /* silent — Tauri API issue */
+          // 2026-06-03 多屏拖动修复：onMoved 在拖动中**持续触发**。原来在这里
+          // 立即 pickEdge + setPosition 吸边 → 拖到屏幕边缘(含两屏交界)就被吸住、
+          // 跨不过去，且 setPosition 又触发 onMoved → 振荡抖动（用户实测：从三星
+          // 拖不回小米，剧烈抖动后弹回三星）。改为**防抖**：拖动停下(onMoved 静止
+          // ~250ms = 松手)后才吸一次，拖动期间不干预位置 → 可自由跨屏。
+          if (snapTimer !== null) {
+            window.clearTimeout(snapTimer);
           }
+          snapTimer = window.setTimeout(async () => {
+            try {
+              const pos = await w.outerPosition();
+              const size = await w.outerSize();
+              const monitor = await currentMonitor();
+              if (!monitor) return;
+              // 2026-06-03 多屏坐标修复：outerPosition() 返回**全局**物理坐标
+              // （非主屏从 monitor.position 偏移起算，如小米屏 x 从 3840 起），而
+              // pickEdge/snapTarget 按「显示器局部 0..size」算边缘。必须先减去显示器
+              // 原点转成局部坐标，吸附结果再加回原点 —— 否则在非主屏上 pickEdge 永远
+              // 误判「右边缘」（全局 x ≫ 局部宽），snapTarget 把桌宠 setPosition 回主屏
+              // （用户实测：拖到小米后剧烈抖动弹回三星）。
+              const mx = monitor.position.x;
+              const my = monitor.position.y;
+              const localRect = {
+                x: pos.x - mx,
+                y: pos.y - my,
+                w: size.width,
+                h: size.height,
+              };
+              const screen = {
+                width: monitor.size.width,
+                height: monitor.size.height,
+              };
+              const edge: Edge = pickEdge(localRect, screen, 100);
+              const now = performance.now();
+              liveRef.current?.setEdgeAttached(edge, now);
+              if (edge !== null) {
+                // Snap by re-positioning slightly out past edge.
+                const { snapTarget } = await import("./pet-anim/edgeWatcher");
+                const t = snapTarget(localRect, screen, edge, 10);
+                if (t) {
+                  // 局部吸附目标加回显示器原点 → 全局坐标；仅当与当前位置有
+                  // 意义差异时才 setPosition，防「setPosition→onMoved→再吸」自触发循环。
+                  const gx = t.x + mx;
+                  const gy = t.y + my;
+                  if (Math.abs(gx - pos.x) > 2 || Math.abs(gy - pos.y) > 2) {
+                    const { PhysicalPosition } = await import(
+                      "@tauri-apps/api/window"
+                    );
+                    await w.setPosition(new PhysicalPosition(gx, gy));
+                  }
+                }
+              }
+            } catch {
+              /* silent — Tauri API issue */
+            }
+          }, 250);
         });
         if (cancelled) {
           off();
@@ -1233,6 +1259,9 @@ function App() {
     })();
     return () => {
       cancelled = true;
+      if (snapTimer !== null) {
+        window.clearTimeout(snapTimer);
+      }
       unlisten?.();
     };
   }, []);

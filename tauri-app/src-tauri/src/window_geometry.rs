@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use tauri::{LogicalSize, Manager, PhysicalPosition, PhysicalSize, WebviewWindow, Window};
+use tauri::{LogicalSize, PhysicalPosition, PhysicalSize, WebviewWindow, Window};
 
 use crate::paths;
 
@@ -191,6 +191,10 @@ struct DebouncerState {
     last_event_at: Option<Instant>,
     pending: Option<WindowGeometry>,
     timer_armed: bool,
+    /// 2026-06-03 跨 DPI 尺寸漂移修复：权威逻辑尺寸（pin）。首个 resize/move
+    /// 事件时从已保存(boot 恢复)的尺寸初始化；此后 resize/move 一律沿用此值，
+    /// 不再用 physical/scale 反算的尺寸覆盖它。详见 `pin_size`。
+    committed_size: Option<(u32, u32)>,
 }
 
 /// 防抖落盘。挂在 Tauri app state 上，单例。clone() 廉价（Arc）。
@@ -207,14 +211,18 @@ impl ResizeDebouncer {
     }
 
     /// resize 事件：尺寸来自事件 payload（physical），位置现读。
+    ///
+    /// 2026-06-03 多屏 DPI 修复：移除了原先在此调 `clamp_position_to_screen` 的
+    /// 逻辑。原意「拖大窗口超屏就拽回」，但在**跨不同 DPI 显示器拖动**时灾难性：
+    /// 跨 DPI 边界 → WM_DPICHANGED → Resized → clamp → set_position → 又跨边界 →
+    /// Resized → … 形成振荡（桌宠剧烈抖动 + 被 current_monitor 误判拽回主屏，
+    /// 无法从主屏拖到副屏）。clamp 只在启动时 apply_saved_geometry 跑一次即可，
+    /// 不在运行期 resize/drag 干预位置。
     pub fn on_resize(&self, win: &Window, physical: PhysicalSize<u32>) {
         eprintln!("[window_geometry] on_resize physical={}x{}", physical.width, physical.height);
-        // 2026-05-30 bug fix：拖大窗口时若超屏，立即 clamp 回屏内。
-        if let Some(main) = win.app_handle().get_webview_window("main") {
-            clamp_position_to_screen(&main);
-        }
         if let Some(g) = build_geometry(win, Some(physical)) {
-            self.schedule_save(g);
+            // 跨 DPI 尺寸漂移修复：用 pin 住的权威逻辑尺寸，不让 DPI 变化改尺寸。
+            self.schedule_save(self.pin_size(g));
         }
     }
 
@@ -222,9 +230,41 @@ impl ResizeDebouncer {
     /// 尺寸现读（拖动不改尺寸，但一并存以保持文件完整）。
     pub fn on_move(&self, win: &Window) {
         if let Some(g) = build_geometry(win, None) {
-            eprintln!("[window_geometry] on_move pos=({:?},{:?})", g.x, g.y);
+            // 跨 DPI 尺寸漂移修复：move 路径同样 pin 尺寸（拖动只改位置不改尺寸）。
+            let g = self.pin_size(g);
+            eprintln!("[window_geometry] on_move pos=({:?},{:?}) size={}x{}", g.x, g.y, g.width, g.height);
             self.schedule_save(g);
         }
+    }
+
+    /// 2026-06-03 跨 DPI 尺寸漂移修复（"拖几次只剩一半"根因）。
+    ///
+    /// `build_geometry` 用 `physical_size / scale_factor` 反算逻辑尺寸。跨不同 DPI
+    /// 显示器拖动时，Resized 携带的 physical（尤其窗口横跨两屏的瞬间）与
+    /// `scale_factor()` 不总是同拍 → 反算的逻辑尺寸有误差，经 resize+move 两条持久化
+    /// 路径反复写回、多次跨屏累积 → 逻辑尺寸单调漂移（实测 375×610 → 360×657）→
+    /// 窗口窄于角色 → 桌宠只显示一半。
+    ///
+    /// 本桌宠窗口**无用户改尺寸入口**（无边框拖拽 / 无缩放滑块；前端 resize 持久化
+    /// 已于 2026-05-31 删除）——逻辑尺寸理应 boot 后恒定。故 **pin 住**：首次事件以
+    /// 已保存(boot apply_saved_geometry 恢复)的尺寸为权威值，此后所有 resize/move 一律
+    /// 沿用，DPI 变化只让窗口物理尺寸自适应、绝不改持久化的逻辑尺寸。若将来加入真·
+    /// 缩放功能，应由该功能直接更新 `committed_size`（或走独立命令路径）。
+    fn pin_size(&self, mut g: WindowGeometry) -> WindowGeometry {
+        let mut st = self.state.lock().unwrap();
+        let (w, h) = match st.committed_size {
+            Some(s) => s,
+            None => {
+                let s = load()
+                    .map(|saved| (saved.width, saved.height))
+                    .unwrap_or((g.width, g.height));
+                st.committed_size = Some(s);
+                s
+            }
+        };
+        g.width = w;
+        g.height = h;
+        g
     }
 
     fn schedule_save(&self, g: WindowGeometry) {
