@@ -309,6 +309,25 @@ export function splitToolError(raw: string): SplitToolErrorResult {
   if (Array.isArray(obj.examples)) {
     examples = obj.examples;
   }
+  // last-mile envelope 包装后，工具自身的 {ok:false, hint, examples} 被套进
+  // envelope.result（JSON 字符串）→ 顶层取不到 hint，金黄修复建议卡不触发。
+  // 兜底：当顶层无 hint 时，解包 envelope.result 再取 hint/examples（与
+  // ArtifactCard.extractArtifactsFromResult 的嵌套兜底同一模式）。
+  if (hint === null && typeof obj.result === "string") {
+    try {
+      const inner = JSON.parse(obj.result) as Record<string, unknown>;
+      if (inner && typeof inner === "object") {
+        if (typeof inner.hint === "string" && inner.hint.trim().length > 0) {
+          hint = inner.hint;
+        }
+        if (examples === null && Array.isArray(inner.examples)) {
+          examples = inner.examples;
+        }
+      }
+    } catch {
+      /* envelope.result 不是 JSON → 忽略，保持 hint=null */
+    }
+  }
   return {
     body: JSON.stringify(parsed, null, 2),
     hint,

@@ -77,11 +77,21 @@ def _add_element(document, el: dict[str, Any]) -> None:
         for _k in ("heading", "paragraph", "table", "page_break"):
             if _k in el:
                 el = dict(el)
+                inner = el[_k]
                 el["type"] = _k
-                if _k in ("heading", "paragraph") and "text" not in el:
-                    el["text"] = el[_k]
+                # LLM 实际常发**嵌套** dict 格式 {"heading":{"text":..,"level":..}}
+                # / {"paragraph":{"text":..}} / {"table":{"rows":..,"header":..}}。
+                # 此前把整个内层 dict 直接赋给 el["text"]，渲染出 str(dict)
+                # 字面量（如 "{'text': '团队周报', 'level': 1}"）→ 正文全是 dict
+                # 文本。修复：内层是 dict → 平铺其字段到 el；是标量 → 按旧简写
+                # ({"heading":"文字"} / {"paragraph":"文字"} / {"table":[[...]]}) 取值。
+                if isinstance(inner, dict):
+                    for _ik, _iv in inner.items():
+                        el.setdefault(_ik, _iv)
+                elif _k in ("heading", "paragraph") and "text" not in el:
+                    el["text"] = inner
                 elif _k == "table" and "rows" not in el:
-                    el["rows"] = el[_k]
+                    el["rows"] = inner
                 break
     etype = (el.get("type") or "paragraph").lower()
     if etype == "heading":
