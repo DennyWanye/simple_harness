@@ -196,6 +196,11 @@ a = Analysis(
         "jupyter",
         "pytest",
         "_pytest",
+        # FlagEmbedding 推理经 transformers.trainer 拉入 datasets(训练用)，
+        # 但推理 lazy `is_datasets_available()` 可选；其 PyInstaller 隔离
+        # 子进程 bindepend 导入会崩(SubprocessDiedError)→ 排除即修复 +
+        # 减体积，运行时 is_datasets_available()→False 安全降级。
+        "datasets",
     ],
     noarchive=False,
 )
