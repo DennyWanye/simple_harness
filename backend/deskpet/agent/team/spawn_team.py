@@ -169,6 +169,7 @@ async def spawn_team(
     timeout_seconds: float = _DEFAULT_TIMEOUT_SECONDS,
     parent_goal_text: str | None = None,
     parent_goal_id: str | None = None,
+    task_graph_store: Any = None,
 ) -> dict[str, Any]:
     """Orchestrate a multi-teammate team.
 
@@ -189,8 +190,12 @@ async def spawn_team(
             we return what's done so far + ``timed_out=True``.
         parent_goal_text: Optional user-level goal text injected into each
             teammate's charter as a drift-prevention anchor.
-        parent_goal_id: Optional goal ID for correlation (not currently
-            stored, reserved for future use).
+        parent_goal_id: Optional goal ID threaded into build_teammate_tools
+            as ``goal_id`` so sub-agents can read/write the shared task graph.
+        task_graph_store: Optional :class:`TaskGraphStore` instance.
+            When provided together with ``parent_goal_id``, the two extra
+            ``goal_task_list``/``goal_task_update`` tools are added to each
+            teammate's tool set (BC: None → original 5-tool set).
 
     Returns:
         ``{ok, team_id, elapsed_ms, results: [task_dict, ...], timed_out,
@@ -241,7 +246,11 @@ async def spawn_team(
             parent_goal_text=parent_goal_text,
         )
         tool_set = build_teammate_tools(
-            store=store, team_id=team_id, teammate_id=tm_id
+            store=store,
+            team_id=team_id,
+            teammate_id=tm_id,
+            task_graph_store=task_graph_store,
+            goal_id=parent_goal_id,
         )
         teammate_coros.append(
             _run_teammate(teammate_runner, charter, tm_id, tool_set)

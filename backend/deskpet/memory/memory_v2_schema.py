@@ -185,6 +185,29 @@ CREATE INDEX IF NOT EXISTS idx_session_goals_sid
     ON session_goals(session_id, status);
 """
 
+# ─────────────────────────────────────────────────────────────────────
+# goal-completion FP-2 — task graph（WI-1.2，冻结 §1.3）
+# ─────────────────────────────────────────────────────────────────────
+# ⚠️ 故意 NOT 放进共享 `_DDL`：同 session_goals 理由，flag-OFF 用户
+# DB 字节不变（R-T5 字节基线）。只有 TaskGraphStore 真正落库时
+# （goal_mode ON）才触发建表。
+_GOAL_TASKS_DDL = """
+CREATE TABLE IF NOT EXISTS goal_tasks (
+    task_id     TEXT    PRIMARY KEY,
+    goal_id     TEXT    NOT NULL,
+    session_id  TEXT    NOT NULL,
+    title       TEXT    NOT NULL,
+    status      TEXT    NOT NULL DEFAULT 'pending',
+    depends_on  TEXT    NOT NULL DEFAULT '[]',
+    claimed_by  TEXT,
+    result      TEXT,
+    created_at  REAL    NOT NULL,
+    updated_at  REAL    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_goal_tasks_goal
+    ON goal_tasks(goal_id, status);
+"""
+
 # Cache so we don't re-run executescript every call. Keyed by absolute db path.
 _ensured: Set[str] = set()
 _lock = asyncio.Lock()
@@ -193,6 +216,10 @@ _lock = asyncio.Lock()
 # _SESSION_GOALS_DDL above — kept out of the shared _DDL on purpose).
 _goals_ensured: Set[str] = set()
 _goals_lock = asyncio.Lock()
+
+# Separate cache + lock for goal_tasks (FP-2 WI-1.2, same flag-OFF moat).
+_goal_tasks_ensured: Set[str] = set()
+_goal_tasks_lock = asyncio.Lock()
 
 
 async def ensure_memory_v2_tables(db_path: str | Path) -> None:
@@ -263,9 +290,33 @@ async def ensure_session_goals_table(db_path: str | Path) -> None:
         log.debug("session_goals table ensured for %s", key)
 
 
+async def ensure_goal_tasks_table(db_path: str | Path) -> None:
+    """Idempotent CREATE TABLE IF NOT EXISTS for ``goal_tasks`` only.
+
+    Deliberately separate from :func:`ensure_memory_v2_tables` and
+    :func:`ensure_session_goals_table` so the task-graph table is created
+    ONLY when TaskGraphStore actually persists (goal_mode ON).
+    This preserves the "flag-OFF → DB bytes unchanged" moat (R-T5).
+    Per-path cached like the shared ensure. Does NOT bump user_version.
+    """
+    key = str(Path(db_path).resolve())
+    if key in _goal_tasks_ensured:
+        return
+    async with _goal_tasks_lock:
+        if key in _goal_tasks_ensured:
+            return
+        async with aiosqlite.connect(db_path) as conn:
+            await conn.execute("PRAGMA busy_timeout=5000")
+            await conn.executescript(_GOAL_TASKS_DDL)
+            await conn.commit()
+        _goal_tasks_ensured.add(key)
+        log.debug("goal_tasks table ensured for %s", key)
+
+
 def _reset_cache_for_tests() -> None:
     """Test helper. Clears the per-path cache so a fresh tmp_path DB
     re-runs DDL. Never call from production code.
     """
     _ensured.clear()
     _goals_ensured.clear()
+    _goal_tasks_ensured.clear()

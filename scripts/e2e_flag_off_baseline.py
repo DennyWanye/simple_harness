@@ -37,6 +37,9 @@ async def _main() -> int:
     if "session_goals" in names:
         print("FAIL: session_goals table created with goal_mode OFF", file=sys.stderr)
         return 1
+    if "goal_tasks" in names:
+        print("FAIL: goal_tasks table created with goal_mode OFF", file=sys.stderr)
+        return 1
 
     # 字节快照（供后续 FP 比对 hash 漂移）
     with open(db_path, "rb") as f:
