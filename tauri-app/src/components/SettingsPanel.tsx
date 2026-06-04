@@ -26,6 +26,7 @@ import { EmbedderStatusCard } from "./EmbedderStatusCard";
 import { ModelContextCard } from "./ModelContextCard";
 import { SettingsProviders } from "./SettingsProviders";
 import { HiyoriMotionTuner } from "./HiyoriMotionTuner";
+import { formatUpdaterError } from "./updaterError";
 import type {
   DailyBudgetStatus,
   IncomingMessage,
@@ -193,6 +194,9 @@ export function SettingsPanel({
         {/* ================ 数据目录 (2026-05-21) ================ */}
         <DataDirSection />
 
+        {/* ================ 关于与更新 (2026-06-05) ================ */}
+        <UpdateSection />
+
         {/* ================ 危险区 (P3-S9) ================ */}
         <DangerZoneSection />
 
@@ -201,6 +205,187 @@ export function SettingsPanel({
             不再需要全局"保存"。关闭走顶部 X 按钮。 */}
       </div>
     </div>
+  );
+}
+
+// ----------------------------------------------------------------------
+// 关于与更新 (2026-06-05) — 手动"检查更新"入口。
+//
+// 底层走 tauri-plugin-updater：check() 拉 latest.json 比版本号；有新版本
+// 就 downloadAndInstall() 下载验签安装。Windows 下安装步骤执行时 app 会被
+// 安装器自动关闭（官方限制），装完拉起新版本，所以这里不需要手动 relaunch。
+//
+// 启动时的静默检查在 hooks/useUpdateChecker.ts；本组件是用户主动点的入口。
+// 两者用的是同一套 updater 配置（tauri.conf.json > plugins.updater）。
+// 错误文案翻译在 ./updaterError（抽出来便于纯函数单测）。
+// ----------------------------------------------------------------------
+
+type UpdatePhase =
+  | "idle"
+  | "checking"
+  | "latest"
+  | "available"
+  | "downloading"
+  | "done"
+  | "error";
+
+function UpdateSection() {
+  const [version, setVersion] = useState<string>("");
+  const [phase, setPhase] = useState<UpdatePhase>("idle");
+  const [errMsg, setErrMsg] = useState<string>("");
+  const [newVersion, setNewVersion] = useState<string>("");
+  const [notes, setNotes] = useState<string>("");
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(
+    null,
+  );
+  // check() 返回的 Update 对象，留到用户点"下载并安装"时用。
+  // 用 any 是因为只在 Tauri 运行时存在，避免给非 Tauri 预览构建引类型依赖。
+  const [pending, setPending] = useState<{ downloadAndInstall: (cb?: (e: unknown) => void) => Promise<void> } | null>(
+    null,
+  );
+
+  // 读当前版本号展示（来自 tauri.conf.json 的 version）。
+  useEffect(() => {
+    let alive = true;
+    import("@tauri-apps/api/app")
+      .then((m) => m.getVersion())
+      .then((v) => {
+        if (alive) setVersion(v);
+      })
+      .catch(() => {
+        /* 非 Tauri 预览构建 / 读不到版本 —— 不显示即可 */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const onCheck = useCallback(async () => {
+    setPhase("checking");
+    setErrMsg("");
+    try {
+      const mod = await import("@tauri-apps/plugin-updater").catch(() => null);
+      if (!mod) {
+        // 预览构建无 Tauri —— 直接当作"已是最新"，避免误报错误。
+        setPhase("latest");
+        return;
+      }
+      const update = await mod.check();
+      if (!update) {
+        setPhase("latest");
+        return;
+      }
+      setNewVersion(update.version);
+      setNotes(update.body ?? "");
+      setPending(update as unknown as typeof pending);
+      setPhase("available");
+    } catch (err) {
+      console.info("[updater] manual check failed:", err);
+      setErrMsg(formatUpdaterError(err));
+      setPhase("error");
+    }
+  }, []);
+
+  const onInstall = useCallback(async () => {
+    if (!pending) return;
+    setPhase("downloading");
+    setProgress({ done: 0, total: 0 });
+    try {
+      let total = 0;
+      let done = 0;
+      await pending.downloadAndInstall((e: unknown) => {
+        const ev = e as { event?: string; data?: { contentLength?: number; chunkLength?: number } };
+        if (ev.event === "Started") {
+          total = ev.data?.contentLength ?? 0;
+          setProgress({ done: 0, total });
+        } else if (ev.event === "Progress") {
+          done += ev.data?.chunkLength ?? 0;
+          setProgress({ done, total });
+        } else if (ev.event === "Finished") {
+          setProgress({ done: total, total });
+        }
+      });
+      // Windows 上一般走不到这里：安装步骤会自动退出 app。
+      setPhase("done");
+    } catch (err) {
+      console.info("[updater] download/install failed:", err);
+      setErrMsg(formatUpdaterError(err));
+      setPhase("error");
+    }
+  }, [pending]);
+
+  const pct =
+    progress && progress.total > 0
+      ? Math.min(100, Math.round((progress.done / progress.total) * 100))
+      : null;
+
+  return (
+    <section style={sectionStyle}>
+      <h3 style={h3Style}>关于与更新</h3>
+      <div style={statusStyle}>
+        当前版本：<strong>{version ? `v${version}` : "—"}</strong>
+      </div>
+
+      {phase === "latest" && (
+        <div style={statusStyle}>✅ 已是最新版本。</div>
+      )}
+
+      {phase === "available" && (
+        <div style={statusStyle}>
+          🎉 发现新版本 <strong>v{newVersion}</strong>
+          {notes ? (
+            <div style={{ marginTop: 6, color: "#475569", whiteSpace: "pre-wrap" }}>
+              {notes}
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {phase === "downloading" && (
+        <div style={statusStyle}>
+          正在下载并安装{pct !== null ? ` … ${pct}%` : "…"}
+          <div style={{ marginTop: 6, color: "#64748b", fontSize: 11.5 }}>
+            安装时 DeskPet 会自动关闭，请稍候它重新启动。
+          </div>
+        </div>
+      )}
+
+      {phase === "done" && (
+        <div style={statusStyle}>✅ 更新已安装，重启后生效。</div>
+      )}
+
+      {phase === "error" && (
+        <div style={{ ...statusStyle, borderColor: "#fecaca", background: "#fef2f2", color: "#b91c1c" }}>
+          {errMsg}
+        </div>
+      )}
+
+      <div style={btnRowStyle}>
+        {phase === "available" ? (
+          <button type="button" style={primaryBtnStyle} onClick={onInstall}>
+            下载并安装 v{newVersion}
+          </button>
+        ) : (
+          <button
+            type="button"
+            style={btnStyle}
+            onClick={onCheck}
+            disabled={phase === "checking" || phase === "downloading"}
+          >
+            {phase === "checking"
+              ? "检查中…"
+              : phase === "downloading"
+                ? "安装中…"
+                : "检查更新"}
+          </button>
+        )}
+      </div>
+
+      <p style={hintStyle}>
+        点击后会联网检查是否有新版本。发现新版本时下载安装包并自动校验签名，
+        确保来自官方发布。
+      </p>
+    </section>
   );
 }
 
@@ -959,6 +1144,13 @@ const btnStyle: React.CSSProperties = {
   fontWeight: 600,
   cursor: "pointer",
   transition: "background 120ms ease, border-color 120ms ease",
+};
+
+const primaryBtnStyle: React.CSSProperties = {
+  ...btnStyle,
+  border: "1px solid #2563eb",
+  background: "#2563eb",
+  color: "#ffffff",
 };
 
 const statusStyle: React.CSSProperties = {
