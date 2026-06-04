@@ -20,7 +20,7 @@ at the call site.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 
@@ -55,6 +55,13 @@ class SessionGoal:
     max_iterations: int = 10
     iterations_used: int = 0
     done: bool = False
+    # —— 新增（全默认值；goal_id="" 即未落库内存态，BC）——
+    goal_id: str = ""
+    status: str = "active"          # active | done | abandoned（落库权威）
+    progress: float = 0.0
+    criteria: Optional[str] = None
+    updated_at: float = 0.0
+    subgoals: list[str] = field(default_factory=list)
 
 
 class SessionGoalStore:
@@ -78,13 +85,18 @@ class SessionGoalStore:
         and ``done`` are reset to 0/False even when overwriting an
         existing entry (new goal = fresh counter).
         """
+        import uuid
+        now = time.time()
         goal = SessionGoal(
             session_id=session_id,
             text=text,
-            set_at=time.time(),
+            set_at=now,
             max_iterations=max_iterations,
             iterations_used=0,
             done=False,
+            goal_id=uuid.uuid4().hex,
+            status="active",
+            updated_at=now,
         )
         self._goals[session_id] = goal
         return goal
@@ -110,6 +122,8 @@ class SessionGoalStore:
         if goal is None:
             return False
         goal.done = True
+        goal.status = "done"
+        goal.updated_at = time.time()
         return True
 
     def increment_iteration(self, session_id: str) -> int:
