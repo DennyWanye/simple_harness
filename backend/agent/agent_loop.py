@@ -1089,6 +1089,14 @@ class AgentLoop:
                             pass
                         if not _done:
                             self.session_goal_store.increment_iteration(session_id)
+                            # T1：落库 iterations_used，重启不归零。safe-fail
+                            # 内置于 persist_iteration；getattr 兜底旧 store。
+                            _pit = getattr(
+                                self.session_goal_store,
+                                "persist_iteration", None,
+                            )
+                            if _pit is not None:
+                                await _pit(session_id)
                             # Append the assistant message that triggered
                             # this so the LLM sees its own prior end_turn
                             # output — symmetric with completion_probe /

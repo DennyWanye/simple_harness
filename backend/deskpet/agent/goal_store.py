@@ -19,6 +19,7 @@ at the call site.
 """
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import Optional
@@ -72,6 +73,77 @@ class SessionGoalStore:
 
     def __init__(self) -> None:
         self._goals: dict[str, SessionGoal] = {}
+        self._session_db = None          # set via bind_persistence
+        # /goal clear 落 abandoned 用：记下被清条目的 goal_id
+        self._last_cleared_goal_id: dict[str, str] = {}
+        self._logger = logging.getLogger("deskpet.agent.goal_store")
+
+    # ───────────────────── goal-completion FP-1 持久化 ────────────────
+    def bind_persistence(self, session_db: object) -> None:
+        """注入 SessionDB 句柄。未调 → 退化纯内存（BC + 测试隔离）。"""
+        self._session_db = session_db
+
+    async def persist(self, goal: SessionGoal) -> None:
+        """异步落库一条 goal。safe-fail：未 bind 或落库失败都不抛
+        （否则 _handle_goal 改 async 后异常冒泡到 slash 处理）。
+        """
+        if self._session_db is None:
+            return
+        try:
+            await self._session_db.upsert_session_goal(
+                goal_id=goal.goal_id,
+                session_id=goal.session_id,
+                text=goal.text,
+                status=goal.status,
+                progress=goal.progress,
+                criteria=goal.criteria,
+                max_iterations=goal.max_iterations,
+                iterations_used=goal.iterations_used,
+                set_at=goal.set_at,
+                updated_at=goal.updated_at or goal.set_at,
+            )
+        except Exception as exc:  # noqa: BLE001 — safe-fail
+            self._logger.warning(
+                "goal_store.persist failed sid=%s: %s", goal.session_id, exc,
+            )
+
+    async def load_persisted(self) -> int:
+        """启动恢复：把所有 active 目标灌回内存 dict。返回恢复条数。
+        未 bind → 0（BC）。每 session 取最新 active（list 已按 updated_at 倒序）。
+        """
+        if self._session_db is None:
+            return 0
+        try:
+            rows = await self._session_db.list_active_goals()
+        except Exception as exc:  # noqa: BLE001 — safe-fail
+            self._logger.warning("goal_store.load_persisted failed: %s", exc)
+            return 0
+        n = 0
+        for r in rows:
+            sid = r["session_id"]
+            if sid in self._goals:       # 已有更新的（倒序首条）→ 跳过旧的
+                continue
+            self._goals[sid] = SessionGoal(
+                session_id=sid,
+                text=r["text"],
+                set_at=r["set_at"],
+                max_iterations=r["max_iterations"],
+                iterations_used=r["iterations_used"],
+                done=(r["status"] == "done"),
+                goal_id=r["goal_id"],
+                status=r["status"],
+                progress=r["progress"],
+                criteria=r["criteria"],
+                updated_at=r["updated_at"],
+            )
+            n += 1
+        self._logger.info("goal_store.load_persisted restored=%d", n)
+        return n
+
+    def get_goal_text(self, session_id: str) -> Optional[str]:
+        """冻结 §1.4：sync, None-safe, 永读内存（最新权威）。"""
+        g = self._goals.get(session_id)
+        return g.text if g is not None else None
 
     def set(
         self,
@@ -108,11 +180,43 @@ class SessionGoalStore:
     def clear(self, session_id: str) -> bool:
         """Drop the goal for ``session_id``. Returns ``True`` if a goal
         existed and was removed, ``False`` if no goal was active.
+
+        记下被清条目的 ``goal_id`` 供 ``persist_abandon`` 落 abandoned
+        （不物理删库行，保留历史给 P0-3 沉淀）。
         """
-        if session_id in self._goals:
+        g = self._goals.get(session_id)
+        if g is not None:
+            self._last_cleared_goal_id[session_id] = g.goal_id
             del self._goals[session_id]
             return True
         return False
+
+    async def persist_abandon(self, session_id: str) -> None:
+        """/goal clear：落 abandoned（不物理删库行）。内存已 clear，
+        从落库行改 status。无 session_db / 无 goal_id → no-op。safe-fail。
+        """
+        if self._session_db is None:
+            return
+        gid = self._last_cleared_goal_id.pop(session_id, "")
+        if not gid:
+            return
+        try:
+            rows = await self._session_db.get_active_goals(session_id)
+            for r in rows:
+                if r["goal_id"] == gid:
+                    await self._session_db.upsert_session_goal(
+                        goal_id=gid, session_id=session_id, text=r["text"],
+                        status="abandoned", progress=r["progress"],
+                        criteria=r["criteria"],
+                        max_iterations=r["max_iterations"],
+                        iterations_used=r["iterations_used"],
+                        set_at=r["set_at"], updated_at=time.time(),
+                    )
+                    break
+        except Exception as exc:  # noqa: BLE001 — safe-fail
+            self._logger.warning(
+                "persist_abandon failed sid=%s: %s", session_id, exc,
+            )
 
     def mark_done(self, session_id: str) -> bool:
         """Mark the goal as achieved. Returns ``True`` if a goal existed
@@ -136,6 +240,14 @@ class SessionGoalStore:
             return 0
         goal.iterations_used += 1
         return goal.iterations_used
+
+    async def persist_iteration(self, session_id: str) -> None:
+        """T1：把当前内存的 iterations_used 落库（重启恢复）。safe-fail。"""
+        g = self._goals.get(session_id)
+        if g is None:
+            return
+        g.updated_at = time.time()
+        await self.persist(g)
 
 
 __all__ = ["SessionGoal", "SessionGoalStore"]
