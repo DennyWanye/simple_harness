@@ -7,7 +7,7 @@
   2. **金黄 hint 卡因 envelope 嵌套不触发** → read_file ENOENT 无修复建议卡（`tauri-app/src/code-panel/MessageBubble.tsx:splitToolError` 已修+HMR验证）
 - **确认潜在设计问题（非本批修）**: TC-32 strict_unknown_toolset 声明未接电消费(静默忽略)；TC-31 default_timeout_seconds 对内置工具无效。
 - **niche 工具 LLM 路由观察**: gpt-5.5 偏好 run_shell/glob 绕过 excel_create/pdf_export/image_ocr/file_organize 等,需强诱导措辞才调专用工具(工具层本身正常)。
-- ⚠️ **待办**: 2个bug补回归单测+提交; 恢复config出厂默认; 更新STATUS/status.md。
+- ✅ **收尾完成**: 2个bug已补回归单测(doc_tools 2个 + splitToolError 3个,全PASS)+ 已提交(commit `4e8f449`); config已恢复用户dev状态; STATUS/status.md已更新里程碑; 测试产物已清理。
 - 截图证据: screenshots/ (TC-03橙弹窗/TC-07红弹窗/TC-10 ArtifactCard/TC-20橙desktop弹窗/TC-27金黄hint卡等)
 
 > 执行人: Claude（真机 SendInput 点击 + 剪贴板粘贴 + CDP 定位/验证 + backend 行为日志）
