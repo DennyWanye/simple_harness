@@ -140,6 +140,9 @@
 
 ## 6. ★ goal_text 跨 Phase 契约（并行前必锁，评审必修#1）
 
+> 🔒 **已冻结（2026-06-04）→ [FP-1/00-CONTRACT-FREEZE.md](./FP-1/00-CONTRACT-FREEZE.md)**：定稿唯一 `SessionGoal`
+> schema（解决本节 §6.1 与 [01-blueprint](./01-P0-1-execution.md) §2 的 done/status、criteria、subgoals、
+> max_iterations 分歧）+ DDL + 注入预算两路径。**以冻结文档为准**，本节为背景。
 > 这是并行开发头号翻车点（pytest+tsc 都过但字段 disagree，正中 `feedback_cross_layer_contract`）。
 > **派 1/2/3 并行前先冻结本节**，配 `scripts/e2e_goal_contract.py` live smoke 兜底。
 
@@ -189,6 +192,9 @@ store.get_completed_path(session_id, goal_id) -> ToolPath | None   # WI-1.6, 喂
 
 ## 7. ★ 全局重试预算账本（2.2 前置 spike，评审必修#2）
 
+> 🔒 **已冻结（2026-06-04）→ [FP-1/00-CONTRACT-FREEZE.md](./FP-1/00-CONTRACT-FREEZE.md) §2**：实地核真
+> `auto_resume.py:148-173` + `session_activity.py` → attempt 计数 = **per-session 共享额度**（所有 reason
+> 共享 `max_attempts=2`）、**in-memory 重启清零**；区别于 `iterations_used`（T1 落库恢复）。以冻结文档为准。
 > 现有三套上限：circuit_breaker threshold=3（工具级）/ auto_resume max_attempts=2（目标级 respawn）/
 > max_verify_nudges=2（loop 内）。2.2 新「真重规划重试」**不得新造第四套计数器**，否则叠乘失控/死循环。
 
