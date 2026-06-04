@@ -54,6 +54,16 @@ logger = logging.getLogger("deskpet.agent.loop")
 # Keep at 3 to match the OpenSpec proposal default.
 _REPEAT_THRESHOLD = 3
 
+# ───────────────────── WI-1.3 goal-anchor constants ─────────────────────
+#
+# Every ``_GOAL_ANCHOR_EVERY`` iterations, when there is an active goal,
+# inject a brief ``[目标锚定]`` system message into working_messages so the
+# model is reminded of the original objective and doesn't drift into
+# intermediate side-tasks.  This is ORTHOGONAL to the goal_checker nudge:
+#   anchor = "don't drift away" (preventive, periodic)
+#   nudge  = "you haven't finished yet" (reactive, on end_turn)
+_GOAL_ANCHOR_EVERY = 5
+
 # Module-level template so tests can pin it. Filled with ``.format(
 # name=..., count=...)`` at injection time.
 _REPEAT_NUDGE_MSG = (
@@ -555,6 +565,11 @@ class AgentLoop:
         # iteration once we're in the 80-95% band.
         _budget_warn_emitted = False
 
+        # WI-1.3 goal-anchor: track the last iteration where we injected a
+        # [目标锚定] message so we never inject twice for the same iteration
+        # (dedupe guard — multiple code paths might reach the anchor check).
+        _last_anchor_iter: int = -1
+
         for iteration in range(1, self.max_iterations + 1):
             # P6 Phase 6 — TerminationGate.allows_call() is always run.
             # Checks hard limits (turns, wall-clock, cost) BEFORE we burn
@@ -664,6 +679,40 @@ class AgentLoop:
                     "tier=%d tools_used=%d",
                     session_id, tid, iteration, budget_left, tier, tools_used,
                 )
+
+            # WI-1.3 decision-point goal anchor. Every _GOAL_ANCHOR_EVERY
+            # iterations, when there is an active goal (goal_mode on),
+            # inject a brief [目标锚定] system message so the model is
+            # reminded of its objective and doesn't drift into side-tasks.
+            #
+            # Guard: only when session_goal_store is wired (BC: None → skip),
+            # only when there's an active goal text (None → skip), and only
+            # once per iteration (_last_anchor_iter dedupe).
+            #
+            # This is SEPARATE from the goal_checker nudge:
+            #   anchor = preventive/periodic "don't drift"
+            #   nudge  = reactive on end_turn "you're not done yet"
+            if (
+                self.session_goal_store is not None
+                and iteration % _GOAL_ANCHOR_EVERY == 0
+                and iteration != _last_anchor_iter
+            ):
+                _gt = getattr(self.session_goal_store, "get_goal_text", None)
+                _anchor_goal_text = _gt(session_id) if callable(_gt) else None
+                if _anchor_goal_text:
+                    anchor_content = (
+                        f"[目标锚定] 当前目标：{_anchor_goal_text}\n"
+                        "请确保接下来的动作仍服务于上述目标。"
+                    )
+                    working_messages.append({
+                        "role": "system",
+                        "content": anchor_content,
+                    })
+                    _last_anchor_iter = iteration
+                    logger.info(
+                        "wi13_goal_anchor_injected sid=%s tid=%s iter=%d",
+                        session_id, tid, iteration,
+                    )
 
             try:
                 if chain_mode:

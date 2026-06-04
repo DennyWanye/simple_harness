@@ -127,6 +127,7 @@ class AutoResumeOrchestrator:
         ws_emitter: Optional[WsEmitter] = None,
         audit_writer: Optional[AuditWriter] = None,
         clock: Callable[[], float] = time.time,
+        goal_text_getter: Optional[Callable[[str], Optional[str]]] = None,
     ) -> None:
         self._supervisor = supervisor
         self._dispatch = chat_dispatcher
@@ -136,6 +137,7 @@ class AutoResumeOrchestrator:
         self._emit = ws_emitter
         self._audit = audit_writer
         self._clock = clock
+        self._goal_text_getter = goal_text_getter
 
     # Useful for runtime config hot-swap (Phase 6 will wire the toggle).
     def set_enabled(self, value: bool) -> None:
@@ -218,11 +220,19 @@ class AutoResumeOrchestrator:
 
         # 5) nudge with a real hint → spawn fresh task with hint injected.
         hint_text = sup_action.hint_for_main_agent
-        new_msgs = list(original_msgs) + [{
+        new_msgs = list(original_msgs)
+        _gt = self._goal_text_getter(sid) if self._goal_text_getter else None
+        if _gt:
+            new_msgs.append({
+                "role": "system",
+                "content": f"[goal] 恢复任务，原目标仍是：{_gt}\n继续推进。",
+                "_is_goal_anchor": True,
+            })
+        new_msgs.append({
             "role": "system",
             "content": f"[Supervisor Hint] {hint_text}",
             "_is_supervisor_hint": True,
-        }]
+        })
         new_attempt = await self._activity.increment_auto_resume_attempts(sid)
 
         # Audit BEFORE dispatch — so even a dispatcher crash leaves a row.

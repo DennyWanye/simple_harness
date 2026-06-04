@@ -44,6 +44,10 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
+# Soft cap for injected goal-anchor system message (~1500 tokens × 4 chars/token).
+_MAX_SYSTEM_INJECT_TOKENS = 1500
+_MAX_SYSTEM_INJECT_CHARS = _MAX_SYSTEM_INJECT_TOKENS * 4  # 6000 chars
+
 
 # ---------------------------------------------------------------------------
 # Result / stats
@@ -133,9 +137,27 @@ class ContextCompressor:
         return prompt_tokens >= self.threshold_tokens()
 
     async def compress(
-        self, messages: list[dict[str, Any]]
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        goal_text: "str | None" = None,
+        pending_tasks: "list[str] | None" = None,
     ) -> CompressionResult:
         """Produce a compressed messages list.
+
+        Parameters
+        ----------
+        goal_text:
+            When non-empty, a re-anchor system message is appended to the
+            system segment of the output (after existing system messages,
+            before first_chunk). Content is soft-capped at
+            ``_MAX_SYSTEM_INJECT_TOKENS`` tokens.  ``None`` or empty string →
+            no injection; output is byte-identical to the old single-param
+            behaviour.
+        pending_tasks:
+            Optional list of pending sub-task titles. The first item is
+            included in the anchor as ``[当前子目标]``. Only used when
+            ``goal_text`` is non-empty.
 
         Never raises. On any failure returns the original messages
         with ``compressed=False`` and ``error`` populated.
@@ -209,8 +231,10 @@ class ContextCompressor:
             "content": _format_summary(summary_text),
         }
 
+        anchor_msgs = _build_goal_anchor(goal_text, pending_tasks)
         new_messages = (
             list(system_msgs)
+            + anchor_msgs
             + list(first_chunk)
             + [summary_message]
             + list(last_chunk)
@@ -311,3 +335,53 @@ def _approx_tokens(text: str) -> int:
     if not text:
         return 0
     return max(1, len(text) // 4)
+
+
+def _build_goal_anchor(
+    goal_text: "str | None",
+    pending_tasks: "list[str] | None",
+) -> list[dict]:
+    """Build zero or one system-role anchor message for goal re-anchoring.
+
+    Returns an empty list when ``goal_text`` is None or empty (BC path).
+    The content is soft-capped at ``_MAX_SYSTEM_INJECT_TOKENS`` tokens
+    with priority: goal_text > 子目标 > remaining pending tasks.
+    """
+    if not goal_text:
+        return []
+
+    budget_chars = _MAX_SYSTEM_INJECT_CHARS  # ~6000
+
+    # --- Priority 1: goal_text (never dropped, but truncated if enormous) ---
+    # Reserve at least a few chars for the fixed template lines.
+    _TEMPLATE_OVERHEAD = 120  # rough bytes for the fixed Chinese strings
+    goal_chars = min(len(goal_text), budget_chars - _TEMPLATE_OVERHEAD)
+    goal_chars = max(goal_chars, 0)
+    truncated_goal = goal_text[:goal_chars]
+
+    # --- Priority 2: first pending task (子目标) ---
+    first_task: str = ""
+    remaining_tasks: list[str] = []
+    if pending_tasks:
+        first_task = pending_tasks[0] if pending_tasks else ""
+        remaining_tasks = list(pending_tasks[1:])
+
+    # Account for goal in budget
+    used = len(truncated_goal) + _TEMPLATE_OVERHEAD
+    remaining_budget = max(budget_chars - used, 0)
+
+    # Truncate first_task if needed
+    if first_task:
+        first_task = first_task[:remaining_budget]
+        remaining_budget -= len(first_task)
+
+    # Build content
+    lines: list[str] = [
+        f"[目标锚定] 当前目标：{truncated_goal}",
+    ]
+    if first_task:
+        lines.append(f"[当前子目标] {first_task}")
+    lines.append("请确保接下来的动作仍服务于上述目标，不要被中间步骤带偏。")
+
+    content = "\n".join(lines)
+    return [{"role": "system", "content": content}]
