@@ -984,11 +984,13 @@ class SessionDB:
     ) -> None:
         """落一条 goal（同 goal_id 覆盖）。同构 upsert_session_plan：
         自带建表（全新 DB 也能 upsert）+ _write_lock + _with_retry。
+        ⚠️ 用 goal 专用 ensure（非共享 ensure_memory_v2_tables），守 flag-OFF
+        字节基线：goal_mode OFF 不落库 → session_goals 表永不建（R-T5）。
         """
         if not self._initialized:
             await self.initialize()
-        from deskpet.memory.memory_v2_schema import ensure_memory_v2_tables
-        await ensure_memory_v2_tables(self._db_path)
+        from deskpet.memory.memory_v2_schema import ensure_session_goals_table
+        await ensure_session_goals_table(self._db_path)
 
         async def _do() -> None:
             async with self._write_lock:
@@ -1024,8 +1026,8 @@ class SessionDB:
         """读某 session 的 active 目标，updated_at 倒序（最新在前）。"""
         if not self._initialized:
             await self.initialize()
-        from deskpet.memory.memory_v2_schema import ensure_memory_v2_tables
-        await ensure_memory_v2_tables(self._db_path)
+        from deskpet.memory.memory_v2_schema import ensure_session_goals_table
+        await ensure_session_goals_table(self._db_path)
 
         async def _do() -> list[dict[str, Any]]:
             async with aiosqlite.connect(self._db_path) as db:
@@ -1050,8 +1052,8 @@ class SessionDB:
         """启动恢复用：全库所有 active 目标。"""
         if not self._initialized:
             await self.initialize()
-        from deskpet.memory.memory_v2_schema import ensure_memory_v2_tables
-        await ensure_memory_v2_tables(self._db_path)
+        from deskpet.memory.memory_v2_schema import ensure_session_goals_table
+        await ensure_session_goals_table(self._db_path)
 
         async def _do() -> list[dict[str, Any]]:
             async with aiosqlite.connect(self._db_path) as db:

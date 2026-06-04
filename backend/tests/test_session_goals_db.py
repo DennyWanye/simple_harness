@@ -7,6 +7,7 @@ import pytest
 
 from deskpet.memory.memory_v2_schema import (
     ensure_memory_v2_tables,
+    ensure_session_goals_table,
     _reset_cache_for_tests,
 )
 
@@ -21,7 +22,7 @@ def _reset_schema_cache():
 @pytest.mark.asyncio
 async def test_session_goals_table_created_with_frozen_columns(tmp_path):
     db = str(tmp_path / "state.db")
-    await ensure_memory_v2_tables(db)
+    await ensure_session_goals_table(db)
     async with aiosqlite.connect(db) as conn:
         cur = await conn.execute("PRAGMA table_info(session_goals)")
         cols = {row[1] for row in await cur.fetchall()}
@@ -33,11 +34,27 @@ async def test_session_goals_table_created_with_frozen_columns(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_ensure_tables_idempotent(tmp_path):
+async def test_ensure_session_goals_idempotent(tmp_path):
+    db = str(tmp_path / "state.db")
+    await ensure_session_goals_table(db)
+    _reset_cache_for_tests()
+    await ensure_session_goals_table(db)
+
+
+@pytest.mark.asyncio
+async def test_shared_ensure_does_NOT_create_session_goals(tmp_path):
+    """R-T5 字节基线（单测版）：共享 ensure（facts/session_plans 路径）
+    绝不建 session_goals 表——守护 flag-OFF 用户 DB 字节不变护城河。
+    """
     db = str(tmp_path / "state.db")
     await ensure_memory_v2_tables(db)
-    _reset_cache_for_tests()
-    await ensure_memory_v2_tables(db)
+    async with aiosqlite.connect(db) as conn:
+        cur = await conn.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='table' AND name='session_goals'"
+        )
+        row = await cur.fetchone()
+    assert row is None
 
 
 from deskpet.memory.session_db import SessionDB
