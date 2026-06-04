@@ -1072,6 +1072,12 @@ try:
             from deskpet.agent.goal_checker import GoalChecker as _GC
             _session_goal_store = _GS()
             _goal_checker = _GC(llm_call=_make_str_llm_call(local_llm or cloud_llm))
+            # R-T1：接电持久化。_session_db 在上方已构造。
+            try:
+                _session_goal_store.bind_persistence(_session_db)
+                logger.info("goal_store_bound_persistence")
+            except Exception as _bp_exc:  # noqa: BLE001
+                logger.warning("goal_store_bind_persistence_failed: %s", _bp_exc)
             logger.info("companion_code_v1_goal_mode_ready")
         except Exception as _gm_exc:  # noqa: BLE001
             logger.warning("companion_code_v1_goal_mode_init_failed: %s", _gm_exc)
@@ -1470,6 +1476,14 @@ async def lifespan(app: FastAPI):
             )
         except Exception as exc:
             logger.warning("code_sessions_restore_failed", error=str(exc))
+    # R-T1：goal_store 启动恢复（重启仍在的核心路径）。
+    _gs_for_restore = service_context.get("session_goal_store")
+    if _gs_for_restore is not None:
+        try:
+            _n = await _gs_for_restore.load_persisted()
+            logger.info("goal_store_load_persisted restored=%d", _n)
+        except Exception as _lp_exc:  # noqa: BLE001
+            logger.warning("goal_store_load_persisted_failed: %s", _lp_exc)
     _mm = service_context.get("memory_manager")
     if _mm is not None:
         try:
