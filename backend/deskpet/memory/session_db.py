@@ -967,6 +967,124 @@ class SessionDB:
 
         await self._with_retry(_do)
 
+    # ───────────────────── goal-completion FP-1 (WI-1.1) ──────────────
+    async def upsert_session_goal(
+        self,
+        *,
+        goal_id: str,
+        session_id: str,
+        text: str,
+        status: str,
+        progress: float,
+        criteria: Optional[str],
+        max_iterations: int,
+        iterations_used: int,
+        set_at: float,
+        updated_at: float,
+    ) -> None:
+        """落一条 goal（同 goal_id 覆盖）。同构 upsert_session_plan：
+        自带建表（全新 DB 也能 upsert）+ _write_lock + _with_retry。
+        """
+        if not self._initialized:
+            await self.initialize()
+        from deskpet.memory.memory_v2_schema import ensure_memory_v2_tables
+        await ensure_memory_v2_tables(self._db_path)
+
+        async def _do() -> None:
+            async with self._write_lock:
+                async with aiosqlite.connect(self._db_path) as db:
+                    await db.execute("PRAGMA busy_timeout=5000")
+                    await db.execute(
+                        """
+                        INSERT INTO session_goals(
+                            goal_id, session_id, text, status, progress,
+                            criteria, max_iterations, iterations_used,
+                            set_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(goal_id) DO UPDATE SET
+                            text            = excluded.text,
+                            status          = excluded.status,
+                            progress        = excluded.progress,
+                            criteria        = excluded.criteria,
+                            max_iterations  = excluded.max_iterations,
+                            iterations_used = excluded.iterations_used,
+                            updated_at      = excluded.updated_at
+                        """,
+                        (
+                            goal_id, session_id, text, status, progress,
+                            criteria, max_iterations, iterations_used,
+                            set_at, updated_at,
+                        ),
+                    )
+                    await db.commit()
+
+        await self._with_retry(_do)
+
+    async def get_active_goals(self, session_id: str) -> list[dict[str, Any]]:
+        """读某 session 的 active 目标，updated_at 倒序（最新在前）。"""
+        if not self._initialized:
+            await self.initialize()
+        from deskpet.memory.memory_v2_schema import ensure_memory_v2_tables
+        await ensure_memory_v2_tables(self._db_path)
+
+        async def _do() -> list[dict[str, Any]]:
+            async with aiosqlite.connect(self._db_path) as db:
+                cur = await db.execute(
+                    """
+                    SELECT goal_id, session_id, text, status, progress,
+                           criteria, max_iterations, iterations_used,
+                           set_at, updated_at
+                    FROM session_goals
+                    WHERE session_id = ? AND status = 'active'
+                    ORDER BY updated_at DESC
+                    """,
+                    (session_id,),
+                )
+                rows = await cur.fetchall()
+                await cur.close()
+                return [self._goal_row_to_dict(r) for r in rows]
+
+        return await self._with_retry(_do)
+
+    async def list_active_goals(self) -> list[dict[str, Any]]:
+        """启动恢复用：全库所有 active 目标。"""
+        if not self._initialized:
+            await self.initialize()
+        from deskpet.memory.memory_v2_schema import ensure_memory_v2_tables
+        await ensure_memory_v2_tables(self._db_path)
+
+        async def _do() -> list[dict[str, Any]]:
+            async with aiosqlite.connect(self._db_path) as db:
+                cur = await db.execute(
+                    """
+                    SELECT goal_id, session_id, text, status, progress,
+                           criteria, max_iterations, iterations_used,
+                           set_at, updated_at
+                    FROM session_goals WHERE status = 'active'
+                    ORDER BY updated_at DESC
+                    """
+                )
+                rows = await cur.fetchall()
+                await cur.close()
+                return [self._goal_row_to_dict(r) for r in rows]
+
+        return await self._with_retry(_do)
+
+    @staticmethod
+    def _goal_row_to_dict(row: Any) -> dict[str, Any]:
+        return {
+            "goal_id": row[0],
+            "session_id": row[1],
+            "text": row[2],
+            "status": row[3],
+            "progress": row[4],
+            "criteria": row[5],
+            "max_iterations": row[6],
+            "iterations_used": row[7],
+            "set_at": row[8],
+            "updated_at": row[9],
+        }
+
     async def list_code_sessions(self) -> list[dict[str, Any]]:
         """P4-S25 B4: read the persisted project list, newest first.
 

@@ -38,3 +38,65 @@ async def test_ensure_tables_idempotent(tmp_path):
     await ensure_memory_v2_tables(db)
     _reset_cache_for_tests()
     await ensure_memory_v2_tables(db)
+
+
+from deskpet.memory.session_db import SessionDB
+
+
+@pytest.mark.asyncio
+async def test_upsert_and_get_active_goal(tmp_path):
+    db = SessionDB(db_path=str(tmp_path / "state.db"))
+    await db.initialize()
+    await db.upsert_session_goal(
+        goal_id="g1", session_id="s1", text="整理三个会议纪要",
+        status="active", progress=0.0, criteria=None,
+        max_iterations=10, iterations_used=2,
+        set_at=100.0, updated_at=100.0,
+    )
+    rows = await db.get_active_goals("s1")
+    assert len(rows) == 1
+    assert rows[0]["text"] == "整理三个会议纪要"
+    assert rows[0]["iterations_used"] == 2
+    assert rows[0]["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_done_goal_excluded_from_active(tmp_path):
+    db = SessionDB(db_path=str(tmp_path / "state.db"))
+    await db.initialize()
+    await db.upsert_session_goal(
+        goal_id="g1", session_id="s1", text="t", status="done",
+        progress=1.0, criteria=None, max_iterations=10,
+        iterations_used=1, set_at=1.0, updated_at=2.0,
+    )
+    assert await db.get_active_goals("s1") == []
+
+
+@pytest.mark.asyncio
+async def test_list_active_goals_across_sessions(tmp_path):
+    db = SessionDB(db_path=str(tmp_path / "state.db"))
+    await db.initialize()
+    for i, sid in enumerate(["s1", "s2"]):
+        await db.upsert_session_goal(
+            goal_id=f"g{i}", session_id=sid, text=f"t{i}",
+            status="active", progress=0.0, criteria=None,
+            max_iterations=10, iterations_used=0,
+            set_at=float(i), updated_at=float(i),
+        )
+    rows = await db.list_active_goals()
+    assert {r["session_id"] for r in rows} == {"s1", "s2"}
+
+
+@pytest.mark.asyncio
+async def test_upsert_overwrites_same_goal_id(tmp_path):
+    db = SessionDB(db_path=str(tmp_path / "state.db"))
+    await db.initialize()
+    for used in (1, 5):
+        await db.upsert_session_goal(
+            goal_id="g1", session_id="s1", text="t", status="active",
+            progress=0.0, criteria=None, max_iterations=10,
+            iterations_used=used, set_at=1.0, updated_at=float(used),
+        )
+    rows = await db.get_active_goals("s1")
+    assert len(rows) == 1
+    assert rows[0]["iterations_used"] == 5
