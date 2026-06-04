@@ -156,6 +156,27 @@ CREATE TABLE IF NOT EXISTS session_plans (
     awaiting    INTEGER NOT NULL DEFAULT 0,
     ts          REAL    NOT NULL
 );
+
+-- =====================================================================
+-- goal-completion FP-1 — 目标持久化（WI-1.1，冻结 §1.3）
+-- =====================================================================
+-- 多目标物理支持（goal_id PK，非 session_id PK），API 层 last-write-wins
+-- 单活跃目标。criteria 占位列：FP-3(2.3) 用，WI-1.1 不消费。runtime
+-- CREATE TABLE IF NOT EXISTS：goal_mode OFF 时永不建表，DB 字节不变。
+CREATE TABLE IF NOT EXISTS session_goals (
+    goal_id         TEXT    PRIMARY KEY,
+    session_id      TEXT    NOT NULL,
+    text            TEXT    NOT NULL,
+    status          TEXT    NOT NULL DEFAULT 'active',
+    progress        REAL    NOT NULL DEFAULT 0.0,
+    criteria        TEXT,
+    max_iterations  INTEGER NOT NULL DEFAULT 10,
+    iterations_used INTEGER NOT NULL DEFAULT 0,
+    set_at          REAL    NOT NULL,
+    updated_at      REAL    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_session_goals_sid
+    ON session_goals(session_id, status);
 """
 
 # Cache so we don't re-run executescript every call. Keyed by absolute db path.
