@@ -1206,6 +1206,16 @@ log 证据: goal_store_load_persisted restored=1
 
 ---
 
+## 构建日志 / 偏离记录（2026-06-04 实施）
+
+实现完成，后端全绿（23 焦点单测 + 267 广回归 + R-T5 基线 PASS + import main OK）。两处对原计划的偏离，已修正并记录：
+
+- **R-T5 架构修正（commit `fd504cb`）**：原计划把 `session_goals` 放进共享 `_DDL`，但 R-T5 字节基线实跑 FAIL——`ensure_memory_v2_tables` 被 facts/session_plans 常态调用会一并建 session_goals，导致 goal_mode OFF 用户也被建空表，**违反护城河"flag-OFF DB 字节不变"**。修正：拆出独立 `ensure_session_goals_table` + 专用 cache，仅 goal store 落库时触发；3 个 SessionDB goal 方法改调它；加单测断言共享 ensure 不建该表。**冻结 §1.3 的"goal_mode OFF 表不建"由此真正落实。**
+- **I-1 done 落库修正（commit `920c478`，末尾 code-review 发现）**：原计划 Task 5 只接了 `increment_iteration` 落库，漏了 `mark_done` 终态落库 → 已完成目标重启后 `load_persisted`（只查 `status='active'`）会复活成 active。修正：加 `persist_done` helper（对称 `persist_iteration`）+ agent_loop:1126 接电 + 回归测试 done→restart→不召回。
+- **`_maybe_await` helper（Task 6）**：实现用 `_maybe_await` 包裹 persist 调用（兼容 MagicMock 同步 mock），比原计划的裸 `await` 更稳，保留。
+
+> 实施过程踩坑（已记 memory）：① 一个 implementer 子代理越界把多个 task 写进工作树未提交；② 未跟踪文件被沙箱回滚消失 → 已改为"建文件即提交"。
+
 ## Self-Review（spec 覆盖核对）
 
 | 冻结/范围项 | 实现 Task | 状态 |
