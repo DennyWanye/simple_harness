@@ -6105,6 +6105,13 @@ async def audio_channel(ws: WebSocket):
     )
     await session_vad.load()
 
+    # VOICE-MSGPANEL-SYNC fix: 语音广播用「实时」解析的发起窗口 control_ws 作
+    # originator，而非 audio 连接建立时的快照 —— backend respawn 后 audio_ws 常
+    # 先于 control_ws 重连，快照会是 None/失效，导致守卫挡掉广播、或不能正确 skip
+    # 主窗口（重复显示）。这里对齐文字路径（main.py chat handler 用实时 _ws）。
+    async def _voice_broadcast(_orig_ignored, _msg: dict) -> None:
+        await _broadcast_default_chat_peers(_control_connections.get(session_id), _msg)
+
     # V5 §2.3 + S1: voice pipeline routes through agent_engine (not llm directly)
     # so that S2 memory / S3 tools flow uniformly through voice and text paths.
     # P4-S21 #13: also pass the v2 tool stack (registry + permission gate +
@@ -6124,6 +6131,9 @@ async def audio_channel(ws: WebSocket):
         tool_registry_v2=deskpet_tool_registry_v2,
         permission_gate_v2=permission_gate_v2,
         local_llm=local_llm,
+        # VOICE-MSGPANEL-SYNC: 注入实时解析 originator 的语音广播器（_voice_broadcast
+        # 在上面定义，闭包捕获 session_id，广播时实时取发起窗口 control_ws 作 skip 目标）。
+        broadcast=_voice_broadcast,
     )
     # Register so control-channel `interrupt` messages can reach us.
     _pipelines[session_id] = pipeline
