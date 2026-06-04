@@ -2128,6 +2128,15 @@ async def lifespan(app: FastAPI):
                     except Exception as _ex:  # noqa: BLE001
                         logger.debug("auto_resume_audit_failed err=%s", _ex)
 
+                # WI-1.5：resume 注入原 goal_text（窄版）。从 service_context
+                # 取活跃 goal store（goal_mode OFF → None → getter 返 None → BC）。
+                def _goal_text_getter_for_resume(_sid: str):
+                    _gs = service_context.get("session_goal_store")
+                    try:
+                        return _gs.get_goal_text(_sid) if _gs is not None else None
+                    except Exception:  # noqa: BLE001 — safe-fail, 不阻 resume
+                        return None
+
                 _orch = _AROrch(
                     supervisor=_supervisor_agent,
                     chat_dispatcher=_auto_resume_dispatch,
@@ -2136,6 +2145,7 @@ async def lifespan(app: FastAPI):
                     enabled=bool(_sup_cfg.get("auto_resume_enabled", True)),
                     ws_emitter=_auto_resume_emit,
                     audit_writer=_auto_resume_audit,
+                    goal_text_getter=_goal_text_getter_for_resume,
                 )
                 service_context.register("auto_resume", _orch)
                 logger.info(
