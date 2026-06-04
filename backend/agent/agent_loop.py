@@ -1124,6 +1124,15 @@ class AgentLoop:
                             continue
                         else:
                             self.session_goal_store.mark_done(session_id)
+                            # 落库 done 终态（与 increment 落库对称）：否则
+                            # load_persisted 只召回 status='active'，已完成目标
+                            # 重启会复活成 active。getattr 兜底旧 store。
+                            _pd = getattr(
+                                self.session_goal_store,
+                                "persist_done", None,
+                            )
+                            if _pd is not None:
+                                await _pd(session_id)
                             logger.info(
                                 "goal_checker.marked_done sid=%s",
                                 session_id,

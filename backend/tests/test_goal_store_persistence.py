@@ -94,6 +94,26 @@ async def test_persist_failure_safe_fail(tmp_path, monkeypatch):
     assert store.get_goal_text("s1") == "t"
 
 
+# ───────────────────── I-1: done 终态落库（重启不复活） ─────────────
+@pytest.mark.asyncio
+async def test_done_goal_does_not_resurrect_after_restart(tmp_path):
+    """完成的目标落 done 终态后，重启 load_persisted 不召回（否则只查
+    status='active' 会让已完成目标复活成 active）。"""
+    db = SessionDB(db_path=str(tmp_path / "state.db"))
+    await db.initialize()
+    store1 = SessionGoalStore()
+    store1.bind_persistence(db)
+    g = store1.set("s1", "整理纪要")
+    await store1.persist(g)
+    store1.mark_done("s1")
+    await store1.persist_done("s1")
+    store2 = SessionGoalStore()
+    store2.bind_persistence(db)
+    n = await store2.load_persisted()
+    assert store2.get("s1") is None        # 不复活
+    assert n == 0
+
+
 # ───────────────────── Task 5: increment_iteration 落库 ─────────────
 @pytest.mark.asyncio
 async def test_increment_iteration_persists(tmp_path):

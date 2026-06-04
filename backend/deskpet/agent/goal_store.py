@@ -249,5 +249,14 @@ class SessionGoalStore:
         g.updated_at = time.time()
         await self.persist(g)
 
+    async def persist_done(self, session_id: str) -> None:
+        """落库 done 终态（与 persist_iteration 对称）。否则 load_persisted
+        只召回 status='active'，已完成目标重启会复活成 active。safe-fail。
+        """
+        g = self._goals.get(session_id)
+        if g is None:
+            return
+        await self.persist(g)
+
 
 __all__ = ["SessionGoal", "SessionGoalStore"]
