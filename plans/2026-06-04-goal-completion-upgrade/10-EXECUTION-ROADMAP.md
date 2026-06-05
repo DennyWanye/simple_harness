@@ -89,7 +89,7 @@
 | FP-2 | 抗漂移闭环 | ✅ | ✅ | ✅ | 🟢* | ✅ | ✅ 实现+55焦点+280回归全绿+真机 agent 在 goal 会话跑确认；**用户决策接受现证据**(re-anchor 单测证明+真机 agent-on-goal)，iter-5 anchor 截图后补（[BLOCKERS.md](./BLOCKERS.md) 选项2）。R-T4 defer |
 | FP-3 | 自我纠错闭环 | ✅ | ✅ | ✅ | 🟢* | ✅ | ✅ 实现(WI-2.1/2.2/2.3/2.4+T6+R-T3+R-T6)+286焦点/2459全suite绿(含§7死循环上界/no_persona_leak/伪完成拦→二次通过/降级矩阵);手测门 MR-2.2 真产物撞同一写权限门,**同 FP-2 口径接受后端证据**;off→shadow 出厂迁移待 R-T6 go/no-go 签核(02-shadow-gonogo.md) |
 | FP-4 | 记忆 + 人格 | ✅ | ✅ | ✅ | 🟢* | ✅ | ✅ 实现(WI-3.1/3.2/3.3/3.4+B-10双写钩+★修daily_decay从未调用bug)+MemEval 491+retriever无回归(头号风险已证)+scope/pinned schema;手测门 MR-3.1跨会话召回真机批量补跑(spawn_task);flag默认off=BC |
-| FP-5 | Skills 分级 + 自创 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ 锁(依赖 FP-1+1.6) |
+| FP-5 | Skills 分级 + 自创 | ✅ | ✅ | ✅ | 🟢* | ✅ | ✅ 后端实现(WI-4.0接通compaction★全回归217绿/4.1embedding自动披露/4.2重挂/4.3技能自创codifier只生成声明式SKILL.md不执行代码)+全部flag off字节BC;4.3前端确认卡=单独前端任务(批量手测会话);手测门真机批量补跑 |
 
 > 串行铁律：**上一个 FP 的🚦手测门没过，不开下一个 FP。** 每个 FP 的 superpowers 细化计划建议存到 `plans/2026-06-04-goal-completion-upgrade/FP-N/`。
 
