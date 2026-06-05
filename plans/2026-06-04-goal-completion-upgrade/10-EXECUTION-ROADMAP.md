@@ -87,7 +87,7 @@
 | 前置 | §6 契约 + §7 账本冻结 | — | — | — | — | — | ✅ 已冻结 2026-06-04（[FP-1/00-CONTRACT-FREEZE.md](./FP-1/00-CONTRACT-FREEZE.md)） |
 | FP-1 | 目标持久化地基 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ **完成**（真机手测门 PASS；FP-1/02-manual-test.md + manual-results-2026-06-04-FP-1/） |
 | FP-2 | 抗漂移闭环 | ✅ | ✅ | ✅ | 🟢* | ✅ | ✅ 实现+55焦点+280回归全绿+真机 agent 在 goal 会话跑确认；**用户决策接受现证据**(re-anchor 单测证明+真机 agent-on-goal)，iter-5 anchor 截图后补（[BLOCKERS.md](./BLOCKERS.md) 选项2）。R-T4 defer |
-| FP-3 | 自我纠错闭环 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ 锁(依赖 FP-1) |
+| FP-3 | 自我纠错闭环 | ✅ | ✅ | ✅ | 🟢* | ✅ | ✅ 实现(WI-2.1/2.2/2.3/2.4+T6+R-T3+R-T6)+286焦点/2459全suite绿(含§7死循环上界/no_persona_leak/伪完成拦→二次通过/降级矩阵);手测门 MR-2.2 真产物撞同一写权限门,**同 FP-2 口径接受后端证据**;off→shadow 出厂迁移待 R-T6 go/no-go 签核(02-shadow-gonogo.md) |
 | FP-4 | 记忆 + 人格 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ 锁(依赖 FP-1) |
 | FP-5 | Skills 分级 + 自创 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ 锁(依赖 FP-1+1.6) |
 
