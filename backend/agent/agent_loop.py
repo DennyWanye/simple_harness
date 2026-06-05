@@ -420,6 +420,10 @@ class AgentLoop:
         # WI-2.4 external evaluator: cross-persona quality judge for high-consequence
         # goals. None (default) = BC (0 extra LLM calls, skip entirely).
         external_evaluator: Optional[Any] = None,  # deskpet.agent.external_evaluator.ExternalEvaluator
+        # WI-4.0 compaction: ContextCompressor to call when prompt tokens near cap.
+        # None (default) = BC (compressor not injected → zero new behaviour).
+        # When non-None, should_compress() and compress() are called in the loop.
+        compressor: Optional[Any] = None,  # deskpet.agent.context_compressor.ContextCompressor
     ) -> None:
         self.llm = llm_registry
         self.tools = tool_registry
@@ -455,6 +459,9 @@ class AgentLoop:
         # WI-2.4 external evaluator: cross-persona quality judge for high-consequence
         # goals (BC: None → skip entirely, 0 extra LLM calls).
         self.external_evaluator = external_evaluator
+        # WI-4.0 compaction: ContextCompressor (BC: None → skip entirely).
+        # When non-None, loop calls should_compress() + compress() after budget check.
+        self.compressor = compressor
         # P5-S2 Phase 3.3: same-(name, args) repeat detection. When set,
         # the loop checks the activity store's per-session
         # ``tool_signature_window`` BEFORE dispatching each tool_call —
@@ -584,6 +591,11 @@ class AgentLoop:
         # (dedupe guard — multiple code paths might reach the anchor check).
         _last_anchor_iter: int = -1
 
+        # WI-4.0 compaction: warn-once latch so we don't spam the log every
+        # iteration when the compressor fires (long multi-tool tasks may cross
+        # the threshold repeatedly; we log the first fire and stay quiet after).
+        _compaction_warn_logged: bool = False
+
         for iteration in range(1, self.max_iterations + 1):
             # P6 Phase 6 — TerminationGate.allows_call() is always run.
             # Checks hard limits (turns, wall-clock, cost) BEFORE we burn
@@ -667,6 +679,45 @@ class AgentLoop:
                     detail=f"daily budget cap reached (${self.budget_checker.cap_usd:.2f})",
                 )
                 return
+
+            # WI-4.0 compaction: after budget guard, before LLM call.
+            # Reuses _budget.estimated_tokens (just computed above).
+            # compressor=None (flag off) → short-circuit, zero overhead.
+            # Operates in-place on working_messages (not assemble — BC).
+            # System messages (skill_prelude/persona/frozen) are kept verbatim
+            # by _partition inside compress() — "不绕 assemble" constraint met.
+            if self.compressor is not None:
+                try:
+                    _ctoken_est = getattr(_budget, "estimated_tokens", 0)
+                except Exception:  # noqa: BLE001
+                    _ctoken_est = 0
+                if self.compressor.should_compress(_ctoken_est):
+                    try:
+                        _gt = None
+                        if self.session_goal_store is not None:
+                            _gt_fn = getattr(self.session_goal_store, "get_goal_text", None)
+                            if callable(_gt_fn):
+                                _gt = _gt_fn(session_id)
+                        _cresult = await self.compressor.compress(
+                            working_messages,
+                            goal_text=_gt,
+                        )
+                        if getattr(_cresult, "compressed", False):
+                            working_messages = _cresult.messages
+                            if not _compaction_warn_logged:
+                                logger.info(
+                                    "p1_4_compaction_fired sid=%s tid=%s iter=%d "
+                                    "reduction=%s",
+                                    session_id, tid, iteration,
+                                    getattr(_cresult, "reduction_ratio", "?"),
+                                )
+                                _compaction_warn_logged = True
+                    except Exception as _cmp_exc:  # noqa: BLE001
+                        # Compaction is advisory — never abort the loop on it.
+                        logger.debug(
+                            "p1_4_compaction_failed sid=%s iter=%d err=%s",
+                            session_id, iteration, str(_cmp_exc)[:200],
+                        )
 
             # P6 Phase 6: escalating in-loop self-check (soft nudge).
             # The legacy _TOOL_BUDGET_HARD_MSG soft cap is GONE — the

@@ -376,6 +376,10 @@ class FeaturesConfig:
     agent_parallel: bool = False
     plan_confirm_gate: bool = False
     preference_memory: bool = False
+    # WI-4.0 compaction: wire ContextCompressor into AgentLoop.
+    # dev default OFF (prod cautious — compaction changes LLM history).
+    # Set [features] compaction_enabled = true in config.toml to enable.
+    compaction_enabled: bool = False
 
 
 @dataclass

@@ -652,6 +652,8 @@ def build_agent(
     # Companion+Code v1 — WI-B3 goal_mode 接电
     session_goal_store=None,
     goal_checker=None,
+    # WI-4.0 compaction — pre-built ContextCompressor or None (flag off = BC)
+    compressor=None,
 ):
     """Build a wired _AgentLoop with optional VerifyGate + ReceiptStore.
 
@@ -797,6 +799,8 @@ def build_agent(
         structured_reflection=use_structured_reflection,
         # ─── WI-2.4 外部评估器（flag off = BC, None = 0 calls）───
         external_evaluator=_external_evaluator,
+        # ─── WI-4.0 compaction（flag off = compressor=None = BC）───
+        compressor=compressor,
     )
 
 
@@ -1140,6 +1144,38 @@ try:
             _goal_checker = None
     service_context.register("session_goal_store", _session_goal_store)
     service_context.register("goal_checker", _goal_checker)
+
+    # WI-4.0 compaction：ContextCompressor 构造 + 注入 build_agent。
+    # flag OFF（默认）→ _context_compressor = None → AgentLoop BC（不调）。
+    # flag ON → 真构造；build_agent 工厂从 service_context 取并传给 AgentLoop。
+    _context_compressor = None
+    _compaction_enabled = bool(
+        getattr(getattr(config, "features", None), "compaction_enabled", False)
+    )
+    if _compaction_enabled:
+        try:
+            from deskpet.agent.context_compressor import (
+                ContextCompressor as _CtxCompressor,
+            )
+            # context_window default 32000 for relay models; threshold 0.75.
+            # Use the already-constructed local_llm (haiku-scale) for the
+            # summary call so we don't spin up a new connection.
+            _compactor_llm = local_llm or cloud_llm
+            _context_compressor = _CtxCompressor(
+                llm_registry=_compactor_llm,
+                context_window=32000,
+                threshold_percent=0.75,
+            )
+            logger.info(
+                "wi4_0_compaction_enabled context_window=32000 threshold=0.75"
+            )
+        except Exception as _cmp_init_exc:  # noqa: BLE001
+            logger.warning(
+                "wi4_0_compaction_init_failed err=%s — disabled",
+                _cmp_init_exc,
+            )
+            _context_compressor = None
+    service_context.register("context_compressor", _context_compressor)
 
     # FP-4 B-10：goal→facts 双写钩接电。
     # 条件：goal_mode ON + goal_facts_hook flag ON + 两个 store 都已构造。
@@ -5440,6 +5476,8 @@ async def control_channel(ws: WebSocket):
                         # Companion+Code v1 WI-B3: 拉 goal_mode 接电资产 (None when flag OFF)
                         _goal_store_for_agent = service_context.get("session_goal_store")
                         _goal_checker_for_agent = service_context.get("goal_checker")
+                        # WI-4.0 compaction: None when flag off (BC)
+                        _compressor_for_agent = service_context.get("context_compressor")
                         _agent = build_agent(
                             config,
                             llm_registry=_shim,
@@ -5452,6 +5490,7 @@ async def control_channel(ws: WebSocket):
                             signature_repeat_threshold=_sig_repeat_thr,
                             session_goal_store=_goal_store_for_agent,
                             goal_checker=_goal_checker_for_agent,
+                            compressor=_compressor_for_agent,
                         )
                         # P4-S25 A1: stream by default — gives the user
                         # instant visible feedback on thinking-mode
