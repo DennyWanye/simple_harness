@@ -205,6 +205,12 @@ class MemoryV2Config:
     # 实际生效取决于调用方是否传 skip_embed=True；flag 关闭时任何 skip_embed=True
     # 应被调用方屏蔽（有效 skip_embed = flag AND caller_intent）。
     light_write: bool = False             # WI-3.4 light 快路开关
+    # FP-4 WI-3.2：人格画像主动注入 Component（默认 False，dev 先开）。
+    # False → PreferenceProfileComponent 返回空 Slice → bundle 字节级等同当前（BC）。
+    persona_inject: bool = False          # WI-3.2 preference profile injection
+    # FP-4 B-10：goal→facts 双写钩（默认 False）。
+    # False → bind_on_goal_set 不接电 → goal_store.set() BC。
+    goal_facts_hook: bool = False         # B-10 goal→facts double-write hook
     facts: MemoryV2FactsConfig = field(default_factory=MemoryV2FactsConfig)
     forget: MemoryV2ForgetConfig = field(
         default_factory=MemoryV2ForgetConfig,

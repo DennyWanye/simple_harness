@@ -19,10 +19,11 @@ at the call site.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Awaitable, Callable, Optional
 
 
 @dataclass
@@ -77,6 +78,50 @@ class SessionGoalStore:
         # /goal clear 落 abandoned 用：记下被清条目的 goal_id
         self._last_cleared_goal_id: dict[str, str] = {}
         self._logger = logging.getLogger("deskpet.agent.goal_store")
+        # B-10 双写钩：可选的 (session_id, text) → Awaitable[None] callback。
+        # goal_store 不 import facts（防 agent←memory import 环）；
+        # callback 由 main.py lifespan 通过 bind_on_goal_set 注入。
+        self._on_goal_set_cb: Optional[Callable[[str, str], Awaitable[None]]] = None
+
+    # ───────────────────── B-10 双写钩 ──────────────────────────────
+    def bind_on_goal_set(
+        self,
+        callback: Callable[[str, str], Awaitable[None]],
+    ) -> None:
+        """注册 goal set 后的单向 fanout callback（B-10 双写契约）。
+
+        callback(session_id: str, text: str) → Awaitable[None]
+
+        - 在 set() 成功后异步 fire（asyncio.create_task，safe-fail）。
+        - goal_store 不 import facts —— callback 由 main.py 注入闭包；
+          这样防止 agent←memory import 环（§1.7 冻结约束）。
+        - 仅允许注册一个 callback（last-write-wins）。
+        """
+        self._on_goal_set_cb = callback
+
+    def _fire_on_goal_set(self, session_id: str, text: str) -> None:
+        """Internal: fire the callback in a fire-and-forget task (safe-fail)."""
+        cb = self._on_goal_set_cb
+        if cb is None:
+            return
+
+        async def _run() -> None:
+            try:
+                await cb(session_id, text)
+            except Exception as exc:  # noqa: BLE001 — safe-fail, no block
+                self._logger.warning(
+                    "on_goal_set_callback_failed sid=%s: %s", session_id, exc
+                )
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.ensure_future(_run())
+            else:
+                loop.run_until_complete(_run())
+        except RuntimeError:
+            # No running loop (e.g. sync tests) — run synchronously via new loop
+            asyncio.run(_run())
 
     # ───────────────────── goal-completion FP-1 持久化 ────────────────
     def bind_persistence(self, session_db: object) -> None:
@@ -171,6 +216,8 @@ class SessionGoalStore:
             updated_at=now,
         )
         self._goals[session_id] = goal
+        # B-10：触发 fanout（facts upsert 等），safe-fail，不阻 set()。
+        self._fire_on_goal_set(session_id, text)
         return goal
 
     def get(self, session_id: str) -> Optional[SessionGoal]:

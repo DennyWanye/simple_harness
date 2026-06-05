@@ -40,6 +40,9 @@ from deskpet.agent.assembler.components.workspace import WorkspaceComponent
 from deskpet.agent.assembler.components.workspace_memory import (
     WorkspaceMemoryComponent,
 )
+from deskpet.agent.assembler.components.preference_profile import (
+    PreferenceProfileComponent,
+)
 from deskpet.agent.assembler.policy import load_policies
 from deskpet.agent.assembler.registry import ComponentRegistry
 from deskpet.agent.assembler.tts_prenarration import TTSPreNarrator
@@ -68,6 +71,7 @@ __all__ = [
     "ToolComponent",
     "WorkspaceComponent",
     "WorkspaceMemoryComponent",
+    "PreferenceProfileComponent",
     "load_policies",
 ]
 
@@ -81,16 +85,21 @@ def build_default_assembler(
     context_window: int = 200_000,
     budget_ratio: float = 0.6,
     workspace_memory_store=None,
+    facts_store=None,
+    persona_inject: bool = False,
 ) -> ContextAssembler:
     """One-shot factory for the common case.
 
-    Wires: 7 built-in components + packaged default.yaml policies +
+    Wires: 8 built-in components + packaged default.yaml policies +
     classifier with provided embedder/LLM + default budget allocator.
     Caller still supplies memory_manager / tool_registry per-turn
     via :meth:`ContextAssembler.assemble`.
 
     记忆系统升级 WI-M1.6：``workspace_memory_store`` 由 main.py 在
     ``memory.v2.workspace_memory`` flag 开时注入；None → 组件空转。
+
+    FP-4 WI-3.2：``facts_store`` 由 main.py 在 ``memory.v2.persona_inject``
+    flag 开时注入；None / flag_enabled=False → 组件返回空 Slice（BC）。
     """
     registry = ComponentRegistry()
     registry.register(MemoryComponent())
@@ -100,6 +109,9 @@ def build_default_assembler(
     registry.register(TimeComponent())
     registry.register(WorkspaceComponent())
     registry.register(WorkspaceMemoryComponent(store=workspace_memory_store))
+    registry.register(
+        PreferenceProfileComponent(store=facts_store, flag_enabled=persona_inject)
+    )
 
     policies = load_policies()
 

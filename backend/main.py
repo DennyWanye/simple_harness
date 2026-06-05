@@ -1141,6 +1141,41 @@ try:
     service_context.register("session_goal_store", _session_goal_store)
     service_context.register("goal_checker", _goal_checker)
 
+    # FP-4 B-10：goal→facts 双写钩接电。
+    # 条件：goal_mode ON + goal_facts_hook flag ON + 两个 store 都已构造。
+    # goal_store 不 import facts（§1.7 冻结约束）→ 通过 bind_on_goal_set 注入 callback。
+    _goal_facts_hook_flag = bool(getattr(_v2_cfg, "goal_facts_hook", False))
+    if (
+        _session_goal_store is not None
+        and _facts_store is not None
+        and _goal_facts_hook_flag
+    ):
+        try:
+            _fs_ref = _facts_store  # closure capture
+
+            async def _goal_to_facts(sid: str, text: str) -> None:
+                """单向钩：goal set → facts upsert(category=goal, scope=session)。"""
+                try:
+                    await _fs_ref.upsert(
+                        category="goal",
+                        subject="user",
+                        key=f"goal_{sid}",
+                        value=text,
+                        confidence=0.9,
+                        source_msg_id=None,
+                        evidence=f"goal set for session {sid}",
+                        scope="session",
+                    )
+                except Exception as _upsert_exc:  # noqa: BLE001 — safe-fail
+                    logger.warning(
+                        "goal_to_facts_upsert_failed sid=%s: %s", sid, _upsert_exc
+                    )
+
+            _session_goal_store.bind_on_goal_set(_goal_to_facts)
+            logger.info("b10_goal_facts_hook_bound")
+        except Exception as _b10_exc:  # noqa: BLE001 — safe-fail
+            logger.warning("b10_goal_facts_hook_bind_failed: %s", _b10_exc)
+
     # P4-S14 + S15: ContextAssembler — pass embedder so TaskClassifier can
     # use the embed-tier route (rule → embed → llm cascade). When BGE-M3
     # isn't loaded yet, the embed path silently falls through to default —
@@ -1168,6 +1203,7 @@ try:
             _workspace_mem_store = None
 
     from deskpet.agent.assembler import build_default_assembler as _build_assembler
+    _persona_inject_flag = bool(getattr(_v2_cfg, "persona_inject", False))
     _assembler = _build_assembler(
         embedder=_embedder,
         llm_registry=None,
@@ -1175,6 +1211,9 @@ try:
         context_window=32_000,
         budget_ratio=0.6,
         workspace_memory_store=_workspace_mem_store,
+        # FP-4 WI-3.2：人格画像注入（flag 关 → component 空转，BC）。
+        facts_store=_facts_store if _persona_inject_flag else None,
+        persona_inject=_persona_inject_flag,
     )
     service_context.register("context_assembler", _assembler)
 
