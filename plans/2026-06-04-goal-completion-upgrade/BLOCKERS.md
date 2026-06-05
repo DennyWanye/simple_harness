@@ -1,5 +1,13 @@
 # BLOCKERS / 状态交接 — goal-completion 升级
 
+> **2026-06-05 真机手测进展（第二轮）**：
+> - ✅ **FP-2 真机手测门 PASS**（[FP-2/02-manual-test.md](./FP-2/02-manual-test.md)）：全 FP flag dev 配置启动，真 UI 设 /goal + 多步 grep 任务 → agent 13 轮 ReAct → `wi13_goal_anchor_injected iter=5/10/15/20` 决策点 re-anchor 周期真机触发 + 3 截图。
+> - 🐛 **真机抓修 2 bug**：① context_compressor 缺 ServiceContext 白名单（WI-4.0 接线，compaction_enabled=true 时 code-mode 任务全崩，已修+回归断言+commit）② 端口冲突 crash-loop（orphan backend 累积抢 8100，已清理流程）。
+> - 🟢 **同栈验证**：compaction_enabled/verify_gate_mode=strict/goal_facts/persona_inject 全开同跑无 Unknown service；verify_gate_init 真机活跃（FP-3）；facts 表 scope/pinned 列已应用到 live DB（FP-4 schema）。
+> - ⚠️ **FP-4 待查 real-machine 发现**：goal_facts_hook=true + /goal set 后，facts `category=goal` 表为空 → B-10 双写钩真机未触发（疑 flag 接线细节，类 context_compressor；WI-3.2 单测已过故是接线问题）。续跑前先查 main.py bind_on_goal_set 是否真被 goal_facts_hook 触发。
+> - **剩余真机手测门（spawn_task 批量，app 现已可用+bug已修）**：FP-3 verify 伪完成→重规划真产物（写权限门 workaround）、FP-4 跨会话召回（+查 B-10 钩）、FP-5 压缩后追目标 + 技能自创确认卡（4.3c 前端待建）。
+
+
 > **2026-06-05 终态更新**：**5 个 FP 后端实现全部完成 + committed**（FP-1~5 共 22 commit），后端单测/回归全绿、R-T5 字节基线守、480 goal-completion 焦点测试绿、MemEval 491 无回归。
 > - ✅ FP-1 真机 windows-mcp 手测门已 PASS（load_persisted 0→1 + UI /goal 查仍在，5 截图）。
 > - 🟢* FP-2/FP-3/FP-4/FP-5 后端全绿，**真机手测门 + FP-5 前端确认卡批量待补**（spawn_task 已建；用户对 FP-2 决策"接受现证据推进"已应用到 FP-3/4/5 同口径）。
