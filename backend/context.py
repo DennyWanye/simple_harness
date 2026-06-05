@@ -52,6 +52,8 @@ _VALID_SERVICES = frozenset({
     "goal_checker",        # GoalChecker — LLM-based goal completion check
     # --- superpowers Layer 1B — 偏好记忆（计划/意图，BGE-M3 语义匹配）---------
     "preference_memory",   # PreferenceMemory — plan-confirm 自动确认 + 意图记忆
+    # --- Option A (2026-06-05) — 瘦包首启模型下载 ----------------------------
+    "model_provisioner",   # ModelProvisioner — 首启从 hf-mirror 下载缺失模型
 })
 
 @dataclass
@@ -93,6 +95,8 @@ class ServiceContext:
     goal_checker: Any | None = None
     # --- superpowers Layer 1B ------------------------------------------------
     preference_memory: Any | None = None
+    # --- Option A — 瘦包首启模型下载 -----------------------------------------
+    model_provisioner: Any | None = None
 
     def register(self, name: str, provider: Any) -> None:
         if name not in _VALID_SERVICES:
