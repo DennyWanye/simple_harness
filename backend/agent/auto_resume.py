@@ -98,6 +98,7 @@ _AUTO_RESUME_TRIGGER_REASONS: frozenset[str] = frozenset({
     "permanent_tool_error",
     "circuit_open",
     "hallucination",
+    "verify_exhausted",  # WI-2.2: verify 两次重试+ephemeral 都失败 → 升级目标级 spawn 重试
 })
 
 

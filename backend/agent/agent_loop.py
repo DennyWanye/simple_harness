@@ -561,6 +561,8 @@ class AgentLoop:
         completion_nudges_used = 0
         # WI-T2.6: 同 completion_nudges_used 模式 — 本轮起算
         verify_nudges_used = 0
+        # WI-2.2: track previous task_replanning for stagnation detection
+        _prev_task_replanning: str = ""
         # P6 Phase 6 — local mirror of gate.state.tools_used kept so the
         # selfcheck tier messages can format "已用 N 次工具调用". The gate
         # is the source of truth for hard-cap enforcement; this var is
@@ -1057,11 +1059,54 @@ class AgentLoop:
                     if (v_outcome is not None and not v_outcome.passed
                             and v_outcome.unmatched_claims):
                         verify_nudges_used += 1
-                        # 失败计数达 max → 调 ephemeral 救援
-                        ephemeral_pass = False
-                        if verify_nudges_used >= self.max_verify_nudges:
+
+                        # WI-2.2: stagnation detection — if 2nd+ rebound and
+                        # task_replanning text is nearly identical to previous
+                        # round (difflib ratio > 0.85), the LLM is stuck in
+                        # copy-paste instead of genuinely replanning. Skip to
+                        # ephemeral immediately (don't waste the 2nd nudge).
+                        _stagnant = False
+                        if verify_nudges_used >= 2 and self.structured_reflection:
                             try:
-                                ephemeral_pass = (
+                                from deskpet.agent.reflection import parse_reflection
+                                import difflib as _difflib
+                                _refl = parse_reflection(response.content or "")
+                                _cur_replan = str(_refl.task_replanning) if _refl else ""
+                                if (
+                                    _prev_task_replanning
+                                    and _cur_replan
+                                    and _difflib.SequenceMatcher(
+                                        None, _prev_task_replanning, _cur_replan
+                                    ).ratio() > 0.85
+                                ):
+                                    _stagnant = True
+                                    logger.info(
+                                        "verify_replan_stagnant sid=%s nudge=%d "
+                                        "ratio=%.2f — escalating to ephemeral",
+                                        session_id, verify_nudges_used,
+                                        _difflib.SequenceMatcher(
+                                            None, _prev_task_replanning, _cur_replan
+                                        ).ratio(),
+                                    )
+                                    try:
+                                        from observability.metrics_sink import (
+                                            record as _vg_metric,
+                                        )
+                                        _vg_metric("verify_replan_stagnant", {
+                                            "nudge_count": int(verify_nudges_used),
+                                        })
+                                    except Exception:  # noqa: BLE001
+                                        pass
+                                if _refl:
+                                    _prev_task_replanning = _cur_replan
+                            except Exception:  # noqa: BLE001 — safe-fail
+                                pass
+
+                        # 失败计数达 max 或 stagnation → 调 ephemeral 救援
+                        ephemeral_pass = False
+                        if _stagnant or verify_nudges_used >= self.max_verify_nudges:
+                            try:
+                                ephemeral_pass = await (
                                     self.verify_gate.consult_ephemeral_subagent(
                                         ledger=ledger,
                                         failed_claims=v_outcome.unmatched_claims,
@@ -1070,8 +1115,43 @@ class AgentLoop:
                                 )
                             except Exception as exc:  # noqa: BLE001
                                 logger.warning("ephemeral consult failed: %s", exc)
+
                         if not ephemeral_pass:
-                            # 回灌 D8 schema
+                            # WI-2.2: verify_exhausted — all layers (nudges +
+                            # ephemeral) exhausted → emit terminal error + return.
+                            # Only when we've either stagnated or used all nudges
+                            # AND ephemeral failed.
+                            if _stagnant or verify_nudges_used >= self.max_verify_nudges:
+                                logger.warning(
+                                    "verify_exhausted sid=%s nudge=%d/%d "
+                                    "stagnant=%s",
+                                    session_id, verify_nudges_used,
+                                    self.max_verify_nudges, _stagnant,
+                                )
+                                try:
+                                    from observability.metrics_sink import (
+                                        record as _vg_metric,
+                                    )
+                                    _vg_metric("verify_exhausted", {
+                                        "nudge_count": int(verify_nudges_used),
+                                        "stagnant": bool(_stagnant),
+                                    })
+                                except Exception:  # noqa: BLE001
+                                    pass
+                                yield ErrorEvent(
+                                    type="error",
+                                    task_id=tid,
+                                    iteration=iteration,
+                                    reason="verify_exhausted",
+                                    detail=(
+                                        f"verify-gate: all retries exhausted after "
+                                        f"{verify_nudges_used} nudge(s). "
+                                        f"stagnant={_stagnant}"
+                                    ),
+                                )
+                                return
+
+                            # Still have nudges: inject rebound + 回灌 D8 schema
                             unmatched_lines = "\n".join(
                                 f"  {i+1}. [unmatched_claim] {c.raw_text!r} — "
                                 f"no receipt matched ({c.reason})"

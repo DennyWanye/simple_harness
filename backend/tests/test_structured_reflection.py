@@ -159,7 +159,7 @@ def _make_fake_verify_gate(unmatched_claims):
         passed=False,
         unmatched_claims=unmatched_claims,
     )
-    gate.consult_ephemeral_subagent = MagicMock(return_value=False)
+    gate.consult_ephemeral_subagent = AsyncMock(return_value=False)
     return gate
 
 

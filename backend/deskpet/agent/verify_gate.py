@@ -15,11 +15,12 @@ stub 时期已建好接口；本次升级把 stub 替换为真正逻辑：
 """
 from __future__ import annotations
 
+import json
 import logging
 import re as _re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Literal, Optional, Protocol
+from typing import Any, Awaitable, Callable, Literal, Optional, Protocol
 
 import yaml
 
@@ -285,13 +286,13 @@ class VerifyGate:
         *,
         extractor: ClaimExtractor,
         mode: str = "off",
-        ephemeral_subagent: Optional[Callable[[Any], bool]] = None,
+        ephemeral_subagent: Optional[Callable[[Any], Awaitable[bool]]] = None,
     ) -> None:
         if mode not in ("off", "shadow", "strict"):
             raise ValueError(f"invalid mode: {mode}")
         self.extractor = extractor
         self.mode = mode
-        # ephemeral_subagent: 接 ledger+failed_claims, 返回 final_verdict
+        # ephemeral_subagent: async callable接 payload dict, 返回 final_verdict bool
         self.ephemeral_subagent = ephemeral_subagent
 
     def check(
@@ -472,7 +473,7 @@ class VerifyGate:
         # 未知 pattern → 兜底返空 list（无 hint，按通用 file 工具放行）
         return []
 
-    def consult_ephemeral_subagent(
+    async def consult_ephemeral_subagent(
         self,
         *,
         ledger: list[ToolReceipt],
@@ -496,7 +497,7 @@ class VerifyGate:
             # stub: 无 ephemeral 接入时直接 fail（保守）
             return False
         try:
-            return bool(self.ephemeral_subagent({
+            return bool(await self.ephemeral_subagent({
                 "ledger_size": len(ledger),
                 "failed_claims": [c.__dict__ for c in failed_claims],
                 "assistant_text": assistant_text[:2000],  # truncate
@@ -504,6 +505,99 @@ class VerifyGate:
         except Exception as exc:  # noqa: BLE001
             logger.warning("ephemeral_subagent raised: %s", exc)
             return False
+
+
+# ─── WI-2.2 ephemeral verifier factory ──────────────────────────────────────
+
+_EPHEMERAL_VERIFIER_PROMPT_TEMPLATE = (
+    "You are an objective verification assistant. Your job is to determine whether "
+    "unmatched claims are actually covered by tool calls in the ledger.\n\n"
+    "Context:\n"
+    "- Assistant claimed: {assistant_text}\n"
+    "- Ledger has {ledger_size} tool call record(s).\n"
+    "- Unmatched claims (regex did not find receipt): {failed_claims}\n\n"
+    "Question: Are these 'unmatched' claims actually covered by one of the tool calls "
+    "in the ledger, just phrased differently (synonym / paraphrase)?\n\n"
+    "Rules:\n"
+    "1. Be objective — do NOT just agree with the assistant.\n"
+    "2. Only output pass if you are confident a tool call covers the claim.\n"
+    "3. If ledger_size=0, the answer is almost always fail.\n"
+    "4. Output ONLY valid JSON with no extra text.\n\n"
+    'Output format: {{"verdict": "pass"|"fail", "reason": "<one-line explanation>"}}'
+)
+
+_FENCED_JSON_RX = _re.compile(
+    r"```(?:json)?\s*(\{.*?\})\s*```",
+    _re.DOTALL | _re.IGNORECASE,
+)
+_BARE_JSON_RX = _re.compile(r"\{[^{}]*\}", _re.DOTALL)
+
+
+def _extract_json_str(raw: str) -> dict | None:
+    """3-level JSON extraction: direct → fenced block → first {..}."""
+    s = raw.strip()
+    try:
+        obj = json.loads(s)
+        if isinstance(obj, dict):
+            return obj
+    except (json.JSONDecodeError, ValueError):
+        pass
+    m = _FENCED_JSON_RX.search(s)
+    if m:
+        try:
+            obj = json.loads(m.group(1))
+            if isinstance(obj, dict):
+                return obj
+        except (json.JSONDecodeError, ValueError):
+            pass
+    m = _BARE_JSON_RX.search(s)
+    if m:
+        try:
+            obj = json.loads(m.group(0))
+            if isinstance(obj, dict):
+                return obj
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return None
+
+
+def make_ephemeral_verifier(
+    llm_call: Callable[[str], Awaitable[str]],
+) -> Callable[[dict[str, Any]], Awaitable[bool]]:
+    """Factory: wraps an async (prompt:str)->str LLM call into a VerifyGate-compatible
+    async ephemeral_subagent callable.
+
+    The returned callable:
+      - accepts payload dict{ledger_size, failed_claims, assistant_text}
+      - returns True (rescue pass) / False (fail)
+      - Anti-sycophancy + objective-only prompt
+      - Safe-fail: any exception / bad JSON → False (conservative)
+
+    Args:
+        llm_call: async callable (prompt: str) -> str  (e.g. _make_str_llm_call result)
+
+    Returns:
+        async callable matching VerifyGate.ephemeral_subagent signature
+    """
+    async def _verifier(payload: dict[str, Any]) -> bool:
+        try:
+            prompt = _EPHEMERAL_VERIFIER_PROMPT_TEMPLATE.format(
+                assistant_text=str(payload.get("assistant_text", ""))[:500],
+                ledger_size=int(payload.get("ledger_size", 0)),
+                failed_claims=str(payload.get("failed_claims", []))[:500],
+            )
+            raw = await llm_call(prompt)
+            obj = _extract_json_str(raw or "")
+            if obj is None:
+                logger.warning("make_ephemeral_verifier: could not parse LLM JSON: %r", (raw or "")[:200])
+                return False
+            verdict = str(obj.get("verdict", "fail")).strip().lower()
+            return verdict == "pass"
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("make_ephemeral_verifier: error: %s", exc)
+            return False
+
+    return _verifier
 
 
 __all__ = [
@@ -519,4 +613,5 @@ __all__ = [
     "CascadeExtractor",
     "VerifyGate",
     "load_claim_patterns",
+    "make_ephemeral_verifier",
 ]

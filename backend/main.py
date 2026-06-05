@@ -687,15 +687,27 @@ def build_agent(
                 RegexExtractor,
                 VerifyGate,
                 load_claim_patterns,
+                make_ephemeral_verifier,
             )
             patterns_path = _Path(verifier_cfg.claim_patterns_file)
             if not patterns_path.is_absolute():
                 # Resolve relative to backend/ (where the default yaml lives)
                 patterns_path = _Path(__file__).parent / patterns_path
             patterns = load_claim_patterns(patterns_path)
+            # WI-2.2: construct ephemeral verifier from cloud/local LLM
+            # provider=None → None → VerifyGate falls back to conservative fail (BC)
+            _ephemeral_llm = _make_str_llm_call(
+                local_llm or cloud_llm, max_tokens=256
+            ) if (local_llm or cloud_llm) else None
+            _ephemeral_subagent = (
+                make_ephemeral_verifier(_ephemeral_llm)
+                if _ephemeral_llm is not None
+                else None
+            )
             verify_gate = VerifyGate(
                 extractor=RegexExtractor(patterns),
                 mode=verifier_cfg.verify_gate_mode,
+                ephemeral_subagent=_ephemeral_subagent,
             )
             logger.info(
                 "verify_gate_init mode=%s patterns=%d path=%s",
