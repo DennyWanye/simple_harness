@@ -255,6 +255,7 @@ class SessionDB:
         tool_call_id: str | None = None,
         tool_calls: list[dict[str, Any]] | None = None,
         reasoning_content: str | None = None,
+        skip_embed: bool = False,
     ) -> int:
         """写入一条 message。
 
@@ -302,7 +303,9 @@ class SessionDB:
         # 契约：
         #   * hook 在写锁**之外**触发——避免 hook 阻塞主写路径
         #   * hook 抛异常只 log warn，不影响返回值
-        if self._on_message_written is not None:
+        #   * FP-4 WI-3.4: skip_embed=True 时跳过 hook（消息仍入 messages 表
+        #     + FTS5 trigger 自动同步；仅 L3 向量 embedding 被跳过）。
+        if self._on_message_written is not None and not skip_embed:
             try:
                 await self._on_message_written(msg_id, content)
             except Exception as exc:  # noqa: BLE001

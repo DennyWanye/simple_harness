@@ -197,6 +197,14 @@ class MemoryV2Config:
     goal_facts: bool = False              # WI-3.1 goal/decision/constraint 记忆抽取
     # FP-4 WI-3.3：PreferenceMemory 半衰期衰减（默认 False，不改变现行为）
     pref_decay: bool = False              # WI-3.3 preference_memory recency decay
+    # FP-4 WI-3.4：写入分级 light 快路（默认 False）
+    # False → skip_embed 强制 False，所有消息都进 L3 向量（当前行为不变）。
+    # True  → 调用方可传 skip_embed=True 跳过 L3 embedding，仅走 L2（消息
+    #         仍入 messages 表 + FTS5 trigger；embedding IS NULL；FTS/recency
+    #         仍可召回）。适用于语音 VAD tick / 截屏低信息判定等高频低信息流。
+    # 实际生效取决于调用方是否传 skip_embed=True；flag 关闭时任何 skip_embed=True
+    # 应被调用方屏蔽（有效 skip_embed = flag AND caller_intent）。
+    light_write: bool = False             # WI-3.4 light 快路开关
     facts: MemoryV2FactsConfig = field(default_factory=MemoryV2FactsConfig)
     forget: MemoryV2ForgetConfig = field(
         default_factory=MemoryV2ForgetConfig,
