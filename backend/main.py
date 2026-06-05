@@ -625,6 +625,17 @@ def _make_str_llm_call(provider, *, max_tokens: int = 512):
 # value = {"fut": Future[str], "text": 原始任务文本}（text 供 Layer 1B 计划记忆记录）。
 _PLAN_CONFIRM_WAITERS: dict[str, dict] = {}
 
+# ─── WI-4.3 技能自创闭环：skill_candidate_confirm Future-await ────────
+# 复制 _PLAN_CONFIRM_WAITERS 模式，独立 channel（不复用 plan-confirm）。
+# key = candidate_id (int)；value = Future[str] ("accept" | "reject")。
+# propose() 后把 Future 注册到此字典，WS handler skill_candidate_confirm
+# 调 _SKILL_CANDIDATE_WAITERS.resolve() → set_result → 唤醒挂起协程。
+try:
+    from deskpet.skills.skill_codifier import SkillCandidateWaiters as _SCWaiters
+    _SKILL_CANDIDATE_WAITERS = _SCWaiters()
+except Exception:
+    _SKILL_CANDIDATE_WAITERS = None  # type: ignore[assignment]
+
 
 # ─── WI-T2.1 v3 build_agent 工厂（接电 VerifyGate）─────────────────
 #
@@ -4150,6 +4161,23 @@ async def control_channel(ws: WebSocket):
                             "plan_confirm_clear_failed sid=%s err=%s", _csid, _pc_e
                         )
 
+            elif msg_type == "skill_candidate_confirm":
+                # WI-4.3 技能自创闭环 — 前端确认/拒绝候选技能。
+                # 与 plan_confirm 镜像：set_result 唤醒 _run_chat 末段挂起的协程。
+                # payload: {candidate_id: int, accept: bool}
+                _sc_payload = raw.get("payload", {}) or {}
+                _sc_cid = int(_sc_payload.get("candidate_id", 0) or 0)
+                _sc_accept = bool(_sc_payload.get("accept", False))
+                _sc_decision = "accept" if _sc_accept else "reject"
+                if _SKILL_CANDIDATE_WAITERS is not None:
+                    _SKILL_CANDIDATE_WAITERS.resolve(_sc_cid, _sc_decision)
+                    logger.info(
+                        "skill_candidate_confirm_received cid=%d decision=%s",
+                        _sc_cid, _sc_decision,
+                    )
+                else:
+                    logger.debug("skill_candidate_confirm: waiters not initialized")
+
             elif msg_type == "code_session_delete":
                 # P4-S24 followup: user clicked 🗑️ on a project tile / sidebar
                 # entry and confirmed the dialog. Drop the in-memory state
@@ -5790,6 +5818,106 @@ async def control_channel(ws: WebSocket):
                                             )
                                 except Exception as _ex:  # noqa: BLE001
                                     logger.debug("auto_resume_success_emit_failed sid=%s err=%s", _sid, _ex)
+
+                                # WI-4.3 技能自创闭环 hook（final-answer 后）
+                                # safe-fail: 任何异常只 debug log，不中断正常 turn。
+                                # flag OFF（默认）→ 整段跳过（字节级 BC）。
+                                try:
+                                    _codify_cfg = getattr(
+                                        getattr(config, "skills", None), "codify", None
+                                    )
+                                    if _codify_cfg is not None and getattr(_codify_cfg, "enabled", False):
+                                        from deskpet.skills.skill_codifier import (
+                                            SkillCodifier as _SCodifier,
+                                            SkillCandidateStore as _SCStore,
+                                            detect_trigger as _detect_trigger,
+                                        )
+                                        # 拿 ToolPathRecorder (已由 FP-1/WI-1.6 构造并注入)
+                                        _tp_rec = service_context.get("tool_path_recorder")
+                                        _sc_loader = service_context.get("skill_loader")
+                                        _sc_candidate_store = service_context.get("skill_candidate_store")
+                                        if _tp_rec is not None and _sc_candidate_store is not None:
+                                            # 拿 active goal_id（若有）
+                                            _sg_store = service_context.get("session_goal_store")
+                                            _sc_goal_id: str | None = None
+                                            if _sg_store is not None:
+                                                _ag = getattr(_sg_store, "get_active_goal", None)
+                                                if callable(_ag):
+                                                    _ag_obj = _ag(_sid)
+                                                    if _ag_obj is not None:
+                                                        _sc_goal_id = getattr(_ag_obj, "goal_id", None)
+                                            if _sc_goal_id is None:
+                                                _sc_goal_id = _sid  # fallback: use session as goal
+                                            _tp = _tp_rec.get_completed_path(_sid, _sc_goal_id)
+                                            if _tp is not None:
+                                                _sc_user_dir = None
+                                                if _sc_loader is not None:
+                                                    _dirs = getattr(_sc_loader, "_dirs", [])
+                                                    if len(_dirs) >= 2:
+                                                        _sc_user_dir = _dirs[1]
+                                                if _sc_user_dir is not None:
+                                                    _llm_for_codify = service_context.get("llm_registry")
+                                                    if _llm_for_codify is not None:
+                                                        async def _make_codify_llm_call(prompt: str) -> str:
+                                                            from llm.types import ChatResponse as _CR
+                                                            _cr: _CR = await _llm_for_codify.chat_with_fallback(
+                                                                [{"role": "user", "content": prompt}],
+                                                                model=None,
+                                                            )
+                                                            return _cr.content or ""
+                                                        _codifier = _SCodifier(
+                                                            candidate_store=_sc_candidate_store,
+                                                            user_skill_dir=_sc_user_dir,
+                                                            llm_call=_make_codify_llm_call,
+                                                            skill_loader=_sc_loader,
+                                                        )
+                                                        _sc_cid = await _codifier.propose(_tp)
+                                                        if _sc_cid is not None:
+                                                            # Push skill_candidate_proposed to frontend
+                                                            _sc_pending = await _sc_candidate_store.fetch_pending(_sc_cid)
+                                                            if _sc_pending is not None:
+                                                                _sc_evt = {
+                                                                    "type": "skill_candidate_proposed",
+                                                                    "payload": {
+                                                                        "candidate_id": _sc_cid,
+                                                                        "name": _sc_pending.get("name"),
+                                                                        "description": _sc_pending.get("description"),
+                                                                        "steps": _sc_pending.get("steps", []),
+                                                                        "session_id": _sid,
+                                                                    },
+                                                                }
+                                                                await _ws.send_json(_sc_evt)
+                                                                logger.info(
+                                                                    "skill_candidate_proposed cid=%d name=%s sid=%s",
+                                                                    _sc_cid, _sc_pending.get("name"), _sid,
+                                                                )
+                                                                # Await user confirm (timeout 5min)
+                                                                if _SKILL_CANDIDATE_WAITERS is not None:
+                                                                    import asyncio as _aio_sc
+                                                                    _sc_fut = _aio_sc.get_event_loop().create_future()
+                                                                    _SKILL_CANDIDATE_WAITERS.add(_sc_cid, _sc_fut)
+                                                                    try:
+                                                                        _sc_decision = await _aio_sc.wait_for(
+                                                                            _sc_fut, timeout=300
+                                                                        )
+                                                                    except _aio_sc.TimeoutError:
+                                                                        _sc_decision = "reject"
+                                                                        logger.info(
+                                                                            "skill_candidate_timeout cid=%d", _sc_cid
+                                                                        )
+                                                                    finally:
+                                                                        _SKILL_CANDIDATE_WAITERS.pop(_sc_cid)
+                                                                    await _codifier.confirm(
+                                                                        _sc_cid,
+                                                                        accept=(_sc_decision == "accept"),
+                                                                    )
+                                                                    logger.info(
+                                                                        "skill_candidate_resolved cid=%d decision=%s",
+                                                                        _sc_cid, _sc_decision,
+                                                                    )
+                                except Exception as _sc_ex:  # noqa: BLE001
+                                    logger.debug("skill_codify_hook_failed sid=%s err=%s", _sid, _sc_ex)
+
                             elif isinstance(ev, _ErrEv):
                                 # P5-S2 Phase 4: try AutoResumeOrchestrator
                                 # FIRST for recoverable error reasons. If

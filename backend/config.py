@@ -365,11 +365,26 @@ class SkillsAutoDisclosureConfig:
 
 
 @dataclass
+class SkillsCodifyConfig:
+    """``[skills.codify]`` — WI-4.3 技能自创闭环 feature flag + rate-limit.
+
+    Default ``enabled=False`` (dev on / prod off).
+    Set ``[skills.codify] enabled = true`` in config.toml to activate.
+    ``max_candidates_per_day`` caps how many pending candidates can be
+    generated per calendar day (防打扰).
+    """
+    enabled: bool = False
+    max_candidates_per_day: int = 3
+
+
+@dataclass
 class SkillsConfig:
     """``[skills]`` top-level config table (WI-4.1+)."""
     auto_disclosure: SkillsAutoDisclosureConfig = field(
         default_factory=SkillsAutoDisclosureConfig
     )
+    # WI-4.3 技能自创闭环 — dev on / prod off by default.
+    codify: SkillsCodifyConfig = field(default_factory=SkillsCodifyConfig)
 
 
 @dataclass
