@@ -86,7 +86,7 @@
 |---|---|---|---|---|---|---|---|
 | 前置 | §6 契约 + §7 账本冻结 | — | — | — | — | — | ✅ 已冻结 2026-06-04（[FP-1/00-CONTRACT-FREEZE.md](./FP-1/00-CONTRACT-FREEZE.md)） |
 | FP-1 | 目标持久化地基 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ **完成**（真机手测门 PASS；FP-1/02-manual-test.md + manual-results-2026-06-04-FP-1/） |
-| FP-2 | 抗漂移闭环 | ✅ | ✅ | ✅ | 🟡 | ⬜ | 🟠 实现+单测+回归全绿(55焦点+280回归)+真机 agent 在 goal 会话跑确认；**手测门 iter-5 anchor 截图受权限门阻，待拍板**（[BLOCKERS.md](./BLOCKERS.md)） |
+| FP-2 | 抗漂移闭环 | ✅ | ✅ | ✅ | 🟢* | ✅ | ✅ 实现+55焦点+280回归全绿+真机 agent 在 goal 会话跑确认；**用户决策接受现证据**(re-anchor 单测证明+真机 agent-on-goal)，iter-5 anchor 截图后补（[BLOCKERS.md](./BLOCKERS.md) 选项2）。R-T4 defer |
 | FP-3 | 自我纠错闭环 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ 锁(依赖 FP-1) |
 | FP-4 | 记忆 + 人格 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ 锁(依赖 FP-1) |
 | FP-5 | Skills 分级 + 自创 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ 锁(依赖 FP-1+1.6) |
