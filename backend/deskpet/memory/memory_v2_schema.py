@@ -95,7 +95,11 @@ CREATE TABLE IF NOT EXISTS facts (
     -- 老库由 schema_v2_migrator.ensure_memory_v2_columns 通过 ALTER
     -- 补齐；新库一次到位避免启动后立即再 ALTER。
     superseded_by  INTEGER REFERENCES facts(id),
-    forgotten_at   REAL
+    forgotten_at   REAL,
+    -- FP-4 Task 1：scope（user/session）+ pinned（用户主动钉住，跳过衰减）。
+    -- 老库同样由 schema_v2_migrator._COLUMN_ADDS ALTER 补齐。
+    scope          TEXT    DEFAULT 'user',
+    pinned         INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_facts_subject_key ON facts(subject, key, is_active);
 CREATE INDEX IF NOT EXISTS idx_facts_category ON facts(category, is_active);
