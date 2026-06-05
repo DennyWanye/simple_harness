@@ -50,6 +50,8 @@ P4_IPC_MESSAGE_TYPES = frozenset(
         "memory_facts_list",
         "memory_forget",
         "memory_forget_undo",
+        # Option A (2026-06-05) — 瘦包首启模型下载进度探针。
+        "model_provision_status",
     }
 )
 
@@ -78,6 +80,8 @@ async def handle(
             await _handle_memory_l1_delete(ws, payload, service_context)
         elif msg_type == "embedder_status":
             await _handle_embedder_status(ws, payload, service_context)
+        elif msg_type == "model_provision_status":
+            await _handle_model_provision_status(ws, payload, service_context)
         elif msg_type == "model_context_get":
             await _handle_model_context_get(ws, payload)
         elif msg_type == "model_context_set":
@@ -367,6 +371,38 @@ async def _handle_embedder_status(
                 "model_path": model_path,
             },
         }
+    )
+
+
+async def _handle_model_provision_status(
+    ws: Any, payload: dict[str, Any], sc: Any
+) -> None:
+    """Option A: 首启模型下载进度探针，供前端进度卡片轮询。
+
+    返回 provisioner.status()（state/current/index/total/downloaded_bytes/
+    total_bytes/error）。未注册（如非瘦包构建从不下载）→ state="ready"，前端
+    据此不显示进度卡片。任何异常都退到 ready，绝不阻断前端。
+    """
+    prov = _get_service(sc, "model_provisioner")
+    if prov is None:
+        await ws.send_json(
+            {
+                "type": "model_provision_status_response",
+                "payload": {"state": "ready", "total": 0},
+            }
+        )
+        return
+    try:
+        status = prov.status()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "p4_ipc.model_provision_status_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        status = {"state": "ready", "total": 0}
+    await ws.send_json(
+        {"type": "model_provision_status_response", "payload": status}
     )
 
 

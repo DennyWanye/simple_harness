@@ -1510,6 +1510,18 @@ async def lifespan(app: FastAPI):
                 logger.warning("p4_embedder_warmup_failed", error=str(exc))
         # fire-and-forget; we deliberately don't await
         asyncio.create_task(_embedder_warmup_bg())
+    # Option A (2026-06-05): 首启模型下载。瘦包(DESKPET_BUNDLE_MODELS=0)不内嵌
+    # 模型 → 后台 daemon 线程从 hf-mirror 拉缺失的 bge-m3 / faster-whisper。
+    # 注册到 service_context 供 p4_ipc 的 model_provision_status 探针读取；
+    # start_background 幂等。失败不阻塞启动（ASR/记忆各自有降级）。
+    try:
+        from deskpet.model_provisioner import ModelProvisioner
+        _provisioner = ModelProvisioner()
+        service_context.register("model_provisioner", _provisioner)
+        _provisioner.start_background()
+        logger.info("model_provisioner_started")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("model_provisioner_start_failed", error=str(exc))
     # superpowers Layer 1B — PreferenceMemory（BGE-M3 语义偏好记忆）。
     # flag OFF（默认）→ 不构造 → plan-confirm 门每次都等确认（现状）。
     # 需要真 embedder（embed 接口）；mock 也能跑（向量稳定可匹配）。

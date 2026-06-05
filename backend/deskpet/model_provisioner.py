@@ -104,6 +104,12 @@ class ModelProvisioner:
         self._lock = threading.Lock()
         self._started = False
 
+    def __deepcopy__(self, memo):
+        # 进程单例：ServiceContext.create_session() 会 deepcopy 整个 context，
+        # 而本对象持有不可 deepcopy 的 threading.Lock + 后台线程。返回自身，
+        # 让所有 per-session context 共享同一个 provisioner（语义也正确）。
+        return self
+
     # ---- 路径 ----------------------------------------------------------
     def _models_dir(self) -> Path:
         return self._models_dir_override if self._models_dir_override is not None else user_models_dir()
