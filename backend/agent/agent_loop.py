@@ -424,6 +424,12 @@ class AgentLoop:
         # None (default) = BC (compressor not injected → zero new behaviour).
         # When non-None, should_compress() and compress() are called in the loop.
         compressor: Optional[Any] = None,  # deskpet.agent.context_compressor.ContextCompressor
+        # WI-4.2 skill remount: inject SkillLoader + SkillMatcher for post-compaction
+        # skill body re-inline.  Both default None → BC (no remount, zero overhead).
+        # When non-None and compaction fires, _remount_skills() is called to re-insert
+        # the bodies of skills used this run as a single role=system block.
+        skill_loader: Optional[Any] = None,   # deskpet.skills.loader.SkillLoader
+        skill_matcher: Optional[Any] = None,  # deskpet.skills.skill_matcher.SkillMatcher
     ) -> None:
         self.llm = llm_registry
         self.tools = tool_registry
@@ -462,6 +468,10 @@ class AgentLoop:
         # WI-4.0 compaction: ContextCompressor (BC: None → skip entirely).
         # When non-None, loop calls should_compress() + compress() after budget check.
         self.compressor = compressor
+        # WI-4.2 skill remount (BC: both None → skip entirely).
+        # When non-None and compaction fires, _remount_skills() re-inlines skill bodies.
+        self.skill_loader = skill_loader
+        self.skill_matcher = skill_matcher
         # P5-S2 Phase 3.3: same-(name, args) repeat detection. When set,
         # the loop checks the activity store's per-session
         # ``tool_signature_window`` BEFORE dispatching each tool_call —
@@ -596,6 +606,14 @@ class AgentLoop:
         # the threshold repeatedly; we log the first fire and stay quiet after).
         _compaction_warn_logged: bool = False
 
+        # WI-4.2 skill remount: track skill_invoke calls this run so that
+        # _remount_skills() knows which skill bodies to re-inline after compaction.
+        # Reset per run() invocation (fresh list each chat turn).
+        # List preserves insertion order for LRU-drop logic; dedup via "already
+        # appended" check below.
+        self._skills_used_order: list[str] = []
+        self._skills_used_this_run: set[str] = set()
+
         for iteration in range(1, self.max_iterations + 1):
             # P6 Phase 6 — TerminationGate.allows_call() is always run.
             # Checks hard limits (turns, wall-clock, cost) BEFORE we burn
@@ -704,6 +722,12 @@ class AgentLoop:
                         )
                         if getattr(_cresult, "compressed", False):
                             working_messages = _cresult.messages
+                            # WI-4.2: re-inline skill bodies after compaction so
+                            # the LLM doesn't lose skill step details that were
+                            # in the compressed "middle" messages.
+                            working_messages = self._remount_skills(
+                                working_messages, session_id
+                            )
                             if not _compaction_warn_logged:
                                 logger.info(
                                     "p1_4_compaction_fired sid=%s tid=%s iter=%d "
@@ -1633,6 +1657,23 @@ class AgentLoop:
                 # longer trigger HALLUCINATION_DETECTED — only repeating the
                 # same path triggers).
                 self._gate.record_tool_call(tc.name, args=tc.arguments)
+                # WI-4.2 skill remount: record skill_invoke calls so that
+                # _remount_skills() can re-inline their bodies after compaction.
+                if tc.name == "skill_invoke" and self.skill_loader is not None:
+                    _sname = None
+                    try:
+                        _sargs = tc.arguments
+                        if isinstance(_sargs, dict):
+                            _sname = _sargs.get("skill_name")
+                        elif isinstance(_sargs, str):
+                            import json as _json_sk
+                            _sargs_d = _json_sk.loads(_sargs)
+                            _sname = _sargs_d.get("skill_name")
+                    except Exception:  # noqa: BLE001 — never block dispatch
+                        pass
+                    if _sname and _sname not in self._skills_used_this_run:
+                        self._skills_used_this_run.add(_sname)
+                        self._skills_used_order.append(_sname)
                 # P6 Phase 6 — tools_used_count was the legacy soft-cap
                 # counter; the gate now tracks tools_used in its state.
                 # Kept as a local var for the (still-active) soft selfcheck
@@ -1746,6 +1787,148 @@ class AgentLoop:
             reason="max_iterations",
             detail=f"exceeded {self.max_iterations} iterations without terminal stop_reason",
         )
+
+    # ------------------------------------------------------------------
+    # WI-4.2 — post-compaction skill body remount
+    # ------------------------------------------------------------------
+
+    _REMOUNT_MARKER = "[已重挂技能 / remounted skills]"
+    _REMOUNT_TOKEN_BUDGET = 25_000  # chars (proxy for tokens; 1 token ≈ 4 chars)
+
+    def _remount_skills(
+        self,
+        messages: list[dict],
+        session_id: str,  # noqa: ARG002 — reserved for future per-session skill store
+    ) -> list[dict]:
+        """Re-inline skill bodies into a single role=system block after compaction.
+
+        Algorithm
+        ---------
+        1. Gather skills to remount:
+           - skills tracked via ``_skills_used_this_run`` (from ``skill_invoke`` calls).
+           - (future: SkillMatcher strong-match set, when matcher available)
+        2. Order by recency of use (``_skills_used_order`` insertion order, most-recent
+           last → iterate reversed for MRU-first priority).
+        3. Re-read bodies via ``skill_loader.read_body(name)`` up to 25K char budget.
+           Skills that exceed remaining budget are dropped (LRU-drop = drop oldest).
+           Skills whose loader raises KeyError / IOError are skipped gracefully.
+        4. Build one role=system block with ``_REMOUNT_MARKER`` as header.
+           BEFORE inserting, remove any existing ``[已重挂技能]`` block (prevents
+           pile-up across repeated compactions).
+        5. No skills used / no bodies loaded → return messages unchanged (no-op).
+        6. skill_loader is None → no-op (BC).
+        """
+        # BC: no loader injected → nothing to do
+        if self.skill_loader is None:
+            return messages
+
+        # Gather names to remount.  Primary source: in-run skill_invoke tracking.
+        # Prefer the ordered list (preserves recency); fall back to the set for
+        # cases where a test (or external code) only sets _skills_used_this_run.
+        _order_attr = getattr(self, "_skills_used_order", [])
+        _set_attr: set[str] = getattr(self, "_skills_used_this_run", set())
+        if _order_attr:
+            names_to_remount: list[str] = list(_order_attr)
+        elif _set_attr:
+            # No ordering info — use the set in arbitrary order.
+            names_to_remount = list(_set_attr)
+        else:
+            names_to_remount = []
+        # Deduplicate while preserving order (shouldn't be needed given how we
+        # build the list, but be defensive).
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for n in names_to_remount:
+            if n not in seen:
+                seen.add(n)
+                ordered.append(n)
+
+        # Future: merge SkillMatcher strong-match names here (WI-4.2 §3.1 note).
+        # When self.skill_matcher is available, call matcher.match(last_user_query)
+        # and union with ``ordered`` (placing matcher hits at the front / MRU).
+
+        if not ordered:
+            # No skills used this run → no-op
+            return messages
+
+        # Load bodies, most-recently-used first, up to budget.
+        # ``ordered`` is insertion-order (oldest first); reverse for MRU priority.
+        budget_remaining = self._REMOUNT_TOKEN_BUDGET
+        sections: list[str] = []
+        # We iterate MRU-first so that the most-recent skills get budget priority.
+        for name in reversed(ordered):
+            try:
+                body = self.skill_loader.read_body(name)
+            except (KeyError, OSError, IOError):
+                # Skill not found or file unreadable → skip gracefully
+                logger.debug(
+                    "skill_remount.skip_unreadable sid=%s name=%s",
+                    session_id, name,
+                )
+                continue
+            except Exception:  # noqa: BLE001
+                continue
+
+            section = f"### {name}\n{body}"
+            if len(section) > budget_remaining:
+                # Would exceed budget — skip this skill (LRU-drop: since we're
+                # iterating MRU-first, any overflow here means we drop the older
+                # skill in subsequent loop iterations — but we still try to fit
+                # shorter ones after this one).  A simpler "first-fit" approach:
+                # just skip and keep trying (smaller bodies may still fit).
+                logger.debug(
+                    "skill_remount.budget_skip sid=%s name=%s body_len=%d remaining=%d",
+                    session_id, name, len(section), budget_remaining,
+                )
+                continue
+            sections.append(section)
+            budget_remaining -= len(section)
+
+        if not sections:
+            # All skills either skipped or over-budget → no-op
+            return messages
+
+        # Build the remount block.  Sections were appended MRU-first; reverse
+        # so the block reads oldest→newest (more natural reading order).
+        sections.reverse()
+        remount_content = (
+            f"{self._REMOUNT_MARKER}\n\n"
+            + "\n\n".join(sections)
+        )
+        remount_block: dict = {"role": "system", "content": remount_content}
+
+        # Remove any existing remount block (single-block invariant — prevents pile-up
+        # across repeated compactions).
+        cleaned = [
+            m for m in messages
+            if not (
+                m.get("role") == "system"
+                and self._REMOUNT_MARKER in (m.get("content") or "")
+            )
+        ]
+
+        # Insert the new remount block.  Place it after the last existing system
+        # message (usually the skill_prelude / persona block) so context order is:
+        #   [system: skill_prelude] … [system: remount] … [user/assistant messages]
+        last_system_idx = -1
+        for idx, m in enumerate(cleaned):
+            if m.get("role") == "system":
+                last_system_idx = idx
+        insert_at = last_system_idx + 1
+
+        result = cleaned[:insert_at] + [remount_block] + cleaned[insert_at:]
+
+        logger.info(
+            "skill_remounted sid=%s names=%s budget_used=%d",
+            session_id,
+            [s.split("\n")[0].replace("### ", "") for s in sections],
+            self._REMOUNT_TOKEN_BUDGET - budget_remaining,
+        )
+        return result
+
+    # ------------------------------------------------------------------
+    # Tool dispatch
+    # ------------------------------------------------------------------
 
     async def _dispatch_tool(
         self, tc: ToolCall, task_id: str, session_id: str = "default"
