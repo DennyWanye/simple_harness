@@ -50,6 +50,12 @@ _VALID_SERVICES = frozenset({
     # whitelist 里。
     "session_goal_store",  # SessionGoalStore — companion+code goal tracking
     "goal_checker",        # GoalChecker — LLM-based goal completion check
+    # --- goal-completion FP-5 WI-4.0 — compaction 接通 AgentLoop ---------------
+    # 2026-06-05 真机 bug fix：main.py:1189 无条件 register("context_compressor")，
+    # 缺白名单 → 启动 register 抛 ValueError(被 boot try/except 吞成 warning)，
+    # 但 chat 派发处 get("context_compressor") 抛 "Unknown service" → code-mode
+    # 任务全崩。flag OFF 时仍 register(None) 占位，故必须在白名单里。
+    "context_compressor",  # ContextCompressor — WI-4.0 loop 内 compaction
     # --- superpowers Layer 1B — 偏好记忆（计划/意图，BGE-M3 语义匹配）---------
     "preference_memory",   # PreferenceMemory — plan-confirm 自动确认 + 意图记忆
     # --- Option A (2026-06-05) — 瘦包首启模型下载 ----------------------------

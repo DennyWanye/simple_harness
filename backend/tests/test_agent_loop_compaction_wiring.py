@@ -406,3 +406,10 @@ def test_build_agent_passes_compressor_none_when_flag_off():
     assert loop.compressor is None, (
         "With compaction_enabled=False, build_agent must pass compressor=None to AgentLoop"
     )
+
+
+def test_context_compressor_in_valid_services():
+    """FP-5 WI-4.0 真机回归: main.py 无条件 register('context_compressor'),
+    缺白名单会致启动 register 失败 + chat get 抛 'Unknown service' → code-mode 全崩。"""
+    from context import _VALID_SERVICES
+    assert "context_compressor" in _VALID_SERVICES
