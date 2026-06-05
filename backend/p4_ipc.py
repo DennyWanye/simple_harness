@@ -52,6 +52,9 @@ P4_IPC_MESSAGE_TYPES = frozenset(
         "memory_forget_undo",
         # Option A (2026-06-05) — 瘦包首启模型下载进度探针。
         "model_provision_status",
+        # FP-4 WI-3.3 — 用户 Pin/Unpin 钉住事实（跳过 daily_decay 衰减）。
+        "memory_pin",
+        "memory_unpin",
     }
 )
 
@@ -92,6 +95,10 @@ async def handle(
             await _handle_memory_forget_ws(ws, payload, service_context)
         elif msg_type == "memory_forget_undo":
             await _handle_memory_forget_undo(ws, payload, service_context)
+        elif msg_type == "memory_pin":
+            await _handle_memory_pin(ws, payload, service_context, pinned=True)
+        elif msg_type == "memory_unpin":
+            await _handle_memory_pin(ws, payload, service_context, pinned=False)
         else:
             # Shouldn't happen — membership check is done by caller.
             await _send_error(ws, f"unknown P4 message type: {msg_type}")
@@ -574,6 +581,67 @@ async def _handle_memory_forget_undo(
             "status": status,
             "restored_ids": [int(i) for i in restored],
         },
+    })
+
+
+# ---------------------------------------------------------------------------
+# FP-4 WI-3.3 — Pin / Unpin fact (skip daily_decay)
+# ---------------------------------------------------------------------------
+
+async def _handle_memory_pin(
+    ws: Any, payload: dict[str, Any], sc: Any, *, pinned: bool,
+) -> None:
+    """Pin 或 Unpin 一条 fact（pinned=True → 跳过 daily_decay 衰减）。
+
+    verb ``memory_pin``   payload: ``{fact_id: int}``
+    verb ``memory_unpin`` payload: ``{fact_id: int}``
+    Response: ``{type: "memory_pin_response" | "memory_unpin_response",
+                 payload: {status: "ok" | "error", reason?: str}}``
+    """
+    resp_type = "memory_pin_response" if pinned else "memory_unpin_response"
+    facts_store = _get_service(sc, "facts_store")
+    if facts_store is None:
+        await ws.send_json({
+            "type": resp_type,
+            "payload": {
+                "status": "error",
+                "reason": "facts_store_not_registered",
+            },
+        })
+        return
+    raw_id = payload.get("fact_id")
+    if raw_id is None:
+        await ws.send_json({
+            "type": resp_type,
+            "payload": {"status": "error", "reason": "fact_id required"},
+        })
+        return
+    try:
+        fact_id = int(raw_id)
+    except (TypeError, ValueError):
+        await ws.send_json({
+            "type": resp_type,
+            "payload": {
+                "status": "error",
+                "reason": f"fact_id must be int, got {raw_id!r}",
+            },
+        })
+        return
+    try:
+        await facts_store.set_pinned(fact_id, pinned)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "p4_ipc.memory_pin_failed",
+            fact_id=fact_id, pinned=pinned, error=str(exc),
+        )
+        await ws.send_json({
+            "type": resp_type,
+            "payload": {"status": "error", "reason": str(exc)},
+        })
+        return
+    await ws.send_json({
+        "type": resp_type,
+        "payload": {"status": "ok", "fact_id": fact_id, "pinned": pinned},
     })
 
 

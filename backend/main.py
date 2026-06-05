@@ -1546,6 +1546,16 @@ async def lifespan(app: FastAPI):
             logger.info("p4_memory_manager_ready")
         except Exception as exc:
             logger.warning("p4_memory_manager_init_failed", error=str(exc))
+    # FP-4 WI-3.3 ★ FIX BUG: FactsStore.daily_decay() was never called in prod.
+    # Apply once at startup (mirrors retriever's "run once at startup" convention).
+    # Pinned facts are skipped (WI-3.3). Failure is non-fatal — only logs.
+    _fs_for_decay = service_context.get("facts_store")
+    if _fs_for_decay is not None:
+        try:
+            _decay_n = await _fs_for_decay.daily_decay()
+            logger.info("p4_facts_daily_decay_startup", mutated=_decay_n)
+        except Exception as _dd_exc:  # noqa: BLE001
+            logger.warning("p4_facts_daily_decay_failed", error=str(_dd_exc))
     _sl = service_context.get("skill_loader")
     if _sl is not None:
         try:
@@ -1586,6 +1596,7 @@ async def lifespan(app: FastAPI):
             _pref_mem = PreferenceMemory(
                 _paths.user_data_dir() / "preference_memory.json",
                 _emb.embed,
+                pref_decay=bool(config.memory.v2.pref_decay),
             )
             service_context.register("preference_memory", _pref_mem)
             logger.info(

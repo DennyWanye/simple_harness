@@ -852,20 +852,51 @@ class FactsStore:
         scored.sort(key=lambda t: -t[0])
         return [d for _, d in scored[: int(limit)]]
 
+    async def set_pinned(self, fact_id: int, pinned: bool) -> None:
+        """Pin or unpin a fact — pinned facts skip daily_decay entirely.
+
+        Mirrors ``mark_forgotten`` pattern: WHERE is_active=1 guard omitted
+        (pin/unpin should work regardless of active state, per WI-3.3 spec).
+        Missing fact_id → 0 rows updated, silent (no error).
+        """
+        await self._ensure_schema()
+        async with aiosqlite.connect(self._db_path) as conn:
+            await conn.execute("PRAGMA busy_timeout=5000")
+            await conn.execute(
+                "UPDATE facts SET pinned = ? WHERE id = ?",
+                (1 if pinned else 0, int(fact_id)),
+            )
+            await conn.commit()
+
     async def daily_decay(self, *, now: Optional[float] = None) -> int:
         """Apply per-fact ``confidence *= exp(-decay_rate * days_since_touch)``.
 
         Mirrors :func:`retriever.daily_decay` but operates on
         ``confidence`` instead of ``salience``. Returns the count of
         rows actually mutated (> 1e-6 delta).
+
+        WI-3.3: pinned facts (``pinned=1``) skip decay entirely — their
+        confidence never drops. The SQL filter ``AND pinned=0`` handles this
+        cheaply (no Python-level skip needed). Guard: if the ``pinned`` column
+        is absent (old DB where ALTER failed), falls back to the original
+        ``WHERE is_active=1`` query so startup is not blocked.
         """
         await self._ensure_schema()
         ts = now if now is not None else time.time()
         async with aiosqlite.connect(self._db_path) as conn:
-            cur = await conn.execute(
+            # WI-3.3: try the pinned-aware query first; fall back if column absent.
+            _pinned_sql = (
+                "SELECT id, confidence, COALESCE(last_recalled, updated_at), "
+                "decay_rate FROM facts WHERE is_active = 1 AND pinned = 0"
+            )
+            _fallback_sql = (
                 "SELECT id, confidence, COALESCE(last_recalled, updated_at), "
                 "decay_rate FROM facts WHERE is_active = 1"
             )
+            try:
+                cur = await conn.execute(_pinned_sql)
+            except Exception:  # noqa: BLE001 — OperationalError: no column pinned
+                cur = await conn.execute(_fallback_sql)
             rows = await cur.fetchall()
             await cur.close()
             updates = []

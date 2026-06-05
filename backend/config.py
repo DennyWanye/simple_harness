@@ -195,6 +195,8 @@ class MemoryV2Config:
     episodic_to_semantic: bool = False    # WI-S2.4 summary 抽 facts
     # FP-4 WI-3.1：goal / decision / constraint 类别抽取
     goal_facts: bool = False              # WI-3.1 goal/decision/constraint 记忆抽取
+    # FP-4 WI-3.3：PreferenceMemory 半衰期衰减（默认 False，不改变现行为）
+    pref_decay: bool = False              # WI-3.3 preference_memory recency decay
     facts: MemoryV2FactsConfig = field(default_factory=MemoryV2FactsConfig)
     forget: MemoryV2ForgetConfig = field(
         default_factory=MemoryV2ForgetConfig,
