@@ -1031,9 +1031,21 @@ class AgentLoop:
                             self.receipt_store.load_session(session_id)
                             if self.receipt_store is not None else []
                         )
+                        # WI-2.3: thread goal_text into verify_gate.check so
+                        # GoalAlignment is populated when an active goal exists.
+                        # BC: goal_text=None (no store / no active goal) → byte-identical
+                        # to pre-WI-2.3 (check ignores None goal_text).
+                        _vg_goal_text: Optional[str] = None
+                        if self.session_goal_store is not None:
+                            _gt_fn = getattr(
+                                self.session_goal_store, "get_goal_text", None
+                            )
+                            if callable(_gt_fn):
+                                _vg_goal_text = _gt_fn(session_id)
                         v_outcome = self.verify_gate.check(
                             assistant_text=response.content,
                             ledger=ledger,
+                            goal_text=_vg_goal_text,
                         )
                     except Exception as exc:  # noqa: BLE001
                         logger.warning(
@@ -1072,6 +1084,26 @@ class AgentLoop:
                                 f"Next: please call the missing tool to actually "
                                 f"perform the action you claimed, then end_turn again."
                             )
+                            # WI-2.3: append goal alignment context to rebound
+                            # when goal_text was provided and GoalAlignment is
+                            # populated. goal_text=None → rebound unchanged (BC).
+                            if (
+                                v_outcome.goal_alignment is not None
+                                and not v_outcome.goal_alignment.aligned
+                            ):
+                                ga = v_outcome.goal_alignment
+                                _evidence_str = "\n".join(
+                                    f"  - {e}"
+                                    for e in ga.objective_evidence[:5]
+                                ) or "  (无客观证据)"
+                                rebound = (
+                                    rebound
+                                    + f"\n原始目标: {ga.goal_text}\n"
+                                    + f"客观证据: {_evidence_str}\n"
+                                    + f"缺口: {ga.gap}\n"
+                                    + "→ 请重规划（结构化反思）后补齐，"
+                                    + "使产物真满足原目标，而非换个说法过关。"
+                                )
                             # WI-2.1: append reflection instruction when flag on.
                             # Flag off (default) → rebound string unchanged (BC).
                             if self.structured_reflection:

@@ -53,6 +53,18 @@ class VerifierFailure:
 
 
 @dataclass
+class GoalAlignment:
+    """WI-2.3: 原目标 vs 客观产物对照结果（由 VerifyGate.check 填入）。
+
+    仅当 check() 传入 goal_text 时生成；goal_text=None 时 VerifyOutcome.goal_alignment=None（BC）。
+    """
+    goal_text: str                 # 重述的【原始目标】（防 verifier 漂移的锚）
+    objective_evidence: list[str]  # receipt + outcome_verifier 的客观信号
+    aligned: bool                  # 客观证据是否真满足原目标
+    gap: str                       # aligned=False 时差什么；aligned=True 时为空串
+
+
+@dataclass
 class VerifyOutcome:
     passed: bool
     claims_extracted: int = 0
@@ -61,6 +73,7 @@ class VerifyOutcome:
     elapsed_ms: int = 0
     extractor_used: str = "regex"
     failure_count: int = 0
+    goal_alignment: Optional[GoalAlignment] = None  # WI-2.3: None when goal_text not provided (BC)
 
 
 @dataclass
@@ -286,8 +299,9 @@ class VerifyGate:
         *,
         assistant_text: str,
         ledger: list[ToolReceipt],
+        goal_text: Optional[str] = None,  # WI-2.3: BC default None → behavior identical to pre-WI-2.3
     ) -> VerifyOutcome:
-        # off mode：总 pass（兼容 BC 路径）
+        # off mode：总 pass（兼容 BC 路径）; goal_text irrelevant in off mode
         if self.mode == "off":
             return VerifyOutcome(passed=True)
 
@@ -313,7 +327,74 @@ class VerifyGate:
                     len(unmatched),
                 )
             outcome.passed = True  # shadow 总放行
+
+        # WI-2.3: build GoalAlignment iff goal_text provided (BC: goal_text=None → skip)
+        if goal_text is not None:
+            outcome.goal_alignment = self._build_goal_alignment(
+                goal_text=goal_text,
+                claims=claims,
+                unmatched=unmatched,
+                ledger=ledger,
+            )
+
         return outcome
+
+    def _build_goal_alignment(
+        self,
+        *,
+        goal_text: str,
+        claims: list[Claim],
+        unmatched: list[UnmatchedClaim],
+        ledger: list[ToolReceipt],
+    ) -> GoalAlignment:
+        """WI-2.3: 从 claim/ledger 客观证据构建 GoalAlignment（纯同步，无 LLM）。
+
+        aligned 判定逻辑（客观证据，不读 persona/用户情绪）:
+          - aligned=True  iff 有 claims 且无 unmatched（即所有 claim 都有 receipt 佐证）
+          - aligned=False iff 有 unmatched claim，或 claim 为空但 ledger 也空
+
+        VG-INVARIANT: goal_text 非 None 时，若有 receipt 证据则
+        objective_evidence ≥1 条；若无任何证据则标记 evidence_unavailable 防空证据放行。
+        """
+        # 收集客观证据（receipt 层）
+        objective_evidence: list[str] = []
+        for r in ledger:
+            if r.ok:
+                objective_evidence.append(f"receipt ok: tool={r.tool_name}")
+
+        if not claims:
+            # 无 claim 提取：vacuous pass（未声明 = 未检验），不产生 aligned 判定
+            # 但需遵守 VG-INVARIANT：无证据时标注
+            if not objective_evidence:
+                objective_evidence = ["evidence_unavailable"]
+            # 无 claim 对目标没有信息 → aligned 保守取 True（无假完成风险）
+            return GoalAlignment(
+                goal_text=goal_text,
+                objective_evidence=objective_evidence,
+                aligned=True,
+                gap="",
+            )
+
+        if unmatched:
+            # 有 claim 但未被 receipt 佐证 → 伪完成
+            gap_parts = [
+                f"unmatched claim: {c.raw_text!r} (reason={c.reason})"
+                for c in unmatched[:3]
+            ]
+            return GoalAlignment(
+                goal_text=goal_text,
+                objective_evidence=objective_evidence if objective_evidence else ["evidence_unavailable"],
+                aligned=False,
+                gap="; ".join(gap_parts),
+            )
+
+        # 所有 claim 都有 receipt 佐证 → aligned
+        return GoalAlignment(
+            goal_text=goal_text,
+            objective_evidence=objective_evidence,
+            aligned=True,
+            gap="",
+        )
 
     def _match_claims_against_ledger(
         self,
@@ -428,6 +509,7 @@ class VerifyGate:
 __all__ = [
     "UnmatchedClaim",
     "VerifierFailure",
+    "GoalAlignment",
     "VerifyOutcome",
     "ClaimPattern",
     "Claim",

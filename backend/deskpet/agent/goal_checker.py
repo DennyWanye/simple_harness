@@ -204,4 +204,63 @@ class GoalChecker:
         return (False, hint)
 
 
-__all__ = ["GoalChecker"]
+# ─── WI-2.3: build_alignment_prompt (pure, exported for tests) ───────────────
+
+# 固定反谄媚前缀（硬编码，不可被 persona 覆盖）
+_ANTI_SYCOPHANCY_PREFIX = (
+    "你是冷静的验收员，只依据客观证据判定，不考虑用户情绪，"
+    "宁可判未完成也不假装完成。\n\n"
+)
+
+_ALIGNMENT_PROMPT_TEMPLATE = (
+    "{anti_sycophancy}"
+    "原始目标: {goal_text}\n\n"
+    "客观证据（来自工具 receipt + outcome_verifier，不含 persona/情感信息）:\n"
+    "{evidence_lines}\n\n"
+    "声明（来自 assistant，仅作对比）:\n"
+    "{claim_lines}\n\n"
+    "请仅依据以上客观证据判断原始目标是否已真正满足。\n"
+    "输出 ONLY 单行 JSON（无 markdown）:\n"
+    '{{"aligned": true|false, "gap": "<未满足点；若满足则空串>"}}'
+)
+
+
+def build_alignment_prompt(
+    goal_text: str,
+    artifacts: list[str],
+    claims: list[str],
+) -> str:
+    """WI-2.3: 构建目标对照 prompt（纯函数，供 VerifyGate / tests 复用）。
+
+    **HARD input whitelist**:
+      - prompt 只含 goal_text + objective_evidence (artifacts/sha/diff/test) + claims
+      - 不含 persona/人格 Component、用户情绪、偏好画像
+      - 固定反谄媚前缀保证判定客观性
+
+    Parameters
+    ----------
+    goal_text:
+        原始用户目标文本（§1 锚）。
+    artifacts:
+        客观证据列表：receipt OK 记录、文件 sha、diff、test pass 等。
+        由 VerifyGate._build_goal_alignment 或 outcome_verifier 提供。
+    claims:
+        assistant 声明列表（从 assistant_text 提取，仅作对比参考）。
+    """
+    evidence_lines = (
+        "\n".join(f"  - {e}" for e in artifacts)
+        if artifacts else "  (无客观证据)"
+    )
+    claim_lines = (
+        "\n".join(f"  - {c}" for c in claims)
+        if claims else "  (无声明)"
+    )
+    return _ALIGNMENT_PROMPT_TEMPLATE.format(
+        anti_sycophancy=_ANTI_SYCOPHANCY_PREFIX,
+        goal_text=goal_text,
+        evidence_lines=evidence_lines,
+        claim_lines=claim_lines,
+    )
+
+
+__all__ = ["GoalChecker", "build_alignment_prompt"]
