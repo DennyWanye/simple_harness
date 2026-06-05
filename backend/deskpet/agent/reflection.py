@@ -123,6 +123,18 @@ def _extract_json(raw: str) -> dict | None:  # type: ignore[type-arg]
 # Public parser
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _emit_reflection_parse_failed(text_len: int) -> None:
+    """Best-effort metric emit for reflection parse failure（R-T3 §15.4）。
+
+    失败不抛 — metric 不可用时不阻断降级逻辑。
+    """
+    try:
+        from observability.metrics_sink import record as _metric  # noqa: PLC0415
+        _metric("reflection_parse_failed", {"count": 1})
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def parse_reflection(assistant_text: str) -> StructuredReflection | None:
     """Parse LLM assistant text into a StructuredReflection.
 
@@ -147,6 +159,8 @@ def parse_reflection(assistant_text: str) -> StructuredReflection | None:
             "parse_reflection: could not extract JSON from text (len=%d)",
             len(assistant_text),
         )
+        # R-T3 §15.4: 反思畸形 → 降级机械 nudge + 记降级事实
+        _emit_reflection_parse_failed(len(assistant_text))
         return None
 
     # Extract str fields with "" default

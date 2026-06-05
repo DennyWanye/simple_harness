@@ -6,7 +6,9 @@
 设计纪律：
   - **成本护栏**：`is_high_consequence_goal` 保守判定，仅命中时走一次 LLM 调用；
     普通只读目标完全不调 evaluator（plan §3 lock）。
-  - **Safe-fail**：llm_call=None / 调用异常 → 返回 pass + 记 evaluator_skipped。
+  - **Safe-fail**：llm_call=None / 调用异常 → 默认返回 pass + 记 evaluator_skipped。
+    高后果目标场景：传 ``conservative_on_error=True`` → 超时/错误改返 revise（保守拦截）
+    + 提示手动确认，防 checker 故障时静默放行不可逆操作（R-T3 §15.4）。
   - **Persona 隔离**：evaluator prompt 不含人格/情感/偏好字段（与 2.3 同隔离策略）。
   - **防漂移**：evaluator 用不同 system persona，抵消单 agent 自我强化偏置。
   - **每 goal 最多 1 次**：由 agent_loop 调用方保证（FinalEvent 前仅调一次）。
@@ -212,9 +214,13 @@ class ExternalEvaluator:
         llm_call: Optional[Callable[[str], Awaitable[str]]] = None,
         *,
         pass_threshold: int = _DEFAULT_PASS_THRESHOLD,
+        conservative_on_error: bool = False,
     ) -> None:
         self._llm_call = llm_call
         self._pass_threshold = pass_threshold
+        # R-T3 §15.4: True → 超时/错误时返回 revise（保守拦截），适用于高后果目标。
+        # False（默认）→ 保持原 safe-fail pass 行为（BC）。
+        self._conservative_on_error = conservative_on_error
 
     async def evaluate(
         self,
@@ -233,6 +239,16 @@ class ExternalEvaluator:
         """
         if self._llm_call is None:
             logger.info("evaluator_skipped: llm_call=None (provider not configured)")
+            if self._conservative_on_error:
+                # R-T3 §15.4: 高后果目标 + no provider → 保守拦截
+                self._record_metric("evaluator_skipped", {"reason": "no_provider_conservative"})
+                self._record_metric("evaluator_conservative_block", {"reason": "no_provider"})
+                return {
+                    "quality_score": 0,
+                    "issues": ["evaluator unavailable — manual confirmation required"],
+                    "verdict": "revise",
+                    "reason": "evaluator_skipped (no provider) — conservative block; please verify manually",
+                }
             self._record_metric("evaluator_skipped", {"reason": "no_provider"})
             return {
                 "quality_score": 10,
@@ -251,7 +267,18 @@ class ExternalEvaluator:
         try:
             raw = await self._llm_call(prompt)
         except Exception as exc:  # noqa: BLE001 — safe-fail
-            logger.warning("external_evaluator LLM call failed: %s — safe-fail pass", exc)
+            logger.warning("external_evaluator LLM call failed: %s", exc)
+            if self._conservative_on_error:
+                # R-T3 §15.4: 高后果目标超时/失败 → 保守拦 + 提示手动确认
+                logger.warning("external_evaluator conservative block — manual confirmation required")
+                self._record_metric("evaluator_skipped", {"reason": "llm_error_conservative"})
+                self._record_metric("evaluator_conservative_block", {"reason": "llm_error"})
+                return {
+                    "quality_score": 0,
+                    "issues": [f"evaluator failed ({exc}) — manual confirmation required"],
+                    "verdict": "revise",
+                    "reason": f"evaluator_skipped (error: {exc}) — conservative block",
+                }
             self._record_metric("evaluator_skipped", {"reason": "llm_error", "error": str(exc)})
             return {
                 "quality_score": 10,

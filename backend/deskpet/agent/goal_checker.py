@@ -10,10 +10,12 @@ Lightweight LLM-backed判定: 给定 ``goal_text`` 和最近 working_messages，
 设计纪律:
   - **JSON 解析容错**: LLM 输出可能被 ```json ... ``` 包裹 / 含 markdown
     / 含前后解释文本 — 用尽 3 级 fallback 提取首个合法 JSON 对象。
-  - **Safe-fail**: LLM 调用本身异常 → 返 ``(True, "checker_error")``
-    意为"放行 + 留痕"。AgentLoop 看到 done=True 时 mark_done，避免
-    checker 故障阻塞终态。这符合 ``verify_gate`` "守门失败不阻 dispatch"
-    的同源原则。
+  - **Safe-fail / 降级（R-T3 §15.4）**: LLM 调用异常 / 畸形 JSON →
+    返 ``(False, "goal_check=skipped")``，意为"无法正向确认完成"。
+    AgentLoop 看到 ``hint == "goal_check=skipped"`` 时**不调用 mark_done**
+    （与旧 ``checker_error`` done=True 不同）——避免 checker 故障时静默
+    标目标完成。降级事实同步 emit ``goal_check_skipped`` metric 供 shadow
+    量化。这与 ``context_compressor.compress`` 失败不抛同源范式。
   - **prompt 简短**: 不喂全 working_messages（容易爆 token），只取最近
     5 轮 assistant message 摘要。
 """
@@ -25,6 +27,18 @@ import re
 from typing import Any, Awaitable, Callable
 
 logger = logging.getLogger(__name__)
+
+
+def _emit_goal_check_skipped(reason: str) -> None:
+    """Best-effort metric emit for goal_check=skipped降级事实（R-T3）。
+
+    失败不抛 — metric 系统不可用时不阻断 checker 降级逻辑。
+    """
+    try:
+        from observability.metrics_sink import record as _metric  # noqa: PLC0415
+        _metric("goal_check_skipped", {"reason": reason})
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # 最多喂给 checker 的最近 assistant 轮数
@@ -168,11 +182,13 @@ class GoalChecker:
             raw = await self.llm_call(prompt)
         except Exception as exc:  # noqa: BLE001
             logger.warning("goal_checker llm_call failed: %s", exc)
-            return (True, "checker_error")
+            _emit_goal_check_skipped("llm_error")
+            return (False, "goal_check=skipped")
 
         if not isinstance(raw, str):
             logger.warning("goal_checker llm returned non-str: %r", type(raw))
-            return (True, "checker_error")
+            _emit_goal_check_skipped("non_str_response")
+            return (False, "goal_check=skipped")
 
         obj = _extract_json(raw)
         if obj is None:
@@ -180,8 +196,9 @@ class GoalChecker:
                 "goal_checker could not parse JSON from llm output: %r",
                 raw[:200],
             )
-            # 无法 parse → 保守放行 (safe-fail)
-            return (True, "checker_error")
+            # 无法 parse → 降级到"仅客观证据判定"信号（不默认放行）
+            _emit_goal_check_skipped("parse_failed")
+            return (False, "goal_check=skipped")
 
         done_val = obj.get("done")
         # 容错: "true" / "yes" / 1 也接受
@@ -193,9 +210,10 @@ class GoalChecker:
             done = bool(done_val)
         else:
             logger.warning(
-                "goal_checker missing 'done' field; defaulting to safe-fail",
+                "goal_checker missing 'done' field; degrading to skipped",
             )
-            return (True, "checker_error")
+            _emit_goal_check_skipped("missing_done_field")
+            return (False, "goal_check=skipped")
 
         hint_val = obj.get("hint", "")
         hint = str(hint_val) if hint_val is not None else ""

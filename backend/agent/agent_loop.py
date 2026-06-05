@@ -1256,10 +1256,12 @@ class AgentLoop:
                             )
                         except Exception as exc:  # noqa: BLE001 — safe-fail
                             logger.warning(
-                                "goal_checker raised (sid=%s): %s — passing through",
+                                "goal_checker raised (sid=%s): %s — skipping check",
                                 session_id, exc,
                             )
-                            _done, _hint = True, "checker_error"
+                            # R-T3 §15.4: 兜底也用 skipped 语义（check() 内已 safe-fail，
+                            # 这里只作双重防护）。不默认 done=True。
+                            _done, _hint = False, "goal_check=skipped"
                         # metric emit (best-effort, not blocking)
                         try:
                             from observability.metrics_sink import (  # noqa: PLC0415
@@ -1271,7 +1273,18 @@ class AgentLoop:
                             })
                         except Exception:  # noqa: BLE001 — metric 失败不阻
                             pass
-                        if not _done:
+                        # R-T3 §15.4: goal_check=skipped → checker 降级，
+                        # 无法正向确认 → 不 mark_done，但也不注入"未达成"nudge
+                        # （我们不知道目标是否真达成，不能给 LLM 假信号）。
+                        # 直接 fall-through 到 FinalEvent / evaluator gate。
+                        if _hint == "goal_check=skipped":
+                            logger.info(
+                                "goal_checker.skipped sid=%s — "
+                                "checker degraded, proceeding without goal confirmation",
+                                session_id,
+                            )
+                            # 不 continue，让正常 FinalEvent 流程继续
+                        elif not _done:
                             self.session_goal_store.increment_iteration(session_id)
                             # T1：落库 iterations_used，重启不归零。safe-fail
                             # 内置于 persist_iteration；getattr 兜底旧 store。
