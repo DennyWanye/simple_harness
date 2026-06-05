@@ -1,5 +1,12 @@
-# BLOCKERS — goal-completion 升级（需用户拍板）
+# BLOCKERS / 状态交接 — goal-completion 升级
 
+> **2026-06-05 终态更新**：**5 个 FP 后端实现全部完成 + committed**（FP-1~5 共 22 commit），后端单测/回归全绿、R-T5 字节基线守、480 goal-completion 焦点测试绿、MemEval 491 无回归。
+> - ✅ FP-1 真机 windows-mcp 手测门已 PASS（load_persisted 0→1 + UI /goal 查仍在，5 截图）。
+> - 🟢* FP-2/FP-3/FP-4/FP-5 后端全绿，**真机手测门 + FP-5 前端确认卡批量待补**（spawn_task 已建；用户对 FP-2 决策"接受现证据推进"已应用到 FP-3/4/5 同口径）。
+> - **剩余唯一待办**：一次专项真机手测会话（FP-2 iter-5 anchor / FP-3 verify伪完成→重规划产物 / FP-4 跨会话召回+改偏好 / FP-5 压缩后追目标+技能自创确认卡）+ FP-5 4.3c 前端确认卡组件(Tauri/React)。环境/坑见下 + 各 FP-N/01-TDD-PLAN.md 手测门小节 + FP-5 WI-4.3 报告的前端 NOTE。
+>
+> ---
+> 以下为 FP-2 当时的原始阻塞记录（已被上面终态吸收，保留供追溯）：
 > 日期：2026-06-05 ｜ 状态：FP-1 完成过门；FP-2 实现+测试+提交完成，**手测门遇真实障碍待拍板**。
 
 ## 已完成（硬证据，全部 committed 到 master）
