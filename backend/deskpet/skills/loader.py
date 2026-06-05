@@ -484,6 +484,33 @@ class SkillLoader:
         return ordered
 
     # ------------------------------------------------------------------
+    # Body read (WI-4.1 — no arg substitution)
+    # ------------------------------------------------------------------
+    def read_body(self, name: str) -> str:
+        """Return the raw body of a skill's SKILL.md **without** any
+        ``${args[N]}`` substitution.
+
+        Unlike ``execute()``, this is synchronous and does **not** perform
+        argument substitution — intended for the auto-disclosure path where
+        the body is inlined verbatim into the context prelude.
+
+        Raises :class:`KeyError` if the skill is unknown.
+        """
+        meta = self.get(name)
+        if meta is None:
+            raise KeyError(name)
+        try:
+            text = Path(meta.path).read_text(encoding="utf-8")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("skill.read_body_failed", name=name, error=str(exc))
+            raise
+        try:
+            _fm, body = _split_frontmatter(text)
+        except Exception:  # noqa: BLE001
+            body = text
+        return body.strip("\n")
+
+    # ------------------------------------------------------------------
     # Execution
     # ------------------------------------------------------------------
     async def execute(

@@ -351,6 +351,28 @@ class BillingConfig:
 
 
 @dataclass
+class SkillsAutoDisclosureConfig:
+    """``[skills.auto_disclosure]`` — WI-4.1 二级披露 feature flag + tuning.
+
+    Default ``enabled=False`` → byte-identical to pre-WI-4.1 behavior.
+    Set ``enabled=True`` in config.toml (or ``[features] …``) to activate
+    automatic skill body inlining.
+    """
+    enabled: bool = False
+    strong_threshold: float = 0.55   # cos-sim threshold for "strong match"
+    budget_tokens: int = 8000        # total token budget for inlined bodies
+    per_skill_max_tokens: int = 2000  # single-skill body truncation cap
+
+
+@dataclass
+class SkillsConfig:
+    """``[skills]`` top-level config table (WI-4.1+)."""
+    auto_disclosure: SkillsAutoDisclosureConfig = field(
+        default_factory=SkillsAutoDisclosureConfig
+    )
+
+
+@dataclass
 class FeaturesConfig:
     """``[features]`` 父表 — Companion + Code 升级 v1 (plans/2026-05-25-...).
 
@@ -398,6 +420,8 @@ class AppConfig:
     # Companion + Code 升级 v1 — slash_commands / goal_mode / agent_parallel.
     # 全 flag 默认 OFF（详 FeaturesConfig docstring）.
     features: FeaturesConfig = field(default_factory=FeaturesConfig)
+    # WI-4.1 Skills 分级披露.  全 flag 默认 OFF（字节级 BC）.
+    skills: SkillsConfig = field(default_factory=SkillsConfig)
     # P4-S15: capture the raw TOML so layers that don't have a dataclass
     # yet (P4 [mcp], [agent], [context.assembler], [memory.l3], [tools.web])
     # can read their config without us having to migrate all of them at once.
@@ -945,6 +969,12 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
     # 包含 slash_commands / goal_mode / agent_parallel 3 flag（默认 OFF）.
     if "features" in raw:
         config.features = _load_section(FeaturesConfig, raw["features"])
+    # WI-4.1 skills 分级披露配置加载（[skills.auto_disclosure] 子表）.
+    if "skills" in raw:
+        raw_skills = dict(raw["skills"])
+        raw_ad = dict(raw_skills.pop("auto_disclosure", {}) or {})
+        ad = _load_section(SkillsAutoDisclosureConfig, raw_ad)
+        config.skills = SkillsConfig(auto_disclosure=ad)
     # P4-S15: stash the raw parsed TOML so consumers (MCP bootstrap, agent
     # bootstrap, etc.) can pick out their sections without us bolting on
     # a dataclass for each one.
