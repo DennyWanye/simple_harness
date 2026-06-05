@@ -118,3 +118,46 @@ def _repo_to_subdir(repo_id: str) -> str:
 
 def _repo_to_sentinel(repo_id: str) -> str | None:
     return next(m[2] for m in _MODELS if m[1] == repo_id)
+
+
+# --- control-WS handler 契约（前端 ModelDownloadBanner 依赖字段名）-----------
+
+
+class _FakeWS:
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+
+    async def send_json(self, obj: dict) -> None:
+        self.sent.append(obj)
+
+
+def test_ipc_handler_returns_status(tmp_path: Path) -> None:
+    import asyncio
+
+    import context as ctx_mod
+    import p4_ipc
+
+    prov = ModelProvisioner(models_dir=tmp_path, downloader=lambda r, t: None)
+    sc = ctx_mod.ServiceContext()
+    sc.register("model_provisioner", prov)
+    ws = _FakeWS()
+    asyncio.run(p4_ipc._handle_model_provision_status(ws, {}, sc))
+
+    assert len(ws.sent) == 1
+    msg = ws.sent[0]
+    assert msg["type"] == "model_provision_status_response"
+    # 前端契约：payload 含 state；字段名必须稳定。
+    assert set(msg["payload"]).issuperset({"state"})
+    assert msg["payload"]["state"] in {"idle", "checking", "downloading", "ready", "error"}
+
+
+def test_ipc_handler_unregistered_returns_ready() -> None:
+    import asyncio
+
+    import context as ctx_mod
+    import p4_ipc
+
+    sc = ctx_mod.ServiceContext()  # 没注册 provisioner（如非瘦包构建）
+    ws = _FakeWS()
+    asyncio.run(p4_ipc._handle_model_provision_status(ws, {}, sc))
+    assert ws.sent[0]["payload"]["state"] == "ready"
