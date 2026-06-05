@@ -413,6 +413,10 @@ class AgentLoop:
         # 两个都 None (默认) → BC，跳过整段 goal-check 块。
         session_goal_store: Optional[Any] = None,  # deskpet.agent.goal_store.SessionGoalStore
         goal_checker: Optional[Any] = None,        # deskpet.agent.goal_checker.GoalChecker
+        # WI-2.1 structured reflection: when True, _REFLECTION_INSTRUCTION is
+        # appended to verify-gate rebound + selfcheck tier2/tier3 system msgs.
+        # Default False = BC (flag off → byte-identical behaviour to pre-WI-2.1).
+        structured_reflection: bool = False,
     ) -> None:
         self.llm = llm_registry
         self.tools = tool_registry
@@ -443,6 +447,8 @@ class AgentLoop:
         # WI-B3 Companion+Code v1: /goal store + checker (BC: 两者皆 None → skip)
         self.session_goal_store = session_goal_store
         self.goal_checker = goal_checker
+        # WI-2.1 structured reflection flag (BC: False → no injection)
+        self.structured_reflection = structured_reflection
         # P5-S2 Phase 3.3: same-(name, args) repeat detection. When set,
         # the loop checks the activity store's per-session
         # ``tool_signature_window`` BEFORE dispatching each tool_call —
@@ -668,6 +674,11 @@ class AgentLoop:
             if iteration > 0 and iteration % _SELFCHECK_EVERY == 0:
                 budget_left = self.max_iterations - iteration
                 msg = _build_selfcheck_message(iteration, self.max_iterations, tools_used)
+                # WI-2.1: append reflection instruction at tier2/tier3 only
+                # (zero overhead on normal tier1 path; flag off = BC).
+                if self.structured_reflection and iteration >= _SELFCHECK_TIER2_AT:
+                    from deskpet.agent.reflection import _REFLECTION_INSTRUCTION
+                    msg = msg + _REFLECTION_INSTRUCTION
                 working_messages.append({"role": "system", "content": msg})
                 tier = (
                     3 if iteration >= _SELFCHECK_TIER3_AT
@@ -676,8 +687,9 @@ class AgentLoop:
                 )
                 logger.info(
                     "p5s2_selfcheck_injected sid=%s tid=%s iter=%d budget=%d "
-                    "tier=%d tools_used=%d",
+                    "tier=%d tools_used=%d structured_reflection=%s",
                     session_id, tid, iteration, budget_left, tier, tools_used,
+                    self.structured_reflection,
                 )
 
             # WI-1.3 decision-point goal anchor. Every _GOAL_ANCHOR_EVERY
@@ -1060,6 +1072,11 @@ class AgentLoop:
                                 f"Next: please call the missing tool to actually "
                                 f"perform the action you claimed, then end_turn again."
                             )
+                            # WI-2.1: append reflection instruction when flag on.
+                            # Flag off (default) → rebound string unchanged (BC).
+                            if self.structured_reflection:
+                                from deskpet.agent.reflection import _REFLECTION_INSTRUCTION
+                                rebound = rebound + _REFLECTION_INSTRUCTION
                             if response.content:
                                 working_messages.append({
                                     "role": "assistant",

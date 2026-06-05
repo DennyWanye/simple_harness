@@ -257,6 +257,10 @@ class ToolsVerifierConfig:
     # （PRD §3 D6：failure_count == 3 时调度 ephemeral；默认 2 表示连续 2 次
     # unmatched 才触发救援）
     max_verify_nudges: int = 2
+    # WI-2.1 structured reflection: when True, _REFLECTION_INSTRUCTION is
+    # appended to verify-gate rebound + selfcheck tier2/tier3 system messages.
+    # Default False = BC (flag-off path is byte-identical to pre-WI-2.1).
+    structured_reflection: bool = False
 
 
 @dataclass

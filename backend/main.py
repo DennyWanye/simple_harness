@@ -728,6 +728,12 @@ def build_agent(
     except Exception:  # noqa: BLE001
         nudges = 2
 
+    # WI-2.1: read structured_reflection flag from verifier config (default False = BC)
+    use_structured_reflection = (
+        bool(getattr(verifier_cfg, "structured_reflection", False))
+        if verifier_cfg else False
+    )
+
     return _AgentLoop(
         llm_registry=llm_registry,
         tool_registry=tool_registry,
@@ -744,6 +750,8 @@ def build_agent(
         # flag OFF 时 store/checker=None → agent_loop 跳过 goal-check（BC）
         session_goal_store=session_goal_store,
         goal_checker=goal_checker,
+        # ─── WI-2.1 结构化反思（flag off = BC）───
+        structured_reflection=use_structured_reflection,
     )
 
 
