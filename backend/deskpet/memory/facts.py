@@ -64,6 +64,11 @@ _CATEGORY_DECAY: dict[str, float] = {
     # summary 抽出的 fact category；衰减慢（长期保留）。同时进
     # VALID_CATEGORIES 白名单（下方 frozenset 派生）。
     "episodic_summary": 0.01,
+    # FP-4 WI-3.1：goal / decision / constraint 三类。
+    # 半衰期参考：goal≈200d（ln2/0.005≈138d），decision≈1y，constraint≈最慢。
+    "goal":       0.005,   # ≈200d，活跃目标长期留
+    "decision":   0.002,   # ≈1 年（一次决策长期有效）
+    "constraint": 0.001,   # 最慢（约束几乎不过期）
 }
 
 VALID_CATEGORIES = frozenset(_CATEGORY_DECAY.keys())
@@ -74,6 +79,14 @@ LLMCall = Callable[[str], Awaitable[str]]
 
 
 # Prompts. We pin them as module constants for testability + auditability.
+#
+# FP-4 WI-3.1 dual-version strategy:
+#   _EXTRACT_PROMPT              — flag off (BC, 4 categories: preference/profile/project/event)
+#   _EXTRACT_PROMPT_WITH_GOALS   — flag on  (7 categories: adds goal/decision/constraint)
+#
+# FactExtractor selects prompt via goal_facts ctor param (default False).
+# Old version is BYTE-IDENTICAL to the original (backward-compatibility guard).
+
 _EXTRACT_PROMPT = """\
 You are extracting stable facts from a single chat message.
 Read the SOURCE below. If it contains any stable fact, preference,
@@ -93,6 +106,43 @@ Do NOT extract one-off, time-bound, or transient items — a single
 appointment ("meeting tomorrow at 3"), a temporary file path mentioned
 in passing, today's todo. Only extract DURABLE facts the assistant
 should still know weeks later. When in doubt, leave it out.
+
+If there is no fact worth remembering (small talk, tool noise, simple
+acknowledgement, transient info), output an EMPTY JSON array: [].
+
+Output ONLY the JSON array. No prose, no markdown fences.
+
+SOURCE:
+{content}
+
+JSON:"""
+
+# FP-4 WI-3.1 新版 prompt（flag on）：在 4 类基础上增加 goal / decision / constraint。
+_EXTRACT_PROMPT_WITH_GOALS = """\
+You are extracting stable facts from a single chat message.
+Read the SOURCE below. If it contains any stable fact, preference,
+profile field, or notable event the assistant should remember, output
+a JSON array. Each entry MUST be a JSON object with keys:
+
+  category  — one of: preference | profile | project | event | goal | decision | constraint
+  subject   — who/what the fact is about (default: "user")
+  key       — short snake_case ENGLISH key, e.g. "favorite_drink"
+  value     — short free text value (< 100 chars). MUST be in the SAME
+              LANGUAGE as the source message (Chinese source → Chinese
+              value; English source → English value). Do NOT translate.
+  confidence — float 0..1, your certainty
+  evidence  — the exact source phrase (verbatim, <= 80 chars)
+
+Do NOT extract one-off, time-bound, or transient items — a single
+appointment ("meeting tomorrow at 3"), a temporary file path mentioned
+in passing, today's todo. Only extract DURABLE facts the assistant
+should still know weeks later. When in doubt, leave it out.
+
+**例外（MUST 抽，不可遗漏）**：
+- 持续性目标（"我想在月底前完成 X"、"打算学完这门课"）→ category=goal，value 建议带 [active] 前缀。
+- 已做的决策（"这个项目决定用 TypeScript"、"选了方案 A"）→ category=decision。
+- 长期约束（"只能用开源库"、"预算 2000 以内"）→ category=constraint。
+区分关键：一次性事件（明天 3 点开会）仍排除；带方向性/长期有效的意图与约束必须抽出。
 
 If there is no fact worth remembering (small talk, tool noise, simple
 acknowledgement, transient info), output an EMPTY JSON array: [].
@@ -183,6 +233,7 @@ class ExtractedFact:
     value: str
     confidence: float
     evidence: str
+    scope: str = "user"  # FP-4 WI-3.1: user | session
 
     def normalize(self) -> "ExtractedFact":
         return ExtractedFact(
@@ -192,6 +243,7 @@ class ExtractedFact:
             value=self.value.strip(),
             confidence=max(0.0, min(1.0, float(self.confidence))),
             evidence=self.evidence.strip()[:200],
+            scope=(self.scope or "user").strip().lower(),
         )
 
     def is_valid(self) -> bool:
@@ -287,6 +339,7 @@ class FactsStore:
         source_msg_id: Optional[int],
         evidence: str,
         decay_rate: Optional[float] = None,
+        scope: str = "user",  # FP-4 WI-3.1: user | session
     ) -> int:
         """Insert a brand-new active fact. Caller is expected to have
         already resolved conflicts with any existing (subject, key) via
@@ -300,23 +353,49 @@ class FactsStore:
             category, 0.02
         )
         embedding = await self._embed_fact(key, value)  # WI-M1.4
-        async with aiosqlite.connect(self._db_path) as conn:
-            await conn.execute("PRAGMA busy_timeout=5000")
-            cur = await conn.execute(
-                "INSERT INTO facts("
-                "category, subject, key, value, confidence, source_msg_id, "
-                "created_at, updated_at, evidence, is_active, decay_rate, "
-                "embedding"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
-                (
-                    category, subject, key, value,
-                    float(confidence), source_msg_id,
-                    now, now, evidence, dr, embedding,
-                ),
-            )
-            new_id = int(cur.lastrowid or 0)
-            await cur.close()
-            await conn.commit()
+        # FP-4 WI-3.1: write scope column when available; fall back gracefully
+        # if column not yet ALTERed (old DB without scope column).
+        try:
+            async with aiosqlite.connect(self._db_path) as conn:
+                await conn.execute("PRAGMA busy_timeout=5000")
+                cur = await conn.execute(
+                    "INSERT INTO facts("
+                    "category, subject, key, value, confidence, source_msg_id, "
+                    "created_at, updated_at, evidence, is_active, decay_rate, "
+                    "embedding, scope"
+                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)",
+                    (
+                        category, subject, key, value,
+                        float(confidence), source_msg_id,
+                        now, now, evidence, dr, embedding, scope,
+                    ),
+                )
+                new_id = int(cur.lastrowid or 0)
+                await cur.close()
+                await conn.commit()
+        except Exception as exc:
+            # scope column missing (old DB without ALTER) → retry without scope
+            if "scope" in str(exc).lower() or "table facts has no column" in str(exc).lower():
+                log.debug("upsert: scope column unavailable, falling back: %s", exc)
+                async with aiosqlite.connect(self._db_path) as conn:
+                    await conn.execute("PRAGMA busy_timeout=5000")
+                    cur = await conn.execute(
+                        "INSERT INTO facts("
+                        "category, subject, key, value, confidence, source_msg_id, "
+                        "created_at, updated_at, evidence, is_active, decay_rate, "
+                        "embedding"
+                        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
+                        (
+                            category, subject, key, value,
+                            float(confidence), source_msg_id,
+                            now, now, evidence, dr, embedding,
+                        ),
+                    )
+                    new_id = int(cur.lastrowid or 0)
+                    await cur.close()
+                    await conn.commit()
+            else:
+                raise
         return new_id
 
     async def deactivate(self, fact_id: int, *, now: Optional[float] = None) -> None:
@@ -401,6 +480,7 @@ class FactsStore:
         *,
         subject: Optional[str] = None,
         category: Optional[str] = None,
+        scope: Optional[str] = None,  # FP-4 WI-3.1: filter by scope (user|session)
         limit: int = 200,
     ) -> list[dict[str, Any]]:
         await self._ensure_schema()
@@ -412,6 +492,9 @@ class FactsStore:
         if category:
             where.append("category = ?")
             params.append(category)
+        if scope is not None:
+            where.append("scope = ?")
+            params.append(scope)
         params.append(limit)
         async with aiosqlite.connect(self._db_path) as conn:
             conn.row_factory = aiosqlite.Row
@@ -831,12 +914,15 @@ class FactExtractor:
         cross_key_llm: Optional[LLMCall] = None,
         embedder: Any | None = None,
         forget_within_days: int = 7,
+        goal_facts: bool = False,  # FP-4 WI-3.1: enable goal/decision/constraint extraction
     ) -> None:
         self._store = store
         self._extract_llm = extract_llm
         # Merge LLM can reuse extract_llm if the caller doesn't want a
         # separate provider.
         self._merge_llm = merge_llm or extract_llm
+        # FP-4 WI-3.1: select prompt version based on flag
+        self._goal_facts = bool(goal_facts)
         # 记忆系统升级 WI-M1.2 / D4：字数采样门由 config
         # [memory.v2.facts].min_user_chars 驱动，取代旧的硬编码 `< 8`。
         self._min_chars = int(min_chars)
@@ -885,8 +971,10 @@ class FactExtractor:
             return []
         if not content or len(content.strip()) < self._min_chars:
             return []
+        # FP-4 WI-3.1: select prompt based on goal_facts flag
+        _prompt_tmpl = _EXTRACT_PROMPT_WITH_GOALS if self._goal_facts else _EXTRACT_PROMPT
         try:
-            raw = await self._extract_llm(_EXTRACT_PROMPT.format(content=content[:2000]))
+            raw = await self._extract_llm(_prompt_tmpl.format(content=content[:2000]))
         except Exception as exc:  # noqa: BLE001
             log.warning("FactExtractor.extract LLM failed: %s", exc)
             return []
@@ -968,6 +1056,7 @@ class FactExtractor:
                     confidence=fact.confidence,
                     source_msg_id=message_id,
                     evidence=fact.evidence,
+                    scope=fact.scope,
                 )
                 persisted.append({"id": fid, "action": "insert", **fact.__dict__})
                 continue
@@ -986,6 +1075,7 @@ class FactExtractor:
                     confidence=fact.confidence,
                     source_msg_id=message_id,
                     evidence=fact.evidence,
+                    scope=fact.scope,
                 )
                 persisted.append({"id": fid, "action": "replace", **fact.__dict__})
             elif decision.action == "merge":
@@ -1064,6 +1154,7 @@ class FactExtractor:
                 confidence=fact.confidence,
                 source_msg_id=message_id,
                 evidence=fact.evidence,
+                scope=fact.scope,
             )
             persisted.append(
                 {"id": new_fid, "action": "insert", **fact.__dict__}

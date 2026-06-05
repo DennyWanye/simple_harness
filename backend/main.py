@@ -926,11 +926,13 @@ try:
                 cross_key_merge=_cross_key_enabled,
                 cross_key_llm=_facts_llm,
                 embedder=_embedder,
+                goal_facts=_v2_cfg.goal_facts,  # FP-4 WI-3.1
             )
             logger.info(
                 "p4_fact_extractor_ready",
                 min_chars=_v2_cfg.facts.min_user_chars,
                 cross_key_merge=_cross_key_enabled,
+                goal_facts=_v2_cfg.goal_facts,
             )
         else:
             logger.info("p4_fact_extractor_skipped", reason="no_llm_provider")

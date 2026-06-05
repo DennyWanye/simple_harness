@@ -193,6 +193,8 @@ class MemoryV2Config:
     memory_forget: bool = False           # WI-S2.1a 显式遗忘工具
     entity_path: bool = False             # WI-S2.2 entity 索引检索路
     episodic_to_semantic: bool = False    # WI-S2.4 summary 抽 facts
+    # FP-4 WI-3.1：goal / decision / constraint 类别抽取
+    goal_facts: bool = False              # WI-3.1 goal/decision/constraint 记忆抽取
     facts: MemoryV2FactsConfig = field(default_factory=MemoryV2FactsConfig)
     forget: MemoryV2ForgetConfig = field(
         default_factory=MemoryV2ForgetConfig,
