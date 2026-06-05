@@ -38,6 +38,7 @@ import {
 import { PetCelebrationBubble } from "./pet-anim/PetCelebrationBubble";
 import { PetDNDBadge } from "./pet-anim/PetDNDBadge";
 import { MemoryPanel } from "./components/MemoryPanel";
+import { ModelDownloadBanner } from "./components/ModelDownloadBanner";
 import { ContextBreakdownModal } from "./components/ContextBreakdownModal";
 import { ContextTracePanel } from "./components/ContextTracePanel";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -1989,6 +1990,9 @@ function App() {
         sessionId="default"
         getChannel={getControlChannel}
       />
+
+      {/* Option A: 首启模型下载进度（瘦包后台从 hf-mirror 拉模型时显示） */}
+      <ModelDownloadBanner getChannel={getControlChannel} />
 
       {/* 2026-05-31 restore — Context usage breakdown (ring drill-down) */}
       <ContextBreakdownModal
