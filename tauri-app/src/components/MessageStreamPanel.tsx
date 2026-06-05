@@ -90,13 +90,14 @@ export function MessageStreamPanel({
   chatMessages,
   warnings,
   errors,
-  onSetFilter,
   onDismiss,
-  onDismissAll,
   onJumpToSession,
   onChoice,
   embedded = false,
 }: MessageStreamPanelProps) {
+  // 注：onSetFilter / onDismissAll 仍保留在 MessageStreamPanelProps 类型里
+  // （调用方照常传），但当前 render 未用到——半接线的过滤条特性。先不解构
+  // 以通过 tsc noUnusedParameters；要恢复过滤条 UI 时再接回。
   const rows = useMemo(
     () => buildRows(chatMessages, warnings, errors, filter),
     [chatMessages, warnings, errors, filter],
@@ -344,44 +345,6 @@ function AlertRow({
   );
 }
 
-function FilterChip({
-  label,
-  active,
-  tone,
-  onClick,
-  testId,
-}: {
-  label: string;
-  active: boolean;
-  tone?: "warn" | "err";
-  onClick: () => void;
-  testId?: string;
-}) {
-  const accent = tone ? PALETTE[tone].accent : "#67e8f9";
-  const border = tone ? PALETTE[tone].border : "rgba(103, 232, 249, 0.40)";
-  return (
-    <button
-      type="button"
-      data-testid={testId}
-      onClick={onClick}
-      style={{
-        fontSize: 10.5,
-        fontWeight: active ? 700 : 500,
-        padding: "3px 8px",
-        marginRight: 4,
-        borderRadius: 5,
-        border: `1px solid ${active ? border : "rgba(148, 163, 184, 0.20)"}`,
-        background: active ? (tone ? PALETTE[tone].soft : "rgba(103, 232, 249, 0.18)") : "transparent",
-        color: active ? accent : "#cbd5e1",
-        cursor: "pointer",
-        whiteSpace: "nowrap",
-      }}
-    >
-      {label}
-    </button>
-  );
-}
-
 function pillButton(color: string, border: string): CSSProperties {
   return {
     fontSize: 10.5,
@@ -440,22 +403,6 @@ const embeddedWrapperStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   overflow: "hidden",
-};
-
-const headerStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  flexWrap: "wrap",
-  rowGap: 4,
-  padding: "6px 6px 6px 8px",
-  borderBottom: "1px solid rgba(148, 163, 184, 0.18)",
-};
-
-const sweepBarStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "flex-end",
-  padding: "4px 8px",
-  borderBottom: "1px dashed rgba(148, 163, 184, 0.15)",
 };
 
 const listStyle: CSSProperties = {
