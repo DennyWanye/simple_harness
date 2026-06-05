@@ -91,6 +91,7 @@
     "updater": {
       "active": true,
       "endpoints": [
+        "https://defaultbucket-1300194691.cos.ap-guangzhou.myqcloud.com/deskpet/latest.json",
         "https://github.com/DennyWanye/deskpet/releases/latest/download/latest.json"
       ],
       "dialog": true,
