@@ -417,6 +417,9 @@ class AgentLoop:
         # appended to verify-gate rebound + selfcheck tier2/tier3 system msgs.
         # Default False = BC (flag off → byte-identical behaviour to pre-WI-2.1).
         structured_reflection: bool = False,
+        # WI-2.4 external evaluator: cross-persona quality judge for high-consequence
+        # goals. None (default) = BC (0 extra LLM calls, skip entirely).
+        external_evaluator: Optional[Any] = None,  # deskpet.agent.external_evaluator.ExternalEvaluator
     ) -> None:
         self.llm = llm_registry
         self.tools = tool_registry
@@ -449,6 +452,9 @@ class AgentLoop:
         self.goal_checker = goal_checker
         # WI-2.1 structured reflection flag (BC: False → no injection)
         self.structured_reflection = structured_reflection
+        # WI-2.4 external evaluator: cross-persona quality judge for high-consequence
+        # goals (BC: None → skip entirely, 0 extra LLM calls).
+        self.external_evaluator = external_evaluator
         # P5-S2 Phase 3.3: same-(name, args) repeat detection. When set,
         # the loop checks the activity store's per-session
         # ``tool_signature_window`` BEFORE dispatching each tool_call —
@@ -1315,6 +1321,91 @@ class AgentLoop:
                                 "goal_checker.marked_done sid=%s",
                                 session_id,
                             )
+
+                # WI-2.4: external evaluator gate — BEFORE FinalEvent.
+                # Only fires when:
+                #   a) external_evaluator is wired (flag on), AND
+                #   b) is_high_consequence_goal() returns True.
+                # If evaluator returns verdict=revise → emit ErrorEvent
+                # ("evaluator_revise") instead of FinalEvent so auto_resume
+                # can spawn a replan. Runs at most ONCE per goal (here,
+                # before FinalEvent — revise → replan → new run, no loop).
+                # flag off (external_evaluator=None) → skip entirely (BC, 0 calls).
+                if self.external_evaluator is not None:
+                    try:
+                        from deskpet.agent.external_evaluator import (  # noqa: PLC0415
+                            is_high_consequence_goal as _is_hcg,
+                        )
+                        _eval_ledger = (
+                            self.receipt_store.load_session(session_id)
+                            if self.receipt_store is not None else []
+                        )
+                        # Extract goal_text from session_goal_store if wired,
+                        # else fall back to first user message text.
+                        _eval_goal_text = ""
+                        if self.session_goal_store is not None:
+                            _gt_fn = getattr(
+                                self.session_goal_store, "get_goal_text", None
+                            )
+                            if callable(_gt_fn):
+                                _eval_goal_text = _gt_fn(session_id) or ""
+                        if not _eval_goal_text:
+                            # BC fallback: use first user message content
+                            for _m in working_messages:
+                                if _m.get("role") == "user":
+                                    _eval_goal_text = str(_m.get("content") or "")
+                                    break
+                        if _is_hcg(_eval_goal_text, _eval_ledger, []):
+                            _ev_result = await self.external_evaluator.evaluate(
+                                original_goal=_eval_goal_text,
+                                produced_artifacts=[
+                                    getattr(r, "tool_name", "unknown")
+                                    for r in _eval_ledger
+                                ],
+                                objective_evidence=[
+                                    f"receipt ok: tool={getattr(r, 'tool_name', '?')}"
+                                    for r in _eval_ledger if getattr(r, "ok", True)
+                                ],
+                                conversation_summary=str(response.content or "")[:512],
+                            )
+                            if (
+                                _ev_result.get("verdict") == "revise"
+                                and _ev_result.get("quality_score", 10) < 6
+                            ):
+                                logger.info(
+                                    "external_evaluator verdict=revise sid=%s "
+                                    "quality_score=%d issues=%d → emit evaluator_revise",
+                                    session_id,
+                                    _ev_result["quality_score"],
+                                    len(_ev_result.get("issues", [])),
+                                )
+                                try:
+                                    from observability.metrics_sink import (  # noqa: PLC0415
+                                        record as _eval_metric,
+                                    )
+                                    _eval_metric("evaluator_revise_triggered", {
+                                        "quality_score": _ev_result["quality_score"],
+                                        "issues_count": len(_ev_result.get("issues", [])),
+                                    })
+                                except Exception:  # noqa: BLE001 — metric 失败不阻
+                                    pass
+                                yield ErrorEvent(
+                                    type="error",
+                                    task_id=tid,
+                                    iteration=iteration,
+                                    reason="evaluator_revise",
+                                    detail=(
+                                        f"[external_evaluator] 质量不足 "
+                                        f"(score={_ev_result['quality_score']}/10): "
+                                        + "; ".join(_ev_result.get("issues", []))
+                                    ),
+                                )
+                                return
+                    except Exception as exc:  # noqa: BLE001 — safe-fail
+                        logger.warning(
+                            "external_evaluator gate failed (sid=%s): %s — passing through",
+                            session_id, exc,
+                        )
 
                 # P6 Phase 6 — gate records the natural terminal state
                 # before we emit the FinalEvent so consumers reading

@@ -261,6 +261,12 @@ class ToolsVerifierConfig:
     # appended to verify-gate rebound + selfcheck tier2/tier3 system messages.
     # Default False = BC (flag-off path is byte-identical to pre-WI-2.1).
     structured_reflection: bool = False
+    # WI-2.4 external evaluator: cross-persona quality judge for high-consequence
+    # goals (prod off / dev on). Default False = BC (0 extra LLM calls).
+    external_evaluator: bool = False
+    # Provider key to use for the evaluator (default = reuse main LLM provider).
+    # "default" means: reuse build_agent's local_llm with evaluator system persona.
+    evaluator_provider: str = "default"
 
 
 @dataclass

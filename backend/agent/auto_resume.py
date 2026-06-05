@@ -98,7 +98,8 @@ _AUTO_RESUME_TRIGGER_REASONS: frozenset[str] = frozenset({
     "permanent_tool_error",
     "circuit_open",
     "hallucination",
-    "verify_exhausted",  # WI-2.2: verify 两次重试+ephemeral 都失败 → 升级目标级 spawn 重试
+    "verify_exhausted",    # WI-2.2: verify 两次重试+ephemeral 都失败 → 升级目标级 spawn 重试
+    "evaluator_revise",   # WI-2.4: external evaluator 判定质量不足 → 目标级 replan
 })
 
 

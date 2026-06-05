@@ -746,6 +746,37 @@ def build_agent(
         if verifier_cfg else False
     )
 
+    # WI-2.4: construct ExternalEvaluator when flag on + provider available.
+    # flag off (default) OR provider=None → None (BC, 0 extra LLM calls).
+    _external_evaluator = None
+    _use_external_evaluator = (
+        bool(getattr(verifier_cfg, "external_evaluator", False))
+        if verifier_cfg else False
+    )
+    if _use_external_evaluator:
+        try:
+            from deskpet.agent.external_evaluator import ExternalEvaluator as _EE  # noqa: PLC0415
+            _evaluator_provider_key = (
+                getattr(verifier_cfg, "evaluator_provider", "default")
+                if verifier_cfg else "default"
+            )
+            # Resolve provider: "default" → reuse local_llm (first positional provider
+            # available in the registry). Same pattern as WI-2.3 judgment LLM.
+            # provider=None → ExternalEvaluator safe-fails (logs evaluator_skipped).
+            _ev_provider = None
+            try:
+                # local_llm is available via the registry's first provider
+                _ev_provider = getattr(llm_registry, "providers", [None])[0] if llm_registry else None
+            except Exception:  # noqa: BLE001
+                pass
+            _ev_llm_call = _make_str_llm_call(_ev_provider, max_tokens=512)
+            _external_evaluator = _EE(llm_call=_ev_llm_call)
+        except Exception as exc:  # noqa: BLE001 — safe-fail
+            import logging as _log
+            _log.getLogger(__name__).warning(
+                "external_evaluator construction failed: %s — skipping", exc
+            )
+
     return _AgentLoop(
         llm_registry=llm_registry,
         tool_registry=tool_registry,
@@ -764,6 +795,8 @@ def build_agent(
         goal_checker=goal_checker,
         # ─── WI-2.1 结构化反思（flag off = BC）───
         structured_reflection=use_structured_reflection,
+        # ─── WI-2.4 外部评估器（flag off = BC, None = 0 calls）───
+        external_evaluator=_external_evaluator,
     )
 
 
