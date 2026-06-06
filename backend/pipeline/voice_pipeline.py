@@ -82,6 +82,9 @@ class VoicePipeline:
         self._permission_gate_v2 = permission_gate_v2
         self._local_llm = local_llm
         self._app_config = app_config
+        # FP-5 缺口 5k：codify fire-and-forget 任务的强引用集（防被 GC 提前回收，
+        # 仿 goal_store B-10 _fanout_tasks 修复）。done 后自动 discard。
+        self._codify_tasks: set = set()
         # VOICE-MSGPANEL-SYNC: 多窗口广播器（None == legacy / 单测，跳过 fan-out）。
         # 由 main.py audio_channel 注入 _broadcast_default_chat_peers，让语音对话
         # 也能像文字 chat_v2 一样同步到「消息·主线程」消息框窗口。
@@ -108,21 +111,31 @@ class VoicePipeline:
     async def _maybe_codify_voice(self) -> None:
         """FP-5 缺口 5k：语音 venue 的技能自创 codify hook（对齐文字 venue）。
 
-        调 main._maybe_codify_skill：若本轮跑了 ≥5 工具/≥3 不同工具，从
-        tool_path_recorder 的路径生成技能候选 → 经 control_ws 发
-        skill_candidate_proposed 给桌宠主 UI 渲染确认卡。app_config / service_context
-        缺失（legacy/单测）或无 recorder → helper 内部短路 no-op（BC）。
+        若本轮跑了 ≥5 工具/≥3 不同工具，从 tool_path_recorder 的路径生成技能候选
+        → 经 control_ws 发 skill_candidate_proposed 给桌宠主 UI 渲染确认卡。
+
+        **fire-and-forget**（子代理终轮复评抓出）：_maybe_codify_skill 内部会
+        `wait_for(确认, timeout=300s)` 等用户点技能卡，而语音 TTS 在本轮 agent
+        返回后才合成 → 若直接 await codify，本轮真提候选时用户会听到最长 300s 静音。
+        故 schedule 成后台任务立即返回，让 TTS 正常播；codify 的确认等待在后台跑。
+        app_config / service_context 缺失（legacy/单测）→ no-op（BC）。
         """
         sc = self._service_context
         if self._app_config is None or sc is None:
             return
+        task = asyncio.ensure_future(self._codify_worker())
+        self._codify_tasks.add(task)
+        task.add_done_callback(self._codify_tasks.discard)
+
+    async def _codify_worker(self) -> None:
+        """实际 codify 调用（后台跑）。safe-fail：异常只 debug log。"""
         try:
             from main import (  # noqa: PLC0415 — lazy: avoid circular import
                 _maybe_codify_skill,
                 _SKILL_CANDIDATE_WAITERS,
             )
             await _maybe_codify_skill(
-                sc, self._app_config, self.session_id,
+                self._service_context, self._app_config, self.session_id,
                 self.control_ws, _SKILL_CANDIDATE_WAITERS,
             )
         except Exception as exc:  # noqa: BLE001 — codify 不能让语音崩
@@ -544,9 +557,14 @@ class VoicePipeline:
                     _get_receipt_store as _grs,
                 )
                 from agent.context_manager import ContextManager as _CtxMgr  # noqa: PLC0415
-                _v2 = getattr(
-                    getattr(getattr(self._app_config, "context", None), "manager", None),
-                    "v2_enabled", True,
+                # v2_enabled 回退闸：AppConfig 把 [context] 放在 .raw（无 .context
+                # 属性），必须从 config.raw 读，对齐文字 venue main.py:5370-5373。
+                # （原 getattr(self._app_config,"context",...) 恒落空→恒 True，
+                # 导致 v2_enabled=false 回退闸对语音失效——子代理终轮复评抓出。）
+                _raw = getattr(self._app_config, "raw", {}) or {}
+                _v2 = bool(
+                    ((_raw.get("context") or {}).get("manager") or {})
+                    .get("v2_enabled", True)
                 )
                 _ctx_mgr = _CtxMgr.for_session(
                     model=getattr(self._local_llm, "model", "unknown"),

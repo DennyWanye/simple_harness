@@ -51,6 +51,10 @@ async def test_voice_codify_invokes_helper_with_control_ws(monkeypatch):
     cfg = object()
     p = _make_pipeline(app_config=cfg, service_context=sc, control_ws=ws)
     await p._maybe_codify_voice()
+    # codify 是 fire-and-forget（不阻塞 TTS）→ drain 后台任务再断言。
+    import asyncio
+    if p._codify_tasks:
+        await asyncio.gather(*list(p._codify_tasks))
 
     assert len(calls) == 1, f"应恰好调一次 codify,实际 {len(calls)}"
     got_sc, got_cfg, got_sid, got_ws, _waiters = calls[0]
