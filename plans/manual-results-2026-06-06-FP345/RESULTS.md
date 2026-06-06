@@ -152,6 +152,34 @@ agent 完成 46 工具 + turn `stop_reason='end_turn'` 收尾，但 `pending_ski
 
 候选已 pending + WS 事件已 emit，但真机消息流里**未可见渲染绿色技能卡**（SkillCandidateCard）→ 疑前端 session 路由显示问题（候选 sid=code-64ec67f7，「完整 chat」视图未渲出该卡）或 codify await 5min 超时窗口。**前端卡组件代码已建 + tsc 0err + vitest 134 绿**（commit 58fbac8），WS 契约后端已 emit 正确字段；差「卡在对应 session 视图真显示 → 点保存 → SKILL.md」这一前端显示+确认环节真机捕获。续跑：定位候选 sid 对应的 code session 视图找卡，或排查 ws.ts 的 skill_candidate_proposed→SkillCandidateCard 渲染（session_id 路由）。
 
+## ▶▶ 续跑 PLAYBOOK：12 个 ✅ UI TC（压缩后一读即接）
+
+**环境**：app 用 launch-fp345b.ps1 启动（boot 须见 `fp5_codify_wiring_ready (True,True,True)`）；fp345-proj 会话已存在；relay 鲁棒性已修（agent 能在烂代理下跑通，但慢——耐心等自然完成别早停）；技能 `meeting-minutes-to-ppt` 已落盘（TC-5.8 复用基础）。
+
+**圣杯交互方法（每次重启 handle 变，用 Snapshot 取）**：
+- 找 Code 面板：EnumWindows 找 `DeskPet · Code Mode` → ShowWindow(9/5)+BringWindowToTop+SetForegroundWindow。
+- **关键**：Claude app 会抢前台 → 每次操作前重新 SetForegroundWindow(code_handle)，且**用 Snapshot 取当前输入框「给 fp345-proj 发指令」物理坐标**（dashboard 视图 vs 完整chat 视图坐标不同，别用旧坐标，上轮多次 miss 就是这原因）。
+- 键鼠全 SendInput（INPUT type=1 键盘 0x11 Ctrl/0x56 V/0x0D Enter；type=0 鼠标 0x0002/0x0004）；中文走 Set-Clipboard + Ctrl+V。
+- 验证：DB `state.db`（messages/pending_skill_candidates）+ `tr -d '\000' < .tmp/fp345-tauri2.log | grep` + 截图存 screenshots/。
+
+**12 个 TC 逐条动作**（每条：设目标/发话→等自然完成→截图+grep 判定）：
+| TC | 动作 | 判定证据 |
+|---|---|---|
+| TC-5.1 强匹配载入 | 发「帮我把这周几个会议纪要整理成PPT」 | grep `skill_matcher`/`skill_auto_load` 该 skill 正文载入 |
+| TC-5.8 复用 | 同上，新 session 发 | 已存 meeting-minutes-to-ppt 被自动载/调用 |
+| TC-5.4 拒绝不落盘 | 触发候选卡→点「忽略」 | pending 删、无新 SKILL.md |
+| TC-5.2 压缩追目标 | /goal 设独特目标→堆长对话过阈值→追问原目标 | `p1_4_compaction_fired`+答对（FP-2 已证 anchor）|
+| TC-5.7 压缩后重挂 | 载入skill→堆对话压缩→问「刚才skill第N步」 | `skill_remounted`/`[已重挂技能]` |
+| TC-3.1★ 伪完成→拦→重规划→PPT | /goal 生成PPT→诱导口头声称完成 | `verify_gate_nudge_injected`+`task_replanning`+二次`ppt_create`+ArtifactCard |
+| TC-3.2 真完成放行 | /goal 做Excel→真调excel_create | verify `passed=True` 不重试 |
+| TC-3.3 偏离拦 | /goal 财务Excel→诱导产无关docx | `goal_alignment aligned=False` |
+| TC-3.4 未来时不误判 | 诱导「我将会生成」 | claim 不提完成态、goal 仍 active |
+| TC-4.1★ 重启跨会话召回 | 会话A说决策→taskkill重启→会话B问 | 答出原决策+L3块`[decision]` |
+| TC-4.2 改偏好反映 | 说「我喜欢乌龙茶」→下轮问推荐 | 画像块含+回应反映 |
+| TC-4.3 偏好冲突 | 先A后B偏好→问推荐 | 反映最新B（superseded）|
+
+> 注：这 12 条机制均已被 162 后端焦点测试验证，差真机 UI 截图。relay 修复后无阻塞，逐条同套路。
+
 ## 📊 22 TC 完整盘点（2026-06-06 收口）
 
 | 类别 | 数量 | TC | 证据 |
