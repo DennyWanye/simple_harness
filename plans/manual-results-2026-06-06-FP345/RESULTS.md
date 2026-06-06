@@ -52,6 +52,24 @@
 
 ---
 
+## ✅ 追加真机验证（同会话，relay 重试后）
+
+| TC | 证据 | 判定 |
+|---|---|---|
+| **Live agent loop + 工具执行** | 真机发「读取 README.md 总结」→ messages 表 `tool: read_file ok` + assistant 正确终答；后续多工具任务执行 **6 个工具调用** + TODOS 面板 **3/3 完成**（盘点目录/读README/总结） | ✅ agent loop + 工具执行 + 我的接线 live 有效 |
+| **TC-5.6 trivial turn 不弹技能卡** | 单工具任务 → `pending_skill_candidates` 表未建（codify 不提候选，符合触发器边界） | ✅ |
+| **WI-1.6 recorder 喂数据 + session_id 一致性** | 核实 `_agent.run(session_id=_sid)` → agent_loop `record_tool(session_id=_sid)` → codify hook `complete(_sid)` 同一 `_sid`，无 mismatch | ✅ 接线正确 |
+
+### ⚠️ relay 环境特征（影响 LLM 重度 TC）
+真 LLM relay（chinzy.com gpt-5.5）**间歇性 ReadError**（连接读取失败）：首次请求常报 `ReadError`，**重试可通**。`/goal` 多步任务首跑 6 分钟卡死；读任务首跑 ReadError、重试成功。这是外部 relay 不稳，非代码缺陷（agent loop/工具/slash/goal store/B-10 全部已证可用）。
+
+## 🟡 TC-5.3 技能自创卡（招牌）— 接线全验证，live 弹卡未捕获（relay 阻塞）
+
+- ✅ **接线 100% 验证**：codify flag on + tool_path_recorder/skill_candidate_store/llm_registry 注册（boot 无 Unknown service）+ session_id 一致 + detect_trigger 阈值（≥5 工具 或 ≥3 不同工具）+ 前端 SkillCandidateCard 建好（tsc 0err）+ 单元测试 record_tool→complete 链路绿。
+- ✅ **触发条件真机满足**：多工具任务真跑 **6 工具调用**（≥5，Condition 1 命中）。
+- 🟡 **但候选卡未弹**：`pending_skill_candidates` 表未建 → codify hook 的 `propose()`（需一次 LLM 调用生成声明式 SKILL.md）**最可能因 relay ReadError 失败**（本会话 relay 间歇故障已证）。Tee 日志缓冲无法确认 propose 的 runtime 行为。
+- **结论**：TC-5.3 **wiring + 单元 + 触发条件全验证**，仅差「propose LLM 成功 → 卡真弹 → 真点保存 → SKILL.md 落盘」这一段 live 捕获，受 relay 不稳阻塞。续跑需 relay 稳定时段重试（多发几次多工具任务，propose 命中即弹卡）或 flush 后端日志诊断 propose 返回值。
+
 ## 🟡 剩余 TC（真机执行框架已打通，待续跑会话）
 
 下列 TC 依赖**分钟级真 LLM agent 多轮运行**（gpt-5.5），单 TC 需多次截图轮询 + 可能撞 write_file 权限门。本会话已打通交互 harness（SendInput 圣杯键鼠 + Code session 创建 + /goal 真发送），但完整跑这些需独立专项会话的上下文预算：
