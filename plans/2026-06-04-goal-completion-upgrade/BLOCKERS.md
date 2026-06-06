@@ -1,5 +1,13 @@
 # BLOCKERS / 状态交接 — goal-completion 升级
 
+> ## 🚧 2026-06-06 逃生口（硬阻塞，需 relay 恢复或换 provider）★
+> **现状**：FP-5 技能自创（TC-5.3）+ TC-3.1/4.1 等 LLM 重度 live 手测**代码侧 100% 就绪、卡在外部 LLM relay**。
+> - **代码全就绪**：config 修([skills.codify]) + 5 处接线 + WI-1.6 喂数据 + 前端卡 + **方案 B**(codify hook 抽 `_maybe_codify_skill` helper，FinalEvent+ErrorEvent 两处调，relay 中止/迭代上限后若已跑≥5工具仍触发) + 全单测绿(84 回归 + 4 helper 单测) + boot `fp5_codify_wiring_ready (True,True,True)`。
+> - **硬阻塞 = chinzy.com relay 本会话基础设施不稳**：经 Clash Verge 代理访问，任务栏曾显示「无法访问 Internet」；多工具 turn **持续在首调/2 工具后 ReadError 中止**（session「⚠ error」），跑不到 codify 触发阈值(≥5工具/≥3不同工具)。**retry 远超 3 次**（修输入坐标(物理1099,963已验证可输入+曾跑34工具)/重启/方案B健壮性/多次重发/换 provider 考量）relay 仍间歇失败 → 触发 /goal 逃生口「windows-mcp retry≥3 仍失败」。
+> - **一步续跑（relay 恢复/换 provider 时）**：开 app(launch-fp345b.ps1，boot 须见 `fp5_codify_wiring_ready True,True,True`)→ Snapshot 取 fp345-proj 输入框坐标 → 发「依次调用工具:todo_write/列目录/读README/再列/再读」多工具任务 → 跑满 ≥5 工具 → 方案 B 在 FinalEvent/ErrorEvent 任一触发 → 技能卡弹 → 真点保存(圣杯 SendInput) → SKILL.md 落盘验证。换 provider：config `[llm.local] model` 改 deepseek-v4-pro（同 relay，但推理短/可能更稳）或修 Clash Verge 代理路由。
+> - **已真机过门**：TC-4.5 B-10钩 ✅ / Live agent loop(曾34工具) ✅ / TC-5.6 trivial不弹卡 ✅。**未过**：TC-5.3/3.1/4.1 等(relay 阻塞)。
+
+
 > **2026-06-06 第四轮（真机抓修 config bug + TC-5.3 根因定位）**：
 > - ★★ **真机手测抓出生产级真 bug 并修复**：`config.py:load_config` **只解析 `[skills.auto_disclosure]`，漏 `[skills.codify]`** → `enabled=true` 被丢弃 → `config.skills.codify` 恒默认 off → lifespan codify 接线整段跳过 → recorder/candidate_store/llm 全 None → **技能自创确认卡（WI-4.3）生产永不弹**。诊断靠 boot log **缺 `fp5_codify_wiring_ready`**。修复 commit 7732c0d（+回归测试）；重启后 boot 出现 `fp5_codify_wiring_ready (True,True,True)` 验证。**子代理 wiring 评审漏了 config-loader 这层**（只查 build_agent/services 注册）。
 > - 🔴 **TC-5.3 live 卡弹精确根因 = relay ReadError 中止 turn**：config 修复后 codify 接线 live，但真机多工具任务后卡仍不弹。文件级诊断（已 revert）：codify hook 在 **FinalEvent 分支**；relay **ReadError 中止 turn → 不到 FinalEvent → hook 不跑 → 不 propose**。codify 链路全就绪（config 修+接线 live+触发阈值+前端卡+单测），**差一个稳定 turn 完成**。续跑：relay 稳定时段重发多工具任务即可弹卡→真点保存→SKILL.md；或给 ErrorEvent 分支也补 codify hook（健壮性小切片）。
