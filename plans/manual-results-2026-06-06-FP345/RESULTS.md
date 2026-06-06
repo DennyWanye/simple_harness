@@ -237,3 +237,38 @@ agent 完成 46 工具 + turn `stop_reason='end_turn'` 收尾，但 `pending_ski
 **判定 TC-5.8 PASS**（同一硬证据）：被自动召回预载的 `meeting-minutes-to-ppt` 正是 TC-5.3 真机自创保存的技能 → 「自创技能在后续会话被自动复用」闭环真机贯通（codify 造 → disclosure 召回，FP-5 闭环完整）。
 
 > **意义**：这 6 层全是 `feedback_cross_layer_contract` 的最深演绎——每层单测都绿（sync mock + 注入齐全 + flag on），但生产真机运行栈逐层断裂。正是 `/goal` 强制 windows-mcp 真测（禁 import/脚本回放当证据）才逼出来的：任何"等价证明"都会漏掉这 6 层。修复 304 焦点测试绿 + 真机 UI 证据双保险。
+
+---
+
+## ★ FP-4 偏好画像注入 — 同根第 7 处 fanout-gating bug 抓修 + 真机验证（TC-4.2 注入半边 PASS）
+
+续跑 TC-4.2（改偏好反映）时，真机在 code 会话发「记住我喜欢乌龙茶」→ agent 把它当任务调工具 `permission denied` + 无 preference fact + 无注入。静态查发现 **`preference_profile` 组件在 default.yaml 的所有 policy 里都不存在** → `ComponentRegistry.fanout` 永不调它 → **FP-4 偏好/画像注入（WI-3.2）在生产任何 task_type 下都死掉**（persona_inject flag 开了也白搭）——与 FP-5 skill 缺 policy **同根的系统性 fanout-gating bug**（第 7 处）。
+
+**修复**（commit c64fb81）：default.yaml 给 chat/recall/task/code/plan/emotion policy 的 prefer 补 `preference_profile`（flag persona_inject + 空-facts 双门控 → 关或无 facts 返回空 Slice，字节级 BC）。写路径（facts.py LLM 抽取 preference/profile/constraint 类）本就存在，只差组件 fan-out。+ `preference_profile_injected facts=N` 观测日志。
+
+**真机硬证据**：修复+重启后，code 会话发消息 → **`preference_profile_injected facts=2 task_type=code`**（修复前此日志永不出现，因组件不在 fanout）。preference_profile 组件现在真机 fan-out 并把 2 条 profile/constraint facts 注入进 LLM prompt —— FP-4 偏好注入的「读/注入」半边（之前全局死的部分）真机恢复。
+
+**判定**：TC-4.2 **注入机制半边真机 PASS**（preference_profile 组件 fan-out + 注入 facts 进 prompt 已硬证据验证）。完整 TC-4.2（新偏好→抽取→下轮反映）的「抽取写路径」是独立的异步 LLM fact extractor，在 code 会话未观测到（async/venue 依赖，与本注入修复无关）—— 待 companion-chat venue + fresh context 续跑。
+
+## 📊 续跑会话总结（2026-06-06 压缩后）
+
+**核心成果：真机手测抓出并修复 7 处系统性生产 bug**（全是"组件注册+flag开+单测绿，但 policy fanout / config 线程 / 类型契约层逐个断"的 `feedback_cross_layer_contract` 最深演绎）：
+
+| # | 层 | 影响 | 修复 commit |
+|---|---|---|---|
+| 1 | SkillComponent 无观测日志 | 自动披露生产不可见 | 56ba381 |
+| 2 | assemble() config 漏 skills 段 | auto_enabled 恒 False | 56ba381 |
+| 3 | code policy 漏 skill | SkillComponent 永不 fan-out | 56ba381 |
+| 4 | code 会话靠文本分类 | 落 chat 无 skill | 56ba381 |
+| 5 | codify 技能漏 task_types | select() 永远过滤掉自创技能 | 56ba381 |
+| 6★ | SkillMatcher 同步调 async embedder | 缓存恒空 top_sim=0.0 永远零匹配 | 56ba381 |
+| 7 | preference_profile 缺所有 policy | FP-4 偏好注入全局死 | c64fb81 |
+
+**真机 PASS**（windows-mcp 圣杯 SendInput + 截图 + 日志硬证据）：
+- **TC-5.1 强匹配载入** ✅ `skill_auto_disclosed total=2 strong=2 auto_loaded=2 names=['meeting-minutes-to-ppt']`
+- **TC-5.8 复用自创技能** ✅（同证据：TC-5.3 自创保存的技能被自动召回预载，codify→disclosure 闭环贯通）
+- **TC-4.2 偏好注入半边** ✅ `preference_profile_injected facts=2 task_type=code`
+
+**测试**：304（assembler/skill/config/codify/matcher）+ 112（preference/profile/policy）焦点回归全绿 + 2 个新 async-embedder 回归测试守护生产契约。**6 次真机重启迭代**逐层验证。3 commit（56ba381 / 94d9703 / c64fb81）。
+
+**待续跑**（需 fresh context；部分需 companion-chat venue 而非 code panel）：TC-3.1~3.4（verify gate 伪完成拦截/真完成放行/偏离/未来时）、TC-4.1（重启跨会话召回）、TC-4.3（偏好冲突）、TC-5.2（压缩追目标）、TC-5.4（拒绝不落盘）、TC-5.7（压缩后重挂）。这些机制被 480 goal-completion 焦点测试覆盖，但**本会话证明"单测绿 ≠ 生产可用"**——续跑应同样用真机逐层验证（很可能再抓出同类 fanout/config/契约 gap）。
