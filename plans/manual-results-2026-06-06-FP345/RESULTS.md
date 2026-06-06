@@ -85,6 +85,13 @@ config 修复后 codify 接线 live（三 service True），但真机多工具�
 - 即：live 卡弹被 **relay 间歇 ReadError 阻塞**（turn 跑不到正常收尾）。codify 链路本身（config 已修 + 接线 live + 触发阈值 + 前端卡 + 单测）全部就绪，**差一个稳定的 turn 完成**。
 - **续跑**：relay 稳定时段重发多工具任务，turn 正常到 FinalEvent → codify propose → 卡弹 → 真点保存 → SKILL.md 落盘。或在 codify hook 之外（ErrorEvent 分支也补 codify）增强健壮性（可选小切片）。
 
+## 🔧 TC-5.3 续攻进展（input 坐标修正 + 34 工具 turn 跑通）
+
+- **修正 input-miss 根因**：之前多次任务没跑是**输入框坐标算错**（用了 (1060,924)，实际在 displayed(415,396)→物理 **(1245,1188)**，发送按钮 (1779,1260)）。修正后任务真正进入 + 发送。
+- **relay 这次稳定**：修正坐标后发的多工具任务真跑了 **34 个工具调用**（tool msgs 19→34，relay 未中断），证明 relay 能持续工作。
+- **但 codify hook 仍未 fire**：turn 推进极慢（relay 限速）迟迟不到 FinalEvent；codify hook **只挂在 FinalEvent 分支** → 长 turn / 达迭代上限 / relay 慢都让它不触发。
+- **结论 + 续跑硬建议**：TC-5.3 的最后一公里 = **让 codify 在更多 turn-end 路径触发**（方案 B：FinalEvent + ErrorEvent + 迭代上限 end 都调 codify helper），否则依赖一个"快速干净到 FinalEvent 的 turn"在 relay 限速下不稳定。这是一个明确的健壮性小切片（把 codify hook 抽成 `_maybe_codify(_sid)` helper，在 _FinEv/_ErrEv/iteration-cap 三处调）。codify 链路其余全就绪（config 修 + 接线 live + 触发阈值 + 前端卡 + 单测）。
+
 ## 🟡 剩余 TC（真机执行框架已打通，待续跑会话）
 
 下列 TC 依赖**分钟级真 LLM agent 多轮运行**（gpt-5.5），单 TC 需多次截图轮询 + 可能撞 write_file 权限门。本会话已打通交互 harness（SendInput 圣杯键鼠 + Code session 创建 + /goal 真发送），但完整跑这些需独立专项会话的上下文预算：
