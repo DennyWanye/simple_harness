@@ -88,6 +88,7 @@ class ContextAssembler:
         budget_allocator: Optional[BudgetAllocator] = None,
         enabled: bool = True,
         component_timeout_ms: float = 1500.0,
+        default_config: Optional[dict[str, Any]] = None,
     ) -> None:
         self._registry = component_registry
         self._policies = policies
@@ -95,6 +96,13 @@ class ContextAssembler:
         self._budget = budget_allocator or BudgetAllocator()
         self._enabled = enabled
         self._component_timeout_ms = component_timeout_ms
+        # FP-5 缺口 5j (2026-06-06)：assemble() 的 config dict 必须带
+        # skills.auto_disclosure，否则 SkillComponent 降级 desc-only。原先靠
+        # 每个 venue 调用方（main.py _run_chat / voice_pipeline / …）各自记得传
+        # → 文字 venue 修了、语音 venue 漏了（同根 venue-miss）。改为 assembler
+        # 在 build 时记住 default_config，assemble() 时兜底合并（调用方未提供的
+        # 顶层键用 default 补），从源头根治所有 venue，杜绝第 N 个 venue 再漏。
+        self._default_config: dict[str, Any] = dict(default_config or {})
         self._decisions_ring: deque[AssemblyDecisions] = deque(
             maxlen=_MAX_DECISIONS_RING
         )
@@ -127,6 +135,13 @@ class ContextAssembler:
     ) -> ContextBundle:
         """Produce a ContextBundle. MUST NOT raise."""
         start = time.monotonic()
+
+        # FP-5 缺口 5j：兜底合并 build 时记住的 default_config（含
+        # skills.auto_disclosure），调用方提供的顶层键覆盖默认。这样任何 venue
+        # （文字 _run_chat / 语音 voice_pipeline / 未来新增）都不必各自记得传
+        # skills 配置，SkillComponent 永远拿得到 auto_disclosure → 杜绝 venue-miss。
+        if self._default_config:
+            config = {**self._default_config, **(config or {})}
 
         # 1. Legacy bypass path (task 12.13).
         if not self._enabled:

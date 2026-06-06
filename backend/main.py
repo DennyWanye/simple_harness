@@ -1468,6 +1468,20 @@ try:
         # → SkillComponent 真做 embedding 披露；flag OFF → 两者 None → desc-only (BC)。
         skill_matcher=_skill_matcher,
         skill_loader=_skill_loader,
+        # FP-5 缺口 5j (2026-06-06 子代理复评)：把 auto_disclosure 配置交给
+        # assembler 当 assemble() 的 default_config → 任何 venue（文字 _run_chat /
+        # 语音 voice_pipeline / 未来新增）都自动拿到 skills 配置，根治 venue-miss
+        # （原靠各调用方各自传 → 语音 venue 漏传，第 8 处同根 bug）。
+        auto_disclosure_config=(
+            {
+                "enabled": bool(config.skills.auto_disclosure.enabled),
+                "strong_threshold": float(config.skills.auto_disclosure.strong_threshold),
+                "budget_tokens": int(config.skills.auto_disclosure.budget_tokens),
+                "per_skill_max_tokens": int(config.skills.auto_disclosure.per_skill_max_tokens),
+            }
+            if getattr(getattr(config, "skills", None), "auto_disclosure", None)
+            else None
+        ),
     )
     service_context.register("context_assembler", _assembler)
 

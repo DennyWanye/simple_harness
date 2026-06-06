@@ -89,6 +89,7 @@ def build_default_assembler(
     persona_inject: bool = False,
     skill_matcher=None,
     skill_loader=None,
+    auto_disclosure_config=None,
 ) -> ContextAssembler:
     """One-shot factory for the common case.
 
@@ -131,10 +132,17 @@ def build_default_assembler(
         context_window=context_window, budget_ratio=budget_ratio
     )
 
+    # FP-5 缺口 5j：把 auto_disclosure 配置作为 assemble() 的 default_config，
+    # 任何 venue 调用方不传 skills 也能让 SkillComponent 拿到 → 根治 venue-miss。
+    _default_config = None
+    if auto_disclosure_config:
+        _default_config = {"skills": {"auto_disclosure": dict(auto_disclosure_config)}}
+
     return ContextAssembler(
         component_registry=registry,
         policies=policies,
         classifier=classifier,
         budget_allocator=budget,
         enabled=enabled,
+        default_config=_default_config,
     )
