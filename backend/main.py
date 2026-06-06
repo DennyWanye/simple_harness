@@ -6617,6 +6617,9 @@ async def audio_channel(ws: WebSocket):
         # VOICE-MSGPANEL-SYNC: 注入实时解析 originator 的语音广播器（_voice_broadcast
         # 在上面定义，闭包捕获 session_id，广播时实时取发起窗口 control_ws 作 skip 目标）。
         broadcast=_voice_broadcast,
+        # FP-5 缺口 5k：传 AppConfig 让语音 venue 走 build_agent 工厂（接 verify_gate
+        # + codify + skill 披露/重挂），与文字 venue 对齐。
+        app_config=config,
     )
     # Register so control-channel `interrupt` messages can reach us.
     _pipelines[session_id] = pipeline
