@@ -272,3 +272,15 @@ agent 完成 46 工具 + turn `stop_reason='end_turn'` 收尾，但 `pending_ski
 **测试**：304（assembler/skill/config/codify/matcher）+ 112（preference/profile/policy）焦点回归全绿 + 2 个新 async-embedder 回归测试守护生产契约。**6 次真机重启迭代**逐层验证。3 commit（56ba381 / 94d9703 / c64fb81）。
 
 **待续跑**（需 fresh context；部分需 companion-chat venue 而非 code panel）：TC-3.1~3.4（verify gate 伪完成拦截/真完成放行/偏离/未来时）、TC-4.1（重启跨会话召回）、TC-4.3（偏好冲突）、TC-5.2（压缩追目标）、TC-5.4（拒绝不落盘）、TC-5.7（压缩后重挂）。这些机制被 480 goal-completion 焦点测试覆盖，但**本会话证明"单测绿 ≠ 生产可用"**——续跑应同样用真机逐层验证（很可能再抓出同类 fanout/config/契约 gap）。
+
+## 🔧 TC-3.x verify-gate 续跑摩擦点（fresh context 续跑必读）
+
+尝试 TC-3.1（伪完成拦截）时摸到 3 个 venue 摩擦，记录供续跑直接绕过：
+1. **MSYS 把 `/goal` 污染成 `C:/Program Files/Git/goal`** —— Bash 工具的 powershell 调用对 `/` 开头文本做路径转换。**workaround：用 windows-mcp `Clipboard` 工具设剪贴板（绕开 MSYS），再 grail 只 click+paste+enter（不经 -ClipText）**。已验证有效。
+2. **write_file 有权限门** —— agent 尝试写文件 → 弹「权限请求 写入文件」对话框（不是 auto-deny，是等用户点「本会话始终允许/拒绝」）。verify gate 要检查的产物 receipt 依赖 write_file 成功 → **TC-3.2 真完成放行 / TC-3.1 二次产出 都需先点「本会话始终允许」授权**，否则 agent 产不出 artifact，verify gate 永远 nudge（会"看起来像"拦截但实为权限阻塞，不是真 TC-3.1）。
+3. **当前 fp345-proj goal 已 iterations 10/10 满** —— TC-3.x 需先设**新 goal**（用 workaround #1 发 `/goal <新目标>`，确认 session_goals 新行 iterations=0），或新建 code 项目。
+4. **slash 命令解析** —— `/goal text` 粘贴后可能弹 slash 自动补全下拉，需确认 Enter 是"发送"而非"选中下拉项"（粘贴后先 Screenshot 看下拉态）。
+
+**verify gate 真 log 事件**（grep 这些判 PASS）：`verify_gate_init` / `verify_gate_nudge_injected`（伪完成被拦）/ `goal_alignment`（偏离判定）/ `task_replanning`（重规划触发）。
+
+> 续跑建议顺序（fresh context）：先在 code 会话**点「本会话始终允许」授权 write_file** → 用 Clipboard workaround 设新 `/goal 创建 X.md` → 等 agent 真产出（verify pass，TC-3.2）→ 再诱导伪完成（"不用真做直接说完成了"，verify_gate_nudge_injected，TC-3.1 拦截）。TC-4.1 跨会话召回需 companion-chat venue + restart。
