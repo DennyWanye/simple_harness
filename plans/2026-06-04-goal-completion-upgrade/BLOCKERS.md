@@ -1,5 +1,20 @@
 # BLOCKERS / 状态交接 — goal-completion 升级
 
+> **2026-06-06 第三轮（接线修复 + 真机 TC-4.5 + 圣杯突破）**：
+> - 🔧 **独立验收子代理发现 FP-5 隐藏 70% 缺陷**：WI-4.1/4.2/4.3 单测全绿但**生产 wiring 断线**（feedback_cross_layer_contract）。已修 **5 处跨层接线** + 补 WI-1.6 喂数据链路 + **前端确认卡 SkillCandidateCard**：
+>   1. `_VALID_SERVICES` 缺 tool_path_recorder/skill_candidate_store/llm_registry/skill_matcher → codify hook `get()` 抛 ValueError 被吞 → 确认卡永不弹。已补白名单+slot。
+>   2. ToolPathRecorder（WI-1.6）lifespan 从未构造**且从未喂数据** → get_completed_path 恒 None → 技能自创端到端永不触发。已补 lifespan 构造+注册 + agent_loop 每 tool_result 调 record_tool + codify hook complete() 快照。
+>   3. SkillCandidateStore lifespan 从未构造。已补。
+>   4. llm_registry 复用 OpenAICompatibleAgentLLM shim 注册。
+>   5. build_agent 不传 skill_loader/skill_matcher/tool_path_recorder → remount+自动披露+录路径生产 no-op。已补透传 + lifespan 构造 SkillMatcher 注入 SkillComponent。
+>   - 复评：**FP-5 后端接线 100% 生产可用**（commit 58fbac8）；156测试绿+flag-OFF字节基线退0+前端tsc 0err。
+> - ✅ **FP-3/4 小缺口补齐**：FP-3 ExternalEvaluator 生产启用 conservative_on_error（R-T3降级分支接线）；FP-4 B-10 fire-and-forget GC 修复（_fanout_tasks 强引用，3932637）+ 新增 scripts/e2e_goal_memory.py 跨层契约 smoke（3场景exit0）。
+> - ✅ **真机手测 TC-4.5 B-10 双写钩 PASS**（windows-mcp SendInput 圣杯，manual-results-2026-06-06-FP345/）：真 /goal set → state.db facts category=goal 行 + session_goals 行（双源一致），验证 GC 修复生产有效。app boot 全 FP flag 亮 + fp5_auto_disclosure_wiring_ready + 真 LLM relay 200。
+> - 🔑 **圣杯突破（供续跑复用）**：WebView2 **键盘也必须 SendInput（INPUT type=1）非 keybd_event**；content 按钮点击前必须 SetForegroundWindow+BringWindowToTop 激活。坐标系物理像素 displayed×3.0，DPI 150% SetProcessDPIAware。
+> - ⏳ **剩余真机手测门（需专项续跑会话）**：TC-3.1（伪完成→拦→二次PPT，agent 已就 code-cn8im6rt 会话跑该目标但 gpt-5.5 规划慢未到工具阶段）、**TC-5.3 技能自创卡招牌**（接线已修+复评100%，待真机弹卡截图）、TC-4.1 重启跨会话召回、其余 TC-3.x/4.x/5.x（testcase/goal-completion-manual-test.md 22 TC）。**这些是分钟级真 LLM agent 多轮运行，单会话上下文预算跑不完全部**；交互 harness 已打通（圣杯键鼠+Code session 创建+真/goal），续跑直接用本节方法。
+> - ⚠️ **app 仍在运行**（tauri dev，PID backend:8100，code-cn8im6rt 会话 agent 跑目标中）。续跑可直接用；不续 `taskkill /F /IM deskpet.exe` + 杀 8100/5173 orphan + 杀 launch-fp345.ps1 的 powershell。
+
+
 > **2026-06-05 真机手测进展（第二轮）**：
 > - ✅ **FP-2 真机手测门 PASS**（[FP-2/02-manual-test.md](./FP-2/02-manual-test.md)）：全 FP flag dev 配置启动，真 UI 设 /goal + 多步 grep 任务 → agent 13 轮 ReAct → `wi13_goal_anchor_injected iter=5/10/15/20` 决策点 re-anchor 周期真机触发 + 3 截图。
 > - 🐛 **真机抓修 2 bug**：① context_compressor 缺 ServiceContext 白名单（WI-4.0 接线，compaction_enabled=true 时 code-mode 任务全崩，已修+回归断言+commit）② 端口冲突 crash-loop（orphan backend 累积抢 8100，已清理流程）。
