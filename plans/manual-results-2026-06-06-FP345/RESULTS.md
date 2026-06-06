@@ -70,6 +70,21 @@
 - 🟡 **但候选卡未弹**：`pending_skill_candidates` 表未建 → codify hook 的 `propose()`（需一次 LLM 调用生成声明式 SKILL.md）**最可能因 relay ReadError 失败**（本会话 relay 间歇故障已证）。Tee 日志缓冲无法确认 propose 的 runtime 行为。
 - **结论**：TC-5.3 **wiring + 单元 + 触发条件全验证**，仅差「propose LLM 成功 → 卡真弹 → 真点保存 → SKILL.md 落盘」这一段 live 捕获，受 relay 不稳阻塞。续跑需 relay 稳定时段重试（多发几次多工具任务，propose 命中即弹卡）或 flush 后端日志诊断 propose 返回值。
 
+## ★★ 真机手测抓出生产级真 bug（本会话最大价值）
+
+**bug：config 加载器漏解析 `[skills.codify]` → FP-5 技能自创整个功能在生产里死掉。**
+- 诊断路径：真机跑 6 工具任务后技能卡不弹 → 查 boot log **缺 `fp5_codify_wiring_ready`**（codify 接线块整段没进）→ 静态查 `config.py:load_config` 发现**只 pop `auto_disclosure` 子表，从不解析 `codify`** → `[skills.codify] enabled=true` 被丢弃 → `config.skills.codify.enabled` 恒默认 False → lifespan codify 块跳过 → `tool_path_recorder`/`skill_candidate_store`/`llm_registry` 全注册为 None → codify hook `if _tp_rec is not None and _sc_candidate_store is not None` 短路 → 技能自创确认卡（WI-4.3）**生产永不弹**。
+- **子代理 wiring 评审漏掉这层**：它们查了 build_agent/services 注册，但没查 config 加载器是否真把 TOML flag 传进 schema。这正是 `feedback_cross_layer_contract` 的更深一层。
+- **修复**（commit 7732c0d）：`load_config` 同样解析 `[skills.codify]` → `SkillsConfig(codify=cd)`。补回归测试（enabled=true 被解析 + 默认 off BC）。
+- **验证修复**：重启后 boot log 出现 **`fp5_codify_wiring_ready tool_path=True candidate_store=True llm=True`**（之前缺失）→ codify 接线现在 live。
+
+## 🔴 TC-5.3 live 卡弹的精确根因 = relay ReadError 中止 turn
+
+config 修复后 codify 接线 live（三 service True），但真机多工具任务后技能卡**仍未弹**。文件级诊断（临时插桩，已 revert）结论：
+- **codify hook 在 FinalEvent 分支**；relay **ReadError 中止 turn → 不到 FinalEvent → codify hook 整段不运行 → 不 propose → 卡不弹**。
+- 即：live 卡弹被 **relay 间歇 ReadError 阻塞**（turn 跑不到正常收尾）。codify 链路本身（config 已修 + 接线 live + 触发阈值 + 前端卡 + 单测）全部就绪，**差一个稳定的 turn 完成**。
+- **续跑**：relay 稳定时段重发多工具任务，turn 正常到 FinalEvent → codify propose → 卡弹 → 真点保存 → SKILL.md 落盘。或在 codify hook 之外（ErrorEvent 分支也补 codify）增强健壮性（可选小切片）。
+
 ## 🟡 剩余 TC（真机执行框架已打通，待续跑会话）
 
 下列 TC 依赖**分钟级真 LLM agent 多轮运行**（gpt-5.5），单 TC 需多次截图轮询 + 可能撞 write_file 权限门。本会话已打通交互 harness（SendInput 圣杯键鼠 + Code session 创建 + /goal 真发送），但完整跑这些需独立专项会话的上下文预算：
