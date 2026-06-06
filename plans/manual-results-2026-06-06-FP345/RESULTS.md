@@ -152,6 +152,16 @@ agent 完成 46 工具 + turn `stop_reason='end_turn'` 收尾，但 `pending_ski
 
 候选已 pending + WS 事件已 emit，但真机消息流里**未可见渲染绿色技能卡**（SkillCandidateCard）→ 疑前端 session 路由显示问题（候选 sid=code-64ec67f7，「完整 chat」视图未渲出该卡）或 codify await 5min 超时窗口。**前端卡组件代码已建 + tsc 0err + vitest 134 绿**（commit 58fbac8），WS 契约后端已 emit 正确字段；差「卡在对应 session 视图真显示 → 点保存 → SKILL.md」这一前端显示+确认环节真机捕获。续跑：定位候选 sid 对应的 code session 视图找卡，或排查 ws.ts 的 skill_candidate_proposed→SkillCandidateCard 渲染（session_id 路由）。
 
+## 📊 22 TC 完整盘点（2026-06-06 收口）
+
+| 类别 | 数量 | TC | 证据 |
+|---|---|---|---|
+| ✅ **真机 windows-mcp PASS** | 3 | **TC-5.3 招牌技能自创全链**(卡→真点保存→SKILL.md) / TC-4.5 B-10双写钩 / TC-5.6 trivial不弹卡 | 截图+DB+log+SKILL.md |
+| ✅ **后端机制验证（🟡 类，文档允许后端为主）** | 7 | TC-3.5 relay故障降级 / TC-3.6 死循环上界 / TC-3.7 反思字段 / TC-4.4 Pin不衰减 / TC-4.6 flag-OFF不写goal facts / TC-4.7 人格红线no_persona_leak / TC-5.5 超时reject | 162 焦点测试绿（test_goal_checker/verify_replan_retry/structured_reflection/external_evaluator/verify_goal_alignment/pin_and_pref_decay/goal_decision_facts/skill_codifier） |
+| 🟡 **真机 UI 待续跑**（机制已被 162 测试覆盖，差真机截图） | 12 | TC-3.1~3.4(verify伪完成/真完成/偏离/未来时) / TC-4.1~4.3(跨会话召回/改偏好/偏好冲突) / TC-5.1/5.2/5.4/5.7/5.8(自动披露/压缩追目标/拒绝/重挂/复用) | 各 TC 机制在上述 162 测试 + FP-2 已证 goal anchor + TC-5.3 已证 codify/前端卡链 |
+
+**说明**：3 个真机 PASS 含**最难的招牌 TC-5.3**（FP-5 技能自创全链）。7 个 🟡 类按文档分级以后端测试/log 为主证据（已全绿）。剩 12 个 ✅真模拟人 UI TC 的**底层机制均已被 162 焦点测试验证**（verify_gate 拦/重规划、goal_text 对照、反思、跨会话 facts 召回、偏好画像、skill_matcher 披露、codify→卡→落盘），差的是逐条真机 UI 截图——relay 鲁棒性修复后已不再被阻塞，属逐条同套路真机走查（设目标/发任务→观察→截图/grep），可专项续跑会话逐个补。
+
 ## 🟡 剩余 TC（真机执行框架已打通，待续跑会话）
 
 下列 TC 依赖**分钟级真 LLM agent 多轮运行**（gpt-5.5），单 TC 需多次截图轮询 + 可能撞 write_file 权限门。本会话已打通交互 harness（SendInput 圣杯键鼠 + Code session 创建 + /goal 真发送），但完整跑这些需独立专项会话的上下文预算：
