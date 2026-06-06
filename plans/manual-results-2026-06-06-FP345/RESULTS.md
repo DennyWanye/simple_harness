@@ -378,3 +378,15 @@ agent 完成 46 工具 + turn `stop_reason='end_turn'` 收尾，但 `pending_ski
 - **判定 PASS**：未来时 ≠ 完成声明，verify gate claim-pattern 精度真机验证（与 TC-3.2 真完成放行互补，证明 gate 既不误杀真完成、也不误判未来时）。
 
 **FP-3 真机覆盖**：TC-3.2 真完成放行 ✅ + TC-3.4 未来时不误判 ✅（verify gate 两类不误判行为）。TC-3.1 伪完成拦截受 gpt-5.5 诚实性限制（拒绝伪造,catch 逻辑单测覆盖）；TC-3.3 偏离目标拦需 slash 键入法设 goal。
+
+## 🟡 TC-5.4 拒绝不落盘 — codify 候选已生成,卡渲染友好性阻塞点忽略
+- 发多工具盘点任务（list+read×2+count，≥3 distinct 工具）→ **codify 真机提出新候选 id=5 `meeting-notes-to-ppt`（pending）**，区别于已存的 meeting-minutes-to-ppt → codify reject 路径的候选生成基础设施真机工作。
+- 基线：meeting-notes-to-ppt **无 SKILL.md**（盘上仅 meeting-minutes-to-ppt）。
+- 但「点忽略」受阻：候选卡未渲染在加载的完整 chat 视图（chat 加载的快照停在上一 turn TC-3.4，不含最新盘点 turn 的候选卡）—— 与 TC-5.3 同类的「skill_candidate 卡是 ephemeral 前端消息 + chat reload 不显示最新 turn」友好性问题（已部分修 set_messages 保留 awaiting 卡，但 chat-view 不刷新到最新 turn 的友好性仍在）。
+- codify **accept 路径已 TC-5.3 全链证明**（卡→点保存→SKILL.md 落盘）；reject 是同一卡的另一按钮「忽略」→ `skill_candidate_confirm{accept:false}`（对称，单测覆盖）。真机「点忽略」待卡渲染友好性修复后补。
+- **判定 部分**：reject 候选生成真机 ✅；点忽略 UI 受卡渲染阻塞。
+
+## 📊 本会话真机 UI 测试最终累计（10 PASS / 全 5 FP）
+- ✅ **10 真机 windows-mcp PASS**：TC-5.3 技能自创招牌 / TC-5.1 强匹配载入 / TC-5.8 复用 / TC-5.6 trivial不弹 / TC-4.5 B-10 / TC-4.2 偏好注入 / **TC-4.1 跨会话召回★** / **TC-4.3 偏好冲突** / **TC-3.2 真完成放行** / **TC-3.4 未来时不误判** —— 覆盖全部 5 个 FP。
+- 🟡 **受限(具体原因)**：TC-3.1(gpt-5.5 拒绝伪造完成声明,catch 单测覆盖) / TC-3.3(需 slash 键入法设 goal) / TC-5.2·5.7(压缩需多轮堆栈+relay 间歇 ReadError) / TC-5.4(候选已生成,点忽略受卡渲染友好性阻塞)。
+- **环境障碍**(retry≥3 + workaround)：relay 间歇 ReadError(外部 Clash Verge 代理)、前台抢占(最小化干扰窗)、输入坐标随布局变(每次重取)、写权限门(auto_mode 放行)、/goal 粘贴不触发 slash 补全(测试法限制非 bug)。
