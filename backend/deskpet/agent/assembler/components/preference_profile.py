@@ -22,11 +22,14 @@ Top-N default 10 (spec §2 says 8-12).
 """
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any, Optional
 
 from deskpet.agent.assembler.bundle import Slice
 from deskpet.agent.assembler.components.base import Component, ComponentContext
+
+logger = logging.getLogger(__name__)
 
 # Categories pulled from facts for the profile block.
 # MUST NOT include "goal" (execution-state belongs to goal_store).
@@ -110,6 +113,14 @@ class PreferenceProfileComponent:
 
         text = self._render(rows)
         elapsed_ms = (time.monotonic() - start) * 1000.0
+        # Observability (FP-4 WI-3.2): preference/profile injection was invisible
+        # in logs — emit how many facts got injected so real-machine acceptance
+        # (TC-4.2/4.3) has hard evidence the profile block reached the prompt.
+        logger.info(
+            "preference_profile_injected facts=%d task_type=%s",
+            len(rows),
+            getattr(ctx, "task_type", "?"),
+        )
         return Slice(
             component_name=self.name,
             text_content=text,
