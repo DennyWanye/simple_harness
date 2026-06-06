@@ -790,7 +790,13 @@ def build_agent(
             except Exception:  # noqa: BLE001
                 pass
             _ev_llm_call = _make_str_llm_call(_ev_provider, max_tokens=512)
-            _external_evaluator = _EE(llm_call=_ev_llm_call)
+            # FP-3 R-T3 接线：evaluator 仅对高后果目标触发（is_high_consequence_goal
+            # 门控），故超时/错误时应保守拦截（返 revise）而非放行 —— 高后果场景
+            # 漏放代价远大于误拦。生产构造启用 conservative_on_error（之前默认 False
+            # → R-T3「高后果 evaluator 超时保守拦」分支生产从不触发）。
+            _external_evaluator = _EE(
+                llm_call=_ev_llm_call, conservative_on_error=True,
+            )
         except Exception as exc:  # noqa: BLE001 — safe-fail
             import logging as _log
             _log.getLogger(__name__).warning(
