@@ -12,7 +12,10 @@
 > - ✅ **真机手测 TC-4.5 B-10 双写钩 PASS**（windows-mcp SendInput 圣杯，manual-results-2026-06-06-FP345/）：真 /goal set → state.db facts category=goal 行 + session_goals 行（双源一致），验证 GC 修复生产有效。app boot 全 FP flag 亮 + fp5_auto_disclosure_wiring_ready + 真 LLM relay 200。
 > - 🔑 **圣杯突破（供续跑复用）**：WebView2 **键盘也必须 SendInput（INPUT type=1）非 keybd_event**；content 按钮点击前必须 SetForegroundWindow+BringWindowToTop 激活。坐标系物理像素 displayed×3.0，DPI 150% SetProcessDPIAware。
 > - ⏳ **剩余真机手测门（需专项续跑会话）**：TC-3.1（伪完成→拦→二次PPT，agent 已就 code-cn8im6rt 会话跑该目标但 gpt-5.5 规划慢未到工具阶段）、**TC-5.3 技能自创卡招牌**（接线已修+复评100%，待真机弹卡截图）、TC-4.1 重启跨会话召回、其余 TC-3.x/4.x/5.x（testcase/goal-completion-manual-test.md 22 TC）。**这些是分钟级真 LLM agent 多轮运行，单会话上下文预算跑不完全部**；交互 harness 已打通（圣杯键鼠+Code session 创建+真/goal），续跑直接用本节方法。
-> - ⚠️ **app 仍在运行**（tauri dev，PID backend:8100，code-cn8im6rt 会话 agent 跑目标中）。续跑可直接用；不续 `taskkill /F /IM deskpet.exe` + 杀 8100/5173 orphan + 杀 launch-fp345.ps1 的 powershell。
+> - ✅ **追加真机验证（同会话，relay 重试后）**：Live agent loop 端到端（读 README→read_file ok→正确终答）+ 多工具任务真跑 **6 工具调用** + TODOS 3/3；**TC-5.6 trivial 不弹技能卡**（pending 表未建）✅；核实 record_tool/complete **session_id 一致无 mismatch**（我的接线正确）。详 manual-results-2026-06-06-FP345/RESULTS.md。
+> - 🔴 **关键 gating 阻塞 = LLM relay 间歇 ReadError**：chinzy.com gpt-5.5 **首请求常 ReadError、重试可通**；/goal 多步首跑 6 分钟卡死。这阻塞所有 LLM 重度 TC（TC-3.1 PPT/TC-5.3 卡弹/TC-4.1 召回）——agent 完成多步运行靠运气。**TC-5.3 招牌**：接线 100% 验证（flag/services/session_id/触发阈值≥5工具/前端卡 tsc 绿/单测绿）+ 真机 6 工具满足 Condition1，但候选卡未弹（codify `propose()` 的 LLM 生成调用最可能因 relay ReadError 失败；Tee 日志缓冲无法确认 runtime）。**续跑**：relay 稳定时段多发几次 ≥5 工具任务，propose 命中即弹卡→真点保存→SKILL.md 落盘；或先解决 Tee 日志缓冲（改 `[Console]::Out.Flush` / 写 userdata/logs）以诊断 propose 返回。
+> - ⚠️ **app 仍在运行**（tauri dev，PID backend:8100，code-cn8im6rt 会话空闲）。续跑可直接用；不续 `taskkill /F /IM deskpet.exe` + 杀 8100/5173 orphan + 杀 launch-fp345.ps1 的 powershell。
+> - 🔑 **续跑交互方法（圣杯，必读）**：Code 面板 webview 输入**键盘必须 SendInput（INPUT type=1，wVk=0x11 Ctrl/0x56 V，dwFlags=2 keyup），keybd_event 无效**；点 content 按钮前必 SetForegroundWindow+BringWindowToTop；坐标物理像素 displayed×3.0；DPI SetProcessDPIAware；类型不跨 PowerShell 调用持久需每次 re-Add-Type。Code Mode 窗 handle 每次启动变（Snapshot 查 `DeskPet · Code Mode`），输入框/发送按钮坐标随窗口需 Snapshot 重取。
 
 
 > **2026-06-05 真机手测进展（第二轮）**：
