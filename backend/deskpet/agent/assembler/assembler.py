@@ -140,8 +140,19 @@ class ContextAssembler:
         # skills.auto_disclosure），调用方提供的顶层键覆盖默认。这样任何 venue
         # （文字 _run_chat / 语音 voice_pipeline / 未来新增）都不必各自记得传
         # skills 配置，SkillComponent 永远拿得到 auto_disclosure → 杜绝 venue-miss。
+        # 对二级 dict（如 skills）做一层深合并：防未来某 venue 只传
+        # skills.codify 而把默认的 skills.auto_disclosure 整段抹掉（第 10 处隐患）。
         if self._default_config:
-            config = {**self._default_config, **(config or {})}
+            _merged = dict(self._default_config)
+            for _k, _v in (config or {}).items():
+                if (
+                    isinstance(_v, dict)
+                    and isinstance(_merged.get(_k), dict)
+                ):
+                    _merged[_k] = {**_merged[_k], **_v}
+                else:
+                    _merged[_k] = _v
+            config = _merged
 
         # 1. Legacy bypass path (task 12.13).
         if not self._enabled:
