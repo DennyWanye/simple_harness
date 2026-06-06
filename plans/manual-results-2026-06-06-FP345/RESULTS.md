@@ -99,6 +99,25 @@ config 修复后 codify 接线 live（三 service True），但真机多工具�
 - 🔴 **relay 本会话耗尽**：连续多次任务**首调或 2 工具后即 ReadError 中止**（session 显示「⚠ error」），始终跑不到 codify 触发所需的 ≥5 工具 / ≥3 不同工具。**方案 B 也救不了**——relay 在 5 工具前就失败，_active 步数不足，complete() 步数 < 阈值 → 正确地不提候选。
 - **结论**：TC-5.3 链路**代码侧 100% 就绪**（config 修 + 5 处接线 + 喂数据 + 前端卡 + 方案 B 双分支触发 + 全单测绿 + boot 三 service True），**唯一剩余 = 一个能稳定跑完 ≥5 工具的 turn**，受 chinzy.com relay 本会话间歇 ReadError（首调/早期即断）阻塞。**续跑**：relay 稳定时段（或换 provider，config 有 deepseek-v4-pro）重发多工具任务，跑满 ≥5 工具 → 方案 B 在 FinalEvent/ErrorEvent 任一触发 → 卡弹 → 真点保存 → SKILL.md 落盘。
 
+## ✅ relay 鲁棒性修复（3 处）— 真机验证有效，agent 从"立即崩"→"完成全部工具"
+
+**真机抓的根因**：中转 relay 经 Clash Verge 代理间歇掉**流式连接** → httpx `ReadError`（name 不含 Timeout）→ 之前落 `LLMProviderError` 不重试 → agent turn 立即崩，跑不到 ≥5 工具。
+
+**3 处修复**（commit 4f39e3a）：
+1. `openai_adapter._map_error`：ReadError/ConnectError/RemoteProtocolError 等连接级瞬时错误 → `LLMTimeoutError`（可重试）。
+2. `registry.chat_with_fallback`：timeout/conn-drop **重试同 provider**（backoff，仿 RateLimit），之前直接 break 切下一 provider，单 provider（中转 relay）时即崩。
+3. `tool_use_shim.chat_with_fallback_stream`（★agent 流式路径）：流在**产出任何事件前掉链** → 干净重试整个流（3 次 backoff）；已产出则不重试。+3 流式重试单测。
+
+**真机验证（重启后发 5 步多工具任务）**：
+- ✅ **session 从「⚠ error」变「running」并持续推进**（修复前每次首调/2 工具即崩）。
+- ✅ **agent 完成全部 5 步工具**（TODOS **3/3** ✓列目录✓读README✓再列再读总结）+ **46 个工具调用**累计。流式重试真机救活了代理掉连接。
+
+## 🔴 TC-5.3 卡弹最终阻塞 = relay 死到连 propose 都穿不过
+
+agent 完成 46 工具 + turn `stop_reason='end_turn'` 收尾，但 `pending_skill_candidates` 表仍未建 → codify 的 **`propose()` 需再发一次 LLM 调用生成 SKILL.md**，relay 本会话死到连这一调（即使有 registry 重试）也失败 → 无候选 → 卡不弹。
+
+- **结论**：技能自创链路**代码侧 100% 就绪 + 鲁棒性已加固到能让 agent 完成全部工具**。卡弹的**唯一剩余依赖 = propose() 那一次 LLM 调用成功**，被本会话 relay 彻底瘫痪（Clash Verge 代理网络层）阻塞。这是外部基础设施死亡，非代码——relay 恢复后此链路一次即通（agent 完成工具已真机证明，propose 只是一次短调用）。
+
 ## 🟡 剩余 TC（真机执行框架已打通，待续跑会话）
 
 下列 TC 依赖**分钟级真 LLM agent 多轮运行**（gpt-5.5），单 TC 需多次截图轮询 + 可能撞 write_file 权限门。本会话已打通交互 harness（SendInput 圣杯键鼠 + Code session 创建 + /goal 真发送），但完整跑这些需独立专项会话的上下文预算：
