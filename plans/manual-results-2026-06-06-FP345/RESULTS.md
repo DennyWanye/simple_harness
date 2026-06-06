@@ -204,3 +204,36 @@ agent 完成 46 工具 + turn `stop_reason='end_turn'` 收尾，但 `pending_ski
 | 其余 TC-3.x/4.x/5.x | 🟡 待续 | 见 testcase/goal-completion-manual-test.md |
 
 > **续跑入口**：app 可保持运行（agent 正跑 code-cn8im6rt 会话的目标任务）；交互用本报告「圣杯突破」节的 SendInput 键鼠方法。Code Mode 窗 handle 每次启动变，用 Snapshot 查 `DeskPet · Code Mode`。输入框物理坐标随窗口，需 Snapshot 重取。
+
+---
+
+## ★★★ TC-5.1 强匹配载入 + TC-5.8 复用已存技能 — 真机 PASS（压缩后续跑，抓出 6 层生产死链）
+
+**被测 commit**：`56ba381`（FP-5 auto-disclosure 6 层修复）。环境同上（源码后端 + 全 flag + 真 BGE-M3 embedder is_mock=False + relay）。
+
+### 真机手测抓出生产级真 bug：FP-5 自动披露在 code 会话里 6 层全断（本轮最大价值）
+
+`/goal` 续跑时真机发「帮我把这周几个会议纪要整理成PPT，每个会议要有议题和结论」到 fp345-proj code 会话，逐层定位到 auto-disclosure（WI-4.1/4.2）虽"接线 ready"却在生产 **完全不生效**——单测全用 sync mock embedder + 带 skills 的 config，**全绿掩盖了 6 层生产死链**：
+
+| 层 | 根因 | 修复 |
+|---|---|---|
+| 1 | SkillComponent 无任何观测日志 → 自动披露生产不可见 | 加 `skill_auto_disclosed total/strong/auto_loaded/names/top_sim` 硬证据日志 |
+| 2 | `_run_chat` 调 `assemble()` 传的 config dict 只带 llm/code_mode **漏 skills** → `auto_enabled` 恒 False → desc-only 早返回 | main.py 补回 skills 段（同 [skills.codify] 漏解析一类跨层漂移） |
+| 3 | `code` policy 的 prefer **漏 skill** → code 会话（/goal 所在）SkillComponent 永不 fan-out | default.yaml `code.prefer` 补 skill |
+| 4 | code 会话靠用户文本分类（"整理纪要生成PPT"→chat 无 skill） | main.py code 会话传 `task_type_override="code"` 确定性走 code policy |
+| 5 | codify 生成的 SKILL.md frontmatter **漏 task_types** → `SkillLoader.select(task_type)` 永远过滤掉自创技能（codify 造、disclosure 召不回，FP-5 闭环断裂） | skill_codifier 生成时标注 `task_types: [code, task]` + 补已存 SKILL.md |
+| 6★ | `SkillMatcher.build()/match()` **同步**调 `embedder.encode(text)`，但生产 BGE-M3 是 **`async encode(list)->ndarray`** → 同步调拿到未 await 的 coroutine → `_normalise` 迭代抛异常被吞 → 缓存恒空 → **top_sim=0.0 永远零匹配** | 重写 `match_async` 用异步 `embed()`/`encode()` + 惰性建缓存（同时修 build 早于 embedder warmup 的时序）；+2 async-embedder 回归测试 |
+
+### 真机硬证据（windows-mcp 圣杯 SendInput，逐层修复→重启→重测，共 6 次重启迭代）
+
+修复进程的 `skill_auto_disclosed` 日志演进（每行真机一次任务）：
+- 修层 1-2 前：日志**根本不 fire**（组件不在 fan-out）。
+- 修层 3-4（policy+override）后：`total=1 strong=0 auto_loaded=0 names=[] top_sim=0.00`（组件跑了，但 select 漏掉自创技能）。
+- 修层 5（task_types）后：`total=2 strong=0 auto_loaded=0 top_sim=0.00`（技能选中了，但 matcher 零相似度）。
+- 修层 6（async matcher）后：**`skill_auto_disclosed total=2 strong=2 auto_loaded=2 names=['meeting-minutes-to-ppt'...]`** ✅
+
+**判定 TC-5.1 PASS**：真机发会议纪要→PPT 任务 → SkillComponent fan-out → SkillMatcher 异步嵌入匹配 → `meeting-minutes-to-ppt` 强匹配（top_sim>0.55，strong=2）→ **技能正文 auto_loaded=2 真机内联进 LLM prompt**。agent 回复明确保留技能字段（「议题」「结论」+ 主动补技能正文独有的「待办/风险」）。截图 `screenshots/tc-5.1-auto-disclosure.png`。
+
+**判定 TC-5.8 PASS**（同一硬证据）：被自动召回预载的 `meeting-minutes-to-ppt` 正是 TC-5.3 真机自创保存的技能 → 「自创技能在后续会话被自动复用」闭环真机贯通（codify 造 → disclosure 召回，FP-5 闭环完整）。
+
+> **意义**：这 6 层全是 `feedback_cross_layer_contract` 的最深演绎——每层单测都绿（sync mock + 注入齐全 + flag on），但生产真机运行栈逐层断裂。正是 `/goal` 强制 windows-mcp 真测（禁 import/脚本回放当证据）才逼出来的：任何"等价证明"都会漏掉这 6 层。修复 304 焦点测试绿 + 真机 UI 证据双保险。
