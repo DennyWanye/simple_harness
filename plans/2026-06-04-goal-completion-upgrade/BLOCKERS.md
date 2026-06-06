@@ -1,5 +1,11 @@
 # BLOCKERS / 状态交接 — goal-completion 升级
 
+> **2026-06-06 第四轮（真机抓修 config bug + TC-5.3 根因定位）**：
+> - ★★ **真机手测抓出生产级真 bug 并修复**：`config.py:load_config` **只解析 `[skills.auto_disclosure]`，漏 `[skills.codify]`** → `enabled=true` 被丢弃 → `config.skills.codify` 恒默认 off → lifespan codify 接线整段跳过 → recorder/candidate_store/llm 全 None → **技能自创确认卡（WI-4.3）生产永不弹**。诊断靠 boot log **缺 `fp5_codify_wiring_ready`**。修复 commit 7732c0d（+回归测试）；重启后 boot 出现 `fp5_codify_wiring_ready (True,True,True)` 验证。**子代理 wiring 评审漏了 config-loader 这层**（只查 build_agent/services 注册）。
+> - 🔴 **TC-5.3 live 卡弹精确根因 = relay ReadError 中止 turn**：config 修复后 codify 接线 live，但真机多工具任务后卡仍不弹。文件级诊断（已 revert）：codify hook 在 **FinalEvent 分支**；relay **ReadError 中止 turn → 不到 FinalEvent → hook 不跑 → 不 propose**。codify 链路全就绪（config 修+接线 live+触发阈值+前端卡+单测），**差一个稳定 turn 完成**。续跑：relay 稳定时段重发多工具任务即可弹卡→真点保存→SKILL.md；或给 ErrorEvent 分支也补 codify hook（健壮性小切片）。
+> - ⚠️ **关键续跑须知**：relay（chinzy.com gpt-5.5）**间歇 ReadError**，多工具 turn 完成靠运气；重启后 Code 面板窗 handle 变 + 输入框坐标可能位移（Snapshot 重取 `给 fp345-proj 发指令` 输入框）。诊断用：boot grep `fp5_codify_wiring_ready`（须 True,True,True）；turn 是否到 FinalEvent 看 messages 表 assistant 终答。
+
+
 > **2026-06-06 第三轮（接线修复 + 真机 TC-4.5 + 圣杯突破）**：
 > - 🔧 **独立验收子代理发现 FP-5 隐藏 70% 缺陷**：WI-4.1/4.2/4.3 单测全绿但**生产 wiring 断线**（feedback_cross_layer_contract）。已修 **5 处跨层接线** + 补 WI-1.6 喂数据链路 + **前端确认卡 SkillCandidateCard**：
 >   1. `_VALID_SERVICES` 缺 tool_path_recorder/skill_candidate_store/llm_registry/skill_matcher → codify hook `get()` 抛 ValueError 被吞 → 确认卡永不弹。已补白名单+slot。
