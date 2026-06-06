@@ -984,12 +984,19 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
     # 包含 slash_commands / goal_mode / agent_parallel 3 flag（默认 OFF）.
     if "features" in raw:
         config.features = _load_section(FeaturesConfig, raw["features"])
-    # WI-4.1 skills 分级披露配置加载（[skills.auto_disclosure] 子表）.
+    # WI-4.1 skills 分级披露 + WI-4.3 技能自创配置加载（[skills.auto_disclosure]
+    # / [skills.codify] 子表）.
+    # 2026-06-06 真机手测抓 bug：原加载器只 pop auto_disclosure，**从不解析 codify**
+    # → `[skills.codify] enabled=true` 被丢弃 → config.skills.codify 恒默认(enabled=
+    # False) → lifespan codify 接线跳过 → tool_path_recorder/skill_candidate_store
+    # 全 None → 技能自创确认卡生产永不弹（boot 无 fp5_codify_wiring_ready 印证）。
     if "skills" in raw:
         raw_skills = dict(raw["skills"])
         raw_ad = dict(raw_skills.pop("auto_disclosure", {}) or {})
         ad = _load_section(SkillsAutoDisclosureConfig, raw_ad)
-        config.skills = SkillsConfig(auto_disclosure=ad)
+        raw_cd = dict(raw_skills.pop("codify", {}) or {})
+        cd = _load_section(SkillsCodifyConfig, raw_cd)
+        config.skills = SkillsConfig(auto_disclosure=ad, codify=cd)
     # P4-S15: stash the raw parsed TOML so consumers (MCP bootstrap, agent
     # bootstrap, etc.) can pick out their sections without us bolting on
     # a dataclass for each one.
