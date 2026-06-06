@@ -347,3 +347,25 @@ agent 完成 46 工具 + turn `stop_reason='end_turn'` 收尾，但 `pending_ski
 - 截图 `screenshots/tc-4.3-preference-conflict.png`。
 
 **判定 PASS**：后偏好覆盖旧偏好，推荐反映最新（绿茶），FP-4 偏好冲突/superseded 真机硬证据。
+
+## 📌 /goal 粘贴当任务 — 测试法限制(非 bug)
+真机 SendInput 粘贴 `/goal X` + Enter 被 agent 当任务跑，非设目标。根因：后端 slash 仅在 `msg_type=="slash_command"`（前端检测 slash 后发的独立 WS verb）时处理（main.py:4264 + deskpet/commands dispatch_slash_command），而**前端靠键入"/"弹自动补全才发该 verb；Ctrl+V 粘贴不触发键入检测** → 走普通 chat。**这是 windows-mcp 粘贴测试法限制，非产品 bug**（真人键入 /goal 触发补全 → 正常设目标；后端 slash 解析 + goal_store + facts 钩链路本会话已由 TC-4.5 等验证）。续跑 goal 依赖 TC（如 TC-3.3）需"键入 /goal 前缀触发补全 + 粘贴中文正文"的混合输入法。
+
+## 📊 本会话真机 UI 测试累计（2026-06-06/07，windows-mcp 圣杯 SendInput）
+
+| TC | FP | 判定 | 硬证据 |
+|---|---|---|---|
+| TC-5.3 技能自创招牌全链 | 5 | ✅ PASS | 卡→真点保存→SKILL.md 落盘 |
+| TC-5.1 强匹配载入 | 5 | ✅ PASS | skill_auto_disclosed strong=2 auto_loaded=2 |
+| TC-5.8 复用自创技能 | 5 | ✅ PASS | 同上(meeting-minutes-to-ppt 被召回) |
+| TC-5.6 trivial 不弹卡 | 5 | ✅ PASS | 单工具不提候选 |
+| TC-4.5 B-10 双写钩 | 4 | ✅ PASS | facts category=goal |
+| TC-4.2 偏好注入 | 4 | ✅ PASS | preference_profile_injected facts≥2 |
+| **TC-4.1 重启跨会话召回★** | 4 | ✅ PASS | 决策 PostgreSQL 跨重启准确召回 |
+| **TC-4.3 偏好冲突** | 4 | ✅ PASS | 绿茶覆盖乌龙,推荐反映最新 |
+| **TC-3.2 真完成放行** | 3 | ✅ PASS | 真写 receipt→verify 无 nudge 放行 |
+| TC-3.1 伪完成拦截 | 3 | 🟡 受阻 | gpt-5.5 拒绝伪造声明(诚实);catch 逻辑单测覆盖 |
+| TC-3.3/3.4 偏离/未来时 | 3 | 🟡 待续 | 需 goal(slash 键入法) + 诱导 |
+| TC-5.2/5.4/5.7 压缩/拒绝/重挂 | 5 | 🟡 待续 | 压缩需多轮堆栈;relay 间歇 |
+
+**累计 9 个真机 PASS 覆盖全部 5 个 FP**（FP-1 早 PASS / FP-2 anchor / FP-3 真完成放行 / FP-4 召回+冲突+B10+注入 / FP-5 自创全链+披露+复用）。剩余受 LLM 诚实性(3.1)、slash 键入法(3.3/3.4)、压缩多轮+relay 间歇(5.2/5.7)、fresh 候选(5.4)限制。
