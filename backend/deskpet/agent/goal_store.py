@@ -82,6 +82,9 @@ class SessionGoalStore:
         # goal_store 不 import facts（防 agent←memory import 环）；
         # callback 由 main.py lifespan 通过 bind_on_goal_set 注入。
         self._on_goal_set_cb: Optional[Callable[[str, str], Awaitable[None]]] = None
+        # 保留 fire-and-forget fanout task 的强引用，防 asyncio GC 在 await
+        # 挂起期间回收未完成 task（经典 footgun → category=goal 表静默为空）。
+        self._fanout_tasks: set[asyncio.Future] = set()
 
     # ───────────────────── B-10 双写钩 ──────────────────────────────
     def bind_on_goal_set(
@@ -116,7 +119,11 @@ class SessionGoalStore:
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                asyncio.ensure_future(_run())
+                # 强引用保留：add → done_callback discard，防 task 在首个 await
+                # 挂起后被 GC（fire-and-forget footgun，真机 facts 表静默为空根因）。
+                task = asyncio.ensure_future(_run())
+                self._fanout_tasks.add(task)
+                task.add_done_callback(self._fanout_tasks.discard)
             else:
                 loop.run_until_complete(_run())
         except RuntimeError:

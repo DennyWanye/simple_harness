@@ -350,6 +350,35 @@ async def test_tg6_bind_on_goal_set_fires_callback():
 
 
 @pytest.mark.asyncio
+async def test_tg6_fanout_task_retained_until_done():
+    """TG-6 GC-safe: fire-and-forget fanout task is held by a strong ref
+    while pending (防 asyncio GC 在首个 await 挂起期回收 → 真机 facts 表静默为空根因)，
+    并在完成后从 _fanout_tasks discard。"""
+    import asyncio as _aio
+    store = SessionGoalStore()
+    started = _aio.Event()
+    release = _aio.Event()
+    done: list[bool] = []
+
+    async def slow_callback(sid: str, text: str) -> None:
+        started.set()
+        await release.wait()  # 模拟 upsert 在 await 处挂起
+        done.append(True)
+
+    store.bind_on_goal_set(slow_callback)
+    store.set("sess-gc", "目标")
+    await started.wait()
+    # 挂起期间：task 必须被强引用保留，否则可能被 GC
+    assert len(store._fanout_tasks) == 1, "fanout task 未被保留 → GC 风险"
+    release.set()
+    await _aio.sleep(0)
+    await _aio.sleep(0)
+    assert done == [True]
+    # 完成后 done_callback 应已 discard
+    assert len(store._fanout_tasks) == 0, "完成后未从 _fanout_tasks 移除"
+
+
+@pytest.mark.asyncio
 async def test_tg6_callback_receives_correct_args():
     """TG-6: Callback receives (session_id, text) matching the set() call."""
     store = SessionGoalStore()
