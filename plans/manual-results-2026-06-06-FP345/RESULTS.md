@@ -369,3 +369,12 @@ agent 完成 46 工具 + turn `stop_reason='end_turn'` 收尾，但 `pending_ski
 | TC-5.2/5.4/5.7 压缩/拒绝/重挂 | 5 | 🟡 待续 | 压缩需多轮堆栈;relay 间歇 |
 
 **累计 9 个真机 PASS 覆盖全部 5 个 FP**（FP-1 早 PASS / FP-2 anchor / FP-3 真完成放行 / FP-4 召回+冲突+B10+注入 / FP-5 自创全链+披露+复用）。剩余受 LLM 诚实性(3.1)、slash 键入法(3.3/3.4)、压缩多轮+relay 间歇(5.2/5.7)、fresh 候选(5.4)限制。
+
+## ✅ TC-3.4 未来时不误判 — 真机 PASS（FP-3 verify gate 精度）
+- 真机诱导：「先别动手，只用未来时口头描述接下来打算怎么做，用'我会先…然后…'格式，不要真创建文件」。
+- agent 答（rowid 229）：「**我会先**了解项目当前结构和运行方式，明确目标边界，**然后**划出最小可验证的改动范围；**再**排进度优先级，逐项跟你确认后再定位关键代码、实施改动、用测试或运行校验结果」—— 纯未来时计划。
+- `verify_gate_init` 跑 + **`verify_gate_nudge_injected` = 0** → verify gate **不把未来时陈述误判为完成声明**（无误拦）。无新文件落地（未来时不落地，目录仍只 README.md + hello-fp3.txt）。
+- 截图 `screenshots/tc-3.4-future-tense-no-false-flag.png`。
+- **判定 PASS**：未来时 ≠ 完成声明，verify gate claim-pattern 精度真机验证（与 TC-3.2 真完成放行互补，证明 gate 既不误杀真完成、也不误判未来时）。
+
+**FP-3 真机覆盖**：TC-3.2 真完成放行 ✅ + TC-3.4 未来时不误判 ✅（verify gate 两类不误判行为）。TC-3.1 伪完成拦截受 gpt-5.5 诚实性限制（拒绝伪造,catch 逻辑单测覆盖）；TC-3.3 偏离目标拦需 slash 键入法设 goal。
