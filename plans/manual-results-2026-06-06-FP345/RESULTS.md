@@ -326,3 +326,15 @@ agent 完成 46 工具 + turn `stop_reason='end_turn'` 收尾，但 `pending_ski
 1. **relay 间歇 ReadError**（chinzy.com 经 Clash Verge 代理掉流式连接）—— 多次 turn 被 `Err: ReadError` 截在执行工具前（session 显示「⚠ error」），间歇恢复（TC-3.2 那轮恢复了才跑通）。鲁棒性修复（commit 4f39e3a 3 重试）缓解但本会话 relay 抖动仍重。这是外部基础设施不稳，非代码缺陷。
 2. **前台抢占**：Chrome/Claude/Codex/ChatGPT 反复抢前台 → 破坏 windows-mcp 输入。workaround：ShowWindow(6) 最小化干扰窗 + `App switch` 聚焦 Code Mode + 单 grail 调用内 activate+click+paste+enter（中间不插 windows-mcp 调用避免焦点被抢）。
 3. **输入框物理坐标随窗口布局/对话增长变化** → 每次发送前 Snapshot/截图重取坐标（用旧坐标会点偏到对话区，消息不注册——本轮踩过 (1060,853) 偏高、实际 (1065,1005)）。
+
+## ✅✅ TC-4.1 重启跨会话召回 — 真机 PASS（招牌 ★，FP-4）
+
+完整跨会话记忆链真机验证：
+1. **陈述决策**（重启前，windows-mcp SendInput）：「我们决定数据库用 PostgreSQL，不用 MySQL，原因是需要 JSONB 和更好的并发」。
+2. **抽取入 facts**：`facts` 表 `('decision','database_choice','数据库用 PostgreSQL，不用 MySQL，需要 JSONB 和更好的并发')` —— FP-4 fact 抽取（写侧）真机生效。
+3. **app 重启**（taskkill + 重launch，**内存态清空**；facts 持久化在 state.db）→ boot 后 `facts` 表决策行仍在（跨进程持久化验证）。
+4. **重启后召回**（新 turn 问「我们之前给这个项目定的数据库用哪个？为什么？」）→ agent 答：「之前定的是用 **PostgreSQL**，不用 MySQL。原因是这个项目需要用到 **JSONB**，而且希望在并发上做得更好一些，PostgreSQL 在这两点上更合适。」—— **与原决策（PostgreSQL/JSONB/并发）逐点一致**。
+- `preference_profile_injected facts=2 task_type=code`（画像/事实注入真机 fire）。
+- 截图 `screenshots/tc-4.1-cross-session-recall.png`。
+
+**判定 PASS**：决策陈述→抽取入库→重启清内存→跨会话准确召回，FP-4「重启后跨会话召回」招牌全链真机硬证据贯通。
