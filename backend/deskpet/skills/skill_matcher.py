@@ -25,6 +25,7 @@ Design notes
 from __future__ import annotations
 
 import asyncio
+import inspect
 import math
 from typing import Any, Optional
 
@@ -114,15 +115,85 @@ class SkillMatcher:
     # Async variant (avoids blocking event loop for sync CPU-bound encode)
     # ------------------------------------------------------------------
 
-    async def match_async(self, query: str, skills: list[Any]) -> list[tuple[str, float]]:
-        """Async wrapper — runs the sync ``match()`` in a thread pool.
+    async def _embed_one_async(self, text: str) -> list[float]:
+        """Embed a single text, tolerating BOTH embedder contracts:
 
-        Use this from async component ``provide()`` to avoid blocking the
-        event loop when the embedder is a local CPU model (e.g. BGE-M3).
+        * 生产 BGE-M3：``async embed(list[str]) -> list[list[float]]`` /
+          ``async encode(list[str]) -> ndarray``（异步、收 list、自动 warmup）。
+        * 单测 mock：``encode(text:str) -> list[float]``（同步）。
+
+        FP-5 缺口 5h (2026-06-06 真机抓 bug)：原 ``build()``/``match()`` 同步调
+        ``encode(text)``，但生产 embedder 的 ``encode`` 是 **async + 收 list**，
+        同步调拿到的是未 await 的 coroutine → ``_normalise`` 迭代它抛异常 → 被
+        ``except: pass`` 吞 → 缓存恒空 → 自动披露永远零匹配（top_sim=0.0）。
+        单测用 sync mock 所以全绿，掩盖了这条生产死链。
         """
-        if self._embedder is None:
+        emb = self._embedder
+        if emb is None:
             return []
-        return await asyncio.to_thread(self.match, query, skills)
+        embed_fn = getattr(emb, "embed", None)
+        try:
+            if callable(embed_fn):
+                # Production async contract: embed(list[str]) -> list[list[float]].
+                res = embed_fn([text])
+                if inspect.isawaitable(res):
+                    res = await res
+                if res is not None and len(res) > 0:
+                    return [float(x) for x in res[0]]
+                return []
+            # Fallback: encode. Try list-form first (async list->ndarray contract).
+            res = emb.encode([text])
+            if inspect.isawaitable(res):
+                res = await res
+            if res is None:
+                return []
+            # res is list-of-vectors (we passed [text]) → take row 0.
+            try:
+                return [float(x) for x in res[0]]
+            except (TypeError, IndexError, KeyError):
+                # Some sync embedders return a single vector regardless of input.
+                return [float(x) for x in res]
+        except Exception:  # noqa: BLE001 — degrade silently
+            return []
+
+    async def match_async(self, query: str, skills: list[Any]) -> list[tuple[str, float]]:
+        """Async cosine match using the (possibly async) embedder.
+
+        Builds/repairs the per-skill embedding cache lazily here — this is
+        the robust path that works regardless of when ``build()`` ran
+        relative to embedder warmup (FP-5 缺口 5h/5i：原 ``build()`` 在
+        BGE-M3 subprocess ready 之前跑 + 同步调 async encode → 缓存空/零).
+        """
+        if self._embedder is None or not skills:
+            return []
+
+        # Lazy async (re)build: embed any selected skill missing from cache.
+        for skill in skills:
+            name = _skill_attr(skill, "name", "")
+            if not name or name in self._cache:
+                continue
+            description = _skill_attr(skill, "description", "") or ""
+            when_to_use = _skill_attr(skill, "when_to_use", "") or ""
+            text = f"{description}\n{when_to_use}" if when_to_use else description
+            if not text.strip():
+                continue
+            vec = await self._embed_one_async(text)
+            if vec:
+                self._cache[name] = _normalise(vec)
+
+        query_vec = _normalise(await self._embed_one_async(query))
+        if not any(query_vec):
+            return []
+
+        results: list[tuple[str, float]] = []
+        for skill in skills:
+            name = _skill_attr(skill, "name", "")
+            skill_vec = self._cache.get(name)
+            if skill_vec is None:
+                continue
+            results.append((name, _cosine_sim(query_vec, skill_vec)))
+        results.sort(key=lambda x: x[1], reverse=True)
+        return results
 
 
 # ---------------------------------------------------------------------------

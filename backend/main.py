@@ -5126,6 +5126,34 @@ async def control_channel(ws: WebSocket):
                                         "persona_model_resolve_skipped sid=%s err=%s",
                                         _sid, _pm_exc,
                                     )
+                            # FP-5 缺口 5d (2026-06-06 真机抓 bug)：assemble() 传的
+                            # config dict 原先只带 llm/code_mode，**漏带 skills**→
+                            # SkillComponent._read_auto_disclosure_config 读不到
+                            # auto_disclosure → auto_enabled 恒 False → 自动披露
+                            # （WI-4.1/4.2）生产运行时永不发生（matcher/loader 注入了也白搭）。
+                            # 同 [skills.codify] 漏解析一类的跨层契约漂移。补回 skills 段。
+                            _ad_cfg_dict: dict = {}
+                            try:
+                                _ad = config.skills.auto_disclosure
+                                _ad_cfg_dict = {
+                                    "auto_disclosure": {
+                                        "enabled": bool(_ad.enabled),
+                                        "strong_threshold": float(_ad.strong_threshold),
+                                        "budget_tokens": int(_ad.budget_tokens),
+                                        "per_skill_max_tokens": int(_ad.per_skill_max_tokens),
+                                    }
+                                }
+                            except Exception:  # noqa: BLE001
+                                _ad_cfg_dict = {}
+                            # FP-5 缺口 5f (2026-06-06 真机)：code 会话应确定性走
+                            # `code` policy（含 skill → 自动披露生效），而非靠用户
+                            # 文本分类（"整理会议纪要生成PPT" 会落到 chat → 无 skill）。
+                            # code_mode 开 → task_type_override="code"，让 SkillComponent
+                            # 在 code 会话稳定 fan-out（codify 在 code 造技能，disclosure
+                            # 也必须在 code 召回，闭环一致）。
+                            _tt_override = (
+                                "code" if _code_cfg.get("enabled") else None
+                            )
                             _bundle = await _assembler.assemble(
                                 user_message=_text,
                                 memory_manager=service_context.get("memory_manager"),
@@ -5133,12 +5161,14 @@ async def control_channel(ws: WebSocket):
                                 skill_registry=service_context.get("skill_loader"),
                                 mcp_manager=service_context.get("mcp_manager"),
                                 session_id=_sid,
+                                task_type_override=_tt_override,
                                 config={
                                     "llm": {
                                         "model": _persona_model,
                                         "base_url": _persona_base,
                                     },
                                     "code_mode": _code_cfg,
+                                    "skills": _ad_cfg_dict,
                                 },
                             )
                             if _bundle is not None and _bundle.decisions is not None:

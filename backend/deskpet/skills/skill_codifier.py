@@ -171,6 +171,11 @@ def render_skill_md(candidate: dict[str, Any]) -> str:
         "version: 1.0.0\n"
         "author: self-codified\n"
         f"when_to_use: {_esc(trigger_pattern)}\n"
+        # FP-5 缺口 5g (2026-06-06 真机抓 bug)：codify 出的技能从 code 会话工具
+        # 路径生成，但原 frontmatter 漏 task_types → SkillLoader.select(task_type)
+        # 按 task_types 过滤时永远排除它 → 自动披露（WI-4.1/4.2）永远召回不到
+        # 自己造的技能（codify 造、disclosure 召不回，FP-5 闭环断裂）。标注 code/task。
+        "task_types: [code, task]\n"
         "requires_script: false\n"
         "---\n"
     )

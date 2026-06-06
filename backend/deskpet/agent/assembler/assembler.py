@@ -189,6 +189,15 @@ class ContextAssembler:
             # Both missing → last-resort chat policy.
             policy = AssemblyPolicy(task_type="chat")
 
+        # FP-5 真机诊断 (2026-06-06)：露出分类 task_type + policy 的组件名单，
+        # 用于确认 SkillComponent 是否会 fan-out（auto-disclosure 能否触发）。
+        logger.info(
+            "assembler_task_classified",
+            task_type=policy.task_type,
+            must=list(policy.must),
+            prefer=list(policy.prefer),
+        )
+
         # 3. Fan out components in parallel.
         ctx = ComponentContext(
             task_type=policy.task_type,

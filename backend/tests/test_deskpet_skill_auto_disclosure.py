@@ -201,6 +201,85 @@ def test_skill_matcher_none_embedder_no_crash() -> None:
 
 
 # ---------------------------------------------------------------------------
+# FP-5 缺口 5h/5i 回归 (2026-06-06 真机抓 bug)：
+# 生产 BGE-M3 embedder 是 ASYNC（``async embed(list[str]) -> list[list[float]]``
+# / ``async encode(list[str]) -> ndarray``）。原 matcher 同步调 ``encode(text)``
+# → 拿到未 await 的 coroutine → 缓存恒空 → 自动披露真机 top_sim=0.0 永远零匹配。
+# 旧单测只用 SYNC mock 所以全绿，掩盖了这条生产死链。本组用 async embedder
+# 复现生产契约，确保 match_async 能惰性异步建缓存 + 产出真相似度。
+# ---------------------------------------------------------------------------
+
+def _make_async_embedder(vectors: dict[str, list[float]]) -> Any:
+    """Production-shaped ASYNC embedder: async embed(list[str]) -> list[list[float]]."""
+
+    class _AsyncEmbedder:
+        async def embed(self, texts: list[str]) -> list[list[float]]:
+            out: list[list[float]] = []
+            for text in texts:
+                vec = None
+                for key, v in vectors.items():
+                    if key in text:
+                        vec = list(v)
+                        break
+                if vec is None:
+                    h = hash(text) % 1000
+                    vec = [float(h), 0.0, 0.0]
+                out.append(vec)
+            return out
+
+        async def encode(self, texts: list[str]):  # also async, list-in
+            return await self.embed(texts)
+
+    return _AsyncEmbedder()
+
+
+@pytest.mark.asyncio
+async def test_skill_matcher_async_embedder_lazy_builds_and_matches() -> None:
+    """match_async with an ASYNC embedder strong-matches WITHOUT a prior build().
+
+    Reproduces production: build() ran before BGE-M3 warmup (cache empty) AND
+    the embedder is async. match_async must lazily await-embed the selected
+    skills + query and produce real cosine sims (regression for top_sim=0.0).
+    """
+    vectors = {
+        "query": [1.0, 0.0, 0.0],
+        "strong skill": [1.0, 0.0, 0.0],   # cos=1.0
+        "weak skill": [0.0, 1.0, 0.0],     # cos=0.0
+    }
+    embedder = _make_async_embedder(vectors)
+    skills = [
+        _make_meta("strong", "strong skill"),
+        _make_meta("weak", "weak skill"),
+    ]
+    matcher = SkillMatcher(embedder)
+    # NOTE: deliberately NOT calling build() — simulate empty/stale cache.
+    results = await matcher.match_async("query", skills)
+
+    assert len(results) == 2, f"应对 2 个技能都算出 sim,实际 {results}"
+    sims = dict(results)
+    assert sims["strong"] > 0.9, f"strong 应高相似度,实际 {sims['strong']}"
+    assert sims["weak"] < 0.1, f"weak 应低相似度,实际 {sims['weak']}"
+    # Sorted descending, strong first.
+    assert results[0][0] == "strong"
+
+
+@pytest.mark.asyncio
+async def test_skill_matcher_async_encode_only_embedder() -> None:
+    """Embedder exposing only async ``encode(list)`` (no ``embed``) also works."""
+
+    class _EncodeOnly:
+        async def encode(self, texts: list[str]):
+            return [[1.0, 0.0, 0.0] if "q" in t or "match me" in t else [0.0, 1.0, 0.0]
+                    for t in texts]
+
+    matcher = SkillMatcher(_EncodeOnly())
+    skills = [_make_meta("hit", "match me please")]
+    results = await matcher.match_async("q", skills)
+    assert results and results[0][0] == "hit"
+    assert results[0][1] > 0.9
+
+
+# ---------------------------------------------------------------------------
 # T1 — SkillComponent 3-tier: strong body in prelude, weak desc-only
 # ---------------------------------------------------------------------------
 

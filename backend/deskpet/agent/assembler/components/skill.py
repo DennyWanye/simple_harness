@@ -24,11 +24,14 @@ which sits between ``frozen_system`` and ``memory_block``.
 """
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any, Optional
 
 from deskpet.agent.assembler.bundle import Slice
 from deskpet.agent.assembler.components.base import Component, ComponentContext
+
+logger = logging.getLogger(__name__)
 
 
 # Approximate chars-per-token ratio (conservative, good for CJK/mixed).
@@ -205,6 +208,17 @@ class SkillComponent:
 
         text = "\n\n".join(parts)
         elapsed_ms = (time.monotonic() - start) * 1000.0
+        # Observability (FP-5 WI-4.1/4.2): auto-disclosure is otherwise invisible in
+        # logs — emit which skills were strong-matched + body-inlined so real-machine
+        # acceptance (TC-5.1/5.8) has a hard evidence line.
+        logger.info(
+            "skill_auto_disclosed total=%d strong=%d auto_loaded=%d names=%s top_sim=%.3f",
+            len(skills),
+            len(strong_matches),
+            auto_loaded_count,
+            [nm for nm, _ in strong_matches[:5]],
+            (strong_matches[0][1] if strong_matches else 0.0),
+        )
         return Slice(
             component_name=self.name,
             text_content=text,
