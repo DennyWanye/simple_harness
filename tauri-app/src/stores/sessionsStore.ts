@@ -311,10 +311,25 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
   set_messages(sid, messages) {
     set((state) => {
       const cur = state.sessions[sid] ?? blank_session(sid);
+      // 2026-06-06 真机 bug fix：skill_candidate / plan 确认卡是 ephemeral 前端-only
+      // 消息（不持久化到 SessionDB）。打开「完整 chat」/ F5 触发 session_messages_load
+      // → 这里整体替换 messages 会**丢掉仍 awaiting 的确认卡**（真机找技能卡时开
+      // 完整 chat 反而弄丢卡的根因）。重载时把内存里仍 awaiting 的卡 merge 回尾部。
+      const awaitingCards = cur.messages.filter(
+        (m) =>
+          (m.role === "skill_candidate" && m.skill_candidate_awaiting) ||
+          (m.role === "plan" && m.plan_awaiting_confirm),
+      );
+      const reloadedIds = new Set(messages.map((m) => m.id));
+      const preserved = awaitingCards.filter((m) => !reloadedIds.has(m.id));
       return {
         sessions: {
           ...state.sessions,
-          [sid]: { ...cur, messages, last_activity: Date.now() },
+          [sid]: {
+            ...cur,
+            messages: [...messages, ...preserved],
+            last_activity: Date.now(),
+          },
         },
       };
     });

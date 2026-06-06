@@ -128,6 +128,14 @@ agent 完成 46 工具 + turn `stop_reason='end_turn'` 收尾，但 `pending_ski
 
 **意义**：这证明 TC-5.3 的**整条后端机制链端到端真机工作** —— config 修([skills.codify]) + 5 处接线 + WI-1.6 喂数据(record_tool→complete) + 方案 B(FinalEvent/ErrorEvent 触发) + relay 鲁棒性(流式重试) **全部协同生效**，从 agent 跑工具一路打通到「codify 检测工具路径 → propose 生成技能 → skill_candidate_proposed 推前端 → 候选入库 awaiting confirm」。这是技能自创**最难的全链**，已真机硬证据证明。
 
+## 🐛 TC-5.3 前端卡显示 — 真机抓的 2 个前端 bug（最后一环受阻）
+
+候选 id=1 真机 pending awaiting confirm，但「点保存→SKILL.md」未能捕获，真机定位到**2 个前端 bug**：
+1. **skill_candidate 卡是 ephemeral（前端-only）消息，message reload 时丢失**：`ws.ts` 把卡 push 进 `sessionsStore[sid].messages`（push_message 不丢 role，验证过），但打开「完整 chat」会触发 `session_messages_load` → `set_messages` 从 SessionDB **整体替换** messages → skill_candidate 卡（未持久化到 DB）被丢弃。这是我真机找卡时打开完整 chat 反而弄丢卡的根因。**修法**：set_messages 重载时保留内存里 awaiting 的 skill_candidate/plan 卡（merge 不 replace），或后端在 session_messages_load 时把 pending 候选一并下发。
+2. **codifier dedup 阻止重新生成卡**：已有 pending 候选(id=1)时，再跑多工具任务**不再 propose 新候选**（合理防重复，但叠加 bug#1 导致丢卡后无法靠新任务再弹）。**修法**：清 pending 候选后再触发，或后端支持「重发 pending 候选卡」verb。
+
+**注**：这 2 个是真机手测抓出的**前端显示层 bug**（非技能自创机制 bug——后端 propose→入库→WS emit 已证全通）。修这 2 个 + 重新触发即可完成「卡显示→点保存→SKILL.md」。
+
 ## 🟡 TC-5.3 最后一环（前端卡渲染 + 点保存→SKILL.md）— 待验
 
 候选已 pending + WS 事件已 emit，但真机消息流里**未可见渲染绿色技能卡**（SkillCandidateCard）→ 疑前端 session 路由显示问题（候选 sid=code-64ec67f7，「完整 chat」视图未渲出该卡）或 codify await 5min 超时窗口。**前端卡组件代码已建 + tsc 0err + vitest 134 绿**（commit 58fbac8），WS 契约后端已 emit 正确字段；差「卡在对应 session 视图真显示 → 点保存 → SKILL.md」这一前端显示+确认环节真机捕获。续跑：定位候选 sid 对应的 code session 视图找卡，或排查 ws.ts 的 skill_candidate_proposed→SkillCandidateCard 渲染（session_id 路由）。
