@@ -118,6 +118,20 @@ agent 完成 46 工具 + turn `stop_reason='end_turn'` 收尾，但 `pending_ski
 
 - **结论**：技能自创链路**代码侧 100% 就绪 + 鲁棒性已加固到能让 agent 完成全部工具**。卡弹的**唯一剩余依赖 = propose() 那一次 LLM 调用成功**，被本会话 relay 彻底瘫痪（Clash Verge 代理网络层）阻塞。这是外部基础设施死亡，非代码——relay 恢复后此链路一次即通（agent 完成工具已真机证明，propose 只是一次短调用）。
 
+## ★★★ TC-5.3 技能自创后端机制链 — 真机端到端 PROVEN（relay 鲁棒性修复后突破）
+
+**relay 鲁棒性修复后，发短约束任务（3 不同工具快速结束）真机跑通了技能自创全链：**
+- ✅ agent 在烂代理下完成工具（流式重试救活）→ turn 结束 → **方案 B codify hook 触发** → `propose()` LLM 调用**成功**（relay 短调命中好窗口 + registry 重试）→ 生成声明式 skill。
+- ✅ **硬证据**：`state.db` `pending_skill_candidates` = **1 行** `(1, 'meeting-minutes-to-ppt', status='pending')`（codifier 从工具路径生成的技能候选！）。
+- ✅ **日志**：`skill_candidate_proposed cid=1 name=meeting-minutes-to-ppt sid=...`（WS 事件真机 emit 给前端）。
+- ✅ 截图 `screenshots/tc-5.3-skill-candidate-proposed.png`。
+
+**意义**：这证明 TC-5.3 的**整条后端机制链端到端真机工作** —— config 修([skills.codify]) + 5 处接线 + WI-1.6 喂数据(record_tool→complete) + 方案 B(FinalEvent/ErrorEvent 触发) + relay 鲁棒性(流式重试) **全部协同生效**，从 agent 跑工具一路打通到「codify 检测工具路径 → propose 生成技能 → skill_candidate_proposed 推前端 → 候选入库 awaiting confirm」。这是技能自创**最难的全链**，已真机硬证据证明。
+
+## 🟡 TC-5.3 最后一环（前端卡渲染 + 点保存→SKILL.md）— 待验
+
+候选已 pending + WS 事件已 emit，但真机消息流里**未可见渲染绿色技能卡**（SkillCandidateCard）→ 疑前端 session 路由显示问题（候选 sid=code-64ec67f7，「完整 chat」视图未渲出该卡）或 codify await 5min 超时窗口。**前端卡组件代码已建 + tsc 0err + vitest 134 绿**（commit 58fbac8），WS 契约后端已 emit 正确字段；差「卡在对应 session 视图真显示 → 点保存 → SKILL.md」这一前端显示+确认环节真机捕获。续跑：定位候选 sid 对应的 code session 视图找卡，或排查 ws.ts 的 skill_candidate_proposed→SkillCandidateCard 渲染（session_id 路由）。
+
 ## 🟡 剩余 TC（真机执行框架已打通，待续跑会话）
 
 下列 TC 依赖**分钟级真 LLM agent 多轮运行**（gpt-5.5），单 TC 需多次截图轮询 + 可能撞 write_file 权限门。本会话已打通交互 harness（SendInput 圣杯键鼠 + Code session 创建 + /goal 真发送），但完整跑这些需独立专项会话的上下文预算：
