@@ -92,6 +92,13 @@ config 修复后 codify 接线 live（三 service True），但真机多工具�
 - **但 codify hook 仍未 fire**：turn 推进极慢（relay 限速）迟迟不到 FinalEvent；codify hook **只挂在 FinalEvent 分支** → 长 turn / 达迭代上限 / relay 慢都让它不触发。
 - **结论 + 续跑硬建议**：TC-5.3 的最后一公里 = **让 codify 在更多 turn-end 路径触发**（方案 B：FinalEvent + ErrorEvent + 迭代上限 end 都调 codify helper），否则依赖一个"快速干净到 FinalEvent 的 turn"在 relay 限速下不稳定。这是一个明确的健壮性小切片（把 codify hook 抽成 `_maybe_codify(_sid)` helper，在 _FinEv/_ErrEv/iteration-cap 三处调）。codify 链路其余全就绪（config 修 + 接线 live + 触发阈值 + 前端卡 + 单测）。
 
+## ✅ 方案 B 实现 + TC-5.3 最终状态（relay 耗尽）
+
+- **方案 B 实现**（commit c31d261）：codify hook 抽成模块级 `_maybe_codify_skill(service_context, config, sid, ws, waiters)` helper，在 **FinalEvent + ErrorEvent 两处都调** → turn 经 relay ReadError / 迭代上限 / 中止结束时（若已跑 ≥5 工具）仍触发技能自创。补 4 个 helper 单测（flag off/recorder None/无步骤 no-op + 有步骤 propose+emit），84 回归绿，import OK。
+- **真机验证方案 B**：重启（含 config 修 + 方案 B，boot `fp5_codify_wiring_ready True,True,True`）→ 精确坐标（Snapshot 取输入框物理 (1099,963)）发多工具任务。
+- 🔴 **relay 本会话耗尽**：连续多次任务**首调或 2 工具后即 ReadError 中止**（session 显示「⚠ error」），始终跑不到 codify 触发所需的 ≥5 工具 / ≥3 不同工具。**方案 B 也救不了**——relay 在 5 工具前就失败，_active 步数不足，complete() 步数 < 阈值 → 正确地不提候选。
+- **结论**：TC-5.3 链路**代码侧 100% 就绪**（config 修 + 5 处接线 + 喂数据 + 前端卡 + 方案 B 双分支触发 + 全单测绿 + boot 三 service True），**唯一剩余 = 一个能稳定跑完 ≥5 工具的 turn**，受 chinzy.com relay 本会话间歇 ReadError（首调/早期即断）阻塞。**续跑**：relay 稳定时段（或换 provider，config 有 deepseek-v4-pro）重发多工具任务，跑满 ≥5 工具 → 方案 B 在 FinalEvent/ErrorEvent 任一触发 → 卡弹 → 真点保存 → SKILL.md 落盘。
+
 ## 🟡 剩余 TC（真机执行框架已打通，待续跑会话）
 
 下列 TC 依赖**分钟级真 LLM agent 多轮运行**（gpt-5.5），单 TC 需多次截图轮询 + 可能撞 write_file 权限门。本会话已打通交互 harness（SendInput 圣杯键鼠 + Code session 创建 + /goal 真发送），但完整跑这些需独立专项会话的上下文预算：
