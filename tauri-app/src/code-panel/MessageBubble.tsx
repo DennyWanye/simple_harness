@@ -56,6 +56,18 @@ export function MessageBubble({ msg }: Props) {
           planSid={msg.plan_sid}
         />
       );
+    case "skill_candidate":
+      return (
+        <SkillCandidateCard
+          candidateId={msg.skill_candidate_id ?? 0}
+          name={msg.skill_candidate_name ?? "(未命名技能)"}
+          description={msg.skill_candidate_description ?? ""}
+          steps={msg.skill_candidate_steps ?? []}
+          awaiting={!!msg.skill_candidate_awaiting}
+          accepted={msg.skill_candidate_accepted}
+          skillSid={msg.skill_candidate_sid}
+        />
+      );
     case "tool_call":
       return (
         <ToolCallCard
@@ -532,6 +544,141 @@ function PlanCard({
           >
             取消
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// FP-5 WI-4.3c — 技能自创确认卡。
+// 同构镜像 PlanCard（上方）的「后端 propose → 卡片 awaiting → 用户点按钮 →
+// WS 回传 → resolve 清 awaiting」闭环：
+//   • PlanCard 收 chat_v2_plan，回传 plan_confirm{session_id,decision}
+//   • SkillCandidateCard 收 skill_candidate_proposed，回传
+//     skill_candidate_confirm{candidate_id,accept}
+// 后端收到 accept=true → 落盘 SKILL.md + reload；accept=false → 丢弃候选。
+function SkillCandidateCard({
+  candidateId,
+  name,
+  description,
+  steps,
+  awaiting = false,
+  accepted,
+  skillSid,
+}: {
+  candidateId: number;
+  name: string;
+  description: string;
+  steps: string[];
+  awaiting?: boolean;
+  // resolve 后的最终决定（true=已保存, false=已忽略, undefined=尚未决定）
+  accepted?: boolean;
+  skillSid?: string;
+}) {
+  const resolve_skill_candidate = useSessionsStore(
+    (s) => s.resolve_skill_candidate,
+  );
+  const decide = (accept: boolean) => {
+    // 镜像 PlanCard.decide：先 WS 回传，再本地 resolve 清 awaiting（防重复点击）。
+    codePanelWS.send({
+      type: "skill_candidate_confirm",
+      payload: { candidate_id: candidateId, accept },
+    });
+    if (skillSid) {
+      resolve_skill_candidate(skillSid, candidateId, accept);
+    }
+  };
+  return (
+    <div
+      data-bp-selectable=""
+      data-testid="skill-candidate-card"
+      style={{
+        margin: "8px 0",
+        padding: "10px 14px",
+        // 用紫/青绿调与 plan 卡（蓝）区分，但沿用同样的半透明描边 token。
+        background: "rgba(16, 185, 129, 0.10)",
+        color: "#d1fae5",
+        border: "1px solid rgba(16, 185, 129, 0.45)",
+        borderRadius: 8,
+        fontSize: 12.5,
+      }}
+    >
+      <div style={{ fontWeight: 600, marginBottom: 6, color: "#6ee7b7" }}>
+        ✨ 新技能 · {name}
+      </div>
+      {description && (
+        <div
+          style={{
+            fontSize: 11.5,
+            color: "#94a3b8",
+            marginBottom: 8,
+            fontStyle: "italic",
+          }}
+        >
+          {description}
+        </div>
+      )}
+      {steps.length > 0 && (
+        <ol style={{ margin: 0, paddingLeft: 22, lineHeight: 1.55 }}>
+          {steps.map((s, i) => (
+            <li key={i} style={{ marginBottom: 3, color: "#e2e8f0" }}>
+              {s}
+            </li>
+          ))}
+        </ol>
+      )}
+      {awaiting ? (
+        <div
+          data-testid="skill-candidate-bar"
+          style={{ display: "flex", gap: 8, marginTop: 10 }}
+        >
+          <button
+            type="button"
+            data-testid="skill-candidate-accept"
+            onClick={() => decide(true)}
+            style={{
+              flex: 1,
+              background: "#10b981",
+              color: "#fff",
+              border: "none",
+              borderRadius: 6,
+              padding: "6px 12px",
+              fontSize: 12.5,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            ✓ 保存技能
+          </button>
+          <button
+            type="button"
+            data-testid="skill-candidate-ignore"
+            onClick={() => decide(false)}
+            style={{
+              background: "rgba(148, 163, 184, 0.2)",
+              color: "#e2e8f0",
+              border: "1px solid rgba(148, 163, 184, 0.3)",
+              borderRadius: 6,
+              padding: "6px 14px",
+              fontSize: 12.5,
+              cursor: "pointer",
+            }}
+          >
+            忽略
+          </button>
+        </div>
+      ) : (
+        // 已决定：按钮消失，显示结果文案（防重复点击 + 给用户反馈）。
+        <div
+          data-testid="skill-candidate-result"
+          style={{
+            marginTop: 10,
+            fontSize: 12,
+            fontWeight: 600,
+            color: accepted ? "#6ee7b7" : "#94a3b8",
+          }}
+        >
+          {accepted ? "✓ 已保存为技能" : "已忽略"}
         </div>
       )}
     </div>

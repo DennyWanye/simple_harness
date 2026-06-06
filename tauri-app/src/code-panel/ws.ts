@@ -330,6 +330,23 @@ function dispatch(msg: any) {
       } as any);
       break;
     }
+    case "skill_candidate_proposed": {
+      // FP-5 WI-4.3c: SkillCodifier 跑完多步任务后 propose 一个候选技能，
+      // 推这条事件让前端渲染一张确认卡，然后后端挂起等用户决定（5min 超时
+      // 则自动 reject）。镜像 chat_v2_plan 的 awaiting plan-card 模式：把候选
+      // 落成一条 `skill_candidate` 消息，由 MessageBubble 渲染 SkillCandidateCard。
+      const p = msg.payload || {};
+      store.push_message(sid, {
+        role: "skill_candidate" as any,
+        skill_candidate_id: p.candidate_id,
+        skill_candidate_name: p.name,
+        skill_candidate_description: p.description,
+        skill_candidate_steps: Array.isArray(p.steps) ? p.steps : [],
+        skill_candidate_awaiting: true,
+        skill_candidate_sid: sid,
+      } as any);
+      break;
+    }
     case "chat_v2_plan_cancelled": {
       // superpowers 决策2: 用户点[取消] 或 后端超时 → 清按钮 + 回 idle
       store.resolve_plan(sid);

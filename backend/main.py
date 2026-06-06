@@ -665,6 +665,13 @@ def build_agent(
     goal_checker=None,
     # WI-4.0 compaction — pre-built ContextCompressor or None (flag off = BC)
     compressor=None,
+    # FP-5 缺口 5a (2026-06-06) — WI-4.2 remount + 自动披露接电。两者 None (默认)
+    # → _AgentLoop 跳过 _remount_skills + auto-disclosure（字节级 BC）。
+    skill_loader=None,
+    skill_matcher=None,
+    # FP-5 缺口 2 (2026-06-06) — WI-1.6 工具路径录制喂 FP-5 技能自创。
+    # None (默认) → agent_loop 不喂 recorder（字节级 BC：codify hook complete() 得空 steps → 不提候选）。
+    tool_path_recorder=None,
 ):
     """Build a wired _AgentLoop with optional VerifyGate + ReceiptStore.
 
@@ -812,6 +819,11 @@ def build_agent(
         external_evaluator=_external_evaluator,
         # ─── WI-4.0 compaction（flag off = compressor=None = BC）───
         compressor=compressor,
+        # ─── FP-5 缺口 5a：WI-4.2 remount + 自动披露（flag off = None = BC）───
+        skill_loader=skill_loader,
+        skill_matcher=skill_matcher,
+        # ─── FP-5 缺口 2：WI-1.6 工具路径录制喂技能自创（flag off = None = BC）───
+        tool_path_recorder=tool_path_recorder,
     )
 
 
@@ -1188,6 +1200,90 @@ try:
             _context_compressor = None
     service_context.register("context_compressor", _context_compressor)
 
+    # ─── goal-completion FP-5 接线修复 (2026-06-06) ──────────────────────────
+    # 独立验收发现 codify hook (main.py:5836/5838/5859) + remount/auto-disclosure
+    # 接线引用的 3 个 service (tool_path_recorder / skill_candidate_store /
+    # llm_registry) + skill_matcher 在 lifespan 从未构造/注册 → get() 抛
+    # ValueError("Unknown service") 被 try/except 吞 → WI-4.1/4.2/4.3 真机 no-op。
+    # 修法：flag ON 时构造真实例 register；flag OFF 时一律 register(None) 占位
+    # （保字节级 BC + 让 get() 不抛）。所有新构造都 flag-gated。
+    #
+    # 缺口 2 — ToolPathRecorder (WI-1.6)：录工具路径喂 4.3 自创。codify flag ON
+    # 才构造。喂数据接线已补全（2026-06-06）：build_agent → _AgentLoop(tool_path_recorder=)
+    # → agent_loop 每个 tool_result 调 record_tool(name, ok)；codify hook 在 run 结束
+    # 调 complete() 快照 → get/complete 返回非空 ToolPath，真机自创端到端可触发。
+    _tool_path_recorder = None
+    _skill_candidate_store = None
+    _llm_registry_for_codify = None
+    _codify_flag = bool(
+        getattr(getattr(getattr(config, "skills", None), "codify", None), "enabled", False)
+    )
+    if _codify_flag:
+        try:
+            from deskpet.agent.tool_path import ToolPathRecorder as _TPRecorder
+            from deskpet.skills.skill_codifier import (
+                SkillCandidateStore as _SCStore,
+            )
+            from agent.tool_use_shim import OpenAICompatibleAgentLLM as _CodifyShim
+            _tool_path_recorder = _TPRecorder()
+            # 缺口 3 — SkillCandidateStore：pending 候选独立表 (pending_skill_
+            # candidates)，与 SkillMemoryStore 同 state.db，lazy _ensure_table
+            # （首写才建表 → flag-OFF 字节基线不受影响）。
+            _skill_candidate_store = _SCStore(_state_db_path)
+            # 缺口 4 — llm_registry：codify hook 需 chat_with_fallback(...) ->
+            # ChatResponse。复用 chat handler 同款 OpenAICompatibleAgentLLM shim
+            # （provider_registry 是 [[llm.providers]] 配置管理器，无 chat_with_
+            # fallback → 不可复用）。绑定已构造的 local_llm/cloud_llm provider。
+            _codify_provider = local_llm or cloud_llm
+            if _codify_provider is not None:
+                _llm_registry_for_codify = _CodifyShim(provider=_codify_provider)
+            logger.info(
+                "fp5_codify_wiring_ready tool_path=%s candidate_store=%s llm=%s",
+                _tool_path_recorder is not None,
+                _skill_candidate_store is not None,
+                _llm_registry_for_codify is not None,
+            )
+        except Exception as _codify_wire_exc:  # noqa: BLE001
+            logger.warning(
+                "fp5_codify_wiring_failed err=%s — disabled", _codify_wire_exc
+            )
+            _tool_path_recorder = None
+            _skill_candidate_store = None
+            _llm_registry_for_codify = None
+    service_context.register("tool_path_recorder", _tool_path_recorder)
+    service_context.register("skill_candidate_store", _skill_candidate_store)
+    service_context.register("llm_registry", _llm_registry_for_codify)
+
+    # 缺口 5c — SkillMatcher (WI-4.1)：embedding 相似度披露 + remount。
+    # auto_disclosure flag ON 才构造 SkillMatcher(embedder).build(loader.all())
+    # 并注入给 SkillComponent（下方 build_default_assembler 调用）+ build_agent (缺口 5a/5b)。
+    # flag OFF → matcher=None → SkillComponent / agent_loop 全程降级 desc-only (BC)。
+    _skill_matcher = None
+    _auto_disclosure_flag = bool(
+        getattr(
+            getattr(getattr(config, "skills", None), "auto_disclosure", None),
+            "enabled",
+            False,
+        )
+    )
+    if _auto_disclosure_flag:
+        try:
+            from deskpet.skills.skill_matcher import SkillMatcher as _SkillMatcher
+            _skill_matcher = _SkillMatcher(embedder=_embedder)
+            try:
+                _skill_matcher.build(_skill_loader.all())
+            except Exception as _sm_build_exc:  # noqa: BLE001
+                logger.warning("fp5_skill_matcher_build_failed err=%s", _sm_build_exc)
+            logger.info("fp5_auto_disclosure_wiring_ready matcher=%s", True)
+        except Exception as _ad_wire_exc:  # noqa: BLE001
+            logger.warning(
+                "fp5_auto_disclosure_wiring_failed err=%s — disabled", _ad_wire_exc
+            )
+            _skill_matcher = None
+    # matcher/loader 注入 SkillComponent 在下方 build_default_assembler 调用处
+    # （缺口 5c）；注入 build_agent 在 chat handler 处取用（缺口 5a/5b）。
+    service_context.register("skill_matcher", _skill_matcher)
+
     # FP-4 B-10：goal→facts 双写钩接电。
     # 条件：goal_mode ON + goal_facts_hook flag ON + 两个 store 都已构造。
     # goal_store 不 import facts（§1.7 冻结约束）→ 通过 bind_on_goal_set 注入 callback。
@@ -1261,6 +1357,10 @@ try:
         # FP-4 WI-3.2：人格画像注入（flag 关 → component 空转，BC）。
         facts_store=_facts_store if _persona_inject_flag else None,
         persona_inject=_persona_inject_flag,
+        # FP-5 缺口 5c (2026-06-06)：auto_disclosure flag ON 时注入 matcher/loader
+        # → SkillComponent 真做 embedding 披露；flag OFF → 两者 None → desc-only (BC)。
+        skill_matcher=_skill_matcher,
+        skill_loader=_skill_loader,
     )
     service_context.register("context_assembler", _assembler)
 
@@ -5506,6 +5606,13 @@ async def control_channel(ws: WebSocket):
                         _goal_checker_for_agent = service_context.get("goal_checker")
                         # WI-4.0 compaction: None when flag off (BC)
                         _compressor_for_agent = service_context.get("context_compressor")
+                        # FP-5 缺口 5b (2026-06-06)：取 skill_loader/skill_matcher 传
+                        # build_agent → _AgentLoop 真做 WI-4.2 remount + 自动披露。
+                        # flag OFF → matcher=None → 降级 desc-only（字节级 BC）。
+                        _skill_loader_for_agent = service_context.get("skill_loader")
+                        _skill_matcher_for_agent = service_context.get("skill_matcher")
+                        # FP-5 缺口 2：WI-1.6 工具路径录制器（flag off → None → BC）
+                        _tp_recorder_for_agent = service_context.get("tool_path_recorder")
                         _agent = build_agent(
                             config,
                             llm_registry=_shim,
@@ -5519,6 +5626,9 @@ async def control_channel(ws: WebSocket):
                             session_goal_store=_goal_store_for_agent,
                             goal_checker=_goal_checker_for_agent,
                             compressor=_compressor_for_agent,
+                            skill_loader=_skill_loader_for_agent,
+                            skill_matcher=_skill_matcher_for_agent,
+                            tool_path_recorder=_tp_recorder_for_agent,
                         )
                         # P4-S25 A1: stream by default — gives the user
                         # instant visible feedback on thinking-mode
@@ -5848,8 +5958,18 @@ async def control_channel(ws: WebSocket):
                                                         _sc_goal_id = getattr(_ag_obj, "goal_id", None)
                                             if _sc_goal_id is None:
                                                 _sc_goal_id = _sid  # fallback: use session as goal
-                                            _tp = _tp_rec.get_completed_path(_sid, _sc_goal_id)
-                                            if _tp is not None:
+                                            # WI-1.6：本 run 结束，complete() 把 agent_loop 录得的
+                                            # _active 工具步快照成 ToolPath（pop _active）。无录步 →
+                                            # steps=[] → 下游 detect_trigger 自然不提候选（trivial turn）。
+                                            _sc_goal_text = ""
+                                            if _sg_store is not None:
+                                                _gt_fn = getattr(_sg_store, "get_goal_text", None)
+                                                if callable(_gt_fn):
+                                                    _sc_goal_text = _gt_fn(_sid) or ""
+                                            _tp = _tp_rec.complete(
+                                                _sid, goal_id=_sc_goal_id, goal_text=_sc_goal_text,
+                                            )
+                                            if _tp is not None and _tp.steps:
                                                 _sc_user_dir = None
                                                 if _sc_loader is not None:
                                                     _dirs = getattr(_sc_loader, "_dirs", [])

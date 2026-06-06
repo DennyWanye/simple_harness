@@ -623,3 +623,74 @@ async def test_full_run_skill_invoke_then_compaction_remounts():
         ]
         assert len(remount_blocks) >= 1, "Fallback remount should have produced a block"
         assert _SKILL_A_BODY in remount_blocks[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_tool_path_recorder_fed_during_run():
+    """FP-5 缺口 2：agent_loop 在工具执行后真喂 ToolPathRecorder.record_tool，
+    使 codify hook 的 complete()/get_completed_path 能拿到非空 ToolPath。
+    否则技能自创端到端永不触发（recorder._active 恒空）。"""
+    from llm.types import ChatResponse, ToolCall
+    from deskpet.agent.tool_path import ToolPathRecorder
+
+    class _OneToolLLM:
+        def __init__(self):
+            self._calls = 0
+
+        async def chat_with_fallback(self, messages, *, tools=None, model=None, **kw):
+            self._calls += 1
+            if self._calls == 1:
+                return ChatResponse(
+                    content="",
+                    stop_reason="tool_use",
+                    tool_calls=[ToolCall(id="tc_1", name="read_file", arguments={"path": "a.txt"})],
+                    usage={"input_tokens": 10, "output_tokens": 2},
+                )
+            return ChatResponse(content="done", stop_reason="end_turn", tool_calls=[],
+                                usage={"input_tokens": 5, "output_tokens": 1})
+
+    class _Reg:
+        def schemas(self, enabled_toolsets=None):
+            return [{"name": "read_file", "description": "r",
+                     "parameters": {"type": "object", "properties": {}}}]
+
+        async def execute_tool(self, name, args, task_id):
+            return '{"ok": true, "content": "hi"}'
+
+    rec = ToolPathRecorder()
+    loop = AgentLoop(
+        llm_registry=_OneToolLLM(),
+        tool_registry=_Reg(),
+        tool_path_recorder=rec,
+    )
+    async for _ in loop.run(
+        [{"role": "user", "content": "read a.txt"}], session_id="sid_rec"
+    ):
+        pass
+
+    # 工具执行后 _active 应有该步
+    path = rec.complete("sid_rec", goal_id="g1", goal_text="读文件")
+    names = [s.name for s in path.steps]
+    assert "read_file" in names, f"record_tool 未喂；steps={names}"
+    assert path.steps[names.index("read_file")].ok is True
+
+
+@pytest.mark.asyncio
+async def test_tool_path_recorder_none_no_crash():
+    """recorder=None（默认 BC）→ 不录、不崩。"""
+    from llm.types import ChatResponse
+    from agent.agent_loop import AgentLoop as _AL
+
+    class _EndLLM:
+        async def chat_with_fallback(self, messages, *, tools=None, model=None, **kw):
+            return ChatResponse(content="ok", stop_reason="end_turn", tool_calls=[],
+                                usage={"input_tokens": 1, "output_tokens": 1})
+
+    class _Reg:
+        def schemas(self, enabled_toolsets=None):
+            return []
+
+    loop = _AL(llm_registry=_EndLLM(), tool_registry=_Reg())
+    assert loop.tool_path_recorder is None
+    async for _ in loop.run([{"role": "user", "content": "hi"}], session_id="s"):
+        pass

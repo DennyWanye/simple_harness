@@ -430,6 +430,9 @@ class AgentLoop:
         # the bodies of skills used this run as a single role=system block.
         skill_loader: Optional[Any] = None,   # deskpet.skills.loader.SkillLoader
         skill_matcher: Optional[Any] = None,  # deskpet.skills.skill_matcher.SkillMatcher
+        # WI-1.6 工具路径录制（喂 FP-5 技能自创）。None (默认) → 不录（BC，零开销）。
+        # 非 None 时每个 tool_result 喂 record_tool(name, ok)，complete() 由 codify hook 调。
+        tool_path_recorder: Optional[Any] = None,  # deskpet.agent.tool_path.ToolPathRecorder
     ) -> None:
         self.llm = llm_registry
         self.tools = tool_registry
@@ -472,6 +475,8 @@ class AgentLoop:
         # When non-None and compaction fires, _remount_skills() re-inlines skill bodies.
         self.skill_loader = skill_loader
         self.skill_matcher = skill_matcher
+        # WI-1.6 工具路径录制器（BC: None → 不录）。喂 FP-5 4.3 技能自创触发器。
+        self.tool_path_recorder = tool_path_recorder
         # P5-S2 Phase 3.3: same-(name, args) repeat detection. When set,
         # the loop checks the activity store's per-session
         # ``tool_signature_window`` BEFORE dispatching each tool_call —
@@ -1749,8 +1754,10 @@ class AgentLoop:
                 )
 
                 # P5-S2 Phase 2: classify *this* tool_result.
+                _tp_err_class = None
                 if permanent_break is None:
                     err_class = _classify_tool_result(result_str)
+                    _tp_err_class = err_class
                     if err_class is agent_errors.PermanentToolError:
                         permanent_break = (
                             "permanent_tool_error",
@@ -1761,6 +1768,20 @@ class AgentLoop:
                             "hallucination",
                             _extract_break_detail(result_str, tc.name),
                         )
+
+                # WI-1.6 录工具路径喂 FP-5 技能自创（recorder=None → no-op，BC）。
+                # ok = 非异常 且 未被分类为永久/幻觉错误。safe-fail，永不阻断派发。
+                if self.tool_path_recorder is not None:
+                    try:
+                        _tp_ok = not isinstance(result, BaseException) and _tp_err_class not in (
+                            agent_errors.PermanentToolError,
+                            agent_errors.HallucinationError,
+                        )
+                        self.tool_path_recorder.record_tool(
+                            session_id, name=tc.name, ok=_tp_ok,
+                        )
+                    except Exception:  # noqa: BLE001 — never block dispatch
+                        pass
 
             if permanent_break is not None:
                 reason, detail = permanent_break

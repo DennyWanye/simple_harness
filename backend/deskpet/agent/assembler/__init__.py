@@ -87,6 +87,8 @@ def build_default_assembler(
     workspace_memory_store=None,
     facts_store=None,
     persona_inject: bool = False,
+    skill_matcher=None,
+    skill_loader=None,
 ) -> ContextAssembler:
     """One-shot factory for the common case.
 
@@ -104,7 +106,11 @@ def build_default_assembler(
     registry = ComponentRegistry()
     registry.register(MemoryComponent())
     registry.register(ToolComponent())
-    registry.register(SkillComponent())
+    # FP-5 缺口 5c (2026-06-06): 注入 matcher/loader 让 auto-disclosure 生效。
+    # 默认 None → SkillComponent 降级 desc-only（字节级 BC，与 WI-4.1 前一致）。
+    registry.register(
+        SkillComponent(skill_matcher=skill_matcher, skill_loader=skill_loader)
+    )
     registry.register(PersonaComponent())
     registry.register(TimeComponent())
     registry.register(WorkspaceComponent())
