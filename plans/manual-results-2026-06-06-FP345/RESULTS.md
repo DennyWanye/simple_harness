@@ -338,3 +338,12 @@ agent 完成 46 工具 + turn `stop_reason='end_turn'` 收尾，但 `pending_ski
 - 截图 `screenshots/tc-4.1-cross-session-recall.png`。
 
 **判定 PASS**：决策陈述→抽取入库→重启清内存→跨会话准确召回，FP-4「重启后跨会话召回」招牌全链真机硬证据贯通。
+
+## ✅ TC-4.3 偏好冲突（后偏好覆盖）— 真机 PASS（FP-4）
+
+1. **陈述冲突偏好**（真机）：「我以前喜欢乌龙茶，但现在改了，现在最喜欢绿茶」。
+2. **supersede 抽取**：`facts` → `('preference','favorite_drink','绿茶')` + `('preference','memory_*','曾经喜欢乌龙茶；当前喜欢绿茶，口味偏好已更新，以绿茶为准')`（agent 调 memory 工具 memory_id=14 category=preference）。
+3. **下轮问推荐**「根据你对我的了解推荐一种茶」→ agent 答：「考虑到你喜欢**绿茶**…建议来杯绿茶…符合你现在的口味偏好」—— **反映最新偏好（绿茶），非旧的乌龙茶**。`preference_profile_injected facts=8`（画像块带 superseded 偏好进 prompt）。
+- 截图 `screenshots/tc-4.3-preference-conflict.png`。
+
+**判定 PASS**：后偏好覆盖旧偏好，推荐反映最新（绿茶），FP-4 偏好冲突/superseded 真机硬证据。
