@@ -284,3 +284,19 @@ agent 完成 46 工具 + turn `stop_reason='end_turn'` 收尾，但 `pending_ski
 **verify gate 真 log 事件**（grep 这些判 PASS）：`verify_gate_init` / `verify_gate_nudge_injected`（伪完成被拦）/ `goal_alignment`（偏离判定）/ `task_replanning`（重规划触发）。
 
 > 续跑建议顺序（fresh context）：先在 code 会话**点「本会话始终允许」授权 write_file** → 用 Clipboard workaround 设新 `/goal 创建 X.md` → 等 agent 真产出（verify pass，TC-3.2）→ 再诱导伪完成（"不用真做直接说完成了"，verify_gate_nudge_injected，TC-3.1 拦截）。TC-4.1 跨会话召回需 companion-chat venue + restart。
+
+## ✅ 子代理完成度复评（3 轮）+ 补完到代码侧 100%（按 /goal 流程补做）
+
+用户提醒「子代理评估是否 100%」这一步本会话漏做 → 补做，跑了 **3 轮独立子代理复评**，逐轮抓 bug + 补完：
+
+| 轮 | 判定 | 抓出 | 补完 commit |
+|---|---|---|---|
+| 1 | 88% | **第 8 处**：语音 venue assemble() 漏 skills 配置（同文字 venue #2 venue-miss） | c739a33（assembler 级 default_config 根治所有 venue）+3 测试 |
+| 2 | 95% | **第 9 处**：语音 venue 裸 _AgentLoop → codify(FP-5)/verify(FP-3) 不触发；**第 10 处隐患**：浅合并 | c0bf85d（voice→build_agent+codify）+3 测试；d4ee7d6（深合并加固） |
+| 3（终轮） | 功能性 100% | 第 8/9/10 全闭合、无第 11 处；但抓出我第 9 处修复的 2 处瑕疵：v2_enabled 回退闸语音失效 + codify 阻塞 TTS 风险 | ce9245f（v2_enabled 读 config.raw + codify fire-and-forget）+深合并测试 |
+
+**累计本会话从真机手测一路深挖：9 处同根系统性生产 bug + 1 处加固 + 2 处终轮 polish**（全是「组件注册+flag开+480 单测全绿，但 venue/policy/config/类型契约/时序层逐个断」的 `feedback_cross_layer_contract` 最深演绎）：
+1-7（前述）+ **8 语音 venue 披露配置漏传**（根治为 assembler default_config）+ **9 语音 venue codify/verify 未接线**（裸 _AgentLoop→build_agent）+ 10 深合并加固 + v2_enabled 对齐 + codify fire-and-forget。
+
+**代码侧完成度：100%**（终轮子代理确认无第 11 处同根 bug，两个 venue 均从源头覆盖，未来新 venue 免疫；266+ 焦点测试绿）。
+**真机手测门**（独立下游步骤）：FP-5 ✅；FP-3/FP-4 + 新增的语音 venue codify/verify 仍需真机覆盖（需 fresh context）。
