@@ -128,7 +128,19 @@ agent 完成 46 工具 + turn `stop_reason='end_turn'` 收尾，但 `pending_ski
 
 **意义**：这证明 TC-5.3 的**整条后端机制链端到端真机工作** —— config 修([skills.codify]) + 5 处接线 + WI-1.6 喂数据(record_tool→complete) + 方案 B(FinalEvent/ErrorEvent 触发) + relay 鲁棒性(流式重试) **全部协同生效**，从 agent 跑工具一路打通到「codify 检测工具路径 → propose 生成技能 → skill_candidate_proposed 推前端 → 候选入库 awaiting confirm」。这是技能自创**最难的全链**，已真机硬证据证明。
 
-## 🐛 TC-5.3 前端卡显示 — 真机抓的 2 个前端 bug（最后一环受阻）
+## ✅✅✅ TC-5.3 招牌全链 — 真机 FULL PASS（技能卡→真点保存→SKILL.md 落盘）
+
+**修完 ephemeral-card bug + 重启后，真机模拟人工跑通技能自创完整闭环：**
+1. ✅ 发多工具任务 → agent 在烂代理下完成全部工具（relay 鲁棒性修复）+ 自然到 FinalEvent。
+2. ✅ codify → propose → 候选 id=3 入库 + `skill_candidate_proposed` WS emit。
+3. ✅ **前端绿色「✨ 新技能 · meeting-minutes-to-ppt」卡真机渲染**（ephemeral-card 修复后开完整 chat 卡存活）—— 展示 description + 6 步骤 + 「✓ 保存技能」「忽略」按钮。截图 `screenshots/tc-5.3-skill-card-rendered.png`。
+4. ✅ **真坐标 SendInput 点击「✓ 保存技能」(物理 1221,1053)** → 发 `skill_candidate_confirm{candidate_id:3, accept:true}`。
+5. ✅ **后端日志**：`skill_candidate_confirm_received cid=3 decision=accept` + `skill_candidate_resolved cid=3 decision=accept`。
+6. ✅ **SKILL.md 真落盘**：`<user_data>/skills/user/meeting-minutes-to-ppt/SKILL.md` —— 完整声明式技能（frontmatter name/description/when_to_use/**requires_script: false**（红线：只声明不执行代码）/author: self-codified + 6 步骤正文）。
+
+**判定 TC-5.3 PASS** —— 「多步任务 → 技能自创确认卡弹出 → **真坐标点击保存** → SKILL.md 落盘」招牌全链真机硬证据贯通，veto-1（真 windows-mcp 截图+真点击+落盘证据）**完全满足**。本会话从「relay 死、功能死」一路修到「招牌全链真机 PASS」。
+
+## 🐛（已修）TC-5.3 前端卡显示 — 真机抓的 2 个前端 bug
 
 候选 id=1 真机 pending awaiting confirm，但「点保存→SKILL.md」未能捕获，真机定位到**2 个前端 bug**：
 1. **skill_candidate 卡是 ephemeral（前端-only）消息，message reload 时丢失**：`ws.ts` 把卡 push 进 `sessionsStore[sid].messages`（push_message 不丢 role，验证过），但打开「完整 chat」会触发 `session_messages_load` → `set_messages` 从 SessionDB **整体替换** messages → skill_candidate 卡（未持久化到 DB）被丢弃。这是我真机找卡时打开完整 chat 反而弄丢卡的根因。**修法**：set_messages 重载时保留内存里 awaiting 的 skill_candidate/plan 卡（merge 不 replace），或后端在 session_messages_load 时把 pending 候选一并下发。
