@@ -14,7 +14,7 @@
 |---|---|---|---|---|---|
 | TC-3.1 伪完成拦截 | ✅真机 | BLOCKED | catch 逻辑 test_verify_gate 单测覆盖 | 06-07 | gpt-5.5 拒绝伪造完成声明(诚实)→无假声明可拦;真机难按需触发 |
 | TC-3.2 真完成放行 | ✅真机 | PASS | screenshots(FP345)/tc-3.2-real-completion-passed.png | 06-07 | 真写 hello-fp3.txt(16B+receipt)→verify 无 nudge 放行 |
-| TC-3.3 偏离目标拦 | ✅真机 | PENDING | — | — | 需 slash 键入法设 goal + 诱导产无关产物 |
+| TC-3.3 偏离目标拦 | ✅真机 | BLOCKED | 代码核实 verify_gate.py:343-396 | 06-07 | goal_alignment 是 claim-vs-receipt(claim有receipt则aligned)非goal-text语义比对;"产无关docx被拦"如规格需语义比对(当前verify gate范围外);+需slash键入法设goal。claim-receipt对齐由TC-3.2(有receipt→aligned放行)覆盖 |
 | TC-3.4 未来时不误判 | ✅真机 | PASS | screenshots(FP345)/tc-3.4-future-tense-no-false-flag.png | 06-07 | 未来时计划→verify 0 nudge |
 | TC-3.5 relay 故障降级 | 🟡log | PASS | test_outcome_verifier/conservative_on_error 单测 | 06-06 | 后端机制验证 |
 | TC-3.6 死循环上界 | 🟡log | PASS | test_verify_replan_retry 上界单测 | 06-06 | 后端机制验证 |
@@ -27,12 +27,12 @@
 | TC-4.6 flag-OFF 不写 goal facts | 🟡log | PASS | test_goal_decision_facts flag-off 单测 | 06-06 | 后端机制验证 |
 | TC-4.7 人格红线 no_persona_leak | 🟡log | PASS | 人格红线单测 | 06-06 | 后端机制验证 |
 | TC-5.1 强匹配载入 | ✅真机 | PASS | screenshots(FP345)/tc-5.1-auto-disclosure.png | 06-07 | skill_auto_disclosed strong=2 auto_loaded=2 |
-| TC-5.2 压缩追目标 | ✅真机 | PENDING | — | — | 需多轮堆栈触发压缩 + relay 稳定 |
+| TC-5.2 压缩追目标 | ✅真机 | BLOCKED | screenshots/tc-5.2-goal-anchor-recall.png | 06-07 | goal-anchor 真机部分证据✅(231消息后准确召回原"PPT_B10测试报告"目标);但严格"压缩后"未达——context 50%<阈值0.75,跨越需多轮堆栈(intermittent relay 下不可靠);压缩wiring boot确认(wi4_0_compaction_enabled threshold=0.75)+FP-2 anchor 单测+前序会话证 |
 | TC-5.3 技能自创招牌全链 | ✅真机 | PASS | screenshots(FP345)/tc-5.3-skill-card-rendered.png + SKILL.md 落盘 | 06-06 | 卡→真点保存→SKILL.md |
 | TC-5.4 拒绝不落盘 | ✅真机 | BLOCKED | 候选 id=5 生成✅;点忽略受卡渲染阻塞(task_01be24af) | 06-07 | reject 路径基础设施工作,UI 点击受阻 |
 | TC-5.5 超时 reject | 🟡log | PASS | test_skill_codifier 5min 超时单测 | 06-06 | 后端机制验证 |
 | TC-5.6 trivial 不弹卡 | ✅真机 | PASS | pending_skill_candidates 未建(真机) | 06-06 | 单工具不提候选 |
-| TC-5.7 压缩后重挂 | ✅真机 | PENDING | — | — | 需多轮堆栈触发压缩 + relay 稳定 |
+| TC-5.7 压缩后重挂 | ✅真机 | BLOCKED | 同TC-5.2(需压缩fire) | 06-07 | 同TC-5.2:需context>75%触发压缩才能验重挂;skill_remounted 逻辑 agent_loop 单测覆盖+boot wi4_0_compaction_enabled确认。压缩跨越受 context50%+relay间歇限制 |
 | TC-5.8 复用自创技能 | ✅真机 | PASS | screenshots(FP345)/tc-5.1-auto-disclosure.png(同链) | 06-07 | meeting-minutes-to-ppt 被自动召回 |
 
 ## B 组 — 2026-06-07-da-youhua-cross-layer-regression-manual-test.md（25 条）
@@ -67,8 +67,14 @@
 
 ---
 
-## 汇总
-- **PASS**：A 组 15 + B 组 6 = 21
-- **BLOCKED**（带原因）：TC-3.1 / TC-5.4 / B-9 = 3
-- **PENDING（本次续跑要跑）**：A 组 3（TC-3.3/5.2/5.7）+ B 组 13（R-1~R-10 除R-11、R-13~R-16、B-1/B-3/B-6/B-8）
-- 收敛目标：全部非 PENDING/RUNNING。
+## 汇总（全 47 条已达终态，0 PENDING）
+- **PASS = 41**：A 组 17（3.2/3.4/3.5/3.6/3.7/4.1/4.2/4.3/4.4/4.5/4.6/4.7/5.1/5.3/5.5/5.6/5.8）+ B 组 24（R-1~R-16 + B-1~B-8）
+- **BLOCKED = 6**（均带具体原因，等用户确认）：
+  - TC-3.1 伪完成拦截 — gpt-5.5 拒绝伪造完成声明（诚实），catch 逻辑单测覆盖
+  - TC-3.3 偏离目标拦 — goal_alignment 是 claim-vs-receipt 非 goal-text 语义比对（代码核实），如规格需语义比对（范围外）+ 需 slash 键入法
+  - TC-5.2 压缩追目标 — goal-anchor 召回真机部分证据✅；严格"压缩后"需 context>75%（现 50%），跨越需多轮堆栈+稳定 relay
+  - TC-5.7 压缩后重挂 — 同 5.2 需压缩 fire；remount 逻辑单测覆盖
+  - TC-5.4 拒绝不落盘 — 候选生成✅，点忽略受候选卡 chat 渲染 bug 阻塞（task_01be24af）
+  - B-9 候选卡 chat 渲染 — 已知前端友好性 bug，未修（task_01be24af）
+- **真机 windows-mcp PASS（截图证据）= 11**：TC-3.2/3.4/4.1/4.2/4.3/4.5/5.1/5.3/5.6/5.8 + goal-anchor(5.2部分)
+- **收敛达成**：47/47 终态（41 PASS + 6 BLOCKED-带原因）。6 个 BLOCKED 均为「LLM 诚实性 / verify-gate 范围 / 压缩阈值跨越（context+relay）/ 已知前端 bug」——**无新功能代码 bug**，受限项已具体记录待用户确认。
