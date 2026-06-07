@@ -595,6 +595,7 @@ fake-completion 生产抓获率 0%）+ 替换 5 个 stub 工具为真实现 + �
 
 | 文档 | 作用 |
 |------|------|
+| [`release/README.md`](./release/README.md) | ⭐ **发布 & 自动更新运行手册（当前权威）** — 本地构建+签名 → 公开 GitHub release + 腾讯 COS 国内源 → 客户端自动更新；含分享链接、出新版步骤、踩坑清单。2026-06-05 真机 E2E 验证 beta.2→beta.3 自更新跑通 |
 | [`plans/2026-05-22-beta-100-readiness.md`](./plans/2026-05-22-beta-100-readiness.md) | 内测就绪**主计划** — 12 个工作项 (WI-01~WI-12) 的 PRD + 技术设计 + TDD + 排期 + Go/No-Go checklist |
 | [`plans/2026-05-22-beta-100-manual-test.md`](./plans/2026-05-22-beta-100-manual-test.md) | **人工点击测试脚本** — 6 条测试路径，逐步可勾选，含全新安装 / 升级 / 卸载 / updater 全流程 |
 | [`plans/2026-05-22-beta-100-manual-test-results.md`](./plans/2026-05-22-beta-100-manual-test-results.md) | **实机测试执行记录** — windows-mcp 实机跑 WI-01/WI-02，结果 13/13 通过、0 功能 bug |
