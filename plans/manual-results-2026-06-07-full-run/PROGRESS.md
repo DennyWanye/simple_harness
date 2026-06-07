@@ -27,12 +27,12 @@
 | TC-4.6 flag-OFF 不写 goal facts | 🟡log | PASS | test_goal_decision_facts flag-off 单测 | 06-06 | 后端机制验证 |
 | TC-4.7 人格红线 no_persona_leak | 🟡log | PASS | 人格红线单测 | 06-06 | 后端机制验证 |
 | TC-5.1 强匹配载入 | ✅真机 | PASS | screenshots(FP345)/tc-5.1-auto-disclosure.png | 06-07 | skill_auto_disclosed strong=2 auto_loaded=2 |
-| TC-5.2 压缩追目标 | ✅真机 | BLOCKED | screenshots/tc-5.2-goal-anchor-recall.png | 06-07 | goal-anchor 真机部分证据✅(231消息后准确召回原"PPT_B10测试报告"目标);但严格"压缩后"未达——context 50%<阈值0.75,跨越需多轮堆栈(intermittent relay 下不可靠);压缩wiring boot确认(wi4_0_compaction_enabled threshold=0.75)+FP-2 anchor 单测+前序会话证 |
+| TC-5.2 压缩追目标 | ✅真机 | BLOCKED | screenshots/tc-5.2-goal-anchor-recall.png | 06-07 | **已按审计做 workaround**(单轮粘贴 52k 字~13k token,rowid 232)→压缩仍**未 fire**(整会话从无 p1_4_compaction_fired)。根因:触发=estimated_tokens(working_messages len/4)≥24000,52k+231短消息仍不够+疑 context-manager 窗口化历史→**压缩实践中难/不触发(潜在死链,已建调查任务)**。goal-anchor 行为✅真机证(231消息+52k dump 后仍准确召回 PPT_B10测试报告)。严格"压缩后重锚"链路因压缩不 fire 无法验 |
 | TC-5.3 技能自创招牌全链 | ✅真机 | PASS | screenshots(FP345)/tc-5.3-skill-card-rendered.png + SKILL.md 落盘 | 06-06 | 卡→真点保存→SKILL.md |
 | TC-5.4 拒绝不落盘 | ✅真机 | BLOCKED | 候选 id=5 生成✅;点忽略受卡渲染阻塞(task_01be24af) | 06-07 | reject 路径基础设施工作,UI 点击受阻 |
 | TC-5.5 超时 reject | 🟡log | PASS | test_skill_codifier 5min 超时单测 | 06-06 | 后端机制验证 |
 | TC-5.6 trivial 不弹卡 | ✅真机 | PASS | pending_skill_candidates 未建(真机) | 06-06 | 单工具不提候选 |
-| TC-5.7 压缩后重挂 | ✅真机 | BLOCKED | 同TC-5.2(需压缩fire) | 06-07 | 同TC-5.2:需context>75%触发压缩才能验重挂;skill_remounted 逻辑 agent_loop 单测覆盖+boot wi4_0_compaction_enabled确认。压缩跨越受 context50%+relay间歇限制 |
+| TC-5.7 压缩后重挂 | ✅真机 | BLOCKED | 同TC-5.2(压缩未fire) | 06-07 | 同TC-5.2:压缩从未触发(已试52k单轮workaround无效)→无法验压缩后 skill 重挂;skill_remounted 逻辑 agent_loop 单测覆盖+boot wi4_0_compaction_enabled。根因同5.2(压缩潜在不触发,已建调查任务) |
 | TC-5.8 复用自创技能 | ✅真机 | PASS | screenshots(FP345)/tc-5.1-auto-disclosure.png(同链) | 06-07 | meeting-minutes-to-ppt 被自动召回 |
 
 ## B 组 — 2026-06-07-da-youhua-cross-layer-regression-manual-test.md（25 条）

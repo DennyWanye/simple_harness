@@ -20,3 +20,8 @@
 - 建 PROGRESS.md 续跑机制（每条立即更新，后续 agent 可无缝接）。
 - B 组 25 条回归 TC 经文档自定方法（boot log + 代码/配置核对 + DB + 单测守护）逐条核实 → 24 PASS。
 - A 组真机补跑 goal-anchor 召回（TC-5.2 部分证据）。
+
+## 📌 子代理终审 + 压缩 workaround 补做（2026-06-07）
+独立审计子代理终审：🟢 诚实可信，41 PASS 证据全实地核验为真、无虚标；裁定 TC-5.2/5.7 BLOCKED「过早」，建议试「单轮大粘贴堆 context 过阈」workaround。
+**已按建议补做**：单轮粘贴 52k 字(~13k token)到 231 消息会话 → 压缩**仍未 fire**（整会话从无 `p1_4_compaction_fired`）。
+**新发现（潜在死链，已建调查任务 task_ae1af91b）**：压缩触发 `estimated_tokens≥24000`（compressor 自带 32000×0.75）疑因 working_messages 窗口化 / 与 budget effective_window(可能800K) 口径错配，导致 FP-5 WI-4.0 压缩在生产实践中难/不触发。goal-anchor 行为本身✅（231消息+52k dump 后仍准确召回原目标 PPT_B10测试报告）。TC-5.2/5.7 严格链路因压缩不 fire 无法真机验，BLOCKED 理由已升级为「压缩潜在不触发 + 已建调查」。
