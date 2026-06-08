@@ -297,10 +297,29 @@ function dispatch(msg: any) {
       // preview); the canonical assistant bubble lands here.
       const cur = store.sessions[sid];
       if (cur) {
-        const cleaned = cur.messages.filter(
+        let cleaned = cur.messages.filter(
           (m) => m.role !== ("assistant_delta" as any) &&
                  m.role !== ("reasoning_delta" as any),
         );
+        if (text) {
+          const lastUserIdx = cleaned.findLastIndex((m) => m.role === "user");
+          const hasSameTurnPreview = cleaned.some(
+            (m, idx) =>
+              idx > lastUserIdx &&
+              m.role === "assistant" &&
+              m.text === text,
+          );
+          if (hasSameTurnPreview) {
+            cleaned = cleaned.filter(
+              (m, idx) =>
+                !(
+                  idx > lastUserIdx &&
+                  m.role === "assistant" &&
+                  m.text === text
+                ),
+            );
+          }
+        }
         store.set_messages(sid, cleaned);
       }
       if (text) store.push_message(sid, { role: "assistant", text });
