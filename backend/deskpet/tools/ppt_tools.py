@@ -36,7 +36,10 @@ Failure modes
   warning embedded as a footnote text.
 
 The whole module is purely synchronous and CPU-cheap — no LLM calls
-here. Producing the outline is the LLM's job, layout is ours.
+except optional image generation. Producing the outline is the LLM's job,
+layout is ours. By default this stays offline; only slides with
+``image_prompt`` trigger synchronous ``image_tools.generate_images`` calls,
+and failures degrade to placeholders.
 """
 from __future__ import annotations
 
@@ -75,7 +78,7 @@ except ImportError:  # pragma: no cover
 
 
 VALID_LAYOUTS = (
-    "title", "section", "bullet", "two_column", "image", "quote", "toc", "chart",
+    "title", "section", "bullet", "two_column", "image", "image_full", "quote", "toc", "chart",
 )
 VALID_THEMES = ("minimal", "dark", "playful")
 
@@ -100,6 +103,8 @@ class SlideOutline:
     right_title: str = ""
     # image
     image_path: Optional[str] = None
+    # 整页生图：有则 ppt_create 自动生图填 image_path
+    image_prompt: Optional[str] = None
     caption: str = ""
     # quote
     quote: str = ""
@@ -127,6 +132,7 @@ class SlideOutline:
             left_title=(self.left_title or "").strip(),
             right_title=(self.right_title or "").strip(),
             image_path=(self.image_path or None),
+            image_prompt=(self.image_prompt or None),
             caption=(self.caption or "").strip(),
             quote=(self.quote or "").strip(),
             cite=(self.cite or "").strip(),
@@ -1227,6 +1233,75 @@ def _render_image_v2(slide, outline: SlideOutline, theme: Theme) -> None:
     )
 
 
+def _render_image_full_v2(slide, outline: SlideOutline, theme: Theme) -> None:
+    img = outline.image_path
+    if img and Path(img).is_file():
+        try:
+            slide.shapes.add_picture(
+                img,
+                Emu(0), Emu(0),
+                width=Emu(_SLIDE_WIDTH), height=Emu(_SLIDE_HEIGHT),
+            )
+            band_top = Emu(int(_SLIDE_HEIGHT * 0.78))
+            band_h = Emu(int(_SLIDE_HEIGHT * 0.22))
+            _add_shape(
+                slide, MSO_SHAPE.RECTANGLE,
+                left=Emu(0), top=band_top,
+                width=Emu(_SLIDE_WIDTH), height=band_h,
+                fill=theme.dark_bg_rgb, line=None,
+            )
+            _add_text(
+                slide, outline.title or "",
+                left=Inches(0.62), top=band_top + Inches(0.18),
+                width=Inches(8.76), height=Inches(0.54),
+                font_size=28, bold=True,
+                color=theme.dark_text_rgb,
+                font_name=theme.font_heading,
+                align="left",
+            )
+            if outline.caption:
+                _add_text(
+                    slide, outline.caption,
+                    left=Inches(0.64), top=band_top + Inches(0.78),
+                    width=Inches(8.72), height=Inches(0.34),
+                    font_size=13,
+                    color=theme.dark_muted_text_rgb,
+                    font_name=theme.font_body,
+                    align="left",
+                )
+            return
+        except Exception as exc:  # noqa: BLE001
+            log.debug("full image insert failed (%s); falling back to placeholder", exc)
+
+    _fill_slide_bg(slide, theme)
+    _add_title_block(slide, outline.title or "", outline.subtitle, theme)
+    _add_corner_motif(slide, theme)
+    _add_icon_badge(
+        slide, "IMG",
+        left=Inches(4.64), top=Inches(2.22),
+        size=Inches(0.72), theme=theme, fill=theme.secondary_rgb,
+    )
+    _add_text(
+        slide, f"image missing: {img}" if img else "image placeholder",
+        left=Inches(2.12), top=Inches(3.04),
+        width=Inches(5.76), height=Inches(0.42),
+        font_size=13,
+        color=theme.muted_text_rgb,
+        font_name=theme.font_body,
+        align="center",
+    )
+    if outline.caption:
+        _add_text(
+            slide, outline.caption,
+            left=Inches(2.12), top=Inches(3.54),
+            width=Inches(5.76), height=Inches(0.38),
+            font_size=12,
+            color=theme.muted_text_rgb,
+            font_name=theme.font_body,
+            align="center",
+        )
+
+
 def _render_quote_v2(slide, outline: SlideOutline, theme: Theme) -> None:
     _fill_slide_bg(slide, theme)
     _add_corner_motif(slide, theme)
@@ -1396,6 +1471,7 @@ _RENDERERS = {
     "bullet": _render_bullet_v2,
     "two_column": _render_two_column_v2,
     "image": _render_image_v2,
+    "image_full": _render_image_full_v2,
     "quote": _render_quote_v2,
     "toc": _render_toc_v2,
     "chart": _render_chart_v2,
@@ -1424,6 +1500,35 @@ def _add_footer(
         font_name=theme.font_body,
         align="right",
     )
+
+
+def _autofill_image_prompts(slides: list[SlideOutline]) -> None:
+    pending = [
+        (idx, so.image_prompt)
+        for idx, so in enumerate(slides)
+        if so.image_prompt and not so.image_path
+    ]
+    if not pending:
+        return
+
+    try:
+        try:
+            from .image_tools import generate_images
+        except Exception as exc:  # noqa: BLE001
+            log.warning("image prompt autofill unavailable: %s", exc)
+            return
+
+        prompts = [prompt for _, prompt in pending]
+        results = generate_images(prompts)
+        for (idx, prompt), result in zip(pending, results):
+            path = result.get("path") if isinstance(result, dict) else None
+            if path:
+                slides[idx].image_path = str(path)
+            else:
+                error = result.get("error") if isinstance(result, dict) else None
+                log.debug("image prompt generation failed: prompt=%r error=%r", prompt, error)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("image prompt autofill failed: %s", exc, exc_info=True)
 
 
 # ---------------------------------------------------------------------
@@ -1500,6 +1605,8 @@ def ppt_create(
             ),
         }
 
+    _autofill_image_prompts(slides)
+
     theme_obj = get_theme(theme)
     out_path = _resolve_output_path(output_path)
 
@@ -1519,7 +1626,7 @@ def ppt_create(
                 renderer(slide, so, theme_obj)
             # Footer everywhere except the very first title slide for breathing room.
             if so.layout != "title":
-                _add_footer(slide, theme_obj, i, total, dark=is_conclusion)
+                _add_footer(slide, theme_obj, i, total, dark=is_conclusion or so.layout == "image_full")
             # Speaker notes
             if so.notes:
                 notes_tf = slide.notes_slide.notes_text_frame
@@ -1591,9 +1698,9 @@ _PPT_SCHEMA = {
                 "description": (
                     "List of slide dicts, OR a JSON string of such a list. "
                     "Each slide: {layout, title, subtitle?, bullets?, left?, "
-                    "right?, left_title?, right_title?, image_path?, caption?, "
+                    "right?, left_title?, right_title?, image_path?, image_prompt?, caption?, "
                     "quote?, cite?, notes?}. layout ∈ {title, section, bullet, "
-                    "two_column, image, quote, toc}."
+                    "two_column, image, image_full, quote, toc}."
                 ),
                 "type": ["array", "string"],
             },
