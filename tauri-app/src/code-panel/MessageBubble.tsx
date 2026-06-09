@@ -12,6 +12,7 @@
  */
 import { useMemo, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
+import { invoke } from "@tauri-apps/api/core";
 
 import type { Message } from "../stores/sessionsStore";
 import { useSessionsStore } from "../stores/sessionsStore";
@@ -21,6 +22,32 @@ import { codePanelWS } from "./ws";
 
 interface Props {
   msg: Message;
+}
+
+// 判断 markdown 链接 href 是否指向本地文件（而非 http(s)/mailto 等网络链接）。
+// 命中：Windows 盘符路径 (C:\... / C:/...)、UNC (\\server\...)、file:// 协议、POSIX 绝对路径 (/...)。
+function isLocalFilePath(href: string): boolean {
+  if (!href) return false;
+  const h = href.trim();
+  if (/^[a-zA-Z]:[\\/]/.test(h)) return true; // C:\... or C:/...
+  if (h.startsWith("\\\\")) return true; // UNC \\server\share
+  if (/^file:\/\//i.test(h)) return true; // file:// 协议
+  if (h.startsWith("/")) return true; // POSIX 绝对路径
+  return false;
+}
+
+// 把 href 规整成 artifact_open 可用的本地路径（剥掉 file:// 前缀）。
+function toLocalPath(href: string): string {
+  const h = href.trim();
+  if (/^file:\/\//i.test(h)) {
+    try {
+      // file:///C:/x.pptx → C:/x.pptx ; file://server/share → //server/share
+      return decodeURIComponent(h.replace(/^file:\/\//i, "").replace(/^\/([a-zA-Z]:)/, "$1"));
+    } catch {
+      return h.replace(/^file:\/\//i, "");
+    }
+  }
+  return h;
 }
 
 export function MessageBubble({ msg }: Props) {
@@ -240,10 +267,33 @@ function AssistantBubble({ text }: { text: string }) {
             ol: ({ children }: any) => (
               <ol style={{ margin: "6px 0", paddingLeft: 22 }}>{children}</ol>
             ),
-            a: ({ href, children }: any) => (
-              <a href={href} target="_blank" rel="noreferrer noopener"
-                 style={{ color: "#67e8f9" }}>{children}</a>
-            ),
+            a: ({ href, children }: any) => {
+              const url = typeof href === "string" ? href : "";
+              if (isLocalFilePath(url)) {
+                // 本地文件链接（如 LLM 写的 [打开 PPT](C:\...\xxx.pptx)）：
+                // webview 里 href 打不开 → 改走 Tauri artifact_open 用系统默认应用打开。
+                const localPath = toLocalPath(url);
+                return (
+                  <a
+                    href={url}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      void invoke("artifact_open", { path: localPath }).catch(
+                        (err) => console.error("[artifact_open] failed", err),
+                      );
+                    }}
+                    style={{ color: "#67e8f9", cursor: "pointer" }}
+                    title={localPath}
+                  >
+                    {children}
+                  </a>
+                );
+              }
+              return (
+                <a href={url} target="_blank" rel="noreferrer noopener"
+                   style={{ color: "#67e8f9" }}>{children}</a>
+              );
+            },
           }}
         >
           {text}
