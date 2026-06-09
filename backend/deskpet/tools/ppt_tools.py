@@ -81,6 +81,7 @@ VALID_LAYOUTS = (
     "title", "section", "bullet", "two_column", "image", "image_full", "quote", "toc", "chart",
 )
 VALID_THEMES = ("minimal", "dark", "playful")
+_TEMPLATES_DIR = Path(__file__).parent / "ppt_templates"
 
 
 # ---------------------------------------------------------------------
@@ -1531,6 +1532,45 @@ def _autofill_image_prompts(slides: list[SlideOutline]) -> None:
         log.warning("image prompt autofill failed: %s", exc, exc_info=True)
 
 
+def _list_bundled_templates() -> list[str]:
+    """Return bundled template names without raising."""
+    try:
+        if not _TEMPLATES_DIR.is_dir():
+            return []
+        return sorted(
+            path.stem
+            for path in _TEMPLATES_DIR.glob("*.pptx")
+            if path.is_file()
+        )
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _resolve_template_path(template: Optional[str]) -> Optional[str]:
+    """Resolve a direct .pptx path or bundled template name without raising."""
+    try:
+        raw = str(template or "").strip()
+        if not raw:
+            return None
+
+        direct = Path(raw).expanduser()
+        if direct.is_file():
+            return str(direct.resolve())
+
+        name = Path(raw).name
+        if name.lower().endswith(".pptx"):
+            name = name[:-5]
+        if not name:
+            return None
+
+        bundled = _TEMPLATES_DIR / f"{name}.pptx"
+        if bundled.is_file():
+            return str(bundled.resolve())
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
 def _pick_template_layout(prs, deskpet_layout: str):
     """Map DeskPet layout names to a template slide layout."""
     mapping = {
@@ -1728,9 +1768,9 @@ def ppt_create(
     output_path:
         Absolute path. Defaults to ``<tempdir>/deskpet-ppt-<ts>.pptx``.
     template:
-        Optional .pptx template path. When valid, DeskPet uses the
-        template slide layouts and fills placeholders so formatting is
-        inherited from the template.
+        Optional bundled template name or .pptx template path. When
+        valid, DeskPet uses the template slide layouts and fills
+        placeholders so formatting is inherited from the template.
 
     Returns
     -------
@@ -1777,16 +1817,16 @@ def ppt_create(
     out_path = _resolve_output_path(output_path)
 
     if template:
-        tpl = Path(template).expanduser()
-        if tpl.is_file():
+        resolved = _resolve_template_path(template)
+        if resolved:
             result = _render_with_template(
-                slides, str(tpl), title=title, author=author, out_path=out_path,
+                slides, resolved, title=title, author=author, out_path=out_path,
             )
             if result is not None:
                 return result
             log.warning("template render failed, falling back to from-scratch engine")
         else:
-            log.warning("template path not found: %s - falling back to from-scratch engine", template)
+            log.warning("template not found: %s - falling back to from-scratch engine", template)
 
     theme_obj = get_theme(theme)
 
@@ -1921,6 +1961,42 @@ _PPT_SCHEMA = {
 }
 
 
+def _build_template_description() -> str:
+    templates = _list_bundled_templates()
+    available = (
+        "当前可用 bundled 模板名：" + ", ".join(templates)
+        if templates
+        else "当前无 bundled 模板"
+    )
+    return (
+        "Optional bundled template name or .pptx absolute path. When provided "
+        "and valid, DeskPet loads it, adds slides from its layouts, fills "
+        "placeholders, and inherits editable formatting from the template. "
+        "使用模板能产出更专业/精美的可编辑 PPT；用户要“正式/专业/精美”PPT 时优先用模板。"
+        f"{available}。"
+    )
+
+
+def _build_ppt_schema() -> dict[str, Any]:
+    schema = {
+        **_PPT_SCHEMA,
+        "parameters": {
+            **_PPT_SCHEMA["parameters"],
+            "properties": {
+                **_PPT_SCHEMA["parameters"]["properties"],
+            },
+        },
+    }
+    schema["parameters"]["properties"]["template"] = {
+        **schema["parameters"]["properties"]["template"],
+        "description": _build_template_description(),
+    }
+    return schema
+
+
+_PPT_SCHEMA = _build_ppt_schema()
+
+
 def _handle_ppt_create(args: dict, task_id: str) -> str:
     """Sync handler wired into the tool registry.
 
@@ -1951,7 +2027,7 @@ def _register_ppt_tool() -> None:
         registry.register(
             "ppt_create",
             "ppt",
-            _PPT_SCHEMA,
+            _build_ppt_schema(),
             _handle_ppt_create,
             permission_category="write_file",
             timeout_seconds=30.0,
