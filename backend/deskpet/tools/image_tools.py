@@ -33,17 +33,19 @@ from .registry import registry
 
 _DEFAULT_MODEL = "gpt-image-2"
 _DEFAULT_SIZE = "1024x1024"
-# 2026-05-16 timeout 协调：之前 per-request=registry=120s → 单次慢出图
-# 或一次重试就被 registry 的 asyncio.wait_for(120s) 砍掉，重试形同虚设。
-# 现在 per-HTTP-attempt=100s，最多 4 次（3 次重试足够接住 the relay 瞬时
-# 断连——实测断连发生在 ~62s），registry 总超时另设 _TOOL_TIMEOUT_S
-# 覆盖 4×100 + 3+8+20 退避，保证重试能真正跑完。
-_TIMEOUT_S = 100.0          # 单次 HTTP 请求超时
-_MAX_ATTEMPTS = 4           # 总尝试次数（3 次重试）
-_RETRY_BACKOFF = (3.0, 8.0, 20.0)  # attempt 2/3/4 前指数退避
+# 2026-06-09 快速失败调参（真机实测修正）：B-1 曾把重试提到 4×100s=400s+
+# 以为 relay 是「瞬时断连」（实测断连 ~62s，retry 能接住）。但真机发现 relay
+# 的 gpt-image-2 出图接口是「挂起不返回」（连试都打到上游、全程无响应）——
+# 这种情况下 4 次×100s 只会让用户「在画了」后干等 ~7 分钟才收到失败消息。
+# 改为快速失败：单次 70s（> 62s 瞬时阈值，仍能接住真·瞬时断连）+ 仅 1 次
+# 重试，最坏 ~145s 就明确告知出图失败，而不是死等。ssl/protocol 瞬时归类
+# 重试逻辑保留（见下方 _generate_png 的 except 元组）。
+_TIMEOUT_S = 70.0           # 单次 HTTP 请求超时（> 62s 瞬时断连阈值）
+_MAX_ATTEMPTS = 2           # 总尝试次数（1 次重试，接瞬时；不死等挂起）
+_RETRY_BACKOFF = (5.0,)     # attempt 2 前退避
 # 注册到 ToolRegistry 的总超时：必须 > 最坏重试预算
-# (4×100 + 3+8+20 = 431) 否则 registry 会在重试跑完前杀掉 handler。
-_TOOL_TIMEOUT_S = 480.0
+# (2×70 + 5 = 145) 否则 registry 会在重试跑完前杀掉 handler。
+_TOOL_TIMEOUT_S = 160.0
 
 _SCHEMA: dict[str, Any] = {
     "name": "generate_image",
