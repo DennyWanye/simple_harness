@@ -79,6 +79,29 @@ class _FakeCompressor:
         return CompressionResult(messages=list(messages), compressed=False)
 
 
+class _FakeContextManager:
+    """Minimal ContextManager facade with a per-session compaction threshold."""
+
+    def __init__(self, *, estimated_tokens: int, compact_at_tokens: int):
+        from agent.token_budget import BudgetCheck, BudgetCheckResult
+
+        self.result = BudgetCheckResult(
+            verdict=BudgetCheck.OK,
+            estimated_tokens=estimated_tokens,
+            context_window=32000,
+            ratio=estimated_tokens / 32000,
+        )
+
+        class _Cfg:
+            pass
+
+        self.config = _Cfg()
+        self.config.compact_at_tokens = compact_at_tokens
+
+    def check_budget(self, messages, *, model: str):
+        return self.result
+
+
 def _make_msgs(n_non_system: int = 4, with_system: bool = True):
     """Build a short message list with optional system prefix."""
     out: list[dict] = []
@@ -178,6 +201,40 @@ async def test_compressor_fires_when_threshold_exceeded():
     assert len(fake_compressor.compress_calls) >= 1, "compress() not called"
     # should_compress must have been called
     assert len(fake_compressor.should_compress_calls) >= 1, "should_compress() not called"
+
+
+@pytest.mark.asyncio
+async def test_context_manager_compact_at_overrides_static_compressor_threshold():
+    """task_ae1af91b: AgentLoop must use the per-session ContextManager
+    compaction waterline, not only the boot-time ContextCompressor default.
+
+    A real code session resolves model/project context into ContextManager;
+    if that says estimated_tokens crossed compact_at_tokens, compression
+    must fire even when the shared compressor's legacy 32k threshold would
+    say "not yet".
+    """
+    compressed_out = [
+        {"role": "system", "content": "[skill_prelude] instructions here"},
+        {"role": "assistant", "content": "[压缩摘要 / compressed summary]\nSummary."},
+        {"role": "user", "content": "latest"},
+    ]
+    fake_compressor = _FakeCompressor(
+        should=False,
+        compressed_messages=compressed_out,
+    )
+    ctx = _FakeContextManager(estimated_tokens=150, compact_at_tokens=100)
+
+    loop = AgentLoop(
+        llm_registry=_FakeLLM(),
+        tool_registry=_FakeToolRegistry(),
+        context_manager=ctx,
+        compressor=fake_compressor,
+    )
+
+    async for _ in loop.run(_make_msgs(), session_id="test_ctx_threshold"):
+        pass
+
+    assert len(fake_compressor.compress_calls) >= 1
 
 
 # ---------------------------------------------------------------------------

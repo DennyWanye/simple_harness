@@ -714,7 +714,20 @@ class AgentLoop:
                     _ctoken_est = getattr(_budget, "estimated_tokens", 0)
                 except Exception:  # noqa: BLE001
                     _ctoken_est = 0
-                if self.compressor.should_compress(_ctoken_est):
+                _ctx_should_compress = False
+                try:
+                    _ctx_cfg = getattr(self._ctx, "config", None)
+                    _ctx_compact_at = getattr(_ctx_cfg, "compact_at_tokens", None)
+                    if _ctx_compact_at is not None:
+                        _ctx_should_compress = (
+                            _ctoken_est >= int(_ctx_compact_at) > 0
+                        )
+                except Exception:  # noqa: BLE001
+                    _ctx_should_compress = False
+                if (
+                    self.compressor.should_compress(_ctoken_est)
+                    or _ctx_should_compress
+                ):
                     try:
                         _gt = None
                         if self.session_goal_store is not None:

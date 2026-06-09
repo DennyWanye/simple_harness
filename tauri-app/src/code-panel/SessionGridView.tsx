@@ -75,6 +75,29 @@ export function buildSetModelMessage(
   return { type: "code_session_set_model", payload };
 }
 
+/** Return the latest unresolved skill candidate in a session message list.
+ * Dashboard tiles render their own compact confirmation controls, so this
+ * mirrors MessageBubble's SkillCandidateCard lookup without needing a DOM. */
+export function findAwaitingSkillCandidate(messages: Message[]): Message | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i];
+    if (m.role === "skill_candidate" && m.skill_candidate_awaiting) {
+      return m;
+    }
+  }
+  return null;
+}
+
+export function buildSkillCandidateConfirmMessage(
+  candidate_id: number,
+  accept: boolean,
+): { type: string; payload: Record<string, unknown> } {
+  return {
+    type: "skill_candidate_confirm",
+    payload: { candidate_id, accept },
+  };
+}
+
 // code-session-model-params: the model dropdown is data-driven from the
 // relay's live /models catalog (see codeModelsStore +
 // buildModelOptionsFromCatalog / capsForModel). The old hardcoded
@@ -439,12 +462,21 @@ function Tile({
   const awaiting_plan = messages.find(
     (m) => m.role === "plan" && m.plan_awaiting_confirm,
   );
+  const awaiting_skill_candidate = findAwaitingSkillCandidate(messages);
   const decide_plan = (decision: "go" | "cancel") => {
     codePanelWS.send({
       type: "plan_confirm",
       payload: { session_id, decision },
     });
     useSessionsStore.getState().resolve_plan(session_id, awaiting_plan?.id);
+  };
+  const decide_skill_candidate = (candidateId: number, accept: boolean) => {
+    codePanelWS.send(buildSkillCandidateConfirmMessage(candidateId, accept));
+    useSessionsStore.getState().resolve_skill_candidate(
+      session_id,
+      candidateId,
+      accept,
+    );
   };
 
   return (
@@ -763,6 +795,76 @@ function Tile({
               }}
             >
               取消
+            </button>
+          </div>
+        </div>
+      )}
+
+      {awaiting_skill_candidate && (
+        <div
+          data-testid="skill-candidate-card"
+          style={{
+            margin: "6px 0",
+            padding: "8px 10px",
+            background: "rgba(16, 185, 129, 0.12)",
+            border: "1px solid rgba(16, 185, 129, 0.5)",
+            borderRadius: 8,
+            fontSize: 11.5,
+            color: "#d1fae5",
+          }}
+        >
+          <div style={{ fontWeight: 600, color: "#6ee7b7", marginBottom: 4 }}>
+            ✨ 新技能 · {awaiting_skill_candidate.skill_candidate_name ?? "(未命名技能)"}
+          </div>
+          {awaiting_skill_candidate.skill_candidate_description && (
+            <div style={{ color: "#94a3b8", fontSize: 10.5, marginBottom: 6 }}>
+              {awaiting_skill_candidate.skill_candidate_description}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              type="button"
+              data-testid="skill-candidate-accept"
+              onClick={() =>
+                decide_skill_candidate(
+                  awaiting_skill_candidate.skill_candidate_id ?? 0,
+                  true,
+                )
+              }
+              style={{
+                flex: 1,
+                background: "#10b981",
+                color: "#fff",
+                border: "none",
+                borderRadius: 6,
+                padding: "5px 10px",
+                fontSize: 11.5,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              ✓ 保存技能
+            </button>
+            <button
+              type="button"
+              data-testid="skill-candidate-ignore"
+              onClick={() =>
+                decide_skill_candidate(
+                  awaiting_skill_candidate.skill_candidate_id ?? 0,
+                  false,
+                )
+              }
+              style={{
+                background: "rgba(148, 163, 184, 0.2)",
+                color: "#e2e8f0",
+                border: "1px solid rgba(148, 163, 184, 0.3)",
+                borderRadius: 6,
+                padding: "5px 12px",
+                fontSize: 11.5,
+                cursor: "pointer",
+              }}
+            >
+              忽略
             </button>
           </div>
         </div>

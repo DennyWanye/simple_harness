@@ -12,6 +12,10 @@ try:
 except AttributeError:
     pass
 
+from deskpet.frozen_worker_dispatch import dispatch_frozen_worker_if_requested
+
+dispatch_frozen_worker_if_requested()
+
 import asyncio
 import os
 import re

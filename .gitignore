@@ -79,6 +79,8 @@ debug/assembler_trace_*.json
 backend/.tmp-pytest-root/
 backend/.pytest-basetemp/
 backend/temp/
+# goal-completion 手测/运行产物（含 userdata: state.db/device_id/llm_runtime/密钥）— 永不入库
+.tmp/
 
 # P4-S20+: PyInstaller MSI-target dist (7.7 GB, regeneratable).
 backend/dist-msi/
