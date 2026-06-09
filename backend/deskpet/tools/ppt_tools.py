@@ -64,7 +64,7 @@ try:  # pragma: no cover — import probe
     from pptx import Presentation as _Presentation
     from pptx.util import Inches, Pt, Emu
     from pptx.dml.color import RGBColor
-    from pptx.enum.shapes import MSO_SHAPE
+    from pptx.enum.shapes import MSO_SHAPE, PP_PLACEHOLDER
     from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
     from pptx.enum.dml import MSO_FILL_TYPE
     from pptx.chart.data import CategoryChartData
@@ -72,7 +72,7 @@ try:  # pragma: no cover — import probe
     _HAS_PPTX = True
 except ImportError:  # pragma: no cover
     _Presentation = None  # type: ignore
-    Inches = Pt = Emu = RGBColor = MSO_SHAPE = PP_ALIGN = MSO_ANCHOR = MSO_FILL_TYPE = None  # type: ignore
+    Inches = Pt = Emu = RGBColor = MSO_SHAPE = PP_PLACEHOLDER = PP_ALIGN = MSO_ANCHOR = MSO_FILL_TYPE = None  # type: ignore
     CategoryChartData = XL_CHART_TYPE = XL_LEGEND_POSITION = None  # type: ignore
     _HAS_PPTX = False
 
@@ -1531,6 +1531,169 @@ def _autofill_image_prompts(slides: list[SlideOutline]) -> None:
         log.warning("image prompt autofill failed: %s", exc, exc_info=True)
 
 
+def _pick_template_layout(prs, deskpet_layout: str):
+    """Map DeskPet layout names to a template slide layout."""
+    mapping = {
+        "title": ("title slide", 0),
+        "section": ("section", 2),
+        "bullet": ("title and content", 1),
+        "two_column": ("two content", 3),
+        "image": ("picture", 8),
+        "image_full": ("picture", 8),
+        "quote": ("section", 2),
+        "toc": ("title and content", 1),
+        "chart": ("title and content", 1),
+    }
+    keyword, fallback_idx = mapping.get(deskpet_layout, ("title and content", 1))
+
+    for layout in prs.slide_layouts:
+        if keyword in (layout.name or "").lower():
+            return layout
+
+    if len(prs.slide_layouts) == 0:
+        raise ValueError("template has no slide layouts")
+    idx = min(max(fallback_idx, 0), len(prs.slide_layouts) - 1)
+    try:
+        return prs.slide_layouts[idx]
+    except Exception:  # noqa: BLE001
+        return prs.slide_layouts[0]
+
+
+def _template_placeholders(slide, *types: Any) -> list[Any]:
+    placeholders = []
+    for shape in slide.shapes:
+        if not getattr(shape, "is_placeholder", False):
+            continue
+        try:
+            if shape.placeholder_format.type in types:
+                placeholders.append(shape)
+        except Exception:  # noqa: BLE001
+            continue
+    return placeholders
+
+
+def _set_placeholder_text(ph, text: str) -> None:
+    if not text:
+        return
+    try:
+        ph.text_frame.text = text
+    except Exception:  # noqa: BLE001
+        try:
+            ph.text = text
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _fill_placeholder_lines(ph, lines: Sequence[str], *, bold_first: bool = False) -> None:
+    clean = [str(line).strip() for line in lines if str(line).strip()]
+    if not clean:
+        return
+    try:
+        tf = ph.text_frame
+        tf.text = clean[0]
+        if bold_first and tf.paragraphs and tf.paragraphs[0].runs:
+            tf.paragraphs[0].runs[0].font.bold = True
+        for line in clean[1:]:
+            p = tf.add_paragraph()
+            p.text = line
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _render_with_template(
+    slides: list[SlideOutline], template_path: str, *, title: str, author: str, out_path: Path,
+) -> Optional[dict[str, Any]]:
+    try:
+        prs = _Presentation(template_path)
+
+        # 模板文件常带示例页；这里只保留 master/layout/theme，避免用户示例页混入输出。
+        xml_slides = prs.slides._sldIdLst
+        for sldId in list(xml_slides):
+            xml_slides.remove(sldId)
+
+        for so in slides:
+            layout = _pick_template_layout(prs, so.layout)
+            slide = prs.slides.add_slide(layout)
+
+            title_ph = _template_placeholders(
+                slide, PP_PLACEHOLDER.TITLE, PP_PLACEHOLDER.CENTER_TITLE,
+            )
+            if title_ph:
+                _set_placeholder_text(title_ph[0], so.title)
+
+            subtitle_ph = _template_placeholders(slide, PP_PLACEHOLDER.SUBTITLE)
+            if subtitle_ph:
+                _set_placeholder_text(subtitle_ph[0], so.subtitle)
+
+            body_ph = _template_placeholders(slide, PP_PLACEHOLDER.BODY, PP_PLACEHOLDER.OBJECT)
+            object_ph = _template_placeholders(slide, PP_PLACEHOLDER.OBJECT)
+
+            if so.layout == "two_column":
+                targets = object_ph if len(object_ph) >= 2 else body_ph
+                if targets:
+                    _fill_placeholder_lines(
+                        targets[0],
+                        ([so.left_title] if so.left_title else []) + so.left,
+                        bold_first=bool(so.left_title),
+                    )
+                if len(targets) > 1:
+                    _fill_placeholder_lines(
+                        targets[1],
+                        ([so.right_title] if so.right_title else []) + so.right,
+                        bold_first=bool(so.right_title),
+                    )
+            elif so.layout in {"section", "quote"}:
+                lines = [so.subtitle] if so.layout == "section" else [so.quote, so.cite]
+                if body_ph:
+                    _fill_placeholder_lines(body_ph[0], lines)
+            elif so.layout not in {"title", "image", "image_full"} and body_ph:
+                _fill_placeholder_lines(body_ph[0], so.bullets)
+
+            if so.layout in {"image", "image_full"}:
+                picture_ph = _template_placeholders(slide, PP_PLACEHOLDER.PICTURE)
+                if picture_ph and so.image_path and Path(str(so.image_path)).is_file():
+                    try:
+                        picture_ph[0].insert_picture(str(so.image_path))
+                    except Exception as exc:  # noqa: BLE001
+                        log.debug("template picture insert failed: %s", exc)
+                caption_targets = [
+                    ph for ph in body_ph
+                    if ph not in picture_ph and ph not in title_ph and ph not in subtitle_ph
+                ]
+                if caption_targets and so.caption:
+                    _set_placeholder_text(caption_targets[0], so.caption)
+
+            if so.notes:
+                slide.notes_slide.notes_text_frame.text = so.notes
+
+        try:
+            cp = prs.core_properties
+            if title:
+                cp.title = title
+            if author:
+                cp.author = author
+                cp.last_modified_by = author
+        except Exception:  # noqa: BLE001
+            pass
+
+        prs.save(out_path)
+        return {
+            "ok": True,
+            "path": str(out_path),
+            "slide_count": len(slides),
+            "theme": "template",
+            "artifacts": [{
+                "kind": "file",
+                "path": str(out_path),
+                "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "title": Path(str(out_path)).name,
+            }],
+        }
+    except Exception as exc:  # noqa: BLE001
+        log.warning("template render failed: %s", exc, exc_info=True)
+        return None
+
+
 # ---------------------------------------------------------------------
 # Public entrypoint
 # ---------------------------------------------------------------------
@@ -1543,6 +1706,7 @@ def ppt_create(
     title: str = "",
     author: str = "DeskPet",
     output_path: Optional[str] = None,
+    template: Optional[str] = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """Render an outline into a ``.pptx`` file on disk.
@@ -1563,6 +1727,10 @@ def ppt_create(
         Set on the document core properties.
     output_path:
         Absolute path. Defaults to ``<tempdir>/deskpet-ppt-<ts>.pptx``.
+    template:
+        Optional .pptx template path. When valid, DeskPet uses the
+        template slide layouts and fills placeholders so formatting is
+        inherited from the template.
 
     Returns
     -------
@@ -1606,9 +1774,21 @@ def ppt_create(
         }
 
     _autofill_image_prompts(slides)
+    out_path = _resolve_output_path(output_path)
+
+    if template:
+        tpl = Path(template).expanduser()
+        if tpl.is_file():
+            result = _render_with_template(
+                slides, str(tpl), title=title, author=author, out_path=out_path,
+            )
+            if result is not None:
+                return result
+            log.warning("template render failed, falling back to from-scratch engine")
+        else:
+            log.warning("template path not found: %s - falling back to from-scratch engine", template)
 
     theme_obj = get_theme(theme)
-    out_path = _resolve_output_path(output_path)
 
     try:
         prs = _Presentation()
@@ -1700,7 +1880,8 @@ _PPT_SCHEMA = {
                     "Each slide: {layout, title, subtitle?, bullets?, left?, "
                     "right?, left_title?, right_title?, image_path?, image_prompt?, caption?, "
                     "quote?, cite?, notes?}. layout ∈ {title, section, bullet, "
-                    "two_column, image, image_full, quote, toc}."
+                    "two_column, image, image_full, quote, toc}. In template mode, "
+                    "layout maps onto the template's standard slide layouts."
                 ),
                 "type": ["array", "string"],
             },
@@ -1715,6 +1896,14 @@ _PPT_SCHEMA = {
             "output_path": {
                 "type": "string",
                 "description": "Absolute output path. Defaults to a temp file.",
+            },
+            "template": {
+                "type": "string",
+                "description": (
+                    "Optional .pptx template path. When provided and valid, DeskPet "
+                    "loads it, adds slides from its layouts, fills placeholders, and "
+                    "inherits editable formatting from the template."
+                ),
             },
             "dry_run": {
                 "type": "boolean",
@@ -1744,6 +1933,7 @@ def _handle_ppt_create(args: dict, task_id: str) -> str:
         title=str(args.get("title") or ""),
         author=str(args.get("author") or "DeskPet"),
         output_path=(str(args["output_path"]) if args.get("output_path") else None),
+        template=(str(args["template"]) if args.get("template") else None),
         dry_run=bool(args.get("dry_run", False)),
     )
     return json.dumps(result, ensure_ascii=False)
