@@ -21,6 +21,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import ssl
 import sys
 import time
 from pathlib import Path
@@ -34,15 +35,15 @@ _DEFAULT_MODEL = "gpt-image-2"
 _DEFAULT_SIZE = "1024x1024"
 # 2026-05-16 timeout 协调：之前 per-request=registry=120s → 单次慢出图
 # 或一次重试就被 registry 的 asyncio.wait_for(120s) 砍掉，重试形同虚设。
-# 现在 per-HTTP-attempt=100s，最多 2 次（1 次重试足够接住 the relay 瞬时
+# 现在 per-HTTP-attempt=100s，最多 4 次（3 次重试足够接住 the relay 瞬时
 # 断连——实测断连发生在 ~62s），registry 总超时另设 _TOOL_TIMEOUT_S
-# 覆盖 2×100 + 退避，保证重试能真正跑完。
+# 覆盖 4×100 + 3+8+20 退避，保证重试能真正跑完。
 _TIMEOUT_S = 100.0          # 单次 HTTP 请求超时
-_MAX_ATTEMPTS = 2           # 总尝试次数（1 次重试）
-_RETRY_BACKOFF = (5.0,)     # attempt 2 前退避
+_MAX_ATTEMPTS = 4           # 总尝试次数（3 次重试）
+_RETRY_BACKOFF = (3.0, 8.0, 20.0)  # attempt 2/3/4 前指数退避
 # 注册到 ToolRegistry 的总超时：必须 > 最坏重试预算
-# (2×100 + 5 = 205) 否则 registry 会在重试跑完前杀掉 handler。
-_TOOL_TIMEOUT_S = 240.0
+# (4×100 + 3+8+20 = 431) 否则 registry 会在重试跑完前杀掉 handler。
+_TOOL_TIMEOUT_S = 480.0
 
 _SCHEMA: dict[str, Any] = {
     "name": "generate_image",
@@ -224,6 +225,8 @@ def _generate_png(
             httpx.ReadError,
             httpx.WriteError,
             httpx.PoolTimeout,
+            httpx.ProtocolError,
+            ssl.SSLError,
         ) as exc:
             last_transient = f"{type(exc).__name__}: {exc}"
         except httpx.HTTPError as exc:
@@ -243,10 +246,72 @@ def _generate_png(
 def _save_image(png: bytes) -> Path:
     """Save PNG into workspace, return the path. Raises on IO failure."""
     ws = _workspace_dir()
-    fname = f"genimg_{time.strftime('%Y%m%dT%H%M%S', time.gmtime())}.png"
+    stamp = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
+    fname = f"genimg_{stamp}_{time.time_ns()}.png"
     out = ws / fname
     out.write_bytes(png)
     return out
+
+
+def generate_images(prompts, *, size=_DEFAULT_SIZE, model=None):
+    """同步批量文生图，给 PPT 整页生图用（async worker 不返回路径，这里要确定性同步路径）。
+    逐 prompt 调 _generate_png + _save_image。返回 list，每项:
+    {"prompt": str, "path": str|None, "error": str|None}。
+    任一 prompt 失败不影响其它（该项 path=None,error=原因）。从不抛异常。
+    """
+    def _safe_prompt_text(value) -> str:
+        if isinstance(value, str):
+            return value
+        try:
+            return str(value)
+        except Exception:  # noqa: BLE001
+            return ""
+
+    try:
+        resolved_model = model or _image_model()
+    except Exception:  # noqa: BLE001
+        resolved_model = _DEFAULT_MODEL
+    results = []
+    if not isinstance(prompts, list):
+        return [
+            {
+                "prompt": _safe_prompt_text(prompts),
+                "path": None,
+                "error": "empty prompt",
+            }
+        ]
+    for prompt in prompts:
+        if not isinstance(prompt, str) or not prompt.strip():
+            results.append(
+                {
+                    "prompt": _safe_prompt_text(prompt),
+                    "path": None,
+                    "error": "empty prompt",
+                }
+            )
+            continue
+        try:
+            png, err = _generate_png(prompt, size, resolved_model)
+            if png is None:
+                results.append({"prompt": prompt, "path": None, "error": err or "未知错误"})
+                continue
+            try:
+                out = _save_image(png)
+            except Exception as exc:  # noqa: BLE001
+                results.append(
+                    {"prompt": prompt, "path": None, "error": f"写入 workspace 失败：{exc}"}
+                )
+                continue
+            results.append({"prompt": prompt, "path": str(out), "error": None})
+        except Exception as exc:  # noqa: BLE001
+            results.append(
+                {
+                    "prompt": prompt,
+                    "path": None,
+                    "error": f"未预期错误：{type(exc).__name__}: {exc}",
+                }
+            )
+    return results
 
 
 def _validate_prompt(args: dict[str, Any]) -> str | None:
