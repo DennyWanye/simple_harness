@@ -1,0 +1,47 @@
+任务：修 DeskPet 两个真 bug —— (B-1) 工具 receipt 序列化炸 (B-2) 用户说"生成图片"时 LLM 误调 web_fetch 网搜而不调 generate_image AI 生图。
+
+== 证据(真机日志抓到) ==
+用户在桌宠聊天发「帮我生成一张图片并保存到本地：一只戴墨镜的橘猫，扁平插画风」：
+- backend log: `POST https://chinzy.com/v1/images/generations` 出现 **0 次** —— 图像接口从没被调。
+- 实际被调工具是 web_fetch(调了好几次)，最后还 codify 了 web-research-summary 技能。
+- 反复 WARNING: `receipt_store_provider raised in execute_tool 'web_fetch': Object of type ImageGenerationWorker is not JSON serializable`。
+
+== 目标文件(只许动这些) ==
+- B-1: G:\projects\deskpet\backend\deskpet\tools\registry.py
+- B-2: G:\projects\deskpet\backend\deskpet\tools\image_tools.py（generate_image 工具描述）+ 必要时 G:\projects\deskpet\backend\deskpet\tools\web_tools.py（web_fetch 描述）
+**绝对不要碰 ppt_tools.py / ppt_templates/（另一个子代理在改）**。
+
+== B-1：修 receipt 序列化(registry.py) ==
+根因：execute_tool(~line 686) 把 per-session 注入上下文 merge 进 merged_params：
+    merged_params.update(self._session_context.get(session_id, {}))  # 注入 _session_id / _image_worker / _write_scope_root 等
+    merged_params.update(dict(params or {}))
+然后 ~line 818 建 receipt 时 `args=dict(merged_params or {})` 把整个 merged_params(含 _image_worker 这种不可 JSON 序列化的对象)塞进 receipt → receipt_store_provider 序列化 args 时炸 → line 827 warning。
+修法：
+- 建 receipt 的 args 只用「LLM 真正传的参数」或至少剔除注入的内部键。最稳：定义内部注入键前缀约定——所有 _session_context 注入的键都以 "_" 开头(_session_id/_image_worker/_write_scope_root 等)，建 receipt 前过滤掉以 "_" 开头的键：
+    receipt_args = {k: v for k, v in merged_params.items() if not (isinstance(k, str) and k.startswith("_"))}
+  用 receipt_args 替换 line 818 的 `args=dict(merged_params or {})`。
+- 额外稳健：即使过滤后仍有非 JSON 值，receipt 序列化也不该让工具执行报 warning/失败。确认/保证 receipt 构建对不可序列化值兜底(若 receipt 模型/provider 自己 json.dumps，加 default=str 或 try/except 降级)。最小改动优先用上面的前缀过滤；若 receipt_store_provider 内部还会炸，补一层 best-effort(default=str)。
+- 不要改 execute_tool 的工具执行语义(merged_params 仍照常传给 handler，注入键工具照常能用)；只改「进 receipt 的那份 args」。
+
+== B-2：修工具路由(让"生成图片"走 generate_image 不走 web_fetch) ==
+根因分析：capability_gate PASS 后，整个 toolset(含 web_fetch + generate_image)都给 LLM，gpt-5.5 对「生成一张图片并保存到本地」误选了 web_fetch(把它理解成"下载网图")。这是工具描述区分度不够。
+请先读 image_tools.py 的 _SCHEMA["description"] 和 web_tools.py 里 web_fetch 的 description，然后：
+- 强化 generate_image 描述：明确「**AI 文生图/原创生成**图片(画/生成/做海报/插画/图标/头像)时**必须用本工具**；本工具会真生成并保存到本地返回路径。**不要用 web_fetch/网页搜索去找图**」。
+- 弱化/澄清 web_fetch 描述：明确「web_fetch 用于抓取**网页文本内容**做调研，**不是用来生成或获取图片**；用户要生成/画图片请用 generate_image」。(若 web_fetch 描述里有诱导"下载/图片"字样，去掉或限定。)
+- 不改这两个工具的入参 schema/handler 行为，只改 description 文案。
+- 注意：真正验证 LLM 路由对不对需要真机 live test(relay+LLM)，本任务只把描述区分度做到位 + 单测覆盖「描述含正确关键词」。在最后说明这点。
+
+== 硬约束 ==
+- 只动 registry.py + image_tools.py(+按需 web_tools.py)。不碰 ppt_tools.py。
+- 不改工具执行语义、不改入参 schema 结构、不加新依赖。
+- 现有测试不破。中文注释风格一致。
+
+== 验收(必须自测) ==
+工作目录 G:\projects\deskpet\backend；解释器 .venv\Scripts\python.exe
+1. 现有不破：.venv\Scripts\python.exe -m pytest tests/test_generate_image_tool.py tests/test_image_reliability_b1.py -q 全绿；若有 registry 相关测试(找 tests/test_*registr* 或 test_tool*)也跑一遍绿。
+2. 新测试 tests/test_b_routing_and_receipt.py：
+   a. test_receipt_args_strip_injected_keys：构造/调用 execute_tool(或直接测建 receipt 的那段逻辑)，注入含 _image_worker=object()、_session_id="s"、真实参数 url="x"；断言进 receipt 的 args 不含任何 "_" 开头键、含 url；且 execute_tool 不再因序列化抛 warning/异常(可 mock receipt_store_provider 验证收到的 args 已过滤)。
+   b. test_generate_image_description_disambiguates：断言 generate_image _SCHEMA["description"] 含「生成/AI/不要…搜索」类关键词(明确文生图、非网搜)。
+   c. test_web_fetch_description_not_for_images：断言 web_fetch 描述明确「不用于生成/获取图片」类澄清。
+3. 跑新测试全绿。
+完成后输出：B-1 改的行 + 过滤逻辑、B-2 两个描述改了啥、测试 pass 结果、并明确说明 B-2 路由真验需 live test。

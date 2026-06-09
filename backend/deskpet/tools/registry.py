@@ -812,10 +812,22 @@ class ToolRegistry:
                     # WI-T2.3 v3 P0 修：用真实 _started_at（dispatch 开始时记
                     # 录）+ now() 算 duration_ms。原 v2.1 用两次 now() 间隔仅
                     # 微秒，导致 receipt duration_ms ~0 → p95 监控失效。
+                    receipt_args = {
+                        k: v for k, v in dict(merged_params or {}).items()
+                        if not (isinstance(k, str) and k.startswith("_"))
+                    }
+                    try:
+                        receipt_args = json.loads(json.dumps(
+                            receipt_args, ensure_ascii=False, default=str
+                        ))
+                    except (TypeError, ValueError):
+                        receipt_args = {
+                            str(k): str(v) for k, v in receipt_args.items()
+                        }
                     emit_receipt(
                         store,
                         tool_name=name,
-                        args=dict(merged_params or {}),
+                        args=receipt_args,
                         started_at=_started_at,
                         ended_at=_dt.now(_tz.utc),
                         ok=envelope_ok,

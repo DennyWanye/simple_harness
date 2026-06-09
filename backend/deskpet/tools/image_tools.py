@@ -48,8 +48,9 @@ _TOOL_TIMEOUT_S = 480.0
 _SCHEMA: dict[str, Any] = {
     "name": "generate_image",
     "description": (
-        "根据文字描述生成一张图片（文生图）。用户说“生成图片/画一张/做个海报”"
-        "等时调用。图片会存到 workspace 目录并自动用系统默认看图器打开。"
+        "AI 文生图/原创生成图片工具。用户要生成、画、做海报、插画、图标、头像或保存一张新图片时必须用本工具；"
+        "本工具会真实调用图像生成接口并把图片保存到本地 workspace 后返回路径。"
+        "不要用 web_fetch、网页搜索或抓取网页去找图来替代图片生成。"
     ),
     "parameters": {
         "type": "object",

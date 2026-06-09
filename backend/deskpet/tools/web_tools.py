@@ -202,9 +202,10 @@ def _detect_captcha(text: str) -> bool:
 _SCHEMA_FETCH: dict[str, Any] = {
     "name": "web_fetch",
     "description": (
-        "HTTP GET a URL and return status + content + content_type. "
+        "抓取网页文本内容做调研：HTTP GET a URL and return status + content + content_type. "
         "Follows up to 5 redirects. HTML truncated to 2MB. Respects "
-        "robots.txt and per-domain rate limits from config."
+        "robots.txt and per-domain rate limits from config. "
+        "web_fetch 不是用来生成或获取图片；用户要生成、画图片请用 generate_image。"
     ),
     "parameters": {
         "type": "object",
