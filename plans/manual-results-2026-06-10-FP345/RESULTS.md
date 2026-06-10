@@ -24,7 +24,7 @@
 | TC-4.2 改偏好下轮反映 | **PASS** | 「喜欢乌龙茶」→facts `preference\|favorite_drink\|乌龙茶`→「推荐饮料」→「推荐你喝**无糖乌龙茶**」; 截图 tc-4.2-pref-reflect.png |
 | TC-4.3 偏好冲突替换 | **PASS** | 「改喝咖啡」→DB: 乌龙茶 `is_active=0`(软失效)+ `preferred_drink\|咖啡\|active=1`→再问推荐→「**冰美式**」; 截图 tc-4.3-conflict.png |
 | TC-4.4 Pin 不衰减+调度接通 | **PASS(🟡)** | **`p4_facts_daily_decay_startup mutated=60`**(调度真接通真跑——原"生产从未调用"bug 已修的生产实证!)+ test_pin_and_pref_decay 单测绿(pin 跳过/unpin 恢复)。MemoryPanel UI pin 真点击未做(后端核对为主,testcase 🟡允许),诚实标 |
-| TC-4.5 B-10 双写钩 | **PASS+FAIL→修复** | 钩绑定 `b10_goal_facts_hook_bound` ✅ + 每次 /goal set 双写 facts category=goal ✅;**步骤5 去重 FAIL**: 同 key goal_<sid> 15 行全 active 堆积(upsert 是纯 INSERT,B-10 直连无 extractor 兜底)→ **修复 commit 75af4bd**(新增 `upsert_replacing`=find_active→upsert→mark_superseded, TDD 2 测红→绿+回归 107 passed)。真机复验(重启后 set 验单条)留下一 boot |
+| TC-4.5 B-10 双写钩 | **PASS+FAIL→修复→真机复验 PASS (2026-06-11)** | 钩绑定 `b10_goal_facts_hook_bound` ✅ + 双写 ✅;去重 FAIL(15 行全 active)→ 修复 75af4bd(`upsert_replacing`)。**复验时发现二阶缺陷**:只 supersede 最新一条,历史脏堆积永不自愈 → **修复 `ac76d48`**(supersede 全部 active 同 key 行,TDD+1 测 35 passed)。**真机复验 PASS**:重启(新代码)→全屏 `/goal` ×2 → DB `goal_code-6kbuuzg6` **active=1**(id=84 最新) + 16 行 superseded,链 57→83→84 — **15 条历史脏行一次写入全部自愈**。截图 tc-4.5-reverify-single-active.png。注:`/goal` 契约是 `/goal <text>`(无 set 子命令,HANDOFF 配方笔误) |
 | TC-4.6 flag-OFF goal facts 不出现 | **PASS(后端)** | 钩绑定条件含 `goal_facts_hook` flag(main.py:1411)+R-T5 字节基线脚本;OFF 分支真机未单独跑一轮,诚实标 |
 | TC-4.7 人格红线 | **PASS(后端)** | no_persona_leak 类单测绿(verify 判定输入白名单+无 persona llm_call);真机注入诱导无法点击复现(testcase 🟡预期) |
 

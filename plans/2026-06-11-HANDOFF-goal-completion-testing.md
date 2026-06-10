@@ -39,7 +39,7 @@
 | 4 | **登录态强杀后失效**(两次弹 Token Relay 重登,均在多次 `taskkill /F` 后) | 疑 refresh token 落盘在退出钩子,强杀来不及写(真实用户崩溃/断电同样触发) | 查 keychain 写入时机(`backend/llm/keys.py` / relay 登录流);改成 token 刷新即落盘 |
 
 ### 🟡 复验/优化
-- **TC-4.5 真机复验**:`upsert_replacing` 修复(75af4bd)单测绿但真机未复验 —— 重启后 `/goal set` ×2 → 查 `facts WHERE key='goal_<sid>' AND is_active=1` 应只 1 条。
+- ~~**TC-4.5 真机复验**~~ → **✅ PASS (2026-06-11)**:复验发现二阶缺陷(只 supersede 最新一条,历史脏堆积不自愈)→ 修复 `ac76d48`(supersede 全部 active 同 key)。真机:`/goal` ×2 → active=1 + 16 superseded,15 条脏行一次自愈。注:契约是 `/goal <text>`,无 set 子命令。
 - goal_checker 中文长输出 JSON 解析失败率偏高(降级路径工作,`goal_checker.skipped` 频出)→ prompt 加固。
 - 补 2 张留痕截图(TC-1.7 goalcheck / TC-3.3 misalign,审计 L1/L2,功能证据已实锤)。
 
