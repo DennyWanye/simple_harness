@@ -611,6 +611,12 @@ class AgentLoop:
         # the threshold repeatedly; we log the first fire and stay quiet after).
         _compaction_warn_logged: bool = False
 
+        # FP-2 TC-2.1 第 3 刀: relay 真实 prompt_tokens 反馈回路。char-based
+        # 估算对中文/markdown 系统性低估(真机 real 32.9k 时 estimate <24k),
+        # 纯系数追不上内容分布 → 用上一轮 response.usage.input_tokens 兜底,
+        # compaction 判定取 max(estimate, real)。0 = 本 run 还没有真实值。
+        _last_real_prompt_tokens: int = 0
+
         # WI-4.2 skill remount: track skill_invoke calls this run so that
         # _remount_skills() knows which skill bodies to re-inline after compaction.
         # Reset per run() invocation (fresh list each chat turn).
@@ -714,6 +720,9 @@ class AgentLoop:
                     _ctoken_est = getattr(_budget, "estimated_tokens", 0)
                 except Exception:  # noqa: BLE001
                     _ctoken_est = 0
+                # 第 3 刀: real usage 兜底(见 _last_real_prompt_tokens 注释)。
+                if _last_real_prompt_tokens > _ctoken_est:
+                    _ctoken_est = _last_real_prompt_tokens
                 _ctx_should_compress = False
                 try:
                     _ctx_cfg = getattr(self._ctx, "config", None)
@@ -1025,6 +1034,9 @@ class AgentLoop:
             totals["output"] += response.usage.output_tokens
             totals["cache_read"] += response.usage.cache_read_tokens
             totals["cache_write"] += response.usage.cache_write_tokens
+            # 第 3 刀: 记录 relay 真实 prompt 大小,喂下一轮 compaction 判定。
+            if response.usage.input_tokens > _last_real_prompt_tokens:
+                _last_real_prompt_tokens = response.usage.input_tokens
 
             # P6 Phase 6 — record the turn (advances turns_used and
             # optionally adds to cost_usd if the response carries a

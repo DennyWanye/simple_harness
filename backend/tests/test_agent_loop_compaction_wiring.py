@@ -470,3 +470,53 @@ def test_context_compressor_in_valid_services():
     缺白名单会致启动 register 失败 + chat get 抛 'Unknown service' → code-mode 全崩。"""
     from context import _VALID_SERVICES
     assert "context_compressor" in _VALID_SERVICES
+
+
+# ---------------------------------------------------------------------------
+# FP-2 TC-2.1 第 3 刀 — relay 真实 prompt_tokens 反馈回路。
+# 真机实测两轮系数校准后估算仍低估(real 32.9k 时 estimate <24k 不触发)。
+# 修法: compaction 判定用 max(estimate, 上一轮 response.usage.input_tokens)。
+# ---------------------------------------------------------------------------
+
+class _HighUsageTwoTurnLLM:
+    """第 1 轮回 tool_use 且 usage.input_tokens=30000(模拟 relay 真实值),
+    第 2 轮 end_turn。compaction 检查在第 2 轮 LLM 调用前 → 应收到 ≥30000。"""
+
+    def __init__(self):
+        self.calls = 0
+
+    async def chat_with_fallback(self, messages, *, tools=None, model=None, **kw):
+        self.calls += 1
+        from llm.types import ChatResponse, ToolCall
+        if self.calls == 1:
+            return ChatResponse(
+                content="",
+                stop_reason="tool_use",
+                tool_calls=[ToolCall(id="t1", name="noop", arguments={})],
+                usage={"input_tokens": 30000, "output_tokens": 10},
+            )
+        return ChatResponse(
+            content="done", stop_reason="end_turn", tool_calls=[],
+            usage={"input_tokens": 30100, "output_tokens": 5},
+        )
+
+
+@pytest.mark.asyncio
+async def test_real_usage_feedback_overrides_low_estimate():
+    """estimate 低(短消息)但上一轮 real input_tokens=30000 →
+    第 2 轮 compaction 检查必须收到 ≥30000(real 反馈回路)。"""
+    comp = _FakeCompressor(should=False)  # 记录收到的值;不真压缩
+    loop = AgentLoop(
+        llm_registry=_HighUsageTwoTurnLLM(),
+        tool_registry=_FakeToolRegistry(),
+        compressor=comp,
+    )
+    msgs = [{"role": "user", "content": "短消息"}]
+    async for _ev in loop.run(msgs, session_id="s-realfb", task_id="t-realfb"):
+        pass
+    # 第 1 次检查(iteration1, 无 real 值)可为小值;
+    # 第 2 次检查(iteration2)必须 >= 30000
+    assert len(comp.should_compress_calls) >= 2, comp.should_compress_calls
+    assert comp.should_compress_calls[1] >= 30000, (
+        f"real usage feedback missing: {comp.should_compress_calls}"
+    )
