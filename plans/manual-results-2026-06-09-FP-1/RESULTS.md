@@ -35,3 +35,9 @@
 ## 遗留/建议
 - bug#7(Enter 被 dropdown 吞)与 tile 不解析 slash(#5):建议产品侧评估是否统一。
 - 旧 active 行不自动 abandoned(TC-1.5 注明的当前行为):多行 active 累积,建议 set 时 abandon 旧行(冻结契约允许 last-write-wins,非缺陷)。
+
+## 审计后补注(opus 4.8 审计 L1/L2 处置)
+
+- **L1(TC-1.7 截图缺失)**: `tc-1.7-goalcheck.png` 未截。功能证据已实锤(log `goal_checker_nudge_injected sid=code-6kbuuzg6 iter=1/10` + DB iterations_used=1 落库),审计判定「功能链成立,瑕疵在留痕」。如需补可重启造一轮 rebound 再截;当前如实标注。
+- **L2(TC-2.1 截图名)**: testcase 名 `tc-2.1-after-compact-still-on-goal.png` 因 TC-2.1 FAIL(压缩未触发)场景无法构造,实际留 `diag-tc21.png` 诊断图——审计接受。
+- 审计报告: [AUDIT-opus.md](./AUDIT-opus.md)(44 个 pytest 独立复跑全过 + grep 三连归零 + 修复代码逐行核实)。
