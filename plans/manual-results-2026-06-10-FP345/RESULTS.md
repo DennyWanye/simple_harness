@@ -32,27 +32,27 @@
 
 | TC | 判定 | 关键证据 |
 |---|---|---|
-| TC-5.1 强匹配自动载 | **FAIL(真缺陷)** | `skill_auto_disclosed total=1 strong=0 auto_loaded=0 top_sim=0.000` ×4 —— ①top_sim 恒 0(匹配端 embedding 零向量,R-16「SkillMatcher 同步调 async embedder 零匹配」已知模式回归/venue 变体) ②total=1(builtin 14 个未进 matcher)。**待修**(两层:matcher embedding 真算 + loader 全集进 build) |
+| TC-5.1 强匹配自动载 | **FAIL→修复→真机 PASS (2026-06-11)** | 原 FAIL:`total=1 strong=0 top_sim=0.000`。三层根因:①SkillComponent 走 `loader.select(task_type)`,builtin v1 skill task_types=[] 全被滤掉(total=1 真因) ②lifespan sync `build()` 调 async encode 静默 no-op ③top_sim 打 strong_matches[0] 掩盖真实分数。**修复 commit `3526ac1`**(auto ON 用全集+build_async 预热+top_sim 真值) + **`b439bbc`**(混合匹配:triggers 词法路+when_to_use 进 embedding——BGE-M3 对短中文 query 区分度不够,8 query 离线校准 on-target 0.45~0.55 vs off-target 0.53+)。**真机复测 PASS**:boot `fp5_skill_matcher_prewarmed cached=12` → 发「帮我深度调研一下AI桌宠的记忆系统架构」→ **`skill_auto_disclosed total=12 strong=1 auto_loaded=1 names=['deep-research'] top_sim=0.950`** → LLM 真按 deep-research 正文跑多源 web_fetch 调研。离线校准终验:6 on-target 全命中正确 skill,闲聊/知识问答零误载。截图 tc-5.1-fixed-disclosed.png |
 | TC-5.2 压缩后追问原目标 | **PASS** | = FP-2 TC-2.1 已闭环(`p1_4_compaction_fired reduction=0.976` + 压缩后追问精确指向 session 最初任务); 截图 ../manual-results-2026-06-09-FP-2/screenshots/tc-2.1-after-compact-still-on-goal.png |
 | TC-5.3 自创→保存→落盘→复用(招牌) | **PASS(历史+本轮复证)** | 保存全链 2026-06-06 真机 PASS(真坐标点保存→`meeting-minutes-to-ppt/SKILL.md` 落盘至今真实存在于 fp345-userdata,manual-results-2026-06-06-FP345/);本轮复证: 触发器+卡渲染 ≥5 次(flight-ticket-booking/cat-care-weekly-ppt/test-ppt-generation/…)+`skill_codifier.proposed cid=13 steps=6`。本轮保存分支未重复(全点忽略以测 5.4),引用历史证据,诚实标 |
 | TC-5.4 拒绝→不落盘 | **PASS** | 真坐标点「忽略」×3 + `skill_candidate_confirm_received decision=reject` ×3 + userdata-a/skills/user/ **空**(全 reject 一致,零落盘) |
 | TC-5.5 候选 5min 超时 reject | **PASS(后端)** | 超时逻辑单测绿;真机 5 分钟等待未做(🟡log 级,testcase 预期) |
 | TC-5.6 trivial 不弹卡 | **PASS** | 本轮大量 trivial 消息(推荐饮料/一句话问答/查询)全程零候选卡;卡只在多步工具任务后弹(≥5 工具触发器选择性真机验证) |
-| TC-5.7 压缩后 skill 重挂 | **未触发(诚实标)** | 需「skill 已载入+压缩发生」组合;本轮压缩 fire 时无已载 skill(TC-5.1 缺陷导致 auto_loaded=0 → 无 skill 可重挂)。**被 TC-5.1 缺陷阻塞**,修复后连带复测; 单测 test_deskpet_skill_remount 15 passed 兜底 |
+| TC-5.7 压缩后 skill 重挂 | **未触发→真机 PASS (2026-06-11,随 5.1 修复连带复测)** | 同 turn 完整链路(tid=task_260610180228):复合指令「skill_invoke recall-yesterday + 连读 5 个大文件」→ ① `skill_invoke` 真调(args_dump 18:02:37) ② `p1_4_compaction_fired iter=7 reduction=0.968` ③ **`skill_remounted sid=code-6kbuuzg6 names=['recall-yesterday'] budget_used=264`**。注:remount 来源是 skill_invoke 跟踪(`_skills_used_this_run`,每 turn 重置),auto-disclosure 强匹配集合并入 remount 是源码标注的 Future TODO(agent_loop.py:1895)。截图 tc-5.7-remounted.png。⚠️过程中 bug#2 第 4 次复现:候选卡 pending+turn 进行中发的消息被吞,清卡重发才到 |
 | TC-5.8 保存后复用 | **PASS(历史)** | 2026-06-06 真机已验(保存的 meeting-minutes-to-ppt 新 session 复用);本轮未重复保存分支(同 5.3),引用+诚实标 |
 
 ## 汇总
 
 - **FP-3: 7/7 判定** — 4 真机 PASS(含 2 变体) + 3 PASS(自然故障/后端,诚实标)
 - **FP-4: 7/7 判定** — 4 真机 PASS + 2 后端 PASS + 1 复合(钩✅/去重 FAIL→**已修复 75af4bd**)
-- **FP-5: 8/8 判定** — 4 PASS(1 真机+1 等价+2 历史引用) + 2 后端 PASS + **1 FAIL(TC-5.1 真缺陷待修)** + 1 被阻塞(5.7,随 5.1 修复连带)
+- **FP-5: 8/8 判定** — 4 PASS(1 真机+1 等价+2 历史引用) + 2 后端 PASS + ~~1 FAIL(TC-5.1)~~ + ~~1 被阻塞(5.7)~~ → **2026-06-11 双双真机 PASS**(TC-5.1 三层修复 commit 3526ac1+b439bbc;TC-5.7 连带复测 skill_remounted 实锤) → **FP-5 全绿**
 
 ## 本轮(FP-3/4/5 期间)修复与发现
 
 | # | 类型 | 内容 |
 |---|---|---|
 | 1 | **修复** | TC-4.5 B-10 同 key 堆积 → `upsert_replacing`(commit 75af4bd) |
-| 2 | **待修缺陷** | TC-5.1: skill 匹配 top_sim=0.000 + total=1(R-16 模式回归/venue 变体);连带阻塞 TC-5.7 |
+| 2 | **修复(2026-06-11)** | TC-5.1: 三层根因(select venue 过滤/sync build no-op/log 掩盖)→ commit 3526ac1 + b439bbc(混合匹配 triggers);TC-5.1+TC-5.7 真机双 PASS |
 | 3 | 观察 | ArtifactCard 未在本轮 ppt/excel 产物上渲染(LLM 文本报路径) |
 | 4 | 观察 | completion_nudge 强度高:压住了"只说不做"类诱导(对 3.4/3.6 的测试构造是阻力、对产品是好特性) |
 | 5 | 观察 | goal_checker JSON 解析失败率偏高(中文长输出),降级路径工作但建议 prompt 加固 |
