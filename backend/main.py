@@ -1294,9 +1294,19 @@ try:
             # context_window default 32000 for relay models; threshold 0.75.
             # Use the already-constructed local_llm (haiku-scale) for the
             # summary call so we don't spin up a new connection.
+            # FP-2 真机修复: compressor 调 chat_with_fallback,而裸 provider
+            # (OpenAICompatibleProvider) 没有该方法 → AttributeError 被
+            # safe-fail 吞掉,压缩永远失败(should_compress 过了也白过)。
+            # 复用 codify 同款 shim 包装(见下方 _CodifyShim 注释,同一个坑)。
+            from agent.tool_use_shim import (
+                OpenAICompatibleAgentLLM as _CmpShim,
+            )
             _compactor_llm = local_llm or cloud_llm
             _context_compressor = _CtxCompressor(
-                llm_registry=_compactor_llm,
+                llm_registry=(
+                    _CmpShim(provider=_compactor_llm)
+                    if _compactor_llm is not None else None
+                ),
                 context_window=32000,
                 threshold_percent=0.75,
             )
