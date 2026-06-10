@@ -109,6 +109,13 @@ async function open_socket() {
   ws.onopen = () => {
     reconnect_attempt = 0;
     current_state = "connected";
+    // Bug#2 修复 (2026-06-11)：flush 断连期间排队的用户消息(原 send() 在
+    // socket 非 OPEN 时直接丢弃 — 用户消息静默消失的传输层真因)。先 flush
+    // 再拉列表,保持用户消息的先后顺序。
+    while (_outbox.length > 0) {
+      const queued = _outbox.shift();
+      if (queued) ws?.send(queued);
+    }
     // Pull current sessions list on (re)connect so the dashboard hydrates.
     ws?.send(JSON.stringify({ type: "code_sessions_list" }));
     // code-session-model-params: pull the live model catalog so the
@@ -825,12 +832,19 @@ function dispatch(msg: any) {
   }
 }
 
+// Bug#2 修复 (2026-06-11)：断连时的出站消息排队(原实现直接丢弃 — 用户
+// 消息静默消失)。重连 onopen 时 flush。上限防泄漏:超出丢最旧并告警。
+const _outbox: string[] = [];
+const _OUTBOX_MAX = 50;
+
 export const codePanelWS: CodePanelWS = {
   send(msg) {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(msg));
     } else {
-      console.warn("[code-panel] send on closed socket; queueing reconnect");
+      console.warn("[code-panel] socket not open; queueing message for flush on reconnect");
+      _outbox.push(JSON.stringify(msg));
+      if (_outbox.length > _OUTBOX_MAX) _outbox.shift();
       schedule_reconnect();
     }
   },
