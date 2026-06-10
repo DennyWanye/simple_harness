@@ -725,19 +725,37 @@ async def _maybe_codify_skill(service_context, config, sid, ws, waiters):
         )
         if waiters is not None:
             import asyncio as _aio_sc
+
+            # Bug#2 修复 (2026-06-11)：confirm 等待拆独立 task。原 300s
+            # Future-await 内联在 chat task 里 → chat_v2_final 已发但 task
+            # 还活着;用户下一条消息触发同 sid 抢占 cancel → 候选 Future
+            # 一起死(卡点击无响应、candidate 永久 pending),且确认期间
+            # chat 被实际占住。独立 task 后:chat task 立即收尾,候选确认
+            # 与后续对话真并行,新消息的 preempt 也伤不到确认链路。
             _sc_fut = _aio_sc.get_event_loop().create_future()
             waiters.add(_sc_cid, _sc_fut)
-            try:
-                _sc_decision = await _aio_sc.wait_for(_sc_fut, timeout=300)
-            except _aio_sc.TimeoutError:
-                _sc_decision = "reject"
-                logger.info("skill_candidate_timeout cid=%d", _sc_cid)
-            finally:
-                waiters.pop(_sc_cid)
-            await _codifier.confirm(_sc_cid, accept=(_sc_decision == "accept"))
-            logger.info(
-                "skill_candidate_resolved cid=%d decision=%s", _sc_cid, _sc_decision,
-            )
+
+            async def _await_candidate_decision(
+                _cid=_sc_cid, _fut=_sc_fut, _cod=_codifier, _w=waiters
+            ):
+                try:
+                    try:
+                        _decision = await _aio_sc.wait_for(_fut, timeout=300)
+                    except _aio_sc.TimeoutError:
+                        _decision = "reject"
+                        logger.info("skill_candidate_timeout cid=%d", _cid)
+                    finally:
+                        _w.pop(_cid)
+                    await _cod.confirm(_cid, accept=(_decision == "accept"))
+                    logger.info(
+                        "skill_candidate_resolved cid=%d decision=%s", _cid, _decision,
+                    )
+                except Exception as _aw_ex:  # noqa: BLE001 — safe-fail
+                    logger.debug(
+                        "skill_candidate_wait_failed cid=%d err=%s", _cid, _aw_ex
+                    )
+
+            _aio_sc.create_task(_await_candidate_decision())
     except Exception as _sc_ex:  # noqa: BLE001 — safe-fail
         logger.debug("skill_codify_hook_failed sid=%s err=%s", sid, _sc_ex)
 

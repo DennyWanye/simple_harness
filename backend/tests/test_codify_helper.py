@@ -97,3 +97,59 @@ async def test_codify_helper_proposes_and_emits_when_steps_present():
     assert evt["type"] == "skill_candidate_proposed"
     assert evt["payload"]["candidate_id"] == 7
     assert evt["payload"]["session_id"] == "sid"
+
+
+@pytest.mark.asyncio
+async def test_codify_helper_returns_promptly_confirm_in_background():
+    """Bug#2 修复 (2026-06-11)：confirm 等待拆独立 task。
+
+    原 300s Future-await 内联在 chat task → chat_v2_final 已发但 task 还
+    挂着;下一条消息的同 sid 抢占 cancel 把候选 Future 连带杀死(卡点击
+    无响应、candidate 永久 pending)。修复后:helper 在 propose+emit 后
+    立即返回;Future 之后 resolve 时 confirm 仍在后台被调用。
+    """
+    import asyncio
+    from deskpet.skills.skill_codifier import SkillCandidateWaiters
+
+    rec = ToolPathRecorder()
+    for n in ["todo_write", "list_dir", "read_file", "list_dir", "read_file"]:
+        rec.record_tool("sid", name=n, ok=True)
+    candidate_store = MagicMock()
+    candidate_store.fetch_pending = AsyncMock(return_value={
+        "name": "n", "description": "d", "steps": ["a"],
+    })
+    loader = SimpleNamespace(_dirs=["builtin_dir", "/user/skills"])
+    llm = MagicMock()
+    llm.chat_with_fallback = AsyncMock()
+    ws = SimpleNamespace(send_json=AsyncMock())
+    svc = _svc({
+        "tool_path_recorder": rec,
+        "skill_candidate_store": candidate_store,
+        "skill_loader": loader,
+        "llm_registry": llm,
+    })
+    waiters = SkillCandidateWaiters()
+
+    import deskpet.skills.skill_codifier as _codmod
+    orig_propose = _codmod.SkillCodifier.propose
+    orig_confirm = _codmod.SkillCodifier.confirm
+    confirm_mock = AsyncMock()
+    _codmod.SkillCodifier.propose = AsyncMock(return_value=9)
+    _codmod.SkillCodifier.confirm = confirm_mock
+    try:
+        # 关键断言1:helper 必须在 ~0s 内返回(不等 300s confirm)
+        await asyncio.wait_for(
+            _maybe_codify_skill(svc, _cfg(True), "sid", ws, waiters),
+            timeout=2.0,
+        )
+        ws.send_json.assert_called_once()
+        confirm_mock.assert_not_called()  # 还没人裁决
+
+        # 关键断言2:之后 resolve(模拟用户点忽略) → 后台 task 调 confirm
+        waiters.resolve(9, "reject")
+        await asyncio.sleep(0.05)  # 让后台 task 跑完
+        confirm_mock.assert_awaited_once()
+        assert confirm_mock.await_args.kwargs.get("accept") is False
+    finally:
+        _codmod.SkillCodifier.propose = orig_propose
+        _codmod.SkillCodifier.confirm = orig_confirm
