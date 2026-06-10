@@ -36,6 +36,7 @@ Design
 from __future__ import annotations
 
 import enum
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -126,13 +127,35 @@ class BudgetCheckResult:
     advice: str = ""
 
 
+# CJK 字符(汉字/假名/全角符号)在主流 BPE 里 ≈1 token/字,而 char/4 会低估
+# ~4 倍。FP-2 真机实测:中文会话 real prompt_tokens=28k 被估 ~7k,导致
+# compaction(24k 阈值)永不触发、直到撑爆 32k 窗口。CJK 字符按等效 4 个
+# ASCII 字符计入,使最终 //4 后 ≈1 token/字。
+_CJK_RE = re.compile(
+    r"[　-ヿ㐀-䶿一-鿿豈-﫿＀-￯]"
+)
+
+
+def _weighted_chars(s: str) -> int:
+    """Return ASCII-equivalent char count: CJK chars weigh 4× (≈1 token each).
+
+    真机校准(FP-2 TC-2.1 第二刀): markdown/路径/代码密集的英文实测
+    ~3 char/token(relay prompt_tokens=34008 vs 旧估 <24000,低估 30%+),
+    纯散文才接近 4。ASCII 部分按 ×8/7 上调(等效 ~3.5 char/token),
+    宁可早压不可爆窗。
+    """
+    cjk = len(_CJK_RE.findall(s))
+    ascii_part = len(s) - cjk
+    return ascii_part + ascii_part // 7 + cjk * 4
+
+
 def estimate_tokens(messages: list[dict[str, Any]]) -> int:
-    """Char/4 heuristic. Counts content strings + tool_call payloads.
+    """CJK-aware char/4 heuristic. Counts content strings + tool_call payloads.
 
     Tradeoff: we used to consider importing tiktoken, but it's ~30 MB
     of model files and only matches OpenAI's BPE — not deepseek's,
-    not Anthropic's, etc. The char/4 estimate is within 15% on
-    mixed-language content, which is enough for an 80% WARN threshold.
+    not Anthropic's, etc. The char/4 estimate is within ~15% on
+    English; CJK chars are weighted ≈1 token each (see _CJK_RE note).
     """
     if not messages:
         return 0
@@ -142,9 +165,9 @@ def estimate_tokens(messages: list[dict[str, Any]]) -> int:
         # `content` may be a string or absent (assistant tool-only turns)
         content = m.get("content")
         if isinstance(content, str):
-            chars += len(content)
+            chars += _weighted_chars(content)
         elif content is not None:
-            chars += len(str(content))
+            chars += _weighted_chars(str(content))
 
         # tool_calls payload — args may be a JSON string or pre-parsed dict
         tool_calls = m.get("tool_calls")
@@ -153,7 +176,9 @@ def estimate_tokens(messages: list[dict[str, Any]]) -> int:
                 if isinstance(tc, dict):
                     args = tc.get("args") or tc.get("arguments")
                     if args is not None:
-                        chars += len(args if isinstance(args, str) else str(args))
+                        chars += _weighted_chars(
+                            args if isinstance(args, str) else str(args)
+                        )
                     name = tc.get("name") or ""
                     chars += len(str(name))
 
