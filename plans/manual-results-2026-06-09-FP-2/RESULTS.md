@@ -48,3 +48,26 @@
 - `backend/agent/token_budget.py`: CJK 加权 + ASCII 3.5 校准(2 commit 待提)
 - `backend/tests/test_token_budget_per_model.py`: +3 CJK 测试
 - `backend/tests/test_p5s2_token_budget.py`: 边界样本 220k→190k 校准
+
+## 2026-06-10 续测:TC-2.1 FAIL → **PASS**(4 刀修复后真机闭环)
+
+用户指出「修复、复测(直到过)」执行缺口后续测。完整修复链:
+
+| 刀 | 缺陷 | 修复 | commit |
+|---|---|---|---|
+| 1 | estimate char/4 对 CJK 低估 4 倍 | `_CJK_RE` 加权(≈1 token/字) | e6ee37f |
+| 2 | markdown/路径英文 ~3 char/token 仍低估 30% | ASCII ×8/7(≈3.5) | e6ee37f |
+| 3 | 系数永远追不上内容分布 | **relay 真实 prompt_tokens 反馈回路**(compaction 判定取 max(estimate, 上一轮 response.usage.input_tokens)) | 4f7141d |
+| 4 | compressor 接线传裸 provider → `chat_with_fallback` AttributeError 被 safe-fail 吞,压缩永远失败 | codify 同款 `OpenAICompatibleAgentLLM` shim 包装 | 0800299 |
+
+**真机 PASS 证据(第 5 次冲击,blade-4 boot)**:
+- 🔥 `p1_4_compaction_fired sid=code-6kbuuzg6 tid=task_260610154122_aa8d6c2a iter=8 reduction=0.9762`(6 文件任务单 turn 10.6k→20k+,real 反馈触发)
+- 压缩后追问「这个任务我最初让你做什么来着?」→ AI:「你最初让我整理 `C:/Program Files/Git/goal` 里的本周三个会议纪要。」—— **丢 97.6% 中间内容后仍精确指向 session 最初任务(连第一条消息的字面路径都对),零漂移** ✅
+- 截图: screenshots/tc-2.1-after-compact-still-on-goal.png(testcase 指定文件名,L2 瑕疵同步闭环)
+- 过程附证: 第 4 次冲击(blade-3)`context_compressor.llm_failed AttributeError` ×2 = 第 3 刀已让 should_compress 真机通过、卡在第 4 层接线 —— 逐层剥洋葱的完整证据链
+
+**TC-2.1 终判: PASS**(4 缺陷全修,压缩触发+压缩后不漂移双达成)。FP-2 更新为 **8 PASS + 2 BLOCKED**。
+
+**附加发现(2026-06-10 续测期)**:
+- Token Relay 登录态两次失效(均在多次 `taskkill /F` 强杀后)→ 疑 refresh token 落盘时机问题,建议排查退出钩子,真实用户崩溃/断电同样会触发。
+- 候选卡阻塞 bug 第三次复现(6 文件 turn 后又弹卡,须先忽略才能发追问)——优先级建议提高。
