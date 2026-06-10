@@ -93,6 +93,18 @@
 
 > 串行铁律：**上一个 FP 的🚦手测门没过，不开下一个 FP。** 每个 FP 的 superpowers 细化计划建议存到 `plans/2026-06-04-goal-completion-upgrade/FP-N/`。
 
+### 2026-06-10 按正式 testcase 的系统性复测（windows-mcp 全程 + opus 4.8 审计）
+
+按 [testcase/goal-completion/](../../testcase/goal-completion/) 两份正式用例逐 TC 复测（此前手测门为开发期即时验证）：
+
+| FP | 复测结果 | 证据 |
+|---|---|---|
+| **FP-1** | **8/8 PASS**（TC-1.1 招牌链 pass^k 3/3：设目标→taskkill→重启→restored=1→UI 原目标仍在） | [manual-results-2026-06-09-FP-1/RESULTS.md](../manual-results-2026-06-09-FP-1/RESULTS.md) + 9 截图；修 1 产品 bug（ws.ts slash 后 UI 永卡思考中, commit 58e82f7） |
+| **FP-2** | **7 PASS + 2 BLOCKED(按 testcase 预期确认) + 1 FAIL(TC-2.1=真缺陷产出)** | [manual-results-2026-06-09-FP-2/RESULTS.md](../manual-results-2026-06-09-FP-2/RESULTS.md)；TC-2.1 挖出 compaction 估算双重低估（CJK 4×+ASCII 30%），修 2 刀（commit e6ee37f, 回归 124 绿），第 3 刀（relay 真实 token 反馈回路）记 backlog |
+| 审计 | **opus 4.8 独立审计:接受**（44 pytest 复跑全过 + grep 三连归零 + 修复代码逐行核实；唯一瑕疵 TC-1.7 缺 1 张留痕截图,已补注处置） | [AUDIT-opus.md](../manual-results-2026-06-09-FP-1/AUDIT-opus.md) |
+
+额外发现待修：**skill 候选卡 pending 阻塞同 session 后续 chat 且 reject 后不重放**（FP-2 RESULTS 附录 #1,真 bug）。
+
 ---
 
 ## 4. 自己跑 / 跨 session 接手（起手说明）
