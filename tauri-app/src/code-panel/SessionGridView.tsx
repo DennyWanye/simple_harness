@@ -413,8 +413,11 @@ function Tile({
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      if (inflight) stop();
-      else send();
+      // Bug#2 修复 (2026-06-11)：与 InputBar 一致 —— inflight 时 Enter 原是
+      // stop(),打好的字被静默吞掉。有文字 → 发送(后端同 sid 抢占);
+      // 空文字 + inflight → 才是停止。
+      if (text.trim()) send();
+      else if (inflight) stop();
     }
   };
 
@@ -897,13 +900,14 @@ function Tile({
         />
         <button
           type="button"
-          onClick={() => (inflight ? stop() : send())}
+          // Bug#2 修复：有文字永远是发送(后端同 sid 抢占);空文字+inflight 才是停止
+          onClick={() => (text.trim() ? send() : inflight ? stop() : undefined)}
           disabled={!inflight && !text.trim()}
           style={{
-            background: inflight
-              ? "#dc2626"
-              : text.trim()
-                ? "#2563eb"
+            background: text.trim()
+              ? "#2563eb"
+              : inflight
+                ? "#dc2626"
                 : "rgba(148, 163, 184, 0.2)",
             color: "#fff",
             border: "none",
@@ -916,7 +920,7 @@ function Tile({
             whiteSpace: "nowrap",
           }}
         >
-          {inflight ? "■ 停止" : "发送"}
+          {text.trim() ? "发送" : inflight ? "■ 停止" : "发送"}
         </button>
       </div>
 

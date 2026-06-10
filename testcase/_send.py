@@ -56,14 +56,14 @@ js = f"""(()=>{{
   // send button = the 发送 inside the SAME tile container as this textarea
   // (DOM 祖先法，避免 dashboard 双 tile 下按几何选错另一 tile 的发送按钮)。
   let cont=ta; for(let i=0;i<10&&cont.parentElement;i++){{cont=cont.parentElement;
-    if(cont.querySelector('textarea')===ta){{const b=[...cont.querySelectorAll('button')].find(x=>x.innerText.trim()==='发送'||x.getAttribute('aria-label')==='发送'); if(b){{var sameTileBtn=b;}}}}
+    if(cont.querySelector('textarea')===ta){{const b=[...cont.querySelectorAll('button')].find(x=>x.innerText.trim()==='发送'||x.innerText.includes('停止')||x.getAttribute('aria-label')==='发送'); if(b){{var sameTileBtn=b;}}}}
     // stop climbing once we'd include a SECOND textarea (left the tile)
     if(cont.querySelectorAll('textarea').length>1) break;
   }}
   let best=null;
   if(typeof sameTileBtn!=='undefined'&&sameTileBtn) best=sameTileBtn.getBoundingClientRect();
   if(!best){{ // fallback: nearest 发送 on same row to the right
-    const sends=[...document.querySelectorAll('button')].filter(b=>b.innerText.trim()==='发送');
+    const sends=[...document.querySelectorAll('button')].filter(b=>b.innerText.trim()==='发送'||b.innerText.includes('停止'));
     let bd=1e9; for(const b of sends){{const r=b.getBoundingClientRect(); if(r.left<rt.left)continue; const d=Math.abs(r.top-(rt.top+rt.height/2)); if(d<bd){{bd=d;best=r;}}}}
   }}
   if(!best) return JSON.stringify({{err:'no send btn'}});
