@@ -398,6 +398,25 @@ class FactsStore:
                 raise
         return new_id
 
+    async def upsert_replacing(self, **kwargs: Any) -> int:
+        """Upsert with same-(subject,key) replacement (FP-4 TC-4.5 修复).
+
+        ``upsert`` 是纯 INSERT(冲突消解归 FactExtractor);但直连调用方
+        (如 B-10 goal→facts 钩)没有 extractor 兜底 → 每次写堆一行,真机
+        15 行全 active。本方法组合 find_active → upsert → mark_superseded,
+        保证同 key 始终只有 1 条 active,旧行走 supersede 链保历史
+        (对齐 mem0/Zep 软失效语义,冻结契约 §1.7)。
+        """
+        old = await self.find_active(
+            subject=kwargs["subject"], key=kwargs["key"]
+        )
+        new_id = await self.upsert(**kwargs)
+        if old is not None and int(old["id"]) != new_id:
+            await self.mark_superseded(
+                old_id=int(old["id"]), superseded_by=new_id
+            )
+        return new_id
+
     async def deactivate(self, fact_id: int, *, now: Optional[float] = None) -> None:
         await self._ensure_schema()
         ts = now if now is not None else time.time()

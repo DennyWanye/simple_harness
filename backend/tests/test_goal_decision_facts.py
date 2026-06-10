@@ -417,3 +417,37 @@ class TestFactRowToHitPrefix:
             assert hit.text.startswith("[fact]"), (
                 f"Expected [fact] prefix for category={cat!r}, got: {hit.text!r}"
             )
+
+
+# ---------------------------------------------------------------------------
+# FP-4 TC-4.5 真机暴露 bug:B-10 钩直接调 upsert(纯 INSERT,docstring 明说
+# 调用方负责冲突消解)→ 每次 /goal set 堆一行,真机 15 行全 active 不去重。
+# 修复:upsert_replacing 组合 find_active→upsert→mark_superseded。
+# ---------------------------------------------------------------------------
+import pytest as _pytest
+
+
+@_pytest.mark.asyncio
+async def test_upsert_replacing_dedups_same_key(tmp_path):
+    from deskpet.memory.facts import FactsStore
+    fs = FactsStore(db_path=str(tmp_path / "state.db"), embedder=None)
+    kw = dict(category="goal", subject="user", key="goal_s1",
+              confidence=0.9, source_msg_id=None, evidence="t", scope="session")
+    id1 = await fs.upsert_replacing(value="目标A", **kw)
+    id2 = await fs.upsert_replacing(value="目标B", **kw)
+    assert id2 != id1
+    active = await fs.find_active(subject="user", key="goal_s1")
+    assert active is not None and active["value"] == "目标B"
+    old = await fs.get_by_id(id1)
+    assert old["is_active"] == 0 and old["superseded_by"] == id2
+
+
+@_pytest.mark.asyncio
+async def test_upsert_replacing_first_insert_plain(tmp_path):
+    from deskpet.memory.facts import FactsStore
+    fs = FactsStore(db_path=str(tmp_path / "state.db"), embedder=None)
+    fid = await fs.upsert_replacing(
+        category="goal", subject="user", key="goal_x", value="v",
+        confidence=0.9, source_msg_id=None, evidence="t", scope="session")
+    row = await fs.get_by_id(fid)
+    assert row["is_active"] == 1

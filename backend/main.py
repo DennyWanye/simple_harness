@@ -1418,9 +1418,14 @@ try:
             _fs_ref = _facts_store  # closure capture
 
             async def _goal_to_facts(sid: str, text: str) -> None:
-                """单向钩：goal set → facts upsert(category=goal, scope=session)。"""
+                """单向钩：goal set → facts upsert(category=goal, scope=session)。
+
+                TC-4.5 修复: 用 upsert_replacing 而非裸 upsert —— 后者是纯
+                INSERT,真机同 key 堆了 15 行全 active;replacing 版保证
+                goal_<sid> 始终单条 active,旧目标走 supersede 链。
+                """
                 try:
-                    await _fs_ref.upsert(
+                    await _fs_ref.upsert_replacing(
                         category="goal",
                         subject="user",
                         key=f"goal_{sid}",
