@@ -451,3 +451,28 @@ async def test_upsert_replacing_first_insert_plain(tmp_path):
         confidence=0.9, source_msg_id=None, evidence="t", scope="session")
     row = await fs.get_by_id(fid)
     assert row["is_active"] == 1
+
+
+@_pytest.mark.asyncio
+async def test_upsert_replacing_heals_legacy_duplicate_actives(tmp_path):
+    """修复前堆积的多条 active 同 key 行(真机 15 行)在下一次写入时自愈。
+
+    TC-4.5 真机复验(2026-06-11)发现:原实现只 supersede find_active 的
+    最新一条,旧堆积永远留 active。现 supersede 全部 active 同 key 行。
+    """
+    from deskpet.memory.facts import FactsStore
+    import aiosqlite
+    fs = FactsStore(db_path=str(tmp_path / "state.db"), embedder=None)
+    kw = dict(category="goal", subject="user", key="goal_dirty",
+              confidence=0.9, source_msg_id=None, evidence="t", scope="session")
+    # 模拟修复前脏数据:纯 upsert 堆 3 条全 active
+    ids = [await fs.upsert(value=f"旧目标{i}", **kw) for i in range(3)]
+    new_id = await fs.upsert_replacing(value="新目标", **kw)
+    async with aiosqlite.connect(str(tmp_path / "state.db")) as conn:
+        cur = await conn.execute(
+            "SELECT COUNT(*) FROM facts WHERE key='goal_dirty' AND is_active=1")
+        n_active = (await cur.fetchone())[0]
+    assert n_active == 1, f"自愈后应只 1 条 active,实际 {n_active}"
+    for old_id in ids:
+        row = await fs.get_by_id(old_id)
+        assert row["is_active"] == 0 and row["superseded_by"] == new_id

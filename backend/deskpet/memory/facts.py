@@ -407,14 +407,22 @@ class FactsStore:
         保证同 key 始终只有 1 条 active,旧行走 supersede 链保历史
         (对齐 mem0/Zep 软失效语义,冻结契约 §1.7)。
         """
-        old = await self.find_active(
-            subject=kwargs["subject"], key=kwargs["key"]
-        )
-        new_id = await self.upsert(**kwargs)
-        if old is not None and int(old["id"]) != new_id:
-            await self.mark_superseded(
-                old_id=int(old["id"]), superseded_by=new_id
+        # 取全部 active 同 key 行(不止最新一条)——修复前堆积的脏数据
+        # (真机 15 行全 active)也要在下一次写入时自愈;只 supersede 最新
+        # 一条会让旧堆积永远留 active(TC-4.5 复验 2026-06-11 发现)。
+        await self._ensure_schema()
+        async with aiosqlite.connect(self._db_path) as conn:
+            cur = await conn.execute(
+                "SELECT id FROM facts "
+                "WHERE subject = ? AND key = ? AND is_active = 1",
+                (kwargs["subject"], kwargs["key"]),
             )
+            old_ids = [int(r[0]) for r in await cur.fetchall()]
+            await cur.close()
+        new_id = await self.upsert(**kwargs)
+        for old_id in old_ids:
+            if old_id != new_id:
+                await self.mark_superseded(old_id=old_id, superseded_by=new_id)
         return new_id
 
     async def deactivate(self, fact_id: int, *, now: Optional[float] = None) -> None:
