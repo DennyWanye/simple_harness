@@ -620,6 +620,138 @@ async def test_desc_list_always_present_even_when_no_body_loaded(tmp_path: Path)
 
 
 # ---------------------------------------------------------------------------
+# TC-5.1 真机回归 (2026-06-11)：total=1 / top_sim=0.000 双根因
+#
+# ① ``loader.select(task_type)`` 按 task_types frontmatter 过滤，而 builtin
+#   claude-code-v1 格式 skill 全是 ``task_types=[]`` → 全被滤掉 → 组件只拿到
+#   1 个漏网 skill（真机 log: skill_auto_disclosed total=1）。auto-disclosure
+#   的设计是「全集进 desc list + embedding 决定强匹配」→ flag ON 必须用
+#   ``registry.all()`` 全集；flag OFF 保持 select 路径（字节级 BC）。
+# ② lifespan 的 ``matcher.build(loader.all())`` 同步调 async encode → 静默
+#   no-op（unawaited coroutine 被吞）→ 需要 ``build_async`` 预热入口。
+# ③ log 的 top_sim 打 strong_matches[0]（空时 0.0）掩盖真实 ranked 分数。
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_auto_on_uses_full_skill_set_not_select(tmp_path: Path) -> None:
+    """auto ON 时组件必须用 registry.all() 全集，不被 select() 过滤。"""
+    _make_skill_dir(
+        tmp_path, "research-skill", "deep research helper", "## Research body content."
+    )
+    loader = SkillLoader([tmp_path], enable_watch=False)
+    loader.reload()
+    research = loader.get("research-skill")
+    assert research is not None
+    other = _make_meta("other", "unrelated description")
+
+    registry = MagicMock()
+    registry.select.return_value = [other]  # select 把 research-skill 滤掉了
+    registry.all.return_value = [other, research]  # 全集才有
+
+    vectors = {
+        "deep research": [1.0, 0.0, 0.0],
+        "unrelated description": [0.0, 1.0, 0.0],
+        "query": [1.0, 0.0, 0.0],
+    }
+    matcher = SkillMatcher(_make_embedder(vectors))
+    matcher.build([other, research])
+
+    component = SkillComponent(skill_matcher=matcher, skill_loader=loader)
+    ctx = _make_ctx([], user_message="query", auto_disclosure_enabled=True)
+    ctx.skill_registry = registry
+
+    result: Slice = await component.provide(ctx)
+    # 全集进 desc list（select 漏掉的 skill 必须在）
+    assert "research-skill" in result.text_content
+    # 且强匹配 body 被预载
+    assert "Research body content" in result.text_content
+    assert result.meta["count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_flag_off_keeps_select_path(tmp_path: Path) -> None:
+    """flag OFF 保持 select() venue（字节级 BC：不泄露全集进 chat prelude）。"""
+    _make_skill_dir(tmp_path, "research-skill", "deep research helper", "## Body.")
+    loader = SkillLoader([tmp_path], enable_watch=False)
+    loader.reload()
+    research = loader.get("research-skill")
+    other = _make_meta("other", "unrelated description")
+
+    registry = MagicMock()
+    registry.select.return_value = [other]
+    registry.all.return_value = [other, research]
+
+    component = SkillComponent()
+    ctx = _make_ctx([], user_message="query", auto_disclosure_enabled=False)
+    ctx.skill_registry = registry
+
+    result: Slice = await component.provide(ctx)
+    assert "other" in result.text_content
+    assert "research-skill" not in result.text_content
+
+
+@pytest.mark.asyncio
+async def test_build_async_with_async_embedder_fills_cache() -> None:
+    """build_async 用生产 async embedder 真填缓存（lifespan 预热入口）。"""
+    vectors = {
+        "strong skill": [1.0, 0.0, 0.0],
+        "weak skill": [0.0, 1.0, 0.0],
+    }
+    embedder = _make_async_embedder(vectors)
+    skills = [
+        _make_meta("strong", "strong skill"),
+        _make_meta("weak", "weak skill"),
+    ]
+    matcher = SkillMatcher(embedder)
+    await matcher.build_async(skills)
+    assert set(matcher._cache.keys()) == {"strong", "weak"}
+
+
+def test_build_sync_with_async_embedder_skips_cleanly() -> None:
+    """sync build() 遇到 async embedder 不留垃圾缓存（lazy match_async 兜底）。"""
+    embedder = _make_async_embedder({"s": [1.0, 0.0, 0.0]})
+    matcher = SkillMatcher(embedder)
+    matcher.build([_make_meta("s", "s desc")])
+    assert matcher._cache == {}
+
+
+@pytest.mark.asyncio
+async def test_log_top_sim_reports_ranked_not_strong(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """无强匹配时 top_sim 应打真实 ranked 最高分，不是 0.000（诊断误导回归）。"""
+    _make_skill_dir(tmp_path, "mid-skill", "mid match description", "## Mid body.")
+    loader = SkillLoader([tmp_path], enable_watch=False)
+    loader.reload()
+    meta = loader.get("mid-skill")
+    assert meta is not None
+
+    # cos(query, mid) = 0.6 — 低于 0.55 阈值?不,0.6>0.55。改用 0.3。
+    vectors = {
+        "mid match": [0.3, 0.954, 0.0],  # cos≈0.3 vs query [1,0,0]
+        "query": [1.0, 0.0, 0.0],
+    }
+    matcher = SkillMatcher(_make_embedder(vectors))
+    matcher.build([meta])
+
+    component = SkillComponent(skill_matcher=matcher, skill_loader=loader)
+    ctx = _make_ctx(
+        [meta], user_message="query", auto_disclosure_enabled=True, strong_threshold=0.55
+    )
+    import logging as _logging
+
+    with caplog.at_level(_logging.INFO, logger="deskpet.agent.assembler.components.skill"):
+        await component.provide(ctx)
+    line = next(
+        (r.getMessage() for r in caplog.records if "skill_auto_disclosed" in r.getMessage()),
+        "",
+    )
+    assert line, "应有 skill_auto_disclosed log"
+    assert "top_sim=0.000" not in line, f"top_sim 应是真实 ranked 分数: {line}"
+    assert "top_sim=0.3" in line
+
+
+# ---------------------------------------------------------------------------
 # T-extra: meta contains auto_loaded_count when bodies are loaded
 # ---------------------------------------------------------------------------
 

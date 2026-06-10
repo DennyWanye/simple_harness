@@ -1391,10 +1391,10 @@ try:
         try:
             from deskpet.skills.skill_matcher import SkillMatcher as _SkillMatcher
             _skill_matcher = _SkillMatcher(embedder=_embedder)
-            try:
-                _skill_matcher.build(_skill_loader.all())
-            except Exception as _sm_build_exc:  # noqa: BLE001
-                logger.warning("fp5_skill_matcher_build_failed err=%s", _sm_build_exc)
+            # TC-5.1 修复 (2026-06-11)：生产 embedder.encode 是 async，原 sync
+            # build() 是静默 no-op（缓存恒空）。这里是 module-level（无运行
+            # loop），真正的 build_async 预热在 lifespan 里 create_task
+            # （锚点 fp5_skill_matcher_prewarmed）。
             logger.info("fp5_auto_disclosure_wiring_ready matcher=%s", True)
         except Exception as _ad_wire_exc:  # noqa: BLE001
             logger.warning(
@@ -1889,6 +1889,21 @@ async def lifespan(app: FastAPI):
             logger.info("p4_skill_loader_ready", count=len(_sl.list_skills()))
         except Exception as exc:
             logger.warning("p4_skill_loader_start_failed", error=str(exc))
+    # TC-5.1 修复 (2026-06-11)：SkillMatcher 缓存预热。module-level 的 sync
+    # build() 对 async 生产 embedder 是静默 no-op → 这里 loader 启动后台跑
+    # build_async（encode 内部自动 warmup embedder，不阻塞启动）。失败无害——
+    # match_async 仍会逐 turn 惰性建缓存。
+    _sm_for_prewarm = service_context.get("skill_matcher")
+    if _sm_for_prewarm is not None and _sl is not None:
+        async def _skill_matcher_prewarm_bg() -> None:
+            try:
+                _n = await _sm_for_prewarm.build_async(_sl.all())
+                logger.info("fp5_skill_matcher_prewarmed", cached=_n)
+            except Exception as _pw_exc:  # noqa: BLE001
+                logger.warning("fp5_skill_matcher_prewarm_failed", error=str(_pw_exc))
+
+        # fire-and-forget; we deliberately don't await (same as embedder warmup)
+        asyncio.create_task(_skill_matcher_prewarm_bg())
     # P4-S15: Embedder warmup runs in the background so cold-start isn't
     # blocked by 286 MB of BGE-M3 weights. Mock fallback returns instantly.
     _emb = service_context.get("embedder")

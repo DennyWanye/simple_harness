@@ -63,6 +63,15 @@ class SkillMatcher:
         self._cache = {}
         if self._embedder is None:
             return
+        # 生产 BGE-M3 的 encode 是 async coroutine function — sync build 调它
+        # 只会拿到未 await 的 coroutine（TC-5.1：原实现 _normalise(coroutine)
+        # 抛异常被吞 → build 静默 no-op + unawaited warning）。直接跳过，
+        # 交给 build_async 预热或 match_async 惰性建缓存。
+        encode_fn = getattr(self._embedder, "encode", None)
+        if inspect.iscoroutinefunction(encode_fn) or inspect.iscoroutinefunction(
+            getattr(self._embedder, "embed", None)
+        ):
+            return
         for skill in skills:
             name = _skill_attr(skill, "name", "")
             description = _skill_attr(skill, "description", "") or ""
@@ -74,9 +83,37 @@ class SkillMatcher:
                 continue
             try:
                 vec = self._embedder.encode(text)
+                if inspect.isawaitable(vec):
+                    vec.close()  # defensive: async-returning sync attr
+                    continue
                 self._cache[name] = _normalise(vec)
             except Exception:  # noqa: BLE001 — degrade silently
                 pass
+
+    async def build_async(self, skills: list[Any]) -> int:
+        """Async pre-warm of the skill embedding cache (lifespan entry).
+
+        Works with BOTH embedder contracts via ``_embed_one_async``. Returns
+        the number of skills cached. Existing cache entries are kept (idempotent
+        with the lazy rebuild in ``match_async``).
+        """
+        if self._embedder is None:
+            return 0
+        cached = 0
+        for skill in skills:
+            name = _skill_attr(skill, "name", "")
+            if not name or name in self._cache:
+                continue
+            description = _skill_attr(skill, "description", "") or ""
+            when_to_use = _skill_attr(skill, "when_to_use", "") or ""
+            text = f"{description}\n{when_to_use}" if when_to_use else description
+            if not text.strip():
+                continue
+            vec = await self._embed_one_async(text)
+            if vec:
+                self._cache[name] = _normalise(vec)
+                cached += 1
+        return cached
 
     # ------------------------------------------------------------------
     # Synchronous match

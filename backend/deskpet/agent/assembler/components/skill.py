@@ -80,10 +80,23 @@ class SkillComponent:
                 meta={"status": "no_registry"},
             )
 
+        # Read config for auto-disclosure first — it decides the skill venue.
+        ad_cfg = _read_auto_disclosure_config(ctx.config)
+        auto_enabled = ad_cfg.get("enabled", False)
+
         # Fetch skill list from registry.
+        #
+        # TC-5.1 真机回归 (2026-06-11)：``select(task_type)`` 按 task_types
+        # frontmatter 过滤，而 builtin claude-code-v1 skill 全是 task_types=[]
+        # → 全被滤掉（真机 total=1）。auto-disclosure 的契约是「全集进 desc
+        # list + embedding 决定强匹配」→ flag ON 用 ``all()`` 全集；flag OFF
+        # 保持 select 路径（字节级 BC：不泄露全集进 chat prelude）。
         skills: list[Any]
         try:
-            if hasattr(registry, "select"):
+            if auto_enabled and hasattr(registry, "all"):
+                maybe = registry.all()
+                skills = await maybe if hasattr(maybe, "__await__") else maybe
+            elif hasattr(registry, "select"):
                 maybe = registry.select(
                     ctx.task_type, prefer=list(ctx.policy.prefer)
                 )
@@ -108,12 +121,6 @@ class SkillComponent:
                 bucket="skill",
                 meta={"count": 0},
             )
-
-        # -----------------------------------------------------------------
-        # Read config for auto-disclosure.
-        # -----------------------------------------------------------------
-        ad_cfg = _read_auto_disclosure_config(ctx.config)
-        auto_enabled = ad_cfg.get("enabled", False)
 
         # -----------------------------------------------------------------
         # Build desc list (always — priority 85, not cuttable).
@@ -211,13 +218,16 @@ class SkillComponent:
         # Observability (FP-5 WI-4.1/4.2): auto-disclosure is otherwise invisible in
         # logs — emit which skills were strong-matched + body-inlined so real-machine
         # acceptance (TC-5.1/5.8) has a hard evidence line.
+        # top_sim 必须打真实 ranked 最高分（不是 strong_matches[0]）——否则
+        # 「有 0.4 的相似度但没过阈值」和「embedding 全坏零向量」在 log 里
+        # 都显示 top_sim=0.000，真机诊断会被误导（TC-5.1 教训）。
         logger.info(
             "skill_auto_disclosed total=%d strong=%d auto_loaded=%d names=%s top_sim=%.3f",
             len(skills),
             len(strong_matches),
             auto_loaded_count,
             [nm for nm, _ in strong_matches[:5]],
-            (strong_matches[0][1] if strong_matches else 0.0),
+            (ranked[0][1] if ranked else 0.0),
         )
         return Slice(
             component_name=self.name,
