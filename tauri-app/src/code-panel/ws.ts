@@ -384,6 +384,9 @@ function dispatch(msg: any) {
       const p = msg.payload || {};
       const text = format_slash_result(p.result);
       store.push_message(sid, { role: "slash_result" as any, text });
+      // slash 是同步请求-响应：结果到达即结束本轮。不清 inflight 会让
+      // InputBar 永卡"思考中"（发送钮变停止钮，后续输入无法提交）。
+      store.upsert(sid, { status: "idle", inflight: false });
       break;
     }
     case "tool_call": {
