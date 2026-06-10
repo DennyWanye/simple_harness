@@ -1,6 +1,8 @@
 ---
 name: deep-research
 description: 对一个主题做严肃的多源调研，产出带引用 + 抓取时间的结构化报告（不编造结论）
+when_to_use: 用户要深度调研、调查研究、多源查证一个主题，或要求产出带引用来源的研究报告、行业分析、技术对比时
+triggers: [深度调研, 调研报告, 调查研究, 研究报告, 深入调研, 做个调研, 做一份调研]
 version: 0.1.0
 author: deskpet
 task_types: [recall, web_search, task]

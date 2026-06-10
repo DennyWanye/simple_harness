@@ -1,6 +1,8 @@
 ---
 name: excel-generate
 description: 把数据或需求描述变成一份专业的 .xlsx 表格（本地生成，含公式/图表/样式）
+when_to_use: 用户要生成 Excel 表格、把数据整理成 xlsx、要带公式图表的统计报表时
+triggers: [excel, Excel, xlsx, 做表格, 整理成表格, 统计报表]
 version: 0.1.0
 author: deskpet
 task_types: [task, plan]

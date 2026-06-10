@@ -30,6 +30,11 @@ import math
 from typing import Any, Optional
 
 
+# Similarity assigned to an explicit trigger-phrase hit — must clear any
+# reasonable strong_threshold so trigger matches always auto-disclose.
+_TRIGGER_SIM = 0.95
+
+
 class SkillMatcher:
     """Ranks skills by cosine similarity to a query.
 
@@ -201,34 +206,52 @@ class SkillMatcher:
         relative to embedder warmup (FP-5 缺口 5h/5i：原 ``build()`` 在
         BGE-M3 subprocess ready 之前跑 + 同步调 async encode → 缓存空/零).
         """
-        if self._embedder is None or not skills:
+        if not skills:
             return []
 
         # Lazy async (re)build: embed any selected skill missing from cache.
-        for skill in skills:
-            name = _skill_attr(skill, "name", "")
-            if not name or name in self._cache:
-                continue
-            description = _skill_attr(skill, "description", "") or ""
-            when_to_use = _skill_attr(skill, "when_to_use", "") or ""
-            text = f"{description}\n{when_to_use}" if when_to_use else description
-            if not text.strip():
-                continue
-            vec = await self._embed_one_async(text)
-            if vec:
-                self._cache[name] = _normalise(vec)
+        # (embedder=None → 跳过 embedding,trigger 词法路仍然工作)
+        if self._embedder is not None:
+            for skill in skills:
+                name = _skill_attr(skill, "name", "")
+                if not name or name in self._cache:
+                    continue
+                description = _skill_attr(skill, "description", "") or ""
+                when_to_use = _skill_attr(skill, "when_to_use", "") or ""
+                text = f"{description}\n{when_to_use}" if when_to_use else description
+                if not text.strip():
+                    continue
+                vec = await self._embed_one_async(text)
+                if vec:
+                    self._cache[name] = _normalise(vec)
 
         query_vec = _normalise(await self._embed_one_async(query))
-        if not any(query_vec):
-            return []
+        have_query_vec = any(query_vec)
 
+        # TC-5.1 (2026-06-11)：混合匹配。BGE-M3 对短中文 query 的余弦区分度
+        # 不够(on-target 0.45~0.55 vs off-target 0.53+,实测 8 query 校准)——
+        # 显式 triggers 命中(query 含触发词)直接抬到 _TRIGGER_SIM(>任何
+        # strong_threshold)，embedding 兜没写 trigger 的 paraphrase。
         results: list[tuple[str, float]] = []
+        query_lower = query.lower()
         for skill in skills:
             name = _skill_attr(skill, "name", "")
-            skill_vec = self._cache.get(name)
-            if skill_vec is None:
+            if not name:
                 continue
-            results.append((name, _cosine_sim(query_vec, skill_vec)))
+            skill_vec = self._cache.get(name)
+            triggers = _skill_attr(skill, "triggers", None) or []
+            hit_trigger = any(
+                t and str(t).lower() in query_lower for t in triggers
+            )
+            # 保持原契约：没向量也没 trigger 命中的 skill 不进结果。
+            if skill_vec is None and not hit_trigger:
+                continue
+            sim = 0.0
+            if have_query_vec and skill_vec is not None:
+                sim = _cosine_sim(query_vec, skill_vec)
+            if hit_trigger:
+                sim = max(sim, _TRIGGER_SIM)
+            results.append((name, sim))
         results.sort(key=lambda x: x[1], reverse=True)
         return results
 

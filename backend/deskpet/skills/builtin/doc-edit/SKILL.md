@@ -1,6 +1,8 @@
 ---
 name: doc-edit
 description: 新建 Word 文档，或修改用户已有的 .docx（查找替换/插段落/改表格，保留排版）
+when_to_use: 用户要新建 Word 文档、修改 .docx、查找替换文字、插入段落、编辑文档表格时
+triggers: [word文档, Word文档, docx, 改文档, 编辑文档, 新建文档]
 version: 0.1.0
 author: deskpet
 task_types: [task, plan]

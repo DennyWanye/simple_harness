@@ -1,6 +1,8 @@
 ---
 name: ppt-generate
 description: 把一个主题或一段研究报告变成一份专业的 .pptx 演示文稿（本地生成，支持二次编辑）
+when_to_use: 用户要做 PPT、演示文稿、幻灯片，或把主题、报告内容变成 pptx 时
+triggers: [ppt, PPT, 演示文稿, 幻灯片, pptx]
 version: 0.1.0
 author: deskpet
 task_types: [task, plan, code]

@@ -715,6 +715,83 @@ def test_build_sync_with_async_embedder_skips_cleanly() -> None:
     assert matcher._cache == {}
 
 
+# ---------------------------------------------------------------------------
+# TC-5.1 混合匹配 (2026-06-11)：triggers 词法路。
+# BGE-M3 int8 对短中文 query 区分度不够(实测 on-target 0.45~0.55 vs
+# off-target 0.53+)——显式 triggers 命中直接强匹配,embedding 兜 paraphrase。
+# ---------------------------------------------------------------------------
+
+def test_loader_parses_triggers_legacy(tmp_path: Path) -> None:
+    """legacy 格式 frontmatter 的 triggers + when_to_use 提升为一等字段。"""
+    lines = [
+        "---",
+        "name: trig-skill",
+        "description: a skill",
+        "version: 0.1.0",
+        "author: test",
+        "when_to_use: 用户要深度调研时",
+        "triggers: [深度调研, 调研报告]",
+        "---",
+        "body",
+    ]
+    d = tmp_path / "trig-skill"
+    d.mkdir()
+    (d / "SKILL.md").write_text("\n".join(lines), encoding="utf-8")
+    loader = SkillLoader([tmp_path], enable_watch=False)
+    loader.reload()
+    meta = loader.get("trig-skill")
+    assert meta is not None
+    assert meta.triggers == ["深度调研", "调研报告"]
+    assert meta.when_to_use == "用户要深度调研时"
+    assert meta.to_dict()["triggers"] == ["深度调研", "调研报告"]
+
+
+@pytest.mark.asyncio
+async def test_trigger_hit_forces_strong_match() -> None:
+    """query 含触发词 → sim 抬到 ≥0.95(过任何 strong_threshold)。"""
+    # embedding 给 deep-research 很低的 sim(0.1),但 trigger 命中
+    vectors = {
+        "research skill": [0.1, 0.995, 0.0],
+        "调研": [1.0, 0.0, 0.0],
+    }
+    embedder = _make_async_embedder(vectors)
+    meta = _make_meta("deep-research", "research skill")
+    meta.triggers = ["深度调研"]
+    matcher = SkillMatcher(embedder)
+    results = await matcher.match_async("帮我深度调研一下AI桌宠", [meta])
+    assert results and results[0][0] == "deep-research"
+    assert results[0][1] >= 0.95
+
+
+@pytest.mark.asyncio
+async def test_trigger_case_insensitive() -> None:
+    """触发词大小写不敏感(PPT vs ppt)。"""
+    meta = _make_meta("ppt-generate", "ppt skill")
+    meta.triggers = ["PPT"]
+    matcher = SkillMatcher(_make_async_embedder({"x": [1.0, 0.0, 0.0]}))
+    results = await matcher.match_async("帮我做个ppt", [meta])
+    assert results and results[0][1] >= 0.95
+
+
+@pytest.mark.asyncio
+async def test_no_trigger_no_vec_skill_omitted() -> None:
+    """没向量也没 trigger 命中的 skill 不进结果(原契约)。"""
+    matcher = SkillMatcher(None)  # 无 embedder → 无向量
+    meta = _make_meta("plain", "plain skill")  # 无 triggers
+    results = await matcher.match_async("随便聊聊", [meta])
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_trigger_works_without_embedder() -> None:
+    """embedder=None 时词法路仍工作(离线/未 warmup 也能强匹配)。"""
+    meta = _make_meta("weather-report", "weather skill")
+    meta.triggers = ["天气"]
+    matcher = SkillMatcher(None)
+    results = await matcher.match_async("今天天气怎么样", [meta])
+    assert results and results[0][1] >= 0.95
+
+
 @pytest.mark.asyncio
 async def test_log_top_sim_reports_ranked_not_strong(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
