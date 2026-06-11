@@ -2132,6 +2132,7 @@ def _best_design_content_page(
         key=lambda page: (
             page["info"]["n_body"] < wanted,
             abs(page["info"]["n_body"] - wanted),
+            -page.get("score", 0.0),  # 槽数相当时挑更规整的页
             page["index"],
         ),
     )
@@ -2142,6 +2143,39 @@ def _first_unused_page(pages: Sequence[dict[str, Any]], used: set[int]) -> Optio
         if page["index"] not in used:
             return page
     return None
+
+
+def _page_quality_score(info: dict[str, Any]) -> float:
+    """设计页「规整度」打分(越高越好,给选页排序用)。
+
+    真机看图发现: 竖排标题页(标题框窄高,中文被裁成"城乡与区")、图标网格
+    页(一堆小 label)、装饰过多页填充易穿帮;而标题横排 + 几个对称正文槽的
+    页填充干净。据此打分,选页优先挑高分页。从不抛异常。
+    """
+    try:
+        score = 0.0
+        title = info.get("title")
+        if title is not None:
+            try:
+                w, h = int(title.width), int(title.height)
+                if w >= h:
+                    score += 3.0           # 横排标题 = 好
+                else:
+                    score -= 5.0           # 竖排/窄高标题 = 中文必裁,重罚
+            except Exception:  # noqa: BLE001
+                pass
+        # 正文槽适量(1~4)最佳;过多 = 图标网格类,易乱
+        nb = int(info.get("n_body", 0))
+        if 1 <= nb <= 4:
+            score += 2.0
+        elif nb > 6:
+            score -= 2.0
+        # 装饰/标签噪声越多越易穿帮
+        score -= 0.4 * len(info.get("labels", []))
+        score -= 0.6 * len(info.get("decor", []))
+        return score
+    except Exception:  # noqa: BLE001
+        return 0.0
 
 
 def _select_design_page(
@@ -2192,6 +2226,59 @@ def _enable_text_autofit(shape) -> None:
         tf.word_wrap = True
         if MSO_AUTO_SIZE is not None:
             tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+    except Exception:  # noqa: BLE001
+        pass
+
+
+import re as _re_ppt
+
+# 残留占位文 = 模板自带的示例/提示文字,填充后没被覆盖会穿帮。中英都覆盖。
+_PLACEHOLDER_PATTERNS = (
+    "输入标题", "输入内容", "请输入", "在此输入", "点击输入", "点击此处",
+    "标题内容", "您的内容", "替换文字", "此处添加", "添加标题", "添加文字",
+    "输入文本", "输入您的", "输入相关", "请替换", "示例文字", "正文内容",
+    "presentations are communication", "click to edit", "lorem ipsum",
+    "your text here", "add text", "sample text", "ipsum lorem",
+)
+
+
+def _is_residual_placeholder(text: str) -> bool:
+    """文本是否是模板残留占位文(中英)。命中 → 填充后清空,防穿帮。
+
+    判定: 归一化后命中占位短语 OR 是大段英文 lorem(≥6 个连续英文单词且
+    无中文 —— 模板正文槽的英文示例段)。真实中文内容不会命中。
+    """
+    t = (text or "").strip()
+    if not t:
+        return False
+    low = t.lower()
+    for pat in _PLACEHOLDER_PATTERNS:
+        # 只有当文本【基本就是占位词本身】(命中且全文不比占位词长太多)才
+        # 算残留 —— 防误伤含占位词子串的真实内容(如 bullet「替换文字槽…」)。
+        if pat in low and len(t) <= len(pat) + 6:
+            return True
+    # 大段纯英文(无中文)且词数多 → 模板英文 lorem 正文示例(整段替换文)
+    if not _re_ppt.search(r"[一-鿿]", t):
+        words = _re_ppt.findall(r"[A-Za-z]{2,}", t)
+        if len(words) >= 6:
+            return True
+    return False
+
+
+def _sweep_residual_placeholders(slide) -> None:
+    """填充后兜底清扫: 把本页所有【仍是残留占位文】的文本框清空。
+
+    通用兜底 —— design-fill 只能识别/填充规整槽位,模板里复杂版式
+    (图标网格/竖排/装饰副标题)的占位文常漏清。真实内容刚被填进去不会
+    命中占位模式,所以这一扫只杀穿帮、不误伤。从不抛异常。
+    """
+    try:
+        for shape in _iter_design_text_shapes(slide.shapes):
+            try:
+                if _is_residual_placeholder(shape.text_frame.text):
+                    _set_text_keep_style(shape, [])
+            except Exception:  # noqa: BLE001
+                continue
     except Exception:  # noqa: BLE001
         pass
 
@@ -2324,6 +2411,7 @@ def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
     subtitle_shape = info.get("subtitle")
     bodies = list(info.get("bodies", []))
     labels = list(info.get("labels", []))
+    _divider_target = None  # title/section 页填了副标题的形状(保留它,清其余)
 
     if title_shape is not None:
         title_text = so.quote if so.layout == "quote" else so.title
@@ -2340,6 +2428,7 @@ def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
             _clear_design_body_slots(info, keep=[target])
         else:
             _clear_design_body_slots(info)
+        _divider_target = target
     elif so.layout == "section":
         target = bodies[0] if bodies else subtitle_shape
         if target is None and so.subtitle:
@@ -2350,6 +2439,7 @@ def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
             _clear_design_body_slots(info, keep=[target])
         else:
             _clear_design_body_slots(info)
+        _divider_target = target
     elif so.layout == "quote":
         cite_target = labels[0] if labels else (bodies[0] if bodies else None)
         if cite_target is not None and so.cite:
@@ -2398,10 +2488,40 @@ def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
         if txt and _is_english_semantic_label(txt):
             _set_text_keep_style(shape, [])
 
+    # 章节/标题/引用页是「分隔页」: 本就只该有标题 + 副标题,模板自带的
+    # 装饰副标题/标语(如"健康教育/心理辅导/重拾信心" —— 真实中文,占位
+    # 清扫和英文标签都抓不到)留着必穿帮。清掉除标题/已填副标题外的所有
+    # 文字。从不抛异常。
+    if so.layout in {"title", "section", "quote"}:
+        # 身份用底层 lxml 元素(python-pptx 每次迭代生成新 shape 包装,
+        # id(shape) 不稳定;_element 是同一个节点)。
+        _keep_ids = set()
+        for s in (title_shape, _divider_target):
+            if s is not None:
+                try:
+                    _keep_ids.add(id(s._element))
+                except Exception:  # noqa: BLE001
+                    pass
+        try:
+            for shape in _iter_design_text_shapes(slide.shapes):
+                try:
+                    if id(shape._element) in _keep_ids:
+                        continue
+                    if (shape.text_frame.text or "").strip():
+                        _set_text_keep_style(shape, [])
+                except Exception:  # noqa: BLE001
+                    continue
+        except Exception:  # noqa: BLE001
+            pass
+
     # 有 AI 生成图(image_prompt 出图后的 image_path) → 换进本页最大图片位,
     # 把模板通用库存照替成贴合主题的定制视觉(模板丰富内容 + AI 视觉合一)。
     if so.image_path and Path(str(so.image_path)).is_file():
         _swap_design_picture(slide, str(so.image_path))
+
+    # 兜底清扫所有残留占位文(中英) —— 复杂版式漏清的"输入标题内容"/
+    # 英文 lorem 在这里统一清掉,防穿帮。
+    _sweep_residual_placeholders(slide)
 
     if so.notes:
         try:
@@ -2437,14 +2557,19 @@ def _render_with_design_pages(
                 slide, int(prs.slide_width or 0), int(prs.slide_height or 0))}
             for idx, slide in enumerate(prs.slides)
         ]
-        section_pages = [
-            page for page in pages[1:]
-            if page["info"]["title_pt"] >= 80 and page["info"]["n_body"] <= 1
-        ]
-        content_pages = [
-            page for page in pages[1:]
-            if page["info"]["n_body"] >= 1
-        ]
+        # 按规整度给每页打分,选页时优先挑高分页(避开竖排标题/图标网格
+        # 等易穿帮版式) —— 真机看图驱动的修复。
+        for page in pages:
+            page["score"] = _page_quality_score(page["info"])
+        section_pages = sorted(
+            [p for p in pages[1:]
+             if p["info"]["title_pt"] >= 80 and p["info"]["n_body"] <= 1],
+            key=lambda p: (-p["score"], p["index"]),
+        )
+        content_pages = sorted(
+            [p for p in pages[1:] if p["info"]["n_body"] >= 1],
+            key=lambda p: (-p["score"], p["index"]),
+        )
 
         used: set[int] = set()
         selected: list[tuple[dict[str, Any], SlideOutline]] = []
