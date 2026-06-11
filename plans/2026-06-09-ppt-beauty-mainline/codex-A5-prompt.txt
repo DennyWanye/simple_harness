@@ -1,0 +1,47 @@
+任务：给 DeskPet PPT 工具加「视觉预览闭环」基建 —— ppt_create 生成后自动用 WPS COM 把每页渲染成 PNG，作为 image artifacts 返回(用户/agent 在聊天里直接看到每页效果)。新建一个渲染模块 + 改 ppt_tools.py 接线 + 测试。
+
+== 背景(已实测) ==
+- 本机 WPS COM 渲染可用: win32com.client.Dispatch("Kwpp.Application") → Presentations.Open(path, True, False, False) → pres.Slides(i).Export(png_path, "PNG", 1600, 900) 实测成功;MS PowerPoint COM 不可用(0x800700c1)。pywin32 已在 backend venv。
+- 参考可工作脚本: G:\projects\deskpet\plans\2026-06-09-ppt-beauty-mainline\render_all_slides.py
+- ppt_create 返回结构: {"ok":True,"path",...,"artifacts":[{kind:"file",...}]}。前端 ArtifactCard 对 kind="image" 会渲染缩略图(generate_image 工具已用此契约)。
+
+== 新建文件 ==
+G:\projects\deskpet\backend\deskpet\tools\ppt_render.py
+内容:
+1. def com_render_available() -> bool: 探测 pywin32 + Kwpp.Application 是否可 Dispatch(缓存结果到模块级 _AVAILABLE,只探一次;探测时 Dispatch 后立即 Quit;任何异常 → False)。
+2. def render_pptx_to_pngs(pptx_path: str, out_dir: str, *, width: int = 1280, height: int = 720, max_slides: int = 30) -> list[str]:
+   - COM 不可用/任何失败 → 返回 [](从不抛异常)。
+   - pythoncom.CoInitialize() / finally CoUninitialize();Dispatch("Kwpp.Application");Open(绝对路径, ReadOnly=True, Untitled=False, WithWindow=False);逐页 Export 到 out_dir/slide{i}.png;Close;Quit(Quit 包 try)。
+   - 返回成功导出的 png 路径列表(存在且 >1KB 才算)。
+   - 模块顶部 lazy import win32com/pythoncom(import 失败 → _AVAILABLE=False,函数全部返回 [])。
+   - 注意: COM 调用慢(WPS 启动数秒),调用方自行决定是否值得;本模块不做异步。
+
+== 改 ppt_tools.py(最小接线) ==
+1. 新增 def _maybe_render_preview(result: dict) -> None:
+   - 读 config: (config.raw.get("ppt") or {}).get("preview_render", True)(lazy import config,异常默认 True)。
+   - False / result 非 ok / 无 path → 直接 return。
+   - lazy import .ppt_render;com_render_available() False → return。
+   - out_dir = <pptx同目录>/<pptx文件名去扩展>.preview/
+   - pngs = render_pptx_to_pngs(result["path"], out_dir)
+   - 每张 png 追加进 result["artifacts"]: {"kind":"image","path":png,"mime":"image/png","title":"预览 第N页"}
+   - 整函数 try/except → log.warning,绝不影响主结果。
+2. 在 ppt_create 三条成功路径的 return 前调用(design/layout/from-scratch 共用):最干净的做法是把三处 return 的 dict 先存变量,调 _maybe_render_preview(result) 再 return;或在 ppt_create 最外层统一(注意 dry_run/失败路径不调)。选改动最小且覆盖三引擎的方式。
+
+== 硬约束 ==
+- 只新建 ppt_render.py + 改 ppt_tools.py + 新增测试文件。
+- 不破现有 -k ppt 55 个测试(注意: 现有测试跑 ppt_create 会触发 _maybe_render_preview → 测试环境 WPS COM 可能可用会真启动 WPS 拖慢!解法: 测试 conftest 不动,_maybe_render_preview 里先查 config flag;给 tests/conftest.py 加东西【不允许】。正确解法: render 探测加环境开关 —— env DESKPET_PPT_PREVIEW_RENDER=0 时 com_render_available() 直接 False;并在新测试文件顶部和 backend/tests/conftest.py 【不对,不碰 conftest】。
+  最稳方案: _maybe_render_preview 读 config flag 默认 True,但【pytest 运行中】(env PYTEST_CURRENT_TEST 存在)时直接 return —— 加一行 os.environ 检查,生产无影响。)
+- ppt_render.py 所有公开函数从不抛异常。
+- 不加新依赖(pywin32 已有)。
+- 中文注释风格一致。
+
+== 验收(必须自测) ==
+工作目录 G:\projects\deskpet\backend;解释器 .venv\Scripts\python.exe
+1. 现有 BC: .venv\Scripts\python.exe -m pytest -k ppt -q 全绿(55+新增)。
+2. 新测试 tests/test_ppt_preview_render_a5.py ≥4 用例(全部 mock COM,不真启 WPS):
+   a. test_preview_artifacts_appended: monkeypatch ppt_tools 引用的 render 模块(com_render_available→True, render_pptx_to_pngs→写2个假png返回路径) + monkeypatch os.environ 移除 PYTEST_CURRENT_TEST 的检查影响(或 monkeypatch _maybe_render_preview 内部的 pytest 检查函数——把 pytest 检查抽成 _in_pytest() 以便测试 monkeypatch),调 ppt_create(简单outline) → 断言 artifacts 含 2 个 kind=image 且 title 含「预览」。
+   b. test_preview_disabled_by_config: monkeypatch config raw {"ppt":{"preview_render":False}} → 断言无 image artifacts。
+   c. test_preview_render_unavailable_ok: com_render_available→False → ppt_create 正常 ok,无 image artifacts,不抛。
+   d. test_render_module_never_raises: render_pptx_to_pngs 喂不存在路径/COM 不可用 → 返回 [] 不抛。
+3. 真渲染冒烟(允许真启 WPS 一次): 直接调 render_pptx_to_pngs(r"G:\projects\deskpet\.tmp\design-fill-smoke-v6.pptx", r"G:\projects\deskpet\.tmp\ppt-render-probe\a5") → 打印返回列表,断言 4 张。
+完成后输出: 文件清单、接线位置、测试结果、真渲染冒烟结果。

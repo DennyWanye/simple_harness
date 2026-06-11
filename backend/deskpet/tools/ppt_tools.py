@@ -57,6 +57,65 @@ from typing import Any, Iterable, Literal, Optional, Sequence
 log = logging.getLogger(__name__)
 
 
+def _in_pytest() -> bool:
+    # 预览渲染会真启动 WPS(慢且有副作用),pytest 全程跳过;
+    # 专门的 A-5 接线测试会 monkeypatch 本函数放行。
+    return bool(os.environ.get("PYTEST_CURRENT_TEST"))
+
+
+def _ppt_preview_render_enabled() -> bool:
+    """config ``[ppt].preview_render``(默认 True)。读法与 _image_model 一致。"""
+    try:
+        import config as _cfg  # type: ignore[import-not-found]
+
+        return bool((_cfg.config.raw.get("ppt") or {}).get("preview_render", True))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+# lazy 渲染器句柄：生产首次用时才 import(COM 探测有开销);
+# 测试 monkeypatch ppt_tools.ppt_render 即可注入假渲染器。
+ppt_render = None  # type: ignore[assignment]
+
+
+def _get_ppt_renderer():
+    global ppt_render
+    if ppt_render is None:
+        from . import ppt_render as _mod  # noqa: PLW0603
+        ppt_render = _mod
+    return ppt_render
+
+
+def _maybe_render_preview(result: dict[str, Any]) -> None:
+    """Best-effort PPT 视觉预览：每页渲染成 PNG 追加为 image artifacts,
+    用户/agent 在聊天里直接看到每页效果。失败只记日志,不影响主结果。"""
+    try:
+        if _in_pytest():
+            return
+        if not _ppt_preview_render_enabled():
+            return
+        if not result.get("ok") or not result.get("path"):
+            return
+
+        renderer = _get_ppt_renderer()
+        if not renderer.com_render_available():
+            return
+
+        pptx = Path(str(result["path"])).expanduser().resolve()
+        out_dir = pptx.with_suffix(".preview")
+        pngs = renderer.render_pptx_to_pngs(str(pptx), str(out_dir))
+        artifacts = result.setdefault("artifacts", [])
+        for idx, png in enumerate(pngs, start=1):
+            artifacts.append({
+                "kind": "image",
+                "path": png,
+                "mime": "image/png",
+                "title": f"预览 第{idx}页",
+            })
+    except Exception as exc:  # noqa: BLE001
+        log.warning("ppt preview render failed: %s", exc, exc_info=True)
+
+
 # ---------------------------------------------------------------------
 # python-pptx availability — defer the import so callers without the
 # dep get a graceful fallback instead of an ImportError at module load.
@@ -2428,12 +2487,14 @@ def ppt_create(
             )
             if result is not None:
                 log.debug("ppt template rendered with design pages: %s", resolved)
+                _maybe_render_preview(result)
                 return result
             result = _render_with_template(
                 slides, resolved, title=title, author=author, out_path=out_path,
             )
             if result is not None:
                 log.debug("ppt template rendered with layouts: %s", resolved)
+                _maybe_render_preview(result)
                 return result
             log.warning("template render failed, falling back to from-scratch engine")
         else:
@@ -2475,7 +2536,7 @@ def ppt_create(
         prs.save(out_path)
         # WI-T1.2 D1：显式 emit artifacts[]（一等公民路径，前端按 kind=file
         # 渲染 ArtifactCard；保留 path 字段保 BC）。
-        return {
+        result = {
             "ok": True,
             "path": str(out_path),
             "slide_count": total,
@@ -2487,6 +2548,8 @@ def ppt_create(
                 "title": Path(str(out_path)).name,
             }],
         }
+        _maybe_render_preview(result)
+        return result
     except Exception as exc:  # noqa: BLE001
         log.warning("ppt_create failed: %s", exc, exc_info=True)
         return {

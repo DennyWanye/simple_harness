@@ -1,4 +1,4 @@
-ok=True theme=template-design slides=4 path=G:\projects\deskpet\.tmp\design-fill-smoke-v3.pptx
+ok=True theme=template-design slides=4 path=G:\projects\deskpet\.tmp\design-fill-smoke-v6.pptx
 reopened slides=4
   slide[0]: ['大语言模型应用实践', 'DeskPet 设计页复用样例']
   slide[1]: ['从规则到神经网络', '一、技术背景']
