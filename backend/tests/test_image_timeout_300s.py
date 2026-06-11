@@ -175,6 +175,26 @@ def test_tool_timeout_covers_worst_retry_budget(img_mod):
     assert m._TOOL_TIMEOUT_S > worst
 
 
+def test_bypasses_env_proxy_by_default(img_mod):
+    """本机代理（Clash 等）会把 60s+ 零流量的出图连接掐断（实测 ~64s
+    RemoteProtocolError）→ 默认 trust_env=False 直连中转站。"""
+    m = img_mod
+    _FakeClient.post_fn = lambda url, **k: _Resp(200, {"data": [{"b64_json": _B64}]})
+    png, err = m._generate_png("x", m._DEFAULT_SIZE, m._DEFAULT_MODEL)
+    assert err is None
+    assert _FakeClient.init_kwargs.get("trust_env") is False
+
+
+def test_trust_env_proxy_config_overridable(img_mod, monkeypatch):
+    """网络环境必须走代理的用户可用 [image].trust_env_proxy=true 改回。"""
+    m = img_mod
+    monkeypatch.setattr(m, "_trust_env_proxy", lambda: True)
+    _FakeClient.post_fn = lambda url, **k: _Resp(200, {"data": [{"b64_json": _B64}]})
+    png, err = m._generate_png("x", m._DEFAULT_SIZE, m._DEFAULT_MODEL)
+    assert err is None
+    assert _FakeClient.init_kwargs.get("trust_env") is True
+
+
 def test_missing_api_key_logs_warning(img_mod, monkeypatch, caplog):
     """对应中转站发现的裸 401：key 解析失败时要有日志可查，不静默裸发。"""
     import logging

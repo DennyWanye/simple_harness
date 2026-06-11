@@ -33,19 +33,33 @@ from .registry import registry
 
 _DEFAULT_MODEL = "gpt-image-2"
 _DEFAULT_SIZE = "1024x1024"
-# 2026-06-09 快速失败调参（真机实测修正）：B-1 曾把重试提到 4×100s=400s+
-# 以为 relay 是「瞬时断连」（实测断连 ~62s，retry 能接住）。但真机发现 relay
-# 的 gpt-image-2 出图接口是「挂起不返回」（连试都打到上游、全程无响应）——
-# 这种情况下 4 次×100s 只会让用户「在画了」后干等 ~7 分钟才收到失败消息。
-# 改为快速失败：单次 70s（> 62s 瞬时阈值，仍能接住真·瞬时断连）+ 仅 1 次
-# 重试，最坏 ~145s 就明确告知出图失败，而不是死等。ssl/protocol 瞬时归类
-# 重试逻辑保留（见下方 _generate_png 的 except 元组）。
-_TIMEOUT_S = 70.0           # 单次 HTTP 请求超时（> 62s 瞬时断连阈值）
-_MAX_ATTEMPTS = 2           # 总尝试次数（1 次重试，接瞬时；不死等挂起）
+_DEFAULT_QUALITY = "medium"
+# 2026-06-11 超时根因修正（中转站侧 Caddy 访问日志 + RequestLog 交叉证据
+# + 本机真链路实测）。「60 秒必挂」其实是两个独立的 60s 杀手叠加：
+# 1) httpx 超时太短：服务端最近 30 次调用 28 次成功 200，耗时 57~221s
+#    （典型 70~120s），而客户端 60~70s 就掐断 → 报超时、服务端 1~2 分钟
+#    后照样把图生成完并按次计费（$0.15/次，钱花了图没人收）。修法：read
+#    超时拉到 300s，与服务端路由超时 timeoutMs=300000 对齐。
+# 2) 本机代理掐空闲连接：httpx 默认 trust_env=True 会跟随 HTTP(S)_PROXY
+#    env（如 Clash 127.0.0.1:7897），而出图期间连接上 60~220s 没有任何
+#    字节流动，代理把"空闲"连接 ~60s 就掐断（实测 RemoteProtocolError
+#    "Server disconnected" 精确卡在 ~64s；Caddy 侧对应记到 status 0 的
+#    "客户端 59.8s 断开"）。中转站是国内站、直连可达，修法：默认
+#    trust_env=False 直连（config [image].trust_env_proxy=true 可改回）。
+# 之前 2026-06-09 误判为「relay 挂起不返回」改成 70s 快速失败 —— 实际是
+# 上面两个 60s 杀手。修复后真链路实测：200 OK / 79.9s / 1.3MB 出图
+# （plans/2026-06-11-image-timeout-fix-live.png）。同步阻塞的体验问题由
+# ImageGenerationWorker 异步路径兜底（默认开启，agent turn 秒回不阻塞）。
+_TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=30.0, pool=30.0)
+# 重试只接「快速瞬时失败」：连接超时/断连/SSL/502/503（都没打到生成、
+# 无扣费风险）。读超时（等满 300s）与 504（上游耗尽 300s 预算）不重试 ——
+# 客户端断开后服务端仍会继续生成并扣费，盲目重试 = 双倍烧钱。
+_MAX_ATTEMPTS = 2           # 总尝试次数（仅瞬时错误重试 1 次）
 _RETRY_BACKOFF = (5.0,)     # attempt 2 前退避
 # 注册到 ToolRegistry 的总超时：必须 > 最坏重试预算
-# (2×70 + 5 = 145) 否则 registry 会在重试跑完前杀掉 handler。
-_TOOL_TIMEOUT_S = 160.0
+# （attempt1 瞬时失败 ≤~40s + 5s 退避 + attempt2 读满 300s + 收尾），
+# 否则 registry 会在请求跑完前杀掉 handler。
+_TOOL_TIMEOUT_S = 360.0
 
 _SCHEMA: dict[str, Any] = {
     "name": "generate_image",
@@ -132,6 +146,42 @@ def _image_model() -> str:
         return _DEFAULT_MODEL
 
 
+def _trust_env_proxy() -> bool:
+    """config ``[image].trust_env_proxy`` → httpx trust_env（默认 False）。
+
+    默认绕过系统代理直连中转站：本机代理（Clash 等）会把出图这种
+    60~220s 零字节流动的「空闲」连接 ~60s 掐断（见模块顶部根因注释）。
+    若用户的网络环境必须走代理才能到达 endpoint，可在 config 设
+    ``[image] trust_env_proxy = true`` 改回跟随 HTTP(S)_PROXY env。
+    """
+    try:
+        import config as _cfg  # type: ignore[import-not-found]
+
+        return bool(
+            (_cfg.config.raw.get("image") or {}).get("trust_env_proxy", False)
+        )
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _image_quality() -> str:
+    """config ``[image].quality`` → payload quality（默认 medium）。
+
+    中转层全字段透传（images.service.ts 仅替换 model 字段），quality 直达
+    上游；计费按张数与质量无关。桌宠小窗展示场景用不到 HD —— 降 quality
+    能把现网 57~221s 的生成耗时显著压低，是最便宜的提速手段。
+    """
+    try:
+        import config as _cfg  # type: ignore[import-not-found]
+
+        return str(
+            (_cfg.config.raw.get("image") or {}).get("quality")
+            or _DEFAULT_QUALITY
+        )
+    except Exception:  # noqa: BLE001
+        return _DEFAULT_QUALITY
+
+
 def _workspace_dir() -> Path:
     from paths import user_data_dir  # type: ignore[import-not-found]
 
@@ -173,6 +223,17 @@ def _generate_png(
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
+    else:
+        # 2026-06-11 中转站日志发现过一次不带 Authorization 头的裸 401
+        # （疑似某次配置丢了 key）。本地无鉴权 endpoint 是合法场景，所以
+        # 不硬失败，但落警告日志便于下次定位 key 解析链路哪环断了。
+        import logging as _logging
+
+        _logging.getLogger(__name__).warning(
+            "generate_image: api_key 未解析到，发送不带 Authorization 的"
+            "请求（base_url=%s）— 若对端是中转站会 401",
+            base_url,
+        )
     # 2026-05-16 中专站确认契约：OpenAI 标准 Images API，显式请求
     # b64_json（规格明确要求；服务端把 n 钳到 [1,10]）。
     payload = {
@@ -180,23 +241,31 @@ def _generate_png(
         "prompt": prompt,
         "size": size,
         "n": 1,
+        "quality": _image_quality(),
         "response_format": "b64_json",
     }
 
-    # 中转站上游对慢/复杂出图会瞬时断连（RemoteProtocolError
-    # "Server disconnected"）。断连/超时/5xx 重试带退避；4xx 确定性
-    # 错误立即返回不重试。
+    # 中转站上游对慢/复杂出图偶发瞬时断连（RemoteProtocolError
+    # "Server disconnected"）。瞬时错误（连接断/SSL/502/503）重试带退避；
+    # 4xx 确定性错误、读超时、504 立即返回不重试（后两者重试 = 重复扣费）。
     last_transient = ""
     for _attempt in range(1, _MAX_ATTEMPTS + 1):
         try:
-            with httpx.Client(timeout=_TIMEOUT_S) as cli:
+            with httpx.Client(
+                timeout=_TIMEOUT, trust_env=_trust_env_proxy()
+            ) as cli:
                 resp = cli.post(
                     f"{base_url}/images/generations",
                     json=payload,
                     headers=headers,
                 )
-            if resp.status_code in (502, 503, 504):
+            if resp.status_code in (502, 503):
                 last_transient = f"HTTP {resp.status_code}（上游网关瞬时）"
+            elif resp.status_code == 504:
+                return None, (  # 上游已耗尽服务端 300s 预算：重试只会再烧一轮
+                    "上游等满 300 秒仍没出图（网关 504，上游偶发抽风）。"
+                    "为避免重复扣费已停止重试。稍后再试，或把描述写简单点。"
+                )
             elif resp.status_code != 200:
                 detail = ""
                 try:
@@ -215,19 +284,30 @@ def _generate_png(
                 if item.get("b64_json"):
                     return base64.b64decode(item["b64_json"]), None
                 if item.get("url"):
-                    with httpx.Client(timeout=_TIMEOUT_S) as cli:
+                    with httpx.Client(
+                        timeout=_TIMEOUT, trust_env=_trust_env_proxy()
+                    ) as cli:
                         dl = cli.get(item["url"])
                     if dl.status_code != 200:
                         return None, f"取回图片 URL 失败 HTTP {dl.status_code}。"
                     return dl.content, None
                 return None, "响应里既没有 b64_json 也没有 url，无法保存图片。"
+        except httpx.ConnectTimeout as exc:
+            # 连接没建立就超时（10s）：请求没打到生成、无扣费风险 → 可重试。
+            # 必须排在 TimeoutException 之前（它是其子类）。
+            last_transient = f"{type(exc).__name__}: {exc}"
+        except httpx.TimeoutException as exc:
+            return None, (  # 读超时不重试：服务端仍会生成完并按次计费
+                f"图像接口等了 {int(_TIMEOUT.read)} 秒仍未返回"
+                f"（{type(exc).__name__}）。服务端可能仍在出图并照常计费，"
+                "为避免重复扣费已停止等待且不重试。稍后再试，"
+                "或把描述写简单点 —— 复杂出图更慢。"
+            )
         except (
-            httpx.TimeoutException,
             httpx.RemoteProtocolError,
             httpx.ConnectError,
             httpx.ReadError,
             httpx.WriteError,
-            httpx.PoolTimeout,
             httpx.ProtocolError,
             ssl.SSLError,
         ) as exc:
