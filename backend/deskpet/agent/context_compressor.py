@@ -232,7 +232,7 @@ class ContextCompressor:
         }
 
         anchor_msgs = _build_goal_anchor(goal_text, pending_tasks)
-        new_messages = (
+        new_messages = _sanitize_tool_pairs(
             list(system_msgs)
             + anchor_msgs
             + list(first_chunk)
@@ -273,6 +273,16 @@ def _partition(
     System messages are pulled out and returned as a group. The rest are
     then split into ``first_n + middle + last_n``. If the non-system
     count is ≤ first_n+last_n the middle is empty.
+
+    切割点会对齐 tool 配对边界(2026-06-12 真机 400 修复)：OpenAI 协议
+    要求 ``role:"tool"`` 必须紧跟在带 ``tool_calls`` 的 assistant 之后。
+    纯按位置切会把配对切断 —— tail 开头留下孤儿 tool(配对 assistant 被
+    压进 middle)、head 尾部留下悬空 tool_calls(响应被压进 middle)，上游
+    直接 400 Bad Request。对齐规则：
+      * head 从尾部收缩：最后一条是带 tool_calls 的 assistant 且其 tool
+        响应不全在 head → 该 assistant 挪进 middle(连同其后已在 head 的
+        tool 响应)。
+      * tail 从头部收缩：开头的 tool 消息(配对在 middle)挪进 middle。
     """
     system_msgs: list[dict[str, Any]] = [
         m for m in messages if (m.get("role") == "system")
@@ -284,10 +294,82 @@ def _partition(
     if n <= first_n + last_n:
         return system_msgs, non_system, [], []
 
-    head = non_system[:first_n]
-    tail = non_system[n - last_n :] if last_n > 0 else []
-    middle = non_system[first_n : n - last_n] if last_n > 0 else non_system[first_n:]
+    cut_head = first_n
+    cut_tail = n - last_n if last_n > 0 else n
+
+    # head 尾部不停在「悬空 tool_calls」上：若 head 最后一条是带
+    # tool_calls 的 assistant(它的 tool 响应在切割点之后) → 收缩。
+    while cut_head > 0:
+        last = non_system[cut_head - 1]
+        if last.get("role") == "assistant" and last.get("tool_calls"):
+            cut_head -= 1
+            continue
+        if last.get("role") == "tool":
+            # head 以 tool 结尾本身合法(配对在更前面),但若同组 tool 响应
+            # 跨越切割点(下一条还是 tool) → 整组连同 assistant 一起收缩。
+            if cut_head < n and non_system[cut_head].get("role") == "tool":
+                cut_head -= 1
+                continue
+        break
+
+    # tail 开头不以孤儿 tool 起步：配对 assistant 在 middle 已被压缩。
+    while cut_tail < n and non_system[cut_tail].get("role") == "tool":
+        cut_tail += 1
+
+    if cut_tail <= cut_head:
+        # 对齐后没有可压缩的 middle — 放弃压缩(调用方按 no_middle 处理)。
+        return system_msgs, non_system, [], []
+
+    head = non_system[:cut_head]
+    middle = non_system[cut_head:cut_tail]
+    tail = non_system[cut_tail:]
     return system_msgs, head, middle, tail
+
+
+def _sanitize_tool_pairs(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """输出前的协议兜底清洗：删孤儿 tool 消息、剥悬空 tool_calls。
+
+    任何来源的非法序列(不只 compressor 自己)到这里都被修齐,保证发给
+    OpenAI 兼容上游的消息序列永远合法。纯函数,不改入参。
+    """
+    out: list[dict[str, Any]] = []
+    open_ids: set = set()  # 上一条 assistant.tool_calls 中尚未见到响应的 id
+    for m in messages:
+        role = m.get("role")
+        if role == "tool":
+            if m.get("tool_call_id") in open_ids:
+                out.append(m)
+                continue
+            # 孤儿 tool：配对 assistant 已被压缩 → 丢弃(内容在摘要里)。
+            continue
+        if role == "assistant" and m.get("tool_calls"):
+            open_ids = {
+                tc.get("id") for tc in (m.get("tool_calls") or []) if tc.get("id")
+            }
+            out.append(m)
+            continue
+        if role != "tool":
+            open_ids = set()
+        out.append(m)
+
+    # 二遍：剥掉「响应不全」的 assistant.tool_calls(悬空) — 倒序找每个
+    # assistant 的后续 tool 响应是否齐全。
+    for i, m in enumerate(out):
+        if m.get("role") != "assistant" or not m.get("tool_calls"):
+            continue
+        want = {tc.get("id") for tc in (m.get("tool_calls") or []) if tc.get("id")}
+        got = set()
+        for follow in out[i + 1:]:
+            if follow.get("role") == "tool" and follow.get("tool_call_id") in want:
+                got.add(follow.get("tool_call_id"))
+            else:
+                break
+        if want - got:
+            stripped = {k: v for k, v in m.items() if k != "tool_calls"}
+            if not str(stripped.get("content") or "").strip():
+                stripped["content"] = "(调用了工具,结果已并入上文摘要)"
+            out[i] = stripped
+    return out
 
 
 def _render_transcript(messages: list[dict[str, Any]]) -> str:
