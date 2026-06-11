@@ -1659,8 +1659,19 @@ def _render_with_template(
         prs = _Presentation(template_path)
 
         # 模板文件常带示例页；这里只保留 master/layout/theme，避免用户示例页混入输出。
+        # 关键：只从 _sldIdLst remove(sldId) 仅删「引用」，底层 ppt/slides/slideN.xml
+        # 部件仍残留 → 新加 slide 复用 slide1.xml 等名字 → zip 内 Duplicate name →
+        # WPS/PowerPoint 会渲染【旧示例页】而非填充内容（实测「graphic designer」串图
+        # 根因）。必须同时 drop_rel 真正解除关系，让残留部件不被写回。
+        _R_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
         xml_slides = prs.slides._sldIdLst
         for sldId in list(xml_slides):
+            rId = sldId.get(_R_ID)
+            if rId:
+                try:
+                    prs.part.drop_rel(rId)
+                except Exception:  # noqa: BLE001
+                    pass
             xml_slides.remove(sldId)
 
         for so in slides:
