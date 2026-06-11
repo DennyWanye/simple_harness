@@ -5948,7 +5948,12 @@ async def control_channel(ws: WebSocket):
                                 # AND a code-panel-friendly `tool_call`
                                 # event so the new MessageStream renders
                                 # ToolCallCard inline.
-                                await _ws.send_json({
+                                # 2026-06-12: 工具事件也要广播给 default 会话
+                                # 的 peer 窗口(消息面板) —— 之前只发起方窗口
+                                # 能看到工具执行过程,面板里"后台在干活但
+                                # 什么都不显示",用户体验差。与 chat_v2_delta
+                                # 同模式 fan-out。
+                                _tue_msg = {
                                     "type": "tool_use_event",
                                     "payload": {
                                         "kind": "request",
@@ -5957,8 +5962,10 @@ async def control_channel(ws: WebSocket):
                                         "turn": ev.iteration,
                                         "session_id": _sid,
                                     },
-                                })
-                                await _ws.send_json({
+                                }
+                                await _ws.send_json(_tue_msg)
+                                await _broadcast_default_chat_peers(_ws, _tue_msg)
+                                _tc_msg = {
                                     "type": "tool_call",
                                     "payload": {
                                         "name": ev.tool_call.name,
@@ -5966,7 +5973,9 @@ async def control_channel(ws: WebSocket):
                                         "turn": ev.iteration,
                                         "session_id": _sid,
                                     },
-                                })
+                                }
+                                await _ws.send_json(_tc_msg)
+                                await _broadcast_default_chat_peers(_ws, _tc_msg)
                                 # P6 bugfix 2026-05-14 (history persistence):
                                 # tool_call 也要入 SessionDB，否则重启或 F5 后
                                 # UI 只能看到 user 气泡，看不到 agent 调用过
@@ -6001,7 +6010,9 @@ async def control_channel(ws: WebSocket):
                                     _parsed = json.loads(ev.result)
                                 except Exception:
                                     _parsed = ev.result
-                                await _ws.send_json({
+                                # 2026-06-12: 同 tool_call —— 结果事件也广播
+                                # 给消息面板 peer,工具执行全过程两窗一致。
+                                _tur_msg = {
                                     "type": "tool_use_event",
                                     "payload": {
                                         "kind": "result",
@@ -6010,8 +6021,10 @@ async def control_channel(ws: WebSocket):
                                         "turn": ev.iteration,
                                         "session_id": _sid,
                                     },
-                                })
-                                await _ws.send_json({
+                                }
+                                await _ws.send_json(_tur_msg)
+                                await _broadcast_default_chat_peers(_ws, _tur_msg)
+                                _tr_msg = {
                                     "type": "tool_result",
                                     "payload": {
                                         "tool": ev.tool_name,
@@ -6020,7 +6033,9 @@ async def control_channel(ws: WebSocket):
                                         "turn": ev.iteration,
                                         "session_id": _sid,
                                     },
-                                })
+                                }
+                                await _ws.send_json(_tr_msg)
+                                await _broadcast_default_chat_peers(_ws, _tr_msg)
                                 # P6 bugfix 2026-05-14 (history persistence):
                                 # tool_result 也要入 SessionDB (role='tool'
                                 # + tool_call_id 回指 assistant 的调用)。
