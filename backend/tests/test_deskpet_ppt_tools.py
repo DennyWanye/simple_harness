@@ -341,14 +341,15 @@ def test_ppt_create_unknown_theme_uses_minimal(out_path: Path) -> None:
 
 
 @pytestmark_pptx
-def test_ppt_create_default_output_path_lands_in_temp(tmp_path: Path, monkeypatch) -> None:
-    # Force tempdir into our pytest tmp_path
-    monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
+def test_ppt_create_default_output_path_lands_in_output_dir(tmp_path: Path, monkeypatch) -> None:
+    # 默认输出落 <user_data>/OutPut/PPT/(用户好找);user_data 重定向进 tmp。
+    monkeypatch.setenv("DESKPET_USER_DATA_DIR", str(tmp_path))
     outline = [{"layout": "title", "title": "X"}]
     result = ppt_create(outline)
     assert result["ok"] is True
     assert Path(result["path"]).is_file()
     assert str(tmp_path) in result["path"]
+    assert ("OutPut" in result["path"]) and ("PPT" in result["path"])
 
 
 @pytestmark_pptx

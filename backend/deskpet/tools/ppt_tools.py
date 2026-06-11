@@ -2791,7 +2791,14 @@ def _resolve_output_path(p: Optional[str]) -> Path:
         return path
     ts = int(time.time())
     fname = f"deskpet-ppt-{ts}.pptx"
-    return Path(tempfile.gettempdir()) / fname
+    # 默认落 <user_data>/OutPut/PPT/(用户好找,系统 temp 没人翻得到);
+    # paths 不可用(独立脚本等)再回退 temp。
+    try:
+        from paths import output_dir  # type: ignore[import-not-found]
+
+        return output_dir("PPT") / fname
+    except Exception:  # noqa: BLE001
+        return Path(tempfile.gettempdir()) / fname
 
 
 # ---------------------------------------------------------------------
@@ -2804,7 +2811,8 @@ _PPT_SCHEMA = {
     "description": (
         "Generate a professional .pptx presentation locally from an outline. "
         "Returns the file path on success; falls back to a Markdown outline "
-        "when python-pptx is unavailable. Use this AFTER you've decided on a "
+        "when python-pptx is unavailable. 生成成功后【必须】把返回的 path 完整"
+        "路径告诉用户(用户要知道文件存哪了)。Use this AFTER you've decided on a "
         "structured slide outline. Do not stuff long paragraphs into bullets "
         "— bullets are cues, not scripts.\n"
         "两种视觉风格(二选一,别混用):\n"
@@ -2971,7 +2979,8 @@ def _handle_ppt_create(args: dict, task_id: str) -> str:
                     await worker.notifier(
                         sid,
                         f"✨ 图文 PPT 做好啦！已自动打开～\n"
-                        f"📁 {Path(str(path)).name}（{result.get('slide_count', '?')} 页）",
+                        f"📁 {Path(str(path)).name}（{result.get('slide_count', '?')} 页）\n"
+                        f"📂 保存在：{path}",
                     )
                 else:
                     await worker.notifier(
