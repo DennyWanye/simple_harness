@@ -1710,14 +1710,13 @@ def _user_template_roots() -> list[Path]:
     默认 <repo>/resources/PPT_Template;env DESKPET_PPT_TEMPLATE_ROOTS
     (``;`` 分隔)可覆盖/追加。从不抛异常。
     """
+    # 仅 env 显式开启 —— 默认【不】递归搜原始模板库,避免 LLM 瞎选到不合适
+    # 的模板(精选好模板已进 bundled,见 _TEMPLATE_STYLE_HINTS)。
     roots: list[Path] = []
     try:
         env = (os.environ.get("DESKPET_PPT_TEMPLATE_ROOTS", "") or "").strip()
         if env:
             roots += [Path(p.strip()) for p in env.split(";") if p.strip()]
-        # 仓库内置: backend/deskpet/tools → parents[3] = repo 根
-        repo_default = Path(__file__).resolve().parents[3] / "resources" / "PPT_Template"
-        roots.append(repo_default)
     except Exception:  # noqa: BLE001
         pass
     return [r for r in roots if r.is_dir()]
@@ -3036,19 +3035,31 @@ _PPT_SCHEMA = {
 }
 
 
+# 精选模板的风格描述(给 LLM 按主题选)。键 = bundled 文件 stem。
+_TEMPLATE_STYLE_HINTS = {
+    "商务深蓝-水墨": "深蓝水墨国风,庄重沉稳。适合教育/文化/政务/学术/严肃汇报。",
+    "高级感-蓝": "蓝色简约现代,清爽专业。适合科技/商业/产品/通用职场汇报。",
+    "简约高级-灰": "高级灰极简,留白克制。适合设计/品牌/方案/高端通用场合。",
+}
+
+
 def _build_template_description() -> str:
     templates = _list_bundled_templates()
-    available = (
-        "当前可用 bundled 模板名：" + ", ".join(templates)
-        if templates
-        else "当前无 bundled 模板"
-    )
+    if not templates:
+        return (
+            "Optional .pptx absolute path. 当前无 bundled 模板,要模板填充请传"
+            "一个 .pptx 绝对路径。"
+        )
+    lines = []
+    for name in templates:
+        hint = _TEMPLATE_STYLE_HINTS.get(name, "")
+        lines.append(f"「{name}」{hint}".rstrip())
+    listing = "；".join(lines)
     return (
-        "Optional bundled template name or .pptx absolute path. When provided "
-        "and valid, DeskPet loads it, adds slides from its layouts, fills "
-        "placeholders, and inherits editable formatting from the template. "
-        "使用模板能产出更专业/精美的可编辑 PPT；用户要“正式/专业/精美”PPT 时优先用模板。"
-        f"{available}。"
+        "可编辑模板填充。【只能】从下列精选模板里【按名字精确】选一个传入"
+        "(别的名字一律不要传、不要自己编模板名),或传一个 .pptx 绝对路径。"
+        "用户要『正式/专业/精美/可编辑』PPT 时优先用模板;按主题选最贴的风格：\n"
+        f"{listing}。"
     )
 
 
