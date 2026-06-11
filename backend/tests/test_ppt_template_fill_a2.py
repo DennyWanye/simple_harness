@@ -116,9 +116,10 @@ def test_template_picture_placeholder(tmp_path: Path, template_pptx: Path, tiny_
     assert _has_picture(prs.slides[0])
 
 
-def test_template_image_prompt_autofill(
+def test_template_mode_skips_image_gen(
     monkeypatch, tmp_path: Path, template_pptx: Path, tiny_png: Path,
 ) -> None:
+    """模板模式下 image_prompt 不触发 AI 生图(设计页无插图接口,生成=白烧钱)。"""
     from deskpet.tools import image_tools
 
     calls: list[list[str]] = []
@@ -137,4 +138,29 @@ def test_template_image_prompt_autofill(
     )
 
     assert result["ok"] is True
-    assert calls == [["a clean desk pet hero"]]
+    # 显式传了 template → 走模板模式 → 跳过生图省钱
+    assert calls == []
+
+
+def test_image_full_autofills_without_template(
+    monkeypatch, tmp_path: Path, tiny_png: Path,
+) -> None:
+    """无 template 的 image_full + image_prompt → 真触发 AI 生图。"""
+    from deskpet.tools import image_tools
+
+    calls: list[list[str]] = []
+
+    def fake_generate_images(prompts, **kwargs):
+        calls.append(list(prompts))
+        return [{"prompt": prompts[0], "path": str(tiny_png), "error": None}]
+
+    monkeypatch.setattr(image_tools, "generate_images", fake_generate_images)
+    out = tmp_path / "imagefull.pptx"
+
+    result = ppt_create(
+        [{"layout": "image_full", "title": "封面", "image_prompt": "a cinematic ai city"}],
+        output_path=str(out),
+    )
+
+    assert result["ok"] is True
+    assert calls == [["a cinematic ai city"]]

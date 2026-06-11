@@ -2505,11 +2505,21 @@ def ppt_create(
             ),
         }
 
-    _autofill_image_prompts(slides)
     out_path = _resolve_output_path(output_path)
 
-    # 显式 template 优先；无则用 env 默认模板(DESKPET_PPT_DEFAULT_TEMPLATE)。
-    chosen_template = template or _default_template()
+    # 视觉风格仲裁(防 AI 整页生图 与 模板模式 互踩 + 防白烧钱)：
+    # - 显式 template= 永远优先(用户明确要模板)。
+    # - 否则若有 image_full/image 页带 image_prompt → 用户要 AI 整页生图,
+    #   不让 env 默认模板(DESKPET_PPT_DEFAULT_TEMPLATE)劫持。
+    wants_ai_images = any(
+        (so.layout in {"image_full", "image"}) and so.image_prompt
+        for so in slides
+    )
+    chosen_template = template or (None if wants_ai_images else _default_template())
+    # 模板模式不会用到 AI 生成图(设计页是嵌入照,无插图接口)→ 跳过生图省钱
+    # ($0.15/张)。仅非模板模式才 autofill。
+    if not chosen_template:
+        _autofill_image_prompts(slides)
     if chosen_template:
         resolved = _resolve_template_path(chosen_template)
         if resolved:
@@ -2614,7 +2624,14 @@ _PPT_SCHEMA = {
         "Returns the file path on success; falls back to a Markdown outline "
         "when python-pptx is unavailable. Use this AFTER you've decided on a "
         "structured slide outline. Do not stuff long paragraphs into bullets "
-        "— bullets are cues, not scripts."
+        "— bullets are cues, not scripts.\n"
+        "两种视觉风格(二选一,别混用):\n"
+        "① AI 整页生图(最惊艳,适合'用AI配图/惊艳/视觉冲击/封面海报感'的需求): "
+        "每页 layout='image_full' + 写一段英文 image_prompt,DeskPet 会用 "
+        "gpt-image-2 生成电影感全屏背景图铺满整页、标题压在底部暗带。"
+        "这种模式【不要】传 template 参数。每张图约 1~2 分钟,4 页请耐心等。\n"
+        "② 模板填充(可编辑/正式商务): 传 template=模板名,用模板的设计页填文字。"
+        "这种模式【不要】给页面写 image_prompt(模板自带配图,AI 图用不上会白生成)。"
     ),
     "parameters": {
         "type": "object",
@@ -2625,8 +2642,14 @@ _PPT_SCHEMA = {
                     "Each slide: {layout, title, subtitle?, bullets?, left?, "
                     "right?, left_title?, right_title?, image_path?, image_prompt?, caption?, "
                     "quote?, cite?, notes?}. layout ∈ {title, section, bullet, "
-                    "two_column, image, image_full, quote, toc}. In template mode, "
-                    "layout maps onto the template's standard slide layouts."
+                    "two_column, image, image_full, quote, toc}.\n"
+                    "image_full = AI 整页生图页: 必须配 image_prompt(英文,描述电影感"
+                    "全屏画面,深色调、主体在上 2/3、底部留白给标题、no text no "
+                    "watermark);title/caption 会叠在底部暗带。整份做成 AI 视觉 deck "
+                    "时每页都用 image_full。\n"
+                    "image_prompt = 该页要 AI 生成的图(gpt-image-2);只在 image_full/"
+                    "image 页用,且当前【没传 template】时才生效。\n"
+                    "传了 template 时: layout 映射到模板的标准版式,别再写 image_prompt。"
                 ),
                 "type": ["array", "string"],
             },
