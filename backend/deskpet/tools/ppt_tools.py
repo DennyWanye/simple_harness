@@ -1704,6 +1704,25 @@ def _default_template() -> Optional[str]:
         return None
 
 
+def _user_template_roots() -> list[Path]:
+    """用户模板根目录(递归搜索) —— 桌宠可按名引用这里的模板。
+
+    默认 <repo>/resources/PPT_Template;env DESKPET_PPT_TEMPLATE_ROOTS
+    (``;`` 分隔)可覆盖/追加。从不抛异常。
+    """
+    roots: list[Path] = []
+    try:
+        env = (os.environ.get("DESKPET_PPT_TEMPLATE_ROOTS", "") or "").strip()
+        if env:
+            roots += [Path(p.strip()) for p in env.split(";") if p.strip()]
+        # 仓库内置: backend/deskpet/tools → parents[3] = repo 根
+        repo_default = Path(__file__).resolve().parents[3] / "resources" / "PPT_Template"
+        roots.append(repo_default)
+    except Exception:  # noqa: BLE001
+        pass
+    return [r for r in roots if r.is_dir()]
+
+
 def _resolve_template_path(template: Optional[str]) -> Optional[str]:
     """Resolve a direct .pptx path or bundled template name without raising."""
     try:
@@ -1724,6 +1743,17 @@ def _resolve_template_path(template: Optional[str]) -> Optional[str]:
         bundled = _TEMPLATES_DIR / f"{name}.pptx"
         if bundled.is_file():
             return str(bundled.resolve())
+
+        # 用户模板根(resources/PPT_Template/**)按 stem 递归匹配
+        for root in _user_template_roots():
+            try:
+                hit = next(
+                    (p for p in root.rglob(f"{name}.pptx") if p.is_file()), None
+                )
+                if hit is not None:
+                    return str(hit.resolve())
+            except Exception:  # noqa: BLE001
+                continue
     except Exception:  # noqa: BLE001
         return None
     return None
