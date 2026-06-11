@@ -807,6 +807,15 @@ function dispatch(msg: any) {
         );
       break;
     }
+    case "model_context_set_response": {
+      // 2026-06-12: 上下文档位保存 ack。catalog 刷新由 modal 保存时
+      // 紧随的 code_models_list 请求完成,这里只记失败。
+      const p = msg.payload || {};
+      if (!p.ok) {
+        console.warn("[ws] model_context_set rejected:", p.model, p.context_window);
+      }
+      break;
+    }
     case "code_session_model_set": {
       // Ack from backend for code_session_set_model. Same merge as above —
       // backend echoes provider_id + preferred_model + model_params so we

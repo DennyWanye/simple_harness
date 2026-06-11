@@ -30,6 +30,7 @@ import {
   capsForModel,
   buildModelOptionsFromCatalog,
   contextWindowForModel,
+  supportedWindowsForModel,
 } from "./codeModelsStore";
 import { useSessionsStore, type CodeModelParams } from "../stores/sessionsStore";
 
@@ -79,9 +80,18 @@ export function ChangeModelModal({
   // opus/sonnet exposes thinking; the picker only renders the controls
   // the chosen model actually supports. Unknown/custom id → permissive.
   const caps = capsForModel(model || current_model, catalog);
-  // Context window is a model property, NOT a user choice — show the
-  // model's real nominal window read-only (null → "由 provider 决定").
+  // 2026-06-12: 上下文窗口从「只读」升级为「按型号可选档位」。
+  // supported_windows > 1 档(如 gpt-5.5: 128K/400K/1M) → 渲染下拉,
+  // 选择经 model_context_set 持久化到 backend 全局 override(压缩阈值/
+  // 预算同步生效);单档/未知 → 保持只读 chip。
   const ctx_window = contextWindowForModel(model || current_model, catalog);
+  const ctx_options = supportedWindowsForModel(model || current_model, catalog);
+  const [ctx_choice, set_ctx_choice] = useState<number | null>(null);
+  // 切换模型 → 档位选择回到该模型当前值
+  useEffect(() => {
+    set_ctx_choice(null);
+  }, [model]);
+  const ctx_selected = ctx_choice ?? ctx_window;
 
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => {
@@ -101,8 +111,23 @@ export function ChangeModelModal({
     // never both true (mutually exclusive by construction).
     if (caps.thinking) params.thinking = reason_mode === "thinking";
     if (caps.fast) params.fast = reason_mode === "fast";
-    // context window is model-defined & read-only — not sent as a param.
     if (caps.effort) params.effort = effort;
+    // 上下文档位变化 → 持久化为该模型的全局 override(非 per-session 参数:
+    // 窗口是模型属性,backend 压缩阈值/预算据此对齐),然后刷新 catalog。
+    if (
+      ctx_choice != null &&
+      ctx_choice !== ctx_window &&
+      ctx_options.includes(ctx_choice)
+    ) {
+      codePanelWS.send({
+        type: "model_context_set",
+        payload: {
+          model: (model || current_model || "").trim(),
+          context_window: ctx_choice,
+        },
+      });
+      codePanelWS.send({ type: "code_models_list" });
+    }
     codePanelWS.send(buildSetModelMessage(session_id, model, params));
     // Optimistic write — backend's code_session_model_set ack reconciles
     // (same pattern as the provider dropdown).
@@ -175,9 +200,35 @@ export function ChangeModelModal({
             </>
           )}
 
-          {/* Context window — model-defined, READ-ONLY (not all models
-              support the same window; we show the model's real one). */}
-          {caps.context && (
+          {/* Context window — 按型号可选档位(>1 档渲染下拉,保存时持久化
+              为全局 override);单档/未知型号保持只读 chip。 */}
+          {caps.context && ctx_options.length > 1 && (
+            <>
+              <label style={labelStyle} htmlFor="ctx-window-select">
+                上下文窗口
+              </label>
+              <select
+                id="ctx-window-select"
+                aria-label="上下文窗口"
+                value={String(ctx_selected ?? ctx_options[0])}
+                onChange={(e) => set_ctx_choice(Number(e.target.value))}
+                style={selectStyle}
+              >
+                {ctx_options.map((w) => (
+                  <option key={w} value={String(w)}>
+                    {`${w.toLocaleString()} tokens` +
+                      (w >= 1_000_000
+                        ? "  (≈1M)"
+                        : `  (≈${Math.round(w / 1000)}K)`)}
+                  </option>
+                ))}
+              </select>
+              <span style={hintStyle}>
+                档位为该模型支持的窗口；选择对所有会话生效
+              </span>
+            </>
+          )}
+          {caps.context && ctx_options.length <= 1 && (
             <>
               <label style={labelStyle}>上下文窗口（模型决定）</label>
               <div style={ctxChipStyle} aria-label="上下文窗口">
