@@ -2126,6 +2126,29 @@ def _select_design_page(
     return _first_unused_page(pages, used)
 
 
+def _is_english_semantic_label(text: str) -> bool:
+    """是否是「该清掉的英文语义小标签」(EXPERIENCE/AWARDS/BA PRODUCT DESIGN)。
+
+    判定: 含 ≥3 个连续英文字母(英文单词) 且 不含中文。装饰编号 ONE/TWO/
+    THREE/FOUR 也是英文单词,但它们是「位置编号」装饰、配在正文上方读起来
+    自然,豁免保留。纯数字/符号天然不命中。
+    """
+    import re
+
+    t = text.strip()
+    if not t:
+        return False
+    if re.search(r"[一-鿿]", t):  # 有中文 → 不是纯英文标签
+        return False
+    if not re.search(r"[A-Za-z]{3,}", t):  # 没有英文单词(纯数字/符号)
+        return False
+    DECOR_NUMS = {"one", "two", "three", "four", "five", "six",
+                  "seven", "eight", "nine", "ten"}
+    if t.lower() in DECOR_NUMS:
+        return False
+    return True
+
+
 def _fill_design_bullets(info: dict[str, Any], bullets: Sequence[str]) -> None:
     clean = [str(item).strip() for item in bullets if str(item).strip()]
     bodies = list(info.get("bodies", []))
@@ -2157,6 +2180,70 @@ def _insert_design_picture(slide, so: SlideOutline) -> None:
                 log.debug("design picture insert failed: %s", exc)
     except Exception:  # noqa: BLE001
         pass
+
+
+def _swap_design_picture(slide, image_path: str) -> bool:
+    """把设计页里【最大的嵌入图片】的图源换成 AI 生成图(保留原图位置/裁切/
+    边框样式) —— 这是「模板丰富内容 + 定制 AI 视觉」的关键: 用模板的多段
+    文字排版 + 专业设计,但配图换成贴合主题的 AI 图,而非模板通用库存照。
+
+    技术: 找最大 Picture shape → 经 a:blip r:embed 定位 image part →
+    替换其 _blob。AI 图(PNG)转 JPEG 以匹配多数模板的 jpeg part(跨
+    PowerPoint/WPS 更稳)。成功返回 True。从不抛异常。
+    """
+    try:
+        src = Path(str(image_path))
+        if not src.is_file():
+            return False
+        from pptx.oxml.ns import qn
+
+        # 选面积最大的 Picture(通常是主视觉位)
+        best = None
+        best_area = -1
+        for sh in slide.shapes:
+            if getattr(sh, "shape_type", None) == 13:  # PICTURE
+                try:
+                    area = int(sh.width) * int(sh.height)
+                except Exception:  # noqa: BLE001
+                    area = 0
+                if area > best_area:
+                    best_area, best = area, sh
+        if best is None:
+            return False
+
+        blips = best._element.findall(".//" + qn("a:blip"))
+        if not blips:
+            return False
+        r_id = blips[0].get(qn("r:embed"))
+        if not r_id:
+            return False
+        image_part = slide.part.related_part(r_id)
+
+        # AI 图转 JPEG(白底), 匹配模板 part 的 content-type, 避免某些
+        # 阅读器对 ext/content-type 不一致挑剔。
+        new_bytes = src.read_bytes()
+        try:
+            from io import BytesIO
+            from PIL import Image  # type: ignore
+
+            with Image.open(src) as im:
+                if im.mode in ("RGBA", "P", "LA"):
+                    bg = Image.new("RGB", im.size, (255, 255, 255))
+                    bg.paste(im.convert("RGBA"), mask=im.convert("RGBA").split()[-1])
+                    im = bg
+                else:
+                    im = im.convert("RGB")
+                buf = BytesIO()
+                im.save(buf, format="JPEG", quality=88)
+                new_bytes = buf.getvalue()
+        except Exception:  # noqa: BLE001
+            pass  # PIL 不可用 → 直接塞原字节(WPS 实测可读)
+
+        image_part._blob = new_bytes
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log.debug("design picture swap failed: %s", exc)
+        return False
 
 
 def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
@@ -2224,6 +2311,22 @@ def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
     # (底色/位置仍是设计的一部分)，只清文本。
     for shape in info.get("decor", []):
         _set_text_keep_style(shape, [])
+
+    # 清掉英文语义小标签(EXPERIENCE/AWARDS/BA PRODUCT DESIGN 等)：中文
+    # deck 里残留英文小标题会穿帮。纯数字/罗马序号(ONE 这类装饰编号靠
+    # _is_decor_label 豁免)保留。
+    for shape in info.get("labels", []):
+        try:
+            txt = (shape.text_frame.text or "").strip()
+        except Exception:  # noqa: BLE001
+            txt = ""
+        if txt and _is_english_semantic_label(txt):
+            _set_text_keep_style(shape, [])
+
+    # 有 AI 生成图(image_prompt 出图后的 image_path) → 换进本页最大图片位,
+    # 把模板通用库存照替成贴合主题的定制视觉(模板丰富内容 + AI 视觉合一)。
+    if so.image_path and Path(str(so.image_path)).is_file():
+        _swap_design_picture(slide, str(so.image_path))
 
     if so.notes:
         try:
@@ -2509,16 +2612,20 @@ def ppt_create(
 
     # 视觉风格仲裁(防 AI 整页生图 与 模板模式 互踩 + 防白烧钱)：
     # - 显式 template= 永远优先(用户明确要模板)。
-    # - 否则若有 image_full/image 页带 image_prompt → 用户要 AI 整页生图,
-    #   不让 env 默认模板(DESKPET_PPT_DEFAULT_TEMPLATE)劫持。
-    wants_ai_images = any(
-        (so.layout in {"image_full", "image"}) and so.image_prompt
-        for so in slides
+    # - 否则若有 image_full 页带 image_prompt → 用户要 AI 整页铺图,不让
+    #   env 默认模板(DESKPET_PPT_DEFAULT_TEMPLATE)劫持。
+    wants_fullbleed = any(
+        so.layout == "image_full" and so.image_prompt for so in slides
     )
-    chosen_template = template or (None if wants_ai_images else _default_template())
-    # 模板模式不会用到 AI 生成图(设计页是嵌入照,无插图接口)→ 跳过生图省钱
-    # ($0.15/张)。仅非模板模式才 autofill。
-    if not chosen_template:
+    chosen_template = template or (None if wants_fullbleed else _default_template())
+    # 生图消费者: ①模板模式 → AI 图换进设计页图片位(_swap_design_picture,
+    # 丰富内容+定制视觉) ②image_full/image 页 → 全幅铺图/插图。两者都不沾
+    # 才跳过生图省钱($0.15/张)。
+    has_prompts = any(so.image_prompt for so in slides)
+    has_img_layout = any(
+        so.layout in {"image_full", "image"} and so.image_prompt for so in slides
+    )
+    if has_prompts and (chosen_template or has_img_layout):
         _autofill_image_prompts(slides)
     if chosen_template:
         resolved = _resolve_template_path(chosen_template)

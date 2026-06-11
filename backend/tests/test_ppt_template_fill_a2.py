@@ -116,10 +116,10 @@ def test_template_picture_placeholder(tmp_path: Path, template_pptx: Path, tiny_
     assert _has_picture(prs.slides[0])
 
 
-def test_template_mode_skips_image_gen(
+def test_template_mode_generates_for_swap(
     monkeypatch, tmp_path: Path, template_pptx: Path, tiny_png: Path,
 ) -> None:
-    """模板模式下 image_prompt 不触发 AI 生图(设计页无插图接口,生成=白烧钱)。"""
+    """模板模式 + image_prompt → 生图(供换进设计页图片位:丰富内容+定制视觉)。"""
     from deskpet.tools import image_tools
 
     calls: list[list[str]] = []
@@ -132,13 +132,39 @@ def test_template_mode_skips_image_gen(
     out = tmp_path / "prompt-picture.pptx"
 
     result = ppt_create(
-        [{"layout": "image", "title": "图", "image_prompt": "a clean desk pet hero"}],
+        [{"layout": "bullet", "title": "要点", "bullets": ["A", "B"],
+          "image_prompt": "a clean desk pet hero"}],
         output_path=str(out),
         template=str(template_pptx),
     )
 
     assert result["ok"] is True
-    # 显式传了 template → 走模板模式 → 跳过生图省钱
+    # 模板模式带 image_prompt → 真生图(给 _swap_design_picture 用)
+    assert calls == [["a clean desk pet hero"]]
+
+
+def test_template_mode_no_prompt_no_gen(
+    monkeypatch, tmp_path: Path, template_pptx: Path, tiny_png: Path,
+) -> None:
+    """模板模式但没写 image_prompt → 不生图(省钱;用模板自带配图)。"""
+    from deskpet.tools import image_tools
+
+    calls: list[list[str]] = []
+
+    def fake_generate_images(prompts, **kwargs):
+        calls.append(list(prompts))
+        return [{"prompt": prompts[0], "path": str(tiny_png), "error": None}]
+
+    monkeypatch.setattr(image_tools, "generate_images", fake_generate_images)
+    out = tmp_path / "no-prompt.pptx"
+
+    result = ppt_create(
+        [{"layout": "bullet", "title": "要点", "bullets": ["A", "B"]}],
+        output_path=str(out),
+        template=str(template_pptx),
+    )
+
+    assert result["ok"] is True
     assert calls == []
 
 
