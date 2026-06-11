@@ -126,14 +126,14 @@ try:  # pragma: no cover — import probe
     from pptx.util import Inches, Pt, Emu
     from pptx.dml.color import RGBColor
     from pptx.enum.shapes import MSO_SHAPE, PP_PLACEHOLDER
-    from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+    from pptx.enum.text import PP_ALIGN, MSO_ANCHOR, MSO_AUTO_SIZE
     from pptx.enum.dml import MSO_FILL_TYPE
     from pptx.chart.data import CategoryChartData
     from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
     _HAS_PPTX = True
 except ImportError:  # pragma: no cover
     _Presentation = None  # type: ignore
-    Inches = Pt = Emu = RGBColor = MSO_SHAPE = PP_PLACEHOLDER = PP_ALIGN = MSO_ANCHOR = MSO_FILL_TYPE = None  # type: ignore
+    Inches = Pt = Emu = RGBColor = MSO_SHAPE = PP_PLACEHOLDER = PP_ALIGN = MSO_ANCHOR = MSO_FILL_TYPE = MSO_AUTO_SIZE = None  # type: ignore
     CategoryChartData = XL_CHART_TYPE = XL_LEGEND_POSITION = None  # type: ignore
     _HAS_PPTX = False
 
@@ -1295,8 +1295,59 @@ def _render_image_v2(slide, outline: SlideOutline, theme: Theme) -> None:
     )
 
 
+def _render_image_full_rich_panel(slide, outline: SlideOutline, theme: Theme) -> None:
+    """全幅 AI 图 + 左侧深色面板(标题 + 丰富要点)。面板尺寸我方自控,
+    长中文要点不受模板小槽限制 —— 这是「惊艳 AI 视觉 + 丰富可读内容」。"""
+    panel_w = int(_SLIDE_WIDTH * 0.46)
+    # 左侧深色面板(主视觉留右 54%)
+    _add_shape(
+        slide, MSO_SHAPE.RECTANGLE,
+        left=Emu(0), top=Emu(0),
+        width=Emu(panel_w), height=Emu(_SLIDE_HEIGHT),
+        fill=theme.dark_bg_rgb, line=None,
+    )
+    # accent 竖条
+    _add_shape(
+        slide, MSO_SHAPE.RECTANGLE,
+        left=Inches(0.62), top=Inches(0.7),
+        width=Inches(0.06), height=Inches(0.62),
+        fill=theme.accent_rgb, line=None,
+    )
+    _add_text(
+        slide, outline.title or "",
+        left=Inches(0.82), top=Inches(0.64),
+        width=Inches(3.6), height=Inches(0.78),
+        font_size=27, bold=True,
+        color=theme.dark_text_rgb,
+        font_name=theme.font_heading,
+        align="left", anchor="middle",
+    )
+    bullets = [b for b in (outline.bullets or []) if str(b).strip()]
+    if bullets:
+        _add_bullet_text(
+            slide, bullets,
+            left=Inches(0.82), top=Inches(1.74),
+            width=Inches(3.5), height=Inches(3.2),
+            font_size=15,
+            color=theme.dark_text_rgb,
+            font_name=theme.font_body,
+            accent_color=theme.accent_rgb,
+        )
+    elif outline.caption:
+        _add_text(
+            slide, outline.caption,
+            left=Inches(0.82), top=Inches(1.74),
+            width=Inches(3.5), height=Inches(2.6),
+            font_size=16,
+            color=theme.dark_muted_text_rgb,
+            font_name=theme.font_body,
+            align="left",
+        )
+
+
 def _render_image_full_v2(slide, outline: SlideOutline, theme: Theme) -> None:
     img = outline.image_path
+    has_bullets = bool([b for b in (outline.bullets or []) if str(b).strip()])
     if img and Path(img).is_file():
         try:
             slide.shapes.add_picture(
@@ -1304,6 +1355,10 @@ def _render_image_full_v2(slide, outline: SlideOutline, theme: Theme) -> None:
                 Emu(0), Emu(0),
                 width=Emu(_SLIDE_WIDTH), height=Emu(_SLIDE_HEIGHT),
             )
+            # 有丰富要点 → 左侧自控面板(内容页);否则 → 底部带(封面式)
+            if has_bullets:
+                _render_image_full_rich_panel(slide, outline, theme)
+                return
             band_top = Emu(int(_SLIDE_HEIGHT * 0.78))
             band_h = Emu(int(_SLIDE_HEIGHT * 0.22))
             _add_shape(
@@ -2127,6 +2182,20 @@ def _select_design_page(
     return _first_unused_page(pages, used)
 
 
+def _enable_text_autofit(shape) -> None:
+    """开启文本框「自动换行 + 收缩字号填充」(WPS/PowerPoint 渲染时把超长
+    中文压进框)。模板正文槽是为短英文 lorem 设计的,长中文会溢出/挤成
+    一团 —— normAutofit 让渲染器自动缩字号到放得下。从不抛异常。
+    """
+    try:
+        tf = shape.text_frame
+        tf.word_wrap = True
+        if MSO_AUTO_SIZE is not None:
+            tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _is_english_semantic_label(text: str) -> bool:
     """是否是「该清掉的英文语义小标签」(EXPERIENCE/AWARDS/BA PRODUCT DESIGN)。
 
@@ -2161,12 +2230,15 @@ def _fill_design_bullets(info: dict[str, Any], bullets: Sequence[str]) -> None:
     if len(bodies) >= len(clean):
         for shape, bullet in zip(bodies, clean):
             _set_text_keep_style(shape, [bullet])
+            _enable_text_autofit(shape)
         for shape in bodies[len(clean):]:
             _set_text_keep_style(shape, [])
         return
     for shape, bullet in zip(bodies[:-1], clean[: max(len(bodies) - 1, 0)]):
         _set_text_keep_style(shape, [bullet])
+        _enable_text_autofit(shape)
     _set_text_keep_style(bodies[-1], clean[len(bodies) - 1:])
+    _enable_text_autofit(bodies[-1])
 
 
 def _insert_design_picture(slide, so: SlideOutline) -> None:
@@ -2291,11 +2363,13 @@ def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
                 bodies[0],
                 ([so.left_title] if so.left_title else []) + list(so.left),
             )
+            _enable_text_autofit(bodies[0])
         if len(bodies) > 1:
             _set_text_keep_style(
                 bodies[1],
                 ([so.right_title] if so.right_title else []) + list(so.right),
             )
+            _enable_text_autofit(bodies[1])
         for shape in bodies[2:]:
             _set_text_keep_style(shape, [])
     elif so.layout in {"image", "image_full"}:
@@ -2751,13 +2825,15 @@ _PPT_SCHEMA = {
                     "right?, left_title?, right_title?, image_path?, image_prompt?, caption?, "
                     "quote?, cite?, notes?}. layout ∈ {title, section, bullet, "
                     "two_column, image, image_full, quote, toc}.\n"
-                    "image_full = AI 整页生图页: 必须配 image_prompt(英文,描述电影感"
-                    "全屏画面,深色调、主体在上 2/3、底部留白给标题、no text no "
-                    "watermark);title/caption 会叠在底部暗带。整份做成 AI 视觉 deck "
-                    "时每页都用 image_full。\n"
-                    "image_prompt = 该页要 AI 生成的图(gpt-image-2);只在 image_full/"
-                    "image 页用,且当前【没传 template】时才生效。\n"
-                    "传了 template 时: layout 映射到模板的标准版式,别再写 image_prompt。"
+                    "image_full = AI 全幅生图页(惊艳+丰富,首选): 配 image_prompt"
+                    "(英文,电影感全屏画面,深色调、主体偏右、no text no watermark)。"
+                    "★封面页只给 title+caption → 全幅图+底部暗带;★内容页给 title+"
+                    "bullets(3-4 条,每条≤24字精炼) → 全幅图+左侧深色面板放标题和要点"
+                    "(我方自控排版,不挤)。这样既惊艳又有内容,做整份 AI 视觉 PPT 时"
+                    "每页都用 image_full(封面无 bullets,内容页带 bullets)。\n"
+                    "image_prompt = 该页要 AI 生成的图(gpt-image-2)。image_full 页必配。"
+                    "传了 template 时也可写 image_prompt: 会把 AI 图换进模板的图片位"
+                    "(模板专业排版 + 定制 AI 视觉)。"
                 ),
                 "type": ["array", "string"],
             },

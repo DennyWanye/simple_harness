@@ -21,8 +21,9 @@ outline = [
      "left": ["降低专业门槛", "释放创造力", "重塑生产流程"],
      "right_title": "挑战", "right": ["数据隐私", "算力成本", "可信与对齐"], "image_path": imgs[2]},
 ]
-OUT = r"G:\projects\deskpet\.tmp\combo-rich-v2.pptx"
+OUT = r"G:\projects\deskpet\.tmp\combo-rich-v3.pptx"
 res = ppt_create(outline, template=r"G:\projects\deskpet\resources\PPT_Template\高级感 (01)---.pptx", output_path=OUT, title="AI 重塑未来")
 print("ok =", res.get("ok"), " theme =", res.get("theme"), " path =", res.get("path"))
+
 
 
