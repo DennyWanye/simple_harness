@@ -1546,6 +1546,17 @@ def _list_bundled_templates() -> list[str]:
         return []
 
 
+def _default_template() -> Optional[str]:
+    """无显式 template 时的默认模板(bundled 名或路径)，来自环境变量
+    ``DESKPET_PPT_DEFAULT_TEMPLATE``。不设 → None(行为不变，走 from-scratch)。
+    用户「干净专业就够了」→ 在 launch/config 设此 env 即让生成默认套模板。
+    """
+    try:
+        return (os.environ.get("DESKPET_PPT_DEFAULT_TEMPLATE", "") or "").strip() or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _resolve_template_path(template: Optional[str]) -> Optional[str]:
     """Resolve a direct .pptx path or bundled template name without raising."""
     try:
@@ -1839,8 +1850,10 @@ def ppt_create(
     _autofill_image_prompts(slides)
     out_path = _resolve_output_path(output_path)
 
-    if template:
-        resolved = _resolve_template_path(template)
+    # 显式 template 优先；无则用 env 默认模板(DESKPET_PPT_DEFAULT_TEMPLATE)。
+    chosen_template = template or _default_template()
+    if chosen_template:
+        resolved = _resolve_template_path(chosen_template)
         if resolved:
             result = _render_with_template(
                 slides, resolved, title=title, author=author, out_path=out_path,
@@ -1849,7 +1862,7 @@ def ppt_create(
                 return result
             log.warning("template render failed, falling back to from-scratch engine")
         else:
-            log.warning("template not found: %s - falling back to from-scratch engine", template)
+            log.warning("template not found: %s - falling back to from-scratch engine", chosen_template)
 
     theme_obj = get_theme(theme)
 
