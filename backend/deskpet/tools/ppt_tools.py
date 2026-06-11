@@ -1572,31 +1572,43 @@ def _resolve_template_path(template: Optional[str]) -> Optional[str]:
 
 
 def _pick_template_layout(prs, deskpet_layout: str):
-    """Map DeskPet layout names to a template slide layout."""
+    """把 DeskPet 布局名映射到模板的 slide layout。
+
+    先按关键词(中英别名)匹配 layout 名 —— 国内下载的「高级感」模板布局名
+    多为中文('标题幻灯片'/'标题和内容'/'节标题'/'两栏内容'/'图片与标题'),
+    纯英文关键词匹配不到会回退标准 idx,遇到布局重排的模板就选错。补中文
+    别名后绝大多数中文模板能正确映射。匹配不到再回退标准 PowerPoint idx。
+    """
     mapping = {
-        "title": ("title slide", 0),
-        "section": ("section", 2),
-        "bullet": ("title and content", 1),
-        "two_column": ("two content", 3),
-        "image": ("picture", 8),
-        "image_full": ("picture", 8),
-        "quote": ("section", 2),
-        "toc": ("title and content", 1),
-        "chart": ("title and content", 1),
+        "title": (["title slide", "标题幻灯片", "封面", "首页"], 0),
+        "section": (["section header", "section", "节标题", "章节", "过渡"], 2),
+        "bullet": (["title and content", "标题和内容", "内容与标题", "正文"], 1),
+        "two_column": (["two content", "两栏内容", "两栏", "双栏", "comparison", "比较"], 3),
+        "image": (["picture with caption", "picture", "图片与标题", "图文", "图片"], 8),
+        "image_full": (["picture with caption", "picture", "图片与标题", "图文", "图片"], 8),
+        "quote": (["section header", "section", "节标题", "引用"], 2),
+        "toc": (["title and content", "标题和内容", "目录", "内容与标题"], 1),
+        "chart": (["title and content", "标题和内容", "图表", "内容与标题"], 1),
     }
-    keyword, fallback_idx = mapping.get(deskpet_layout, ("title and content", 1))
+    keywords, fallback_idx = mapping.get(
+        deskpet_layout, (["title and content", "标题和内容"], 1)
+    )
 
-    for layout in prs.slide_layouts:
-        if keyword in (layout.name or "").lower():
-            return layout
-
-    if len(prs.slide_layouts) == 0:
+    layouts = list(prs.slide_layouts)
+    if not layouts:
         raise ValueError("template has no slide layouts")
-    idx = min(max(fallback_idx, 0), len(prs.slide_layouts) - 1)
+    # 按关键词优先级逐个扫 layout 名(中英大小写不敏感),命中即返回
+    for kw in keywords:
+        kw_l = kw.lower()
+        for layout in layouts:
+            if kw_l in (layout.name or "").lower():
+                return layout
+    # 回退标准 idx(clamp 防越界)
+    idx = min(max(fallback_idx, 0), len(layouts) - 1)
     try:
-        return prs.slide_layouts[idx]
+        return layouts[idx]
     except Exception:  # noqa: BLE001
-        return prs.slide_layouts[0]
+        return layouts[0]
 
 
 def _template_placeholders(slide, *types: Any) -> list[Any]:
