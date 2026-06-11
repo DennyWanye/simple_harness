@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 DennyWanye
+﻿# SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
 """A-2 PPT template placeholder fill tests."""
@@ -123,7 +123,7 @@ def test_template_image_prompt_autofill(
 
     calls: list[list[str]] = []
 
-    def fake_generate_images(prompts):
+    def fake_generate_images(prompts, **kwargs):
         calls.append(list(prompts))
         return [{"prompt": prompts[0], "path": str(tiny_png), "error": None}]
 

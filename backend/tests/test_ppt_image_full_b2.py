@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 DennyWanye
+﻿# SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
 """B-2 PPT 整页生图布局测试。"""
@@ -32,7 +32,7 @@ def test_image_prompt_autofills_path(monkeypatch, tmp_path: Path, tiny_png: Path
 
     calls: list[list[str]] = []
 
-    def fake_generate_images(prompts):
+    def fake_generate_images(prompts, **kwargs):
         calls.append(list(prompts))
         return [{"prompt": prompts[0], "path": str(tiny_png), "error": None}]
 
@@ -52,7 +52,7 @@ def test_image_prompt_autofills_path(monkeypatch, tmp_path: Path, tiny_png: Path
 def test_no_image_prompt_no_network(monkeypatch, tmp_path: Path) -> None:
     from deskpet.tools import image_tools
 
-    def fail_generate_images(prompts):
+    def fail_generate_images(prompts, **kwargs):
         raise AssertionError("generate_images should not be called")
 
     monkeypatch.setattr(image_tools, "generate_images", fail_generate_images)
@@ -70,7 +70,7 @@ def test_no_image_prompt_no_network(monkeypatch, tmp_path: Path) -> None:
 def test_dry_run_skips_image_gen(monkeypatch) -> None:
     from deskpet.tools import image_tools
 
-    def fail_generate_images(prompts):
+    def fail_generate_images(prompts, **kwargs):
         raise AssertionError("generate_images should not be called")
 
     monkeypatch.setattr(image_tools, "generate_images", fail_generate_images)
@@ -87,7 +87,7 @@ def test_dry_run_skips_image_gen(monkeypatch) -> None:
 def test_image_gen_failure_degrades(monkeypatch, tmp_path: Path) -> None:
     from deskpet.tools import image_tools
 
-    def fake_generate_images(prompts):
+    def fake_generate_images(prompts, **kwargs):
         return [{"prompt": prompts[0], "path": None, "error": "relay down"}]
 
     monkeypatch.setattr(image_tools, "generate_images", fake_generate_images)

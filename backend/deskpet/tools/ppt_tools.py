@@ -1563,6 +1563,35 @@ def _add_footer(
     )
 
 
+def _crop_image_to_169(path: str) -> str:
+    """把生成图中心裁切成 16:9 后另存,返回裁切版路径。
+
+    image_full 全幅铺图会把图拉到 16:9 画布 —— 方图/3:2 直接拉伸会明显
+    变形。中心裁切零变形。PIL 不可用/失败 → 返回原路径(退化为拉伸)。
+    """
+    try:
+        from PIL import Image  # type: ignore
+
+        src = Path(path)
+        with Image.open(src) as im:
+            w, h = im.size
+            target_h = int(w * 9 / 16)
+            if target_h > h:
+                # 图太「方」,反向裁宽
+                target_w = int(h * 16 / 9)
+                left = max(0, (w - target_w) // 2)
+                box = (left, 0, left + target_w, h)
+            else:
+                top = max(0, (h - target_h) // 2)
+                box = (0, top, w, top + target_h)
+            out = src.with_name(src.stem + "_169" + src.suffix)
+            im.crop(box).save(out)
+        return str(out)
+    except Exception as exc:  # noqa: BLE001
+        log.debug("16:9 crop failed (%s); using original image", exc)
+        return path
+
+
 def _autofill_image_prompts(slides: list[SlideOutline]) -> None:
     pending = [
         (idx, so.image_prompt)
@@ -1580,11 +1609,13 @@ def _autofill_image_prompts(slides: list[SlideOutline]) -> None:
             return
 
         prompts = [prompt for _, prompt in pending]
-        results = generate_images(prompts)
+        # 横版 1536x1024(gpt-image 官方尺寸档)最接近 16:9;再中心裁切
+        # 到 16:9 全幅铺图零变形。
+        results = generate_images(prompts, size="1536x1024")
         for (idx, prompt), result in zip(pending, results):
             path = result.get("path") if isinstance(result, dict) else None
             if path:
-                slides[idx].image_path = str(path)
+                slides[idx].image_path = _crop_image_to_169(str(path))
             else:
                 error = result.get("error") if isinstance(result, dict) else None
                 log.debug("image prompt generation failed: prompt=%r error=%r", prompt, error)
@@ -2704,7 +2735,11 @@ def _register_ppt_tool() -> None:
             _build_ppt_schema(),
             _handle_ppt_create,
             permission_category="write_file",
-            timeout_seconds=30.0,
+            # 纯文本/模板填充约 1~3s;但带 image_prompt 的整页生图(B-2)会
+            # 在 _autofill_image_prompts 里串行调 gpt-image-2(每张 70~180s,
+            # 偶发等满 300s),N 页 deck 可达数分钟。给足预算避免 registry
+            # 在生图跑完前杀掉 handler。注:同步阻塞 UX 由后续异步化改善。
+            timeout_seconds=1200.0,
             concurrency_safe=False,  # G3: writes .pptx to disk
         )
     except Exception as exc:  # noqa: BLE001
