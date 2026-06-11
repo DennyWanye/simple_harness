@@ -1,0 +1,88 @@
+任务：给 DeskPet PPT 模板模式加「设计页复用」(design-fill) —— 不删模板示例页，把 outline 内容替换进设计页的文字槽，保留模板全部视觉(色块/装饰/排版/图片)。这是商业 AI-PPT 产品的标准做法。仅改 ppt_tools.py + 加一个测试文件。
+
+== 背景(已实测) ==
+现有 A-2 模板填充 = 删示例页 + 用 layout 占位符填充。但国内「高级感」模板的炫酷设计全画在【示例页】上，layout 是 bare 标准布局 → 填出来是白板，用户不接受。勘探报告(G:\projects\deskpet\plans\2026-06-09-ppt-beauty-mainline\design_pages_report.txt)证实设计页结构规整可替换：
+- 每页由 TEXT_BOX 构成: 大标题(92-162pt 短文本)/小标签(25pt 短文本如 ONE/EXPERIENCE)/正文槽(24pt 长英文占位文 "Presentations are communication tools...")
+- 例: 高级感(01) 17页 — slide0 封面(162pt大字+30pt副文), slide9 内容页(92pt标题+4组 25pt标签+24pt正文槽), slide2 quote页(120pt大字)
+
+== 目标文件(唯一改) ==
+G:\projects\deskpet\backend\deskpet\tools\ppt_tools.py
+新测试: G:\projects\deskpet\backend\tests\test_ppt_design_fill_a4.py
+不碰其它文件。
+
+== 现有代码(已读) ==
+- ppt_create(outline,*,theme,title,author,output_path,template=None,dry_run) ~line 1719。template 解析后走 _render_with_template(layout填充) → None 回退 from-scratch。
+- _render_with_template / _pick_template_layout / _resolve_template_path / _default_template / _autofill_image_prompts 已存在。
+- 删 slide 的正确姿势(已修过bug): 同时 prs.part.drop_rel(rId) + xml_slides.remove(sldId)，r:id 属性名空间 "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"。
+- SlideOutline 字段: layout/title/subtitle/bullets/left/right/left_title/right_title/image_path/image_prompt/caption/quote/cite/chart/notes。
+
+== 改动 1：设计页分析 ==
+新增 def _analyze_design_page(slide) -> dict：
+- 递归收集有文字的形状(含 GROUP 内, shape.shape_type==6 时递归 shape.shapes)。
+- 每形状求 max_pt：遍历 text_frame.paragraphs[*].runs[*].font.size 取最大 pt；无 size 则试 paragraph.font.size；都无默认 18。
+- 分类(按勘探实证的字号/长度规律)：
+  * title_shape: 在「文本长度<=60」的形状里取 max_pt 最大者(通常 92-162pt)。
+  * body_slots: max_pt<=32 且 文本长度>=25 的形状，按(top,left)阅读序排序 —— 这些是英文 lorem 正文槽。
+  * label_slots: max_pt<=32 且 文本长度<25(如 ONE/EXPERIENCE/QUOTE)。
+  * subtitle_shape: 除 title 外 max_pt 第二大的形状(若有)。
+- 返回 {"title": shape|None, "subtitle": shape|None, "bodies": [...], "labels": [...], "n_body": int, "title_pt": float}。
+- 从不抛异常(单形状异常跳过)。
+
+== 改动 2：保留样式的文字替换 ==
+新增 def _set_text_keep_style(shape, lines: list[str]) -> None：
+- 目标：替换文字但保留原 run 的字体/字号/颜色/加粗。
+- 做法(lxml 层)：tf=shape.text_frame；取第一个有 run 的段 p0 与其第一个 run r0(保留其 rPr 格式)；
+  * r0.text = lines[0]；删 p0 其余 run(r._r.getparent().remove(r._r))；
+  * 删其余所有段(<a:p> 移除)；
+  * lines[1:] 每行: copy.deepcopy(p0._p) → 把副本中 run 文本设为该行 → append 到 txBody。
+- lines 为空或 [""] → 清空文本(tf.text="")。
+- 每行裁剪到 80 字符(防爆框)。从不抛异常。
+
+== 改动 3：设计页渲染器 ==
+新增 def _render_with_design_pages(slides, template_path, *, title, author, out_path) -> Optional[dict]：
+1. prs = _Presentation(template_path)；若 len(prs.slides) < 3 → return None(设计页太少,让上层回退 layout 模式)。
+2. 逐设计页 _analyze_design_page 建索引；页分类：
+   * cover = slide[0]；
+   * section_pages: title_pt>=80 且 n_body<=1 的页(排除cover)；
+   * content_pages: n_body>=1 的页(排除cover)，记 n_body。
+3. 为每个 outline 项选页(贪心,每页最多用一次)：
+   * layout=title → cover。
+   * section/quote → 未用 section_pages 取一个；没了→未用 content 页。
+   * bullet/toc/chart/image/image_full → 未用 content 页中选 n_body 最接近(优先>=) len(bullets) 的。
+   * two_column → 未用 content 页中 n_body>=2 优先。
+   * 全用完 → 任意未用页；一个未用页都没有 → 该项跳过选页循环并 log.debug(总页数通常 15-18 >> outline 4-8,罕见)。
+4. 填充(每个选中页)：
+   * title 项: _set_text_keep_style(title_shape,[so.title]); subtitle→subtitle_shape 或第一个 body；其余 body 槽清空(它们是英文lorem,留着穿帮)。
+   * section: title→title_shape; subtitle→第一个 body 或 subtitle_shape；其余 body 清空。
+   * quote: so.quote→title_shape; so.cite→第一个 label 或 body；其余 body 清空。
+   * bullet/toc: so.title→title_shape; bullets 分配进 body_slots —— n_body>=len(bullets): 每槽一条,多余槽清空; n_body<len(bullets): 前 n-1 槽各一条,最后一槽放剩余条目(多行 lines)。label_slots 不动(ONE/TWO 当装饰编号)。
+   * two_column: title→title_shape; 槽0 = [left_title]+left 多行; 槽1 = [right_title]+right 多行；其余清空。
+   * image/image_full: 当 bullet 处理(标题+caption 进 body)；若 so.image_path 是文件且页内有 PICTURE 占位符则 insert_picture(可选,没有就算了)。
+   * notes: so.notes → slide.notes_slide.notes_text_frame.text。
+5. 重排+删页：
+   * 把【选中页】按 outline 顺序重排：操作 prs.slides._sldIdLst —— 收集选中页对应 sldId 元素按新序 append(lxml append 自动移动)，再删未用页(先 drop_rel 再 remove,姿势见上)。
+6. core_properties title/author；prs.save(out_path)；返回与 _render_with_template 相同结构的 dict(theme 用 "template-design")。
+7. 整函数 try/except → log.warning + return None(上层回退)。
+
+== 改动 4：ppt_create 接线 ==
+- 现 template 分支: resolved 后先试 _render_with_design_pages(...)，None → 再试现有 _render_with_template(layout填充)，再 None → from-scratch。一行 log 说明走了哪条。
+- 不加新参数(设计页优先是默认行为;layout 填充自动作为回退)。不改返回结构。
+
+== 硬约束 ==
+- 只改 ppt_tools.py + 新增测试文件。
+- template=None 路径字节不变;现有 -k ppt 全绿(48 个,含 A-2/A-3 测试 —— 注意 A-2 的 test_template_fills_title_and_bullets 用的是 Presentation() 标准模板存的 tpl(0 张 slide) → len<3 → design 模式 return None 自动回退 layout 模式,所以现测试应天然不破;若有测试用了带页模板需细看)。
+- 不加新依赖(copy/lxml 经 python-pptx 已有)。
+- 从不抛异常,全链路优雅回退。
+- 中文注释风格一致。
+
+== 验收(必须自测) ==
+工作目录 G:\projects\deskpet\backend；解释器 .venv\Scripts\python.exe
+1. BC: .venv\Scripts\python.exe -m pytest -k ppt -q 全绿。
+2. 新测试 tests/test_ppt_design_fill_a4.py ≥5 用例。测试里用 python-pptx 程序化造一个「合成设计模板」(≥4页,每页加 textbox: 一个 60pt 短文本当标题 + 两个 20pt 长文本(>=30字符,内容含 "LOREM")当正文槽；用 slide_layouts[6] Blank 加页,shapes.add_textbox + 设 run.font.size):
+   a. test_design_fill_replaces_title_and_bullets: outline=[title,bullet(3条)]; ppt_create(template=合成模板) → ok;重开输出,断言 slide0 含 outline 标题文本、slide1 含 3 条 bullet 文本、且全文档不再含 "LOREM"(lorem 槽被替换或清空)。
+   b. test_design_fill_keeps_style: 断言替换后标题 run 的 font.size 仍是 60pt(样式保留)。
+   c. test_design_fill_page_count: outline 2 项、模板 4 页 → 输出 slide 数==2(未用页删除)。
+   d. test_design_fill_falls_back_on_tiny_template: 0/1/2 页模板(Presentation() 直接存) → 自动回退 layout/from-scratch 仍 ok=True。
+   e. test_design_fill_two_column: two_column 项 → 两个槽分别含 left/right 文本。
+3. 真实模板冒烟(必跑): 用 G:\projects\deskpet\resources\PPT_Template\高级感 (01)---.pptx 跑 4 项 outline(title/section/bullet/two_column),输出到 G:\projects\deskpet\.tmp\design-fill-smoke.pptx,打印 ok 与每页文本摘要(重开后逐 slide 列文字),断言含中文 outline 内容且不含 'Presentations are communication'。
+完成后输出: 改动函数清单、页选择/分配逻辑摘要、全部测试 pass 结果、冒烟输出摘要。

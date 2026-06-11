@@ -1,0 +1,8 @@
+ok=True theme=template-design slides=4 path=G:\projects\deskpet\.tmp\design-fill-smoke.pptx
+reopened slides=4
+  slide[0]: ['大语言模型应用实践', 'DeskPet 设计页复用样例']
+  slide[1]: ['从规则到神经网络', '一、技术背景']
+  slide[2]: ['ONE', '自然语言理解与生成', 'TWO', '工具调用与代码执行', 'THREE', '多轮对话与上下文记忆', 'FOUR', '检索增强与长期记忆', '核心能力']
+  slide[3]: ['About Me', '本地 vs 云端', 'EXPERIENCE', '本地部署 / 数据不出本机 / 隐私安全', 'AWARDS', '云端模型 / 能力更强 / 免维护']
+LOREM_RESIDUE=False
+VERDICT=PASS

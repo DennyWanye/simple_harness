@@ -43,6 +43,7 @@ and failures degrade to placeholders.
 """
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
@@ -1663,6 +1664,408 @@ def _fill_placeholder_lines(ph, lines: Sequence[str], *, bold_first: bool = Fals
         pass
 
 
+def _iter_design_text_shapes(shapes) -> Iterable[Any]:
+    for shape in shapes:
+        try:
+            if getattr(shape, "shape_type", None) == 6:
+                yield from _iter_design_text_shapes(shape.shapes)
+                continue
+            if getattr(shape, "has_text_frame", False) and (shape.text or "").strip():
+                yield shape
+        except Exception:  # noqa: BLE001
+            continue
+
+
+def _shape_text_max_pt(shape) -> float:
+    try:
+        max_pt = 0.0
+        for paragraph in shape.text_frame.paragraphs:
+            try:
+                size = paragraph.font.size
+                if size is not None:
+                    max_pt = max(max_pt, float(size.pt))
+            except Exception:  # noqa: BLE001
+                pass
+            for run in paragraph.runs:
+                try:
+                    size = run.font.size
+                    if size is not None:
+                        max_pt = max(max_pt, float(size.pt))
+                except Exception:  # noqa: BLE001
+                    continue
+        return max_pt or 18.0
+    except Exception:  # noqa: BLE001
+        return 18.0
+
+
+def _shape_text_len(shape) -> int:
+    try:
+        return len((shape.text or "").strip())
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _shape_reading_key(shape) -> tuple[int, int]:
+    try:
+        return (int(shape.top), int(shape.left))
+    except Exception:  # noqa: BLE001
+        return (0, 0)
+
+
+def _analyze_design_page(slide) -> dict[str, Any]:
+    """Detect editable text slots on a designed example slide."""
+    try:
+        records: list[dict[str, Any]] = []
+        for shape in _iter_design_text_shapes(slide.shapes):
+            try:
+                text_len = _shape_text_len(shape)
+                records.append({
+                    "shape": shape,
+                    "max_pt": _shape_text_max_pt(shape),
+                    "text_len": text_len,
+                    "key": _shape_reading_key(shape),
+                })
+            except Exception:  # noqa: BLE001
+                continue
+
+        title_candidates = [item for item in records if item["text_len"] <= 60]
+        title_item = max(title_candidates, key=lambda item: item["max_pt"], default=None)
+        title_shape = title_item["shape"] if title_item else None
+
+        remaining = [item for item in records if item.get("shape") is not title_shape]
+        subtitle_item = max(remaining, key=lambda item: item["max_pt"], default=None)
+        bodies = sorted(
+            (
+                item["shape"]
+                for item in records
+                if item["max_pt"] <= 32 and item["text_len"] >= 25
+            ),
+            key=_shape_reading_key,
+        )
+        labels = sorted(
+            (
+                item["shape"]
+                for item in records
+                if item["max_pt"] <= 32 and item["text_len"] < 25
+            ),
+            key=_shape_reading_key,
+        )
+        title_pt = float(title_item["max_pt"]) if title_item else 0.0
+        return {
+            "title": title_shape,
+            "subtitle": subtitle_item["shape"] if subtitle_item else None,
+            "bodies": bodies,
+            "labels": labels,
+            "n_body": len(bodies),
+            "title_pt": title_pt,
+        }
+    except Exception:  # noqa: BLE001
+        return {
+            "title": None,
+            "subtitle": None,
+            "bodies": [],
+            "labels": [],
+            "n_body": 0,
+            "title_pt": 0.0,
+        }
+
+
+def _set_text_keep_style(shape, lines: list[str]) -> None:
+    """Replace text while preserving the first run/paragraph style."""
+    try:
+        clean = [str(line).strip()[:80] for line in (lines or []) if str(line).strip()]
+        tf = shape.text_frame
+        if not clean:
+            tf.text = ""
+            return
+
+        p0 = tf.paragraphs[0] if tf.paragraphs else None
+        if p0 is None or not p0.runs:
+            tf.text = "\n".join(clean)
+            return
+
+        r0 = p0.runs[0]
+        r0.text = clean[0]
+        for run in list(p0.runs)[1:]:
+            try:
+                run._r.getparent().remove(run._r)
+            except Exception:  # noqa: BLE001
+                pass
+
+        tx_body = tf._txBody
+        for paragraph in list(tf.paragraphs)[1:]:
+            try:
+                tx_body.remove(paragraph._p)
+            except Exception:  # noqa: BLE001
+                pass
+
+        for line in clean[1:]:
+            new_p = copy.deepcopy(p0._p)
+            first_text = None
+            for node in new_p.iter():
+                if node.tag.endswith("}t"):
+                    if first_text is None:
+                        first_text = node
+                        node.text = line
+                    else:
+                        node.text = ""
+            tx_body.append(new_p)
+    except Exception:  # noqa: BLE001
+        try:
+            shape.text_frame.text = "\n".join(str(line).strip()[:80] for line in lines if str(line).strip())
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _clear_design_body_slots(info: dict[str, Any], *, keep: Sequence[Any] = ()) -> None:
+    keep_ids = {id(shape) for shape in keep if shape is not None}
+    for shape in info.get("bodies", []):
+        if id(shape) not in keep_ids:
+            _set_text_keep_style(shape, [])
+
+
+def _best_design_content_page(
+    pages: Sequence[dict[str, Any]], used: set[int], wanted: int,
+) -> Optional[dict[str, Any]]:
+    candidates = [page for page in pages if page["index"] not in used]
+    if not candidates:
+        return None
+    return min(
+        candidates,
+        key=lambda page: (
+            page["info"]["n_body"] < wanted,
+            abs(page["info"]["n_body"] - wanted),
+            page["index"],
+        ),
+    )
+
+
+def _first_unused_page(pages: Sequence[dict[str, Any]], used: set[int]) -> Optional[dict[str, Any]]:
+    for page in pages:
+        if page["index"] not in used:
+            return page
+    return None
+
+
+def _select_design_page(
+    so: SlideOutline,
+    pages: Sequence[dict[str, Any]],
+    section_pages: Sequence[dict[str, Any]],
+    content_pages: Sequence[dict[str, Any]],
+    used: set[int],
+) -> Optional[dict[str, Any]]:
+    if so.layout == "title" and 0 not in used:
+        return pages[0]
+
+    if so.layout in {"section", "quote"}:
+        return (
+            _first_unused_page(section_pages, used)
+            or _first_unused_page(content_pages, used)
+            or _first_unused_page(pages, used)
+        )
+
+    if so.layout == "two_column":
+        two_slot_pages = [
+            page for page in content_pages
+            if page["info"]["n_body"] >= 2
+        ]
+        return (
+            _first_unused_page(two_slot_pages, used)
+            or _best_design_content_page(content_pages, used, 2)
+            or _first_unused_page(pages, used)
+        )
+
+    if so.layout in {"bullet", "toc", "chart", "image", "image_full"}:
+        wanted = len(so.bullets) or (1 if so.caption else 0) or 1
+        return (
+            _best_design_content_page(content_pages, used, wanted)
+            or _first_unused_page(pages, used)
+        )
+
+    return _first_unused_page(pages, used)
+
+
+def _fill_design_bullets(info: dict[str, Any], bullets: Sequence[str]) -> None:
+    clean = [str(item).strip() for item in bullets if str(item).strip()]
+    bodies = list(info.get("bodies", []))
+    if not bodies:
+        return
+    if not clean:
+        _clear_design_body_slots(info)
+        return
+    if len(bodies) >= len(clean):
+        for shape, bullet in zip(bodies, clean):
+            _set_text_keep_style(shape, [bullet])
+        for shape in bodies[len(clean):]:
+            _set_text_keep_style(shape, [])
+        return
+    for shape, bullet in zip(bodies[:-1], clean[: max(len(bodies) - 1, 0)]):
+        _set_text_keep_style(shape, [bullet])
+    _set_text_keep_style(bodies[-1], clean[len(bodies) - 1:])
+
+
+def _insert_design_picture(slide, so: SlideOutline) -> None:
+    try:
+        if not so.image_path or not Path(str(so.image_path)).is_file():
+            return
+        picture_ph = _template_placeholders(slide, PP_PLACEHOLDER.PICTURE)
+        if picture_ph:
+            try:
+                picture_ph[0].insert_picture(str(so.image_path))
+            except Exception as exc:  # noqa: BLE001
+                log.debug("design picture insert failed: %s", exc)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
+    title_shape = info.get("title")
+    subtitle_shape = info.get("subtitle")
+    bodies = list(info.get("bodies", []))
+    labels = list(info.get("labels", []))
+
+    if title_shape is not None:
+        title_text = so.quote if so.layout == "quote" else so.title
+        _set_text_keep_style(title_shape, [title_text])
+
+    if so.layout == "title":
+        target = subtitle_shape or (bodies[0] if bodies else None)
+        if target is not None and so.subtitle:
+            _set_text_keep_style(target, [so.subtitle])
+            _clear_design_body_slots(info, keep=[target])
+        else:
+            _clear_design_body_slots(info)
+    elif so.layout == "section":
+        target = bodies[0] if bodies else subtitle_shape
+        if target is not None and so.subtitle:
+            _set_text_keep_style(target, [so.subtitle])
+            _clear_design_body_slots(info, keep=[target])
+        else:
+            _clear_design_body_slots(info)
+    elif so.layout == "quote":
+        cite_target = labels[0] if labels else (bodies[0] if bodies else None)
+        if cite_target is not None and so.cite:
+            _set_text_keep_style(cite_target, [so.cite])
+            _clear_design_body_slots(info, keep=[cite_target])
+        else:
+            _clear_design_body_slots(info)
+    elif so.layout == "two_column":
+        if bodies:
+            _set_text_keep_style(
+                bodies[0],
+                ([so.left_title] if so.left_title else []) + list(so.left),
+            )
+        if len(bodies) > 1:
+            _set_text_keep_style(
+                bodies[1],
+                ([so.right_title] if so.right_title else []) + list(so.right),
+            )
+        for shape in bodies[2:]:
+            _set_text_keep_style(shape, [])
+    elif so.layout in {"image", "image_full"}:
+        _insert_design_picture(slide, so)
+        lines = list(so.bullets)
+        if so.caption:
+            lines = lines + [so.caption]
+        _fill_design_bullets(info, lines)
+    else:
+        _fill_design_bullets(info, so.bullets)
+
+    if so.notes:
+        try:
+            slide.notes_slide.notes_text_frame.text = so.notes
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _drop_slide_id(prs, sld_id) -> None:
+    _R_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
+    try:
+        r_id = sld_id.get(_R_ID)
+        if r_id:
+            try:
+                prs.part.drop_rel(r_id)
+            except Exception:  # noqa: BLE001
+                pass
+        prs.slides._sldIdLst.remove(sld_id)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _render_with_design_pages(
+    slides: list[SlideOutline], template_path: str, *, title: str, author: str, out_path: Path,
+) -> Optional[dict[str, Any]]:
+    try:
+        prs = _Presentation(template_path)
+        if len(prs.slides) < 3:
+            return None
+
+        pages = [
+            {"index": idx, "slide": slide, "info": _analyze_design_page(slide)}
+            for idx, slide in enumerate(prs.slides)
+        ]
+        section_pages = [
+            page for page in pages[1:]
+            if page["info"]["title_pt"] >= 80 and page["info"]["n_body"] <= 1
+        ]
+        content_pages = [
+            page for page in pages[1:]
+            if page["info"]["n_body"] >= 1
+        ]
+
+        used: set[int] = set()
+        selected: list[tuple[dict[str, Any], SlideOutline]] = []
+        for so in slides:
+            page = _select_design_page(so, pages, section_pages, content_pages, used)
+            if page is None:
+                log.debug("design page exhausted, skipping slide: %s", so.title)
+                continue
+            used.add(page["index"])
+            selected.append((page, so))
+        if not selected:
+            return None
+
+        for page, so in selected:
+            _fill_design_page(page["slide"], so, page["info"])
+
+        xml_slides = prs.slides._sldIdLst
+        sld_ids = list(xml_slides)
+        selected_ids = [sld_ids[page["index"]] for page, _ in selected]
+        selected_id_set = {id(sld_id) for sld_id in selected_ids}
+        for sld_id in selected_ids:
+            xml_slides.append(sld_id)
+        for sld_id in list(xml_slides):
+            if id(sld_id) not in selected_id_set:
+                _drop_slide_id(prs, sld_id)
+
+        try:
+            cp = prs.core_properties
+            if title:
+                cp.title = title
+            if author:
+                cp.author = author
+                cp.last_modified_by = author
+        except Exception:  # noqa: BLE001
+            pass
+
+        prs.save(out_path)
+        return {
+            "ok": True,
+            "path": str(out_path),
+            "slide_count": len(selected),
+            "theme": "template-design",
+            "artifacts": [{
+                "kind": "file",
+                "path": str(out_path),
+                "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "title": Path(str(out_path)).name,
+            }],
+        }
+    except Exception as exc:  # noqa: BLE001
+        log.warning("template design render failed: %s", exc, exc_info=True)
+        return None
+
+
 def _render_with_template(
     slides: list[SlideOutline], template_path: str, *, title: str, author: str, out_path: Path,
 ) -> Optional[dict[str, Any]]:
@@ -1855,10 +2258,17 @@ def ppt_create(
     if chosen_template:
         resolved = _resolve_template_path(chosen_template)
         if resolved:
+            result = _render_with_design_pages(
+                slides, resolved, title=title, author=author, out_path=out_path,
+            )
+            if result is not None:
+                log.debug("ppt template rendered with design pages: %s", resolved)
+                return result
             result = _render_with_template(
                 slides, resolved, title=title, author=author, out_path=out_path,
             )
             if result is not None:
+                log.debug("ppt template rendered with layouts: %s", resolved)
                 return result
             log.warning("template render failed, falling back to from-scratch engine")
         else:
