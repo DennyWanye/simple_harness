@@ -1320,16 +1320,35 @@ try:
                 OpenAICompatibleAgentLLM as _CmpShim,
             )
             _compactor_llm = local_llm or cloud_llm
+            # 2026-06-12: 压缩窗口不再 hardcode 32000 —— 按当前主模型经
+            # model_info 三层解析(BUILTIN ← 用户档位 override)。用户在
+            # 「模型与参数」面板选 1M 档后,重启即对压缩阈值生效。
+            _cmp_window, _cmp_threshold = 32000, 0.75
+            try:
+                from llm import model_info as _mi_cmp
+                _cmp_model = str(
+                    (config.raw.get("llm") or {}).get("model") or ""
+                ).strip()
+                if _cmp_model:
+                    _cmp_info = _mi_cmp.resolve(_cmp_model)
+                    _cmp_window = int(_cmp_info.context_window)
+                    _cmp_threshold = float(_cmp_info.compact_at_pct)
+            except Exception as _cmp_exc:  # noqa: BLE001
+                logger.warning(
+                    "compaction_window_resolve_failed err=%s — fallback 32000",
+                    str(_cmp_exc)[:120],
+                )
             _context_compressor = _CtxCompressor(
                 llm_registry=(
                     _CmpShim(provider=_compactor_llm)
                     if _compactor_llm is not None else None
                 ),
-                context_window=32000,
-                threshold_percent=0.75,
+                context_window=_cmp_window,
+                threshold_percent=_cmp_threshold,
             )
             logger.info(
-                "wi4_0_compaction_enabled context_window=32000 threshold=0.75"
+                "wi4_0_compaction_enabled context_window=%d threshold=%.2f"
+                % (_cmp_window, _cmp_threshold)
             )
         except Exception as _cmp_init_exc:  # noqa: BLE001
             logger.warning(
