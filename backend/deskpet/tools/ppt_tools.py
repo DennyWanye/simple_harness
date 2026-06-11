@@ -1712,7 +1712,76 @@ def _shape_reading_key(shape) -> tuple[int, int]:
         return (0, 0)
 
 
-def _analyze_design_page(slide) -> dict[str, Any]:
+def _shape_mostly_in_canvas(shape, slide_w: int, slide_h: int) -> bool:
+    """形状面积是否 ≥70% 落在画布内。出血/越界的艺术装饰字(如页缘的
+    QUOTE / 手写体大字)塞中文必被裁切,不能当 title/subtitle 槽。
+    取不到几何时保守返回 True(不误杀)。"""
+    try:
+        left, top = int(shape.left), int(shape.top)
+        w, h = int(shape.width), int(shape.height)
+        if w <= 0 or h <= 0:
+            return True
+        vis_w = min(left + w, slide_w) - max(left, 0)
+        vis_h = min(top + h, slide_h) - max(top, 0)
+        if vis_w <= 0 or vis_h <= 0:
+            return False
+        return (vis_w * vis_h) >= 0.7 * (w * h)
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _fit_font_pt(shape, lines: list[str], orig_pt: float) -> float:
+    """按形状宽高估算能放下 lines 的字号(中文全角宽≈1em)。
+    从原字号 0.9 步进往下缩,下限 24pt;估不出时返回原字号。"""
+    try:
+        width, height = int(shape.width), int(shape.height)
+        if width <= 0 or height <= 0 or not lines:
+            return orig_pt
+        if len(lines) == 1:
+            # 单行标题：必不折行(折行孤字最丑,如「核心能/力」)。
+            # 可用宽 = 框宽 - 内边距(默认左右各~0.1in,取 0.28in 保险),
+            # 中文全角字宽≈1em,再乘 0.92 留呼吸感,解出单行最大字号。
+            n = max(len(lines[0]), 1)
+            usable_pt = (width - 360000) / 12700.0
+            pt_single = usable_pt / n * 0.92
+            return max(24.0, min(float(orig_pt), pt_single))
+        pt = float(orig_pt)
+        while pt > 24.0:
+            per_line = max(1, int(width / (pt * 12700 * 0.95)))
+            needed = sum(
+                max(1, -(-len(line) // per_line))  # ceil
+                for line in lines
+            )
+            max_lines = max(1, int(height / (pt * 12700 * 1.25)))
+            if needed <= max_lines:
+                return pt
+            pt *= 0.9
+        return 24.0
+    except Exception:  # noqa: BLE001
+        return orig_pt
+
+
+def _ensure_readable_text(shape) -> None:
+    """标题若继承了「背景装饰字」的极淡显式 RGB(亮度>0.72) → 加深为深灰,
+    保证主标题可读。主题色继承(非显式 RGB)不动。"""
+    try:
+        for para in shape.text_frame.paragraphs:
+            for run in para.runs:
+                color = run.font.color
+                if getattr(color, "type", None) is None:
+                    continue
+                rgb = getattr(color, "rgb", None)
+                if rgb is None:
+                    continue
+                r, g, b = rgb[0], rgb[1], rgb[2]
+                luma = (r * 299 + g * 587 + b * 114) / 255000.0
+                if luma > 0.72:
+                    run.font.color.rgb = RGBColor(0x20, 0x29, 0x33)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _analyze_design_page(slide, slide_w: int = 0, slide_h: int = 0) -> dict[str, Any]:
     """Detect editable text slots on a designed example slide."""
     try:
         records: list[dict[str, Any]] = []
@@ -1724,11 +1793,20 @@ def _analyze_design_page(slide) -> dict[str, Any]:
                     "max_pt": _shape_text_max_pt(shape),
                     "text_len": text_len,
                     "key": _shape_reading_key(shape),
+                    "in_canvas": (
+                        _shape_mostly_in_canvas(shape, slide_w, slide_h)
+                        if slide_w and slide_h else True
+                    ),
                 })
             except Exception:  # noqa: BLE001
                 continue
 
-        title_candidates = [item for item in records if item["text_len"] <= 60]
+        # 出血/越界形状不当 title/subtitle(塞中文必裁切);它们若是 >60pt
+        # 大字会自然落入 decor 被清空。
+        title_candidates = [
+            item for item in records
+            if item["text_len"] <= 60 and item.get("in_canvas", True)
+        ]
         title_item = max(title_candidates, key=lambda item: item["max_pt"], default=None)
         title_shape = title_item["shape"] if title_item else None
 
@@ -1737,7 +1815,10 @@ def _analyze_design_page(slide) -> dict[str, Any]:
         # 的另一层(如封面背景大字 + 前景手写体)，把 subtitle 填进去会和中文
         # 标题重叠混乱 —— 它们归 decor，填充后清空。
         subtitle_item = max(
-            (item for item in remaining if item["max_pt"] <= 60),
+            (
+                item for item in remaining
+                if item["max_pt"] <= 60 and item.get("in_canvas", True)
+            ),
             key=lambda item: item["max_pt"],
             default=None,
         )
@@ -1781,6 +1862,8 @@ def _analyze_design_page(slide) -> dict[str, Any]:
             "decor": decor,
             "n_body": len(bodies),
             "title_pt": title_pt,
+            "slide_w": slide_w,
+            "slide_h": slide_h,
         }
     except Exception:  # noqa: BLE001
         return {
@@ -1791,11 +1874,18 @@ def _analyze_design_page(slide) -> dict[str, Any]:
             "decor": [],
             "n_body": 0,
             "title_pt": 0.0,
+            "slide_w": slide_w,
+            "slide_h": slide_h,
         }
 
 
-def _set_text_keep_style(shape, lines: list[str]) -> None:
-    """Replace text while preserving the first run/paragraph style."""
+def _set_text_keep_style(shape, lines: list[str], *, fit_pt: bool = False) -> None:
+    """Replace text while preserving the first run/paragraph style.
+
+    fit_pt=True(title/subtitle 大字槽用): 原字号是为原英文词定制的
+    (如 162pt×'SARAH AMELIA'),中文长内容塞进去会撑爆折行孤字 —— 按
+    形状宽高自适应缩字号后再替换。
+    """
     try:
         clean = [str(line).strip()[:80] for line in (lines or []) if str(line).strip()]
         tf = shape.text_frame
@@ -1809,6 +1899,16 @@ def _set_text_keep_style(shape, lines: list[str]) -> None:
             return
 
         r0 = p0.runs[0]
+        if fit_pt:
+            try:
+                orig_size = r0.font.size
+                orig_pt = float(orig_size.pt) if orig_size else 0.0
+                if orig_pt > 24.0:
+                    new_pt = _fit_font_pt(shape, clean, orig_pt)
+                    if new_pt < orig_pt:
+                        r0.font.size = Pt(int(round(new_pt)))
+            except Exception:  # noqa: BLE001
+                pass
         r0.text = clean[0]
         for run in list(p0.runs)[1:]:
             try:
@@ -1857,7 +1957,11 @@ def _take_subtitle_from_decor(info: dict[str, Any]):
     用来放 subtitle(双层艺术叠排里位置错开的那层)。挑中的从 decor 移除，
     位置重叠的(会和中文标题打架)留在 decor 待清空。"""
     title_shape = info.get("title")
+    slide_w = int(info.get("slide_w") or 0)
+    slide_h = int(info.get("slide_h") or 0)
     for shape in list(info.get("decor", [])):
+        if slide_w and slide_h and not _shape_mostly_in_canvas(shape, slide_w, slide_h):
+            continue  # 出血装饰层塞中文必裁切,留 decor 清空
         if title_shape is None or not _shapes_v_overlap(shape, title_shape):
             info["decor"].remove(shape)
             return shape
@@ -1973,14 +2077,16 @@ def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
 
     if title_shape is not None:
         title_text = so.quote if so.layout == "quote" else so.title
-        _set_text_keep_style(title_shape, [title_text])
+        _set_text_keep_style(title_shape, [title_text], fit_pt=True)
+        _ensure_readable_text(title_shape)
 
     if so.layout == "title":
         target = subtitle_shape or (bodies[0] if bodies else None)
         if target is None and so.subtitle:
             target = _take_subtitle_from_decor(info)
         if target is not None and so.subtitle:
-            _set_text_keep_style(target, [so.subtitle])
+            _set_text_keep_style(target, [so.subtitle], fit_pt=True)
+            _ensure_readable_text(target)
             _clear_design_body_slots(info, keep=[target])
         else:
             _clear_design_body_slots(info)
@@ -1989,7 +2095,8 @@ def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
         if target is None and so.subtitle:
             target = _take_subtitle_from_decor(info)
         if target is not None and so.subtitle:
-            _set_text_keep_style(target, [so.subtitle])
+            _set_text_keep_style(target, [so.subtitle], fit_pt=True)
+            _ensure_readable_text(target)
             _clear_design_body_slots(info, keep=[target])
         else:
             _clear_design_body_slots(info)
@@ -2058,7 +2165,8 @@ def _render_with_design_pages(
             return None
 
         pages = [
-            {"index": idx, "slide": slide, "info": _analyze_design_page(slide)}
+            {"index": idx, "slide": slide, "info": _analyze_design_page(
+                slide, int(prs.slide_width or 0), int(prs.slide_height or 0))}
             for idx, slide in enumerate(prs.slides)
         ]
         section_pages = [

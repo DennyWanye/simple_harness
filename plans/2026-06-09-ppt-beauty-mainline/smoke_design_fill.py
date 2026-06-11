@@ -6,7 +6,7 @@ from pptx import Presentation  # noqa: E402
 from deskpet.tools.ppt_tools import ppt_create  # noqa: E402
 
 TPL = r"G:\projects\deskpet\resources\PPT_Template\高级感 (01)---.pptx"
-OUT = r"G:\projects\deskpet\.tmp\design-fill-smoke-v3.pptx"
+OUT = r"G:\projects\deskpet\.tmp\design-fill-smoke-v6.pptx"
 REPORT = Path(r"G:\projects\deskpet\plans\2026-06-09-ppt-beauty-mainline\smoke_design_fill_report.txt")
 
 outline = [
@@ -44,5 +44,8 @@ else:
     lines.append("VERDICT=FAIL (render not ok)")
 REPORT.write_text("\n".join(lines), encoding="utf-8")
 print("written", REPORT)
+
+
+
 
 
