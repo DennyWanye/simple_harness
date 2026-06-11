@@ -43,6 +43,7 @@ and failures degrade to placeholders.
 """
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import logging
@@ -2832,14 +2833,32 @@ def _build_ppt_schema() -> dict[str, Any]:
 _PPT_SCHEMA = _build_ppt_schema()
 
 
+def _ppt_async_enabled() -> bool:
+    """config ``[ppt].async_enabled``(默认 True)。带 AI 生图的 deck 走后台。"""
+    try:
+        import config as _cfg  # type: ignore[import-not-found]
+
+        return bool((_cfg.config.raw.get("ppt") or {}).get("async_enabled", True))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _count_image_prompt_pages(outline: Any) -> int:
+    try:
+        return sum(1 for so in parse_outline(outline) if so.image_prompt)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
 def _handle_ppt_create(args: dict, task_id: str) -> str:
     """Sync handler wired into the tool registry.
 
-    ``ppt_create`` is itself synchronous (no network, no LLM), so we
-    just JSON-serialize the result.
+    纯文本/模板填充是同步快路径。但带 image_prompt 的 deck 要串行调
+    gpt-image-2(每张 70~180s,N 页可达数分钟) —— 同步会把 agent 回合
+    卡死。这种 deck 走后台异步: 秒回「制作中」,ImageGenerationWorker
+    的事件循环上跑完整生成,做好用 notifier 推回桌宠 + 自动打开。
     """
-    result = ppt_create(
-        args.get("outline"),
+    kwargs = dict(
         theme=str(args.get("theme") or "minimal"),
         title=str(args.get("title") or ""),
         author=str(args.get("author") or "DeskPet"),
@@ -2847,7 +2866,71 @@ def _handle_ppt_create(args: dict, task_id: str) -> str:
         template=(str(args["template"]) if args.get("template") else None),
         dry_run=bool(args.get("dry_run", False)),
     )
+    outline = args.get("outline")
+
+    worker = args.get("_image_worker")
+    sid = str(args.get("_session_id") or "default")
+    n_imgs = _count_image_prompt_pages(outline)
+    can_async = (
+        n_imgs >= 1
+        and not kwargs["dry_run"]
+        and worker is not None
+        and getattr(worker, "alive", lambda: False)()
+        and _ppt_async_enabled()
+    )
+
+    if can_async:
+        async def _bg_job() -> None:
+            loop = asyncio.get_running_loop()
+            try:
+                result = await loop.run_in_executor(
+                    None, lambda: ppt_create(outline, **kwargs)
+                )
+            except Exception as exc:  # noqa: BLE001
+                result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            try:
+                path = result.get("path")
+                if result.get("ok") and path:
+                    _open_image_file(path)
+                    await worker.notifier(
+                        sid,
+                        f"✨ 图文 PPT 做好啦！已自动打开～\n"
+                        f"📁 {Path(str(path)).name}（{result.get('slide_count', '?')} 页）",
+                    )
+                else:
+                    await worker.notifier(
+                        sid, f"😿 PPT 没做成：{result.get('error') or '未知错误'}"
+                    )
+            except Exception as exc:  # noqa: BLE001
+                log.warning("ppt async notify failed: %s", exc)
+
+        if worker.submit_background(lambda: _bg_job()):
+            return json.dumps(
+                {
+                    "ok": True,
+                    "status": "generating",
+                    "message": (
+                        f"🎨 在做图文 PPT 啦～要给 {n_imgs} 页各画一张 AI 图，"
+                        f"约几分钟，做好我自动打开发你，这会儿可以先聊点别的~"
+                    ),
+                },
+                ensure_ascii=False,
+            )
+        # submit 失败 → 落同步路径(慢但出图)
+        log.warning("ppt async submit failed; falling back to sync")
+
+    result = ppt_create(outline, **kwargs)
     return json.dumps(result, ensure_ascii=False)
+
+
+def _open_image_file(path: str) -> bool:
+    """复用 image_tools 的 OS 打开(桌宠场景,故意打开)。从不抛异常。"""
+    try:
+        from .image_tools import _open_file as _of  # type: ignore
+
+        return bool(_of(Path(str(path))))
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _register_ppt_tool() -> None:
