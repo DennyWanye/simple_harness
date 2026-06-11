@@ -1,4 +1,4 @@
-"""A-4 真实模板冒烟: 高级感(01) 设计页复用,验证中文内容替换+无 lorem 残留。"""
+﻿"""A-4 真实模板冒烟: 高级感(01) 设计页复用,验证中文内容替换+无 lorem 残留。"""
 import sys
 from pathlib import Path
 sys.path.insert(0, r"G:\projects\deskpet\backend")
@@ -6,7 +6,7 @@ from pptx import Presentation  # noqa: E402
 from deskpet.tools.ppt_tools import ppt_create  # noqa: E402
 
 TPL = r"G:\projects\deskpet\resources\PPT_Template\高级感 (01)---.pptx"
-OUT = r"G:\projects\deskpet\.tmp\design-fill-smoke.pptx"
+OUT = r"G:\projects\deskpet\.tmp\design-fill-smoke-v3.pptx"
 REPORT = Path(r"G:\projects\deskpet\plans\2026-06-09-ppt-beauty-mainline\smoke_design_fill_report.txt")
 
 outline = [
@@ -44,3 +44,5 @@ else:
     lines.append("VERDICT=FAIL (render not ok)")
 REPORT.write_text("\n".join(lines), encoding="utf-8")
 print("written", REPORT)
+
+

@@ -1733,7 +1733,29 @@ def _analyze_design_page(slide) -> dict[str, Any]:
         title_shape = title_item["shape"] if title_item else None
 
         remaining = [item for item in records if item.get("shape") is not title_shape]
-        subtitle_item = max(remaining, key=lambda item: item["max_pt"], default=None)
+        # subtitle 必须是小字(<=60pt)：>60pt 的非 title 大字是「双层艺术叠排」
+        # 的另一层(如封面背景大字 + 前景手写体)，把 subtitle 填进去会和中文
+        # 标题重叠混乱 —— 它们归 decor，填充后清空。
+        subtitle_item = max(
+            (item for item in remaining if item["max_pt"] <= 60),
+            key=lambda item: item["max_pt"],
+            default=None,
+        )
+        subtitle_shape = subtitle_item["shape"] if subtitle_item else None
+        # decor = 非 title/subtitle 的艺术大字(>60pt)。纯数字/超短文本
+        # (如步骤编号 '1' '2' '3')保留当装饰，其余(如 'About Me'
+        # 'graphic designer')残留英文穿帮 → 进 decor 待清空。
+        decor = []
+        for item in remaining:
+            if item["max_pt"] <= 60 or item["shape"] is subtitle_shape:
+                continue
+            try:
+                _txt = (item["shape"].text_frame.text or "").strip()
+            except Exception:  # noqa: BLE001
+                _txt = ""
+            if len(_txt) <= 2 or _txt.isdigit():
+                continue
+            decor.append(item["shape"])
         bodies = sorted(
             (
                 item["shape"]
@@ -1753,9 +1775,10 @@ def _analyze_design_page(slide) -> dict[str, Any]:
         title_pt = float(title_item["max_pt"]) if title_item else 0.0
         return {
             "title": title_shape,
-            "subtitle": subtitle_item["shape"] if subtitle_item else None,
+            "subtitle": subtitle_shape,
             "bodies": bodies,
             "labels": labels,
+            "decor": decor,
             "n_body": len(bodies),
             "title_pt": title_pt,
         }
@@ -1765,6 +1788,7 @@ def _analyze_design_page(slide) -> dict[str, Any]:
             "subtitle": None,
             "bodies": [],
             "labels": [],
+            "decor": [],
             "n_body": 0,
             "title_pt": 0.0,
         }
@@ -1815,6 +1839,29 @@ def _set_text_keep_style(shape, lines: list[str]) -> None:
             shape.text_frame.text = "\n".join(str(line).strip()[:80] for line in lines if str(line).strip())
         except Exception:  # noqa: BLE001
             pass
+
+
+def _shapes_v_overlap(a, b) -> bool:
+    """两形状垂直方向是否大面积重叠(>50% 较小高度)。判断失败保守视为重叠。"""
+    try:
+        top_a, bot_a = int(a.top), int(a.top) + int(a.height)
+        top_b, bot_b = int(b.top), int(b.top) + int(b.height)
+        inter = min(bot_a, bot_b) - max(top_a, top_b)
+        return inter > 0.5 * min(bot_a - top_a, bot_b - top_b)
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _take_subtitle_from_decor(info: dict[str, Any]):
+    """subtitle 没有小字槽可放时，从 decor 里挑一个与 title 不重叠的形状
+    用来放 subtitle(双层艺术叠排里位置错开的那层)。挑中的从 decor 移除，
+    位置重叠的(会和中文标题打架)留在 decor 待清空。"""
+    title_shape = info.get("title")
+    for shape in list(info.get("decor", [])):
+        if title_shape is None or not _shapes_v_overlap(shape, title_shape):
+            info["decor"].remove(shape)
+            return shape
+    return None
 
 
 def _clear_design_body_slots(info: dict[str, Any], *, keep: Sequence[Any] = ()) -> None:
@@ -1930,6 +1977,8 @@ def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
 
     if so.layout == "title":
         target = subtitle_shape or (bodies[0] if bodies else None)
+        if target is None and so.subtitle:
+            target = _take_subtitle_from_decor(info)
         if target is not None and so.subtitle:
             _set_text_keep_style(target, [so.subtitle])
             _clear_design_body_slots(info, keep=[target])
@@ -1937,6 +1986,8 @@ def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
             _clear_design_body_slots(info)
     elif so.layout == "section":
         target = bodies[0] if bodies else subtitle_shape
+        if target is None and so.subtitle:
+            target = _take_subtitle_from_decor(info)
         if target is not None and so.subtitle:
             _set_text_keep_style(target, [so.subtitle])
             _clear_design_body_slots(info, keep=[target])
@@ -1970,6 +2021,12 @@ def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
         _fill_design_bullets(info, lines)
     else:
         _fill_design_bullets(info, so.bullets)
+
+    # 清掉残留的英文艺术大字(decor)：原模板的主题词叠排(About Me /
+    # graphic designer 等)不清会和中文内容穿帮混排。形状本身保留
+    # (底色/位置仍是设计的一部分)，只清文本。
+    for shape in info.get("decor", []):
+        _set_text_keep_style(shape, [])
 
     if so.notes:
         try:
