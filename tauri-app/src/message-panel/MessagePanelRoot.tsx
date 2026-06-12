@@ -136,15 +136,36 @@ export function MessagePanelRoot() {
     }
   }, [audioMessage, isPlaying, resetPlaybackBuffer, bargeIn]);
 
-  // Same companion-stream derivation as App.tsx (strip <think>/tool
-  // trace via forPet; synth ts since the store has none).
+  // Companion-stream derivation (strip <think> via forPet; synth ts
+  // since the store has none)。2026-06-12: 工具执行轨迹(tool_call/
+  // tool_result)不再丢弃 —— 用户要求「我让它生成PPT 和 它生成完之间
+  // 的工具调用」在主消息流全程可观测(此前只有桌宠小气泡显示)。
   const chatMessages = useMemo(() => {
-    type ChatItem = { role: "user" | "assistant"; text: string; ts: number };
+    type ChatItem = { role: "user" | "assistant" | "tool"; text: string; ts: number };
     const out: ChatItem[] = [];
     messages.forEach((m, i) => {
       const ts = Date.now() - (messages.length - i) * 1000;
       if (m.role === "user") {
         out.push({ role: "user", text: m.text ?? "", ts });
+        return;
+      }
+      if ((m.role as string) === "tool_call") {
+        const args = m.tool_args
+          ? JSON.stringify(m.tool_args).slice(0, 120)
+          : "";
+        out.push({
+          role: "tool",
+          text: `🔧 调用 ${m.tool_name || "(工具)"}${args ? ` ${args}${args.length >= 120 ? "…" : ""}` : ""}`,
+          ts,
+        });
+        return;
+      }
+      if ((m.role as string) === "tool_result") {
+        out.push({
+          role: "tool",
+          text: `${m.tool_ok === false ? "❌" : "✅"} ${m.tool_name || "(工具)"} 完成`,
+          ts,
+        });
         return;
       }
       const clean = forPet(m.text);

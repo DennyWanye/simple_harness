@@ -31,7 +31,9 @@ import type { InboxItem } from "../stores/sessionsStore";
 export type StreamFilter = "all" | "chat" | "warn" | "err";
 
 export interface ChatStreamMessage {
-  role: "user" | "assistant";
+  // 2026-06-12: 加 "tool" — 工具执行轨迹(调用/结果)进主消息流,
+  // 用户全程可观测(此前派生层把 tool_call/tool_result 滤掉了)。
+  role: "user" | "assistant" | "tool";
   text: string;
   ts: number;
 }
@@ -66,7 +68,7 @@ type StreamRow =
   | {
       kind: "chat";
       ts: number;
-      role: "user" | "assistant";
+      role: "user" | "assistant" | "tool";
       text: string;
       key: string;
     }
@@ -222,10 +224,34 @@ function ChatRow({
   text,
   ts,
 }: {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "tool";
   text: string;
   ts: number;
 }) {
+  if (role === "tool") {
+    // 工具执行轨迹行: 紧凑、低调(灰底等宽小字),不抢聊天主体视觉。
+    return (
+      <div
+        style={{
+          ...rowBaseStyle,
+          alignSelf: "flex-start",
+          background: "rgba(20, 28, 40, 0.7)",
+          color: "#94a3b8",
+          borderColor: "rgba(103, 232, 249, 0.18)",
+          padding: "4px 10px",
+          fontSize: 11.5,
+          fontFamily: "Consolas, 'Courier New', monospace",
+          maxWidth: "92%",
+        }}
+        data-role="tool"
+      >
+        <div data-bp-selectable="" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+          {text || "(工具)"}
+          <span style={{ marginLeft: 8, opacity: 0.5 }}>{format_relative(ts)}</span>
+        </div>
+      </div>
+    );
+  }
   const tone = role === "user" ? PALETTE.user : PALETTE.asst;
   return (
     <div
