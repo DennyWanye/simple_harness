@@ -2662,6 +2662,19 @@ def _swap_design_picture(slide, image_path: str) -> bool:
         return False
 
 
+def _scale_shape_runs(shape, scale: float) -> None:
+    """把形状内所有 run 的字号 × scale(视觉评审 shrink_text 用于模板页)。
+    没显式字号的 run 跳过(继承模板样式)。从不抛异常。"""
+    try:
+        for para in shape.text_frame.paragraphs:
+            for run in para.runs:
+                sz = run.font.size
+                if sz is not None:
+                    run.font.size = Pt(max(9, int(sz.pt * scale)))
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
     title_shape = info.get("title")
     subtitle_shape = info.get("subtitle")
@@ -2779,6 +2792,12 @@ def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
     # 英文 lorem 在这里统一清掉,防穿帮。
     _sweep_residual_placeholders(slide)
 
+    # 视觉评审 shrink_text(模板页): 缩本页已填文字槽的字号。
+    if so.font_scale and so.font_scale < 1.0:
+        for shape in [info.get("title"), info.get("subtitle")] + list(info.get("bodies", [])):
+            if shape is not None:
+                _scale_shape_runs(shape, so.font_scale)
+
     if so.notes:
         try:
             slide.notes_slide.notes_text_frame.text = so.notes
@@ -2802,7 +2821,10 @@ def _drop_slide_id(prs, sld_id) -> None:
 
 def _render_with_design_pages(
     slides: list[SlideOutline], template_path: str, *, title: str, author: str, out_path: Path,
+    banned_pages: Optional[dict[int, set[int]]] = None,
 ) -> Optional[dict[str, Any]]:
+    """banned_pages: {outline 页序 i: 禁用的设计页 index 集合} —— 视觉评审
+    change_page 动作把上一轮该页用过的设计页 ban 掉,本轮换一张重填。"""
     try:
         prs = _Presentation(template_path)
         if len(prs.slides) < 3:
@@ -2829,13 +2851,21 @@ def _render_with_design_pages(
 
         used: set[int] = set()
         selected: list[tuple[dict[str, Any], SlideOutline]] = []
-        for so in slides:
-            page = _select_design_page(so, pages, section_pages, content_pages, used)
+        page_map: list[int] = []  # 第 k 个成品页 ← 设计页 index(给闭环 ban 用)
+        for i, so in enumerate(slides):
+            # 该 outline 页被 ban 的设计页先记成 used 再选(选完恢复,不影响后页)
+            ban = (banned_pages or {}).get(i, set())
+            eff_used = used | set(ban)
+            page = _select_design_page(so, pages, section_pages, content_pages, eff_used)
+            if page is None and ban:
+                # ban 后无页可选 → 放开 ban 兜底(宁可重复风格也别丢页)
+                page = _select_design_page(so, pages, section_pages, content_pages, used)
             if page is None:
                 log.debug("design page exhausted, skipping slide: %s", so.title)
                 continue
             used.add(page["index"])
             selected.append((page, so))
+            page_map.append(page["index"])
         if not selected:
             return None
 
@@ -2868,6 +2898,7 @@ def _render_with_design_pages(
             "path": str(out_path),
             "slide_count": len(selected),
             "theme": "template-design",
+            "page_map": page_map,
             "artifacts": [{
                 "kind": "file",
                 "path": str(out_path),
@@ -3095,6 +3126,11 @@ def ppt_create(
             )
             if result is not None:
                 log.debug("ppt template rendered with design pages: %s", resolved)
+                # 视觉评估闭环(模板版): 看每页 → 缩字号/换设计页 → 重渲染
+                _visual_review_loop_template(
+                    slides, resolved, out_path,
+                    title=title, author=author, result=result,
+                )
                 _maybe_render_preview(result)
                 return result
             result = _render_with_template(
@@ -3298,6 +3334,117 @@ def _visual_review_loop(
             )
     except Exception as exc:  # noqa: BLE001
         log.warning("visual review loop failed: %s", str(exc)[:200])
+
+
+def _apply_review_actions_template(
+    slides: list[SlideOutline],
+    reviews: list[dict[str, Any]],
+    page_map: list[int],
+    banned_pages: dict[int, set[int]],
+) -> bool:
+    """模板版动作应用: shrink_text 缩该页填充文字;change_page 把该页上一轮
+    用的设计页 ban 掉(重渲染时换页重填)。返回是否需要重渲染。"""
+    changed = False
+    for r in reviews:
+        try:
+            idx = int(r.get("page") or 0) - 1
+            if idx < 0 or idx >= len(slides) or r.get("ok", True):
+                continue
+            so = slides[idx]
+            action = str(r.get("action") or "ok")
+            if action == "shrink_text":
+                if so.font_scale > 0.72:
+                    log.info(
+                        "visual_review(template) fix page=%d shrink_text issues=%s",
+                        idx + 1, r.get("issues"),
+                    )
+                    so.font_scale = round(so.font_scale * 0.85, 2)
+                    changed = True
+            elif action == "change_page":
+                if idx < len(page_map):
+                    log.info(
+                        "visual_review(template) fix page=%d change_page(ban %d) issues=%s",
+                        idx + 1, page_map[idx], r.get("issues"),
+                    )
+                    banned_pages.setdefault(idx, set()).add(page_map[idx])
+                    changed = True
+        except Exception:  # noqa: BLE001
+            continue
+    return changed
+
+
+def _visual_review_loop_template(
+    slides: list[SlideOutline],
+    template_path: str,
+    out_path: Path,
+    *,
+    title: str,
+    author: str,
+    result: dict[str, Any],
+    max_rounds: int = 2,
+) -> None:
+    """模板(design-fill)deck 的视觉评估闭环: 截图 → 评审(模板动作集) →
+    缩字号/换设计页 → 重渲染。失败静默,主结果零影响。从不抛异常。"""
+    try:
+        if _in_pytest():
+            return
+        if not _ppt_visual_review_enabled():
+            return
+        renderer = _get_ppt_renderer()
+        if not renderer.com_render_available():
+            return
+        render_fn = getattr(renderer, "render_pptx_to_pngs_safe", None)
+        if not callable(render_fn):
+            return
+        from .ppt_visual_review import review_slides
+
+        banned_pages: dict[int, set[int]] = {}
+        rounds_meta: list[dict[str, Any]] = []
+        for rnd in range(1, max_rounds + 1):
+            shot_dir = Path(str(out_path)).with_suffix(f".review{rnd}")
+            pngs = render_fn(str(out_path), str(shot_dir), timeout=150.0)
+            if not pngs:
+                break
+            meta = [
+                {
+                    "title": so.title,
+                    "variant": "template",
+                    "n_bullets": len([b for b in (so.bullets or []) if str(b).strip()]),
+                }
+                for so in slides
+            ]
+            reviews = review_slides(pngs, meta, mode="template")
+            if not reviews:
+                break
+            n_bad = sum(1 for r in reviews if not r.get("ok", True))
+            rounds_meta.append({
+                "round": rnd,
+                "pages": len(reviews),
+                "issues": n_bad,
+                "detail": [r for r in reviews if not r.get("ok", True)],
+            })
+            if n_bad == 0:
+                break
+            page_map = list(result.get("page_map") or [])
+            if not _apply_review_actions_template(slides, reviews, page_map, banned_pages):
+                break
+            new_result = _render_with_design_pages(
+                slides, template_path, title=title, author=author,
+                out_path=out_path, banned_pages=banned_pages,
+            )
+            if not new_result:
+                break
+            result["page_map"] = new_result.get("page_map")
+            result["slide_count"] = new_result.get("slide_count", result.get("slide_count"))
+        if rounds_meta:
+            result["visual_review"] = rounds_meta
+            log.info(
+                "visual_review_loop(template) done rounds=%d final_issues=%d",
+                len(rounds_meta),
+                rounds_meta[-1]["issues"] if rounds_meta else -1,
+            )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("template visual review loop failed: %s", str(exc)[:200])
 
 
 def _resolve_output_path(p: Optional[str]) -> Path:

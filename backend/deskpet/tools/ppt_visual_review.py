@@ -25,11 +25,13 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-_REVIEW_SYSTEM = """你是严格的 PPT 视觉质检员。逐页检查幻灯片渲染截图,只关注【视觉/排版】问题:
-1. overflow: 文字溢出容器、被截断、折行成孤字
-2. occlusion: 文字压在图片主体(人脸/视觉焦点)上,或文字与图对比度不足难以阅读
-3. misfit: 版式与内容不匹配(如要点太多挤爆面板、纯氛围页套了内容版式)
-4. blank: 大面积异常空白/元素缺失
+_REVIEW_CHECKS = """你是严格的 PPT 视觉质检员。逐页检查幻灯片渲染截图,只关注【视觉/排版】问题:
+1. overflow: 文字溢出容器、被截断、折行成孤字、文字挤成一团
+2. occlusion: 文字与装饰元素/图片重叠错位,或对比度不足难以阅读
+3. misfit: 版式与内容不匹配(如要点太多挤爆容器、内容放错位置)
+4. blank: 大面积异常空白/元素缺失"""
+
+_REVIEW_SYSTEM = _REVIEW_CHECKS + """
 
 每页给出判定与【修复动作】(只能从下面选):
 - "ok": 本页合格
@@ -39,6 +41,17 @@ _REVIEW_SYSTEM = """你是严格的 PPT 视觉质检员。逐页检查幻灯片�
 输出严格 JSON 数组,不要任何其它文字:
 [{"page":1,"ok":true,"issues":[],"action":"ok"},
  {"page":2,"ok":false,"issues":["标题压在人脸上"],"action":"change_variant","variant":"split_left"}]"""
+
+_REVIEW_SYSTEM_TEMPLATE = _REVIEW_CHECKS + """
+
+这是【模板填充】的 PPT(设计页来自现成模板,内容是填进去的)。每页给出判定与【修复动作】(只能从下面选):
+- "ok": 本页合格
+- "shrink_text": 文字溢出/挤爆容器 → 缩小该页填充文字字号
+- "change_page": 文字与设计元素重叠错位/排版结构性混乱(缩字救不了) → 给本页换一张设计页重新填充
+
+输出严格 JSON 数组,不要任何其它文字:
+[{"page":1,"ok":true,"issues":[],"action":"ok"},
+ {"page":2,"ok":false,"issues":["目录数字与文字重叠"],"action":"change_page"}]"""
 
 
 def _b64_image(path: str, *, max_w: int = 768) -> str | None:
@@ -88,7 +101,8 @@ def review_slides(
     png_paths: list[str],
     pages_meta: list[dict[str, Any]],
     *,
-    max_pages: int = 10,
+    mode: str = "image",
+    max_pages: int = 12,
     timeout: float = 120.0,
 ) -> list[dict[str, Any]]:
     """让多模态 LLM 看每页截图,返回评审动作列表。
@@ -142,10 +156,13 @@ def review_slides(
         except Exception:  # noqa: BLE001
             pass
 
+        system_prompt = (
+            _REVIEW_SYSTEM_TEMPLATE if mode == "template" else _REVIEW_SYSTEM
+        )
         payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": _REVIEW_SYSTEM},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": content},
             ],
             "max_tokens": 1500,

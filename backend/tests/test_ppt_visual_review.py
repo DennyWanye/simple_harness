@@ -205,3 +205,95 @@ def test_loop_config_off(monkeypatch, tmp_path):
     _visual_review_loop(slides, get_theme("dark"), out,
                         title="t", author="a", result=result)
     assert calls["n"] == 0
+
+
+# ── 模板版闭环(design-fill) ─────────────────────────────────────
+
+def test_template_apply_shrink_and_change_page():
+    from deskpet.tools.ppt_tools import _apply_review_actions_template
+
+    slides = _mk_slides()
+    banned: dict = {}
+    page_map = [3, 7]
+    changed = _apply_review_actions_template(slides, [
+        {"page": 1, "ok": False, "issues": ["溢出"], "action": "shrink_text"},
+        {"page": 2, "ok": False, "issues": ["数字与文字重叠"], "action": "change_page"},
+    ], page_map, banned)
+    assert changed is True
+    assert slides[0].font_scale == 0.85
+    assert banned == {1: {7}}  # 第2页(idx1) ban 掉设计页7
+
+
+def test_template_scale_shape_runs_floor():
+    """_scale_shape_runs 有 9pt 下限,无显式字号的 run 不动。"""
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    from deskpet.tools.ppt_tools import _scale_shape_runs
+
+    prs = Presentation()
+    s = prs.slides.add_slide(prs.slide_layouts[6])
+    box = s.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1))
+    r = box.text_frame.paragraphs[0].add_run()
+    r.text = "测试"
+    r.font.size = Pt(20)
+    _scale_shape_runs(box, 0.85)
+    assert box.text_frame.paragraphs[0].runs[0].font.size == Pt(17)
+    for _ in range(20):
+        _scale_shape_runs(box, 0.5)
+    assert box.text_frame.paragraphs[0].runs[0].font.size.pt >= 9
+
+
+def test_template_loop_change_page_rerenders(monkeypatch, tmp_path):
+    """模板闭环: 第1轮 change_page → ban+重渲染(banned 传入);第2轮 clean。"""
+    from deskpet.tools.ppt_tools import _visual_review_loop_template
+
+    monkeypatch.setattr(ppt_tools, "_in_pytest", lambda: False)
+
+    def fake_render_pngs(pptx, out_dir, **kw):
+        d = Path(out_dir); d.mkdir(parents=True, exist_ok=True)
+        p = d / "slide1.png"; p.write_bytes(b"\x89PNG" + b"x" * 2048)
+        return [str(p)]
+
+    monkeypatch.setattr(
+        ppt_tools, "ppt_render",
+        SimpleNamespace(com_render_available=lambda: True,
+                        render_pptx_to_pngs_safe=fake_render_pngs),
+        raising=False,
+    )
+
+    calls = {"n": 0}
+    rounds = [
+        [{"page": 1, "ok": False, "issues": ["重叠"], "action": "change_page"}],
+        [{"page": 1, "ok": True, "action": "ok"}],
+    ]
+
+    def fake_review(pngs, meta, **kw):
+        assert kw.get("mode") == "template"
+        i = min(calls["n"], len(rounds) - 1); calls["n"] += 1
+        return rounds[i]
+
+    import deskpet.tools.ppt_visual_review as vr
+    monkeypatch.setattr(vr, "review_slides", fake_review)
+
+    rerenders = {"n": 0, "banned": None}
+
+    def fake_design_render(slides, template_path, **kw):
+        rerenders["n"] += 1
+        rerenders["banned"] = kw.get("banned_pages")
+        return {"ok": True, "path": kw.get("out_path"), "page_map": [9],
+                "slide_count": 1}
+
+    monkeypatch.setattr(ppt_tools, "_render_with_design_pages", fake_design_render)
+
+    slides = _mk_slides()[:1]
+    out = tmp_path / "deck.pptx"
+    out.write_bytes(b"PK fake")
+    result: dict = {"ok": True, "page_map": [5]}
+    _visual_review_loop_template(slides, "tpl.pptx", out,
+                                 title="t", author="a", result=result)
+    assert calls["n"] == 2
+    assert rerenders["n"] == 1
+    assert rerenders["banned"] == {0: {5}}   # 第1页 ban 掉设计页5
+    assert result["page_map"] == [9]          # 重渲染后映射更新
+    assert result["visual_review"][0]["issues"] == 1
+    assert result["visual_review"][1]["issues"] == 0
