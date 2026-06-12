@@ -2491,6 +2491,68 @@ def _enable_text_autofit(shape) -> None:
         pass
 
 
+def _fit_text_to_shape(shape, *, min_pt: int = 10, default_pt: float = 18.0) -> None:
+    """主动按槽位高度缩字号 —— 真机实测 WPS 渲染【不执行】normAutofit
+    声明,长中文照样溢出框底(压页边/装饰条)。这里在填充后用估算把
+    所有 run 字号显式缩到「估算总高 ≤ 槽高」,确定性根治垂直溢出。
+
+    估算: 每段行数 = ceil(字符宽/可用宽)(中文全角≈1em,保守按全角),
+    段高 = 行数 × 字号 × 1.36(行距)。从不抛异常。
+    """
+    try:
+        tf = shape.text_frame
+        width = int(shape.width)
+        height = int(shape.height)
+        if width <= 0 or height <= 0:
+            return
+
+        paras = list(tf.paragraphs)
+        if not paras:
+            return
+
+        def _para_pt(p) -> float:
+            for r in p.runs:
+                if r.font.size is not None:
+                    return float(r.font.size.pt)
+            if p.font.size is not None:
+                return float(p.font.size.pt)
+            return float(default_pt)
+
+        def _est_height(scale: float) -> float:
+            total = 0.0
+            for p in paras:
+                txt = "".join(r.text or "" for r in p.runs) or (p.text or "")
+                n = max(len(txt.strip()), 1)
+                pt = max(float(min_pt), _para_pt(p) * scale)
+                per_line = max(1, int(width / (pt * 12700 * 0.98)))
+                lines = -(-n // per_line)  # ceil
+                total += lines * pt * 12700 * 1.36
+            return total
+
+        usable_h = height * 0.96
+        if _est_height(1.0) <= usable_h:
+            return  # 放得下,不动
+
+        # 二分/步进找能放下的最大缩放(0.5 下限)
+        scale = 1.0
+        while scale > 0.5 and _est_height(scale) > usable_h:
+            scale -= 0.06
+        scale = max(scale, 0.5)
+        for p in paras:
+            base = _para_pt(p)
+            new_pt = max(min_pt, int(base * scale))
+            for r in p.runs:
+                r.font.size = Pt(new_pt)
+            # 段级字号也写(无 run 的空段/继承段)
+            try:
+                p.font.size = Pt(new_pt)
+            except Exception:  # noqa: BLE001
+                pass
+        log.debug("fit_text_to_shape scale=%.2f", scale)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 import re as _re_ppt
 
 # 残留占位文 = 模板自带的示例/提示文字,填充后没被覆盖会穿帮。中英都覆盖。
@@ -2843,6 +2905,14 @@ def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
         for shape in [info.get("title"), info.get("subtitle")] + list(info.get("bodies", [])):
             if shape is not None:
                 _scale_shape_runs(shape, so.font_scale)
+
+    # 垂直溢出根治: 已填正文槽按槽高主动缩字号(WPS 不执行 normAutofit
+    # 声明,长中文必溢出框底压页边 —— 用户真机三页实测)。
+    for shape in list(info.get("bodies", [])) + (
+        [_divider_target] if _divider_target is not None else []
+    ):
+        if shape is not None:
+            _fit_text_to_shape(shape)
 
     if so.notes:
         try:
