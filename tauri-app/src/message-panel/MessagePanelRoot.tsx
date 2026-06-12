@@ -140,6 +140,27 @@ export function MessagePanelRoot() {
   // since the store has none)。2026-06-12: 工具执行轨迹(tool_call/
   // tool_result)不再丢弃 —— 用户要求「我让它生成PPT 和 它生成完之间
   // 的工具调用」在主消息流全程可观测(此前只有桌宠小气泡显示)。
+  // 「隐藏工具消息」开关: 开=只看对话(隐藏 🔧/✅ 工具轨迹行),
+  // 关=全程可观测。localStorage 持久化,重开面板记住选择。
+  const [hideTools, setHideTools] = useState<boolean>(
+    () => {
+      try {
+        return localStorage.getItem("msgpanel.hideTools") === "1";
+      } catch {
+        return false;
+      }
+    },
+  );
+  const toggleHideTools = () => {
+    setHideTools((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem("msgpanel.hideTools", next ? "1" : "0");
+      } catch { /* 忽略 */ }
+      return next;
+    });
+  };
+
   const chatMessages = useMemo(() => {
     type ChatItem = { role: "user" | "assistant" | "tool"; text: string; ts: number };
     const out: ChatItem[] = [];
@@ -147,6 +168,9 @@ export function MessagePanelRoot() {
       const ts = Date.now() - (messages.length - i) * 1000;
       if (m.role === "user") {
         out.push({ role: "user", text: m.text ?? "", ts });
+        return;
+      }
+      if (hideTools && ((m.role as string) === "tool_call" || (m.role as string) === "tool_result")) {
         return;
       }
       if ((m.role as string) === "tool_call") {
@@ -172,7 +196,7 @@ export function MessagePanelRoot() {
       if (clean) out.push({ role: "assistant", text: clean, ts });
     });
     return out;
-  }, [messages]);
+  }, [messages, hideTools]);
   const warnings = useMemo<InboxItem[]>(
     () => collect_inbox(sessions, "yellow"),
     [sessions],
@@ -282,6 +306,21 @@ export function MessagePanelRoot() {
               {preferred_model || "默认模型"}
             </span>
             <Icon name="edit" size={11} style={{ flexShrink: 0 }} />
+          </button>
+          {/* 隐藏/显示工具消息(🔧 调用轨迹行) */}
+          <button
+            type="button"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={toggleHideTools}
+            title={hideTools ? "显示工具消息" : "隐藏工具消息"}
+            aria-label={hideTools ? "显示工具消息" : "隐藏工具消息"}
+            aria-pressed={hideTools}
+            style={{
+              ...iconBtnStyle,
+              color: hideTools ? "#64748b" : "#67e8f9",
+            }}
+          >
+            <span style={{ fontSize: 12, lineHeight: 1 }}>🔧</span>
           </button>
           {/* 2026-05-31 restore — context ring in header */}
           <span
