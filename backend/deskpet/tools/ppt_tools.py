@@ -176,6 +176,8 @@ class SlideOutline:
     # 整页生图版式变体(版式多样化): cover/split_left/split_right/top/card/
     # quote。空 = 由 _assign_image_layouts 按内容自动分配(相邻不重复)。
     image_variant: str = ""
+    # 视觉评审闭环的 shrink_text 动作: 渲染字号 × 此系数(默认 1.0)。
+    font_scale: float = 1.0
     caption: str = ""
     # quote
     quote: str = ""
@@ -205,6 +207,11 @@ class SlideOutline:
             image_path=(self.image_path or None),
             image_prompt=(self.image_prompt or None),
             image_variant=(self.image_variant or "").strip().lower(),
+            font_scale=(
+                float(self.font_scale)
+                if isinstance(self.font_scale, (int, float)) and 0.5 <= float(self.font_scale) <= 1.5
+                else 1.0
+            ),
             caption=(self.caption or "").strip(),
             quote=(self.quote or "").strip(),
             cite=(self.cite or "").strip(),
@@ -1379,7 +1386,9 @@ def _side_picture(slide, img: str, *, left_emu: int, width_emu: int) -> bool:
 
 def _panel_text(slide, outline: SlideOutline, theme: Theme, *,
                 px: float, pw: float, title_pt: int = 26) -> None:
-    """深色面板内: accent 竖条 + 标题 + 要点/caption。px/pw 为英寸。"""
+    """深色面板内: accent 竖条 + 标题 + 要点/caption。px/pw 为英寸。
+    字号 × outline.font_scale(视觉评审 shrink_text 动作)。"""
+    fs = outline.font_scale or 1.0
     _add_shape(
         slide, MSO_SHAPE.RECTANGLE,
         left=Inches(px), top=Inches(0.7),
@@ -1390,7 +1399,7 @@ def _panel_text(slide, outline: SlideOutline, theme: Theme, *,
         slide, outline.title or "",
         left=Inches(px + 0.2), top=Inches(0.62),
         width=Inches(pw - 0.4), height=Inches(0.92),
-        font_size=title_pt, bold=True,
+        font_size=max(14, int(title_pt * fs)), bold=True,
         color=theme.dark_text_rgb, font_name=theme.font_heading,
         align="left", anchor="middle",
     )
@@ -1400,7 +1409,7 @@ def _panel_text(slide, outline: SlideOutline, theme: Theme, *,
             slide, bullets,
             left=Inches(px + 0.2), top=Inches(1.78),
             width=Inches(pw - 0.5), height=Inches(3.2),
-            font_size=15, color=theme.dark_text_rgb,
+            font_size=max(10, int(15 * fs)), color=theme.dark_text_rgb,
             font_name=theme.font_body, accent_color=theme.accent_rgb,
         )
     elif outline.caption:
@@ -1408,7 +1417,7 @@ def _panel_text(slide, outline: SlideOutline, theme: Theme, *,
             slide, outline.caption,
             left=Inches(px + 0.2), top=Inches(1.78),
             width=Inches(pw - 0.5), height=Inches(2.6),
-            font_size=16, color=theme.dark_muted_text_rgb,
+            font_size=max(11, int(16 * fs)), color=theme.dark_muted_text_rgb,
             font_name=theme.font_body, align="left",
         )
 
@@ -3102,51 +3111,15 @@ def ppt_create(
     theme_obj = get_theme(theme)
 
     try:
-        prs = _Presentation()
-        prs.slide_width = _SLIDE_WIDTH
-        prs.slide_height = _SLIDE_HEIGHT
-        total = len(slides)
-        blank_layout = prs.slide_layouts[6]  # 6 = "Blank" in default template
-        for i, so in enumerate(slides, start=1):
-            slide = prs.slides.add_slide(blank_layout)
-            is_conclusion = _is_conclusion_slide(so, i, total)
-            if is_conclusion:
-                _render_conclusion_v2(slide, so, theme_obj)
-            else:
-                renderer = _RENDERERS.get(so.layout, _render_bullet_v2)
-                renderer(slide, so, theme_obj)
-            # Footer everywhere except the very first title slide for breathing room.
-            if so.layout != "title":
-                _add_footer(slide, theme_obj, i, total, dark=is_conclusion or so.layout == "image_full")
-            # Speaker notes
-            if so.notes:
-                notes_tf = slide.notes_slide.notes_text_frame
-                notes_tf.text = so.notes
-        # Document core properties
-        try:
-            cp = prs.core_properties
-            if title:
-                cp.title = title
-            if author:
-                cp.author = author
-                cp.last_modified_by = author
-        except Exception:  # noqa: BLE001
-            pass
-        prs.save(out_path)
-        # WI-T1.2 D1：显式 emit artifacts[]（一等公民路径，前端按 kind=file
-        # 渲染 ArtifactCard；保留 path 字段保 BC）。
-        result = {
-            "ok": True,
-            "path": str(out_path),
-            "slide_count": total,
-            "theme": theme_obj.name,
-            "artifacts": [{
-                "kind": "file",
-                "path": str(out_path),
-                "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                "title": Path(str(out_path)).name,
-            }],
-        }
+        result = _render_fromscratch(
+            slides, theme_obj, out_path, title=title, author=author,
+        )
+        # 视觉评估闭环(问题1): 桌宠「亲眼看」每页渲染图 → 评审 → 自动修
+        # (换版式/缩字号) → 重渲染。仅 AI 图文 deck(有 image_full 页)走。
+        _visual_review_loop(
+            slides, theme_obj, out_path, title=title, author=author,
+            result=result,
+        )
         _maybe_render_preview(result)
         return result
     except Exception as exc:  # noqa: BLE001
@@ -3158,6 +3131,173 @@ def ppt_create(
                 slides, title=title, author=author,
             ),
         }
+
+
+def _render_fromscratch(
+    slides: list[SlideOutline],
+    theme_obj: Theme,
+    out_path: Path,
+    *,
+    title: str,
+    author: str,
+) -> dict[str, Any]:
+    """from-scratch 引擎渲染并保存(可重入 — 视觉闭环改完 slides 再调一遍)。"""
+    prs = _Presentation()
+    prs.slide_width = _SLIDE_WIDTH
+    prs.slide_height = _SLIDE_HEIGHT
+    total = len(slides)
+    blank_layout = prs.slide_layouts[6]  # 6 = "Blank" in default template
+    for i, so in enumerate(slides, start=1):
+        slide = prs.slides.add_slide(blank_layout)
+        is_conclusion = _is_conclusion_slide(so, i, total)
+        if is_conclusion:
+            _render_conclusion_v2(slide, so, theme_obj)
+        else:
+            renderer = _RENDERERS.get(so.layout, _render_bullet_v2)
+            renderer(slide, so, theme_obj)
+        # Footer everywhere except the very first title slide for breathing room.
+        if so.layout != "title":
+            _add_footer(slide, theme_obj, i, total, dark=is_conclusion or so.layout == "image_full")
+        # Speaker notes
+        if so.notes:
+            notes_tf = slide.notes_slide.notes_text_frame
+            notes_tf.text = so.notes
+    # Document core properties
+    try:
+        cp = prs.core_properties
+        if title:
+            cp.title = title
+        if author:
+            cp.author = author
+            cp.last_modified_by = author
+    except Exception:  # noqa: BLE001
+        pass
+    prs.save(out_path)
+    # WI-T1.2 D1：显式 emit artifacts[]（一等公民路径，前端按 kind=file
+    # 渲染 ArtifactCard；保留 path 字段保 BC）。
+    return {
+        "ok": True,
+        "path": str(out_path),
+        "slide_count": total,
+        "theme": theme_obj.name,
+        "artifacts": [{
+            "kind": "file",
+            "path": str(out_path),
+            "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "title": Path(str(out_path)).name,
+        }],
+    }
+
+
+def _ppt_visual_review_enabled() -> bool:
+    """config ``[ppt].visual_review``(默认 True)。"""
+    try:
+        import config as _cfg  # type: ignore[import-not-found]
+
+        return bool((_cfg.config.raw.get("ppt") or {}).get("visual_review", True))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _apply_review_actions(
+    slides: list[SlideOutline], reviews: list[dict[str, Any]],
+) -> bool:
+    """把视觉评审动作应用到 slides。返回是否有实际改动(需要重渲染)。"""
+    changed = False
+    for r in reviews:
+        try:
+            idx = int(r.get("page") or 0) - 1
+            if idx < 0 or idx >= len(slides) or r.get("ok", True):
+                continue
+            so = slides[idx]
+            action = str(r.get("action") or "ok")
+            if action == "change_variant" and so.layout == "image_full":
+                v = str(r.get("variant") or "").strip().lower()
+                if v in IMAGE_VARIANTS and v != so.image_variant:
+                    log.info(
+                        "visual_review fix page=%d variant %s→%s issues=%s",
+                        idx + 1, so.image_variant, v, r.get("issues"),
+                    )
+                    so.image_variant = v
+                    changed = True
+            elif action == "shrink_text":
+                if so.font_scale > 0.72:
+                    log.info(
+                        "visual_review fix page=%d shrink_text issues=%s",
+                        idx + 1, r.get("issues"),
+                    )
+                    so.font_scale = round(so.font_scale * 0.85, 2)
+                    changed = True
+        except Exception:  # noqa: BLE001
+            continue
+    return changed
+
+
+def _visual_review_loop(
+    slides: list[SlideOutline],
+    theme_obj: Theme,
+    out_path: Path,
+    *,
+    title: str,
+    author: str,
+    result: dict[str, Any],
+    max_rounds: int = 2,
+) -> None:
+    """视觉评估闭环: 渲染截图 → 多模态评审 → 应用修复 → 重渲染,最多
+    max_rounds 轮评审。任何失败静默跳过(主结果零影响)。从不抛异常。"""
+    try:
+        if _in_pytest():
+            return
+        if not _ppt_visual_review_enabled():
+            return
+        if not any(so.layout == "image_full" for so in slides):
+            return  # 仅 AI 图文 deck 走视觉闭环(文本/模板deck不必烧 vision)
+        renderer = _get_ppt_renderer()
+        if not renderer.com_render_available():
+            return
+        render_fn = getattr(renderer, "render_pptx_to_pngs_safe", None)
+        if not callable(render_fn):
+            return
+        from .ppt_visual_review import review_slides
+
+        rounds_meta: list[dict[str, Any]] = []
+        for rnd in range(1, max_rounds + 1):
+            shot_dir = Path(str(out_path)).with_suffix(f".review{rnd}")
+            pngs = render_fn(str(out_path), str(shot_dir), timeout=150.0)
+            if not pngs:
+                break
+            meta = [
+                {
+                    "title": so.title,
+                    "variant": so.image_variant or so.layout,
+                    "n_bullets": len([b for b in (so.bullets or []) if str(b).strip()]),
+                }
+                for so in slides
+            ]
+            reviews = review_slides(pngs, meta)
+            if not reviews:
+                break
+            n_bad = sum(1 for r in reviews if not r.get("ok", True))
+            rounds_meta.append({
+                "round": rnd,
+                "pages": len(reviews),
+                "issues": n_bad,
+                "detail": [r for r in reviews if not r.get("ok", True)],
+            })
+            if n_bad == 0:
+                break
+            if not _apply_review_actions(slides, reviews):
+                break  # 有问题但没有可自动修的动作 → 停(报告里留痕)
+            _render_fromscratch(slides, theme_obj, out_path, title=title, author=author)
+        if rounds_meta:
+            result["visual_review"] = rounds_meta
+            log.info(
+                "visual_review_loop done rounds=%d final_issues=%d",
+                len(rounds_meta),
+                rounds_meta[-1]["issues"] if rounds_meta else -1,
+            )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("visual review loop failed: %s", str(exc)[:200])
 
 
 def _resolve_output_path(p: Optional[str]) -> Path:
