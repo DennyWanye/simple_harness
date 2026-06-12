@@ -1329,28 +1329,52 @@ def _render_image_v2(slide, outline: SlideOutline, theme: Theme) -> None:
 IMAGE_VARIANTS = ("cover", "split_left", "split_right", "top", "card", "quote")
 
 
-def _fullbleed_picture(slide, img: str) -> bool:
+def _place_cover(slide, img: str, *, left: int, top: int, width: int, height: int) -> bool:
+    """object-fit: cover —— 图按【槽位比例中心裁切】后铺满槽位,零拉伸变形。
+
+    用户实测痛点: 把 16:9 横图硬塞进竖/方槽 → 水平挤压。正解不是拉伸,
+    是按槽位宽高比中心裁掉多余边(python-pptx picture.crop_*),放置框仍是
+    槽位尺寸,但可见部分比例 = 槽位比例 → 不变形。PIL 不可用时退化为直接
+    铺(可能轻微拉伸,但有兜底)。从不抛异常。
+    """
     try:
-        slide.shapes.add_picture(
-            img, Emu(0), Emu(0),
-            width=Emu(_SLIDE_WIDTH), height=Emu(_SLIDE_HEIGHT),
-        )
+        pic = slide.shapes.add_picture(img, Emu(left), Emu(top),
+                                       width=Emu(width), height=Emu(height))
+        try:
+            from PIL import Image  # type: ignore
+
+            with Image.open(img) as im:
+                iw, ih = im.size
+            if iw <= 0 or ih <= 0:
+                return True
+            img_ar = iw / ih
+            slot_ar = width / height if height else img_ar
+            if img_ar > slot_ar:
+                # 图太宽 → 裁左右
+                frac = (1.0 - slot_ar / img_ar) / 2.0
+                pic.crop_left = frac
+                pic.crop_right = frac
+            elif img_ar < slot_ar:
+                # 图太高 → 裁上下
+                frac = (1.0 - img_ar / slot_ar) / 2.0
+                pic.crop_top = frac
+                pic.crop_bottom = frac
+        except Exception:  # noqa: BLE001
+            pass  # PIL 不可用 → 保持铺满(退化)
         return True
     except Exception as exc:  # noqa: BLE001
-        log.debug("fullbleed picture failed: %s", exc)
+        log.debug("place cover failed: %s", exc)
         return False
+
+
+def _fullbleed_picture(slide, img: str) -> bool:
+    return _place_cover(slide, img, left=0, top=0,
+                        width=_SLIDE_WIDTH, height=_SLIDE_HEIGHT)
 
 
 def _side_picture(slide, img: str, *, left_emu: int, width_emu: int) -> bool:
-    try:
-        slide.shapes.add_picture(
-            img, Emu(left_emu), Emu(0),
-            width=Emu(width_emu), height=Emu(_SLIDE_HEIGHT),
-        )
-        return True
-    except Exception as exc:  # noqa: BLE001
-        log.debug("side picture failed: %s", exc)
-        return False
+    return _place_cover(slide, img, left=left_emu, top=0,
+                        width=width_emu, height=_SLIDE_HEIGHT)
 
 
 def _panel_text(slide, outline: SlideOutline, theme: Theme, *,
@@ -1438,11 +1462,7 @@ def _render_var_top(slide, outline: SlideOutline, theme: Theme) -> None:
     img = outline.image_path
     img_h = int(_SLIDE_HEIGHT * 0.6)
     if img and Path(img).is_file():
-        try:
-            slide.shapes.add_picture(img, Emu(0), Emu(0),
-                                     width=Emu(_SLIDE_WIDTH), height=Emu(img_h))
-        except Exception:  # noqa: BLE001
-            pass
+        _place_cover(slide, img, left=0, top=0, width=_SLIDE_WIDTH, height=img_h)
     _add_shape(slide, MSO_SHAPE.RECTANGLE, left=Emu(0), top=Emu(img_h),
                width=Emu(_SLIDE_WIDTH), height=Emu(_SLIDE_HEIGHT - img_h),
                fill=theme.background_rgb, line=None)
@@ -1853,21 +1873,26 @@ def _autofill_image_prompts(slides: list[SlideOutline]) -> None:
             log.warning("image prompt autofill unavailable: %s", exc)
             return
 
-        prompts = []
+        # 按版式选生成尺寸(最佳实践: 生成贴近槽位比例的图,cover 裁切损失
+        # 最小)。split 侧栏≈方 → 1024x1024;其余(全幅/上图/封面)→ 横版
+        # 1536x1024。prompt 追加版式负空间指令 + 禁字后缀。同尺寸分一组批量。
+        from collections import OrderedDict
+        groups: "OrderedDict[str, list[tuple[int, str]]]" = OrderedDict()
         for idx, prompt in pending:
             variant = _resolve_image_variant(slides[idx])
             neg = _VARIANT_NEG_SPACE.get(variant, "")
-            prompts.append(f"{prompt} {neg}{_NO_TEXT_SUFFIX}".strip())
-        # 横版 1536x1024(gpt-image 官方尺寸档)最接近 16:9;再中心裁切
-        # 到 16:9 全幅铺图零变形。
-        results = generate_images(prompts, size="1536x1024")
-        for (idx, prompt), result in zip(pending, results):
-            path = result.get("path") if isinstance(result, dict) else None
-            if path:
-                slides[idx].image_path = _crop_image_to_169(str(path))
-            else:
-                error = result.get("error") if isinstance(result, dict) else None
-                log.debug("image prompt generation failed: prompt=%r error=%r", prompt, error)
+            full = f"{prompt} {neg}{_NO_TEXT_SUFFIX}".strip()
+            size = "1024x1024" if variant in ("split_left", "split_right") else "1536x1024"
+            groups.setdefault(size, []).append((idx, full))
+        for size, items in groups.items():
+            results = generate_images([p for _, p in items], size=size)
+            for (idx, _p), result in zip(items, results):
+                path = result.get("path") if isinstance(result, dict) else None
+                if path:
+                    slides[idx].image_path = str(path)
+                else:
+                    err = result.get("error") if isinstance(result, dict) else None
+                    log.debug("image gen failed idx=%d err=%r", idx, err)
     except Exception as exc:  # noqa: BLE001
         log.warning("image prompt autofill failed: %s", exc, exc_info=True)
 
