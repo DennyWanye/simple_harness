@@ -173,6 +173,9 @@ class SlideOutline:
     image_path: Optional[str] = None
     # 整页生图：有则 ppt_create 自动生图填 image_path
     image_prompt: Optional[str] = None
+    # 整页生图版式变体(版式多样化): cover/split_left/split_right/top/card/
+    # quote。空 = 由 _assign_image_layouts 按内容自动分配(相邻不重复)。
+    image_variant: str = ""
     caption: str = ""
     # quote
     quote: str = ""
@@ -201,6 +204,7 @@ class SlideOutline:
             right_title=(self.right_title or "").strip(),
             image_path=(self.image_path or None),
             image_prompt=(self.image_prompt or None),
+            image_variant=(self.image_variant or "").strip().lower(),
             caption=(self.caption or "").strip(),
             quote=(self.quote or "").strip(),
             cite=(self.cite or "").strip(),
@@ -466,6 +470,24 @@ def _add_shape(
     else:
         shape.line.color.rgb = _rgb(line)
     return shape
+
+
+def _set_fill_alpha(shape, alpha_pct: int) -> None:
+    """给已 solid 填充的形状加透明度(0=全透,100=不透)。python-pptx 无原生
+    alpha API,直接往 srgbClr 注入 <a:alpha>。半透明深色遮罩让底图透出来
+    (引用页/卡片可读又不死黑)。从不抛异常。"""
+    try:
+        from pptx.oxml.ns import qn
+
+        srgb = shape.fill.fore_color._xFill.find(qn("a:srgbClr"))
+        if srgb is None:
+            return
+        for old in srgb.findall(qn("a:alpha")):
+            srgb.remove(old)
+        a = srgb.makeelement(qn("a:alpha"), {"val": str(int(max(0, min(100, alpha_pct)) * 1000))})
+        srgb.append(a)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _add_text(
@@ -1301,97 +1323,210 @@ def _render_image_v2(slide, outline: SlideOutline, theme: Theme) -> None:
     )
 
 
-def _render_image_full_rich_panel(slide, outline: SlideOutline, theme: Theme) -> None:
-    """全幅 AI 图 + 左侧深色面板(标题 + 丰富要点)。面板尺寸我方自控,
-    长中文要点不受模板小槽限制 —— 这是「惊艳 AI 视觉 + 丰富可读内容」。"""
-    panel_w = int(_SLIDE_WIDTH * 0.46)
-    # 左侧深色面板(主视觉留右 54%)
+# ── 整页生图 版式多样化(调研: 一套 deck 在 6 种版式里轮换才不单调) ──
+# 变体: cover(全幅封面/转场) split_left/split_right(图一侧+文字面板,左右
+# 交替) top(上图下文) card(全幅背景+半透明深色卡片) quote(大图引用)。
+IMAGE_VARIANTS = ("cover", "split_left", "split_right", "top", "card", "quote")
+
+
+def _fullbleed_picture(slide, img: str) -> bool:
+    try:
+        slide.shapes.add_picture(
+            img, Emu(0), Emu(0),
+            width=Emu(_SLIDE_WIDTH), height=Emu(_SLIDE_HEIGHT),
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log.debug("fullbleed picture failed: %s", exc)
+        return False
+
+
+def _side_picture(slide, img: str, *, left_emu: int, width_emu: int) -> bool:
+    try:
+        slide.shapes.add_picture(
+            img, Emu(left_emu), Emu(0),
+            width=Emu(width_emu), height=Emu(_SLIDE_HEIGHT),
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log.debug("side picture failed: %s", exc)
+        return False
+
+
+def _panel_text(slide, outline: SlideOutline, theme: Theme, *,
+                px: float, pw: float, title_pt: int = 26) -> None:
+    """深色面板内: accent 竖条 + 标题 + 要点/caption。px/pw 为英寸。"""
     _add_shape(
         slide, MSO_SHAPE.RECTANGLE,
-        left=Emu(0), top=Emu(0),
-        width=Emu(panel_w), height=Emu(_SLIDE_HEIGHT),
-        fill=theme.dark_bg_rgb, line=None,
-    )
-    # accent 竖条
-    _add_shape(
-        slide, MSO_SHAPE.RECTANGLE,
-        left=Inches(0.62), top=Inches(0.7),
+        left=Inches(px), top=Inches(0.7),
         width=Inches(0.06), height=Inches(0.62),
         fill=theme.accent_rgb, line=None,
     )
     _add_text(
         slide, outline.title or "",
-        left=Inches(0.82), top=Inches(0.64),
-        width=Inches(3.6), height=Inches(0.78),
-        font_size=27, bold=True,
-        color=theme.dark_text_rgb,
-        font_name=theme.font_heading,
+        left=Inches(px + 0.2), top=Inches(0.62),
+        width=Inches(pw - 0.4), height=Inches(0.92),
+        font_size=title_pt, bold=True,
+        color=theme.dark_text_rgb, font_name=theme.font_heading,
         align="left", anchor="middle",
     )
     bullets = [b for b in (outline.bullets or []) if str(b).strip()]
     if bullets:
         _add_bullet_text(
             slide, bullets,
-            left=Inches(0.82), top=Inches(1.74),
-            width=Inches(3.5), height=Inches(3.2),
-            font_size=15,
-            color=theme.dark_text_rgb,
-            font_name=theme.font_body,
-            accent_color=theme.accent_rgb,
+            left=Inches(px + 0.2), top=Inches(1.78),
+            width=Inches(pw - 0.5), height=Inches(3.2),
+            font_size=15, color=theme.dark_text_rgb,
+            font_name=theme.font_body, accent_color=theme.accent_rgb,
         )
     elif outline.caption:
         _add_text(
             slide, outline.caption,
-            left=Inches(0.82), top=Inches(1.74),
-            width=Inches(3.5), height=Inches(2.6),
-            font_size=16,
-            color=theme.dark_muted_text_rgb,
-            font_name=theme.font_body,
-            align="left",
+            left=Inches(px + 0.2), top=Inches(1.78),
+            width=Inches(pw - 0.5), height=Inches(2.6),
+            font_size=16, color=theme.dark_muted_text_rgb,
+            font_name=theme.font_body, align="left",
         )
+
+
+def _render_var_cover(slide, outline: SlideOutline, theme: Theme) -> None:
+    """A 全幅封面/转场: 全幅图 + 底部暗带(标题 + caption)。"""
+    band_top = Emu(int(_SLIDE_HEIGHT * 0.76))
+    _add_shape(slide, MSO_SHAPE.RECTANGLE, left=Emu(0), top=band_top,
+               width=Emu(_SLIDE_WIDTH), height=Emu(int(_SLIDE_HEIGHT * 0.24)),
+               fill=theme.dark_bg_rgb, line=None)
+    _add_text(slide, outline.title or "", left=Inches(0.62),
+              top=band_top + Inches(0.2), width=Inches(8.76), height=Inches(0.6),
+              font_size=30, bold=True, color=theme.dark_text_rgb,
+              font_name=theme.font_heading, align="left")
+    sub = outline.caption or outline.subtitle
+    if sub:
+        _add_text(slide, sub, left=Inches(0.64), top=band_top + Inches(0.92),
+                  width=Inches(8.72), height=Inches(0.36), font_size=14,
+                  color=theme.dark_muted_text_rgb, font_name=theme.font_body,
+                  align="left")
+
+
+def _render_var_split(slide, outline: SlideOutline, theme: Theme, *,
+                      image_right: bool) -> None:
+    """B 图一侧 + 文字面板另一侧(左右交替防呆板)。"""
+    panel_w = int(_SLIDE_WIDTH * 0.46)
+    img = outline.image_path
+    if image_right:
+        # 面板在左,图在右
+        if img and Path(img).is_file():
+            _side_picture(slide, img, left_emu=panel_w,
+                          width_emu=_SLIDE_WIDTH - panel_w)
+        _add_shape(slide, MSO_SHAPE.RECTANGLE, left=Emu(0), top=Emu(0),
+                   width=Emu(panel_w), height=Emu(_SLIDE_HEIGHT),
+                   fill=theme.dark_bg_rgb, line=None)
+        _panel_text(slide, outline, theme, px=0.62, pw=4.0)
+    else:
+        # 图在左,面板在右
+        if img and Path(img).is_file():
+            _side_picture(slide, img, left_emu=0,
+                          width_emu=_SLIDE_WIDTH - panel_w)
+        _add_shape(slide, MSO_SHAPE.RECTANGLE,
+                   left=Emu(_SLIDE_WIDTH - panel_w), top=Emu(0),
+                   width=Emu(panel_w), height=Emu(_SLIDE_HEIGHT),
+                   fill=theme.dark_bg_rgb, line=None)
+        _panel_text(slide, outline, theme, px=6.2, pw=3.6)
+
+
+def _render_var_top(slide, outline: SlideOutline, theme: Theme) -> None:
+    """C 上图下文: 图占上 60%, 下方标题 + 横排要点(浅底)。"""
+    img = outline.image_path
+    img_h = int(_SLIDE_HEIGHT * 0.6)
+    if img and Path(img).is_file():
+        try:
+            slide.shapes.add_picture(img, Emu(0), Emu(0),
+                                     width=Emu(_SLIDE_WIDTH), height=Emu(img_h))
+        except Exception:  # noqa: BLE001
+            pass
+    _add_shape(slide, MSO_SHAPE.RECTANGLE, left=Emu(0), top=Emu(img_h),
+               width=Emu(_SLIDE_WIDTH), height=Emu(_SLIDE_HEIGHT - img_h),
+               fill=theme.background_rgb, line=None)
+    _add_text(slide, outline.title or "", left=Inches(0.62),
+              top=Emu(img_h) + Inches(0.16), width=Inches(8.76), height=Inches(0.5),
+              font_size=24, bold=True, color=theme.primary_rgb,
+              font_name=theme.font_heading, align="left")
+    bullets = [b for b in (outline.bullets or []) if str(b).strip()]
+    if bullets:
+        _add_bullet_text(slide, bullets, left=Inches(0.66),
+                         top=Emu(img_h) + Inches(0.82), width=Inches(8.7),
+                         height=Inches(1.4), font_size=14, color=theme.text_rgb,
+                         font_name=theme.font_body, accent_color=theme.accent_rgb)
+
+
+def _render_var_card(slide, outline: SlideOutline, theme: Theme) -> None:
+    """D 全幅背景图 + 一个局部半透明深色卡片(标题 + 要点)。"""
+    img = outline.image_path
+    if img and Path(img).is_file():
+        _fullbleed_picture(slide, img)
+    # 右下角深色卡片(半透明,留出大片氛围图,底图微透更精致)
+    cx, cy, cw, ch = 5.2, 1.0, 4.4, 3.7
+    _card = _add_shape(slide, MSO_SHAPE.ROUNDED_RECTANGLE, left=Inches(cx), top=Inches(cy),
+                       width=Inches(cw), height=Inches(ch), fill=(10, 16, 28), line=None)
+    _set_fill_alpha(_card, 82)
+    _panel_text(slide, outline, theme, px=cx + 0.3, pw=cw - 0.5, title_pt=23)
+
+
+def _render_var_quote(slide, outline: SlideOutline, theme: Theme) -> None:
+    """F 大图引用: 全幅(暗)图 + 居中大字短句。"""
+    img = outline.image_path
+    if img and Path(img).is_file():
+        _fullbleed_picture(slide, img)
+    # 半透明压暗整页(alpha 55%)提升可读,但底图仍透出来(不死黑)
+    _ov = _add_shape(slide, MSO_SHAPE.RECTANGLE, left=Emu(0), top=Emu(0),
+                     width=Emu(_SLIDE_WIDTH), height=Emu(_SLIDE_HEIGHT),
+                     fill=(8, 12, 22), line=None)
+    _set_fill_alpha(_ov, 58)
+    text = outline.quote or outline.title or ""
+    _add_text(slide, f"“{text}”" if text else "", left=Inches(1.2),
+              top=Inches(2.0), width=Inches(7.6), height=Inches(1.6),
+              font_size=34, bold=True, color=theme.dark_text_rgb,
+              font_name=theme.font_heading, align="center", anchor="middle")
+    sub = outline.cite or outline.caption or outline.subtitle
+    if sub:
+        _add_text(slide, sub, left=Inches(1.2), top=Inches(3.7), width=Inches(7.6),
+                  height=Inches(0.5), font_size=15, color=theme.dark_muted_text_rgb,
+                  font_name=theme.font_body, align="center")
+
+
+def _resolve_image_variant(outline: SlideOutline) -> str:
+    """决定本页用哪个版式: 显式 image_variant 优先;否则按内容兜底
+    (有要点→split_right; 有 quote→quote; 否则→cover)。"""
+    v = (outline.image_variant or "").strip().lower()
+    if v in IMAGE_VARIANTS:
+        return v
+    if outline.quote:
+        return "quote"
+    if [b for b in (outline.bullets or []) if str(b).strip()]:
+        return "split_right"
+    return "cover"
 
 
 def _render_image_full_v2(slide, outline: SlideOutline, theme: Theme) -> None:
     img = outline.image_path
-    has_bullets = bool([b for b in (outline.bullets or []) if str(b).strip()])
     if img and Path(img).is_file():
         try:
-            slide.shapes.add_picture(
-                img,
-                Emu(0), Emu(0),
-                width=Emu(_SLIDE_WIDTH), height=Emu(_SLIDE_HEIGHT),
-            )
-            # 有丰富要点 → 左侧自控面板(内容页);否则 → 底部带(封面式)
-            if has_bullets:
-                _render_image_full_rich_panel(slide, outline, theme)
-                return
-            band_top = Emu(int(_SLIDE_HEIGHT * 0.78))
-            band_h = Emu(int(_SLIDE_HEIGHT * 0.22))
-            _add_shape(
-                slide, MSO_SHAPE.RECTANGLE,
-                left=Emu(0), top=band_top,
-                width=Emu(_SLIDE_WIDTH), height=band_h,
-                fill=theme.dark_bg_rgb, line=None,
-            )
-            _add_text(
-                slide, outline.title or "",
-                left=Inches(0.62), top=band_top + Inches(0.18),
-                width=Inches(8.76), height=Inches(0.54),
-                font_size=28, bold=True,
-                color=theme.dark_text_rgb,
-                font_name=theme.font_heading,
-                align="left",
-            )
-            if outline.caption:
-                _add_text(
-                    slide, outline.caption,
-                    left=Inches(0.64), top=band_top + Inches(0.78),
-                    width=Inches(8.72), height=Inches(0.34),
-                    font_size=13,
-                    color=theme.dark_muted_text_rgb,
-                    font_name=theme.font_body,
-                    align="left",
-                )
+            variant = _resolve_image_variant(outline)
+            if variant == "cover":
+                _fullbleed_picture(slide, img)
+                _render_var_cover(slide, outline, theme)
+            elif variant == "split_left":
+                _render_var_split(slide, outline, theme, image_right=False)
+            elif variant == "split_right":
+                _render_var_split(slide, outline, theme, image_right=True)
+            elif variant == "top":
+                _render_var_top(slide, outline, theme)
+            elif variant == "card":
+                _render_var_card(slide, outline, theme)
+            elif variant == "quote":
+                _render_var_quote(slide, outline, theme)
+            else:
+                _fullbleed_picture(slide, img)
+                _render_var_cover(slide, outline, theme)
             return
         except Exception as exc:  # noqa: BLE001
             log.debug("full image insert failed (%s); falling back to placeholder", exc)
@@ -1654,7 +1789,55 @@ def _crop_image_to_169(path: str) -> str:
         return path
 
 
+# 每个版式对应的「负空间」构图指令(调研: prompt 主动留白给文字才不盖字)。
+_VARIANT_NEG_SPACE = {
+    "cover": "Composition: keep the bottom third darker, simpler and uncluttered as clean negative space for a title overlay.",
+    "split_right": "Composition: place the main subject on the RIGHT two-thirds; keep the LEFT third clean, simple and darker as negative space for text.",
+    "split_left": "Composition: place the main subject on the LEFT two-thirds; keep the RIGHT third clean, simple and darker as negative space for text.",
+    "top": "Composition: the main scene fills the upper two-thirds; keep the lower third simple and uncluttered for a caption strip.",
+    "card": "Composition: atmospheric wide scene; keep the right side calmer and slightly darker so a text card can sit there.",
+    "quote": "Composition: dark, moody, cinematic wide scene with a calm low-contrast center for a short centered quote; subtle vignette.",
+}
+_NO_TEXT_SUFFIX = " No text, no letters, no words, no typography, no watermark, no logo."
+
+
+def _assign_image_layouts(slides: list[SlideOutline]) -> None:
+    """给整页生图(image_full)的页【自动分配版式变体】,让一套 deck 在多种
+    版式里轮换(调研结论: 不是一种打天下)。规则:
+      - 封面(第一张 image_full) → cover
+      - 结尾(最后一张,含 quote 或 结论意味) → quote
+      - 中间内容页 → 在 [split_right, top, card, split_left] 里轮换
+        (split 左右交替防呆板);无要点的纯氛围页 → cover。
+    已显式写了合法 image_variant 的页保留不动(LLM 可手动指定)。从不抛异常。
+    """
+    try:
+        idxs = [i for i, so in enumerate(slides) if so.layout == "image_full"]
+        if not idxs:
+            return
+        rotation = ["split_right", "top", "card", "split_left"]
+        rot_i = 0
+        for pos, i in enumerate(idxs):
+            so = slides[i]
+            if (so.image_variant or "").strip().lower() in IMAGE_VARIANTS:
+                continue  # LLM 显式指定,尊重
+            has_bullets = bool([b for b in (so.bullets or []) if str(b).strip()])
+            if pos == 0:
+                so.image_variant = "cover"
+            elif so.quote or (pos == len(idxs) - 1 and not has_bullets):
+                so.image_variant = "quote"
+            elif not has_bullets:
+                so.image_variant = "cover"
+            else:
+                so.image_variant = rotation[rot_i % len(rotation)]
+                rot_i += 1
+    except Exception as exc:  # noqa: BLE001
+        log.debug("assign image layouts failed: %s", exc)
+
+
 def _autofill_image_prompts(slides: list[SlideOutline]) -> None:
+    # 先定版式 → 据版式给每张图的 prompt 追加对应负空间指令 + 禁字后缀。
+    _assign_image_layouts(slides)
+
     pending = [
         (idx, so.image_prompt)
         for idx, so in enumerate(slides)
@@ -1670,7 +1853,11 @@ def _autofill_image_prompts(slides: list[SlideOutline]) -> None:
             log.warning("image prompt autofill unavailable: %s", exc)
             return
 
-        prompts = [prompt for _, prompt in pending]
+        prompts = []
+        for idx, prompt in pending:
+            variant = _resolve_image_variant(slides[idx])
+            neg = _VARIANT_NEG_SPACE.get(variant, "")
+            prompts.append(f"{prompt} {neg}{_NO_TEXT_SUFFIX}".strip())
         # 横版 1536x1024(gpt-image 官方尺寸档)最接近 16:9;再中心裁切
         # 到 16:9 全幅铺图零变形。
         results = generate_images(prompts, size="1536x1024")
@@ -2862,6 +3049,10 @@ def ppt_create(
     )
     if has_prompts and (chosen_template or has_img_layout):
         _autofill_image_prompts(slides)
+    else:
+        # 没走 autofill(图已预设/无 prompt)也要给 image_full 页分配版式 ——
+        # 版式是渲染属性,与是否现场生图无关。
+        _assign_image_layouts(slides)
     if chosen_template:
         resolved = _resolve_template_path(chosen_template)
         if resolved:

@@ -46,7 +46,10 @@ def test_image_prompt_autofills_path(monkeypatch, tmp_path: Path, tiny_png: Path
 
     assert result["ok"] is True
     assert out.is_file()
-    assert calls == [["a teal abstract cover"]]
+    # prompt 现会追加版式负空间指令 + 禁字后缀,断言原 prompt 是前缀。
+    assert len(calls) == 1 and len(calls[0]) == 1
+    assert calls[0][0].startswith("a teal abstract cover")
+    assert "no text" in calls[0][0].lower()
 
 
 def test_no_image_prompt_no_network(monkeypatch, tmp_path: Path) -> None:

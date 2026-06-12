@@ -140,7 +140,8 @@ def test_template_mode_generates_for_swap(
 
     assert result["ok"] is True
     # 模板模式带 image_prompt → 真生图(给 _swap_design_picture 用)
-    assert calls == [["a clean desk pet hero"]]
+    assert len(calls) == 1 and len(calls[0]) == 1
+    assert calls[0][0].startswith("a clean desk pet hero")
 
 
 def test_template_mode_no_prompt_no_gen(
@@ -189,4 +190,5 @@ def test_image_full_autofills_without_template(
     )
 
     assert result["ok"] is True
-    assert calls == [["a cinematic ai city"]]
+    assert len(calls) == 1 and len(calls[0]) == 1
+    assert calls[0][0].startswith("a cinematic ai city")
