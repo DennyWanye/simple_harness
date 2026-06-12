@@ -2226,9 +2226,11 @@ def _analyze_design_page(slide, slide_w: int = 0, slide_h: int = 0) -> dict[str,
         )
         subtitle_shape = subtitle_item["shape"] if subtitle_item else None
         # decor = 非 title/subtitle 的艺术大字(>60pt)。纯数字/超短文本
-        # (如步骤编号 '1' '2' '3')保留当装饰，其余(如 'About Me'
-        # 'graphic designer')残留英文穿帮 → 进 decor 待清空。
+        # (如步骤编号 '1' '2' '3')保留当装饰(decor_nums 单列,若与已填
+        # 内容重叠会在填充后被清),其余(如 'About Me' 'graphic designer')
+        # 残留英文穿帮 → 进 decor 待清空。
         decor = []
+        decor_nums = []
         for item in remaining:
             if item["max_pt"] <= 60 or item["shape"] is subtitle_shape:
                 continue
@@ -2237,6 +2239,7 @@ def _analyze_design_page(slide, slide_w: int = 0, slide_h: int = 0) -> dict[str,
             except Exception:  # noqa: BLE001
                 _txt = ""
             if len(_txt) <= 2 or _txt.isdigit():
+                decor_nums.append(item["shape"])
                 continue
             decor.append(item["shape"])
         bodies = sorted(
@@ -2262,6 +2265,7 @@ def _analyze_design_page(slide, slide_w: int = 0, slide_h: int = 0) -> dict[str,
             "bodies": bodies,
             "labels": labels,
             "decor": decor,
+            "decor_nums": decor_nums,
             "n_body": len(bodies),
             "title_pt": title_pt,
             "slide_w": slide_w,
@@ -2274,6 +2278,7 @@ def _analyze_design_page(slide, slide_w: int = 0, slide_h: int = 0) -> dict[str,
             "bodies": [],
             "labels": [],
             "decor": [],
+            "decor_nums": [],
             "n_body": 0,
             "title_pt": 0.0,
             "slide_w": slide_w,
@@ -2662,6 +2667,25 @@ def _swap_design_picture(slide, image_path: str) -> bool:
         return False
 
 
+def _rects_overlap(a, b, *, min_frac: float = 0.2) -> bool:
+    """两形状矩形相交面积 > min_frac × 较小形状面积 → 视为重叠。
+    判断失败保守返回 False(不误清装饰)。"""
+    try:
+        ax1, ay1 = int(a.left), int(a.top)
+        ax2, ay2 = ax1 + int(a.width), ay1 + int(a.height)
+        bx1, by1 = int(b.left), int(b.top)
+        bx2, by2 = bx1 + int(b.width), by1 + int(b.height)
+        iw = min(ax2, bx2) - max(ax1, bx1)
+        ih = min(ay2, by2) - max(ay1, by1)
+        if iw <= 0 or ih <= 0:
+            return False
+        inter = iw * ih
+        amin = min((ax2 - ax1) * (ay2 - ay1), (bx2 - bx1) * (by2 - by1))
+        return amin > 0 and inter > min_frac * amin
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _scale_shape_runs(shape, scale: float) -> None:
     """把形状内所有 run 的字号 × scale(视觉评审 shrink_text 用于模板页)。
     没显式字号的 run 跳过(继承模板样式)。从不抛异常。"""
@@ -2756,6 +2780,28 @@ def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
             txt = ""
         if txt and _is_english_semantic_label(txt):
             _set_text_keep_style(shape, [])
+
+    # 装饰编号(1/2/3 大数字、ONE/TWO/THREE 标签)若与【已填内容】矩形重叠
+    # → 清掉。模板设计里它们是衬在英文短词后面的背景装饰,中文长句填进
+    # 槽后必撞(用户实测「目录大数字与文字重叠」的根因)。不重叠的保留。
+    _filled = [s for s in [title_shape, subtitle_shape, _divider_target] if s is not None]
+    _filled += [b for b in bodies if b is not None]
+    _DECOR_WORDS = {"one", "two", "three", "four", "five", "six",
+                    "seven", "eight", "nine", "ten"}
+    _candidates = list(info.get("decor_nums", []))
+    for shape in info.get("labels", []):
+        try:
+            t = (shape.text_frame.text or "").strip().lower()
+        except Exception:  # noqa: BLE001
+            t = ""
+        if t in _DECOR_WORDS or (t and (t.isdigit() or len(t) <= 2)):
+            _candidates.append(shape)
+    for shape in _candidates:
+        try:
+            if any(_rects_overlap(shape, f) for f in _filled):
+                _set_text_keep_style(shape, [])
+        except Exception:  # noqa: BLE001
+            continue
 
     # 章节/标题/引用页是「分隔页」: 本就只该有标题 + 副标题,模板自带的
     # 装饰副标题/标语(如"健康教育/心理辅导/重拾信心" —— 真实中文,占位
