@@ -64,6 +64,68 @@ def com_render_available() -> bool:
     return bool(_AVAILABLE)
 
 
+def _kill_wps() -> None:
+    """杀残留 WPS 进程(COM 在某页 hang 后超时杀进程,释放下次渲染)。"""
+    import subprocess
+
+    for name in ("wpp.exe", "wps.exe", "wpscloudsvr.exe", "et.exe"):
+        try:
+            subprocess.run(["taskkill", "/F", "/IM", name],
+                           capture_output=True, timeout=10)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def render_pptx_to_pngs_safe(
+    pptx_path: str,
+    out_dir: str,
+    *,
+    width: int = 1280,
+    height: int = 720,
+    max_slides: int = 30,
+    timeout: float = 120.0,
+) -> list[str]:
+    """带超时的预览渲染 —— 在【子进程】里跑 WPS COM,超时即杀子进程+杀 WPS。
+
+    WPS COM 对个别 .pptx/某页 Open/Export 会【挂死】(非异常),in-process
+    渲染会让调用线程永久卡住。异步图文 PPT 任务里这会让"做好啦"推回永久
+    丢失(用户感知"桌宠不理我了")。改子进程隔离 + 超时,渲染再怎么挂也
+    不阻塞调用方。返回 out_dir 里实际产出的 png(超时也返回已完成的部分)。
+    从不抛异常。
+    """
+    import subprocess
+    import sys
+
+    try:
+        if not com_render_available():
+            return []
+        dest = Path(out_dir).expanduser().resolve()
+        dest.mkdir(parents=True, exist_ok=True)
+        backend_dir = Path(__file__).resolve().parents[2]  # backend/
+        proc_args = [
+            sys.executable, "-m", "deskpet.tools.ppt_render",
+            str(Path(pptx_path).expanduser().resolve()), str(dest),
+            str(int(width)), str(int(height)), str(int(max_slides)),
+        ]
+        try:
+            subprocess.run(
+                proc_args, cwd=str(backend_dir),
+                capture_output=True, timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            log_warn = True
+            _kill_wps()
+        except Exception:  # noqa: BLE001
+            pass
+        # 读 out_dir 里实际产出的 png(超时也能拿到已渲染的前几页)
+        return sorted(
+            str(p) for p in dest.glob("slide*.png")
+            if p.is_file() and p.stat().st_size > 1024
+        )
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def render_pptx_to_pngs(
     pptx_path: str,
     out_dir: str,
@@ -122,3 +184,15 @@ def render_pptx_to_pngs(
                 pythoncom.CoUninitialize()
             except Exception:  # noqa: BLE001
                 pass
+
+
+if __name__ == "__main__":
+    # 被 render_pptx_to_pngs_safe 当子进程调用: <pptx> <out_dir> [w h max]
+    import sys as _sys
+
+    _a = _sys.argv
+    if len(_a) >= 3:
+        _w = int(_a[3]) if len(_a) > 3 else 1280
+        _h = int(_a[4]) if len(_a) > 4 else 720
+        _ms = int(_a[5]) if len(_a) > 5 else 30
+        render_pptx_to_pngs(_a[1], _a[2], width=_w, height=_h, max_slides=_ms)

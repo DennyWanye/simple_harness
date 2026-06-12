@@ -104,7 +104,13 @@ def _maybe_render_preview(result: dict[str, Any]) -> None:
 
         pptx = Path(str(result["path"])).expanduser().resolve()
         out_dir = pptx.with_suffix(".preview")
-        pngs = renderer.render_pptx_to_pngs(str(pptx), str(out_dir))
+        # 子进程+超时渲染: WPS COM 对某页挂死也不会阻塞调用线程(异步图文
+        # PPT 任务靠它返回后才推"做好啦",in-process 挂死会让推回永久丢失)。
+        render_fn = getattr(renderer, "render_pptx_to_pngs_safe", None)
+        if callable(render_fn):
+            pngs = render_fn(str(pptx), str(out_dir), timeout=150.0)
+        else:
+            pngs = renderer.render_pptx_to_pngs(str(pptx), str(out_dir))
         artifacts = result.setdefault("artifacts", [])
         for idx, png in enumerate(pngs, start=1):
             artifacts.append({
