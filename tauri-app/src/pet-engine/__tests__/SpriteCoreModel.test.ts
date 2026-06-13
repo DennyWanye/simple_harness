@@ -34,4 +34,16 @@ describe('SpriteCoreModel as real param dict', () => {
     expect(() => m.setParameterValueByIndex(-1, 0.5)).not.toThrow()
     expect(() => m.addParameterValueByIndex!(999, NaN)).not.toThrow()
   })
+  it('resetParameters zeros all values (prevents ADD accumulation each frame)', () => {
+    const m = new SpritePetEngine().getCoreModel() as unknown as {
+      getParameterIndex(n: string): number
+      setParameterValueByIndex(i: number, v: number): void
+      getParameterValueByIndex(i: number): number
+      resetParameters(): void
+    }
+    const i = m.getParameterIndex('ParamBodyAngleZ')
+    m.setParameterValueByIndex(i, 8)
+    m.resetParameters()
+    expect(m.getParameterValueByIndex(i)).toBe(0)
+  })
 })

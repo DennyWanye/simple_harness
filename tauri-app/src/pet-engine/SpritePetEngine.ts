@@ -42,6 +42,17 @@ class SpriteCoreModel implements CoreModelLike {
   getParameterValueByIndex(idx: number): number {
     return this.values[idx] ?? 0
   }
+  /**
+   * Zero every parameter. The renderer MUST call this once per frame
+   * BEFORE AnimationOverlay.applyTo(): pet-anim writes most params
+   * (perlin / wobble / lean / squash → BodyAngleZ/X, BustY) with ADD
+   * semantics, assuming a Cubism-style per-frame reset to baseline.
+   * Without this reset, every ADD accumulates frame over frame and the
+   * figure drifts / tilts forever instead of settling back.
+   */
+  resetParameters(): void {
+    this.values.fill(0)
+  }
 }
 
 /**

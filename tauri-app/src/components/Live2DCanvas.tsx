@@ -570,6 +570,12 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
         const _core = _engine?.getCoreModel();
         let _tf = { rotateDeg: 0, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 };
         if (_core && overlayRef.current) {
+          // FIX (2026-06-13): zero params each frame BEFORE applyTo.
+          // pet-anim writes BodyAngleZ/X + BustY with ADD semantics
+          // (perlin/wobble/lean/squash), assuming a Cubism per-frame
+          // baseline reset. Without this the ADDs accumulate every frame
+          // → 立绘 tilts/drifts forever and never settles ("一直歪").
+          (_core as { resetParameters?: () => void }).resetParameters?.();
           overlayRef.current.setMouthOpenY(mouthRef.current);
           overlayRef.current.applyTo(_core, ts);
           _tf = deriveTransform(_core);
