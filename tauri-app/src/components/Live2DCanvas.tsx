@@ -695,7 +695,7 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
           if (dx * dx + dy * dy > 25 /* 5px threshold squared */) {
             dragStartRef.current = null;
             // v2 A1: hand the overlay into being_held so wobble + surprise fire
-            // for the duration of the drag. Cleared on pointerup below.
+            // for the duration of the drag.
             overlayRef.current?.setDragState("being_held", e.timeStamp);
             // Synchronous call — the cached startDragging was prepared
             // at mount, so SendMessage WM_NCLBUTTONDOWN runs before the
@@ -708,6 +708,21 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
                 /* ignore */
               }
             }
+            // FIX (2026-06-13): startDragging() hands the gesture to Win32,
+            // so the WebView never receives onPointerUp on the hit-zone →
+            // dragState would stay stuck in "being_held" and the wobble
+            // never springs back (character keeps tilting forever). Arm a
+            // window-level fallback: restore "idle" on the next mouse/pointer
+            // release, or after 900ms at the latest (wobble's "picked-up"
+            // reaction plays briefly, then springs back).
+            const restoreIdle = (): void => {
+              overlayRef.current?.setDragState("idle", performance.now());
+              window.removeEventListener("pointerup", restoreIdle);
+              window.removeEventListener("mouseup", restoreIdle);
+            };
+            window.addEventListener("pointerup", restoreIdle, { once: true });
+            window.addEventListener("mouseup", restoreIdle, { once: true });
+            window.setTimeout(restoreIdle, 900);
           }
         }}
         onPointerUp={(e) => {
