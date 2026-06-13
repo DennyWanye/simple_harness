@@ -19,6 +19,7 @@ import {
   loadSpriteImage,
   type CharacterFrame,
 } from "./petCharacter";
+import { deriveTransform } from "./petTransform";
 
 interface Live2DCanvasProps {
   modelPath: string;
@@ -562,12 +563,27 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
         if (!isBlinking && eyeBlinkTimer > 3200) { isBlinking = true; eyeBlinkTimer = 0; }
         if (isBlinking && eyeBlinkTimer > 140) { isBlinking = false; eyeBlinkTimer = 0; }
 
+        // Tier-1: pet-anim 每帧写参数到 engine 的 CoreModel，读回合成整体变换。
+        const _engine = engineRef.current;
+        const _core = _engine?.getCoreModel();
+        let _tf = { rotateDeg: 0, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 };
+        if (_core && overlayRef.current) {
+          overlayRef.current.setMouthOpenY(mouthRef.current);
+          overlayRef.current.applyTo(_core, ts);
+          _tf = deriveTransform(_core);
+        }
+
         const frame: CharacterFrame = {
           w: width,
           h: height,
           t: ts,
           mouthOpen: mouthRef.current,
           blink: isBlinking ? 1 : 0,
+          rotateDeg: _tf.rotateDeg,
+          offsetX: _tf.offsetX,
+          offsetY: _tf.offsetY,
+          scaleX: _tf.scaleX,
+          scaleY: _tf.scaleY,
         };
         if (spriteImg) drawSpriteCharacter(ctx, spriteImg, frame);
         else drawProceduralCharacter(ctx, frame);

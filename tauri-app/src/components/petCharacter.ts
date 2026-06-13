@@ -28,6 +28,12 @@ export interface CharacterFrame {
   readonly mouthOpen: number
   /** 0..1 eyelid close amount (0 = open, 1 = fully shut). */
   readonly blink: number
+  /** Tier-1 互动整体变换（缺省=单位变换）。pivot = 脚底中心。 */
+  readonly rotateDeg?: number
+  readonly offsetX?: number
+  readonly offsetY?: number
+  readonly scaleX?: number
+  readonly scaleY?: number
 }
 
 /** Shared float/breath transform so sprite + procedural feel identical. */
@@ -52,7 +58,6 @@ export function drawSpriteCharacter(
   f: CharacterFrame,
 ): void {
   const { cx, cy, scale } = applyAliveTransform(ctx, f)
-  // Fit the portrait into ~90% width / ~92% height, keep aspect.
   const maxW = f.w * 0.9
   const maxH = f.h * 0.92
   const iw = img.naturalWidth || img.width || 1
@@ -60,11 +65,23 @@ export function drawSpriteCharacter(
   const fit = Math.min(maxW / iw, maxH / ih)
   const drawW = iw * fit * scale
   const drawH = ih * fit * scale
+
+  // Tier-1 互动变换（缺省 = 单位）。pivot = 脚底中心，旋转/挤压像"站着晃"。
+  const rotateRad = ((f.rotateDeg ?? 0) * Math.PI) / 180
+  const sx = f.scaleX ?? 1
+  const sy = f.scaleY ?? 1
+  const ox = f.offsetX ?? 0
+  const oy = f.offsetY ?? 0
+  const footX = cx + ox
+  const footY = cy + drawH / 2 + oy
+
   ctx.save()
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
-  // Anchor bottom-centre so a standing portrait "stands" in the area.
-  ctx.drawImage(img, cx - drawW / 2, cy - drawH / 2, drawW, drawH)
+  ctx.translate(footX, footY)
+  ctx.rotate(rotateRad)
+  ctx.scale(sx, sy)
+  ctx.drawImage(img, -drawW / 2, -drawH, drawW, drawH)
   ctx.restore()
 }
 
