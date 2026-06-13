@@ -46,7 +46,13 @@ export function buildModelContextSetMessage(
 }
 
 /** 把受控输入字符串解析成合法的 fields（白名单 + 范围校验）。
- *  返回 null 表示无有效改动（UI 据此提示，不发 ws）。 */
+ *  返回 null 表示无有效改动（UI 据此提示，不发 ws）。
+ *
+ *  2026-06-13 用户需求改造: context_window 在本卡改【只读展示】(模型
+ *  属性,自由手输危险;档位选择在「模型与参数」modal),卡片只允许调
+ *  「压缩触发阈值」compact_at_pct,范围收紧 0.50–0.95(低于 0.5 疯狂
+ *  压缩,高于 0.95 撞 budget block)。windowEdit 参数保留签名兼容
+ *  (空串=忽略)。 */
 export function parseModelContextEdits(
   windowEdit: string,
   compactEdit: string,
@@ -54,8 +60,12 @@ export function parseModelContextEdits(
   const fields: { context_window?: number; compact_at_pct?: number } = {};
   const w = Number(windowEdit);
   const c = Number(compactEdit);
-  if (Number.isFinite(w) && w > 0) fields.context_window = Math.round(w);
-  if (Number.isFinite(c) && c > 0 && c <= 1) fields.compact_at_pct = c;
+  if (windowEdit.trim() !== "" && Number.isFinite(w) && w > 0) {
+    fields.context_window = Math.round(w);
+  }
+  if (Number.isFinite(c) && c >= 0.5 && c <= 0.95) {
+    fields.compact_at_pct = c;
+  }
   return Object.keys(fields).length === 0 ? null : fields;
 }
 
@@ -154,9 +164,10 @@ export function ModelContextCard({ getChannel }: Props) {
       setSaveMsg("控制通道未连接");
       return;
     }
-    const fields = parseModelContextEdits(windowEdit, compactEdit);
+    // 只发压缩阈值(窗口只读;windowEdit 恒传 "" 忽略)
+    const fields = parseModelContextEdits("", compactEdit);
     if (fields === null) {
-      setSaveMsg("无有效改动（window 需 >0，compact_at_pct 需 0–1）");
+      setSaveMsg("无有效改动（压缩阈值需在 0.50–0.95 之间，如 0.75）");
       return;
     }
     setSaveMsg("保存中…");
@@ -250,22 +261,17 @@ export function ModelContextCard({ getChannel }: Props) {
               fontSize: "11px",
             }}
           >
-            <label htmlFor="mc-window">context_window</label>
-            <input
-              id="mc-window"
-              data-testid="model-context-window-input"
-              value={windowEdit}
-              onChange={(e) => setWindowEdit(e.target.value)}
-              inputMode="numeric"
-              style={inputStyle}
-            />
-            <label htmlFor="mc-compact">compact_at_pct</label>
+            {/* 2026-06-13: context_window 只读展示(上方"生效窗口"),
+                不再提供自由输入 —— 窗口档位在「模型与参数」modal 选。
+                本卡只允许调压缩触发阈值。 */}
+            <label htmlFor="mc-compact">压缩触发阈值 (0.50–0.95)</label>
             <input
               id="mc-compact"
               data-testid="model-context-compact-input"
               value={compactEdit}
               onChange={(e) => setCompactEdit(e.target.value)}
               inputMode="decimal"
+              placeholder="如 0.75 = 75% 时触发压缩"
               style={inputStyle}
             />
           </div>

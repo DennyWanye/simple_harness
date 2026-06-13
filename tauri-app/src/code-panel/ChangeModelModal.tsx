@@ -119,11 +119,15 @@ export function ChangeModelModal({
       ctx_choice !== ctx_window &&
       ctx_options.includes(ctx_choice)
     ) {
+      // 完整协议(p4_ipc): {scope, model, fields} — 2026-06-13 修复:
+      // 之前发的简版 {model, context_window} 走了一个抢路由的重复
+      // handler(已删),现统一走 p4_ipc 完整版。
       codePanelWS.send({
         type: "model_context_set",
         payload: {
+          scope: "global",
           model: (model || current_model || "").trim(),
-          context_window: ctx_choice,
+          fields: { context_window: ctx_choice },
         },
       });
       codePanelWS.send({ type: "code_models_list" });

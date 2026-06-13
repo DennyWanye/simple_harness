@@ -4651,36 +4651,13 @@ async def control_channel(ws: WebSocket):
                     },
                 })
 
-            elif msg_type == "model_context_set":
-                # 2026-06-12: 「模型与参数」面板的上下文档位选择。按型号
-                # 校验档位合法 → 写全局 model_overrides.toml → resolve()
-                # 即刻生效(压缩阈值/预算/catalog 显示全部跟着对齐)。
-                _mc_payload = msg.get("payload") or {}
-                _mc_model = str(_mc_payload.get("model") or "").strip()
-                try:
-                    _mc_window = int(_mc_payload.get("context_window") or 0)
-                except Exception:  # noqa: BLE001
-                    _mc_window = 0
-                _mc_ok = False
-                if _mc_model and _mc_window > 0:
-                    try:
-                        from llm import model_info as _mi_set
-                        _mc_ok = _mi_set.save_global_window_override(
-                            _mc_model, _mc_window
-                        )
-                    except Exception as _mc_exc:  # noqa: BLE001
-                        logger.warning(
-                            "model_context_set_failed model=%s err=%s",
-                            _mc_model, str(_mc_exc)[:150],
-                        )
-                await ws.send_json({
-                    "type": "model_context_set_response",
-                    "payload": {
-                        "ok": _mc_ok,
-                        "model": _mc_model,
-                        "context_window": _mc_window,
-                    },
-                })
+            # 2026-06-13: 此处原有一个简版 "model_context_set" 分支(只认
+            # {model, context_window}) —— 它在 elif 链里抢在 p4_ipc(6456)
+            # 之前,把 ModelContextCard 的完整协议请求({scope, model,
+            # fields})劫持并报错,坏了设置卡的保存两天。已删,统一走
+            # p4_ipc 完整版(fields 白名单含 context_window/compact_at_pct,
+            # scope global/project 深合并 TOML)。ChangeModelModal 的档位
+            # 选择也已改发完整协议。
 
             elif msg_type in (
                 "settings_providers_list_request",
