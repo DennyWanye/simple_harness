@@ -48,6 +48,10 @@ interface SettingsPanelProps {
   /** 2026-05-26: relay adapter（如果是 relay edition）— 让
    * SettingsProviders 把中转站 provider 作为只读虚拟项显示。 */
   relayAdapter?: import("../auth/RelayAuthAdapter").RelayAuthAdapter | null;
+  /** 桌宠形象切换（设置面板「桌宠形象」下拉）。 */
+  petModels: readonly import("../petModels").PetModel[];
+  currentPetModelId: string;
+  onPetModelChange: (id: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -108,6 +112,9 @@ export function SettingsPanel({
   getChannel,
   lastMessage,
   relayAdapter,
+  petModels,
+  currentPetModelId,
+  onPetModelChange,
 }: SettingsPanelProps) {
   // 2026-05-26: 删除"今日使用"section — 用户要求，billing 状态不再在
   // Settings 里展示（如需查看请用后端 /budget_status 命令或 metrics）。
@@ -158,6 +165,34 @@ export function SettingsPanel({
             configuration section was removed. All provider config now lives
             under the "LLM Providers" section below (drag-drop reorder,
             multiple endpoints, per-card pinning). */}
+
+        {/* ================ 桌宠形象 ================ */}
+        <section style={sectionStyle}>
+          <h3 style={h3Style}>桌宠形象</h3>
+          <select
+            value={currentPetModelId}
+            onChange={(e) => onPetModelChange(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "8px 10px",
+              borderRadius: 8,
+              background: "rgba(255,255,255,0.06)",
+              color: "#e9e4ff",
+              border: "1px solid rgba(255,255,255,0.18)",
+              fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            {petModels.map((m) => (
+              <option key={m.id} value={m.id} style={{ color: "#111" }}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+          <p style={{ fontSize: 11, opacity: 0.6, margin: "6px 0 0" }}>
+            选择后立即更换桌宠形象。
+          </p>
+        </section>
 
         {/* ================ LLM Providers (P5-S2 Phase 4) ================ */}
         <section style={sectionStyle}>

@@ -43,6 +43,12 @@ import { ModelDownloadBanner } from "./components/ModelDownloadBanner";
 import { ContextBreakdownModal } from "./components/ContextBreakdownModal";
 import { ContextTracePanel } from "./components/ContextTracePanel";
 import { SettingsPanel } from "./components/SettingsPanel";
+import {
+  PET_MODELS,
+  DEFAULT_PET_MODEL_ID,
+  PET_MODEL_LS_KEY,
+  resolvePetModel,
+} from "./petModels";
 import { DialogBar } from "./components/DialogBar";
 import { UserBubble } from "./components/UserBubble";
 import { StartupOverlay, type BootState } from "./components/StartupOverlay";
@@ -629,6 +635,21 @@ function App() {
 
   // P2-1-S3 — settings panel toggle (cloud account / strategy / daily budget).
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // 桌宠形象选择（设置面板下拉 + localStorage 记住）。改 petModelId →
+  // 下方 Live2DCanvas 的 key 变 → 组件 remount → init 重跑加载新模型 →
+  // 立即换形象（无需重启 app）。
+  const [petModelId, setPetModelId] = useState<string>(
+    () => localStorage.getItem(PET_MODEL_LS_KEY) ?? DEFAULT_PET_MODEL_ID,
+  );
+  const petModel = resolvePetModel(petModelId);
+  const handlePetModelChange = (id: string): void => {
+    setPetModelId(id);
+    try {
+      localStorage.setItem(PET_MODEL_LS_KEY, id);
+    } catch {
+      /* localStorage 不可用 — 非致命，本次会话内仍切换 */
+    }
+  };
 
   // WI-01 (beta-100): first-run onboarding. `onboardingNeeded` flips
   // true only when Rust reports no completion marker. Conservative on
@@ -1655,8 +1676,9 @@ function App() {
       {/* 收起控件已回归 panel header 最左（清晰固定边缘）。中缝悬浮
           tab 是糟糕交互（漂在消息内容上、还被裁），已移除。 */}
       <Live2DCanvas
+        key={petModel.id}
         ref={liveRef}
-        modelPath="/assets/live2d/hiyori/Hiyori.model3.json"
+        modelPath={petModel.modelPath}
         onFpsUpdate={handleFpsUpdate}
         mouthOpenY={mouthOpenY}
         // pet 区恒为 282 CSS px（= 改造前小窗宽度）。面板开/关时窗口
@@ -2047,6 +2069,9 @@ function App() {
         secret={secret}
         onConfigChanged={() => setRouteKind(null)}
         relayAdapter={relayAdapter}
+        petModels={PET_MODELS}
+        currentPetModelId={petModelId}
+        onPetModelChange={handlePetModelChange}
       />
 
       {/* P2-1-S8 budget-exceeded toast */}
