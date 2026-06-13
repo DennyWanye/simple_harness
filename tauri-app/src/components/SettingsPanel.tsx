@@ -25,8 +25,8 @@ import { Icon } from "./Icon";
 import { EmbedderStatusCard } from "./EmbedderStatusCard";
 import { ModelContextCard } from "./ModelContextCard";
 import { SettingsProviders } from "./SettingsProviders";
-import { HiyoriMotionTuner } from "./HiyoriMotionTuner";
 import { formatUpdaterError } from "./updaterError";
+// S5 (live2d-rewrite): HiyoriMotionTuner deleted with the Hiyori assets / Live2D SDK.
 import type {
   DailyBudgetStatus,
   IncomingMessage,
@@ -188,7 +188,6 @@ export function SettingsPanel({
           <h3 style={h3Style}>桌宠 supervisor（P5-S1）</h3>
           <SupervisorToggleSection getChannel={getChannel} />
           <AutoResumeToggleSection getChannel={getChannel} />
-          <HiyoriMotionTuner />
         </section>
 
         {/* ================ 数据目录 (2026-05-21) ================ */}
