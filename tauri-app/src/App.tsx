@@ -37,6 +37,7 @@ import {
 } from "./pet-anim/dndDetector";
 import { PetCelebrationBubble } from "./pet-anim/PetCelebrationBubble";
 import { PetDNDBadge } from "./pet-anim/PetDNDBadge";
+import { PetWorkingBubble } from "./components/PetWorkingBubble";
 import { MemoryPanel } from "./components/MemoryPanel";
 import { ModelDownloadBanner } from "./components/ModelDownloadBanner";
 import { ContextBreakdownModal } from "./components/ContextBreakdownModal";
@@ -349,6 +350,10 @@ function App() {
     visible: boolean;
     message: string;
   }>({ visible: false, message: "" });
+  // Tier-1「努力工作」气泡：agent 任务执行期（发消息 / 调工具）→ true，
+  // 仅在 chat_v2_final / chat_v2_error / 用户中断时关。独立于 thinking
+  // 状态（thinking 收到首个 chunk 即关，不适合表达"整个任务期"）。
+  const [working, setWorking] = useState(false);
   // F1 DND active mirror (state so badge re-renders).
   const [dndActiveUI, setDndActiveUI] = useState(false);
   const timeCelebrationRef = useRef(
@@ -731,6 +736,8 @@ function App() {
       case "tool_use_event": {
         // v2 B2 M-1: first stream chunk → exit thinking immediately.
         thinkingObsRef.current.notifyFirstChunk(performance.now());
+        // Tier-1: agent 正在调工具 → 保持「努力工作」气泡。
+        setWorking(true);
         const payload = (lastMessage as any).payload || {};
         const kind = payload.kind || "";
         const tool = payload.tool_name || "";
@@ -773,6 +780,8 @@ function App() {
       case "chat_v2_final": {
         // v2 B2: defensive close in case first_chunk path was missed.
         thinkingObsRef.current.notifyEnd(performance.now());
+        // Tier-1: 任务完成 → 关闭「努力工作」气泡。
+        setWorking(false);
         const finalPayload = (lastMessage as any).payload || {};
         const finalText = finalPayload.text || "(完成)";
         setMessages((prev) => [
@@ -822,6 +831,8 @@ function App() {
       case "chat_v2_error": {
         // v2 B2: error closes thinking state.
         thinkingObsRef.current.notifyEnd(performance.now());
+        // Tier-1: 任务出错 → 关闭「努力工作」气泡。
+        setWorking(false);
         // P4-S22 fix: render whatever the backend sent — `error`
         // (catch-all path), `detail` (AgentLoop ErrorEvent), or
         // `reason`. WI-R5: a relay `error_class` (insufficient_balance /
@@ -1309,6 +1320,8 @@ function App() {
     setLatestUserInput(chatText + "\u200B".repeat(messages.length));
     // v2 B2: enter thinking state right when the request goes out.
     thinkingObsRef.current.notifyStart(performance.now());
+    // Tier-1: 任务发出即进入「努力工作」期，至 final/error/中断才关。
+    setWorking(true);
     // P4-S21 #14: backend unified chat / chat_v2 — both route to tool_use
     // AgentLoop. Always send via sendChatV2 (the toolbar toggle is gone).
     sendChatV2(chatText);
@@ -1336,6 +1349,8 @@ function App() {
     liveRef.current?.flushVisemeQueue();
     liveRef.current?.cancelMouthFade();
     thinkingObsRef.current.notifyEnd(now);
+    // Tier-1: 用户中断 → 关闭「努力工作」气泡。
+    setWorking(false);
   }, [stopPlayback, resetPlaybackBuffer, sendInterrupt]);
 
   useEffect(() => {
@@ -1649,6 +1664,9 @@ function App() {
         // 完全解耦，切换不重排、不闪。
         petWidth={282}
       />
+
+      {/* Tier-1 — agent 任务执行期「努力工作」气泡。 */}
+      <PetWorkingBubble active={working} />
 
       {/* P4-S20 — 权限请求弹窗（最高 zIndex） */}
       <PermissionPopup
