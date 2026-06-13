@@ -252,19 +252,18 @@ export function ModelContextCard({ getChannel }: Props) {
             style={{ fontSize: "11px", color: "#cbd5e1", lineHeight: 1.6 }}
           >
             <div>
-              生效窗口：
-              <strong>
-                {" "}
-                {state.resolved.context_window.toLocaleString()} tokens
-              </strong>
+              上下文总长度：
+              <strong> {fmtTokens(state.resolved.context_window)}</strong>
             </div>
             <div>
               compaction 触发：{(state.resolved.compact_at_pct * 100).toFixed(0)}
               %（≈
-              {Math.round(
-                state.resolved.context_window * state.resolved.compact_at_pct,
-              ).toLocaleString()}{" "}
-              tokens）
+              {fmtTokens(
+                Math.round(
+                  state.resolved.context_window * state.resolved.compact_at_pct,
+                ),
+              )}
+              ）
             </div>
             <div>
               来源链：
@@ -341,6 +340,17 @@ export function ModelContextCard({ getChannel }: Props) {
       )}
     </div>
   );
+}
+
+// token 数 → K/M 单位短串（32000→"32K"、320000→"320K"、25600→"25.6K"、
+// 1000000→"1M"）。整数不带小数,非整数留 1 位。
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) {
+    const m = n / 1_000_000;
+    return (Number.isInteger(m) ? String(m) : m.toFixed(1)) + "M";
+  }
+  const k = n / 1000;
+  return (Number.isInteger(k) ? String(k) : k.toFixed(1)) + "K";
 }
 
 function SourceBadge({ source }: { source: string }) {
