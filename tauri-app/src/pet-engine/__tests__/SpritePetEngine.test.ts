@@ -18,12 +18,18 @@ describe('SpritePetEngine', () => {
     expect(m1).toBe(m2)
   })
 
-  it('getParameterIndex returns -1 for any pet-anim param name', () => {
+  it('getParameterIndex assigns a stable non-negative index per param name', () => {
+    // SpriteCoreModel is now a real param dict (sprite renderer reads
+    // writes back via deriveTransform), so indices are allocated lazily
+    // and reused — no longer the old -1 no-op sentinel.
     const eng = new SpritePetEngine()
     const m = eng.getCoreModel()!
-    expect(m.getParameterIndex('ParamAngleX')).toBe(-1)
-    expect(m.getParameterIndex('ParamMouthOpenY')).toBe(-1)
-    expect(m.getParameterIndex('')).toBe(-1)
+    const a = m.getParameterIndex('ParamAngleX')
+    const b = m.getParameterIndex('ParamMouthOpenY')
+    expect(a).toBeGreaterThanOrEqual(0)
+    expect(b).toBeGreaterThanOrEqual(0)
+    expect(a).not.toBe(b)
+    expect(m.getParameterIndex('ParamAngleX')).toBe(a)
   })
 
   it('setParameterValueByIndex never throws even for -1 / out-of-range idx', () => {

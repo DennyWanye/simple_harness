@@ -4,23 +4,43 @@
 import type { CoreModelLike, PetEngine, PetEngineBackend } from './types'
 
 /**
- * Sprite CoreModel — accepts pet-anim parameter writes but does not
- * propagate them to a renderer (the Canvas2D character in Live2DCanvas
- * is currently self-driven). Future S2/S3 work will replace this with
- * a model that exposes parameters the Canvas2D / WebGL2 renderer reads.
+ * Sprite CoreModel — a real parameter dictionary.
  *
- * For pet-anim correctness it MUST: return -1 from getParameterIndex
- * for any name (so pet-anim writes are no-ops), and never throw.
+ * pet-anim's AnimationOverlay calls getParameterIndex(name) to obtain a
+ * stable per-name slot, then set/add ParameterValueByIndex each frame
+ * (ParamAngleZ / ParamBodyAngleZ / ParamBustY / ParamBodyAngleX / ...).
+ * Those values are stored here and read back by the sprite renderer
+ * (via deriveTransform in components/petTransform.ts) to compute the
+ *立绘 overall transform — so interactions are now visible.
+ *
+ * Index assignment is lazy: the first getParameterIndex(name) call
+ * allocates the next free slot (initialised to 0) and reuses it on
+ * subsequent calls for the same name. Writes MUST never throw — out-of-
+ * range indices and non-finite values are silently ignored.
  */
 class SpriteCoreModel implements CoreModelLike {
-  getParameterIndex(_name: string): number {
-    return -1
+  private nameToIdx = new Map<string, number>()
+  private values: number[] = []
+
+  getParameterIndex(name: string): number {
+    let idx = this.nameToIdx.get(name)
+    if (idx === undefined) {
+      idx = this.values.length
+      this.nameToIdx.set(name, idx)
+      this.values.push(0)
+    }
+    return idx
   }
-  setParameterValueByIndex(_idx: number, _val: number): void {
-    /* no-op */
+  setParameterValueByIndex(idx: number, val: number): void {
+    if (idx < 0 || !Number.isFinite(val)) return
+    this.values[idx] = val
   }
-  addParameterValueByIndex(_idx: number, _val: number): void {
-    /* no-op */
+  addParameterValueByIndex(idx: number, val: number): void {
+    if (idx < 0 || !Number.isFinite(val)) return
+    this.values[idx] = (this.values[idx] ?? 0) + val
+  }
+  getParameterValueByIndex(idx: number): number {
+    return this.values[idx] ?? 0
   }
 }
 
@@ -29,10 +49,10 @@ class SpriteCoreModel implements CoreModelLike {
  *
  * Live2DCanvas.startCanvas2D() paints a 100%-original Canvas2D
  * character (purple cat); this engine provides the CoreModelLike
- * surface pet-anim wants. Parameter writes are accepted but currently
- * have no visual effect — the Canvas2D character runs its own self-
- * driven blink/breath/mouth animation. A future slice can wire
- * setParameterValueByIndex into a parameter dict the renderer reads.
+ * surface pet-anim wants. Parameter writes now land in a real
+ * parameter dict (SpriteCoreModel) that the sprite renderer reads
+ * back each frame via deriveTransform — so pet-anim interactions
+ * drive the立绘's overall transform.
  *
  * Zero copyright risk: every byte of this file + the Canvas2D drawing
  * code is original work; no Live2D Cubism SDK, no Hiyori assets, no

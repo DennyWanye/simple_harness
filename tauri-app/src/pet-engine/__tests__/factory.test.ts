@@ -12,10 +12,12 @@ describe('createPetEngine factory', () => {
   })
 
   it('produces a usable CoreModelLike out of the box', () => {
+    // SpriteCoreModel is now a real param dict: getParameterIndex lazily
+    // allocates a stable non-negative slot per name (was the old -1 no-op).
     const eng = createPetEngine('sprite')
     const m = eng.getCoreModel()
     expect(m).not.toBeNull()
-    expect(m!.getParameterIndex('ParamAngleX')).toBe(-1)
+    expect(m!.getParameterIndex('ParamAngleX')).toBeGreaterThanOrEqual(0)
   })
 })
 
