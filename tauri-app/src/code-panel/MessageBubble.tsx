@@ -14,6 +14,77 @@ import { useMemo, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import { invoke } from "@tauri-apps/api/core";
 
+const LOCAL_FILE_EXTENSIONS =
+  /\.(pptx?|pptm|xlsx?|docx?|pdf|png|jpe?g|gif|md|txt|csv)$/i;
+
+const isLocalFileLink = (href?: string) => {
+  if (!href) return false;
+  if (/^https?:\/\//i.test(href)) return false;
+
+  const normalizedHref = href.replace(/\\/g, "/");
+  const hrefWithoutQuery = normalizedHref.split(/[?#]/)[0];
+
+  return (
+    /^file:\/\//i.test(href) ||
+    /^[a-zA-Z]:[\\/]/.test(href) ||
+    LOCAL_FILE_EXTENSIONS.test(hrefWithoutQuery)
+  );
+};
+
+const localFilePathFromHref = (href: string) => {
+  const withoutScheme = href.replace(/^file:\/\//i, "");
+  const withoutLeadingWindowsSlash = withoutScheme.replace(
+    /^\/([a-zA-Z]:[\\/])/,
+    "$1",
+  );
+
+  try {
+    return decodeURIComponent(withoutLeadingWindowsSlash);
+  } catch {
+    return withoutLeadingWindowsSlash;
+  }
+};
+
+const openLocalFileLink = (href: string) => {
+  invoke("artifact_open", { path: localFilePathFromHref(href) }).catch(
+    (error) => {
+      console.warn("Failed to open local markdown link", error);
+    },
+  );
+};
+
+declare global {
+  interface Window {
+    __deskpetLocalMarkdownLinkHandlerInstalled?: boolean;
+  }
+}
+
+if (typeof window !== "undefined" && !window.__deskpetLocalMarkdownLinkHandlerInstalled) {
+  window.__deskpetLocalMarkdownLinkHandlerInstalled = true;
+
+  document.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) return;
+
+    const anchor = event.target.closest<HTMLAnchorElement>("a[href]");
+    const href = anchor?.getAttribute("href");
+    if (!href || !isLocalFileLink(href)) return;
+
+    event.preventDefault();
+    openLocalFileLink(href);
+  });
+
+  document.addEventListener("mouseover", (event) => {
+    if (!(event.target instanceof Element)) return;
+
+    const anchor = event.target.closest<HTMLAnchorElement>("a[href]");
+    const href = anchor?.getAttribute("href");
+    if (!anchor || !href || !isLocalFileLink(href) || anchor.title) return;
+
+    anchor.title = "用系统默认程序打开";
+  });
+}
+
+
 import type { Message } from "../stores/sessionsStore";
 import { useSessionsStore } from "../stores/sessionsStore";
 import { CodeBlock, InlineCode } from "./CodeBlock";
