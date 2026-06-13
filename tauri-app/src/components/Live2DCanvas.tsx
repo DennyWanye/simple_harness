@@ -20,6 +20,7 @@ import {
   type CharacterFrame,
 } from "./petCharacter";
 import { deriveTransform } from "./petTransform";
+import { usePetTapBurst, PetTapBurst } from "./PetTapBurst";
 
 interface Live2DCanvasProps {
   modelPath: string;
@@ -184,6 +185,7 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hitZoneRef = useRef<HTMLDivElement>(null);
+  const { bursts, spawn: spawnBurst } = usePetTapBurst();
   // FIX-R3: tracks pointerdown position for manual drag detection on
   // hit-zone. We avoid `data-tauri-drag-region` because it eats click.
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -723,9 +725,11 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
           if (!overlay) return;
           const before = performance.now();
           overlay.pulseInteraction("click", ts);
+          spawnBurst(e.clientX, e.clientY);
           overlay.recordInteractionLatency(performance.now() - before);
         }}
       />
+      <PetTapBurst bursts={bursts} />
     </>
   );
 });
