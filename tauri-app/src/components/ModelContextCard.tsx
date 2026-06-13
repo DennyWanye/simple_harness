@@ -93,11 +93,16 @@ type State =
 
 export function ModelContextCard({ getChannel }: Props) {
   const [state, setState] = useState<State>({ kind: "loading" });
-  const [model, setModel] = useState<string>("deepseek-v4-pro");
+  const [model, setModel] = useState<string>("gpt-5.5");
   // 编辑缓冲（字符串便于受控输入；保存时解析为数值）
   const [windowEdit, setWindowEdit] = useState<string>("");
   const [compactEdit, setCompactEdit] = useState<string>("");
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  // 2026-06-13: 下拉不再只列 BUILTIN 画像表的几个模型 —— 经
+  // code_models_list 拉中转站 live 目录,下拉 = 目录全量 ∪ builtin。
+  // 非 builtin 模型选中后 resolve 落 _default 保守画像(显示的就是
+  // 真实生效值),用户可为它设 compact_at_pct 覆盖(按模型名存 TOML)。
+  const [catalogIds, setCatalogIds] = useState<string[]>([]);
 
   const requestGet = useCallback(
     (m: string) => {
@@ -141,9 +146,18 @@ export function ModelContextCard({ getChannel }: Props) {
         } else {
           setSaveMsg(`保存失败：${a.payload.reason || "未知错误"}`);
         }
+      } else if ((msg as { type?: string }).type === "code_models_list_response") {
+        // 中转站 live 目录 → 下拉全量(旁路订阅,不影响主分发)
+        const p = (msg as { payload?: { models?: Array<{ id?: string }> } }).payload;
+        const ids = (p?.models ?? [])
+          .map((m) => (m && typeof m.id === "string" ? m.id : ""))
+          .filter(Boolean);
+        if (ids.length > 0) setCatalogIds(ids);
       }
     });
     requestGet(model);
+    // 拉中转站目录(复用 code_models_list 通道;失败静默,下拉退化为 builtin)
+    ch.send({ type: "code_models_list" } as never);
     return unsub;
     // model 变化时重新拉取在 onModelChange 里手动触发，这里只挂一次。
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -207,11 +221,18 @@ export function ModelContextCard({ getChannel }: Props) {
             fontSize: "11px",
           }}
         >
-          {state.kind === "ready" && state.models.length > 0 ? (
-            state.models.map((m) => <option key={m}>{m}</option>)
-          ) : (
-            <option>{model}</option>
-          )}
+          {(() => {
+            // 下拉 = 中转站目录全量 ∪ builtin 画像模型 ∪ 当前选中
+            const builtin = state.kind === "ready" ? state.models : [];
+            const merged = Array.from(
+              new Set([...catalogIds, ...builtin, model]),
+            ).filter(Boolean);
+            return merged.length > 0 ? (
+              merged.map((m) => <option key={m}>{m}</option>)
+            ) : (
+              <option>{model}</option>
+            );
+          })()}
         </select>
       </div>
 
