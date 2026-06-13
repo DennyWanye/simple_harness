@@ -4,23 +4,11 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import {
   AnimationOverlay,
+  type CoreModelLike,
   type InteractionKind,
   type MotionTag,
 } from "../pet-anim";
 import { get_calibrated_motion_pools } from "../pet-state/PetStateMachine";
-import {
-  createPetEngine,
-  resolveBackendFromEnv,
-  type PetEngine,
-} from "../pet-engine";
-import {
-  drawSpriteCharacter,
-  drawProceduralCharacter,
-  loadSpriteImage,
-  type CharacterFrame,
-} from "./petCharacter";
-import { deriveTransform } from "./petTransform";
-import { usePetTapBurst, PetTapBurst } from "./PetTapBurst";
 
 interface Live2DCanvasProps {
   modelPath: string;
@@ -124,6 +112,18 @@ export interface Live2DHandle {
   ) => void;
   /** v2 PRD §6.1: full v2 debug surface. */
   getV2Debug: () => ReturnType<AnimationOverlay["getV2Debug"]>;
+  /** 2026-05-31 fun: pointer down on the pet (begins drag/longPress/burst). */
+  funPointerDown: (clientX: number, clientY: number, now_t: number) => void;
+  /** 2026-05-31 fun: pointer move during hold (drag kinematics). */
+  funPointerMove: (clientX: number, clientY: number, now_t: number) => void;
+  /** 2026-05-31 fun: pointer up — ends drag, returns burst classification. */
+  funPointerUp: (now_t: number) => {
+    burst_count: number;
+    burst_intensity: import("../pet-anim/funInteractions").TapBurstIntensity;
+    double_tap: boolean;
+  };
+  /** 2026-05-31 fun: any user activity (chat input / app focus / etc.). */
+  funMarkInteraction: (now_t: number) => void;
 }
 
 interface FaceFrame {
@@ -148,18 +148,24 @@ function computeFaceFrame(
   innerWidth: number,
   modelScaleFactor = 1,
 ): FaceFrame {
-  const left = innerWidth - petWidth + petWidth * 0.25;
-  const width = Math.max(40, petWidth * 0.5 * modelScaleFactor);
-  const top = innerHeight * 0.2;
-  const height = Math.max(40, innerHeight * 0.6 * modelScaleFactor);
+  // 2026-05-31 fun-ux: 扩大 hit-zone 覆盖整个角色可见区（头顶→脚），
+  // 之前只覆盖脸+躯干中间 50%×60% 的窄带，用户点裙子/腿/头发/手臂都没
+  // 反应。现在覆盖角色整列宽 × 几乎全高，点哪都能触发交互。
+  // face_center 仍锁在脸部（用于 gaze 凝视 + proximity/shy/dizzy 计算）。
+  const left = innerWidth - petWidth;
+  const width = Math.max(40, petWidth * modelScaleFactor);
+  const top = innerHeight * 0.05;
+  const height = Math.max(40, innerHeight * 0.9 * modelScaleFactor);
   return {
     left,
     top,
     width,
     height,
+    // 脸约在角色立绘的上部 ~22% 处（Hiyori 全身站姿）。
     face_center_x: left + width / 2,
-    face_center_y: top + height * 0.3,
-    face_radius_css: Math.min(width, height) * 0.5,
+    face_center_y: top + height * 0.22,
+    // face_radius 用角色宽的一半（脸 + 周边的合理凝视/害羞判定半径）。
+    face_radius_css: Math.max(60, width * 0.5),
   };
 }
 
@@ -185,7 +191,6 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hitZoneRef = useRef<HTMLDivElement>(null);
-  const { bursts, spawn: spawnBurst } = usePetTapBurst();
   // FIX-R3: tracks pointerdown position for manual drag detection on
   // hit-zone. We avoid `data-tauri-drag-region` because it eats click.
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -196,33 +201,44 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
   // bound function so the threshold-trigger call is synchronous.
   const startDraggingRef = useRef<(() => Promise<unknown>) | null>(null);
   const [size, setSize] = useState(() => ({
-    // 2026-06-03 跨 DPI 裁切修复（从 master 合并）：petWidth 是固定角色列宽，
-    // 但高 DPI / Windows 文本缩放下 innerWidth 可能 < petWidth → 角色 <img>
-    // 比视口宽 → 右侧被裁。cap 到视口内保证角色完整（代价：略小）。同样适用
-    // 于 sprite 渲染：<img> 的 CSS 宽用 size.w。
+    // 跨 DPI 裁切修复：列宽 cap 在视口内（详见下方 apply 注释）。
     w: Math.min(petWidth ?? window.innerWidth, window.innerWidth),
     h: window.innerHeight,
+    // 2026-06-03 跨 DPI 修复：把 devicePixelRatio 纳入 size 状态，使画布 resize
+    // effect 能在「拖到不同缩放显示器(逻辑尺寸不变但 dpr 变)」时重跑。
+    dpr: window.devicePixelRatio || 1,
   }));
+  // 2026-06-03 跨 DPI 裁切修复：模型异步加载完成的信号。Live2D 模型 load 是
+  // 异步的，加载完时 size 往往没变 → 画布 resize effect（依赖 size.*）不会重跑
+  // → 画布停在 init() 摆放的尺寸/位置，没按当前 size.w(已 cap)+dpr 校正 →
+  // 直接 boot 在某显示器时角色被裁。把它纳入 resize effect 的 deps，模型 ready
+  // 后必触发一次正确的 renderer.resize + 模型 scale/centering。
+  const [modelReady, setModelReady] = useState(false);
   // Use ref for mode to avoid re-render killing the render loop. We don't
   // expose this as React state because the render loop captures it once and
   // toggling it would otherwise tear down + re-init the whole pipeline.
-  const modeRef = useRef<"loading" | "canvas2d">("loading");
+  const modeRef = useRef<"loading" | "live2d" | "canvas2d">("loading");
   const cleanupRef = useRef<(() => void) | null>(null);
   const mouthRef = useRef(mouthOpenY);
   mouthRef.current = mouthOpenY;
-  // S5: modelRef removed together with the pixi-live2d-display path.
-  // The engine is now the single source for the runtime model.
+  // Live2D model instance (set once init() succeeds). Kept on a ref so that
+  // imperative methods can reach it without blowing up the render loop via
+  // re-renders.
+  const modelRef = useRef<any>(null);
+  // 2026-06-03 跨 DPI 裁切修复：模型的**基础(未缩放)**宽高。pixi 的 model.width
+  // 返回的是「当前 scale × localBounds」即**已缩放**宽，且渲染后才更新；resize
+  // effect 若用它算 scale 会把已缩放宽当基础宽 → scale≈1 → 模型爆炸放大(只剩
+  // 胸口)。故加载时存一次基础宽高，scale 计算一律用它。
+  const modelBaseRef = useRef<{ w: number; h: number } | null>(null);
+  // 2026-05-31: PixiJS Application instance ref. Needed so the size-change
+  // effect (line ~390) can call pixiApp.renderer.resize() + recompute model
+  // scale/position when the user resizes the host window. Without this the
+  // PixiJS canvas stays at its mount-time physical size and the <img>
+  // CSS-stretches the snapshot → character looks distorted ("人物被拉伸").
+  const pixiAppRef = useRef<any>(null);
   // v3: AnimationOverlay instance — per Live2DCanvas mount. dispose()
   // called from cleanupRef so HMR / StrictMode double-mount can't leak.
   const overlayRef = useRef<AnimationOverlay | null>(null);
-  // S5 (Live2D removal 2026-05-29): PetEngine abstraction. Only the
-  // 'sprite' backend ships today; resolveBackendFromEnv warns-and-falls
-  // back for any other VITE_PET_ENGINE value. Future slices may add a
-  // 'mesh' backend; pet-anim never sees the swap.
-  const engineRef = useRef<PetEngine | null>(null);
-  const backendRef = useRef(resolveBackendFromEnv(
-    (import.meta as any).env?.VITE_PET_ENGINE as string | undefined,
-  ));
   // v3: face frame state. Updated by ResizeObserver + window resize + once
   // on model load. Drives both hit-zone DOM and overlay.setFaceCenter via
   // a single source `computeFaceFrame`.
@@ -244,10 +260,22 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
     ref,
     () => ({
       setExpression(name: string) {
-        engineRef.current?.setExpression(name);
+        const model = modelRef.current;
+        if (!model) return;
+        try {
+          model.expression?.(name);
+        } catch (err) {
+          console.warn("[Live2D] setExpression failed:", name, err);
+        }
       },
       playMotion(group: string) {
-        engineRef.current?.playMotion(group);
+        const model = modelRef.current;
+        if (!model) return;
+        try {
+          model.motion?.(group, undefined, 2);
+        } catch (err) {
+          console.warn("[Live2D] playMotion failed:", group, err);
+        }
       },
       setBlinkRate(hz: number) {
         overlayRef.current?.setBlinkHz(Math.max(0, Number.isFinite(hz) ? hz : 0));
@@ -362,6 +390,25 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
           }
         );
       },
+      // 2026-05-31 fun interactions
+      funPointerDown(clientX, clientY, now_t) {
+        overlayRef.current?.funPointerDown(clientX, clientY, now_t);
+      },
+      funPointerMove(clientX, clientY, now_t) {
+        overlayRef.current?.funPointerMove(clientX, clientY, now_t);
+      },
+      funPointerUp(now_t) {
+        return (
+          overlayRef.current?.funPointerUp(now_t) ?? {
+            burst_count: 0,
+            burst_intensity: "look_up" as const,
+            double_tap: false,
+          }
+        );
+      },
+      funMarkInteraction(now_t) {
+        overlayRef.current?.funMarkInteraction(now_t);
+      },
     }),
     [],
   );
@@ -369,10 +416,18 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
   // Track viewport. Also keep face frame current.
   useEffect(() => {
     const apply = (): void => {
-      // 跨 DPI 裁切修复（从 master 合并）：cap 列宽到视口内，防角色 <img> 超宽被裁。
+      // 2026-06-03 跨 DPI 裁切修复：petWidth 是固定角色列宽(282)，但某些机器的
+      // webview devicePixelRatio 高于显示器缩放（实测 dpr 2.13/1.42，可能叠加了
+      // Windows 文本缩放 142%）→ 视口 innerWidth 仅 ~253 CSS < 282 → 角色 <img>
+      // 比视口宽 → 右侧被裁、显示不全。把列宽 cap 在视口内：innerWidth≥petWidth 时
+      // 仍用 petWidth(解耦不变)，否则收敛到 innerWidth → 角色完整可见(代价：略小)。
       const w = Math.min(petWidth ?? window.innerWidth, window.innerWidth);
       const h = window.innerHeight;
-      setSize({ w, h });
+      const dpr = window.devicePixelRatio || 1;
+      // 2026-06-03 跨 DPI 诊断：每次 viewport/dpr 变化都记一行，便于真机拖动时
+      // 观察 innerWidth/dpr 随显示器切换的实际值（排查角色裁切）。
+      console.warn(`[Pet] viewport: ${window.innerWidth} x ${window.innerHeight} dpr: ${dpr} petWidth: ${petWidth} size.w: ${w}`);
+      setSize({ w, h, dpr });
       const ff = computeFaceFrame(w, h, window.innerWidth);
       faceFrameRef.current = ff;
       overlayRef.current?.setFaceCenter(ff.face_center_x, ff.face_center_y, ff.face_radius_css);
@@ -387,19 +442,71 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
       }, 100);
     };
     window.addEventListener("resize", throttled);
-    console.warn("[Pet] viewport:", window.innerWidth, "x", window.innerHeight, "dpr:", window.devicePixelRatio);
     let ro: ResizeObserver | null = null;
     if (typeof ResizeObserver !== "undefined" && containerRef.current) {
       ro = new ResizeObserver(throttled);
       ro.observe(containerRef.current);
     }
+    // 2026-06-03 跨 DPI 修复：拖到不同缩放显示器时 devicePixelRatio 变化，但窗口
+    // 逻辑尺寸不变 → resize 事件不一定触发 → 画布 renderer 卡在旧 DPR → 角色被裁。
+    // matchMedia(resolution) 是 DPR 变化的可靠信号；每次变化后用新 DPR 重新 arm。
+    let mql: MediaQueryList | null = null;
+    const onDprChange = (): void => {
+      throttled();
+      armDpr();
+    };
+    const armDpr = (): void => {
+      if (typeof window.matchMedia !== "function") return;
+      mql?.removeEventListener("change", onDprChange);
+      mql = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+      mql.addEventListener("change", onDprChange);
+    };
+    armDpr();
     return () => {
       window.removeEventListener("resize", throttled);
       if (timeout) window.clearTimeout(timeout);
       ro?.disconnect();
+      mql?.removeEventListener("change", onDprChange);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [petWidth]);
+
+  // 2026-05-31 restore — react to size changes: resize the Pixi renderer's
+  // backing buffer AND recompute the model's scale + centering so the
+  // character doesn't get squashed when the window aspect ratio shifts.
+  // Without this, init() picks one renderW/renderH and sticks with it;
+  // any later resize just stretches the same backing texture via CSS,
+  // producing the left/right pinch the user reported after dragging the
+  // window wider.
+  useEffect(() => {
+    const app = pixiAppRef.current;
+    const model = modelRef.current;
+    if (!app || !model) return;
+    // 2026-06-03 跨 DPI 修复：用 size.dpr（随显示器切换更新）而非裸读
+    // window.devicePixelRatio；deps 含 size.dpr → DPR 变化即重算 renderer 尺寸 +
+    // 模型 scale/position，否则画布卡在旧 DPR 物理尺寸 → 角色被裁/拉伸。
+    const dpr = size.dpr || window.devicePixelRatio || 1;
+    const renderW = Math.round(size.w * dpr);
+    const renderH = Math.round(size.h * dpr);
+    console.warn(`[Live2D] renderer resize -> ${renderW}x${renderH} (size ${size.w}x${size.h} dpr ${dpr})`);
+    try {
+      app.renderer?.resize?.(renderW, renderH);
+    } catch (e) {
+      console.warn("[Live2D] renderer.resize failed:", e);
+    }
+    // Equal-aspect rescale: Math.min keeps the model proportionally
+    // sized — wider window → more breathing room, never horizontal
+    // stretch. 用**基础**宽高(modelBaseRef)算 scale + 居中，绝不能用
+    // model.width/height（那是已缩放宽 → scale≈1 → 模型爆炸放大）。
+    const baseW = modelBaseRef.current?.w ?? model.width;
+    const baseH = modelBaseRef.current?.h ?? model.height;
+    const scaleX = (renderW * 0.85) / baseW;
+    const scaleY = (renderH * 0.7) / baseH;
+    const scale = Math.min(scaleX, scaleY);
+    model.scale.set(scale);
+    model.x = (renderW - baseW * scale) / 2;
+    model.y = (renderH - baseH * scale) * 0.25;
+  }, [size.w, size.h, size.dpr, modelReady]);
 
   // FIX-R3: pre-load Tauri window startDragging so the manual drag
   // handler can call it synchronously during the gesture.
@@ -432,6 +539,8 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
     if (!overlay) return;
     const onMove = (e: PointerEvent): void => {
       overlay.setGazeTarget(e.clientX, e.clientY, e.timeStamp);
+      // 2026-05-31 fun: feed shy-away + circle-dizzy observers.
+      overlay.funCursorMove?.(e.clientX, e.clientY, e.timeStamp);
     };
     const onBlur = (): void => {
       overlay.clearGazeTarget(performance.now());
@@ -455,12 +564,12 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
       get: () => overlayRef.current?.getAnimationDebug(),
     });
     if (import.meta.env.DEV) {
-      // S5: bench uses the engine's CoreModelLike (post-Live2D removal).
+      const model = modelRef.current;
       w["__deskpet_anim_bench"] = {
         applyToOnce: (t: number) => {
-          const core = engineRef.current?.getCoreModel();
-          if (core && overlayRef.current) {
-            overlayRef.current.applyTo(core, t);
+          const m = modelRef.current ?? model;
+          if (m && overlayRef.current) {
+            overlayRef.current.applyTo((m as any).internalModel?.coreModel as CoreModelLike, t);
           }
         },
       };
@@ -490,32 +599,194 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
     };
   }, []);
 
+  // 2026-06-03: 此处原有**第二个**「resize PixiJS renderer + reposition」effect，
+  // 与上方(~460)那个职责完全重复，但用 window.devicePixelRatio + model.width
+  // (已缩放宽)→ 拖动时它后跑、覆盖上方修好的结果 → 模型 scale≈1 爆炸放大
+  // (用户实测：拖动后角色只剩胸口)。已删除，统一由上方那个(size.dpr + 基础
+  // 宽高 modelBaseRef + modelReady)负责，单一权威路径，杜绝双 effect 竞争。
+
   // Main init — runs once
   useEffect(() => {
     if (modeRef.current !== "loading") return;
 
     let destroyed = false;
+    let pixiApp: any = null;
     let rafId = 0;
 
     async function init() {
-      // S5 (Live2D removal 2026-05-29): the only shipping backend is
-      // 'sprite'. Wires the SpritePetEngine into pet-anim and hands
-      // rendering off to startCanvas2D — a 100%-original Canvas2D
-      // character with zero copyright risk. The legacy PixiJS +
-      // Live2DModel path was deleted together with the cubismcore /
-      // pixi-live2d-display deps and the Hiyori assets.
-      console.warn("[pet-engine] sprite backend → Canvas2D character");
-      const engine = createPetEngine(backendRef.current);
-      engineRef.current = engine;
-      overlayRef.current?.setMotionPlayer((group, idx) => {
-        engine.playMotion(group, idx);
-      });
-      // Keep face-frame in sync so hit-zone DOM + overlay gaze share
-      // the same source of truth (PRD §6.0 v3).
-      const ff = faceFrameRef.current;
-      overlayRef.current?.setFaceCenter(ff.face_center_x, ff.face_center_y, ff.face_radius_css);
-      modeRef.current = "canvas2d";
-      startCanvas2D();
+      try {
+        console.warn("[Live2D] starting PixiJS...");
+        const PIXI = await import("pixi.js");
+        (window as any).PIXI = PIXI;
+
+        if (destroyed) return;
+
+        const dpr = window.devicePixelRatio || 1;
+        const renderW = Math.round(size.w * dpr);
+        const renderH = Math.round(size.h * dpr);
+
+        pixiApp = new PIXI.Application({
+          width: renderW,
+          height: renderH,
+          backgroundAlpha: 0,
+          antialias: true,
+          preserveDrawingBuffer: true,
+          resolution: 1,
+        });
+
+        if (destroyed) { pixiApp.destroy(true); return; }
+        // Expose for the resize-rescale effect.
+        pixiAppRef.current = pixiApp;
+
+        try {
+          pixiApp.stage.eventMode = "none";
+          pixiApp.stage.interactiveChildren = false;
+          pixiApp.renderer?.events?.destroy?.();
+        } catch { /* ignore */ }
+
+        document.querySelectorAll<HTMLCanvasElement>("canvas[data-pet-live2d]")
+          .forEach((stale) => {
+            try { stale.parentNode?.removeChild(stale); } catch { /* ignore */ }
+          });
+        const pixiCanvas = pixiApp.view as HTMLCanvasElement;
+        pixiCanvas.setAttribute("data-pet-live2d", "1");
+        pixiCanvas.style.cssText = "position:fixed;top:-9999px;left:-9999px;pointer-events:none;";
+        document.body.appendChild(pixiCanvas);
+
+        console.warn("[Live2D] PixiJS created, loading cubism4...");
+        const { Live2DModel } = await import("pixi-live2d-display/cubism4");
+        if (destroyed) return;
+
+        console.warn("[Live2D] loading model:", modelPath);
+        const model = await Promise.race([
+          Live2DModel.from(modelPath),
+          new Promise((_, rej) => setTimeout(() => rej(new Error("timeout 15s")), 15000)),
+        ]) as any;
+
+        if (destroyed) return;
+        console.warn("[Live2D] model loaded:", model.width, "x", model.height);
+        // 此刻 model.width/height 尚未被下方 scale.set 改动 = 基础尺寸，存下来供
+        // resize effect 复用（避免它读到已缩放宽 → 误算 scale）。
+        modelBaseRef.current = { w: model.width, h: model.height };
+
+        model.autoInteract = false;
+
+        const scaleX = (renderW * 0.85) / model.width;
+        const scaleY = (renderH * 0.7) / model.height;
+        const scale = Math.min(scaleX, scaleY);
+        model.scale.set(scale);
+        model.x = (renderW - model.width * scale) / 2;
+        model.y = (renderH - model.height * scale) * 0.25;
+
+        pixiApp.stage.addChild(model);
+        modelRef.current = model;
+        // 模型就绪 → 触发 resize effect 跑一次，用当前 size.w(已 cap)+dpr
+        // 正确设定画布尺寸与模型 scale/居中（init 的初值可能不匹配实际视口）。
+        setModelReady(true);
+
+        // Inject motion player into the overlay so motionPool/FR-5 can
+        // drive real Idle/TapBody groups.
+        overlayRef.current?.setMotionPlayer((group, idx) => {
+          try {
+            model.motion?.(group, idx, 2);
+          } catch (err) {
+            console.warn("[Live2D] motion player failed:", group, idx, err);
+          }
+        });
+        // Push the freshly-loaded model into the face-frame computation.
+        const ff = faceFrameRef.current;
+        overlayRef.current?.setFaceCenter(ff.face_center_x, ff.face_center_y, ff.face_radius_css);
+
+        try {
+          (window as any).__deskpet_play_motion = (group: string, idx?: number) => {
+            try {
+              model.motion?.(group, idx, 2);
+            } catch (err) {
+              console.warn("[Live2D] indexed motion failed:", group, idx, err);
+            }
+          };
+        } catch { /* ignore */ }
+
+        modeRef.current = "live2d";
+        console.warn("[Live2D] render loop starting");
+
+        const TARGET_FPS = 30;
+        const FRAME_INTERVAL = 1000 / TARGET_FPS;
+        let frameCount = 0;
+        let lastFpsTime = performance.now();
+        let lastFrameTime = 0;
+        let pendingBlob = false;
+        let currentBlobUrl: string | null = null;
+
+        function renderLoop(timestamp: number) {
+          if (destroyed) return;
+
+          const delta = timestamp - lastFrameTime;
+          if (delta >= FRAME_INTERVAL && !pendingBlob) {
+            lastFrameTime = timestamp - (delta % FRAME_INTERVAL);
+            frameCount++;
+
+            const now = performance.now();
+            if (now - lastFpsTime >= 1000) {
+              onFpsUpdate?.(Math.round((frameCount * 1000) / (now - lastFpsTime)));
+              frameCount = 0;
+              lastFpsTime = now;
+            }
+
+            // v3: hand control to AnimationOverlay. mouth_open_y is the
+            // only legacy param still pushed in-place here; everything
+            // else (blink, perlin, gaze, saccade, tilt) is overlay-owned.
+            try {
+              const coreModel = (model as any).internalModel?.coreModel as
+                | CoreModelLike
+                | undefined;
+              if (coreModel && overlayRef.current) {
+                overlayRef.current.setMouthOpenY(mouthRef.current);
+                overlayRef.current.applyTo(coreModel, timestamp);
+              }
+            } catch { /* ignore if model structure differs */ }
+
+            if (imgRef.current && pixiApp?.view) {
+              pendingBlob = true;
+              try {
+                (pixiApp.view as HTMLCanvasElement).toBlob(
+                  (blob: Blob | null) => {
+                    pendingBlob = false;
+                    if (destroyed || !blob || !imgRef.current) return;
+                    if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+                    currentBlobUrl = URL.createObjectURL(blob);
+                    imgRef.current.src = currentBlobUrl;
+                    // v3: record visual latency — pair this frame with
+                    // the oldest pending click event (FIFO per §3.8).
+                    overlayRef.current?.recordVisualFrameTs(performance.now());
+                  },
+                  "image/webp",
+                  0.8,
+                );
+              } catch {
+                pendingBlob = false;
+              }
+            }
+          }
+
+          rafId = requestAnimationFrame(renderLoop);
+        }
+        rafId = requestAnimationFrame(renderLoop);
+
+      } catch (err) {
+        console.warn("[Live2D] failed:", err);
+        try {
+          const pixiCanvas = pixiApp?.view as HTMLCanvasElement;
+          if (pixiCanvas?.parentNode) pixiCanvas.parentNode.removeChild(pixiCanvas);
+          pixiApp?.destroy(true);
+        } catch { /* ignore */ }
+        pixiApp = null;
+
+        if (!destroyed) {
+          modeRef.current = "canvas2d";
+          startCanvas2D();
+        }
+      }
     }
 
     // Canvas2D fallback — unchanged from pre-v3, just a fallback character.
@@ -535,17 +806,7 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
       let lastFpsTime = performance.now();
       let eyeBlinkTimer = 0;
       let isBlinking = false;
-      // S6: try to load an external portrait sprite. Until it resolves
-      // (or if it's absent / 404s) we draw the procedural chibi
-      // placeholder. Drop a transparent-bg PNG at
-      // public/assets/pet/character.png and it gets picked up
-      // automatically on next load — that's the "real artwork" path.
-      let spriteImg: HTMLImageElement | null = null;
-      void loadSpriteImage("/assets/pet/character.png").then((img) => {
-        spriteImg = img;
-        if (img) console.warn("[pet] external sprite loaded:", img.naturalWidth, "x", img.naturalHeight);
-        else console.warn("[pet] no external sprite — using procedural chibi placeholder");
-      });
+      const cs = Math.min(width / 300, height / 450, 1);
 
       function draw(ts: number) {
         if (destroyed) return;
@@ -560,41 +821,65 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
           lastFpsTime = now;
         }
 
-        // Self-driven blink scheduler (~every 3.2s, ~140ms closed).
+        ctx.save();
+        ctx.translate(width / 2, height * 0.38);
+        ctx.scale(cs, cs);
+        const by = Math.sin(ts / 1500) * 3, bo = Math.sin(ts / 800) * 2;
+
+        ctx.fillStyle = "rgba(0,0,0,0.15)";
+        ctx.beginPath(); ctx.ellipse(0, 140 + by, 55, 10, 0, 0, Math.PI * 2); ctx.fill();
+        const tw = Math.sin(ts / 300) * 15;
+        ctx.strokeStyle = "rgba(99,102,241,0.8)"; ctx.lineWidth = 8; ctx.lineCap = "round";
+        ctx.beginPath(); ctx.moveTo(45, 85 + by); ctx.quadraticCurveTo(75 + tw, 55 + by, 70 + tw * 1.5, 25 + by); ctx.stroke();
+        ctx.fillStyle = "rgba(99,102,241,0.9)"; roundRect(ctx, -55, 50 + by, 110, 80, 22);
+        ctx.fillStyle = "rgba(129,140,248,0.3)"; roundRect(ctx, -40, 55 + by, 80, 25, 12);
+        ctx.fillStyle = "rgba(129,140,248,0.9)";
+        ctx.beginPath(); ctx.ellipse(-35, 130 + by, 18, 10, -0.1, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(35, 130 + by, 18, 10, 0.1, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "rgba(99,102,241,0.95)";
+        ctx.beginPath(); ctx.arc(0, bo, 65, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "rgba(99,102,241,0.95)";
+        ctx.beginPath(); ctx.moveTo(-55, -20 + bo); ctx.lineTo(-70, -70 + bo); ctx.lineTo(-25, -45 + bo); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(55, -20 + bo); ctx.lineTo(70, -70 + bo); ctx.lineTo(25, -45 + bo); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = "rgba(196,181,253,0.7)";
+        ctx.beginPath(); ctx.moveTo(-52, -25 + bo); ctx.lineTo(-63, -60 + bo); ctx.lineTo(-32, -42 + bo); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(52, -25 + bo); ctx.lineTo(63, -60 + bo); ctx.lineTo(32, -42 + bo); ctx.closePath(); ctx.fill();
         eyeBlinkTimer += 16;
-        if (!isBlinking && eyeBlinkTimer > 3200) { isBlinking = true; eyeBlinkTimer = 0; }
-        if (isBlinking && eyeBlinkTimer > 140) { isBlinking = false; eyeBlinkTimer = 0; }
-
-        // Tier-1: pet-anim 每帧写参数到 engine 的 CoreModel，读回合成整体变换。
-        const _engine = engineRef.current;
-        const _core = _engine?.getCoreModel();
-        let _tf = { rotateDeg: 0, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 };
-        if (_core && overlayRef.current) {
-          // FIX (2026-06-13): zero params each frame BEFORE applyTo.
-          // pet-anim writes BodyAngleZ/X + BustY with ADD semantics
-          // (perlin/wobble/lean/squash), assuming a Cubism per-frame
-          // baseline reset. Without this the ADDs accumulate every frame
-          // → 立绘 tilts/drifts forever and never settles ("一直歪").
-          (_core as { resetParameters?: () => void }).resetParameters?.();
-          overlayRef.current.setMouthOpenY(mouthRef.current);
-          overlayRef.current.applyTo(_core, ts);
-          _tf = deriveTransform(_core);
+        if (eyeBlinkTimer > 3000 && !isBlinking) { isBlinking = true; eyeBlinkTimer = 0; }
+        if (isBlinking && eyeBlinkTimer > 150) { isBlinking = false; eyeBlinkTimer = 0; }
+        const ey = -8 + bo, eo = isBlinking ? 0.1 : 1;
+        ctx.fillStyle = "#fff";
+        ctx.beginPath(); ctx.ellipse(-24, ey, 16, 18 * eo, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(24, ey, 16, 18 * eo, 0, 0, Math.PI * 2); ctx.fill();
+        if (!isBlinking) {
+          const px = Math.sin(ts / 2000) * 4, py = Math.cos(ts / 3000) * 2;
+          ctx.fillStyle = "#1e1b4b";
+          ctx.beginPath(); ctx.arc(-24 + px, ey + py, 8, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(24 + px, ey + py, 8, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "rgba(255,255,255,0.9)";
+          ctx.beginPath(); ctx.arc(-20 + px, ey - 4 + py, 4, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(28 + px, ey - 4 + py, 3, 0, Math.PI * 2); ctx.fill();
         }
-
-        const frame: CharacterFrame = {
-          w: width,
-          h: height,
-          t: ts,
-          mouthOpen: mouthRef.current,
-          blink: isBlinking ? 1 : 0,
-          rotateDeg: _tf.rotateDeg,
-          offsetX: _tf.offsetX,
-          offsetY: _tf.offsetY,
-          scaleX: _tf.scaleX,
-          scaleY: _tf.scaleY,
-        };
-        if (spriteImg) drawSpriteCharacter(ctx, spriteImg, frame);
-        else drawProceduralCharacter(ctx, frame);
+        ctx.fillStyle = "rgba(251,191,207,0.45)";
+        ctx.beginPath(); ctx.ellipse(-42, 12 + bo, 14, 8, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(42, 12 + bo, 14, 8, 0, 0, Math.PI * 2); ctx.fill();
+        const mOpen = mouthRef.current;
+        ctx.fillStyle = "rgba(196,181,253,0.8)";
+        ctx.beginPath(); ctx.moveTo(0, 8 + bo); ctx.lineTo(-5, 14 + bo); ctx.lineTo(5, 14 + bo); ctx.closePath(); ctx.fill();
+        if (mOpen > 0.05) {
+          ctx.fillStyle = "rgba(67,56,202,0.6)";
+          ctx.beginPath(); ctx.ellipse(0, 20 + bo, 8, 4 + mOpen * 10, 0, 0, Math.PI * 2); ctx.fill();
+        } else {
+          ctx.strokeStyle = "#4338ca"; ctx.lineWidth = 2; ctx.lineCap = "round";
+          ctx.beginPath(); ctx.arc(-8, 16 + bo, 8, -0.3, Math.PI * 0.7); ctx.stroke();
+          ctx.beginPath(); ctx.arc(8, 16 + bo, 8, Math.PI * 0.3, Math.PI + 0.3); ctx.stroke();
+        }
+        ctx.strokeStyle = "rgba(200,200,220,0.5)"; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(-30, 10 + bo); ctx.lineTo(-65, 5 + bo); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-30, 16 + bo); ctx.lineTo(-65, 18 + bo); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(30, 10 + bo); ctx.lineTo(65, 5 + bo); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(30, 16 + bo); ctx.lineTo(65, 18 + bo); ctx.stroke();
+        ctx.restore();
 
         canvas.toBlob(
           (blob) => {
@@ -617,13 +902,17 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
     cleanupRef.current = () => {
       destroyed = true;
       cancelAnimationFrame(rafId);
-      // S5: release the PetEngine. No more PixiJS canvas to clean up —
-      // the Canvas2D character lives off the imgRef Blob URL pipeline.
-      engineRef.current?.destroy();
-      engineRef.current = null;
+      modelRef.current = null;
+      pixiAppRef.current = null;
+      setModelReady(false);
       // v3: dispose the overlay so HMR + StrictMode unmounts don't leak.
       overlayRef.current?.dispose();
       overlayRef.current = null;
+      try {
+        const pixiCanvas = pixiApp?.view as HTMLCanvasElement;
+        if (pixiCanvas?.parentNode) pixiCanvas.parentNode.removeChild(pixiCanvas);
+        pixiApp?.destroy(true);
+      } catch { /* ignore */ }
     };
 
     return () => {
@@ -692,8 +981,14 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
           // mousedown+up without movement falls through to onClick
           // (preserving the click pulse).
           dragStartRef.current = { x: e.clientX, y: e.clientY };
+          // 2026-05-31 fun: kick off drag/longPress/burst observer.
+          overlayRef.current?.funPointerDown(e.clientX, e.clientY, e.timeStamp);
         }}
         onPointerMove={(e) => {
+          // 2026-05-31 fun: feed pointermove into drag kinematics (only when
+          // pressed — funPointerDown sets ctx.active true; sample is no-op
+          // when inactive).
+          overlayRef.current?.funPointerMove(e.clientX, e.clientY, e.timeStamp);
           const start = dragStartRef.current;
           if (!start) return;
           const dx = e.clientX - start.x;
@@ -701,7 +996,7 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
           if (dx * dx + dy * dy > 25 /* 5px threshold squared */) {
             dragStartRef.current = null;
             // v2 A1: hand the overlay into being_held so wobble + surprise fire
-            // for the duration of the drag.
+            // for the duration of the drag. Cleared on pointerup below.
             overlayRef.current?.setDragState("being_held", e.timeStamp);
             // Synchronous call — the cached startDragging was prepared
             // at mount, so SendMessage WM_NCLBUTTONDOWN runs before the
@@ -714,31 +1009,19 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
                 /* ignore */
               }
             }
-            // FIX (2026-06-13): startDragging() hands the gesture to Win32,
-            // so the WebView never receives onPointerUp on the hit-zone →
-            // dragState would stay stuck in "being_held" and the wobble
-            // never springs back (character keeps tilting forever). Arm a
-            // window-level fallback: restore "idle" on the next mouse/pointer
-            // release, or after 900ms at the latest (wobble's "picked-up"
-            // reaction plays briefly, then springs back).
-            const restoreIdle = (): void => {
-              overlayRef.current?.setDragState("idle", performance.now());
-              window.removeEventListener("pointerup", restoreIdle);
-              window.removeEventListener("mouseup", restoreIdle);
-            };
-            window.addEventListener("pointerup", restoreIdle, { once: true });
-            window.addEventListener("mouseup", restoreIdle, { once: true });
-            window.setTimeout(restoreIdle, 900);
           }
         }}
         onPointerUp={(e) => {
           dragStartRef.current = null;
           // v2 A1: tell overlay drag ended → spring_back begins.
           overlayRef.current?.setDragState("idle", e.timeStamp);
+          // 2026-05-31 fun: ends drag + classify tap burst.
+          overlayRef.current?.funPointerUp(e.timeStamp);
         }}
         onPointerCancel={(e) => {
           dragStartRef.current = null;
           overlayRef.current?.setDragState("idle", e.timeStamp);
+          overlayRef.current?.funPointerUp(e.timeStamp);
         }}
         onClick={(e) => {
           const ts = e.timeStamp;
@@ -746,11 +1029,9 @@ export const Live2DCanvas = forwardRef<Live2DHandle, Live2DCanvasProps>(function
           if (!overlay) return;
           const before = performance.now();
           overlay.pulseInteraction("click", ts);
-          spawnBurst(e.clientX, e.clientY);
           overlay.recordInteractionLatency(performance.now() - before);
         }}
       />
-      <PetTapBurst bursts={bursts} />
     </>
   );
 });
