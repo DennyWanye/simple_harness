@@ -621,6 +621,16 @@ def _make_str_llm_call(provider, *, max_tokens: int = 512):
     return _call
 
 
+# 把运行中的 local_llm(relay base_url + keychain key) 注入 deep-research，
+# 让 research_run 的 plan/synthesize/reflection 走和聊天 agent 同一个 live
+# relay（修旧 _resolve_default_llm_call 读 providers[0] 丢 key 的隐患）。
+try:
+    from deskpet.tools import research_tools as _research_tools
+    _research_tools.set_live_llm_call(_make_str_llm_call(local_llm, max_tokens=4096))
+except Exception as _exc:  # noqa: BLE001 — research 仍可回退 config 重建
+    log.debug("research live-llm wiring skipped: %s", _exc)
+
+
 # ─── superpowers Layer 1A/1B 决策2：plan-confirm 硬门 ────────────────
 # code 模式非平凡任务出 plan 后，_run_chat（后台任务）在此 Future 上 await，
 # 等前端点 [执行]/[取消] → plan_confirm WS handler set_result → 继续/取消。
@@ -1014,6 +1024,28 @@ try:
         model_path=_bge_dir,
         use_mock_when_missing=True,
     )
+
+    # Wire BGE-M3 semantic relevance into deep-research (WI-2.2). The
+    # scorer returns cosine(topic, passage) ∈ [0,1] per passage so
+    # research_run blends it into relevance. Skipped when the embedder is
+    # the mock (hash vectors carry no semantics) → keyword-only fallback.
+    try:
+        import numpy as _np
+        from deskpet.tools import research_tools as _rt_sem
+
+        async def _research_semantic(query: str, passages: list[str]) -> list[float]:
+            if _embedder.is_mock() or not passages:
+                return []
+            vecs = await _embedder.encode([query] + list(passages))
+            arr = _np.asarray(vecs, dtype="float32")
+            norms = _np.linalg.norm(arr, axis=1, keepdims=True)
+            arr = arr / _np.clip(norms, 1e-8, None)
+            qv, pv = arr[0], arr[1:]
+            return [float(x) for x in pv @ qv]
+
+        _rt_sem.set_semantic_scorer(_research_semantic)
+    except Exception as _exc:  # noqa: BLE001 — research degrades to keyword
+        log.debug("research semantic wiring skipped: %s", _exc)
 
     # P4-S15: SessionDB at <data>/state.db, side-by-side with the legacy
     # memory.db. on_message_written hook will be wired to VectorWorker.enqueue

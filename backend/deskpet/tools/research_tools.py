@@ -38,11 +38,46 @@ import re
 import time
 import urllib.parse
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Iterable, Optional, Protocol
 
 import httpx
 
+from . import research_scoring
+
 log = logging.getLogger(__name__)
+
+
+# Optional BGE-M3 semantic relevance hook. ``main.py`` may inject a
+# ``(query: str, passages: list[str]) -> list[float]`` scorer (cosine in
+# [0,1]) so relevance uses real semantics. Unset → keyword coverage only
+# (graceful degrade, no embedder dependency in tests).
+_SEMANTIC_SCORER = None
+
+
+def set_semantic_scorer(fn) -> None:
+    """Wire a BGE-M3-backed relevance scorer (called from main.py)."""
+    global _SEMANTIC_SCORER
+    _SEMANTIC_SCORER = fn
+
+
+async def _maybe_await(value):
+    """Await ``value`` if it's awaitable, else return as-is (lets the
+    injected semantic scorer be either sync or async)."""
+    if asyncio.iscoroutine(value) or isinstance(value, Awaitable):
+        return await value
+    return value
+
+
+def _relevance_score(text: str, *, keywords: Iterable[str]) -> float:
+    """0-10 relevance = keyword coverage fraction × 10. Pure + fast; the
+    semantic path (when wired) refines the whole passage set at once in
+    :func:`research_run`, so this stays the deterministic floor."""
+    kws = [k for k in (kw.strip().lower() for kw in keywords) if k]
+    if not kws or not text:
+        return 0.0
+    tl = text.lower()
+    return (sum(1 for k in kws if k in tl) / float(len(kws))) * 10.0
 
 
 # ----------------------------------------------------------------------
@@ -182,6 +217,10 @@ class Passage:
     citation: Citation
     text: str
     score: float
+    # Scoring components (authority/recency/relevance/depth on 0-10) kept so
+    # the optional BGE-M3 semantic pass can re-blend relevance + recompute
+    # the composite without re-deriving the other dimensions.
+    dims: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -511,6 +550,7 @@ async def research_run(
     max_urls_per_query: int = 4,
     max_total_passages: int = 12,
     min_passage_chars: int = 250,
+    max_rounds: int = 1,
 ) -> ResearchReport:
     """End-to-end research pipeline. See module docstring.
 
@@ -581,35 +621,118 @@ async def research_run(
     extracted = await _gather_safe(extract_tasks, label="extract")
 
     # ---- 4. score + filter -----------------------------------------
+    # V8 tiered composite: authority(分层,含中文源) × recency(按 topic
+    # velocity) × relevance(关键词覆盖,可选 BGE-M3 语义) × depth(长度).
     keywords = _topic_keywords(topic) + [
         k for q in sub_questions for k in _topic_keywords(q)
     ]
-    passages: list[Passage] = []
-    for url, payload in zip(candidate_urls, extracted):
+    velocity = research_scoring.infer_topic_velocity(topic)
+
+    def _passage_from(url: str, payload: Any) -> Optional[Passage]:
+        """Build a scored Passage from one extract result, or None (with an
+        error appended) when the source is unusable. Closure over keywords/
+        velocity so both round-1 and reflection round-2 score identically."""
         if isinstance(payload, BaseException):
             errors.append(f"extract:{url}: {payload}")
-            continue
+            return None
         if not isinstance(payload, dict) or not payload.get("ok"):
             err = (payload or {}).get("error", "extract failed") if isinstance(payload, dict) else "unknown"
             errors.append(f"extract:{url}: {err}")
-            continue
+            return None
         text = (payload.get("text") or "").strip()
         if len(text) < min_passage_chars:
-            continue
+            return None
         snippet = text[:min_passage_chars].replace("\n", " ").strip()
-        sc = score_passage(text, keywords=keywords, url=url)
-        passages.append(Passage(
+        authority = research_scoring.score_authority(url)
+        recency = research_scoring.score_recency(
+            str(payload.get("date") or ""), topic_velocity=velocity
+        )
+        relevance = _relevance_score(text, keywords=keywords)
+        depth = min(len(text) / 2000.0, 1.0) * 10.0
+        sc = research_scoring.composite_score(
+            authority=authority, recency=recency,
+            relevance=relevance, depth=depth, topic_velocity=velocity,
+        )
+        return Passage(
             citation=Citation(
-                n=0,  # assigned below after sort
-                url=url,
-                title=(payload.get("title") or url)[:200],
+                n=0, url=url, title=(payload.get("title") or url)[:200],
                 snippet=snippet,
                 fetched_at=float(payload.get("fetched_at", time.time())),
-                authority=authority_for_url(url),
+                authority=authority,
             ),
-            text=text,
-            score=sc,
-        ))
+            text=text, score=sc,
+            dims={"authority": authority, "recency": recency,
+                  "relevance": relevance, "depth": depth},
+        )
+
+    passages: list[Passage] = []
+    for url, payload in zip(candidate_urls, extracted):
+        p = _passage_from(url, payload)
+        if p is not None:
+            passages.append(p)
+
+    # ---- 4.5 reflection round (V8 iterative deepening) -------------
+    # depth=deep → after round-1 evidence, ask the LLM what gaps remain,
+    # generate 1-3 follow-up queries, and fetch a 2nd round before synth.
+    rounds = 1
+    if max_rounds >= 2 and passages:
+        seen_urls = set(candidate_urls)
+        follow_qs = await _gap_followup_queries(
+            llm_call, topic, sub_questions, passages, errors
+        )
+        if follow_qs:
+            rounds = 2
+            r2_hits = await _gather_safe(
+                [search_fn(q, max_results=max_urls_per_query) for q in follow_qs],
+                label="search2",
+            )
+            r2_urls: list[str] = []
+            for hits in r2_hits:
+                if isinstance(hits, BaseException):
+                    continue
+                for h in hits or []:
+                    u = h.get("url")
+                    if u and u not in seen_urls:
+                        seen_urls.add(u)
+                        r2_urls.append(u)
+            r2_urls = r2_urls[: max_urls_per_query * len(follow_qs)]
+            if r2_urls:
+                r2_extracted = await _gather_safe(
+                    [extract_fn(u) for u in r2_urls], label="extract2"
+                )
+                for url, payload in zip(r2_urls, r2_extracted):
+                    p = _passage_from(url, payload)
+                    if p is not None:
+                        passages.append(p)
+
+    # ---- 4.6 optional BGE-M3 semantic relevance refine -------------
+    # When a semantic scorer is wired (main.py injects the memory
+    # embedder), blend cosine(topic, passage) into relevance and recompute
+    # the composite. Degrades silently to keyword-only when unwired/failing.
+    if _SEMANTIC_SCORER is not None and passages:
+        try:
+            sims = await _maybe_await(
+                _SEMANTIC_SCORER(topic, [p.text[:2000] for p in passages])
+            )
+        except Exception as exc:  # noqa: BLE001
+            sims = None
+            log.debug("semantic relevance skipped: %s", exc)
+        if sims and len(sims) == len(passages):
+            for p, sim in zip(passages, sims):
+                sem_rel = max(0.0, min(1.0, float(sim))) * 10.0
+                d = p.dims or {}
+                # take the stronger signal so semantic lifts, never buries,
+                # a keyword-strong source
+                blended = max(float(d.get("relevance", 0.0)), sem_rel)
+                d["relevance"] = blended
+                p.dims = d
+                p.score = research_scoring.composite_score(
+                    authority=float(d.get("authority", 3.0)),
+                    recency=float(d.get("recency", 3.0)),
+                    relevance=blended, depth=float(d.get("depth", 0.0)),
+                    topic_velocity=velocity,
+                )
+
     passages.sort(key=lambda p: -p.score)
     passages = passages[:max_total_passages]
     # Re-number citations 1..N in score order
@@ -672,6 +795,7 @@ async def research_run(
     # ---- 7. summary / coverage / return ----------------------------
     summary = _extract_summary(report_md)
     domains = {_host(c.url) for c in citations if _host(c.url)}
+    div = research_scoring.diversity_report([c.url for c in citations])
     coverage = {
         "n_sources": len(citations),
         "n_domains": len(domains),
@@ -679,6 +803,13 @@ async def research_run(
         "cite_check_ok": cc["ok"],
         "cite_missing": cc["missing"],
         "cite_unused": cc["unused"],
+        # V8 diversity / concentration (no single domain should dominate)
+        "topic_velocity": velocity,
+        "unique_domains": div["unique_domains"],
+        "max_single_domain_share": div["max_single_domain_share"],
+        "source_types": div["source_types"],
+        "diversity_ok": div["passes"],
+        "rounds": rounds,
     }
     return ResearchReport(
         topic=topic,
@@ -694,6 +825,52 @@ async def research_run(
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
+
+
+_GAP_PROMPT = """\
+You are improving an in-progress research briefing on:  {topic}
+
+So far you have gathered these sources (titles only):
+{titles}
+
+The original sub-questions were:
+{subqs}
+
+Identify the 1-3 MOST important evidence GAPS still unaddressed (missing
+angles, counter-evidence, costs/failure modes, recent developments, or a
+sub-question with weak coverage). For each gap, write ONE focused web
+search query that would fill it.
+
+Output ONLY a JSON array of query strings (same language as the topic).
+If coverage is already strong, output []. No prose, no fences.
+
+JSON ARRAY:"""
+
+
+async def _gap_followup_queries(
+    llm_call: _LLMCall,
+    topic: str,
+    sub_questions: list[str],
+    passages: list["Passage"],
+    errors: list[str],
+    *,
+    max_followups: int = 3,
+) -> list[str]:
+    """Ask the LLM which evidence gaps remain → follow-up search queries.
+
+    Best-effort: any failure (LLM error / unparseable) → ``[]`` so the
+    pipeline just proceeds with round-1 evidence."""
+    titles = "\n".join(f"- {p.citation.title}" for p in passages[:20]) or "(none)"
+    subqs = "\n".join(f"- {q}" for q in sub_questions) or "(none)"
+    try:
+        raw = await llm_call(_GAP_PROMPT.format(topic=topic, titles=titles, subqs=subqs))
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"reflect_llm: {exc}")
+        return []
+    qs = parse_sub_questions(raw, max_questions=max_followups)
+    # Drop queries that just restate an original sub-question verbatim.
+    seen = {q.strip().lower() for q in sub_questions}
+    return [q for q in qs if q.strip().lower() not in seen][:max_followups]
 
 
 async def _gather_safe(tasks: list, *, label: str) -> list[Any]:
@@ -825,9 +1002,26 @@ _RESEARCH_SCHEMA = {
                 "description": "Cap on passages used for synthesis.",
                 "default": 12,
             },
+            "depth": {
+                "type": "string",
+                "enum": ["light", "standard", "deep"],
+                "description": (
+                    "light=3子问题单轮; standard=5子问题单轮(默认); "
+                    "deep=6子问题 + 反思迭代第二轮补证(gap→补搜)。"
+                ),
+                "default": "standard",
+            },
         },
         "required": ["topic"],
     },
+}
+
+
+# depth 档位 → (子问题数, 每问URL数, 合成段落上限, 反思轮数)
+_DEPTH_PRESETS = {
+    "light": (3, 2, 8, 1),
+    "standard": (5, 4, 12, 1),
+    "deep": (6, 5, 16, 2),
 }
 
 
@@ -853,47 +1047,120 @@ async def _handle_research_run(args: dict, task_id: str) -> str:
             ensure_ascii=False,
         )
 
+    # depth 档位给默认；显式 max_* 参数仍可覆盖。
+    depth = str(args.get("depth") or "standard").lower()
+    d_subq, d_urls, d_pass, d_rounds = _DEPTH_PRESETS.get(depth, _DEPTH_PRESETS["standard"])
+
     report = await research_run(
         topic,
         llm_call=llm_call,
-        max_sub_questions=int(args.get("max_sub_questions") or 5),
-        max_urls_per_query=int(args.get("max_urls_per_query") or 4),
-        max_total_passages=int(args.get("max_total_passages") or 12),
+        max_sub_questions=int(args.get("max_sub_questions") or d_subq),
+        max_urls_per_query=int(args.get("max_urls_per_query") or d_urls),
+        max_total_passages=int(args.get("max_total_passages") or d_pass),
+        max_rounds=int(args.get("max_rounds") or d_rounds),
     )
-    return json.dumps({"ok": True, **report.as_dict()}, ensure_ascii=False)
+
+    out = {"ok": True, **report.as_dict()}
+
+    # WI-2.6: 报告落 OutPut/Research/<slug>-<ts>.md(用户好找),并 emit
+    # artifacts[] → 聊天卡片可点开。落盘失败不影响返回报告正文。
+    if report.report_md and report.citations:
+        try:
+            saved = _save_report(topic, report)
+            if saved:
+                out["path"] = str(saved)
+                out["artifacts"] = [{
+                    "kind": "file",
+                    "path": str(saved),
+                    "mime": "text/markdown",
+                    "title": Path(saved).name,
+                }]
+        except Exception as exc:  # noqa: BLE001
+            log.debug("research report save skipped: %s", exc)
+
+    return json.dumps(out, ensure_ascii=False)
+
+
+def _save_report(topic: str, report: "ResearchReport") -> Optional[Path]:
+    """Write the report markdown to ``<user_data>/OutPut/Research/`` with a
+    metadata header. Returns the path, or None if the dir is unavailable."""
+    try:
+        from paths import output_dir  # type: ignore[import-not-found]
+        base = output_dir("Research")
+    except Exception:  # noqa: BLE001
+        return None
+    cov = report.coverage or {}
+    header = (
+        f"> 调研覆盖 **{cov.get('n_sources', 0)} 个来源** 来自 "
+        f"**{cov.get('n_domains', 0)} 个独立域名**"
+        f"（{cov.get('rounds', 1)} 轮检索，velocity={cov.get('topic_velocity', '?')}，"
+        f"引用自检 {'通过' if cov.get('cite_check_ok') else '未通过'}）。\n\n"
+    )
+    body = header + (report.report_md or "")
+    ts = int(time.time())
+    try:
+        from .office_paths import title_slug  # reuse FS-safe slug
+        slug = title_slug(topic, max_grapheme=40)
+    except Exception:  # noqa: BLE001
+        slug = "report"
+    path = base / f"{slug}-{ts}.md"
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+# An optional process-global live-LLM bridge. ``main.py`` may set this at
+# boot to the *same* provider the chat agent uses (relay base_url + the
+# keychain-resolved cloud key), so deep-research's plan/synthesize calls go
+# through the live relay instead of a config-rebuilt provider. When unset we
+# fall back to reconstructing from config below.
+_LIVE_LLM_CALL: Optional[_LLMCall] = None
+
+
+def set_live_llm_call(fn: Optional[_LLMCall]) -> None:
+    """Wire the running agent's LLM into deep-research (called from main.py)."""
+    global _LIVE_LLM_CALL
+    _LIVE_LLM_CALL = fn
 
 
 async def _resolve_default_llm_call() -> _LLMCall:
-    """Best-effort default LLM bridge for the live tool path.
+    """Resolve an LLM callable for the live tool path.
 
-    We dispatch through the LLM provider chain (set up in ``main.py``).
-    On import failure / missing config, raise so the registry handler
-    returns an error JSON.
+    Priority:
+      1. The live bridge injected by ``main.py`` (same relay + keychain key
+         the chat agent uses) — set via :func:`set_live_llm_call`.
+      2. Reconstruct from ``config.llm.local`` + the OS-keychain cloud key
+         (``resolve_cloud_api_key``), mirroring how ``main.py`` builds its
+         ``local_llm``. The OLD code read ``cfg.llm.providers[0]`` (a stale
+         multi-provider shape) with no keychain key → research silently lost
+         its LLM after relay login. This is that bug fixed.
     """
+    if _LIVE_LLM_CALL is not None:
+        return _LIVE_LLM_CALL
+
     try:
-        from deskpet.config import load_config  # type: ignore
-        from deskpet.providers.openai_compatible import (  # type: ignore
+        from config import load_config, resolve_cloud_api_key  # type: ignore
+        from providers.openai_compatible import (  # type: ignore
             OpenAICompatibleProvider,
         )
     except ImportError as exc:
         raise RuntimeError(f"provider modules unavailable: {exc}") from exc
 
     cfg = load_config()
-    providers = getattr(cfg.llm, "providers", None) or []
-    if not providers:
+    local = getattr(cfg.llm, "local", None)
+    if local is None or not getattr(local, "base_url", ""):
         raise RuntimeError("no llm provider configured")
-    p = providers[0]
+    api_key = resolve_cloud_api_key() or getattr(local, "api_key", "") or ""
     provider = OpenAICompatibleProvider(
-        base_url=p.base_url,
-        api_key=getattr(p, "api_key", "") or "",
-        model=p.model,
+        base_url=local.base_url,
+        api_key=api_key,
+        model=getattr(local, "model", ""),
     )
 
     async def _call(prompt: str) -> str:
         result = await provider.chat_with_tools(
             messages=[{"role": "user", "content": prompt}],
             tools=[],
-            max_tokens=2048,
+            max_tokens=4096,  # synthesis needs room (was 2048 → truncated long reports)
         )
         return (result or {}).get("content") or ""
 

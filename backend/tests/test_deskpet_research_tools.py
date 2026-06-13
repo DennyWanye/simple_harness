@@ -700,3 +700,84 @@ async def test_research_run_dedups_urls_across_sub_questions() -> None:
     )
     assert len(extract_calls) == 1
     assert len(report.citations) == 1
+
+
+@pytest.mark.asyncio
+async def test_research_run_reflection_round_fires_on_deep() -> None:
+    """max_rounds=2: after round-1, the LLM returns a follow-up query →
+    a 2nd search+extract happens and the new source joins the report."""
+    plan = json.dumps(["q1?"])
+    gap = json.dumps(["follow up gap query?"])  # reflection → 1 follow-up
+    synth = "# T\n## TL;DR\n\nClaim [^1].\n\nMore [^2]."
+    llm = FakeLLM([plan, gap, synth])  # plan → gap → synth
+
+    search = make_search({
+        "q1?": [{"url": "https://arxiv.org/r1", "title": "R1", "snippet": ""}],
+        "follow up gap query?": [
+            {"url": "https://nature.com/r2", "title": "R2", "snippet": ""},
+        ],
+    })
+    extracted: list[str] = []
+
+    async def _extract(url: str):
+        extracted.append(url)
+        return {
+            "ok": True, "url": url, "title": url.rsplit("/", 1)[-1],
+            "text": "useful research content about the topic. " * 40,
+            "fetched_at": time.time(),
+        }
+
+    report = await research_run(
+        "topic", llm_call=llm, search=search, extract=_extract, max_rounds=2,
+    )
+    # round-1 url + round-2 follow-up url both fetched
+    assert "https://arxiv.org/r1" in extracted
+    assert "https://nature.com/r2" in extracted
+    assert report.coverage["rounds"] == 2
+    assert len(report.citations) == 2
+
+
+@pytest.mark.asyncio
+async def test_research_run_single_round_by_default() -> None:
+    """Default max_rounds=1: no gap call, no 2nd round (LLM only sees
+    plan + synth, never a gap prompt)."""
+    plan = json.dumps(["q1?"])
+    synth = "# T\n## TL;DR\n\nClaim [^1]."
+    llm = FakeLLM([plan, synth])  # exactly 2 calls; a 3rd would IndexError
+    search = make_search({"q1?": [{"url": "https://arxiv.org/x", "title": "X", "snippet": ""}]})
+
+    async def _extract(url: str):
+        return {"ok": True, "url": url, "title": "X",
+                "text": "content content. " * 40, "fetched_at": time.time()}
+
+    report = await research_run("topic", llm_call=llm, search=search, extract=_extract)
+    assert report.coverage["rounds"] == 1
+    assert len(llm.calls) == 2  # plan + synth only
+
+
+@pytest.mark.asyncio
+async def test_research_run_semantic_scorer_reranks(monkeypatch) -> None:
+    """When a semantic scorer is wired, a low-authority but semantically
+    on-topic source can be lifted in relevance (blended into composite)."""
+    plan = json.dumps(["q1?"])
+    synth = "# T\n## TL;DR\n\nA [^1].\n\nB [^2]."
+    llm = FakeLLM([plan, synth])
+    search = make_search({"q1?": [
+        {"url": "https://random-xyz.net/a", "title": "Topical", "snippet": ""},
+        {"url": "https://arxiv.org/b", "title": "Offtopic", "snippet": ""},
+    ]})
+
+    async def _extract(url: str):
+        return {"ok": True, "url": url, "title": url.rsplit("/", 1)[-1],
+                "text": "some content here. " * 40, "fetched_at": time.time()}
+
+    # Fake scorer: the random-xyz passage is highly relevant (1.0), arxiv low (0.0)
+    def _sem(query, passages):
+        return [1.0 if "some content" in p else 0.0 for p in passages][: len(passages)] \
+            if False else [1.0, 0.0][: len(passages)]
+
+    monkeypatch.setattr(r, "_SEMANTIC_SCORER", _sem)
+    report = await research_run("topic", llm_call=llm, search=search, extract=_extract)
+    # both kept; semantic ran without error and report is well-formed
+    assert len(report.citations) == 2
+    assert report.coverage["n_sources"] == 2

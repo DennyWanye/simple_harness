@@ -1,0 +1,203 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
+"""Source scoring for deep-research — ported from DeepResearch V8's
+``source_evaluator``, adapted to DeskPet (library, no CLI/shell).
+
+Why this exists
+---------------
+The original ``research_tools.score_passage`` used a tiny hand-curated
+authority map + literal keyword coverage. V8 brings a far richer model:
+
+* **Tiered domain authority** (TIER_1/2/3) that explicitly includes
+  **Chinese sources** (cnki / xinhua / 36kr / zhihu / csdn / …) plus a
+  ``.gov``/``.edu``/``.cn`` boost — critical now that Chinese queries
+  actually return Chinese results (see ``search_provider`` region fix).
+* **Recency** scored against a *topic-velocity* curve (fast/medium/slow).
+* **Diversity** + **sub-question coverage** checks so one domain can't
+  dominate the evidence pool.
+
+The relevance/depth dimensions stay caller-supplied (the pipeline fills
+them from keyword coverage and, when available, BGE-M3 semantic
+similarity — see ``research_tools``).
+
+Everything here is pure + deterministic (no network, no LLM) so it is
+trivially unit-testable, mirroring V8's "deterministic helpers" stance.
+"""
+from __future__ import annotations
+
+import time
+from typing import Any, Optional
+from urllib.parse import urlparse
+
+# === Domain authority tiers (ported + de-duped from V8) ===
+
+TIER_1 = {  # 9-10: peer-reviewed / official bodies / primary
+    "nature.com", "science.org", "thelancet.com", "nejm.org",
+    "cell.com", "pnas.org", "ieee.org", "acm.org",
+    "who.int", "nih.gov", "cdc.gov", "europa.eu",
+    "arxiv.org", "semanticscholar.org",
+    # Reference-grade (V8's list omitted these; they are curated + cited)
+    "wikipedia.org", "britannica.com",
+    # Chinese academic / official
+    "cnki.net", "wanfangdata.com.cn", "cqvip.com",
+    "cas.cn", "nsfc.gov.cn", "xueshu.baidu.com", "gov.cn",
+}
+
+TIER_2 = {  # 7-8: reputable news / established industry
+    "reuters.com", "apnews.com", "bbc.com", "nytimes.com",
+    "theguardian.com", "washingtonpost.com", "economist.com",
+    "techcrunch.com", "arstechnica.com", "wired.com",
+    "github.com", "stackoverflow.com", "hbr.org",
+    "mckinsey.com", "bcg.com", "gartner.com",
+    # Chinese reputable news / tech media
+    "xinhuanet.com", "people.com.cn", "thepaper.cn",
+    "36kr.com", "infoq.cn", "juejin.cn", "jiqizhixin.com",
+    "leiphone.com", "geekpark.net", "caixin.com",
+}
+
+TIER_3 = {  # 5-6: industry blogs / vendor / community
+    "medium.com", "substack.com", "dev.to",
+    "engineering.fb.com", "blog.google", "aws.amazon.com",
+    "openai.com", "anthropic.com", "deepmind.google",
+    "huggingface.co", "pytorch.org", "tensorflow.org",
+    # Chinese industry / community
+    "zhihu.com", "csdn.net", "segmentfault.com",
+    "oschina.net", "toutiao.com", "sspai.com",
+    "volcengine.com", "cloud.tencent.com", "aliyun.com",
+}
+
+GOV_EDU_SUFFIXES = (".gov", ".edu", ".gov.cn", ".edu.cn", ".ac.uk", ".ac.jp", ".ac.cn")
+
+_MULTI_TLDS = (
+    ".com.cn", ".gov.cn", ".edu.cn", ".ac.cn", ".org.cn",
+    ".co.uk", ".ac.uk", ".org.uk", ".co.jp", ".ac.jp",
+)
+
+_BLOG_PLATFORMS = ("medium.com", "substack.com", "zhihu.com", "csdn.net", "dev.to")
+
+
+def get_domain(url: str) -> str:
+    """Registrable domain (handles multi-part TLDs like .com.cn / .co.uk)."""
+    hostname = (urlparse(url).hostname or "").lower()
+    parts = hostname.split(".")
+    for tld in _MULTI_TLDS:
+        if hostname.endswith(tld):
+            n = tld.count(".")
+            return ".".join(parts[-(n + 1):]) if len(parts) > n else hostname
+    return ".".join(parts[-2:]) if len(parts) >= 2 else hostname
+
+
+def is_platform_blog(url: str) -> bool:
+    """User-content page on a platform (zhihu/p/, medium user blog) → lower
+    authority than the platform's editorial content."""
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or "").lower()
+    domain = get_domain(url)
+    if domain in _BLOG_PLATFORMS and hostname not in (domain, f"www.{domain}"):
+        return True
+    if domain == "zhihu.com" and "/p/" in parsed.path.lower():
+        return True
+    return False
+
+
+def score_authority(url: str) -> float:
+    """0-10 domain authority."""
+    hostname = (urlparse(url).hostname or "").lower()
+    for suffix in GOV_EDU_SUFFIXES:
+        if hostname.endswith(suffix):
+            return 8.5
+    domain = get_domain(url)
+    if domain in TIER_1:
+        return 9.5
+    if domain in TIER_2:
+        return 7.5 - (1.5 if is_platform_blog(url) else 0.0)
+    if domain in TIER_3:
+        return 5.5 - (1.0 if is_platform_blog(url) else 0.0)
+    return 3.0  # unknown baseline
+
+
+_VELOCITY_THRESHOLDS = {
+    "fast": [(180, 10), (365, 7), (730, 4)],
+    "medium": [(365, 10), (1095, 7), (1825, 4)],
+    "slow": [(1825, 10), (3650, 7), (7300, 4)],
+}
+
+
+def score_recency(date_str: str, *, topic_velocity: str = "medium", now: Optional[float] = None) -> float:
+    """0-10 recency vs a velocity curve. Unknown/garbage date → 3.0."""
+    if not date_str:
+        return 3.0
+    pub = None
+    for fmt in ("%Y-%m-%d", "%Y-%m", "%Y"):
+        try:
+            pub = time.strptime(str(date_str)[: len(fmt) + 2], fmt)
+            break
+        except (ValueError, TypeError):
+            continue
+    if pub is None:
+        return 3.0
+    now_s = now if now is not None else time.time()
+    age_days = (now_s - time.mktime(pub)) / 86400.0
+    for max_days, score in _VELOCITY_THRESHOLDS.get(topic_velocity, _VELOCITY_THRESHOLDS["medium"]):
+        if age_days <= max_days:
+            return float(score)
+    return 2.0
+
+
+def composite_score(
+    *, authority: float, recency: float, relevance: float, depth: float,
+    topic_velocity: str = "medium",
+) -> float:
+    """Weighted blend. Slow topics down-weight recency heavily."""
+    if topic_velocity == "slow":
+        return authority * 0.35 + recency * 0.05 + relevance * 0.35 + depth * 0.25
+    return authority * 0.3 + recency * 0.2 + relevance * 0.3 + depth * 0.2
+
+
+def diversity_report(urls: list[str]) -> dict[str, Any]:
+    """Domain spread + type mix. ``passes`` when ≥5 unique domains AND no
+    single domain holds >25% of the pool (V8 thresholds)."""
+    domains = [get_domain(u) for u in urls if u]
+    counts: dict[str, int] = {}
+    for d in domains:
+        counts[d] = counts.get(d, 0) + 1
+    total = len(domains) or 1
+    max_share = max(counts.values(), default=0) / total
+    types: set[str] = set()
+    for d in domains:
+        if d in TIER_1:
+            types.add("academic")
+        elif d in TIER_2:
+            types.add("news/industry")
+        elif d in TIER_3:
+            types.add("blog/community")
+        else:
+            types.add("other")
+    return {
+        "unique_domains": len(set(domains)),
+        "max_single_domain_share": round(max_share, 2),
+        "dominant_domain": max(counts, key=counts.get, default="none") if counts else "none",
+        "source_types": sorted(types),
+        "type_diversity": len(types) >= 3,
+        "passes": len(set(domains)) >= 5 and max_share <= 0.25,
+    }
+
+
+def infer_topic_velocity(topic: str) -> str:
+    """Cheap heuristic: tech/news topics move fast; law/history slow."""
+    t = (topic or "").lower()
+    fast = ("ai", "llm", "gpt", "模型", "新能源", "股", "crypto", "芯片", "最新", "2026", "趋势", "发布")
+    slow = ("history", "历史", "哲学", "理论", "数学", "physics", "law", "宪法", "古")
+    if any(k in t for k in slow):
+        return "slow"
+    if any(k in t for k in fast):
+        return "fast"
+    return "medium"
+
+
+__all__ = [
+    "TIER_1", "TIER_2", "TIER_3",
+    "get_domain", "is_platform_blog", "score_authority", "score_recency",
+    "composite_score", "diversity_report", "infer_topic_velocity",
+]
