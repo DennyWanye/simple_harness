@@ -297,6 +297,48 @@ registry.register("web_fetch", "web", _SCHEMA_FETCH, _handle_web_fetch)
 
 
 # ---------------------------------------------------------------------
+# web_search — quick DuckDuckGo lookup (chat mode). For DEEP, multi-source
+# research with a cited report, use research_run instead.
+# ---------------------------------------------------------------------
+_SCHEMA_SEARCH: dict[str, Any] = {
+    "name": "web_search",
+    "description": (
+        "联网搜索：给一个查询词，返回 DuckDuckGo 的 top-N 结果(标题/URL/摘要)。"
+        "用于【快速查一下】事实/找网址/看有哪些来源。区域按查询语言自动切(中文→中文区)。"
+        "要【深度调研出带引用的报告】请用 research_run 而不是本工具。"
+        "web_search 不生成图片(画图用 generate_image)。"
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "搜索查询词。"},
+            "max_results": {
+                "type": "integer",
+                "description": "返回结果数 1-10，默认 5。",
+                "default": 5,
+            },
+        },
+        "required": ["query"],
+    },
+}
+
+
+def _handle_web_search(args: dict[str, Any], task_id: str) -> str:
+    from . import search_provider
+
+    query = str(args.get("query", "") or "").strip()
+    if not query:
+        return _err("query is required", retriable=False)
+    result = search_provider.search(
+        query, max_results=int(args.get("max_results", 5) or 5)
+    )
+    return json.dumps(result, ensure_ascii=False)
+
+
+registry.register("web_search", "web", _SCHEMA_SEARCH, _handle_web_search)
+
+
+# ---------------------------------------------------------------------
 # web_extract_article
 # ---------------------------------------------------------------------
 _SCHEMA_ARTICLE: dict[str, Any] = {

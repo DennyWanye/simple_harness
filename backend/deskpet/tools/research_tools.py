@@ -238,27 +238,15 @@ async def default_search(
 ) -> list[dict[str, Any]]:
     """DuckDuckGo HTML SERP → ``[{url, title, snippet}]``.
 
-    No API key required. Returns at most ``max_results`` entries.
-    Failure → empty list (caller decides how to recover).
+    Thin wrapper over the unified :mod:`search_provider` (region-aware:
+    Chinese queries now hit the 中文区 instead of the old hardcoded
+    us-en). No API key. Failure → empty list.
     """
-    params = {"q": query, "kl": "us-en"}
-    owns_client = client is None
-    cli = client or httpx.AsyncClient(
-        headers={"User-Agent": _UA, "Accept-Language": "en-US,en;q=0.9,zh;q=0.8"},
-        timeout=_DEFAULT_TIMEOUT,
-        follow_redirects=True,
+    from . import search_provider
+
+    return await search_provider.search_async(
+        query, max_results=max_results, timeout=_DEFAULT_TIMEOUT, client=client
     )
-    try:
-        try:
-            resp = await cli.post(_DDG_HTML_URL, data=params)
-            resp.raise_for_status()
-        except Exception as exc:  # noqa: BLE001
-            log.debug("ddg search failed for %r: %s", query, exc)
-            return []
-        return _parse_ddg_results(resp.text, max_results=max_results)
-    finally:
-        if owns_client:
-            await cli.aclose()
 
 
 def _parse_ddg_results(html: str, *, max_results: int) -> list[dict[str, Any]]:
