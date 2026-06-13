@@ -973,12 +973,12 @@ def _extract_summary(report_md: str) -> str:
 _RESEARCH_SCHEMA = {
     "name": "research_run",
     "description": (
-        "Deep multi-source research pipeline. Plans sub-questions, "
-        "searches the web, extracts article text, scores by authority, "
-        "and synthesizes a Markdown report with inline [^n] footnote "
-        "citations + a final sources appendix. Every claim must cite a "
-        "real source — the tool refuses to fabricate. Use for any task "
-        "where the user wants 'real research' / '认真调研' / '查一下'."
+        "深度多源调研管线(DeepResearch V8)。拆子问题→搜索→抽正文→分层权威打分"
+        "(含中文源)+新鲜度+语义相关性+来源多样性→deep档反思迭代补证→综合成带"
+        "[^n] 引用的 Markdown 报告(每条事实必须有真实出处,拒绝编造),报告自动落"
+        "OutPut/Research 文件。用于【要一份带引用的研究报告/综述/技术选型/竞品/"
+        "政策分析】。⚠️ 只是【快速查一下事实/找网址】用 web_search,不要用本工具"
+        "(本工具重、耗时)。"
     ),
     "parameters": {
         "type": "object",
