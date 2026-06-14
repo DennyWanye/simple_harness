@@ -1037,3 +1037,28 @@ async def test_research_run_rerank_timeout_marks_failed(monkeypatch):
     assert report.coverage["reranker"] == "llm_failed"
     assert any("rerank_timeout" in e for e in report.errors)
     assert len(report.citations) == 1
+
+
+@pytest.mark.asyncio
+async def test_research_run_drops_mojibake_source() -> None:
+    """抽出整段乱码的源 → 被剔除,不进引用池(codex 抓到的 [^11] 类问题)。"""
+    plan = json.dumps(["q1?"])
+    synth = "# T\n## TL;DR\n\nClaim [^1]."
+    llm = FakeLLM([plan, synth])
+    search = make_search({"q1?": [
+        {"url": "https://bad-encoding.cn/x", "title": "乱码", "snippet": ""},
+        {"url": "https://arxiv.org/ok", "title": "Clean", "snippet": ""},
+    ]})
+
+    async def _extract(url: str):
+        if "bad-encoding" in url:
+            return {"ok": True, "url": url, "title": "garbled",
+                    "text": "锛阢绅钆婅皖銮" * 60,
+                    "fetched_at": time.time()}
+        return {"ok": True, "url": url, "title": "Clean",
+                "text": "clean readable research content here. " * 40, "fetched_at": time.time()}
+
+    report = await research_run("topic", llm_call=llm, search=search, extract=_extract)
+    urls = [c.url for c in report.citations]
+    assert "https://bad-encoding.cn/x" not in urls
+    assert any("dropped_mojibake" in e for e in report.errors)

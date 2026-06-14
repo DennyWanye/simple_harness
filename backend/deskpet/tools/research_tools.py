@@ -826,6 +826,10 @@ async def research_run(
         if payload.get("ai_generated") or research_scoring.is_ai_generated(text):
             errors.append(f"dropped_ai_generated:{url}")
             return None
+        # 乱码源剔除(编码声明错→抽出整段 mojibake,不可引据)。
+        if research_scoring.is_mojibake(text):
+            errors.append(f"dropped_mojibake:{url}")
+            return None
         snippet = text[:min_passage_chars].replace("\n", " ").strip()
         authority = research_scoring.score_authority(url)
         recency = research_scoring.score_recency(

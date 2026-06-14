@@ -113,3 +113,34 @@ def test_ai_generated_disclaimer_detected():
 def test_ai_generated_clean_text_not_flagged():
     assert not rs.is_ai_generated("钠离子电池2025年产量达到3.45GWh，同比接近翻倍。")
     assert not rs.is_ai_generated("")
+
+
+# --- 乱码源检测 (codex 复评抓到 [^11] 整段乱码) ---
+
+def test_is_mojibake_replacement_chars():
+    assert rs.is_mojibake("正常开头" + "�" * 50 + "结尾乱码一片") is True
+
+
+def test_is_mojibake_cjk_as_gbk():
+    # UTF-8 当 GBK 解的典型乱码: 全是不常用 CJK,几乎无常用字
+    garbled = "锛阢绅钆婅皖銮旀姤" * 60
+    assert rs.is_mojibake(garbled) is True
+
+
+def test_is_mojibake_latin1_garbage():
+    assert rs.is_mojibake("Ã©Ã¨Ã Ã¢Ã£Ã¤Ã¥Ã¦Ã§" * 30) is True
+
+
+def test_is_mojibake_clean_chinese_not_flagged():
+    assert rs.is_mojibake("2025年中国新能源汽车销量大幅增长，渗透率超过百分之五十，"
+                          "纯电和插混都在上升，燃油车市场份额持续下降。" * 5) is False
+
+
+def test_is_mojibake_clean_english_not_flagged():
+    assert rs.is_mojibake("Solid state batteries are entering commercial production "
+                          "in 2025 with rising energy density and falling costs. " * 5) is False
+
+
+def test_is_mojibake_short_text_safe():
+    assert rs.is_mojibake("短") is False
+    assert rs.is_mojibake("") is False

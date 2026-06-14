@@ -128,6 +128,41 @@ def is_ai_generated(text: str) -> bool:
     return bool(_AI_DISCLAIMER_RE.search(text[:4000]))
 
 
+# 中文最常用字(覆盖真实中文文本的大头);乱码(锛鐢绗...)里几乎不出现。
+_COMMON_CJK = set(
+    "的一是不了在人有我他这中大来上国个到说们为子和你地出道也时"
+    "年得就那要下以生会自着去之过家学对可她里后小么心多天而能好"
+)
+
+
+def is_mojibake(text: str) -> bool:
+    """正文是否解码乱码(编码声明错→trafilatura 抽出 mojibake)→ 不可引据。
+
+    覆盖三类常见乱码(codex 评审抓到 [^11] 整段乱码):
+      1. U+FFFD 替换字符成片(GBK 字节当 UTF-8 解)。
+      2. Latin-1 补充区垃圾成片(UTF-8 字节当 latin1 解,出 Ã Â à 串)。
+      3. CJK-as-GBK 乱码(UTF-8 当 GBK 解,出 锛鐢绗): 文本以 CJK 为主却几乎
+         没有常用字 → 判乱码。
+    纯英文/正常中文/短文本均不误杀。"""
+    if not text:
+        return False
+    s = text[:3000]
+    n = len(s)
+    if n < 30:
+        return False
+    if s.count("�") / n > 0.02:
+        return True
+    latin1 = sum(1 for c in s if " " <= c <= "ÿ")
+    if latin1 / n > 0.15:
+        return True
+    cjk = [c for c in s if "一" <= c <= "鿿"]
+    if len(cjk) >= n * 0.3:  # 以 CJK 为主 → 应是中文
+        common = sum(1 for c in cjk if c in _COMMON_CJK)
+        if common / len(cjk) < 0.02:  # 常用字占比极低 → 乱码
+            return True
+    return False
+
+
 def score_authority(url: str) -> float:
     """0-10 domain authority."""
     hostname = (urlparse(url).hostname or "").lower()
@@ -229,5 +264,5 @@ __all__ = [
     "TIER_1", "TIER_2", "TIER_3", "SELF_MEDIA",
     "get_domain", "is_platform_blog", "score_authority", "score_recency",
     "composite_score", "diversity_report", "infer_topic_velocity",
-    "is_ai_generated",
+    "is_ai_generated", "is_mojibake",
 ]
