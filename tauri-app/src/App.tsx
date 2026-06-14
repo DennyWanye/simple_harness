@@ -48,6 +48,8 @@ import {
   DEFAULT_PET_MODEL_ID,
   PET_MODEL_LS_KEY,
   resolvePetModel,
+  fetchPetModels,
+  type PetModel,
 } from "./petModels";
 import { DialogBar } from "./components/DialogBar";
 import { UserBubble } from "./components/UserBubble";
@@ -641,7 +643,22 @@ function App() {
   const [petModelId, setPetModelId] = useState<string>(
     () => localStorage.getItem(PET_MODEL_LS_KEY) ?? DEFAULT_PET_MODEL_ID,
   );
-  const petModel = resolvePetModel(petModelId);
+  // 动态可用模型清单（vite 插件实时扫 public/assets/live2d/ 生成的
+  // /assets/live2d/models.json）。初始用内置 fallback，挂载后 fetch 真实
+  // 清单覆盖 → 下拉列出所有放进去的模型（加/删模型刷新即生效）。
+  const [availableModels, setAvailableModels] = useState<PetModel[]>(
+    () => [...PET_MODELS],
+  );
+  useEffect(() => {
+    let alive = true;
+    void fetchPetModels().then((models) => {
+      if (alive) setAvailableModels(models);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const petModel = resolvePetModel(availableModels, petModelId);
   const handlePetModelChange = (id: string): void => {
     setPetModelId(id);
     try {
@@ -2069,7 +2086,7 @@ function App() {
         secret={secret}
         onConfigChanged={() => setRouteKind(null)}
         relayAdapter={relayAdapter}
-        petModels={PET_MODELS}
+        petModels={availableModels}
         currentPetModelId={petModelId}
         onPetModelChange={handlePetModelChange}
       />

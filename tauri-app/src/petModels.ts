@@ -39,7 +39,37 @@ export const DEFAULT_PET_MODEL_ID = "estella";
 /** localStorage key — 记住用户上次选的形象。 */
 export const PET_MODEL_LS_KEY = "deskpet_pet_model_id";
 
-/** 按 id 找模型；找不到回退第一个（清单非空）。 */
-export function resolvePetModel(id: string | null | undefined): PetModel {
-  return PET_MODELS.find((m) => m.id === id) ?? PET_MODELS[0];
+/** 按 id 在给定清单里找模型；找不到回退第一个（清单非空）。 */
+export function resolvePetModel(
+  models: readonly PetModel[],
+  id: string | null | undefined,
+): PetModel {
+  return models.find((m) => m.id === id) ?? models[0] ?? PET_MODELS[0];
+}
+
+/**
+ * 动态获取可用模型清单 —— fetch vite 插件实时扫出的 manifest
+ * (/assets/live2d/models.json)。失败/空时回退内置 PET_MODELS。
+ * 这样设置面板「桌宠形象」下拉会列出 public/assets/live2d/ 下**所有**
+ * 含 .model3.json 的模型目录，加/删模型刷新即生效。
+ */
+export async function fetchPetModels(): Promise<PetModel[]> {
+  try {
+    const res = await fetch("/assets/live2d/models.json", { cache: "no-store" });
+    if (!res.ok) return [...PET_MODELS];
+    const data: unknown = await res.json();
+    if (Array.isArray(data)) {
+      const valid = data.filter(
+        (m): m is PetModel =>
+          !!m &&
+          typeof (m as PetModel).id === "string" &&
+          typeof (m as PetModel).name === "string" &&
+          typeof (m as PetModel).modelPath === "string",
+      );
+      if (valid.length > 0) return valid;
+    }
+    return [...PET_MODELS];
+  } catch {
+    return [...PET_MODELS];
+  }
 }
