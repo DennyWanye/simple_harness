@@ -95,7 +95,8 @@ deskpet/
 │   └── src-tauri/    # Rust 原生层 (窗口透明、麦克风权限)
 ├── docs/superpowers/plans/  # 设计文档 (OpenSpec plans)
 ├── config.toml       # 全局配置
-└── plans/            # 历史规划文档 (docx)
+└── plans/            # 功能规划 / PRD / 路线图（见 plans/index.md 总索引）
+    └── index.md      # 📑 所有规划工作项的一页式导航
 ```
 
 ---
@@ -409,6 +410,11 @@ Schema 版本从 v9 升级到 v10。
 
 项目的设计文档、调研报告、内测就绪材料的速查表。代码改动遵循
 spec-first：3+ 文件的改动先有 plan/spec，再有实现。
+
+> 📑 **规划总索引**: [`plans/index.md`](./plans/index.md) —
+> 所有功能规划 / PRD / 路线图（`plans/<日期-主题>/`）的一页式导航，含一句话说明
+> 与状态（✅ 已落地 / 🟡 进行中 / 📋 规划）。**新建 plan 文件夹后请在此索引登记一行。**
+> 功能落地状态以 [`STATUS/status.md`](./STATUS/status.md) 为准。
 
 > 🧪 **手工测试用例索引**: [`testcase/index.md`](./testcase/index.md) —
 > 登记所有需人工一步步执行（带预期结果）的 testcase；每份用例写清测试范围、

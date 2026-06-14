@@ -627,6 +627,24 @@ def _make_str_llm_call(provider, *, max_tokens: int = 512):
 try:
     from deskpet.tools import research_tools as _research_tools
     _research_tools.set_live_llm_call(_make_str_llm_call(local_llm, max_tokens=4096))
+
+    # LLM 重排桥: 用【廉价模型】(默认 gpt-4.1-mini,中转站有)做 research 召回后的
+    # cross-encoder 式精排 —— 免下载本地 bge-reranker、免占本地内存,复用 relay。
+    # 同 base_url + keychain key,只换 model。[research].reranker_model 可覆盖。
+    try:
+        _rerank_model = str(
+            (config.raw.get("research") or {}).get("reranker_model", "gpt-4.1-mini")
+        )
+        _rerank_provider = OpenAICompatibleProvider(
+            base_url=config.llm.local.base_url,
+            api_key=_resolved_api_key,
+            model=_rerank_model,
+        )
+        _research_tools.set_rerank_llm_call(
+            _make_str_llm_call(_rerank_provider, max_tokens=1024)
+        )
+    except Exception as _exc2:  # noqa: BLE001 — 未注入则 research 退化用主 llm 重排
+        log.debug("research rerank wiring skipped: %s", _exc2)
 except Exception as _exc:  # noqa: BLE001 — research 仍可回退 config 重建
     log.debug("research live-llm wiring skipped: %s", _exc)
 

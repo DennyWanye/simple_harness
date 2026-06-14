@@ -61,6 +61,123 @@ def set_semantic_scorer(fn) -> None:
     _SEMANTIC_SCORER = fn
 
 
+# Optional LLM-as-reranker (默认精排手段)。main.py 注入一个【廉价模型】
+# (如 gpt-4.1-mini) 的 (prompt:str)->str 调用,research 召回后用它对候选段落做
+# cross-encoder 式精排 —— 复用中转站 relay,免下载本地 bge-reranker 模型/免占本地
+# 内存。未注入 → research_run 跳过精排(不回退主 llm,省 token)。模式由
+# [research].reranker 配置门控: "llm"(默认) / "local"(本地 bge-reranker,
+# Phase-future) / "off"。
+_RERANK_LLM_CALL: Optional[_LLMCall] = None
+
+
+def set_rerank_llm_call(fn: Optional[_LLMCall]) -> None:
+    """Wire a cheap-model rerank LLM into deep-research (called from main.py)."""
+    global _RERANK_LLM_CALL
+    _RERANK_LLM_CALL = fn
+
+
+def _rerank_mode() -> str:
+    """``[research].reranker`` ∈ {llm(默认), local, off}。
+
+    "local"(本地 bge-reranker)是 plan 文档里的 Phase-future 可选档,尚未实现 →
+    当前退化为 "llm"(中转站重排),保证开关存在、行为安全。"""
+    try:
+        import config as _cfg  # type: ignore[import-not-found]
+        v = str((_cfg.config.raw.get("research") or {}).get("reranker", "llm")).lower()
+    except Exception:  # noqa: BLE001 — 配置不可用(独立脚本/测试)→ 默认 llm
+        v = "llm"
+    if v == "off":
+        return "off"
+    return "llm"  # llm / local(暂)→ 都走 llm 重排
+
+
+_RERANK_PROMPT = """\
+You are reranking candidate source passages by how well each one actually
+ANSWERS the research topic — judge true relevance AND whether the passage
+carries first-hand / authoritative evidence (official / primary / academic
+beats self-media reposts). Source-tier is given as a hint.
+
+TOPIC: {topic}
+
+CANDIDATES (id | source-tier | title | head):
+{candidates}
+
+Output ONLY a JSON array scoring EVERY id 0-10 for relevance-to-topic, e.g.
+[{{"id": 1, "score": 8}}, {{"id": 2, "score": 3}}]. No prose, no fences.
+
+JSON:"""
+
+
+def _parse_rerank_scores(raw: str) -> dict[int, float]:
+    """Parse the rerank LLM's ``[{"id":n,"score":s}]`` → ``{id: score}``.
+    Defensive against drift; returns {} on any failure."""
+    if not raw:
+        return {}
+    lb, rb = raw.find("["), raw.rfind("]")
+    if not (0 <= lb < rb):
+        return {}
+    try:
+        arr = json.loads(raw[lb:rb + 1])
+    except json.JSONDecodeError:
+        return {}
+    out: dict[int, float] = {}
+    if isinstance(arr, list):
+        for it in arr:
+            if isinstance(it, dict) and "id" in it and "score" in it:
+                try:
+                    out[int(it["id"])] = float(it["score"])
+                except (ValueError, TypeError):
+                    continue
+    return out
+
+
+async def _llm_rerank(
+    topic: str,
+    passages: list["Passage"],
+    rerank_call: _LLMCall,
+    errors: list[str],
+    *,
+    velocity: str,
+) -> None:
+    """Cross-encoder-style精排 via a cheap relay model: score each candidate
+    0-10 for relevance, set it as the relevance dim, recompute composite.
+    Best-effort — any failure leaves existing scores untouched (graceful)."""
+    if not passages:
+        return
+    # 用【列表位置 1..N】作候选 id —— 此处 citation.n 还是 0(重编号在 rerank
+    # 之后),不能用 c.n。
+    lines: list[str] = []
+    for idx, p in enumerate(passages, start=1):
+        c = p.citation
+        head = (p.text[:200].replace("\n", " ")).strip()
+        lines.append(f"{idx} | {_tier_label(c.authority)} | {c.title[:80]} | {head}")
+    try:
+        raw = await rerank_call(
+            _RERANK_PROMPT.format(topic=topic, candidates="\n".join(lines))
+        )
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"rerank_llm: {exc}")
+        return
+    scores = _parse_rerank_scores(raw)
+    if not scores:
+        errors.append("rerank_parse_empty")
+        return
+    for idx, p in enumerate(passages, start=1):
+        s = scores.get(idx)
+        if s is None:
+            continue
+        rel = max(0.0, min(10.0, float(s)))
+        d = p.dims or {}
+        d["relevance"] = rel
+        p.dims = d
+        p.score = research_scoring.composite_score(
+            authority=float(d.get("authority", 3.0)),
+            recency=float(d.get("recency", 3.0)),
+            relevance=rel, depth=float(d.get("depth", 0.0)),
+            topic_velocity=velocity,
+        )
+
+
 async def _maybe_await(value):
     """Await ``value`` if it's awaitable, else return as-is (lets the
     injected semantic scorer be either sync or async)."""
@@ -757,6 +874,19 @@ async def research_run(
                 )
 
     passages.sort(key=lambda p: -p.score)
+
+    # ---- 4.7 LLM rerank (默认精排;免下载本地 cross-encoder) -----------
+    # 召回+打分后用廉价中转站模型(gpt-4.1-mini)做 cross-encoder 式精排,把
+    # "真回答问题且权威"的源顶进 top-K。候选池限 2×上限以控 token;off 可关。
+    # 仅当 rerank 桥已注入(main.py 默认注入 gpt-4.1-mini)且未关时触发;未注入则
+    # 跳过(不回退主 llm,省一次 gpt-5.5 调用 + 避免无谓双调用)。
+    rerank_used = "off"
+    if _rerank_mode() != "off" and passages and _RERANK_LLM_CALL is not None:
+        pool = passages[: max(max_total_passages * 2, 24)]
+        await _llm_rerank(topic, pool, _RERANK_LLM_CALL, errors, velocity=velocity)
+        passages.sort(key=lambda p: -p.score)  # 用 rerank 后的分重排
+        rerank_used = "llm"
+
     passages = passages[:max_total_passages]
     # Re-number citations 1..N in score order
     for i, p in enumerate(passages, start=1):
@@ -840,6 +970,7 @@ async def research_run(
         "source_types": div["source_types"],
         "diversity_ok": div["passes"],
         "rounds": rounds,
+        "reranker": rerank_used,
     }
     return ResearchReport(
         topic=topic,

@@ -858,3 +858,76 @@ async def test_research_run_prunes_unused_citations() -> None:
     assert report.citations[0].n == 1
     # 附录里不出现废条目
     assert "[^2]:" not in report.report_md
+
+
+def test_parse_rerank_scores():
+    assert r._parse_rerank_scores('[{"id":1,"score":8},{"id":2,"score":3}]') == {1: 8.0, 2: 3.0}
+    assert r._parse_rerank_scores('前言 [{"id":3,"score":9.5}] 后语') == {3: 9.5}
+    assert r._parse_rerank_scores("not json") == {}
+    assert r._parse_rerank_scores("") == {}
+
+
+@pytest.mark.asyncio
+async def test_research_run_llm_rerank_reorders(monkeypatch):
+    """注入 rerank 桥(廉价模型 stub)→ 把低权威但被 rerank 判高分的源顶上来;
+    coverage.reranker == 'llm'。"""
+    plan = json.dumps(["q1?"])
+    synth = "# T\n## TL;DR\n\nA [^1].\n\nB [^2]."
+    llm = FakeLLM([plan, synth])  # 主 llm 只管 plan+synth(rerank 走独立桥)
+    search = make_search({"q1?": [
+        {"url": "https://random-xyz.net/topical", "title": "Topical", "snippet": ""},
+        {"url": "https://arxiv.org/offtopic", "title": "Offtopic", "snippet": ""},
+    ]})
+
+    async def _extract(url: str):
+        return {"ok": True, "url": url, "title": url.rsplit("/", 1)[-1],
+                "text": "content about the subject here. " * 40, "fetched_at": time.time()}
+
+    # rerank stub: 给 random-xyz(低权威)打高分,arxiv 打低分 → 应反转排序
+    async def _rerank(prompt: str) -> str:
+        # 解析出 candidate id(按出现顺序),给第一个 url(random)高分
+        import re as _re
+        ids = [int(x) for x in _re.findall(r"^(\d+) \|", prompt, _re.MULTILINE)]
+        out = []
+        for i in ids:
+            # random-xyz 的段落标题是 topical → 在 prompt 里;简单按 id 给分
+            out.append({"id": i, "score": 9 if i == _topical_id else 1})
+        return json.dumps(out)
+
+    # 先跑一次确定哪个 id 是 random-xyz —— 改用更稳的判定:给所有 id 中含'topical'
+    async def _rerank2(prompt: str) -> str:
+        import re as _re
+        out = []
+        for line in prompt.splitlines():
+            m = _re.match(r"^(\d+) \| .* \| (.*?) \|", line)
+            if m:
+                cid = int(m.group(1)); title = m.group(2)
+                out.append({"id": cid, "score": 9 if "topical" in title.lower() else 1})
+        return json.dumps(out)
+
+    monkeypatch.setattr(r, "_RERANK_LLM_CALL", _rerank2)
+    report = await research_run("topic", llm_call=llm, search=search, extract=_extract)
+    assert report.coverage["reranker"] == "llm"
+    assert len(report.citations) == 2
+    # rerank 把 topical(random-xyz)顶到 #1,尽管它域名权威更低
+    assert report.citations[0].url == "https://random-xyz.net/topical"
+
+
+@pytest.mark.asyncio
+async def test_research_run_rerank_skipped_when_unwired(monkeypatch):
+    """未注入 rerank 桥 → 跳过精排,coverage.reranker == 'off',主 llm 只被
+    调用 plan+synth(不被 rerank 多消耗一次)。"""
+    # 显式置 None: 别的测试 import main.py 可能把全局 _RERANK_LLM_CALL 设过(污染)。
+    monkeypatch.setattr(r, "_RERANK_LLM_CALL", None)
+    plan = json.dumps(["q1?"])
+    synth = "# T\n## TL;DR\n\nClaim [^1]."
+    llm = FakeLLM([plan, synth])  # 恰好 2 次;若 rerank 误触发会 IndexError
+    search = make_search({"q1?": [{"url": "https://arxiv.org/x", "title": "X", "snippet": ""}]})
+
+    async def _extract(url: str):
+        return {"ok": True, "url": url, "title": "X",
+                "text": "content content here. " * 40, "fetched_at": time.time()}
+
+    report = await research_run("topic", llm_call=llm, search=search, extract=_extract)
+    assert report.coverage["reranker"] == "off"
+    assert len(llm.calls) == 2
