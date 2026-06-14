@@ -76,6 +76,27 @@ def set_rerank_llm_call(fn: Optional[_LLMCall]) -> None:
     _RERANK_LLM_CALL = fn
 
 
+def _is_loopback_url(base_url: str) -> bool:
+    """True 当 base_url 的 host 是本地回环(localhost / 127.0.0.0/8 / ::1)。
+
+    用 hostname 解析 + ipaddress.is_loopback,避免裸字符串匹配漏 ::1/127.0.0.2/
+    大小写,也不误伤含 'localhost' 子串的远端域名。main.py 据此决定是否注入 rerank
+    桥(本地 ollama 通常没有 gpt-4.1-mini)。"""
+    import ipaddress
+    try:
+        host = (urllib.parse.urlparse(base_url).hostname or "").strip().lower()
+    except (ValueError, TypeError):
+        return False
+    if not host:
+        return False
+    if host in ("localhost", "localhost."):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 def _rerank_mode() -> str:
     """``[research].reranker`` ∈ {llm(默认), local, off}。
 
@@ -177,10 +198,11 @@ async def _llm_rerank(
         errors.append(f"rerank_llm: {exc}")
         return False
     scores = _parse_rerank_scores(raw)
-    # 只保留 1..n 的合法 id(丢超界/重复已在 parse 去重);覆盖率过低(<半数)视为
-    # 模型没认真打分 → 整次 no-op,不污染排序。
+    # 只保留 1..n 的合法 id(丢超界;重复已在 parse 去重);覆盖率过低视为模型没
+    # 认真打分 → 整次 no-op。小候选集(≤3)要求全量覆盖,大集合 ceil(n/2)。
     scores = {i: s for i, s in scores.items() if 1 <= i <= n}
-    if len(scores) < max(1, n // 2):
+    need = n if n <= 3 else (n + 1) // 2
+    if len(scores) < need:
         errors.append(f"rerank_low_coverage:{len(scores)}/{n}")
         return False
     for idx, p in enumerate(passages, start=1):

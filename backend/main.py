@@ -635,7 +635,7 @@ try:
     # 会每次研究都失败白调,故 localhost 端点不注入(research 自动跳过精排)。
     try:
         _r_base = str(config.llm.local.base_url or "")
-        if _r_base and "localhost" not in _r_base and "127.0.0.1" not in _r_base:
+        if _r_base and not _research_tools._is_loopback_url(_r_base):
             _rerank_model = str(
                 (config.raw.get("research") or {}).get("reranker_model", "gpt-4.1-mini")
             )

@@ -994,3 +994,46 @@ def test_rerank_mode_config(monkeypatch):
     _set("local");    assert r._rerank_mode() == "llm"   # 暂退化
     _set("garbage");  assert r._rerank_mode() == "llm"   # 非法 → 保守 llm
     _set("");         assert r._rerank_mode() == "llm"
+
+
+def test_is_loopback_url():
+    """localhost 守卫: 解析 hostname + ipaddress,覆盖 ::1/127网段/大小写,
+    不误伤含 localhost 子串的远端域名。"""
+    assert r._is_loopback_url("http://localhost:11434") is True
+    assert r._is_loopback_url("http://127.0.0.1:8000/v1") is True
+    assert r._is_loopback_url("http://127.0.0.2:8000") is True   # 127/8 整段
+    assert r._is_loopback_url("http://[::1]:8000/v1") is True
+    assert r._is_loopback_url("http://LOCALHOST:1234") is True   # 大小写
+    assert r._is_loopback_url("https://chinzy.com/v1") is False  # 远端 relay
+    assert r._is_loopback_url("https://my-localhost-cdn.com/v1") is False  # 不误伤
+    assert r._is_loopback_url("") is False
+
+
+def test_parse_rerank_scores_dedup_and_types():
+    # 重复 id → 后者覆盖;非法项跳过
+    assert r._parse_rerank_scores('[{"id":1,"score":5},{"id":1,"score":8}]') == {1: 8.0}
+    assert r._parse_rerank_scores('[{"id":2,"score":"x"},{"id":3,"score":7}]') == {3: 7.0}
+
+
+@pytest.mark.asyncio
+async def test_research_run_rerank_timeout_marks_failed(monkeypatch):
+    """rerank 调用超时 → wait_for 触发,标 llm_failed + rerank_timeout,报告照常。"""
+    monkeypatch.setattr(r, "_RERANK_TIMEOUT", 0.05)
+    plan = json.dumps(["q1?"])
+    synth = "# T\n## TL;DR\n\nA [^1]."
+    llm = FakeLLM([plan, synth])
+    search = make_search({"q1?": [{"url": "https://arxiv.org/a", "title": "A", "snippet": ""}]})
+
+    async def _extract(url: str):
+        return {"ok": True, "url": url, "title": "A",
+                "text": "content here. " * 40, "fetched_at": time.time()}
+
+    async def _rerank_slow(prompt: str) -> str:
+        await asyncio.sleep(1.0)  # > _RERANK_TIMEOUT
+        return "[]"
+
+    monkeypatch.setattr(r, "_RERANK_LLM_CALL", _rerank_slow)
+    report = await research_run("topic", llm_call=llm, search=search, extract=_extract)
+    assert report.coverage["reranker"] == "llm_failed"
+    assert any("rerank_timeout" in e for e in report.errors)
+    assert len(report.citations) == 1
