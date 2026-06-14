@@ -631,22 +631,26 @@ try:
     # LLM 重排桥: 用【廉价模型】(默认 gpt-4.1-mini,中转站有)做 research 召回后的
     # cross-encoder 式精排 —— 免下载本地 bge-reranker、免占本地内存,复用 relay。
     # 同 base_url + keychain key,只换 model。[research].reranker_model 可覆盖。
+    # 仅在云端/relay base_url 下注入: 本地 ollama(localhost) 通常没有 gpt-4.1-mini,
+    # 会每次研究都失败白调,故 localhost 端点不注入(research 自动跳过精排)。
     try:
-        _rerank_model = str(
-            (config.raw.get("research") or {}).get("reranker_model", "gpt-4.1-mini")
-        )
-        _rerank_provider = OpenAICompatibleProvider(
-            base_url=config.llm.local.base_url,
-            api_key=_resolved_api_key,
-            model=_rerank_model,
-        )
-        _research_tools.set_rerank_llm_call(
-            _make_str_llm_call(_rerank_provider, max_tokens=1024)
-        )
-    except Exception as _exc2:  # noqa: BLE001 — 未注入则 research 退化用主 llm 重排
-        log.debug("research rerank wiring skipped: %s", _exc2)
+        _r_base = str(config.llm.local.base_url or "")
+        if _r_base and "localhost" not in _r_base and "127.0.0.1" not in _r_base:
+            _rerank_model = str(
+                (config.raw.get("research") or {}).get("reranker_model", "gpt-4.1-mini")
+            )
+            _rerank_provider = OpenAICompatibleProvider(
+                base_url=_r_base,
+                api_key=_resolved_api_key,
+                model=_rerank_model,
+            )
+            _research_tools.set_rerank_llm_call(
+                _make_str_llm_call(_rerank_provider, max_tokens=2048)
+            )
+    except Exception as _exc2:  # noqa: BLE001 — 未注入则 research 跳过精排
+        logger.debug("research_rerank_wiring_skipped", error=str(_exc2))
 except Exception as _exc:  # noqa: BLE001 — research 仍可回退 config 重建
-    log.debug("research live-llm wiring skipped: %s", _exc)
+    logger.debug("research_live_llm_wiring_skipped", error=str(_exc))
 
 
 # ─── superpowers Layer 1A/1B 决策2：plan-confirm 硬门 ────────────────
@@ -1063,7 +1067,7 @@ try:
 
         _rt_sem.set_semantic_scorer(_research_semantic)
     except Exception as _exc:  # noqa: BLE001 — research degrades to keyword
-        log.debug("research semantic wiring skipped: %s", _exc)
+        logger.debug("research_semantic_wiring_skipped", error=str(_exc))
 
     # P4-S15: SessionDB at <data>/state.db, side-by-side with the legacy
     # memory.db. on_message_written hook will be wired to VectorWorker.enqueue

@@ -931,3 +931,66 @@ async def test_research_run_rerank_skipped_when_unwired(monkeypatch):
     report = await research_run("topic", llm_call=llm, search=search, extract=_extract)
     assert report.coverage["reranker"] == "off"
     assert len(llm.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_research_run_rerank_failure_marks_llm_failed(monkeypatch):
+    """rerank 桥在但调用抛错 → coverage.reranker=='llm_failed'(不误标 llm),
+    保留原打分照常出报告。"""
+    plan = json.dumps(["q1?"])
+    synth = "# T\n## TL;DR\n\nA [^1]."
+    llm = FakeLLM([plan, synth])
+    search = make_search({"q1?": [{"url": "https://arxiv.org/a", "title": "A", "snippet": ""}]})
+
+    async def _extract(url: str):
+        return {"ok": True, "url": url, "title": "A",
+                "text": "content here. " * 40, "fetched_at": time.time()}
+
+    async def _rerank_boom(prompt: str) -> str:
+        raise RuntimeError("relay 500")
+
+    monkeypatch.setattr(r, "_RERANK_LLM_CALL", _rerank_boom)
+    report = await research_run("topic", llm_call=llm, search=search, extract=_extract)
+    assert report.coverage["reranker"] == "llm_failed"
+    assert any("rerank_llm" in e for e in report.errors)
+    assert len(report.citations) == 1  # 报告照常
+
+
+@pytest.mark.asyncio
+async def test_research_run_rerank_low_coverage_noop(monkeypatch):
+    """rerank 只给极少 id 打分(低覆盖)→ 整次 no-op,标 llm_failed。"""
+    plan = json.dumps(["q1?", "q2?"])
+    synth = "# T\n## TL;DR\n\nA [^1]. B [^2]."
+    llm = FakeLLM([plan, synth])
+    search = make_search({
+        "q1?": [{"url": "https://arxiv.org/a", "title": "A", "snippet": ""}],
+        "q2?": [{"url": "https://nature.com/b", "title": "B", "snippet": ""}],
+    })
+
+    async def _extract(url: str):
+        return {"ok": True, "url": url, "title": url.rsplit("/", 1)[-1],
+                "text": "content here. " * 40, "fetched_at": time.time()}
+
+    async def _rerank_partial(prompt: str) -> str:
+        return json.dumps([])  # 一个都没打 → 0 覆盖 → no-op
+
+    monkeypatch.setattr(r, "_RERANK_LLM_CALL", _rerank_partial)
+    report = await research_run("topic", llm_call=llm, search=search, extract=_extract)
+    assert report.coverage["reranker"] == "llm_failed"
+    assert any("rerank_low_coverage" in e for e in report.errors)
+
+
+def test_rerank_mode_config(monkeypatch):
+    """_rerank_mode: off/llm/local/非法/空白 的健壮解析。"""
+    import types
+
+    def _set(val):
+        fake = types.SimpleNamespace(config=types.SimpleNamespace(raw={"research": {"reranker": val}}))
+        monkeypatch.setitem(__import__("sys").modules, "config", fake)
+
+    _set("off");      assert r._rerank_mode() == "off"
+    _set(" OFF ");    assert r._rerank_mode() == "off"   # strip + 大小写
+    _set("llm");      assert r._rerank_mode() == "llm"
+    _set("local");    assert r._rerank_mode() == "llm"   # 暂退化
+    _set("garbage");  assert r._rerank_mode() == "llm"   # 非法 → 保守 llm
+    _set("");         assert r._rerank_mode() == "llm"
