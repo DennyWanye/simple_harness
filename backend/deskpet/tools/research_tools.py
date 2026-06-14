@@ -532,16 +532,67 @@ def _clean_ddg_url(url: str) -> str:
     return url
 
 
+# ── P1-3 二级抓取: Jina Reader (r.jina.ai) ─────────────────────────────
+# trafilatura 只解析静态 HTML;现代 JS/SPA 站正文是浏览器跑 JS 才出来的,
+# 原始 HTML 是空壳 → trafilatura 抽不到(真机实测:预制菜行业站多如此,导致来源
+# 数偏少)。r.jina.ai 在它服务器上用真浏览器跑完 JS、返回干净 Markdown,作为
+# trafilatura 抽空/过短时的二级兜底。免 key(限速档);best-effort;可配置关。
+_JINA_READER_BASE = "https://r.jina.ai/"
+_JINA_MIN_CHARS = 300   # trafilatura 正文短于此 → 疑似 JS 空壳,试 Jina
+_JINA_TIMEOUT = 22.0
+
+
+def _jina_enabled() -> bool:
+    """``[research].jina_reader`` (默认 True)。外部免费服务,best-effort。"""
+    try:
+        import config as _cfg  # type: ignore[import-not-found]
+        return bool((_cfg.config.raw.get("research") or {}).get("jina_reader", True))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _parse_jina(body: str) -> dict[str, str]:
+    """r.jina.ai 返回形如 ``Title: ...\\nURL Source: ...\\nMarkdown Content:\\n<正文>``;
+    也可能直接是 Markdown。解析出 {title, text}。"""
+    title = ""
+    text = body or ""
+    m = re.search(r"^Title:\s*(.+)$", body, re.MULTILINE)
+    if m:
+        title = m.group(1).strip()
+    mc = body.find("Markdown Content:")
+    if mc != -1:
+        text = body[mc + len("Markdown Content:"):].strip()
+    return {"title": title, "text": text.strip()}
+
+
+async def _jina_extract(url: str, *, client: httpx.AsyncClient) -> Optional[dict[str, str]]:
+    """二级抓取: 调 r.jina.ai 拿 JS 渲染后 Markdown。best-effort,失败/空→None。"""
+    try:
+        resp = await client.get(
+            _JINA_READER_BASE + url,
+            timeout=_JINA_TIMEOUT,
+            headers={"Accept": "text/plain", "X-Return-Format": "markdown"},
+        )
+        resp.raise_for_status()
+        body = resp.text
+    except Exception as exc:  # noqa: BLE001
+        log.debug("jina reader failed for %s: %s", url, exc)
+        return None
+    if not body or len(body) < _JINA_MIN_CHARS:
+        return None
+    return _parse_jina(body)
+
+
 async def default_extract(
     url: str,
     *,
     client: Optional[httpx.AsyncClient] = None,
 ) -> dict[str, Any]:
-    """Fetch + extract main article text via trafilatura.
+    """Fetch + extract main article text via trafilatura, with a Jina Reader
+    二级兜底 for JS-rendered pages trafilatura can't read.
 
-    Returns ``{ok, text, title, url, fetched_at}`` or
-    ``{ok: False, error, url}`` on failure. trafilatura's main-content
-    extraction is roughly Newspaper3k-level but lighter.
+    Returns ``{ok, text, title, url, fetched_at, extractor}`` or
+    ``{ok: False, error, url}`` on failure.
     """
     owns_client = client is None
     cli = client or httpx.AsyncClient(
@@ -573,6 +624,15 @@ async def default_extract(
             m = re.search(r"<title>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
             if m:
                 title = re.sub(r"\s+", " ", m.group(1)).strip()
+        # P1-3 二级兜底: trafilatura 抽空/过短(疑似 JS 空壳)→ 试 Jina Reader,
+        # 取更长的正文(JS 站才能救回,静态站 trafilatura 已够)。
+        extractor = "trafilatura"
+        if len(text) < _JINA_MIN_CHARS and _jina_enabled():
+            jina = await _jina_extract(url, client=cli)
+            if jina and len(jina.get("text", "")) > len(text):
+                text = jina["text"]
+                title = title or jina.get("title") or ""
+                extractor = "jina"
         if not text:
             return {"ok": False, "error": "no text extracted", "url": url}
         # 源质量过滤: AI 生成声明常在作者署名/页脚 boilerplate(如搜狐"作者声明:
@@ -582,6 +642,7 @@ async def default_extract(
             "ok": True, "url": url, "title": title or url,
             "text": text, "fetched_at": time.time(),
             "ai_generated": research_scoring.is_ai_generated(html),
+            "extractor": extractor,
         }
     finally:
         if owns_client:

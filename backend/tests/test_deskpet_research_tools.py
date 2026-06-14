@@ -1062,3 +1062,76 @@ async def test_research_run_drops_mojibake_source() -> None:
     urls = [c.url for c in report.citations]
     assert "https://bad-encoding.cn/x" not in urls
     assert any("dropped_mojibake" in e for e in report.errors)
+
+
+# --- P1-3 Jina Reader 二级抓取 ---
+
+def test_parse_jina():
+    body = "Title: 我的标题\nURL Source: http://x\nMarkdown Content:\n这是正文内容。"
+    out = r._parse_jina(body)
+    assert out["title"] == "我的标题"
+    assert out["text"] == "这是正文内容。"
+    # 无结构头的纯 markdown
+    out2 = r._parse_jina("# 纯Markdown标题\n一些内容在这里。")
+    assert "纯Markdown标题" in out2["text"]
+
+
+@pytest.mark.asyncio
+async def test_default_extract_jina_fallback():
+    """trafilatura 在 JS 空壳上抽空 → 降级 Jina Reader 救回正文,extractor='jina'。"""
+    class _Resp:
+        def __init__(self, text):
+            self.text = text
+            self.url = "x"
+
+        def raise_for_status(self):
+            return None
+
+    class _FakeClient:
+        async def get(self, url, **kw):
+            if url.startswith("https://r.jina.ai/"):
+                return _Resp("Title: 真实标题\nURL Source: x\nMarkdown Content:\n"
+                             + ("这是 JS 渲染后救回的真实正文内容。" * 40))
+            # JS 空壳: trafilatura 抽不到正文
+            return _Resp("<html><body><div id='app'></div><script>render()</script></body></html>")
+
+        async def aclose(self):
+            return None
+
+    out = await r.default_extract("https://spa-site.com/article", client=_FakeClient())
+    assert out["ok"] is True
+    assert out["extractor"] == "jina"
+    assert "救回的真实正文" in out["text"]
+
+
+@pytest.mark.asyncio
+async def test_default_extract_trafilatura_enough_no_jina():
+    """trafilatura 抽到够长正文 → 不调 Jina(extractor='trafilatura')。"""
+    jina_called = {"n": 0}
+
+    class _Resp:
+        def __init__(self, text):
+            self.text = text
+            self.url = "x"
+
+        def raise_for_status(self):
+            return None
+
+    article_html = ("<html><head><title>好文</title></head><body><article><p>"
+                    + ("这是一篇内容充实的静态文章正文。" * 60)
+                    + "</p></article></body></html>")
+
+    class _FakeClient:
+        async def get(self, url, **kw):
+            if url.startswith("https://r.jina.ai/"):
+                jina_called["n"] += 1
+                return _Resp("Title: x\nMarkdown Content:\nshould not be used")
+            return _Resp(article_html)
+
+        async def aclose(self):
+            return None
+
+    out = await r.default_extract("https://static-site.com/a", client=_FakeClient())
+    assert out["ok"] is True
+    assert out["extractor"] == "trafilatura"
+    assert jina_called["n"] == 0  # 没调 Jina
