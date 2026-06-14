@@ -41,6 +41,11 @@ requires_script: false
 
 ## 2. 调 `research_run` 工具
 
+> ⚠️ **必须用 `research_run` 一次完成深度调研，禁止自己用 `web_search` +
+> `web_fetch` 手动拼。** `research_run` 内部已经做了多源搜索 + 分层权威打分 +
+> 反思迭代补证 + 引用自检 + 报告落盘——手动编排会跳过打分/校验/落盘，浪费
+> 工具调用且质量更差。只有"快速查一个事实/网址"才用 `web_search`。
+
 ```
 research_run(topic=<用户主题>, depth=light|standard|deep)
 ```
