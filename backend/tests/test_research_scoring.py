@@ -90,3 +90,26 @@ def test_velocity_slow_for_history():
 
 def test_velocity_default_medium():
     assert rs.infer_topic_velocity("城市垃圾分类政策") == "medium"
+
+
+# --- 源质量过滤 (codex 评审驱动): 自媒体降权 + AI 生成内容检测 ---
+
+def test_self_media_below_unknown_baseline():
+    # 自媒体/转帖农场 2.0 < unknown 3.0 < TIER_3 5.5
+    assert rs.score_authority("https://www.sohu.com/a/123_456") == 2.0
+    assert rs.score_authority("https://baijiahao.baidu.com/s?id=999") == 2.0
+    assert rs.score_authority("https://www.163.com/dy/article/X.html") == 2.0
+    # 真权威源仍稳压自媒体
+    assert rs.score_authority("https://www.gov.cn/x") > rs.score_authority("https://sohu.com/a")
+    assert rs.score_authority("https://arxiv.org/abs/1") > rs.score_authority("https://163.com/dy/x")
+
+
+def test_ai_generated_disclaimer_detected():
+    assert rs.is_ai_generated("本文内容包含人工智能生成内容，请甄别。正文……")
+    assert rs.is_ai_generated("免责声明：本文部分内容由AI生成。")
+    assert rs.is_ai_generated("This article is AI-generated. Body...")
+
+
+def test_ai_generated_clean_text_not_flagged():
+    assert not rs.is_ai_generated("钠离子电池2025年产量达到3.45GWh，同比接近翻倍。")
+    assert not rs.is_ai_generated("")

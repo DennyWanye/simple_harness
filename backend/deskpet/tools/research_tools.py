@@ -185,6 +185,19 @@ Rules:
 - Same language as the passages.
 - No bullet lists — flowing prose. The reader is an intelligent adult.
 
+EVIDENCE-QUALITY RULES (apply strictly):
+- 官方源优先: 政策/标准/法规/企业产能与订单/财报数字这类硬事实,优先引用官方
+  与一手来源(政府/监管/标准机构网站、上市公司公告、企业官方发布、同行评审论文)。
+  当某条关键事实**只有**资讯站/自媒体/转帖(如 sohu/百家号/网易号/搜狐号)支撑时,
+  必须在句中明示「据{{媒体}}报道,未经一手核实」,不得当作既定事实陈述。
+- 数据口径必须分清: 涉及"产量/出货量/规划产能/已建成产能/装机量/预测值"等数字时,
+  **明确标注是哪一种口径 + 年份 + 来源**;不要把"规划产能"写成"量产能力",不要把
+  "预测"写成"现状"。多个来源给出口径不同/数值冲突的数字时,**并列呈现并点明差异**,
+  不要静默取一个或平均。
+- 区分电芯/电池包/系统级指标(如能量密度 Wh/kg 要注明是电芯还是系统、是否量产批次)。
+- 证据强弱要与措辞匹配: 弱证据(单一二手源)用"据报道/有资讯称",强证据(官方/论文/
+  多源一致)才用确定语气。
+
 PASSAGES:
 {passages}
 
@@ -642,6 +655,10 @@ async def research_run(
         text = (payload.get("text") or "").strip()
         if len(text) < min_passage_chars:
             return None
+        # 源质量过滤: 页面自带"包含 AI 生成内容"声明 → 直接剔除(不可作正式引据)。
+        if research_scoring.is_ai_generated(text):
+            errors.append(f"dropped_ai_generated:{url}")
+            return None
         snippet = text[:min_passage_chars].replace("\n", " ").strip()
         authority = research_scoring.score_authority(url)
         recency = research_scoring.score_recency(
@@ -916,13 +933,28 @@ def _is_cjk(s: str) -> bool:
     return any("一" <= ch <= "鿿" for ch in s)
 
 
+def _tier_label(authority: float) -> str:
+    """权威分 → 给 LLM 看的来源层级标签(驱动"官方源优先"规则)。"""
+    if authority >= 8.5:
+        return "官方/学术/一手"
+    if authority >= 7.0:
+        return "一线媒体/权威行业"
+    if authority >= 4.5:
+        return "行业博客/社区"
+    if authority <= 2.5:
+        return "自媒体/转帖(弱·需一手核实)"
+    return "来源不明(弱)"
+
+
 def _format_passages_for_llm(passages: list[Passage]) -> str:
-    """Render passages in a stable format the LLM can cite from."""
+    """Render passages in a stable format the LLM can cite from. 每条带
+    来源层级标签,让 synth 的"官方源优先/弱证据须标注"规则可执行。"""
     chunks: list[str] = []
     for p in passages:
         c = p.citation
+        tier = _tier_label(c.authority)
         chunks.append(
-            f"({c.n}) [{c.title}] {c.url}\n{p.text[:1800]}\n"
+            f"({c.n}) [来源层级: {tier}] [{c.title}] {c.url}\n{p.text[:1800]}\n"
         )
     return "\n---\n".join(chunks)
 

@@ -781,3 +781,30 @@ async def test_research_run_semantic_scorer_reranks(monkeypatch) -> None:
     # both kept; semantic ran without error and report is well-formed
     assert len(report.citations) == 2
     assert report.coverage["n_sources"] == 2
+
+
+@pytest.mark.asyncio
+async def test_research_run_drops_ai_generated_source() -> None:
+    """自带'包含AI生成内容'声明的页面 → 被剔除,不进引用池。"""
+    plan = json.dumps(["q1?"])
+    synth = "# T\n## TL;DR\n\nClaim [^1]."
+    llm = FakeLLM([plan, synth])
+    search = make_search({"q1?": [
+        {"url": "https://www.sohu.com/a/ai", "title": "AI repost", "snippet": ""},
+        {"url": "https://arxiv.org/clean", "title": "Clean", "snippet": ""},
+    ]})
+
+    async def _extract(url: str):
+        if "sohu" in url:
+            return {"ok": True, "url": url, "title": "AI repost",
+                    "text": "本文内容包含人工智能生成内容。" + "钠电池产量数据。" * 40,
+                    "fetched_at": time.time()}
+        return {"ok": True, "url": url, "title": "Clean",
+                "text": "real research content about the topic. " * 40,
+                "fetched_at": time.time()}
+
+    report = await research_run("topic", llm_call=llm, search=search, extract=_extract)
+    urls = [c.url for c in report.citations]
+    assert "https://www.sohu.com/a/ai" not in urls  # AI 生成源被剔除
+    assert "https://arxiv.org/clean" in urls
+    assert any("dropped_ai_generated" in e for e in report.errors)
