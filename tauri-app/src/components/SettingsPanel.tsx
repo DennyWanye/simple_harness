@@ -176,10 +176,11 @@ export function SettingsPanel({
               width: "100%",
               padding: "8px 10px",
               borderRadius: 8,
-              background: "rgba(255,255,255,0.06)",
-              color: "#e9e4ff",
+              background: "rgba(255,255,255,0.92)",
+              color: "#111",
               border: "1px solid rgba(255,255,255,0.18)",
               fontSize: 13,
+              fontWeight: 600,
               cursor: "pointer",
             }}
           >
