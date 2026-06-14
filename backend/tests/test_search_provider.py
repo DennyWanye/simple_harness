@@ -76,7 +76,8 @@ def test_search_empty_query_no_network():
     assert r["count"] == 0 and r["results"] == [] and "error" in r
 
 
-def test_search_caps_max_results_value(monkeypatch):
+def test_search_ddg_engine_region(monkeypatch):
+    """显式只用 duckduckgo: 中文 query → kl=cn-zh,解析出结果,engine 标注。"""
     captured = {}
 
     class _FakeResp:
@@ -95,12 +96,112 @@ def test_search_caps_max_results_value(monkeypatch):
         def __exit__(self, *a):
             return False
 
-        def post(self, url, data=None):
-            captured["kl"] = data.get("kl")
+        def request(self, method, url, **kw):
+            captured["method"] = method
+            captured["data"] = kw.get("data")
             return _FakeResp()
 
     monkeypatch.setattr(sp.httpx, "Client", _FakeClient)
-    r = sp.search("中文测试查询", max_results=99)
-    # region inferred Chinese; results parsed from fake html
-    assert captured["kl"] == "cn-zh"
+    r = sp.search("中文测试查询", max_results=99, engines=["duckduckgo"])
+    assert captured["method"] == "POST"
+    assert captured["data"]["kl"] == "cn-zh"
+    assert r["engine"] == "duckduckgo"
     assert r["count"] == 2
+
+
+# --- 多引擎: bing/baidu 解析 + 兼容性降级队列 ---
+
+_BING_HTML = """
+<ol id="b_results">
+  <li class="b_algo"><h2><a href="https://example.com/a">必应标题A</a></h2>
+    <div class="b_caption"><p>必应摘要A</p></div></li>
+  <li class="b_algo"><h2><a href="https://example.org/b">Bing Title B</a></h2>
+    <div class="b_caption"><p>Bing snippet B</p></div></li>
+</ol>
+"""
+
+_BAIDU_HTML = """
+<div class="result c-container"><h3 class="t"><a href="http://www.baidu.com/link?url=ABC">百度标题A</a></h3>
+  <div class="c-abstract">百度摘要A</div></div>
+<div class="result c-container"><h3 class="t"><a href="http://www.baidu.com/link?url=DEF">百度标题B</a></h3></div>
+"""
+
+
+def test_parse_bing_html():
+    out = sp.parse_bing_html(_BING_HTML, max_results=5)
+    assert len(out) == 2
+    assert out[0]["url"] == "https://example.com/a"
+    assert out[0]["title"] == "必应标题A"
+    assert "必应摘要A" in out[0]["snippet"]
+
+
+def test_parse_baidu_html():
+    out = sp.parse_baidu_html(_BAIDU_HTML, max_results=5)
+    assert len(out) == 2
+    assert out[0]["title"] == "百度标题A"
+    assert out[0]["url"].startswith("http")
+
+
+def test_engine_queue_default():
+    assert sp._engine_queue() == ["bing", "duckduckgo"]  # 无配置 → 默认
+
+
+def test_engine_queue_config(monkeypatch):
+    import types
+    fake = types.SimpleNamespace(config=types.SimpleNamespace(
+        raw={"research": {"search_engines": ["baidu", "BING", "garbage"]}}))
+    monkeypatch.setitem(__import__("sys").modules, "config", fake)
+    assert sp._engine_queue() == ["baidu", "bing"]  # 清洗+小写+去非法,保序
+
+
+def test_search_fallback_queue(monkeypatch):
+    """降级队列: bing 失败/空 → 降级到 duckduckgo 出结果,engine 标 duckduckgo。"""
+    calls = []
+
+    class _FakeResp:
+        def __init__(self, text):
+            self.text = text
+
+        def raise_for_status(self):
+            return None
+
+    class _FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def request(self, method, url, **kw):
+            calls.append(url)
+            if "bing.com" in url:
+                raise sp.httpx.HTTPError("bing blocked")  # 模拟必应被墙
+            return _FakeResp(_SAMPLE_HTML)  # ddg 出结果
+
+    monkeypatch.setattr(sp.httpx, "Client", _FakeClient)
+    r = sp.search("测试", max_results=5)  # 默认 [bing, duckduckgo]
+    assert r["engine"] == "duckduckgo"   # 降级成功
+    assert r["count"] == 2
+    assert any("bing.com" in u for u in calls)  # 确实先试了 bing
+
+
+def test_search_all_engines_fail(monkeypatch):
+    class _FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def request(self, method, url, **kw):
+            raise sp.httpx.HTTPError("all blocked")
+
+    monkeypatch.setattr(sp.httpx, "Client", _FakeClient)
+    r = sp.search("测试", max_results=5)
+    assert r["count"] == 0 and r["results"] == [] and "error" in r
