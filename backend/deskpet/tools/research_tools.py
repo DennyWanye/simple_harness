@@ -414,9 +414,13 @@ async def default_extract(
                 title = re.sub(r"\s+", " ", m.group(1)).strip()
         if not text:
             return {"ok": False, "error": "no text extracted", "url": url}
+        # 源质量过滤: AI 生成声明常在作者署名/页脚 boilerplate(如搜狐"作者声明:
+        # 本文包含人工智能生成内容"),trafilatura 抽正文时会把它剥掉 → 必须扫
+        # 【原始 HTML】才抓得到(codex 评审实测:只扫抽取后正文漏了 sohu 的 AI 页)。
         return {
             "ok": True, "url": url, "title": title or url,
             "text": text, "fetched_at": time.time(),
+            "ai_generated": research_scoring.is_ai_generated(html),
         }
     finally:
         if owns_client:
@@ -656,7 +660,9 @@ async def research_run(
         if len(text) < min_passage_chars:
             return None
         # 源质量过滤: 页面自带"包含 AI 生成内容"声明 → 直接剔除(不可作正式引据)。
-        if research_scoring.is_ai_generated(text):
+        # 双层: payload["ai_generated"](extract 阶段扫原始 HTML,抓 boilerplate 里
+        # 的声明)+ 抽取后正文兜底(自定义 extract_fn 没带该 flag 时)。
+        if payload.get("ai_generated") or research_scoring.is_ai_generated(text):
             errors.append(f"dropped_ai_generated:{url}")
             return None
         snippet = text[:min_passage_chars].replace("\n", " ").strip()
@@ -803,6 +809,13 @@ async def research_run(
             f"\n\n> ⚠️ 自检发现 {len(cc['missing'])} 个引用编号在引用列表里不存在: "
             f"{cc['missing']}。请用户在使用本报告前核对来源。\n"
         )
+
+    # 废引用清理(codex 评审: 附录里残留 [^5][^9]... 正文没引用的条目拉低可信度)。
+    # 只保留正文真正用到的来源;正文一个 [^n] 都没有(极少见)才兜底保留全部。
+    used_refs = set(find_footnote_refs(report_md))
+    used_citations = [c for c in citations if c.n in used_refs]
+    if used_citations:
+        citations = used_citations
 
     # Always append the citation list as Markdown footnotes
     report_md = report_md.rstrip() + "\n\n---\n\n## 引用\n\n" + "\n".join(

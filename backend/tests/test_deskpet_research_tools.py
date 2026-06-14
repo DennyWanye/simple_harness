@@ -808,3 +808,53 @@ async def test_research_run_drops_ai_generated_source() -> None:
     assert "https://www.sohu.com/a/ai" not in urls  # AI 生成源被剔除
     assert "https://arxiv.org/clean" in urls
     assert any("dropped_ai_generated" in e for e in report.errors)
+
+
+@pytest.mark.asyncio
+async def test_research_run_drops_ai_flag_from_extract() -> None:
+    """extract 阶段扫原始 HTML 置 payload['ai_generated']=True(正文已被
+    trafilatura 剥掉声明,看不出来)→ 仍被剔除。"""
+    plan = json.dumps(["q1?"])
+    synth = "# T\n## TL;DR\n\nClaim [^1]."
+    llm = FakeLLM([plan, synth])
+    search = make_search({"q1?": [
+        {"url": "https://www.sohu.com/a/clean-looking", "title": "S", "snippet": ""},
+        {"url": "https://arxiv.org/ok", "title": "A", "snippet": ""},
+    ]})
+
+    async def _extract(url: str):
+        # sohu 正文干净(声明被剥掉),但 extract 扫原始 HTML 标了 ai_generated
+        if "sohu" in url:
+            return {"ok": True, "url": url, "title": "S", "ai_generated": True,
+                    "text": "钠电池产量数据很扎实。" * 40, "fetched_at": time.time()}
+        return {"ok": True, "url": url, "title": "A",
+                "text": "clean research content here. " * 40, "fetched_at": time.time()}
+
+    report = await research_run("topic", llm_call=llm, search=search, extract=_extract)
+    urls = [c.url for c in report.citations]
+    assert "https://www.sohu.com/a/clean-looking" not in urls
+    assert any("dropped_ai_generated" in e for e in report.errors)
+
+
+@pytest.mark.asyncio
+async def test_research_run_prunes_unused_citations() -> None:
+    """正文只引用了 [^1],来源池里有 2 条 → 附录只列 [^1],废条目 [^2] 清掉。"""
+    plan = json.dumps(["q1?", "q2?"])
+    synth = "# T\n## TL;DR\n\n只引用第一个来源 [^1]，不引用第二个。"
+    llm = FakeLLM([plan, synth])
+    search = make_search({
+        "q1?": [{"url": "https://arxiv.org/a", "title": "A", "snippet": ""}],
+        "q2?": [{"url": "https://nature.com/b", "title": "B", "snippet": ""}],
+    })
+
+    async def _extract(url: str):
+        return {"ok": True, "url": url, "title": url.rsplit("/", 1)[-1],
+                "text": "research content about the topic here. " * 40,
+                "fetched_at": time.time()}
+
+    report = await research_run("topic", llm_call=llm, search=search, extract=_extract)
+    # 只保留正文引用的 [^1]
+    assert len(report.citations) == 1
+    assert report.citations[0].n == 1
+    # 附录里不出现废条目
+    assert "[^2]:" not in report.report_md
