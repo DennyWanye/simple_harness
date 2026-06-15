@@ -97,6 +97,40 @@ def _is_loopback_url(base_url: str) -> bool:
         return False
 
 
+# P1-2 site: 定向官方域 —— 按子问题意图把搜索锁定到一手权威域,提升"找到一手源"
+# 命中率(命中域名 gov.cn/cninfo/arxiv 天然 TIER_1,后续打分/精排自然favor)。
+# 顺序即优先级,命中第一条即用。keywords 用小写(中文不受 lower 影响,英文转小写匹配)。
+_SITE_RULES: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("上市公司", "公告", "财报", "年报", "季报", "半年报", "业绩预告",
+      "招股", "招股书", "问询函", "巨潮"), "site:cninfo.com.cn"),
+    (("政策", "法规", "规定", "通知", "方案", "规划", "监管", "办法",
+      "意见", "部委", "工信部", "发改委", "国务院", "条例", "国标",
+      "国家标准", "技术规范", "标准化"), "site:gov.cn"),
+    (("论文", "arxiv", "preprint", "学术研究", "综述论文", "算法原理",
+      "sota", "paper"), "site:arxiv.org"),
+)
+
+
+def _site_directive_for(text: str) -> Optional[str]:
+    """子问题命中政策/企业/学术意图 → 返回对应 site: 定向(如 site:gov.cn);
+    都不命中 → None(只走普通搜索)。"""
+    t = (text or "").lower()
+    for kws, site in _SITE_RULES:
+        if any(k in t for k in kws):
+            return site
+    return None
+
+
+def _site_directed_enabled() -> bool:
+    """``[research].site_directed`` (默认 True)。纯 prompt/query 改动,零成本,
+    可关。"""
+    try:
+        import config as _cfg  # type: ignore[import-not-found]
+        return bool((_cfg.config.raw.get("research") or {}).get("site_directed", True))
+    except Exception:  # noqa: BLE001
+        return True
+
+
 def _rerank_mode() -> str:
     """``[research].reranker`` ∈ {llm(默认), local, off}。
 
@@ -825,21 +859,30 @@ async def research_run(
         errors.append("plan_fallback: using topic verbatim")
 
     # ---- 2. search --------------------------------------------------
+    # 每个子问题: 普通搜 + (命中政策/企业/学术意图时)site: 定向官方域加一搜,
+    # 让一手权威源(gov.cn/cninfo/arxiv)进候选池。site_directed 可关。
+    site_on = _site_directed_enabled()
+    search_specs: list[tuple[str, str]] = []  # (实际搜索串, 归属子问题)
+    for q in sub_questions:
+        search_specs.append((q, q))
+        site = _site_directive_for(q) if site_on else None
+        if site:
+            search_specs.append((f"{q} {site}", q))
     search_tasks = [
-        search_fn(q, max_results=max_urls_per_query) for q in sub_questions
+        search_fn(sq, max_results=max_urls_per_query) for sq, _ in search_specs
     ]
     raw_results = await _gather_safe(search_tasks, label="search")
-    # Dedup by URL, preserving the question index for keyword scoring.
+    # Dedup by URL, mapping back to the OWNING sub-question for keyword scoring.
     url_to_question: dict[str, str] = {}
-    for q, hits in zip(sub_questions, raw_results):
+    for (sq, owner), hits in zip(search_specs, raw_results):
         if isinstance(hits, BaseException):
-            errors.append(f"search:{q!r}: {hits}")
+            errors.append(f"search:{sq!r}: {hits}")
             continue
         for h in hits or []:
             u = h.get("url")
             if not u or u in url_to_question:
                 continue
-            url_to_question[u] = q
+            url_to_question[u] = owner
 
     if not url_to_question:
         errors.append("no search results")
@@ -855,9 +898,10 @@ async def research_run(
         )
 
     # ---- 3. fetch + extract ----------------------------------------
-    # Cap how many URLs we actually fetch so we don't burn 5 minutes.
+    # Cap how many URLs we actually fetch so we don't burn 5 minutes. 用
+    # len(search_specs)(含 site: 定向搜)作上限,确保一手权威源不被普通结果挤掉。
     candidate_urls = list(url_to_question.keys())[
-        : max_urls_per_query * len(sub_questions)
+        : max_urls_per_query * len(search_specs)
     ]
     extract_tasks = [extract_fn(u) for u in candidate_urls]
     extracted = await _gather_safe(extract_tasks, label="extract")

@@ -1165,3 +1165,61 @@ async def test_default_extract_jina_default_off():
     out = await r.default_extract("https://spa.com/x", client=_FakeClient())
     assert jina_hit["n"] == 0          # 默认关 → 没调 Jina
     assert out["ok"] is False          # trafilatura 抽空 + Jina 关 → 失败
+
+
+# --- P1-2 site: 定向官方域 ---
+
+def test_site_directive_for():
+    assert r._site_directive_for("某上市公司2025年财报营收") == "site:cninfo.com.cn"
+    assert r._site_directive_for("新能源汽车产业政策和监管办法") == "site:gov.cn"
+    assert r._site_directive_for("钠离子电池国家标准技术规范") == "site:gov.cn"
+    assert r._site_directive_for("transformer 算法原理 论文 arxiv") == "site:arxiv.org"
+    assert r._site_directive_for("今天天气怎么样") is None  # 不命中 → 不定向
+
+
+@pytest.mark.asyncio
+async def test_research_run_site_directed_search(monkeypatch):
+    """政策类子问题 → 额外发一条 site:gov.cn 定向搜;命中的 gov.cn 源进引用池。"""
+    monkeypatch.setattr(r, "_RERANK_LLM_CALL", None)  # 隔离 rerank 污染
+    plan = json.dumps(["新能源汽车补贴政策有哪些?"])
+    synth = "# T\n## TL;DR\n\n据官方 [^1]。"
+    llm = FakeLLM([plan, synth])
+    searched = []
+
+    async def _search(q, *, max_results=5):
+        searched.append(q)
+        if "site:gov.cn" in q:
+            return [{"url": "https://www.gov.cn/zhengce/x", "title": "补贴政策", "snippet": ""}]
+        return [{"url": "https://auto-news.com/y", "title": "新闻", "snippet": ""}]
+
+    async def _extract(url):
+        return {"ok": True, "url": url, "title": url.rsplit("/", 1)[-1],
+                "text": "新能源汽车补贴政策内容详细说明在这里。" * 30, "fetched_at": time.time()}
+
+    report = await research_run("topic", llm_call=llm, search=_search, extract=_extract)
+    # 确实发了 site:gov.cn 定向搜
+    assert any("site:gov.cn" in q for q in searched)
+    # gov.cn 官方源进了引用池
+    assert any("gov.cn" in c.url for c in report.citations)
+
+
+@pytest.mark.asyncio
+async def test_research_run_site_directed_off(monkeypatch):
+    """site_directed 关 → 不发 site: 定向搜。"""
+    monkeypatch.setattr(r, "_RERANK_LLM_CALL", None)
+    monkeypatch.setattr(r, "_site_directed_enabled", lambda: False)
+    plan = json.dumps(["新能源汽车政策监管办法?"])
+    synth = "# T\n## TL;DR\n\nA [^1]."
+    llm = FakeLLM([plan, synth])
+    searched = []
+
+    async def _search(q, *, max_results=5):
+        searched.append(q)
+        return [{"url": "https://x.com/a", "title": "A", "snippet": ""}]
+
+    async def _extract(url):
+        return {"ok": True, "url": url, "title": "A",
+                "text": "content here. " * 40, "fetched_at": time.time()}
+
+    await research_run("topic", llm_call=llm, search=_search, extract=_extract)
+    assert not any("site:" in q for q in searched)  # 关了 → 无 site: 定向
