@@ -1620,7 +1620,11 @@ def _register_research_tool() -> None:
             _RESEARCH_SCHEMA,
             _handle_research_run,
             permission_category="read_file",
-            timeout_seconds=180.0,
+            # deep 档要跑 多引擎降级搜索 + 二级抓取 + 反思补证轮 + LLM 精排,
+            # 慢网区(代理/必应跳转 cn.bing)单轮就逼近 180s。提到 300s(对齐
+            # code/os 重工具),给 deep 档完整跑完的余量,避免半途 tool_timeout
+            # 丢掉已抓到的一手源(真机 UI 测 TC-P2-03 deep 档 180s 超时实证)。
+            timeout_seconds=300.0,
         )
     except Exception as exc:  # noqa: BLE001
         log.debug("research tool registration skipped: %s", exc)
