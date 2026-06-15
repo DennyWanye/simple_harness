@@ -144,10 +144,13 @@
 
 | 用例 | 被测点 | windows-mcp | 判定 |
 |---|---|---|---|
-| TC-P2-01 | multi-query/HyDE 扩展提召回 | 是（UI + 日志查询数） | ⬜ |
-| TC-P2-02 | 巨潮资讯直连（财报） | 是（UI + 报告引用 cninfo） | ⬜ |
-| TC-P2-03 | 国标系统直连（GB/T） | 是（UI + 报告引用 openstd） | ⬜ |
-| TC-P2-04 | 直连意图路由不误触 | 是（UI + 报告引用无直连域名） | ⬜ |
-| TC-P2-05 | direct_sources 开关 opt-out | 部分（配置改 + UI 复跑 + 引用核对） | ⬜ |
+| TC-P2-01 | multi-query/HyDE 扩展提召回 | 是（UI + 日志查询数） | ✅ PASS |
+| TC-P2-02 | 巨潮资讯直连（财报） | 是（UI + 报告引用 cninfo） | ✅ PASS |
+| TC-P2-03 | 国标系统直连（GB/T） | 是（UI + 报告引用 openstd） | ✅ PASS |
+| TC-P2-04 | 直连意图路由不误触 | 是（UI + 报告引用无直连域名） | ✅ PASS |
+| TC-P2-05 | direct_sources 开关 opt-out | 部分（配置改 + UI 复跑 + 引用核对） | ✅ PASS |
 
+> **执行结果**: 2026-06-15 windows-mcp 真机 UI 测 **5/5 PASS**，详见
+> [plans/manual-results-2026-06-15-phase2/RESULTS.md](../../plans/manual-results-2026-06-15-phase2/RESULTS.md)。
+> 真测中发现并修复 5 个 bug（cninfo/openstd 关键词清洗、180s→300s 超时、`[research]` 配置开关失效）。
 > 执行截图/日志证据存 `plans/manual-results-2026-06-15-phase2/`，本文件只放用例定义。
