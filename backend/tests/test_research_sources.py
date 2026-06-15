@@ -129,6 +129,81 @@ async def test_cninfo_search_empty_keyword():
     assert await rs.cninfo_search("") == []
 
 
+# --- SEC EDGAR(美股一手源)---
+
+def test_extract_us_ticker():
+    assert rs._extract_us_ticker("特斯拉2024年年度报告的营收和净利润") == "TSLA"
+    assert rs._extract_us_ticker("苹果公司财报") == "AAPL"
+    assert rs._extract_us_ticker("分析 NVDA 的年报") == "NVDA"   # 显式 ticker
+    assert rs._extract_us_ticker("宁德时代2024年财报") == ""      # A股,无美股别名
+    assert rs._extract_us_ticker("今天天气如何") == ""
+
+
+def test_low_quality_filter():
+    from deskpet.tools import research_scoring as rsc
+    assert rsc.is_low_quality("https://www.hanyuguoxue.com/cidian/ci-xxx") is True
+    assert rsc.is_low_quality("https://zidian.qianp.com/zi/特") is True
+    assert rsc.is_low_quality("http://static.cninfo.com.cn/x.PDF") is False
+    assert rsc.is_low_quality("https://openstd.samr.gov.cn/x") is False
+
+
+@pytest.mark.asyncio
+async def test_edgar_search_builds_passage(monkeypatch):
+    """mock SEC: ticker→CIK + companyconcept → 结构化财务 passage。"""
+    rs._EDGAR_TICKERS_CACHE = None   # 清进程缓存
+    rs._EDGAR_TITLES_CACHE = []
+
+    class _Resp:
+        def __init__(self, j, status=200):
+            self._j = j
+            self.status_code = status
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._j
+
+    def _concept_units(val):
+        return {"entityName": "Tesla, Inc.", "units": {"USD": [
+            {"form": "10-K", "fp": "FY", "fy": 2024, "end": "2024-12-31", "val": val},
+            {"form": "10-K", "fp": "FY", "fy": 2023, "end": "2023-12-31", "val": val - 1},
+        ]}}
+
+    class _FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def get(self, url, **kw):
+            if "company_tickers" in url:
+                return _Resp({"0": {"cik_str": 1318605, "ticker": "TSLA", "title": "Tesla, Inc."}})
+            if "NetIncomeLoss" in url:
+                return _Resp(_concept_units(7_091_000_000))
+            if "Revenues" in url or "RevenueFromContract" in url:
+                return _Resp(_concept_units(97_690_000_000))
+            if "Assets" in url or "StockholdersEquity" in url or "EarningsPerShare" in url:
+                return _Resp({}, status=404)
+            return _Resp({}, status=404)
+
+        async def aclose(self):
+            return None
+
+    out = await rs.edgar_search("特斯拉2024年营收和净利润", client=_FakeClient())
+    assert len(out) == 1
+    assert out[0]["source"] == "edgar"
+    assert "sec.gov" in out[0]["url"]
+    assert "营业收入" in out[0]["text"] and "97,690,000,000" in out[0]["text"]
+    assert "净利润" in out[0]["text"] and "7,091,000,000" in out[0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_edgar_search_unresolved_returns_empty():
+    rs._EDGAR_TICKERS_CACHE = {"TSLA": "0001318605"}   # 缓存已在,跳过网络
+    rs._EDGAR_TITLES_CACHE = []
+    # A股公司名,无美股 ticker → 解析不到 → []
+    assert await rs.edgar_search("宁德时代年报", client=object()) == []
+
+
 @pytest.mark.asyncio
 async def test_cninfo_search_network_fail(monkeypatch):
     class _FakeClient:

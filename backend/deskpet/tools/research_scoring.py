@@ -84,6 +84,21 @@ SELF_MEDIA = {
 
 GOV_EDU_SUFFIXES = (".gov", ".edu", ".gov.cn", ".edu.cn", ".ac.uk", ".ac.jp", ".ac.cn")
 
+# 字典/词义/单字百科类站点 —— 对**任何**实质研究都无引据价值,却常因主题词被拆成
+# 单字(如"特斯拉"被搜成"特")命中"X字的意思"页污染结果池(真机查特斯拉报告暴露:9 源里
+# 4 个是字典页)。命中即在 _passage_from 阶段直接剔除(与 ai_generated/mojibake 同级)。
+LOW_QUALITY = {
+    "hanyuguoxue.com", "hgcha.com", "qianp.com", "cidian.qianp.com",
+    "zidian.qianp.com", "zdic.net", "cidian.911cha.com", "tool.httpcn.com",
+    "chazidian.com", "zd9999.com", "guoxuedashi.net", "kxue.com",
+    "obsky.com", "5156edu.com",
+}
+
+
+def is_low_quality(url: str) -> bool:
+    """字典/词义站 → True(应剔除)。按可注册域匹配,覆盖其子域。"""
+    return get_domain(url) in LOW_QUALITY
+
 # AI 生成内容声明 —— 命中即视为不可作正式引据(codex 评审抓到 [^3] 明示"包含人工
 # 智能生成内容"却撑核心事实)。研究管线据此直接剔除该来源。
 _AI_DISCLAIMER_RE = re.compile(

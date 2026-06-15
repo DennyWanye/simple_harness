@@ -40,6 +40,14 @@ _CNINFO_TOPSEARCH = "http://www.cninfo.com.cn/new/information/topSearch/query"
 _CNINFO_STATIC = "http://static.cninfo.com.cn/"
 _OPENSTD_LIST = "https://openstd.samr.gov.cn/bzgk/gb/std_list"
 
+# SEC EDGAR(美股一手源)。美国站,中国大陆访问时快时慢 → 短超时 + best-effort,
+# 连不上返 [] 降级到普通搜索。SEC 要求 UA 带联系方式,否则 403。
+_EDGAR_TICKERS = "https://www.sec.gov/files/company_tickers.json"
+_EDGAR_CONCEPT = "https://data.sec.gov/api/xbrl/companyconcept/CIK{cik}/us-gaap/{concept}.json"
+_EDGAR_FILINGS = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={cik}&type=10-K"
+_EDGAR_UA = "DeskPet-Research/0.6 (contact: deskpet-research@deskpet.app)"
+_EDGAR_TIMEOUT = 10.0
+
 _PDF_MAX_PAGES = 12        # 年报常数百页;只抽前 N 页(摘要/要点/主要财务通常在前面)
 _PDF_MAX_CHARS = 18_000    # 单篇正文上限,控 token
 _PDF_SCAN_PAGES = 40       # 财务类查询找"主要会计数据"表时最多向后扫多少页
@@ -411,5 +419,187 @@ async def openstd_search(
             await cli.aclose()
 
 
+# ── SEC EDGAR(美股一手源,A股直连兜不住时的 fallback)──────────────────
+# 常见美股公司中文/别名 → ticker。覆盖中国用户最常问的那批;命不中再靠英文名
+# 在 company_tickers.json 的 title 里模糊匹配。
+_US_NAME_TICKER = {
+    "特斯拉": "TSLA", "tesla": "TSLA", "苹果": "AAPL", "apple": "AAPL",
+    "微软": "MSFT", "microsoft": "MSFT", "英伟达": "NVDA", "nvidia": "NVDA",
+    "谷歌": "GOOGL", "google": "GOOGL", "alphabet": "GOOGL",
+    "亚马逊": "AMZN", "amazon": "AMZN", "脸书": "META", "meta": "META",
+    "facebook": "META", "奈飞": "NFLX", "网飞": "NFLX", "netflix": "NFLX",
+    "英特尔": "INTC", "intel": "INTC", "高通": "QCOM", "美光": "MU",
+    "博通": "AVGO", "甲骨文": "ORCL", "oracle": "ORCL", "思科": "CSCO",
+    "可口可乐": "KO", "百事": "PEP", "星巴克": "SBUX", "麦当劳": "MCD",
+    "耐克": "NKE", "nike": "NKE", "迪士尼": "DIS", "disney": "DIS",
+    "波音": "BA", "boeing": "BA", "沃尔玛": "WMT", "walmart": "WMT",
+    "摩根大通": "JPM", "高盛": "GS", "伯克希尔": "BRK-B", "辉瑞": "PFE",
+    "强生": "JNJ", "埃克森美孚": "XOM", "雪佛龙": "CVX", "福特": "F",
+    "通用汽车": "GM", "超威": "AMD", "amd": "AMD", "派拉蒙": "PARA",
+    "优步": "UBER", "uber": "UBER", "爱彼迎": "ABNB", "airbnb": "ABNB",
+    "帕兰提尔": "PLTR", "palantir": "PLTR", "礼来": "LLY",
+}
+
+# 我们关心的 XBRL 概念(us-gaap) → 中文label。营收两种口径都试。
+_EDGAR_CONCEPTS = [
+    ("RevenueFromContractWithCustomerExcludingAssessedTax", "营业收入"),
+    ("Revenues", "营业收入"),
+    ("NetIncomeLoss", "净利润"),
+    ("Assets", "总资产"),
+    ("StockholdersEquity", "股东权益"),
+    ("EarningsPerShareDiluted", "稀释每股收益"),
+]
+
+_EDGAR_TICKERS_CACHE: Optional[dict[str, str]] = None   # ticker(大写) → CIK(10位)
+_EDGAR_TITLES_CACHE: list[tuple[str, str]] = []          # (title小写, CIK)
+
+
+def _extract_us_ticker(q: str) -> str:
+    """从子问题抽美股 ticker。命中中文/英文别名表优先;否则找显式大写 ticker。"""
+    t = (q or "").lower()
+    for name, tk in _US_NAME_TICKER.items():
+        if name.lower() in t:
+            return tk
+    # 显式写了 ticker(独立 2-5 大写字母,排除常见非 ticker 词)
+    for m in re.findall(r"\b([A-Z]{2,5})\b", q or ""):
+        if m not in ("GB", "USD", "CNY", "SEC", "GAAP", "IPO", "CEO", "ETF",
+                     "AI", "EV", "HK", "US", "FY", "TLDR", "PDF", "API"):
+            return m
+    return ""
+
+
+async def _edgar_load_tickers(cli: httpx.AsyncClient) -> None:
+    """拉一次 company_tickers.json 建 ticker→CIK + title→CIK 映射(进程缓存)。"""
+    global _EDGAR_TICKERS_CACHE, _EDGAR_TITLES_CACHE
+    if _EDGAR_TICKERS_CACHE is not None:
+        return
+    r = await cli.get(_EDGAR_TICKERS)
+    r.raise_for_status()
+    j = r.json()
+    rows = j.values() if isinstance(j, dict) else j
+    tk_map: dict[str, str] = {}
+    titles: list[tuple[str, str]] = []
+    for row in rows:
+        cik = str(row.get("cik_str", "")).zfill(10)
+        tk = str(row.get("ticker", "")).upper()
+        title = str(row.get("title", "")).lower()
+        if tk:
+            tk_map.setdefault(tk, cik)
+        if title:
+            titles.append((title, cik))
+    _EDGAR_TICKERS_CACHE = tk_map
+    _EDGAR_TITLES_CACHE = titles
+
+
+async def _edgar_resolve_cik(keyword: str, cli: httpx.AsyncClient) -> tuple[str, str]:
+    """(CIK, ticker)。解析不到返 ("","")。"""
+    tk = _extract_us_ticker(keyword)
+    await _edgar_load_tickers(cli)
+    cache = _EDGAR_TICKERS_CACHE or {}
+    if tk and tk in cache:
+        return cache[tk], tk
+    # 英文名在 title 里模糊匹配(取最短匹配,避免命中超长子公司名)
+    low = (keyword or "").lower()
+    best: tuple[str, str] = ("", "")
+    for title, cik in _EDGAR_TITLES_CACHE:
+        head = title.split(",")[0].split(" inc")[0].strip()
+        if len(head) >= 3 and head in low:
+            if not best[0] or len(head) > len(best[1]):
+                best = (cik, head)
+    return (best[0], tk or "") if best[0] else ("", "")
+
+
+def _edgar_recent_fys(units: list[dict[str, Any]], n: int = 3) -> list[dict[str, Any]]:
+    """从 concept 的 USD units 里取最近 n 个**不同财年**的年报(10-K, 全年 FY)值,
+    新→旧。返回多年是为了:① 用户问的具体年份(如 2024)一定在内,不被"最新年报"挤掉;
+    ② 顺带给同比趋势。"""
+    fy = [u for u in units
+          if u.get("form") in ("10-K", "10-K/A") and u.get("fp") == "FY"
+          and u.get("val") is not None]
+    fy.sort(key=lambda u: str(u.get("end", "")), reverse=True)
+    out: list[dict[str, Any]] = []
+    seen_years: set[str] = set()
+    for u in fy:
+        yr = str(u.get("fy") or str(u.get("end", ""))[:4])
+        if yr in seen_years:
+            continue
+        seen_years.add(yr)
+        out.append(u)
+        if len(out) >= n:
+            break
+    return out
+
+
+async def _edgar_fetch(keyword: str, cli: httpx.AsyncClient,
+                       max_results: int) -> list[dict[str, Any]]:
+    """单次尝试(给定 client)。解析不到/无数据返 []。异常向上抛(由 edgar_search 切换网络)。"""
+    cik, tk = await _edgar_resolve_cik(keyword, cli)
+    if not cik:
+        return []
+    company = ""
+    lines: list[str] = []
+    seen_labels: set[str] = set()
+    for concept, label in _EDGAR_CONCEPTS:
+        if label in seen_labels:
+            continue
+        try:
+            r = await cli.get(_EDGAR_CONCEPT.format(cik=cik, concept=concept))
+            if r.status_code != 200:
+                continue
+            j = r.json()
+            company = company or str(j.get("entityName") or "")
+            units = (j.get("units") or {}).get("USD") or []
+        except Exception as exc:  # noqa: BLE001
+            log.debug("edgar concept %s failed: %s", concept, exc)
+            continue
+        recent = _edgar_recent_fys(units, n=3)
+        if not recent:
+            continue
+        seen_labels.add(label)
+        vals = "; ".join(
+            f"FY{u.get('fy') or str(u.get('end',''))[:4]} {u['val']:,}" for u in recent
+        )
+        lines.append(f"- {label}（美元）: {vals}")
+    if not lines:
+        return []
+    title = f"{company or tk or keyword} SEC 10-K 主要财务数据"
+    text = (
+        f"{title}（来源：美国证券交易委员会 SEC EDGAR 官方 XBRL 披露，"
+        f"取自年报 Form 10-K，单位美元）：\n" + "\n".join(lines) +
+        "\n（数据来自 SEC 官方结构化披露，为一手权威来源。）"
+    )
+    return [{
+        "ok": True, "url": _EDGAR_FILINGS.format(cik=cik),
+        "title": title[:200], "text": text,
+        "fetched_at": time.time(), "source": "edgar",
+    }][:max_results]
+
+
+async def edgar_search(
+    keyword: str, *, max_results: int = 1,
+    client: Optional[httpx.AsyncClient] = None,
+) -> list[dict[str, Any]]:
+    """SEC EDGAR 美股一手财务直连 → 1 条结构化 passage(营收/净利润/总资产等,
+    取自 XBRL companyconcept,逐位官方数据)。best-effort:连不上/解析不到返 []
+    (降级到普通搜索)。SEC 是美国站,中国访问可能慢/不通 → **直连与系统代理双试**,
+    两者都不行就降级。UA 必须带联系方式否则 403。"""
+    if not (keyword or "").strip():
+        return []
+    if client is not None:                       # 测试注入: 单次,不切网络
+        return await _edgar_fetch(keyword, client, max_results)
+    headers = {"User-Agent": _EDGAR_UA, "Accept-Encoding": "gzip, deflate"}
+    # 直连优先(实测更快),失败再走系统代理(GFW 后用户靠代理)。
+    for trust_env in (False, True):
+        cli = httpx.AsyncClient(headers=headers, timeout=_EDGAR_TIMEOUT,
+                                follow_redirects=True, trust_env=trust_env)
+        try:
+            return await _edgar_fetch(keyword, cli, max_results)
+        except Exception as exc:  # noqa: BLE001 — ConnectError/403/超时 → 试下一种网络
+            log.debug("edgar attempt trust_env=%s failed: %s", trust_env, exc)
+        finally:
+            await cli.aclose()
+    return []
+
+
 __all__ = ["direct_source_for", "cninfo_search", "openstd_search",
-           "parse_openstd"]
+           "parse_openstd", "edgar_search"]

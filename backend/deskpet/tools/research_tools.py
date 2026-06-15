@@ -999,6 +999,10 @@ async def research_run(
             err = (payload or {}).get("error", "extract failed") if isinstance(payload, dict) else "unknown"
             errors.append(f"extract:{url}: {err}")
             return None
+        # 字典/词义站直接剔除(主题词被拆成单字时命中"X字的意思"页污染结果)。
+        if research_scoring.is_low_quality(url):
+            errors.append(f"dropped_low_quality:{url}")
+            return None
         text = (payload.get("text") or "").strip()
         if len(text) < min_passage_chars:
             return None
@@ -1041,8 +1045,9 @@ async def research_run(
         if p is not None:
             passages.append(p)
 
-    # ---- 4.4 Phase-2 中文一手源直连 (巨潮/国标) --------------------
+    # ---- 4.4 Phase-2 中文一手源直连 (巨潮/国标 + 美股 EDGAR fallback) ----
     # 子问题谈"上市公司/财报"→巨潮公告(PDF抽正文);谈"国标/标准"→国标系统。
+    # 财报类若巨潮空(美股/外企不在 A 股)→ 兜底 SEC EDGAR(美国站,连不上自动降级返空)。
     # 直连源专门构造 Passage(跳过长度门 —— 国标元数据短但权威),高新鲜度。
     if _direct_sources_enabled():
         from . import research_sources as _rs
@@ -1051,8 +1056,12 @@ async def research_run(
             if not src:
                 continue
             try:
-                items = (await _rs.cninfo_search(q, max_results=3) if src == "cninfo"
-                         else await _rs.openstd_search(q, max_results=3))
+                if src == "cninfo":
+                    items = await _rs.cninfo_search(q, max_results=3)
+                    if not items:   # A股没命中(美股/外企)→ EDGAR 兜底,best-effort
+                        items = await _rs.edgar_search(q, max_results=1)
+                else:
+                    items = await _rs.openstd_search(q, max_results=3)
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"direct:{src}:{q!r}: {exc}")
                 items = []
