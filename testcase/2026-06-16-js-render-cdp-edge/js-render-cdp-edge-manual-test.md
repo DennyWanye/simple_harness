@@ -356,21 +356,22 @@ POC 已验证有效的真实 JS 站（`plans/2026-06-16-crawl4ai-fetch-tier/00-P
 
 | 用例 | 被测点 | 关键配置 | windows-mcp | 日志锚点 | 判定 |
 |---|---|---|---|---|---|
-| TC-01 | Happy path：JS 空壳被渲染救回 | `js_render=true`, cdp-edge | 是（UI + 报告 + 日志） | `cdp_edge_render ok=True chars>300` | ☐ |
-| TC-02 | flag-off：同主题不触发、回落原行为 | `js_render=false` | 是 | **无** `cdp_edge_render` | ☐ |
-| TC-03 | 优雅降级·引擎缺失（webview 未实现） | `js_render=true`, engine=webview | 是 | 无 cdp_edge_render + `engine=webview 本期未实现` | ☐ |
-| TC-04 | 双闸不误触发（静态文字主题） | `js_render=true`, cdp-edge | 是 | 无/极少 `cdp_edge_render` | ☐ |
-| TC-04.1 | 边界·渲染 ok=True 但正文不更长 → 不替换（观察性，别误判 bug） | `js_render=true`, cdp-edge | 观察性（日志为主） | `cdp_edge_render ok=True chars≤原正文` → extractor 仍 trafilatura | ☐ |
-| TC-05 | 触发计数上限 ≤4 + 跨轮归零 | `js_render=true`, cdp-edge | 是（多空壳源主题） | `cdp_edge_render` 行数 ≤4 | ☐ |
-| TC-06 | 单页渲染超时降级 | `js_render_timeout=2` | 是 | `cdp_edge_render ok=False`（超时） | ☐ |
-| TC-07 | 去重：渲染命中后不走 jina | `js_render=true`+`jina_reader=true` | 是 | 命中源 extractor=cdp-edge，无 jina | ☐ |
-| TC-08 | 关桌宠重开后开关生效 | 关/开两态 + 重启 | 是 | 关态零渲染 / 开态有渲染 | ☐ |
-| TC-09 | deep 档（300s）叠加渲染不超时 | deep 主题, `js_render=true` | 是（wall-clock） | research_run 无 300s 超时 | ☐ |
-| TC-10 | 中文 JS 站能渲染（豆瓣类） | `js_render=true`, cdp-edge | 是 | `cdp_edge_render ok=True chars>1000` | ☐ |
-| TC-11 | ★招牌·渲染失败保活：失败后下个源秒复用同一 Edge（`cd15844` 唯一真机手段） | `js_render=true`, cdp-edge, `js_render_timeout=2` | 是（多空壳源 + ms 序列对比 + 进程数） | 同轮内 `ok=False` 之后的 `ok=True` `ms` 明显小（无冷启） | ☐ |
+| TC-01 | Happy path：JS 空壳被渲染救回 | `js_render=true`, cdp-edge | 是（UI + 报告 + 日志） | `cdp_edge_render ok=True chars>300` | ✅ PASS（4 站 90K-254K 字进报告） |
+| TC-02 | flag-off：同主题不触发、回落原行为 | `js_render=false` | 是 | **无** `cdp_edge_render` | ✅ PASS（0 渲染，报告正常） |
+| TC-03 | 优雅降级·引擎缺失（webview 未实现） | `js_render=true`, engine=webview | 是 | 无 cdp_edge_render | ✅ PASS（0 渲染+报告生成+无超时） |
+| TC-04 | 双闸不误触发（静态文字主题） | `js_render=true`, cdp-edge | 是 | 无/极少 `cdp_edge_render` | ✅ PASS（只渲真空壳 SPA，静态长文未误触发） |
+| TC-04.1 | 边界·渲染 ok=True 但正文不更长 → 不替换（观察性） | `js_render=true`, cdp-edge | 观察性 | extractor 仍 trafilatura | ✅（单测覆盖） |
+| TC-05 | 触发计数上限 ≤4 + 跨轮归零 | `js_render=true`, cdp-edge | 是 | `cdp_edge_render` 行数 ≤4 | ✅ PASS（TC-01 正好 4 次） |
+| TC-06 | 单页渲染超时降级 | `js_render_timeout=2` | 是 | `cdp_edge_render ok=False`（超时） | ✅ PASS（ok=False+报告正常+无挂死） |
+| TC-07 | 去重：渲染命中后不走 jina | `js_render=true`+`jina_reader=true` | 是 | 命中源无 jina | ✅ PASS（3 渲染命中，r.jina.ai 调用 0） |
+| TC-08 | 关桌宠重开后开关生效 | 关/开两态 + 重启 | 是 | 关态零渲染 / 开态有渲染 | ✅ PASS（开 4/关 0） |
+| TC-09 | deep 档（300s）叠加渲染不超时 | deep 主题, `js_render=true` | 是（wall-clock） | research_run 无 300s 超时 | ✅ PASS（deep 完整出报告，0 超时） |
+| TC-10 | 中文 JS 站能渲染（豆瓣类） | `js_render=true`, cdp-edge | 是 | `cdp_edge_render ok=True chars>1000` | ✅ PASS（douban 90232 字无乱码） |
+| TC-11 | ★招牌·渲染失败保活（`cd15844` 唯一真机手段） | `js_render=true`, cdp-edge, `timeout=2` | 是（进程数+ms） | 失败后 msedge 稳定不被杀 | ✅ PASS（ok=False 后 msedge 稳定 10 未归零） |
 
 > **用例计数**：共 **11 条主用例**（TC-01 ~ TC-11）+ **1 条观察性边界子项**（TC-04.1）= 12 条。
 >
-> **执行结果**: 待执行。执行后填判定 + 把截图/日志证据存
-> `plans/manual-results-2026-06-16-js-render/`（本文件只放用例定义）。
-> ⚠️ 真测前务必确认启动日志出现 `[backend_launch] Dev python=... backend_dir=<worktree>`（跑 worktree 代码，非冻结 exe）。
+> **执行结果**: **2026-06-16 windows-mcp 真机 11/11 PASS，0 bug**（TC-04.1 观察项由单测覆盖）。
+> 完整证据见 [plans/manual-results-2026-06-16-js-render/RESULTS.md](../../plans/manual-results-2026-06-16-js-render/RESULTS.md)
+> （日志锚点 `cdp_edge_render` + 报告引用核对 + msedge 进程数保活证据；`logs/` 存各 TC 日志）。
+> ⚠️ 真测确认启动日志 `[backend_launch] Dev python=... backend_dir=<worktree>`（跑 worktree 代码，非冻结 exe）。
