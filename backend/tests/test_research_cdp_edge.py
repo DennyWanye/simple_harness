@@ -55,6 +55,27 @@ async def test_cdp_edge_render_handles_launch_failure(monkeypatch):
     assert await cdp.cdp_edge_render("http://x") is None
 
 
+@pytest.mark.asyncio
+async def test_cdp_edge_render_eval_timeout_returns_none(monkeypatch):
+    """浏览器在、但渲染(navigate/eval)超时 → 返 None 不抛,且不杀常驻浏览器(可复用)。"""
+    import asyncio as _asyncio
+    _reset_state(monkeypatch)
+
+    async def _slow_render(url, timeout):
+        raise _asyncio.TimeoutError()   # 模拟渲染中超时
+
+    monkeypatch.setattr(cdp, "_render_once", _slow_render)
+    monkeypatch.setattr(cdp, "_browser_running", lambda: True)   # 浏览器仍活
+    reset_called = {"n": 0}
+
+    async def _spy_reset(*a, **k):
+        reset_called["n"] += 1
+
+    monkeypatch.setattr(cdp, "_reset_browser_state", _spy_reset)
+    assert await cdp.cdp_edge_render("http://x", timeout=1.0) is None
+    assert reset_called["n"] == 0   # 单次渲染失败不该重置(杀)常驻浏览器
+
+
 @pytest.mark.live
 @pytest.mark.asyncio
 async def test_cdp_edge_render_live_js_site():

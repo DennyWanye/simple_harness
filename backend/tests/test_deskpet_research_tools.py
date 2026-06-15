@@ -1338,6 +1338,52 @@ async def test_default_extract_js_render_engine_crawl4ai(monkeypatch):
     assert "渲染后救回的真实正文" in out["text"]
 
 
+@pytest.mark.asyncio
+async def test_js_render_ai_generated_scans_rendered_html(monkeypatch):
+    """渲染命中后, ai_generated 须扫【渲染后 HTML】: 原始空壳无 AI 声明、渲染后正文含声明
+    → out['ai_generated'] 为 True(plan WI-3:渲染路径锚点不同,须分别覆盖)。"""
+    monkeypatch.setattr(r, "_js_render_enabled", lambda: True)
+    monkeypatch.setattr(r, "_js_render_engine", lambda: "cdp-edge")
+    monkeypatch.setattr(r, "_jina_enabled", lambda: False)
+    import deskpet.tools.research_cdp_edge as ce_mod
+    # 渲染后 HTML: 长正文 + AI 生成声明(原始空壳里没有这句)
+    rendered_with_ai = ("<html><body><article><p>"
+                        + ("这是 JS 渲染后救回的真实正文。" * 60)
+                        + "本文包含人工智能生成内容。</p></article></body></html>")
+
+    async def _fake_render(url, *, timeout=20.0):
+        return rendered_with_ai
+
+    monkeypatch.setattr(ce_mod, "cdp_edge_render", _fake_render)
+    _Resp, _FakeClient = _fake_client_factory()
+    # 原始大空壳不含 AI 声明
+    assert "人工智能生成" not in _JS_SHELL_BIG
+    out = await r.default_extract("https://spa.com/x", client=_FakeClient(_JS_SHELL_BIG))
+    assert out["extractor"] == "cdp-edge"
+    assert out["ai_generated"] is True   # 扫的是渲染后 HTML(含声明),不是原始空壳
+
+
+@pytest.mark.asyncio
+async def test_js_render_ai_generated_not_in_rendered(monkeypatch):
+    """对照: 原始空壳含 AI 声明但渲染后正文不含 → 命中渲染后 ai_generated 为 False(证明扫的是渲染后)。"""
+    monkeypatch.setattr(r, "_js_render_enabled", lambda: True)
+    monkeypatch.setattr(r, "_js_render_engine", lambda: "cdp-edge")
+    monkeypatch.setattr(r, "_jina_enabled", lambda: False)
+    import deskpet.tools.research_cdp_edge as ce_mod
+    shell_with_ai = ("<html><head><title>站</title></head><body>"
+                     "<!-- 本文包含人工智能生成内容 --><div id='app'></div>"
+                     "<script>/*" + ("x" * 21000) + "*/</script></body></html>")
+
+    async def _fake_render(url, *, timeout=20.0):
+        return _RENDERED_LONG   # 干净正文,无 AI 声明
+
+    monkeypatch.setattr(ce_mod, "cdp_edge_render", _fake_render)
+    _Resp, _FakeClient = _fake_client_factory()
+    out = await r.default_extract("https://spa.com/x", client=_FakeClient(shell_with_ai))
+    assert out["extractor"] == "cdp-edge"
+    assert out["ai_generated"] is False   # 渲染后 HTML 无声明 → False(没去扫原始空壳)
+
+
 # --- P1-2 site: 定向官方域 ---
 
 def test_site_directive_for():

@@ -406,10 +406,15 @@ async def cdp_edge_render(url: str, *, timeout: float = 20.0) -> Optional[str]:
         log.info("cdp_edge_render", url=url, chars=len(html), ms=int(elapsed * 1000), ok=True)
         return html
     except Exception as exc:  # noqa: BLE001
-        try:
-            await _reset_browser_state()
-        except Exception:  # noqa: BLE001
-            pass
+        # 只在**连接级致命错误**(进程死 / ws 断)才重置常驻浏览器;单次渲染超时/eval 失败
+        # **不应**杀掉常驻 Edge —— 否则下一个 URL 冷启 10-17s,违背"单例常驻复用"(plan §2 决策)
+        # 且 deep 档多 URL 叠加冷启会顶穿 300s。本次 target 已由 _render_once 的 finally 关掉,
+        # 浏览器仍存活可复用。
+        if not _browser_running():
+            try:
+                await _reset_browser_state()
+            except Exception:  # noqa: BLE001
+                pass
         log.info("cdp_edge_render", url=url, ok=False, error=(str(exc) or exc.__class__.__name__)[:120])
         return None
 
