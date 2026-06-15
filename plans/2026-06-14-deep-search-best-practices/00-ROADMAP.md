@@ -77,10 +77,11 @@ query 改写(multi-query + HyDE + site:定向)
 
 ## 4. 分阶段路线图（按 ROI × 部署友好度排序）
 
-> 进度（2026-06-14）：✅ **多引擎降级队列**（必应→DDG，百度备选，治中国区被墙；
-> 原路线图未列，实测驱动新增）· ✅ **P1-1 精排**（走 LLM gpt-4.1-mini，免下载本地
-> 模型）· ✅ **P1-3 Jina Reader 二级抓取** · ⬜ P1-2 site: 定向 · ⬜ Phase-2 中文一手源
-> API · ⬜ Phase-3 SearXNG/Playwright。源质量过滤（自媒体降权/AI内容/乱码剔除）已上。
+> 进度（2026-06-14）：**Phase 1 基本完成** ✅ —— ✅ **多引擎降级队列**（必应→DDG，
+> 百度备选，治中国区被墙；实测驱动新增）· ✅ **P1-1 精排**（LLM gpt-4.1-mini，免下载）·
+> ✅ **P1-2 site: 定向官方域**（政策→gov.cn/企业→cninfo/学术→arxiv）· 🟡 **P1-3 Jina**
+> （代码全，但 r.jina.ai 国外需代理→改 opt-in 默认关）· 源质量过滤（自媒体/AI/乱码剔除）✅。
+> ⬜ Phase-2 中文一手源 API · ⬜ Phase-3 SearXNG/Playwright（真治 JS 站需本地浏览器）。
 
 ### Phase 1 — 纯本地零依赖，立刻提质（短期，最高 ROI）
 - **P1-1 本地 bge-reranker-v2-m3 重排** ★首选：召回后（DDG/语义打分出 top-N）插一层
