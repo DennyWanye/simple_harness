@@ -4,7 +4,7 @@
 > 每新增一份手工测试文档，在下表追加一行，写清**测试范围**与**目的**。
 > 自动化测试（pytest/vitest/cargo）不在此登记，那些放各 `plans/*/0X-TDD.md`。
 >
-> **最后更新**: 2026-06-15
+> **最后更新**: 2026-06-16
 
 ---
 
@@ -18,6 +18,7 @@
 | [goal-completion/FP-1-目标持久化-manual-test.md](./goal-completion/FP-1-目标持久化-manual-test.md) | **goal-completion 升级 FP-1 目标持久化地基**：WI-1.1 Durable Goal Store（`/goal` 落 `session_goals` 表）、R-T1 lifespan 接电（bind_persistence + 启动 load_persisted）、T1 `iterations_used` 落库重启不归零、WI-1.6 ToolPathRecorder 工具路径录制、R-T5 flag-OFF 字节基线（goal_mode=false 不建表）、R-T7 多 USER_DATA_DIR 隔离、goal_checker 末轮接电、`/goal clear`→abandoned 保留历史、多目标 last-write-wins | 验证「目标在重启后仍在」这条 FP-1 招牌链（pass^k k=3）+ 持久化栈全链路；**经 3 轮迭代校准**：全部 log 锚点/SQL/前端渲染字符串/测试函数名逐个 grep 真代码证实（含修正 codex 编造的测试名） | 8 (TC-1.1~1.8) | **是**（TC-1.1/1.5/1.7 真模拟人；TC-1.2/1.3/1.6/1.8 🟡log+DB；TC-1.4 🔵脚本） |
 | [goal-completion/FP-2-抗漂移-manual-test.md](./goal-completion/FP-2-抗漂移-manual-test.md) | **goal-completion 升级 FP-2 抗漂移闭环**：WI-1.3 re-anchoring（压缩后追问原目标不漂移 + `wi13_goal_anchor_injected`）、WI-1.2 goal_tasks 任务图（DAG ready 调度/并发 claim 不双占/跨子 agent 共享）、WI-1.4 spawn_team handoff goal checkpoint（Charter 含父目标 + off-goal 分流）、WI-1.5 auto-resume 续原目标（main.py:2522 已接线）、compaction 触发前置（默认 False 须显式开启） | 验证「目标在长链路执行中不丢」；**诚实标注 4 处 BLOCKED/待实现**（TaskGraphStore 未在 main.py 注册、无 goal_tasks UI、无 LLM judge、无 GD 指标）并给出每条的「解锁前置」接线清单——区分「后端能力已实现」vs「产品链路未接」；经 3 轮迭代校准 | 10 (TC-2.1~2.10) | **部分**（TC-2.1 真模拟人 pass^k；多数 🟡后端/log；TC-2.2/2.9 BLOCKED 待解锁） |
 | [2026-06-15-deep-search-phase2/deep-search-phase2-manual-test.md](./2026-06-15-deep-search-phase2/deep-search-phase2-manual-test.md) | **deep-research Phase-2 三项（中国可直连）**：①multi-query/HyDE 查询扩展（纯 LLM 改写+假设答案提召回，`_expand_queries`）②巨潮资讯直连（上市公司公告 PDF→pypdf 抽正文，`cninfo_search`）③国家标准全文系统直连（GB/T 标准号+名称元数据，`openstd_search`）；含意图路由不误触 + `direct_sources`/`query_expansion` opt-out 开关核对 | 验证三项一手源/召回增强真在生产链路触发（报告引用出现 cninfo.com.cn / openstd.samr.gov.cn 域名、搜索查询数 > 子问题数）；区分「意图未命中」vs「网络直连失败」；对应 commit `02fd984` | 5 (TC-P2-01~05) | **是**（TC-P2-01~04 UI 真测+报告引用核对；TC-P2-05 配置改+复跑） |
+| [2026-06-16-js-render-cdp-edge/js-render-cdp-edge-manual-test.md](./2026-06-16-js-render-cdp-edge/js-render-cdp-edge-manual-test.md) | **deep-research JS 渲染兜底（Option C / cdp-edge 引擎）**：trafilatura 正文 <300 字且原始 HTML >20KB（双闸）时连系统已装 Edge 无头（CDP）渲染 JS/SPA 空壳站取 `outerHTML` 再抽正文，排在 jina（国外）之前、中国可直连；纯后端 Windows 落地。覆盖 happy-path 救回空壳源 / flag-off 不触发 / engine=webview 优雅降级 / 双闸不误触发静态站 / 触发计数 ≤4 + 跨轮归零 / 单页超时降级 / 渲染命中后去重不走 jina / 关桌宠重开开关生效 / deep 档 300s 叠加不超时 / 中文 JS 站（豆瓣类）渲染 | 验证 JS 渲染兜底真在生产链路按双闸触发 + best-effort 降级永不挂死 research_run；PASS 靠日志锚点 `event="cdp_edge_render" ok=True/False chars/ms` + 报告命中源 `extractor=cdp-edge`，非「报告看起来更全」；对应 commit `a520ef7`+`cd15844` | 11 (TC-01~11) + TC-04.1 边界 | **是**（全部 UI 真测 + 报告引用核对 + 后端日志 grep；TC-11 验证渲染失败保活常驻浏览器的真机证据） |
 | [goal-completion-manual-test.md](./goal-completion-manual-test.md) | goal-completion 升级 FP-3/4/5：FP-3 自我纠错闭环（verify 拦伪完成→结构化反思→真重规划→二次产物 / goal_text 对照 / 未来时不误判 / relay 降级 / 重试上界）、FP-4 记忆+人格（重启后跨会话召回 / 改偏好下轮反映 / 偏好冲突 / Pin 不衰减 / B-10 双写钩 / 人格红线不污染完成判定 / flag-OFF 字节基线）、FP-5 Skills（强匹配正文自动载 / 压缩后追问原目标 / 技能自创卡→真坐标保存→SKILL.md 落盘→新 session 复用 / 拒绝 / 5min 超时 / trivial 不弹 / 压缩后重挂） | 覆盖三个 FP 的全部手测门验收点 + 边界/易错场景（未来时态、relay 故障、死循环上界、偏好冲突、flag-OFF 负向、超时 reject、trivial turn）；招牌真机链 TC-3.1/4.1/5.3 | 22 (FP-3 7 + FP-4 7 + FP-5 8) | **是**（绝大多数为 windows-mcp 真模拟人 ✅，少数内部时序/降级/超时为 🟡log+后端核对） |
 
 ---
