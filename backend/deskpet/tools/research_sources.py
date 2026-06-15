@@ -64,6 +64,41 @@ def _strip_tags(s: str) -> str:
     return re.sub(r"<[^>]+>", "", s or "").strip()
 
 
+# 巨潮 searchkey 走标题全文匹配:噪声句("X公司2024年财报营收")命中 0,纯实体名
+# ("X公司")命中。下表去掉年报/财报类噪声词 + 年份/数字 → 留公司/实体名。
+_CNINFO_NOISE = (
+    "年度报告", "年报", "半年报", "季报", "财报", "业绩快报", "业绩预告",
+    "业绩", "营收", "营业收入", "净利润", "利润", "公告", "披露", "报告",
+    "招股说明书", "招股书", "问询函", "怎么样", "如何", "多少", "情况",
+    "的", "和", "与", "及", "了",
+)
+
+
+def _cninfo_category(q: str) -> str:
+    """从原始问题判断公告类别 → cninfo category 过滤,显著提升相关性。
+    谈年报/财报/营收/净利润 → 年度报告类;否则空(全部公告按时间)。"""
+    t = q or ""
+    if any(k in t for k in ("年报", "年度报告", "财报", "营收", "营业收入",
+                            "净利润", "利润", "业绩")):
+        return "category_ndbg_szsh"   # 年度报告(深沪)
+    if any(k in t for k in ("半年报", "中报", "半年度")):
+        return "category_bndbg_szsh"  # 半年度报告
+    if "季报" in t or "一季" in t or "三季" in t:
+        return "category_yjdbg_szsh"  # 季度报告
+    return ""
+
+
+def _clean_cninfo_kw(q: str) -> str:
+    """把噪声子问题压成实体名(公司名)。压没了就退回原串。"""
+    s = q or ""
+    for n in _CNINFO_NOISE:
+        s = s.replace(n, "")
+    s = re.sub(r"\d{4}\s*年?", "", s)   # 年份
+    s = re.sub(r"\d+", "", s)            # 残留数字
+    s = re.sub(r"\s+", " ", s).strip()
+    return s or (q or "").strip()
+
+
 # ── 巨潮资讯 ──────────────────────────────────────────────────────────
 def _extract_pdf_text(data: bytes) -> str:
     """pypdf 抽 PDF 前 N 页文本(capped)。失败/无库 → 空串。"""
@@ -92,9 +127,10 @@ async def cninfo_search(
     client: Optional[httpx.AsyncClient] = None,
 ) -> list[dict[str, Any]]:
     """巨潮公告直连 → passages(含 PDF 抽取正文)。best-effort,失败返 []。"""
-    kw = (keyword or "").strip()
+    kw = _clean_cninfo_kw(keyword)
     if not kw:
         return []
+    category = _cninfo_category(keyword)   # 用原始问题判类别(年报/季报/...)
     owns = client is None
     cli = client or httpx.AsyncClient(
         headers={"User-Agent": _UA}, timeout=_TIMEOUT, follow_redirects=True
@@ -105,8 +141,8 @@ async def cninfo_search(
                 _CNINFO_QUERY,
                 data={"pageNum": 1, "pageSize": max(max_results, 5),
                       "column": "szse", "tabName": "fulltext",
-                      "searchkey": kw, "seDate": "", "sortName": "",
-                      "sortType": "", "isHLtitle": "true"},
+                      "searchkey": kw, "category": category, "seDate": "",
+                      "sortName": "", "sortType": "", "isHLtitle": "true"},
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
             resp.raise_for_status()
@@ -144,9 +180,30 @@ async def cninfo_search(
 
 
 # ── 国家标准全文公开系统 ──────────────────────────────────────────────
+_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")          # 发布/实施日期 cell
+_STATUS_WORDS = ("推标", "国标", "现行", "废止", "即将实施", "查看详细",
+                 "查看", "详细", "强标")
+
+
+def _extract_hcno(row: Any) -> str:
+    """从行内 <a> 的 onclick/href 抽内部 hcno(newGbInfo 真正需要的 hash)。"""
+    for a in row.css("a"):
+        blob = (a.attributes.get("onclick") or "") + " " + (a.attributes.get("href") or "")
+        m = (re.search(r"hcno=([0-9A-Za-z]+)", blob)
+             or re.search(r"showInfo\w*\(\s*['\"]([0-9A-Za-z]+)", blob))
+        if m:
+            return m.group(1)
+    return ""
+
+
 def parse_openstd(html: str, *, max_results: int) -> list[dict[str, Any]]:
-    """解析 openstd std_list 表格 → [{标准号, 名称}]。全文在 JS viewer 后,
-    只取元数据(标准号 + 名称 + 状态)。纯解析,可单测。"""
+    """解析 openstd std_list 表格 → [{std_no, name, hcno}]。全文在 JS viewer 后,
+    只取元数据(标准号 + 名称 + 内部 hcno)。纯解析,可单测。
+
+    name 选取要排除**日期 cell**(``2024-08-23 00:00:00.0`` 比真名长会误选)和
+    状态词(推标/现行/查看详细)。hcno 来自行内 ``<a onclick>``,是 newGbInfo 真正
+    需要的 hash;抽不到则退回 std_no(链接退化但元数据仍可用)。
+    """
     out: list[dict[str, Any]] = []
     try:
         from selectolax.parser import HTMLParser  # type: ignore
@@ -164,12 +221,19 @@ def parse_openstd(html: str, *, max_results: int) -> list[dict[str, Any]]:
         num = next((c for c in cells if re.search(r"GB[/ ]?T?\s*\d{3,}", c)), "")
         if not num:
             continue
-        # 名称: 标准号之后最长的非空 cell
+        # 名称: 排除标准号/日期/状态词/纯数字后,取最长且含中文的 cell
         name = ""
         for c in cells:
-            if c and c != num and len(c) > len(name) and not c.isdigit():
+            if not c or c == num or c.isdigit():
+                continue
+            if _DATE_RE.search(c) or c in _STATUS_WORDS:
+                continue
+            if not re.search(r"[一-鿿]", c):  # 名称必含中文
+                continue
+            if len(c) > len(name):
                 name = c
-        out.append({"std_no": num.strip(), "name": name.strip()})
+        out.append({"std_no": num.strip(), "name": name.strip(),
+                    "hcno": _extract_hcno(row)})
     return out
 
 
@@ -197,11 +261,13 @@ async def openstd_search(
         for row in rows:
             std_no = row["std_no"]
             name = row["name"] or std_no
+            # newGbInfo 需要内部 hcno hash;抽到就用它,抽不到退回标准号(链接退化)。
+            hcno = row.get("hcno") or std_no
             text = (f"国家标准 {std_no}：{name}。（来源：国家标准全文公开系统 "
                     f"openstd.samr.gov.cn，全文可在该系统在线查阅。）")
             out.append({
                 "ok": True,
-                "url": f"https://openstd.samr.gov.cn/bzgk/gb/newGbInfo?hcno={std_no}",
+                "url": f"https://openstd.samr.gov.cn/bzgk/gb/newGbInfo?hcno={hcno}",
                 "title": f"{std_no} {name}"[:200],
                 "text": text, "fetched_at": time.time(), "source": "openstd",
             })

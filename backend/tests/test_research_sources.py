@@ -26,8 +26,13 @@ def test_direct_source_for():
 _OPENSTD_HTML = """
 <table>
   <tr><th>序号</th><th>标准号</th><th>标准名称</th><th>状态</th></tr>
-  <tr><td>1</td><td>GB/T 32895-2016</td><td>钠离子电池通用规范</td><td>现行</td></tr>
-  <tr><td>2</td><td>GB/T 27930-2015</td><td>电动汽车充电通信协议</td><td>现行</td></tr>
+  <tr><td>1</td><td>GB/T 32895-2016</td><td>钠离子电池通用规范</td>
+      <td>推标</td><td>现行</td><td>2016-08-29 00:00:00.0</td>
+      <td><a onclick="showInfoHref('ABC123DEF456'); return false;"
+             href="javascript:void(0)">查看详细</a></td></tr>
+  <tr><td>2</td><td>GB/T 27930-2015</td><td>电动汽车充电通信协议</td>
+      <td>现行</td><td>2015-12-28 00:00:00.0</td>
+      <td><a href="newGbInfo?hcno=ZZZ999">查看详细</a></td></tr>
   <tr><td>3</td><td>无标准号行</td><td>不该被收</td><td>x</td></tr>
 </table>
 """
@@ -37,7 +42,12 @@ def test_parse_openstd():
     out = rs.parse_openstd(_OPENSTD_HTML, max_results=5)
     assert len(out) == 2  # 第3行无 GB 标准号 → 丢
     assert out[0]["std_no"] == "GB/T 32895-2016"
+    # 名称不能被日期 cell(2016-08-29...) 或状态词(推标/现行) 抢走
     assert out[0]["name"] == "钠离子电池通用规范"
+    # hcno 从 <a onclick=showInfoHref('...')> 抽到(非标准号)
+    assert out[0]["hcno"] == "ABC123DEF456"
+    # 第2行 hcno 从 href 的 ?hcno= 抽
+    assert out[1]["hcno"] == "ZZZ999"
 
 
 def test_parse_openstd_respects_max():
