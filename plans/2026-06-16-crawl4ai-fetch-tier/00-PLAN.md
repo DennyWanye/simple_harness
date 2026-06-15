@@ -88,13 +88,28 @@ httpx 直抓 → trafilatura(主)
 
 ## 4. 分阶段任务（WI）
 
-### WI-(-1) WebView 渲染 POC GATE（二轮新增，0.5 天，**先于 WI-0**）
-> 见 R1。用 Tauri 现成 WebView2 加载 1 个 JS 站、`eval` 取 `document.body.innerText`/`outerHTML` 回传 backend，
-> 验证零体积路线能否拿到渲染后正文。
-> - **通过**（拿得到正文）→ 把结论 + "WebView2 零体积、正式包可用、命中率高于独立 Chrome/Edge"回写用户，
->   建议 WebView 做首选档、Crawl4AI 做 dev-only 高级档（见 §10 F2）；等用户拍板。
-> - **受限**（回传链路复杂 / SPA 内容拿不全）→ 记录证据，按本 plan 推进 Crawl4AI。
-> - 用户已指定方向 Crawl4AI，本 GATE **不阻断**实现，但结论必须回写，避免闷头交付 dev-only 重方案。
+### WI-(-1) WebView 渲染 POC GATE（二轮新增）→ ✅ **已跑，PASS（2026-06-16）**
+
+**实测结论（证据 `.tmp/webview_poc_cdp.py`，系统 Edge 149 = WebView2 引擎，经 CDP 渲染）**：
+
+| 站点 | 原始 httpx 正文 | 系统引擎渲染后正文 | 结果 |
+|---|---|---|---|
+| quotes.toscrape.com/**js/**（JS 金标准） | 29 字（空壳） | **1071 字** | ✅ 救回 +1042 |
+| quotes.toscrape.com/（静态对照） | 1161 字 | 1161 字 | ≈ 不变（不破坏静态站） |
+| book.douban.com/latest（**真实中文 JS 站**） | 44 字（空壳） | **1244 字**（豆瓣书单真内容） | ✅ 救回 +1200 |
+
+→ **"复用系统浏览器引擎渲染 JS、零下载"路线成立**，中文站直连有效，不伤静态站。
+
+> **★ POC 暴露出一条比 Tauri-WebView-eval 和 Crawl4AI 都更优的实现路径 —— CDP-连系统-Edge**：
+> POC 用的不是 Tauri 内嵌 webview，而是**直接启动系统已装 Edge 无头 + CDP（`websockets` 库，venv 已有）**
+> `Runtime.evaluate` 取渲染后 `outerHTML`。这条路同时打赢三家：
+> - **vs Crawl4AI**：不下 100MB Chromium（用系统 Edge）；**且只依赖 `websockets`(纯 Python，可进 spec hiddenimports) → 正式冻结包也能用**，没有"dev-only"硬伤
+> - **vs Tauri-WebView-eval**：**不用动 Rust / 不用重编译**，纯 Python 后端适配器，好建好测
+> - 中国友好：本地 Edge 直连，无国外服务
+>
+> **代价/待解**：① 依赖系统装了 Edge（Win10/11 必装 ✓；Mac/Linux 需另议）② 当前 POC 每页冷启 10-17s（含每次新起无头进程 + 固定 4s 等待）→ 实现时必须**单例常驻无头浏览器 + 复用、调优等待**，把单页压到 2-4s。
+
+**判定回写用户**：GATE PASS。建议把"**系统引擎渲染**"做成抓取首选兜底档，**优先用 CDP-系统-Edge 实现**（零体积 + 正式包可用 + 不动 Rust）；Crawl4AI 与 Tauri-WebView-eval 都降为备选。**等用户拍板后再开实现。**
 
 ### WI-0 决策 spike + 可行性 GATE（先做，**未通过不得进 WI-1**）
 > 一轮升级：从"1 步 spike"升为**硬 GATE**。下列每条都要有**实测证据**（命令输出/截图/日志），
