@@ -121,33 +121,50 @@ def _site_directive_for(text: str) -> Optional[str]:
     return None
 
 
+# [research] 配置读取 —— 统一缓存入口。
+# 历史 bug(真机 UI 测 TC-P2-05 发现): 旧代码各处 `import config as _cfg;
+# _cfg.config.raw.get("research")` 读配置,但 config 模块并**没有** `config`
+# 属性(loaded AppConfig 是 main.py 的 main.config 全局,不是 config 模块属性),
+# → 每次 AttributeError 被 except 吞掉 → 所有 [research] 开关恒取默认,关不掉
+# (direct_sources=false 被忽略,cninfo 照常直连)。改为正确解析配置文件并缓存:
+# 优先用已发布的单例(若某运行模式设了),否则 load_config(resolve_config_path())。
+_RESEARCH_RAW_CACHE: Optional[dict] = None
+
+
+def _research_raw() -> dict:
+    """返回 ``[research]`` 段(dict),进程内缓存。读不到返回 {}。"""
+    global _RESEARCH_RAW_CACHE
+    if _RESEARCH_RAW_CACHE is None:
+        raw: dict = {}
+        try:
+            import config as _cfg  # type: ignore[import-not-found]
+            obj = getattr(_cfg, "config", None)   # 若有发布的单例优先用
+            if obj is not None and hasattr(obj, "raw"):
+                raw = obj.raw.get("research") or {}
+            else:
+                cfg = _cfg.load_config(_cfg.resolve_config_path())
+                raw = cfg.raw.get("research") or {}
+        except Exception:  # noqa: BLE001
+            raw = {}
+        _RESEARCH_RAW_CACHE = raw if isinstance(raw, dict) else {}
+    return _RESEARCH_RAW_CACHE
+
+
 def _site_directed_enabled() -> bool:
     """``[research].site_directed`` (默认 True)。纯 prompt/query 改动,零成本,
     可关。"""
-    try:
-        import config as _cfg  # type: ignore[import-not-found]
-        return bool((_cfg.config.raw.get("research") or {}).get("site_directed", True))
-    except Exception:  # noqa: BLE001
-        return True
+    return bool(_research_raw().get("site_directed", True))
 
 
 # P2 multi-query / HyDE 查询扩展 + 中文一手源直连开关 ----------------
 def _query_expansion_enabled() -> bool:
     """``[research].query_expansion`` (默认 True)。纯 LLM 零外部依赖,中国友好。"""
-    try:
-        import config as _cfg  # type: ignore[import-not-found]
-        return bool((_cfg.config.raw.get("research") or {}).get("query_expansion", True))
-    except Exception:  # noqa: BLE001
-        return True
+    return bool(_research_raw().get("query_expansion", True))
 
 
 def _direct_sources_enabled() -> bool:
     """``[research].direct_sources`` (默认 True)。巨潮/国标 中国可直连。"""
-    try:
-        import config as _cfg  # type: ignore[import-not-found]
-        return bool((_cfg.config.raw.get("research") or {}).get("direct_sources", True))
-    except Exception:  # noqa: BLE001
-        return True
+    return bool(_research_raw().get("direct_sources", True))
 
 
 _EXPAND_PROMPT = """\
@@ -191,11 +208,7 @@ def _rerank_mode() -> str:
 
     "local"(本地 bge-reranker)是 plan 文档里的 Phase-future 可选档,尚未实现 →
     当前退化为 "llm"(中转站重排),保证开关存在、行为安全。"""
-    try:
-        import config as _cfg  # type: ignore[import-not-found]
-        v = str((_cfg.config.raw.get("research") or {}).get("reranker", "llm")).strip().lower()
-    except Exception:  # noqa: BLE001 — 配置不可用(独立脚本/测试)→ 默认 llm
-        v = "llm"
+    v = str(_research_raw().get("reranker", "llm")).strip().lower()
     if v == "off":
         return "off"
     if v in ("llm", "local"):
@@ -636,11 +649,7 @@ _JINA_TIMEOUT = 8.0     # 快速失败(国外服务,无代理直接连不上)
 def _jina_enabled() -> bool:
     """``[research].jina_reader`` (默认 False / opt-in)。r.jina.ai 国外需代理,
     默认关;有代理的用户显式开。best-effort。"""
-    try:
-        import config as _cfg  # type: ignore[import-not-found]
-        return bool((_cfg.config.raw.get("research") or {}).get("jina_reader", False))
-    except Exception:  # noqa: BLE001
-        return False
+    return bool(_research_raw().get("jina_reader", False))
 
 
 def _parse_jina(body: str) -> dict[str, str]:

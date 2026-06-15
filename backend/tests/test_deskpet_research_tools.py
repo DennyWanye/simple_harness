@@ -56,6 +56,9 @@ def _isolate_phase2(monkeypatch):
     monkeypatch 打开。"""
     monkeypatch.setattr(r, "_query_expansion_enabled", lambda: False)
     monkeypatch.setattr(r, "_direct_sources_enabled", lambda: False)
+    r._RESEARCH_RAW_CACHE = None   # 清 [research] 配置缓存,防跨测试污染
+    yield
+    r._RESEARCH_RAW_CACHE = None
 
 
 # ----------------------------------------------------------------------
@@ -996,6 +999,7 @@ def test_rerank_mode_config(monkeypatch):
     def _set(val):
         fake = types.SimpleNamespace(config=types.SimpleNamespace(raw={"research": {"reranker": val}}))
         monkeypatch.setitem(__import__("sys").modules, "config", fake)
+        r._RESEARCH_RAW_CACHE = None   # 清缓存,让 _research_raw 重读 fake config
 
     _set("off");      assert r._rerank_mode() == "off"
     _set(" OFF ");    assert r._rerank_mode() == "off"   # strip + 大小写
