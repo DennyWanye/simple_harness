@@ -35,6 +35,7 @@ import asyncio
 import json
 import logging
 import re
+import sys
 import time
 import urllib.parse
 from dataclasses import asdict, dataclass, field
@@ -165,6 +166,69 @@ def _query_expansion_enabled() -> bool:
 def _direct_sources_enabled() -> bool:
     """``[research].direct_sources`` (默认 True)。巨潮/国标 中国可直连。"""
     return bool(_research_raw().get("direct_sources", True))
+
+
+# JS 渲染抓取兜底开关(治 JS/SPA 空壳站)。默认关(opt-in,避免对正常短页误触发重渲染)。
+# 本期(Option C)落地引擎 = cdp-edge(连系统 Edge 无头,纯后端,POC 验证,Windows);
+# webview(三端复用 Tauri 内核)为下一期主线,本期未实现 → 选它时按平台降级。
+def _js_render_enabled() -> bool:
+    """``[research].js_render`` (默认 False / opt-in)。"""
+    return bool(_research_raw().get("js_render", False))
+
+
+def _js_render_engine() -> str:
+    """``[research].js_render_engine`` ∈ {cdp-edge, webview, crawl4ai}。
+
+    真实默认按平台给"本期能用"的引擎: Windows → cdp-edge(已落地);非 Win 暂无本期引擎
+    → 返回配置原值(webview/crawl4ai),由 default_extract 路由时降级。配置显式指定则尊重之。"""
+    v = str(_research_raw().get("js_render_engine", "") or "").strip().lower()
+    if v in ("cdp-edge", "cdp_edge", "cdpedge"):
+        return "cdp-edge"
+    if v in ("webview", "crawl4ai"):
+        return v
+    # 未配置: Windows 默认走已落地的 cdp-edge,其它平台留 webview(本期未实现→降级)
+    return "cdp-edge" if sys.platform == "win32" else "webview"
+
+
+def _js_render_timeout() -> float:
+    """``[research].js_render_timeout`` (秒,默认 20)。"""
+    try:
+        return float(_research_raw().get("js_render_timeout", 20.0) or 20.0)
+    except (TypeError, ValueError):
+        return 20.0
+
+
+# 单次 research 内 JS 渲染触发计数(护 research_run 300s 预算,见 plan WI-3 双闸②)。
+_JS_RENDER_MAX_PER_RUN = 4
+_JS_RENDER_MIN_SHELL_HTML = 20_000   # 原始 HTML > 此值 + trafilatura 短 = 疑 JS 空壳(双闸①)
+_js_render_run_count = 0             # 每次 research_run 开头 _reset_js_render_budget() 归零
+
+
+def _reset_js_render_budget() -> None:
+    """research_run 开头调,归零本轮 JS 渲染触发计数。"""
+    global _js_render_run_count
+    _js_render_run_count = 0
+
+
+async def _js_render_dispatch(url: str) -> Optional[str]:
+    """按 ``_js_render_engine()`` 路由渲染 url → 渲染后 HTML 字符串;不可用/失败返 None。
+    best-effort,绝不抛(失败回落 jina/原结果)。"""
+    engine = _js_render_engine()
+    timeout = _js_render_timeout()
+    try:
+        if engine == "cdp-edge":
+            from . import research_cdp_edge as _ce
+            return await _ce.cdp_edge_render(url, timeout=timeout)
+        if engine == "crawl4ai":
+            from . import research_crawl4ai as _c4  # dev 档,懒 import
+            r = await _c4.crawl4ai_extract(url, timeout=timeout)
+            return (r or {}).get("html") if isinstance(r, dict) else None
+        # webview: 三端主线,本期(Option C)未实现 → 降级(返 None 走 jina/原结果)
+        log.debug("js_render engine=webview 本期未实现,跳过 (url=%s)", url)
+        return None
+    except Exception as exc:  # noqa: BLE001
+        log.debug("js_render dispatch failed engine=%s url=%s: %s", engine, url, exc)
+        return None
 
 
 _EXPAND_PROMPT = """\
@@ -725,10 +789,30 @@ async def default_extract(
             m = re.search(r"<title>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
             if m:
                 title = re.sub(r"\s+", " ", m.group(1)).strip()
-        # P1-3 二级兜底: trafilatura 抽空/过短(疑似 JS 空壳)→ 试 Jina Reader,
-        # 取更长的正文(JS 站才能救回,静态站 trafilatura 已够)。
+        # 二级兜底(疑似 JS 空壳): 先本地渲染(cdp-edge/webview/crawl4ai), 再 Jina(国外)。
         extractor = "trafilatura"
-        if len(text) < _JINA_MIN_CHARS and _jina_enabled():
+        global _js_render_run_count
+        # 本地 JS 渲染兜底(本地、中国可用,排在 jina 之前)。双闸防误触发 + 护超时预算:
+        #   ①trafilatura 短 且 原始 HTML 够大(疑被 JS 藏的富页) ②本轮触发未超上限
+        if (len(text) < _JINA_MIN_CHARS and len(html) > _JS_RENDER_MIN_SHELL_HTML
+                and _js_render_enabled() and _js_render_run_count < _JS_RENDER_MAX_PER_RUN):
+            _js_render_run_count += 1
+            rendered = await _js_render_dispatch(url)
+            if rendered:
+                try:
+                    import trafilatura  # type: ignore
+                    r_text = (trafilatura.extract(
+                        rendered, include_comments=False, include_tables=False,
+                        favor_recall=False) or "").strip()
+                except Exception:  # noqa: BLE001
+                    r_text = ""
+                if len(r_text) > len(text):
+                    text = r_text
+                    extractor = _js_render_engine()   # "cdp-edge" / "crawl4ai"
+                    html = rendered   # 后续 ai_generated/mojibake 改扫【渲染后 HTML】(plan WI-3)
+        # Jina Reader 二级兜底: 仅当本地渲染未命中(extractor 仍 trafilatura)才试,避免
+        # 一个空壳站连跑两个重型兜底使超时翻倍(plan R6 去重)。
+        if extractor == "trafilatura" and len(text) < _JINA_MIN_CHARS and _jina_enabled():
             jina = await _jina_extract(url, client=cli)
             if jina and len(jina.get("text", "")) > len(text):
                 text = jina["text"]
@@ -908,6 +992,7 @@ async def research_run(
     search_fn = search or default_search
     extract_fn = extract or default_extract
     errors: list[str] = []
+    _reset_js_render_budget()   # 本轮 JS 渲染触发计数归零(护 300s 预算)
 
     # ---- 1. plan ----------------------------------------------------
     try:

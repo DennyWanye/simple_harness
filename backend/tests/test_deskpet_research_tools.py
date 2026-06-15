@@ -56,9 +56,12 @@ def _isolate_phase2(monkeypatch):
     monkeypatch 打开。"""
     monkeypatch.setattr(r, "_query_expansion_enabled", lambda: False)
     monkeypatch.setattr(r, "_direct_sources_enabled", lambda: False)
+    monkeypatch.setattr(r, "_js_render_enabled", lambda: False)  # JS 渲染默认关,要测的自开
     r._RESEARCH_RAW_CACHE = None   # 清 [research] 配置缓存,防跨测试污染
+    r._reset_js_render_budget()    # 归零 JS 渲染触发计数,防跨测试污染
     yield
     r._RESEARCH_RAW_CACHE = None
+    r._reset_js_render_budget()
 
 
 # ----------------------------------------------------------------------
@@ -1178,6 +1181,161 @@ async def test_default_extract_jina_default_off():
     out = await r.default_extract("https://spa.com/x", client=_FakeClient())
     assert jina_hit["n"] == 0          # 默认关 → 没调 Jina
     assert out["ok"] is False          # trafilatura 抽空 + Jina 关 → 失败
+
+
+# --- JS 渲染兜底 (Option C: cdp-edge) ---
+
+# >20KB 的 JS 空壳(过双闸①): head 有 title,body 是空 div + 一大段 script(trafilatura 抽不到正文)
+_JS_SHELL_BIG = ("<html><head><title>JS 站</title></head><body><div id='app'></div>"
+                 "<script>/*" + ("x" * 21000) + "*/render()</script></body></html>")
+# <20KB 的小空壳(不过双闸①)
+_JS_SHELL_SMALL = "<html><head><title>小</title></head><body><div id='app'></div></body></html>"
+_RENDERED_LONG = ("<html><body><article><p>"
+                  + ("这是 JS 渲染后救回的真实正文。" * 60) + "</p></article></body></html>")
+
+
+def _fake_client_factory(jina_counter=None):
+    class _Resp:
+        def __init__(self, text):
+            self.text = text
+            self.url = "x"
+
+        def raise_for_status(self):
+            return None
+
+    class _FakeClient:
+        def __init__(self, shell):
+            self._shell = shell
+
+        async def get(self, url, **kw):
+            if url.startswith("https://r.jina.ai/"):
+                if jina_counter is not None:
+                    jina_counter["n"] += 1
+                return _Resp("Title: x\nMarkdown Content:\n" + ("jina救回" * 80))
+            return _Resp(self._shell)
+
+        async def aclose(self):
+            return None
+
+    return _Resp, _FakeClient
+
+
+@pytest.mark.asyncio
+async def test_default_extract_js_render_cdp_edge(monkeypatch):
+    """js_render 开 + engine=cdp-edge: 大空壳 → 渲染救回正文,extractor='cdp-edge',且不调 jina(去重)。"""
+    monkeypatch.setattr(r, "_js_render_enabled", lambda: True)
+    monkeypatch.setattr(r, "_js_render_engine", lambda: "cdp-edge")
+    import deskpet.tools.research_cdp_edge as ce_mod
+    monkeypatch.setattr(r, "_jina_enabled", lambda: True)   # 开着也应被去重跳过
+    jina_counter = {"n": 0}
+
+    async def _fake_render(url, *, timeout=20.0):
+        return _RENDERED_LONG
+
+    monkeypatch.setattr(ce_mod, "cdp_edge_render", _fake_render)
+    _Resp, _FakeClient = _fake_client_factory(jina_counter)
+    out = await r.default_extract("https://spa.com/x", client=_FakeClient(_JS_SHELL_BIG))
+    assert out["ok"] is True
+    assert out["extractor"] == "cdp-edge"
+    assert "渲染后救回的真实正文" in out["text"]
+    assert jina_counter["n"] == 0          # 本地渲染命中 → 跳过 jina(R6 去重)
+
+
+@pytest.mark.asyncio
+async def test_default_extract_js_render_small_html_no_trigger(monkeypatch):
+    """双闸①: trafilatura 短但原始 HTML <20KB → 不触发渲染(防正常短页误触发)。"""
+    monkeypatch.setattr(r, "_js_render_enabled", lambda: True)
+    monkeypatch.setattr(r, "_js_render_engine", lambda: "cdp-edge")
+    monkeypatch.setattr(r, "_jina_enabled", lambda: False)
+    import deskpet.tools.research_cdp_edge as ce_mod
+    called = {"n": 0}
+
+    async def _fake_render(url, *, timeout=20.0):
+        called["n"] += 1
+        return _RENDERED_LONG
+
+    monkeypatch.setattr(ce_mod, "cdp_edge_render", _fake_render)
+    _Resp, _FakeClient = _fake_client_factory()
+    out = await r.default_extract("https://spa.com/x", client=_FakeClient(_JS_SHELL_SMALL))
+    assert called["n"] == 0   # 小 HTML 不过双闸① → 没调渲染
+
+
+@pytest.mark.asyncio
+async def test_default_extract_js_render_off_no_call(monkeypatch):
+    """js_render 关(默认): 大空壳也不调渲染,extractor 保持 trafilatura(flag-off 行为)。"""
+    monkeypatch.setattr(r, "_js_render_enabled", lambda: False)
+    monkeypatch.setattr(r, "_jina_enabled", lambda: False)
+    import deskpet.tools.research_cdp_edge as ce_mod
+    called = {"n": 0}
+
+    async def _fake_render(url, *, timeout=20.0):
+        called["n"] += 1
+        return _RENDERED_LONG
+
+    monkeypatch.setattr(ce_mod, "cdp_edge_render", _fake_render)
+    _Resp, _FakeClient = _fake_client_factory()
+    out = await r.default_extract("https://spa.com/x", client=_FakeClient(_JS_SHELL_BIG))
+    assert called["n"] == 0   # flag off → 没调渲染
+
+
+@pytest.mark.asyncio
+async def test_default_extract_js_render_fail_falls_to_jina(monkeypatch):
+    """渲染返 None → 回落 jina(本地渲染未命中,extractor 仍 trafilatura → jina 兜底)。"""
+    monkeypatch.setattr(r, "_js_render_enabled", lambda: True)
+    monkeypatch.setattr(r, "_js_render_engine", lambda: "cdp-edge")
+    monkeypatch.setattr(r, "_jina_enabled", lambda: True)
+    import deskpet.tools.research_cdp_edge as ce_mod
+    jina_counter = {"n": 0}
+
+    async def _fake_render(url, *, timeout=20.0):
+        return None   # 渲染失败
+
+    monkeypatch.setattr(ce_mod, "cdp_edge_render", _fake_render)
+    _Resp, _FakeClient = _fake_client_factory(jina_counter)
+    out = await r.default_extract("https://spa.com/x", client=_FakeClient(_JS_SHELL_BIG))
+    assert jina_counter["n"] == 1          # 渲染没命中 → 试 jina
+    assert out["extractor"] == "jina"
+
+
+@pytest.mark.asyncio
+async def test_js_render_budget_cap(monkeypatch):
+    """单轮触发计数上限: 超过 _JS_RENDER_MAX_PER_RUN 次后不再调渲染。"""
+    monkeypatch.setattr(r, "_js_render_enabled", lambda: True)
+    monkeypatch.setattr(r, "_js_render_engine", lambda: "cdp-edge")
+    monkeypatch.setattr(r, "_jina_enabled", lambda: False)
+    import deskpet.tools.research_cdp_edge as ce_mod
+    called = {"n": 0}
+
+    async def _fake_render(url, *, timeout=20.0):
+        called["n"] += 1
+        return None   # 返 None,不替换,纯计触发次数
+
+    monkeypatch.setattr(ce_mod, "cdp_edge_render", _fake_render)
+    r._reset_js_render_budget()
+    _Resp, _FakeClient = _fake_client_factory()
+    for i in range(r._JS_RENDER_MAX_PER_RUN + 3):
+        await r.default_extract(f"https://spa.com/{i}", client=_FakeClient(_JS_SHELL_BIG))
+    assert called["n"] == r._JS_RENDER_MAX_PER_RUN   # 触发次数封顶
+
+
+@pytest.mark.asyncio
+async def test_default_extract_js_render_engine_crawl4ai(monkeypatch):
+    """engine=crawl4ai → 路由到 crawl4ai 适配器(本期 dev 档,mock 之)。"""
+    monkeypatch.setattr(r, "_js_render_enabled", lambda: True)
+    monkeypatch.setattr(r, "_js_render_engine", lambda: "crawl4ai")
+    monkeypatch.setattr(r, "_jina_enabled", lambda: False)
+    import sys as _sys, types as _types
+    fake_mod = _types.ModuleType("deskpet.tools.research_crawl4ai")
+
+    async def _fake_c4(url, *, timeout=20.0):
+        return {"html": _RENDERED_LONG}
+
+    fake_mod.crawl4ai_extract = _fake_c4
+    monkeypatch.setitem(_sys.modules, "deskpet.tools.research_crawl4ai", fake_mod)
+    _Resp, _FakeClient = _fake_client_factory()
+    out = await r.default_extract("https://spa.com/x", client=_FakeClient(_JS_SHELL_BIG))
+    assert out["extractor"] == "crawl4ai"
+    assert "渲染后救回的真实正文" in out["text"]
 
 
 # --- P1-2 site: 定向官方域 ---
