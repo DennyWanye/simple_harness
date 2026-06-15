@@ -534,21 +534,24 @@ def _clean_ddg_url(url: str) -> str:
 
 # ── P1-3 二级抓取: Jina Reader (r.jina.ai) ─────────────────────────────
 # trafilatura 只解析静态 HTML;现代 JS/SPA 站正文是浏览器跑 JS 才出来的,
-# 原始 HTML 是空壳 → trafilatura 抽不到(真机实测:预制菜行业站多如此,导致来源
-# 数偏少)。r.jina.ai 在它服务器上用真浏览器跑完 JS、返回干净 Markdown,作为
-# trafilatura 抽空/过短时的二级兜底。免 key(限速档);best-effort;可配置关。
+# 原始 HTML 是空壳 → trafilatura 抽不到。r.jina.ai 在它服务器上用真浏览器跑完
+# JS、返回干净 Markdown,作为 trafilatura 抽空/过短时的二级兜底。
+# ⚠️ 真机实测: r.jina.ai 是【国外服务,中国大陆需代理】(直连 ConnectError),
+# 对裸中国用户连不上,只对有代理的用户有效 → 故【默认关】(opt-in),且超时缩到
+# 8s 快速失败,避免裸中国用户每个 JS 页白等。有代理可 [research].jina_reader=true 开。
 _JINA_READER_BASE = "https://r.jina.ai/"
 _JINA_MIN_CHARS = 300   # trafilatura 正文短于此 → 疑似 JS 空壳,试 Jina
-_JINA_TIMEOUT = 22.0
+_JINA_TIMEOUT = 8.0     # 快速失败(国外服务,无代理直接连不上)
 
 
 def _jina_enabled() -> bool:
-    """``[research].jina_reader`` (默认 True)。外部免费服务,best-effort。"""
+    """``[research].jina_reader`` (默认 False / opt-in)。r.jina.ai 国外需代理,
+    默认关;有代理的用户显式开。best-effort。"""
     try:
         import config as _cfg  # type: ignore[import-not-found]
-        return bool((_cfg.config.raw.get("research") or {}).get("jina_reader", True))
+        return bool((_cfg.config.raw.get("research") or {}).get("jina_reader", False))
     except Exception:  # noqa: BLE001
-        return True
+        return False
 
 
 def _parse_jina(body: str) -> dict[str, str]:

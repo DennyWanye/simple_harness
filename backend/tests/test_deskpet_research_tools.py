@@ -1077,8 +1077,10 @@ def test_parse_jina():
 
 
 @pytest.mark.asyncio
-async def test_default_extract_jina_fallback():
-    """trafilatura 在 JS 空壳上抽空 → 降级 Jina Reader 救回正文,extractor='jina'。"""
+async def test_default_extract_jina_fallback(monkeypatch):
+    """trafilatura 在 JS 空壳上抽空 + Jina 显式开 → 降级 Jina 救回正文,extractor='jina'。"""
+    monkeypatch.setattr(r, "_jina_enabled", lambda: True)  # opt-in 默认关,测试显式开
+
     class _Resp:
         def __init__(self, text):
             self.text = text
@@ -1135,3 +1137,31 @@ async def test_default_extract_trafilatura_enough_no_jina():
     assert out["ok"] is True
     assert out["extractor"] == "trafilatura"
     assert jina_called["n"] == 0  # 没调 Jina
+
+
+@pytest.mark.asyncio
+async def test_default_extract_jina_default_off():
+    """Jina 默认关(opt-in): JS 空壳抽空且未开 Jina → 不调 r.jina.ai,返回失败。"""
+    jina_hit = {"n": 0}
+
+    class _Resp:
+        def __init__(self, text):
+            self.text = text
+            self.url = "x"
+
+        def raise_for_status(self):
+            return None
+
+    class _FakeClient:
+        async def get(self, url, **kw):
+            if url.startswith("https://r.jina.ai/"):
+                jina_hit["n"] += 1
+                return _Resp("Title: x Markdown Content: " + ("救回" * 200))
+            return _Resp("<html><body><div id='app'></div></body></html>")  # JS 空壳
+
+        async def aclose(self):
+            return None
+
+    out = await r.default_extract("https://spa.com/x", client=_FakeClient())
+    assert jina_hit["n"] == 0          # 默认关 → 没调 Jina
+    assert out["ok"] is False          # trafilatura 抽空 + Jina 关 → 失败
