@@ -36,6 +36,7 @@ _UA = (
 _TIMEOUT = 18.0
 
 _CNINFO_QUERY = "http://www.cninfo.com.cn/new/hisAnnouncement/query"
+_CNINFO_TOPSEARCH = "http://www.cninfo.com.cn/new/information/topSearch/query"
 _CNINFO_STATIC = "http://static.cninfo.com.cn/"
 _OPENSTD_LIST = "https://openstd.samr.gov.cn/bzgk/gb/std_list"
 
@@ -99,6 +100,60 @@ def _clean_cninfo_kw(q: str) -> str:
     return s or (q or "").strip()
 
 
+# LLM 子问题是长句("围绕宁德时代2024年年报数据有哪些争议…"),公司名几乎总在句首。
+# 取首部实体: 砍掉句首填充词(围绕/关于/…) → 砍到第一个数字/停止词之前。
+_CNINFO_FILLERS = ("围绕", "关于", "分析", "请", "调研", "介绍", "查询",
+                   "查一下", "查", "对比", "比较", "梳理", "总结")
+_CNINFO_STOP = ("年", "报告", "财报", "营收", "营业", "净利", "利润", "披露",
+                "公告", "年度", "季", "半年", "业绩", "有哪些", "如何", "怎么",
+                "分业务", "构成", "同比", "数据", "核心", "情况", "的", "及",
+                "与", "和", "在", "于")
+
+
+def _lead_entity(q: str) -> str:
+    """从长子问题抽句首公司/实体名(给 topSearch 联想用)。"""
+    s = (q or "").strip()
+    for f in _CNINFO_FILLERS:
+        if s.startswith(f):
+            s = s[len(f):]
+            break
+    m = re.search(r"\d", s)
+    if m:
+        s = s[:m.start()]
+    for w in _CNINFO_STOP:
+        i = s.find(w)
+        if i > 0:
+            s = s[:i]
+    return s.strip("的，,。 \t（）()、")
+
+
+async def _cninfo_resolve(candidate: str, cli: httpx.AsyncClient) -> tuple[str, str]:
+    """topSearch 公司联想 → (简称, 'code,orgId')。优先 A股。失败/无果退 (candidate,'')。
+
+    解析到精确 stock 后,用 ``stock=code,orgId`` 查公告比模糊 searchkey 稳得多
+    (长句噪声 searchkey 会命中 0)。"""
+    cand = (candidate or "").strip()
+    if not cand:
+        return "", ""
+    try:
+        r = await cli.post(
+            _CNINFO_TOPSEARCH, data={"keyWord": cand, "maxNum": 5},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        arr = r.json()
+        if not isinstance(arr, list) or not arr:
+            return cand, ""
+        best = next((x for x in arr if x.get("category") == "A股"), arr[0])
+        zwjc = best.get("zwjc") or cand
+        code = best.get("code") or ""
+        org = best.get("orgId") or ""
+        stock = f"{code},{org}" if code and org else ""
+        return zwjc, stock
+    except Exception as exc:  # noqa: BLE001
+        log.debug("cninfo topSearch failed for %r: %s", cand, exc)
+        return cand, ""
+
+
 # ── 巨潮资讯 ──────────────────────────────────────────────────────────
 def _extract_pdf_text(data: bytes) -> str:
     """pypdf 抽 PDF 前 N 页文本(capped)。失败/无库 → 空串。"""
@@ -127,9 +182,9 @@ async def cninfo_search(
     client: Optional[httpx.AsyncClient] = None,
 ) -> list[dict[str, Any]]:
     """巨潮公告直连 → passages(含 PDF 抽取正文)。best-effort,失败返 []。"""
-    kw = _clean_cninfo_kw(keyword)
-    if not kw:
+    if not (keyword or "").strip():
         return []
+    candidate = _lead_entity(keyword) or _clean_cninfo_kw(keyword)
     category = _cninfo_category(keyword)   # 用原始问题判类别(年报/季报/...)
     owns = client is None
     cli = client or httpx.AsyncClient(
@@ -137,18 +192,25 @@ async def cninfo_search(
     )
     try:
         try:
+            # 先 topSearch 解析精确公司 → stock=code,orgId 查公告(比模糊 searchkey
+            # 稳:长句噪声 searchkey 命中 0)。解析不到则退回 searchkey。
+            name, stock = await _cninfo_resolve(candidate, cli)
+            data = {"pageNum": 1, "pageSize": max(max_results, 5),
+                    "column": "szse", "tabName": "fulltext",
+                    "category": category, "seDate": "", "sortName": "",
+                    "sortType": "", "isHLtitle": "false"}
+            if stock:
+                data["stock"] = stock
+            else:
+                data["searchkey"] = name or candidate
             resp = await cli.post(
-                _CNINFO_QUERY,
-                data={"pageNum": 1, "pageSize": max(max_results, 5),
-                      "column": "szse", "tabName": "fulltext",
-                      "searchkey": kw, "category": category, "seDate": "",
-                      "sortName": "", "sortType": "", "isHLtitle": "true"},
+                _CNINFO_QUERY, data=data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
             resp.raise_for_status()
             anns = (resp.json() or {}).get("announcements") or []
         except Exception as exc:  # noqa: BLE001
-            log.debug("cninfo query failed for %r: %s", kw, exc)
+            log.debug("cninfo query failed for %r: %s", candidate, exc)
             return []
         out: list[dict[str, Any]] = []
         for a in anns[:max_results]:
