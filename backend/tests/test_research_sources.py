@@ -55,6 +55,20 @@ def test_parse_openstd_respects_max():
     assert len(out) == 1
 
 
+def test_openstd_keyword():
+    # 短词原样
+    assert rs._openstd_keyword("钠离子电池") == "钠离子电池"
+    # 长子问题压成核心技术词(剥填充词 + 砍脚手架词)
+    assert rs._openstd_keyword("钠离子电池有哪些国家标准 GB/T 标准号") == "钠离子电池"
+    assert rs._openstd_keyword(
+        "围绕钠离子电池 GB/T 标准仍存在哪些争议或空白") == "钠离子电池"
+    # 句首"中国/截至目前"等填充词被循环剥离
+    assert rs._openstd_keyword(
+        "截至目前中国钠离子电池国家标准的制定进展") == "钠离子电池"
+    # 无技术词(纯脚手架)→ 空 → openstd_search 跳过
+    assert rs._openstd_keyword("这些 GB/T 标准由哪些主管部门管理") == ""
+
+
 # --- cninfo: mock httpx 验证 query→PDF→passage 流程 ---
 
 @pytest.mark.asyncio

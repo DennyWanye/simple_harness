@@ -242,6 +242,34 @@ async def cninfo_search(
 
 
 # ── 国家标准全文公开系统 ──────────────────────────────────────────────
+# openstd std_list 的 p.p2 是关键词匹配:长子问题("这些 GB/T 标准由哪些主管部门…")
+# 命中 0,核心技术词("钠离子电池")命中。下面把长子问题压成核心词。
+_OPENSTD_FILLERS = ("围绕", "关于", "这些", "截至目前", "截至", "目前", "梳理",
+                    "分析", "请", "调研", "查一下", "查", "中国", "我国", "国内")
+_OPENSTD_CUT = ("有哪些", "国家标准", "标准号", "强制性标准", "推荐性标准", "标准",
+                "规范", "gb/t", "gb ", "由哪些", "仍存在", "相关", "制定", "进展",
+                "争议", "技术委员会", "主管部门", "怎么", "如何", "最新", "动态",
+                "的", "有")
+
+
+def _openstd_keyword(q: str) -> str:
+    """长子问题 → 核心技术词(给 std_list p.p2 用)。无技术词则返回空(跳过)。"""
+    s = (q or "").strip()
+    changed = True
+    while changed:                       # 循环剥离句首填充词(围绕/中国/截至…)
+        changed = False
+        for f in _OPENSTD_FILLERS:
+            if s.startswith(f):
+                s = s[len(f):]
+                changed = True
+                break
+    low = s.lower()
+    idxs = [low.find(w) for w in _OPENSTD_CUT if 0 < low.find(w)]
+    if idxs:
+        s = s[:min(idxs)]
+    return s.strip("的，,。 \t（）()、 ")
+
+
 _DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")          # 发布/实施日期 cell
 _STATUS_WORDS = ("推标", "国标", "现行", "废止", "即将实施", "查看详细",
                  "查看", "详细", "强标")
@@ -304,7 +332,7 @@ async def openstd_search(
     client: Optional[httpx.AsyncClient] = None,
 ) -> list[dict[str, Any]]:
     """国标系统搜索 → 标准元数据 passages(标准号+名称)。best-effort,失败返 []。"""
-    kw = (keyword or "").strip()
+    kw = _openstd_keyword(keyword)   # 长子问题压成核心技术词,否则 std_list 命中 0
     if not kw:
         return []
     owns = client is None
