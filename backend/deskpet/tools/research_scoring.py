@@ -43,6 +43,8 @@ TIER_1 = {  # 9-10: peer-reviewed / official bodies / primary
     # Chinese academic / official
     "cnki.net", "wanfangdata.com.cn", "cqvip.com",
     "cas.cn", "nsfc.gov.cn", "xueshu.baidu.com", "gov.cn",
+    # Chinese first-party disclosure (Phase-2 direct sources)
+    "cninfo.com.cn", "sse.com.cn", "szse.cn",
 }
 
 TIER_2 = {  # 7-8: reputable news / established industry

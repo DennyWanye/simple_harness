@@ -131,6 +131,61 @@ def _site_directed_enabled() -> bool:
         return True
 
 
+# P2 multi-query / HyDE 查询扩展 + 中文一手源直连开关 ----------------
+def _query_expansion_enabled() -> bool:
+    """``[research].query_expansion`` (默认 True)。纯 LLM 零外部依赖,中国友好。"""
+    try:
+        import config as _cfg  # type: ignore[import-not-found]
+        return bool((_cfg.config.raw.get("research") or {}).get("query_expansion", True))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _direct_sources_enabled() -> bool:
+    """``[research].direct_sources`` (默认 True)。巨潮/国标 中国可直连。"""
+    try:
+        import config as _cfg  # type: ignore[import-not-found]
+        return bool((_cfg.config.raw.get("research") or {}).get("direct_sources", True))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+_EXPAND_PROMPT = """\
+You are expanding search coverage for a research topic.
+
+TOPIC: {topic}
+SUB-QUESTIONS:
+{subqs}
+
+Produce extra SEARCH QUERIES that would surface sources the originals might
+miss. Include:
+- 2-3 multi-query reformulations (synonyms, alternate entity names, English↔中文)
+- 1 HyDE query: a short hypothetical-answer sentence (the kind of sentence a
+  perfect source would contain), usable as a search query.
+
+Output ONLY a JSON array of query strings (same language as the topic where
+natural). No prose, no fences. Max 4 items.
+
+JSON ARRAY:"""
+
+
+async def _expand_queries(
+    llm_call: _LLMCall, topic: str, sub_questions: list[str], errors: list[str],
+    *, max_extra: int = 4,
+) -> list[str]:
+    """multi-query + HyDE: 一次 LLM 调用产出≤4 条额外搜索 query。
+    best-effort,失败/解析空 → []。去掉与原子问题重复的。"""
+    subqs = "\n".join(f"- {q}" for q in sub_questions) or "(none)"
+    try:
+        raw = await llm_call(_EXPAND_PROMPT.format(topic=topic, subqs=subqs))
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"query_expansion: {exc}")
+        return []
+    qs = parse_sub_questions(raw, max_questions=max_extra)
+    seen = {q.strip().lower() for q in sub_questions} | {topic.strip().lower()}
+    return [q for q in qs if q.strip().lower() not in seen][:max_extra]
+
+
 def _rerank_mode() -> str:
     """``[research].reranker`` ∈ {llm(默认), local, off}。
 
@@ -858,9 +913,17 @@ async def research_run(
         sub_questions = [topic]
         errors.append("plan_fallback: using topic verbatim")
 
+    # ---- 1.5 query expansion (multi-query + HyDE) -------------------
+    # 一次 LLM 调用产出额外搜索 query(改写+HyDE),提升召回。归属 topic(不偏向
+    # 某子问题的关键词打分)。失败静默。
+    expansion_qs: list[str] = []
+    if _query_expansion_enabled():
+        expansion_qs = await _expand_queries(llm_call, topic, sub_questions, errors)
+
     # ---- 2. search --------------------------------------------------
     # 每个子问题: 普通搜 + (命中政策/企业/学术意图时)site: 定向官方域加一搜,
     # 让一手权威源(gov.cn/cninfo/arxiv)进候选池。site_directed 可关。
+    # 末尾追加 query expansion 的额外查询(归属 topic)。
     site_on = _site_directed_enabled()
     search_specs: list[tuple[str, str]] = []  # (实际搜索串, 归属子问题)
     for q in sub_questions:
@@ -868,6 +931,8 @@ async def research_run(
         site = _site_directive_for(q) if site_on else None
         if site:
             search_specs.append((f"{q} {site}", q))
+    for eq in expansion_qs:
+        search_specs.append((eq, topic))
     search_tasks = [
         search_fn(sq, max_results=max_urls_per_query) for sq, _ in search_specs
     ]
@@ -966,6 +1031,45 @@ async def research_run(
         p = _passage_from(url, payload)
         if p is not None:
             passages.append(p)
+
+    # ---- 4.4 Phase-2 中文一手源直连 (巨潮/国标) --------------------
+    # 子问题谈"上市公司/财报"→巨潮公告(PDF抽正文);谈"国标/标准"→国标系统。
+    # 直连源专门构造 Passage(跳过长度门 —— 国标元数据短但权威),高新鲜度。
+    if _direct_sources_enabled():
+        from . import research_sources as _rs
+        for q in sub_questions:
+            src = _rs.direct_source_for(q)
+            if not src:
+                continue
+            try:
+                items = (await _rs.cninfo_search(q, max_results=3) if src == "cninfo"
+                         else await _rs.openstd_search(q, max_results=3))
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"direct:{src}:{q!r}: {exc}")
+                items = []
+            for payload in items:
+                d_url = payload.get("url", "")
+                d_text = (payload.get("text") or "").strip()
+                if not d_url or not d_text:
+                    continue
+                d_auth = research_scoring.score_authority(d_url)
+                d_rel = _relevance_score(d_text, keywords=keywords)
+                d_depth = min(len(d_text) / 2000.0, 1.0) * 10.0
+                d_sc = research_scoring.composite_score(
+                    authority=d_auth, recency=8.0, relevance=d_rel,
+                    depth=d_depth, topic_velocity=velocity,
+                )
+                passages.append(Passage(
+                    citation=Citation(
+                        n=0, url=d_url, title=(payload.get("title") or d_url)[:200],
+                        snippet=d_text[:250].replace("\n", " ").strip(),
+                        fetched_at=float(payload.get("fetched_at", time.time())),
+                        authority=d_auth,
+                    ),
+                    text=d_text, score=d_sc,
+                    dims={"authority": d_auth, "recency": 8.0,
+                          "relevance": d_rel, "depth": d_depth},
+                ))
 
     # ---- 4.5 reflection round (V8 iterative deepening) -------------
     # depth=deep → after round-1 evidence, ask the LLM what gaps remain,

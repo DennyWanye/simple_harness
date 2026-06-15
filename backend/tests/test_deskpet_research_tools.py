@@ -49,6 +49,15 @@ from deskpet.tools.research_tools import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _isolate_phase2(monkeypatch):
+    """测试默认关掉 P2 query-expansion + direct-sources：它们会多吃一次
+    llm_call / 打外网,打乱 FakeLLM([plan,synth]) 序列。需要测的用例自行
+    monkeypatch 打开。"""
+    monkeypatch.setattr(r, "_query_expansion_enabled", lambda: False)
+    monkeypatch.setattr(r, "_direct_sources_enabled", lambda: False)
+
+
 # ----------------------------------------------------------------------
 # Sub-question planner parsing
 # ----------------------------------------------------------------------
@@ -1223,3 +1232,87 @@ async def test_research_run_site_directed_off(monkeypatch):
 
     await research_run("topic", llm_call=llm, search=_search, extract=_extract)
     assert not any("site:" in q for q in searched)  # 关了 → 无 site: 定向
+
+
+# --- P2 query expansion (multi-query / HyDE) ---
+
+@pytest.mark.asyncio
+async def test_research_run_query_expansion(monkeypatch):
+    """开启 query_expansion → plan 后多一次 LLM 产额外 query,这些 query 被搜。"""
+    monkeypatch.setattr(r, "_query_expansion_enabled", lambda: True)
+    monkeypatch.setattr(r, "_RERANK_LLM_CALL", None)
+    plan = json.dumps(["q1?"])
+    expansion = json.dumps(["扩展查询A", "扩展查询B"])  # multi-query 改写
+    synth = "# T\n## TL;DR\n\nA [^1]."
+    llm = FakeLLM([plan, expansion, synth])  # plan → expansion → synth
+    searched = []
+
+    async def _search(q, *, max_results=5):
+        searched.append(q)
+        return [{"url": "https://arxiv.org/a", "title": "A", "snippet": ""}]
+
+    async def _extract(url):
+        return {"ok": True, "url": url, "title": "A",
+                "text": "content here. " * 40, "fetched_at": time.time()}
+
+    await research_run("topic", llm_call=llm, search=_search, extract=_extract)
+    assert "扩展查询A" in searched and "扩展查询B" in searched
+
+
+# --- P2 direct sources (cninfo / openstd) ---
+
+@pytest.mark.asyncio
+async def test_research_run_direct_source_cninfo(monkeypatch):
+    """子问题谈财报 → 巨潮直连源进引用池(高权威)。"""
+    monkeypatch.setattr(r, "_direct_sources_enabled", lambda: True)
+    monkeypatch.setattr(r, "_RERANK_LLM_CALL", None)
+    import deskpet.tools.research_sources as rs_mod
+
+    async def _fake_cninfo(keyword, *, max_results=3, client=None):
+        return [{"ok": True, "url": "http://static.cninfo.com.cn/x/123.PDF",
+                 "title": "宁德时代 2025年年度报告",
+                 "text": "宁德时代2025年营收与净利润等关键财务数据正文。" * 30,
+                 "fetched_at": time.time(), "source": "cninfo"}]
+
+    monkeypatch.setattr(rs_mod, "cninfo_search", _fake_cninfo)
+    plan = json.dumps(["宁德时代2025年财报营收如何?"])
+    synth = "# T\n## TL;DR\n\n据公告 [^1]."
+    llm = FakeLLM([plan, synth])
+
+    async def _search(q, *, max_results=5):
+        return [{"url": "https://news.com/y", "title": "新闻", "snippet": ""}]
+
+    async def _extract(url):
+        return {"ok": True, "url": url, "title": "新闻",
+                "text": "一般新闻内容。" * 40, "fetched_at": time.time()}
+
+    report = await research_run("topic", llm_call=llm, search=_search, extract=_extract)
+    assert any("cninfo.com.cn" in c.url for c in report.citations)
+
+
+@pytest.mark.asyncio
+async def test_research_run_direct_source_disabled(monkeypatch):
+    """direct_sources 关 → 不调直连源(即使子问题谈财报)。"""
+    monkeypatch.setattr(r, "_direct_sources_enabled", lambda: False)
+    monkeypatch.setattr(r, "_RERANK_LLM_CALL", None)
+    import deskpet.tools.research_sources as rs_mod
+    called = {"n": 0}
+
+    async def _fake_cninfo(keyword, *, max_results=3, client=None):
+        called["n"] += 1
+        return []
+
+    monkeypatch.setattr(rs_mod, "cninfo_search", _fake_cninfo)
+    plan = json.dumps(["某公司财报营收?"])
+    synth = "# T\n## TL;DR\n\nA [^1]."
+    llm = FakeLLM([plan, synth])
+
+    async def _search(q, *, max_results=5):
+        return [{"url": "https://x.com/a", "title": "A", "snippet": ""}]
+
+    async def _extract(url):
+        return {"ok": True, "url": url, "title": "A",
+                "text": "content. " * 40, "fetched_at": time.time()}
+
+    await research_run("topic", llm_call=llm, search=_search, extract=_extract)
+    assert called["n"] == 0

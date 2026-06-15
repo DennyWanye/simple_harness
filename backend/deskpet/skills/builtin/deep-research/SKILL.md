@@ -50,9 +50,11 @@ requires_script: false
 research_run(topic=<用户主题>, depth=light|standard|deep)
 ```
 
-工具内部跑：plan（拆 3-6 子问题）→ search（多引擎兼容性降级队列：必应→DuckDuckGo，
-百度备选；中文自动走中文区；某引擎被墙/限流自动降级下一个；**政策/企业/学术类子问题
-额外 site: 定向官方域**：政策→site:gov.cn、上市公司→site:cninfo.com.cn、学术→site:arxiv.org）→
+工具内部跑：plan（拆 3-6 子问题）→ **query 扩展（multi-query 改写 + HyDE，提召回）**
+→ search（多引擎兼容性降级队列：必应→DuckDuckGo，百度备选；中文自动走中文区；某引擎被
+墙/限流自动降级下一个；**政策/企业/学术类子问题额外 site: 定向官方域**：政策→site:gov.cn、
+上市公司→site:cninfo.com.cn、学术→site:arxiv.org）→ **中文一手源直连（谈上市公司/财报→
+巨潮资讯公告 PDF；谈国标/标准→国家标准全文系统，中国可直连）**→
 fetch+extract（trafilatura 抽正文，JS 渲染站抽不到时**二级兜底 Jina Reader** 跑 JS 救回
 + 抓取时间）→ **分层打分**（域名权威 TIER1/2/3 含中文学术/媒体 + 新鲜度按主题速度 +
 相关性[关键词+BGE-M3语义] + 深度 + 来源多样性）→
