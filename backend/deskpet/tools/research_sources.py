@@ -40,8 +40,12 @@ _CNINFO_TOPSEARCH = "http://www.cninfo.com.cn/new/information/topSearch/query"
 _CNINFO_STATIC = "http://static.cninfo.com.cn/"
 _OPENSTD_LIST = "https://openstd.samr.gov.cn/bzgk/gb/std_list"
 
-_PDF_MAX_PAGES = 8         # 年报常数百页;只抽前 N 页(摘要/要点/主要财务通常在前面)
-_PDF_MAX_CHARS = 12_000    # 单篇正文上限,控 token
+_PDF_MAX_PAGES = 12        # 年报常数百页;只抽前 N 页(摘要/要点/主要财务通常在前面)
+_PDF_MAX_CHARS = 18_000    # 单篇正文上限,控 token
+_PDF_SCAN_PAGES = 40       # 财务类查询找"主要会计数据"表时最多向后扫多少页
+# "主要会计数据和财务指标"那张表 = 营收+净利润+总资产+净资产 全在一处,是财报类
+# 查询最该抓的页。年报正文里它可能在第 4~8 页(摘要前 1~3 页),用这些标记定位。
+_FIN_TABLE_MARKERS = ("主要会计数据和财务指标", "主要会计数据")
 
 
 # ── 意图路由 ──────────────────────────────────────────────────────────
@@ -155,26 +159,61 @@ async def _cninfo_resolve(candidate: str, cli: httpx.AsyncClient) -> tuple[str, 
 
 
 # ── 巨潮资讯 ──────────────────────────────────────────────────────────
-def _extract_pdf_text(data: bytes) -> str:
-    """pypdf 抽 PDF 前 N 页文本(capped)。失败/无库 → 空串。"""
+def _extract_pdf_text(data: bytes, *, want_financials: bool = False) -> str:
+    """pypdf 抽 PDF 文本(capped)。失败/无库 → 空串。
+
+    ``want_financials=True``(财报类查询): 先在前 ``_PDF_SCAN_PAGES`` 页里定位
+    "主要会计数据和财务指标"那张表(营收+净利润+总资产+净资产 全在这一处),把它放
+    正文**最前**,保证不被字数上限截掉 —— 否则年报 300 页里这张表常排在第 4~8 页后,
+    8 页上限正好漏掉净利润行(真机核查 BYD 报告暴露的就是这个召回缺口)。"""
     try:
         import pypdf  # type: ignore
     except Exception:  # noqa: BLE001
         return ""
     try:
         reader = pypdf.PdfReader(io.BytesIO(data))
-        parts: list[str] = []
-        for page in reader.pages[:_PDF_MAX_PAGES]:
-            try:
-                parts.append(page.extract_text() or "")
-            except Exception:  # noqa: BLE001
-                continue
-            if sum(len(p) for p in parts) >= _PDF_MAX_CHARS:
-                break
-        return "\n".join(parts)[:_PDF_MAX_CHARS].strip()
     except Exception as exc:  # noqa: BLE001
-        log.debug("pypdf extract failed: %s", exc)
+        log.debug("pypdf open failed: %s", exc)
         return ""
+    n = len(reader.pages)
+    _cache: dict[int, str] = {}
+
+    def _pg(i: int) -> str:
+        if i not in _cache:
+            try:
+                _cache[i] = reader.pages[i].extract_text() or ""
+            except Exception:  # noqa: BLE001
+                _cache[i] = ""
+        return _cache[i]
+
+    # 财务类: 定位主要会计数据表页 → 置顶(它就是营收+净利润所在表)
+    fin_block = ""
+    if want_financials:
+        for i in range(min(_PDF_SCAN_PAGES, n)):
+            t = _pg(i)
+            if any(m in t for m in _FIN_TABLE_MARKERS) or (
+                "营业收入" in t and "净利润" in t
+            ):
+                fin_block = "[主要会计数据和财务指标]\n" + t.strip() + "\n\n"
+                break
+
+    parts: list[str] = [fin_block] if fin_block else []
+    total = len(fin_block)
+    for i in range(min(_PDF_MAX_PAGES, n)):
+        t = _pg(i)
+        parts.append(t)
+        total += len(t)
+        if total >= _PDF_MAX_CHARS:
+            break
+    return "\n".join(parts)[:_PDF_MAX_CHARS].strip()
+
+
+def _rank_cninfo_anns(anns: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """财报类: 把"年报摘要"排到正报之前 —— 摘要短、"主要会计数据"表集中在头一两页,
+    召回性价比最高(正报数百页 pypdf 只抽得到前部)。摘要里没有的细分项再靠正报兜底。"""
+    summ = [a for a in anns if "摘要" in (a.get("announcementTitle") or "")]
+    rest = [a for a in anns if "摘要" not in (a.get("announcementTitle") or "")]
+    return summ + rest
 
 
 async def cninfo_search(
@@ -212,6 +251,11 @@ async def cninfo_search(
         except Exception as exc:  # noqa: BLE001
             log.debug("cninfo query failed for %r: %s", candidate, exc)
             return []
+        # 财报类(category 命中年报/季报等): 摘要排到正报前(摘要"主要会计数据"表集中,
+        # pypdf 召回性价比最高),且抽取时定位财务表置顶。want_fin 控这两条增强。
+        want_fin = bool(category)
+        if want_fin:
+            anns = _rank_cninfo_anns(anns)
         out: list[dict[str, Any]] = []
         for a in anns[:max_results]:
             adj = a.get("adjunctUrl") or ""
@@ -225,7 +269,7 @@ async def cninfo_search(
             try:
                 pr = await cli.get(pdf_url)
                 if pr.status_code == 200 and pr.content:
-                    text = _extract_pdf_text(pr.content)
+                    text = _extract_pdf_text(pr.content, want_financials=want_fin)
             except Exception as exc:  # noqa: BLE001
                 log.debug("cninfo pdf fetch failed %s: %s", pdf_url, exc)
             # PDF 抽不到正文时退化为元数据(公司+标题仍是一手信号)

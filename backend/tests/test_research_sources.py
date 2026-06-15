@@ -111,6 +111,19 @@ async def test_cninfo_search_builds_passages(monkeypatch):
     assert out[0]["text"]  # 有内容(PDF 抽到 或 元数据退化)
 
 
+def test_rank_cninfo_anns_summary_first():
+    """财报类: '年度报告摘要' 排到 '年度报告' 正报之前(摘要财务表召回性价比高)。"""
+    anns = [
+        {"announcementTitle": "2024年年度报告"},
+        {"announcementTitle": "2024年年度报告摘要"},
+        {"announcementTitle": "关于召开股东大会的公告"},
+    ]
+    ranked = rs._rank_cninfo_anns(anns)
+    assert "摘要" in ranked[0]["announcementTitle"]   # 摘要置顶
+    titles = [a["announcementTitle"] for a in ranked]
+    assert titles == ["2024年年度报告摘要", "2024年年度报告", "关于召开股东大会的公告"]
+
+
 @pytest.mark.asyncio
 async def test_cninfo_search_empty_keyword():
     assert await rs.cninfo_search("") == []
