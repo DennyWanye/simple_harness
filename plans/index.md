@@ -11,7 +11,7 @@
 
 | 工作项 | 主文档 | 一句话 | 状态 |
 |---|---|---|---|
-| **crawl4ai-fetch-tier** | [00-PLAN](2026-06-16-crawl4ai-fetch-tier/00-PLAN.md) | deep-research 抓取加一级 Crawl4AI 真浏览器渲染兜底(治 JS/SPA 空壳站)；opt-in + Chromium 外置下载不进默认包 | 📋 |
+| **crawl4ai-fetch-tier** | [00-PLAN](2026-06-16-crawl4ai-fetch-tier/00-PLAN.md) | deep-research 抓取加一级真浏览器渲染兜底(治 JS/SPA 空壳站)；POC 后**主线转 Tauri 自带 WebView**(三端零体积零安装),CDP-系统Edge 为 Win 加速档,Crawl4AI 降 dev 高级档 | 📋 |
 | **research-reranker** | [00-PLAN](2026-06-14-research-reranker/00-PLAN.md) | deep-research 召回后精排：默认 LLM 重排(gpt-4.1-mini,免下载)+本地 bge-reranker 可选 | 🟡 |
 | **deep-search-best-practices** | [00-ROADMAP](2026-06-14-deep-search-best-practices/00-ROADMAP.md) | 不接付费 API 的深搜最佳实践调研 + 升级路线图(SearXNG/Jina Reader/reranker/一手源) | 📋 |
 | **deep-research-v8** | [00-PLAN](2026-06-13-deep-research-v8/00-PLAN.md) | 搜索+deep-research 升级到 DeepResearch V8(分层打分/反思迭代/源质量过滤/落报告) | ✅ |

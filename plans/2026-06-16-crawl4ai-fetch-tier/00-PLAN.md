@@ -1,9 +1,12 @@
-# Crawl4AI JS 渲染抓取层 — 实施 PLAN
+# JS 渲染抓取层 — 实施 PLAN（首选 Tauri WebView，Crawl4AI 降 dev 高级档）
 
-> **状态**: 📋 规划中（已过两轮评审迭代，详见文末「评审迭代记录」）
-> **目标**: 给 deep-research 抓取链路加一级 **Crawl4AI 真浏览器渲染**兜底，治 trafilatura/Jina
-> 都拿不下的 JS/SPA/强反爬站，输出 LLM 友好的干净 Markdown。
-> **仓库**: https://github.com/unclecode/crawl4ai （pip `crawl4ai`，Python 3.10+，底层 Playwright）
+> **状态**: 📋 规划中（两轮评审 + WebView POC PASS + 三端最佳实践拍板，详见 §2.5 与文末记录）
+> **目标**: 给 deep-research 抓取链路加一级**真浏览器渲染**兜底，治 trafilatura/Jina 都拿不下的
+> JS/SPA 站。**主线实现 = 复用 Tauri 自带 WebView（三端零体积零安装，见 §2.5）**；Crawl4AI（本
+> plan 原始诉求）降为 dev/高级档，CDP-系统Edge 为 Windows 可选加速档。
+> **历史**: 本 plan 始于"接 Crawl4AI"，经 POC + 三端兼容评估后**主线转向 Tauri WebView**；文件夹名
+> 保留 `crawl4ai-fetch-tier` 仅为历史连续性，**真正主线见 §2.5**。
+> **关键来源**: Crawl4AI https://github.com/unclecode/crawl4ai ；Tauri WebView `eval_with_callback`。
 > **最后更新**: 2026-06-16
 
 > ⚠️ **评审关键前置（务必先读）**：本仓库**已存在** `backend/deskpet/tools/browser_use_tool.py`
@@ -52,21 +55,52 @@ r.jina.ai 二级兜底(JS 渲染,但国外服务,中国大陆需代理)
 
 ---
 
+## 2.5 三端最佳实践决策（2026-06-16，用户拍板 — 本 plan 的真正主线）
+
+> WI-(-1) POC 证明"系统引擎渲染 JS"能力成立后，以**「三端(Win/Mac/Linux)兼容 + 打包后用户零负担」**
+> 为最高准则重排方案。**结论：JS 渲染兜底的首选实现 = 复用 Tauri 自带 WebView 开隐藏窗渲染。**
+
+**为什么是它（决定性事实）**：DeskPet 是 Tauri 应用 —— **它能在某平台跑起来，就说明该平台的 WebView
+引擎一定在**（Win=WebView2 / Mac=WKWebView / Linux=WebKitGTK，Tauri 无引擎启动不了）。所以 Tauri
+WebView 是**三端唯一"保证在场 + 用户零安装 + 零额外体积"**的浏览器引擎。
+
+| 方案 | Windows | macOS | Linux | 用户负担 | 正式包可用 | 跨平台一套代码 |
+|---|---|---|---|---|---|---|
+| **Tauri 自带 WebView（首选）** | ✅WebView2 | ✅WKWebView | ✅WebKitGTK | **零** | ✅ | ✅ |
+| CDP-系统Edge（Win 可选加速档） | ✅ | ❌默认无 | ❌不一定 | Mac/Linux 需装浏览器 | ✅(websockets) | ❌偏科 |
+| Crawl4AI/Playwright（dev 高级档） | ✅ | ✅ | ✅ | 下 ~100MB | ❌冻结包不可 | ✅但重 |
+
+**代价全在开发侧（用户侧永远零负担）**：① 要写一小块 Rust（隐藏 webview→导航→`eval` 取 DOM→channel 回传）；
+② 三端 `eval` 小差异收进**注入的 JS**（自己 try/catch 包字符串，规避 Win 吞异常）；③ **安全**：用
+**隔离 webview**（不暴露 app IPC 给被抓的外部页）只跑固定抠正文脚本，**绝不复用桌宠主窗口**；
+④ 常驻单例隐藏 webview 复用，顺序导航控资源。
+
+**三档定位（最终）**：
+- 🥇 **Tauri WebView 渲染** = 跨平台首选兜底（本 plan 主线，下文 WI 以它为准）
+- 🥈 **CDP-系统Edge** = Windows 可选加速档（系统 Edge 比内嵌 webview 略好控；POC 已验证；非主路）
+- 🥉 **Crawl4AI** = dev / 高级用户档，不进默认包（原始诉求保留，但不是默认实现）
+
+---
+
 ## 3. 架构与接入点
 
-### 3.1 抓取链路（升级后，三级降级）
+### 3.1 抓取链路（升级后，三级降级 — 以 Tauri WebView 为 JS 兜底主路）
 
 ```
-httpx 直抓 → trafilatura(主)
-   ↓ 正文 < _JINA_MIN_CHARS(300)
-[research].crawl4ai=on 且浏览器就绪 → Crawl4AI 渲染抽 Markdown   ← 本 plan 新增
-   ↓ 仍不行 / crawl4ai 关 / 浏览器没装
-[research].jina_reader=on → Jina Reader(国外,代理)
+httpx 直抓 → trafilatura(主, 三端, 治静态站)
+   ↓ 正文 < _JINA_MIN_CHARS(300) 且原始 HTML > 20KB(疑 JS 空壳, 见 WI-3 双闸)
+[research].js_render=on → Tauri 自带 WebView 隐藏窗渲染 → 取 outerHTML 再 trafilatura   ← 主线(三端零体积)
+   ↓ (Windows 可选) crawl4ai_browser=cdp-edge → CDP 连系统 Edge(POC 验证, 加速档)
+   ↓ (dev/高级) crawl4ai → Crawl4AI 渲染(不进默认包)
+   ↓ 仍不行 / 渲染关
+[research].jina_reader=on → Jina Reader(国外, 代理)
    ↓
 返回现有最好结果(哪怕短)
 ```
 
-> **次序决策**：Crawl4AI（本地、中国可用）排在 Jina（国外、需代理）**之前** —— 中国用户优先用能直连的。
+> **次序决策**：本地渲染（WebView / CDP-Edge / crawl4ai，皆中国可直连）排在 Jina（国外、需代理）**之前**；
+> 三档本地渲染按"命中即停"，不叠跑（见 R6 去重）。配置开关统一为 `[research].js_render`(总开关) +
+> `js_render_engine`(webview[默认] / cdp-edge / crawl4ai)。
 
 ### 3.2 代码接入点（最小侵入）
 
@@ -109,7 +143,10 @@ httpx 直抓 → trafilatura(主)
 >
 > **代价/待解**：① 依赖系统装了 Edge（Win10/11 必装 ✓；Mac/Linux 需另议）② 当前 POC 每页冷启 10-17s（含每次新起无头进程 + 固定 4s 等待）→ 实现时必须**单例常驻无头浏览器 + 复用、调优等待**，把单页压到 2-4s。
 
-**判定回写用户**：GATE PASS。建议把"**系统引擎渲染**"做成抓取首选兜底档，**优先用 CDP-系统-Edge 实现**（零体积 + 正式包可用 + 不动 Rust）；Crawl4AI 与 Tauri-WebView-eval 都降为备选。**等用户拍板后再开实现。**
+**判定回写用户**：GATE PASS —— "复用系统引擎渲染 JS、零下载"成立。
+
+> **★★ 用户决策（2026-06-16）：以「三端兼容 + 打包后用户零负担」为最高准则，最终选 Tauri 自带 WebView 为首选实现，CDP-系统-Edge 降为 Windows 可选加速档。** 见下「§2.5 三端最佳实践决策」。
+> （CDP-系统-Edge 虽 Windows 最优、且我 POC 证明能力成立，但它**跨平台偏科**：Mac 默认无 Edge/Chrome、Linux 不一定有 → 不能作三端主路。Tauri WebView 是三端唯一"保证在场 + 免安装"的引擎。）
 
 ### WI-0 决策 spike + 可行性 GATE（先做，**未通过不得进 WI-1**）
 > 一轮升级：从"1 步 spike"升为**硬 GATE**。下列每条都要有**实测证据**（命令输出/截图/日志），
