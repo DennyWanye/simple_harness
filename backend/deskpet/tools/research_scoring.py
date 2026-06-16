@@ -92,12 +92,32 @@ LOW_QUALITY = {
     "zidian.qianp.com", "zdic.net", "cidian.911cha.com", "tool.httpcn.com",
     "chazidian.com", "zd9999.com", "guoxuedashi.net", "kxue.com",
     "obsky.com", "5156edu.com",
+    # 真机豆瓣调研暴露的漏网字典/词义站(精确域名列表追不完 → 下面补模式匹配)
+    "chienwen.net", "gushici.net", "kmcha.com", "hwxnet.com", "cha88.cn",
 }
+
+# 字典/词义站**模式匹配**(精确列表追不完): 子域 dictionary./zidian./cidian./hanyu./
+# cihai./chengyu./ciku./xinhua. 或路径含 /cidian//zidian//chengyu/ → 几乎必是字典词条页。
+# (真机豆瓣调研:dictionary.chienwen.net / dictionary.cambridge.org / zidian.gushici.net
+#  混进报告引用 —— 用模式一次性根治,不再逐个追域名。)
+_LOW_QUALITY_HOST_RE = re.compile(
+    r"(^|\.)(dictionary|zidian|cidian|hanyu|cihai|chengyu|ciku|xinhuazidian)\."
+)
+_LOW_QUALITY_PATH_RE = re.compile(r"/(cidian|zidian|chengyu|cihai)/")
 
 
 def is_low_quality(url: str) -> bool:
-    """字典/词义站 → True(应剔除)。按可注册域匹配,覆盖其子域。"""
-    return get_domain(url) in LOW_QUALITY
+    """字典/词义站 → True(应剔除)。精确域名列表 + 子域/路径模式双判,覆盖其子域。"""
+    if get_domain(url) in LOW_QUALITY:
+        return True
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if _LOW_QUALITY_HOST_RE.search(host):
+        return True
+    path = (parsed.path or "").lower()
+    if _LOW_QUALITY_PATH_RE.search(path):
+        return True
+    return False
 
 # AI 生成内容声明 —— 命中即视为不可作正式引据(codex 评审抓到 [^3] 明示"包含人工
 # 智能生成内容"却撑核心事实)。研究管线据此直接剔除该来源。

@@ -141,10 +141,21 @@ def test_extract_us_ticker():
 
 def test_low_quality_filter():
     from deskpet.tools import research_scoring as rsc
+    # 精确域名列表
     assert rsc.is_low_quality("https://www.hanyuguoxue.com/cidian/ci-xxx") is True
     assert rsc.is_low_quality("https://zidian.qianp.com/zi/特") is True
+    # 子域模式(真机豆瓣调研漏网的字典站,精确列表追不完→模式匹配根治)
+    assert rsc.is_low_quality("https://dictionary.chienwen.net/word/5f/如何.html") is True
+    assert rsc.is_low_quality("https://dictionary.cambridge.org/dict/x") is True
+    assert rsc.is_low_quality("https://zidian.gushici.net/y") is True
+    assert rsc.is_low_quality("https://kmcha.com/z") is True
+    # 路径模式
+    assert rsc.is_low_quality("https://example.com/cidian/abc") is True
+    # 正常站不误杀
     assert rsc.is_low_quality("http://static.cninfo.com.cn/x.PDF") is False
     assert rsc.is_low_quality("https://openstd.samr.gov.cn/x") is False
+    assert rsc.is_low_quality("https://book.douban.com/latest") is False
+    assert rsc.is_low_quality("https://news.cctv.com/china/") is False
 
 
 @pytest.mark.asyncio
