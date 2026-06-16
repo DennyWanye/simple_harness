@@ -430,12 +430,14 @@ class TestSummariserPrompt:
         msgs = _messages(10, include_system=False)
         await cc.compress(msgs)
 
-        sys_prompt = llm.calls[0]["messages"][0]["content"].lower()
-        # The prompt must ASK for names, dates/times, decisions — even if
-        # the actual LLM may ignore them. This is the contract we ship.
-        assert "named" in sys_prompt or "name" in sys_prompt
-        assert "date" in sys_prompt or "time" in sys_prompt
-        assert "decision" in sys_prompt or "commitment" in sys_prompt
+        sys_prompt = llm.calls[0]["messages"][0]["content"]
+        # 结构化摘要契约(优化 #2): prompt 必须要求保活【当前任务 + 最近用户请求】,
+        # 同时保留关键事实/决策/日期。这是我们出厂的契约(LLM 可能不照做,但必须要求)。
+        assert "当前任务" in sys_prompt          # 头等: 任务连续性不丢
+        assert "用户请求" in sys_prompt          # 保最近一条用户请求
+        assert "决定" in sys_prompt or "决策" in sys_prompt
+        assert "日期" in sys_prompt and ("数字" in sys_prompt or "数据" in sys_prompt)
+        assert "不要杜撰" in sys_prompt or "杜撰" in sys_prompt
 
     @pytest.mark.asyncio
     async def test_summariser_uses_configured_model(self) -> None:

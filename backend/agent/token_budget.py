@@ -150,42 +150,17 @@ def _weighted_chars(s: str) -> int:
 
 
 def estimate_tokens(messages: list[dict[str, Any]]) -> int:
-    """CJK-aware char/4 heuristic. Counts content strings + tool_call payloads.
+    """CJK-aware token 估算。**统一委托** ``deskpet.agent.tokens.count_messages_tokens``
+    (同一口径,可选 tiktoken 精度),消除散落 ``len//4`` 不一致(优化 #1+#3)。
 
-    Tradeoff: we used to consider importing tiktoken, but it's ~30 MB
-    of model files and only matches OpenAI's BPE — not deepseek's,
-    not Anthropic's, etc. The char/4 estimate is within ~15% on
-    English; CJK chars are weighted ≈1 token each (see _CJK_RE note).
+    历史取舍仍成立: 默认不上 tiktoken(~30MB BPE + 中国网络 + 跨 provider 不准),
+    启发式 CJK-aware + 安全偏上 + relay 真实反馈三刀制实战足够;tiktoken 仅
+    ``DESKPET_TIKTOKEN=1`` 时作精度增强。``_weighted_chars`` 保留供 BC。
     """
     if not messages:
         return 0
-
-    chars = 0
-    for m in messages:
-        # `content` may be a string or absent (assistant tool-only turns)
-        content = m.get("content")
-        if isinstance(content, str):
-            chars += _weighted_chars(content)
-        elif content is not None:
-            chars += _weighted_chars(str(content))
-
-        # tool_calls payload — args may be a JSON string or pre-parsed dict
-        tool_calls = m.get("tool_calls")
-        if tool_calls:
-            for tc in tool_calls:
-                if isinstance(tc, dict):
-                    args = tc.get("args") or tc.get("arguments")
-                    if args is not None:
-                        chars += _weighted_chars(
-                            args if isinstance(args, str) else str(args)
-                        )
-                    name = tc.get("name") or ""
-                    chars += len(str(name))
-
-    # Each ~4 chars ≈ 1 token; add a small per-message overhead for
-    # role tag + delimiters that the wire protocol adds.
-    per_msg_overhead = 4 * len(messages)
-    return max(0, chars // 4 + per_msg_overhead)
+    from deskpet.agent.tokens import count_messages_tokens
+    return count_messages_tokens(messages)
 
 
 def get_context_window(model_name: str) -> int:

@@ -96,13 +96,18 @@ class ContextCompressor:
         Cap on the compressed output. Default 512.
     """
 
+    # 结构化摘要(优化 #2): 旧版只是一段 prose、只保"实体/时间/决策",压缩后
+    # 常把"用户正在让我做的那件事"摘没了 → 桌宠"看不到上一轮任务"。新版强制
+    # 用分段输出,**头等优先保活"当前进行中的任务 + 最近一条用户请求"**,任务连续性不丢。
     _SUMMARY_SYSTEM = (
-        "You summarise a DESKPET conversation segment for prompt-cache "
-        "efficiency. Preserve: named entities (people, projects), dates "
-        "and times, explicit decisions / commitments, and any data the "
-        "user asked to remember. Drop filler, repetition, and social "
-        "pleasantries. Output MUST be a neutral third-person prose "
-        "paragraph in the user's language. Do NOT hallucinate."
+        "你在压缩一段 DESKPET 对话历史(为省 token),但**绝不能丢掉任务连续性**。\n"
+        "用**用户的语言**、第三人称,按下面分段输出(空的段直接省略,不要写'无'):\n\n"
+        "【进行中/当前任务】← 最重要,必须保: 用户当前正让助手做的那件事是什么、做到哪一步了;"
+        "把**最近一条用户请求**的原意完整保留(短就近乎原文)。\n"
+        "【已完成】已经做完的步骤、得到的结论或产物(带关键结果值)。\n"
+        "【关键事实与决策】人名/项目/数字/日期/已定的决定/用户明确让记住的数据。\n"
+        "【待办/下一步】尚未完成、接下来要做的事。\n\n"
+        "丢弃: 寒暄、重复、过程性废话。**不要杜撰**任何未在原文出现的信息。"
     )
 
     def __init__(
@@ -114,7 +119,7 @@ class ContextCompressor:
         first_n: int = 3,
         last_n: int = 6,
         model: str = "claude-haiku-4-5",
-        summary_max_tokens: int = 512,
+        summary_max_tokens: int = 768,   # 512→768: 结构化摘要稍长,保任务连续性(优化 #2)
     ) -> None:
         self._llm = llm_registry
         self.context_window = int(context_window)
@@ -245,6 +250,21 @@ class ContextCompressor:
         reduction = 0.0
         if input_tokens > 0:
             reduction = max(0.0, 1.0 - (output_tokens / input_tokens))
+
+        # 可观测(优化 #4): 压缩命中落一条结构化锚点,便于排查"何时压了/压了多少"。
+        # grep `context_compacted` → stderr → tauri dev log。
+        logger.info(
+            "context_compacted",
+            middle_tokens_in=input_tokens,
+            summary_tokens_out=output_tokens,
+            reduction=round(reduction, 3),
+            summarized_msgs=len(middle_chunk),
+            kept_head=len(first_chunk),
+            kept_tail=len(last_chunk),
+            model=self.model,
+            window=self.context_window,
+            threshold_pct=self.threshold_percent,
+        )
 
         return CompressionResult(
             messages=new_messages,
@@ -413,10 +433,12 @@ def _format_summary(summary_text: str) -> str:
 
 
 def _approx_tokens(text: str) -> int:
-    """Coarse token estimate — same 4-char heuristic as the assembler."""
+    """Token estimate — 统一走 tokens.count_text_tokens(CJK-aware + 可选 tiktoken,
+    与 budget/assembler 同口径,消除旧 ``len//4`` 不一致,优化 #1+#3)。"""
     if not text:
         return 0
-    return max(1, len(text) // 4)
+    from .tokens import count_text_tokens
+    return count_text_tokens(text)
 
 
 def _build_goal_anchor(

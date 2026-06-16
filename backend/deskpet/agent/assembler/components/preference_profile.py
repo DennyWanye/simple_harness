@@ -40,7 +40,10 @@ _DEFAULT_TOP_N = 10
 
 
 def _approx_tokens(text: str) -> int:
-    return max(1, len(text) // 4) if text else 0
+    if not text:
+        return 0
+    from deskpet.agent.tokens import count_text_tokens
+    return count_text_tokens(text)
 
 
 class PreferenceProfileComponent:

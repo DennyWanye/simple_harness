@@ -165,6 +165,13 @@ class AutoResumeOrchestrator:
             logger.info("auto_resume_skipped sid=%s reason=disabled", sid)
             return AutoResumeResult(action="ask_user", reason="disabled")
 
+        # 注(优化 #4 评审结论): 曾想在此加"fresh user turn 不注入收敛 hint"守卫,
+        # 但实测发现——真正的 max_iterations/circuit runaway 的 original_msgs 也常以
+        # user 消息结尾(见 test_p5s2_auto_resume),**消息栈无法区分"fresh turn"与
+        # "runaway"**,加守卫会误拦合法的 runaway 恢复。用户"压缩后看不到任务"的根因
+        # 是【压缩丢任务】,已由 ContextCompressor 结构化摘要保活当前任务(优化 #2)根治;
+        # auto_resume 的 hint 只是症状。故此处不加 fragile 守卫,根因侧解决。
+
         # 1) Check current attempt counter BEFORE doing anything expensive.
         sa = await self._safe_get_activity(sid)
         attempts_so_far = sa.auto_resume_attempts if sa is not None else 0
