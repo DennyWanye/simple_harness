@@ -415,9 +415,14 @@ class FeaturesConfig:
     plan_confirm_gate: bool = False
     preference_memory: bool = False
     # WI-4.0 compaction: wire ContextCompressor into AgentLoop.
-    # dev default OFF (prod cautious — compaction changes LLM history).
-    # Set [features] compaction_enabled = true in config.toml to enable.
-    compaction_enabled: bool = False
+    # WI-6 (compaction-bestpractice-upgrade, 2026-06-16): 默认翻 True。
+    # gate 已满足: P-B 修复(窗口按有效出站模型解析) + 第1/2期单测全绿 + 小窗口长
+    # 会话真机 case ② 通过(24×microcompact+2×完整摘要后桌宠仍记得任务,任务连续性
+    # 保住)。compaction 级联(microcompact→结构化摘要→截断兜底)对长 agentic 任务
+    # 平滑续跑、防 BLOCK gate 中断。可设 [features] compaction_enabled = false 关闭。
+    # 已知 caveat: haiku 摘要层偶发反射(把元指令当任务,issue #46602 式),microcompact
+    # (最高频、不调模型层)无此问题;后续可继续强化防反射。
+    compaction_enabled: bool = True
 
 
 @dataclass

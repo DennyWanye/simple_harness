@@ -430,14 +430,15 @@ def test_config_has_compaction_enabled_flag():
     )
 
 
-def test_config_compaction_enabled_default_false():
-    """compaction_enabled defaults to False (prod off, per spec §4)."""
+def test_config_compaction_enabled_default_true():
+    """WI-6 (compaction-bestpractice-upgrade): compaction_enabled 默认翻 True
+    (gate: P-B 修复 + 单测全绿 + 真机 case ② 任务连续性通过)。"""
     from config import AppConfig
     cfg = AppConfig()
     flag = getattr(cfg.features, "compaction_enabled", None)
     if flag is None:
         flag = getattr(cfg, "compaction_enabled", None)
-    assert flag is False, f"compaction_enabled must default to False, got {flag!r}"
+    assert flag is True, f"compaction_enabled must default to True after WI-6, got {flag!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -450,7 +451,8 @@ def test_build_agent_passes_compressor_none_when_flag_off():
     from main import build_agent
 
     cfg = AppConfig()
-    # Ensure flag is off (default)
+    # WI-6 后默认 True → 本测显式关掉以验证 flag-off 的 BC 路径(compressor=None)。
+    cfg.features.compaction_enabled = False
     assert not getattr(cfg.features, "compaction_enabled", False)
 
     loop = build_agent(
