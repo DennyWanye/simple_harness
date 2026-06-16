@@ -451,3 +451,477 @@ class TestWI4bPreflush:
         import inspect
         assert "file_memory" in inspect.signature(AgentLoop.__init__).parameters
         assert inspect.signature(AgentLoop.__init__).parameters["file_memory"].default is None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 一轮对抗式挑战 — 补强单测 (2026-06-16)
+# 找到的覆盖缺口按 WI 分组,断言以实跑探查为准、可证伪。
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+# ───────────────────── WI-1 边界缺口 (原 25 测未覆盖) ─────────────────────
+class TestWI1EdgeGaps:
+    def test_should_compress_shortcircuits_zero_window(self):
+        """context_window<=0 → should_compress 永 False(短路,即便 prompt 巨大)。"""
+        c = ContextCompressor(
+            context_window=0, threshold_percent=0.75, effective_pct=0.95
+        )
+        assert c.should_compress(10**9) is False
+
+    def test_should_compress_shortcircuits_zero_threshold(self):
+        """threshold_percent<=0 → should_compress 永 False(短路)。"""
+        c = ContextCompressor(
+            context_window=1000, threshold_percent=0.0, effective_pct=0.95
+        )
+        assert c.should_compress(10**9) is False
+
+    def test_effective_window_none_is_full_window(self):
+        """effective_pct=None → effective_window() 按 ×1.0 = 整窗(不缩水)。"""
+        c = ContextCompressor(context_window=123_456)
+        assert c.effective_window() == 123_456
+
+    def test_effective_window_with_pct(self):
+        c = ContextCompressor(context_window=400_000, effective_pct=0.95)
+        assert c.effective_window() == 380_000
+
+    def test_trigger_buffer_wins_over_threshold(self):
+        """buffer 先到的分支: threshold 高、有效窗口紧 → trigger = buffer_line。
+
+        window=400K, compact_pct=0.99 → threshold=396000;
+        eff_pct=0.90 → eff_win=360000, reserve=12500 → buffer_line=347500 < threshold
+        ⇒ min 取 buffer_line。(原测只覆盖 threshold 先到的三个 case)
+        """
+        c = ContextCompressor(
+            context_window=400_000, threshold_percent=0.99, effective_pct=0.90
+        )
+        assert c.threshold_tokens() == 396_000
+        assert c.effective_window() - c.output_reserve() == 347_500
+        assert c.trigger_tokens() == 347_500
+
+    def test_output_reserve_floor_and_ceil_clamp(self):
+        """output_reserve 公式上下限钳制: 极小窗口→8K floor, 极大窗口→32K ceil。"""
+        tiny = ContextCompressor(context_window=10_000, effective_pct=0.95)
+        assert tiny.output_reserve() == 8_000  # 10000//32=312 → floor 8000
+        huge = ContextCompressor(context_window=10_000_000, effective_pct=0.95)
+        assert huge.output_reserve() == 32_000  # //32 巨大 → ceil 32000
+
+
+# ───────────────────── WI-2 microcompact 边界缺口 ─────────────────────
+class TestWI2MicrocompactEdgeGaps:
+    def test_keep_recent_tools_zero_prunes_all(self):
+        """keep_recent_tools=0 → 全部 tool 被清(无保护,不留最后一个)。"""
+        msgs = []
+        for i in range(3):
+            msgs.append({"role": "assistant", "content": "",
+                         "tool_calls": [{"id": f"tc{i}", "function": {"name": "f"}}]})
+            msgs.append({"role": "tool", "tool_call_id": f"tc{i}", "content": "DATA" * 100})
+        out, n = _microcompact_tool_results(msgs, keep_recent_tools=0)
+        assert n == 3
+        assert all("已清理" in m["content"] for m in out if m["role"] == "tool")
+
+    def test_multi_tool_per_assistant_protection_counted_per_tool_msg(self):
+        """一个 assistant 配多个 tool 消息时,保护计数按【tool 消息】粒度,不按 assistant。
+
+        keep_recent=1 → 只护最后一条 tool(id=b),同 assistant 的前一条(id=a)仍清。
+        """
+        msgs = [
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"id": "a", "function": {"name": "f"}},
+                {"id": "b", "function": {"name": "g"}},
+            ]},
+            {"role": "tool", "tool_call_id": "a", "content": "RA" * 100},
+            {"role": "tool", "tool_call_id": "b", "content": "RB" * 100},
+        ]
+        out, n = _microcompact_tool_results(msgs, keep_recent_tools=1)
+        assert n == 1
+        by_id = {m["tool_call_id"]: m for m in out if m["role"] == "tool"}
+        assert "已清理" in by_id["a"]["content"]      # 早的清
+        assert "已清理" not in by_id["b"]["content"]  # 最近的护
+
+    def test_recent_k_counted_by_tool_index_not_message_index(self):
+        """tool 消息夹杂非 tool 消息时,"最近 K 个" 按 tool 出现次序取,不受中间普通消息干扰。"""
+        msgs = [
+            {"role": "assistant", "content": "", "tool_calls": [{"id": "t0", "function": {"name": "f"}}]},
+            {"role": "tool", "tool_call_id": "t0", "content": "R0" * 50},
+            {"role": "user", "content": "夹在中间的普通消息"},
+            {"role": "assistant", "content": "", "tool_calls": [{"id": "t1", "function": {"name": "f"}}]},
+            {"role": "tool", "tool_call_id": "t1", "content": "R1" * 50},
+        ]
+        out, n = _microcompact_tool_results(msgs, keep_recent_tools=1)
+        assert n == 1
+        by_id = {m["tool_call_id"]: m for m in out if m["role"] == "tool"}
+        assert "已清理" in by_id["t0"]["content"]
+        assert "已清理" not in by_id["t1"]["content"]
+
+    def test_empty_content_tool_not_counted(self):
+        """空 content 的 tool 不被计入清理(无正文可清),不产生假阳性 n。"""
+        msgs = [
+            {"role": "assistant", "content": "", "tool_calls": [{"id": "t0", "function": {"name": "f"}}]},
+            {"role": "tool", "tool_call_id": "t0", "content": ""},
+            {"role": "assistant", "content": "", "tool_calls": [{"id": "t1", "function": {"name": "f"}}]},
+            {"role": "tool", "tool_call_id": "t1", "content": "REAL" * 100},
+        ]
+        out, n = _microcompact_tool_results(msgs, keep_recent_tools=0)
+        # 只有 t1 有正文 → 只清 1 条(t0 空内容不算)
+        assert n == 1
+
+    @pytest.mark.asyncio
+    async def test_microcompact_only_keep0_no_orphan_after_sanitize(self):
+        """microcompact-only 早退(keep_tools=0 全清) → _sanitize 不产孤儿(壳+配对仍齐)。"""
+        from deskpet.agent.context_compressor import _sanitize_tool_pairs, _partition
+
+        msgs = [{"role": "system", "content": "s"}]
+        for i in range(5):
+            msgs.append({"role": "assistant", "content": "",
+                         "tool_calls": [{"id": f"tc{i}", "function": {"name": "f"}}]})
+            msgs.append({"role": "tool", "tool_call_id": f"tc{i}", "content": "R" * 2000})
+        msgs.append({"role": "user", "content": "go"})
+
+        class _CountingLLM:
+            def __init__(self): self.calls = 0
+            async def chat_with_fallback(self, *a, **k):
+                self.calls += 1
+                class R: content = "S"
+                return R()
+
+        llm = _CountingLLM()
+        c = ContextCompressor(
+            llm_registry=llm, context_window=200_000, threshold_percent=0.75,
+            microcompact_keep_tools=0,
+        )
+        r = await c.compress(msgs)
+        assert r.meta.get("reason") == "microcompact_only"
+        assert llm.calls == 0
+        # 早退输出已经过 _sanitize → 每条 tool 仍有紧邻配对 assistant,无孤儿
+        tools = [m for m in r.messages if m.get("role") == "tool"]
+        assert len(tools) == 5
+        # 协议合法性: 再 sanitize 一次条数不变(幂等,无孤儿可删)
+        again = _sanitize_tool_pairs(r.messages)
+        assert len([m for m in again if m.get("role") == "tool"]) == 5
+
+
+# ───────────────────── WI-3 prior 抽取 + 透传 边界缺口 ─────────────────────
+class TestWI3PriorExtractionEdgeGaps:
+    def test_extract_prior_takes_last_of_multiple(self):
+        """多条旧摘要 → prior 取最后一条;所有旧摘要均从待摘列表剔除。"""
+        msgs = [
+            {"role": "assistant", "content": _format_summary("OLD-FIRST")},
+            {"role": "user", "content": "中间"},
+            {"role": "assistant", "content": _format_summary("OLD-SECOND")},
+        ]
+        prior, kept = _extract_prior_summary(msgs)
+        assert prior == "OLD-SECOND"
+        assert all(not str(m.get("content") or "").lstrip().startswith(_SUMMARY_MARKER) for m in kept)
+        assert len(kept) == 1  # 仅中间普通消息留下
+
+    def test_extract_prior_tolerates_leading_whitespace(self):
+        """旧摘要前有空白/换行/缩进 → 仍能识别 marker(用 lstrip)。"""
+        content = "   \n  " + _format_summary("INDENTED-PRIOR")
+        prior, kept = _extract_prior_summary([{"role": "assistant", "content": content}])
+        assert prior == "INDENTED-PRIOR"
+        assert kept == []  # 被剔除
+
+    @pytest.mark.asyncio
+    async def test_passthrough_emits_single_summary_no_haiku(self):
+        """中段去掉旧摘要后为空 → 透传 prior: 恰 1 条摘要 + 不调 haiku(省 token)。"""
+
+        class _CountingLLM:
+            def __init__(self): self.calls = 0
+            async def chat_with_fallback(self, *a, **k):
+                self.calls += 1
+                class R: content = "SHOULD-NOT-BE-CALLED"
+                return R()
+
+        llm = _CountingLLM()
+        c = ContextCompressor(llm_registry=llm, first_n=1, last_n=1)
+        msgs = [
+            {"role": "user", "content": "u0"},
+            {"role": "assistant", "content": _format_summary("PRIOR-PASS-XYZ")},
+            {"role": "user", "content": "u-last"},
+        ]
+        r = await c.compress(msgs)
+        assert r.meta.get("reason") == "prior_summary_passthrough"
+        assert llm.calls == 0  # 不再走 haiku
+        summaries = [
+            m for m in r.messages
+            if str(m.get("content") or "").lstrip().startswith(_SUMMARY_MARKER)
+        ]
+        assert len(summaries) == 1
+        assert "PRIOR-PASS-XYZ" in summaries[0]["content"]
+
+    @pytest.mark.asyncio
+    async def test_prior_passed_as_separate_system_segment_not_in_transcript(self):
+        """prior 作独立 system 段拼进 summary_system,不混进喂 haiku 的待摘 transcript。"""
+        captured = {}
+
+        class _LLM:
+            async def chat_with_fallback(self, messages, **k):
+                captured["system"] = messages[0]["content"]
+                captured["user"] = messages[1]["content"]
+                class R: content = "NEW-SUMMARY"
+                return R()
+
+        c = ContextCompressor(llm_registry=_LLM(), first_n=1, last_n=1)
+        msgs = [
+            {"role": "user", "content": "u0"},
+            {"role": "assistant", "content": _format_summary("PRIOR-STATE-ABC")},
+            {"role": "user", "content": "real-mid-1" * 20},
+            {"role": "assistant", "content": "real-mid-2" * 20},
+            {"role": "user", "content": "u-last"},
+        ]
+        await c.compress(msgs)
+        assert "PRIOR-STATE-ABC" in captured["system"]
+        assert "已有摘要" in captured["system"]
+        assert _SUMMARY_MARKER not in captured["user"]
+        assert "PRIOR-STATE-ABC" not in captured["user"]
+
+
+# ───────────────────── 反射 guard 边界 + 大小写缺口 ─────────────────────
+class TestReflectionGuardEdgeGaps:
+    def test_exactly_one_signal_not_reflective(self):
+        """恰好 1 个反射信号 → 不判反射(阈值 ≥2,防误伤真实对话偶提)。"""
+        assert _looks_reflective("用户问怎么省 token 调用成本") is False
+
+    def test_exactly_two_signals_is_reflective(self):
+        """恰好 2 个不同信号 → 判反射(边界达成)。"""
+        # 信号1: 压缩+对话/历史; 信号2: 省token
+        assert _looks_reflective("用户要压缩对话历史并省 token") is True
+
+    def test_省token_is_case_insensitive(self):
+        """省token 信号 IGNORECASE — 大写 TOKEN 也命中(省 token 提示词省写法)。"""
+        # 两个信号: 压缩对话(压缩.{0,8}对话/历史) + 省 TOKEN(大写, IGNORECASE)
+        assert _looks_reflective("压缩对话历史，省 TOKEN") is True
+
+    def test_empty_text_not_reflective(self):
+        assert _looks_reflective("") is False
+        assert _looks_reflective(None) is False  # None-safe
+
+    @pytest.mark.asyncio
+    async def test_reflective_output_no_clean_prior_kept_not_crash(self):
+        """新摘要反射但【无干净 prior】→ 保留该反射摘要 + 不崩(only 告警, 任务连续性靠 always-on 兜)。"""
+
+        class _ReflectiveLLM:
+            async def chat_with_fallback(self, *a, **k):
+                class R:
+                    content = ("用户要把对话历史压缩成摘要，分段输出，"
+                               "第三人称，省 token，不要杜撰。")
+                return R()
+
+        c = ContextCompressor(llm_registry=_ReflectiveLLM(), first_n=1, last_n=1)
+        # 中段没有任何旧摘要 → prior is None
+        msgs = [
+            {"role": "user", "content": "u0"},
+            {"role": "user", "content": "m1" * 30},
+            {"role": "assistant", "content": "m2" * 30},
+            {"role": "user", "content": "u-last"},
+        ]
+        r = await c.compress(msgs)  # 不抛
+        assert r.compressed is True
+        summaries = [
+            m for m in r.messages
+            if str(m.get("content") or "").lstrip().startswith(_SUMMARY_MARKER)
+        ]
+        assert len(summaries) == 1
+        # 无干净 prior 可退 → 反射摘要被保留(降级,但不丢消息)
+        assert "不要杜撰" in summaries[0]["content"]
+
+
+# ───────────────────── WI-4a always-on 真注入 (跑 loop 断言) ─────────────────────
+class TestWI4aAlwaysOnInjection:
+    class _NullTools:
+        def schemas(self, enabled_toolsets=None):
+            return []
+
+        async def execute_tool(self, name, args, task_id):
+            return '{"ok": true}'
+
+    class _EndTurnLLM:
+        def __init__(self):
+            self.seen: list[list[dict]] = []
+
+        async def chat_with_fallback(self, messages, *, tools=None, model=None, **kw):
+            self.seen.append(list(messages))
+            from llm.types import ChatResponse
+            return ChatResponse(
+                content="done", stop_reason="end_turn", tool_calls=[],
+                usage={"input_tokens": 5, "output_tokens": 3},
+            )
+
+    @pytest.mark.asyncio
+    async def test_always_on_anchor_injected_with_subgoal(self):
+        """有 goal + 有 pending → 循环前注入恰 1 条 [目标锚定],含目标 + [当前子目标]。"""
+        from agent.agent_loop import AgentLoop
+        from deskpet.agent.goal_store import SessionGoalStore
+
+        store = SessionGoalStore()
+        g = store.set("s-anchor", "整理季度复盘")
+        g.subgoals = ["收集三个项目数据", "汇总成稿"]
+
+        llm = self._EndTurnLLM()
+        loop = AgentLoop(
+            llm_registry=llm, tool_registry=self._NullTools(),
+            session_goal_store=store,
+        )
+        async for _ in loop.run([{"role": "user", "content": "开始"}], session_id="s-anchor"):
+            pass
+
+        assert llm.seen, "LLM 未被调用"
+        anchors = [
+            m for m in llm.seen[0]
+            if m.get("role") == "system" and str(m.get("content")).startswith("[目标锚定]")
+        ]
+        assert len(anchors) == 1
+        content = anchors[0]["content"]
+        assert "整理季度复盘" in content
+        assert "[当前子目标] 收集三个项目数据" in content  # 取 pending[0]
+
+    @pytest.mark.asyncio
+    async def test_always_on_anchor_no_subgoal_line_when_no_pending(self):
+        """有 goal 但无 pending → 注 [目标锚定] 但不带 [当前子目标] 行。"""
+        from agent.agent_loop import AgentLoop
+        from deskpet.agent.goal_store import SessionGoalStore
+
+        store = SessionGoalStore()
+        store.set("s-nosub", "随便写写")  # 无 subgoals
+
+        llm = self._EndTurnLLM()
+        loop = AgentLoop(
+            llm_registry=llm, tool_registry=self._NullTools(),
+            session_goal_store=store,
+        )
+        async for _ in loop.run([{"role": "user", "content": "x"}], session_id="s-nosub"):
+            pass
+
+        anchors = [
+            m for m in llm.seen[0]
+            if m.get("role") == "system" and str(m.get("content")).startswith("[目标锚定]")
+        ]
+        assert len(anchors) == 1
+        assert "[当前子目标]" not in anchors[0]["content"]
+
+    @pytest.mark.asyncio
+    async def test_no_anchor_when_no_active_goal(self):
+        """store 存在但本 session 无 goal → 不注入(BC)。"""
+        from agent.agent_loop import AgentLoop
+        from deskpet.agent.goal_store import SessionGoalStore
+
+        store = SessionGoalStore()  # 空
+        llm = self._EndTurnLLM()
+        loop = AgentLoop(
+            llm_registry=llm, tool_registry=self._NullTools(),
+            session_goal_store=store,
+        )
+        async for _ in loop.run([{"role": "user", "content": "x"}], session_id="s-empty"):
+            pass
+
+        for call in llm.seen:
+            assert not any(
+                str(m.get("content") or "").startswith("[目标锚定]") for m in call
+            )
+
+
+# ───────────────────── WI-4b pre-flush 缺口 (safe-fail / 无 goal / 都无) ─────────────────────
+class TestWI4bPreflushEdgeGaps:
+    class _Tools:
+        def schemas(self, enabled_toolsets=None):
+            return []
+
+        async def execute_tool(self, name, args, task_id):
+            return '{"ok": true}'
+
+    class _LLM:
+        async def chat_with_fallback(self, messages, *, tools=None, model=None, **kw):
+            from llm.types import ChatResponse
+            return ChatResponse(
+                content="done", stop_reason="end_turn", tool_calls=[],
+                usage={"input_tokens": 5, "output_tokens": 3},
+            )
+
+    class _AlwaysCompress:
+        def should_compress(self, n):
+            return True
+
+        async def compress(self, messages, *, goal_text=None, pending_tasks=None):
+            from deskpet.agent.context_compressor import CompressionResult
+            return CompressionResult(messages=list(messages), compressed=False)
+
+    @pytest.mark.asyncio
+    async def test_preflush_does_not_block_compression_when_append_raises(self):
+        """file_memory.append 抛异常 → pre-flush safe-fail,压缩照常进行,run 不崩。"""
+        from agent.agent_loop import AgentLoop
+
+        class _RaisingFM:
+            def __init__(self): self.calls = 0
+            async def append(self, target, content, salience=0.5):
+                self.calls += 1
+                raise RuntimeError("disk full")
+
+        class _GoalStore:
+            def get_goal_text(self, sid):
+                return "有目标"
+
+        compressor = self._AlwaysCompress()
+        fm = _RaisingFM()
+        loop = AgentLoop(
+            llm_registry=self._LLM(), tool_registry=self._Tools(),
+            compressor=compressor, session_goal_store=_GoalStore(), file_memory=fm,
+        )
+        events = []
+        async for ev in loop.run([{"role": "user", "content": "请整理"}], session_id="s-raise"):
+            events.append(ev)
+        # append 被尝试(safe-fail 吞异常),loop 正常产出 final,无 error event
+        assert fm.calls >= 1
+        assert any(getattr(e, "type", "") == "final" for e in events)
+        assert not any(getattr(e, "type", "") == "error" for e in events)
+
+    @pytest.mark.asyncio
+    async def test_preflush_when_no_goal_but_recent_user(self):
+        """无 goal 但有最近 user → 仍 flush(_flush_parts 含'最近请求')。"""
+        from agent.agent_loop import AgentLoop
+
+        class _RecFM:
+            def __init__(self): self.calls = []
+            async def append(self, target, content, salience=0.5):
+                self.calls.append(content)
+
+        class _NoGoalStore:
+            def get_goal_text(self, sid):
+                return None  # 无 goal
+
+        fm = _RecFM()
+        loop = AgentLoop(
+            llm_registry=self._LLM(), tool_registry=self._Tools(),
+            compressor=self._AlwaysCompress(), session_goal_store=_NoGoalStore(),
+            file_memory=fm,
+        )
+        async for _ in loop.run([{"role": "user", "content": "帮我查天气"}], session_id="s-nogoal"):
+            pass
+        assert len(fm.calls) == 1
+        assert "最近请求" in fm.calls[0]
+        assert "帮我查天气" in fm.calls[0]
+        assert "目标:" not in fm.calls[0]  # 无 goal → 不含目标段
+
+    @pytest.mark.asyncio
+    async def test_no_preflush_when_no_goal_no_user(self):
+        """既无 goal 又无 user 消息(只 system) → _flush_parts 空 → 不 flush。"""
+        from agent.agent_loop import AgentLoop
+
+        class _RecFM:
+            def __init__(self): self.calls = []
+            async def append(self, target, content, salience=0.5):
+                self.calls.append(content)
+
+        class _NoGoalStore:
+            def get_goal_text(self, sid):
+                return None
+
+        fm = _RecFM()
+        loop = AgentLoop(
+            llm_registry=self._LLM(), tool_registry=self._Tools(),
+            compressor=self._AlwaysCompress(), session_goal_store=_NoGoalStore(),
+            file_memory=fm,
+        )
+        # 只有 system 消息,无 user
+        async for _ in loop.run([{"role": "system", "content": "persona"}], session_id="s-bare"):
+            pass
+        assert fm.calls == []  # goal+user 都无 → 不 flush

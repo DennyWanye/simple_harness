@@ -29,6 +29,7 @@
 >    - `context_compacted middle_tokens_in=… summary_tokens_out=… reduction=… summarized_msgs=… kept_head=… kept_tail=… model=… window=… threshold_pct=… summary_preview=<前300字>` — **压缩真正命中（走了 haiku 摘要）**（`context_compressor.py:394`）。
 >    - `context_microcompact_only tool_results_pruned=<n> window=<N>` — **只跑了 microcompact 就降到线下、没调模型**（`context_compressor.py:232`）。
 >    - `wi4a_goal_anchor_always_on sid=<sid> tid=<tid>` — 每轮注入一条常驻 `[目标锚定]` system（`agent_loop.py:625`）。
+>    - `context_compressor.reflective_summary_detected preview=<…> fell_back_to_prior=<bool>` — **反射 guard 命中**：haiku 把压缩元指令当任务复述（≥2 信号），本条摘要不落地 / 回退干净 prior（`context_compressor.py:369`）。**正常对话不应出现**；出现说明 haiku 又反射了，但 guard 已拦下（降级非崩溃）。
 > 6. **[目标锚定] 内容**: `[目标锚定] 当前目标：<goal>`（+ 可选 `[当前子目标] <pending[0]>` + "请确保接下来的动作仍服务于上述目标…"）。role=system → `_partition` 永久排除（永不进 middle、永不被压）。
 >
 > **最后更新**: 2026-06-16（剧本 + **真机已执行回填**：TC-1/2/3/4 PASS、TC-5 环境受限(单测已证)、TC-6 机制PASS+反射已加固；详见文末「真机执行记录」）
@@ -250,6 +251,37 @@ npx tauri dev   # 在 tauri-app 目录；它自管唯一 vite + spawn backend
 
 ---
 
+## TC-7 — 反射 guard 可观测：连压多次，若 haiku 反射则 `reflective_summary_detected` 拦下、桌宠不失忆
+
+**类型**: 后端日志判定（真实运行栈日志）+ UI 真测兜底
+
+**目的**: 验证反射后处理闸（issue #46602 式）在真机生产栈可观测。haiku 偶发把 `_SUMMARY_SYSTEM` 元指令
+（"压缩对话历史/省 token/分段输出/第三人称/不要杜撰"）当用户任务复述进摘要。`_looks_reflective`（≥2 信号）
+拦下：有干净 prior → 回退 prior；无 prior → 保留但告警。两条路径都**不让反射摘要污染任务连续性**。
+本 TC 把"反射已加固"从单测层提到真机可观测层（TC-6 只在结论里提，无独立日志锚点验收）。
+
+**前置配置**: 同 TC-1，小窗口；连续触发 ≥2~3 次压缩（持续多轮工具调用 / 追问），增加 haiku 反射出现概率。
+
+| 步骤 | 动作（declare） | 期望结果 |
+|---|---|---|
+| 1 | 触发 ≥2 次压缩（见 TC-1/TC-6 剧本，持续追问把 token 反复顶过触发线） | 日志多条 `context_compacted` |
+| 2 | grep tauri dev log `reflective_summary_detected` | **可能 0 次（haiku 这次没反射，正常）也可能 ≥1 次**。若 ≥1 次 → 看其 `fell_back_to_prior` 字段 |
+| 3 | 若步骤 2 命中：检查同次 `context_compacted` 的 `summary_preview` | 落地的摘要**不含**"不要杜撰/分段输出/第三人称"等元指令扎堆（反射内容没污染最终摘要）；`fell_back_to_prior=True` 时 preview 应是上一条干净摘要正文 |
+| 4 | 不论 guard 是否命中，发一轮"我们刚才在干嘛？"追问 | 桌宠仍能复述真实任务（反射被拦 → 任务连续性不受影响），**不**答"压缩对话历史/省 token"这类元指令式回答 |
+| 5 | Screenshot 抓追问回复 | 截图 `screenshots/TC-7-step5.png`；回复是真实任务，非元指令复读 |
+
+**可观测证据**:
+- ✅ guard 生效（命中时）：`reflective_summary_detected` 出现且最终 `summary_preview` 干净；桌宠追问答真实任务。
+- ✅ guard 未触发（haiku 这次没反射）：无 `reflective_summary_detected`，摘要本就干净——同样 PASS（guard 是兜底，不是必现）。
+- ❌ 复发：日志出现反射摘要被**落地**（`summary_preview` 含元指令扎堆且无 `reflective_summary_detected` 拦截），或桌宠追问答"在压缩对话/省 token"——说明 guard 漏检（查 `_looks_reflective` 信号阈值）。
+
+**PASS 判据**: 步骤 4 桌宠追问答真实任务（非元指令复读）+ 若 `reflective_summary_detected` 命中则步骤 3 落地摘要干净。
+**FAIL 判据**: 反射摘要落地污染任务，或桌宠追问复读压缩元指令。
+
+**判定**: _待真机回填_（单测已证 `_looks_reflective` + 回退路径，见 `test_compaction_bestpractice_upgrade.py::TestReflectionGuardEdgeGaps`）
+
+---
+
 ## 结果汇总（待真机执行回填）
 
 | Case | 范围 | 类型 | 判定 |
@@ -260,6 +292,7 @@ npx tauri dev   # 在 tauri-app 目录；它自管唯一 vite + spawn backend
 | TC-4 | microcompact（`context_microcompact_only` / tool_result 占位） | log | _待回填_ |
 | TC-5 | 目标 always-on（每轮 ≤1 条 `[目标锚定]`，压缩后仍在） | UI 真测 + log | _待回填_ |
 | TC-6 | 防套娃（连压 2 次不嵌套摘要） | UI 真测 + log | _待回填_ |
+| TC-7 | 反射 guard 可观测（`reflective_summary_detected` 拦下，任务不失忆） | log + UI 真测 | _待回填_ |
 
 > **恢复环境（验完必做）**: 删 `model_overrides.toml` 里的小窗口 override 行；按需把 `[features] compaction_enabled` 改回 false（除非 WI-6 已翻默认）。
 > **结果存档**: 截图存 `testcase/2026-06-16-compaction-bestpractice-phase1/screenshots/`；执行后日志证据贴回各 case 的 log 证据栏与本汇总表。
