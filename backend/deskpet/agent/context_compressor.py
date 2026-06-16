@@ -102,10 +102,12 @@ class ContextCompressor:
     _SUMMARY_SYSTEM = (
         "你在压缩一段 DESKPET 对话历史(为省 token),但**绝不能丢掉任务连续性**。\n"
         "用**用户的语言**、第三人称,按下面分段输出(空的段直接省略,不要写'无'):\n\n"
+        "【意图/目标】用户这段对话整体想达成的目标/诉求(若有)。\n"
         "【进行中/当前任务】← 最重要,必须保: 用户当前正让助手做的那件事是什么、做到哪一步了;"
         "把**最近一条用户请求**的原意完整保留(短就近乎原文)。\n"
         "【已完成】已经做完的步骤、得到的结论或产物(带关键结果值)。\n"
         "【关键事实与决策】人名/项目/数字/日期/已定的决定/用户明确让记住的数据。\n"
+        "【涉及的文件/产物】对话中出现的文件路径、生成的产物、关键标识符。\n"
         "【待办/下一步】尚未完成、接下来要做的事。\n\n"
         "丢弃: 寒暄、重复、过程性废话。**不要杜撰**任何未在原文出现的信息。\n"
         "★若【待摘内容】里**没有**明确的用户任务(例如只是一些工具调用/系统记录),"
@@ -123,6 +125,8 @@ class ContextCompressor:
         last_n: int = 6,
         model: str = "claude-haiku-4-5",
         summary_max_tokens: int = 768,   # 512→768: 结构化摘要稍长,保任务连续性(优化 #2)
+        effective_pct: "float | None" = None,
+        microcompact_keep_tools: int = 3,
     ) -> None:
         self._llm = llm_registry
         self.context_window = int(context_window)
@@ -131,6 +135,14 @@ class ContextCompressor:
         self.last_n = max(0, int(last_n))
         self.model = model
         self.summary_max_tokens = int(summary_max_tokens)
+        # WI-1: 触发改"剩余 token buffer"。effective_pct 由 main.py 按有效出站模型
+        # (model_info.effective_pct) 注入；None → 退回纯比例阈值(旧单测/BC 路径,
+        # 不启用 buffer 触发,因小窗口 buffer 下限 8K 会把比例阈值吞掉)。
+        self.effective_pct = (
+            float(effective_pct) if effective_pct is not None else None
+        )
+        # WI-2: microcompact 保护最近 N 个工具调用的 tool_result 原文。
+        self.microcompact_keep_tools = max(0, int(microcompact_keep_tools))
 
     # ------------------------------------------------------------------
     # Public API
@@ -138,11 +150,44 @@ class ContextCompressor:
     def threshold_tokens(self) -> int:
         return int(self.context_window * self.threshold_percent)
 
+    # WI-1 buffer 公式(随窗口自适应,第2轮定稿) ----------------------------
+    # output_reserve = max(8K, min(32K, window//32))：400K→12.5K；1M→31.25K；32K→8K。
+    _OUTPUT_RESERVE_FLOOR = 8_000
+    _OUTPUT_RESERVE_CEIL = 32_000
+
+    def output_reserve(self) -> int:
+        """留给"下一条输出/摘要"的 token buffer(纯公式,供 WI-1 单测断言)。"""
+        return max(
+            self._OUTPUT_RESERVE_FLOOR,
+            min(self._OUTPUT_RESERVE_CEIL, self.context_window // 32),
+        )
+
+    def effective_window(self) -> int:
+        """有效窗口 = context_window × effective_pct(effective_pct=None 时按 1.0)。"""
+        pct = self.effective_pct if self.effective_pct is not None else 1.0
+        return int(self.context_window * pct)
+
+    def trigger_tokens(self) -> int:
+        """WI-1 单一触发线。
+
+        - effective_pct 未注入(BC/旧单测) → 纯比例阈值 ``threshold_tokens()``。
+        - 注入了 → ``min(threshold_tokens(), effective_window − output_reserve)``，
+          谁先到先压(大窗口比例先到、小窗口 buffer 先到)。若 buffer 比有效窗口还大
+          (极小窗口) ⇒ ``eff_win − buffer`` 为负,忽略该项退回比例阈值。
+        """
+        base = self.threshold_tokens()
+        if self.effective_pct is None:
+            return base
+        buffer_line = self.effective_window() - self.output_reserve()
+        if buffer_line <= 0:
+            return base
+        return min(base, buffer_line)
+
     def should_compress(self, prompt_tokens: int) -> bool:
         """Return True when caller should call :meth:`compress`."""
         if self.context_window <= 0 or self.threshold_percent <= 0.0:
             return False
-        return prompt_tokens >= self.threshold_tokens()
+        return prompt_tokens >= self.trigger_tokens()
 
     async def compress(
         self,
@@ -174,35 +219,114 @@ class ContextCompressor:
         if not messages:
             return CompressionResult(messages=[])
 
+        # ── WI-2 microcompact: 先廉价清陈旧 tool_result(不调模型、不动语义)。
+        # 命中后若整体已降到触发线下 → 直接返回,省一次 haiku 调用(最高频生效层)。
+        work, n_micro = _microcompact_tool_results(
+            messages, self.microcompact_keep_tools
+        )
+        if n_micro > 0:
+            try:
+                from .tokens import count_messages_tokens as _cmt
+                if _cmt(work) < self.trigger_tokens():
+                    logger.info(
+                        "context_microcompact_only",
+                        tool_results_pruned=n_micro,
+                        window=self.context_window,
+                    )
+                    return CompressionResult(
+                        messages=_sanitize_tool_pairs(work),
+                        compressed=True,
+                        latency_ms=(time.monotonic() - start) * 1000.0,
+                        meta={
+                            "reason": "microcompact_only",
+                            "tool_results_pruned": n_micro,
+                        },
+                    )
+            except Exception:  # noqa: BLE001
+                pass
+
         system_msgs, first_chunk, middle_chunk, last_chunk = _partition(
-            messages, self.first_n, self.last_n
+            work, self.first_n, self.last_n
         )
 
         if not middle_chunk:
             # Nothing to compress — window is too short.
             return CompressionResult(
-                messages=list(messages),
-                compressed=False,
+                messages=_sanitize_tool_pairs(work) if n_micro > 0 else list(work),
+                compressed=n_micro > 0,
                 latency_ms=(time.monotonic() - start) * 1000.0,
-                meta={"reason": "no_middle_to_summarize"},
+                meta={
+                    "reason": "no_middle_to_summarize",
+                    "tool_results_pruned": n_micro,
+                },
             )
 
         if self._llm is None:
             return CompressionResult(
-                messages=list(messages),
-                compressed=False,
+                messages=_sanitize_tool_pairs(work) if n_micro > 0 else list(work),
+                compressed=n_micro > 0,
                 latency_ms=(time.monotonic() - start) * 1000.0,
-                error="no_llm_registry",
-                meta={"reason": "llm_registry_missing"},
+                error=None if n_micro > 0 else "no_llm_registry",
+                meta={
+                    "reason": "microcompact_no_llm" if n_micro > 0 else "llm_registry_missing",
+                    "tool_results_pruned": n_micro,
+                },
             )
 
-        middle_text = _render_transcript(middle_chunk)
+        # ── WI-3 锚定增量: 抽出中段里的上次 [压缩摘要] 作 prior-state(不混进待摘
+        # transcript,防套娃 drift)。prior 作独立段拼进 system prompt。
+        prior_summary, middle_for_summary = _extract_prior_summary(middle_chunk)
+
+        # 边界: 中段去掉旧摘要后为空(只剩旧摘要+噪声) → 透传 prior,不丢(不调模型)。
+        middle_text = _render_transcript(middle_for_summary)
+        if not middle_text.strip():
+            if prior_summary:
+                summary_message = {
+                    "role": "assistant",
+                    "content": _format_summary(prior_summary),
+                }
+                has_anchor = any(
+                    m.get("role") == "system"
+                    and str(m.get("content") or "").startswith("[目标锚定]")
+                    for m in system_msgs
+                )
+                anchor_msgs = (
+                    [] if has_anchor else _build_goal_anchor(goal_text, pending_tasks)
+                )
+                new_messages = _sanitize_tool_pairs(
+                    list(system_msgs)
+                    + anchor_msgs
+                    + list(first_chunk)
+                    + [summary_message]
+                    + list(last_chunk)
+                )
+                return CompressionResult(
+                    messages=new_messages,
+                    compressed=True,
+                    latency_ms=(time.monotonic() - start) * 1000.0,
+                    meta={"reason": "prior_summary_passthrough", "tool_results_pruned": n_micro},
+                )
+            return CompressionResult(
+                messages=_sanitize_tool_pairs(work) if n_micro > 0 else list(work),
+                compressed=n_micro > 0,
+                latency_ms=(time.monotonic() - start) * 1000.0,
+                meta={"reason": "empty_middle_after_microcompact", "tool_results_pruned": n_micro},
+            )
+
         input_tokens = _approx_tokens(middle_text)
+
+        summary_system = self._SUMMARY_SYSTEM
+        if prior_summary:
+            summary_system = (
+                self._SUMMARY_SYSTEM
+                + "\n\n【已有摘要(在此基础上增量更新,不要丢已记录的任务/决策)】\n"
+                + prior_summary
+            )
 
         try:
             response = await self._llm.chat_with_fallback(
                 [
-                    {"role": "system", "content": self._SUMMARY_SYSTEM},
+                    {"role": "system", "content": summary_system},
                     {"role": "user", "content": middle_text},
                 ],
                 model=self.model,
@@ -239,7 +363,18 @@ class ContextCompressor:
             "content": _format_summary(summary_text),
         }
 
-        anchor_msgs = _build_goal_anchor(goal_text, pending_tasks)
+        # WI-4a 去重: 整合路径里 agent_loop 已注入 always-on [目标锚定] system,
+        # 它经 _partition 进 system_msgs。若已存在就**不再**自注第二条(满足
+        # "[目标锚定] system 恒 ≤1 条" 的 DoD);独立调用(无 always-on,如单测)
+        # 仍按 goal_text 注一条,保 BC。
+        has_existing_anchor = any(
+            m.get("role") == "system"
+            and str(m.get("content") or "").startswith("[目标锚定]")
+            for m in system_msgs
+        )
+        anchor_msgs = (
+            [] if has_existing_anchor else _build_goal_anchor(goal_text, pending_tasks)
+        )
         new_messages = _sanitize_tool_pairs(
             list(system_msgs)
             + anchor_msgs
@@ -429,11 +564,79 @@ def _render_transcript(messages: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+# 摘要标记前缀 — _format_summary 注入 + _extract_prior_summary 识别上次摘要。
+# ⚠️ 改这个前缀会破坏锚定增量识别 + 一批断言此前缀的测试,别改。
+_SUMMARY_MARKER = "[压缩摘要 / compressed summary]"
+
+
 def _format_summary(summary_text: str) -> str:
     """Wrap the raw summary with a marker that downstream readers can detect."""
-    return (
-        "[压缩摘要 / compressed summary]\n" + summary_text.strip()
-    )
+    return _SUMMARY_MARKER + "\n" + summary_text.strip()
+
+
+def _extract_prior_summary(
+    msgs: list[dict[str, Any]],
+) -> "tuple[Optional[str], list[dict[str, Any]]]":
+    """WI-3 锚定增量：从待摘中段抽出上一次的 [压缩摘要],防止套娃 drift。
+
+    扫 ``msgs`` 里 role=="assistant" 且 content 以 ``_SUMMARY_MARKER`` 开头的消息:
+      * 取**最后一条**的正文(剥掉前缀行)作为 ``prior_summary``;
+      * 把**所有**这类消息从列表里剔除(它们不该再被当待摘 transcript 重摘)。
+    返回 ``(prior_summary, msgs_without_prior)``。纯函数,不改入参。
+
+    无历史摘要 → 返回 ``(None, list(msgs))``。
+    """
+    prior: Optional[str] = None
+    kept: list[dict[str, Any]] = []
+    for m in msgs:
+        content = m.get("content")
+        if (
+            m.get("role") == "assistant"
+            and isinstance(content, str)
+            and content.lstrip().startswith(_SUMMARY_MARKER)
+        ):
+            # 剥掉前缀行,余下即上次摘要正文。多条则保留最后一条。
+            body = content.lstrip()[len(_SUMMARY_MARKER):].strip()
+            prior = body
+            continue  # 从待摘列表剔除
+        kept.append(m)
+    return prior, kept
+
+
+def _microcompact_tool_results(
+    messages: list[dict[str, Any]], keep_recent_tools: int
+) -> "tuple[list[dict[str, Any]], int]":
+    """WI-2 microcompact：把陈旧 tool_result 正文换占位串(不调模型、不动语义)。
+
+    保护**最近 keep_recent_tools 个** role=="tool" 消息的 content 原文;更早的
+    tool 消息 content 换成占位,但**保留整条消息壳 + tool_call_id**(绝不删整条,
+    否则破坏 assistant.tool_calls↔tool 配对计数,见 _sanitize_tool_pairs)。
+    assistant.tool_calls 一律不动。纯函数,不改入参。
+
+    返回 ``(new_messages, n_compacted)``。``n_compacted`` = 实际被换占位的条数。
+    """
+    _PLACEHOLDER = "[旧工具结果已清理 / stale tool result pruned]"
+    # 收集所有 role=="tool" 的下标,最近 keep_recent_tools 个受保护。
+    tool_idxs = [i for i, m in enumerate(messages) if m.get("role") == "tool"]
+    if not tool_idxs:
+        return list(messages), 0
+    protected = set(tool_idxs[-keep_recent_tools:]) if keep_recent_tools > 0 else set()
+    out: list[dict[str, Any]] = []
+    n_compacted = 0
+    for i, m in enumerate(messages):
+        if (
+            m.get("role") == "tool"
+            and i not in protected
+            and str(m.get("content") or "").strip()
+            and m.get("content") != _PLACEHOLDER
+        ):
+            new_m = dict(m)
+            new_m["content"] = _PLACEHOLDER
+            out.append(new_m)
+            n_compacted += 1
+        else:
+            out.append(m)
+    return out, n_compacted
 
 
 def _approx_tokens(text: str) -> int:

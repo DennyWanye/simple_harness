@@ -601,10 +601,29 @@ class AgentLoop:
         # iteration once we're in the 80-95% band.
         _budget_warn_emitted = False
 
-        # WI-1.3 goal-anchor: track the last iteration where we injected a
-        # [目标锚定] message so we never inject twice for the same iteration
-        # (dedupe guard — multiple code paths might reach the anchor check).
-        _last_anchor_iter: int = -1
+        # WI-4a 目标 always-on 单点注入(对标 Claude Code 钉死 CLAUDE.md)。
+        # 唯一注入点 = 这里(循环前注一次),role=system → context_compressor._partition
+        # 永久排除、永不被压;compress() 见到它就不再自注(去重),整轮恒 ≤1 条 [目标锚定]。
+        # 取代了原"周期性 anchor(每 _GOAL_ANCHOR_EVERY 轮重注)"+"压缩后 _build_goal_anchor
+        # 注入"两处冗余。目标 + 子目标都从 session_goal_store 取。
+        if self.session_goal_store is not None:
+            _ga_fn = getattr(self.session_goal_store, "get_goal_text", None)
+            _always_goal = _ga_fn(session_id) if callable(_ga_fn) else None
+            if _always_goal:
+                _anchor_lines = [f"[目标锚定] 当前目标：{_always_goal}"]
+                _pg_fn = getattr(self.session_goal_store, "get_pending_tasks", None)
+                _pending = _pg_fn(session_id) if callable(_pg_fn) else None
+                if _pending:
+                    _anchor_lines.append(f"[当前子目标] {_pending[0]}")
+                _anchor_lines.append(
+                    "请确保接下来的动作仍服务于上述目标，不要被中间步骤带偏。"
+                )
+                working_messages.append(
+                    {"role": "system", "content": "\n".join(_anchor_lines)}
+                )
+                logger.info(
+                    "wi4a_goal_anchor_always_on sid=%s tid=%s", session_id, tid
+                )
 
         # WI-4.0 compaction: warn-once latch so we don't spam the log every
         # iteration when the compressor fires (long multi-tool tasks may cross
@@ -816,39 +835,10 @@ class AgentLoop:
                     self.structured_reflection,
                 )
 
-            # WI-1.3 decision-point goal anchor. Every _GOAL_ANCHOR_EVERY
-            # iterations, when there is an active goal (goal_mode on),
-            # inject a brief [目标锚定] system message so the model is
-            # reminded of its objective and doesn't drift into side-tasks.
-            #
-            # Guard: only when session_goal_store is wired (BC: None → skip),
-            # only when there's an active goal text (None → skip), and only
-            # once per iteration (_last_anchor_iter dedupe).
-            #
-            # This is SEPARATE from the goal_checker nudge:
-            #   anchor = preventive/periodic "don't drift"
-            #   nudge  = reactive on end_turn "you're not done yet"
-            if (
-                self.session_goal_store is not None
-                and iteration % _GOAL_ANCHOR_EVERY == 0
-                and iteration != _last_anchor_iter
-            ):
-                _gt = getattr(self.session_goal_store, "get_goal_text", None)
-                _anchor_goal_text = _gt(session_id) if callable(_gt) else None
-                if _anchor_goal_text:
-                    anchor_content = (
-                        f"[目标锚定] 当前目标：{_anchor_goal_text}\n"
-                        "请确保接下来的动作仍服务于上述目标。"
-                    )
-                    working_messages.append({
-                        "role": "system",
-                        "content": anchor_content,
-                    })
-                    _last_anchor_iter = iteration
-                    logger.info(
-                        "wi13_goal_anchor_injected sid=%s tid=%s iter=%d",
-                        session_id, tid, iteration,
-                    )
+            # WI-4a: 周期性 [目标锚定] 注入已删除 —— 改由循环前的 always-on 单点注入
+            # (见上方 wi4a_goal_anchor_always_on)。always-on 那条 role=system 常驻、
+            # 不被压、整轮恒 ≤1 条,周期重注是冗余且会堆多条同文 system。防 drift 由
+            # always-on 常驻 + WI-3 结构化摘要保任务共同覆盖,能力不丢。
 
             try:
                 if chain_mode:

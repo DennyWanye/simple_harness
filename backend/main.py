@@ -1391,7 +1391,7 @@ try:
             # 2026-06-12: 压缩窗口不再 hardcode 32000 —— 按当前主模型经
             # model_info 三层解析(BUILTIN ← 用户档位 override)。用户在
             # 「模型与参数」面板选 1M 档后,重启即对压缩阈值生效。
-            _cmp_window, _cmp_threshold = 32000, 0.75
+            _cmp_window, _cmp_threshold, _cmp_eff_pct = 32000, 0.75, 0.95
             try:
                 from llm import model_info as _mi_cmp
                 # P-B 修复: 用有效出站模型(运行时覆盖后,如 gpt-5.5)解析压缩窗口,而非
@@ -1401,6 +1401,8 @@ try:
                     _cmp_info = _mi_cmp.resolve(_cmp_model)
                     _cmp_window = int(_cmp_info.context_window)
                     _cmp_threshold = float(_cmp_info.compact_at_pct)
+                    # WI-1: effective_pct 供 buffer 触发公式(剩余 token buffer)。
+                    _cmp_eff_pct = float(_cmp_info.effective_pct)
             except Exception as _cmp_exc:  # noqa: BLE001
                 logger.warning(
                     "compaction_window_resolve_failed err=%s — fallback 32000",
@@ -1413,10 +1415,11 @@ try:
                 ),
                 context_window=_cmp_window,
                 threshold_percent=_cmp_threshold,
+                effective_pct=_cmp_eff_pct,
             )
             logger.info(
-                "wi4_0_compaction_enabled context_window=%d threshold=%.2f"
-                % (_cmp_window, _cmp_threshold)
+                "wi4_0_compaction_enabled context_window=%d threshold=%.2f eff_pct=%.2f"
+                % (_cmp_window, _cmp_threshold, _cmp_eff_pct)
             )
         except Exception as _cmp_init_exc:  # noqa: BLE001
             logger.warning(
