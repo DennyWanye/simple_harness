@@ -11,6 +11,7 @@
 
 | 工作项 | 主文档 | 一句话 | 状态 |
 |---|---|---|---|
+| **compaction-bestpractice-upgrade** | [00-PLAN](2026-06-16-compaction-bestpractice-upgrade/00-PLAN.md) | 上下文压缩升级对标 Claude Code/Hermes/OpenClaw：单调级联(microcompact→结构化摘要→截断兜底)+剩余 token buffer 触发+pre-flush 防丢任务+目标钉死不可压+接已有 L1/L3 记忆；做完才默认开 compaction | 📋 |
 | **effective-llm-model-resolution** | [00-PLAN](2026-06-16-effective-llm-model-resolution/00-PLAN.md) | 根治 P-B：让读模型名的代码(压缩窗口/stub/ppt复审)统一读**运行时有效模型**(llm_runtime.json 覆盖的 gpt-5.5)而非 config 旧种子(gemma)；加 effective_llm_model 访问器 + raw 同步 | 📋 |
 | **context-compaction-optim** | [00-PLAN](2026-06-16-context-compaction-optim/00-PLAN.md) | 上下文压缩四方向优化(任务保活结构化摘要+token 统一+观测)；真机测揪出并修"压缩永不触发"核心 bug + 防摘要反射 prompt；留 P-B 窗口取错模型 follow-up | 🟡 |
 | **crawl4ai-fetch-tier** | [00-PLAN](2026-06-16-crawl4ai-fetch-tier/00-PLAN.md) | deep-research 抓取加一级真浏览器渲染兜底(治 JS/SPA 空壳站)；POC 后**主线转 Tauri 自带 WebView**(三端零体积零安装),CDP-系统Edge 为 Win 加速档,Crawl4AI 降 dev 高级档 | 📋 |
