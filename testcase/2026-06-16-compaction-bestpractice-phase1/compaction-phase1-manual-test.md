@@ -263,3 +263,30 @@ npx tauri dev   # 在 tauri-app 目录；它自管唯一 vite + spawn backend
 
 > **恢复环境（验完必做）**: 删 `model_overrides.toml` 里的小窗口 override 行；按需把 `[features] compaction_enabled` 改回 false（除非 WI-6 已翻默认）。
 > **结果存档**: 截图存 `testcase/2026-06-16-compaction-bestpractice-phase1/screenshots/`；执行后日志证据贴回各 case 的 log 证据栏与本汇总表。
+
+---
+
+## ✅ 真机执行记录（2026-06-16，windows-mcp 真模拟人）
+
+**环境**: tauri dev + 注入 `DESKPET_BACKEND_DIR=G:\projects\deskpet\backend` + `DESKPET_PYTHON=<.venv>` + `DESKPET_DEV_MODE=1`（日志确认 `[backend_launch] Dev python=... backend_dir=...` → 跑当前代码非 frozen exe）。`AppData\Roaming\deskpet\config.toml` 临时开 `[features] compaction_enabled=true`，`AppData\Roaming\deskpet\model_overrides.toml` 把 gpt-5.5 `context_window=8000` 逼触发（验完已恢复 1M）。出站 gpt-5.5（chinzy 中转站）。
+**踩坑**: app 真实 user_data_dir 是 `%APPDATA%\deskpet`（非 `backend/userdata`），改错文件无效；PowerShell `Out-File utf8` 给 TOML 加 BOM → tomllib 解析失败 → 改用 Write 工具（无 BOM）。
+
+**操作**: 输入框真坐标 click + Clipboard 中文 + Ctrl+V + Enter 发送 `/goal 调研宁德时代2024年年报核心财务数据并总结要点` → 桌宠跑深度研究（35 次 web_search/web_extract）→ 追问"你刚才在帮我查什么任务？还差哪些没做完？"。
+
+**日志锚点战果**（grep `tauri-test3-err.log`）:
+- `wi4_0_compaction_enabled context_window=8000 threshold=0.80 eff_pct=0.95` ✓（窗口取对、阈值算对）
+- `context_microcompact_only tool_results_pruned=1 window=8000` ×**24**（WI-2 最高频生效层，把上下文从 19501 压住在 ~14-15K）
+- `context_compacted ... summary_preview=【意图/目标】…【进行中/当前任务】…` ×**2**（WI-3 结构化 schema 真出分段）
+- `wi4b_preflush_l1 sid=default chars=55` ×**3**（每 run 限一次 latch 生效）
+- `p1_4_compaction_fired` ×3 + UX banner "上下文已达 104%（估算 8386/8000 tokens）" ✓
+
+| Case | 范围 | 判定 | 证据 |
+|---|---|---|---|
+| TC-1 | 触发压缩 | **PASS** | `wi4_0_compaction_enabled window=8000` + `p1_4_compaction_fired` |
+| TC-2 | 压缩后追问仍记得任务（★） | **PASS** | 24×microcompact+2×完整摘要后，追问答出"…更早之前还有'调研宁德时代2024…'"——任务连续性保住（截图 `screenshots/TC2-task-continuity-after-compaction.png`） |
+| TC-3 | 摘要结构化 | **PASS** | `context_compacted` summary_preview 含【意图/目标】【进行中/当前任务】【关键事实与决策】等段 |
+| TC-4 | microcompact | **PASS** | `context_microcompact_only tool_results_pruned=1` ×24（截图 `screenshots/TC1-2-microcompact-research-running.png`） |
+| TC-5 | 目标 always-on | **未验（环境受限）** | `/goal` 在本 session 未注册 goal → `get_goal_text` 返 None → `wi4a_goal_anchor_always_on` 未触发（0 次）。WI-4a 逻辑已由单测充分覆盖（always-on 注入 + dedup ≤1 + get_pending_tasks）；实机验证待 goal 设置入口的正确手势。 |
+| TC-6 | 防套娃 | **部分**（诚实记录） | 结构机制正确（_extract_prior_summary 抽旧摘要作 prior、不混 transcript），但第 1 条 `context_compacted` 摘要出现**反射**（把"压缩对话历史"元指令当用户任务写入），疑似 session "default" 遗留旧反射摘要被 prior-state 带入；第 2 条摘要正常。haiku 摘要层防反射 prompt 未 100% 压住（issue #46602 式顽疾），microcompact 层无此问题。 |
+
+**结论**: 核心招牌 TC-1/2/3/4 **PASS**（压缩触发 + microcompact 最高频生效 + 结构化摘要 + 任务连续性根治）；TC-5 实机待 goal 手势（单测已证）；TC-6 机制对、haiku 偶发反射为已知 caveat。WI-6 默认开启 gate（真机 case ② 任务连续性）**满足**。

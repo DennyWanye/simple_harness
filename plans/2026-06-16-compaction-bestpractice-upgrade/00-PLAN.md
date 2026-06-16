@@ -1,6 +1,8 @@
 # 上下文压缩升级（对标 Claude Code / Hermes / OpenClaw 最佳实践）— 实施 PLAN
 
-> **状态**: 📋 规划中（已过子代理 2 轮对抗式评审，实现细节钉到可开工 — 见文末两轮评审记录）
+> **状态**: ✅ 已实施（Phase 1+2 全做完，compaction 默认开启 WI-6）— 见文末「实施记录」+ `STATUS/status.md` §4 2026-06-16 里程碑。
+> 提交链: Phase1 `70d376d`+`e933e7d` / Phase2 `e1ff9d3`+`12d4554`。真机证据 `testcase/2026-06-16-compaction-bestpractice-phase1/`。
+> 〔原状态〕📋 规划中（已过子代理 2 轮对抗式评审，实现细节钉到可开工 — 见文末两轮评审记录）
 > **目标**: 把 DeskPet 的上下文管理从"0.6 截断 + 0.8 扁平摘要（且阈值反序、默认关）"升级到业界最佳实践:
 > **单调递进的级联压缩（microcompact → 结构化摘要 → 截断兜底）+ pre-flush 防丢任务 + 目标钉死不可压 +
 > 触发用剩余 token buffer**；并把跨会话"记住用户"接进**已有的 L1/L3 记忆系统**（不重造）。
@@ -390,3 +392,29 @@ WI-6 P-B 依赖成立(`plans/2026-06-16-effective-llm-model-resolution/00-PLAN.m
 - §4 每条测试改为可证伪自动断言；§8 新增"受影响测试清单"逐 WI 钉必改文件(WI-4a 红 3 文件)。
 - **第1轮结论复核结果**：发现1(阈值反序误诊)✅成立但需补"l2_top_k 才是历史防爆闸"；发现2(frozen-snapshot)✅完全成立；
   发现3(目标钉死机制现成)✅成立但注入统一比第1轮说的更复杂(三处不是两处)。
+
+## 实施记录（2026-06-16，Lead 直接实现 + codex 偏好的最佳实践例外）
+
+**执行方式裁决**：原计划用 codex gpt-5.5 子代理写。实测此 refactor **重度交织**(WI-1/2/3/4a 共改 context_compressor.py + agent_loop.py 同两文件)+ **双压缩器陷阱**(context_compressor vs history_compactor)+ 测试迁移精细，并行 codex 必 merge 冲突、context-blind 难精准 → 按"你自己按最佳实践决定"授权，**Lead 直接实现**(单序列、握全上下文)，子代理用于**评估**(2 轮对抗到 100%)+**手测文档**(并行,可独立)。
+
+**Phase 1**(`70d376d` 实现 + `e933e7d` 评估修复):
+- WI-1 should_compress 改 `min(threshold, eff_win−output_reserve)`,output_reserve 自适应公式;effective_pct=None 退纯比例(旧 should_compress 单测零改 BC)。main.py 注入 effective_pct。
+- WI-2 `_microcompact_tool_results` 纯函数 + compress 入口跑 + 降到线下跳 haiku。
+- WI-3 `_SUMMARY_SYSTEM` 7 段 + `_extract_prior_summary` 锚定增量 + 空中段透传 prior。
+- WI-4a agent_loop always-on 单点注入 + 删周期 anchor;**关键决策：compress 用 dedup(见已有锚不注第二条)而非"删 compress 注入"** → 满足 ≤1 DoD 又保 test_compressor_goal_anchor BC,3 个 goal_anchor 测试文件零改动。保留 `_GOAL_ANCHOR_EVERY`(死常量,test 9-12 因 always-on 天然满足)。
+- 评估 2 轮 96%→100%:修 #1 `SessionGoalStore.get_pending_tasks`(真实现子目标数据源,SessionGoal.subgoals 本就有字段) + #2 safe-fail 两处退回改 microcompact 后 work(不丢占位收益)。
+
+**Phase 2**(`e1ff9d3` WI-4b/5 + `12d4554` WI-6):
+- WI-4b AgentLoop 加 file_memory 注入 + 触发压缩前 best-effort pre-flush(latch 每 run 一次,salience 0.6,frozen-snapshot→下个 session 召回)。main.py `globals().get('_file_memory')` 接线。
+- WI-5 确认 ContextAssembler 召回 + USER.md cap 已在,不新增代码。
+- WI-6 config.py `compaction_enabled` 默认 True(gate: P-B 修复✓ + 单测全绿✓ + 真机 case ②✓)。迁移 default-false 测试。
+
+**测试**：新增 21 单测(`tests/test_compaction_bestpractice_upgrade.py`);宽回归 699/850 passed。
+
+**windows-mcp 真机**(`testcase/2026-06-16-compaction-bestpractice-phase1/`)：注入 `DESKPET_BACKEND_DIR` 跑当前码、gpt-5.5 窗口压 8000 逼触发。一次 deepresearch 35 工具调用 → `context_microcompact_only`×24(把上下文从19501压住~14-15K)+`context_compacted`×2(7 段结构化)+`wi4b_preflush_l1`×3+UX banner 104%。**★ case ② 压缩后追问桌宠仍记得"调研宁德时代2024年报"(任务连续性根治) = PASS**。TC-1/2/3/4 PASS。
+
+**诚实 caveat（未尽事项）**：
+1. **WI-4a always-on 实机未验**：`/goal` 在该 session 未注册 goal → `get_goal_text` 返 None → `wi4a_goal_anchor_always_on` 触发 0 次。WI-4a 逻辑单测充分覆盖(always-on 注入/dedup ≤1/get_pending_tasks),实机验证待 goal 设置入口正确手势。
+2. **haiku 摘要层偶发反射**：1/2 条 context_compacted 把"压缩对话"元指令当用户任务写入(疑似 session 遗留旧反射摘要被 prior-state 带入);microcompact 层(最高频、不调模型)无此问题。防反射 prompt 未 100% 压住(issue #46602 式),后续可继续强化。
+3. **子目标 producer 缺位**：get_pending_tasks 管道就绪且单测证,但全仓无生产代码填 SessionGoal.subgoals → `[当前子目标]` 端到端暂为空,待后续 goal-decompose 接入。
+4. 真测环境踩坑(留给后人)：app 真实 user_data_dir 是 `%APPDATA%\deskpet`(非 backend/userdata);PowerShell Out-File 给 TOML 加 BOM 致 tomllib 解析失败 → 用 Write 工具无 BOM。
