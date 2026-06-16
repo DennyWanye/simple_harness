@@ -24,7 +24,16 @@
  *     the handle (or any toolbar button) re-expands.
  *   • A fresh red error auto-expands the panel + switches to "错误".
  */
-import { useEffect, useMemo, useRef, type CSSProperties } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  type CSSProperties,
+} from "react";
+
+// 消息流滚动位置持久键(进入消息界面恢复上次位置,见下 useLayoutEffect)。
+const MSGSTREAM_SCROLL_KEY = "deskpet.msgstream.scroll.v1";
 
 import type { InboxItem } from "../stores/sessionsStore";
 
@@ -120,6 +129,41 @@ export function MessageStreamPanel({
     }
   }, [rows.length]);
 
+  // 进入消息界面时恢复上次滚动位置(关掉消息面板再打开仍回到原处)。
+  // 消息大框是独立 webview,开关可能重建 → 用 localStorage 持久,跨 webview 重建有效。
+  // 上次在底部 → 仍贴底(随新消息跟随);否则恢复到当时的 scrollTop。仅挂载时跑一次。
+  const scrollRestoredRef = useRef(false);
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!el || scrollRestoredRef.current) return;
+    scrollRestoredRef.current = true;
+    let saved: { top: number; atBottom: boolean } | null = null;
+    try {
+      saved = JSON.parse(localStorage.getItem(MSGSTREAM_SCROLL_KEY) || "null");
+    } catch {
+      saved = null;
+    }
+    if (!saved || saved.atBottom) {
+      el.scrollTop = el.scrollHeight; // 默认/上次贴底 → 底部
+    } else {
+      el.scrollTop = Math.max(0, Math.min(saved.top, el.scrollHeight));
+    }
+  }, []);
+
+  const handleListScroll = () => {
+    const el = listRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    try {
+      localStorage.setItem(
+        MSGSTREAM_SCROLL_KEY,
+        JSON.stringify({ top: el.scrollTop, atBottom }),
+      );
+    } catch {
+      /* localStorage 不可用时忽略,不影响功能 */
+    }
+  };
+
   return (
     <div
       role="region"
@@ -133,7 +177,7 @@ export function MessageStreamPanel({
           对应 onSetFilter / onDismissAll / FilterChip / sweepBarStyle / pillButton
           变成未使用，但 prop 接口保留以兼容 caller。 */}
 
-      <div ref={listRef} style={listStyle}>
+      <div ref={listRef} style={listStyle} onScroll={handleListScroll}>
         {rows.length === 0 ? (
           <div style={emptyStyle}>
             {emptyMessage(filter)}

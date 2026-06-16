@@ -36,6 +36,11 @@ import {
 } from "../components/MessageStreamPanel";
 import { InputBar } from "../code-panel/InputBar";
 import { ChangeModelModal } from "../code-panel/ChangeModelModal";
+import {
+  useCodeModelsStore,
+  contextWindowForModel,
+  formatContextWindow,
+} from "../code-panel/codeModelsStore";
 import { codePanelWS } from "../code-panel/ws";
 import { useAudioChannel } from "../hooks/useAudioChannel";
 import { BACKEND_PORT } from "../backendPort";
@@ -59,6 +64,10 @@ export function MessagePanelRoot() {
   const model_params = useSessionsStore(
     (s) => s.sessions[SID]?.model_params ?? null,
   );
+  // 模型按钮显示「模型-上下文长度(K/M)」: 从 catalog 取当前模型上下文窗口。
+  const modelCatalog = useCodeModelsStore((s) => s.models);
+  const ctx_window = contextWindowForModel(preferred_model, modelCatalog);
+  const ctx_label = formatContextWindow(ctx_window);
 
   // ── Voice pipeline (parity with the pet's main mic) ──────────────
   // The panel is its own window, so it runs its own audio channel +
@@ -303,7 +312,11 @@ export function MessagePanelRoot() {
                 whiteSpace: "nowrap",
               }}
             >
-              {preferred_model || "默认模型"}
+              {preferred_model
+                ? ctx_label
+                  ? `${preferred_model}-${ctx_label}`
+                  : preferred_model
+                : "默认模型"}
             </span>
             <Icon name="edit" size={11} style={{ flexShrink: 0 }} />
           </button>

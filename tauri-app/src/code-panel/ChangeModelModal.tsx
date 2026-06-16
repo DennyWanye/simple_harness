@@ -31,6 +31,7 @@ import {
   buildModelOptionsFromCatalog,
   contextWindowForModel,
   supportedWindowsForModel,
+  formatContextWindow,
 } from "./codeModelsStore";
 import { useSessionsStore, type CodeModelParams } from "../stores/sessionsStore";
 
@@ -220,10 +221,7 @@ export function ChangeModelModal({
               >
                 {ctx_options.map((w) => (
                   <option key={w} value={String(w)}>
-                    {`${w.toLocaleString()} tokens` +
-                      (w >= 1_000_000
-                        ? "  (≈1M)"
-                        : `  (≈${Math.round(w / 1000)}K)`)}
+                    {formatContextWindow(w)}
                   </option>
                 ))}
               </select>
@@ -237,12 +235,7 @@ export function ChangeModelModal({
               <label style={labelStyle}>上下文窗口（模型决定）</label>
               <div style={ctxChipStyle} aria-label="上下文窗口">
                 {ctx_window != null
-                  ? `${ctx_window.toLocaleString()} tokens` +
-                    (ctx_window >= 1_000_000
-                      ? "  (≈1M)"
-                      : ctx_window >= 1000
-                        ? `  (≈${Math.round(ctx_window / 1000)}K)`
-                        : "")
+                  ? formatContextWindow(ctx_window) || "由 provider 决定"
                   : "由 provider 决定"}
               </div>
             </>

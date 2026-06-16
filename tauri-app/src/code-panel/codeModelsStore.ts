@@ -47,6 +47,17 @@ export function contextWindowForModel(
   return hit?.context_window ?? null;
 }
 
+/** 上下文长度 → 仅 K/M 单位的紧凑字符串(给模型按钮 + 参数弹框统一用)。
+ *  128000→"128K"  400000→"400K"  1000000→"1M"  1500000→"1.5M"  null→""。 */
+export function formatContextWindow(n: number | null | undefined): string {
+  if (!n || !Number.isFinite(n) || n <= 0) return "";
+  if (n >= 1_000_000) {
+    const m = n / 1_000_000;
+    return `${Number.isInteger(m) ? m : +m.toFixed(1)}M`;
+  }
+  return `${Math.round(n / 1000)}K`;
+}
+
 /** 该型号可选的上下文档位(>1 才渲染下拉)。 */
 export function supportedWindowsForModel(
   model_id: string | null | undefined,
