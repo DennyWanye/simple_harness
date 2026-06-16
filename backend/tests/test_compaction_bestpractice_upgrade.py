@@ -13,6 +13,7 @@ from deskpet.agent.context_compressor import (
     _extract_prior_summary,
     _microcompact_tool_results,
     _format_summary,
+    _looks_reflective,
     _SUMMARY_MARKER,
 )
 
@@ -315,6 +316,69 @@ class TestWI4aGoalAnchor:
         assert store.get_pending_tasks("s1") == []
         g.subgoals = ["收集数据", "汇总成稿"]
         assert store.get_pending_tasks("s1") == ["收集数据", "汇总成稿"]
+
+
+# ───────────────────────── 反射 guard (caveat #2 加固) ─────────────────────────
+class TestReflectionGuard:
+    def test_looks_reflective_detects_meta(self):
+        # 真机观测到的反射样本(复述压缩提示词)
+        reflective = (
+            "【进行中/当前任务】用户要把一段对话历史压缩成更省 token 的摘要，"
+            "按意图/目标分段输出，用第三人称、不要杜撰。"
+        )
+        assert _looks_reflective(reflective) is True
+
+    def test_looks_reflective_passes_real_task(self):
+        real = (
+            "【进行中/当前任务】用户在让助手调研宁德时代2024年报的营收和净利润，"
+            "已查到营业收入约3620亿元，还差研发投入数据。"
+        )
+        assert _looks_reflective(real) is False
+
+    def test_single_signal_not_flagged(self):
+        # 真实对话碰巧提一次"压缩对话"不应误判(需 ≥2 信号)
+        assert _looks_reflective("用户问怎么压缩对话框的字体大小") is False
+
+    def test_extract_prior_skips_reflective(self):
+        refl = _format_summary("用户要把对话历史压缩成摘要，分段输出，第三人称，不要杜撰")
+        clean = _format_summary("用户在调研宁德时代年报")
+        # 中段含一条反射旧摘要 → 不作为 prior 带入
+        _, _ = _extract_prior_summary([{"role": "assistant", "content": refl}])
+        prior_refl, _ = _extract_prior_summary([{"role": "assistant", "content": refl}])
+        assert prior_refl is None  # 反射 prior 被丢弃
+        prior_clean, _ = _extract_prior_summary([{"role": "assistant", "content": clean}])
+        assert prior_clean == "用户在调研宁德时代年报"
+
+    @pytest.mark.asyncio
+    async def test_reflective_output_falls_back_to_prior(self):
+        """新摘要反射 + 中段有干净旧摘要 → 输出回退到干净 prior,不落反射。"""
+
+        class _ReflectiveLLM:
+            async def chat_with_fallback(self, *a, **k):
+                class R:
+                    content = ("用户要把对话历史压缩成摘要，按分段输出，"
+                               "第三人称，省 token，不要杜撰。")
+                return R()
+
+        c = ContextCompressor(llm_registry=_ReflectiveLLM(), first_n=1, last_n=1)
+        clean_prior = _format_summary("用户在调研宁德时代2024年报核心财务数据")
+        msgs = [
+            {"role": "user", "content": "u0"},
+            {"role": "assistant", "content": clean_prior},
+            {"role": "user", "content": "m1" * 30},
+            {"role": "assistant", "content": "m2" * 30},
+            {"role": "user", "content": "u-last"},
+        ]
+        r = await c.compress(msgs)
+        # 注入的摘要应是干净 prior,不是反射新摘要
+        summary_msgs = [
+            m for m in r.messages
+            if str(m.get("content") or "").lstrip().startswith(_SUMMARY_MARKER)
+        ]
+        assert len(summary_msgs) == 1
+        body = summary_msgs[0]["content"]
+        assert "宁德时代" in body
+        assert "不要杜撰" not in body  # 反射内容没落地
 
 
 # ───────────────────────── WI-4b pre-flush 落 L1 (Phase 2) ─────────────────────────

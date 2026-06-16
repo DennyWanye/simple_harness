@@ -361,6 +361,20 @@ class ContextCompressor:
                 meta={"tool_results_pruned": n_micro},
             )
 
+        # 反射后处理闸(issue #46602): 新摘要疑似复述压缩提示词本身(把元指令当用户
+        # 任务)→ 不让它落地。优先回退到上一条**干净** prior(_extract_prior_summary
+        # 已保证 prior 非反射);无干净 prior 时只能保留并告警(WI-4a 目标 always-on
+        # system 段仍护任务连续性,反射只是让本条摘要质量差,不致命)。
+        reflective = _looks_reflective(summary_text)
+        if reflective:
+            logger.warning(
+                "context_compressor.reflective_summary_detected",
+                preview=summary_text[:120],
+                fell_back_to_prior=bool(prior_summary),
+            )
+            if prior_summary:
+                summary_text = prior_summary
+
         output_tokens = _approx_tokens(summary_text)
         summary_message = {
             "role": "assistant",
@@ -578,6 +592,33 @@ def _format_summary(summary_text: str) -> str:
     return _SUMMARY_MARKER + "\n" + summary_text.strip()
 
 
+import re as _re
+
+# 反射检测(issue #46602 式): haiku 偶发把"压缩对话历史/省token/分段输出/第三人称/
+# 不要杜撰"这类**本提示词自身的元指令**当成用户任务写进摘要。这些词在真实用户任务
+# 摘要里几乎不会扎堆出现 → 命中 ≥2 个不同信号即判为反射。纯 prompt 压不住,加后处理闸。
+_REFLECTION_SIGNALS = (
+    _re.compile(r"压缩.{0,8}(对话|历史|上下文)"),
+    _re.compile(r"省.{0,3}token", _re.IGNORECASE),
+    _re.compile(r"分段(输出|呈现|表述)"),
+    _re.compile(r"第三人称"),
+    _re.compile(r"杜撰"),
+    _re.compile(r"用户的语言"),
+    _re.compile(r"空(的)?段(直接)?省略"),
+)
+
+
+def _looks_reflective(text: str) -> bool:
+    """True 当摘要疑似在复述压缩提示词本身(反射),而非总结真实对话。
+
+    命中 ≥2 个不同元指令信号即判反射(单个信号可能是真实对话碰巧提及,提高阈值防误伤)。
+    """
+    if not text:
+        return False
+    hits = sum(1 for pat in _REFLECTION_SIGNALS if pat.search(text))
+    return hits >= 2
+
+
 def _extract_prior_summary(
     msgs: list[dict[str, Any]],
 ) -> "tuple[Optional[str], list[dict[str, Any]]]":
@@ -601,8 +642,11 @@ def _extract_prior_summary(
         ):
             # 剥掉前缀行,余下即上次摘要正文。多条则保留最后一条。
             body = content.lstrip()[len(_SUMMARY_MARKER):].strip()
-            prior = body
-            continue  # 从待摘列表剔除
+            # 防 drift 传播: 反射的旧摘要**不**作为 prior-state 带入(否则反射会被
+            # 增量更新永久延续);但仍从待摘列表剔除(不重新摘旧摘要)。
+            if not _looks_reflective(body):
+                prior = body
+            continue  # 从待摘列表剔除(反射与否都剔,不重摘旧摘要)
         kept.append(m)
     return prior, kept
 
