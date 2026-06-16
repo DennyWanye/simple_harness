@@ -67,6 +67,27 @@
 4. 回归: `pytest tests/ -k "compact or compress or token or budget or assembler or auto_resume or agent_loop"` 全绿。
 5. 真机: 长会话触发压缩后,追问"刚才在干嘛/继续" → 桌宠仍记得当前任务(不再"看不到上一轮任务")。
 
+## 3.5 真机测试发现的问题(2026-06-16 windows-mcp 测压缩)
+
+> 把压缩窗口临时调小(model_overrides gemma4:e4b 2000)+ 开 `compaction_enabled` 测触发时发现:
+
+- **P-A(核心 bug,已修)**: **压缩在桌宠主聊天里实际从不触发**。根因: agent_loop 压缩检查在
+  LLM 调用**前**跑,用 `max(_budget.estimated_tokens, _last_real_prompt_tokens)`——但
+  ① `_budget.estimated_tokens` 被 BudgetAllocator 压到 window×0.6(低于压缩阈值 window×0.8);
+  ② `_last_real_prompt_tokens` 每条消息开头 line618 重置 0,只在 LLM 响应后(line1038)才拿到
+  relay 真值,而单轮聊天消息不迭代第二次 → 检查永远拿不到真值。两路都够不到阈值 → 实测 12 条
+  消息/relay 真 prompt 1746 token 仍**完全不压**。**修**: 检查处直接 `count_messages_tokens
+  (working_messages)`(即将发送的真实消息大小,调用前可得、不受 allocator 截断、不延迟)作第 4 刀。
+- **P-B(配置 mismatch,待评估)**: 压缩窗口取自 config `[llm] model`(gemma4:e4b→32K default),
+  但**实际 LLM 是中转站 gpt-5.5(用户面板设了 1M)**。生产里压缩阈值按错模型算(32K 而非 1M)→
+  过早压缩。应改成按真实出站模型解析窗口。(本期记录,单独修)
+- **P-C(两套系统序,#3 已部分缓解)**: BudgetAllocator 截在 window×0.6、ContextCompressor 触发在
+  window×0.8 → allocator 估算路径天然够不到压缩阈值。P-A 的"直接数 working_messages"绕开了它,
+  但两阈值的序仍值得统一(budget_ratio 应 ≥ compact threshold,否则估算路径形同虚设)。
+- **观察**: deep-research 报告**不进主 loop 上下文**(落盘/给用户,工具结果回灌 LLM 的很小),
+  所以"deep-research 多次"并不会撑大主 loop → 靠 deep-research 触发压缩低效;真正撑大主 loop 的是
+  普通多轮对话历史累积。
+
 ## 4. 文件清单
 - 新: `backend/deskpet/agent/tokens.py` + `backend/tests/test_agent_tokens.py`
 - 改: `context_compressor.py`(prompt+anchor+_approx_tokens) · `agent/token_budget.py`(复用 tokens) ·

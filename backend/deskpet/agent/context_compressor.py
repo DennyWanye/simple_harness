@@ -107,7 +107,10 @@ class ContextCompressor:
         "【已完成】已经做完的步骤、得到的结论或产物(带关键结果值)。\n"
         "【关键事实与决策】人名/项目/数字/日期/已定的决定/用户明确让记住的数据。\n"
         "【待办/下一步】尚未完成、接下来要做的事。\n\n"
-        "丢弃: 寒暄、重复、过程性废话。**不要杜撰**任何未在原文出现的信息。"
+        "丢弃: 寒暄、重复、过程性废话。**不要杜撰**任何未在原文出现的信息。\n"
+        "★若【待摘内容】里**没有**明确的用户任务(例如只是一些工具调用/系统记录),"
+        "【进行中/当前任务】段就写'(本段无明确任务)',**绝不要**把本提示词本身、"
+        "或'压缩对话'这类元说明当成用户任务写进去(那是你的指令,不是对话内容)。"
     )
 
     def __init__(
@@ -264,6 +267,7 @@ class ContextCompressor:
             model=self.model,
             window=self.context_window,
             threshold_pct=self.threshold_percent,
+            summary_preview=summary_text[:300],
         )
 
         return CompressionResult(

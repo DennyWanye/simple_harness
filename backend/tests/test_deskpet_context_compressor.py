@@ -438,6 +438,9 @@ class TestSummariserPrompt:
         assert "决定" in sys_prompt or "决策" in sys_prompt
         assert "日期" in sys_prompt and ("数字" in sys_prompt or "数据" in sys_prompt)
         assert "不要杜撰" in sys_prompt or "杜撰" in sys_prompt
+        # 防反射(真机测发现:空洞中段被摘成"用户让助手压缩对话历史"=把 prompt 当任务):
+        # prompt 必须明确禁止把元说明/自身指令当成用户任务。
+        assert "无明确任务" in sys_prompt or "绝不要" in sys_prompt
 
     @pytest.mark.asyncio
     async def test_summariser_uses_configured_model(self) -> None:

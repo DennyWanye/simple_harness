@@ -723,6 +723,20 @@ class AgentLoop:
                 # 第 3 刀: real usage 兜底(见 _last_real_prompt_tokens 注释)。
                 if _last_real_prompt_tokens > _ctoken_est:
                     _ctoken_est = _last_real_prompt_tokens
+                # ★ 第 4 刀(真机测压缩发现的核心 bug 修复): 直接数【即将发送的
+                # working_messages】的 token。原来只用 _budget.estimated_tokens(被
+                # BudgetAllocator 压到 window×0.6,低于压缩阈值 window×0.8)+
+                # _last_real_prompt_tokens(每条消息开头重置 0、且单轮聊天不迭代第二次
+                # 拿不到真值) → 两路都够不到阈值 → 压缩**永不触发**(实测 12 消息/
+                # 1746 真 token 仍不压)。直接数 working_messages 调用前可得、不受
+                # allocator 截断、不延迟,是最可靠的触发信号(复用统一计数,优化 #1+#3)。
+                try:
+                    from deskpet.agent.tokens import count_messages_tokens as _cmt
+                    _wm_tokens = _cmt(working_messages)
+                    if _wm_tokens > _ctoken_est:
+                        _ctoken_est = _wm_tokens
+                except Exception:  # noqa: BLE001
+                    pass
                 _ctx_should_compress = False
                 try:
                     _ctx_cfg = getattr(self._ctx, "config", None)
