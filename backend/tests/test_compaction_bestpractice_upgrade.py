@@ -152,6 +152,26 @@ class TestWI2Microcompact:
         # 占位后每个 tool 仍有配对 assistant → 不产孤儿(条数不减)
         assert len([m for m in sanitized if m.get("role") == "tool"]) == 5
 
+    @pytest.mark.asyncio
+    async def test_safe_fail_preserves_microcompact(self):
+        """haiku 失败时退回 microcompact 后的 work(占位仍在),不丢收益。"""
+
+        class _RaisingLLM:
+            async def chat_with_fallback(self, *a, **k):
+                raise RuntimeError("haiku down")
+
+        # 小窗口逼到必须走 haiku(microcompact 不够) → 失败 → 应返回 work
+        c = ContextCompressor(
+            llm_registry=_RaisingLLM(), context_window=8_000,
+            threshold_percent=0.75, microcompact_keep_tools=1,
+        )
+        msgs = self._msgs_with_tools(5)
+        r = await c.compress(msgs)
+        assert r.compressed is True  # microcompact 生效
+        assert r.meta.get("tool_results_pruned", 0) >= 1
+        tool_contents = [m["content"] for m in r.messages if m.get("role") == "tool"]
+        assert any("已清理" in t for t in tool_contents)
+
 
 # ───────────────────────── WI-3 结构化摘要 + 锚定增量 ─────────────────────────
 class TestWI3StructuredSummaryAndAnchoring:
@@ -282,3 +302,16 @@ class TestWI4aGoalAnchor:
         ]
         assert len(anchors) == 1
         assert "独立目标" in anchors[0]["content"]
+
+    def test_goal_store_get_pending_tasks(self):
+        """always-on 子目标数据源: SessionGoalStore.get_pending_tasks 返回 subgoals。"""
+        from deskpet.agent.goal_store import SessionGoalStore
+
+        store = SessionGoalStore()
+        # 无目标 → 空
+        assert store.get_pending_tasks("s0") == []
+        g = store.set("s1", "整理周报")
+        # 有目标但无子目标 → 空
+        assert store.get_pending_tasks("s1") == []
+        g.subgoals = ["收集数据", "汇总成稿"]
+        assert store.get_pending_tasks("s1") == ["收集数据", "汇总成稿"]

@@ -339,22 +339,26 @@ class ContextCompressor:
                 error=str(exc),
                 error_type=type(exc).__name__,
             )
+            # safe-fail: 退回上一级 = microcompact 后的 work(保住占位收益),
+            # 而非最原始 messages(否则 microcompact 白做)。与 no_middle/no_llm 一致。
             return CompressionResult(
-                messages=list(messages),
-                compressed=False,
+                messages=_sanitize_tool_pairs(work) if n_micro > 0 else list(messages),
+                compressed=n_micro > 0,
                 input_tokens=input_tokens,
                 latency_ms=(time.monotonic() - start) * 1000.0,
                 error=str(exc),
+                meta={"tool_results_pruned": n_micro},
             )
 
         summary_text = str(getattr(response, "content", "") or "").strip()
         if not summary_text:
             return CompressionResult(
-                messages=list(messages),
-                compressed=False,
+                messages=_sanitize_tool_pairs(work) if n_micro > 0 else list(messages),
+                compressed=n_micro > 0,
                 input_tokens=input_tokens,
                 latency_ms=(time.monotonic() - start) * 1000.0,
                 error="empty_summary",
+                meta={"tool_results_pruned": n_micro},
             )
 
         output_tokens = _approx_tokens(summary_text)

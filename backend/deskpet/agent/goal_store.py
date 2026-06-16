@@ -197,6 +197,15 @@ class SessionGoalStore:
         g = self._goals.get(session_id)
         return g.text if g is not None else None
 
+    def get_pending_tasks(self, session_id: str) -> list[str]:
+        """子目标列表（供 WI-4a always-on [当前子目标] 注入）。
+
+        sync, None-safe：无目标 / 无子目标 → 空 list。读 ``SessionGoal.subgoals``
+        内存权威。当前 v1 不区分 done/pending（subgoals 是纯文本清单），全部返回。
+        """
+        g = self._goals.get(session_id)
+        return list(g.subgoals) if g is not None and g.subgoals else []
+
     def set(
         self,
         session_id: str,
