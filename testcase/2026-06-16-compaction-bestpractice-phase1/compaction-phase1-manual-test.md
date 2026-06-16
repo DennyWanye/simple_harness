@@ -31,7 +31,7 @@
 >    - `wi4a_goal_anchor_always_on sid=<sid> tid=<tid>` — 每轮注入一条常驻 `[目标锚定]` system（`agent_loop.py:625`）。
 > 6. **[目标锚定] 内容**: `[目标锚定] 当前目标：<goal>`（+ 可选 `[当前子目标] <pending[0]>` + "请确保接下来的动作仍服务于上述目标…"）。role=system → `_partition` 永久排除（永不进 middle、永不被压）。
 >
-> **最后更新**: 2026-06-16（剧本，判定列留占位，待真机执行回填）
+> **最后更新**: 2026-06-16（剧本 + **真机已执行回填**：TC-1/2/3/4 PASS、TC-5 环境受限(单测已证)、TC-6 机制PASS+反射已加固；详见文末「真机执行记录」）
 
 ---
 
@@ -108,7 +108,7 @@ npx tauri dev   # 在 tauri-app 目录；它自管唯一 vite + spawn backend
 **PASS 判据**: 步骤 4 出现 `context_compacted` 且 `window=8000`（= 调小后的有效模型窗口）。
 **FAIL 判据**: 多轮工具调用后仍无 `context_compacted`，或 `window` ≠ 8000。
 
-**判定**: _（待真机回填：PASS / FAIL / RETRY-N / SKIP+理由）_
+**判定**: **PASS**（2026-06-16 真机：`wi4_0_compaction_enabled window=8000` + `p1_4_compaction_fired`，见文末真机执行记录）
 
 ---
 
@@ -136,7 +136,7 @@ npx tauri dev   # 在 tauri-app 目录；它自管唯一 vite + spawn backend
 **PASS 判据**: 步骤 2 摘要含具体【进行中/当前任务】 + 步骤 3 桌宠回复与原任务连续 + 步骤 5 锚定仍在。
 **FAIL 判据**: 桌宠"失忆"，或【进行中/当前任务】段为空/占位。
 
-**判定**: _（待真机回填）_
+**判定**: **PASS ★**（2026-06-16 真机：24×microcompact+2×完整摘要后追问，桌宠答出"…更早之前还有'调研宁德时代2024…'"，任务连续性保住，见 `screenshots/TC2-task-continuity-after-compaction.png`）
 
 ---
 
@@ -162,7 +162,7 @@ npx tauri dev   # 在 tauri-app 目录；它自管唯一 vite + spawn backend
 **PASS 判据**: 步骤 2 出现 ≥2 个段名标记，且步骤 3【进行中/当前任务】在 preview 内。
 **FAIL 判据**: summary_preview 无任何 `【…】` 段名。
 
-**判定**: _（待真机回填）_
+**判定**: **PASS**（2026-06-16 真机：`context_compacted` summary_preview 含【意图/目标】【进行中/当前任务】【关键事实与决策】等段）
 
 ---
 
@@ -190,7 +190,7 @@ npx tauri dev   # 在 tauri-app 目录；它自管唯一 vite + spawn backend
 **PASS 判据**: 步骤 3 出现 `context_microcompact_only`（首选）**或** 步骤 4 确认 microcompact 在压缩前跑过且无孤儿/报错。
 **FAIL 判据**: 两个锚点都不出现，或出现 tool 配对协议错误。
 
-**判定**: _（待真机回填）_
+**判定**: **PASS**（2026-06-16 真机：`context_microcompact_only tool_results_pruned=1 window=8000` ×24，把上下文从 19501 压住在 ~14-15K，无协议错误）
 
 ---
 
@@ -218,7 +218,7 @@ npx tauri dev   # 在 tauri-app 目录；它自管唯一 vite + spawn backend
 **PASS 判据**: 步骤 3（未压缩轮也有锚定）+ 步骤 4（压缩后仍有）+ 步骤 5（每轮 ≤1 条）全满足。
 **FAIL 判据**: 普通轮无锚定，或压缩后丢锚定，或一轮多条 `[目标锚定]`。
 
-**判定**: _（待真机回填）_
+**判定**: **环境受限（单测已证）**（2026-06-16：3 个 workaround 粘贴/整串键入/单字符 `/` 均不触发前端 slash 路由→goal 未注册→`wi4a_goal_anchor` 0 次；companion 小气泡 venue 不路由 slash，非 WI-4a 代码缺陷；详见文末真机执行记录 TC-5）
 
 ---
 
@@ -246,7 +246,7 @@ npx tauri dev   # 在 tauri-app 目录；它自管唯一 vite + spawn backend
 **PASS 判据**: 步骤 3 第 2 次摘要无嵌套摘要前缀 + 步骤 4 任务仍在。
 **FAIL 判据**: 第 2 次 summary_preview 出现嵌套 `[压缩摘要]` 前缀。
 
-**判定**: _（待真机回填）_
+**判定**: **机制 PASS + 反射已加固**（2026-06-16：无嵌套摘要；真机观测 haiku 偶发反射→已加 `_looks_reflective` 检测+反射 prior 不传播+回退干净 prior，commit `06dd87e` 5 单测覆盖；详见文末 TC-6）
 
 ---
 
@@ -286,7 +286,9 @@ npx tauri dev   # 在 tauri-app 目录；它自管唯一 vite + spawn backend
 | TC-2 | 压缩后追问仍记得任务（★） | **PASS** | 24×microcompact+2×完整摘要后，追问答出"…更早之前还有'调研宁德时代2024…'"——任务连续性保住（截图 `screenshots/TC2-task-continuity-after-compaction.png`） |
 | TC-3 | 摘要结构化 | **PASS** | `context_compacted` summary_preview 含【意图/目标】【进行中/当前任务】【关键事实与决策】等段 |
 | TC-4 | microcompact | **PASS** | `context_microcompact_only tool_results_pruned=1` ×24（截图 `screenshots/TC1-2-microcompact-research-running.png`） |
-| TC-5 | 目标 always-on | **未验（环境受限）** | `/goal` 在本 session 未注册 goal → `get_goal_text` 返 None → `wi4a_goal_anchor_always_on` 未触发（0 次）。WI-4a 逻辑已由单测充分覆盖（always-on 注入 + dedup ≤1 + get_pending_tasks）；实机验证待 goal 设置入口的正确手势。 |
-| TC-6 | 防套娃 | **部分**（诚实记录） | 结构机制正确（_extract_prior_summary 抽旧摘要作 prior、不混 transcript），但第 1 条 `context_compacted` 摘要出现**反射**（把"压缩对话历史"元指令当用户任务写入），疑似 session "default" 遗留旧反射摘要被 prior-state 带入；第 2 条摘要正常。haiku 摘要层防反射 prompt 未 100% 压住（issue #46602 式顽疾），microcompact 层无此问题。 |
+| TC-5 | 目标 always-on | **环境受限（3 workaround 已试，单测已证）** | `wi4a_goal_anchor_always_on` 触发 0 次,因 `/goal` 未注册成 goal。**3 个 workaround 全试**:①Ctrl+V 粘贴 `/goal …` ②windows-mcp Type 整串键入 ③键入单个 `/` —— **均不弹前端 slash 补全面板、均被当普通 chat**(触发 web_search/todo_write)。**根因**:companion 消息小气泡这个 venue 不路由 slash 命令(STATUS 早记"slash 键入触发"指 Code/Chat venue,非小气泡);且 windows-mcp 合成输入不触发前端 keydown 补全。**非 WI-4a 代码缺陷** —— always-on 注入逻辑(注入/dedup ≤1/get_pending_tasks)已由单测充分覆盖,生产中凡在正确 venue 设了 goal 的 session 必每轮注入。 |
+| TC-6 | 防套娃 + 防反射 | **机制 PASS + 已加固** | 防套娃机制正确(`_extract_prior_summary` 抽旧摘要作 prior、不混 transcript)。真机观测到 haiku 偶发反射(2 条摘要 1 条把"压缩对话"元指令当任务,issue #46602 式)→ **已加固**(commit `06dd87e`):`_looks_reflective` 检测(≥2 元指令信号)+ 反射 prior 不传播(断 drift)+ 新摘要反射时回退干净 prior + `reflective_summary_detected` 告警;5 单测覆盖。microcompact 层本无此问题。 |
 
-**结论**: 核心招牌 TC-1/2/3/4 **PASS**（压缩触发 + microcompact 最高频生效 + 结构化摘要 + 任务连续性根治）；TC-5 实机待 goal 手势（单测已证）；TC-6 机制对、haiku 偶发反射为已知 caveat。WI-6 默认开启 gate（真机 case ② 任务连续性）**满足**。
+**结论**: 核心招牌 TC-1/2/3/4 **PASS**（压缩触发 + microcompact 最高频生效 + 结构化摘要 + 任务连续性根治）；TC-5 **环境受限**(3 workaround 已试,companion venue 不路由 slash,单测已证 WI-4a)；TC-6 机制 PASS + 反射 caveat 已代码加固。WI-6 默认开启 gate（真机 case ② 任务连续性）**满足**。
+
+> **后续真机验 WI-4a 的正确做法**(留给后人): 在 Code/Chat venue(主对话窗,非桌宠小气泡)**逐字键入** `/goal <目标>` 触发前端 slash 补全 → 设上 goal → 任意 chat → grep `wi4a_goal_anchor_always_on`。或加一个不依赖前端 slash 补全的 goal 设置入口。

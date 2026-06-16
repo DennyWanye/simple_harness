@@ -413,8 +413,8 @@ WI-6 P-B 依赖成立(`plans/2026-06-16-effective-llm-model-resolution/00-PLAN.m
 
 **windows-mcp 真机**(`testcase/2026-06-16-compaction-bestpractice-phase1/`)：注入 `DESKPET_BACKEND_DIR` 跑当前码、gpt-5.5 窗口压 8000 逼触发。一次 deepresearch 35 工具调用 → `context_microcompact_only`×24(把上下文从19501压住~14-15K)+`context_compacted`×2(7 段结构化)+`wi4b_preflush_l1`×3+UX banner 104%。**★ case ② 压缩后追问桌宠仍记得"调研宁德时代2024年报"(任务连续性根治) = PASS**。TC-1/2/3/4 PASS。
 
-**诚实 caveat（未尽事项）**：
-1. **WI-4a always-on 实机未验**：`/goal` 在该 session 未注册 goal → `get_goal_text` 返 None → `wi4a_goal_anchor_always_on` 触发 0 次。WI-4a 逻辑单测充分覆盖(always-on 注入/dedup ≤1/get_pending_tasks),实机验证待 goal 设置入口正确手势。
-2. **haiku 摘要层偶发反射**：1/2 条 context_compacted 把"压缩对话"元指令当用户任务写入(疑似 session 遗留旧反射摘要被 prior-state 带入);microcompact 层(最高频、不调模型)无此问题。防反射 prompt 未 100% 压住(issue #46602 式),后续可继续强化。
-3. **子目标 producer 缺位**：get_pending_tasks 管道就绪且单测证,但全仓无生产代码填 SessionGoal.subgoals → `[当前子目标]` 端到端暂为空,待后续 goal-decompose 接入。
-4. 真测环境踩坑(留给后人)：app 真实 user_data_dir 是 `%APPDATA%\deskpet`(非 backend/userdata);PowerShell Out-File 给 TOML 加 BOM 致 tomllib 解析失败 → 用 Write 工具无 BOM。
+**caveat 处理结果（2026-06-16 二轮收尾）**：
+1. **WI-4a always-on 实机 = 环境受限（已尽 3 workaround）**：`/goal` 设 goal 走前端 slash 路由,但 **3 个 workaround(Ctrl+V 粘贴 / windows-mcp 整串键入 / 单字符 `/`)均不触发** companion 小气泡 venue 的 slash 补全 → 全被当普通 chat → goal 未注册 → `wi4a_goal_anchor` 0 次。**根因**:companion 小气泡 venue 不路由 slash(STATUS 早记"slash 键入触发"指 Code/Chat venue) + windows-mcp 合成输入不触发前端 keydown 补全。**非 WI-4a 代码缺陷**,逻辑单测充分覆盖(always-on/dedup ≤1/get_pending_tasks);生产中正确 venue 设了 goal 的 session 必每轮注入。后续真机验:Code/Chat venue 逐字键入 `/goal`,或加不依赖 slash 补全的 goal 入口。
+2. **haiku 偶发反射 = 已代码加固**(`06dd87e`)：加 `_looks_reflective`(≥2 元指令信号)检测 + 反射旧摘要不作 prior-state 传播(断 drift) + 新摘要反射时回退上一条干净 prior + `reflective_summary_detected` 告警;5 单测覆盖。microcompact 层本无此问题。
+3. **子目标 producer 缺位（仍未尽）**：get_pending_tasks 管道就绪且单测证,但全仓无生产代码填 SessionGoal.subgoals → `[当前子目标]` 端到端暂为空,待后续 goal-decompose 接入。
+4. 真测环境踩坑(留给后人)：app 真实 user_data_dir 是 `%APPDATA%\deskpet`(非 backend/userdata);PowerShell Out-File 给 TOML 加 BOM 致 tomllib 解析失败 → 用 Write 工具无 BOM;companion 小气泡 venue 不路由 slash 命令。
