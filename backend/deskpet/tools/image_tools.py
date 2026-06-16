@@ -114,12 +114,10 @@ def _resolve_endpoint() -> tuple[str, str | None]:
 
     if not base_url:
         try:
-            import config as _cfg  # type: ignore[import-not-found]
+            from config import standalone_config_section  # type: ignore[import-not-found]
 
             base_url = str(
-                getattr(getattr(_cfg.config, "llm", None), "local", None)
-                and _cfg.config.llm.local.base_url
-                or (_cfg.config.raw.get("llm") or {}).get("base_url", "")
+                (standalone_config_section("llm") or {}).get("base_url", "")
             )
         except Exception:  # noqa: BLE001
             base_url = ""
@@ -136,10 +134,10 @@ def _resolve_endpoint() -> tuple[str, str | None]:
 
 def _image_model() -> str:
     try:
-        import config as _cfg  # type: ignore[import-not-found]
+        from config import standalone_config_section  # type: ignore[import-not-found]
 
         return str(
-            (_cfg.config.raw.get("image") or {}).get("model")
+            (standalone_config_section("image") or {}).get("model")
             or _DEFAULT_MODEL
         )
     except Exception:  # noqa: BLE001
@@ -155,10 +153,10 @@ def _trust_env_proxy() -> bool:
     ``[image] trust_env_proxy = true`` 改回跟随 HTTP(S)_PROXY env。
     """
     try:
-        import config as _cfg  # type: ignore[import-not-found]
+        from config import standalone_config_section  # type: ignore[import-not-found]
 
         return bool(
-            (_cfg.config.raw.get("image") or {}).get("trust_env_proxy", False)
+            (standalone_config_section("image") or {}).get("trust_env_proxy", False)
         )
     except Exception:  # noqa: BLE001
         return False
@@ -172,10 +170,10 @@ def _image_quality() -> str:
     能把现网 57~221s 的生成耗时显著压低，是最便宜的提速手段。
     """
     try:
-        import config as _cfg  # type: ignore[import-not-found]
+        from config import standalone_config_section  # type: ignore[import-not-found]
 
         return str(
-            (_cfg.config.raw.get("image") or {}).get("quality")
+            (standalone_config_section("image") or {}).get("quality")
             or _DEFAULT_QUALITY
         )
     except Exception:  # noqa: BLE001
@@ -451,10 +449,10 @@ def _handle_generate_image_sync(args: dict[str, Any], task_id: str = "") -> str:
 
 def _async_enabled() -> bool:
     try:
-        import config as _cfg  # type: ignore[import-not-found]
+        from config import standalone_config_section  # type: ignore[import-not-found]
 
         return bool(
-            (_cfg.config.raw.get("image") or {}).get("async_enabled", True)
+            (standalone_config_section("image") or {}).get("async_enabled", True)
         )
     except Exception:  # noqa: BLE001
         return True

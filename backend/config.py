@@ -817,6 +817,36 @@ def effective_llm_model_standalone() -> str:
     return "gemma4:e4b"
 
 
+def standalone_config_section(section: str) -> dict:
+    """工具进程内读 config.toml 某段(dict),不依赖 main 的 config 单例。
+
+    历史 bug(真机 UI 测 TC-P2-05): 各工具用
+    ``import config as _cfg; _cfg.config.raw.get("<section>")`` 读配置,但
+    ``config`` 模块**并无** ``config`` 属性 —— 已加载的 ``AppConfig`` 是
+    ``main.py`` 的 ``main.config`` 全局,工具 import 的 ``config`` 模块拿不到。
+    于是 ``_cfg.config`` 恒抛 ``AttributeError`` 被外层 except 吞掉 → 用户在
+    config.toml 配的开关(``[image] model/quality/...``、``[research] ...`` 等)
+    **从未生效**,恒取代码里的默认值。
+
+    本 helper 正确解析磁盘上的 config 并返回指定段。借 :func:`load_config`
+    的进程级 mtime 缓存,重复调用是廉价的(用户改 config.toml 会自动失效重读)。
+    读不到 / 段不存在 / 段非 dict → 一律返回 ``{}``,全程不抛。
+
+    See also :func:`effective_llm_model_standalone`(同样的「工具拿不到单例」
+    根因,只是它针对 ``[llm].model``)。
+    """
+    try:
+        cfg = load_config(resolve_config_path())
+        raw = cfg.raw or {}
+        if isinstance(raw, dict):
+            val = raw.get(section)
+            if isinstance(val, dict):
+                return val
+    except Exception:  # noqa: BLE001 — 配置缺失/损坏一律回落默认
+        pass
+    return {}
+
+
 def _resolve_memory_db_path(raw: str) -> Path:
     """Map a MemoryConfig.db_path value to an absolute Path.
 
