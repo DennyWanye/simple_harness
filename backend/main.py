@@ -999,6 +999,9 @@ def build_agent(
         skill_matcher=skill_matcher,
         # ─── FP-5 缺口 2：WI-1.6 工具路径录制喂技能自创（flag off = None = BC）───
         tool_path_recorder=tool_path_recorder,
+        # ─── WI-4b pre-flush：压缩前把任务态落 L1(跨 session 记任务)。模块级
+        # _file_memory(L1048)在 build_agent 调用时已就绪；try 失败则 None(BC)。───
+        file_memory=globals().get("_file_memory"),
     )
 
 

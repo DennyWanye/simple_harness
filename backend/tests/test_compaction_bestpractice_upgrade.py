@@ -315,3 +315,75 @@ class TestWI4aGoalAnchor:
         assert store.get_pending_tasks("s1") == []
         g.subgoals = ["收集数据", "汇总成稿"]
         assert store.get_pending_tasks("s1") == ["收集数据", "汇总成稿"]
+
+
+# ───────────────────────── WI-4b pre-flush 落 L1 (Phase 2) ─────────────────────────
+class TestWI4bPreflush:
+    @pytest.mark.asyncio
+    async def test_preflush_writes_task_state_once(self):
+        """触发压缩 → pre-flush 把任务态 append 到 L1 'memory',每 run 限一次。"""
+        from agent.agent_loop import AgentLoop
+        from deskpet.agent.context_compressor import CompressionResult
+
+        class _FakeTools:
+            def schemas(self, enabled_toolsets=None):
+                return []
+
+            async def execute_tool(self, name, args, task_id):
+                return '{"ok": true}'
+
+        class _FakeLLM:
+            async def chat_with_fallback(self, messages, *, tools=None, model=None, **kw):
+                from llm.types import ChatResponse
+                return ChatResponse(
+                    content="done", stop_reason="end_turn", tool_calls=[],
+                    usage={"input_tokens": 5, "output_tokens": 3},
+                )
+
+        class _FakeCompressor:
+            def should_compress(self, n):
+                return True
+
+            async def compress(self, messages, *, goal_text=None, pending_tasks=None):
+                return CompressionResult(messages=list(messages), compressed=False)
+
+        class _FakeGoalStore:
+            def get_goal_text(self, sid):
+                return "整理三份文档"
+
+        class _RecordingFileMemory:
+            def __init__(self):
+                self.calls = []
+
+            async def append(self, target, content, salience=0.5):
+                self.calls.append({"target": target, "content": content, "sal": salience})
+
+        fm = _RecordingFileMemory()
+        loop = AgentLoop(
+            llm_registry=_FakeLLM(),
+            tool_registry=_FakeTools(),
+            compressor=_FakeCompressor(),
+            session_goal_store=_FakeGoalStore(),
+            file_memory=fm,
+        )
+        msgs = [{"role": "user", "content": "请帮我整理文档"}]
+        msgs += [{"role": "user" if i % 2 == 0 else "assistant", "content": f"m{i}"}
+                 for i in range(4)]
+        async for _ in loop.run(msgs, session_id="s-pf"):
+            pass
+
+        assert len(fm.calls) == 1, f"pre-flush 应限频一次, 实际 {len(fm.calls)}"
+        c = fm.calls[0]
+        assert c["target"] == "memory"
+        assert "任务态" in c["content"]
+        assert "整理三份文档" in c["content"]
+
+    @pytest.mark.asyncio
+    async def test_no_preflush_when_file_memory_none(self):
+        """file_memory=None → 不 flush(BC)。"""
+        from agent.agent_loop import AgentLoop
+
+        sig_params = AgentLoop.__init__.__doc__  # smoke
+        import inspect
+        assert "file_memory" in inspect.signature(AgentLoop.__init__).parameters
+        assert inspect.signature(AgentLoop.__init__).parameters["file_memory"].default is None

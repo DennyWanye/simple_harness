@@ -433,6 +433,10 @@ class AgentLoop:
         # WI-1.6 工具路径录制（喂 FP-5 技能自创）。None (默认) → 不录（BC，零开销）。
         # 非 None 时每个 tool_result 喂 record_tool(name, ok)，complete() 由 codify hook 调。
         tool_path_recorder: Optional[Any] = None,  # deskpet.agent.tool_path.ToolPathRecorder
+        # WI-4b pre-flush: 压缩真正摘掉中段前,把"当前任务态"写进 L1 文件记忆,
+        # 跨 session 记住任务(frozen-snapshot → 只对下个 session 生效)。None (默认)
+        # → 不 flush(BC)。每个 run 最多 flush 一次(限频,防刷爆 MEMORY.md 50KB cap)。
+        file_memory: Optional[Any] = None,  # deskpet.memory.file_memory.FileMemory
     ) -> None:
         self.llm = llm_registry
         self.tools = tool_registry
@@ -477,6 +481,8 @@ class AgentLoop:
         self.skill_matcher = skill_matcher
         # WI-1.6 工具路径录制器（BC: None → 不录）。喂 FP-5 4.3 技能自创触发器。
         self.tool_path_recorder = tool_path_recorder
+        # WI-4b pre-flush L1 句柄（BC: None → 不 flush）。
+        self.file_memory = file_memory
         # P5-S2 Phase 3.3: same-(name, args) repeat detection. When set,
         # the loop checks the activity store's per-session
         # ``tool_signature_window`` BEFORE dispatching each tool_call —
@@ -630,6 +636,10 @@ class AgentLoop:
         # the threshold repeatedly; we log the first fire and stay quiet after).
         _compaction_warn_logged: bool = False
 
+        # WI-4b pre-flush 限频 latch: 每个 run 最多把任务态 flush 进 L1 一次
+        # (防长 agentic 任务反复触发压缩时刷爆 MEMORY.md 50KB cap → 驱逐真实记忆)。
+        _preflush_done: bool = False
+
         # FP-2 TC-2.1 第 3 刀: relay 真实 prompt_tokens 反馈回路。char-based
         # 估算对中文/markdown 系统性低估(真机 real 32.9k 时 estimate <24k),
         # 纯系数追不上内容分布 → 用上一轮 response.usage.input_tokens 兜底,
@@ -776,6 +786,37 @@ class AgentLoop:
                             _gt_fn = getattr(self.session_goal_store, "get_goal_text", None)
                             if callable(_gt_fn):
                                 _gt = _gt_fn(session_id)
+                        # WI-4b pre-flush: 摘掉中段前把任务态写进 L1(跨 session 记任务)。
+                        # best-effort + 每 run 限一次(latch),失败绝不阻断压缩。
+                        if self.file_memory is not None and not _preflush_done:
+                            _preflush_done = True
+                            try:
+                                _last_user = ""
+                                for _m in reversed(working_messages):
+                                    if _m.get("role") == "user":
+                                        _last_user = str(_m.get("content") or "")[:500]
+                                        break
+                                _flush_parts = []
+                                if _gt:
+                                    _flush_parts.append(f"目标: {_gt}")
+                                if _last_user:
+                                    _flush_parts.append(f"最近请求: {_last_user}")
+                                if _flush_parts:
+                                    _flush_body = (
+                                        "[任务态快照/task-state] " + "; ".join(_flush_parts)
+                                    )
+                                    await self.file_memory.append(
+                                        "memory", _flush_body, salience=0.6
+                                    )
+                                    logger.info(
+                                        "wi4b_preflush_l1 sid=%s tid=%s chars=%d",
+                                        session_id, tid, len(_flush_body),
+                                    )
+                            except Exception as _pf_exc:  # noqa: BLE001
+                                logger.debug(
+                                    "wi4b_preflush_failed sid=%s err=%s",
+                                    session_id, str(_pf_exc)[:120],
+                                )
                         _cresult = await self.compressor.compress(
                             working_messages,
                             goal_text=_gt,
