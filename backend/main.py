@@ -69,7 +69,7 @@ from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from pathlib import Path
 from pydantic import BaseModel, field_validator, model_validator
 
-from config import load_config, resolve_config_path
+from config import load_config, resolve_config_path, effective_llm_model
 import paths as _paths
 from paths import resolve_model_dir  # P3-S1
 from context import ServiceContext
@@ -186,6 +186,20 @@ if _llm_overrides:
         config.llm.local.base_url = _llm_overrides["base_url"]
     if "model" in _llm_overrides:
         config.llm.local.model = _llm_overrides["model"]
+        # P-B 修复(同步 raw): 覆盖只写 dataclass,但有代码读 config.raw["llm"]["model"]
+        # (压缩窗口 :1384 / stub :4268 / breakdown 探针 :2944)会拿到旧种子 gemma → 这里
+        # 同步原始 dict,使所有 in-process raw 读取也读到有效模型。配合下方 effective_llm_model
+        # 访问器(WI-3)双保险。见 plans/2026-06-16-effective-llm-model-resolution。
+        try:
+            config.raw.setdefault("llm", {})["model"] = _llm_overrides["model"]
+        except Exception:  # noqa: BLE001
+            pass
+    if "base_url" in _llm_overrides:
+        # base_url 也同步 raw(让 breakdown 探针的 base_url 预览也对;真出站本就用 dataclass)
+        try:
+            config.raw.setdefault("llm", {})["base_url"] = _llm_overrides["base_url"]
+        except Exception:  # noqa: BLE001
+            pass
     if "temperature" in _llm_overrides:
         config.llm.local.temperature = float(_llm_overrides["temperature"])
     if "api_key" in _llm_overrides and _llm_overrides["api_key"]:
@@ -1380,9 +1394,9 @@ try:
             _cmp_window, _cmp_threshold = 32000, 0.75
             try:
                 from llm import model_info as _mi_cmp
-                _cmp_model = str(
-                    (config.raw.get("llm") or {}).get("model") or ""
-                ).strip()
+                # P-B 修复: 用有效出站模型(运行时覆盖后,如 gpt-5.5)解析压缩窗口,而非
+                # config.raw 旧种子(gemma 32K)→ 否则按错模型阈值过早压缩浪费大窗口。
+                _cmp_model = effective_llm_model(config).strip()
                 if _cmp_model:
                     _cmp_info = _mi_cmp.resolve(_cmp_model)
                     _cmp_window = int(_cmp_info.context_window)
@@ -4263,9 +4277,9 @@ async def control_channel(ws: WebSocket):
                     # the first real turn lands.
                     try:
                         from llm.model_info import resolve as _resolve_model_for_stub
-                        # Best-effort: use whatever model the local llm
-                        # is configured for (config.toml [llm].model).
-                        _stub_model = (config.raw.get("llm") or {}).get("model") or ""
+                        # P-B 修复: 用有效出站模型(运行时覆盖后)发给前端 context_usage 环,
+                        # 而非 config.raw 旧种子 → 否则前端模型环显示旧 gemma 名 + 错窗口。
+                        _stub_model = effective_llm_model(config)
                         _info = _resolve_model_for_stub(_stub_model) if _stub_model else None
                         _cw = int(_info.context_window) if _info else 32_000
                         _eff = float(_info.effective_pct) if _info else 0.95

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 from __future__ import annotations
+import json
 import logging
 import os
 import shutil
@@ -759,6 +760,61 @@ def resolve_config_path() -> Path:
     # AppConfig() defaults when the path is missing, which is the
     # correct behaviour — we just won't read anything from disk.
     return _paths.user_data_dir() / "config.toml"
+
+
+def effective_llm_model(cfg: "AppConfig") -> str:
+    """有效出站 LLM 模型名。优先 dataclass(运行时覆盖已应用) → raw → 种子默认。
+    cfg 可能是部分构造/None-字段，全程空安全，绝不抛。
+    """
+    try:
+        model = cfg.llm.local.model
+        if isinstance(model, str) and model:
+            return model
+    except Exception:
+        pass
+
+    try:
+        raw = cfg.raw or {}
+        if isinstance(raw, dict):
+            llm = raw.get("llm", {}) or {}
+            if isinstance(llm, dict):
+                model = llm.get("model")
+                if isinstance(model, str) and model:
+                    return model
+    except Exception:
+        pass
+
+    return "gemma4:e4b"
+
+
+def effective_llm_model_standalone() -> str:
+    """工具进程内取有效出站模型，不依赖 main 的 config 单例(那个单例工具拿不到)。
+    优先直读 <user_data>/llm_runtime.json 的 model → 回落磁盘 config → 种子默认。失败静默。
+    """
+    try:
+        rt = _paths.user_data_dir() / "llm_runtime.json"
+        if rt.exists():
+            data = json.loads(rt.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                model = data.get("model")
+                if isinstance(model, str) and model:
+                    return model
+    except Exception:
+        pass
+
+    try:
+        cfg = load_config(resolve_config_path())
+        raw = cfg.raw or {}
+        if isinstance(raw, dict):
+            llm = raw.get("llm", {}) or {}
+            if isinstance(llm, dict):
+                model = llm.get("model")
+                if isinstance(model, str) and model:
+                    return model
+    except Exception:
+        pass
+
+    return "gemma4:e4b"
 
 
 def _resolve_memory_db_path(raw: str) -> Path:

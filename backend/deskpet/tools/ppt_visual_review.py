@@ -148,11 +148,13 @@ def review_slides(
             "text": f"共 {n} 页。请逐页质检并按规定格式输出 JSON 数组。",
         })
 
+        # P-B 修复: 原写法 `_cfg.config.raw` 恒 AttributeError(config 模块无 config 属性,
+        # 同 TC-P2-05 坑)→ 被 except 吞 → 一直回落 hardcode "gpt-5.5",换模型时读不到有效值。
+        # 改走 standalone 访问器(直读 llm_runtime.json 的有效出站模型,不依赖 main 单例)。
         model = "gpt-5.5"
         try:
-            import config as _cfg  # type: ignore[import-not-found]
-
-            model = str((_cfg.config.raw.get("llm") or {}).get("model") or model)
+            from config import effective_llm_model_standalone  # type: ignore
+            model = effective_llm_model_standalone() or model
         except Exception:  # noqa: BLE001
             pass
 
