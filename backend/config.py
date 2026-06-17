@@ -881,9 +881,18 @@ def _resolve_memory_db_path(raw: str) -> Path:
 #   - mtime 改变 / path 不同 → invalidate + 重读
 #   - 文件不存在 → 不缓存（保持每次重建默认 AppConfig，方便 test fixture
 #     反复 monkeypatch _resolve_memory_db_path）
+#
+# WI-T5.1 v3.1 — cache key 同时纳入 st_size（不只 mtime）：
+# Windows 文件系统 mtime 精度有限，**同一路径在同一 mtime tick 内连续重写两次**
+# （rsync/make 同款陷阱）会让 mtime-only 比对误判"未变"→ 返回 stale config。
+# 这正是 test_t1_11 在 warm 进程下偶发 "DID NOT RAISE VG-INVARIANT-5" 的根因：
+# 它对同一 tmp config.toml 先写空 model（合法）再写 unknown_model（应报错），
+# 两次写常落同一 tick → 第二次 load_config 命中 cache 返回第一次的合法对象，
+# 校验路径被旁路。size 不同即可强制失效（mtime+size 是标准稳健启发式）。
 _cfg_cache: Optional["AppConfig"] = None
 _cfg_cache_path: Optional[Path] = None
 _cfg_cache_mtime: Optional[float] = None
+_cfg_cache_size: Optional[int] = None
 
 
 def _load_config_uncached(path: Path) -> "AppConfig":
@@ -898,25 +907,32 @@ def load_config(path: str | Path = "config.toml") -> AppConfig:
     unchanged since last call. Reload happens automatically when the user
     edits config.toml (mtime bumps) or when called with a different path.
     """
-    global _cfg_cache, _cfg_cache_path, _cfg_cache_mtime
+    global _cfg_cache, _cfg_cache_path, _cfg_cache_mtime, _cfg_cache_size
     path = Path(path)
     if path.exists():
         try:
-            cur_mtime = path.stat().st_mtime
+            st = path.stat()
+            cur_mtime: Optional[float] = st.st_mtime
+            cur_size: Optional[int] = st.st_size
         except OSError:
             cur_mtime = None
+            cur_size = None
         if (
             _cfg_cache is not None
             and _cfg_cache_path == path
             and _cfg_cache_mtime is not None
             and cur_mtime is not None
             and abs(cur_mtime - _cfg_cache_mtime) < 1e-6
+            # size 一并比对：挡 mtime 精度内同路径重写（见上方注释 / test_t1_11）
+            and _cfg_cache_size is not None
+            and cur_size == _cfg_cache_size
         ):
             return _cfg_cache
         cfg = _load_config_impl(path)
         _cfg_cache = cfg
         _cfg_cache_path = path
         _cfg_cache_mtime = cur_mtime
+        _cfg_cache_size = cur_size
         return cfg
     # 文件不存在 — 不缓存（保留每次重建默认 AppConfig 的语义）
     return _load_config_impl(path)
@@ -924,10 +940,11 @@ def load_config(path: str | Path = "config.toml") -> AppConfig:
 
 def _reset_load_config_cache() -> None:
     """Test helper：清缓存（避免 fixture 间状态泄漏）。"""
-    global _cfg_cache, _cfg_cache_path, _cfg_cache_mtime
+    global _cfg_cache, _cfg_cache_path, _cfg_cache_mtime, _cfg_cache_size
     _cfg_cache = None
     _cfg_cache_path = None
     _cfg_cache_mtime = None
+    _cfg_cache_size = None
 
 
 def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
