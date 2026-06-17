@@ -30,6 +30,7 @@ describe('PetEngine type', () => {
   it('CoreModelLike re-export matches pet-anim contract', () => {
     const m: CoreModelLike = {
       getParameterIndex: () => -1,
+      getParameterValueByIndex: () => 0,
       setParameterValueByIndex: () => {},
     }
     expect(m.getParameterIndex('x')).toBe(-1)

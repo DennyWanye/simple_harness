@@ -37,7 +37,7 @@ export interface CharacterFrame {
 }
 
 /** Shared float/breath transform so sprite + procedural feel identical. */
-function applyAliveTransform(ctx: CanvasRenderingContext2D, f: CharacterFrame): { cx: number; cy: number; scale: number } {
+function applyAliveTransform(_ctx: CanvasRenderingContext2D, f: CharacterFrame): { cx: number; cy: number; scale: number } {
   const cx = f.w / 2
   // Sit the character a touch above vertical centre so the body has room.
   const floatY = Math.sin(f.t / 1400) * 6
