@@ -219,7 +219,7 @@ npx tauri dev   # 在 tauri-app 目录；它自管唯一 vite + spawn backend
 **PASS 判据**: 步骤 3（未压缩轮也有锚定）+ 步骤 4（压缩后仍有）+ 步骤 5（每轮 ≤1 条）全满足。
 **FAIL 判据**: 普通轮无锚定，或压缩后丢锚定，或一轮多条 `[目标锚定]`。
 
-**判定**: **环境受限（单测已证）**（2026-06-16：3 个 workaround 粘贴/整串键入/单字符 `/` 均不触发前端 slash 路由→goal 未注册→`wi4a_goal_anchor` 0 次；companion 小气泡 venue 不路由 slash，非 WI-4a 代码缺陷；详见文末真机执行记录 TC-5）
+**判定**: **✅ PASS（2026-06-17 真机闭环）**（venue 破解:主线程大消息框路由 slash、小气泡不路由 + `slash_commands` 默认关需开启。用户真键盘在主线程键入 `/goal`→桌宠"已设置目标"→发 chat→`wi4a_goal_anchor_always_on sid=default` 触发,≤1 dedup 成立。截图 `TC5-goal-set-wi4a-fired.png`;详见文末「二轮逐条真测」TC-5 + venue 发现）
 
 ---
 
@@ -340,7 +340,7 @@ npx tauri dev   # 在 tauri-app 目录；它自管唯一 vite + spawn backend
 | TC-2 | **PASS ★**(已重抓干净证据) | **opus 审计指出首批截图是全屏(Claude Code 占主导)→ 重抓**:压缩(cc≥1)后问"我们刚才一直在聊哪家公司哪一年什么主题?"→桌宠 companion 气泡答 **"我们刚才一直在聊的是宁德时代 2024 年年报的核心财务数据与要点总结"** —— 精确任务召回,任务连续性真机保住。**干净裁剪证据 `screenshots/TC2-pet-reply-cropped.png`(仅桌宠气泡区,非 Claude Code)**。 |
 | TC-3 | **PASS** | 2 条 `context_compacted` summary_preview 均结构化:`【意图/目标】用户想深度调研宁德时代2024年报核心财务数据…【进行中/当前任务】…【待办/下一步】…` |
 | TC-4 | **PASS** | `context_microcompact_only tool_results_pruned=1`:**8000 run ×15**(opus 审计实数订正,原文"×2"为口误) + **24000 run ×9**(窗口够大时 microcompact 独力压住、full summary 无需出动,印证"最高频生效层");截图 `TC1-2-microcompact-research-running.png` |
-| TC-5 | **环境受限(根因已查清+已修 feature,差真实键盘)** | **真因不是代码**:①初次真键盘 `/goal` 报 `slash_commands feature disabled` → 查明 AppData config 无 `[features]` 段、`slash_commands` 默认 False → **已加 `[features] slash_commands=true` 并重启**(根因修复);②但 windows-mcp **粘贴/合成键入** `/goal` 不触发前端 slash 检测(靠真实 keydown 弹"/命令"面板),被当 chat 发出 → `wi4a_goal_anchor` 仍 0。**唯一缺口=需用户真实键盘键入 `/goal`**(已知测试法限制)。WI-4a 逻辑单测充分覆盖。 |
+| TC-5 | **✅ PASS（真机闭环 2026-06-17）** | **三层根因全破解**:①`/goal` 报 `slash_commands feature disabled` → AppData config 无 `[features]`、`slash_commands` 默认 False → 加 `[features] slash_commands=true` 重启(修复);②**venue 关键发现**:桌宠**小气泡输入框不路由 slash**(粘贴/键入都当 chat),**主线程大消息框(点"消息"打开的 660×900 面板)才路由** —— 用户在主线程真键盘键入 `/goal 调研宁德时代2024年报核心数据` → 桌宠回 **"已设置目标: 调研宁德时代2024年报核心数据 (上限 10 轮)"**(截图 `TC5-goal-set-wi4a-fired.png`);③发 chat 触发 agent loop → 日志 **`wi4a_goal_anchor_always_on sid=default tid=...`** 真机触发,每轮 1 条(≤1 dedup 成立)。WI-4a always-on 目标锚定真机闭环。 |
 | TC-6 | **PASS** | 连压 2 次:第 2 条 `context_compacted` summary `【意图/目标】用户希望把此前讨论过的宁德时代财务数据,以及…对比内容,整合成…报告` —— **整合 prior 入新摘要、无 `[压缩摘要]` 嵌套**(锚定增量真机生效);截图 `TC1-6-rerun-2x-context-compacted.png` |
 | TC-7 | **PASS(无反射发生)** | 全程 `reflective_summary_detected`=**0** —— 反射 guard 在位(commit `06dd87e`),本轮所有 `context_compacted` 摘要均干净无反射;真机正向证据(guard 未需介入即无反射) |
 
@@ -349,12 +349,15 @@ npx tauri dev   # 在 tauri-app 目录；它自管唯一 vite + spawn backend
 2. **窗口大小影响哪层压缩生效(重要)**:`window=8000` 下单个 research_run 大结果就接近满窗 → token_budget **BLOCK 闸(ratio=1.0)** 可能在 compaction 压下去前抢先中止(few-but-huge 早期无 middle 可摘、≤3 tool 全保护)。`window=24000` 给 compaction headroom,microcompact 独力压住(full summary 不触发)。**要看 `context_compacted`(full 摘要)需对话密集累积中段;要看 microcompact 用工具密集任务** —— 两层各管一类过载。真实 gpt-5.5(400K)两类都从容,BLOCK 闸不会误伤。
 3. 8000 微窗下偶有 `p5s2_token_budget_block ratio>1` 单轮峰值撞闸,但 compaction + loop 恢复(cc 继续上升、桌宠答完),非崩溃。
 
-**二轮结论**: TC-1/2/3/4/6/7 **全 PASS**(fresh windows-mcp 真机日志+截图);TC-5 环境受限(slash_commands 根因已修,差真实键盘触发前端路由,WI-4a 单测已证)。
+**二轮结论(2026-06-17 更新)**: **TC-1~7 全 7 条真机 PASS**。TC-5 原判"环境受限",经用户协助真键盘在**主线程大消息框**键入 `/goal` 后**真机闭环**:桌宠"已设置目标"+ `wi4a_goal_anchor_always_on` 触发。
+
+**TC-5 venue 关键发现(留给后人,极重要)**: DeskPet `/goal` 等 slash 命令**只在「主线程大消息框」(点"消息"按钮打开的 660×900 面板)路由**,桌宠**悬浮小气泡输入框不路由 slash**(粘贴/键入都被当普通 chat)。+ `slash_commands` 默认 False 需 `[features] slash_commands=true`。之前所有 TC-5 失败 = ①feature 没开 + ②在错的 venue(小气泡)输入。windows-mcp 合成输入在主线程能不能路由未单独验(本次是用户真键盘),但 venue 对了 + feature 开了就能设 goal。
 
 ### 🔎 opus 4.8 独立核验(2026-06-17)
 独立审计员亲自 grep 6 个真机日志 + 检查截图,裁决:
 - **TC-1/3/4/6/7 真 PASS** —— 日志硬证据属实、**真运行栈**(`[backend_launch] Dev python` + cargo run + 真 tool 调用)、**无脚本/import/websocket 污染**。round-1 反射现场(test3)诚实保留未掩盖。
 - **抓到 2 处必修**(已修):① TC-2 首批截图是全屏(Claude Code 占主导)非桌宠 UI → **已重抓干净裁剪证据** `TC2-pet-reply-cropped.png`(桌宠答"宁德时代2024年报核心财务数据");② TC-4 数字口误 8000×2 → **实数 15**(已订正)。
 - **TC-5 环境受限判定成立**(wi4a 6 日志全 0 客观属实;已尽合理努力:改 config 开 feature + 多 venue 多输入法 + 请求用户真实键盘;属正当已知测试法限制非偷懒)。注:`slash_commands feature disabled` 错误串在 backend log 搜不到(前端错误未落后端日志),根因属"逻辑成立+未证伪"。
+  - **➜ 审计后续(2026-06-17)**: TC-5 已**真机闭环转 PASS** —— 真因补全为「①`slash_commands` 默认关 + ②**venue 错(小气泡不路由,主线程大消息框才路由)**」。用户真键盘在主线程键入 `/goal`→桌宠"已设置目标"→`wi4a_goal_anchor_always_on sid=default` 真机触发。审计当时"环境受限成立"的判断在当时信息下正确,venue 发现后缺口已补。
 - **TC-1 判据偏差**: reduction=0.0(中段近空触发)→ 判据已修订(见上表)。
 - **无造假/纪律违规**(除已修的 TC-2 截图错配)。
