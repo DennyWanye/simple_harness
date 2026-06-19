@@ -1,6 +1,6 @@
 # DeskPet — 全局项目状态
 
-> **最后更新**: 2026-06-19
+> **最后更新**: 2026-06-20
 > **维护方式**: 每完成一个里程碑 / 合并一个 worktree 后更新本文件。
 > **用途**: 一页看清整个项目（所有并行工作流）的当前状态。新 session / 子代理
 > 接手前先读这里。
@@ -49,7 +49,7 @@
 | **Code 模式工作流纪律** (superpowers 全套) | ✅ Layer 1A persona 3/3 E2E + plan 硬门 2/2 E2E + Layer 1B 偏好记忆 cosine 0.936 + verify strict;✅ **过夜并行(spec 3 轮 opus 评估锁定 → 子代理并行实现 → 完成度审计 11/11 ALL-COMPLETE)**：A1 意图记忆 + A2 /prefs(修 slash 结果静默丢 bug) + A4 plan 持久化三层 + A5 文档 + C2 边角 24 测 + B1 flaky closed + B3 merge companion-code-v2;单测 16 新文件全绿 + 全套 **2331 passed**;**真机 windows-mcp 待跑** | [05-LOCKED-spec](../plans/2026-06-02-superpowers-code-workflow/05-LOCKED-spec.md) |
 | **技能系统** (SkillLoader + 14 builtin) | ✅ 生产可用 | `docs/SKILLS.md` |
 | **Office 文档生成** (PPT/Word/Excel) | ✅ 生产可用 — PPT 模板填充+AI整页生图+视觉评估闭环;**Word/Excel 升复杂档**(列表/段内混排/字色/页眉页脚页码/插图 · 数字格式/合并/逐格样式/多图表/嵌图);默认落 `OutPut/{PPT,Doc,Excel}` | `doc-edit`/`excel-generate`/`ppt-generate` SKILL.md + §4 里程碑 |
-| **搜索 + Deep Research** (DeepResearch V8 + Phase-1/2) | ✅ 生产可用 — 统一 `search_provider`(多引擎降级队列 必应→DDG/百度备选,区域感知)+ 聊天 `web_search` 快查 + `research_run` V8 管线(**multi-query/HyDE 扩展** → 多引擎搜 + **site: 定向官方域** → trafilatura+**JS 渲染兜底(cdp-edge 连系统 Edge 无头,治 JS/SPA 空壳站,opt-in)**+Jina 抽取 → **中文一手源直连(巨潮财报 PDF / 国标 openstd)**+**美股 EDGAR**(财报兜底) → 分层权威打分含中文源/源质量过滤含字典站剔除/LLM 精排/反思迭代/BGE-M3语义/报告落 OutPut/Research);**不接付费搜索引擎**;Phase-2 + JS渲染 真机 UI 测全 PASS | `deep-research` SKILL v0.2 + [Phase-2 测试](../testcase/2026-06-15-deep-search-phase2/deep-search-phase2-manual-test.md) |
+| **搜索 + Deep Research** (DeepResearch V8 + Phase-1/2) | ✅ 生产可用 — 统一 `search_provider`(多引擎降级队列 必应→DDG/百度备选,区域感知)+ 聊天 `web_search` 快查 + `research_run` V8 管线(**multi-query/HyDE 扩展** → 多引擎搜 + **site: 定向官方域** → trafilatura+**JS 渲染兜底(cdp-edge 连系统 Edge 无头,治 JS/SPA 空壳站,opt-in)**+Jina 抽取 → **中文一手源直连(巨潮财报 PDF / 国标 openstd)**+**美股 EDGAR**(财报兜底) → 分层权威打分含中文源/源质量过滤含字典站剔除/LLM 精排/反思迭代/BGE-M3语义/报告落 OutPut/Research);**不接付费搜索引擎**;Phase-2 + JS渲染 真机 UI 测全 PASS;**⚠️ 2026-06-20 专项调查**：所谓"新 ReAct 子代理"代码不在仓库(已丢失),`research_run` 才是唯一在岗实现;挖到 recency 维度真 bug(default_extract 缺 date 字段→新鲜度恒为默认值);全部结论为**静态读码、未运行实测** | **专项档 [STATUS/DeepResearch.md](./DeepResearch.md)** · 优化方案 [plans/deepsearch/](../plans/deepsearch/00-optimization-plan.md) · `deep-research` SKILL v0.2 + [Phase-2 测试](../testcase/2026-06-15-deep-search-phase2/deep-search-phase2-manual-test.md) |
 | **relay 登录集成** | ✅ ship | [relay-login-integration](../plans/2026-05-22-relay-login-integration/) |
 | **Slash 命令 + /goal + 多 agent** (v2) | ✅ 实现 + 真测；**未 merge master** | [companion-code-skill-upgrade](../plans/2026-05-25-companion-code-skill-upgrade/) |
 | **goal-completion 升级 (FP-1~FP-5 线)** | 🟡 FP-1 ✅（真机手测门 PASS）；FP-2 抗漂移 ✅（55焦点+280回归绿；R-T4 defer）；FP-3 自我纠错 ✅实现(WI-2.1~2.4+T6+R-T3+R-T6;286焦点/2459全suite绿;§7死循环上界+no_persona_leak+伪完成拦→二次通过+降级矩阵;off→shadow待go/no-go签核;手测门真产物撞写权限门同FP-2口径)；FP-4 记忆+人格 ✅实现(WI-3.1~3.4+B-10双写钩+修daily_decay从未调用bug;MemEval 491+retriever无回归;scope/pinned列)；FP-5 Skills 分级+自创 ✅后端(WI-4.0接通compaction★全回归/4.1 embedding自动披露/4.2重挂/4.3技能自创codifier不执行代码;flag off字节BC)；**5个FP后端实现全完成+R-T5字节基线守+480 goal-completion焦点测试绿**；FP-2/3/4/5真机手测门+FP-5前端确认卡批量补跑(spawn_task) | [10-EXECUTION-ROADMAP](../plans/2026-06-04-goal-completion-upgrade/10-EXECUTION-ROADMAP.md) · [FP-1/](../plans/2026-06-04-goal-completion-upgrade/FP-1/) · [FP-2/](../plans/2026-06-04-goal-completion-upgrade/FP-2/) |

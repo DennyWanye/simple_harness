@@ -2,8 +2,10 @@
 
 本地部署的桌面语音宠物：Live2D 桌宠 + 全本地语音交互管线（VAD → ASR → LLM → TTS）。
 
-> 📊 **项目整体状态一页看清**: [`STATUS/status.md`](./STATUS/status.md) —
-> 所有并行 worktree / 功能模块完成度 / 最近里程碑 / 已知问题。
+> 📊 **状态档总索引**: [`STATUS/index.md`](./STATUS/index.md) —
+> 登记所有状态档及其作用。其中 [`status.md`](./STATUS/status.md) 是全局项目状态
+> （所有并行 worktree / 功能模块完成度 / 最近里程碑 / 已知问题），
+> [`DeepResearch.md`](./STATUS/DeepResearch.md) 是 deep research 模块专项状态。
 
 ---
 
@@ -414,7 +416,7 @@ spec-first：3+ 文件的改动先有 plan/spec，再有实现。
 > 📑 **规划总索引**: [`plans/index.md`](./plans/index.md) —
 > 所有功能规划 / PRD / 路线图（`plans/<日期-主题>/`）的一页式导航，含一句话说明
 > 与状态（✅ 已落地 / 🟡 进行中 / 📋 规划）。**新建 plan 文件夹后请在此索引登记一行。**
-> 功能落地状态以 [`STATUS/status.md`](./STATUS/status.md) 为准。
+> 功能落地状态以 [`STATUS/index.md`](./STATUS/index.md) 索引下的各状态档为准。
 
 > 🧪 **手工测试用例索引**: [`testcase/index.md`](./testcase/index.md) —
 > 登记所有需人工一步步执行（带预期结果）的 testcase；每份用例写清测试范围、
