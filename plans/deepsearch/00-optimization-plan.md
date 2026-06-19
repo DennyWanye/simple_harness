@@ -22,11 +22,25 @@
 
 ### Step 0 — 质量基线 spike（🔴 最高优先，决策前置门）
 **目的**：把"零运行证据"这个最大盲区填掉，拿到决策依据。
+
+**评测底座已确认可复用**（查 `v8-reference/`，2026-06-20）——Step 0 最贵的两块现成：
+- **质量评分**：直接套 `v8-reference/reference/evaluator-prompt.md` 的 LLM-judge 评分卡
+  （5 维加权：Evidence&grounding 30% / Synthesis 20% / Coverage&limitations 20% / Coherence 15%
+  / Calibration&insight 15%，PASS≥6 + hard-fail + 5 claim 抽查协议）。**不用自己造评分标准。**
+- **代表性主题集**：直接用 `v8-reference/evals/routing-evals.json` 里 6 个 `should_trigger:true`
+  的 case（决策 brief / 综述 / delta 追问 / 对比 memo / 竞品 / contested research），再补 1–2 个财报类
+  （触发中文一手源直连路径）+ 中英各覆盖。
+- **结果记录**：复用 `v8-reference/scripts/emit_run_summary.py`（独立 CLI，吃 draft/registry/evaluation
+  → 出 run-summary.json，自带中英混合字数统计）记每次跑的指标。
+- 注：`source_evaluator.py` / `verify_citations.py` **已 port 进 backend**（`research_scoring.py` /
+  `cite_check`），是 research_run 实际在用的版本，**参考即可、无需另跑**。（彩蛋：source_evaluator 的
+  输入 schema 明确含 `date` 字段 → 反证了 §Step1 的 recency bug —— V8 本就假设源带发布日期。）
+
 **做什么**：
-- 选 5–8 个代表性主题（中/英、快/慢速、财报类、技术类各覆盖），用真 LLM 链路各跑一次 `research_run`
-  的 standard + deep 档（按 `CLAUDE.md` §开发期登录测试账号 走真实 relay key）。
-- 每次记录：报告质量（人工评 + 可选复用 `v8-reference/evals` 的 scorers）、耗时、token/成本、
-  失败阶段分布、最终源的权威/多样性分布、recency 修前对照。
+- 上述主题集，用真 LLM 链路各跑一次 `research_run` 的 standard + deep 档（按 `CLAUDE.md`
+  §开发期登录测试账号 走真实 relay key）。
+- 每次记录：LLM-judge 质量分（按上面评分卡）、耗时、token/成本、失败阶段分布、
+  最终源的权威/多样性分布、recency 修前后对照。
 - 顺带量化单机资源（内存/CPU 峰值、JS 渲染开销、并发上限）。
 **验收门**：产出一份 `01-baseline-spike-report.md`，回答："现状质量到底如何 / 瓶颈在检索还是综合 / deep 档值不值这个成本"。
 **不通过则不进 Step 2。**
@@ -55,7 +69,8 @@
 
 1. **架构方向**：原地升级 vs ReAct 子代理？（仓库内 v8 plan 与 06-19 状态笔记方向对立）
 2. **若走子代理**：是否接受重写并把已调好的能力重新嫁接的回归风险？
-3. **Step 0 用哪套质量评测**：纯人工评 vs 复用 `v8-reference/evals` + `scorers.py`？
+3. ~~**Step 0 用哪套质量评测**~~ —— ✅ 已定（2026-06-20）：复用 `v8-reference` 的
+   `evaluator-prompt.md`（LLM-judge 评分卡）+ `routing-evals.json`（主题集）+ `emit_run_summary.py`（记录）。
 
 ## 4. 范围 / 非目标
 
