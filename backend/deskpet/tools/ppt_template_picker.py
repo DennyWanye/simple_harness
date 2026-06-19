@@ -41,15 +41,27 @@ _PREVIEW_EXTS = (".jpg", ".jpeg", ".png", ".webp")
 CATEGORY_STYLE_HINTS = {
     "高级色": "彩色高级感、视觉冲击强、配色饱满。适合科技/商业/产品发布/营销/通用职场汇报。",
     "高级简约": "极简留白、克制高级、以排版取胜。适合设计/品牌/方案/学术/高端通用场合。",
+    "通用商务": "通用商务风、专业稳妥。外部大库不可用时的兜底,适合各类职场汇报/工作总结/计划。",
 }
 
 
 # ---------------------------------------------------------------------
 # 库结构原语
 # ---------------------------------------------------------------------
-def template_library_root() -> Optional[Path]:
-    """模板库根目录。env ``DESKPET_PPT_TEMPLATE_ROOT`` 优先,否则
-    ``<repo>/resources/PPT_Template``。目录不存在 → None。从不抛异常。"""
+def _has_category_subdir(root: Path) -> bool:
+    """``root`` 下是否有至少一个含 .pptx 的子目录(= 一个大类)。"""
+    try:
+        for sub in root.iterdir():
+            if sub.is_dir() and any(sub.glob("*.pptx")):
+                return True
+    except Exception:  # noqa: BLE001
+        return False
+    return False
+
+
+def _external_root() -> Optional[Path]:
+    """外部大库根。env ``DESKPET_PPT_TEMPLATE_ROOT`` 优先(无效则忽略),
+    否则 ``<repo>/resources/PPT_Template``。不存在 → None。"""
     try:
         env = (os.environ.get("DESKPET_PPT_TEMPLATE_ROOT", "") or "").strip()
         if env:
@@ -61,6 +73,22 @@ def template_library_root() -> Optional[Path]:
         return root if root.is_dir() else None
     except Exception:  # noqa: BLE001
         return None
+
+
+def _bundled_fallback_root() -> Optional[Path]:
+    """随仓库提交的兜底模板根(``<this_dir>/ppt_templates``)。外部大库不可用时
+    (打包 app / 新机器 / 未放置大库)用它保证模板功能不彻底失效。"""
+    try:
+        root = Path(__file__).parent / "ppt_templates"
+        return root if (root.is_dir() and _has_category_subdir(root)) else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def template_library_root() -> Optional[Path]:
+    """生效的模板库根:外部大库优先,缺失则回退到 bundled 兜底库。
+    都没有 → None。从不抛异常。"""
+    return _external_root() or _bundled_fallback_root()
 
 
 def _normalize_category(name: str) -> str:

@@ -139,7 +139,35 @@ def test_pick_category_without_previews_still_returns_pptx(
     assert picked is not None and picked.stem == "c"
 
 
-def test_no_library_returns_empty(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_external_absent_falls_back_to_bundled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """外部大库不可用(env 指向不存在)→ 回退到随仓库提交的 bundled 兜底库。"""
     monkeypatch.setenv("DESKPET_PPT_TEMPLATE_ROOT", str(tmp_path / "does-not-exist"))
+    root = picker.template_library_root()
+    assert root is not None and root.name == "ppt_templates"
+    keys = {c["key"] for c in picker.list_categories()}
+    assert "通用商务" in keys, f"兜底类缺失: {keys}"
+
+
+def test_truly_empty_returns_none(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """外部库不可用 + bundled 也被屏蔽 → 真正为空。"""
+    monkeypatch.setenv("DESKPET_PPT_TEMPLATE_ROOT", str(tmp_path / "does-not-exist"))
+    monkeypatch.setattr(picker, "_bundled_fallback_root", lambda: None)
     assert picker.list_categories() == []
     assert picker.pick_template_by_preview("任何", "主题") is None
+
+
+def test_bundled_fallback_has_business_templates() -> None:
+    """随仓库提交的兜底库应有「通用商务」类且 ≥3 套带预览图。"""
+    root = picker._bundled_fallback_root()
+    assert root is not None, "bundled 兜底库缺失"
+    # 此测试不设 env;有外部大库时 template_library_root 返回外部库,故直接查 bundled root。
+    cats = [d for d in root.iterdir() if d.is_dir() and any(d.glob("*.pptx"))]
+    assert cats, "兜底库无任何含 pptx 的大类"
+    biz = next((d for d in cats if picker._normalize_category(d.name) == "通用商务"), None)
+    assert biz is not None
+    n_pptx = len(list(biz.glob("*.pptx")))
+    n_prev = len(list((biz / "预览图").glob("*"))) if (biz / "预览图").is_dir() else 0
+    assert n_pptx >= 3, f"兜底模板数={n_pptx}"
+    assert n_prev >= 3, f"兜底预览图数={n_prev}"
