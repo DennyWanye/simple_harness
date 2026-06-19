@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 import pytest
 
-from agent.agent_loop import AgentLoop, FinalEvent
+from agent.agent_loop import AgentLoop, ErrorEvent, FinalEvent
 from llm.types import ChatResponse, ToolCall
 from providers.openai_compatible import OpenAICompatibleProvider
 
@@ -280,3 +280,101 @@ async def test_tier3_suppresses_completion_nudge() -> None:
 
     assert any(isinstance(ev, FinalEvent) for ev in events)
     assert probe_calls == 0
+
+
+class _AlwaysEndTurnLLM:
+    """Every turn returns plain end_turn text → always reaches the verify gate."""
+
+    def __init__(self) -> None:
+        self.tool_choices: list[str | None] = []
+        self.calls = 0
+
+    async def chat_with_fallback(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        model: str | None = None,
+        **kwargs: Any,
+    ) -> ChatResponse:
+        self.calls += 1
+        self.tool_choices.append(kwargs.get("tool_choice"))
+        return ChatResponse(
+            content=f"claim turn {self.calls}",
+            stop_reason="end_turn",
+            model="stub-model",
+            tool_calls=[],
+        )
+
+
+class _FakeClaim:
+    def __init__(self, raw_text: str = "I created report.pptx") -> None:
+        self.raw_text = raw_text
+        self.reason = "no_receipt"
+        self.pattern_id = "p1"
+
+
+class _FailVerifyOutcome:
+    passed = False
+    unmatched_claims = [_FakeClaim()]
+    goal_alignment = None
+
+
+class _FailVerifyGate:
+    """Verify gate that never matches → forces exhaustion path (B5)."""
+
+    mode = "strict"
+
+    def check(self, *, assistant_text: str, ledger: Any, goal_text: Any = None):  # noqa: ARG002
+        return _FailVerifyOutcome()
+
+    def build_rebound_message(self, unmatched: Any) -> str:  # noqa: ARG002
+        return "rebound: please prove your claims"
+
+    async def consult_ephemeral_subagent(
+        self, *, ledger: Any, failed_claims: Any, assistant_text: Any  # noqa: ARG002
+    ) -> bool:
+        return False
+
+
+@pytest.mark.asyncio
+async def test_verify_exhausted_grants_final_text_turn() -> None:
+    """B5/§17.6: verify exhaustion → one forced tool_choice=none summary turn →
+    terminal ErrorEvent(verify_exhausted) carrying the model summary in detail."""
+    llm = _AlwaysEndTurnLLM()
+    loop = AgentLoop(
+        llm,
+        _Tools(),
+        max_iterations=10,
+        verify_gate=_FailVerifyGate(),
+        max_verify_nudges=2,
+    )
+
+    events = await _collect(loop.run([{"role": "user", "content": "go"}]))
+
+    errors = [ev for ev in events if isinstance(ev, ErrorEvent)]
+    assert errors, "verify exhaustion must surface an ErrorEvent (graceful degrade)"
+    assert errors[-1].reason == "verify_exhausted"
+    # the failure was surfaced with the model's final summary text, not hidden
+    assert errors[-1].detail
+    # the granted final turn used tool_choice="none" (protocol-level hard stop)
+    assert "none" in llm.tool_choices
+
+
+@pytest.mark.asyncio
+async def test_verify_exhausted_flag_off_hard_exits_without_final_turn() -> None:
+    """BC: with force_finish flag off, exhaustion hard-exits (no forced none turn)."""
+    llm = _AlwaysEndTurnLLM()
+    loop = AgentLoop(
+        llm,
+        _Tools(),
+        max_iterations=10,
+        verify_gate=_FailVerifyGate(),
+        max_verify_nudges=2,
+        force_finish_via_tool_choice=False,
+    )
+
+    events = await _collect(loop.run([{"role": "user", "content": "go"}]))
+
+    errors = [ev for ev in events if isinstance(ev, ErrorEvent)]
+    assert errors and errors[-1].reason == "verify_exhausted"
+    assert "none" not in llm.tool_choices
