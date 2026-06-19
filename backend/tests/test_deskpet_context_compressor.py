@@ -24,6 +24,7 @@ import pytest
 from deskpet.agent.context_compressor import (
     CompressionResult,
     ContextCompressor,
+    _format_summary,
 )
 
 
@@ -557,3 +558,64 @@ class TestSummaryFormatting:
         msgs = _messages(10, include_system=False)
         result = await cc.compress(msgs)
         assert "concise summary" in result.summary_preview
+
+
+# ---------------------------------------------------------------------------
+# WI-1 (2026-06-19 task-scope-context-isolation) —
+# 压缩摘要任务作用域化：打破"任务棘轮",旧任务不再被当成'当前任务'保活。
+# ---------------------------------------------------------------------------
+class TestSummaryTaskScoping:
+    def test_summary_system_has_task_boundary_rule(self) -> None:
+        """_SUMMARY_SYSTEM 必须含'任务边界'纪律 + 【早前已结束的任务】分段。
+
+        这是防 agent 漂回旧任务(如 CATL 年报)的核心提示词约束 —— guard 它不被
+        无意改回'保留整段对话所有任务'的旧写法。
+        """
+        sys_prompt = ContextCompressor._SUMMARY_SYSTEM
+        assert "任务边界" in sys_prompt
+        assert "早前已结束的任务" in sys_prompt
+        assert "最近一条用户请求" in sys_prompt
+        # 明确禁止把旧任务当当前任务保活
+        assert "当前任务" in sys_prompt and "保活" in sys_prompt
+
+    @pytest.mark.asyncio
+    async def test_no_prior_summary_keeps_bare_system_prompt(self) -> None:
+        """无 prior 摘要时,传给 LLM 的 system prompt 就是裸 _SUMMARY_SYSTEM
+        (不追加增量规则) —— BC。"""
+        llm = _FakeLLM(content="新摘要")
+        cc = ContextCompressor(llm_registry=llm, first_n=1, last_n=1)
+        msgs = _messages(10, include_system=False)
+        result = await cc.compress(msgs)
+        assert result.compressed is True
+        sent_system = llm.calls[0]["messages"][0]["content"]
+        assert sent_system == ContextCompressor._SUMMARY_SYSTEM
+        assert "增量规则" not in sent_system
+
+    @pytest.mark.asyncio
+    async def test_prior_summary_appends_supersede_rule(self) -> None:
+        """中段含上一轮 [压缩摘要] 时,增量提示词必须含'打破任务棘轮'的 supersede
+        规则(以最新对话为准 / 旧'当前任务'移到早前已结束),而非旧的'不要丢任务'棘轮。
+        """
+        llm = _FakeLLM(content="增量后的新摘要")
+        cc = ContextCompressor(llm_registry=llm, first_n=1, last_n=1)
+        # 构造中段:塞一条上一轮的压缩摘要(prior),让 _extract_prior_summary 命中。
+        prior = _format_summary(
+            "【进行中/当前任务】用户让我做宁德时代 2024 年报分析 PPT。"
+        )
+        msgs = [
+            {"role": "user", "content": "msg-00: 开场"},
+            {"role": "assistant", "content": prior},
+            {"role": "user", "content": "msg-02: 帮我改做小学教育现状 PPT"},
+            {"role": "assistant", "content": "msg-03: 好的"},
+            {"role": "user", "content": "msg-04: 继续"},
+            {"role": "assistant", "content": "msg-05: 收尾"},
+        ]
+        result = await cc.compress(msgs)
+        assert result.compressed is True
+        sent_system = llm.calls[0]["messages"][0]["content"]
+        # prior 被作为增量基底拼进 system
+        assert "年报分析 PPT" in sent_system
+        # 关键:supersede 规则在场(打破棘轮),旧"不要丢任务"棘轮措辞已去除
+        assert "增量规则" in sent_system
+        assert "以最新对话为准" in sent_system
+        assert "不要丢已记录的任务/决策" not in sent_system

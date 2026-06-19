@@ -1305,6 +1305,17 @@ try:
     # request. Absent / =1.0 → legacy behaviour (Strangler-Fig).
     _comp_cfg = (config.raw.get("companion") if hasattr(config, "raw") else None) or {}
     _xsess_decay = _comp_cfg.get("memory_cross_session_decay")
+    # WI-2 (2026-06-19 task-scope-context-isolation): 同 session 时近性降权
+    # 半衰期（天）。**默认开启 = 7 天** —— 根治单一 `default` 会话里陈旧旧任务
+    # (如一个月前 CATL 年报) 满权召回把新任务带偏。config.toml 显式设 0 / 负数
+    # / 极大值 → 关闭（退回旧行为）。
+    _DEFAULT_RECENCY_HALF_LIFE_DAYS = 7.0
+    _recency_hl_cfg = _comp_cfg.get("memory_intra_session_recency_half_life_days")
+    _recency_hl = (
+        float(_recency_hl_cfg)
+        if _recency_hl_cfg is not None
+        else _DEFAULT_RECENCY_HALF_LIFE_DAYS
+    )
     _memory_manager = _MemoryManager(
         file_memory=_file_memory,
         session_db=_session_db,
@@ -1312,6 +1323,7 @@ try:
         cross_session_decay=(
             float(_xsess_decay) if _xsess_decay is not None else None
         ),
+        recency_half_life_days=_recency_hl,
     )
     service_context.register("memory_manager", _memory_manager)
 

@@ -74,6 +74,7 @@ class MemoryManager:
         session_db: Any,
         retriever: Optional["Retriever"] = None,
         cross_session_decay: float | None = None,
+        recency_half_life_days: float | None = None,
     ) -> None:
         self._file_memory = file_memory
         self._session_db = session_db
@@ -84,6 +85,10 @@ class MemoryManager:
         # [companion].memory_cross_session_decay=1.0 → 退回旧行为
         # (Strangler-Fig)。由 main.py 读 config 注入此值。
         self._cross_session_decay = cross_session_decay
+        # WI-2 (2026-06-19 task-scope-context-isolation): 同 session 时近性
+        # 降权半衰期（天）。解决单一 `default` 会话陈旧旧任务记忆满权召回带偏
+        # agent。None → retriever 关闭该降权（回退旧行为）。由 main.py 注入。
+        self._recency_half_life_days = recency_half_life_days
 
     # ------------------------------------------------------------------
     # Bootstrap
@@ -288,6 +293,7 @@ class MemoryManager:
                         cur_session_id=_sid,
                         cur_session_kind=_kind,
                         cross_session_decay=self._cross_session_decay,
+                        recency_half_life_days=self._recency_half_life_days,
                     )
                 except TypeError:
                     # Fake retriever in unit tests accepts (query, policy).

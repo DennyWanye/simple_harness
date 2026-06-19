@@ -29,10 +29,14 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 
+import aiosqlite
+
 from deskpet.memory.embedder import Embedder
 from deskpet.memory.retriever import (
     Retriever,
     RetrievalPolicy,
+    _INTRA_SESSION_RECENCY_FLOOR,
+    _intra_session_recency_weight,
     _is_project_class,
     _session_affinity,
     _session_kind,
@@ -314,6 +318,112 @@ async def test_recall_companion_decays_cross_session_project_memory(
             f"VPN project memory not decayed: legacy={legacy_scores[vpn_id]} "
             f"scoped={scoped_scores[vpn_id]}"
         )
+
+
+# ======================================================================
+# WI-2 (2026-06-19 task-scope-context-isolation) —
+# 同 session 时近性降权：单一 `default` 会话里陈旧旧任务记忆不再满权召回。
+# ======================================================================
+
+_DAY = 86400.0
+
+
+def test_recency_weight_disabled_returns_one():
+    """half_life None / <=0 / inf → 1.0（关闭，回退旧行为）。"""
+    for hl in (None, 0, -3.0, float("inf")):
+        assert _intra_session_recency_weight(30 * _DAY, hl) == pytest.approx(1.0)
+
+
+def test_recency_weight_fresh_is_one():
+    """age <= 0（同刻/未来时间戳）→ 1.0，保守不降。"""
+    assert _intra_session_recency_weight(0.0, 7.0) == pytest.approx(1.0)
+    assert _intra_session_recency_weight(-100.0, 7.0) == pytest.approx(1.0)
+
+
+def test_recency_weight_halves_each_half_life():
+    """每过一个 half_life 权重减半（0.5 ** (age/half_life)）。"""
+    assert _intra_session_recency_weight(7 * _DAY, 7.0) == pytest.approx(0.5)
+    assert _intra_session_recency_weight(14 * _DAY, 7.0) == pytest.approx(0.25)
+
+
+def test_recency_weight_floored():
+    """很老的记忆被压到 floor，不清零（降权非过滤，桌宠仍'记得你'）。"""
+    w = _intra_session_recency_weight(365 * _DAY, 7.0)
+    assert w == pytest.approx(_INTRA_SESSION_RECENCY_FLOOR)
+    assert w > 0.0
+
+
+async def _backdate_message(db: SessionDB, mid: int, age_seconds: float) -> None:
+    """把某条 message 的 created_at 改成"age_seconds 之前"（测试回填旧任务）。"""
+    import time as _t
+    async with aiosqlite.connect(str(db._db_path)) as conn:
+        await conn.execute(
+            "UPDATE messages SET created_at = ? WHERE id = ?",
+            (_t.time() - age_seconds, mid),
+        )
+        await conn.commit()
+
+
+@pytest.mark.asyncio
+async def test_recall_intra_session_old_task_demoted(
+    db: SessionDB, embedder: Embedder
+):
+    """复现本次 bug 核心：同一 `default` 会话里，一个月前的旧任务（CATL）记忆
+    与今天的新任务记忆同时命中时，旧记忆被时近性降权、排在新记忆之下。
+    """
+    sid = "default"
+    # 30 天前的旧任务记忆（CATL 年报）
+    await db.append_message(sid, "user", "帮我做宁德时代 2024 年报分析 PPT")
+    old_id = (await db.get_messages(sid))[-1]["id"]
+    await _backdate_message(db, old_id, 30 * _DAY)
+    # 今天的新任务记忆（同样含 PPT，向量上接近 → 不靠主题区分，只靠时近）
+    await db.append_message(sid, "user", "帮我做小学教育现状 PPT")
+    new_id = (await db.get_messages(sid))[-1]["id"]
+
+    retriever = Retriever(db, embedder)
+    scoped = await retriever.recall(
+        "PPT",
+        top_k=10,
+        cur_session_id=sid,
+        cur_session_kind="companion",
+        cross_session_decay=0.15,
+        recency_half_life_days=7.0,
+    )
+    scores = {h.message_id: h.score for h in scoped}
+    order = [h.message_id for h in scoped]
+    assert old_id in scores and new_id in scores
+    # 旧任务记忆排在新任务之后（不再满权劫持）
+    assert order.index(new_id) < order.index(old_id), (
+        f"旧 CATL 记忆未被时近降到新任务之下: order={order}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_recall_recency_off_matches_legacy_same_session(
+    db: SessionDB, embedder: Embedder
+):
+    """recency_half_life_days=None（关闭）时，同 session 召回与旧行为一致：
+    旧记忆不被时近降权（Strangler-Fig / BC）。"""
+    sid = "default"
+    await db.append_message(sid, "user", "帮我做宁德时代年报 PPT")
+    old_id = (await db.get_messages(sid))[-1]["id"]
+    await _backdate_message(db, old_id, 30 * _DAY)
+
+    retriever = Retriever(db, embedder)
+    legacy = await retriever.recall("PPT", top_k=10)
+    off = await retriever.recall(
+        "PPT",
+        top_k=10,
+        cur_session_id=sid,
+        cur_session_kind="companion",
+        cross_session_decay=0.15,
+        recency_half_life_days=None,
+    )
+    legacy_scores = {h.message_id: h.score for h in legacy}
+    off_scores = {h.message_id: h.score for h in off}
+    # 同 session 记忆在两种模式下分数一致（recency 关 → affinity=1.0 不动）
+    if old_id in legacy_scores and old_id in off_scores:
+        assert off_scores[old_id] == pytest.approx(legacy_scores[old_id])
 
 
 @pytest.mark.asyncio

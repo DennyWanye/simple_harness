@@ -78,6 +78,19 @@ _RRF_K = 60
 # [companion].memory_cross_session_decay 缺失时用这个安全默认（Phase 4
 # 才正式落 config 段；本 Phase 只读，不写 config.toml）。
 _DEFAULT_CROSS_SESSION_DECAY = 0.15
+# ----------------------------------------------------------------------
+# 同 session 时近性降权（WI-2 / 2026-06-19 task-scope-context-isolation）
+# ----------------------------------------------------------------------
+# 问题：companion 单一 `default` session 从不切分，新任务（如"做小学教育
+# PPT"）与一个月前的旧任务（"宁德时代年报"）共用同一 session。跨 session
+# 降权对此无效（_session_affinity 同 session 恒 1.0），导致陈旧旧任务记忆被
+# 满权召回、把 agent 带偏。解法：对**同 session** 记忆按 age 做时近性乘性
+# 降权（0.5 ** (age/half_life)），越旧越轻。降权非过滤（带 floor），桌宠仍
+# "记得你"。half_life 默认 7 天；config 缺失 / None / <=0 / inf → 关闭（1.0，
+# byte-identical 回退旧行为，Strangler-Fig）。
+_DEFAULT_INTRA_SESSION_HALF_LIFE_DAYS = 7.0
+# 老记忆最多压到此 floor —— 不清零（保"桌宠记得你"，与降权非过滤一致）。
+_INTRA_SESSION_RECENCY_FLOOR = 0.15
 # code session 产生的"人物/偏好/闲聊"类记忆，在 companion 当前会话只轻降，
 # 保留"桌宠记得你"能力（spec: Cross-session person/preference memory still
 # recalled）。
@@ -218,6 +231,7 @@ class Retriever:
         cur_session_id: str | None = None,
         cur_session_kind: str | None = None,
         cross_session_decay: float | None = None,
+        recency_half_life_days: float | None = None,
     ) -> list[Hit]:
         """四路 fan-out → RRF 融合 → session-affinity 降权 → salience boost → top_k。
 
@@ -240,6 +254,12 @@ class Retriever:
             跨 session 项目类记忆在 companion 当前会话的降权系数。来自
             ``config.toml [companion].memory_cross_session_decay``，由调用方
             读出后传入；None 时用安全默认 ``0.15``。``1.0`` = 退回旧行为。
+        recency_half_life_days:
+            WI-2 同 session 时近性降权半衰期（天）。对**当前 session 自己**的
+            记忆按 age 做 ``0.5 ** (age/half_life)`` 乘性降权，解决单一 `default`
+            会话里陈旧旧任务记忆满权召回把 agent 带偏的问题。来自 config.toml
+            ``[companion].memory_intra_session_recency_half_life_days``。
+            **None / <=0 / inf → 关闭**（同 session 记忆恒 1.0，退回旧行为）。
 
         Returns
         -------
@@ -310,11 +330,21 @@ class Retriever:
                 if cross_session_decay is not None
                 else _DEFAULT_CROSS_SESSION_DECAY
             )
-            # decay>=1.0 直接跳过整段（纯函数也会返回 1.0，这里再省一次
-            # 全量 meta 取，保证回退路径与旧行为 byte-identical）。
-            if decay < 1.0:
+            # WI-2 同 session 时近性是否启用（None/<=0/inf → 关闭）。
+            _hl = recency_half_life_days
+            recency_on = (
+                _hl is not None and _hl > 0 and not math.isinf(_hl)
+            )
+            # decay>=1.0 且 recency 关 → 整段跳过（纯函数也会返回 1.0，这里再
+            # 省一次全量 meta 取，保证回退路径与旧行为 byte-identical）。
+            if decay < 1.0 or recency_on:
                 fused = await self._apply_session_affinity(
-                    fused, cur_session_id, cur_session_kind, decay
+                    fused,
+                    cur_session_id,
+                    cur_session_kind,
+                    decay,
+                    now=(time.time() if recency_on else None),
+                    recency_half_life_days=(_hl if recency_on else None),
                 )
 
         top_items = fused[:effective_top_k]
@@ -558,9 +588,10 @@ class Retriever:
     ) -> dict[int, dict]:
         """批量拿每条 message 的 session-affinity 判定所需元数据。
 
-        Returns ``{id: {session_id, is_summary, tool_calls, content, role}}``。
-        空列表返回 ``{}``。这些字段都在 ``messages`` 表里（schema v10：
-        is_summary/tool_calls 已存在），一次 ``IN (...)`` 取齐，O(候选数)。
+        Returns ``{id: {session_id, is_summary, tool_calls, content, role,
+        created_at}}``。空列表返回 ``{}``。这些字段都在 ``messages`` 表里
+        （schema v10：is_summary/tool_calls 已存在），一次 ``IN (...)`` 取齐，
+        O(候选数)。``created_at`` 供 WI-2 同 session 时近性降权算 age。
         """
         if not message_ids:
             return {}
@@ -568,8 +599,8 @@ class Retriever:
         db_path = str(self._db._db_path)
         async with aiosqlite.connect(db_path) as db:
             cursor = await db.execute(
-                f"SELECT id, session_id, is_summary, tool_calls, content, role "
-                f"FROM messages WHERE id IN ({placeholders})",
+                f"SELECT id, session_id, is_summary, tool_calls, content, role, "
+                f"created_at FROM messages WHERE id IN ({placeholders})",
                 tuple(message_ids),
             )
             rows = await cursor.fetchall()
@@ -581,6 +612,7 @@ class Retriever:
                 "tool_calls": r[3],
                 "content": r[4],
                 "role": r[5],
+                "created_at": r[6],
             }
             for r in rows
         }
@@ -591,12 +623,19 @@ class Retriever:
         cur_sid: str | None,
         cur_kind: str | None,
         decay: float,
+        *,
+        now: float | None = None,
+        recency_half_life_days: float | None = None,
     ) -> list[tuple[int, float, str]]:
-        """对 RRF 融合结果乘 session-affinity 后重排（OpenSpec D1）。
+        """对 RRF 融合结果乘 session-affinity（+ WI-2 同 session 时近性）后重排。
 
         在裁 top_k **之前** 调用：被降权的跨 session 项目记忆要真正掉
         rank（spec: SHALL NOT rank above memories relevant to current
         request），不能只压分却仍占坑。
+
+        WI-2：当 ``recency_half_life_days`` 启用时，对**同 session**（mem_sid
+        == cur_sid）记忆额外乘时近性权重 —— 解决单一 `default` 会话里陈旧旧
+        任务记忆满权召回把 agent 带偏的问题（跨 session 矩阵不动，正交叠乘）。
 
         失败隔离：补取 session 元数据出错只 log，原样返回未降权 fused
         （recall 不因 affinity 这一步崩，符合 retriever 的降级契约）。
@@ -623,6 +662,24 @@ class Retriever:
                 reweighted.append((mid, score, source))
                 continue
             aff = _session_affinity(row, cur_sid, cur_kind, decay)
+            # WI-2 同 session 时近性：仅对当前 session 自己的旧记忆按 age 降权。
+            # 跨 session 已由 _session_affinity 处理；这里只补"同 session 内
+            # 陈旧任务"的缺口。now/half_life 未传 → rec=1.0（回退）。
+            if (
+                now is not None
+                and recency_half_life_days is not None
+                and cur_sid is not None
+                and row.get("session_id") == cur_sid
+            ):
+                created_at = row.get("created_at")
+                if created_at is not None:
+                    try:
+                        rec = _intra_session_recency_weight(
+                            now - float(created_at), recency_half_life_days
+                        )
+                        aff *= rec
+                    except (TypeError, ValueError):
+                        pass  # created_at 异常 → 不降权，保守
             reweighted.append((mid, score * aff, source))
 
         # 重排：affinity 加权后分数降序；同分按 message_id 升序稳定 tie-break
@@ -744,6 +801,33 @@ def _session_affinity(
 
     # 其它（cur=code←companion、companion←companion 跨 session 等）→ 不降权。
     return 1.0
+
+
+def _intra_session_recency_weight(
+    age_seconds: float,
+    half_life_days: float | None,
+) -> float:
+    """同 session 记忆按 age 的时近性乘性权重（WI-2）。
+
+    ``0.5 ** (age_days / half_life_days)`` —— 每过一个 half_life 权重减半。
+    带 floor（``_INTRA_SESSION_RECENCY_FLOOR``）防老记忆被压到 0：降权非
+    过滤，桌宠仍"记得你"。
+
+    关闭/回退（返回 1.0，byte-identical 旧行为）：
+    * ``half_life_days`` 为 None / <=0 / inf；
+    * ``age_seconds`` <= 0（未来时间戳或同刻，保守不降）。
+    """
+    if (
+        half_life_days is None
+        or half_life_days <= 0
+        or math.isinf(half_life_days)
+    ):
+        return 1.0
+    if age_seconds <= 0:
+        return 1.0
+    age_days = age_seconds / 86400.0
+    w = 0.5 ** (age_days / half_life_days)
+    return max(_INTRA_SESSION_RECENCY_FLOOR, min(1.0, w))
 
 
 def _truthy_int(value) -> bool:
