@@ -82,9 +82,30 @@ goal_mode ON + always-on 锚定当前任务 —— 留作后续，本次不引�
   - **默认开启 = 7 天半衰期**（main.py 注入，config 可关）。
   - 测试：`tests/test_retriever_session_affinity.py`（7 新）。
 - ✅ 回归：compaction+retriever+manager 全套 **219 passed**（203 + 16），无回归。
-- ⏳ **手工 E2E（项目 HARD 约束，未做）**：windows-mcp 真机——seed CATL 旧历史→
-  发"做小学教育 PPT"→长链跑完截图确认不漂回。**这才是"用户能用"的权威证据，
-  单测不可替代。完成前不标 STATUS 完成。**
+- ✅ **WI-2 后记修复**（retriever.py，commit 0d60dfe）：真机 E2E 暴露 recency 重排把
+  无元数据(归档/stale 索引)id 顶进 top_k 把真命中饿死→空召回。修法：取全体候选
+  元数据→按排名过滤→凑 top_k。真实 default 会话 recency-ON 0→8 hits 且偏好近期。
+
+## 4c. 真机 E2E 结果（2026-06-19，windows-mcp）
+
+环境：`backend/userdata`（含 CATL 污染 default 会话 872 msgs）+ 新代码
+（日志确认 `[backend_launch] Dev python=...backend\.venv backend_dir=...\backend`，非 frozen）。
+任务：发"中国现阶段小学教育...PPT，先深度调研..."到桌宠 companion（SendInput 圣杯点击
++ clipboard 粘贴，破 WebView2 穿透）。证据图 `screenshots/01,02-*.png`。
+
+**结论：漂移已修，但全长链被 env 配置卡停（非漂移、非本修复）。**
+- ✅ **零 CATL 漂移**：UI 面板可见 `todo_write`/`research_run` topic 全是"中国现阶段小学
+  教育"，尽管同一可见历史顶部就有旧 `run_shell ...catl2024.pdf...`。日志全程
+  `宁德|CATL|年报` **0 命中**。
+- ✅ **compaction 触发 2 次**（旧代码漂移窗口），摘要未把 CATL 拽进当前任务。
+- ✅ **WI-2 空召回回归** 被真机抓到并修复（单测小 db 漏的，正是真 E2E 价值）。
+- ⚠️ **任务停在 iter=4** 因 `model_info: gpt-5.5 window=8000 source=global` →
+  `token_budget_block (10370/8000)`。这是 **model 注册表 env 配置 bug**（gpt-5.5 真实窗口
+  远大于 8000），会卡死**所有**长任务，与本修复无关 → 已登记跟踪。
+- ℹ️ 旧有 `l3_failed TypeError("'>' int vs dict")`（vec 路径、safe-fail、非本次改动行）→ 已登记。
+
+**未标 STATUS 完成**：漂移防护机制已真机验证，但完整长链（→大纲→生成 .pptx）因
+env window=8000 未跑完；待修 gpt-5.5 窗口配置后可补一次完整长链 E2E。
 
 ## 5. 影响文件
 - `backend/deskpet/agent/context_compressor.py`（WI-1）
