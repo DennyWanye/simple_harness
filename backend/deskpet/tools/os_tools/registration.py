@@ -86,12 +86,16 @@ def register_os_tools(registry) -> None:  # type: ignore[no-untyped-def]
         toolset="os",
         schema=_schema(
             "edit_file",
-            "Replace exact text in a file. old_string must be unique unless replace_all=true.",
+            "Replace exact text in a file. old_string must be unique unless replace_all=true. "
+            "If exact match fails and fuzzy=true (default), falls back to whitespace/anchor "
+            "matching and otherwise returns did_you_mean suggestions; set fuzzy=false to require "
+            "an exact match only.",
             {
                 "path": {"type": "string"},
                 "old_string": {"type": "string"},
                 "new_string": {"type": "string"},
                 "replace_all": {"type": "boolean", "default": False},
+                "fuzzy": {"type": "boolean", "default": True},
             },
             ["path", "old_string", "new_string"],
         ),
