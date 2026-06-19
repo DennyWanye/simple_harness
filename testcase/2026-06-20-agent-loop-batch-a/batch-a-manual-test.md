@@ -2,7 +2,8 @@
 
 > **被测功能**（commit `6eb55f4` + `dff43d0`，plan `plans/2026-06-20-agent-loop-optimization/00-PLAN.md`）：
 > - **WI-1 tool_choice 硬约束**：`[agent] force_finish_tool_choice=true`（默认）时，tier3（迭代 ≥ `_SELFCHECK_TIER3_AT=30`）/ verify 耗尽时对下一轮 LLM 调用传 `tool_choice="none"`，协议层禁工具，强制收尾；flag off 回到旧行为（BC）。
-> - **WI-2 结构化 trace**：`[agent] trace_enabled=true`（默认 false）时，每轮往 `<user_data>/traces/<task_id>.jsonl` 逐行记 `iter_start / llm_out / tool_result / gate / end`，其中 `tool_calls`/`tool_result` 的 **args 完整未截断**；tracer=None（默认）零开销不建文件（BC）。
+> - **WI-2 结构化 trace**：`[agent] iteration_trace_enabled=true`（默认 false）时，每轮往 `<user_data>/traces/<task_id>.jsonl` 逐行记 `iter_start / llm_out / tool_result / gate / end`，其中 `tool_calls`/`tool_result` 的 **args 完整未截断**；tracer=None（默认）零开销不建文件（BC）。
+>   ⚠️ 真机测试发现：flag 名用 `iteration_trace_enabled` 而非 `trace_enabled`，避免与 `[context.assembler].trace_enabled`（已有 Context Trace UI / P4-S11）命名碰撞（2026-06-20 改名 + 真机验证）。
 > - **WI-3 阶段化提示词收尾自查**：**code 模式** persona 常驻「第 5 步 · 收尾自查」（每个 code-mode 任务收尾前都应自查、对照原始需求打勾），**companion 模式**无此段（BC）。
 >
 > **执行方式（HARD）**：真人 / windows-mcp 在真实 DeskPet 桌宠 App 上**模拟鼠标点击 + 键盘输入**执行。**禁止**用 WebSocket / pytest / import 内部模块当 UI 测试证据（见根 `CLAUDE.md`「🔒 手工测试纪律」）。
@@ -111,10 +112,10 @@ npx tauri dev
 ## TC-4 — WI-2 trace 开启：真机驱动任务 → 生成 jsonl（核心链路）
 **类型**：UI 真测驱动 + 文件验证（windows-mcp 驱动）｜**需 windows-mcp：是**
 
-**前置**：编辑 `<user_data>\config.toml`（与登录后 config 同目录，通常 `%APPDATA%\deskpet\config.toml`）加：
+**前置**：编辑 `<user_data>\config.toml`（通常 `%APPDATA%\deskpet\config.toml`）在 `[agent]` 段加：
 ```toml
 [agent]
-trace_enabled = true
+iteration_trace_enabled = true
 ```
 按手测纪律 taskkill 后**重启**桌宠（重走 1.1–1.3）。
 

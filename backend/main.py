@@ -973,9 +973,12 @@ def build_agent(
                 "external_evaluator construction failed: %s — skipping", exc
             )
 
-    _agent_cfg = cfg.raw.get("agent", {}) if isinstance(cfg.raw, dict) else {}
+    _cfg_raw = getattr(cfg, "raw", None)
+    _agent_cfg = _cfg_raw.get("agent", {}) if isinstance(_cfg_raw, dict) else {}
     _ff = bool(_agent_cfg.get("force_finish_tool_choice", True))
-    _trace_enabled = bool(_agent_cfg.get("trace_enabled", False))
+    # WI-2: 用 iteration_trace_enabled（而非 trace_enabled）避免与
+    # [context.assembler].trace_enabled（Context Trace UI / P4-S11）命名碰撞。
+    _trace_enabled = bool(_agent_cfg.get("iteration_trace_enabled", False))
     _tracer = None
     if _trace_enabled:
         try:
