@@ -11,7 +11,8 @@
 
 | 工作项 | 主文档 | 一句话 | 状态 |
 |---|---|---|---|
-| **deepsearch（优化方案）** | [00-optimization-plan](deepsearch/00-optimization-plan.md) | deep research 继续优化：先 Step 0 质量基线 spike(零运行证据)→修 recency 真 bug+补可观测性→据 spike 数据裁决"原地升级 vs 重建 ReAct 子代理"；不删 research_run/不接付费 API | 📋 待裁决 |
+| **deepresearch-upgrade（升级 plan）** | [00-upgrade-plan](deepresearch-upgrade/00-upgrade-plan.md) | 工具 `research_run`→**`deepresearch`** 更名 + 演进(代码级 R1-R12 手术面)；Phase0 质量 spike(门)→Phase1 更名→Phase2 修recency+可观测→Phase3 spike-gated 缺口→Phase4 延后 ReAct；经 2 轮子代理对抗挑战到"无 BLOCKING 可照做" | 📋 待执行 |
+| **deepsearch（优化策略）** | [00-optimization-plan](deepsearch/00-optimization-plan.md) | deep research 优化策略(deepresearch-upgrade 的上层)：先 Step 0 质量基线 spike→修 recency→据数据裁决架构；不删 research_run/不接付费 API | 📋 待裁决 |
 | **compaction-bestpractice-upgrade** | [00-PLAN](2026-06-16-compaction-bestpractice-upgrade/00-PLAN.md) | 上下文压缩升级对标 Claude Code/Hermes/OpenClaw：单调级联(microcompact→结构化摘要→截断兜底)+剩余 token buffer 触发+pre-flush 防丢任务+目标钉死不可压+接已有 L1/L3 记忆；做完才默认开 compaction | ✅ Phase1+2 全做完+真机 case② PASS+WI-6 默认开 |
 | **effective-llm-model-resolution** | [00-PLAN](2026-06-16-effective-llm-model-resolution/00-PLAN.md) | 根治 P-B：让读模型名的代码(压缩窗口/stub/ppt复审)统一读**运行时有效模型**(llm_runtime.json 覆盖的 gpt-5.5)而非 config 旧种子(gemma)；加 effective_llm_model 访问器 + raw 同步 | 📋 |
 | **context-compaction-optim** | [00-PLAN](2026-06-16-context-compaction-optim/00-PLAN.md) | 上下文压缩四方向优化(任务保活结构化摘要+token 统一+观测)；真机测揪出并修"压缩永不触发"核心 bug + 防摘要反射 prompt；留 P-B 窗口取错模型 follow-up | 🟡 |

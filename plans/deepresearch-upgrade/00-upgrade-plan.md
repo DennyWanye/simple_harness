@@ -76,10 +76,14 @@ grep -rn 'research_run\|deepresearch' tauri-app/src
 **代码级做法**：
 - 新建 `backend/scripts/spike_deepresearch_baseline.py`（独立脚本，**不进产线**）。
 - **live LLM 注入必须照 `backend/scripts/e2e_stage_a_live.py` 的真链路**（⚠️ **不要**抄 `e2e_ppt_deepresearch.py`——那是 `FakeLLM` 罐头响应，抄它会跑成 mock，违背本门"真跑"要求）。具体三步（e2e_stage_a_live.py:36-114 实证）：
-  1. `from config import load_config, resolve_cloud_api_key`；`config = load_config()`。
+  1. `from config import load_config, resolve_cloud_api_key`；`config = load_config()`；`cloud_key = resolve_cloud_api_key()`。
   2. `from providers.openai_compatible import OpenAICompatibleProvider`；
-     `cloud = OpenAICompatibleProvider(base_url=config.llm.cloud.base_url, api_key=resolve_cloud_api_key(), model=config.llm.cloud.model)`。
-  3. 把 `cloud` 包成 `async def llm_call(prompt)->str`（调 provider 的 chat 接口取文本），传 `deepresearch(topic, llm_call=llm_call, ...)`。rerank/semantic 钩子同 main.py:641-1085 的注入方式（可选，spike 可先只注主 LLM）。
+     ⚠️ **先判空**（Round2-B：无 `[llm.cloud]` 段时 `config.llm.cloud` 为 None）：
+     `assert cloud_key and config.llm.cloud is not None`，再
+     `cloud = OpenAICompatibleProvider(base_url=config.llm.cloud.base_url, api_key=cloud_key, model=config.llm.cloud.model)`。
+  3. 把 `cloud` 包成 `async def llm_call(prompt)->str`——**直接照抄 `research_tools.py:1705-1711` 的 `_call` 闭包**：
+     `out = await cloud.chat_with_tools(messages=[{"role":"user","content":prompt}], tools=[], max_tokens=4096)`；`return (out or {}).get("content") or ""`。
+     （⚠️ provider **没有**裸 `.chat()` 方法，只有 `chat_stream`/`chat_with_tools`；别望文生义。）传 `deepresearch(topic, llm_call=llm_call, ...)`。rerank/semantic 钩子同 main.py:641-1085（可选，spike 可先只注主 LLM）。
 - 对每个 topic 跑 `standard` + `deep` 两档；计时（`time.perf_counter`）+ 抓 token（provider 返回 usage）+ 记 `coverage`/`errors`/源权威&多样性分布。
 - 每份报告再调一次 LLM 当 judge，套 `evaluator-prompt.md` 评分卡 → 收 5 维加权分。
 - 汇总 `plans/deepresearch-upgrade/01-baseline-spike-report.md`。
@@ -114,8 +118,10 @@ grep -rn 'research_run\|deepresearch' tauri-app/src
 **根因**：`default_extract`（research_tools.py:826-831）返回字典无 `date` 键 → `_passage_from`（:1106-1108）`payload.get("date")` 恒空 → `score_recency` 恒返回 3.0。
 **改法**（Round1-B 核实可行：trafilatura `extract_metadata().date` 输出已规范化为 `YYYY-MM-DD` 纯字符串，`score_recency` 的 `%Y-%m-%d` 档直接吃，无格式不兼容风险）：
 - `default_extract` 已有 `meta = trafilatura.extract_metadata(html)`（:784）。在返回字典（:826-831）加一键 `"date": (getattr(meta, "date", None) or "")`。
-- ⚠️ **两处分支都要加**：JS 渲染兜底替换 `html = rendered`（:812）后，title 当前仍用渲染前的——同理 date 也要在渲染后**重新 `extract_metadata(rendered)` 取 date**，否则渲染路径的源 date 仍空。具体：在 :809-812 渲染成功块内补一次 `meta` 重取并更新 date 候选。
+- ⚠️ **渲染分支也要加**：JS 渲染兜底替换 `html = rendered`（:812）后，title 当前仍用渲染前的——同理 date 要在 :809-812 渲染成功块内**重新 `extract_metadata(rendered)` 取 date** 更新候选，否则渲染路径源 date 仍空。
+- 注（Round2-B）：第三条 Jina 兜底路径（:815-820）返回无 date，`meta` 保持渲染前值 → 该路径 date 可能为空，**属预期**（score_recency 坏值/空值安全返 3.0，不报错）。
 - `_passage_from` 无需改（:1106-1108 已读 `payload.get("date")`）。
+- 注：R8 等列的 SKILL.md 行号可能随别处改动**漂移**——执行时**以 §2.1 grep 结果为准**，不死盯表里行号。
 **验收门**：①新增单测：mock extract 返回带 `date` 的 payload → 断言该 passage 的 `dims["recency"]` ≠ 3.0 且随日期/velocity 变化；②Phase 0 spike 修前/修后对照：top 源排序确有变化（证明维度激活）。
 
 ### 5.2 可观测性
@@ -129,9 +135,10 @@ grep -rn 'research_run\|deepresearch' tauri-app/src
 > 所以**不能"直接复用"**——必须二选一：
 
 **Phase 2 默认走 A（自包含、零隐私墙风险）**：
-- **A — 扩 `ResearchReport.coverage` 字段**（不动 metrics_sink）：在 coverage 加
-  `route/mode/n_dropped_by_reason{ai_generated,low_quality,mojibake,too_short}/rerank_used/velocity/rounds/elapsed_ms_per_stage`。
-  纯返回值，单测可断言，spike 直接读。**本 Phase 采用此项。**
+- **A — 扩 `ResearchReport.coverage` 字段**（`coverage` 已是 `dict[str,Any]` @:573，加键**不需改 dataclass**；下游 PPT/前端不读 coverage，无契约破坏）。**本 Phase 采用此项。**
+  - ⚠️ Round2 提醒：`rounds`(:1342)/`reranker`即rerank_used(:1343)/`topic_velocity`即velocity(:1337) **已在 coverage**，别重复加/改名。
+  - **真正要新加**的只有：`route` / `mode` / `n_dropped_by_reason{ai_generated,low_quality,mojibake,too_short}` / `elapsed_ms_per_stage`。
+  - 实现工作量提示：`n_dropped_by_reason` 需在 `_passage_from` 各 `errors.append("dropped_*")` 处（:1089/1098/1102）**同步累加一个计数器**（当前只进 errors 列表）；`elapsed_ms_per_stage` 需在 orchestrator 各阶段**新埋 `time.perf_counter()` 分段点**（当前无分段计时）。
 - **B（可选，跨会话指标才需要）— 扩白名单后再 emit**：在 `metrics_sink.py` 的 `VALID_EVENTS` 加
   `"deepresearch_run"`，`_ALLOWED_DETAIL_KEYS` 加 `rerank_used`/`n_dropped`/`rounds`/`velocity`/`elapsed_ms`
   （都是枚举/数字/短串，满足隐私墙），再在 deepresearch 末尾 `record("deepresearch_run", {...})`。
@@ -144,7 +151,7 @@ grep -rn 'research_run\|deepresearch' tauri-app/src
 ## 6. Phase 3 — 缺口能力补齐（spike-gated，按 Phase 0 数据取舍）
 
 仅做 Phase 0 证明「确实是瓶颈」的项：
-- **本地 bge-reranker 可选档**（research_tools.py:270-282 当前 `_rerank_mode()` 把 `local` 退化为 `llm`；`FlagEmbedding` 已在 `.venv`，有 `FlagReranker`/`FlagAutoReranker`）：让 `local` 真生效（在精排函数 ~:330 加 `mode=="local"` 分支实例化 `FlagReranker("BAAI/bge-reranker-v2-m3")`），复用 `_RERANK_TIMEOUT=25.0` 加超时降级。
+- **本地 bge-reranker 可选档**（research_tools.py:270-282 当前 `_rerank_mode()` 把 `local` 退化为 `llm`；`FlagEmbedding` 已在 `.venv`，`from FlagEmbedding import FlagReranker` 可用）：让 `local` 真生效。⚠️ **接入点（Round2-B 纠正）**：**不要**在 `_llm_rerank`（:331，纯 LLM 路径函数）内部加分支；正确做法是**新建 `_bge_local_rerank()` 函数**（:330 附近），并在**调用决策点 :1247** 加 `elif _rerank_mode()=="local": applied = await _bge_local_rerank(...)`，实例化 `FlagReranker("BAAI/bge-reranker-v2-m3")` 做精排，复用 `_RERANK_TIMEOUT=25.0` 超时降级。
   ⚠️ **Round1-B 坑**：首次触发会从 HuggingFace Hub **下载数百 MB 模型**（5-15 分钟），期间必然超 25s → 静默降级回 llm → `local` 看似"正常"实则永不生效。**必须**：① 加启动时/首次预检——检测 `HF_HOME` 本地缓存是否已有该模型，无则提示预下载（不在 research 热路径里同步下载）；② 文档化缓存路径配置。
 - **loopback/ollama 用户精排**（main.py:652 仅非 loopback 注入 rerank）：让本地模型也能走精排（或走上面的本地 bge），消除「本地用户质量无声下降」。
 - **crawl4ai webview 反向链路**（`plans/2026-06-16-crawl4ai-fetch-tier/` 的 WI-0 GATE）：补 JS 渲染在非 Windows 的覆盖。
