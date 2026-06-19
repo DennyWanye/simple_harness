@@ -11,6 +11,7 @@ P5-S2 Phase 0: error responses now include ``ok: false`` + ``hint``
 """
 from __future__ import annotations
 
+import difflib
 import json
 from pathlib import Path
 from typing import Any
@@ -38,11 +39,93 @@ def _err(error: str, hint: str, **extra: Any) -> str:
     return json.dumps(body, ensure_ascii=False)
 
 
+def _line_indent(line: str) -> str:
+    return line[: len(line) - len(line.lstrip(" \t"))]
+
+
+def _whitespace_fallback(
+    text: str,
+    old: str,
+    new: str,
+) -> tuple[str, float] | None:
+    old_lines = old.split("\n")
+    if len(old_lines) != 1:
+        return None
+
+    target = old.strip()
+    if not target:
+        return None
+
+    file_lines = text.split("\n")
+    matches = [
+        idx for idx, line in enumerate(file_lines) if line.strip() == target
+    ]
+    if len(matches) != 1:
+        return None
+
+    idx = matches[0]
+    file_lines[idx] = _line_indent(file_lines[idx]) + new.strip()
+    return "\n".join(file_lines), 1.0
+
+
+def _anchor_fallback(
+    text: str,
+    old: str,
+    new: str,
+) -> tuple[str, float] | None:
+    old_lines = old.split("\n")
+    line_count = len(old_lines)
+    if line_count < 2:
+        return None
+
+    file_lines = text.split("\n")
+    if len(file_lines) < line_count:
+        return None
+
+    edge_count = 2 if line_count >= 4 else 1
+    old_head = [line.strip() for line in old_lines[:edge_count]]
+    old_tail = [line.strip() for line in old_lines[-edge_count:]]
+    candidates: list[tuple[int, float]] = []
+
+    for start in range(0, len(file_lines) - line_count + 1):
+        window_lines = file_lines[start : start + line_count]
+        window_head = [line.strip() for line in window_lines[:edge_count]]
+        window_tail = [line.strip() for line in window_lines[-edge_count:]]
+        if window_head != old_head or window_tail != old_tail:
+            continue
+
+        window_text = "\n".join(window_lines)
+        confidence = difflib.SequenceMatcher(None, old, window_text).ratio()
+        if confidence >= 0.85:
+            candidates.append((start, confidence))
+
+    if len(candidates) != 1:
+        return None
+
+    start, confidence = candidates[0]
+    file_lines[start : start + line_count] = new.split("\n")
+    return "\n".join(file_lines), confidence
+
+
+def _did_you_mean_error(path: str, old: str, file_lines: list[str]) -> str:
+    cands = difflib.get_close_matches(old, file_lines, n=3, cutoff=0.6)
+    return _err(
+        "no exact match for old_string",
+        "未精确命中；见 did_you_mean 最相近行",
+        path=path,
+        matched_by="none",
+        did_you_mean=[
+            {"line": file_lines.index(cand) + 1, "text": cand} for cand in cands
+        ],
+    )
+
+
 def edit_file(args: dict[str, Any], task_id: str = "") -> str:
     path = args.get("path", "")
     old = args.get("old_string", "")
     new = args.get("new_string", "")
     replace_all = bool(args.get("replace_all", False))
+    fuzzy = bool(args.get("fuzzy", True))
 
     # OpenSpec §D3 — companion session write-scope（见 write_file 注释）。
     _scope_root = args.get("_write_scope_root")
@@ -94,6 +177,39 @@ def edit_file(args: dict[str, Any], task_id: str = "") -> str:
 
     count = text.count(old)
     if count == 0:
+        if fuzzy:
+            file_lines = text.split("\n")
+
+            fallback = _whitespace_fallback(text, old, new)
+            matched_by = "whitespace"
+            if fallback is None:
+                fallback = _anchor_fallback(text, old, new)
+                matched_by = "anchor"
+
+            if fallback is None:
+                return _did_you_mean_error(path, old, file_lines)
+
+            new_text, confidence = fallback
+            try:
+                p.write_text(new_text, encoding="utf-8")
+            except OSError as exc:
+                return _err(
+                    f"OSError: {exc}",
+                    f"写回 {path} 时操作系统报错。"
+                    "常见原因：权限不足、磁盘已满、文件被其它进程占用。",
+                    path=path,
+                )
+
+            return json.dumps(
+                {
+                    "replacements": 1,
+                    "path": str(p.resolve()),
+                    "matched_by": matched_by,
+                    "confidence": confidence,
+                },
+                ensure_ascii=False,
+            )
+
         return _err(
             "old_string not found",
             f"old_string 在 {path} 中找不到。请先用 read_file 看实际内容，"

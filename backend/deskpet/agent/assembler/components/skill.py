@@ -83,6 +83,7 @@ class SkillComponent:
         # Read config for auto-disclosure first — it decides the skill venue.
         ad_cfg = _read_auto_disclosure_config(ctx.config)
         auto_enabled = ad_cfg.get("enabled", False)
+        knowledge_enabled = _read_knowledge_enabled_config(ctx.config)
 
         # Fetch skill list from registry.
         #
@@ -119,21 +120,40 @@ class SkillComponent:
                 component_name=self.name,
                 priority=70,
                 bucket="skill",
-                meta={"count": 0},
+                meta={
+                    "count": 0,
+                    "auto_loaded_count": 0,
+                    "knowledge_loaded_count": 0,
+                },
             )
+
+        if not knowledge_enabled:
+            skills = [s for s in skills if _is_user_invocable(s)]
+            if not skills:
+                return Slice(
+                    component_name=self.name,
+                    priority=70,
+                    bucket="skill",
+                    meta={
+                        "count": 0,
+                        "auto_loaded_count": 0,
+                        "knowledge_loaded_count": 0,
+                    },
+                )
 
         # -----------------------------------------------------------------
         # Build desc list (always — priority 85, not cuttable).
         # -----------------------------------------------------------------
         desc_lines = ["## 可用技能"]
-        for s in skills:
+        visible_skills = [s for s in skills if _is_user_invocable(s)]
+        for s in visible_skills:
             sname = _skill_attr(s, "name", "?")
             summary = _skill_attr(s, "summary", "") or _skill_attr(s, "description", "")
             if summary:
                 desc_lines.append(f"- **{sname}**: {summary}")
             else:
                 desc_lines.append(f"- **{sname}**")
-        desc_text = "\n".join(desc_lines)
+        desc_text = "\n".join(desc_lines) if visible_skills else ""
 
         # When flag is off → emit desc list only (byte-identical to pre-WI-4.1).
         if not auto_enabled or self._matcher is None or self._loader is None:
@@ -141,13 +161,14 @@ class SkillComponent:
             return Slice(
                 component_name=self.name,
                 text_content=desc_text,
-                tokens=max(1, len(desc_text) // _CHARS_PER_TOKEN),
+                tokens=max(1, len(desc_text) // _CHARS_PER_TOKEN) if desc_text else 0,
                 priority=85,
                 bucket="skill",
                 meta={
-                    "count": len(skills),
+                    "count": len(visible_skills),
                     "latency_ms": round(elapsed_ms, 2),
                     "auto_loaded_count": 0,
+                    "knowledge_loaded_count": 0,
                 },
             )
 
@@ -182,6 +203,7 @@ class SkillComponent:
         strong_matches = _sort_by_sim_then_usage(strong_matches, skills)
 
         auto_loaded_count = 0
+        knowledge_loaded_count = 0
         body_sections: list[str] = []
         used_tokens = 0
 
@@ -199,18 +221,22 @@ class SkillComponent:
             body_tokens = max(1, len(raw_body) // _CHARS_PER_TOKEN)
             if used_tokens + body_tokens > budget_tokens:
                 break
+            is_knowledge = _is_knowledge(nm, skills)
+            heading = "知识片段（自动注入）" if is_knowledge else "技能正文（自动预载）"
             body_sections.append(
-                f"### {nm} 技能正文（自动预载）\n{raw_body}"
+                f"### {nm} {heading}\n{raw_body}"
             )
             used_tokens += body_tokens
             auto_loaded_count += 1
+            if is_knowledge:
+                knowledge_loaded_count += 1
 
         # -----------------------------------------------------------------
         # Compose final prelude text.
         # -----------------------------------------------------------------
-        parts = [desc_text]
+        parts = [desc_text] if desc_text else []
         if body_sections:
-            parts.append("\n---\n以下技能正文已预载，无需再 skill_invoke：")
+            parts.append("\n---\n以下内容已按触发词预载，无需再 skill_invoke：")
             parts.extend(body_sections)
 
         text = "\n\n".join(parts)
@@ -236,8 +262,11 @@ class SkillComponent:
             priority=85,  # desc list is never cut; body section can be trimmed externally
             bucket="skill",
             meta={
-                "count": len(skills),
+                "count": len(visible_skills),
                 "auto_loaded_count": auto_loaded_count,
+                "knowledge_loaded_count": knowledge_loaded_count,
+                "triggered": auto_loaded_count > 0,
+                "protected": knowledge_loaded_count > 0,
                 "latency_ms": round(elapsed_ms, 2),
             },
         )
@@ -258,6 +287,17 @@ def _is_disabled_for_model(name: str, skills: list[Any]) -> bool:
     for s in skills:
         if _skill_attr(s, "name", "") == name:
             return bool(_skill_attr(s, "disable_model_invocation", False))
+    return False
+
+
+def _is_user_invocable(skill: Any) -> bool:
+    return bool(_skill_attr(skill, "user_invocable", True))
+
+
+def _is_knowledge(name: str, skills: list[Any]) -> bool:
+    for s in skills:
+        if _skill_attr(s, "name", "") == name:
+            return not _is_user_invocable(s)
     return False
 
 
@@ -309,6 +349,19 @@ def _read_auto_disclosure_config(config: Any) -> dict[str, Any]:
         }
     except AttributeError:
         return {}
+
+
+def _read_knowledge_enabled_config(config: Any) -> bool:
+    """Return [skills].knowledge_enabled, defaulting to False for BC."""
+    if isinstance(config, dict):
+        skills_cfg = config.get("skills")
+        if isinstance(skills_cfg, dict):
+            return bool(skills_cfg.get("knowledge_enabled", False))
+        return False
+    try:
+        return bool(config.skills.knowledge_enabled)
+    except AttributeError:
+        return False
 
 
 _ASSERT_PROTOCOL: Component = SkillComponent()

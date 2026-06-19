@@ -95,6 +95,8 @@ _REPEAT_NUDGE_MSG = (
 _SELFCHECK_EVERY = 10  # base interval — tier 1 fires here
 _SELFCHECK_TIER2_AT = 20  # iter >= this → escalate
 _SELFCHECK_TIER3_AT = 30  # iter >= this → forced stop
+_TODO_SYNC_EVERY = 8
+_TODO_SYNC_MSG = "[当前任务进度]\n{body}\n请优先完成未完成项，勿遗漏。"
 
 _SELFCHECK_TIER1 = (
     "[self-check 第 1 级 / 第 {iter}/{max_iter} 轮 — 已用 {tools_used} 次工具调用]\n"
@@ -439,6 +441,9 @@ class AgentLoop:
         file_memory: Optional[Any] = None,  # deskpet.memory.file_memory.FileMemory
         force_finish_via_tool_choice: bool = True,
         tracer: Optional[Any] = None,
+        code_todo_getter: Optional[
+            Callable[[str], Awaitable[list[dict[str, Any]]]]
+        ] = None,
     ) -> None:
         self.llm = llm_registry
         self.tools = tool_registry
@@ -487,6 +492,7 @@ class AgentLoop:
         self.file_memory = file_memory
         self.force_finish_via_tool_choice = force_finish_via_tool_choice
         self._tracer = tracer
+        self.code_todo_getter = code_todo_getter
         # P5-S2 Phase 3.3: same-(name, args) repeat detection. When set,
         # the loop checks the activity store's per-session
         # ``tool_signature_window`` BEFORE dispatching each tool_call —
@@ -896,6 +902,33 @@ class AgentLoop:
                     and iteration >= _SELFCHECK_TIER3_AT
                 ):
                     _force_finish_next = True
+
+            if (
+                self.code_todo_getter is not None
+                and iteration % _TODO_SYNC_EVERY == 0
+                and iteration < _SELFCHECK_TIER3_AT
+            ):
+                try:
+                    todos = await self.code_todo_getter(session_id)
+                except Exception:
+                    todos = []
+                if todos:
+                    lines = []
+                    for t in todos:
+                        content = (t.get("content") or "")[:80]
+                        status = (t.get("status") or "").lower()
+                        mark = {"completed": "✓", "in_progress": "🔄"}.get(
+                            status, "⏳"
+                        )
+                        lines.append(f"  {mark} {content}")
+                    working_messages.append({
+                        "role": "system",
+                        "content": _TODO_SYNC_MSG.format(body="\n".join(lines)),
+                    })
+                    logger.info(
+                        "wi4_todo_sync sid=%s iter=%d n=%d",
+                        session_id, iteration, len(todos),
+                    )
 
             # WI-4a: 周期性 [目标锚定] 注入已删除 —— 改由循环前的 always-on 单点注入
             # (见上方 wi4a_goal_anchor_always_on)。always-on 那条 role=system 常驻、

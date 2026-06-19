@@ -828,6 +828,7 @@ def build_agent(
     # ★v3 round2 P0-6 补 4 个参数（main.py:4161 现场调用需要）
     max_iterations: int = 16,
     completion_probe=None,
+    code_todo_getter=None,
     max_completion_nudges: int = 2,
     signature_repeat_threshold=None,
     # Companion+Code v1 — WI-B3 goal_mode 接电
@@ -859,6 +860,7 @@ def build_agent(
         receipt_store_getter: 0-arg callable，返回 ReceiptStore 或 None
         max_iterations: AgentLoop 迭代上限（companion 16 / code 50）
         completion_probe: 完成探针 (P5-S2 Hook A)
+        code_todo_getter: code todo 快照读取器 (WI-4 Focus Chain)
         max_completion_nudges: 完成探针 nudge 上限
         signature_repeat_threshold: 死循环抑制阈值 (P5-S2 Phase 6)
 
@@ -997,6 +999,7 @@ def build_agent(
         tool_registry=tool_registry,
         max_iterations=max_iterations,
         completion_probe=completion_probe,
+        code_todo_getter=code_todo_getter,
         max_completion_nudges=max_completion_nudges,
         signature_repeat_threshold=signature_repeat_threshold,
         context_manager=context_manager,
@@ -5926,6 +5929,24 @@ async def control_channel(ws: WebSocket):
                                 )
                                 return []
 
+                        async def _code_todo_getter(_base_sid: str) -> list[dict]:
+                            try:
+                                cm_local = service_context.get("code_mode")
+                                if cm_local is None:
+                                    return []
+                                code_sid = cm_local.code_session_id(_base_sid)
+                                if not code_sid:
+                                    return []
+                                if _sdb is None:
+                                    return []
+                                return await _sdb.get_code_todos(code_sid)
+                            except Exception as _e:  # noqa: BLE001
+                                logger.warning(
+                                    "wi4_todo_getter_lookup_failed sid=%s err=%s",
+                                    _base_sid, str(_e)[:200],
+                                )
+                                return []
+
                         # P5-S2 Phase 6: pull supervisor-section knobs
                         # for the AgentLoop's in-loop death-loop
                         # suppression. Read fresh from config so a
@@ -5959,6 +5980,7 @@ async def control_channel(ws: WebSocket):
                             receipt_store_getter=_get_receipt_store,
                             max_iterations=_max_iter,
                             completion_probe=_completion_probe,
+                            code_todo_getter=_code_todo_getter,
                             max_completion_nudges=2,
                             signature_repeat_threshold=_sig_repeat_thr,
                             session_goal_store=_goal_store_for_agent,

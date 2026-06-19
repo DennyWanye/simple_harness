@@ -381,6 +381,8 @@ class SkillsCodifyConfig:
 @dataclass
 class SkillsConfig:
     """``[skills]`` top-level config table (WI-4.1+)."""
+    # WI-5: triggered background knowledge snippets. Default OFF for BC.
+    knowledge_enabled: bool = False
     auto_disclosure: SkillsAutoDisclosureConfig = field(
         default_factory=SkillsAutoDisclosureConfig
     )
@@ -1100,11 +1102,16 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
     # 全 None → 技能自创确认卡生产永不弹（boot 无 fp5_codify_wiring_ready 印证）。
     if "skills" in raw:
         raw_skills = dict(raw["skills"])
+        knowledge_enabled = bool(raw_skills.pop("knowledge_enabled", False))
         raw_ad = dict(raw_skills.pop("auto_disclosure", {}) or {})
         ad = _load_section(SkillsAutoDisclosureConfig, raw_ad)
         raw_cd = dict(raw_skills.pop("codify", {}) or {})
         cd = _load_section(SkillsCodifyConfig, raw_cd)
-        config.skills = SkillsConfig(auto_disclosure=ad, codify=cd)
+        config.skills = SkillsConfig(
+            knowledge_enabled=knowledge_enabled,
+            auto_disclosure=ad,
+            codify=cd,
+        )
     # P4-S15: stash the raw parsed TOML so consumers (MCP bootstrap, agent
     # bootstrap, etc.) can pick out their sections without us bolting on
     # a dataclass for each one.

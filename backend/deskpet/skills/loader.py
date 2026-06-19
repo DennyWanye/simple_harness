@@ -224,6 +224,7 @@ class SkillLoader:
         script_timeout_s: float = 10.0,
         debounce_s: float = 1.0,
         tool_registry: Any = None,
+        knowledge_enabled: bool = False,
     ) -> None:
         self._dirs: list[Path] = [
             Path(d) for d in (skill_dirs if skill_dirs is not None else _default_skill_dirs())
@@ -232,6 +233,7 @@ class SkillLoader:
         self._script_timeout_s = float(script_timeout_s)
         self._debounce_s = float(debounce_s)
         self._tool_registry = tool_registry
+        self._knowledge_enabled = bool(knowledge_enabled)
         # Scope inference: index 0 is built-in, index 1+ is user. The
         # first dir containing the path wins.
         self._lock = threading.Lock()
@@ -297,6 +299,13 @@ class SkillLoader:
                         continue
                     meta = self._load_single(skill_md, scope=scope)
                     if meta is None:
+                        continue
+                    # WI-5: `user-invocable: false` bundles are background
+                    # knowledge snippets, not user-callable skills. Keep them
+                    # entirely out of the loader snapshot unless the explicit
+                    # knowledge flag is on, preserving flag-off BC for desc
+                    # lists, /help surfaces, and skill_invoke.
+                    if not self._knowledge_enabled and not meta.user_invocable:
                         continue
                     # Tie-break: user scope wins over built-in. We iterate
                     # built-in first, so when a later "user" entry arrives
