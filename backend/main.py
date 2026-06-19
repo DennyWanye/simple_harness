@@ -20,6 +20,7 @@ import asyncio
 import os
 import re
 import secrets
+import uuid
 from contextlib import asynccontextmanager
 from zoneinfo import ZoneInfo
 
@@ -972,6 +973,22 @@ def build_agent(
                 "external_evaluator construction failed: %s — skipping", exc
             )
 
+    _agent_cfg = cfg.raw.get("agent", {}) if isinstance(cfg.raw, dict) else {}
+    _ff = bool(_agent_cfg.get("force_finish_tool_choice", True))
+    _trace_enabled = bool(_agent_cfg.get("trace_enabled", False))
+    _tracer = None
+    if _trace_enabled:
+        try:
+            from agent.trace import IterationTracer
+            _tracer = IterationTracer(
+                trace_dir=_paths.user_data_dir() / "traces",
+                session_id="",
+                task_id=str(uuid.uuid4()),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("iteration_tracer_init_failed: %s", exc)
+            _tracer = None
+
     return _AgentLoop(
         llm_registry=llm_registry,
         tool_registry=tool_registry,
@@ -1002,6 +1019,8 @@ def build_agent(
         # ─── WI-4b pre-flush：压缩前把任务态落 L1(跨 session 记任务)。模块级
         # _file_memory(L1048)在 build_agent 调用时已就绪；try 失败则 None(BC)。───
         file_memory=globals().get("_file_memory"),
+        force_finish_via_tool_choice=_ff,
+        tracer=_tracer,
     )
 
 

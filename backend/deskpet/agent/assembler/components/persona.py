@@ -59,7 +59,13 @@ _CODE_MODE_PERSONA_TEMPLATE = (
     "\n"
     "- 可用工具: read_file, write_file, edit_file, list_directory, glob, grep,\n"
     "  run_shell, web_fetch, web_search, todo_write, agent (subagent)。\n"
-    "- 长任务里 max 50 轮工具调用；答完用户原问题即停，不追求完美。"
+    "- 长任务里 max 50 轮工具调用；答完用户原问题即停，不追求完美。\n"
+    "\n"
+    "【第 5 步 · 收尾自查】说\"我完成了\"之前，逐项对照原始需求打勾：\n"
+    "  1. 列出用户最初要什么（需求清单）\n"
+    "  2. 逐项标 ✓/✗/部分；有 ✗ 必须回到执行或显式说明放弃理由\n"
+    "  3. 改了代码 → 必须已 verify（跑测试/真机/diff 看生效），不可\"应该没问题\"\n"
+    "  4. 最终回复给出：做了什么 + 验证证据 + 剩余项"
 )
 
 

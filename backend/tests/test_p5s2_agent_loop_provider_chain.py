@@ -71,6 +71,7 @@ class _FakeProvider:
         temperature: float | None = None,
         response_format: dict | None = None,
         model: str | None = None,
+        tool_choice: str | None = None,
     ) -> dict:
         self.call_count += 1
         # Provider may receive an override model; record it.

@@ -16,6 +16,21 @@ from providers._response_sanitizer import sanitize_response
 logger = structlog.get_logger()
 
 
+def _record_tool_choice_none_unsupported(provider: str, model: str) -> None:
+    try:
+        from observability.metrics_sink import record
+        record(
+            "tool_choice_none_unsupported",
+            {"provider": provider, "model": model},
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _is_tool_choice_400(exc: httpx.HTTPStatusError, body: str) -> bool:
+    return exc.response.status_code == 400 and "tool_choice" in (body or "")
+
+
 def _merge_code_params(payload: dict, code_params: dict | None) -> dict:
     """code-session-model-params: splice the per-session request fragment.
 
@@ -242,6 +257,7 @@ class OpenAICompatibleProvider:
         max_tokens: int = 8192,
         temperature: float | None = None,
         response_format: dict | None = None,
+        tool_choice: str | None = None,
     ) -> dict:
         """P4-S25 fix: HTTP-stream-as-transport, response-as-aggregate.
 
@@ -270,6 +286,7 @@ class OpenAICompatibleProvider:
             max_tokens=max_tokens,
             temperature=temperature,
             response_format=response_format,
+            tool_choice=tool_choice,
         ):
             if ev.get("type") == "final":
                 final_dict = ev
@@ -297,6 +314,7 @@ class OpenAICompatibleProvider:
         max_tokens: int = 8192,
         temperature: float | None = None,
         response_format: dict | None = None,
+        tool_choice: str | None = None,
     ) -> dict:
         """DEPRECATED: original ``stream: False`` implementation.
 
@@ -342,7 +360,7 @@ class OpenAICompatibleProvider:
         payload = _merge_code_params(payload, self.code_params)
         if tools:
             payload["tools"] = tools
-            payload["tool_choice"] = "auto"
+            payload["tool_choice"] = tool_choice or "auto"
         # P4-S25: structured output. OpenAI / the relay / DashScope use
         # `response_format`; Ollama ignores that and reads `format`.
         # We pass the OpenAI-shape through and ALSO emit Ollama's
@@ -474,6 +492,34 @@ class OpenAICompatibleProvider:
                 )
                 try:
                     data = await _send(stripped)
+                except httpx.HTTPStatusError as exc2:
+                    body2 = ""
+                    try:
+                        body2 = exc2.response.text[:300]
+                    except Exception:  # noqa: BLE001
+                        pass
+                    raise LLMProviderError(
+                        f"LLM HTTP {exc2.response.status_code} {exc2.response.reason_phrase}: "
+                        f"{body2}",
+                        status_code=exc2.response.status_code,
+                        error_class=classify_relay_error(
+                            exc2.response.status_code, body2
+                        ),
+                    ) from exc2
+            elif (
+                "tool_choice" in payload
+                and _is_tool_choice_400(exc, body_snippet)
+            ):
+                payload = dict(payload)
+                payload.pop("tool_choice", None)
+                _record_tool_choice_none_unsupported(self.base_url, self.model)
+                logger.warning(
+                    "openai_compat_tool_choice_unsupported_retry",
+                    model=self.model,
+                    base_url=self.base_url,
+                )
+                try:
+                    data = await _send(messages)
                 except httpx.HTTPStatusError as exc2:
                     body2 = ""
                     try:
@@ -636,6 +682,7 @@ class OpenAICompatibleProvider:
         max_tokens: int = 8192,
         temperature: float | None = None,
         response_format: dict | None = None,
+        tool_choice: str | None = None,
     ):
         """P4-S25 A1: streaming version of chat_with_tools.
 
@@ -688,7 +735,7 @@ class OpenAICompatibleProvider:
         )
         if tools:
             payload["tools"] = tools
-            payload["tool_choice"] = "auto"
+            payload["tool_choice"] = tool_choice or "auto"
         if response_format is not None:
             payload["response_format"] = response_format
             rf_type = response_format.get("type") if isinstance(response_format, dict) else None
@@ -727,6 +774,7 @@ class OpenAICompatibleProvider:
         # have NULL reasoning_content rows).
         used_messages = messages
         used_payload = payload
+        tool_choice_stripped = False
         for attempt, delay in enumerate(backoffs):
             if delay:
                 await _asyncio.sleep(delay)
@@ -771,8 +819,23 @@ class OpenAICompatibleProvider:
                         stripped=len(used_messages),
                     )
                     continue  # retry the loop with stripped messages
-                # WI-R5: classify relay 402 (余额不足) / 401 (key 失效)
-                # into a structured error_class so the chat layer can show
+                if (
+                    not tool_choice_stripped
+                    and "tool_choice" in used_payload
+                    and _is_tool_choice_400(exc, body)
+                ):
+                    tool_choice_stripped = True
+                    used_payload = dict(used_payload)
+                    used_payload.pop("tool_choice", None)
+                    _record_tool_choice_none_unsupported(self.base_url, self.model)
+                    logger.warning(
+                        "openai_compat_stream_tool_choice_unsupported_retry",
+                        model=self.model,
+                        base_url=self.base_url,
+                    )
+                    continue
+                # WI-R5: classify relay 402 / 401 into a structured
+                # error_class so the chat layer can show
                 # a friendly message + 充值 link / drive the key-rotation
                 # retry, instead of bubbling a half-raw HTTP error.
                 raise LLMProviderError(
@@ -852,6 +915,7 @@ class OpenAICompatibleProvider:
                     max_tokens=max_tokens,
                     temperature=temperature,
                     response_format=response_format,
+                    tool_choice=tool_choice,
                 )
                 # Yield a synthetic terminal event so the streaming consumer
                 # can treat this exactly like a completed SSE stream. No

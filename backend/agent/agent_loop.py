@@ -437,6 +437,8 @@ class AgentLoop:
         # 跨 session 记住任务(frozen-snapshot → 只对下个 session 生效)。None (默认)
         # → 不 flush(BC)。每个 run 最多 flush 一次(限频,防刷爆 MEMORY.md 50KB cap)。
         file_memory: Optional[Any] = None,  # deskpet.memory.file_memory.FileMemory
+        force_finish_via_tool_choice: bool = True,
+        tracer: Optional[Any] = None,
     ) -> None:
         self.llm = llm_registry
         self.tools = tool_registry
@@ -483,6 +485,8 @@ class AgentLoop:
         self.tool_path_recorder = tool_path_recorder
         # WI-4b pre-flush L1 句柄（BC: None → 不 flush）。
         self.file_memory = file_memory
+        self.force_finish_via_tool_choice = force_finish_via_tool_choice
+        self._tracer = tracer
         # P5-S2 Phase 3.3: same-(name, args) repeat detection. When set,
         # the loop checks the activity store's per-session
         # ``tool_signature_window`` BEFORE dispatching each tool_call —
@@ -602,6 +606,8 @@ class AgentLoop:
         # is the source of truth for hard-cap enforcement; this var is
         # purely informational.
         tools_used_count = 0
+        _verify_final_done = False
+        _force_finish_queued = False
 
         # P5-S2 B3: warn-once latch so we don't spam the WARN log every
         # iteration once we're in the 80-95% band.
@@ -655,6 +661,16 @@ class AgentLoop:
         self._skills_used_this_run: set[str] = set()
 
         for iteration in range(1, self.max_iterations + 1):
+            _force_finish_next = False
+            if _force_finish_queued:
+                _force_finish_next = True
+                _force_finish_queued = False
+            if self._tracer:
+                self._tracer.record({
+                    "kind": "iter_start",
+                    "iter": iteration,
+                    "msg_count": len(working_messages),
+                })
             # P6 Phase 6 — TerminationGate.allows_call() is always run.
             # Checks hard limits (turns, wall-clock, cost) BEFORE we burn
             # another LLM call. The gate is the single source of truth
@@ -875,6 +891,11 @@ class AgentLoop:
                     session_id, tid, iteration, budget_left, tier, tools_used,
                     self.structured_reflection,
                 )
+                if (
+                    self.force_finish_via_tool_choice
+                    and iteration >= _SELFCHECK_TIER3_AT
+                ):
+                    _force_finish_next = True
 
             # WI-4a: 周期性 [目标锚定] 注入已删除 —— 改由循环前的 always-on 单点注入
             # (见上方 wi4a_goal_anchor_always_on)。always-on 那条 role=system 常驻、
@@ -911,6 +932,7 @@ class AgentLoop:
                                 max_tokens=int(llm_kwargs.get("max_tokens", 8192)),
                                 temperature=llm_kwargs.get("temperature"),
                                 response_format=llm_kwargs.get("response_format"),
+                                tool_choice=("none" if _force_finish_next else None),
                             )
                         except LLMProviderError as exc:
                             last_exc = exc
@@ -975,12 +997,16 @@ class AgentLoop:
                     final_dict: dict | None = None
                     delta_count = 0
                     stream_failed_with: Exception | None = None
+                    call_llm_kwargs = (
+                        {**llm_kwargs, "tool_choice": "none"}
+                        if _force_finish_next else llm_kwargs
+                    )
                     try:
                         async for ev in self.llm.chat_with_fallback_stream(  # type: ignore[attr-defined]
                             working_messages,
                             tools=tool_schemas or None,
                             model=use_model,
-                            **llm_kwargs,
+                            **call_llm_kwargs,
                         ):
                             ev_type = ev.get("type")
                             if ev_type == "delta":
@@ -1039,7 +1065,7 @@ class AgentLoop:
                             working_messages,
                             tools=tool_schemas or None,
                             model=use_model,
-                            **llm_kwargs,
+                            **call_llm_kwargs,
                         )
                     else:
                         # Convert to ChatResponse to share the rest of the
@@ -1047,11 +1073,15 @@ class AgentLoop:
                         from agent.tool_use_shim import _raw_to_response
                         response = _raw_to_response(final_dict)
                 else:
+                    call_llm_kwargs = (
+                        {**llm_kwargs, "tool_choice": "none"}
+                        if _force_finish_next else llm_kwargs
+                    )
                     response = await self.llm.chat_with_fallback(
                         working_messages,
                         tools=tool_schemas or None,
                         model=use_model,
-                        **llm_kwargs,
+                        **call_llm_kwargs,
                     )
             except LLMBudgetExceededError as exc:
                 yield ErrorEvent(
@@ -1082,6 +1112,22 @@ class AgentLoop:
             # 第 3 刀: 记录 relay 真实 prompt 大小,喂下一轮 compaction 判定。
             if response.usage.input_tokens > _last_real_prompt_tokens:
                 _last_real_prompt_tokens = response.usage.input_tokens
+            if self._tracer:
+                self._tracer.record({
+                    "kind": "llm_out",
+                    "iter": iteration,
+                    "stop_reason": response.stop_reason,
+                    "content_preview": (response.content or "")[:200],
+                    "tool_calls": [
+                        {"name": tc.name, "args": tc.arguments}
+                        for tc in response.tool_calls
+                    ],
+                    "usage": (
+                        response.usage.model_dump()
+                        if hasattr(response.usage, "model_dump")
+                        else {}
+                    ),
+                })
 
             # P6 Phase 6 — record the turn (advances turns_used and
             # optionally adds to cost_usd if the response carries a
@@ -1109,6 +1155,35 @@ class AgentLoop:
 
             # End of conversation — emit final and stop.
             if response.stop_reason != "tool_use" or not response.tool_calls:
+                # WI-1 §17.6 — verify_exhausted final-summary turn: when this
+                # is the single forced "summarize then stop" turn granted after
+                # verify-gate exhaustion (_verify_final_done set + force_finish
+                # consumed this iteration), the model has now produced its
+                # plain-text summary. Surface it as the terminal
+                # ErrorEvent(verify_exhausted) (summary carried in detail) so the
+                # failure is still reported while the user gets the summary.
+                # Without this, the verify block's own entry guard
+                # (verify_nudges_used < max) skips re-entry on this turn and the
+                # run would silently end as a FinalEvent, hiding the failure.
+                if _verify_final_done and _force_finish_next:
+                    if self._tracer:
+                        self._tracer.record({
+                            "kind": "end",
+                            "iter": iteration,
+                            "reason": "verify_exhausted",
+                            "gate_summary": self._gate.summary(),
+                        })
+                    yield ErrorEvent(
+                        type="error",
+                        task_id=tid,
+                        iteration=iteration,
+                        reason="verify_exhausted",
+                        detail=(
+                            response.content
+                            or "verify-gate: all retries exhausted"
+                        ),
+                    )
+                    return
                 # P5-S2 Hook A: completion guard. Before truly finalizing,
                 # ask the caller (via ``completion_probe``) whether session-
                 # level work (todos) is actually finished. If the LLM said
@@ -1118,6 +1193,8 @@ class AgentLoop:
                 # ``max_completion_nudges`` so we can't loop forever when
                 # the LLM digs in.
                 if (
+                    iteration < _SELFCHECK_TIER3_AT
+                    and
                     self.completion_probe is not None
                     and self.max_completion_nudges > 0
                     and completion_nudges_used < self.max_completion_nudges
@@ -1131,6 +1208,14 @@ class AgentLoop:
                         )
                         incomplete = []
                     if incomplete:
+                        if self._tracer:
+                            self._tracer.record({
+                                "kind": "gate",
+                                "iter": iteration,
+                                "which": "completion",
+                                "passed": False,
+                                "reason": "incomplete_todos",
+                            })
                         completion_nudges_used += 1
                         # Build the rebound system message. Keep it brief
                         # — long prompts crowd the context window.
@@ -1170,6 +1255,14 @@ class AgentLoop:
                         # Skip the final emission and re-iterate. The
                         # next LLM call sees the nudge.
                         continue
+                    if self._tracer:
+                        self._tracer.record({
+                            "kind": "gate",
+                            "iter": iteration,
+                            "which": "completion",
+                            "passed": True,
+                            "reason": "",
+                        })
 
                 # WI-T2.6 last-mile P0-3: VerifyGate end_turn 守门（PRD §3 D6）。
                 # 同 completion_probe 模式 — 守门返回 outcome.passed=False 时
@@ -1177,6 +1270,8 @@ class AgentLoop:
                 # 控制重试上限（PRD: failure_count==3 时调度 ephemeral → 仍
                 # fail 才强退）。flag-off 时 verify_gate=None 跳过整段（BC）。
                 if (
+                    iteration < _SELFCHECK_TIER3_AT
+                    and
                     self.verify_gate is not None
                     and getattr(self.verify_gate, "mode", "off") != "off"
                     and verify_nudges_used < self.max_verify_nudges
@@ -1214,6 +1309,14 @@ class AgentLoop:
 
                     if (v_outcome is not None and not v_outcome.passed
                             and v_outcome.unmatched_claims):
+                        if self._tracer:
+                            self._tracer.record({
+                                "kind": "gate",
+                                "iter": iteration,
+                                "which": "verify",
+                                "passed": False,
+                                "reason": "unmatched_claims",
+                            })
                         verify_nudges_used += 1
 
                         # WI-2.2: stagnation detection — if 2nd+ rebound and
@@ -1294,6 +1397,28 @@ class AgentLoop:
                                     })
                                 except Exception:  # noqa: BLE001
                                     pass
+                                if (
+                                    self.force_finish_via_tool_choice
+                                    and not _verify_final_done
+                                ):
+                                    _verify_final_done = True
+                                    _force_finish_queued = True
+                                    working_messages.append({
+                                        "role": "system",
+                                        "content": (
+                                            "verify 多次未对齐 ledger，本轮必须 end_turn："
+                                            "向用户如实总结做了什么、哪些未能验证、建议下一步。"
+                                            "不要再调用任何工具。"
+                                        ),
+                                    })
+                                    continue
+                                if self._tracer:
+                                    self._tracer.record({
+                                        "kind": "end",
+                                        "iter": iteration,
+                                        "reason": "verify_exhausted",
+                                        "gate_summary": self._gate.summary(),
+                                    })
                                 yield ErrorEvent(
                                     type="error",
                                     task_id=tid,
@@ -1381,6 +1506,14 @@ class AgentLoop:
                             logger.info(
                                 "verify_gate.ephemeral_rescued sid=%s", session_id,
                             )
+                    elif self._tracer and v_outcome is not None:
+                        self._tracer.record({
+                            "kind": "gate",
+                            "iter": iteration,
+                            "which": "verify",
+                            "passed": True,
+                            "reason": "",
+                        })
 
                 # WI-B3 Companion+Code v1 — /goal end_turn rebound. Same
                 # safe-fail pattern as completion_probe / verify_gate:
@@ -1391,6 +1524,8 @@ class AgentLoop:
                 # = None, or no active goal, or goal.done already) →
                 # skip the block entirely (BC).
                 if (
+                    iteration < _SELFCHECK_TIER3_AT
+                    and
                     self.session_goal_store is not None
                     and self.goal_checker is not None
                 ):
@@ -1435,6 +1570,14 @@ class AgentLoop:
                             )
                             # 不 continue，让正常 FinalEvent 流程继续
                         elif not _done:
+                            if self._tracer:
+                                self._tracer.record({
+                                    "kind": "gate",
+                                    "iter": iteration,
+                                    "which": "goal",
+                                    "passed": False,
+                                    "reason": str(_hint or "")[:200],
+                                })
                             self.session_goal_store.increment_iteration(session_id)
                             # T1：落库 iterations_used，重启不归零。safe-fail
                             # 内置于 persist_iteration；getattr 兜底旧 store。
@@ -1470,6 +1613,14 @@ class AgentLoop:
                             )
                             continue
                         else:
+                            if self._tracer:
+                                self._tracer.record({
+                                    "kind": "gate",
+                                    "iter": iteration,
+                                    "which": "goal",
+                                    "passed": True,
+                                    "reason": "",
+                                })
                             self.session_goal_store.mark_done(session_id)
                             # 落库 done 终态（与 increment 落库对称）：否则
                             # load_persisted 只召回 status='active'，已完成目标
@@ -1574,6 +1725,13 @@ class AgentLoop:
                 # before we emit the FinalEvent so consumers reading
                 # gate.summary() after a run see SUCCESS / matching reason.
                 self._gate.record_final_answer()
+                if self._tracer:
+                    self._tracer.record({
+                        "kind": "end",
+                        "iter": iteration,
+                        "reason": response.stop_reason or "end_turn",
+                        "gate_summary": self._gate.summary(),
+                    })
 
                 yield FinalEvent(
                     type="final",
@@ -1786,6 +1944,15 @@ class AgentLoop:
                     )
                 else:
                     result_str = result
+                if self._tracer:
+                    self._tracer.record({
+                        "kind": "tool_result",
+                        "iter": iteration,
+                        "name": tc.name,
+                        "args": tc.arguments,
+                        "ok": not isinstance(result, BaseException),
+                        "result_preview": str(result_str)[:200],
+                    })
                 yield ToolResultEvent(
                     type="tool_result",
                     task_id=tid,
