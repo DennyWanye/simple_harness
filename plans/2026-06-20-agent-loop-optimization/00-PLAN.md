@@ -636,4 +636,101 @@ return _err("no exact match", hint="见 did_you_mean", extra={
 - **裁定：达到「有经验工程师可照本 plan 100% 无需再做设计决策执行」的标准**（剩余只是机械的行号核对，非设计空白）。R3 不再新增设计，仅供实现期回填真实行号。
 
 ---
-（v1 + R1 + R2 修订完。plan 收敛，可执行。）
+
+## 16. R3 挑战修订（核验 §15 骨架，权威，只增不删）
+
+> R3 两子代理（骨架逐段核验 / 实现者干跑）对 §15.2 附录 A 做最后核验，发现 **3 个骨架自身的真 bug**（非行号漂移）+ 1 处设计空白。本节修正，**与 §15 冲突处以本节为准**。R3 同时确认：A-1 三路径、A-3、A-4 骨架正确可照抄；方法行号 `_legacy_chat_with_tools_nonstream`(292)、`chat_stream_with_tools`(631) 核实无误；§15 全部关键行号(657/858/898/979/1050/1120/1179/1393/3860/5058)再次确认真实。
+
+### 16.1 🔴 修正 A-6（WI-4 todo sync — 原 list comprehension 语法错）
+原 §15.2 A-6 的一行式 `{{'completed':'✓',...}}.get(s,'⏳')` 在 f-string 里大括号转义错误、跑不通。**以下显式循环版为准**（与 §5.3 一致）：
+```python
+if self.code_todo_getter is not None and iteration % _TODO_SYNC_EVERY == 0:
+    try:
+        todos = await self.code_todo_getter(session_id)   # get_code_todos 已是 async ✅
+    except Exception:
+        todos = []
+    if todos:
+        lines = []
+        for t in todos:
+            content = (t.get("content") or "")[:80]
+            status = (t.get("status") or "").lower()
+            mark = {"completed": "✓", "in_progress": "🔄"}.get(status, "⏳")
+            lines.append(f"  {mark} {content}")
+        working_messages.append({"role": "system",
+                                 "content": _TODO_SYNC_MSG.format(body="\n".join(lines))})
+```
+
+### 16.2 🔴 修正 A-7（WI-6 edit_file 降级 — 缺 file_lines 定义）
+原 §15.2 A-7 直接用 `file_lines` 但未定义 → NameError。**降级分支开头必须先建 `file_lines`**，且 did_you_mean 对**行**做匹配：
+```python
+# count == 0（精确未命中）降级分支：
+file_lines = text.split("\n")                  # ← 必须先定义（原骨架漏）
+# ① whitespace fallback：strip 每行比对，唯一命中→按原缩进替换；多命中→转 ③
+# ② anchor fallback：old 首尾 1-2 行定位，SequenceMatcher.ratio()≥0.85 且唯一→替换；否则→③
+# ③ did_you_mean：
+import difflib
+cands = difflib.get_close_matches(old_string, file_lines, n=3, cutoff=0.6)
+return _err("no exact match", hint="见 did_you_mean",
+            matched_by="none",
+            did_you_mean=[{"line": file_lines.index(c) + 1, "text": c} for c in cands])
+```
+> 注：真实 `_err(error, hint, **extra)`（`edit_file.py:30`）—— extra 走 kwargs，故上面把 `matched_by`/`did_you_mean` 作为 kwargs 直接传（不是包在 `extra={}` 里）。`fuzzy` 是 `edit_file` **新增**参数（现签名无，需加，默认 True）。
+
+### 16.3 🔴 修正 A-4/A-5（WI-7 responder 契约 — 原 `.send()` 接口未定义，真 BLOCKING）
+真实 `_permission_responder`（`main.py:499`）是 **`async def _permission_responder(req) -> PermissionResponse`**：内部 `ws = _control_connections.get(req.session_id)` → `ws.send_json({...})` → 建 future → `await fut`。**不是 `responder.send()` 对象**。WI-7 照同构定义一个**澄清 sender 闭包**，工具 handler 只 await 它：
+
+```python
+# main.py 模块级（与 _permission_pending 同处）：
+_clarify_pending: dict[str, asyncio.Future] = {}     # ← 新增模块级 dict
+
+# main.py 内构造 sender 闭包（与 _permission_responder 同构）：
+async def _clarify_ask(question: str, options: list[str], session_id: str) -> str:
+    ws = _control_connections.get(session_id) or _control_connections.get("default")
+    if ws is None:
+        return ""                                     # 无连接→空答（handler 判空降级）
+    rid = str(uuid.uuid4())
+    loop = asyncio.get_running_loop()
+    fut = loop.create_future()
+    _clarify_pending[rid] = fut
+    try:
+        await ws.send_json({"type": "clarification_request",
+                            "payload": {"request_id": rid, "question": question, "options": options}})
+        return await asyncio.wait_for(fut, timeout=120)
+    except asyncio.TimeoutError:
+        return ""                                     # 超时→空答
+    finally:
+        _clarify_pending.pop(rid, None)               # ← 必有，防泄漏
+
+# 工具 handler（clarify_tool.py）只依赖一个 async callable，不依赖 .send 对象：
+def build_ask_clarification_tool(ask_fn):             # ask_fn = _clarify_ask
+    async def _handler(args, task_id="", session_id="default"):
+        answer = await ask_fn(args["question"], args.get("options", []), session_id)
+        if answer:
+            return json.dumps({"ok": True, "answer": answer})
+        return json.dumps({"ok": False, "reason": "user_did_not_respond_or_no_channel"})
+    return _handler, _SCHEMA
+```
+- recv 主循环分支（§15 A-4）不变，仍 `elif msg_type == "clarification_response": fut=_clarify_pending.get(rid); fut.set_result(payload.get("answer",""))`。
+- **关键**：`_clarify_ask` 内部 await future、`_clarify_pending` 模块级、回答走独立 control 分支 —— 三者合起来才避开 §13.7 H1 的 cancel 竞态。
+
+### 16.4 修正 A-2（三处 nudge 守卫 — 逐处调括号，非套模板）
+R3 确认 completion(1120)/verify(1179)/goal(1393) 三处最外层 `if` 条件各不相同（verify 还有 `getattr` 多条件、goal 内部 1398 还有嵌套 if）。加 `iteration < _SELFCHECK_TIER3_AT and` 时**逐处把它并进该处真实条件的最外层**（必要时整体加括号），不要套同一字符串模板。短任务到不了 30，守卫恒真无副作用（R3 确认）。
+
+### 16.5 消解 WI-7 前端设计空白（用默认决策，避免 punt）
+R3 指出 `ClarificationDialog` 的 options/输入框交互是设计空白。**本 plan 拍定默认行为**（实现者无需再问产品）：
+- `question` 纯文本渲染（**不**支持 markdown，避免注入）。
+- `options` 非空 → 渲染为按钮列表，点击即把该 option 文本作为 answer 发 `clarification_response`。
+- **始终**同时显示一个自由输入框（即使有 options），用户可不选按钮、直接输入；回车/确认即发 answer。
+- 复用 `tauri-app/src/hooks/usePermissionRequests.ts` 的 pending/resolve 模式，新增 `useClarificationRequests` + `ClarificationDialog`；回复经 **control WS** 发 `{type:"clarification_response", payload:{request_id, answer}}`。
+
+### 16.6 测试基础设施补充（R3 实现者干跑发现）
+- WI-1 测试要断言 provider 收到 `tool_choice`：现有 `_FakeProvider`（`test_p5s2_agent_loop_provider_chain.py`）的 `chat_with_tools` 无 tool_choice 形参 → 测试里**扩展一个 mock 子类**：`chat_with_tools(self, *a, tool_choice=None, **kw)` 内 `self.last_tool_choice = tool_choice`，断言之。这是测试基建改造，非生产代码。
+- WI-7 `test_clarify_not_cancelled_by_new_chat`：构造挂起的 `_clarify_ask`（future 未 resolve），模拟收到一条 `chat` 消息，断言该 future 未被 cancel（因为走独立分支、不进 `_chat_inflight` cancel 路径）。
+
+### 16.7 R3 收敛判定
+- R3 把「可照抄落地」从 §15 的骨架级提升到**逐行无误**：3 个骨架 bug（A-6 语法 / A-7 漏定义 / A-5 responder 契约）已在 §16 修正并给出真实可跑代码；WI-7 唯一的设计空白（前端交互）已用 §16.5 默认决策消解。
+- 剩余仅「实现期 grep 复核 main.py 行号」这一**活代码库固有机械成本**，plan 已逐处标注。
+- **裁定：plan 已收敛到「有经验工程师可照本 plan + §13/§15/§16 修订，无需再做任何设计决策、直接编码」**。R3 是最后一轮设计层核验；R4 不再需要（无新设计面，只剩落地时的行号回填）。
+
+---
+（v1 + R1 + R2 + R3 修订完。plan 收敛至可执行，挑战迭代结束。）
