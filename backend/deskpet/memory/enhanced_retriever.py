@@ -140,6 +140,7 @@ class EnhancedRetriever:
         cur_session_id: str | None = None,
         cur_session_kind: str | None = None,
         cross_session_decay: float | None = None,
+        recency_half_life_days: float | None = None,
     ) -> list[Hit]:
         """Wrapped recall.
 
@@ -160,6 +161,19 @@ class EnhancedRetriever:
 
         # Ask base for a wider window so we don't truncate good candidates
         # before merge + rerank get a chance.
+        #
+        # IMPORTANT (2026-06-19 task-scope-context-isolation / WI-2): this
+        # wrapper MUST mirror the base ``Retriever.recall`` signature 1:1 and
+        # forward every session-scoping kwarg (cur_session_id / cur_session_kind
+        # / cross_session_decay / recency_half_life_days). When a kwarg is added
+        # to the base but not here, ``MemoryManager._safe_l3`` calling us with
+        # that kwarg raises ``TypeError: recall() got an unexpected keyword
+        # argument …`` — which the manager's ``except TypeError`` mis-reads as a
+        # test-double signature and retries ``recall(query, {policy dict})``,
+        # passing a dict as ``top_k``. The dict then reaches the base's
+        # ``max(top_k, policy.top_k)`` → ``'>' not supported between instances of
+        # 'int' and 'dict'`` and the whole L3 layer degrades. So: keep the
+        # forwarding list in sync with the base.
         widened_k = max(effective_top_k, _RERANK_INPUT_K) if self._reranker else effective_top_k
         base_hits = await self._base.recall(
             effective_query,
@@ -167,6 +181,7 @@ class EnhancedRetriever:
             cur_session_id=cur_session_id,
             cur_session_kind=cur_session_kind,
             cross_session_decay=cross_session_decay,
+            recency_half_life_days=recency_half_life_days,
         )
 
         # No plug-ins active → byte-identical legacy path.
