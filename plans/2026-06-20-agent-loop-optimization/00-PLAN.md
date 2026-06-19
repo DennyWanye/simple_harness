@@ -733,4 +733,56 @@ R3 指出 `ClarificationDialog` 的 options/输入框交互是设计空白。**�
 - **裁定：plan 已收敛到「有经验工程师可照本 plan + §13/§15/§16 修订，无需再做任何设计决策、直接编码」**。R3 是最后一轮设计层核验；R4 不再需要（无新设计面，只剩落地时的行号回填）。
 
 ---
-（v1 + R1 + R2 + R3 修订完。plan 收敛至可执行，挑战迭代结束。）
+
+## 17. R4 挑战修订（核验 §16 自身 + 跨 WI 整体集成，权威，只增不删）
+
+> R4 两子代理（核验 R3 修订自身 / 跨 WI 整体交互——此前各轮未系统做）。结论：§16 修订自身 99% 站得住（`_err(error,hint,**extra)`@`edit_file.py:30`、`_control_connections`@`main.py:2797`、`_permission_pending`@`main.py:497`、`ws.send_json`、前端 `usePermissionRequests.ts` pending/resolve+`channel.send` 均核实真实）。本节修 R4 发现的 1 个笔误 + 1 个真缺口 + 2 个澄清。**与前文冲突处以本节为准。**
+
+### 17.1 🔴 补 `import uuid`（§16.3 用了 `uuid.uuid4()` 但 main.py 未 import）
+R4 核实 main.py 头部**无 `import uuid`**、全文无 `uuid.` 用例 → §16.3 的 `_clarify_ask` 会 `NameError`。**修**：在 main.py import 段加 `import uuid`；或复用项目既有 id 生成（ref-store/任务用 `secrets.token_urlsafe`）——二选一，推荐 `import uuid` 最直观。
+
+### 17.2 🔴 WI-4 todo sync 也要加 tier3 守卫（§13.1 B4 漏覆盖）
+§13.1 B4 给 completion/verify/goal **nudge** 加了 `iteration < _SELFCHECK_TIER3_AT` 守卫，但 **WI-4 todo sync（Focus Chain）同是"还有未完成、继续做"的信号**，与 tier3"立即收尾"矛盾，却未纳入守卫。**修**：§15.2 A-6 / §16.1 的 todo sync 注入条件追加 tier3 守卫：
+```python
+if (self.code_todo_getter is not None
+        and iteration % _TODO_SYNC_EVERY == 0
+        and iteration < _SELFCHECK_TIER3_AT):          # ← R4 新增，与 B4 一致
+    ...
+```
+
+### 17.3 🟡 WI-2 IterationTracer 并发写安全（明确 record 位置 + 隔离）
+工具经 `asyncio.gather` 并发分发，但 agent_loop **在 gather 之后用顺序 for 遍历 `dispatch_results`**（`agent_loop.py:1521` 区）。**约束**：`tracer.record(tool_result)` 必须放在那个**顺序 for 循环里**（不是放进并发的 `_dispatch_one` 内）→ 天然无并发写。额外保险：
+- 文件按 `task_id` 隔离（`<trace_dir>/<task_id>.jsonl`）→ spawn_team 并行子代理各写各的，不冲突。
+- `IterationTracer.record` 内仍加一个 `threading.Lock`（廉价）兜底，防未来有人误把 record 移进并发路径。
+
+### 17.4 🟡 澄清：三道守门 `continue` 顺序短路 → 一轮最多一条 nudge
+R4 整体审查担忧"单轮堆 5-7 条 system 消息"——**纠正**：completion→verify→goal 三道守门是顺序判定，任一注入 nudge 后即 `continue` 跳出本轮（不会继续判后面两道）。故**一轮最多触发一条 nudge**，不会三条齐堆。加上 17.2 后，tier3+ 连这一条也禁。token 累积风险由 ContextManager.check_budget 既有机制兜底（与本批正交）。仍建议补一条错峰单测：
+- `test_selfcheck_todo_offpeak`：断言 iter 8/16/24 只注 todo、iter 10/20/30 只注 selfcheck、iter 40（LCM）才同时（且 40≥30 时 todo 被 tier3 守卫挡掉）。
+
+### 17.5 🟡 _FakeProvider 升级范围（澄清 §16.6）
+R4 统计 ~37 测试文件引用 AgentLoop/provider。但**绝大多数 mock 的 `chat_with_tools`/`chat_with_fallback` 已用 `**kw`/`**kwargs` 吞参**（grep 可见 `chat_with_fallback(self, *a, **k)` 等）→ 新增 `tool_choice` kwarg **不破坏**它们。**只有显式列全参数、无 `**kw` 的 fake 需补 `tool_choice=None`**（主要是 `test_p5s2_agent_loop_provider_chain.py` 的 `_FakeProvider`，且本就要扩展它做 §15.5 的 `last_tool_choice` 断言）。实现时 grep `def chat_with_tools` + `def chat_with_fallback` 无 `**` 的逐个补。
+
+### 17.6 🟡 WI-1 verify_exhausted（B5）给出代码骨架（升为 WI-1 必做，含防循环 latch）
+§13.1 B5 只描述未给骨架。**补**（`agent_loop.py:1297` 区 verify_exhausted 分支）：
+```python
+# 原: yield ErrorEvent(reason="verify_exhausted"); return
+if self.force_finish_via_tool_choice and not _verify_final_done:
+    _verify_final_done = True                       # ← run() 局部 latch，初值 False（604 区）
+    _force_finish_next = True                       # 下一轮 tool_choice=none，只出文本
+    working_messages.append({"role": "system",
+        "content": "verify 多次未对齐 ledger，本轮必须 end_turn：向用户如实总结做了什么、"
+                   "哪些未能验证、建议下一步。不要再调用任何工具。"})
+    continue                                         # 给最后一轮纯文本收尾
+# 已给过最后一轮仍不行 → 维持原硬退
+yield ErrorEvent(type="error", task_id=tid, iteration=iteration, reason="verify_exhausted", detail="...")
+return
+```
+> latch `_verify_final_done` 保证最多再来一轮，不会无限循环。flag off（`force_finish_via_tool_choice=False`）→ 走原硬退（BC）。
+
+### 17.7 R4 收敛判定
+- R4 核验 §16 自身：仅 1 笔误（uuid import），无新引入设计错；跨 WI 整体审查新增 2 个真缺口（todo sync tier3 守卫 / verify_exhausted 骨架）+ 2 澄清（并发写位置 / nudge 顺序短路），均已在 §17 闭合并给代码。
+- 四轮发现量单调收敛：R1（4 设计 bug）→ R2（骨架级补全）→ R3（3 骨架笔误+1 接口）→ R4（1 笔误+1 守卫缺口）。bug 量级与影响面持续下降，无反弹。
+- **裁定：plan 设计层与代码骨架层已全部闭合**，剩余仅「实现期 grep 行号回填 + 逐个补无-`**kw` 的 fake」这类机械落地工，无任何待定设计决策。挑战迭代到此**真正收敛**，R5 无新面可挑。
+
+---
+（v1 + R1 + R2 + R3 + R4 修订完。plan 收敛至可执行，挑战迭代结束。）
