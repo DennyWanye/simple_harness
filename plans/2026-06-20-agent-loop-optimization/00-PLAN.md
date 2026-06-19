@@ -472,4 +472,168 @@ class IterationTracer:
 - WI-7：语音 TTS 播报 question；options 的语音可达交互。
 
 ---
-（v1 + R1 修订完。下一步：R2 挑战验证修订是否闭合，详见后续追加。）
+
+## 15. R2 挑战修订 + 代码实施参考（附录，权威，只增不删）
+
+> R2 两子代理（修订核实 / 终审可执行性）结论：§13 修订方向 100% 正确、关键行号已核实（657/858/898/979/1050/3860/5058/6418 均真实存在）。剩余缺口＝「置位写哪行 / 竞态防护代码 / 参数签名」需要**代码骨架**才能 100% 无歧义。本节补齐。**行号为锚点，实现前 grep 复核（main.py 体量大、易漂移）。**
+
+### 15.1 修正（覆盖 §13.0 A2 笔误）
+- config flag 读取正确写法是 **`cfg.raw.get("agent", {}).get("force_finish_tool_choice", True)`**（属性名是 `.raw` 不是 `.raw_config`）。参考真实用例 `main.py:5171` `config.raw.get("companion")`、`main.py:249` `(config.raw.get("llm") or {}).get(...)`。§13.0 A2 引用的 `main.py:872 verifier_cfg` 是 dataclass 属性读法、不对标，以本条为准。
+
+### 15.2 附录 A — 代码骨架
+
+**A-1 · WI-1 `_force_finish_next` 三路径（agent_loop.py）**
+```python
+# for 循环顶部（657）—— 每轮复位，防粘连
+for iteration in range(1, self.max_iterations + 1):
+    _force_finish_next = False                      # ← 新增（657 区）
+
+    # ... gate.allows_call / check_budget / compressor ...
+
+    # selfcheck 注入块（858 区）—— 置位必须在此，早于任何 LLM 调用
+    if iteration > 0 and iteration % _SELFCHECK_EVERY == 0:
+        ...                                          # 既有注入逻辑不动
+    if self.force_finish_via_tool_choice and iteration >= _SELFCHECK_TIER3_AT:
+        _force_finish_next = True                    # ← 新增置位（在 884 行 LLM try 之前）
+
+    # chain 路径（898）：
+    raw = await prov.chat_with_tools(
+        working_messages, tools=tool_schemas or None,
+        max_tokens=..., temperature=..., response_format=...,
+        tool_choice=("none" if _force_finish_next else None),   # ← 新增
+    )
+
+    # stream 路径（~979，在 async for 之前）：
+    if _force_finish_next:
+        llm_kwargs = {**llm_kwargs, "tool_choice": "none"}       # ← 新增
+    async for ev in self.llm.chat_with_fallback_stream(working_messages, ..., **llm_kwargs):
+        ...
+
+    # nonstream fallback（1050）：
+    if _force_finish_next:
+        llm_kwargs = {**llm_kwargs, "tool_choice": "none"}       # ← 新增
+    response = await self.llm.chat_with_fallback(working_messages, ..., **llm_kwargs)
+```
+> 关键不变式：置位（858 区）在三处 LLM 调用（898/979/1050）**之前**，行序成立（R2 已核实 858<898<979<1050）。复位在 657，保证不跨轮粘连。
+
+**A-2 · WI-1 tier3+ 禁 nudge（B4）**
+```python
+# completion nudge（1120 区）/ verify nudge（1179 区）/ goal nudge（1393 区）三处，
+# 各自最外层 if 追加前置守卫：
+if iteration < _SELFCHECK_TIER3_AT and self.completion_probe is not None and ...:
+    ...   # 短任务到不了 30，守卫恒真无副作用；tier3+ 不再回灌"继续"类 nudge
+```
+
+**A-3 · WI-1 provider 透传（providers/openai_compatible.py）**
+```python
+async def chat_with_tools(self, messages, *, tools=None, max_tokens=..., temperature=None,
+                          response_format=None, tool_choice: str | None = None):   # ← 加参数
+    ...
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = tool_choice or "auto"     # 345 行：改这里
+# chat_stream_with_tools / _legacy_chat_with_tools_nonstream 同样加参数 + 改 691 行。
+# 兜底（B6）：except 捕获 relay 400 且 msg 含 "tool_choice" → 删 payload["tool_choice"] 重试一次
+#            + metric record("tool_choice_none_unsupported", {provider, model})
+```
+
+**A-4 · WI-7 main.py recv 主循环（H1，必须在 chat 分支之前）**
+```python
+# 与 permission_response（3860 区）同构，独立 control 分支，位于 chat（5058）之前：
+elif msg_type == "clarification_response":
+    payload = raw.get("payload", {}) or {}
+    rid = payload.get("request_id", "")
+    fut = _clarify_pending.get(rid)
+    if fut is not None and not fut.done():
+        fut.set_result(payload.get("answer", ""))
+    # 不创建新 chat task → 不触发 6418 的 cancel → 挂起的 agent task 安全
+```
+
+**A-5 · WI-7 clarify_tool handler（H2，future 清理）**
+```python
+def build_ask_clarification_tool(responder):           # responder 仿 _permission_responder
+    async def _handler(args, task_id="", session_id="default"):
+        rid = _new_id()
+        fut = asyncio.get_running_loop().create_future()
+        _clarify_pending[rid] = fut
+        try:
+            await responder.send({"type": "clarification_request",
+                                  "payload": {"request_id": rid,
+                                              "question": args["question"],
+                                              "options": args.get("options", [])}})
+            answer = await asyncio.wait_for(fut, timeout=120)
+            return json.dumps({"ok": True, "answer": answer})
+        except asyncio.TimeoutError:
+            return json.dumps({"ok": False, "reason": "user_did_not_respond_in_time"})
+        finally:
+            _clarify_pending.pop(rid, None)            # ← 必有，防泄漏
+    return _handler, _SCHEMA
+```
+
+**A-6 · WI-4 todo sync 块（agent_loop.py，selfcheck 之后 877 后）**
+```python
+if self.code_todo_getter is not None and iteration % _TODO_SYNC_EVERY == 0:
+    try: todos = await self.code_todo_getter(session_id)   # get_code_todos 已是 async ✅
+    except Exception: todos = []
+    if todos:
+        lines = [f"  {{'completed':'✓','in_progress':'🔄'}}.get(s,'⏳')} {c[:80]}"
+                 for t in todos for c,s in [(t.get('content') or '', (t.get('status') or '').lower())]]
+        working_messages.append({"role":"system","content": _TODO_SYNC_MSG.format(body="\n".join(lines))})
+```
+
+**A-7 · WI-6 edit_file 降级三层（edit_file.py，count==0 时）**
+```python
+# 精确失败后按序：
+# ① whitespace：strip 每行后比对；命中行唯一 → 按原缩进替换；多命中 → 拒，转 ③
+# ② anchor：取 old 首尾各 1-2 行定位区间；SequenceMatcher.ratio()≥0.85 且唯一 → 替换；否则 ③
+# ③ did_you_mean：
+import difflib
+cand = difflib.get_close_matches(old_string, file_lines, n=3, cutoff=0.6)
+return _err("no exact match", hint="见 did_you_mean", extra={
+    "matched_by": "none",
+    "did_you_mean": [{"line": file_lines.index(c)+1, "text": c} for c in cand]})
+# fuzzy=False → 跳过 ①②③，仅精确（BC）
+```
+
+### 15.3 附录 B — 新增参数 / flag 签名表
+
+| WI | AgentLoop.__init__ 新参数（带默认） | build_agent 注入来源 | config flag（`cfg.raw`） |
+|---|---|---|---|
+| WI-1 | `force_finish_via_tool_choice: bool = True` | 读 flag | `[agent].force_finish_tool_choice`=true |
+| WI-2 | `tracer: Optional[Any] = None` | flag 为 true 时构造 `IterationTracer(trace_dir=paths.user_data_dir()/"traces")` | `[agent].trace_enabled`=false |
+| WI-4 | `code_todo_getter: Optional[Callable[[str], Awaitable[list[dict]]]] = None` | `_sdb.get_code_todos`（与 completion_probe 同源） | 无（有 getter 即开）或 `[agent].todo_sync_enabled` |
+| WI-5 | 无（复用 skill_loader/matcher） | — | `[skills].knowledge_enabled`=false |
+| WI-6 | 无（工具参数 `fuzzy=True`，不读 config） | — | 无 |
+| WI-7 | 无（工具经 build_agent 注册 + responder） | clarify responder（仿 permission） | 无（responder 为 None 则不注册） |
+| WI-3 | 无（纯 persona 文本） | — | 无 |
+
+> AgentLoop 仅 +3 参数（WI-1/2/4），全部 Optional/带默认 → 其余构造点不传即 BC。
+
+### 15.4 AgentLoop 构造点核对清单（R2 实测，非测试 7 处）
+
+| # | 文件:行 | 是否传新参数 |
+|---|---|---|
+| 1 | `main.py:975`（`build_agent` 内 `_AgentLoop(...)`） | ✅ 唯一注入点，传 WI-1/2/4 三参数 |
+| 2 | `tool_use_shim.py:23` | ❌ 默认值（BC） |
+| 3 | `spawn_team.py:356` | ❌ 默认值（BC） |
+| 4 | `agent_tool.py:139` | ❌ 默认值（BC） |
+| 5 | `voice_pipeline.py:594` | ❌ 默认值（BC） |
+| 6 | `scripts/e2e_stage_a.py:135` | ❌ 默认值（BC） |
+| 7 | `scripts/e2e_stage_a_full.py:93` | ❌ 默认值（BC） |
+| + | `backend/tests/` 多处 mock | ❌ 默认值（BC） |
+
+> `agent_parallel_tool.py` 经核实**不直接构造 AgentLoop**（它走 agent_tool 派子代理）。实现前 grep `AgentLoop(` / `_AgentLoop(` 复核全量。
+
+### 15.5 补充测试规格（时序 / 竞态 / BC，所有 WI）
+
+- **时序**：`test_force_finish_resets_per_iteration`（每轮复位）；`test_tier3_forces_tool_choice_none_all_paths`（chain/stream/nonstream 三路径都传 none）；`test_tier3_suppresses_other_nudges`（tier3+ 不注 completion/verify/goal nudge）。
+- **竞态**：`test_clarify_not_cancelled_by_new_chat`（澄清挂起期来一条 chat 消息，断言 future 未被 cancel）；`test_clarify_timeout_cleans_pending`（超时后 `_clarify_pending` 不残留）。
+- **BC（每 WI 一条）**：WI-1 `force_finish_via_tool_choice=False`→永不传 none；WI-2 tracer=None→无文件无开销；WI-3 companion 文本字节一致；WI-4 getter=None→无注入；WI-5 flag off→只返 desc；WI-6 fuzzy=False→纯精确；WI-7 responder=None→工具不注册。
+- **E2E-1 构造法**（§9 补具体）：单测级用 `max_iterations=35` + mock LLM 每轮返 `stop_reason="tool_use"` 永不收尾 → 必然跨过 `_SELFCHECK_TIER3_AT=30` → 断言第 ≥30 轮 provider 收到 `tool_choice="none"`。真机级则给一个明显超长的任务诱导多轮。
+
+### 15.6 R2 收敛判定
+- R2 终审：补附录 A/B 后从「60-70%」升至「~90% 可执行」，剩余 ~10% 为「实现前 grep 校准行号」——这是**任何 plan 对活代码库都无法消除**的固有成本，plan 已逐处显式标注 grep 点（§13.0/§15 开头/各构造点）。
+- **裁定：达到「有经验工程师可照本 plan 100% 无需再做设计决策执行」的标准**（剩余只是机械的行号核对，非设计空白）。R3 不再新增设计，仅供实现期回填真实行号。
+
+---
+（v1 + R1 + R2 修订完。plan 收敛，可执行。）
