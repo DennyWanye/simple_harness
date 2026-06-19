@@ -47,7 +47,7 @@ research_agent.py 顶部注释自述：「与旧的 `research_run`（一个巨�
 
 **已核实的硬证据：**
 
-1. **main.py 零引用** —— `grep subagent|register_builtin|SubagentRuntime|run_subagent backend/main.py` → **No matches**。
+1. **main.py 未接 research 子代理运行时** —— `register_builtin_subagents` / `SubagentRuntime` / `run_research` 这三个**具体符号**在 main.py 仍**零引用**。⚠️ 订正（2026-06-19 复核）：原稿写的「`grep subagent ...` → No matches」**不准确**——main.py :891/:899 有 `_ephemeral_subagent` 接线（另一套临时子代理机制，**非** `agent/subagents/` 这套 research 子代理）。所以"未通电"成立的是**这套 research 子代理**，不是"main.py 完全没有任何 subagent"。
 2. **只有自己引用自己** —— 全 repo grep `subagents|research_agent|run_subagent|synthesize_report|SubagentRuntime|register_builtin` 命中的文件**全部在 `backend/deskpet/agent/subagents/` 目录内部**，没有 tools/、没有 assembler/、没有 main.py。
 3. **没有测试** —— `backend/tests/` 下无任何文件引用 subagents / research_agent / run_subagent / synthesize_report。
 4. **没有工具 schema 暴露给 LLM** —— presets.py 注释说 `register_builtin_subagents` 应「called from main.py during tool registration」，但 main.py 根本没调；也没有把 research 子代理包成一个 tool 注册进 ToolRegistry / tool_selector 的 web category。
@@ -56,20 +56,22 @@ research_agent.py 顶部注释自述：「与旧的 `research_run`（一个巨�
 
 ---
 
-## ⏳ 最后两个待确认（上一个工具调用被上下文截断，未拿到结果）
+## ✅ 两个待确认项 — 已验证（2026-06-19 复核，推翻原稿两处猜测）
 
-接手人请先跑这两条，补全判断：
+原稿因上下文截断留了两个"疑似"判断，本次已用读码核实，**两个猜测都被推翻**：
 
-1. **旧 research_run 是否还活着**（决定「现在桌宠实际用哪套 / 还能不能 research」）：
-   - `grep -n "_register_research_tool" backend/deskpet/tools/research_tools.py`（模块级是否仍自注册）
-   - `grep -rn research_run backend/main.py`
-2. **入口 SKILL.md 是否为空**（之前 Read `backend/deskpet/skills/builtin/deep-research/SKILL.md` 系统提示「this file exists but is empty」，强烈怀疑已被清空）：
-   - `wc -c backend/deskpet/skills/builtin/deep-research/SKILL.md`
+1. **旧 research_run —— 活着，且已接线**（不是"半残"）：
+   - `research_tools.py:1716 _register_research_tool()` → `:1736` 模块级直接执行 → **自注册仍生效**。
+   - `research_run` 定义在 `:967`；main.py **确实引用**（`:639` 让其 plan/synthesize/reflection 走聊天 agent 同一 live、`:1069` 把 embedder 结果 blend 进 relevance）。
+   - 即：**旧 research_run 是当前桌宠实际可用的 research 路径**。
+2. **入口 SKILL.md —— 非空，内容完整**（原稿"疑似被清空"❌ 推翻）：
+   - `wc -c` = **6649 字节**。完整 frontmatter（name=deep-research / version 0.2.0 / triggers / task_types）+ 全套提示词。
+   - 之前 Read 看到的「this file exists but is empty」是**误读/旧快照**，非真实状态。
 
-**推测的当前真实状态（待上面验证）：**
-- 旧 research_run 工具可能还注册着（research_tools.py 模块底部 `_register_research_tool()` 模块级执行），但其入口 SKILL.md 疑似被清空 → 旧路径「半残」。
-- 新 research 子代理 = 完整代码 + 完整架构，但**完全未接线**（无 main.py wiring / 无 tool 暴露 / 无测试）。
-- 结论倾向：**这是一次「架构已重写、接线未完成」的半成品迁移**。用户记忆中「已用子代理实现」对应的是**代码实现完成**，但**尚未真正接通到桌宠可用**。
+**订正后的当前真实状态：**
+- 旧 research_run：**活着 + 自注册 + main.py 接线 + SKILL.md 完整** = 桌宠现在能用的 research 路径（**不是半残**）。
+- 新 research 子代理（`agent/subagents/`）：完整代码 + 完整架构，但**这套 runtime 未接线**（main.py 无 `register_builtin_subagents`/`SubagentRuntime`/`run_research` 引用、无 tool 暴露、无测试）。
+- 结论：这是一次「**新架构已写完但未通电，旧实现仍在岗**」的并存状态。用户记忆中「已用子代理实现」= **新子代理代码完成**，但桌宠**实际跑的仍是旧 research_run**。
 
 ---
 
@@ -82,9 +84,10 @@ research_agent.py 顶部注释自述：「与旧的 `research_run`（一个巨�
 | 接线到运行时 | ❌ 未做（main.py 零引用）|
 | 工具暴露给 LLM | ❌ 未做 |
 | 测试 | ❌ 无 |
-| 真机可用 | ❌ 当前对话调不到 |
+| 真机可用（新子代理） | ❌ 当前对话调不到 |
+| 真机可用（旧 research_run） | ✅ 活着 + 接线 + SKILL.md 完整，桌宠现在用的是这套 |
 
-**一句话**：架构和代码是成品，接线和验证是 0。属于「写完了、没插电」。
+**一句话**：**新** research 子代理「写完了、没插电」（架构/代码成品，接线/测试为 0）；但**旧 research_run 仍在岗可用**，所以桌宠 research 功能并没断——只是没切到新架构。
 
 ---
 
