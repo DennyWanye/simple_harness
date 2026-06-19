@@ -1,0 +1,1 @@
+INFO:providers.openai_compatible:event='p5s2_tool_call_args_dump' level='info' timestamp='2026-06-19T19:11:16.286883Z' idx=0 name='deepresearch' args_len=146 args_preview='{"depth":"standard","max_sub_questions":5,"max_total_passages":12,"max_urls_per_query":4,"topic":"宁德' parse_ok=True

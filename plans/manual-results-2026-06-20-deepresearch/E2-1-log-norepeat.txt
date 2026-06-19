@@ -1,0 +1,1 @@
+INFO:providers.openai_compatible:event='p5s2_tool_call_args_dump' level='info' timestamp='2026-06-19T19:11:16.286883Z' idx=0 name='deepresearch' args_len=146 ar
