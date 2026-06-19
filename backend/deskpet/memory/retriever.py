@@ -347,15 +347,19 @@ class Retriever:
                     recency_half_life_days=(_hl if recency_on else None),
                 )
 
-        top_items = fused[:effective_top_k]
-        ids = [mid for mid, _, _ in top_items]
-        metadata = await self._fetch_message_meta(ids)
+        # WI-2 后记(2026-06-19 真机 E2E 发现): 必须先取元数据、过滤掉
+        # `messages` 表里查不到的候选(归档/stale fanout 索引 id),**再**凑
+        # top_k —— 否则这些无元数据 id 会占满 top_k 槽位把真命中饿死(affinity/
+        # recency 重排把归档 id 顶进前列时,极端情况整体空召回)。按融合排名顺序
+        # 遍历全体候选,只收有元数据的,够 top_k 即停。
+        all_ids = [mid for mid, _, _ in fused]
+        metadata = await self._fetch_message_meta(all_ids)
 
         hits: list[Hit] = []
-        for mid, score, source in top_items:
+        for mid, score, source in fused:
             meta = metadata.get(mid)
             if meta is None:
-                # message 在 fan-out 和 fetch 之间被删了 —— 罕见，跳过。
+                # 归档 / 已删 / stale 索引 id —— 跳过且**不**占 top_k 槽。
                 continue
             hits.append(
                 Hit(
@@ -366,6 +370,8 @@ class Retriever:
                     source=source,
                 )
             )
+            if len(hits) >= effective_top_k:
+                break
 
         # 命中 boost：spec 明确要求 salience += 0.05 + decay_last_touch=now()。
         # 放在构造 hits 之后、返回之前；boost 失败只 log，不影响返回。
