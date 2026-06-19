@@ -70,7 +70,8 @@
 ## TC-3 — ★ WI-5 触发知识注入（knowledge_enabled=on）
 **类型**：UI 真测｜**需 windows-mcp：是**
 
-**前置**：config `[skills] knowledge_enabled = true`，重启。
+**前置（真机发现：三重激活条件）**：WI-5 复用 FP-5 auto_disclosure body-inline 路径，需**同时**：① `[skills] knowledge_enabled = true`（WI-5 新增）② `[skills.auto_disclosure] enabled = true`（FP-5 已有）③ 请求归到 prefer 含 `skill` 的 task_type（`policy.py` 仅 `task` 类含；chat/code/web_search/plan 不含）。设好①②后重启。
+> 注：`帮我做ppt` 真机被分类为 `chat`（无 skill）→ SkillComponent 不运行 → 知识不注入。这是已有 FP-5 task-门控，非 WI-5 范围。WI-5 逻辑由 6 单测覆盖。
 
 | 步 | 坐标/动作 | 输入 | 期望 |
 |---|---|---|---|
