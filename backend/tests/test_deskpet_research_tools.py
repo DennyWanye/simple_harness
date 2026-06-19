@@ -64,6 +64,15 @@ def _isolate_phase2(monkeypatch):
     r._reset_js_render_budget()
 
 
+def test_deepresearch_registered_and_research_run_alias() -> None:
+    from deskpet.tools.registry import registry
+    from deskpet.tools.research_tools import deepresearch, research_run
+
+    assert registry.get("deepresearch") is not None
+    assert registry.get("research_run") is None
+    assert research_run is deepresearch
+
+
 # ----------------------------------------------------------------------
 # Sub-question planner parsing
 # ----------------------------------------------------------------------

@@ -114,7 +114,7 @@ outline 替换成了"深海探险"凭空主题。本约束就是为了压制这�
 ## 4. 与 deep-research 串联（可选）
 
 如果用户说「研究 X 然后做 PPT」：
-1. 先调 deep-research skill / `research_run` 工具得到 ResearchReport
+1. 先调 deep-research skill / `deepresearch` 工具得到 ResearchReport
 2. 把 `report_md` 里的章节 + `citations` 转换成 outline
 3. 引用源放进 `notes` 字段（备注页），bullet 保持简洁
 

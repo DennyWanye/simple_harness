@@ -3,7 +3,7 @@ name: deep-research
 description: 对一个主题做严肃的多源调研，产出带引用 + 抓取时间的结构化报告（不编造结论）。基于 DeepResearch V8 方法论。
 when_to_use: 用户要深度调研、综述报告、技术选型/竞品/政策分析、多源查证、要带引用来源的研究报告、或要求"第二轮/继续深入"时。简单事实查一下用 web_search，不用本技能。
 triggers: [深度调研, 调研报告, 调查研究, 研究报告, 深入调研, 做个调研, 做一份调研, 综述, 技术选型, 竞品研究, 政策分析]
-version: 0.2.0
+version: 0.3.0
 author: deskpet
 task_types: [recall, web_search, task]
 argument_hint: <主题> [--depth=light|standard|deep]
@@ -39,15 +39,15 @@ requires_script: false
 
 **用户没要长报告就默认 brief。** 别动不动甩 6000 字。
 
-## 2. 调 `research_run` 工具
+## 2. 调 `deepresearch` 工具
 
-> ⚠️ **必须用 `research_run` 一次完成深度调研，禁止自己用 `web_search` +
-> `web_fetch` 手动拼。** `research_run` 内部已经做了多源搜索 + 分层权威打分 +
+> ⚠️ **必须用 `deepresearch` 一次完成深度调研，禁止自己用 `web_search` +
+> `web_fetch` 手动拼。** `deepresearch` 内部已经做了多源搜索 + 分层权威打分 +
 > 反思迭代补证 + 引用自检 + 报告落盘——手动编排会跳过打分/校验/落盘，浪费
 > 工具调用且质量更差。只有"快速查一个事实/网址"才用 `web_search`。
 
 ```
-research_run(topic=<用户主题>, depth=light|standard|deep)
+deepresearch(topic=<用户主题>, depth=light|standard|deep)
 ```
 
 工具内部跑：plan（拆 3-6 子问题）→ **query 扩展（multi-query 改写 + HyDE，提召回）**
@@ -112,7 +112,7 @@ cite_check（自检引用真实）。
 ## 5. 与 ppt-generate / doc_create 串联
 
 用户说"研究 X 然后做成 PPT / 写成 Word"：
-1. 先 `research_run` → 拿 `report_md` + `citations`
+1. 先 `deepresearch` → 拿 `report_md` + `citations`
 2. PPT：每个 `##` 章节 → 一张 bullet slide，引用 URL 放 `notes`，调 ppt_create
 3. Word：report_md 直接 doc_create（heading/paragraph/list 元素），引用做附录
 

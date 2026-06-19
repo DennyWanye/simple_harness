@@ -5,7 +5,7 @@
 
 What it does
 ------------
-1. Runs ``research_run`` against a fixed topic with a deterministic
+1. Runs ``deepresearch`` against a fixed topic with a deterministic
    FakeLLM (no live network needed) and prints the resulting report.
 2. Pipes the report's section titles into ``ppt_create`` to produce a
    real ``.pptx`` file on disk. Asserts the file exists, slide count,
@@ -33,7 +33,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from deskpet.tools.research_tools import research_run
+from deskpet.tools.research_tools import deepresearch
 from deskpet.tools.ppt_tools import ppt_create
 
 
@@ -141,8 +141,8 @@ async def fake_extract(url: str):
 
 async def main() -> int:
     topic = "Structured logging in Python — 2026 state of the art"
-    print(f"\n===== Step 1: research_run({topic!r}) =====\n")
-    report = await research_run(
+    print(f"\n===== Step 1: deepresearch({topic!r}) =====\n")
+    report = await deepresearch(
         topic,
         llm_call=FakeLLM(),
         search=fake_search,

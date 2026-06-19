@@ -636,7 +636,7 @@ def _make_str_llm_call(provider, *, max_tokens: int = 512):
 
 
 # 把运行中的 local_llm(relay base_url + keychain key) 注入 deep-research，
-# 让 research_run 的 plan/synthesize/reflection 走和聊天 agent 同一个 live
+# 让 deepresearch 的 plan/synthesize/reflection 走和聊天 agent 同一个 live
 # relay（修旧 _resolve_default_llm_call 读 providers[0] 丢 key 的隐患）。
 try:
     from deskpet.tools import research_tools as _research_tools
@@ -1066,7 +1066,7 @@ try:
 
     # Wire BGE-M3 semantic relevance into deep-research (WI-2.2). The
     # scorer returns cosine(topic, passage) ∈ [0,1] per passage so
-    # research_run blends it into relevance. Skipped when the embedder is
+    # deepresearch blends it into relevance. Skipped when the embedder is
     # the mock (hash vectors carry no semantics) → keyword-only fallback.
     try:
         import numpy as _np

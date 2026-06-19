@@ -5,7 +5,7 @@
 
 Pipeline
 --------
-    research_run(topic)
+    deepresearch(topic)
     ├── 1. plan          ─ LLM splits the topic into 3-6 sub-questions
     ├── 2. search        ─ each sub-q → DuckDuckGo HTML SERP → top-N URLs
     ├── 3. fetch+extract ─ concurrent web_extract_article on those URLs
@@ -65,7 +65,7 @@ def set_semantic_scorer(fn) -> None:
 # Optional LLM-as-reranker (默认精排手段)。main.py 注入一个【廉价模型】
 # (如 gpt-4.1-mini) 的 (prompt:str)->str 调用,research 召回后用它对候选段落做
 # cross-encoder 式精排 —— 复用中转站 relay,免下载本地 bge-reranker 模型/免占本地
-# 内存。未注入 → research_run 跳过精排(不回退主 llm,省 token)。模式由
+# 内存。未注入 → deepresearch 跳过精排(不回退主 llm,省 token)。模式由
 # [research].reranker 配置门控: "llm"(默认) / "local"(本地 bge-reranker,
 # Phase-future) / "off"。
 _RERANK_LLM_CALL: Optional[_LLMCall] = None
@@ -198,14 +198,14 @@ def _js_render_timeout() -> float:
         return 20.0
 
 
-# 单次 research 内 JS 渲染触发计数(护 research_run 300s 预算,见 plan WI-3 双闸②)。
+# 单次 research 内 JS 渲染触发计数(护 deepresearch 300s 预算,见 plan WI-3 双闸②)。
 _JS_RENDER_MAX_PER_RUN = 4
 _JS_RENDER_MIN_SHELL_HTML = 20_000   # 原始 HTML > 此值 + trafilatura 短 = 疑 JS 空壳(双闸①)
-_js_render_run_count = 0             # 每次 research_run 开头 _reset_js_render_budget() 归零
+_js_render_run_count = 0             # 每次 deepresearch 开头 _reset_js_render_budget() 归零
 
 
 def _reset_js_render_budget() -> None:
-    """research_run 开头调,归零本轮 JS 渲染触发计数。"""
+    """deepresearch 开头调,归零本轮 JS 渲染触发计数。"""
     global _js_render_run_count
     _js_render_run_count = 0
 
@@ -325,7 +325,7 @@ def _parse_rerank_scores(raw: str) -> dict[int, float]:
     return out
 
 
-_RERANK_TIMEOUT = 25.0  # 独立超时:rerank 模型卡住不拖垮整个 research_run
+_RERANK_TIMEOUT = 25.0  # 独立超时:rerank 模型卡住不拖垮整个 deepresearch
 
 
 async def _llm_rerank(
@@ -399,7 +399,7 @@ async def _maybe_await(value):
 def _relevance_score(text: str, *, keywords: Iterable[str]) -> float:
     """0-10 relevance = keyword coverage fraction × 10. Pure + fast; the
     semantic path (when wired) refines the whole passage set at once in
-    :func:`research_run`, so this stays the deterministic floor."""
+    :func:`deepresearch`, so this stays the deterministic floor."""
     kws = [k for k in (kw.strip().lower() for kw in keywords) if k]
     if not kws or not text:
         return 0.0
@@ -964,7 +964,7 @@ def parse_sub_questions(raw: str, *, max_questions: int) -> list[str]:
 # ----------------------------------------------------------------------
 
 
-async def research_run(
+async def deepresearch(
     topic: str,
     *,
     llm_call: _LLMCall,
@@ -1517,7 +1517,7 @@ def _extract_summary(report_md: str) -> str:
 
 
 _RESEARCH_SCHEMA = {
-    "name": "research_run",
+    "name": "deepresearch",
     "description": (
         "深度多源调研管线(DeepResearch V8)。拆子问题→搜索→抽正文→分层权威打分"
         "(含中文源)+新鲜度+语义相关性+来源多样性→deep档反思迭代补证→综合成带"
@@ -1571,11 +1571,11 @@ _DEPTH_PRESETS = {
 }
 
 
-async def _handle_research_run(args: dict, task_id: str) -> str:
+async def _handle_deepresearch(args: dict, task_id: str) -> str:
     """Async handler. Bridges the registry's ``args`` dict to the
     orchestrator. The LLM call is resolved from the global provider
     chain inside ``main.py`` — for unit tests we go directly through
-    ``research_run`` so this code path isn't exercised.
+    ``deepresearch`` so this code path isn't exercised.
     """
     topic = str(args.get("topic") or "").strip()
     if not topic:
@@ -1597,7 +1597,7 @@ async def _handle_research_run(args: dict, task_id: str) -> str:
     depth = str(args.get("depth") or "standard").lower()
     d_subq, d_urls, d_pass, d_rounds = _DEPTH_PRESETS.get(depth, _DEPTH_PRESETS["standard"])
 
-    report = await research_run(
+    report = await deepresearch(
         topic,
         llm_call=llm_call,
         max_sub_questions=int(args.get("max_sub_questions") or d_subq),
@@ -1713,15 +1713,15 @@ async def _resolve_default_llm_call() -> _LLMCall:
     return _call
 
 
-def _register_research_tool() -> None:
-    """Side-effect: register research_run with the global tool registry."""
+def _register_deepresearch_tool() -> None:
+    """Side-effect: register deepresearch with the global tool registry."""
     try:
         from .registry import registry  # type: ignore
         registry.register(
-            "research_run",
+            "deepresearch",
             "web",
             _RESEARCH_SCHEMA,
-            _handle_research_run,
+            _handle_deepresearch,
             permission_category="read_file",
             # deep 档要跑 多引擎降级搜索 + 二级抓取 + 反思补证轮 + LLM 精排,
             # 慢网区(代理/必应跳转 cn.bing)单轮就逼近 180s。提到 300s(对齐
@@ -1733,4 +1733,6 @@ def _register_research_tool() -> None:
         log.debug("research tool registration skipped: %s", exc)
 
 
-_register_research_tool()
+_register_deepresearch_tool()
+
+research_run = deepresearch  # deprecated alias: use deepresearch
