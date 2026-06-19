@@ -1,0 +1,341 @@
+{
+  "model": "gpt-5.5",
+  "results": [
+    {
+      "id": "mcp-sec",
+      "mode": "standard",
+      "topic": "MCP 在企业里落地的主要安全风险，给一个带引用的决策 brief",
+      "elapsed_s": 89.4,
+      "n_sources": 6,
+      "n_domains": 4,
+      "rounds": 1,
+      "velocity": "medium",
+      "reranker": "llm_failed",
+      "route": "ddg",
+      "n_dropped_by_reason": {
+        "ai_generated": 0,
+        "low_quality": 0,
+        "mojibake": 0,
+        "too_short": 0
+      },
+      "elapsed_ms_per_stage": {
+        "plan": 9136,
+        "search": 7927,
+        "fetch": 7104,
+        "score": 1876,
+        "synth": 51234
+      },
+      "n_citations": 6,
+      "cite_ok": true,
+      "errors": [
+        "extract:https://zhuanlan.zhihu.com/p/1905272000181678702: Client error '403 Forbidden' for url 'https://zhuanlan.zhihu.com/p/1905272000181678702'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403",
+        "extract:https://zhuanlan.zhihu.com/p/1903748785458348538: Client error '403 Forbidden' for url 'https://zhuanlan.zhihu.com/p/1903748785458348538'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403",
+        "extract:https://blog.csdn.net/m0_48891301/article/details/148423838: Server error '521 ' for url 'https://blog.csdn.net/m0_48891301/article/details/148423838'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/521",
+        "rerank_llm: LLM HTTP 404 Not Found: "
+      ],
+      "report_chars": 4552,
+      "judge": {
+        "evidence": 4,
+        "synthesis": 7,
+        "coverage": 8,
+        "coherence": 8,
+        "calibration": 8,
+        "composite": 6.5,
+        "verdict": "PASS",
+        "one_line": "结构清晰且有不错的风险归纳和证据校准，但引用大量依赖二手/弱来源且缺少官方规范、CVE或一手研究支撑，作为决策 brief 勉强合格。"
+      }
+    },
+    {
+      "id": "mcp-sec",
+      "mode": "deep",
+      "topic": "MCP 在企业里落地的主要安全风险，给一个带引用的决策 brief",
+      "elapsed_s": 98.9,
+      "n_sources": 12,
+      "n_domains": 11,
+      "rounds": 2,
+      "velocity": "medium",
+      "reranker": "llm_failed",
+      "route": "ddg",
+      "n_dropped_by_reason": {
+        "ai_generated": 0,
+        "low_quality": 0,
+        "mojibake": 0,
+        "too_short": 1
+      },
+      "elapsed_ms_per_stage": {
+        "plan": 5742,
+        "search": 8378,
+        "fetch": 10351,
+        "score": 14504,
+        "synth": 53978
+      },
+      "n_citations": 12,
+      "cite_ok": true,
+      "errors": [
+        "extract:https://zhuanlan.zhihu.com/p/1919548232226283534: Client error '403 Forbidden' for url 'https://zhuanlan.zhihu.com/p/1919548232226283534'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403",
+        "extract:https://www.gov.cn/zhengce/zhengceku/202412/P020241226453066361975.pdf: no text extracted",
+        "extract:https://zhuanlan.zhihu.com/p/30445136490: Client error '403 Forbidden' for url 'https://zhuanlan.zhihu.com/p/30445136490'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403",
+        "extract:https://blog.csdn.net/gpt188/article/details/151112564: Server error '521 ' for url 'https://blog.csdn.net/gpt188/article/details/151112564'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/521",
+        "extract:https://checkmarx.com/learn/mcp-security-risks-real-world-incidents-and-security-controls/: Client error '403 Forbidden' for url 'https://checkmarx.com/learn/mcp-security-risks-real-world-incidents-and-security-controls/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403",
+        "rerank_llm: LLM HTTP 404 Not Found: "
+      ],
+      "report_chars": 5255,
+      "judge": {
+        "evidence": 6,
+        "synthesis": 7,
+        "coverage": 7,
+        "coherence": 8,
+        "calibration": 7,
+        "composite": 6.9,
+        "verdict": "PASS",
+        "one_line": "结构清晰、风险谱系覆盖较完整且有校准意识，但 deep 档位下对一手规范、漏洞库和企业决策量化依据依赖不足，部分关键事实仍靠厂商或博客支撑。"
+      }
+    },
+    {
+      "id": "rag-eval",
+      "mode": "standard",
+      "topic": "RAG 评估方法的综述报告，要有来源、有局限性",
+      "elapsed_s": 22.0,
+      "n_sources": 0,
+      "n_domains": 0,
+      "rounds": null,
+      "velocity": null,
+      "reranker": null,
+      "route": "ddg",
+      "n_dropped_by_reason": {
+        "ai_generated": 0,
+        "low_quality": 0,
+        "mojibake": 0,
+        "too_short": 0
+      },
+      "elapsed_ms_per_stage": {
+        "plan": 6744,
+        "search": 6914,
+        "fetch": 0,
+        "score": 0,
+        "synth": 0
+      },
+      "n_citations": 0,
+      "cite_ok": true,
+      "errors": [
+        "no search results"
+      ],
+      "report_chars": 378,
+      "judge": {
+        "evidence": 1,
+        "synthesis": 1,
+        "coverage": 2,
+        "coherence": 3,
+        "calibration": 4,
+        "composite": 1.95,
+        "verdict": "FAIL",
+        "one_line": "报告明确承认未找到来源，几乎没有回答研究问题；虽有失败说明和子问题列表，但缺乏证据、综述内容、方法比较与实质性局限分析。"
+      }
+    },
+    {
+      "id": "oai-vs-anthropic",
+      "mode": "standard",
+      "topic": "比较 OpenAI 和 Anthropic 在 agent skills 上的思路，带引用分析",
+      "elapsed_s": 20.5,
+      "n_sources": 0,
+      "n_domains": 0,
+      "rounds": null,
+      "velocity": null,
+      "reranker": null,
+      "route": "ddg",
+      "n_dropped_by_reason": {
+        "ai_generated": 0,
+        "low_quality": 0,
+        "mojibake": 0,
+        "too_short": 0
+      },
+      "elapsed_ms_per_stage": {
+        "plan": 7547,
+        "search": 6948,
+        "fetch": 0,
+        "score": 0,
+        "synth": 0
+      },
+      "n_citations": 0,
+      "cite_ok": true,
+      "errors": [
+        "no search results"
+      ],
+      "report_chars": 532,
+      "judge": {
+        "evidence": 1,
+        "synthesis": 1,
+        "coverage": 2,
+        "coherence": 3,
+        "calibration": 2,
+        "composite": 1.7,
+        "verdict": "FAIL",
+        "one_line": "报告完全未完成研究任务，仅说明取证失败且没有任何引用分析、比较框架或决策相关洞察。"
+      }
+    },
+    {
+      "id": "oai-vs-anthropic",
+      "mode": "deep",
+      "topic": "比较 OpenAI 和 Anthropic 在 agent skills 上的思路，带引用分析",
+      "elapsed_s": 21.7,
+      "n_sources": 0,
+      "n_domains": 0,
+      "rounds": null,
+      "velocity": null,
+      "reranker": null,
+      "route": "ddg",
+      "n_dropped_by_reason": {
+        "ai_generated": 0,
+        "low_quality": 0,
+        "mojibake": 0,
+        "too_short": 0
+      },
+      "elapsed_ms_per_stage": {
+        "plan": 8117,
+        "search": 8358,
+        "fetch": 0,
+        "score": 0,
+        "synth": 0
+      },
+      "n_citations": 0,
+      "cite_ok": true,
+      "errors": [
+        "no search results"
+      ],
+      "report_chars": 675,
+      "judge": {
+        "evidence": 1,
+        "synthesis": 1,
+        "coverage": 1,
+        "coherence": 2,
+        "calibration": 2,
+        "composite": 1.3,
+        "verdict": "FAIL",
+        "one_line": "报告没有实际回答研究问题，也没有引用、比较分析或深度综合，只是说明取证失败；唯一可取之处是如实披露了失败状态。"
+      }
+    },
+    {
+      "id": "cs-ai-vendors",
+      "mode": "standard",
+      "topic": "竞品研究：对比 5 家客服 AI 厂商的定位、能力、局限",
+      "elapsed_s": 22.3,
+      "n_sources": 0,
+      "n_domains": 0,
+      "rounds": null,
+      "velocity": null,
+      "reranker": null,
+      "route": "ddg",
+      "n_dropped_by_reason": {
+        "ai_generated": 0,
+        "low_quality": 0,
+        "mojibake": 0,
+        "too_short": 0
+      },
+      "elapsed_ms_per_stage": {
+        "plan": 6553,
+        "search": 7321,
+        "fetch": 0,
+        "score": 0,
+        "synth": 0
+      },
+      "n_citations": 0,
+      "cite_ok": true,
+      "errors": [
+        "no search results"
+      ],
+      "report_chars": 353,
+      "judge": {
+        "evidence": 1,
+        "synthesis": 1,
+        "coverage": 2,
+        "coherence": 3,
+        "calibration": 3,
+        "composite": 1.8,
+        "verdict": "FAIL",
+        "one_line": "报告基本未完成研究任务，仅说明取证失败并列出原始子问题，没有竞品对比、证据、综合判断或可用结论。"
+      }
+    },
+    {
+      "id": "browser-use",
+      "mode": "standard",
+      "topic": "深度研究 AI browser use 的真实落地边界，别只讲 demo",
+      "elapsed_s": 20.9,
+      "n_sources": 0,
+      "n_domains": 0,
+      "rounds": null,
+      "velocity": null,
+      "reranker": null,
+      "route": "ddg",
+      "n_dropped_by_reason": {
+        "ai_generated": 0,
+        "low_quality": 0,
+        "mojibake": 0,
+        "too_short": 0
+      },
+      "elapsed_ms_per_stage": {
+        "plan": 8134,
+        "search": 7702,
+        "fetch": 0,
+        "score": 0,
+        "synth": 0
+      },
+      "n_citations": 0,
+      "cite_ok": true,
+      "errors": [
+        "no search results"
+      ],
+      "report_chars": 541,
+      "judge": {
+        "evidence": 1,
+        "synthesis": 1,
+        "coverage": 2,
+        "coherence": 3,
+        "calibration": 2,
+        "composite": 1.65,
+        "verdict": "FAIL",
+        "one_line": "报告几乎没有实际研究内容或证据，只列出未完成的子问题，无法回答“真实落地边界”这一研究问题。"
+      }
+    },
+    {
+      "id": "catl-2024",
+      "mode": "standard",
+      "topic": "宁德时代 2024 年财报的关键经营数据（营收/净利/研发/海外占比）",
+      "elapsed_s": 20.8,
+      "n_sources": 0,
+      "n_domains": 0,
+      "rounds": null,
+      "velocity": null,
+      "reranker": null,
+      "route": "ddg",
+      "n_dropped_by_reason": {
+        "ai_generated": 0,
+        "low_quality": 0,
+        "mojibake": 0,
+        "too_short": 0
+      },
+      "elapsed_ms_per_stage": {
+        "plan": 7393,
+        "search": 7976,
+        "fetch": 0,
+        "score": 0,
+        "synth": 0
+      },
+      "n_citations": 0,
+      "cite_ok": true,
+      "errors": [
+        "no search results"
+      ],
+      "report_chars": 403,
+      "judge": {
+        "evidence": 1,
+        "synthesis": 1,
+        "coverage": 2,
+        "coherence": 3,
+        "calibration": 2,
+        "composite": 1.65,
+        "verdict": "FAIL",
+        "one_line": "报告未提供任何财报数据或引用，只说明抓取失败，无法回答营收、净利、研发和海外占比等核心问题。"
+      }
+    }
+  ]
+}
