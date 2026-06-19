@@ -148,7 +148,8 @@ VALID_LAYOUTS = (
     "title", "section", "bullet", "two_column", "image", "image_full", "quote", "toc", "chart",
 )
 VALID_THEMES = ("minimal", "dark", "playful")
-_TEMPLATES_DIR = Path(__file__).parent / "ppt_templates"
+# 模板源已迁到外部大库 resources/PPT_Template(见 ppt_template_picker)。
+# 不再有 git 跟踪的 bundled 模板目录。
 
 
 # ---------------------------------------------------------------------
@@ -1906,24 +1907,10 @@ def _autofill_image_prompts(slides: list[SlideOutline]) -> None:
         log.warning("image prompt autofill failed: %s", exc, exc_info=True)
 
 
-def _list_bundled_templates() -> list[str]:
-    """Return bundled template names without raising."""
-    try:
-        if not _TEMPLATES_DIR.is_dir():
-            return []
-        return sorted(
-            path.stem
-            for path in _TEMPLATES_DIR.glob("*.pptx")
-            if path.is_file()
-        )
-    except Exception:  # noqa: BLE001
-        return []
-
-
 def _default_template() -> Optional[str]:
-    """无显式 template 时的默认模板(bundled 名或路径)，来自环境变量
-    ``DESKPET_PPT_DEFAULT_TEMPLATE``。不设 → None(行为不变，走 from-scratch)。
-    用户「干净专业就够了」→ 在 launch/config 设此 env 即让生成默认套模板。
+    """无显式 template 时的默认模板(大类名或 .pptx 路径)，来自环境变量
+    ``DESKPET_PPT_DEFAULT_TEMPLATE``。不设 → None(走 from-scratch)。
+    可设成一个大类名(如「高级色」)让生成默认套模板并按预览图选具体设计。
     """
     try:
         return (os.environ.get("DESKPET_PPT_DEFAULT_TEMPLATE", "") or "").strip() or None
@@ -1932,13 +1919,10 @@ def _default_template() -> Optional[str]:
 
 
 def _user_template_roots() -> list[Path]:
-    """用户模板根目录(递归搜索) —— 桌宠可按名引用这里的模板。
-
-    默认 <repo>/resources/PPT_Template;env DESKPET_PPT_TEMPLATE_ROOTS
-    (``;`` 分隔)可覆盖/追加。从不抛异常。
+    """额外模板根目录(递归搜索),来自 env ``DESKPET_PPT_TEMPLATE_ROOTS``
+    (``;`` 分隔)。库主根由 ppt_template_picker.template_library_root() 提供。
+    从不抛异常。
     """
-    # 仅 env 显式开启 —— 默认【不】递归搜原始模板库,避免 LLM 瞎选到不合适
-    # 的模板(精选好模板已进 bundled,见 _TEMPLATE_STYLE_HINTS)。
     roots: list[Path] = []
     try:
         env = (os.environ.get("DESKPET_PPT_TEMPLATE_ROOTS", "") or "").strip()
@@ -1950,8 +1934,14 @@ def _user_template_roots() -> list[Path]:
 
 
 def _resolve_template_path(template: Optional[str]) -> Optional[str]:
-    """Resolve a direct .pptx path or bundled template name without raising."""
+    """解析【直传 .pptx 路径】或【库内模板 stem】→ 绝对路径。从不抛异常。
+
+    注意:这里【不】处理大类名 —— 大类名要靠预览图视觉选具体文件,见
+    :func:`_resolve_template_for_render`(它有 topic 上下文)。
+    """
     try:
+        from . import ppt_template_picker as _tpl
+
         raw = str(template or "").strip()
         if not raw:
             return None
@@ -1966,12 +1956,13 @@ def _resolve_template_path(template: Optional[str]) -> Optional[str]:
         if not name:
             return None
 
-        bundled = _TEMPLATES_DIR / f"{name}.pptx"
-        if bundled.is_file():
-            return str(bundled.resolve())
-
-        # 用户模板根(resources/PPT_Template/**)按 stem 递归匹配
-        for root in _user_template_roots():
+        # 库主根 + env 额外根,按 stem 递归匹配
+        roots: list[Path] = []
+        lib = _tpl.template_library_root()
+        if lib is not None:
+            roots.append(lib)
+        roots += _user_template_roots()
+        for root in roots:
             try:
                 hit = next(
                     (p for p in root.rglob(f"{name}.pptx") if p.is_file()), None
@@ -1983,6 +1974,27 @@ def _resolve_template_path(template: Optional[str]) -> Optional[str]:
     except Exception:  # noqa: BLE001
         return None
     return None
+
+
+def _resolve_template_for_render(
+    template: Optional[str], *, topic: str = ""
+) -> Optional[str]:
+    """把 ``template``(大类名 / .pptx 路径 / 库内 stem)解析成具体 .pptx 路径。
+
+    大类名 → 预览图视觉选一套;否则按路径/stem 解析。从不抛异常。
+    """
+    try:
+        from . import ppt_template_picker as _tpl
+
+        raw = str(template or "").strip()
+        if not raw:
+            return None
+        if _tpl.is_category(raw):
+            picked = _tpl.pick_template_by_preview(raw, topic)
+            return str(picked) if picked is not None else None
+        return _resolve_template_path(raw)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _pick_template_layout(prs, deskpet_layout: str):
@@ -3235,7 +3247,9 @@ def ppt_create(
         # 版式是渲染属性,与是否现场生图无关。
         _assign_image_layouts(slides)
     if chosen_template:
-        resolved = _resolve_template_path(chosen_template)
+        # 大类名 → 按预览图视觉选一套;路径/stem → 直接解析。topic 给 picker 选最贴的设计。
+        topic = title or (slides[0].title if slides else "")
+        resolved = _resolve_template_for_render(chosen_template, topic=topic)
         if resolved:
             result = _render_with_design_pages(
                 slides, resolved, title=title, author=author, out_path=out_path,
@@ -3660,30 +3674,38 @@ _PPT_SCHEMA = {
 }
 
 
-# 精选模板的风格描述(给 LLM 按主题选)。键 = bundled 文件 stem。
-_TEMPLATE_STYLE_HINTS = {
-    "商务深蓝-水墨": "深蓝水墨国风,庄重沉稳。适合教育/文化/政务/学术/严肃汇报。",
-    "高级感-蓝": "蓝色简约现代,清爽专业。适合科技/商业/产品/通用职场汇报。",
-    "简约高级-灰": "高级灰极简,留白克制。适合设计/品牌/方案/高端通用场合。",
-}
-
-
 def _build_template_description() -> str:
-    templates = _list_bundled_templates()
-    if not templates:
+    """工具 schema 里 ``template`` 参数的说明 —— 列出可选【大类】(不是单个模板)。
+
+    模板库有上百套,无法逐一列名。LLM 只挑一个大类名,引擎再按预览图视觉
+    选该类里最贴主题的一套设计。也支持直传一个 .pptx 绝对路径。
+    """
+    try:
+        from . import ppt_template_picker as _tpl
+
+        cats = _tpl.list_categories()
+    except Exception:  # noqa: BLE001
+        cats = []
+    if not cats:
         return (
-            "Optional .pptx absolute path. 当前无 bundled 模板,要模板填充请传"
+            "Optional .pptx absolute path. 当前模板库不可用,要模板填充请传"
             "一个 .pptx 绝对路径。"
         )
     lines = []
-    for name in templates:
-        hint = _TEMPLATE_STYLE_HINTS.get(name, "")
-        lines.append(f"「{name}」{hint}".rstrip())
+    for cat in cats:
+        key = cat.get("key", "")
+        hint = ""
+        try:
+            hint = _tpl.CATEGORY_STYLE_HINTS.get(key, "")
+        except Exception:  # noqa: BLE001
+            hint = ""
+        lines.append(f"「{key}」{hint}(约 {cat.get('count', '?')} 套)".rstrip())
     listing = "；".join(lines)
     return (
-        "可编辑模板填充。【只能】从下列精选模板里【按名字精确】选一个传入"
-        "(别的名字一律不要传、不要自己编模板名),或传一个 .pptx 绝对路径。"
-        "用户要『正式/专业/精美/可编辑』PPT 时优先用模板;按主题选最贴的风格：\n"
+        "可编辑模板填充。用户要『正式/专业/精美/可编辑』PPT 时优先用模板:"
+        "从下列【大类】里【按名字精确】选一个传入(只传大类名,别自己编名字),"
+        "桌宠会按预览图为你的主题挑该类里最合适的一套设计。也可直传 .pptx 绝对路径。"
+        "按主题选最贴的风格：\n"
         f"{listing}。"
     )
 

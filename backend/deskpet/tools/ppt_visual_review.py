@@ -71,6 +71,74 @@ def _b64_image(path: str, *, max_w: int = 768) -> str | None:
         return None
 
 
+def vision_chat(
+    content_parts: list[dict[str, Any]],
+    *,
+    system: str = "",
+    timeout: float = 120.0,
+    max_tokens: int = 1500,
+    temperature: float = 0.0,
+) -> str:
+    """通用多模态 ``/chat/completions`` 调用 — 复用同一 relay endpoint/key/model。
+
+    ``content_parts``: OpenAI 风格 user content 列表(``{"type":"text",...}`` /
+    ``{"type":"image_url",...}``,后者可用 :func:`_b64_image` 产生)。
+
+    返回模型回复文本;**任何失败返回 ``""``**(无 key/HTTP 错/网络错)。从不抛异常。
+    visual review 与模板选图共用此原语,避免重复 relay 接线。
+    """
+    try:
+        from .image_tools import _resolve_endpoint, _trust_env_proxy  # type: ignore
+
+        base_url, api_key = _resolve_endpoint()
+        if not base_url or not api_key:
+            log.info("vision_chat skipped: no endpoint/key")
+            return ""
+        if not content_parts:
+            return ""
+
+        import httpx
+
+        model = "gpt-5.5"
+        try:
+            from config import effective_llm_model_standalone  # type: ignore
+
+            model = effective_llm_model_standalone() or model
+        except Exception:  # noqa: BLE001
+            pass
+
+        messages: list[dict[str, Any]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": content_parts})
+        payload = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        }
+        with httpx.Client(
+            timeout=httpx.Timeout(connect=10.0, read=timeout, write=30.0, pool=30.0),
+            trust_env=_trust_env_proxy(),
+        ) as cli:
+            resp = cli.post(f"{base_url}/chat/completions", json=payload, headers=headers)
+        if resp.status_code != 200:
+            log.warning("vision_chat HTTP %d: %s", resp.status_code, resp.text[:200])
+            return ""
+        return (
+            (resp.json().get("choices") or [{}])[0]
+            .get("message", {})
+            .get("content", "")
+        ) or ""
+    except Exception as exc:  # noqa: BLE001
+        log.warning("vision_chat failed: %s", str(exc)[:200])
+        return ""
+
+
 def _parse_review_json(text: str) -> list[dict[str, Any]]:
     """LLM 输出 → 评审列表。容忍 ```json 围栏/前后杂文。失败 []。"""
     try:
@@ -114,15 +182,6 @@ def review_slides(
     从不抛异常。
     """
     try:
-        from .image_tools import _resolve_endpoint, _trust_env_proxy  # type: ignore
-
-        base_url, api_key = _resolve_endpoint()
-        if not base_url or not api_key:
-            log.info("visual review skipped: no endpoint/key")
-            return []
-
-        import httpx
-
         content: list[dict[str, Any]] = []
         n = min(len(png_paths), max_pages)
         for i in range(n):
@@ -148,45 +207,14 @@ def review_slides(
             "text": f"共 {n} 页。请逐页质检并按规定格式输出 JSON 数组。",
         })
 
-        # P-B 修复: 原写法 `_cfg.config.raw` 恒 AttributeError(config 模块无 config 属性,
-        # 同 TC-P2-05 坑)→ 被 except 吞 → 一直回落 hardcode "gpt-5.5",换模型时读不到有效值。
-        # 改走 standalone 访问器(直读 llm_runtime.json 的有效出站模型,不依赖 main 单例)。
-        model = "gpt-5.5"
-        try:
-            from config import effective_llm_model_standalone  # type: ignore
-            model = effective_llm_model_standalone() or model
-        except Exception:  # noqa: BLE001
-            pass
-
         system_prompt = (
             _REVIEW_SYSTEM_TEMPLATE if mode == "template" else _REVIEW_SYSTEM
         )
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": content},
-            ],
-            "max_tokens": 1500,
-            "temperature": 0.0,
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        }
-        with httpx.Client(
-            timeout=httpx.Timeout(connect=10.0, read=timeout, write=30.0, pool=30.0),
-            trust_env=_trust_env_proxy(),
-        ) as cli:
-            resp = cli.post(f"{base_url}/chat/completions", json=payload, headers=headers)
-        if resp.status_code != 200:
-            log.warning("visual review HTTP %d: %s", resp.status_code, resp.text[:200])
+        text = vision_chat(
+            content, system=system_prompt, timeout=timeout, max_tokens=1500
+        )
+        if not text:
             return []
-        text = (
-            (resp.json().get("choices") or [{}])[0]
-            .get("message", {})
-            .get("content", "")
-        ) or ""
         reviews = _parse_review_json(text)
         log.info(
             "visual_review done pages=%d issues=%d",
