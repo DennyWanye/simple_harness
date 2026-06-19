@@ -395,6 +395,81 @@ class IterationTracer:
 
 ### 挑战轮次记录
 - R0（v1 作者自评）：行号多来自子代理测绘，`persona.py`/`skill.py` 行号实现前需 grep 复核；provider 文件已确认为 `backend/providers/openai_compatible.py`（非 `backend/llm/`）。
+- R1（3 子代理：正确性 / 完整性 / 运行时）：见 §13 权威修订。
 
 ---
-（v1 完，等待挑战迭代）
+
+## 13. R1 挑战修订（权威 — 与前文冲突处以本节为准）
+
+> 三个独立子代理（正确性核实 / 实施完整性 / 运行时陷阱）对 v1 的挑战结论。**本节为只增内容，不删前文；凡与 §2-§11 冲突，以本节为准。** 已逐条 grep 复核。
+
+### 13.0 全局架构决策（影响所有 WI）
+
+- **A1 · 新依赖一律经 `build_agent` 工厂注入，不污染调用方**。`AgentLoop.__init__` 已有 40+ 可选参数；本批新增的 `tracer` / `code_todo_getter` / `force_finish_via_tool_choice` 仍加在 `__init__`（带安全默认值），但**只有 `build_agent`（`main.py:820+`）负责构造并传入**。其余 8 个构造点（`tool_use_shim.py`、`spawn_team.py:356`、`agent_tool.py:139`、`agent_parallel_tool.py`、`voice_pipeline.py:594`、`scripts/e2e_*.py`、测试 mock）**不传 = 吃默认值 = BC**。实现时逐一确认这 9 处不被新参数破坏。
+- **A2 · config flag 走 `raw_config` dict，不改 `config.py` dataclass**。参考 `main.py:872` 的 `verifier_cfg` 读取模式：`cfg.raw_config.get("agent", {}).get("force_finish_tool_choice", True)`。涉及的 flag：`[agent] force_finish_tool_choice`(默认 true)、`[agent] trace_enabled`(默认 false)、`[skills] knowledge_enabled`(默认 false)、WI-6 `fuzzy` 走参数默认不读 config（更 BC）。
+- **A3 · BC 测试范式**：mock provider 参考 `backend/tests/test_p5s2_agent_loop_provider_chain.py` 的 `_FakeProvider`；要断言 request body 的 WI-1，把 `_FakeProvider.chat_with_tools` 扩展成记录入参（`self.calls.append(kwargs)`），或 `mock.patch("httpx.AsyncClient.post")` 拦截。每个 WI 配一条 `test_wiN_bc`（flag off → 行为不变）。
+
+### 13.1 WI-1 修订（4 处运行时 bug，必修）
+
+- **B1 · provider 三方法都加 `tool_choice` 参数**：`chat_with_tools`(237)、`chat_stream_with_tools`、`_legacy_chat_with_tools_nonstream` 全部加 `tool_choice: str|None = None`，并把 345/691 的 `"auto"` 改 `tool_choice or "auto"`。（核实：345/691 行确为硬编码 `"auto"` ✅）
+- **B2 · 🔴【时序 fix，最高优先】置位必须在该轮 LLM 调用之前**：
+  - `_force_finish_next` 在 **for 循环顶部（`agent_loop.py:657`）复位为 False**。
+  - 在 selfcheck 判定区块（`858`）里，`if iteration >= _SELFCHECK_TIER3_AT:` 成立时**立即 `_force_finish_next = True`**（在 append tier3 消息的同时、且必须早于 `884` 行的 LLM 调用 try）。
+  - 若置位写在 LLM 调用之后 → 当轮仍用旧值传 `"auto"`、tier3 压力延迟一轮甚至失效（v1 §2.3 措辞含糊，以此为准）。
+- **B3 · 🔴 流式分支也要注入（v1 漏）**：tool_choice 必须覆盖**三条**调用路径——chain(`898`)、**stream_capable(`~979`)**、nonstream fallback(`1050`)。stream 分支在 `async for ev in self.llm.chat_with_fallback_stream(...)` 调用前加 `if _force_finish_next: llm_kwargs = {**llm_kwargs, "tool_choice": "none"}`。v1 只写了 chain+nonstream，**stream 必须补**。
+- **B4 · 🔴 tier3+ 禁止其他守门 nudge（指令打架 fix）**：tier3「禁止 tool_call、立即收尾」与 completion/verify/goal nudge「继续做」自相矛盾。在这三道 nudge 的注入分支前各加前置守卫 `if iteration < _SELFCHECK_TIER3_AT:`（tier3 及以后不再回灌"继续"类 nudge，统一交给强制收尾）。
+- **B5 · verify_exhausted 给最后一轮纯文本收尾**（接 §12 待办）：把 `1297-1308` 的直接 `ErrorEvent + return` 改为：置 `_force_finish_next=True` + 注入"verify 失败，本轮必须 end_turn 给用户总结" + `continue`；配一个 `_verify_final_done` latch 防再次进入死循环（最多再来一轮）。
+- **B6 · 兜底**：中转站不认 `tool_choice="none"` → provider 内 catch 400（message 含 tool_choice）降级为不传 + messages 末尾追加强提示，记 metric `tool_choice_none_unsupported`。（升入 DoD，见 §2.7 补：「且具备 relay 不支持 none 的兜底」）
+
+### 13.2 WI-2 修订
+- **C1 · tracer 经 build_agent 构造**：`AgentLoop.__init__` 加 `tracer=None`；`build_agent` 读 `[agent] trace_enabled`（默认 false），true 时构造 `IterationTracer(trace_dir=paths.user_data_dir()/"traces", ...)`（目录 mkdir(parents,exist_ok)）注入。其余构造点默认 None=零开销。
+- **C2 · 时间戳用 `time.time()`**：这是后端 Python 进程，`time.time()` 可用（与"Workflow 脚本里 Date.now 不可用"无关，那是 JS 沙箱约束）。
+- **C3 · 轮转先做简单版**：一个 `run(session_id)` 写 `<trace_dir>/<session_id>.jsonl`；行数上限/轮转留 §14 follow-up。确认 `traces/` 不在 diagnostic bundle 收集 glob 内（grep `diagnostic`/`bundle` 确认）。
+
+### 13.3 WI-3 修订（必修，否则测试挂）
+- **D1 · persona 第 4 步现状只有"验证"、无自查清单**（核实 `persona.py:36-62`，第 4 步在 L55-58 讲验证逻辑）。需在 `_CODE_MODE_PERSONA_TEMPLATE` **末尾（L62 之后，不改既有 L36-62）追加**「收尾自查清单」段（文本见 §4.3）。否则 `test_code_persona_has_closing_checklist` 找不到关键字必失败。
+- **D2 · companion 条件化自查推迟**：companion 的"仅有工具调用时才提示"涉及运行时条件（应在 agent_loop selfcheck 块判 `tools_used_count` 注入，非 persona 文本）→ 拆为 follow-up（§14），WI-3 本体只改 code persona。
+
+### 13.4 WI-4 修订
+- **E1 · `code_todo_getter` 经 build_agent 注入**，复用 `_sdb.get_code_todos`（与 completion_probe **同源**）。`AgentLoop.__init__` 加 `code_todo_getter=None`。
+- **E2 · 与 `_GOAL_ANCHOR_EVERY=5` 错峰**：todo sync 放 selfcheck 之后（`877` 之后），周期 8。测试需覆盖：iter 5/10（注 anchor）、iter 8/16（注 todo）、iter 40（若同周期不重复堆叠）。anchor=目标常驻、todo=带勾选进度，二者不重。
+
+### 13.5 WI-5 修订（工作量缩小 + 时机澄清）
+- **F1 · body inline 已实现**（核实 `skill.py:188-206` 已调 `loader.read_body` 拼入）→ WI-5 **缩为**：补 2-3 个知识片段（`SKILL.md`+frontmatter `triggers:`，`user-invocable:false`）+ flag `[skills] knowledge_enabled` + 测试。工作量 2d→**0.5-1d**。
+- **F2 · 触发时机澄清（纠正 challenger 的部分误解）**：知识注入发生在 **chat turn 级的 `assemble()`（`_run_chat` 内一次性 preflight）**，不是 agent loop 每轮迭代。每个**用户消息=一个新 turn=一次 assemble**，所以"用户这条消息里的触发词"能命中——这是符合预期的。challenger 5.1 混淆了"loop iteration"与"conversation turn"。**但**：同一 turn 内若跑很多轮且触发 compaction，注入的知识可能被压掉 → 见 F3。
+- **F3 · compaction 保护**：触发命中注入的知识 Slice 标 `triggered/protected` meta；`context_compressor` 见到该标记**不压或优先保**（对齐 §6.5 的"可压/不可压"待办，升为必做）。
+- **F4 · 阈值统一**：沿用 `skill_matcher` 既有 trigger 路径（命中即 `_TRIGGER_SIM=0.95`）触发注入，**不引入第二套 0.55 阈值**，避免冲突与长 turn 误注。
+
+### 13.6 WI-6 修订
+- **G1 · 降级分层明确**：精确失败（count==0）→ ① strip 前后空白后比对（命中按原缩进替换）→ ② 首尾各 1-2 行锚点定位 → ③ 仍失败返回 `{ok:false, did_you_mean: difflib.get_close_matches(old, file_lines, n=3, cutoff=0.6), matched_by:"none"}`（带行号）。
+- **G2 · fuzzy 走参数默认 True、不读 config**（更 BC，参考现有 `replace_all`）；`fuzzy=False` → 纯精确（BC）。降级命中要求相似度阈值（whitespace 命中需唯一；anchor 命中需 confidence≥0.9），多候选则拒改回 did-you-mean。
+
+### 13.7 WI-7 修订（致命竞态，必修）
+- **H1 · 🔴 必须走独立 control 通道，禁止混 chat 消息**：`clarification_request`/`clarification_response` 是**独立 WS 消息类型**（非 `chat_v2_*`），处理位置在 recv 主循环 `elif msg_type == "clarification_response"`（在 chat 消息处理之前），与 permission 同构。**原因**：chat 消息会触发"同 sid 新消息 cancel 旧 task"（`main.py:6419` 附近），若澄清答案当 chat 发，会 cancel 掉正在 `await fut` 的 agent task → 答案永远到不了、future 永挂。permission 没此问题正因为它走 control 通道——这是必须照抄的关键点，不是可选项。
+- **H2 · future 清理**：handler `try: return await asyncio.wait_for(fut, 120) finally: _clarify_pending.pop(request_id, None)`；超时返 `{ok:false, reason:"user_did_not_respond_in_time"}`，schema description 说明超时风险。
+- **H3 · 前端契约（补全，给前端工程师照做）**：
+  - 新 WS in：`clarification_request {request_id, question, options?}`；新 WS out：`clarification_response {request_id, answer}`。
+  - 前端：复用 `tauri-app/src/hooks/usePermissionRequests.ts` 同款 future/pending 模式新增 `ClarificationDialog`（问题文本 + options 按钮 + 自由输入框）；回复经 **control WS** 发 `clarification_response`。
+  - 单测须含 `test_clarify_not_cancelled_by_new_chat`：挂起期间来一条 chat 消息，断言澄清 future 不被 cancel。
+- **H4 · TTS 播报推迟**为 follow-up（§14），WI-7 本体只做文字弹窗。
+
+### 13.8 工作量重估（覆盖 §11）
+| 批次 | WI | 重估 |
+|---|---|---|
+| A | WI-1, WI-2, WI-3 | 2-3d（WI-1 含 4 处时序/分支修 + 兜底） |
+| B | WI-4, WI-5, WI-6 | 3-4d（WI-5 缩小、WI-6 降级匹配占大头） |
+| C | WI-7 | 2-3d（后端 + 前端 control 通道 + 竞态测试） |
+
+---
+
+## 14. Follow-up（本批不做、记录在案，只增不删）
+- WI-1：`verify_exhausted` latch 细化；relay 不支持 `none` 的更优雅协商。
+- WI-2：trace 行数上限 + 轮转 + archive。
+- WI-3：companion 条件化自查（运行时 tools_used 判定注入）。
+- WI-4：todo 进度注入去重（多次只保最新）。
+- WI-5：知识片段更多领域覆盖；可压/不可压精细分级。
+- WI-6：多块 `<<<<<<< SEARCH/=======/>>>>>>> REPLACE` + order-invariant。
+- WI-7：语音 TTS 播报 question；options 的语音可达交互。
+
+---
+（v1 + R1 修订完。下一步：R2 挑战验证修订是否闭合，详见后续追加。）
