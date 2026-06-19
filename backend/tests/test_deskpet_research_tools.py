@@ -27,6 +27,7 @@ import asyncio
 import json
 import re
 import time
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -352,6 +353,36 @@ async def test_default_extract_happy_path() -> None:
 
 
 @pytest.mark.asyncio
+async def test_default_extract_includes_metadata_date(monkeypatch) -> None:
+    import httpx
+
+    trafilatura = pytest.importorskip("trafilatura")
+    monkeypatch.setattr(
+        trafilatura,
+        "extract",
+        lambda *a, **kw: "Dated research source body. " * 80,
+    )
+    monkeypatch.setattr(
+        trafilatura,
+        "extract_metadata",
+        lambda html: SimpleNamespace(title="Dated Article", date="2026-06-01"),
+    )
+
+    class _T(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            return httpx.Response(200, text="<html><body>source</body></html>")
+
+    client = httpx.AsyncClient(transport=_T())
+    try:
+        out = await r.default_extract("https://e.com/dated", client=client)
+    finally:
+        await client.aclose()
+
+    assert out["ok"] is True
+    assert out["date"] == "2026-06-01"
+
+
+@pytest.mark.asyncio
 async def test_default_extract_404_returns_error() -> None:
     import httpx
 
@@ -475,6 +506,101 @@ async def test_research_run_happy_path() -> None:
     # TL;DR was extracted as summary
     assert report.summary != ""
     assert "quantum" in report.summary.lower()
+
+
+@pytest.mark.asyncio
+async def test_research_run_recency_scores_payload_dates(monkeypatch) -> None:
+    plan = json.dumps(["q1?"])
+    synth = "# T\n## TL;DR\n\nRecent and old sources differ [^1][^2]."
+    llm = FakeLLM([plan, synth])
+    search = make_search({"q1?": [
+        {"url": "https://arxiv.org/recent", "title": "Recent", "snippet": ""},
+        {"url": "https://arxiv.org/old", "title": "Old", "snippet": ""},
+    ]})
+    extract = make_extract({
+        "https://arxiv.org/recent": {
+            "ok": True, "url": "https://arxiv.org/recent",
+            "title": "Recent", "date": "2026-06-01",
+            "text": "current topic evidence with useful details. " * 50,
+            "fetched_at": time.time(),
+        },
+        "https://arxiv.org/old": {
+            "ok": True, "url": "https://arxiv.org/old",
+            "title": "Old", "date": "2018-01-01",
+            "text": "older topic evidence with useful details. " * 50,
+            "fetched_at": time.time(),
+        },
+    })
+    captured: list[Passage] = []
+    original_format = r._format_passages_for_llm
+
+    def _capture(passages: list[Passage]) -> str:
+        captured.extend(passages)
+        return original_format(passages)
+
+    monkeypatch.setattr(r, "_format_passages_for_llm", _capture)
+
+    await research_run("2026 topic update", llm_call=llm, search=search, extract=extract)
+
+    recency_by_url = {p.citation.url: p.dims["recency"] for p in captured}
+    recent = recency_by_url["https://arxiv.org/recent"]
+    old = recency_by_url["https://arxiv.org/old"]
+    assert recent != 3.0
+    assert old != 3.0
+    assert recent > old
+
+
+@pytest.mark.asyncio
+async def test_research_run_coverage_observability_counts_drops() -> None:
+    plan = json.dumps(["q1?"])
+    synth = "# T\n## TL;DR\n\nOnly usable source remains [^1]."
+    llm = FakeLLM([plan, synth])
+    search = make_search({"q1?": [
+        {"url": "https://cidian.qianp.com/x", "title": "Dictionary", "snippet": ""},
+        {"url": "https://example.com/short", "title": "Short", "snippet": ""},
+        {"url": "https://arxiv.org/ok", "title": "Usable", "snippet": ""},
+    ]})
+    extract = make_extract({
+        "https://cidian.qianp.com/x": {
+            "ok": True, "url": "https://cidian.qianp.com/x",
+            "title": "Dictionary",
+            "text": "dictionary page with enough words to be filtered by domain. " * 40,
+            "fetched_at": time.time(),
+        },
+        "https://example.com/short": {
+            "ok": True, "url": "https://example.com/short",
+            "title": "Short", "text": "too short",
+            "fetched_at": time.time(),
+        },
+        "https://arxiv.org/ok": {
+            "ok": True, "url": "https://arxiv.org/ok",
+            "title": "Usable",
+            "text": "usable research evidence about the topic. " * 50,
+            "fetched_at": time.time(),
+        },
+    })
+
+    report = await research_run(
+        "topic",
+        llm_call=llm,
+        search=search,
+        extract=extract,
+        max_urls_per_query=3,
+        mode="deep",
+    )
+
+    assert report.coverage["route"] == "ddg"
+    assert report.coverage["mode"] == "deep"
+    assert set(report.coverage["n_dropped_by_reason"]) == {
+        "ai_generated", "low_quality", "mojibake", "too_short",
+    }
+    assert report.coverage["n_dropped_by_reason"]["low_quality"] == 1
+    assert report.coverage["n_dropped_by_reason"]["too_short"] == 1
+    assert report.coverage["n_dropped_by_reason"]["ai_generated"] == 0
+    assert set(report.coverage["elapsed_ms_per_stage"]) == {
+        "plan", "search", "fetch", "score", "synth",
+    }
+    assert all(v >= 0 for v in report.coverage["elapsed_ms_per_stage"].values())
 
 
 @pytest.mark.asyncio
@@ -1248,6 +1374,42 @@ async def test_default_extract_js_render_cdp_edge(monkeypatch):
     assert out["extractor"] == "cdp-edge"
     assert "渲染后救回的真实正文" in out["text"]
     assert jina_counter["n"] == 0          # 本地渲染命中 → 跳过 jina(R6 去重)
+
+
+@pytest.mark.asyncio
+async def test_default_extract_js_render_updates_metadata_date(monkeypatch):
+    monkeypatch.setattr(r, "_js_render_enabled", lambda: True)
+    monkeypatch.setattr(r, "_js_render_engine", lambda: "cdp-edge")
+    monkeypatch.setattr(r, "_jina_enabled", lambda: False)
+    import deskpet.tools.research_cdp_edge as ce_mod
+
+    trafilatura = pytest.importorskip("trafilatura")
+    rendered = (
+        "<html><head><title>Rendered</title></head><body><article>"
+        + ("Rendered source body. " * 80)
+        + "</article></body></html>"
+    )
+
+    def _extract(html, **kw):
+        return "Rendered source body. " * 80 if html == rendered else ""
+
+    def _extract_metadata(html):
+        if html == rendered:
+            return SimpleNamespace(title="Rendered", date="2026-06-02")
+        return SimpleNamespace(title="Shell", date="")
+
+    async def _fake_render(url, *, timeout=20.0):
+        return rendered
+
+    monkeypatch.setattr(trafilatura, "extract", _extract)
+    monkeypatch.setattr(trafilatura, "extract_metadata", _extract_metadata)
+    monkeypatch.setattr(ce_mod, "cdp_edge_render", _fake_render)
+    _Resp, _FakeClient = _fake_client_factory()
+
+    out = await r.default_extract("https://spa.com/dated", client=_FakeClient(_JS_SHELL_BIG))
+
+    assert out["extractor"] == "cdp-edge"
+    assert out["date"] == "2026-06-02"
 
 
 @pytest.mark.asyncio

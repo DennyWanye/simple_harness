@@ -774,6 +774,7 @@ async def default_extract(
         html = resp.text
         title = ""
         text = ""
+        date = ""
         try:
             import trafilatura  # type: ignore
             extracted = trafilatura.extract(
@@ -783,6 +784,7 @@ async def default_extract(
             text = (extracted or "").strip()
             meta = trafilatura.extract_metadata(html)
             title = (getattr(meta, "title", None) or "").strip() if meta else ""
+            date = (getattr(meta, "date", None) or "").strip() if meta else ""
         except Exception as exc:  # noqa: BLE001
             log.debug("trafilatura extract failed for %s: %s", url, exc)
         if not title:
@@ -804,10 +806,15 @@ async def default_extract(
                     r_text = (trafilatura.extract(
                         rendered, include_comments=False, include_tables=False,
                         favor_recall=False) or "").strip()
+                    r_meta = trafilatura.extract_metadata(rendered)
                 except Exception:  # noqa: BLE001
                     r_text = ""
+                    r_meta = None
                 if len(r_text) > len(text):
                     text = r_text
+                    r_date = (getattr(r_meta, "date", None) or "").strip() if r_meta else ""
+                    if r_date:
+                        date = r_date
                     extractor = _js_render_engine()   # "cdp-edge" / "crawl4ai"
                     html = rendered   # 后续 ai_generated/mojibake 改扫【渲染后 HTML】(plan WI-3)
         # Jina Reader 二级兜底: 仅当本地渲染未命中(extractor 仍 trafilatura)才试,避免
@@ -826,6 +833,7 @@ async def default_extract(
         return {
             "ok": True, "url": url, "title": title or url,
             "text": text, "fetched_at": time.time(),
+            "date": date,
             "ai_generated": research_scoring.is_ai_generated(html),
             "extractor": extractor,
         }
@@ -975,6 +983,7 @@ async def deepresearch(
     max_total_passages: int = 12,
     min_passage_chars: int = 250,
     max_rounds: int = 1,
+    mode: str = "standard",
 ) -> ResearchReport:
     """End-to-end research pipeline. See module docstring.
 
@@ -992,9 +1001,41 @@ async def deepresearch(
     search_fn = search or default_search
     extract_fn = extract or default_extract
     errors: list[str] = []
+    mode = (mode or "standard").lower()
+    route = str(
+        getattr(search_fn, "route", None)
+        or getattr(search_fn, "provider", None)
+        or getattr(search_fn, "engine", None)
+        or "ddg"
+    )
+    dropped_by_reason = {
+        "ai_generated": 0,
+        "low_quality": 0,
+        "mojibake": 0,
+        "too_short": 0,
+    }
+    elapsed_ms_per_stage = {
+        "plan": 0,
+        "search": 0,
+        "fetch": 0,
+        "score": 0,
+        "synth": 0,
+    }
+
+    def _stage_ms(start: float) -> int:
+        return max(0, int(round((time.perf_counter() - start) * 1000)))
+
+    def _observability_coverage() -> dict[str, Any]:
+        return {
+            "route": route,
+            "mode": mode,
+            "n_dropped_by_reason": dict(dropped_by_reason),
+            "elapsed_ms_per_stage": dict(elapsed_ms_per_stage),
+        }
     _reset_js_render_budget()   # 本轮 JS 渲染触发计数归零(护 300s 预算)
 
     # ---- 1. plan ----------------------------------------------------
+    stage_start = time.perf_counter()
     try:
         plan_raw = await llm_call(_PLAN_PROMPT.format(topic=topic))
     except Exception as exc:  # noqa: BLE001
@@ -1006,6 +1047,7 @@ async def deepresearch(
         # lets users with offline / failing LLM still get *something*.
         sub_questions = [topic]
         errors.append("plan_fallback: using topic verbatim")
+    elapsed_ms_per_stage["plan"] = _stage_ms(stage_start)
 
     # ---- 1.5 query expansion (multi-query + HyDE) -------------------
     # 一次 LLM 调用产出额外搜索 query(改写+HyDE),提升召回。归属 topic(不偏向
@@ -1015,6 +1057,7 @@ async def deepresearch(
         expansion_qs = await _expand_queries(llm_call, topic, sub_questions, errors)
 
     # ---- 2. search --------------------------------------------------
+    stage_start = time.perf_counter()
     # 每个子问题: 普通搜 + (命中政策/企业/学术意图时)site: 定向官方域加一搜,
     # 让一手权威源(gov.cn/cninfo/arxiv)进候选池。site_directed 可关。
     # 末尾追加 query expansion 的额外查询(归属 topic)。
@@ -1031,6 +1074,7 @@ async def deepresearch(
         search_fn(sq, max_results=max_urls_per_query) for sq, _ in search_specs
     ]
     raw_results = await _gather_safe(search_tasks, label="search")
+    elapsed_ms_per_stage["search"] = _stage_ms(stage_start)
     # Dedup by URL, mapping back to the OWNING sub-question for keyword scoring.
     url_to_question: dict[str, str] = {}
     for (sq, owner), hits in zip(search_specs, raw_results):
@@ -1052,6 +1096,7 @@ async def deepresearch(
             coverage={
                 "n_sources": 0, "n_domains": 0,
                 "n_sub_questions": len(sub_questions),
+                **_observability_coverage(),
             },
             errors=errors,
         )
@@ -1062,10 +1107,13 @@ async def deepresearch(
     candidate_urls = list(url_to_question.keys())[
         : max_urls_per_query * len(search_specs)
     ]
+    stage_start = time.perf_counter()
     extract_tasks = [extract_fn(u) for u in candidate_urls]
     extracted = await _gather_safe(extract_tasks, label="extract")
+    elapsed_ms_per_stage["fetch"] = _stage_ms(stage_start)
 
     # ---- 4. score + filter -----------------------------------------
+    stage_start = time.perf_counter()
     # V8 tiered composite: authority(分层,含中文源) × recency(按 topic
     # velocity) × relevance(关键词覆盖,可选 BGE-M3 语义) × depth(长度).
     keywords = _topic_keywords(topic) + [
@@ -1086,19 +1134,23 @@ async def deepresearch(
             return None
         # 字典/词义站直接剔除(主题词被拆成单字时命中"X字的意思"页污染结果)。
         if research_scoring.is_low_quality(url):
+            dropped_by_reason["low_quality"] += 1
             errors.append(f"dropped_low_quality:{url}")
             return None
         text = (payload.get("text") or "").strip()
         if len(text) < min_passage_chars:
+            dropped_by_reason["too_short"] += 1
             return None
         # 源质量过滤: 页面自带"包含 AI 生成内容"声明 → 直接剔除(不可作正式引据)。
         # 双层: payload["ai_generated"](extract 阶段扫原始 HTML,抓 boilerplate 里
         # 的声明)+ 抽取后正文兜底(自定义 extract_fn 没带该 flag 时)。
         if payload.get("ai_generated") or research_scoring.is_ai_generated(text):
+            dropped_by_reason["ai_generated"] += 1
             errors.append(f"dropped_ai_generated:{url}")
             return None
         # 乱码源剔除(编码声明错→抽出整段 mojibake,不可引据)。
         if research_scoring.is_mojibake(text):
+            dropped_by_reason["mojibake"] += 1
             errors.append(f"dropped_mojibake:{url}")
             return None
         snippet = text[:min_passage_chars].replace("\n", " ").strip()
@@ -1266,6 +1318,8 @@ async def deepresearch(
             authority=p.citation.authority,
         )
 
+    elapsed_ms_per_stage["score"] = _stage_ms(stage_start)
+
     if not passages:
         errors.append("no usable passages")
         return ResearchReport(
@@ -1275,11 +1329,13 @@ async def deepresearch(
             coverage={
                 "n_sources": 0, "n_domains": 0,
                 "n_sub_questions": len(sub_questions),
+                **_observability_coverage(),
             },
             errors=errors,
         )
 
     # ---- 5. synthesize ---------------------------------------------
+    stage_start = time.perf_counter()
     passage_block = _format_passages_for_llm(passages)
     try:
         report_md = await llm_call(_SYNTH_PROMPT.format(
@@ -1294,6 +1350,7 @@ async def deepresearch(
     report_md = (report_md or "").strip()
     if not report_md:
         report_md = _passages_only_fallback(topic, passages)
+    elapsed_ms_per_stage["synth"] = _stage_ms(stage_start)
 
     # ---- 6. cite_check ---------------------------------------------
     citations = [p.citation for p in passages]
@@ -1341,6 +1398,7 @@ async def deepresearch(
         "diversity_ok": div["passes"],
         "rounds": rounds,
         "reranker": rerank_used,
+        **_observability_coverage(),
     }
     return ResearchReport(
         topic=topic,
@@ -1604,6 +1662,7 @@ async def _handle_deepresearch(args: dict, task_id: str) -> str:
         max_urls_per_query=int(args.get("max_urls_per_query") or d_urls),
         max_total_passages=int(args.get("max_total_passages") or d_pass),
         max_rounds=int(args.get("max_rounds") or d_rounds),
+        mode=depth,
     )
 
     out = {"ok": True, **report.as_dict()}
