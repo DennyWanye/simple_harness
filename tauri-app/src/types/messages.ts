@@ -430,6 +430,7 @@ export interface ModelContextSetAck {
 // P4-S20: skill platform — re-exported from skillPlatform.ts to keep
 // the wire-contract definition close to the rest of the platform types.
 import type {
+  ClarificationRequest,
   PermissionRequest,
   ToolUseEvent,
 } from "./skillPlatform";
@@ -494,6 +495,7 @@ export type IncomingMessage =
   | ModelContextGetResponse
   | ModelContextSetAck
   | PermissionRequest
+  | ClarificationRequest
   | ToolUseEvent
   | CodeModeStateMessage
   | CodeTodoUpdateMessage

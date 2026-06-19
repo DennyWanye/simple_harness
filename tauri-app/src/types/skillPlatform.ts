@@ -53,6 +53,25 @@ export interface PermissionResponse {
   };
 }
 
+/** Backend -> frontend: ask the user for a clarification answer. */
+export interface ClarificationRequest {
+  type: "clarification_request";
+  payload: {
+    request_id: string;
+    question: string;
+    options?: string[];
+  };
+}
+
+/** Frontend -> backend clarification reply. */
+export interface ClarificationResponse {
+  type: "clarification_response";
+  payload: {
+    request_id: string;
+    answer: string;
+  };
+}
+
 /**
  * Streaming event during a tool_use turn. The chat panel uses these to
  * render inline tool steps ("📖 reading foo.txt…", "✅ done").

@@ -358,6 +358,7 @@ try:
     from deskpet.types.skill_platform import (
         PermissionResponse as _PermissionResponse,
     )
+    from deskpet.tools.code_tools.clarify_tool import resolve_clarification_response
     _register_os_tools_v2(deskpet_tool_registry_v2)
     # P4-S22: Code mode tools (glob, grep, web_search) registered now;
     # todo_write + agent need closures over runtime objects (SessionDB,
@@ -496,6 +497,7 @@ try:
     # Filled by the gate responder, drained by the WS handler when
     # a permission_response arrives.
     _permission_pending: dict[str, "asyncio.Future"] = {}
+    _clarify_pending: dict[str, "asyncio.Future"] = {}
 
     async def _permission_responder(req):  # PermissionRequest → PermissionResponse
         """Broadcast permission_request via the control WS for the request's session,
@@ -524,6 +526,31 @@ try:
             _permission_pending.pop(req.request_id, None)
 
     permission_gate_v2.set_responder(_permission_responder)
+
+    async def _clarify_ask(question: str, options: list[str], session_id: str) -> str:
+        """Broadcast clarification_request via the independent control WS."""
+        ws = _control_connections.get(session_id) or _control_connections.get("default")
+        if ws is None:
+            return ""
+        request_id = str(uuid.uuid4())
+        loop = asyncio.get_running_loop()
+        fut = loop.create_future()
+        _clarify_pending[request_id] = fut
+        try:
+            await ws.send_json({
+                "type": "clarification_request",
+                "payload": {
+                    "request_id": request_id,
+                    "question": question,
+                    "options": list(options or []),
+                },
+            })
+            return await asyncio.wait_for(fut, 120)
+        except asyncio.TimeoutError:
+            return ""
+        finally:
+            _clarify_pending.pop(request_id, None)
+
     logger.info(
         "p4_s20_tool_registry_v2_ready",
         os_tools=len(deskpet_tool_registry_v2.list_tools(source="builtin")),
@@ -533,6 +560,9 @@ except Exception as _v2_exc:  # noqa: BLE001 — non-fatal, log + degrade
     deskpet_tool_registry_v2 = None
     permission_gate_v2 = None
     _permission_pending = {}
+    _clarify_pending = {}
+    _clarify_ask = None
+    resolve_clarification_response = None
     skill_registry_client = None
     skill_installer = None
     _skill_staged = {}
@@ -1792,6 +1822,7 @@ try:
             from deskpet.tools.code_tools import (
                 build_todo_write_tool as _build_todo_write_tool,
                 build_agent_tool as _build_agent_tool,
+                build_ask_clarification_tool as _build_ask_clarification_tool,
             )
             from agent.tool_use_shim import (  # type: ignore[import-not-found]
                 OpenAICompatibleAgentLLM as _ShimForAgent,
@@ -1911,6 +1942,20 @@ try:
                 agent_parallel_schema=_parallel_schema,
             )
             # P5-S2 G1: count bumped 5→6 — added fetch_tool_result
+            if _clarify_ask is not None:
+                _clarify_handler, _clarify_schema = _build_ask_clarification_tool(
+                    _clarify_ask
+                )
+                deskpet_tool_registry_v2.register(
+                    name="ask_clarification",
+                    toolset="code",
+                    schema=_clarify_schema,
+                    handler=_clarify_handler,
+                    permission_category="read_file",
+                    source="builtin",
+                    timeout_seconds=130.0,
+                    replace_allowed=True,
+                )
             logger.info("p4_s22_code_tools_registered", count=6)
         except Exception as _ct_exc:  # noqa: BLE001
             logger.warning(
@@ -3903,6 +3948,22 @@ async def control_channel(ws: WebSocket):
                         request_id=rid,
                     )
 
+            elif msg_type == "clarification_response":
+                payload = raw.get("payload", {}) or {}
+                if callable(resolve_clarification_response) and resolve_clarification_response(
+                    _clarify_pending,
+                    payload,
+                ):
+                    logger.info(
+                        "clarification_response_resolved",
+                        request_id=payload.get("request_id", ""),
+                    )
+                else:
+                    logger.info(
+                        "clarification_response_no_pending",
+                        request_id=payload.get("request_id", ""),
+                    )
+
             elif msg_type == "permission_auto_mode_set":
                 # P4-S21 #13: toggle "yes-to-all" mode. Settings panel
                 # sends {enabled: bool}; we flip the flag on the live
@@ -5696,7 +5757,10 @@ async def control_channel(ws: WebSocket):
                             if _proot is not None:
                                 deskpet_tool_registry_v2.set_session_context(
                                     _sid,
-                                    {"_project_root": str(_proot)},
+                                    {
+                                        "_project_root": str(_proot),
+                                        "_session_id": _sid,
+                                    },
                                 )
                         else:
                             # OpenSpec 2026-05-16 §D3 — companion session

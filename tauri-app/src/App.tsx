@@ -58,7 +58,9 @@ import { useBudgetToast } from "./hooks/useBudgetToast";
 import { invoke } from "@tauri-apps/api/core";
 import { useControlChannel } from "./hooks/useWebSocket";
 import { usePermissionRequests } from "./hooks/usePermissionRequests";
+import { useClarificationRequests } from "./hooks/useClarificationRequests";
 import { PermissionPopup } from "./components/PermissionPopup";
+import { ClarificationDialog } from "./components/ClarificationDialog";
 import { SkillStorePanel } from "./components/SkillStorePanel";
 import { Toolbar } from "./components/Toolbar";
 import { Icon } from "./components/Icon";
@@ -718,6 +720,8 @@ function App() {
     state === "connected" ? getControlChannel() : null;
   const { current: permissionCurrent, resolve: resolvePermission } =
     usePermissionRequests(permissionChannel);
+  const { current: clarificationCurrent, resolve: resolveClarification } =
+    useClarificationRequests(permissionChannel);
 
   // P4-S20 Stage C — skill store panel toggle
   const [skillStoreOpen, setSkillStoreOpen] = useState(false);
@@ -1711,6 +1715,10 @@ function App() {
       <PermissionPopup
         request={permissionCurrent}
         onResolve={resolvePermission}
+      />
+      <ClarificationDialog
+        current={clarificationCurrent}
+        onResolve={resolveClarification}
       />
 
       {/* P5-S1 D — Debug overlay. Only renders when
