@@ -90,6 +90,7 @@ def build_default_assembler(
     skill_matcher=None,
     skill_loader=None,
     auto_disclosure_config=None,
+    knowledge_enabled: bool = False,
 ) -> ContextAssembler:
     """One-shot factory for the common case.
 
@@ -134,9 +135,17 @@ def build_default_assembler(
 
     # FP-5 缺口 5j：把 auto_disclosure 配置作为 assemble() 的 default_config，
     # 任何 venue 调用方不传 skills 也能让 SkillComponent 拿到 → 根治 venue-miss。
+    # WI-5: knowledge_enabled 也进 default_config，让 assemble() 的 per-turn
+    # config（被 SkillComponent + assembler 的 prefer 注入逻辑读）拿得到该 flag，
+    # 否则触发式知识注入在任何 venue 都因 config 缺该键而恒不生效（真机暴露）。
     _default_config = None
-    if auto_disclosure_config:
-        _default_config = {"skills": {"auto_disclosure": dict(auto_disclosure_config)}}
+    if auto_disclosure_config or knowledge_enabled:
+        _skills_default = {}
+        if auto_disclosure_config:
+            _skills_default["auto_disclosure"] = dict(auto_disclosure_config)
+        if knowledge_enabled:
+            _skills_default["knowledge_enabled"] = True
+        _default_config = {"skills": _skills_default}
 
     return ContextAssembler(
         component_registry=registry,

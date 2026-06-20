@@ -1679,6 +1679,12 @@ try:
             if getattr(getattr(config, "skills", None), "auto_disclosure", None)
             else None
         ),
+        # WI-5：把 knowledge_enabled 也喂进 assembler 的 default_config，使
+        # assemble() 的 per-turn config（SkillComponent 过滤 + assembler prefer
+        # 注入都读它）拿得到该 flag。否则触发式知识注入恒不生效（真机暴露）。
+        knowledge_enabled=bool(
+            getattr(getattr(config, "skills", None), "knowledge_enabled", False)
+        ),
     )
     service_context.register("context_assembler", _assembler)
 
