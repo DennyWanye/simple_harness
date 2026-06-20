@@ -194,3 +194,50 @@
 ### 8.4 待两个子代理夯实的代码执行细节（本轮派活）
 - **Agent A（Fix A 组装层）**：锚定"紧邻 user"需不需要改 `bundle.build_messages`（现签名 [bundle.py:282](../../backend/deskpet/agent/assembler/bundle.py) 是 system→history→user，无"history 后 system"槽位）；embedder async 在 `provide` 里 await 的并发/超时影响；Tier 1 两条标签的确切注入载体（memory_block meta 还是 bundle 新参数）。
 - **Agent B（Fix B 分发层）**：本轮原始 user 消息（`_msgs[-1].content`）从 `_run_chat`（main.py:5222）到 AgentLoop tool dispatch 的确切可达点；通用注入"声明 user_request 的工具自动填原话"该挂在哪一层（schema/registry/dispatch）；有无阻碍。
+
+---
+
+## 9. 子代理代码执行评估定稿（2026-06-20 · 两个 general-purpose 子代理并行读码后）
+
+> 两个子代理各亲自读码，**各挖出一个 🔴 级阻碍**（§8 未覆盖）。本节是**可直接照改的实现 spec** + 对 §8 的修正。所有 file:line 为本轮读码核实。
+
+### 9.1 Fix A 确切改点（组装层）
+
+**可行性**：Tier 1 锚定 ✅ / Tier 1 重定性 ✅ / Tier 2 截断 ⚠️（embedder 超时风险，见阻碍）。
+
+| # | 文件:行 | 改什么 |
+|---|---|---|
+| A1 | [bundle.py:262](../../backend/deskpet/agent/assembler/bundle.py) `build_messages` | 加 keyword-only `late_system_nudge: Optional[str]=None`；在 `history` extend **之后**、`user_message` append **之前**插入 `{"role":"system","content":late_system_nudge}`。**对 prompt cache 零影响**（frozen 前缀不动，nudge 落动态尾部）。 |
+| A2 | [bundle.py](../../backend/deskpet/agent/assembler/bundle.py) `Bundle` | 新增字段 `late_system_nudge: str=""`，由 MemoryComponent 经 meta 透出、`assembler._stitch`（[:365](../../backend/deskpet/agent/assembler/assembler.py)）提升（仿 `l2_history` 同一套机制）。**锚定逻辑收敛组装层，main.py 仅 1 行透传。** |
+| A3 | [memory.py:95](../../backend/deskpet/agent/assembler/components/memory.py) | 构建 `l2_history` 时，若 `policy.relabel_l2`，在列表**头部**插一条 system：「以下为较早对话记录，可能涉及其他话题，仅供背景参考」。**就用 l2_history 首条，不需 bundle 新参数**；L2 仍是真 turn，**不回退 P4-S21 #16**。 |
+| A4 | [bundle.py:106](../../backend/deskpet/agent/assembler/bundle.py) `MemoryPolicy` + [policy.py:201](../../backend/deskpet/agent/assembler/policy.py) `_to_policy` | **双改**（隐藏必改点）：dataclass 加 `relabel_l2=True`/`anchor_current=True`/`topic_shift_gate=False`/`topic_shift_threshold=0.35`/`l2_keep_on_shift=1`；`_to_policy` 同步解析，否则 YAML 新 key **被静默丢弃**。 |
+| A5 | [memory.py](../../backend/deskpet/agent/assembler/components/memory.py) provide（Tier 2 才执行） | embedder 经 `getattr(mm,"_retriever",None)._embedder` 逐层防守取；`_topic_similarity` 内：`is_ready()/is_mock()` 预检（mock=md5 hash 无语义→不门控）→ `await asyncio.wait_for(emb.encode([cur,l2_concat]),0.3)` → `except→None→保留全部 L2`（fail-open）。归一化向量 cosine 退化点积。 |
+| A6 | [entity_extractor.py:39](../../backend/deskpet/memory/entity_extractor.py) `_STOPWORDS` | 直接 import 复用做 anaphora 检测（句首代词/疑问词起手→判延续）。合取判据：`sim<阈值 ∧ len(cur)>50 ∧ not _starts_with_anaphora` 才截断，任一不满足全量保留。 |
+
+**🔴 阻碍（A）**：embedder 的 `await encode` 落在**已有 1500ms 硬超时的组件 fan-out 内**（[registry.py:172](../../backend/deskpet/agent/assembler/registry.py) + assembler.py:91），`mm.recall` 已占一部分。**冷模型首调（warmup 加载 286MB BGE-M3）→ memory slice 超时 → L2+L3 全丢，比漂移更糟。** 缓解：①Tier 2 才碰 embedder（**Tier 1 零 embedder→零此风险，这是拆层最大价值**）②`is_ready()` 预检不触发 warmup ③内层 `wait_for(0.3)` ④fail-open。
+
+### 9.2 Fix B 确切改点（分发层）
+
+**可行性**：B2 系统注入 ✅ / 通用化 ✅（但**必须避开** `set_session_context`，见 🔴 阻碍）。
+
+| # | 文件:行 | 改什么 |
+|---|---|---|
+| B1 | [main.py:6092](../../backend/main.py) 调 `_agent.run(...)` 处 | 新增 kwarg `loop_user_request=(None if _is_sentinel else _text)`。**`_text` 是函数参数、100% 本轮原话**，比 `_msgs[-1]` 零歧义。 |
+| B2 | [agent_loop.py:564](../../backend/deskpet/agent/agent_loop.py) `run()` 签名 + :1872 dispatch 循环体 | run() 收 `loop_user_request`；在 `for tc in response.tool_calls:` 体内、`_dispatch_tool` 之前：若 `_tool_declares_user_request(tc.name, tool_schemas)` 且 `isinstance(tc.arguments,dict)` → **无条件覆盖** `tc.arguments["user_request"]=loop_user_request`。 |
+| B3 | [research_tools.py:1589](../../backend/deskpet/tools/research_tools.py) schema | properties 加 `user_request`（**不进 required**），description 写「系统注入，勿填」（降低 LLM 主动填漂值的概率）。 |
+| B4 | research_tools.py：`_PLAN_PROMPT`[:463] / `_SYNTH_PROMPT`[:485] / orchestrator 签名[:975] / `.format`[:1040,:1341] / handler[:1638,:1658] | 加 `ORIGINAL USER REQUEST (authoritative)` 双锚；orchestrator 内 `_ur=(user_request or topic).strip()`；handler 从 args 取 `user_request` 透传。**`user_request=None`→`_ur=topic` 零回归**。 |
+
+**🔴 阻碍（B）**：**不能复用 registry 的 `set_session_context`** —— [registry.py:690-692](../../backend/deskpet/agent/registry.py) 合并顺序是 `session_context` 先、`params`（LLM 填的）后 → **冲突时 LLM 值获胜**。若 LLM 正漂时也填了个漂的 `user_request`，会**覆盖系统注入的真原话**，正好违背 B2 初衷。缓解：注入走 **agent_loop dispatch 直写 `tc.arguments`** + **无条件覆盖**（系统值永远赢，一并解决"LLM 乱填"+"合并顺序"两个问题）。
+
+### 9.3 对 §8 的修正（子代理发现，须并入）
+
+1. **§8.1 Tier 1① 锚定位置钉死 = `build_messages` 新参数 `late_system_nudge`**（非 memory_block 顶部——那在 history 前 recency 压不住；非拼进 user 文本——会污染 Fix B 的原话源）。两个 Fix 在此**耦合**：锚定必须走独立 system message 保持 user turn 纯净。
+2. **§8 漏了"配置双改"**：`MemoryPolicy` dataclass + `_to_policy` loader 是固定 schema，YAML 加 key 会被静默吞（A4）。
+3. **§8.1 Tier 2 未量化超时风险**：必须补 `is_ready()` 预检 + 内层 `wait_for(0.3)` + fail-open，否则 Tier 2 开启时冷模型反向制造"丢 L2"新 bug（A 阻碍）。
+4. **§8.2「自动注入 `_msgs[-1].content`」措辞有坑**：`_msgs[-1]` 仅在 `run()` 入口、循环开始前是用户原话；进 loop 后 `working_messages[-1]` 是工具结果。**改为：main.py:6092 显式传 `loop_user_request=_text`**（B1）。
+5. **§8.2 通用注入挂点钉死 = agent_loop dispatch 直写 `tc.arguments`，显式排除 `set_session_context`**（合并顺序陷阱，B 阻碍）。
+6. **注入用「无条件覆盖」而非「缺失才填」**：schema 字段对 LLM 可见可能被乱填，无条件覆盖一举解决（取代 §4#4「拿不到则 fallback」）。
+
+### 9.4 测试空白（须补）
+- 现有 [test_p4s21_context_bundle_history.py](../../backend/tests) 只覆盖 L2→history 提升，**无任何 L2 多轮追问连续性/门控测试**。Tier 1 单测验"标签+nudge 注入"（不验删除）；Tier 2 必须补四组 fixture：高相似保留 / 低相似截断 / mock 不门控 / encode 超时 fail-open。
+- Fix B 单测：`_PLAN_PROMPT.format` 含 user_request；`user_request=None` 回退 topic；dispatch 无条件覆盖 LLM 乱填值。
