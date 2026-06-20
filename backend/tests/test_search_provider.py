@@ -4,6 +4,8 @@
 """Deep-research V8 — unified search_provider (region-aware DDG)."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from deskpet.tools import search_provider as sp
@@ -145,7 +147,7 @@ def test_parse_baidu_html():
 
 
 def test_engine_queue_default():
-    assert sp._engine_queue() == ["bing", "duckduckgo"]  # 无配置 → 默认
+    assert sp._engine_queue() == ["google-cdp"]  # §6.0: 默认只 google-cdp(可达门控),去 bing/ddg
 
 
 def test_engine_queue_config(monkeypatch):
@@ -161,6 +163,7 @@ def test_engine_queue_config(monkeypatch):
 
 def test_known_engines_includes_browser_and_searxng():
     assert "bing-cdp" in sp._KNOWN_ENGINES
+    assert "google-cdp" in sp._KNOWN_ENGINES
     assert "searxng" in sp._KNOWN_ENGINES
 
 
@@ -192,7 +195,8 @@ def test_search_fallback_queue(monkeypatch):
             return _FakeResp(_SAMPLE_HTML)  # ddg 出结果
 
     monkeypatch.setattr(sp.httpx, "Client", _FakeClient)
-    r = sp.search("测试", max_results=5)  # 默认 [bing, duckduckgo]
+    # §6.0: 默认队列已改 google-cdp,本测显式传 bing/ddg 验降级机制本身
+    r = sp.search("测试", max_results=5, engines=["bing", "duckduckgo"])
     assert r["engine"] == "duckduckgo"   # 降级成功
     assert r["count"] == 2
     assert any("bing.com" in u for u in calls)  # 确实先试了 bing
@@ -299,6 +303,134 @@ async def test_search_async_bing_cdp_captcha_sentinel(monkeypatch):
     assert results == []
     assert "bing_cdp_captcha_suspected" in sp.get_last_search_errors()
     assert sp.get_last_engines_hit() == []
+
+
+def test_parse_google_html_extracts_organic_results():
+    html = (Path(__file__).parent / "fixtures" / "google_serp_sample.html").read_text(encoding="utf-8")
+
+    out = sp._parse_google_html(html, max_results=5)
+
+    assert out[:2] == [
+        {
+            "url": "https://example.com/google-a",
+            "title": "Google Result A",
+            "snippet": "First Google organic snippet.",
+        },
+        {
+            "url": "https://example.org/google-b",
+            "title": "Google Result B",
+            "snippet": "Second Google organic snippet.",
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_search_async_google_cdp_uses_rendered_fixture_without_httpx(monkeypatch):
+    html = (Path(__file__).parent / "fixtures" / "google_serp_sample.html").read_text(encoding="utf-8")
+    calls = []
+
+    async def _fake_render(url: str, *, timeout: float):
+        calls.append((url, timeout))
+        return html
+
+    monkeypatch.setattr(sp, "_google_reachable", lambda: True)
+    monkeypatch.setattr(sp, "cdp_edge_render", _fake_render)
+    client = _AsyncClientFail()
+
+    results = await sp.search_async("中文测试", engines=["google-cdp"], client=client, max_results=5)
+
+    assert len(results) >= 2
+    assert calls and "google.com/search" in calls[0][0]
+    assert "q=%E4%B8%AD%E6%96%87%E6%B5%8B%E8%AF%95" in calls[0][0]
+    assert "hl=zh-CN" in calls[0][0]
+    assert calls[0][1] == 8.0
+    assert client.requests == []
+    assert sp.get_last_engines_hit() == ["google-cdp"]
+
+
+@pytest.mark.asyncio
+async def test_search_async_google_cdp_unreachable_skips_render_and_degrades(monkeypatch):
+    render_calls = []
+
+    async def _fake_render(url: str, *, timeout: float):
+        render_calls.append((url, timeout))
+        raise AssertionError("google-cdp should not render when google is unreachable")
+
+    class _Client:
+        class _Resp:
+            text = _SAMPLE_HTML
+
+            def raise_for_status(self):
+                return None
+
+        async def request(self, method, url, **kw):
+            return self._Resp()
+
+    monkeypatch.setattr(sp, "_google_reachable", lambda: False)
+    monkeypatch.setattr(sp, "cdp_edge_render", _fake_render)
+
+    results = await sp.search_async("test", engines=["google-cdp", "duckduckgo"], client=_Client())
+
+    assert len(results) == 2
+    assert render_calls == []
+    assert sp.get_last_engines_hit() == ["duckduckgo"]
+    assert "google-cdp: unreachable" in sp.get_last_search_errors()
+
+
+@pytest.mark.asyncio
+async def test_search_async_google_cdp_captcha_sentinel(monkeypatch):
+    captcha_html = (
+        '<html><body><form action="/sorry/index"><div class="g-recaptcha"></div>'
+        "Our systems have detected unusual traffic from your computer network."
+        "</body></html>"
+        + ("x" * 11_000)
+    )
+
+    async def _fake_render(url: str, *, timeout: float):
+        return captcha_html
+
+    monkeypatch.setattr(sp, "_google_reachable", lambda: True)
+    monkeypatch.setattr(sp, "cdp_edge_render", _fake_render)
+
+    results = await sp.search_async("test", engines=["google-cdp"], client=_AsyncClientFail())
+
+    assert results == []
+    assert "google_cdp_captcha_suspected" in sp.get_last_search_errors()
+    assert sp.get_last_engines_hit() == []
+
+
+def test_google_reachable_cache_uses_injected_clock(monkeypatch):
+    state = {"now": 100.0, "calls": 0}
+    monkeypatch.setattr(sp, "_now", lambda: state["now"])
+    sp.reset_google_reachable_cache()
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+    class _Client:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, url):
+            state["calls"] += 1
+            return _Resp()
+
+    monkeypatch.setattr(sp.httpx, "Client", _Client)
+
+    assert sp._google_reachable() is True
+    assert sp._google_reachable() is True
+    assert state["calls"] == 1
+
+    state["now"] += sp._GOOGLE_REACHABLE_TTL_SECONDS + 0.1
+    assert sp._google_reachable() is True
+    assert state["calls"] == 2
 
 
 def test_engine_queue_searxng_requires_url(monkeypatch):

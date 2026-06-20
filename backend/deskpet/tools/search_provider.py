@@ -47,10 +47,16 @@ log = logging.getLogger(__name__)
 #   百度(baidu)  = 覆盖最高但广告/百家号多(已降权) → 备选,默认不在队列,可配置加入
 _DDG_HTML_URL = "https://html.duckduckgo.com/html/"
 _BING_URL = "https://www.bing.com/search"
+_GOOGLE_HOME_URL = "https://www.google.com/"
+_GOOGLE_SEARCH_URL = "https://www.google.com/search"
 _BAIDU_URL = "https://www.baidu.com/s"
 
-_DEFAULT_ENGINE_QUEUE = ("bing", "duckduckgo")  # 百度备选,不默认启用
-_KNOWN_ENGINES = ("bing", "duckduckgo", "baidu", "bing-cdp", "searxng")
+# §6.0 用户指令(2026-06-20): 不再默认用 Bing/DDG(裸 SERP 易被 IP 封)。默认只 google-cdp
+# (无头浏览器渲染谷歌,可达门控:有 VPN/能访问才用,不通自动跳过)。通用主题主要靠直连源
+# (百度百科/搜狗百科国内稳定 + 维基可达门控)。bing/duckduckgo/baidu/bing-cdp/searxng 仍
+# 在 _KNOWN_ENGINES,用户可经 [research].search_engines 显式 opt-in 当兜底。
+_DEFAULT_ENGINE_QUEUE = ("google-cdp",)
+_KNOWN_ENGINES = ("bing", "duckduckgo", "baidu", "bing-cdp", "google-cdp", "searxng")
 
 _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -62,6 +68,8 @@ _MAX_RESULTS_CAP = 10
 _SEARCH_CDP_MAX_PER_RUN = 4
 _SERP_RENDER_TIMEOUT = 8.0
 _CAPTCHA_HTML_MIN_BYTES = 10 * 1024
+_GOOGLE_REACHABLE_TIMEOUT = 4.0
+_GOOGLE_REACHABLE_TTL_SECONDS = 60.0
 _ENGINE_FAILURES_BEFORE_COOLDOWN = 2
 _ENGINE_COOLDOWN_SECONDS = 5 * 60.0
 _RESULT_CACHE_TTL_SECONDS = 2 * 60.0
@@ -100,6 +108,7 @@ _now = lambda: time.monotonic()
 _sleep = time.sleep
 _async_sleep = asyncio.sleep
 _search_cdp_count = 0
+_google_reachable_cache: Optional[tuple[float, bool]] = None
 _engine_failures: dict[str, int] = {}
 _engine_cooldown_until: dict[str, float] = {}
 _result_cache: dict[tuple[str, str, str], tuple[float, list[dict[str, str]]]] = {}
@@ -163,11 +172,18 @@ def reset_search_cdp_budget() -> None:
 
 def reset_search_runtime_state() -> None:
     """Clear process-local search hardening state for tests or a new runtime."""
+    reset_google_reachable_cache()
     _engine_failures.clear()
     _engine_cooldown_until.clear()
     _result_cache.clear()
     _last_engines_hit.clear()
     _last_search_errors.clear()
+
+
+def reset_google_reachable_cache() -> None:
+    """Clear the short-lived Google reachability probe cache."""
+    global _google_reachable_cache
+    _google_reachable_cache = None
 
 
 def get_last_engines_hit() -> list[str]:
@@ -272,6 +288,36 @@ def _bing_serp_url(query: str, region: str) -> str:
     return _BING_URL + "?" + urllib.parse.urlencode({"q": query, "mkt": mkt})
 
 
+def _google_serp_url(query: str, region: str) -> str:
+    hl = "zh-CN" if region == "cn-zh" else "en"
+    return f"{_GOOGLE_SEARCH_URL}?q={urllib.parse.quote(query, safe='')}&hl={hl}"
+
+
+def _google_reachable() -> bool:
+    """Lightweight Google availability gate with a short process-local TTL."""
+    global _google_reachable_cache
+    now = _now()
+    if _google_reachable_cache is not None:
+        expires_at, reachable = _google_reachable_cache
+        if now < expires_at:
+            return reachable
+
+    reachable = False
+    try:
+        with httpx.Client(
+            headers=_BASE_HEADERS,
+            timeout=_GOOGLE_REACHABLE_TIMEOUT,
+            follow_redirects=True,
+        ) as client:
+            resp = client.get(_GOOGLE_HOME_URL)
+        reachable = int(getattr(resp, "status_code", 200)) < 500
+    except Exception as exc:  # noqa: BLE001
+        log.debug("google reachability probe failed: %s", exc)
+
+    _google_reachable_cache = (now + _GOOGLE_REACHABLE_TTL_SECONDS, reachable)
+    return reachable
+
+
 def _search_cdp_budget_available() -> bool:
     return _search_cdp_count < _SEARCH_CDP_MAX_PER_RUN
 
@@ -344,6 +390,80 @@ def _looks_like_bing_captcha(html: str, results: list[dict[str, str]]) -> bool:
     text = _strip(html).lower()
     needles = ("verify", "unusual traffic", "captcha", "机器人")
     return any(n in text for n in needles)
+
+
+def _clean_google_url(url: str) -> str:
+    if not url:
+        return ""
+    if url.startswith("//"):
+        url = "https:" + url
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.path == "/url":
+            qs = urllib.parse.parse_qs(parsed.query)
+            target = qs.get("q", [""])[0] or qs.get("url", [""])[0]
+            if target:
+                return urllib.parse.unquote(target)
+    except Exception:  # noqa: BLE001
+        return url
+    return url
+
+
+def _node_text(node: Any) -> str:
+    return re.sub(r"\s+", " ", (node.text() or "")).strip()
+
+
+def _parse_google_html(html: str, max_results: int) -> list[dict[str, str]]:
+    """Parse Google organic SERP HTML rendered by CDP."""
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    try:
+        from selectolax.parser import HTMLParser  # type: ignore
+    except ImportError:
+        return out
+
+    tree = HTMLParser(html or "")
+    containers = list(tree.css("div.g")) + list(tree.css("div[data-hveid]"))
+    for node in containers:
+        if len(out) >= max_results:
+            break
+        a_node = None
+        h3_node = None
+        for a in node.css("a[href]"):
+            h3 = a.css_first("h3")
+            if h3 is not None:
+                a_node = a
+                h3_node = h3
+                break
+        if a_node is None or h3_node is None:
+            continue
+
+        url = _clean_google_url((a_node.attributes.get("href") or "").strip())
+        title = _node_text(h3_node)
+        if not url.startswith("http") or not title or url in seen:
+            continue
+
+        snippet = ""
+        for selector in (".VwiC3b", "[data-sncf]", "[data-content-feature]"):
+            s = node.css_first(selector)
+            if s is not None:
+                snippet = _node_text(s)
+                break
+        if not snippet:
+            text = _node_text(node)
+            snippet = text.replace(title, "", 1).strip()
+        out.append({"url": url, "title": title, "snippet": snippet})
+        seen.add(url)
+    return out
+
+
+def _looks_like_google_captcha(html: str, results: list[dict[str, str]]) -> bool:
+    if results or not html or len(html.encode("utf-8", "ignore")) <= _CAPTCHA_HTML_MIN_BYTES:
+        return False
+    text = html.lower()
+    needles = ("recaptcha", "g-recaptcha", "unusual traffic", "/sorry/")
+    return any(n in text for n in needles)
+
 
 _TAG_STRIP_RE = re.compile(r"<[^>]+>")
 _CJK_RE = re.compile(r"[㐀-鿿぀-ヿ가-힯]")
@@ -514,7 +634,7 @@ def search(
     queue = engines or _engine_queue()
     last_err: Optional[str] = None
     for engine in queue:
-        if engine in {"bing-cdp", "searxng"}:
+        if engine in {"bing-cdp", "google-cdp", "searxng"}:
             continue
         if not _engine_available(engine):
             last_err = f"{engine}: cooling down"
@@ -620,6 +740,39 @@ async def search_async(
                 _record_engine_failure(engine)
                 continue
 
+            if engine == "google-cdp":
+                if not _google_reachable():
+                    _record_engine_failure(engine)
+                    _record_search_error("google-cdp: unreachable")
+                    continue
+                if not _consume_search_cdp_budget():
+                    _record_search_error("google-cdp: budget exhausted")
+                    continue
+                try:
+                    html = await cdp_edge_render(_google_serp_url(q, reg), timeout=_serp_render_timeout())
+                    if html is None:
+                        _record_engine_failure(engine)
+                        _record_search_error("google-cdp: render returned none")
+                        continue
+                    results = _parse_google_html(html, max_results=n)
+                    if _looks_like_google_captcha(html, results):
+                        _record_engine_failure(engine)
+                        _record_search_error("google_cdp_captcha_suspected")
+                        log.warning("google_cdp_captcha_suspected", extra={"query": q})
+                        continue
+                except Exception as exc:  # noqa: BLE001
+                    _record_engine_failure(engine)
+                    _record_search_error(f"{engine}: {exc}")
+                    log.debug("async search engine %s failed for %r: %s", engine, q, exc)
+                    continue
+                if results:
+                    _record_engine_success(engine)
+                    _cache_results(engine, q, reg, results)
+                    _mark_engine_hit(engine)
+                    return results
+                _record_engine_failure(engine)
+                continue
+
             if engine == "searxng":
                 searxng_url = _searxng_url()
                 if not searxng_url:
@@ -708,4 +861,5 @@ __all__ = [
     "parse_ddg_html", "parse_bing_html", "parse_baidu_html",
     "get_last_engines_hit", "get_last_search_errors",
     "reset_search_cdp_budget", "reset_search_runtime_state",
+    "reset_google_reachable_cache",
 ]

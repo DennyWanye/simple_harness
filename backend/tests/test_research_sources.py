@@ -36,7 +36,10 @@ def test_direct_source_for(monkeypatch):
     assert "cninfo" in rs.direct_source_for("某上市公司年度报告披露")
     assert "openstd" in rs.direct_source_for("钠离子电池国家标准 GB/T")
     assert "openstd" in rs.direct_source_for("锂电池技术规范标准号")
-    assert "wikipedia" in rs.direct_source_for("钠离子电池是什么，给我背景综述")
+    wiki_sources = rs.direct_source_for("XX综述")
+    assert "baidu_baike" in wiki_sources
+    assert "sogou_baike" in wiki_sources
+    assert "wikipedia" in wiki_sources
     assert "arxiv" in rs.direct_source_for("钠离子电池论文和技术选型研究")
     assert "semantic_scholar" not in rs.direct_source_for("钠离子电池论文和技术选型研究")
     assert "wikidata" not in rs.direct_source_for("特斯拉 CEO 结构化事实")
@@ -62,7 +65,10 @@ def test_direct_source_for_respects_direct_source_types(monkeypatch):
 def test_direct_source_types_default(monkeypatch):
     monkeypatch.setattr(rs, "_research_raw", lambda: {})
 
-    assert rs._direct_source_types() == ["cninfo", "openstd", "wikipedia", "arxiv"]
+    types = rs._direct_source_types()
+    assert "baidu_baike" in types
+    assert "sogou_baike" in types
+    assert "wikipedia" in types
 
 
 # --- openstd 纯解析 ---
@@ -278,7 +284,114 @@ async def test_cninfo_search_network_fail(monkeypatch):
 # --- 新直连源 fetcher 契约 ---
 
 @pytest.mark.asyncio
-async def test_wikipedia_search_contract_from_fixture():
+async def test_baidu_baike_search_contract_from_fixture():
+    html = (_FIXTURES / "baidu_baike_sample.html").read_text(encoding="utf-8")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "baike.baidu.com"
+        return httpx.Response(200, text=html, headers={"content-type": "text/html; charset=utf-8"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        out = await rs.baidu_baike_search("Sodium ion battery", max_results=1, client=client)
+
+    assert len(out) == 1
+    _assert_direct_contract(out[0], "baidu_baike")
+    assert "baike.baidu.com" in out[0]["url"]
+
+
+@pytest.mark.asyncio
+async def test_sogou_baike_search_contract_from_fixture():
+    html = (_FIXTURES / "sogou_baike_sample.html").read_text(encoding="utf-8")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "baike.sogou.com"
+        return httpx.Response(200, text=html, headers={"content-type": "text/html; charset=utf-8"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        out = await rs.sogou_baike_search("Sodium ion battery", max_results=1, client=client)
+
+    assert len(out) == 1
+    _assert_direct_contract(out[0], "sogou_baike")
+    assert "baike.sogou.com" in out[0]["url"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fetcher_name", ["baidu_baike_search", "sogou_baike_search"])
+async def test_baike_fetchers_degrade_to_empty_on_timeout(fetcher_name):
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectTimeout("blocked")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await getattr(rs, fetcher_name)("x", client=client) == []
+
+
+@pytest.mark.asyncio
+async def test_reachable_success_timeout_and_cache(monkeypatch):
+    class _Resp:
+        status_code = 204
+
+    calls: list[str] = []
+    now = [1000.0]
+
+    class _SuccessClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return None
+
+        async def get(self, url):
+            calls.append(url)
+            return _Resp()
+
+    monkeypatch.setattr(rs.httpx, "AsyncClient", _SuccessClient)
+    monkeypatch.setattr(rs, "_now", lambda: now[0], raising=False)
+    rs._reset_reachable_cache()
+
+    assert await rs._reachable("example.com", timeout=0.5) is True
+    assert await rs._reachable("example.com", timeout=0.5) is True
+    assert calls == ["https://example.com/"]
+
+    now[0] += 301
+    assert await rs._reachable("example.com", timeout=0.5) is True
+    assert calls == ["https://example.com/", "https://example.com/"]
+
+    class _TimeoutClient(_SuccessClient):
+        async def get(self, url):
+            raise httpx.ConnectTimeout("blocked")
+
+    monkeypatch.setattr(rs.httpx, "AsyncClient", _TimeoutClient)
+    rs._reset_reachable_cache()
+    assert await rs._reachable("blocked.example", timeout=0.5) is False
+
+
+@pytest.mark.asyncio
+async def test_wikipedia_unreachable_short_circuits_without_api_request(monkeypatch):
+    checked: list[str] = []
+
+    async def _fake_reachable(host: str, *, timeout: float = 4.0) -> bool:
+        checked.append(host)
+        return False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("wikipedia API should not be requested when hosts are unreachable")
+
+    monkeypatch.setattr(rs, "_reachable", _fake_reachable)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await rs.wikipedia_search("Sodium ion battery", client=client) == []
+
+    assert checked == ["zh.wikipedia.org", "en.wikipedia.org"]
+
+
+@pytest.mark.asyncio
+async def test_wikipedia_search_contract_from_fixture(monkeypatch):
+    async def _fake_reachable(host: str, *, timeout: float = 4.0) -> bool:
+        return True
+
+    monkeypatch.setattr(rs, "_reachable", _fake_reachable)
     fixture = json.loads((_FIXTURES / "wikipedia_sample.json").read_text(encoding="utf-8"))
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -349,7 +462,12 @@ async def test_wikidata_search_contract_from_fixture():
         rs.wikidata_search,
     ],
 )
-async def test_new_fetchers_degrade_to_empty_on_timeout(fetcher):
+async def test_new_fetchers_degrade_to_empty_on_timeout(fetcher, monkeypatch):
+    async def _fake_reachable(host: str, *, timeout: float = 4.0) -> bool:
+        return True
+
+    monkeypatch.setattr(rs, "_reachable", _fake_reachable)
+
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectTimeout("blocked")
 
@@ -369,6 +487,8 @@ async def test_semantic_scholar_429_degrades_to_empty():
 def test_direct_fetchers_mapping_contains_all_sources():
     assert rs.DIRECT_FETCHERS["cninfo"] is rs.cninfo_search
     assert rs.DIRECT_FETCHERS["openstd"] is rs.openstd_search
+    assert rs.DIRECT_FETCHERS["baidu_baike"] is rs.baidu_baike_search
+    assert rs.DIRECT_FETCHERS["sogou_baike"] is rs.sogou_baike_search
     assert rs.DIRECT_FETCHERS["wikipedia"] is rs.wikipedia_search
     assert rs.DIRECT_FETCHERS["arxiv"] is rs.arxiv_search
     assert rs.DIRECT_FETCHERS["semantic_scholar"] is rs.semantic_scholar_search

@@ -24,7 +24,7 @@ import logging
 import re
 import time
 from typing import Any, Callable, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urljoin
 from xml.etree import ElementTree as ET
 
 import httpx
@@ -41,6 +41,9 @@ _CNINFO_QUERY = "http://www.cninfo.com.cn/new/hisAnnouncement/query"
 _CNINFO_TOPSEARCH = "http://www.cninfo.com.cn/new/information/topSearch/query"
 _CNINFO_STATIC = "http://static.cninfo.com.cn/"
 _OPENSTD_LIST = "https://openstd.samr.gov.cn/bzgk/gb/std_list"
+_BAIDU_BAIKE_ITEM = "https://baike.baidu.com/item/{keyword}"
+_BAIDU_BAIKE_SEARCH = "https://baike.baidu.com/search?word={keyword}"
+_SOGOU_BAIKE_SEARCH = "https://baike.sogou.com/Search.e?sp=S{keyword}"
 _WIKIPEDIA_API = "https://{lang}.wikipedia.org/w/api.php"
 _WIKIPEDIA_SUMMARY = "https://{lang}.wikipedia.org/api/rest_v1/page/summary/{title}"
 _ARXIV_API = "https://export.arxiv.org/api/query"
@@ -49,10 +52,14 @@ _WIKIDATA_SPARQL = "https://query.wikidata.org/sparql"
 _DIRECT_TIMEOUT = 6.0
 _DIRECT_TEXT_MAX = 18_000
 _DIRECT_TITLE_MAX = 200
-_DIRECT_SOURCE_DEFAULT_TYPES = ["cninfo", "openstd", "wikipedia", "arxiv"]
+_DIRECT_SOURCE_DEFAULT_TYPES = [
+    "cninfo", "openstd", "baidu_baike", "sogou_baike", "wikipedia", "arxiv",
+]
 _DIRECT_SOURCE_ORDER = (
-    "openstd",
     "cninfo",
+    "openstd",
+    "baidu_baike",
+    "sogou_baike",
     "wikipedia",
     "arxiv",
     "semantic_scholar",
@@ -61,12 +68,51 @@ _DIRECT_SOURCE_ORDER = (
 _ALL_DIRECT_SOURCE_TYPES = {
     "cninfo",
     "openstd",
+    "baidu_baike",
+    "sogou_baike",
     "wikipedia",
     "arxiv",
     "semantic_scholar",
     "wikidata",
 }
 _DIRECT_SOURCE_ALIASES = {"s2": "semantic_scholar", "semantic-scholar": "semantic_scholar"}
+_REACHABLE_TTL = 300.0
+_REACHABLE_CACHE: dict[str, tuple[float, bool]] = {}
+
+
+def _now() -> float:
+    return time.time()
+
+
+def _reset_reachable_cache() -> None:
+    _REACHABLE_CACHE.clear()
+
+
+async def _reachable(host: str, *, timeout: float = 4.0) -> bool:
+    """Best-effort HTTPS reachability probe with a short process-local TTL."""
+    host_s = (host or "").strip().lower()
+    if not host_s:
+        return False
+    now = _now()
+    cached = _REACHABLE_CACHE.get(host_s)
+    if cached and now - cached[0] < _REACHABLE_TTL:
+        return cached[1]
+
+    ok = False
+    try:
+        async with httpx.AsyncClient(
+            headers={"User-Agent": _UA, "Accept": "*/*"},
+            timeout=timeout,
+            follow_redirects=True,
+            trust_env=True,
+        ) as cli:
+            resp = await cli.get(f"https://{host_s}/")
+            ok = 200 <= resp.status_code < 400
+    except Exception as exc:  # noqa: BLE001
+        log.debug("reachability probe failed host=%s: %s", host_s, exc)
+        ok = False
+    _REACHABLE_CACHE[host_s] = (now, ok)
+    return ok
 
 # SEC EDGAR(美股一手源)。美国站,中国大陆访问时快时慢 → 短超时 + best-effort,
 # 连不上返 [] 降级到普通搜索。SEC 要求 UA 带联系方式,否则 403。
@@ -161,7 +207,7 @@ def direct_source_for(text: str) -> list[str]:
     if any(k in t for k in _CNINFO_KW):
         hits.append("cninfo")
     if any(k in t for k in _WIKIPEDIA_KW):
-        hits.append("wikipedia")
+        hits.extend(["baidu_baike", "sogou_baike", "wikipedia"])
     if any(k in t for k in _ACADEMIC_KW):
         hits.extend(["arxiv", "semantic_scholar"])
     if any(k in t for k in _WIKIDATA_KW) or re.search(r"\bq\d{2,}\b", t):
@@ -201,11 +247,96 @@ def _direct_item(source: str, *, url: str, title: str, text: str) -> Optional[di
 
 def _direct_client(*, trust_env: bool = False) -> httpx.AsyncClient:
     return httpx.AsyncClient(
-        headers={"User-Agent": _UA, "Accept": "application/json, text/xml;q=0.9, */*;q=0.8"},
+        headers={
+            "User-Agent": _UA,
+            "Accept": "text/html, application/json;q=0.9, text/xml;q=0.8, */*;q=0.7",
+        },
         timeout=_DIRECT_TIMEOUT,
         follow_redirects=True,
         trust_env=trust_env,
     )
+
+
+def _html_title(html: str, fallback: str = "") -> str:
+    try:
+        from selectolax.parser import HTMLParser  # type: ignore
+        tree = HTMLParser(html or "")
+        for selector in ("h1", "title"):
+            node = tree.css_first(selector)
+            title = (node.text() if node else "").strip()
+            if title:
+                return title
+    except Exception:  # noqa: BLE001
+        pass
+    m = re.search(r"<title[^>]*>(.*?)</title>", html or "", flags=re.I | re.S)
+    if m:
+        return _strip_tags(m.group(1))
+    return fallback
+
+
+def _html_main_text(html: str) -> str:
+    try:
+        import trafilatura  # type: ignore
+        text = trafilatura.extract(
+            html or "",
+            include_comments=False,
+            include_tables=False,
+            favor_precision=True,
+        )
+        if text and text.strip():
+            return text
+    except Exception as exc:  # noqa: BLE001
+        log.debug("trafilatura baike extract failed: %s", exc)
+    try:
+        from selectolax.parser import HTMLParser  # type: ignore
+        tree = HTMLParser(html or "")
+        for node in tree.css("script, style, noscript"):
+            node.decompose()
+        body = tree.body
+        return (body.text(separator=" ") if body else tree.text(separator=" ")).strip()
+    except Exception:  # noqa: BLE001
+        return _strip_tags(html or "")
+
+
+def _baike_item(source: str, *, url: str, html: str, fallback_title: str) -> Optional[dict[str, Any]]:
+    title = fallback_title
+    try:
+        import trafilatura  # type: ignore
+        meta = trafilatura.extract_metadata(html or "")
+        title = str(getattr(meta, "title", None) or title)
+    except Exception:  # noqa: BLE001
+        pass
+    title = _html_title(html, title)
+    text = _html_main_text(html)
+    return _direct_item(source, url=url, title=title, text=text)
+
+
+def _first_baike_link(html: str, base_url: str, *, host: str) -> str:
+    def _ok(href: str) -> bool:
+        return bool(href) and (
+            "baike.baidu.com/item/" in href
+            or "baike.sogou.com/" in href
+            or href.startswith("/item/")
+            or href.startswith("/v")
+        )
+
+    try:
+        from selectolax.parser import HTMLParser  # type: ignore
+        tree = HTMLParser(html or "")
+        for a in tree.css("a"):
+            href = (a.attributes.get("href") or "").strip()
+            if _ok(href):
+                full = urljoin(base_url, href)
+                if host in full:
+                    return full
+    except Exception:  # noqa: BLE001
+        pass
+    for href in re.findall(r"""href=["']([^"']+)["']""", html or "", flags=re.I):
+        if _ok(href):
+            full = urljoin(base_url, href)
+            if host in full:
+                return full
+    return ""
 
 
 # 巨潮 searchkey 走标题全文匹配:噪声句("X公司2024年财报营收")命中 0,纯实体名
@@ -550,7 +681,142 @@ async def openstd_search(
             await cli.aclose()
 
 
-# ── Wikipedia / arXiv / Semantic Scholar / Wikidata ───────────────────────
+# ── Baike / Wikipedia / arXiv / Semantic Scholar / Wikidata ───────────────
+async def _baidu_baike_fetch(
+    keyword: str,
+    cli: httpx.AsyncClient,
+    max_results: int,
+) -> list[dict[str, Any]]:
+    kw = (keyword or "").strip()
+    if not kw:
+        return []
+    item_url = _BAIDU_BAIKE_ITEM.format(keyword=quote(kw, safe=""))
+    try:
+        resp = await cli.get(item_url)
+        if 200 <= resp.status_code < 400:
+            item = _baike_item(
+                "baidu_baike",
+                url=str(resp.url),
+                html=resp.text,
+                fallback_title=kw,
+            )
+            if item:
+                return [item][:max_results]
+    except Exception as exc:  # noqa: BLE001
+        log.debug("baidu baike item fetch failed for %r: %s", kw, exc)
+
+    try:
+        search_url = _BAIDU_BAIKE_SEARCH.format(keyword=quote(kw, safe=""))
+        resp = await cli.get(search_url)
+        if not (200 <= resp.status_code < 400):
+            return []
+        first = _first_baike_link(resp.text, str(resp.url), host="baike.baidu.com")
+        if first:
+            try:
+                page = await cli.get(first)
+                if 200 <= page.status_code < 400:
+                    item = _baike_item(
+                        "baidu_baike",
+                        url=str(page.url),
+                        html=page.text,
+                        fallback_title=kw,
+                    )
+                    return [item][:max_results] if item else []
+            except Exception as exc:  # noqa: BLE001
+                log.debug("baidu baike linked item fetch failed for %r: %s", kw, exc)
+        item = _baike_item("baidu_baike", url=str(resp.url), html=resp.text, fallback_title=kw)
+        return [item][:max_results] if item else []
+    except Exception as exc:  # noqa: BLE001
+        log.debug("baidu baike search failed for %r: %s", kw, exc)
+        return []
+
+
+async def baidu_baike_search(
+    keyword: str, *, max_results: int = 3,
+    client: Optional[httpx.AsyncClient] = None,
+) -> list[dict[str, Any]]:
+    """Baidu Baike direct source. Best-effort; failures degrade to []."""
+    if not (keyword or "").strip():
+        return []
+    if client is not None:
+        try:
+            return await _baidu_baike_fetch(keyword, client, max_results)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("baidu baike injected client failed: %s", exc)
+            return []
+    for trust_env in (False, True):
+        cli = _direct_client(trust_env=trust_env)
+        try:
+            out = await _baidu_baike_fetch(keyword, cli, max_results)
+            if out:
+                return out
+        except Exception as exc:  # noqa: BLE001
+            log.debug("baidu baike attempt trust_env=%s failed: %s", trust_env, exc)
+        finally:
+            await cli.aclose()
+    return []
+
+
+async def _sogou_baike_fetch(
+    keyword: str,
+    cli: httpx.AsyncClient,
+    max_results: int,
+) -> list[dict[str, Any]]:
+    kw = (keyword or "").strip()
+    if not kw:
+        return []
+    try:
+        search_url = _SOGOU_BAIKE_SEARCH.format(keyword=quote(kw, safe=""))
+        resp = await cli.get(search_url)
+        if not (200 <= resp.status_code < 400):
+            return []
+        first = _first_baike_link(resp.text, str(resp.url), host="baike.sogou.com")
+        if first:
+            try:
+                page = await cli.get(first)
+                if 200 <= page.status_code < 400:
+                    item = _baike_item(
+                        "sogou_baike",
+                        url=str(page.url),
+                        html=page.text,
+                        fallback_title=kw,
+                    )
+                    return [item][:max_results] if item else []
+            except Exception as exc:  # noqa: BLE001
+                log.debug("sogou baike linked item fetch failed for %r: %s", kw, exc)
+        item = _baike_item("sogou_baike", url=str(resp.url), html=resp.text, fallback_title=kw)
+        return [item][:max_results] if item else []
+    except Exception as exc:  # noqa: BLE001
+        log.debug("sogou baike search failed for %r: %s", kw, exc)
+        return []
+
+
+async def sogou_baike_search(
+    keyword: str, *, max_results: int = 3,
+    client: Optional[httpx.AsyncClient] = None,
+) -> list[dict[str, Any]]:
+    """Sogou Baike direct source. Best-effort; failures degrade to []."""
+    if not (keyword or "").strip():
+        return []
+    if client is not None:
+        try:
+            return await _sogou_baike_fetch(keyword, client, max_results)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("sogou baike injected client failed: %s", exc)
+            return []
+    for trust_env in (False, True):
+        cli = _direct_client(trust_env=trust_env)
+        try:
+            out = await _sogou_baike_fetch(keyword, cli, max_results)
+            if out:
+                return out
+        except Exception as exc:  # noqa: BLE001
+            log.debug("sogou baike attempt trust_env=%s failed: %s", trust_env, exc)
+        finally:
+            await cli.aclose()
+    return []
+
+
 async def _wikipedia_fetch(
     keyword: str,
     cli: httpx.AsyncClient,
@@ -615,6 +881,8 @@ async def wikipedia_search(
 ) -> list[dict[str, Any]]:
     """Wikipedia opensearch + REST summary 直连。best-effort,失败返 []。"""
     if not (keyword or "").strip():
+        return []
+    if not await _reachable("zh.wikipedia.org") and not await _reachable("en.wikipedia.org"):
         return []
     if client is not None:
         try:
@@ -1035,6 +1303,8 @@ async def edgar_search(
 DIRECT_FETCHERS: dict[str, Callable[..., Any]] = {
     "cninfo": cninfo_search,
     "openstd": openstd_search,
+    "baidu_baike": baidu_baike_search,
+    "sogou_baike": sogou_baike_search,
     "wikipedia": wikipedia_search,
     "arxiv": arxiv_search,
     "semantic_scholar": semantic_scholar_search,
@@ -1048,6 +1318,8 @@ __all__ = [
     "DIRECT_FETCHERS",
     "cninfo_search",
     "openstd_search",
+    "baidu_baike_search",
+    "sogou_baike_search",
     "wikipedia_search",
     "arxiv_search",
     "semantic_scholar_search",
