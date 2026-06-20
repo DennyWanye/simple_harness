@@ -1,8 +1,8 @@
 # 00-PRD — 桌宠子代理并发驱动（Subagent Concurrency Driver）
 
-> **版本**: v0.1（待子代理对抗评审迭代 → v1.0 LOCKED）
+> **版本**: v0.3（经 2 轮子代理对抗评审迭代；第 2 轮判定「100% executable，无功能删减」）
 > **日期**: 2026-06-21
-> **状态**: 📋 规划中（未动代码）
+> **状态**: 📋 规划完成 · 待用户 review 后实施（未动代码）
 > **关联状态档**: [`STATUS/AgentLoop.md`](../../STATUS/AgentLoop.md) · [`STATUS/AgentImprovements.md`](../../STATUS/AgentImprovements.md)
 > **本目录**: `plans/2026-06-21-subagent-concurrency-driver/`
 

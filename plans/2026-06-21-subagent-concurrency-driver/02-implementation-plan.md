@@ -4,7 +4,7 @@
 > 每个 WI 给出 **改哪个文件、哪个函数、什么签名、什么逻辑**。所有现有 file:line 已读码核实。
 > 纪律：每 WI 先红后绿（TDD，见 [`03-TDD.md`](./03-TDD.md)）；所有新行为 flag-gated，OFF=BC 字节级。
 >
-> **版本 v0.2** — 已吸收[第 1 轮对抗评审](#附录-评审修订记录) 全部 4 BLOCKING + 9 MAJOR/MINOR + 7 缺口（F1–F14 + gap1-7）。修订点在每 WI 标 `【R1:Fx】`。
+> **版本 v0.3** — 已吸收[第 1+2 轮对抗评审](#附录-评审修订记录)：R1（4 BLOCKING + 9 MAJOR/MINOR + 7 缺口 F1–F14/gap1-7）+ R2（2 BLOCKING + 1 准 BLOCKING + 5 MINOR + 4 hand-wave 补全 R2-1~R2-8）。第 2 轮判定「100% executable，无功能删减」。修订点在每 WI 标 `【R1:Fx】`/`【R2-x】`。
 
 ---
 
@@ -117,7 +117,9 @@ log.info("subagent_scheduled kind=%s run_id=%s task_id=%s", kind, run_id, task_i
       adapter = _SubsetRegistryAdapter(parent_tool_registry, sa_for_runner["tools"])
       sub = AgentLoop(llm_registry=llm_shim, tool_registry=adapter,
                       max_iterations=sa_for_runner["_max_iter"])
-      msgs = [{"role":"system","content": _framing(sa_for_runner)},
+      framing = sa_for_runner.get("_framing", "")   # 【R2 hand-wave5】_run_one 已把 prof.framing/max_iterations 写进 sa_for_runner（见上）
+      sys = "You are a focused subagent. " + framing + " 用工具完成后，用一条简洁最终消息总结结果（父代理把它当返回值）。"
+      msgs = [{"role":"system","content": sys},
               {"role":"user","content": sa_for_runner["prompt"]}]
       final = ""
       async for ev in sub.run(msgs, session_id=f"{parent_sid}.par-{sa_task_id}"):
@@ -149,7 +151,8 @@ if bool(getattr(getattr(config,"features",None),"subagent_driver",False)):
 
 ## WI-1.5 —【R1:F5/F9】WS 进度出口 + metrics 键白名单
 
-**改** `backend/observability/metrics_sink.py`：`_ALLOWED_DETAIL_KEYS`（`:90`）加 `"run_id"`, `"kind"`, `"duration_ms"`；`VALID_EVENTS`（`:71`）加 `"subagent_scheduled"`。
+**改** `backend/observability/metrics_sink.py`：`_ALLOWED_DETAIL_KEYS`（`:90`）加 **`"run_id"`, `"kind"`**（**【R2-5】** `duration_ms`/`task_id`/`status`/`model` 已在白名单，无须重加）；`VALID_EVENTS`（`:71`）加 `"subagent_scheduled"`。
+**【R2 hand-wave3】 double-emit 说明**：现有 `_emit_progress`（`agent_parallel_tool.py:221`）已 record `subagent_progress{task_id,status}`，新调度器 sink record `subagent_progress{run_id,kind,...}` —— **两路都保留**（键不同、都已白名单），metrics.jsonl 会有两条进度流（无害，各自维度互补）。
 **改** `backend/main.py`：新增 `_subagent_progress_sink(payload)`（仿 `_todo_broadcaster` `:1882`）：①`record("subagent_progress", {run_id,kind,task_id,status,duration_ms})` ②对 `list(_control_connections.values())` 逐个 `asyncio.create_task(ws.send_json({"type":"subagent_progress","payload":payload}))`，逐个 try/except 不互累。
 **测试** TG-1.5（1.5.4 metrics 键真留存 run_id/kind/duration_ms）。
 
@@ -196,6 +199,7 @@ return json.dumps(res, ensure_ascii=False)
 - `spawn_team(...)` 加 `teammate_tool_subset: tuple|None=None, teammate_max_iterations: int=30`（默认=现状→BC）。
 - `_make_default_runner` 透传：`AgentLoop(max_iterations=teammate_max_iterations)`（原硬编码 30 `:356`→参数）；`_TeamSubsetRegistry(parent_registry, team_tools, allowed_tools=teammate_tool_subset)`。
 - `_TeamSubsetRegistry.__init__`（`:394`）：`_DEFAULT_READONLY`（`:390`）→ 用注入的 `allowed_tools`（None→现有只读集 BC）；仍剔 `FORBIDDEN_TEAMMATE_TOOLS`。
+- **【R2-6】 启动日志锚点**：`spawn_team()` 校验后（~`spawn_team.py:221`）加 `log.info("spawn_team team=%s n=%d", team_id, num_teammates)`（V2 manual case grep 依赖；现仅 timeout 处 `:268` 有日志）。
 
 **测试** TG-2.2（2.2.3 默认 max_iter=30/只读集 BC）。
 
@@ -227,6 +231,7 @@ return json.dumps(res, ensure_ascii=False)
 ## WI-2.5 —【R1:F13】子代理写工具权限态 + team permission（P2-optional UI）
 
 - **【R1:F13】 写权限态（必做）**：`doc`/`code`/`fileops` kind 子代理调 `ppt_create`/`write_file`(`permission_category="write_file"` `ppt_tools.py:3848`) 会撞权限门、无人替子代理点。**posture**：子代理执行复用父会话的 auto-mode/permission 状态（子代理 sid 是 `<parent>.par-*`，权限解析挂父）。验收前确认 `permissions_auto_mode` ON 时子代理写工具放行（仿 goal-completion FP 真机用法）。
+- **【R2-8】 写冲突保证**：`ppt_create` 等 `concurrency_safe=False`（`ppt_tools.py:~3855`），但 registry 只在单个 `dispatch_batch` 内串行化（`registry.py:897-918`），**不**跨并发 `execute_tool`。两个 `doc` 子代理并发写 `.pptx` 仅靠 **`doc` lane_concurrency=1**（WI-0.1）防撞——**且只在 scheduler 路径（`subagent_driver=ON`）生效，BC 扁平路径无此保护**。单机单用户可接受，但需知晓此约束。
 - **team permission 升级 UI（P2-optional）**：`TeamStore.request_permission`（`:460`）数据已存；新增 control WS `team_permission_request`/`team_permission_grant`→`grant_permission`（`:485`）+ 前端 approve 卡。工期紧则 team 工具限只读、跳过本项。
 
 ## WI-2.6 —【R1:gap6/R6】TeamStore `.db` 清理
@@ -254,17 +259,22 @@ return json.dumps(res, ensure_ascii=False)
 ## WI-3.3 —【R1:F6/F11/gap5】agent_loop 回合边界 drain + 取消级联
 
 **改** `backend/agent/agent_loop.py` `run()`：
-- `AgentLoop.__init__` 加 `subagent_registry=None`（BC：None=不 drain）。
-- **【R1:F11】** drain 放进 `for iteration in range(1, max+1):`（`:709`）**循环体顶部**（gate `:724` 之后），用 `working_messages`（`:604`）**不是** `messages`：
+- `AgentLoop.__init__` 加 `subagent_registry=None`（BC：None=不 drain），**【R2:hand-wave1】** body 显式 `self._subagent_registry = subagent_registry`（仿其它可选依赖存法）。
+- **【R2:hand-wave2】 新增事件类**（`agent_loop.py` 事件区 ~`:385`，仿 `FinalEvent`）：`@dataclass class SubagentCompletionEvent(AgentEvent): run_id: str; task_id: str; kind: str; summary: str`，并加进 `AgentEventUnion`（`:2391`）。
+- **【R1:F11 + R2-1 修正】** drain 放进 `for iteration in range(1, max+1):`（`:709`）**循环体顶部**（gate `:724` 之后），用 `working_messages`（`:604`）**不是** `messages`。**⚠️ R2-1：role 守门逻辑此前写反了**——tool 结果以 `role="tool"` append（`agent_loop.py:2069`），迭代顶 `working_messages[-1].role` 几乎恒为 `"tool"`；纯文本 assistant 回合直接 `FinalEvent`+return 退出循环 → `"assistant"-at-top` 实际不可达。原守门 `if ==assistant: inject else defer` 会**永远走 else、非阻塞注入永不发生**（WI-3.3 价值归零）。正确约束 = 「除非最后一条是带**未应答 tool_calls** 的 assistant，否则 append user 安全」（迭代顶恒满足）：
   ```python
   if self._subagent_registry is not None:
       while not self._subagent_registry.completion_queue.empty():
           done = self._subagent_registry.completion_queue.get_nowait()
-          # 【R1:gap5】role 交替守门：仅当上一条是 assistant（干净回合边界）才注入；否则下一轮再 drain
-          if working_messages and working_messages[-1].get("role") == "assistant":
-              working_messages.append({"role":"user","content": f"[子代理完成] {done.task_id}({done.kind}): {done.summary}"})
-              yield SubagentCompletionEvent(run_id=done.run_id, ...)
-          else:
+          last = working_messages[-1] if working_messages else None
+          safe = (last is None) or last.get("role") in ("tool", "user") \
+                 or (last.get("role") == "assistant" and not last.get("tool_calls"))
+          if safe:
+              working_messages.append({"role": "user",
+                  "content": f"[子代理完成] {done.task_id}({done.kind}): {done.summary}"})
+              yield SubagentCompletionEvent(run_id=done.run_id, task_id=done.task_id,
+                                            kind=done.kind, summary=done.summary)
+          else:  # 极罕见（带未应答 tool_calls 的 assistant 在顶）→ 回队下轮再注入
               self._subagent_registry.completion_queue.put_nowait(done); break
   ```
 - **【R1:F6】 取消级联（关键）**：在 `main.py` 的 `chat_v2_interrupt` handler（`:4577`），`_t.cancel()`（`:4589`）**之后**加：
@@ -284,7 +294,7 @@ return json.dumps(res, ensure_ascii=False)
 
 ## WI-4.1 — 子代理 TerminationGate 平价
 
-**改** `agent_tool.py` / runner：`build_agent_tool(..., termination_gate_factory=None)`；构造 AgentLoop 时若给 factory 则传 `gate=factory()`（`AgentLoop` 已有 `self._gate` TerminationGate，`agent_loop.py:433-486` 支持 None-默认参，评审确认可加）。main.py：`subagent_driver` ON 时给轻量 gate。BC：factory=None 不变。
+**改** `agent_tool.py` / runner：`build_agent_tool(..., termination_gate_factory=None)`；构造 AgentLoop 时若给 factory 则传 **`termination_gate=factory()`**（**【R2-2 修正】** 真参数名是 `termination_gate`（`agent_loop.py:447`，存进 `self._gate` `:564-567`），**不是** `gate=`，传 `gate=` 会 `TypeError`；`TerminationGate`/`GateConfig` from `agent.termination`，`agent_loop.py:39`）。main.py：`subagent_driver` ON 时给轻量 gate。BC：factory=None 不变。
 
 ## WI-4.2 —【R1:F4/F8】每 kind 模型路由（新建 provider，不是换 shim）
 
@@ -292,12 +302,14 @@ return json.dumps(res, ensure_ascii=False)
 - **【R1:F4】** shim 不能换 model、provider model 不可变 → 必须**新建 provider**：
   ```python
   def _make_shim_for_model(model: str):
-      from llm.openai_compatible import OpenAICompatibleProvider   # 同 main.py:254 用法
-      prov = OpenAICompatibleProvider(base_url=local_llm.base_url, api_key=local_llm.api_key,
-                                      model=model, temperature=local_llm.temperature)  # 字段名以 :254 实参为准
+      from providers.openai_compatible import OpenAICompatibleProvider   # ★R2-3：providers.* 非 llm.*（main.py:128）
+      prov = OpenAICompatibleProvider(
+          base_url=local_llm.base_url, api_key=local_llm.api_key,   # api_key 已是 resolved（main.py:243/256）
+          model=model, temperature=local_llm.temperature,
+          sanitize_inline_cot_dsml=local_llm.sanitize_inline_cot_dsml)  # ★R2-4：与父 provider 保持一致(openai_compatible.py:88)
       return _ShimForAgent(provider=prov)   # ★F8：别名 _ShimForAgent，非 OpenAICompatibleAgentLLM
   ```
-  （缓存 per-model shim 防重复建连。）
+  （ctor kwargs `base_url/api_key/model/temperature` 评审核实正确，`openai_compatible.py:66-75`；缓存 per-model shim 防重复建连。）
 - runner：`prof.model` 非空 → 用 `_make_shim_for_model(prof.model)` 替默认 `_shim_for_agent`（`main.py:1907`）；`prof.model=None` → 父 shim（BC）。
 - **测试** TG-4.2（4.2.1 model 非空建新 provider；4.2.2 None 用父 shim BC）。
 
@@ -365,3 +377,24 @@ return json.dumps(res, ensure_ascii=False)
 | gap7 | 缺口 | P3 工具两阶段 None-gated 注册（WI-3.2） |
 
 P0（task_kinds/scheduler/config）评审判定「sound，可照做」。
+
+**第 2 轮对抗评审（2026-06-21，61 工具调用，逐条核验 v0.2 修复 + 最高风险并发安全）** — 已吸收，升 **v0.3**：
+
+| ID | 严重 | 修订 |
+|---|---|---|
+| R2-1 | BLOCKING | role 守门写反——tool 结果是 `role="tool"`，迭代顶 last 恒非 assistant→原逻辑永远 defer、非阻塞注入归零。改为「除非最后是带未应答 tool_calls 的 assistant 否则注入」（WI-3.3） |
+| R2-2 | BLOCKING | TerminationGate 参数名 `termination_gate=`（非 `gate=`，否则 TypeError）；import from `agent.termination`（WI-4.1） |
+| R2-3 | MAJOR(准 BLOCKING) | import 路径 `providers.openai_compatible`（非 `llm.openai_compatible`，否则 ModuleNotFoundError）（WI-4.2） |
+| R2-4 | MINOR | WI-4.2 补 `sanitize_inline_cot_dsml=local_llm.sanitize_inline_cot_dsml` 与父 provider 一致 |
+| R2-5 | MINOR | `duration_ms` 已在白名单，WI-1.5 只加 `run_id`/`kind` |
+| R2-6 | MINOR | spawn_team 加启动 `log.info("spawn_team team=%s n=%d")`（WI-2.2，V2 grep 依赖） |
+| R2-7 | MINOR | 01-arch §3.2 scheduler.run 签名对齐 02（加 task_id/parent_sid） |
+| R2-8 | MINOR | doc 写冲突仅靠 lane=1 且仅 scheduler 路径生效，WI-2.5 注明 |
+| hand-wave1 | 补细节 | WI-3.3 显式 `self._subagent_registry = subagent_registry` ctor 赋值 |
+| hand-wave2 | 补细节 | 定义 `SubagentCompletionEvent(AgentEvent)` + 加进 `AgentEventUnion`（WI-3.3） |
+| hand-wave3 | 补细节 | WI-1.5 double-emit（两路进度流都保留，键互补） |
+| hand-wave5 | 补细节 | WI-1.3 native runner 用 `sa_for_runner["_framing"]` 键（删未定义 helper） |
+
+**第 2 轮验证为「正确」的 v0.2 修复**（评审逐条核源码确认）：F1（context dataclass 完整修法，无 to_dict/post_init 遗漏）、F6（`service_context` 是 module global，interrupt handler `:4589` 在作用域内，`cancel_all` 同步安全）、F7（spawn_team 参数注入全链路贯通）、**F10（最高风险——多 AgentLoop 协程同事件循环并发**：现状 agent_parallel 已这么跑、所有 per-call 状态按 session_id 隔离、无 module 级可变单例→**无新增腐败风险**）、F4 核心决策（新建 provider 带 model）、WI-3.2 同事件循环 await 无「Future attached to different loop」风险。
+
+**结论**：R2-1/R2-2/R2-3 修订 + 4 处 hand-wave 补全后，评审判定达成 **「100% executable，无功能删减」**。

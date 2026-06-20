@@ -101,7 +101,9 @@
 | 3.1.2 | `cancel_all()` | 活 run 的 Task.cancel 被调；已完成的不动 ★V5 |
 | 3.2.1 | `spawn_subagents` 2 任务 | 立即返回 run_ids（不 await）；registry 有 2 条 running |
 | 3.2.2 | `await_subagents(run_ids)` | 等到完成、返回 results；completion_queue 入队 |
-| 3.3.1 | agent_loop 注入 registry + 预置 completion_queue 1 条 | run() 某轮顶部 drain → messages 追加 [子代理完成] user 消息 |
+| 3.3.1 | agent_loop 注入 registry + 预置 completion_queue 1 条，last msg=tool | run() 顶部 drain → `working_messages` 追加 [子代理完成] user 消息 + yield SubagentCompletionEvent ★R2-1（守门取反后 tool/user 后能注入） |
+| 3.3.1b |【R2-1】last msg=带 tool_calls 的 assistant | **不**注入，回队 break（守门正确拒绝未应答 tool_calls 场景） |
+| 3.3.1c |【R2 hw2】SubagentCompletionEvent | 是 AgentEvent 子类、在 AgentEventUnion 内、字段 run_id/task_id/kind/summary |
 | 3.3.2 | registry=None（BC） | run() 不 drain，行为与现状一致 ★BC |
 | 3.3.3 | cancel 路径调 cancel_all | 活子代理被取消 |
 
@@ -109,7 +111,7 @@
 
 | # | 用例 | 断言 |
 |---|---|---|
-| 4.1.1 | `termination_gate_factory` 给定 | AgentLoop ctor 收到 gate |
+| 4.1.1 | `termination_gate_factory` 给定 | AgentLoop ctor 收到 **`termination_gate=`**（★R2-2 真参数名，非 gate=）→ self._gate 被设 |
 | 4.1.2 | factory=None（BC） | 无 gate，行为不变 |
 | 4.2.1 | kind.model="gpt-5.4-mini" | runner 用 `_make_shim_for_model("gpt-5.4-mini")` 建的 shim |
 | 4.2.2 | kind.model=None | 用父 shim ★BC |

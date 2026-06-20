@@ -124,8 +124,8 @@ class KindProfile:
 class SubagentScheduler:
     def __init__(self, *, global_concurrency: int, lane_caps: dict[str,int],
                  progress_sink: Callable[[dict], None] | None = None): ...
-    async def run(self, *, kind: str, run_id: str,
-                  coro_factory: Callable[[], Awaitable[Any]]) -> Any:
+    async def run(self, *, kind: str, run_id: str, task_id: str, parent_sid: str,
+                  coro_factory: Callable[[], Awaitable[Any]]) -> Any:   # 【R2-7】签名以 02 WI-0.2 为准
         # acquire global sem → acquire kind-lane sem → emit "running"
         #   → await coro_factory() → emit "completed/failed" → release
     def snapshot(self) -> dict:  # {running, queued, by_lane}
