@@ -202,6 +202,49 @@ class TeamStore:
         # method call (cheap but avoidable).
         self._initialised: set[str] = set()
 
+    def cleanup_old(self, *, max_age_days: float = 7.0, max_files: int = 200) -> int:
+        """删过期/超量 team ``.db`` 文件（boot 时调，防 ``<user_data>/teams/``
+        无限堆积，WI-2.6/R6）。返回删除的 db 数。**best-effort，永不抛。**"""
+        removed = 0
+        try:
+            base = self._base
+            if not base.exists():
+                return 0
+
+            def _unlink_db(p: Path) -> None:
+                nonlocal removed
+                gone = False
+                for suff in ("", "-wal", "-shm"):
+                    try:
+                        Path(str(p) + suff).unlink()
+                        if suff == "":
+                            gone = True
+                    except OSError:
+                        continue
+                if gone:
+                    removed += 1
+
+            dbs = sorted(base.glob("*.db"), key=lambda p: p.stat().st_mtime)
+            cutoff = time.time() - max_age_days * 86400.0
+            survivors: list[Path] = []
+            for p in dbs:
+                try:
+                    if p.stat().st_mtime < cutoff:
+                        _unlink_db(p)
+                    else:
+                        survivors.append(p)
+                except OSError:
+                    continue
+            # survivors 已按 mtime 升序 → 超量时删最旧的
+            if len(survivors) > max_files:
+                for p in survivors[: len(survivors) - max_files]:
+                    _unlink_db(p)
+            if removed:
+                log.info("team_store cleanup removed=%d db files", removed)
+        except Exception as exc:  # noqa: BLE001 — 清理失败不影响启动
+            log.debug("TeamStore.cleanup_old failed: %s", exc)
+        return removed
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

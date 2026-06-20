@@ -39,8 +39,18 @@ def build_agent_tool(
     llm_shim,
     parent_tool_registry,
     parent_session_id_resolver: Callable[[], str],
+    default_max_iterations: int = _SUBAGENT_MAX_ITERATIONS,
+    default_tool_subset: tuple[str, ...] = _DEFAULT_READONLY_TOOLS,
+    default_framing: str = "",
+    termination_gate_factory: Callable[[], Any] | None = None,
 ):
     """Construct the agent (subagent) tool handler.
+
+    子代理并发驱动（plans/2026-06-21-subagent-concurrency-driver/ WI-1.1/4.1）：
+    ``default_max_iterations`` / ``default_tool_subset`` / ``default_framing`` 让
+    调度器按 KindProfile 给每个子代理定制迭代上限 / 工具子集 / 角色 framing；
+    ``termination_gate_factory`` 给子代理质量守门（WI-4.1）。**默认值 = 现状
+    常量 → 不传新参时行为字节级一致（BC）。**
 
     The closure captures the LLM shim and a clone-able tool registry so
     the subagent can run its own AgentLoop independently of the parent.
@@ -103,7 +113,12 @@ def build_agent_tool(
                 if isinstance(t, str) and t != "agent"  # recursion guard
             ]
         else:
-            tool_subset = list(_DEFAULT_READONLY_TOOLS)
+            tool_subset = list(default_tool_subset)
+        # 允许 per-call 覆盖迭代上限（调度器按 KindProfile 注入）
+        try:
+            call_max_iter = int(args.get("max_iterations") or default_max_iterations)
+        except (TypeError, ValueError):
+            call_max_iter = default_max_iterations
 
         # Filter the parent registry to a derived registry that only
         # exposes the subset. Implementation: we use ToolRegistry's
@@ -121,26 +136,34 @@ def build_agent_tool(
 
         adapter = _SubsetRegistryAdapter(parent_tool_registry, tool_subset)
 
+        _framing_block = (default_framing + "\n\n") if default_framing else ""
         sub_messages = [
             {
                 "role": "system",
                 "content": (
                     f"You are a focused subagent invoked by a parent code-mode "
                     f"agent. Task: {description}\n\n"
+                    f"{_framing_block}"
                     "Use the available tools, then end your turn with a single "
                     "concise final message summarising what you found / did. "
-                    "You have 15 iterations max. The parent will treat your "
-                    "final message as your return value."
+                    f"You have {call_max_iter} iterations max. The parent will "
+                    "treat your final message as your return value."
                 ),
             },
             {"role": "user", "content": prompt},
         ]
 
-        sub_loop = _AgentLoop(
-            llm_registry=llm_shim,
-            tool_registry=adapter,
-            max_iterations=_SUBAGENT_MAX_ITERATIONS,
-        )
+        _loop_kwargs: dict[str, Any] = {
+            "llm_registry": llm_shim,
+            "tool_registry": adapter,
+            "max_iterations": call_max_iter,
+        }
+        if termination_gate_factory is not None:
+            try:
+                _loop_kwargs["termination_gate"] = termination_gate_factory()
+            except Exception as _gexc:  # noqa: BLE001 — gate 构造失败不阻子代理
+                log.warning("subagent termination_gate factory failed: %s", _gexc)
+        sub_loop = _AgentLoop(**_loop_kwargs)
 
         parent_sid = parent_session_id_resolver() or "default"
         sub_sid = f"{parent_sid}.sub"

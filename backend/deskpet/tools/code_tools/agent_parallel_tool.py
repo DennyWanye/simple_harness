@@ -48,7 +48,11 @@ log = logging.getLogger(__name__)
 
 
 _MIN_SUBAGENTS = 2
-_MAX_SUBAGENTS = 4
+# WI-1.2: 4→8。真实并发由 SubagentScheduler 全局 cap 背压（多的排队），
+# 此处只放宽 LLM 一次能列的子任务数。
+_MAX_SUBAGENTS = 8
+# 合法 kind（与 task_kinds._BUILTIN_KINDS 对齐；未知 kind 运行时回退 general）
+_KIND_ENUM = ["general", "research", "code", "fileops", "doc", "web"]
 # Recursion guard — 这两个名字永远不会被传给 subagent
 _FORBIDDEN_NESTED_TOOLS = frozenset({"agent", "agent_parallel"})
 
@@ -72,10 +76,11 @@ _DEFAULT_CACHE_MODE = _CACHE_MODE_FORK
 _SCHEMA: dict[str, Any] = {
     "name": "agent_parallel",
     "description": (
-        "并发派 2-4 个独立子代理处理可并行子任务（hub-and-spoke 模式）。"
-        "每个子代理有独立 prompt + tool subset + 15 iter cap，结果聚合返回。"
-        "适用于：多模块改动、多语言翻译、独立调研任务等。"
-        "不允许嵌套（subagent 内部 agent/agent_parallel 会被剔除）。"
+        "并发派 2-8 个独立子代理处理可并行的【多种事务】（hub-and-spoke 模式）。"
+        "每个子任务可指定 kind（research/code/doc/web/fileops/general），不同类型"
+        "并发受 lane 调度，按 kind 自动选工具集/迭代上限。结果聚合返回。"
+        "适用于：一条请求里同时要调研+做PPT+查资料这类异构并发，或多模块改动、"
+        "多语言翻译、独立调研。不允许嵌套（subagent 内部 spawn 类工具会被剔除）。"
     ),
     "parameters": {
         "type": "object",
@@ -94,6 +99,16 @@ _SCHEMA: dict[str, Any] = {
                         "task_id": {
                             "type": "string",
                             "description": "Short identifier for this subagent task.",
+                        },
+                        "kind": {
+                            "type": "string",
+                            "enum": _KIND_ENUM,
+                            "description": (
+                                "事务类型：决定子代理工具集/迭代上限/并发 lane。"
+                                "research=调研(联网+deepresearch)、code=编码(读写改+跑测试)、"
+                                "doc=文档生成(PPT/Word/Excel)、web=联网快查、fileops=文件读写、"
+                                "general=通用只读(默认)。"
+                            ),
                         },
                         "prompt": {
                             "type": "string",
@@ -258,6 +273,8 @@ def build_agent_parallel_tool(
     parent_session_id_resolver: Callable[[], str],
     subagent_runner: Optional[SubagentRunner] = None,
     parent_system_prompt_resolver: Optional[Callable[[], str]] = None,
+    scheduler: Any = None,
+    kind_overrides: Optional[dict[str, Any]] = None,
 ):
     """Construct the ``agent_parallel`` tool handler.
 
@@ -279,11 +296,27 @@ def build_agent_parallel_tool(
             (still deterministic — fork hashes match, fresh hashes
             differ — which is what tests assert).
     """
-    runner: SubagentRunner = subagent_runner or _make_default_runner(
-        llm_shim=llm_shim,
-        parent_tool_registry=parent_tool_registry,
-        parent_session_id_resolver=parent_session_id_resolver,
-    )
+    # WI-1.3: 事务分型解析器（lazy import 防循环 import）
+    from deskpet.agent.task_kinds import resolve_kind
+
+    # Runner 选择（WI-1.3）：
+    #   1. subagent_runner（测试注入）优先
+    #   2. scheduler 存在 → 原生协程 runner（无线程池占用，F10）
+    #   3. 否则 → 现状 thread-bounce default runner（scheduler=None 的 BC 路径）
+    if subagent_runner is not None:
+        runner: SubagentRunner = subagent_runner
+    elif scheduler is not None:
+        runner = _make_async_native_runner(
+            llm_shim=llm_shim,
+            parent_tool_registry=parent_tool_registry,
+            parent_session_id_resolver=parent_session_id_resolver,
+        )
+    else:
+        runner = _make_default_runner(
+            llm_shim=llm_shim,
+            parent_tool_registry=parent_tool_registry,
+            parent_session_id_resolver=parent_session_id_resolver,
+        )
     resolve_parent_prompt: Callable[[], str] = (
         parent_system_prompt_resolver or (lambda: "")
     )
@@ -354,6 +387,8 @@ def build_agent_parallel_tool(
 
         async def _run_one(sa: dict[str, Any]) -> dict[str, Any]:
             sa_task_id = sa["task_id"]
+            # WI-1.3: 解析事务分型 → 工具子集/迭代上限/framing/lane
+            prof = resolve_kind(sa.get("kind"), overrides=kind_overrides)
             # G4: resolve cache mode per-subagent + compute system prompt hash
             sa_cache_mode = _resolve_cache_mode(sa, batch_cache_mode)
             sa_system_prompt_hash = _compute_system_prompt_hash(
@@ -362,23 +397,40 @@ def build_agent_parallel_tool(
                 sa_task_id=sa_task_id,
             )
             full_prompt = _build_sprint_contract(sa)
-            # Strip recursion-forbidden tools before handoff
+            # 工具子集：子任务显式 tools（剔 forbidden）优先，否则用 kind 默认
+            req_tools = _filter_subagent_tools(sa.get("tools"))
+            effective_tools = req_tools if req_tools is not None else list(prof.tools)
             sa_for_runner = {
                 **sa,
                 "prompt": full_prompt,
-                "tools": _filter_subagent_tools(sa.get("tools")),
-                # G4: surface cache hints to the runner (default runner
-                # ignores them — they only need to flow through to the
-                # LLM provider in a follow-up wiring change).
+                "tools": effective_tools,
+                # WI-1.3：分型注入，供 native runner 按 KindProfile 构造子 AgentLoop
+                "_kind": prof.kind,
+                "_max_iter": prof.max_iterations,
+                "_framing": prof.framing,
+                # G4: surface cache hints to the runner
                 "cache_mode": sa_cache_mode,
                 "parent_system_prompt_hash": sa_system_prompt_hash,
             }
+            parent_sid = parent_session_id_resolver() or "default"
+            run_id = f"{parent_sid}.par-{sa_task_id}"
             _emit_progress(sa_task_id, "starting")
+
+            async def _do() -> str:
+                return await runner(sa_for_runner, sa_task_id)
+
             try:
-                output = await runner(sa_for_runner, sa_task_id)
+                if scheduler is not None:
+                    output = await scheduler.run(
+                        kind=prof.kind, run_id=run_id, task_id=sa_task_id,
+                        parent_sid=parent_sid, coro_factory=_do,
+                    )
+                else:
+                    output = await _do()  # BC：无调度器 = 现状扁平 gather
                 _emit_progress(sa_task_id, "completed")
                 return {
                     "task_id": sa_task_id,
+                    "kind": prof.kind,
                     "ok": True,
                     "output": output,
                     # G4 detail block — tests + observability consume this
@@ -393,6 +445,7 @@ def build_agent_parallel_tool(
                 )
                 return {
                     "task_id": sa_task_id,
+                    "kind": prof.kind,
                     "ok": False,
                     "error": f"{type(exc).__name__}: {exc}",
                     "cache_mode": sa_cache_mode,
@@ -483,9 +536,73 @@ def _make_default_runner(
     return _runner
 
 
+def _make_async_native_runner(
+    *,
+    llm_shim: Any,
+    parent_tool_registry: Any,
+    parent_session_id_resolver: Callable[[], str],
+) -> SubagentRunner:
+    """WI-1.3 (F10) — scheduler 路径专用 runner：**直接在协程内**构造并 await
+    子 ``AgentLoop``，不经 ``run_in_executor`` 线程跳转。
+
+    这样调度器 semaphore 是唯一并发闸，不再为每个子代理 pin 一个线程池 worker
+    整个生命周期（_make_default_runner 的 thread-bounce 在 scheduler=None 的 BC
+    路径保留）。多个子 AgentLoop 协程在同一事件循环并发是安全的——现状
+    agent_parallel 已如此跑，且所有 per-call 状态按 session_id 隔离。
+    """
+
+    async def _runner(sa_for_runner: dict[str, Any], sa_task_id: str) -> str:
+        # lazy import 防循环（agent_tool 同款）
+        from agent.agent_loop import (  # type: ignore[import-not-found]
+            AgentLoop as _AgentLoop,
+            FinalEvent as _FinEv,
+            ErrorEvent as _ErrEv,
+        )
+        from .agent_tool import _SubsetRegistryAdapter
+
+        parent_sid = parent_session_id_resolver() or "default"
+        tools = list(sa_for_runner.get("tools") or [])
+        adapter = _SubsetRegistryAdapter(parent_tool_registry, tools)
+
+        framing = sa_for_runner.get("_framing", "") or ""
+        try:
+            max_iter = int(sa_for_runner.get("_max_iter") or 15)
+        except (TypeError, ValueError):
+            max_iter = 15
+
+        _framing_block = (framing + " ") if framing else ""
+        sys_msg = (
+            "You are a focused subagent invoked by a parent agent. "
+            f"{_framing_block}"
+            "用工具完成后，用一条简洁最终消息总结结果（父代理把它当返回值）。"
+            f"你最多有 {max_iter} 轮迭代。"
+        )
+        msgs = [
+            {"role": "system", "content": sys_msg},
+            {"role": "user", "content": sa_for_runner["prompt"]},
+        ]
+        sub = _AgentLoop(
+            llm_registry=llm_shim,
+            tool_registry=adapter,
+            max_iterations=max_iter,
+        )
+        sub_sid = f"{parent_sid}.par-{sa_task_id}"
+        final = ""
+        async for ev in sub.run(msgs, session_id=sub_sid):
+            if isinstance(ev, _FinEv):
+                final = ev.content or ""
+                break
+            if isinstance(ev, _ErrEv):
+                return f"[subagent error] {ev.reason}: {ev.detail}".rstrip(": ")
+        return final or "[subagent finished without final text]"
+
+    return _runner
+
+
 __all__ = [
     "_SCHEMA",
     "_build_sprint_contract",
+    "_make_async_native_runner",
     "_compute_system_prompt_hash",
     "_emit_progress",
     "_filter_subagent_tools",

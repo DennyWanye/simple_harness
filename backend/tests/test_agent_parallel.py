@@ -37,12 +37,14 @@ from deskpet.tools.code_tools.agent_parallel_tool import (
 
 
 def test_schema_shape_min_max():
-    """Schema declares 2-4 subagents min/max."""
+    """Schema declares 2-8 subagents min/max (subagent-driver WI-1.2: 4→8)."""
     sub_spec = _SCHEMA["parameters"]["properties"]["subagents"]
     assert sub_spec["minItems"] == 2
-    assert sub_spec["maxItems"] == 4
+    assert sub_spec["maxItems"] == 8
     item_required = sub_spec["items"]["required"]
     assert "task_id" in item_required
+    # WI-1.2: kind 字段已加进 items
+    assert "kind" in sub_spec["items"]["properties"]
     assert "prompt" in item_required
 
 
@@ -118,17 +120,27 @@ async def test_validation_rejects_count_below_minimum():
         await handler({"subagents": [{"task_id": "a", "prompt": "x"}]}, "")
     )
     assert out["ok"] is False
-    assert "2-4" in out["error"]
+    assert "2-8" in out["error"]
 
 
 @pytest.mark.asyncio
 async def test_validation_rejects_count_above_maximum():
-    """count == 5 → ok=false."""
+    """count == 9 → ok=false (WI-1.2: max raised 4→8)."""
+    handler = _build_handler(runner=_make_echo_runner())
+    nine = [{"task_id": f"t{i}", "prompt": "x"} for i in range(9)]
+    out = json.loads(await handler({"subagents": nine}, ""))
+    assert out["ok"] is False
+    assert "2-8" in out["error"]
+
+
+@pytest.mark.asyncio
+async def test_validation_accepts_five_now():
+    """count == 5 now legal (was rejected at max=4)."""
     handler = _build_handler(runner=_make_echo_runner())
     five = [{"task_id": f"t{i}", "prompt": "x"} for i in range(5)]
     out = json.loads(await handler({"subagents": five}, ""))
-    assert out["ok"] is False
-    assert "2-4" in out["error"]
+    assert out["ok"] is True
+    assert out["count"] == 5
 
 
 @pytest.mark.asyncio
@@ -334,7 +346,11 @@ async def test_handler_strips_recursive_tools_before_runner():
         "",
     )
     assert seen_tools[0] == ["read_file", "grep"]
-    assert seen_tools[1] is None
+    # WI-1.3: 无显式 tools → general kind 默认集（= agent_tool 旧 None 时会用的
+    # 同一只读集，工具行为等价；现由 agent_parallel 显式注入）。
+    assert seen_tools[1] == [
+        "read_file", "list_directory", "glob", "grep", "web_search"
+    ]
 
 
 # ---------------------------------------------------------------------------

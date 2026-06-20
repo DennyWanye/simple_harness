@@ -1920,13 +1920,71 @@ try:
                 parent_session_id_resolver=_resolve_parent_sid,
             )
 
-            # Companion+Code v1 WI-C: agent_parallel 接电（flag ON 时构造工具
-            # 闭包；OFF 时不构造、handler=None 让 register_code_tools 跳过）.
+            # ===== 子代理并发驱动 (plans/2026-06-21-subagent-concurrency-driver/) =====
+            # WI-1.4/1.5：构造 SubagentScheduler（lane-aware 有界调度）+ 进度出口
+            # （metrics 盘 + WS 广播）。flag subagent_driver OFF 时全不构造（BC）。
+            _subagent_scheduler = None
+            _kind_overrides = None
+
+            def _subagent_progress_sink(payload: dict) -> None:
+                # 1) metrics（盘，复用 VALID_EVENTS 的 subagent_progress）
+                try:
+                    from observability.metrics_sink import record as _rec
+                    _rec("subagent_progress", {
+                        k: payload.get(k)
+                        for k in ("run_id", "kind", "task_id", "status", "duration_ms")
+                    })
+                except Exception:  # noqa: BLE001 — 进度永不阻断
+                    pass
+                # 2) WS 广播给所有 control 连接（fire-and-forget，非阻塞）
+                try:
+                    _msg = {"type": "subagent_progress", "payload": payload}
+                    for _ws in list(_control_connections.values()):
+                        try:
+                            asyncio.create_task(_ws.send_json(_msg))
+                        except Exception:  # noqa: BLE001
+                            pass
+                except Exception:  # noqa: BLE001
+                    pass
+
+            if bool(getattr(
+                getattr(config, "features", None), "subagent_driver", False,
+            )):
+                try:
+                    from deskpet.agent.subagent_scheduler import (
+                        SubagentScheduler as _SubSched,
+                    )
+                    from deskpet.agent.task_kinds import (
+                        load_kind_overrides as _load_kinds,
+                    )
+                    from config import get_subagent_concurrency as _get_conc
+
+                    _glob_cap, _lane_caps = _get_conc(config)
+                    _kind_overrides = _load_kinds(
+                        (getattr(config, "raw", None) or {}).get("agent")
+                    )
+                    _subagent_scheduler = _SubSched(
+                        global_concurrency=_glob_cap,
+                        lane_caps=_lane_caps,
+                        progress_sink=_subagent_progress_sink,
+                    )
+                    service_context.register("subagent_scheduler", _subagent_scheduler)
+                    logger.info(
+                        "subagent_driver_ready global=%d lanes=%s",
+                        _glob_cap, _lane_caps,
+                    )
+                except Exception as _sd_exc:  # noqa: BLE001
+                    logger.warning("subagent_driver_init_failed: %s", _sd_exc)
+
+            # Companion+Code v1 WI-C: agent_parallel 接电。subagent_driver 或旧
+            # agent_parallel 任一开即注册；带 scheduler 时走有界调度+事务分型，
+            # 否则现状扁平 gather（scheduler=None → 字节级 BC）.
             _parallel_handler = None
             _parallel_schema = None
-            if bool(getattr(
-                getattr(config, "features", None), "agent_parallel", False,
-            )):
+            _feat = getattr(config, "features", None)
+            if bool(getattr(_feat, "agent_parallel", False)) or bool(
+                getattr(_feat, "subagent_driver", False)
+            ):
                 try:
                     from deskpet.tools.code_tools.agent_parallel_tool import (
                         build_agent_parallel_tool as _build_parallel,
@@ -1935,13 +1993,66 @@ try:
                         llm_shim=_shim_for_agent,
                         parent_tool_registry=deskpet_tool_registry_v2,
                         parent_session_id_resolver=_resolve_parent_sid,
+                        scheduler=_subagent_scheduler,
+                        kind_overrides=_kind_overrides,
                     )
-                    logger.info("companion_code_v1_agent_parallel_ready")
+                    logger.info(
+                        "companion_code_v1_agent_parallel_ready scheduler=%s",
+                        _subagent_scheduler is not None,
+                    )
                 except Exception as _ap_exc:  # noqa: BLE001
                     logger.warning(
                         "companion_code_v1_agent_parallel_init_failed: %s",
                         _ap_exc,
                     )
+
+            # ===== 子代理并发驱动 — spawn_team 暴露 (WI-2.4) =====
+            # flag agent_team ON：构造 TeamStore/TaskGraphStore（注入 service_context）
+            # + spawn_team LLM 工具。OFF 时 handler=None → 不注册（BC）.
+            _spawn_team_handler = None
+            _spawn_team_schema = None
+            if bool(getattr(
+                getattr(config, "features", None), "agent_team", False,
+            )):
+                try:
+                    from pathlib import Path as _PathAT
+                    from deskpet.agent.team.team_store import TeamStore as _TeamStore
+                    from deskpet.agent.task_graph import (
+                        TaskGraphStore as _TaskGraphStore,
+                    )
+                    from deskpet.tools.code_tools.spawn_team_tool import (
+                        build_spawn_team_tool as _build_spawn_team,
+                    )
+
+                    _team_store = _TeamStore(
+                        base_dir=_PathAT(_paths.user_data_dir()) / "teams"
+                    )
+                    try:
+                        _team_store.cleanup_old()  # WI-2.6 防 .db 堆积
+                    except Exception:  # noqa: BLE001
+                        pass
+                    _task_graph_store = _TaskGraphStore(db=_session_db)
+                    service_context.register("team_store", _team_store)
+                    service_context.register("task_graph_store", _task_graph_store)
+
+                    _sg = service_context.get("session_goal_store")
+                    _goal_text_resolver = (
+                        (lambda: _sg.get_goal_text(_resolve_parent_sid()))
+                        if _sg is not None else None
+                    )
+                    _spawn_team_handler, _spawn_team_schema = _build_spawn_team(
+                        llm_shim=_shim_for_agent,
+                        parent_tool_registry=deskpet_tool_registry_v2,
+                        parent_session_id_resolver=_resolve_parent_sid,
+                        team_store=_team_store,
+                        task_graph_store=_task_graph_store,
+                        kind_overrides=_kind_overrides,
+                        goal_text_resolver=_goal_text_resolver,
+                        goal_id_resolver=None,
+                    )
+                    logger.info("agent_team_ready")
+                except Exception as _at_exc:  # noqa: BLE001
+                    logger.warning("agent_team_init_failed: %s", _at_exc)
 
             # Re-register the full code tool set including the closures.
             from deskpet.tools.code_tools import (
@@ -1955,6 +2066,8 @@ try:
                 agent_schema=_agent_schema,
                 agent_parallel_handler=_parallel_handler,
                 agent_parallel_schema=_parallel_schema,
+                spawn_team_handler=_spawn_team_handler,
+                spawn_team_schema=_spawn_team_schema,
             )
             # P5-S2 G1: count bumped 5→6 — added fetch_tool_result
             if _clarify_ask is not None:

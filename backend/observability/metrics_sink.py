@@ -69,6 +69,9 @@ VALID_EVENTS = frozenset({
     # WI-C1 Companion+Code v1 Stage C — agent_parallel subagent lifecycle
     # (starting / completed / failed)；脱敏：task_id 由 caller 自管。
     "subagent_progress",
+    # 子代理并发驱动 (plans/2026-06-21-subagent-concurrency-driver/ WI-1.5)
+    # — 调度器把子任务调进 lane 运行（kind/run_id/lane cap 背压）.
+    "subagent_scheduled",
     # WI-G1 Companion+Code v2 — Multi-Agent Team workflow task lifecycle
     # (team_task_created / team_task_claimed / team_task_done)；脱敏：
     # task_id + team_id 都是 caller 自管的 uuid，无敏感内容。
@@ -116,6 +119,10 @@ _ALLOWED_DETAIL_KEYS = frozenset({
     # detail keys.
     "task_id",         # subagent_progress: caller-supplied short id
     "status",          # subagent_progress: starting / completed / failed
+    # 子代理并发驱动 (WI-1.5) — subagent_scheduled / subagent_progress 额外维度
+    # （脱敏：run_id 是 sid 派生短 id、kind 是枚举，均无用户文本）.
+    "run_id",          # subagent_scheduled: <parent_sid>.par-<task_id>
+    "kind",            # subagent_scheduled: research/code/doc/web/fileops/general
     # WI-G1 Companion+Code v2 Multi-Agent Team — team_task_* detail keys.
     "team_id",         # team_task_*: caller-supplied short id (uuid hex)
     "teammate_id",     # team_task_claimed/done: who did the work

@@ -170,6 +170,8 @@ async def spawn_team(
     parent_goal_text: str | None = None,
     parent_goal_id: str | None = None,
     task_graph_store: Any = None,
+    teammate_tool_subset: tuple[str, ...] | None = None,
+    teammate_max_iterations: int = 30,
 ) -> dict[str, Any]:
     """Orchestrate a multi-teammate team.
 
@@ -218,6 +220,9 @@ async def spawn_team(
                 "error": f"task_descriptions[{i}] must be a non-empty string",
             }
 
+    # 子代理并发驱动 WI-2.2 (R2-6)：启动日志锚点（真机 E2E V2 grep 依赖）
+    log.info("spawn_team team=%s n=%d", team_id, num_teammates)
+
     # 1. Seed the task pool.
     for desc in task_descriptions:
         await store.create_task(team_id, desc)
@@ -232,6 +237,8 @@ async def spawn_team(
             parent_session_id=parent_session_id,
             store=store,
             team_id=team_id,
+            teammate_tool_subset=teammate_tool_subset,
+            teammate_max_iterations=teammate_max_iterations,
         )
 
     # 3. Spawn N teammates concurrently.
@@ -312,6 +319,8 @@ def _make_default_runner(
     parent_session_id: str,
     store: TeamStore,
     team_id: str,
+    teammate_tool_subset: tuple[str, ...] | None = None,
+    teammate_max_iterations: int = 30,
 ) -> TeammateRunner:
     """Build a TeammateRunner that spins up a real ``agent.AgentLoop``
     with the merged subset tool registry.
@@ -339,6 +348,7 @@ def _make_default_runner(
         adapter = _TeamSubsetRegistry(
             parent_registry=parent_tool_registry,
             team_tools=team_tools,
+            allowed_tools=teammate_tool_subset,
         )
 
         messages = [
@@ -356,7 +366,7 @@ def _make_default_runner(
         sub_loop = AgentLoop(
             llm_registry=llm_shim,
             tool_registry=adapter,
-            max_iterations=30,
+            max_iterations=teammate_max_iterations,
         )
         sub_sid = f"{parent_session_id}.team-{team_id}.{teammate_id}"
 
@@ -396,16 +406,21 @@ class _TeamSubsetRegistry:
         *,
         parent_registry: Any,
         team_tools: list[tuple[str, dict[str, Any], Any]],
+        allowed_tools: tuple[str, ...] | None = None,
     ) -> None:
         self._parent = parent_registry
         # Map name → (schema, handler) for the team tools.
         self._team: dict[str, tuple[dict[str, Any], Any]] = {
             name: (schema, handler) for name, schema, handler in team_tools
         }
-        # Strict allowlist for parent passthrough.
-        self._parent_allowed = (
-            self._DEFAULT_READONLY - FORBIDDEN_TEAMMATE_TOOLS
+        # WI-2.2: 父透传工具集 = 注入的 teammate_tool_subset（按 kind），
+        # 缺省回退现有只读集（BC）；两者都剔 FORBIDDEN_TEAMMATE_TOOLS（防越权）。
+        base = (
+            frozenset(allowed_tools)
+            if allowed_tools
+            else self._DEFAULT_READONLY
         )
+        self._parent_allowed = base - FORBIDDEN_TEAMMATE_TOOLS
 
     def schemas(self, enabled_toolsets: Any = None) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []

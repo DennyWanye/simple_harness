@@ -53,6 +53,8 @@ def register_code_tools(
     agent_schema=None,
     agent_parallel_handler=None,
     agent_parallel_schema=None,
+    spawn_team_handler=None,
+    spawn_team_schema=None,
 ) -> None:
     """Register glob/grep/web_search statically + todo_write/agent
     using caller-built closures (because they need session-db / llm-shim
@@ -193,5 +195,20 @@ def register_code_tools(
             permission_category="read_file",
             source="builtin",
             timeout_seconds=300.0,
+            replace_allowed=False,
+        )
+
+    # 子代理并发驱动 WI-2.3 — spawn_team（同构共享任务池，features.agent_team）。
+    # toolset="control"；权限同 agent_parallel 用 "read_file"（仅编排，teammate
+    # 内部各工具仍各自按真实 category check）；600s 兜底（团队比单批更久）。
+    if spawn_team_handler is not None and spawn_team_schema is not None:
+        registry.register(
+            name="spawn_team",
+            toolset="control",
+            schema=spawn_team_schema,
+            handler=spawn_team_handler,
+            permission_category="read_file",
+            source="builtin",
+            timeout_seconds=600.0,
             replace_allowed=False,
         )
