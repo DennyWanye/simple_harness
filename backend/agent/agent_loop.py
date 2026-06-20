@@ -44,6 +44,36 @@ from llm.types import ChatResponse, ToolCall
 logger = logging.getLogger("deskpet.agent.loop")
 
 
+def _tool_declares_user_request(name: str, schemas: list[dict[str, Any]]) -> bool:
+    """Return True when a tool schema exposes a ``user_request`` property."""
+    for schema in schemas or []:
+        function_schema = schema.get("function") if isinstance(schema, dict) else None
+        candidate = function_schema if isinstance(function_schema, dict) else schema
+        if not isinstance(candidate, dict):
+            continue
+        if candidate.get("name") != name:
+            continue
+        parameters = candidate.get("parameters")
+        if not isinstance(parameters, dict):
+            return False
+        properties = parameters.get("properties")
+        return isinstance(properties, dict) and "user_request" in properties
+    return False
+
+
+def _inject_loop_user_request(
+    tc: ToolCall,
+    schemas: list[dict[str, Any]],
+    *,
+    loop_user_request: Optional[str],
+) -> None:
+    """Inject this loop's original user request into opted-in tool calls."""
+    if not loop_user_request or not isinstance(tc.arguments, dict):
+        return
+    if _tool_declares_user_request(tc.name, schemas):
+        tc.arguments["user_request"] = loop_user_request
+
+
 # ───────────────────── P5-S2 Phase 3 constants ─────────────────────
 
 
@@ -549,6 +579,7 @@ class AgentLoop:
         session_id: str = "default",
         stream: bool = False,
         provider_chain: Optional[list[Any]] = None,
+        loop_user_request: Optional[str] = None,
         **llm_kwargs: Any,
     ) -> AsyncIterator[AgentEvent]:
         """Drive the ReAct loop. See module docstring for event contract.
@@ -1789,6 +1820,13 @@ class AgentLoop:
             #
             # Check happens BEFORE we append the assistant turn so the
             # rejected tool_call doesn't pollute the conversation either.
+            for tc in response.tool_calls:
+                _inject_loop_user_request(
+                    tc,
+                    tool_schemas,
+                    loop_user_request=loop_user_request,
+                )
+
             if self.activity_store is not None:
                 from agent.session_activity import args_hash as _args_hash  # noqa: PLC0415
 
@@ -1870,6 +1908,11 @@ class AgentLoop:
             tool_coros = []
             call_order: list[ToolCall] = []
             for tc in response.tool_calls:
+                _inject_loop_user_request(
+                    tc,
+                    tool_schemas,
+                    loop_user_request=loop_user_request,
+                )
                 # P6 Phase 6 — gate gates each tool dispatch on hard
                 # budget + per-tool consecutive cap (hallucination
                 # detection). Returning early on the FIRST blocked tool
