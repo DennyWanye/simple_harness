@@ -112,7 +112,9 @@ Get-ChildItem $dir -Filter *.md | Sort-Object LastWriteTime -Desc | Select-Objec
 | TC-A1 | A 直连源生效 | 正常·核心 | ⭐核心 | 综述主题 → 报告引用出现 wikipedia.org / arxiv.org |
 | TC-A2 | spike 病灶修复 | 正常·核心 | 🔴最关键 | 连续 4 个不同主题 → 不再全 0 来源 |
 | TC-A3 | 财报→cninfo 直连回归 | 回归 | 高 | 宁德时代财报 → 引用含 cninfo 巨潮 PDF |
-| TC-A4 | 通用主题默认覆盖率 | 诚实边界 | 高 | 无直连意图主题 → 默认是否仍可能 0 源(暴露 bing-cdp 该不该默认开) |
+| TC-A4 | 通用主题默认覆盖率 | 诚实边界 | 高 | 无直连意图主题 → 默认是否仍可能 0 源 |
+| TC-A5 | 百度/搜狗百科直连(国内稳定) | 正常·核心 | ⭐核心 | 通用/百科主题 → baike.baidu/sogou 真调用,补通用主题洞 |
+| TC-A6 | 谷歌可达门控 | 门控 | 中 | 有VPN→google-cdp用;不通→自动跳过不拖垮(维基同理) |
 | TC-O1 | 观测字段 | 观测 | 高 | coverage.route.direct_sources_hit + elapsed_ms_per_stage.direct + n_dropped_by_reason.direct_source_empty |
 | TC-B1 | B bing-cdp（config 启用后） | opt-in | 中 | engines_hit 含 bing-cdp；captcha → errors 含 bing_cdp_captcha_suspected |
 | TC-X1 | 全失败兜底 | 异常 | 🔴一票否决 | 极端无结果主题 → no_results 模板 + errors 如实 + App 不崩 |
@@ -269,6 +271,50 @@ Get-ChildItem $dir -Filter *.md | Sort-Object LastWriteTime -Desc | Select-Objec
 **证据要求**：路由 grep（证直连未命中）+ 2 截图 + 有源/0源 log + （若触发加测）开 bing-cdp 前后对比。
 
 > 📌 这条是整套测试里**唯一可能暴露"默认修复不彻底"**的用例——TC-A2 证明直连源类题已修，TC-A4 诚实回答"通用类题默认是否还脆弱"。两者合起来才是完整的 spike 病灶覆盖评估。
+
+---
+
+### TC-A5 — 百度百科/搜狗百科直连源(国内稳定,补 TC-A4 通用主题洞)⭐核心
+
+**目的**：验证通用/百科类主题路由到 **百度百科 + 搜狗百科**（国内稳定、绕 SERP 封禁），补上 TC-A4 暴露的"通用主题默认脆弱"洞。这是"不用 Bing/DDG"后通用主题的主力兜底。
+
+**前置**：§1；config 默认（baidu_baike/sogou_baike 默认开）。
+
+**主题**：`什么是向量数据库？综述与背景介绍`（含"什么是/综述/背景/介绍"→ 路由 baidu_baike+sogou_baike+wikipedia）。
+
+**精确步骤**：click 输入框→Clipboard 主题→Ctrl+V→Enter→轮询。grep：
+```powershell
+Select-String -Path "...\tauri-dev2.log" -Pattern "baike.baidu.com|baike.sogou.com|direct_sources_hit"
+```
++ 读最新报告引用域名。
+
+**判定**：
+- **PASS**：log 出现 `baike.baidu.com` 或 `baike.sogou.com` 真调用；报告引用含百科域名 **或** route.direct_sources_hit 含 baidu_baike/sogou_baike。**即便 Bing/DDG 已不在默认队列,百科仍兜底出源(非全 0)。**
+- **FAIL**：通用主题 0 来源 / 百科源完全没被调用(检查 direct_source_for 路由 + direct_source_types 默认含百科)。
+
+**证据**：2 截图 + 报告 .md + baike grep。
+
+---
+
+### TC-A6 — 谷歌可达门控(有 VPN 才用,不通自动跳过)
+
+**目的**：验证 `google-cdp` 引擎的可达门控——有 VPN/能访问谷歌时用(渲染谷歌 SERP),不通时**自动跳过、不报错、不拖慢**。
+
+**前置**：§1；config 默认（默认队列 = google-cdp）。
+
+**精确步骤**：触发任一研究后 grep：
+```powershell
+Select-String -Path "...\tauri-dev2.log" -Pattern "google-cdp|google.com/search|unreachable|google_cdp_captcha"
+```
+
+**判定（分支，均非 FAIL）**：
+- **有 VPN/谷歌可达**：log 见 `google.com/search` 渲染 + engines_hit 含 google-cdp → ✅ 谷歌生效。
+- **无 VPN/谷歌不可达**：log 见 `google-cdp: unreachable`（或该引擎被跳过），**研究仍正常完成**（靠直连源），App 不卡/不报错 → ✅ 门控正确（"不通不用"）。
+- **FAIL**：谷歌不可达却傻等渲染超时拖垮整轮 / 抛未捕获异常 / 因谷歌不通导致整个研究失败。
+
+**证据**：grep 输出（命中或 unreachable 任一）+ 研究正常完成截图。
+
+> 说明：维基百科可达门控同理（log `_reachable` 不通则 wikipedia_search 快速返 []，不发 API 请求）——可在本例一并 grep `wikipedia.org` 确认通则用、不通跳过。
 
 ---
 
