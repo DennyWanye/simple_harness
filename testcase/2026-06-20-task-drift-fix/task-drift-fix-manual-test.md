@@ -35,7 +35,19 @@
 >
 > **证据归档**：截图存 `G:\projects\deskpet\testcase\2026-06-20-task-drift-fix\screenshots\`，命名 `<case-id>-<简述>.png`；log/文本 grep 存同父目录 `*.txt`。
 >
-> **最后更新**：2026-06-20（v2 聚焦修订：证据策略升级为 acb69a0 两条硬 log 锚点；627 历史已实测确认；待真机执行回填）
+> **最后更新**：2026-06-20（v3 真机实测后修正 — 见下 ★ 与 [`RESULTS.md`](./RESULTS.md)）
+>
+> ### ★ v3 真机实测修正（重要，影响 TC-6/TC-7 语义）
+> 真机 E2E 暴露并修复了两点（详见 [`RESULTS.md`](./RESULTS.md) §0 三轮迭代）：
+> 1. **Tier1 锚定/重定性不足以阻止 topic 漂移**（真机：anchor/relabel 已注入但外层 LLM topic 仍漂回 CATL）→ **Tier2 改为默认开**（`topic_shift_gate: true`），并把过高的 `len>50` 合取阈值改可配置 `topic_shift_min_len`（默认 16，原 50 漏判 32 字的简短新任务）。
+> 2. **Tier2 embedding 实时 encode 在真机恒超时**（BGE-M3 subprocess 被 vector worker 回填 + 研究负载抢锁，撞 1500ms 组件 budget）→ Tier2 加**词法内容词重叠兜底**：embedder 超时/不可用 → 退化到零延迟词法信号（跨域漂移 token 重叠≈0 必被抓）。
+>
+> **新增 log 锚点/字段**（grep 用）：
+> - `task_drift_context_gate` 增字段 **`shift_path`**（`off`/`embed`/`lexical`，标明本轮用哪条信号）。
+> - `task_drift_sim_ok`（`sim`/`encode_ms`）/ `task_drift_sim_skip`（`reason=no_embedder|not_ready|mock|encode_timeout|encode_error`）——Tier2 相似度路诊断。
+>
+> **TC-6 语义变更**：原"验 Tier2 默认**关**"已作废 → 现验 Tier2 默认**开**生效（`topic_shift_gate=True` + 跨域 `l2_truncated=True`/同域 `l2_truncated=False`）。
+> **TC-7**：embedding 主路真机因锁竞争难稳定触发（恒 `shift_path=lexical`），其正确性由单测覆盖；词法兜底路已真机充分验证。
 
 ---
 
