@@ -120,13 +120,9 @@ _last_search_errors: list[str] = []
 
 
 def _engine_queue() -> list[str]:
-    """``[research].search_engines`` 配置的引擎降级队列;默认 (bing, duckduckgo)。
-    只保留已知引擎,顺序即降级优先级。中国用户可配 ['baidu','bing'] 等。"""
-    try:
-        import config as _cfg  # type: ignore[import-not-found]
-        v = (_cfg.config.raw.get("research") or {}).get("search_engines")
-    except Exception:  # noqa: BLE001 — 配置不可用 → 默认队列
-        v = None
+    """``[research].search_engines`` 配置的引擎降级队列;默认见 _DEFAULT_ENGINE_QUEUE。
+    只保留已知引擎,顺序即降级优先级。"""
+    v = _research_raw().get("search_engines")
     if isinstance(v, list) and v:
         q = [str(x).strip().lower() for x in v]
         q = [e for e in q if e in _KNOWN_ENGINES]
@@ -138,9 +134,22 @@ def _engine_queue() -> list[str]:
 
 
 def _research_raw() -> dict[str, Any]:
+    """返回 config.toml 的 ``[research]`` 段 dict;读不到返回 {}。
+
+    ⚠️ 2026-06-21 真机 E2E 修复:原实现只读 ``config.config.raw``,但 ``config.config``
+    单例并不存在(config.py 无该模块全局、main.py 不注入)→ 恒 AttributeError → 所有
+    [research] 开关(search_engines/searxng_url/serp_hardening)读不到 config.toml、全失效。
+    改用 research_tools._research_raw 同款健壮兜底:有发布单例则用,否则 load_config(
+    resolve_config_path()) 直读真实 config 文件。
+    """
     try:
         import config as _cfg  # type: ignore[import-not-found]
-        raw = (_cfg.config.raw.get("research") or {})
+        obj = getattr(_cfg, "config", None)  # 若有发布的单例优先
+        if obj is not None and hasattr(obj, "raw"):
+            raw = obj.raw.get("research") or {}
+        else:
+            cfg = _cfg.load_config(_cfg.resolve_config_path())
+            raw = cfg.raw.get("research") or {}
         return raw if isinstance(raw, dict) else {}
     except Exception:  # noqa: BLE001
         return {}

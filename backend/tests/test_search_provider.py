@@ -161,6 +161,22 @@ def test_engine_queue_config(monkeypatch):
     assert sp._engine_queue() == ["baidu", "bing", "bing-cdp", "searxng"]  # 清洗+小写+去非法,保序
 
 
+def test_engine_queue_reads_config_via_load_config_fallback(monkeypatch):
+    """2026-06-21 真机修复回归: config 模块**无 config 单例**时(真实运行口径,
+    main.py 不注入 config.config),_research_raw/_engine_queue 必须经 load_config(
+    resolve_config_path()) 兜底读到 [research].search_engines —— 否则配置开关全失效。"""
+    import types
+    # fake config 模块: 没有 .config 单例,只有 load_config + resolve_config_path
+    fake_cfg_obj = types.SimpleNamespace(raw={"research": {"search_engines": ["baidu", "bing"]}})
+    fake = types.SimpleNamespace(
+        load_config=lambda *_a, **_k: fake_cfg_obj,
+        resolve_config_path=lambda *_a, **_k: "X",
+    )
+    assert not hasattr(fake, "config")  # 复现真实:无单例
+    monkeypatch.setitem(__import__("sys").modules, "config", fake)
+    assert sp._engine_queue() == ["baidu", "bing"]   # 经 load_config 兜底读到,非默认
+
+
 def test_known_engines_includes_browser_and_searxng():
     assert "bing-cdp" in sp._KNOWN_ENGINES
     assert "google-cdp" in sp._KNOWN_ENGINES
