@@ -1400,6 +1400,15 @@ try:
     _skill_loader = _SkillLoader(
         skill_dirs=[_builtin_dir, _user_skills_dir],
         enable_watch=False,
+        # WI-5：触发式知识注入的真正接电点。知识片段（user-invocable:false）
+        # 只有 loader 的 knowledge_enabled 打开才会进 reload() 快照（loader.py:308）。
+        # 之前漏传 → loader 恒 False → 3 个知识片段从未进 all() → matcher 永远
+        # 匹配不到（真机 total=12 而非 15）。assembler/SkillComponent 的 d7da6e5
+        # 配置流通修复是在「过滤一个本就为空的子集」，必须从源头 loader 放行。
+        # flag 默认 False 保 BC（desc list / /help / skill_invoke 不泄露知识片段）。
+        knowledge_enabled=bool(
+            getattr(getattr(config, "skills", None), "knowledge_enabled", False)
+        ),
     )
     service_context.register("skill_loader", _skill_loader)
     # WI-T3.2 v3：skill_invoke 工具接电 SkillLoader（取代 stubs.py 同名 stub）.

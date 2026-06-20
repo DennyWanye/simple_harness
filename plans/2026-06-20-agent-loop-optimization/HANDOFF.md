@@ -56,7 +56,23 @@ WI-5 = 用户消息含触发词（如 "ppt"）→ 自动把知识片段正文注
 
 ---
 
-## 3. ⚠️ 遗留 BUG（新 session 重点解决）：知识片段的 trigger 运行时不命中
+## 3. ✅ 已解决（2026-06-20 续修）：知识片段的 trigger 运行时不命中
+
+**根因**：`main.py:1400` 构造 `SkillLoader` 时漏传 `knowledge_enabled` → loader 恒用默认
+`False` → `reload()`（`loader.py:308`）把 3 个 `user-invocable:false` 知识片段挡在快照外 →
+`loader.all()` 永远只有 12 个常规技能 → matcher 无从匹配（真机 `total=12` 即铁证）。
+下面「待查假设」原方向（registry 包装丢 triggers）已排除——真因在 loader 构造漏 flag，
+loader.all() 根本不含知识片段。
+
+**修复**：`_SkillLoader(...)` 加 `knowledge_enabled=bool(config.skills.knowledge_enabled)`。
+**真机复验**：boot `skill.reload_ok count=15`（原 12）；code 句「windows 反斜杠路径报错」→
+`skill_auto_disclosed total=15 strong=1 auto_loaded=1 names=['windows-path-debug'] top_sim=0.950`。
+详见 [manual-results-2026-06-20-wi5-trigger-fix/RESULTS.md](../manual-results-2026-06-20-wi5-trigger-fix/RESULTS.md)。
+回归补 `test_wi5_trigger_inject.py::test_real_loader_registry_injects_knowledge_via_trigger`（走真 loader.all()）。
+
+---
+
+### （历史诊断记录，保留）原 BUG 描述：知识片段的 trigger 运行时不命中
 
 **症状**（真机 `plans/2026-06-20-agent-loop-optimization/codex/tauri-dev7.log`）：
 - chat 发 "帮我做个ppt…" → `skill_auto_disclosed total=12 strong=1 auto_loaded=1 names=['ppt-generate'] top_sim=0.950`
