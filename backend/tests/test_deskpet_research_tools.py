@@ -611,6 +611,33 @@ async def test_research_run_coverage_observability_counts_drops() -> None:
 
 
 @pytest.mark.asyncio
+async def test_research_run_direct_sources_run_even_when_search_empty(monkeypatch) -> None:
+    """§6.0 真机 E2E 暴露的严重 bug 回归: 普通搜索 0 结果(SERP 被 IP 封)时,直连源仍须运行,
+    **不被 'no search results' 早返跳过** —— 否则封禁场景下 §6.0-A 直连兜底完全失效
+    (而封禁正是直连源要兜底的场景)。"""
+    import deskpet.tools.research_tools as _rt
+    import deskpet.tools.research_sources as _rs
+    monkeypatch.setattr(_rt, "_direct_sources_enabled", lambda: True)
+    monkeypatch.setattr(_rs, "direct_source_for", lambda q: ["cninfo"])
+
+    async def _fake_cninfo(q, *, max_results=3, client=None):
+        return [{"ok": True, "url": "https://static.cninfo.com.cn/x.pdf", "title": "年报",
+                 "text": "营业收入与净利润等关键财务数据。" * 40,
+                 "fetched_at": time.time(), "source": "cninfo"}]
+    monkeypatch.setitem(_rs.DIRECT_FETCHERS, "cninfo", _fake_cninfo)
+    monkeypatch.setattr(_rs, "cninfo_search", _fake_cninfo)
+
+    llm = FakeLLM([json.dumps(["公司财报营收净利润?"]), "# T\n## TL;DR\n\nFrom cninfo [^1]."])
+    search = make_search({"公司财报营收净利润?": []})   # 搜索全空 = 模拟 SERP 被封
+    extract = make_extract({})
+    report = await research_run("公司财报", llm_call=llm, search=search, extract=extract)
+    urls = [c.url for c in report.citations]
+    # 关键断言: 搜索全空,但直连源仍兜底产出 passage(非 no_results 早返)
+    assert "https://static.cninfo.com.cn/x.pdf" in urls
+    assert report.coverage["route"]["direct_sources_hit"] == ["cninfo"]
+
+
+@pytest.mark.asyncio
 async def test_research_run_collects_search_side_channel_errors(monkeypatch) -> None:
     """§6.0.4 🔴: bing-cdp captcha 等引擎级侧信道错误须如实进 report.errors
     (否则 captcha 软封与'真无结果'不可区分)。"""

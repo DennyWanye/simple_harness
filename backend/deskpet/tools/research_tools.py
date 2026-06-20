@@ -1123,18 +1123,11 @@ async def deepresearch(
         pass
 
     if not url_to_question:
+        # §6.0 修复(真机 E2E 暴露的严重 bug): 普通搜索 0 结果(最常见因 SERP 被 IP 封)时
+        # **不再 early-return** —— 否则 §4.4 直连源(bypass SERP,正是为封禁场景兜底)永远跑
+        # 不到,§6.0-A 直连源的全部价值会在"最需要它"时失效。改为:记 error 后继续走 fetch(空候选)
+        # → score → §4.4 直连源 → 由后面"no usable passages"兜底真正全空的情况。
         errors.append("no search results")
-        return ResearchReport(
-            topic=topic, summary="",
-            report_md=_no_results_template(topic, sub_questions),
-            citations=[], sub_questions=sub_questions,
-            coverage={
-                "n_sources": 0, "n_domains": 0,
-                "n_sub_questions": len(sub_questions),
-                **_observability_coverage(),
-            },
-            errors=errors,
-        )
 
     # ---- 3. fetch + extract ----------------------------------------
     # Cap how many URLs we actually fetch so we don't burn 5 minutes. 用
