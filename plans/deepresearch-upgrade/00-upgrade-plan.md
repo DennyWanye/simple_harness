@@ -4,6 +4,13 @@
 > **前置**: [STATUS/DeepResearch.md](../../STATUS/DeepResearch.md) · [现状评估](../2026-06-19-deep-research-current-vs-plan-assessment.md) · [优化策略](../deepsearch/00-optimization-plan.md)
 > **关系**: 本 plan 是 [`plans/deepsearch/00-optimization-plan.md`] 策略的**代码级实施版**，把工具从 `research_run` 更名为 `deepresearch` 并落地分阶段升级。
 
+> 📎 **Agent-Loop 7 WI 改动对本 plan 的影响（2026-06-20 子代理复核，结论：无需代码级调整）**：
+> - **WI-1 tool_choice**：deepresearch `_call`（research_tools.py:1764，`tools=[]`）+ spike 脚本均不传 tool_choice 也不注入 tools → payload 无 tool_choice，**字节级兼容**，零影响。
+> - **WI-2 trace.py**（`agent/trace.py` `IterationTracer.record`）：**per-iteration/per-gate 粒度，在 agent_loop 循环内，进不到工具内部**（deepresearch 是 dispatch 黑盒）→ **不替代 §5.2-A 的 coverage 观测**（见 §5.2 追加备注）。
+> - **WI-4a 目标锚定**（agent_loop.py:622-644 常驻 `[目标锚定]` system 消息）：缓解**外层** LLM 选题漂移（即本 plan §真机 E2E 实测的"Rust 请求→研究了 CATL"那类）；但**进不到 deepresearch 内部** sub_questions 生成（工具内 `llm_call` 不经 agent loop、看不到锚点）→ 工具内部漂移仍靠 deepresearch 自身，本 plan 不依赖 WI-4a。
+> - **WI-5 source-check 知识片段**（triggers=引用/来源/查证…，`user-invocable:false`）：与"深度调研"触发词不重叠、内容是 3 行通用引用规范，与 deepresearch 内部 cite-check **无冲突**，无需对齐条款。
+> - **WI-7 ask_clarification**：LLM 可在研究主题不明时先澄清 → 间接减少无谓重型研究/搜索限流，但不自动拦截 deepresearch，无需 plan 配合。
+
 ---
 
 ## 1. 目标与决策
@@ -152,6 +159,8 @@ grep -rn 'research_run\|deepresearch' tauri-app/src
   **非 Phase 2 必需，列为后续。**
 
 **验收门**：跑一次能从 `ResearchReport.coverage` 读到各阶段耗时 + drop 分类计数 + rerank_used（走 A）。
+
+> 📎 **trace.py 不替代本方案（2026-06-20 复核）**：WI-2 的 `agent/trace.py`（`IterationTracer.record`）是 **agent-loop per-iteration 粒度**，进不到 deepresearch 工具内部各阶段，故 **§5.2-A coverage 仍为主方案**。若后续需"跨轮聚合 deepresearch 统计（整体 token/轮数）"，可在 tool handler 闭包里调 `IterationTracer.record()` 补 tool 层 trace——**本阶段不做**，coverage 已够。
 
 ---
 
