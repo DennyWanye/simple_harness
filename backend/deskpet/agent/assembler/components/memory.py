@@ -26,9 +26,13 @@ import re
 import time
 from typing import Any
 
+import structlog
+
 from deskpet.agent.assembler.bundle import Slice
 from deskpet.agent.assembler.components.base import Component, ComponentContext
 from deskpet.memory.entity_extractor import _STOPWORDS
+
+logger = structlog.get_logger(__name__)
 
 
 _L2_CONTEXT_LABEL = "以下为较早的对话记录，可能涉及其他话题，仅供背景参考。"
@@ -110,6 +114,9 @@ class MemoryComponent:
         )
         l2_keep_on_shift = int(getattr(policy_memory, "l2_keep_on_shift", 1))
 
+        l2_count_in = len(l2_rows)
+        gate_sim: float | None = None
+        l2_truncated = False
         if l2_rows and topic_shift_gate:
             emb = _get_embedder(mm)
             l2_concat = "\n".join(
@@ -117,16 +124,17 @@ class MemoryComponent:
                 for row in l2_rows
                 if isinstance(row, dict) and (row.get("content") or "").strip()
             )
-            sim = await _topic_similarity(emb, ctx.user_message, l2_concat)
+            gate_sim = await _topic_similarity(emb, ctx.user_message, l2_concat)
             is_shift = (
-                sim is not None
-                and sim < topic_shift_threshold
+                gate_sim is not None
+                and gate_sim < topic_shift_threshold
                 and len(ctx.user_message.strip()) > 50
                 and not _starts_with_anaphora(ctx.user_message)
             )
             if is_shift:
                 keep = max(0, l2_keep_on_shift)
                 l2_rows = l2_rows[-keep:] if keep else []
+                l2_truncated = True
 
         frozen_text = _render_l1(result.get("l1"))
         # P4-S21 #16 fix: L2 raw rows are now promoted to bundle.history
@@ -174,6 +182,22 @@ class MemoryComponent:
                 if rc:
                     entry["reasoning_content"] = rc
             l2_history.append(entry)
+
+        # Task-drift observability anchor (grep `task_drift_context_gate` in
+        # the tauri-dev stderr log). Makes Tier 1 (relabel/anchor) and Tier 2
+        # (topic-shift truncation) verifiable in real E2E without a prompt
+        # dump — and doubles as production telemetry for drift incidents.
+        logger.info(
+            "task_drift_context_gate",
+            session_id=ctx.session_id,
+            relabel_applied=bool(l2_rows and relabel_l2),
+            anchor_applied=anchor_current,
+            topic_shift_gate=topic_shift_gate,
+            l2_truncated=l2_truncated,
+            gate_sim=(round(gate_sim, 4) if gate_sim is not None else None),
+            l2_count_in=l2_count_in,
+            l2_count_out=len(l2_rows),
+        )
 
         return Slice(
             component_name=self.name,

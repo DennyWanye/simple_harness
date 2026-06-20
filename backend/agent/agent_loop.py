@@ -72,6 +72,15 @@ def _inject_loop_user_request(
         return
     if _tool_declares_user_request(tc.name, schemas):
         tc.arguments["user_request"] = loop_user_request
+        # Task-drift observability anchor (grep `task_drift_user_request_injected`
+        # in the tauri-dev stderr log). Confirms Fix B injected this loop's
+        # original user request into the tool args — p5s2 dump truncates at
+        # 100 chars so user_request itself isn't visible there.
+        logger.info(
+            "task_drift_user_request_injected tool=%s req_len=%d",
+            tc.name,
+            len(loop_user_request),
+        )
 
 
 # ───────────────────── P5-S2 Phase 3 constants ─────────────────────
