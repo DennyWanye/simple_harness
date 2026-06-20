@@ -10,7 +10,7 @@
 - `DESKPET_DEV_MODE=1` + dev 自动登录（`tauri-app/.env.local` 凭据，2026-06-21 `2263ee1`）
 - 跑当前 worktree 码：`DESKPET_BACKEND_DIR=<worktree>/backend` + `DESKPET_PYTHON=<.venv python>`（CLAUDE.md 坑 #8），日志确认 `[backend_launch] Dev python=...`
 - config.toml 开 flag（按测试阶段）：`[features] subagent_driver=true`（P1）/ `agent_team=true`（P2）/ `subagent_nonblocking=true`（P3）
-- 关键日志锚点：`subagent_scheduled kind=...`、`subagent_progress status=...`、`spawn_team team=...`、`subagent_cancel_all n=...`
+- 关键日志锚点（**【R1:F9】均由实现显式 `log.info` 发出**，可 grep）：`subagent_scheduled kind=...`（`SubagentScheduler.run` WI-0.2）、`subagent_progress status=...`（WS+metrics WI-1.5）、`spawn_team team=... n=...`（spawn_team 起始 WI-2.x）、`subagent_cancel_all n=...`（`cancel_all` WI-3.1）
 
 ---
 

@@ -38,6 +38,15 @@
 | 0.3.3 | 写 `[agent.concurrency] global_concurrency=6` + lane_caps | `get_subagent_concurrency(cfg)` 返回 `(6, {...})` ★（仿 b05823b 回归：证开关真生效，非靠默认侥幸） |
 | 0.3.4 | `get_subagent_concurrency` 传入无 `.raw` 的 stub | 不抛，返回默认 `(4, {...})`（防 config 单例陷阱 R2） |
 
+## TG-0.4 —【R1:F1】context 服务槽（`tests/test_subagent_services.py`）
+
+| # | 用例 | 断言 |
+|---|---|---|
+| 0.4.1 | `ServiceContext().register("subagent_scheduler", obj)` + `.get(...)` | 返回 obj，不抛 |
+| 0.4.2 | 同上 team_store / task_graph_store / subagent_registry | 4 槽全可 register/get |
+| 0.4.3 | `register("不存在的服务", x)` | 仍 raise ValueError（白名单未被破坏） |
+| 0.4.4 | `_VALID_SERVICES` | 含新增 4 名 + 原有 `session_goal_store` 等不丢 |
+
 ## TG-1.1 — `build_agent_tool` 参数（`tests/test_agent_tool_params.py`）
 
 | # | 用例 | 断言 |
@@ -58,6 +67,8 @@
 | 1.3.4 | 未知 kind="xyz" | 回退 general 只读集，不崩 |
 | 1.3.5 | 6 子任务 + 真 scheduler global=4 | 全完成；progress sink 见 queued 出现（背压触发）★V3 |
 | 1.3.6 | 单子代理抛异常 | 该 result ok=false，其余正常（错误隔离不回归） |
+| 1.3.7 |【R1:F10】scheduler 路径用 `_make_async_native_runner`（mock AgentLoop） | 不调 `loop.run_in_executor`（无 thread-bounce）；子 AgentLoop 作协程 await |
+| 1.3.8 |【R1:gap1】envelope `results[].output` 是子代理摘要、含 task_id+kind | 父可据此合成（output 经截断不超长） |
 
 ## TG-1.5 — WS 进度出口（`tests/test_subagent_progress_sink.py`）
 

@@ -101,7 +101,7 @@ DeskPet 后端**已经有三层子代理基建**（详见 [`01-architecture.md`]
 
 - 跨进程 / 分布式子代理（Redis/celery）——单机桌宠不需要（D3 精神）
 - 子代理间任意 mesh 通信——`spawn_team` 的 mailbox 已够；`agent_parallel` 子代理保持全隔离
-- 递归深度 > 1 的 orchestrator 树——首发只做扁平 fan-out（D2/模式 6），depth 计数器留扩展位
+- 递归深度 > 1 的 orchestrator 树——首发只做**扁平 fan-out**（D2/模式 6）。递归由**工具剥离**阻断（子代理工具集永不含 agent/agent_parallel/spawn_team/spawn_subagents，见 `task_kinds._FORBIDDEN_IN_KIND` + `_FORBIDDEN_NESTED_TOOLS`），这本身就**保证 depth=1**——不引入数字 depth 计数器（无 fan-out 树需求时是镀金）。【R1:gap3 修订：原「depth 计数器留扩展位」是过度承诺，已删】
 - 子代理 git worktree 物理隔离——deskpet 是单机，用 per-task 临时目录 + 工具集隔离即可（非本计划）
 
 ---

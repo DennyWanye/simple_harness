@@ -49,7 +49,7 @@
 ### 1.4 接线现状 — `main.py`
 
 - `register_code_tools(registry, *, todo_write_handler, todo_write_schema, agent_handler, agent_schema, agent_parallel_handler, agent_parallel_schema)`（`registration.py:47`）；两阶段调用（`main.py:366` 最小集 / `main.py:1950` 全集闭包）
-- `main.py:1907` `_shim_for_agent = OpenAICompatibleAgentLLM(provider=local_llm)`；`:1909` `_resolve_parent_sid()`；`:1917` 构造 `agent` 工具；`:1927-1944` flag-gated 构造 `agent_parallel`；`:1950-1958` re-register 全集
+- `main.py:1907` `_shim_for_agent = _ShimForAgent(provider=local_llm)`（`_ShimForAgent` = `OpenAICompatibleAgentLLM` 的 import 别名 `:1843`；`local_llm` 是 `OpenAICompatibleProvider` `:254`，**非 shim**）【R1:F8】；`:1909` `_resolve_parent_sid()`；`:1917` 构造 `agent` 工具；`:1927-1944` flag-gated 构造 `agent_parallel`；`:1950-1958` re-register 全集
 - `features.agent_parallel=False`（`config.py:416`）；`FeaturesConfig`（`config.py:394`）；`[agent]` 段走 `AppConfig.raw["agent"]` 直读（`config.py:449` 注释）
 
 ### 1.5 ReAct 主循环 — `agent_loop.py`
