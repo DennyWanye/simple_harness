@@ -241,6 +241,42 @@ grep -rn 'research_run\|deepresearch' tauri-app/src
 - **冷却/缓存可注入时钟**：契约-6 的冷却/缓存时间读取经可注入 clock（模块级 `_now`），单测 monkeypatch 推进虚拟时间，**禁用真 `time.sleep`**（规避 CLAUDE.md 坑6 time-based flaky）；测冷却到期恢复 + 缓存 TTL 过期两边界。
 - **真机前置声明**：§7 第3项真机须记录 ①`cdp_edge_available()`==True ②**先用裸 SERP 连跑触发真实封禁**再验 bing-cdp 接管（否则 B 路径未被锻炼，5 次绿不能归因于 B）③网络对 wikipedia/arxiv 可达性（影响 A 命中归因）；报告按引擎拆解每次命中来源，不只看总数≠0。
 
+### 6.0.3 运行时预算 + 灰度回滚 + 完整性补强（Round-4 子代理挑战后**追加**，只增不删上文）
+
+**🔴 运行时预算（补 R4 BLOCK：契约-4 的 K 没给值，按 deep 档默认必爆 300s）**：
+- 关键事实：search 阶段 `bing-cdp` 与 fetch 阶段 JS 渲染 **共用同一 `_render_semaphore=2` + 常驻 Edge 单例**（research_cdp_edge 模块级）。deep 档 6 子问题 ×site 定向 ≈12 query 若都走 cdp，2 并发串行 ×~15s ≈ 90s，叠加 fetch 渲染争用 → 顶穿 300s 工具超时。
+- 钉死：① bing-cdp 用**独立短超时** `serp_render_timeout`（默认 **8s**，SERP 是服务端渲染不需 20s SPA 等待），不复用 `_js_render_timeout()`=20s。② search-CDP 预算 **K ≤ 4**（与 `_JS_RENDER_MAX_PER_RUN=4` 同量级）；约束不等式 `(K_search + K_fetch) × (serp_render_timeout / 2并发) < 安全余量 180s`，K 可验证非拍脑袋。③ search-CDP 计数器与 fetch 的 `_js_render_run_count`(:204) **共享 semaphore 但独立计数**，plan 须写明此交叉。
+- 验收门（追加 §7）：deep 档真机跑抓 `elapsed_ms_per_stage["search"]`（:1017 已埋点）**断言 < 120s**，把"没爆预算"变可判定门。
+
+**captcha sentinel（补 R4 MAJOR：Bing 对无头 Edge 上 captcha → `parse_bing_html` 返空，与"真无结果"不可区分）**：
+- bing-cdp 拿到 `html` 后、喂 `parse_bing_html` 前：若 parse 返空 **但** html 非空且 >N KB，扫 captcha 指纹（`li.b_algo` 缺失 + 命中 `verify/unusual traffic/captcha/是否为机器人` 任一）→ append 显式 error `bing_cdp_captcha_suspected`（**非无声 []**）。纳入 §6.0.2 全失败兜底门的 errors 如实断言。
+
+**直连源并发（补 R4 MAJOR：直连块 `for q × for src` 双层串行 await + 双试 trust_env，叠 300s 关键路径上拖 60-240s）**：
+- direct 块（:1191）改 `asyncio.gather`（复用 `_gather_safe`），所有 (子问题×源) fetcher 并发；整块 `asyncio.wait_for(timeout=T_direct)` 截断 best-effort 返已得。
+- 契约里"双试 `trust_env=(False,True)`"每试加 **≤6s 超时上限**（否则被墙源第一试吃满默认超时才轮第二试，串行灾难放大）。
+- `elapsed_ms_per_stage` 加 **`"direct"` 阶段计时**（现只有 plan/search/fetch/score/synth，直连块无观测）。
+
+**B 路径独立非零门（补 R4 MAJOR：5 次不 0 来源可能是直连源撑着、bing-cdp 仍吃 captcha 的假绿）**：
+- §6.0.2 真机门**拆两独立判据**：(a) A 直连命中门（wikipedia/arxiv 域名出现）；(b) **B bing-cdp 独立非零门** —— 先裸 SERP 连跑触发真实封禁后，断言 `bing-cdp ∈ coverage.route.engines_hit` 且**单独贡献 ≥1 源**。两门**分别判 PASS/FAIL，不许合并成"总数非零"**。
+- **B 被证伪的退路（列入 §11 未决）**：若 bing-cdp 真机持续吃 captcha，是否接受"A 直连 + D 硬化裸 SERP"为最低可交付，还是 B 必须修好才算 §6.0 完成 → 用户裁决。
+
+**🔴 灰度与回滚契约（补 R4 BLOCK：rollout 整块缺失，新直连源默认开、无 per-source flag、回滚只到 commit 级）**：
+- 每个新直连源**独立开关**：`[research].direct_source_types` 为**准入硬条件**（非"可加"），默认 = `["cninfo","openstd","wikipedia","arxiv"]`（**s2/wikidata 默认 off**，因 429/被墙/SPARQL 序列化复杂度风险），每源可单独开关。
+- §6.0-D 硬化加 `[research].serp_hardening`（默认值待定但**必须能关回旧行为**）。
+- §8 回滚表追加一行：**单个新源出问题 → 配置层 `direct_source_types` 摘掉该源即时止血，无需 revert commit**（粒度从 commit 级降到源级）。
+
+**SKILL.md 能力描述同步（补 R4 MAJOR：§2 仍写"必应→DuckDuckGo"，与新骨干矛盾、LLM-visible 误导）**：
+- 交付物：把 `deep-research/SKILL.md` §2 检索描述从"必应→DuckDuckGo，百度备选"改为反映新骨干（直连 wikipedia/arxiv/s2 + bing-cdp 浏览器搜索兜底 + searxng opt-in + 裸 SERP 降最后兜底）；frontmatter `version: 0.3.0`→`0.4.0`。**仅在 §6.0 实际落地后改**（避免描述领先实现）。§7 真机确认 SKILL.md 描述与实际检索路径一致。
+
+**配置登记 + 迁移说明（补 R4 MAJOR：无 md 登记 `[research]` 键、新键 power-user 无从配、升级行为变化未记录）**：
+- 交付物：`userdata/config.toml` `[research]` 段补注释式登记新键（`searxng_url`/`direct_source_types`/`serp_hardening`）+ 默认值；新增/更新 `[research]` 配置说明（README/docs）列全部键+默认+升级影响；**明确写出"现有用户不改 config 时的默认行为变化"一节**（哪些新源默认开/关）。
+
+**query 扩展 × 直连源边界（补 R4 MINOR，显式化沉默决策）**：直连源意图路由的输入语料**默认仍只用 `sub_questions`**（不喂 expansion_qs，避免放大 API 调用/限速）——显式声明此边界；若后续直连命中率低再评估纳入（带去重+每源上限）。
+
+**依赖裁决（补 R4 MINOR，防误装）**：**本期 A 路线零新 pip 依赖** —— arxiv Atom XML 用 stdlib `xml.etree.ElementTree`（照 `web_tools.py:32` 既有模式，**禁止引 feedparser**）；wikidata SPARQL / wikipedia / s2 均 `httpx + .json()`。如确需新依赖须先在此登记 + 评估 NSIS 包体影响（见 memory `project_nsis_model_externalization`）。
+
+> ✅ Round-4 确认**已覆盖、无需补**：新直连源 passages 进同一 `passages` 池，统一走 4.6 语义打分 + 4.7 LLM 精排；`wikipedia.org/arxiv.org/semanticscholar.org` 已在 `research_scoring.TIER_1` → 新源已正确融入打分/精排管线。
+
 > 以下为原 Phase 3 三项（保留不变，按上面排序降为次优先）：
 
 仅做 Phase 0 证明「确实是瓶颈」的项：
@@ -290,6 +326,7 @@ grep -rn 'research_run\|deepresearch' tauri-app/src
 2. 模块文件是否一并改名 `research_tools.py`→`deepresearch_tools.py`（牵动 import）？默认不改。
 3. Phase 3 三项的优先级由 Phase 0 数据定。→ ✅ **已定（2026-06-20，见 §3 横幅 + §6.0）**：搜索可靠性（§6.0-A/B）> 韧性辅助（§6.0-C/D）> 原 §6 三项 grounding 精排；Phase 4 当前不启动。
 4. （新增）§6.0 四路线里，C（SearXNG）需 Docker 不适合普通用户、D（硬化）只是缓兵——A（直连源）+ B（浏览器搜索）作为主推是否认可？第三方源（Marginalia/Brave 免费档）要不要纳入由用户定。
+5. （新增·Round-4）**B 路径被证伪的退路**：若 bing-cdp 真机持续吃 Bing captcha（无头 Edge 软封），接受"A 直连源 + D 硬化裸 SERP"为 §6.0 最低可交付，还是 B 必须修好（如换 Google-cdp / 加登录态 profile）才算完成？影响 §6.0-B 验收门是否一票否决。
 
 ## 执行顺序
 Phase 0（spike，门）→ Phase 1（更名）→ Phase 2（recency + 可观测）→〔门：spike 数据〕→ Phase 3（按需）→〔可选〕Phase 4。
