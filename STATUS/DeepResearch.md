@@ -115,7 +115,9 @@ loopback/ollama 用户拿不到 LLM 精排（main.py 仅非 loopback 注入）�
 - ✅ **Phase 1 更名** `research_run`→`deepresearch`（codex；76 单测；子代理评估 100%；真机 E2E PASS）
 - ✅ **Phase 2** 修 recency 真 bug + coverage 可观测（codex；80 单测；评估 100%）
 - ✅ **Phase 0 质量 spike** 完成（[`01-baseline-spike-report.md`](../plans/deepresearch-upgrade/01-baseline-spike-report.md)）：质量达标（6.5/6.9 PASS），但 **🔴 免费 Bing/DDG/百度持续负载下 IP 级封禁（11/13 运行 0 来源）= 检索层是第一瓶颈**；综合维度已达标 → **不支持 Phase 4 ReAct**。
-- 🟡 **Phase 3（待执行）**：新增「搜索可靠性改造」为最高优先（直连源 API 扩展 + 浏览器渲染搜索绕封禁 + SearXNG opt-in + 抓取硬化），grounding 精排次之。
+- ✅ **§6.0 搜索可靠性改造（实现完成）**：A 直连源(wikipedia/arxiv/s2/wikidata,默认开,bypass SERP) + B bing-cdp 浏览器搜索(opt-in) + C SearXNG + D 硬化 + 观测(route集合/direct_source_empty/elapsed.direct);codex 并行 + Lead 集成;子代理评估 100%;83 单测绿。
+  - 🔴 **真机 E2E 揪出并修复严重 bug**：搜索 0 结果(SERP 被封)时 early-return 跳过直连源 → §6.0-A 在最需要时失效;单测/5轮评审全漏(总提供搜索结果),真机才抓到。已修(commit `ab14e04`)+真机复测 TC-A1 PASS(wikipedia API 5+arxiv API 7,报告引用 arxiv,搜索薄时全靠直连兜底)。
+- 🟡 **Phase 3 reranker 等（待执行）**：原 §6 三项(本地 bge-reranker/loopback 精排/crawl4ai)治 grounding 第二瓶颈,次优先。
 - ⚠️ **生产 bug（spike 暴露）**：真实用户连续多次深度调研也会撞"搜索被封→无结果"，非仅 spike 现象。
 
 ---

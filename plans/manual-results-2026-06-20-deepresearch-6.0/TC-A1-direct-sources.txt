@@ -1,0 +1,12 @@
+=== TC-A1 直连源 API 命中 ===
+INFO:httpx:HTTP Request: GET https://export.arxiv.org/api/query?search_query=all%3A%E5%90%91%E9%87%8
+INFO:httpx:HTTP Request: GET https://export.arxiv.org/api/query?search_query=all%3A%E5%90%91%E9%87%8
+INFO:httpx:HTTP Request: GET https://export.arxiv.org/api/query?search_query=all%3A%E4%B8%BB%E6%B5%8
+INFO:httpx:HTTP Request: GET https://export.arxiv.org/api/query?search_query=all%3A%E5%90%91%E9%87%8
+INFO:httpx:HTTP Request: GET https://export.arxiv.org/api/query?search_query=all%3A%E4%B8%BB%E6%B5%8
+INFO:httpx:HTTP Request: GET https://export.arxiv.org/api/query?search_query=all%3A%E5%90%91%E9%87%8
+INFO:httpx:HTTP Request: GET https://export.arxiv.org/api/query?search_query=all%3A%E5%90%91%E9%87%8
+INFO:httpx:HTTP Request: GET https://zh.wikipedia.org/w/api.php?action=opensearch&search=%E5%90%91%E
+
+=== 报告引用域名 ===
+      3 arxiv.org
