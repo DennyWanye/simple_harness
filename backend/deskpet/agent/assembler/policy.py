@@ -95,6 +95,7 @@ def load_policies(
                     topic_shift_gate=base.memory.topic_shift_gate,
                     topic_shift_threshold=base.memory.topic_shift_threshold,
                     l2_keep_on_shift=base.memory.l2_keep_on_shift,
+                    topic_shift_min_len=base.memory.topic_shift_min_len,
                 ),
                 budget_ratio=base.budget_ratio,
             )
@@ -212,6 +213,7 @@ def _to_policy(task_type: str, body: dict[str, Any]) -> AssemblyPolicy:
         topic_shift_gate=bool(memory_raw.get("topic_shift_gate", False)),
         topic_shift_threshold=float(memory_raw.get("topic_shift_threshold", 0.35)),
         l2_keep_on_shift=int(memory_raw.get("l2_keep_on_shift", 1)),
+        topic_shift_min_len=int(memory_raw.get("topic_shift_min_len", 16)),
     )
     return AssemblyPolicy(
         task_type=task_type,

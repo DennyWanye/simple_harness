@@ -278,6 +278,31 @@ async def test_topic_shift_gate_truncates_on_low_similarity_and_keeps_high_simil
 
 
 @pytest.mark.asyncio
+async def test_topic_shift_gate_truncates_short_explicit_new_task():
+    """Regression for real E2E (2026-06-20): a terse but explicit new-task
+    command of 32 chars ("帮我深度调研 Rust 异步运行时 Tokio 的架构与竞品对比")
+    drifted because the old length gate was >50. With the calibrated
+    topic_shift_min_len=16 it is eligible and the off-topic CATL L2 is
+    truncated."""
+    component = MemoryComponent()
+    current = "帮我深度调研 Rust 异步运行时 Tokio 的架构与竞品对比"
+    assert 16 <= len(current) <= 50  # would have failed the old >50 gate
+
+    ctx = _ctx(
+        _MemoryManager(l2=_rows(3), embedder=_Embedder(0.1)),
+        MemoryPolicy(
+            topic_shift_gate=True,
+            topic_shift_threshold=0.35,
+            l2_keep_on_shift=1,
+            topic_shift_min_len=16,
+        ),
+        current,
+    )
+    sl = await component.provide(ctx)
+    assert [m["content"] for m in sl.meta["l2_history"][1:]] == ["old topic user 2"]
+
+
+@pytest.mark.asyncio
 async def test_topic_shift_gate_default_off_does_not_call_embedder():
     component = MemoryComponent()
     embedder = _Embedder(0.1)

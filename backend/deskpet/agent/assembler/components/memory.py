@@ -113,6 +113,7 @@ class MemoryComponent:
             getattr(policy_memory, "topic_shift_threshold", 0.35)
         )
         l2_keep_on_shift = int(getattr(policy_memory, "l2_keep_on_shift", 1))
+        topic_shift_min_len = int(getattr(policy_memory, "topic_shift_min_len", 16))
 
         l2_count_in = len(l2_rows)
         gate_sim: float | None = None
@@ -128,7 +129,7 @@ class MemoryComponent:
             is_shift = (
                 gate_sim is not None
                 and gate_sim < topic_shift_threshold
-                and len(ctx.user_message.strip()) > 50
+                and len(ctx.user_message.strip()) >= topic_shift_min_len
                 and not _starts_with_anaphora(ctx.user_message)
             )
             if is_shift:

@@ -114,6 +114,13 @@ class MemoryPolicy:
     topic_shift_gate: bool = False
     topic_shift_threshold: float = 0.35
     l2_keep_on_shift: int = 1
+    # Min chars for a message to be eligible for topic-shift truncation.
+    # Short messages are already exempted by the anaphora/<10-char rule;
+    # this is a mild backstop. 16 lets a terse but explicit new task
+    # ("帮我深度调研 Rust Tokio…", 32 chars) qualify while pronoun/short
+    # follow-ups stay exempt. Real E2E showed the old 50 missed short
+    # new-task commands → drift survived.
+    topic_shift_min_len: int = 16
 
 
 @dataclass

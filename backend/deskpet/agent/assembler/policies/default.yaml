@@ -41,9 +41,10 @@ policies:
       l3_top_k: 5
       relabel_l2: true
       anchor_current: true
-      topic_shift_gate: false
+      topic_shift_gate: true
       topic_shift_threshold: 0.35
       l2_keep_on_shift: 1
+      topic_shift_min_len: 16
 
   recall:
     # Pure memory-probe: user asked "what did we discuss about X".
@@ -57,9 +58,10 @@ policies:
       l3_top_k: 10
       relabel_l2: true
       anchor_current: true
-      topic_shift_gate: false
+      topic_shift_gate: true
       topic_shift_threshold: 0.35
       l2_keep_on_shift: 1
+      topic_shift_min_len: 16
 
   task:
     # "Do X for me" — actioned request. Full tool access + workspace.
@@ -72,9 +74,10 @@ policies:
       l3_top_k: 3
       relabel_l2: true
       anchor_current: true
-      topic_shift_gate: false
+      topic_shift_gate: true
       topic_shift_threshold: 0.35
       l2_keep_on_shift: 1
+      topic_shift_min_len: 16
 
   code:
     # Coding/debugging — scoped tool list, workspace is high value.
@@ -99,9 +102,10 @@ policies:
       l3_top_k: 5
       relabel_l2: true
       anchor_current: true
-      topic_shift_gate: false
+      topic_shift_gate: true
       topic_shift_threshold: 0.35
       l2_keep_on_shift: 1
+      topic_shift_min_len: 16
 
   web_search:
     must: [memory]
@@ -113,9 +117,10 @@ policies:
       l3_top_k: 3
       relabel_l2: true
       anchor_current: true
-      topic_shift_gate: false
+      topic_shift_gate: true
       topic_shift_threshold: 0.35
       l2_keep_on_shift: 1
+      topic_shift_min_len: 16
 
   plan:
     must: [memory, persona]
@@ -127,9 +132,10 @@ policies:
       l3_top_k: 5
       relabel_l2: true
       anchor_current: true
-      topic_shift_gate: false
+      topic_shift_gate: true
       topic_shift_threshold: 0.35
       l2_keep_on_shift: 1
+      topic_shift_min_len: 16
 
   emotion:
     # Emotional support — no tools, lean into persona + recent chat.
@@ -142,9 +148,10 @@ policies:
       l3_top_k: 5
       relabel_l2: true
       anchor_current: true
-      topic_shift_gate: false
+      topic_shift_gate: true
       topic_shift_threshold: 0.35
       l2_keep_on_shift: 1
+      topic_shift_min_len: 16
 
   command:
     # Slash command or direct control; tool-driven, skip heavy memory.
@@ -157,6 +164,7 @@ policies:
       l3_top_k: 0
       relabel_l2: true
       anchor_current: true
-      topic_shift_gate: false
+      topic_shift_gate: true
       topic_shift_threshold: 0.35
       l2_keep_on_shift: 1
+      topic_shift_min_len: 16
