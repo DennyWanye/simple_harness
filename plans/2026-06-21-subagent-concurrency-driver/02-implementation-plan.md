@@ -398,3 +398,15 @@ P0（task_kinds/scheduler/config）评审判定「sound，可照做」。
 **第 2 轮验证为「正确」的 v0.2 修复**（评审逐条核源码确认）：F1（context dataclass 完整修法，无 to_dict/post_init 遗漏）、F6（`service_context` 是 module global，interrupt handler `:4589` 在作用域内，`cancel_all` 同步安全）、F7（spawn_team 参数注入全链路贯通）、**F10（最高风险——多 AgentLoop 协程同事件循环并发**：现状 agent_parallel 已这么跑、所有 per-call 状态按 session_id 隔离、无 module 级可变单例→**无新增腐败风险**）、F4 核心决策（新建 provider 带 model）、WI-3.2 同事件循环 await 无「Future attached to different loop」风险。
 
 **结论**：R2-1/R2-2/R2-3 修订 + 4 处 hand-wave 补全后，评审判定达成 **「100% executable，无功能删减」**。
+
+**第 3 轮收敛验证（2026-06-21，21 工具调用，scoped）** — 逐条核源码验证 v0.3 五处 delta 修复**全部 VERIFIED-CORRECT、无新 bug**：
+
+| 修复 | 验证结论 | 证据 |
+|---|---|---|
+| R2-1 role 守门 | 正确——tool 结果以 `role="tool"` append（`agent_loop.py:2069-2076`），loop-top last 恒为 tool→新守门 `"tool"` 分支命中→真注入；旧逆向逻辑确恒 defer。**配对安全**：loop-top 时前轮所有 tool_calls 已应答（continue 路径只 append assistant+system 无未应答 tool_calls），守门最坏对 trailing system 良性延迟一轮，永不破坏配对 | `agent_loop.py:2069/709/724/1330/1577/1687/1880/1914` |
+| R2-2 termination_gate | 正确——真参数名 `termination_gate`（`:447`→`self._gate :564`），import `agent.termination`（`:39`） | |
+| R2-3/R2-4 provider | 正确——`providers.openai_compatible`（`main.py:128`），ctor 接受 base_url/api_key/model/temperature/sanitize_inline_cot_dsml，`local_llm` 全属性暴露 | `openai_compatible.py:66-88` |
+| hand-wave2 事件类 | 正确——基类 `AgentEvent`（`:280`），union `AgentEventUnion`（`:2391-2397`）真存在 | |
+| R2-6 spawn_team log | 正确——校验块止于 `:219`，插入点有效 | `spawn_team.py:219-221` |
+
+**最终判定（R3）**：**v0.3 is 100% executable. Go.** —— 3 轮对抗评审收敛，无遗留 BLOCKING/MAJOR。**v0.3 即定稿候选，待用户 review 拍板后 → v1.0 LOCKED + 进入实施。**
