@@ -277,6 +277,36 @@ grep -rn 'research_run\|deepresearch' tauri-app/src
 
 > ✅ Round-4 确认**已覆盖、无需补**：新直连源 passages 进同一 `passages` 池，统一走 4.6 语义打分 + 4.7 LLM 精排；`wikipedia.org/arxiv.org/semanticscholar.org` 已在 `research_scoring.TIER_1` → 新源已正确融入打分/精排管线。
 
+### 6.0.4 收口：实现顺序 + 待定量取值 + 验收门总表（Round-5 验证后**追加**，只增不删上文）
+
+> R5 两个验证者确认 §6.0 **无 BLOCK、技术陈述与真实代码相符**。本节把残留的"待定量/缺顺序/门散落"收口。
+
+**实现顺序（建议，按依赖链）**：
+1. **先注册引擎**：`bing-cdp` + `searxng` 加进 `_KNOWN_ENGINES`(search_provider.py:49)——否则被 `_engine_queue` 静默过滤、永不入队（无声失效）。
+2. **再改 `search_async` 引擎分派**（契约-3/5 合并一次改造）：主循环加 `if engine.endswith("-cdp")`（走 `cdp_edge_render`）和 `if engine=="searxng"`（走 `resp.json()`+`_parse_searxng_json`）前置分支，绕开 `_engine_request`/`cli.request`。
+3. **加 search-CDP 预算**：search_provider 模块级独立计数器 K≤4 + `serp_render_timeout=8s`（注意与 fetch 的 JS 渲染共用 `_render_semaphore=2`，见 6.0.3）。
+4. **A 直连块多源化**（契约-1）：与 B/C 可**并行**开发；但 **契约-7 去重 + 观测 route 扩集合是横切项**（贯穿 A 与普通搜索两条路），须在 A 落地同批、最后统一收口。
+
+**待定量取值（R5 MAJOR，定默认消除"待定"）**：
+- captcha sentinel 的 `N KB` → **以 `li.b_algo` 缺失为主判据，KB 阈值仅辅助门槛 N=10**（captcha 页通常 <10KB、真 SERP 几十~上百 KB）。
+- 直连块整体超时 `T_direct` → **默认 45s**（每试 trust_env ≤6s 为其下界约束）；与 search-CDP 预算同属"总时长 < 安全余量 180s"账本。
+- `[research].serp_hardening` 默认 → **off（等价当前裸 SERP 行为）**。
+
+**`route` 类型变更显式提示（R5 验证-2）**：`route` 从 `str`(单值) 改为 `dict`(`{"engines_hit":[...],"direct_sources_hit":[...]}`) 是**破坏性类型变更**——除 `_observability_coverage()`(:1005-1010) 函数体外，**所有读 `coverage["route"]` 的调用方都要同步改**（grep 确认无下游按 str 消费）。
+
+**bing-cdp 完整做法索引（R5 MINOR，散落 7 处）**：⚠️ **§6.0-B 原文"改 `_engine_request`"是初稿，已被契约-3 推翻（改为 search_async 前置分支绕开它）——最终实现以契约-3/4 + 6.0.3 + 本节为准**。完整做法跳读：§6.0-B（注册）→ 契约-3（分派分支）→ 契约-4（`cdp_edge_render` :391 签名 + 独立计数器）→ 收敛补丁（先进 `_KNOWN_ENGINES`）→ 6.0.3（8s 超时/K≤4/semaphore 交叉/captcha sentinel/B 独立非零门）。
+
+**§6.0 验收门总表（□ 可勾，🔴=一票否决）**：
+- □ 🔴 **全失败兜底回归门**（6.0.2）：全源全引擎失败仍出 no_results 模板 + errors 如实（含 `bing_cdp_captcha_suspected`），非抛/非空崩。
+- □ 🔴 **deep 档 search 预算门**（6.0.3）：真机 deep 跑 `elapsed_ms_per_stage["search"]` < 120s。
+- □ A 直连源：每 fetcher 契约-2 字段单测（重点 text 非空）+ 429/被墙降级返[]不抛 + 真机命中（wikipedia.org/arxiv.org 域名出现）。
+- □ B bing-cdp：mock fixture 单测（结果非空 + `cli.request` 未调）+ 返 None 降级不抛；真机 **B 独立非零门**（先裸 SERP 触发封禁后，`bing-cdp ∈ engines_hit` 且单独 ≥1 源，与 A 分别判）。
+- □ C searxng：门控两态（配/不配 url）+ 解析正确。
+- □ D 硬化：冷却/缓存/退避单测（**可注入时钟、禁真 sleep**）。
+- □ 三新引擎均在 `_KNOWN_ENGINES`（封堵静默过滤陷阱）。
+- □ 既有 `test_research_sources.py`（字符串等值→成员检查）+ search_provider 单测不回归红。
+- □ 契约-7 去重：同 URL 不重复进池单测。
+
 > 以下为原 Phase 3 三项（保留不变，按上面排序降为次优先）：
 
 仅做 Phase 0 证明「确实是瓶颈」的项：
