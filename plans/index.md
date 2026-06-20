@@ -12,6 +12,7 @@
 | 工作项 | 主文档 | 一句话 | 状态 |
 |---|---|---|---|
 | **agent-loop-optimization** | [00-PLAN](2026-06-20-agent-loop-optimization/00-PLAN.md) | Agent 执行引擎代码级优化 7 WI(tool_choice硬约束/trace/阶段化提示词/Focus Chain todo回灌/触发式知识注入/SEARCH-REPLACE降级编辑/ask_clarification)；含 §13 R1 + §15 R2 挑战修订(时序/流式/control通道竞态/代码骨架)；经 2 轮 5 子代理挑战收敛至可执行 | 📋 待实施 |
+| **task-drift-fix（交接）** | [HANDOFF](2026-06-20-task-drift-fix-HANDOFF.md) | 桌宠「任务漂移」修复交接：单一 default 会话从不切分→新任务被旧主题(CATL)压垮；cbdf855 修了 compaction摘要+L3召回两搬运工,但 raw历史直灌+会话切分根因未动(短会话compaction不触发→主漂移路径)；修复方向 D1切分作用域+D5 deepresearch传原话；待另一 session 实现 | 📋 待修复 |
 | **deepresearch-upgrade（升级 plan）** | [00-upgrade-plan](deepresearch-upgrade/00-upgrade-plan.md) | 工具 `research_run`→**`deepresearch`** 更名 + 演进(代码级 R1-R12 手术面)；Phase0 质量 spike(门)→Phase1 更名→Phase2 修recency+可观测→Phase3 spike-gated 缺口→Phase4 延后 ReAct；经 2 轮子代理对抗挑战到"无 BLOCKING 可照做" | 📋 待执行 |
 | **deepsearch（优化策略）** | [00-optimization-plan](deepsearch/00-optimization-plan.md) | deep research 优化策略(deepresearch-upgrade 的上层)：先 Step 0 质量基线 spike→修 recency→据数据裁决架构；不删 research_run/不接付费 API | 📋 待裁决 |
 | **compaction-bestpractice-upgrade** | [00-PLAN](2026-06-16-compaction-bestpractice-upgrade/00-PLAN.md) | 上下文压缩升级对标 Claude Code/Hermes/OpenClaw：单调级联(microcompact→结构化摘要→截断兜底)+剩余 token buffer 触发+pre-flush 防丢任务+目标钉死不可压+接已有 L1/L3 记忆；做完才默认开 compaction | ✅ Phase1+2 全做完+真机 case② PASS+WI-6 默认开 |
