@@ -189,6 +189,29 @@ grep -rn 'research_run\|deepresearch' tauri-app/src
 **Phase 3 优先级（spike 后重排，新增此排序，不删原项）**：
 `3.0-A 直连源 + 3.0-B 浏览器搜索`（最高，治第一瓶颈搜索可靠性）> `3.0-C/D`（韧性辅助）> 下方原 §6 三项（治第二瓶颈 grounding / 平台覆盖，降为次优先；其中"crawl4ai webview"与 3.0-B 同源可合流实现）。
 
+### 6.0.1 实现契约细则（Round-1 子代理挑战后**追加**，只增不删上文）
+
+> 上文 A/B/C 的"复用现有函数"隐含了返回类型/调用契约的破坏性变更。下列把契约改动 + 现有消费方/单测的连带修改写死，照此执行不撞契约。
+
+**契约-1（A 的 `direct_source_for` 多源化）**：现状 `research_sources.py:66 direct_source_for(text)->Optional[str]`，唯一消费点 `research_tools.py:1192` 是 `if src=="cninfo"...else openstd` **字符串二分支**，且 `tests/test_research_sources.py:14-21` 有 6 条 `=="cninfo"/=="openstd"/is None` 硬断言。
+- 改法：`direct_source_for` 改返回 `list[str]`（无命中→`[]`）；direct-source 块（**真实行号 :1185-1227——上文 A 写的 :1137 有误，以此为准**）把二分支改 `for src in srcs:` + dispatch 映射 `_FETCHER_MAP={"cninfo":cninfo_search,"openstd":openstd_search,"wikipedia":wikipedia_search,"arxiv":arxiv_search,"semantic_scholar":semantic_scholar_search}`，cninfo 的"空→edgar 兜底"在该源分支内保留；`test_research_sources.py` 6 条断言改成员检查（`"cninfo" in direct_source_for(...)`）。**§7 测试矩阵追加：既有 test_research_sources.py 同步改并通过。**
+
+**契约-2（A 新 fetcher 返回结构=硬契约）**：每条必须 `{"ok":True,"url":非空,"title":str(≤200),"text":非空摘要正文(≤18000),"fetched_at":float,"source":"wikipedia/arxiv/..."}`。`text` 空会被 `research_tools.py:1208 if not d_url or not d_text: continue` **静默丢弃**——wikipedia summary/arxiv abstract 必须填进 `text`。
+
+**契约-3（B 浏览器搜索撞 `_engine_request` 三元组契约）**：`_engine_request`(:76) 返回 `(method,url,kw)`；`search`(:244) 与 `search_async`(:285) 两个消费者都 `method,url,kw=req`→`cli.request(...)`→`_engine_parse(engine,resp.text,n)`（chat+code web_search 共用，blast radius 大）。
+- **不能**让 `bing-cdp` 的 `_engine_request` 返字符串（`ValueError` 解包崩）。正确：在 `search_async` 主循环(:305-318)加前置分支 `if engine.endswith("-cdp"): serp_url=_BING_URL+"?"+urlencode({"q":q,...}); html=await research_cdp_edge.cdp_edge_render(serp_url, timeout=_js_render_timeout()); results=parse_bing_html(html or "", max_results=n)`，**绕开** `_engine_request`/`cli.request`。同步 `search`(:244) 无 async → `bing-cdp` 仅在 `search_async` 生效，deepresearch 走 async 够用。
+
+**契约-4（B 渲染函数真实接口）**：`research_cdp_edge.cdp_edge_render(url:str,*,timeout:float=20.0)->Optional[str]`（**:391，async，失败返 None 需降级到队列下一引擎，绝不抛**），内部已有 `_render_semaphore=2` + 常驻 Edge 复用，**勿自起 Edge**。⚠️ 上文"复用 JS 渲染 4 次/run 预算"无法直接落地：计数器 `_js_render_run_count`(research_tools.py:204) 在 **fetch 阶段**累加，search 阶段够不到 → 搜索阶段 CDP 预算需 **search_provider 模块级独立计数器**（每 research 内 `bing-cdp` 最多 K 次）。
+
+**契约-5（C SearXNG 是 JSON 非 HTML）**：现 `_engine_parse`(:88) 三分支全解析 HTML、`search_async` 喂 `resp.text`。searxng 需 `resp.json()` + 新 `_parse_searxng_json()`（与 B 同属"队列循环按引擎分流解析"，建议 B/C 合并为一次 `search_async` 引擎分派改造）。
+
+**契约-6（D 冷却/缓存=模块级共享 state）**：挂 search_provider 模块级 dict，`search` 与 `search_async` 两入口共用同一读写点（否则同步路径绕过冷却）。
+
+**API 风险（实现时注意，全 best-effort 失败降级返 `[]`）**：
+- **Semantic Scholar**：匿名限速约 100 req/5min，持续负载易 429 → 加 `Retry-After` + 静默降级（照 edgar_search 模式）。
+- **大陆可达性**：zh.wikipedia.org / export.arxiv.org / wikidata.org 可能被墙 → 双试 `for trust_env in (False, True)`（照 edgar_search 直连+代理双试）。
+- **Wikidata** 返结构化 triples，需序列化成自然语言 `text`，复杂度高，放最后做。
+
 > 以下为原 Phase 3 三项（保留不变，按上面排序降为次优先）：
 
 仅做 Phase 0 证明「确实是瓶颈」的项：
@@ -206,6 +229,7 @@ grep -rn 'research_run\|deepresearch' tauri-app/src
 2. **live smoke**：`scripts/e2e_ppt_deepresearch.py`（真链路出 .pptx，证明更名未断下游 PPT 集成）。
 3. **真机 E2E**（按 `CLAUDE.md` 手工测试纪律，windows-mcp 或 computer-use）：桌宠对话「帮我深度调研 X」→ 日志确认调 `deepresearch` → ArtifactCard 渲染报告 → 截图存 `plans/manual-results-<date>/screenshots/`。
 > ⚠️ 真机 E2E 不可用 WebSocket/pytest/import 替代（feedback_real_e2e_not_script_replay）。
+4. **（§6.0 专属，追加）既有测试同步**：`direct_source_for` 多源化后 `tests/test_research_sources.py`（:14-21 字符串等值断言）必须同步改为成员检查并通过；`search_provider` 加 `bing-cdp`/`searxng`/冷却缓存后既有 search_provider 单测不得回归红。§6.0-B 真机验收 = **连续 5 次研究不再 0 来源**（直接复测 Phase 0 暴露的封禁场景）。
 
 ---
 
