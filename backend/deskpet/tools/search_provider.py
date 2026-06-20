@@ -39,12 +39,15 @@ from .research_cdp_edge import cdp_edge_render
 
 log = logging.getLogger(__name__)
 
-# ── 多引擎兼容性降级队列 ──────────────────────────────────────────────
-# 现状痛点: 唯一引擎 DuckDuckGo 在中国大陆常被墙/不稳。改成按"中国区可达性"
-# 排队的 fallback: 挨个试,第一个返回够结果的就用,失败/空/超时→降级下一个。
-#   必应(bing)   = 中国可达 + 中文结果不错 + 免 key 抓取 → 默认主力
-#   duckduckgo   = 西方引擎(墙内需代理) → 默认兜底
-#   百度(baidu)  = 覆盖最高但广告/百家号多(已降权) → 备选,默认不在队列,可配置加入
+# ── 多引擎降级队列 ──────────────────────────────────────────────
+# §6.0(2026-06-20)起默认队列 = ("google-cdp",) —— Bing/DDG 裸 SERP 抓取易被 IP 封
+# (Phase0 spike 实证),已**移出默认**;通用主题主靠直连源(百度/搜狗百科国内稳定 +
+# 维基/谷歌可达门控,见 research_sources / research_tools §4.4)。下列引擎仍可经
+# [research].search_engines 显式 opt-in 当兜底:
+#   google-cdp   = 无头浏览器渲染谷歌 SERP + 可达门控(有VPN才用) → **默认队列唯一项**
+#   bing/duckduckgo/baidu = 裸 SERP 抓取(易被封) → 仅 opt-in
+#   bing-cdp     = 无头浏览器渲染必应 SERP → opt-in
+#   searxng      = 自托管聚合(需 searxng_url) → opt-in
 _DDG_HTML_URL = "https://html.duckduckgo.com/html/"
 _BING_URL = "https://www.bing.com/search"
 _GOOGLE_HOME_URL = "https://www.google.com/"
