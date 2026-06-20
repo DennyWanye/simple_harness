@@ -212,6 +212,11 @@ grep -rn 'research_run\|deepresearch' tauri-app/src
 - **大陆可达性**：zh.wikipedia.org / export.arxiv.org / wikidata.org 可能被墙 → 双试 `for trust_env in (False, True)`（照 edgar_search 直连+代理双试）。
 - **Wikidata** 返结构化 triples，需序列化成自然语言 `text`，复杂度高，放最后做。
 
+**收敛补丁（Round-2 子代理复核后追加）**：
+- 契约-3/5 补：`bing-cdp` **和** `searxng` 都必须先加进 `_KNOWN_ENGINES`(search_provider.py:49)，否则 `_engine_queue()`(:70) 的 `[e for e in q if e in _KNOWN_ENGINES]` 会把它们**静默过滤掉**、引擎永不入队（功能无声失效）。
+- 契约-1 钉死 dispatch 调用行：`for src in srcs: items = await _FETCHER_MAP[src](q, max_results=3)`；**新 fetcher 签名必须对齐 `cninfo_search`(:227) 的 `(keyword, *, max_results:int) -> list[dict]`**；cninfo 特例 `if src=='cninfo' and not items: items = await edgar_search(q, max_results=1)`。
+- 契约-3 的 serp_url 对齐 region：`urlencode({'q':q, 'mkt':'zh-CN' if reg=='cn-zh' else 'en-US'})`（对齐现有 `_engine_request`:81-82 的 region 行为）。
+
 > 以下为原 Phase 3 三项（保留不变，按上面排序降为次优先）：
 
 仅做 Phase 0 证明「确实是瓶颈」的项：
