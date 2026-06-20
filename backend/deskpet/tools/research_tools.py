@@ -463,7 +463,10 @@ _DEFAULT_AUTHORITY = 1.0
 _PLAN_PROMPT = """\
 You are planning a deep research project on the topic below.
 
-TOPIC: {topic}
+ORIGINAL USER REQUEST (authoritative - the plan MUST serve this):
+{user_request}
+
+REFINED TOPIC: {topic}
 
 Break it into 3-6 focused sub-questions whose combined answers would
 form a thorough, balanced briefing. Cover different angles: what is it,
@@ -483,6 +486,8 @@ JSON ARRAY:"""
 
 
 _SYNTH_PROMPT = """\
+ORIGINAL USER REQUEST: {user_request}
+
 You are writing a research briefing on:  {topic}
 
 You have {n_passages} source passages, each labelled with a numeric tag
@@ -984,6 +989,7 @@ async def deepresearch(
     min_passage_chars: int = 250,
     max_rounds: int = 1,
     mode: str = "standard",
+    user_request: Optional[str] = None,
 ) -> ResearchReport:
     """End-to-end research pipeline. See module docstring.
 
@@ -998,6 +1004,7 @@ async def deepresearch(
             errors=["empty topic"],
         )
     topic = topic.strip()
+    _ur = (user_request or topic).strip()
     search_fn = search or default_search
     extract_fn = extract or default_extract
     errors: list[str] = []
@@ -1037,7 +1044,10 @@ async def deepresearch(
     # ---- 1. plan ----------------------------------------------------
     stage_start = time.perf_counter()
     try:
-        plan_raw = await llm_call(_PLAN_PROMPT.format(topic=topic))
+        plan_raw = await llm_call(_PLAN_PROMPT.format(
+            topic=topic,
+            user_request=_ur,
+        ))
     except Exception as exc:  # noqa: BLE001
         errors.append(f"plan_llm: {exc}")
         plan_raw = ""
@@ -1340,6 +1350,7 @@ async def deepresearch(
     try:
         report_md = await llm_call(_SYNTH_PROMPT.format(
             topic=topic,
+            user_request=_ur,
             n_passages=len(passages),
             passages=passage_block,
         ))
@@ -1591,6 +1602,13 @@ _RESEARCH_SCHEMA = {
                 "type": "string",
                 "description": "The research question or topic (concise; the planner will split it).",
             },
+            "user_request": {
+                "type": "string",
+                "description": (
+                    "System injected; do not fill. Original user request for "
+                    "this loop, used to align topic and prevent drift."
+                ),
+            },
             "max_sub_questions": {
                 "type": "integer",
                 "description": "How many sub-questions the planner may produce. 3-6 typical.",
@@ -1640,6 +1658,7 @@ async def _handle_deepresearch(args: dict, task_id: str) -> str:
         return json.dumps(
             {"ok": False, "error": "topic is required"}, ensure_ascii=False
         )
+    user_request = str(args.get("user_request") or "").strip() or None
 
     # Resolve an LLM callable from the running provider chain. We import
     # lazily so test environments without an LLM still pass.
@@ -1663,6 +1682,7 @@ async def _handle_deepresearch(args: dict, task_id: str) -> str:
         max_total_passages=int(args.get("max_total_passages") or d_pass),
         max_rounds=int(args.get("max_rounds") or d_rounds),
         mode=depth,
+        user_request=user_request,
     )
 
     out = {"ok": True, **report.as_dict()}

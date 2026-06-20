@@ -6094,6 +6094,7 @@ async def control_channel(ws: WebSocket):
                             session_id=_sid,
                             stream=True,
                             provider_chain=_provider_chain,
+                            loop_user_request=(None if _is_sentinel else _text),
                         ):
                             # WI-A1: track tool usage for intent memory.
                             if isinstance(ev, _TCEv) and getattr(ev, "tool_call", None):
