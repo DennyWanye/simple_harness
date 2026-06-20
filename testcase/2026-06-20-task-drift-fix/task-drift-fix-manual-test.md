@@ -548,7 +548,7 @@ Select-String -Path $LOG -Pattern "deepresearch|user_request|OutPut/Research|p5s
 | TC-4b | 4 追问不误伤 | 长延续追问也不丢上下文 | 长追问延续 CATL | ✅ 是 |
 | TC-5 | 5 FixB 原话直传 | deepresearch 注入 user_request(硬锚点) | `task_drift_user_request_injected tool=deepresearch req_len>0` | ✅ 是(触发轮) |
 | TC-5b | 5 FixB 纵深 | 外层略漂时报告主题被原话拉回 | 报告主题=用户原话主题(纵深未触发→PASS) | ✅ 是 |
-| TC-6 | 6 Tier2默认关 | 默认不调 embedder、不截 L2 | `topic_shift_gate=False`+`l2_truncated=False`+`gate_sim=None` | ✅ 是(触发轮) |
+| TC-6 | 6 Tier2(语义已改默认**开**) | `topic_shift_gate=True` 生效·跨域截断/同域保留 | `topic_shift_gate=True`+跨域`l2_truncated=True`/同域`False`(原"默认关"作废,见头部v3) | ✅ 是(触发轮) |
 | TC-7 | 7 Tier2开启(可选) | 长任务截断+短代词豁免 | `gate_sim`浮点+长任务`l2_truncated=True`/短追问`=False` | ✅ 是(需改配置重启) |
 | TC-8 | 8 BC 回归 | 单一主题连续对话不受影响 | 三轮连贯不割裂 | ✅ 是 |
 | TC-9 | 8 BC 回归 | 普通对话/工具不误注入 user_request | `tool=web_search` 注入零命中 | ✅ 是 |
@@ -556,29 +556,24 @@ Select-String -Path $LOG -Pattern "deepresearch|user_request|OutPut/Research|p5s
 | TC-11 | 9 边界 | sentinel 不被当原话注入(被动观测) | 注入 req_len 全来自真实输入、非 sentinel | 是(随真模拟轮被动观测) |
 | TC-12 | 9 边界 | 多窗口共享 default 行为一致 | 两 venue 追问连续+不漂 | ✅ 是 |
 
-**覆盖维度清单**：1 核心漂移修复 happy path（★含连续3次 + 第二主题交叉）/ 2 Tier1 锚定真注入 / 3 Tier1 重定性真注入 / 4 追问连续性不被误伤（★头号负向，短+代词+长延续）/ 5 Fix B 原话直传（含纵深拉回）/ 6 Tier2 默认关回归 / 7 Tier2 开启可选档（截断+豁免）/ 8 BC 回归（单一主题/普通工具/首条无历史）/ 9 边界（sentinel/多窗口）。
+**覆盖维度清单**：1 核心漂移修复 happy path（★含连续3次 + 第二主题交叉）/ 2 Tier1 锚定真注入 / 3 Tier1 重定性真注入 / 4 追问连续性不被误伤（★头号负向，短+代词+长延续）/ 5 Fix B 原话直传（含纵深拉回）/ 6 Tier2 默认**开**生效（真机证明 Tier1 不足，原"默认关"已作废）/ 7 Tier2 embedding 主路（真机锁竞争走词法兜底，embedding 路单测覆盖）/ 8 BC 回归（单一主题/普通工具/首条无历史）/ 9 边界（sentinel/多窗口）。
 
 ---
 
-## 6. 结果汇总（待真机执行回填）
+## 6. 结果汇总（2026-06-20 真机执行回填 — 详见 [`RESULTS.md`](./RESULTS.md)）
+
+> ⚠️ 本轮真机聚焦**核心漂移（TC-1）+ 头号追问风险（TC-4）+ 锚点链（TC-2/3/5）+ BC（TC-8）**的闭环；其余 deferred 项理由见 RESULTS.md §2「未单独执行」。codex 独立验收（[codex-eval-task.md](../../plans/2026-06-20-task-drift-fix/codex-eval-task.md)）判核心已修、证据链 82/100，标注 TC-1 三连跑 / embedding 主路实证 / TC-5b 为待补强。
 
 | Case | 范围 | 类型 | 判定 |
 |---|---|---|---|
-| TC-1 | 核心漂移不漂(★,连续3次) | UI 真测 + log | _待回填_ |
-| TC-1b | 第二主题交叉验证 | UI 真测 + log | _待回填_ |
-| TC-2 | 锚定注入 | log(硬锚点 anchor_applied) | _待回填_ |
-| TC-3 | 重定性注入 | log(硬锚点 relabel_applied) | _待回填_ |
-| TC-4 | 短/代词追问不误伤(★) | UI 真测 | _待回填_ |
-| TC-4b | 长延续追问不误伤 | UI 真测 | _待回填_ |
-| TC-5 | FixB 原话直传 | log | _待回填_ |
-| TC-5b | FixB 纵深拉回 | UI 真测 + log | _待回填_ |
-| TC-6 | Tier2 默认关回归 | log + UI 真测 | _待回填_ |
-| TC-7 | Tier2 开启(可选) | UI 真测 + log | _待回填_ |
-| TC-8 | 单一主题连续对话 | UI 真测 | _待回填_ |
-| TC-9 | 普通工具不误注入 | UI 真测 + log | _待回填_ |
-| TC-10 | 首条无历史不报错 | UI 真测 | _待回填_ |
-| TC-11 | sentinel 不注入 | log | _待回填_ |
-| TC-12 | 多窗口一致 | UI 真测 | _待回填_ |
+| TC-1 ★ | 核心漂移不漂 | UI 真测 + log | ✅ **PASS（run1）** — `l2_truncated=True shift_path=lexical 5→1` + topic=Rust(async-std/smol/monoio/glommio)；⚠️ 仅 1 次，plan 要求连续 3 次**待补** |
+| TC-2 | 锚定注入 | log 硬锚点 | ✅ **PASS** — `anchor_applied=True` |
+| TC-3 | 重定性注入 | log 硬锚点 | ✅ **PASS** — `relabel_applied=True` |
+| TC-4 ★ | 短/代词追问不误伤 | UI 真测 + log | ✅ **PASS** — "它的竞品"/"继续" 均 `l2_truncated=False` + 续 CATL（竞品/年报PDF） |
+| TC-5 | FixB 原话直传 | log | ✅ **PASS** — `task_drift_user_request_injected req_len=32` |
+| TC-6 | Tier2（语义已改默认**开**） | log | ✅ **PASS** — `topic_shift_gate=True` 真生效、跨域 `l2_truncated=True`/同域 `False`（原"默认关"语义作废，见头部 v3） |
+| TC-8 | 单一主题/话题切换 | UI 真测 + log | ✅ **PASS（t1）** — CATL→asyncio 正确截断 + 连贯答 asyncio |
+| TC-1b / TC-5b / TC-7(embed路) / TC-9 / TC-10 / TC-11 / TC-12 | 交叉/纵深/边界/BC | — | ⏳ **deferred** — 由单测 + 代码审查覆盖（理由见 RESULTS §2）；TC-1b/5b/embedding 主路为 codex 标注的待补强 |
 
-> **恢复环境（验完必做）**：若做过 TC-7，把 `default.yaml` 的 `topic_shift_gate` 改回 `false`；确认未遗留任何临时配置 override。
+> **恢复环境（验完必做）**：本轮已把 `default.yaml` 的 `topic_shift_gate` 设为**默认 `true`**（真机证明 Tier1 不足，已是预期默认值，不需改回）。TC-7 若临时调过其它 override 才需清理。
 > **结果存档**：截图存 `screenshots/`；执行后日志证据贴回各 case log 证据栏与本汇总表。
