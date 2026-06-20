@@ -112,6 +112,7 @@ Get-ChildItem $dir -Filter *.md | Sort-Object LastWriteTime -Desc | Select-Objec
 | TC-A1 | A 直连源生效 | 正常·核心 | ⭐核心 | 综述主题 → 报告引用出现 wikipedia.org / arxiv.org |
 | TC-A2 | spike 病灶修复 | 正常·核心 | 🔴最关键 | 连续 4 个不同主题 → 不再全 0 来源 |
 | TC-A3 | 财报→cninfo 直连回归 | 回归 | 高 | 宁德时代财报 → 引用含 cninfo 巨潮 PDF |
+| TC-A4 | 通用主题默认覆盖率 | 诚实边界 | 高 | 无直连意图主题 → 默认是否仍可能 0 源(暴露 bing-cdp 该不该默认开) |
 | TC-O1 | 观测字段 | 观测 | 高 | coverage.route.direct_sources_hit + elapsed_ms_per_stage.direct + n_dropped_by_reason.direct_source_empty |
 | TC-B1 | B bing-cdp（config 启用后） | opt-in | 中 | engines_hit 含 bing-cdp；captcha → errors 含 bing_cdp_captcha_suspected |
 | TC-X1 | 全失败兜底 | 异常 | 🔴一票否决 | 极端无结果主题 → no_results 模板 + errors 如实 + App 不崩 |
@@ -240,6 +241,34 @@ Get-ChildItem $dir -Filter *.md | Sort-Object LastWriteTime -Desc | Select-Objec
 - **FAIL**：报告无 cninfo 也无 sec.gov，且 log 无 `direct:cninfo` 异常（说明 cninfo 根本没被路由——检查 `direct_source_for("...财报...")` 是否返 `["cninfo"]`）。
 
 **证据要求**：3 截图 + `.md` 路径 + cninfo/edgar grep 输出。
+
+---
+
+### TC-A4 — 通用主题(无直连意图)默认配置覆盖率(诚实边界测·高)
+
+**目的（评估补强）**：TC-A1/A2 的主题**都路由到直连源**（财报/学术/综述/技术选型），等于"挑了能过的题"。但 §6.0-A 只兜底**有直连意图**的主题；**通用主题（无 wikipedia/arxiv/cninfo/openstd 意图）默认仍只走 bing/ddg 裸 SERP**（因 bing-cdp 默认 opt-in 不在默认队列）。本例诚实暴露：**默认配置对通用主题是否仍可能 0 来源**（=spike 病灶对这类题是否仍在）。
+
+**前置**：§1；**config 默认**（不开 bing-cdp）；**紧接 TC-A2 之后连续跑**（让 SERP 已有负载/可能已被封，最能暴露问题）。
+
+**主题（刻意无直连意图）**：`直播带货高退货率的主要成因`（无「综述/背景/介绍/是什么」→ 不命中 wikipedia；无「论文/研究/技术选型」→ 不命中 arxiv；无「财报/年报/营收」→ 不命中 cninfo；无「国标/标准」→ 不命中 openstd。`direct_source_for` 应返 `[]` → 纯靠 SERP）。
+
+**精确步骤**：
+1. （先确认路由）grep 该主题 log 看 `direct_sources_hit` 是否空 / 有无 `direct:` 行——预期直连源**未命中**。
+2. `declare: 动作=click→paste "帮我深度调研 直播带货高退货率的主要成因"→Enter | 期望=纯 SERP 路径`。Clipboard+Ctrl+V+Enter。截图 `TC-A4-01-typed.png`。
+3. 轮询等结果。截图 `TC-A4-02-result.png`。
+4. 看报告是否有源 / 是否 no_results；grep log：
+   ```powershell
+   Select-String -Path "...\tauri-dev.log" -Pattern "no search results|engines_hit|direct_sources_hit"
+   ```
+
+**预期 / 判定（这是诚实边界，不是实现 PASS/FAIL）**：
+- **结果 1（SERP 当次没被封 → 有源）**：记 ✅「通用主题本次有源（SERP 未被封）」，但**注明**：这不代表 SERP 不会被封，只是本次没触发。
+- **结果 2（SERP 被封 → 0 源 no_results）**：记 ⚠️「**已知边界暴露**：通用主题默认配置下 SERP 被封即 0 源，§6.0-A 直连兜底不覆盖此类题」。**这不算 §6.0 实现 FAIL**（实现按 plan：bing-cdp 默认 opt-in），但**是产品决策点** → 需用户裁决「bing-cdp 是否应进默认队列」或「通用主题也加宽直连意图」。
+- **加测（验证 B 能补这个洞）**：若结果 2 发生，**临时开 bing-cdp**（同 TC-B1 改 config）复跑同一主题 → 若这次有源（engines_hit 含 bing-cdp）→ 证明 **B 正是这个边界的解**，强化"bing-cdp 默认开"的决策依据。测后还原 config。
+
+**证据要求**：路由 grep（证直连未命中）+ 2 截图 + 有源/0源 log + （若触发加测）开 bing-cdp 前后对比。
+
+> 📌 这条是整套测试里**唯一可能暴露"默认修复不彻底"**的用例——TC-A2 证明直连源类题已修，TC-A4 诚实回答"通用类题默认是否还脆弱"。两者合起来才是完整的 spike 病灶覆盖评估。
 
 ---
 
@@ -428,6 +457,7 @@ log 证据: <grep 命中行，含 timestamp 与关键字 direct:/engines_hit/cni
 | 环境 Gate | §1.2 Dev python ✅（否则全轮作废） |
 | 🔴 TC-A2 | ≥3/4 主题有源，**绝无全 0**（对照 spike 2/13）→ 这是 GO 的硬门 |
 | ⭐ TC-A1 | 综述报告引用出现 wikipedia.org（arxiv 更佳） |
+| 高 TC-A4 | 通用主题默认覆盖率诚实记录(有源/0源)；若 0 源暴露 bing-cdp 默认开决策点 |
 | 🔴 TC-X1 | 全失败兜底 App 不崩 + no_results 如实 + 不编造来源（一票否决） |
 | 高 TC-A3 / TC-O1 | cninfo（或 EDGAR 兜底）回归 + 观测字段可见 |
 | 中 TC-B1 / TC-D1 | bing-cdp 命中或 captcha 如实；PPT 链路通 |
