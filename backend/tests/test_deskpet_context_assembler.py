@@ -816,3 +816,35 @@ async def test_assemble_deep_merges_partial_skills_keeps_default_auto_disclosure
     assert merged_skills.get("auto_disclosure") == {"enabled": True}, \
         f"深合并应保留 default 的 auto_disclosure: {merged_skills}"
     assert merged_skills.get("codify") == {"x": 1}, "调用方的 codify 子键应保留"
+
+
+# ---------------------------------------------------------------------------
+# WI-5 修复 (多代理审计 G1)：knowledge_enabled → SkillComponent 对 chat 也 fan-out
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_wi5_knowledge_enabled_runs_skill_component_for_chat():
+    """真实 assemble() 路径：默认 chat policy.prefer 不含 skill → SkillComponent
+    不运行；开 [skills].knowledge_enabled 后，本轮 prefer 追加 skill → SkillComponent
+    对 chat 也 fan-out（否则触发式知识注入在最常见的闲聊路径永不生效）。"""
+    assembler = build_default_assembler(
+        embedder=FakeEmbedder(), llm_registry=FakeLLM("chat")
+    )
+
+    # knowledge OFF（默认）→ chat 不跑 SkillComponent（字节级 BC）
+    b_off = await assembler.assemble(
+        "今天天气好不好",
+        memory_manager=FakeMemoryManager(),
+        tool_registry=FakeToolRegistry(),
+    )
+    assert b_off.task_type == "chat"
+    assert "skill" not in b_off.decisions.components
+
+    # knowledge ON → chat 也跑 SkillComponent（知识注入路径打通）
+    b_on = await assembler.assemble(
+        "今天天气好不好",
+        memory_manager=FakeMemoryManager(),
+        tool_registry=FakeToolRegistry(),
+        config={"skills": {"knowledge_enabled": True}},
+    )
+    assert b_on.task_type == "chat"
+    assert "skill" in b_on.decisions.components

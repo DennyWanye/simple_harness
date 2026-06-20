@@ -34,6 +34,7 @@ Decisions telemetry (task 12.11):
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import time
 from collections import deque
 from typing import Any, Optional
@@ -214,6 +215,22 @@ class ContextAssembler:
         if policy is None:
             # Both missing → last-resort chat policy.
             policy = AssemblyPolicy(task_type="chat")
+
+        # WI-5 修复 (2026-06-20, 多代理审计 G1)：触发式知识注入挂在 SkillComponent
+        # 上，但 ``chat`` task_type 的 policy.prefer 不含 ``skill`` → 最常见的闲聊
+        # 路径永远不 fan-out SkillComponent，知识片段永不注入。当
+        # ``[skills].knowledge_enabled`` 开启时，给本轮 prefer 追加 ``skill``，让
+        # SkillComponent 对所有 task_type（含 chat）都运行，知识注入才能在常见路径
+        # 生效。默认 knowledge_enabled=false → prefer 不变 → 字节级 BC 安全。
+        # （注意 policy 是 self._policies 的共享对象，必须 replace 出副本，勿原地改。）
+        if "skill" not in policy.prefer:
+            _skills_cfg = config.get("skills") if isinstance(config, dict) else None
+            if isinstance(_skills_cfg, dict) and bool(
+                _skills_cfg.get("knowledge_enabled", False)
+            ):
+                policy = dataclasses.replace(
+                    policy, prefer=[*policy.prefer, "skill"]
+                )
 
         # FP-5 真机诊断 (2026-06-06)：露出分类 task_type + policy 的组件名单，
         # 用于确认 SkillComponent 是否会 fan-out（auto-disclosure 能否触发）。
