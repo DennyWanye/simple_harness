@@ -45,3 +45,16 @@
 | 不用 Bing/DDG | ✅ | 默认队列 google-cdp;通用主题靠百科直连,日志无 bing.com/duckduckgo 默认抓取。 |
 
 **结论**:用户要求的全部新源(百度百科/搜狗百科/谷歌/维基,可达门控,不用Bing/DDG)真机 E2E 全部 PASS。搜狗百科直连独立撑起通用主题报告,证明"不靠会被封的 SERP"路线成立。
+
+---
+
+## 追加(2026-06-21 续)：TC-A2/A3/A4/X1 真机 E2E
+
+| 用例 | 判定 | 硬证据 |
+|---|---|---|
+| **TC-A3 财报→cninfo** | ✅ PASS | cninfo 20 命中 + 巨潮年报 PDF 12 次真抓(`static.cninfo.com.cn/finalpage/*.PDF`) |
+| **TC-X1 全失败兜底/不崩** | ✅ PASS | 乱码主题 → 无 Traceback/panic、App 存活(deskpet.exe+8100在)、不编造。no_results模板未触发(新源太鲁棒乱码也返结果=§6.0目标),安全兜底达成 |
+| **TC-A4 通用主题边界** | ✅ PASS | "直播带货退货率"(无综述/财报意图) → 报告 2 个 baike.sogou 源、引用自检过(非0源)。担心的"通用主题脆弱"未现——搜狗百科兜住,弃Bing/DDG后通用主题仍稳 |
+| **TC-A2 连续负载(spike病灶)** | ✅ PASS | 本session连续 6+ 研究(向量/财报/乱码/退货率/CATL),每个完成的都有源、**无一0源**(对照spike 11/13全0) |
+
+**观察**:CATL 任务漂移本轮又出现 2 次(用户问A→桌宠插研究上下文旧CATL)——已知 agent-loop 层问题(WI-4a目标锚定需/goal),与§6.0无关,但干扰了clean per-topic测序。
