@@ -22,11 +22,42 @@ adds L1 content to the frozen bucket — just with empty strings.
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from typing import Any
 
 from deskpet.agent.assembler.bundle import Slice
 from deskpet.agent.assembler.components.base import Component, ComponentContext
+from deskpet.memory.entity_extractor import _STOPWORDS
+
+
+_L2_CONTEXT_LABEL = "以下为较早的对话记录，可能涉及其他话题，仅供背景参考。"
+_CURRENT_REQUEST_NUDGE = (
+    "当前请求是本轮唯一任务；先前对话仅为背景，若与当前请求冲突，以当前请求为准。"
+)
+_ANAPHORA_PREFIXES = (
+    "它",
+    "他",
+    "她",
+    "其",
+    "这个",
+    "那个",
+    "这些",
+    "那些",
+    "这",
+    "那",
+    "继续",
+    "然后",
+    "what",
+    "why",
+    "how",
+    "which",
+    "this",
+    "that",
+    "these",
+    "those",
+)
+_ANAPHORA_WORDS = {"it", "they", "them", "he", "she", "his", "her", "their"}
 
 
 class MemoryComponent:
@@ -70,6 +101,33 @@ class MemoryComponent:
 
         l2_rows = result.get("l2") or []
         l3_hits = result.get("l3") or []
+
+        topic_shift_gate = bool(getattr(policy_memory, "topic_shift_gate", False))
+        relabel_l2 = bool(getattr(policy_memory, "relabel_l2", False))
+        anchor_current = bool(getattr(policy_memory, "anchor_current", False))
+        topic_shift_threshold = float(
+            getattr(policy_memory, "topic_shift_threshold", 0.35)
+        )
+        l2_keep_on_shift = int(getattr(policy_memory, "l2_keep_on_shift", 1))
+
+        if l2_rows and topic_shift_gate:
+            emb = _get_embedder(mm)
+            l2_concat = "\n".join(
+                (row.get("content") or "").strip()
+                for row in l2_rows
+                if isinstance(row, dict) and (row.get("content") or "").strip()
+            )
+            sim = await _topic_similarity(emb, ctx.user_message, l2_concat)
+            is_shift = (
+                sim is not None
+                and sim < topic_shift_threshold
+                and len(ctx.user_message.strip()) > 50
+                and not _starts_with_anaphora(ctx.user_message)
+            )
+            if is_shift:
+                keep = max(0, l2_keep_on_shift)
+                l2_rows = l2_rows[-keep:] if keep else []
+
         frozen_text = _render_l1(result.get("l1"))
         # P4-S21 #16 fix: L2 raw rows are now promoted to bundle.history
         # by the assembler stitcher (see meta["l2_history"] below). The
@@ -93,6 +151,8 @@ class MemoryComponent:
         # Promote L2 raw rows to OpenAI message format. The assembler's
         # `_stitch` reads meta["l2_history"] and assigns to bundle.history.
         l2_history: list[dict[str, Any]] = []
+        if l2_rows and relabel_l2:
+            l2_history.append({"role": "system", "content": _L2_CONTEXT_LABEL})
         for row in l2_rows:
             role = row.get("role")
             content = (row.get("content") or "").strip()
@@ -128,8 +188,70 @@ class MemoryComponent:
                 "latency_ms": round(elapsed_ms, 2),
                 # NEW: assembler picks this up and assigns to bundle.history
                 "l2_history": l2_history,
+                **(
+                    {"late_system_nudge": _CURRENT_REQUEST_NUDGE}
+                    if anchor_current
+                    else {}
+                ),
             },
         )
+
+
+def _get_embedder(mm: Any) -> Any:
+    r = getattr(mm, "_retriever", None)
+    return getattr(r, "_embedder", None) if r is not None else None
+
+
+async def _topic_similarity(emb: Any, current: str, l2_concat: str) -> float | None:
+    if emb is None:
+        return None
+    try:
+        if not emb.is_ready() or emb.is_mock():
+            return None
+        vecs = await asyncio.wait_for(
+            emb.encode([current, l2_concat]), timeout=0.3
+        )
+    except Exception:
+        return None
+    if getattr(vecs, "shape", [0])[0] < 2:
+        return None
+    return float(vecs[0] @ vecs[1])
+
+
+def _starts_with_anaphora(current: str) -> bool:
+    text = current.strip()
+    if len(text) < 10:
+        return True
+    if not text:
+        return False
+
+    lower = text.lower()
+    if any(lower.startswith(prefix) for prefix in _ANAPHORA_PREFIXES):
+        return True
+
+    first = _first_token(text)
+    if not first:
+        return False
+    first_lower = first.lower()
+    return (
+        first_lower in _ANAPHORA_WORDS
+        or first in _STOPWORDS
+        or first_lower.capitalize() in _STOPWORDS
+    )
+
+
+def _first_token(text: str) -> str:
+    cjk = re.match(r"[\u4e00-\u9fff]+", text)
+    if cjk:
+        span = cjk.group(0)
+        candidates = sorted(_STOPWORDS, key=len, reverse=True)
+        for word in candidates:
+            if span.startswith(word):
+                return word
+        return span[:2]
+
+    word = re.match(r"[A-Za-z]+", text)
+    return word.group(0) if word else text[:1]
 
 
 # ---------------------------------------------------------------------------

@@ -90,6 +90,11 @@ def load_policies(
                     l1=base.memory.l1,
                     l2_top_k=base.memory.l2_top_k,
                     l3_top_k=base.memory.l3_top_k,
+                    relabel_l2=base.memory.relabel_l2,
+                    anchor_current=base.memory.anchor_current,
+                    topic_shift_gate=base.memory.topic_shift_gate,
+                    topic_shift_threshold=base.memory.topic_shift_threshold,
+                    l2_keep_on_shift=base.memory.l2_keep_on_shift,
                 ),
                 budget_ratio=base.budget_ratio,
             )
@@ -202,6 +207,11 @@ def _to_policy(task_type: str, body: dict[str, Any]) -> AssemblyPolicy:
         l1=str(memory_raw.get("l1", "snapshot")),
         l2_top_k=int(memory_raw.get("l2_top_k", 5)),
         l3_top_k=int(memory_raw.get("l3_top_k", 5)),
+        relabel_l2=bool(memory_raw.get("relabel_l2", True)),
+        anchor_current=bool(memory_raw.get("anchor_current", True)),
+        topic_shift_gate=bool(memory_raw.get("topic_shift_gate", False)),
+        topic_shift_threshold=float(memory_raw.get("topic_shift_threshold", 0.35)),
+        l2_keep_on_shift=int(memory_raw.get("l2_keep_on_shift", 1)),
     )
     return AssemblyPolicy(
         task_type=task_type,
