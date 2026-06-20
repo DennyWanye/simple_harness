@@ -3,7 +3,7 @@ name: deep-research
 description: 对一个主题做严肃的多源调研，产出带引用 + 抓取时间的结构化报告（不编造结论）。基于 DeepResearch V8 方法论。
 when_to_use: 用户要深度调研、综述报告、技术选型/竞品/政策分析、多源查证、要带引用来源的研究报告、或要求"第二轮/继续深入"时。简单事实查一下用 web_search，不用本技能。
 triggers: [深度调研, 调研报告, 调查研究, 研究报告, 深入调研, 做个调研, 做一份调研, 综述, 技术选型, 竞品研究, 政策分析]
-version: 0.3.0
+version: 0.4.0
 author: deskpet
 task_types: [recall, web_search, task]
 argument_hint: <主题> [--depth=light|standard|deep]
@@ -51,12 +51,13 @@ deepresearch(topic=<用户主题>, depth=light|standard|deep)
 ```
 
 工具内部跑：plan（拆 3-6 子问题）→ **query 扩展（multi-query 改写 + HyDE，提召回）**
-→ search（多引擎兼容性降级队列：必应→DuckDuckGo，百度备选；中文自动走中文区；某引擎被
-墙/限流自动降级下一个；**政策/企业/学术类子问题额外 site: 定向官方域**：政策→site:gov.cn、
-上市公司→site:cninfo.com.cn、学术→site:arxiv.org）→ **中文一手源直连（谈上市公司/财报→
-巨潮资讯公告 PDF；谈国标/标准→国家标准全文系统，中国可直连）**→
-fetch+extract（trafilatura 抽正文，JS 渲染站抽不到时**二级兜底 Jina Reader** 跑 JS 救回
-+ 抓取时间）→ **分层打分**（域名权威 TIER1/2/3 含中文学术/媒体 + 新鲜度按主题速度 +
+→ **直连权威源（首选，bypass SERP、免 IP 封禁）：综述/背景→Wikipedia、论文/技术选型→arXiv
+（+Semantic Scholar 可选）、上市公司/财报→巨潮资讯公告 PDF、国标/标准→国家标准全文系统**
+→ search（通用网搜：可选 **bing-cdp 真浏览器渲染搜索（绕 IP 封禁）**、SearXNG 自托管 opt-in；
+**裸 SERP 必应/DuckDuckGo/百度降为最后兜底** + 失败冷却/缓存硬化；中文自动走中文区；某引擎被
+墙/限流自动降级下一个；**政策/企业/学术类子问题额外 site: 定向官方域**）→
+fetch+extract（trafilatura 抽正文，JS 渲染站抽不到时**二级兜底**跑 JS 救回 + 抓取时间）
+→ **分层打分**（域名权威 TIER1/2/3 含中文学术/媒体 + 新鲜度按主题速度 +
 相关性[关键词+BGE-M3语义] + 深度 + 来源多样性）→
 **deep 档反思迭代**（找证据缺口 → 补搜第二轮）→ synthesize（每条事实配 `[^n]`）→
 cite_check（自检引用真实）。
