@@ -111,6 +111,13 @@ loopback/ollama 用户拿不到 LLM 精排（main.py 仅非 loopback 注入）�
 → ③ 用 spike 数据决定"原地升级 vs 重建 ReAct 子代理"。详细方案见
 [`plans/deepsearch/00-optimization-plan.md`](../plans/deepsearch/00-optimization-plan.md)。
 
+### 进度（2026-06-20，升级 plan = [`plans/deepresearch-upgrade/00-upgrade-plan.md`](../plans/deepresearch-upgrade/00-upgrade-plan.md)）
+- ✅ **Phase 1 更名** `research_run`→`deepresearch`（codex；76 单测；子代理评估 100%；真机 E2E PASS）
+- ✅ **Phase 2** 修 recency 真 bug + coverage 可观测（codex；80 单测；评估 100%）
+- ✅ **Phase 0 质量 spike** 完成（[`01-baseline-spike-report.md`](../plans/deepresearch-upgrade/01-baseline-spike-report.md)）：质量达标（6.5/6.9 PASS），但 **🔴 免费 Bing/DDG/百度持续负载下 IP 级封禁（11/13 运行 0 来源）= 检索层是第一瓶颈**；综合维度已达标 → **不支持 Phase 4 ReAct**。
+- 🟡 **Phase 3（待执行）**：新增「搜索可靠性改造」为最高优先（直连源 API 扩展 + 浏览器渲染搜索绕封禁 + SearXNG opt-in + 抓取硬化），grounding 精排次之。
+- ⚠️ **生产 bug（spike 暴露）**：真实用户连续多次深度调研也会撞"搜索被封→无结果"，非仅 spike 现象。
+
 ---
 
 ## 关键文件

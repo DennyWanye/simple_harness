@@ -66,6 +66,13 @@ grep -rn 'research_run\|deepresearch' tauri-app/src
 
 ## 3. Phase 0 — 质量基线 spike（🔴 决策前置门，先做）
 
+> ✅ **已完成（2026-06-20）** — 报告见 [`01-baseline-spike-report.md`](./01-baseline-spike-report.md)。真 relay + gpt-5.5 + 精排 + evaluator 5 维 LLM-judge。
+> **三道门判定**：基线质量 PASS（mcp-sec std=6.5/deep=6.9 ≥6）· cite-check 100% · deep 值得保留（增益+0.4/1.1×）。
+> **🔴 决定性发现**：免费 Bing/DDG/百度（HTML SERP 抓取）持续负载下 IP 级封禁、分钟级不恢复（11/13 运行 0 来源）。
+> **瓶颈归类**：检索层（① 搜索可靠性=第一瓶颈 ② grounding/evidence=第二瓶颈），**非综合层**。
+> → 支持新增 §6.0 搜索可靠性改造（最高优先）+ §6 reranker（次优先）；**不支持 Phase 4 ReAct**（见 §10 按语）。
+> 局限：搜索封禁致 clean-N 仅 2，质量基线 suggestive，但"瓶颈=检索"结论强（跨 90s 间隔重现）。
+
 **目的**：补「零运行证据」盲区，拿到 Phase 3 取舍依据。**不通过不进 Phase 3。**
 
 **评测底座（已确认可复用，见优化方案 Step 0）**：
@@ -150,6 +157,40 @@ grep -rn 'research_run\|deepresearch' tauri-app/src
 
 ## 6. Phase 3 — 缺口能力补齐（spike-gated，按 Phase 0 数据取舍）
 
+### 6.0 🔴 新增（Phase 0 spike 实测后置入，**最高优先**）— 搜索可靠性改造
+
+> 背景：Phase 0 spike（[`01-baseline-spike-report.md`](./01-baseline-spike-report.md)）实测——免费 Bing/DDG/百度**全是 HTML SERP 抓取**（`search_provider.py` `_engine_request`:76 / `_engine_parse`:88），持续负载下被 IP 级封禁、分钟级不恢复（11/13 运行 `no search results`）。瓶颈=检索可靠性。**不再把裸 SERP 抓取当主力。** 沿用硬约束：**不接付费搜索 API**。
+> 用户指令（2026-06-20）：弃用 Bing/DDG 当主力，换免费替代。下列四路线 A+B 为主、C/D 辅。
+
+**A — 直连权威源 API 扩展（骨干，bypass SERP，顺带治第二瓶颈 grounding）**
+- 接入点：`research_sources.py` 的 `direct_source_for()`(:66) 意图路由 + 新 async fetcher（照 `cninfo_search`:227 / `openstd_search` 模式）；在 `research_tools.py` §4.4 direct-source 块（`deepresearch` :1137 附近）挂上。
+- 新增源（全免费官方 API、无 key、不被 IP 封）：
+  - `wikipedia_search`：MediaWiki opensearch + REST summary（`zh/en.wikipedia.org/w/api.php`）— 综述/背景意图
+  - `arxiv_search`：arXiv API（`export.arxiv.org/api/query`）— 学术/论文/技术选型意图
+  - `semantic_scholar_search`：Semantic Scholar Graph API（`api.semanticscholar.org`，无 key 限速档）— 技术/论文
+  - `wikidata_search`：Wikidata REST/SPARQL — 结构化事实
+- `direct_source_for` 扩展为可返回**多个**源（财报→cninfo、学术→arxiv+s2、通用→wikipedia）；意图关键词表照现有 cninfo/openstd 模式加。命中域名天然 TIER_1（打分已支持）。
+- 验收：每个 fetcher 单测（mock HTTP）+ 真机命中（报告引用出现 wikipedia.org/arxiv.org 域名）。
+
+**B — 浏览器渲染搜索（通用网搜兜底，绕 HTTP 层封禁）**
+- 复用 `research_cdp_edge.py`（系统 Edge 无头 via CDP，`cdp_edge_available()`:73，渲染 URL→`outerHTML`）。
+- 新增 search_provider 引擎 `"bing-cdp"`：在 `_KNOWN_ENGINES`(:49) 注册；`_engine_request`(:76) 对该引擎改走"用 cdp-edge 导航 SERP URL 取 outerHTML"（不是 httpx）；`_engine_parse`(:88) 复用现有 `parse_bing_html`(:183)。真浏览器带 cookie/JS/指纹 → 远难被封。
+- 配置：`[research].search_engines = ["wikipedia","bing-cdp","bing",...]`（直连源+浏览器搜索优先，裸 SERP 抓取降为最后兜底）。复用 JS 渲染的 4 次/run 预算 + 超时降级。
+- 验收：单测（mock cdp render）+ 真机（**连续 5 次研究不再 0 来源** —— 直接复测 spike 暴露的封禁场景）。
+
+**C — SearXNG 自托管引擎（power-user opt-in，Docker）**
+- 新增 search_provider 引擎 `"searxng"`：HTTP GET 本地 SearXNG `[research].searxng_url`（如 `http://127.0.0.1:8888/search?q=...&format=json`），解析 JSON。默认关、用户配 url 才入队列。
+- 验收：配 url 后真实例/mock 返回解析正确。
+
+**D — 现有 SERP 抓取硬化（defense-in-depth）**
+- `search_provider` 加：真实浏览器 headers + 轮换 UA；引擎被封后**冷却**（失败计数→该引擎冷却 N 分钟跳过，进程内状态）；**结果缓存**（同 query 短期 TTL 复用）；退避重试。
+- 验收：单测覆盖冷却/缓存/退避逻辑。
+
+**Phase 3 优先级（spike 后重排，新增此排序，不删原项）**：
+`3.0-A 直连源 + 3.0-B 浏览器搜索`（最高，治第一瓶颈搜索可靠性）> `3.0-C/D`（韧性辅助）> 下方原 §6 三项（治第二瓶颈 grounding / 平台覆盖，降为次优先；其中"crawl4ai webview"与 3.0-B 同源可合流实现）。
+
+> 以下为原 Phase 3 三项（保留不变，按上面排序降为次优先）：
+
 仅做 Phase 0 证明「确实是瓶颈」的项：
 - **本地 bge-reranker 可选档**（research_tools.py:270-282 当前 `_rerank_mode()` 把 `local` 退化为 `llm`；`FlagEmbedding` 已在 `.venv`，`from FlagEmbedding import FlagReranker` 可用）：让 `local` 真生效。⚠️ **接入点（Round2-B 纠正）**：**不要**在 `_llm_rerank`（:331，纯 LLM 路径函数）内部加分支；正确做法是**新建 `_bge_local_rerank()` 函数**（:330 附近），并在**调用决策点 :1247** 加 `elif _rerank_mode()=="local": applied = await _bge_local_rerank(...)`，实例化 `FlagReranker("BAAI/bge-reranker-v2-m3")` 做精排，复用 `_RERANK_TIMEOUT=25.0` 超时降级。
   ⚠️ **Round1-B 坑**：首次触发会从 HuggingFace Hub **下载数百 MB 模型**（5-15 分钟），期间必然超 25s → 静默降级回 llm → `local` 看似"正常"实则永不生效。**必须**：① 加启动时/首次预检——检测 `HF_HOME` 本地缓存是否已有该模型，无则提示预下载（不在 research 热路径里同步下载）；② 文档化缓存路径配置。
@@ -189,10 +230,15 @@ grep -rn 'research_run\|deepresearch' tauri-app/src
 ## 10. Phase 4（延后/可选）— ReAct 子代理
 仅当 Phase 0 显示瓶颈在「流程僵化、需自主多轮探索」且用户确认愿担回归风险时启动：重写 `agent/subagents/`（受限只读工具子集 + 三重预算闸 + 分离 synthesis + EvidenceLog）+ 接线 main.py + tool 暴露 + 把现有打分/一手源/抓取层嫁接进子代理工具 + 测试 + 真机 E2E。**本 plan 不展开。**
 
+> 📌 **Phase 0 数据结论（2026-06-20 追加）**：spike **不支持**现在做 Phase 4。瓶颈实测在**检索层**（搜索可靠性 + grounding），而**综合/连贯/校准维度已达标**（有效运行 7-8 分），控制流不是瓶颈。Phase 4 的触发条件（「瓶颈在流程僵化」）**未满足** → 维持延后，除非用户在看过 spike 后仍明确要做。本结论不删除 Phase 4，仅记录"当前数据不启动"。
+
 ## 11. 未决问题
 1. 架构决策（§1.2）默认「演进+更名」，用户是否接受 / 要不要直接上 ReAct？
 2. 模块文件是否一并改名 `research_tools.py`→`deepresearch_tools.py`（牵动 import）？默认不改。
-3. Phase 3 三项的优先级由 Phase 0 数据定。
+3. Phase 3 三项的优先级由 Phase 0 数据定。→ ✅ **已定（2026-06-20，见 §3 横幅 + §6.0）**：搜索可靠性（§6.0-A/B）> 韧性辅助（§6.0-C/D）> 原 §6 三项 grounding 精排；Phase 4 当前不启动。
+4. （新增）§6.0 四路线里，C（SearXNG）需 Docker 不适合普通用户、D（硬化）只是缓兵——A（直连源）+ B（浏览器搜索）作为主推是否认可？第三方源（Marginalia/Brave 免费档）要不要纳入由用户定。
 
 ## 执行顺序
 Phase 0（spike，门）→ Phase 1（更名）→ Phase 2（recency + 可观测）→〔门：spike 数据〕→ Phase 3（按需）→〔可选〕Phase 4。
+
+> 📌 **进度追加（2026-06-20）**：Phase 0 ✅ / Phase 1 ✅ / Phase 2 ✅ 已完成。spike 数据门已过，**Phase 3 从新增的 §6.0 搜索可靠性改造起步**（3.0-A 直连源 + 3.0-B 浏览器搜索最高优先），原 §6 三项次之；Phase 4 当前不启动。
