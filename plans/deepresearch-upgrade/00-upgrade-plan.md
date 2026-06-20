@@ -217,6 +217,30 @@ grep -rn 'research_run\|deepresearch' tauri-app/src
 - 契约-1 钉死 dispatch 调用行：`for src in srcs: items = await _FETCHER_MAP[src](q, max_results=3)`；**新 fetcher 签名必须对齐 `cninfo_search`(:227) 的 `(keyword, *, max_results:int) -> list[dict]`**；cninfo 特例 `if src=='cninfo' and not items: items = await edgar_search(q, max_results=1)`。
 - 契约-3 的 serp_url 对齐 region：`urlencode({'q':q, 'mkt':'zh-CN' if reg=='cn-zh' else 'en-US'})`（对齐现有 `_engine_request`:81-82 的 region 行为）。
 
+### 6.0.2 跨节一致性 + 测试完备性（Round-3 子代理挑战后**追加**，只增不删上文）
+
+**订正-1（配置：`search_engines` 与直连源是两套机制，勿混）**：上文 §6.0-A/B 配置示例把直连源 `wikipedia` 误塞进 `search_engines` 队列——**实际跑不通**：`_engine_queue()`(search_provider.py:70) 会 `[e for e in q if e in _KNOWN_ENGINES]` 把 wikipedia 静默过滤（它不在、也**不该**进 `_KNOWN_ENGINES`）。正确口径：
+- **搜索引擎队列** `[research].search_engines` 只列 `bing/duckduckgo/baidu/bing-cdp/searxng`（都须在 `_KNOWN_ENGINES`:49）。
+- **直连源** wikipedia/arxiv/semantic_scholar/wikidata 由 `direct_source_for()` 意图路由触发（research_tools §4.4 块 :1185-1227），**不进** `search_engines`；开关走已有 `[research].direct_sources` + 可加 `[research].direct_source_types`（控制启用哪些直连源）。
+- 两套机制物理隔离（search_provider 引擎 vs direct 块），配置/触发互不交叉。**§6.0-A/B 示例中的 `"wikipedia"` 以本订正为准（归直连源、不在引擎队列）。**
+
+**契约-7（直连源 URL 去重，补 Round-3 MAJOR）**：现有去重 `url_to_question`(:1079-1088)/`seen_urls`(:1234) 只覆盖 search→fetch 路径，直连块(:1205-1227)直接 append **不查重**。wikipedia.org/arxiv.org 是高 authority 域、极可能同时出现在普通 SERP 与直连源 → 同 URL 重复进池/重复 Citation/双双挤 top-K。
+- 改法：维护 run 级 `seen_passage_urls`（普通搜索已收 URL + 已 append 直连 URL，**归一化**去 query/fragment/末尾斜杠后比较）；直连 append 前 `if norm(d_url) in seen: continue` 否则 add；普通搜索阶段同步注册已收 URL。
+
+**观测联动（对齐 Phase 2 §5.2-A，补 Round-3 MAJOR）**：新源/引擎后 coverage 要能回答"这次走通了哪条路"（spike 把"检索可靠性"列第一发现，改造后必须可观测）。
+- `route` 从单值扩成集合 `{"engines_hit":[...], "direct_sources_hit":[...]}`（记本 run 实际命中的引擎/直连源）。
+- `n_dropped_by_reason` 加键 `direct_source_empty`（契约-2 的 `text` 空被 :1208 continue 处 + 新 fetcher 降级返 [] 处同步累加）。均写进既有 coverage，不碰 metrics_sink 白名单。
+
+**默认值口径（补 Round-3 MINOR）**：`_DEFAULT_ENGINE_QUEUE`(search_provider.py:48) **保持 `("bing","duckduckgo")` 不变**；§6.0-B 的 `["wikipedia","bing-cdp",...]` 仅 power-user opt-in 示例（按订正-1 剔除 wikipedia）。`bing-cdp` 是否进默认队列单独决策；如确改默认，§7 须显式列受影响的默认队列断言并同步改。
+
+**测试补强（Round-3，追加进 §7 测试矩阵）**：
+- 🔴 **一票否决·全失败兜底回归门**：单测构造 所有新源 fetcher + `bing-cdp`(cdp_edge_render 返 None) + searxng(未配) + 裸 SERP(返空) **全部失败/返 []** → 断言 deepresearch 仍返回 no_results 模板（**非抛异常/非空崩**），且 `ResearchReport.errors` **如实**含各失败原因（不被契约-2 静默 continue 吞掉）。这是 spike 病灶（全失败→0 来源）的护栏，§6.0 改动不得破坏现有优雅降级。
+- **bing-cdp 单测策略**：monkeypatch `search_provider` 内 `cdp_edge_render` 返存盘 fixture（`tests/fixtures/bing_serp_sample.html`，从 spike 真实 outerHTML 截取，列入交付物）→ 断言 ①结果非空且 `cli.request` 未被调用（证"绕开" SERP 抓取真生效）②返 None 时不抛、降级下一引擎。
+- **直连源 fetcher 单测**：每个落真实 API 响应 fixture（`tests/fixtures/{wikipedia,arxiv,s2,wikidata}_sample.*`，注意 arxiv=Atom XML、wikidata=SPARQL JSON 格式差异大）；mock 返 fixture → 断言契约-2 全字段（重点 `text` 非空 + title≤200/text≤18000 截断）；mock 429/超时/被墙 → 断言降级返 [] 不抛。
+- **门控两态**：searxng/bing-cdp 各测 配置开→入队且解析正确 / 配置关→不入队；并定向断言三新引擎都在 `_KNOWN_ENGINES`（封堵静默过滤陷阱）。
+- **冷却/缓存可注入时钟**：契约-6 的冷却/缓存时间读取经可注入 clock（模块级 `_now`），单测 monkeypatch 推进虚拟时间，**禁用真 `time.sleep`**（规避 CLAUDE.md 坑6 time-based flaky）；测冷却到期恢复 + 缓存 TTL 过期两边界。
+- **真机前置声明**：§7 第3项真机须记录 ①`cdp_edge_available()`==True ②**先用裸 SERP 连跑触发真实封禁**再验 bing-cdp 接管（否则 B 路径未被锻炼，5 次绿不能归因于 B）③网络对 wikipedia/arxiv 可达性（影响 A 命中归因）；报告按引擎拆解每次命中来源，不只看总数≠0。
+
 > 以下为原 Phase 3 三项（保留不变，按上面排序降为次优先）：
 
 仅做 Phase 0 证明「确实是瓶颈」的项：
