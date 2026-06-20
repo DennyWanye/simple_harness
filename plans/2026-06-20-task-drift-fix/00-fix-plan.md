@@ -157,3 +157,40 @@
 ### 7.5 评审待你拍板的两个决策点
 1. **Fix B 走 B2（系统注入原话，鲁棒）**——确认接受"需在 agent loop 分发处补一小段管线"（非纯 3 行）。
 2. **Fix A 门控默认关（kill-switch off）先灰度**——确认先默认关、真机验证连续不漂后再默认开。
+
+---
+
+## 8. 第三轮审查后定稿（2026-06-20 · 独立核验 + 风险分层）
+
+> 本节在 §3/§7 基础上做一处**降风险重构**并拍死 §7.5 两个决策点。核验：§1 全部承重断言已亲自读码复核通过（memory.py 零门控、bundle.py 顺序、embedder 路径、_PLAN_PROMPT 仅 topic、l2_top_k=5）——诊断坐实，方向不变。
+
+### 8.1 核心重构：Fix A 按风险拆成两层（锚定/重定性 ≠ 语义截断）
+
+**问题**：原 Fix A 把"当前请求锚定"（零风险）与"语义截断门控"（高风险，§7.2 自认头号风险=追问误伤）**捆在同一 kill-switch 后面、一起默认关**。后果：永远测不出"其实光锚定就够了"。且反推那次漂移——**模型当场承认 conflict 仍漂，但那是在"无任何锚定指令"下**，所以单条强锚定能不能治好是**未知数**，不该和高风险截断绑死。
+
+**拆层**（按风险分级、分别上、分别验）：
+
+| 层 | 内容 | 风险 | 默认 | 机理 |
+|---|---|---|---|---|
+| **Tier 1** | ① **当前请求优先锚定**：当前 user **正前方**插一条 system nudge（「当前请求是本轮唯一任务；先前对话仅背景，冲突时以当前请求为准」）。位置须**紧邻 user**（recency 才压得住 5 轮 CATL），非 memory_block 顶部。② **L2 历史重定性**：提升 L2 轮次前加一行 system 标签（「以下为较早对话记录，可能涉及其他话题，仅供背景参考」）。 | **零**（永不删上下文 → 不可能误伤追问） | **开** | 直接打"模型把 5 轮 CATL 当活跃对话线"的机理，不删一字、零相似度计算 |
+| **Tier 2** | §7.2 那套**语义截断门控**（合取 `低相似 ∧ 长消息 ∧ 无指代起手` + anaphora 豁免） | **高**（新地盘无安全网，误删追问上下文） | **关**（kill-switch） | 删/截断不相关旧轮 |
+
+> ⚠️ Tier 1 ② 重定性是**加一行标签、L2 仍是真 turn**，**不回退 P4-S21 #16**（当初故意把 L2 从 system block 挪进 history 防被当 noise 忽略，见 [memory.py:74-80](../../backend/deskpet/agent/assembler/components/memory.py)）——兼容。
+>
+> **策略**：先上 Tier 1（默认开）→ 真机连续验 → **够了就省掉 Tier 2**（连同头号风险一起省）；**不够才**开 Tier 2 灰度。即「先试改历史定性+锚定，删历史留兜底」。
+
+### 8.2 §7.5 决策拍板
+
+1. **Fix B = B2，且做成通用机制**：B1（LLM 自填 user_request）必然失败——模型正漂时填进 args 的也是漂的 topic。B2 由 agent loop 分发处**强制注入本轮原始 user 消息**。**改进**：不写成 deepresearch 专属，在 tool dispatch 处做成「**任何声明了 `user_request` 字段的工具，自动注入 `_msgs[-1].content`**」，一处管线多工具复用（ppt_create 等未来白嫖防漂）。
+2. **Tier 1 默认开 / Tier 2 默认关**：取代原 §7.5#2「整个 Fix A 默认关」——Tier 1 零风险不开等于白做；Tier 2（截断）才灰度。
+
+### 8.3 落地顺序（修订）
+1. **Fix B（B2 通用注入）** — 最隔离，先上 + 单测。
+2. **Fix A Tier 1**（锚定 + L2 重定性）— 默认开；单测验"标签+锚定注入"（**不验删除**）。
+3. 合并 → 真机 E2E（872 CATL + 发 Rust，连续 ≥3 次不漂）。
+4. **若 Tier 1 仍偶漂** → 才开 Tier 2，再验追问连续性回归。
+5. 绿 → 更新 STATUS。
+
+### 8.4 待两个子代理夯实的代码执行细节（本轮派活）
+- **Agent A（Fix A 组装层）**：锚定"紧邻 user"需不需要改 `bundle.build_messages`（现签名 [bundle.py:282](../../backend/deskpet/agent/assembler/bundle.py) 是 system→history→user，无"history 后 system"槽位）；embedder async 在 `provide` 里 await 的并发/超时影响；Tier 1 两条标签的确切注入载体（memory_block meta 还是 bundle 新参数）。
+- **Agent B（Fix B 分发层）**：本轮原始 user 消息（`_msgs[-1].content`）从 `_run_chat`（main.py:5222）到 AgentLoop tool dispatch 的确切可达点；通用注入"声明 user_request 的工具自动填原话"该挂在哪一层（schema/registry/dispatch）；有无阻碍。
