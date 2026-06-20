@@ -1912,6 +1912,36 @@ try:
 
             _shim_for_agent = _ShimForAgent(provider=local_llm)
 
+            # 子代理并发驱动 WI-4.2：per-kind 模型路由。KindProfile.model 非空时
+            # 给该子代理换一个指向不同 model 的 shim（新建 provider——shim/provider
+            # 的 model 不可变，R2-3/R2-4）。缓存 per-model shim 防重复建连。默认所有
+            # KindProfile.model=None → 永不调用 → 用父 shim（BC）.
+            _shim_by_model: dict[str, object] = {}
+
+            def _make_shim_for_model(model: str):
+                if not model:
+                    return _shim_for_agent
+                _cached = _shim_by_model.get(model)
+                if _cached is not None:
+                    return _cached
+                try:
+                    from providers.openai_compatible import (
+                        OpenAICompatibleProvider as _OAP,
+                    )
+                    _prov = _OAP(
+                        base_url=local_llm.base_url,
+                        api_key=local_llm.api_key,
+                        model=model,
+                        temperature=local_llm.temperature,
+                        sanitize_inline_cot_dsml=local_llm.sanitize_inline_cot_dsml,
+                    )
+                    _shim = _ShimForAgent(provider=_prov)
+                    _shim_by_model[model] = _shim
+                    return _shim
+                except Exception as _sm_exc:  # noqa: BLE001 — 失败回退父 shim
+                    logger.warning("subagent shim_for_model(%s) failed: %s", model, _sm_exc)
+                    return _shim_for_agent
+
             def _resolve_parent_sid() -> str:
                 cm = service_context.get("code_mode")
                 if cm is not None:
@@ -2001,6 +2031,7 @@ try:
                         parent_session_id_resolver=_resolve_parent_sid,
                         scheduler=_subagent_scheduler,
                         kind_overrides=_kind_overrides,
+                        shim_resolver=_make_shim_for_model,  # WI-4.2 per-kind 模型路由
                     )
                     logger.info(
                         "companion_code_v1_agent_parallel_ready scheduler=%s",
@@ -2109,6 +2140,7 @@ try:
                         scheduler=_nb_scheduler,
                         registry=_subagent_registry,
                         kind_overrides=_kind_overrides,
+                        shim_resolver=_make_shim_for_model,  # WI-4.2 per-kind 模型路由
                     )
                     logger.info("subagent_nonblocking_ready")
                 except Exception as _nb_exc:  # noqa: BLE001

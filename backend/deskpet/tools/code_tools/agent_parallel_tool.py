@@ -275,6 +275,8 @@ def build_agent_parallel_tool(
     parent_system_prompt_resolver: Optional[Callable[[], str]] = None,
     scheduler: Any = None,
     kind_overrides: Optional[dict[str, Any]] = None,
+    termination_gate_factory: Optional[Callable[[], Any]] = None,
+    shim_resolver: Optional[Callable[[str], Any]] = None,
 ):
     """Construct the ``agent_parallel`` tool handler.
 
@@ -310,6 +312,8 @@ def build_agent_parallel_tool(
             llm_shim=llm_shim,
             parent_tool_registry=parent_tool_registry,
             parent_session_id_resolver=parent_session_id_resolver,
+            termination_gate_factory=termination_gate_factory,
+            shim_resolver=shim_resolver,
         )
     else:
         runner = _make_default_runner(
@@ -408,6 +412,7 @@ def build_agent_parallel_tool(
                 "_kind": prof.kind,
                 "_max_iter": prof.max_iterations,
                 "_framing": prof.framing,
+                "_model": prof.model,  # P4 WI-4.2: per-kind 模型路由（None=父模型 BC）
                 # G4: surface cache hints to the runner
                 "cache_mode": sa_cache_mode,
                 "parent_system_prompt_hash": sa_system_prompt_hash,
@@ -541,6 +546,8 @@ def _make_async_native_runner(
     llm_shim: Any,
     parent_tool_registry: Any,
     parent_session_id_resolver: Callable[[], str],
+    termination_gate_factory: Optional[Callable[[], Any]] = None,
+    shim_resolver: Optional[Callable[[str], Any]] = None,
 ) -> SubagentRunner:
     """WI-1.3 (F10) — scheduler 路径专用 runner：**直接在协程内**构造并 await
     子 ``AgentLoop``，不经 ``run_in_executor`` 线程跳转。
@@ -581,11 +588,27 @@ def _make_async_native_runner(
             {"role": "system", "content": sys_msg},
             {"role": "user", "content": sa_for_runner["prompt"]},
         ]
-        sub = _AgentLoop(
-            llm_registry=llm_shim,
-            tool_registry=adapter,
-            max_iterations=max_iter,
-        )
+        # P4 WI-4.2: per-kind 模型路由（sa["_model"] 非空 + resolver 给 → 换 shim）
+        _model = sa_for_runner.get("_model")
+        _shim = llm_shim
+        if _model and shim_resolver is not None:
+            try:
+                _shim = shim_resolver(_model) or llm_shim
+            except Exception:  # noqa: BLE001 — 模型解析失败回退父 shim
+                _shim = llm_shim
+        # P4 WI-4.1: 子代理质量守门（未注入 factory → AgentLoop 自带默认 gate 兜底
+        # turns/cost；注入则用自定义 gate，如防复读）.
+        _sub_kwargs: dict[str, Any] = {
+            "llm_registry": _shim,
+            "tool_registry": adapter,
+            "max_iterations": max_iter,
+        }
+        if termination_gate_factory is not None:
+            try:
+                _sub_kwargs["termination_gate"] = termination_gate_factory()
+            except Exception:  # noqa: BLE001
+                pass
+        sub = _AgentLoop(**_sub_kwargs)
         sub_sid = f"{parent_sid}.par-{sa_task_id}"
         final = ""
         async for ev in sub.run(msgs, session_id=sub_sid):

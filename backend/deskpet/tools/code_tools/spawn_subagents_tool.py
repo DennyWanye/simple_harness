@@ -98,6 +98,8 @@ def build_spawn_subagents_tools(
     scheduler: Any,
     registry: Any,
     kind_overrides: Optional[dict[str, Any]] = None,
+    termination_gate_factory: Optional[Callable[[], Any]] = None,
+    shim_resolver: Optional[Callable[[str], Any]] = None,
 ):
     """构造 ``spawn_subagents`` + ``await_subagents`` 两个工具。
 
@@ -111,6 +113,8 @@ def build_spawn_subagents_tools(
         llm_shim=llm_shim,
         parent_tool_registry=parent_tool_registry,
         parent_session_id_resolver=parent_session_id_resolver,
+        termination_gate_factory=termination_gate_factory,
+        shim_resolver=shim_resolver,
     )
 
     async def _spawn(args: dict[str, Any], task_id: str = "") -> str:
@@ -138,6 +142,7 @@ def build_spawn_subagents_tools(
                 "_kind": prof.kind,
                 "_max_iter": prof.max_iterations,
                 "_framing": prof.framing,
+                "_model": prof.model,  # P4 WI-4.2: per-kind 模型路由（None=父模型 BC）
             }
 
             async def _wrapped(
