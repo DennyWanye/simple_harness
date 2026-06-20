@@ -566,7 +566,7 @@ Select-String -Path $LOG -Pattern "deepresearch|user_request|OutPut/Research|p5s
 
 | Case | 范围 | 类型 | 判定 |
 |---|---|---|---|
-| TC-1 ★ | 核心漂移不漂 | UI 真测 + log | ✅ **PASS（run1）** — `l2_truncated=True shift_path=lexical 5→1` + topic=Rust(async-std/smol/monoio/glommio)；⚠️ 仅 1 次，plan 要求连续 3 次**待补** |
+| TC-1 ★ | 核心漂移不漂 | UI 真测 + log | ✅ **PASS（5 次全不漂）** — `l2_truncated=True shift_path=lexical 5→1` + topic=Rust(async-std/smol/monoio/glommio)；据 codex 验收**补三连跑→实做 5 次**(每次灌 CATL)，topic 全 Rust 0 漂，轮1/2 干净截断复现，证据 `TC-1-3runs-log.txt` |
 | TC-2 | 锚定注入 | log 硬锚点 | ✅ **PASS** — `anchor_applied=True` |
 | TC-3 | 重定性注入 | log 硬锚点 | ✅ **PASS** — `relabel_applied=True` |
 | TC-4 ★ | 短/代词追问不误伤 | UI 真测 + log | ✅ **PASS** — "它的竞品"/"继续" 均 `l2_truncated=False` + 续 CATL（竞品/年报PDF） |

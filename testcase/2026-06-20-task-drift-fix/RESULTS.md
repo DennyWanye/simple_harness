@@ -23,7 +23,7 @@
 
 | Case | 维度 | 判定 | 硬证据 |
 |---|---|---|---|
-| **TC-1 ★** | 核心漂移修复 | ✅ **PASS** | `task_drift_context_gate l2_truncated=True shift_path=lexical l2_count_in=5 l2_count_out=1`；`p5s2 topic="Rust 异步运行时 Tokio…竞品 async-std、smol、monoio、glommio"`（**不含 CATL**）；桌宠真在 `web_extract_article github.com/smol-rs/smol`（Rust 竞品）；报告完成"已保存为 Markdown"。截图 `TC-1-run1-rust-smol-research.png` / `TC-1-run1-report-done-rust.png`，log `TC-1-run1-log.txt` |
+| **TC-1 ★** | 核心漂移修复 | ✅ **PASS（多次复现）** | run1：`l2_truncated=True shift_path=lexical 5→1` + `p5s2 topic="Rust…async-std/smol/monoio/glommio"`（不含 CATL）+ 桌宠真抓 `github.com/smol-rs/smol` + 报告落盘。截图 `TC-1-run1-*.png`，log `TC-1-run1-log.txt`。**据 codex 验收补三连跑**（[`TC-1-3runs-log.txt`](./TC-1-3runs-log.txt)）：对同一 Rust 请求做 **5 次真机**（每次前真灌多条 CATL 制造旧主题压力）→ **5 次 deepresearch topic 全=Rust，0 次漂回 CATL**；其中**轮1/轮2 干净复现 `l2_count_in=5→out=1` 截断**（13:04:28 / 13:07:13）；末轮桌宠气泡确认规划 Rust Tokio 调研（截图 `TC-1-3runs-final-rust-plan.png`）。**诚实标注**：轮3/3'/3final 因灌入的 CATL 内容（电池/营收=可研究主题）诱发桌宠**主动** web_search/deepresearch 宁德，污染了观测（穿插的 topic=宁德 是 CATL 自身触发、非 Rust 请求漂移），故"干净 CATL 主导截断"为 2 次、"Rust 不漂"为 5 次 |
 | **TC-2** | Tier1 锚定 | ✅ **PASS** | 每轮 `task_drift_context_gate ... anchor_applied=True` |
 | **TC-3** | Tier1 重定性 | ✅ **PASS** | 有 L2 轮 `relabel_applied=True`（`l2_count_in>0`） |
 | **TC-4 ★** | 追问连续性不被误伤 | ✅ **PASS** | step2「它的主要竞争对手有哪些」→ `l2_truncated=False`（"它"代词 anaphora 豁免）+ web_search query=`"…宁德时代 比亚迪…"`（正确指代 CATL 竞品）；step3「继续」→ `l2_truncated=False`（2字<10 短路豁免）+ run_shell `path='/tmp/catl_2024_annual.pdf' keywords=['营业收…']`（**正确续 CATL 财报分析、未失忆**）。截图 `TC-4-step{1,2,3}-*.png` |
