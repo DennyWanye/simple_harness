@@ -11,7 +11,7 @@
 
 | 工作项 | 主文档 | 一句话 | 状态 |
 |---|---|---|---|
-| **subagent-concurrency-driver** | [00-PRD](2026-06-21-subagent-concurrency-driver/00-PRD.md) | 给桌宠 agent **驱动子代理并发处理多种事务**的能力：复用现有三层基建(agent/agent_parallel/spawn_team)+ 新增事务分型 `task_kinds` + lane-aware 有界调度 `subagent_scheduler` + 非阻塞 spawn/await + WS 进度 + 取消级联；对标 openhuman/hermes/openclaw 码级(8 模式)；P0-P4 五阶段全 flag-gated；待子代理对抗评审迭代至 100% 可执行 | 📋 规划中 |
+| **subagent-concurrency-driver** | [00-PRD](2026-06-21-subagent-concurrency-driver/00-PRD.md) | 给桌宠 agent **驱动子代理并发处理多种事务**的能力：复用现有三层基建(agent/agent_parallel/spawn_team)+ 新增事务分型 `task_kinds` + lane-aware 有界调度 `subagent_scheduler` + 非阻塞 spawn/await + WS 进度 + 取消级联；对标 openhuman/hermes/openclaw 码级(8 模式)；P0-P4 五阶段全 flag-gated；经 3 轮对抗评审收敛(R3 判 100% executable)+用户拍板全做 | 🟡 实施中 |
 | **agent-loop-optimization** | [00-PLAN](2026-06-20-agent-loop-optimization/00-PLAN.md) | Agent 执行引擎代码级优化 7 WI(tool_choice硬约束/trace/阶段化提示词/Focus Chain todo回灌/触发式知识注入/SEARCH-REPLACE降级编辑/ask_clarification)；含 §13 R1 + §15 R2 挑战修订(时序/流式/control通道竞态/代码骨架)；经 2 轮 5 子代理挑战收敛至可执行 | 📋 待实施 |
 | **task-drift-fix（交接）** | [HANDOFF](2026-06-20-task-drift-fix-HANDOFF.md) | 桌宠「任务漂移」修复交接：单一 default 会话从不切分→新任务被旧主题(CATL)压垮；cbdf855 修了 compaction摘要+L3召回两搬运工,但 raw历史直灌+会话切分根因未动(短会话compaction不触发→主漂移路径)；修复方向 D1切分作用域+D5 deepresearch传原话；待另一 session 实现 | 📋 待修复 |
 | **deepresearch-upgrade（升级 plan）** | [00-upgrade-plan](deepresearch-upgrade/00-upgrade-plan.md) | 工具 `research_run`→**`deepresearch`** 更名 + 演进(代码级 R1-R12 手术面)；Phase0 质量 spike(门)→Phase1 更名→Phase2 修recency+可观测→Phase3 spike-gated 缺口→Phase4 延后 ReAct；经 2 轮子代理对抗挑战到"无 BLOCKING 可照做" | 📋 待执行 |

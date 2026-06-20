@@ -69,6 +69,13 @@ _VALID_SERVICES = frozenset({
     "preference_memory",   # PreferenceMemory — plan-confirm 自动确认 + 意图记忆
     # --- Option A (2026-06-05) — 瘦包首启模型下载 ----------------------------
     "model_provisioner",   # ModelProvisioner — 首启从 hf-mirror 下载缺失模型
+    # --- 子代理并发驱动 (plans/2026-06-21-subagent-concurrency-driver/) -------
+    # flag OFF（默认）时 lifespan 不 register 这些（None 占位无需），但加进白名单
+    # 防 get()/register() 抛 "Unknown service"（仿 session_goal_store 注释 :48）。
+    "subagent_scheduler",  # SubagentScheduler — lane-aware 有界并发调度
+    "subagent_registry",   # SubagentRegistry — 非阻塞 run 记录 + completion queue + 取消
+    "team_store",          # TeamStore — spawn_team 共享任务池/mailbox/permission
+    "task_graph_store",    # TaskGraphStore — DAG 依赖排序任务图
 })
 
 @dataclass
@@ -117,6 +124,11 @@ class ServiceContext:
     skill_candidate_store: Any | None = None
     llm_registry: Any | None = None
     skill_matcher: Any | None = None
+    # --- 子代理并发驱动 (plans/2026-06-21-subagent-concurrency-driver/) -------
+    subagent_scheduler: Any | None = None
+    subagent_registry: Any | None = None
+    team_store: Any | None = None
+    task_graph_store: Any | None = None
 
     def register(self, name: str, provider: Any) -> None:
         if name not in _VALID_SERVICES:

@@ -416,6 +416,14 @@ class FeaturesConfig:
     agent_parallel: bool = False
     plan_confirm_gate: bool = False
     preference_memory: bool = False
+    # --- 子代理并发驱动（plans/2026-06-21-subagent-concurrency-driver/）---------
+    # 全默认 OFF；OFF 时新代码 short-circuit，agent_parallel 退回扁平 gather（字节级 BC）。
+    #   subagent_driver       — 总开关：事务分型(task_kinds)路由 + 有界调度(scheduler)接入
+    #   agent_team            — 暴露 spawn_team LLM 工具 + 构造 TeamStore/TaskGraphStore
+    #   subagent_nonblocking  — 非阻塞 spawn_subagents/await_subagents + completion queue 回灌
+    subagent_driver: bool = False
+    agent_team: bool = False
+    subagent_nonblocking: bool = False
     # WI-4.0 compaction: wire ContextCompressor into AgentLoop.
     # WI-6 (compaction-bestpractice-upgrade, 2026-06-16): 默认翻 True。
     # gate 已满足: P-B 修复(窗口按有效出站模型解析) + 第1/2期单测全绿 + 小窗口长
@@ -735,6 +743,41 @@ def seed_user_config_if_missing() -> Path | None:
     except OSError as e:
         logger.warning("config seed failed (%s); falling back to bundle default", e)
         return None
+
+
+def get_subagent_concurrency(cfg: "AppConfig") -> tuple[int, dict[str, int]]:
+    """子代理并发驱动：从 ``cfg.raw['agent']['concurrency']`` 读全局/各 lane cap。
+
+    plan WI-0.3。**必须 getattr 兜底**（cfg 可能是无 ``.raw`` 的测试 stub）——
+    不复刻 2026-06-21 `b05823b` 的 ``config.config`` 单例不存在导致配置静默
+    失效的坑（R2）。缺省 → 内置默认 ``(4, {...})``。
+    """
+    raw = (getattr(cfg, "raw", None) or {})
+    agent_raw = raw.get("agent", {}) if isinstance(raw, dict) else {}
+    conc = agent_raw.get("concurrency", {}) if isinstance(agent_raw, dict) else {}
+    if not isinstance(conc, dict):
+        conc = {}
+    try:
+        glob = int(conc.get("global_concurrency", 4))
+    except (TypeError, ValueError):
+        glob = 4
+    lanes_raw = conc.get("lane_caps", {})
+    default_lanes = {
+        "research": 2,
+        "code": 2,
+        "fileops": 3,
+        "doc": 1,
+        "web": 3,
+        "general": 2,
+    }
+    lanes: dict[str, int] = dict(default_lanes)
+    if isinstance(lanes_raw, dict):
+        for k, v in lanes_raw.items():
+            try:
+                lanes[str(k)] = int(v)
+            except (TypeError, ValueError):
+                continue
+    return glob, lanes
 
 
 def resolve_config_path() -> Path:
