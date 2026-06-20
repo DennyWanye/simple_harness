@@ -70,8 +70,30 @@ export function RelayEdition({ adapter, brandName, openAccountRef }: RelayEditio
     let cancelled = false;
     (async () => {
       try {
-        const restored = await adapter.restoreSession();
-        // WI-R2: already-logged-in cold start → push provider to backend.
+        let restored = await adapter.restoreSession();
+        // 本地 DEV 自动登录(永不手动登录): session 没了(首启/30天refresh过期/被擦)时,
+        // 若注入了 dev 凭据(VITE_DEV_RELAY_EMAIL/PASSWORD)则静默重登,登录框永不阻塞。
+        // ⚠️ 仅 import.meta.env.DEV 生效 —— 生产 build(DEV=false)此整段为死代码,
+        // 凭据也不会进生产包(只在 dev .env.local)。详见 LOCAL-DEV-CREDENTIALS.md。
+        if (
+          !restored &&
+          !cancelled &&
+          import.meta.env.DEV &&
+          import.meta.env.VITE_DEV_RELAY_EMAIL &&
+          import.meta.env.VITE_DEV_RELAY_PASSWORD
+        ) {
+          try {
+            await adapter.login({
+              email: String(import.meta.env.VITE_DEV_RELAY_EMAIL),
+              password: String(import.meta.env.VITE_DEV_RELAY_PASSWORD),
+            });
+            restored = adapter.isAuthenticated();
+            console.info("[RelayEdition] dev auto-login OK (VITE_DEV_RELAY_*)");
+          } catch (e) {
+            console.warn("[RelayEdition] dev auto-login failed:", e);
+          }
+        }
+        // WI-R2: already-logged-in (或自动登录成功) cold start → push provider to backend.
         if (restored && !cancelled) refreshProviders();
       } finally {
         if (!cancelled) {
