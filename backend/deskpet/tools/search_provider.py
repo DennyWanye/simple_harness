@@ -25,13 +25,17 @@ Design constraints (per project decision 2026-06-13):
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
+import time
 import urllib.parse
 from html import unescape
 from typing import Any, Optional
 
 import httpx
+
+from .research_cdp_edge import cdp_edge_render
 
 log = logging.getLogger(__name__)
 
@@ -46,7 +50,7 @@ _BING_URL = "https://www.bing.com/search"
 _BAIDU_URL = "https://www.baidu.com/s"
 
 _DEFAULT_ENGINE_QUEUE = ("bing", "duckduckgo")  # 百度备选,不默认启用
-_KNOWN_ENGINES = ("bing", "duckduckgo", "baidu")
+_KNOWN_ENGINES = ("bing", "duckduckgo", "baidu", "bing-cdp", "searxng")
 
 _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -55,6 +59,52 @@ _UA = (
 )
 _DEFAULT_TIMEOUT = 12.0
 _MAX_RESULTS_CAP = 10
+_SEARCH_CDP_MAX_PER_RUN = 4
+_SERP_RENDER_TIMEOUT = 8.0
+_CAPTCHA_HTML_MIN_BYTES = 10 * 1024
+_ENGINE_FAILURES_BEFORE_COOLDOWN = 2
+_ENGINE_COOLDOWN_SECONDS = 5 * 60.0
+_RESULT_CACHE_TTL_SECONDS = 2 * 60.0
+_HARDENING_RETRIES = 2
+_HARDENING_BACKOFF_SECONDS = 0.25
+
+_BROWSER_UAS = (
+    _UA,
+    (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0"
+    ),
+    (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
+    ),
+)
+_BASE_HEADERS = {
+    "User-Agent": _UA,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+}
+_HARDENED_HEADER_BASE = {
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Upgrade-Insecure-Requests": "1",
+}
+
+_now = lambda: time.monotonic()
+_sleep = time.sleep
+_async_sleep = asyncio.sleep
+_search_cdp_count = 0
+_engine_failures: dict[str, int] = {}
+_engine_cooldown_until: dict[str, float] = {}
+_result_cache: dict[tuple[str, str, str], tuple[float, list[dict[str, str]]]] = {}
+_last_engines_hit: list[str] = []
+_last_search_errors: list[str] = []
 
 
 def _engine_queue() -> list[str]:
@@ -68,9 +118,170 @@ def _engine_queue() -> list[str]:
     if isinstance(v, list) and v:
         q = [str(x).strip().lower() for x in v]
         q = [e for e in q if e in _KNOWN_ENGINES]
+        if "searxng" in q and not _searxng_url():
+            q = [e for e in q if e != "searxng"]
         if q:
             return q
     return list(_DEFAULT_ENGINE_QUEUE)
+
+
+def _research_raw() -> dict[str, Any]:
+    try:
+        import config as _cfg  # type: ignore[import-not-found]
+        raw = (_cfg.config.raw.get("research") or {})
+        return raw if isinstance(raw, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _searxng_url() -> str:
+    v = _research_raw().get("searxng_url", "")
+    return str(v or "").strip().rstrip("/")
+
+
+def _serp_hardening() -> bool:
+    return bool(_research_raw().get("serp_hardening", False))
+
+
+def _serp_render_timeout() -> float:
+    try:
+        return float(_research_raw().get("serp_render_timeout", _SERP_RENDER_TIMEOUT) or _SERP_RENDER_TIMEOUT)
+    except (TypeError, ValueError):
+        return _SERP_RENDER_TIMEOUT
+
+
+def reset_search_cdp_budget() -> None:
+    """Reset the per-run search-CDP budget counter.
+
+    ``research_tools`` can call this once at the start of each deepresearch
+    run; search CDP shares Edge's render semaphore but keeps an independent
+    count from fetch-stage JS rendering.
+    """
+    global _search_cdp_count
+    _search_cdp_count = 0
+
+
+def reset_search_runtime_state() -> None:
+    """Clear process-local search hardening state for tests or a new runtime."""
+    _engine_failures.clear()
+    _engine_cooldown_until.clear()
+    _result_cache.clear()
+    _last_engines_hit.clear()
+    _last_search_errors.clear()
+
+
+def get_last_engines_hit() -> list[str]:
+    """Return engine names that produced the latest search result set.
+
+    ``search_async`` returns only the legacy list of result dicts, so route
+    observability reads this side-channel immediately after a call. The list is
+    reset at the beginning of each ``search``/``search_async`` invocation.
+    """
+    return list(_last_engines_hit)
+
+
+def get_last_search_errors() -> list[str]:
+    """Return explicit errors captured during the latest search invocation."""
+    return list(_last_search_errors)
+
+
+def _reset_last_observation() -> None:
+    _last_engines_hit.clear()
+    _last_search_errors.clear()
+
+
+def _mark_engine_hit(engine: str) -> None:
+    if engine not in _last_engines_hit:
+        _last_engines_hit.append(engine)
+
+
+def _record_search_error(error: str) -> None:
+    if error and error not in _last_search_errors:
+        _last_search_errors.append(error)
+
+
+def _engine_available(engine: str) -> bool:
+    if not _serp_hardening():
+        return True
+    until = _engine_cooldown_until.get(engine, 0.0)
+    if until and _now() < until:
+        return False
+    if until:
+        _engine_cooldown_until.pop(engine, None)
+        _engine_failures[engine] = 0
+    return True
+
+
+def _record_engine_failure(engine: str) -> None:
+    if not _serp_hardening():
+        return
+    failures = _engine_failures.get(engine, 0) + 1
+    _engine_failures[engine] = failures
+    if failures >= _ENGINE_FAILURES_BEFORE_COOLDOWN:
+        _engine_cooldown_until[engine] = _now() + _ENGINE_COOLDOWN_SECONDS
+
+
+def _record_engine_success(engine: str) -> None:
+    if not _serp_hardening():
+        return
+    _engine_failures[engine] = 0
+    _engine_cooldown_until.pop(engine, None)
+
+
+def _cache_key(engine: str, query: str, region: str) -> tuple[str, str, str]:
+    return (engine, query.strip().lower(), region)
+
+
+def _cached_results(engine: str, query: str, region: str) -> Optional[list[dict[str, str]]]:
+    if not _serp_hardening():
+        return None
+    item = _result_cache.get(_cache_key(engine, query, region))
+    if item is None:
+        return None
+    expires_at, results = item
+    if _now() >= expires_at:
+        _result_cache.pop(_cache_key(engine, query, region), None)
+        return None
+    return [dict(r) for r in results]
+
+
+def _cache_results(engine: str, query: str, region: str, results: list[dict[str, str]]) -> None:
+    if not _serp_hardening() or not results:
+        return
+    _result_cache[_cache_key(engine, query, region)] = (
+        _now() + _RESULT_CACHE_TTL_SECONDS,
+        [dict(r) for r in results],
+    )
+
+
+def _headers_for_request(engine: str, query: str, *, hardened: bool) -> dict[str, str]:
+    if not hardened:
+        return dict(_HEADERS)
+    idx = abs(hash((engine, query, int(_now() // 60)))) % len(_BROWSER_UAS)
+    headers = dict(_HARDENED_HEADER_BASE)
+    headers["User-Agent"] = _BROWSER_UAS[idx]
+    return headers
+
+
+def _backoff_delay(attempt: int) -> float:
+    return _HARDENING_BACKOFF_SECONDS * (2 ** max(0, attempt))
+
+
+def _bing_serp_url(query: str, region: str) -> str:
+    mkt = "zh-CN" if region == "cn-zh" else "en-US"
+    return _BING_URL + "?" + urllib.parse.urlencode({"q": query, "mkt": mkt})
+
+
+def _search_cdp_budget_available() -> bool:
+    return _search_cdp_count < _SEARCH_CDP_MAX_PER_RUN
+
+
+def _consume_search_cdp_budget() -> bool:
+    global _search_cdp_count
+    if not _search_cdp_budget_available():
+        return False
+    _search_cdp_count += 1
+    return True
 
 
 def _engine_request(engine: str, query: str, region: str):
@@ -93,6 +304,46 @@ def _engine_parse(engine: str, html: str, max_results: int) -> list[dict[str, st
     if engine == "baidu":
         return parse_baidu_html(html, max_results=max_results)
     return []
+
+
+def _parse_searxng_json(body: Any, max_results: int) -> list[dict[str, str]]:
+    """Parse SearXNG JSON ``results`` into the unified result shape."""
+    if not isinstance(body, dict):
+        return []
+    items = body.get("results")
+    if not isinstance(items, list):
+        return []
+    out: list[dict[str, str]] = []
+    for item in items:
+        if len(out) >= max_results:
+            break
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url") or "").strip()
+        title = str(item.get("title") or "").strip()
+        snippet = str(item.get("content") or item.get("snippet") or "").strip()
+        if url.startswith("http") and title:
+            out.append({"url": url, "title": title, "snippet": snippet})
+    return out
+
+
+def _looks_like_bing_captcha(html: str, results: list[dict[str, str]]) -> bool:
+    if results or not html or len(html.encode("utf-8", "ignore")) <= _CAPTCHA_HTML_MIN_BYTES:
+        return False
+    try:
+        from selectolax.parser import HTMLParser  # type: ignore
+        if HTMLParser(html).css_first("li.b_algo") is not None:
+            return False
+    except ImportError:
+        if re.search(r"<li\b[^>]*class=[\"'][^\"']*\bb_algo\b", html, flags=re.I):
+            return False
+    except Exception:  # noqa: BLE001
+        pass
+    if "li.b_algo" in html:
+        return False
+    text = _strip(html).lower()
+    needles = ("verify", "unusual traffic", "captcha", "机器人")
+    return any(n in text for n in needles)
 
 _TAG_STRIP_RE = re.compile(r"<[^>]+>")
 _CJK_RE = re.compile(r"[㐀-鿿぀-ヿ가-힯]")
@@ -238,7 +489,7 @@ def _normalize_max(max_results: int) -> int:
     return max(1, min(n, _MAX_RESULTS_CAP))
 
 
-_HEADERS = {"User-Agent": _UA, "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"}
+_HEADERS = dict(_BASE_HEADERS)
 
 
 def search(
@@ -255,6 +506,7 @@ def search(
     每引擎独立超时;全队列失败 → ``results: []`` + ``error``。Never raises。
     """
     q = (query or "").strip()
+    _reset_last_observation()
     if not q:
         return {"query": "", "count": 0, "results": [], "error": "empty query"}
     n = _normalize_max(max_results)
@@ -262,22 +514,50 @@ def search(
     queue = engines or _engine_queue()
     last_err: Optional[str] = None
     for engine in queue:
+        if engine in {"bing-cdp", "searxng"}:
+            continue
+        if not _engine_available(engine):
+            last_err = f"{engine}: cooling down"
+            _record_search_error(last_err)
+            continue
+        cached = _cached_results(engine, q, reg)
+        if cached is not None:
+            _mark_engine_hit(engine)
+            return {"query": q, "count": len(cached), "results": cached,
+                    "region": reg, "engine": engine}
         req = _engine_request(engine, q, reg)
         if req is None:
             continue
         method, url, kw = req
+        attempts = _HARDENING_RETRIES if _serp_hardening() else 1
+        results: list[dict[str, str]] = []
         try:
-            with httpx.Client(headers=_HEADERS, timeout=timeout, follow_redirects=True) as client:
-                resp = client.request(method, url, **kw)
-            resp.raise_for_status()
-            results = _engine_parse(engine, resp.text, n)
+            for attempt in range(attempts):
+                headers = _headers_for_request(engine, q, hardened=_serp_hardening())
+                try:
+                    with httpx.Client(headers=headers, timeout=timeout, follow_redirects=True) as client:
+                        resp = client.request(method, url, **kw)
+                    resp.raise_for_status()
+                    results = _engine_parse(engine, resp.text, n)
+                    break
+                except Exception:
+                    if attempt + 1 >= attempts:
+                        raise
+                    _sleep(_backoff_delay(attempt))
+                    continue
         except Exception as exc:  # noqa: BLE001
             last_err = f"{engine}: {exc}"
+            _record_engine_failure(engine)
+            _record_search_error(last_err)
             log.debug("search engine %s failed for %r: %s", engine, q, exc)
             continue
         if results:
+            _record_engine_success(engine)
+            _cache_results(engine, q, reg, results)
+            _mark_engine_hit(engine)
             return {"query": q, "count": len(results), "results": results,
                     "region": reg, "engine": engine}
+        _record_engine_failure(engine)
     return {"query": q, "count": 0, "results": [], "region": reg,
             "error": last_err or "all engines returned empty"}
 
@@ -294,35 +574,138 @@ async def search_async(
     """异步搜索(兼容性降级队列)→ ``[{url, title, snippet}]``(research 管线形状)。
     按队列依次试,第一个非空就返回;全失败 → ``[]``。"""
     q = (query or "").strip()
+    _reset_last_observation()
     if not q:
         return []
     n = _normalize_max(max_results)
     reg = region or region_for_query(q)
     queue = engines or _engine_queue()
     owns = client is None
-    cli = client or httpx.AsyncClient(headers=_HEADERS, timeout=timeout, follow_redirects=True)
+    cli = client
     try:
         for engine in queue:
+            if not _engine_available(engine):
+                _record_search_error(f"{engine}: cooling down")
+                continue
+            cached = _cached_results(engine, q, reg)
+            if cached is not None:
+                _mark_engine_hit(engine)
+                return cached
+            if engine == "bing-cdp":
+                if not _consume_search_cdp_budget():
+                    _record_search_error("bing-cdp: budget exhausted")
+                    continue
+                try:
+                    html = await cdp_edge_render(_bing_serp_url(q, reg), timeout=_serp_render_timeout())
+                    if html is None:
+                        _record_engine_failure(engine)
+                        _record_search_error("bing-cdp: render returned none")
+                        continue
+                    results = parse_bing_html(html, max_results=n)
+                    if _looks_like_bing_captcha(html, results):
+                        _record_engine_failure(engine)
+                        _record_search_error("bing_cdp_captcha_suspected")
+                        log.warning("bing_cdp_captcha_suspected", extra={"query": q})
+                        continue
+                except Exception as exc:  # noqa: BLE001
+                    _record_engine_failure(engine)
+                    _record_search_error(f"{engine}: {exc}")
+                    log.debug("async search engine %s failed for %r: %s", engine, q, exc)
+                    continue
+                if results:
+                    _record_engine_success(engine)
+                    _cache_results(engine, q, reg, results)
+                    _mark_engine_hit(engine)
+                    return results
+                _record_engine_failure(engine)
+                continue
+
+            if engine == "searxng":
+                searxng_url = _searxng_url()
+                if not searxng_url:
+                    _record_search_error("searxng: missing searxng_url")
+                    continue
+                attempts = _HARDENING_RETRIES if _serp_hardening() else 1
+                results = []
+                try:
+                    if cli is None:
+                        cli = httpx.AsyncClient(
+                            headers=_headers_for_request(engine, q, hardened=_serp_hardening()),
+                            timeout=timeout,
+                            follow_redirects=True,
+                        )
+                    for attempt in range(attempts):
+                        try:
+                            resp = await cli.request(
+                                "GET",
+                                searxng_url,
+                                params={"q": q, "format": "json"},
+                            )
+                            resp.raise_for_status()
+                            results = _parse_searxng_json(resp.json(), n)
+                            break
+                        except Exception:
+                            if attempt + 1 >= attempts:
+                                raise
+                            await _async_sleep(_backoff_delay(attempt))
+                            continue
+                except Exception as exc:  # noqa: BLE001
+                    _record_engine_failure(engine)
+                    _record_search_error(f"{engine}: {exc}")
+                    log.debug("async search engine %s failed for %r: %s", engine, q, exc)
+                    continue
+                if results:
+                    _record_engine_success(engine)
+                    _cache_results(engine, q, reg, results)
+                    _mark_engine_hit(engine)
+                    return results
+                _record_engine_failure(engine)
+                continue
+
             req = _engine_request(engine, q, reg)
             if req is None:
                 continue
             method, url, kw = req
+            attempts = _HARDENING_RETRIES if _serp_hardening() else 1
+            results = []
             try:
-                resp = await cli.request(method, url, **kw)
-                resp.raise_for_status()
-                results = _engine_parse(engine, resp.text, n)
+                if cli is None:
+                    cli = httpx.AsyncClient(
+                        headers=_headers_for_request(engine, q, hardened=_serp_hardening()),
+                        timeout=timeout,
+                        follow_redirects=True,
+                    )
+                for attempt in range(attempts):
+                    try:
+                        resp = await cli.request(method, url, **kw)
+                        resp.raise_for_status()
+                        results = _engine_parse(engine, resp.text, n)
+                        break
+                    except Exception:
+                        if attempt + 1 >= attempts:
+                            raise
+                        await _async_sleep(_backoff_delay(attempt))
+                        continue
             except Exception as exc:  # noqa: BLE001
+                _record_engine_failure(engine)
+                _record_search_error(f"{engine}: {exc}")
                 log.debug("async search engine %s failed for %r: %s", engine, q, exc)
                 continue
             if results:
+                _record_engine_success(engine)
+                _cache_results(engine, q, reg, results)
+                _mark_engine_hit(engine)
                 return results
+            _record_engine_failure(engine)
         return []
     finally:
-        if owns:
+        if owns and cli is not None:
             await cli.aclose()
 
 
 __all__ = [
     "search", "search_async", "region_for_query",
     "parse_ddg_html", "parse_bing_html", "parse_baidu_html",
+    "get_last_engines_hit", "get_last_search_errors",
+    "reset_search_cdp_budget", "reset_search_runtime_state",
 ]

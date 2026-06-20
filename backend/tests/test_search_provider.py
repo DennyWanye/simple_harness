@@ -4,6 +4,8 @@
 """Deep-research V8 — unified search_provider (region-aware DDG)."""
 from __future__ import annotations
 
+import pytest
+
 from deskpet.tools import search_provider as sp
 
 
@@ -149,9 +151,17 @@ def test_engine_queue_default():
 def test_engine_queue_config(monkeypatch):
     import types
     fake = types.SimpleNamespace(config=types.SimpleNamespace(
-        raw={"research": {"search_engines": ["baidu", "BING", "garbage"]}}))
+        raw={"research": {
+            "search_engines": ["baidu", "BING", "bing-cdp", "searxng", "garbage"],
+            "searxng_url": "https://sx.example/search",
+        }}))
     monkeypatch.setitem(__import__("sys").modules, "config", fake)
-    assert sp._engine_queue() == ["baidu", "bing"]  # 清洗+小写+去非法,保序
+    assert sp._engine_queue() == ["baidu", "bing", "bing-cdp", "searxng"]  # 清洗+小写+去非法,保序
+
+
+def test_known_engines_includes_browser_and_searxng():
+    assert "bing-cdp" in sp._KNOWN_ENGINES
+    assert "searxng" in sp._KNOWN_ENGINES
 
 
 def test_search_fallback_queue(monkeypatch):
@@ -205,3 +215,188 @@ def test_search_all_engines_fail(monkeypatch):
     monkeypatch.setattr(sp.httpx, "Client", _FakeClient)
     r = sp.search("测试", max_results=5)
     assert r["count"] == 0 and r["results"] == [] and "error" in r
+
+
+@pytest.fixture(autouse=True)
+def _reset_search_provider_state(monkeypatch):
+    sp.reset_search_cdp_budget()
+    sp.reset_search_runtime_state()
+    monkeypatch.setattr(sp, "_now", lambda: 0.0)
+    yield
+    sp.reset_search_cdp_budget()
+    sp.reset_search_runtime_state()
+
+
+class _AsyncClientFail:
+    def __init__(self, *a, **k):
+        self.requests = []
+
+    async def request(self, method, url, **kw):
+        self.requests.append((method, url, kw))
+        raise AssertionError("httpx AsyncClient.request should not be called")
+
+    async def aclose(self):
+        return None
+
+
+@pytest.mark.asyncio
+async def test_search_async_bing_cdp_uses_rendered_fixture_without_httpx(monkeypatch):
+    fixture = (sp.__file__ and __import__("pathlib").Path(__file__).parent / "fixtures" / "bing_serp_sample.html")
+    html = fixture.read_text(encoding="utf-8")
+    calls = []
+
+    async def _fake_render(url: str, *, timeout: float):
+        calls.append((url, timeout))
+        return html
+
+    monkeypatch.setattr(sp, "cdp_edge_render", _fake_render)
+    client = _AsyncClientFail()
+
+    results = await sp.search_async("中文测试", engines=["bing-cdp"], client=client, max_results=5)
+
+    assert len(results) >= 2
+    assert calls and "bing.com/search" in calls[0][0]
+    assert "mkt=zh-CN" in calls[0][0]
+    assert calls[0][1] == 8.0
+    assert client.requests == []
+    assert sp.get_last_engines_hit() == ["bing-cdp"]
+
+
+@pytest.mark.asyncio
+async def test_search_async_bing_cdp_none_degrades_to_next_engine(monkeypatch):
+    async def _fake_render(url: str, *, timeout: float):
+        return None
+
+    class _Client:
+        class _Resp:
+            text = _SAMPLE_HTML
+
+            def raise_for_status(self):
+                return None
+
+        async def request(self, method, url, **kw):
+            return self._Resp()
+
+    monkeypatch.setattr(sp, "cdp_edge_render", _fake_render)
+
+    results = await sp.search_async("test", engines=["bing-cdp", "duckduckgo"], client=_Client())
+
+    assert len(results) == 2
+    assert sp.get_last_engines_hit() == ["duckduckgo"]
+
+
+@pytest.mark.asyncio
+async def test_search_async_bing_cdp_captcha_sentinel(monkeypatch):
+    captcha_html = "<html><body>verify captcha unusual traffic 机器人</body></html>" + ("x" * 11_000)
+
+    async def _fake_render(url: str, *, timeout: float):
+        return captcha_html
+
+    monkeypatch.setattr(sp, "cdp_edge_render", _fake_render)
+
+    results = await sp.search_async("test", engines=["bing-cdp"], client=_AsyncClientFail())
+
+    assert results == []
+    assert "bing_cdp_captcha_suspected" in sp.get_last_search_errors()
+    assert sp.get_last_engines_hit() == []
+
+
+def test_engine_queue_searxng_requires_url(monkeypatch):
+    import types
+
+    no_url = types.SimpleNamespace(config=types.SimpleNamespace(
+        raw={"research": {"search_engines": ["searxng", "bing"]}}))
+    monkeypatch.setitem(__import__("sys").modules, "config", no_url)
+    assert sp._engine_queue() == ["bing"]
+
+    with_url = types.SimpleNamespace(config=types.SimpleNamespace(
+        raw={"research": {"search_engines": ["searxng", "bing"], "searxng_url": "https://sx.example/search"}}))
+    monkeypatch.setitem(__import__("sys").modules, "config", with_url)
+    assert sp._engine_queue() == ["searxng", "bing"]
+
+
+@pytest.mark.asyncio
+async def test_search_async_searxng_parses_json_when_configured(monkeypatch):
+    import types
+
+    fake = types.SimpleNamespace(config=types.SimpleNamespace(
+        raw={"research": {"search_engines": ["searxng"], "searxng_url": "https://sx.example/search"}}))
+    monkeypatch.setitem(__import__("sys").modules, "config", fake)
+
+    class _Resp:
+        text = ""
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"results": [
+                {"url": "https://example.com/a", "title": "A", "content": "Alpha"},
+                {"url": "https://example.org/b", "title": "B", "content": "Beta"},
+            ]}
+
+    class _Client:
+        def __init__(self):
+            self.calls = []
+
+        async def request(self, method, url, **kw):
+            self.calls.append((method, url, kw))
+            return _Resp()
+
+    client = _Client()
+    results = await sp.search_async("topic", client=client)
+
+    assert results == [
+        {"url": "https://example.com/a", "title": "A", "snippet": "Alpha"},
+        {"url": "https://example.org/b", "title": "B", "snippet": "Beta"},
+    ]
+    assert client.calls[0][0] == "GET"
+    assert client.calls[0][1] == "https://sx.example/search"
+    assert client.calls[0][2]["params"] == {"q": "topic", "format": "json"}
+    assert sp.get_last_engines_hit() == ["searxng"]
+
+
+def test_parse_searxng_json_is_pure():
+    body = {"results": [
+        {"url": "https://example.com/a", "title": "A", "content": "Alpha"},
+        {"url": "", "title": "bad", "content": "skip"},
+        {"url": "https://example.org/b", "title": "B", "content": "Beta"},
+    ]}
+    assert sp._parse_searxng_json(body, max_results=1) == [
+        {"url": "https://example.com/a", "title": "A", "snippet": "Alpha"}
+    ]
+
+
+def test_hardening_cooldown_uses_injected_clock(monkeypatch):
+    import types
+
+    state = {"now": 100.0}
+    fake = types.SimpleNamespace(config=types.SimpleNamespace(
+        raw={"research": {"serp_hardening": True}}))
+    monkeypatch.setitem(__import__("sys").modules, "config", fake)
+    monkeypatch.setattr(sp, "_now", lambda: state["now"])
+
+    sp._record_engine_failure("bing")
+    sp._record_engine_failure("bing")
+    assert sp._engine_available("bing") is False
+
+    state["now"] += sp._ENGINE_COOLDOWN_SECONDS + 0.1
+    assert sp._engine_available("bing") is True
+
+
+def test_hardening_cache_ttl_uses_injected_clock(monkeypatch):
+    import types
+
+    state = {"now": 10.0}
+    fake = types.SimpleNamespace(config=types.SimpleNamespace(
+        raw={"research": {"serp_hardening": True}}))
+    monkeypatch.setitem(__import__("sys").modules, "config", fake)
+    monkeypatch.setattr(sp, "_now", lambda: state["now"])
+
+    sp._cache_results("bing", "topic", "us-en", [{"url": "https://e.test", "title": "E", "snippet": ""}])
+    assert sp._cached_results("bing", "topic", "us-en") == [
+        {"url": "https://e.test", "title": "E", "snippet": ""}
+    ]
+
+    state["now"] += sp._RESULT_CACHE_TTL_SECONDS + 0.1
+    assert sp._cached_results("bing", "topic", "us-en") is None

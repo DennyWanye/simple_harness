@@ -4,21 +4,65 @@
 """Phase-2 中文一手源直连适配器测试 (research_sources)。"""
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
+import httpx
 import pytest
 
 from deskpet.tools import research_sources as rs
 
+_FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _assert_direct_contract(item: dict, source: str) -> None:
+    assert item["ok"] is True
+    assert item["source"] == source
+    assert isinstance(item["url"], str) and item["url"]
+    assert isinstance(item["title"], str) and item["title"]
+    assert len(item["title"]) <= 200
+    assert isinstance(item["text"], str) and item["text"].strip()
+    assert len(item["text"]) <= 18_000
+    assert isinstance(item["fetched_at"], float)
+
 
 # --- 意图路由 ---
 
-def test_direct_source_for():
-    assert rs.direct_source_for("宁德时代2025年财报营收") == "cninfo"
-    assert rs.direct_source_for("某上市公司年度报告披露") == "cninfo"
-    assert rs.direct_source_for("钠离子电池国家标准 GB/T") == "openstd"
-    assert rs.direct_source_for("锂电池技术规范标准号") == "openstd"
-    assert rs.direct_source_for("今天天气如何") is None
+def test_direct_source_for(monkeypatch):
+    monkeypatch.setattr(rs, "_research_raw", lambda: {})
+
+    assert isinstance(rs.direct_source_for("宁德时代2025年财报营收"), list)
+    assert "cninfo" in rs.direct_source_for("宁德时代2025年财报营收")
+    assert "cninfo" in rs.direct_source_for("某上市公司年度报告披露")
+    assert "openstd" in rs.direct_source_for("钠离子电池国家标准 GB/T")
+    assert "openstd" in rs.direct_source_for("锂电池技术规范标准号")
+    assert "wikipedia" in rs.direct_source_for("钠离子电池是什么，给我背景综述")
+    assert "arxiv" in rs.direct_source_for("钠离子电池论文和技术选型研究")
+    assert "semantic_scholar" not in rs.direct_source_for("钠离子电池论文和技术选型研究")
+    assert "wikidata" not in rs.direct_source_for("特斯拉 CEO 结构化事实")
+    assert rs.direct_source_for("今天天气如何") == []
     # openstd 优先级高于 cninfo(同时含"标准"和"公告"时)
-    assert rs.direct_source_for("国家标准公告") == "openstd"
+    assert "openstd" in rs.direct_source_for("国家标准公告")
+
+
+def test_direct_source_for_respects_direct_source_types(monkeypatch):
+    monkeypatch.setattr(
+        rs,
+        "_research_raw",
+        lambda: {"direct_source_types": ["s2", "wikidata"]},
+    )
+
+    srcs = rs.direct_source_for("结构化实体事实和论文研究")
+    assert "semantic_scholar" in srcs
+    assert "wikidata" in srcs
+    assert "arxiv" not in srcs
+    assert "wikipedia" not in srcs
+
+
+def test_direct_source_types_default(monkeypatch):
+    monkeypatch.setattr(rs, "_research_raw", lambda: {})
+
+    assert rs._direct_source_types() == ["cninfo", "openstd", "wikipedia", "arxiv"]
 
 
 # --- openstd 纯解析 ---
@@ -229,3 +273,103 @@ async def test_cninfo_search_network_fail(monkeypatch):
 
     out = await rs.cninfo_search("x", client=_FakeClient())
     assert out == []  # best-effort
+
+
+# --- 新直连源 fetcher 契约 ---
+
+@pytest.mark.asyncio
+async def test_wikipedia_search_contract_from_fixture():
+    fixture = json.loads((_FIXTURES / "wikipedia_sample.json").read_text(encoding="utf-8"))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/w/api.php"):
+            return httpx.Response(200, json=fixture["opensearch"])
+        return httpx.Response(200, json=fixture["summary"])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        out = await rs.wikipedia_search("钠离子电池", max_results=1, client=client)
+
+    assert len(out) == 1
+    _assert_direct_contract(out[0], "wikipedia")
+    assert "wikipedia.org" in out[0]["url"]
+
+
+@pytest.mark.asyncio
+async def test_arxiv_search_contract_from_fixture():
+    xml = (_FIXTURES / "arxiv_sample.xml").read_text(encoding="utf-8")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=xml, headers={"content-type": "application/atom+xml"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        out = await rs.arxiv_search("sodium ion battery", max_results=1, client=client)
+
+    assert len(out) == 1
+    _assert_direct_contract(out[0], "arxiv")
+    assert "arxiv.org" in out[0]["url"]
+
+
+@pytest.mark.asyncio
+async def test_semantic_scholar_search_contract_from_fixture():
+    fixture = json.loads((_FIXTURES / "s2_sample.json").read_text(encoding="utf-8"))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=fixture)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        out = await rs.semantic_scholar_search("sodium ion battery", max_results=1, client=client)
+
+    assert len(out) == 1
+    _assert_direct_contract(out[0], "semantic_scholar")
+    assert "semanticscholar.org" in out[0]["url"]
+
+
+@pytest.mark.asyncio
+async def test_wikidata_search_contract_from_fixture():
+    fixture = json.loads((_FIXTURES / "wikidata_sample.json").read_text(encoding="utf-8"))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=fixture)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        out = await rs.wikidata_search("Q937", max_results=1, client=client)
+
+    assert len(out) == 1
+    _assert_direct_contract(out[0], "wikidata")
+    assert "wikidata.org" in out[0]["url"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fetcher",
+    [
+        rs.wikipedia_search,
+        rs.arxiv_search,
+        rs.semantic_scholar_search,
+        rs.wikidata_search,
+    ],
+)
+async def test_new_fetchers_degrade_to_empty_on_timeout(fetcher):
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectTimeout("blocked")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await fetcher("x", client=client) == []
+
+
+@pytest.mark.asyncio
+async def test_semantic_scholar_429_degrades_to_empty():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, headers={"Retry-After": "1"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await rs.semantic_scholar_search("x", client=client) == []
+
+
+def test_direct_fetchers_mapping_contains_all_sources():
+    assert rs.DIRECT_FETCHERS["cninfo"] is rs.cninfo_search
+    assert rs.DIRECT_FETCHERS["openstd"] is rs.openstd_search
+    assert rs.DIRECT_FETCHERS["wikipedia"] is rs.wikipedia_search
+    assert rs.DIRECT_FETCHERS["arxiv"] is rs.arxiv_search
+    assert rs.DIRECT_FETCHERS["semantic_scholar"] is rs.semantic_scholar_search
+    assert rs.DIRECT_FETCHERS["wikidata"] is rs.wikidata_search

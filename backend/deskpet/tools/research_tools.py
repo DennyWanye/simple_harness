@@ -1009,17 +1009,29 @@ async def deepresearch(
     extract_fn = extract or default_extract
     errors: list[str] = []
     mode = (mode or "standard").lower()
-    route = str(
+    # route 扩成集合(§6.0.2 观测): 记本 run 实际命中的搜索引擎 + 直连源。
+    # str→dict 破坏性类型变更已核 coverage["route"] 无下游按 str 消费。
+    _route_fallback = str(
         getattr(search_fn, "route", None)
         or getattr(search_fn, "provider", None)
         or getattr(search_fn, "engine", None)
         or "ddg"
     )
+    route: dict[str, Any] = {
+        "engines_hit": [], "direct_sources_hit": [], "fallback": _route_fallback,
+    }
+    # 每轮开头重置 search_provider 运行态(cdp 预算/engines_hit/errors),best-effort
+    try:
+        from . import search_provider as _sp_reset
+        _sp_reset.reset_search_runtime_state()
+    except Exception:  # noqa: BLE001
+        pass
     dropped_by_reason = {
         "ai_generated": 0,
         "low_quality": 0,
         "mojibake": 0,
         "too_short": 0,
+        "direct_source_empty": 0,
     }
     elapsed_ms_per_stage = {
         "plan": 0,
@@ -1027,6 +1039,7 @@ async def deepresearch(
         "fetch": 0,
         "score": 0,
         "synth": 0,
+        "direct": 0,
     }
 
     def _stage_ms(start: float) -> int:
@@ -1096,6 +1109,13 @@ async def deepresearch(
             if not u or u in url_to_question:
                 continue
             url_to_question[u] = owner
+
+    # 记录本 run 实际命中的搜索引擎(§6.0.2 观测),best-effort
+    try:
+        from . import search_provider as _sp_hit
+        route["engines_hit"] = _sp_hit.get_last_engines_hit()
+    except Exception:  # noqa: BLE001
+        pass
 
     if not url_to_question:
         errors.append("no search results")
@@ -1192,49 +1212,92 @@ async def deepresearch(
         if p is not None:
             passages.append(p)
 
-    # ---- 4.4 Phase-2 中文一手源直连 (巨潮/国标 + 美股 EDGAR fallback) ----
-    # 子问题谈"上市公司/财报"→巨潮公告(PDF抽正文);谈"国标/标准"→国标系统。
-    # 财报类若巨潮空(美股/外企不在 A 股)→ 兜底 SEC EDGAR(美国站,连不上自动降级返空)。
-    # 直连源专门构造 Passage(跳过长度门 —— 国标元数据短但权威),高新鲜度。
+    # ---- 4.4 直连权威源 (中文一手源 cninfo/openstd + wikipedia/arxiv/s2/wikidata) ----
+    # §6.0-A: bypass SERP 的官方 API 直连;direct_source_for→多源(list);并发 gather +
+    # T_direct(默认45s)截断;契约-7 URL 归一化去重(不与普通搜索/彼此重复,dup≠drop);
+    # 命中源记入 route.direct_sources_hit;整源空记 direct_source_empty。高新鲜度跳长度门。
     if _direct_sources_enabled():
         from . import research_sources as _rs
-        for q in sub_questions:
-            src = _rs.direct_source_for(q)
-            if not src:
-                continue
+        import urllib.parse as _uparse
+
+        def _norm_url(u: str) -> str:
+            try:
+                p = _uparse.urlsplit(u)
+                return f"{p.scheme}://{p.netloc}{p.path.rstrip('/')}".lower()
+            except Exception:  # noqa: BLE001
+                return (u or "").rstrip("/").lower()
+
+        seen_passage_urls = {_norm_url(u) for u in candidate_urls}
+        direct_sources_hit: list[str] = []
+        stage_start = time.perf_counter()
+
+        async def _run_direct(q: str, src: str) -> tuple[str, list[dict]]:
             try:
                 if src == "cninfo":
                     items = await _rs.cninfo_search(q, max_results=3)
                     if not items:   # A股没命中(美股/外企)→ EDGAR 兜底,best-effort
                         items = await _rs.edgar_search(q, max_results=1)
                 else:
-                    items = await _rs.openstd_search(q, max_results=3)
+                    fetcher = _rs.DIRECT_FETCHERS.get(src)
+                    items = await fetcher(q, max_results=3) if fetcher else []
+                return src, list(items or [])
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"direct:{src}:{q!r}: {exc}")
-                items = []
-            for payload in items:
-                d_url = payload.get("url", "")
-                d_text = (payload.get("text") or "").strip()
-                if not d_url or not d_text:
-                    continue
-                d_auth = research_scoring.score_authority(d_url)
-                d_rel = _relevance_score(d_text, keywords=keywords)
-                d_depth = min(len(d_text) / 2000.0, 1.0) * 10.0
-                d_sc = research_scoring.composite_score(
-                    authority=d_auth, recency=8.0, relevance=d_rel,
-                    depth=d_depth, topic_velocity=velocity,
+                return src, []
+
+        _direct_tasks = [
+            _run_direct(q, src)
+            for q in sub_questions
+            for src in _rs.direct_source_for(q)
+        ]
+        if _direct_tasks:
+            try:
+                _direct_results = await asyncio.wait_for(
+                    _gather_safe(_direct_tasks, label="direct"),
+                    timeout=float(_research_raw().get("direct_timeout", 45.0)),
                 )
-                passages.append(Passage(
-                    citation=Citation(
-                        n=0, url=d_url, title=(payload.get("title") or d_url)[:200],
-                        snippet=d_text[:250].replace("\n", " ").strip(),
-                        fetched_at=float(payload.get("fetched_at", time.time())),
-                        authority=d_auth,
-                    ),
-                    text=d_text, score=d_sc,
-                    dims={"authority": d_auth, "recency": 8.0,
-                          "relevance": d_rel, "depth": d_depth},
-                ))
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"direct_stage: {exc}")
+                _direct_results = []
+            for _res in _direct_results:
+                if isinstance(_res, BaseException) or not _res:
+                    continue
+                src, items = _res
+                _added = 0
+                for payload in items:
+                    d_url = payload.get("url", "")
+                    d_text = (payload.get("text") or "").strip()
+                    if not d_url or not d_text:
+                        continue
+                    if _norm_url(d_url) in seen_passage_urls:
+                        continue  # 契约-7: 与普通搜索/彼此去重(dup≠drop,不计入 empty)
+                    seen_passage_urls.add(_norm_url(d_url))
+                    d_auth = research_scoring.score_authority(d_url)
+                    d_rel = _relevance_score(d_text, keywords=keywords)
+                    d_depth = min(len(d_text) / 2000.0, 1.0) * 10.0
+                    d_sc = research_scoring.composite_score(
+                        authority=d_auth, recency=8.0, relevance=d_rel,
+                        depth=d_depth, topic_velocity=velocity,
+                    )
+                    passages.append(Passage(
+                        citation=Citation(
+                            n=0, url=d_url, title=(payload.get("title") or d_url)[:200],
+                            snippet=d_text[:250].replace("\n", " ").strip(),
+                            fetched_at=float(payload.get("fetched_at", time.time())),
+                            authority=d_auth,
+                        ),
+                        text=d_text, score=d_sc,
+                        dims={"authority": d_auth, "recency": 8.0,
+                              "relevance": d_rel, "depth": d_depth},
+                    ))
+                    _added += 1
+                if _added > 0:
+                    if src not in direct_sources_hit:
+                        direct_sources_hit.append(src)
+                else:
+                    dropped_by_reason["direct_source_empty"] += 1
+        route["direct_sources_hit"] = direct_sources_hit
+        elapsed_ms_per_stage["direct"] = _stage_ms(stage_start)
 
     # ---- 4.5 reflection round (V8 iterative deepening) -------------
     # depth=deep → after round-1 evidence, ask the LLM what gaps remain,

@@ -589,18 +589,69 @@ async def test_research_run_coverage_observability_counts_drops() -> None:
         mode="deep",
     )
 
-    assert report.coverage["route"] == "ddg"
+    # §6.0.2: route 升级为集合 {engines_hit, direct_sources_hit, fallback}
+    assert isinstance(report.coverage["route"], dict)
+    assert report.coverage["route"]["fallback"] == "ddg"
+    assert "engines_hit" in report.coverage["route"]
+    assert "direct_sources_hit" in report.coverage["route"]
     assert report.coverage["mode"] == "deep"
+    # §6.0.2: n_dropped_by_reason 加 direct_source_empty 键
     assert set(report.coverage["n_dropped_by_reason"]) == {
-        "ai_generated", "low_quality", "mojibake", "too_short",
+        "ai_generated", "low_quality", "mojibake", "too_short", "direct_source_empty",
     }
     assert report.coverage["n_dropped_by_reason"]["low_quality"] == 1
     assert report.coverage["n_dropped_by_reason"]["too_short"] == 1
+    # §6.0.2: elapsed_ms_per_stage 加 "direct" 键
+    assert "direct" in report.coverage["elapsed_ms_per_stage"]
     assert report.coverage["n_dropped_by_reason"]["ai_generated"] == 0
     assert set(report.coverage["elapsed_ms_per_stage"]) == {
-        "plan", "search", "fetch", "score", "synth",
+        "plan", "search", "fetch", "score", "synth", "direct",
     }
     assert all(v >= 0 for v in report.coverage["elapsed_ms_per_stage"].values())
+
+
+@pytest.mark.asyncio
+async def test_research_run_direct_sources_multi_dispatch_and_dedup(monkeypatch) -> None:
+    """§6.0 集成: direct_source_for→多源 list → DIRECT_FETCHERS dispatch →
+    契约-7 URL 去重(直连与普通搜索同 URL 不重复) → route.direct_sources_hit 记命中源。"""
+    import deskpet.tools.research_tools as _rt
+    import deskpet.tools.research_sources as _rs
+    plan = json.dumps(["公司 X 年报要点?"])
+    synth = "# T\n## TL;DR\n\nFrom direct [^1] and web [^2]."
+    llm = FakeLLM([plan, synth])
+    search = make_search({"公司 X 年报要点?": [
+        {"url": "https://web.example.com/a", "title": "Web", "snippet": ""},
+    ]})
+    extract = make_extract({
+        "https://web.example.com/a": {
+            "ok": True, "url": "https://web.example.com/a", "title": "Web",
+            "text": "web evidence about the topic with enough length. " * 50,
+            "fetched_at": time.time(),
+        },
+    })
+    monkeypatch.setattr(_rt, "_direct_sources_enabled", lambda: True)
+    monkeypatch.setattr(_rs, "direct_source_for", lambda q: ["wikipedia"])
+
+    async def _fake_wiki(q, *, max_results=3, client=None):
+        return [
+            {"ok": True, "url": "https://en.wikipedia.org/wiki/X", "title": "X",
+             "text": "authoritative wikipedia evidence on the topic. " * 50,
+             "fetched_at": time.time(), "source": "wikipedia"},
+            # 与普通搜索同 URL(末尾斜杠差异) → 应被契约-7 归一化去重
+            {"ok": True, "url": "https://web.example.com/a/", "title": "dup",
+             "text": "duplicate url that must be deduped away here. " * 50,
+             "fetched_at": time.time(), "source": "wikipedia"},
+        ]
+    monkeypatch.setitem(_rs.DIRECT_FETCHERS, "wikipedia", _fake_wiki)
+
+    report = await research_run(
+        "topic", llm_call=llm, search=search, extract=extract, max_urls_per_query=3,
+    )
+    urls = [c.url for c in report.citations]
+    assert "https://en.wikipedia.org/wiki/X" in urls            # 直连新源进池
+    assert report.coverage["route"]["direct_sources_hit"] == ["wikipedia"]
+    # 契约-7: web.example.com/a 仅 1 次(普通搜索那条;wikipedia 的同 URL dup 被去重)
+    assert sum(1 for u in urls if u.rstrip("/") == "https://web.example.com/a") == 1
 
 
 @pytest.mark.asyncio

@@ -23,7 +23,9 @@ import io
 import logging
 import re
 import time
-from typing import Any, Optional
+from typing import Any, Callable, Optional
+from urllib.parse import quote
+from xml.etree import ElementTree as ET
 
 import httpx
 
@@ -39,6 +41,32 @@ _CNINFO_QUERY = "http://www.cninfo.com.cn/new/hisAnnouncement/query"
 _CNINFO_TOPSEARCH = "http://www.cninfo.com.cn/new/information/topSearch/query"
 _CNINFO_STATIC = "http://static.cninfo.com.cn/"
 _OPENSTD_LIST = "https://openstd.samr.gov.cn/bzgk/gb/std_list"
+_WIKIPEDIA_API = "https://{lang}.wikipedia.org/w/api.php"
+_WIKIPEDIA_SUMMARY = "https://{lang}.wikipedia.org/api/rest_v1/page/summary/{title}"
+_ARXIV_API = "https://export.arxiv.org/api/query"
+_S2_API = "https://api.semanticscholar.org/graph/v1/paper/search"
+_WIKIDATA_SPARQL = "https://query.wikidata.org/sparql"
+_DIRECT_TIMEOUT = 6.0
+_DIRECT_TEXT_MAX = 18_000
+_DIRECT_TITLE_MAX = 200
+_DIRECT_SOURCE_DEFAULT_TYPES = ["cninfo", "openstd", "wikipedia", "arxiv"]
+_DIRECT_SOURCE_ORDER = (
+    "openstd",
+    "cninfo",
+    "wikipedia",
+    "arxiv",
+    "semantic_scholar",
+    "wikidata",
+)
+_ALL_DIRECT_SOURCE_TYPES = {
+    "cninfo",
+    "openstd",
+    "wikipedia",
+    "arxiv",
+    "semantic_scholar",
+    "wikidata",
+}
+_DIRECT_SOURCE_ALIASES = {"s2": "semantic_scholar", "semantic-scholar": "semantic_scholar"}
 
 # SEC EDGAR(美股一手源)。美国站,中国大陆访问时快时慢 → 短超时 + best-effort,
 # 连不上返 [] 降级到普通搜索。SEC 要求 UA 带联系方式,否则 403。
@@ -61,20 +89,123 @@ _CNINFO_KW = ("上市公司", "公告", "财报", "年报", "季报", "半年报
               "营收", "净利润", "招股", "招股书", "问询函", "巨潮", "披露")
 _OPENSTD_KW = ("国标", "国家标准", "技术规范", "标准号", "gb/t", "gb ",
                "强制性标准", "推荐性标准", "标准全文")
+_WIKIPEDIA_KW = (
+    "综述", "背景", "是什么", "什么是", "概述", "介绍", "定义", "入门",
+    "原理", "概念", "历史", "百科", "wiki", "wikipedia", "overview",
+    "background", "what is", "definition",
+)
+_ACADEMIC_KW = (
+    "论文", "学术", "研究", "技术选型", "算法", "模型", "实验", "文献",
+    "paper", "papers", "academic", "research", "arxiv", "sota", "benchmark",
+    "survey",
+)
+_WIKIDATA_KW = (
+    "结构化事实", "结构化", "实体", "事实", "知识图谱", "属性", "出生",
+    "成立", "总部", "人口", "wikidata", " q",
+)
 
 
-def direct_source_for(text: str) -> Optional[str]:
-    """子问题命中 → "cninfo" / "openstd";否则 None。"""
+_RESEARCH_RAW_CACHE: Optional[dict[str, Any]] = None
+
+
+def _research_raw() -> dict[str, Any]:
+    """返回 ``[research]`` 段(dict),进程内缓存。读不到返回 {}。"""
+    global _RESEARCH_RAW_CACHE
+    if _RESEARCH_RAW_CACHE is None:
+        raw: dict[str, Any] = {}
+        try:
+            import config as _cfg  # type: ignore[import-not-found]
+            obj = getattr(_cfg, "config", None)
+            if obj is not None and hasattr(obj, "raw"):
+                raw = obj.raw.get("research") or {}
+            else:
+                cfg = _cfg.load_config(_cfg.resolve_config_path())
+                raw = cfg.raw.get("research") or {}
+        except Exception:  # noqa: BLE001
+            raw = {}
+        _RESEARCH_RAW_CACHE = raw if isinstance(raw, dict) else {}
+    return _RESEARCH_RAW_CACHE
+
+
+def _direct_source_types() -> list[str]:
+    """``[research].direct_source_types`` 准入硬门控。
+
+    默认启用 ``["cninfo", "openstd", "wikipedia", "arxiv"]``；Semantic
+    Scholar 和 Wikidata 默认关闭。返回值只包含已知直连源。
+    """
+    raw = _research_raw().get("direct_source_types", _DIRECT_SOURCE_DEFAULT_TYPES)
+    if raw is None:
+        raw = _DIRECT_SOURCE_DEFAULT_TYPES
+    if isinstance(raw, str):
+        items = [x.strip().lower() for x in re.split(r"[,;\s]+", raw) if x.strip()]
+    elif isinstance(raw, (list, tuple, set)):
+        items = [str(x).strip().lower() for x in raw if str(x).strip()]
+    else:
+        return list(_DIRECT_SOURCE_DEFAULT_TYPES)
+    normalized = [_DIRECT_SOURCE_ALIASES.get(x, x) for x in items]
+    return [x for x in normalized if x in _ALL_DIRECT_SOURCE_TYPES]
+
+
+def direct_source_for(text: str) -> list[str]:
+    """子问题命中直连源列表；无命中返回 ``[]``。
+
+    返回 list，Lead 集成端按 list 消费并通过 ``DIRECT_FETCHERS`` dispatch。
+    ``[research].direct_source_types`` 是准入硬条件，未启用的源不会返回。
+    """
     t = (text or "").lower()
+    if not t:
+        return []
+    hits: list[str] = []
     if any(k in t for k in _OPENSTD_KW):
-        return "openstd"
+        hits.append("openstd")
     if any(k in t for k in _CNINFO_KW):
-        return "cninfo"
-    return None
+        hits.append("cninfo")
+    if any(k in t for k in _WIKIPEDIA_KW):
+        hits.append("wikipedia")
+    if any(k in t for k in _ACADEMIC_KW):
+        hits.extend(["arxiv", "semantic_scholar"])
+    if any(k in t for k in _WIKIDATA_KW) or re.search(r"\bq\d{2,}\b", t):
+        hits.append("wikidata")
+
+    enabled = set(_direct_source_types())
+    out: list[str] = []
+    for src in _DIRECT_SOURCE_ORDER:
+        if src in hits and src in enabled and src not in out:
+            out.append(src)
+    return out
 
 
 def _strip_tags(s: str) -> str:
     return re.sub(r"<[^>]+>", "", s or "").strip()
+
+
+def _clean_text(s: str) -> str:
+    return re.sub(r"\s+", " ", s or "").strip()
+
+
+def _direct_item(source: str, *, url: str, title: str, text: str) -> Optional[dict[str, Any]]:
+    clean_text = _clean_text(text)[:_DIRECT_TEXT_MAX].strip()
+    clean_title = _clean_text(title)[:_DIRECT_TITLE_MAX].strip()
+    clean_url = (url or "").strip()
+    if not clean_url or not clean_title or not clean_text:
+        return None
+    return {
+        "ok": True,
+        "url": clean_url,
+        "title": clean_title,
+        "text": clean_text,
+        "fetched_at": time.time(),
+        "source": source,
+    }
+
+
+def _direct_client(*, trust_env: bool = False) -> httpx.AsyncClient:
+    return httpx.AsyncClient(
+        headers={"User-Agent": _UA, "Accept": "application/json, text/xml;q=0.9, */*;q=0.8"},
+        timeout=_DIRECT_TIMEOUT,
+        follow_redirects=True,
+        trust_env=trust_env,
+    )
 
 
 # 巨潮 searchkey 走标题全文匹配:噪声句("X公司2024年财报营收")命中 0,纯实体名
@@ -419,6 +550,306 @@ async def openstd_search(
             await cli.aclose()
 
 
+# ── Wikipedia / arXiv / Semantic Scholar / Wikidata ───────────────────────
+async def _wikipedia_fetch(
+    keyword: str,
+    cli: httpx.AsyncClient,
+    max_results: int,
+) -> list[dict[str, Any]]:
+    langs = ["zh", "en"] if re.search(r"[\u4e00-\u9fff]", keyword or "") else ["en", "zh"]
+    for lang in langs:
+        try:
+            r = await cli.get(
+                _WIKIPEDIA_API.format(lang=lang),
+                params={
+                    "action": "opensearch",
+                    "search": keyword,
+                    "limit": max_results,
+                    "namespace": 0,
+                    "format": "json",
+                },
+            )
+            r.raise_for_status()
+            data = r.json()
+            titles = data[1] if isinstance(data, list) and len(data) > 1 else []
+            urls = data[3] if isinstance(data, list) and len(data) > 3 else []
+        except Exception as exc:  # noqa: BLE001
+            log.debug("wikipedia opensearch failed lang=%s keyword=%r: %s", lang, keyword, exc)
+            continue
+
+        out: list[dict[str, Any]] = []
+        for idx, title in enumerate(titles[:max_results]):
+            title_s = str(title or "").strip()
+            if not title_s:
+                continue
+            try:
+                sr = await cli.get(
+                    _WIKIPEDIA_SUMMARY.format(lang=lang, title=quote(title_s, safe=""))
+                )
+                sr.raise_for_status()
+                sj = sr.json()
+            except Exception as exc:  # noqa: BLE001
+                log.debug("wikipedia summary failed title=%r: %s", title_s, exc)
+                continue
+            page_url = (
+                ((sj.get("content_urls") or {}).get("desktop") or {}).get("page")
+                or (urls[idx] if idx < len(urls) else "")
+                or _WIKIPEDIA_SUMMARY.format(lang=lang, title=quote(title_s, safe=""))
+            )
+            item = _direct_item(
+                "wikipedia",
+                url=page_url,
+                title=str(sj.get("title") or title_s),
+                text=str(sj.get("extract") or sj.get("description") or ""),
+            )
+            if item:
+                out.append(item)
+        if out:
+            return out
+    return []
+
+
+async def wikipedia_search(
+    keyword: str, *, max_results: int = 3,
+    client: Optional[httpx.AsyncClient] = None,
+) -> list[dict[str, Any]]:
+    """Wikipedia opensearch + REST summary 直连。best-effort,失败返 []。"""
+    if not (keyword or "").strip():
+        return []
+    if client is not None:
+        try:
+            return await _wikipedia_fetch(keyword, client, max_results)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("wikipedia injected client failed: %s", exc)
+            return []
+    for trust_env in (False, True):
+        cli = _direct_client(trust_env=trust_env)
+        try:
+            out = await _wikipedia_fetch(keyword, cli, max_results)
+            if out:
+                return out
+        except Exception as exc:  # noqa: BLE001
+            log.debug("wikipedia attempt trust_env=%s failed: %s", trust_env, exc)
+        finally:
+            await cli.aclose()
+    return []
+
+
+def _atom_text(parent: ET.Element, name: str) -> str:
+    node = parent.find(f"{{http://www.w3.org/2005/Atom}}{name}")
+    return (node.text or "").strip() if node is not None else ""
+
+
+async def _arxiv_fetch(
+    keyword: str,
+    cli: httpx.AsyncClient,
+    max_results: int,
+) -> list[dict[str, Any]]:
+    r = await cli.get(
+        _ARXIV_API,
+        params={"search_query": f"all:{keyword}", "start": 0, "max_results": max_results},
+    )
+    r.raise_for_status()
+    root = ET.fromstring(r.text)
+    out: list[dict[str, Any]] = []
+    for entry in root.findall("{http://www.w3.org/2005/Atom}entry")[:max_results]:
+        url = _atom_text(entry, "id")
+        title = _atom_text(entry, "title")
+        summary = _atom_text(entry, "summary")
+        published = _atom_text(entry, "published")
+        text = f"{summary}\nPublished: {published}" if published else summary
+        item = _direct_item("arxiv", url=url, title=title, text=text)
+        if item:
+            out.append(item)
+    return out
+
+
+async def arxiv_search(
+    keyword: str, *, max_results: int = 3,
+    client: Optional[httpx.AsyncClient] = None,
+) -> list[dict[str, Any]]:
+    """arXiv Atom API 直连；Atom XML 用 stdlib ElementTree 解析。"""
+    if not (keyword or "").strip():
+        return []
+    if client is not None:
+        try:
+            return await _arxiv_fetch(keyword, client, max_results)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("arxiv injected client failed: %s", exc)
+            return []
+    for trust_env in (False, True):
+        cli = _direct_client(trust_env=trust_env)
+        try:
+            out = await _arxiv_fetch(keyword, cli, max_results)
+            if out:
+                return out
+        except Exception as exc:  # noqa: BLE001
+            log.debug("arxiv attempt trust_env=%s failed: %s", trust_env, exc)
+        finally:
+            await cli.aclose()
+    return []
+
+
+async def _semantic_scholar_fetch(
+    keyword: str,
+    cli: httpx.AsyncClient,
+    max_results: int,
+) -> list[dict[str, Any]]:
+    r = await cli.get(
+        _S2_API,
+        params={
+            "query": keyword,
+            "limit": max_results,
+            "fields": "title,abstract,url,year,authors",
+        },
+    )
+    if r.status_code == 429:
+        retry_after = r.headers.get("Retry-After", "")
+        log.debug("semantic scholar rate limited; retry-after=%s", retry_after)
+        return []
+    r.raise_for_status()
+    data = r.json()
+    out: list[dict[str, Any]] = []
+    for row in (data.get("data") or [])[:max_results]:
+        title = str(row.get("title") or "")
+        abstract = str(row.get("abstract") or "")
+        authors = ", ".join(
+            str(a.get("name") or "") for a in row.get("authors") or [] if a.get("name")
+        )
+        year = row.get("year")
+        meta = "; ".join(
+            x for x in [
+                f"Year: {year}" if year else "",
+                f"Authors: {authors}" if authors else "",
+            ] if x
+        )
+        text = f"{abstract}\n{meta}" if meta else abstract
+        url = str(row.get("url") or "")
+        if not url and row.get("paperId"):
+            url = f"https://www.semanticscholar.org/paper/{row['paperId']}"
+        item = _direct_item("semantic_scholar", url=url, title=title, text=text)
+        if item:
+            out.append(item)
+    return out
+
+
+async def semantic_scholar_search(
+    keyword: str, *, max_results: int = 3,
+    client: Optional[httpx.AsyncClient] = None,
+) -> list[dict[str, Any]]:
+    """Semantic Scholar Graph API 匿名搜索。429/超时静默降级为 []。"""
+    if not (keyword or "").strip():
+        return []
+    if client is not None:
+        try:
+            return await _semantic_scholar_fetch(keyword, client, max_results)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("semantic scholar injected client failed: %s", exc)
+            return []
+    cli = _direct_client(trust_env=False)
+    try:
+        return await _semantic_scholar_fetch(keyword, cli, max_results)
+    except Exception as exc:  # noqa: BLE001
+        log.debug("semantic scholar failed: %s", exc)
+        return []
+    finally:
+        await cli.aclose()
+
+
+def _sparql_literal(row: dict[str, Any], key: str) -> str:
+    return str((row.get(key) or {}).get("value") or "").strip()
+
+
+def _wikidata_query(keyword: str, limit: int) -> str:
+    qid = re.search(r"\bQ\d{2,}\b", keyword or "", flags=re.I)
+    if qid:
+        subject = f"VALUES ?item {{ wd:{qid.group(0).upper()} }}"
+    else:
+        escaped = (keyword or "").replace("\\", "\\\\").replace('"', '\\"')
+        subject = f"""
+        SERVICE wikibase:mwapi {{
+          bd:serviceParam wikibase:endpoint "www.wikidata.org";
+                          wikibase:api "EntitySearch";
+                          mwapi:search "{escaped}";
+                          mwapi:language "zh".
+          ?item wikibase:apiOutputItem mwapi:item.
+        }}
+        """
+    return f"""
+    SELECT ?item ?itemLabel ?propertyLabel ?valueLabel WHERE {{
+      {subject}
+      ?item ?claim ?statement.
+      ?property wikibase:claim ?claim.
+      ?property wikibase:statementProperty ?statementProperty.
+      ?statement ?statementProperty ?value.
+      SERVICE wikibase:label {{ bd:serviceParam wikibase:language "zh,en". }}
+    }}
+    LIMIT {max(1, min(limit * 8, 40))}
+    """
+
+
+async def _wikidata_fetch(
+    keyword: str,
+    cli: httpx.AsyncClient,
+    max_results: int,
+) -> list[dict[str, Any]]:
+    r = await cli.get(
+        _WIKIDATA_SPARQL,
+        params={"query": _wikidata_query(keyword, max_results), "format": "json"},
+        headers={"Accept": "application/sparql-results+json"},
+    )
+    r.raise_for_status()
+    data = r.json()
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in ((data.get("results") or {}).get("bindings") or []):
+        item_url = _sparql_literal(row, "item")
+        if not item_url:
+            continue
+        rec = grouped.setdefault(
+            item_url,
+            {"label": _sparql_literal(row, "itemLabel"), "facts": []},
+        )
+        prop = _sparql_literal(row, "propertyLabel")
+        val = _sparql_literal(row, "valueLabel")
+        if prop and val and len(rec["facts"]) < 12:
+            rec["facts"].append(f"{prop}: {val}")
+    out: list[dict[str, Any]] = []
+    for item_url, rec in list(grouped.items())[:max_results]:
+        label = rec.get("label") or item_url.rsplit("/", 1)[-1]
+        facts = rec.get("facts") or []
+        text = f"Wikidata 结构化事实：{label}。\n" + "\n".join(f"- {x}" for x in facts)
+        item = _direct_item("wikidata", url=item_url, title=f"{label} - Wikidata", text=text)
+        if item:
+            out.append(item)
+    return out
+
+
+async def wikidata_search(
+    keyword: str, *, max_results: int = 3,
+    client: Optional[httpx.AsyncClient] = None,
+) -> list[dict[str, Any]]:
+    """Wikidata SPARQL 结构化事实直连；best-effort,失败返 []。"""
+    if not (keyword or "").strip():
+        return []
+    if client is not None:
+        try:
+            return await _wikidata_fetch(keyword, client, max_results)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("wikidata injected client failed: %s", exc)
+            return []
+    for trust_env in (False, True):
+        cli = _direct_client(trust_env=trust_env)
+        try:
+            out = await _wikidata_fetch(keyword, cli, max_results)
+            if out:
+                return out
+        except Exception as exc:  # noqa: BLE001
+            log.debug("wikidata attempt trust_env=%s failed: %s", trust_env, exc)
+        finally:
+            await cli.aclose()
+    return []
+
+
 # ── SEC EDGAR(美股一手源,A股直连兜不住时的 fallback)──────────────────
 # 常见美股公司中文/别名 → ticker。覆盖中国用户最常问的那批;命不中再靠英文名
 # 在 company_tickers.json 的 title 里模糊匹配。
@@ -601,5 +1032,26 @@ async def edgar_search(
     return []
 
 
-__all__ = ["direct_source_for", "cninfo_search", "openstd_search",
-           "parse_openstd", "edgar_search"]
+DIRECT_FETCHERS: dict[str, Callable[..., Any]] = {
+    "cninfo": cninfo_search,
+    "openstd": openstd_search,
+    "wikipedia": wikipedia_search,
+    "arxiv": arxiv_search,
+    "semantic_scholar": semantic_scholar_search,
+    "wikidata": wikidata_search,
+}
+
+
+__all__ = [
+    "direct_source_for",
+    "_direct_source_types",
+    "DIRECT_FETCHERS",
+    "cninfo_search",
+    "openstd_search",
+    "wikipedia_search",
+    "arxiv_search",
+    "semantic_scholar_search",
+    "wikidata_search",
+    "parse_openstd",
+    "edgar_search",
+]
