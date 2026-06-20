@@ -117,6 +117,7 @@ class MemoryComponent:
 
         l2_count_in = len(l2_rows)
         gate_sim: float | None = None
+        shift_path = "off"
         l2_truncated = False
         if l2_rows and topic_shift_gate:
             emb = _get_embedder(mm)
@@ -126,9 +127,22 @@ class MemoryComponent:
                 if isinstance(row, dict) and (row.get("content") or "").strip()
             )
             gate_sim = await _topic_similarity(emb, ctx.user_message, l2_concat)
+            # Primary signal = embedding cosine. But the BGE-M3 subprocess
+            # can be lock-contended (vector-worker backfill / research load)
+            # and time out under the ~1500ms component budget — real E2E
+            # showed gate_sim=None reliably right after boot. So when the
+            # embedding is unavailable we fall back to a zero-latency lexical
+            # overlap signal instead of failing open (which would let the
+            # drift survive). Cross-domain shifts (Rust vs CATL) have ~0
+            # content-token overlap → reliably caught even with no embedder.
+            if gate_sim is not None:
+                topic_diff = gate_sim < topic_shift_threshold
+                shift_path = "embed"
+            else:
+                topic_diff = _lexical_topic_shift(ctx.user_message, l2_concat)
+                shift_path = "lexical"
             is_shift = (
-                gate_sim is not None
-                and gate_sim < topic_shift_threshold
+                topic_diff
                 and len(ctx.user_message.strip()) >= topic_shift_min_len
                 and not _starts_with_anaphora(ctx.user_message)
             )
@@ -195,6 +209,7 @@ class MemoryComponent:
             anchor_applied=anchor_current,
             topic_shift_gate=topic_shift_gate,
             l2_truncated=l2_truncated,
+            shift_path=shift_path,
             gate_sim=(round(gate_sim, 4) if gate_sim is not None else None),
             l2_count_in=l2_count_in,
             l2_count_out=len(l2_rows),
@@ -229,18 +244,78 @@ def _get_embedder(mm: Any) -> Any:
 
 async def _topic_similarity(emb: Any, current: str, l2_concat: str) -> float | None:
     if emb is None:
+        logger.info("task_drift_sim_skip", reason="no_embedder")
         return None
     try:
-        if not emb.is_ready() or emb.is_mock():
+        if not emb.is_ready():
+            logger.info("task_drift_sim_skip", reason="not_ready")
             return None
+        if emb.is_mock():
+            logger.info("task_drift_sim_skip", reason="mock")
+            return None
+        _t = time.monotonic()
+        # 1.0s inner cap: the BGE-M3 subprocess is already warm by this
+        # point (L3 recall encoded the query earlier this turn), so a
+        # 2-text encode is normally well under this. The cap still guards
+        # the ~1500ms component fan-out budget — on the rare slow encode we
+        # fail-open (keep all L2) rather than time out the whole slice.
         vecs = await asyncio.wait_for(
-            emb.encode([current, l2_concat]), timeout=0.3
+            emb.encode([current, l2_concat]), timeout=1.0
         )
-    except Exception:
+        _ms = round((time.monotonic() - _t) * 1000.0, 1)
+    except asyncio.TimeoutError:
+        logger.info("task_drift_sim_skip", reason="encode_timeout")
+        return None
+    except Exception as exc:  # noqa: BLE001 — fail-open, never break assembly
+        logger.info("task_drift_sim_skip", reason="encode_error", err=str(exc))
         return None
     if getattr(vecs, "shape", [0])[0] < 2:
+        logger.info("task_drift_sim_skip", reason="bad_shape")
         return None
-    return float(vecs[0] @ vecs[1])
+    sim = float(vecs[0] @ vecs[1])
+    logger.info("task_drift_sim_ok", sim=round(sim, 4), encode_ms=_ms)
+    return sim
+
+
+def _content_tokens(text: str) -> set[str]:
+    """Cheap content-token set for lexical topic-shift detection.
+
+    No segmenter dependency: ascii words (len≥2) + CJK character bigrams.
+    Crude but free — used only as a fallback when the embedder is
+    unavailable. Common function words appear in both sides so they bias
+    toward "keep" (fewer false truncations), which is the safe direction.
+    """
+    text = text.strip().lower()
+    tokens: set[str] = set()
+    for w in re.findall(r"[a-z0-9]{2,}", text):
+        if w not in _ANAPHORA_WORDS:
+            tokens.add(w)
+    for run in re.findall(r"[一-鿿]+", text):
+        if len(run) == 1:
+            tokens.add(run)
+            continue
+        for i in range(len(run) - 1):
+            tokens.add(run[i:i + 2])
+    return tokens
+
+
+def _lexical_topic_shift(current: str, l2_concat: str) -> bool:
+    """Fallback topic-shift signal when the embedder is unavailable.
+
+    True when <15% of the current request's content tokens also appear in
+    the recent L2 history — i.e. the request talks about something the
+    recent conversation didn't. Cross-domain shifts (e.g. Rust vs CATL)
+    score ~0 overlap and are reliably caught; same-topic follow-ups share
+    many tokens and are kept.
+    """
+    cur = _content_tokens(current)
+    if len(cur) < 2:
+        return False  # too little signal → don't truncate (safe)
+    hist = _content_tokens(l2_concat)
+    if not hist:
+        return False
+    overlap = len(cur & hist) / len(cur)
+    return overlap < 0.15
 
 
 def _starts_with_anaphora(current: str) -> bool:

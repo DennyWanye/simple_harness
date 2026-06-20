@@ -221,12 +221,35 @@ async def test_topic_similarity_real_numpy_dot_product_contract():
 
 
 @pytest.mark.asyncio
-async def test_topic_shift_gate_degrades_without_truncating_l2():
+async def test_topic_shift_gate_lexical_fallback_truncates_when_embedder_down():
+    """Real E2E (2026-06-20): the BGE-M3 subprocess is lock-contended right
+    after boot (vector-worker backfill) so the live encode times out and
+    gate_sim=None. Instead of failing open (drift survives), Tier 2 falls
+    back to a zero-latency lexical-overlap signal. A cross-domain request
+    (no token overlap with the "old topic user" L2) is still truncated."""
     component = MemoryComponent()
     ctx = _ctx(
         _MemoryManager(l2=_rows(3), embedder=None),
         MemoryPolicy(topic_shift_gate=True, l2_keep_on_shift=1),
         "请帮我深入研究 Rust Tokio 异步运行时的调度器、IO 驱动、任务模型、生态定位和竞品对比。",
+    )
+
+    sl = await component.provide(ctx)
+
+    assert sl.meta.get("l2_history")  # relabel + kept tail present
+    assert [m["content"] for m in sl.meta["l2_history"][1:]] == ["old topic user 2"]
+
+
+@pytest.mark.asyncio
+async def test_topic_shift_gate_lexical_fallback_keeps_topic_overlap():
+    """Embedder down + a message that shares content tokens with the recent
+    L2 (a real on-topic follow-up) must be KEPT by the lexical fallback —
+    only genuine topic changes get truncated."""
+    component = MemoryComponent()
+    ctx = _ctx(
+        _MemoryManager(l2=_rows(3), embedder=None),
+        MemoryPolicy(topic_shift_gate=True, l2_keep_on_shift=1),
+        "请再详细说说 old topic user 这个话题的更多要点和背景",
     )
 
     sl = await component.provide(ctx)
