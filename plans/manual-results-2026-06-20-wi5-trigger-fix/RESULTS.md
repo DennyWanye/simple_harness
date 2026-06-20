@@ -54,6 +54,19 @@
 - 对照 HANDOFF 修前同句：`total=12 strong=0 auto_loaded=0 names=[] top_sim=0.479`
 - 判定：**PASS**（知识片段 windows-path-debug 经 trigger 命中并 body 注入上下文）
 
+## 层 3 完整真机复验：3 个知识片段逐一验收（2026-06-20 第二轮）
+
+启动日志 GATE 通过：`[backend_launch] Dev python=...`（worktree 源码）+ `skill.reload_ok count=15` + `llm_api_key_from_keychain`。
+log：`codex/tauri-dev9.log`。截图：`screenshots/layer3-three-fragments-e2e.png`。
+
+| case | 话术（Clipboard+Ctrl+V）| skill_auto_disclosed | 判定 |
+|---|---|---|---|
+| WI5-L3-1 windows-path-debug | 我在windows下用反斜杠路径老是报错，怎么办 | `total=15 strong=1 auto_loaded=1 names=['windows-path-debug'] top_sim=0.950` | **PASS** |
+| WI5-L3-2 ppt-tips | 帮我做个ppt | `total=15 strong=2 auto_loaded=2 names=['ppt-generate', 'ppt-tips'] top_sim=0.950` | **PASS**（常规技能 ppt-generate 与知识片段 ppt-tips 同时命中+注入，符合预期共存） |
+| WI5-L3-3 source-check | 这个结论的来源靠谱吗，帮我验证下引用 | `total=15 strong=1 auto_loaded=1 names=['source-check'] top_sim=0.950` | **PASS** |
+
+3/3 知识片段 trigger 真机命中 + body 注入。每条 `total=15`（修前必为 12）。
+
 ## 回归测试
 
 - 新增 `tests/test_wi5_trigger_inject.py::test_real_loader_registry_injects_knowledge_via_trigger`
