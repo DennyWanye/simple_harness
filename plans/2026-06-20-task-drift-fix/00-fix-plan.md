@@ -110,3 +110,50 @@
 2. Fix A 单测先行 → 实现 → 单测绿。
 3. 合并后真机 E2E（5.2）→ 连续 3 次不漂 → 更新 `STATUS/status.md`。
 4. （可选二期）短追问启发式豁免；若产品要"新建对话"UX 再评估 D1。
+
+---
+
+## 7. 第二轮深度调研发现（夯实/修正方案 · 2026-06-20）
+
+### 7.1 Fix A 可行性：✅ 成立，但两条原假设被**修正**
+
+**① embedder 组装期可达 ✅**：链路 `ComponentContext.memory_manager`（[base.py:42](backend/deskpet/agent/assembler/components/base.py:42)）→ `MemoryManager._retriever`（[manager.py:81](backend/deskpet/memory/manager.py:81)）→ `Retriever._embedder`（[retriever.py:215](backend/deskpet/memory/retriever.py:215)）可达（私有属性，需 `getattr` 防守）。`Embedder.encode(list[str])` 是 **async**、返回 `(N,1024)` BGE-M3、**L2 normalized**（→ cosine 退化为点积，极廉价）；`is_ready()`/`is_mock()` 可判降级。
+
+**② ⚠️ 修正：历史 embedding 不在 `get_messages` 里**。原 plan 设想"直接读 `messages.embedding` BLOB"——**错**。`get_messages` 只 SELECT 12 列、不含 embedding（[session_db.py:348-354](backend/deskpet/memory/session_db.py:348)）；向量在**独立 `messages_vec` 虚表**、由 VectorWorker **异步回填**（[001_p4_initial_v9.sql:66](backend/deskpet/memory/migrations/001_p4_initial_v9.sql:66)）。
+  → **后果**：最近几条消息向量**可能还没回填**，读 vec 表不可靠。
+  → **改用更稳的做法**：组装期一次 `encode([current_request, recent_L2_concat])`（2 条短文本，一次 batch，~数十 ms），自给自足、不依赖异步回填。比读存量向量**更鲁棒**。
+
+**③ ⚠️ 修正：当前 query 每轮其实被编码了 1~2 次（白扔）**。L3 召回 `_safe_embed_query`（[retriever.py:543](backend/deskpet/memory/retriever.py:543)）+ classifier embed tier（[classifier.py:257](backend/deskpet/agent/assembler/classifier.py:257)）都 encode 过当前 query，**算完即弃、不缓存/不返回**。Fix A 再 encode 一次 = 重复。**二期优化**：让 `Retriever.recall()` 回传 `query_vector` 供上游共享；一期直接重编码（成本可接受）。
+
+**④ 锚定注入位置 ✅ 不破 prompt cache**：放进 `memory_block`（dynamic bucket，[memory.py:80-88](backend/deskpet/agent/assembler/components/memory.py:80)）或当前 user 前的独立 system message，均不动 frozen 前缀（[bundle.py:287-304](backend/deskpet/agent/assembler/bundle.py:287)）。
+
+### 7.2 Fix A 正确性：**追问误伤是头号风险**，门控判据须**收紧为合取**
+
+调研确认现有系统**完全没有"追问/延续/指代消解"检测**（classifier 三层级联 rule/embed/LLM 都不判延续，[classifier.py](backend/deskpet/agent/assembler/classifier.py)），且**没有任何测试保护 L2 多轮追问连续性**（L2 原始历史门控是全新地盘，无安全网）。危险样本：`继续` / `它的竞品呢` / `第二个方案呢`——**省略主语、与历史 embedding 相似度反而偏低**，朴素相似度门控会**误删它们需要的上下文**。
+
+→ **门控判据收紧为"低相似 ∧ 像独立新任务"合取**（任一不满足就保留历史）：
+- 相似度信号：`max cos(current, 最近3条L2) < 阈值`（建议 0.35，进 yaml）。
+- 新任务形状：消息**较长**（>~50 字）**且无指代起手**（可复用 [entity_extractor.py:39-55](backend/deskpet/memory/entity_extractor.py:39) 的代词/疑问词停用词集做 anaphora 检测）。
+- 短消息（<10 字）/ 代词疑问词起手 → **直接判延续、保留历史**（高优先豁免）。
+- **"当前请求优先"锚定始终在**——即便门控放过（保留历史）也能软性纠偏，是不确定档的兜底。
+- **kill-switch**：config 开关，**默认关**，验证通过再开（对标 WI-2 的 legacy 退回）。
+
+→ **L2 门控 与 L3 WI-2 降权分工，勿双罚**：L3 已对"同 session 旧记忆按年龄指数衰减"（[retriever.py:812](backend/deskpet/memory/retriever.py:812) `_intra_session_recency_weight`）；L2 门控只管"当前请求 ↔ 最近原始对话轮次的语义相关性"，**两者一个管年龄、一个管话题相关性，不重叠**。注意 L3 的 `affinity=1.0 同 session` / `0.8 跨 session 人物类` 是**受测保护的不变量**（`test_retriever_session_affinity.py`、`test_regression_2026_05_16_vpn_hijack.py`），那是 L3 召回评分，**与 L2 原始历史门控是两套机制**，别混改、别波及。
+
+### 7.3 Fix B 可达性：⚠️ 修正——**鲁棒版需一小处管线打通，非"纯 3 行"**
+
+工具执行时 `_handle_deepresearch(args, task_id)` **拿不到用户原话**——`_text` 在 `_run_chat`（[main.py:5222](backend/main.py:5222)）有，但进 AgentLoop 后丢了。两条路：
+- **B1（schema 加字段，LLM 自己填 user_request）**：trivial，但**模型正在漂时填进来的也是漂的**，→ 不可靠、违背初衷。
+- **B2（dispatch 时由系统注入原话）**：在 agent loop 工具分发处把"本轮原始 user 消息"（`_msgs[-1].content`，进 loop 前可得）注入到声明了 `user_request` 的工具 args。**鲁棒**，但需在工具分发链补一小段把原话传到 handler（非纯 3 行，但仍封闭）。
+→ **采 B2**。改点：schema [research_tools.py:1590](backend/deskpet/tools/research_tools.py:1590) + handler [:1632](backend/deskpet/tools/research_tools.py:1632) + orchestrator 签名 [:975](backend/deskpet/tools/research_tools.py:975) + `_PLAN_PROMPT`[:463](backend/deskpet/tools/research_tools.py:463)/`_SYNTH_PROMPT`[:485] 注入 + **agent loop 分发处注入原话**（需定位 tool dispatch 点）。
+
+### 7.4 D1 改造面已量化：**后端 12 处 + 前端 6 处 + DB 迁移**，暂缓正确
+
+- 可复用模板：`code_mode/state.py` 的 `_code_session_id`/`enter`/`exit`/`delete`/`load_persisted`（[state.py:30-191](backend/deskpet/code_mode/state.py:30)）→ 可仿做 `TaskSessionManager`。
+- 🔴 **最高复杂度 = 多窗口 fan-out 重组**：`_broadcast_default_chat_peers` 硬编码 `=="default"`（[main.py:3190](backend/main.py:3190)），13 处调用；session_id 不再恒 default 后要定义"同组会话"语义。
+- 后端 session_id 仅 2 入口（[main.py:3771](backend/main.py:3771) control、[:6881](backend/main.py:6881) audio），默认 "default"；前端 `ControlChannel.ts` 完全不传，需补 5~8 处。
+- **结论**：改造面中大、复杂度高，**暂缓正确**；Fix A 用组装期裁剪已软性达成隔离。
+
+### 7.5 评审待你拍板的两个决策点
+1. **Fix B 走 B2（系统注入原话，鲁棒）**——确认接受"需在 agent loop 分发处补一小段管线"（非纯 3 行）。
+2. **Fix A 门控默认关（kill-switch off）先灰度**——确认先默认关、真机验证连续不漂后再默认开。
