@@ -1024,6 +1024,7 @@ async def deepresearch(
     try:
         from . import search_provider as _sp_reset
         _sp_reset.reset_search_runtime_state()
+        _sp_reset.reset_search_cdp_budget()  # 每轮归零 search-CDP 预算(模块级跨run累加防护)
     except Exception:  # noqa: BLE001
         pass
     dropped_by_reason = {
@@ -1110,10 +1111,14 @@ async def deepresearch(
                 continue
             url_to_question[u] = owner
 
-    # 记录本 run 实际命中的搜索引擎(§6.0.2 观测),best-effort
+    # 记录本 run 实际命中的搜索引擎(§6.0.2 观测) + 收集引擎级侧信道错误
+    # (含 bing_cdp_captcha_suspected — §6.0.4 🔴 一票否决门:errors 须如实),best-effort
     try:
         from . import search_provider as _sp_hit
         route["engines_hit"] = _sp_hit.get_last_engines_hit()
+        for _e in _sp_hit.get_last_search_errors():
+            if _e not in errors:
+                errors.append(_e)
     except Exception:  # noqa: BLE001
         pass
 

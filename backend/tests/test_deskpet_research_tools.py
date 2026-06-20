@@ -611,6 +611,26 @@ async def test_research_run_coverage_observability_counts_drops() -> None:
 
 
 @pytest.mark.asyncio
+async def test_research_run_collects_search_side_channel_errors(monkeypatch) -> None:
+    """§6.0.4 🔴: bing-cdp captcha 等引擎级侧信道错误须如实进 report.errors
+    (否则 captcha 软封与'真无结果'不可区分)。"""
+    import deskpet.tools.search_provider as _sp
+    monkeypatch.setattr(_sp, "get_last_search_errors",
+                        lambda: ["bing_cdp_captcha_suspected"])
+    llm = FakeLLM([json.dumps(["q?"]), "# T\n## TL;DR\n\nEvidence [^1]."])
+    search = make_search({"q?": [
+        {"url": "https://e.com/a", "title": "A", "snippet": ""},
+    ]})
+    extract = make_extract({"https://e.com/a": {
+        "ok": True, "url": "https://e.com/a", "title": "A",
+        "text": "usable evidence about the topic with enough length. " * 50,
+        "fetched_at": time.time(),
+    }})
+    report = await research_run("topic", llm_call=llm, search=search, extract=extract)
+    assert "bing_cdp_captcha_suspected" in report.errors
+
+
+@pytest.mark.asyncio
 async def test_research_run_direct_sources_multi_dispatch_and_dedup(monkeypatch) -> None:
     """§6.0 集成: direct_source_for→多源 list → DIRECT_FETCHERS dispatch →
     契约-7 URL 去重(直连与普通搜索同 URL 不重复) → route.direct_sources_hit 记命中源。"""
