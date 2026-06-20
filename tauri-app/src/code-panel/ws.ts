@@ -17,6 +17,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { BACKEND_PORT } from "../backendPort";
 import { useSessionsStore } from "../stores/sessionsStore";
+import { useSubagentStore } from "./subagentStore";
 // P5-S2 Phase 5 — code session binding events
 import { useProvidersStore } from "./providersStore";
 import { useCodeModelsStore } from "./codeModelsStore";
@@ -383,6 +384,23 @@ function dispatch(msg: any) {
       // P4-S25 B3: backend cancelled in-flight task. Clear status so
       // the button reverts to "发送" and user can type again.
       store.upsert(sid, { status: "idle", inflight: false });
+      break;
+    }
+    case "subagent_progress": {
+      // subagent-concurrency-driver WI-3.4 — 子代理并发实时进度
+      // （queued→running→completed/failed）。喂独立 subagentStore，
+      // 由 SubagentProgressPanel 渲染（不碰消息流）。
+      const p = msg.payload || {};
+      if (p && p.run_id) {
+        useSubagentStore.getState().upsert({
+          run_id: String(p.run_id),
+          task_id: String(p.task_id || ""),
+          kind: String(p.kind || ""),
+          status: String(p.status || "queued"),
+          summary: typeof p.summary === "string" ? p.summary : undefined,
+          ts: typeof p.ts === "number" ? p.ts : Date.now(),
+        });
+      }
       break;
     }
     case "slash_command_result": {

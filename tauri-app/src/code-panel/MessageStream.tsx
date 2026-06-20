@@ -19,6 +19,7 @@ import { Virtuoso } from "react-virtuoso";
 
 import type { Message } from "../stores/sessionsStore";
 import { MessageBubble } from "./MessageBubble";
+import { SubagentProgressPanel } from "./SubagentProgressPanel";
 
 interface Props {
   messages: Message[];
@@ -70,21 +71,34 @@ export function MessageStream({ messages }: Props) {
   }
 
   return (
-    <Virtuoso
-      data={messages}
-      followOutput={followRef.current}
-      computeItemKey={item_key}
-      style={{ height: "100%", width: "100%" }}
-      itemContent={(_, msg) => (
-        <div style={{ padding: "0 14px" }}>
-          <MessageBubble msg={msg} />
-        </div>
-      )}
-      // Subtle bottom padding so the input bar shadow doesn't overlap
-      // the last message
-      components={{
-        Footer: () => <div style={{ height: 12 }} />,
+    <div
+      style={{
+        height: "100%",
+        width: "100%",
+        display: "flex",
+        flexDirection: "column",
       }}
-    />
+    >
+      {/* subagent-concurrency-driver WI-3.4：并发子代理实时进度（runs 空时 null） */}
+      <SubagentProgressPanel />
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <Virtuoso
+          data={messages}
+          followOutput={followRef.current}
+          computeItemKey={item_key}
+          style={{ height: "100%", width: "100%" }}
+          itemContent={(_, msg) => (
+            <div style={{ padding: "0 14px" }}>
+              <MessageBubble msg={msg} />
+            </div>
+          )}
+          // Subtle bottom padding so the input bar shadow doesn't overlap
+          // the last message
+          components={{
+            Footer: () => <div style={{ height: 12 }} />,
+          }}
+        />
+      </div>
+    </div>
   );
 }
