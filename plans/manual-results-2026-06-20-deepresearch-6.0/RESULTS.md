@@ -58,3 +58,19 @@
 | **TC-A2 连续负载(spike病灶)** | ✅ PASS | 本session连续 6+ 研究(向量/财报/乱码/退货率/CATL),每个完成的都有源、**无一0源**(对照spike 11/13全0) |
 
 **观察**:CATL 任务漂移本轮又出现 2 次(用户问A→桌宠插研究上下文旧CATL)——已知 agent-loop 层问题(WI-4a目标锚定需/goal),与§6.0无关,但干扰了clean per-topic测序。
+
+---
+
+## 追加(2026-06-21 续2)：TC-B1(bing-cdp opt-in) — 揪出真bug+修复;live渲染env-limited
+
+| 项 | 结果 |
+|---|---|
+| **🔴 揪出真 bug(TC-B1 价值)** | bing-cdp 经 [research].search_engines 配置怎么都不生效。根因:search_provider `_engine_queue`/`_research_raw` 读 `config.config.raw`,但该单例不存在(config.py无全局+main.py不注入)→恒AttributeError→默认队列。**search_provider 所有 config 开关(search_engines/searxng_url/serp_hardening)读不到 config.toml、全失效**(此前靠代码默认侥幸看着对)。**已修**(commit b05823b):改 load_config(resolve_config_path()) 健壮兜底,+回退单测;验证 _engine_queue 真读到 ['bing-cdp','bing']。 |
+| **config 路径 gotcha** | 后端读 `%APPDATA%\deskpet\config.toml`(非 backend/userdata)。 |
+| **bing-cdp 机制** | ✅ 已证:与 google-cdp **完全同 cdp_edge_render 路径**(google-cdp live 真渲染 google.com/search ok=True chars=4594)+ bing-cdp 单测(渲染fixture/解析/降级)+ 配置开关修复后验证可入队。 |
+| **live bing.com/search 渲染** | ⚠️ **env-limited**:windows-mcp 无法稳定聚焦桌宠 WebView2 输入框(文本漏到 Claude Code 窗口),试 windows-mcp Click / SendInput 圣壁 / App switch 三种 workaround 均失败。唯一未直接观察的是 bing-URL 渲染(与已 live 证明的 google-cdp 仅 URL 常量之差)。 |
+
+**TC-B1 结论**:bing-cdp 全维度验证(引擎+分派+解析+降级单测 / cdp-渲染机制 live 经 google-cdp证 / 配置开关修复+验证),仅"live 渲染 bing-URL"因 WebView2 聚焦工具障碍 env-limited;且这一步是与已证 google-cdp 路径的 1 行 URL 差。
+
+## §6.0 真机 E2E 总结(全部用例)
+TC-A1✅ TC-A2✅ TC-A3✅ TC-A4✅ TC-A5✅ TC-A6✅ TC-X1✅ + TC-B1(机制全证,live渲染env-limited)。真机揪出并修复 **2 个真 bug**(早返跳过直连源 ab14e04 / config开关全失效 b05823b),均单测/评审漏、真机才暴露——真测核心价值兑现。
