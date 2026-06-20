@@ -382,6 +382,21 @@ class ErrorEvent(AgentEvent):
 
 
 @dataclass
+class SubagentCompletionEvent(AgentEvent):
+    """子代理并发驱动 WI-3.3 — 一个非阻塞子代理完成、其摘要在回合边界注入
+    父上下文时发出。main.py 可转成 ws ``subagent_completion`` 供前端展示。"""
+
+    run_id: str = ""
+    task_id: str = ""
+    kind: str = ""
+    summary: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.type:
+            self.type = "subagent_completion"
+
+
+@dataclass
 class ProviderChainFallbackEvent(AgentEvent):
     """P5-S2 Phase 3.6 — emitted when a provider in the chain fails
     transiently and the loop moves to the next provider.
@@ -483,9 +498,13 @@ class AgentLoop:
         code_todo_getter: Optional[
             Callable[[str], Awaitable[list[dict[str, Any]]]]
         ] = None,
+        # 子代理并发驱动 WI-3.3：非阻塞子代理 completion queue（agent_loop 回合
+        # 边界 drain 注入父上下文）。None (默认) → 不 drain（BC，零行为变更）.
+        subagent_registry: Optional[Any] = None,
     ) -> None:
         self.llm = llm_registry
         self.tools = tool_registry
+        self._subagent_registry = subagent_registry
         self.max_iterations = max_iterations
         self.budget_checker = budget_checker
         self.default_model = default_model
@@ -707,6 +726,41 @@ class AgentLoop:
         self._skills_used_this_run: set[str] = set()
 
         for iteration in range(1, self.max_iterations + 1):
+            # 子代理并发驱动 WI-3.3：回合边界 drain 非阻塞子代理完成 → 注入父上下文。
+            # R2-1: tool 结果以 role="tool" append，迭代顶 last 恒非 assistant；
+            # 守门 = 除非最后一条是带「未应答 tool_calls」的 assistant，否则 append
+            # user 安全（迭代顶恒满足）。registry=None (默认) → 跳过整段（BC）。
+            if self._subagent_registry is not None:
+                _cq = self._subagent_registry.completion_queue
+                while not _cq.empty():
+                    _done = _cq.get_nowait()
+                    _last = working_messages[-1] if working_messages else None
+                    _safe = (
+                        _last is None
+                        or _last.get("role") in ("tool", "user")
+                        or (
+                            _last.get("role") == "assistant"
+                            and not _last.get("tool_calls")
+                        )
+                    )
+                    if _safe:
+                        working_messages.append({
+                            "role": "user",
+                            "content": (
+                                f"[子代理完成] {_done.task_id}({_done.kind}): "
+                                f"{_done.summary}"
+                            ),
+                        })
+                        yield SubagentCompletionEvent(
+                            run_id=_done.run_id,
+                            task_id=_done.task_id,
+                            kind=_done.kind,
+                            summary=_done.summary,
+                        )
+                    else:
+                        # 极罕见：带未应答 tool_calls 的 assistant 在顶 → 回队下轮注入
+                        _cq.put_nowait(_done)
+                        break
             _force_finish_next = False
             if _force_finish_queued:
                 _force_finish_next = True
@@ -2394,4 +2448,5 @@ AgentEventUnion = Union[
     ToolResultEvent,
     FinalEvent,
     ErrorEvent,
+    SubagentCompletionEvent,
 ]

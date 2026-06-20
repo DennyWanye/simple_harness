@@ -55,6 +55,10 @@ def register_code_tools(
     agent_parallel_schema=None,
     spawn_team_handler=None,
     spawn_team_schema=None,
+    spawn_subagents_handler=None,
+    spawn_subagents_schema=None,
+    await_subagents_handler=None,
+    await_subagents_schema=None,
 ) -> None:
     """Register glob/grep/web_search statically + todo_write/agent
     using caller-built closures (because they need session-db / llm-shim
@@ -210,5 +214,30 @@ def register_code_tools(
             permission_category="read_file",
             source="builtin",
             timeout_seconds=600.0,
+            replace_allowed=False,
+        )
+
+    # 子代理并发驱动 WI-3.2 — 非阻塞 spawn_subagents / await_subagents
+    # （features.subagent_nonblocking）。spawn 立即返回不阻塞；await 结束回合等。
+    if spawn_subagents_handler is not None and spawn_subagents_schema is not None:
+        registry.register(
+            name="spawn_subagents",
+            toolset="control",
+            schema=spawn_subagents_schema,
+            handler=spawn_subagents_handler,
+            permission_category="read_file",
+            source="builtin",
+            timeout_seconds=60.0,  # spawn 立即返回，无需长 timeout
+            replace_allowed=False,
+        )
+    if await_subagents_handler is not None and await_subagents_schema is not None:
+        registry.register(
+            name="await_subagents",
+            toolset="control",
+            schema=await_subagents_schema,
+            handler=await_subagents_handler,
+            permission_category="read_file",
+            source="builtin",
+            timeout_seconds=600.0,  # 等子代理跑完，给足
             replace_allowed=False,
         )

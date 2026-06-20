@@ -1057,6 +1057,12 @@ def build_agent(
         file_memory=globals().get("_file_memory"),
         force_finish_via_tool_choice=_ff,
         tracer=_tracer,
+        # ─── 子代理并发驱动 WI-3.3：非阻塞子代理 completion queue（回合边界 drain）。
+        # 从 module-global service_context 取（flag subagent_nonblocking OFF 时槽为
+        # None → agent_loop 不 drain，BC）。───
+        subagent_registry=globals().get("service_context").get("subagent_registry")
+        if globals().get("service_context") is not None
+        else None,
     )
 
 
@@ -2054,6 +2060,60 @@ try:
                 except Exception as _at_exc:  # noqa: BLE001
                     logger.warning("agent_team_init_failed: %s", _at_exc)
 
+            # ===== 子代理并发驱动 — 非阻塞 spawn_subagents/await_subagents (WI-3.2) =====
+            # flag subagent_nonblocking ON：构造 SubagentRegistry + 两个工具。
+            # 非阻塞依赖调度器：若 subagent_driver OFF（_subagent_scheduler 为 None）
+            # 则现场建一个默认调度器供非阻塞用（多做不少做）。OFF 时 handler=None（BC）.
+            _spawn_subs_handler = None
+            _spawn_subs_schema = None
+            _await_subs_handler = None
+            _await_subs_schema = None
+            if bool(getattr(
+                getattr(config, "features", None), "subagent_nonblocking", False,
+            )):
+                try:
+                    from deskpet.agent.subagent_registry import (
+                        SubagentRegistry as _SubReg,
+                    )
+                    from deskpet.tools.code_tools.spawn_subagents_tool import (
+                        build_spawn_subagents_tools as _build_spawn_subs,
+                    )
+
+                    _nb_scheduler = _subagent_scheduler
+                    if _nb_scheduler is None:
+                        from deskpet.agent.subagent_scheduler import (
+                            SubagentScheduler as _SubSched2,
+                        )
+                        from config import get_subagent_concurrency as _gc2
+                        _g2, _l2 = _gc2(config)
+                        _nb_scheduler = _SubSched2(
+                            global_concurrency=_g2, lane_caps=_l2,
+                            progress_sink=_subagent_progress_sink,
+                        )
+                        if _kind_overrides is None:
+                            from deskpet.agent.task_kinds import (
+                                load_kind_overrides as _lk2,
+                            )
+                            _kind_overrides = _lk2(
+                                (getattr(config, "raw", None) or {}).get("agent")
+                            )
+                    _subagent_registry = _SubReg()
+                    service_context.register("subagent_registry", _subagent_registry)
+                    (
+                        (_spawn_subs_handler, _spawn_subs_schema),
+                        (_await_subs_handler, _await_subs_schema),
+                    ) = _build_spawn_subs(
+                        llm_shim=_shim_for_agent,
+                        parent_tool_registry=deskpet_tool_registry_v2,
+                        parent_session_id_resolver=_resolve_parent_sid,
+                        scheduler=_nb_scheduler,
+                        registry=_subagent_registry,
+                        kind_overrides=_kind_overrides,
+                    )
+                    logger.info("subagent_nonblocking_ready")
+                except Exception as _nb_exc:  # noqa: BLE001
+                    logger.warning("subagent_nonblocking_init_failed: %s", _nb_exc)
+
             # Re-register the full code tool set including the closures.
             from deskpet.tools.code_tools import (
                 register_code_tools as _register_code_tools_full,
@@ -2068,6 +2128,10 @@ try:
                 agent_parallel_schema=_parallel_schema,
                 spawn_team_handler=_spawn_team_handler,
                 spawn_team_schema=_spawn_team_schema,
+                spawn_subagents_handler=_spawn_subs_handler,
+                spawn_subagents_schema=_spawn_subs_schema,
+                await_subagents_handler=_await_subs_handler,
+                await_subagents_schema=_await_subs_schema,
             )
             # P5-S2 G1: count bumped 5→6 — added fetch_tool_result
             if _clarify_ask is not None:
@@ -4701,6 +4765,15 @@ async def control_channel(ws: WebSocket):
                 if _t is not None and not _t.done():
                     _t.cancel()
                     cancelled = True
+                # 子代理并发驱动 WI-3.3/F6/D10：取消级联——/stop 同时收割所有活的
+                # 非阻塞子代理 task（它们由 registry 持有、不属 chat task）。OFF 时
+                # 槽为 None → no-op（BC）.
+                try:
+                    _sub_reg = service_context.get("subagent_registry")
+                    if _sub_reg is not None:
+                        _sub_reg.cancel_all()
+                except Exception as _cc_exc:  # noqa: BLE001
+                    logger.debug("subagent cancel cascade failed: %s", _cc_exc)
                 # Tell the frontend regardless — it expects a response so
                 # the button can revert. If nothing was running, send the
                 # confirmation anyway (idempotent UX).
