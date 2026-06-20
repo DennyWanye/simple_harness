@@ -220,10 +220,10 @@ async def _topic_similarity(emb: Any, current: str, l2_concat: str) -> float | N
 
 def _starts_with_anaphora(current: str) -> bool:
     text = current.strip()
-    if len(text) < 10:
-        return True
     if not text:
         return False
+    if len(text) < 10:
+        return True
 
     lower = text.lower()
     if any(lower.startswith(prefix) for prefix in _ANAPHORA_PREFIXES):

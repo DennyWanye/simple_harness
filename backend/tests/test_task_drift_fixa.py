@@ -195,6 +195,32 @@ async def test_topic_similarity_degrades_for_missing_or_mock_embedder():
 
 
 @pytest.mark.asyncio
+async def test_topic_similarity_real_numpy_dot_product_contract():
+    """Lock the production type contract: real Embedder.encode returns a
+    numpy (N,1024) L2-normalized array, and `vecs[0] @ vecs[1]` must yield
+    a Python float cosine. Guards against a numpy/`@` regression the mock
+    _Vec can't catch."""
+    np = pytest.importorskip("numpy")
+
+    class _NumpyEmbedder:
+        def is_ready(self) -> bool:
+            return True
+
+        def is_mock(self) -> bool:
+            return False
+
+        async def encode(self, texts: list[str]):
+            # Two L2-normalized 4-d vectors with a known cosine of 0.5.
+            a = np.array([1.0, 0.0, 0.0, 0.0], dtype="float32")
+            b = np.array([0.5, (3 ** 0.5) / 2, 0.0, 0.0], dtype="float32")
+            return np.stack([a, b])
+
+    sim = await _topic_similarity(_NumpyEmbedder(), "current", "history")
+    assert isinstance(sim, float)
+    assert abs(sim - 0.5) < 1e-5
+
+
+@pytest.mark.asyncio
 async def test_topic_shift_gate_degrades_without_truncating_l2():
     component = MemoryComponent()
     ctx = _ctx(
