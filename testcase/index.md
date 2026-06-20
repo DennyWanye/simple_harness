@@ -4,7 +4,7 @@
 > 每新增一份手工测试文档，在下表追加一行，写清**测试范围**与**目的**。
 > 自动化测试（pytest/vitest/cargo）不在此登记，那些放各 `plans/*/0X-TDD.md`。
 >
-> **最后更新**: 2026-06-20
+> **最后更新**: 2026-06-20（+ 任务漂移修复手测文档）
 
 ---
 
@@ -12,6 +12,7 @@
 
 | 文档 | 被测功能 / 范围 | 测试目的 | 用例数 | 是否需 windows-mcp |
 |---|---|---|---|---|
+| [2026-06-20-task-drift-fix/task-drift-fix-manual-test.md](./2026-06-20-task-drift-fix/task-drift-fix-manual-test.md) | **任务漂移修复（Fix A + Fix B，commit acb69a0）**：Fix A 组装层 Tier1 当前请求锚定(`_CURRENT_REQUEST_NUDGE`,history 后 user 前插 system)+L2 历史重定性(`_L2_CONTEXT_LABEL`,l2_history 头部标签)默认开、Tier2 话题跳变语义截断(`topic_shift_gate` 默认关,合取 `低相似∧>50字∧无指代`+短/代词豁免+embedder fail-open)；Fix B 分发层对声明 `user_request` 字段的工具无条件注入本轮原话(deepresearch `_PLAN/_SYNTH_PROMPT` 双锚)。两条硬 log 锚点 `task_drift_context_gate`(relabel/anchor/topic_shift_gate/l2_truncated/gate_sim/l2_count_in,out)+`task_drift_user_request_injected`(tool/req_len) | 验证桌宠对无关新请求(Rust)不漂回上下文旧主题(CATL,627 库)+追问连续性(短/代词/长延续)不被误伤+Fix B 原话注入(硬锚点)+Tier2 默认关回归+BC；判定全用真模拟人触发后真实运行栈 log 硬证据(p5s2 topic / 两条新锚点)，禁脚本回放/WebSocket/import | 15 (TC-1~12 + 1b/4b/5b) | **是**（核心/追问/多窗口全 windows-mcp 真模拟点击+输入+截图；锚点 TC 真模拟触发后 grep log） |
 | [2026-06-20-deepresearch-upgrade/manual-test.md](./2026-06-20-deepresearch-upgrade/manual-test.md) | **deepresearch 升级 Phase 1+2**：工具 `research_run`→`deepresearch` 更名（LLM 工具名/SKILL/web_search 引导/PPT 串联）+ Phase 2 修 recency 真 bug（default_extract 回填 date 激活新鲜度维度）+ coverage 可观测字段（route/mode/n_dropped_by_reason 4 键/elapsed_ms_per_stage 5 键）；覆盖更名生效·研究 E2E happy·deep 反思·recency·可观测（含**强制 drop 验证计数器真增**）·PPT 下游·边界异常·路由正确性·中文一手源直连回归 | 验证更名后真机对话调到的是 `deepresearch`（log 无 research_run）+ Phase 2 改动生效且未破坏既有路径；同时采集 Phase 0 质量基线；判定全部从代码事实校准、含环境 HARD GATE（Dev python 非 Bundled exe） | 14 (TC-R1-1~R7-1 + env 门) | **是**（全部真机 windows-mcp 模拟点击+输入 + 截图 + tauri-dev.log grep） |
 | [status-file-manual-test.md](./status-file-manual-test.md) | STATUS 全局项目状态文件 + README/CLAUDE.md 链接 + STATUS 更新纪律 | 验证状态文件结构完整、两处入口链接可达、更新纪律已正式落地且可执行 | 6 (TC-01~06) | 否（纯文档/链接核对） |
 | [tool-layer-manual-test.md](./tool-layer-manual-test.md) | 整个 deskpet 工具层：工具注册/发现、用户级触发（PPT/Excel/Word/PDF/OCR/图片/整理/网页）、artifact 信封、receipt 落盘、verify gate、circuit breaker、permission gate、toolset 门控、tool_search、agent_parallel、workspace 沙箱 | 验证「用户真的用得了」（A 类 UI 真测）+「内部契约/开关对」（B 类配置核对）；覆盖 last-mile D1~D12 + v3 WI-T2.1/T5.1 + companion v1 agent_parallel | 17 (A1~A5 + B1~B12) | **A 类 5 例需**（UI 真测+截图）；B 类 12 例为配置/脚本核对 |
