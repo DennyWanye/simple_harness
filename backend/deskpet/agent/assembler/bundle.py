@@ -109,6 +109,11 @@ class MemoryPolicy:
     l1: str = "snapshot"  # "snapshot" or "off"
     l2_top_k: int = 5
     l3_top_k: int = 5
+    relabel_l2: bool = True
+    anchor_current: bool = True
+    topic_shift_gate: bool = False
+    topic_shift_threshold: float = 0.35
+    l2_keep_on_shift: int = 1
 
 
 @dataclass
@@ -258,12 +263,14 @@ class ContextBundle:
     # producing the "we just talked about VPN, why does it ask 'what do you want
     # to do?'" failure mode).
     history: list[dict[str, Any]] = field(default_factory=list)
+    late_system_nudge: str = ""
 
     def build_messages(
         self,
         base_system: str = "",
         *,
         history: Optional[list[dict[str, Any]]] = None,
+        late_system_nudge: Optional[str] = None,
         user_message: Optional[str] = None,
     ) -> list[dict[str, Any]]:
         """Construct an OpenAI-format messages list.
@@ -299,6 +306,9 @@ class ContextBundle:
 
         if history:
             messages.extend(history)
+
+        if late_system_nudge:
+            messages.append({"role": "system", "content": late_system_nudge})
 
         if user_message is not None:
             messages.append({"role": "user", "content": user_message})

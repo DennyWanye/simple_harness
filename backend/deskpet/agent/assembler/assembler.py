@@ -371,6 +371,12 @@ class ContextAssembler:
                 ]
                 break
 
+        for sl in budget_result.slices:
+            nudge = sl.meta.get("late_system_nudge") if sl.meta else None
+            if isinstance(nudge, str) and nudge.strip():
+                bundle.late_system_nudge = nudge.strip()
+                break
+
         return bundle
 
     def _build_decisions(

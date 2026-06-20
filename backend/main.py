@@ -5472,6 +5472,7 @@ async def control_channel(ws: WebSocket):
                         _msgs = _bundle.build_messages(
                             user_message=_text,
                             history=_bundle.history,
+                            late_system_nudge=_bundle.late_system_nudge,
                         )
                     else:
                         _msgs = [{"role": "user", "content": _text}]
