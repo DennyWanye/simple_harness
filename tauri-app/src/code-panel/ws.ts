@@ -253,6 +253,16 @@ function dispatch(msg: any) {
     store.active_sid;
 
   switch (msg.type) {
+    case "session_switched":
+    case "task_session_started": {
+      const p = msg.payload || {};
+      const next_sid = typeof p.new_sid === "string" ? p.new_sid : "";
+      if (next_sid) {
+        store.ensure(next_sid);
+        store.set_active(next_sid);
+      }
+      break;
+    }
     case "chat_response": {
       // Mid-loop assistant text (with tool calls). Render as assistant bubble.
       const text = msg.payload?.text;

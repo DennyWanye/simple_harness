@@ -47,22 +47,23 @@ import { BACKEND_PORT } from "../backendPort";
 import { useAudioRecorder } from "../hooks/useAudioRecorder";
 import { useAudioPlayer } from "../hooks/useAudioPlayer";
 
-const SID = "default"; // the pet's companion main thread
+const DEFAULT_SID = "default"; // the pet's companion main thread
 
 export function MessagePanelRoot() {
+  const [activeSid, setActiveSid] = useState(DEFAULT_SID);
   const [filter, setFilter] = useState<StreamFilter>("all");
   const [showModelModal, setShowModelModal] = useState(false);
   // 2026-05-31 restore — context breakdown modal state + snapshot subscriber.
   const [contextModalOpen, setContextModalOpen] = useState(false);
-  const contextUsage = useSessionsStore((s) => s.sessions[SID]?.context_usage ?? null);
+  const contextUsage = useSessionsStore((s) => s.sessions[activeSid]?.context_usage ?? null);
 
   const sessions = useSessionsStore((s) => s.sessions);
-  const messages = useSessionsStore((s) => s.sessions[SID]?.messages ?? []);
+  const messages = useSessionsStore((s) => s.sessions[activeSid]?.messages ?? []);
   const preferred_model = useSessionsStore(
-    (s) => s.sessions[SID]?.preferred_model ?? null,
+    (s) => s.sessions[activeSid]?.preferred_model ?? null,
   );
   const model_params = useSessionsStore(
-    (s) => s.sessions[SID]?.model_params ?? null,
+    (s) => s.sessions[activeSid]?.model_params ?? null,
   );
   // 模型按钮显示「模型-上下文长度(K/M)」: 从 catalog 取当前模型上下文窗口。
   const modelCatalog = useCodeModelsStore((s) => s.models);
@@ -113,6 +114,24 @@ export function MessagePanelRoot() {
     bargeIn,
   } = useAudioPlayer(getChannel());
 
+  useEffect(() => {
+    return codePanelWS.on_message((msg: any) => {
+      if (msg?.type !== "session_switched" && msg?.type !== "task_session_started") {
+        return;
+      }
+      const nextSid = msg?.payload?.new_sid;
+      if (typeof nextSid !== "string" || !nextSid) return;
+      useSessionsStore.getState().ensure(nextSid);
+      setActiveSid(nextSid);
+    });
+  }, []);
+
+  const switchToDefault = useCallback(() => {
+    useSessionsStore.getState().ensure(DEFAULT_SID);
+    useSessionsStore.getState().set_active(DEFAULT_SID);
+    setActiveSid(DEFAULT_SID);
+  }, []);
+
   const toggleRecording = useCallback(async () => {
     if (isRecording) {
       stopRecording();
@@ -134,7 +153,7 @@ export function MessagePanelRoot() {
         }
         break;
       case "transcript":
-        useSessionsStore.getState().push_message(SID, {
+        useSessionsStore.getState().push_message(activeSid, {
           role: audioMessage.payload.role,
           text: audioMessage.payload.text,
         });
@@ -143,7 +162,7 @@ export function MessagePanelRoot() {
         bargeIn();
         break;
     }
-  }, [audioMessage, isPlaying, resetPlaybackBuffer, bargeIn]);
+  }, [audioMessage, isPlaying, resetPlaybackBuffer, bargeIn, activeSid]);
 
   // Companion-stream derivation (strip <think> via forPet; synth ts
   // since the store has none)。2026-06-12: 工具执行轨迹(tool_call/
@@ -282,16 +301,28 @@ export function MessagePanelRoot() {
             <Icon name="chevron-left" size={14} />
           </button>
           <span
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={activeSid === DEFAULT_SID ? undefined : switchToDefault}
+            title={activeSid === DEFAULT_SID ? "当前话题" : "回到默认话题"}
             style={{
               display: "flex",
               alignItems: "center",
               gap: 7,
               flex: 1,
-              pointerEvents: "none",
+              minWidth: 0,
+              cursor: activeSid === DEFAULT_SID ? "default" : "pointer",
             }}
           >
             <Icon name="message" size={14} style={{ color: "#a5b4fc" }} />
-            <span>消息 · 主线程</span>
+            <span
+              style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {activeSid === DEFAULT_SID ? "消息 · default" : `消息 · ${activeSid}`}
+            </span>
           </span>
           <button
             type="button"
@@ -386,7 +417,7 @@ export function MessagePanelRoot() {
             leftAccessory = the mic button, parity with the pet bar. */}
         <InputBar
           placeholder="和桌宠说点什么…"
-          sessionId={SID}
+          sessionId={activeSid}
           leftAccessory={
             <button
               type="button"
@@ -433,7 +464,7 @@ export function MessagePanelRoot() {
 
       {showModelModal && (
         <ChangeModelModal
-          session_id={SID}
+          session_id={activeSid}
           current_model={preferred_model}
           current_params={model_params}
           onClose={() => setShowModelModal(false)}
@@ -444,7 +475,7 @@ export function MessagePanelRoot() {
       <ContextBreakdownModal
         open={contextModalOpen}
         onClose={() => setContextModalOpen(false)}
-        sessionId={SID}
+        sessionId={activeSid}
         snapshot={contextUsage}
         send={(m) => codePanelWS.send(m)}
         onMessage={(fn) => codePanelWS.on_message(fn)}

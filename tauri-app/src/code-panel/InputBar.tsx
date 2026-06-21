@@ -23,6 +23,7 @@ import { BACKEND_PORT } from "../backendPort";
 import { codePanelWS } from "./ws";
 import { SlashDropdown, type SlashCommand } from "./SlashDropdown";
 import { ArgHintBar, type ArgSchema } from "./ArgHintBar";
+import { Icon } from "../components/Icon";
 
 // 输入历史 — module-scope，跨 InputBar 实例共享 (max 50 entries)
 const _slashInputHistory: string[] = [];
@@ -188,6 +189,17 @@ export function InputBar({
     useSessionsStore.getState().upsert(sid, { inflight: false, status: "idle" });
   }, [sid]);
 
+  const startNewTopic = useCallback(() => {
+    if (!sid) return;
+    const t = text.trim();
+    setDropdownOpen(false);
+    setArgHintCmd(null);
+    codePanelWS.send({
+      type: "chat_v2",
+      payload: { session_id: sid, new_session: true, text: t },
+    });
+  }, [sid, text]);
+
   const onChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const v = e.target.value;
     set_text(v);
@@ -320,6 +332,31 @@ export function InputBar({
           onAccept={acceptCandidate}
         />
         {leftAccessory}
+        <button
+          type="button"
+          onClick={startNewTopic}
+          disabled={!sid}
+          title="新话题"
+          aria-label="新话题"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            background: "rgba(20, 184, 166, 0.16)",
+            color: "#99f6e4",
+            border: "1px solid rgba(45, 212, 191, 0.35)",
+            borderRadius: 8,
+            padding: "0 10px",
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: sid ? "pointer" : "not-allowed",
+            height: 36,
+            flexShrink: 0,
+          }}
+        >
+          <Icon name="plus" size={14} />
+          <span>新话题</span>
+        </button>
         <textarea
           ref={taRef}
           value={text}

@@ -59,4 +59,20 @@ describe("ws.dispatch chat final dedupe", () => {
       text: "same assistant answer",
     });
   });
+
+  it("activates and creates the backend-selected session after a session switch", () => {
+    __test_dispatch({
+      type: "session_switched",
+      payload: {
+        old_sid: "default",
+        new_sid: "task-default-1",
+        reason: "explicit_new",
+      },
+    });
+
+    const store = useSessionsStore.getState();
+    expect(store.active_sid).toBe("task-default-1");
+    expect(store.sessions["task-default-1"]).toBeDefined();
+    expect(store.sessions["task-default-1"].messages).toEqual([]);
+  });
 });

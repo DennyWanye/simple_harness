@@ -93,6 +93,8 @@ import { RelayEdition } from "./auth/RelayEdition";
 import { relayProviderBridge } from "./auth/relayProviderBridge";
 import { friendlyChatErrorMessage } from "./auth/relayErrorText";
 
+const DEFAULT_SESSION_ID = "default";
+
 function stripMarkdown(text: string): string {
   return text
     .replace(/\*\*(.*?)\*\*/g, "$1")
@@ -111,6 +113,8 @@ function App() {
 
   const [fps, setFps] = useState(0);
   const [chatText, setChatText] = useState("");
+  const [activeSid, setActiveSid] = useState(DEFAULT_SESSION_ID);
+  const activeSidRef = useRef(DEFAULT_SESSION_ID);
   // Track whether the backend is routing through cloud or local.
   // "cloud" | "local" | null (unknown)
   const [routeKind, setRouteKind] = useState<"cloud" | "local" | null>(null);
@@ -475,6 +479,15 @@ function App() {
   const applySupervisorAlert = useSessionsStore((s) => s.apply_supervisor_alert);
   const clearSupervisorAlert = useSessionsStore((s) => s.clear_supervisor_alert);
   const ensureSession = useSessionsStore((s) => s.ensure);
+  const switchActiveSid = useCallback(
+    (sid: string) => {
+      ensureSession(sid);
+      useSessionsStore.getState().set_active(sid);
+      activeSidRef.current = sid;
+      setActiveSid(sid);
+    },
+    [ensureSession],
+  );
   // 2026-05-17 桌宠窗左侧常驻消息面板 —— 复用 MessageStreamPanel。
   // 消息面板是**独立窗口**。点 ▶消息 = Rust toggle_message_panel
   // （显↔隐，权威返回新可见态）。`leftPanelOpen` 由 Rust 发的
@@ -532,39 +545,39 @@ function App() {
   // 独家负责，不需要前端冗余写盘。
 
   // Control channel (text chat + interrupt + emotion/action events)
-  const { state, lastMessage, sendChatV2, sendInterrupt, getChannel: getControlChannel } =
+  const { state, lastMessage, getChannel: getControlChannel } =
     useControlChannel(BACKEND_PORT, secret);
 
   // 2026-05-18: 连接(或重连)后从 SessionDB 回灌 default 会话历史，
   // 使左侧消息面板重启后也显示历史记录（后端 session_messages_load
   // → session_messages_response，已在上面 lastMessage switch 处理）。
-  const historyLoadedRef = useRef(false);
+  const historyLoadedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (state !== "connected") {
-      historyLoadedRef.current = false;
+      historyLoadedRef.current.clear();
       return;
     }
-    if (historyLoadedRef.current) return;
+    if (historyLoadedRef.current.has(activeSid)) return;
     const ch = getControlChannel();
     if (!ch) return;
     try {
       ch.send({
         type: "session_messages_load",
-        payload: { session_id: "default", limit: 200 },
+        payload: { session_id: activeSid, limit: 200 },
       });
       // 2026-05-31 restore — pull cached context-usage on connect so the
       // ring gauge in toolbar hydrates immediately.
       try {
         ch.send({
           type: "context_usage_request",
-          payload: { session_id: "default" },
+          payload: { session_id: activeSid },
         });
       } catch { /* best-effort */ }
-      historyLoadedRef.current = true;
+      historyLoadedRef.current.add(activeSid);
     } catch (e) {
       console.warn("[Pet] session_messages_load send failed:", e);
     }
-  }, [state, getControlChannel]);
+  }, [state, getControlChannel, activeSid]);
 
   // P4-S20: toggle to route chat through the new tool_use loop
   // P4-S20-LLM-Unified: chat 路径已统一 — backend `chat` 和 `chat_v2`
@@ -755,8 +768,20 @@ function App() {
   useEffect(() => {
     if (!lastMessage) return;
     const t = (lastMessage as { type?: string }).type;
+    const payloadSid = (lastMessage as any).payload?.session_id;
+    const isActivePayload = !payloadSid || payloadSid === activeSidRef.current;
     switch (t) {
+      case "session_switched":
+      case "task_session_started": {
+        const nextSid = (lastMessage as any).payload?.new_sid;
+        if (typeof nextSid === "string" && nextSid) {
+          switchActiveSid(nextSid);
+          setMessages([]);
+        }
+        break;
+      }
       case "chat_response":
+        if (!isActivePayload) break;
         setMessages((prev) => [
           ...prev,
           { role: "assistant", text: (lastMessage as any).payload.text },
@@ -776,6 +801,7 @@ function App() {
         break;
       // P4-S20 chat_v2 stream events
       case "tool_use_event": {
+        if (!isActivePayload) break;
         // v2 B2 M-1: first stream chunk → exit thinking immediately.
         thinkingObsRef.current.notifyFirstChunk(performance.now());
         // Tier-1: agent 正在调工具 → 保持「努力工作」气泡。
@@ -811,6 +837,7 @@ function App() {
         break;
       }
       case "chat_v2_user_echo": {
+        if (!isActivePayload) break;
         // 2026-05-31 restore — multi-window sync: peer typed a user message.
         // Backend skips originator so receiving means peer-origin → push.
         const echoText = (lastMessage as any).payload?.text;
@@ -820,6 +847,7 @@ function App() {
         break;
       }
       case "chat_v2_final": {
+        if (!isActivePayload) break;
         // v2 B2: defensive close in case first_chunk path was missed.
         thinkingObsRef.current.notifyEnd(performance.now());
         // Tier-1: 任务完成 → 关闭「努力工作」气泡。
@@ -860,6 +888,8 @@ function App() {
         // user/assistant（tool 行非对话，streamChat 的 forPet 也会滤）；
         // 这是权威近 200 条快照，直接替换 messages。
         const p: any = (lastMessage as any).payload || {};
+        const targetSid = p.session_id;
+        if (targetSid && targetSid !== activeSidRef.current) break;
         const rows: any[] = Array.isArray(p.messages) ? p.messages : [];
         const hist = rows
           .filter((r) => r && (r.role === "user" || r.role === "assistant"))
@@ -871,6 +901,7 @@ function App() {
         break;
       }
       case "chat_v2_error": {
+        if (!isActivePayload) break;
         // v2 B2: error closes thinking state.
         thinkingObsRef.current.notifyEnd(performance.now());
         // Tier-1: 任务出错 → 关闭「努力工作」气泡。
@@ -922,7 +953,7 @@ function App() {
         break;
       }
     }
-  }, [lastMessage, applySupervisorAlert, ensureSession]);
+  }, [lastMessage, applySupervisorAlert, ensureSession, switchActiveSid]);
 
   // Handle audio channel JSON messages
   useEffect(() => {
@@ -1366,9 +1397,36 @@ function App() {
     setWorking(true);
     // P4-S21 #14: backend unified chat / chat_v2 — both route to tool_use
     // AgentLoop. Always send via sendChatV2 (the toolbar toggle is gone).
-    sendChatV2(chatText);
+    const ch = getControlChannel();
+    ch?.send({
+      type: "chat_v2",
+      payload: { text: chatText, session_id: activeSidRef.current },
+    });
     setChatText("");
   };
+
+  const handleNewTopic = useCallback(() => {
+    const ch = getControlChannel();
+    if (!ch) return;
+    const text = chatText.trim();
+    ch.send({
+      type: "chat_v2",
+      payload: {
+        session_id: activeSidRef.current,
+        new_session: true,
+        text,
+      },
+    });
+    if (text) {
+      thinkingObsRef.current.notifyStart(performance.now());
+      setWorking(true);
+    }
+  }, [getControlChannel, chatText]);
+
+  const handleSwitchDefault = useCallback(() => {
+    switchActiveSid(DEFAULT_SESSION_ID);
+    setMessages([]);
+  }, [switchActiveSid]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -1383,7 +1441,11 @@ function App() {
     stopPlayback();
     setMouthOpenY(0);
     resetPlaybackBuffer();
-    sendInterrupt();
+    const ch = getControlChannel();
+    ch?.send({
+      type: "chat_v2_interrupt",
+      payload: { session_id: activeSidRef.current },
+    });
     setVadStatus("idle");
     // v2 D1 (M-11): user-interrupt releases emotion lock immediately.
     const now = performance.now();
@@ -1393,7 +1455,7 @@ function App() {
     thinkingObsRef.current.notifyEnd(now);
     // Tier-1: 用户中断 → 关闭「努力工作」气泡。
     setWorking(false);
-  }, [stopPlayback, resetPlaybackBuffer, sendInterrupt]);
+  }, [stopPlayback, resetPlaybackBuffer, getControlChannel]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1891,6 +1953,59 @@ function App() {
           </button>
         )}
 
+        <button
+          type="button"
+          onClick={handleNewTopic}
+          disabled={state !== "connected"}
+          title="新话题"
+          aria-label="新话题"
+          style={{
+            height: 36,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            padding: "0 11px",
+            borderRadius: 18,
+            border: "1px solid rgba(45,212,191,0.42)",
+            background:
+              state === "connected"
+                ? "rgba(20,184,166,0.16)"
+                : "rgba(255,255,255,0.05)",
+            color: state === "connected" ? "#99f6e4" : "rgba(148,163,184,0.6)",
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: state === "connected" ? "pointer" : "not-allowed",
+            flexShrink: 0,
+          }}
+        >
+          <Icon name="plus" size={14} />
+          <span>新话题</span>
+        </button>
+
+        {activeSid !== DEFAULT_SESSION_ID && (
+          <button
+            type="button"
+            onClick={handleSwitchDefault}
+            title="回到默认话题"
+            aria-label="回到默认话题"
+            style={{
+              height: 36,
+              width: 36,
+              borderRadius: "50%",
+              border: "1px solid rgba(148,163,184,0.28)",
+              background: "rgba(255,255,255,0.07)",
+              color: "#cbd5e1",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <Icon name="refresh" size={15} />
+          </button>
+        )}
+
         <input
           data-testid="chat-input"
           className="bp-chat-input"
@@ -2044,7 +2159,7 @@ function App() {
         connectionState={state}
         routeKind={routeKind}
         topOffset={petError ? 66 : undefined}
-        contextUsage={sessions["default"]?.context_usage ?? null}
+        contextUsage={sessions[activeSid]?.context_usage ?? null}
         onContextRingClick={() => setContextModalOpen(true)}
       />
 
@@ -2052,7 +2167,7 @@ function App() {
       <MemoryPanel
         open={memoryOpen}
         onClose={() => setMemoryOpen(false)}
-        sessionId="default"
+        sessionId={activeSid}
         getChannel={getControlChannel}
       />
 
@@ -2063,8 +2178,8 @@ function App() {
       <ContextBreakdownModal
         open={contextModalOpen}
         onClose={() => setContextModalOpen(false)}
-        sessionId="default"
-        snapshot={sessions["default"]?.context_usage ?? null}
+        sessionId={activeSid}
+        snapshot={sessions[activeSid]?.context_usage ?? null}
         send={(m) => {
           const ch = getControlChannel();
           if (ch) {
