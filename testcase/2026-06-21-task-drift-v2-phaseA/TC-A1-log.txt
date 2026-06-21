@@ -1,0 +1,12 @@
+TC-A1 固态电池(钠离子历史压力下) — 主题夺权 PASS
+固态电池搜索: 18  钠离子: 0  宁德: 0
+fanout 子代理: 11
+INFO:deskpet.agent.loop:task_drift_user_request_injected tool=deepresearch req_len=44
+INFO:deskpet.agent.loop:task_drift_user_request_injected tool=deepresearch req_len=44
+INFO:deskpet.agent.subagent_scheduler:subagent_scheduled kind=research run_id=default.dr-0 task_id=dr-0
+INFO:deskpet.agent.subagent_scheduler:subagent_scheduled kind=research run_id=default.dr-1 task_id=dr-1
+INFO:deskpet.agent.subagent_scheduler:subagent_scheduled kind=research run_id=default.dr-2 task_id=dr-2
+INFO:deskpet.agent.subagent_scheduler:subagent_scheduled kind=research run_id=default.dr-3 task_id=dr-3
+INFO:deskpet.agent.subagent_scheduler:subagent_scheduled kind=research run_id=default.dr-4 task_id=dr-4
+INFO:deskpet.agent.subagent_scheduler:subagent_scheduled kind=research run_id=default.dr-5 task_id=dr-5
+桌宠回复: 抱歉喵,这次没能产出合格的带引用 Markdown 深度报告(网络受限0引用不落盘,非T0-1 bug)

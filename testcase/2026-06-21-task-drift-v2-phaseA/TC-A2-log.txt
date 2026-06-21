@@ -1,0 +1,7 @@
+TC-A2 Rust(电池系历史压力下) — 跨域主题夺权 PASS
+Rust/Tokio/async 搜索: 17  电池/钠/宁德: 0
+Fix B 注入: req_len=53 (Rust 原话)
+INFO:httpx:HTTP Request: GET https://export.arxiv.org/api/query?search_query=all%3ATokio+%E7%9A%84%E
+INFO:httpx:HTTP Request: GET https://export.arxiv.org/api/query?search_query=all%3ATokio+%E7%9A%84%E
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/item/Tokio%20%E5%9C%A8%E7%BD%91%E7%BB%9C%20I%2F
+(注: chinzy 偶发 404 重试 200; 落盘 ENV-LIMITED 网络 0 引用)
