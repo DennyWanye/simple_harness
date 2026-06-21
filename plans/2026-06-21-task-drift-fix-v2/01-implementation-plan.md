@@ -121,6 +121,7 @@ text = decision.stripped_text                                   # 去掉 /new �
 - 新增 `_chat_peer_groups: dict[str, str]`（key=transport sid，value=当前 effective chat sid）。默认映射 `default→default`、`message-panel-main→default`，未登记 peer 默认=自身 sid。
 - `/new` / `task_session_started` 时把同一 UI 组的 peers 一起映射到 `decision.effective_sid`。
 - 广播：按 `payload.session_id` 找所有 `_chat_peer_groups[peer_sid] == payload.session_id` 的连接发送（取代现有"硬编码 ==default"判断）。
+- **调用侧（R4 补 — 关键）**：`main.py:5478` 现为 `if not _is_sentinel and _sid == "default":` 才广播 user echo → **去掉 `_sid == "default"` 条件**（改 `if not _is_sentinel:`），否则切到 `task-*` effective sid 的轮**根本不会调用广播函数**；按组判定全部交给 helper 内部。
 
 **前端接入点**：后端发 `session_switched`/`task_session_started` 事件；`App.tsx:552` 宠物窗硬编码 `default`、`MessagePanelRoot.tsx:436` InputBar 固定 `SID` → 响应切换、显示当前 scope、提供"新话题"按钮 + "回上个话题"退路。**无 DB 迁移**（messages 已按 session_id 存）。
 
@@ -135,7 +136,7 @@ text = decision.stripped_text                                   # 去掉 /new �
   elif policy_memory.l2_page_in == "followup" and not _starts_with_anaphora(ctx.user_message): call_policy["l2_top_k"] = 0
   ```
 - **默认 profile**：`task`/`web_search`/`command` 设 `followup`；`recall`/`chat`/`emotion` 保 `always`。
-- **`/continue` 具体改点（R2-D + R3 透传接口）**：① `main.py` resolve 阶段解析 `/continue` 前缀 → `TaskScopeDecision.reason="continue"` + **新增字段 `force_l2_page_in: Literal["always"]|None`**；② **透传接口（R3）**：`ContextAssembler.assemble()` 现仅有 `task_type_override`，新增 `memory_policy_override`（或 `assembly_options`）参数；在 `assembler.py:212` 取到 policy 后 `policy = dataclasses.replace(policy, memory=dataclasses.replace(policy.memory, l2_page_in="always"))` 再 fanout 给 `MemoryComponent`；③ 前端"同会话/继续"按钮发 payload `{force_l2:true}`；④ strip `/continue` 正文。
+- **`/continue` 具体改点（R2-D + R3 透传接口 + R4 后端消费点）**：① `main.py:5401` 附近**同时消费按钮 payload 与 `/continue` 前缀**两条入口：`force_l2 = bool(_payload.get("force_l2")) or text.startswith("/continue")`，传给 `TaskSessionManager.resolve(...)` → `TaskScopeDecision.reason="continue"` + **新增字段 `force_l2_page_in: Literal["always"]|None`**；② **透传接口（R3）**：`ContextAssembler.assemble()` 现仅有 `task_type_override`，新增 `memory_policy_override`（或 `assembly_options`）参数；在 `assembler.py:212` 取到 policy 后 `policy = dataclasses.replace(policy, memory=dataclasses.replace(policy.memory, l2_page_in="always"))` 再 fanout 给 `MemoryComponent`；③ 前端"同会话/继续"按钮发 payload `{force_l2:true}`；④ strip `/continue` 正文。
 - ⚠️ R2-D：`l2_top_k=0` 不炸（`manager.py:147` 支持），但跳过 `memory.py:179-201` 的 reasoning_content 回填 → **连续 thinking 场景必测**。
 - 单测：3 档 + 默认 profile + anaphora 豁免 + reasoning_content 场景。
 
@@ -190,3 +191,6 @@ T0-2 假设错→验证+断言；漂移两层；T0-1 全替换表；voice 缺 Fi
 
 ## §11 codex R3 已纳入（防遗忘）
 ①§1 补 #16 `_passages_only_fallback(topic)` 两处 `:1795/1799` → `request_topic`（synth 失败/空时报告回漂）；②§5 group 落地细节（transport sid 不变 + `_chat_peer_groups` 映射 + 按组广播，防两窗口连同一 task-* 被踢）；③§8 sentinel 判据改显式 `is_sentinel_run` flag（非 `loop_user_request is None`，防误伤普通轮）；④§6 `/continue` 透传接口（`TaskScopeDecision.force_l2_page_in` + `assemble()` 加 `memory_policy_override` + `assembler.py:212` `dataclasses.replace`）。R3 另确认：code 模式默认 toolset 不暴露 deepresearch（非阻塞）；§5 主链路 L3/goal_store/activity/artifact/facts 无额外旧 sid 写入点。
+
+## §12 codex R4 已纳入（防遗忘）
+①§5 调用侧 `main.py:5478` 去掉 `_sid == "default"` 条件（否则 `task-*` 轮不调广播）；②§6 `/continue` 后端消费点 `main.py:5401` `force_l2 = bool(_payload.get("force_l2")) or text.startswith("/continue")`。R4 另**核验通过**：§1#16 准（`:1795/1799` 确为两处 `_passages_only_fallback(topic)`）、§1 16 项**无第 17 处漏网**、§8 sentinel 落点（`agent_loop.py:600` 加 `is_sentinel_run`、`main.py:6322` 传 `_is_sentinel`）准、§6 `dataclasses.replace` 落点（`assembler.py:212`）准。
