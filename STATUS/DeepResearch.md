@@ -36,7 +36,7 @@
 | ④.7 LLM 精排 reranker（候选池≤24，失败如实标） | ✅ 但仅云端 relay 注入 | :1241-1258 |
 | ⑤ Synthesize（含口径提示，失败降级段落罗列） | ✅ 同函数内成文 | :1282-1296 |
 | ⑥ Cite-check（脚注号对齐，缺失⚠️/未用裁掉） | ✅ 不校验 claim-evidence 对齐 | :1298-1318 |
-| ⑦ 落盘 + artifact 卡片 | ✅ `OutPut/Research/` | :1609-1627 |
+| ⑦ 落盘 + artifact 卡片 | ✅ `DeepResearch/`（安装目录下，2026-06-21 由 OutPut/Research 迁移）+ `DeepResearch/index.md` 总索引（倒序/可点开） | _save_report:1826 + _update_deepresearch_index:1664 |
 
 **打分子系统**（`research_scoring.py`，纯函数）：分层权威分（4 档 + 中文源 + 自媒体降到 2.0）`:203-218`；
 新鲜度分 `:228-246`（⚠️见 §4 真 bug）；合成分 `:249-256`；多样性 `:259-285`（≥5 域、单域≤25%）；

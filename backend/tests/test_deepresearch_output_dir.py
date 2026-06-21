@@ -166,6 +166,10 @@ async def test_update_deepresearch_index_creates_header_dedupes_and_preserves_ut
     assert text.count("[中文报告.md](中文报告.md)") == 1
     assert "中文/主题 换行" in text
     assert "[中文报告.md](中文报告.md)" in text
+    # 原子写：os.replace 落地后正式 index.md 存在，临时 .md.tmp 不残留
+    assert (tmp_path / "index.md").exists()
+    assert not (tmp_path / "index.md.tmp").exists()
+    assert not list(tmp_path.glob("*.tmp"))
 
 
 @pytest.mark.asyncio
