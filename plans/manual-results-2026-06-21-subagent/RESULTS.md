@@ -90,6 +90,31 @@
 
 ---
 
+## 2026-06-21 收尾 — 两个非阻断瑕疵已修 + 真机复验 PASS
+
+承接用户验收反馈，把上文「次要瑕疵」全部处理完并真机复验。
+
+### Fix-1 ★ 进度卡片进桌宠主消息面板（issue 1）
+
+- **根因**：`SubagentProgressPanel` 此前只挂在 `code-panel/MessageStream`（Code 模式窗口）；桌宠主消息面板用 `components/MessageStreamPanel`，从未挂载该卡片。
+- **改动**（commit `0e190ae`）：
+  - `SubagentProgressPanel` 重写为**主题可切 `variant`(light/dark) + 可折叠（全部跑完自动收起）+ 运行中实时计时 + 淡入动画**。
+  - 在 `MessageStreamPanel` 顶部挂 `variant="dark"`（深色玻璃，与面板一致），数据走该窗口 `codePanelWS` 的 `subagent_progress` 派发喂 `subagentStore`（后端广播给**所有** control 连接，`main.py:1978`，含 `message-panel-main`）。
+  - code 模式仍用默认 light 变体，零回归。
+- **真机复验**（windows-mcp，主消息面板「消息·主线程」）：发 4 竞品调研 → 卡片实时显示 **「🤖 子代理并发 · 运行中 4/4」**，🔧 调研 tesla_model_y/byd_seal **运行中 33s**（elapsed 正确）+ ⏳ nio_es6/xpeng_g6 **排队中**。截图 `screenshots/issue1-card-running-elapsed-fixed.png`、`issue1-card-message-panel-running-4of4.png`。
+- **顺手修**：新计时功能初版把后端 epoch **秒** ts 当**毫秒**算 → elapsed 显示天文数字；`elapsedLabel` 归一（<1e12 视为秒×1000）。回归测试锁定。
+
+### Fix-2 ★ 取消态独立渲染 + 排队期取消不卡 queued（issue 2）
+
+- **后端**：排队期取消补发终态已于 `261ba42` 修（`subagent_scheduler.run` 外层 try/except + `entered_running` 标志 + `reason="cancelled"`）；本次 `0e190ae` 再给**运行期**取消的 inner except 补 `reason="cancelled"`（`isinstance(exc, CancelledError)`），运行态/排队态取消归一。
+- **前端**：store+ws 透传 `reason`，面板按 `status=="failed" && reason=="cancelled"` 渲染 **🚫 已取消**，与真失败 **❌ 失败** 区分。
+- **单测**：`test_subagent_scheduler.py` 9 passed（含 `test_queued_cancel_emits_terminal_progress` / `test_running_cancel_tags_reason_cancelled` / `test_genuine_failure_has_no_cancelled_reason`）；前端 store 6 + panel 7（含取消态/折叠/dark/elapsed 回归）。
+- **真机复验**：4 竞品调研（research lane cap=2 → 2 running + 2 queued）运行中点**停止** → 卡片 4 行全部 **🚫 已取消**（queued 的 nio_es6/xpeng_g6 + running 的 tesla_model_y/byd_seal 一致），**无一卡 queued**；metrics 证 nio_es6/xpeng_g6 = queued→failed（直接终态，未经 running）。截图 `screenshots/issue1+2-card-terminal-cancelled-vs-failed.png`（首轮 2🚫+2❌，inner-except reason 修复前）、`issue1+2-final-all-cancelled-message-panel.png`（修复后 4🚫 一致）。
+
+**回归**：54 后端 + 229 前端 vitest 全绿；tsc 0 err。两瑕疵均**已闭环**。
+
+---
+
 ## 架构观察（供后续）
 
 1. **进度卡片(SubagentProgressPanel)只挂载在 Code 模式**(`code-panel/MessageStream.tsx`)，桌宠主消息面板用 `components/MessageStreamPanel.tsx` 不渲染该卡片。subagentStore 经同一 control WS(`code-panel/ws.ts`) 喂数据，故桌宠主聊触发的并发也能在 Code 模式卡片实时显示(V3 实证)。若产品上希望桌宠消息面板也显示并发卡片，需在 MessageStreamPanel 也挂载 SubagentProgressPanel。
