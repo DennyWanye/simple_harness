@@ -4,7 +4,7 @@
 > 每新增一份手工测试文档，在下表追加一行，写清**测试范围**与**目的**。
 > 自动化测试（pytest/vitest/cargo）不在此登记，那些放各 `plans/*/0X-TDD.md`。
 >
-> **最后更新**: 2026-06-21（+ 任务漂移 v2 阶段A 手测文档）
+> **最后更新**: 2026-06-22（+ 任务漂移 v2 阶段B 手测文档）
 
 ---
 
@@ -12,6 +12,7 @@
 
 | 文档 | 被测功能 / 范围 | 测试目的 | 用例数 | 是否需 windows-mcp |
 |---|---|---|---|---|
+| [2026-06-21-task-drift-v2-phaseB/phaseB-manual-test.md](./2026-06-21-task-drift-v2-phaseB/phaseB-manual-test.md) | **任务漂移 v2 阶段B（T1-1 会话切分根治层1 + T0-4 voice + sentinel + group + 前端，commit ca4022a7）**：`/new`/新话题按钮 → 后端起新 `effective_sid`(task-default-N) → 新 scope L2 空 → 主 loop 选 topic 时不被旧 attention-sink 污染 → 彻底不漂。覆盖 /new 切场隔离(★层1根治)·前端新话题按钮·不切场对照·/continue 续场(force_l2)·多窗口 group 同步·sentinel 拒 deepresearch·voice 全链路 sid·BC 零回归 | 验证会话切分从源头根治漂移(比阶段A层2纵深更根治)；判定看 `session_switched`/`task_session_started` 事件 + `session_id=task-*`(切场最硬证据) + deepresearch 搜索 query 主题(网络受限不依赖落盘) + 多窗口同步；禁脚本/import/WS | 8 (TC-B1~B8) | **是**（核心真机 windows-mcp 模拟点击+输入+log grep；含灌钠离子史剧本） |
 | [2026-06-21-task-drift-v2-phaseA/phaseA-manual-test.md](./2026-06-21-task-drift-v2-phaseA/phaseA-manual-test.md) | **任务漂移 v2 阶段A（T0-1 deepresearch 原话夺权 + T0-2 fanout 隔离，commit 15817813）**：deepresearch 内部 16 处"当主题用"的 topic→`request_topic`(=用户原话);即使外层 LLM 选的 topic 参数漂(层1,本阶段不治)，**落盘报告标题/文件名 slug/sub_questions/正文主题=用户原话**(层2纵深夺权)；T0-2 fanout 已隔离断言。覆盖相邻领域夺权(钠离子史→固态电池)·跨域(CATL→Rust)·fanout漂修·BC正常·deep档(gap/rerank/semantic)·长口语slug边界 | 验证 deepresearch 报告主题以原话为准(治层2)；判定看**落盘 `DeepResearch/<slug>.md` 文件名+标题+正文** + `task_drift_user_request_injected req_len` + `p5s2 args(topic vs user_request)`，**不看 p5s2 外层 topic**(层1留 T1-1)；禁脚本/import/WS | 6 (TC-A1~A6) | **是**（核心真机 windows-mcp 模拟点击+剪贴板输入+落盘报告核对+log grep；含灌钠离子史剧本） |
 | [2026-06-21-deepresearch-subagent-fanout/manual-test-phase2-fanout.md](./2026-06-21-deepresearch-subagent-fanout/manual-test-phase2-fanout.md) | **deepresearch 子代理 fan-out — Phase 2（WI-1~6/§5 fan-out 核心）**：plan 拆题后每子问题派 research 子代理(复用全管线)经 SubagentScheduler 有界并发跑→主线程统一 synthesize；覆盖 fan-out 触发(`subagent_scheduled kind=research run_id=<sid>.dr-i`+coverage.mode=fanout)·前端并发进度面板·统一报告全局连续引用·背压 queued 晋升·flag 双态(subagent_driver+subagent_fanout 缺一走 flat)·递归守门(内层 scheduler=None/_depth=1 不二次 fan-out)·300s 预算硬裁 | 验证 fan-out 真在桌宠 UI 链路触发(N 子代理并发+统一报告+index 模式列 fanout)+ flag OFF 回归 flat + 递归守门 airtight；判定全用真模拟点击+输入+tauri-dev.log grep `subagent_scheduled`/coverage+报告/index，禁脚本/import/WS | 7 TC(F1~F7)+env 门 | **是**（全真机 windows-mcp 模拟点击+剪贴板输入+截图+log grep；flag on/off 两态重启真测）|
 | [2026-06-21-deepresearch-subagent-fanout/manual-test-phase1-wi8.md](./2026-06-21-deepresearch-subagent-fanout/manual-test-phase1-wi8.md) | **deepresearch 子代理 fan-out — Phase 1（WI-8 落盘+索引）**：所有 deepresearch 报告落**安装目录 `DeepResearch/`**（dev=repo 根，不进 C 盘 AppData/旧 OutPut/Research）+ 维护 `DeepResearch/index.md` 总索引（倒序/可点击相对链接/列值含模式列 flat-vs-fanout）；覆盖 happy 落点·index 首建表头·第二份倒序·幂等去重·中文 UTF-8·`\|`/换行转义·artifact path 可点·负向非 C 盘·`DESKPET_DEEPRESEARCH_DIR` env 覆盖·no-citations 不落盘 + 打包 frozen 分支 ENV-LIMITED | 验证 WI-8 落盘迁移真在桌宠 UI 链路生效（报告/索引落对位置+格式正确+不脏数据）；**设计阶段已抓出并修复模式列泄漏档位 bug**；判定全用真模拟点击+输入+落盘文件/index 内容/tauri-dev.log grep，禁脚本/import/WS | 9 正式 + 1 best-effort + 1 env 门 | **是**（全真机 windows-mcp 模拟点击+剪贴板输入+截图；frozen 打包路径 ENV-LIMITED） |

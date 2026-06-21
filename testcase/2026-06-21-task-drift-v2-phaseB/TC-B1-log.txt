@@ -1,0 +1,7 @@
+TC-B1 /new 区块链(钠离子/电池历史压力下) — T1-1 切场隔离根治 PASS
+切场: 组装 gate session_id='task-default-1' (新 effective_sid, 后端 resolve 切场成功)
+fanout: 6 子代理在 task-default-1 scope
+新scope搜索: 区块链 11 次 / 电池/钠/宁德 0 次 → 新scope L2空,彻底不漂
+Fix B: req_len=33 (区块链原话)
+前端: 新话题按钮真机渲染(2846,1509)
+(对照2026-06-21复现: 不切场时区块链→宁德漂; 现切场后区块链→区块链×11不漂)
