@@ -1,6 +1,6 @@
 # 00-PLAN — DeepResearch 子代理 Fan-out（每子问题一个子代理深查 → 主线程统一分析）
 
-> **版本**: v0.4（3 轮 codex 对抗挑战收敛：R1 7B+4M / R2 2B+3M / R3 1B+1M 全修，见 §13 附录）
+> **版本**: v0.5（4 轮 codex 对抗挑战收敛：R1 7B+4M / R2 2B+3M / R3 1B+1M / R4 1B+1M 全修，见 §13 附录）
 > **日期**: 2026-06-21
 > **状态**: 📋 规划中（先写 plan，review 后再执行）
 > **本目录**: `plans/2026-06-21-deepresearch-subagent-fanout/`
@@ -127,11 +127,15 @@ deepresearch(topic, scheduler=S, _depth=0)
 
 递归唯一危险路径 = **LLM 派的子代理调 `deepresearch` 工具再 fan-out**（本计划内部 fan-out 是编程式 `deepresearch()` 调用，已显式 `scheduler=None/_depth=1`，不经工具）。第 1 轮提的"顶层 sid 子串门"被第 2 轮否（误杀正常 sid）。**定稿为剥工具为唯一硬保证 + depth 双保险**：
 
-1. **【硬保证】剥 `deepresearch` 工具——覆盖 kind 默认 + overrides + 显式 tools 三条路径**（★R3:BLOCKING：v0.3 只覆盖 kind 路径，显式 `tools:["deepresearch"]` 仍绕过）。三处 forbidden 集都要加 `"deepresearch"`：
-   - **kind 路径**：`task_kinds._FORBIDDEN_IN_KIND`（[task_kinds.py:30](../../backend/deskpet/agent/task_kinds.py:30)）加 `"deepresearch"`；内置 research profile（[:62](../../backend/deskpet/agent/task_kinds.py:62)）工具集移除 `deepresearch`。`resolve_kind()` 对内置+overrides 都 `_strip_forbidden`（[task_kinds.py:113-126](../../backend/deskpet/agent/task_kinds.py:113)）。
-   - **显式 tools 路径（关键漏洞）**：`agent_parallel_tool._FORBIDDEN_NESTED_TOOLS`（[:57](../../backend/deskpet/tools/code_tools/agent_parallel_tool.py:57)，被 `_filter_subagent_tools` [:260](../../backend/deskpet/tools/code_tools/agent_parallel_tool.py:260) + `spawn_subagents_tool` [:136](../../backend/deskpet/tools/code_tools/spawn_subagents_tool.py:136) 复用）当前只 `{"agent","agent_parallel"}` → 加 `"deepresearch"`（顺带补 `"spawn_team","spawn_subagents","await_subagents"`，闭合既存 driver 漏洞）。
-   - **team 路径**：`teammate_tools.FORBIDDEN_TEAMMATE_TOOLS`（[:42](../../backend/deskpet/agent/team/teammate_tools.py:42)）加 `"deepresearch"`。
-   → **任何 kind / override / 显式 tools / teammate 的子代理都拿不到 `deepresearch`**，从根上无 LLM 子代理触发 fan-out 的路径（airtight，不依赖 sid）。
+1. **【硬保证】剥 `deepresearch` 工具——单一共享常量覆盖全部 4 条 spawn 路径**（★R3+R4：每轮各冒一个绕过口；根治=DRY 共享常量，不再逐处补）。
+   - **根因**：4 个 spawn 子代理的入口各有一套 tool-filter，互相不同步：① kind→`task_kinds._FORBIDDEN_IN_KIND`={agent,agent_parallel,spawn_team,spawn_subagents,await_subagents}；② agent_parallel/spawn_subagents 显式 tools→`agent_parallel_tool._FORBIDDEN_NESTED_TOOLS`={agent,agent_parallel}；③ **单 `agent` 工具显式 tools→`agent_tool.py:113` 只剥 `"agent"`**（R4-BLOCKING：第 4 条路径）；④ team→`teammate_tools.FORBIDDEN_TEAMMATE_TOOLS`={agent,agent_parallel,spawn_team}。
+   - **修法（单一真相）**：以 `task_kinds._FORBIDDEN_IN_KIND` 为**唯一权威集**，加入 `"deepresearch"`（最终={agent,agent_parallel,spawn_team,spawn_subagents,await_subagents,deepresearch}）；**其余 3 处 filter 全部改为引用/并入该集**：
+     - `agent_tool.py:109-113`：`tool_subset = [t for t in requested_tools if isinstance(t,str) and t not in _FORBIDDEN_IN_KIND]`（import `from deskpet.agent.task_kinds import _FORBIDDEN_IN_KIND`）。
+     - `agent_parallel_tool._FORBIDDEN_NESTED_TOOLS`（[:57](../../backend/deskpet/tools/code_tools/agent_parallel_tool.py:57)）= `_FORBIDDEN_IN_KIND`（或 `frozenset(_FORBIDDEN_IN_KIND)`）——同时覆盖 `_filter_subagent_tools` [:260](../../backend/deskpet/tools/code_tools/agent_parallel_tool.py:260) + `spawn_subagents_tool` [:136](../../backend/deskpet/tools/code_tools/spawn_subagents_tool.py:136)。
+     - `teammate_tools.FORBIDDEN_TEAMMATE_TOOLS`（[:42](../../backend/deskpet/agent/team/teammate_tools.py:42)）并入 `_FORBIDDEN_IN_KIND`（保留原有，union 加 deepresearch）。
+   - 内置 research profile（[:62](../../backend/deskpet/agent/task_kinds.py:62)）工具集移除 `deepresearch`；`resolve_kind()` 对内置+overrides 都 `_strip_forbidden`（[task_kinds.py:113-126](../../backend/deskpet/agent/task_kinds.py:113)）。
+   - 无循环 import：task_kinds 只依赖 dataclasses/typing，被 agent_tool/agent_parallel_tool/teammate_tools 单向 import 安全。
+   → **全部 4 条 spawn 路径（agent / agent_parallel / spawn_subagents / spawn_team）+ kind + overrides 都拿不到 `deepresearch`**，单一常量保证不再有第 5 个口子（airtight，不依赖 sid）。
 2. **`_depth` 计数（双保险）**：fanout 分叉只在 `_depth==0` 触发；内层 `deepresearch()` 传 `_depth=1` → 必走扁平。
 3. **内层 `scheduler=None`（双保险）**：`_run_subagent_fanout` 每个内层 `deepresearch()` 显式不传 scheduler → 即便 `_depth` 漏判也进不了 fanout 分支。
 
@@ -353,12 +357,13 @@ report = await deepresearch(..., scheduler=get_subagent_scheduler(), parent_sid=
 ```
 **不再用 sid 子串门**（§5 R2 定稿：误杀风险，递归改由"剥工具"硬保证）。`_resolve_sid` 不存在，用 `args.get("_session_id")`。
 
-**改 c — 强制剥 deepresearch（三条路径，§5 第 1 条；★R3-BLOCKING 补显式 tools 路径）**：
-- `task_kinds._FORBIDDEN_IN_KIND`（[:30](../../backend/deskpet/agent/task_kinds.py:30)）加 `"deepresearch"`；内置 research profile（[:62](../../backend/deskpet/agent/task_kinds.py:62)）工具集去掉 `deepresearch`。
-- `agent_parallel_tool._FORBIDDEN_NESTED_TOOLS`（[:57](../../backend/deskpet/tools/code_tools/agent_parallel_tool.py:57)）由 `{"agent","agent_parallel"}` → 加 `"deepresearch","spawn_team","spawn_subagents","await_subagents"`（覆盖 agent_parallel + spawn_subagents 显式 tools）。
-- `teammate_tools.FORBIDDEN_TEAMMATE_TOOLS`（[:42](../../backend/deskpet/agent/team/teammate_tools.py:42)）加 `"deepresearch"`。
-- **★R3-MAJOR 同步更新会变红的现存测试**（断言 research 含 deepresearch）：`test_task_kinds.py:18`（`"deepresearch" in p.tools`）、`test_task_kinds.py:41`（overrides merge）、`test_agent_parallel_kinds.py:62`（`"deepresearch" in by["a"]["tools"]`）→ 改为断言 **已被剥除**（`"deepresearch" not in ...`）+ 新增显式 tools 回归（`tools:["deepresearch"]` 经 `_filter_subagent_tools` 后不含 deepresearch）。
-- **★R3-MINOR**：`agent_parallel` schema 里 research kind 描述若写「联网+deepresearch」，改为「联网检索/交叉验证（web_search/web_fetch）」。
+**改 c — 强制剥 deepresearch（单一共享常量覆盖 4 路径，§5 第 1 条；★R3+R4）**：
+- `task_kinds._FORBIDDEN_IN_KIND`（[:30](../../backend/deskpet/agent/task_kinds.py:30)）加 `"deepresearch"`（唯一权威集）；内置 research profile（[:62](../../backend/deskpet/agent/task_kinds.py:62)）去掉 `deepresearch`。
+- `agent_tool.py:109-113`（[:109](../../backend/deskpet/tools/code_tools/agent_tool.py:109)）★R4-BLOCKING：显式 tools 过滤从 `t != "agent"` 改为 `t not in _FORBIDDEN_IN_KIND`（import 共享集）。
+- `agent_parallel_tool._FORBIDDEN_NESTED_TOOLS`（[:57](../../backend/deskpet/tools/code_tools/agent_parallel_tool.py:57)）= 引用/并入 `_FORBIDDEN_IN_KIND`（覆盖 agent_parallel + spawn_subagents）。
+- `teammate_tools.FORBIDDEN_TEAMMATE_TOOLS`（[:42](../../backend/deskpet/agent/team/teammate_tools.py:42)）并入 `_FORBIDDEN_IN_KIND`。
+- **★R3+R4-MAJOR 同步更新会变红的断言**（断言 research 含 deepresearch）：`test_task_kinds.py:18`、`test_task_kinds.py:41`、`test_agent_parallel_kinds.py:62`、**`scripts/acceptance/subagent_driver_smoke.py:43`**（R4 漏网：`"deepresearch" in resolve_kind("research").tools`）→ 全部改为断言**已被剥除**；新增 4 路径回归（kind/agent 显式/agent_parallel 显式/teammate 都不含 deepresearch）。
+- **★R3-MINOR**：`agent_parallel`/`agent` schema 里 research 描述若写「联网+deepresearch」，改为「联网检索/交叉验证（web_search/web_fetch）」。
 
 **改 d — `main.py` lifespan**（driver 的 scheduler 注册块之后）：
 ```python
@@ -489,10 +494,11 @@ async def _update_deepresearch_index(report_path: Path, topic: str, report: Rese
 |---|---|---|
 | `backend/deskpet/tools/research_tools.py` | 签名加 5 参 + fanout 分叉 + `_run_subagent_fanout` + 引用重编号 + `_fanout_synthesize` + `_FANOUT_SYNTH_PROMPT` + 全局桥 + flag helper + cite 复用重构 | WI-1~6 |
 | `backend/main.py` | lifespan 接 `set_subagent_scheduler`（`service_context.get` + `logger`） | WI-5d |
-| `backend/deskpet/agent/task_kinds.py` | `_FORBIDDEN_IN_KIND` 加 deepresearch + research profile 去 deepresearch | WI-5c/§5 |
-| `backend/deskpet/tools/code_tools/agent_parallel_tool.py` | `_FORBIDDEN_NESTED_TOOLS` 加 deepresearch+spawn 类（显式 tools 路径，★R3） | WI-5c/§5 |
-| `backend/deskpet/agent/team/teammate_tools.py` | `FORBIDDEN_TEAMMATE_TOOLS` 加 deepresearch | WI-5c/§5 |
-| `backend/tests/test_task_kinds.py` · `test_agent_parallel_kinds.py` | 改断言 deepresearch 已被剥 + 显式 tools 回归（★R3-MAJOR） | WI-5c |
+| `backend/deskpet/agent/task_kinds.py` | `_FORBIDDEN_IN_KIND` 加 deepresearch（唯一权威集）+ research profile 去 deepresearch | WI-5c/§5 |
+| `backend/deskpet/tools/code_tools/agent_tool.py` | 显式 tools 过滤改引用 `_FORBIDDEN_IN_KIND`（★R4 第 4 路径） | WI-5c/§5 |
+| `backend/deskpet/tools/code_tools/agent_parallel_tool.py` | `_FORBIDDEN_NESTED_TOOLS` 引用/并入 `_FORBIDDEN_IN_KIND`（覆盖 spawn_subagents） | WI-5c/§5 |
+| `backend/deskpet/agent/team/teammate_tools.py` | `FORBIDDEN_TEAMMATE_TOOLS` 并入 `_FORBIDDEN_IN_KIND` | WI-5c/§5 |
+| `backend/tests/test_task_kinds.py` · `test_agent_parallel_kinds.py` · `scripts/acceptance/subagent_driver_smoke.py` | 改断言 deepresearch 已被剥 + 4 路径回归（★R3+R4-MAJOR） | WI-5c |
 | `backend/deskpet/tools/registry.py` | （只读核实）`_session_id` 注入 params，无改动 | WI-5b |
 | `backend/config.py` | 无改动（`[research]`/`[agent.concurrency]` 纯 raw-read，挑战 B 确认够健壮） | WI-5 |
 | `backend/paths.py` | 新增 `deepresearch_dir()` + `_install_root_for_deepresearch()`（独立 probe DeepResearch 本身） | WI-8a |
@@ -532,7 +538,7 @@ async def _update_deepresearch_index(report_path: Path, topic: str, report: Rese
 - TG-3：模块级 `_norm_url` 提取后 direct-source 去重回归；引用全局重编号（撞号去重 refmap）。
 - TG-4：`_strip_footnote_definitions`/`_rewrite_local_refs` 正确；`_fanout_synthesize` + synth 失败降级含全局引用；`_finalize_report_md` 抽取后扁平 cite 字节级 BC。
 - TG-5：`_fanout_enabled`/`_fanout_max_subquestions`/`_fanout_concurrency`（复用 `get_subagent_concurrency`）真读 config（b05823b 回归，含 conc=1）+ 无 .raw 不抛。
-- TG-5b（★R3 递归守门三路径）：kind 默认/overrides（`resolve_kind` 后 research.tools 无 deepresearch）+ **显式 tools**（`_filter_subagent_tools(["deepresearch"])` 不含）+ teammate（`FORBIDDEN_TEAMMATE_TOOLS` 含 deepresearch）；更新后的 `test_task_kinds.py`/`test_agent_parallel_kinds.py` 转绿。
+- TG-5b（★R3+R4 递归守门 4 路径，单一共享常量）：kind 默认/overrides（`resolve_kind("research").tools` 无 deepresearch）+ **单 agent 显式**（`agent({"tools":["deepresearch"]})` 过滤后不含）+ **agent_parallel/spawn_subagents 显式**（`_filter_subagent_tools(["deepresearch"])` 不含）+ teammate（`FORBIDDEN_TEAMMATE_TOOLS` 含 deepresearch）；更新后的 `test_task_kinds.py`/`test_agent_parallel_kinds.py`/`subagent_driver_smoke.py` 转绿。
 - TG-6（WI-8）：`deepresearch_dir()` 四分支（env / frozen mock `sys.frozen`+`sys.executable` 可写安装根 / dev repo 根 / **frozen 但 root 不可写 → home 兜底 + 不落 user_data_dir**）；`_install_root_for_deepresearch` 直接 probe DeepResearch 本身；`_update_deepresearch_index` 首建表头 + 倒序 + 幂等去重 + 原子 `os.replace` + utf-8 + 主题转义 + `asyncio.Lock` 串行（并发两次只插两行不丢）；`_save_report` 落点为 DeepResearch（非 OutPut/Research）。
 - 全量回归：现有 `test_deskpet_research_tools.py` 全绿（BC）。
 
@@ -631,3 +637,16 @@ async def _update_deepresearch_index(report_path: Path, topic: str, report: Rese
 **第 3 轮 VERIFIED-CORRECT（7/8）**：D8 预算硬裁（conc=1/2/4 三组 `waves*timeout+60≤300` 且 timeout≥45 均成立）、`_fanout_concurrency` 复用 `get_subagent_concurrency`、`import os`+`_INDEX_HEADER`/`_insert_row_after_header`、`_finalize_report_md` 签名抽取、`_save_report` 拆分、probe 唯一名+home 兜底、旧路径文案清理点真实存在。整体扫描（coverage 缺键/skip_plan 变量/循环 import）未发现新 BLOCKING。
 
 **结论（v0.4）**：R3 唯一 BLOCKING（显式 tools 绕过）已用"三路径 forbidden 集全封"闭合；递归守门现 airtight 且不依赖 sid。趋势 11→5→2 收敛。**待第 4 轮终验。**
+
+### 第 4 轮终验（2026-06-21，codex gpt-5.5，专探第 4 绕过口 + 整体复扫）
+
+7/8 前轮修复 VERIFIED；揪出 **1 BLOCKING + 1 MAJOR**（递归守门第 4 条路径 + 漏网验收脚本），已吸收（v0.4 → v0.5）：
+
+| ID | 严重 | 问题 | 修订落点 |
+|---|---|---|---|
+| R4-1 | BLOCKING | 单 `agent` 工具是第 4 条 LLM 子代理拿 deepresearch 的路径（[agent_tool.py:109-113](../../backend/deskpet/tools/code_tools/agent_tool.py:109) 只剥 `agent`），v0.4 三路径未覆盖它 | §5/WI-5c：**改用单一共享常量 `_FORBIDDEN_IN_KIND`**，4 路径（agent/agent_parallel/spawn_subagents/team）全引用，根治"每轮冒新口" |
+| R4-2 | MAJOR | `scripts/acceptance/subagent_driver_smoke.py:43` 也断言 `"deepresearch" in resolve_kind("research").tools`，v0.4 测试清单漏列 → 改完会 NO-SHIP | WI-5c 测试清单补该 smoke |
+
+**根因反思**：R3/R4 连续在"又一个 tool-filter 路径"翻车——v0.5 改为**单一权威常量 + 其余路径全部引用**，从结构上消除第 5 个口子的可能（不再逐处补丁）。
+
+**结论（v0.5）**：4 路径递归守门由单一共享常量保证；趋势 11→5→2→2，BLOCKING 已从"逐处补"升级为"结构性根治"。**待第 5 轮终验确认 EXECUTABLE-AS-IS。**
