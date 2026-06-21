@@ -1,7 +1,7 @@
 # PPT 能力优化 — DeepResearch 调研 → 大纲确认 → 惊艳生图(gpt-image-2) / 模板兜底
 
-> **状态**: **v1.3 — R5 揪出 v1.2 修复自身的 1 BLOCKING+2 MAJOR（并发/生命周期细节）已全部消解（§6 R-19/20/21）。待 R6 微确认后即 EXECUTABLE-AS-IS。**
-> **对抗轨迹**：R1 codex 4B+3M / architect 2B+4M → R2 codex 1B+3M → R3 codex **EXECUTABLE-AS-IS**（v1.0 LOCKED）→ v1.1 并入用户决策（FP-5 风格大纲卡+历史/deep档/落盘/不注明费用）→ R4 codex 0B+3M（大纲卡 delta）→ v1.2 → R5 codex 1B+2M（v1.2 修复自身的并发细节：cancel-race/跨重启死卡/double-pop）→ v1.3 消解。挑战记录见 `.challenge-r{1..5}.out`。
+> **状态**: **v1.3 LOCKED — R6 终判 `VERDICT: EXECUTABLE-AS-IS`（3 处微修全部「修对」、无新坑、无连锁）。可执行。**
+> **对抗轨迹**：R1 codex 4B+3M / architect 2B+4M → R2 codex 1B+3M → R3 codex **EXECUTABLE-AS-IS**（v1.0 LOCKED）→ v1.1 并入用户决策（FP-5 风格大纲卡+历史/deep档/落盘/不注明费用）→ R4 codex 0B+3M（大纲卡 delta）→ v1.2 → R5 codex 1B+2M（v1.2 修复自身的并发细节：cancel-race/跨重启死卡/double-pop）→ v1.3 → R6 codex **EXECUTABLE-AS-IS**。BLOCKING 轨迹 6→1→0→0→1→0 收敛。6 轮挑战记录见 `.challenge-r{1..6}.out`。
 > **建档**: 2026-06-21
 > **作者**: Claude (Lead) · 对抗：codex gpt-5.5（只读，2 轮）+ architect 子代理
 > **前置阅读**: [STATUS/PPT.md](../../STATUS/PPT.md) · [STATUS/DeepResearch.md](../../STATUS/DeepResearch.md) · [STATUS/AgentLoop.md](../../STATUS/AgentLoop.md)
