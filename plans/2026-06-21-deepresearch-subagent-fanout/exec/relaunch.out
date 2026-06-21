@@ -1,0 +1,836 @@
+
+> tauri-app@0.6.0-beta.5 tauri:dev
+> tauri dev
+
+cmd :      Running BeforeDevCommand (`npm run dev:relay`)
+����λ�� G:\projects\deskpet\plans\2026-06-21-deepresearch-subagent-fanout\exec\relaunch_clean.ps1:15 �ַ�: 1
++ cmd /c "cd /d G:\projects\deskpet\tauri-app && npm run tauri:dev" *>& ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (     Running Be...run dev:relay`):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+> tauri-app@0.6.0-beta.5 dev:relay
+> vite --mode relay
+
+
+  [32m[1mVITE[22m v8.0.8[39m  [42m [1mrelay[22m [49m  [2mready in [0m[1m175[22m[2m[0m ms[22m
+
+  [32m�?[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5173[22m/[39m
+[2m  [32m�?[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+        Info Watching G:\projects\deskpet\tauri-app\src-tauri for changes...
+[1m[93mwarning[0m[1m[97m: function `resolve_with` is never used[0m
+  [1m[96m--> [0msrc\paths.rs:49:4
+   [1m[96m|[0m
+[1m[96m49[0m [1m[96m|[0m fn resolve_with(
+   [1m[96m|[0m    [1m[93m^^^^^^^^^^^^[0m
+   [1m[96m|[0m
+   [1m[96m= [0m[1m[97mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+[1m[93mwarning[0m: `deskpet` (lib) generated 1 warning
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 0.77s
+[1m[92m     Running[0m `target\debug\deskpet.exe`
+[permissions] PermissionRequested handler installed
+[window_geometry] apply_saved_geometry: loaded 457x667 logical pos=Some(2624),Some(579)
+[window_geometry] set_size OK, inner_size now 686x1001 physical
+[window_geometry] restoring position (2624,579)
+[window_geometry] Resized event label=main size=686x1001
+[window_geometry] on_resize physical=686x1001
+[window_geometry] on_move pos=(Some(2624),Some(579)) size=457x667
+[2m16:06:49[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Pet] viewport: 254 x 423 dpr: 2.129999876022339 petWidth: 282 size.w: 254
+[2m16:06:49[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Live2D] starting PixiJS...
+[backend_launch] Dev python=G:\projects\deskpet\backend\.venv\Scripts\python.exe backend_dir=G:\projects\deskpet\backen
+d
+[2m16:06:49[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Pet] viewport: 323 x 470 dpr: 2.129999876022339 petWidth: 282 size.w: 282
+[2m16:06:49[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Live2D] starting PixiJS...
+[2m16:06:49[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Live2D] PixiJS created, loading cubism4...
+[2m16:06:49[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Live2D] loading model:
+ /assets/live2d/Design_genius_White/Design_genius_White/Design_genius(1).model3.json
+[2m16:06:49[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Pet] viewport: 323 x 470 dpr: 2.129999876022339 petWidth: 282 size.w: 282
+[2m16:06:49[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[code-panel] get_shared
+_secret failed: No secret available (backend not started?)
+[2m16:06:49[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Live2D] model loaded: 5000 x 7000
+[2m16:06:49[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Live2D] render loop starting
+[2m16:06:49[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Live2D] renderer resize -> 601x1001 (size 282x470 dpr 2.129999876022339)
+[2m16:06:49[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m    at Live2DModel._ren
+der (http://localhost:5173/node_modules/.vite/deps/pixi-live2d-display_cubism4.js?v=d35ba6cf:17997:45)
+    at Container.render (http://localhost:5173/node_modules/.vite/deps/pixi-live2d-display_cubism4.js?v=d35ba6cf:13540:
+9)
+    at _Container2.render (http://localhost:5173/node_modules/.vite/deps/pixi__js.js?v=d35ba6cf:10414:75)
+    at ObjectRendererSystem.render (http://localhost:5173/node_modules/.vite/deps/pixi__js.js?v=d35ba6cf:8869:186)
+    at _Renderer2.render (http://localhost:5173/node_modules/.vite/deps/pixi__js.js?v=d35ba6cf:8949:23)
+    at _Application2.render (http://localhost:5173/node_modules/.vite/deps/pixi__js.js?v=d35ba6cf:13569:17)
+    at TickerListener.emit (http://localhost:5173/node_modules/.vite/deps/pixi__js.js?v=d35ba6cf:8324:38)
+    at _Ticker2.update (http://localhost:5173/node_modules/.vite/deps/pixi__js.js?v=d35ba6cf:8492:42)
+[2m16:06:49[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[code-panel] get_shared
+_secret failed: No secret available (backend not started?)
+INFO:observability.crash_reports:event='crash_reporter_installed' level='info' timestamp='2026-06-21T08:06:49.868748Z' 
+directory='G:\\projects\\deskpet\\crash_reports'
+INFO:config:llm_unified_schema_loaded fields=['api_key', 'base_url', 'max_tokens', 'model', 'temperature'] base_url=htt
+ps://your-llm-relay.example.com/v1 model=gpt-5.5
+INFO:__main__:event='config_loaded' level='info' timestamp='2026-06-21T08:06:49.876748Z' path='C:\\Users\\24378\\AppDat
+a\\Roaming\\deskpet\\config.toml' exists=True user_data_dir='C:\\Users\\24378\\AppData\\Roaming\\deskpet' user_models_d
+ir='F:\\DeskPetData\\models' model_root='F:\\DeskPetData\\models'
+[window_geometry] flushing 457x667 pos=Some(2624),Some(579) to disk
+[window_geometry] saved OK
+[2m16:06:50[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[code-panel] get_shared
+_secret failed: No secret available (backend not started?)
+[2m16:06:50[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[code-panel] get_shared
+_secret failed: No secret available (backend not started?)
+G:\projects\deskpet\backend\.venv\Lib\site-packages\transformers\utils\hub.py:110: FutureWarning: Using `TRANSFORMERS_C
+ACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+INFO:__main__:event='llm_runtime_overrides_applied base_url=%s model=%s' level='info' timestamp='2026-06-21T08:06:52.13
+5393Z' positional_args=('https://chinzy.com/v1', 'gpt-5.5')
+INFO:__main__:event='llm_api_key_from_keychain' level='info' timestamp='2026-06-21T08:06:52.135393Z'
+INFO:__main__:event='sanitize_inline_cot_dsml_flag' level='info' timestamp='2026-06-21T08:06:52.136897Z' enabled=True
+INFO:__main__:event='provider_registry_initialized providers=%d' level='info' timestamp='2026-06-21T08:06:52.151904Z' p
+ositional_args=(0,)
+WARNING:deskpet.tools.registry:tool 'web_fetch' re-registered (toolset=web �?web, source=builtin �?builtin); previous
+ definition replaced (replace_allowed opt-in)
+INFO:__main__:event='last_mile.default_artifact_dir resolved to %s' level='info' timestamp='2026-06-21T08:06:52.469733Z
+' positional_args=('C:\\Users\\24378\\AppData\\Roaming\\deskpet\\artifacts',)
+INFO:__main__:event='permission_auto_mode_restored' level='info' timestamp='2026-06-21T08:06:52.470737Z' enabled=True
+INFO:__main__:event='p4_s20_plugins_discovered' level='info' timestamp='2026-06-21T08:06:52.477739Z' plugins_dir='C:\\U
+sers\\24378\\AppData\\Roaming\\deskpet\\plugins' plugins=[]
+INFO:__main__:event='p4_s20_tool_registry_v2_ready' level='info' timestamp='2026-06-21T08:06:52.477739Z' os_tools=45
+INFO:__main__:event='hardware_tier' level='info' timestamp='2026-06-21T08:06:52.477739Z' tier='minimal' recommended_llm
+='gemma:e4b' recommended_tts='edge-tts' recommended_asr='tiny'
+INFO:__main__:event='p4_fact_extractor_ready' level='info' timestamp='2026-06-21T08:06:52.486959Z' min_chars=8 cross_ke
+y_merge=True goal_facts=False
+INFO:__main__:event='p4_enhanced_retriever_ready' level='info' timestamp='2026-06-21T08:06:52.487960Z' rerank=False enh
+anced_retriever=True query_rewrite=False chunking=False entity_path=False
+INFO:deskpet.tools.skill_tools:skill_tools.bind: skill_loader=SkillLoader
+INFO:__main__:event='p4_skill_invoke_tool_bound' level='info' timestamp='2026-06-21T08:06:52.488959Z'
+INFO:__main__:event='goal_store_bound_persistence' level='info' timestamp='2026-06-21T08:06:52.489956Z'
+INFO:__main__:event='companion_code_v1_goal_mode_ready' level='info' timestamp='2026-06-21T08:06:52.489956Z'
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=1000000 source=global
+INFO:__main__:event='wi4_0_compaction_enabled context_window=1000000 threshold=0.80 eff_pct=0.95' level='info' timestam
+p='2026-06-21T08:06:52.492959Z'
+INFO:__main__:event='fp5_auto_disclosure_wiring_ready matcher=%s' level='info' timestamp='2026-06-21T08:06:52.492959Z' 
+positional_args=(True,)
+INFO:__main__:event='p4_workspace_memory_ready' level='info' timestamp='2026-06-21T08:06:52.493957Z'
+INFO:deskpet.tools.memory_tools:memory_tools.bind: facts_store=FactsStore embedder=Embedder llm=True NL=False
+INFO:__main__:event='p4_memory_tools_bound' level='info' timestamp='2026-06-21T08:06:52.511232Z' forget_natural_languag
+e=False memory_forget_flag=False
+WARNING:deskpet.tools.registry:tool 'glob' re-registered (toolset=code �?code, source=builtin �?builtin); previous de
+finition replaced (replace_allowed opt-in)
+WARNING:deskpet.tools.registry:tool 'grep' re-registered (toolset=code �?code, source=builtin �?builtin); previous de
+finition replaced (replace_allowed opt-in)
+WARNING:deskpet.tools.registry:tool 'web_search' re-registered (toolset=code �?code, source=builtin �?builtin); previ
+ous definition replaced (replace_allowed opt-in)
+WARNING:deskpet.tools.registry:tool 'fetch_tool_result' re-registered (toolset=code �?code, source=builtin �?builtin)
+; previous definition replaced (replace_allowed opt-in)
+WARNING:deskpet.tools.registry:tool 'todo_write' re-registered (toolset=todo �?code, source=builtin �?builtin); previ
+ous definition replaced (replace_allowed opt-in)
+INFO:__main__:event='p4_s22_code_tools_registered' level='info' timestamp='2026-06-21T08:06:52.515232Z' count=6
+INFO:__main__:event='p4_services_registered' level='info' timestamp='2026-06-21T08:06:52.516232Z' l1_dir='C:\\Users\\24
+378\\AppData\\Roaming\\deskpet\\data' state_db='C:\\Users\\24378\\AppData\\Roaming\\deskpet\\data\\state.db' memory_man
+ager=True skill_loader=True context_assembler=True embedder_mock_when_missing=True vector_worker=True retriever=True
+WARNING:__main__:event='metrics_auth_bypassed_dev_mode' level='warning' timestamp='2026-06-21T08:06:52.516232Z' note='D
+ESKPET_DEV_MODE=1 �?/metrics and WS auth are OPEN. Set DESKPET_DEV_MODE=0 in production.'
+[2m16:06:52[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[code-panel] get_shared
+_secret failed: No secret available (backend not started?)
+INFO:__main__:event='starting backend' level='info' timestamp='2026-06-21T08:06:52.532377Z' host='127.0.0.1' port=8100
+INFO:     Started server process [6040]
+INFO:     Waiting for application startup.
+INFO:__main__:event='preloading models...' level='info' timestamp='2026-06-21T08:06:52.551399Z'
+INFO:__main__:event='p4_workspace_memory_loop_rebound' level='info' timestamp='2026-06-21T08:06:52.551399Z' ok=True
+INFO:__main__:event='billing_ledger_ready' level='info' timestamp='2026-06-21T08:06:52.554400Z' db_path='C:\\Users\\243
+78\\AppData\\Roaming\\deskpet\\data\\billing.db'
+INFO:providers.silero_vad:event='loading silero-vad v5' level='info' timestamp='2026-06-21T08:06:52.554400Z'
+INFO:providers.silero_vad:event='silero-vad loaded' level='info' timestamp='2026-06-21T08:06:52.645914Z'
+INFO:__main__:event='loaded' level='info' timestamp='2026-06-21T08:06:52.645914Z' engine='vad_engine'
+INFO:providers.faster_whisper_asr:event='loading faster-whisper' level='info' timestamp='2026-06-21T08:06:52.645914Z' m
+odel='F:\\DeskPetData\\models\\faster-whisper-large-v3-turbo' device='cuda' compute_type='float16'
+INFO:providers.faster_whisper_asr:event='faster-whisper loaded' level='info' timestamp='2026-06-21T08:06:58.888547Z'
+INFO:__main__:event='loaded' level='info' timestamp='2026-06-21T08:06:58.889547Z' engine='asr_engine'
+INFO:providers.edge_tts_provider:event='edge-tts ready' level='info' timestamp='2026-06-21T08:06:58.889547Z' voice='zh-
+CN-XiaoyiNeural'
+INFO:__main__:event='loaded' level='info' timestamp='2026-06-21T08:06:58.889547Z' engine='tts_engine'
+INFO:deskpet.memory.schema:state.db backed up before migration: C:\Users\24378\AppData\Roaming\deskpet\data\state.db.ba
+k.2026-06-21T08-06-58
+WARNING:deskpet.memory.migrator:state.db user_version=16 < 17; DeskPet clean-room has no real v1..v8 history �?treatin
+g as incremental upgrade and will re-run unapplied SQL
+INFO:deskpet.memory.session_db:SessionDB ready (db=C:\Users\24378\AppData\Roaming\deskpet\data\state.db, vec=on)
+INFO:__main__:event='p4_session_db_ready' level='info' timestamp='2026-06-21T08:06:58.939058Z' path='C:\\Users\\24378\\
+AppData\\Roaming\\deskpet\\data\\state.db'
+INFO:__main__:event='code_sessions_restored' level='info' timestamp='2026-06-21T08:06:58.942060Z' count=1
+INFO:deskpet.agent.goal_store:goal_store.load_persisted restored=3
+INFO:__main__:event='goal_store_load_persisted restored=%d' level='info' timestamp='2026-06-21T08:06:58.948389Z' positi
+onal_args=(3,)
+INFO:deskpet.memory.manager:event='memory_manager.initialized' level='info' timestamp='2026-06-21T08:06:58.949390Z' bas
+e_dir='C:\\Users\\24378\\AppData\\Roaming\\deskpet\\data' retriever_available=True
+INFO:__main__:event='p4_memory_manager_ready' level='info' timestamp='2026-06-21T08:06:58.949390Z'
+INFO:__main__:event='p4_facts_daily_decay_startup' level='info' timestamp='2026-06-21T08:06:58.967388Z' mutated=79
+INFO:deskpet.skills.loader:event='skill.reload_ok' level='info' timestamp='2026-06-21T08:06:58.977389Z' count=15
+INFO:__main__:event='p4_skill_loader_ready' level='info' timestamp='2026-06-21T08:06:58.978390Z' count=15
+INFO:__main__:event='model_provisioner_started' level='info' timestamp='2026-06-21T08:06:58.979391Z'
+INFO:__main__:event='p4_vector_worker_ready' level='info' timestamp='2026-06-21T08:06:58.979391Z' facts_extract=True
+INFO:deskpet.memory.image_worker:image_worker started (max_concurrent=2)
+INFO:deskpet.model_provisioner:event='model_provision_already_ready' level='info' timestamp='2026-06-21T08:06:58.979391
+Z'
+INFO:__main__:event='image_worker_ready' level='info' timestamp='2026-06-21T08:06:58.979391Z'
+INFO:deskpet.memory.embedder:Spawning BGE-M3 subprocess worker (path=F:\DeskPetData\models\bge-m3-int8 device=cpu)
+INFO:__main__:event='p4_embedder_ready' level='info' timestamp='2026-06-21T08:06:59.184997Z' is_mock=False
+[2m16:06:59[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[relayProviderBridge] u
+pdateCloudConfig failed: backend POST http://127.0.0.1:8100/config/cloud failed: error sending request for url (http://
+127.0.0.1:8100/config/cloud)
+WARNING:deskpet.memory.embedder:[embedder-worker stderr] G:\projects\deskpet\backend\.venv\Lib\site-packages\transforme
+rs\utils\hub.py:110: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers.
+ Use `HF_HOME` instead.
+WARNING:deskpet.memory.embedder:[embedder-worker stderr]   warnings.warn(
+Secure MCP Filesystem Server running on stdio
+Client does not support MCP Roots, using allowed directories set from server args: [ 'C:\\Users\\24378\\AppData\\Roamin
+g\\deskpet\\workspace' ]
+INFO:deskpet.mcp.manager:event='mcp_server_connected' level='info' timestamp='2026-06-21T08:07:01.195683Z' server='file
+system' transport='stdio' tool_count=14
+INFO:deskpet.mcp.manager:event='mcp_server_disabled' level='info' timestamp='2026-06-21T08:07:01.195683Z' server='weath
+er'
+INFO:deskpet.mcp.manager:event='mcp_server_connected' level='info' timestamp='2026-06-21T08:07:03.220963Z' server='play
+wright' transport='stdio' tool_count=23
+INFO:deskpet.mcp.bootstrap:event='mcp_bootstrap_started' level='info' timestamp='2026-06-21T08:07:03.221962Z' states={'
+filesystem': 'running', 'playwright': 'running'}
+INFO:__main__:event='p4_mcp_manager_ready' level='info' timestamp='2026-06-21T08:07:03.221962Z' states={'filesystem': '
+running', 'playwright': 'running'}
+INFO:__main__:event='p5s2_circuit_breaker_wired threshold=%d cooldown=%.0fs' level='info' timestamp='2026-06-21T08:07:0
+3.223962Z' positional_args=(3, 60.0)
+INFO:__main__:event='supervisor_provider_resolved id=legacy base_url=%s �?registry empty/unavailable; consider adding 
+a provider via Settings' level='info' timestamp='2026-06-21T08:07:03.223962Z' positional_args=('https://chinzy.com/v1',
+)
+INFO:deskpet.agent.watchdog:watchdog started (scan_interval=60s, stuck_threshold=900s, dedup=720s)
+INFO:__main__:event='p5_supervisor_watchdog_started' level='info' timestamp='2026-06-21T08:07:03.223962Z'
+INFO:__main__:event='p5s2_auto_resume_started enabled=%s max_attempts=%d' level='info' timestamp='2026-06-21T08:07:03.2
+23962Z' positional_args=(True, 2)
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=1000000 source=global
+INFO:__main__:event='startup complete' level='info' timestamp='2026-06-21T08:07:03.224964Z'
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8100 (Press CTRL+C to quit)
+INFO:     127.0.0.1:11747 - "WebSocket /ws/control?secret=78d1af9d05273f1edc9047012f46c4a5" [accepted]
+INFO:__main__:event='control channel connected' level='info' timestamp='2026-06-21T08:07:03.300482Z' session_id='defaul
+t'
+INFO:     connection open
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=1000000 source=global
+INFO:__main__:event='llm_runtime_overrides_saved path=%s' level='info' timestamp='2026-06-21T08:07:03.510201Z' position
+al_args=(WindowsPath('C:/Users/24378/AppData/Roaming/deskpet/llm_runtime.json'),)
+INFO:__main__:event='llm_config_updated base_url=%s model=%s' level='info' timestamp='2026-06-21T08:07:03.510201Z' posi
+tional_args=('https://chinzy.com/v1', 'gpt-5.5')
+INFO:     127.0.0.1:6021 - "WebSocket /ws/control?secret=78d1af9d05273f1edc9047012f46c4a5&session_id=code-panel-main" [
+accepted]
+INFO:__main__:event='control channel connected' level='info' timestamp='2026-06-21T08:07:04.724922Z' session_id='code-p
+anel-main'
+INFO:     connection open
+INFO:httpx:HTTP Request: GET https://chinzy.com/v1/models "HTTP/1.1 200 OK"
+INFO:llm.model_info:model_context_resolved model=deepseek-v4-pro window=1000000 source=builtin
+INFO:llm.model_info:model_context_resolved model=deepseek-v4-pro window=1000000 source=builtin
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=1000000 source=global
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=1000000 source=global
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=1000000 source=global
+INFO:deskpet.memory.embedder:BGE-M3 worker ready in 3745.7ms (device=cpu)
+INFO:deskpet.memory.embedder:BGE-M3 subprocess worker ready (path=F:\DeskPetData\models\bge-m3-int8, device=cpu, attemp
+t=1)
+WARNING:deskpet.memory.embedder:[embedder-worker stderr] You're using a XLMRobertaTokenizerFast tokenizer. Please note 
+that with a fast tokenizer, using the `__call__` method is faster than using a method to encode the text followed by a 
+call to the `pad` method to get a padded encoding.
+INFO:__main__:event='fp5_skill_matcher_prewarmed' level='info' timestamp='2026-06-21T08:07:10.330240Z' cached=15
+INFO:     127.0.0.1:5130 - "WebSocket /ws/control?secret=78d1af9d05273f1edc9047012f46c4a5&session_id=message-panel-main
+" [accepted]
+INFO:__main__:event='control channel connected' level='info' timestamp='2026-06-21T08:07:10.768650Z' session_id='messag
+e-panel-main'
+INFO:     connection open
+INFO:__main__:event='summarizer_starting age_days=30 min_messages=20 max_per_run=10' level='info' timestamp='2026-06-21
+T08:07:11.222060Z'
+INFO:__main__:event='summarizer_done scanned=%d summarized=%d archived=%d errors=%d' level='info' timestamp='2026-06-21
+T08:07:11.227567Z' positional_args=(0, 0, 0, 0)
+INFO:httpx:HTTP Request: GET https://chinzy.com/v1/models "HTTP/1.1 200 OK"
+INFO:llm.model_info:model_context_resolved model=deepseek-v4-pro window=1000000 source=builtin
+INFO:llm.model_info:model_context_resolved model=deepseek-v4-pro window=1000000 source=builtin
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=1000000 source=global
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=1000000 source=global
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=1000000 source=global
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:09:38.419993Z' positional_args=('gpt-5.5', None, None)
+WARNING:deskpet.memory.embedder:[embedder-worker stderr] 
+pre tokenize:   0%|          | 0/5 [00:00<?, ?it/s]
+pre tokenize: 100%|██████████| 5/5 [00:00<00:00, 5006.33it/s]
+WARNING:deskpet.memory.embedder:[embedder-worker stderr] 
+Inference Embeddings:   0%|          | 0/5 [00:00<?, ?it/s]
+Inference Embeddings:  20%|██        | 1/5 [00:00<00:00,  7.72it/s]
+Inference Embeddings:  40%|████      | 2/5 [00:00<00:00,  8.34it/s]
+Inference Embeddings:  60%|██████    | 3/5 [00:00<00:00,  8.68it/s]
+Inference Embeddings:  80%|████████  | 4/5 [00:00<00:00,  8.97it/s]
+Inference Embeddings: 100%|██████████| 5/5 [00:00<00:00,  9.40it/s]
+INFO:deskpet.agent.assembler.assembler:event='assembler_task_classified' level='info' timestamp='2026-06-21T08:09:39.34
+7751Z' task_type='chat' must=['memory', 'persona'] prefer=['tool', 'time', 'workspace', 'preference_profile', 'skill']
+INFO:deskpet.agent.assembler.components.skill:skill_auto_disclosed total=15 strong=2 auto_loaded=2 names=['deep-researc
+h', 'source-check'] top_sim=0.950
+INFO:deskpet.agent.assembler.components.memory:event='task_drift_sim_skip' level='info' timestamp='2026-06-21T08:09:40.
+789771Z' reason='encode_timeout'
+INFO:deskpet.agent.assembler.components.memory:event='task_drift_context_gate' level='info' timestamp='2026-06-21T08:09
+:40.790772Z' session_id='default' relabel_applied=True anchor_applied=True topic_shift_gate=True l2_truncated=False shi
+ft_path='lexical' gate_sim=None l2_count_in=5 l2_count_out=5
+INFO:deskpet.agent.assembler.registry:event='assembler.component_done' level='info' timestamp='2026-06-21T08:09:40.7907
+72Z' component='memory' duration_ms=1437.0 status='ok'
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=1000000 source=global
+WARNING:__main__:event='p5s2_provider_chain_resolve_failed sid=%s err=%s �?falling back to legacy single-provider path
+' level='warning' timestamp='2026-06-21T08:09:40.814292Z' positional_args=('default', 'no LLM provider configured')
+INFO:__main__:event='verify_gate_init mode=%s patterns=%d path=%s' level='info' timestamp='2026-06-21T08:09:40.824291Z'
+ positional_args=('shadow', 9, WindowsPath('G:/projects/deskpet/backend/verify/claim_patterns.yaml'))
+INFO:deskpet.agent.loop:wi4a_goal_anchor_always_on sid=default tid=task_260621080940_a5e6434b
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:09:40.947323Z' positional_args=('gpt-5.5', None, None)
+INFO:deskpet.memory.embedder:embedder: discarding stale response id=22 (waiting for 23)
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:providers.openai_compatible:event='p4s25_stream_summary' level='info' timestamp='2026-06-21T08:09:43.731247Z' sse_
+lines=9 content_chars=2 reasoning_chars=0 tool_calls=0 delta_keys=['content', 'role'] stop_reason='end_turn'
+INFO:providers.openai_compatible:event='p4s25_prompt_cache_hit' level='info' timestamp='2026-06-21T08:09:43.732247Z' wh
+ere='stream' cached_tokens=4864 prompt_tokens=5404 hit_rate=0.9001
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:providers.openai_compatible:event='p5s2_tool_call_args_dump' level='info' timestamp='2026-06-21T08:09:49.482671Z' 
+idx=0 name='deepresearch' args_len=209 args_preview='{"topic":"钠离子电池的工作原理、产业现状与代表企�
+��：技术路线、产业化进展、应用场景、主要中国与国际企业","depth":"deep","max_sub_questions":6,"m
+ax_' parse_ok=True
+INFO:providers.openai_compatible:event='p4s25_stream_summary' level='info' timestamp='2026-06-21T08:09:49.482671Z' sse_
+lines=299 content_chars=67 reasoning_chars=0 tool_calls=1 delta_keys=['content', 'role', 'tool_calls'] stop_reason='too
+l_use'
+INFO:providers.openai_compatible:event='p4s25_prompt_cache_hit' level='info' timestamp='2026-06-21T08:09:49.482671Z' wh
+ere='stream' cached_tokens='unknown' prompt_tokens=18889 hit_rate='unknown'
+INFO:deskpet.agent.loop:task_drift_user_request_injected tool=deepresearch req_len=49
+INFO:deskpet.agent.loop:task_drift_user_request_injected tool=deepresearch req_len=49
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:09:49.497670Z' positional_args=('gpt-5.5', None, None)
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:providers.openai_compatible:event='p4s25_stream_summary' level='info' timestamp='2026-06-21T08:10:01.959421Z' sse_
+lines=513 content_chars=356 reasoning_chars=0 tool_calls=0 delta_keys=['content', 'role'] stop_reason='end_turn'
+INFO:providers.openai_compatible:event='p4s25_prompt_cache_hit' level='info' timestamp='2026-06-21T08:10:01.959421Z' wh
+ere='stream' cached_tokens=4864 prompt_tokens=5336 hit_rate=0.9115
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:10:01.961424Z' positional_args=('gpt-5.5', None, None)
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:providers.openai_compatible:event='p4s25_stream_summary' level='info' timestamp='2026-06-21T08:10:39.364019Z' sse_
+lines=323 content_chars=314 reasoning_chars=0 tool_calls=0 delta_keys=['content', 'role'] stop_reason='end_turn'
+INFO:providers.openai_compatible:event='p4s25_prompt_cache_hit' level='info' timestamp='2026-06-21T08:10:39.365024Z' wh
+ere='stream' cached_tokens=4608 prompt_tokens=5555 hit_rate=0.8295
+INFO:httpx:HTTP Request: GET https://www.google.com/ "HTTP/1.1 302 Found"
+INFO:httpx:HTTP Request: GET https://www.google.com.hk/url?sa=p&hl=zh-CN&pref=hkredirect&pval=yes&q=https://www.google.
+com.hk/&ust=1782029472271306&usg=AOvVaw0Aw-eZ8Xf7kM5P5GYI1ZCB "HTTP/1.1 302 Found"
+INFO:httpx:HTTP Request: GET https://www.google.com.hk/ "HTTP/1.1 200 OK"
+INFO:deskpet.tools.research_cdp_edge:event='cdp_edge_render' level='info' timestamp='2026-06-21T08:10:53.252968Z' url='
+https://www.google.com/search?q=%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E7%9A%84%E5%9F%BA%E6%9C%AC%E5%B7%A5%E4%BD
+%9C%E5%8E%9F%E7%90%86%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%8C%E5%85%B6%E4%B8%8E%E9%94%82%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A
+0%E5%9C%A8%E7%A6%BB%E5%AD%90%E5%B5%8C%E5%85%A5%2F%E8%84%B1%E5%B5%8C%E3%80%81%E6%9D%90%E6%96%99%E4%BD%93%E7%B3%BB%E3%80%
+81%E6%80%A7%E8%83%BD%E6%8C%87%E6%A0%87%E5%92%8C%E5%AE%89%E5%85%A8%E6%80%A7%E6%96%B9%E9%9D%A2%E6%9C%89%E5%93%AA%E4%BA%9B
+%E5%85%B3%E9%94%AE%E5%B7%AE%E5%BC%82%EF%BC%9F&hl=zh-CN' ok=False error='TimeoutError'
+INFO:deskpet.tools.research_cdp_edge:event='cdp_edge_render' level='info' timestamp='2026-06-21T08:10:53.254970Z' url='
+https://www.google.com/search?q=%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E7%9A%84%E4%B8%BB%E8%A6%81%E6%8A%80%E6%9C
+%AF%E8%B7%AF%E7%BA%BF%E6%9C%89%E5%93%AA%E4%BA%9B%EF%BC%8C%E5%8C%85%E6%8B%AC%E6%AD%A3%E6%9E%81%E3%80%81%E8%B4%9F%E6%9E%8
+1%E3%80%81%E7%94%B5%E8%A7%A3%E6%B6%B2%E3%80%81%E9%9A%94%E8%86%9C%E4%B8%8E%E7%94%B5%E8%8A%AF%E7%BB%93%E6%9E%84%EF%BC%8C%
+E5%90%84%E8%B7%AF%E7%BA%BF%E7%9A%84%E4%BC%98%E5%8A%A3%E5%8A%BF%E5%92%8C%E4%BA%A7%E4%B8%9A%E5%8C%96%E6%88%90%E7%86%9F%E5
+%BA%A6%E5%A6%82%E4%BD%95%EF%BC%9F&hl=zh-CN' ok=False error='TimeoutError'
+INFO:deskpet.tools.research_cdp_edge:event='cdp_edge_render' level='info' timestamp='2026-06-21T08:11:01.276351Z' url='
+https://www.google.com/search?q=%E5%85%A8%E7%90%83%E5%8F%8A%E4%B8%AD%E5%9B%BD%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1
+%A0%E4%BA%A7%E4%B8%9A%E7%9B%AE%E5%89%8D%E5%A4%84%E4%BA%8E%E4%BB%80%E4%B9%88%E9%98%B6%E6%AE%B5%EF%BC%8C%E5%8C%85%E6%8B%A
+C%E4%BA%A7%E8%83%BD%E8%A7%84%E5%88%92%E3%80%81%E9%87%8F%E4%BA%A7%E8%BF%9B%E5%B1%95%E3%80%81%E6%88%90%E6%9C%AC%E6%B0%B4%
+E5%B9%B3%E3%80%81%E4%BE%9B%E5%BA%94%E9%93%BE%E9%85%8D%E5%A5%97%E5%92%8C%E6%94%BF%E7%AD%96%E7%8E%AF%E5%A2%83%EF%BC%9F&hl
+=zh-CN' ok=False error='TimeoutError'
+INFO:deskpet.tools.research_cdp_edge:event='cdp_edge_render' level='info' timestamp='2026-06-21T08:11:01.278351Z' url='
+https://www.google.com/search?q=%E5%85%A8%E7%90%83%E5%8F%8A%E4%B8%AD%E5%9B%BD%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1
+%A0%E4%BA%A7%E4%B8%9A%E7%9B%AE%E5%89%8D%E5%A4%84%E4%BA%8E%E4%BB%80%E4%B9%88%E9%98%B6%E6%AE%B5%EF%BC%8C%E5%8C%85%E6%8B%A
+C%E4%BA%A7%E8%83%BD%E8%A7%84%E5%88%92%E3%80%81%E9%87%8F%E4%BA%A7%E8%BF%9B%E5%B1%95%E3%80%81%E6%88%90%E6%9C%AC%E6%B0%B4%
+E5%B9%B3%E3%80%81%E4%BE%9B%E5%BA%94%E9%93%BE%E9%85%8D%E5%A5%97%E5%92%8C%E6%94%BF%E7%AD%96%E7%8E%AF%E5%A2%83%EF%BC%9F%20
+site%3Agov.cn&hl=zh-CN' ok=False error='TimeoutError'
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/item/%E4%B8%AD%E5%9B%BD%E4%B8%8E%E5%9B%BD%E9%99%85%E4%B8%8A%E6%9C%
+89%E5%93%AA%E4%BA%9B%E4%BB%A3%E8%A1%A8%E6%80%A7%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E4%BC%81%E4%B8%9A%E3%80%81
+%E6%9D%90%E6%96%99%E4%BC%81%E4%B8%9A%E5%92%8C%E6%95%B4%E8%BD%A6%2F%E5%82%A8%E8%83%BD%E5%90%88%E4%BD%9C%E6%96%B9%EF%BC%8
+C%E5%AE%83%E4%BB%AC%E7%9A%84%E6%8A%80%E6%9C%AF%E8%B7%AF%E7%BA%BF%E3%80%81%E4%BA%A7%E5%93%81%E8%BF%9B%E5%B1%95%E3%80%81%
+E5%AE%A2%E6%88%B7%E5%90%88%E4%BD%9C%E5%92%8C%E7%AB%9E%E4%BA%89%E4%BC%98%E5%8A%BF%E5%88%86%E5%88%AB%E6%98%AF%E4%BB%80%E4
+%B9%88%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/item/%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E7%9A%84%E5%9F%
+BA%E6%9C%AC%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%8C%E5%85%B6%E4%B8%8E%E9%94%82%E7%A6%BB
+%E5%AD%90%E7%94%B5%E6%B1%A0%E5%9C%A8%E7%A6%BB%E5%AD%90%E5%B5%8C%E5%85%A5%2F%E8%84%B1%E5%B5%8C%E3%80%81%E6%9D%90%E6%96%9
+9%E4%BD%93%E7%B3%BB%E3%80%81%E6%80%A7%E8%83%BD%E6%8C%87%E6%A0%87%E5%92%8C%E5%AE%89%E5%85%A8%E6%80%A7%E6%96%B9%E9%9D%A2%
+E6%9C%89%E5%93%AA%E4%BA%9B%E5%85%B3%E9%94%AE%E5%B7%AE%E5%BC%82%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/search?word=%E4%B8%AD%E5%9B%BD%E4%B8%8E%E5%9B%BD%E9%99%85%E4%B8%8A
+%E6%9C%89%E5%93%AA%E4%BA%9B%E4%BB%A3%E8%A1%A8%E6%80%A7%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E4%BC%81%E4%B8%9A%E
+3%80%81%E6%9D%90%E6%96%99%E4%BC%81%E4%B8%9A%E5%92%8C%E6%95%B4%E8%BD%A6%2F%E5%82%A8%E8%83%BD%E5%90%88%E4%BD%9C%E6%96%B9%
+EF%BC%8C%E5%AE%83%E4%BB%AC%E7%9A%84%E6%8A%80%E6%9C%AF%E8%B7%AF%E7%BA%BF%E3%80%81%E4%BA%A7%E5%93%81%E8%BF%9B%E5%B1%95%E3
+%80%81%E5%AE%A2%E6%88%B7%E5%90%88%E4%BD%9C%E5%92%8C%E7%AB%9E%E4%BA%89%E4%BC%98%E5%8A%BF%E5%88%86%E5%88%AB%E6%98%AF%E4%B
+B%80%E4%B9%88%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/search?word=%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E7%9A%84
+%E5%9F%BA%E6%9C%AC%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%8C%E5%85%B6%E4%B8%8E%E9%94%82%E
+7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E5%9C%A8%E7%A6%BB%E5%AD%90%E5%B5%8C%E5%85%A5%2F%E8%84%B1%E5%B5%8C%E3%80%81%E6%9D%90%
+E6%96%99%E4%BD%93%E7%B3%BB%E3%80%81%E6%80%A7%E8%83%BD%E6%8C%87%E6%A0%87%E5%92%8C%E5%AE%89%E5%85%A8%E6%80%A7%E6%96%B9%E9
+%9D%A2%E6%9C%89%E5%93%AA%E4%BA%9B%E5%85%B3%E9%94%AE%E5%B7%AE%E5%BC%82%EF%BC%9F "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://baike.sogou.com/Search.e?sp=S%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E7%9A%8
+4%E5%9F%BA%E6%9C%AC%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%8C%E5%85%B6%E4%B8%8E%E9%94%82%
+E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E5%9C%A8%E7%A6%BB%E5%AD%90%E5%B5%8C%E5%85%A5%2F%E8%84%B1%E5%B5%8C%E3%80%81%E6%9D%90
+%E6%96%99%E4%BD%93%E7%B3%BB%E3%80%81%E6%80%A7%E8%83%BD%E6%8C%87%E6%A0%87%E5%92%8C%E5%AE%89%E5%85%A8%E6%80%A7%E6%96%B9%E
+9%9D%A2%E6%9C%89%E5%93%AA%E4%BA%9B%E5%85%B3%E9%94%AE%E5%B7%AE%E5%BC%82%EF%BC%9F "HTTP/1.1 302 Found"
+INFO:httpx:HTTP Request: GET https://baike.sogou.com/Search.e?sp=S%E4%B8%AD%E5%9B%BD%E4%B8%8E%E5%9B%BD%E9%99%85%E4%B8%8
+A%E6%9C%89%E5%93%AA%E4%BA%9B%E4%BB%A3%E8%A1%A8%E6%80%A7%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E4%BC%81%E4%B8%9A%
+E3%80%81%E6%9D%90%E6%96%99%E4%BC%81%E4%B8%9A%E5%92%8C%E6%95%B4%E8%BD%A6%2F%E5%82%A8%E8%83%BD%E5%90%88%E4%BD%9C%E6%96%B9
+%EF%BC%8C%E5%AE%83%E4%BB%AC%E7%9A%84%E6%8A%80%E6%9C%AF%E8%B7%AF%E7%BA%BF%E3%80%81%E4%BA%A7%E5%93%81%E8%BF%9B%E5%B1%95%E
+3%80%81%E5%AE%A2%E6%88%B7%E5%90%88%E4%BD%9C%E5%92%8C%E7%AB%9E%E4%BA%89%E4%BC%98%E5%8A%BF%E5%88%86%E5%88%AB%E6%98%AF%E4%
+BB%80%E4%B9%88%EF%BC%9F "HTTP/1.1 302 Found"
+WARNING:trafilatura.core:discarding data: None
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/item/%E4%B8%AD%E5%9B%BD%E4%B8%8E%E5%9B%BD%E9%99%85%E4%B8%8A%E6%9C%
+89%E5%93%AA%E4%BA%9B%E4%BB%A3%E8%A1%A8%E6%80%A7%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E4%BC%81%E4%B8%9A%E3%80%81
+%E6%9D%90%E6%96%99%E4%BC%81%E4%B8%9A%E5%92%8C%E6%95%B4%E8%BD%A6%2F%E5%82%A8%E8%83%BD%E5%90%88%E4%BD%9C%E6%96%B9%EF%BC%8
+C%E5%AE%83%E4%BB%AC%E7%9A%84%E6%8A%80%E6%9C%AF%E8%B7%AF%E7%BA%BF%E3%80%81%E4%BA%A7%E5%93%81%E8%BF%9B%E5%B1%95%E3%80%81%
+E5%AE%A2%E6%88%B7%E5%90%88%E4%BD%9C%E5%92%8C%E7%AB%9E%E4%BA%89%E4%BC%98%E5%8A%BF%E5%88%86%E5%88%AB%E6%98%AF%E4%BB%80%E4
+%B9%88%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/item/%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E7%9A%84%E5%9F%
+BA%E6%9C%AC%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%8C%E5%85%B6%E4%B8%8E%E9%94%82%E7%A6%BB
+%E5%AD%90%E7%94%B5%E6%B1%A0%E5%9C%A8%E7%A6%BB%E5%AD%90%E5%B5%8C%E5%85%A5%2F%E8%84%B1%E5%B5%8C%E3%80%81%E6%9D%90%E6%96%9
+9%E4%BD%93%E7%B3%BB%E3%80%81%E6%80%A7%E8%83%BD%E6%8C%87%E6%A0%87%E5%92%8C%E5%AE%89%E5%85%A8%E6%80%A7%E6%96%B9%E9%9D%A2%
+E6%9C%89%E5%93%AA%E4%BA%9B%E5%85%B3%E9%94%AE%E5%B7%AE%E5%BC%82%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/search?word=%E4%B8%AD%E5%9B%BD%E4%B8%8E%E5%9B%BD%E9%99%85%E4%B8%8A
+%E6%9C%89%E5%93%AA%E4%BA%9B%E4%BB%A3%E8%A1%A8%E6%80%A7%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E4%BC%81%E4%B8%9A%E
+3%80%81%E6%9D%90%E6%96%99%E4%BC%81%E4%B8%9A%E5%92%8C%E6%95%B4%E8%BD%A6%2F%E5%82%A8%E8%83%BD%E5%90%88%E4%BD%9C%E6%96%B9%
+EF%BC%8C%E5%AE%83%E4%BB%AC%E7%9A%84%E6%8A%80%E6%9C%AF%E8%B7%AF%E7%BA%BF%E3%80%81%E4%BA%A7%E5%93%81%E8%BF%9B%E5%B1%95%E3
+%80%81%E5%AE%A2%E6%88%B7%E5%90%88%E4%BD%9C%E5%92%8C%E7%AB%9E%E4%BA%89%E4%BC%98%E5%8A%BF%E5%88%86%E5%88%AB%E6%98%AF%E4%B
+B%80%E4%B9%88%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/search?word=%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E7%9A%84
+%E5%9F%BA%E6%9C%AC%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%8C%E5%85%B6%E4%B8%8E%E9%94%82%E
+7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E5%9C%A8%E7%A6%BB%E5%AD%90%E5%B5%8C%E5%85%A5%2F%E8%84%B1%E5%B5%8C%E3%80%81%E6%9D%90%
+E6%96%99%E4%BD%93%E7%B3%BB%E3%80%81%E6%80%A7%E8%83%BD%E6%8C%87%E6%A0%87%E5%92%8C%E5%AE%89%E5%85%A8%E6%80%A7%E6%96%B9%E9
+%9D%A2%E6%9C%89%E5%93%AA%E4%BA%9B%E5%85%B3%E9%94%AE%E5%B7%AE%E5%BC%82%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://zh.wikipedia.org/ "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://zh.wikipedia.org/ "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://www.sogou.com/sogou?query=%E4%B8%AD%E5%9B%BD%E4%B8%8E%E5%9B%BD%E9%99%85%E4%B8%8A%E
+6%9C%89%E5%93%AA%E4%BA%9B%E4%BB%A3%E8%A1%A8%E6%80%A7%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E4%BC%81%E4%B8%9A%E3%
+80%81%E6%9D%90%E6%96%99%E4%BC%81%E4%B8%9A%E5%92%8C%E6%95%B4%E8%BD%A6%2F%E5%82%A8%E8%83%BD%E5%90%88%E4%BD%9C%E6%96%B9%EF
+%BC%8C%E5%AE%83%E4%BB%AC%E7%9A%84%E6%8A%80%E6%9C%AF%E8%B7%AF%E7%BA%BF%E3%80%81%E4%BA%A7%E5%93%81%E8%BF%9B%E5%B1%95%E3%8
+0%81%E5%AE%A2%E6%88%B7%E5%90%88%E4%BD%9C%E5%92%8C%E7%AB%9E%E4%BA%89%E4%BC%98%E5%8A%BF%E5%88%86%E5%88%AB%E6%98%AF%E4%BB%
+80%E4%B9%88%EF%BC%9F&ie=utf8&insite=baike.sogou.com&pid=sogou-wsse-17737832ac17be52 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.sogou.com/sogou?query=%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E7%9A%84%E
+5%9F%BA%E6%9C%AC%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%8C%E5%85%B6%E4%B8%8E%E9%94%82%E7%
+A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E5%9C%A8%E7%A6%BB%E5%AD%90%E5%B5%8C%E5%85%A5%2F%E8%84%B1%E5%B5%8C%E3%80%81%E6%9D%90%E6
+%96%99%E4%BD%93%E7%B3%BB%E3%80%81%E6%80%A7%E8%83%BD%E6%8C%87%E6%A0%87%E5%92%8C%E5%AE%89%E5%85%A8%E6%80%A7%E6%96%B9%E9%9
+D%A2%E6%9C%89%E5%93%AA%E4%BA%9B%E5%85%B3%E9%94%AE%E5%B7%AE%E5%BC%82%EF%BC%9F&ie=utf8&insite=baike.sogou.com&pid=sogou-w
+sse-17737832ac17be52 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://baike.sogou.com/v10379802.htm?fromTitle=%E5%82%A8%E8%83%BD%EF%BC%88%E9%80%9A%E8%BF%
+87%E4%BB%8B%E8%B4%A8%E6%88%96%E8%AE%BE%E5%A4%87%E6%8A%8A%E8%83%BD%E9%87%8F%E5%AD%98%E5%82%A8%E8%B5%B7%E6%9D%A5%E5%9C%A8
+%E9%9C%80%E8%A6%81%E6%97%B6%E5%86%8D%E9%87%8A%E6%94%BE%E7%9A%84%E8%BF%87%E7%A8%8B%EF%BC%89 "HTTP/1.1 302 Found"
+INFO:httpx:HTTP Request: GET http://baike.sogou.com/v158039233.htm?fromTitle=%E5%AE%81%E5%BE%B7%E6%97%B6%E4%BB%A3%E6%96
+%B0%E8%83%BD%E6%BA%90%E7%A7%91%E6%8A%80%E8%82%A1%E4%BB%BD%E6%9C%89%E9%99%90%E5%85%AC%E5%8F%B8 "HTTP/1.1 302 Found"
+INFO:httpx:HTTP Request: GET https://baike.sogou.com/v158039233.htm?fromTitle=%E5%AE%81%E5%BE%B7%E6%97%B6%E4%BB%A3%E6%9
+6%B0%E8%83%BD%E6%BA%90%E7%A7%91%E6%8A%80%E8%82%A1%E4%BB%BD%E6%9C%89%E9%99%90%E5%85%AC%E5%8F%B8 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://baike.sogou.com/v10379802.htm?fromTitle=%E5%82%A8%E8%83%BD%EF%BC%88%E9%80%9A%E8%BF
+%87%E4%BB%8B%E8%B4%A8%E6%88%96%E8%AE%BE%E5%A4%87%E6%8A%8A%E8%83%BD%E9%87%8F%E5%AD%98%E5%82%A8%E8%B5%B7%E6%9D%A5%E5%9C%A
+8%E9%9C%80%E8%A6%81%E6%97%B6%E5%86%8D%E9%87%8A%E6%94%BE%E7%9A%84%E8%BF%87%E7%A8%8B%EF%BC%89 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://en.wikipedia.org/ "HTTP/1.1 403 Forbidden"
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:11:08.815413Z' positional_args=('gpt-5.5', None, None)
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:providers.openai_compatible:event='p4s25_stream_summary' level='info' timestamp='2026-06-21T08:11:24.614057Z' sse_
+lines=9 content_chars=142 reasoning_chars=0 tool_calls=0 delta_keys=['content', 'role'] stop_reason='end_turn'
+INFO:providers.openai_compatible:event='p4s25_prompt_cache_hit' level='info' timestamp='2026-06-21T08:11:24.614057Z' wh
+ere='stream' cached_tokens=4608 prompt_tokens=5566 hit_rate=0.8279
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:11:27.093429Z' positional_args=('gpt-4.1-mini', None, None)
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 404 Not Found"
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:11:29.111965Z' positional_args=('gpt-5.5', None, None)
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:providers.openai_compatible:event='p4s25_stream_summary' level='info' timestamp='2026-06-21T08:12:25.673142Z' sse_
+lines=4591 content_chars=3226 reasoning_chars=0 tool_calls=0 delta_keys=['content', 'role'] stop_reason='end_turn'
+INFO:providers.openai_compatible:event='p4s25_prompt_cache_hit' level='info' timestamp='2026-06-21T08:12:25.673142Z' wh
+ere='stream' cached_tokens=4864 prompt_tokens=8682 hit_rate=0.5602
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:12:25.699660Z' positional_args=('gpt-5.5', None, None)
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:providers.openai_compatible:event='p5s2_tool_call_args_dump' level='info' timestamp='2026-06-21T08:12:36.706167Z' 
+idx=0 name='deepresearch' args_len=365 args_preview='{"depth":"deep","max_sub_questions":6,"max_total_passages":24,"max
+_urls_per_query":6,"topic":"Sodium' parse_ok=True
+INFO:providers.openai_compatible:event='p4s25_stream_summary' level='info' timestamp='2026-06-21T08:12:36.706167Z' sse_
+lines=353 content_chars=74 reasoning_chars=0 tool_calls=1 delta_keys=['content', 'role', 'tool_calls'] stop_reason='too
+l_use'
+INFO:providers.openai_compatible:event='p4s25_prompt_cache_hit' level='info' timestamp='2026-06-21T08:12:36.706167Z' wh
+ere='stream' cached_tokens='unknown' prompt_tokens=18624 hit_rate='unknown'
+INFO:deskpet.agent.loop:task_drift_user_request_injected tool=deepresearch req_len=49
+INFO:deskpet.agent.loop:task_drift_user_request_injected tool=deepresearch req_len=49
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:12:36.721167Z' positional_args=('gpt-5.5', None, None)
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:providers.openai_compatible:event='p4s25_stream_summary' level='info' timestamp='2026-06-21T08:12:55.638974Z' sse_
+lines=545 content_chars=400 reasoning_chars=0 tool_calls=0 delta_keys=['content', 'role'] stop_reason='end_turn'
+INFO:providers.openai_compatible:event='p4s25_prompt_cache_hit' level='info' timestamp='2026-06-21T08:12:55.638974Z' wh
+ere='stream' cached_tokens=5120 prompt_tokens=5723 hit_rate=0.8946
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:12:55.639974Z' positional_args=('gpt-5.5', None, None)
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:providers.openai_compatible:event='p4s25_stream_summary' level='info' timestamp='2026-06-21T08:13:03.028950Z' sse_
+lines=379 content_chars=838 reasoning_chars=0 tool_calls=0 delta_keys=['content', 'role'] stop_reason='end_turn'
+INFO:providers.openai_compatible:event='p4s25_prompt_cache_hit' level='info' timestamp='2026-06-21T08:13:03.028950Z' wh
+ere='stream' cached_tokens=4352 prompt_tokens=5179 hit_rate=0.8403
+INFO:httpx:HTTP Request: GET https://www.google.com/ "HTTP/1.1 302 Found"
+INFO:httpx:HTTP Request: GET https://www.google.com.hk/url?sa=p&hl=zh-CN&pref=hkredirect&pval=yes&q=https://www.google.
+com.hk/&ust=1782029614855584&usg=AOvVaw1Af_JigBIowDrQJj8fvpht "HTTP/1.1 302 Found"
+INFO:httpx:HTTP Request: GET https://www.google.com.hk/ "HTTP/1.1 200 OK"
+INFO:deskpet.tools.research_cdp_edge:event='cdp_edge_render' level='info' timestamp='2026-06-21T08:13:13.440070Z' url='
+https://www.google.com/search?q=%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E7%9A%84%E5%9F%BA%E6%9C%AC%E5%B7%A5%E4%BD
+%9C%E5%8E%9F%E7%90%86%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%8C%E5%8C%85%E6%8B%AC%E6%AD%A3%E8%B4%9F%E6%9E%81%E6%9D%90%E6%96%9
+9%E3%80%81%E7%94%B5%E8%A7%A3%E6%B6%B2%E3%80%81%E7%A6%BB%E5%AD%90%E5%B5%8C%E5%85%A5%2F%E8%84%B1%E5%B5%8C%E6%9C%BA%E5%88%
+B6%EF%BC%8C%E4%BB%A5%E5%8F%8A%E4%B8%8E%E9%94%82%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E7%9A%84%E5%85%B3%E9%94%AE%E5%B7%AE
+%E5%BC%82%EF%BC%9F&hl=zh-CN' chars=5767 ms=4477 ok=True
+INFO:deskpet.tools.research_cdp_edge:event='cdp_edge_render' level='info' timestamp='2026-06-21T08:13:13.895354Z' url='
+https://www.google.com/search?q=%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E4%B8%BA%E4%BB%80%E4%B9%88%E9%87%8D%E8%A6
+%81%EF%BC%8C%E5%85%B6%E5%9C%A8%E8%B5%84%E6%BA%90%E6%88%90%E6%9C%AC%E3%80%81%E4%BE%9B%E5%BA%94%E9%93%BE%E5%AE%89%E5%85%A
+8%E3%80%81%E4%BD%8E%E6%B8%A9%E6%80%A7%E8%83%BD%E3%80%81%E5%AE%89%E5%85%A8%E6%80%A7%E5%92%8C%E5%82%A8%E8%83%BD%2F%E7%94%
+B5%E5%8A%A8%E8%BD%A6%E5%BA%94%E7%94%A8%E4%B8%AD%E7%9A%84%E6%BD%9C%E5%9C%A8%E4%BC%98%E5%8A%BF%E4%B8%8E%E5%B1%80%E9%99%90
+%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F&hl=zh-CN' chars=5821 ms=4926 ok=True
+INFO:deskpet.tools.research_cdp_edge:event='cdp_edge_render' level='info' timestamp='2026-06-21T08:13:21.439900Z' url='
+https://www.google.com/search?q=%E6%88%AA%E8%87%B32024%E5%B9%B4%E5%89%8D%E5%90%8E%EF%BC%8C%E9%92%A0%E7%A6%BB%E5%AD%90%E
+7%94%B5%E6%B1%A0%E7%9A%84%E6%8A%80%E6%9C%AF%E6%88%90%E7%86%9F%E5%BA%A6%E5%92%8C%E4%BA%A7%E4%B8%9A%E5%8C%96%E7%8E%B0%E7%
+8A%B6%E5%A6%82%E4%BD%95%EF%BC%8C%E5%8C%85%E6%8B%AC%E8%83%BD%E9%87%8F%E5%AF%86%E5%BA%A6%E3%80%81%E5%BE%AA%E7%8E%AF%E5%AF
+%BF%E5%91%BD%E3%80%81%E6%88%90%E6%9C%AC%E3%80%81%E9%87%8F%E4%BA%A7%E8%A7%84%E6%A8%A1%E5%92%8C%E4%B8%BB%E8%A6%81%E5%BA%9
+4%E7%94%A8%E5%9C%BA%E6%99%AF%EF%BC%9F&hl=zh-CN' ok=False error='TimeoutError'
+INFO:deskpet.tools.research_cdp_edge:event='cdp_edge_render' level='info' timestamp='2026-06-21T08:13:21.896581Z' url='
+https://www.google.com/search?q=%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E4%BA%A7%E4%B8%9A%E9%93%BE%E5%92%8C%E4%BB
+%A3%E8%A1%A8%E4%BC%81%E4%B8%9A%E6%A0%BC%E5%B1%80%E5%A6%82%E4%BD%95%EF%BC%8C%E9%87%8D%E7%82%B9%E6%AF%94%E8%BE%83%E5%AE%8
+1%E5%BE%B7%E6%97%B6%E4%BB%A3%E3%80%81%E4%B8%AD%E7%A7%91%E6%B5%B7%E9%92%A0%E3%80%81Natron%20Energy%E3%80%81Faradion%E3%8
+0%81Tiamat%E7%AD%89%E5%85%AC%E5%8F%B8%E7%9A%84%E6%8A%80%E6%9C%AF%E8%B7%AF%E7%BA%BF%E3%80%81%E4%BA%A7%E8%83%BD%E8%A7%84%
+E5%88%92%E3%80%81%E5%95%86%E4%B8%9A%E8%BF%9B%E5%B1%95%E5%92%8C%E5%AE%98%E6%96%B9%E6%8A%AB%E9%9C%B2%EF%BC%9F&hl=zh-CN' o
+k=False error='TimeoutError'
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/item/%E8%BF%91%E5%B9%B4%E6%9D%83%E5%A8%81%E6%9C%BA%E6%9E%84%E5%92%
+8C%E7%A0%94%E7%A9%B6%E6%96%87%E7%8C%AE%E5%A6%82%E4%BD%95%E8%AF%84%E4%BB%B7%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0
+%E7%9A%84%E5%8F%91%E5%B1%95%E5%89%8D%E6%99%AF%EF%BC%8C%E5%8C%85%E6%8B%ACIEA%E3%80%81BloombergNEF%E3%80%81%E7%BB%BC%E8%B
+F%B0%E8%AE%BA%E6%96%87%E5%92%8C%E4%BC%81%E4%B8%9A%E5%85%AC%E5%91%8A%E5%AF%B92024%E5%B9%B4%E4%BB%A5%E6%9D%A5%E8%B6%8B%E5
+%8A%BF%E7%9A%84%E5%88%A4%E6%96%AD%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/item/%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E4%B8%BA%E4%BB%
+80%E4%B9%88%E9%87%8D%E8%A6%81%EF%BC%8C%E5%85%B6%E5%9C%A8%E8%B5%84%E6%BA%90%E6%88%90%E6%9C%AC%E3%80%81%E4%BE%9B%E5%BA%94
+%E9%93%BE%E5%AE%89%E5%85%A8%E3%80%81%E4%BD%8E%E6%B8%A9%E6%80%A7%E8%83%BD%E3%80%81%E5%AE%89%E5%85%A8%E6%80%A7%E5%92%8C%E
+5%82%A8%E8%83%BD%2F%E7%94%B5%E5%8A%A8%E8%BD%A6%E5%BA%94%E7%94%A8%E4%B8%AD%E7%9A%84%E6%BD%9C%E5%9C%A8%E4%BC%98%E5%8A%BF%
+E4%B8%8E%E5%B1%80%E9%99%90%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/item/%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E7%9A%84%E5%9F%
+BA%E6%9C%AC%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%8C%E5%8C%85%E6%8B%AC%E6%AD%A3%E8%B4%9F
+%E6%9E%81%E6%9D%90%E6%96%99%E3%80%81%E7%94%B5%E8%A7%A3%E6%B6%B2%E3%80%81%E7%A6%BB%E5%AD%90%E5%B5%8C%E5%85%A5%2F%E8%84%B
+1%E5%B5%8C%E6%9C%BA%E5%88%B6%EF%BC%8C%E4%BB%A5%E5%8F%8A%E4%B8%8E%E9%94%82%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E7%9A%84%
+E5%85%B3%E9%94%AE%E5%B7%AE%E5%BC%82%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.sogou.com/Search.e?sp=S%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E7%9A%8
+4%E5%9F%BA%E6%9C%AC%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%8C%E5%8C%85%E6%8B%AC%E6%AD%A3%
+E8%B4%9F%E6%9E%81%E6%9D%90%E6%96%99%E3%80%81%E7%94%B5%E8%A7%A3%E6%B6%B2%E3%80%81%E7%A6%BB%E5%AD%90%E5%B5%8C%E5%85%A5%2F
+%E8%84%B1%E5%B5%8C%E6%9C%BA%E5%88%B6%EF%BC%8C%E4%BB%A5%E5%8F%8A%E4%B8%8E%E9%94%82%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E
+7%9A%84%E5%85%B3%E9%94%AE%E5%B7%AE%E5%BC%82%EF%BC%9F "HTTP/1.1 302 Found"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/search?word=%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E4%B8%BA
+%E4%BB%80%E4%B9%88%E9%87%8D%E8%A6%81%EF%BC%8C%E5%85%B6%E5%9C%A8%E8%B5%84%E6%BA%90%E6%88%90%E6%9C%AC%E3%80%81%E4%BE%9B%E
+5%BA%94%E9%93%BE%E5%AE%89%E5%85%A8%E3%80%81%E4%BD%8E%E6%B8%A9%E6%80%A7%E8%83%BD%E3%80%81%E5%AE%89%E5%85%A8%E6%80%A7%E5%
+92%8C%E5%82%A8%E8%83%BD%2F%E7%94%B5%E5%8A%A8%E8%BD%A6%E5%BA%94%E7%94%A8%E4%B8%AD%E7%9A%84%E6%BD%9C%E5%9C%A8%E4%BC%98%E5
+%8A%BF%E4%B8%8E%E5%B1%80%E9%99%90%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/search?word=%E8%BF%91%E5%B9%B4%E6%9D%83%E5%A8%81%E6%9C%BA%E6%9E%84
+%E5%92%8C%E7%A0%94%E7%A9%B6%E6%96%87%E7%8C%AE%E5%A6%82%E4%BD%95%E8%AF%84%E4%BB%B7%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E
+6%B1%A0%E7%9A%84%E5%8F%91%E5%B1%95%E5%89%8D%E6%99%AF%EF%BC%8C%E5%8C%85%E6%8B%ACIEA%E3%80%81BloombergNEF%E3%80%81%E7%BB%
+BC%E8%BF%B0%E8%AE%BA%E6%96%87%E5%92%8C%E4%BC%81%E4%B8%9A%E5%85%AC%E5%91%8A%E5%AF%B92024%E5%B9%B4%E4%BB%A5%E6%9D%A5%E8%B
+6%8B%E5%8A%BF%E7%9A%84%E5%88%A4%E6%96%AD%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/search?word=%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E7%9A%84
+%E5%9F%BA%E6%9C%AC%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%8C%E5%8C%85%E6%8B%AC%E6%AD%A3%E
+8%B4%9F%E6%9E%81%E6%9D%90%E6%96%99%E3%80%81%E7%94%B5%E8%A7%A3%E6%B6%B2%E3%80%81%E7%A6%BB%E5%AD%90%E5%B5%8C%E5%85%A5%2F%
+E8%84%B1%E5%B5%8C%E6%9C%BA%E5%88%B6%EF%BC%8C%E4%BB%A5%E5%8F%8A%E4%B8%8E%E9%94%82%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E7
+%9A%84%E5%85%B3%E9%94%AE%E5%B7%AE%E5%BC%82%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.sogou.com/Search.e?sp=S%E8%BF%91%E5%B9%B4%E6%9D%83%E5%A8%81%E6%9C%BA%E6%9E%8
+4%E5%92%8C%E7%A0%94%E7%A9%B6%E6%96%87%E7%8C%AE%E5%A6%82%E4%BD%95%E8%AF%84%E4%BB%B7%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%
+E6%B1%A0%E7%9A%84%E5%8F%91%E5%B1%95%E5%89%8D%E6%99%AF%EF%BC%8C%E5%8C%85%E6%8B%ACIEA%E3%80%81BloombergNEF%E3%80%81%E7%BB
+%BC%E8%BF%B0%E8%AE%BA%E6%96%87%E5%92%8C%E4%BC%81%E4%B8%9A%E5%85%AC%E5%91%8A%E5%AF%B92024%E5%B9%B4%E4%BB%A5%E6%9D%A5%E8%
+B6%8B%E5%8A%BF%E7%9A%84%E5%88%A4%E6%96%AD%EF%BC%9F "HTTP/1.1 302 Found"
+INFO:httpx:HTTP Request: GET https://baike.sogou.com/Search.e?sp=S%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E4%B8%B
+A%E4%BB%80%E4%B9%88%E9%87%8D%E8%A6%81%EF%BC%8C%E5%85%B6%E5%9C%A8%E8%B5%84%E6%BA%90%E6%88%90%E6%9C%AC%E3%80%81%E4%BE%9B%
+E5%BA%94%E9%93%BE%E5%AE%89%E5%85%A8%E3%80%81%E4%BD%8E%E6%B8%A9%E6%80%A7%E8%83%BD%E3%80%81%E5%AE%89%E5%85%A8%E6%80%A7%E5
+%92%8C%E5%82%A8%E8%83%BD%2F%E7%94%B5%E5%8A%A8%E8%BD%A6%E5%BA%94%E7%94%A8%E4%B8%AD%E7%9A%84%E6%BD%9C%E5%9C%A8%E4%BC%98%E
+5%8A%BF%E4%B8%8E%E5%B1%80%E9%99%90%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F "HTTP/1.1 302 Found"
+INFO:httpx:HTTP Request: POST http://www.cninfo.com.cn/new/information/topSearch/query "HTTP/1.1 200 200"
+INFO:httpx:HTTP Request: POST http://www.cninfo.com.cn/new/information/topSearch/query "HTTP/1.1 200 200"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/item/%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E4%B8%BA%E4%BB%
+80%E4%B9%88%E9%87%8D%E8%A6%81%EF%BC%8C%E5%85%B6%E5%9C%A8%E8%B5%84%E6%BA%90%E6%88%90%E6%9C%AC%E3%80%81%E4%BE%9B%E5%BA%94
+%E9%93%BE%E5%AE%89%E5%85%A8%E3%80%81%E4%BD%8E%E6%B8%A9%E6%80%A7%E8%83%BD%E3%80%81%E5%AE%89%E5%85%A8%E6%80%A7%E5%92%8C%E
+5%82%A8%E8%83%BD%2F%E7%94%B5%E5%8A%A8%E8%BD%A6%E5%BA%94%E7%94%A8%E4%B8%AD%E7%9A%84%E6%BD%9C%E5%9C%A8%E4%BC%98%E5%8A%BF%
+E4%B8%8E%E5%B1%80%E9%99%90%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: POST http://www.cninfo.com.cn/new/hisAnnouncement/query "HTTP/1.1 200 200"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/item/%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E7%9A%84%E5%9F%
+BA%E6%9C%AC%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%8C%E5%8C%85%E6%8B%AC%E6%AD%A3%E8%B4%9F
+%E6%9E%81%E6%9D%90%E6%96%99%E3%80%81%E7%94%B5%E8%A7%A3%E6%B6%B2%E3%80%81%E7%A6%BB%E5%AD%90%E5%B5%8C%E5%85%A5%2F%E8%84%B
+1%E5%B5%8C%E6%9C%BA%E5%88%B6%EF%BC%8C%E4%BB%A5%E5%8F%8A%E4%B8%8E%E9%94%82%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E7%9A%84%
+E5%85%B3%E9%94%AE%E5%B7%AE%E5%BC%82%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/search?word=%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E4%B8%BA
+%E4%BB%80%E4%B9%88%E9%87%8D%E8%A6%81%EF%BC%8C%E5%85%B6%E5%9C%A8%E8%B5%84%E6%BA%90%E6%88%90%E6%9C%AC%E3%80%81%E4%BE%9B%E
+5%BA%94%E9%93%BE%E5%AE%89%E5%85%A8%E3%80%81%E4%BD%8E%E6%B8%A9%E6%80%A7%E8%83%BD%E3%80%81%E5%AE%89%E5%85%A8%E6%80%A7%E5%
+92%8C%E5%82%A8%E8%83%BD%2F%E7%94%B5%E5%8A%A8%E8%BD%A6%E5%BA%94%E7%94%A8%E4%B8%AD%E7%9A%84%E6%BD%9C%E5%9C%A8%E4%BC%98%E5
+%8A%BF%E4%B8%8E%E5%B1%80%E9%99%90%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/item/%E8%BF%91%E5%B9%B4%E6%9D%83%E5%A8%81%E6%9C%BA%E6%9E%84%E5%92%
+8C%E7%A0%94%E7%A9%B6%E6%96%87%E7%8C%AE%E5%A6%82%E4%BD%95%E8%AF%84%E4%BB%B7%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0
+%E7%9A%84%E5%8F%91%E5%B1%95%E5%89%8D%E6%99%AF%EF%BC%8C%E5%8C%85%E6%8B%ACIEA%E3%80%81BloombergNEF%E3%80%81%E7%BB%BC%E8%B
+F%B0%E8%AE%BA%E6%96%87%E5%92%8C%E4%BC%81%E4%B8%9A%E5%85%AC%E5%91%8A%E5%AF%B92024%E5%B9%B4%E4%BB%A5%E6%9D%A5%E8%B6%8B%E5
+%8A%BF%E7%9A%84%E5%88%A4%E6%96%AD%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: POST http://www.cninfo.com.cn/new/hisAnnouncement/query "HTTP/1.1 200 200"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/search?word=%E8%BF%91%E5%B9%B4%E6%9D%83%E5%A8%81%E6%9C%BA%E6%9E%84
+%E5%92%8C%E7%A0%94%E7%A9%B6%E6%96%87%E7%8C%AE%E5%A6%82%E4%BD%95%E8%AF%84%E4%BB%B7%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E
+6%B1%A0%E7%9A%84%E5%8F%91%E5%B1%95%E5%89%8D%E6%99%AF%EF%BC%8C%E5%8C%85%E6%8B%ACIEA%E3%80%81BloombergNEF%E3%80%81%E7%BB%
+BC%E8%BF%B0%E8%AE%BA%E6%96%87%E5%92%8C%E4%BC%81%E4%B8%9A%E5%85%AC%E5%91%8A%E5%AF%B92024%E5%B9%B4%E4%BB%A5%E6%9D%A5%E8%B
+6%8B%E5%8A%BF%E7%9A%84%E5%88%A4%E6%96%AD%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/search?word=%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E7%9A%84
+%E5%9F%BA%E6%9C%AC%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%8C%E5%8C%85%E6%8B%AC%E6%AD%A3%E
+8%B4%9F%E6%9E%81%E6%9D%90%E6%96%99%E3%80%81%E7%94%B5%E8%A7%A3%E6%B6%B2%E3%80%81%E7%A6%BB%E5%AD%90%E5%B5%8C%E5%85%A5%2F%
+E8%84%B1%E5%B5%8C%E6%9C%BA%E5%88%B6%EF%BC%8C%E4%BB%A5%E5%8F%8A%E4%B8%8E%E9%94%82%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E7
+%9A%84%E5%85%B3%E9%94%AE%E5%B7%AE%E5%BC%82%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET http://static.cninfo.com.cn/finalpage/2026-06-11/1225363941.PDF "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.sogou.com/sogou?query=%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E4%B8%BA%E
+4%BB%80%E4%B9%88%E9%87%8D%E8%A6%81%EF%BC%8C%E5%85%B6%E5%9C%A8%E8%B5%84%E6%BA%90%E6%88%90%E6%9C%AC%E3%80%81%E4%BE%9B%E5%
+BA%94%E9%93%BE%E5%AE%89%E5%85%A8%E3%80%81%E4%BD%8E%E6%B8%A9%E6%80%A7%E8%83%BD%E3%80%81%E5%AE%89%E5%85%A8%E6%80%A7%E5%92
+%8C%E5%82%A8%E8%83%BD%2F%E7%94%B5%E5%8A%A8%E8%BD%A6%E5%BA%94%E7%94%A8%E4%B8%AD%E7%9A%84%E6%BD%9C%E5%9C%A8%E4%BC%98%E5%8
+A%BF%E4%B8%8E%E5%B1%80%E9%99%90%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F&ie=utf8&insite=baike.sogou.com&pid=sogou-wsse-17737
+832ac17be52 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://export.arxiv.org/api/query?search_query=all%3A%E8%BF%91%E5%B9%B4%E6%9D%83%E5%A8%81
+%E6%9C%BA%E6%9E%84%E5%92%8C%E7%A0%94%E7%A9%B6%E6%96%87%E7%8C%AE%E5%A6%82%E4%BD%95%E8%AF%84%E4%BB%B7%E9%92%A0%E7%A6%BB%E
+5%AD%90%E7%94%B5%E6%B1%A0%E7%9A%84%E5%8F%91%E5%B1%95%E5%89%8D%E6%99%AF%EF%BC%8C%E5%8C%85%E6%8B%ACIEA%E3%80%81BloombergN
+EF%E3%80%81%E7%BB%BC%E8%BF%B0%E8%AE%BA%E6%96%87%E5%92%8C%E4%BC%81%E4%B8%9A%E5%85%AC%E5%91%8A%E5%AF%B92024%E5%B9%B4%E4%B
+B%A5%E6%9D%A5%E8%B6%8B%E5%8A%BF%E7%9A%84%E5%88%A4%E6%96%AD%EF%BC%9F&start=0&max_results=3 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.sogou.com/sogou?query=%E8%BF%91%E5%B9%B4%E6%9D%83%E5%A8%81%E6%9C%BA%E6%9E%84%E
+5%92%8C%E7%A0%94%E7%A9%B6%E6%96%87%E7%8C%AE%E5%A6%82%E4%BD%95%E8%AF%84%E4%BB%B7%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%
+B1%A0%E7%9A%84%E5%8F%91%E5%B1%95%E5%89%8D%E6%99%AF%EF%BC%8C%E5%8C%85%E6%8B%ACIEA%E3%80%81BloombergNEF%E3%80%81%E7%BB%BC
+%E8%BF%B0%E8%AE%BA%E6%96%87%E5%92%8C%E4%BC%81%E4%B8%9A%E5%85%AC%E5%91%8A%E5%AF%B92024%E5%B9%B4%E4%BB%A5%E6%9D%A5%E8%B6%
+8B%E5%8A%BF%E7%9A%84%E5%88%A4%E6%96%AD%EF%BC%9F&ie=utf8&insite=baike.sogou.com&pid=sogou-wsse-17737832ac17be52 "HTTP/1.
+1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.sogou.com/sogou?query=%E9%92%A0%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E7%9A%84%E
+5%9F%BA%E6%9C%AC%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%8C%E5%8C%85%E6%8B%AC%E6%AD%A3%E8%
+B4%9F%E6%9E%81%E6%9D%90%E6%96%99%E3%80%81%E7%94%B5%E8%A7%A3%E6%B6%B2%E3%80%81%E7%A6%BB%E5%AD%90%E5%B5%8C%E5%85%A5%2F%E8
+%84%B1%E5%B5%8C%E6%9C%BA%E5%88%B6%EF%BC%8C%E4%BB%A5%E5%8F%8A%E4%B8%8E%E9%94%82%E7%A6%BB%E5%AD%90%E7%94%B5%E6%B1%A0%E7%9
+A%84%E5%85%B3%E9%94%AE%E5%B7%AE%E5%BC%82%EF%BC%9F&ie=utf8&insite=baike.sogou.com&pid=sogou-wsse-17737832ac17be52 "HTTP/
+1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://static.cninfo.com.cn/finalpage/2026-05-23/1225326054.PDF "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://baike.sogou.com/v72632628.htm#para1 "HTTP/1.1 302 Found"
+INFO:httpx:HTTP Request: GET http://baike.sogou.com/v10379802.htm?fromTitle=%E5%82%A8%E8%83%BD "HTTP/1.1 302 Found"
+INFO:httpx:HTTP Request: GET http://baike.sogou.com/v10379802.htm?fromTitle=%E5%82%A8%E8%83%BD%EF%BC%88%E9%80%9A%E8%BF%
+87%E4%BB%8B%E8%B4%A8%E6%88%96%E8%AE%BE%E5%A4%87%E6%8A%8A%E8%83%BD%E9%87%8F%E5%AD%98%E5%82%A8%E8%B5%B7%E6%9D%A5%E5%9C%A8
+%E9%9C%80%E8%A6%81%E6%97%B6%E5%86%8D%E9%87%8A%E6%94%BE%E7%9A%84%E8%BF%87%E7%A8%8B%EF%BC%89 "HTTP/1.1 302 Found"
+INFO:httpx:HTTP Request: GET http://static.cninfo.com.cn/finalpage/2026-05-23/1225326039.PDF "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://baike.sogou.com/v72632628.htm#para1 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://baike.sogou.com/v10379802.htm?fromTitle=%E5%82%A8%E8%83%BD "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://baike.sogou.com/v10379802.htm?fromTitle=%E5%82%A8%E8%83%BD%EF%BC%88%E9%80%9A%E8%BF
+%87%E4%BB%8B%E8%B4%A8%E6%88%96%E8%AE%BE%E5%A4%87%E6%8A%8A%E8%83%BD%E9%87%8F%E5%AD%98%E5%82%A8%E8%B5%B7%E6%9D%A5%E5%9C%A
+8%E9%9C%80%E8%A6%81%E6%97%B6%E5%86%8D%E9%87%8A%E6%94%BE%E7%9A%84%E8%BF%87%E7%A8%8B%EF%BC%89 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.sec.gov/files/company_tickers.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://data.sec.gov/api/xbrl/companyconcept/CIK0001956744/us-gaap/RevenueFromContractWith
+CustomerExcludingAssessedTax.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://export.arxiv.org/api/query?search_query=all%3A%E8%BF%91%E5%B9%B4%E6%9D%83%E5%A8%81
+%E6%9C%BA%E6%9E%84%E5%92%8C%E7%A0%94%E7%A9%B6%E6%96%87%E7%8C%AE%E5%A6%82%E4%BD%95%E8%AF%84%E4%BB%B7%E9%92%A0%E7%A6%BB%E
+5%AD%90%E7%94%B5%E6%B1%A0%E7%9A%84%E5%8F%91%E5%B1%95%E5%89%8D%E6%99%AF%EF%BC%8C%E5%8C%85%E6%8B%ACIEA%E3%80%81BloombergN
+EF%E3%80%81%E7%BB%BC%E8%BF%B0%E8%AE%BA%E6%96%87%E5%92%8C%E4%BC%81%E4%B8%9A%E5%85%AC%E5%91%8A%E5%AF%B92024%E5%B9%B4%E4%B
+B%A5%E6%9D%A5%E8%B6%8B%E5%8A%BF%E7%9A%84%E5%88%A4%E6%96%AD%EF%BC%9F&start=0&max_results=3 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://data.sec.gov/api/xbrl/companyconcept/CIK0001956744/us-gaap/NetIncomeLoss.json "HTT
+P/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://data.sec.gov/api/xbrl/companyconcept/CIK0001956744/us-gaap/Assets.json "HTTP/1.1 2
+00 OK"
+INFO:httpx:HTTP Request: GET https://data.sec.gov/api/xbrl/companyconcept/CIK0001956744/us-gaap/StockholdersEquity.json
+ "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://data.sec.gov/api/xbrl/companyconcept/CIK0001956744/us-gaap/EarningsPerShareDiluted
+.json "HTTP/1.1 200 OK"
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:13:29.253719Z' positional_args=('gpt-5.5', None, None)
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:providers.openai_compatible:event='p4s25_stream_summary' level='info' timestamp='2026-06-21T08:13:41.501946Z' sse_
+lines=135 content_chars=299 reasoning_chars=0 tool_calls=0 delta_keys=['content', 'role'] stop_reason='end_turn'
+INFO:providers.openai_compatible:event='p4s25_prompt_cache_hit' level='info' timestamp='2026-06-21T08:13:41.501946Z' wh
+ere='stream' cached_tokens=4608 prompt_tokens=5682 hit_rate=0.811
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:13:47.307545Z' positional_args=('gpt-4.1-mini', None, None)
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 404 Not Found"
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:13:49.601168Z' positional_args=('gpt-5.5', None, None)
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:providers.openai_compatible:event='p4s25_stream_summary' level='info' timestamp='2026-06-21T08:14:43.258219Z' sse_
+lines=2769 content_chars=2243 reasoning_chars=0 tool_calls=0 delta_keys=['content', 'role'] stop_reason='end_turn'
+INFO:providers.openai_compatible:event='p4s25_prompt_cache_hit' level='info' timestamp='2026-06-21T08:14:43.258219Z' wh
+ere='stream' cached_tokens=5120 prompt_tokens=12725 hit_rate=0.4024
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:14:43.288731Z' positional_args=('gpt-5.5', None, None)
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:15:15.663581Z' positional_args=('gpt-5.5', None, None)
+INFO:deskpet.agent.assembler.assembler:event='assembler_task_classified' level='info' timestamp='2026-06-21T08:15:15.81
+7660Z' task_type='chat' must=['memory', 'persona'] prefer=['tool', 'time', 'workspace', 'preference_profile', 'skill']
+INFO:deskpet.agent.assembler.components.skill:skill_auto_disclosed total=15 strong=2 auto_loaded=2 names=['deep-researc
+h', 'source-check'] top_sim=0.950
+WARNING:deskpet.agent.assembler.registry:event='assembler.component_timed_out' level='warning' timestamp='2026-06-21T08
+:15:17.313573Z' component='memory' timeout_ms=1500.0
+INFO:deskpet.agent.assembler.registry:event='assembler.component_done' level='info' timestamp='2026-06-21T08:15:17.3135
+73Z' component='memory' duration_ms=1500.0 status='timeout'
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=1000000 source=global
+WARNING:__main__:event='p5s2_provider_chain_resolve_failed sid=%s err=%s �?falling back to legacy single-provider path
+' level='warning' timestamp='2026-06-21T08:15:17.320575Z' positional_args=('default', 'no LLM provider configured')
+INFO:__main__:event='verify_gate_init mode=%s patterns=%d path=%s' level='info' timestamp='2026-06-21T08:15:17.325573Z'
+ positional_args=('shadow', 9, WindowsPath('G:/projects/deskpet/backend/verify/claim_patterns.yaml'))
+INFO:deskpet.agent.loop:wi4a_goal_anchor_always_on sid=default tid=task_260621081517_f3825d34
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:15:17.327573Z' positional_args=('gpt-5.5', None, None)
+INFO:deskpet.memory.embedder:embedder: discarding stale response id=33 (waiting for 34)
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:providers.openai_compatible:event='p4s25_stream_summary' level='info' timestamp='2026-06-21T08:15:33.272190Z' sse_
+lines=9 content_chars=2 reasoning_chars=0 tool_calls=0 delta_keys=['content', 'role'] stop_reason='end_turn'
+INFO:providers.openai_compatible:event='p4s25_prompt_cache_hit' level='info' timestamp='2026-06-21T08:15:33.272190Z' wh
+ere='stream' cached_tokens=5120 prompt_tokens=5786 hit_rate=0.8849
+INFO:providers.openai_compatible:event='p5s2_tool_call_args_dump' level='info' timestamp='2026-06-21T08:15:37.178999Z' 
+idx=0 name='deepresearch' args_len=236 args_preview='{"depth":"deep","max_sub_questions":6,"max_total_passages":18,"max
+_urls_per_query":5,"topic":"固态电池的技' parse_ok=True
+INFO:providers.openai_compatible:event='p4s25_stream_summary' level='info' timestamp='2026-06-21T08:15:37.178999Z' sse_
+lines=395 content_chars=94 reasoning_chars=0 tool_calls=1 delta_keys=['content', 'role', 'tool_calls'] stop_reason='too
+l_use'
+INFO:providers.openai_compatible:event='p4s25_prompt_cache_hit' level='info' timestamp='2026-06-21T08:15:37.178999Z' wh
+ere='stream' cached_tokens='unknown' prompt_tokens=18120 hit_rate='unknown'
+INFO:deskpet.agent.loop:task_drift_user_request_injected tool=deepresearch req_len=44
+INFO:deskpet.agent.loop:task_drift_user_request_injected tool=deepresearch req_len=44
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:15:37.192980Z' positional_args=('gpt-5.5', None, None)
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:providers.openai_compatible:event='p4s25_stream_summary' level='info' timestamp='2026-06-21T08:16:03.973489Z' sse_
+lines=441 content_chars=292 reasoning_chars=0 tool_calls=0 delta_keys=['content', 'role'] stop_reason='end_turn'
+INFO:providers.openai_compatible:event='p4s25_prompt_cache_hit' level='info' timestamp='2026-06-21T08:16:03.973489Z' wh
+ere='stream' cached_tokens=4608 prompt_tokens=5410 hit_rate=0.8518
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:16:03.973489Z' positional_args=('gpt-5.5', None, None)
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:providers.openai_compatible:event='p4s25_stream_summary' level='info' timestamp='2026-06-21T08:16:24.551653Z' sse_
+lines=381 content_chars=392 reasoning_chars=0 tool_calls=0 delta_keys=['content', 'role'] stop_reason='end_turn'
+INFO:providers.openai_compatible:event='p4s25_prompt_cache_hit' level='info' timestamp='2026-06-21T08:16:24.551653Z' wh
+ere='stream' cached_tokens=4608 prompt_tokens=5546 hit_rate=0.8309
+INFO:httpx:HTTP Request: GET https://www.google.com/ "HTTP/1.1 302 Found"
+INFO:httpx:HTTP Request: GET https://www.google.com.hk/url?sa=p&hl=zh-CN&pref=hkredirect&pval=yes&q=https://www.google.
+com.hk/&ust=1782029817726848&usg=AOvVaw1CEmygqw0tFF1cmoGzdSmr "HTTP/1.1 302 Found"
+INFO:httpx:HTTP Request: GET https://www.google.com.hk/ "HTTP/1.1 200 OK"
+INFO:deskpet.tools.research_cdp_edge:event='cdp_edge_render' level='info' timestamp='2026-06-21T08:16:40.203502Z' url='
+https://www.google.com/search?q=%E7%A1%AB%E5%8C%96%E7%89%A9%E3%80%81%E6%B0%A7%E5%8C%96%E7%89%A9%E3%80%81%E8%81%9A%E5%90
+%88%E7%89%A9%E3%80%81%E5%8D%A4%E5%8C%96%E7%89%A9%E5%8F%8A%E5%A4%8D%E5%90%88%E5%9B%BA%E6%80%81%E7%94%B5%E8%A7%A3%E8%B4%A
+8%E5%90%84%E8%87%AA%E7%9A%84%E6%8A%80%E6%9C%AF%E8%B7%AF%E7%BA%BF%E3%80%81%E5%85%B3%E9%94%AE%E6%9D%90%E6%96%99%E4%BD%93%
+E7%B3%BB%E3%80%81%E4%BC%98%E7%BC%BA%E7%82%B9%E5%92%8C%E9%80%82%E7%94%A8%E5%9C%BA%E6%99%AF%E6%98%AF%E4%BB%80%E4%B9%88%EF
+%BC%9F&hl=zh-CN' ok=False error='TimeoutError'
+INFO:deskpet.tools.research_cdp_edge:event='cdp_edge_render' level='info' timestamp='2026-06-21T08:16:40.205599Z' url='
+https://www.google.com/search?q=%E5%9B%BA%E6%80%81%E7%94%B5%E6%B1%A0%E7%9A%84%E5%9F%BA%E6%9C%AC%E5%8E%9F%E7%90%86%E3%80
+%81%E6%A0%B8%E5%BF%83%E4%BB%B7%E5%80%BC%E4%B8%8E%E7%9B%B8%E5%AF%B9%E6%B6%B2%E6%80%81%E9%94%82%E7%94%B5%E6%B1%A0%E7%9A%8
+4%E6%80%A7%E8%83%BD%2F%E5%AE%89%E5%85%A8%2F%E8%83%BD%E9%87%8F%E5%AF%86%E5%BA%A6%E4%BC%98%E5%8A%BF%E6%98%AF%E4%BB%80%E4%
+B9%88%EF%BC%9F&hl=zh-CN' ok=False error='TimeoutError'
+INFO:deskpet.tools.research_cdp_edge:event='cdp_edge_render' level='info' timestamp='2026-06-21T08:16:44.737211Z' url='
+https://www.google.com/search?q=%E5%85%A8%E7%90%83%E4%B8%8E%E4%B8%AD%E5%9B%BD%E4%B8%BB%E8%A6%81%E4%BC%81%E4%B8%9A%E3%80
+%81%E7%A7%91%E7%A0%94%E6%9C%BA%E6%9E%84%E5%92%8C%E8%BD%A6%E4%BC%81%E5%9C%A8%E5%9B%BA%E6%80%81%E7%94%B5%E6%B1%A0%E4%BA%A
+7%E4%B8%9A%E5%8C%96%E4%B8%8A%E7%9A%84%E6%9C%80%E6%96%B0%E8%BF%9B%E5%B1%95%E3%80%81%E9%87%8F%E4%BA%A7%E6%97%B6%E9%97%B4%
+E8%A1%A8%E5%92%8C%E5%95%86%E4%B8%9A%E5%8C%96%E5%8F%AF%E4%BF%A1%E5%BA%A6%E5%A6%82%E4%BD%95%EF%BC%9F&hl=zh-CN' chars=7147
+ ms=12544 ok=True
+INFO:deskpet.tools.research_cdp_edge:event='cdp_edge_render' level='info' timestamp='2026-06-21T08:16:46.723728Z' url='
+https://www.google.com/search?q=%E5%9B%BA%E6%80%81%E7%94%B5%E6%B1%A0%E5%BD%93%E5%89%8D%E7%9A%84%E5%85%B3%E9%94%AE%E6%8A
+%80%E6%9C%AF%E7%93%B6%E9%A2%88%E6%9C%89%E5%93%AA%E4%BA%9B%EF%BC%8C%E5%8C%85%E6%8B%AC%E7%95%8C%E9%9D%A2%E9%98%BB%E6%8A%9
+7%E3%80%81%E9%94%82%E6%9E%9D%E6%99%B6%E3%80%81%E7%A9%BA%E6%B0%94%E7%A8%B3%E5%AE%9A%E6%80%A7%E3%80%81%E6%9C%BA%E6%A2%B0%
+E5%8E%8B%E5%8A%9B%E3%80%81%E5%88%B6%E9%80%A0%E5%B7%A5%E8%89%BA%E4%B8%8E%E8%89%AF%E7%8E%87%E9%97%AE%E9%A2%98%EF%BC%9F&hl
+=zh-CN' chars=7202 ms=14536 ok=True
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/item/%E7%A1%AB%E5%8C%96%E7%89%A9%E3%80%81%E6%B0%A7%E5%8C%96%E7%89%
+A9%E3%80%81%E8%81%9A%E5%90%88%E7%89%A9%E3%80%81%E5%8D%A4%E5%8C%96%E7%89%A9%E5%8F%8A%E5%A4%8D%E5%90%88%E5%9B%BA%E6%80%81
+%E7%94%B5%E8%A7%A3%E8%B4%A8%E5%90%84%E8%87%AA%E7%9A%84%E6%8A%80%E6%9C%AF%E8%B7%AF%E7%BA%BF%E3%80%81%E5%85%B3%E9%94%AE%E
+6%9D%90%E6%96%99%E4%BD%93%E7%B3%BB%E3%80%81%E4%BC%98%E7%BC%BA%E7%82%B9%E5%92%8C%E9%80%82%E7%94%A8%E5%9C%BA%E6%99%AF%E6%
+98%AF%E4%BB%80%E4%B9%88%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/item/%E5%9B%BA%E6%80%81%E7%94%B5%E6%B1%A0%E7%9A%84%E5%9F%BA%E6%9C%
+AC%E5%8E%9F%E7%90%86%E3%80%81%E6%A0%B8%E5%BF%83%E4%BB%B7%E5%80%BC%E4%B8%8E%E7%9B%B8%E5%AF%B9%E6%B6%B2%E6%80%81%E9%94%82
+%E7%94%B5%E6%B1%A0%E7%9A%84%E6%80%A7%E8%83%BD%2F%E5%AE%89%E5%85%A8%2F%E8%83%BD%E9%87%8F%E5%AF%86%E5%BA%A6%E4%BC%98%E5%8
+A%BF%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/item/%E5%9B%BA%E6%80%81%E7%94%B5%E6%B1%A0%E5%9C%A8%E5%8A%A8%E5%8A%
+9B%E7%94%B5%E6%B1%A0%E3%80%81%E5%82%A8%E8%83%BD%E3%80%81%E6%B6%88%E8%B4%B9%E7%94%B5%E5%AD%90%E3%80%81%E4%BD%8E%E7%A9%BA
+%E7%BB%8F%E6%B5%8E%E7%AD%89%E5%9C%BA%E6%99%AF%E7%9A%84%E5%BA%94%E7%94%A8%E5%89%8D%E6%99%AF%E3%80%81%E6%88%90%E6%9C%AC%E
+7%BB%93%E6%9E%84%E4%B8%8E%E4%BE%9B%E5%BA%94%E9%93%BE%E7%93%B6%E9%A2%88%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F "HTTP/1.1 40
+3 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/search?word=%E7%A1%AB%E5%8C%96%E7%89%A9%E3%80%81%E6%B0%A7%E5%8C%96
+%E7%89%A9%E3%80%81%E8%81%9A%E5%90%88%E7%89%A9%E3%80%81%E5%8D%A4%E5%8C%96%E7%89%A9%E5%8F%8A%E5%A4%8D%E5%90%88%E5%9B%BA%E
+6%80%81%E7%94%B5%E8%A7%A3%E8%B4%A8%E5%90%84%E8%87%AA%E7%9A%84%E6%8A%80%E6%9C%AF%E8%B7%AF%E7%BA%BF%E3%80%81%E5%85%B3%E9%
+94%AE%E6%9D%90%E6%96%99%E4%BD%93%E7%B3%BB%E3%80%81%E4%BC%98%E7%BC%BA%E7%82%B9%E5%92%8C%E9%80%82%E7%94%A8%E5%9C%BA%E6%99
+%AF%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/search?word=%E5%9B%BA%E6%80%81%E7%94%B5%E6%B1%A0%E7%9A%84%E5%9F%BA
+%E6%9C%AC%E5%8E%9F%E7%90%86%E3%80%81%E6%A0%B8%E5%BF%83%E4%BB%B7%E5%80%BC%E4%B8%8E%E7%9B%B8%E5%AF%B9%E6%B6%B2%E6%80%81%E
+9%94%82%E7%94%B5%E6%B1%A0%E7%9A%84%E6%80%A7%E8%83%BD%2F%E5%AE%89%E5%85%A8%2F%E8%83%BD%E9%87%8F%E5%AF%86%E5%BA%A6%E4%BC%
+98%E5%8A%BF%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/search?word=%E5%9B%BA%E6%80%81%E7%94%B5%E6%B1%A0%E5%9C%A8%E5%8A%A8
+%E5%8A%9B%E7%94%B5%E6%B1%A0%E3%80%81%E5%82%A8%E8%83%BD%E3%80%81%E6%B6%88%E8%B4%B9%E7%94%B5%E5%AD%90%E3%80%81%E4%BD%8E%E
+7%A9%BA%E7%BB%8F%E6%B5%8E%E7%AD%89%E5%9C%BA%E6%99%AF%E7%9A%84%E5%BA%94%E7%94%A8%E5%89%8D%E6%99%AF%E3%80%81%E6%88%90%E6%
+9C%AC%E7%BB%93%E6%9E%84%E4%B8%8E%E4%BE%9B%E5%BA%94%E9%93%BE%E7%93%B6%E9%A2%88%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F "HTTP
+/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.sogou.com/Search.e?sp=S%E7%A1%AB%E5%8C%96%E7%89%A9%E3%80%81%E6%B0%A7%E5%8C%9
+6%E7%89%A9%E3%80%81%E8%81%9A%E5%90%88%E7%89%A9%E3%80%81%E5%8D%A4%E5%8C%96%E7%89%A9%E5%8F%8A%E5%A4%8D%E5%90%88%E5%9B%BA%
+E6%80%81%E7%94%B5%E8%A7%A3%E8%B4%A8%E5%90%84%E8%87%AA%E7%9A%84%E6%8A%80%E6%9C%AF%E8%B7%AF%E7%BA%BF%E3%80%81%E5%85%B3%E9
+%94%AE%E6%9D%90%E6%96%99%E4%BD%93%E7%B3%BB%E3%80%81%E4%BC%98%E7%BC%BA%E7%82%B9%E5%92%8C%E9%80%82%E7%94%A8%E5%9C%BA%E6%9
+9%AF%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F "HTTP/1.1 302 Found"
+INFO:httpx:HTTP Request: GET https://baike.sogou.com/Search.e?sp=S%E5%9B%BA%E6%80%81%E7%94%B5%E6%B1%A0%E7%9A%84%E5%9F%B
+A%E6%9C%AC%E5%8E%9F%E7%90%86%E3%80%81%E6%A0%B8%E5%BF%83%E4%BB%B7%E5%80%BC%E4%B8%8E%E7%9B%B8%E5%AF%B9%E6%B6%B2%E6%80%81%
+E9%94%82%E7%94%B5%E6%B1%A0%E7%9A%84%E6%80%A7%E8%83%BD%2F%E5%AE%89%E5%85%A8%2F%E8%83%BD%E9%87%8F%E5%AF%86%E5%BA%A6%E4%BC
+%98%E5%8A%BF%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F "HTTP/1.1 302 Found"
+INFO:httpx:HTTP Request: GET https://baike.sogou.com/Search.e?sp=S%E5%9B%BA%E6%80%81%E7%94%B5%E6%B1%A0%E5%9C%A8%E5%8A%A
+8%E5%8A%9B%E7%94%B5%E6%B1%A0%E3%80%81%E5%82%A8%E8%83%BD%E3%80%81%E6%B6%88%E8%B4%B9%E7%94%B5%E5%AD%90%E3%80%81%E4%BD%8E%
+E7%A9%BA%E7%BB%8F%E6%B5%8E%E7%AD%89%E5%9C%BA%E6%99%AF%E7%9A%84%E5%BA%94%E7%94%A8%E5%89%8D%E6%99%AF%E3%80%81%E6%88%90%E6
+%9C%AC%E7%BB%93%E6%9E%84%E4%B8%8E%E4%BE%9B%E5%BA%94%E9%93%BE%E7%93%B6%E9%A2%88%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F "HTT
+P/1.1 302 Found"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/item/%E5%9B%BA%E6%80%81%E7%94%B5%E6%B1%A0%E7%9A%84%E5%9F%BA%E6%9C%
+AC%E5%8E%9F%E7%90%86%E3%80%81%E6%A0%B8%E5%BF%83%E4%BB%B7%E5%80%BC%E4%B8%8E%E7%9B%B8%E5%AF%B9%E6%B6%B2%E6%80%81%E9%94%82
+%E7%94%B5%E6%B1%A0%E7%9A%84%E6%80%A7%E8%83%BD%2F%E5%AE%89%E5%85%A8%2F%E8%83%BD%E9%87%8F%E5%AF%86%E5%BA%A6%E4%BC%98%E5%8
+A%BF%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/item/%E7%A1%AB%E5%8C%96%E7%89%A9%E3%80%81%E6%B0%A7%E5%8C%96%E7%89%
+A9%E3%80%81%E8%81%9A%E5%90%88%E7%89%A9%E3%80%81%E5%8D%A4%E5%8C%96%E7%89%A9%E5%8F%8A%E5%A4%8D%E5%90%88%E5%9B%BA%E6%80%81
+%E7%94%B5%E8%A7%A3%E8%B4%A8%E5%90%84%E8%87%AA%E7%9A%84%E6%8A%80%E6%9C%AF%E8%B7%AF%E7%BA%BF%E3%80%81%E5%85%B3%E9%94%AE%E
+6%9D%90%E6%96%99%E4%BD%93%E7%B3%BB%E3%80%81%E4%BC%98%E7%BC%BA%E7%82%B9%E5%92%8C%E9%80%82%E7%94%A8%E5%9C%BA%E6%99%AF%E6%
+98%AF%E4%BB%80%E4%B9%88%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/item/%E5%9B%BA%E6%80%81%E7%94%B5%E6%B1%A0%E5%9C%A8%E5%8A%A8%E5%8A%
+9B%E7%94%B5%E6%B1%A0%E3%80%81%E5%82%A8%E8%83%BD%E3%80%81%E6%B6%88%E8%B4%B9%E7%94%B5%E5%AD%90%E3%80%81%E4%BD%8E%E7%A9%BA
+%E7%BB%8F%E6%B5%8E%E7%AD%89%E5%9C%BA%E6%99%AF%E7%9A%84%E5%BA%94%E7%94%A8%E5%89%8D%E6%99%AF%E3%80%81%E6%88%90%E6%9C%AC%E
+7%BB%93%E6%9E%84%E4%B8%8E%E4%BE%9B%E5%BA%94%E9%93%BE%E7%93%B6%E9%A2%88%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F "HTTP/1.1 40
+3 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/search?word=%E5%9B%BA%E6%80%81%E7%94%B5%E6%B1%A0%E7%9A%84%E5%9F%BA
+%E6%9C%AC%E5%8E%9F%E7%90%86%E3%80%81%E6%A0%B8%E5%BF%83%E4%BB%B7%E5%80%BC%E4%B8%8E%E7%9B%B8%E5%AF%B9%E6%B6%B2%E6%80%81%E
+9%94%82%E7%94%B5%E6%B1%A0%E7%9A%84%E6%80%A7%E8%83%BD%2F%E5%AE%89%E5%85%A8%2F%E8%83%BD%E9%87%8F%E5%AF%86%E5%BA%A6%E4%BC%
+98%E5%8A%BF%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/search?word=%E7%A1%AB%E5%8C%96%E7%89%A9%E3%80%81%E6%B0%A7%E5%8C%96
+%E7%89%A9%E3%80%81%E8%81%9A%E5%90%88%E7%89%A9%E3%80%81%E5%8D%A4%E5%8C%96%E7%89%A9%E5%8F%8A%E5%A4%8D%E5%90%88%E5%9B%BA%E
+6%80%81%E7%94%B5%E8%A7%A3%E8%B4%A8%E5%90%84%E8%87%AA%E7%9A%84%E6%8A%80%E6%9C%AF%E8%B7%AF%E7%BA%BF%E3%80%81%E5%85%B3%E9%
+94%AE%E6%9D%90%E6%96%99%E4%BD%93%E7%B3%BB%E3%80%81%E4%BC%98%E7%BC%BA%E7%82%B9%E5%92%8C%E9%80%82%E7%94%A8%E5%9C%BA%E6%99
+%AF%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/search?word=%E5%9B%BA%E6%80%81%E7%94%B5%E6%B1%A0%E5%9C%A8%E5%8A%A8
+%E5%8A%9B%E7%94%B5%E6%B1%A0%E3%80%81%E5%82%A8%E8%83%BD%E3%80%81%E6%B6%88%E8%B4%B9%E7%94%B5%E5%AD%90%E3%80%81%E4%BD%8E%E
+7%A9%BA%E7%BB%8F%E6%B5%8E%E7%AD%89%E5%9C%BA%E6%99%AF%E7%9A%84%E5%BA%94%E7%94%A8%E5%89%8D%E6%99%AF%E3%80%81%E6%88%90%E6%
+9C%AC%E7%BB%93%E6%9E%84%E4%B8%8E%E4%BE%9B%E5%BA%94%E9%93%BE%E7%93%B6%E9%A2%88%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F "HTTP
+/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://zh.wikipedia.org/ "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://www.sogou.com/sogou?query=%E5%9B%BA%E6%80%81%E7%94%B5%E6%B1%A0%E5%9C%A8%E5%8A%A8%E
+5%8A%9B%E7%94%B5%E6%B1%A0%E3%80%81%E5%82%A8%E8%83%BD%E3%80%81%E6%B6%88%E8%B4%B9%E7%94%B5%E5%AD%90%E3%80%81%E4%BD%8E%E7%
+A9%BA%E7%BB%8F%E6%B5%8E%E7%AD%89%E5%9C%BA%E6%99%AF%E7%9A%84%E5%BA%94%E7%94%A8%E5%89%8D%E6%99%AF%E3%80%81%E6%88%90%E6%9C
+%AC%E7%BB%93%E6%9E%84%E4%B8%8E%E4%BE%9B%E5%BA%94%E9%93%BE%E7%93%B6%E9%A2%88%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F&ie=utf8
+&insite=baike.sogou.com&pid=sogou-wsse-17737832ac17be52 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.sogou.com/sogou?query=%E5%9B%BA%E6%80%81%E7%94%B5%E6%B1%A0%E7%9A%84%E5%9F%BA%E
+6%9C%AC%E5%8E%9F%E7%90%86%E3%80%81%E6%A0%B8%E5%BF%83%E4%BB%B7%E5%80%BC%E4%B8%8E%E7%9B%B8%E5%AF%B9%E6%B6%B2%E6%80%81%E9%
+94%82%E7%94%B5%E6%B1%A0%E7%9A%84%E6%80%A7%E8%83%BD%2F%E5%AE%89%E5%85%A8%2F%E8%83%BD%E9%87%8F%E5%AF%86%E5%BA%A6%E4%BC%98
+%E5%8A%BF%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F&ie=utf8&insite=baike.sogou.com&pid=sogou-wsse-17737832ac17be52 "HTTP/1.1 
+200 OK"
+INFO:httpx:HTTP Request: GET https://www.sogou.com/sogou?query=%E7%A1%AB%E5%8C%96%E7%89%A9%E3%80%81%E6%B0%A7%E5%8C%96%E
+7%89%A9%E3%80%81%E8%81%9A%E5%90%88%E7%89%A9%E3%80%81%E5%8D%A4%E5%8C%96%E7%89%A9%E5%8F%8A%E5%A4%8D%E5%90%88%E5%9B%BA%E6%
+80%81%E7%94%B5%E8%A7%A3%E8%B4%A8%E5%90%84%E8%87%AA%E7%9A%84%E6%8A%80%E6%9C%AF%E8%B7%AF%E7%BA%BF%E3%80%81%E5%85%B3%E9%94
+%AE%E6%9D%90%E6%96%99%E4%BD%93%E7%B3%BB%E3%80%81%E4%BC%98%E7%BC%BA%E7%82%B9%E5%92%8C%E9%80%82%E7%94%A8%E5%9C%BA%E6%99%A
+F%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%9F&ie=utf8&insite=baike.sogou.com&pid=sogou-wsse-17737832ac17be52 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://zh.wikipedia.org/ "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET http://baike.sogou.com/v8063273.htm?fromTitle=%E9%81%8E%E6%B8%A1%E5%85%83%E7%B4%A0 "HTTP/1
+.1 302 Found"
+INFO:httpx:HTTP Request: GET http://baike.sogou.com/v417373.htm?fromTitle=%E5%9B%BA%E4%BD%93%E7%94%B5%E6%B1%A0 "HTTP/1.
+1 302 Found"
+INFO:httpx:HTTP Request: GET http://baike.sogou.com/v605863.htm?fromTitle=%E9%94%82%E5%8A%A8%E5%8A%9B%E7%94%B5%E6%B1%A0
+ "HTTP/1.1 302 Found"
+INFO:httpx:HTTP Request: GET https://baike.sogou.com/v8063273.htm?fromTitle=%E9%81%8E%E6%B8%A1%E5%85%83%E7%B4%A0 "HTTP/
+1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://baike.sogou.com/v605863.htm?fromTitle=%E9%94%82%E5%8A%A8%E5%8A%9B%E7%94%B5%E6%B1%A
+0 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://baike.sogou.com/v417373.htm?fromTitle=%E5%9B%BA%E4%BD%93%E7%94%B5%E6%B1%A0 "HTTP/1
+.1 200 OK"
+INFO:httpx:HTTP Request: GET https://en.wikipedia.org/ "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://zh.wikipedia.org/ "HTTP/1.1 403 Forbidden"
+INFO:httpx:HTTP Request: GET https://en.wikipedia.org/ "HTTP/1.1 403 Forbidden"
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:16:54.372912Z' positional_args=('gpt-5.5', None, None)
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:providers.openai_compatible:event='p4s25_stream_summary' level='info' timestamp='2026-06-21T08:17:03.016682Z' sse_
+lines=269 content_chars=186 reasoning_chars=0 tool_calls=0 delta_keys=['content', 'role'] stop_reason='end_turn'
+INFO:providers.openai_compatible:event='p4s25_prompt_cache_hit' level='info' timestamp='2026-06-21T08:17:03.016682Z' wh
+ere='stream' cached_tokens=4864 prompt_tokens=5522 hit_rate=0.8808
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:17:06.236299Z' positional_args=('gpt-4.1-mini', None, None)
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 404 Not Found"
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:17:08.840215Z' positional_args=('gpt-5.5', None, None)
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
