@@ -5084,6 +5084,13 @@ async def control_channel(ws: WebSocket):
                         _sub_reg.cancel_all()
                 except Exception as _cc_exc:  # noqa: BLE001
                     logger.debug("subagent cancel cascade failed: %s", _cc_exc)
+                # PPT Pro（WI-7③/R-16）：/停止 同时取消该 session 正在跑的 ppt_pro
+                # 后台编排 task（调研/等确认/渲染阶段）——它由 _PPT_PRO_RUNNING 持有、
+                # 不属 chat task，故需单独收割；无在跑任务时 no-op。
+                try:
+                    ppt_tools._ppt_pro_cancel(target_sid)
+                except Exception as _pc_exc:  # noqa: BLE001
+                    logger.debug("ppt_pro cancel cascade failed: %s", _pc_exc)
                 # Tell the frontend regardless — it expects a response so
                 # the button can revert. If nothing was running, send the
                 # confirmation anyway (idempotent UX).
