@@ -1,6 +1,6 @@
 # PPT 生成 — 模块专项状态
 
-> **最后更新**: 2026-06-20
+> **最后更新**: 2026-06-21
 > **用途**: 一页看清 DeskPet「生成 PPT」全链路怎么工作、由哪些文件承担、能力边界与已知短板。要动 PPT 功能前先读这里。
 > **同级**: [status.md](./status.md)(全局) · [AgentLoop.md](./AgentLoop.md)(执行引擎)
 
@@ -44,14 +44,14 @@
 
 | 路径 | 函数 | 何时走 | 产物特点 |
 |---|---|---|---|
-| **① 模板设计页填充** | `_render_with_design_pages` (:2938) | 传了 `template`(大类名/路径)且解析出设计 deck | 最专业;复用现成设计页,内容填进文字槽,AI 图换图位(`_swap_design_picture`) |
-| **② 模板版式填充** | `_render_with_template` (:3030) | ① 失败回退;模板只有 bare layout(占位符) | 干净但朴素;`_pick_template_layout` 中英布局名映射 |
-| **③ from-scratch** | `_render_fromscratch` (:3300) | 无模板 / 模板解析失败 / AI 整页生图 | 代码摆 EMU 坐标;3 主题(minimal/dark/playful)× 10 版式 |
+| **① 模板设计页填充** | `_render_with_design_pages` (:2950) | 传了 `template`(大类名/路径)且解析出设计 deck | 最专业;复用现成设计页,内容填进文字槽,AI 图换图位(`_swap_design_picture`) |
+| **② 模板版式填充** | `_render_with_template` (:3042) | ① 失败回退;模板只有 bare layout(占位符) | 干净但朴素;`_pick_template_layout` 中英布局名映射 |
+| **③ from-scratch** | `_render_fromscratch` (:3302) | 无模板 / 模板解析失败 / AI 整页生图 | 代码摆 EMU 坐标;3 主题(minimal/dark/playful)× 10 版式 |
 
 **版式**(`VALID_LAYOUTS`): title / section / bullet / two_column / image / image_full / quote / toc / chart / (+conclusion 自动判定)。每个 `_render_*_v2` 一个函数,经 `_RENDERERS` 分派。
 **图表**:`chart` 走 python-pptx 原生 `add_chart`(✅ 可编辑,亮点)。
 
-**分派核心逻辑**(`ppt_create` :3216 附近):
+**分派核心逻辑**(`ppt_create` @:3152;`wants_fullbleed` 分派 @:3232 起):
 ```python
 wants_fullbleed = any(image_full + image_prompt)            # AI 整页 → 不让默认模板劫持
 chosen_template = template or (None if wants_fullbleed else _default_template())
@@ -113,9 +113,13 @@ else:
 
 ---
 
+> 📌 **优化 plan（v1.0 LOCKED，未实现）**：[plans/2026-06-21-ppt-deepresearch-pro/](../plans/2026-06-21-ppt-deepresearch-pro/00-PLAN.md) —
+> 新工具 `ppt_pro`：主题 → deepresearch 充分调研 → 拟大纲 → 用户确认(可改) → 优先 gpt-image-2 惊艳生图 / 连不上回退模板。
+> 经 3 轮 codex+architect 对抗收敛到 EXECUTABLE-AS-IS，**直接对治下面 §9.1 大纲质量短板**。
+
 ## 9. 已知短板 / 缺口
 
-1. **大纲质量(skill 层)** — outline 由 LLM 按 `ppt-generate/SKILL.md` 产;现实里内容常空泛/结构平庸/bullet 像讲稿。**根因在 skill/LLM 层,不在工具层**(工具只渲染)。当前 gpt-5.5 窗口仅 8000 也压制了大纲质量。→ 优化靶心之一(见 plans)。
+1. **大纲质量(skill 层)** — outline 由 LLM 按 `ppt-generate/SKILL.md` 产;现实里内容常空泛/结构平庸/bullet 像讲稿。**根因在 skill/LLM 层,不在工具层**(工具只渲染)。当前 gpt-5.5 窗口仅 8000 也压制了大纲质量。→ 优化靶心之一,已立 plan(见上方 📌,用 deepresearch 调研喂大纲根治内容空泛)。
 2. **SKILL.md 已 stale** — 第 27 行仍硬编码旧 3 模板名(商务深蓝-水墨/高级感-蓝/简约高级-灰,已删),与新大类机制冲突;模板填充模式的指导需改成「按大类名选」。
 3. **「6 短板」**(2026-06 评估,主动 defer):①信息密度失控 ②图标简陋 ③图片裁切生硬 ④图表配色不随主题 ⑤内容数≠模板槽数(已部分被鲁棒选页缓解)⑥细节装饰基础。
 4. **打包/分发**:外部大库 gitignored 不进安装包;打包 app 仅有 3 套 bundled 兜底。
