@@ -73,7 +73,7 @@ cite_check（自检引用真实）。
   "coverage": {"n_sources":8,"n_domains":5,"rounds":2,"topic_velocity":"fast",
                "cite_check_ok":true,"unique_domains":5,"max_single_domain_share":0.2,
                "diversity_ok":true,...},
-  "path": "...\\OutPut\\Research\\xxx.md",   # 报告已自动落盘
+  "path": "...\\DeepResearch\\xxx.md",   # 报告已自动落盘(安装目录下 DeepResearch/)
   "errors": [...]
 }
 ```
