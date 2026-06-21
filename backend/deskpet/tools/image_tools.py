@@ -19,7 +19,9 @@ REFUSE→PASS (consistent with companion-context-isolation §D2:
 from __future__ import annotations
 
 import base64
+from contextvars import ContextVar
 import json
+import logging
 import os
 import ssl
 import sys
@@ -30,6 +32,8 @@ from typing import Any
 import httpx
 
 from .registry import registry
+
+log = logging.getLogger(__name__)
 
 _DEFAULT_MODEL = "gpt-image-2"
 _DEFAULT_SIZE = "1024x1024"
@@ -60,6 +64,10 @@ _RETRY_BACKOFF = (5.0,)     # attempt 2 前退避
 # （attempt1 瞬时失败 ≤~40s + 5s 退避 + attempt2 读满 300s + 收尾），
 # 否则 registry 会在请求跑完前杀掉 handler。
 _TOOL_TIMEOUT_S = 360.0
+_ImageErrorContext = tuple[int | None, dict[str, Any] | str | None, Exception | None]
+_LAST_IMAGE_ERROR_CONTEXT: ContextVar[_ImageErrorContext] = ContextVar(
+    "_LAST_IMAGE_ERROR_CONTEXT", default=(None, None, None)
+)
 
 _SCHEMA: dict[str, Any] = {
     "name": "generate_image",
@@ -132,6 +140,40 @@ def _resolve_endpoint() -> tuple[str, str | None]:
     return base_url.rstrip("/"), api_key
 
 
+def _resolve_relay_base_and_key() -> tuple[str | None, str | None]:
+    """复用现有 image endpoint/key 解析来源，避免 probe 与生图路径漂移。"""
+    base_url, api_key = _resolve_endpoint()
+    return base_url or None, api_key
+
+
+def _models_url_for_base(base_url: str) -> str:
+    base = base_url.rstrip("/")
+    return f"{base}/models" if base.endswith("/v1") else f"{base}/v1/models"
+
+
+def probe_image_reachable(*, timeout_s: float = 8.0) -> bool:
+    """便宜探测 relay images 服务可达性；只判服务层，不证明模型可用。"""
+    base_url, api_key = _resolve_relay_base_and_key()
+    if not base_url:
+        log.info("image probe unreachable: missing image relay base_url")
+        return False
+
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    try:
+        timeout = httpx.Timeout(
+            connect=5.0,
+            read=timeout_s,
+            write=5.0,
+            pool=5.0,
+        )
+        with httpx.Client(timeout=timeout, trust_env=_trust_env_proxy()) as cli:
+            resp = cli.get(_models_url_for_base(base_url), headers=headers)
+        return resp.status_code < 500
+    except Exception as exc:  # noqa: BLE001 - probe 从不向上抛
+        log.info("image probe unreachable: %s", exc)
+        return False
+
+
 def _image_model() -> str:
     try:
         from config import standalone_config_section  # type: ignore[import-not-found]
@@ -180,6 +222,100 @@ def _image_quality() -> str:
         return _DEFAULT_QUALITY
 
 
+def _set_image_error_context(
+    status_code: int | None,
+    body: dict[str, Any] | str | None,
+    exc: Exception | None,
+) -> None:
+    _LAST_IMAGE_ERROR_CONTEXT.set((status_code, body, exc))
+
+
+def _get_image_error_context() -> _ImageErrorContext:
+    return _LAST_IMAGE_ERROR_CONTEXT.get()
+
+
+def _collect_error_texts(body: dict[str, Any] | str | None) -> list[str]:
+    if body is None:
+        return []
+    if isinstance(body, str):
+        try:
+            parsed = json.loads(body)
+        except Exception:  # noqa: BLE001
+            return [body]
+        if isinstance(parsed, dict):
+            return _collect_error_texts(parsed)
+        return [body]
+    texts: list[str] = []
+
+    def _walk(value: Any) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key in {"code", "type", "message", "error"} and isinstance(
+                    item, (str, int, float)
+                ):
+                    texts.append(str(item))
+                else:
+                    _walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                _walk(item)
+        elif isinstance(value, (str, int, float)):
+            texts.append(str(value))
+
+    _walk(body)
+    return texts
+
+
+def _classify_image_error(
+    status_code: int | None,
+    body: dict[str, Any] | str | None,
+    exc: Exception | None,
+) -> str:
+    """给 PPT Pro 回退 gate 使用的粗粒度失败分类。"""
+    if exc is not None and isinstance(
+        exc,
+        (
+            httpx.TimeoutException,
+            httpx.RemoteProtocolError,
+            httpx.ConnectError,
+            httpx.ReadError,
+            httpx.WriteError,
+            httpx.ProtocolError,
+            ssl.SSLError,
+        ),
+    ):
+        return "connectivity"
+    if status_code in (502, 503, 504):
+        return "connectivity"
+    if status_code in (401, 403):
+        return "auth"
+    if status_code == 429:
+        return "quota"
+
+    texts = [text.lower() for text in _collect_error_texts(body)]
+    joined = " ".join(texts)
+    if (
+        "model_not_found" in joined
+        or "invalid_model" in joined
+        or ("model" in joined and "unsupport" in joined)
+    ):
+        return "model_unavailable"
+    if "content_policy" in joined or "safety" in joined:
+        return "content"
+
+    # relay 有时只返回自然语言 message；这层依赖文案，可能漏判。
+    # 上层还会用「全图失败也回退」兜底，避免整套 PPT 变成占位图。
+    if "model" in joined and any(
+        marker in joined
+        for marker in ("not found", "unsupport", "不支持", "不存在", "无可用")
+    ):
+        return "model_unavailable"
+
+    if status_code is not None and 400 <= status_code < 500:
+        return "content"
+    return "unknown"
+
+
 def _workspace_dir() -> Path:
     from paths import user_data_dir  # type: ignore[import-not-found]
 
@@ -211,8 +347,10 @@ def _generate_png(
     BOTH the legacy sync handler and the async ImageGenerationWorker —
     single copy of the slow logic. Never raises.
     """
-    base_url, api_key = _resolve_endpoint()
+    _set_image_error_context(None, None, None)
+    base_url, api_key = _resolve_relay_base_and_key()
     if not base_url:
+        _set_image_error_context(None, None, None)
         return None, (
             "没解析到图像生成 endpoint（llm_runtime.json / config 都没有 "
             "base_url）。请先在设置里配好 LLM endpoint。"
@@ -258,18 +396,24 @@ def _generate_png(
                     headers=headers,
                 )
             if resp.status_code in (502, 503):
+                _set_image_error_context(resp.status_code, None, None)
                 last_transient = f"HTTP {resp.status_code}（上游网关瞬时）"
             elif resp.status_code == 504:
+                _set_image_error_context(resp.status_code, None, None)
                 return None, (  # 上游已耗尽服务端 300s 预算：重试只会再烧一轮
                     "上游等满 300 秒仍没出图（网关 504，上游偶发抽风）。"
                     "为避免重复扣费已停止重试。稍后再试，或把描述写简单点。"
                 )
             elif resp.status_code != 200:
                 detail = ""
+                body: dict[str, Any] | str | None = None
                 try:
-                    detail = json.dumps(resp.json(), ensure_ascii=False)[:300]
+                    body = resp.json()
+                    detail = json.dumps(body, ensure_ascii=False)[:300]
                 except Exception:  # noqa: BLE001
                     detail = ""
+                    body = None
+                _set_image_error_context(resp.status_code, body, None)
                 return None, (  # 4xx 确定性错误：不重试
                     f"图像接口 HTTP {resp.status_code}：可能是 model 不支持、"
                     f"额度或参数问题。响应：{detail}"
@@ -277,6 +421,7 @@ def _generate_png(
             else:
                 data = (resp.json() or {}).get("data") or []
                 if not data:
+                    _set_image_error_context(resp.status_code, {"data": data}, None)
                     return None, "接口 200 但 data 为空，无法取回图片。"
                 item = data[0]
                 if item.get("b64_json"):
@@ -287,14 +432,18 @@ def _generate_png(
                     ) as cli:
                         dl = cli.get(item["url"])
                     if dl.status_code != 200:
+                        _set_image_error_context(dl.status_code, None, None)
                         return None, f"取回图片 URL 失败 HTTP {dl.status_code}。"
                     return dl.content, None
+                _set_image_error_context(resp.status_code, item, None)
                 return None, "响应里既没有 b64_json 也没有 url，无法保存图片。"
         except httpx.ConnectTimeout as exc:
             # 连接没建立就超时（10s）：请求没打到生成、无扣费风险 → 可重试。
             # 必须排在 TimeoutException 之前（它是其子类）。
+            _set_image_error_context(None, None, exc)
             last_transient = f"{type(exc).__name__}: {exc}"
         except httpx.TimeoutException as exc:
+            _set_image_error_context(None, None, exc)
             return None, (  # 读超时不重试：服务端仍会生成完并按次计费
                 f"图像接口等了 {int(_TIMEOUT.read)} 秒仍未返回"
                 f"（{type(exc).__name__}）。服务端可能仍在出图并照常计费，"
@@ -309,10 +458,13 @@ def _generate_png(
             httpx.ProtocolError,
             ssl.SSLError,
         ) as exc:
+            _set_image_error_context(None, None, exc)
             last_transient = f"{type(exc).__name__}: {exc}"
         except httpx.HTTPError as exc:
+            _set_image_error_context(None, None, exc)
             last_transient = f"{type(exc).__name__}: {exc}"
         except Exception as exc:  # noqa: BLE001 — never raise
+            _set_image_error_context(None, None, exc)
             return None, f"未预期错误：{type(exc).__name__}: {exc}"
         if _attempt < _MAX_ATTEMPTS:
             time.sleep(_RETRY_BACKOFF[_attempt - 1])
@@ -359,6 +511,7 @@ def generate_images(prompts, *, size=_DEFAULT_SIZE, model=None):
                 "prompt": _safe_prompt_text(prompts),
                 "path": None,
                 "error": "empty prompt",
+                "error_kind": "content",
             }
         ]
     for prompt in prompts:
@@ -368,19 +521,34 @@ def generate_images(prompts, *, size=_DEFAULT_SIZE, model=None):
                     "prompt": _safe_prompt_text(prompt),
                     "path": None,
                     "error": "empty prompt",
+                    "error_kind": "content",
                 }
             )
             continue
         try:
+            _set_image_error_context(None, None, None)
             png, err = _generate_png(prompt, size, resolved_model)
             if png is None:
-                results.append({"prompt": prompt, "path": None, "error": err or "未知错误"})
+                status_code, body, exc = _get_image_error_context()
+                results.append(
+                    {
+                        "prompt": prompt,
+                        "path": None,
+                        "error": err or "未知错误",
+                        "error_kind": _classify_image_error(status_code, body, exc),
+                    }
+                )
                 continue
             try:
                 out = _save_image(png)
             except Exception as exc:  # noqa: BLE001
                 results.append(
-                    {"prompt": prompt, "path": None, "error": f"写入 workspace 失败：{exc}"}
+                    {
+                        "prompt": prompt,
+                        "path": None,
+                        "error": f"写入 workspace 失败：{exc}",
+                        "error_kind": "unknown",
+                    }
                 )
                 continue
             results.append({"prompt": prompt, "path": str(out), "error": None})
@@ -390,6 +558,7 @@ def generate_images(prompts, *, size=_DEFAULT_SIZE, model=None):
                     "prompt": prompt,
                     "path": None,
                     "error": f"未预期错误：{type(exc).__name__}: {exc}",
+                    "error_kind": _classify_image_error(None, None, exc),
                 }
             )
     return results
@@ -416,11 +585,16 @@ def _handle_generate_image_sync(args: dict[str, Any], task_id: str = "") -> str:
     model = _image_model()
     png, err = _generate_png(prompt, size, model)
     if png is None:
-        return _err("image gen failed", err or "未知错误")
+        status_code, body, exc = _get_image_error_context()
+        return _err(
+            "image gen failed",
+            err or "未知错误",
+            error_kind=_classify_image_error(status_code, body, exc),
+        )
     try:
         out = _save_image(png)
     except Exception as exc:  # noqa: BLE001
-        return _err("save failed", f"写入 workspace 失败：{exc}")
+        return _err("save failed", f"写入 workspace 失败：{exc}", error_kind="unknown")
     opened = _open_file(out)
     # WI-T1.2 D1：显式 emit artifacts[]（kind=image 用于前端区分文件 vs 图像）
     # 注：audit follow-up — _open_file 已自动打开图片；当
