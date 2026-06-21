@@ -11,6 +11,7 @@
 
 | 工作项 | 主文档 | 一句话 | 状态 |
 |---|---|---|---|
+| **deepresearch-subagent-fanout** | [00-PLAN](2026-06-21-deepresearch-subagent-fanout/00-PLAN.md) | 把子代理并发能力接进 deepresearch：Plan 拆题后**每子问题派一个子代理跑完整单问题 deepresearch**(复用§6.0 全管线:搜索+直连权威源+打分+精排),`SubagentScheduler` 有界并发(cap4/lane2 背压)→ N 份子报告回主线程 → 主线程**统一 synthesize 跨子报告分析出结论**；引用全局重编号+失败隔离+depth-1 三重递归守门；flag `[research].subagent_fanout`(依赖 `features.subagent_driver`)默认 OFF/字节级 BC；复用 driver 的进度面板零前端改动 | 📋 待 review |
 | **subagent-concurrency-driver** | [00-PRD](2026-06-21-subagent-concurrency-driver/00-PRD.md) | 给桌宠 agent **驱动子代理并发处理多种事务**的能力：复用现有三层基建(agent/agent_parallel/spawn_team)+ 新增事务分型 `task_kinds` + lane-aware 有界调度 `subagent_scheduler` + 非阻塞 spawn/await + WS 进度 + 取消级联；对标 openhuman/hermes/openclaw 码级(8 模式)；P0-P4 五阶段全 flag-gated；经 3 轮对抗评审收敛+用户拍板全做；**P0-P4 全实施**(单测 320+绿/接线冒烟 SHIP/boot smoke 真 backend 4 ready 锚点;真桌宠 UI E2E 待跑) | ✅ 实施完成 |
 | **agent-loop-optimization** | [00-PLAN](2026-06-20-agent-loop-optimization/00-PLAN.md) | Agent 执行引擎代码级优化 7 WI(tool_choice硬约束/trace/阶段化提示词/Focus Chain todo回灌/触发式知识注入/SEARCH-REPLACE降级编辑/ask_clarification)；含 §13 R1 + §15 R2 挑战修订(时序/流式/control通道竞态/代码骨架)；经 2 轮 5 子代理挑战收敛至可执行 | 📋 待实施 |
 | **task-drift-fix（交接）** | [HANDOFF](2026-06-20-task-drift-fix-HANDOFF.md) | 桌宠「任务漂移」修复交接：单一 default 会话从不切分→新任务被旧主题(CATL)压垮；cbdf855 修了 compaction摘要+L3召回两搬运工,但 raw历史直灌+会话切分根因未动(短会话compaction不触发→主漂移路径)；修复方向 D1切分作用域+D5 deepresearch传原话；待另一 session 实现 | 📋 待修复 |
