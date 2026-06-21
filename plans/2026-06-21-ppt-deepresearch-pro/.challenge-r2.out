@@ -1,0 +1,970 @@
+Reading additional input from stdin...
+OpenAI Codex v0.125.0 (research preview)
+--------
+workdir: G:\projects\deskpet
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019eea3a-11f6-7cf0-becb-03b215d93449
+--------
+user
+你是资深架构评审，对一份「PPT 优化 plan」做**第 2 轮对抗式只读复核**。上一轮（R1）你和另一位评审共找出若干 BLOCKING/MAJOR，作者已出 v0.2 修复。本轮目标：(1) 逐条验证 R1 的修复在 v0.2 里**是否真正、正确地落地**；(2) 找**新引入**或**仍残留**的 BLOCKING/MAJOR。
+
+## 待复核 plan（v0.2）
+G:/projects/deskpet/plans/2026-06-21-ppt-deepresearch-pro/00-PLAN.md （完整读，注意顶部 v0.1→v0.2 变更说明 + §6 风险表 + §2.3/§2.5 新架构）
+
+## R1 已认定问题 → 逐条判 v0.2 是否修对（给「修对/没修对/修过头」+证据）
+1. **确认/调研环拆独立 task（R-4 BLOCKING）**：v0.2 §2.3/§2.5 让 handler 秒回 + `asyncio.create_task` 起独立编排 task。核对：
+   - `asyncio.create_task` 起的 task **真的不会**随 chat task（parent）被 cancel 而级联取消吗？（确认 create_task 是 loop 级独立 task，非 TaskGroup/gather 子任务）
+   - 独立编排 task 跑在 **哪个 loop**？它 `await _clarify_ask`（依赖 main loop 的 `_control_connections`/`_clarify_pending`）—— handler 被 registry 在 chat task 上 await（registry.py:730-743），chat task 与 main loop 是否同一个 loop？若同 → create_task 落 main loop，OK；请核实 backend 是否真单 loop。
+   - 渲染走 `run_blocking=loop.run_in_executor`，`_render_pro`→`ppt_create`（阻塞）跑在 executor 线程不卡 loop，对吗？
+2. **配置文件 backend/config.py（BLOCKING）**：v0.2 WI-0 改指 `backend/config.py` + `standalone_config_section("ppt")`。核实该函数签名/用法（config.py:870 附近），plan 写的读法可行吗？`_ppt_pro_cfg()` 在 ppt_tools 里能拿到吗？
+3. **注入经 registry session context / set_ppt_pro_services（BLOCKING）**：v0.2 WI-7 用模块级 `_PPT_PRO_CTX` + `set_ppt_pro_services()` setter（仿 research_tools 的 set_live_llm_call）。核实：handler 从 `kwargs["_session_id"]` 读 sid 是否与 registry 实际注入键一致（registry.py:262/691 + ppt_tools.py 现有 `_session_id` 读法 :3769）？setter 注入范式可行吗？
+4. **F4 4xx model_unavailable 回退（BLOCKING）**：v0.2 §2.2 + WI-6b 把 error_kind 细分 connectivity/model_unavailable/auth/quota/content。核实 image_tools.py:267-277 的真实返回里**能否解析出**「model 不支持/not found」（有没有结构化 error.code，还是只有中文文案）？若只有文案，plan 的「不靠中文文案」承诺能否兑现？
+5. **R-1 二次烧图双保险**：v0.2 `_degrade_to_template` 清 image_prompt + `ppt_create(skip_image_gen=True)`。核实 ppt_create @3239 加 `if not skip_image_gen:` 是否真能拦住唯一的生图入口？有没有别的生图/落盘路径漏网？
+6. **WI-2 双模式大纲 / prev_slides 修订 / WI-4 让我改改编辑态 / WI-10 receipt**：核对这些是否自洽、有没有接口对不上。
+
+## 另查 v0.2 是否有新坑
+- handler 秒回 `status:researching` 后，agent ReAct 看到这个 tool_result 会不会**误以为没做完而重复调用 ppt_pro** 或乱接话？（参考现有 ppt_create 异步 `status:generating` 的处理）
+- `set_ppt_pro_services` 注入时机：main.py:530 `_clarify_ask` 定义 vs ppt 工具注册/注入的先后，会不会注入到 None？
+- 独立编排 task 里 `await _resolve_default_llm_call()`：research 钩子注入(main.py:674)是否一定早于用户触发？冷启动竞态？
+- 预算/超时：编排 task 自管超时，但 research(asyncio.wait_for 300s) + 确认(120/300s) + 渲染(生图 N×1-3min) 全程没有总上界，task 会不会泄漏/挂死？需不需要总超时 + task 取消入口（/stop）？
+
+## 输出
+逐条 R1 修复判定 + 新发现，按 [BLOCKING|MAJOR|MINOR] 分级 + 证据(文件:行号)。最后一行：`VERDICT: EXECUTABLE-AS-IS` 或 `VERDICT: NEEDS-FIX (N BLOCKING, M MAJOR)`。只读不改文件。
+codex
+我会按只读复核处理：先完整读 v0.2 plan，再对照 registry/main/ppt/image/config 等真实代码逐项核验。会使用 `Geek-skills-solution-architect` 的架构评审视角，但不改文件。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content -Raw 'C:/Users/24378/.agents/skills/geek-solution-architect/SKILL.md'" in G:\projects\deskpet
+ succeeded in 24425ms:
+---
+name: Geek-skills-solution-architect
+version: 1.0.0
+description: ä¸“ä¸šçš„è§£å†³æ–¹æ¡ˆæž¶æž„å¸ˆåŠ©æ‰‹ï¼Œæä¾›ç³»ç»Ÿæž¶æž„è®¾è®¡ã€æŠ€æœ¯é€‰åž‹ã€æž¶æž„è¯„å®¡ã€æ€§èƒ½ä¼˜åŒ–ç­‰å…¨æ–¹ä½æŒ‡å¯¼ã€‚é€‚ç”¨äºŽè®¾è®¡æ–°ç³»ç»Ÿæž¶æž„ã€è¯„å®¡çŽ°æœ‰æž¶æž„ã€æŠ€æœ¯é€‰åž‹å†³ç­–ã€æž¶æž„é‡æž„ã€æ€§èƒ½ä¼˜åŒ–ã€å¾®æœåŠ¡è®¾è®¡ç­‰åœºæ™¯ã€‚ç»“åˆç½‘ç»œæœç´¢äº†è§£æœ€æ–°æŠ€æœ¯è¶‹åŠ¿ï¼Œæä¾›åŸºäºŽ2025å¹´æœ€ä½³å®žè·µçš„æž¶æž„å»ºè®®ï¼Œæ¶µç›–å¾®æœåŠ¡ã€äº‹ä»¶é©±åŠ¨ã€äº‘åŽŸç”Ÿã€AIæž¶æž„ç­‰çŽ°ä»£æž¶æž„æ¨¡å¼ã€?
+---
+
+# è§£å†³æ–¹æ¡ˆæž¶æž„å¸?
+
+ä¸“ä¸šçš„æž¶æž„è®¾è®¡å’Œå’¨è¯¢åŠ©æ‰‹,å¸®åŠ©æ‚¨è®¾è®¡é«˜è´¨é‡çš„è½¯ä»¶ç³»ç»Ÿæž¶æž?åšå‡ºæ˜Žæ™ºçš„æŠ€æœ¯é€‰åž‹å†³ç­–,å¹¶æä¾›æž¶æž„è¯„å®¡å’Œä¼˜åŒ–å»ºè®®ã€?
+
+## æ ¸å¿ƒèƒ½åŠ›
+
+1. **æž¶æž„è®¾è®¡** - ä»Žéœ€æ±‚åˆ°æž¶æž„çš„å®Œæ•´è®¾è®¡æµç¨?
+2. **æŠ€æœ¯é€‰åž‹** - åŸºäºŽå¤šç»´åº¦è¯„ä¼°çš„æŠ€æœ¯å†³ç­?
+3. **æž¶æž„è¯„å®¡** - å…¨é¢çš„æž¶æž„è´¨é‡è¯„ä¼?
+4. **æž¶æž„ä¼˜åŒ–** - æ€§èƒ½ã€å¯æ‰©å±•æ€§ã€å¯é æ€§ä¼˜åŒ?
+5. **è¶‹åŠ¿æ´žå¯Ÿ** - 2025å¹´æœ€æ–°æž¶æž„è¶‹åŠ¿å’Œæœ€ä½³å®žè·?
+
+## ä½¿ç”¨åœºæ™¯
+
+### ä½•æ—¶ä½¿ç”¨æœ¬æŠ€èƒ½ï¼Ÿ
+
+å½“é‡åˆ°ä»¥ä¸‹æƒ…å†µæ—¶,è¯·ä½¿ç”¨æœ¬æŠ€èƒ?
+
+- âœ?è®¾è®¡æ–°ç³»ç»Ÿçš„æž¶æž„
+- âœ?è¯„å®¡çŽ°æœ‰ç³»ç»Ÿæž¶æž„
+- âœ?è¿›è¡ŒæŠ€æœ¯é€‰åž‹å†³ç­–
+- âœ?è§£å†³æž¶æž„é—®é¢˜
+- âœ?ä¼˜åŒ–ç³»ç»Ÿæ€§èƒ½
+- âœ?å¾®æœåŠ¡æž¶æž„è®¾è®?
+- âœ?äº‘åŽŸç”Ÿæž¶æž„è®¾è®?
+- âœ?äº†è§£æœ€æ–°æž¶æž„è¶‹åŠ?
+
+## å·¥ä½œæµç¨‹
+
+### ç¬¬ä¸€æ­? æ˜Žç¡®éœ€æ±‚å’Œç›®æ ‡
+
+åœ¨å¼€å§‹æž¶æž„è®¾è®¡å‰,å…ˆæ˜Žç¡?
+
+1. **ä¸šåŠ¡éœ€æ±?*: è¦è§£å†³ä»€ä¹ˆé—®é¢˜ï¼Ÿæ”¯æŒä»€ä¹ˆä¸šåŠ¡åœºæ™¯ï¼Ÿ
+2. **éžåŠŸèƒ½éœ€æ±?*: æ€§èƒ½ã€å¯ç”¨æ€§ã€å®‰å…¨æ€§ã€å¯æ‰©å±•æ€§è¦æ±?
+3. **çº¦æŸæ¡ä»¶**: é¢„ç®—ã€æ—¶é—´ã€å›¢é˜ŸæŠ€èƒ½ã€æŠ€æœ¯æ ˆé™åˆ¶
+4. **ç›®æ ‡æŒ‡æ ‡**: SLAè¦æ±‚ã€ç”¨æˆ·è§„æ¨¡ã€æ•°æ®é‡
+
+### ç¬¬äºŒæ­? å­¦ä¹ æž¶æž„çŸ¥è¯†(é¦–æ¬¡ä½¿ç”¨)
+
+**å¿…è¯»æ ¸å¿ƒæ–‡æ¡£**:
+```
+view /home/Codex/solution-architect/references/æž¶æž„è®¾è®¡åŽŸåˆ™.md
+```
+åŒ…å«:
+- SOLIDåŽŸåˆ™å’Œæž¶æž„æ ¸å¿ƒåŽŸåˆ?
+- æž¶æž„è´¨é‡å±žæ€?
+- 2025å¹´æž¶æž„è¶‹åŠ?
+- æž¶æž„å†³ç­–æ¡†æž¶
+
+**å…¶ä»–å‚è€ƒæ–‡æ¡?*(æ ¹æ®éœ€è¦?:
+- `æž¶æž„æ¨¡å¼.md` - å„ç§æž¶æž„æ¨¡å¼è¯¦è§£
+- `æŠ€æœ¯é€‰åž‹æŒ‡å—.md` - æŠ€æœ¯é€‰åž‹æ–¹æ³•è®?
+- `æž¶æž„è¯„å®¡æ¸…å•.md` - æž¶æž„è¯„å®¡æ ‡å‡†
+
+### ç¬¬ä¸‰æ­? æ‰§è¡Œå…·ä½“ä»»åŠ¡
+
+#### ä»»åŠ¡A: æž¶æž„è®¾è®¡
+
+**1. éœ€æ±‚åˆ†æž?*
+```
+å¸®æˆ‘è®¾è®¡ä¸€ä¸ª[ç³»ç»Ÿæè¿°]çš„æž¶æž?
+è¦æ±‚:
+- ç”¨æˆ·è§„æ¨¡: [æ•°é‡]
+- æ€§èƒ½è¦æ±‚: [SLA]
+- ç‰¹æ®Šéœ€æ±? [åˆ—ä¸¾]
+```
+
+**2. æœç´¢æœ€æ–°å®žè·?*
+```
+web_search: [ç±»ä¼¼ç³»ç»Ÿ] æž¶æž„è®¾è®¡æœ€ä½³å®žè·?
+web_search: 2025 [ç›¸å…³é¢†åŸŸ] æž¶æž„è¶‹åŠ¿
+```
+
+**3. è®¾è®¡æµç¨‹**
+- åˆ†æžéœ€æ±‚å’Œçº¦æŸ
+- é€‰æ‹©åˆé€‚çš„æž¶æž„æ¨¡å¼
+- è®¾è®¡ç³»ç»Ÿç»„ä»¶å’Œäº¤äº?
+- åˆ¶å®šæŠ€æœ¯é€‰åž‹æ–¹æ¡ˆ
+- è¯„ä¼°é£Žé™©å’Œæƒè¡?
+- è¾“å‡ºæž¶æž„æ–‡æ¡£
+
+**4. è¾“å‡ºå†…å®¹**
+- ç³»ç»Ÿæž¶æž„å›?
+- ç»„ä»¶èŒè´£è¯´æ˜Ž
+- æŠ€æœ¯æ ˆé€‰æ‹©åŠç†ç”?
+- éƒ¨ç½²æž¶æž„
+- æž¶æž„å†³ç­–è®°å½•(ADR)
+- é£Žé™©å’Œç¼“è§£æŽªæ–?
+
+#### ä»»åŠ¡B: æŠ€æœ¯é€‰åž‹
+
+**1. æ˜Žç¡®éœ€æ±?*
+```
+éœ€è¦é€‰æ‹©[æŠ€æœ¯ç±»åž‹]:
+- å€™é€‰æ–¹æ¡? [A, B, C]
+- è¯„ä¼°é‡ç‚¹: [æ€§èƒ½/æˆæœ¬/å­¦ä¹ æ›²çº¿]
+- çº¦æŸæ¡ä»¶: [åˆ—ä¸¾]
+```
+
+**2. è°ƒç ”æœ€æ–°ä¿¡æ?*
+```
+web_search: [æŠ€æœ¯A] vs [æŠ€æœ¯B] 2025 comparison
+web_search: [æŠ€æœ¯] production experience
+```
+
+**3. è¯„ä¼°æµç¨‹**
+- åˆ—å‡ºå€™é€‰æ–¹æ¡?
+- å¤šç»´åº¦è¯„ä¼?åŠŸèƒ½ã€æ€§èƒ½ã€æˆæœ¬ã€ç”Ÿæ€ç­‰)
+- POCéªŒè¯å»ºè®®
+- è¯„åˆ†çŸ©é˜µ
+- æƒè¡¡åˆ†æž
+- æœ€ç»ˆæŽ¨è?
+
+**4. è¾“å‡ºå†³ç­–æ–‡æ¡£**
+å‚è€ƒ`æŠ€æœ¯é€‰åž‹æŒ‡å—.md`ä¸­çš„æ¨¡æ¿
+
+#### ä»»åŠ¡C: æž¶æž„è¯„å®¡
+
+**1. æä¾›æž¶æž„ææ–™**
+```
+è¯·è¯„å®¡è¿™ä¸ªæž¶æž„è®¾è®?
+[æä¾›æž¶æž„å›¾ã€æ–‡æ¡£æˆ–æè¿°]
+```
+
+**2. è¯„å®¡ç»´åº¦**
+ä½¿ç”¨`æž¶æž„è¯„å®¡æ¸…å•.md`è¿›è¡Œå…¨é¢è¯„å®¡:
+- åŠŸèƒ½æ€?
+- è´¨é‡å±žæ€?æ€§èƒ½ã€å¯æ‰©å±•æ€§ã€å¯ç”¨æ€§ç­‰)
+- æž¶æž„è®¾è®¡
+- æŠ€æœ¯é€‰åž‹
+- éƒ¨ç½²è¿ç»´
+- æˆæœ¬
+- é£Žé™©
+
+**3. è¯„å®¡è¾“å‡º**
+- æ€»ä½“è¯„åˆ†å’Œè¯„ä»?
+- ä¸»è¦ä¼˜ç‚¹
+- å­˜åœ¨é—®é¢˜(æŒ‰ä¸¥é‡ç¨‹åº¦åˆ†ç±?
+- æ”¹è¿›å»ºè®®
+- åŽç»­è¡ŒåŠ¨é¡?
+
+#### ä»»åŠ¡D: æž¶æž„ä¼˜åŒ–
+
+**1. é—®é¢˜è¯†åˆ«**
+```
+ç³»ç»Ÿå­˜åœ¨[æ€§èƒ½/å¯ç”¨æ€?å¯æ‰©å±•æ€§]é—®é¢˜:
+[å…·ä½“æè¿°é—®é¢˜çŽ°è±¡å’ŒæŒ‡æ ‡]
+```
+
+**2. åˆ†æžæ–¹æ³•**
+- å®šä½ç“¶é¢ˆ
+- æœç´¢ç±»ä¼¼é—®é¢˜çš„è§£å†³æ–¹æ¡?
+- æä¾›ä¼˜åŒ–æ–¹æ¡ˆ
+- æƒè¡¡å–èˆåˆ†æž
+
+**3. ä¼˜åŒ–å»ºè®®**
+- çŸ­æœŸå¿«é€Ÿä¼˜åŒ?
+- ä¸­æœŸæ”¹è¿›æ–¹æ¡ˆ
+- é•¿æœŸæž¶æž„æ¼”è¿›
+- å®žæ–½è®¡åˆ’
+
+#### ä»»åŠ¡E: äº†è§£æž¶æž„è¶‹åŠ¿
+
+**1. æœç´¢æœ€æ–°è¶‹åŠ?*
+```
+web_search: 2025 software architecture trends
+web_search: [å…·ä½“é¢†åŸŸ] architecture best practices 2025
+```
+
+**2. é˜…è¯»å‚è€ƒæ–‡æ¡?*
+```
+view references/æž¶æž„è®¾è®¡åŽŸåˆ™.md  # æŸ¥çœ‹2025å¹´è¶‹åŠ¿éƒ¨åˆ?
+view references/æž¶æž„æ¨¡å¼.md      # æŸ¥çœ‹çŽ°ä»£æž¶æž„æ¨¡å¼
+```
+
+**3. ç»¼åˆåˆ†æž**
+- æ€»ç»“å…³é”®è¶‹åŠ¿
+- åˆ†æžé€‚ç”¨åœºæ™¯
+- æä¾›å®žè·µå»ºè®®
+
+## å·¥å…·ä½¿ç”¨
+
+### 1. ç½‘ç»œæœç´¢
+
+**æœç´¢æž¶æž„æ¡ˆä¾‹**:
+```
+web_search: [å…¬å¸/äº§å“] system architecture
+web_search: microservices architecture best practices 2025
+web_search: [æŠ€æœ¯] production lessons learned
+```
+
+**æœç´¢æŠ€æœ¯å¯¹æ¯?*:
+```
+web_search: PostgreSQL vs MySQL 2025
+web_search: Kafka vs RabbitMQ performance comparison
+web_search: AWS vs Azure vs GCP comparison
+```
+
+**èŽ·å–è¯¦ç»†å†…å®¹**:
+```
+web_fetch: [æƒå¨æŠ€æœ¯åšå®¢URL]
+web_fetch: [å®˜æ–¹æ–‡æ¡£URL]
+```
+
+### 2. å‚è€ƒæ–‡æ¡?
+
+**æ ¸å¿ƒæ–‡æ¡£**:
+- `æž¶æž„è®¾è®¡åŽŸåˆ™.md` - è®¾è®¡åŽŸåˆ™ã€è´¨é‡å±žæ€§ã€?025è¶‹åŠ¿
+- `æž¶æž„æ¨¡å¼.md` - åˆ†å±‚ã€å¾®æœåŠ¡ã€äº‹ä»¶é©±åŠ¨ç­‰æ¨¡å¼
+- `æŠ€æœ¯é€‰åž‹æŒ‡å—.md` - æŠ€æœ¯æ ˆè¯„ä¼°å’Œé€‰æ‹©æ–¹æ³•
+- `æž¶æž„è¯„å®¡æ¸…å•.md` - å…¨é¢çš„è¯„å®¡æ ‡å‡?
+
+**æŸ¥çœ‹æ–¹æ³•**:
+```
+view /home/Codex/solution-architect/references/[æ–‡æ¡£å]
+```
+
+## æ ¸å¿ƒåŽŸåˆ™
+
+### æž¶æž„è®¾è®¡çš?é»„é‡‘æ³•åˆ™"
+
+1. **ç®€å•ä¼˜äºŽå¤æ?* - KISSåŽŸåˆ™,é¿å…è¿‡åº¦è®¾è®¡
+2. **æ¼”è¿›ä¼˜äºŽå®Œç¾Ž** - æ¸è¿›å¼è®¾è®?æŒç»­æ”¹è¿›
+3. **æƒè¡¡æ— å¤„ä¸åœ¨** - æ²¡æœ‰å®Œç¾Žæ–¹æ¡ˆ,åªæœ‰æœ€åˆé€‚çš„
+4. **è´¨é‡å±žæ€§ä¼˜å…?* - æ˜Žç¡®æ€§èƒ½ã€å¯ç”¨æ€§ç­‰éžåŠŸèƒ½éœ€æ±?
+5. **å›¢é˜Ÿèƒ½åŠ›åŒ¹é…** - é€‰æ‹©å›¢é˜Ÿèƒ½é©¾é©­çš„æŠ€æœ?
+6. **è®°å½•å†³ç­–** - ä½¿ç”¨ADRè®°å½•é‡è¦å†³ç­–
+7. **æŒç»­éªŒè¯** - é€šè¿‡POCå’Œå®žè·µéªŒè¯å‡è®?
+
+### 2025å¹´æž¶æž„å…³é”®è¶‹åŠ?
+
+1. **AIä¼˜åŒ–æž¶æž„** - AIè¾…åŠ©è®¾è®¡ã€AIé›†æˆã€RAGæž¶æž„
+2. **äº‹ä»¶é©±åŠ¨** - å®žæ—¶æ•°æ®å¤„ç†ã€æœåŠ¡è§£è€?
+3. **å¾®æœåŠ¡æ¼”è¿?* - è¶…æ¨¡å—åŒ–ã€Serverlesså¾®æœåŠ¡ã€æ¨¡å—åŒ–å•ä½“
+4. **é›¶ä¿¡ä»»å®‰å…?* - å®‰å…¨å†…åµŒåˆ°æž¶æž„è®¾è®?
+5. **è¾¹ç¼˜è®¡ç®—** - Edge-nativeè®¾è®¡
+6. **å¯ç»„åˆæž¶æž?* - çµæ´»çš„ç»„ä»¶åŒ–è®¾è®¡
+7. **ç»¿è‰²è½¯ä»¶** - èƒ½æ•ˆä¼˜åŒ–ã€ç¢³ä¸­å’Œ
+8. **æŒç»­æž¶æž„** - æž¶æž„æŒç»­æ¼”è¿›ã€ADRå®žè·µ
+
+## å¸¸è§åœºæ™¯ç¤ºä¾‹
+
+### åœºæ™¯1: è®¾è®¡ç”µå•†ç³»ç»Ÿ
+
+```
+è¯·å¸®æˆ‘è®¾è®¡ä¸€ä¸ªç”µå•†ç³»ç»Ÿæž¶æž?
+- é¢„æœŸç”¨æˆ·: 100ä¸‡æ—¥æ´?
+- æ ¸å¿ƒåŠŸèƒ½: å•†å“æµè§ˆã€ä¸‹å•ã€æ”¯ä»˜ã€åº“å­?
+- æ€§èƒ½è¦æ±‚: 99thå“åº”æ—¶é—´<200ms
+- å¯ç”¨æ€? 99.9%
+- é¢„ç®—: ä¸­ç­‰
+- å›¢é˜Ÿ: 20äº?ç†Ÿæ‚‰Javaç”Ÿæ€?
+```
+
+**è¾“å‡º**: å®Œæ•´çš„å¾®æœåŠ¡æž¶æž„è®¾è®¡,åŒ…æ‹¬æŠ€æœ¯é€‰åž‹ã€éƒ¨ç½²æ–¹æ¡ˆç­‰
+
+### åœºæ™¯2: è¯„å®¡å¾®æœåŠ¡æž¶æž?
+
+```
+è¯·è¯„å®¡è¿™ä¸ªå¾®æœåŠ¡æž¶æž„:
+[ä¸Šä¼ æž¶æž„å›¾æˆ–æè¿°]
+
+é‡ç‚¹å…³æ³¨:
+- æœåŠ¡åˆ’åˆ†æ˜¯å¦åˆç†
+- æ•°æ®ä¸€è‡´æ€§å¦‚ä½•ä¿è¯?
+- æ€§èƒ½ç“¶é¢ˆåœ¨å“ªé‡?
+```
+
+**è¾“å‡º**: è¯¦ç»†è¯„å®¡æŠ¥å‘Š,åŒ…å«ä¼˜ç¼ºç‚¹ã€é—®é¢˜ã€å»ºè®?
+
+### åœºæ™¯3: æ•°æ®åº“é€‰åž‹
+
+```
+éœ€è¦ä¸ºç¤¾äº¤åº”ç”¨é€‰æ‹©æ•°æ®åº?
+- æ•°æ®ç±»åž‹: ç”¨æˆ·å…³ç³»ã€åŠ¨æ€ã€è¯„è®?
+- è¯»å†™æ¯? 9:1
+- æ•°æ®é‡? TBçº?
+- æŸ¥è¯¢æ¨¡å¼: å¤æ‚å…³ç³»æŸ¥è¯¢ + æ—¶é—´çº¿æŸ¥è¯?
+
+å€™é€? PostgreSQL, MongoDB, Cassandra, Neo4j
+```
+
+**è¾“å‡º**: è¯„ä¼°çŸ©é˜µã€æŽ¨èæ–¹æ¡ˆã€ç†ç”?
+
+### åœºæ™¯4: æ€§èƒ½ä¼˜åŒ–
+
+```
+ç³»ç»Ÿå“åº”å˜æ…¢:
+- 99thå“åº”æ—¶é—´ä»?00mså‡åˆ°500ms
+- ä¸»è¦åœ¨è®¢å•æŸ¥è¯¢æŽ¥å?
+- æ•°æ®é‡å¢žé•¿åˆ°1000ä¸‡æ¡
+- æ•°æ®åº“CPU 80%
+
+å¦‚ä½•ä¼˜åŒ–ï¼?
+```
+
+**è¾“å‡º**: é—®é¢˜åˆ†æžã€ä¼˜åŒ–æ–¹æ¡?çŸ­æœŸ/ä¸­æœŸ/é•¿æœŸ)
+
+## è¾“å‡ºæ ¼å¼
+
+### æž¶æž„è®¾è®¡è¾“å‡º
+
+```markdown
+## [ç³»ç»Ÿåç§°] æž¶æž„è®¾è®¡
+
+### 1. éœ€æ±‚æ¦‚è¿?
+[ä¸šåŠ¡éœ€æ±‚ã€éžåŠŸèƒ½éœ€æ±‚ã€çº¦æŸæ¡ä»¶]
+
+### 2. æž¶æž„æ¦‚è§ˆ
+[ç³»ç»Ÿæž¶æž„å›?- ä½¿ç”¨Mermaidæˆ–æ–‡å­—æè¿°]
+
+### 3. æ ¸å¿ƒç»„ä»¶
+- ç»„ä»¶A: [èŒè´£ã€æŠ€æœ¯é€‰åž‹ã€æŽ¥å£]
+- ç»„ä»¶B: [èŒè´£ã€æŠ€æœ¯é€‰åž‹ã€æŽ¥å£]
+
+### 4. æŠ€æœ¯é€‰åž‹
+| åˆ†ç±» | æŠ€æœ?| é€‰æ‹©ç†ç”± |
+|------|------|----------|
+| åŽç«¯ | Spring Boot | å›¢é˜Ÿç†Ÿæ‚‰,ç”Ÿæ€å®Œå–?|
+| æ•°æ®åº?| PostgreSQL | åŠŸèƒ½å¼ºå¤§,æ€§èƒ½å¥?|
+| ç¼“å­˜ | Redis | é«˜æ€§èƒ½,æ˜“ç”¨ |
+| æ¶ˆæ¯é˜Ÿåˆ— | Kafka | é«˜åžå?æŒä¹…åŒ?|
+
+### 5. è´¨é‡ä¿è¯
+- æ€§èƒ½: [ç­–ç•¥]
+- å¯ç”¨æ€? [ç­–ç•¥]
+- å®‰å…¨æ€? [ç­–ç•¥]
+
+### 6. éƒ¨ç½²æž¶æž„
+[éƒ¨ç½²æ‹“æ‰‘ã€çŽ¯å¢ƒåˆ’åˆ†]
+
+### 7. é£Žé™©å’Œç¼“è§?
+| é£Žé™© | å½±å“ | ç¼“è§£æŽªæ–½ |
+|------|------|----------|
+| [é£Žé™©1] | é«?| [æŽªæ–½] |
+
+### 8. ä¸‹ä¸€æ­¥è¡ŒåŠ?
+- [ ] POCéªŒè¯
+- [ ] è¯¦ç»†è®¾è®¡
+- [ ] æŠ€æœ¯é¢„ç ?
+```
+
+### æŠ€æœ¯é€‰åž‹è¾“å‡º
+
+```markdown
+## æŠ€æœ¯é€‰åž‹: [æŠ€æœ¯ç±»åˆ«]
+
+### å€™é€‰æ–¹æ¡?
+1. [æŠ€æœ¯A]
+2. [æŠ€æœ¯B]
+3. [æŠ€æœ¯C]
+
+### è¯„ä¼°çŸ©é˜µ
+| ç»´åº¦ | æƒé‡ | A | B | C |
+|------|------|---|---|---|
+| åŠŸèƒ½ | 30% | 9 | 7 | 8 |
+| æ€§èƒ½ | 20% | 8 | 9 | 7 |
+| æ€»åˆ† | | 8.5 | 7.8 | 7.7 |
+
+### æŽ¨èæ–¹æ¡ˆ
+é€‰æ‹©[æŠ€æœ¯A],ç†ç”±:
+1. [ç†ç”±1]
+2. [ç†ç”±2]
+
+### POCéªŒè¯ç‚?
+- [éªŒè¯ç‚?]
+- [éªŒè¯ç‚?]
+```
+
+### æž¶æž„è¯„å®¡è¾“å‡º
+
+```markdown
+## æž¶æž„è¯„å®¡æŠ¥å‘Š
+
+### æ€»ä½“è¯„åˆ†
+- è¯„åˆ†: X.X/5.0
+- è¯„ä»·: [ä¼˜ç§€/è‰¯å¥½/åˆæ ¼/éœ€æ”¹è¿›]
+
+### ä¸»è¦ä¼˜ç‚¹
+1. [ä¼˜ç‚¹1]
+2. [ä¼˜ç‚¹2]
+
+### å­˜åœ¨é—®é¢˜
+
+#### é«˜ä¼˜å…ˆçº§
+- [P0é—®é¢˜] - [å…·ä½“æè¿°]
+
+#### ä¸­ä¼˜å…ˆçº§
+- [P1é—®é¢˜] - [å…·ä½“æè¿°]
+
+### æ”¹è¿›å»ºè®®
+1. [å»ºè®®1] - [å…·ä½“æŽªæ–½]
+2. [å»ºè®®2] - [å…·ä½“æŽªæ–½]
+
+### åŽç»­è¡ŒåŠ¨
+- [ ] [ä»»åŠ¡1] - [è´Ÿè´£äºº] - [æœŸé™]
+- [ ] [ä»»åŠ¡2] - [è´Ÿè´£äºº] - [æœŸé™]
+```
+
+## æœ€ä½³å®žè·?
+
+### âœ?æŽ¨èåšæ³•
+
+1. **éœ€æ±‚å…ˆè¡?* - å……åˆ†ç†è§£ä¸šåŠ¡éœ€æ±‚å†è®¾è®¡
+2. **æ¸è¿›å¼è®¾è®?* - ä»Žç®€å•å¼€å§?é€æ­¥æ¼”è¿›
+3. **éªŒè¯å‡è®¾** - å…³é”®å†³ç­–åšPOCéªŒè¯
+4. **è®°å½•å†³ç­–** - ä½¿ç”¨ADRè®°å½•æž¶æž„å†³ç­–
+5. **æŒç»­è¯„å®¡** - å®šæœŸè¯„å®¡å’Œä¼˜åŒ–æž¶æž?
+6. **å­¦ä¹ å€Ÿé‰´** - ç ”ç©¶ä¼˜ç§€å¼€æºé¡¹ç›®æž¶æž?
+7. **å›¢é˜Ÿåä½œ** - æž¶æž„è®¾è®¡è¦å›¢é˜Ÿå…±è¯?
+
+### â?é¿å…é™·é˜±
+
+1. **è¿‡åº¦è®¾è®¡** - ä¸è¦è®¾è®¡è¿‡äºŽå¤æ‚çš„ç³»ç»?
+2. **ç›²ç›®è·Ÿé£Ž** - ä¸è¦è¿½é€æœ€æ–°æŠ€æœ¯è€Œä¸è€ƒè™‘é€‚ç”¨æ€?
+3. **å¿½è§†å›¢é˜Ÿ** - ä¸è¦é€‰æ‹©å›¢é˜Ÿæ— æ³•é©¾é©­çš„æŠ€æœ?
+4. **ç¼ºå°‘æ–‡æ¡£** - ä¸è¦åªæœ‰æž¶æž„å›¾æ²¡æœ‰æ–‡æ¡£è¯´æ˜?
+5. **å¿½è§†è¿ç»´** - ä¸è¦è®¾è®¡å‡ºéš¾ä»¥è¿ç»´çš„æž¶æž„
+6. **ç¼ºå°‘ç›‘æŽ§** - ä¸è¦å¿½è§†å¯è§‚æµ‹æ€§è®¾è®?
+7. **ä¸€æ­¥åˆ°ä½?* - ä¸è¦æœŸæœ›ç¬¬ä¸€ç‰ˆå°±å®Œç¾Ž
+
+## èµ„æºæ¸…å•
+
+### å‚è€ƒæ–‡æ¡?(references/)
+- `æž¶æž„è®¾è®¡åŽŸåˆ™.md` (15KB) - æ ¸å¿ƒåŽŸåˆ™ã€è´¨é‡å±žæ€§ã€?025è¶‹åŠ¿
+- `æž¶æž„æ¨¡å¼.md` (18KB) - 10ç§ä¸»æµæž¶æž„æ¨¡å¼è¯¦è§?
+- `æŠ€æœ¯é€‰åž‹æŒ‡å—.md` (16KB) - æŠ€æœ¯æ ˆè¯„ä¼°æ–¹æ³•å’ŒæŽ¨è?
+- `æž¶æž„è¯„å®¡æ¸…å•.md` (14KB) - å…¨é¢çš„è¯„å®¡æ ‡å‡†å’Œæµç¨‹
+
+### ä½¿ç”¨å»ºè®®
+- **é¦–æ¬¡ä½¿ç”¨**: å¿…è¯»`æž¶æž„è®¾è®¡åŽŸåˆ™.md`
+- **æž¶æž„è®¾è®¡**: å‚è€ƒ`æž¶æž„æ¨¡å¼.md`é€‰æ‹©åˆé€‚æ¨¡å¼?
+- **æŠ€æœ¯é€‰åž‹**: ä½¿ç”¨`æŠ€æœ¯é€‰åž‹æŒ‡å—.md`çš„è¯„ä¼°æ¡†æž?
+- **æž¶æž„è¯„å®¡**: ä½¿ç”¨`æž¶æž„è¯„å®¡æ¸…å•.md`é€é¡¹æ£€æŸ?
+
+## æŒç»­å­¦ä¹ 
+
+### å…³æ³¨æ¸ é“
+- **æŠ€æœ¯åšå®?*: Martin Fowler, High Scalability
+- **æŠ€æœ¯ä¼šè®?*: QCon, InfoQ, KubeCon
+- **æŠ€æœ¯é›·è¾?*: ThoughtWorks Technology Radar
+- **å¼€æºé¡¹ç›?*: ç ”ç©¶çŸ¥åå¼€æºé¡¹ç›®æž¶æž?
+
+### å®žè·µå»ºè®®
+- å‚ä¸ŽçœŸå®žé¡¹ç›®æž¶æž„è®¾è®¡
+- é˜…è¯»å’Œåˆ†æžä¼˜ç§€æž¶æž„æ¡ˆä¾‹
+- åšæŠ€æœ¯POCå’ŒéªŒè¯?
+- ç¼–å†™æž¶æž„æ–‡æ¡£å’ŒADR
+- å‚åŠ æž¶æž„è¯„å®¡ä¼šè®®
+- æŒç»­å­¦ä¹ æ–°æŠ€æœ¯å’Œæ¨¡å¼
+
+---
+
+**ç‰ˆæœ¬**: 1.0
+**æ›´æ–°æ—¥æœŸ**: 2025å¹?
+**é€‚ç”¨èŒƒå›´**: è½¯ä»¶ç³»ç»Ÿæž¶æž„è®¾è®¡ä¸Žè¯„å®?
+
+ÎÞ·¨ÉèÖÃÊôÐÔ¡£´ËÓïÑÔÄ£Ê½½öÖ§³ÖºËÐÄÀàÐÍµÄÊôÐÔÉèÖÃ¡£
+ËùÔÚÎ»ÖÃ ÐÐ:1 ×Ö·û: 1
++ [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) []£¬RuntimeException
+    + FullyQualifiedErrorId : PropertySetterNotSupportedInConstrainedLanguage
+ 
+
+codex
+我已经确认评审技能只需要按架构质量/风险清单输出即可。现在开始读 plan 和真实实现，重点看 v0.2 文字承诺是否能被现有代码支撑。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content -Raw 'G:/projects/deskpet/plans/2026-06-21-ppt-deepresearch-pro/00-PLAN.md'" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "rg --files | rg \"(backend/(config|main)|registry|ppt_tools|image_tools)\\.py"'$"' in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command 'git status --short' in G:\projects\deskpet
+ succeeded in 954ms:
+# PPT èƒ½åŠ›ä¼˜åŒ– â€?DeepResearch è°ƒç ” â†?å¤§çº²ç¡®è®¤ â†?æƒŠè‰³ç”Ÿå›¾(gpt-image-2) / æ¨¡æ¿å…œåº•
+
+> **çŠ¶æ€?*: v0.2ï¼ˆå·²è¿?R1 åŒè·¯å¯¹æŠ—ï¼šcodex gpt-5.5 4B+3M / architect 2B+4Mï¼ŒBLOCKING/MAJOR å…¨æ¶ˆè§£ï¼›å¾?R2 å¤æ ¸æ”¶æ•›åˆ?EXECUTABLE-AS-ISï¼?> **å»ºæ¡£**: 2026-06-21
+> **ä½œè€?*: Claude (Lead)
+> **å‰ç½®é˜…è¯»**: [STATUS/PPT.md](../../STATUS/PPT.md) Â· [STATUS/DeepResearch.md](../../STATUS/DeepResearch.md) Â· [STATUS/AgentLoop.md](../../STATUS/AgentLoop.md)
+>
+> **v0.1â†’v0.2 å…³é”®ä¿®æ­£**ï¼ˆR1 å¯¹æŠ—ï¼‰ï¼šâ‘?ç¡®è®¤/è°ƒç ”çŽ?*æ‹†ç‹¬ç«?asyncio.Task**ã€handler ç§’å›žï¼ˆä¿® FP-5 åŒæ¬¾ preempt-cancel BLOCKINGï¼‰ï¼›â‘?é…ç½®æ–‡ä»¶æ˜?`backend/config.py` é?`deskpet/config.py`ï¼Œèµ° `standalone_config_section` é¿å¼€ `config.config` åè¯»æ³•ï¼ˆBLOCKINGï¼‰ï¼›â‘?æ³¨å…¥ç»?registry session context / `set_ppt_pro_services`ï¼Œéž `ppt_tools.set_session_context`ï¼ˆBLOCKINGï¼‰ï¼›â‘?F4 å›žé€€å¢žåŠ  **4xx model_unavailable** è§¦å‘ï¼ˆBLOCKINGï¼‰ï¼›â‘?`_degrade_to_template` æ¸…ç©º image_prompt + `skip_image_gen` åŒä¿é™©é˜²äºŒæ¬¡çƒ§å›¾ï¼›â‘¥ å¤§çº²**åŒæ¨¡å¼äº§å‡?*ï¼ˆimage_prompt+å……å®ž bulletsï¼‰é˜²å›žé€€å¡Œæ–¹ï¼›â‘¦ ä¿®è®¢çŽ¯ä¼  prev_slides é˜²æ•´ç›˜é‡æ‹Ÿï¼›â‘?å‰ç«¯ã€Œè®©æˆ‘æ”¹æ”¹ã€è¿›ç¼–è¾‘æ€ï¼›â‘?æ–°å¢ž WI-10 receipt/artifact ä¸ŠæŠ¥ã€?
+---
+
+## 0. éœ€æ±‚ï¼ˆç”¨æˆ·åŽŸè¯ï¼?
+> ä¼˜åŒ– PPT çš„èƒ½åŠ›ï¼šç”¨æˆ·ç”Ÿæˆ PPT ç»™äº†ä¸»é¢˜ä»¥åŽï¼?*ç”?deepresearch çš„èƒ½åŠ›è¿›è¡Œå……åˆ†çš„è°ƒç ”**ï¼Œç„¶å?*ç”Ÿæˆå¤§çº²**ï¼?*å’Œç”¨æˆ·ç¡®è®¤å¤§çº²æ˜¯å?ok**ï¼Œok çš„è¯å°?*ä¼˜å…ˆç”?gpt-image-2 ç”ŸæˆæƒŠè‰³çš?PPT**ï¼›å¦‚æž?*è¿žæŽ¥ä¸ä¸Š gpt-image-2ï¼Œåˆ™ç”¨æ¨¡æ¿çš„æ–¹å¼ç”Ÿæˆ PPT**ã€?
+æ‹†æˆ 4 ä¸?*ä¸å¯è£å‰ª**çš„åŠŸèƒ½ç‚¹ï¼?
+| # | åŠŸèƒ½ç‚?| éªŒæ”¶å£å¾„ |
+|---|---|---|
+| **F1** | ä¸»é¢˜ â†?ç”?deepresearch å……åˆ†è°ƒç ” | ç”Ÿæˆå‰çœŸè°?`deepresearch()` ç®¡çº¿ï¼Œå¤§çº²å†…å®¹æœ‰è°ƒç ”æ¥æºæ”¯æ’‘ï¼ˆéžå‡­ç©ºç¼–ï¼‰ |
+| **F2** | è°ƒç ”ç»“æžœ â†?ç”Ÿæˆç»“æž„åŒ–å¤§çº?| LLM åŸºäºŽè°ƒç ”æŠ¥å‘Šäº§å‡º `list[SlideOutline]`ï¼Œè½åˆ°å¯æ¸²æŸ“çš?outline JSON |
+| **F3** | å’Œç”¨æˆ·ç¡®è®¤å¤§çº²ï¼ˆå¯æ”¹ï¼?| æš‚åœ agentï¼Œå‰ç«¯å¼¹ã€Œå¤§çº²ç¡®è®¤å¡ã€å±•ç¤ºå¤šè¡Œå¤§çº²ï¼Œç”¨æˆ·å¯ã€Œç¡®è®¤ç”Ÿæˆ?/ æä¿®æ”¹æ„è§ã€ï¼›æ”¹äº†é‡æ‹Ÿå†ç¡®è®?|
+| **F4** | ç¡®è®¤åŽä¼˜å…?gpt-image-2 æƒŠè‰³ç”Ÿå›¾ï¼›è¿žä¸ä¸Šå›žé€€æ¨¡æ¿ | é»˜è®¤èµ?`image_full` AI æ•´é¡µç”Ÿå›¾ï¼?*æŽ¢æµ‹+é¦–å›¾å®žæµ‹**åˆ¤å®š gpt-image-2 ä¸å¯è¾?â†?**æ•´å‰¯å›žé€€æ¨¡æ¿è·¯å¾„**ï¼Œä¸ç•™å ä½å›¾æ®‹é¡µ |
+
+---
+
+## 1. çŽ°çŠ¶æ‘˜è¦ï¼ˆæ¥è‡ªä»£ç æµ‹ç»˜ï¼Œå«çœŸå®žè¡Œå·ï¼‰
+
+> è¯¦è§ Â§1 å„æ–‡ä»¶å®žæµ‹ã€‚ä¸‹åˆ—è¡Œå·ä¸º 2026-06-21 å®žæµ‹ï¼Œå®žçŽ°æ—¶ä»¥æºç ?grep ä¸ºå‡†ï¼ˆè§ Â§9 å®žçŽ°çºªå¾‹ï¼‰ã€?
+### 1.1 PPT å·¥å…·å±‚ï¼ˆ`backend/deskpet/tools/ppt_tools.py`ï¼Œ~3860 è¡Œï¼‰
+- å…¥å£ `ppt_create(outline, *, theme, title, author, output_path, template, dry_run)` @**3152**ï¼›handler `_handle_ppt_create` @**3750**ï¼›æ³¨å†?`_register_ppt_tool()` @**3834-3860**ï¼ˆ`timeout_seconds=1200.0`, `permission_category="write_file"`, `concurrency_safe=False`ï¼‰ã€?- åˆ†æ´¾ï¼š`wants_fullbleed` @**3232**ï¼ˆ`any(layout=="image_full" and image_prompt)`ï¼‰â†’ `chosen_template` @**3235**ï¼ˆ`template or (None if wants_fullbleed else _default_template())`ï¼‰ã€?- ç”Ÿå›¾è§¦å‘ @**3239-3248**ï¼š`has_prompts and (chosen_template or has_img_layout)` â†?`_autofill_image_prompts(slides)` @**1867**ï¼›å¦åˆ?`_assign_image_layouts` @**1834**ã€?- ä¸‰æ¸²æŸ“è·¯å¾„ï¼š`_render_with_design_pages` @**2950**ï¼ˆæ¨¡æ¿è®¾è®¡é¡µâ‰?ï¼? `_render_with_template` @**3042** / `_render_fromscratch` @**3302**ã€?- **ç”Ÿå›¾å¤±è´¥çŽ°çŠ¶ï¼ˆå…³é”®ï¼‰**ï¼š`_autofill_image_prompts` @**1899-1905** å•é¡µå¤±è´¥å?`log.debug`ã€`image_path` ç•?`None`ã€?*ä¸æŠ›å¼‚å¸¸ä¸å›žé€€**ï¼›`_render_image_full_v2` @**1539** è§?`image_path=None` â†?æ¸²æŸ“æˆã€Œå ä½å›¾ã€ï¼ˆæ·±è‰²åº?IMG å¾½ç« +"image placeholder"ï¼‰ã€?*å½“å‰æ²¡æœ‰ä»»ä½•ã€Œæ•´å‰¯å›žé€€æ¨¡æ¿ã€æœºåˆ?*â€”â€”è¿™æ˜?F4 çš„æ ¸å¿ƒç¼ºå£ã€?- å¼‚æ­¥ï¼š`_handle_ppt_create` @**3771-3818**ï¼Œæ¡ä»?`n_imgs>=1 and not dry_run and worker.alive() and _ppt_async_enabled()` â†?`_bg_job` åŽå°è·?+ `worker.notifier(sid, "âœ?..")` + ç«‹å³è¿”å›ž `{"ok":True,"status":"generating"}`ï¼›å¤±è´¥é™çº§åŒæ­¥ã€?- outline ç»“æž„ `SlideOutline` dataclass @**160-191**ï¼ˆå­—æ®µï¼š`layout/title/subtitle/bullets/left/right/left_title/right_title/image_path/image_prompt/image_variant/font_scale/caption/quote/cite/chart/notes`ï¼‰ï¼›`parse_outline` @**308** å®½å®¹è§£æžï¼›`normalize` @**193**ã€?
+### 1.2 é…å›¾ï¼ˆ`backend/deskpet/tools/image_tools.py`ï¼?- `_generate_png(prompt, size, model) -> (bytes|None, err|None)` @**206**ï¼?*ä»Žä¸æŠ›å¼‚å¸?*ï¼›`generate_images(prompts, *, size, model) -> list[{prompt,path,error}]` @**337**ã€?- è¶…æ—¶ `_TIMEOUT=httpx.Timeout(connect=10, read=300, write=30, pool=30)` @**52**ï¼›`_MAX_ATTEMPTS=2`ï¼›å¤±è´¥åˆ†ç±?@**250-324**ï¼šè¿žæŽ¥ç±»ï¼ˆConnectTimeout/RemoteProtocolError/ConnectError/ReadError/WriteError/ProtocolError/SSLError/502/503ï¼‰è®° `last_transient` **å¯é‡è¯?*ï¼›è¯»è¶…æ—¶/504/4xx/å…¶å®ƒ **ç«‹å³è¿”å›ž (None, err)**ã€?- **å¯æ®ã€Œerror æ–‡æœ¬/å¼‚å¸¸ç±»ã€åŒºåˆ†ã€Œè¿žæŽ¥ç±»å¤±è´¥ï¼?è¿žä¸ä¸?gpt-image-2ï¼‰ã€vsã€Œå†…å®?4xx å¤±è´¥ã€?*â€”â€”F4 å›žé€€åˆ¤å®šè¦ç”¨åˆ°è¿™ç‚¹ï¼ˆè§?Â§3 WI-2ï¼‰ã€?
+### 1.3 DeepResearchï¼ˆ`backend/deskpet/tools/research_tools.py`ï¼Œ~2282 è¡Œï¼‰
+- æ ¸å¿ƒ `async def deepresearch(topic, *, llm_call, search=None, extract=None, max_sub_questions=5, max_urls_per_query=4, max_total_passages=12, min_passage_chars=250, max_rounds=1, mode="standard", user_request=None, scheduler=None, parent_sid="default", _depth=0, skip_plan=False) -> ResearchReport` @**1338**ã€?- **library-onlyï¼Œå¯ç›´æŽ¥ `await deepresearch(...)`**ï¼ˆæ¨¡å—æ³¨é‡Šæ˜Žç¤ºã€Œno FastAPI/IPC glueã€ï¼‰ã€‚å”¯ä¸€å¿…å¡«éžé»˜è®¤å‚æ•°æ˜¯ `llm_call`ã€?- ä¾èµ–æ³¨å…¥ï¼ˆmain.py lifespan ä¸€æ¬¡æ€§ï¼Œå…¨å±€é€æ˜Žï¼‰ï¼š`set_live_llm_call` @main.py**674** / `set_rerank_llm_call` @**692** / `set_semantic_scorer` @**1146** / `set_subagent_scheduler` @**2018**ã€‚å†…éƒ¨è°ƒç”¨æ–¹æ‹?LLMï¼š`_resolve_default_llm_call()` @research_tools**2215**ï¼ˆä¼˜å…ˆè¿”å›žå·²æ³¨å…¥çš?`_LIVE_LLM_CALL`ï¼Œå¦åˆ™æŒ‰ config+keychain é‡å»ºï¼‰ã€?- è¿”å›ž `ResearchReport` dataclass @**677**ï¼š`topic/summary/report_md/citations:list[Citation]/sub_questions/coverage:dict/errors`ã€?*æ³¨æ„**ï¼šè½ç›?`path`/`artifacts` ä¸åœ¨ `ResearchReport` é‡Œï¼Œåªåœ¨ handler `_handle_deepresearch` @**2111** è½ç›˜åŽè¿½åŠ ï¼›è½ç›˜å‡½æ•° `_save_report` @**2174** + `_update_deepresearch_index` @**2007**ï¼Œç›®å½?`paths.deepresearch_dir()` @paths**142**ã€?- æ¡£ä½ `_DEPTH_PRESETS` @**2104**ï¼šlight `(3,2,8,1)` / standard `(5,4,12,1)` / deep `(6,5,16,2)`ï¼ˆå­é—®é¢˜/æ¯é—®URL/æ®µè½ä¸Šé™/åæ€è½®ï¼‰ã€‚å…¨å±€å·¥å…·è¶…æ—¶ `_DEEPRESEARCH_TOOL_TIMEOUT=300.0` @**491**ï¼?*ç›´è°ƒæ— å†…ç½?timeout**ï¼Œéœ€è°ƒç”¨æ–¹è‡ªåŠ?`asyncio.wait_for`ã€?
+### 1.4 æš‚åœç­‰ç”¨æˆ·ç¡®è®¤ï¼ˆä¸¤å¥—æœºåˆ¶ï¼?- **`ask_clarification`** å·¥å…·ï¼š`code_tools/clarify_tool.py`ï¼ˆschema @**15-33**ã€`build_clarification_ask` @**50-91**ã€`resolve_clarification_response` @**36-47**ï¼‰ã€‚main.py å†…è”äº†ç­‰ä»·é—­åŒ?`_clarify_ask` @**530-552**ï¼ˆ`_clarify_pending: dict[str,Future]` @**500**ï¼ŒæŽ¨ `clarification_request` åˆ?`_control_connections[session_id]`ï¼Œ`await asyncio.wait_for(fut, 120)`ï¼‰ï¼›æ³¨å†Œ @**2175-2184**ï¼›å›žç?@**4181-4195**ï¼ˆ`clarification_response` â†?`resolve_clarification_response` â†?`fut.set_result`ï¼‰ã€?- å‰ç«¯ `ClarificationDialog.tsx`ï¼ˆ`tauri-app/src/components/`ï¼? `useClarificationRequests.ts`ï¼ˆhookï¼Œç›‘å?`/ws/control` çš?`clarification_request`ï¼‰ï¼›æŒ‚è½½ `App.tsx` @**723-724/1719-1722**ï¼ˆç”¨ `permissionChannel`ï¼Œpet çª—å£ `/ws/control?session_id=default`ï¼‰ã€‚ç±»åž?`skillPlatform.ts` @**57-73**ã€?- **ç»“è®ºï¼ˆæ¥è‡ªæµ‹ç»˜ï¼‰**ï¼š`ask_clarification` å½¢æ€æœ€çœåŠ›â€”â€”åŽç«¯å·²èƒ½åœ¨ tool handler å†?`await _clarify_ask(...)` æŒ‚èµ· agentï¼Œå‰ç«¯å·²æœ‰å¼¹çª—ã€?*åªéœ€æ‰©å±• payload æºå¸¦å¤šè¡Œå¤§çº² Markdownï¼ˆ`content_md`ï¼? å‰ç«¯å¯Œæ–‡æœ¬æ¸²æŸ?*å³å¯æ‰¿è½½ F3ã€Œå±•ç¤ºå¤§çº²è®©ç”¨æˆ·ç¡®è®¤/æ”¹ã€ã€?
+### 1.5 Envelope çŽ°çŠ¶
+```jsonc
+// agent â†?å‰ç«¯
+{"type":"clarification_request","payload":{"request_id":"<uuid>","question":"...","options":["..."]}}
+// å‰ç«¯ â†?agent
+{"type":"clarification_response","payload":{"request_id":"<uuid>","answer":"..."}}
+```
+
+---
+
+## 2. æž¶æž„å†³ç­–
+
+### 2.1 æ ¸å¿ƒå†³ç­–ï¼šæ–°å»?*å•å·¥å…·ç¡®å®šæ€§ç¼–æŽ?* `ppt_pro`ï¼ˆè€Œéžè®?LLM å¤šæ­¥ç¼–æŽ’ï¼?
+**ä¸ºä»€ä¹ˆä¸ç”?LLM ç¼–æŽ’ï¼ˆè®© SKILL.md æŒ‡æŒ¥ LLM ä¾æ¬¡è°?deepresearchâ†’ask_clarificationâ†’ppt_createï¼?*ï¼?1. **çª—å£åŽ‹åŠ›**ï¼šPPT.md Â§9.1 å®žæµ‹ gpt-5.5 æ¡Œå® çª—å£ä»?8000ï¼ŒæŠŠæ•´ä»½è°ƒç ”æŠ¥å‘Šå¡žè¿›ä¸Šä¸‹æ–‡å†å¤šæ­¥ç¼–æŽ’æžæ˜“çˆ†çª—/ä¸¢æ­¥ã€?2. **æŠ—æ¼‚ç§?*ï¼šSTATUS è®°å½•äº†å¤§é‡ã€Œè·¨å±?/ å¤šæ­¥ã€æ¼‚ç§?bugï¼ˆtask-driftã€fanout-gating 7 å¤„æ­»é“¾ç­‰ï¼‰ã€‚å¤šæ­?LLM ç¼–æŽ’æ˜¯æ¼‚ç§»é«˜å‘åŒºã€?3. **ç¡®å®šæ€?*ï¼šF4ã€Œè¿žä¸ä¸Šå›žé€€æ¨¡æ¿ã€æ˜¯ç¡®å®šæ€§åˆ¤å®šï¼Œå¿…é¡»åœ¨ä»£ç é‡Œåšï¼Œä¸èƒ½é?LLMã€Œæ„Ÿè§‰ã€ã€?
+**å†³ç­–**ï¼šæ–°å»ºå·¥å…?`ppt_pro(topic, *, depth, pages, theme, ...)`ï¼Œagent **åªè°ƒä¸€æ¬?*ï¼Œhandler å†…éƒ¨æŒ‰ç¡®å®šæ€§ç®¡çº¿è·‘ F1â†’F2â†’F3â†’F4ã€‚confirm ä¹‹ä¸­é€”æš‚åœå¤ç”?`_clarify_ask`ï¼ˆå·²éªŒè¯ tool handler å†…å¯ `await` æŒ‚èµ·ï¼‰ã€‚ä¿ç•™æ—§ `ppt_create` ä¸åŠ¨ï¼ˆç›´æŽ¥å‡ºå›?ç›´æŽ¥ç»?outline çš„ç®€å•åœºæ™?+ ä½œä¸º `ppt_pro` çš„æ¸²æŸ“åŽç«¯ï¼‰ã€?
+```
+LLM ä¸€æ¬¡è°ƒç”?  ppt_pro(topic="æ–°èƒ½æºç”µæ± æŠ€æœ¯å‘å¸ƒä¼š", depth="standard", pages=8)
+  â”?  â”œâ”€ Stage A [F1] è°ƒç ”   await deepresearch(topic, llm_call, mode=depthæ˜ å°„)  (å?asyncio.wait_for è¶…æ—¶)
+  â”?       â†?æŽ¨ã€ŒðŸ”?æ­£åœ¨æ·±åº¦è°ƒç ”â€¦ã€?/ å®ŒæˆæŽ¨ã€ŒðŸ“?è°ƒç ”å®Œæˆï¼ŒN æºã€?  â”œâ”€ Stage B [F2] æ‹Ÿçº²   await _draft_outline_from_research(topic, report, pages, llm_call)
+  â”?       â†?list[SlideOutline]ï¼ˆé»˜è®?image_full + image_prompt = æƒŠè‰³æ¨¡å¼ï¼?  â”œâ”€ Stage C [F3] ç¡®è®¤   await _clarify_ask(question, options=["ç¡®è®¤ç”Ÿæˆ","è®©æˆ‘æ”¹æ”¹"], content_md=å¤§çº²MD, sid, timeout=300)
+  â”?       â”œâ”€ "ç¡®è®¤ç”Ÿæˆ" / ç©ºç­”(è¶…æ—¶è§†å–æ¶? â†?è¿?D
+  â”?       â”œâ”€ è‡ªç”±æ–‡æœ¬(ä¿®æ”¹æ„è§) â†?_redraft_outline(feedback) â†?å›?Stage Cï¼ˆâ‰¤ _PPT_PRO_MAX_REVISIONS è½®ï¼‰
+  â”?       â””â”€ "å–æ¶ˆ" â†?ä¼˜é›…è¿”å›žã€Œå·²å–æ¶ˆã€?  â””â”€ Stage D [F4] æ¸²æŸ“   _render_pro(slides, ...)
+           â”œâ”€ probe + é¦–å›¾å®žæµ‹ gpt-image-2 å¯è¾¾ â†?èµ?image_full æƒŠè‰³è·¯å¾„(å¤ç”¨ ppt_create ç”Ÿå›¾+è§†è§‰é—­çŽ¯)
+           â””â”€ ä¸å¯è¾?â†?_degrade_to_template(slides) + chosen_template=é»˜è®¤å¤§ç±» â†?ppt_create æ¨¡æ¿è·¯å¾„
+                       + æŽ¨ã€Œâš ï¸?AI é…å›¾æš‚æ—¶è¿žä¸ä¸Šï¼Œå·²ç”¨ç²¾ç¾Žæ¨¡æ¿ç”Ÿæˆã€?           æœ€ç»ˆè½ç›?+ é¢„è§ˆå›?artifact + notifier æŽ¨å›ž + è‡ªåŠ¨æ‰“å¼€
+```
+
+### 2.2 F4 å›žé€€åˆ¤å®šï¼ˆåŒå±‚ï¼Œç¡®å®šæ€?â€?v0.2 ä¿?BLOCKINGï¼?xx æ¨¡åž‹ä¸å¯ç”¨ä¹Ÿè¦å›žé€€ï¼?1. **é¢„æŽ¢æµ?*ï¼ˆä¾¿å®œã€å…è´¹ï¼‰ï¼š`image_tools.probe_image_reachable(timeout=...)` â€”â€?`trust_env=False` ç›´è¿ž relay base `/v1/models`ï¼ˆå·²çŸ?200ï¼Œè§ STATUS 06-09ï¼‰ï¼Œconnect 5s/read 8sã€‚è¿”å›?`False` å?relay æ•´ä½“ä¸å¯è¾?â†?ç›´æŽ¥èµ°æ¨¡æ¿ï¼Œ**ä¸çƒ§ä»»ä½•ç”Ÿå›¾é’?*ã€?   - **æ³¨æ„**ï¼šprobe `/v1/models` 200 åªè¯æ˜?relay æ´»ç€ï¼?*ä¸è¯æ˜?gpt-image-2 æ¨¡åž‹å¯ç”¨**ï¼ˆcodex BLOCKINGï¼‰â†’ å¿…é¡»é ç¬¬ 2 å±‚å…œã€?2. **é¦–å›¾å®žæµ‹**ï¼ˆç²¾ç¡®ï¼‰ï¼šé¢„æŽ¢æµ‹è¿‡äº†ï¼Œå…ˆåªç”Ÿ**ç¬?1 å¼?*å›¾ï¼›æŒ‰è¿”å›žçš„ `error_kind`ï¼ˆWI-6b æ–°å¢žï¼‰åˆ¤å®šï¼š
+   - **è§¦å‘æ•´å‰¯å›žé€€æ¨¡æ¿**ï¼? å¹¿ä¹‰ã€Œè¿žä¸ä¸Š gpt-image-2ã€ï¼‰ï¼?     - `connectivity`ï¼šç½‘ç»?æœåŠ¡å±‚ï¼ˆconnect/read-timeout/5xx/SSL/protocolï¼‰ã€?     - `model_unavailable`ï¼?xx ä¸­ã€Œmodel ä¸æ”¯æŒ?/ model_not_found / è¯?relay æ—?gpt-image-2ã€ï¼ˆcodex å®žæµ‹ `image_tools.py:267-277` é?200 é”™è¯¯æ–‡æ¡ˆå«ã€Œmodel ä¸æ”¯æŒã€ï¼‰â€”â€?*è¿™æ­£æ˜¯ç”¨æˆ·è¯´çš„ã€Œè¿žæŽ¥ä¸ä¸?gpt-image-2ã€?*ï¼Œå¿…é¡»å›žé€€ã€?   - **ä¸å›žé€€**ï¼ˆå ä½é™çº§ï¼Œé¿å…è¯¯ä¼¤ï¼‰ï¼š
+     - `content`/`safety`ï¼?xx å†…å®¹/safety æ‹’ç»ï¼ˆä¸ªåˆ?prompt è§¦å‘ï¼Œæ¢å›¾æˆ–å ä½å³å¯ï¼Œéžæ•´ä½“ä¸å¯ç”¨ï¼‰ã€?     - `auth`/`quota`ï¼šè®¤è¯?é¢åº¦â€”â€?*ä¸é™é»˜å ä½?*ï¼Œåº”æ˜Žç¡®é€šçŸ¥ç”¨æˆ·ã€Œé…å›¾æœåŠ¡è®¤è¯?é¢åº¦æœ‰é—®é¢˜ã€ï¼ˆæ—¢éžã€Œè¿žä¸ä¸Šã€ä¹Ÿéžã€Œå†…å®¹é—®é¢˜ã€ï¼Œè®©ç”¨æˆ·çŸ¥æƒ…ï¼‰ã€?   - é¦–å›¾æˆåŠŸ â†?ç»§ç»­ç”Ÿå…¶ä½™å›¾ï¼ˆæƒŠè‰³è·¯å¾„ï¼‰ã€?
+### 2.3 åŒæ­¥/å¼‚æ­¥è¾¹ç•Œï¼ˆv0.2 é‡å†™ â€?ä¿?BLOCKING-1/2ï¼?
+> **v0.1 é”™è¯¯**ï¼šåŽŸè®¾è®¡æŠ?Stage A/B/C åŒæ­¥ `await` åœ?handler å†…ï¼ˆagent turn æŒ‚èµ· ~10minï¼‰ã€?> è¿?*ç²¾ç¡®å¤åˆ»äº?FP-5 å½“å¹´ä¿®æŽ‰çš?same-sid preempt bug**ï¼ˆ`main.py:806-811` æ³¨é‡Šï¼‰ï¼šç¡®è®¤æœŸé—´ç”¨æˆ·
+> éšä¾¿å‘ä¸€å¥è¯ â†?`main.py:6767-6770` æ— æ¡ä»?cancel å?sid ä¸Šä¸€ä¸?chat task â†?`_clarify_ask` çš?> Future è¢?cancel â†?ç¡®è®¤å¡å˜åƒµå°¸ã€`ppt_pro` é™é»˜æ­»äº¡ã€é›¶åé¦ˆã€?*å¿…é¡»æ‹†ç‹¬ç«?taskã€?*
+
+**v0.2 æ­£ç¡®æž¶æž„**ï¼ˆè§ Â§2.5 è¯¦è¿°ï¼‰ï¼š
+- `ppt_pro` = **async handler**ï¼Œæœ¬ä½“åªæ ¡éªŒå‚æ•° â†?`asyncio.create_task(_ppt_pro_orchestrate(...))` åœ?**main loop**ï¼ˆuvicorn å?loopï¼Œä¸Ž `_clarify_ask`/`_control_connections` å?loopï¼‰èµ·ä¸€ä¸?*ç‹¬ç«‹ç¼–æŽ’ task** â†?**ç«‹å³è¿”å›ž** `{"ok":True,"status":"researching","message":"æ­£åœ¨è°ƒç ”ä¸»é¢˜â€?}`ã€‚chat task éšå³æ”¶å°¾ï¼Œç”¨æˆ·å¯ç»§ç»­å¯¹è¯ï¼›åŽç»?preempt cancel **ä¼¤ä¸åˆ?*ç‹¬ç«‹ç¼–æŽ’ taskï¼ˆ`create_task` æ˜?loop çº§ç‹¬ç«?taskï¼Œéžçˆ¶å­çº§è”å–æ¶ˆï¼‰ã€?- ç‹¬ç«‹ç¼–æŽ’ task å†…ï¼šStage A/B/C ä¸²è¡Œ `await`ï¼ˆè°ƒç ?â†?æ‹Ÿçº² â†?ç¡®è®¤ï¼Œç¡®è®¤å¤ç”?`_clarify_ask`ï¼ŒåŒ loop å®‰å…¨ï¼‰ï¼›Stage D æ¸²æŸ“ï¼ˆç”Ÿå›¾é˜»å¡žï¼‰èµ?`loop.run_in_executor(None, lambda: _render_pro(...))` ä¸é˜»å¡?main loopã€‚å…¨ç¨?notifier æŽ¨è¿›åº?+ æŽ¨æˆå“ã€?- **task å¼•ç”¨ä¿æ´»**ï¼šæ¨¡å—çº§ `_PPT_PRO_TASKS: set[asyncio.Task]` æŒå¼•ç”¨ï¼ˆasyncio å¼±å¼•ç”?taskï¼Œä¸æŒä¼šè¢?GCï¼‰ï¼Œ`task.add_done_callback(_PPT_PRO_TASKS.discard)`ã€?- è¿™æ · `ppt_pro` æ³¨å†Œçš?`timeout_seconds` åªçº¦æŸç§’å›žçš„ handlerï¼?*ä¸å†éœ€è¦?1800s å…?10min**ï¼ˆç¼–æŽ?task è‡ªç®¡è¶…æ—¶ï¼‰ã€?
+### 2.5 ç‹¬ç«‹ç¼–æŽ’ task éª¨æž¶ï¼ˆv0.2 æ–°å¢ž â€?FP-5 èŒƒæœ¬ï¼?
+ç…§æ¬ `main.py:803-835`ï¼ˆFP-5 `_await_candidate_decision` + `create_task`ï¼‰ç»è¿‡å®žæˆ˜éªŒè¯çš„æ¨¡å¼ï¼?
+```python
+_PPT_PRO_TASKS: set[asyncio.Task] = set()   # æ¨¡å—çº§ï¼Œä¿æ´»å¼•ç”¨
+
+async def _ppt_pro_orchestrate(*, topic, pages, depth, theme, image_mode,
+                               title, author, output_path,
+                               clarify, notifier, run_blocking, session_id):
+    """ç‹¬ç«‹ taskï¼šè°ƒç ”â†’æ‹Ÿçº²â†’ç¡®è®¤â†’æ¸²æŸ“ã€‚åœ¨ main loop ä¸Šè·‘ï¼Œä¸å?chat preempt å½±å“ã€?""
+    try:
+        await notifier(session_id, "ðŸ” æ­£åœ¨å›´ç»•ä¸»é¢˜åšæ·±åº¦è°ƒç ”â€?)
+        report = await _research_topic_for_ppt(topic, depth=depth, timeout_s=research_to)  # WI-1
+        n_src = len(report.citations) if report else 0
+        await notifier(session_id, f"ðŸ“š è°ƒç ”å®Œæˆï¼ˆ{n_src} ä¸ªæ¥æºï¼‰ï¼Œæ­£åœ¨æ‹Ÿå¤§çº²â€? if report
+                       else "ðŸ“ è°ƒç ”æœªå–å¾—æ¥æºï¼ŒæŒ‰é€šç”¨çŸ¥è¯†æ‹Ÿå¤§çº²â€?)
+        llm = await _resolve_default_llm_call()                                            # WI-2 é”å®š LLM æº?        slides = await _draft_outline_from_research(topic, report, pages=pages, theme=theme,
+                                                    image_mode=image_mode, llm_call=llm)
+        # ç¡®è®¤çŽ¯ï¼ˆâ‰?max_revisionsï¼Œä¼  prev_slides é˜²æ•´ç›˜é‡æ‹?â€?MAJOR-3ï¼?        confirmed = False
+        for _ in range(max_revisions + 1):
+            ans = (await clarify(_confirm_question(report), ["ç¡®è®¤ç”Ÿæˆ", "è®©æˆ‘æ”¹æ”¹", "å–æ¶ˆ"],
+                                 session_id, timeout=confirm_to,
+                                 content_md=_outline_to_markdown(slides))) or ""
+            norm = ans.strip()
+            if norm in ("ç¡®è®¤ç”Ÿæˆ","ç¡®è®¤","ok","OK"): confirmed = True; break
+            if norm in ("å–æ¶ˆ","cancel") or norm == "":
+                await notifier(session_id, "å¥½çš„ï¼Œå·²å–æ¶ˆï¼Œæ²¡æœ‰ç”Ÿæˆ?PPTã€?); return
+            slides = await _draft_outline_from_research(topic, report, pages=pages, theme=theme,
+                                                        image_mode=image_mode, llm_call=llm,
+                                                        feedback=norm, prev_slides=slides)   # ä¼ ä¸Šä¸€ç‰?        if not confirmed:
+            await notifier(session_id, "å¤§çº²æ”¹äº†å¥½å‡ è½®è¿˜æ²¡å®šï¼Œå…ˆæš‚åœå•¦ï¼Œéœ€è¦å†å«æˆ‘~"); return
+        # æ¸²æŸ“ï¼ˆé˜»å¡?â†?executorï¼Œä¸å?main loopï¼?        await notifier(session_id, "âœ?å¤§çº²å·²ç¡®è®¤ï¼Œå¼€å§‹ç”Ÿæˆâ€?)
+        result = await run_blocking(lambda: _render_pro(slides, theme=theme, title=title,
+                    author=author, output_path=output_path, image_mode=image_mode,
+                    probe_timeout_s=probe_to, notify=_sync_notify(notifier, session_id)))
+        await _ppt_pro_report_done(result, notifier, session_id)        # WI-10 receipt/artifact + æŽ¨æˆå“?+ è‡ªåŠ¨æ‰“å¼€
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        log.exception("ppt_pro orchestrate failed")
+        await notifier(session_id, f"ðŸ˜¿ PPT æ²¡åšæˆï¼š{e}")
+```
+- `run_blocking` = æ³¨å…¥çš?`lambda coro_fn: loop.run_in_executor(None, coro_fn)`ï¼ˆmain loop çš?executorï¼‰ã€?- `notifier` = æ³¨å…¥çš?main-loop æŽ¨é€ï¼ˆcontrol WS æˆ?`worker.notifier`ï¼Œç¡®è®?notifier ä¹Ÿåœ¨ main loopï¼‰ã€?- handlerï¼ˆWI-7ï¼‰ï¼š`t=asyncio.create_task(_ppt_pro_orchestrate(...)); _PPT_PRO_TASKS.add(t); t.add_done_callback(_PPT_PRO_TASKS.discard); return {"ok":True,"status":"researching","message":"æ­£åœ¨è°ƒç ”ä¸»é¢˜ï¼Œç¨ç­‰æˆ‘æŠŠå¤§çº²æ‹Ÿå‡ºæ¥ç»™ä½ ç¡®è®¤~"}`ã€?
+### 2.6 Flag / BC
+- æ–°å¢ž `[ppt].pro_enabled`ï¼ˆé»˜è®?**True**â€”â€”è¿™æ˜¯ç”¨æˆ·ä¸»è¯‰æ±‚ï¼Œè¦å¼€ç®±å¯ç”¨ï¼›ä½†ä¿ç•™å¼€å…³å¯å…³ï¼‰ã€?- `ppt_pro` æ˜?*æ–°å¢žå·¥å…·**ï¼Œä¸æ”?`ppt_create` å­—èŠ‚è¡Œä¸º â†?å¯¹çŽ°æœ‰è°ƒç”¨é›¶ BC é£Žé™©ã€?- `_clarify_ask` åŠ?`timeout` å½¢å‚ï¼ˆé»˜è®?120 ä¿?BCï¼‰ï¼Œ`clarification_request` payload åŠ?*å¯é€?* `content_md`ï¼ˆæ—§å‰ç«¯å¿½ç•¥æœªçŸ¥å­—æ®µï¼ŒBCï¼‰ã€?
+---
+
+## 3. å·¥ä½œé¡¹ï¼ˆWIï¼‰â€?é€æ–‡ä»¶é€å‡½æ•?
+> æ¯ä¸ª WI æ ‡æ³¨ï¼šæ–‡ä»¶ã€å‡½æ•°ã€æ”¹åŠ¨ç±»åž‹ï¼ˆæ–°å¢ž/æ”¹ï¼‰ã€ä¼ªä»£ç /diffã€éªŒæ”¶ã€?
+### WI-0 Â· é…ç½®ä¸Žå¼€å…³ï¼ˆv0.2 ä¿?BLOCKING â€?æ–‡ä»¶è·¯å¾„é”™äº†ï¼?> **codex å®žæµ‹**ï¼š`backend/deskpet/config.py` **ä¸å­˜åœ?*ï¼›é…ç½®å®žçŽ°åœ¨ **`backend/config.py`**ï¼ˆ`AppConfig.raw` @456ï¼Œ`standalone_config_section()` @870ï¼‰ã€‚ä¸” `config.py:874` æ³¨é‡Šæ˜Žç¡®ã€Œå·¥å…·æ‹¿ä¸åˆ° config å•ä¾‹ã€â€”â€”`ppt_tools.py` çŽ°æœ‰ `_ppt_async_enabled`/`_ppt_preview_render_enabled` ç”¨çš„ `_cfg.config.raw` æ˜?*å·²çŸ¥åæ¨¡å¼?*ï¼ˆSTATUS å¤šæ¬¡è®°å½• `config.config` å•ä¾‹ä¸å­˜åœ¨è‡´é…ç½®é™é»˜å¤±æ•ˆï¼‰ã€?
+**æ–‡ä»¶** `backend/config.py`
+- åœ?PPT é…ç½®è¯»å–å¤„åŠ  6 ä¸?pro_* é¡¹ã€?*è¯»æ³•å¯¹é½å¥å£®æ–¹å¼**ï¼šç”¨ `standalone_config_section("ppt")`ï¼ˆ@870ï¼‰æˆ– `raw.get("ppt", {})`ï¼?*ä¸è¦**ç”?`_cfg.config.raw`ã€?- å­—æ®µï¼š`pro_enabled: bool = True`ã€`pro_default_depth: str = "standard"`ã€`pro_max_revisions: int = 2`ã€`pro_research_timeout_s: float = 300.0`ã€`pro_confirm_timeout_s: float = 300.0`ã€`pro_image_probe_timeout_s: float = 8.0`ã€?- **`ppt_tools.py` ä¾?*ï¼šæ–°å¢?`_ppt_pro_cfg()` è¯»å–ï¼ˆä»¿çŽ°æœ‰ `_ppt_async_enabled` çš?toml è¯»å–é£Žæ ¼ï¼Œä½†èµ?`standalone_config_section`ï¼?*é¡ºæ‰‹æŠŠçŽ°æœ?`_cfg.config.raw` åè¯»æ³•ä¸€å¹¶ä¿®æ­?*ï¼Œå¯¹é½?STATUS 06-15/06-20 å·²ä¿®çš?`[research]` åŒæ¬¾ bugï¼‰ã€?**éªŒæ”¶**ï¼š`test_config.py`/`test_ppt_*` åŠ?1 ä¾‹éªŒè¯é»˜è®¤å€?+ toml è¦†ç›–çœŸç”Ÿæ•ˆï¼ˆä¸è¢« `config.config` åè¯»æ³•åžï¼‰ï¼›flag-off æ—?`ppt_pro` ä¸æ³¨å†Œã€?
+---
+
+### WI-1 Â· DeepResearch è°ƒç ”å°è£…ï¼ˆF1ï¼?**æ–‡ä»¶** `backend/deskpet/tools/ppt_tools.py`ï¼ˆæ–°å¢žå‡½æ•°ï¼Œé è¿‘æ–‡ä»¶å¤´å·¥å…·åŒºï¼?æ–°å¢žï¼?```python
+async def _research_topic_for_ppt(topic: str, *, depth: str, timeout_s: float) -> "ResearchReport | None":
+    """ä¸?PPT è°ƒç ”ä¸»é¢˜ï¼Œè¿”å›?ResearchReportï¼ˆreport_md/citations/coverageï¼‰ã€‚å¤±è´¥è¿”å›?Noneï¼ˆä¸é˜»æ–­ï¼Œé™çº§ä¸ºæ— è°ƒç ”ç›´æŽ¥æ‹Ÿçº²ï¼‰ã€?""
+    from deskpet.tools.research_tools import deepresearch, _resolve_default_llm_call, _DEPTH_PRESETS
+    try:
+        llm = await _resolve_default_llm_call()
+    except Exception as e:
+        log.warning("ppt_pro research: no llm_call (%s) â†?skip research", e)
+        return None
+    sub_q, urls, passages, rounds = _DEPTH_PRESETS.get(depth, _DEPTH_PRESETS["standard"])
+    try:
+        return await asyncio.wait_for(
+            deepresearch(
+                topic, llm_call=llm,
+                max_sub_questions=sub_q, max_urls_per_query=urls,
+                max_total_passages=passages, max_rounds=rounds, mode=depth,
+                user_request=f"ä¸ºåˆ¶ä½?PPT è°ƒç ”ä¸»é¢˜ï¼š{topic}",
+            ),
+            timeout=timeout_s,
+        )
+    except asyncio.TimeoutError:
+        log.warning("ppt_pro research timeout â†?degrade to no-research outline")
+        return None
+    except Exception as e:
+        # MINOR-3ï¼šä¸è¦?except Exception ä¸€æŠŠåžã€‚åŒºåˆ†ã€Œç½‘ç»?æœç´¢çž¬æ—¶å¤±è´¥ã€?é™çº§ None)
+        # ä¸Žã€Œé…ç½?è®¤è¯é”™è¯¯ã€?åº”è®©ç”¨æˆ·çŸ¥é“,å¦åˆ™é™é»˜é€€åŒ–æˆå‡­ç©ºç¼?è¿èƒŒ F1)ã€?        if _is_config_or_auth_error(e):
+            raise                       # ä¸ŠæŠ› â†?ç¼–æŽ’ task æŽ¨ã€Œè°ƒç ”æœåŠ¡æ²¡é…å¥½â€¦ã€ç»™ç”¨æˆ·
+        log.warning("ppt_pro research failed: %s â†?degrade to no-research outline", e)
+        return None
+```
+**è®¾è®¡è¦ç‚¹**ï¼?- `_is_config_or_auth_error(e)`ï¼šè¯†åˆ?401/403/key ç¼ºå¤±/provider æœªé…ç½®ç­‰ç¡¬é”™è¯¯ï¼ˆä¸?`image_tools` 401 è½è­¦å‘ŠåŒæºæ€è·¯ï¼‰ï¼›å…¶ä½™ï¼ˆæœç´¢è¢«å°?æŠ“å–å¤±è´¥/ç½‘ç»œçž¬æ—¶ï¼‰æ‰é™çº§ã€?- **å¤ç”¨ `_DEPTH_PRESETS`**ï¼ˆcodex å®žæµ‹ï¼šå·²æ˜?research_tools é¡¶å±‚å¸¸é‡ @**2104**ï¼?*ç›´æŽ¥ import å³å¯**ï¼Œæ— éœ€é‡æž„ï¼‰ã€?- **é™çº§è€Œéžå¤±è´¥ï¼ˆF1ï¼Œå¸æ”?codex MAJORï¼?*ï¼šè°ƒç ”ã€Œç½‘ç»?æœç´¢ã€ç±»å¤±è´¥ â†?è¿”å›ž Noneï¼Œä½†**ä¸é™é»˜å½“æˆ?F1 å®Œæˆ**ï¼šStage C ç¡®è®¤å¡çš„é—®é¢˜æ–‡æ¡ˆæ”¹ä¸ºæ˜¾å¼å‘ŠçŸ¥ã€Œâš ï¸?æœªå–å¾—è°ƒç ”æ¥æºï¼Œä¸‹é¢å¤§çº²åŸºäºŽé€šç”¨çŸ¥è¯†ï¼Œæ˜¯å¦ä»è¦ç”Ÿæˆï¼Ÿã€è®©ç”¨æˆ·**çŸ¥æƒ…åŽå†ç¡®è®¤**ï¼ˆä¸å·å·å‡ºã€Œæ­£å¼?PPTã€ï¼‰ã€‚ã€Œé…ç½?è®¤è¯ã€ç±»å¤±è´¥ â†?ä¸ŠæŠ›ï¼ˆWI-1 å·²åŒºåˆ†ï¼‰ã€?- **ä¸è½ç›?*ï¼šPPT å†…éƒ¨è°ƒç ”é»˜è®¤**ä¸?*è°?`_save_report`ï¼ˆé¿å…æ±¡æŸ?DeepResearch/ ç´¢å¼•ï¼‰ï¼›å¯åŠ  config `[ppt].pro_save_research`ï¼ˆé»˜è®?Falseï¼‰å…è®¸è½ç›˜ã€?
+**éªŒæ”¶**ï¼šmock `deepresearch` çš„å•æµ‹â€”â€?a) æ­£å¸¸è¿”å›ž reportï¼?b) ç½‘ç»œå¤±è´¥/è¶…æ—¶è¿”å›ž Noneï¼?c) é…ç½®/è®¤è¯é”™è¯¯**ä¸ŠæŠ›**ï¼ˆä¸åžï¼‰ï¼?d) æ—?llm_call ä¸ŠæŠ›é…ç½®é”™è¯¯ã€?
+---
+
+### WI-2 Â· è°ƒç ” â†?å¤§çº²æ‹Ÿåˆ¶ + ä¿®è®¢ï¼ˆF2ï¼?**æ–‡ä»¶** `backend/deskpet/tools/ppt_tools.py`ï¼ˆæ–°å¢žï¼‰
+```python
+async def _draft_outline_from_research(
+    topic: str, report: "ResearchReport | None", *, pages: int, theme: str,
+    image_mode: bool, llm_call, feedback: str = "", prev_slides=None,
+) -> list[SlideOutline]:
+    """åŸºäºŽè°ƒç ”æŠ¥å‘Šï¼ˆå¯ç©ºï¼‰æ‹?PPT å¤§çº²ã€?    **åŒæ¨¡å¼äº§å‡ºï¼ˆMAJOR-2ï¼?*ï¼šæ— è®?image_modeï¼Œæ¯é¡µåŒæ—¶äº§å‡?      â‘?image_promptï¼ˆæƒŠè‰³è·¯å¾„ç”¨ï¼?â‘?å……å®žçš?bullets/subtitleï¼ˆæ¨¡æ¿å›žé€€è·¯å¾„ç”¨ï¼‰ã€?    æ¸²æŸ“æ—¶æŒ‰å¯è¾¾æ€§äºŒé€‰å­—æ®µï¼Œ**ä¸åšæœ‰æŸ image_fullâ†’bullet è½¬æ¢**ï¼Œå›žé€€ä¹Ÿä¸å¡Œæ–¹ã€?    feedback éžç©º = ç”¨æˆ·ä¿®æ”¹æ„è§ï¼›prev_slides éžç©º = åœ¨å…¶åŸºç¡€ä¸Šå¢žé‡æ”¹ï¼ˆMAJOR-3ï¼‰ã€?""
+    research_md = (report.report_md if report else "")[: _PPT_PRO_RESEARCH_CTX_CHARS]  # æˆªæ–­é˜²çˆ†çª—ï¼Œé»˜è®¤ 6000
+    prompt = _build_outline_prompt(topic, research_md, pages=pages, image_mode=image_mode,
+                                   feedback=feedback,
+                                   prev_md=(_outline_to_markdown(prev_slides) if prev_slides else ""))
+    raw = await llm_call(prompt)
+    slides = parse_outline(raw)              # å¤ç”¨çŽ°æœ‰å®½å®¹è§£æž
+    if not slides:                           # è§£æžå¤±è´¥å…œåº•ï¼šæœ€å°å¯ç”¨å¤§çº?        slides = _fallback_minimal_outline(topic, pages, image_mode)
+    return slides
+```
+- **`llm_call` æºé”å®šï¼ˆMINOR-4ï¼?*ï¼šè°ƒç”¨æ–¹ï¼ˆÂ?.5 ç¼–æŽ’ taskï¼‰ä¼ å…?`await _resolve_default_llm_call()`ï¼ˆresearch/ä¸?LLMï¼Œçª—å?`max_tokens` è¾ƒå¤§ï¼‰ï¼Œ**ä¸å¾—**ç”¨æ¡Œå®?8000 çª—å£èŠå¤©æ¨¡åž‹ï¼Œå¦åˆ?6000 è°ƒç ” + ç³»ç»Ÿ prompt çˆ†çª—ã€?- æ–°å¢ž `_build_outline_prompt(...)`ï¼šè¦æ±‚è¾“å‡?Â§1.1 `SlideOutline` å…¼å®¹ JSON æ•°ç»„ï¼?*æ¯é¡µåŒæ—¶å?*ï¼?  - `title` + `bullets`ï¼?-5 æ¡å……å®žè¦ç‚¹ï¼Œæ¨¡æ¿è·¯å¾„ç›´æŽ¥ç”¨ï¼Œå¯†åº¦åŒ¹é…è®¾è®¡é¡µï¼‰
+  - `image_prompt`ï¼ˆæƒŠè‰³è·¯å¾„ç”¨ï¼šç”µå½±æ„Ÿã€è´Ÿç©ºé—´ã€ç¦å­—åŽç¼€ï¼Œå¤ç”?`_assign_image_layouts` prompt ä¹ æƒ¯ï¼?  - `layout`ï¼šæƒŠè‰³æ¨¡å¼æ ‡ `image_full`ï¼ˆæ¸²æŸ“æ—¶è‹¥å›žé€€ä¼šè¢« `_degrade_to_template` æŒ?bullets æ”¹ç‰ˆå¼ï¼Œä½?bullets å·²å……å®žä¸å¡Œï¼‰ã€?  - å¼ºçº¦æŸã€Œå†…å®¹å¿…é¡»åŸºäºŽä»¥ä¸‹è°ƒç ”æŠ¥å‘Šï¼Œå¼•ç”¨å…¶ä¸­æ•°æ®/äº‹å®žï¼Œä¸å¾—ç¼–é€ ã€? é™?`research_md`ã€?  - `prev_md` éžç©ºæ—?prompt æ”¹ä¸ºã€Œè¿™æ˜¯å½“å‰å¤§çº?+ ç”¨æˆ·è¦æ”¹ Xï¼?*åªæ”¹åŠ¨ç›¸å…³éƒ¨åˆ†ï¼Œä¿ç•™å…¶ä½™é¡?*ã€ï¼ˆå¢žé‡ä¿®è®¢ï¼Œä¸æ•´ç›˜é‡æ‹Ÿï¼‰ã€?- æ–°å¢ž `_outline_to_markdown(slides) -> str`ï¼šæ¸²æŸ“ç»™ç”¨æˆ·çœ‹çš„å¤šè¡Œå¤§çº² MDï¼ˆé¡µç ?+ æ ‡é¢˜ + bullets ç¼©è¿›ï¼‰ï¼Œç”¨äºŽç¡®è®¤å?`content_md` ä¸?`prev_md`ã€?- æ–°å¢ž `_fallback_minimal_outline(topic, pages, image_mode)`ï¼šçº¯æœ¬åœ°å…œåº•ï¼ˆå°é?pages-1 å†…å®¹é¡µå ä½ï¼‰ï¼Œä¿è¯ã€ŒLLM å…¨æŒ‚ä¹Ÿèƒ½å‡ºå¤§çº²ã€ã€?- å¸¸é‡ `_PPT_PRO_RESEARCH_CTX_CHARS = 6000`ã€?
+**éªŒæ”¶**ï¼šå•æµ‹â€”â€?a) æœ?report æ‹Ÿçº²**åŒæ—¶å?image_prompt ä¸Žå……å®?bullets**ï¼?b) report=None ä»å‡ºå¤§çº²ï¼?c) feedback+prev_slides æ³¨å…¥é‡æ‹Ÿï¼ˆmock llm æ ¡éªŒ prompt å?feedback ä¸?prev_mdï¼Œä¸”æŒ‡ä»¤ä¸ºã€Œå¢žé‡æ”¹ã€ï¼‰ï¼?d) llm è¿”å›žåžƒåœ¾ â†?`_fallback_minimal_outline`ï¼?e) `_outline_to_markdown` å¤šé¡µæ­£ç¡®æˆæ–‡ã€?
+---
+
+### WI-3 Â· ç¡®è®¤å¡ï¼šåŽç«¯ `_clarify_ask` æ‰©å±• + æ³¨å…¥ ppt ä¸Šä¸‹æ–‡ï¼ˆF3 åŽç«¯ï¼?
+> **ç¡®è®¤çŽ¯é€»è¾‘æœ¬ä½“åœ?Â§2.5 ç¼–æŽ’ task**ï¼ˆå·²å?prev_slides ä¿®è®¢çŽ¯ã€å–æ¶ˆã€è¶…æ—¶ä¼˜é›…è¿”å›žï¼‰ã€‚WI-3 åªè´Ÿè´?> æŠ?`_clarify_ask` æ”¹å¾—èƒ½æºå¸¦å¯Œæ–‡æœ¬ + æŠŠå®ƒï¼ˆåŠ notifier/run_blocking/session_idï¼‰æ³¨å…¥ç»™ ppt ç¼–æŽ’ taskã€?
+**MAJOR-1 æ¾„æ¸…ï¼ˆæ¥è‡ªæŒ‘æˆ˜ï¼‰**ï¼šå®žæµ?`_clarify_ask` æ˜?`main.py:530-552` çš?*å”¯ä¸€æ´»åŠ¨å®žçŽ°**ï¼ˆlifespan å†…é—­åŒ…ï¼Œç­¾åä»?3 ä½ç½®å‚æ•°ã€ç¡¬ç¼–ç  `wait_for(fut, 120)`ï¼‰ï¼›`clarify_tool.py::build_clarification_ask` **æœªè¢« main å®žé™…è°ƒç”¨**ã€‚æ‰€ä»?v0.1 R-3ã€Œæ”¶æ•›ä¸¤ä»½æ‹·è´ã€æ˜¯**ä¼ªä»»åŠ¡ï¼Œåˆ é™¤**ã€‚åªæ”?`main.py:530` è¿™ä¸€å¤„é—­åŒ…å³å¯ã€?
+**æ–‡ä»¶ A** `backend/main.py`ï¼š`_clarify_ask` @**530-552** åŠ?`timeout` + `content_md`ï¼?*ä¿?BC**ï¼šé»˜è®?`timeout=120, content_md=None`ï¼‰ï¼š
+```python
+async def _clarify_ask(question, options, session_id, *, timeout: float = 120.0, content_md: str | None = None):
+    ...
+    payload = {"request_id": request_id, "question": question, "options": list(options or [])}
+    if content_md:
+        payload["content_md"] = content_md     # æ–°å¢žï¼šå¯Œæ–‡æœ¬å¤§çº²
+    await ws.send_json({"type": "clarification_request", "payload": payload})
+    return await asyncio.wait_for(fut, timeout)   # ç”¨å½¢å?timeoutï¼ˆé»˜è®?120 = BCï¼?```
+- `clarify_tool.py::build_clarification_ask` ä¹ŸåŠ åŒæ ·å½¢å‚ï¼ˆä¿å£å¾„ä¸€è‡´ï¼Œä½?*ä¸?*åšæ”¶æ•›é‡æž„â€”â€”é¿å…æ— è°“æ”¹åŠ¨é¢ï¼‰ã€?
+**æ–‡ä»¶ B æ³¨å…¥ï¼ˆå…³é”®ï¼ŒBLOCKING-2 ç›¸å…³ï¼?*ï¼š`ppt_pro` ç¼–æŽ’ task å¿…é¡»åœ?**main loop** ä¸Šæ‹¿åˆ?main-loop ç‰ˆçš„ `_clarify_ask`/notifier/executorã€?- **æ³¨å…¥æ—¶æœºæ ¡éªŒ**ï¼š`_clarify_ask` å®šä¹‰åœ?`main.py:530`ï¼ˆlifespan å†…ï¼‰ã€‚å¿…é¡»ç¡®è®?ppt å·¥å…·çš?`registry.set_session_context(...)` è°ƒç”¨ç‚¹åœ¨ `_clarify_ask` **å®šä¹‰ä¹‹åŽ**æ‰§è¡Œï¼ˆgrep `set_session_context` åœ?main.py çš„è¡Œå?vs 530ï¼‰ã€‚è‹¥æ—©äºŽï¼Œåˆ™æ”¹ä¸ºåœ?`_clarify_ask` å®šä¹‰åŽå† setï¼Œæˆ–ç”?late-bindingï¼ˆæ³¨å…¥ä¸€ä¸ªè¿”å›?`_clarify_ask` çš?getterï¼‰ã€?- ç»?`registry.set_session_context` ç»?ppt å·¥å…·è¿½åŠ ï¼?  - `clarify=_clarify_ask`
+  - `notifier=<main-loop notifier>`ï¼ˆcontrol WS æŽ¨é€æˆ– `worker.notifier`ï¼?*ç¡®è®¤å…¶åœ¨ main loop**ï¼›è‹¥ `worker.notifier` å®žé™…è·‘åœ¨ worker loopï¼Œåˆ™æ”¹ç”¨ç›´æŽ¥ `_control_connections[sid].send_json` åŒ…ä¸€å±?main-loop async æŽ¨é€ï¼‰
+  - `run_blocking=lambda fn: asyncio.get_running_loop().run_in_executor(None, fn)`
+  - `session_id`ï¼ˆcontrol WS æ³¨å†Œ keyï¼›pet çª—å£ä¸?`"default"`ï¼Œ`_clarify_ask` å†…å·²æœ?`or get("default")` å…œåº•ï¼Œè§ R-2ï¼?
+**éªŒæ”¶**ï¼šå•æµ‹â€”â€?a) `_clarify_ask` å¸?`content_md` è¿?payloadã€å¸¦ `timeout` å½¢å‚ç”Ÿæ•ˆï¼ˆmock ws + futï¼‰ï¼›(b) é»˜è®¤è°ƒç”¨ï¼ˆä¸ä¼ æ–°å‚ï¼‰è¡Œä¸ºå­—èŠ‚ä¸å˜ï¼ˆBCï¼‰ï¼›(c) ppt ç¼–æŽ’ task èƒ½æ‹¿åˆ°æ³¨å…¥çš„ clarify/notifier/run_blockingï¼ˆcontext æ³¨å…¥æµ‹ï¼‰ã€?*æ³?*ï¼šç¡®è®¤çŽ¯è·¯å¾„ï¼ˆç¡®è®?æ”?å–æ¶ˆ/è¶…æ—¶ï¼‰çš„å•æµ‹å½?Â§2.5 ç¼–æŽ’ task çš?WI-7 éªŒæ”¶ã€?
+---
+
+### WI-4 Â· ç¡®è®¤å¡ï¼šå‰ç«¯å¯Œæ–‡æœ¬æ¸²æŸ?+ ã€Œè®©æˆ‘æ”¹æ”¹ã€ç¼–è¾‘æ€ï¼ˆF3 å‰ç«¯ï¼?> v0.2 ä¿?codex MAJORï¼š`ClarificationDialog.tsx:114` ç‚¹ä»»æ„?option **ç«‹å³** `onResolve(option)`â€”â€”è‹¥ã€Œè®©æˆ‘æ”¹æ”¹ã€å½“æ™®é€?optionï¼Œä¼šå›žä¼ å­—é¢å­—ç¬¦ä¸²ã€Œè®©æˆ‘æ”¹æ”¹ã€å½“æˆå¤§çº²ï¼ˆé”™ï¼‰ã€‚å¿…é¡»è®©å®ƒè¿›ç¼–è¾‘æ€ã€?
+**æ–‡ä»¶ A** `tauri-app/src/types/skillPlatform.ts` @**57-73**ï¼š`ClarificationRequest["payload"]` åŠ å¯é€?`content_md?: string`ï¼ˆcodex å®žæµ‹å½“å‰æ— æ­¤å­—æ®µ @57-62ï¼‰ã€?**æ–‡ä»¶ B** `tauri-app/src/components/ClarificationDialog.tsx`ï¼?- é—®é¢˜ä¸‹æ–¹ï¼Œ`current.content_md` å­˜åœ¨åˆ™æ¸²æŸ“æ»šåŠ¨åŒºå±•ç¤ºå¤§çº²ï¼ˆå¤ç”¨é¡¹ç›?markdown æ¸²æŸ“å™¨ï¼Œå¦åˆ™ `<pre style={{whiteSpace:"pre-wrap",maxHeight:"40vh",overflow:"auto"}}>`ï¼‰ã€?- æŒ‰é’®ï¼šã€Œâœ… ç¡®è®¤ç”Ÿæˆã€â†’ `onResolve("ç¡®è®¤ç”Ÿæˆ")`ï¼›ã€Œâœï¸?è®©æˆ‘æ”¹æ”¹ã€â†’ **ä¸?resolve**ï¼Œåˆ‡åˆ°ç¼–è¾‘æ€ï¼šå±•ç¤ºå·²æœ‰çš„è‡ªç”±æ–‡æœ?`<textarea>`ï¼ˆ@**37/137-147**ï¼? æç¤ºã€Œè¯´è¯´æƒ³æ”¹å“ªé‡Œã€? ã€Œæäº¤ä¿®æ”¹ã€æŒ‰é’?â†?æäº¤æ‰?`onResolve(textareaValue)`ï¼›ã€Œâœ– å–æ¶ˆã€â†’ `onResolve("å–æ¶ˆ")`ã€?- å³ï¼šæŠŠã€Œè®©æˆ‘æ”¹æ”¹ã€ä»Žã€Œç«‹å?resolve çš?optionã€æ”¹æˆã€Œåˆ‡æ?UI çŠ¶æ€çš„æœ¬åœ°æŒ‰é’®ã€ï¼Œä¸ŽçŽ°æœ‰ã€Œç‚¹ option ç«‹å³ resolveã€è¯­ä¹‰è§£è€¦ã€?**æ–‡ä»¶ C** `useClarificationRequests.ts` @**40-47**ï¼šæ— éœ€æ”¹é€»è¾‘ï¼ˆhook å·²èƒ½ä¼ ä»»æ„å­—ç¬¦ä¸²ï¼Œcodex ç¡®è®¤ï¼‰ï¼Œä»…ç¡®ä¿?`content_md` éš?payload è¿›å…¥ `current`ã€?**éªŒæ”¶**ï¼š`vitest`â€”â€?a) æœ?content_md æ¸²æŸ“å¤§çº²å—ï¼›(b) æ—?content_md ä¸æ¸²æŸ“ï¼ˆBCï¼Œæ—§ ask_clarification è°ƒç”¨ä¸å—å½±å“ï¼‰ï¼›(c) ã€Œç¡®è®¤ç”Ÿæˆã€resolve "ç¡®è®¤ç”Ÿæˆ"ï¼?d) ã€Œè®©æˆ‘æ”¹æ”¹ã€?*ä¸?* resolveã€è¿›ç¼–è¾‘æ€ã€æäº¤åŽ resolve textarea æ–‡æœ¬ï¼?e) ã€Œå–æ¶ˆã€resolve "å–æ¶ˆ"ã€?
+---
+
+### WI-5 Â· gpt-image-2 å¯è¾¾æŽ¢æµ‹ï¼ˆF4 ç¬?1 å±‚ï¼‰
+**æ–‡ä»¶** `backend/deskpet/tools/image_tools.py`ï¼ˆæ–°å¢žï¼‰
+```python
+def probe_image_reachable(*, timeout_s: float = 8.0) -> bool:
+    """ä¾¿å®œæŽ¢æµ‹ relay images æœåŠ¡æ˜¯å¦å¯è¾¾ï¼šGET <base>/v1/modelsï¼Œtrust_env=False ç›´è¿žã€?    ä»…åˆ¤ç½‘ç»œ/æœåŠ¡å±‚å¯è¾¾ï¼Œä¸éªŒ gpt-image-2 æ¨¡åž‹æœ¬èº«ï¼ˆé‚£äº¤ç»™é¦–å›¾å®žæµ‹ï¼‰ã€?""
+    base, key = _resolve_relay_base_and_key()        # å¤ç”¨ image_tools çŽ°æœ‰ base/key è§£æž
+    if not base:
+        return False
+    try:
+        with httpx.Client(trust_env=_image_trust_env(), timeout=httpx.Timeout(connect=5.0, read=timeout_s, write=5.0, pool=5.0)) as c:
+            r = c.get(base.rstrip("/") + "/v1/models", headers=({"Authorization": f"Bearer {key}"} if key else {}))
+            return r.status_code < 500
+    except Exception as e:
+        log.info("image probe unreachable: %s", e)
+        return False
+```
+- å¤ç”¨çŽ°æœ‰ base/key/`trust_env` è§£æžï¼ˆgrep `trust_env`/`/images/generations`/base url ç»„è£…ï¼‰ã€‚è‹¥çŽ°æˆå‡½æ•°æ²¡æœ‰ç‹¬ç«‹çš?base è§£æžï¼ŒæŠ½ä¸€ä¸?`_resolve_relay_base_and_key()` å†…éƒ¨ helperï¼ˆä¸Ž `_generate_png` ç”¨åŒä¸€æ¥æºï¼Œé¿å…æ¼‚ç§»ï¼‰ã€?**éªŒæ”¶**ï¼šå•æµ?mock httpxâ€”â€?00/404â†’Trueï¼?500 è§†å¯è¾¾ï¼Œ404 ä¹Ÿç®—ã€ŒæœåŠ¡åœ¨ã€ï¼‰ã€?03/è¿žæŽ¥å¼‚å¸¸â†’Falseã€?
+---
+
+### WI-6 Â· æ•´å‰¯å›žé€€æ¨¡æ¿ï¼ˆF4 ç¬?2 å±?+ æ¸²æŸ“ç¼–æŽ’ï¼?**æ–‡ä»¶** `backend/deskpet/tools/ppt_tools.py`
+- æ–°å¢ž `_degrade_to_template(slides) -> list[SlideOutline]`ï¼šæŠŠ `image_full`+`image_prompt` çš„é¡µè½¬æˆæ¨¡æ¿å‹å¥½ç‰ˆå¼ï¼ˆ`image_full`â†’`bullet`/`section`ï¼›æ¸…ç©?`image_prompt`/`image_path`ï¼›ä¿ç•?title/bullets/subtitleï¼‰ã€?*å†…å®¹ä¸ä¸¢ï¼Œåªæ¢çš®**ã€?- æ–°å¢žé¦–å›¾å®žæµ‹å°è£…ï¼ˆå¤ç”?`_autofill_image_prompts` ä½†å¸¦ã€Œé¦–å›?gateã€ï¼‰ï¼?```python
+def _autofill_with_connectivity_gate(slides) -> tuple[bool, int]:
+    """å…ˆç”Ÿç¬?1 å¼ å›¾ï¼›è‹¥è¿žæŽ¥ç±»å¤±è´?â†?è¿”å›ž (False, 0) è¡¨ç¤ºåˆ¤å®šä¸å¯è¾¾ä¸å†ç”Ÿå›¾ã€?    æˆåŠŸ â†?ç”Ÿå…¶ä½™å›¾ï¼Œè¿”å›?(True, n_ok)ã€‚è¿”å›?reachable æ ‡å¿— + æˆåŠŸé¡µæ•°ã€?""
+    prompts = [(i, s) for i, s in enumerate(slides) if s.image_prompt]
+    if not prompts: return (True, 0)
+    i0, s0 = prompts[0]
+    res0 = generate_images([s0.image_prompt], size=_size_for(s0))[0]
+    if not res0.get("path"):
+        if _should_fallback(res0):          # connectivity æˆ?model_unavailable â†?ä¸å¯è¾?            return (False, 0)
+        # content/safety å¤±è´¥ï¼šå ä½é™çº§ï¼Œç»§ç»­åŽç»­ï¼ˆéžã€Œè¿žä¸ä¸Šã€ï¼‰
+    else:
+        slides[i0].image_path = res0["path"]
+    # ç”Ÿå…¶ä½?    rest = generate_images([s.image_prompt for _, s in prompts[1:]], ...)
+    n_ok = sum(1 for r in rest if r.get("path")) + (1 if slides[i0].image_path else 0)
+    for (idx, s), r in zip(prompts[1:], rest):
+        if r.get("path"): slides[idx].image_path = r["path"]
+    return (True, n_ok)
+```
+- æ–°å¢ž `_should_fallback(res: dict) -> bool`ï¼š`res.get("error_kind") in {"connectivity","model_unavailable"}`ï¼ˆç›´æŽ¥è¯»ç»“æž„åŒ?kindï¼?*ä¸é è„†å¼±ä¸­æ–‡æ–‡æœ¬åŒ¹é…**ï¼‰ã€?- **WI-6bï¼ˆç»“æž„åŒ–å¤±è´¥åˆ†ç±»ï¼Œå¿…å?â€?codex BLOCKINGï¼?* `image_tools.py`ï¼š`generate_images`/`_generate_png` å¤±è´¥è¿”å›žåŠ é”® `error_kind`ï¼ˆä¸ç ´å `error` å­—æ®µï¼ŒBCï¼‰ã€‚æ˜ å°?Â§1.2/codex å®žæµ‹ `image_tools.py:267-277` çš„åˆ†ç±»ï¼š
+  - `connectivity`ï¼šConnectTimeout/RemoteProtocolError/ConnectError/ReadError/WriteError/ProtocolError/SSLError/è¯»è¶…æ—?502/503/504ã€?  - `model_unavailable`ï¼?xx ä¸”é”™è¯¯ä½“å?model ä¸æ”¯æŒ?/ model_not_found / æ— è¯¥æ¨¡åž‹ï¼ˆè§£æž?relay è¿”å›žçš?error.code/messageï¼‰ã€?  - `auth`ï¼?01/403/key ç¼ºå¤±ã€‚`quota`ï¼?29/é¢åº¦ã€‚`content`ï¼šå…¶ä½?4xxï¼ˆsafety/å‚æ•°ï¼‰ã€‚`unknown`ï¼šå…œåº•ã€?  - **åˆ¤å®šåŸºäºŽ relay è¿”å›žçš„ç»“æž„åŒ–å­—æ®µï¼ˆstatus_code + error.codeï¼‰ï¼Œä¸é ä¸­æ–‡æ–‡æ¡ˆ**ï¼Œé¿å…?relay æ”¹æ–‡æ¡ˆå°±å¤±æ•ˆã€?- æ–°å¢ž `_degrade_to_template(slides) -> list[SlideOutline]`ï¼ˆä¿® R-1 fallback äºŒæ¬¡çƒ§å›¾ï¼‰ï¼š
+  - `image_full`â†’`bullet`/`section`ï¼?*æ¸…ç©º `image_prompt` å’?`image_path`**ï¼ˆå¦åˆ?`ppt_create` @3239 çš?`has_prompts` ä»ä¸ºçœŸä¼šäºŒæ¬¡çƒ§å›¾ï¼codex MAJORï¼‰ï¼›ä¿ç•™ title/**å……å®ž bullets**ï¼ˆWI-2 åŒæ¨¡å¼å·²äº§ï¼‰/subtitleã€?*å†…å®¹ä¸ä¸¢ã€å¯†åº¦åŒ¹é…æ¨¡æ¿è®¾è®¡é¡µ**ã€?- æ–°å¢žæ¸²æŸ“ç¼–æŽ’ `_render_pro(slides, *, theme, title, author, output_path, image_mode, probe_timeout_s, notify) -> dict`ï¼?```python
+def _render_pro(...):
+    use_template = not image_mode
+    if image_mode and not probe_image_reachable(timeout_s=probe_timeout_s):
+        use_template = True; notify("âš ï¸ AI é…å›¾æš‚æ—¶è¿žä¸ä¸Šï¼Œå·²åˆ‡æ¢ç²¾ç¾Žæ¨¡æ¿ç”Ÿæˆã€?)
+    if image_mode and not use_template:
+        reachable, n_ok = _autofill_with_connectivity_gate(slides)
+        if not reachable:
+            use_template = True; notify("âš ï¸ gpt-image-2 æš‚æ—¶ç”¨ä¸äº†ï¼Œå·²åˆ‡æ¢ç²¾ç¾Žæ¨¡æ¿ç”Ÿæˆã€?)
+    if use_template:
+        slides = _degrade_to_template(slides)   # å·²æ¸…ç©?image_prompt â†?ä¸‹é¢ ppt_create ä¸ä¼šäºŒæ¬¡ç”Ÿå›¾
+        return ppt_create(slides, theme=theme, title=title, author=author,
+                          output_path=output_path, template=_default_category_template(),
+                          skip_image_gen=True)              # åŒä¿é™?    # æƒŠè‰³è·¯å¾„ï¼šå›¾å·²ç”Ÿå¥?image_path å¡«å¥½)ï¼Œè·³è¿?ppt_create å†…éƒ¨äºŒæ¬¡ç”Ÿå›¾
+    return ppt_create(slides, theme=theme, title=title, author=author,
+                      output_path=output_path, skip_image_gen=True)
+```
+> **R-1ï¼ˆåŒä¿é™©ï¼?*ï¼šâ‘ `_degrade_to_template` æ¸…ç©º image_promptï¼›â‘¡ç»?`ppt_create` åŠ?keyword-only `skip_image_gen: bool=False`ï¼ˆ@3239 çš?`_autofill_image_prompts` å‰åŠ  `if not skip_image_gen:`ï¼?*é»˜è®¤ False = å­—èŠ‚ BC**ï¼‰ï¼Œ`_render_pro` ä¸¤æ¡è·¯å¾„éƒ½ä¼  Trueã€‚ä¸¤æ¡éƒ½åšï¼Œç¡®ä¿æ¨¡æ¿å›žé€€è·¯å¾„ + æƒŠè‰³å·²ç”Ÿå›¾è·¯å¾„éƒ½ä¸äºŒæ¬¡çƒ§å›¾ï¼ˆcodex MAJORï¼šfallback è·¯å¾„ä¹Ÿä¼šçƒ§å›¾ï¼‰ã€?**éªŒæ”¶**ï¼šå•æµ‹â€”â€?a) probe False â†?æ¨¡æ¿è·¯å¾„ï¼ˆ`_degrade_to_template` + ppt_create skip_image_gen=True + templateï¼‰ï¼›(b) é¦–å›¾ connectivity â†?å›žé€€ï¼?c) **é¦–å›¾ model_unavailableï¼?xx æ¨¡åž‹ä¸æ”¯æŒï¼‰â†?å›žé€€**ï¼?d) é¦–å›¾ content â†?ä¸å›žé€€ï¼ˆå ä½ç»§ç»­ï¼‰ï¼?e) å…¨ç¨‹æˆåŠŸ â†?æƒŠè‰³è·¯å¾„ä¸äºŒæ¬¡ç”Ÿå›¾ï¼›(f) `_degrade_to_template` æ¸…ç©º image_prompt ä¸?bullets å……å®žä¸ä¸¢ï¼?g) `ppt_create(skip_image_gen=False)` é»˜è®¤è¡Œä¸ºå­—èŠ‚ BCã€?
+---
+
+### WI-7 Â· `ppt_pro` å·¥å…· handlerï¼ˆasync ç§’å›ž + ç‹¬ç«‹ç¼–æŽ’ taskï¼? schema + æ³¨å†Œï¼ˆæ€»è£…ï¼?> v0.2 ä¿?BLOCKING-1/2/3ï¼šhandler æ˜?**async**ã€?*ç§’å›ž**ã€èµ·ç‹¬ç«‹ taskï¼›æ³¨å…¥ç» **registry session context**ï¼ˆä¸æ˜?`ppt_tools.set_session_context`ï¼Œé‚£ä¸å­˜åœ¨ï¼‰ï¼›handler ä»?**args è¯?`_session_id`**ï¼ˆåŒçŽ°æœ‰ `ppt_create` @**3769** çš„è¯»æ³•ï¼‰ã€?
+**æ–‡ä»¶** `backend/deskpet/tools/ppt_tools.py`
+- æ–°å¢ž `async def _handle_ppt_pro(**kwargs)`ï¼?```python
+async def _handle_ppt_pro(**kwargs):
+    sid = kwargs.get("_session_id", "default")          # registry æ³¨å…¥è¿?argsï¼ˆåŒ ppt_create @3769ï¼?    clarify = _PPT_PRO_CTX.get("clarify")               # è§ä¸‹ã€Œæ³¨å…¥ã€ï¼šç»?registry session context æ‹?    notifier = _PPT_PRO_CTX.get("notifier")
+    run_blocking = _PPT_PRO_CTX.get("run_blocking")
+    if clarify is None or notifier is None:             # æŽ¥çº¿ç¼ºå¤± â†?ä¸é™é»˜æ­»ï¼Œå›žé€€æ™®é€?ppt_create è¡Œä¸ºæˆ–æ˜Žç¡®æŠ¥é”?        return {"ok": False, "error": "ppt_pro æŽ¥çº¿ç¼ºå¤±ï¼ˆclarify/notifier æœªæ³¨å…¥ï¼‰", "fallback": "è¯·ç”¨ ppt_create"}
+    t = asyncio.create_task(_ppt_pro_orchestrate(
+        topic=kwargs["topic"], pages=kwargs.get("pages", 8),
+        depth=kwargs.get("depth") or _ppt_pro_cfg().default_depth,
+        theme=kwargs.get("theme", "minimal"), image_mode=kwargs.get("image_mode", True),
+        title=kwargs.get("title", ""), author=kwargs.get("author", "DeskPet"),
+        output_path=kwargs.get("output_path"),
+        clarify=clarify, notifier=notifier, run_blocking=run_blocking, session_id=sid))
+    _PPT_PRO_TASKS.add(t); t.add_done_callback(_PPT_PRO_TASKS.discard)
+    return {"ok": True, "status": "researching",
+            "message": "æ”¶åˆ°~ æˆ‘å…ˆå›´ç»•è¿™ä¸ªä¸»é¢˜åšè°ƒç ”ï¼Œæ‹Ÿå¥½å¤§çº²ä¼šå¼¹ç»™ä½ ç¡®è®¤ï¼Œç¡®è®¤åŽå¼€å§‹ç”Ÿæˆ?PPTã€?}
+```
+- **æ³¨å…¥ï¼ˆå…³é”®ï¼ŒBLOCKING-3ï¼?*ï¼š`_clarify_ask`/notifier/run_blocking/session_id æ˜?**main loop** çš„èµ„æºï¼Œç»?registry çš?session context æœºåˆ¶ï¼ˆ`registry.py:262` setã€`:691` åˆå¹¶è¿?handler argsï¼‰æ³¨å…¥ã€‚ä¸¤ç§è½åœ°æ‹©ä¸€ï¼?  - (i) æŠŠå®ƒä»¬æ”¾è¿?registry session contextï¼Œhandler ä»?`kwargs` è¯»ï¼ˆä¸?`_session_id` åŒè·¯ï¼‰ã€?  - (ii) main.py åœ?`_clarify_ask` å®šä¹‰åŽï¼Œè°ƒä¸€ä¸?`ppt_tools.set_ppt_pro_services(clarify=..., notifier=..., run_blocking=...)`ï¼?*æ–°å¢ž**æ¨¡å—çº?setter + `_PPT_PRO_CTX` dictï¼Œä»¿ research_tools çš?`set_live_llm_call` æ³¨å…¥èŒƒå¼ï¼‰ã€?*æŽ¨è (ii)**ï¼ˆä¸Ž deepresearch ä¾èµ–æ³¨å…¥åŒèŒƒå¼ï¼Œæ¸…æ™°ã€å¯æµ‹ï¼‰ã€?  - **æ³¨å…¥æ—¶æœº**ï¼šå¿…é¡»åœ¨ `main.py:530 _clarify_ask` å®šä¹‰**ä¹‹åŽ**è°?setterï¼ˆcodex æé†’ï¼‰ã€?- `_ppt_pro_orchestrate`ï¼šè§ Â§2.5 éª¨æž¶ï¼ˆå« prev_slides ä¿®è®¢çŽ¯ã€no-research çŸ¥æƒ…ç¡®è®¤ã€å–æ¶?è¶…æ—¶ä¼˜é›…è¿”å›žã€æ¸²æŸ“èµ° run_blockingï¼‰ã€?- å…¥å‚ schema `_PPT_PRO_SCHEMA`ï¼š`topic:string`(å¿…å¡«) / `pages:integer`(é»˜è®¤8,èŒƒå›´3-20) / `depth:enum(light,standard,deep)`(é»˜è®¤ config) / `theme:enum(minimal,dark,playful)` / `image_mode:boolean`(é»˜è®¤True=æƒŠè‰³) / `title/author/output_path`(å?ppt_create)ã€?- æ³¨å†Œ `_register_ppt_pro_tool()`ï¼ˆä»¿ `_register_ppt_tool` @**3834**ï¼‰ï¼š`toolset="ppt"`, `permission_category="write_file"`, `timeout_seconds=60.0`ï¼?*ç§’å›žï¼Œä¸éœ€ 1800**ï¼? `concurrency_safe=False`ï¼?*ä»…å½“ `_ppt_pro_cfg().enabled` ä¸?True æ—¶æ³¨å†?*ã€?**éªŒæ”¶**ï¼šhandler çº§å•æµ‹ï¼ˆmock clarify/notifier/run_blocking/research/llmï¼‰â€”â€?a) ç§’å›ž `status:researching` ä¸”èµ·äº†ç‹¬ç«?taskï¼?b) æŽ¥çº¿ç¼ºå¤±è¿”å›žæ˜Žç¡®é”™è¯¯ä¸å´©ï¼?c) ç‹¬ç«‹ task happy pathï¼ˆç¡®è®¤â†’æ¸²æŸ“ï¼‰ï¼›(d) å–æ¶ˆ/è¶…æ—¶/no-research çŸ¥æƒ…ç¡®è®¤è·¯å¾„ï¼?e) chat task è¢?cancel ä¸å½±å“ç‹¬ç«‹ç¼–æŽ?taskï¼ˆæ¨¡æ‹?parent cancelï¼‰ã€?
+---
+
+### WI-8 Â· SKILL.md æ›´æ–°ï¼ˆè·¯ç”?+ ä¿?staleï¼?**æ–‡ä»¶** `backend/deskpet/skills/builtin/ppt-generate/SKILL.md`
+1. **ä¿?staleï¼ˆPPT.md Â§9.2 è®°å½•çš„å·²çŸ?bugï¼?*ï¼šç¬¬ 27 è¡Œæ—§æ¨¡æ¿å?`å•†åŠ¡æ·±è“-æ°´å¢¨/é«˜çº§æ„?è“?ç®€çº¦é«˜çº?ç°` â†?çœŸå®žå¤§ç±» `é«˜çº§è‰?é«˜çº§ç®€çº?é€šç”¨å•†åŠ¡`ï¼ˆä¸Ž `ppt_template_picker.py` ä¸€è‡´ï¼‰ã€?2. **æ–°å¢žè·¯ç”±è§„åˆ™**ï¼šå½“ç”¨æˆ·ã€Œç»™ä¸ªä¸»é¢˜è¦åšï¼ˆæ­£å¼/è°ƒç ”åž?æƒŠè‰³ï¼‰PPTã€â†’ **ä¼˜å…ˆè°?`ppt_pro(topic=...)`**ï¼ˆå®ƒä¼šè‡ªåŠ¨è°ƒç ”â†’æ‹Ÿçº²â†’ç¡®è®¤â†’ç”Ÿå›¾/æ¨¡æ¿ï¼‰ã€‚ä»…å½“ç”¨æˆ?*å·²ç»™å¥½å®Œæ•?outline / æ˜Žç¡®è¦æ±‚è·³è¿‡è°ƒç ”å’Œç¡®è®?/ åªè¦æœ´ç´ å¿«å‡º** â†?ç›´æŽ¥ç”?`ppt_create`ã€?3. è¯´æ˜Ž `ppt_pro` ä¼šæš‚åœç­‰ç”¨æˆ·ç¡®è®¤å¤§çº²ï¼ŒLLM ä¸è¦è‡ªå·±å†é—®ä¸€éã€?**éªŒæ”¶**ï¼šäººå·¥è¯»æ ?+ ä¸ç ´å?skill åŠ è½½ï¼ˆskill loader æµ‹è¯•ç»¿ï¼‰ã€?
+---
+
+### WI-10 Â· åŽå° task çš?receipt / artifact ä¸ŠæŠ¥ï¼ˆarchitect MAJOR-4ï¼?> `ppt_pro` handler ç§’å›ž `status:researching` åŽï¼ŒçœŸæ­£äº§ç‰©åœ¨ç‹¬ç«?task å‡ºã€‚è‹¥ä¸è¡¥ä¸ŠæŠ¥ï¼Œlast-mile verify gate / receipt ä½“ç³»ï¼ˆ`emit_receipt`ã€`test_verify_gate.py`ã€`test_receipt_store.py`ï¼‰çœ‹ä¸åˆ°è¿™æ¡æ–°é“¾è·¯çš„çœŸå®žäº§ç‰©ä¸Žå¤±è´¥ã€?
+**æ–‡ä»¶** `backend/deskpet/tools/ppt_tools.py`ï¼ˆ`_ppt_pro_report_done` + å¤±è´¥åˆ†æ”¯ï¼?- æˆåŠŸï¼šç¼–æŽ?task æ‹¿åˆ° `_render_pro` çš?`result`ï¼ˆå« `path`/`artifacts`ï¼‰åŽï¼?*è¡¥å‘ receipt + artifact**ï¼Œå¯¹é½?`ppt_create` çŽ°æœ‰ artifact emitï¼ˆ`ppt_tools.py:3349`ï¼‰ã€‚æŠŠæˆå“ .pptx + é¢„è§ˆå›¾ä½œä¸ºç»“æž„åŒ– artifact æŽ¨å›žï¼ˆä¸å?notifier æ–‡æœ¬ï¼‰ï¼Œè®©ç”¨æˆ·çœ‹åˆ°ã€Œæ‰“å¼€ / åœ¨æ–‡ä»¶å¤¹ä¸­æ˜¾ç¤ºã€å¡ + verify gate å¯å¯¹è´¦ã€?- å¤±è´¥ï¼ˆæ¸²æŸ“å¤±è´?/ ç¡®è®¤è¶…æ—¶ / no-research è¢«ç”¨æˆ·å–æ¶ˆï¼‰ï¼šé™¤ notifier æ–‡æœ¬å¤–ï¼Œ**emit ä¸€æ?error/cancel ç»“æž„åŒ–ç»“æž?*ï¼ˆreceipt outcome=failed/cancelledï¼‰ï¼Œä¸é™é»˜ã€?- è‡ªåŠ¨æ‰“å¼€ï¼šå¸¦å›¾æˆå“å¤ç”¨çŽ°æœ‰ã€Œâœ¨â€¦å·²è‡ªåŠ¨æ‰“å¼€ã€é€»è¾‘ï¼ˆPPT.md Â§2ï¼‰ã€?**éªŒæ”¶**ï¼šå•æµ‹â€”â€?a) æˆåŠŸ â†?emit artifactï¼ˆå« pathï¼? receipt outcome=okï¼?b) æ¸²æŸ“å¤±è´¥ â†?receipt outcome=failed + notifierï¼?c) å–æ¶ˆ â†?outcome=cancelledã€?
+---
+
+### WI-9 Â· æµ‹è¯•ä¸ŽçœŸæœºéªŒæ”?- **å•æµ‹**ï¼ˆbackendï¼‰ï¼šWI-0~7/WI-10 å„è‡ª focus æµ‹ï¼›æ–°å¢ž `test_ppt_pro.py` è¦†ç›–ç¼–æŽ’å…¨è·¯å¾„ï¼ˆresearch é™çº§/é…ç½®é”™ä¸ŠæŠ?/ ç¡®è®¤ / ä¿®æ”¹çŽ?prev_slides) / å–æ¶ˆ / è¶…æ—¶ / probe å›žé€€ / é¦–å›¾ connectivity gate / é¦–å›¾ model_unavailable gate / content ä¸å›žé€€ / ç‹¬ç«‹ task ä¸è¢« parent cancelï¼‰ã€‚å¤ç”?mock-embedder/mock-llm é£Žæ ¼ã€?- **BC å›žå½’**ï¼š`-k ppt` å…¨å¥— + research å…¨å¥— + clarify ç›¸å…³ + å‰ç«¯ `vitest`ï¼ˆClarificationDialogï¼? `tsc 0 err`ã€?- **æŽ¥çº¿å†’çƒŸ**ï¼šè£¸è¿›ç¨‹å†’çƒŸè„šæœ¬ `scripts/acceptance/ppt_pro_smoke.py`ï¼ˆdry-ishï¼šmock ç”Ÿå›¾ + mock confirmï¼ŒéªŒè¯ç¼–æŽ?wiring ä¸æ­»ï¼‰ã€?- **windows-mcp çœŸæœº E2E**ï¼ˆé¡¹ç›®ç¡¬çºªå¾‹ï¼Œè§ Â§8 æ‰‹æµ‹è®¡åˆ’ï¼Œå•ç‹¬æ–‡æ¡?`02-manual-test.md`ï¼‰ã€?
+---
+
+## 4. æ–‡ä»¶æ”¹åŠ¨æ¸…å•ï¼ˆä¸€é¡µé€ŸæŸ¥ï¼?
+| æ–‡ä»¶ | æ”¹åŠ¨ | WI |
+|---|---|---|
+| `backend/deskpet/config.py` | åŠ?`[ppt]` 6 ä¸?pro_* å­—æ®µ | WI-0 |
+| `backend/deskpet/tools/research_tools.py` | æ— éœ€æ”¹ï¼ˆ`_DEPTH_PRESETS` å·²æ˜¯é¡¶å±‚å¸¸é‡ @2104ï¼Œç›´æŽ?importï¼?| WI-1b |
+| `backend/deskpet/tools/ppt_tools.py` | æ–°å¢ž `_ppt_pro_cfg`/`_research_topic_for_ppt`/`_is_config_or_auth_error`/`_draft_outline_from_research`/`_build_outline_prompt`/`_outline_to_markdown`/`_fallback_minimal_outline`/`_degrade_to_template`/`_autofill_with_connectivity_gate`/`_should_fallback`/`_render_pro`/`_ppt_pro_orchestrate`/`_handle_ppt_pro`/`_ppt_pro_report_done`/`_PPT_PRO_SCHEMA`/`_PPT_PRO_CTX`/`_PPT_PRO_TASKS`/`set_ppt_pro_services`/`_register_ppt_pro_tool`ï¼›`ppt_create` åŠ?`skip_image_gen` å½¢å‚ï¼?*ä¿®çŽ°æœ?`_ppt_async_enabled` ç­‰çš„ `_cfg.config.raw` åè¯»æ³?* | WI-0/1/2/6/7/10 |
+| `backend/deskpet/tools/image_tools.py` | æ–°å¢ž `probe_image_reachable`ï¼›å¤±è´¥è¿”å›žåŠ  `error_kind`(connectivity/model_unavailable/auth/quota/content/unknown)ï¼›`_resolve_relay_base_and_key` helper | WI-5/6b |
+| `backend/config.py`ï¼?*ä¸æ˜¯** deskpet/config.pyï¼?| åŠ?`[ppt]` 6 ä¸?pro_* é¡¹ï¼Œèµ?`standalone_config_section("ppt")` | WI-0 |
+| `backend/main.py` | `_clarify_ask` åŠ?`timeout`+`content_md`ï¼›`_clarify_ask` å®šä¹‰åŽè°ƒ `ppt_tools.set_ppt_pro_services(...)` æ³¨å…¥ clarify/notifier/run_blockingï¼›`pro_enabled` æ—¶æ³¨å†?`ppt_pro` | WI-3/7 |
+| `backend/deskpet/tools/code_tools/clarify_tool.py` | `build_clarification_ask` åŠ?`timeout`+`content_md`ï¼ˆå£å¾„ä¸€è‡´ï¼Œä¸åšæ”¶æ•›é‡æž„ï¼?| WI-3 |
+| `tauri-app/src/types/skillPlatform.ts` | `ClarificationRequest.payload.content_md?: string` | WI-4 |
+| `tauri-app/src/components/ClarificationDialog.tsx` | æ¸²æŸ“ `content_md` å¤§çº²å?+ ã€Œè®©æˆ‘æ”¹æ”¹ã€æ”¹ç¼–è¾‘æ€ï¼ˆä¸ç«‹å?resolveï¼?| WI-4 |
+| `backend/deskpet/skills/builtin/ppt-generate/SKILL.md` | è·¯ç”±åˆ?`ppt_pro` + ä¿?stale æ¨¡æ¿å?| WI-8 |
+| `backend/deskpet/tools/ppt_tools.py`ï¼ˆ`_ppt_pro_report_done`ï¼?| åŽå° task æˆåŠŸ/å¤±è´¥è¡¥å‘ receipt + artifact | WI-10 |
+| `backend/tests/test_ppt_pro.py`ï¼ˆæ–°ï¼? æ—¢æœ‰ ppt/research/clarify æµ?| å•æµ‹ + BC | WI-9 |
+| `tauri-app/src/components/__tests__/ClarificationDialog.test.tsx` | vitest | WI-4/9 |
+| `scripts/acceptance/ppt_pro_smoke.py`ï¼ˆæ–°ï¼?| æŽ¥çº¿å†’çƒŸ | WI-9 |
+| `plans/2026-06-21-ppt-deepresearch-pro/02-manual-test.md`ï¼ˆæ–°ï¼?| windows-mcp çœŸæœºç”¨ä¾‹ | WI-9 |
+
+---
+
+## 5. æ‰§è¡Œé¡ºåºï¼ˆä¾èµ–å›¾ï¼?
+```
+WI-0 (config: backend/config.py + ä¿®åè¯»æ³•) â”€â”¬â”€ WI-1 (research å°è£…, import _DEPTH_PRESETS)
+                                            â”œâ”€ WI-2 (æ‹Ÿçº²/åŒæ¨¡å¼?ä¿®è®¢)
+                                            â”œâ”€ WI-5 (probe) â”€ WI-6b (error_kind ç»†åˆ†) â”€ WI-6 (å›žé€€ç¼–æŽ’+_degrade æ¸?prompt)
+                                            â””â”€ WI-3 åŽç«¯ clarify æ‰©å±• â”€â”?WI-4 (å‰ç«¯ clarify æ¸²æŸ“ + è®©æˆ‘æ”¹æ”¹ç¼–è¾‘æ€? â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”?                                                                     â””â”€ WI-7 (ppt_pro async ç§’å›ž+ç‹¬ç«‹ task æ€»è£…) â”€ WI-10 (receipt) â”€ WI-8 (SKILL) â”€ WI-9 (æµ‹è¯•/çœŸæœº)
+```
+- å¯å¹¶è¡Œï¼š{WI-1}ã€{WI-2}ã€{WI-5+WI-6b+WI-6}ã€{WI-3 åŽç«¯}ã€{WI-4 å‰ç«¯} äº”æ¡ç‹¬ç«‹çº¿ï¼ˆcodex å¤?worktree å¹¶è¡Œï¼‰ã€?- æ±‡åˆç‚¹ï¼šWI-7 æ€»è£…ï¼ˆå« Â§2.5 ç‹¬ç«‹ç¼–æŽ’ taskï¼‰â†’ WI-10 ä¸ŠæŠ¥ â†?WI-8 è·¯ç”±ã€?
+---
+
+## 6. é£Žé™©ä¸Žå¯¹ç­–ï¼ˆv0.2ï¼šR1 å¯¹æŠ—æŒ‘æˆ˜åŽæ›´æ–°ï¼Œâœ?å·²åœ¨ plan å†…æ¶ˆè§£ï¼‰
+
+| ID | é£Žé™© | çŠ¶æ€?å¯¹ç­– |
+|---|---|---|
+| **R-1** | `_render_pro` å·²ç”Ÿå›?/ æ¨¡æ¿å›žé€€è·¯å¾„ï¼Œ`ppt_create` @3239 äºŒæ¬¡ç”Ÿå›¾ï¼ˆé‡å¤çƒ§é’±ï¼‰ | âœ?**åŒä¿é™?*ï¼š`_degrade_to_template` æ¸…ç©º image_prompt + `ppt_create` åŠ?`skip_image_gen`ï¼ˆé»˜è®?False=BCï¼‰ï¼Œä¸¤è·¯å¾„éƒ½ä¼?Trueï¼ˆWI-6ï¼?|
+| **R-2** | `_clarify_ask` èµ?`_control_connections[session_id]`ï¼Œppt æ‹¿åˆ°çš?sid æ˜¯å¦å‘½ä¸­ | âœ?ä½Žé£Žé™©ï¼šcodex å®žæµ‹åŽç«¯é»˜è®¤ç¼ºçœ queryâ†’`"default"`ï¼ˆmain.py:3986/3996ï¼‰ï¼Œ`_clarify_ask` å†?`or get("default")` å…œåº•ï¼›handler ä»?args è¯?`_session_id`ï¼ˆWI-7ï¼‰ã€‚çœŸæœºæ ¸éªŒå‘½ä¸?|
+| **R-3** | ~~`_clarify_ask` ä¸¤ä»½æ‹·è´~~ | âœ?**ä¼ªå‘½é¢˜å·²åˆ?*ï¼šcodex å®žæµ‹ main.py:530 æ˜¯å”¯ä¸€æ´»åŠ¨å®žçŽ°ï¼Œclarify_tool æœªè¢«è°ƒç”¨ï¼›åªæ”¹ä¸€å¤?|
+| **R-4** | ç¡®è®¤/è°ƒç ”å†…è” await åœ?chat task â†?same-sid æ–°æ¶ˆæ?preempt cancel æ€ç¡®è®¤é“¾è·¯ï¼?FP-5 æ—?bugï¼?| âœ?**BLOCKING å·²ä¿®**ï¼šhandler ç§’å›ž + ç‹¬ç«‹ `asyncio.create_task` ç¼–æŽ’ taskï¼ˆÂ?.3/Â§2.5ï¼‰ï¼Œç…§æ¬ FP-5 èŒƒæœ¬ï¼Œpreempt ä¼¤ä¸åˆ?|
+| **R-5** | è°ƒç ” report_md æ³¨å…¥æ‹Ÿçº² prompt çˆ†çª— | âœ?`_PPT_PRO_RESEARCH_CTX_CHARS=6000` æˆªæ–­ + æ‹Ÿçº²ç”?`_resolve_default_llm_call`ï¼ˆWI-2 é”å®šï¼?|
+| **R-6** | probe `/v1/models` 200 ä½?gpt-image-2 æ¨¡åž‹ä¸å¯ç”¨ï¼ˆå‡é˜³ï¼?| âœ?åŒå±‚ï¼šprobe + é¦–å›¾å®žæµ‹ gateï¼Œä¸” 4xx model_unavailable ä¹Ÿå›žé€€ï¼ˆÂ?.2/WI-6bï¼?|
+| **R-7** | `parse_outline` å¯?LLM ä¹±è¾“å‡ºé²æ£’æ€?| âœ?`_fallback_minimal_outline` å…œåº• + å¤ç”¨ `normalize` |
+| **R-8** | flag é»˜è®¤ True æ”¹å˜å‡ºåŽ‚è¡Œä¸º | âœ?æ–°å·¥å…?+ SKILL.md è·¯ç”±æŽ§åˆ¶ + `image_mode`/å¿«å‡º + `pro_enabled` å¯å…³ |
+| **R-9** | æ¨¡æ¿å›žé€€å†…å®¹å¯†åº¦å¡Œæ–¹ï¼ˆimage_full ç¨€ç–æ–‡æœ¬å¡«æ¨¡æ¿è®¾è®¡é¡µç•™ç™½ï¼‰ | âœ?WI-2 åŒæ¨¡å¼äº§å‡ºï¼ˆimage_prompt + å……å®ž bulletsï¼‰ï¼Œå›žé€€ç”?bullets ä¸åšæœ‰æŸè½¬æ¢ï¼ˆarchitect MAJOR-2ï¼?|
+| **R-10** | ä¿®è®¢çŽ¯ä¸¢ä¸Šä¸€ç‰ˆå¤§çº²ï¼Œæ•´ç›˜é‡æ‹ŸæŽ¨ç¿»å·²è®¤å¯é¡µ | âœ?WI-2 ä¼?`prev_slides`ï¼Œprompt æ”¹ã€Œå¢žé‡æ”¹ã€ä¿ç•™å…¶ä½™ã€ï¼ˆarchitect MAJOR-3ï¼?|
+| **R-11** | F1 è°ƒç ”é™é»˜å¤±è´¥ â†?å·å·å‡ºã€Œæ­£å¼?PPTã€å‡­ç©ºç¼– | âœ?åŒºåˆ†é…ç½®é”?ä¸ŠæŠ›)/ç½‘ç»œé”?é™çº§)ï¼Œä¸” no-research æ—¶ç¡®è®¤å¡æ˜¾å¼å‘ŠçŸ¥è®©ç”¨æˆ·çŸ¥æƒ…ç¡®è®¤ï¼ˆWI-1ï¼Œcodex/architect MAJORï¼?|
+| **R-12** | åŽå° task äº§ç‰©/å¤±è´¥ verify gate çœ‹ä¸åˆ?| âœ?WI-10 è¡?receipt+artifactï¼ˆarchitect MAJOR-4ï¼?|
+| **R-13** | é…ç½®èµ?`_cfg.config.raw` åè¯»æ³•é™é»˜å¤±æ•ˆï¼ˆSTATUS å¤šæ¬¡è¸©ï¼‰ | âœ?WI-0 èµ?`standalone_config_section`ï¼Œé¡ºæ‰‹ä¿®çŽ°æœ‰åè¯»æ³•ï¼ˆcodex BLOCKINGï¼?|
+
+---
+
+## 7. å¾…å†³é—®é¢˜ï¼ˆéœ€ç”¨æˆ·æ‹æ¿ â€?å·²å¤§å¹…æ”¶æ•›ï¼Œä»…å‰©åå¥½é¡¹ï¼‰
+
+> R1 ä¸¤è·¯å¯¹æŠ—ï¼ˆcodex 4B+3M / architect 2B+4Mï¼‰çš„ BLOCKING/MAJOR å·²å…¨éƒ¨åœ¨ v0.2 æ¶ˆè§£ï¼ˆè§ Â§6ï¼‰ã€‚å‰©ä¸‹çº¯å±žäº§å“åå¥½ï¼Œä¸é˜»å¡žå®žçŽ°ï¼š
+
+1. **è°ƒç ”æ¡£ä½é»˜è®¤**ï¼š`standard`ï¼? å­é—®é¢˜ï¼Œ~2-3minï¼Œè´¨é‡æ›´ç¨³ï¼‰vs `light`ï¼? å­é—®é¢˜ï¼Œ~60-90sï¼Œæ›´å¿«ï¼‰ã€‚æœ¬ plan é»˜è®¤ standardï¼?*å»ºè®®å¾è¯¢ç”¨æˆ·**ï¼ˆå¿« vs å……åˆ†ï¼‰ã€?2. **ç¡®è®¤å¡å½¢æ€?*ï¼šå¤ç”?`ask_clarification`ï¼ˆæœ¬ plan é€‰ï¼ŒçœåŠ›ï¼‰vs FP-5 é£Žæ ¼ç‹¬ç«‹ã€Œå¤§çº²å¡ã€ï¼ˆæ”¯æŒã€Œå­˜ä¸ºåŽ†å²å¤§çº?æ¨¡æ¿ã€ç­‰å¯Œäº¤äº’ï¼‰ã€‚æœ¬ plan é€‰å‰è€…ï¼›è‹¥ç”¨æˆ·æƒ³è¦å¤§çº²å¯å¤ç”¨/å¯ç¼–è¾‘ä¿å­˜ï¼Œå†å‡çº§ã€?3. **è°ƒç ”æ˜¯å¦è½ç›˜** DeepResearch/ï¼ˆé»˜è®¤å¦ï¼Œé¿å…æ±¡æŸ“ç´¢å¼•ï¼›`pro_save_research` å¯å¼€ï¼‰ã€?4. **ç”Ÿå›¾æˆæœ¬æç¤º**ï¼šç¡®è®¤å³åŒæ„ gpt-image-2 æŒ‰å¼ è®¡è´¹ï¼ˆ~$0.15/å¼?Ã— Nï¼‰ã€‚æ˜¯å¦åœ¨ç¡®è®¤å¡æ³¨æ˜Žé¡µæ•°ä¸Žé¢„ä¼°å¼ æ•°ï¼Ÿï¼ˆå»ºè®®æ³¨æ˜Žï¼Œé€æ˜Žï¼?
+---
+
+## 8. æ‰‹æµ‹è®¡åˆ’ï¼ˆwindows-mcpï¼Œè¯¦è§?`02-manual-test.md`ï¼?- TC-1 æƒŠè‰³å…¨é“¾è·¯ï¼šå‘ä¸»é¢?â†?çœŸè°ƒ deepresearchï¼ˆlog è§?`deepresearch` è°ƒç”¨ + æ¥æºæ•°ï¼‰â†?ç¡®è®¤å¡å¼¹å‡ºå«å¤§çº² â†?çœŸç‚¹ã€Œç¡®è®¤ç”Ÿæˆã€â†’ gpt-image-2 çœŸå‡ºå›?â†?è½ç›˜ + è‡ªåŠ¨æ‰“å¼€ã€?- TC-2 ä¿®æ”¹çŽ¯ï¼šç¡®è®¤å¡è¾“ã€ŒæŠŠç¬?é¡µæ¢æˆç«žå“å¯¹æ¯”ã€â†’ å¤§çº²é‡æ‹Ÿ â†?å†ç¡®è®?â†?ç”Ÿæˆã€?- TC-3 å–æ¶ˆï¼šç‚¹ã€Œå–æ¶ˆã€â†’ ä¸ç”Ÿæˆã€?- TC-4 â˜…å›žé€€ï¼šæ–­ç½?å…?relay å‡ºå›¾ï¼ˆæˆ– mock probe Falseï¼‰â†’ æŽ¢æµ‹ä¸å¯è¾?â†?èµ°æ¨¡æ?â†?ä»å‡ºå®Œæ•´ deckï¼ˆæ— å ä½æ®‹é¡µï¼? é€šçŸ¥ã€Œå·²ç”¨æ¨¡æ¿ã€ã€?- TC-5 è°ƒç ”é™çº§ï¼šresearch è¶…æ—¶ â†?ä»æ‹Ÿçº²ï¼ˆæ³¨æ˜Žæ— æ¥æºï¼‰â†?ç¡®è®¤ â†?ç”Ÿæˆã€?- TC-6 BCï¼šæ—§ `ppt_create` ç›´æŽ¥å‡ºå›¾è·¯å¾„ä¸å—å½±å“ã€?
+---
+
+## 9. å®žçŽ°çºªå¾‹
+- **è¡Œå·ä»¥å®žçŽ°æ—¶ grep ä¸ºå‡†**ï¼ˆæœ¬ plan è¡Œå·ä¸?2026-06-21 æµ‹ç»˜å¿«ç…§ï¼Œä»£ç ä¼šå˜ï¼‰ã€?- æ–°æ–‡ä»?*å³å»ºå?`git add`+commit**ï¼ˆé˜²æ²™ç®±å›žæ»šï¼Œè§å…¨å±€ memoryï¼‰ã€?- ä¸­æ–‡æ–‡ä»¶ç”?Edit/Writeï¼ˆå‹¿ç”?PowerShell Get-Content/Set-Content é“¾ï¼‰ã€?- codex gpt-5.5 å­ä»£ç†å®žçŽ°ï¼ˆç‹¬ç«‹æ–‡ä»¶å¹¶è¡Œ/åŒæ–‡ä»¶ä¸²è¡Œï¼‰ï¼ŒLead é›†æˆ + çœŸæœºéªŒæ”¶ã€?- æ¯?WI å®Œæˆè·‘å¯¹åº”å•æµ‹ï¼›æ€»è£…åŽè·‘ `-k ppt` + research + clarify + vitest + tsc å…¨ç»¿æ‰è¿›çœŸæœºã€?- å®ŒæˆåŽæ›´æ–?`STATUS/PPT.md` + `STATUS/status.md`ï¼ˆé¡¹ç›®ç¡¬çºªå¾‹ï¼‰ã€?
+ÎÞ·¨ÉèÖÃÊôÐÔ¡£´ËÓïÑÔÄ£Ê½½öÖ§³ÖºËÐÄÀàÐÍµÄÊôÐÔÉèÖÃ¡£
+ËùÔÚÎ»ÖÃ ÐÐ:1 ×Ö·û: 1
++ [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) []£¬RuntimeException
+    + FullyQualifiedErrorId : PropertySetterNotSupportedInConstrainedLanguage
+ 
+
+ succeeded in 998ms:
+ M .claude/launch.json
+ M .claude/settings.local.json
+ M LOCAL-DEV-CREDENTIALS.md.example
+ M STATUS/AgentImprovements.md
+ M STATUS/AgentLoop.md
+ M STATUS/DeepResearch.md
+ M STATUS/PPT.md
+ M STATUS/index.md
+ M backend/tests/test_deskpet_research_tools.py
+ M plans/2026-06-21-deepresearch-subagent-fanout/exec/relaunch_p2.out
+ M tauri-app/public/assets/pet/character.png
+ M tauri-app/src-tauri/Cargo.lock
+ M tauri-app/src-tauri/Cargo.toml
+?? DeepResearch/
+?? backend/catl_2024_annual_report.pdf
+?? backend/catl_2024_annual_report.txt
+?? backend/catl_2024_ar.pdf
+?? backend/catl_2024_ar.txt
+?? plans/2026-06-13-mesh-engine-s3/
+?? plans/2026-06-21-ppt-deepresearch-pro/.challenge-r2.md
+?? plans/2026-06-21-ppt-deepresearch-pro/.challenge-r2.out
+?? plans/2026-06-21-ppt-deepresearch-pro/02-manual-test.md
+?? plans/manual-results-2026-06-20-deepresearch-6.0/tauri-dev.log.err
+?? plans/manual-results-2026-06-20-deepresearch-6.0/tauri-dev2.log.err
+?? plans/manual-results-2026-06-20-deepresearch-6.0/tauri-dev3.log.err
+?? plans/manual-results-2026-06-20-deepresearch-6.0/tauri-dev4.log.err
+?? plans/manual-results-2026-06-20-deepresearch-6.0/tauri-dev5.log.err
+?? plans/manual-results-2026-06-20-deepresearch-6.0/tauri-dev6.log.err
+?? plans/manual-results-2026-06-20-deepresearch-6.0/tauri-dev7.log.err
+?? plans/manual-results-2026-06-20-deepresearch/tauri-dev.log.err
+?? plans/manual-results-2026-06-20/screenshots/render_img_ppt/
+?? plans/manual-results-2026-06-20/screenshots/render_template177/
+?? "tauri-app/public/assets/live2d/#Free# Snow Leopard/"
+?? tauri-app/public/assets/live2d/Azuki-san/
+?? tauri-app/public/assets/live2d/Design_genius_White/
+?? "tauri-app/public/assets/live2d/Estella Belongs_to_DG_STUDIO_free/"
+?? tauri-app/public/assets/live2d/HoshinoAi/
+?? tauri-app/public/assets/live2d/estella/
+无法设置属性。此语言模式仅支持核心类型的属性设置。
+所在位置 行:1 字符: 1
++ [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) []，RuntimeException
+    + FullyQualifiedErrorId : PropertySetterNotSupportedInConstrainedLanguage
+ 
+warning: unable to access 'C:\Users\24378/.config/git/ignore': Permission denied
+warning: unable to access 'C:\Users\24378/.config/git/ignore': Permission denied
+
+2026-06-21T12:49:52.571796Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 2.8 seconds
+Output:
+无法设置属性。此语言模式仅支持核心类型的属性设置。
+所在位置 行:1 字符: 1
++ [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) []，RuntimeException
+    + FullyQualifiedErrorId : PropertySetterNotSupportedInConstrainedLanguage
+ 
+rg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试
+一次。
+所在位置 行:2 字符: 1
++ rg --files | rg "(backend/(config|main)|registry|ppt_tools|image_tool ...
++ ~~
+    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+
+ exited 1 in 2765ms:
+无法设置属性。此语言模式仅支持核心类型的属性设置。
+所在位置 行:1 字符: 1
++ [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) []，RuntimeException
+    + FullyQualifiedErrorId : PropertySetterNotSupportedInConstrainedLanguage
+ 
+rg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试
+一次。
+所在位置 行:2 字符: 1
++ rg --files | rg "(backend/(config|main)|registry|ppt_tools|image_tool ...
++ ~~
+    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+
