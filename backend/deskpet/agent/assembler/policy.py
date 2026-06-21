@@ -89,6 +89,7 @@ def load_policies(
                 memory=MemoryPolicy(
                     l1=base.memory.l1,
                     l2_top_k=base.memory.l2_top_k,
+                    l2_page_in=base.memory.l2_page_in,
                     l3_top_k=base.memory.l3_top_k,
                     relabel_l2=base.memory.relabel_l2,
                     anchor_current=base.memory.anchor_current,
@@ -207,6 +208,7 @@ def _to_policy(task_type: str, body: dict[str, Any]) -> AssemblyPolicy:
     mem = MemoryPolicy(
         l1=str(memory_raw.get("l1", "snapshot")),
         l2_top_k=int(memory_raw.get("l2_top_k", 5)),
+        l2_page_in=str(memory_raw.get("l2_page_in", "always")),
         l3_top_k=int(memory_raw.get("l3_top_k", 5)),
         relabel_l2=bool(memory_raw.get("relabel_l2", True)),
         anchor_current=bool(memory_raw.get("anchor_current", True)),

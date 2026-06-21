@@ -133,6 +133,7 @@ class ContextAssembler:
         config: Optional[dict[str, Any]] = None,
         session_id: Optional[str] = None,
         task_type_override: Optional[str] = None,
+        memory_policy_override: Optional[dict[str, Any]] = None,
     ) -> ContextBundle:
         """Produce a ContextBundle. MUST NOT raise."""
         start = time.monotonic()
@@ -223,6 +224,18 @@ class ContextAssembler:
         # SkillComponent 对所有 task_type（含 chat）都运行，知识注入才能在常见路径
         # 生效。默认 knowledge_enabled=false → prefer 不变 → 字节级 BC 安全。
         # （注意 policy 是 self._policies 的共享对象，必须 replace 出副本，勿原地改。）
+        if (
+            isinstance(memory_policy_override, dict)
+            and "l2_page_in" in memory_policy_override
+        ):
+            policy = dataclasses.replace(
+                policy,
+                memory=dataclasses.replace(
+                    policy.memory,
+                    l2_page_in=str(memory_policy_override["l2_page_in"]),
+                ),
+            )
+
         if "skill" not in policy.prefer:
             _skills_cfg = config.get("skills") if isinstance(config, dict) else None
             if isinstance(_skills_cfg, dict) and bool(

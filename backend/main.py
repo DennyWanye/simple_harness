@@ -5467,6 +5467,15 @@ async def control_channel(ws: WebSocket):
                 )
                 _msg_sid = _scope_decision.effective_sid
                 text = _scope_decision.stripped_text
+                _memory_policy_override = (
+                    {"l2_page_in": "always"}
+                    if getattr(
+                        _scope_decision,
+                        "force_l2_page_in",
+                        None,
+                    ) == "always"
+                    else None
+                )
                 if _scope_decision.created:
                     _switch_payload = {
                         "old_sid": _base_msg_sid,
@@ -5524,7 +5533,12 @@ async def control_channel(ws: WebSocket):
                         except Exception as _ex:  # noqa: BLE001
                             logger.debug("auto_resume_reset_failed sid=%s err=%s", _msg_sid, _ex)
 
-                async def _run_chat(_ws, _text, _sid):
+                async def _run_chat(
+                    _ws,
+                    _text,
+                    _sid,
+                    _memory_policy_override=None,
+                ):
                     # P4-S20-LLM-Unified-fix: 持久化用户消息到 SessionDB
                     # 并入向量库。老 chat 路径靠 SimpleLLMAgent.chat_stream
                     # 内部写入；新路径直接调 AgentLoop 绕过了 SimpleLLMAgent，
@@ -5747,6 +5761,7 @@ async def control_channel(ws: WebSocket):
                                 mcp_manager=service_context.get("mcp_manager"),
                                 session_id=_sid,
                                 task_type_override=_tt_override,
+                                memory_policy_override=_memory_policy_override,
                                 config={
                                     "llm": {
                                         "model": _persona_model,
@@ -6849,7 +6864,14 @@ async def control_channel(ws: WebSocket):
                 _prev_task = _chat_inflight.get(_msg_sid)
                 if _prev_task is not None and not _prev_task.done():
                     _prev_task.cancel()
-                _chat_task = asyncio.create_task(_run_chat(ws, text, _msg_sid))
+                _chat_task = asyncio.create_task(
+                    _run_chat(
+                        ws,
+                        text,
+                        _msg_sid,
+                        _memory_policy_override,
+                    )
+                )
                 _chat_inflight[_msg_sid] = _chat_task
 
                 # P5-S2 Phase 4: register a per-sid re-dispatcher closure

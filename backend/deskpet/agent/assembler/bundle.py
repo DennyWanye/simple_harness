@@ -28,7 +28,7 @@ Spec: openspec/changes/p4-poseidon-agent-harness/specs/context-assembler/spec.md
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +108,7 @@ class MemoryPolicy:
 
     l1: str = "snapshot"  # "snapshot" or "off"
     l2_top_k: int = 5
+    l2_page_in: Literal["always", "followup", "off"] = "always"
     l3_top_k: int = 5
     relabel_l2: bool = True
     anchor_current: bool = True

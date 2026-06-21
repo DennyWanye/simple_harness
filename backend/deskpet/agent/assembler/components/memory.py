@@ -91,6 +91,14 @@ class MemoryComponent:
             "l3_top_k": policy_memory.l3_top_k,
             "session_id": ctx.session_id,
         }
+        l2_page_in = getattr(policy_memory, "l2_page_in", "always")
+        if l2_page_in == "off":
+            call_policy["l2_top_k"] = 0
+        elif (
+            l2_page_in == "followup"
+            and not _starts_with_anaphora(ctx.user_message)
+        ):
+            call_policy["l2_top_k"] = 0
 
         try:
             result = await mm.recall(ctx.user_message, policy=call_policy)
