@@ -1,6 +1,6 @@
 # 00-PLAN — DeepResearch 子代理 Fan-out（每子问题一个子代理深查 → 主线程统一分析）
 
-> **版本**: v0.2（吸收第 1 轮 codex gpt-5.5 双子代理对抗挑战：7 BLOCKING + 4 MAJOR 全修，见 §13 附录）
+> **版本**: v0.3（第 1 轮 7 BLOCKING+4 MAJOR + 第 2 轮 2 BLOCKING+3 MAJOR 全修，见 §13 附录）
 > **日期**: 2026-06-21
 > **状态**: 📋 规划中（先写 plan，review 后再执行）
 > **本目录**: `plans/2026-06-21-deepresearch-subagent-fanout/`
@@ -112,33 +112,26 @@ deepresearch(topic, scheduler=S, _depth=0)
 - **D6 — flag = `[research].subagent_fanout`（默认 false），依赖 `features.subagent_driver`**：fan-out 需要 scheduler，scheduler 由 `features.subagent_driver=ON` 构造（子代理 driver 计划）。两者都 ON 才生效。理由：复用 driver 的 scheduler 生命周期，不重复构造；项目铁律新功能默认 OFF。读取走 `_research_raw()` 安全兜底（`b05823b` 教训，**不复刻 `config.config` 单例 bug**）。
 - **D7 — 落盘只在最外层一次**：内层子调用直接走 `deepresearch()`（不经 `_handle_deepresearch` 的 `_save_report`），天然不落 N 份中间报告；主线程合成后由 `_handle_deepresearch` 落盘一次。理由：避免 OutPut/Research 堆 N 份碎报告。
 - **D8 —【R1:A-BLOCKING-3 重写】预算由构造保证 ≤ tool 超时**：原"固定 120s 单跑超时"数学不成立（挑战者 A：deep=6 子问题、research lane=2 → 3 波 ×120s=360s 已破 300s）。改为**动态预算**，由构造保证最坏 wall-clock ≤ tool 超时：
-  - 模块常量 `_DEEPRESEARCH_TOOL_TIMEOUT=300.0`（注册处 [:1870](../../backend/deskpet/tools/research_tools.py:1870) 与预算计算**共用同一常量**）、`_FANOUT_OUTER_RESERVE=60.0`（外层 plan+merge+synth 预留）。
-  - `n = min(len(sub_questions), fanout_max_subquestions)`（默认 cap=6；超出的子问题丢弃并 `log` 记 dropped，不静默）。
-  - `conc = min(global_concurrency, research_lane_cap)`（从 `[agent.concurrency]` 读，默认 `min(4,2)=2`；缺省安全兜底）。
-  - `waves = ceil(n / conc)`；`per_subrun_timeout = clamp((TOOL_TIMEOUT - RESERVE) / waves, 45.0, 150.0)`。
-  - **可证**：`waves * per_subrun + RESERVE ≤ TOOL_TIMEOUT`（默认 n=6→waves=3→per_subrun=80s→3×80+60=300）；TG-2 加断言。`fanout_max_subquestions` 上限保证 `(TOOL-RESERVE)/waves ≥ 45`（waves≤5）。
-  - 子跑档默认走 `_fanout_subrun_mode`（auto=deep→standard / standard→light / light→light）；**注意直连权威源（baike/wiki/arxiv/cninfo）在任何档位都跑**，所以降档不丢一手源质量，只减普通搜索的 URL/passage 量。
+  - 模块常量 `_DEEPRESEARCH_TOOL_TIMEOUT=300.0`（**定义在 `_register_deepresearch_tool()` 之前**，注册处 [:1870](../../backend/deskpet/tools/research_tools.py:1870) `timeout_seconds=` 改引用该常量——单一真相）、`_FANOUT_OUTER_RESERVE=60.0`、`_MIN_SUBRUN=45.0`。
+  - `conc = max(1, min(glob, lanes["research"]))`，其中 `glob, lanes = config.get_subagent_concurrency(cfg)`（**复用现成 helper** [config.py:748](../../backend/config.py:748)，已带默认+安全兜底；默认 `min(4,2)=2`）。
+  - **【★R2:A-BLOCKING-1 修正】硬裁 n 防下界破不等式**：`max_waves = (TOOL_TIMEOUT - RESERVE) // _MIN_SUBRUN`（=240//45=**5**）；`n = min(len(sub_questions), fanout_max_subquestions, conc * max_waves)`（超出丢弃并 `log` 记 dropped）。若 `conc*max_waves` < `len`，多余子问题丢弃——保证 `waves ≤ max_waves`。
+  - `waves = (n + conc - 1) // conc`（整数 ceil，免 `math` import）；`per_subrun_timeout = min((TOOL_TIMEOUT - RESERVE) / waves, 150.0)`（**只设上界 150，下界由 n 硬裁保证 ≥48**）。
+  - **可证**：`waves ≤ max_waves=5 ⟹ per_subrun = 240/waves ≥ 48 ≥ _MIN_SUBRUN`，且 `waves*per_subrun + RESERVE = 240 + 60 = 300 = TOOL_TIMEOUT`（上界 150 只会更小）。极端 `conc=1`（config 允许）：n 被裁到 ≤5，waves≤5，仍成立。TG-2 加断言（含 conc=1 / n=20 极端）。
+  - 子跑档默认走 `_fanout_subrun_mode`（auto=deep→standard / standard→light / light→light）；**直连权威源（baike/wiki/arxiv/cninfo）在任何档位都跑**，降档不丢一手源质量，只减普通搜索的 URL/passage 量。
 - **D9 —【R1:A-MAJOR-1 / B-BLOCKING-2】`parent_sid` 来源 = 注入的 `_session_id`，不是 task_id 反查**：`_resolve_sid(task_id)` 不存在。registry 执行前把 session context 合并进 params（[registry.py:690](../../backend/deskpet/tools/registry.py:690)），main 注入 `_session_id`（[main.py:5992](../../backend/main.py:5992)）。故 `_handle_deepresearch` 用 `parent_sid = str(args.get("_session_id") or "default")`。
-- **D10 —【R1:A-BLOCKING-2】递归守门强制化（airtight）**：`_handle_deepresearch` **只在顶层会话**注入 scheduler——若 `_session_id` 含子代理标记（`.sub` / `.par-` / `.team-` / `.dr-`）则 `scheduler=None`，使任何 LLM 派的子代理调 `deepresearch` 都进不了 fan-out 分支。详见 §5 重写。
+- **D10 —【R1:A-BLOCKING-2 / R2 修正】递归守门 = 强制剥工具（覆盖 overrides）**：第 1 轮提的"顶层 sid 子串门"被第 2 轮否（A2-MAJOR：正常顶层 session_id 含 `.sub` 等子串会**误杀** fan-out → 功能归零）。**改为以剥工具为唯一硬保证**：把 `"deepresearch"` 加进 `task_kinds._FORBIDDEN_IN_KIND`（[task_kinds.py:30](../../backend/deskpet/agent/task_kinds.py:30)）——`resolve_kind()` 对**内置 + 用户 overrides** 都强制剥，任何 kind 的子代理都拿不到 `deepresearch` 工具 → 不可能经 LLM 路径再 fan-out。**不再用 sid 门**（避免误杀）。详见 §5 重写。
 
 ---
 
-## 5. 递归守门（depth-1 硬保证，airtight）
+## 5. 递归守门（depth-1 硬保证，airtight — R2 定稿）
 
-挑战者 A 指出原"三重保险"有漏：WI-5 给 `_handle_deepresearch` 注入全局 scheduler 后，**LLM 派的 research 子代理调 `deepresearch` 工具仍会再 fan-out**（KindProfile 含 deepresearch）。修正为**四重 + 强制**：
+递归唯一危险路径 = **LLM 派的子代理调 `deepresearch` 工具再 fan-out**（本计划内部 fan-out 是编程式 `deepresearch()` 调用，已显式 `scheduler=None/_depth=1`，不经工具）。第 1 轮提的"顶层 sid 子串门"被第 2 轮否（误杀正常 sid）。**定稿为剥工具为唯一硬保证 + depth 双保险**：
 
-1. **顶层才注入 scheduler（关键，D10）**：`_handle_deepresearch` 解析 `parent_sid = args.get("_session_id")`；若含子代理标记（`.sub`/`.par-`/`.team-`/`.dr-`）→ `scheduler=None`。这从**入口**杜绝任何子代理触发 fan-out：
-   ```python
-   sid = str(args.get("_session_id") or "default")
-   _IN_SUBAGENT = any(m in sid for m in (".sub", ".par-", ".team-", ".dr-"))
-   sched = None if _IN_SUBAGENT else _get_subagent_scheduler()
-   report = await deepresearch(..., scheduler=sched, parent_sid=sid)
-   ```
-2. **`_depth` 计数**：fanout 分叉只在 `_depth==0` 触发；内层子调用传 `_depth=1` → 必走扁平。
-3. **内层 `scheduler=None`**：`_run_subagent_fanout` 的每个内层 `deepresearch()` 显式不传 scheduler → 即便 `_depth` 漏判也进不了 fanout。
-4. **【强制，非建议】剥 research KindProfile 的 deepresearch**：本计划**直接改** [task_kinds.py:62](../../backend/deskpet/agent/task_kinds.py:62) research 工具集 `("web_search","web_fetch","deepresearch","read_file")` → `("web_search","web_fetch","read_file")`（移除 `deepresearch`）。理由：消除 LLM 子代理调 deepresearch 的可能性（双保险，配合第 1 条）。这是一行安全收口，纳入本计划 WI-5（不再"留给 driver 计划"）。
+1. **【硬保证】剥 `deepresearch` 工具（覆盖 overrides）**：把 `"deepresearch"` 加进 `task_kinds._FORBIDDEN_IN_KIND`（[task_kinds.py:30](../../backend/deskpet/agent/task_kinds.py:30)），并从内置 research profile 工具集移除（[:62](../../backend/deskpet/agent/task_kinds.py:62) `("web_search","web_fetch","deepresearch","read_file")` → `("web_search","web_fetch","read_file")`）。`resolve_kind()` 对**内置 + 用户 overrides** 都强制剥（A2 证：`load_kind_overrides` 接受 `spec["tools"]`，最终只 `resolve_kind` 剥 `_FORBIDDEN_IN_KIND`）→ **任何 kind / 任何 override 的子代理都拿不到 `deepresearch` 工具**，从根上不存在 LLM 子代理触发 fan-out 的路径。
+2. **`_depth` 计数（双保险）**：fanout 分叉只在 `_depth==0` 触发；内层 `deepresearch()` 传 `_depth=1` → 必走扁平。
+3. **内层 `scheduler=None`（双保险）**：`_run_subagent_fanout` 每个内层 `deepresearch()` 显式不传 scheduler → 即便 `_depth` 漏判也进不了 fanout 分支。
 
-> 第 1 条（顶层门）是主防线，第 4 条（剥工具）是不依赖 sid 命名的次防线；两者独立成立 → airtight。
+> **不再用 sid 门**（避免 A2-MAJOR 误杀）。`_handle_deepresearch` 始终注入 scheduler——因为剥工具后，能调到该 handler 的只有顶层（非子代理）路径，inherently top-level。`parent_sid = args.get("_session_id") or "default"` 仅用于进度事件标识（D9），不再参与守门。
 
 ---
 
@@ -202,17 +195,17 @@ if fanout_on:
 async def _run_subagent_fanout(*, topic, sub_questions, llm_call, search, extract,
                                scheduler, parent_sid, mode, user_request,
                                errors, route) -> ResearchReport:
-    # —— D8 动态预算：按构造保证最坏 wall-clock ≤ tool 超时 ——
-    cap = _fanout_max_subquestions()                       # 默认 6
+    # —— D8 动态预算：按构造保证最坏 wall-clock ≤ tool 超时（R2 修正：硬裁 n 防下界破不等式）——
+    conc = _fanout_concurrency()                           # 复用 get_subagent_concurrency；默认 2，极端可为 1
+    max_waves = int((_DEEPRESEARCH_TOOL_TIMEOUT - _FANOUT_OUTER_RESERVE) // _MIN_SUBRUN)  # =5
+    cap = min(_fanout_max_subquestions(), conc * max_waves)   # ★硬裁，保证 waves≤max_waves
     eff_subq = sub_questions[:cap]
     if len(sub_questions) > cap:
         errors.append(f"fanout: dropped {len(sub_questions)-cap} subquestions over cap {cap}")
     submode = _fanout_subrun_mode(mode)                    # auto=降一级；直连源各档都跑
     _, d_urls, d_pass, d_rounds = _DEPTH_PRESETS[submode]
-    conc = max(1, min(_global_concurrency(), _research_lane_cap()))   # 默认 min(4,2)=2
-    waves = max(1, math.ceil(len(eff_subq) / conc))
-    timeout = max(45.0, min(150.0,
-        (_DEEPRESEARCH_TOOL_TIMEOUT - _FANOUT_OUTER_RESERVE) / waves))
+    waves = max(1, (len(eff_subq) + conc - 1) // conc)     # 整数 ceil，免 math import；≤ max_waves
+    timeout = min(150.0, (_DEEPRESEARCH_TOOL_TIMEOUT - _FANOUT_OUTER_RESERVE) / waves)  # 下界由硬裁保证≥48
 
     async def _one(i, q):
         async def _coro():
@@ -276,7 +269,7 @@ async def _run_subagent_fanout(*, topic, sub_questions, llm_call, search, extrac
         sub_questions=sub_questions, coverage=coverage, errors=errors,
     )
 ```
-**新增模块依赖**：`import math`（文件顶部，若未 import）。常量 `_DEEPRESEARCH_TOOL_TIMEOUT=300.0` / `_FANOUT_OUTER_RESERVE=60.0`；helper `_global_concurrency()`/`_research_lane_cap()`/`_fanout_max_subquestions()` 见 WI-5（读 `[agent.concurrency]`/`[research]`，安全兜底）。
+**新增模块依赖**：`import os`（文件顶部，[:34](../../backend/deskpet/tools/research_tools.py:34) 缺 os；WI-8c 用）。**不引 `math`**（整数 ceil）。常量 `_DEEPRESEARCH_TOOL_TIMEOUT`/`_FANOUT_OUTER_RESERVE`/`_MIN_SUBRUN`；helper `_fanout_concurrency()`/`_fanout_max_subquestions()`/`_fanout_subrun_mode()` 见 WI-5a（复用 `config.get_subagent_concurrency`，安全兜底）。
 **ResearchReport 字段对齐**（已核 [:572-579](../../backend/deskpet/tools/research_tools.py:572)）：必填 `topic/summary/report_md/citations/sub_questions/coverage`，`errors` 有默认。
 **测试** TG-2：mock scheduler（直接 await coro_factory）+ mock 内层 deepresearch（返桩 ResearchReport）→ 验证 N 份合并、失败隔离（1 失败其余存活+错误透传）、全失败兜底（summary 字段在、不 TypeError）、coverage.subagent_fanout/waves 正确、cap 截断、depth-1（断言内层收到 scheduler=None/_depth=1）、**预算断言** `waves*timeout + RESERVE ≤ _DEEPRESEARCH_TOOL_TIMEOUT`。
 
@@ -308,21 +301,28 @@ def _rewrite_local_refs(md: str, local_to_global: dict[int, int]) -> str:
 1. `merged, refmap = _merge_subreport_citations(sub_reports)`（WI-3）
 2. 每份子报告：`body = _strip_footnote_definitions(r.report_md)` → `body = _rewrite_local_refs(body, {ln: refmap[(idx, ln)] ...})`
 3. `llm_call(_FANOUT_SYNTH_PROMPT.format(...))` → 失败降级到「按子问题拼接已重写正文 + 全局引用附录」
-4. `report_md, merged = _finalize_report_md(report_md, merged, errors)`（下面复用 helper）→ return
-**重构（不改行为）**：把扁平路径 [:1427–1452](../../backend/deskpet/tools/research_tools.py:1427) 的 cite_check + 废引用清理（`find_footnote_refs`/`used_citations`）+ 引用附录追加抽成 `def _finalize_report_md(report_md, citations, errors) -> tuple[str, list[Citation]]`，扁平路径改调它（**逐字搬运、回归 diff=0**），fanout 路径复用。
-**测试** TG-4：`_strip_footnote_definitions` 去附录留正文；`_rewrite_local_refs` 撞号→全局正确；synth LLM 失败→降级仍含全局引用且 cite_check 通过；`_finalize_report_md` 抽取后扁平用例字节级 BC。
+4. `report_md, merged, _cc = _finalize_report_md(report_md, merged, errors)` → `return report_md, merged`
+**重构（不改行为，★R2:A-MAJOR 明确签名防作用域漏）**：把扁平路径 [:1427–1452](../../backend/deskpet/tools/research_tools.py:1427) 的 cite_check + 废引用清理（`find_footnote_refs`/`used_citations`）+ 引用附录追加抽成
+```python
+def _finalize_report_md(report_md, citations, errors) -> tuple[str, list, dict]:
+    """返回 (report_md_含引用附录, 裁剪后 citations, cc)。扁平 + fanout 共用，
+    入口/出口只用返回值——不依赖外层 cc/used_refs 等局部变量（避免抽取后 NameError）。"""
+```
+扁平路径 [:1427-1452](../../backend/deskpet/tools/research_tools.py:1427) 原地改为 `report_md, citations, cc = _finalize_report_md(report_md, citations, errors)`（**逐字搬运、回归 diff=0**），随后 `cc` 仅供 coverage 用（[:1462-1463](../../backend/deskpet/tools/research_tools.py:1462) `cite_check_ok`/`cite_missing` 仍可取 `cc[...]`）。
+**测试** TG-4：`_strip_footnote_definitions` 去附录留正文；`_rewrite_local_refs` 撞号→全局正确；synth LLM 失败→降级仍含全局引用且 cite_check 通过；`_finalize_report_md` 抽取后扁平用例字节级 BC（含 coverage 的 cite_check_ok/cite_missing 不变）。
 
 ### WI-5 — scheduler 注入（main.py + 全局桥）+ flag/并发读取 + 递归守门接线
 
-**改 a — `research_tools.py` 全局桥 + helper**（仿 LLM 全局桥 [:1797](../../backend/deskpet/tools/research_tools.py:1797)）：
+**改 a — `research_tools.py` 顶部加 `import os`（[:34](../../backend/deskpet/tools/research_tools.py:34) 已有 asyncio/json/logging/re/sys/time；缺 os——WI-8c 用 `os.replace`）**；`math` 不引入（WI-2 用整数 ceil `(n+conc-1)//conc`）。全局桥 + helper（仿 LLM 全局桥 [:1797](../../backend/deskpet/tools/research_tools.py:1797)）：
 ```python
-import math   # 若文件未 import（WI-2 用）
-_DEEPRESEARCH_TOOL_TIMEOUT = 300.0          # 与注册处 timeout_seconds 共用（[:1870]）
+# 常量：放在 _register_deepresearch_tool() 调用之前（模块加载顺序），注册处共用
+_DEEPRESEARCH_TOOL_TIMEOUT = 300.0   # 注册处 [:1870] timeout_seconds= 改引用本常量（单一真相）
 _FANOUT_OUTER_RESERVE = 60.0
+_MIN_SUBRUN = 45.0
 _SUBAGENT_SCHEDULER = None
 def set_subagent_scheduler(s) -> None:
     global _SUBAGENT_SCHEDULER; _SUBAGENT_SCHEDULER = s
-def get_subagent_scheduler(): return _SUBAGENT_SCHEDULER   # 公开（main.py 不直接 import 私有）
+def get_subagent_scheduler(): return _SUBAGENT_SCHEDULER   # 公开（main.py 不 import 私有）
 def _fanout_enabled() -> bool: return bool(_research_raw().get("subagent_fanout", False))
 def _fanout_min_subquestions() -> int: return int(_research_raw().get("fanout_min_subquestions", 2) or 2)
 def _fanout_max_subquestions() -> int: return int(_research_raw().get("fanout_max_subquestions", 6) or 6)
@@ -331,43 +331,35 @@ def _fanout_subrun_mode(outer: str) -> str:
     if m in ("light", "standard", "deep"): return m
     if m == "inherit": return outer if outer in _DEPTH_PRESETS else "standard"
     return {"deep": "standard", "standard": "light", "light": "light"}.get(outer, "light")  # auto
-def _agent_raw() -> dict:    # 读 [agent.concurrency]，安全兜底（不复刻 config.config 单例 bug）
+def _fanout_concurrency() -> int:    # ★R2：复用 config.get_subagent_concurrency（[config.py:748]，带默认+兜底）
     try:
         import config as _cfg
-        obj = getattr(_cfg, "config", None)
-        raw = (obj.raw if obj is not None and hasattr(obj, "raw")
-               else _cfg.load_config(_cfg.resolve_config_path()).raw)
-        a = (raw or {}).get("agent") or {}
-        return a if isinstance(a, dict) else {}
-    except Exception: return {}
-def _global_concurrency() -> int:
-    return int((_agent_raw().get("concurrency") or {}).get("global_concurrency", 4) or 4)
-def _research_lane_cap() -> int:
-    lc = (_agent_raw().get("concurrency") or {}).get("lane_caps") or {}
-    return int(lc.get("research", 2) or 2)
+        cfg = getattr(_cfg, "config", None) or _cfg.load_config(_cfg.resolve_config_path())
+        glob, lanes = _cfg.get_subagent_concurrency(cfg)
+        return max(1, min(int(glob), int((lanes or {}).get("research", 2))))
+    except Exception:
+        return 2   # 安全兜底（min(4,2)）
 ```
-> ⚠️ `_DEEPRESEARCH_TOOL_TIMEOUT` 定义后，注册处 [:1870](../../backend/deskpet/tools/research_tools.py:1870) 的 `timeout_seconds=300.0` 改成引用该常量（单一真相，D8 预算才成立）。
+> ⚠️ 注册处 [:1870](../../backend/deskpet/tools/research_tools.py:1870) `timeout_seconds=300.0` 改成 `timeout_seconds=_DEEPRESEARCH_TOOL_TIMEOUT`；常量定义须在 `_register_deepresearch_tool()`（[:1856](../../backend/deskpet/tools/research_tools.py:1856)）之前（B2 提的加载顺序）。WI-2 用 `_fanout_concurrency()` 取 `conc`。
 
-**改 b — `_handle_deepresearch`（[:1711](../../backend/deskpet/tools/research_tools.py:1711)）顶层守门注入（D9/D10）**：
+**改 b — `_handle_deepresearch`（[:1711](../../backend/deskpet/tools/research_tools.py:1711)）注入（D9，无 sid 门）**：
 ```python
-sid = str(args.get("_session_id") or "default")
-_IN_SUBAGENT = any(m in sid for m in (".sub", ".par-", ".team-", ".dr-"))
-sched = None if _IN_SUBAGENT else get_subagent_scheduler()
-report = await deepresearch(..., scheduler=sched, parent_sid=sid)
+sid = str(args.get("_session_id") or "default")     # registry 注入（[registry.py:690]/[main.py:5992]），仅作进度标识
+report = await deepresearch(..., scheduler=get_subagent_scheduler(), parent_sid=sid)
 ```
-（`_session_id` 由 registry 注入 params，[registry.py:690](../../backend/deskpet/tools/registry.py:690)/[main.py:5992](../../backend/main.py:5992)，已核实。**不用** `_resolve_sid`，它不存在。）
+**不再用 sid 子串门**（§5 R2 定稿：误杀风险，递归改由"剥工具"硬保证）。`_resolve_sid` 不存在，用 `args.get("_session_id")`。
 
-**改 c — `task_kinds.py:62` 强制剥工具（§5 第 4 条）**：research 工具集 `("web_search","web_fetch","deepresearch","read_file")` → `("web_search","web_fetch","read_file")`。
+**改 c — `task_kinds.py` 强制剥 deepresearch（§5 第 1 条）**：① `_FORBIDDEN_IN_KIND`（[:30](../../backend/deskpet/agent/task_kinds.py:30)）加 `"deepresearch"`（覆盖 overrides）；② 内置 research profile（[:62](../../backend/deskpet/agent/task_kinds.py:62)）工具集去掉 `deepresearch`。
 
-**改 d — `main.py` lifespan**（driver 的 scheduler 构造块之后；scheduler 局部名以 driver 实现为准，挑战核实为 `service_context.register("subagent_scheduler", ...)` [main.py:2007](../../backend/main.py:2007)，故用 `service_context.get`）：
+**改 d — `main.py` lifespan**（driver 的 scheduler 注册块之后）：
 ```python
-_sched = service_context.get("subagent_scheduler")   # driver 已注册；未开则 None
-from deskpet.tools import research_tools as _rt        # ★ _research_raw 在 research_tools，不是 main 本地
+_sched = service_context.get("subagent_scheduler")   # driver 已 register（[main.py:2007]）；未开则 None
+from deskpet.tools import research_tools as _rt        # ★ _research_raw/_fanout_enabled 在 research_tools，非 main 本地
 if _sched is not None and _rt._fanout_enabled():
     _rt.set_subagent_scheduler(_sched)
-    logger.info("deepresearch subagent fanout ENABLED (scheduler wired)")   # ★ main.py 是 logger 不是 log（[:86]）
+    logger.info("deepresearch subagent fanout ENABLED (scheduler wired)")   # ★ main.py 是 logger（[:86]），非 log
 ```
-**测试** TG-5：`_fanout_enabled`/`_fanout_max_subquestions`/`_global_concurrency`/`_research_lane_cap` 真读 config（b05823b 回归：真 `[research].subagent_fanout=true` + `[agent.concurrency].lane_caps.research` 读到）；无 `.raw` stub 不抛；`_handle_deepresearch` 在 sid 含 `.par-` 时 `scheduler=None`（守门）；顶层 sid 时注入。
+**测试** TG-5：`_fanout_enabled`/`_fanout_max_subquestions`/`_fanout_concurrency` 真读 config（b05823b 回归：真 `[research].subagent_fanout=true` + `[agent.concurrency].lane_caps.research` 经 `get_subagent_concurrency` 读到；`conc=1` 极端）；无 `.raw` stub 不抛。
 
 ### WI-6 — 观测 + WS 进度（复用，几乎零新代码）
 
@@ -401,20 +393,25 @@ def _install_root_for_deepresearch() -> Path | None:
     target = root / "DeepResearch"
     try:
         target.mkdir(parents=True, exist_ok=True)
-        probe = target / ".deskpet-dr-write-probe"
-        probe.write_bytes(b""); probe.unlink()  # 直接 probe DeepResearch 本身可写
+        probe = target / f".deskpet-dr-write-probe-{os.getpid()}"   # ★R2:B-MAJOR 唯一名,防并发互删
+        probe.write_bytes(b""); probe.unlink()  # 直接 probe DeepResearch 本身可写（非 userdata）
         return target
     except OSError:
         return None
 ```
-**★B-BLOCKING-3 修正**：兜底**不再是** `user_data_dir()/DeepResearch`（会落 %AppData% C 盘）。改为 `Path.home()/"DeskPet"/"DeepResearch"`（可见、好找）+ `log.warning("install root not writable; DeepResearch falls back to <home>; set DESKPET_DEEPRESEARCH_DIR to override")`。
-> 说明：常见安装是 Tauri NSIS **per-user**（装到可写目录），安装根可写 → 报告就落安装目录旁，满足"安装目录/DeepResearch + 不进 Roaming"。只有 per-machine Program Files 才触发 home 兜底；env 覆盖永远优先。
+**★B-BLOCKING-3 / R2 修正**：兜底**绝不回落** `user_data_dir()`（%AppData%\Roaming 隐藏 C 盘）。改为 `Path.home()/"DeskPet"/"DeepResearch"`（可见）+ `logger.warning("install root not writable; DeepResearch → <home>\\DeskPet; set DESKPET_DEEPRESEARCH_DIR to override")`。
+> **关于"不进 C 盘"的诚实说明（R2:B 提，需用户知晓）**：报告落**安装目录旁**——deskpet 装在 G:\ 则报告在 G:\，装在 C:\ 则在 C:\（尊重用户装机选择，且**不进隐藏 Roaming**，满足真实意图）。**只有** per-machine Program Files（安装根只读）才触发 `<home>` 兜底，而 `Path.home()` 在 Windows 是 `C:\Users\x`——此唯一边角无法完全避开 C 盘（单 C 盘机器本就无非 C 可写位置）；此时 `DESKPET_DEEPRESEARCH_DIR` 是逃生口。常见 NSIS per-user 安装不触发兜底。
 
 **WI-8b — `_save_report` 改用 `deepresearch_dir()`**（[research_tools.py:1770](../../backend/deskpet/tools/research_tools.py:1770)）：
 - 把 `from paths import output_dir; base = output_dir("Research")`（[:1774-1775](../../backend/deskpet/tools/research_tools.py:1774)）改为 `from paths import deepresearch_dir; base = deepresearch_dir()`。
 - 文件名沿用 `<slug>-<ts>.md`，落 `<DeepResearch>/<slug>-<ts>.md`（顶层，不再嵌 `OutPut/Research`）。
 - header 元数据不变。**保存成功后调 WI-8c 更新 index。**
 - 该改动**对扁平 + fan-out 两条路径同时生效**（都经 `_handle_deepresearch` → `_save_report`）。
+- **★R2:B 清理旧路径文案**（否则模型/用户被误导）：同步把仍写 `OutPut/Research` 的地方改为 `DeepResearch/`：
+  - tool schema 描述 [research_tools.py:1655](../../backend/deskpet/tools/research_tools.py:1655)（"报告落 OutPut/Research 文件" → "DeepResearch/"）
+  - `_save_report` docstring/注释 [:1751](../../backend/deskpet/tools/research_tools.py:1751)/[:1771](../../backend/deskpet/tools/research_tools.py:1771)
+  - SKILL.md [deep-research/SKILL.md:86](../../backend/deskpet/skills/builtin/deep-research/SKILL.md:86)（"OutPut/Research/*.md" → "DeepResearch/*.md"）
+  - 前端 ArtifactCard 只消费返回的绝对 `path`，**无硬依赖**（B2 已核），无需改。
 
 **WI-8c — `_update_deepresearch_index(report_path, topic, report)`**（research_tools.py 新增）：
 - 维护 `<DeepResearch>/index.md`：每份报告一行，**倒序**（最新在上）。表格列：日期 / 主题 / 文件(相对链接) / 来源数 / 域名数 / 模式(flat/fanout) / 子问题数。
@@ -422,29 +419,46 @@ def _install_root_for_deepresearch() -> Path | None:
 - **幂等去重**：按文件名 dedup（同文件不重复加行）。原子写（写 tmp → `os.replace`）。失败 try/except 不影响报告返回（落盘已成功）。
 - **★B-MAJOR-3 并发安全**：两个 deepresearch tool call 并发各自"读→插→replace"会丢更新。加**进程内 `asyncio.Lock`**（模块级 `_INDEX_LOCK`）串行化 index 更新（单机单后端进程足够；deskpet 是单实例桌宠，无多进程写同一 index）。**编码强制 `encoding="utf-8"`** 读写（避开 PowerShell/中文 mojibake 坑，`feedback_powershell_chinese_files`）。
 - 主题列对 `|`/换行做转义（防破坏 Markdown 表格）。
+**★R2 补全：`_INDEX_HEADER` 常量 + `_insert_row_after_header` helper 必须定义**（A2/B2 共同指出引用未定义）：
 ```python
+_INDEX_HEADER = (
+    "# DeepResearch 调研索引\n\n"
+    "> 本目录汇集本机所有 deepresearch 调研报告（倒序，最新在上）。点开文件名即可阅读复用。\n\n"
+    "| 日期 | 主题 | 文件 | 来源数 | 域名数 | 模式 | 子问题 |\n"
+    "|---|---|---|---|---|---|---|\n"
+)
 _INDEX_LOCK = asyncio.Lock()
+def _insert_row_after_header(existing: str, row: str) -> str:
+    """在表头分隔行（`|---...|`）之后插入 row（倒序首行）。找不到分隔行则视为损坏/旧档，
+    用 _INDEX_HEADER 重建再插。"""
+    lines = existing.splitlines()
+    for i, ln in enumerate(lines):
+        if set(ln.strip()) <= set("|-: ") and "-" in ln and "|" in ln:   # 表头分隔行
+            lines.insert(i + 1, row)
+            return "\n".join(lines) + "\n"
+    return _INDEX_HEADER + row + "\n"   # 兜底重建
+
 async def _update_deepresearch_index(report_path: Path, topic: str, report: ResearchReport) -> None:
     async with _INDEX_LOCK:
-        base = report_path.parent
-        idx = base / "index.md"
+        idx = report_path.parent / "index.md"
         cov = report.coverage or {}
         safe_topic = str(topic).replace("|", "/").replace("\n", " ").strip()
         row = (f"| {time.strftime('%Y-%m-%d %H:%M')} | {safe_topic} | "
                f"[{report_path.name}]({report_path.name}) | {cov.get('n_sources',0)} | "
                f"{cov.get('n_domains',0)} | {cov.get('mode','flat')} | {cov.get('n_sub_questions',0)} |")
         existing = idx.read_text(encoding="utf-8") if idx.exists() else _INDEX_HEADER
-        if report_path.name in existing:   # 幂等
+        if report_path.name in existing:   # 幂等去重
             return
-        merged = _insert_row_after_header(existing, row)   # 表头后插首行（倒序）
+        merged = _insert_row_after_header(existing, row)
         tmp = idx.with_suffix(".md.tmp")
         tmp.write_text(merged, encoding="utf-8")
-        os.replace(tmp, idx)
+        os.replace(tmp, idx)   # 原子替换（需顶部 import os，WI-5a）
 ```
 > `_save_report` 是同步函数（[:1770](../../backend/deskpet/tools/research_tools.py:1770)）；index 更新改在 `_handle_deepresearch`（async，[:1753-1765](../../backend/deskpet/tools/research_tools.py:1753) 落盘块）里 `await _update_deepresearch_index(...)`，避免在同步函数里建 event loop。`_save_report` 仅负责写报告 md + 返回 path。
 
 **WI-8d — repo README 记录 index 作用**（[`README.md`](../../README.md)）：
-- 加一节（仿现有 `plans/index.md` 在 README 的记法）：说明 `DeepResearch/`（安装目录下）汇集所有 deepresearch 报告，`DeepResearch/index.md` 是总索引（倒序、可点开），方便后续查阅复用；打包应用同样在安装目录下生成。
+- 加一节（仿现有 `plans/index.md` 在 README 的记法）：说明 `DeepResearch/`（安装目录下，运行时生成）汇集所有 deepresearch 报告，`DeepResearch/index.md` 是总索引（倒序、可点开），方便后续查阅复用；打包应用同样在安装目录下生成。
+- **★R2:B 消歧**：README [:8](../../README.md:8) 已有 `DeepResearch.md`（STATUS 状态文档链接）。新节须明确区分：**`DeepResearch.md`** = 模块状态文档（repo 内）；**`DeepResearch/`（目录）+ `DeepResearch/index.md`** = 运行时报告产物索引（安装目录下）。避免同名混淆。
 
 **WI-8e — 打包应用同逻辑（★B-MAJOR-2：覆盖 NSIS+MSI 两种安装位置）**：
 - 项目实际出 **NSIS + MSI**（[tauri.conf.json:71](../../tauri-app/src-tauri/tauri.conf.json:71) `targets:["nsis"]`、[release.ps1:66](../../scripts/release.ps1:66) `--bundles nsis msi`），backend bundle 路径 `dist-portable/deskpet-backend`（[tauri.conf.json:88](../../tauri-app/src-tauri/tauri.conf.json:88)）。
@@ -454,7 +468,7 @@ async def _update_deepresearch_index(report_path: Path, topic: str, report: Rese
 - 运行时产物，**不入安装清单**（与 userdata 同策略，卸载不删报告）。**无须改 installer**；但若要强制"永远在安装目录旁"，可在 installer 预建可写 `<install>/DeepResearch`（可选增强，非必需）。
 - 验收（TC-F6 扩展）：至少覆盖 **per-user 非 C 盘安装** 一种真机/半真机场景验证落点；Program Files 场景验 home 兜底 + warning。
 
-**测试** TG-6：`deepresearch_dir()` 三分支（env 覆盖 / frozen mock `sys.frozen`+`sys.executable` / dev repo 根 / 只读兜底）；`_update_deepresearch_index` 首建表头 + 倒序插入 + 幂等去重 + 原子写;`_save_report` 落点改到 DeepResearch（非 OutPut/Research）回归。
+**测试** TG-6（详见 §10.1）：`deepresearch_dir()` 四分支（env / frozen 可写安装根 / dev repo 根 / frozen 只读根→home 兜底**且不落 user_data_dir**）；`_install_root_for_deepresearch` 唯一 probe 名；`_INDEX_HEADER`/`_insert_row_after_header`/`_update_deepresearch_index` 首建表头 + 倒序 + 幂等 + 原子 `os.replace` + utf-8 + 转义 + Lock 串行；`_save_report` 落点为 DeepResearch；旧 `OutPut/Research` 文案已清。
 
 ### WI-7 — 测试组（详见 §10）
 
@@ -470,7 +484,8 @@ async def _update_deepresearch_index(report_path: Path, topic: str, report: Rese
 | `backend/deskpet/tools/registry.py` | （只读核实）`_session_id` 注入 params，无改动 | WI-5b |
 | `backend/config.py` | 无改动（`[research]`/`[agent.concurrency]` 纯 raw-read，挑战 B 确认够健壮） | WI-5 |
 | `backend/paths.py` | 新增 `deepresearch_dir()` + `_install_root_for_deepresearch()`（独立 probe DeepResearch 本身） | WI-8a |
-| `README.md`（repo 根） | 记录 `DeepResearch/index.md` 索引作用 | WI-8d |
+| `README.md`（repo 根） | 记录 `DeepResearch/index.md` 索引作用 + 与 `DeepResearch.md` 消歧 | WI-8d |
+| `backend/deskpet/skills/builtin/deep-research/SKILL.md` | `:86` 旧路径 `OutPut/Research`→`DeepResearch/` | WI-8b |
 | `backend/tests/test_deepresearch_subagent_fanout.py` | 新建测试组 TG-1~5 | WI-7 |
 | `backend/tests/test_deepresearch_output_dir.py` | 新建 TG-6（落盘根 + index 维护） | WI-8 |
 | `testcase/<date>-deepresearch-subagent-fanout/manual-test.md` | windows-mcp 真机 E2E | §10 |
@@ -568,3 +583,24 @@ async def _update_deepresearch_index(report_path: Path, topic: str, report: Rese
 **两轮共同确认正确（GAP，无需改）**：keyword-only 新参数不破调用（字节级 BC 靠 TG-1 diff 证）；`scheduler.run` 用法/返回值一致；LLM 全局桥 + scheduler 实例存在（driver 已落地：[config.py:424](../../backend/config.py:424)、[main.py:2007](../../backend/main.py:2007)、SubagentProgressPanel）；dev `parents[1]`=repo 根；`[research]`/`[agent]` raw 读够健壮（不必扩 config dataclass）；README 可自然插入。
 
 **结论（v0.2）**：11 项全修，待第 2 轮挑战验证收敛。
+
+### 第 2 轮对抗验证（2026-06-21，codex gpt-5.5 双验证者，逐条核 v0.2 + 猎杀补丁新坑）
+
+两名各出 NOT-EXECUTABLE。合并 **2 BLOCKING + 3 MAJOR + 杂项**，全部已吸收（v0.2 → v0.3）：
+
+| ID | 来源 | 严重 | 问题 | 修订落点 |
+|---|---|---|---|---|
+| R2-1 | A2+B2 | BLOCKING | D8 下界 clamp 45 在 `conc=1`（config 允许）时破不等式（n=6→6×45+60=330>300） | D8/WI-2 改**硬裁 n ≤ conc×max_waves(5)**，下界由裁剪保证、不再 clamp |
+| R2-2 | A2+B2 | BLOCKING | `import os` 缺、`_INDEX_HEADER`/`_insert_row_after_header` 未定义 → index 崩 | WI-5a 加 `import os`；WI-8c 补两者定义 |
+| R2-3 | A2+B2 | MAJOR | sid 子串门误杀正常 session_id（功能归零） | §5/D10 **去掉 sid 门**，递归改由 `_FORBIDDEN_IN_KIND` 剥工具硬保证 |
+| R2-4 | A2 | MAJOR | 剥工具只改 profile，overrides 仍可加回 | WI-5c 把 `deepresearch` 加进 `_FORBIDDEN_IN_KIND`（覆盖 overrides） |
+| R2-5 | A2 | MAJOR | `_finalize_report_md` 抽取易漏作用域（cc/used_refs） | WI-4 明确签名 `-> (report_md, citations, cc)`，两路只用返回值 |
+| R2-6 | B2 | MAJOR | `_install_root` probe 固定文件名并发互删 | WI-8a probe 名加 `os.getpid()` |
+| R2-7 | A2 | — | `_agent_raw` 自写 lane_caps 路径（虽对） | WI-5a 改**复用 `config.get_subagent_concurrency`**（[config.py:748]） |
+| R2-8 | B2 | MINOR | 旧 `OutPut/Research` 文案残留（schema/docstring/SKILL.md） | WI-8b 一并清理 |
+| R2-9 | B2 | MINOR | README `DeepResearch/`(目录) 与 `DeepResearch.md`(文档) 同名混淆 | WI-8d 消歧 |
+| R2-10 | B2 | 说明 | home 兜底仍在 C 盘（`Path.home()`） | WI-8a 诚实说明：唯安装根只读边角触发，env 覆盖逃生；常见 per-user 安装落安装目录旁 |
+
+**第 2 轮验证为"正确"的 v0.2 修复**：`_norm_url` 提取、WI-2 summary/no_results 构造、WI-5d logger/_rt 接线、`parent_sid=_session_id`、子报告脚注 strip/rewrite、dev `parents[1]`=repo 根、`lane_caps` 嵌套路径、NSIS/MSI 判断。
+
+**结论（v0.3）**：第 2 轮 BLOCKING/MAJOR 全修；预算不等式现由"硬裁 n"在任意 config（含 conc=1）下可证成立，递归守门改为不依赖 sid 的剥工具硬保证。**待第 3 轮收敛验证。**
