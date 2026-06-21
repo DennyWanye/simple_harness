@@ -29,6 +29,10 @@ from pathlib import Path as _Path
 
 import structlog
 import uvicorn
+from deskpet.session.task_scope import (
+    TaskScopeDecision,
+    task_session_manager,
+)
 
 # P2-2 debug (2026-04-20): Rust supervisor drains child stdout/stderr after
 # the SHARED_SECRET handshake, so structlog's console output vanishes once
@@ -3095,6 +3099,56 @@ app.add_middleware(
 
 # Track control channel connections for lip-sync forwarding
 _control_connections: dict[str, WebSocket] = {}
+# Transport websocket sid -> effective chat sid shown by that peer.
+_chat_peer_groups: dict[str, str] = {
+    "default": "default",
+    "message-panel-main": "default",
+}
+
+
+def _initial_chat_peer_group(transport_sid: str) -> str:
+    if transport_sid in {"default", "message-panel-main"}:
+        return task_session_manager.active_sid("default")
+    return task_session_manager.active_sid(transport_sid)
+
+
+def _register_chat_peer(transport_sid: str) -> str:
+    sid = transport_sid or "default"
+    task_session_manager.register_peer(sid)
+    group = _chat_peer_groups.get(sid)
+    if group is None:
+        group = _initial_chat_peer_group(sid)
+        _chat_peer_groups[sid] = group
+    return group
+
+
+def _remap_chat_peer_group(transport_sid: str, effective_sid: str) -> None:
+    sid = transport_sid or "default"
+    old_group = _chat_peer_groups.get(sid, _initial_chat_peer_group(sid))
+    _chat_peer_groups.setdefault(sid, old_group)
+    for peer_sid, group in list(_chat_peer_groups.items()):
+        if group == old_group:
+            _chat_peer_groups[peer_sid] = effective_sid
+    task_session_manager.remap_peer_group(sid, effective_sid)
+
+
+def _resolve_chat_task_scope(
+    *,
+    base_sid: str,
+    text: str,
+    payload: dict,
+) -> TaskScopeDecision:
+    payload = payload or {}
+    force_l2 = bool(payload.get("force_l2")) or (text or "").startswith("/continue")
+    decision = task_session_manager.resolve(
+        base_sid,
+        text or "",
+        explicit_new=bool(payload.get("new_session")),
+        force_l2=force_l2,
+    )
+    if decision.created:
+        _remap_chat_peer_group(base_sid, decision.effective_sid)
+    return decision
 
 
 # 2026-05-28 — per-session context-usage snapshot for the frontend Claude-Code-
@@ -3402,10 +3456,15 @@ async def _broadcast_default_chat_peers(originator_ws: WebSocket, msg: dict) -> 
     payload = msg.get("payload") or {}
     if not isinstance(payload, dict):
         return
-    if payload.get("session_id") != "default":
+    payload_sid = payload.get("session_id") or payload.get("new_sid")
+    if not payload_sid:
         return
     for _peer_sid, _peer_ws in list(_control_connections.items()):
         if _peer_ws is originator_ws:
+            continue
+        _main_group = _chat_peer_groups.get(_peer_sid, _initial_chat_peer_group(_peer_sid))
+        _manager_group = task_session_manager.peer_group(_peer_sid)
+        if _main_group != payload_sid and _manager_group != payload_sid:
             continue
         try:
             await _peer_ws.send_json(msg)
@@ -3984,6 +4043,7 @@ async def control_channel(ws: WebSocket):
         return
 
     session_id = ws.query_params.get("session_id", "default")
+    _register_chat_peer(session_id)
     # P4-S20: gracefully kick the previous holder of this session_id
     # (e.g. an old E2E client) so its disconnect callback doesn't
     # later pop OUR entry. Don't kill ourselves if we're the holder.
@@ -5399,6 +5459,27 @@ async def control_channel(ws: WebSocket):
                 _payload = raw.get("payload", {}) or {}
                 text = _payload.get("text", "")
                 _msg_sid = _payload.get("session_id") or session_id
+                _base_msg_sid = _msg_sid
+                _scope_decision = _resolve_chat_task_scope(
+                    base_sid=_msg_sid,
+                    text=text,
+                    payload=_payload,
+                )
+                _msg_sid = _scope_decision.effective_sid
+                text = _scope_decision.stripped_text
+                if _scope_decision.created:
+                    _switch_payload = {
+                        "old_sid": _base_msg_sid,
+                        "new_sid": _msg_sid,
+                        "reason": _scope_decision.reason,
+                    }
+                    for _evt_type in ("session_switched", "task_session_started"):
+                        _switch_evt = {"type": _evt_type, "payload": dict(_switch_payload)}
+                        try:
+                            await ws.send_json(_switch_evt)
+                        except Exception:
+                            pass
+                        await _broadcast_default_chat_peers(ws, _switch_evt)
                 if (
                     deskpet_tool_registry_v2 is None
                     or permission_gate_v2 is None
@@ -5475,7 +5556,7 @@ async def control_channel(ws: WebSocket):
                     # 广播给同 "default" 会话的其他控制通道 (主桌宠 + 消息
                     # 面板互相同步)。originating WS 已经本地 push_message
                     # 过了，所以跳过 originator 避免重复。
-                    if not _is_sentinel and _sid == "default":
+                    if not _is_sentinel:
                         _user_echo_evt = {
                             "type": "chat_v2_user_echo",
                             "payload": {"session_id": _sid, "text": _text},
@@ -6320,6 +6401,7 @@ async def control_channel(ws: WebSocket):
                             stream=True,
                             provider_chain=_provider_chain,
                             loop_user_request=(None if _is_sentinel else _text),
+                            is_sentinel_run=_is_sentinel,
                         ):
                             # WI-A1: track tool usage for intent memory.
                             if isinstance(ev, _TCEv) and getattr(ev, "tool_call", None):

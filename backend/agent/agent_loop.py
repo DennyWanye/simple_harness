@@ -608,6 +608,7 @@ class AgentLoop:
         stream: bool = False,
         provider_chain: Optional[list[Any]] = None,
         loop_user_request: Optional[str] = None,
+        is_sentinel_run: bool = False,
         **llm_kwargs: Any,
     ) -> AsyncIterator[AgentEvent]:
         """Drive the ReAct loop. See module docstring for event contract.
@@ -1889,6 +1890,22 @@ class AgentLoop:
                     tool_schemas,
                     loop_user_request=loop_user_request,
                 )
+
+            if is_sentinel_run and any(tc.name == "deepresearch" for tc in response.tool_calls):
+                yield FinalEvent(
+                    type="final",
+                    task_id=tid,
+                    iteration=iteration,
+                    content=(
+                        "Auto-resume sentinel cannot start deepresearch. "
+                        "Please explicitly send a research request."
+                    ),
+                    total_input_tokens=totals["input"],
+                    total_output_tokens=totals["output"],
+                    total_cache_read_tokens=totals["cache_read"],
+                    total_cache_write_tokens=totals["cache_write"],
+                )
+                return
 
             if self.activity_store is not None:
                 from agent.session_activity import args_hash as _args_hash  # noqa: PLC0415

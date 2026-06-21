@@ -11,6 +11,7 @@ import numpy as np
 import structlog
 from fastapi import WebSocket
 
+from deskpet.session.task_scope import task_session_manager
 from observability.metrics import stage_timer
 from pipeline.barge_in_filter import BargeInFilter
 from pipeline.tag_parser import StreamingTagParser, TagEvent
@@ -154,7 +155,12 @@ class VoicePipeline:
         except Exception:
             pass  # control channel may have disconnected
 
-    async def _broadcast_chat_v2(self, msg_type: str, text: str) -> None:
+    async def _broadcast_chat_v2(
+        self,
+        msg_type: str,
+        text: str,
+        session_id: str | None = None,
+    ) -> None:
         """VOICE-MSGPANEL-SYNC: 把一轮语音对话 fan-out 给**其它** control 通道。
 
         桌宠主窗口和「消息·主线程」消息框是两个独立 Tauri 窗口、各自独立的
@@ -171,12 +177,13 @@ class VoicePipeline:
         """
         # 注：不再依赖 self.control_ws（audio 连接时的快照，backend respawn 后可能
         # None/失效）。originator 由注入的 _voice_broadcast 闭包在广播时实时解析。
-        if not (self._broadcast and self.session_id == "default"):
+        effective_sid = session_id or self.session_id
+        if not self._broadcast:
             return
         try:
             await self._broadcast(self.control_ws, {
                 "type": msg_type,
-                "payload": {"session_id": "default", "text": text},
+                "payload": {"session_id": effective_sid, "text": text},
             })
         except Exception as exc:  # noqa: BLE001
             logger.warning("voice_broadcast_failed", msg_type=msg_type, error=str(exc))
@@ -288,6 +295,16 @@ class VoicePipeline:
                 text = await self.asr.transcribe(audio_bytes)
             if not text.strip():
                 return
+            decision = task_session_manager.resolve(
+                self.session_id,
+                text,
+                explicit_new=False,
+                force_l2=(text or "").startswith("/continue"),
+            )
+            effective_sid = decision.effective_sid
+            if decision.created:
+                task_session_manager.remap_peer_group(self.session_id, effective_sid)
+            text = decision.stripped_text
 
             logger.info("user_said", text=text)
             await audio_ws.send_json({
@@ -296,7 +313,11 @@ class VoicePipeline:
             })
             # VOICE-MSGPANEL-SYNC: user 这句同步给其它窗口（消息框），与文字
             # chat_v2_user_echo 同构。
-            await self._broadcast_chat_v2("chat_v2_user_echo", text)
+            await self._broadcast_chat_v2(
+                "chat_v2_user_echo",
+                text,
+                session_id=effective_sid,
+            )
 
             # Step 2: Agent — two paths.
             #
@@ -312,7 +333,11 @@ class VoicePipeline:
                 and self._permission_gate_v2 is not None
                 and self._local_llm is not None
             ):
-                response_text = await self._run_with_tools(text, audio_ws)
+                response_text = await self._run_with_tools(
+                    text,
+                    audio_ws,
+                    session_id=effective_sid,
+                )
             else:
                 response_text = await self._run_legacy_chat_stream(text)
 
@@ -356,7 +381,11 @@ class VoicePipeline:
                 "payload": transcript_payload,
             })
             # VOICE-MSGPANEL-SYNC: assistant 回复同步给其它窗口（chat_v2_final）。
-            await self._broadcast_chat_v2("chat_v2_final", response_text)
+            await self._broadcast_chat_v2(
+                "chat_v2_final",
+                response_text,
+                session_id=effective_sid,
+            )
 
             # Step 3: TTS (PCM16 24kHz stream via ffmpeg pipe — P2-2-M2)
             # Binary frame layout: 1-byte type header + audio data.
@@ -403,6 +432,7 @@ class VoicePipeline:
                 "type": "tts_end",
                 "payload": {},
             })
+            return response_text
 
         except asyncio.CancelledError:
             logger.info("utterance_cancelled")
@@ -457,7 +487,13 @@ class VoicePipeline:
                     response_text += item
         return response_text
 
-    async def _run_with_tools(self, text: str, audio_ws: WebSocket) -> str:
+    async def _run_with_tools(
+        self,
+        text: str,
+        audio_ws: WebSocket,
+        *,
+        session_id: str | None = None,
+    ) -> str:
         """P4-S21 #13 path: route voice through AgentLoop tool-use loop.
 
         Mirrors main.py's `_run_chat`:
@@ -477,6 +513,7 @@ class VoicePipeline:
         """
         from deskpet.agent.assembler.bundle import ContextBundle as _Bundle  # noqa: F401  (used via assembler)
         sc = self._service_context
+        effective_sid = session_id or self.session_id
 
         def _ctx(name: str):
             getter = getattr(sc, "get", None)
@@ -491,7 +528,7 @@ class VoicePipeline:
         if sdb is not None:
             try:
                 user_msg_id = await sdb.append_message(
-                    session_id=self.session_id, role="user", content=text,
+                    session_id=effective_sid, role="user", content=text,
                 )
                 if vw is not None and user_msg_id is not None:
                     await vw.enqueue(user_msg_id, text)
@@ -509,7 +546,7 @@ class VoicePipeline:
                     tool_registry=_ctx("tool_router"),
                     skill_registry=_ctx("skill_loader"),
                     mcp_manager=_ctx("mcp_manager"),
-                    session_id=self.session_id,
+                    session_id=effective_sid,
                     config={
                         "llm": {
                             "model": getattr(self._local_llm, "model", "unknown"),
@@ -611,9 +648,13 @@ class VoicePipeline:
             except Exception:  # noqa: BLE001 — defensive
                 pass
 
-        async with stage_timer("agent", session_id=self.session_id):
+        async with stage_timer("agent", session_id=effective_sid):
             try:
-                async for ev in loop.run(messages, session_id=self.session_id):
+                async for ev in loop.run(
+                    messages,
+                    session_id=effective_sid,
+                    loop_user_request=text,
+                ):
                     if self._interrupted:
                         logger.info("agent_interrupted")
                         break
@@ -703,7 +744,7 @@ class VoicePipeline:
         if sdb is not None and response_text:
             try:
                 asst_id = await sdb.append_message(
-                    session_id=self.session_id,
+                    session_id=effective_sid,
                     role="assistant",
                     content=response_text,
                 )

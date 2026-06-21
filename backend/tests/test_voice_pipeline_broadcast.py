@@ -117,14 +117,17 @@ async def test_default_session_broadcasts_user_and_final():
 
 
 @pytest.mark.asyncio
-async def test_non_default_session_does_not_broadcast():
+async def test_non_default_session_broadcasts_when_broadcaster_is_injected():
     """非 default 会话（code-*）不广播 —— 只有 companion 主线程需要多窗口同步。"""
     bc = _RecordingBroadcast()
     pipe = _make_pipe(session_id="code-abc123", broadcast=bc)
 
     await pipe._process_utterance(b"fake", _FakeWS())
 
-    assert bc.calls == [], f"non-default session must not broadcast, got: {bc.calls}"
+    assert [msg["payload"]["session_id"] for _, msg in bc.calls] == [
+        "code-abc123",
+        "code-abc123",
+    ]
 
 
 @pytest.mark.asyncio
