@@ -17,11 +17,13 @@ from deskpet.frozen_worker_dispatch import dispatch_frozen_worker_if_requested
 dispatch_frozen_worker_if_requested()
 
 import asyncio
+import json
 import os
 import re
 import secrets
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 import logging
@@ -146,6 +148,15 @@ from router.hybrid_router import HybridRouter, LLMUnavailableError, RoutingStrat
 from billing.ledger import BillingLedger
 
 from config import resolve_cloud_api_key as _resolve_cloud_api_key  # P2-1-S3
+from deskpet.tools import ppt_tools
+from deskpet.tools.ppt_outline_store import (
+    PPTOutlineWaiters,
+    expire_dangling_proposed,
+    list_history,
+    mark_status,
+    save_outline,
+)
+from deskpet.tools.ppt_tools import _ppt_pro_cfg
 
 # P4-S20-LLM-Unified: runtime overrides — settings panel 里改的会写到这个文件，
 # 启动时读它覆盖 config.toml [llm] 段（只 base_url / model / temperature；
@@ -2270,6 +2281,12 @@ async def lifespan(app: FastAPI):
             logger.info("p4_session_db_ready", path=str(_sdb._db_path))
         except Exception as exc:
             logger.warning("p4_session_db_init_failed", error=str(exc))
+    _expire_ppt_outline_dangling_for_startup()
+    try:
+        _wire_ppt_pro_services_for_startup()
+        logger.info("ppt_pro_services_wired")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ppt_pro_services_wire_failed", error=str(exc))
     # P4-S25 B4: restore persisted code-mode projects from SessionDB.
     # Done after _sdb.initialize() so migration v13 (code_sessions
     # table) is in place. Failure is non-fatal — user just sees an
@@ -3099,11 +3116,203 @@ app.add_middleware(
 
 # Track control channel connections for lip-sync forwarding
 _control_connections: dict[str, WebSocket] = {}
+_PPT_OUTLINE_WAITERS = PPTOutlineWaiters()
 # Transport websocket sid -> effective chat sid shown by that peer.
 _chat_peer_groups: dict[str, str] = {
     "default": "default",
     "message-panel-main": "default",
 }
+
+
+async def _broadcast_control(msg: dict) -> None:
+    """Best-effort fan-out to every control websocket."""
+    for _sid, _ws in list(_control_connections.items()):
+        try:
+            await _ws.send_json(msg)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("control_broadcast_failed sid=%s err=%s", _sid, exc)
+
+
+async def _ppt_outline_propose(
+    sid: str,
+    *,
+    topic,
+    slides,
+    sources_count,
+    outline_md,
+    no_research,
+) -> dict:
+    oid = uuid.uuid4().hex
+    cfg = _ppt_pro_cfg()
+    history_enabled = bool(getattr(cfg, "outline_history", False))
+    if history_enabled:
+        save_outline(oid, sid, topic, slides, int(sources_count or 0))
+
+    payload = {
+        "outline_id": oid,
+        "topic": topic,
+        "outline_md": outline_md,
+        "session_id": sid,
+        "sources_count": int(sources_count or 0),
+        "no_research": bool(no_research),
+        "history": list_history(sid, 20) if history_enabled else [],
+    }
+    await _broadcast_control({"type": "ppt_outline_proposed", "payload": payload})
+
+    loop = asyncio.get_running_loop()
+    fut = loop.create_future()
+    _PPT_OUTLINE_WAITERS.add(oid, fut)
+    try:
+        decision = await asyncio.wait_for(
+            fut,
+            float(getattr(cfg, "confirm_timeout_s", 1800.0) or 1800.0),
+        )
+    except asyncio.TimeoutError:
+        decision = {"action": "cancel"}
+    except asyncio.CancelledError:
+        mark_status(oid, "cancelled")
+        raise
+    finally:
+        _PPT_OUTLINE_WAITERS.pop(oid)
+
+    action = str((decision or {}).get("action") or "").lower()
+    mark_status(
+        oid,
+        {
+            "accept": "accepted",
+            "modify": "proposed",
+            "cancel": "cancelled",
+            "reuse": "accepted",
+        }.get(action, "rejected"),
+    )
+    return dict(decision or {})
+
+
+async def _handle_control_ws_message(raw: dict, *, session_id: str, ws: WebSocket) -> bool:  # noqa: ARG001
+    msg_type = raw.get("type", "")
+    if msg_type != "ppt_outline_decision":
+        return False
+    payload = raw.get("payload", {}) or {}
+    oid = str(payload.get("outline_id") or "")
+    decision = {
+        "action": str(payload.get("action") or "").strip().lower(),
+        "feedback": str(payload.get("feedback") or ""),
+        "reuse_id": payload.get("reuse_id") or None,
+    }
+    if oid and _PPT_OUTLINE_WAITERS.resolve(oid, decision):
+        await _broadcast_control({
+            "type": "ppt_outline_resolved",
+            "payload": {"outline_id": oid},
+        })
+        logger.info("ppt_outline_decision_resolved", outline_id=oid)
+    else:
+        logger.info("ppt_outline_decision_no_pending", outline_id=oid)
+    return True
+
+
+async def _ppt_notify_chat_bubble(sid: str, text: str) -> None:
+    msg = {
+        "type": "chat_response",
+        "payload": {
+            "text": str(text or ""),
+            "provider": "ppt_pro",
+            "session_id": sid or "default",
+        },
+    }
+    ws = _control_connections.get(sid) or _control_connections.get("default")
+    if ws is None:
+        return
+    try:
+        await ws.send_json(msg)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("ppt_notify_send_failed sid=%s err=%s", sid, exc)
+        return
+    await _broadcast_default_chat_peers(ws, msg)
+
+
+async def _ppt_artifact_push(sid: str, artifacts: list, text: str = "") -> None:
+    payload = {
+        "tool": "ppt_pro",
+        "ok": True,
+        "result": text or "",
+        "text": text or "",
+        "artifacts": list(artifacts or []),
+        "session_id": sid or "default",
+    }
+    msg = {"type": "tool_result", "payload": payload}
+    ws = _control_connections.get(sid) or _control_connections.get("default")
+    if ws is not None:
+        try:
+            await ws.send_json(msg)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("ppt_artifact_push_send_failed sid=%s err=%s", sid, exc)
+        else:
+            await _broadcast_default_chat_peers(ws, msg)
+
+    sdb = service_context.get("session_db")
+    if sdb is not None:
+        try:
+            await sdb.append_message(
+                session_id=sid or "default",
+                role="tool",
+                content=json.dumps(payload, ensure_ascii=False),
+                tool_call_id="",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ppt_artifact_push_persist_failed", error=str(exc))
+
+
+def _ppt_receipt_report(
+    sid: str,
+    *,
+    tool: str = "ppt_pro",
+    outcome,
+    path=None,
+    shas=None,
+) -> None:
+    try:
+        store_getter = globals().get("_get_receipt_store")
+        store = store_getter() if callable(store_getter) else None
+        if store is None:
+            return
+        from deskpet.tools.receipt_store import emit_receipt
+
+        now = datetime.now(timezone.utc)
+        ok = str(outcome or "").lower() in {"ok", "success", "succeeded"}
+        emit_receipt(
+            store,
+            tool_name=str(tool or "ppt_pro"),
+            args={"outcome": outcome, "path": path},
+            started_at=now,
+            ended_at=now,
+            ok=ok,
+            session_id=sid or "default",
+            artifact_shas=list(shas or []) or None,
+            error_class=None if ok else str(outcome or "failed"),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ppt_receipt_report_failed", error=str(exc))
+
+
+def _expire_ppt_outline_dangling_for_startup() -> int:
+    try:
+        expired = int(expire_dangling_proposed() or 0)
+        if expired:
+            logger.info("ppt_outline_expired_dangling", count=expired)
+        return expired
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ppt_outline_expire_startup_failed", error=str(exc))
+        return 0
+
+
+def _wire_ppt_pro_services_for_startup() -> None:
+    ppt_tools.set_ppt_pro_services(
+        outline_propose=_ppt_outline_propose,
+        notifier=_ppt_notify_chat_bubble,
+        run_blocking=lambda fn: asyncio.get_running_loop().run_in_executor(None, fn),
+        artifact_pusher=_ppt_artifact_push,
+        receipt_reporter=_ppt_receipt_report,
+    )
 
 
 def _initial_chat_peer_group(transport_sid: str) -> str:
@@ -4069,6 +4278,9 @@ async def control_channel(ws: WebSocket):
         while True:
             raw = await ws.receive_json()
             msg_type = raw.get("type", "")
+
+            if await _handle_control_ws_message(raw, session_id=session_id, ws=ws):
+                continue
 
             if msg_type == "ping":
                 await ws.send_json({"type": "pong"})
