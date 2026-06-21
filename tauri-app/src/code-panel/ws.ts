@@ -397,6 +397,8 @@ function dispatch(msg: any) {
           task_id: String(p.task_id || ""),
           kind: String(p.kind || ""),
           status: String(p.status || "queued"),
+          // 排队中被取消时后端发 reason="cancelled" → 前端区分「已取消」与「失败」。
+          reason: typeof p.reason === "string" ? p.reason : undefined,
           summary: typeof p.summary === "string" ? p.summary : undefined,
           ts: typeof p.ts === "number" ? p.ts : Date.now(),
         });

@@ -138,19 +138,22 @@ class SubagentScheduler:
                             }
                         )
                         return out
-                    except BaseException:
-                        # BaseException 含 CancelledError —— 取消也要发 failed 进度
-                        self._emit(
-                            {
-                                "run_id": run_id,
-                                "kind": kind,
-                                "task_id": task_id,
-                                "parent_sid": parent_sid,
-                                "status": "failed",
-                                "duration_ms": int((time.time() - t0) * 1000),
-                                "ts": time.time(),
-                            }
-                        )
+                    except BaseException as exc:
+                        # BaseException 含 CancelledError —— 取消也要发 failed 进度。
+                        # 区分主动取消 vs 真失败：取消时带 reason="cancelled"，前端据此
+                        # 渲染「🚫 已取消」而非「❌ 失败」（与排队期取消的归一一致）。
+                        _ev = {
+                            "run_id": run_id,
+                            "kind": kind,
+                            "task_id": task_id,
+                            "parent_sid": parent_sid,
+                            "status": "failed",
+                            "duration_ms": int((time.time() - t0) * 1000),
+                            "ts": time.time(),
+                        }
+                        if isinstance(exc, asyncio.CancelledError):
+                            _ev["reason"] = "cancelled"
+                        self._emit(_ev)
                         raise
                     finally:
                         self._running -= 1

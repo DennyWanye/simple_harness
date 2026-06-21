@@ -174,6 +174,61 @@ def test_queued_cancel_emits_terminal_progress():  # 0.2.7
     assert snap == {"running": 0, "queued": 0}
 
 
+def test_running_cancel_tags_reason_cancelled():  # 0.2.8
+    """运行中（已拿到信号量）被取消 → failed 带 reason="cancelled"。
+
+    与 0.2.4 真失败(ValueError, reason=None)区分：前端据 reason 把「取消」
+    渲染成 🚫 而非 ❌（运行态/排队态取消归一一致）。
+    """
+    events: list[tuple[str, str | None]] = []
+
+    async def body():
+        sched = SubagentScheduler(
+            progress_sink=lambda p: events.append((p["status"], p.get("reason")))
+        )
+        running = asyncio.Event()
+
+        async def long_task():
+            running.set()
+            await asyncio.sleep(1.0)  # 跑起来后挂住，等被取消
+
+        t = asyncio.create_task(
+            sched.run(kind="general", run_id="r1", task_id="t1",
+                      parent_sid="p", coro_factory=long_task)
+        )
+        await running.wait()  # 确保已进 running（拿到双闸）
+        t.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await t
+        return sched.snapshot()
+
+    snap = _run(body())
+    assert ("running", None) in events       # 真进过 running
+    assert ("failed", "cancelled") in events  # 取消态带 reason
+    assert snap == {"running": 0, "queued": 0}  # 无泄漏
+
+
+def test_genuine_failure_has_no_cancelled_reason():  # 0.2.9
+    """真失败(非取消)不得带 reason="cancelled" —— 锁住「取消 vs 失败」区分。"""
+    events: list[tuple[str, str | None]] = []
+
+    async def body():
+        sched = SubagentScheduler(
+            progress_sink=lambda p: events.append((p["status"], p.get("reason")))
+        )
+
+        async def boom():
+            raise ValueError("nope")
+
+        await sched.run(kind="general", run_id="r1", task_id="t1",
+                        parent_sid="p", coro_factory=boom)
+
+    with pytest.raises(ValueError):
+        _run(body())
+    assert ("failed", None) in events                  # 失败但无 cancelled 标记
+    assert ("failed", "cancelled") not in events
+
+
 def test_snapshot_returns_to_zero():  # 0.2.6
     async def body():
         sched = SubagentScheduler(global_concurrency=2)

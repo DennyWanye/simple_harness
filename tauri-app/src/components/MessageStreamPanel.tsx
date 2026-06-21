@@ -36,6 +36,9 @@ import {
 const MSGSTREAM_SCROLL_KEY = "deskpet.msgstream.scroll.v1";
 
 import type { InboxItem } from "../stores/sessionsStore";
+// 子代理并发进度卡片（深色变体，与本面板玻璃拟态一致）。runs 空时自渲染 null，
+// 零侵入；数据由本窗口 codePanelWS 的 subagent_progress 派发喂 subagentStore。
+import { SubagentProgressPanel } from "../code-panel/SubagentProgressPanel";
 
 export type StreamFilter = "all" | "chat" | "warn" | "err";
 
@@ -176,6 +179,10 @@ export function MessageStreamPanel({
           (filter==warn|err 才显示) 在 filter 锁定 "all" 后自然不再渲染。
           对应 onSetFilter / onDismissAll / FilterChip / sweepBarStyle / pillButton
           变成未使用，但 prop 接口保留以兼容 caller。 */}
+
+      {/* 子代理并发实时进度：钉在消息流顶部（list 之上，不随滚动），始终可见。
+          无并发任务时该组件返回 null，不占位。 */}
+      <SubagentProgressPanel variant="dark" />
 
       <div ref={listRef} style={listStyle} onScroll={handleListScroll}>
         {rows.length === 0 ? (

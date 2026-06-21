@@ -16,6 +16,9 @@ export interface SubagentRunView {
   task_id: string;
   kind: string;
   status: string; // queued | running | completed | failed
+  /** 终态补充原因。后端排队中被取消时发 status="failed" + reason="cancelled"，
+   * 前端据此把该行渲染成「🚫 已取消」而非「❌ 失败」（见 SubagentProgressPanel）。 */
+  reason?: string;
   summary?: string;
   ts: number;
 }

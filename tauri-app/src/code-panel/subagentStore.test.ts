@@ -50,6 +50,15 @@ describe("subagentStore (WI-3.4)", () => {
     expect(useSubagentStore.getState().runs["vic"]).toBeUndefined(); // 终态可清
   });
 
+  it("carries reason on terminal events (cancelled vs failed)", () => {
+    const s = useSubagentStore.getState();
+    s.upsert({ run_id: "vic", kind: "research", status: "queued", ts: 1 });
+    s.upsert({ run_id: "vic", status: "failed", reason: "cancelled", ts: 2 });
+    const run = useSubagentStore.getState().runs["vic"];
+    expect(run.status).toBe("failed");
+    expect(run.reason).toBe("cancelled"); // 用于前端区分「已取消」与「失败」
+  });
+
   it("clear removes everything", () => {
     useSubagentStore.getState().upsert({ run_id: "a", status: "running", ts: 1 });
     useSubagentStore.getState().clear();

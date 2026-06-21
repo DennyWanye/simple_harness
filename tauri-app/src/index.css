@@ -211,3 +211,24 @@ input, textarea, [contenteditable="true"], pre, code,
 .bp-tab-active:hover {
   background: #2563eb !important;
 }
+
+/* ── 子代理并发进度卡片动画（SubagentProgressPanel） ───────────────────
+   出现淡入 + running 图标/状态点脉冲。仅运行态用动画，终态静止省 GPU。 */
+@keyframes deskpet-subagent-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes deskpet-subagent-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+.deskpet-subagent-card {
+  animation: deskpet-subagent-in 0.22s ease-out;
+}
+.deskpet-subagent-pulse {
+  display: inline-block;
+  animation: deskpet-subagent-pulse 1.1s ease-in-out infinite;
+}
+.deskpet-subagent-dot {
+  animation: deskpet-subagent-pulse 1.1s ease-in-out infinite;
+}
