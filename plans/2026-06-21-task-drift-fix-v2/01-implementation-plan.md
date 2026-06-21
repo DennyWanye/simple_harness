@@ -82,7 +82,7 @@ fanout 已隔离（§0），不改隔离。仅：`test_deepresearch_subagent_fan
 `pipeline/voice_pipeline.py`：
 - `:616` `loop.run(messages, session_id=self.session_id)` **补 `loop_user_request=text`**（`text` 在 `_run_with_tools(self, text, audio_ws)` 作用域=本轮语音原话，R2-C 已验证生效）。
 - 配合 T1-1：voice 也要 resolve effective sid，且**全链路统一**——`:493/494` append、`:512` assembler、`:616` run、`:706` assistant 落库**都用同一 effective sid**（否则"用户写新 scope、组装/回复写旧 scope"）。
-- **voice user echo 广播点（R5 补 — 漏网）**：`_process_utterance` 在 `:299` 调 `_broadcast_chat_v2("chat_v2_user_echo", text)`，而 `_broadcast_chat_v2`（`:174` `self.session_id == "default"` 门 + `:179` payload 写死 `"session_id":"default"`）会让切到 `task-*` 的语音轮 echo 仍广播到 default → 数据流断。改：`_broadcast_chat_v2` **加 `session_id` 参数**，payload 用 effective sid，**去掉 `self.session_id == "default"` 门**，按组过滤交给 `_broadcast_default_chat_peers`；`:299` 先 resolve 得 `effective_sid`/`stripped_text` 再 echo。
+- **voice 广播点（R5+R6 补 — `_broadcast_chat_v2` 全部调用点）**：`_broadcast_chat_v2`（`:174` `self.session_id == "default"` 门 + `:179` payload 写死 `"session_id":"default"`）会让切到 `task-*` 的语音轮广播仍落 default → 数据流断。改：① `_broadcast_chat_v2` **加 `session_id: str` 参数（给默认值 `=None`→回退 `self.session_id`，保 BC 不破坏其它调用）**，payload 用该 sid，**去掉 `self.session_id == "default"` 门**，按组过滤交给 `_broadcast_default_chat_peers`；② **grep `_broadcast_chat_v2(` 的全部调用点，逐一传 `effective_sid`**——已知至少两处：`:299 chat_v2_user_echo`（先 resolve 得 `effective_sid`/`stripped_text` 再 echo）+ `:359 chat_v2_final`（assistant final 同步）。实现时 grep 确认无第三处遗漏。
 - 单测：mock voice pipeline 断言 `loop_user_request` 透传 + **`/new`/active `task-*` 时 echo/append/assemble/loop/assistant 五处 sid 一致**。
 
 ---
@@ -198,3 +198,6 @@ T0-2 假设错→验证+断言；漂移两层；T0-1 全替换表；voice 缺 Fi
 
 ## §13 codex R5 已纳入（防遗忘）
 §4 补 voice user echo 广播漏网点 `voice_pipeline.py:174/179/299`（`_broadcast_chat_v2` 加 `session_id` 参数 + 去掉 `==default` 门 + payload 用 effective sid + 按组过滤）；单测补 voice 五处 sid 一致。R5 另**核验通过**：R4 两项（`main.py:5478` 去 `==default`、§6 `/continue` `force_l2` 消费链路到 `assemble(memory_policy_override)`）落点与数据流可执行。
+
+## §14 codex R6 已纳入（防遗忘）
+§4 voice 广播改为覆盖 `_broadcast_chat_v2` **全部调用点**（`:299 chat_v2_user_echo` + `:359 chat_v2_final`，加 `session_id=None` 默认参数保 BC，实现时 grep 全调用点）。R6 **核验通过其余全部**：deepresearch §1 16 项行号/替换方向对齐当前代码、`:1795/1799` 准；main `_sid=="default"` 调用侧、group helper、sentinel 显式 flag、`/continue` override 链路、Tier2 关闭顺序均已覆盖，无新阻碍。
