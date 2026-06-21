@@ -1,7 +1,7 @@
 # PPT 能力优化 — DeepResearch 调研 → 大纲确认 → 惊艳生图(gpt-image-2) / 模板兜底
 
-> **状态**: **v1.2 — 用户 4 项决策已并入 + R4 对 F3 大纲卡 delta 的 3 个 MAJOR 已全部消解（§6 R-18/19/20）。作者判定 EXECUTABLE-AS-IS，待用户最终拍板执行。**
-> **对抗轨迹**：R1 codex 4B+3M / architect 2B+4M → R2 codex 1B+3M → R3 codex **EXECUTABLE-AS-IS**（v1.0 LOCKED）→ v1.1 并入用户决策（FP-5 风格大纲卡+历史/deep档/落盘/不注明费用）→ R4 codex **0 BLOCKING+3 MAJOR**（全在大纲卡 delta）→ v1.2 消解（WS 广播+去重 / reload 两层持久化 / 同主题挡-异主题替换）。BLOCKING 轨迹 6→1→0→0 已收敛。挑战记录见 `.challenge-r{1,2,3,4}.out`。
+> **状态**: **v1.3 — R5 揪出 v1.2 修复自身的 1 BLOCKING+2 MAJOR（并发/生命周期细节）已全部消解（§6 R-19/20/21）。待 R6 微确认后即 EXECUTABLE-AS-IS。**
+> **对抗轨迹**：R1 codex 4B+3M / architect 2B+4M → R2 codex 1B+3M → R3 codex **EXECUTABLE-AS-IS**（v1.0 LOCKED）→ v1.1 并入用户决策（FP-5 风格大纲卡+历史/deep档/落盘/不注明费用）→ R4 codex 0B+3M（大纲卡 delta）→ v1.2 → R5 codex 1B+2M（v1.2 修复自身的并发细节：cancel-race/跨重启死卡/double-pop）→ v1.3 消解。挑战记录见 `.challenge-r{1..5}.out`。
 > **建档**: 2026-06-21
 > **作者**: Claude (Lead) · 对抗：codex gpt-5.5（只读，2 轮）+ architect 子代理
 > **前置阅读**: [STATUS/PPT.md](../../STATUS/PPT.md) · [STATUS/DeepResearch.md](../../STATUS/DeepResearch.md) · [STATUS/AgentLoop.md](../../STATUS/AgentLoop.md)
@@ -287,7 +287,7 @@ async def _draft_outline_from_research(
 > **天然契合**：`ppt_pro` 编排已是独立 task（R-4 修复），在其中 propose 卡 + await Future 不受 chat preempt 影响——比 ask_clarification 更顺。
 
 **文件 A 新增** `backend/deskpet/tools/ppt_outline_store.py`（仿 `skill_codifier` 的 waiters + 仿 `receipt_store`/SessionDB 的持久化）：
-- `class PPTOutlineWaiters`：`dict[str, asyncio.Future]`，`add(oid, fut)/resolve(oid, decision)/pop(oid)`（照搬 `SkillCandidateWaiters` @skill_codifier:285-317）。
+- `class PPTOutlineWaiters`：`dict[str, asyncio.Future]`，`add(oid, fut)/resolve(oid, decision)/pop(oid)`（照搬 `SkillCandidateWaiters` @skill_codifier:285-317）。**`pop` 实现为幂等 `self._d.pop(oid, None)`、`resolve` 对已 pop/已 done 的 fut no-op**（防 double-pop KeyError + 双面板重复 resolve，R5）。
 - **历史持久化**（用户要「存历史大纲」）：`ppt_outline_history` 表（SessionDB，仿 `ensure_session_goals_table` 的 flag-gated 建表，`pro_outline_history` 开才建，保 BC 字节基线）。字段：`outline_id TEXT PK, session_id, topic, created_at, slides_json TEXT, sources_count INT, status TEXT(proposed/accepted/rejected/superseded)`。
   - `save_outline(oid, sid, topic, slides, sources)` / `mark_status(oid, status)` / `list_history(sid, limit=20)` / `get_outline(oid)`（供「从历史复用」）。
 
@@ -304,8 +304,8 @@ async def _draft_outline_from_research(
   fut = loop.create_future(); _PPT_OUTLINE_WAITERS.add(oid, fut)
   try:    decision = await asyncio.wait_for(fut, cfg.pro_confirm_timeout_s)   # {action, feedback?, reuse_id?}
   except asyncio.TimeoutError: decision = {"action": "cancel"}
-  except asyncio.CancelledError: outline_store.mark_status(oid, "cancelled"); _PPT_OUTLINE_WAITERS.pop(oid); raise
-  finally: _PPT_OUTLINE_WAITERS.pop(oid)
+  except asyncio.CancelledError: outline_store.mark_status(oid, "cancelled"); raise  # 不在此 pop，交给 finally（防 double-pop）
+  finally: _PPT_OUTLINE_WAITERS.pop(oid)    # PPTOutlineWaiters.pop 实现为幂等 dict.pop(oid, None)
   outline_store.mark_status(oid, _status_of(decision))
   return decision
   ```
@@ -336,14 +336,16 @@ for _ in range(max_revisions + 1):
 
 **文件 A** `tauri-app/src/code-panel/ws.ts`（仿 :360-375）：`case "ppt_outline_proposed"` → `store.push_message(sid, {role:"ppt_outline", ppt_outline_awaiting:true, outline_id, topic, outline_md, sources_count, no_research, history})`。
 **文件 B** `tauri-app/src/stores/sessionsStore.ts`：加 `ppt_outline` message role + 字段（仿 skill_candidate 字段 @27/54-62）；`resolve_ppt_outline(sid, oid)` 清 awaiting flag。**收 `ppt_outline_resolved` 广播也调它**（清另一面板 stale 卡，MAJOR-1）。
-- **MAJOR-2 修（R4）：reload 不丢卡**。codex 实测：skill_candidate 的「reload 保留」靠前端 `set_messages` 把**内存里仍 awaiting** 的卡合并回（`sessionsStore.ts:311`），后端只 rehydrate awaiting plan（`main.py:4733`）。所以本卡要做到 reload 不丢，需**两层**：① `set_messages` 合并时保留 `ppt_outline_awaiting` 卡（仿 :311 加 `ppt_outline` 分支）；② **后端 `session_messages_response` 从 `ppt_outline_history WHERE status='proposed'` rehydrate** 未决卡（比纯内存更强，因我们已持久化；仿 :4733 awaiting plan 的回灌）。**两者都做**（内存兜 reload-不重连场景，后端兜进程重启场景）。
+- **MAJOR-2 修（R4）+ R5 BLOCKING-级修正：reload 不丢卡，但不能跨重启造"死卡"**。codex 实测：skill_candidate 的「reload 保留」靠前端 `set_messages` 把**内存里仍 awaiting** 的卡合并回（`sessionsStore.ts:311`）。本卡的等待通道是**进程内** `_PPT_OUTLINE_WAITERS`（Future）——**进程重启后 Future+编排 task 全没了**，若还 rehydrate 一张可点的 awaiting 卡 → 点了 resolve 空 waiter → **死卡（R5 揪出）**。所以分两种 reload：
+  - **同进程 reload/重连**（waiter+task 还在）：前端 `set_messages` 保留内存里 `ppt_outline_awaiting` 卡（仿 :311 加 `ppt_outline` 分支）→ 点击仍能 resolve。✅ 这是"reload 不丢卡"的真实覆盖范围。
+  - **跨进程重启**（waiter+task 已亡）：**不 rehydrate 可点的 awaiting 卡**。改为 backend 启动时把残留 `ppt_outline_history WHERE status='proposed'` **标记 `expired`**；这些大纲仍在历史里**可被 reuse 复用**（用户决策 2 的"存历史大纲"由此满足），但**不冒充等待中的卡**。诚实边界：「awaiting 卡只在同进程存活；重启后变可复用历史，不变死卡」。
 **文件 C 新增** `tauri-app/src/code-panel/PPTOutlineCard.tsx`（仿 `SkillCandidateCard`）：
 - 渲染 `outline_md`（markdown 滚动区）+ `sources_count`（"📚 N 个调研来源"）+ `no_research` 时显"⚠️ 无来源"提示（**不显费用，用户决策 4**）。
 - 按钮：「✅ 确认生成」→ send `{type:"ppt_outline_decision", payload:{outline_id, action:"accept"}}`；「✏️ 修改」→ 展开 textarea，提交 → `action:"modify", feedback`；「✖ 取消」→ `action:"cancel"`。
 - **历史复用**（用户决策 2）：`history` 非空 → 折叠区「📜 历史大纲」列出过往 topic+时间，点某条 → `action:"reuse", reuse_id`。
 - **去重渲染（MAJOR-1）**：按 `outline_id` 去重——同 oid 卡只显一张（防广播双面板重复）。发送 decision 后清 `ppt_outline_awaiting`（按钮消失）；并监听 `ppt_outline_resolved` 清 stale。
 **文件 D** 挂载：`MessageBubble.tsx`（code panel）+ 主消息面板（`MessageStreamPanel`，对齐 STATUS 06-21 子代理面板双挂载）渲染 `role==="ppt_outline"` 的卡。
-**验收**：`vitest`——(a) 卡渲染 outline_md+来源数+无费用字样；(b) accept/modify/cancel/reuse 各发对 envelope；(c) reload 保留 awaiting 卡（内存 set_messages + 后端 rehydrate 两路各一测）；(d) 历史区点击发 reuse_id；(e) `ppt_outline_resolved` 广播清 stale 卡 + 同 oid 去重。
+**验收**：`vitest` + backend 测——(a) 卡渲染 outline_md+来源数+无费用字样；(b) accept/modify/cancel/reuse 各发对 envelope；(c) **同进程** reload 保留 awaiting 卡（set_messages）且可 resolve；(c2) **跨重启**：backend 启动把残留 proposed→expired，前端不显可点 awaiting 卡（无死卡），但该大纲进历史可 reuse；(d) 历史区点击发 reuse_id；(e) `ppt_outline_resolved` 广播清 stale 卡 + 同 oid 去重。
 
 ---
 
@@ -471,7 +473,11 @@ async def _handle_ppt_pro(**kwargs):
         except Exception as e:
             log.exception("ppt_pro runner failed"); await notifier(sid, f"😿 PPT 没做成：{e}")
         finally:
-            _PPT_PRO_RUNNING.pop(sid, None); _PPT_PRO_RUNNING_TOPIC.pop(sid, None)
+            # R5 BLOCKING 修：identity-guard——只在 registry 仍指向「我自己」时才清，
+            # 否则异主题替换时被 cancel 的旧 task 的 finally 会异步晚执行、误清掉新 task 的索引。
+            _me = asyncio.current_task()
+            if _PPT_PRO_RUNNING.get(sid) is _me:
+                _PPT_PRO_RUNNING.pop(sid, None); _PPT_PRO_RUNNING_TOPIC.pop(sid, None)
     t = asyncio.create_task(_runner())
     _PPT_PRO_RUNNING[sid] = t; _PPT_PRO_RUNNING_TOPIC[sid] = topic
     _PPT_PRO_TASKS.add(t); t.add_done_callback(_PPT_PRO_TASKS.discard)
@@ -536,7 +542,7 @@ async def _handle_ppt_pro(**kwargs):
 | `backend/deskpet/tools/image_tools.py` | 新增 `probe_image_reachable`；失败返回加 `error_kind`(connectivity/model_unavailable/auth/quota/content/unknown)；`_resolve_relay_base_and_key` helper | WI-5/6b |
 | `backend/config.py`（**不是** deskpet/config.py） | 加 `[ppt]` pro_* 项（含 `pro_default_depth=deep`/`pro_save_research=True`/`pro_outline_history=True`），走 `standalone_config_section("ppt")` | WI-0 |
 | `backend/deskpet/tools/ppt_outline_store.py`（**新**，v1.1） | `PPTOutlineWaiters` + 大纲历史持久化（`ppt_outline_history` 表，flag-gated）+ save/list/get/mark | WI-3 |
-| `backend/main.py` | 新增 `_PPT_OUTLINE_WAITERS`+`_ppt_outline_propose`（propose+await）+ `_broadcast_control`（广播大纲卡，R-18）+ WS 回灌 `ppt_outline_decision`（首次 resolve 生效+广播 `ppt_outline_resolved`）+ `session_messages_response` 从 history rehydrate awaiting 卡（R-19）；定义后调 `ppt_tools.set_ppt_pro_services(outline_propose/notifier/run_blocking/artifact_pusher/receipt_reporter)`；`pro_enabled` 时注册 `ppt_pro` | WI-3/4/7/10 |
+| `backend/main.py` | 新增 `_PPT_OUTLINE_WAITERS`+`_ppt_outline_propose`（propose+await）+ `_broadcast_control`（广播大纲卡，R-18）+ WS 回灌 `ppt_outline_decision`（首次 resolve 生效+广播 `ppt_outline_resolved`）+ 启动时残留 `ppt_outline_history(status=proposed)`→`expired`（防跨重启死卡，R-19）；定义后调 `ppt_tools.set_ppt_pro_services(outline_propose/notifier/run_blocking/artifact_pusher/receipt_reporter)`；`pro_enabled` 时注册 `ppt_pro` | WI-3/4/7/10 |
 | `tauri-app/src/code-panel/ws.ts` + `stores/sessionsStore.ts` | `ppt_outline_proposed`→push_message；`ppt_outline` role+字段+`resolve_ppt_outline` | WI-4 |
 | `tauri-app/src/code-panel/PPTOutlineCard.tsx`（**新**，v1.1） | FP-5 风格大纲卡：渲染大纲+来源数+无费用；按钮 确认/修改(textarea)/取消/历史复用 → `ppt_outline_decision`；双面板挂载 | WI-4 |
 | `backend/deskpet/skills/builtin/ppt-generate/SKILL.md` | 路由到 `ppt_pro` + 修 stale 模板名 | WI-8 |
@@ -585,8 +591,9 @@ WI-4 (前端 PPTOutlineCard + 历史复用 + reload 持久化) ─────�
 | **R-16** | 后台编排无超时/取消/清理 → task 泄漏挂死 | ✅ WI-7 **分阶段限时**（research 360s / confirm 等用户 1800s/轮 / **render `wait_for(max(600,pages*120))` 补 registry 绕过的洞**）——确认等待不计入机器超时（避免误杀用户看大纲）+ `/stop`/same-sid 取消 `_ppt_pro_cancel` + `finally` 清 `_PPT_PRO_RUNNING`（codex R2 MAJOR + R3 预防总超时误杀确认） |
 | **R-17** | WI-10 receipt/artifact 通道未闭合（后台 task 不在 registry 生命周期内） | ✅ WI-10 显式注入 `artifact_pusher`+`receipt_reporter`，后台 task 主动推成品卡 + 对账（codex R2 MAJOR） |
 | **R-18** | 大纲卡 WS 用 `get(sid)` 打不准 code-panel（key=`code-panel-main`）→ 卡发不到/双面板重复 | ✅ WI-3 改 `_broadcast_control` 广播所有 control peer + 前端按 `outline_id` 去重 + resolve 后广播 `ppt_outline_resolved` 清 stale（R4 MAJOR-1） |
-| **R-19** | 「reload 不丢大纲卡」未落实（skill_candidate 靠 set_messages+后端 rehydrate） | ✅ WI-4 两层：前端 `set_messages` 保留 awaiting + 后端从 `ppt_outline_history(status=proposed)` rehydrate（R4 MAJOR-2） |
-| **R-20** | 30min confirm + 去重锁 → 用户换主题重发被 already_running 挡死 | ✅ WI-7 改「同主题=already_running 防 AgentLoop 重复；不同主题=`_ppt_pro_cancel` 旧任务+替换」+ 提示可「停」（R4 MAJOR-3） |
+| **R-19** | 「reload 不丢大纲卡」+ 跨重启 rehydrate 死卡 | ✅ WI-4：同进程 reload 用 `set_messages` 保留可点卡；**跨重启**则启动时 proposed→`expired`（只作可 reuse 历史，不冒充死卡）——诚实边界（R4 MAJOR-2 + R5 MAJOR 修正） |
+| **R-20** | 异主题替换的 registry 清理竞态（旧 task finally 异步晚执行误清新 task 索引） | ✅ WI-7 `finally` 加 **identity-guard**（`if _PPT_PRO_RUNNING.get(sid) is current_task`）+ 同主题挡/异主题 `_ppt_pro_cancel` 替换（R4 MAJOR-3 + R5 BLOCKING 修） |
+| **R-21** | WI-3 取消路径 `except`+`finally` double-pop KeyError | ✅ `except` 只 mark_status+raise（不 pop），`finally` 单点 pop + `PPTOutlineWaiters.pop` 幂等（R5 MAJOR） |
 
 ---
 
