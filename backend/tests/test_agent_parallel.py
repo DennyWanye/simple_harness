@@ -88,7 +88,13 @@ def test_filter_subagent_tools_strips_recursive_names():
     """Recursion guard — agent + agent_parallel always removed."""
     out = _filter_subagent_tools(["read_file", "agent", "grep", "agent_parallel"])
     assert out == ["read_file", "grep"]
-    assert _FORBIDDEN_NESTED_TOOLS == {"agent", "agent_parallel"}
+    # 2026-06-21 fan-out 递归守门：_FORBIDDEN_NESTED_TOOLS 现统一引用共享集
+    # task_kinds._FORBIDDEN_IN_KIND（含 deepresearch + spawn 类），防子代理显式
+    # tools 绕过守门再 fan-out。断言为超集 + deepresearch 已纳入。
+    assert {"agent", "agent_parallel"} <= _FORBIDDEN_NESTED_TOOLS
+    assert "deepresearch" in _FORBIDDEN_NESTED_TOOLS
+    # deepresearch / spawn 类经显式 tools 也被剥除
+    assert _filter_subagent_tools(["read_file", "deepresearch", "spawn_team"]) == ["read_file"]
 
 
 def test_filter_subagent_tools_none_passthrough():
