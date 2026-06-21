@@ -1,9 +1,11 @@
 # PPT 能力优化 — DeepResearch 调研 → 大纲确认 → 惊艳生图(gpt-image-2) / 模板兜底
 
-> **状态**: v0.1 DRAFT（待 codex/子代理多轮对抗挑战收敛到 EXECUTABLE-AS-IS）
+> **状态**: v0.2（已过 R1 双路对抗：codex gpt-5.5 4B+3M / architect 2B+4M，BLOCKING/MAJOR 全消解；待 R2 复核收敛到 EXECUTABLE-AS-IS）
 > **建档**: 2026-06-21
 > **作者**: Claude (Lead)
 > **前置阅读**: [STATUS/PPT.md](../../STATUS/PPT.md) · [STATUS/DeepResearch.md](../../STATUS/DeepResearch.md) · [STATUS/AgentLoop.md](../../STATUS/AgentLoop.md)
+>
+> **v0.1→v0.2 关键修正**（R1 对抗）：① 确认/调研环**拆独立 asyncio.Task**、handler 秒回（修 FP-5 同款 preempt-cancel BLOCKING）；② 配置文件是 `backend/config.py` 非 `deskpet/config.py`，走 `standalone_config_section` 避开 `config.config` 坏读法（BLOCKING）；③ 注入经 registry session context / `set_ppt_pro_services`，非 `ppt_tools.set_session_context`（BLOCKING）；④ F4 回退增加 **4xx model_unavailable** 触发（BLOCKING）；⑤ `_degrade_to_template` 清空 image_prompt + `skip_image_gen` 双保险防二次烧图；⑥ 大纲**双模式产出**（image_prompt+充实 bullets）防回退塌方；⑦ 修订环传 prev_slides 防整盘重拟；⑧ 前端「让我改改」进编辑态；⑨ 新增 WI-10 receipt/artifact 上报。
 
 ---
 
@@ -91,17 +93,83 @@ LLM 一次调用:  ppt_pro(topic="新能源电池技术发布会", depth="standa
            最终落盘 + 预览图 artifact + notifier 推回 + 自动打开
 ```
 
-### 2.2 F4 回退判定（双层，确定性）
+### 2.2 F4 回退判定（双层，确定性 — v0.2 修 BLOCKING：4xx 模型不可用也要回退）
 1. **预探测**（便宜、免费）：`image_tools.probe_image_reachable(timeout=...)` —— `trust_env=False` 直连 relay base `/v1/models`（已知 200，见 STATUS 06-09），connect 5s/read 8s。返回 `False` 即 relay 整体不可达 → 直接走模板，**不烧任何生图钱**。
-2. **首图实测**（精确，捕捉「relay 在但 gpt-image-2 模型挂」）：预探测过了之后，先只生**第 1 张**图；若返回**连接类错误**（§1.2 的 transient 分类 + 读超时/504，即「连不上」语义）→ 判定不可达 → 放弃剩余生图、整副 `_degrade_to_template` 回退。若首图成功 → 继续生其余图（惊艳路径）。
-   - 「连不上」= 网络/服务层失败（connect/read-timeout/5xx/SSL/protocol）。「内容失败」（4xx 拒绝/safety）**不触发整副回退**（那不是「连不上」，按现状占位降级，避免误伤）。
+   - **注意**：probe `/v1/models` 200 只证明 relay 活着，**不证明 gpt-image-2 模型可用**（codex BLOCKING）→ 必须靠第 2 层兜。
+2. **首图实测**（精确）：预探测过了，先只生**第 1 张**图；按返回的 `error_kind`（WI-6b 新增）判定：
+   - **触发整副回退模板**（= 广义「连不上 gpt-image-2」）：
+     - `connectivity`：网络/服务层（connect/read-timeout/5xx/SSL/protocol）。
+     - `model_unavailable`：4xx 中「model 不支持 / model_not_found / 该 relay 无 gpt-image-2」（codex 实测 `image_tools.py:267-277` 非 200 错误文案含「model 不支持」）——**这正是用户说的「连接不上 gpt-image-2」**，必须回退。
+   - **不回退**（占位降级，避免误伤）：
+     - `content`/`safety`：4xx 内容/safety 拒绝（个别 prompt 触发，换图或占位即可，非整体不可用）。
+     - `auth`/`quota`：认证/额度——**不静默占位**，应明确通知用户「配图服务认证/额度有问题」（既非「连不上」也非「内容问题」，让用户知情）。
+   - 首图成功 → 继续生其余图（惊艳路径）。
 
-### 2.3 同步/异步边界
-- Stage A/B/C（调研+拟纲+确认）**同步**在 handler 内 `await`（agent turn 挂起，期间推进度消息）。最坏 ≈ research(≤300s) + 确认等待(≤300s)。`ppt_pro` 注册 `timeout_seconds=1800.0`（30min）兜住。
-- Stage D 渲染（生图 1-3min/张）**复用现有 `_bg_job` 异步路径**：确认后 `submit_background` 跑渲染，handler 立即返回 `{"ok":True,"status":"generating"}`，notifier 推回成品。
-- 若 worker 不可用 → 同步渲染降级（同 `_handle_ppt_create` 现有降级）。
+### 2.3 同步/异步边界（v0.2 重写 — 修 BLOCKING-1/2）
 
-### 2.4 Flag / BC
+> **v0.1 错误**：原设计把 Stage A/B/C 同步 `await` 在 handler 内（agent turn 挂起 ~10min）。
+> 这**精确复刻了 FP-5 当年修掉的 same-sid preempt bug**（`main.py:806-811` 注释）：确认期间用户
+> 随便发一句话 → `main.py:6767-6770` 无条件 cancel 同 sid 上一个 chat task → `_clarify_ask` 的
+> Future 被 cancel → 确认卡变僵尸、`ppt_pro` 静默死亡、零反馈。**必须拆独立 task。**
+
+**v0.2 正确架构**（见 §2.5 详述）：
+- `ppt_pro` = **async handler**，本体只校验参数 → `asyncio.create_task(_ppt_pro_orchestrate(...))` 在 **main loop**（uvicorn 单 loop，与 `_clarify_ask`/`_control_connections` 同 loop）起一个**独立编排 task** → **立即返回** `{"ok":True,"status":"researching","message":"正在调研主题…"}`。chat task 随即收尾，用户可继续对话；后续 preempt cancel **伤不到**独立编排 task（`create_task` 是 loop 级独立 task，非父子级联取消）。
+- 独立编排 task 内：Stage A/B/C 串行 `await`（调研 → 拟纲 → 确认，确认复用 `_clarify_ask`，同 loop 安全）；Stage D 渲染（生图阻塞）走 `loop.run_in_executor(None, lambda: _render_pro(...))` 不阻塞 main loop。全程 notifier 推进度 + 推成品。
+- **task 引用保活**：模块级 `_PPT_PRO_TASKS: set[asyncio.Task]` 持引用（asyncio 弱引用 task，不持会被 GC），`task.add_done_callback(_PPT_PRO_TASKS.discard)`。
+- 这样 `ppt_pro` 注册的 `timeout_seconds` 只约束秒回的 handler，**不再需要 1800s 兜 10min**（编排 task 自管超时）。
+
+### 2.5 独立编排 task 骨架（v0.2 新增 — FP-5 范本）
+
+照搬 `main.py:803-835`（FP-5 `_await_candidate_decision` + `create_task`）经过实战验证的模式：
+
+```python
+_PPT_PRO_TASKS: set[asyncio.Task] = set()   # 模块级，保活引用
+
+async def _ppt_pro_orchestrate(*, topic, pages, depth, theme, image_mode,
+                               title, author, output_path,
+                               clarify, notifier, run_blocking, session_id):
+    """独立 task：调研→拟纲→确认→渲染。在 main loop 上跑，不受 chat preempt 影响。"""
+    try:
+        await notifier(session_id, "🔍 正在围绕主题做深度调研…")
+        report = await _research_topic_for_ppt(topic, depth=depth, timeout_s=research_to)  # WI-1
+        n_src = len(report.citations) if report else 0
+        await notifier(session_id, f"📚 调研完成（{n_src} 个来源），正在拟大纲…" if report
+                       else "📝 调研未取得来源，按通用知识拟大纲…")
+        llm = await _resolve_default_llm_call()                                            # WI-2 锁定 LLM 源
+        slides = await _draft_outline_from_research(topic, report, pages=pages, theme=theme,
+                                                    image_mode=image_mode, llm_call=llm)
+        # 确认环（≤ max_revisions，传 prev_slides 防整盘重拟 — MAJOR-3）
+        confirmed = False
+        for _ in range(max_revisions + 1):
+            ans = (await clarify(_confirm_question(report), ["确认生成", "让我改改", "取消"],
+                                 session_id, timeout=confirm_to,
+                                 content_md=_outline_to_markdown(slides))) or ""
+            norm = ans.strip()
+            if norm in ("确认生成","确认","ok","OK"): confirmed = True; break
+            if norm in ("取消","cancel") or norm == "":
+                await notifier(session_id, "好的，已取消，没有生成 PPT。"); return
+            slides = await _draft_outline_from_research(topic, report, pages=pages, theme=theme,
+                                                        image_mode=image_mode, llm_call=llm,
+                                                        feedback=norm, prev_slides=slides)   # 传上一版
+        if not confirmed:
+            await notifier(session_id, "大纲改了好几轮还没定，先暂停啦，需要再叫我~"); return
+        # 渲染（阻塞 → executor，不卡 main loop）
+        await notifier(session_id, "✅ 大纲已确认，开始生成…")
+        result = await run_blocking(lambda: _render_pro(slides, theme=theme, title=title,
+                    author=author, output_path=output_path, image_mode=image_mode,
+                    probe_timeout_s=probe_to, notify=_sync_notify(notifier, session_id)))
+        await _ppt_pro_report_done(result, notifier, session_id)        # WI-10 receipt/artifact + 推成品 + 自动打开
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        log.exception("ppt_pro orchestrate failed")
+        await notifier(session_id, f"😿 PPT 没做成：{e}")
+```
+- `run_blocking` = 注入的 `lambda coro_fn: loop.run_in_executor(None, coro_fn)`（main loop 的 executor）。
+- `notifier` = 注入的 main-loop 推送（control WS 或 `worker.notifier`，确认 notifier 也在 main loop）。
+- handler（WI-7）：`t=asyncio.create_task(_ppt_pro_orchestrate(...)); _PPT_PRO_TASKS.add(t); t.add_done_callback(_PPT_PRO_TASKS.discard); return {"ok":True,"status":"researching","message":"正在调研主题，稍等我把大纲拟出来给你确认~"}`。
+
+### 2.6 Flag / BC
 - 新增 `[ppt].pro_enabled`（默认 **True**——这是用户主诉求，要开箱可用；但保留开关可关）。
 - `ppt_pro` 是**新增工具**，不改 `ppt_create` 字节行为 → 对现有调用零 BC 风险。
 - `_clarify_ask` 加 `timeout` 形参（默认 120 保 BC），`clarification_request` payload 加**可选** `content_md`（旧前端忽略未知字段，BC）。
@@ -112,11 +180,14 @@ LLM 一次调用:  ppt_pro(topic="新能源电池技术发布会", depth="standa
 
 > 每个 WI 标注：文件、函数、改动类型（新增/改）、伪代码/diff、验收。
 
-### WI-0 · 配置与开关
-**文件** `backend/deskpet/config.py`（PPT 配置段，grep `class .*PPT|\[ppt\]|ppt_` 定位）
-- 加字段：`pro_enabled: bool = True`、`pro_default_depth: str = "standard"`（light/standard/deep）、`pro_max_revisions: int = 2`、`pro_research_timeout_s: float = 300.0`、`pro_confirm_timeout_s: float = 300.0`、`pro_image_probe_timeout_s: float = 8.0`。
-- 解析对齐现有 `[ppt]` 段读法（参考 `visual_review`/`async_enabled`/`preview_render` 的解析）。
-**验收**：`test_config.py` 加 1 例验证默认值 + toml 覆盖；flag-off 时 `ppt_pro` 不注册。
+### WI-0 · 配置与开关（v0.2 修 BLOCKING — 文件路径错了）
+> **codex 实测**：`backend/deskpet/config.py` **不存在**；配置实现在 **`backend/config.py`**（`AppConfig.raw` @456，`standalone_config_section()` @870）。且 `config.py:874` 注释明确「工具拿不到 config 单例」——`ppt_tools.py` 现有 `_ppt_async_enabled`/`_ppt_preview_render_enabled` 用的 `_cfg.config.raw` 是**已知坏模式**（STATUS 多次记录 `config.config` 单例不存在致配置静默失效）。
+
+**文件** `backend/config.py`
+- 在 PPT 配置读取处加 6 个 pro_* 项。**读法对齐健壮方式**：用 `standalone_config_section("ppt")`（@870）或 `raw.get("ppt", {})`，**不要**用 `_cfg.config.raw`。
+- 字段：`pro_enabled: bool = True`、`pro_default_depth: str = "standard"`、`pro_max_revisions: int = 2`、`pro_research_timeout_s: float = 300.0`、`pro_confirm_timeout_s: float = 300.0`、`pro_image_probe_timeout_s: float = 8.0`。
+- **`ppt_tools.py` 侧**：新增 `_ppt_pro_cfg()` 读取（仿现有 `_ppt_async_enabled` 的 toml 读取风格，但走 `standalone_config_section`，**顺手把现有 `_cfg.config.raw` 坏读法一并修正**，对齐 STATUS 06-15/06-20 已修的 `[research]` 同款 bug）。
+**验收**：`test_config.py`/`test_ppt_*` 加 1 例验证默认值 + toml 覆盖真生效（不被 `config.config` 坏读法吞）；flag-off 时 `ppt_pro` 不注册。
 
 ---
 
@@ -143,18 +214,24 @@ async def _research_topic_for_ppt(topic: str, *, depth: str, timeout_s: float) -
             ),
             timeout=timeout_s,
         )
-    except (asyncio.TimeoutError, Exception) as e:
-        log.warning("ppt_pro research failed/timeout: %s → degrade to no-research outline", e)
+    except asyncio.TimeoutError:
+        log.warning("ppt_pro research timeout → degrade to no-research outline")
+        return None
+    except Exception as e:
+        # MINOR-3：不要 except Exception 一把吞。区分「网络/搜索瞬时失败」(降级 None)
+        # 与「配置/认证错误」(应让用户知道,否则静默退化成凭空编,违背 F1)。
+        if _is_config_or_auth_error(e):
+            raise                       # 上抛 → 编排 task 推「调研服务没配好…」给用户
+        log.warning("ppt_pro research failed: %s → degrade to no-research outline", e)
         return None
 ```
 **设计要点**：
-- **复用 `_DEPTH_PRESETS`**（不要硬编码档位数字，保持与 deepresearch 单一真相源一致）。从 research_tools import 该常量；若它是 `_handle_deepresearch` 内的局部 map，则在 research_tools 顶层提一个 `DEPTH_PRESETS` 公共常量（小重构，见 §3 WI-1b）。
-- **降级而非失败**：调研失败/超时 → 返回 None，Stage B 用「无调研」prompt 直接拟纲（功能不缺，只是质量降级），并在确认卡注明「⚠️ 本次未取得调研来源」。
+- `_is_config_or_auth_error(e)`：识别 401/403/key 缺失/provider 未配置等硬错误（与 `image_tools` 401 落警告同源思路）；其余（搜索被封/抓取失败/网络瞬时）才降级。
+- **复用 `_DEPTH_PRESETS`**（codex 实测：已是 research_tools 顶层常量 @**2104**，**直接 import 即可**，无需重构）。
+- **降级而非失败（F1，吸收 codex MAJOR）**：调研「网络/搜索」类失败 → 返回 None，但**不静默当成 F1 完成**：Stage C 确认卡的问题文案改为显式告知「⚠️ 未取得调研来源，下面大纲基于通用知识，是否仍要生成？」让用户**知情后再确认**（不偷偷出「正式 PPT」）。「配置/认证」类失败 → 上抛（WI-1 已区分）。
 - **不落盘**：PPT 内部调研默认**不**调 `_save_report`（避免污染 DeepResearch/ 索引）；可加 config `[ppt].pro_save_research`（默认 False）允许落盘。
 
-**WI-1b（小重构）** `research_tools.py`：把 `_DEPTH_PRESETS` 提为顶层公共常量 `DEPTH_PRESETS`（`_handle_deepresearch` 改引用它），供 ppt_tools 复用。**验收**：research 全套 BC 不破。
-
-**验收**：mock `deepresearch` 的单测——(a) 正常返回 report；(b) 超时返回 None；(c) 无 llm_call 返回 None。
+**验收**：mock `deepresearch` 的单测——(a) 正常返回 report；(b) 网络失败/超时返回 None；(c) 配置/认证错误**上抛**（不吞）；(d) 无 llm_call 上抛配置错误。
 
 ---
 
@@ -163,29 +240,46 @@ async def _research_topic_for_ppt(topic: str, *, depth: str, timeout_s: float) -
 ```python
 async def _draft_outline_from_research(
     topic: str, report: "ResearchReport | None", *, pages: int, theme: str,
-    image_mode: bool, llm_call, feedback: str = "",
+    image_mode: bool, llm_call, feedback: str = "", prev_slides=None,
 ) -> list[SlideOutline]:
-    """基于调研报告（可空）拟 PPT 大纲。image_mode=True 则每页带 image_full+image_prompt（惊艳模式）。
-    feedback 非空时 = 用户修改意见，按其重拟。"""
+    """基于调研报告（可空）拟 PPT 大纲。
+    **双模式产出（MAJOR-2）**：无论 image_mode，每页同时产出
+      ① image_prompt（惊艳路径用） ② 充实的 bullets/subtitle（模板回退路径用）。
+    渲染时按可达性二选字段，**不做有损 image_full→bullet 转换**，回退也不塌方。
+    feedback 非空 = 用户修改意见；prev_slides 非空 = 在其基础上增量改（MAJOR-3）。"""
     research_md = (report.report_md if report else "")[: _PPT_PRO_RESEARCH_CTX_CHARS]  # 截断防爆窗，默认 6000
-    prompt = _build_outline_prompt(topic, research_md, pages=pages, image_mode=image_mode, feedback=feedback)
+    prompt = _build_outline_prompt(topic, research_md, pages=pages, image_mode=image_mode,
+                                   feedback=feedback,
+                                   prev_md=(_outline_to_markdown(prev_slides) if prev_slides else ""))
     raw = await llm_call(prompt)
     slides = parse_outline(raw)              # 复用现有宽容解析
     if not slides:                           # 解析失败兜底：最小可用大纲
         slides = _fallback_minimal_outline(topic, pages, image_mode)
     return slides
 ```
-- 新增 `_build_outline_prompt(...)`：系统化提示词，要求输出 §1.1 `SlideOutline` 兼容的 JSON 数组。**惊艳模式**：封面 `layout="image_full"` + `image_prompt`（电影感、负空间、禁字后缀，复用 `_assign_image_layouts` 的 prompt 习惯），内容页 `image_full`+精炼 bullets。**模板模式**：`layout` 用 bullet/two_column/section 等，不带 image_prompt。提示词强约束「内容必须基于以下调研报告，引用其中的数据/事实，不得编造」+ 附 `research_md`。
-- 新增 `_outline_to_markdown(slides) -> str`：把 slides 渲染成给用户看的多行大纲 MD（页码 + 标题 + bullets 缩进），用于确认卡 `content_md`。
+- **`llm_call` 源锁定（MINOR-4）**：调用方（§2.5 编排 task）传入 `await _resolve_default_llm_call()`（research/主 LLM，窗口/`max_tokens` 较大），**不得**用桌宠 8000 窗口聊天模型，否则 6000 调研 + 系统 prompt 爆窗。
+- 新增 `_build_outline_prompt(...)`：要求输出 §1.1 `SlideOutline` 兼容 JSON 数组，**每页同时含**：
+  - `title` + `bullets`（3-5 条充实要点，模板路径直接用，密度匹配设计页）
+  - `image_prompt`（惊艳路径用：电影感、负空间、禁字后缀，复用 `_assign_image_layouts` prompt 习惯）
+  - `layout`：惊艳模式标 `image_full`（渲染时若回退会被 `_degrade_to_template` 按 bullets 改版式，但 bullets 已充实不塌）。
+  - 强约束「内容必须基于以下调研报告，引用其中数据/事实，不得编造」+ 附 `research_md`。
+  - `prev_md` 非空时 prompt 改为「这是当前大纲 + 用户要改 X，**只改动相关部分，保留其余页**」（增量修订，不整盘重拟）。
+- 新增 `_outline_to_markdown(slides) -> str`：渲染给用户看的多行大纲 MD（页码 + 标题 + bullets 缩进），用于确认卡 `content_md` 与 `prev_md`。
 - 新增 `_fallback_minimal_outline(topic, pages, image_mode)`：纯本地兜底（封面+pages-1 内容页占位），保证「LLM 全挂也能出大纲」。
-- 常量 `_PPT_PRO_RESEARCH_CTX_CHARS = 6000`（research 注入上限，防爆 LLM 窗口）。
+- 常量 `_PPT_PRO_RESEARCH_CTX_CHARS = 6000`。
 
-**验收**：单测——(a) 有 report 拟纲含 image_prompt（image_mode）；(b) report=None 仍出大纲；(c) feedback 注入重拟（mock llm 校验 prompt 含 feedback）；(d) llm 返回垃圾 → `_fallback_minimal_outline` 生效；(e) `_outline_to_markdown` 多页正确成文。
+**验收**：单测——(a) 有 report 拟纲**同时含 image_prompt 与充实 bullets**；(b) report=None 仍出大纲；(c) feedback+prev_slides 注入重拟（mock llm 校验 prompt 含 feedback 与 prev_md，且指令为「增量改」）；(d) llm 返回垃圾 → `_fallback_minimal_outline`；(e) `_outline_to_markdown` 多页正确成文。
 
 ---
 
-### WI-3 · 确认卡：后端挂起 + payload 扩展（F3 后端）
-**文件 A** `backend/main.py`：把内联 `_clarify_ask` @**530-552** 加 `timeout` + `content_md` 形参（**保 BC**：默认 `timeout=120, content_md=None`）：
+### WI-3 · 确认卡：后端 `_clarify_ask` 扩展 + 注入 ppt 上下文（F3 后端）
+
+> **确认环逻辑本体在 §2.5 编排 task**（已含 prev_slides 修订环、取消、超时优雅返回）。WI-3 只负责
+> 把 `_clarify_ask` 改得能携带富文本 + 把它（及 notifier/run_blocking/session_id）注入给 ppt 编排 task。
+
+**MAJOR-1 澄清（来自挑战）**：实测 `_clarify_ask` 是 `main.py:530-552` 的**唯一活动实现**（lifespan 内闭包，签名仅 3 位置参数、硬编码 `wait_for(fut, 120)`）；`clarify_tool.py::build_clarification_ask` **未被 main 实际调用**。所以 v0.1 R-3「收敛两份拷贝」是**伪任务，删除**。只改 `main.py:530` 这一处闭包即可。
+
+**文件 A** `backend/main.py`：`_clarify_ask` @**530-552** 加 `timeout` + `content_md`（**保 BC**：默认 `timeout=120, content_md=None`）：
 ```python
 async def _clarify_ask(question, options, session_id, *, timeout: float = 120.0, content_md: str | None = None):
     ...
@@ -193,52 +287,32 @@ async def _clarify_ask(question, options, session_id, *, timeout: float = 120.0,
     if content_md:
         payload["content_md"] = content_md     # 新增：富文本大纲
     await ws.send_json({"type": "clarification_request", "payload": payload})
-    return await asyncio.wait_for(fut, timeout)   # 用形参 timeout
+    return await asyncio.wait_for(fut, timeout)   # 用形参 timeout（默认 120 = BC）
 ```
-> 同步更新 `code_tools/clarify_tool.py::build_clarification_ask` 的等价闭包签名（保持两处一致，避免再次漂移；二者本是同一逻辑两份拷贝——可顺手抽到 clarify_tool 单一实现，main.py import 之，见 §6 风险 R-3）。
+- `clarify_tool.py::build_clarification_ask` 也加同样形参（保口径一致，但**不**做收敛重构——避免无谓改动面）。
 
-**文件 B** `backend/deskpet/tools/ppt_tools.py`：让 `ppt_pro` handler 能拿到 `_clarify_ask` + `session_id`。
-- 现状：tool 经 `registry.set_session_context` 注入 `worker`（含 `notifier`/`submit_background`）。新增注入 `clarify`（= `_clarify_ask`）与 `session_id`。
-- **main.py** lifespan 注册 ppt 工具上下文处（grep `set_session_context`）追加 `clarify=_clarify_ask`。
-- handler 内：
-```python
-async def _ppt_pro_confirm(slides, *, clarify, session_id, timeout_s, note: str = "") -> str:
-    md = _outline_to_markdown(slides)
-    q = "我按主题调研后拟了下面的 PPT 大纲，确认就开始生成；想改的话直接告诉我改哪里 👇"
-    if note: q = note + "\n" + q
-    return (await clarify(q, ["确认生成", "让我改改", "取消"], session_id,
-                          timeout=timeout_s, content_md=md)) or ""
-```
-- 主流程（确认环 ≤ `pro_max_revisions`）：
-```python
-slides = await _draft_outline_from_research(topic, report, pages=pages, theme=theme, image_mode=image_mode, llm_call=llm)
-for _round in range(cfg_max_revisions + 1):
-    ans = await _ppt_pro_confirm(slides, clarify=clarify, session_id=sid, timeout_s=confirm_to,
-                                 note=("" if report else "⚠️ 本次未取得调研来源，大纲基于通用知识。"))
-    norm = ans.strip()
-    if norm in ("确认生成", "确认", "ok", "OK", "") :       # 空=超时→按取消处理（见下）
-        confirmed = (norm != ""); break
-    if norm in ("取消", "cancel"):
-        return {"ok": True, "status": "cancelled", "message": "已取消，没有生成 PPT。"}
-    # 其余 = 修改意见 → 重拟
-    slides = await _draft_outline_from_research(topic, report, pages=pages, theme=theme,
-                                                image_mode=image_mode, llm_call=llm, feedback=norm)
-else:
-    confirmed = False  # 改太多轮，停
-if not confirmed:
-    return {"ok": True, "status": "cancelled", "message": "大纲未确认（超时或修改次数过多），已暂停。需要的话再叫我~"}
-```
-- **超时语义**：`asyncio.wait_for` 超时 → `_clarify_ask` 返回 `""` → 按「未确认/取消」优雅返回（不报错、不强行生成）。
+**文件 B 注入（关键，BLOCKING-2 相关）**：`ppt_pro` 编排 task 必须在 **main loop** 上拿到 main-loop 版的 `_clarify_ask`/notifier/executor。
+- **注入时机校验**：`_clarify_ask` 定义在 `main.py:530`（lifespan 内）。必须确认 ppt 工具的 `registry.set_session_context(...)` 调用点在 `_clarify_ask` **定义之后**执行（grep `set_session_context` 在 main.py 的行号 vs 530）。若早于，则改为在 `_clarify_ask` 定义后再 set，或用 late-binding（注入一个返回 `_clarify_ask` 的 getter）。
+- 经 `registry.set_session_context` 给 ppt 工具追加：
+  - `clarify=_clarify_ask`
+  - `notifier=<main-loop notifier>`（control WS 推送或 `worker.notifier`，**确认其在 main loop**；若 `worker.notifier` 实际跑在 worker loop，则改用直接 `_control_connections[sid].send_json` 包一层 main-loop async 推送）
+  - `run_blocking=lambda fn: asyncio.get_running_loop().run_in_executor(None, fn)`
+  - `session_id`（control WS 注册 key；pet 窗口为 `"default"`，`_clarify_ask` 内已有 `or get("default")` 兜底，见 R-2）
 
-**验收**：单测（mock clarify）——(a) 首轮「确认生成」→ confirmed=True；(b) 「让我改改…」→ 触发 redraft 再确认；(c) 超过 max_revisions → cancelled；(d) 空答（超时）→ cancelled；(e) `content_md` 真带进 payload。
+**验收**：单测——(a) `_clarify_ask` 带 `content_md` 进 payload、带 `timeout` 形参生效（mock ws + fut）；(b) 默认调用（不传新参）行为字节不变（BC）；(c) ppt 编排 task 能拿到注入的 clarify/notifier/run_blocking（context 注入测）。**注**：确认环路径（确认/改/取消/超时）的单测归 §2.5 编排 task 的 WI-7 验收。
 
 ---
 
-### WI-4 · 确认卡：前端富文本渲染（F3 前端）
-**文件 A** `tauri-app/src/types/skillPlatform.ts` @**57-73**：`ClarificationRequest["payload"]` 加可选 `content_md?: string`。
-**文件 B** `tauri-app/src/components/ClarificationDialog.tsx`：问题文本下方，若 `current.content_md` 存在，渲染一块滚动区展示大纲（markdown 或等宽 `<pre>`；项目已有 markdown 渲染器则复用，否则 `<pre style={{whiteSpace:"pre-wrap",maxHeight:"40vh",overflow:"auto"}}>`）。选项按钮「确认生成 / 让我改改 / 取消」+ 自由文本输入框（已有）：点「让我改改」聚焦输入框提示用户写修改意见；输入框内容作为 `answer` 回传（即修改意见）。
-**文件 C** `useClarificationRequests.ts`：无需改逻辑（payload 透传），仅确保 `content_md` 随 payload 进入 `current`。
-**验收**：`vitest` 组件测——(a) 有 content_md 渲染大纲块；(b) 无 content_md 不渲染（BC）；(c) 点选项/输入文本各自 `onResolve` 正确值。
+### WI-4 · 确认卡：前端富文本渲染 + 「让我改改」编辑态（F3 前端）
+> v0.2 修 codex MAJOR：`ClarificationDialog.tsx:114` 点任意 option **立即** `onResolve(option)`——若「让我改改」当普通 option，会回传字面字符串「让我改改」当成大纲（错）。必须让它进编辑态。
+
+**文件 A** `tauri-app/src/types/skillPlatform.ts` @**57-73**：`ClarificationRequest["payload"]` 加可选 `content_md?: string`（codex 实测当前无此字段 @57-62）。
+**文件 B** `tauri-app/src/components/ClarificationDialog.tsx`：
+- 问题下方，`current.content_md` 存在则渲染滚动区展示大纲（复用项目 markdown 渲染器，否则 `<pre style={{whiteSpace:"pre-wrap",maxHeight:"40vh",overflow:"auto"}}>`）。
+- 按钮：「✅ 确认生成」→ `onResolve("确认生成")`；「✏️ 让我改改」→ **不 resolve**，切到编辑态：展示已有的自由文本 `<textarea>`（@**37/137-147**）+ 提示「说说想改哪里」+ 「提交修改」按钮 → 提交才 `onResolve(textareaValue)`；「✖ 取消」→ `onResolve("取消")`。
+- 即：把「让我改改」从「立即 resolve 的 option」改成「切换 UI 状态的本地按钮」，与现有「点 option 立即 resolve」语义解耦。
+**文件 C** `useClarificationRequests.ts` @**40-47**：无需改逻辑（hook 已能传任意字符串，codex 确认），仅确保 `content_md` 随 payload 进入 `current`。
+**验收**：`vitest`——(a) 有 content_md 渲染大纲块；(b) 无 content_md 不渲染（BC，旧 ask_clarification 调用不受影响）；(c) 「确认生成」resolve "确认生成"；(d) 「让我改改」**不** resolve、进编辑态、提交后 resolve textarea 文本；(e) 「取消」resolve "取消"。
 
 ---
 
@@ -277,9 +351,9 @@ def _autofill_with_connectivity_gate(slides) -> tuple[bool, int]:
     i0, s0 = prompts[0]
     res0 = generate_images([s0.image_prompt], size=_size_for(s0))[0]
     if not res0.get("path"):
-        if _is_connectivity_error(res0.get("error")):   # 连不上 → 不可达
+        if _should_fallback(res0):          # connectivity 或 model_unavailable → 不可达
             return (False, 0)
-        # 内容类失败：占位降级，继续后续（非「连不上」）
+        # content/safety 失败：占位降级，继续后续（非「连不上」）
     else:
         slides[i0].image_path = res0["path"]
     # 生其余
@@ -289,43 +363,70 @@ def _autofill_with_connectivity_gate(slides) -> tuple[bool, int]:
         if r.get("path"): slides[idx].image_path = r["path"]
     return (True, n_ok)
 ```
-- 新增 `_is_connectivity_error(err: str|None) -> bool`：按 error 文本/标记匹配连接类（connect/timeout/读超时/5xx/SSL/protocol/relay 不可达）。**建议**：在 `image_tools` 的失败分类里给 transient 类 error 文本加统一前缀（如 `[transient]`）或返回结构里加 `kind:"connectivity"|"content"`，让判定不靠脆弱的中文文本匹配（见 WI-6b）。
-- **WI-6b（强化判定，推荐）** `image_tools.py`：`generate_images`/`_generate_png` 的失败返回从 `error:str` 升级为同时带 `error_kind: "connectivity"|"content"|"unknown"`（不破坏 `error` 字段，加键即可，BC）。`_is_connectivity_error` 直接读 `error_kind`。
-- 新增渲染编排 `_render_pro(slides, *, theme, title, author, output_path, image_mode, probe_timeout_s, notifier, sid) -> dict`：
+- 新增 `_should_fallback(res: dict) -> bool`：`res.get("error_kind") in {"connectivity","model_unavailable"}`（直接读结构化 kind，**不靠脆弱中文文本匹配**）。
+- **WI-6b（结构化失败分类，必做 — codex BLOCKING）** `image_tools.py`：`generate_images`/`_generate_png` 失败返回加键 `error_kind`（不破坏 `error` 字段，BC）。映射 §1.2/codex 实测 `image_tools.py:267-277` 的分类：
+  - `connectivity`：ConnectTimeout/RemoteProtocolError/ConnectError/ReadError/WriteError/ProtocolError/SSLError/读超时/502/503/504。
+  - `model_unavailable`：4xx 且错误体含 model 不支持 / model_not_found / 无该模型（解析 relay 返回的 error.code/message）。
+  - `auth`：401/403/key 缺失。`quota`：429/额度。`content`：其余 4xx（safety/参数）。`unknown`：兜底。
+  - **判定基于 relay 返回的结构化字段（status_code + error.code），不靠中文文案**，避免 relay 改文案就失效。
+- 新增 `_degrade_to_template(slides) -> list[SlideOutline]`（修 R-1 fallback 二次烧图）：
+  - `image_full`→`bullet`/`section`；**清空 `image_prompt` 和 `image_path`**（否则 `ppt_create` @3239 的 `has_prompts` 仍为真会二次烧图！codex MAJOR）；保留 title/**充实 bullets**（WI-2 双模式已产）/subtitle。**内容不丢、密度匹配模板设计页**。
+- 新增渲染编排 `_render_pro(slides, *, theme, title, author, output_path, image_mode, probe_timeout_s, notify) -> dict`：
 ```python
 def _render_pro(...):
     use_template = not image_mode
     if image_mode and not probe_image_reachable(timeout_s=probe_timeout_s):
-        use_template = True; _notify(notifier, sid, "⚠️ AI 配图暂时连不上，已切换精美模板生成。")
+        use_template = True; notify("⚠️ AI 配图暂时连不上，已切换精美模板生成。")
     if image_mode and not use_template:
         reachable, n_ok = _autofill_with_connectivity_gate(slides)
         if not reachable:
-            use_template = True; _notify(notifier, sid, "⚠️ AI 配图暂时连不上，已切换精美模板生成。")
+            use_template = True; notify("⚠️ gpt-image-2 暂时用不了，已切换精美模板生成。")
     if use_template:
-        slides = _degrade_to_template(slides)
+        slides = _degrade_to_template(slides)   # 已清空 image_prompt → 下面 ppt_create 不会二次生图
         return ppt_create(slides, theme=theme, title=title, author=author,
-                          output_path=output_path, template=_default_category_template())
-    # 惊艳路径：图已生好(image_path 填好)，直接渲染 image_full + 视觉闭环
-    return ppt_create(slides, theme=theme, title=title, author=author, output_path=output_path)
+                          output_path=output_path, template=_default_category_template(),
+                          skip_image_gen=True)              # 双保险
+    # 惊艳路径：图已生好(image_path 填好)，跳过 ppt_create 内部二次生图
+    return ppt_create(slides, theme=theme, title=title, author=author,
+                      output_path=output_path, skip_image_gen=True)
 ```
-> **关键**：`ppt_create` 现状会在内部再调一次 `_autofill_image_prompts`（@3239-3248）。`_render_pro` 已先生好图（`image_path` 已填），需避免二次生图。两种实现选一（§6 R-1）：(i) 给 `ppt_create` 加 `skip_image_gen: bool=False` 形参，`_render_pro` 传 True；(ii) `_render_pro` 走更底层的 `_render_fromscratch`/`_render_with_*` 直接渲染绕过 `ppt_create` 顶层。**推荐 (i)**（改动小、复用顶层视觉闭环）。
-**验收**：单测——(a) image_mode + probe False → 走模板路径（`_degrade_to_template` 调用 + ppt_create 带 template）；(b) probe True 但首图 connectivity error → 回退模板；(c) 首图 content error → 不回退（占位继续）；(d) 全程成功 → 惊艳路径不二次生图；(e) `_degrade_to_template` 内容不丢。
+> **R-1（双保险）**：①`_degrade_to_template` 清空 image_prompt；②给 `ppt_create` 加 keyword-only `skip_image_gen: bool=False`（@3239 的 `_autofill_image_prompts` 前加 `if not skip_image_gen:`，**默认 False = 字节 BC**），`_render_pro` 两条路径都传 True。两条都做，确保模板回退路径 + 惊艳已生图路径都不二次烧图（codex MAJOR：fallback 路径也会烧图）。
+**验收**：单测——(a) probe False → 模板路径（`_degrade_to_template` + ppt_create skip_image_gen=True + template）；(b) 首图 connectivity → 回退；(c) **首图 model_unavailable（4xx 模型不支持）→ 回退**；(d) 首图 content → 不回退（占位继续）；(e) 全程成功 → 惊艳路径不二次生图；(f) `_degrade_to_template` 清空 image_prompt 且 bullets 充实不丢；(g) `ppt_create(skip_image_gen=False)` 默认行为字节 BC。
 
 ---
 
-### WI-7 · `ppt_pro` 工具 handler + schema + 注册（编排总装）
+### WI-7 · `ppt_pro` 工具 handler（async 秒回 + 独立编排 task）+ schema + 注册（总装）
+> v0.2 修 BLOCKING-1/2/3：handler 是 **async**、**秒回**、起独立 task；注入经 **registry session context**（不是 `ppt_tools.set_session_context`，那不存在）；handler 从 **args 读 `_session_id`**（同现有 `ppt_create` @**3769** 的读法）。
+
 **文件** `backend/deskpet/tools/ppt_tools.py`
-- 新增 `async def _handle_ppt_pro(**kwargs)`：编排 Stage A→D（调 WI-1/2/3/6），同步做 A/B/C，确认后渲染走异步 `_bg_job`（复用 `worker.submit_background` + `notifier`），返回 `{"ok":True,"status":"generating"}`；worker 不可用则同步 `_render_pro`。
-- 入参 schema `_PPT_PRO_SCHEMA`：
-  - `topic: string`（必填）
-  - `pages: integer`（默认 8，范围 3-20）
-  - `depth: enum(light,standard,deep)`（默认取 config `pro_default_depth`）
-  - `theme: enum(minimal,dark,playful)`（默认 minimal）
-  - `image_mode: boolean`（默认 True = 惊艳优先；False = 直接模板）
-  - `title/author/output_path`（同 ppt_create）
-- 注册 `_register_ppt_pro_tool()`（仿 `_register_ppt_tool` @3834）：`toolset="ppt"`, `permission_category="write_file"`, `timeout_seconds=1800.0`, `concurrency_safe=False`；**仅当 `config.ppt.pro_enabled` 为 True 时注册**。
-- **进度可观测**：Stage A 前 `_notify("🔍 正在围绕主题做深度调研…")`；A 后 `_notify(f"📚 调研完成（{n_sources} 个来源），正在拟大纲…")`；用 `worker.notifier`（异步）或 control WS。
-**验收**：handler 级单测（mock research/llm/clarify/render）跑通 happy path（确认→生成）+ 取消路径 + 调研降级路径。
+- 新增 `async def _handle_ppt_pro(**kwargs)`：
+```python
+async def _handle_ppt_pro(**kwargs):
+    sid = kwargs.get("_session_id", "default")          # registry 注入进 args（同 ppt_create @3769）
+    clarify = _PPT_PRO_CTX.get("clarify")               # 见下「注入」：经 registry session context 拿
+    notifier = _PPT_PRO_CTX.get("notifier")
+    run_blocking = _PPT_PRO_CTX.get("run_blocking")
+    if clarify is None or notifier is None:             # 接线缺失 → 不静默死，回退普通 ppt_create 行为或明确报错
+        return {"ok": False, "error": "ppt_pro 接线缺失（clarify/notifier 未注入）", "fallback": "请用 ppt_create"}
+    t = asyncio.create_task(_ppt_pro_orchestrate(
+        topic=kwargs["topic"], pages=kwargs.get("pages", 8),
+        depth=kwargs.get("depth") or _ppt_pro_cfg().default_depth,
+        theme=kwargs.get("theme", "minimal"), image_mode=kwargs.get("image_mode", True),
+        title=kwargs.get("title", ""), author=kwargs.get("author", "DeskPet"),
+        output_path=kwargs.get("output_path"),
+        clarify=clarify, notifier=notifier, run_blocking=run_blocking, session_id=sid))
+    _PPT_PRO_TASKS.add(t); t.add_done_callback(_PPT_PRO_TASKS.discard)
+    return {"ok": True, "status": "researching",
+            "message": "收到~ 我先围绕这个主题做调研，拟好大纲会弹给你确认，确认后开始生成 PPT。"}
+```
+- **注入（关键，BLOCKING-3）**：`_clarify_ask`/notifier/run_blocking/session_id 是 **main loop** 的资源，经 registry 的 session context 机制（`registry.py:262` set、`:691` 合并进 handler args）注入。两种落地择一：
+  - (i) 把它们放进 registry session context，handler 从 `kwargs` 读（与 `_session_id` 同路）。
+  - (ii) main.py 在 `_clarify_ask` 定义后，调一个 `ppt_tools.set_ppt_pro_services(clarify=..., notifier=..., run_blocking=...)`（**新增**模块级 setter + `_PPT_PRO_CTX` dict，仿 research_tools 的 `set_live_llm_call` 注入范式）。**推荐 (ii)**（与 deepresearch 依赖注入同范式，清晰、可测）。
+  - **注入时机**：必须在 `main.py:530 _clarify_ask` 定义**之后**调 setter（codex 提醒）。
+- `_ppt_pro_orchestrate`：见 §2.5 骨架（含 prev_slides 修订环、no-research 知情确认、取消/超时优雅返回、渲染走 run_blocking）。
+- 入参 schema `_PPT_PRO_SCHEMA`：`topic:string`(必填) / `pages:integer`(默认8,范围3-20) / `depth:enum(light,standard,deep)`(默认 config) / `theme:enum(minimal,dark,playful)` / `image_mode:boolean`(默认True=惊艳) / `title/author/output_path`(同 ppt_create)。
+- 注册 `_register_ppt_pro_tool()`（仿 `_register_ppt_tool` @**3834**）：`toolset="ppt"`, `permission_category="write_file"`, `timeout_seconds=60.0`（**秒回，不需 1800**）, `concurrency_safe=False`；**仅当 `_ppt_pro_cfg().enabled` 为 True 时注册**。
+**验收**：handler 级单测（mock clarify/notifier/run_blocking/research/llm）——(a) 秒回 `status:researching` 且起了独立 task；(b) 接线缺失返回明确错误不崩；(c) 独立 task happy path（确认→渲染）；(d) 取消/超时/no-research 知情确认路径；(e) chat task 被 cancel 不影响独立编排 task（模拟 parent cancel）。
 
 ---
 
@@ -338,8 +439,19 @@ def _render_pro(...):
 
 ---
 
+### WI-10 · 后台 task 的 receipt / artifact 上报（architect MAJOR-4）
+> `ppt_pro` handler 秒回 `status:researching` 后，真正产物在独立 task 出。若不补上报，last-mile verify gate / receipt 体系（`emit_receipt`、`test_verify_gate.py`、`test_receipt_store.py`）看不到这条新链路的真实产物与失败。
+
+**文件** `backend/deskpet/tools/ppt_tools.py`（`_ppt_pro_report_done` + 失败分支）
+- 成功：编排 task 拿到 `_render_pro` 的 `result`（含 `path`/`artifacts`）后，**补发 receipt + artifact**，对齐 `ppt_create` 现有 artifact emit（`ppt_tools.py:3349`）。把成品 .pptx + 预览图作为结构化 artifact 推回（不只 notifier 文本），让用户看到「打开 / 在文件夹中显示」卡 + verify gate 可对账。
+- 失败（渲染失败 / 确认超时 / no-research 被用户取消）：除 notifier 文本外，**emit 一条 error/cancel 结构化结果**（receipt outcome=failed/cancelled），不静默。
+- 自动打开：带图成品复用现有「✨…已自动打开」逻辑（PPT.md §2）。
+**验收**：单测——(a) 成功 → emit artifact（含 path）+ receipt outcome=ok；(b) 渲染失败 → receipt outcome=failed + notifier；(c) 取消 → outcome=cancelled。
+
+---
+
 ### WI-9 · 测试与真机验收
-- **单测**（backend）：WI-0~7 各自 focus 测；新增 `test_ppt_pro.py` 覆盖编排全路径（research 降级 / 确认 / 修改环 / 取消 / 超时 / probe 回退 / 首图 gate）。复用 mock-embedder/mock-llm 风格。
+- **单测**（backend）：WI-0~7/WI-10 各自 focus 测；新增 `test_ppt_pro.py` 覆盖编排全路径（research 降级/配置错上抛 / 确认 / 修改环(prev_slides) / 取消 / 超时 / probe 回退 / 首图 connectivity gate / 首图 model_unavailable gate / content 不回退 / 独立 task 不被 parent cancel）。复用 mock-embedder/mock-llm 风格。
 - **BC 回归**：`-k ppt` 全套 + research 全套 + clarify 相关 + 前端 `vitest`（ClarificationDialog）+ `tsc 0 err`。
 - **接线冒烟**：裸进程冒烟脚本 `scripts/acceptance/ppt_pro_smoke.py`（dry-ish：mock 生图 + mock confirm，验证编排 wiring 不死）。
 - **windows-mcp 真机 E2E**（项目硬纪律，见 §8 手测计划，单独文档 `02-manual-test.md`）。
@@ -351,14 +463,16 @@ def _render_pro(...):
 | 文件 | 改动 | WI |
 |---|---|---|
 | `backend/deskpet/config.py` | 加 `[ppt]` 6 个 pro_* 字段 | WI-0 |
-| `backend/deskpet/tools/research_tools.py` | `_DEPTH_PRESETS`→顶层 `DEPTH_PRESETS` 公共常量 | WI-1b |
-| `backend/deskpet/tools/ppt_tools.py` | 新增 `_research_topic_for_ppt`/`_draft_outline_from_research`/`_build_outline_prompt`/`_outline_to_markdown`/`_fallback_minimal_outline`/`_ppt_pro_confirm`/`_degrade_to_template`/`_autofill_with_connectivity_gate`/`_is_connectivity_error`/`_render_pro`/`_handle_ppt_pro`/`_PPT_PRO_SCHEMA`/`_register_ppt_pro_tool`；`ppt_create` 加 `skip_image_gen` 形参 | WI-1/2/3/6/7 |
-| `backend/deskpet/tools/image_tools.py` | 新增 `probe_image_reachable`；失败返回加 `error_kind`；`_resolve_relay_base_and_key` helper | WI-5/6b |
-| `backend/main.py` | `_clarify_ask` 加 `timeout`+`content_md`；ppt 工具 `set_session_context` 注入 `clarify`+`session_id`；`pro_enabled` 时注册 `ppt_pro` | WI-3/7 |
-| `backend/deskpet/tools/code_tools/clarify_tool.py` | `build_clarification_ask` 闭包同步加 `timeout`+`content_md`（与 main.py 一致） | WI-3 |
+| `backend/deskpet/tools/research_tools.py` | 无需改（`_DEPTH_PRESETS` 已是顶层常量 @2104，直接 import） | WI-1b |
+| `backend/deskpet/tools/ppt_tools.py` | 新增 `_ppt_pro_cfg`/`_research_topic_for_ppt`/`_is_config_or_auth_error`/`_draft_outline_from_research`/`_build_outline_prompt`/`_outline_to_markdown`/`_fallback_minimal_outline`/`_degrade_to_template`/`_autofill_with_connectivity_gate`/`_should_fallback`/`_render_pro`/`_ppt_pro_orchestrate`/`_handle_ppt_pro`/`_ppt_pro_report_done`/`_PPT_PRO_SCHEMA`/`_PPT_PRO_CTX`/`_PPT_PRO_TASKS`/`set_ppt_pro_services`/`_register_ppt_pro_tool`；`ppt_create` 加 `skip_image_gen` 形参；**修现有 `_ppt_async_enabled` 等的 `_cfg.config.raw` 坏读法** | WI-0/1/2/6/7/10 |
+| `backend/deskpet/tools/image_tools.py` | 新增 `probe_image_reachable`；失败返回加 `error_kind`(connectivity/model_unavailable/auth/quota/content/unknown)；`_resolve_relay_base_and_key` helper | WI-5/6b |
+| `backend/config.py`（**不是** deskpet/config.py） | 加 `[ppt]` 6 个 pro_* 项，走 `standalone_config_section("ppt")` | WI-0 |
+| `backend/main.py` | `_clarify_ask` 加 `timeout`+`content_md`；`_clarify_ask` 定义后调 `ppt_tools.set_ppt_pro_services(...)` 注入 clarify/notifier/run_blocking；`pro_enabled` 时注册 `ppt_pro` | WI-3/7 |
+| `backend/deskpet/tools/code_tools/clarify_tool.py` | `build_clarification_ask` 加 `timeout`+`content_md`（口径一致，不做收敛重构） | WI-3 |
 | `tauri-app/src/types/skillPlatform.ts` | `ClarificationRequest.payload.content_md?: string` | WI-4 |
-| `tauri-app/src/components/ClarificationDialog.tsx` | 渲染 `content_md` 大纲块 | WI-4 |
+| `tauri-app/src/components/ClarificationDialog.tsx` | 渲染 `content_md` 大纲块 + 「让我改改」改编辑态（不立即 resolve） | WI-4 |
 | `backend/deskpet/skills/builtin/ppt-generate/SKILL.md` | 路由到 `ppt_pro` + 修 stale 模板名 | WI-8 |
+| `backend/deskpet/tools/ppt_tools.py`（`_ppt_pro_report_done`） | 后台 task 成功/失败补发 receipt + artifact | WI-10 |
 | `backend/tests/test_ppt_pro.py`（新）+ 既有 ppt/research/clarify 测 | 单测 + BC | WI-9 |
 | `tauri-app/src/components/__tests__/ClarificationDialog.test.tsx` | vitest | WI-4/9 |
 | `scripts/acceptance/ppt_pro_smoke.py`（新） | 接线冒烟 | WI-9 |
@@ -369,40 +483,46 @@ def _render_pro(...):
 ## 5. 执行顺序（依赖图）
 
 ```
-WI-0 (config) ─┬─ WI-1b (DEPTH_PRESETS 重构) ─ WI-1 (research 封装)
-               ├─ WI-2 (拟纲/修订)
-               ├─ WI-5 (probe) ─ WI-6b (error_kind) ─ WI-6 (回退编排)
-               └─ WI-3 后端 clarify 扩展 ─┐
-WI-4 (前端 clarify 渲染) ──────────────────┤
-                                          └─ WI-7 (ppt_pro 总装) ─ WI-8 (SKILL) ─ WI-9 (测试/真机)
+WI-0 (config: backend/config.py + 修坏读法) ─┬─ WI-1 (research 封装, import _DEPTH_PRESETS)
+                                            ├─ WI-2 (拟纲/双模式/修订)
+                                            ├─ WI-5 (probe) ─ WI-6b (error_kind 细分) ─ WI-6 (回退编排+_degrade 清 prompt)
+                                            └─ WI-3 后端 clarify 扩展 ─┐
+WI-4 (前端 clarify 渲染 + 让我改改编辑态) ──────────────────────────────┤
+                                                                     └─ WI-7 (ppt_pro async 秒回+独立 task 总装) ─ WI-10 (receipt) ─ WI-8 (SKILL) ─ WI-9 (测试/真机)
 ```
-- 可并行：{WI-1+WI-1b}、{WI-2}、{WI-5+WI-6b+WI-6}、{WI-3 后端}、{WI-4 前端} 五条独立线（codex 多 worktree 并行）。
-- 汇合点：WI-7 总装。
+- 可并行：{WI-1}、{WI-2}、{WI-5+WI-6b+WI-6}、{WI-3 后端}、{WI-4 前端} 五条独立线（codex 多 worktree 并行）。
+- 汇合点：WI-7 总装（含 §2.5 独立编排 task）→ WI-10 上报 → WI-8 路由。
 
 ---
 
-## 6. 风险与对策（待对抗挑战补充）
+## 6. 风险与对策（v0.2：R1 对抗挑战后更新，✅=已在 plan 内消解）
 
-| ID | 风险 | 对策 |
+| ID | 风险 | 状态/对策 |
 |---|---|---|
-| **R-1** | `_render_pro` 已生图，`ppt_create` 内部 @3239 二次生图（重复烧钱/覆盖） | 给 `ppt_create` 加 `skip_image_gen=False` 形参，`_render_pro` 惊艳路径传 True（WI-6 已列） |
-| **R-2** | `_clarify_ask` 走 `_control_connections[session_id]`；ppt 工具拿到的 `session_id` 是否就是 control WS 注册的那个 key？pet 窗口是 `"default"` | WI-7 注入 `session_id` 必须用与 control WS 注册一致的 key；测绘见 App.tsx 用 `session_id=default`。实现时真机核验 `_control_connections` 命中 |
-| **R-3** | `_clarify_ask` 在 main.py 与 clarify_tool.py 两份拷贝，改一处漏一处再漂移 | WI-3 顺手收敛为单一实现（clarify_tool 导出，main.py import），二者签名强制一致 |
-| **R-4** | 同步 handler 内 await 调研+确认最坏 ~10min，agent turn 长时间挂起，期间用户发新消息会 preempt/cancel 当前 turn → 确认链路被杀 | 参照 FP-5「确认卡」教训（独立 asyncio.Task 防 preempt）。评估：是否把确认环也拆独立 task？或接受「确认期间不收新消息」。**留待挑战定夺**（见 §7 待决） |
-| **R-5** | 调研 report_md 注入拟纲 prompt 爆 LLM 窗口（gpt-5.5 8000） | `_PPT_PRO_RESEARCH_CTX_CHARS=6000` 截断；拟纲用 `_resolve_default_llm_call`（research LLM，max_tokens 较大）而非 8000 窗口的聊天模型 |
-| **R-6** | probe `/v1/models` 200 但 gpt-image-2 模型本身不可用（probe 假阳） | 双层判定：probe 过了仍有「首图实测 gate」兜底（WI-6） |
-| **R-7** | `parse_outline` 对 LLM 乱输出的鲁棒性 | `_fallback_minimal_outline` 兜底；复用现有 `normalize` |
-| **R-8** | flag 默认 True 改变出厂行为（用户原本「做 PPT」可能不期望被暂停确认） | `ppt_pro` 是新工具，SKILL.md 路由控制何时用；保留 `image_mode`/快出路径；`pro_enabled` 可关回旧行为 |
+| **R-1** | `_render_pro` 已生图 / 模板回退路径，`ppt_create` @3239 二次生图（重复烧钱） | ✅ **双保险**：`_degrade_to_template` 清空 image_prompt + `ppt_create` 加 `skip_image_gen`（默认 False=BC），两路径都传 True（WI-6） |
+| **R-2** | `_clarify_ask` 走 `_control_connections[session_id]`，ppt 拿到的 sid 是否命中 | ✅ 低风险：codex 实测后端默认缺省 query→`"default"`（main.py:3986/3996），`_clarify_ask` 内 `or get("default")` 兜底；handler 从 args 读 `_session_id`（WI-7）。真机核验命中 |
+| **R-3** | ~~`_clarify_ask` 两份拷贝~~ | ✅ **伪命题已删**：codex 实测 main.py:530 是唯一活动实现，clarify_tool 未被调用；只改一处 |
+| **R-4** | 确认/调研内联 await 在 chat task → same-sid 新消息 preempt cancel 杀确认链路（=FP-5 旧 bug） | ✅ **BLOCKING 已修**：handler 秒回 + 独立 `asyncio.create_task` 编排 task（§2.3/§2.5），照搬 FP-5 范本，preempt 伤不到 |
+| **R-5** | 调研 report_md 注入拟纲 prompt 爆窗 | ✅ `_PPT_PRO_RESEARCH_CTX_CHARS=6000` 截断 + 拟纲用 `_resolve_default_llm_call`（WI-2 锁定） |
+| **R-6** | probe `/v1/models` 200 但 gpt-image-2 模型不可用（假阳） | ✅ 双层：probe + 首图实测 gate，且 4xx model_unavailable 也回退（§2.2/WI-6b） |
+| **R-7** | `parse_outline` 对 LLM 乱输出鲁棒性 | ✅ `_fallback_minimal_outline` 兜底 + 复用 `normalize` |
+| **R-8** | flag 默认 True 改变出厂行为 | ✅ 新工具 + SKILL.md 路由控制 + `image_mode`/快出 + `pro_enabled` 可关 |
+| **R-9** | 模板回退内容密度塌方（image_full 稀疏文本填模板设计页留白） | ✅ WI-2 双模式产出（image_prompt + 充实 bullets），回退用 bullets 不做有损转换（architect MAJOR-2） |
+| **R-10** | 修订环丢上一版大纲，整盘重拟推翻已认可页 | ✅ WI-2 传 `prev_slides`，prompt 改「增量改、保留其余」（architect MAJOR-3） |
+| **R-11** | F1 调研静默失败 → 偷偷出「正式 PPT」凭空编 | ✅ 区分配置错(上抛)/网络错(降级)，且 no-research 时确认卡显式告知让用户知情确认（WI-1，codex/architect MAJOR） |
+| **R-12** | 后台 task 产物/失败 verify gate 看不到 | ✅ WI-10 补 receipt+artifact（architect MAJOR-4） |
+| **R-13** | 配置走 `_cfg.config.raw` 坏读法静默失效（STATUS 多次踩） | ✅ WI-0 走 `standalone_config_section`，顺手修现有坏读法（codex BLOCKING） |
 
 ---
 
-## 7. 待决问题（需挑战阶段 + 用户拍板）
+## 7. 待决问题（需用户拍板 — 已大幅收敛，仅剩偏好项）
 
-1. **R-4 确认期 preempt**：确认环是否拆独立 task（防新消息 cancel）？还是接受确认期间阻塞？（影响 UX 与实现复杂度）
-2. **`ppt_pro` vs 扩展 `ppt_create`**：是否真要新工具，还是给 `ppt_create` 加 `research=True/confirm=True` 开关？（本 plan 选新工具，理由 §2.1）
-3. **确认卡用 `ask_clarification` 复用 vs 专用「大纲卡」**（FP-5 风格独立卡片）？本 plan 选前者（省力）；若要「保存为模板/历史大纲」等富交互，后者更好。
-4. **调研档位默认**：PPT 默认 standard 是否太慢（standard ≈ 5 子问题，可能 2-3min）？是否默认 light？
-5. **调研是否落盘**到 DeepResearch/（默认否）。
+> R1 两路对抗（codex 4B+3M / architect 2B+4M）的 BLOCKING/MAJOR 已全部在 v0.2 消解（见 §6）。剩下纯属产品偏好，不阻塞实现：
+
+1. **调研档位默认**：`standard`（5 子问题，~2-3min，质量更稳）vs `light`（3 子问题，~60-90s，更快）。本 plan 默认 standard，**建议征询用户**（快 vs 充分）。
+2. **确认卡形态**：复用 `ask_clarification`（本 plan 选，省力）vs FP-5 风格独立「大纲卡」（支持「存为历史大纲/模板」等富交互）。本 plan 选前者；若用户想要大纲可复用/可编辑保存，再升级。
+3. **调研是否落盘** DeepResearch/（默认否，避免污染索引；`pro_save_research` 可开）。
+4. **生图成本提示**：确认即同意 gpt-image-2 按张计费（~$0.15/张 × N）。是否在确认卡注明页数与预估张数？（建议注明，透明）
 
 ---
 
