@@ -1,0 +1,414 @@
+Reading additional input from stdin...
+OpenAI Codex v0.125.0 (research preview)
+--------
+workdir: G:\projects\deskpet
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019eea47-b9b2-71b3-a770-fe3019cb68d9
+--------
+user
+你是资深架构评审，对一份「PPT 优化 plan」做**第 3 轮（终轮）只读复核**。前两轮的 BLOCKING/MAJOR 作者已在 v0.3 修复。本轮**只聚焦验证 v0.3 新增的 4 处修复是否引入新 BLOCKING/MAJOR**，并给最终是否 EXECUTABLE-AS-IS 的判定。不要重复挑前两轮已闭环的点（除非发现修复本身是错的）。
+
+## 待复核 plan（v0.3）
+G:/projects/deskpet/plans/2026-06-21-ppt-deepresearch-pro/00-PLAN.md （读顶部 v0.2→v0.3 变更 + §6 R-14~R-17 + WI-6b + WI-7 + WI-10）
+
+## 只核这 4 处 v0.3 新增（每处给「可行/有坑」+证据行号）
+1. **4xx 分层判定（R-14, WI-6b）**：status_code→error.code→多语言文案兜底 + 「全图失败 n_ok==0 也回退」。问题：① 这套分层在 `backend/deskpet/tools/image_tools.py` 现有失败返回结构里能落地吗（`_generate_png` 返回 `(bytes|None, err|None)`，要加 error_kind 需改返回签名——会不会破坏现有调用方？grep `_generate_png`/`generate_images` 所有调用点）？② 「全图失败回退」与「content 类不回退」会不会冲突（content 失败但全失败时该不该回退）？
+2. **同会话去重 `_PPT_PRO_RUNNING[sid]`（R-15, WI-7）**：返回 `already_running`。问题：① sid 取 `kwargs["_session_id"]`，桌宠聊天的 sid 是否稳定（同一会话多轮是否同 sid）？若 sid 每轮变，去重失效。② `already_running` 这个 status 字符串 AgentLoop/前端能正确处理不报错吗？
+3. **总超时 + 取消（R-16, WI-7）**：`asyncio.wait_for(orchestrate, total_timeout_s=1200)` 包住含 `await _clarify_ask`(等用户确认) 的整个编排。问题：**总超时会不会把「正在等用户确认大纲」也算进 1200s 一起 timeout 杀掉**？用户慢慢看大纲很正常。`/stop` 取消入口 `_ppt_pro_cancel` 真能 cancel 到正 `await clarify` 的 task 吗（CancelledError 能否穿透 asyncio.wait_for 的 Future）？
+4. **receipt/artifact 通道闭合（R-17, WI-10）**：注入 `artifact_pusher`/`receipt_reporter`。问题：plan 说「复用现有桌宠成品卡 WS 通道」「复用 emit_receipt」——这两个通道现实里**真存在且能从后台 task 调**吗？grep 现有 artifact 卡推送（`ppt_create` 异步路径成品怎么到前端的）+ `emit_receipt`/ReceiptStore 的真实调用方式，确认 plan 的注入不是空想。
+
+## 另核 1 点
+- v0.3 改动有没有和前两轮已修的点互相打架（比如总超时与确认超时 confirm_timeout_s 叠加语义、去重与 same-sid 取消的交互）？
+
+## 输出
+4 处逐一判定 + 任何新发现，[BLOCKING|MAJOR|MINOR] 分级 + 证据(文件:行号)。最后一行必须是：`VERDICT: EXECUTABLE-AS-IS` 或 `VERDICT: NEEDS-FIX (N BLOCKING, M MAJOR)`。只读不改文件。
+codex
+我会按只读复核处理：先读计划 v0.3 指定段落，再用 `rg` 定位实际调用链和通道实现，只验证这 4 个新增点是否带来新的阻断或重大风险。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content -Path 'G:\\projects\\deskpet\\plans\\2026-06-21-ppt-deepresearch-pro\\00-PLAN.md' | Select-Object -First 260" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command 'rg -n "_generate_png|generate_images|ppt_create|emit_receipt|ReceiptStore|artifact|artifact_pusher|receipt_reporter|_session_id|AgentLoop|already_running|clarify|_clarify_ask|_ppt_pro_cancel|PPT_PRO_RUNNING|wait_for|confirm_timeout" -S .' in G:\projects\deskpet
+ succeeded in 24510ms:
+# PPT èƒ½åŠ›ä¼˜åŒ– â€?DeepResearch è°ƒç ” â†?å¤§çº²ç¡®è®¤ â†?æƒŠè‰³ç”Ÿå›¾(gpt-image-2) / æ¨¡æ¿å…œåº•
+
+> **çŠ¶æ€?*: **v0.3 â€?R2 å¤æ ¸åŽæ”¶æ•›ï¼Œä½œè€…åˆ¤å®?EXECUTABLE-AS-ISï¼ˆå¾…ç”¨æˆ· reviewï¼?*ã€‚R1 åŒè·¯å¯¹æŠ—ï¼ˆcodex 4B+3M / architect 2B+4Mï¼? R2 codex å¤æ ¸ï¼?B+3Mï¼‰çš„å…¨éƒ¨ BLOCKING/MAJOR å·²æ¶ˆè§£ï¼ˆÂ§6 R-1~R-17 å…?âœ…ï¼‰ã€?> **å»ºæ¡£**: 2026-06-21
+> **ä½œè€?*: Claude (Lead) Â· å¯¹æŠ—ï¼šcodex gpt-5.5ï¼ˆåªè¯»ï¼Œ2 è½®ï¼‰+ architect å­ä»£ç?> **å‰ç½®é˜…è¯»**: [STATUS/PPT.md](../../STATUS/PPT.md) Â· [STATUS/DeepResearch.md](../../STATUS/DeepResearch.md) Â· [STATUS/AgentLoop.md](../../STATUS/AgentLoop.md)
+>
+> **v0.1â†’v0.2ï¼ˆR1ï¼‰å…³é”®ä¿®æ­?*ï¼šâ‘  ç¡®è®¤/è°ƒç ”çŽ?*æ‹†ç‹¬ç«?asyncio.Task**ã€handler ç§’å›žï¼ˆä¿® FP-5 åŒæ¬¾ preempt-cancel BLOCKINGï¼‰ï¼›â‘?é…ç½®æ–‡ä»¶æ˜?`backend/config.py` é?`deskpet/config.py`ï¼Œèµ° `standalone_config_section` é¿å¼€ `config.config` åè¯»æ³•ï¼ˆBLOCKINGï¼‰ï¼›â‘?æ³¨å…¥ç»?`set_ppt_pro_services`ï¼Œéž `ppt_tools.set_session_context`ï¼ˆBLOCKINGï¼‰ï¼›â‘?F4 å›žé€€å¢žåŠ  **4xx model_unavailable** è§¦å‘ï¼ˆBLOCKINGï¼‰ï¼›â‘?`_degrade_to_template` æ¸…ç©º image_prompt + `skip_image_gen` åŒä¿é™©é˜²äºŒæ¬¡çƒ§å›¾ï¼›â‘¥ å¤§çº²**åŒæ¨¡å¼äº§å‡?*é˜²å›žé€€å¡Œæ–¹ï¼›â‘¦ ä¿®è®¢çŽ¯ä¼  prev_slidesï¼›â‘§ å‰ç«¯ã€Œè®©æˆ‘æ”¹æ”¹ã€è¿›ç¼–è¾‘æ€ï¼›â‘?æ–°å¢ž WI-10ã€?> **v0.2â†’v0.3ï¼ˆR2ï¼‰å…³é”®ä¿®æ­?*ï¼šâ‘© 4xx åˆ¤å®šæ”?*åˆ†å±‚**ï¼ˆstatus_codeâ†’error.codeâ†’å¤šè¯­è¨€æ–‡æ¡ˆå…œåº•+è¯šå®žå£°æ˜Žï¼?ã€Œå…¨å›¾å¤±è´¥ä¹Ÿå›žé€€ã€äºŒæ¬¡å…œåº?+ çœŸå®žæ ·ä¾‹æµ‹è¯•ï¼ˆBLOCKINGï¼‰ï¼›â‘?`_PPT_PRO_RUNNING[sid]` **åŒä¼šè¯åŽ»é‡?*é˜?AgentLoop é‡å¤è°ƒèµ·ç¬¬äºŒä¸?taskï¼ˆMAJORï¼‰ï¼›â‘?åŽå°ç¼–æŽ’åŠ?*æ€»è¶…æ—?1200s + `/stop`/same-sid å–æ¶ˆå…¥å£ + æ¸…ç†**ï¼ˆMAJORï¼‰ï¼›â‘?WI-10 **é—­åˆé€šé“**ï¼šæ³¨å…?`artifact_pusher`+`receipt_reporter` åŽå°ä¸»åŠ¨æŽ¨æˆå“å¡/å¯¹è´¦ï¼ˆMAJORï¼‰ï¼›â‘?åˆ?Â§4 æ®‹ç•™ `deskpet/config.py` è¡?+ WI-8 åŠ ã€ŒLLM è§?status ä¸é‡å¤è°ƒã€ã€?
+---
+
+## 0. éœ€æ±‚ï¼ˆç”¨æˆ·åŽŸè¯ï¼?
+> ä¼˜åŒ– PPT çš„èƒ½åŠ›ï¼šç”¨æˆ·ç”Ÿæˆ PPT ç»™äº†ä¸»é¢˜ä»¥åŽï¼?*ç”?deepresearch çš„èƒ½åŠ›è¿›è¡Œå……åˆ†çš„è°ƒç ”**ï¼Œç„¶å?*ç”Ÿæˆå¤§çº²**ï¼?*å’Œç”¨æˆ·ç¡®è®¤å¤§çº²æ˜¯å?ok**ï¼Œok çš„è¯å°?*ä¼˜å…ˆç”?gpt-image-2 ç”ŸæˆæƒŠè‰³çš?PPT**ï¼›å¦‚æž?*è¿žæŽ¥ä¸ä¸Š gpt-image-2ï¼Œåˆ™ç”¨æ¨¡æ¿çš„æ–¹å¼ç”Ÿæˆ PPT**ã€?
+æ‹†æˆ 4 ä¸?*ä¸å¯è£å‰ª**çš„åŠŸèƒ½ç‚¹ï¼?
+| # | åŠŸèƒ½ç‚?| éªŒæ”¶å£å¾„ |
+|---|---|---|
+| **F1** | ä¸»é¢˜ â†?ç”?deepresearch å……åˆ†è°ƒç ” | ç”Ÿæˆå‰çœŸè°?`deepresearch()` ç®¡çº¿ï¼Œå¤§çº²å†…å®¹æœ‰è°ƒç ”æ¥æºæ”¯æ’‘ï¼ˆéžå‡­ç©ºç¼–ï¼‰ |
+| **F2** | è°ƒç ”ç»“æžœ â†?ç”Ÿæˆç»“æž„åŒ–å¤§çº?| LLM åŸºäºŽè°ƒç ”æŠ¥å‘Šäº§å‡º `list[SlideOutline]`ï¼Œè½åˆ°å¯æ¸²æŸ“çš?outline JSON |
+| **F3** | å’Œç”¨æˆ·ç¡®è®¤å¤§çº²ï¼ˆå¯æ”¹ï¼?| æš‚åœ agentï¼Œå‰ç«¯å¼¹ã€Œå¤§çº²ç¡®è®¤å¡ã€å±•ç¤ºå¤šè¡Œå¤§çº²ï¼Œç”¨æˆ·å¯ã€Œç¡®è®¤ç”Ÿæˆ?/ æä¿®æ”¹æ„è§ã€ï¼›æ”¹äº†é‡æ‹Ÿå†ç¡®è®?|
+| **F4** | ç¡®è®¤åŽä¼˜å…?gpt-image-2 æƒŠè‰³ç”Ÿå›¾ï¼›è¿žä¸ä¸Šå›žé€€æ¨¡æ¿ | é»˜è®¤èµ?`image_full` AI æ•´é¡µç”Ÿå›¾ï¼?*æŽ¢æµ‹+é¦–å›¾å®žæµ‹**åˆ¤å®š gpt-image-2 ä¸å¯è¾?â†?**æ•´å‰¯å›žé€€æ¨¡æ¿è·¯å¾„**ï¼Œä¸ç•™å ä½å›¾æ®‹é¡µ |
+
+---
+
+## 1. çŽ°çŠ¶æ‘˜è¦ï¼ˆæ¥è‡ªä»£ç æµ‹ç»˜ï¼Œå«çœŸå®žè¡Œå·ï¼‰
+
+> è¯¦è§ Â§1 å„æ–‡ä»¶å®žæµ‹ã€‚ä¸‹åˆ—è¡Œå·ä¸º 2026-06-21 å®žæµ‹ï¼Œå®žçŽ°æ—¶ä»¥æºç ?grep ä¸ºå‡†ï¼ˆè§ Â§9 å®žçŽ°çºªå¾‹ï¼‰ã€?
+### 1.1 PPT å·¥å…·å±‚ï¼ˆ`backend/deskpet/tools/ppt_tools.py`ï¼Œ~3860 è¡Œï¼‰
+- å…¥å£ `ppt_create(outline, *, theme, title, author, output_path, template, dry_run)` @**3152**ï¼›handler `_handle_ppt_create` @**3750**ï¼›æ³¨å†?`_register_ppt_tool()` @**3834-3860**ï¼ˆ`timeout_seconds=1200.0`, `permission_category="write_file"`, `concurrency_safe=False`ï¼‰ã€?- åˆ†æ´¾ï¼š`wants_fullbleed` @**3232**ï¼ˆ`any(layout=="image_full" and image_prompt)`ï¼‰â†’ `chosen_template` @**3235**ï¼ˆ`template or (None if wants_fullbleed else _default_template())`ï¼‰ã€?- ç”Ÿå›¾è§¦å‘ @**3239-3248**ï¼š`has_prompts and (chosen_template or has_img_layout)` â†?`_autofill_image_prompts(slides)` @**1867**ï¼›å¦åˆ?`_assign_image_layouts` @**1834**ã€?- ä¸‰æ¸²æŸ“è·¯å¾„ï¼š`_render_with_design_pages` @**2950**ï¼ˆæ¨¡æ¿è®¾è®¡é¡µâ‰?ï¼? `_render_with_template` @**3042** / `_render_fromscratch` @**3302**ã€?- **ç”Ÿå›¾å¤±è´¥çŽ°çŠ¶ï¼ˆå…³é”®ï¼‰**ï¼š`_autofill_image_prompts` @**1899-1905** å•é¡µå¤±è´¥å?`log.debug`ã€`image_path` ç•?`None`ã€?*ä¸æŠ›å¼‚å¸¸ä¸å›žé€€**ï¼›`_render_image_full_v2` @**1539** è§?`image_path=None` â†?æ¸²æŸ“æˆã€Œå ä½å›¾ã€ï¼ˆæ·±è‰²åº?IMG å¾½ç« +"image placeholder"ï¼‰ã€?*å½“å‰æ²¡æœ‰ä»»ä½•ã€Œæ•´å‰¯å›žé€€æ¨¡æ¿ã€æœºåˆ?*â€”â€”è¿™æ˜?F4 çš„æ ¸å¿ƒç¼ºå£ã€?- å¼‚æ­¥ï¼š`_handle_ppt_create` @**3771-3818**ï¼Œæ¡ä»?`n_imgs>=1 and not dry_run and worker.alive() and _ppt_async_enabled()` â†?`_bg_job` åŽå°è·?+ `worker.notifier(sid, "âœ?..")` + ç«‹å³è¿”å›ž `{"ok":True,"status":"generating"}`ï¼›å¤±è´¥é™çº§åŒæ­¥ã€?- outline ç»“æž„ `SlideOutline` dataclass @**160-191**ï¼ˆå­—æ®µï¼š`layout/title/subtitle/bullets/left/right/left_title/right_title/image_path/image_prompt/image_variant/font_scale/caption/quote/cite/chart/notes`ï¼‰ï¼›`parse_outline` @**308** å®½å®¹è§£æžï¼›`normalize` @**193**ã€?
+### 1.2 é…å›¾ï¼ˆ`backend/deskpet/tools/image_tools.py`ï¼?- `_generate_png(prompt, size, model) -> (bytes|None, err|None)` @**206**ï¼?*ä»Žä¸æŠ›å¼‚å¸?*ï¼›`generate_images(prompts, *, size, model) -> list[{prompt,path,error}]` @**337**ã€?- è¶…æ—¶ `_TIMEOUT=httpx.Timeout(connect=10, read=300, write=30, pool=30)` @**52**ï¼›`_MAX_ATTEMPTS=2`ï¼›å¤±è´¥åˆ†ç±?@**250-324**ï¼šè¿žæŽ¥ç±»ï¼ˆConnectTimeout/RemoteProtocolError/ConnectError/ReadError/WriteError/ProtocolError/SSLError/502/503ï¼‰è®° `last_transient` **å¯é‡è¯?*ï¼›è¯»è¶…æ—¶/504/4xx/å…¶å®ƒ **ç«‹å³è¿”å›ž (None, err)**ã€?- **å¯æ®ã€Œerror æ–‡æœ¬/å¼‚å¸¸ç±»ã€åŒºåˆ†ã€Œè¿žæŽ¥ç±»å¤±è´¥ï¼?è¿žä¸ä¸?gpt-image-2ï¼‰ã€vsã€Œå†…å®?4xx å¤±è´¥ã€?*â€”â€”F4 å›žé€€åˆ¤å®šè¦ç”¨åˆ°è¿™ç‚¹ï¼ˆè§?Â§3 WI-2ï¼‰ã€?
+### 1.3 DeepResearchï¼ˆ`backend/deskpet/tools/research_tools.py`ï¼Œ~2282 è¡Œï¼‰
+- æ ¸å¿ƒ `async def deepresearch(topic, *, llm_call, search=None, extract=None, max_sub_questions=5, max_urls_per_query=4, max_total_passages=12, min_passage_chars=250, max_rounds=1, mode="standard", user_request=None, scheduler=None, parent_sid="default", _depth=0, skip_plan=False) -> ResearchReport` @**1338**ã€?- **library-onlyï¼Œå¯ç›´æŽ¥ `await deepresearch(...)`**ï¼ˆæ¨¡å—æ³¨é‡Šæ˜Žç¤ºã€Œno FastAPI/IPC glueã€ï¼‰ã€‚å”¯ä¸€å¿…å¡«éžé»˜è®¤å‚æ•°æ˜¯ `llm_call`ã€?- ä¾èµ–æ³¨å…¥ï¼ˆmain.py lifespan ä¸€æ¬¡æ€§ï¼Œå…¨å±€é€æ˜Žï¼‰ï¼š`set_live_llm_call` @main.py**674** / `set_rerank_llm_call` @**692** / `set_semantic_scorer` @**1146** / `set_subagent_scheduler` @**2018**ã€‚å†…éƒ¨è°ƒç”¨æ–¹æ‹?LLMï¼š`_resolve_default_llm_call()` @research_tools**2215**ï¼ˆä¼˜å…ˆè¿”å›žå·²æ³¨å…¥çš?`_LIVE_LLM_CALL`ï¼Œå¦åˆ™æŒ‰ config+keychain é‡å»ºï¼‰ã€?- è¿”å›ž `ResearchReport` dataclass @**677**ï¼š`topic/summary/report_md/citations:list[Citation]/sub_questions/coverage:dict/errors`ã€?*æ³¨æ„**ï¼šè½ç›?`path`/`artifacts` ä¸åœ¨ `ResearchReport` é‡Œï¼Œåªåœ¨ handler `_handle_deepresearch` @**2111** è½ç›˜åŽè¿½åŠ ï¼›è½ç›˜å‡½æ•° `_save_report` @**2174** + `_update_deepresearch_index` @**2007**ï¼Œç›®å½?`paths.deepresearch_dir()` @paths**142**ã€?- æ¡£ä½ `_DEPTH_PRESETS` @**2104**ï¼šlight `(3,2,8,1)` / standard `(5,4,12,1)` / deep `(6,5,16,2)`ï¼ˆå­é—®é¢˜/æ¯é—®URL/æ®µè½ä¸Šé™/åæ€è½®ï¼‰ã€‚å…¨å±€å·¥å…·è¶…æ—¶ `_DEEPRESEARCH_TOOL_TIMEOUT=300.0` @**491**ï¼?*ç›´è°ƒæ— å†…ç½?timeout**ï¼Œéœ€è°ƒç”¨æ–¹è‡ªåŠ?`asyncio.wait_for`ã€?
+### 1.4 æš‚åœç­‰ç”¨æˆ·ç¡®è®¤ï¼ˆä¸¤å¥—æœºåˆ¶ï¼?- **`ask_clarification`** å·¥å…·ï¼š`code_tools/clarify_tool.py`ï¼ˆschema @**15-33**ã€`build_clarification_ask` @**50-91**ã€`resolve_clarification_response` @**36-47**ï¼‰ã€‚main.py å†…è”äº†ç­‰ä»·é—­åŒ?`_clarify_ask` @**530-552**ï¼ˆ`_clarify_pending: dict[str,Future]` @**500**ï¼ŒæŽ¨ `clarification_request` åˆ?`_control_connections[session_id]`ï¼Œ`await asyncio.wait_for(fut, 120)`ï¼‰ï¼›æ³¨å†Œ @**2175-2184**ï¼›å›žç?@**4181-4195**ï¼ˆ`clarification_response` â†?`resolve_clarification_response` â†?`fut.set_result`ï¼‰ã€?- å‰ç«¯ `ClarificationDialog.tsx`ï¼ˆ`tauri-app/src/components/`ï¼? `useClarificationRequests.ts`ï¼ˆhookï¼Œç›‘å?`/ws/control` çš?`clarification_request`ï¼‰ï¼›æŒ‚è½½ `App.tsx` @**723-724/1719-1722**ï¼ˆç”¨ `permissionChannel`ï¼Œpet çª—å£ `/ws/control?session_id=default`ï¼‰ã€‚ç±»åž?`skillPlatform.ts` @**57-73**ã€?- **ç»“è®ºï¼ˆæ¥è‡ªæµ‹ç»˜ï¼‰**ï¼š`ask_clarification` å½¢æ€æœ€çœåŠ›â€”â€”åŽç«¯å·²èƒ½åœ¨ tool handler å†?`await _clarify_ask(...)` æŒ‚èµ· agentï¼Œå‰ç«¯å·²æœ‰å¼¹çª—ã€?*åªéœ€æ‰©å±• payload æºå¸¦å¤šè¡Œå¤§çº² Markdownï¼ˆ`content_md`ï¼? å‰ç«¯å¯Œæ–‡æœ¬æ¸²æŸ?*å³å¯æ‰¿è½½ F3ã€Œå±•ç¤ºå¤§çº²è®©ç”¨æˆ·ç¡®è®¤/æ”¹ã€ã€?
+### 1.5 Envelope çŽ°çŠ¶
+```jsonc
+// agent â†?å‰ç«¯
+{"type":"clarification_request","payload":{"request_id":"<uuid>","question":"...","options":["..."]}}
+// å‰ç«¯ â†?agent
+{"type":"clarification_response","payload":{"request_id":"<uuid>","answer":"..."}}
+```
+
+---
+
+## 2. æž¶æž„å†³ç­–
+
+### 2.1 æ ¸å¿ƒå†³ç­–ï¼šæ–°å»?*å•å·¥å…·ç¡®å®šæ€§ç¼–æŽ?* `ppt_pro`ï¼ˆè€Œéžè®?LLM å¤šæ­¥ç¼–æŽ’ï¼?
+**ä¸ºä»€ä¹ˆä¸ç”?LLM ç¼–æŽ’ï¼ˆè®© SKILL.md æŒ‡æŒ¥ LLM ä¾æ¬¡è°?deepresearchâ†’ask_clarificationâ†’ppt_createï¼?*ï¼?1. **çª—å£åŽ‹åŠ›**ï¼šPPT.md Â§9.1 å®žæµ‹ gpt-5.5 æ¡Œå® çª—å£ä»?8000ï¼ŒæŠŠæ•´ä»½è°ƒç ”æŠ¥å‘Šå¡žè¿›ä¸Šä¸‹æ–‡å†å¤šæ­¥ç¼–æŽ’æžæ˜“çˆ†çª—/ä¸¢æ­¥ã€?2. **æŠ—æ¼‚ç§?*ï¼šSTATUS è®°å½•äº†å¤§é‡ã€Œè·¨å±?/ å¤šæ­¥ã€æ¼‚ç§?bugï¼ˆtask-driftã€fanout-gating 7 å¤„æ­»é“¾ç­‰ï¼‰ã€‚å¤šæ­?LLM ç¼–æŽ’æ˜¯æ¼‚ç§»é«˜å‘åŒºã€?3. **ç¡®å®šæ€?*ï¼šF4ã€Œè¿žä¸ä¸Šå›žé€€æ¨¡æ¿ã€æ˜¯ç¡®å®šæ€§åˆ¤å®šï¼Œå¿…é¡»åœ¨ä»£ç é‡Œåšï¼Œä¸èƒ½é?LLMã€Œæ„Ÿè§‰ã€ã€?
+**å†³ç­–**ï¼šæ–°å»ºå·¥å…?`ppt_pro(topic, *, depth, pages, theme, ...)`ï¼Œagent **åªè°ƒä¸€æ¬?*ï¼Œhandler å†…éƒ¨æŒ‰ç¡®å®šæ€§ç®¡çº¿è·‘ F1â†’F2â†’F3â†’F4ã€‚confirm ä¹‹ä¸­é€”æš‚åœå¤ç”?`_clarify_ask`ï¼ˆå·²éªŒè¯ tool handler å†…å¯ `await` æŒ‚èµ·ï¼‰ã€‚ä¿ç•™æ—§ `ppt_create` ä¸åŠ¨ï¼ˆç›´æŽ¥å‡ºå›?ç›´æŽ¥ç»?outline çš„ç®€å•åœºæ™?+ ä½œä¸º `ppt_pro` çš„æ¸²æŸ“åŽç«¯ï¼‰ã€?
+```
+LLM ä¸€æ¬¡è°ƒç”?  ppt_pro(topic="æ–°èƒ½æºç”µæ± æŠ€æœ¯å‘å¸ƒä¼š", depth="standard", pages=8)
+  â”?  â”œâ”€ Stage A [F1] è°ƒç ”   await deepresearch(topic, llm_call, mode=depthæ˜ å°„)  (å?asyncio.wait_for è¶…æ—¶)
+  â”?       â†?æŽ¨ã€ŒðŸ”?æ­£åœ¨æ·±åº¦è°ƒç ”â€¦ã€?/ å®ŒæˆæŽ¨ã€ŒðŸ“?è°ƒç ”å®Œæˆï¼ŒN æºã€?  â”œâ”€ Stage B [F2] æ‹Ÿçº²   await _draft_outline_from_research(topic, report, pages, llm_call)
+  â”?       â†?list[SlideOutline]ï¼ˆé»˜è®?image_full + image_prompt = æƒŠè‰³æ¨¡å¼ï¼?  â”œâ”€ Stage C [F3] ç¡®è®¤   await _clarify_ask(question, options=["ç¡®è®¤ç”Ÿæˆ","è®©æˆ‘æ”¹æ”¹"], content_md=å¤§çº²MD, sid, timeout=300)
+  â”?       â”œâ”€ "ç¡®è®¤ç”Ÿæˆ" / ç©ºç­”(è¶…æ—¶è§†å–æ¶? â†?è¿?D
+  â”?       â”œâ”€ è‡ªç”±æ–‡æœ¬(ä¿®æ”¹æ„è§) â†?_redraft_outline(feedback) â†?å›?Stage Cï¼ˆâ‰¤ _PPT_PRO_MAX_REVISIONS è½®ï¼‰
+  â”?       â””â”€ "å–æ¶ˆ" â†?ä¼˜é›…è¿”å›žã€Œå·²å–æ¶ˆã€?  â””â”€ Stage D [F4] æ¸²æŸ“   _render_pro(slides, ...)
+           â”œâ”€ probe + é¦–å›¾å®žæµ‹ gpt-image-2 å¯è¾¾ â†?èµ?image_full æƒŠè‰³è·¯å¾„(å¤ç”¨ ppt_create ç”Ÿå›¾+è§†è§‰é—­çŽ¯)
+           â””â”€ ä¸å¯è¾?â†?_degrade_to_template(slides) + chosen_template=é»˜è®¤å¤§ç±» â†?ppt_create æ¨¡æ¿è·¯å¾„
+                       + æŽ¨ã€Œâš ï¸?AI é…å›¾æš‚æ—¶è¿žä¸ä¸Šï¼Œå·²ç”¨ç²¾ç¾Žæ¨¡æ¿ç”Ÿæˆã€?           æœ€ç»ˆè½ç›?+ é¢„è§ˆå›?artifact + notifier æŽ¨å›ž + è‡ªåŠ¨æ‰“å¼€
+```
+
+### 2.2 F4 å›žé€€åˆ¤å®šï¼ˆåŒå±‚ï¼Œç¡®å®šæ€?â€?v0.2 ä¿?BLOCKINGï¼?xx æ¨¡åž‹ä¸å¯ç”¨ä¹Ÿè¦å›žé€€ï¼?1. **é¢„æŽ¢æµ?*ï¼ˆä¾¿å®œã€å…è´¹ï¼‰ï¼š`image_tools.probe_image_reachable(timeout=...)` â€”â€?`trust_env=False` ç›´è¿ž relay base `/v1/models`ï¼ˆå·²çŸ?200ï¼Œè§ STATUS 06-09ï¼‰ï¼Œconnect 5s/read 8sã€‚è¿”å›?`False` å?relay æ•´ä½“ä¸å¯è¾?â†?ç›´æŽ¥èµ°æ¨¡æ¿ï¼Œ**ä¸çƒ§ä»»ä½•ç”Ÿå›¾é’?*ã€?   - **æ³¨æ„**ï¼šprobe `/v1/models` 200 åªè¯æ˜?relay æ´»ç€ï¼?*ä¸è¯æ˜?gpt-image-2 æ¨¡åž‹å¯ç”¨**ï¼ˆcodex BLOCKINGï¼‰â†’ å¿…é¡»é ç¬¬ 2 å±‚å…œã€?2. **é¦–å›¾å®žæµ‹**ï¼ˆç²¾ç¡®ï¼‰ï¼šé¢„æŽ¢æµ‹è¿‡äº†ï¼Œå…ˆåªç”Ÿ**ç¬?1 å¼?*å›¾ï¼›æŒ‰è¿”å›žçš„ `error_kind`ï¼ˆWI-6b æ–°å¢žï¼‰åˆ¤å®šï¼š
+   - **è§¦å‘æ•´å‰¯å›žé€€æ¨¡æ¿**ï¼? å¹¿ä¹‰ã€Œè¿žä¸ä¸Š gpt-image-2ã€ï¼‰ï¼?     - `connectivity`ï¼šç½‘ç»?æœåŠ¡å±‚ï¼ˆconnect/read-timeout/5xx/SSL/protocolï¼‰ã€?     - `model_unavailable`ï¼?xx ä¸­ã€Œmodel ä¸æ”¯æŒ?/ model_not_found / è¯?relay æ—?gpt-image-2ã€ï¼ˆcodex å®žæµ‹ `image_tools.py:267-277` é?200 é”™è¯¯æ–‡æ¡ˆå«ã€Œmodel ä¸æ”¯æŒã€ï¼‰â€”â€?*è¿™æ­£æ˜¯ç”¨æˆ·è¯´çš„ã€Œè¿žæŽ¥ä¸ä¸?gpt-image-2ã€?*ï¼Œå¿…é¡»å›žé€€ã€?   - **ä¸å›žé€€**ï¼ˆå ä½é™çº§ï¼Œé¿å…è¯¯ä¼¤ï¼‰ï¼š
+     - `content`/`safety`ï¼?xx å†…å®¹/safety æ‹’ç»ï¼ˆä¸ªåˆ?prompt è§¦å‘ï¼Œæ¢å›¾æˆ–å ä½å³å¯ï¼Œéžæ•´ä½“ä¸å¯ç”¨ï¼‰ã€?     - `auth`/`quota`ï¼šè®¤è¯?é¢åº¦â€”â€?*ä¸é™é»˜å ä½?*ï¼Œåº”æ˜Žç¡®é€šçŸ¥ç”¨æˆ·ã€Œé…å›¾æœåŠ¡è®¤è¯?é¢åº¦æœ‰é—®é¢˜ã€ï¼ˆæ—¢éžã€Œè¿žä¸ä¸Šã€ä¹Ÿéžã€Œå†…å®¹é—®é¢˜ã€ï¼Œè®©ç”¨æˆ·çŸ¥æƒ…ï¼‰ã€?   - é¦–å›¾æˆåŠŸ â†?ç»§ç»­ç”Ÿå…¶ä½™å›¾ï¼ˆæƒŠè‰³è·¯å¾„ï¼‰ã€?
+### 2.3 åŒæ­¥/å¼‚æ­¥è¾¹ç•Œï¼ˆv0.2 é‡å†™ â€?ä¿?BLOCKING-1/2ï¼?
+> **v0.1 é”™è¯¯**ï¼šåŽŸè®¾è®¡æŠ?Stage A/B/C åŒæ­¥ `await` åœ?handler å†…ï¼ˆagent turn æŒ‚èµ· ~10minï¼‰ã€?> è¿?*ç²¾ç¡®å¤åˆ»äº?FP-5 å½“å¹´ä¿®æŽ‰çš?same-sid preempt bug**ï¼ˆ`main.py:806-811` æ³¨é‡Šï¼‰ï¼šç¡®è®¤æœŸé—´ç”¨æˆ·
+> éšä¾¿å‘ä¸€å¥è¯ â†?`main.py:6767-6770` æ— æ¡ä»?cancel å?sid ä¸Šä¸€ä¸?chat task â†?`_clarify_ask` çš?> Future è¢?cancel â†?ç¡®è®¤å¡å˜åƒµå°¸ã€`ppt_pro` é™é»˜æ­»äº¡ã€é›¶åé¦ˆã€?*å¿…é¡»æ‹†ç‹¬ç«?taskã€?*
+
+**v0.2 æ­£ç¡®æž¶æž„**ï¼ˆè§ Â§2.5 è¯¦è¿°ï¼‰ï¼š
+- `ppt_pro` = **async handler**ï¼Œæœ¬ä½“åªæ ¡éªŒå‚æ•° â†?`asyncio.create_task(_ppt_pro_orchestrate(...))` åœ?**main loop**ï¼ˆuvicorn å?loopï¼Œä¸Ž `_clarify_ask`/`_control_connections` å?loopï¼‰èµ·ä¸€ä¸?*ç‹¬ç«‹ç¼–æŽ’ task** â†?**ç«‹å³è¿”å›ž** `{"ok":True,"status":"researching","message":"æ­£åœ¨è°ƒç ”ä¸»é¢˜â€?}`ã€‚chat task éšå³æ”¶å°¾ï¼Œç”¨æˆ·å¯ç»§ç»­å¯¹è¯ï¼›åŽç»?preempt cancel **ä¼¤ä¸åˆ?*ç‹¬ç«‹ç¼–æŽ’ taskï¼ˆ`create_task` æ˜?loop çº§ç‹¬ç«?taskï¼Œéžçˆ¶å­çº§è”å–æ¶ˆï¼‰ã€?- ç‹¬ç«‹ç¼–æŽ’ task å†…ï¼šStage A/B/C ä¸²è¡Œ `await`ï¼ˆè°ƒç ?â†?æ‹Ÿçº² â†?ç¡®è®¤ï¼Œç¡®è®¤å¤ç”?`_clarify_ask`ï¼ŒåŒ loop å®‰å…¨ï¼‰ï¼›Stage D æ¸²æŸ“ï¼ˆç”Ÿå›¾é˜»å¡žï¼‰èµ?`loop.run_in_executor(None, lambda: _render_pro(...))` ä¸é˜»å¡?main loopã€‚å…¨ç¨?notifier æŽ¨è¿›åº?+ æŽ¨æˆå“ã€?- **task å¼•ç”¨ä¿æ´»**ï¼šæ¨¡å—çº§ `_PPT_PRO_TASKS: set[asyncio.Task]` æŒå¼•ç”¨ï¼ˆasyncio å¼±å¼•ç”?taskï¼Œä¸æŒä¼šè¢?GCï¼‰ï¼Œ`task.add_done_callback(_PPT_PRO_TASKS.discard)`ã€?- è¿™æ · `ppt_pro` æ³¨å†Œçš?`timeout_seconds` åªçº¦æŸç§’å›žçš„ handlerï¼?*ä¸å†éœ€è¦?1800s å…?10min**ï¼ˆç¼–æŽ?task è‡ªç®¡è¶…æ—¶ï¼‰ã€?
+### 2.5 ç‹¬ç«‹ç¼–æŽ’ task éª¨æž¶ï¼ˆv0.2 æ–°å¢ž â€?FP-5 èŒƒæœ¬ï¼?
+ç…§æ¬ `main.py:803-835`ï¼ˆFP-5 `_await_candidate_decision` + `create_task`ï¼‰ç»è¿‡å®žæˆ˜éªŒè¯çš„æ¨¡å¼ï¼?
+```python
+_PPT_PRO_TASKS: set[asyncio.Task] = set()   # æ¨¡å—çº§ï¼Œä¿æ´»å¼•ç”¨
+
+async def _ppt_pro_orchestrate(*, topic, pages, depth, theme, image_mode,
+                               title, author, output_path,
+                               clarify, notifier, run_blocking, session_id):
+    """ç‹¬ç«‹ taskï¼šè°ƒç ”â†’æ‹Ÿçº²â†’ç¡®è®¤â†’æ¸²æŸ“ã€‚åœ¨ main loop ä¸Šè·‘ï¼Œä¸å?chat preempt å½±å“ã€?""
+    try:
+        await notifier(session_id, "ðŸ” æ­£åœ¨å›´ç»•ä¸»é¢˜åšæ·±åº¦è°ƒç ”â€?)
+        report = await _research_topic_for_ppt(topic, depth=depth, timeout_s=research_to)  # WI-1
+        n_src = len(report.citations) if report else 0
+        await notifier(session_id, f"ðŸ“š è°ƒç ”å®Œæˆï¼ˆ{n_src} ä¸ªæ¥æºï¼‰ï¼Œæ­£åœ¨æ‹Ÿå¤§çº²â€? if report
+                       else "ðŸ“ è°ƒç ”æœªå–å¾—æ¥æºï¼ŒæŒ‰é€šç”¨çŸ¥è¯†æ‹Ÿå¤§çº²â€?)
+        llm = await _resolve_default_llm_call()                                            # WI-2 é”å®š LLM æº?        slides = await _draft_outline_from_research(topic, report, pages=pages, theme=theme,
+                                                    image_mode=image_mode, llm_call=llm)
+        # ç¡®è®¤çŽ¯ï¼ˆâ‰?max_revisionsï¼Œä¼  prev_slides é˜²æ•´ç›˜é‡æ‹?â€?MAJOR-3ï¼?        confirmed = False
+        for _ in range(max_revisions + 1):
+            ans = (await clarify(_confirm_question(report), ["ç¡®è®¤ç”Ÿæˆ", "è®©æˆ‘æ”¹æ”¹", "å–æ¶ˆ"],
+                                 session_id, timeout=confirm_to,
+                                 content_md=_outline_to_markdown(slides))) or ""
+            norm = ans.strip()
+            if norm in ("ç¡®è®¤ç”Ÿæˆ","ç¡®è®¤","ok","OK"): confirmed = True; break
+            if norm in ("å–æ¶ˆ","cancel") or norm == "":
+                await notifier(session_id, "å¥½çš„ï¼Œå·²å–æ¶ˆï¼Œæ²¡æœ‰ç”Ÿæˆ?PPTã€?); return
+            slides = await _draft_outline_from_research(topic, report, pages=pages, theme=theme,
+                                                        image_mode=image_mode, llm_call=llm,
+                                                        feedback=norm, prev_slides=slides)   # ä¼ ä¸Šä¸€ç‰?        if not confirmed:
+            await notifier(session_id, "å¤§çº²æ”¹äº†å¥½å‡ è½®è¿˜æ²¡å®šï¼Œå…ˆæš‚åœå•¦ï¼Œéœ€è¦å†å«æˆ‘~"); return
+        # æ¸²æŸ“ï¼ˆé˜»å¡?â†?executorï¼Œä¸å?main loopï¼?        await notifier(session_id, "âœ?å¤§çº²å·²ç¡®è®¤ï¼Œå¼€å§‹ç”Ÿæˆâ€?)
+        result = await run_blocking(lambda: _render_pro(slides, theme=theme, title=title,
+                    author=author, output_path=output_path, image_mode=image_mode,
+                    probe_timeout_s=probe_to, notify=_sync_notify(notifier, session_id)))
+        await _ppt_pro_report_done(result, notifier, session_id)        # WI-10 receipt/artifact + æŽ¨æˆå“?+ è‡ªåŠ¨æ‰“å¼€
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        log.exception("ppt_pro orchestrate failed")
+        await notifier(session_id, f"ðŸ˜¿ PPT æ²¡åšæˆï¼š{e}")
+```
+- `run_blocking` = æ³¨å…¥çš?`lambda coro_fn: loop.run_in_executor(None, coro_fn)`ï¼ˆmain loop çš?executorï¼‰ã€?- `notifier` = æ³¨å…¥çš?main-loop æŽ¨é€ï¼ˆcontrol WS æˆ?`worker.notifier`ï¼Œç¡®è®?notifier ä¹Ÿåœ¨ main loopï¼‰ã€?- handlerï¼ˆWI-7ï¼‰ï¼š`t=asyncio.create_task(_ppt_pro_orchestrate(...)); _PPT_PRO_TASKS.add(t); t.add_done_callback(_PPT_PRO_TASKS.discard); return {"ok":True,"status":"researching","message":"æ­£åœ¨è°ƒç ”ä¸»é¢˜ï¼Œç¨ç­‰æˆ‘æŠŠå¤§çº²æ‹Ÿå‡ºæ¥ç»™ä½ ç¡®è®¤~"}`ã€?
+### 2.6 Flag / BC
+- æ–°å¢ž `[ppt].pro_enabled`ï¼ˆé»˜è®?**True**â€”â€”è¿™æ˜¯ç”¨æˆ·ä¸»è¯‰æ±‚ï¼Œè¦å¼€ç®±å¯ç”¨ï¼›ä½†ä¿ç•™å¼€å…³å¯å…³ï¼‰ã€?- `ppt_pro` æ˜?*æ–°å¢žå·¥å…·**ï¼Œä¸æ”?`ppt_create` å­—èŠ‚è¡Œä¸º â†?å¯¹çŽ°æœ‰è°ƒç”¨é›¶ BC é£Žé™©ã€?- `_clarify_ask` åŠ?`timeout` å½¢å‚ï¼ˆé»˜è®?120 ä¿?BCï¼‰ï¼Œ`clarification_request` payload åŠ?*å¯é€?* `content_md`ï¼ˆæ—§å‰ç«¯å¿½ç•¥æœªçŸ¥å­—æ®µï¼ŒBCï¼‰ã€?
+---
+
+## 3. å·¥ä½œé¡¹ï¼ˆWIï¼‰â€?é€æ–‡ä»¶é€å‡½æ•?
+> æ¯ä¸ª WI æ ‡æ³¨ï¼šæ–‡ä»¶ã€å‡½æ•°ã€æ”¹åŠ¨ç±»åž‹ï¼ˆæ–°å¢ž/æ”¹ï¼‰ã€ä¼ªä»£ç /diffã€éªŒæ”¶ã€?
+### WI-0 Â· é…ç½®ä¸Žå¼€å…³ï¼ˆv0.2 ä¿?BLOCKING â€?æ–‡ä»¶è·¯å¾„é”™äº†ï¼?> **codex å®žæµ‹**ï¼š`backend/deskpet/config.py` **ä¸å­˜åœ?*ï¼›é…ç½®å®žçŽ°åœ¨ **`backend/config.py`**ï¼ˆ`AppConfig.raw` @456ï¼Œ`standalone_config_section()` @870ï¼‰ã€‚ä¸” `config.py:874` æ³¨é‡Šæ˜Žç¡®ã€Œå·¥å…·æ‹¿ä¸åˆ° config å•ä¾‹ã€â€”â€”`ppt_tools.py` çŽ°æœ‰ `_ppt_async_enabled`/`_ppt_preview_render_enabled` ç”¨çš„ `_cfg.config.raw` æ˜?*å·²çŸ¥åæ¨¡å¼?*ï¼ˆSTATUS å¤šæ¬¡è®°å½• `config.config` å•ä¾‹ä¸å­˜åœ¨è‡´é…ç½®é™é»˜å¤±æ•ˆï¼‰ã€?
+**æ–‡ä»¶** `backend/config.py`
+- åœ?PPT é…ç½®è¯»å–å¤„åŠ  6 ä¸?pro_* é¡¹ã€?*è¯»æ³•å¯¹é½å¥å£®æ–¹å¼**ï¼šç”¨ `standalone_config_section("ppt")`ï¼ˆ@870ï¼‰æˆ– `raw.get("ppt", {})`ï¼?*ä¸è¦**ç”?`_cfg.config.raw`ã€?- å­—æ®µï¼š`pro_enabled: bool = True`ã€`pro_default_depth: str = "standard"`ã€`pro_max_revisions: int = 2`ã€`pro_research_timeout_s: float = 300.0`ã€`pro_confirm_timeout_s: float = 300.0`ã€`pro_image_probe_timeout_s: float = 8.0`ã€?- **`ppt_tools.py` ä¾?*ï¼šæ–°å¢?`_ppt_pro_cfg()` è¯»å–ï¼ˆä»¿çŽ°æœ‰ `_ppt_async_enabled` çš?toml è¯»å–é£Žæ ¼ï¼Œä½†èµ?`standalone_config_section`ï¼?*é¡ºæ‰‹æŠŠçŽ°æœ?`_cfg.config.raw` åè¯»æ³•ä¸€å¹¶ä¿®æ­?*ï¼Œå¯¹é½?STATUS 06-15/06-20 å·²ä¿®çš?`[research]` åŒæ¬¾ bugï¼‰ã€?**éªŒæ”¶**ï¼š`test_config.py`/`test_ppt_*` åŠ?1 ä¾‹éªŒè¯é»˜è®¤å€?+ toml è¦†ç›–çœŸç”Ÿæ•ˆï¼ˆä¸è¢« `config.config` åè¯»æ³•åžï¼‰ï¼›flag-off æ—?`ppt_pro` ä¸æ³¨å†Œã€?
+---
+
+### WI-1 Â· DeepResearch è°ƒç ”å°è£…ï¼ˆF1ï¼?**æ–‡ä»¶** `backend/deskpet/tools/ppt_tools.py`ï¼ˆæ–°å¢žå‡½æ•°ï¼Œé è¿‘æ–‡ä»¶å¤´å·¥å…·åŒºï¼?æ–°å¢žï¼?```python
+async def _research_topic_for_ppt(topic: str, *, depth: str, timeout_s: float) -> "ResearchReport | None":
+    """ä¸?PPT è°ƒç ”ä¸»é¢˜ï¼Œè¿”å›?ResearchReportï¼ˆreport_md/citations/coverageï¼‰ã€‚å¤±è´¥è¿”å›?Noneï¼ˆä¸é˜»æ–­ï¼Œé™çº§ä¸ºæ— è°ƒç ”ç›´æŽ¥æ‹Ÿçº²ï¼‰ã€?""
+    from deskpet.tools.research_tools import deepresearch, _resolve_default_llm_call, _DEPTH_PRESETS
+    try:
+        llm = await _resolve_default_llm_call()
+    except Exception as e:
+        log.warning("ppt_pro research: no llm_call (%s) â†?skip research", e)
+        return None
+    sub_q, urls, passages, rounds = _DEPTH_PRESETS.get(depth, _DEPTH_PRESETS["standard"])
+    try:
+        return await asyncio.wait_for(
+            deepresearch(
+                topic, llm_call=llm,
+                max_sub_questions=sub_q, max_urls_per_query=urls,
+                max_total_passages=passages, max_rounds=rounds, mode=depth,
+                user_request=f"ä¸ºåˆ¶ä½?PPT è°ƒç ”ä¸»é¢˜ï¼š{topic}",
+            ),
+            timeout=timeout_s,
+        )
+    except asyncio.TimeoutError:
+        log.warning("ppt_pro research timeout â†?degrade to no-research outline")
+        return None
+    except Exception as e:
+        # MINOR-3ï¼šä¸è¦?except Exception ä¸€æŠŠåžã€‚åŒºåˆ†ã€Œç½‘ç»?æœç´¢çž¬æ—¶å¤±è´¥ã€?é™çº§ None)
+        # ä¸Žã€Œé…ç½?è®¤è¯é”™è¯¯ã€?åº”è®©ç”¨æˆ·çŸ¥é“,å¦åˆ™é™é»˜é€€åŒ–æˆå‡­ç©ºç¼?è¿èƒŒ F1)ã€?        if _is_config_or_auth_error(e):
+            raise                       # ä¸ŠæŠ› â†?ç¼–æŽ’ task æŽ¨ã€Œè°ƒç ”æœåŠ¡æ²¡é…å¥½â€¦ã€ç»™ç”¨æˆ·
+        log.warning("ppt_pro research failed: %s â†?degrade to no-research outline", e)
+        return None
+```
+**è®¾è®¡è¦ç‚¹**ï¼?- `_is_config_or_auth_error(e)`ï¼šè¯†åˆ?401/403/key ç¼ºå¤±/provider æœªé…ç½®ç­‰ç¡¬é”™è¯¯ï¼ˆä¸?`image_tools` 401 è½è­¦å‘ŠåŒæºæ€è·¯ï¼‰ï¼›å…¶ä½™ï¼ˆæœç´¢è¢«å°?æŠ“å–å¤±è´¥/ç½‘ç»œçž¬æ—¶ï¼‰æ‰é™çº§ã€?- **å¤ç”¨ `_DEPTH_PRESETS`**ï¼ˆcodex å®žæµ‹ï¼šå·²æ˜?research_tools é¡¶å±‚å¸¸é‡ @**2104**ï¼?*ç›´æŽ¥ import å³å¯**ï¼Œæ— éœ€é‡æž„ï¼‰ã€?- **é™çº§è€Œéžå¤±è´¥ï¼ˆF1ï¼Œå¸æ”?codex MAJORï¼?*ï¼šè°ƒç ”ã€Œç½‘ç»?æœç´¢ã€ç±»å¤±è´¥ â†?è¿”å›ž Noneï¼Œä½†**ä¸é™é»˜å½“æˆ?F1 å®Œæˆ**ï¼šStage C ç¡®è®¤å¡çš„é—®é¢˜æ–‡æ¡ˆæ”¹ä¸ºæ˜¾å¼å‘ŠçŸ¥ã€Œâš ï¸?æœªå–å¾—è°ƒç ”æ¥æºï¼Œä¸‹é¢å¤§çº²åŸºäºŽé€šç”¨çŸ¥è¯†ï¼Œæ˜¯å¦ä»è¦ç”Ÿæˆï¼Ÿã€è®©ç”¨æˆ·**çŸ¥æƒ…åŽå†ç¡®è®¤**ï¼ˆä¸å·å·å‡ºã€Œæ­£å¼?PPTã€ï¼‰ã€‚ã€Œé…ç½?è®¤è¯ã€ç±»å¤±è´¥ â†?ä¸ŠæŠ›ï¼ˆWI-1 å·²åŒºåˆ†ï¼‰ã€?- **ä¸è½ç›?*ï¼šPPT å†…éƒ¨è°ƒç ”é»˜è®¤**ä¸?*è°?`_save_report`ï¼ˆé¿å…æ±¡æŸ?DeepResearch/ ç´¢å¼•ï¼‰ï¼›å¯åŠ  config `[ppt].pro_save_research`ï¼ˆé»˜è®?Falseï¼‰å…è®¸è½ç›˜ã€?
+**éªŒæ”¶**ï¼šmock `deepresearch` çš„å•æµ‹â€”â€?a) æ­£å¸¸è¿”å›ž reportï¼?b) ç½‘ç»œå¤±è´¥/è¶…æ—¶è¿”å›ž Noneï¼?c) é…ç½®/è®¤è¯é”™è¯¯**ä¸ŠæŠ›**ï¼ˆä¸åžï¼‰ï¼?d) æ—?llm_call ä¸ŠæŠ›é…ç½®é”™è¯¯ã€?
+---
+
+### WI-2 Â· è°ƒç ” â†?å¤§çº²æ‹Ÿåˆ¶ + ä¿®è®¢ï¼ˆF2ï¼?**æ–‡ä»¶** `backend/deskpet/tools/ppt_tools.py`ï¼ˆæ–°å¢žï¼‰
+```python
+async def _draft_outline_from_research(
+    topic: str, report: "ResearchReport | None", *, pages: int, theme: str,
+    image_mode: bool, llm_call, feedback: str = "", prev_slides=None,
+) -> list[SlideOutline]:
+    """åŸºäºŽè°ƒç ”æŠ¥å‘Šï¼ˆå¯ç©ºï¼‰æ‹?PPT å¤§çº²ã€?    **åŒæ¨¡å¼äº§å‡ºï¼ˆMAJOR-2ï¼?*ï¼šæ— è®?image_modeï¼Œæ¯é¡µåŒæ—¶äº§å‡?      â‘?image_promptï¼ˆæƒŠè‰³è·¯å¾„ç”¨ï¼?â‘?å……å®žçš?bullets/subtitleï¼ˆæ¨¡æ¿å›žé€€è·¯å¾„ç”¨ï¼‰ã€?    æ¸²æŸ“æ—¶æŒ‰å¯è¾¾æ€§äºŒé€‰å­—æ®µï¼Œ**ä¸åšæœ‰æŸ image_fullâ†’bullet è½¬æ¢**ï¼Œå›žé€€ä¹Ÿä¸å¡Œæ–¹ã€?    feedback éžç©º = ç”¨æˆ·ä¿®æ”¹æ„è§ï¼›prev_slides éžç©º = åœ¨å…¶åŸºç¡€ä¸Šå¢žé‡æ”¹ï¼ˆMAJOR-3ï¼‰ã€?""
+    research_md = (report.report_md if report else "")[: _PPT_PRO_RESEARCH_CTX_CHARS]  # æˆªæ–­é˜²çˆ†çª—ï¼Œé»˜è®¤ 6000
+    prompt = _build_outline_prompt(topic, research_md, pages=pages, image_mode=image_mode,
+                                   feedback=feedback,
+                                   prev_md=(_outline_to_markdown(prev_slides) if prev_slides else ""))
+    raw = await llm_call(prompt)
+    slides = parse_outline(raw)              # å¤ç”¨çŽ°æœ‰å®½å®¹è§£æž
+    if not slides:                           # è§£æžå¤±è´¥å…œåº•ï¼šæœ€å°å¯ç”¨å¤§çº?        slides = _fallback_minimal_outline(topic, pages, image_mode)
+    return slides
+```
+- **`llm_call` æºé”å®šï¼ˆMINOR-4ï¼?*ï¼šè°ƒç”¨æ–¹ï¼ˆÂ?.5 ç¼–æŽ’ taskï¼‰ä¼ å…?`await _resolve_default_llm_call()`ï¼ˆresearch/ä¸?LLMï¼Œçª—å?`max_tokens` è¾ƒå¤§ï¼‰ï¼Œ**ä¸å¾—**ç”¨æ¡Œå®?8000 çª—å£èŠå¤©æ¨¡åž‹ï¼Œå¦åˆ?6000 è°ƒç ” + ç³»ç»Ÿ prompt çˆ†çª—ã€?- æ–°å¢ž `_build_outline_prompt(...)`ï¼šè¦æ±‚è¾“å‡?Â§1.1 `SlideOutline` å…¼å®¹ JSON æ•°ç»„ï¼?*æ¯é¡µåŒæ—¶å?*ï¼?  - `title` + `bullets`ï¼?-5 æ¡å……å®žè¦ç‚¹ï¼Œæ¨¡æ¿è·¯å¾„ç›´æŽ¥ç”¨ï¼Œå¯†åº¦åŒ¹é…è®¾è®¡é¡µï¼‰
+  - `image_prompt`ï¼ˆæƒŠè‰³è·¯å¾„ç”¨ï¼šç”µå½±æ„Ÿã€è´Ÿç©ºé—´ã€ç¦å­—åŽç¼€ï¼Œå¤ç”?`_assign_image_layouts` prompt ä¹ æƒ¯ï¼?  - `layout`ï¼šæƒŠè‰³æ¨¡å¼æ ‡ `image_full`ï¼ˆæ¸²æŸ“æ—¶è‹¥å›žé€€ä¼šè¢« `_degrade_to_template` æŒ?bullets æ”¹ç‰ˆå¼ï¼Œä½?bullets å·²å……å®žä¸å¡Œï¼‰ã€?  - å¼ºçº¦æŸã€Œå†…å®¹å¿…é¡»åŸºäºŽä»¥ä¸‹è°ƒç ”æŠ¥å‘Šï¼Œå¼•ç”¨å…¶ä¸­æ•°æ®/äº‹å®žï¼Œä¸å¾—ç¼–é€ ã€? é™?`research_md`ã€?  - `prev_md` éžç©ºæ—?prompt æ”¹ä¸ºã€Œè¿™æ˜¯å½“å‰å¤§çº?+ ç”¨æˆ·è¦æ”¹ Xï¼?*åªæ”¹åŠ¨ç›¸å…³éƒ¨åˆ†ï¼Œä¿ç•™å…¶ä½™é¡?*ã€ï¼ˆå¢žé‡ä¿®è®¢ï¼Œä¸æ•´ç›˜é‡æ‹Ÿï¼‰ã€?- æ–°å¢ž `_outline_to_markdown(slides) -> str`ï¼šæ¸²æŸ“ç»™ç”¨æˆ·çœ‹çš„å¤šè¡Œå¤§çº² MDï¼ˆé¡µç ?+ æ ‡é¢˜ + bullets ç¼©è¿›ï¼‰ï¼Œç”¨äºŽç¡®è®¤å?`content_md` ä¸?`prev_md`ã€?- æ–°å¢ž `_fallback_minimal_outline(topic, pages, image_mode)`ï¼šçº¯æœ¬åœ°å…œåº•ï¼ˆå°é?pages-1 å†…å®¹é¡µå ä½ï¼‰ï¼Œä¿è¯ã€ŒLLM å…¨æŒ‚ä¹Ÿèƒ½å‡ºå¤§çº²ã€ã€?- å¸¸é‡ `_PPT_PRO_RESEARCH_CTX_CHARS = 6000`ã€?
+**éªŒæ”¶**ï¼šå•æµ‹â€”â€?a) æœ?report æ‹Ÿçº²**åŒæ—¶å?image_prompt ä¸Žå……å®?bullets**ï¼?b) report=None ä»å‡ºå¤§çº²ï¼?c) feedback+prev_slides æ³¨å…¥é‡æ‹Ÿï¼ˆmock llm æ ¡éªŒ prompt å?feedback ä¸?prev_mdï¼Œä¸”æŒ‡ä»¤ä¸ºã€Œå¢žé‡æ”¹ã€ï¼‰ï¼?d) llm è¿”å›žåžƒåœ¾ â†?`_fallback_minimal_outline`ï¼?e) `_outline_to_markdown` å¤šé¡µæ­£ç¡®æˆæ–‡ã€?
+---
+
+### WI-3 Â· ç¡®è®¤å¡ï¼šåŽç«¯ `_clarify_ask` æ‰©å±• + æ³¨å…¥ ppt ä¸Šä¸‹æ–‡ï¼ˆF3 åŽç«¯ï¼?
+> **ç¡®è®¤çŽ¯é€»è¾‘æœ¬ä½“åœ?Â§2.5 ç¼–æŽ’ task**ï¼ˆå·²å?prev_slides ä¿®è®¢çŽ¯ã€å–æ¶ˆã€è¶…æ—¶ä¼˜é›…è¿”å›žï¼‰ã€‚WI-3 åªè´Ÿè´?> æŠ?`_clarify_ask` æ”¹å¾—èƒ½æºå¸¦å¯Œæ–‡æœ¬ + æŠŠå®ƒï¼ˆåŠ notifier/run_blocking/session_idï¼‰æ³¨å…¥ç»™ ppt ç¼–æŽ’ taskã€?
+**MAJOR-1 æ¾„æ¸…ï¼ˆæ¥è‡ªæŒ‘æˆ˜ï¼‰**ï¼šå®žæµ?`_clarify_ask` æ˜?`main.py:530-552` çš?*å”¯ä¸€æ´»åŠ¨å®žçŽ°**ï¼ˆlifespan å†…é—­åŒ…ï¼Œç­¾åä»?3 ä½ç½®å‚æ•°ã€ç¡¬ç¼–ç  `wait_for(fut, 120)`ï¼‰ï¼›`clarify_tool.py::build_clarification_ask` **æœªè¢« main å®žé™…è°ƒç”¨**ã€‚æ‰€ä»?v0.1 R-3ã€Œæ”¶æ•›ä¸¤ä»½æ‹·è´ã€æ˜¯**ä¼ªä»»åŠ¡ï¼Œåˆ é™¤**ã€‚åªæ”?`main.py:530` è¿™ä¸€å¤„é—­åŒ…å³å¯ã€?
+**æ–‡ä»¶ A** `backend/main.py`ï¼š`_clarify_ask` @**530-552** åŠ?`timeout` + `content_md`ï¼?*ä¿?BC**ï¼šé»˜è®?`timeout=120, content_md=None`ï¼‰ï¼š
+```python
+async def _clarify_ask(question, options, session_id, *, timeout: float = 120.0, content_md: str | None = None):
+    ...
+    payload = {"request_id": request_id, "question": question, "options": list(options or [])}
+    if content_md:
+        payload["content_md"] = content_md     # æ–°å¢žï¼šå¯Œæ–‡æœ¬å¤§çº²
+    await ws.send_json({"type": "clarification_request", "payload": payload})
+    return await asyncio.wait_for(fut, timeout)   # ç”¨å½¢å?timeoutï¼ˆé»˜è®?120 = BCï¼?```
+- `clarify_tool.py::build_clarification_ask` ä¹ŸåŠ åŒæ ·å½¢å‚ï¼ˆä¿å£å¾„ä¸€è‡´ï¼Œä½?*ä¸?*åšæ”¶æ•›é‡æž„â€”â€”é¿å…æ— è°“æ”¹åŠ¨é¢ï¼‰ã€?
+**æ–‡ä»¶ B æ³¨å…¥ï¼ˆå…³é”®ï¼ŒBLOCKING-2 ç›¸å…³ï¼?*ï¼š`ppt_pro` ç¼–æŽ’ task å¿…é¡»åœ?**main loop** ä¸Šæ‹¿åˆ?main-loop ç‰ˆçš„ `_clarify_ask`/notifier/executorã€?- **æ³¨å…¥æ—¶æœºæ ¡éªŒ**ï¼š`_clarify_ask` å®šä¹‰åœ?`main.py:530`ï¼ˆlifespan å†…ï¼‰ã€‚å¿…é¡»ç¡®è®?ppt å·¥å…·çš?`registry.set_session_context(...)` è°ƒç”¨ç‚¹åœ¨ `_clarify_ask` **å®šä¹‰ä¹‹åŽ**æ‰§è¡Œï¼ˆgrep `set_session_context` åœ?main.py çš„è¡Œå?vs 530ï¼‰ã€‚è‹¥æ—©äºŽï¼Œåˆ™æ”¹ä¸ºåœ?`_clarify_ask` å®šä¹‰åŽå† setï¼Œæˆ–ç”?late-bindingï¼ˆæ³¨å…¥ä¸€ä¸ªè¿”å›?`_clarify_ask` çš?getterï¼‰ã€?- ç»?`registry.set_session_context` ç»?ppt å·¥å…·è¿½åŠ ï¼?  - `clarify=_clarify_ask`
+  - `notifier=<main-loop notifier>`ï¼ˆcontrol WS æŽ¨é€æˆ– `worker.notifier`ï¼?*ç¡®è®¤å…¶åœ¨ main loop**ï¼›è‹¥ `worker.notifier` å®žé™…è·‘åœ¨ worker loopï¼Œåˆ™æ”¹ç”¨ç›´æŽ¥ `_control_connections[sid].send_json` åŒ…ä¸€å±?main-loop async æŽ¨é€ï¼‰
+  - `run_blocking=lambda fn: asyncio.get_running_loop().run_in_executor(None, fn)`
+  - `session_id`ï¼ˆcontrol WS æ³¨å†Œ keyï¼›pet çª—å£ä¸?`"default"`ï¼Œ`_clarify_ask` å†…å·²æœ?`or get("default")` å…œåº•ï¼Œè§ R-2ï¼?
+**éªŒæ”¶**ï¼šå•æµ‹â€”â€?a) `_clarify_ask` å¸?`content_md` è¿?payloadã€å¸¦ `timeout` å½¢å‚ç”Ÿæ•ˆï¼ˆmock ws + futï¼‰ï¼›(b) é»˜è®¤è°ƒç”¨ï¼ˆä¸ä¼ æ–°å‚ï¼‰è¡Œä¸ºå­—èŠ‚ä¸å˜ï¼ˆBCï¼‰ï¼›(c) ppt ç¼–æŽ’ task èƒ½æ‹¿åˆ°æ³¨å…¥çš„ clarify/notifier/run_blockingï¼ˆcontext æ³¨å…¥æµ‹ï¼‰ã€?*æ³?*ï¼šç¡®è®¤çŽ¯è·¯å¾„ï¼ˆç¡®è®?æ”?å–æ¶ˆ/è¶…æ—¶ï¼‰çš„å•æµ‹å½?Â§2.5 ç¼–æŽ’ task çš?WI-7 éªŒæ”¶ã€?
+---
+
+### WI-4 Â· ç¡®è®¤å¡ï¼šå‰ç«¯å¯Œæ–‡æœ¬æ¸²æŸ?+ ã€Œè®©æˆ‘æ”¹æ”¹ã€ç¼–è¾‘æ€ï¼ˆF3 å‰ç«¯ï¼?> v0.2 ä¿?codex MAJORï¼š`ClarificationDialog.tsx:114` ç‚¹ä»»æ„?option **ç«‹å³** `onResolve(option)`â€”â€”è‹¥ã€Œè®©æˆ‘æ”¹æ”¹ã€å½“æ™®é€?optionï¼Œä¼šå›žä¼ å­—é¢å­—ç¬¦ä¸²ã€Œè®©æˆ‘æ”¹æ”¹ã€å½“æˆå¤§çº²ï¼ˆé”™ï¼‰ã€‚å¿…é¡»è®©å®ƒè¿›ç¼–è¾‘æ€ã€?
+**æ–‡ä»¶ A** `tauri-app/src/types/skillPlatform.ts` @**57-73**ï¼š`ClarificationRequest["payload"]` åŠ å¯é€?`content_md?: string`ï¼ˆcodex å®žæµ‹å½“å‰æ— æ­¤å­—æ®µ @57-62ï¼‰ã€?**æ–‡ä»¶ B** `tauri-app/src/components/ClarificationDialog.tsx`ï¼?- é—®é¢˜ä¸‹æ–¹ï¼Œ`current.content_md` å­˜åœ¨åˆ™æ¸²æŸ“æ»šåŠ¨åŒºå±•ç¤ºå¤§çº²ï¼ˆå¤ç”¨é¡¹ç›?markdown æ¸²æŸ“å™¨ï¼Œå¦åˆ™ `<pre style={{whiteSpace:"pre-wrap",maxHeight:"40vh",overflow:"auto"}}>`ï¼‰ã€?- æŒ‰é’®ï¼šã€Œâœ… ç¡®è®¤ç”Ÿæˆã€â†’ `onResolve("ç¡®è®¤ç”Ÿæˆ")`ï¼›ã€Œâœï¸?è®©æˆ‘æ”¹æ”¹ã€â†’ **ä¸?resolve**ï¼Œåˆ‡åˆ°ç¼–è¾‘æ€ï¼šå±•ç¤ºå·²æœ‰çš„è‡ªç”±æ–‡æœ?`<textarea>`ï¼ˆ@**37/137-147**ï¼? æç¤ºã€Œè¯´è¯´æƒ³æ”¹å“ªé‡Œã€? ã€Œæäº¤ä¿®æ”¹ã€æŒ‰é’?â†?æäº¤æ‰?`onResolve(textareaValue)`ï¼›ã€Œâœ– å–æ¶ˆã€â†’ `onResolve("å–æ¶ˆ")`ã€?- å³ï¼šæŠŠã€Œè®©æˆ‘æ”¹æ”¹ã€ä»Žã€Œç«‹å?resolve çš?optionã€æ”¹æˆã€Œåˆ‡æ?UI çŠ¶æ€çš„æœ¬åœ°æŒ‰é’®ã€ï¼Œä¸ŽçŽ°æœ‰ã€Œç‚¹ option ç«‹å³ resolveã€è¯­ä¹‰è§£è€¦ã€?**æ–‡ä»¶ C** `useClarificationRequests.ts` @**40-47**ï¼šæ— éœ€æ”¹é€»è¾‘ï¼ˆhook å·²èƒ½ä¼ ä»»æ„å­—ç¬¦ä¸²ï¼Œcodex ç¡®è®¤ï¼‰ï¼Œä»…ç¡®ä¿?`content_md` éš?payload è¿›å…¥ `current`ã€?**éªŒæ”¶**ï¼š`vitest`â€”â€?a) æœ?content_md æ¸²æŸ“å¤§çº²å—ï¼›(b) æ—?content_md ä¸æ¸²æŸ“ï¼ˆBCï¼Œæ—§ ask_clarification è°ƒç”¨ä¸å—å½±å“ï¼‰ï¼›(c) ã€Œç¡®è®¤ç”Ÿæˆã€resolve "ç¡®è®¤ç”Ÿæˆ"ï¼?d) ã€Œè®©æˆ‘æ”¹æ”¹ã€?*ä¸?* resolveã€è¿›ç¼–è¾‘æ€ã€æäº¤åŽ resolve textarea æ–‡æœ¬ï¼?e) ã€Œå–æ¶ˆã€resolve "å–æ¶ˆ"ã€?
+---
+
+### WI-5 Â· gpt-image-2 å¯è¾¾æŽ¢æµ‹ï¼ˆF4 ç¬?1 å±‚ï¼‰
+**æ–‡ä»¶** `backend/deskpet/tools/image_tools.py`ï¼ˆæ–°å¢žï¼‰
+```python
+def probe_image_reachable(*, timeout_s: float = 8.0) -> bool:
+    """ä¾¿å®œæŽ¢æµ‹ relay images æœåŠ¡æ˜¯å¦å¯è¾¾ï¼šGET <base>/v1/modelsï¼Œtrust_env=False ç›´è¿žã€?    ä»…åˆ¤ç½‘ç»œ/æœåŠ¡å±‚å¯è¾¾ï¼Œä¸éªŒ gpt-image-2 æ¨¡åž‹æœ¬èº«ï¼ˆé‚£äº¤ç»™é¦–å›¾å®žæµ‹ï¼‰ã€?""
+    base, key = _resolve_relay_base_and_key()        # å¤ç”¨ image_tools çŽ°æœ‰ base/key è§£æž
+    if not base:
+        return False
+    try:
+        with httpx.Client(trust_env=_image_trust_env(), timeout=httpx.Timeout(connect=5.0, read=timeout_s, write=5.0, pool=5.0)) as c:
+            r = c.get(base.rstrip("/") + "/v1/models", headers=({"Authorization": f"Bearer {key}"} if key else {}))
+            return r.status_code < 500
+    except Exception as e:
+        log.info("image probe unreachable: %s", e)
+        return False
+```
+- å¤ç”¨çŽ°æœ‰ base/key/`trust_env` è§£æžï¼ˆgrep `trust_env`/`/images/generations`/base url ç»„è£…ï¼‰ã€‚è‹¥çŽ°æˆå‡½æ•°æ²¡æœ‰ç‹¬ç«‹çš?base è§£æžï¼ŒæŠ½ä¸€ä¸?`_resolve_relay_base_and_key()` å†…éƒ¨ helperï¼ˆä¸Ž `_generate_png` ç”¨åŒä¸€æ¥æºï¼Œé¿å…æ¼‚ç§»ï¼‰ã€?**éªŒæ”¶**ï¼šå•æµ?mock httpxâ€”â€?00/404â†’Trueï¼?500 è§†å¯è¾¾ï¼Œ404 ä¹Ÿç®—ã€ŒæœåŠ¡åœ¨ã€ï¼‰ã€?03/è¿žæŽ¥å¼‚å¸¸â†’Falseã€?
+---
+
+### WI-6 Â· æ•´å‰¯å›žé€€æ¨¡æ¿ï¼ˆF4 ç¬?2 å±?+ æ¸²æŸ“ç¼–æŽ’ï¼?**æ–‡ä»¶** `backend/deskpet/tools/ppt_tools.py`
+- æ–°å¢ž `_degrade_to_template(slides) -> list[SlideOutline]`ï¼šæŠŠ `image_full`+`image_prompt` çš„é¡µè½¬æˆæ¨¡æ¿å‹å¥½ç‰ˆå¼ï¼ˆ`image_full`â†’`bullet`/`section`ï¼›æ¸…ç©?`image_prompt`/`image_path`ï¼›ä¿ç•?title/bullets/subtitleï¼‰ã€?*å†…å®¹ä¸ä¸¢ï¼Œåªæ¢çš®**ã€?- æ–°å¢žé¦–å›¾å®žæµ‹å°è£…ï¼ˆå¤ç”?`_autofill_image_prompts` ä½†å¸¦ã€Œé¦–å›?gateã€ï¼‰ï¼?```python
+def _autofill_with_connectivity_gate(slides) -> tuple[bool, int]:
+    """å…ˆç”Ÿç¬?1 å¼ å›¾ï¼›è‹¥è¿žæŽ¥ç±»å¤±è´?â†?è¿”å›ž (False, 0) è¡¨ç¤ºåˆ¤å®šä¸å¯è¾¾ä¸å†ç”Ÿå›¾ã€?    æˆåŠŸ â†?ç”Ÿå…¶ä½™å›¾ï¼Œè¿”å›?(True, n_ok)ã€‚è¿”å›?reachable æ ‡å¿— + æˆåŠŸé¡µæ•°ã€?""
+    prompts = [(i, s) for i, s in enumerate(slides) if s.image_prompt]
+    if not prompts: return (True, 0)
+    i0, s0 = prompts[0]
+    res0 = generate_images([s0.image_prompt], size=_size_for(s0))[0]
+    if not res0.get("path"):
+        if _should_fallback(res0):          # connectivity æˆ?model_unavailable â†?ä¸å¯è¾?            return (False, 0)
+        # content/safety å¤±è´¥ï¼šå ä½é™çº§ï¼Œç»§ç»­åŽç»­ï¼ˆéžã€Œè¿žä¸ä¸Šã€ï¼‰
+    else:
+        slides[i0].image_path = res0["path"]
+    # ç”Ÿå…¶ä½?    rest = generate_images([s.image_prompt for _, s in prompts[1:]], ...)
+    n_ok = sum(1 for r in rest if r.get("path")) + (1 if slides[i0].image_path else 0)
+    for (idx, s), r in zip(prompts[1:], rest):
+        if r.get("path"): slides[idx].image_path = r["path"]
+    if n_ok == 0:                    # v0.3 å…œåº•ï¼šå…¨å›¾å¤±è´?å«è¢«è¯¯åˆ¤ content)â†?æ•´å‰¯å›žé€€,é¿å…å…¨å ä½çƒ‚ deck
+        return (False, 0)
+    return (True, n_ok)
+```
+- æ–°å¢ž `_should_fallback(res: dict) -> bool`ï¼š`res.get("error_kind") in {"connectivity","model_unavailable"}`ï¼ˆç›´æŽ¥è¯»ç»“æž„åŒ?kindï¼?*ä¸é è„†å¼±ä¸­æ–‡æ–‡æœ¬åŒ¹é…**ï¼‰ã€?- **WI-6bï¼ˆç»“æž„åŒ–å¤±è´¥åˆ†ç±»ï¼Œå¿…å?â€?codex BLOCKINGï¼›v0.3 æ”¹åˆ¤å®šä¼˜å…ˆçº§ï¼?* `image_tools.py`ï¼š`generate_images`/`_generate_png` å¤±è´¥è¿”å›žåŠ é”® `error_kind`ï¼ˆä¸ç ´å `error` å­—æ®µï¼ŒBCï¼‰ã€‚codex å®žæµ‹ `image_tools.py:263-271` çŽ°çŠ¶ï¼šéž 200 åªæŠŠ `resp.json()` dump æˆæ–‡æœ¬æ‹¼è¿?error stringï¼?*ä¸ä¿è¯æœ‰ç»“æž„åŒ?`error.code`**ã€‚æ‰€ä»¥åˆ¤å®?*åˆ†å±‚ã€è¯šå®?*ï¼ˆä¸èƒ½åªæ‰¿è¯ºã€Œä¸é æ–‡æ¡ˆã€ï¼‰ï¼?  - **ç¬?1 ä¼˜å…ˆï¼šHTTP status_code**ï¼ˆæœ€å¯é ï¼‰â€”â€”connect/è¯»è¶…æ—?RemoteProtocolError/SSL/502/503/504 â†?`connectivity`ï¼?01/403 â†?`auth`ï¼?29 â†?`quota`ã€?  - **ç¬?2 ä¼˜å…ˆï¼šè§£æžè¿”å›žä½“çš„ç»“æž„åŒ– `error.code`/`error.type`/`code`**ï¼ˆè‹¥ relay æä¾›ï¼‰â€”â€”`model_not_found`/`model_*unsupported*`/`invalid_model` â†?`model_unavailable`ï¼›`content_policy`/`safety` â†?`content`ã€?  - **ç¬?3 å…œåº•ï¼ˆæ‰¿è®¤å±€é™ï¼‰ï¼šå¤šè¯­è¨€å­ä¸²åŒ¹é…**ï¼ˆrelay åªç»™è‡ªç„¶è¯­è¨€ message æ—¶å”¯ä¸€æ‰‹æ®µï¼‰â€”â€”message å?`model`+(`not found`/`unsupport`/`ä¸æ”¯æŒ`/`ä¸å­˜åœ¨`/`æ— å¯ç”¨`) â†?`model_unavailable`ã€?*plan è¯šå®žå£°æ˜Žï¼šæ­¤å±‚ä¾èµ?relay æ–‡æ¡ˆï¼Œrelay æ”¹æ–‡æ¡ˆå¯èƒ½æ¼åˆ?â†?ç”±ã€Œé¦–å›¾å®žæµ‹å¤±è´?+ æ•´ä½“å¤±è´¥çŽ‡ã€äºŒæ¬¡å…œåº•ï¼ˆè§ä¸‹ï¼‰ï¼Œä¸”æµ‹è¯•å¿…é¡»è¦†ç›–çœŸå®?relay 4xx æ ·ä¾‹ã€?*
+  - å…¶ä½™ 4xx â†?`content`ï¼›æ— æ³•å½’ç±?â†?`unknown`ã€?  - **é¢å¤–å…œåº•ï¼ˆæ²» BLOCKING æ®‹ç•™ï¼?*ï¼šå³ä¾¿å•å›¾è¢«è¯¯åˆ¤æˆ?`content` æ²¡è§¦å‘å›žé€€ï¼Œ`_autofill_with_connectivity_gate` æœ«å°¾è‹?*æ‰€æœ‰é¡µç”Ÿå›¾å…¨å¤±è´¥ï¼ˆn_ok==0ï¼?*ï¼Œä¹Ÿåˆ¤å®šä¸å¯è¾?â†?æ•´å‰¯å›žé€€æ¨¡æ¿ï¼ˆé¿å…ã€Œå…¨æ˜¯å ä½å›¾ã€çš„çƒ?deckï¼‰ã€?  - **çœŸå®žæ ·ä¾‹æµ‹è¯•**ï¼šæŠ“ä¸€æ¬?relay å¯¹ã€Œä¸å­˜åœ¨çš?modelã€çš„çœŸå®ž 4xx å“åº”ä½“å­˜è¿?testdataï¼Œå•æµ‹æ–­è¨€è¢«å½’ä¸?`model_unavailable`ã€?- æ–°å¢ž `_degrade_to_template(slides) -> list[SlideOutline]`ï¼ˆä¿® R-1 fallback äºŒæ¬¡çƒ§å›¾ï¼‰ï¼š
+  - `image_full`â†’`bullet`/`section`ï¼?*æ¸…ç©º `image_prompt` å’?`image_path`**ï¼ˆå¦åˆ?`ppt_create` @3239 çš?`has_prompts` ä»ä¸ºçœŸä¼šäºŒæ¬¡çƒ§å›¾ï¼codex MAJORï¼‰ï¼›ä¿ç•™ title/**å……å®ž bullets**ï¼ˆWI-2 åŒæ¨¡å¼å·²äº§ï¼‰/subtitleã€?*å†…å®¹ä¸ä¸¢ã€å¯†åº¦åŒ¹é…æ¨¡æ¿è®¾è®¡é¡µ**ã€?- æ–°å¢žæ¸²æŸ“ç¼–æŽ’ `_render_pro(slides, *, theme, title, author, output_path, image_mode, probe_timeout_s, notify) -> dict`ï¼?```python
+def _render_pro(...):
+    use_template = not image_mode
+    if image_mode and not probe_image_reachable(timeout_s=probe_timeout_s):
+        use_template = True; notify("âš ï¸ AI é…å›¾æš‚æ—¶è¿žä¸ä¸Šï¼Œå·²åˆ‡æ¢ç²¾ç¾Žæ¨¡æ¿ç”Ÿæˆã€?)
+    if image_mode and not use_template:
+        reachable, n_ok = _autofill_with_connectivity_gate(slides)
+        if not reachable:
+            use_template = True; notify("âš ï¸ gpt-image-2 æš‚æ—¶ç”¨ä¸äº†ï¼Œå·²åˆ‡æ¢ç²¾ç¾Žæ¨¡æ¿ç”Ÿæˆã€?)
+    if use_template:
+        slides = _degrade_to_template(slides)   # å·²æ¸…ç©?image_prompt â†?ä¸‹é¢ ppt_create ä¸ä¼šäºŒæ¬¡ç”Ÿå›¾
+        return ppt_create(slides, theme=theme, title=title, author=author,
+                          output_path=output_path, template=_default_category_template(),
+                          skip_image_gen=True)              # åŒä¿é™?    # æƒŠè‰³è·¯å¾„ï¼šå›¾å·²ç”Ÿå¥?image_path å¡«å¥½)ï¼Œè·³è¿?ppt_create å†…éƒ¨äºŒæ¬¡ç”Ÿå›¾
+    return ppt_create(slides, theme=theme, title=title, author=author,
+                      output_path=output_path, skip_image_gen=True)
+```
+> **R-1ï¼ˆåŒä¿é™©ï¼?*ï¼šâ‘ `_degrade_to_template` æ¸…ç©º image_promptï¼›â‘¡ç»?`ppt_create` åŠ?keyword-only `skip_image_gen: bool=False`ï¼ˆ@3239 çš?`_autofill_image_prompts` å‰åŠ  `if not skip_image_gen:`ï¼?*é»˜è®¤ False = å­—èŠ‚ BC**ï¼‰ï¼Œ`_render_pro` ä¸¤æ¡è·¯å¾„éƒ½ä¼  Trueã€‚ä¸¤æ¡éƒ½åšï¼Œç¡®ä¿æ¨¡æ¿å›žé€€è·¯å¾„ + æƒŠè‰³å·²ç”Ÿå›¾è·¯å¾„éƒ½ä¸äºŒæ¬¡çƒ§å›¾ï¼ˆcodex MAJORï¼šfallback è·¯å¾„ä¹Ÿä¼šçƒ§å›¾ï¼‰ã€?**éªŒæ”¶**ï¼šå•æµ‹â€”â€?a) probe False â†?æ¨¡æ¿è·¯å¾„ï¼ˆ`_degrade_to_template` + ppt_create skip_image_gen=True + templateï¼‰ï¼›(b) é¦–å›¾ connectivity â†?å›žé€€ï¼?c) **é¦–å›¾ model_unavailableï¼?xx æ¨¡åž‹ä¸æ”¯æŒï¼‰â†?å›žé€€**ï¼?d) é¦–å›¾ content â†?ä¸å›žé€€ï¼ˆå ä½ç»§ç»­ï¼‰ï¼?e) å…¨ç¨‹æˆåŠŸ â†?æƒŠè‰³è·¯å¾„ä¸äºŒæ¬¡ç”Ÿå›¾ï¼›(f) `_degrade_to_template` æ¸…ç©º image_prompt ä¸?bullets å……å®žä¸ä¸¢ï¼?g) `ppt_create(skip_image_gen=False)` é»˜è®¤è¡Œä¸ºå­—èŠ‚ BCã€?
+---
+
+ÎÞ·¨ÉèÖÃÊôÐÔ¡£´ËÓïÑÔÄ£Ê½½öÖ§³ÖºËÐÄÀàÐÍµÄÊôÐÔÉèÖÃ¡£
+ËùÔÚÎ»ÖÃ ÐÐ:1 ×Ö·û: 1
++ [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) []£¬RuntimeException
+    + FullyQualifiedErrorId : PropertySetterNotSupportedInConstrainedLanguage
+ 
+
+2026-06-21T13:04:36.295574Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 26.1 seconds
+Output:
+无法设置属性。此语言模式仅支持核心类型的属性设置。
+所在位置 行:1 字符: 1
++ [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) []，RuntimeException
+    + FullyQualifiedErrorId : PropertySetterNotSupportedInConstrainedLanguage
+ 
+rg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试
+一次。
+所在位置 行:2 字符: 1
++ rg -n "_generate_png|generate_images|ppt_create|emit_receipt|ReceiptS ...
++ ~~
+    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+
+ exited 1 in 26106ms:
+无法设置属性。此语言模式仅支持核心类型的属性设置。
+所在位置 行:1 字符: 1
++ [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) []，RuntimeException
+    + FullyQualifiedErrorId : PropertySetterNotSupportedInConstrainedLanguage
+ 
+rg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试
+一次。
+所在位置 行:2 字符: 1
++ rg -n "_generate_png|generate_images|ppt_create|emit_receipt|ReceiptS ...
++ ~~
+    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+
+codex
+`rg` 在这个环境里不可用，我改用 PowerShell 的 `Select-String` 做同等只读检索。计划文件能读到，但终端编码有些乱码；我会以行号和代码结构为主，避免被显示编码误导。
+2026-06-21T13:04:54.154208Z ERROR codex_core::tools::router: error=`"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Select-String -Path 'G:\\projects\\deskpet\\plans\\2026-06-21-ppt-deepresearch-pro\\00-PLAN.md' -Pattern 'v0.2.*v0.3|R-14|R-15|R-16|R-17|WI-6b|WI-7|WI-10|_PPT_PRO_RUNNING|already_running|wait_for|total_timeout|artifact_pusher|receipt_reporter|n_ok==0|全图' -Context 3,8"` rejected: blocked by policy
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Select-String -Path 'G:\\projects\\deskpet\\plans\\2026-06-21-ppt-deepresearch-pro\\00-PLAN.md' -Pattern 'v0.2.*v0.3|R-14|R-15|R-16|R-17|WI-6b|WI-7|WI-10|_PPT_PRO_RUNNING|already_running|wait_for|total_timeout|artifact_pusher|receipt_reporter|n_ok==0|全图' -Context 3,8" in G:\projects\deskpet
+ declined in 0ms:
+`"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Select-String -Path 'G:\\projects\\deskpet\\plans\\2026-06-21-ppt-deepresearch-pro\\00-PLAN.md' -Pattern 'v0.2.*v0.3|R-14|R-15|R-16|R-17|WI-6b|WI-7|WI-10|_PPT_PRO_RUNNING|already_running|wait_for|total_timeout|artifact_pusher|receipt_reporter|n_ok==0|全图' -Context 3,8"` rejected: blocked by policy
+2026-06-21T13:04:54.186833Z ERROR codex_core::tools::router: error=`"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-ChildItem -Path 'G:\\projects\\deskpet' -Recurse -File -Include *.py,*.ts,*.tsx,*.md | Select-String -Pattern '_generate_png|generate_images|ppt_create|emit_receipt|ReceiptStore|artifact_pusher|receipt_reporter|_session_id|already_running|AgentLoop|_clarify_ask|_ppt_pro_cancel|PPT_PRO_RUNNING|wait_for|confirm_timeout|clarification_request' -CaseSensitive:"'$false | Select-Object Path,LineNumber,Line | Format-List'` rejected: blocked by policy
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-ChildItem -Path 'G:\\projects\\deskpet' -Recurse -File -Include *.py,*.ts,*.tsx,*.md | Select-String -Pattern '_generate_png|generate_images|ppt_create|emit_receipt|ReceiptStore|artifact_pusher|receipt_reporter|_session_id|already_running|AgentLoop|_clarify_ask|_ppt_pro_cancel|PPT_PRO_RUNNING|wait_for|confirm_timeout|clarification_request' -CaseSensitive:"'$false | Select-Object Path,LineNumber,Line | Format-List' in G:\projects\deskpet
+ declined in 0ms:
+`"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-ChildItem -Path 'G:\\projects\\deskpet' -Recurse -File -Include *.py,*.ts,*.tsx,*.md | Select-String -Pattern '_generate_png|generate_images|ppt_create|emit_receipt|ReceiptStore|artifact_pusher|receipt_reporter|_session_id|already_running|AgentLoop|_clarify_ask|_ppt_pro_cancel|PPT_PRO_RUNNING|wait_for|confirm_timeout|clarification_request' -CaseSensitive:"'$false | Select-Object Path,LineNumber,Line | Format-List'` rejected: blocked by policy
+codex
+安全策略拦了刚才较宽的递归检索命令。我会缩小到明确文件和目录，用更短的只读命令分批查。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-ChildItem -Path 'G:\\projects\\deskpet\\backend\\deskpet\\tools' -File" in G:\projects\deskpet
+ succeeded in 1021ms:
+
+
+    目录: G:\projects\deskpet\backend\deskpet\tools
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----         2026/5/28     12:13          11985 artifact.py                                                          
+-a----         2026/5/28     16:41          22146 browser_use_tool.py                                                  
+-a----         2026/6/14     12:28          21693 computer_use_tool.py                                                 
+-a----         2026/6/13     15:40          26354 doc_tools.py                                                         
+-a----         2026/5/28     12:13           2523 error_classifier.py                                                  
+-a----         2026/6/13     15:37          17786 excel_tools.py                                                       
+-a----          2026/6/2     23:48           7839 file_organize_tools.py                                               
+-a----          2026/6/2     23:48          18648 file_tools.py                                                        
+-a----         2026/6/16     17:34          21819 image_tools.py                                                       
+-a----          2026/6/2     23:48          19511 memory_tools.py                                                      
+-a----         2026/5/28     12:13           5022 ocr_tools.py                                                         
+-a----         2026/6/13     15:37          11987 office_paths.py                                                      
+-a----         2026/5/28     12:13           6476 pdf_tools.py                                                         
+-a----         2026/5/28     12:13           7787 picker_tools.py                                                      
+-a----         2026/6/12     10:47           6224 ppt_render.py                                                        
+-a----         2026/6/20      0:32          14480 ppt_template_picker.py                                               
+-a----         2026/6/19     23:46         151089 ppt_tools.py                                                         
+-a----         2026/6/19     23:42           8655 ppt_visual_review.py                                                 
+-a----          2026/6/5     18:06           5720 receipt.py                                                           
+-a----         2026/5/28     12:13          10779 receipt_store.py                                                     
+-a----         2026/6/11      3:03          50574 registry.py                                                          
+-a----         2026/6/16      2:45          15297 research_cdp_edge.py                                                 
+-a----         2026/6/16     12:46          12597 research_scoring.py                                                  
+-a----         2026/6/21      0:19          52957 research_sources.py                                                  
+-a----         2026/6/21     16:25          91186 research_tools.py                                                    
+-a----         2026/6/21      2:27          33330 search_provider.py                                                   
+-a----         2026/5/30     23:19           4208 skill_tools.py                                                       
+-a----         2026/5/28     12:13           5049 stubs.py                                                             
+-a----          2026/6/4     23:51           5753 task_graph_tools.py                                                  
+-a----         2026/5/28     12:13           6192 todo_tools.py                                                        
+-a----         2026/5/28     12:13           3739 tool_search.py                                                       
+-a----         2026/6/14     11:30          28209 web_tools.py                                                         
+-a----         2026/5/28     12:13           3652 _config.py                                                           
+-a----         2026/5/28     12:13           3747 __init__.py                                                          
+
+
+无法设置属性。此语言模式仅支持核心类型的属性设置。
+所在位置 行:1 字符: 1
++ [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) []，RuntimeException
+    + FullyQualifiedErrorId : PropertySetterNotSupportedInConstrainedLanguage
+ 
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Select-String -Path 'G:\\projects\\deskpet\\backend\\deskpet\\tools\\image_tools.py' -Pattern '_generate_png|generate_images'" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Select-String -Path 'G:\\projects\\deskpet\\backend\\deskpet\\tools\\ppt_tools.py' -Pattern 'generate_images|ppt_create|_handle_ppt_create|notifier|_bg_job|skip_image|artifact|receipt'" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Select-String -Path 'G:\\projects\\deskpet\\backend\\main.py' -Pattern '_clarify_ask|_clarify_pending|clarification_response|clarification_request|_control_connections|_chat_tasks|cancel|session_id|emit_receipt|ReceiptStore|artifact|ppt_create'" in G:\projects\deskpet

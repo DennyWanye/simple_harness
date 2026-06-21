@@ -154,11 +154,13 @@ async def _ppt_pro_orchestrate(*, topic, pages, depth, theme, image_mode,
                                                         feedback=norm, prev_slides=slides)   # 传上一版
         if not confirmed:
             await notifier(session_id, "大纲改了好几轮还没定，先暂停啦，需要再叫我~"); return
-        # 渲染（阻塞 → executor，不卡 main loop）
+        # 渲染（阻塞 → executor，不卡 main loop；render 阶段独立超时，绕过 registry 1200s 故自包）
         await notifier(session_id, "✅ 大纲已确认，开始生成…")
-        result = await run_blocking(lambda: _render_pro(slides, theme=theme, title=title,
+        result = await asyncio.wait_for(
+            run_blocking(lambda: _render_pro(slides, theme=theme, title=title,
                     author=author, output_path=output_path, image_mode=image_mode,
-                    probe_timeout_s=probe_to, notify=_sync_notify(notifier, session_id)))
+                    probe_timeout_s=probe_to, notify=_sync_notify(notifier, session_id))),
+            timeout=render_to)   # _ppt_pro_cfg().render_timeout_s = max(600, pages*120)
         await _ppt_pro_report_done(result, notifier, session_id)        # WI-10 receipt/artifact + 推成品 + 自动打开
     except asyncio.CancelledError:
         raise
@@ -186,7 +188,7 @@ async def _ppt_pro_orchestrate(*, topic, pages, depth, theme, image_mode,
 
 **文件** `backend/config.py`
 - 在 PPT 配置读取处加 6 个 pro_* 项。**读法对齐健壮方式**：用 `standalone_config_section("ppt")`（@870）或 `raw.get("ppt", {})`，**不要**用 `_cfg.config.raw`。
-- 字段：`pro_enabled: bool = True`、`pro_default_depth: str = "standard"`、`pro_max_revisions: int = 2`、`pro_research_timeout_s: float = 300.0`、`pro_confirm_timeout_s: float = 300.0`、`pro_image_probe_timeout_s: float = 8.0`。
+- 字段：`pro_enabled: bool = True`、`pro_default_depth: str = "standard"`、`pro_max_revisions: int = 2`、`pro_research_timeout_s: float = 300.0`、`pro_confirm_timeout_s: float = 300.0`、`pro_image_probe_timeout_s: float = 8.0`、`pro_render_timeout_s: float = 0.0`（0=用 `max(600, pages*120)` 动态默认）、`pro_save_research: bool = False`。
 - **`ppt_tools.py` 侧**：新增 `_ppt_pro_cfg()` 读取（仿现有 `_ppt_async_enabled` 的 toml 读取风格，但走 `standalone_config_section`，**顺手把现有 `_cfg.config.raw` 坏读法一并修正**，对齐 STATUS 06-15/06-20 已修的 `[research]` 同款 bug）。
 **验收**：`test_config.py`/`test_ppt_*` 加 1 例验证默认值 + toml 覆盖真生效（不被 `config.config` 坏读法吞）；flag-off 时 `ppt_pro` 不注册。
 
@@ -422,18 +424,17 @@ async def _handle_ppt_pro(**kwargs):
                 "message": "这个会话已经有一份 PPT 在做啦（调研/等确认/生成中），先把那份弄完哈~"}
     async def _runner():
         try:
-            await asyncio.wait_for(_ppt_pro_orchestrate(   # ② 全链路总超时（codex MAJOR）
+            await _ppt_pro_orchestrate(        # ② 不用单一总 wait_for（见下「分阶段限时」）
                 topic=kwargs["topic"], pages=kwargs.get("pages", 8),
                 depth=kwargs.get("depth") or _ppt_pro_cfg().default_depth,
                 theme=kwargs.get("theme", "minimal"), image_mode=kwargs.get("image_mode", True),
                 title=kwargs.get("title", ""), author=kwargs.get("author", "DeskPet"),
                 output_path=kwargs.get("output_path"),
-                clarify=clarify, notifier=notifier, run_blocking=run_blocking, session_id=sid),
-                timeout=_ppt_pro_cfg().total_timeout_s)    # 默认 1200s（research+confirm+render 上界）
-        except asyncio.TimeoutError:
-            await notifier(sid, "⏳ PPT 做太久超时啦，先停了，稍后再试或说得更具体些~")
+                clarify=clarify, notifier=notifier, run_blocking=run_blocking, session_id=sid)
         except asyncio.CancelledError:
             await notifier(sid, "🛑 已停止当前 PPT 任务。"); raise
+        except Exception as e:
+            log.exception("ppt_pro runner failed"); await notifier(sid, f"😿 PPT 没做成：{e}")
         finally:
             _PPT_PRO_RUNNING.pop(sid, None)
     t = asyncio.create_task(_runner())
@@ -442,7 +443,12 @@ async def _handle_ppt_pro(**kwargs):
     return {"ok": True, "status": "researching",
             "message": "收到~ 我先围绕这个主题做调研，拟好大纲会弹给你确认，确认后开始生成 PPT。"}
 ```
-- **③ 取消入口（codex MAJOR）**：`/stop`（grep 现有 `/stop`/`subagent_cancel_all`/chat preempt 处）+ 可选 same-sid 新 `ppt_pro` 调用时，调 `_ppt_pro_cancel(sid)` → `_PPT_PRO_RUNNING[sid].cancel()`。与现有 `/stop` 级联取消对齐（STATUS 06-21 subagent `/stop` 范本）。新增 config `[ppt].pro_total_timeout_s=1200.0`。
+- **② 分阶段限时（v0.3 修正：不能用单一总超时——会把「用户慢慢看大纲」也算进去误杀）**。**不**对整个 `_ppt_pro_orchestrate` 套一个 `wait_for(total)`，而是**逐阶段**各自有界（确认等待**不计入**机器超时，由用户节奏决定）：
+  - 调研：`asyncio.wait_for(deepresearch(...), research_timeout_s)`（WI-1 已有，默认 300s）。
+  - 确认：`_clarify_ask(timeout=confirm_timeout_s)` 每轮（默认 300s），`max_revisions` 轮——这是**等用户**的合理上界，超时=用户没回，按取消优雅返回（非「机器卡死」）。
+  - **渲染（关键泄漏点）**：`ppt_create` 经 `run_in_executor` 直跑、**绕过了 registry 的 1200s 超时** → 必须自己包 `asyncio.wait_for(run_blocking(...), render_timeout_s)`（新增 config `[ppt].pro_render_timeout_s`，默认 `max(600, pages*120)`，覆盖 N 张图最坏耗时）。超时 → notifier 告知 + 标 failed。
+  - 这样每阶段都有界、task 不会永久挂；且**用户看大纲的时间不被机器超时杀**。
+- **③ 取消入口（codex MAJOR）**：`/stop`（grep 现有 `/stop`/`subagent_cancel_all`/chat preempt 处）+ 可选 same-sid 新 `ppt_pro` 调用时，调 `_ppt_pro_cancel(sid)` → `_PPT_PRO_RUNNING[sid].cancel()`。`CancelledError` 能穿透正在 `await _clarify_ask`（其内 `await asyncio.wait_for(fut, ...)`）的 task（cancel 会传播进内层 await），编排 `except CancelledError` 兜底通知后重抛。与现有 `/stop` 级联取消对齐（STATUS 06-21 subagent `/stop` 范本）。
 - **注入（关键，BLOCKING-3）**：`_clarify_ask`/notifier/run_blocking/session_id 是 **main loop** 的资源，经 registry 的 session context 机制（`registry.py:262` set、`:691` 合并进 handler args）注入。两种落地择一：
   - (i) 把它们放进 registry session context，handler 从 `kwargs` 读（与 `_session_id` 同路）。
   - (ii) main.py 在 `_clarify_ask` 定义后，调一个 `ppt_tools.set_ppt_pro_services(clarify=..., notifier=..., run_blocking=...)`（**新增**模块级 setter + `_PPT_PRO_CTX` dict，仿 research_tools 的 `set_live_llm_call` 注入范式）。**推荐 (ii)**（与 deepresearch 依赖注入同范式，清晰、可测）。
@@ -543,7 +549,7 @@ WI-4 (前端 clarify 渲染 + 让我改改编辑态) ─────────
 | **R-13** | 配置走 `_cfg.config.raw` 坏读法静默失效（STATUS 多次踩） | ✅ WI-0 走 `standalone_config_section`，顺手修现有坏读法（codex BLOCKING） |
 | **R-14** | 4xx「不靠中文文案」承诺无法兑现（relay 可能只给自然语言 message 无 error.code） | ✅ WI-6b 分层判定（status_code→error.code→多语言文案兜底，**诚实声明文案层局限**）+ 「全图失败 n_ok==0 也回退」二次兜底 + 真实 relay 样例测试（codex R2 BLOCKING） |
 | **R-15** | 秒回后 AgentLoop 回灌 tool_result 继续迭代 → 重复调 `ppt_pro` 起第二个后台 task（重复调研/烧图） | ✅ WI-7 `_PPT_PRO_RUNNING[sid]` 去重，重复调返回 `already_running` + WI-8 SKILL 告知 LLM 见 status 即等待（codex R2 MAJOR） |
-| **R-16** | 后台编排无总超时/取消/清理 → task 泄漏挂死 | ✅ WI-7 `asyncio.wait_for(total_timeout_s=1200)` + `/stop`/same-sid 取消入口 `_ppt_pro_cancel` + `finally` 清 `_PPT_PRO_RUNNING`（codex R2 MAJOR） |
+| **R-16** | 后台编排无超时/取消/清理 → task 泄漏挂死 | ✅ WI-7 **分阶段限时**（research 300s / confirm 等用户 300s/轮 / **render `wait_for(max(600,pages*120))` 补 registry 绕过的洞**）——确认等待不计入机器超时（避免误杀用户看大纲）+ `/stop`/same-sid 取消 `_ppt_pro_cancel` + `finally` 清 `_PPT_PRO_RUNNING`（codex R2 MAJOR + R3 预防总超时误杀确认） |
 | **R-17** | WI-10 receipt/artifact 通道未闭合（后台 task 不在 registry 生命周期内） | ✅ WI-10 显式注入 `artifact_pusher`+`receipt_reporter`，后台 task 主动推成品卡 + 对账（codex R2 MAJOR） |
 
 ---
