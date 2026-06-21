@@ -4057,6 +4057,9 @@ def _resolve_output_path(p: Optional[str]) -> Path:
 _PPT_SCHEMA = {
     "name": "ppt_create",
     "description": (
+        "【注意：若用户只给主题就要做 PPT（含「惊艳/AI配图」需求），请改用 ppt_pro —— "
+        "它会自动调研+大纲确认+优先生图/连不上回退模板。本工具仅用于：用户已给出完整 outline / "
+        "明确要跳过调研和确认 / 只要朴素快出 / 要一次做模板与AI各一份。】\n"
         "Generate a professional .pptx presentation locally from an outline. "
         "Returns the file path on success; falls back to a Markdown outline "
         "when python-pptx is unavailable. 生成成功后【必须】把返回的 path 完整"
@@ -4570,8 +4573,13 @@ async def _handle_ppt_pro(args: dict, task_id: str = "") -> dict[str, Any]:  # n
 _PPT_PRO_SCHEMA = {
     "name": "ppt_pro",
     "description": (
-        "Research a topic, propose a PPT outline for confirmation, then generate "
-        "a polished .pptx. Returns immediately while the background task continues."
+        "【做 PPT 首选工具】用户只给一个主题就要做（正式/调研型/惊艳/AI配图）PPT 时，"
+        "用这个，不要用 ppt_create、也不要自己先 web_search/todo_write 调研。"
+        "它会自动一条龙：① 用 deepresearch 深度调研该主题；② 基于调研拟大纲；"
+        "③ 弹「大纲确认卡」给用户确认/修改/取消/复用历史；④ 用户确认后优先用 gpt-image-2 "
+        "生成惊艳整页配图 PPT，连不上 gpt-image-2 则自动回退精美模板。只需调一次、传 topic 即可。"
+        "返回 status='researching'（或 'already_running'）表示已在后台进行——"
+        "【不要】重复调用、不要因没看到成品就重试，安静等后台推进度/成品。"
     ),
     "parameters": {
         "type": "object",
