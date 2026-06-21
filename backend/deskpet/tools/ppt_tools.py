@@ -53,9 +53,89 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Iterable, Literal, Optional, Sequence
 
 log = logging.getLogger(__name__)
+
+
+def _ppt_config_section() -> dict[str, Any]:
+    """独立工具进程读取 ``[ppt]`` 配置；读不到时返回空 dict。"""
+    merged: dict[str, Any] = {}
+    # 兼容旧测试和历史内存注入形态；真实生产配置以后面的 standalone 读取为准。
+    try:
+        import config as _cfg  # type: ignore[import-not-found]
+
+        raw = getattr(getattr(_cfg, "config", None), "raw", {}) or {}
+        val = raw.get("ppt") if isinstance(raw, dict) else {}
+        if isinstance(val, dict):
+            merged.update(val)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from config import standalone_config_section  # type: ignore[import-not-found]
+
+        raw = standalone_config_section("ppt") or {}
+        if isinstance(raw, dict):
+            merged.update(raw)
+    except Exception:  # noqa: BLE001
+        pass
+    return merged
+
+
+def _cfg_bool(raw: dict[str, Any], key: str, default: bool) -> bool:
+    val = raw.get(key, default)
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(val)
+
+
+def _cfg_int(raw: dict[str, Any], key: str, default: int) -> int:
+    try:
+        return int(raw.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _cfg_float(raw: dict[str, Any], key: str, default: float) -> float:
+    try:
+        return float(raw.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _cfg_str(raw: dict[str, Any], key: str, default: str) -> str:
+    val = raw.get(key, default)
+    return str(val).strip() if val is not None else default
+
+
+def _ppt_pro_cfg() -> SimpleNamespace:
+    """读取 PPT Pro 配置，兼容 ``pro_*`` 与短字段，缺失时使用计划默认值。"""
+    raw = _ppt_config_section()
+    cfg = SimpleNamespace(
+        enabled=_cfg_bool(raw, "pro_enabled", _cfg_bool(raw, "enabled", True)),
+        default_depth=_cfg_str(raw, "pro_default_depth", _cfg_str(raw, "default_depth", "deep")),
+        max_revisions=_cfg_int(raw, "pro_max_revisions", _cfg_int(raw, "max_revisions", 2)),
+        research_timeout_s=_cfg_float(raw, "pro_research_timeout_s", _cfg_float(raw, "research_timeout_s", 360.0)),
+        confirm_timeout_s=_cfg_float(raw, "pro_confirm_timeout_s", _cfg_float(raw, "confirm_timeout_s", 1800.0)),
+        image_probe_timeout_s=_cfg_float(raw, "pro_image_probe_timeout_s", _cfg_float(raw, "image_probe_timeout_s", 8.0)),
+        render_timeout_s=_cfg_float(raw, "pro_render_timeout_s", _cfg_float(raw, "render_timeout_s", 0.0)),
+        save_research=_cfg_bool(raw, "pro_save_research", _cfg_bool(raw, "save_research", True)),
+        outline_history=_cfg_bool(raw, "pro_outline_history", _cfg_bool(raw, "outline_history", True)),
+    )
+    # 编排骨架里曾使用 pro_* 命名；这里提供别名，避免下一趟接线重复适配。
+    cfg.pro_enabled = cfg.enabled
+    cfg.pro_default_depth = cfg.default_depth
+    cfg.pro_max_revisions = cfg.max_revisions
+    cfg.pro_research_timeout_s = cfg.research_timeout_s
+    cfg.pro_confirm_timeout_s = cfg.confirm_timeout_s
+    cfg.pro_image_probe_timeout_s = cfg.image_probe_timeout_s
+    cfg.pro_render_timeout_s = cfg.render_timeout_s
+    cfg.pro_save_research = cfg.save_research
+    cfg.pro_outline_history = cfg.outline_history
+    return cfg
 
 
 def _in_pytest() -> bool:
@@ -67,9 +147,7 @@ def _in_pytest() -> bool:
 def _ppt_preview_render_enabled() -> bool:
     """config ``[ppt].preview_render``(默认 True)。读法与 _image_model 一致。"""
     try:
-        import config as _cfg  # type: ignore[import-not-found]
-
-        return bool((_cfg.config.raw.get("ppt") or {}).get("preview_render", True))
+        return _cfg_bool(_ppt_config_section(), "preview_render", True)
     except Exception:  # noqa: BLE001
         return True
 
@@ -365,6 +443,262 @@ def parse_outline(raw: Any) -> list[SlideOutline]:
             continue
         out.append(so.normalize())
     return out
+
+
+# ---------------------------------------------------------------------
+# PPT Pro content helpers (WI-1 / WI-2)
+# ---------------------------------------------------------------------
+
+
+_PPT_PRO_RESEARCH_CTX_CHARS = 6000
+
+
+def _is_config_or_auth_error(e: Exception) -> bool:
+    """区分必须上抛的配置/认证硬错误，避免静默降级成无来源 PPT。"""
+    status = getattr(e, "status_code", None) or getattr(e, "status", None)
+    response = getattr(e, "response", None)
+    if status is None and response is not None:
+        status = getattr(response, "status_code", None) or getattr(response, "status", None)
+    try:
+        if int(status) in {401, 403}:
+            return True
+    except (TypeError, ValueError):
+        pass
+
+    cls_name = type(e).__name__.lower()
+    msg = str(e).lower()
+    text = f"{cls_name} {msg}"
+    hard_markers = (
+        "401",
+        "403",
+        "unauthorized",
+        "forbidden",
+        "authentication",
+        "auth",
+        "api key",
+        "apikey",
+        "invalid key",
+        "missing key",
+        "no llm provider configured",
+        "provider modules unavailable",
+        "provider not configured",
+        "no provider configured",
+        "not configured",
+        "未配置",
+        "认证",
+        "鉴权",
+        "授权",
+        "密钥",
+        "api_key",
+    )
+    return any(marker in text for marker in hard_markers)
+
+
+async def _research_topic_for_ppt(topic: str, *, depth: str, timeout_s: float):
+    """为 PPT Pro 跑 DeepResearch；软失败返回 None，认证/配置错误上抛。"""
+    from deskpet.tools.research_tools import (  # type: ignore[import-not-found]
+        _DEPTH_PRESETS,
+        _resolve_default_llm_call,
+        deepresearch,
+    )
+
+    chosen_depth = (depth or "standard").strip().lower()
+    d_subq, d_urls, d_pass, d_rounds = _DEPTH_PRESETS.get(
+        chosen_depth, _DEPTH_PRESETS.get("standard", (5, 4, 12, 1))
+    )
+
+    async def _run():
+        llm_call = await _resolve_default_llm_call()
+        return await deepresearch(
+            topic,
+            llm_call=llm_call,
+            max_sub_questions=d_subq,
+            max_urls_per_query=d_urls,
+            max_total_passages=d_pass,
+            max_rounds=d_rounds,
+            mode=chosen_depth,
+            user_request=f"为制作PPT调研：{topic}",
+        )
+
+    try:
+        return await asyncio.wait_for(_run(), timeout=timeout_s)
+    except asyncio.TimeoutError:
+        log.warning("ppt_pro research timeout -> degrade to no-research outline")
+        return None
+    except Exception as exc:  # noqa: BLE001
+        if _is_config_or_auth_error(exc):
+            raise
+        log.warning("ppt_pro research failed: %s -> degrade to no-research outline", exc)
+        return None
+
+
+def _save_and_index_research(topic: str, report: Any):
+    """Best-effort 落盘调研报告并更新 DeepResearch 索引；失败只记录日志。"""
+    try:
+        from deskpet.tools.research_tools import (  # type: ignore[import-not-found]
+            _save_report,
+            _update_deepresearch_index,
+        )
+
+        saved = _save_report(topic, report)
+        if not saved:
+            return None
+
+        async def _update() -> None:
+            await _update_deepresearch_index(saved, topic, report)
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(_update())
+        else:
+            task = loop.create_task(_update())
+
+            def _log_done(t: asyncio.Task) -> None:
+                try:
+                    t.result()
+                except Exception as exc:  # noqa: BLE001
+                    log.debug("ppt_pro research index update skipped: %s", exc)
+
+            task.add_done_callback(_log_done)
+        return saved
+    except Exception as exc:  # noqa: BLE001
+        log.debug("ppt_pro research save skipped: %s", exc)
+        return None
+
+
+async def _draft_outline_from_research(
+    topic: str,
+    report: Any,
+    *,
+    pages: int,
+    theme: str,
+    image_mode: bool,
+    llm_call,
+    feedback: str = "",
+    prev_slides: Optional[Sequence[SlideOutline]] = None,
+) -> list[SlideOutline]:
+    """基于调研报告拟制 SlideOutline；LLM 输出异常时用本地最小大纲兜底。"""
+    _ = theme
+    research_md = (getattr(report, "report_md", "") if report else "")[:_PPT_PRO_RESEARCH_CTX_CHARS]
+    prompt = _build_outline_prompt(
+        topic,
+        research_md,
+        pages=pages,
+        image_mode=image_mode,
+        feedback=feedback,
+        prev_md=(_outline_to_markdown(prev_slides) if prev_slides else ""),
+    )
+    raw = await llm_call(prompt)
+    slides = parse_outline(raw)
+    if not slides:
+        slides = _fallback_minimal_outline(topic, pages, image_mode)
+    return slides
+
+
+def _build_outline_prompt(
+    topic: str,
+    research_md: str,
+    *,
+    pages: int,
+    image_mode: bool,
+    feedback: str = "",
+    prev_md: str = "",
+) -> str:
+    """构造兼容 SlideOutline JSON 数组的拟纲提示词。"""
+    pages = max(1, int(pages or 1))
+    mode_hint = (
+        "优先使用 image_full 布局；每页仍必须有 title、3-5 条 bullets 和英文 image_prompt。"
+        if image_mode
+        else "优先使用 title、section、bullet、two_column 等可编辑布局；每页仍必须有 image_prompt 供后续可选生图。"
+    )
+    research_block = research_md.strip() or "调研报告为空：必须明确标注待核验，不得伪造来源、数据或引用。"
+    revise_block = ""
+    if prev_md.strip():
+        revise_block = (
+            "\n这是当前大纲和用户修改意见。请做增量修改：只改与反馈相关的页，保留其余页的标题、顺序和核心要点。\n"
+            f"\n当前大纲：\n{prev_md.strip()}\n"
+        )
+    feedback_block = f"\n用户修改意见：{feedback.strip()}\n" if feedback.strip() else ""
+
+    return (
+        "你是严谨的 PPT 内容策划助手。请只输出 JSON 数组，不要 Markdown、解释或代码围栏。\n"
+        f"主题：{topic}\n"
+        f"页数：{pages}\n"
+        f"视觉模式：{'AI 整页图文' if image_mode else '可编辑内容页'}。{mode_hint}\n"
+        "输出必须兼容 SlideOutline：每个对象可含 layout/title/subtitle/bullets/image_prompt/notes。"
+        "每页必须同时包含 title、bullets、image_prompt；bullets 为 3-5 条充实要点，避免空泛短词。\n"
+        "内容硬约束：必须基于调研报告组织论点，优先引用报告中的数据、事实、趋势和来源编号；"
+        "不得编造报告没有支持的数字、机构、结论或引用。没有报告时要写成待核验假设。\n"
+        "image_prompt 用英文，要求 cinematic, negative space, editorial composition，并包含 no text, no watermark, no logo, no UI labels。"
+        "不要让图片里出现文字、商标、水印或界面字。\n"
+        f"{revise_block}{feedback_block}"
+        "\n调研报告：\n"
+        f"{research_block}\n"
+        "\nJSON 示例：\n"
+        "[{\"layout\":\"image_full\",\"title\":\"标题\",\"bullets\":[\"要点一\",\"要点二\",\"要点三\"],"
+        "\"image_prompt\":\"cinematic scene, negative space, no text, no watermark, no logo\"}]\n"
+    )
+
+
+def _outline_to_markdown(slides: Sequence[SlideOutline]) -> str:
+    """把 SlideOutline 转成确认卡可读 Markdown。"""
+    lines: list[str] = []
+    for i, slide in enumerate(slides or [], start=1):
+        title = slide.title or "(无标题)"
+        lines.append(f"第 {i} 页：{title}")
+        if slide.subtitle:
+            lines.append(f"  _{slide.subtitle}_")
+        for bullet in slide.bullets or []:
+            lines.append(f"  - {bullet}")
+        if slide.left_title or slide.left:
+            lines.append(f"  {slide.left_title or '左栏'}")
+            for bullet in slide.left:
+                lines.append(f"  - {bullet}")
+        if slide.right_title or slide.right:
+            lines.append(f"  {slide.right_title or '右栏'}")
+            for bullet in slide.right:
+                lines.append(f"  - {bullet}")
+        if slide.quote:
+            lines.append(f"  > {slide.quote}")
+        if slide.cite:
+            lines.append(f"  -- {slide.cite}")
+        if i != len(slides):
+            lines.append("")
+    return "\n".join(lines).strip()
+
+
+def _fallback_minimal_outline(topic: str, pages: int, image_mode: bool) -> list[SlideOutline]:
+    """LLM 不可用时的本地最小大纲：封面 + 内容页占位。"""
+    total = max(1, int(pages or 1))
+    slides: list[SlideOutline] = [
+        SlideOutline(
+            layout="title",
+            title=topic or "PPT Pro",
+            subtitle="基于当前可用信息生成的初稿",
+            image_prompt=(
+                f"cinematic keynote cover about {topic}, negative space, no text, no watermark, no logo"
+                if image_mode else None
+            ),
+        )
+    ]
+    for i in range(2, total + 1):
+        slides.append(
+            SlideOutline(
+                layout="image_full" if image_mode else "bullet",
+                title=f"{topic}：关键问题 {i - 1}" if topic else f"关键问题 {i - 1}",
+                bullets=[
+                    "补充来自调研报告的核心事实",
+                    "提炼对用户目标有用的判断",
+                    "标注仍需核验的数据和来源",
+                ],
+                image_prompt=(
+                    f"cinematic editorial visual about {topic}, negative space, no text, no watermark, no logo"
+                    if image_mode else None
+                ),
+            )
+        )
+    return slides
 
 
 # ---------------------------------------------------------------------
@@ -3358,9 +3692,7 @@ def _render_fromscratch(
 def _ppt_visual_review_enabled() -> bool:
     """config ``[ppt].visual_review``(默认 True)。"""
     try:
-        import config as _cfg  # type: ignore[import-not-found]
-
-        return bool((_cfg.config.raw.get("ppt") or {}).get("visual_review", True))
+        return _cfg_bool(_ppt_config_section(), "visual_review", True)
     except Exception:  # noqa: BLE001
         return True
 
@@ -3733,9 +4065,7 @@ _PPT_SCHEMA = _build_ppt_schema()
 def _ppt_async_enabled() -> bool:
     """config ``[ppt].async_enabled``(默认 True)。带 AI 生图的 deck 走后台。"""
     try:
-        import config as _cfg  # type: ignore[import-not-found]
-
-        return bool((_cfg.config.raw.get("ppt") or {}).get("async_enabled", True))
+        return _cfg_bool(_ppt_config_section(), "async_enabled", True)
     except Exception:  # noqa: BLE001
         return True
 
