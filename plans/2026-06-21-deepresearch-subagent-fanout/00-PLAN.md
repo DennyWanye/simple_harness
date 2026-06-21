@@ -1,6 +1,6 @@
 # 00-PLAN — DeepResearch 子代理 Fan-out（每子问题一个子代理深查 → 主线程统一分析）
 
-> **版本**: v0.3（第 1 轮 7 BLOCKING+4 MAJOR + 第 2 轮 2 BLOCKING+3 MAJOR 全修，见 §13 附录）
+> **版本**: v0.4（3 轮 codex 对抗挑战收敛：R1 7B+4M / R2 2B+3M / R3 1B+1M 全修，见 §13 附录）
 > **日期**: 2026-06-21
 > **状态**: 📋 规划中（先写 plan，review 后再执行）
 > **本目录**: `plans/2026-06-21-deepresearch-subagent-fanout/`
@@ -119,7 +119,7 @@ deepresearch(topic, scheduler=S, _depth=0)
   - **可证**：`waves ≤ max_waves=5 ⟹ per_subrun = 240/waves ≥ 48 ≥ _MIN_SUBRUN`，且 `waves*per_subrun + RESERVE = 240 + 60 = 300 = TOOL_TIMEOUT`（上界 150 只会更小）。极端 `conc=1`（config 允许）：n 被裁到 ≤5，waves≤5，仍成立。TG-2 加断言（含 conc=1 / n=20 极端）。
   - 子跑档默认走 `_fanout_subrun_mode`（auto=deep→standard / standard→light / light→light）；**直连权威源（baike/wiki/arxiv/cninfo）在任何档位都跑**，降档不丢一手源质量，只减普通搜索的 URL/passage 量。
 - **D9 —【R1:A-MAJOR-1 / B-BLOCKING-2】`parent_sid` 来源 = 注入的 `_session_id`，不是 task_id 反查**：`_resolve_sid(task_id)` 不存在。registry 执行前把 session context 合并进 params（[registry.py:690](../../backend/deskpet/tools/registry.py:690)），main 注入 `_session_id`（[main.py:5992](../../backend/main.py:5992)）。故 `_handle_deepresearch` 用 `parent_sid = str(args.get("_session_id") or "default")`。
-- **D10 —【R1:A-BLOCKING-2 / R2 修正】递归守门 = 强制剥工具（覆盖 overrides）**：第 1 轮提的"顶层 sid 子串门"被第 2 轮否（A2-MAJOR：正常顶层 session_id 含 `.sub` 等子串会**误杀** fan-out → 功能归零）。**改为以剥工具为唯一硬保证**：把 `"deepresearch"` 加进 `task_kinds._FORBIDDEN_IN_KIND`（[task_kinds.py:30](../../backend/deskpet/agent/task_kinds.py:30)）——`resolve_kind()` 对**内置 + 用户 overrides** 都强制剥，任何 kind 的子代理都拿不到 `deepresearch` 工具 → 不可能经 LLM 路径再 fan-out。**不再用 sid 门**（避免误杀）。详见 §5 重写。
+- **D10 —【R1/R2/R3 收敛】递归守门 = 三路径强制剥工具（不依赖 sid）**：sid 子串门被 R2 否（误杀）。改以剥工具为硬保证；R3 又发现只剥 kind 路径不够（显式 `tools:["deepresearch"]` 绕过 `_filter_subagent_tools`）。最终在**三处 forbidden 集**都加 `deepresearch`：`_FORBIDDEN_IN_KIND`（kind）+ `_FORBIDDEN_NESTED_TOOLS`（显式 tools，agent_parallel/spawn_subagents）+ `FORBIDDEN_TEAMMATE_TOOLS`（team）。任何子代理路径都拿不到 deepresearch → airtight。详见 §5。
 
 ---
 
@@ -127,7 +127,11 @@ deepresearch(topic, scheduler=S, _depth=0)
 
 递归唯一危险路径 = **LLM 派的子代理调 `deepresearch` 工具再 fan-out**（本计划内部 fan-out 是编程式 `deepresearch()` 调用，已显式 `scheduler=None/_depth=1`，不经工具）。第 1 轮提的"顶层 sid 子串门"被第 2 轮否（误杀正常 sid）。**定稿为剥工具为唯一硬保证 + depth 双保险**：
 
-1. **【硬保证】剥 `deepresearch` 工具（覆盖 overrides）**：把 `"deepresearch"` 加进 `task_kinds._FORBIDDEN_IN_KIND`（[task_kinds.py:30](../../backend/deskpet/agent/task_kinds.py:30)），并从内置 research profile 工具集移除（[:62](../../backend/deskpet/agent/task_kinds.py:62) `("web_search","web_fetch","deepresearch","read_file")` → `("web_search","web_fetch","read_file")`）。`resolve_kind()` 对**内置 + 用户 overrides** 都强制剥（A2 证：`load_kind_overrides` 接受 `spec["tools"]`，最终只 `resolve_kind` 剥 `_FORBIDDEN_IN_KIND`）→ **任何 kind / 任何 override 的子代理都拿不到 `deepresearch` 工具**，从根上不存在 LLM 子代理触发 fan-out 的路径。
+1. **【硬保证】剥 `deepresearch` 工具——覆盖 kind 默认 + overrides + 显式 tools 三条路径**（★R3:BLOCKING：v0.3 只覆盖 kind 路径，显式 `tools:["deepresearch"]` 仍绕过）。三处 forbidden 集都要加 `"deepresearch"`：
+   - **kind 路径**：`task_kinds._FORBIDDEN_IN_KIND`（[task_kinds.py:30](../../backend/deskpet/agent/task_kinds.py:30)）加 `"deepresearch"`；内置 research profile（[:62](../../backend/deskpet/agent/task_kinds.py:62)）工具集移除 `deepresearch`。`resolve_kind()` 对内置+overrides 都 `_strip_forbidden`（[task_kinds.py:113-126](../../backend/deskpet/agent/task_kinds.py:113)）。
+   - **显式 tools 路径（关键漏洞）**：`agent_parallel_tool._FORBIDDEN_NESTED_TOOLS`（[:57](../../backend/deskpet/tools/code_tools/agent_parallel_tool.py:57)，被 `_filter_subagent_tools` [:260](../../backend/deskpet/tools/code_tools/agent_parallel_tool.py:260) + `spawn_subagents_tool` [:136](../../backend/deskpet/tools/code_tools/spawn_subagents_tool.py:136) 复用）当前只 `{"agent","agent_parallel"}` → 加 `"deepresearch"`（顺带补 `"spawn_team","spawn_subagents","await_subagents"`，闭合既存 driver 漏洞）。
+   - **team 路径**：`teammate_tools.FORBIDDEN_TEAMMATE_TOOLS`（[:42](../../backend/deskpet/agent/team/teammate_tools.py:42)）加 `"deepresearch"`。
+   → **任何 kind / override / 显式 tools / teammate 的子代理都拿不到 `deepresearch`**，从根上无 LLM 子代理触发 fan-out 的路径（airtight，不依赖 sid）。
 2. **`_depth` 计数（双保险）**：fanout 分叉只在 `_depth==0` 触发；内层 `deepresearch()` 传 `_depth=1` → 必走扁平。
 3. **内层 `scheduler=None`（双保险）**：`_run_subagent_fanout` 每个内层 `deepresearch()` 显式不传 scheduler → 即便 `_depth` 漏判也进不了 fanout 分支。
 
@@ -349,7 +353,12 @@ report = await deepresearch(..., scheduler=get_subagent_scheduler(), parent_sid=
 ```
 **不再用 sid 子串门**（§5 R2 定稿：误杀风险，递归改由"剥工具"硬保证）。`_resolve_sid` 不存在，用 `args.get("_session_id")`。
 
-**改 c — `task_kinds.py` 强制剥 deepresearch（§5 第 1 条）**：① `_FORBIDDEN_IN_KIND`（[:30](../../backend/deskpet/agent/task_kinds.py:30)）加 `"deepresearch"`（覆盖 overrides）；② 内置 research profile（[:62](../../backend/deskpet/agent/task_kinds.py:62)）工具集去掉 `deepresearch`。
+**改 c — 强制剥 deepresearch（三条路径，§5 第 1 条；★R3-BLOCKING 补显式 tools 路径）**：
+- `task_kinds._FORBIDDEN_IN_KIND`（[:30](../../backend/deskpet/agent/task_kinds.py:30)）加 `"deepresearch"`；内置 research profile（[:62](../../backend/deskpet/agent/task_kinds.py:62)）工具集去掉 `deepresearch`。
+- `agent_parallel_tool._FORBIDDEN_NESTED_TOOLS`（[:57](../../backend/deskpet/tools/code_tools/agent_parallel_tool.py:57)）由 `{"agent","agent_parallel"}` → 加 `"deepresearch","spawn_team","spawn_subagents","await_subagents"`（覆盖 agent_parallel + spawn_subagents 显式 tools）。
+- `teammate_tools.FORBIDDEN_TEAMMATE_TOOLS`（[:42](../../backend/deskpet/agent/team/teammate_tools.py:42)）加 `"deepresearch"`。
+- **★R3-MAJOR 同步更新会变红的现存测试**（断言 research 含 deepresearch）：`test_task_kinds.py:18`（`"deepresearch" in p.tools`）、`test_task_kinds.py:41`（overrides merge）、`test_agent_parallel_kinds.py:62`（`"deepresearch" in by["a"]["tools"]`）→ 改为断言 **已被剥除**（`"deepresearch" not in ...`）+ 新增显式 tools 回归（`tools:["deepresearch"]` 经 `_filter_subagent_tools` 后不含 deepresearch）。
+- **★R3-MINOR**：`agent_parallel` schema 里 research kind 描述若写「联网+deepresearch」，改为「联网检索/交叉验证（web_search/web_fetch）」。
 
 **改 d — `main.py` lifespan**（driver 的 scheduler 注册块之后）：
 ```python
@@ -480,7 +489,10 @@ async def _update_deepresearch_index(report_path: Path, topic: str, report: Rese
 |---|---|---|
 | `backend/deskpet/tools/research_tools.py` | 签名加 5 参 + fanout 分叉 + `_run_subagent_fanout` + 引用重编号 + `_fanout_synthesize` + `_FANOUT_SYNTH_PROMPT` + 全局桥 + flag helper + cite 复用重构 | WI-1~6 |
 | `backend/main.py` | lifespan 接 `set_subagent_scheduler`（`service_context.get` + `logger`） | WI-5d |
-| `backend/deskpet/agent/task_kinds.py` | research 工具集剥掉 `deepresearch`（递归守门第 4 条） | WI-5c/§5 |
+| `backend/deskpet/agent/task_kinds.py` | `_FORBIDDEN_IN_KIND` 加 deepresearch + research profile 去 deepresearch | WI-5c/§5 |
+| `backend/deskpet/tools/code_tools/agent_parallel_tool.py` | `_FORBIDDEN_NESTED_TOOLS` 加 deepresearch+spawn 类（显式 tools 路径，★R3） | WI-5c/§5 |
+| `backend/deskpet/agent/team/teammate_tools.py` | `FORBIDDEN_TEAMMATE_TOOLS` 加 deepresearch | WI-5c/§5 |
+| `backend/tests/test_task_kinds.py` · `test_agent_parallel_kinds.py` | 改断言 deepresearch 已被剥 + 显式 tools 回归（★R3-MAJOR） | WI-5c |
 | `backend/deskpet/tools/registry.py` | （只读核实）`_session_id` 注入 params，无改动 | WI-5b |
 | `backend/config.py` | 无改动（`[research]`/`[agent.concurrency]` 纯 raw-read，挑战 B 确认够健壮） | WI-5 |
 | `backend/paths.py` | 新增 `deepresearch_dir()` + `_install_root_for_deepresearch()`（独立 probe DeepResearch 本身） | WI-8a |
@@ -500,7 +512,7 @@ async def _update_deepresearch_index(report_path: Path, topic: str, report: Rese
 |---|---|---|
 | R1 | N×全管线子调查并发打爆 relay（429/504） | scheduler 全局 cap=4 + research lane=2 背压；子跑降档（D8）；沿用现有 relay 重试链 |
 | R2 | N 份全管线叠加破 300s tool 超时 | **D8 动态预算由构造保证** `waves*per_subrun+reserve ≤ TOOL_TIMEOUT`（共用 `_DEEPRESEARCH_TOOL_TIMEOUT` 常量）+ `fanout_max_subquestions` 上限 + 子跑降档；TG-2 预算断言 |
-| R3 | 递归 fan-out（子代理再 fan-out）爆栈/烧钱 | §5 **四重强制守门**（顶层 sid 门 `scheduler=None` + `_depth==0` 条件 + 内层 `scheduler=None` + **强制剥 research KindProfile 的 deepresearch**） |
+| R3 | 递归 fan-out（子代理再 fan-out）爆栈/烧钱 | §5 守门：**三路径强制剥 deepresearch**（`_FORBIDDEN_IN_KIND`+`_FORBIDDEN_NESTED_TOOLS`+`FORBIDDEN_TEAMMATE_TOOLS`，覆盖 kind/显式 tools/team）+ `_depth==0` 条件 + 内层 `scheduler=None`；不依赖 sid（避免误杀） |
 | R4 | 引用撞号 / 全局重编号错 → 悬空引用 | WI-3 URL 归一去重 + 映射表；cite_check 复用兜底（[:1427](../../backend/deskpet/tools/research_tools.py:1427)） |
 | R5 | 单子代理失败拖垮整 run | `gather(return_exceptions=True)` 失败隔离；全失败才 no_results 兜底 |
 | R6 | flag 静默失效（config.config 单例陷阱重演） | 一律 `_research_raw()` 安全兜底；TG-5 加真 config 回归（仿 b05823b） |
@@ -519,7 +531,8 @@ async def _update_deepresearch_index(report_path: Path, topic: str, report: Rese
 - TG-2：fanout ON（mock scheduler+内层）→ N 份合并、失败隔离（1 失败其余存活+错误透传）、全失败兜底（含 summary 不 TypeError）、coverage.subagent_fanout/waves、cap 截断、depth-1 断言（内层 scheduler=None/_depth=1）、**预算断言** `waves*per_subrun+RESERVE ≤ _DEEPRESEARCH_TOOL_TIMEOUT`（默认 + 极端 n=20）。
 - TG-3：模块级 `_norm_url` 提取后 direct-source 去重回归；引用全局重编号（撞号去重 refmap）。
 - TG-4：`_strip_footnote_definitions`/`_rewrite_local_refs` 正确；`_fanout_synthesize` + synth 失败降级含全局引用；`_finalize_report_md` 抽取后扁平 cite 字节级 BC。
-- TG-5：`_fanout_enabled`/`_fanout_max_subquestions`/`_global_concurrency`/`_research_lane_cap` 真读 config（b05823b 回归）+ 无 .raw 不抛；`_handle_deepresearch` sid 含 `.par-`→scheduler=None、顶层→注入（守门）。
+- TG-5：`_fanout_enabled`/`_fanout_max_subquestions`/`_fanout_concurrency`（复用 `get_subagent_concurrency`）真读 config（b05823b 回归，含 conc=1）+ 无 .raw 不抛。
+- TG-5b（★R3 递归守门三路径）：kind 默认/overrides（`resolve_kind` 后 research.tools 无 deepresearch）+ **显式 tools**（`_filter_subagent_tools(["deepresearch"])` 不含）+ teammate（`FORBIDDEN_TEAMMATE_TOOLS` 含 deepresearch）；更新后的 `test_task_kinds.py`/`test_agent_parallel_kinds.py` 转绿。
 - TG-6（WI-8）：`deepresearch_dir()` 四分支（env / frozen mock `sys.frozen`+`sys.executable` 可写安装根 / dev repo 根 / **frozen 但 root 不可写 → home 兜底 + 不落 user_data_dir**）；`_install_root_for_deepresearch` 直接 probe DeepResearch 本身；`_update_deepresearch_index` 首建表头 + 倒序 + 幂等去重 + 原子 `os.replace` + utf-8 + 主题转义 + `asyncio.Lock` 串行（并发两次只插两行不丢）；`_save_report` 落点为 DeepResearch（非 OutPut/Research）。
 - 全量回归：现有 `test_deskpet_research_tools.py` 全绿（BC）。
 
@@ -604,3 +617,17 @@ async def _update_deepresearch_index(report_path: Path, topic: str, report: Rese
 **第 2 轮验证为"正确"的 v0.2 修复**：`_norm_url` 提取、WI-2 summary/no_results 构造、WI-5d logger/_rt 接线、`parent_sid=_session_id`、子报告脚注 strip/rewrite、dev `parents[1]`=repo 根、`lane_caps` 嵌套路径、NSIS/MSI 判断。
 
 **结论（v0.3）**：第 2 轮 BLOCKING/MAJOR 全修；预算不等式现由"硬裁 n"在任意 config（含 conc=1）下可证成立，递归守门改为不依赖 sid 的剥工具硬保证。**待第 3 轮收敛验证。**
+
+### 第 3 轮收敛终审（2026-06-21，codex gpt-5.5 综合验证者，逐条核 v0.3 delta + 整体扫描）
+
+逐条核 8 条 v0.3 delta：**7 条 VERIFIED-CORRECT**，仅第 3 条（递归守门）STILL-WRONG。结论 **1 BLOCKING + 1 MAJOR + 1 MINOR**，已吸收（v0.3 → v0.4）：
+
+| ID | 严重 | 问题 | 修订落点 |
+|---|---|---|---|
+| R3-1 | BLOCKING | 剥工具只覆盖 kind 路径；显式 `tools:["deepresearch"]` 走 `_filter_subagent_tools`（`_FORBIDDEN_NESTED_TOOLS` 仅 `{agent,agent_parallel}`，[agent_parallel_tool.py:57](../../backend/deskpet/tools/code_tools/agent_parallel_tool.py:57)）+ spawn_subagents 复用 → 绕过守门再 fan-out | §5/WI-5c：`_FORBIDDEN_NESTED_TOOLS` + `FORBIDDEN_TEAMMATE_TOOLS` 也加 deepresearch（三路径全封） |
+| R3-2 | MAJOR | 剥 deepresearch 后现存测试变红（`test_task_kinds.py:18/:41`、`test_agent_parallel_kinds.py:62` 断言 research 含 deepresearch） | WI-5c 同步更新这 3 个断言为"已剥" + 显式 tools 回归 |
+| R3-3 | MINOR | `agent_parallel` schema research 描述仍写"联网+deepresearch" | WI-5c 改描述文案 |
+
+**第 3 轮 VERIFIED-CORRECT（7/8）**：D8 预算硬裁（conc=1/2/4 三组 `waves*timeout+60≤300` 且 timeout≥45 均成立）、`_fanout_concurrency` 复用 `get_subagent_concurrency`、`import os`+`_INDEX_HEADER`/`_insert_row_after_header`、`_finalize_report_md` 签名抽取、`_save_report` 拆分、probe 唯一名+home 兜底、旧路径文案清理点真实存在。整体扫描（coverage 缺键/skip_plan 变量/循环 import）未发现新 BLOCKING。
+
+**结论（v0.4）**：R3 唯一 BLOCKING（显式 tools 绕过）已用"三路径 forbidden 集全封"闭合；递归守门现 airtight 且不依赖 sid。趋势 11→5→2 收敛。**待第 4 轮终验。**
