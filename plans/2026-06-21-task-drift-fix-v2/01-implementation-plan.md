@@ -1,6 +1,7 @@
 # 任务漂移 v2 — 实现 plan（含代码实现细节，经 codex R1+R2 硬化）
 
-> **日期**: 2026-06-21　**状态**: 🔨 实现细节定稿中（codex 多轮挑战 → 收敛至 EXECUTABLE-AS-IS）
+> **日期**: 2026-06-21　**状态**: ✅ **EXECUTABLE-AS-IS**（codex gpt-5.5 **7 轮**只读对抗挑战收敛，R7 判定可执行，可交给 agent 实现）
+> **收敛轨迹**: R1=3 大问题 → R2=9 处 → R3=4 项 → R4=2 项 → R5=1 项 → R6=1 项 → **R7=EXECUTABLE-AS-IS**
 > **配套**: 调研方向见 [00-research-and-best-fix.md](./00-research-and-best-fix.md)；挑战记录 §10。
 > **行号声明**: `file:line` 来自 codex R1/R2 只读核读（2026-06-21），实现时以 `grep` 复核为准。
 
@@ -201,3 +202,7 @@ T0-2 假设错→验证+断言；漂移两层；T0-1 全替换表；voice 缺 Fi
 
 ## §14 codex R6 已纳入（防遗忘）
 §4 voice 广播改为覆盖 `_broadcast_chat_v2` **全部调用点**（`:299 chat_v2_user_echo` + `:359 chat_v2_final`，加 `session_id=None` 默认参数保 BC，实现时 grep 全调用点）。R6 **核验通过其余全部**：deepresearch §1 16 项行号/替换方向对齐当前代码、`:1795/1799` 准；main `_sid=="default"` 调用侧、group helper、sentinel 显式 flag、`/continue` override 链路、Tier2 关闭顺序均已覆盖，无新阻碍。
+
+## §15 codex R7 — 收敛判定：EXECUTABLE-AS-IS ✅
+R7（2026-06-21）只读终验判定 **EXECUTABLE-AS-IS，可交给另一个 agent 实现**。核验：`_broadcast_chat_v2` 全局仅 3 处（定义 + `:299`/`:359` 两调用），无第三处遗漏；§1 16 项 deepresearch 替换、§5 全链路 sid（main + voice）、group helper、sentinel 显式 flag、`/continue` override、Tier2 关闭顺序——**均无新实质阻碍**。
+**非阻塞实现提醒**：① `session_id` 参数类型注解用 `str | None = None`；② 改完 grep `_broadcast_chat_v2(` / `topic` 全局复核两处调用与替换表；③ 补 voice sid 一致性测试。
