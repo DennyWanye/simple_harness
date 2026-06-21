@@ -34,6 +34,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import sys
 import time
@@ -426,6 +427,14 @@ _UA = (
 # Per-host fetch politeness — we hand work off to web_tools for the
 # real extract step; this client only hits DuckDuckGo.
 _DEFAULT_TIMEOUT = 12.0
+
+_INDEX_HEADER = (
+    "# DeepResearch 报告索引\n\n"
+    "运行时自动生成的 DeepResearch 报告总索引，新报告按倒序插入。\n\n"
+    "| 日期 | 主题 | 文件 | 来源数 | 域名数 | 模式 | 子问题 |\n"
+    "|---|---|---|---|---|---|---|\n"
+)
+_INDEX_LOCK = asyncio.Lock()
 
 # Authority bonus map — small, hand-curated. Higher = more trustworthy.
 # Anything not listed gets ``_DEFAULT_AUTHORITY``. Tuned for the
@@ -1641,6 +1650,51 @@ def _extract_summary(report_md: str) -> str:
     return re.sub(r"\s+", " ", m.group(1)).strip()
 
 
+def _insert_row_after_header(existing: str, row: str) -> str:
+    """Insert ``row`` immediately after the Markdown table separator."""
+    lines = existing.splitlines(keepends=True)
+    normalized_row = row if row.endswith("\n") else row + "\n"
+    for idx, line in enumerate(lines):
+        if "|---|" in line:
+            lines.insert(idx + 1, normalized_row)
+            return "".join(lines)
+    return _INDEX_HEADER + normalized_row + "\n"
+
+
+async def _update_deepresearch_index(
+    report_path: Path,
+    topic: str,
+    report: "ResearchReport",
+) -> None:
+    """Best-effort update of ``DeepResearch/index.md``."""
+    try:
+        async with _INDEX_LOCK:
+            idx = report_path.parent / "index.md"
+            cov = report.coverage or {}
+            safe_topic = str(topic or "").replace("|", "/").replace("\r", " ").replace("\n", " ")
+            row = (
+                f"| {time.strftime('%Y-%m-%d %H:%M')} "
+                f"| {safe_topic} "
+                f"| [{report_path.name}]({report_path.name}) "
+                f"| {cov.get('n_sources', 0)} "
+                f"| {cov.get('n_domains', 0)} "
+                f"| {cov.get('mode', 'flat')} "
+                f"| {cov.get('n_sub_questions', 0)} |\n"
+            )
+            if idx.exists():
+                existing = idx.read_text(encoding="utf-8")
+            else:
+                existing = _INDEX_HEADER
+            if report_path.name in existing:
+                return
+            updated = _insert_row_after_header(existing, row)
+            tmp = idx.with_suffix(".md.tmp")
+            tmp.write_text(updated, encoding="utf-8")
+            os.replace(tmp, idx)
+    except Exception as exc:  # noqa: BLE001
+        log.debug("deepresearch index update skipped: %s", exc)
+
+
 # ---------------------------------------------------------------------
 # Tool registry wiring
 # ---------------------------------------------------------------------
@@ -1652,7 +1706,7 @@ _RESEARCH_SCHEMA = {
         "深度多源调研管线(DeepResearch V8)。拆子问题→搜索→抽正文→分层权威打分"
         "(含中文源)+新鲜度+语义相关性+来源多样性→deep档反思迭代补证→综合成带"
         "[^n] 引用的 Markdown 报告(每条事实必须有真实出处,拒绝编造),报告自动落"
-        "OutPut/Research 文件。用于【要一份带引用的研究报告/综述/技术选型/竞品/"
+        "DeepResearch/ 文件。用于【要一份带引用的研究报告/综述/技术选型/竞品/"
         "政策分析】。⚠️ 只是【快速查一下事实/找网址】用 web_search,不要用本工具"
         "(本工具重、耗时)。"
     ),
@@ -1748,12 +1802,13 @@ async def _handle_deepresearch(args: dict, task_id: str) -> str:
 
     out = {"ok": True, **report.as_dict()}
 
-    # WI-2.6: 报告落 OutPut/Research/<slug>-<ts>.md(用户好找),并 emit
+    # WI-8: 报告落 DeepResearch/<slug>-<ts>.md(用户好找),并 emit
     # artifacts[] → 聊天卡片可点开。落盘失败不影响返回报告正文。
     if report.report_md and report.citations:
         try:
             saved = _save_report(topic, report)
             if saved:
+                await _update_deepresearch_index(saved, topic, report)
                 out["path"] = str(saved)
                 out["artifacts"] = [{
                     "kind": "file",
@@ -1768,11 +1823,11 @@ async def _handle_deepresearch(args: dict, task_id: str) -> str:
 
 
 def _save_report(topic: str, report: "ResearchReport") -> Optional[Path]:
-    """Write the report markdown to ``<user_data>/OutPut/Research/`` with a
+    """Write the report markdown to ``DeepResearch/`` with a
     metadata header. Returns the path, or None if the dir is unavailable."""
     try:
-        from paths import output_dir  # type: ignore[import-not-found]
-        base = output_dir("Research")
+        from paths import deepresearch_dir  # type: ignore[import-not-found]
+        base = deepresearch_dir()
     except Exception:  # noqa: BLE001
         return None
     cov = report.coverage or {}

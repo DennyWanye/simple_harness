@@ -1,5 +1,11 @@
 # DeskPet
 
+## DeepResearch 运行时报告目录
+
+`DeepResearch/` 是运行时生成的调研报告目录：开发环境位于仓库根目录，打包应用位于安装目录下。所有 `deepresearch` 报告都会写入这里，`DeepResearch/index.md` 是总索引，新报告倒序插入，文件链接可直接点开，方便复用历史调研。
+
+注意：[`STATUS/DeepResearch.md`](./STATUS/DeepResearch.md) 是仓库内的 deep research 模块状态文档；`DeepResearch/` 是运行时报告目录，二者用途不同。
+
 本地部署的桌面语音宠物：Live2D 桌宠 + 全本地语音交互管线（VAD → ASR → LLM → TTS）。
 
 > 📊 **状态档总索引**: [`STATUS/index.md`](./STATUS/index.md) —

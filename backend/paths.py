@@ -34,6 +34,7 @@ can pin paths explicitly without touching the filesystem defaults.
 """
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from pathlib import Path
@@ -46,6 +47,7 @@ import platformdirs
 # instead of `AppData\Roaming\deskpet\deskpet\`.
 _APP_NAME = "deskpet"
 _APP_AUTHOR: str | bool = False
+logger = logging.getLogger(__name__)
 
 def _install_dir() -> Path | None:
     """Return the directory containing the frozen exe, or None in dev mode."""
@@ -118,6 +120,60 @@ def _portable_userdata_dir() -> Path | None:
 def is_portable_mode() -> bool:
     """True when running from a frozen install with a writable userdata dir."""
     return _portable_userdata_dir() is not None
+
+
+def _install_root_for_deepresearch() -> Path | None:
+    """Return writable ``<install_root>/DeepResearch`` for frozen installs."""
+    base = _install_dir()
+    if base is None:
+        return None
+    root = base.parent if base.name.lower() == "backend" else base
+    target = root / "DeepResearch"
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        probe = target / f".deskpet-dr-write-probe-{os.getpid()}"
+        probe.write_bytes(b"")
+        probe.unlink()
+    except OSError:
+        return None
+    return target
+
+
+def deepresearch_dir() -> Path:
+    """Runtime DeepResearch report directory.
+
+    Resolution order:
+      1. ``DESKPET_DEEPRESEARCH_DIR`` env override.
+      2. Frozen install root ``<install_root>/DeepResearch`` when writable.
+      3. Dev repo root ``DeepResearch/``.
+      4. ``~/DeskPet/DeepResearch`` fallback.
+
+    This path deliberately never falls back to :func:`user_data_dir` /
+    AppData, so research artifacts stay in a visible report directory.
+    """
+    override = os.environ.get("DESKPET_DEEPRESEARCH_DIR")
+    if override:
+        target = Path(override)
+        target.mkdir(parents=True, exist_ok=True)
+        return target
+
+    frozen_target = _install_root_for_deepresearch()
+    if frozen_target is not None:
+        frozen_target.mkdir(parents=True, exist_ok=True)
+        return frozen_target
+
+    if not getattr(sys, "frozen", False):
+        target = Path(__file__).resolve().parents[1] / "DeepResearch"
+        target.mkdir(parents=True, exist_ok=True)
+        return target
+
+    target = Path.home() / "DeskPet" / "DeepResearch"
+    target.mkdir(parents=True, exist_ok=True)
+    logger.warning(
+        "DeepResearch install directory is not writable; falling back to %s",
+        target,
+    )
+    return target
 
 
 def user_data_dir() -> Path:
