@@ -45,6 +45,7 @@ llm_topic = topic              # untrusted candidate; 仅日志/可选展示
 | 13 | fallback 标题 `:1153/1157/1964/1976` | `topic` | `request_topic` | R1 |
 | 14 | **最终 report** `:1828` | `ResearchReport(topic=topic)` | `topic=request_topic` | **R2** |
 | 15 | handler 保存 `:2158/2160/2193` | `_save_report(topic)`/index/`title_slug(topic)` | `save_topic = report.topic or (user_request or topic)` → 全用 `save_topic` | R1 |
+| 16 | **synth 两处 fallback** `:1795/1799` | `_passages_only_fallback(topic, passages)`（synth LLM 异常 + synth 返回空两条路径） | `request_topic` | **R3** |
 
 **明确"不该改"（保留原样，R2）**：schema 里 `"topic"` 字段 `:2062/2098`；handler 入参 `args["topic"]` `:2117`；helper **形参名**（`_expand_queries(topic)`/`_llm_rerank(topic)`/`_save_report(topic)` 形参不改，只改**调用点传值**）；`topic_velocity` 作为 coverage key 不改；`seen` 去重集 `:327`（helper 内部，传对即可）；`depth`/`mode`/`max_rounds`/`brief` 链路**不得**被波及。
 
@@ -115,6 +116,12 @@ text = decision.stripped_text                                   # 去掉 /new �
 | `main.py:3405` `_broadcast_default_chat_peers` | 硬编码只广播 `payload.session_id=="default"` | **改 group 语义**：定义"同组会话"（主桌宠窗+消息面板共享同一 effective_sid 组），按组广播；否则切 `task-*` 后多窗口同步失效 |
 | voice `:493/494/512/616/706` | `self.session_id` | 全 effective（§4）|
 
+**`_broadcast_default_chat_peers` group 实现细节（R3 落地改法 — 关键：transport sid 与 chat sid 分离）**：
+- **`_control_connections` 仍按 transport sid 存**（`default`、`message-panel-main`）——**不要**让两个窗口都改连同一个 `task-*` websocket sid，否则 `main.py:3987-3996` 会踢掉前一个连接。
+- 新增 `_chat_peer_groups: dict[str, str]`（key=transport sid，value=当前 effective chat sid）。默认映射 `default→default`、`message-panel-main→default`，未登记 peer 默认=自身 sid。
+- `/new` / `task_session_started` 时把同一 UI 组的 peers 一起映射到 `decision.effective_sid`。
+- 广播：按 `payload.session_id` 找所有 `_chat_peer_groups[peer_sid] == payload.session_id` 的连接发送（取代现有"硬编码 ==default"判断）。
+
 **前端接入点**：后端发 `session_switched`/`task_session_started` 事件；`App.tsx:552` 宠物窗硬编码 `default`、`MessagePanelRoot.tsx:436` InputBar 固定 `SID` → 响应切换、显示当前 scope、提供"新话题"按钮 + "回上个话题"退路。**无 DB 迁移**（messages 已按 session_id 存）。
 
 ---
@@ -128,7 +135,7 @@ text = decision.stripped_text                                   # 去掉 /new �
   elif policy_memory.l2_page_in == "followup" and not _starts_with_anaphora(ctx.user_message): call_policy["l2_top_k"] = 0
   ```
 - **默认 profile**：`task`/`web_search`/`command` 设 `followup`；`recall`/`chat`/`emotion` 保 `always`。
-- **`/continue` 具体改点（R2-D 补）**：① `main.py` resolve 阶段解析 `/continue` 前缀 → 本轮 `TaskScopeDecision.reason="continue"`；② 透传到组装层强制本轮 `l2_page_in="always"`（经 ctx 或 policy override）；③ 前端"同会话/继续"按钮发 payload `{force_l2:true}`；④ strip `/continue` 正文。
+- **`/continue` 具体改点（R2-D + R3 透传接口）**：① `main.py` resolve 阶段解析 `/continue` 前缀 → `TaskScopeDecision.reason="continue"` + **新增字段 `force_l2_page_in: Literal["always"]|None`**；② **透传接口（R3）**：`ContextAssembler.assemble()` 现仅有 `task_type_override`，新增 `memory_policy_override`（或 `assembly_options`）参数；在 `assembler.py:212` 取到 policy 后 `policy = dataclasses.replace(policy, memory=dataclasses.replace(policy.memory, l2_page_in="always"))` 再 fanout 给 `MemoryComponent`；③ 前端"同会话/继续"按钮发 payload `{force_l2:true}`；④ strip `/continue` 正文。
 - ⚠️ R2-D：`l2_top_k=0` 不炸（`manager.py:147` 支持），但跳过 `memory.py:179-201` 的 reasoning_content 回填 → **连续 thinking 场景必测**。
 - 单测：3 档 + 默认 profile + anaphora 豁免 + reasoning_content 场景。
 
@@ -164,7 +171,14 @@ text = decision.stripped_text                                   # 去掉 /new �
 4. **T0-3 关 Tier2**（★**T1-1/T1-2 真机验证通过后**才默认关，避免过渡期普通回复漂移回潮）。
 5. **T1-1b**（自动检测 shadow log）。
 - 每阶段：单测先行 → 真机复验（**相邻领域 + 多窗口 + sentinel 必验**）。
-- **auto-resume sentinel 处理（R2-E2）**：`_run_chat(..., "<<auto_resume>>")` 时 `loop_user_request=None`——明确策略二选一：(a) **禁止 sentinel 轮触发 deepresearch**（gate 掉），或 (b) 把"被恢复任务的原始 user_request"透传进 sentinel 轮。本 plan 采 (a)（更简单、零漂移）：在工具 dispatch 处，若本轮 `loop_user_request is None` 且工具是 deepresearch → 拒绝并提示需显式请求。单测覆盖。
+- **auto-resume sentinel 处理（R2-E2 + R3 修正判据）**：`_run_chat(..., "<<auto_resume>>")` 触发的 sentinel 轮，采策略 (a)**禁止 sentinel 轮触发 deepresearch**（更简单、零漂移）。
+  - ⚠️ **判据必须用显式 flag，不能用 `loop_user_request is None`**（R3：`AgentLoop.run()` 默认 `loop_user_request=None`，普通未传的调用方也会 None → 误伤）。
+  - 改法：`AgentLoop.run(..., is_sentinel_run: bool = False)` 新增显式参数；`main.py:_run_chat` 用已有 `_is_sentinel` 传入；dispatch 前判断：
+    ```py
+    if is_sentinel_run and tc.name == "deepresearch":
+        return <structured_refusal>   # 提示需显式发起研究请求
+    ```
+  - 单测覆盖（sentinel 轮拒 deepresearch / 普通轮放行）。
 
 ---
 
@@ -173,3 +187,6 @@ T0-2 假设错→验证+断言；漂移两层；T0-1 全替换表；voice 缺 Fi
 
 ## §10 codex R2 已纳入（防遗忘）
 ①§1 漏改 9 处（fanout root/search owner/topic_keywords/velocity/gap/semantic/rerank/no-results/最终 report）+ 明确"不该改"清单；②§5 插入点精确到 5401→5419 间 + 早期 sid（5419/5426/5442）+ in-flight/redispatch/callback（6767/6770/6771/6786/6837）+ `_broadcast_default_chat_peers`(3405) 改 group 语义 + voice 全链路（493/494/512/616/706）；③§6 `/continue` 具体改点 + reasoning_content 必测；④§8 顺序改"T1 兜底后再关 Tier2" + auto-resume sentinel 禁触发 deepresearch。
+
+## §11 codex R3 已纳入（防遗忘）
+①§1 补 #16 `_passages_only_fallback(topic)` 两处 `:1795/1799` → `request_topic`（synth 失败/空时报告回漂）；②§5 group 落地细节（transport sid 不变 + `_chat_peer_groups` 映射 + 按组广播，防两窗口连同一 task-* 被踢）；③§8 sentinel 判据改显式 `is_sentinel_run` flag（非 `loop_user_request is None`，防误伤普通轮）；④§6 `/continue` 透传接口（`TaskScopeDecision.force_l2_page_in` + `assemble()` 加 `memory_policy_override` + `assembler.py:212` `dataclasses.replace`）。R3 另确认：code 模式默认 toolset 不暴露 deepresearch（非阻塞）；§5 主链路 L3/goal_store/activity/artifact/facts 无额外旧 sid 写入点。
