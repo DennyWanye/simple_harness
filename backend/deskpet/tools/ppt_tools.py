@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import inspect
 import json
 import logging
 import os
@@ -56,7 +57,16 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Iterable, Literal, Optional, Sequence
 
+from deskpet.tools import ppt_outline_store
+from deskpet.tools.image_tools import generate_images, probe_image_reachable
+
 log = logging.getLogger(__name__)
+
+
+_PPT_PRO_CTX: dict[str, Any] = {}
+_PPT_PRO_TASKS: set[asyncio.Task] = set()
+_PPT_PRO_RUNNING: dict[str, asyncio.Task] = {}
+_PPT_PRO_RUNNING_TOPIC: dict[str, str] = {}
 
 
 def _ppt_config_section() -> dict[str, Any]:
@@ -2252,6 +2262,118 @@ def _default_template() -> Optional[str]:
         return None
 
 
+def _degrade_to_template(slides: Sequence[SlideOutline]) -> list[SlideOutline]:
+    """Return template-friendly slide copies and clear all generated-image fields."""
+    degraded: list[SlideOutline] = []
+    for slide in slides:
+        so = copy.deepcopy(slide).normalize()
+        if so.layout == "image_full" and so.image_prompt:
+            so.layout = "bullet" if so.bullets else "section"
+        so.image_prompt = None
+        so.image_path = None
+        degraded.append(so)
+    return degraded
+
+
+def _should_fallback(res: dict) -> bool:
+    return res.get("error_kind") in {"connectivity", "model_unavailable"}
+
+
+def _image_prompt_payload(slide: SlideOutline) -> tuple[str, str]:
+    variant = _resolve_image_variant(slide)
+    neg = _VARIANT_NEG_SPACE.get(variant, "")
+    prompt = f"{slide.image_prompt or ''} {neg}{_NO_TEXT_SUFFIX}".strip()
+    size = "1024x1024" if variant in ("split_left", "split_right") else "1536x1024"
+    return prompt, size
+
+
+def _autofill_with_connectivity_gate(slides: list[SlideOutline]) -> tuple[bool, int]:
+    """Generate image prompts with a first-image connectivity gate."""
+    _assign_image_layouts(slides)
+    pending = [
+        (idx, so)
+        for idx, so in enumerate(slides)
+        if so.image_prompt and not so.image_path
+    ]
+    if not pending:
+        return True, 0
+
+    i0, s0 = pending[0]
+    prompt0, size0 = _image_prompt_payload(s0)
+    try:
+        first = generate_images([prompt0], size=size0)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("ppt_pro first image generation failed: %s", exc)
+        return False, 0
+    res0 = first[0] if first else {}
+    n_ok = 0
+    path0 = res0.get("path") if isinstance(res0, dict) else None
+    if path0:
+        slides[i0].image_path = str(path0)
+        n_ok += 1
+    elif isinstance(res0, dict) and _should_fallback(res0):
+        return False, 0
+
+    for idx, slide in pending[1:]:
+        prompt, size = _image_prompt_payload(slide)
+        try:
+            results = generate_images([prompt], size=size)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("ppt_pro image generation failed idx=%d err=%s", idx, exc)
+            continue
+        res = results[0] if results else {}
+        path = res.get("path") if isinstance(res, dict) else None
+        if path:
+            slide.image_path = str(path)
+            n_ok += 1
+    if n_ok == 0:
+        return False, 0
+    return True, n_ok
+
+
+def _render_pro(
+    slides: list[SlideOutline],
+    *,
+    theme: str,
+    title: str,
+    author: str,
+    output_path: Optional[str],
+    image_mode: bool,
+    probe_timeout_s: float,
+    notify,
+) -> dict[str, Any]:
+    use_template = not image_mode
+    working = [copy.deepcopy(s).normalize() for s in slides]
+
+    if image_mode and not probe_image_reachable(timeout_s=probe_timeout_s):
+        use_template = True
+        notify("AI 配图暂时连不上，已切换模板生成。")
+    if image_mode and not use_template:
+        reachable, _n_ok = _autofill_with_connectivity_gate(working)
+        if not reachable:
+            use_template = True
+            notify("gpt-image-2 暂时用不了，已切换模板生成。")
+
+    if use_template:
+        return ppt_create(
+            _degrade_to_template(working),
+            theme=theme,
+            title=title,
+            author=author,
+            output_path=output_path,
+            template=_default_template() or "高级色",
+            skip_image_gen=True,
+        )
+    return ppt_create(
+        working,
+        theme=theme,
+        title=title,
+        author=author,
+        output_path=output_path,
+        skip_image_gen=True,
+    )
+
+
 def _user_template_roots() -> list[Path]:
     """额外模板根目录(递归搜索),来自 env ``DESKPET_PPT_TEMPLATE_ROOTS``
     (``;`` 分隔)。库主根由 ppt_template_picker.template_library_root() 提供。
@@ -3492,6 +3614,7 @@ def ppt_create(
     output_path: Optional[str] = None,
     template: Optional[str] = None,
     dry_run: bool = False,
+    skip_image_gen: bool = False,
 ) -> dict[str, Any]:
     """Render an outline into a ``.pptx`` file on disk.
 
@@ -3574,7 +3697,7 @@ def ppt_create(
     has_img_layout = any(
         so.layout in {"image_full", "image"} and so.image_prompt for so in slides
     )
-    if has_prompts and (chosen_template or has_img_layout):
+    if not skip_image_gen and has_prompts and (chosen_template or has_img_layout):
         _autofill_image_prompts(slides)
     else:
         # 没走 autofill(图已预设/无 prompt)也要给 image_full 页分配版式 ——
@@ -4161,6 +4284,335 @@ def _open_image_file(path: str) -> bool:
         return False
 
 
+async def _maybe_await(value):
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
+async def _notify(notifier, session_id: str, message: str) -> None:
+    if notifier is None:
+        return
+    try:
+        await _maybe_await(notifier(session_id, message))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("ppt_pro notify failed: %s", exc)
+
+
+def _sync_notify(notifier, session_id: str, loop: asyncio.AbstractEventLoop):
+    def _send(message: str) -> None:
+        try:
+            asyncio.run_coroutine_threadsafe(_notify(notifier, session_id, message), loop)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ppt_pro sync notify failed: %s", exc)
+
+    return _send
+
+
+def set_ppt_pro_services(
+    *,
+    outline_propose=None,
+    notifier=None,
+    run_blocking=None,
+    artifact_pusher=None,
+    receipt_reporter=None,
+) -> None:
+    _PPT_PRO_CTX.update({
+        "outline_propose": outline_propose,
+        "notifier": notifier,
+        "run_blocking": run_blocking,
+        "artifact_pusher": artifact_pusher,
+        "receipt_reporter": receipt_reporter,
+    })
+
+
+def _ppt_pro_cancel(sid: str) -> None:
+    task = _PPT_PRO_RUNNING.get(str(sid or "default"))
+    if task is not None and not task.done():
+        task.cancel()
+
+
+async def _run_blocking_call(run_blocking, fn):
+    return await _maybe_await(run_blocking(fn))
+
+
+async def _ppt_pro_report_done(result: dict, *, notifier, session_id: str) -> None:
+    artifact_pusher = _PPT_PRO_CTX.get("artifact_pusher")
+    receipt_reporter = _PPT_PRO_CTX.get("receipt_reporter")
+    try:
+        if result.get("ok"):
+            path = result.get("path")
+            artifacts = list(result.get("artifacts") or [])
+            text = f"PPT 已生成：{path}" if path else "PPT 已生成。"
+            if artifact_pusher is not None:
+                try:
+                    await _maybe_await(artifact_pusher(session_id, artifacts, text))
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("ppt_pro artifact push failed: %s", exc)
+            if receipt_reporter is not None:
+                try:
+                    await _maybe_await(receipt_reporter(session_id, outcome="ok", path=path))
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("ppt_pro receipt report failed: %s", exc)
+            if path:
+                _open_image_file(str(path))
+                await _notify(notifier, session_id, f"✨ PPT 做好啦，已自动打开：{path}")
+            else:
+                await _notify(notifier, session_id, "✨ PPT 做好啦。")
+            return
+
+        error = result.get("error") or "未知错误"
+        if receipt_reporter is not None:
+            try:
+                await _maybe_await(receipt_reporter(session_id, outcome="failed", path=result.get("path")))
+            except Exception as exc:  # noqa: BLE001
+                log.warning("ppt_pro failed receipt report failed: %s", exc)
+        await _notify(notifier, session_id, f"PPT 没做成：{error}")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("ppt_pro report_done failed: %s", exc)
+
+
+async def _ppt_pro_orchestrate(
+    *,
+    topic: str,
+    pages: int,
+    depth: str,
+    theme: str,
+    image_mode: bool,
+    title: str,
+    author: str,
+    output_path: Optional[str],
+    outline_propose,
+    notifier,
+    run_blocking,
+    session_id: str,
+) -> None:
+    cfg = _ppt_pro_cfg()
+    try:
+        await _notify(notifier, session_id, "🔍 正在围绕主题做深度调研…")
+        report = await _maybe_await(
+            _research_topic_for_ppt(topic, depth=depth, timeout_s=cfg.research_timeout_s)
+        )
+        if cfg.save_research and report is not None:
+            _save_and_index_research(topic, report)
+        sources = getattr(report, "citations", None) if report is not None else None
+        n_src = len(sources or [])
+        if report is not None:
+            await _notify(notifier, session_id, f"📚 调研完成（{n_src} 个来源），正在拟大纲…")
+        else:
+            await _notify(notifier, session_id, "📝 调研未取得来源，按通用知识拟大纲…")
+
+        from deskpet.tools.research_tools import _resolve_default_llm_call
+
+        llm = await _resolve_default_llm_call()
+        slides = await _draft_outline_from_research(
+            topic,
+            report,
+            pages=pages,
+            theme=theme,
+            image_mode=image_mode,
+            llm_call=llm,
+        )
+
+        confirmed = False
+        for _ in range(int(cfg.max_revisions) + 1):
+            decision = await _maybe_await(
+                outline_propose(
+                    session_id,
+                    topic=topic,
+                    slides=slides,
+                    sources_count=n_src,
+                    outline_md=_outline_to_markdown(slides),
+                    no_research=(report is None),
+                )
+            )
+            action = str((decision or {}).get("action") or "modify").strip().lower()
+            if action == "accept":
+                confirmed = True
+                break
+            if action == "reuse":
+                row = ppt_outline_store.get_outline((decision or {}).get("reuse_id"))
+                slides = parse_outline(json.loads(row["slides_json"]))
+                confirmed = True
+                break
+            if action == "cancel":
+                await _notify(notifier, session_id, "好的，已取消，没有生成 PPT。")
+                return
+            slides = await _draft_outline_from_research(
+                topic,
+                report,
+                pages=pages,
+                theme=theme,
+                image_mode=image_mode,
+                llm_call=llm,
+                feedback=str((decision or {}).get("feedback") or ""),
+                prev_slides=slides,
+            )
+        if not confirmed:
+            await _notify(notifier, session_id, "大纲改了好几轮还没定，先暂停，需要再叫我。")
+            return
+
+        await _notify(notifier, session_id, "✅ 大纲已确认，开始生成…")
+        render_to = float(cfg.render_timeout_s or max(600, int(pages) * 120))
+        loop = asyncio.get_running_loop()
+        result = await asyncio.wait_for(
+            _run_blocking_call(
+                run_blocking,
+                lambda: _render_pro(
+                    slides,
+                    theme=theme,
+                    title=title,
+                    author=author,
+                    output_path=output_path,
+                    image_mode=image_mode,
+                    probe_timeout_s=cfg.image_probe_timeout_s,
+                    notify=_sync_notify(notifier, session_id, loop),
+                ),
+            ),
+            timeout=render_to,
+        )
+        await _ppt_pro_report_done(result, notifier=notifier, session_id=session_id)
+    except asyncio.CancelledError:
+        await _notify(notifier, session_id, "PPT 任务已停止。")
+        raise
+    except Exception as exc:  # noqa: BLE001
+        log.exception("ppt_pro orchestrate failed")
+        await _ppt_pro_report_done(
+            {"ok": False, "error": f"{type(exc).__name__}: {exc}"},
+            notifier=notifier,
+            session_id=session_id,
+        )
+
+
+def _coerce_ppt_pro_args(args: dict[str, Any]) -> dict[str, Any]:
+    cfg = _ppt_pro_cfg()
+    topic = str(args.get("topic") or "").strip()
+    pages = max(3, min(20, _cfg_int(args, "pages", 8)))
+    depth = str(args.get("depth") or cfg.default_depth or "standard").strip().lower()
+    if depth not in {"light", "standard", "deep"}:
+        depth = cfg.default_depth if cfg.default_depth in {"light", "standard", "deep"} else "standard"
+    theme = str(args.get("theme") or "minimal").strip().lower()
+    if theme not in VALID_THEMES:
+        theme = "minimal"
+    return {
+        "topic": topic,
+        "pages": pages,
+        "depth": depth,
+        "theme": theme,
+        "image_mode": bool(args.get("image_mode", True)),
+        "title": str(args.get("title") or topic),
+        "author": str(args.get("author") or "DeskPet"),
+        "output_path": str(args["output_path"]) if args.get("output_path") else None,
+    }
+
+
+async def _handle_ppt_pro(args: dict, task_id: str = "") -> dict[str, Any]:  # noqa: ARG001
+    sid = str(args.get("_session_id") or "default")
+    outline_propose = _PPT_PRO_CTX.get("outline_propose")
+    notifier = _PPT_PRO_CTX.get("notifier")
+    run_blocking = _PPT_PRO_CTX.get("run_blocking")
+    if outline_propose is None or notifier is None or run_blocking is None:
+        return {
+            "ok": False,
+            "error": "ppt_pro 接线缺失（outline_propose/notifier/run_blocking 未注入）",
+            "fallback": "请用 ppt_create",
+        }
+
+    kwargs = _coerce_ppt_pro_args(dict(args or {}))
+    topic = kwargs["topic"]
+    if not topic:
+        return {"ok": False, "error": "topic is required"}
+
+    cur = _PPT_PRO_RUNNING.get(sid)
+    if cur is not None and not cur.done():
+        if topic == _PPT_PRO_RUNNING_TOPIC.get(sid):
+            return {
+                "ok": True,
+                "status": "already_running",
+                "message": "这份 PPT 已经在做了，等我把大纲或成品推回来。",
+            }
+        _ppt_pro_cancel(sid)
+        await _notify(notifier, sid, "好，换个主题，我重新来过。")
+
+    async def _runner() -> None:
+        try:
+            await _ppt_pro_orchestrate(
+                **kwargs,
+                outline_propose=outline_propose,
+                notifier=notifier,
+                run_blocking=run_blocking,
+                session_id=sid,
+            )
+        except asyncio.CancelledError:
+            await _notify(notifier, sid, "已停止当前 PPT 任务。")
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log.exception("ppt_pro runner failed")
+            await _notify(notifier, sid, f"PPT 没做成：{exc}")
+        finally:
+            me = asyncio.current_task()
+            if _PPT_PRO_RUNNING.get(sid) is me:
+                _PPT_PRO_RUNNING.pop(sid, None)
+                _PPT_PRO_RUNNING_TOPIC.pop(sid, None)
+
+    task = asyncio.create_task(_runner())
+    _PPT_PRO_RUNNING[sid] = task
+    _PPT_PRO_RUNNING_TOPIC[sid] = topic
+    _PPT_PRO_TASKS.add(task)
+    task.add_done_callback(_PPT_PRO_TASKS.discard)
+    return {
+        "ok": True,
+        "status": "researching",
+        "message": "收到，我先围绕这个主题做调研，拟好大纲会给你确认。",
+    }
+
+
+_PPT_PRO_SCHEMA = {
+    "name": "ppt_pro",
+    "description": (
+        "Research a topic, propose a PPT outline for confirmation, then generate "
+        "a polished .pptx. Returns immediately while the background task continues."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "topic": {
+                "type": "string",
+                "description": "PPT topic or brief.",
+            },
+            "pages": {
+                "type": "integer",
+                "minimum": 3,
+                "maximum": 20,
+                "default": 8,
+            },
+            "depth": {
+                "type": "string",
+                "enum": ["light", "standard", "deep"],
+                "description": "Research depth. Defaults to [ppt].pro_default_depth.",
+            },
+            "theme": {
+                "type": "string",
+                "enum": list(VALID_THEMES),
+                "default": "minimal",
+            },
+            "image_mode": {
+                "type": "boolean",
+                "default": True,
+                "description": "True uses AI full-slide images when reachable; false uses templates.",
+            },
+            "title": {"type": "string"},
+            "author": {"type": "string", "default": "DeskPet"},
+            "output_path": {
+                "type": "string",
+                "description": "Optional absolute output .pptx path.",
+            },
+        },
+        "required": ["topic"],
+    },
+}
+
+
 def _register_ppt_tool() -> None:
     """Module-import side effect: register ppt_create with the registry.
 
@@ -4187,4 +4639,24 @@ def _register_ppt_tool() -> None:
         log.debug("ppt tool registration skipped: %s", exc)
 
 
+def _register_ppt_pro_tool() -> None:
+    try:
+        if not _ppt_pro_cfg().enabled:
+            return
+        from .registry import registry  # type: ignore
+
+        registry.register(
+            "ppt_pro",
+            "ppt",
+            _PPT_PRO_SCHEMA,
+            _handle_ppt_pro,
+            permission_category="write_file",
+            timeout_seconds=60.0,
+            concurrency_safe=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.debug("ppt_pro tool registration skipped: %s", exc)
+
+
 _register_ppt_tool()
+_register_ppt_pro_tool()
