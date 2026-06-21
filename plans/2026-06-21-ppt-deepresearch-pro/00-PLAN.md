@@ -1,11 +1,12 @@
 # PPT 能力优化 — DeepResearch 调研 → 大纲确认 → 惊艳生图(gpt-image-2) / 模板兜底
 
-> **状态**: v0.2（已过 R1 双路对抗：codex gpt-5.5 4B+3M / architect 2B+4M，BLOCKING/MAJOR 全消解；待 R2 复核收敛到 EXECUTABLE-AS-IS）
+> **状态**: **v0.3 — R2 复核后收敛，作者判定 EXECUTABLE-AS-IS（待用户 review）**。R1 双路对抗（codex 4B+3M / architect 2B+4M）+ R2 codex 复核（1B+3M）的全部 BLOCKING/MAJOR 已消解（§6 R-1~R-17 全 ✅）。
 > **建档**: 2026-06-21
-> **作者**: Claude (Lead)
+> **作者**: Claude (Lead) · 对抗：codex gpt-5.5（只读，2 轮）+ architect 子代理
 > **前置阅读**: [STATUS/PPT.md](../../STATUS/PPT.md) · [STATUS/DeepResearch.md](../../STATUS/DeepResearch.md) · [STATUS/AgentLoop.md](../../STATUS/AgentLoop.md)
 >
-> **v0.1→v0.2 关键修正**（R1 对抗）：① 确认/调研环**拆独立 asyncio.Task**、handler 秒回（修 FP-5 同款 preempt-cancel BLOCKING）；② 配置文件是 `backend/config.py` 非 `deskpet/config.py`，走 `standalone_config_section` 避开 `config.config` 坏读法（BLOCKING）；③ 注入经 registry session context / `set_ppt_pro_services`，非 `ppt_tools.set_session_context`（BLOCKING）；④ F4 回退增加 **4xx model_unavailable** 触发（BLOCKING）；⑤ `_degrade_to_template` 清空 image_prompt + `skip_image_gen` 双保险防二次烧图；⑥ 大纲**双模式产出**（image_prompt+充实 bullets）防回退塌方；⑦ 修订环传 prev_slides 防整盘重拟；⑧ 前端「让我改改」进编辑态；⑨ 新增 WI-10 receipt/artifact 上报。
+> **v0.1→v0.2（R1）关键修正**：① 确认/调研环**拆独立 asyncio.Task**、handler 秒回（修 FP-5 同款 preempt-cancel BLOCKING）；② 配置文件是 `backend/config.py` 非 `deskpet/config.py`，走 `standalone_config_section` 避开 `config.config` 坏读法（BLOCKING）；③ 注入经 `set_ppt_pro_services`，非 `ppt_tools.set_session_context`（BLOCKING）；④ F4 回退增加 **4xx model_unavailable** 触发（BLOCKING）；⑤ `_degrade_to_template` 清空 image_prompt + `skip_image_gen` 双保险防二次烧图；⑥ 大纲**双模式产出**防回退塌方；⑦ 修订环传 prev_slides；⑧ 前端「让我改改」进编辑态；⑨ 新增 WI-10。
+> **v0.2→v0.3（R2）关键修正**：⑩ 4xx 判定改**分层**（status_code→error.code→多语言文案兜底+诚实声明）+「全图失败也回退」二次兜底 + 真实样例测试（BLOCKING）；⑪ `_PPT_PRO_RUNNING[sid]` **同会话去重**防 AgentLoop 重复调起第二个 task（MAJOR）；⑫ 后台编排加**总超时 1200s + `/stop`/same-sid 取消入口 + 清理**（MAJOR）；⑬ WI-10 **闭合通道**：注入 `artifact_pusher`+`receipt_reporter` 后台主动推成品卡/对账（MAJOR）；⑭ 删 §4 残留 `deskpet/config.py` 行 + WI-8 加「LLM 见 status 不重复调」。
 
 ---
 
@@ -361,14 +362,18 @@ def _autofill_with_connectivity_gate(slides) -> tuple[bool, int]:
     n_ok = sum(1 for r in rest if r.get("path")) + (1 if slides[i0].image_path else 0)
     for (idx, s), r in zip(prompts[1:], rest):
         if r.get("path"): slides[idx].image_path = r["path"]
+    if n_ok == 0:                    # v0.3 兜底：全图失败(含被误判 content)→ 整副回退,避免全占位烂 deck
+        return (False, 0)
     return (True, n_ok)
 ```
 - 新增 `_should_fallback(res: dict) -> bool`：`res.get("error_kind") in {"connectivity","model_unavailable"}`（直接读结构化 kind，**不靠脆弱中文文本匹配**）。
-- **WI-6b（结构化失败分类，必做 — codex BLOCKING）** `image_tools.py`：`generate_images`/`_generate_png` 失败返回加键 `error_kind`（不破坏 `error` 字段，BC）。映射 §1.2/codex 实测 `image_tools.py:267-277` 的分类：
-  - `connectivity`：ConnectTimeout/RemoteProtocolError/ConnectError/ReadError/WriteError/ProtocolError/SSLError/读超时/502/503/504。
-  - `model_unavailable`：4xx 且错误体含 model 不支持 / model_not_found / 无该模型（解析 relay 返回的 error.code/message）。
-  - `auth`：401/403/key 缺失。`quota`：429/额度。`content`：其余 4xx（safety/参数）。`unknown`：兜底。
-  - **判定基于 relay 返回的结构化字段（status_code + error.code），不靠中文文案**，避免 relay 改文案就失效。
+- **WI-6b（结构化失败分类，必做 — codex BLOCKING；v0.3 改判定优先级）** `image_tools.py`：`generate_images`/`_generate_png` 失败返回加键 `error_kind`（不破坏 `error` 字段，BC）。codex 实测 `image_tools.py:263-271` 现状：非 200 只把 `resp.json()` dump 成文本拼进 error string，**不保证有结构化 `error.code`**。所以判定**分层、诚实**（不能只承诺「不靠文案」）：
+  - **第 1 优先：HTTP status_code**（最可靠）——connect/读超时/RemoteProtocolError/SSL/502/503/504 → `connectivity`；401/403 → `auth`；429 → `quota`。
+  - **第 2 优先：解析返回体的结构化 `error.code`/`error.type`/`code`**（若 relay 提供）——`model_not_found`/`model_*unsupported*`/`invalid_model` → `model_unavailable`；`content_policy`/`safety` → `content`。
+  - **第 3 兜底（承认局限）：多语言子串匹配**（relay 只给自然语言 message 时唯一手段）——message 含 `model`+(`not found`/`unsupport`/`不支持`/`不存在`/`无可用`) → `model_unavailable`。**plan 诚实声明：此层依赖 relay 文案，relay 改文案可能漏判 → 由「首图实测失败 + 整体失败率」二次兜底（见下），且测试必须覆盖真实 relay 4xx 样例。**
+  - 其余 4xx → `content`；无法归类 → `unknown`。
+  - **额外兜底（治 BLOCKING 残留）**：即便单图被误判成 `content` 没触发回退，`_autofill_with_connectivity_gate` 末尾若**所有页生图全失败（n_ok==0）**，也判定不可达 → 整副回退模板（避免「全是占位图」的烂 deck）。
+  - **真实样例测试**：抓一次 relay 对「不存在的 model」的真实 4xx 响应体存进 testdata，单测断言被归为 `model_unavailable`。
 - 新增 `_degrade_to_template(slides) -> list[SlideOutline]`（修 R-1 fallback 二次烧图）：
   - `image_full`→`bullet`/`section`；**清空 `image_prompt` 和 `image_path`**（否则 `ppt_create` @3239 的 `has_prompts` 仍为真会二次烧图！codex MAJOR）；保留 title/**充实 bullets**（WI-2 双模式已产）/subtitle。**内容不丢、密度匹配模板设计页**。
 - 新增渲染编排 `_render_pro(slides, *, theme, title, author, output_path, image_mode, probe_timeout_s, notify) -> dict`：
@@ -401,24 +406,43 @@ def _render_pro(...):
 **文件** `backend/deskpet/tools/ppt_tools.py`
 - 新增 `async def _handle_ppt_pro(**kwargs)`：
 ```python
+_PPT_PRO_RUNNING: dict[str, asyncio.Task] = {}    # v0.3 按 session 去重（codex MAJOR：防重复调用起第二个 task）
+
 async def _handle_ppt_pro(**kwargs):
     sid = kwargs.get("_session_id", "default")          # registry 注入进 args（同 ppt_create @3769）
-    clarify = _PPT_PRO_CTX.get("clarify")               # 见下「注入」：经 registry session context 拿
+    clarify = _PPT_PRO_CTX.get("clarify")               # 见下「注入」：经 set_ppt_pro_services 注入
     notifier = _PPT_PRO_CTX.get("notifier")
     run_blocking = _PPT_PRO_CTX.get("run_blocking")
-    if clarify is None or notifier is None:             # 接线缺失 → 不静默死，回退普通 ppt_create 行为或明确报错
+    if clarify is None or notifier is None:             # 接线缺失 → 不静默死，明确报错
         return {"ok": False, "error": "ppt_pro 接线缺失（clarify/notifier 未注入）", "fallback": "请用 ppt_create"}
-    t = asyncio.create_task(_ppt_pro_orchestrate(
-        topic=kwargs["topic"], pages=kwargs.get("pages", 8),
-        depth=kwargs.get("depth") or _ppt_pro_cfg().default_depth,
-        theme=kwargs.get("theme", "minimal"), image_mode=kwargs.get("image_mode", True),
-        title=kwargs.get("title", ""), author=kwargs.get("author", "DeskPet"),
-        output_path=kwargs.get("output_path"),
-        clarify=clarify, notifier=notifier, run_blocking=run_blocking, session_id=sid))
+    # ① 同 session 去重：已有在跑的 ppt_pro → 不起第二个（codex MAJOR）
+    cur = _PPT_PRO_RUNNING.get(sid)
+    if cur is not None and not cur.done():
+        return {"ok": True, "status": "already_running",
+                "message": "这个会话已经有一份 PPT 在做啦（调研/等确认/生成中），先把那份弄完哈~"}
+    async def _runner():
+        try:
+            await asyncio.wait_for(_ppt_pro_orchestrate(   # ② 全链路总超时（codex MAJOR）
+                topic=kwargs["topic"], pages=kwargs.get("pages", 8),
+                depth=kwargs.get("depth") or _ppt_pro_cfg().default_depth,
+                theme=kwargs.get("theme", "minimal"), image_mode=kwargs.get("image_mode", True),
+                title=kwargs.get("title", ""), author=kwargs.get("author", "DeskPet"),
+                output_path=kwargs.get("output_path"),
+                clarify=clarify, notifier=notifier, run_blocking=run_blocking, session_id=sid),
+                timeout=_ppt_pro_cfg().total_timeout_s)    # 默认 1200s（research+confirm+render 上界）
+        except asyncio.TimeoutError:
+            await notifier(sid, "⏳ PPT 做太久超时啦，先停了，稍后再试或说得更具体些~")
+        except asyncio.CancelledError:
+            await notifier(sid, "🛑 已停止当前 PPT 任务。"); raise
+        finally:
+            _PPT_PRO_RUNNING.pop(sid, None)
+    t = asyncio.create_task(_runner())
+    _PPT_PRO_RUNNING[sid] = t
     _PPT_PRO_TASKS.add(t); t.add_done_callback(_PPT_PRO_TASKS.discard)
     return {"ok": True, "status": "researching",
             "message": "收到~ 我先围绕这个主题做调研，拟好大纲会弹给你确认，确认后开始生成 PPT。"}
 ```
+- **③ 取消入口（codex MAJOR）**：`/stop`（grep 现有 `/stop`/`subagent_cancel_all`/chat preempt 处）+ 可选 same-sid 新 `ppt_pro` 调用时，调 `_ppt_pro_cancel(sid)` → `_PPT_PRO_RUNNING[sid].cancel()`。与现有 `/stop` 级联取消对齐（STATUS 06-21 subagent `/stop` 范本）。新增 config `[ppt].pro_total_timeout_s=1200.0`。
 - **注入（关键，BLOCKING-3）**：`_clarify_ask`/notifier/run_blocking/session_id 是 **main loop** 的资源，经 registry 的 session context 机制（`registry.py:262` set、`:691` 合并进 handler args）注入。两种落地择一：
   - (i) 把它们放进 registry session context，handler 从 `kwargs` 读（与 `_session_id` 同路）。
   - (ii) main.py 在 `_clarify_ask` 定义后，调一个 `ppt_tools.set_ppt_pro_services(clarify=..., notifier=..., run_blocking=...)`（**新增**模块级 setter + `_PPT_PRO_CTX` dict，仿 research_tools 的 `set_live_llm_call` 注入范式）。**推荐 (ii)**（与 deepresearch 依赖注入同范式，清晰、可测）。
@@ -435,18 +459,24 @@ async def _handle_ppt_pro(**kwargs):
 1. **修 stale（PPT.md §9.2 记录的已知 bug）**：第 27 行旧模板名 `商务深蓝-水墨/高级感-蓝/简约高级-灰` → 真实大类 `高级色/高级简约/通用商务`（与 `ppt_template_picker.py` 一致）。
 2. **新增路由规则**：当用户「给个主题要做（正式/调研型/惊艳）PPT」→ **优先调 `ppt_pro(topic=...)`**（它会自动调研→拟纲→确认→生图/模板）。仅当用户**已给好完整 outline / 明确要求跳过调研和确认 / 只要朴素快出** → 直接用 `ppt_create`。
 3. 说明 `ppt_pro` 会暂停等用户确认大纲，LLM 不要自己再问一遍。
+4. **防重复调用（codex R2 MAJOR）**：`ppt_pro` 返回 `status:researching`/`already_running` 表示**已在后台进行**——LLM **不要再次调用** `ppt_pro`，也不要因为「没看到成品」而重试；安静等后台 notifier 推进度/成品即可（对齐现有 `ppt_create` 异步 `status:generating` 的处理）。
 **验收**：人工读校 + 不破坏 skill 加载（skill loader 测试绿）。
 
 ---
 
-### WI-10 · 后台 task 的 receipt / artifact 上报（architect MAJOR-4）
-> `ppt_pro` handler 秒回 `status:researching` 后，真正产物在独立 task 出。若不补上报，last-mile verify gate / receipt 体系（`emit_receipt`、`test_verify_gate.py`、`test_receipt_store.py`）看不到这条新链路的真实产物与失败。
+### WI-10 · 后台 task 的 receipt / artifact 通道（architect MAJOR-4 + codex R2：通道未闭合）
+> `ppt_pro` handler 秒回 `status:researching` 时，registry 只对这个**秒回值**发 receipt（`registry.py:780-860`），真正产物在独立 task 出 → registry 生命周期看不到。**必须显式注入产物上报通道**，否则 verify gate 永远只看到 `status:researching`。
 
-**文件** `backend/deskpet/tools/ppt_tools.py`（`_ppt_pro_report_done` + 失败分支）
-- 成功：编排 task 拿到 `_render_pro` 的 `result`（含 `path`/`artifacts`）后，**补发 receipt + artifact**，对齐 `ppt_create` 现有 artifact emit（`ppt_tools.py:3349`）。把成品 .pptx + 预览图作为结构化 artifact 推回（不只 notifier 文本），让用户看到「打开 / 在文件夹中显示」卡 + verify gate 可对账。
-- 失败（渲染失败 / 确认超时 / no-research 被用户取消）：除 notifier 文本外，**emit 一条 error/cancel 结构化结果**（receipt outcome=failed/cancelled），不静默。
-- 自动打开：带图成品复用现有「✨…已自动打开」逻辑（PPT.md §2）。
-**验收**：单测——(a) 成功 → emit artifact（含 path）+ receipt outcome=ok；(b) 渲染失败 → receipt outcome=failed + notifier；(c) 取消 → outcome=cancelled。
+**关键：先勘探现有「异步 ppt_create 怎么把成品 artifact 卡推回前端」**（`_bg_job` @**3779-3816** + `worker.notifier`）。`_bg_job` 现状只 notifier 文本（architect 指出它也没结构化 artifact）。所以本 WI 要**新建**一条产物上报通道，`ppt_pro` 与（顺带）`ppt_create` 异步路径共用：
+
+**文件 A** `backend/main.py`：`set_ppt_pro_services(...)` 追加注入：
+- `artifact_pusher`：一个 main-loop async 函数 `async def push(sid, artifacts: list[dict])` —— 经现有「桌宠成品卡」WS 通道把 `kind=file`/`kind=image` artifact 推到前端（grep 现有 artifact envelope 推送：`emit`/artifact card 广播，复用 last-mile `ArtifactCard` 渲染路径）。
+- `receipt_reporter`（可选）：`receipt_store_getter` 或一个 `report(sid, tool="ppt_pro", outcome, path, shas)` —— 复用 `emit_receipt`/`ReceiptStore`（`test_receipt_store.py` 的写法），让 verify gate 能对账后台真实产物。
+
+**文件 B** `backend/deskpet/tools/ppt_tools.py`：`_ppt_pro_report_done(result, *, notifier, artifact_pusher, receipt_reporter, sid)`：
+- 成功：`await artifact_pusher(sid, result["artifacts"])`（成品 .pptx + 预览图 PNG，复用 `ppt_create` 已构造的 artifacts @**3349** 附近）+ `receipt_reporter(sid, outcome="ok", path=result["path"], shas=...)` + notifier「✨…已自动打开」+ 自动打开（带图复用 PPT.md §2 逻辑）。
+- 失败/取消：notifier 文本 + `receipt_reporter(outcome="failed"/"cancelled")`（不静默；verify gate 可见）。
+**验收**：单测——(a) 成功 → artifact_pusher 收到含 path 的 artifacts + receipt outcome=ok；(b) 渲染失败 → outcome=failed + notifier；(c) 取消/超时 → outcome=cancelled；(d) 真机 TC-1 前端能看到成品「打开/在文件夹中显示」卡（非纯文本）。
 
 ---
 
@@ -462,7 +492,6 @@ async def _handle_ppt_pro(**kwargs):
 
 | 文件 | 改动 | WI |
 |---|---|---|
-| `backend/deskpet/config.py` | 加 `[ppt]` 6 个 pro_* 字段 | WI-0 |
 | `backend/deskpet/tools/research_tools.py` | 无需改（`_DEPTH_PRESETS` 已是顶层常量 @2104，直接 import） | WI-1b |
 | `backend/deskpet/tools/ppt_tools.py` | 新增 `_ppt_pro_cfg`/`_research_topic_for_ppt`/`_is_config_or_auth_error`/`_draft_outline_from_research`/`_build_outline_prompt`/`_outline_to_markdown`/`_fallback_minimal_outline`/`_degrade_to_template`/`_autofill_with_connectivity_gate`/`_should_fallback`/`_render_pro`/`_ppt_pro_orchestrate`/`_handle_ppt_pro`/`_ppt_pro_report_done`/`_PPT_PRO_SCHEMA`/`_PPT_PRO_CTX`/`_PPT_PRO_TASKS`/`set_ppt_pro_services`/`_register_ppt_pro_tool`；`ppt_create` 加 `skip_image_gen` 形参；**修现有 `_ppt_async_enabled` 等的 `_cfg.config.raw` 坏读法** | WI-0/1/2/6/7/10 |
 | `backend/deskpet/tools/image_tools.py` | 新增 `probe_image_reachable`；失败返回加 `error_kind`(connectivity/model_unavailable/auth/quota/content/unknown)；`_resolve_relay_base_and_key` helper | WI-5/6b |
@@ -512,6 +541,10 @@ WI-4 (前端 clarify 渲染 + 让我改改编辑态) ─────────
 | **R-11** | F1 调研静默失败 → 偷偷出「正式 PPT」凭空编 | ✅ 区分配置错(上抛)/网络错(降级)，且 no-research 时确认卡显式告知让用户知情确认（WI-1，codex/architect MAJOR） |
 | **R-12** | 后台 task 产物/失败 verify gate 看不到 | ✅ WI-10 补 receipt+artifact（architect MAJOR-4） |
 | **R-13** | 配置走 `_cfg.config.raw` 坏读法静默失效（STATUS 多次踩） | ✅ WI-0 走 `standalone_config_section`，顺手修现有坏读法（codex BLOCKING） |
+| **R-14** | 4xx「不靠中文文案」承诺无法兑现（relay 可能只给自然语言 message 无 error.code） | ✅ WI-6b 分层判定（status_code→error.code→多语言文案兜底，**诚实声明文案层局限**）+ 「全图失败 n_ok==0 也回退」二次兜底 + 真实 relay 样例测试（codex R2 BLOCKING） |
+| **R-15** | 秒回后 AgentLoop 回灌 tool_result 继续迭代 → 重复调 `ppt_pro` 起第二个后台 task（重复调研/烧图） | ✅ WI-7 `_PPT_PRO_RUNNING[sid]` 去重，重复调返回 `already_running` + WI-8 SKILL 告知 LLM 见 status 即等待（codex R2 MAJOR） |
+| **R-16** | 后台编排无总超时/取消/清理 → task 泄漏挂死 | ✅ WI-7 `asyncio.wait_for(total_timeout_s=1200)` + `/stop`/same-sid 取消入口 `_ppt_pro_cancel` + `finally` 清 `_PPT_PRO_RUNNING`（codex R2 MAJOR） |
+| **R-17** | WI-10 receipt/artifact 通道未闭合（后台 task 不在 registry 生命周期内） | ✅ WI-10 显式注入 `artifact_pusher`+`receipt_reporter`，后台 task 主动推成品卡 + 对账（codex R2 MAJOR） |
 
 ---
 
