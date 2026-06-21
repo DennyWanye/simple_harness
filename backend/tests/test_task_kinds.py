@@ -15,7 +15,7 @@ from deskpet.agent.task_kinds import (
 def test_resolve_research_profile():  # 0.1.1
     p = resolve_kind("research")
     assert isinstance(p, KindProfile)
-    assert "web_search" in p.tools and "deepresearch" in p.tools
+    assert "web_search" in p.tools and "deepresearch" not in p.tools
     assert p.max_iterations == 12
 
 
@@ -38,7 +38,7 @@ def test_load_overrides_merges():  # 0.1.4
     )
     assert merged["research"].max_iterations == 20
     # 其余字段保留
-    assert "deepresearch" in merged["research"].tools
+    assert "deepresearch" not in resolve_kind("research", overrides=merged).tools
     # resolve via overrides 也生效
     assert resolve_kind("research", overrides=merged).max_iterations == 20
 
@@ -75,3 +75,13 @@ def test_new_kind_via_override():  # 多做：覆盖可新增 kind
     )
     assert "vision" in merged
     assert resolve_kind("vision", overrides=merged).max_iterations == 5
+
+
+def test_deepresearch_guard_covers_all_subagent_paths():
+    from deskpet.agent.team.teammate_tools import FORBIDDEN_TEAMMATE_TOOLS
+    from deskpet.tools.code_tools.agent_parallel_tool import _filter_subagent_tools
+
+    assert "deepresearch" not in resolve_kind("research").tools
+    assert "deepresearch" not in _filter_subagent_tools(["deepresearch", "read_file"])
+    assert "deepresearch" in _FORBIDDEN_IN_KIND
+    assert "deepresearch" in FORBIDDEN_TEAMMATE_TOOLS

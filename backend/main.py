@@ -2012,6 +2012,12 @@ try:
                 except Exception as _sd_exc:  # noqa: BLE001
                     logger.warning("subagent_driver_init_failed: %s", _sd_exc)
 
+            _sched = service_context.get("subagent_scheduler")
+            from deskpet.tools import research_tools as _rt
+            if _sched is not None and _rt._fanout_enabled():
+                _rt.set_subagent_scheduler(_sched)
+                logger.info("deepresearch subagent fanout ENABLED (scheduler wired)")
+
             # Companion+Code v1 WI-C: agent_parallel 接电。subagent_driver 或旧
             # agent_parallel 任一开即注册；带 scheduler 时走有界调度+事务分型，
             # 否则现状扁平 gather（scheduler=None → 字节级 BC）.

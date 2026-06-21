@@ -12,6 +12,12 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from pathlib import Path
+
+
+_BACKEND_ROOT = Path(__file__).resolve().parents[2]
+if str(_BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_ROOT))
 
 
 _fails: list[str] = []
@@ -40,7 +46,7 @@ async def main() -> int:
 
     print("[1] 事务分型 task_kinds")
     _check("6 内置 kind", len(known_kinds()) >= 6, str(known_kinds()))
-    _check("research 工具集", "deepresearch" in resolve_kind("research").tools)
+    _check("research 工具集剥除 deepresearch", "deepresearch" not in resolve_kind("research").tools)
     _check("未知 kind→general", resolve_kind("xyz").kind == "general")
     _check(
         "递归守门(剔 spawn 类)",

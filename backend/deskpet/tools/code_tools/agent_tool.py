@@ -28,6 +28,8 @@ import json
 import logging
 from typing import Any, Awaitable, Callable
 
+from deskpet.agent.task_kinds import _FORBIDDEN_IN_KIND
+
 log = logging.getLogger(__name__)
 
 _SUBAGENT_MAX_ITERATIONS = 15
@@ -110,7 +112,7 @@ def build_agent_tool(
         if requested_tools and isinstance(requested_tools, list):
             tool_subset = [
                 t for t in requested_tools
-                if isinstance(t, str) and t != "agent"  # recursion guard
+                if isinstance(t, str) and t not in _FORBIDDEN_IN_KIND
             ]
         else:
             tool_subset = list(default_tool_subset)

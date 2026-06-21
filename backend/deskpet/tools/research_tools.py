@@ -152,6 +152,66 @@ def _research_raw() -> dict:
     return _RESEARCH_RAW_CACHE
 
 
+_SUBAGENT_SCHEDULER = None
+
+
+def set_subagent_scheduler(s) -> None:
+    """Wire the process-global SubagentScheduler for deepresearch fan-out."""
+    global _SUBAGENT_SCHEDULER
+    _SUBAGENT_SCHEDULER = s
+
+
+def get_subagent_scheduler():
+    """Return the wired SubagentScheduler, if any."""
+    return _SUBAGENT_SCHEDULER
+
+
+def _fanout_enabled() -> bool:
+    return bool(_research_raw().get("subagent_fanout", False))
+
+
+def _fanout_min_subquestions() -> int:
+    try:
+        return int(_research_raw().get("fanout_min_subquestions", 2))
+    except (TypeError, ValueError):
+        return 2
+
+
+def _fanout_max_subquestions() -> int:
+    try:
+        return int(_research_raw().get("fanout_max_subquestions", 6))
+    except (TypeError, ValueError):
+        return 6
+
+
+def _fanout_subrun_mode(outer: str) -> str:
+    v = str(_research_raw().get("fanout_subrun_mode", "auto") or "auto").strip().lower()
+    outer = (outer or "standard").strip().lower()
+    if v == "auto":
+        if outer == "deep":
+            return "standard"
+        if outer == "standard":
+            return "light"
+        return "light"
+    if v in ("light", "standard", "deep"):
+        return v
+    if v == "inherit":
+        return outer if outer in _DEPTH_PRESETS else "standard"
+    return "light"
+
+
+def _fanout_concurrency() -> int:
+    try:
+        import config as _cfg  # type: ignore[import-not-found]
+        obj = getattr(_cfg, "config", None)
+        if obj is None:
+            obj = _cfg.load_config(_cfg.resolve_config_path())
+        glob, lanes = _cfg.get_subagent_concurrency(obj)
+        return max(1, min(int(glob), int((lanes or {}).get("research", 2))))
+    except Exception:  # noqa: BLE001
+        return 2
+
+
 def _site_directed_enabled() -> bool:
     """``[research].site_directed`` (默认 True)。纯 prompt/query 改动,零成本,
     可关。"""
@@ -428,6 +488,10 @@ _UA = (
 # real extract step; this client only hits DuckDuckGo.
 _DEFAULT_TIMEOUT = 12.0
 
+_DEEPRESEARCH_TOOL_TIMEOUT = 300.0
+_FANOUT_OUTER_RESERVE = 60.0
+_MIN_SUBRUN = 45.0
+
 _INDEX_HEADER = (
     "# DeepResearch 报告索引\n\n"
     "运行时自动生成的 DeepResearch 报告总索引，新报告按倒序插入。\n\n"
@@ -541,6 +605,39 @@ EVIDENCE-QUALITY RULES (apply strictly):
 
 PASSAGES:
 {passages}
+
+REPORT:"""
+
+_FANOUT_SYNTH_PROMPT = """\
+You are synthesizing a final DeepResearch report from multiple sub-question
+research reports.
+
+ORIGINAL USER REQUEST:
+{user_request}
+
+REFINED TOPIC:
+{topic}
+
+The citation numbers have already been normalized globally. You may ONLY cite
+the global footnotes listed in "MERGED CITATIONS" below. Do not invent or
+renumber citations. Compare evidence across sub-questions, resolve conflicts,
+and produce one unified conclusion rather than concatenating the sub-reports.
+
+SUB-REPORTS:
+{sub_reports}
+
+MERGED CITATIONS:
+{citations}
+
+Write a Markdown report in the same language as the request, with:
+# {topic}
+## TL;DR
+## Key findings
+## Analysis
+## Caveats and open questions
+## Conclusion
+
+Every factual claim must cite one or more existing global footnotes like [^1].
 
 REPORT:"""
 
@@ -865,6 +962,14 @@ def _host(url: str) -> str:
     return (urllib.parse.urlparse(url).hostname or "").lower()
 
 
+def _norm_url(u: str) -> str:
+    try:
+        p = urllib.parse.urlsplit(u)
+        return f"{p.scheme}://{p.netloc}{p.path.rstrip('/')}".lower()
+    except Exception:  # noqa: BLE001
+        return (u or "").rstrip("/").lower()
+
+
 def authority_for_url(url: str) -> float:
     """Look up the authority bonus for the URL's host (with parent-domain
     fallback so subdomains inherit). Unknown → :data:`_DEFAULT_AUTHORITY`.
@@ -939,6 +1044,250 @@ def cite_check(
     }
 
 
+def _merge_subreport_citations(sub_reports) -> tuple[list[Citation], dict[tuple[int, int], int]]:
+    """Merge sub-report citations by normalized URL and build local→global refs."""
+    merged: list[Citation] = []
+    url_to_global: dict[str, int] = {}
+    refmap: dict[tuple[int, int], int] = {}
+    for report_idx, item in enumerate(sub_reports):
+        report = item[1] if isinstance(item, tuple) else item
+        for c in getattr(report, "citations", []) or []:
+            key = _norm_url(c.url)
+            if key in url_to_global:
+                refmap[(report_idx, int(c.n))] = url_to_global[key]
+                continue
+            global_n = len(merged) + 1
+            url_to_global[key] = global_n
+            refmap[(report_idx, int(c.n))] = global_n
+            merged.append(Citation(
+                n=global_n,
+                url=c.url,
+                title=c.title,
+                snippet=c.snippet,
+                fetched_at=c.fetched_at,
+                authority=c.authority,
+            ))
+    return merged, refmap
+
+
+def _strip_footnote_definitions(md: str) -> str:
+    text = (md or "").strip()
+    matches = list(re.finditer(r"(?m)^##\s+引用\s*$", text))
+    if matches:
+        text = text[:matches[-1].start()].rstrip()
+        text = re.sub(r"\n-{3,}\s*$", "", text).rstrip()
+    text = re.sub(r"(?m)^\[\^\d+\]:[^\n]*(?:\n[ \t]+[^\n]*)*\n?", "", text)
+    return text.strip()
+
+
+def _rewrite_local_refs(md: str, local_to_global: dict[int, int]) -> str:
+    def _replace(match: re.Match) -> str:
+        local = int(match.group(1))
+        return f"[^{local_to_global.get(local, local)}]"
+
+    return _FOOTNOTE_REF_RE.sub(_replace, md or "")
+
+
+def _finalize_report_md(
+    report_md: str,
+    citations: list[Citation],
+    errors: list[str],
+) -> tuple[str, list[Citation], dict[str, Any]]:
+    cc = cite_check(report_md, citations)
+    if not cc["ok"]:
+        errors.append(
+            f"cite_check failed: missing footnotes {cc['missing']}"
+        )
+        # Append a warning + force unique footnote list. We keep the
+        # report rather than dropping it — the caller can decide
+        # whether to ask the LLM to retry.
+        report_md += (
+            f"\n\n> ⚠️ 自检发现 {len(cc['missing'])} 个引用编号在引用列表里不存在: "
+            f"{cc['missing']}。请用户在使用本报告前核对来源。\n"
+        )
+
+    # 废引用清理(codex 评审: 附录里残留 [^5][^9]... 正文没引用的条目拉低可信度)。
+    # 只保留正文真正用到的来源;正文一个 [^n] 都没有(极少见)才兜底保留全部。
+    used_refs = set(find_footnote_refs(report_md))
+    used_citations = [c for c in citations if c.n in used_refs]
+    if used_citations:
+        citations = used_citations
+
+    # Always append the citation list as Markdown footnotes
+    report_md = report_md.rstrip() + "\n\n---\n\n## 引用\n\n" + "\n".join(
+        c.as_footnote() for c in citations
+    ) + "\n"
+    return report_md, citations, cc
+
+
+async def _fanout_synthesize(
+    topic: str,
+    user_request: str,
+    sub_reports: list[tuple[str, ResearchReport]],
+    llm_call: _LLMCall,
+    errors: list[str],
+) -> tuple[str, list[Citation]]:
+    merged, refmap = _merge_subreport_citations(sub_reports)
+    sections: list[str] = []
+    for report_idx, (q, report) in enumerate(sub_reports):
+        local_to_global = {
+            local_n: global_n
+            for (idx, local_n), global_n in refmap.items()
+            if idx == report_idx
+        }
+        body = _strip_footnote_definitions(report.report_md)
+        body = _rewrite_local_refs(body, local_to_global)
+        sections.append(f"### {q}\n\n{body}")
+
+    sub_report_block = "\n\n---\n\n".join(sections)
+    citations_block = "\n".join(c.as_footnote() for c in merged) or "(none)"
+    try:
+        report_md = await llm_call(_FANOUT_SYNTH_PROMPT.format(
+            topic=topic,
+            user_request=user_request,
+            sub_reports=sub_report_block,
+            citations=citations_block,
+        ))
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"fanout_synth_llm: {exc}")
+        report_md = f"# {topic}\n\n" + sub_report_block
+
+    report_md = (report_md or "").strip()
+    if not report_md:
+        report_md = f"# {topic}\n\n" + sub_report_block
+    report_md, merged, _cc = _finalize_report_md(report_md, merged, errors)
+    return report_md, merged
+
+
+async def _run_subagent_fanout(
+    *,
+    topic: str,
+    sub_questions: list[str],
+    llm_call: _LLMCall,
+    search: _Searcher,
+    extract: _Extractor,
+    scheduler,
+    parent_sid: str,
+    mode: str,
+    user_request: str,
+    errors: list[str],
+    route: dict[str, Any],
+) -> ResearchReport:
+    conc = _fanout_concurrency()
+    max_waves = int((_DEEPRESEARCH_TOOL_TIMEOUT - _FANOUT_OUTER_RESERVE) // _MIN_SUBRUN)
+    cap = min(_fanout_max_subquestions(), conc * max_waves)
+    eff_subq = sub_questions[:cap]
+    if len(eff_subq) < len(sub_questions):
+        errors.append(
+            f"fanout_dropped_subquestions:{len(sub_questions) - len(eff_subq)}"
+        )
+    submode = _fanout_subrun_mode(mode)
+    _, d_urls, d_pass, d_rounds = _DEPTH_PRESETS[submode]
+    waves = max(1, (len(eff_subq) + conc - 1) // conc)
+    timeout = min(150.0, (_DEEPRESEARCH_TOOL_TIMEOUT - _FANOUT_OUTER_RESERVE) / waves)
+
+    async def _run_one(i: int, q: str):
+        async def _coro():
+            return await asyncio.wait_for(
+                deepresearch(
+                    q,
+                    llm_call=llm_call,
+                    search=search,
+                    extract=extract,
+                    max_sub_questions=1,
+                    max_urls_per_query=d_urls,
+                    max_total_passages=d_pass,
+                    max_rounds=d_rounds,
+                    mode=submode,
+                    user_request=q,
+                    scheduler=None,
+                    _depth=1,
+                    skip_plan=True,
+                ),
+                timeout=timeout,
+            )
+
+        return await scheduler.run(
+            kind="research",
+            run_id=f"{parent_sid}.dr-{i}",
+            task_id=f"dr-{i}",
+            parent_sid=parent_sid,
+            coro_factory=_coro,
+        )
+
+    results = await asyncio.gather(
+        *[_run_one(i, q) for i, q in enumerate(eff_subq)],
+        return_exceptions=True,
+    )
+
+    sub_reports: list[tuple[str, ResearchReport]] = []
+    per_subquestion: list[dict[str, Any]] = []
+    n_failed = 0
+    for q, result in zip(eff_subq, results):
+        if isinstance(result, BaseException):
+            n_failed += 1
+            errors.append(f"fanout:{q!r}: {result}")
+            per_subquestion.append({"question": q, "status": "failed", "error": str(result)})
+            continue
+        if not isinstance(result, ResearchReport):
+            n_failed += 1
+            errors.append(f"fanout:{q!r}: invalid result {type(result).__name__}")
+            per_subquestion.append({"question": q, "status": "failed", "error": "invalid_result"})
+            continue
+        sub_reports.append((q, result))
+        errors.extend(result.errors or [])
+        per_subquestion.append({
+            "question": q,
+            "status": "completed",
+            "n_sources": int((result.coverage or {}).get("n_sources", 0)),
+            "n_domains": int((result.coverage or {}).get("n_domains", 0)),
+        })
+
+    fanout_obs = {
+        "enabled": True,
+        "n_subagents": len(eff_subq),
+        "n_completed": len(sub_reports),
+        "n_failed": n_failed,
+        "waves": waves,
+        "per_subrun_timeout_s": timeout,
+        "per_subquestion": per_subquestion,
+    }
+    base_cov = {
+        "n_sub_questions": len(sub_questions),
+        "mode": "fanout",
+        "subagent_fanout": fanout_obs,
+    }
+
+    if not sub_reports:
+        return ResearchReport(
+            topic=topic,
+            summary="",
+            report_md=_no_results_template(topic, sub_questions),
+            citations=[],
+            sub_questions=sub_questions,
+            coverage={"n_sources": 0, "n_domains": 0, **base_cov},
+            errors=errors,
+        )
+
+    report_md, merged_citations = await _fanout_synthesize(
+        topic, user_request, sub_reports, llm_call, errors
+    )
+    domains = {_host(c.url) for c in merged_citations if _host(c.url)}
+    return ResearchReport(
+        topic=topic,
+        summary=_extract_summary(report_md),
+        report_md=report_md,
+        citations=merged_citations,
+        sub_questions=sub_questions,
+        coverage={
+            "n_sources": len(merged_citations),
+            "n_domains": len(domains),
+            **base_cov,
+        },
+        errors=errors,
+    )
+
+
 # ----------------------------------------------------------------------
 # Plan / Synthesize parsers — defensive against LLM drift
 # ----------------------------------------------------------------------
@@ -999,6 +1348,10 @@ async def deepresearch(
     max_rounds: int = 1,
     mode: str = "standard",
     user_request: Optional[str] = None,
+    scheduler=None,
+    parent_sid: str = "default",
+    _depth: int = 0,
+    skip_plan: bool = False,
 ) -> ResearchReport:
     """End-to-end research pipeline. See module docstring.
 
@@ -1066,21 +1419,42 @@ async def deepresearch(
 
     # ---- 1. plan ----------------------------------------------------
     stage_start = time.perf_counter()
-    try:
-        plan_raw = await llm_call(_PLAN_PROMPT.format(
-            topic=topic,
-            user_request=_ur,
-        ))
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"plan_llm: {exc}")
-        plan_raw = ""
-    sub_questions = parse_sub_questions(plan_raw, max_questions=max_sub_questions)
+    if skip_plan:
+        sub_questions = [topic]
+    else:
+        try:
+            plan_raw = await llm_call(_PLAN_PROMPT.format(
+                topic=topic,
+                user_request=_ur,
+            ))
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"plan_llm: {exc}")
+            plan_raw = ""
+        sub_questions = parse_sub_questions(plan_raw, max_questions=max_sub_questions)
     if not sub_questions:
         # Fall back to the topic itself as the single sub-question. This
         # lets users with offline / failing LLM still get *something*.
         sub_questions = [topic]
         errors.append("plan_fallback: using topic verbatim")
     elapsed_ms_per_stage["plan"] = _stage_ms(stage_start)
+
+    fanout_on = (scheduler is not None and _depth == 0
+                 and len(sub_questions) >= _fanout_min_subquestions()
+                 and _fanout_enabled())
+    if fanout_on:
+        return await _run_subagent_fanout(
+            topic=topic,
+            sub_questions=sub_questions,
+            llm_call=llm_call,
+            search=search_fn,
+            extract=extract_fn,
+            scheduler=scheduler,
+            parent_sid=parent_sid,
+            mode=mode,
+            user_request=_ur,
+            errors=errors,
+            route=route,
+        )
 
     # ---- 1.5 query expansion (multi-query + HyDE) -------------------
     # 一次 LLM 调用产出额外搜索 query(改写+HyDE),提升召回。归属 topic(不偏向
@@ -1225,14 +1599,6 @@ async def deepresearch(
     # 命中源记入 route.direct_sources_hit;整源空记 direct_source_empty。高新鲜度跳长度门。
     if _direct_sources_enabled():
         from . import research_sources as _rs
-        import urllib.parse as _uparse
-
-        def _norm_url(u: str) -> str:
-            try:
-                p = _uparse.urlsplit(u)
-                return f"{p.scheme}://{p.netloc}{p.path.rstrip('/')}".lower()
-            except Exception:  # noqa: BLE001
-                return (u or "").rstrip("/").lower()
 
         seen_passage_urls = {_norm_url(u) for u in candidate_urls}
         direct_sources_hit: list[str] = []
@@ -1435,30 +1801,7 @@ async def deepresearch(
 
     # ---- 6. cite_check ---------------------------------------------
     citations = [p.citation for p in passages]
-    cc = cite_check(report_md, citations)
-    if not cc["ok"]:
-        errors.append(
-            f"cite_check failed: missing footnotes {cc['missing']}"
-        )
-        # Append a warning + force unique footnote list. We keep the
-        # report rather than dropping it — the caller can decide
-        # whether to ask the LLM to retry.
-        report_md += (
-            f"\n\n> ⚠️ 自检发现 {len(cc['missing'])} 个引用编号在引用列表里不存在: "
-            f"{cc['missing']}。请用户在使用本报告前核对来源。\n"
-        )
-
-    # 废引用清理(codex 评审: 附录里残留 [^5][^9]... 正文没引用的条目拉低可信度)。
-    # 只保留正文真正用到的来源;正文一个 [^n] 都没有(极少见)才兜底保留全部。
-    used_refs = set(find_footnote_refs(report_md))
-    used_citations = [c for c in citations if c.n in used_refs]
-    if used_citations:
-        citations = used_citations
-
-    # Always append the citation list as Markdown footnotes
-    report_md = report_md.rstrip() + "\n\n---\n\n## 引用\n\n" + "\n".join(
-        c.as_footnote() for c in citations
-    ) + "\n"
+    report_md, citations, cc = _finalize_report_md(report_md, citations, errors)
 
     # ---- 7. summary / coverage / return ----------------------------
     summary = _extract_summary(report_md)
@@ -1777,6 +2120,7 @@ async def _handle_deepresearch(args: dict, task_id: str) -> str:
             {"ok": False, "error": "topic is required"}, ensure_ascii=False
         )
     user_request = str(args.get("user_request") or "").strip() or None
+    sid = str(args.get("_session_id") or "default")
 
     # Resolve an LLM callable from the running provider chain. We import
     # lazily so test environments without an LLM still pass.
@@ -1801,6 +2145,8 @@ async def _handle_deepresearch(args: dict, task_id: str) -> str:
         max_rounds=int(args.get("max_rounds") or d_rounds),
         mode=depth,
         user_request=user_request,
+        scheduler=get_subagent_scheduler(),
+        parent_sid=sid,
     )
 
     out = {"ok": True, **report.as_dict()}
@@ -1925,7 +2271,7 @@ def _register_deepresearch_tool() -> None:
             # 慢网区(代理/必应跳转 cn.bing)单轮就逼近 180s。提到 300s(对齐
             # code/os 重工具),给 deep 档完整跑完的余量,避免半途 tool_timeout
             # 丢掉已抓到的一手源(真机 UI 测 TC-P2-03 deep 档 180s 超时实证)。
-            timeout_seconds=300.0,
+            timeout_seconds=_DEEPRESEARCH_TOOL_TIMEOUT,
         )
     except Exception as exc:  # noqa: BLE001
         log.debug("research tool registration skipped: %s", exc)

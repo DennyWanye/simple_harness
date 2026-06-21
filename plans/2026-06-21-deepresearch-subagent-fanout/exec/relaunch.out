@@ -834,3 +834,10 @@ INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 4
 INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
 xtra_body=%s' level='info' timestamp='2026-06-21T08:17:08.840215Z' positional_args=('gpt-5.5', None, None)
 INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:providers.openai_compatible:event='p4s25_stream_summary' level='info' timestamp='2026-06-21T08:18:29.505893Z' sse_
+lines=3719 content_chars=2556 reasoning_chars=0 tool_calls=0 delta_keys=['content', 'role'] stop_reason='end_turn'
+INFO:providers.openai_compatible:event='p4s25_prompt_cache_hit' level='info' timestamp='2026-06-21T08:18:29.506893Z' wh
+ere='stream' cached_tokens=4608 prompt_tokens=10421 hit_rate=0.4422
+INFO:providers.openai_compatible:event='openai_compat_outbound fn=chat_stream_with_tools model=%s reasoning_effort=%s e
+xtra_body=%s' level='info' timestamp='2026-06-21T08:18:29.527893Z' positional_args=('gpt-5.5', None, None)
+[1m[91merror[0m: process didn't exit successfully: `target\debug\deskpet.exe` (exit code: 1)

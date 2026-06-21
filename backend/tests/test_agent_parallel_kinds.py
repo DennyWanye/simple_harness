@@ -59,7 +59,7 @@ async def test_kind_routes_tools_and_scheduler():  # 1.3.1
     )
     assert out["ok"]
     by = {c["task_id"]: c for c in calls}
-    assert "deepresearch" in by["a"]["tools"]  # research kind 工具集
+    assert "deepresearch" not in by["a"]["tools"]  # research kind 工具集
     assert "ppt_create" in by["b"]["tools"]  # doc kind 工具集
     assert by["a"]["_kind"] == "research" and by["b"]["_kind"] == "doc"
     assert by["a"]["_max_iter"] == 12 and by["b"]["_max_iter"] == 15

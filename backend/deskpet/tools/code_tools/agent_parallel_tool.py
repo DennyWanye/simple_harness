@@ -44,6 +44,8 @@ import logging
 import time
 from typing import Any, Awaitable, Callable, Optional
 
+from deskpet.agent.task_kinds import _FORBIDDEN_IN_KIND
+
 log = logging.getLogger(__name__)
 
 
@@ -54,7 +56,7 @@ _MAX_SUBAGENTS = 8
 # 合法 kind（与 task_kinds._BUILTIN_KINDS 对齐；未知 kind 运行时回退 general）
 _KIND_ENUM = ["general", "research", "code", "fileops", "doc", "web"]
 # Recursion guard — 这两个名字永远不会被传给 subagent
-_FORBIDDEN_NESTED_TOOLS = frozenset({"agent", "agent_parallel"})
+_FORBIDDEN_NESTED_TOOLS = frozenset(_FORBIDDEN_IN_KIND)
 
 # G4 (companion-code-v2) — prompt cache modes.
 #   "fork"  → each subagent reuses the parent agent's system prompt bytes
@@ -105,7 +107,7 @@ _SCHEMA: dict[str, Any] = {
                             "enum": _KIND_ENUM,
                             "description": (
                                 "事务类型：决定子代理工具集/迭代上限/并发 lane。"
-                                "research=调研(联网+deepresearch)、code=编码(读写改+跑测试)、"
+                                "research=调研(联网+web_fetch)、code=编码(读写改+跑测试)、"
                                 "doc=文档生成(PPT/Word/Excel)、web=联网快查、fileops=文件读写、"
                                 "general=通用只读(默认)。"
                             ),

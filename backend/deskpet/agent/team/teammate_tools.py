@@ -31,6 +31,7 @@ import json
 import logging
 from typing import Any, Awaitable, Callable
 
+from deskpet.agent.task_kinds import _FORBIDDEN_IN_KIND
 from deskpet.agent.team.team_store import TeamStore
 
 log = logging.getLogger(__name__)
@@ -39,7 +40,9 @@ log = logging.getLogger(__name__)
 # Names of tools that must NEVER appear in a teammate's tool set —
 # would let a teammate fan out further (mid-loop infinite recursion)
 # or escape the team sandbox.
-FORBIDDEN_TEAMMATE_TOOLS = frozenset({"agent", "agent_parallel", "spawn_team"})
+FORBIDDEN_TEAMMATE_TOOLS = (
+    frozenset({"agent", "agent_parallel", "spawn_team"}) | _FORBIDDEN_IN_KIND
+)
 
 
 # Module-level schemas — pure data, safe to share across teams. Handlers

@@ -28,7 +28,14 @@ from typing import Any
 # 递归守门：任何 kind 的工具子集都不得含这些
 # （与 agent_parallel._FORBIDDEN_NESTED_TOOLS / teammate_tools.FORBIDDEN_TEAMMATE_TOOLS 对齐）
 _FORBIDDEN_IN_KIND = frozenset(
-    {"agent", "agent_parallel", "spawn_team", "spawn_subagents", "await_subagents"}
+    {
+        "agent",
+        "agent_parallel",
+        "spawn_team",
+        "spawn_subagents",
+        "await_subagents",
+        "deepresearch",
+    }
 )
 
 
@@ -59,7 +66,7 @@ _BUILTIN_KINDS: dict[str, KindProfile] = {
     ),
     "research": KindProfile(
         "research",
-        ("web_search", "web_fetch", "deepresearch", "read_file"),
+        ("web_search", "web_fetch", "read_file"),
         12,
         framing="你是调研子代理：检索权威来源、交叉验证、给带依据的结论。",
         lane_concurrency=2,
