@@ -1672,13 +1672,16 @@ async def _update_deepresearch_index(
             idx = report_path.parent / "index.md"
             cov = report.coverage or {}
             safe_topic = str(topic or "").replace("|", "/").replace("\r", " ").replace("\n", " ")
+            # 模式列区分 flat / fanout —— 不能用 cov["mode"]（那是档位 standard/deep/light，
+            # §6.0 观测占用），按 subagent_fanout 块是否存在判定（Phase 2 fanout 才有）。
+            pipeline_mode = "fanout" if cov.get("subagent_fanout") else "flat"
             row = (
                 f"| {time.strftime('%Y-%m-%d %H:%M')} "
                 f"| {safe_topic} "
                 f"| [{report_path.name}]({report_path.name}) "
                 f"| {cov.get('n_sources', 0)} "
                 f"| {cov.get('n_domains', 0)} "
-                f"| {cov.get('mode', 'flat')} "
+                f"| {pipeline_mode} "
                 f"| {cov.get('n_sub_questions', 0)} |\n"
             )
             if idx.exists():

@@ -173,6 +173,29 @@ async def test_update_deepresearch_index_creates_header_dedupes_and_preserves_ut
 
 
 @pytest.mark.asyncio
+async def test_index_mode_column_is_flat_not_depth(tmp_path):
+    # cov["mode"]="deep"(档位) 不应泄漏到模式列；扁平跑模式列必须是 "flat"
+    report_path = tmp_path / "flatrun.md"
+    report_path.write_text("# r", encoding="utf-8")
+    await r._update_deepresearch_index(report_path, "flat topic", _report(topic="flat topic"))
+    text = (tmp_path / "index.md").read_text(encoding="utf-8")
+    row = [l for l in text.splitlines() if "flatrun.md" in l][0]
+    assert "| flat |" in row
+    assert "| deep |" not in row  # 档位绝不能当模式列
+
+
+@pytest.mark.asyncio
+async def test_index_mode_column_is_fanout_when_subagent_fanout_present(tmp_path):
+    report_path = tmp_path / "fanrun.md"
+    report_path.write_text("# r", encoding="utf-8")
+    rep = _report(topic="fan topic", coverage={"subagent_fanout": {"enabled": True, "n_subagents": 3}})
+    await r._update_deepresearch_index(report_path, "fan topic", rep)
+    text = (tmp_path / "index.md").read_text(encoding="utf-8")
+    row = [l for l in text.splitlines() if "fanrun.md" in l][0]
+    assert "| fanout |" in row
+
+
+@pytest.mark.asyncio
 async def test_update_deepresearch_index_serializes_concurrent_writes(tmp_path):
     report_a = tmp_path / "a.md"
     report_b = tmp_path / "b.md"
