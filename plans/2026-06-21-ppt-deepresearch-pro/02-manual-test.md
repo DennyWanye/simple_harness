@@ -19,8 +19,8 @@
 6. 成品落 `OutPut/PPT/*.pptx`，预览图 artifact 进聊天，自动打开（WPS），首页/内容页是 AI 整页配图惊艳风。
 **判定**：PASS = 调研真发生 + 大纲有据 + 确认卡可见 + 点确认后真出图惊艳 deck 落盘。
 
-## TC-2 修改环（F3「可改」+ MAJOR-3 防整盘重拟）
-**步骤**：TC-1 弹确认卡后，点「✏️ 让我改改」→ 出现 textarea → Clipboard 输「把第 3 页换成与磷酸铁锂的竞品对比，其余页不要动」→ 点「提交修改」。
+## TC-2 修改环（F3「可改」+ 防整盘重拟）
+**步骤**：TC-1 弹**大纲卡**（`ppt_outline_proposed`）后，点「✏️ 修改」→ 出现 textarea → Clipboard 输「把第 3 页换成与磷酸铁锂的竞品对比，其余页不要动」→ 点「提交修改」（发 `ppt_outline_decision action=modify`）。
 **期望**：
 1. backend log：编排 task 收到 feedback，`_draft_outline_from_research(feedback=..., prev_slides=...)` 重拟。
 2. **新确认卡**：第 3 页变为竞品对比，**其余页与上一版基本一致**（验证增量修订非整盘重拟）。
@@ -64,6 +64,11 @@
 1. 新消息正常被回答（「现在几点」）。
 2. **确认卡仍在、仍可点**；回到确认卡点「确认生成」→ 编排 task 仍存活、继续出图（独立 task 未被 preempt cancel）。
 **判定**：PASS = 新消息不杀确认链路（验证 §2.5 独立 task 修复）。**这是 R-4 BLOCKING 的真机验证。**
+
+## TC-9 大纲历史复用 + 持久化（F3 决策 2）
+**步骤**：完成 TC-1 一次后，再发一个新主题做 PPT → 大纲卡出现时展开「📜 历史大纲」→ 应看到上次的主题条目 → 点它（发 `ppt_outline_decision action=reuse reuse_id=...`）→ 直接用历史大纲进入生成。另：弹卡后 reload 页面 → 卡仍在（持久化，仿 skill_candidate）。
+**期望**：`ppt_outline_history` 表有记录；复用走历史 slides；reload 不丢卡。
+**判定**：PASS = 历史可见可复用 + 卡持久化。
 
 ## TC-8 BC（旧 ppt_create 不受影响）
 **步骤**：输「直接用这个大纲做 PPT：[贴一份 outline]」或「快速做个 3 页朴素 PPT」（引导走 ppt_create 而非 ppt_pro）。

@@ -1,7 +1,7 @@
 # PPT 能力优化 — DeepResearch 调研 → 大纲确认 → 惊艳生图(gpt-image-2) / 模板兜底
 
-> **状态**: **v1.0 LOCKED — 3 轮对抗收敛，codex R3 终判 `VERDICT: EXECUTABLE-AS-IS`（无新 BLOCKING/MAJOR，2 个实现期 MINOR 已并入）。待用户 review 后即可执行。**
-> **对抗轨迹**：R1 codex 4 BLOCKING+3 MAJOR / architect 2 BLOCKING+4 MAJOR → R2 codex 1 BLOCKING+3 MAJOR → R3 codex **0 BLOCKING 0 MAJOR（EXECUTABLE-AS-IS）**。全部 BLOCKING/MAJOR 已消解（§6 R-1~R-17 全 ✅）。挑战记录见 `.challenge-r{1,2,3}.out`。
+> **状态**: **v1.1 — 用户 review 拍板 4 项决策已并入（§7）。其中决策 2「改 FP-5 风格独立大纲卡 + 存历史」是 F3 实质架构变更，已重写 WI-3/WI-4 + 新增 WI-3 历史持久化，并对该 delta 跑 R4 对抗复核（见状态尾）。**
+> **对抗轨迹**：R1 codex 4B+3M / architect 2B+4M → R2 codex 1B+3M → R3 codex **EXECUTABLE-AS-IS**（v1.0 LOCKED）→ v1.1 并入用户决策 → R4 对 F3 大纲卡 delta 复核。挑战记录见 `.challenge-r{1,2,3,4}.out`。
 > **建档**: 2026-06-21
 > **作者**: Claude (Lead) · 对抗：codex gpt-5.5（只读，2 轮）+ architect 子代理
 > **前置阅读**: [STATUS/PPT.md](../../STATUS/PPT.md) · [STATUS/DeepResearch.md](../../STATUS/DeepResearch.md) · [STATUS/AgentLoop.md](../../STATUS/AgentLoop.md)
@@ -54,7 +54,7 @@
 ### 1.4 暂停等用户确认（两套机制）
 - **`ask_clarification`** 工具：`code_tools/clarify_tool.py`（schema @**15-33**、`build_clarification_ask` @**50-91**、`resolve_clarification_response` @**36-47**）。main.py 内联了等价闭包 `_clarify_ask` @**530-552**（`_clarify_pending: dict[str,Future]` @**500**，推 `clarification_request` 到 `_control_connections[session_id]`，`await asyncio.wait_for(fut, 120)`）；注册 @**2175-2184**；回灌 @**4181-4195**（`clarification_response` → `resolve_clarification_response` → `fut.set_result`）。
 - 前端 `ClarificationDialog.tsx`（`tauri-app/src/components/`）+ `useClarificationRequests.ts`（hook，监听 `/ws/control` 的 `clarification_request`）；挂载 `App.tsx` @**723-724/1719-1722**（用 `permissionChannel`，pet 窗口 `/ws/control?session_id=default`）。类型 `skillPlatform.ts` @**57-73**。
-- **结论（来自测绘）**：`ask_clarification` 形态最省力——后端已能在 tool handler 内 `await _clarify_ask(...)` 挂起 agent，前端已有弹窗。**只需扩展 payload 携带多行大纲 Markdown（`content_md`）+ 前端富文本渲染**即可承载 F3「展示大纲让用户确认/改」。
+- **结论（v1.1 用户决策）**：采用 **FP-5「技能候选卡」同款的独立卡片机制**（非 ask_clarification）——因为用户要「存历史大纲可复用」。范本完整可复制：`skill_codifier.SkillCandidateWaiters` + `_maybe_codify_skill` 的 Future-await 独立 task + `skill_candidate_proposed`/`skill_candidate_confirm` WS 双向 + `SkillCandidateCard` 持久化卡。详见 WI-3/WI-4。
 
 ### 1.5 Envelope 现状
 ```jsonc
@@ -116,7 +116,7 @@ LLM 一次调用:  ppt_pro(topic="新能源电池技术发布会", depth="standa
 
 **v0.2 正确架构**（见 §2.5 详述）：
 - `ppt_pro` = **async handler**，本体只校验参数 → `asyncio.create_task(_ppt_pro_orchestrate(...))` 在 **main loop**（uvicorn 单 loop，与 `_clarify_ask`/`_control_connections` 同 loop）起一个**独立编排 task** → **立即返回** `{"ok":True,"status":"researching","message":"正在调研主题…"}`。chat task 随即收尾，用户可继续对话；后续 preempt cancel **伤不到**独立编排 task（`create_task` 是 loop 级独立 task，非父子级联取消）。
-- 独立编排 task 内：Stage A/B/C 串行 `await`（调研 → 拟纲 → 确认，确认复用 `_clarify_ask`，同 loop 安全）；Stage D 渲染（生图阻塞）走 `loop.run_in_executor(None, lambda: _render_pro(...))` 不阻塞 main loop。全程 notifier 推进度 + 推成品。
+- 独立编排 task 内：Stage A/B/C 串行 `await`（调研 → 拟纲 → 确认，**确认用 FP-5 风格独立大纲卡 `_ppt_outline_propose`**，同 loop 安全，WI-3）；Stage D 渲染（生图阻塞）走 `loop.run_in_executor(None, lambda: _render_pro(...))` 不阻塞 main loop。全程 notifier 推进度 + 推成品。
 - **task 引用保活**：模块级 `_PPT_PRO_TASKS: set[asyncio.Task]` 持引用（asyncio 弱引用 task，不持会被 GC），`task.add_done_callback(_PPT_PRO_TASKS.discard)`。
 - 这样 `ppt_pro` 注册的 `timeout_seconds` 只约束秒回的 handler，**不再需要 1800s 兜 10min**（编排 task 自管超时）。
 
@@ -129,30 +129,34 @@ _PPT_PRO_TASKS: set[asyncio.Task] = set()   # 模块级，保活引用
 
 async def _ppt_pro_orchestrate(*, topic, pages, depth, theme, image_mode,
                                title, author, output_path,
-                               clarify, notifier, run_blocking, session_id):
-    """独立 task：调研→拟纲→确认→渲染。在 main loop 上跑，不受 chat preempt 影响。"""
+                               outline_propose, notifier, run_blocking, session_id):
+    """独立 task：调研→拟纲→(大纲卡)确认→渲染。在 main loop 上跑，不受 chat preempt 影响。"""
     try:
         await notifier(session_id, "🔍 正在围绕主题做深度调研…")
-        report = await _research_topic_for_ppt(topic, depth=depth, timeout_s=research_to)  # WI-1
+        report = await _research_topic_for_ppt(topic, depth=depth, timeout_s=research_to)  # WI-1（deep档~5min）
+        if cfg.pro_save_research and report: _save_and_index_research(topic, report)       # WI-1 默认落盘
         n_src = len(report.citations) if report else 0
         await notifier(session_id, f"📚 调研完成（{n_src} 个来源），正在拟大纲…" if report
                        else "📝 调研未取得来源，按通用知识拟大纲…")
         llm = await _resolve_default_llm_call()                                            # WI-2 锁定 LLM 源
         slides = await _draft_outline_from_research(topic, report, pages=pages, theme=theme,
                                                     image_mode=image_mode, llm_call=llm)
-        # 确认环（≤ max_revisions，传 prev_slides 防整盘重拟 — MAJOR-3）
+        # 确认环（FP-5 风格大纲卡，≤ max_revisions，传 prev_slides 防整盘重拟 — WI-3）
         confirmed = False
         for _ in range(max_revisions + 1):
-            ans = (await clarify(_confirm_question(report), ["确认生成", "让我改改", "取消"],
-                                 session_id, timeout=confirm_to,
-                                 content_md=_outline_to_markdown(slides))) or ""
-            norm = ans.strip()
-            if norm in ("确认生成","确认","ok","OK"): confirmed = True; break
-            if norm in ("取消","cancel") or norm == "":
+            d = await outline_propose(session_id, topic=topic, slides=slides, sources_count=n_src,
+                                      outline_md=_outline_to_markdown(slides), no_research=(report is None))
+            act = d.get("action")
+            if act == "accept": confirmed = True; break
+            if act == "reuse":            # 复用历史大纲
+                slides = parse_outline(_outline_store.get_outline(d["reuse_id"])["slides_json"])
+                confirmed = True; break
+            if act == "cancel":
                 await notifier(session_id, "好的，已取消，没有生成 PPT。"); return
+            # act == "modify"
             slides = await _draft_outline_from_research(topic, report, pages=pages, theme=theme,
                                                         image_mode=image_mode, llm_call=llm,
-                                                        feedback=norm, prev_slides=slides)   # 传上一版
+                                                        feedback=d.get("feedback",""), prev_slides=slides)
         if not confirmed:
             await notifier(session_id, "大纲改了好几轮还没定，先暂停啦，需要再叫我~"); return
         # 渲染（阻塞 → executor，不卡 main loop；render 阶段独立超时，绕过 registry 1200s 故自包）
@@ -171,6 +175,7 @@ async def _ppt_pro_orchestrate(*, topic, pages, depth, theme, image_mode,
 ```
 - `run_blocking` = 注入的 `lambda coro_fn: loop.run_in_executor(None, coro_fn)`（main loop 的 executor）。
 - `notifier` = 注入的 main-loop 推送（control WS 或 `worker.notifier`，确认 notifier 也在 main loop）。
+- `outline_propose` = 注入的 `_ppt_outline_propose`（WI-3，FP-5 风格大纲卡 propose+await+history）。
 - handler（WI-7）：`t=asyncio.create_task(_ppt_pro_orchestrate(...)); _PPT_PRO_TASKS.add(t); t.add_done_callback(_PPT_PRO_TASKS.discard); return {"ok":True,"status":"researching","message":"正在调研主题，稍等我把大纲拟出来给你确认~"}`。
 
 ### 2.6 Flag / BC
@@ -189,7 +194,7 @@ async def _ppt_pro_orchestrate(*, topic, pages, depth, theme, image_mode,
 
 **文件** `backend/config.py`
 - 在 PPT 配置读取处加 6 个 pro_* 项。**读法对齐健壮方式**：用 `standalone_config_section("ppt")`（@870）或 `raw.get("ppt", {})`，**不要**用 `_cfg.config.raw`。
-- 字段：`pro_enabled: bool = True`、`pro_default_depth: str = "standard"`、`pro_max_revisions: int = 2`、`pro_research_timeout_s: float = 300.0`、`pro_confirm_timeout_s: float = 300.0`、`pro_image_probe_timeout_s: float = 8.0`、`pro_render_timeout_s: float = 0.0`（0=用 `max(600, pages*120)` 动态默认）、`pro_save_research: bool = False`。
+- 字段（**v1.1 按用户决策**）：`pro_enabled: bool = True`、`pro_default_depth: str = "deep"`（用户要「5 分钟」充分调研 → deep 档 6 子问题/2 轮反思）、`pro_max_revisions: int = 2`、`pro_research_timeout_s: float = 360.0`（~6min 上界容 5min 调研）、`pro_confirm_timeout_s: float = 1800.0`（大纲卡等用户更久，FP-5 卡用 300s；这里给 30min 宽松，超时按取消）、`pro_image_probe_timeout_s: float = 8.0`、`pro_render_timeout_s: float = 0.0`（0=用 `max(600, pages*120)` 动态默认）、`pro_save_research: bool = True`（用户要默认落盘）、`pro_outline_history: bool = True`（存历史大纲，见 WI-3）。
 - **`ppt_tools.py` 侧**：新增 `_ppt_pro_cfg()` 读取（仿现有 `_ppt_async_enabled` 的 toml 读取风格，但走 `standalone_config_section`，**顺手把现有 `_cfg.config.raw` 坏读法一并修正**，对齐 STATUS 06-15/06-20 已修的 `[research]` 同款 bug）。
 **验收**：`test_config.py`/`test_ppt_*` 加 1 例验证默认值 + toml 覆盖真生效（不被 `config.config` 坏读法吞）；flag-off 时 `ppt_pro` 不注册。
 
@@ -233,7 +238,7 @@ async def _research_topic_for_ppt(topic: str, *, depth: str, timeout_s: float) -
 - `_is_config_or_auth_error(e)`：识别 401/403/key 缺失/provider 未配置等硬错误（与 `image_tools` 401 落警告同源思路）；其余（搜索被封/抓取失败/网络瞬时）才降级。
 - **复用 `_DEPTH_PRESETS`**（codex 实测：已是 research_tools 顶层常量 @**2104**，**直接 import 即可**，无需重构）。
 - **降级而非失败（F1，吸收 codex MAJOR）**：调研「网络/搜索」类失败 → 返回 None，但**不静默当成 F1 完成**：Stage C 确认卡的问题文案改为显式告知「⚠️ 未取得调研来源，下面大纲基于通用知识，是否仍要生成？」让用户**知情后再确认**（不偷偷出「正式 PPT」）。「配置/认证」类失败 → 上抛（WI-1 已区分）。
-- **不落盘**：PPT 内部调研默认**不**调 `_save_report`（避免污染 DeepResearch/ 索引）；可加 config `[ppt].pro_save_research`（默认 False）允许落盘。
+- **默认落盘（v1.1 用户决策）**：`pro_save_research=True` → 调研完成后调 `_save_report(topic, report)` + `_update_deepresearch_index(...)`（与 deepresearch handler 同路，落 `paths.deepresearch_dir()` + 倒序索引），让 PPT 的调研报告也进 DeepResearch/ 可复用。`pro_save_research=False` 可关。
 
 **验收**：mock `deepresearch` 的单测——(a) 正常返回 report；(b) 网络失败/超时返回 None；(c) 配置/认证错误**上抛**（不吞）；(d) 无 llm_call 上抛配置错误。
 
@@ -276,47 +281,67 @@ async def _draft_outline_from_research(
 
 ---
 
-### WI-3 · 确认卡：后端 `_clarify_ask` 扩展 + 注入 ppt 上下文（F3 后端）
+### WI-3 · 独立「大纲确认卡」后端（F3 后端 — v1.1 改 FP-5 风格 + 历史持久化）
 
-> **确认环逻辑本体在 §2.5 编排 task**（已含 prev_slides 修订环、取消、超时优雅返回）。WI-3 只负责
-> 把 `_clarify_ask` 改得能携带富文本 + 把它（及 notifier/run_blocking/session_id）注入给 ppt 编排 task。
+> **用户决策（v1.1）**：不复用 `ask_clarification`，改用 **FP-5「技能候选卡」同款的独立卡片机制**——支持持久化（reload 不丢卡）+ **存历史大纲可复用**。范本：`skill_codifier.py`（`SkillCandidateWaiters`/`propose`/`confirm`）+ `main.py:709-835`（`_maybe_codify_skill` 的 Future-await 独立 task + WS 推送 + 回灌）。
+> **天然契合**：`ppt_pro` 编排已是独立 task（R-4 修复），在其中 propose 卡 + await Future 不受 chat preempt 影响——比 ask_clarification 更顺。
 
-**MAJOR-1 澄清（来自挑战）**：实测 `_clarify_ask` 是 `main.py:530-552` 的**唯一活动实现**（lifespan 内闭包，签名仅 3 位置参数、硬编码 `wait_for(fut, 120)`）；`clarify_tool.py::build_clarification_ask` **未被 main 实际调用**。所以 v0.1 R-3「收敛两份拷贝」是**伪任务，删除**。只改 `main.py:530` 这一处闭包即可。
+**文件 A 新增** `backend/deskpet/tools/ppt_outline_store.py`（仿 `skill_codifier` 的 waiters + 仿 `receipt_store`/SessionDB 的持久化）：
+- `class PPTOutlineWaiters`：`dict[str, asyncio.Future]`，`add(oid, fut)/resolve(oid, decision)/pop(oid)`（照搬 `SkillCandidateWaiters` @skill_codifier:285-317）。
+- **历史持久化**（用户要「存历史大纲」）：`ppt_outline_history` 表（SessionDB，仿 `ensure_session_goals_table` 的 flag-gated 建表，`pro_outline_history` 开才建，保 BC 字节基线）。字段：`outline_id TEXT PK, session_id, topic, created_at, slides_json TEXT, sources_count INT, status TEXT(proposed/accepted/rejected/superseded)`。
+  - `save_outline(oid, sid, topic, slides, sources)` / `mark_status(oid, status)` / `list_history(sid, limit=20)` / `get_outline(oid)`（供「从历史复用」）。
 
-**文件 A** `backend/main.py`：`_clarify_ask` @**530-552** 加 `timeout` + `content_md`（**保 BC**：默认 `timeout=120, content_md=None`）：
+**文件 B 新增** `backend/main.py`（仿 `_maybe_codify_skill` @709-835，但由 ppt 编排 task 主动调，不走 turn-end hook）：
+- 模块级 `_PPT_OUTLINE_WAITERS = PPTOutlineWaiters()`。
+- `async def _ppt_outline_propose(sid, *, topic, slides, sources_count, outline_md, no_research) -> str(decision)`：
+  ```python
+  oid = uuid4().hex
+  if cfg.pro_outline_history: outline_store.save_outline(oid, sid, topic, slides, sources_count)
+  ws = _control_connections.get(sid) or _control_connections.get("default")
+  await ws.send_json({"type": "ppt_outline_proposed", "payload": {
+      "outline_id": oid, "topic": topic, "outline_md": outline_md,
+      "sources_count": sources_count, "no_research": no_research,
+      "history": outline_store.list_history(sid, 20) if cfg.pro_outline_history else []}})
+  fut = loop.create_future(); _PPT_OUTLINE_WAITERS.add(oid, fut)
+  try:    decision = await asyncio.wait_for(fut, cfg.pro_confirm_timeout_s)   # {action, feedback?, reuse_id?}
+  except asyncio.TimeoutError: decision = {"action": "cancel"}
+  finally: _PPT_OUTLINE_WAITERS.pop(oid)
+  outline_store.mark_status(oid, _status_of(decision))
+  return decision
+  ```
+- WS 回灌（仿 `skill_candidate_confirm` @main.py:4867-4882）：control WS 收 `ppt_outline_decision` → `_PPT_OUTLINE_WAITERS.resolve(oid, {action, feedback, reuse_id})`。`action ∈ {accept, modify, cancel, reuse}`。
+- **注入**：经 `set_ppt_pro_services(...)` 把 `_ppt_outline_propose`（绑定 sid 由编排传）注入给 ppt 编排 task（替代原 `clarify`）。注入时机/loop 同 WI-7（main loop）。
+
+**文件 C** §2.5 编排确认环改用卡：
 ```python
-async def _clarify_ask(question, options, session_id, *, timeout: float = 120.0, content_md: str | None = None):
-    ...
-    payload = {"request_id": request_id, "question": question, "options": list(options or [])}
-    if content_md:
-        payload["content_md"] = content_md     # 新增：富文本大纲
-    await ws.send_json({"type": "clarification_request", "payload": payload})
-    return await asyncio.wait_for(fut, timeout)   # 用形参 timeout（默认 120 = BC）
+for _ in range(max_revisions + 1):
+    d = await outline_propose(sid, topic=topic, slides=slides,
+            sources_count=n_src, outline_md=_outline_to_markdown(slides), no_research=(report is None))
+    act = d.get("action")
+    if act == "accept": confirmed = True; break
+    if act == "cancel": await notifier(sid, "好的，已取消~"); return
+    if act == "reuse":                                   # 从历史大纲复用
+        slides = parse_outline(outline_store.get_outline(d["reuse_id"])["slides_json"]); confirmed = True; break
+    if act == "modify":
+        slides = await _draft_outline_from_research(topic, report, pages=pages, theme=theme,
+                    image_mode=image_mode, llm_call=llm, feedback=d.get("feedback",""), prev_slides=slides)
 ```
-- `clarify_tool.py::build_clarification_ask` 也加同样形参（保口径一致，但**不**做收敛重构——避免无谓改动面）。
-
-**文件 B 注入（关键，BLOCKING-2 相关）**：`ppt_pro` 编排 task 必须在 **main loop** 上拿到 main-loop 版的 `_clarify_ask`/notifier/executor。
-- **注入时机校验**：`_clarify_ask` 定义在 `main.py:530`（lifespan 内）。必须确认 ppt 工具的 `registry.set_session_context(...)` 调用点在 `_clarify_ask` **定义之后**执行（grep `set_session_context` 在 main.py 的行号 vs 530）。若早于，则改为在 `_clarify_ask` 定义后再 set，或用 late-binding（注入一个返回 `_clarify_ask` 的 getter）。
-- 经 `registry.set_session_context` 给 ppt 工具追加：
-  - `clarify=_clarify_ask`
-  - `notifier=<main-loop notifier>`（control WS 推送或 `worker.notifier`，**确认其在 main loop**；若 `worker.notifier` 实际跑在 worker loop，则改用直接 `_control_connections[sid].send_json` 包一层 main-loop async 推送）
-  - `run_blocking=lambda fn: asyncio.get_running_loop().run_in_executor(None, fn)`
-  - `session_id`（control WS 注册 key；pet 窗口为 `"default"`，`_clarify_ask` 内已有 `or get("default")` 兜底，见 R-2）
-
-**验收**：单测——(a) `_clarify_ask` 带 `content_md` 进 payload、带 `timeout` 形参生效（mock ws + fut）；(b) 默认调用（不传新参）行为字节不变（BC）；(c) ppt 编排 task 能拿到注入的 clarify/notifier/run_blocking（context 注入测）。**注**：确认环路径（确认/改/取消/超时）的单测归 §2.5 编排 task 的 WI-7 验收。
+**验收**：单测——(a) propose 推 `ppt_outline_proposed`+注册 Future+落 history；(b) `ppt_outline_decision(accept/modify/cancel/reuse)` 正确 resolve；(c) 超时→cancel；(d) history flag off 不建表（字节 BC）；(e) reuse 从历史取回 slides；(f) modify 触发 redraft(prev_slides)。
 
 ---
 
-### WI-4 · 确认卡：前端富文本渲染 + 「让我改改」编辑态（F3 前端）
-> v0.2 修 codex MAJOR：`ClarificationDialog.tsx:114` 点任意 option **立即** `onResolve(option)`——若「让我改改」当普通 option，会回传字面字符串「让我改改」当成大纲（错）。必须让它进编辑态。
+### WI-4 · 独立「大纲确认卡」前端 `PPTOutlineCard`（F3 前端 — v1.1 改 FP-5 风格）
+> 范本：`SkillCandidateCard`（`MessageBubble.tsx:681-710`）+ `ws.ts:360-375`（`skill_candidate_proposed`→push_message）+ `sessionsStore.ts:364-388`（resolve）。**持久化卡**（reload 保留，仿 skill_candidate 的 `set_messages` 保 awaiting 卡）。
 
-**文件 A** `tauri-app/src/types/skillPlatform.ts` @**57-73**：`ClarificationRequest["payload"]` 加可选 `content_md?: string`（codex 实测当前无此字段 @57-62）。
-**文件 B** `tauri-app/src/components/ClarificationDialog.tsx`：
-- 问题下方，`current.content_md` 存在则渲染滚动区展示大纲（复用项目 markdown 渲染器，否则 `<pre style={{whiteSpace:"pre-wrap",maxHeight:"40vh",overflow:"auto"}}>`）。
-- 按钮：「✅ 确认生成」→ `onResolve("确认生成")`；「✏️ 让我改改」→ **不 resolve**，切到编辑态：展示已有的自由文本 `<textarea>`（@**37/137-147**）+ 提示「说说想改哪里」+ 「提交修改」按钮 → 提交才 `onResolve(textareaValue)`；「✖ 取消」→ `onResolve("取消")`。
-- 即：把「让我改改」从「立即 resolve 的 option」改成「切换 UI 状态的本地按钮」，与现有「点 option 立即 resolve」语义解耦。
-**文件 C** `useClarificationRequests.ts` @**40-47**：无需改逻辑（hook 已能传任意字符串，codex 确认），仅确保 `content_md` 随 payload 进入 `current`。
-**验收**：`vitest`——(a) 有 content_md 渲染大纲块；(b) 无 content_md 不渲染（BC，旧 ask_clarification 调用不受影响）；(c) 「确认生成」resolve "确认生成"；(d) 「让我改改」**不** resolve、进编辑态、提交后 resolve textarea 文本；(e) 「取消」resolve "取消"。
+**文件 A** `tauri-app/src/code-panel/ws.ts`（仿 :360-375）：`case "ppt_outline_proposed"` → `store.push_message(sid, {role:"ppt_outline", ppt_outline_awaiting:true, outline_id, topic, outline_md, sources_count, no_research, history})`。
+**文件 B** `tauri-app/src/stores/sessionsStore.ts`：加 `ppt_outline` message role + 字段（仿 skill_candidate 字段 @27/54-62）；`resolve_ppt_outline(sid, oid, decision)` 清 awaiting flag。
+**文件 C 新增** `tauri-app/src/code-panel/PPTOutlineCard.tsx`（仿 `SkillCandidateCard`）：
+- 渲染 `outline_md`（markdown 滚动区）+ `sources_count`（"📚 N 个调研来源"）+ `no_research` 时显"⚠️ 无来源"提示（**不显费用，用户决策 4**）。
+- 按钮：「✅ 确认生成」→ send `{type:"ppt_outline_decision", payload:{outline_id, action:"accept"}}`；「✏️ 修改」→ 展开 textarea，提交 → `action:"modify", feedback`；「✖ 取消」→ `action:"cancel"`。
+- **历史复用**（用户决策 2）：`history` 非空 → 折叠区「📜 历史大纲」列出过往 topic+时间，点某条 → `action:"reuse", reuse_id`。
+- 发送后清 `ppt_outline_awaiting`（按钮消失），走 `codePanelWS.send` + pet 窗口 control WS 两通道（卡可能挂在主消息面板，对齐 STATUS 06-21 SubagentProgressPanel 双挂载教训）。
+**文件 D** 挂载：`MessageBubble.tsx`（code panel）+ 主消息面板（`MessageStreamPanel`，对齐 STATUS 06-21 子代理面板双挂载）渲染 `role==="ppt_outline"` 的卡。
+**验收**：`vitest`——(a) 卡渲染 outline_md+来源数+无费用字样；(b) accept/modify/cancel/reuse 各发对 envelope；(c) reload 保留 awaiting 卡（持久化）；(d) 历史区点击发 reuse_id。
 
 ---
 
@@ -413,11 +438,11 @@ _PPT_PRO_RUNNING: dict[str, asyncio.Task] = {}    # v0.3 按 session 去重（co
 
 async def _handle_ppt_pro(**kwargs):
     sid = kwargs.get("_session_id", "default")          # registry 注入进 args（同 ppt_create @3769）
-    clarify = _PPT_PRO_CTX.get("clarify")               # 见下「注入」：经 set_ppt_pro_services 注入
+    outline_propose = _PPT_PRO_CTX.get("outline_propose")  # WI-3 FP-5 风格大纲卡 propose
     notifier = _PPT_PRO_CTX.get("notifier")
     run_blocking = _PPT_PRO_CTX.get("run_blocking")
-    if clarify is None or notifier is None:             # 接线缺失 → 不静默死，明确报错
-        return {"ok": False, "error": "ppt_pro 接线缺失（clarify/notifier 未注入）", "fallback": "请用 ppt_create"}
+    if outline_propose is None or notifier is None:     # 接线缺失 → 不静默死，明确报错
+        return {"ok": False, "error": "ppt_pro 接线缺失（outline_propose/notifier 未注入）", "fallback": "请用 ppt_create"}
     # ① 同 session 去重：已有在跑的 ppt_pro → 不起第二个（codex MAJOR）
     cur = _PPT_PRO_RUNNING.get(sid)
     if cur is not None and not cur.done():
@@ -431,7 +456,7 @@ async def _handle_ppt_pro(**kwargs):
                 theme=kwargs.get("theme", "minimal"), image_mode=kwargs.get("image_mode", True),
                 title=kwargs.get("title", ""), author=kwargs.get("author", "DeskPet"),
                 output_path=kwargs.get("output_path"),
-                clarify=clarify, notifier=notifier, run_blocking=run_blocking, session_id=sid)
+                outline_propose=outline_propose, notifier=notifier, run_blocking=run_blocking, session_id=sid)
         except asyncio.CancelledError:
             await notifier(sid, "🛑 已停止当前 PPT 任务。"); raise
         except Exception as e:
@@ -449,15 +474,13 @@ async def _handle_ppt_pro(**kwargs):
   - 确认：`_clarify_ask(timeout=confirm_timeout_s)` 每轮（默认 300s），`max_revisions` 轮——这是**等用户**的合理上界，超时=用户没回，按取消优雅返回（非「机器卡死」）。
   - **渲染（关键泄漏点）**：`ppt_create` 经 `run_in_executor` 直跑、**绕过了 registry 的 1200s 超时** → 必须自己包 `asyncio.wait_for(run_blocking(...), render_timeout_s)`（新增 config `[ppt].pro_render_timeout_s`，默认 `max(600, pages*120)`，覆盖 N 张图最坏耗时）。超时 → notifier 告知 + 标 failed。
   - 这样每阶段都有界、task 不会永久挂；且**用户看大纲的时间不被机器超时杀**。
-- **③ 取消入口（codex MAJOR）**：`/stop`（grep 现有 `/stop`/`subagent_cancel_all`/chat preempt 处）+ 可选 same-sid 新 `ppt_pro` 调用时，调 `_ppt_pro_cancel(sid)` → `_PPT_PRO_RUNNING[sid].cancel()`。`CancelledError` 能穿透正在 `await _clarify_ask`（其内 `await asyncio.wait_for(fut, ...)`）的 task（cancel 会传播进内层 await），编排 `except CancelledError` 兜底通知后重抛。与现有 `/stop` 级联取消对齐（STATUS 06-21 subagent `/stop` 范本）。
-- **注入（关键，BLOCKING-3）**：`_clarify_ask`/notifier/run_blocking/session_id 是 **main loop** 的资源，经 registry 的 session context 机制（`registry.py:262` set、`:691` 合并进 handler args）注入。两种落地择一：
-  - (i) 把它们放进 registry session context，handler 从 `kwargs` 读（与 `_session_id` 同路）。
-  - (ii) main.py 在 `_clarify_ask` 定义后，调一个 `ppt_tools.set_ppt_pro_services(clarify=..., notifier=..., run_blocking=...)`（**新增**模块级 setter + `_PPT_PRO_CTX` dict，仿 research_tools 的 `set_live_llm_call` 注入范式）。**推荐 (ii)**（与 deepresearch 依赖注入同范式，清晰、可测）。
-  - **注入时机**：必须在 `main.py:530 _clarify_ask` 定义**之后**调 setter（codex 提醒）。
+- **③ 取消入口（codex MAJOR）**：`/stop`（grep 现有 `/stop`/`subagent_cancel_all`/chat preempt 处）+ 可选 same-sid 新 `ppt_pro` 调用时，调 `_ppt_pro_cancel(sid)` → `_PPT_PRO_RUNNING[sid].cancel()`。`CancelledError` 能穿透正在 `await _ppt_outline_propose`（其内 `await asyncio.wait_for(fut, ...)`）的 task（cancel 会传播进内层 await），编排 `except CancelledError` 兜底通知后重抛。与现有 `/stop` 级联取消对齐（STATUS 06-21 subagent `/stop` 范本）。
+- **注入（关键，BLOCKING-3）**：`outline_propose`(WI-3)/notifier/run_blocking/artifact_pusher/receipt_reporter 是 **main loop** 的资源。落地用 **`ppt_tools.set_ppt_pro_services(outline_propose=..., notifier=..., run_blocking=..., artifact_pusher=..., receipt_reporter=...)`**（新增模块级 setter + `_PPT_PRO_CTX` dict，仿 research_tools 的 `set_live_llm_call` 注入范式）；`session_id` 仍从 handler args 读（registry `:262/:691` 注入 `_session_id`）。
+  - **注入时机**：必须在 `main.py` 的 `_ppt_outline_propose`/`_PPT_OUTLINE_WAITERS`（WI-3 文件 B）定义**之后**调 setter。
 - `_ppt_pro_orchestrate`：见 §2.5 骨架（含 prev_slides 修订环、no-research 知情确认、取消/超时优雅返回、渲染走 run_blocking）。
 - 入参 schema `_PPT_PRO_SCHEMA`：`topic:string`(必填) / `pages:integer`(默认8,范围3-20) / `depth:enum(light,standard,deep)`(默认 config) / `theme:enum(minimal,dark,playful)` / `image_mode:boolean`(默认True=惊艳) / `title/author/output_path`(同 ppt_create)。
 - 注册 `_register_ppt_pro_tool()`（仿 `_register_ppt_tool` @**3834**）：`toolset="ppt"`, `permission_category="write_file"`, `timeout_seconds=60.0`（**秒回，不需 1800**）, `concurrency_safe=False`；**仅当 `_ppt_pro_cfg().enabled` 为 True 时注册**。
-**验收**：handler 级单测（mock clarify/notifier/run_blocking/research/llm）——(a) 秒回 `status:researching` 且起了独立 task；(b) 接线缺失返回明确错误不崩；(c) 独立 task happy path（确认→渲染）；(d) 取消/超时/no-research 知情确认路径；(e) chat task 被 cancel 不影响独立编排 task（模拟 parent cancel）。
+**验收**：handler 级单测（mock outline_propose/notifier/run_blocking/research/llm）——(a) 秒回 `status:researching` 且起了独立 task；(b) 接线缺失返回明确错误不崩；(c) 独立 task happy path（大纲卡 accept→渲染）；(d) 取消/超时/no-research 知情确认/reuse 历史路径；(e) chat task 被 cancel 不影响独立编排 task（模拟 parent cancel）；(f) same-sid 重复调返回 already_running。
 
 ---
 
@@ -502,15 +525,15 @@ async def _handle_ppt_pro(**kwargs):
 | `backend/deskpet/tools/research_tools.py` | 无需改（`_DEPTH_PRESETS` 已是顶层常量 @2104，直接 import） | WI-1b |
 | `backend/deskpet/tools/ppt_tools.py` | 新增 `_ppt_pro_cfg`/`_research_topic_for_ppt`/`_is_config_or_auth_error`/`_draft_outline_from_research`/`_build_outline_prompt`/`_outline_to_markdown`/`_fallback_minimal_outline`/`_degrade_to_template`/`_autofill_with_connectivity_gate`/`_should_fallback`/`_render_pro`/`_ppt_pro_orchestrate`/`_handle_ppt_pro`/`_ppt_pro_report_done`/`_PPT_PRO_SCHEMA`/`_PPT_PRO_CTX`/`_PPT_PRO_TASKS`/`set_ppt_pro_services`/`_register_ppt_pro_tool`；`ppt_create` 加 `skip_image_gen` 形参；**修现有 `_ppt_async_enabled` 等的 `_cfg.config.raw` 坏读法** | WI-0/1/2/6/7/10 |
 | `backend/deskpet/tools/image_tools.py` | 新增 `probe_image_reachable`；失败返回加 `error_kind`(connectivity/model_unavailable/auth/quota/content/unknown)；`_resolve_relay_base_and_key` helper | WI-5/6b |
-| `backend/config.py`（**不是** deskpet/config.py） | 加 `[ppt]` 6 个 pro_* 项，走 `standalone_config_section("ppt")` | WI-0 |
-| `backend/main.py` | `_clarify_ask` 加 `timeout`+`content_md`；`_clarify_ask` 定义后调 `ppt_tools.set_ppt_pro_services(...)` 注入 clarify/notifier/run_blocking；`pro_enabled` 时注册 `ppt_pro` | WI-3/7 |
-| `backend/deskpet/tools/code_tools/clarify_tool.py` | `build_clarification_ask` 加 `timeout`+`content_md`（口径一致，不做收敛重构） | WI-3 |
-| `tauri-app/src/types/skillPlatform.ts` | `ClarificationRequest.payload.content_md?: string` | WI-4 |
-| `tauri-app/src/components/ClarificationDialog.tsx` | 渲染 `content_md` 大纲块 + 「让我改改」改编辑态（不立即 resolve） | WI-4 |
+| `backend/config.py`（**不是** deskpet/config.py） | 加 `[ppt]` pro_* 项（含 `pro_default_depth=deep`/`pro_save_research=True`/`pro_outline_history=True`），走 `standalone_config_section("ppt")` | WI-0 |
+| `backend/deskpet/tools/ppt_outline_store.py`（**新**，v1.1） | `PPTOutlineWaiters` + 大纲历史持久化（`ppt_outline_history` 表，flag-gated）+ save/list/get/mark | WI-3 |
+| `backend/main.py` | 新增 `_PPT_OUTLINE_WAITERS`+`_ppt_outline_propose`（FP-5 风格大纲卡 propose+await）+ WS 回灌 `ppt_outline_decision`；定义后调 `ppt_tools.set_ppt_pro_services(outline_propose/notifier/run_blocking/artifact_pusher/receipt_reporter)`；`pro_enabled` 时注册 `ppt_pro` | WI-3/7/10 |
+| `tauri-app/src/code-panel/ws.ts` + `stores/sessionsStore.ts` | `ppt_outline_proposed`→push_message；`ppt_outline` role+字段+`resolve_ppt_outline` | WI-4 |
+| `tauri-app/src/code-panel/PPTOutlineCard.tsx`（**新**，v1.1） | FP-5 风格大纲卡：渲染大纲+来源数+无费用；按钮 确认/修改(textarea)/取消/历史复用 → `ppt_outline_decision`；双面板挂载 | WI-4 |
 | `backend/deskpet/skills/builtin/ppt-generate/SKILL.md` | 路由到 `ppt_pro` + 修 stale 模板名 | WI-8 |
 | `backend/deskpet/tools/ppt_tools.py`（`_ppt_pro_report_done`） | 后台 task 成功/失败补发 receipt + artifact | WI-10 |
 | `backend/tests/test_ppt_pro.py`（新）+ 既有 ppt/research/clarify 测 | 单测 + BC | WI-9 |
-| `tauri-app/src/components/__tests__/ClarificationDialog.test.tsx` | vitest | WI-4/9 |
+| `tauri-app/src/code-panel/__tests__/PPTOutlineCard.test.tsx`（新） | vitest（卡渲染/4 动作/历史复用/持久化） | WI-4/9 |
 | `scripts/acceptance/ppt_pro_smoke.py`（新） | 接线冒烟 | WI-9 |
 | `plans/2026-06-21-ppt-deepresearch-pro/02-manual-test.md`（新） | windows-mcp 真机用例 | WI-9 |
 
@@ -555,14 +578,14 @@ WI-4 (前端 clarify 渲染 + 让我改改编辑态) ─────────
 
 ---
 
-## 7. 待决问题（需用户拍板 — 已大幅收敛，仅剩偏好项）
+## 7. 待决问题（v1.1 — 用户已全部拍板 ✅）
 
-> R1 两路对抗（codex 4B+3M / architect 2B+4M）的 BLOCKING/MAJOR 已全部在 v0.2 消解（见 §6）。剩下纯属产品偏好，不阻塞实现：
-
-1. **调研档位默认**：`standard`（5 子问题，~2-3min，质量更稳）vs `light`（3 子问题，~60-90s，更快）。本 plan 默认 standard，**建议征询用户**（快 vs 充分）。
-2. **确认卡形态**：复用 `ask_clarification`（本 plan 选，省力）vs FP-5 风格独立「大纲卡」（支持「存为历史大纲/模板」等富交互）。本 plan 选前者；若用户想要大纲可复用/可编辑保存，再升级。
-3. **调研是否落盘** DeepResearch/（默认否，避免污染索引；`pro_save_research` 可开）。
-4. **生图成本提示**：确认即同意 gpt-image-2 按张计费（~$0.15/张 × N）。是否在确认卡注明页数与预估张数？（建议注明，透明）
+| # | 决策 | 落地 |
+|---|---|---|
+| 1 | 调研「5 分钟」 | `pro_default_depth=deep`（6 子问题/2 轮反思，~5min），`pro_research_timeout_s=360`（WI-0/WI-1） |
+| 2 | **FP-5 风格独立大纲卡 + 存历史大纲** | 重写 WI-3/WI-4：`ppt_outline_proposed` 卡 + Future-await + `ppt_outline_history` 持久化 + 历史复用 |
+| 3 | 调研默认落盘 | `pro_save_research=True` → 落 DeepResearch/（WI-1） |
+| 4 | 不注明生图费用 | 大纲卡不显示费用（WI-4） |
 
 ---
 
