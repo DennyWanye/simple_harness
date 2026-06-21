@@ -14,6 +14,8 @@
 
 deepresearch 的 **Plan 拆题之后**，不再把所有子问题丢进一个扁平池统一搜，而是**每个子问题派一个子代理独立跑完整 deepresearch 单问题调查**（复用现有全管线：搜索+直连权威源+分层打分+精排），由 `SubagentScheduler` 有界并发调度（research lane=2，全局 cap=4，超额排队背压）；N 份子调查报告回到主线程 → 主线程做**统一 synthesize 分析** → 得出最终结论。**全程 flag-gated，出厂默认 OFF，OFF 时字节级 BC**。
 
+> **附带需求（WI-8，与 fan-out flag 无关，所有 deepresearch 都生效）**：所有报告落 **deskpet 安装目录下的 `DeepResearch/`**（**不进 C 盘 `%AppData%`**）+ 维护 `DeepResearch/index.md` 总索引（倒序、可点开）+ repo README 记录该索引作用；**打包应用同逻辑**（安装根解析）。
+
 ---
 
 ## 1. 背景 — 现状与要改的点（已读码核实）
@@ -132,7 +134,9 @@ deepresearch(topic, scheduler=S, _depth=0)
 | `[research].fanout_subrun_mode` | `[research]` | `"auto"` | 子跑档位策略（auto=外层降一级 / light / standard / inherit） | auto |
 | `[research].fanout_subrun_timeout` | `[research]` | `120.0` | 每子调查单跑超时（秒） | 120 |
 | `[research].fanout_min_subquestions` | `[research]` | `2` | 少于此数不 fan-out（1 个子问题没必要） | 2 |
+| `DESKPET_DEEPRESEARCH_DIR`（env，非 flag） | 环境变量 | （未设）| 覆盖 DeepResearch 落盘根目录（测试/power user） | 走 `deepresearch_dir()` 默认解析（安装根） |
 
+> 报告落盘根目录（WI-8）默认 = **安装目录/DeepResearch/**（dev=repo 根），**不进 C 盘 `%AppData%`**；与 fan-out flag 无关，所有 deepresearch 都落这。
 > 读取一律走 `_research_raw()`（research_tools 内已有 `b05823b` 后的安全兜底实现）+ getattr 兜底，**不读 `config.config` 单例**。
 
 ---
@@ -280,6 +284,57 @@ if _subagent_scheduler is not None and bool(_research_raw().get("subagent_fanout
 - WS 进度：`scheduler.run` 已 emit `subagent_progress`（driver 计划 WI-1.5 的 `_subagent_progress_sink` 广播）→ 桌宠前端 `SubagentProgressPanel` 自动显示 N 条 research lane 并发「忙」。**本计划无须新增前端**（复用 driver 的面板）。
 - 日志锚点：`subagent_scheduled kind=research run_id=<sid>.dr-N`（scheduler 自带，真机 grep 验 N 个并发）。
 
+### WI-8 — 所有 deepresearch 报告落「安装目录/DeepResearch/」+ index.md + README（用户新增需求）
+
+> 用户要求：**所有 deepresearch**（含扁平 + fan-out）报告落 **deskpet 安装目录下的 `DeepResearch/`**（**不进 C 盘 `%AppData%`**），并维护 `DeepResearch/index.md` 索引所有调研，repo README 记录该 index 作用；**打包后应用同逻辑**。
+> 注意：这是对 deepresearch **落盘行为的通用改动**，与 fan-out flag 无关（无论 flag 开关都生效）。
+
+**WI-8a — `paths.deepresearch_dir()` 新函数**（[`paths.py`](../../backend/paths.py)，仿 `_portable_userdata_dir` [:57](../../backend/paths.py:57)）：
+```python
+def deepresearch_dir() -> Path:
+    """所有 deepresearch 报告 + index.md 的根目录 = <安装目录>/DeepResearch/。
+    解析顺序：
+      1. DESKPET_DEEPRESEARCH_DIR env 覆盖（测试/power user）。
+      2. frozen：安装根（复用 _portable_userdata_dir 的安装根探测：backend exe
+         父→上跳到含写权限的 install root）→ <install_root>/DeepResearch/。
+      3. dev：repo 根（Path(__file__).resolve().parents[1]）→ <repo>/DeepResearch/。
+      4. 兜底（安装根只读，如 Program Files 无 admin）：user_data_dir()/DeepResearch
+         + log.warning（保证功能不崩，但优先安装目录）。
+    目录按需 mkdir(parents=True, exist_ok=True)。"""
+```
+- 安装根探测**复用** `_portable_userdata_dir` 已有的「backend→上跳→probe-write 验可写」逻辑（[:94-114](../../backend/paths.py:94)），抽一个 `_install_root_writable() -> Path|None` 公共 helper 给两者共用（不重写）。
+- **不走 `user_data_dir()`**（那会落 `%AppData%` C 盘，正是用户不要的）。仅在安装根真不可写时兜底。
+
+**WI-8b — `_save_report` 改用 `deepresearch_dir()`**（[research_tools.py:1770](../../backend/deskpet/tools/research_tools.py:1770)）：
+- 把 `from paths import output_dir; base = output_dir("Research")`（[:1774-1775](../../backend/deskpet/tools/research_tools.py:1774)）改为 `from paths import deepresearch_dir; base = deepresearch_dir()`。
+- 文件名沿用 `<slug>-<ts>.md`，落 `<DeepResearch>/<slug>-<ts>.md`（顶层，不再嵌 `OutPut/Research`）。
+- header 元数据不变。**保存成功后调 WI-8c 更新 index。**
+- 该改动**对扁平 + fan-out 两条路径同时生效**（都经 `_handle_deepresearch` → `_save_report`）。
+
+**WI-8c — `_update_deepresearch_index(report_path, topic, report)`**（research_tools.py 新增）：
+- 维护 `<DeepResearch>/index.md`：每份报告一行，**倒序**（最新在上）。表格列：日期 / 主题 / 文件(相对链接) / 来源数 / 域名数 / 模式(flat/fanout) / 子问题数。
+- 首次创建时写表头 + 说明段（"本目录索引所有 deepresearch 调研报告，供后续查阅复用"）。
+- **幂等去重**：按文件名 dedup（同文件不重复加行）。原子写（写 tmp → replace）。失败 try/except 不影响报告返回（落盘已成功）。
+```python
+def _update_deepresearch_index(report_path: Path, topic: str, report: ResearchReport) -> None:
+    base = report_path.parent
+    idx = base / "index.md"
+    cov = report.coverage or {}
+    row = (f"| {time.strftime('%Y-%m-%d %H:%M')} | {topic} | "
+           f"[{report_path.name}]({report_path.name}) | {cov.get('n_sources',0)} | "
+           f"{cov.get('n_domains',0)} | {cov.get('mode','flat')} | {cov.get('n_sub_questions',0)} |")
+    ... 读现有(无则建表头) → 若 report_path.name 未出现则在表首插入 row → 原子写 ...
+```
+
+**WI-8d — repo README 记录 index 作用**（[`README.md`](../../README.md)）：
+- 加一节（仿现有 `plans/index.md` 在 README 的记法）：说明 `DeepResearch/`（安装目录下）汇集所有 deepresearch 报告，`DeepResearch/index.md` 是总索引（倒序、可点开），方便后续查阅复用；打包应用同样在安装目录下生成。
+
+**WI-8e — 打包应用同逻辑**：
+- frozen 分支由 WI-8a `deepresearch_dir()` 覆盖（安装根探测）；便携版 = `<install_root>/DeepResearch/`，与 userdata 同级。
+- 无须改 Tauri/NSIS 打包清单（DeepResearch 是运行时按需创建的用户产物，不入安装清单——与 userdata 同策略，卸载不删用户报告）。
+
+**测试** TG-6：`deepresearch_dir()` 三分支（env 覆盖 / frozen mock `sys.frozen`+`sys.executable` / dev repo 根 / 只读兜底）；`_update_deepresearch_index` 首建表头 + 倒序插入 + 幂等去重 + 原子写;`_save_report` 落点改到 DeepResearch（非 OutPut/Research）回归。
+
 ### WI-7 — 测试组（详见 §10）
 
 ---
@@ -291,7 +346,10 @@ if _subagent_scheduler is not None and bool(_research_raw().get("subagent_fanout
 | `backend/deskpet/tools/research_tools.py` | 签名加 5 参 + fanout 分叉 + `_run_subagent_fanout` + 引用重编号 + `_fanout_synthesize` + `_FANOUT_SYNTH_PROMPT` + 全局桥 + flag helper + cite 复用重构 | WI-1~6 |
 | `backend/main.py` | lifespan 接 `set_subagent_scheduler` | WI-5 |
 | `backend/config.py`（可选） | `[research]` 段 raw-read，无需 dataclass 字段（已 raw 兜底） | WI-5 |
+| `backend/paths.py` | 新增 `deepresearch_dir()` + 抽 `_install_root_writable()` 公共 helper | WI-8a |
+| `README.md`（repo 根） | 记录 `DeepResearch/index.md` 索引作用 | WI-8d |
 | `backend/tests/test_deepresearch_subagent_fanout.py` | 新建测试组 TG-1~5 | WI-7 |
+| `backend/tests/test_deepresearch_output_dir.py` | 新建 TG-6（落盘根 + index 维护） | WI-8 |
 | `testcase/<date>-deepresearch-subagent-fanout/manual-test.md` | windows-mcp 真机 E2E | §10 |
 
 > 前端：**零改动**（复用子代理 driver 的 `SubagentProgressPanel`）。
@@ -322,6 +380,7 @@ if _subagent_scheduler is not None and bool(_research_raw().get("subagent_fanout
 - TG-3：引用全局重编号（撞号去重映射）。
 - TG-4：`_fanout_synthesize` + synth 失败降级 + cite 复用。
 - TG-5：flag 真 config 读取（b05823b 回归）+ 无 .raw 不抛。
+- TG-6（WI-8）：`deepresearch_dir()` 三分支（env / frozen mock / dev repo 根 / 只读兜底）；`_update_deepresearch_index` 首建表头 + 倒序 + 幂等去重 + 原子写；`_save_report` 落点为 DeepResearch（非 OutPut/Research）。
 - 全量回归：现有 `test_deskpet_research_tools.py` 全绿（BC）。
 
 ### 10.2 真机 windows-mcp E2E（HARD — 不可用脚本/协议层替代）
@@ -335,6 +394,7 @@ if _subagent_scheduler is not None and bool(_research_raw().get("subagent_fanout
 | TC-F3 | 等出报告 | 最终报告**跨子问题统一分析**（不是 N 份拼接）+ 引用全局连续 + 引用自检通过 | 截图报告 + 落盘 .md |
 | TC-F4 | 背压验证（6 子问题场景） | 全局 cap=4 → 4 跑 2 排队 → 全部完成不丢 | log |
 | TC-F5 | flag OFF 回归 | `subagent_fanout=OFF` → 同问题走扁平、无 `subagent_scheduled` log、报告正常 | log + 截图 |
+| TC-F6 | 落盘 + 索引（WI-8，扁平/fanout 均验） | 报告落 **安装目录/DeepResearch/**（dev=repo 根，**非 C 盘 AppData**）→ `DeepResearch/index.md` 新增倒序一行可点开 → repo README 有索引说明 | 文件路径截图 + index.md 内容 |
 
 > 失败必 retry ≥3 次不同 workaround 才可标「环境受限」；跳过须显式声明 + 等用户确认。
 
