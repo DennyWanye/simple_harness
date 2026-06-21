@@ -1,8 +1,8 @@
 # 00-PLAN — DeepResearch 子代理 Fan-out（每子问题一个子代理深查 → 主线程统一分析）
 
-> **版本**: v0.5（4 轮 codex 对抗挑战收敛：R1 7B+4M / R2 2B+3M / R3 1B+1M / R4 1B+1M 全修，见 §13 附录）
+> **版本**: **v1.0 LOCKED**（5 轮 codex gpt-5.5 对抗挑战收敛：R1 7B+4M / R2 2B+3M / R3 1B+1M / R4 1B+1M 全修 → **R5 VERDICT: EXECUTABLE-AS-IS**，见 §13 附录）
 > **日期**: 2026-06-21
-> **状态**: 📋 规划中（先写 plan，review 后再执行）
+> **状态**: ✅ 可执行（5 轮挑战收敛至 EXECUTABLE-AS-IS，待用户拍板执行）
 > **本目录**: `plans/2026-06-21-deepresearch-subagent-fanout/`
 > **关联**:
 > - 子代理基建：[`plans/2026-06-21-subagent-concurrency-driver/`](../2026-06-21-subagent-concurrency-driver/00-PRD.md)（scheduler/task_kinds/registry 已落地）
@@ -153,7 +153,7 @@ deepresearch(topic, scheduler=S, _depth=0)
 | `[research].fanout_min_subquestions` | `[research]` | `2` | 少于此数不 fan-out（1 个子问题没必要） | 2 |
 | `[research].fanout_max_subquestions` | `[research]` | `6` | fan-out 最多并发子问题数（超出丢弃并 log；保证预算 ≤ tool 超时，D8） | 6 |
 
-> 单跑超时**不再是固定 flag**——由 D8 动态计算（`clamp((300−60)/waves, 45, 150)`，与注册 tool timeout 共用 `_DEEPRESEARCH_TOOL_TIMEOUT` 常量），按构造保证最坏 wall-clock ≤ tool 超时。
+> 单跑超时**不再是固定 flag**——由 D8 动态计算：先硬裁 `n ≤ conc×max_waves(5)` 保证 `waves≤5`，再 `timeout = min(150.0, (300−60)/waves)`（下界由硬裁保证 ≥48，无需 clamp 下界），与注册 tool timeout 共用 `_DEEPRESEARCH_TOOL_TIMEOUT` 常量，按构造保证最坏 wall-clock ≤ tool 超时。
 | `DESKPET_DEEPRESEARCH_DIR`（env，非 flag） | 环境变量 | （未设）| 覆盖 DeepResearch 落盘根目录（测试/power user） | 走 `deepresearch_dir()` 默认解析（安装根） |
 
 > 报告落盘根目录（WI-8）默认 = **安装目录/DeepResearch/**（dev=repo 根），**不进 C 盘 `%AppData%`**；与 fan-out flag 无关，所有 deepresearch 都落这。
@@ -650,3 +650,11 @@ async def _update_deepresearch_index(report_path: Path, topic: str, report: Rese
 **根因反思**：R3/R4 连续在"又一个 tool-filter 路径"翻车——v0.5 改为**单一权威常量 + 其余路径全部引用**，从结构上消除第 5 个口子的可能（不再逐处补丁）。
 
 **结论（v0.5）**：4 路径递归守门由单一共享常量保证；趋势 11→5→2→2，BLOCKING 已从"逐处补"升级为"结构性根治"。**待第 5 轮终验确认 EXECUTABLE-AS-IS。**
+
+### 第 5 轮终验（2026-06-21，codex gpt-5.5）— ✅ 收敛
+
+穷举 7 条"LLM 子代理拿到 deepresearch"的路径，确认 v0.5 单一共享常量**全封**（含默认集本就不含、无第 7 条、无循环 import）；整体复扫前 4 轮修复在 v0.5 文本里**无回退、无自相矛盾**。
+
+**VERDICT: EXECUTABLE-AS-IS**，仅 1 个 MINOR：§6 line156 flag 表注释残留旧式 `clamp(...,45,150)` 文案（验证者明示**不影响执行**，硬裁已保证 waves≤5）→ 已顺手改为 `min(150,240/waves)` 表述一致。
+
+**最终判定**：**v1.0 LOCKED，5 轮对抗挑战收敛，100% 可照做。** 总计修复 11 BLOCKING + 8 MAJOR（R1 7+4 / R2 2+3 / R3 1+1 / R4 1+1 / R5 0+0），趋势 11→5→2→2→0。
