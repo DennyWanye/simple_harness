@@ -222,6 +222,7 @@ async def test_tg2_fanout_runs_subreports_depth_one_and_merges(monkeypatch) -> N
     assert len({r._norm_url(c.url) for c in report.citations}) == 3
     assert [call["topic"] for call in calls] == ["q1?", "q2?", "q3?"]
     assert all(call["scheduler"] is None for call in calls)
+    assert [call["user_request"] for call in calls] == ["q1?", "q2?", "q3?"]
     assert all(call["_depth"] == 1 for call in calls)
     assert all(call["max_sub_questions"] == 1 for call in calls)
     assert all(call["skip_plan"] is True for call in calls)

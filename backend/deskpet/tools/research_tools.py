@@ -534,12 +534,13 @@ _DEFAULT_AUTHORITY = 1.0
 
 # Default prompts. Kept as module constants for testability / pinning.
 _PLAN_PROMPT = """\
-You are planning a deep research project on the topic below.
+You are planning a deep research project from the original user request below.
 
-ORIGINAL USER REQUEST (authoritative - the plan MUST serve this):
+ORIGINAL USER REQUEST (authoritative; derive ALL sub-questions from THIS):
 {user_request}
 
-REFINED TOPIC: {topic}
+CANDIDATE TOPIC FROM TOOL ARGS (untrusted; may be drifted - IGNORE if it conflicts):
+{topic}
 
 Break it into 3-6 focused sub-questions whose combined answers would
 form a thorough, balanced briefing. Cover different angles: what is it,
@@ -561,7 +562,7 @@ JSON ARRAY:"""
 _SYNTH_PROMPT = """\
 ORIGINAL USER REQUEST: {user_request}
 
-You are writing a research briefing on:  {topic}
+You are writing a research briefing on:  {request_topic}
 
 You have {n_passages} source passages, each labelled with a numeric tag
 like (1), (2), etc. Use these AS FOOTNOTES in your report — when you
@@ -570,7 +571,7 @@ Every factual claim MUST cite at least one footnote.
 
 Write a Markdown briefing with this structure:
 
-  # {topic}
+  # {request_topic}
 
   ## TL;DR
   (one paragraph — 2-4 sentences, no citations)
@@ -630,7 +631,7 @@ MERGED CITATIONS:
 {citations}
 
 Write a Markdown report in the same language as the request, with:
-# {topic}
+# {request_topic}
 ## TL;DR
 ## Key findings
 ## Analysis
@@ -1127,6 +1128,7 @@ async def _fanout_synthesize(
     llm_call: _LLMCall,
     errors: list[str],
 ) -> tuple[str, list[Citation]]:
+    request_topic = (user_request or topic).strip()
     merged, refmap = _merge_subreport_citations(sub_reports)
     sections: list[str] = []
     for report_idx, (q, report) in enumerate(sub_reports):
@@ -1144,17 +1146,18 @@ async def _fanout_synthesize(
     try:
         report_md = await llm_call(_FANOUT_SYNTH_PROMPT.format(
             topic=topic,
+            request_topic=request_topic,
             user_request=user_request,
             sub_reports=sub_report_block,
             citations=citations_block,
         ))
     except Exception as exc:  # noqa: BLE001
         errors.append(f"fanout_synth_llm: {exc}")
-        report_md = f"# {topic}\n\n" + sub_report_block
+        report_md = f"# {request_topic}\n\n" + sub_report_block
 
     report_md = (report_md or "").strip()
     if not report_md:
-        report_md = f"# {topic}\n\n" + sub_report_block
+        report_md = f"# {request_topic}\n\n" + sub_report_block
     report_md, merged, _cc = _finalize_report_md(report_md, merged, errors)
     return report_md, merged
 
@@ -1367,6 +1370,8 @@ async def deepresearch(
         )
     topic = topic.strip()
     _ur = (user_request or topic).strip()
+    request_topic = _ur            # canonical subject (authoritative)
+    llm_topic = topic              # untrusted candidate
     search_fn = search or default_search
     extract_fn = extract or default_extract
     errors: list[str] = []
@@ -1420,12 +1425,12 @@ async def deepresearch(
     # ---- 1. plan ----------------------------------------------------
     stage_start = time.perf_counter()
     if skip_plan:
-        sub_questions = [topic]
+        sub_questions = [request_topic]
     else:
         try:
             plan_raw = await llm_call(_PLAN_PROMPT.format(
-                topic=topic,
-                user_request=_ur,
+                topic=llm_topic,
+                user_request=request_topic,
             ))
         except Exception as exc:  # noqa: BLE001
             errors.append(f"plan_llm: {exc}")
@@ -1434,7 +1439,7 @@ async def deepresearch(
     if not sub_questions:
         # Fall back to the topic itself as the single sub-question. This
         # lets users with offline / failing LLM still get *something*.
-        sub_questions = [topic]
+        sub_questions = [request_topic]
         errors.append("plan_fallback: using topic verbatim")
     elapsed_ms_per_stage["plan"] = _stage_ms(stage_start)
 
@@ -1443,7 +1448,7 @@ async def deepresearch(
                  and _fanout_enabled())
     if fanout_on:
         return await _run_subagent_fanout(
-            topic=topic,
+            topic=request_topic,
             sub_questions=sub_questions,
             llm_call=llm_call,
             search=search_fn,
@@ -1451,7 +1456,7 @@ async def deepresearch(
             scheduler=scheduler,
             parent_sid=parent_sid,
             mode=mode,
-            user_request=_ur,
+            user_request=request_topic,
             errors=errors,
             route=route,
         )
@@ -1461,7 +1466,7 @@ async def deepresearch(
     # 某子问题的关键词打分)。失败静默。
     expansion_qs: list[str] = []
     if _query_expansion_enabled():
-        expansion_qs = await _expand_queries(llm_call, topic, sub_questions, errors)
+        expansion_qs = await _expand_queries(llm_call, request_topic, sub_questions, errors)
 
     # ---- 2. search --------------------------------------------------
     stage_start = time.perf_counter()
@@ -1476,7 +1481,7 @@ async def deepresearch(
         if site:
             search_specs.append((f"{q} {site}", q))
     for eq in expansion_qs:
-        search_specs.append((eq, topic))
+        search_specs.append((eq, request_topic))
     search_tasks = [
         search_fn(sq, max_results=max_urls_per_query) for sq, _ in search_specs
     ]
@@ -1527,10 +1532,10 @@ async def deepresearch(
     stage_start = time.perf_counter()
     # V8 tiered composite: authority(分层,含中文源) × recency(按 topic
     # velocity) × relevance(关键词覆盖,可选 BGE-M3 语义) × depth(长度).
-    keywords = _topic_keywords(topic) + [
+    keywords = _topic_keywords(request_topic) + [
         k for q in sub_questions for k in _topic_keywords(q)
     ]
-    velocity = research_scoring.infer_topic_velocity(topic)
+    velocity = research_scoring.infer_topic_velocity(request_topic)
 
     def _passage_from(url: str, payload: Any) -> Optional[Passage]:
         """Build a scored Passage from one extract result, or None (with an
@@ -1679,7 +1684,7 @@ async def deepresearch(
     if max_rounds >= 2 and passages:
         seen_urls = set(candidate_urls)
         follow_qs = await _gap_followup_queries(
-            llm_call, topic, sub_questions, passages, errors
+            llm_call, request_topic, sub_questions, passages, errors
         )
         if follow_qs:
             rounds = 2
@@ -1713,7 +1718,7 @@ async def deepresearch(
     if _SEMANTIC_SCORER is not None and passages:
         try:
             sims = await _maybe_await(
-                _SEMANTIC_SCORER(topic, [p.text[:2000] for p in passages])
+                _SEMANTIC_SCORER(request_topic, [p.text[:2000] for p in passages])
             )
         except Exception as exc:  # noqa: BLE001
             sims = None
@@ -1747,7 +1752,7 @@ async def deepresearch(
         # 的 tail 在池内被降分后"翻上来"绕过精排。
         pool_size = min(len(passages), max(max_total_passages, min(max_total_passages * 2, 24)))
         pool = passages[:pool_size]
-        applied = await _llm_rerank(topic, pool, _RERANK_LLM_CALL, errors, velocity=velocity)
+        applied = await _llm_rerank(request_topic, pool, _RERANK_LLM_CALL, errors, velocity=velocity)
         if applied:
             pool.sort(key=lambda p: -p.score)  # 用 rerank 后的分在池内重排
             passages = pool
@@ -1769,8 +1774,8 @@ async def deepresearch(
     if not passages:
         errors.append("no usable passages")
         return ResearchReport(
-            topic=topic, summary="",
-            report_md=_no_results_template(topic, sub_questions),
+            topic=request_topic, summary="",
+            report_md=_no_results_template(request_topic, sub_questions),
             citations=[], sub_questions=sub_questions,
             coverage={
                 "n_sources": 0, "n_domains": 0,
@@ -1785,18 +1790,19 @@ async def deepresearch(
     passage_block = _format_passages_for_llm(passages)
     try:
         report_md = await llm_call(_SYNTH_PROMPT.format(
-            topic=topic,
-            user_request=_ur,
+            topic=llm_topic,
+            request_topic=request_topic,
+            user_request=request_topic,
             n_passages=len(passages),
             passages=passage_block,
         ))
     except Exception as exc:  # noqa: BLE001
         errors.append(f"synth_llm: {exc}")
-        report_md = _passages_only_fallback(topic, passages)
+        report_md = _passages_only_fallback(request_topic, passages)
 
     report_md = (report_md or "").strip()
     if not report_md:
-        report_md = _passages_only_fallback(topic, passages)
+        report_md = _passages_only_fallback(request_topic, passages)
     elapsed_ms_per_stage["synth"] = _stage_ms(stage_start)
 
     # ---- 6. cite_check ---------------------------------------------
@@ -1825,7 +1831,7 @@ async def deepresearch(
         **_observability_coverage(),
     }
     return ResearchReport(
-        topic=topic,
+        topic=request_topic,
         summary=summary,
         report_md=report_md,
         citations=citations,
@@ -2155,9 +2161,10 @@ async def _handle_deepresearch(args: dict, task_id: str) -> str:
     # artifacts[] → 聊天卡片可点开。落盘失败不影响返回报告正文。
     if report.report_md and report.citations:
         try:
-            saved = _save_report(topic, report)
+            save_topic = report.topic or (user_request or topic)
+            saved = _save_report(save_topic, report)
             if saved:
-                await _update_deepresearch_index(saved, topic, report)
+                await _update_deepresearch_index(saved, save_topic, report)
                 out["path"] = str(saved)
                 out["artifacts"] = [{
                     "kind": "file",
