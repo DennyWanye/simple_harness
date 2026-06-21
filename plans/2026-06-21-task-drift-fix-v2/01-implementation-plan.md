@@ -82,7 +82,8 @@ fanout 已隔离（§0），不改隔离。仅：`test_deepresearch_subagent_fan
 `pipeline/voice_pipeline.py`：
 - `:616` `loop.run(messages, session_id=self.session_id)` **补 `loop_user_request=text`**（`text` 在 `_run_with_tools(self, text, audio_ws)` 作用域=本轮语音原话，R2-C 已验证生效）。
 - 配合 T1-1：voice 也要 resolve effective sid，且**全链路统一**——`:493/494` append、`:512` assembler、`:616` run、`:706` assistant 落库**都用同一 effective sid**（否则"用户写新 scope、组装/回复写旧 scope"）。
-- 单测：mock voice pipeline 断言 `loop_user_request` 透传 + 四处 sid 一致。
+- **voice user echo 广播点（R5 补 — 漏网）**：`_process_utterance` 在 `:299` 调 `_broadcast_chat_v2("chat_v2_user_echo", text)`，而 `_broadcast_chat_v2`（`:174` `self.session_id == "default"` 门 + `:179` payload 写死 `"session_id":"default"`）会让切到 `task-*` 的语音轮 echo 仍广播到 default → 数据流断。改：`_broadcast_chat_v2` **加 `session_id` 参数**，payload 用 effective sid，**去掉 `self.session_id == "default"` 门**，按组过滤交给 `_broadcast_default_chat_peers`；`:299` 先 resolve 得 `effective_sid`/`stripped_text` 再 echo。
+- 单测：mock voice pipeline 断言 `loop_user_request` 透传 + **`/new`/active `task-*` 时 echo/append/assemble/loop/assistant 五处 sid 一致**。
 
 ---
 
@@ -194,3 +195,6 @@ T0-2 假设错→验证+断言；漂移两层；T0-1 全替换表；voice 缺 Fi
 
 ## §12 codex R4 已纳入（防遗忘）
 ①§5 调用侧 `main.py:5478` 去掉 `_sid == "default"` 条件（否则 `task-*` 轮不调广播）；②§6 `/continue` 后端消费点 `main.py:5401` `force_l2 = bool(_payload.get("force_l2")) or text.startswith("/continue")`。R4 另**核验通过**：§1#16 准（`:1795/1799` 确为两处 `_passages_only_fallback(topic)`）、§1 16 项**无第 17 处漏网**、§8 sentinel 落点（`agent_loop.py:600` 加 `is_sentinel_run`、`main.py:6322` 传 `_is_sentinel`）准、§6 `dataclasses.replace` 落点（`assembler.py:212`）准。
+
+## §13 codex R5 已纳入（防遗忘）
+§4 补 voice user echo 广播漏网点 `voice_pipeline.py:174/179/299`（`_broadcast_chat_v2` 加 `session_id` 参数 + 去掉 `==default` 门 + payload 用 effective sid + 按组过滤）；单测补 voice 五处 sid 一致。R5 另**核验通过**：R4 两项（`main.py:5478` 去 `==default`、§6 `/continue` `force_l2` 消费链路到 `assemble(memory_policy_override)`）落点与数据流可执行。
