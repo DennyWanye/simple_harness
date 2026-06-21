@@ -83,6 +83,7 @@ class SubagentScheduler:
         """
         lane = self._lane(kind)
         self._queued += 1
+        t_queued = time.time()
         self._emit(
             {
                 "run_id": run_id,
@@ -90,62 +91,88 @@ class SubagentScheduler:
                 "task_id": task_id,
                 "parent_sid": parent_sid,
                 "status": "queued",
-                "ts": time.time(),
+                "ts": t_queued,
             }
         )
-        # 双闸背压：全局 cap → kind-lane cap。超 cap 在此 await 排队。
-        async with self._global:
-            async with lane:
+        # 是否已进入 running（拿到双闸）。决定排队阶段被取消时谁来补发终态：
+        # 未进 running → 由下面 except 补发；已进 running → 内层 try/except 已发。
+        entered_running = False
+        try:
+            # 双闸背压：全局 cap → kind-lane cap。超 cap 在此 await 排队。
+            # ★ 排队期间若 Task.cancel()，CancelledError 在此抛出（还没进 try
+            #   块），由本函数最外层 except 补发终态进度，避免前端卡片卡 queued。
+            async with self._global:
+                async with lane:
+                    self._queued -= 1
+                    self._running += 1
+                    entered_running = True
+                    # F9: 日志锚点供真机 E2E grep
+                    log.info(
+                        "subagent_scheduled kind=%s run_id=%s task_id=%s",
+                        kind,
+                        run_id,
+                        task_id,
+                    )
+                    self._emit(
+                        {
+                            "run_id": run_id,
+                            "kind": kind,
+                            "task_id": task_id,
+                            "parent_sid": parent_sid,
+                            "status": "running",
+                            "ts": time.time(),
+                        }
+                    )
+                    t0 = time.time()
+                    try:
+                        out = await coro_factory()
+                        self._emit(
+                            {
+                                "run_id": run_id,
+                                "kind": kind,
+                                "task_id": task_id,
+                                "parent_sid": parent_sid,
+                                "status": "completed",
+                                "duration_ms": int((time.time() - t0) * 1000),
+                                "ts": time.time(),
+                            }
+                        )
+                        return out
+                    except BaseException:
+                        # BaseException 含 CancelledError —— 取消也要发 failed 进度
+                        self._emit(
+                            {
+                                "run_id": run_id,
+                                "kind": kind,
+                                "task_id": task_id,
+                                "parent_sid": parent_sid,
+                                "status": "failed",
+                                "duration_ms": int((time.time() - t0) * 1000),
+                                "ts": time.time(),
+                            }
+                        )
+                        raise
+                    finally:
+                        self._running -= 1
+        except BaseException:
+            # 排队阶段（尚未进 running）被取消/异常：内层 except 没机会跑，
+            # 否则前端 SubagentProgressPanel 该行永远停在 "queued"。在此补发一条
+            # 终态 failed 进度并修复 queued 计数泄漏，再 re-raise 保持取消语义。
+            if not entered_running:
                 self._queued -= 1
-                self._running += 1
-                # F9: 日志锚点供真机 E2E grep
-                log.info(
-                    "subagent_scheduled kind=%s run_id=%s task_id=%s",
-                    kind,
-                    run_id,
-                    task_id,
-                )
                 self._emit(
                     {
                         "run_id": run_id,
                         "kind": kind,
                         "task_id": task_id,
                         "parent_sid": parent_sid,
-                        "status": "running",
+                        "status": "failed",
+                        "reason": "cancelled",
+                        "duration_ms": int((time.time() - t_queued) * 1000),
                         "ts": time.time(),
                     }
                 )
-                t0 = time.time()
-                try:
-                    out = await coro_factory()
-                    self._emit(
-                        {
-                            "run_id": run_id,
-                            "kind": kind,
-                            "task_id": task_id,
-                            "parent_sid": parent_sid,
-                            "status": "completed",
-                            "duration_ms": int((time.time() - t0) * 1000),
-                            "ts": time.time(),
-                        }
-                    )
-                    return out
-                except BaseException:
-                    # BaseException 含 CancelledError —— 取消也要发 failed 进度
-                    self._emit(
-                        {
-                            "run_id": run_id,
-                            "kind": kind,
-                            "task_id": task_id,
-                            "parent_sid": parent_sid,
-                            "status": "failed",
-                            "duration_ms": int((time.time() - t0) * 1000),
-                            "ts": time.time(),
-                        }
-                    )
-                    raise
-                finally:
-                    self._running -= 1
+            raise
 
     def snapshot(self) -> dict[str, int]:
         """当前调度状态快照（observability）。"""

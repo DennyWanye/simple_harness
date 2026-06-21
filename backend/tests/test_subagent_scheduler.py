@@ -121,6 +121,59 @@ def test_progress_sink_exception_does_not_break():  # 0.2.5
     assert _run(body()) == "still-ok"
 
 
+def test_queued_cancel_emits_terminal_progress():  # 0.2.7
+    """排队中（未拿到信号量）被取消 → 必须补发终态进度，前端卡片才能归位。
+
+    回归 2026-06-21 V5 取消级联 bug：CancelledError 在 `async with self._global`
+    等待期间抛出，从未进 running 的 try 块，导致只发过 "queued"，卡片卡死。
+    """
+    events: list[tuple[str, str]] = []
+
+    async def body():
+        # 全局 cap=1：第一个占住槽，第二个只能排队 → 取消它时仍在 queued。
+        sched = SubagentScheduler(
+            global_concurrency=1,
+            progress_sink=lambda p: events.append(
+                (p["run_id"], p["status"], p.get("reason"))
+            ),
+        )
+
+        started = asyncio.Event()
+
+        async def hog():
+            started.set()
+            await asyncio.sleep(0.2)  # 长占全局槽
+
+        async def victim():  # 永远拿不到槽（在 hog 跑完前被取消）
+            await asyncio.sleep(0.2)
+
+        t_hog = asyncio.create_task(
+            sched.run(kind="general", run_id="hog", task_id="hog",
+                      parent_sid="p", coro_factory=hog)
+        )
+        await started.wait()  # 确保 hog 已占槽
+        t_victim = asyncio.create_task(
+            sched.run(kind="general", run_id="vic", task_id="vic",
+                      parent_sid="p", coro_factory=victim)
+        )
+        await asyncio.sleep(0.01)  # 让 victim 跑到 queued 并在信号量上 await
+        t_victim.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await t_victim
+        await t_hog
+        return sched.snapshot()
+
+    snap = _run(body())
+
+    # victim 永远没进 running：只应有 queued → failed(reason=cancelled)
+    vic = [(s, r) for (rid, s, r) in events if rid == "vic"]
+    assert ("queued", None) in vic
+    assert ("failed", "cancelled") in vic
+    assert "running" not in [s for (s, _) in vic]
+    # 计数器无泄漏（queued 在取消路径里也被 -= 1）
+    assert snap == {"running": 0, "queued": 0}
+
+
 def test_snapshot_returns_to_zero():  # 0.2.6
     async def body():
         sched = SubagentScheduler(global_concurrency=2)

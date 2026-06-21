@@ -36,6 +36,20 @@ describe("subagentStore (WI-3.4)", () => {
     expect(runs["c"]).toBeUndefined();
   });
 
+  it("queued run flips to terminal when cancellation emits failed (2026-06-21 V5)", () => {
+    // 回归：排队中被取消时后端补发 status=failed(reason=cancelled)，
+    // 卡片该行须从 queued 归位到 failed（之前后端漏发 → 永远卡 queued）。
+    const s = useSubagentStore.getState();
+    s.upsert({ run_id: "vic", kind: "general", task_id: "vic", status: "queued", ts: 1 });
+    expect(useSubagentStore.getState().runs["vic"].status).toBe("queued");
+    s.upsert({ run_id: "vic", status: "failed", ts: 2 });
+    const run = useSubagentStore.getState().runs["vic"];
+    expect(run.status).toBe("failed"); // ❌ 归位，不再卡 queued
+    expect(run.kind).toBe("general"); // 上下文不丢
+    useSubagentStore.getState().clearTerminal();
+    expect(useSubagentStore.getState().runs["vic"]).toBeUndefined(); // 终态可清
+  });
+
   it("clear removes everything", () => {
     useSubagentStore.getState().upsert({ run_id: "a", status: "running", ts: 1 });
     useSubagentStore.getState().clear();
