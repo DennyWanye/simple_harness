@@ -1,0 +1,17 @@
+### V5 spawn_subagents(background) + cancel cascade ###
+2026-06-21 10:24:20,578 INFO providers.openai_compatible event='p5s2_tool_call_args_dump' level='info' timestamp='2026-06-21T02:24:20.578248Z' idx=0 name='spawn_subagents' args_len=1080 args_preview='{"subagents":[{"forbidden_files":[],"input_files":[],"kind":"research","output_files":[],"prompt":"深' parse_ok=True
+2026-06-21 10:24:20,598 INFO deskpet.agent.subagent_scheduler subagent_scheduled kind=research run_id=code-xbhyzzo0.spawn-tesla_model_3_research-b222 task_id=tesla_model_3_research
+2026-06-21 10:24:20,714 INFO deskpet.agent.subagent_scheduler subagent_scheduled kind=research run_id=code-xbhyzzo0.spawn-byd_han_ev_research-9449 task_id=byd_han_ev_research
+2026-06-21 10:26:22,048 INFO deskpet.agent.subagent_registry subagent_cancel_all n=3
+
+### V5 cancelled subagents (running→failed at cancel time) ###
+{"ts":1782008660.598,"event":"subagent_progress","detail":{"run_id":"code-xbhyzzo0.spawn-tesla_model_3_research-b222","kind":"research","task_id":"tesla_model_3_research","status":"queued"}}
+{"ts":1782008660.599,"event":"subagent_progress","detail":{"run_id":"code-xbhyzzo0.spawn-tesla_model_3_research-b222","kind":"research","task_id":"tesla_model_3_research","status":"running"}}
+{"ts":1782008660.715,"event":"subagent_progress","detail":{"run_id":"code-xbhyzzo0.spawn-byd_han_ev_research-9449","kind":"research","task_id":"byd_han_ev_research","status":"queued"}}
+{"ts":1782008660.715,"event":"subagent_progress","detail":{"run_id":"code-xbhyzzo0.spawn-byd_han_ev_research-9449","kind":"research","task_id":"byd_han_ev_research","status":"running"}}
+{"ts":1782008660.827,"event":"subagent_progress","detail":{"run_id":"code-xbhyzzo0.spawn-nio_et5_research-ac48","kind":"research","task_id":"nio_et5_research","status":"queued"}}
+{"ts":1782008782.05,"event":"subagent_progress","detail":{"run_id":"code-xbhyzzo0.spawn-tesla_model_3_research-b222","kind":"research","task_id":"tesla_model_3_research","status":"failed","duration_ms":121451}}
+{"ts":1782008782.051,"event":"subagent_progress","detail":{"run_id":"code-xbhyzzo0.spawn-byd_han_ev_research-9449","kind":"research","task_id":"byd_han_ev_research","status":"failed","duration_ms":121334}}
+
+### V5 no LLM outbound after cancel (10:26:22) ###
+post-cancel outbound LLM calls: 0

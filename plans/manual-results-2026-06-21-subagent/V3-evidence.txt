@@ -1,0 +1,31 @@
+### V3 subagent_scheduled (first 4 to acquire slots) ###
+2026-06-21 10:19:58,180 INFO deskpet.agent.subagent_scheduler subagent_scheduled kind=web run_id=code-xbhyzzo0.par-beijing_weather task_id=beijing_weather
+2026-06-21 10:19:58,292 INFO deskpet.agent.subagent_scheduler subagent_scheduled kind=web run_id=code-xbhyzzo0.par-shanghai_weather task_id=shanghai_weather
+2026-06-21 10:19:58,407 INFO deskpet.agent.subagent_scheduler subagent_scheduled kind=web run_id=code-xbhyzzo0.par-guangzhou_weather task_id=guangzhou_weather
+2026-06-21 10:19:58,519 INFO deskpet.agent.subagent_scheduler subagent_scheduled kind=general run_id=code-xbhyzzo0.par-poem_courage task_id=poem_courage
+2026-06-21 10:20:03,892 INFO deskpet.agent.subagent_scheduler subagent_scheduled kind=general run_id=code-xbhyzzo0.par-poem_persistence task_id=poem_persistence
+2026-06-21 10:20:09,495 INFO deskpet.agent.subagent_scheduler subagent_scheduled kind=general run_id=code-xbhyzzo0.par-poem_dream task_id=poem_dream
+
+### V3 backpressure timeline (peak=4, 6 queued/6 running/6 completed) ###
++  0.00s  web      beijing_weather          queued     
++  0.00s  web      beijing_weather          running    
++  0.11s  web      shanghai_weather         queued     
++  0.11s  web      shanghai_weather         running    
++  0.23s  web      guangzhou_weather        queued     
++  0.23s  web      guangzhou_weather        running    
++  0.34s  general  poem_courage             queued     
++  0.34s  general  poem_courage             running    
++  0.45s  general  poem_persistence         queued     
++  0.45s  general  poem_dream               queued     
++  5.71s  general  poem_courage             completed  5371ms
++  5.71s  general  poem_persistence         running    
++ 11.31s  general  poem_persistence         completed  5600ms
++ 11.31s  general  poem_dream               running    
++ 24.30s  general  poem_dream               completed  12981ms
++ 27.16s  web      beijing_weather          completed  27164ms
++ 36.68s  web      guangzhou_weather        completed  36451ms
++ 38.31s  web      shanghai_weather         completed  38193ms
+--- status counts ---
+{'queued': 6, 'running': 6, 'completed': 6}
+peak concurrent running = 4
+distinct task_ids = 6
