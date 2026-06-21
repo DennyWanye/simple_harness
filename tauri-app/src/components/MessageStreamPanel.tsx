@@ -35,20 +35,28 @@ import {
 // 消息流滚动位置持久键(进入消息界面恢复上次位置,见下 useLayoutEffect)。
 const MSGSTREAM_SCROLL_KEY = "deskpet.msgstream.scroll.v1";
 
-import type { InboxItem } from "../stores/sessionsStore";
+import type { InboxItem, Message } from "../stores/sessionsStore";
 // 子代理并发进度卡片（深色变体，与本面板玻璃拟态一致）。runs 空时自渲染 null，
 // 零侵入；数据由本窗口 codePanelWS 的 subagent_progress 派发喂 subagentStore。
 import { SubagentProgressPanel } from "../code-panel/SubagentProgressPanel";
+import { PPTOutlineCard } from "../code-panel/PPTOutlineCard";
 
 export type StreamFilter = "all" | "chat" | "warn" | "err";
 
-export interface ChatStreamMessage {
-  // 2026-06-12: 加 "tool" — 工具执行轨迹(调用/结果)进主消息流,
-  // 用户全程可观测(此前派生层把 tool_call/tool_result 滤掉了)。
-  role: "user" | "assistant" | "tool";
-  text: string;
-  ts: number;
-}
+export type ChatStreamMessage =
+  | {
+      // 2026-06-12: 加 "tool" — 工具执行轨迹(调用/结果)进主消息流,
+      // 用户全程可观测(此前派生层把 tool_call/tool_result 滤掉了)。
+      role: "user" | "assistant" | "tool";
+      text: string;
+      ts: number;
+    }
+  | {
+      role: "ppt_outline";
+      message: Message;
+      session_id: string;
+      ts: number;
+    };
 
 export interface MessageStreamPanelProps {
   filter: StreamFilter;
@@ -80,8 +88,7 @@ type StreamRow =
   | {
       kind: "chat";
       ts: number;
-      role: "user" | "assistant" | "tool";
-      text: string;
+      msg: ChatStreamMessage;
       key: string;
     }
   | {
@@ -192,7 +199,7 @@ export function MessageStreamPanel({
         ) : (
           rows.map((r) =>
             r.kind === "chat" ? (
-              <ChatRow key={r.key} role={r.role} text={r.text} ts={r.ts} />
+              <ChatRow key={r.key} msg={r.msg} />
             ) : (
               <AlertRow
                 key={r.key}
@@ -228,8 +235,7 @@ function buildRows(
       rows.push({
         kind: "chat",
         ts: m.ts,
-        role: m.role,
-        text: m.text,
+        msg: m,
         key: `c:${i}:${m.ts}`,
       }),
     );
@@ -270,15 +276,26 @@ function emptyMessage(f: StreamFilter): string {
   }
 }
 
-function ChatRow({
-  role,
-  text,
-  ts,
-}: {
-  role: "user" | "assistant" | "tool";
-  text: string;
-  ts: number;
-}) {
+function ChatRow({ msg }: { msg: ChatStreamMessage }) {
+  if (msg.role === "ppt_outline") {
+    const m = msg.message;
+    return (
+      <div style={{ width: "100%" }}>
+        <PPTOutlineCard
+          outlineId={m.outline_id ?? ""}
+          topic={m.topic ?? ""}
+          outlineMd={m.outline_md ?? ""}
+          sourcesCount={m.sources_count ?? 0}
+          noResearch={!!m.no_research}
+          history={m.history ?? []}
+          awaiting={!!m.ppt_outline_awaiting}
+          sessionId={msg.session_id}
+        />
+      </div>
+    );
+  }
+
+  const { role, text, ts } = msg;
   if (role === "tool") {
     // 工具执行轨迹行: 紧凑、低调(灰底等宽小字),不抢聊天主体视觉。
     return (

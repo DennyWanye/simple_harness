@@ -72,6 +72,47 @@ export interface ClarificationResponse {
   };
 }
 
+export interface PPTOutlineHistoryItem {
+  outline_id: string;
+  topic: string;
+  created_at: string;
+  sources_count: number;
+  status: string;
+}
+
+/** Backend -> frontend: PPT Pro outline confirmation card. */
+export interface PPTOutlineProposed {
+  type: "ppt_outline_proposed";
+  payload: {
+    outline_id: string;
+    topic: string;
+    outline_md: string;
+    session_id: string;
+    sources_count: number;
+    no_research: boolean;
+    history: PPTOutlineHistoryItem[];
+  };
+}
+
+/** Frontend -> backend: user's decision on a PPT Pro outline card. */
+export interface PPTOutlineDecision {
+  type: "ppt_outline_decision";
+  payload: {
+    outline_id: string;
+    action: "accept" | "modify" | "cancel" | "reuse";
+    feedback?: string;
+    reuse_id?: string;
+  };
+}
+
+/** Backend -> frontend broadcast: clear stale copies of an outline card. */
+export interface PPTOutlineResolved {
+  type: "ppt_outline_resolved";
+  payload: {
+    outline_id: string;
+  };
+}
+
 /**
  * Streaming event during a tool_use turn. The chat panel uses these to
  * render inline tool steps ("📖 reading foo.txt…", "✅ done").

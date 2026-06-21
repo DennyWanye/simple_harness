@@ -384,6 +384,39 @@ function dispatch(msg: any) {
       } as any);
       break;
     }
+    case "ppt_outline_proposed": {
+      const p = msg.payload || {};
+      const targetSid = typeof p.session_id === "string" && p.session_id ? p.session_id : sid;
+      store.push_message(targetSid, {
+        role: "ppt_outline" as any,
+        ppt_outline_awaiting: true,
+        outline_id: p.outline_id,
+        topic: p.topic,
+        outline_md: p.outline_md,
+        sources_count: typeof p.sources_count === "number" ? p.sources_count : 0,
+        no_research: !!p.no_research,
+        history: Array.isArray(p.history) ? p.history : [],
+      } as any);
+      break;
+    }
+    case "ppt_outline_resolved": {
+      const p = msg.payload || {};
+      const outlineId = typeof p.outline_id === "string" ? p.outline_id : "";
+      if (outlineId) {
+        const targets = new Set<string>([sid]);
+        for (const [sessionId, session] of Object.entries(store.sessions)) {
+          if (
+            session.messages.some(
+              (m) => m.role === "ppt_outline" && m.outline_id === outlineId,
+            )
+          ) {
+            targets.add(sessionId);
+          }
+        }
+        targets.forEach((targetSid) => store.resolve_ppt_outline(targetSid, outlineId));
+      }
+      break;
+    }
     case "chat_v2_plan_cancelled": {
       // superpowers 决策2: 用户点[取消] 或 后端超时 → 清按钮 + 回 idle
       store.resolve_plan(sid);

@@ -432,6 +432,8 @@ export interface ModelContextSetAck {
 import type {
   ClarificationRequest,
   PermissionRequest,
+  PPTOutlineProposed,
+  PPTOutlineResolved,
   ToolUseEvent,
 } from "./skillPlatform";
 
@@ -496,6 +498,8 @@ export type IncomingMessage =
   | ModelContextSetAck
   | PermissionRequest
   | ClarificationRequest
+  | PPTOutlineProposed
+  | PPTOutlineResolved
   | ToolUseEvent
   | CodeModeStateMessage
   | CodeTodoUpdateMessage

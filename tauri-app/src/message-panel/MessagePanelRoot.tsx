@@ -32,6 +32,7 @@ import {
 import { forPet } from "../petText";
 import {
   MessageStreamPanel,
+  type ChatStreamMessage,
   type StreamFilter,
 } from "../components/MessageStreamPanel";
 import { InputBar } from "../code-panel/InputBar";
@@ -190,8 +191,7 @@ export function MessagePanelRoot() {
   };
 
   const chatMessages = useMemo(() => {
-    type ChatItem = { role: "user" | "assistant" | "tool"; text: string; ts: number };
-    const out: ChatItem[] = [];
+    const out: ChatStreamMessage[] = [];
     messages.forEach((m, i) => {
       const ts = Date.now() - (messages.length - i) * 1000;
       if (m.role === "user") {
@@ -220,11 +220,15 @@ export function MessagePanelRoot() {
         });
         return;
       }
+      if (m.role === "ppt_outline") {
+        out.push({ role: "ppt_outline", message: m, session_id: activeSid, ts });
+        return;
+      }
       const clean = forPet(m.text);
       if (clean) out.push({ role: "assistant", text: clean, ts });
     });
     return out;
-  }, [messages, hideTools]);
+  }, [messages, hideTools, activeSid]);
   const warnings = useMemo<InboxItem[]>(
     () => collect_inbox(sessions, "yellow"),
     [sessions],

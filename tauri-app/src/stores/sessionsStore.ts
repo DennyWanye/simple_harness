@@ -16,6 +16,8 @@
  */
 import { create } from "zustand";
 
+import type { PPTOutlineHistoryItem } from "../types/skillPlatform";
+
 export type MessageRole =
   | "user"
   | "assistant"
@@ -25,6 +27,7 @@ export type MessageRole =
   | "tool_result"
   | "plan"              // P4-S25 A2: plan card preceding execution
   | "skill_candidate"   // FP-5 WI-4.3c: 技能自创确认卡（后端 propose → 用户确认）
+  | "ppt_outline"       // PPT Pro WI-4: 大纲确认卡（后端 propose → 用户确认/修改/复用）
   | "slash_result"      // FEAT-A2: /slash 命令结果（help/goal/prefs/skill/error）
   | "error";
 
@@ -60,6 +63,14 @@ export interface Message {
   // resolve 后记录用户最终决定（true=已保存, false=已忽略），驱动结果文案
   skill_candidate_accepted?: boolean;
   skill_candidate_sid?: string;    // 该卡所属 session（回传 WS 时不需要但便于定位）
+  // PPT Pro WI-4: 大纲确认卡 payload（后端 propose，前端 decision）。
+  outline_id?: string;
+  topic?: string;
+  outline_md?: string;
+  sources_count?: number;
+  no_research?: boolean;
+  history?: PPTOutlineHistoryItem[];
+  ppt_outline_awaiting?: boolean;
   // Bookkeeping
   ts: number;
 }
@@ -202,6 +213,9 @@ interface SessionsStore {
    *  awaiting（按钮消失），并记录 accepted 决定以驱动结果文案。镜像
    *  resolve_plan 的 by-id / latest-fallback 模式。candidateId 优先按 id 命中。 */
   resolve_skill_candidate(sid: string, candidateId: number, accepted: boolean): void;
+  /** PPT Pro WI-4: 清掉指定 outline_id 的待确认卡。用于本地 decision
+   *  以及后端 `ppt_outline_resolved` 广播清理 stale 副本。 */
+  resolve_ppt_outline(sid: string, outlineId: string): void;
   upsert_todos(sid: string, todos: Todo[]): void;
   remove(sid: string): void;
   set_inflight(delta: number): void;
@@ -219,6 +233,20 @@ interface SessionsStore {
 
 const newId = (): string =>
   globalThis.crypto?.randomUUID?.() ?? `m-${Math.random().toString(36).slice(2, 10)}`;
+
+function dedupe_ppt_outline_messages(messages: Message[]): Message[] {
+  const lastByOutlineId = new Map<string, number>();
+  messages.forEach((m, idx) => {
+    if (m.role === "ppt_outline" && m.outline_id) {
+      lastByOutlineId.set(m.outline_id, idx);
+    }
+  });
+  if (lastByOutlineId.size === 0) return messages;
+  return messages.filter((m, idx) => {
+    if (m.role !== "ppt_outline" || !m.outline_id) return true;
+    return lastByOutlineId.get(m.outline_id) === idx;
+  });
+}
 
 const blank_session = (sid: string): SessionState => ({
   base_session_id: sid,
@@ -295,12 +323,16 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
     const ts = msg.ts ?? Date.now();
     set((state) => {
       const cur = state.sessions[sid] ?? blank_session(sid);
+      const nextMessages = dedupe_ppt_outline_messages([
+        ...cur.messages,
+        { ...msg, id, ts },
+      ]);
       return {
         sessions: {
           ...state.sessions,
           [sid]: {
             ...cur,
-            messages: [...cur.messages, { ...msg, id, ts }],
+            messages: nextMessages,
             last_activity: ts,
           },
         },
@@ -318,16 +350,18 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
       const awaitingCards = cur.messages.filter(
         (m) =>
           (m.role === "skill_candidate" && m.skill_candidate_awaiting) ||
+          (m.role === "ppt_outline" && m.ppt_outline_awaiting) ||
           (m.role === "plan" && m.plan_awaiting_confirm),
       );
       const reloadedIds = new Set(messages.map((m) => m.id));
       const preserved = awaitingCards.filter((m) => !reloadedIds.has(m.id));
+      const nextMessages = dedupe_ppt_outline_messages([...messages, ...preserved]);
       return {
         sessions: {
           ...state.sessions,
           [sid]: {
             ...cur,
-            messages: [...messages, ...preserved],
+            messages: nextMessages,
             last_activity: Date.now(),
           },
         },
@@ -379,6 +413,32 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
         cleared = true;
         break;
       }
+      if (!cleared) return {};
+      return {
+        sessions: {
+          ...state.sessions,
+          [sid]: { ...cur, messages: next },
+        },
+      };
+    });
+  },
+
+  resolve_ppt_outline(sid, outlineId) {
+    set((state) => {
+      const cur = state.sessions[sid];
+      if (!cur) return {};
+      let cleared = false;
+      const next = cur.messages.map((m) => {
+        if (
+          m.role !== "ppt_outline" ||
+          !m.ppt_outline_awaiting ||
+          m.outline_id !== outlineId
+        ) {
+          return m;
+        }
+        cleared = true;
+        return { ...m, ppt_outline_awaiting: false };
+      });
       if (!cleared) return {};
       return {
         sessions: {

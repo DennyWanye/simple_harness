@@ -90,6 +90,7 @@ import { useSessionsStore } from "../stores/sessionsStore";
 import { CodeBlock, InlineCode } from "./CodeBlock";
 import { ArtifactCard, extractArtifactsFromResult } from "./ArtifactCard";
 import { codePanelWS } from "./ws";
+import { PPTOutlineCard } from "./PPTOutlineCard";
 
 interface Props {
   msg: Message;
@@ -166,6 +167,19 @@ export function MessageBubble({ msg }: Props) {
           skillSid={msg.skill_candidate_sid}
         />
       );
+    case "ppt_outline":
+      return (
+        <PPTOutlineCard
+          outlineId={msg.outline_id ?? ""}
+          topic={msg.topic ?? ""}
+          outlineMd={msg.outline_md ?? ""}
+          sourcesCount={msg.sources_count ?? 0}
+          noResearch={!!msg.no_research}
+          history={msg.history ?? []}
+          awaiting={!!msg.ppt_outline_awaiting}
+          sessionId={msg.outline_id ? findMessageSession(msg.outline_id) : undefined}
+        />
+      );
     case "tool_call":
       return (
         <ToolCallCard
@@ -189,6 +203,20 @@ export function MessageBubble({ msg }: Props) {
     default:
       return null;
   }
+}
+
+function findMessageSession(outlineId: string) {
+  const sessions = useSessionsStore.getState().sessions;
+  for (const [sid, session] of Object.entries(sessions)) {
+    if (
+      session.messages.some(
+        (m) => m.role === "ppt_outline" && m.outline_id === outlineId,
+      )
+    ) {
+      return sid;
+    }
+  }
+  return undefined;
 }
 
 function UserBubble({ text }: { text: string }) {
