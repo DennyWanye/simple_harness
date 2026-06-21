@@ -1,6 +1,7 @@
 # PPT 能力优化 — DeepResearch 调研 → 大纲确认 → 惊艳生图(gpt-image-2) / 模板兜底
 
-> **状态**: **v0.3 — R2 复核后收敛，作者判定 EXECUTABLE-AS-IS（待用户 review）**。R1 双路对抗（codex 4B+3M / architect 2B+4M）+ R2 codex 复核（1B+3M）的全部 BLOCKING/MAJOR 已消解（§6 R-1~R-17 全 ✅）。
+> **状态**: **v1.0 LOCKED — 3 轮对抗收敛，codex R3 终判 `VERDICT: EXECUTABLE-AS-IS`（无新 BLOCKING/MAJOR，2 个实现期 MINOR 已并入）。待用户 review 后即可执行。**
+> **对抗轨迹**：R1 codex 4 BLOCKING+3 MAJOR / architect 2 BLOCKING+4 MAJOR → R2 codex 1 BLOCKING+3 MAJOR → R3 codex **0 BLOCKING 0 MAJOR（EXECUTABLE-AS-IS）**。全部 BLOCKING/MAJOR 已消解（§6 R-1~R-17 全 ✅）。挑战记录见 `.challenge-r{1,2,3}.out`。
 > **建档**: 2026-06-21
 > **作者**: Claude (Lead) · 对抗：codex gpt-5.5（只读，2 轮）+ architect 子代理
 > **前置阅读**: [STATUS/PPT.md](../../STATUS/PPT.md) · [STATUS/DeepResearch.md](../../STATUS/DeepResearch.md) · [STATUS/AgentLoop.md](../../STATUS/AgentLoop.md)
@@ -475,9 +476,9 @@ async def _handle_ppt_pro(**kwargs):
 
 **关键：先勘探现有「异步 ppt_create 怎么把成品 artifact 卡推回前端」**（`_bg_job` @**3779-3816** + `worker.notifier`）。`_bg_job` 现状只 notifier 文本（architect 指出它也没结构化 artifact）。所以本 WI 要**新建**一条产物上报通道，`ppt_pro` 与（顺带）`ppt_create` 异步路径共用：
 
-**文件 A** `backend/main.py`：`set_ppt_pro_services(...)` 追加注入：
-- `artifact_pusher`：一个 main-loop async 函数 `async def push(sid, artifacts: list[dict])` —— 经现有「桌宠成品卡」WS 通道把 `kind=file`/`kind=image` artifact 推到前端（grep 现有 artifact envelope 推送：`emit`/artifact card 广播，复用 last-mile `ArtifactCard` 渲染路径）。
-- `receipt_reporter`（可选）：`receipt_store_getter` 或一个 `report(sid, tool="ppt_pro", outcome, path, shas)` —— 复用 `emit_receipt`/`ReceiptStore`（`test_receipt_store.py` 的写法），让 verify gate 能对账后台真实产物。
+**文件 A** `backend/main.py`：`set_ppt_pro_services(...)` 追加注入（R3 MINOR：明确通道实体，**没有独立 `artifact_push` 协议**，复用现有 `tool_result` envelope）：
+- `artifact_pusher`：main-loop async `async def push(sid, artifacts: list[dict], text: str)` —— **构造一条合成 `{"type":"tool_result", "payload":{..., "artifacts":[...], "session_id":sid}}` 事件**，走现有 `tool_result` WS 广播路径（codex 实测 main.py:6490 广播 + 前端 `ArtifactCard.tsx:384`/`MessageBubble.tsx:480` 从 `tool_result.artifacts[]` 解析渲染「打开/在文件夹中显示」卡），**并像现有路径一样落 SessionDB**（持久化，reload 不丢卡）。artifacts 用 `kind=file`(成品 .pptx)+`kind=image`(预览 PNG)。
+- `receipt_reporter`（可选）：复用 `emit_receipt(store, ...)`（codex 实测 `receipt_store.py:264`），`report(sid, tool="ppt_pro", outcome, path, shas)`，让 verify gate 对账后台真实产物。
 
 **文件 B** `backend/deskpet/tools/ppt_tools.py`：`_ppt_pro_report_done(result, *, notifier, artifact_pusher, receipt_reporter, sid)`：
 - 成功：`await artifact_pusher(sid, result["artifacts"])`（成品 .pptx + 预览图 PNG，复用 `ppt_create` 已构造的 artifacts @**3349** 附近）+ `receipt_reporter(sid, outcome="ok", path=result["path"], shas=...)` + notifier「✨…已自动打开」+ 自动打开（带图复用 PPT.md §2 逻辑）。
