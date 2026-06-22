@@ -33,6 +33,11 @@ export interface BudgetStatusMessage {
   payload: DailyBudgetStatus;
 }
 
+export interface ChatTurnTimeoutResponse {
+  type: "chat_turn_timeout_response";
+  payload: { minutes: number };
+}
+
 export interface PongMessage {
   type: "pong";
 }
@@ -484,6 +489,7 @@ export type IncomingMessage =
   | MemoryExportResponse
   | ProviderTestConnectionResult
   | BudgetStatusMessage
+  | ChatTurnTimeoutResponse
   | SkillsListResponse
   | DecisionsListResponse
   | MemorySearchResponse

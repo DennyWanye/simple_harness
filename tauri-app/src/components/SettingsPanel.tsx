@@ -78,6 +78,25 @@ export function buildAutoResumeSettingsMessage(
   };
 }
 
+export const CHAT_TURN_TIMEOUT_DEFAULT_MINUTES = 15;
+export const CHAT_TURN_TIMEOUT_MIN_MINUTES = 1;
+export const CHAT_TURN_TIMEOUT_MAX_MINUTES = 60;
+
+export function clampChatTurnTimeoutMinutes(minutes: number): number {
+  if (!Number.isFinite(minutes)) return CHAT_TURN_TIMEOUT_DEFAULT_MINUTES;
+  return Math.min(
+    CHAT_TURN_TIMEOUT_MAX_MINUTES,
+    Math.max(CHAT_TURN_TIMEOUT_MIN_MINUTES, Math.round(minutes)),
+  );
+}
+
+export function buildChatTurnTimeoutSetMessage(minutes: number) {
+  return {
+    type: "chat_turn_timeout_set",
+    payload: { minutes: clampChatTurnTimeoutMinutes(minutes) },
+  };
+}
+
 /**
  * Send a `budget_status` request on the control channel and resolve with the
  * next `budget_status` reply (or reject after `timeoutMs`).
@@ -217,6 +236,7 @@ export function SettingsPanel({
         <section style={sectionStyle}>
           <h3 style={h3Style}>权限</h3>
           <AutoModeToggle getChannel={getChannel} />
+          <ChatTurnTimeoutSetting getChannel={getChannel} />
         </section>
 
         {/* ================ 桌宠 supervisor (P5-S1) ================ */}
@@ -497,6 +517,114 @@ function AutoModeToggle({
         关闭时（默认），DeskPet 在执行写文件、运行 shell 等操作前会弹出确认。
         语音模式下还会同时朗读"请点击允许"，提醒你回到屏幕。开启此项 = 跳过
         所有确认（仅在你完全信任 LLM 配置时使用）。
+      </p>
+      {err && <span style={{ color: "#b91c1c", fontSize: 11 }}>{err}</span>}
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------
+// Chat turn hard-timeout setting.
+//
+// Backend default is 15 minutes. This asks the backend for the persisted
+// value when the control channel is available, then sends clamped updates
+// immediately when the number input changes.
+// ----------------------------------------------------------------------
+function ChatTurnTimeoutSetting({
+  getChannel,
+}: { getChannel: () => ControlChannel | null }) {
+  const [turnTimeoutMin, setTurnTimeoutMin] = useState<number>(
+    CHAT_TURN_TIMEOUT_DEFAULT_MINUTES,
+  );
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let unsubMessage: (() => void) | null = null;
+    let unsubState: (() => void) | null = null;
+
+    const requestCurrentValue = (ch: ControlChannel) => {
+      try {
+        ch.send({ type: "chat_turn_timeout_get", payload: {} });
+      } catch {
+        /* retry on reconnect or next mount */
+      }
+    };
+
+    const attach = () => {
+      if (cancelled) return;
+      const ch = getChannel();
+      if (!ch) {
+        retryTimer = setTimeout(attach, 500);
+        return;
+      }
+
+      unsubMessage = ch.onMessage((msg: IncomingMessage) => {
+        if (msg.type !== "chat_turn_timeout_response") return;
+        setTurnTimeoutMin(clampChatTurnTimeoutMinutes(msg.payload.minutes));
+        setErr(null);
+      });
+      unsubState = ch.onStateChange((state) => {
+        if (state === "connected") requestCurrentValue(ch);
+      });
+      requestCurrentValue(ch);
+    };
+
+    attach();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      unsubMessage?.();
+      unsubState?.();
+    };
+  }, [getChannel]);
+
+  const onChange = useCallback(
+    (raw: string) => {
+      setErr(null);
+      const next = clampChatTurnTimeoutMinutes(Number(raw));
+      setTurnTimeoutMin(next);
+      try {
+        const ch = getChannel();
+        if (!ch) throw new Error("控制通道未连接");
+        ch.send(buildChatTurnTimeoutSetMessage(next));
+      } catch (e) {
+        setErr(String(e));
+      }
+    },
+    [getChannel],
+  );
+
+  return (
+    <div style={{ display: "grid", gap: 6, marginTop: 10 }}>
+      <label
+        htmlFor="chat-turn-timeout-minutes"
+        style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}
+      >
+        对话超时(分钟)
+      </label>
+      <input
+        id="chat-turn-timeout-minutes"
+        type="number"
+        min={CHAT_TURN_TIMEOUT_MIN_MINUTES}
+        max={CHAT_TURN_TIMEOUT_MAX_MINUTES}
+        step={1}
+        value={turnTimeoutMin}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          width: 120,
+          padding: "5px 8px",
+          borderRadius: 4,
+          border: "1px solid #d1d5db",
+          fontSize: 12,
+          outline: "none",
+        }}
+        data-testid="chat-turn-timeout-minutes"
+      />
+      <p style={hintStyle}>
+        网络/中转站持续不响应时,超过此时长自动停止并提示。默认 15 分钟,范围 1-60。
       </p>
       {err && <span style={{ color: "#b91c1c", fontSize: 11 }}>{err}</span>}
     </div>
