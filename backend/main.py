@@ -1047,6 +1047,14 @@ def build_agent(
         if verifier_cfg else False
     )
 
+    # WI-1B-2 压缩可观测: 从 cfg.features.ctx_observability 读 flag (默认 False = BC)。
+    # OFF 时 _AgentLoop 压缩路径不 emit metrics / 不 yield ContextCompactedEvent。
+    _features_cfg = getattr(cfg, "features", None)
+    _ctx_observability = (
+        bool(getattr(_features_cfg, "ctx_observability", False))
+        if _features_cfg else False
+    )
+
     # WI-2.4: construct ExternalEvaluator when flag on + provider available.
     # flag off (default) OR provider=None → None (BC, 0 extra LLM calls).
     _external_evaluator = None
@@ -1126,6 +1134,8 @@ def build_agent(
         external_evaluator=_external_evaluator,
         # ─── WI-4.0 compaction（flag off = compressor=None = BC）───
         compressor=compressor,
+        # ─── WI-1B-2 压缩可观测（flag off = False = BC，压缩路径零额外行为）───
+        ctx_observability=_ctx_observability,
         # ─── FP-5 缺口 5a：WI-4.2 remount + 自动披露（flag off = None = BC）───
         skill_loader=skill_loader,
         skill_matcher=skill_matcher,
@@ -6212,6 +6222,7 @@ async def control_channel(ws: WebSocket):
                             ToolResultEvent as _TREv,
                             FinalEvent as _FinEv,
                             ErrorEvent as _ErrEv,
+                            ContextCompactedEvent as _CtxCompactedEv,
                         )
                         from agent.tool_use_shim import OpenAICompatibleAgentLLM as _Shim
                         # P4-S20-LLM-Unified: 单一 endpoint。local_llm 来自
@@ -7097,6 +7108,26 @@ async def control_channel(ws: WebSocket):
                                 await _maybe_codify_skill(
                                     service_context, config, _sid, _ws, _SKILL_CANDIDATE_WAITERS,
                                 )
+
+                            # WI-1B-2 压缩可观测: flag ON 时 agent_loop 在压缩命中
+                            # 后 yield 此事件。转一条 ws → 前端在圈圈 gauge 附近浮
+                            # toast「已压缩,省 N token」。flag OFF 时后端根本不 yield,
+                            # 此分支不触发(BC,前端无需额外门控)。
+                            elif isinstance(ev, _CtxCompactedEv):
+                                _cc_msg = {
+                                    "type": "context_compacted",
+                                    "payload": {
+                                        "reduction": getattr(ev, "reduction", 0.0),
+                                        "tokens_in": getattr(ev, "tokens_in", 0),
+                                        "tokens_out": getattr(ev, "tokens_out", 0),
+                                        "model": getattr(ev, "model", "") or "",
+                                        "session_id": _sid,
+                                    },
+                                }
+                                try:
+                                    await _ws.send_json(_cc_msg)
+                                except Exception as exc:  # noqa: BLE001
+                                    logger.debug("context_compacted_ws_failed sid=%s err=%s", _sid, exc)
 
                         # P4-S24: assistant persistence moved INTO the
                         # FinalEvent handler above so a same-sid task

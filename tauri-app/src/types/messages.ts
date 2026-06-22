@@ -38,6 +38,19 @@ export interface ChatTurnTimeoutResponse {
   payload: { minutes: number };
 }
 
+// WI-1B-2 压缩可观测 — 上下文压缩命中时后端推送（仅 features.ctx_observability
+// ON；OFF=BC 不发）。前端浮 toast「已压缩，省 N token」（N = tokens_in - tokens_out）。
+export interface ContextCompactedMessage {
+  type: "context_compacted";
+  payload: {
+    reduction: number;
+    tokens_in: number;
+    tokens_out: number;
+    model: string;
+    session_id: string;
+  };
+}
+
 export interface PongMessage {
   type: "pong";
 }
@@ -509,6 +522,7 @@ export type IncomingMessage =
   | ToolUseEvent
   | CodeModeStateMessage
   | CodeTodoUpdateMessage
-  | CodeModeSuggestMessage;
+  | CodeModeSuggestMessage
+  | ContextCompactedMessage;
 
 export type AudioMessage = VADEvent | TranscriptMessage | TTSEndMessage | TTSBargeInMessage | ErrorMessage;

@@ -82,6 +82,10 @@ VALID_EVENTS = frozenset({
     "goal_check_skipped",           # GoalChecker 超时/失败 → 仅客观证据判定信号
     "reflection_parse_failed",      # 结构化反思 JSON 畸形 → 降级机械 nudge
     "evaluator_conservative_block", # ExternalEvaluator 超时/失败 + 高后果 → 保守拦
+    # WI-1B-2 压缩可观测 — 上下文压缩命中 (flag features.ctx_observability ON)。
+    # detail: ratio(节省比) / model(摘要模型) / count(省下 token = in-out)。脱敏:
+    # 全是数字/枚举,无用户文本。
+    "context_compacted",
 })
 
 # Whitelisted ``detail`` keys. A caller can ONLY write these fields —

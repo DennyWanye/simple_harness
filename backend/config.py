@@ -433,6 +433,13 @@ class FeaturesConfig:
     # 已知 caveat: haiku 摘要层偶发反射(把元指令当任务,issue #46602 式),microcompact
     # (最高频、不调模型层)无此问题;后续可继续强化防反射。
     compaction_enabled: bool = True
+    # WI-1B-2 压缩可观测 (plans/.../ ctx-observability):
+    # 默认 OFF = 字节级 BC。OFF 时压缩成功路径不 emit metrics、不 yield
+    # ContextCompactedEvent、不发 ws context_compacted；现有 logger.info
+    # ("context_compacted", ...) 全部不变。ON 时压缩命中额外:① metrics_sink
+    # record 一条 "context_compacted" 事件(ratio/model);② agent_loop yield
+    # ContextCompactedEvent;③ main.py 转一条 ws → 前端浮 toast「已压缩,省 N token」。
+    ctx_observability: bool = False
 
 
 @dataclass

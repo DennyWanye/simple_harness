@@ -55,6 +55,7 @@ import { DialogBar } from "./components/DialogBar";
 import { UserBubble } from "./components/UserBubble";
 import { StartupOverlay, type BootState } from "./components/StartupOverlay";
 import { useBudgetToast } from "./hooks/useBudgetToast";
+import { useContextCompactedToast } from "./hooks/useContextCompactedToast";
 import { invoke } from "@tauri-apps/api/core";
 import { useControlChannel } from "./hooks/useWebSocket";
 import { usePermissionRequests } from "./hooks/usePermissionRequests";
@@ -725,6 +726,20 @@ function App() {
     return () => clearTimeout(t);
   }, [budgetToast]);
   useBudgetToast(getControlChannel, showBudgetToast);
+
+  // WI-1B-2 压缩可观测 — 上下文压缩命中时浮「已压缩，省 N token」。
+  // 后端仅在 features.ctx_observability ON 时发 context_compacted（OFF=BC 不发）。
+  // 复用预算 toast 的渲染槽（同一 fixed 角标），auto-clear 4s。
+  const [ctxToast, setCtxToast] = useState<string | null>(null);
+  const showCtxToast = useCallback((msg: string) => {
+    setCtxToast(msg);
+  }, []);
+  useEffect(() => {
+    if (!ctxToast) return;
+    const t = setTimeout(() => setCtxToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [ctxToast]);
+  useContextCompactedToast(getControlChannel, showCtxToast);
 
   // P4-S20 Wave 1c — permission popup IPC wiring. Runs only when the
   // control channel is open; backend sends `permission_request`, hook
@@ -2234,6 +2249,30 @@ function App() {
           }}
         >
           {budgetToast}
+        </div>
+      )}
+
+      {/* WI-1B-2 压缩可观测 toast —「已压缩，省 N token」。绿色区分于红色预算
+          toast；下移避免与预算 toast 重叠（圈圈 gauge 区域上方角标）。 */}
+      {ctxToast && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            top: budgetToast ? 64 : 16,
+            right: 16,
+            maxWidth: 280,
+            padding: "8px 14px",
+            background: "#15803d",
+            color: "white",
+            borderRadius: 6,
+            fontSize: 13,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+            zIndex: 2000,
+          }}
+        >
+          {ctxToast}
         </div>
       )}
 

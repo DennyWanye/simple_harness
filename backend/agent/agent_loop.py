@@ -421,6 +421,24 @@ class ProviderChainFallbackEvent(AgentEvent):
             self.type = "provider_chain_fallback"
 
 
+@dataclass
+class ContextCompactedEvent(AgentEvent):
+    """WI-1B-2 压缩可观测 — flag ``features.ctx_observability`` ON 时,上下文
+    压缩命中后发出一条轻量事件。main.py 转成 ws
+    ``{type: "context_compacted", reduction, tokens_in, tokens_out, model}``,
+    前端在圈圈 gauge 附近浮一条 toast「已压缩,省 N token」(N = tokens_in -
+    tokens_out)。flag OFF 时本事件**永不构造**(零开销,字节级 BC)。"""
+
+    reduction: float = 0.0   # 节省比 0~1（middle 段 reduction_ratio）
+    tokens_in: int = 0       # 压缩前 middle 段 token
+    tokens_out: int = 0      # 压缩后摘要 token
+    model: str = ""          # 摘要所用模型（可选）
+
+    def __post_init__(self) -> None:
+        if not self.type:
+            self.type = "context_compacted"
+
+
 # ───────────────────── protocols for caller dependencies ─────────────────────
 
 
@@ -480,6 +498,10 @@ class AgentLoop:
         # None (default) = BC (compressor not injected → zero new behaviour).
         # When non-None, should_compress() and compress() are called in the loop.
         compressor: Optional[Any] = None,  # deskpet.agent.context_compressor.ContextCompressor
+        # WI-1B-2 压缩可观测 (features.ctx_observability). False (默认) = 字节级 BC:
+        # 压缩成功路径不 emit metrics、不 yield ContextCompactedEvent。True 时压缩
+        # 命中额外 record 一条 metrics + yield 一条轻量事件供 main.py 转 ws → 前端 toast。
+        ctx_observability: bool = False,
         # WI-4.2 skill remount: inject SkillLoader + SkillMatcher for post-compaction
         # skill body re-inline.  Both default None → BC (no remount, zero overhead).
         # When non-None and compaction fires, _remount_skills() is called to re-insert
@@ -540,6 +562,8 @@ class AgentLoop:
         # WI-4.0 compaction: ContextCompressor (BC: None → skip entirely).
         # When non-None, loop calls should_compress() + compress() after budget check.
         self.compressor = compressor
+        # WI-1B-2 压缩可观测 flag (BC: False → 压缩路径零额外行为)。
+        self.ctx_observability = bool(ctx_observability)
         # WI-4.2 skill remount (BC: both None → skip entirely).
         # When non-None and compaction fires, _remount_skills() re-inlines skill bodies.
         self.skill_loader = skill_loader
@@ -954,6 +978,35 @@ class AgentLoop:
                                     getattr(_cresult, "reduction_ratio", "?"),
                                 )
                                 _compaction_warn_logged = True
+                            # WI-1B-2 压缩可观测: flag ON 时额外 emit metrics +
+                            # yield 轻量事件。flag OFF → 整块 short-circuit(BC,
+                            # 既不 record 也不构造/yield ContextCompactedEvent)。
+                            if self.ctx_observability:
+                                _ctx_in = int(getattr(_cresult, "input_tokens", 0) or 0)
+                                _ctx_out = int(getattr(_cresult, "output_tokens", 0) or 0)
+                                _ctx_ratio = float(
+                                    getattr(_cresult, "reduction_ratio", 0.0) or 0.0
+                                )
+                                try:
+                                    from observability.metrics_sink import (
+                                        record as _ctx_metric,
+                                    )
+                                    _ctx_metric("context_compacted", {
+                                        "ratio": round(_ctx_ratio, 3),
+                                        "model": getattr(self.compressor, "model", "")
+                                        or "",
+                                        "count": _ctx_in - _ctx_out,
+                                    })
+                                except Exception:  # noqa: BLE001
+                                    pass
+                                yield ContextCompactedEvent(
+                                    task_id=tid,
+                                    iteration=iteration,
+                                    reduction=round(_ctx_ratio, 3),
+                                    tokens_in=_ctx_in,
+                                    tokens_out=_ctx_out,
+                                    model=getattr(self.compressor, "model", "") or "",
+                                )
                     except Exception as _cmp_exc:  # noqa: BLE001
                         # Compaction is advisory — never abort the loop on it.
                         logger.debug(
