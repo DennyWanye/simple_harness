@@ -46,7 +46,13 @@
 - **现象**：TC-1（惊艳路径,1图+7×403）与 TC-4（模板回退路径,5×403→n_ok==0）**两条路径**在 confirm 之后都走到「渲染 deck」步骤,但 **deck 始终不落盘、无完成/失败通知、无 Traceback（是 hang 不是 error）**。orchestrate 的 `except Exception: notify("没做成")` 未触发 → 卡在某个**阻塞调用**。
 - **排查**：① 初判 WPS COM(`Kwpp.Application` visual_review/preview)在 `run_in_executor` 线程挂起 → dev config 关 `[ppt] visual_review=false / preview_render=false` 重启复测 → **仍 hang**。② 故 hang 不（只）在 visual_review/preview,而在模板回退渲染链更上游（疑 `_resolve_template_for_render` 的**模板选图 `vision_chat`** 或模板库加载在 executor 线程的事件循环/阻塞问题）。
 - **影响**：F1→F2→F3 + 图像 403 判定全部 PROVEN,但**惊艳/模板 deck 最终落盘被此 hang 阻断**。
-- **建议修复方向（下个 focused 循环）**：给 orchestrate 的 `run_in_executor` 渲染加 ① 阶段日志(定位卡在 `_render_pro` 的哪个子调用) ② render 子步骤超时/线程内事件循环正确初始化 ③ 必要时模板选图 vision_chat 在 executor 线程用独立 `asyncio.run`/同步客户端。`render_timeout` (max(600,pages*120)) 最终会 abort 但用户体验差。
+- **深化诊断（已逐步排除）**：① 非 visual_review/preview WPS COM（关掉仍 hang）；② 非 `_sync_notify`（fire-and-forget 不阻塞）；③ 非模板选图 vision_chat（confirm 后 5×403 之后**无任何新 chat POST** → 没到 vision-pick；且 TC-1 惊艳路径无模板也 hang）。→ **最可疑根因**：`_run_blocking_call` 用 `run_in_executor(None, …)` 即**默认共享 ThreadPoolExecutor**；后端同时跑 BGE-M3 embedder / vector-worker / summarizer 等大量 `run_in_executor` 工作,**默认池被占满 → render 任务排队不执行,表现为 hang**（两条路径同症、与渲染内容无关,正符合"任务排队"特征）。
+- **已试 2 个修复,均未解决(故 bug 更深)**：
+  1. dev config 关 `visual_review`+`preview_render`(排除 WPS COM)→ 仍 hang。
+  2. 给 render 专用 `ThreadPoolExecutor(max_workers=2)` 替代默认共享池(排除 executor 饱和,commit `feat(ppt-pro): ppt_pro render 专用线程池`)→ 仍 hang。
+- **进一步定位**：复测确认 hang 在 `_autofill_with_connectivity_gate` 返回(5×403,n_ok==0)**之后**、`ppt_create(template="高级色", skip_image_gen=True)` 内,且**在任何模板选图 vision_chat 之前**(confirm 后无新 `chat/completions`)。即卡在 `ppt_create`→`_resolve_template_for_render("高级色")`→`pick_template_by_preview` **早期**(疑外部 2.8GB 模板库 `resources/PPT_Template` 预览图 PIL 加载/contact-sheet 组装阻塞),**或** `ppt_create` 在 orchestrate executor 上下文里某个同步阻塞。注:TC-1(惊艳 fromscratch 无模板)当时 visual_review/preview 仍 ON,其 hang 可能是 WPS COM;两条路径 hang 可能不同根因。
+- **下一步(需埋点)**：在 `ppt_create` 渲染路径 + `pick_template_by_preview` 加逐段 `log.info` 锚点,真机复跑一次即可精确定位阻塞行,再针对性修(给库加载加超时/上限/缓存,或绕开 vision-pick 用确定性默认模板)。这是一个**专门的 instrumented-debug 循环**,非一次 live 猜测可解。
+- **不影响实施交付正确性**:`ppt_create` 作为同步工具单测 + 历史真机(06-20)正常;本 hang 特定于 ppt_pro 在当前 dev 环境(403 配额 + 该模板库/COM 状态)下的集成路径。
 - **注**：`ppt_create` 作为**同步工具**直接调用时渲染正常(单测/历史真机 06-20 PASS);本 bug 特定于 **ppt_pro orchestrate 经 run_in_executor 调 ppt_create** 的集成路径。
 
 ## 5. 诚实声明

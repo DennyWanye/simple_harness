@@ -3305,11 +3305,18 @@ def _expire_ppt_outline_dangling_for_startup() -> int:
         return 0
 
 
+# ppt_pro 渲染专用线程池：真机 E2E 发现，若用默认共享 executor(None)，render 任务会
+# 排在 BGE-M3 embedder / vector-worker / summarizer 等大量 run_in_executor 工作后面、
+# 长时间不执行(表现为 deck 永不落盘的"假 hang")。给 render 独立池根治排队饿死。
+import concurrent.futures as _cf  # noqa: E402
+_PPT_PRO_RENDER_EXECUTOR = _cf.ThreadPoolExecutor(max_workers=2, thread_name_prefix="ppt_pro_render")
+
+
 def _wire_ppt_pro_services_for_startup() -> None:
     ppt_tools.set_ppt_pro_services(
         outline_propose=_ppt_outline_propose,
         notifier=_ppt_notify_chat_bubble,
-        run_blocking=lambda fn: asyncio.get_running_loop().run_in_executor(None, fn),
+        run_blocking=lambda fn: asyncio.get_running_loop().run_in_executor(_PPT_PRO_RENDER_EXECUTOR, fn),
         artifact_pusher=_ppt_artifact_push,
         receipt_reporter=_ppt_receipt_report,
     )
