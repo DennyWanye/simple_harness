@@ -1,6 +1,6 @@
 # PPT 生成 — 模块专项状态
 
-> **最后更新**: 2026-06-21
+> **最后更新**: 2026-06-22
 > **用途**: 一页看清 DeskPet「生成 PPT」全链路怎么工作、由哪些文件承担、能力边界与已知短板。要动 PPT 功能前先读这里。
 > **同级**: [status.md](./status.md)(全局) · [AgentLoop.md](./AgentLoop.md)(执行引擎)
 
@@ -105,22 +105,25 @@ else:
 
 ---
 
-## 8. 真机验证状态(2026-06-20)
+## 8. 真机验证状态(2026-06-22)
 
-- **模板设计页 + 预览图视觉选** ✅ PASS:LLM 选大类「高级色」→ 真 vision `vision chose id=77 → (177).pptx` → design-pages 填充 + 模板视觉闭环 2 轮 → 5 页产物。
-- **AI 整页配图(gpt-image-2)** ✅ PASS:「深海探秘」3 页 → gpt-image-2 出图 200×3 → 视觉评审 `issues=0` → 落盘 + 自动打开(WPS)。深海潜航器/幽光水母/海沟全屏电影感大图。
+- **`ppt_pro` F1-F4 端到端逻辑链路** ✅ PASS(2026-06-22):F1 deepresearch 真调研(搜狗百科直连)→ F2 拟纲 6K+ 字流 → F3 大纲卡真渲染 + SendInput 真点击确认 → F4 首图实测判定(gpt-image-2 真 403→切模板)→ deck 5 页落盘自动打开(WPS)。TC-4 模板回退 PASS;TC-9 preempt 不杀确认链路 PASS。真测中**揪出并修复 2 真 bug**(路由缺口 / 渲染 executor 线程 hang 双根因)。证据 [plans/manual-results-2026-06-22-ppt-pro/](../plans/manual-results-2026-06-22-ppt-pro/)。
+- **模板设计页 + 预览图视觉选** ✅ PASS(2026-06-20):LLM 选大类「高级色」→ 真 vision `vision chose id=77 → (177).pptx` → design-pages 填充 + 模板视觉闭环 2 轮 → 5 页产物。
+- **AI 整页配图(gpt-image-2)** ✅ PASS(2026-06-20):「深海探秘」3 页 → gpt-image-2 出图 200×3 → 视觉评审 `issues=0` → 落盘 + 自动打开(WPS)。深海潜航器/幽光水母/海沟全屏电影感大图。
 - 报告:[plans/manual-results-2026-06-20/REPORT-ppt-template-vision-pick.md](../plans/manual-results-2026-06-20/REPORT-ppt-template-vision-pick.md)。
+- **环境受限**:relay gpt-image-2 403 配额墙阻断 ppt_pro 剩余约 13 用例(模型不可用回退/内容不误伤/调研降级等),待配额恢复补验。
 
 ---
 
-> 📌 **优化 plan（v1.0 LOCKED，未实现）**：[plans/2026-06-21-ppt-deepresearch-pro/](../plans/2026-06-21-ppt-deepresearch-pro/00-PLAN.md) —
-> 新工具 `ppt_pro`：主题 → deepresearch 充分调研 → 拟大纲 → 用户确认(可改) → 优先 gpt-image-2 惊艳生图 / 连不上回退模板。
-> 经 3 轮 codex+architect 对抗收敛到 EXECUTABLE-AS-IS，**直接对治下面 §9.1 大纲质量短板**。
+> 📌 **`ppt_pro` 已实施完成 + 真机验收 ✅(2026-06-22)**：[plans/2026-06-21-ppt-deepresearch-pro/](../plans/2026-06-21-ppt-deepresearch-pro/00-PLAN.md)(v1.3 LOCKED, 6 轮 codex 对抗收敛) —
+> 新工具 `ppt_pro`：主题 → deepresearch 充分调研 → 拟大纲(双模式防回退) → 用户确认(可改) → 首图实测判定(gpt-image-2 可达→惊艳整页生图 / 不可达→模板兜底)。
+> 旧 `ppt_create` 仍在岗作直传路径(已给 outline / 已知模板时)。见 §4 全局里程碑(status.md 2026-06-22)。
 
 ## 9. 已知短板 / 缺口
 
-1. **大纲质量(skill 层)** — outline 由 LLM 按 `ppt-generate/SKILL.md` 产;现实里内容常空泛/结构平庸/bullet 像讲稿。**根因在 skill/LLM 层,不在工具层**(工具只渲染)。当前 gpt-5.5 窗口仅 8000 也压制了大纲质量。→ 优化靶心之一,已立 plan(见上方 📌,用 deepresearch 调研喂大纲根治内容空泛)。
-2. **SKILL.md 已 stale** — 第 27 行仍硬编码旧 3 模板名(商务深蓝-水墨/高级感-蓝/简约高级-灰,已删),与新大类机制冲突;模板填充模式的指导需改成「按大类名选」。
-3. **「6 短板」**(2026-06 评估,主动 defer):①信息密度失控 ②图标简陋 ③图片裁切生硬 ④图表配色不随主题 ⑤内容数≠模板槽数(已部分被鲁棒选页缓解)⑥细节装饰基础。
-4. **打包/分发**:外部大库 gitignored 不进安装包;打包 app 仅有 3 套 bundled 兜底。
-5. **成本/时延**:每次模板生成 +1 vision 选图调用;AI 配图每张 1-3 分钟(外部 relay 速度)。
+1. **大纲质量(skill 层)** — outline 由 LLM 按 `ppt-generate/SKILL.md` 产;现实里内容常空泛/结构平庸/bullet 像讲稿。**根因在 skill/LLM 层,不在工具层**(工具只渲染)。当前 gpt-5.5 窗口仅 8000 也压制了大纲质量。→ **`ppt_pro` 已用 deepresearch 调研喂大纲对治**(见上 📌);旧 `ppt_create` 直传路径仍受此短板影响。
+2. **渲染 hang 需埋点根因定位(残留)** — ppt_pro 渲染 executor 线程 hang 已修双根因(bundled 模板直传 + asdict 转 dict),但 RESULTS 建议后续加 log 锚点确认无第三处阻塞路径。
+3. ~~**SKILL.md 已 stale**~~ ✅ 已修(commit `2e83c1fe`):删旧 3 模板名,改「按大类名选」+ 路由优先 `ppt_pro`。
+4. **「6 短板」**(2026-06 评估,主动 defer):①信息密度失控 ②图标简陋 ③图片裁切生硬 ④图表配色不随主题 ⑤内容数≠模板槽数(已部分被鲁棒选页缓解)⑥细节装饰基础。
+5. **打包/分发**:外部大库 gitignored 不进安装包;打包 app 仅有 3 套 bundled 兜底。
+6. **成本/时延**:每次模板生成 +1 vision 选图调用;AI 配图每张 1-3 分钟(外部 relay 速度)。
