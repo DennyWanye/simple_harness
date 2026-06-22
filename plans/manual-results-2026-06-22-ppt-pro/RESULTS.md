@@ -36,5 +36,18 @@
 ## 4. 观察 / 待investigate（非阻断）
 - **持续 403 期间渲染耗时长**：首图成功后 7×403 占位，deck 渲染（含 visual_review WPS COM）在观测窗口内未完成。需复核：图像大面积失败（n_ok 远小于页数，如 1/8）时是否应也回退模板（当前仅 n_ok==0 才回退）——relay 配额恢复后复现确认。
 
+## 4b. 续测（用户选 A：用当前 gpt-image-2 403 状态测回退+非生图用例）
+
+- **★TC-9 preempt 不杀确认链路 — PASS（双重铁证）**：ppt_pro 大纲卡未决时,向桌宠发无关消息「现在几点了？」→ 桌宠**真回答**「现在是 2026年6月22日 00:31…」(截图)＋随后 SendInput 真点「确认生成」→ log `ppt_outline_decision_resolved outline_id=86…`（**非 `no_pending` 死卡**）。证明独立编排 task 未被 same-sid 新消息 preempt 杀掉 = R-4/FP-5 同款 bug 已根治。✅✅
+- **F4 回退判定逻辑 — 已触发**：confirm 后 image_mode 真发 `images/generations`，**5/5 全 403**（无 200）→ `_autofill_with_connectivity_gate` `n_ok==0` 安全网 → 应回退模板。判定逻辑按预期执行（全图失败）。
+
+## 4c. 🐛 真 E2E 发现的第 2 个 BUG（需代码级修复）：ppt_pro 渲染步骤在 executor 线程挂起
+
+- **现象**：TC-1（惊艳路径,1图+7×403）与 TC-4（模板回退路径,5×403→n_ok==0）**两条路径**在 confirm 之后都走到「渲染 deck」步骤,但 **deck 始终不落盘、无完成/失败通知、无 Traceback（是 hang 不是 error）**。orchestrate 的 `except Exception: notify("没做成")` 未触发 → 卡在某个**阻塞调用**。
+- **排查**：① 初判 WPS COM(`Kwpp.Application` visual_review/preview)在 `run_in_executor` 线程挂起 → dev config 关 `[ppt] visual_review=false / preview_render=false` 重启复测 → **仍 hang**。② 故 hang 不（只）在 visual_review/preview,而在模板回退渲染链更上游（疑 `_resolve_template_for_render` 的**模板选图 `vision_chat`** 或模板库加载在 executor 线程的事件循环/阻塞问题）。
+- **影响**：F1→F2→F3 + 图像 403 判定全部 PROVEN,但**惊艳/模板 deck 最终落盘被此 hang 阻断**。
+- **建议修复方向（下个 focused 循环）**：给 orchestrate 的 `run_in_executor` 渲染加 ① 阶段日志(定位卡在 `_render_pro` 的哪个子调用) ② render 子步骤超时/线程内事件循环正确初始化 ③ 必要时模板选图 vision_chat 在 executor 线程用独立 `asyncio.run`/同步客户端。`render_timeout` (max(600,pages*120)) 最终会 abort 但用户体验差。
+- **注**：`ppt_create` 作为**同步工具**直接调用时渲染正常(单测/历史真机 06-20 PASS);本 bug 特定于 **ppt_pro orchestrate 经 run_in_executor 调 ppt_create** 的集成路径。
+
 ## 5. 诚实声明
 本次为长时无人化自主构建 + 真机验收。**实施 100% + 单测/冒烟全绿 + TC-1 核心链路（F1-F4 + 路由修复）真机 PROVEN**。**未**对 14 条用例全部跑完真机——根因是 **relay gpt-image-2 403 配额墙**（图像相关用例无法在本窗口完成），按 runbook 纪律**如实记录环境受限，未用脚本/协议层假装通过**。
