@@ -4,6 +4,7 @@
 >
 > **用户决策（2026-06-22 已定，已固化进 plan）**：① 圈圈 **两层都做**（1A Claude Code 环境 + 1B DeskPet 运行时）；② TG-1 **方案 A**（新建 `goal_task_create` + 提升 TaskGraphStore 三件套为主 agent 全局可见）；③ 方向二 **全做 P0~P3**（含 OH-3/CC-3/CC-5/TG-2 等低优先项，一个不漏）。
 > **依据**: [STATUS/status.md](../../STATUS/status.md)（2026-06-22 已校准）+ 三路调研（架构 / 对标系统 / 上下文管理）+ `research/` 对标资料
+> ⚠️ **行号说明**：本 plan（含 01/02）文中行号为撰写时快照，master 持续提交致漂移约 ±50 行；**实施时一律按符号名/函数名定位，不依赖行号**。
 > **范围**: 两大优化方向 —— ①上下文管理（Claude Code 工作环境 + DeskPet 运行时双层）②openclaw/hermes/claude/openhuman 对标差距补齐
 > **铁律**: 不可少做功能；技术项细化到「具体哪个文件、哪个函数、怎么改」；全部新功能 flag 出厂 OFF = 字节级 BC
 
@@ -90,7 +91,7 @@
 
 | 类 | 含义 | WI |
 |---|---|---|
-| **A 已实现+已测，仅点亮 flag/补观测** | 代码已在且有测试，默认 OFF 或缺观测 | HM-1（自我纠错，含清 stale 注释 + 查 ephemeral 专用模型是否真生效）· CC-1（skill 压缩后 `_remount_skills` 已实现且有测试）· OH-2（pref_decay 默认 off）· TG-1 goal 持久化（已落库） |
+| **A 已实现+已测，仅点亮 flag/补观测** | 代码已在且有测试，默认 OFF 或缺观测 | HM-1（自我纠错，含清 stale 注释；ephemeral 专用模型已确认生效，dead config 已修 772c4291）· CC-1（skill 压缩后 `_remount_skills` 已实现且有测试）· OH-2（pref_decay 默认 off）· TG-1 goal 持久化（已落库） |
 | **B 真缺口，新建** | 实读确认无等价物 | OH-4 记忆 self-curation nudge · CC-2 plan mode 物理只读权限 · OC-1 显式 depth 上界 · OC-2 累计背压指标 |
 | **C 已有基础，补全/补入口/加固** | 核心在但差临门一脚 | OH-1（四路 RRF→决定是否默认开第五路 facts/entity）· OH-2 补用户 pin/forget 入口 · OH-3 写入分级 light 路径 · TG-1（新建 `goal_task_create` 工具 + 厘清三套任务概念定唯一目标 + 清 goal_store stale 注释） |
 | **D 低优先新增/评估** | 锦上添花 | CC-3 `/verify` 真实运行 skill · CC-5 终端用户 auto-memory（评估） |
@@ -130,7 +131,7 @@
 | Phase | 内容 | 依赖 | 价值 |
 |---|---|---|---|
 | **P0（立即，低风险，直接回应用户）** | 1A 全部（工作环境瘦身，缓解圈圈）+ 1B-1（token 收敛，仅 2 处）+ 1B-2（压缩可观测）| 无 | 直接缓解「圈圈满」+ 工程整洁 |
-| **P1（点亮已实现的护城河 + 补观测）** | HM-1 点亮+观测+修 dead config / OH-1 决定第五路 lane / OH-2 补 Pin 入口+开 pref_decay / TG-1 新建 goal_task_create（方案A）/ CC-1 已实现计 0 | 多数无前置（CC-1 已消解）| 把已建能力真正用起来，低成本高收益 |
+| **P1（点亮已实现的护城河 + 补观测）** | HM-1 点亮+观测（dead config 已修 772c4291）/ OH-1 决定第五路 lane / OH-2 补 Pin 入口+开 pref_decay / TG-1 新建 goal_task_create（方案A）/ CC-1 已实现计 0 | 多数无前置（CC-1 已消解）| 把已建能力真正用起来，低成本高收益 |
 | **P2（4 个真缺口新建）** | OH-4 记忆 nudge / CC-2 plan mode 只读权限 / OC-1 显式 depth / OC-2 背压指标 | 各自独立可并行 | 补真空白 |
 | **P3（打磨/低优先）** | OH-3 写入分级 / CC-3 `/verify` skill / CC-5 auto-memory 评估 / 1B-3/4/5 / TG-2 审批 UI / HM-2 引用既有 plan | 多数已 ship 基建 | 锦上添花 |
 
@@ -162,7 +163,7 @@
 2. ✅ **方向二范围** → **全做 P0~P3**：4 真缺口（OH-4/CC-2/OC-1/OC-2）新建 + 已实现项点亮 + 低优先项（OH-3/CC-3/CC-5/TG-2）也做，一个对标点不漏。
 3. ✅ **TG-1 任务概念** → **方案 A**：新建 `goal_task_create` 工具 + 把 `task_graph_tools` 三件套（list/update/新 create）从「仅 teammate」提升为主 agent 全局可见；TaskGraphStore DAG+依赖+持久化已就绪，最贴近 cc-haha Task 工具族。已固化进 02 文档 TG-1。
 4. ✅ **已建能力默认点亮（决策①，更激进）**：
-   - **HM-1 自我纠错 = 全档默认开**（structured_reflection / verify_gate 非 off）——含陪伴档。
+   - **HM-1 自我纠错 = 全档默认开**（`structured_reflection`=True + `verify_gate_mode`：off→**strict**（或先 shadow 观察），取值只能 off/shadow/strict——**严禁 "on"/"ephemeral"，否则 ConfigError**）——含陪伴档。**★ 硬连锁**：`verify_gate_mode != "off"` 必须**同时**把 `emit_receipts` 默认 False→True（VG-INVARIANT-1，`config.py:567-572`），否则启动即 ConfigError / ledger 空致全 end_turn 被阻塞。**风险**：strict 在「无 claim 纯闲聊」下若误阻塞，则陪伴档退 shadow、code/goal 档用 strict，落地前真机验证。
    - **OH-2 偏好衰减 = 默认开**（pref_decay=True）；**硬前置**：用户「pin/忘记某条偏好」入口**必须与衰减同一批上线**（否则桌宠自动淡忘而用户无法保留）。
    - **TG-1 goal_mode = 仍默认手动**（不全局默认开，长目标档手动启用）。
 5. ✅ **1A 落地（决策②）→ 方案 B**：CLAUDE.md 抽出的长段规范化成**按需加载的可复用资产**（`~/.claude/knowledge-base/` 或参考 skill），CLAUDE.md 只留一行指针；不只给一次性 SOP。所有项目/新机器复用，圈圈瘦身长期不反弹。
@@ -184,4 +185,4 @@
 
 > **收敛趋势**：每轮都冒新坑但趋势收敛（符合 `feedback_codex_adversarial_plan_hardening`）。三个独立读码者（2 gp + codex）对「已实现 vs 真缺口」的判定已高度一致：**4 个真缺口 OH-4/CC-2/OC-1/OC-2 三方一致确认**。R2 后无 BLOCKING/MAJOR 未决，仅 TG-1 任务概念选型需 Lead 拍板（属产品/架构决策，非缺陷）。
 >
-> **附带产出（独立于本 plan 的 shipped 真 bug）**：`ephemeral_subagent_model`（`config.py:271` 配置项，默认 haiku + 白名单校验）**从未被消费** —— `main.py:936` 自我纠错 ephemeral verifier 直接用 `local_llm or cloud_llm`。已开独立任务跟踪修复。
+> **附带产出（已修，留痕）**：✅ `ephemeral_subagent_model` dead config bug 已于 commit `772c4291` 修复（`main.py:973-996` `_resolve_ephemeral_provider` 按 config 解析专用 provider，:974-976 注释明写「之前 bug 直接复用主 LLM，现按配置解析专用 provider」+ `:687 _clone_provider_with_model`）。plan 内相关待办已移除。
