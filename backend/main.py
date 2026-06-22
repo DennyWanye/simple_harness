@@ -189,6 +189,17 @@ def _save_llm_runtime_overrides(data: dict) -> None:
         logger.warning("llm_runtime_overrides_save_failed: %s", exc)
 
 
+# 对话回合硬超时(默认 15 分钟,可在设置里调整,持久化到 llm_runtime.json
+# 的 chat_turn_timeout_minutes)。relay/网络持续不可用时,避免 agent 无限重试
+# 让桌宠"努力工作中"死转 —— 超时即优雅停止 + 友好告知用户。夹在 1~60 分钟。
+def _chat_turn_timeout_s() -> float:
+    try:
+        m = float(_load_llm_runtime_overrides().get("chat_turn_timeout_minutes", 15))
+    except Exception:  # noqa: BLE001
+        m = 15.0
+    return max(60.0, min(3600.0, m * 60.0))
+
+
 # P4-S25 (2026-05-09): cross-endpoint Ollama fallback removed at
 # user request. Single-endpoint mode — errors surface directly
 # instead of auto-swapping to a different model with a different
@@ -3563,14 +3574,16 @@ def _intent_label_from_turn(had_tool_call: bool) -> str:
 
 
 def _approx_tokens(text: str | None) -> int:
-    """Cheap heuristic for token count without a tokenizer dependency.
-    Mirrors the rule-of-thumb tiktoken-ish ~3.5 chars/token for mixed CJK+
-    English. Accurate enough to drive a "where did my context go" pie chart;
-    the authoritative number is the LLM's own ``prompt_tokens`` (already in
-    the ring). Returns 0 on falsy input."""
+    """委托 tokens.count_text_tokens（CJK-aware）做统一口径估算。
+
+    全后端 token 计数走唯一入口 ``deskpet.agent.tokens.count_text_tokens``
+    （CJK×4 加权，可选 tiktoken，启发式回落），消除散落口径不一致。
+    用于驱动 "where did my context go" 饼图；权威值仍是 LLM 自己的
+    ``prompt_tokens``（已在 ring 里）。Returns 0 on falsy input."""
     if not text:
         return 0
-    return max(1, int(len(text) / 3.5))
+    from deskpet.agent.tokens import count_text_tokens
+    return count_text_tokens(text)
 
 
 async def _compute_context_breakdown(session_id: str) -> dict[str, Any]:
@@ -3609,7 +3622,7 @@ async def _compute_context_breakdown(session_id: str) -> dict[str, Any]:
     # 2) Memory — recalled facts (subset of what ContextAssembler injects).
     mem_preview = ""
     mem_count = 0
-    mem_total_chars = 0
+    mem_total_tokens = 0
     try:
         fs = service_context.get("facts_store")
         if fs is not None and hasattr(fs, "list_active"):
@@ -3620,7 +3633,7 @@ async def _compute_context_breakdown(session_id: str) -> dict[str, Any]:
                 cat = f.get("category", "?") or "?"
                 subj = f.get("subject", "") or ""
                 val = f.get("value", "") or ""
-                mem_total_chars += len(cat) + len(subj) + len(val)
+                mem_total_tokens += _approx_tokens(cat) + _approx_tokens(subj) + _approx_tokens(val)
                 if len(preview_lines) < 8:
                     preview_lines.append(f"- [{cat}] {subj}: {val[:60]}")
             mem_preview = "\n".join(preview_lines)
@@ -3629,7 +3642,7 @@ async def _compute_context_breakdown(session_id: str) -> dict[str, Any]:
     sections.append({
         "kind": "memory",
         "label": "Memory / facts",
-        "tokens": max(0, int(mem_total_chars / 3.5)) if mem_total_chars else 0,
+        "tokens": mem_total_tokens,
         "preview": mem_preview[:400],
         "count": mem_count,
     })
@@ -3672,15 +3685,13 @@ async def _compute_context_breakdown(session_id: str) -> dict[str, Any]:
                 turns = []
             hist_count = len(turns)
             parts = []
-            total_chars = 0
             for t in turns:
                 role = getattr(t, "role", "?")
                 content = getattr(t, "content", "") or ""
-                total_chars += len(content)
+                hist_tokens += _approx_tokens(content)
                 if len(parts) < 12:
                     parts.append(f"[{role}] {str(content)[:80]}")
             hist_text = "\n".join(parts)
-            hist_tokens = max(1, int(total_chars / 3.5)) if total_chars else 0
     except Exception as exc:  # noqa: BLE001
         logger.debug("breakdown_history_probe_failed err=%s", exc)
     sections.append({
@@ -3906,7 +3917,10 @@ async def update_cloud_config(body: CloudConfigRequest, request: Request):
         # `relayProviderBridge` re-pushes it after every restart /
         # rotation, so losing it from the persisted file is fine.
         overrides_to_save["api_key"] = body.api_key.strip()
-    _save_llm_runtime_overrides(overrides_to_save)
+    # 合并保存:保留其它运行时键(如 chat_turn_timeout_minutes),不被 provider 设置冲掉。
+    _merged_overrides = _load_llm_runtime_overrides()
+    _merged_overrides.update(overrides_to_save)
+    _save_llm_runtime_overrides(_merged_overrides)
 
     # Strategy field deprecated under unified schema — silently accepted
     # but ignored. (HybridRouter still has the API; we just don't drive
@@ -4543,6 +4557,36 @@ async def control_channel(ws: WebSocket):
                 await ws.send_json({
                     "type": "permission_auto_mode_response",
                     "payload": {"enabled": enabled},
+                })
+
+            elif msg_type == "chat_turn_timeout_set":
+                # 设置面板写「对话超时(分钟)」。持久化到 llm_runtime.json,夹 1~60 分钟。
+                payload = raw.get("payload", {}) or {}
+                try:
+                    _mins = int(round(float(payload.get("minutes", 15))))
+                except Exception:  # noqa: BLE001
+                    _mins = 15
+                _mins = max(1, min(60, _mins))
+                _ov = _load_llm_runtime_overrides()
+                _ov["chat_turn_timeout_minutes"] = _mins
+                _save_llm_runtime_overrides(_ov)
+                logger.info("chat_turn_timeout_set minutes=%d", _mins)
+                await ws.send_json({
+                    "type": "chat_turn_timeout_response",
+                    "payload": {"minutes": _mins},
+                })
+
+            elif msg_type == "chat_turn_timeout_get":
+                # 设置面板读当前值(展示)。默认 15。
+                try:
+                    _cur = int(round(float(
+                        _load_llm_runtime_overrides().get("chat_turn_timeout_minutes", 15)
+                    )))
+                except Exception:  # noqa: BLE001
+                    _cur = 15
+                await ws.send_json({
+                    "type": "chat_turn_timeout_response",
+                    "payload": {"minutes": max(1, min(60, _cur))},
                 })
 
             elif msg_type == "plugin_list":
@@ -7140,11 +7184,43 @@ async def control_channel(ws: WebSocket):
                 # session panels work correctly. Track in-flight task
                 # per-sid so a same-sid retry cancels its predecessor
                 # (prevents stale tool calls if user rage-types).
+                # 对话回合硬超时包装(默认 15 分钟,设置里可调)。relay/网络持续
+                # 不可用时 agent 会无限重试让桌宠"努力工作中"死转 —— 超时即优雅
+                # 停止 + 发 chat_v2_final 友好告知,清掉前端转圈。
+                async def _run_chat_with_timeout(_g_ws, _g_text, _g_sid, _g_mp=None):
+                    _g_to = _chat_turn_timeout_s()
+                    try:
+                        await asyncio.wait_for(
+                            _run_chat(_g_ws, _g_text, _g_sid, _g_mp), timeout=_g_to,
+                        )
+                    except asyncio.TimeoutError:
+                        _g_min = int(round(_g_to / 60))
+                        logger.warning(
+                            "chat_turn_timeout sid=%s timeout_s=%.0f", _g_sid, _g_to,
+                        )
+                        _g_evt = {
+                            "type": "chat_v2_final",
+                            "payload": {
+                                "text": (
+                                    f"⏱️ 这次请求超过 {_g_min} 分钟还没完成,可能是网络或"
+                                    f"中转站不稳。我先停下来了,稍后再试试看~"
+                                    f"(超时时长可在设置里调整)"
+                                ),
+                                "iterations": 0,
+                                "session_id": _g_sid,
+                            },
+                        }
+                        try:
+                            await _g_ws.send_json(_g_evt)
+                            await _broadcast_default_chat_peers(_g_ws, _g_evt)
+                        except Exception:  # noqa: BLE001
+                            pass
+
                 _prev_task = _chat_inflight.get(_msg_sid)
                 if _prev_task is not None and not _prev_task.done():
                     _prev_task.cancel()
                 _chat_task = asyncio.create_task(
-                    _run_chat(
+                    _run_chat_with_timeout(
                         ws,
                         text,
                         _msg_sid,
@@ -7161,7 +7237,7 @@ async def control_channel(ws: WebSocket):
                 # reflects the freshest local state.
                 async def _redisp(_target_ws, _target_sid):
                     _new_task = asyncio.create_task(
-                        _run_chat(_target_ws, "<<auto_resume>>", _target_sid)
+                        _run_chat_with_timeout(_target_ws, "<<auto_resume>>", _target_sid)
                     )
                     _chat_inflight[_target_sid] = _new_task
                     _new_task.add_done_callback(_make_followup_cb(_target_sid, _target_ws))
@@ -7194,7 +7270,7 @@ async def control_channel(ws: WebSocket):
                                 # trigger text. ``_run_chat`` will pop the
                                 # hint via the standard injection path.
                                 new_task = asyncio.create_task(
-                                    _run_chat(target_ws, "<<supervisor_followup>>", target_sid)
+                                    _run_chat_with_timeout(target_ws, "<<supervisor_followup>>", target_sid)
                                 )
                                 _chat_inflight[target_sid] = new_task
                                 new_task.add_done_callback(_make_followup_cb(target_sid, target_ws))
