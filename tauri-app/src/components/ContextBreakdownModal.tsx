@@ -176,7 +176,7 @@ export function ContextBreakdownModal({
 
         <div style={{ borderTop: "1px solid #374151", paddingTop: 12 }}>
           <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
-            <span>构成（前端估算 · ~3.5 chars/token）</span>
+            <span>构成（后端估算 · CJK-aware tokens）</span>
             {data && (
               <span style={{ color: "#94a3b8", fontSize: 10 }}>
                 估算合计 {fmtTokens(sectionTotal)} · LLM 实测 {fmtTokens(data.last_usage_prompt_tokens)}
