@@ -52,7 +52,7 @@ import os
 import re
 import tempfile
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Iterable, Literal, Optional, Sequence
@@ -2362,8 +2362,10 @@ def _render_pro(
         # （_resolve_template_path 走路径分支，跳过 pick_template_by_preview）。
         tpl = _fallback_template_path()
         log.info("ppt_pro render template path=%s tpl=%r", "template", tpl)
+        # bug#2-b 修：ppt_create 的 parse_outline 只认 JSON/dict 列表，不认 SlideOutline
+        # 实例 → 必须 asdict 转 dict 再传，否则 "outline parse failed or empty"。
         result = ppt_create(
-            _degrade_to_template(working),
+            [asdict(s) for s in _degrade_to_template(working)],
             theme=theme,
             title=title,
             author=author,
@@ -2375,7 +2377,7 @@ def _render_pro(
         return result
     log.info("ppt_pro render path=fromscratch(惊艳)")
     result = ppt_create(
-        working,
+        [asdict(s) for s in working],
         theme=theme,
         title=title,
         author=author,
