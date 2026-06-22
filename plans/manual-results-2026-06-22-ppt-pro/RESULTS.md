@@ -55,5 +55,19 @@
 - **不影响实施交付正确性**:`ppt_create` 作为同步工具单测 + 历史真机(06-20)正常;本 hang 特定于 ppt_pro 在当前 dev 环境(403 配额 + 该模板库/COM 状态)下的集成路径。
 - **注**：`ppt_create` 作为**同步工具**直接调用时渲染正常(单测/历史真机 06-20 PASS);本 bug 特定于 **ppt_pro orchestrate 经 run_in_executor 调 ppt_create** 的集成路径。
 
+## 4d. 🐛 bug#2 修复 + ★TC-4 真机 E2E PASS（deck 自动打开 WPS）
+
+**bug#2 双根因定位+修复**（instrumented-debug 循环）：
+1. **回退用大类名 `"高级色"` → `pick_template_by_preview` 对外部 2.8GB 库 90 张大预览图 PIL 拼 contact-sheet,在 executor 线程阻塞**（hang 在 vision_chat 之前、无 chat POST，正合症状）。→ 修：`_render_pro` 回退改用 **bundled 模板直传路径** `_fallback_template_path()`（`ppt_templates/通用商务/极简PitchDeck.pptx`），走 `_resolve_template_path` 路径分支,**跳过 vision 选图**（commit `回退改bundled模板直传路径`）。
+2. **`_render_pro` 把 `SlideOutline` 实例列表传给 `ppt_create`,但 `parse_outline` 只认 JSON/dict 列表** → `error="outline parse failed or empty"` ok=False。→ 修：两处 `ppt_create` 调用前 `[asdict(s) for s in …]` 转 dict（commit `asdict转dict两路径`）。独立复现 `ok=True 5页落盘` 验证。
+
+**★TC-4 网络/模型不可用回退模板 — 真机 windows-mcp E2E PASS（铁证）**：
+- 桌宠发「做一份『量子计算入门』的惊艳PPT，5页，要AI配图」→ `ppt_pro`（routing 稳定）→ deepresearch 真调研(搜狗百科等)→ 大纲卡弹出(含 `[^n]` 引用)→ SendInput 真点「确认生成」→ `ppt_outline_decision_resolved`。
+- F4 回退链 log 铁证：`ppt_pro gate reachable=False n_ok=0`（gpt-image-2 真 5/5 403）→ `ppt_pro render template path tpl=…极简PitchDeck.pptx`（bundled,跳 vision）→ `ppt_pro render done(template) ok=True path=…deskpet-ppt-1782092692.pptx`。
+- 桌宠通知「**gpt-image-2 暂时用不了，已切换模板生成**」+「✅ ppt_pro 完成」；**deck 5 页真落盘 + 自动在 WPS 打开**（截图:标题页「从普通比特出发：量子计算…」+ STRATEGY/Vision 模板设计 + 量子计算调研内容,**无占位图**）。
+- 判定：**PASS**。这是 plan F4「连不上 gpt-image-2 则用模板」的核心一票否决项,在 gpt-image-2 真 403 不可用时验证通过。
+
+**本次自主运行 E2E 真机 PASS 汇总**：路由(修复)✅ · F1 调研 ✅ · F2 拟纲 ✅ · F3 大纲卡+确认 ✅ · ★TC-9 preempt 不杀确认链路 ✅ · **★TC-4 F4 回退模板(deck自动打开)✅**。**E2E 发现并修复 2 个真 bug(路由 / 渲染 hang 双根因)**。惊艳 gpt-image-2 整页生图路径受 relay 403 配额墙阻(环境受限,待配额恢复验)。
+
 ## 5. 诚实声明
 本次为长时无人化自主构建 + 真机验收。**实施 100% + 单测/冒烟全绿 + TC-1 核心链路（F1-F4 + 路由修复）真机 PROVEN**。**未**对 14 条用例全部跑完真机——根因是 **relay gpt-image-2 403 配额墙**（图像相关用例无法在本窗口完成），按 runbook 纪律**如实记录环境受限，未用脚本/协议层假装通过**。
