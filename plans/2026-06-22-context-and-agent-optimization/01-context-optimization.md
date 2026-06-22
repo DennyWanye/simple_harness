@@ -87,6 +87,7 @@
 **注意事项 / 铁律不能删**：
 - 中文优先、MCP 优先、先规划再编码、质量门控、安全护栏（rm -rf / push --force / .env）、手测纪律的**触发词与禁止项**—— 这些是行为约束，删了会让 agent 走捷径，**只能搬细节、不能删约束本身**。
 - 抽走的内容要确保 agent 能「按需找回」：在主文件留下确切路径，否则等于丢失。
+- **落仓库成可复用资产（决策②方案B，2026-06-22）**：抽出的长段**规范化成按需加载的可复用资产**（落 `~/.claude/knowledge-base/` 或参考 skill，如 `windows-mcp-e2e.md` / `codex-usage.md`），CLAUDE.md 只留一行指针指向该资产；**不只给一次性 SOP**。这样多个会话/项目可复用同一份知识，而非每次重抽。
 
 ---
 
@@ -151,7 +152,7 @@
 
 ---
 
-#### WI-1B-1 token 计数 scatter 收敛  [flag: unified_token_count 默认 False（口径统一部分）+ 纯重构部分无需 flag | 优先级 P0 | 工作量 M]
+#### WI-1B-1 token 计数 scatter 收敛  [**不挂 flag**（决策③方案B，2026-06-22）：直接统一到 count_text_tokens（中文友好口径）；非字节 BC，靠强回归 + 真机验收兜底 | 优先级 P0 | 工作量 M]
 
 - **现状**：统一入口 `backend/deskpet/agent/tokens.py:62 count_text_tokens` / `:99 count_messages_tokens` 已存在。复核后（见上「token 计数现状审计」表）**残留 6 处裸估算**，分布在三套口径：
   - **`main.py` 三处 `/3.5`**：`:3520` `_approx_tokens`（persona/总览）、`:3579`（`mem_total_chars/3.5`，memory 块）、`:3630`（`total_chars/3.5`，history）。均喂 `_compute_context_breakdown`（`main.py:3523`，调用点 `:3552` 等），驱动前端「context 占用饼图 / 圈圈」。`/3.5` 对 CJK 低估 ~3–4 倍。
@@ -159,33 +160,31 @@
   - **`metrics.py:267` `len(block)//4`**：仅离线 memory eval 指标（`WI-M0.2`/PRD D11 口径），非运行时热路径，影响小但口径不一致。
   - （已收敛、本 WI 不动：context_compressor.py:700 / persona.py:127 / memory.py:438 / preference_profile.py:42 / token_budget.py estimate_tokens —— 这些已委托 `tokens.py`，但内部仍是 `//4` 加权口径。）
 - **问题**：**三套口径并存**（`tokens.py` 的 `_weighted_chars//4` vs `main.py` 的 `/3.5` vs `skill/metrics` 的裸 `//4`），收敛不彻底。`main.py` 三处尤其关键——让**前端圈圈数字**与真实 token 占用偏差大（中文会话尤甚），既误导用户「圈圈满不满」，又与 compaction 触发口径（`tokens.count_messages_tokens`）打架。
-- **改法（分两批，按 BC 性质拆）**：
-  - **批 1 —— 纯口径统一到 `tokens.count_text_tokens`（行为会变，挂 flag `unified_token_count`）**：
+- **改法（分两批，按 BC 性质拆 —— 决策③方案B：两批都直接改，不挂 flag）**：
+  - **批 1 —— 纯口径统一到 `tokens.count_text_tokens`（会改数字：`/3.5`→中文加权口径，行为会变）→ 直接改 + 强回归测试 + 真机 windows-mcp 确认压缩时机变化无害**：
     - `main.py:3520` `_approx_tokens` 委托统一入口（与 persona.py/memory.py 同模式）；`:3579`/`:3630` 两处把 `mem_total_chars/3.5`、`total_chars/3.5` 改为对各自文本调 `count_text_tokens`（注意 `:3579` 现在按累加 char 数算，需改成对拼好的 mem 文本调用，或对各 cat/subj/val 分别 count 再求和）。
     - `skill.py:221,261`（及 `:164`）把 `len(...)//_CHARS_PER_TOKEN` 改为 `count_text_tokens(...)`；`:218` 的 `max_chars = per_skill_max_tokens * _CHARS_PER_TOKEN` 是反向截断换算，保留 `_CHARS_PER_TOKEN` 做粗略 char 预算即可（截断点会随口径变，见 BC 警示）。
     - `metrics.py:267` 改 `from deskpet.agent.tokens import count_text_tokens; return max(1, count_text_tokens(block))`；同步改 `:243` docstring「1 token ≈ 4 chars」→「委托 tokens.count_text_tokens（CJK-aware）」。
-    - flag `unified_token_count` OFF（出厂默认）→ 各处沿用旧 `/3.5`、`//4` 估算（字节级 BC）；ON → 全走 `tokens.py`。
+    - **不挂 flag**（决策③方案B）：直接统一到 `count_text_tokens`，不留 `unified_token_count` 开关。非字节级 BC，安全网 = 强回归测试（断言 CJK 不再低估）+ 真机 windows-mcp 验收「压缩触发时机变化无害」。
     - 推荐委托模板（main.py，签名不变 `text: str | None`，调用点零改动）：
       ```python
       def _approx_tokens(text: str | None) -> int:
           if not text:
               return 0
-          if not _features.unified_token_count:        # flag OFF → 旧口径，字节 BC
-              return max(1, int(len(text) / 3.5))
           from deskpet.agent.tokens import count_text_tokens
-          return count_text_tokens(text)
+          return count_text_tokens(text)        # 直接统一口径（决策③方案B，不挂 flag）
       ```
-  - **批 2 —— 纯重构等价替换（同口径 `//4`，无行为变，无需 flag）**：把 `skill.py`/`metrics.py` 现有的 `len//4` 收口到一个**与 tokens.py 启发式同口径**的 helper（仍 `//4` 但走单一函数），消除「裸 magic number 散落」。此批结果数值与旧值一致（字节 BC），可直接合，不挂 flag。
-    - ⚠️ 注意：批 2 只在「不引入 CJK 加权」前提下成立；一旦换成 `count_text_tokens`（含 CJK×4 加权）就属批 1（行为变）。两批不要混。
+  - **批 2 —— 纯等价重构（同口径 `//4`→`//4` 合并，本就无行为变化）→ 直接做**：把 `skill.py`/`metrics.py` 中尚未并入批1、仍是裸 `len//4` magic number 的散落点收口到单一 helper（仍 `//4`，数值与旧值一致），消除散落。此批本就无行为变化，直接做。
+    - ⚠️ 注意：批 2 仅指「不引入 CJK 加权、纯合并 magic number」的等价重构；一旦换成 `count_text_tokens`（含 CJK×4 加权）就属批 1（行为变）。两批不要混。
   - 顺手清 `memory.py:446-448` 的重复 `if not text` 死代码（非功能，可选）。
-- **BC 警示（关键）**：**统一口径会改变中文会话的 token 估值数字**（CJK 上升到真实值）→ 这会**影响压缩触发时机**（breakdown 估值变大可能提前/推迟触发判断）、**改变 skill slice 的截断点**（`per_skill_max_tokens` 换算后实际放进的字数变少）。这**不是字节级 BC**。所以：
-  - ① 口径统一部分（批 1）**挂 flag `unified_token_count` 默认 False**：OFF 时所有点沿用旧 `/3.5`、`//4`（字节 BC）；ON 时全走 `tokens.py`。
-  - ② 或拆「纯重构等价替换」（`//4`→`//4` 同口径，BC，批 2）与「口径统一」（`/3.5`→CJK-aware，行为变，挂 flag，批 1）两类，分别合入。
+- **BC 警示（关键）**：**统一口径会改变中文会话的 token 估值数字**（CJK 上升到真实值）→ 这会**影响压缩触发时机**（breakdown 估值变大可能提前/推迟触发判断）、**改变 skill slice 的截断点**（`per_skill_max_tokens` 换算后实际放进的字数变少）。这**不是字节级 BC**。处置（决策③方案B，2026-06-22）：
+  - ① **不挂 flag**：批 1 直接统一到 `count_text_tokens`，不留 `unified_token_count` 开关。数字变准是正收益（权威值仍是 relay usage）。
+  - ② 非字节级 BC 的安全网 = **强回归测试**（断言 OFF/ON 等价路线取消后，CJK 文本估值接近真实、不再 `/3.5` 低估）+ **真机 windows-mcp 验收**「压缩触发时机变化无害」。批 2 是纯等价重构（`//4`→`//4`），本就字节 BC。
   - ③ 函数签名/调用点不动；权威值始终是 relay 的 `usage.input_tokens`（圈圈/breakdown 只是显示估值）。
 - **测试点**：
-  - 单测文件 `backend/tests/test_agent_tokens.py`（已存在，`:17` CJK 不可低估、`:38` 断言 compressor `_approx_tokens`）→ 新增 `test_main_approx_tokens_flag_off_legacy`（OFF：`main._approx_tokens` 仍 = `len/3.5`，字节 BC）+ `test_main_approx_tokens_flag_on_cjk_aware`（ON：中文文本接近字符数，不再 `len/3.5`）。
-  - 新增 `test_skill_tokens_flag_off_unchanged` / `test_metrics_l3_tokens_flag_on_cjk_aware`：分别断言 OFF 等价旧 `//4`、ON 中文不低估到 1/4。
-  - 真机 windows-mcp（flag ON）：开桌宠 → 中文对话几轮 → 点圈圈 gauge 打开 ContextBreakdownModal → 截图核对「memory/system」段 token 数 vs `last_usage_prompt_tokens` 不再出现「估值远小于真实」的离谱偏差。
+  - 单测文件 `backend/tests/test_agent_tokens.py`（已存在，`:17` CJK 不可低估、`:38` 断言 compressor `_approx_tokens`）→ 新增**强回归** `test_main_approx_tokens_cjk_aware`（统一后：`main._approx_tokens` 对中文文本接近字符数，不再 `len/3.5` 低估）。
+  - 新增**强回归** `test_skill_tokens_cjk_aware` / `test_metrics_l3_tokens_cjk_aware`：断言 skill/metrics 路径中文不再低估到 1/4。（不挂 flag，故无 OFF/ON 双路对照，直接断言统一后口径正确。）
+  - 真机 windows-mcp（统一后）：开桌宠 → 中文对话几轮 → 点圈圈 gauge 打开 ContextBreakdownModal → 截图核对「memory/system」段 token 数 vs `last_usage_prompt_tokens` 不再出现「估值远小于真实」的离谱偏差，且压缩触发时机变化无害。
 - **依赖**：无。
 
 ---
@@ -263,11 +262,11 @@
 
 2. **⚠️ 1B-5 ContextCompressor 构造点行号待核实**：未读到 `main.py` 中 `ContextCompressor(...)` 的实例化行（`STATUS/AgentLoop.md §7 build_agent` 提到 compressor 从 `service_context.get` 取，构造在 lifespan）。改「窗口自适应 keep」前需定位构造点确认能拿到 `model_info`。
 
-3. **1B-1 的 BC 性质（已修订判定）**：1B-1 **会改变估值数字**（CJK 上升到真实值），严格说**不是字节级 BC**——且影响**压缩触发时机 + skill slice 截断点**，不只是显示。**本轮修订已把判定从「无需 flag、直接修」改为「口径统一部分挂 flag `unified_token_count` 默认 False」**（OFF 沿用旧估算 = 字节 BC，ON 全走 tokens.py），或拆「纯重构等价替换（BC）」与「口径统一（行为变，挂 flag）」两批。**需 Lead 拍板**：是否接受这一 flag 化的渐进路线，还是直接 ON（数字变准是正收益，权威值仍是 relay usage）。
+3. **1B-1 的 BC 性质（决策③已定方案B，2026-06-22）**：1B-1 **会改变估值数字**（CJK 上升到真实值），严格说**不是字节级 BC**——且影响**压缩触发时机 + skill slice 截断点**，不只是显示。**决策已定方案B：直接统一到 `count_text_tokens`，不挂 flag（`unified_token_count` 取消）**。非字节级 BC 靠**强回归测试 + 真机 windows-mcp 验收**兜底（断言中文不再 `/3.5` 低估、压缩触发时机变化无害）。批1（会改数字）直接改 + 回归 + 真机；批2（`//4`→`//4` 纯等价重构）本无行为变化直接做。**已无 Lead 待决项。**
 
 4. **1B-1 范围已修正（之前严重低估）**：上轮误判「仅 2 处残留」。复核读码（2026-06-22）发现真实残留 **6 处**：`main.py` 三处 `/3.5`（`:3520`/`:3579`/`:3630`）+ `skill.py` 两处 `len//4`（`:221`/`:261`，另 `:164`）+ `metrics.py:267`。且口径是**三套并存**（`tokens.py` 的 `//4` 加权 vs `main.py` 的 `/3.5` vs `skill/metrics` 的裸 `//4`），收敛不彻底。**工作量从 S 上调到 M**。00-PLAN.md §2 的描述需相应校正（不是「仅 2 处」）。
 
-5. **1A 落仓库与否（对应 00-PLAN.md §7 开放问题 3）**：1A 是用户工作环境配置（CLAUDE.md 瘦身 / MCP 裁剪 / memory 治理），**不进 DeskPet 代码**。是否要把抽出来的参考文件（windows-mcp-e2e.md / codex-usage.md）规范化成 `~/.claude/knowledge-base/` 下可复用资产，还是仅给 SOP——需 Lead/用户定。
+5. **1A 落仓库（决策②已定方案B，2026-06-22）**：1A 是用户工作环境配置（CLAUDE.md 瘦身 / MCP 裁剪 / memory 治理），**不进 DeskPet 代码**。**决策已定方案B：把抽出来的参考文件（windows-mcp-e2e.md / codex-usage.md）规范化成 `~/.claude/knowledge-base/` 下（或参考 skill）的按需加载可复用资产，CLAUDE.md 只留一行指针；不只给一次性 SOP。** 已无待决项。
 
 6. **1A 工具目录 token 节省量是粗估**：~250 工具/~150 skill 的常驻 token 占用无法精确 `wc`（取决于 harness 如何序列化 deferred 目录）。「省 3–8K token」是基于「每工具名 + 部分服务器说明」的量级估算，实际需用户在 settings 改完后对比圈圈基线验证。
 

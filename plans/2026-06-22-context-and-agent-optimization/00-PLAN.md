@@ -161,8 +161,12 @@
 1. ✅ **「圈圈」侧重** → **两层都做**：1A（Claude Code 环境瘦身，先做，立竿见影）+ 1B（DeskPet 运行时精修，跟进）。
 2. ✅ **方向二范围** → **全做 P0~P3**：4 真缺口（OH-4/CC-2/OC-1/OC-2）新建 + 已实现项点亮 + 低优先项（OH-3/CC-3/CC-5/TG-2）也做，一个对标点不漏。
 3. ✅ **TG-1 任务概念** → **方案 A**：新建 `goal_task_create` 工具 + 把 `task_graph_tools` 三件套（list/update/新 create）从「仅 teammate」提升为主 agent 全局可见；TaskGraphStore DAG+依赖+持久化已就绪，最贴近 cc-haha Task 工具族。已固化进 02 文档 TG-1。
-4. 🟡 **1A 是否落仓库**（次要，实施时定）：CLAUDE.md 瘦身 / MCP 裁剪 默认写成 repo 内可复用 SOP + `.mcp.json`/settings 建议，不强制脚本化。
-5. 🟡 **1B-1 token 收敛 BC**（实施时定）：默认挂 flag `unified_token_count`（OFF=旧口径字节 BC），ON 走统一口径；纯等价重构（//4→//4）部分不挂 flag 直接做。
+4. ✅ **已建能力默认点亮（决策①，更激进）**：
+   - **HM-1 自我纠错 = 全档默认开**（structured_reflection / verify_gate 非 off）——含陪伴档。
+   - **OH-2 偏好衰减 = 默认开**（pref_decay=True）；**硬前置**：用户「pin/忘记某条偏好」入口**必须与衰减同一批上线**（否则桌宠自动淡忘而用户无法保留）。
+   - **TG-1 goal_mode = 仍默认手动**（不全局默认开，长目标档手动启用）。
+5. ✅ **1A 落地（决策②）→ 方案 B**：CLAUDE.md 抽出的长段规范化成**按需加载的可复用资产**（`~/.claude/knowledge-base/` 或参考 skill），CLAUDE.md 只留一行指针；不只给一次性 SOP。所有项目/新机器复用，圈圈瘦身长期不反弹。
+6. ✅ **1B-1 token 收敛（决策③）→ 方案 B（直接改，不挂 flag）**：统一到中文友好口径 `count_text_tokens`，修「中文被低估→压缩偏晚」隐患；纯等价重构（//4→//4）本就无行为变化直接做；会改数字的部分直接改 + **强回归测试 + 真机 windows-mcp 确认压缩时机变化无害**。原拟的 `unified_token_count` flag **取消**。
 
 ---
 

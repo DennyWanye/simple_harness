@@ -48,13 +48,14 @@
 - 依赖：无。
 - 工作量预估：S（若只接 graph 路）/ 0（删除）。
 
-#### WI-OH-2 PROFILE 人格半衰期  [flag: 已有 memory.v2.persona_inject | 优先级 P2（决定开关 + 补 Pin/Forget 入口，机制已实现）| 对标: openhuman B3]
+#### WI-OH-2 PROFILE 人格半衰期  [flag: 已有 memory.v2.persona_inject；**pref_decay 默认开=True（决策①，2026-06-22）** | 优先级 P2（机制已实现；**默认开 pref_decay** + 补 Pin/Forget 入口，pin 入口为硬前置）| 对标: openhuman B3]
 - 对标点：偏好按 class 半衰期 7-90 天衰减 + Pin/Forget + 注入 system prompt（README §2.2）。
 - DeskPet 现状：**核心已实现**。① 衰减：`backend/deskpet/memory/facts.py:57 _CATEGORY_DECAY`（profile 永不衰减 / preference≈200d / goal≈200d / decision≈1y / constraint 最慢）+ `daily_decay()`(facts.py:905)。② Pin：`facts.py:882 set_pinned()` + schema `pinned` 列（`memory_v2_schema.py:102`、`schema_v2_migrator.py:37`），pinned 行跳衰减（facts.py:907 `AND pinned=0`）。③ 注入：`backend/deskpet/agent/assembler/components/preference_profile.py`（PreferenceProfileComponent，priority=85，📌 标记 Pin 置顶，读 preference/profile/constraint，**严禁谄媚措辞**）。
 - 改法（已实读核实：`preference_memory.py:68 pref_decay=False` 默认关，:115 已支持 pin，:169+ 已有 decay/pinned 逻辑，`test_pin_and_pref_decay.py` 已覆盖 → **机制都在，只剩开关 + 用户入口决策**）：
-  1. **决定是否默认开 `pref_decay`**：`PreferenceMemory.__init__(..., pref_decay=False)`（preference_memory.py:68）衰减逻辑已实现（:169+）且有测试，不是「重写 JSON decay」，仅是出厂默认值产品决策（默认 off→某档默认 on）。
-  2. **暴露用户层 Pin/Forget 入口**：底层 pin（preference_memory.py:115 + facts.py:882 `set_pinned()`）已就绪，缺的是**对话式入口** —— 用户说「记住我喜欢 X / 别再提 Y」→ 触发 pin/forget。新增轻量工具 `memory_pin(key, action)` 注册进 `tools/registry.py`，或在意图分类里加规则路由。
-- BC 保证：`pref_decay` 默认维持 False（OFF=现状字节一致）；pin 工具 OFF 时不注册（registry 无此工具名 → 字节一致）。
+  1. **默认开 `pref_decay=True`（决策①已定，2026-06-22）**：`PreferenceMemory.__init__(..., pref_decay=False)`（preference_memory.py:68）出厂默认值改为 **True**。衰减逻辑已实现（:169+）且有测试，不是「重写 JSON decay」，仅改出厂默认。
+  2. **暴露用户层 Pin/Forget 入口（pin 为硬前置，必须与衰减同一批上线）**：底层 pin（preference_memory.py:115 + facts.py:882 `set_pinned()`）已就绪，缺的是**对话式入口** —— 用户说「记住我喜欢 X / 别再提 Y」→ 触发 pin/forget。新增轻量工具 `memory_pin(key, action)` 注册进 `tools/registry.py`，或在意图分类里加规则路由。
+- **⚠️ 依赖 / 验收硬前置（决策①）**：默认开 `pref_decay` **必须与「用户 pin/忘记某条偏好」的对话式入口同一批上线**。否则桌宠会自动淡忘偏好，而用户无法保留想留的偏好（衰减开了但没有「钉住」的逃生口 = 用户体验倒退）。验收门：pref_decay 默认 ON 的那次交付，必须同时包含可用的 pin（钉住跳衰减）+ forget（主动遗忘）入口并真机验证。两者不可拆批分别上线。
+- BC 保证：**注意决策①已定 `pref_decay` 默认翻 True（非字节 BC）** —— 默认行为变（偏好开始衰减），靠强回归 + 真机验收兜底，且受 pin 硬前置约束（见上）。pin 工具未注册时不出现在 registry（字节一致），但本决策要求 pin 入口与衰减同批上线，故出厂态 = 衰减开 + pin 入口在。
 - 测试点：**扩展现有 `backend/tests/test_pin_and_pref_decay.py`**（加「默认开 pref_decay 后衰减生效」+「pin 后跳衰减」case，勿新建重复文件）+ `test_preference_profile_component.py`（已有 ⚠️）；真机：对桌宠说「记住我用 neovim」→ 重启 → 下轮 prompt 含 `📌 [preference] 编辑器: neovim`（grep `preference_profile_injected`）。
 - 依赖：无。
 - 工作量预估：M。
@@ -89,7 +90,7 @@
 > 对标：`research/hermes-agent/README.md` §3（agentic JSON-mode / 技能自创触发器）。
 > **读码核实：HM-1 机制已实现（默认 off），但发现 1 处 dead config（`ephemeral_subagent_model` 未生效）需修**；HM-2 有独立 LOCKED plan。
 
-#### WI-HM-1 agentic JSON-mode 自我纠错闭环  [flag: 已有 structured_reflection + verify_gate.mode | 优先级 P2（**机制已实现默认 off**；点亮决策 + 修 dead config + 清 stale 注释）| 对标: hermes 借鉴1]
+#### WI-HM-1 agentic JSON-mode 自我纠错闭环  [flag: structured_reflection + verify_gate.mode **默认 ON（全档默认开，含陪伴档；决策①，2026-06-22）** | 优先级 P2（机制已实现；**改默认值为全档开** + 修 dead config + 清 stale 注释）| 对标: hermes 借鉴1]
 - 对标点：强制产出 `error_analysis / execution_critique / task_replanning` 结构化字段，verify 不过时由 replan 驱动自动重试，而非报错给用户（hermes README §3(2)）。
 - DeskPet 现状：✅ **已完整实现**（与主纲假设的「校验不过就停」**矛盾**——读码推翻该假设）：
   - `backend/deskpet/agent/reflection.py:26 StructuredReflection`（5 段：error_analysis/execution_critique/task_replanning/next_action/confidence）+ `_REFLECTION_INSTRUCTION`(reflection.py:48) 强制 JSON 输出 + `parse_reflection` 3 级 fallback。
@@ -101,10 +102,10 @@
 - 现状定性：机制在 `verify_gate.mode != "off"` 时可用，**默认 off**；无 subagent 时 `make_ephemeral_verifier(None)` → VerifyGate 保守失败（BC），非「生产可用」。措辞从「已完整实现」收为「机制已实现，默认 off」。
 - 改法：**不新建主闭环**。真正待办：
   1. **修 dead config**：让 `main.py:936` 在构造 `_ephemeral_llm` 时按 `verifier_cfg.ephemeral_subagent_model` 选模型（若该模型对应 provider 不存在则 fallback 主 LLM 并 log warning）。否则配置项形同虚设。
-  2. **出厂默认值决策**：`structured_reflection` 默认 False、`verify_gate.mode` 默认 "off"（self-audit §2「已建未点亮」）。Lead 定夺是否在某档（如 code 模式 / 长 goal）默认点亮，或保持 opt-in。
+  2. **出厂默认值（决策①已定，2026-06-22）：全档默认开** —— 把 `structured_reflection` 默认 False→**True**、`verify_gate.mode` 默认 "off"→**非 off**（如 "ephemeral"/"on"），**所有档位默认开，含陪伴档**（companion / code / 长 goal 一律开）。不再保持 opt-in。落地需配套 dead config 修复（见第 1 点），确保 ephemeral 救援真有可用模型。
   3. **可观测补全**：`verify_replan_stagnant` 已埋点（agent_loop.py:1482），补 `verify_exhausted` / `ephemeral_pass` 的 metrics_sink 计数，进 1B-2 dashboard。
   4. **清理过时注释**：删/改 `verify_gate.py:12` 仍写「stub 留 WI-T2.4b」的 docstring 行（实现已落地，注释误导后人）。纯文档/注释清理，无行为变化。
-- BC 保证：两 flag 维持默认 OFF = 现状字节一致（已有惯例）；dead config 修复仅在 `verify_gate.mode != "off"` 路径生效，OFF 时不触达。
+- BC 保证：**注意决策①已定全档默认开（非字节 BC）** —— 出厂值从 OFF 翻 ON 后，默认行为会变（verify 守门 + reflection 介入），靠强回归 + 真机验收兜底，不再以「维持 OFF = 字节一致」为基线。若需保守灰度，可临时保留 OFF→ON 的切换能力做回归对照，但**最终出厂值 = 全档开**。dead config 修复在 `verify_gate.mode != "off"` 路径生效（全档开后即默认触达）。
 - 测试点：**扩展现有 `backend/tests/test_build_agent_verify_wiring.py`**（加「按 ephemeral_subagent_model 选模型」断言）+ `test_goal_loop_integration.py` / `test_goal_checker.py`（ephemeral 真实现已覆盖，勿新建 stub 测试）。真机：给桌宠一个「生成 PPT」目标，故意让首轮虚报完成 → 观察 verify 拦截 → reflection JSON → 重试真生成（grep `ephemeral_rescued` / `verify_exhausted` + receipt 落盘）。
 - 依赖：无。
 - 工作量预估：S（修 dead config + 点亮决策 + 观测 + 清注释；主闭环已实现）。
@@ -234,7 +235,8 @@
   2. **（A 路）新建 `goal_task_create`（+ 可选 `goal_task_get`）工具**：schema + handler 与现有 `goal_task_list/update` 同风格放 `tools/task_graph_tools.py`，handler 调 `task_graph_store.create(..., depends_on=...)`。
   3. **（A 路）可见性提升接线**：把三件套从「仅 teammate 可见」提升到「主 agent 全局可调」 —— 接线点 `tools/registry.py`（全局注册）vs `team/teammate_tools.py`（teammate 专属）。
   4. **边界澄清 + 清过期注释（非「补落库」）**：明确 **SessionGoalStore(内存热路径权威，goal_store.py:75 _goals) vs session_db.session_goals(持久化镜像) 的职责边界**（已分层非冲突，无 source-of-truth 之争）；**清 `goal_store.py:11-12` 那段「v1 不持久化」过期注释**（实现已落 `bind_persistence/persist/load_persisted`）；persist 钩子集中（统一状态变更点触发 `persist_*`，避免多处手动调漏调致镜像漂移）。
-- BC 保证：`goal_mode` 默认 False → goal_tasks/session_goals 表**永不建**（session_db.py R-T5）= 字节基线；新 task 工具 OFF 时不注册（registry 无此工具名 → 字节一致）。
+- **goal_mode 仍默认手动（决策①区分，2026-06-22）**：与 HM-1（全档默认开）/ OH-2（pref_decay 默认开）不同，**`goal_mode` 不全局默认开，维持默认 False（手动开启）**。goal 任务图是重能力，按需手动启用，不出厂默认开。
+- BC 保证：`goal_mode` 默认 False（手动）→ goal_tasks/session_goals 表**永不建**（session_db.py R-T5）= 字节基线；新 task 工具 OFF 时不注册（registry 无此工具名 → 字节一致）。
 - 测试点：**扩展现有 `backend/tests/test_goal_*.py` / `test_goal_store_persistence.py`**（goal 持久化往返已覆盖，勿重建）；A 路补 `test_goal_task_create_tool.py`（create→list 往返 + 主 agent 可调断言）+ 集中 persist 钩子的镜像同步断言（加进 `test_goal_store_persistence.py`）。真机：设长 goal → 桌宠用 `goal_task_create` 建带依赖的任务 → 重启 → 任务图与依赖仍在。
 - 依赖：✅ 无（设计决策已定方案 A，2026-06-22）。
 - 工作量预估：**M-L**（A 路：create+get 工具从零建 + 可见性提升接线 + persist 钩子集中 + 清注释；存储/持久层已有）。
@@ -256,7 +258,11 @@
 2. **★ TG-1 派发前必须由 Lead 拍板「主 agent 用哪套任务概念」（唯一真·设计决策）**。已实读确认三套并存：`team_task_*`(TeamStore,有 create)/`goal_task_list+update`(TaskGraphStore,仅 teammate,无 create)/`GoalStore`(goal 文本)。方案 A（提升 TaskGraphStore 三件套 + 新建 create，DAG 最强）vs B（复用 team_task_*，无 DAG 依赖语义）。推荐 A，但 create 需从零建 + 暴露接线 → 工作量 M-L。**未拍板不进实现。** goal_store(内存权威) vs session_goals(持久镜像) 职责已厘清为分层非冲突；goal 持久化已落库（删去原「补落库」待办），仅余清 `goal_store.py:11-12` 过期注释 + persist 钩子集中。
 3. **🐛 HM-1 发现 1 处真 bug：`ephemeral_subagent_model` dead config**。`config.py:271`（默认 "haiku"，:608 有白名单校验）本意给 ephemeral 救援用专用模型，但 `main.py:936-938` 直接复用 `local_llm or cloud_llm`，**从未读该配置** → 写了校验、永不消费。需修（按配置选模型 + fallback）。除此之外自我纠错闭环代码层无缺口（`make_ephemeral_verifier`/`main.py:936` 注入/`agent_loop.py:1492` 调用/:1633 日志俱在），措辞从「已完整实现」改为「机制已实现、默认 off」。另遗留 `verify_gate.py:12` 过时「stub」docstring，纯注释清理。HM-1 工作量 **S**。
 4. **CC-1 确认已实现（含 compaction 后重挂），无接线工作 —— 推翻 R1「重挂是伪缺口」结论**。已实读 + 测试确认：`agent_loop.py:2212 _remount_skills()`（compaction 后 re-inline skill 正文，:946 真调用，main.py:885 传 skill_loader）+ `test_deskpet_skill_remount_after_compaction.py` 全套覆盖。R1 误判为「伪缺口/不会发生」，**本轮以实读为准更正**：重挂机制确实存在并已接线。CC-1 计 0（仅可选强匹配调优）。
-5. **flag 出厂默认值是产品决策**。HM-1（structured_reflection / verify_gate.mode）、OH-2（pref_decay）、TG-1（goal_mode）等大量能力「已建未点亮」。哪些在哪个档（companion / code / 长 goal）默认点亮，是产品体验 vs BC 风险的权衡，需 Lead/用户拍板（延续「字节级契约 + flag 渐进点亮」惯例）。
+5. **flag 出厂默认值（决策①已拍板，2026-06-22）**。三处定调：
+   - **HM-1（structured_reflection / verify_gate.mode）= 全档默认开**（含陪伴档；companion / code / 长 goal 一律开）。
+   - **OH-2（pref_decay）= 默认开（True）+ pin 入口硬前置**（衰减与 pin/forget 对话式入口必须同一批上线，否则桌宠自动淡忘而用户无法保留偏好）。
+   - **TG-1（goal_mode）= 仍默认手动**（不全局默认开，重能力按需启用）。
+   注：HM-1 / OH-2 翻 ON 属非字节级 BC，靠强回归 + 真机验收兜底（延续「能力已建、出厂值由产品决策」惯例，但此三项已无 Lead 待决）。
 6. **前端现状未读** ⚠️。TG-2（审批聚合）、OC-2（进度面板）、OH-2（Pin 入口）涉及 `tauri-app/src/` 前端，本次只读了后端，前端实现度待核实后才能精确定工作量。
 7. **CC-4 不引入通用 hook**。DeskPet 运行时无 hook 且不应加（单机桌宠过度工程）。已有 verify-gate end_turn 守门即 Stop-hook 等价物，CC-4 主要是文档化 + 确认无遗漏，几乎无新代码。
 8. **测试纪律：勿新建重复测试**。`test_goal_store_persistence.py` / `test_pin_and_pref_decay.py` / `test_deskpet_skill_remount_after_compaction.py` 均已存在；相关 WI 一律「扩展现有文件 + 加 case」，不新建同名/同域文件。
