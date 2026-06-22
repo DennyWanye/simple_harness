@@ -35,13 +35,24 @@
 | `backend/deskpet/agent/assembler/components/memory.py:438` `_approx_tokens` | 委托 `count_text_tokens`（注意 `:446-448` 有重复 `if not text` 死代码） | ✅ 已收敛（有微瑕） |
 | `backend/deskpet/agent/assembler/components/preference_profile.py:42` `_approx_tokens` | 委托 `count_text_tokens` | ✅ 已收敛 |
 
-**❗ 仍是裸估算、未走统一口径（1B-1 真正要收的点）**：
-| 文件:行 | 现状代码 | 影响 |
-|---|---|---|
-| `backend/main.py:3512` `_approx_tokens` | `return max(1, int(len(text) / 3.5))`（纯 `len/3.5`，对 CJK 低估 ~3–4 倍） | 喂 `_compute_context_breakdown`（`main.py:3523`，§3552 等），驱动前端「context 占用饼图 / 圈圈」估值 → **圈圈数字本身偏差大**，与真实 compaction 触发口径不一致。这正好和 1A 的「圈圈」诉求重叠。 |
-| `backend/deskpet/memory/eval/metrics.py:267` | `return max(1, len(block) // 4)`（裸 `len//4`，CJK 低估 ~4 倍） | 仅 memory eval 指标（`WI-M0.2`/PRD D11 离线评测口径），非运行时热路径，影响小但口径不一致。 |
+**❗ 仍是裸估算、未走统一口径（1B-1 真正要收的点）—— 复核后清单（2026-06-22 逐行读码）**：
 
-> 结论：1B-1 的实际工作量比 00-PLAN.md 设想的小——绝大多数 assembler/compressor/budget 点**已经收敛**。真正残留只有 **2 处**：`main.py:3512`（重要，关联圈圈）+ `metrics/eval`（次要）。
+> ⚠️ **修正之前的「仅 2 处」误判**：上轮只点了 `main.py` + `metrics` 两处，复核后发现 ① `main.py` 的 `/3.5` 实际是 **3 处**（persona/memory/history 各一），② 还漏了 **skill.py 的 `len//_CHARS_PER_TOKEN`（2–3 处）**。真正残留是 **6 处**（不含已收敛但口径仍 `//4` 的存量）。下表为全口径候选清单，已标注「裸残留 / 已收敛」状态，避免再误判。
+
+| 文件:行 | 在算什么 | 现状口径 | 状态 |
+|---|---|---|---|
+| `backend/main.py:3520` `_approx_tokens` | context 环 persona / 总览 | `len/3.5` | ❗ 裸残留 |
+| `backend/main.py:3579` | memory 块（`mem_total_chars`） | `mem_total_chars/3.5` | ❗ 裸残留 |
+| `backend/main.py:3630` | history（`total_chars`） | `total_chars/3.5` | ❗ 裸残留 |
+| `backend/deskpet/agent/assembler/components/skill.py:221,261`（另 `:164`） | skill 正文 / slice | `len//_CHARS_PER_TOKEN`(=`//4`) | ❗ 裸残留 |
+| `backend/deskpet/memory/eval/metrics.py:267` | memory eval block（离线指标） | `len//4` | ❗ 裸残留（次要，非热路径） |
+| `backend/deskpet/agent/context_compressor.py:700` `_approx_tokens`（`:322`/`:388` 调用） | 压缩输入/输出计费 | 委托 `count_text_tokens` | ✅ 已收敛 |
+| `backend/deskpet/agent/assembler/components/persona.py:127` `_approx_tokens` | persona slice | 委托 `count_text_tokens` | ✅ 已收敛 |
+| `backend/deskpet/agent/assembler/components/memory.py:438` `_approx_tokens` | memory slice | 委托 `count_text_tokens` | ✅ 已收敛（`:446-448` 有重复 `if not text` 死代码） |
+| `backend/deskpet/agent/assembler/components/preference_profile.py:42` `_approx_tokens` | preference slice | 委托 `count_text_tokens` | ✅ 已收敛 |
+| `backend/agent/token_budget.py` `estimate_tokens`（`:162-163`） | budget heuristic | 委托 `count_messages_tokens` | ✅ 已收敛（仅 `:21` docstring 还写「`len/4` heuristic」，需同步改文案） |
+
+> **关键事实（口径不一致已是既成事实，不是「都低估」那么简单）**：统一入口 `tokens.py` 用 `_weighted_chars//4`（CJK×4 加权），但 `main.py` 三处用 `len/3.5`、`skill.py`/`metrics` 用 `len//4` —— **三套口径并存**。即使是已收敛点也是 `//4` 加权口径，与 main.py 的 `/3.5` 仍不一致。所以 1B-1 不是「补 2 个漏」，而是**统一口径 + 收尾 6 处裸残留**，工作量从 S 上调到 **M**。
 
 ---
 
@@ -140,29 +151,41 @@
 
 ---
 
-#### WI-1B-1 token 计数 scatter 收敛  [flag: 无需 flag（纯口径修正，幂等）| 优先级 P0]
+#### WI-1B-1 token 计数 scatter 收敛  [flag: unified_token_count 默认 False（口径统一部分）+ 纯重构部分无需 flag | 优先级 P0 | 工作量 M]
 
-- **现状**：统一入口 `backend/deskpet/agent/tokens.py:62 count_text_tokens` / `:99 count_messages_tokens` 已存在；绝大多数点已收敛（见上「token 计数现状审计」表）。**仅剩 2 处裸估算**：
-  - `backend/main.py:3512` `_approx_tokens(text)` → `return max(1, int(len(text) / 3.5))`（纯 `len/3.5`，CJK 低估 3–4 倍）。被 `_compute_context_breakdown`（`main.py:3523`，调用点 `:3552` 等多处）使用，驱动前端「context 占用饼图 / 圈圈」。
-  - `backend/deskpet/memory/eval/metrics.py:267` → `return max(1, len(block) // 4)`（裸 `len//4`）。仅离线 memory eval 指标用。
-- **问题**：这 2 处与运行时压缩/预算口径（CJK-aware）不一致。`main.py:3512` 尤其关键——它让**前端圈圈数字**与真实 token 占用偏差大（中文会话尤甚），既误导用户「圈圈满不满」，又与 compaction 触发口径（`tokens.count_messages_tokens`）打架。
-- **改法**：
-  - `main.py:3512` `_approx_tokens` 改为委托统一入口（与 persona.py/memory.py 同模式）：
-    ```python
-    def _approx_tokens(text: str | None) -> int:
-        if not text:
-            return 0
-        from deskpet.agent.tokens import count_text_tokens
-        return count_text_tokens(text)
-    ```
-    签名不变（`text: str | None`），调用点（`:3552` 等）零改动。
-  - `metrics.py:267` 把 `len(block) // 4` 改为 `from deskpet.agent.tokens import count_text_tokens; return max(1, count_text_tokens(block))`。注意改完 `:243` 那句 docstring「1 token ≈ 4 chars」也要更新成「委托 tokens.count_text_tokens（CJK-aware）」。
+- **现状**：统一入口 `backend/deskpet/agent/tokens.py:62 count_text_tokens` / `:99 count_messages_tokens` 已存在。复核后（见上「token 计数现状审计」表）**残留 6 处裸估算**，分布在三套口径：
+  - **`main.py` 三处 `/3.5`**：`:3520` `_approx_tokens`（persona/总览）、`:3579`（`mem_total_chars/3.5`，memory 块）、`:3630`（`total_chars/3.5`，history）。均喂 `_compute_context_breakdown`（`main.py:3523`，调用点 `:3552` 等），驱动前端「context 占用饼图 / 圈圈」。`/3.5` 对 CJK 低估 ~3–4 倍。
+  - **`skill.py` 两处（另 `:164`）`len//_CHARS_PER_TOKEN`**（`_CHARS_PER_TOKEN=4`，`:38`）：`:221` skill 正文、`:261` skill slice。裸 `//4`，CJK 低估。
+  - **`metrics.py:267` `len(block)//4`**：仅离线 memory eval 指标（`WI-M0.2`/PRD D11 口径），非运行时热路径，影响小但口径不一致。
+  - （已收敛、本 WI 不动：context_compressor.py:700 / persona.py:127 / memory.py:438 / preference_profile.py:42 / token_budget.py estimate_tokens —— 这些已委托 `tokens.py`，但内部仍是 `//4` 加权口径。）
+- **问题**：**三套口径并存**（`tokens.py` 的 `_weighted_chars//4` vs `main.py` 的 `/3.5` vs `skill/metrics` 的裸 `//4`），收敛不彻底。`main.py` 三处尤其关键——让**前端圈圈数字**与真实 token 占用偏差大（中文会话尤甚），既误导用户「圈圈满不满」，又与 compaction 触发口径（`tokens.count_messages_tokens`）打架。
+- **改法（分两批，按 BC 性质拆）**：
+  - **批 1 —— 纯口径统一到 `tokens.count_text_tokens`（行为会变，挂 flag `unified_token_count`）**：
+    - `main.py:3520` `_approx_tokens` 委托统一入口（与 persona.py/memory.py 同模式）；`:3579`/`:3630` 两处把 `mem_total_chars/3.5`、`total_chars/3.5` 改为对各自文本调 `count_text_tokens`（注意 `:3579` 现在按累加 char 数算，需改成对拼好的 mem 文本调用，或对各 cat/subj/val 分别 count 再求和）。
+    - `skill.py:221,261`（及 `:164`）把 `len(...)//_CHARS_PER_TOKEN` 改为 `count_text_tokens(...)`；`:218` 的 `max_chars = per_skill_max_tokens * _CHARS_PER_TOKEN` 是反向截断换算，保留 `_CHARS_PER_TOKEN` 做粗略 char 预算即可（截断点会随口径变，见 BC 警示）。
+    - `metrics.py:267` 改 `from deskpet.agent.tokens import count_text_tokens; return max(1, count_text_tokens(block))`；同步改 `:243` docstring「1 token ≈ 4 chars」→「委托 tokens.count_text_tokens（CJK-aware）」。
+    - flag `unified_token_count` OFF（出厂默认）→ 各处沿用旧 `/3.5`、`//4` 估算（字节级 BC）；ON → 全走 `tokens.py`。
+    - 推荐委托模板（main.py，签名不变 `text: str | None`，调用点零改动）：
+      ```python
+      def _approx_tokens(text: str | None) -> int:
+          if not text:
+              return 0
+          if not _features.unified_token_count:        # flag OFF → 旧口径，字节 BC
+              return max(1, int(len(text) / 3.5))
+          from deskpet.agent.tokens import count_text_tokens
+          return count_text_tokens(text)
+      ```
+  - **批 2 —— 纯重构等价替换（同口径 `//4`，无行为变，无需 flag）**：把 `skill.py`/`metrics.py` 现有的 `len//4` 收口到一个**与 tokens.py 启发式同口径**的 helper（仍 `//4` 但走单一函数），消除「裸 magic number 散落」。此批结果数值与旧值一致（字节 BC），可直接合，不挂 flag。
+    - ⚠️ 注意：批 2 只在「不引入 CJK 加权」前提下成立；一旦换成 `count_text_tokens`（含 CJK×4 加权）就属批 1（行为变）。两批不要混。
   - 顺手清 `memory.py:446-448` 的重复 `if not text` 死代码（非功能，可选）。
-- **BC 保证**：此项**改变估值数字**（CJK 会上升到真实值），不是字节级 BC——但它是**口径修正非行为开关**。BC 边界：①不改任何函数签名/调用点；②ASCII-only 文本结果与旧 `len/3.5` 接近（统一口径 ASCII ≈3.5char/token，数值同量级）；③不影响真实出站 prompt（圈圈只是显示估值，权威值仍是 relay 的 `usage.input_tokens`）。所以无 flag——它是 bug-fix 性质的口径统一，不该藏在 flag 后。
+- **BC 警示（关键）**：**统一口径会改变中文会话的 token 估值数字**（CJK 上升到真实值）→ 这会**影响压缩触发时机**（breakdown 估值变大可能提前/推迟触发判断）、**改变 skill slice 的截断点**（`per_skill_max_tokens` 换算后实际放进的字数变少）。这**不是字节级 BC**。所以：
+  - ① 口径统一部分（批 1）**挂 flag `unified_token_count` 默认 False**：OFF 时所有点沿用旧 `/3.5`、`//4`（字节 BC）；ON 时全走 `tokens.py`。
+  - ② 或拆「纯重构等价替换」（`//4`→`//4` 同口径，BC，批 2）与「口径统一」（`/3.5`→CJK-aware，行为变，挂 flag，批 1）两类，分别合入。
+  - ③ 函数签名/调用点不动；权威值始终是 relay 的 `usage.input_tokens`（圈圈/breakdown 只是显示估值）。
 - **测试点**：
-  - 单测文件 `backend/tests/test_agent_tokens.py`（已存在，`:17` CJK 不可低估、`:38` 断言 compressor `_approx_tokens`）→ 新增 `test_main_approx_tokens_cjk_aware`：断言 `main._approx_tokens("一千个汉字...")` 接近字符数（CJK≈1token/字），不再是 `len/3.5`。
-  - 新增 `test_metrics_l3_tokens_cjk_aware`（`backend/tests/` 下）：断言 `metrics` L3 token 估算对中文不低估到 1/4。
-  - 真机 windows-mcp：开桌宠 → 中文对话几轮 → 点圈圈 gauge 打开 ContextBreakdownModal → 截图核对「memory/system」段 token 数 vs `last_usage_prompt_tokens` 不再出现「估值远小于真实」的离谱偏差。
+  - 单测文件 `backend/tests/test_agent_tokens.py`（已存在，`:17` CJK 不可低估、`:38` 断言 compressor `_approx_tokens`）→ 新增 `test_main_approx_tokens_flag_off_legacy`（OFF：`main._approx_tokens` 仍 = `len/3.5`，字节 BC）+ `test_main_approx_tokens_flag_on_cjk_aware`（ON：中文文本接近字符数，不再 `len/3.5`）。
+  - 新增 `test_skill_tokens_flag_off_unchanged` / `test_metrics_l3_tokens_flag_on_cjk_aware`：分别断言 OFF 等价旧 `//4`、ON 中文不低估到 1/4。
+  - 真机 windows-mcp（flag ON）：开桌宠 → 中文对话几轮 → 点圈圈 gauge 打开 ContextBreakdownModal → 截图核对「memory/system」段 token 数 vs `last_usage_prompt_tokens` 不再出现「估值远小于真实」的离谱偏差。
 - **依赖**：无。
 
 ---
@@ -240,9 +263,9 @@
 
 2. **⚠️ 1B-5 ContextCompressor 构造点行号待核实**：未读到 `main.py` 中 `ContextCompressor(...)` 的实例化行（`STATUS/AgentLoop.md §7 build_agent` 提到 compressor 从 `service_context.get` 取，构造在 lifespan）。改「窗口自适应 keep」前需定位构造点确认能拿到 `model_info`。
 
-3. **1B-1 的 BC 性质**：1B-1 **会改变估值数字**（CJK 上升到真实值），严格说**不是字节级 BC**。本文档判定它是「口径 bug-fix」不该藏 flag。**需 Lead 拍板**：是否接受「圈圈/breakdown 数字对中文会话变大（变准）」这一可见变化，还是要藏 flag 渐进。倾向：直接修（数字变准是正收益，权威值仍是 relay usage）。
+3. **1B-1 的 BC 性质（已修订判定）**：1B-1 **会改变估值数字**（CJK 上升到真实值），严格说**不是字节级 BC**——且影响**压缩触发时机 + skill slice 截断点**，不只是显示。**本轮修订已把判定从「无需 flag、直接修」改为「口径统一部分挂 flag `unified_token_count` 默认 False」**（OFF 沿用旧估算 = 字节 BC，ON 全走 tokens.py），或拆「纯重构等价替换（BC）」与「口径统一（行为变，挂 flag）」两批。**需 Lead 拍板**：是否接受这一 flag 化的渐进路线，还是直接 ON（数字变准是正收益，权威值仍是 relay usage）。
 
-4. **1B-1 范围比 00-PLAN.md 设想小**：读码发现 assembler/compressor/budget 的 token 点**已基本收敛**，真正残留仅 2 处。00-PLAN.md §2「把残留裸 `len//4`/`_approx_tokens` 全路由」的描述需校正为「仅 main.py:3512 + metrics.py:267 两处」。是否仍单列为 P0 WI，请 Lead 定（工作量已很小，可并入其他 P0）。
+4. **1B-1 范围已修正（之前严重低估）**：上轮误判「仅 2 处残留」。复核读码（2026-06-22）发现真实残留 **6 处**：`main.py` 三处 `/3.5`（`:3520`/`:3579`/`:3630`）+ `skill.py` 两处 `len//4`（`:221`/`:261`，另 `:164`）+ `metrics.py:267`。且口径是**三套并存**（`tokens.py` 的 `//4` 加权 vs `main.py` 的 `/3.5` vs `skill/metrics` 的裸 `//4`），收敛不彻底。**工作量从 S 上调到 M**。00-PLAN.md §2 的描述需相应校正（不是「仅 2 处」）。
 
 5. **1A 落仓库与否（对应 00-PLAN.md §7 开放问题 3）**：1A 是用户工作环境配置（CLAUDE.md 瘦身 / MCP 裁剪 / memory 治理），**不进 DeskPet 代码**。是否要把抽出来的参考文件（windows-mcp-e2e.md / codex-usage.md）规范化成 `~/.claude/knowledge-base/` 下可复用资产，还是仅给 SOP——需 Lead/用户定。
 

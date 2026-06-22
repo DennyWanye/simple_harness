@@ -17,17 +17,17 @@
 | OH-1 五路混合检索 | 🔴 缺口 | ✅ **已实现**：`retriever.py` 4 路 RRF + `enhanced_retriever.py` 叠 facts/rerank/chunk/rewrite | **降级/删除**（见 3.1） |
 | OH-2 人格半衰期 | 🔴 缺口 | ✅ **核心+Pin 都已实现**：`facts.py:_CATEGORY_DECAY`+`set_pinned`(882)+`preference_profile.py` 注入 | **降级**（仅剩 PreferenceMemory JSON 无衰减 + 对话式 Pin/Forget 入口） |
 | OH-3 写入分级 | 🔴 缺口 | 🟡 **部分**：`session_db.py:258 skip_embed` 已有（FP-4 WI-3.4）；缺统一 `put_doc_light` 语义 + 高频流接线 | 保留（缩小范围） |
-| OH-4 记忆 nudge | 🔴 缺口 | ❌ **真缺口**：`memory/reflection.py` 无周期性 self-curation nudge | **保留** |
-| HM-1 自我纠错闭环 | 🔴 缺口 | ✅ **已完整实现**：`reflection.py:StructuredReflection`(error_analysis/critique/replan)+`agent_loop.py:1395+` verify 守门+stagnation+ephemeral 升级 | **降级为「点亮+调参」**（见 3.2） |
+| OH-4 记忆 nudge | 🔴 缺口 | ❌ **真缺口（已实读确认）**：`memory/reflection.py` 无周期性 self-curation nudge | **保留** |
+| HM-1 自我纠错闭环 | 🔴 缺口 | ✅ **已完整实现（含 ephemeral 真 LLM 救援）**：`reflection.py:StructuredReflection`(error_analysis/critique/replan)+`agent_loop.py:1395+` verify 守门+stagnation+`verify_gate.py:564 make_ephemeral_verifier`(真 async LLM)+`main.py:936` 真机注入+`agent_loop.py:1492` 真调用 | **确认已实现**（仅点亮+观测+清 stale 注释，见 3.2） |
 | HM-2 技能自创可执行 | 🔴 缺口 | 🟡 已有独立 LOCKED plan | **引用对齐**（见 3.2） |
-| CC-1 skills 三级披露 | 🔴 缺口 | 🟡 **大部分已实现**：`skill.py` auto_disclosure(embedding 强匹配+body inline+预算)+`loader.py:read_body` | 保留**仅 compaction-rehang 一项** |
-| CC-2 plan mode 只读权限 | 🔴 缺口 | ❌ **真缺口**：`code_mode/` 无 read_only/plan_mode 权限切换 | **保留** |
+| CC-1 skills 三级披露 | 🔴 缺口 | ✅ **三级已实现 + 正文在受保护 system 分区（compaction 安全）**：`skill.py` auto_disclosure(embedding 强匹配+body inline+预算+LRU)+`loader.py:read_body`；compaction 只摘要 non-system middle、verbatim 保留 system | **降级为可选增强**（「重挂」是伪缺口，见 3.3） |
+| CC-2 plan mode 只读权限 | 🔴 缺口 | ❌ **真缺口（已实读确认）**：`code_mode/state.py:36-45` 无 plan/read_only 字段；`permissions/gate.py` 无「计划期全禁写」模式；auto_mode 反而全允许 | **保留** |
 | CC-3 `/verify`+`/run` skill | 🔴 缺口 | 🟡 后端 verify-gate 已有；缺面向真机 GUI 的 bundled skill + 启动配方 | 保留 |
 | CC-4 hooks exit-2 | 🔴 缺口 | ❌ **DeskPet 运行时无 hook 机制**（codingsys 的 hook 是 Claude-Code 侧，与桌宠运行时无关） | **保留（但重新定位，见 3.3）** |
 | CC-5 auto-memory | 🔴 缺口 | 🟡 **部分**：`facts.py` 自动抽取+`preference_profile` 注入 = 事实级 auto-memory；缺「踩坑/配方」类 learnings | 保留（缩小范围） |
-| OC-1 depth 计数 | 🟠 补强 | 🟡 **结构守门已有**（`task_kinds.py:_strip_forbidden` depth=1），缺**显式数值 depth 字段** | 保留（小） |
-| OC-2 背压指标 | 🟠 补强 | 🟡 **scheduler.snapshot() 已有**+progress_sink；缺累计指标/导出 | 保留（小） |
-| TG-1 Task 任务图持久化 | 🟠 | ✅ **已实现**：`agent/task_graph.py:TaskGraphStore`(DAG+claim_ready)+`session_db.py` `goal_tasks`/`session_goals` 落库 | **降级**（仅剩 goal_store.py 内存态 + 子代理读写暴露） |
+| OC-1 depth 计数 | 🟠 补强 | 🟡 **真缺口（已实读确认）**：`task_kinds.py:28-39,122-124` 仅靠剥 spawn 类工具保证 depth=1，无显式 depth 数值/上界 | 保留（小） |
+| OC-2 背压指标 | 🟠 补强 | 🟡 **真缺口（已实读确认）**：`subagent_scheduler.py:49-50` 仅瞬时 _running/_queued + snapshot，无累计 peak/total_queued/total_rejected | 保留（小） |
+| TG-1 Task 任务图持久化 | 🟠 | 🟡 **DAG 已实现且持久化，但 create 工具不存在、list/update 仅 teammate 可见**：`task_graph.py:TaskGraphStore`(DAG+claim_ready)+`session_db.py` `goal_tasks`/`session_goals` 落库；`task_graph_tools.py:8-13` 仅 `goal_task_list/update` 两件、不全局注册 | **加大**（新建 create 工具 + 提升可见性，见 3.5） |
 | TG-2 前端审批聚合 | 🟠 | 🟡 后端 `permissions/gate.py` 完整；前端聚合视图待核 ⚠️ | 保留 |
 
 > **给 Lead 的取舍**：方向二真正「值得新建」的高杠杆缺口收敛为 **OH-4（记忆 nudge）/ CC-2（plan 只读权限）/ CC-4（运行时 hook 或等价确定性门）/ OH-3 与 OC-1/OC-2 的补强**。其余多是「调参点亮 + 补观测 + 补对话入口」。这与 2026-06-21 子代理并发 plan、FP-4/FP-5 已落地高度重叠。
@@ -89,21 +89,22 @@
 > 对标：`research/hermes-agent/README.md` §3（agentic JSON-mode / 技能自创触发器）。
 > **读码核实：HM-1 已完整实现**（远超调研档假设）；HM-2 有独立 LOCKED plan。
 
-#### WI-HM-1 agentic JSON-mode 自我纠错闭环  [flag: 已有 structured_reflection + verify_gate.mode | 优先级 P2（点亮+调参，非新建）| 对标: hermes 借鉴1]
+#### WI-HM-1 agentic JSON-mode 自我纠错闭环  [flag: 已有 structured_reflection + verify_gate.mode | 优先级 P2（点亮+调参+清 stale 注释，**确认已实现非缺口**）| 对标: hermes 借鉴1]
 - 对标点：强制产出 `error_analysis / execution_critique / task_replanning` 结构化字段，verify 不过时由 replan 驱动自动重试，而非报错给用户（hermes README §3(2)）。
 - DeskPet 现状：✅ **已完整实现**（与主纲假设的「校验不过就停」**矛盾**——读码推翻该假设）：
   - `backend/deskpet/agent/reflection.py:26 StructuredReflection`（5 段：error_analysis/execution_critique/task_replanning/next_action/confidence）+ `_REFLECTION_INSTRUCTION`(reflection.py:48) 强制 JSON 输出 + `parse_reflection` 3 级 fallback。
   - `backend/agent/agent_loop.py:1395-1520+` VerifyGate end_turn 守门：verify 不过 → 回灌 reflection schema system message + continue（自动重试，`max_verify_nudges` 默认 2）；**WI-2.2 stagnation 检测**（agent_loop.py:1450，difflib ratio>0.85 判 replan 抄袭 → 提前升级）；**ephemeral 子代理救援**（agent_loop.py:1494 `consult_ephemeral_subagent`）；`verify_exhausted` 终态。
   - `verify_gate.py:57 GoalAlignment`（WI-2.3：重述原目标 vs 客观产物对照，防 verifier 漂移）+ `agent_loop.py:1419` 把 goal_text 穿进 check。
   - `backend/deskpet/agent/external_evaluator.py` + `goal_checker.py`（独立 evaluator，对标「外部验证>自我验证」）。
+- ✅ **ephemeral 救援已是真实现（非 stub）**（已实读核实）：`verify_gate.py:564-600 make_ephemeral_verifier()` 真包 async LLM call + `main.py:936-947` 真机注入 + `agent_loop.py:1492-1506` 真调用 + `agent_loop.py:1633` `ephemeral_rescued` 日志。**整条闭环代码层无缺口。** 唯一 stale：`verify_gate.py:12` 顶部注释仍写「ephemeral_verifier_subagent stub（接 LLM 留 WI-T2.4b）」，实际早已接。
 - 改法：**不新建**。真正待办：
   1. **出厂默认值决策**：`structured_reflection` 默认 False、`verify_gate.mode` 默认 "off"（self-audit §2「已建未点亮」）。Lead 定夺是否在某档（如 code 模式 / 长 goal）默认点亮，或保持 opt-in。
   2. **可观测补全**：`verify_replan_stagnant` 已埋点（agent_loop.py:1482），补 `verify_exhausted` / `ephemeral_pass` 的 metrics_sink 计数，进 1B-2 dashboard。
-  3. ⚠️ 核实 `consult_ephemeral_subagent` 是否仍是 stub（verify_gate.py 顶注释提到 stub 留 WI-T2.4b）—— 若仍 stub，补真 LLM 实现是唯一代码级缺口。
+  3. **清理过时注释**：删/改 `verify_gate.py:12` 仍写「stub 留 WI-T2.4b」的 docstring 行（实现已落地，注释误导后人）。纯文档/注释清理，无行为变化。
 - BC 保证：两 flag 维持默认 OFF = 现状字节一致（已有惯例）。
-- 测试点：已有 `backend/tests/test_build_agent_verify_wiring.py` / `test_goal_loop_integration.py` / `test_goal_checker.py`；补 `test_ephemeral_subagent.py`（若实现 ephemeral）。真机：给桌宠一个「生成 PPT」目标，故意让首轮虚报完成 → 观察 verify 拦截 → reflection JSON → 重试真生成（grep `verify_exhausted` 不出现 + receipt 落盘）。
+- 测试点：已有 `backend/tests/test_build_agent_verify_wiring.py` / `test_goal_loop_integration.py` / `test_goal_checker.py`（ephemeral 真实现已有覆盖，无需新建 stub 测试）。真机：给桌宠一个「生成 PPT」目标，故意让首轮虚报完成 → 观察 verify 拦截 → reflection JSON → 重试真生成（grep `ephemeral_rescued` / `verify_exhausted` + receipt 落盘）。
 - 依赖：无。
-- 工作量预估：S（点亮+观测）/ M（若需补 ephemeral 真实现）。
+- 工作量预估：S（点亮+观测+清注释；闭环已完整实现，无代码级缺口）。
 
 #### WI-HM-2 技能自创产可执行 function call  [flag: 见对齐 plan | 优先级 P3 | 对标: hermes 借鉴2]
 - 对标点：完成多步目标后按触发器（≥5 工具调用/从错误恢复/被纠正/非显然 workflow）自评固化成**可复用、可直接调用**的技能（hermes README §3(3)）。
@@ -124,14 +125,16 @@
 
 > 对标：`research/claude-code/README.md` §2.2(skills 三级)/§2.8(plan mode)/§2.3(hooks)/§2.2(/verify·/run)/§2.9(auto-memory)。
 
-#### WI-CC-1 skills 三级渐进披露（补 compaction 重挂）  [flag: 已有 skills.auto_disclosure.enabled | 优先级 P2（仅补一项）| 对标: claude 4.1]
-- 对标点：启动只载 name+description（字符预算）→ 触发载正文 → 附件按需 → **compaction 后按预算重挂最近调用的 skill**（claude README §2.2）。
-- DeskPet 现状：🟡 **三级核心已实现**：`backend/deskpet/agent/assembler/components/skill.py:46 SkillComponent` —— ① 一级：desc list（priority 85 never-cut，skill.py:147）；② 二级：`auto_disclosure.enabled`(默认 False) 开时 embedding 强匹配（`skill_matcher.match_async`，阈值 0.55）→ body inline（`loader.read_body`，skill.py:214）+ 预算填充（budget_tokens 默认 8000 / per_skill 2000 / LRU 淘汰）；③ 附件：`loader.py:574 invoke_script` 按需。**唯一真缺口**：**compaction 后按预算重挂**（self-audit §1「compaction 根本没接 AgentLoop / `should_compress` 未调」⚠️ 需复核 ContextManager 现状，主纲 1B 说 compaction 默认开，故此处需重新核实是否已接）。
-- 改法：⚠️ **先核实** `backend/agent/context_manager.py` 压缩后是否丢 skill body。若丢：压缩时记录「本会话已 auto-disclose 的 skill 名 + 最近调用时间」，压缩后在 SkillComponent 下一次 provide 时按 `compaction_rehang_budget`（默认 25K，对齐 claude）重挂 top-N 最近 skill 的 body（每个截前 5000 token）。挂在 `ContextManager` 压缩钩子，不散进 agent_loop。
-- BC 保证：auto_disclosure OFF 时本就无 body 段，重挂逻辑空转；flag `skills.compaction_rehang`（默认 False）OFF = 不重挂 = 现状。
-- 测试点：`backend/tests/test_skill_compaction_rehang.py` —— 模拟压缩后断言 skill body 仍在 bundle；真机：长对话触发压缩后，先前 auto-load 的技能正文仍生效。
-- 依赖：依赖 1B 的 compaction 接线现状核实（⚠️ 与主纲 §1B 表述可能冲突，须对齐）。
-- 工作量预估：S-M。
+#### WI-CC-1 skills 三级渐进披露（已实现；可选增强：compaction 后扩 inline 预算）  [flag: 已有 skills.auto_disclosure.enabled | 优先级 P3（可选增强，非缺口）| 对标: claude 4.1]
+- 对标点：启动只载 name+description（字符预算）→ 触发载正文 → 附件按需 → compaction 后技能正文仍生效（claude README §2.2）。
+- DeskPet 现状：✅ **三级渐进披露大部分已实现，且正文在受保护分区（compaction 安全）**（已实读核实，**推翻调研档「需 compaction 后重挂」的假设**）：
+  - **三级披露**：`backend/deskpet/agent/assembler/components/skill.py:46 SkillComponent` —— ① 一级：desc list（priority 85 never-cut，skill.py:147）；② 二级：`auto_disclosure.enabled`(默认 False) 开时 embedding 强匹配（`skill_matcher.match_async`，阈值 0.55）→ body inline（`loader.read_body`，skill.py:214）+ 预算填充（budget_tokens 默认 8000 / per_skill 2000 / LRU 淘汰）；③ 附件：`loader.py:574 invoke_script` 按需。
+  - **关键事实——「compaction 后重挂」解决的是一个不会发生的问题**：skill 正文由 SkillComponent 注入到**系统提示（role=system 分区）**；compaction（`context_compressor.py:_partition` 455-480 + `agent_loop.py:858-864`）**把所有 role=system 整段 verbatim 保留、只摘要 non-system 的 middle**。grep `reattach/remount/on_compact` 全 0 命中。**结论：skill 正文在受保护分区，compaction 永不压它 → 无需「重挂」机制。**
+- 改法：**去掉「compaction 后重挂」这一伪缺口**（该缺口不存在）。**仅保留一条可选低优先增强**（非缺口）：compaction 释放掉 non-system middle 预算后，下一轮 assemble 允许 SkillComponent **提高 body inline 量**（如临时上调 `per_skill` / `budget_tokens`，把更多强匹配技能正文 inline）。属「有了更多预算就多披露」的锦上添花，不是修复。
+- BC 保证：auto_disclosure OFF 时本就无 body 段；增强挂 flag `skills.post_compaction_inline_boost`（默认 False）OFF = 现状字节一致。
+- 测试点（仅增强落地时需要）：`backend/tests/test_skill_inline_boost.py` —— 断言 compaction 后 assemble 的 skill body inline 量随释放预算上升；真机：长对话触发压缩后，强匹配技能正文仍在 system 分区生效（本就成立，作回归保护）。
+- 依赖：无（compaction 行为已实读确认，不再依赖 1B 接线核实）。
+- 工作量预估：0（不做增强）/ S（仅做可选 inline-boost）。
 
 #### WI-CC-2 plan mode 只读权限模式  [flag: code_mode.plan_read_only 默认 False | 优先级 P1 | 对标: claude 4.2]
 - 对标点：规划期作为**独立只读权限模式**，物理禁 Edit/Write，非仅流程提示；批准时五选一审批闸（claude README §2.8）。
@@ -209,19 +212,20 @@
 > 对标：`research/cc-haha/README.md` §2.2(Task 工具族)/§2.3(集中式审批)。
 > **读码核实：TaskGraphStore 已实现且持久化；本节缩为「补 LLM 工具暴露 + 前端聚合」。**
 
-#### WI-TG-1 Task 任务图持久化（补 goal_store 落库 + 子代理读写暴露）  [flag: agent.goal_mode 默认 False | 优先级 P2（降级）| 对标: cc-haha 4.1]
+#### WI-TG-1 Task 任务图：补 create 工具 + 提升可见性 + 一致性加固  [flag: agent.goal_mode 默认 False | 优先级 P2 | 对标: cc-haha 4.1]
 - 对标点：`TaskCreate/Update/List/Get` 带依赖 + 跨子 agent 共享状态 + 落盘，替代扁平 todo（cc-haha README §2.2）。
-- DeskPet 现状：✅ **任务图核心已实现**（与主纲假设的「缺持久化」**矛盾**）：
-  - `backend/deskpet/agent/task_graph.py:TaskGraphStore` —— DAG（`_has_cycle` DFS 防环，task_graph.py:58）+ `create` / `claim_ready`（原子认领，用 SessionDB `_write_lock`）/ `update`（done 触发 `session_goals` 进度回填）。
-  - **持久化已有**：`backend/deskpet/memory/session_db.py` 的 `goal_tasks` 表（session_db.py:1094+，专用 `ensure` 守 flag-OFF 字节基线 R-T5）+ `session_goals` 表（session_db.py:991+）。`TaskNode`(task_graph.py:29) 含 `depends_on`/`claimed_by`/`result` = 跨 agent 共享态。
-  - **唯一仍内存态**：`backend/deskpet/agent/goal_store.py:4 SessionGoalStore`（goal_store.py:11 明注「Persistence deliberately NOT implemented v1 ... TODO: SessionDB persistence留 v2」）—— 这是「当前活跃 goal 文本」的轻量内存缓存，**但** session_db 的 `session_goals` 已能落库（疑两套并存 ⚠️ 需 Lead 厘清 goal_store vs session_goals 职责）。
-- 改法：真缺口收敛为：
-  1. **goal_store → SessionDB 落库**：让 `SessionGoalStore` 读写 `session_db.session_goals`（已有表+CRUD，session_db.py:1004 INSERT / 1042 SELECT），重启不丢（self-audit §2「第一块多米诺」）。⚠️ 先厘清 goal_store 与 session_goals 是否重复、谁是 source of truth。
-  2. **暴露 LLM 工具**：把 TaskGraphStore 包成 `task_create/task_update/task_list/task_get` 注册进 `tools/registry.py`，供主 agent + 子代理读写（cc-haha Task 工具族）。当前 TaskGraphStore 是内部类，⚠️ 核实是否已有工具封装（grep `task_create` 未在本次扫到 → 疑未暴露）。
-- BC 保证：`goal_mode` 默认 False → goal_tasks/session_goals 表**永不建**（session_db.py:991 注释 R-T5）= 字节基线；task 工具 OFF 时不注册。
-- 测试点：已有 `backend/tests/test_goal_*.py`；补 `test_goal_store_persistence.py`（重启后 goal 仍在）+ `test_task_tools.py`（LLM 工具往返）。真机：设长 goal → 重启桌宠 → goal 仍活跃、任务图仍在。
-- 依赖：无（表已存在）。
-- 工作量预估：M（落库接线 + 工具封装；核心存储已有）。
+- DeskPet 现状（已实读核实，**工作量曾被低估**）：
+  - ✅ **DAG 存储 + 持久化已实现**（保留这点）：`backend/deskpet/agent/task_graph.py:TaskGraphStore` —— DAG（`_has_cycle` DFS 防环，task_graph.py:58）+ `create` / `claim_ready`（原子认领，用 SessionDB `_write_lock`）/ `update`（done 触发 `session_goals` 进度回填）；落库走 `session_db.py` 的 `goal_tasks` 表（:1094+，专用 `ensure` 守 flag-OFF 字节基线 R-T5）+ `session_goals` 表（:991+）。`TaskNode`(task_graph.py:29) 含 `depends_on`/`claimed_by`/`result` = 跨 agent 共享态。
+  - ❌ **create 工具根本不存在**：`task_create`/`TaskCreate` 全 backend **0 命中**。`backend/deskpet/tools/task_graph_tools.py:8-13` 明说这些工具**不全局注册**，只在有 TaskGraphStore+goal_id 时 append 到 **teammate** 工具集；且只有 `goal_task_list`(:31) + `goal_task_update`(:43) **两个**，**无 create**。创建节点只能内部 `session_db.create_goal_task`(:1098) 走 goal 流程，**未暴露成 LLM 工具**。
+  - **goal 状态分层（非冲突，已厘清）**：goal 文本以**内存为权威**（`goal_store.py:75 _goals dict`，:196 注释「永读内存最新权威」），SQLite `session_goals` 表是**持久化镜像**（`bind_persistence`/`persist`/`load_persisted`；goal_mode OFF 不建表=BC）；`goal_tasks` 表是另一维度的**子任务 DAG**，与 session_goals 不重叠、不冲突。一致性靠多处手动 `persist_*` 调用，**易漏**。
+- 改法（工作量上调，create 工具需从零建）：
+  1. **新建 `goal_task_create` 工具**（schema + handler，与现有 `goal_task_list/update` 同风格放 `tools/task_graph_tools.py`，handler 调 `task_graph_store.create(..., depends_on=...)`）—— 这是当前**完全缺失**的一环。
+  2. **决定 task_graph_tools 三件套（create/list/update）的可见性**：是否从「仅 teammate 子代理可见」提升到「主 agent 也能全局调」。接线点：`task_graph_tools.py`（工具定义）+ `tools/registry.py`（全局注册）/ `team/teammate_tools.py`（teammate 专属）—— Lead 拍板暴露范围（主 agent 全局 vs 维持 teammate-only）。
+  3. **一致性加固（定性为「加固」，非冲突/去重）**：内存权威 + SQLite 镜像分层已清晰，无 source-of-truth 之争；待办是**集中 persist 钩子**（统一在状态变更点触发 `persist_*`），避免当前多处手动调用漏调导致镜像漂移。
+- BC 保证：`goal_mode` 默认 False → goal_tasks/session_goals 表**永不建**（session_db.py:991 注释 R-T5）= 字节基线；新 task 工具 OFF 时不注册（registry 无此工具名 → 字节一致）。
+- 测试点：已有 `backend/tests/test_goal_*.py`；补 `test_goal_task_create_tool.py`（新建工具往返：create→list 见到该节点）+（若提升可见性）主 agent 可调断言 + `test_persist_hook.py`（状态变更后镜像必同步）。真机：设长 goal → 桌宠用 `goal_task_create` 建带依赖的任务 → 重启 → 任务图与依赖仍在。
+- 依赖：无（DAG 存储与持久表已存在）。
+- 工作量预估：**M-L**（create 工具从零建 + 可见性提升接线 + persist 钩子集中；存储层已有但工具/暴露层缺口比原估大）。
 
 #### WI-TG-2 前端审批 UX 聚合视图  [flag: 前端开关 ⚠️ | 优先级 P3 | 对标: cc-haha 4.2]
 - 对标点：危险命令/工具调用/agent 反问汇聚到**一个**审批入口，批量批准，主循环不打断（cc-haha README §2.3）。
@@ -236,10 +240,10 @@
 
 ## 残留风险 / 需 Lead 定夺
 
-1. **🔴 方向二大面积已实现 —— plan 范围需重定标**。HM-1（自我纠错全闭环）、OH-1（五路检索）、OH-2 核心（半衰期+Pin）、TG-1 核心（任务图+持久表）、CC-1 核心（三级披露）均**已落地**。若照主纲「都当缺口新建」会重复造轮子。**建议 Lead 把方向二重定为「点亮 flag + 补观测 + 补对话/前端入口 + 4 个真缺口」**，真缺口 = OH-4 / CC-2 / OC-1 / OC-2（+ OH-3 接线 / CC-3 skill / TG-1 落库与工具暴露 / TG-2 前端）。
-2. **goal_store.py vs session_goals 表职责重叠** ⚠️。两套「目标存储」并存（内存 SessionGoalStore + 持久 session_goals 表），TG-1 落库前必须厘清谁是 source of truth，否则双写漂移。
-3. **ephemeral_subagent 是否仍 stub** ⚠️。`verify_gate.py` 顶注释提到「ephemeral_verifier_subagent stub 留 WI-T2.4b」，但 agent_loop.py:1494 已调 `consult_ephemeral_subagent`——需核实是真实现还是 stub（影响 HM-1 工作量 S vs M）。
-4. **CC-1 compaction 接线状态自相矛盾** ⚠️。主纲 §1B 说「compaction 默认开、已完成 WI-1~6」，但 self-audit(2026-06-04) 说「compaction 根本没接 AgentLoop」。两者时间差大，CC-1 落地前**必须复核** `backend/agent/context_manager.py` 现状（决定 CC-1 是「补重挂」还是「无事可做」）。
+1. **🔴 方向二大面积已实现 —— plan 范围需重定标**。HM-1（自我纠错全闭环，含 ephemeral 真 LLM 救援）、OH-1（五路检索）、OH-2 核心（半衰期+Pin）、CC-1（三级披露 + 正文受 compaction 保护）均**已落地**；TG-1 的 DAG 存储+持久表已落地但 **create 工具/暴露层仍缺**。若照主纲「都当缺口新建」会重复造轮子。**建议 Lead 把方向二重定为「点亮 flag + 补观测 + 补对话/前端入口 + 4 个真缺口 + TG-1 工具层」**，真缺口 = OH-4 / CC-2 / OC-1 / OC-2（+ OH-3 接线 / CC-3 skill / TG-1 create 工具与暴露 / TG-2 前端）。
+2. **TG-1 工作量上调（create 工具不存在）**。已实读确认：`goal_task_create`/`TaskCreate` 全 backend 0 命中——create 工具需**从零建**；现有 `task_graph_tools.py` 仅 list/update 两件且**仅 teammate 可见**，是否提升到主 agent 全局可调需 Lead 拍板。goal_store(内存权威) vs session_goals(持久镜像) 职责**已厘清为分层非冲突**，原「source-of-truth 之争」消解，仅余 persist 钩子加固。工作量从 M 上调到 **M-L**。
+3. **HM-1 确认已实现（非缺口）**。ephemeral 救援已是真 LLM 实现（`verify_gate.py:564 make_ephemeral_verifier` + `main.py:936` 注入 + `agent_loop.py:1492` 调用 + :1633 `ephemeral_rescued` 日志），整条自我纠错闭环代码层无缺口。唯一遗留是 `verify_gate.py:12` 过时「stub」docstring，纯注释清理。HM-1 工作量定为 **S**（点亮+观测+清注释），不再有 S/M 不确定。
+4. **CC-1 从缺口改为可选增强**。已实读确认：skill 正文注入 role=system 分区，compaction（`context_compressor.py:_partition` + `agent_loop.py:858-864`）verbatim 保留 system、只摘要 non-system middle，`reattach/remount/on_compact` 0 命中——「compaction 后重挂」是**伪缺口**（不会发生）。CC-1 降为 P3 可选增强（compaction 释放预算后下一轮 assemble 多 inline 技能正文），原「复核 context_manager」前置消解。
 5. **flag 出厂默认值是产品决策**。HM-1（structured_reflection / verify_gate.mode）、OH-2、TG-1（goal_mode）等大量能力「已建未点亮」。哪些在哪个档（companion / code / 长 goal）默认点亮，是产品体验 vs BC 风险的权衡，需 Lead/用户拍板（延续「字节级契约 + flag 渐进点亮」惯例）。
 6. **前端现状未读** ⚠️。TG-2（审批聚合）、OC-2（进度面板）、OH-2（Pin 入口）涉及 `tauri-app/src/` 前端，本次只读了后端，前端实现度待核实后才能精确定工作量。
 7. **CC-4 不引入通用 hook**。DeskPet 运行时无 hook 且不应加（单机桌宠过度工程）。已有 verify-gate end_turn 守门即 Stop-hook 等价物，CC-4 主要是文档化 + 确认无遗漏，几乎无新代码。
@@ -248,7 +252,7 @@
 
 ```
 独立可并行（无依赖）:
-  OH-1(删/可选)  OH-2(降级)  OH-3  CC-1(待核compaction)  CC-2  CC-3  OC-1  OC-2  TG-2
+  OH-1(删/可选)  OH-2(降级)  OH-3  CC-1(可选增强,非缺口)  CC-2  CC-3  OC-1  OC-2  TG-1(create工具+暴露)  TG-2
 
 强依赖链:
   OH-4(记忆nudge机制) ──► CC-5(learnings = OH-4 多产一个 category + 注入)   [合并实现]
@@ -260,9 +264,9 @@
 外部 plan 对齐（不在本 plan 改代码）:
   HM-2 ──► plans/2026-06-22-skill-executable-function-call (LOCKED)
 
-前置厘清（阻塞落地）:
-  TG-1 落库 ──需先── 厘清 goal_store.py vs session_goals 职责（残留风险#2）
-  CC-1     ──需先── 复核 context_manager compaction 现状（残留风险#4）
+前置厘清（已实读消解，不再阻塞）:
+  TG-1 ── goal_store(内存权威) vs session_goals(持久镜像) 职责已厘清，分层非冲突（仅 persist 钩子加固）
+  CC-1 ── compaction 行为已实读确认（system 分区 verbatim 保留），无「重挂」缺口
 ```
 
-> 无环。真正的实现编排：先做 4 个真缺口（OH-4/CC-2/OC-1/OC-2，皆独立可并行）+ 厘清 #2/#4 两个前置；其余多为「点亮 + 观测 + 入口」，工作量小。
+> 无环。真正的实现编排：先做 4 个真缺口（OH-4/CC-2/OC-1/OC-2，皆独立可并行）；TG-1 工作量上调（create 工具从零建 + 暴露），其余多为「点亮 + 观测 + 入口」。
