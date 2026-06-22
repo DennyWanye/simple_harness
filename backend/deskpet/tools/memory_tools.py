@@ -360,6 +360,16 @@ _MEMORY_WRITE_SCHEMA: dict[str, Any] = {
                 "description": "0.0-1.0 importance. Default 0.5.",
                 "default": 0.5,
             },
+            "pinned": {
+                "type": "boolean",
+                "default": False,
+                "description": (
+                    "Pin this memory so DeskPet never lets it decay/forget. "
+                    "Set true when the user explicitly says to ALWAYS remember "
+                    "or never forget (e.g. \"记住/别忘了/永远记住 ...\"). "
+                    "Pinned facts skip the daily decay sweep."
+                ),
+            },
         },
         "required": ["text"],
     },
@@ -420,6 +430,8 @@ async def _memory_write_handle(args: dict, task_id: str) -> str:  # noqa: ARG001
     confidence = max(0.0, min(1.0, salience))
     # key 用时间戳保证唯一（旧 schema 没传 key 字段 → 自动生成）
     key = f"memory_{int(time.time() * 1000)}"
+    # WI-OH-2 path(a): pinned=True → 偏好钉住跳衰减（用户保留偏好逃生口）。
+    pinned = bool(args.get("pinned", False))
     try:
         new_id = await _facts_store.upsert(
             category=category,
@@ -435,11 +447,21 @@ async def _memory_write_handle(args: dict, task_id: str) -> str:  # noqa: ARG001
             "ok": False,
             "error": f"facts.upsert failed: {exc}",
         }, ensure_ascii=False)
+    # 钉住：daily_decay 的 `AND pinned=0` 过滤会跳过本行 → confidence 永不衰减。
+    # set_pinned 失败不让整次写入失败（fact 已落库），只标 pinned 状态。
+    pin_applied = False
+    if pinned:
+        try:
+            await _facts_store.set_pinned(int(new_id), True)
+            pin_applied = True
+        except Exception as exc:  # noqa: BLE001
+            log.warning("memory_write set_pinned(%s) failed: %s", new_id, exc)
     return json.dumps({
         "ok": True,
         "memory_id": int(new_id),
         "category": category,
         "tier": tier,
+        "pinned": pin_applied,
     }, ensure_ascii=False)
 
 

@@ -65,14 +65,15 @@ class PreferenceMemory:
         threshold: float = 0.86,
         max_entries: int = 500,
         now_fn: Callable[[], float] = time.time,
-        pref_decay: bool = False,
+        pref_decay: bool = True,
     ) -> None:
         self._path = Path(path)
         self._embed = embed_fn
         self._threshold = float(threshold)
         self._max = int(max_entries)
         self._now = now_fn
-        # WI-3.3: recency decay gate. False (default) → legacy behaviour unchanged.
+        # WI-3.3 / WI-OH-2 决策①: recency decay gate. 现默认 True（出厂开）。
+        # pinned 条目跳衰减（match 时 decay=1.0），给用户保留偏好的逃生口。
         self._pref_decay = bool(pref_decay)
         self._entries: list[dict[str, Any]] = self._load()
 

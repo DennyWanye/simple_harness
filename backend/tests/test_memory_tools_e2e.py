@@ -112,6 +112,92 @@ async def test_g3_2_write_then_search_exact_substring(
 
 
 # ----------------------------------------------------------------------
+# WI-OH-2 path(a) — memory_write pinned=True → 产生 pinned preference fact
+# 用户「记住我喜欢用 neovim，别忘了」→ LLM 调 memory_write(pinned=true)。
+# 验收：fact 落库 + pinned=1 + 跳 daily_decay（即便老化）。
+# ----------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_wi_oh2_memory_write_pinned_creates_pinned_pref_fact(
+    bound_facts: FactsStore,
+) -> None:
+    w = json.loads(
+        await memory_tools._memory_write_handle(
+            {"text": "记住我喜欢用 neovim", "pinned": True}, "t1"
+        )
+    )
+    assert w["ok"] is True, f"memory_write 应成功: {w}"
+    assert w["pinned"] is True, f"响应应标 pinned=True: {w}"
+    # tier 默认 auto → preference 类别（长期保留）
+    assert w["category"] == "preference"
+    mem_id = w["memory_id"]
+
+    # fact 行真带 pinned=1
+    row = await bound_facts.get_by_id(mem_id)
+    assert row is not None
+    assert row["pinned"] == 1, f"fact 行应 pinned=1, 实际 {row.get('pinned')}"
+
+
+@pytest.mark.asyncio
+async def test_wi_oh2_pinned_pref_fact_skips_daily_decay(
+    bound_facts: FactsStore,
+) -> None:
+    """pinned preference fact 即使老化也跳 daily_decay（用户逃生口生效）。"""
+    import time as _time
+
+    import aiosqlite
+
+    # pinned 偏好
+    w_pin = json.loads(
+        await memory_tools._memory_write_handle(
+            {"text": "永远记住我用 dvorak 键位", "pinned": True}, "t1"
+        )
+    )
+    # 非 pinned 偏好（对照组）
+    w_norm = json.loads(
+        await memory_tools._memory_write_handle(
+            {"text": "我现在在用 qwerty"}, "t2"
+        )
+    )
+    assert w_pin["pinned"] is True
+    assert w_norm["pinned"] is False
+
+    # 把两条都改成 30 天前最后召回 + 非零 decay_rate，制造衰减条件
+    stale = _time.time() - 86400 * 30
+    async with aiosqlite.connect(bound_facts._db_path) as conn:
+        await conn.execute(
+            "UPDATE facts SET last_recalled = ?, decay_rate = 0.05", (stale,)
+        )
+        await conn.commit()
+
+    await bound_facts.daily_decay()
+
+    r_pin = await bound_facts.get_by_id(w_pin["memory_id"])
+    r_norm = await bound_facts.get_by_id(w_norm["memory_id"])
+    # memory_write 默认 salience=0.5 → confidence=0.5。pinned 跳衰减 → 仍 0.5；
+    # 非 pinned 30 天衰减 → < 0.5。
+    assert r_pin["confidence"] == pytest.approx(0.5), (
+        f"pinned 偏好 confidence 应不衰减(=初始0.5)，实际 {r_pin['confidence']}"
+    )
+    assert r_norm["confidence"] < 0.5, (
+        f"非 pinned 偏好应衰减(< 初始0.5)，实际 {r_norm['confidence']}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_wi_oh2_memory_write_default_not_pinned(
+    bound_facts: FactsStore,
+) -> None:
+    """不带 pinned 参数 → 默认 False（BC，老调用方不受影响）。"""
+    w = json.loads(
+        await memory_tools._memory_write_handle({"text": "随手记一条"}, "t1")
+    )
+    assert w["ok"] is True
+    assert w["pinned"] is False
+    row = await bound_facts.get_by_id(w["memory_id"])
+    assert (row.get("pinned") or 0) == 0
+
+
+# ----------------------------------------------------------------------
 # G3.3 — bind 状态（F3 回归：默认配置下工具可用，非 not bound）
 # ----------------------------------------------------------------------
 @pytest.mark.asyncio

@@ -196,8 +196,11 @@ class MemoryV2Config:
     episodic_to_semantic: bool = False    # WI-S2.4 summary 抽 facts
     # FP-4 WI-3.1：goal / decision / constraint 类别抽取
     goal_facts: bool = False              # WI-3.1 goal/decision/constraint 记忆抽取
-    # FP-4 WI-3.3：PreferenceMemory 半衰期衰减（默认 False，不改变现行为）
-    pref_decay: bool = False              # WI-3.3 preference_memory recency decay
+    # FP-4 WI-3.3 / WI-OH-2 决策①：PreferenceMemory 半衰期衰减默认开。
+    # 桌宠自动淡忘老偏好（老条目 effective 分沉底）；pinned 偏好跳衰减。
+    # 硬前置：用户保留偏好的 pin 入口（memory_write pinned=True / memory_pin
+    # WS verb）与本默认值同批可用，确保用户有逃生口。
+    pref_decay: bool = True               # WI-OH-2 决策① 默认开（原 WI-3.3 默认 False）
     # FP-4 WI-3.4：写入分级 light 快路（默认 False）
     # False → skip_embed 强制 False，所有消息都进 L3 向量（当前行为不变）。
     # True  → 调用方可传 skip_embed=True 跳过 L3 embedding，仅走 L2（消息

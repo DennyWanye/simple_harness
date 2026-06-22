@@ -467,6 +467,54 @@ async def test_tg6_record_without_pin_param_bc(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# WI-OH-2 决策①: pref_decay 默认开 (True)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_oh2_pref_decay_default_is_true(tmp_path):
+    """PreferenceMemory 出厂默认 pref_decay=True（决策①翻转）。
+
+    不传 pref_decay → 老条目 effective 分应低于新条目（衰减真生效）。
+    """
+    from deskpet.agent.preference_memory import PreferenceMemory
+
+    pref_path = tmp_path / "pref.json"
+    vec = [1.0, 0.0, 0.0]
+    embed_fn = _make_embed_fn(vec)
+    now_ts = time.time()
+    old_ts = now_ts - 300 * 86400
+    fresh_ts = now_ts - 1
+
+    pref_path.write_text(json.dumps([
+        {"text": "old pref", "embedding": vec,
+         "label": "approved", "kind": "plan", "ts": old_ts},
+        {"text": "fresh pref", "embedding": vec,
+         "label": "approved", "kind": "plan", "ts": fresh_ts},
+    ]), encoding="utf-8")
+
+    # 关键：NOT passing pref_decay → 必须默认 True
+    pm = PreferenceMemory(pref_path, embed_fn, now_fn=lambda: now_ts)
+    assert pm._pref_decay is True, "出厂默认 pref_decay 必须为 True（决策①）"
+
+    # 衰减生效 → match 选中较新的（effective 分更高）那条
+    result = await pm.match("some pref", "plan")
+    assert result is not None
+    assert result["text"] == "fresh pref", (
+        f"衰减开启后应优先较新条目，得到 {result['text']}"
+    )
+
+
+def test_oh2_config_pref_decay_default_true():
+    """config.MemoryV2Config dataclass 默认 pref_decay=True（main.py 构造点读它）。"""
+    from config import MemoryV2Config
+
+    assert MemoryV2Config().pref_decay is True, (
+        "config.MemoryV2Config.pref_decay 出厂默认必须 True（决策①），"
+        "否则 main.py:2500 构造 PreferenceMemory 时传 False"
+    )
+
+
+# ---------------------------------------------------------------------------
 # TG-7: p4_ipc memory_pin / memory_unpin verb
 # ---------------------------------------------------------------------------
 
