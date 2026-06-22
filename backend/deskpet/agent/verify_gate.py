@@ -9,7 +9,8 @@ stub 时期已建好接口；本次升级把 stub 替换为真正逻辑：
     检测兜底；N2 默认 yaml 100% 加载正向用例覆盖）
   - VerifyGate.check 真正实现：claim 提取 + ledger 对账 + failure_count
   - CascadeExtractor: 二级 LLM fallback (LLM 实现 stub 留 WI-T2.4b)
-  - ephemeral_verifier_subagent: 第 3 次失败救援 stub（接 LLM 留 WI-T2.4b）
+  - ephemeral_verifier_subagent: 第 3 次失败救援已实现（见 make_ephemeral_verifier
+    真包 async LLM 调用）
 
 测试组对照 plans/.../01-TDD.md §B TG-9。
 """

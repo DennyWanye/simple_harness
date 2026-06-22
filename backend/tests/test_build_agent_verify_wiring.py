@@ -271,3 +271,34 @@ def test_build_agent_uses_cfg_max_verify_nudges(
         receipt_store_getter=mock_receipt_store_getter,
     )
     assert agent.max_verify_nudges == 5
+
+
+# ─── WI-HM-1: 出厂默认点亮 + VG-INVARIANT 守门 ───────────────────────
+
+
+def test_factory_default_lights_up_self_correction_loop():
+    """WI-HM-1 决策①：真 AppConfig 出厂默认 = 自我纠错闭环全档开.
+
+    verify_gate_mode='shadow' + emit_receipts=True + structured_reflection=True，
+    且 _validate_flag_invariants 不抛（VG-INVARIANT-0/1 都满足）。
+    """
+    from config import AppConfig, _validate_flag_invariants
+
+    cfg = AppConfig()
+    v = cfg.tools.verifier
+    assert v.verify_gate_mode == "shadow"
+    assert v.emit_receipts is True
+    assert v.structured_reflection is True
+    # 默认 config 必须通过 invariant 校验（不抛 ConfigError）.
+    _validate_flag_invariants(cfg)
+
+
+def test_vg_invariant_1_raises_when_mode_on_but_receipts_off():
+    """WI-HM-1 硬连锁：verify_gate_mode != 'off' 但 emit_receipts=False →
+    ConfigError VG-INVARIANT-1（否则 ledger 永远空 → 全 end_turn 阻塞）。"""
+    from config import AppConfig, ConfigError, _validate_flag_invariants
+
+    cfg = AppConfig()
+    cfg.tools.verifier.emit_receipts = False  # 违反 VG-INVARIANT-1
+    with pytest.raises(ConfigError, match="VG-INVARIANT-1"):
+        _validate_flag_invariants(cfg)

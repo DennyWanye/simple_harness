@@ -64,6 +64,14 @@ VALID_EVENTS = frozenset({
     "verify_gate_init",
     # WI-T2.6 agent_loop 触发 nudge（fake-completion 拦截事件）.
     "verify_gate_nudge_injected",
+    # WI-HM-1 自我纠错闭环观测 — agent_loop 已埋点但此前不在白名单被静默丢弃：
+    #   verify_replan_stagnant: 连续重规划无进展（stagnation 检测命中）.
+    #   verify_exhausted: 所有 nudge + ephemeral 救援层全耗尽 → 终止 turn.
+    #   ephemeral_pass / ephemeral_rescued: 第 3 次失败 ephemeral 子代理救援判定结果.
+    "verify_replan_stagnant",
+    "verify_exhausted",
+    "ephemeral_pass",
+    "ephemeral_rescued",
     # WI-B3 Companion+Code v1 /goal end_turn rebound checker invocations.
     "goal_checker_invoked",
     # WI-C1 Companion+Code v1 Stage C — agent_parallel subagent lifecycle
@@ -119,6 +127,8 @@ _ALLOWED_DETAIL_KEYS = frozenset({
     "patterns_loaded", # verify_gate_init: 加载的 ClaimPattern 数
     "session_id",      # verify_gate_nudge_injected: hash 后 sid（caller 自管脱敏）
     "nudge_count",     # verify_gate_nudge_injected: 第几次 nudge
+    # WI-HM-1 verify_exhausted detail (脱敏: bool, 无用户文本).
+    "stagnant",        # verify_exhausted: 是否因 stagnation 触发耗尽
     # WI-C1 Companion+Code v1 Stage C — agent_parallel subagent_progress
     # detail keys.
     "task_id",         # subagent_progress: caller-supplied short id

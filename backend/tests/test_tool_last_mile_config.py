@@ -63,8 +63,9 @@ def test_t1_1_no_tools_section_all_defaults(tmp_path):
     # verifier defaults
     v = tools.verifier
     assert isinstance(v, ToolsVerifierConfig)
-    assert v.emit_receipts is False
-    assert v.verify_gate_mode == "off"
+    # WI-HM-1 决策①：自我纠错闭环出厂默认点亮（原 off/False）.
+    assert v.emit_receipts is True
+    assert v.verify_gate_mode == "shadow"
     assert v.extractor_fallback_enabled is True
     assert v.ephemeral_subagent_model == "haiku"
     assert v.run_build is False

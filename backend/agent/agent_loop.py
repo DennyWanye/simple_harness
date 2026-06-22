@@ -1555,6 +1555,22 @@ class AgentLoop:
                                 )
                             except Exception as exc:  # noqa: BLE001
                                 logger.warning("ephemeral consult failed: %s", exc)
+                            # WI-HM-1: emit ephemeral 救援判定到 metrics.jsonl
+                            # （之前只 logger.info，未计数化 → 监控看不到救援率）.
+                            try:
+                                from observability.metrics_sink import (  # noqa: PLC0415
+                                    record as _eph_metric,
+                                )
+                                _eph_metric(
+                                    "ephemeral_rescued"
+                                    if ephemeral_pass else "ephemeral_pass",
+                                    {
+                                        "nudge_count": int(verify_nudges_used),
+                                        "ok": bool(ephemeral_pass),
+                                    },
+                                )
+                            except Exception:  # noqa: BLE001 — metric 失败不阻 dispatch
+                                pass
 
                         if not ephemeral_pass:
                             # WI-2.2: verify_exhausted — all layers (nudges +

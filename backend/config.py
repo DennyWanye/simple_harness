@@ -265,8 +265,14 @@ class ToolsVerifierConfig:
         永远空，所有 claim 都 unmatched，会无脑阻塞所有 end_turn。
       - ``ephemeral_subagent_model`` 缺省时默认 ``"haiku"``（N5）。
     """
-    emit_receipts: bool = False
-    verify_gate_mode: str = "off"                  # off | shadow | strict
+    # WI-HM-1 决策①：自我纠错闭环出厂默认点亮（非字节级 BC，强回归+真机兜底）。
+    # 三个默认值是一个原子改动（VG-INVARIANT-1 硬连锁见 _validate_flag_invariants）：
+    #   verify_gate_mode != "off" 必须 emit_receipts=True，否则 ledger 永远空 →
+    #   ConfigError VG-INVARIANT-1（或所有 end_turn 被无脑阻塞）。
+    # 选 shadow 而非 strict：全档开 verify 观测但非阻塞，避免 strict 在无 claim
+    # 纯闲聊误阻塞 end_turn；strict 升级留真机确认后跟进。
+    emit_receipts: bool = True
+    verify_gate_mode: str = "shadow"               # off | shadow | strict
     extractor_fallback_enabled: bool = True        # D6 二级 LLM fallback
     ephemeral_subagent_model: str = "haiku"        # D6 第 3 次失败救援模型
     run_build: bool = False                        # D7 build verifier
@@ -278,8 +284,8 @@ class ToolsVerifierConfig:
     max_verify_nudges: int = 2
     # WI-2.1 structured reflection: when True, _REFLECTION_INSTRUCTION is
     # appended to verify-gate rebound + selfcheck tier2/tier3 system messages.
-    # Default False = BC (flag-off path is byte-identical to pre-WI-2.1).
-    structured_reflection: bool = False
+    # WI-HM-1 决策①：出厂默认点亮（原 False=BC）。
+    structured_reflection: bool = True
     # WI-2.4 external evaluator: cross-persona quality judge for high-consequence
     # goals (prod off / dev on). Default False = BC (0 extra LLM calls).
     external_evaluator: bool = False
