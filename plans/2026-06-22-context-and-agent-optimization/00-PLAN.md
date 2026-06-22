@@ -98,7 +98,7 @@
 
 ### 3.1 openhuman → 记忆工程（实读后：核心已实现，补边角）
 - WI-OH-1 五路混合检索 — ✅ **已实现**（`retriever.py:226` 4 路 RRF + `enhanced_retriever.py` 叠 facts/rerank/chunk/rewrite）→ **降级为「确认默认开 + 补 freshness 权重可调」或删除**
-- WI-OH-2 PROFILE 人格半衰期 — 🟡 **核心已实现**（`facts.py:_CATEGORY_DECAY` + `set_pinned:882` + `preference_profile.py` 📌置顶注入）→ **仅补 PreferenceMemory JSON 衰减 + 对话式 Pin/Forget 入口**
+- WI-OH-2 PROFILE 人格半衰期 — 🟡 **核心已实现**（`facts.py:_CATEGORY_DECAY` + `set_pinned:882` + `preference_profile.py` 📌置顶注入）→ **默认开 pref_decay + 补 Pin/Forget 入口**（前端实读：forget 已有 `MemoryPanel.tsx` 🗑；pin 后端 `memory_pin` WS 已注册，默认走对话式路 A，**前端 0 工作量**）
 - WI-OH-3 记忆写入分级 — 🟡 部分 → 补 light 路径（高频流跳 embedding）`memory/manager.py`
 - WI-OH-4 记忆 self-curation nudge — 🔴 **真缺口**：agent_loop 周期性让 agent 自决该不该记
 
@@ -115,11 +115,11 @@
 
 ### 3.4 openclaw → 子代理调度打磨（8 模式已实现，仅余补强）
 - WI-OC-1 depth 计数真生效 — 🔴 **真缺口**（现仅「剥 spawn 类工具」守门，无显式 depth 数值上界）
-- WI-OC-2 背压/lane 指标可观测 — 🔴 **真缺口**（调度器无累计 metrics）→ 埋点 + 前端进度面板已有可承接
+- WI-OC-2 背压/lane 指标可观测 — 🟡 **前端面板已有运行中指标(N/M+计时)、缺累计指标**（前后端实读确认）：`SubagentProgressPanel.tsx` 已展示运行中 N/M+计时，但 `subagentStore.ts:14` 无累计字段、调度器无累计 metrics → 后端补 peak/total_queued/total_rejected（S）+ 前端补字段展示（S），**M**
 
 ### 3.5 cc-haha → Task 任务图 + 审批聚合
 - WI-TG-1 Task 结构化任务图 — ✅ 存储+持久化已实现（`task_graph.py:TaskGraphStore` DAG+claim_ready + `goal_store.py` bind_persistence/persist/load_persisted 已落库）→ **决策方案 A**：`task_create` 工具实际**不存在**（仅 `goal_task_list/update` 且仅 teammate 可见）→ 新建 `goal_task_create` + 提升三件套为主 agent 全局可见 + 清 `goal_store.py:11-12` 过期「v1 不持久化」注释。R2 已厘清三套任务概念
-- WI-TG-2 前端审批 UX 聚合视图 — 🟡 ⚠️ 前端实现度未读，落地前核实
+- WI-TG-2 前端审批 UX 聚合视图 — ❌ **无聚合视图（前端实读确认）**，只有散落 FIFO 单弹窗（`PermissionPopup.tsx` + `usePermissionRequests.ts:26-49` 单一 FIFO 一次一条 + `App.tsx:1777-1780`）→ 新建 `ApprovalCenterPanel`，**工作量 L**
 
 ---
 

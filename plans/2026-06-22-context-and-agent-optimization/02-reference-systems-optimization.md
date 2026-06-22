@@ -26,9 +26,9 @@
 | CC-4 hooks exit-2 | 🔴 缺口 | ❌ **DeskPet 运行时无 hook 机制**（codingsys 的 hook 是 Claude-Code 侧，与桌宠运行时无关） | **保留（但重新定位，见 3.3）** |
 | CC-5 auto-memory | 🔴 缺口 | 🟡 **部分**：`facts.py` 自动抽取+`preference_profile` 注入 = 事实级 auto-memory；缺「踩坑/配方」类 learnings | 保留（缩小范围） |
 | OC-1 depth 计数 | 🟠 补强 | 🟡 **真缺口（已实读确认）**：`task_kinds.py:28-39,122-124` 仅靠剥 spawn 类工具保证 depth=1，无显式 depth 数值/上界 | 保留（小） |
-| OC-2 背压指标 | 🟠 补强 | 🟡 **真缺口（已实读确认）**：`subagent_scheduler.py:49-50` 仅瞬时 _running/_queued + snapshot，无累计 peak/total_queued/total_rejected | 保留（小） |
+| OC-2 背压指标 | 🟠 补强 | 🟡 **前端面板已有运行中指标(N/M+计时)、缺累计指标**（前端实读确认）：`SubagentProgressPanel.tsx:117-118` 运行中 N/M + :273-274 实时计时 + :193-195 完成/排队/失败汇总，已挂消息流；后端 `subagent_scheduler.py:49-50` 仅瞬时 _running/_queued + snapshot，无累计 peak/total_queued/total_rejected | 保留（小，前后端各补累计字段） |
 | TG-1 Task 任务图持久化 | 🟠 | 🟡 **DAG + goal 持久化都已实现；存在三套任务概念**：`task_graph.py:98 TaskGraphStore`(DAG+claim_ready)+`session_db.py` `goal_tasks`/`session_goals` 落库 + `goal_store.py:139 bind_persistence`/:143/:166 goal 持久化（有 `test_goal_store_persistence.py`）。三套概念：`team_task_*`(TeamStore)/`goal_task_list+update`(TaskGraphStore,仅 teammate,无 create)/GoalStore | **先做设计决策：主 agent 用哪套**（见 3.5） |
-| TG-2 前端审批聚合 | 🟠 | 🟡 后端 `permissions/gate.py` 完整；前端聚合视图待核 ⚠️ | 保留 |
+| TG-2 前端审批聚合 | 🟠 | ❌ **无聚合视图（前端实读确认）**：后端 `permissions/gate.py` 完整；前端只有散落 FIFO 单弹窗（`PermissionPopup.tsx` 单请求三按钮 + `usePermissionRequests.ts:26-49` 单一 FIFO 队列一次只显示一条 + `App.tsx:1777-1780` 全局逐个展示），无批量审批 | 保留（新建 ApprovalCenterPanel，**L**）|
 
 > **给 Lead 的取舍**：方向二真正「值得新建」的高杠杆缺口收敛为 **OH-4（记忆 nudge）/ CC-2（plan 只读权限物理拦截）/ TG-1（A 路 create 工具 + 暴露，待 Lead 拍板用哪套任务概念）/ OH-3 接线 / OC-1·OC-2 补强**。另有 **1 处真 bug：HM-1 的 `ephemeral_subagent_model` dead config（main.py:936 未消费）**。其余多是「调参点亮 + 补观测 + 补对话入口」。CC-1（含 compaction 后重挂）已实现且有测试，无接线工作。这与 2026-06-21 子代理并发 plan、FP-4/FP-5 已落地高度重叠。
 
@@ -53,12 +53,17 @@
 - DeskPet 现状：**核心已实现**。① 衰减：`backend/deskpet/memory/facts.py:57 _CATEGORY_DECAY`（profile 永不衰减 / preference≈200d / goal≈200d / decision≈1y / constraint 最慢）+ `daily_decay()`(facts.py:905)。② Pin：`facts.py:882 set_pinned()` + schema `pinned` 列（`memory_v2_schema.py:102`、`schema_v2_migrator.py:37`），pinned 行跳衰减（facts.py:907 `AND pinned=0`）。③ 注入：`backend/deskpet/agent/assembler/components/preference_profile.py`（PreferenceProfileComponent，priority=85，📌 标记 Pin 置顶，读 preference/profile/constraint，**严禁谄媚措辞**）。
 - 改法（已实读核实：`preference_memory.py:68 pref_decay=False` 默认关，:115 已支持 pin，:169+ 已有 decay/pinned 逻辑，`test_pin_and_pref_decay.py` 已覆盖 → **机制都在，只剩开关 + 用户入口决策**）：
   1. **默认开 `pref_decay=True`（决策①已定，2026-06-22）**：`PreferenceMemory.__init__(..., pref_decay=False)`（preference_memory.py:68）出厂默认值改为 **True**。衰减逻辑已实现（:169+）且有测试，不是「重写 JSON decay」，仅改出厂默认。
-  2. **暴露用户层 Pin/Forget 入口（pin 为硬前置，必须与衰减同一批上线）**：底层 pin（preference_memory.py:115 + facts.py:882 `set_pinned()`）已就绪，缺的是**对话式入口** —— 用户说「记住我喜欢 X / 别再提 Y」→ 触发 pin/forget。新增轻量工具 `memory_pin(key, action)` 注册进 `tools/registry.py`，或在意图分类里加规则路由。
-- **⚠️ 依赖 / 验收硬前置（决策①）**：默认开 `pref_decay` **必须与「用户 pin/忘记某条偏好」的对话式入口同一批上线**。否则桌宠会自动淡忘偏好，而用户无法保留想留的偏好（衰减开了但没有「钉住」的逃生口 = 用户体验倒退）。验收门：pref_decay 默认 ON 的那次交付，必须同时包含可用的 pin（钉住跳衰减）+ forget（主动遗忘）入口并真机验证。两者不可拆批分别上线。
+  2. **暴露用户层 Pin/Forget 入口（pin 为硬前置，必须与衰减同一批上线）**（前端已实读核实）：
+     - **forget 入口前端已有**：`tauri-app/src/components/MemoryPanel.tsx:941-1060`「事实」tab 已可查看 + 🗑 删除偏好（`handleFactForget:488`，:1005-1018 遗忘按钮，test id `fact_forget_*`）。硬前置中的「forget」已满足，无需新建。
+     - **pin 入口前端缺**（搜 pin/固定/star = 0 命中），但**后端 pin 已就绪**：`facts.py:882 set_pinned` + `p4_ipc.py:56/98-101` WS 路由 `memory_pin/memory_unpin` 已注册；仅前端 `types/messages.ts` 无 `memory_pin_request/response` 定义。
+     - **pin 入口两条路**（默认走路 A，最省）：
+       - **路 A 纯对话式（推荐，前端 0 工作量）**：用户说「记住我喜欢 X」→ 后端意图路由直接调已注册的 `memory_pin` WS（无需任何前端改动），可与衰减同批上线。
+       - **路 B GUI 按钮（S）**：在 `MemoryPanel.tsx` facts 行加 pin 按钮 + 补 `types/messages.ts` 的 `memory_pin` 消息类型。
+- **依赖 / 验收硬前置（决策①，前端实读后收敛）**：默认开 `pref_decay` **必须与「用户 pin/忘记某条偏好」的入口同一批上线**。否则桌宠会自动淡忘偏好，而用户无法保留想留的偏好（衰减开了但没有「钉住」的逃生口 = 用户体验倒退）。**实读后两入口现状**：① **forget 已满足**（MemoryPanel 🗑 遗忘按钮已在）；② **pin 默认走对话式路 A（前端 0 工作量）** —— 后端 `memory_pin` WS 已注册，意图路由接上即可，与衰减同批上线。验收门：pref_decay 默认 ON 的那次交付，pin（钉住跳衰减）+ forget（主动遗忘）入口可用并真机验证。两者不可拆批分别上线。
 - BC 保证：**注意决策①已定 `pref_decay` 默认翻 True（非字节 BC）** —— 默认行为变（偏好开始衰减），靠强回归 + 真机验收兜底，且受 pin 硬前置约束（见上）。pin 工具未注册时不出现在 registry（字节一致），但本决策要求 pin 入口与衰减同批上线，故出厂态 = 衰减开 + pin 入口在。
 - 测试点：**扩展现有 `backend/tests/test_pin_and_pref_decay.py`**（加「默认开 pref_decay 后衰减生效」+「pin 后跳衰减」case，勿新建重复文件）+ `test_preference_profile_component.py`（已有 ⚠️）；真机：对桌宠说「记住我用 neovim」→ 重启 → 下轮 prompt 含 `📌 [preference] 编辑器: neovim`（grep `preference_profile_injected`）。
 - 依赖：无。
-- 工作量预估：M。
+- 工作量预估：M（pin 默认走对话式路 A → 前端 0；衰减默认开 + 意图路由接 memory_pin WS 为主；路 B GUI 按钮可选 +S）。
 
 #### WI-OH-3 记忆写入分级（light 快路）  [flag: memory.v2.write_tiering 默认 False | 优先级 P2 | 对标: openhuman B4]
 - 对标点：`put_doc()`（embed+异步图抽）/ `put_doc_light()`（高频流跳 embedding）/ `ingest_doc()`（全同步）三级（README §2.1）。
@@ -205,12 +210,16 @@
 
 #### WI-OC-2 背压/lane 指标可观测  [flag: 无（纯观测增强）| 优先级 P3 | 对标: openclaw queue.md]
 - 对标点：调度器埋点（queued/running/排队时长/per-lane 占用）→ 可观测（openclaw lane 队列背压）。
-- DeskPet 现状（已实读核实）：🟡 **进度事件已完整，只缺累计指标**。`subagent_scheduler.py:85/122/174` 已发 queued/running/completed/failed 事件（:59 `_emit`，含 ts/status）+ `:180 snapshot()` 返 `{running, queued}` + `subagent_scheduled` 日志锚点(:110)。**进度事件不需重做**；**缺口收窄为累计指标**：queue wait 时长（P50/P95）/ 峰值并发 / 按 lane 聚合占用 / 拒绝·超时计数 / export 到 metrics_sink。
-- 改法（**只加累计层，不动既有进度事件**）：① scheduler 内累计 `lane_wait_ms` 直方图 + per-lane 峰值并发；② `snapshot()` 扩累计字段；③ 完成时 `observability/metrics_sink.record("subagent_lane_wait", {...})`（metrics_sink 已存在，HM-1 已用）。进 1B-2 dashboard。
+- DeskPet 现状（前后端均已实读核实）：🟡 **前端面板已有运行中指标、缺累计背压指标**。
+  - **前端**：`tauri-app/src/code-panel/SubagentProgressPanel.tsx` 已挂消息流并展示运行中指标（:117-118 运行中 N/M、:273-274 实时计时、:193-195 完成/排队/失败汇总）；但 `code-panel/subagentStore.ts:14-24 SubagentRunView` **无累计字段**；`code-panel/ws.ts:432-448` 后端仅推 `subagent_progress` 单条事件。
+  - **后端**：`subagent_scheduler.py:85/122/174` 已发 queued/running/completed/failed 事件（:59 `_emit`，含 ts/status）+ `:180-182 snapshot()` 仅返 `{running, queued}` + `subagent_scheduled` 日志锚点(:110)。**进度事件不需重做**；**缺口收窄为累计指标**：峰值并发 / 累计排队 / 拒绝·超时计数 / queue wait 时长（P50/P95）/ export 到 metrics_sink。
+- 改法（**只加累计层，前后端各补字段，不动既有进度事件**）：
+  1. **后端（S，≈30 行）**：scheduler 加累计计数器，`snapshot()` 与 `subagent_progress` 事件补 `peak_concurrent / total_queued / total_rejected`（+ 可选 `lane_wait_ms` 直方图）；完成时 `observability/metrics_sink.record("subagent_lane_wait", {...})`（metrics_sink 已存在，HM-1 已用）。
+  2. **前端（S，≈20 行）**：`code-panel/subagentStore.ts:14 SubagentRunView` + `SubagentProgressPanel` 加这几个累计字段展示。
 - BC 保证：纯增观测，不改调度行为/不动既有事件；metrics 失败已 try/except 吞（scheduler.py:64 模式）= 无功能影响。
-- 测试点：`backend/tests/test_scheduler_metrics.py`（新）—— 跑 N 个超 cap 任务 → 断言 snapshot 含 wait 累计统计；真机：并发子代理时前端面板（SubagentProgressPanel）显示排队/运行数。
+- 测试点：`backend/tests/test_scheduler_metrics.py`（新）—— 跑 N 个超 cap 任务 → 断言 snapshot 含 peak_concurrent/total_queued/total_rejected 累计统计；真机：并发子代理时前端面板（SubagentProgressPanel）显示累计排队/峰值并发/拒绝数。
 - 依赖：无。
-- 工作量预估：S。
+- 工作量预估：M（后端 S + 前端 S）。
 
 ---
 
@@ -241,14 +250,14 @@
 - 依赖：✅ 无（设计决策已定方案 A，2026-06-22）。
 - 工作量预估：**M-L**（A 路：create+get 工具从零建 + 可见性提升接线 + persist 钩子集中 + 清注释；存储/持久层已有）。
 
-#### WI-TG-2 前端审批 UX 聚合视图  [flag: 前端开关 ⚠️ | 优先级 P3 | 对标: cc-haha 4.2]
+#### WI-TG-2 前端审批 UX 聚合视图  [flag: 前端开关 | 优先级 P3 | 对标: cc-haha 4.2]
 - 对标点：危险命令/工具调用/agent 反问汇聚到**一个**审批入口，批量批准，主循环不打断（cc-haha README §2.3）。
-- DeskPet 现状：🟡 **后端完整，前端待核**。`backend/deskpet/permissions/gate.py` 已有 3 按钮 modal 协议（gate.py:16-18「Yes once / Yes always for session / No」+ 60s 超时 auto-deny）+ pluggable responder（接 control WS broadcaster）。**前端是否有统一「待审批」聚合视图**（vs 散落弹窗）⚠️ 未核实（需读 `tauri-app/src/` 权限相关组件）。
-- 改法：⚠️ **先核实前端现状**。若散落：新增前端 `ApprovalCenterPanel`（聚合多个 pending PermissionRequest，支持批量批准/拒绝）；后端 gate 增「列出当前 session pending 请求」WS 推送（gate 已持有 pending 状态 ⚠️ 核实）。注意项目纪律「不加重权限墙、只防手滑」（cc-haha README §5）—— 做**聚合 UX**，不做细粒度权限系统。
+- DeskPet 现状（前端已实读确认）：❌ **无聚合视图，只有散落 FIFO 单弹窗**。后端 `backend/deskpet/permissions/gate.py` 已有 3 按钮 modal 协议（gate.py:16-18「Yes once / Yes always for session / No」+ 60s 超时 auto-deny）+ pluggable responder（接 control WS broadcaster）。**前端无任何聚合/批量审批**：`tauri-app/src/components/PermissionPopup.tsx`（单请求三按钮弹窗：拒绝 / 本会话始终允许 / 允许一次）；`tauri-app/src/hooks/usePermissionRequests.ts:26-49`（单一 FIFO 队列，**一次只显示一条**，后续排队）；`App.tsx:1777-1780`（全局顶层逐个展示）。
+- 改法（前端实读确认散落 → 直接进新建）：新增前端 `ApprovalCenterPanel`（聚合多个 pending PermissionRequest，支持批量批准/拒绝），接 control WS；后端 gate 增「列出当前 session pending 请求」WS 推送（gate 已持有 pending 状态）。保留纪律「不加重权限墙、只做聚合 UX」（cc-haha README §5）—— 不做细粒度权限系统。
 - BC 保证：前端新面板默认隐藏/flag 控制；后端不改 gate 决策逻辑（只加只读「列 pending」接口）。
-- 测试点：前端组件测试 ⚠️ + 真机：并发触发 2+ 权限请求 → 聚合面板一屏显示 → 批量批准。
+- 测试点：前端组件测试（ApprovalCenterPanel 聚合多 pending + 批量批准）+ 真机：并发触发 2+ 权限请求 → 聚合面板一屏显示 → 批量批准。
 - 依赖：无。
-- 工作量预估：M（前端为主）。
+- 工作量预估：**L**（前端从零建聚合面板 + 批量批准交互 + 后端「列 pending」WS 推送；现状仅散落 FIFO 单弹窗，无可复用聚合层）。
 
 ---
 
@@ -263,7 +272,10 @@
    - **OH-2（pref_decay）= 默认开（True）+ pin 入口硬前置**（衰减与 pin/forget 对话式入口必须同一批上线，否则桌宠自动淡忘而用户无法保留偏好）。
    - **TG-1（goal_mode）= 仍默认手动**（不全局默认开，重能力按需启用）。
    注：HM-1 / OH-2 翻 ON 属非字节级 BC，靠强回归 + 真机验收兜底（延续「能力已建、出厂值由产品决策」惯例，但此三项已无 Lead 待决）。
-6. **前端现状未读** ⚠️。TG-2（审批聚合）、OC-2（进度面板）、OH-2（Pin 入口）涉及 `tauri-app/src/` 前端，本次只读了后端，前端实现度待核实后才能精确定工作量。
+6. **✅ 前端已实读核查（2026-06-22）**。三处涉及 `tauri-app/src/` 的 WI 已逐文件读真代码定工作量：
+   - **TG-2（审批聚合）= ❌ 无聚合视图 → L**：只有散落 FIFO 单弹窗（`PermissionPopup.tsx` + `usePermissionRequests.ts:26-49` 单一 FIFO 一次一条 + `App.tsx:1777-1780`），需从零建 `ApprovalCenterPanel`。
+   - **OC-2（背压指标）= 前端面板已有运行中指标(N/M+计时)、缺累计指标 → M**：`SubagentProgressPanel.tsx` 已展示运行中 N/M+计时，但 `subagentStore.ts:14 SubagentRunView` 无累计字段；后端 scheduler 补 peak/total_queued/total_rejected（S）+ 前端补字段展示（S）。
+   - **OH-2（pin/forget 入口）= forget 已有 + pin 走对话式(前端 0)**：`MemoryPanel.tsx:941-1060` 🗑 遗忘按钮已在（forget 满足）；pin 后端 `memory_pin` WS 已注册（`p4_ipc.py:56/98-101`），默认走对话式路 A 前端 0 工作量（路 B GUI 按钮可选 +S）。
 7. **CC-4 不引入通用 hook**。DeskPet 运行时无 hook 且不应加（单机桌宠过度工程）。已有 verify-gate end_turn 守门即 Stop-hook 等价物，CC-4 主要是文档化 + 确认无遗漏，几乎无新代码。
 8. **测试纪律：勿新建重复测试**。`test_goal_store_persistence.py` / `test_pin_and_pref_decay.py` / `test_deskpet_skill_remount_after_compaction.py` 均已存在；相关 WI 一律「扩展现有文件 + 加 case」，不新建同名/同域文件。
 
