@@ -2344,27 +2344,37 @@ def _render_pro(
 ) -> dict[str, Any]:
     use_template = not image_mode
     working = [copy.deepcopy(s).normalize() for s in slides]
+    log.info("ppt_pro _render_pro start image_mode=%s pages=%d", image_mode, len(working))
 
     if image_mode and not probe_image_reachable(timeout_s=probe_timeout_s):
         use_template = True
         notify("AI 配图暂时连不上，已切换模板生成。")
     if image_mode and not use_template:
         reachable, _n_ok = _autofill_with_connectivity_gate(working)
+        log.info("ppt_pro gate reachable=%s n_ok=%s", reachable, _n_ok)
         if not reachable:
             use_template = True
             notify("gpt-image-2 暂时用不了，已切换模板生成。")
 
     if use_template:
-        return ppt_create(
+        # bug#2 修：回退**不走大类名 vision 选图**（外部 2.8GB 库 PIL 拼 contact-sheet
+        # 在 executor 线程会阻塞 → deck 永不落盘）。改用确定性 bundled 模板**直传路径**
+        # （_resolve_template_path 走路径分支，跳过 pick_template_by_preview）。
+        tpl = _fallback_template_path()
+        log.info("ppt_pro render template path=%s tpl=%r", "template", tpl)
+        result = ppt_create(
             _degrade_to_template(working),
             theme=theme,
             title=title,
             author=author,
             output_path=output_path,
-            template=_default_template() or "高级色",
+            template=tpl,            # 直传 .pptx 路径或 None(→fromscratch)，绝不传大类名
             skip_image_gen=True,
         )
-    return ppt_create(
+        log.info("ppt_pro render done(template) ok=%s path=%s", result.get("ok"), result.get("path"))
+        return result
+    log.info("ppt_pro render path=fromscratch(惊艳)")
+    result = ppt_create(
         working,
         theme=theme,
         title=title,
@@ -2372,6 +2382,20 @@ def _render_pro(
         output_path=output_path,
         skip_image_gen=True,
     )
+    log.info("ppt_pro render done(fromscratch) ok=%s path=%s", result.get("ok"), result.get("path"))
+    return result
+
+
+def _fallback_template_path() -> Optional[str]:
+    """回退用**确定性 bundled 模板直传路径**（跳过外部大库 + vision 选图，避免
+    pick_template_by_preview 在 executor 线程做 90 张大预览图 PIL 拼图阻塞）。
+    返回 bundled 通用商务 第一套 .pptx 的绝对路径；无则 None（上层 fromscratch）。从不抛。"""
+    try:
+        bundled = Path(__file__).parent / "ppt_templates" / "通用商务"
+        cands = sorted(bundled.glob("*.pptx"))
+        return str(cands[0]) if cands else None
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _user_template_roots() -> list[Path]:
