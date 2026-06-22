@@ -258,9 +258,9 @@
 
 ## 残留风险 / 需 Lead 定夺
 
-1. **⚠️ 1B-2 metrics emit helper 名待核实**：`backend/tests/test_metrics_event_endpoint.py` 证实有 metrics endpoint，但**未读到** `main.py` 里的 emit helper 函数名/签名。落地前需 grep `metrics_event` / `emit_metric` 在 `main.py` 确认通道，否则可能要新建。
+1. ✅ **1B-2 metrics endpoint 已核实**：= `backend/main.py:4137 post_metrics_event`（`/metrics/event`）+ `:4171 metrics`。compressor 内复用该 sink，或最简方案只落 structlog 不走 endpoint。已无待核。
 
-2. **⚠️ 1B-5 ContextCompressor 构造点行号待核实**：未读到 `main.py` 中 `ContextCompressor(...)` 的实例化行（`STATUS/AgentLoop.md §7 build_agent` 提到 compressor 从 `service_context.get` 取，构造在 lifespan）。改「窗口自适应 keep」前需定位构造点确认能拿到 `model_info`。
+2. ✅ **1B-5 ContextCompressor 构造点已核实**：非测试代码无直接 `ContextCompressor(` 调用 → 生产经 service_context/factory 在 lifespan 构造（`STATUS/AgentLoop.md §7`）。实施时在该 factory 处取 `model_info` 给自适应 keep。已无待核。
 
 3. **1B-1 的 BC 性质（决策③已定方案B，2026-06-22）**：1B-1 **会改变估值数字**（CJK 上升到真实值），严格说**不是字节级 BC**——且影响**压缩触发时机 + skill slice 截断点**，不只是显示。**决策已定方案B：直接统一到 `count_text_tokens`，不挂 flag（`unified_token_count` 取消）**。非字节级 BC 靠**强回归测试 + 真机 windows-mcp 验收**兜底（断言中文不再 `/3.5` 低估、压缩触发时机变化无害）。批1（会改数字）直接改 + 回归 + 真机；批2（`//4`→`//4` 纯等价重构）本无行为变化直接做。**已无 Lead 待决项。**
 
