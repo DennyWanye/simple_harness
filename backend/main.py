@@ -681,6 +681,45 @@ def _make_str_llm_call(provider, *, max_tokens: int = 512):
     return _call
 
 
+def _resolve_ephemeral_provider(base_provider, model_name: str):
+    """Clone ``base_provider`` with its model overridden to ``model_name``.
+
+    接 ``[tools.verifier].ephemeral_subagent_model``（D6 第 3 次失败救援模型）。
+    中转站按 model id 路由，故只换 model、复用 base_provider 的
+    base_url/api_key/temperature/sanitize（与 ``effective_llm_model``
+    同思路：配置里写啥模型就出站啥模型，不做隐式改写）。
+
+    回退 ``base_provider``（即旧行为 = 复用主 LLM）的情形：
+      * ``base_provider is None`` —— 调用方整体跳过 ephemeral；
+      * ``model_name`` 空 / 仅空白 —— 缺省，回退主 LLM（保持 BC）；
+      * ``model_name == base_provider.model`` —— 已是目标模型，免重复构造；
+      * 克隆失败（任意异常）—— 兜底回退主 LLM，绝不让 verify-gate 接电崩。
+    """
+    if base_provider is None:
+        return None
+    name = (model_name or "").strip()
+    if not name:
+        return base_provider
+    try:
+        if getattr(base_provider, "model", None) == name:
+            return base_provider
+        return OpenAICompatibleProvider(
+            base_url=base_provider.base_url,
+            api_key=base_provider.api_key,
+            model=name,
+            temperature=getattr(base_provider, "temperature", 0.2),
+            sanitize_inline_cot_dsml=getattr(
+                base_provider, "sanitize_inline_cot_dsml", _sanitize_cot_dsml
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 — 克隆失败兜底回退主 LLM（保 BC）
+        logger.warning(
+            "ephemeral provider clone failed (model=%s): %s — falling back to base LLM",
+            name, exc,
+        )
+        return base_provider
+
+
 # 把运行中的 local_llm(relay base_url + keychain key) 注入 deep-research，
 # 让 deepresearch 的 plan/synthesize/reflection 走和聊天 agent 同一个 live
 # relay（修旧 _resolve_default_llm_call 读 providers[0] 丢 key 的隐患）。
@@ -931,11 +970,25 @@ def build_agent(
                 # Resolve relative to backend/ (where the default yaml lives)
                 patterns_path = _Path(__file__).parent / patterns_path
             patterns = load_claim_patterns(patterns_path)
-            # WI-2.2: construct ephemeral verifier from cloud/local LLM
+            # WI-2.2: construct ephemeral verifier from cloud/local LLM.
+            # 救援子代理走 [tools.verifier].ephemeral_subagent_model 配的专用
+            # 模型（D6 第 3 次失败救援）——之前 bug 是直接复用主 LLM，配置永不
+            # 生效。现按配置解析出专用 provider；缺省/解析失败回退主 LLM。
             # provider=None → None → VerifyGate falls back to conservative fail (BC)
+            _ephemeral_base = local_llm or cloud_llm
+            _ephemeral_provider = _resolve_ephemeral_provider(
+                _ephemeral_base,
+                getattr(verifier_cfg, "ephemeral_subagent_model", ""),
+            )
             _ephemeral_llm = _make_str_llm_call(
-                local_llm or cloud_llm, max_tokens=256
-            ) if (local_llm or cloud_llm) else None
+                _ephemeral_provider, max_tokens=256
+            ) if _ephemeral_provider is not None else None
+            if _ephemeral_provider is not None:
+                logger.info(
+                    "ephemeral_verifier_model model=%s (base=%s)",
+                    getattr(_ephemeral_provider, "model", "?"),
+                    getattr(_ephemeral_base, "model", "?"),
+                )
             _ephemeral_subagent = (
                 make_ephemeral_verifier(_ephemeral_llm)
                 if _ephemeral_llm is not None

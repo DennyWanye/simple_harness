@@ -118,7 +118,7 @@
 - WI-OC-2 背压/lane 指标可观测 — 🔴 **真缺口**（调度器无累计 metrics）→ 埋点 + 前端进度面板已有可承接
 
 ### 3.5 cc-haha → Task 任务图 + 审批聚合
-- WI-TG-1 Task 结构化任务图 — ✅ **已实现且持久化**（`task_graph.py:TaskGraphStore` DAG+claim_ready + session_db `goal_tasks`/`session_goals` 落库）→ **仅补 goal_store 内存态落库一致性 + LLM `task_create` 工具暴露**（⚠️ 工具是否已暴露待核实）
+- WI-TG-1 Task 结构化任务图 — ✅ 存储+持久化已实现（`task_graph.py:TaskGraphStore` DAG+claim_ready + `goal_store.py` bind_persistence/persist/load_persisted 已落库）→ **决策方案 A**：`task_create` 工具实际**不存在**（仅 `goal_task_list/update` 且仅 teammate 可见）→ 新建 `goal_task_create` + 提升三件套为主 agent 全局可见 + 清 `goal_store.py:11-12` 过期「v1 不持久化」注释。R2 已厘清三套任务概念
 - WI-TG-2 前端审批 UX 聚合视图 — 🟡 ⚠️ 前端实现度未读，落地前核实
 
 ---
@@ -130,7 +130,7 @@
 | Phase | 内容 | 依赖 | 价值 |
 |---|---|---|---|
 | **P0（立即，低风险，直接回应用户）** | 1A 全部（工作环境瘦身，缓解圈圈）+ 1B-1（token 收敛，仅 2 处）+ 1B-2（压缩可观测）| 无 | 直接缓解「圈圈满」+ 工程整洁 |
-| **P1（点亮已实现的护城河 + 补观测）** | HM-1 点亮+观测 / OH-1 确认默认开 / OH-2 补 Pin 入口 / TG-1 补工具暴露 / CC-1 复核 compaction 重挂 | 先做现状复核（解 ⚠️） | 把已建能力真正用起来，低成本高收益 |
+| **P1（点亮已实现的护城河 + 补观测）** | HM-1 点亮+观测+修 dead config / OH-1 决定第五路 lane / OH-2 补 Pin 入口+开 pref_decay / TG-1 新建 goal_task_create（方案A）/ CC-1 已实现计 0 | 多数无前置（CC-1 已消解）| 把已建能力真正用起来，低成本高收益 |
 | **P2（4 个真缺口新建）** | OH-4 记忆 nudge / CC-2 plan mode 只读权限 / OC-1 显式 depth / OC-2 背压指标 | 各自独立可并行 | 补真空白 |
 | **P3（打磨/低优先）** | OH-3 写入分级 / CC-3 `/verify` skill / CC-5 auto-memory 评估 / 1B-3/4/5 / TG-2 审批 UI / HM-2 引用既有 plan | 多数已 ship 基建 | 锦上添花 |
 
