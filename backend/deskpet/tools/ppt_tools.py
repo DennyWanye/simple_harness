@@ -4517,9 +4517,11 @@ def _coerce_ppt_pro_args(args: dict[str, Any]) -> dict[str, Any]:
     cfg = _ppt_pro_cfg()
     topic = str(args.get("topic") or "").strip()
     pages = max(3, min(20, _cfg_int(args, "pages", 8)))
-    depth = str(args.get("depth") or cfg.default_depth or "standard").strip().lower()
+    # 调研档位**锁死为配置值(默认 deep),忽略 LLM 传入的 depth** —— 用户要求
+    # "充分调研"，不让 LLM 降档到 standard/light。pro_default_depth 见 [ppt] 配置。
+    depth = str(cfg.default_depth or "deep").strip().lower()
     if depth not in {"light", "standard", "deep"}:
-        depth = cfg.default_depth if cfg.default_depth in {"light", "standard", "deep"} else "standard"
+        depth = "deep"
     theme = str(args.get("theme") or "minimal").strip().lower()
     if theme not in VALID_THEMES:
         theme = "minimal"
@@ -4620,11 +4622,8 @@ _PPT_PRO_SCHEMA = {
                 "maximum": 20,
                 "default": 8,
             },
-            "depth": {
-                "type": "string",
-                "enum": ["light", "standard", "deep"],
-                "description": "Research depth. Defaults to [ppt].pro_default_depth.",
-            },
+            # depth 不暴露给 LLM —— 调研档位由后端锁死为 [ppt].pro_default_depth(默认 deep)，
+            # 不让 LLM 降档，保证"充分调研"。
             "theme": {
                 "type": "string",
                 "enum": list(VALID_THEMES),
