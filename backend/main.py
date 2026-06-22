@@ -985,9 +985,9 @@ def build_agent(
             ) if _ephemeral_provider is not None else None
             if _ephemeral_provider is not None:
                 logger.info(
-                    "ephemeral_verifier_model model=%s (base=%s)",
-                    getattr(_ephemeral_provider, "model", "?"),
-                    getattr(_ephemeral_base, "model", "?"),
+                    "ephemeral_verifier_model",
+                    model=getattr(_ephemeral_provider, "model", "?"),
+                    base=getattr(_ephemeral_base, "model", "?"),
                 )
             _ephemeral_subagent = (
                 make_ephemeral_verifier(_ephemeral_llm)
