@@ -218,7 +218,7 @@
 > 对标：`research/cc-haha/README.md` §2.2(Task 工具族)/§2.3(集中式审批)。
 > **读码核实：TaskGraphStore 已实现且持久化；本节缩为「补 LLM 工具暴露 + 前端聚合」。**
 
-#### WI-TG-1 Task 任务图：先定「主 agent 用哪套任务概念」+ 补 create/可见性 + 边界澄清  [flag: agent.goal_mode 默认 False | 优先级 P2 | 对标: cc-haha 4.1]
+#### WI-TG-1 Task 任务图：方案 A（提升 TaskGraphStore）+ 补 create/可见性 + 边界澄清  [flag: agent.goal_mode 默认 False | 优先级 P2 | 对标: cc-haha 4.1 | 决策已定: 方案A]
 - 对标点：`TaskCreate/Update/List/Get` 带依赖 + 跨子 agent 共享状态 + 落盘，替代扁平 todo（cc-haha README §2.2）。
 - DeskPet 现状（已实读核实）：**存储 + goal 持久化都已实现；存在三套任务概念未厘清，是本 WI 第一道坎**。
   - ✅ **DAG 存储 + 持久化已实现**：`backend/deskpet/agent/task_graph.py:98 TaskGraphStore` —— DAG（`_has_cycle` DFS 防环）+ `create` / `claim_ready`（原子认领，用 SessionDB `_write_lock`）/ `update`（done 触发 `session_goals` 进度回填）；落库走 `session_db.py` 的 `goal_tasks` 表（专用 `ensure` 守 flag-OFF 字节基线 R-T5）+ `session_goals` 表。`TaskNode`(task_graph.py:29) 含 `depends_on`/`claimed_by`/`result` = 跨 agent 共享态。
@@ -227,17 +227,16 @@
     - `team/teammate_tools.py:53 team_task_create`（+ _claim/_update）—— 维度是 **TeamStore**（团队协作任务），**有 create**，teammate 工具集。
     - `tools/task_graph_tools.py:32 goal_task_list` / :44 `goal_task_update` —— 维度是 **TaskGraphStore**（goal 子任务 DAG），**仅 teammate 可见、不全局注册**（:6-13 明说），且 **无 create**（节点只能内部 `session_db.create_goal_task` 走 goal 流程，未暴露 LLM 工具）。
     - `goal_store.py:GoalStore`（SessionGoalStore）—— 维度是 **goal 文本本身**（一句话目标），内存权威 + SQLite `session_goals` 持久镜像。
-- 改法（**第一步是设计决策，必须先于派发 WI**）：
-  1. **★ 设计决策（派发前必须由 Lead 拍板）：主 agent 要用哪套任务概念？**
-     - **方案 A — 新建 `goal_task_create/get` 把 TaskGraphStore 三件套提升为主 agent 全局可见**：复用已有 DAG 存储（带依赖/持久化最完整），新增 create+get 工具并在 `tools/registry.py` 全局注册。**利**：DAG/依赖/落盘最强，最贴 cc-haha；**弊**：与 teammate-only 现状混用需理清作用域，工作量大。
-     - **方案 B — 复用 `team_task_*`（TeamStore）**：已有 create，无需新建。**利**：最省，create 现成；**弊**：TeamStore 是团队协作维度、**无 DAG 依赖语义**，对标 cc-haha「带依赖任务图」会缩水。
-     - **推荐 A**（cc-haha 核心是 DAG 依赖，TeamStore 满足不了），但 create 工具需从零建 + 暴露接线 —— 故工作量 M-L。**Lead 未拍板前本 WI 不进实现。**
+- 改法：
+  1. ✅ **设计决策已拍板（2026-06-22 用户定）：方案 A** —— 新建 `goal_task_create/get` 把 TaskGraphStore 三件套提升为主 agent 全局可见（复用已有 DAG 存储，带依赖/持久化最完整，最贴 cc-haha Task 工具族）。
+     - （备选 B「复用 `team_task_*`」已否决：TeamStore 是团队协作维度、无 DAG 依赖语义，对标 cc-haha「带依赖任务图」会缩水。）
+     - 工作量 M-L（create 工具从零建 + 可见性提升接线）。**无阻塞，可直接进实现。**
   2. **（A 路）新建 `goal_task_create`（+ 可选 `goal_task_get`）工具**：schema + handler 与现有 `goal_task_list/update` 同风格放 `tools/task_graph_tools.py`，handler 调 `task_graph_store.create(..., depends_on=...)`。
   3. **（A 路）可见性提升接线**：把三件套从「仅 teammate 可见」提升到「主 agent 全局可调」 —— 接线点 `tools/registry.py`（全局注册）vs `team/teammate_tools.py`（teammate 专属）。
   4. **边界澄清 + 清过期注释（非「补落库」）**：明确 **SessionGoalStore(内存热路径权威，goal_store.py:75 _goals) vs session_db.session_goals(持久化镜像) 的职责边界**（已分层非冲突，无 source-of-truth 之争）；**清 `goal_store.py:11-12` 那段「v1 不持久化」过期注释**（实现已落 `bind_persistence/persist/load_persisted`）；persist 钩子集中（统一状态变更点触发 `persist_*`，避免多处手动调漏调致镜像漂移）。
 - BC 保证：`goal_mode` 默认 False → goal_tasks/session_goals 表**永不建**（session_db.py R-T5）= 字节基线；新 task 工具 OFF 时不注册（registry 无此工具名 → 字节一致）。
 - 测试点：**扩展现有 `backend/tests/test_goal_*.py` / `test_goal_store_persistence.py`**（goal 持久化往返已覆盖，勿重建）；A 路补 `test_goal_task_create_tool.py`（create→list 往返 + 主 agent 可调断言）+ 集中 persist 钩子的镜像同步断言（加进 `test_goal_store_persistence.py`）。真机：设长 goal → 桌宠用 `goal_task_create` 建带依赖的任务 → 重启 → 任务图与依赖仍在。
-- 依赖：**★ 阻塞于「方案 A/B 用哪套」的 Lead 拍板**（见改法 1）。
+- 依赖：✅ 无（设计决策已定方案 A，2026-06-22）。
 - 工作量预估：**M-L**（A 路：create+get 工具从零建 + 可见性提升接线 + persist 钩子集中 + 清注释；存储/持久层已有）。
 
 #### WI-TG-2 前端审批 UX 聚合视图  [flag: 前端开关 ⚠️ | 优先级 P3 | 对标: cc-haha 4.2]
@@ -271,9 +270,9 @@
 强依赖链:
   OH-4(记忆nudge机制) ──► CC-5(learnings = OH-4 多产一个 category + 注入)   [合并实现]
 
-★ 阻塞于 Lead 拍板（唯一真·设计决策）:
-  TG-1 ──► 【主 agent 用哪套任务概念? 方案A(TaskGraphStore+新建create) vs 方案B(复用team_task_*)】
-          拍板前不进实现；拍板后 create+get 工具+暴露+清注释+persist钩子（M-L）
+✅ 设计决策已定（2026-06-22 用户拍板，无阻塞）:
+  TG-1 ──► 方案A：提升 TaskGraphStore 三件套为主 agent 全局可见 + 新建 create+get 工具
+          + 清注释 + persist 钩子集中（M-L，可直接进实现）
 
 HM-1 含 1 处真 bug（独立可修）:
   HM-1 ──► 修 ephemeral_subagent_model dead config（main.py:936 未消费 config.py:271）
@@ -290,4 +289,4 @@ HM-1 含 1 处真 bug（独立可修）:
   CC-1 ── compaction 后重挂已实现且有测试（agent_loop.py:2212 _remount_skills + 测试文件），R1 误判更正
 ```
 
-> 无环。实现编排：**先等 Lead 拍板 TG-1「用哪套任务概念」**（唯一真·设计决策）；其余真缺口（OH-4/CC-2 物理拦截/OC-1/OC-2）独立可并行；HM-1 的 dead-config bug 独立可修；CC-1 已实现计 0。其余多为「点亮 + 观测 + 入口」。
+> 无环。实现编排：TG-1 决策已定方案 A（无阻塞）；4 个真缺口（OH-4/CC-2 物理拦截/OC-1/OC-2）+ TG-1 独立可并行；HM-1 的 dead-config bug 独立可修；CC-1 已实现计 0。其余多为「点亮 + 观测 + 入口」。全 plan 无待决项 = EXECUTABLE-AS-IS。

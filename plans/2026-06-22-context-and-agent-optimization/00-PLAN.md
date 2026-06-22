@@ -1,6 +1,8 @@
 # DeskPet 优化总规划 — 上下文管理 + 对标系统升级（2026-06-22）
 
-> **状态**: v1.0 READY-pending-1-decision（R1 双子代理校准 + ground-truth 实读裁决 + codex 对抗 NOT-READY → R2 全收，无 BLOCKING/MAJOR 残留；**唯余 1 个设计决策待 Lead 拍板：TG-1 任务概念 A/B**。详见 §8）
+> **状态**: **v1.0 EXECUTABLE-AS-IS**（R1 双子代理校准 + ground-truth 实读裁决 + codex 对抗 NOT-READY → R2 全收，无 BLOCKING/MAJOR 残留；2026-06-22 用户拍板 3 项决策已固化，无待决项。详见 §8）
+>
+> **用户决策（2026-06-22 已定，已固化进 plan）**：① 圈圈 **两层都做**（1A Claude Code 环境 + 1B DeskPet 运行时）；② TG-1 **方案 A**（新建 `goal_task_create` + 提升 TaskGraphStore 三件套为主 agent 全局可见）；③ 方向二 **全做 P0~P3**（含 OH-3/CC-3/CC-5/TG-2 等低优先项，一个不漏）。
 > **依据**: [STATUS/status.md](../../STATUS/status.md)（2026-06-22 已校准）+ 三路调研（架构 / 对标系统 / 上下文管理）+ `research/` 对标资料
 > **范围**: 两大优化方向 —— ①上下文管理（Claude Code 工作环境 + DeskPet 运行时双层）②openclaw/hermes/claude/openhuman 对标差距补齐
 > **铁律**: 不可少做功能；技术项细化到「具体哪个文件、哪个函数、怎么改」；全部新功能 flag 出厂 OFF = 字节级 BC
@@ -154,13 +156,13 @@
 
 ---
 
-## 7. 待 review 的开放问题（交付时与用户确认）
+## 7. 决策记录（2026-06-22 已拍板）
 
-1. **「圈圈」歧义**：用户指的是 **Claude Code 工作环境**（1A）还是 **DeskPet 运行时**（1B）？本 plan 两层都覆盖，review 时确认侧重。
-2. **范围取舍**：方向二多为「点亮已实现」（轻），真新建只有 4 个缺口（B 类）；是否按 P0→P3 全做，还是只做 P0+P1+部分 B 类？
-3. **1A 是否落仓库**：Claude Code 工作环境优化（CLAUDE.md 瘦身 / MCP 裁剪）是否要写成 repo 内可复用的配置/脚本，还是仅给操作 SOP？
-4. **TG-1 任务概念唯一目标（设计决策，派发前必须拍板）**：DeskPet 现存三套任务概念 —— TeamStore（`team_task_create/update/list`）/ TaskGraphStore（`goal_task_list/update`，仅 teammate 可见、无 create）/ GoalStore。主 agent 要用哪套？方案 A：新建 `goal_task_create/get` 把 task_graph_tools 提升为主 agent 全局可见；方案 B：复用 `team_task_*`。详见 02 文档 TG-1。
-5. **1B-1 token 收敛 BC 取舍**：口径统一会改变中文 token 估值（影响压缩触发/截断点），不是字节 BC。挂 flag `unified_token_count`（默认 OFF）保旧口径，还是接受为「可接受的 UI/metrics 修正」直接改？
+1. ✅ **「圈圈」侧重** → **两层都做**：1A（Claude Code 环境瘦身，先做，立竿见影）+ 1B（DeskPet 运行时精修，跟进）。
+2. ✅ **方向二范围** → **全做 P0~P3**：4 真缺口（OH-4/CC-2/OC-1/OC-2）新建 + 已实现项点亮 + 低优先项（OH-3/CC-3/CC-5/TG-2）也做，一个对标点不漏。
+3. ✅ **TG-1 任务概念** → **方案 A**：新建 `goal_task_create` 工具 + 把 `task_graph_tools` 三件套（list/update/新 create）从「仅 teammate」提升为主 agent 全局可见；TaskGraphStore DAG+依赖+持久化已就绪，最贴近 cc-haha Task 工具族。已固化进 02 文档 TG-1。
+4. 🟡 **1A 是否落仓库**（次要，实施时定）：CLAUDE.md 瘦身 / MCP 裁剪 默认写成 repo 内可复用 SOP + `.mcp.json`/settings 建议，不强制脚本化。
+5. 🟡 **1B-1 token 收敛 BC**（实施时定）：默认挂 flag `unified_token_count`（OFF=旧口径字节 BC），ON 走统一口径；纯等价重构（//4→//4）部分不挂 flag 直接做。
 
 ---
 
