@@ -1,6 +1,6 @@
 # DeskPet 优化总规划 — 上下文管理 + 对标系统升级（2026-06-22）
 
-> **状态**: **v1.0 EXECUTABLE-AS-IS**（R1 双子代理校准 + ground-truth 实读裁决 + codex 对抗 NOT-READY → R2 全收，无 BLOCKING/MAJOR 残留；2026-06-22 用户拍板 3 项决策已固化，无待决项。详见 §8）
+> **状态**: **v1.1 EXECUTABLE-AS-IS**（经 R1→R4 共 4 轮对抗实读裁决；R3 挖出并修掉 2 BLOCKING+3 MAJOR「派活会崩/做错」硬伤，R4 实读核验全部落实 → READY，无 BLOCKING/MAJOR/待决项；2026-06-22 用户拍板 3 项决策已固化。详见 §8）
 >
 > **用户决策（2026-06-22 已定，已固化进 plan）**：① 圈圈 **两层都做**（1A Claude Code 环境 + 1B DeskPet 运行时）；② TG-1 **方案 A**（新建 `goal_task_create` + 提升 TaskGraphStore 三件套为主 agent 全局可见）；③ 方向二 **全做 P0~P3**（含 OH-3/CC-3/CC-5/TG-2 等低优先项，一个不漏）。
 > **依据**: [STATUS/status.md](../../STATUS/status.md)（2026-06-22 已校准）+ 三路调研（架构 / 对标系统 / 上下文管理）+ `research/` 对标资料
@@ -181,8 +181,11 @@
 | **R0 撰写** | 2 个 general-purpose 实读代码写 01/02 | **方向二大面积「其实已实现」**（research 滞后于代码）| §3/§4 实现度校准 |
 | **R1-A ground-truth 裁决** | 1 个 gp 实读裁决 7 处 ⚠️ | HM-1/OH-1/OH-2/TG-1 已实现；1B-1 残留比想象多；CC-1 skill 在受保护分区 | R1 修订 01（token 6 处+flag）/02（CC-1 降级/TG-1 加大/HM-1 确认）|
 | **R1-B codex 对抗** | codex gpt-5.5 只读审查（独立印证）| **NOT-READY**：CC-1 其实**已有 `_remount_skills` + 测试**；TG-1 还有第三套 `team_task_create`；CC-2 "禁 Edit/Write" 名不对（DeskPet 无此工具名）；HM-1 `ephemeral_subagent_model` 疑未真生效；测试点多已存在 | **R2 修订中**（本轮）|
-| **R2** | gp 实读 spot-verify codex 全部 8 项 claim（全属实）+ 修订 02 + Lead 修 00 分类法 | CC-1 确认已实现+已测（推翻 R1 伪缺口判定）；TG-1 三套概念厘清；CC-2 真工具名 write_file/edit_file/run_shell/desktop_create_file + 拦截层；HM-1 揪出 `ephemeral_subagent_model` dead config 真 bug；OH-1/OH-2/OC-2 措辞收准 | ✅ 清空 BLOCKING/MAJOR；唯余 1 设计决策（TG-1 A/B）|
+| **R2** | gp 实读 spot-verify codex 全部 8 项 claim（全属实）+ 修订 02 + Lead 修 00 分类法 | CC-1 确认已实现+已测（推翻 R1 伪缺口判定）；TG-1 三套概念厘清；CC-2 真工具名 + 拦截层；HM-1 揪出 `ephemeral_subagent_model` dead config 真 bug；OH-1/OH-2/OC-2 措辞收准 | ✅ 清空 BLOCKING/MAJOR；唯余 1 设计决策（TG-1 A/B）|
+| **决策固化** | 用户拍板 3 项（圈圈两层/TG-1 方案A/方向二全做 P0-P3）+ 前端实读核查 | TG-2 无聚合视图(L)/OC-2 面板已有缺累计指标(M)/OH-2 forget 已有 pin 走对话式(前端0)；清空全部 ⚠️ | ✅ v1.0 EXECUTABLE-AS-IS |
+| **R3（深度对抗）** | codex（被环境策略卡死无效）+ gp 实读「派活会不会卡住」 | **NOT-READY**：B1 dead config 已被 `772c4291` 修复（plan 还当待办）；B2 verify_gate 字段名错（真名 `verify_gate_mode`，白名单 off/shadow/strict）+ 漏 `emit_receipts` 硬连锁（VG-INVARIANT-1，只翻一个启动崩溃）；M1 CC-2 应按 permission_category 判；M2 TG-1 全局 handler 拿不到 goal_id/session_id 的坎；M3 goal_store 第二处过期注释 | R3 修订 00/02 |
+| **R4（最终确认）** | gp 实读核验 R3 修订 + 终极一致性扫描 | **READY**：B1/B2/M1/M2/M3 全部✅落实且与 config.py/main.py/task_graph.py/registry.py 对账一致；无剩余 BLOCKING/MAJOR；无一致性残留；R3 未引入新问题 | ✅ **v1.1 EXECUTABLE-AS-IS** |
 
-> **收敛趋势**：每轮都冒新坑但趋势收敛（符合 `feedback_codex_adversarial_plan_hardening`）。三个独立读码者（2 gp + codex）对「已实现 vs 真缺口」的判定已高度一致：**4 个真缺口 OH-4/CC-2/OC-1/OC-2 三方一致确认**。R2 后无 BLOCKING/MAJOR 未决，仅 TG-1 任务概念选型需 Lead 拍板（属产品/架构决策，非缺陷）。
+> **收敛趋势**：每轮都冒新坑但趋势收敛（符合 `feedback_codex_adversarial_plan_hardening`）。独立读码者（多个 gp + codex）对「已实现 vs 真缺口」判定高度一致：**4 个真缺口 OH-4/CC-2/OC-1/OC-2 多方确认**。R3 把「会让派活子代理做错/卡住」的硬伤（修已修的 bug、翻 ON 字段名错致启动崩溃、TG-1 全局拿不到 goal_id）挖净，R4 实读核验全部落实 → **R4 后 READY，无 BLOCKING/MAJOR/待决项**。
 >
 > **附带产出（已修，留痕）**：✅ `ephemeral_subagent_model` dead config bug 已于 commit `772c4291` 修复（`main.py:973-996` `_resolve_ephemeral_provider` 按 config 解析专用 provider，:974-976 注释明写「之前 bug 直接复用主 LLM，现按配置解析专用 provider」+ `:687 _clone_provider_with_model`）。plan 内相关待办已移除。
