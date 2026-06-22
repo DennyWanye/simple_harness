@@ -1531,6 +1531,48 @@ try:
                 logger.info("goal_store_bound_persistence")
             except Exception as _bp_exc:  # noqa: BLE001
                 logger.warning("goal_store_bind_persistence_failed: %s", _bp_exc)
+            # WI-TG-1 方案A：把 goal_task_{list,update,create,get} 从「仅
+            # teammate 可见」提升为主 agent 全局可调。全局 handler 签名
+            # (args, corr_id) 无 goal/session 上下文，故用 goal_resolver 闭包
+            # 在调用时反查 SessionGoalStore 的活跃目标取 (goal_id, session_id)；
+            # 无活跃目标 → 工具返回「请先用 /goal 设定目标」友好错误。
+            # 门控：仅 goal_mode ON 时注册（OFF → registry 无此工具名 → BC）。
+            try:
+                if deskpet_tool_registry_v2 is not None:
+                    from deskpet.agent.task_graph import (
+                        TaskGraphStore as _TGS_global,
+                    )
+                    from deskpet.tools.task_graph_tools import (
+                        build_global_goal_task_tools as _build_global_gt,
+                    )
+                    _global_tg_store = _TGS_global(db=_session_db)
+                    service_context.register(
+                        "task_graph_store", _global_tg_store
+                    )
+                    _gt_resolver = (
+                        lambda: _session_goal_store.get_active_goal_context()
+                    )
+                    for _gt_name, _gt_schema, _gt_handler in _build_global_gt(
+                        task_graph_store=_global_tg_store,
+                        goal_resolver=_gt_resolver,
+                    ):
+                        deskpet_tool_registry_v2.register(
+                            name=_gt_name,
+                            toolset="goal",
+                            schema=_gt_schema,
+                            handler=_gt_handler,
+                            permission_category="read_file",
+                            source="builtin",
+                            # create/update mutate the goal_tasks table →
+                            # not concurrency-safe; list/get are read-only.
+                            concurrency_safe=_gt_name in (
+                                "goal_task_list", "goal_task_get",
+                            ),
+                            replace_allowed=True,
+                        )
+                    logger.info("goal_task_tools_registered_global count=4")
+            except Exception as _gt_exc:  # noqa: BLE001
+                logger.warning("goal_task_tools_register_failed: %s", _gt_exc)
             logger.info("companion_code_v1_goal_mode_ready")
         except Exception as _gm_exc:  # noqa: BLE001
             logger.warning("companion_code_v1_goal_mode_init_failed: %s", _gm_exc)

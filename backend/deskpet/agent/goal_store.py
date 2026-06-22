@@ -7,9 +7,12 @@ In-memory store mapping ``session_id -> SessionGoal``. Used by
 ``/goal <text>`` slash command and consumed by ``AgentLoop`` end-turn
 ``goal_checker`` rebound (see ``goal_checker.py``).
 
-Persistence is deliberately NOT implemented in v1 — goals are
-session-lifetime only (TODO: SessionDB persistence留 v2). Re-setting
-the same ``session_id`` overwrites the prior goal (last-write-wins).
+Persistence is wired via :meth:`SessionGoalStore.bind_persistence`
+(goal-completion FP-1): ``persist`` / ``load_persisted`` round-trip
+active goals through the ``session_goals`` table in SessionDB so they
+survive a restart. When ``bind_persistence`` is never called the store
+degrades to pure in-memory (BC + test isolation). Re-setting the same
+``session_id`` overwrites the prior goal (last-write-wins).
 
 Thread-safety: protected by a single ``asyncio.Lock``? No — the store
 is consumed from a single asyncio task per session (AgentLoop runs
@@ -67,9 +70,13 @@ class SessionGoal:
 
 
 class SessionGoalStore:
-    """In-memory ``session_id -> SessionGoal`` map.
+    """In-memory ``session_id -> SessionGoal`` map (authoritative read path).
 
-    Methods are all sync (no I/O). Persistence留 v2 (TODO: SessionDB).
+    Mutators (``set`` / ``mark_done`` / ``increment_iteration``) are sync
+    and touch only the in-memory dict. Durable state is written through the
+    async ``persist*`` methods and restored by ``load_persisted`` — see
+    :meth:`bind_persistence`. Without a bound SessionDB the store is pure
+    in-memory.
     """
 
     def __init__(self) -> None:
@@ -196,6 +203,37 @@ class SessionGoalStore:
         """冻结 §1.4：sync, None-safe, 永读内存（最新权威）。"""
         g = self._goals.get(session_id)
         return g.text if g is not None else None
+
+    def get_active_goal_context(
+        self, session_id: Optional[str] = None
+    ) -> Optional[tuple[str, str]]:
+        """Resolve ``(goal_id, session_id)`` for an active goal.
+
+        WI-TG-1 方案A: the main-agent global ``goal_task_*`` tools have no
+        session/goal in their ``(args, corr_id)`` signature, so they call
+        this to fill the two required args of ``TaskGraphStore.create``.
+
+        - If ``session_id`` is given and has an active goal with a non-empty
+          ``goal_id`` → return that goal's ``(goal_id, session_id)``.
+        - Else fall back to the single most-recently-updated active goal
+          across all sessions (deskpet is single-user; usually ≤1 active
+          goal). This keeps the tool usable even when the caller can't
+          supply a session id.
+        - No active goal with a persisted ``goal_id`` → ``None`` (caller
+          surfaces a "set a goal first" error).
+        """
+        if session_id is not None:
+            g = self._goals.get(session_id)
+            if g is not None and g.goal_id and g.status == "active":
+                return (g.goal_id, g.session_id)
+        candidates = [
+            g for g in self._goals.values()
+            if g.goal_id and g.status == "active"
+        ]
+        if not candidates:
+            return None
+        best = max(candidates, key=lambda g: g.updated_at or g.set_at)
+        return (best.goal_id, best.session_id)
 
     def get_pending_tasks(self, session_id: str) -> list[str]:
         """子目标列表（供 WI-4a always-on [当前子目标] 注入）。
