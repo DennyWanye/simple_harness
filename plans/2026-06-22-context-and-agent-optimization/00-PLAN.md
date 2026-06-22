@@ -80,41 +80,47 @@
 
 > 详见 [02-reference-systems-optimization.md](./02-reference-systems-optimization.md)（含每个 WI 的文件/函数/数据结构/测试点）
 
-### 3.1 openhuman → 记忆工程深化（伴侣感命脉）
-- WI-OH-1 五路混合检索：在 `memory/retriever.py` 现有 BGE-M3 向量基础上，加 keyword/episodic/freshness 信号加权融合
-- WI-OH-2 PROFILE 人格半衰期：新建/扩展 `memory/personalization.py`，偏好 7-90 天衰减 + Pin/Forget
-- WI-OH-3 记忆写入分级：`memory/manager.py` 加 light 路径（高频流跳 embedding）
-- WI-OH-4 记忆 self-curation nudge：agent_loop 周期性让 agent 自决该不该记
+> ⚠️ **重大实现度校准（2026-06-22，实读代码后）**：方向二**大面积已实现**——调研 `research/` 档多写于 2026-06-04 前，而 DeskPet 此后已落 FP-4/FP-5/子代理并发 8 模式等。实读代码后，多数「差距」实为「已实现，仅差点亮 flag / 补观测 / 补入口」。下表每行标注真实现度。**真正需新建的缺口只有 4 个**（OH-4 / CC-2 / OC-1 / OC-2）。详见 [02-reference-systems-optimization.md](./02-reference-systems-optimization.md)。
+>
+> **这正是「不可少做功能」的正确解读**：不是把已实现的重写，而是把已实现但 OFF/未接的**点亮 + 补全 + 加真缺口**，一个对标点都不漏。
 
-### 3.2 hermes → 自我纠错闭环（从「发现问题」到「自动补救」）
-- WI-HM-1 agentic JSON-mode：verify gate 校验不过时强制产 `error_analysis / critique / replan` 结构化字段 → 自动重规划重试（`agent/agent_loop.py` + `verify/verify_gate.py`）
-- WI-HM-2 技能自创产可执行：`skills/skill_codifier.py` 现仅产 Markdown body，扩展到可产 function-call 技能（与 plans/2026-06-22-skill-executable-function-call 对齐）
+### 3.1 openhuman → 记忆工程（实读后：核心已实现，补边角）
+- WI-OH-1 五路混合检索 — ✅ **已实现**（`retriever.py:226` 4 路 RRF + `enhanced_retriever.py` 叠 facts/rerank/chunk/rewrite）→ **降级为「确认默认开 + 补 freshness 权重可调」或删除**
+- WI-OH-2 PROFILE 人格半衰期 — 🟡 **核心已实现**（`facts.py:_CATEGORY_DECAY` + `set_pinned:882` + `preference_profile.py` 📌置顶注入）→ **仅补 PreferenceMemory JSON 衰减 + 对话式 Pin/Forget 入口**
+- WI-OH-3 记忆写入分级 — 🟡 部分 → 补 light 路径（高频流跳 embedding）`memory/manager.py`
+- WI-OH-4 记忆 self-curation nudge — 🔴 **真缺口**：agent_loop 周期性让 agent 自决该不该记
+
+### 3.2 hermes → 自我纠错闭环（实读后：已完整实现）
+- WI-HM-1 agentic JSON-mode 自我纠错 — ✅ **已完整实现**（`reflection.py:StructuredReflection`=error_analysis/critique/replan + `agent_loop.py:1395+` verify 守门 + stagnation difflib>0.85 检测 + ephemeral 升级 + `verify_gate.py:GoalAlignment` 重述原目标对照）→ **降级为「点亮 flag + 补观测 + 真机验证闭环真生效」**
+- WI-HM-2 技能自创产可执行 — 🟡 已有独立 LOCKED plan → **引用 [plans/2026-06-22-skill-executable-function-call](../2026-06-22-skill-executable-function-call/)，不重复造**
 
 ### 3.3 claude（Claude Code）→ harness 机制补深
-- WI-CC-1 skills 三级渐进披露彻底化：启动只注入 name+description（字符预算）+ 触发载正文 + 附件按需 + compaction 后按预算重挂（`skills/skill_loader.py`）
-- WI-CC-2 plan mode 只读权限模式：规划期物理禁 Edit/Write（permission mode 切只读），非仅流程提示
-- WI-CC-3 `/verify`+`/run` bundled skill：面向真实桌宠/app 运行验证改动生效
-- WI-CC-4 hooks exit-2 确定性强制深化：Stop/PostToolUse hook 阻断「没验证就收尾」
-- WI-CC-5 auto-memory：让 agent 自动积累用户偏好/踩坑到 per-project 轻量 memory
+- WI-CC-1 skills 三级渐进披露 — 🟡 **大部分已实现**（`skill.py` auto_disclosure embedding 强匹配+body inline+预算+LRU；`loader.py:read_body`）→ **仅剩 compaction 后重挂一项**（⚠️ 接线状态需复核 `context_manager.py`，01/02 报告口径冲突）
+- WI-CC-2 plan mode 只读权限模式 — 🔴 **真缺口**（`code_mode/` grep 0 命中只读权限切换）：规划期物理禁 Edit/Write
+- WI-CC-3 `/verify`+`/run` bundled skill — 🟡 last-mile 已有 → 补一个面向真实桌宠运行验证的 skill + 启动配方
+- WI-CC-4 hooks exit-2 — ❌ **不引入通用 hook**：DeskPet 运行时无 hook 层，已有 verify-gate end_turn 守门即等价物（避免过度工程）
+- WI-CC-5 auto-memory — 🟡 L1 文件记忆/pre-flush 已有 → 评估是否补面向终端用户的轻量 auto-memory（低优先）
 
 ### 3.4 openclaw → 子代理调度打磨（8 模式已实现，仅余补强）
-- WI-OC-1 depth 计数真生效（递归守门从「剥工具」升到「显式 depth 上界」）
-- WI-OC-2 背压/lane 指标可观测（调度器埋点 → 前端进度面板已有，补 metrics）
+- WI-OC-1 depth 计数真生效 — 🔴 **真缺口**（现仅「剥 spawn 类工具」守门，无显式 depth 数值上界）
+- WI-OC-2 背压/lane 指标可观测 — 🔴 **真缺口**（调度器无累计 metrics）→ 埋点 + 前端进度面板已有可承接
 
 ### 3.5 cc-haha → Task 任务图 + 审批聚合
-- WI-TG-1 Task 结构化任务图持久化：`task/` 暴露 TaskCreate/Update/List/Get，带依赖、跨子 agent 共享，落盘
-- WI-TG-2 前端审批 UX 聚合视图
+- WI-TG-1 Task 结构化任务图 — ✅ **已实现且持久化**（`task_graph.py:TaskGraphStore` DAG+claim_ready + session_db `goal_tasks`/`session_goals` 落库）→ **仅补 goal_store 内存态落库一致性 + LLM `task_create` 工具暴露**（⚠️ 工具是否已暴露待核实）
+- WI-TG-2 前端审批 UX 聚合视图 — 🟡 ⚠️ 前端实现度未读，落地前核实
 
 ---
 
 ## 4. 分期与依赖（草案，待 03 细化）
 
+> 校准后分期：方向二多为「点亮 flag + 补观测」（轻），真新建只有 4 个缺口。
+
 | Phase | 内容 | 依赖 | 价值 |
 |---|---|---|---|
-| **P0（立即，低风险）** | 1A 全部（工作环境瘦身）+ 1B-1（token 收敛）+ 1B-2（可观测）| 无 | 直接缓解「圈圈满」+ 工程整洁 |
-| **P1（高杠杆差异化）** | 3.1 记忆深化（OH-1~4）+ 3.2 自我纠错（HM-1）| 无强依赖 | 伴侣感 + 完成质量 |
-| **P2（harness 补深）** | 3.3 claude 机制（CC-1~5）+ 3.5 Task 图（TG-1/2）| CC-1 依赖 skill_loader 现状核实 | 长期复利 |
-| **P3（打磨）** | 3.4 openclaw 补强（OC-1/2）+ 1B-3/4/5 + 3.2 HM-2 | 子代理驱动已 ship | 锦上添花 |
+| **P0（立即，低风险，直接回应用户）** | 1A 全部（工作环境瘦身，缓解圈圈）+ 1B-1（token 收敛，仅 2 处）+ 1B-2（压缩可观测）| 无 | 直接缓解「圈圈满」+ 工程整洁 |
+| **P1（点亮已实现的护城河 + 补观测）** | HM-1 点亮+观测 / OH-1 确认默认开 / OH-2 补 Pin 入口 / TG-1 补工具暴露 / CC-1 复核 compaction 重挂 | 先做现状复核（解 ⚠️） | 把已建能力真正用起来，低成本高收益 |
+| **P2（4 个真缺口新建）** | OH-4 记忆 nudge / CC-2 plan mode 只读权限 / OC-1 显式 depth / OC-2 背压指标 | 各自独立可并行 | 补真空白 |
+| **P3（打磨/低优先）** | OH-3 写入分级 / CC-3 `/verify` skill / CC-5 auto-memory 评估 / 1B-3/4/5 / TG-2 审批 UI / HM-2 引用既有 plan | 多数已 ship 基建 | 锦上添花 |
 
 ---
 
