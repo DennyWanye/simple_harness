@@ -198,7 +198,7 @@
   - 前端「圈圈」饼图由 `main.py:3523 _compute_context_breakdown` 驱动（独立估值，非压缩事件）。
 - **问题**：①日志只进 stderr→tauri dev log，**前端无可视化**「这次压了多少 / 何时压的」；②`context_compacted` 与前端 breakdown 是**两套口径**（前者真实压缩、后者估值），用户看不到「刚刚压缩省了 X token」的反馈；③无聚合 metrics（多次压缩的累计节省）。
 - **改法**：
-  - 复用已有 metrics 事件通道（`backend/tests/test_metrics_event_endpoint.py` 证实存在 metrics endpoint；具体 emit 函数名 ⚠️ 待核实——grep `metrics_event` 在 `main.py` 找 endpoint，确认 emit helper）。在 `context_compressor.py:422` 落 `context_compacted` 日志的**同一处**，可选 emit 一条 metrics 事件（flag `ctx_observability` ON 时）：`{event:"context_compacted", reduction, in, out, model, ts}`。
+  - 复用已有 metrics 事件通道（已核实：metrics endpoint = `backend/main.py:4137 post_metrics_event`（`/metrics/event`）+ `:4171 metrics`；compressor 内复用该 endpoint 的 sink，或最简方案只落 structlog 不走 endpoint）。在 `context_compressor.py:422` 落 `context_compacted` 日志的**同一处**，可选 emit 一条 metrics 事件（flag `ctx_observability` ON 时）：`{event:"context_compacted", reduction, in, out, model, ts}`。
   - 在 `agent_loop.py` 压缩成功分支（`:941` `if getattr(_cresult,"compressed",...)`）后，flag ON 时 yield 一个**新的轻量 AgentEvent**（如 `ContextCompactedEvent`，字段 = reduction/in/out），由 `main.py` 事件转发层（`STATUS/AgentLoop.md §7`，`async for ev in _agent.run`）转成 WS 消息 → 前端在圈圈附近浮一条 toast「已压缩，省 N token」。
   - flag OFF：不 emit metrics、不 yield 新事件，仅保留现有 `logger.info`（= 现状字节一致）。
 - **BC 保证**：OFF 时 §422/§237/§950 的 `logger.info` 不变、不新增任何 yield 事件、不调 metrics endpoint → 与现状字节一致。新 AgentEvent 类型只在 flag ON 路径构造，OFF 路径不 import/不实例化。
@@ -246,7 +246,7 @@
 - **现状**：microcompact 已是「保护最近 N 个 tool_result、清更早的」启发式——**不是**全局清。证据：`context_compressor.py:664 _microcompact_tool_results(messages, keep_recent_tools)`，`:681` `protected = set(tool_idxs[-keep_recent_tools:])`，只对 `i not in protected` 的旧 tool 换占位（`:684-694`）。`keep_recent_tools` 由 `ContextCompressor.__init__` 的 `microcompact_keep_tools=3`（`:135`/`:151`）控制。
 - **问题**：00-PLAN.md 把此项描述为「从『全局清旧 tool_result』改启发式」——但**读码发现现状已经是按『最近 N 个』的启发式**，所以此 WI 不是「改架构」，而是**精修保护策略**：当前只按「tool 消息条数」保护最近 N 个，未考虑①最近 N 个里若有超大 tool_result 仍占满窗口；②不区分 tool_result 大小/新鲜度；③`keep_recent_tools` 固定 3，不随窗口自适应。
 - **改法**（精修，非重写）：
-  - 让 `microcompact_keep_tools` 可随窗口自适应：在构造 `ContextCompressor` 处（main.py build_agent ⚠️ 待核实确切行——grep `ContextCompressor(` in main.py）按 `model_info.context_window` 给更大窗口更大的 keep（如 `clamp(window//100_000+2, 3, 8)`）。或加 flag `microcompact_size_aware` 默认 False：ON 时保护策略从「最近 N 条」改「最近 N 条 + 累计字节 ≤ M」，避免最近 N 条里有巨型结果仍爆。
+  - 让 `microcompact_keep_tools` 可随窗口自适应：在构造 `ContextCompressor` 处（已核实：非测试代码无直接 `ContextCompressor(` 调用 → 生产经 service_context/factory 在 lifespan 构造，见 `STATUS/AgentLoop.md §7`；实施时在该 factory 处取 `model_info`）按 `model_info.context_window` 给更大窗口更大的 keep（如 `clamp(window//100_000+2, 3, 8)`）。或加 flag `microcompact_size_aware` 默认 False：ON 时保护策略从「最近 N 条」改「最近 N 条 + 累计字节 ≤ M」，避免最近 N 条里有巨型结果仍爆。
   - 保持 `_microcompact_tool_results` 纯函数签名（`messages, keep_recent_tools`）不变，新增 size-aware 走新参数或新函数，避免破坏现有断言。
 - **BC 保证**：不改 `microcompact_keep_tools` 默认值（3）→ 现有行为字节一致。size-aware 走新 flag（默认 False）。窗口自适应若改默认 keep 值，需谨慎——建议也藏 flag，OFF 时 keep=3 不变。
 - **测试点**：

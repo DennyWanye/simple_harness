@@ -69,10 +69,10 @@
 - 对标点：`put_doc()`（embed+异步图抽）/ `put_doc_light()`（高频流跳 embedding）/ `ingest_doc()`（全同步）三级（README §2.1）。
 - DeskPet 现状：🟡 **部分**。`backend/deskpet/memory/session_db.py:258 append_message(..., skip_embed=False)` 已有 light 原语（FP-4 WI-3.4，skip_embed=True 时跳 on_message_written hook → 不进 VectorWorker 队列，session_db.py:306-308）。**但缺**：① 统一的「高频流（截屏/语音 VAD tick/supervisor 感知）走 light」接线点；② `put_doc_light` 命名语义封装。
 - 改法：
-  1. 在写记忆的调用方（找 supervisor 感知流 / 语音 tick 写入点 ⚠️ 需定位，疑在 `backend/pipeline/` 或 supervisor 模块）按来源标 `skip_embed=True`。
+  1. 在写记忆的调用方（已核实：高频写入点 = `backend/pipeline/voice_pipeline.py`（语音 tick）+ `memory/manager.py`/`session_db.py`；且 `backend/tests/test_light_write_path.py` 已存在覆盖 light 路径）按来源标 `skip_embed=True`。
   2. 可选：在 `memory/manager.py` 暴露 `write(target, ..., light: bool=False)` 形参，light=True 透传 skip_embed（manager.py:71 `MemoryManager` 已是三层 façade，加形参不破坏现有 `recall`/`write`）。
 - BC 保证：flag OFF → 所有写入路径 `skip_embed=False`（现状），字节一致；flag 仅切换高频流来源的 skip_embed。
-- 测试点：`backend/tests/test_write_tiering.py`（新）—— 断言 light 写入后 VectorWorker 队列未增长；真机：连续语音 tick 后查 embedder 队列不暴涨。
+- 测试点：**扩展现有 `backend/tests/test_light_write_path.py`**（已覆盖 light 原语，加「高频流来源自动标 skip_embed」case，勿新建重复文件）—— 断言 light 写入后 VectorWorker 队列未增长；真机：连续语音 tick 后查 embedder 队列不暴涨。
 - 依赖：无。
 - 工作量预估：S-M（核心原语已有，主要是定位高频流接线点）。
 
