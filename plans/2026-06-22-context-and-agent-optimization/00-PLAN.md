@@ -1,6 +1,6 @@
 # DeskPet 优化总规划 — 上下文管理 + 对标系统升级（2026-06-22）
 
-> **状态**: DRAFT v0.1（待子代理多轮对抗硬化到 EXECUTABLE-AS-IS）
+> **状态**: v1.0 READY-pending-1-decision（R1 双子代理校准 + ground-truth 实读裁决 + codex 对抗 NOT-READY → R2 全收，无 BLOCKING/MAJOR 残留；**唯余 1 个设计决策待 Lead 拍板：TG-1 任务概念 A/B**。详见 §8）
 > **依据**: [STATUS/status.md](../../STATUS/status.md)（2026-06-22 已校准）+ 三路调研（架构 / 对标系统 / 上下文管理）+ `research/` 对标资料
 > **范围**: 两大优化方向 —— ①上下文管理（Claude Code 工作环境 + DeskPet 运行时双层）②openclaw/hermes/claude/openhuman 对标差距补齐
 > **铁律**: 不可少做功能；技术项细化到「具体哪个文件、哪个函数、怎么改」；全部新功能 flag 出厂 OFF = 字节级 BC
@@ -84,6 +84,16 @@
 >
 > **这正是「不可少做功能」的正确解读**：不是把已实现的重写，而是把已实现但 OFF/未接的**点亮 + 补全 + 加真缺口**，一个对标点都不漏。
 
+**WI 五类分类法（解决「口径不稳」，每个对标点归一类、无遗漏）**：
+
+| 类 | 含义 | WI |
+|---|---|---|
+| **A 已实现+已测，仅点亮 flag/补观测** | 代码已在且有测试，默认 OFF 或缺观测 | HM-1（自我纠错，含清 stale 注释 + 查 ephemeral 专用模型是否真生效）· CC-1（skill 压缩后 `_remount_skills` 已实现且有测试）· OH-2（pref_decay 默认 off）· TG-1 goal 持久化（已落库） |
+| **B 真缺口，新建** | 实读确认无等价物 | OH-4 记忆 self-curation nudge · CC-2 plan mode 物理只读权限 · OC-1 显式 depth 上界 · OC-2 累计背压指标 |
+| **C 已有基础，补全/补入口/加固** | 核心在但差临门一脚 | OH-1（四路 RRF→决定是否默认开第五路 facts/entity）· OH-2 补用户 pin/forget 入口 · OH-3 写入分级 light 路径 · TG-1（新建 `goal_task_create` 工具 + 厘清三套任务概念定唯一目标 + 清 goal_store stale 注释） |
+| **D 低优先新增/评估** | 锦上添花 | CC-3 `/verify` 真实运行 skill · CC-5 终端用户 auto-memory（评估） |
+| **E 明确不做** | 避免过度工程 | CC-4 通用 hook 层（已有 verify-gate end_turn 守门即等价物） |
+
 ### 3.1 openhuman → 记忆工程（实读后：核心已实现，补边角）
 - WI-OH-1 五路混合检索 — ✅ **已实现**（`retriever.py:226` 4 路 RRF + `enhanced_retriever.py` 叠 facts/rerank/chunk/rewrite）→ **降级为「确认默认开 + 补 freshness 权重可调」或删除**
 - WI-OH-2 PROFILE 人格半衰期 — 🟡 **核心已实现**（`facts.py:_CATEGORY_DECAY` + `set_pinned:882` + `preference_profile.py` 📌置顶注入）→ **仅补 PreferenceMemory JSON 衰减 + 对话式 Pin/Forget 入口**
@@ -95,7 +105,7 @@
 - WI-HM-2 技能自创产可执行 — 🟡 已有独立 LOCKED plan → **引用 [plans/2026-06-22-skill-executable-function-call](../2026-06-22-skill-executable-function-call/)，不重复造**
 
 ### 3.3 claude（Claude Code）→ harness 机制补深
-- WI-CC-1 skills 三级渐进披露 — 🟡 **大部分已实现**（`skill.py` auto_disclosure embedding 强匹配+body inline+预算+LRU；`loader.py:read_body`）→ **仅剩 compaction 后重挂一项**（⚠️ 接线状态需复核 `context_manager.py`，01/02 报告口径冲突）
+- WI-CC-1 skills 三级渐进披露 — ✅ **已实现且有测试**（`skill.py` auto_disclosure embedding 强匹配+body inline+预算+LRU；`loader.py:read_body`；**compaction 后重挂 = `agent_loop.py:_remount_skills` 已实现 + `test_deskpet_skill_remount_after_compaction.py` 已覆盖**，codex 实读裁决 ⚠️ 已消解）→ 无接线工作，仅可选调优 `_remount_skills` 策略（D 类）
 - WI-CC-2 plan mode 只读权限模式 — 🔴 **真缺口**（`code_mode/` grep 0 命中只读权限切换）：规划期物理禁 Edit/Write
 - WI-CC-3 `/verify`+`/run` bundled skill — 🟡 last-mile 已有 → 补一个面向真实桌宠运行验证的 skill + 启动配方
 - WI-CC-4 hooks exit-2 — ❌ **不引入通用 hook**：DeskPet 运行时无 hook 层，已有 verify-gate end_turn 守门即等价物（避免过度工程）
@@ -147,5 +157,25 @@
 ## 7. 待 review 的开放问题（交付时与用户确认）
 
 1. **「圈圈」歧义**：用户指的是 **Claude Code 工作环境**（1A）还是 **DeskPet 运行时**（1B）？本 plan 两层都覆盖，review 时确认侧重。
-2. **范围取舍**：方向二 5 个对标系统全做工程量巨大；是否按 P0→P3 分期，还是某几个系统优先？
+2. **范围取舍**：方向二多为「点亮已实现」（轻），真新建只有 4 个缺口（B 类）；是否按 P0→P3 全做，还是只做 P0+P1+部分 B 类？
 3. **1A 是否落仓库**：Claude Code 工作环境优化（CLAUDE.md 瘦身 / MCP 裁剪）是否要写成 repo 内可复用的配置/脚本，还是仅给操作 SOP？
+4. **TG-1 任务概念唯一目标（设计决策，派发前必须拍板）**：DeskPet 现存三套任务概念 —— TeamStore（`team_task_create/update/list`）/ TaskGraphStore（`goal_task_list/update`，仅 teammate 可见、无 create）/ GoalStore。主 agent 要用哪套？方案 A：新建 `goal_task_create/get` 把 task_graph_tools 提升为主 agent 全局可见；方案 B：复用 `team_task_*`。详见 02 文档 TG-1。
+5. **1B-1 token 收敛 BC 取舍**：口径统一会改变中文 token 估值（影响压缩触发/截断点），不是字节 BC。挂 flag `unified_token_count`（默认 OFF）保旧口径，还是接受为「可接受的 UI/metrics 修正」直接改？
+
+---
+
+## 8. 对抗迭代记录（供 review 看收敛过程）
+
+本 plan 严格走「写 → 多轮对抗实读裁决 → 修订」直到无 BLOCKING：
+
+| 轮次 | 方式 | 关键发现 | 处置 |
+|---|---|---|---|
+| **起草** | 3 路 Explore（架构/对标/上下文）+ Lead 综合 | 主纲基于 `research/`（多写于 2026-06-04 前）| 立 00/01/02 框架 |
+| **R0 撰写** | 2 个 general-purpose 实读代码写 01/02 | **方向二大面积「其实已实现」**（research 滞后于代码）| §3/§4 实现度校准 |
+| **R1-A ground-truth 裁决** | 1 个 gp 实读裁决 7 处 ⚠️ | HM-1/OH-1/OH-2/TG-1 已实现；1B-1 残留比想象多；CC-1 skill 在受保护分区 | R1 修订 01（token 6 处+flag）/02（CC-1 降级/TG-1 加大/HM-1 确认）|
+| **R1-B codex 对抗** | codex gpt-5.5 只读审查（独立印证）| **NOT-READY**：CC-1 其实**已有 `_remount_skills` + 测试**；TG-1 还有第三套 `team_task_create`；CC-2 "禁 Edit/Write" 名不对（DeskPet 无此工具名）；HM-1 `ephemeral_subagent_model` 疑未真生效；测试点多已存在 | **R2 修订中**（本轮）|
+| **R2** | gp 实读 spot-verify codex 全部 8 项 claim（全属实）+ 修订 02 + Lead 修 00 分类法 | CC-1 确认已实现+已测（推翻 R1 伪缺口判定）；TG-1 三套概念厘清；CC-2 真工具名 write_file/edit_file/run_shell/desktop_create_file + 拦截层；HM-1 揪出 `ephemeral_subagent_model` dead config 真 bug；OH-1/OH-2/OC-2 措辞收准 | ✅ 清空 BLOCKING/MAJOR；唯余 1 设计决策（TG-1 A/B）|
+
+> **收敛趋势**：每轮都冒新坑但趋势收敛（符合 `feedback_codex_adversarial_plan_hardening`）。三个独立读码者（2 gp + codex）对「已实现 vs 真缺口」的判定已高度一致：**4 个真缺口 OH-4/CC-2/OC-1/OC-2 三方一致确认**。R2 后无 BLOCKING/MAJOR 未决，仅 TG-1 任务概念选型需 Lead 拍板（属产品/架构决策，非缺陷）。
+>
+> **附带产出（独立于本 plan 的 shipped 真 bug）**：`ephemeral_subagent_model`（`config.py:271` 配置项，默认 haiku + 白名单校验）**从未被消费** —— `main.py:936` 自我纠错 ephemeral verifier 直接用 `local_llm or cloud_llm`。已开独立任务跟踪修复。
