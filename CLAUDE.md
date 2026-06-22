@@ -52,53 +52,12 @@ DeskPet 的 LLM 调用走 中转站（默认 gpt-5.5）。用户首次启动时�
 
 ---
 
-## 📁 仓库分支与 worktree 拓扑
+## 📁 分支 / 端口 / 关键文档
 
-| 路径 | 分支 | 用途 |
-|---|---|---|
-| `G:\projects\deskpet\` | `master` | main 工作树，beta 100 ready 代码 |
-| `G:\projects\deskpet\.claude\worktrees\memory-upgrade\` | `worktree-memory-upgrade` | memory-v2 升级（Stage 0/1 已合 PR #2） |
-| `G:\projects\deskpet-tool-last-mile\` | `tool-last-mile-upgrade` | **本 worktree** — 工具调用 last-mile 升级（PRD §3 D1-D12） |
-
-### 端口隔离（防 dev 抢端口）
-
-`scripts/dev-worktree.ps1` 已支持 `DESKPET_BACKEND_PORT` + `DESKPET_VITE_PORT` env 注入：
-
-| 工作树 | backend | vite |
-|---|---|---|
-| main | 8100（默认） | 5173（默认） |
-| memory-upgrade | 8200 | 5273 |
-| tool-last-mile（本树） | 8300 | 5373 |
-
----
-
-## 🧪 跑 last-mile 升级的验收
-
-```bash
-# Stage 2 准入硬条件（N1/N2）+ 4 个一票否决（MR-0/8/13/19）
-cd /g/projects/deskpet-tool-last-mile
-python scripts/acceptance/last_mile_smoke.py
-# 期望: DECISION: SHIP
-
-# 仅 last-mile 相关 TG 全套（170+ 用例）
-cd backend && python -m pytest tests/test_tool_artifact.py tests/test_tool_last_mile_config.py \
-    tests/test_receipt_store.py tests/test_verify_gate.py tests/test_outcome_verifier.py \
-    tests/test_stage2_wiring.py tests/test_agent_loop_verify_wiring.py \
-    tests/test_byte_level_consistency.py tests/test_artifact_default_path.py \
-    tests/test_ppt_dry_run.py tests/test_metrics_event_endpoint.py -v
-```
-
----
-
-## 📚 关键文档
-
-- `plans/2026-05-23-tool-last-mile-upgrade/00-PRD.md` (v2.1) — 12 决策 + 19 WI + 4 一票否决
-- `plans/2026-05-23-tool-last-mile-upgrade/01-TDD.md` (v2.1) — 13 测试组
-- `plans/2026-05-23-tool-last-mile-upgrade/02-manual-test-cases.md` (v2.1) — MR-0~24
-- `plans/2026-05-23-tool-last-mile-upgrade/03-architect-review-round1.md` — 一轮架构评审
-- `plans/2026-05-23-tool-last-mile-upgrade/04-architect-review-round2.md` — 二轮评审 + v2.1 后记
-- `plans/2026-05-23-tool-last-mile-upgrade/STAGE0-audit.md` — 工具产物 + 前端审计
-- `plans/2026-05-23-tool-last-mile-upgrade/STAGE0-claim-baseline.md` — claim 短语基线
+- **分支策略**：master 直接开发（`feedback_deskpet_branch_strategy`），不走长寿命 feature 分支。worktree 拓扑与各模块完成度见 [`STATUS/status.md`](./STATUS/status.md) §2。
+- **端口隔离**（真测高频）：main 树 backend=**8100** / vite=**5173**（默认）；其他 worktree 经 `scripts/dev-worktree.ps1` 注入 `DESKPET_BACKEND_PORT`/`DESKPET_VITE_PORT` 错开。
+- **关键 plan/文档清单**：见各 `plans/<date>-*/00-*.md` 与 [`STATUS/status.md`](./STATUS/status.md)。last-mile 升级 PRD/TDD/手测用例在 `plans/2026-05-23-tool-last-mile-upgrade/`。
+- **last-mile 验收命令**：`python scripts/acceptance/last_mile_smoke.py`（期望 `DECISION: SHIP`）+ 对应 TG pytest 套件（命令清单见该 plan 目录）。
 
 ---
 
@@ -142,55 +101,12 @@ cd backend && python -m pytest tests/test_tool_artifact.py tests/test_tool_last_
 
 ## 🔒 手工测试纪律（HARD CONSTRAINT — 不可妥协）
 
-当用户要求 **"用 windows-mcp 测试"** / **"跑手工测试"** / **"模拟人工点击"** 时，本约束**强制生效**。
+触发词："用 windows-mcp 测试" / "跑手工测试" / "模拟人工点击" / "真测" / "真 E2E" / `/goal` 设了相关 condition → 本约束强制生效。
 
-### ❌ 禁止的绕过方式（违反即视为未完成）
+**完整纪律（禁止清单 / workaround / 报告格式）见全局** `~/.claude/knowledge-base/windows-mcp-e2e.md`。本项目特有补充：
 
-1. **不允许** 直接 WebSocket 注入 backend (`ws://127.0.0.1:8100/*`) 当 UI 测试证据
-   — 这是协议层验证，**不是**用户行为，不能替代 windows-mcp 模拟点击
-2. **不允许** 把 `pytest` / `last_mile_smoke.py` / 任何 backend 单元/acceptance 脚本当 UI 测试 PASS 证据
-   — 用户要的是"模拟人工"，脚本回放违反 `feedback_real_e2e_not_script_replay`
-3. **不允许** Python `import` backend 包查 registry / loader / config 内部状态当"功能可用"证据
-   — 这证明"代码加载到了"，**不证明**"用户用得了"
-4. **不允许** 仅靠 `cmdkey /list` / 文件存在 / boot log grep 推断"功能可用"
-   — 间接证据不是 E2E 证据
-5. **不允许** 因 windows-mcp 工具报错（如 `Click(loc=[x,y])` schema bug、SendKeys 中文 IME）就 fallback 到上述任何方式
-   — 工具障碍必须用 workaround 克服，不是绕过的理由
-
-### ✅ 强制要求的真测做法
-
-1. **每个 testcase 必须**：windows-mcp Snapshot/Screenshot 抓状态 → 真坐标点击 / 真输入 → 截图证据 → 肉眼或日志判 PASS/FAIL
-2. **Click 失败 workaround**（按优先级 retry）：
-   - PowerShell `[W]::SetCursorPos(x,y) + mouse_event(LEFTDOWN/UP)` Win32 API
-   - windows-mcp `Click(label=...)` 用 Snapshot 出的 label
-   - 用 `App switch` 先聚焦窗口再 click
-3. **中文输入 workaround**（按优先级 retry）：
-   - STA Runspace + `[System.Windows.Forms.Clipboard]::SetText("中文")` + Ctrl+V
-   - 焦点不在目标窗口 → 先 Click 输入框聚焦再粘贴
-   - 验证 backend log 真收到了消息（不收到就说明粘贴失败，要 retry）
-4. **每个 case 失败必须 retry 至少 3 次不同 workaround**，才能标"环境受限"
-5. **跳过任何 testcase 必须**：显式声明 + 给具体环境受限理由 + **等用户确认**
-6. **每个 windows-mcp 动作前先 declare**：`坐标=(x,y) | 动作=click/type | 期望=...` —— 这是给用户的纪律承诺，防止又走捷径
-
-### 🎯 适用场景识别词
-
-用户出现以下词时立刻进入本纪律：
-- "用 windows-mcp 跑"
-- "模拟人工点击/输入"
-- "跑手工测试" / "手工测试"
-- "真测" / "真 E2E"
-- "/goal" 设置了相关 condition
-
-### 📝 报告格式
-
-每个 testcase 报告必须含：
-```
-case: TC-04.1 / B5-1 / R3-1 / ...
-坐标: (3444, 1786)
-动作: Click 输入框 → Clipboard "你好" → Ctrl+V → Enter
-截图: screenshots/<case>.png
-backend log 证据: <grep 关键事件>
-判定: PASS / FAIL / RETRY-N
-```
+- **不允许**用 `ws://127.0.0.1:8100/*` WebSocket 直注、`pytest`/`last_mile_smoke.py`、`import` backend 查 registry、`cmdkey /list`/boot log grep 当 UI 测试证据 —— 全是协议层/脚本/间接证据，不替代真模拟点击。
+- **中文输入 workaround**：STA Runspace + `Clipboard.SetText("中文")` + Ctrl+V；焦点不在目标窗口先 Click 输入框聚焦再粘贴；用 backend log 确认消息真收到。
+- **每个 case**：Snapshot/Screenshot → 真坐标点击/真输入 → 截图 → 日志判定；动作前 declare `坐标=(x,y)|动作=|期望=`；失败 retry ≥3 次不同 workaround 才能标"环境受限"；跳过须等用户确认。
 
 **记住**：用户要的不是"PASS 数量"，是"真 E2E 证据"。绕过得来的 PASS 是负价值。
