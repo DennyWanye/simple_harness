@@ -436,14 +436,10 @@ def _render_l2_l3(
 
 
 def _approx_tokens(text: str) -> int:
-    """Very coarse token estimate (1 token ≈ 4 chars for mixed Chinese+English).
+    """委托统一入口 ``deskpet.agent.tokens.count_text_tokens``（CJK-aware）。
 
-    Accurate enough for budget allocation. The real tokeniser is
-    provider-specific; we avoid importing tiktoken here to keep the
-    hot path fast.
+    全后端 token 计数走同一口径，足够做 budget allocation。
     """
-    if not text:
-        return 0
     if not text:
         return 0
     from deskpet.agent.tokens import count_text_tokens

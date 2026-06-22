@@ -395,9 +395,11 @@ async def test_weak_match_desc_only(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_overbudget_high_usage_retained(tmp_path: Path) -> None:
     """When total body tokens exceed budget, drop lowest usage_count first."""
-    # Create two skills both strong matches, budget allows only one
-    body_high = "x" * 500  # ~125 tokens
-    body_low = "y" * 500   # ~125 tokens
+    # Create two skills both strong matches, budget allows only one.
+    # WI-1B-1：token 计数收敛到 CJK-aware count_text_tokens（ASCII×8/7 安全偏上），
+    # 500 ASCII ≈ 142 tokens（旧裸 len//4 是 125）。budget 取 150：容一不容二。
+    body_high = "x" * 500  # ~142 tokens (count_text_tokens)
+    body_low = "y" * 500   # ~142 tokens
 
     _make_skill_dir(tmp_path, "high-use", "alpha skill description", body_high)
     _make_skill_dir(tmp_path, "low-use", "beta skill description", body_low)
@@ -422,14 +424,14 @@ async def test_overbudget_high_usage_retained(tmp_path: Path) -> None:
     matcher = SkillMatcher(embedder)
     matcher.build([meta_high, meta_low])
 
-    # Tiny budget: only fits one body (~125 tokens each, budget=130)
+    # Tiny budget: only fits one body (~142 tokens each, budget=150)
     component = SkillComponent(skill_matcher=matcher, skill_loader=loader)
     ctx = _make_ctx(
         [meta_high, meta_low],
         user_message="query",
         auto_disclosure_enabled=True,
         strong_threshold=0.55,
-        budget_tokens=130,
+        budget_tokens=150,
     )
     result: Slice = await component.provide(ctx)
     # high-use body should be present

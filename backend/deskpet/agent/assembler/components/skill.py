@@ -30,11 +30,13 @@ from typing import Any, Optional
 
 from deskpet.agent.assembler.bundle import Slice
 from deskpet.agent.assembler.components.base import Component, ComponentContext
+from deskpet.agent.tokens import count_text_tokens
 
 logger = logging.getLogger(__name__)
 
 
-# Approximate chars-per-token ratio (conservative, good for CJK/mixed).
+# 粗略 char 截断预算用的 chars/token 比（仅用于反向算 max_chars 截断长度，
+# 不是 token 计数口径；真正的 token 计数走 tokens.count_text_tokens）。
 _CHARS_PER_TOKEN = 4
 
 # Default config values (mirror SkillsAutoDisclosureConfig defaults).
@@ -161,7 +163,7 @@ class SkillComponent:
             return Slice(
                 component_name=self.name,
                 text_content=desc_text,
-                tokens=max(1, len(desc_text) // _CHARS_PER_TOKEN) if desc_text else 0,
+                tokens=count_text_tokens(desc_text) if desc_text else 0,
                 priority=85,
                 bucket="skill",
                 meta={
@@ -218,7 +220,7 @@ class SkillComponent:
             max_chars = per_skill_max_tokens * _CHARS_PER_TOKEN
             if len(raw_body) > max_chars:
                 raw_body = raw_body[:max_chars] + "\n…（已截断）"
-            body_tokens = max(1, len(raw_body) // _CHARS_PER_TOKEN)
+            body_tokens = count_text_tokens(raw_body)
             if used_tokens + body_tokens > budget_tokens:
                 break
             is_knowledge = _is_knowledge(nm, skills)
@@ -258,7 +260,7 @@ class SkillComponent:
         return Slice(
             component_name=self.name,
             text_content=text,
-            tokens=max(1, len(text) // _CHARS_PER_TOKEN),
+            tokens=count_text_tokens(text),
             priority=85,  # desc list is never cut; body section can be trimmed externally
             bucket="skill",
             meta={

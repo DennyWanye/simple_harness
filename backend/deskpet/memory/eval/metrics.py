@@ -239,8 +239,8 @@ def _rendered_tokens(hits: Iterable[Any]) -> int:
 
     记忆系统升级 WI-M0.2 / PRD D11: 量的是 L3/facts 召回段渲染进 system
     prompt 的文本 token —— 不含 L1 静态档案、不含对话历史。复刻
-    ``assembler/components/memory.py`` 的渲染（``_render_l3_only``）与
-    粗略 tokenizer（``_approx_tokens``: 1 token ≈ 4 chars），口径与 agent
+    ``assembler/components/memory.py`` 的渲染（``_render_l3_only``），token
+    计数委托统一入口 ``tokens.count_text_tokens``（CJK-aware），口径与 agent
     一致。空召回 → 0 token（不渲染段头）。
     """
     lines: list[str] = []
@@ -264,7 +264,8 @@ def _rendered_tokens(hits: Iterable[Any]) -> int:
     if not lines:
         return 0
     block = "## 相关记忆片段 (L3, RRF recall)\n\n" + "\n".join(lines)
-    return max(1, len(block) // 4)
+    from deskpet.agent.tokens import count_text_tokens
+    return max(1, count_text_tokens(block))
 
 
 def _extract_message_id(hit: Any) -> Optional[int]:

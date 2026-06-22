@@ -18,10 +18,9 @@ This module gives the chat handler a fast pre-call check:
   elif result.verdict is BudgetCheck.WARN:
       # log + optionally compact proactively
 
-No tiktoken dependency — we use a ``len(content) / 4`` heuristic that's
-~5-15% accurate for mixed English/Chinese, which is enough for warning
-thresholds. The real model count will be slightly different but never
-by an order of magnitude.
+Token 计数统一委托 ``deskpet.agent.tokens.count_messages_tokens``（CJK-aware
+启发式，可选 tiktoken 精度增强），消除散落的 ``len//4`` 口径不一致。对中文
+不再低估，足够驱动 warning 阈值；真实 model count 略有出入但绝不差一个数量级。
 
 Design
 ------
