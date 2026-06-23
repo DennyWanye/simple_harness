@@ -106,8 +106,13 @@ def build_spawn_subagents_tools(
     Returns:
         ``((spawn_handler, spawn_schema), (await_handler, await_schema))``
     """
-    from deskpet.agent.task_kinds import resolve_kind
+    from deskpet.agent.task_kinds import (
+        SpawnDepthExceeded,
+        check_spawn_depth,
+        resolve_kind,
+    )
     from deskpet.agent.subagent_registry import SubagentRun
+    from .agent_parallel_tool import _read_raw_agent_cfg
 
     runner = _make_async_native_runner(
         llm_shim=llm_shim,
@@ -122,6 +127,15 @@ def build_spawn_subagents_tools(
         if not isinstance(subs, list) or not subs:
             return json.dumps(
                 {"ok": False, "error": "subagents must be a non-empty list"},
+                ensure_ascii=False,
+            )
+        # WI-OC-1：显式 depth 上界（flag OFF=默认 → no-op，仍靠 strip 守门 = BC）。
+        # flag ON 且本代理深度已达上界 → 拒绝整批 spawn（与剥 spawn 工具同风格拒绝）。
+        try:
+            check_spawn_depth(_read_raw_agent_cfg())
+        except SpawnDepthExceeded as exc:
+            return json.dumps(
+                {"ok": False, "error": str(exc), "forbidden": "spawn_depth"},
                 ensure_ascii=False,
             )
         parent_sid = parent_session_id_resolver() or "default"

@@ -203,6 +203,18 @@ async def spawn_team(
         ``{ok, team_id, elapsed_ms, results: [task_dict, ...], timed_out,
         aligned: [...], flagged: [...]}``.
     """
+    # WI-OC-1：显式 depth 上界（flag OFF=默认 → no-op，仍靠 strip 守门 = BC）。
+    # flag ON 且本代理深度已达上界 → 拒绝整个 team spawn。
+    try:
+        from deskpet.agent.task_kinds import SpawnDepthExceeded, check_spawn_depth
+        from deskpet.tools.code_tools.agent_parallel_tool import (
+            _read_raw_agent_cfg,
+        )
+
+        check_spawn_depth(_read_raw_agent_cfg())
+    except SpawnDepthExceeded as _de:
+        return {"ok": False, "error": str(_de), "forbidden": "spawn_depth"}
+
     if not _MIN_TEAMMATES <= num_teammates <= _MAX_TEAMMATES:
         return {
             "ok": False,
@@ -370,18 +382,32 @@ def _make_default_runner(
         )
         sub_sid = f"{parent_session_id}.team-{team_id}.{teammate_id}"
 
-        async for ev in sub_loop.run(messages, session_id=sub_sid):
-            if isinstance(ev, FinalEvent):
-                return
-            if isinstance(ev, ErrorEvent):
-                # Don't raise — teammate exits cleanly, _run_teammate
-                # already isolates exceptions but this avoids an extra
-                # warning row.
-                log.info(
-                    "team teammate %s ended on ErrorEvent: %s",
-                    teammate_id, getattr(ev, "reason", "?"),
-                )
-                return
+        # WI-OC-1：teammate 深度 = 父深度+1，注入 env（depth gate flag ON 生效；
+        # OFF 时 env 不被读取 → BC）。同进程内跑，run 完恢复旧值不污染父/兄弟。
+        import os as _os
+
+        from deskpet.agent.task_kinds import _DEPTH_ENV, child_depth_env
+
+        _prev_depth = _os.environ.get(_DEPTH_ENV)
+        _os.environ.update(child_depth_env())
+        try:
+            async for ev in sub_loop.run(messages, session_id=sub_sid):
+                if isinstance(ev, FinalEvent):
+                    return
+                if isinstance(ev, ErrorEvent):
+                    # Don't raise — teammate exits cleanly, _run_teammate
+                    # already isolates exceptions but this avoids an extra
+                    # warning row.
+                    log.info(
+                        "team teammate %s ended on ErrorEvent: %s",
+                        teammate_id, getattr(ev, "reason", "?"),
+                    )
+                    return
+        finally:
+            if _prev_depth is None:
+                _os.environ.pop(_DEPTH_ENV, None)
+            else:
+                _os.environ[_DEPTH_ENV] = _prev_depth
 
     return _runner
 

@@ -41,12 +41,33 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import time
 from typing import Any, Awaitable, Callable, Optional
 
 from deskpet.agent.task_kinds import _FORBIDDEN_IN_KIND
 
 log = logging.getLogger(__name__)
+
+
+def _read_raw_agent_cfg() -> dict[str, Any]:
+    """惰性读 ``config.raw['agent']`` —— 供 WI-OC-1 depth gate 读 flag/上界。
+
+    与 ``research_tools._fanout_concurrency`` 同款防御式读法：cfg 单例可能不
+    存在 → 全程 try/except，失败回退 ``{}``（depth_gate_enabled({}) = False =
+    OFF = BC，绝不因读 config 失败而误拦 spawn）。
+    """
+    try:
+        import config as _cfg  # type: ignore[import-not-found]
+
+        obj = getattr(_cfg, "config", None)
+        if obj is None:
+            obj = _cfg.load_config(_cfg.resolve_config_path())
+        raw = getattr(obj, "raw", None) or {}
+        agent_raw = raw.get("agent", {}) if isinstance(raw, dict) else {}
+        return agent_raw if isinstance(agent_raw, dict) else {}
+    except Exception:  # noqa: BLE001 — 读 config 失败一律 OFF（BC 安全）
+        return {}
 
 
 _MIN_SUBAGENTS = 2
@@ -301,7 +322,12 @@ def build_agent_parallel_tool(
             differ — which is what tests assert).
     """
     # WI-1.3: 事务分型解析器（lazy import 防循环 import）
-    from deskpet.agent.task_kinds import resolve_kind
+    # WI-OC-1: depth gate（显式深度上界，flag OFF=默认 → no-op = BC）
+    from deskpet.agent.task_kinds import (
+        SpawnDepthExceeded,
+        check_spawn_depth,
+        resolve_kind,
+    )
 
     # Runner 选择（WI-1.3）：
     #   1. subagent_runner（测试注入）优先
@@ -328,6 +354,15 @@ def build_agent_parallel_tool(
     )
 
     async def _handle(args: dict[str, Any], task_id: str = "") -> str:
+        # WI-OC-1：显式 depth 上界（flag OFF=默认 → no-op，仍靠 strip 守门 = BC）。
+        # flag ON 且本代理深度已达上界 → 拒绝整批（与剥 spawn 工具同风格拒绝）。
+        try:
+            check_spawn_depth(_read_raw_agent_cfg())
+        except SpawnDepthExceeded as exc:
+            return json.dumps(
+                {"ok": False, "error": str(exc), "forbidden": "spawn_depth"},
+                ensure_ascii=False,
+            )
         subagents = args.get("subagents")
         # G4: batch-level cache_mode default (each subagent may override)
         batch_cache_mode_raw = args.get("cache_mode", _DEFAULT_CACHE_MODE)
@@ -613,12 +648,26 @@ def _make_async_native_runner(
         sub = _AgentLoop(**_sub_kwargs)
         sub_sid = f"{parent_sid}.par-{sa_task_id}"
         final = ""
-        async for ev in sub.run(msgs, session_id=sub_sid):
-            if isinstance(ev, _FinEv):
-                final = ev.content or ""
-                break
-            if isinstance(ev, _ErrEv):
-                return f"[subagent error] {ev.reason}: {ev.detail}".rstrip(": ")
+        # WI-OC-1：子代理深度 = 父深度+1，注入 env 让子代理的
+        # current_spawn_depth() 比父深一层（depth gate flag ON 时生效；OFF 时
+        # 此 env 不被任何检查读取 → 行为字节不变 = BC）。同进程内跑，run 完恢复
+        # 旧值，避免污染父/兄弟代理（asyncio 同事件循环串行进入此段）。
+        from deskpet.agent.task_kinds import _DEPTH_ENV, child_depth_env
+
+        _prev_depth = os.environ.get(_DEPTH_ENV)
+        os.environ.update(child_depth_env())
+        try:
+            async for ev in sub.run(msgs, session_id=sub_sid):
+                if isinstance(ev, _FinEv):
+                    final = ev.content or ""
+                    break
+                if isinstance(ev, _ErrEv):
+                    return f"[subagent error] {ev.reason}: {ev.detail}".rstrip(": ")
+        finally:
+            if _prev_depth is None:
+                os.environ.pop(_DEPTH_ENV, None)
+            else:
+                os.environ[_DEPTH_ENV] = _prev_depth
         return final or "[subagent finished without final text]"
 
     return _runner

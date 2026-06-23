@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from typing import Any, Awaitable, Callable
 
 from deskpet.agent.task_kinds import _FORBIDDEN_IN_KIND
@@ -103,6 +104,16 @@ def build_agent_tool(
     }
 
     def _handler(args: dict[str, Any], task_id: str = "") -> str:
+        # WI-OC-1：显式 depth 上界（flag OFF=默认 → no-op，仍靠 strip 守门 = BC）。
+        from deskpet.agent.task_kinds import SpawnDepthExceeded, check_spawn_depth
+        from .agent_parallel_tool import _read_raw_agent_cfg
+
+        try:
+            check_spawn_depth(_read_raw_agent_cfg())
+        except SpawnDepthExceeded as exc:
+            return json.dumps(
+                {"error": str(exc), "forbidden": "spawn_depth"}, ensure_ascii=False
+            )
         description = args.get("description")
         prompt = args.get("prompt")
         if not description or not prompt:
@@ -189,13 +200,25 @@ def build_agent_tool(
         except RuntimeError:
             loop = None
 
-        if loop is None or not loop.is_running():
-            result = asyncio.run(_run())
-        else:
-            fut = asyncio.run_coroutine_threadsafe(_run(), loop)
-            # Subagent capped at 15 iterations × ~30s per LLM round = ~7m worst case.
-            # Pick a generous-but-finite timeout.
-            result = fut.result(timeout=600)
+        # WI-OC-1：子代理深度 = 父深度+1，注入 env 让子代理 current_spawn_depth()
+        # 深一层（depth gate flag ON 时生效；OFF 时此 env 不被读取 → BC）。
+        from deskpet.agent.task_kinds import _DEPTH_ENV, child_depth_env
+
+        _prev_depth = os.environ.get(_DEPTH_ENV)
+        os.environ.update(child_depth_env())
+        try:
+            if loop is None or not loop.is_running():
+                result = asyncio.run(_run())
+            else:
+                fut = asyncio.run_coroutine_threadsafe(_run(), loop)
+                # Subagent capped at 15 iter × ~30s per LLM round = ~7m worst case.
+                # Pick a generous-but-finite timeout.
+                result = fut.result(timeout=600)
+        finally:
+            if _prev_depth is None:
+                os.environ.pop(_DEPTH_ENV, None)
+            else:
+                os.environ[_DEPTH_ENV] = _prev_depth
 
         return json.dumps({"result": result, "tools": tool_subset})
 
