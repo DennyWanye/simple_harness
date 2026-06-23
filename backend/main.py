@@ -6655,6 +6655,27 @@ async def control_channel(ws: WebSocket):
                             _PLAN_CONFIRM_WAITERS[_sid] = {
                                 "fut": _confirm_fut, "text": _text,
                             }
+                            # WI-CC-2: features.plan_read_only ON 时，规划期
+                            # （plan 挂起、等用户点[执行]）置该 session 物理只读 ——
+                            # registry.execute_tool 拦下所有写/执行类工具。go/
+                            # cancel/timeout 后在 finally 解禁。OFF（默认）= 不置位
+                            # = 字节级 BC。
+                            _plan_ro_on = bool(
+                                getattr(config.features, "plan_read_only", False)
+                            )
+                            if _plan_ro_on:
+                                try:
+                                    deskpet_tool_registry_v2.set_plan_read_only(
+                                        _sid, True
+                                    )
+                                    logger.info(
+                                        "plan_read_only_enter sid=%s", _sid
+                                    )
+                                except Exception as _ro_e:  # noqa: BLE001
+                                    logger.warning(
+                                        "plan_read_only_enter_failed sid=%s err=%s",
+                                        _sid, _ro_e,
+                                    )
                             logger.info("plan_confirm_gate_awaiting sid=%s", _sid)
                             try:
                                 _decision = await asyncio.wait_for(
@@ -6665,6 +6686,21 @@ async def control_channel(ws: WebSocket):
                                 logger.info("plan_confirm_gate_timeout sid=%s", _sid)
                             finally:
                                 _PLAN_CONFIRM_WAITERS.pop(_sid, None)
+                                # WI-CC-2: 不论 go / cancel / timeout，解禁规划期
+                                # 只读（幂等；未置位时 discard 无害）。
+                                if _plan_ro_on:
+                                    try:
+                                        deskpet_tool_registry_v2.set_plan_read_only(
+                                            _sid, False
+                                        )
+                                        logger.info(
+                                            "plan_read_only_exit sid=%s", _sid
+                                        )
+                                    except Exception as _ro_e2:  # noqa: BLE001
+                                        logger.debug(
+                                            "plan_read_only_exit_failed sid=%s err=%s",
+                                            _sid, _ro_e2,
+                                        )
                                 # FEAT-A4: 不论 go / cancel / timeout，plan 都不再
                                 # awaiting → 清 sidecar 标记（幂等，重复无害）。
                                 # 统一收口在 finally，确保三条出路都覆盖。

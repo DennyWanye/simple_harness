@@ -426,12 +426,19 @@ class FeaturesConfig:
     * ``preference_memory`` — superpowers Layer 1B：BGE-M3 语义偏好记忆。计划记忆
       让 plan-confirm 硬门对"语义相似且以往批准过"的任务**自动确认**（决策2 的
       "记下来后续直接做"）。OFF（默认）时不构造 PreferenceMemory，门每次都等确认。
+    * ``plan_read_only`` — WI-CC-2 规划期**物理只读**。ON 且 plan-confirm 硬门挂起
+      （展示 plan、等用户点[执行]）期间，registry.execute_tool 对所有写/执行类
+      permission_category（write_file/desktop_write/shell/skill_install）的工具
+      返回「规划期只读」deny，**不执行**；只读工具（read_file/network 等）照常放行。
+      用户点[执行]→解禁。OFF（默认）= 规划期不切只读、写类工具照常（字节级 BC）。
+      注：需 plan_confirm_gate 一并 ON 才有挂起窗口可锁。
     """
     slash_commands: bool = False
     goal_mode: bool = False
     agent_parallel: bool = False
     plan_confirm_gate: bool = False
     preference_memory: bool = False
+    plan_read_only: bool = False
     # --- 子代理并发驱动（plans/2026-06-21-subagent-concurrency-driver/）---------
     # 全默认 OFF；OFF 时新代码 short-circuit，agent_parallel 退回扁平 gather（字节级 BC）。
     #   subagent_driver       — 总开关：事务分型(task_kinds)路由 + 有界调度(scheduler)接入

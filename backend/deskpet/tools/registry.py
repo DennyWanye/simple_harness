@@ -61,6 +61,21 @@ ToolHandler = Callable[[dict[str, Any], str], str]
 CheckFn = Callable[[], bool]
 
 
+# WI-CC-2 (plan mode 物理只读): 写/执行类 permission_category 集中维护。
+# 与 deskpet.types.skill_platform.PermissionCategory 的 8 个合法值对齐 ——
+# 写产物/有副作用的 4 类列入；只读类（read_file / read_file_sensitive /
+# network / mcp_call）不在内，规划期照常放行。按 *permission_category* 判而
+# 非硬编码工具名，所以自动覆盖所有写产物工具（os/ppt/excel/doc/pdf/memory/
+# computer_use 等 —— 它们均以这 4 类之一注册），新增写工具无需改这里。
+#   write_file    — write_file / edit_file / 各产物写工具 (ppt/excel/doc/pdf/memory…)
+#   desktop_write — desktop_create_file 等桌面落盘
+#   shell         — run_shell / computer_use GUI 控制（点击/输入/拖拽副作用）
+#   skill_install — 安装 skill（写盘 + 改变工具面）
+_WRITE_PERMISSION_CATEGORIES: frozenset[str] = frozenset(
+    {"write_file", "desktop_write", "shell", "skill_install"}
+)
+
+
 # WI-T4.1 v3 D11: 显式 conflict 错误（registry spec gap 修复）。
 # 历史 ``registry.register replaces on duplicate`` 是反模式 — late-loaded
 # stubs 会无声覆盖真实现，错误极难调试（last-mile / stage2 都踩过）。
@@ -228,6 +243,12 @@ class ToolRegistry:
         self._receipt_store_provider: Optional[Callable[[], Any]] = None
         # WI-T2.3 session iteration 计数 (per session_id) — receipt.iteration 字段
         self._session_iteration: dict[str, int] = {}
+        # WI-CC-2 (plan mode 物理只读): per-session 规划期只读开关。
+        # main.py 在 plan-confirm 硬门挂起前置 True、用户点[执行]/取消/超时后置
+        # False。为 True 期间 execute_tool 拦下所有 _WRITE_PERMISSION_CATEGORIES
+        # 工具。默认空集 = 无 session 处于只读 = 字节级 BC（features.plan_read_only
+        # OFF 时 main.py 永不置位，此集恒空）。
+        self._plan_read_only_sessions: set[str] = set()
 
     def set_permission_gate(self, gate) -> None:  # type: ignore[no-untyped-def]
         """Wire a PermissionGate. Called once at backend startup."""
@@ -277,6 +298,24 @@ class ToolRegistry:
     def get_session_context(self, session_id: str) -> dict[str, Any]:
         """Read-only snapshot of the session's tool-arg context."""
         return dict(self._session_context.get(session_id, {}))
+
+    def set_plan_read_only(self, session_id: str, enabled: bool) -> None:
+        """WI-CC-2 — toggle 规划期物理只读 for one session.
+
+        ``enabled=True`` 期间，``execute_tool`` 对该 session 上任何
+        ``permission_category`` 属 ``_WRITE_PERMISSION_CATEGORIES`` 的工具
+        返回「规划期只读」deny（不执行 handler）；只读工具照常放行。
+        main.py 在 plan-confirm 硬门挂起前置 True、go/cancel/timeout 后置 False。
+        幂等：重复 True/False 无副作用。
+        """
+        if enabled:
+            self._plan_read_only_sessions.add(session_id)
+        else:
+            self._plan_read_only_sessions.discard(session_id)
+
+    def is_plan_read_only(self, session_id: str) -> bool:
+        """True iff ``session_id`` is currently in 规划期物理只读 mode."""
+        return session_id in self._plan_read_only_sessions
 
     # ------------------------------------------------------------------
     # Registration
@@ -659,6 +698,29 @@ class ToolRegistry:
                 logger.warning(
                     "tools_config_provider read failed in execute_tool: %s", _exc,
                 )
+
+        # WI-CC-2 (plan mode 物理只读): 规划期对写/执行类工具硬拦。
+        # set_plan_read_only(sid, True) 期间（main.py 在 plan-confirm 硬门挂起
+        # 时置位），任何 permission_category 属写类集合的工具直接 deny，handler
+        # **不执行** —— 把「流程提示」升级为「物理只读」。只读工具放行。
+        # 默认无 session 处于只读（features.plan_read_only OFF → main.py 永不置
+        # 位）→ 此分支 short-circuit → 字节级 BC。
+        if (
+            session_id in self._plan_read_only_sessions
+            and spec.permission_category in _WRITE_PERMISSION_CATEGORIES
+        ):
+            logger.info(
+                "plan_read_only_deny sid=%s tool=%s category=%s",
+                session_id, name, spec.permission_category,
+            )
+            return {
+                "ok": False,
+                "result": None,
+                "error": (
+                    f"规划期只读：工具 {name!r}（{spec.permission_category}）"
+                    "在计划确认前不可执行。请先批准执行计划（点[执行]）再调用写类工具。"
+                ),
+            }
 
         # P5-S2 Phase 3: per-(session, tool) circuit breaker. If the
         # breaker is OPEN we synthesize a structured ``circuit_open``
