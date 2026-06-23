@@ -64,4 +64,36 @@ describe("subagentStore (WI-3.4)", () => {
     useSubagentStore.getState().clear();
     expect(Object.keys(useSubagentStore.getState().runs)).toHaveLength(0);
   });
+
+  // WI-OC-2 累计观测指标
+  it("metrics default to zero (BC: 旧后端不推 → 不崩)", () => {
+    const m = useSubagentStore.getState().metrics;
+    expect(m).toEqual({ peak_concurrent: 0, total_queued: 0, total_rejected: 0 });
+  });
+
+  it("setMetrics overwrites only the carried numeric fields", () => {
+    const s = useSubagentStore.getState();
+    s.setMetrics({ peak_concurrent: 3, total_queued: 5, total_rejected: 1 });
+    expect(useSubagentStore.getState().metrics).toEqual({
+      peak_concurrent: 3,
+      total_queued: 5,
+      total_rejected: 1,
+    });
+    // 部分快照：undefined 字段不动旧值（旧后端可能不推某些 key）。
+    s.setMetrics({ total_queued: 8 });
+    const m = useSubagentStore.getState().metrics;
+    expect(m.total_queued).toBe(8);
+    expect(m.peak_concurrent).toBe(3); // 未携带 → 保持
+    expect(m.total_rejected).toBe(1);
+  });
+
+  it("clear resets metrics too", () => {
+    useSubagentStore.getState().setMetrics({ peak_concurrent: 4, total_queued: 9 });
+    useSubagentStore.getState().clear();
+    expect(useSubagentStore.getState().metrics).toEqual({
+      peak_concurrent: 0,
+      total_queued: 0,
+      total_rejected: 0,
+    });
+  });
 });

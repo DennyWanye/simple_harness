@@ -111,6 +111,7 @@ export function SubagentProgressPanel({
   variant = "light",
 }: SubagentProgressPanelProps) {
   const runs = useSubagentStore((s) => s.runs);
+  const metrics = useSubagentStore((s) => s.metrics);
   const clearTerminal = useSubagentStore((s) => s.clearTerminal);
   const theme = THEMES[variant];
 
@@ -276,6 +277,43 @@ export function SubagentProgressPanel({
               </div>
             );
           })}
+          {/* WI-OC-2 累计观测汇总（背压/lane 指标）。后端在每条进度事件附带
+              调度器全局快照；旧后端不推 → 全 0 → 不渲染（优雅降级）。 */}
+          {(metrics.total_queued > 0 ||
+            metrics.peak_concurrent > 0 ||
+            metrics.total_rejected > 0) && (
+            <div
+              data-testid="subagent-metrics-summary"
+              style={{
+                marginTop: 4,
+                paddingTop: 4,
+                borderTop: `1px solid ${theme.border}`,
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 10,
+                fontSize: 11,
+                color: theme.subFg,
+              }}
+            >
+              <span data-testid="subagent-metric-peak" title="历史运行峰值（背压上限）">
+                峰值 {metrics.peak_concurrent}
+              </span>
+              <span data-testid="subagent-metric-queued" title="累计入队总数">
+                累计入队 {metrics.total_queued}
+              </span>
+              <span
+                data-testid="subagent-metric-rejected"
+                title="累计拒绝/取消（排队或运行中被取消）"
+                style={
+                  metrics.total_rejected > 0
+                    ? { color: "#ef4444" }
+                    : undefined
+                }
+              >
+                拒绝 {metrics.total_rejected}
+              </span>
+            </div>
+          )}
         </div>
       )}
     </div>

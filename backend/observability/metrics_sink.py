@@ -80,6 +80,9 @@ VALID_EVENTS = frozenset({
     # 子代理并发驱动 (plans/2026-06-21-subagent-concurrency-driver/ WI-1.5)
     # — 调度器把子任务调进 lane 运行（kind/run_id/lane cap 背压）.
     "subagent_scheduled",
+    # WI-OC-2 背压/lane 观测 — 子任务从入队到拿到双闸的队列等待耗时样本
+    # （detail: kind 枚举 + duration_ms 数字，无用户文本）。供 P50/P95 估算。
+    "subagent_lane_wait",
     # WI-G1 Companion+Code v2 — Multi-Agent Team workflow task lifecycle
     # (team_task_created / team_task_claimed / team_task_done)；脱敏：
     # task_id + team_id 都是 caller 自管的 uuid，无敏感内容。

@@ -171,7 +171,9 @@ def test_queued_cancel_emits_terminal_progress():  # 0.2.7
     assert ("failed", "cancelled") in vic
     assert "running" not in [s for (s, _) in vic]
     # 计数器无泄漏（queued 在取消路径里也被 -= 1）
-    assert snap == {"running": 0, "queued": 0}
+    assert snap["running"] == 0 and snap["queued"] == 0
+    # WI-OC-2：排队中被取消计入 total_rejected
+    assert snap["total_rejected"] >= 1
 
 
 def test_running_cancel_tags_reason_cancelled():  # 0.2.8
@@ -205,7 +207,7 @@ def test_running_cancel_tags_reason_cancelled():  # 0.2.8
     snap = _run(body())
     assert ("running", None) in events       # 真进过 running
     assert ("failed", "cancelled") in events  # 取消态带 reason
-    assert snap == {"running": 0, "queued": 0}  # 无泄漏
+    assert snap["running"] == 0 and snap["queued"] == 0  # 无泄漏
 
 
 def test_genuine_failure_has_no_cancelled_reason():  # 0.2.9
@@ -243,4 +245,4 @@ def test_snapshot_returns_to_zero():  # 0.2.6
         return sched.snapshot()
 
     snap = _run(body())
-    assert snap == {"running": 0, "queued": 0}
+    assert snap["running"] == 0 and snap["queued"] == 0

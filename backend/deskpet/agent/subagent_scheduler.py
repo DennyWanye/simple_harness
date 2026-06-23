@@ -48,6 +48,16 @@ class SubagentScheduler:
         self._progress = progress_sink
         self._running = 0
         self._queued = 0
+        # WI-OC-2 累计观测层（纯增量计数，不影响调度行为）：
+        #   peak_concurrent: 历史运行峰值（≤ global cap，验证背压真生效）。
+        #   total_queued:    累计入队总数（不随出队回落，是吞吐口径）。
+        #   total_rejected:  累计拒绝/取消计数（排队或运行中被取消 → 终态 failed
+        #                    +reason="cancelled" 时 +1；真错误不计入）。
+        #   lane_wait_ms:    每次跑完记一笔队列等待耗时样本，供 P50/P95 估算。
+        self._peak_concurrent = 0
+        self._total_queued = 0
+        self._total_rejected = 0
+        self._lane_wait_ms: list[float] = []
 
     def _lane(self, kind: str) -> asyncio.Semaphore:
         """惰性创建该 kind 的 lane semaphore（默认 cap=2）。"""
@@ -59,10 +69,50 @@ class SubagentScheduler:
     def _emit(self, payload: dict[str, Any]) -> None:
         if self._progress is None:
             return
+        # WI-OC-2：在每条进度事件 payload 上附累计观测字段（纯增字段，旧字段
+        # 不变 → BC：旧前端忽略未知 key，新前端读取展示；旧后端不推 → 前端缺省 0）。
+        try:
+            payload = {**payload, **self._metrics()}
+        except Exception as exc:  # noqa: BLE001 — 累计字段附加永不阻断进度
+            log.debug("subagent scheduler metrics attach failed: %s", exc)
         try:
             self._progress(payload)
         except Exception as exc:  # noqa: BLE001 — 进度永不阻断调度
             log.debug("subagent scheduler progress emit failed: %s", exc)
+
+    def _metrics(self) -> dict[str, int]:
+        """WI-OC-2 累计观测字段（peak / total_queued / total_rejected）。"""
+        return {
+            "peak_concurrent": self._peak_concurrent,
+            "total_queued": self._total_queued,
+            "total_rejected": self._total_rejected,
+        }
+
+    @staticmethod
+    def _percentile(samples: list[float], pct: float) -> float:
+        """最近邻分位数（无 numpy 依赖）。空样本返回 0.0。"""
+        if not samples:
+            return 0.0
+        ordered = sorted(samples)
+        if len(ordered) == 1:
+            return ordered[0]
+        k = (len(ordered) - 1) * pct
+        lo = int(k)
+        hi = min(lo + 1, len(ordered) - 1)
+        frac = k - lo
+        return ordered[lo] + (ordered[hi] - ordered[lo]) * frac
+
+    def _record_lane_wait(self, kind: str, wait_ms: int) -> None:
+        """把单次队列等待耗时落到 metrics_sink（失败静默吞，不阻断调度）。"""
+        try:
+            from observability.metrics_sink import record  # noqa: PLC0415
+
+            record(
+                "subagent_lane_wait",
+                {"kind": kind, "duration_ms": int(wait_ms)},
+            )
+        except Exception as exc:  # noqa: BLE001 — 观测失败永不影响调度
+            log.debug("subagent lane_wait metric failed: %s", exc)
 
     async def run(
         self,
@@ -83,6 +133,7 @@ class SubagentScheduler:
         """
         lane = self._lane(kind)
         self._queued += 1
+        self._total_queued += 1  # WI-OC-2 累计入队（只增不减，吞吐口径）
         t_queued = time.time()
         self._emit(
             {
@@ -105,7 +156,13 @@ class SubagentScheduler:
                 async with lane:
                     self._queued -= 1
                     self._running += 1
+                    if self._running > self._peak_concurrent:
+                        self._peak_concurrent = self._running  # WI-OC-2 运行峰值
                     entered_running = True
+                    # WI-OC-2 队列等待样本（拿到双闸的时刻 - 入队时刻），供 P50/P95。
+                    lane_wait_ms = int((time.time() - t_queued) * 1000)
+                    self._lane_wait_ms.append(float(lane_wait_ms))
+                    self._record_lane_wait(kind, lane_wait_ms)
                     # F9: 日志锚点供真机 E2E grep
                     log.info(
                         "subagent_scheduled kind=%s run_id=%s task_id=%s",
@@ -153,6 +210,7 @@ class SubagentScheduler:
                         }
                         if isinstance(exc, asyncio.CancelledError):
                             _ev["reason"] = "cancelled"
+                            self._total_rejected += 1  # WI-OC-2 运行中被取消计入拒绝
                         self._emit(_ev)
                         raise
                     finally:
@@ -163,6 +221,7 @@ class SubagentScheduler:
             # 终态 failed 进度并修复 queued 计数泄漏，再 re-raise 保持取消语义。
             if not entered_running:
                 self._queued -= 1
+                self._total_rejected += 1  # WI-OC-2 排队中被取消计入拒绝
                 self._emit(
                     {
                         "run_id": run_id,
@@ -178,8 +237,22 @@ class SubagentScheduler:
             raise
 
     def snapshot(self) -> dict[str, int]:
-        """当前调度状态快照（observability）。"""
-        return {"running": self._running, "queued": self._queued}
+        """当前调度状态快照（observability）。
+
+        瞬时字段：``running`` / ``queued``（既有，BC 不变）。
+        WI-OC-2 累计字段：``peak_concurrent`` / ``total_queued`` /
+        ``total_rejected`` + 队列等待分位 ``lane_wait_p50_ms`` /
+        ``lane_wait_p95_ms``（无样本时为 0）。
+        """
+        return {
+            "running": self._running,
+            "queued": self._queued,
+            "peak_concurrent": self._peak_concurrent,
+            "total_queued": self._total_queued,
+            "total_rejected": self._total_rejected,
+            "lane_wait_p50_ms": int(self._percentile(self._lane_wait_ms, 0.50)),
+            "lane_wait_p95_ms": int(self._percentile(self._lane_wait_ms, 0.95)),
+        }
 
 
 __all__ = ["SubagentScheduler"]

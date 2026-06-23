@@ -435,7 +435,8 @@ function dispatch(msg: any) {
       // 由 SubagentProgressPanel 渲染（不碰消息流）。
       const p = msg.payload || {};
       if (p && p.run_id) {
-        useSubagentStore.getState().upsert({
+        const sub = useSubagentStore.getState();
+        sub.upsert({
           run_id: String(p.run_id),
           task_id: String(p.task_id || ""),
           kind: String(p.kind || ""),
@@ -444,6 +445,16 @@ function dispatch(msg: any) {
           reason: typeof p.reason === "string" ? p.reason : undefined,
           summary: typeof p.summary === "string" ? p.summary : undefined,
           ts: typeof p.ts === "number" ? p.ts : Date.now(),
+        });
+        // WI-OC-2：每条进度事件附带调度器累计快照（peak/total_queued/
+        // total_rejected）。旧后端不推这些 key → setMetrics 忽略 → 缺省 0 降级。
+        sub.setMetrics({
+          peak_concurrent:
+            typeof p.peak_concurrent === "number" ? p.peak_concurrent : undefined,
+          total_queued:
+            typeof p.total_queued === "number" ? p.total_queued : undefined,
+          total_rejected:
+            typeof p.total_rejected === "number" ? p.total_rejected : undefined,
         });
       }
       break;
