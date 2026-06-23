@@ -215,6 +215,13 @@ class MemoryV2Config:
     # FP-4 B-10：goal→facts 双写钩（默认 False）。
     # False → bind_on_goal_set 不接电 → goal_store.set() BC。
     goal_facts_hook: bool = False         # B-10 goal→facts double-write hook
+    # WI-OH-4：记忆 self-curation nudge（agent 主动判断该不该记，对标 hermes
+    # 周期性自省 + openhuman self-curation）。默认 False = 字节级 BC：
+    # flag OFF → MemoryCurator 不构造、agent_loop 不调 nudge、不写 facts。
+    curation_nudge: bool = False          # WI-OH-4 记忆自策展 nudge 开关
+    # WI-OH-4 频率门控：每 N 个回合触发一次 nudge（对齐 hermes「周期性」）。
+    # 仅在 curation_nudge=True 时生效。
+    curation_nudge_every_n_turns: int = 8
     facts: MemoryV2FactsConfig = field(default_factory=MemoryV2FactsConfig)
     forget: MemoryV2ForgetConfig = field(
         default_factory=MemoryV2ForgetConfig,

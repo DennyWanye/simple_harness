@@ -523,10 +523,21 @@ class AgentLoop:
         # 子代理并发驱动 WI-3.3：非阻塞子代理 completion queue（agent_loop 回合
         # 边界 drain 注入父上下文）。None (默认) → 不 drain（BC，零行为变更）.
         subagent_registry: Optional[Any] = None,
+        # WI-OH-4 记忆 self-curation nudge: MemoryCurator + 频率门控。
+        # curator None (默认) → 不调 nudge（BC，零行为变更）。非 None 时每
+        # curation_nudge_every_n_turns 个回合在 FinalEvent 后 fire-and-forget
+        # 一次 nudge（异步，不挡主回合，照 vector_worker 模式）。
+        memory_curator: Optional[Any] = None,  # deskpet.memory.curation.MemoryCurator
+        curation_nudge_every_n_turns: int = 8,
     ) -> None:
         self.llm = llm_registry
         self.tools = tool_registry
         self._subagent_registry = subagent_registry
+        # WI-OH-4 记忆自策展 nudge（BC: None → 不调 nudge）。每 session 一个轮次
+        # 计数器；到 _curation_every 触发一次 fire-and-forget nudge。
+        self._memory_curator = memory_curator
+        self._curation_every = max(1, int(curation_nudge_every_n_turns or 8))
+        self._curation_turn_counts: dict[str, int] = {}
         self.max_iterations = max_iterations
         self.budget_checker = budget_checker
         self.default_model = default_model
@@ -1930,6 +1941,11 @@ class AgentLoop:
                         "gate_summary": self._gate.summary(),
                     })
 
+                # WI-OH-4: 记忆 self-curation nudge — 在 FinalEvent 之后周期性
+                # fire-and-forget 触发（curator None → BC，跳过整段；非 None 时
+                # 每 _curation_every 回合调一次，异步不挡主回合）。
+                self._maybe_fire_curation_nudge(session_id, working_messages)
+
                 yield FinalEvent(
                     type="final",
                     task_id=tid,
@@ -2270,6 +2286,58 @@ class AgentLoop:
             reason="max_iterations",
             detail=f"exceeded {self.max_iterations} iterations without terminal stop_reason",
         )
+
+    # ------------------------------------------------------------------
+    # WI-OH-4 — memory self-curation nudge (fire-and-forget)
+    # ------------------------------------------------------------------
+
+    def _maybe_fire_curation_nudge(
+        self,
+        session_id: str,
+        working_messages: list[dict[str, Any]],
+    ) -> None:
+        """Periodically kick off a memory self-curation nudge.
+
+        BC: ``self._memory_curator is None`` → return immediately (zero
+        behaviour change). When a curator is wired, a per-session turn counter
+        is bumped each terminal turn; once it hits ``_curation_every`` the
+        nudge is scheduled as a fire-and-forget asyncio task so it never blocks
+        the FinalEvent / user turn (照 vector_worker 异步模式).
+
+        Any failure here is swallowed — the curation path must never affect the
+        chat turn.
+        """
+        if self._memory_curator is None:
+            return
+        try:
+            count = self._curation_turn_counts.get(session_id, 0) + 1
+            self._curation_turn_counts[session_id] = count
+            if count % self._curation_every != 0:
+                return
+            # Snapshot the conversation so the background task reads a stable
+            # list even if `working_messages` keeps mutating after we return.
+            recent = list(working_messages)
+
+            async def _run_curation() -> None:
+                try:
+                    decisions = await self._memory_curator.nudge(recent)
+                    logger.info(
+                        "oh4_curation_nudge sid=%s turn=%d decisions=%d remembered=%d",
+                        session_id,
+                        count,
+                        len(decisions),
+                        sum(1 for d in decisions if getattr(d, "should_remember", False)),
+                    )
+                except Exception as exc:  # noqa: BLE001 — never escape bg task
+                    logger.debug(
+                        "oh4_curation_nudge_failed sid=%s: %s", session_id, exc
+                    )
+
+            asyncio.create_task(_run_curation())
+        except Exception as exc:  # noqa: BLE001 — scheduling must not break turn
+            logger.debug(
+                "oh4_curation_schedule_failed sid=%s: %s", session_id, exc
+            )
 
     # ------------------------------------------------------------------
     # WI-4.2 — post-compaction skill body remount

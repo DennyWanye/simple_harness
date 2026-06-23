@@ -938,6 +938,9 @@ def build_agent(
     # FP-5 缺口 2 (2026-06-06) — WI-1.6 工具路径录制喂 FP-5 技能自创。
     # None (默认) → agent_loop 不喂 recorder（字节级 BC：codify hook complete() 得空 steps → 不提候选）。
     tool_path_recorder=None,
+    # WI-OH-4 — 记忆 self-curation nudge。None (默认) → agent_loop 不调 nudge
+    # （字节级 BC）。非 None 时每 N 回合 fire-and-forget 触发一次。
+    memory_curator=None,
 ):
     """Build a wired _AgentLoop with optional VerifyGate + ReceiptStore.
 
@@ -1141,6 +1144,12 @@ def build_agent(
         skill_matcher=skill_matcher,
         # ─── FP-5 缺口 2：WI-1.6 工具路径录制喂技能自创（flag off = None = BC）───
         tool_path_recorder=tool_path_recorder,
+        # ─── WI-OH-4：记忆 self-curation nudge（curator None = BC，不调 nudge）───
+        memory_curator=memory_curator,
+        curation_nudge_every_n_turns=int(
+            getattr(getattr(getattr(cfg, "memory", None), "v2", None),
+                    "curation_nudge_every_n_turns", 8) or 8
+        ),
         # ─── WI-4b pre-flush：压缩前把任务态落 L1(跨 session 记任务)。模块级
         # _file_memory(L1048)在 build_agent 调用时已就绪；try 失败则 None(BC)。───
         file_memory=globals().get("_file_memory"),
@@ -2614,6 +2623,26 @@ async def lifespan(app: FastAPI):
 
             asyncio.create_task(_reflection_loop())
             logger.info("p4_reflection_worker_scheduled")
+
+    # WI-OH-4: 记忆 self-curation nudge — flag memory.v2.curation_nudge 开 +
+    # facts store + LLM 可用 → 构造 MemoryCurator 存进 service_context，由
+    # build_agent 接电到 agent_loop（每 N 回合 fire-and-forget nudge）。
+    # flag 关 / 无 facts / 无 LLM → curator=None → agent_loop 不调 nudge（BC）。
+    if (
+        config.memory.v2.curation_nudge
+        and _facts_store is not None
+    ):
+        _curation_llm = _make_str_llm_call(local_llm, max_tokens=512)
+        if _curation_llm is None:
+            logger.info("oh4_curation_skipped", reason="no_llm_provider")
+        else:
+            from deskpet.memory.curation import MemoryCurator as _MemoryCurator
+            _curator = _MemoryCurator(_facts_store, _curation_llm)
+            service_context.register("memory_curator", _curator)
+            logger.info(
+                "oh4_curation_nudge_wired",
+                every_n=config.memory.v2.curation_nudge_every_n_turns,
+            )
     # OpenSpec 2026-05-16-async-image-gen: start the ImageGenerationWorker
     # unless async disabled (then generate_image runs legacy sync).
     _iw = service_context.get("image_worker")
@@ -6748,6 +6777,8 @@ async def control_channel(ws: WebSocket):
                         _skill_matcher_for_agent = service_context.get("skill_matcher")
                         # FP-5 缺口 2：WI-1.6 工具路径录制器（flag off → None → BC）
                         _tp_recorder_for_agent = service_context.get("tool_path_recorder")
+                        # WI-OH-4：记忆 self-curation curator（flag off → None → BC）
+                        _curator_for_agent = service_context.get("memory_curator")
                         _agent = build_agent(
                             config,
                             llm_registry=_shim,
@@ -6765,6 +6796,7 @@ async def control_channel(ws: WebSocket):
                             skill_loader=_skill_loader_for_agent,
                             skill_matcher=_skill_matcher_for_agent,
                             tool_path_recorder=_tp_recorder_for_agent,
+                            memory_curator=_curator_for_agent,
                         )
                         # P4-S25 A1: stream by default — gives the user
                         # instant visible feedback on thinking-mode

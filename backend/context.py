@@ -76,6 +76,10 @@ _VALID_SERVICES = frozenset({
     "subagent_registry",   # SubagentRegistry — 非阻塞 run 记录 + completion queue + 取消
     "team_store",          # TeamStore — spawn_team 共享任务池/mailbox/permission
     "task_graph_store",    # TaskGraphStore — DAG 依赖排序任务图
+    # --- WI-OH-4 记忆 self-curation nudge (plans/2026-06-21-ppt-deepresearch-pro) ---
+    # flag memory.v2.curation_nudge OFF（默认）时 lifespan 不 register（None 占位
+    # 无需），但加进白名单防 get()/register() 抛 "Unknown service"（仿上方注释）。
+    "memory_curator",      # MemoryCurator — agent 主动判断该不该长期记
 })
 
 @dataclass
@@ -129,6 +133,8 @@ class ServiceContext:
     subagent_registry: Any | None = None
     team_store: Any | None = None
     task_graph_store: Any | None = None
+    # --- WI-OH-4 记忆 self-curation nudge ------------------------------------
+    memory_curator: Any | None = None
 
     def register(self, name: str, provider: Any) -> None:
         if name not in _VALID_SERVICES:
