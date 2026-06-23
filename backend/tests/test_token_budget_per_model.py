@@ -96,6 +96,64 @@ def test_context_manager_v1_rollback_still_uses_legacy_window():
 
 
 # ---------------------------------------------------------------------------
+# WI-1B-3 自适应 compact_at_pct — flag OFF 字节级 BC；ON 时 agentic 提前压。
+# ---------------------------------------------------------------------------
+
+def test_adaptive_pct_off_equals_fixed():
+    """OFF（默认）: compact_at_tokens_for(True)==for(False)==compact_at_tokens。"""
+    from agent.context_manager import ContextConfig
+    from llm.model_info import resolve
+
+    info = resolve("deepseek-v4-pro", None)  # 1M, compact 0.75
+    cfg = ContextConfig(model_info=info, v2_enabled=True)
+    assert cfg.adaptive_compact_pct is False
+    fixed = cfg.compact_at_tokens
+    assert cfg.compact_at_tokens_for(agentic=True) == fixed
+    assert cfg.compact_at_tokens_for(agentic=False) == fixed
+    assert fixed == 750_000
+
+
+def test_adaptive_pct_on_agentic_lower():
+    """ON: agentic 触发线 < 纯对话；两者都 clamp 在 [0.6,0.95]×window。"""
+    from agent.context_manager import ContextConfig
+    from llm.model_info import resolve
+
+    info = resolve("deepseek-v4-pro", None)  # 1M, compact_at_pct 0.75
+    cfg = ContextConfig(
+        model_info=info, v2_enabled=True, adaptive_compact_pct=True
+    )
+    window = info.context_window
+    agentic = cfg.compact_at_tokens_for(agentic=True)
+    chat = cfg.compact_at_tokens_for(agentic=False)
+    # agentic 提前压 → 触发线更低。
+    assert agentic < chat
+    # 默认 deltas: 0.75-0.05=0.70 ; 0.75+0.03=0.78（都在 clamp 区间内）。
+    assert agentic == int(window * 0.70)
+    assert chat == int(window * 0.78)
+    # clamp 边界: 两者都在 [0.6,0.95]×window。
+    assert int(window * 0.6) <= agentic <= int(window * 0.95)
+    assert int(window * 0.6) <= chat <= int(window * 0.95)
+
+
+def test_adaptive_pct_clamp_caps_extreme_delta():
+    """极端 delta 被 clamp 到 [0.6,0.95]，不会越界。"""
+    from agent.context_manager import ContextConfig
+    from llm.model_info import resolve
+
+    info = resolve("deepseek-v4-pro", None)  # 1M, base 0.75
+    window = info.context_window
+    cfg = ContextConfig(
+        model_info=info,
+        v2_enabled=True,
+        adaptive_compact_pct=True,
+        agentic_pct_delta=-0.40,  # 0.75-0.40=0.35 → clamp 0.6
+        chat_pct_delta=+0.40,     # 0.75+0.40=1.15 → clamp 0.95
+    )
+    assert cfg.compact_at_tokens_for(agentic=True) == int(window * 0.6)
+    assert cfg.compact_at_tokens_for(agentic=False) == int(window * 0.95)
+
+
+# ---------------------------------------------------------------------------
 # FP-2 TC-2.1 真机暴露 bug:char/4 启发式对 CJK 低估 ~4 倍 →
 # 中文重度会话 real 28k tokens 被估 ~7k,compaction(24k 阈值)永不触发。
 # 修复:CJK 字符按 ≈1 token/字计(等效 4 ASCII chars)。

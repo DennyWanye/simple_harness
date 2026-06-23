@@ -147,6 +147,16 @@ class ContextConfig:
     budget_warn_pct: float = 0.80
     budget_block_pct: float = 0.95
 
+    # ─── WI-1B-3 自适应 compact_at_pct（默认 OFF = 字节级 BC）───
+    # OFF（默认）→ compact_at_tokens_for() 直接 return compact_at_tokens，
+    # agent_loop 走原分支，字节级一致。ON 时按"本 run 是否 agentic"微调触发线:
+    # agentic（多工具长任务）提前压（delta 负、阈值下移、留 buffer 给工具结果）；
+    # 纯对话延后压（delta 正、阈值上移、少打断闲聊）。结果 clamp 在
+    # [0.6, 0.95]×window 内防越界。
+    adaptive_compact_pct: bool = False
+    agentic_pct_delta: float = -0.05
+    chat_pct_delta: float = +0.03
+
     # ─── 内部：解析出当前生效的 ModelContextInfo ───
     def _resolved_model_info(self) -> ModelContextInfo:
         """v2 下返回注入的 model_info；未注入则懒解析 _default。"""
@@ -176,6 +186,29 @@ class ContextConfig:
             return int(_LEGACY_CONTEXT_WINDOW * _LEGACY_COMPACT_AT_PCT)
         mi = self._resolved_model_info()
         return int(mi.context_window * mi.compact_at_pct)
+
+    def compact_at_tokens_for(self, agentic: bool) -> int:
+        """WI-1B-3 自适应触发线（按本 run 是否 agentic 微调）。
+
+        - ``adaptive_compact_pct`` OFF（默认）→ 直接返回 ``compact_at_tokens``
+          属性（无论 agentic 取值），与旧路径字节级一致（BC）。
+        - ON → ``window × clamp(compact_at_pct + delta, 0.6, 0.95)``：
+          agentic=True 用 ``agentic_pct_delta``（默认 -0.05，提前压），
+          agentic=False 用 ``chat_pct_delta``（默认 +0.03，延后压）。
+          v1（``v2_enabled=False``）下 window/pct 取 legacy 常量。
+        """
+        if not self.adaptive_compact_pct:
+            return self.compact_at_tokens
+        if not self.v2_enabled:
+            window = _LEGACY_CONTEXT_WINDOW
+            base_pct = _LEGACY_COMPACT_AT_PCT
+        else:
+            mi = self._resolved_model_info()
+            window = mi.context_window
+            base_pct = mi.compact_at_pct
+        delta = self.agentic_pct_delta if agentic else self.chat_pct_delta
+        eff_pct = max(0.6, min(0.95, base_pct + delta))
+        return int(window * eff_pct)
 
     @property
     def tool_result_threshold(self) -> int:
@@ -270,6 +303,7 @@ class ContextManager:
         v2_enabled: bool = True,
         summarize_fn: Optional[SummarizeFn] = None,
         ref_store: Optional[ToolResultRefStore] = None,
+        adaptive_compact_pct: bool = False,
     ) -> "ContextManager":
         """按 model + project_root 三层 resolve 注入 ModelContextInfo。
 
@@ -285,10 +319,17 @@ class ContextManager:
         """
         if v2_enabled:
             mi = resolve_model_info(model, project_root=project_root)
-            config = ContextConfig(model_info=mi, v2_enabled=True)
+            config = ContextConfig(
+                model_info=mi,
+                v2_enabled=True,
+                adaptive_compact_pct=adaptive_compact_pct,
+            )
         else:
             # 回退闸：不解析 per-model，ContextConfig 走 legacy 绝对值。
-            config = ContextConfig(v2_enabled=False)
+            config = ContextConfig(
+                v2_enabled=False,
+                adaptive_compact_pct=adaptive_compact_pct,
+            )
         return cls(
             config=config,
             summarize_fn=summarize_fn,

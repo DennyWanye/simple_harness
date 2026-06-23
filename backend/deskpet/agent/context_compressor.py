@@ -133,6 +133,8 @@ class ContextCompressor:
         summary_max_tokens: int = 768,   # 512→768: 结构化摘要稍长,保任务连续性(优化 #2)
         effective_pct: "float | None" = None,
         microcompact_keep_tools: int = 3,
+        microcompact_size_aware: bool = False,
+        microcompact_keep_bytes: int = 24_000,
     ) -> None:
         self._llm = llm_registry
         self.context_window = int(context_window)
@@ -149,6 +151,12 @@ class ContextCompressor:
         )
         # WI-2: microcompact 保护最近 N 个工具调用的 tool_result 原文。
         self.microcompact_keep_tools = max(0, int(microcompact_keep_tools))
+        # WI-1B-5: size-aware 保护(默认 OFF = 字节级 BC)。OFF → 仍按"最近 N 条";
+        # ON → "最近 N 条 + 累计字节 ≤ microcompact_keep_bytes",避免最近 N 条里
+        # 混入巨型 tool_result 仍把窗口撑爆(只保护到字节预算耗尽为止,更早的即便
+        # 在 N 之内也会被清)。
+        self.microcompact_size_aware = bool(microcompact_size_aware)
+        self.microcompact_keep_bytes = max(0, int(microcompact_keep_bytes))
 
     # ------------------------------------------------------------------
     # Public API
@@ -228,7 +236,12 @@ class ContextCompressor:
         # ── WI-2 microcompact: 先廉价清陈旧 tool_result(不调模型、不动语义)。
         # 命中后若整体已降到触发线下 → 直接返回,省一次 haiku 调用(最高频生效层)。
         work, n_micro = _microcompact_tool_results(
-            messages, self.microcompact_keep_tools
+            messages,
+            self.microcompact_keep_tools,
+            keep_bytes=(
+                self.microcompact_keep_bytes
+                if self.microcompact_size_aware else None
+            ),
         )
         if n_micro > 0:
             try:
@@ -662,7 +675,10 @@ def _extract_prior_summary(
 
 
 def _microcompact_tool_results(
-    messages: list[dict[str, Any]], keep_recent_tools: int
+    messages: list[dict[str, Any]],
+    keep_recent_tools: int,
+    *,
+    keep_bytes: "int | None" = None,
 ) -> "tuple[list[dict[str, Any]], int]":
     """WI-2 microcompact：把陈旧 tool_result 正文换占位串(不调模型、不动语义)。
 
@@ -671,6 +687,11 @@ def _microcompact_tool_results(
     否则破坏 assistant.tool_calls↔tool 配对计数,见 _sanitize_tool_pairs)。
     assistant.tool_calls 一律不动。纯函数,不改入参。
 
+    WI-1B-5 size-aware(``keep_bytes`` 非 None 时启用): 在"最近 N 条"基础上再叠
+    "累计 content 字节 ≤ keep_bytes"——从最近往旧累加,字节预算耗尽即停止保护
+    (避免最近 N 条里混入巨型 tool_result 仍把窗口撑爆)。``keep_bytes=None``
+    (默认)→ 纯按"最近 N 条",与旧行为字节级一致(BC)。
+
     返回 ``(new_messages, n_compacted)``。``n_compacted`` = 实际被换占位的条数。
     """
     _PLACEHOLDER = "[旧工具结果已清理 / stale tool result pruned]"
@@ -678,7 +699,21 @@ def _microcompact_tool_results(
     tool_idxs = [i for i, m in enumerate(messages) if m.get("role") == "tool"]
     if not tool_idxs:
         return list(messages), 0
-    protected = set(tool_idxs[-keep_recent_tools:]) if keep_recent_tools > 0 else set()
+    recent_idxs = tool_idxs[-keep_recent_tools:] if keep_recent_tools > 0 else []
+    if keep_bytes is None:
+        # BC 路径: 纯"最近 N 条"。
+        protected = set(recent_idxs)
+    else:
+        # size-aware: 在最近 N 条里从新到旧累加字节,超预算即不再保护更旧的。
+        protected = set()
+        used = 0
+        for idx in reversed(recent_idxs):  # 最近的先入,旧的后入
+            body_len = len(str(messages[idx].get("content") or "").encode("utf-8"))
+            if used + body_len > keep_bytes:
+                # 预算耗尽: 当前及更旧的(更靠前)一律不再保护 → 纳入压缩判断。
+                break
+            protected.add(idx)
+            used += body_len
     out: list[dict[str, Any]] = []
     n_compacted = 0
     for i, m in enumerate(messages):

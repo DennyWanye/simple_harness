@@ -1633,6 +1633,14 @@ try:
                     "compaction_window_resolve_failed err=%s — fallback 32000",
                     str(_cmp_exc)[:120],
                 )
+            # WI-1B-5: microcompact size-aware flag(默认 OFF=BC,保护仍按"最近 N 条")。
+            _micro_size_aware = bool(
+                getattr(
+                    getattr(config, "features", None),
+                    "microcompact_size_aware",
+                    False,
+                )
+            )
             _context_compressor = _CtxCompressor(
                 llm_registry=(
                     _CmpShim(provider=_compactor_llm)
@@ -1641,6 +1649,7 @@ try:
                 context_window=_cmp_window,
                 threshold_percent=_cmp_threshold,
                 effective_pct=_cmp_eff_pct,
+                microcompact_size_aware=_micro_size_aware,
             )
             logger.info(
                 "wi4_0_compaction_enabled context_window=%d threshold=%.2f eff_pct=%.2f"
@@ -3331,6 +3340,46 @@ async def _ppt_outline_propose(
         }.get(action, "rejected"),
     )
     return dict(decision or {})
+
+
+# ─── WI-1B-4 摘要质量回路 — 纯检测/构造 helper（main.py 闭包 + 单测共用）──────
+import re as _re_sql_module
+
+_SUMMARY_CONFUSED_RE = _re_sql_module.compile(r"刚才|之前说的|你忘了|我们在弄|上一个")
+_TASK_STATE_SNAPSHOT_MARKER = "[任务态快照"
+
+
+def _sql_user_is_confused(text: str) -> bool:
+    """用户消息是否用"困惑措辞"问起被压掉的上下文（词法匹配）。"""
+    return bool(_SUMMARY_CONFUSED_RE.search(text or ""))
+
+
+def _sql_latest_task_snapshot(entries: "list[dict]") -> "str | None":
+    """从 L1 list_entries 结果里取最近一条 pre-flush 任务态快照（无则 None）。
+
+    任务态快照由 agent_loop wi4b_preflush 在压缩触发时写入 MEMORY.md，
+    形如 ``[任务态快照/task-state] 目标: ...; 最近请求: ...``。它的存在
+    即"本 session 发生过压缩"的标志（不依赖 ctx_observability flag）。
+    """
+    snaps = [
+        str(e.get("text", ""))
+        for e in (entries or [])
+        if _TASK_STATE_SNAPSHOT_MARKER in str(e.get("text", ""))
+    ]
+    return snaps[-1] if snaps else None
+
+
+def _sql_build_reinject_msg(snapshot: str) -> dict:
+    """据任务态快照构造一条回灌 system 消息。"""
+    return {
+        "role": "system",
+        "content": (
+            "[任务态回灌/summary-quality-loop] 用户提起了之前的上下文，但相关"
+            "历史已被压缩。以下是压缩前保存的任务态快照，请据此续接，不要重新"
+            "自我介绍或反问用户想做什么：\n" + snapshot
+        ),
+        "_is_summary_reinject": True,
+    }
 
 
 async def _handle_control_ws_message(raw: dict, *, session_id: str, ws: WebSocket) -> bool:  # noqa: ARG001
@@ -6275,6 +6324,46 @@ async def control_channel(ws: WebSocket):
                     except Exception as _hint_exc:  # noqa: BLE001
                         logger.debug("supervisor_hint_inject_failed error=%s", _hint_exc)
 
+                    # ─── WI-1B-4 摘要质量回路（flag OFF 默认 → 整段 short-circuit，
+                    # 字节级 BC）。ON 时: 用户用"困惑措辞"问起被压掉的上下文
+                    # (刚才|之前说的|你忘了|我们在弄|上一个) + 本 session 确实发生过
+                    # 压缩(L1 有 [任务态快照] 条目) → 从 L1 重新注入一条任务态 system
+                    # 提示(不立刻重摘,只补回任务连续性)。检测/补救全在闭包内。
+                    try:
+                        _sql_on = bool(
+                            getattr(
+                                getattr(config, "features", None),
+                                "summary_quality_loop",
+                                False,
+                            )
+                        )
+                    except Exception:  # noqa: BLE001
+                        _sql_on = False
+                    if _sql_on and not _is_sentinel and _sql_user_is_confused(_text or ""):
+                        try:
+                            _fm = service_context.get("file_memory")
+                            if _fm is not None:
+                                _entries = await _fm.list_entries("memory")
+                                _latest = _sql_latest_task_snapshot(_entries)
+                                if _latest:
+                                    _reinject = _sql_build_reinject_msg(_latest)
+                                    _ins_at = 0
+                                    while (
+                                        _ins_at < len(_msgs)
+                                        and _msgs[_ins_at].get("role") == "system"
+                                    ):
+                                        _ins_at += 1
+                                    _msgs.insert(_ins_at, _reinject)
+                                    logger.info(
+                                        "wi1b4_summary_reinject sid=%s chars=%d",
+                                        _sid, len(_latest),
+                                    )
+                        except Exception as _sql_exc:  # noqa: BLE001
+                            logger.debug(
+                                "wi1b4_summary_loop_skipped sid=%s err=%s",
+                                _sid, _sql_exc,
+                            )
+
                     final_text = ""
                     # P4-S24: capture the LAST assistant turn's
                     # reasoning_content so we persist it alongside
@@ -6369,10 +6458,20 @@ async def control_channel(ws: WebSocket):
                             if (_in_code_mode and _cmm is not None)
                             else None
                         )
+                        # WI-1B-3: adaptive_compact_pct flag(默认 OFF=BC)穿到
+                        # ContextConfig；OFF 时 compact_at_tokens_for() 等价旧触发线。
+                        _adaptive_cpct = bool(
+                            getattr(
+                                getattr(config, "features", None),
+                                "adaptive_compact_pct",
+                                False,
+                            )
+                        )
                         _ctx_mgr = _CtxMgr.for_session(
                             model=_ctx_model,
                             project_root=_ctx_proot,
                             v2_enabled=_ctx_v2_enabled,
+                            adaptive_compact_pct=_adaptive_cpct,
                         )
 
                         # ─── P5-S2 Phase 3.15: provider_chain resolution ───

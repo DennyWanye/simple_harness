@@ -173,6 +173,60 @@ class TestWI2Microcompact:
         tool_contents = [m["content"] for m in r.messages if m.get("role") == "tool"]
         assert any("已清理" in t for t in tool_contents)
 
+    # ─── WI-1B-5 microcompact size-aware（flag OFF=keep N 不变；ON=N + 字节预算）───
+    def test_microcompact_keep_default_unchanged(self):
+        """默认构造 keep=3 不变 + keep_bytes=None → 行为字节级 BC。"""
+        c = ContextCompressor()
+        assert c.microcompact_keep_tools == 3
+        assert c.microcompact_size_aware is False
+        # _microcompact_tool_results 默认 keep_bytes=None → 纯"最近 N 条"。
+        msgs = self._msgs_with_tools(5)
+        out_default, n_default = _microcompact_tool_results(
+            msgs, keep_recent_tools=3
+        )
+        out_explicit, n_explicit = _microcompact_tool_results(
+            msgs, keep_recent_tools=3, keep_bytes=None
+        )
+        assert n_default == n_explicit == 2  # 5 个 tool,保护最近 3 → 清 2
+        assert out_default == out_explicit
+
+    def test_microcompact_size_aware(self):
+        """ON: 最近 N 条里有巨型 tool_result → 字节预算耗尽,更旧的纳入压缩判断。
+
+        最近 3 条若全保护会留 3×(RESULT*2000)≈36KB 字节。给 keep_bytes 只够
+        装最近 1 条(每条 ~12KB),size-aware 应只保护最近 1 条 → 清掉 4 条,
+        而非纯"最近 N 条"路径只清 2 条。
+        """
+        msgs = self._msgs_with_tools(5)
+        # 单条 content 字节数（RESULT*2000 = 12000 ASCII bytes）。
+        one_body = len(("RESULT" * 2000).encode("utf-8"))
+        # 预算只够 1 条多一点、不够 2 条。
+        budget = one_body + 100
+        out, n = _microcompact_tool_results(
+            msgs, keep_recent_tools=3, keep_bytes=budget
+        )
+        # 纯"最近 3 条"会清 2；size-aware 预算只够最近 1 条 → 清 4。
+        assert n == 4
+        tools = [m for m in out if m.get("role") == "tool"]
+        assert len(tools) == 5  # 整条壳仍保留
+        # 仅最近 1 条原文保留,其余 4 条换占位。
+        assert tools[-1]["content"] == "RESULT" * 2000
+        for t in tools[:4]:
+            assert "已清理" in t["content"]
+            assert t["role"] == "tool"
+
+    def test_microcompact_size_aware_budget_fits_all_recent(self):
+        """预算充足时 size-aware 退化为纯'最近 N 条'（与 BC 同结果）。"""
+        msgs = self._msgs_with_tools(5)
+        out_sa, n_sa = _microcompact_tool_results(
+            msgs, keep_recent_tools=3, keep_bytes=10_000_000
+        )
+        out_bc, n_bc = _microcompact_tool_results(
+            msgs, keep_recent_tools=3, keep_bytes=None
+        )
+        assert n_sa == n_bc == 2
+        assert out_sa == out_bc
+
 
 # ───────────────────────── WI-3 结构化摘要 + 锚定增量 ─────────────────────────
 class TestWI3StructuredSummaryAndAnchoring:

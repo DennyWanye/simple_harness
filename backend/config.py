@@ -469,6 +469,22 @@ class FeaturesConfig:
     # record 一条 "context_compacted" 事件(ratio/model);② agent_loop yield
     # ContextCompactedEvent;③ main.py 转一条 ws → 前端浮 toast「已压缩,省 N token」。
     ctx_observability: bool = False
+    # WI-1B-3 自适应 compact_at_pct (plans/.../ compaction 三件套):
+    # 默认 OFF = 字节级 BC。OFF 时 ContextConfig.compact_at_tokens_for() 直接
+    # 返回 compact_at_tokens 属性,agent_loop 走原触发线。ON 时按本 run 是否
+    # agentic(工具调用计数≥阈值)微调触发线: agentic 提前压(留 buffer)、纯对话
+    # 延后压(少打断闲聊),结果 clamp 在 [0.6,0.95]×window。
+    adaptive_compact_pct: bool = False
+    # WI-1B-4 摘要质量回路 (同上):
+    # 默认 OFF = 字节级 BC。OFF 时 _run_chat 用户消息预处理不加任何分支。ON 时
+    # 对用户消息跑词法匹配(刚才|之前说的|你忘了|我们在弄|上一个) + 本 session
+    # 发生过压缩(L1 有任务态快照) → 命中则从 L1 重新注入一条任务态 system 提示
+    # (不立刻重摘,只补回被摘掉的任务连续性)。
+    summary_quality_loop: bool = False
+    # WI-1B-5 microcompact size-aware (同上):
+    # 默认 OFF = 字节级 BC(microcompact 仍按"保护最近 N 条")。ON 时保护策略改
+    # "最近 N 条 + 累计字节 ≤ M",避免最近 N 条里混入巨型 tool_result 仍撑爆窗口。
+    microcompact_size_aware: bool = False
 
 
 @dataclass

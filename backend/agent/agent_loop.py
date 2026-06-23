@@ -747,6 +747,12 @@ class AgentLoop:
         # (防长 agentic 任务反复触发压缩时刷爆 MEMORY.md 50KB cap → 驱逐真实记忆)。
         _preflush_done: bool = False
 
+        # WI-1B-3 自适应触发线: 本 run 累计工具调用数 ≥ 阈值 → 视为 "agentic"
+        # (多工具长任务,提前压留 buffer);否则纯对话(延后压)。仅 adaptive_compact_pct
+        # ON 时影响触发线,OFF 时只是个没人读的计数器(字节级 BC)。
+        _run_tool_calls: int = 0
+        _AGENTIC_TOOL_THRESHOLD = 3
+
         # FP-2 TC-2.1 第 3 刀: relay 真实 prompt_tokens 反馈回路。char-based
         # 估算对中文/markdown 系统性低估(真机 real 32.9k 时 estimate <24k),
         # 纯系数追不上内容分布 → 用上一轮 response.usage.input_tokens 兜底,
@@ -921,7 +927,16 @@ class AgentLoop:
                 _ctx_should_compress = False
                 try:
                     _ctx_cfg = getattr(self._ctx, "config", None)
-                    _ctx_compact_at = getattr(_ctx_cfg, "compact_at_tokens", None)
+                    # WI-1B-3: adaptive_compact_pct ON → 按本 run 是否 agentic
+                    # (工具调用计数 ≥ 阈值) 取微调后的触发线;OFF → for() 直接
+                    # 返回原 compact_at_tokens 属性(字节级 BC,等价旧分支)。
+                    _ctx_compact_at = None
+                    _for_fn = getattr(_ctx_cfg, "compact_at_tokens_for", None)
+                    if callable(_for_fn):
+                        _agentic = _run_tool_calls >= _AGENTIC_TOOL_THRESHOLD
+                        _ctx_compact_at = _for_fn(_agentic)
+                    else:
+                        _ctx_compact_at = getattr(_ctx_cfg, "compact_at_tokens", None)
                     if _ctx_compact_at is not None:
                         _ctx_should_compress = (
                             _ctoken_est >= int(_ctx_compact_at) > 0
@@ -2068,6 +2083,10 @@ class AgentLoop:
             if response.reasoning_content:
                 asst_msg["reasoning_content"] = response.reasoning_content
             working_messages.append(asst_msg)
+
+            # WI-1B-3: 累计本 run 工具调用数(供自适应触发线判 agentic;
+            # adaptive_compact_pct OFF 时无人读 → 字节级 BC)。
+            _run_tool_calls += len(response.tool_calls)
 
             # Dispatch all tools concurrently (spec §11.9).
             tool_coros = []
