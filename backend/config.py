@@ -739,6 +739,160 @@ def _is_legacy_llm_schema(raw: dict) -> bool:
     )
 
 
+# ─── factory feature-flag backfill (additive schema migration) ──────────
+#
+# Gap fixed 2026-06-23 (follow-up to WI-OH-4 curation 死链, commit b8d57bf3):
+# `seed_user_config_if_missing` only ever (a) seeds a full config on first
+# run or (b) wholesale-replaces a *legacy* `[llm.local]/[llm.cloud]` config.
+# An existing **unified** user config was never touched — so any new factory
+# flag added to the bundle `config.toml` (e.g. `[memory.v2] curation_nudge /
+# auto_learnings`, historically `facts_extract`) only reached *fresh*
+# installs; 存量用户 kept their old `%APPDATA%\deskpet\config.toml` forever
+# and the feature stayed dark at runtime (resolve_config_path() prefers that
+# AppData file).
+#
+# `_merge_missing_feature_flags` closes that gap: on every startup it
+# additively backfills **only** the allow-listed feature-flag keys that the
+# bundle default defines but the user is missing. User-customised values and
+# comments are preserved byte-for-byte; nothing is ever overwritten.
+
+# Allow-listed TOML table paths whose *missing* keys are safe to backfill.
+# These are behaviour-flag / capability-gate / tuning sections (Strangler-Fig
+# switches). DELIBERATELY EXCLUDED — and why:
+#   * [llm] / [llm.providers] / [llm.fallback_chain] / [llm_p4*] — endpoint +
+#     model + api_key. The user's real runtime values live in llm_runtime.json
+#     (Settings panel writes there), and api_key MUST NEVER be written into
+#     config.toml (commit would leak it). Backfilling could also re-introduce
+#     a stale default model.
+#   * [backend] — host/port the user may have changed.
+#   * [billing] / [billing.pricing] — user spend caps / private pricing.
+#   * [asr] / [tts] / [vad] / [voice] — device + voice preferences.
+#   * [memory] (db_path) — a user filesystem path.
+#   * [[mcp.servers]] — array-of-tables the user may have customised; an
+#     additive *scalar* merge can't model array-of-tables safely.
+_MIGRATABLE_SECTIONS: tuple[tuple[str, ...], ...] = (
+    ("tools", "last_mile"),
+    ("tools", "verifier"),
+    ("supervisor",),
+    ("companion",),
+    ("image",),
+    ("memory", "v2"),
+    ("memory", "v2", "facts"),
+    ("memory", "v2", "forget"),
+    ("context", "manager"),
+    ("context", "assembler"),
+    ("code_e2e",),
+    ("research",),
+)
+
+
+def _is_toml_table(obj: object) -> bool:
+    """True for a tomlkit table / inline-table (mapping-like) node.
+
+    Duck-typed (``keys`` + ``__getitem__``) so we don't import tomlkit's
+    internal item types — scalars (int/str/bool) and arrays lack ``keys``.
+    """
+    return hasattr(obj, "keys") and hasattr(obj, "__getitem__") and not isinstance(
+        obj, (str, bytes)
+    )
+
+
+def _dig_table(doc: object, path: tuple[str, ...]) -> object | None:
+    """Walk ``path`` through nested tomlkit tables. Returns the node or None
+    if any segment is absent / not a table."""
+    cur: object = doc
+    for seg in path:
+        if not _is_toml_table(cur):
+            return None
+        try:
+            if seg not in cur:  # type: ignore[operator]
+                return None
+            cur = cur[seg]  # type: ignore[index]
+        except (TypeError, KeyError):
+            return None
+    return cur
+
+
+def _merge_missing_feature_flags(user_target: Path, bundle_source: Path) -> bool:
+    """Additively backfill allow-listed factory feature-flag keys that the
+    bundle default defines but the user's config is missing.
+
+    Non-destructive: existing user keys/values/comments are preserved; only
+    *missing* keys (and whole missing allow-listed sections) are inserted,
+    carrying the bundle's inline trivia. Writes a ``.pre-migrate-bak`` backup
+    before saving. Idempotent — a second run finds nothing missing.
+
+    Requires tomlkit (comment-preserving writer). If tomlkit is unavailable,
+    or parsing/writing fails, logs a warning and returns False — it NEVER
+    raises, so a backfill problem can't block backend startup.
+
+    Returns True iff the file was modified.
+    """
+    try:
+        import copy
+
+        import tomlkit
+    except Exception as e:  # pragma: no cover - import guard
+        logger.warning("feature_flag_merge_skipped (no tomlkit): %s", e)
+        return False
+
+    try:
+        user_doc = tomlkit.parse(user_target.read_text(encoding="utf-8"))
+        bundle_doc = tomlkit.parse(bundle_source.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning("feature_flag_merge_parse_failed: %s", e)
+        return False
+
+    added: list[str] = []
+    for path in _MIGRATABLE_SECTIONS:
+        bundle_tbl = _dig_table(bundle_doc, path)
+        if not _is_toml_table(bundle_tbl):
+            continue  # bundle doesn't define this section — nothing to seed
+        user_tbl = _dig_table(user_doc, path)
+        if user_tbl is None:
+            # Whole section missing → copy it wholesale (preserves comments).
+            parent = _dig_table(user_doc, path[:-1])
+            if not _is_toml_table(parent):
+                continue  # parent absent & not separately allow-listed — skip
+            try:
+                parent[path[-1]] = copy.deepcopy(bundle_tbl)  # type: ignore[index]
+            except Exception as e:
+                logger.warning("feature_flag_merge_section_copy_failed %s: %s", path, e)
+                continue
+            added.append(".".join(path) + " (section)")
+            continue
+        for key in list(bundle_tbl.keys()):  # type: ignore[union-attr]
+            if key in user_tbl:  # type: ignore[operator]
+                continue
+            bval = bundle_tbl[key]  # type: ignore[index]
+            if _is_toml_table(bval):
+                continue  # nested sub-table handled via its own allowlist entry
+            try:
+                user_tbl[key] = copy.deepcopy(bval)  # type: ignore[index]
+            except Exception as e:
+                logger.warning(
+                    "feature_flag_merge_key_copy_failed %s.%s: %s", path, key, e
+                )
+                continue
+            added.append(".".join(path) + "." + str(key))
+
+    if not added:
+        return False
+
+    try:
+        bak = user_target.with_suffix(".pre-migrate-bak")
+        shutil.copyfile(user_target, bak)
+        user_target.write_text(tomlkit.dumps(user_doc), encoding="utf-8")
+        logger.info(
+            "feature_flag_merge_applied count=%d keys=%s backup=%s",
+            len(added), added, bak,
+        )
+        return True
+    except OSError as e:
+        logger.warning("feature_flag_merge_write_failed: %s", e)
+        return False
+
+
 def seed_user_config_if_missing() -> Path | None:
     """First-run: copy the bundle's config.toml into user_data_dir if the
     user doesn't have one yet. Also: P4-S21 #12 — if user_data_dir/config.toml
@@ -780,6 +934,18 @@ def seed_user_config_if_missing() -> Path | None:
                 logger.warning(
                     "legacy_llm_schema_migrate_failed: %s", e,
                 )
+            return user_target
+
+        # Non-legacy existing config → additively backfill any new factory
+        # feature-flag keys the user is missing (the 2026-06-23 gap). Fully
+        # self-guarded; the extra try/except is belt-and-suspenders so a
+        # backfill problem can never break startup.
+        source = _bundle_default_config_path()
+        if source is not None and source.is_file():
+            try:
+                _merge_missing_feature_flags(user_target, source)
+            except Exception as e:  # pragma: no cover - defensive
+                logger.warning("feature_flag_merge_unexpected: %s", e)
         return user_target
 
     source = _bundle_default_config_path()

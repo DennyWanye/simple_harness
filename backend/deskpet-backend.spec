@@ -53,6 +53,10 @@ hiddenimports += collect_submodules("deskpet.skills")
 hiddenimports += ["sqlite_vec"]                    # P4-S20: L3 vector recall
 hiddenimports += [
     "tzdata",                   # zoneinfo needs this on Windows
+    # config.py additive feature-flag backfill writes via tomlkit. It's a
+    # static import inside _merge_missing_feature_flags (lazy, try-guarded),
+    # so static analysis may miss it — pin it explicitly to be safe.
+    "tomlkit",
     "prometheus_client",
     "aiosqlite",
     # P3-S6+S7: user data / cache / models dir resolution at startup.
