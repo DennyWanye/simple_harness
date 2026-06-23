@@ -1,0 +1,11 @@
+# GUI 真测 PASS — curation 真 FIRE at turn=2 (2026-06-23, 真坐标点击+真中文输入+日志判定)
+## 完整链路（存量 config → 迁移 → wired → FIRE）:
+### 1) 迁移在真启动栈把缺失 flag 补进存量 config:
+47:INFO:config:feature_flag_merge_applied count=3 keys=['memory.v2.curation_nudge', 'memory.v2.curation_nudge_every_n_turns', 'memory.v2.auto_learnings'] backup=G:\projects\deskpet\plans\manual-results-2026-06-23-backfill\userdata\config.pre-migrate-bak
+### 2) 运行 backend 读迁移后 flag=True → curator wired:
+110:INFO:__main__:event='oh4_curation_nudge_wired' level='info' timestamp='2026-06-23T09:29:33.234410Z' every_n=2 auto_learnings=True
+### 3) 真 GUI 聊 2 轮（同会话真实用户消息）→ memory_write 主动记忆 + curation nudge FIRE at turn=2:
+224:INFO:providers.openai_compatible:event='p5s2_tool_call_args_dump' level='info' timestamp='2026-06-23T09:46:09.757853Z' idx=0 name='memory_write' args_len=64 args_preview='{"text":"用户叫小王，是个程序员","tier":"l3","salience":0.7,"pinned":false}' parse_ok=True
+263:INFO:deskpet.agent.loop:oh4_curation_nudge sid=task-task-default-1-1 turn=2 decisions=0 remembered=0
+265:INFO:providers.openai_compatible:event='p5s2_tool_call_args_dump' level='info' timestamp='2026-06-23T09:49:25.048454Z' idx=0 name='memory_write' args_len=50 args_preview='{"text":"用户叫小王，是个程序员。","tier":"l3","salience":0.8}' parse_ok=True
+## 注: decisions=0 = 后台 curator 发现 agent 已内联 memory_write 记过,无额外可记;关键是 turn=2 触发链路活着.

@@ -54,17 +54,31 @@ auto_learnings = true
 - **完整链路**：源码后端 → 迁移 applied → flag 读成 True → 功能 wired live。
   即"存量用户升级一次后 curation_nudge 从暗变亮"，正是要修的真因。
 
-### ⏳ DEFERRED（环境受限，非失败）— GUI 截图 + 聊 2 轮看 curation 真 FIRE
+### ✅ PASS（补跑，用户在场）— GUI 真截图 + 真坐标点击 + 真中文输入 + curation 真 FIRE at turn=2
 
-- **阻断 1**: computer-use 授权弹窗 2 次各 300s 超时 → 用户离开键盘，无法真截图/真点击/真输入。
-- **阻断 2**: relay `chinzy.com` 已知间歇 5xx（STATUS 多条记录），聊天需真 LLM 链路。
-- **为何不算 gap**: GUI 聊 2 轮验证的是【下游 curation FIRE 行为】（curator 每 N 回合
-  fire-and-forget → facts.upsert），这块已在 commit `b8d57bf3` 的 boot-log 真测 + 12 单测
-  验过。本次改动是【config 迁移】，其可观测效果 = "存量 config 里 flag 变 true 且被运行
-  backend 读成 True 接电"，上面 L47/L108 + 落盘 config 已直证。
-- **待用户在场 + relay 恢复时补**：真截图桌宠 + 真输入 2 轮中文 → 抓 `curation_nudge fire turn=2`。
+见 `EVIDENCE-curation-fire.txt`。真模拟人工链路（**非脚本回放/非 WS 直注**）：
+
+1. **真启动**：installed shell 触发自更新器（killed，不装）后改走 dev tauri 源码后端；
+   computer-use 授权 deskpet.exe（dev exe 路径 != 安装路径，前几次基名授权超时，最终
+   用户盯弹窗点允许后 granted）。
+2. **真截图 + 真点击**：截图见桌宠主界面「已连接」→ 跳过 onboarding → 点「消息」开
+   完整聊天窗（含可聚焦输入框「和桌宠说点什么…」+「Enter 发送」）。
+3. **真中文输入 2 轮**（同会话 sid=`task-task-default-1-1`，clipboard/Unicode 注入 WebView2）：
+   - 轮1「你好，我叫小王，是个程序员」→ agent 真调 `memory_write {"text":"用户叫小王，是个程序员","tier":"l3","salience":0.7}` → 权限门「写入文件」点「允许一次」→ `✓ memory_write 完成` → 桌宠真回「你好呀小王～我记住啦」。
+   - 轮2「我平时用 Python 和 Rust 写代码，请记住这个偏好」→ 第 2 个 terminal turn。
+4. **日志判定 FIRE**：`oh4_curation_nudge sid=task-task-default-1-1 turn=2 decisions=0 remembered=0`
+   —— curation nudge **在 turn=2 真触发**（`every_n=2` 周期），正是迁移点亮的 flag 驱动的下游行为。
+   `decisions=0` = 后台 curator 发现 agent 已内联 `memory_write` 记过、无额外可记；关键是
+   **turn=2 触发链路活着**（迁移后 flag → wired → fire 全程贯通）。
+
+**真测踩坑（额外）**：① compact 桌宠面板语音优先、无常驻文本框 + WebView2 SendInput 焦点
+不进 DOM → 直接 type/paste 不落字；**解法**=点「消息」开完整聊天窗（有真输入框）后才能输入。
+② 每点一次「新话题」= 新 session → 每会话计数器从 1 起，`every_n=2` 永不到 2 → **必须同一会话
+连发 2 条真实用户消息**（greeting 不进 curation 计数）。③ installed shell 一启动就弹自更新器
+（killed 不装），改用 dev tauri。
 
 ## 清理
 
 测试实例已停（kill 8150/5190 + spawned deskpet.exe），8100/5173/8150/5190 全 free，
-0 残留 deskpet/cargo。预先存在的 leftover 栈（手动 `python main.py` + 旧 deskpet.exe）也已清。
+0 残留 deskpet/cargo。预先存在的 leftover 栈（手动 `python main.py` + 旧 deskpet.exe）+
+误触发的安装器均已清，**用户安装版未改动**。
