@@ -2645,16 +2645,24 @@ async def lifespan(app: FastAPI):
     # facts store + LLM 可用 → 构造 MemoryCurator 存进 service_context，由
     # build_agent 接电到 agent_loop（每 N 回合 fire-and-forget nudge）。
     # flag 关 / 无 facts / 无 LLM → curator=None → agent_loop 不调 nudge（BC）。
-    if (
-        config.memory.v2.curation_nudge
-        and _facts_store is not None
-    ):
+    # 2026-06-23 修生产死链：旧代码 flag=False 时**整个 if 不进、零日志** → 真测时
+    # 无法区分「flag 没开」vs「facts_store 没接上」vs「LLM 缺失」，曾误诊为接线 bug。
+    # 改成显式三分支 skip-log（reason=flag_off / no_facts_store / no_llm_provider），
+    # 任何「curator 没接上」都在启动日志留痕，杜绝静默死链复发。facts_store 用
+    # module-global 优先、service_context 兜底（两者在 startup 均已就绪，见
+    # p4_services_registered + memory_tools.bind 日志）。
+    _cur_facts = _facts_store if _facts_store is not None else service_context.get("facts_store")
+    if not config.memory.v2.curation_nudge:
+        logger.info("oh4_curation_skipped", reason="flag_off")
+    elif _cur_facts is None:
+        logger.info("oh4_curation_skipped", reason="no_facts_store")
+    else:
         _curation_llm = _make_str_llm_call(local_llm, max_tokens=512)
         if _curation_llm is None:
             logger.info("oh4_curation_skipped", reason="no_llm_provider")
         else:
             from deskpet.memory.curation import MemoryCurator as _MemoryCurator
-            _curator = _MemoryCurator(_facts_store, _curation_llm)
+            _curator = _MemoryCurator(_cur_facts, _curation_llm)
             service_context.register("memory_curator", _curator)
             logger.info(
                 "oh4_curation_nudge_wired",
