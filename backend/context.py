@@ -80,6 +80,10 @@ _VALID_SERVICES = frozenset({
     # flag memory.v2.curation_nudge OFF（默认）时 lifespan 不 register（None 占位
     # 无需），但加进白名单防 get()/register() 抛 "Unknown service"（仿上方注释）。
     "memory_curator",      # MemoryCurator — agent 主动判断该不该长期记
+    # --- WI-TG-2 审批 UX 聚合 (plans/2026-06-22-context-and-agent-optimization) ---
+    # PermissionGate 注册成 service 让 p4_ipc 的只读「列 pending」接口拿到它，
+    # 供 ApprovalCenterPanel 聚合展示。只读 — 不改 gate 决策路径。
+    "permission_gate",     # PermissionGate — 只读 list_pending 供审批聚合面板
 })
 
 @dataclass
@@ -135,6 +139,8 @@ class ServiceContext:
     task_graph_store: Any | None = None
     # --- WI-OH-4 记忆 self-curation nudge ------------------------------------
     memory_curator: Any | None = None
+    # --- WI-TG-2 审批 UX 聚合 -------------------------------------------------
+    permission_gate: Any | None = None
 
     def register(self, name: str, provider: Any) -> None:
         if name not in _VALID_SERVICES:

@@ -220,6 +220,31 @@ export interface SkillsListResponse {
   };
 }
 
+/**
+ * WI-TG-2 — one in-flight permission prompt. Mirrors the
+ * `permission_request` payload so the ApprovalCenterPanel can reuse the
+ * same fields. Read-only snapshot from PermissionGate.list_pending().
+ */
+export interface PendingPermissionItem {
+  request_id: string;
+  category: string;
+  summary: string;
+  params: Record<string, unknown>;
+  default_action: "allow" | "prompt" | "deny";
+  dangerous: boolean;
+  session_id: string;
+}
+
+/** WI-TG-2 — backend → frontend: current session's pending prompts. */
+export interface PermissionsPendingListResponse {
+  type: "permissions_pending_list_response";
+  payload: {
+    pending: PendingPermissionItem[];
+    /** Present when PermissionGate isn't registered (v2 init failed). */
+    reason?: string;
+  };
+}
+
 export interface DecisionRecord {
   /** ISO8601 or epoch seconds — UI formats defensively. */
   timestamp?: string | number;
@@ -515,6 +540,7 @@ export type IncomingMessage =
   | ModelProvisionStatusResponse
   | ModelContextGetResponse
   | ModelContextSetAck
+  | PermissionsPendingListResponse
   | PermissionRequest
   | ClarificationRequest
   | PPTOutlineProposed

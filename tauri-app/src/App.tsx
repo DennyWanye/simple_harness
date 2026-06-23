@@ -61,6 +61,7 @@ import { useControlChannel } from "./hooks/useWebSocket";
 import { usePermissionRequests } from "./hooks/usePermissionRequests";
 import { useClarificationRequests } from "./hooks/useClarificationRequests";
 import { PermissionPopup } from "./components/PermissionPopup";
+import { ApprovalCenterPanel } from "./components/ApprovalCenterPanel";
 import { ClarificationDialog } from "./components/ClarificationDialog";
 import { SkillStorePanel } from "./components/SkillStorePanel";
 import { Toolbar } from "./components/Toolbar";
@@ -1793,6 +1794,9 @@ function App() {
         request={permissionCurrent}
         onResolve={resolvePermission}
       />
+      {/* WI-TG-2 — 审批聚合视图。BC：默认 enabled={false} → 不渲染，
+          现有单弹窗路径不受影响。要开聚合 UX 把 prop 翻成 true。 */}
+      <ApprovalCenterPanel channel={permissionChannel} enabled={false} />
       <ClarificationDialog
         current={clarificationCurrent}
         onResolve={resolveClarification}

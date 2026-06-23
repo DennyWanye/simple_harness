@@ -87,4 +87,23 @@ describe("SubagentProgressPanel", () => {
     render(<SubagentProgressPanel variant="dark" />);
     expect(screen.getByTestId("subagent-progress-panel").getAttribute("data-variant")).toBe("dark");
   });
+
+  // WI-OC-2 累计观测汇总
+  it("does not render metrics summary when all cumulative counters are zero (BC)", () => {
+    useSubagentStore.getState().upsert({ run_id: "a", kind: "web", status: "running", ts: 1 });
+    render(<SubagentProgressPanel />);
+    // 旧后端不推累计字段 → 全 0 → 不渲染汇总（优雅降级）。
+    expect(screen.queryByTestId("subagent-metrics-summary")).toBeNull();
+  });
+
+  it("renders cumulative metrics (peak / queued / rejected) when present", () => {
+    const s = useSubagentStore.getState();
+    s.upsert({ run_id: "a", kind: "web", task_id: "bj", status: "completed", ts: 1 });
+    s.setMetrics({ peak_concurrent: 3, total_queued: 7, total_rejected: 2 });
+    render(<SubagentProgressPanel />);
+    const summary = screen.getByTestId("subagent-metrics-summary");
+    expect(within(summary).getByTestId("subagent-metric-peak").textContent).toMatch(/峰值\s*3/);
+    expect(within(summary).getByTestId("subagent-metric-queued").textContent).toMatch(/累计入队\s*7/);
+    expect(within(summary).getByTestId("subagent-metric-rejected").textContent).toMatch(/拒绝\s*2/);
+  });
 });

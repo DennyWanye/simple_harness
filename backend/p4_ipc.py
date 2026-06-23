@@ -55,6 +55,8 @@ P4_IPC_MESSAGE_TYPES = frozenset(
         # FP-4 WI-3.3 — 用户 Pin/Unpin 钉住事实（跳过 daily_decay 衰减）。
         "memory_pin",
         "memory_unpin",
+        # WI-TG-2 — ApprovalCenterPanel 只读「列当前 session pending 权限请求」。
+        "permissions_pending_list",
     }
 )
 
@@ -99,6 +101,10 @@ async def handle(
             await _handle_memory_pin(ws, payload, service_context, pinned=True)
         elif msg_type == "memory_unpin":
             await _handle_memory_pin(ws, payload, service_context, pinned=False)
+        elif msg_type == "permissions_pending_list":
+            await _handle_permissions_pending_list(
+                ws, session_id, payload, service_context
+            )
         else:
             # Shouldn't happen — membership check is done by caller.
             await _send_error(ws, f"unknown P4 message type: {msg_type}")
@@ -642,6 +648,46 @@ async def _handle_memory_pin(
     await ws.send_json({
         "type": resp_type,
         "payload": {"status": "ok", "fact_id": fact_id, "pinned": pinned},
+    })
+
+
+# ---------------------------------------------------------------------------
+# WI-TG-2 — ApprovalCenterPanel: 只读列出当前 session 的 pending 权限请求
+#
+# 纯只读：从 PermissionGate.list_pending() 取在途请求快照，绝不改 gate 决策。
+# 批准/拒绝仍走既有 permission_response 协议（一条 request_id 一条），本接口
+# 只负责让聚合面板知道「现在有哪些待办」。gate 未注册（如 v2 init 失败）→
+# 返回空列表 + reason，前端据此不显示面板。
+# ---------------------------------------------------------------------------
+async def _handle_permissions_pending_list(
+    ws: Any, session_id: str, payload: dict[str, Any], sc: Any,
+) -> None:
+    """返回当前 session 在途 permission 请求列表给 ApprovalCenterPanel。
+
+    payload: ``{session_id?: str}`` —— 缺省用连接的 session_id。
+    Response: ``{type: "permissions_pending_list_response",
+                 payload: {pending: [...]}}``
+    """
+    gate = _get_service(sc, "permission_gate")
+    if gate is None or not hasattr(gate, "list_pending"):
+        await ws.send_json({
+            "type": "permissions_pending_list_response",
+            "payload": {
+                "pending": [],
+                "reason": "permission_gate_not_registered",
+            },
+        })
+        return
+    target_sid = payload.get("session_id")
+    sid = str(target_sid) if target_sid else (session_id or None)
+    try:
+        pending = gate.list_pending(session_id=sid)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("p4_ipc.permissions_pending_list_failed", error=str(exc))
+        pending = []
+    await ws.send_json({
+        "type": "permissions_pending_list_response",
+        "payload": {"pending": list(pending)},
     })
 
 

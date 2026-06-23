@@ -108,6 +108,13 @@ class PermissionGate:
         # Optional TTS engine for voice prompts. Wired by main.py at
         # startup via `set_tts_engine`.
         self._tts_engine: Optional[Any] = None
+        # WI-TG-2: read-only registry of in-flight prompt requests, keyed
+        # by request_id. Populated when `_prompt` fires a PermissionRequest
+        # and cleared when the responder returns (allow/deny/timeout). This
+        # is a *pure observability* surface for the ApprovalCenterPanel — it
+        # never feeds back into the gate's decision logic. Decisions are
+        # still driven solely by the responder + deny patterns + cache.
+        self._pending: dict[str, PermissionRequest] = {}
 
     # -----------------------------------------------------------------
     # Wiring
@@ -322,19 +329,27 @@ class PermissionGate:
                     asyncio.create_task(_drain())
             except Exception:  # noqa: BLE001
                 pass  # TTS failures don't block permission flow
+        # WI-TG-2: register the in-flight request so the ApprovalCenterPanel
+        # can list it. Always cleared in the finally block — even on
+        # timeout/exception — so the registry only ever holds requests the
+        # user has not yet resolved.
+        self._pending[request.request_id] = request
         try:
-            response: PermissionResponse = await asyncio.wait_for(
-                self._responder(request), timeout=self.config.timeout_s
-            )
-        except asyncio.TimeoutError:
-            return PermissionDecision(
-                allow=False, source="timeout", request_id=request.request_id
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("permission_responder_raised", exc_info=exc)
-            return PermissionDecision(
-                allow=False, source="user-denied", request_id=request.request_id
-            )
+            try:
+                response: PermissionResponse = await asyncio.wait_for(
+                    self._responder(request), timeout=self.config.timeout_s
+                )
+            except asyncio.TimeoutError:
+                return PermissionDecision(
+                    allow=False, source="timeout", request_id=request.request_id
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("permission_responder_raised", exc_info=exc)
+                return PermissionDecision(
+                    allow=False, source="user-denied", request_id=request.request_id
+                )
+        finally:
+            self._pending.pop(request.request_id, None)
 
         if response.decision == "allow":
             return PermissionDecision(
@@ -374,6 +389,37 @@ class PermissionGate:
         if category in {"shell", "skill_install", "read_file_sensitive"}:
             return "deny"
         return "prompt"
+
+    # -----------------------------------------------------------------
+    # WI-TG-2: read-only pending-request introspection
+    # -----------------------------------------------------------------
+    def list_pending(
+        self, session_id: Optional[str] = None
+    ) -> list[dict[str, Any]]:
+        """Return UI-friendly dicts for every in-flight prompt request.
+
+        Read-only observability surface for the ApprovalCenterPanel — this
+        does **not** touch the gate's decision path. Each entry mirrors the
+        ``permission_request`` WS payload shape so the frontend can reuse
+        its existing renderer. When ``session_id`` is given, only that
+        session's pending requests are returned.
+        """
+        out: list[dict[str, Any]] = []
+        for req in self._pending.values():
+            if session_id is not None and req.session_id != session_id:
+                continue
+            out.append(
+                {
+                    "request_id": req.request_id,
+                    "category": req.category,
+                    "summary": req.summary,
+                    "params": dict(req.params),
+                    "default_action": req.default_action,
+                    "dangerous": req.dangerous,
+                    "session_id": req.session_id,
+                }
+            )
+        return out
 
     # -----------------------------------------------------------------
     # Test helpers

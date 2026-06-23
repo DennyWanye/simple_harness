@@ -683,4 +683,56 @@ def test_message_type_membership() -> None:
     # FP-4 WI-3.3：Pin/Unpin IPC verbs。
     assert "memory_pin" in p4_ipc.P4_IPC_MESSAGE_TYPES
     assert "memory_unpin" in p4_ipc.P4_IPC_MESSAGE_TYPES
-    assert len(p4_ipc.P4_IPC_MESSAGE_TYPES) == 14
+    # WI-TG-2：ApprovalCenterPanel 只读「列 pending 权限请求」。
+    assert "permissions_pending_list" in p4_ipc.P4_IPC_MESSAGE_TYPES
+    assert len(p4_ipc.P4_IPC_MESSAGE_TYPES) == 15
+
+
+# ---------------------------------------------------------------------------
+# WI-TG-2 — permissions_pending_list handler
+# ---------------------------------------------------------------------------
+class _FakeGate:
+    """Read-only gate stub exposing list_pending(session_id=...)."""
+
+    def __init__(self, pending: list[dict[str, Any]]) -> None:
+        self._pending = pending
+        self.last_session_id: Any = "<unset>"
+
+    def list_pending(self, session_id: str | None = None) -> list[dict[str, Any]]:
+        self.last_session_id = session_id
+        if session_id is None:
+            return list(self._pending)
+        return [p for p in self._pending if p.get("session_id") == session_id]
+
+
+@pytest.mark.asyncio
+async def test_permissions_pending_list_returns_pending() -> None:
+    """Handler surfaces gate.list_pending() filtered by the connection sid."""
+    gate = _FakeGate(
+        [
+            {"request_id": "r1", "category": "shell", "session_id": "s1"},
+            {"request_id": "r2", "category": "network", "session_id": "s2"},
+        ]
+    )
+    ws = FakeWebSocket()
+    sc = FakeServiceContext(permission_gate=gate)
+    await p4_ipc.handle(ws, "s1", "permissions_pending_list", {}, sc)
+    assert len(ws.sent) == 1
+    resp = ws.sent[0]
+    assert resp["type"] == "permissions_pending_list_response"
+    # Connection sid "s1" is used when payload omits session_id.
+    assert gate.last_session_id == "s1"
+    pend = resp["payload"]["pending"]
+    assert [p["request_id"] for p in pend] == ["r1"]
+
+
+@pytest.mark.asyncio
+async def test_permissions_pending_list_gate_unregistered() -> None:
+    """No gate → empty list + reason, never raises."""
+    ws = FakeWebSocket()
+    sc = FakeServiceContext()  # no permission_gate
+    await p4_ipc.handle(ws, "s1", "permissions_pending_list", {}, sc)
+    resp = ws.sent[0]
+    assert resp["type"] == "permissions_pending_list_response"
+    assert resp["payload"]["pending"] == []
+    assert resp["payload"]["reason"] == "permission_gate_not_registered"

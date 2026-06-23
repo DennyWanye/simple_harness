@@ -553,6 +553,14 @@ try:
 
     permission_gate_v2.set_responder(_permission_responder)
 
+    # WI-TG-2: register the gate as a read-only service so the p4_ipc
+    # `permissions_pending_list` handler can surface in-flight requests to
+    # the ApprovalCenterPanel. Read-only — the panel never mutates the gate.
+    try:
+        service_context.register("permission_gate", permission_gate_v2)
+    except Exception as _pg_reg_exc:  # noqa: BLE001 — non-fatal
+        logger.warning("permission_gate_register_failed", error=str(_pg_reg_exc))
+
     async def _clarify_ask(question: str, options: list[str], session_id: str) -> str:
         """Broadcast clarification_request via the independent control WS."""
         ws = _control_connections.get(session_id) or _control_connections.get("default")
