@@ -212,10 +212,20 @@ async def test_no_chat_turns_skips(db_path):
 
 
 class _StubCurator:
-    """记录 nudge 被调用的次数 + 收到的 turns。"""
+    """记录 nudge 被调用的次数 + 收到的 turns。
+
+    带持久 ``bump_turn`` 计数器（镜像真 ``MemoryCurator``）：计数挂 curator 而非
+    per-turn loop，是 2026-06-23 真测抓出的生产死链修复点。
+    """
 
     def __init__(self) -> None:
         self.calls: list[list] = []
+        self._turn_counts: dict[str, int] = {}
+
+    def bump_turn(self, session_id: str) -> int:
+        n = self._turn_counts.get(session_id, 0) + 1
+        self._turn_counts[session_id] = n
+        return n
 
     async def nudge(self, recent_turns, **_kw):
         self.calls.append(list(recent_turns))
@@ -249,10 +259,9 @@ def _make_loop(*, curator=None, every=8):
 async def test_agentloop_curator_none_bc():
     """③ curator=None → _maybe_fire_curation_nudge 无副作用（BC）。"""
     loop = _make_loop(curator=None)
-    # 不应抛、不应调度任何任务
+    # 不应抛、不应调度任何任务（curator=None → 提前 return，零副作用）
     loop._maybe_fire_curation_nudge("s1", list(_TURNS))
-    # turn counter 也不该被建立（提前 return）
-    assert loop._curation_turn_counts == {}
+    assert loop._memory_curator is None
 
 
 @pytest.mark.asyncio
@@ -295,6 +304,34 @@ async def test_agentloop_per_session_counters():
     loop._maybe_fire_curation_nudge("sA", list(_TURNS))  # sA:2 触发
     await asyncio.sleep(0.01)
     assert len(stub.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_counter_persists_across_loop_rebuild():
+    """★ 真测抓出的生产死链回归守门：计数器挂 curator 单例，跨 _AgentLoop 重建存活。
+
+    main.py 每个 chat 回合 `build_agent` 重建一个新的 `_AgentLoop`。若计数器挂在
+    loop 实例上（旧实现），每回合归零 → ``every_n=2`` 时 ``1 % 2 != 0`` **永不触发**
+    （2026-06-23 真机 E2E 抓出：聊 2 轮无 oh4_curation_nudge）。本测试用**不同的**
+    loop 实例共享**同一** curator，验证 curator 上的计数跨重建累加、第 2 个 loop 触发。
+    上面的 test ④/⑤ 复用同一 loop 实例，测不到这个跨重建场景。
+    """
+    stub = _StubCurator()
+    # 每"回合"造一个全新 loop（模拟 main.py per-turn 重建），共享同一 curator 单例
+    loop1 = _make_loop(curator=stub, every=2)
+    loop2 = _make_loop(curator=stub, every=2)
+    assert loop1 is not loop2
+
+    loop1._maybe_fire_curation_nudge("default", list(_TURNS))  # count=1 不触发
+    await asyncio.sleep(0.01)
+    assert stub.calls == [], "第 1 个 loop（count=1）不该触发"
+
+    loop2._maybe_fire_curation_nudge("default", list(_TURNS))  # count=2 触发
+    await asyncio.sleep(0.01)
+    assert len(stub.calls) == 1, (
+        "第 2 个 loop 必须触发（count=2）——证计数器挂 curator 单例、跨 loop 重建存活。"
+        "旧实现计数挂 loop 实例 → 每回合归零 → every_n>1 永不触发（生产死链）。"
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────

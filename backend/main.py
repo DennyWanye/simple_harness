@@ -2662,11 +2662,18 @@ async def lifespan(app: FastAPI):
             logger.info("oh4_curation_skipped", reason="no_llm_provider")
         else:
             from deskpet.memory.curation import MemoryCurator as _MemoryCurator
-            _curator = _MemoryCurator(_cur_facts, _curation_llm)
+            # WI-CC-5: 把 auto_learnings 真传进去，否则 curator 恒 allow_learnings
+            # =False → learnings 提示词/类别永不启用（旧构造漏传，CC-5 暗装）。
+            _curator = _MemoryCurator(
+                _cur_facts,
+                _curation_llm,
+                allow_learnings=bool(config.memory.v2.auto_learnings),
+            )
             service_context.register("memory_curator", _curator)
             logger.info(
                 "oh4_curation_nudge_wired",
                 every_n=config.memory.v2.curation_nudge_every_n_turns,
+                auto_learnings=bool(config.memory.v2.auto_learnings),
             )
     # OpenSpec 2026-05-16-async-image-gen: start the ImageGenerationWorker
     # unless async disabled (then generate_image runs legacy sync).

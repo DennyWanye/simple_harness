@@ -533,11 +533,11 @@ class AgentLoop:
         self.llm = llm_registry
         self.tools = tool_registry
         self._subagent_registry = subagent_registry
-        # WI-OH-4 记忆自策展 nudge（BC: None → 不调 nudge）。每 session 一个轮次
-        # 计数器；到 _curation_every 触发一次 fire-and-forget nudge。
+        # WI-OH-4 记忆自策展 nudge（BC: None → 不调 nudge）。每 session 轮次
+        # 计数器现挂在 curator 单例上（见 curation.py bump_turn）——本 loop 每回合
+        # 重建，计数器若挂这里会每回合归零、永不到阈值（真测抓出）。阈值仍留这里。
         self._memory_curator = memory_curator
         self._curation_every = max(1, int(curation_nudge_every_n_turns or 8))
-        self._curation_turn_counts: dict[str, int] = {}
         self.max_iterations = max_iterations
         self.budget_checker = budget_checker
         self.default_model = default_model
@@ -2326,11 +2326,20 @@ class AgentLoop:
         Any failure here is swallowed — the curation path must never affect the
         chat turn.
         """
-        if self._memory_curator is None:
+        curator = self._memory_curator
+        if curator is None:
             return
         try:
-            count = self._curation_turn_counts.get(session_id, 0) + 1
-            self._curation_turn_counts[session_id] = count
+            # WI-OH-4 fix (2026-06-23, real-E2E caught): the per-session count
+            # lives on the curator SINGLETON, not on this _AgentLoop. main.py
+            # rebuilds a fresh loop per chat turn (build_agent in _run_chat),
+            # so an in-loop counter reset every turn and never reached the
+            # threshold in production (the unit test passed only because it
+            # reused one loop instance). The threshold itself stays here (from
+            # config). Defensive getattr: curators without bump_turn (old/mock)
+            # fall back to firing every terminal turn rather than never.
+            _bump = getattr(curator, "bump_turn", None)
+            count = _bump(session_id) if callable(_bump) else self._curation_every
             if count % self._curation_every != 0:
                 return
             # Snapshot the conversation so the background task reads a stable
@@ -2339,7 +2348,7 @@ class AgentLoop:
 
             async def _run_curation() -> None:
                 try:
-                    decisions = await self._memory_curator.nudge(recent)
+                    decisions = await curator.nudge(recent)
                     logger.info(
                         "oh4_curation_nudge sid=%s turn=%d decisions=%d remembered=%d",
                         session_id,

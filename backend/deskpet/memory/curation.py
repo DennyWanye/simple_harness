@@ -283,6 +283,27 @@ class MemoryCurator:
         # decision (e.g. hallucinated) is filtered out before persist/return.
         # Set by main.py from cfg.memory.v2.auto_learnings.
         self._allow_learnings = bool(allow_learnings)
+        # WI-OH-4 fix (2026-06-23, real-E2E caught): the per-session turn
+        # counter MUST live here, on the curator singleton — NOT on the
+        # _AgentLoop. main.py rebuilds a fresh _AgentLoop per chat turn
+        # (build_agent inside _run_chat), so an in-loop counter reset every
+        # turn and ``count % every_n`` never reached 0 in production. The unit
+        # test passed only because it reused ONE loop instance across turns.
+        # The curator is registered once in service_context → this dict
+        # persists across turns, so the cadence gate actually advances.
+        self._turn_counts: dict[str, int] = {}
+
+    def bump_turn(self, session_id: str) -> int:
+        """Increment + return the persistent per-session terminal-turn count.
+
+        Lives on the curator (a service_context singleton) so it survives the
+        per-turn ``_AgentLoop`` rebuild. The frequency *threshold* stays on the
+        caller (``agent_loop``, from ``cfg.memory.v2.curation_nudge_every_n_turns``);
+        this only owns the monotonic count so the gate can advance across turns.
+        """
+        n = self._turn_counts.get(session_id, 0) + 1
+        self._turn_counts[session_id] = n
+        return n
 
     async def nudge(
         self,
