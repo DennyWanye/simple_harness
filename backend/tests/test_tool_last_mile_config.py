@@ -65,7 +65,7 @@ def test_t1_1_no_tools_section_all_defaults(tmp_path):
     assert isinstance(v, ToolsVerifierConfig)
     # WI-HM-1 决策①：自我纠错闭环出厂默认点亮（原 off/False）.
     assert v.emit_receipts is True
-    assert v.verify_gate_mode == "shadow"
+    assert v.verify_gate_mode == "strict"  # 2026-06-23 shadow→strict(真机确认闲聊不误阻塞)
     assert v.extractor_fallback_enabled is True
     assert v.ephemeral_subagent_model == "haiku"
     assert v.run_build is False

@@ -279,14 +279,15 @@ def test_build_agent_uses_cfg_max_verify_nudges(
 def test_factory_default_lights_up_self_correction_loop():
     """WI-HM-1 决策①：真 AppConfig 出厂默认 = 自我纠错闭环全档开.
 
-    verify_gate_mode='shadow' + emit_receipts=True + structured_reflection=True，
+    verify_gate_mode='strict' + emit_receipts=True + structured_reflection=True，
     且 _validate_flag_invariants 不抛（VG-INVARIANT-0/1 都满足）。
+    （2026-06-23 由 shadow 升 strict——真机确认 strict 不误阻塞无 claim 闲聊。）
     """
     from config import AppConfig, _validate_flag_invariants
 
     cfg = AppConfig()
     v = cfg.tools.verifier
-    assert v.verify_gate_mode == "shadow"
+    assert v.verify_gate_mode == "strict"
     assert v.emit_receipts is True
     assert v.structured_reflection is True
     # 默认 config 必须通过 invariant 校验（不抛 ConfigError）.

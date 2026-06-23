@@ -285,10 +285,12 @@ class ToolsVerifierConfig:
     # 三个默认值是一个原子改动（VG-INVARIANT-1 硬连锁见 _validate_flag_invariants）：
     #   verify_gate_mode != "off" 必须 emit_receipts=True，否则 ledger 永远空 →
     #   ConfigError VG-INVARIANT-1（或所有 end_turn 被无脑阻塞）。
-    # 选 shadow 而非 strict：全档开 verify 观测但非阻塞，避免 strict 在无 claim
-    # 纯闲聊误阻塞 end_turn；strict 升级留真机确认后跟进。
+    # 2026-06-23 升级 strict（完成 decision① 目标"全档开 strict"）：真机已确认
+    # strict 在无 claim 纯闲聊下不误阻塞 end_turn（"你好呀今天天气"等多轮 stop_reason=
+    # end_turn 正常收尾 + goal/task 回合也放行，见 exec/B1 真测）。前置满足故由 shadow
+    # 升 strict——verify 真守门拦截虚报完成→reflection 重试。若后续某档误阻塞可退 shadow。
     emit_receipts: bool = True
-    verify_gate_mode: str = "shadow"               # off | shadow | strict
+    verify_gate_mode: str = "strict"               # off | shadow | strict
     extractor_fallback_enabled: bool = True        # D6 二级 LLM fallback
     ephemeral_subagent_model: str = "haiku"        # D6 第 3 次失败救援模型
     run_build: bool = False                        # D7 build verifier
