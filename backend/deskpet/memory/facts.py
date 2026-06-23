@@ -69,6 +69,9 @@ _CATEGORY_DECAY: dict[str, float] = {
     "goal":       0.005,   # ≈200d，活跃目标长期留
     "decision":   0.002,   # ≈1 年（一次决策长期有效）
     "constraint": 0.001,   # 最慢（约束几乎不过期）
+    # WI-CC-5：auto-memory learnings（procedural）。如「用户上次 PPT 要深色
+    # 主题」「生成周报的步骤」——可复用流程/偏好型知识，长期保留（慢衰减）。
+    "learning":   0.01,    # ≈70d half-life，procedural 经验慢衰减
 }
 
 VALID_CATEGORIES = frozenset(_CATEGORY_DECAY.keys())

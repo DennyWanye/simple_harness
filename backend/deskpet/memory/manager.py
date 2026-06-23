@@ -176,6 +176,7 @@ class MemoryManager:
         salience: float = 0.5,
         session_id: Optional[str] = None,
         role: str = "assistant",
+        light: bool = False,
     ) -> None:
         """Route a write to the correct layer.
 
@@ -184,6 +185,20 @@ class MemoryManager:
         - ``target == "session"`` → delegates to the session DB. Prefers
           S1's ``append_message``, then legacy ``write_message`` /
           ``append``. ``session_id`` is required for session writes.
+
+        WI-OH-3 写入分级 light 快路
+        --------------------------
+        ``light=True`` 标记本条写入来自**高频低信息流**（语音 VAD tick /
+        截屏低信息判定 / supervisor 感知 tick）。它透传 ``skip_embed=True``
+        给 ``session_db.append_message``：消息仍入 ``messages`` 表 + FTS5
+        trigger（L2 + recency 仍可召回），但**跳过 on_message_written hook
+        → 不进 VectorWorker 队列 → 不写 L3 向量 embedding**。
+
+        调用方约定（``light_write`` flag gating）：``light`` 应由调用方按
+        ``cfg.memory.v2.light_write AND <来源是高频流>`` 计算后传入。flag
+        OFF 时调用方必须传 ``light=False`` → 所有写入 ``skip_embed=False``
+        = 当前行为字节级 BC。``light`` 仅对 ``target='session'`` 有意义
+        （L1 文件记忆无向量列，传 light 也被忽略）。
         """
         if target not in _VALID_WRITE_TARGETS:
             raise ValueError(
@@ -203,8 +218,13 @@ class MemoryManager:
         # conversation store's .append(). Order reflects "use the most
         # correct / most recent API available".
         if hasattr(db, "append_message"):
+            # WI-OH-3: 透传 light → skip_embed。仅 S1 SessionDB 支持该形参；
+            # 透传时 light=True 跳 VectorWorker hook（不进 L3 向量）。
             await db.append_message(
-                session_id=session_id, role=role, content=content
+                session_id=session_id,
+                role=role,
+                content=content,
+                skip_embed=light,
             )
         elif hasattr(db, "write_message"):
             await db.write_message(
@@ -217,6 +237,33 @@ class MemoryManager:
                 "session_db exposes none of: append_message, "
                 "write_message, append"
             )
+
+    async def put_doc_light(
+        self,
+        content: str,
+        *,
+        session_id: str,
+        role: str = "user",
+    ) -> None:
+        """WI-OH-3 named light-write entry for high-frequency low-info streams.
+
+        Thin self-documenting alias over ``write(target='session', light=True)``
+        — voice VAD ticks / low-info screenshot verdicts / supervisor sense
+        ticks should call this so the call-site reads as "this is a light
+        write" instead of a bare ``skip_embed`` boolean.
+
+        BC note: callers still gate on ``cfg.memory.v2.light_write`` — when the
+        flag is OFF they should route through the normal ``write`` path
+        (``light=False``) so nothing is skipped. This helper does not consult
+        config itself (manager is config-agnostic); it只是固定 ``light=True``.
+        """
+        await self.write(
+            content,
+            target="session",
+            session_id=session_id,
+            role=role,
+            light=True,
+        )
 
     # ------------------------------------------------------------------
     # Internal: per-layer safe wrappers

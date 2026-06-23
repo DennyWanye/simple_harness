@@ -525,3 +525,74 @@ async def test_tg6_no_callback_no_attribute_error():
     # Just call set without binding — must work
     g = store.set("sess-plain", "plain goal")
     assert g is not None
+
+
+# ===========================================================================
+# WI-CC-5: auto-memory learnings 注入（include_learnings flag）
+# ===========================================================================
+
+
+def _learning_row(key: str, value: str, confidence: float = 0.6) -> dict:
+    return {
+        "id": 9,
+        "category": "learning",
+        "subject": "user",
+        "key": key,
+        "value": value,
+        "confidence": confidence,
+        "is_active": 1,
+        "pinned": 0,
+        "updated_at": 2.0,
+    }
+
+
+@pytest.mark.asyncio
+async def test_cc5_learning_not_injected_by_default():
+    """CC-5 BC: include_learnings 默认 False → learning 行不被取/不注入。"""
+    store = FakeFactsStore(
+        rows_by_category={
+            "preference": [_pref_row("饮料", "乌龙茶")],
+            "learning": [_learning_row("ppt_theme", "上次 PPT 要深色主题")],
+        }
+    )
+    comp = PreferenceProfileComponent(store=store)  # include_learnings 默认 False
+    result = await comp.provide(_make_ctx())
+
+    assert "乌龙茶" in result.text_content
+    # learning 行不应出现（fetch 集合不含 learning）
+    assert "深色主题" not in result.text_content
+
+
+@pytest.mark.asyncio
+async def test_cc5_learning_injected_when_flag_on():
+    """CC-5: include_learnings=True → learning 行进画像块（注入）。"""
+    store = FakeFactsStore(
+        rows_by_category={
+            "preference": [_pref_row("饮料", "乌龙茶")],
+            "learning": [_learning_row("ppt_theme", "上次 PPT 要深色主题")],
+        }
+    )
+    comp = PreferenceProfileComponent(store=store, include_learnings=True)
+    result = await comp.provide(_make_ctx())
+
+    assert "乌龙茶" in result.text_content
+    assert "深色主题" in result.text_content
+    assert "[learning]" in result.text_content
+
+
+@pytest.mark.asyncio
+async def test_cc5_flag_off_fetch_set_unchanged():
+    """CC-5 BC: flag OFF 时 list_active 只被三个基础 category 调用（不查 learning）。"""
+    calls: list[str] = []
+
+    class _RecordingStore(FakeFactsStore):
+        async def list_active(self, *, category=None, **kw):
+            calls.append(category)
+            return await super().list_active(category=category, **kw)
+
+    store = _RecordingStore(rows_by_category={"preference": [_pref_row("k", "v")]})
+    comp = PreferenceProfileComponent(store=store)  # OFF
+    await comp.provide(_make_ctx())
+
+    assert "learning" not in calls
+    assert set(calls) == {"preference", "profile", "constraint"}

@@ -295,3 +295,112 @@ async def test_agentloop_per_session_counters():
     loop._maybe_fire_curation_nudge("sA", list(_TURNS))  # sA:2 触发
     await asyncio.sleep(0.01)
     assert len(stub.calls) == 1
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# WI-CC-5 — auto-memory learnings（procedural 类）
+# ──────────────────────────────────────────────────────────────────────────
+
+_LEARNING_LLM_OUT = (
+    '{"decisions": [{"should_remember": true, "category": "learning", '
+    '"key": "ppt_theme_pref", "value": "用户上次 PPT 要深色主题", '
+    '"reason": "可复用的生成偏好"}]}'
+)
+
+
+@pytest.mark.asyncio
+async def test_auto_learnings_on_writes_learning_fact(db_path):
+    """CC-5: allow_learnings=True → curator 可产 learning category → facts 新增
+    一行 category='learning'。"""
+    store = FactsStore(db_path)
+
+    async def _llm(prompt: str) -> str:
+        # flag ON 时 prompt 必须提到 learning category（用 learnings-aware 变体）
+        assert "learning" in prompt
+        return _LEARNING_LLM_OUT
+
+    curator = MemoryCurator(store, _llm, allow_learnings=True)
+    decisions = await curator.nudge(_TURNS)
+
+    assert len(decisions) == 1
+    assert decisions[0].category == "learning"
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT * FROM facts WHERE category = 'learning'"
+        )
+        rows = [dict(r) for r in await cur.fetchall()]
+        await cur.close()
+    assert len(rows) == 1
+    assert rows[0]["key"] == "ppt_theme_pref"
+    assert "深色主题" in rows[0]["value"]
+
+
+@pytest.mark.asyncio
+async def test_auto_learnings_off_uses_base_prompt(db_path):
+    """CC-5 BC: allow_learnings=False（默认）→ 用 base prompt（不提 learning）。"""
+    store = FactsStore(db_path)
+
+    async def _llm(prompt: str) -> str:
+        # 默认 prompt 的 category 枚举不含 learning（OH-4 字节级 BC）
+        assert "| \"learning\"" not in prompt
+        return '{"decisions": []}'
+
+    curator = MemoryCurator(store, _llm)  # allow_learnings 默认 False
+    assert await curator.nudge(_TURNS) == []
+
+
+@pytest.mark.asyncio
+async def test_auto_learnings_off_filters_stray_learning(db_path):
+    """CC-5 BC: flag OFF 时即便 LLM 硬塞 learning 决策，也被过滤 → 不写、不返。"""
+    store = FactsStore(db_path)
+
+    async def _llm(prompt: str) -> str:
+        return _LEARNING_LLM_OUT  # 模型越界返回 learning
+
+    curator = MemoryCurator(store, _llm)  # OFF
+    decisions = await curator.nudge(_TURNS)
+    # learning 被 BC guard 过滤 → 空
+    assert decisions == []
+    if await _facts_table_exists(db_path):
+        assert await _count_facts(db_path) == 0
+
+
+@pytest.mark.asyncio
+async def test_auto_learnings_on_keeps_non_learning(db_path):
+    """CC-5: flag ON 时非 learning 决策也照常保留（不误删）。"""
+    store = FactsStore(db_path)
+
+    async def _llm(prompt: str) -> str:
+        return (
+            '{"decisions": ['
+            '{"should_remember": true, "category": "preference", '
+            '"key": "drink", "value": "乌龙茶", "reason": "稳定偏好"},'
+            '{"should_remember": true, "category": "learning", '
+            '"key": "report_steps", "value": "生成周报的步骤", "reason": "可复用流程"}'
+            ']}'
+        )
+
+    curator = MemoryCurator(store, _llm, allow_learnings=True)
+    decisions = await curator.nudge(_TURNS)
+    cats = sorted(d.category for d in decisions)
+    assert cats == ["learning", "preference"]
+    assert await _count_facts(db_path) == 2
+
+
+def test_learning_category_has_decay():
+    """CC-5: facts._CATEGORY_DECAY 含 learning（慢衰减），且进 VALID_CATEGORIES。"""
+    from deskpet.memory.facts import _CATEGORY_DECAY, VALID_CATEGORIES
+
+    assert "learning" in _CATEGORY_DECAY
+    assert _CATEGORY_DECAY["learning"] == pytest.approx(0.01)
+    assert "learning" in VALID_CATEGORIES
+
+
+def test_memory_v2_config_auto_learnings_default_false():
+    """CC-5: MemoryV2Config.auto_learnings 默认 False（BC）。"""
+    from config import MemoryV2Config
+
+    cfg = MemoryV2Config()
+    assert cfg.auto_learnings is False
+    assert MemoryV2Config(auto_learnings=True).auto_learnings is True

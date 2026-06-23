@@ -283,3 +283,110 @@ async def test_flag_false_hook_always_fires(hooked_db):
 
     # flag=False → effective_skip=False → hook 对每条都触发
     assert hook.call_count == 2
+
+
+# ─── WI-OH-3: MemoryManager.write(light=) 透传 + 高频流来源门控 ──────────────
+
+
+def _make_manager(session_db):
+    """构造一个仅用于 write 路径测试的 MemoryManager（L1/L3 用占位）。"""
+    from deskpet.memory.manager import MemoryManager
+
+    class _StubFileMemory:
+        async def append(self, *a, **k):  # pragma: no cover - 不走 L1
+            return None
+
+    return MemoryManager(_StubFileMemory(), session_db, retriever=None)
+
+
+@pytest.mark.asyncio
+async def test_manager_write_light_true_skips_hook(hooked_db):
+    """OH-3: manager.write(target='session', light=True) → skip_embed=True
+    → on_message_written hook 不触发 → VectorWorker 队列不增长。"""
+    db, hook = hooked_db
+    mgr = _make_manager(db)
+    sid = await db.create_session()
+
+    await mgr.write(
+        "voice vad tick", target="session", session_id=sid, role="user", light=True
+    )
+
+    assert hook.call_count == 0, "light=True 应跳 hook（不进 VectorWorker 队列）"
+    msgs = await db.get_messages(sid)
+    assert len(msgs) == 1 and msgs[0]["content"] == "voice vad tick"
+
+
+@pytest.mark.asyncio
+async def test_manager_write_light_default_false_fires_hook(hooked_db):
+    """OH-3 BC: manager.write 默认 light=False → skip_embed=False → hook 照常。"""
+    db, hook = hooked_db
+    mgr = _make_manager(db)
+    sid = await db.create_session()
+
+    await mgr.write("full utterance", target="session", session_id=sid, role="user")
+
+    assert hook.call_count == 1
+    hook.assert_called_once_with(1, "full utterance")
+
+
+@pytest.mark.asyncio
+async def test_manager_put_doc_light_alias(hooked_db):
+    """OH-3: put_doc_light 命名快路 = write(light=True)（跳 hook）。"""
+    db, hook = hooked_db
+    mgr = _make_manager(db)
+    sid = await db.create_session()
+
+    await mgr.put_doc_light("screenshot low-info verdict", session_id=sid)
+
+    assert hook.call_count == 0
+    msgs = await db.get_messages(sid)
+    assert msgs[0]["role"] == "user"
+
+
+@pytest.mark.asyncio
+async def test_high_frequency_source_flag_on_skips_embed(hooked_db):
+    """OH-3: 高频流来源 + flag ON → 调用方计算 light=flag AND 高频 →
+    skip_embed → VectorWorker 队列（= hook call_count）不增长。"""
+    from config import MemoryV2Config
+
+    db, hook = hooked_db
+    mgr = _make_manager(db)
+    sid = await db.create_session()
+    cfg = MemoryV2Config(light_write=True)
+
+    # 调用方语义：来源是高频流 → light = flag AND is_high_freq
+    is_high_freq = True
+    effective_light = cfg.light_write and is_high_freq  # True
+    await mgr.write(
+        "vad-tick-1", target="session", session_id=sid, role="user", light=effective_light
+    )
+    await mgr.write(
+        "vad-tick-2", target="session", session_id=sid, role="user", light=effective_light
+    )
+
+    # 两条高频流消息都被跳过 → hook（VectorWorker enqueue）从未触发
+    assert hook.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_high_frequency_source_flag_off_all_embed_bc(hooked_db):
+    """OH-3 BC: flag OFF → 即便来源是高频流，light=flag AND 高频 = False →
+    所有写入 skip_embed=False → hook 每条都触发（字节级当前行为）。"""
+    from config import MemoryV2Config
+
+    db, hook = hooked_db
+    mgr = _make_manager(db)
+    sid = await db.create_session()
+    cfg = MemoryV2Config()  # light_write=False
+
+    is_high_freq = True
+    effective_light = cfg.light_write and is_high_freq  # False（flag OFF 压制）
+    await mgr.write(
+        "vad-tick-a", target="session", session_id=sid, role="user", light=effective_light
+    )
+    await mgr.write(
+        "vad-tick-b", target="session", session_id=sid, role="user", light=effective_light
+    )
+
+    # flag OFF → 全部 embed → hook 每条都触发
+    assert hook.call_count == 2

@@ -35,6 +35,10 @@ logger = logging.getLogger(__name__)
 # MUST NOT include "goal" (execution-state belongs to goal_store).
 _PROFILE_CATEGORIES = ("preference", "profile", "constraint")
 
+# WI-CC-5: extra category injected only when auto_learnings flag is ON.
+# Kept separate so the default (flag OFF) fetch set is byte-identical.
+_LEARNING_CATEGORY = "learning"
+
 # Default top-N cap to stay under ~400 tokens.
 _DEFAULT_TOP_N = 10
 
@@ -64,10 +68,16 @@ class PreferenceProfileComponent:
         *,
         flag_enabled: bool = True,
         top_n: int = _DEFAULT_TOP_N,
+        include_learnings: bool = False,
     ) -> None:
         self._store = store
         self._flag_enabled = flag_enabled
         self._top_n = top_n
+        # WI-CC-5: when True, also inject category='learning' (procedural
+        # auto-memory) into the profile block. Default False = BC: fetch set
+        # stays (preference/profile/constraint), bundle byte-identical.
+        # Set by main.py from cfg.memory.v2.auto_learnings.
+        self._include_learnings = bool(include_learnings)
 
     async def provide(self, ctx: ComponentContext) -> Slice:
         # Gate 1: flag off → BC empty slice
@@ -142,7 +152,11 @@ class PreferenceProfileComponent:
     async def _fetch_rows(self) -> list[dict[str, Any]]:
         """Pull rows for all profile categories, sort by pinned→confidence DESC."""
         all_rows: list[dict[str, Any]] = []
-        for cat in _PROFILE_CATEGORIES:
+        # WI-CC-5: append 'learning' only when flag ON (BC: default set unchanged).
+        categories = _PROFILE_CATEGORIES + (
+            (_LEARNING_CATEGORY,) if self._include_learnings else ()
+        )
+        for cat in categories:
             rows = await self._store.list_active(
                 category=cat,
                 limit=self._top_n,

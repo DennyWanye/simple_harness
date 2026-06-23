@@ -222,6 +222,12 @@ class MemoryV2Config:
     # WI-OH-4 频率门控：每 N 个回合触发一次 nudge（对齐 hermes「周期性」）。
     # 仅在 curation_nudge=True 时生效。
     curation_nudge_every_n_turns: int = 8
+    # WI-CC-5：auto-memory learnings（procedural 类）。与 OH-4 curator 合并：
+    # 允许 curator 输出 category='learning'（如「用户上次 PPT 要深色主题」「生成
+    # 周报的步骤」），写 facts 表（慢衰减）+ 由 preference_profile 注入。
+    # 默认 False = 字节级 BC：flag OFF → curator 不产 learning、注入不含 learning。
+    # 仅在 curation_nudge=True 且 auto_learnings=True 时产 learning。
+    auto_learnings: bool = False          # WI-CC-5 auto-memory learnings 开关
     facts: MemoryV2FactsConfig = field(default_factory=MemoryV2FactsConfig)
     forget: MemoryV2ForgetConfig = field(
         default_factory=MemoryV2ForgetConfig,

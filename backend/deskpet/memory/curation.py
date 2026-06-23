@@ -92,6 +92,49 @@ RECENT TURNS:
 JSON:"""
 
 
+# WI-CC-5: prompt variant that additionally permits a ``learning`` category
+# (procedural / reusable how-to knowledge — e.g. "user wanted a dark theme for
+# the last PPT", "the steps to generate the weekly report"). Only used when the
+# ``auto_learnings`` flag is ON. BYTE-IDENTICAL to _CURATION_PROMPT except the
+# category enum gains "learning" plus one guidance sentence.
+_CURATION_PROMPT_WITH_LEARNINGS = """\
+You are the pet's memory curator. Read the recent conversation turns below
+(one block per turn, most recent last), then decide — on your own — whether
+anything is worth remembering for the long term.
+
+Be selective. Only surface durable, reusable facts about the user or the
+relationship: stable preferences, recurring projects, important personal
+context, decisions, constraints. You may ALSO record "learning" items —
+reusable procedural knowledge or how-the-user-likes-things, e.g. the steps to
+do a recurring task, or a styling preference observed while helping ("user
+preferred a dark theme for the last deck"). Skip small talk, one-off chatter,
+and things already obviously transient. It is completely fine to remember
+NOTHING.
+
+Reply with ONLY a JSON object of this exact shape:
+
+{{
+  "decisions": [
+    {{
+      "should_remember": true,
+      "category": "preference" | "fact" | "goal" | "constraint" | "context" | "learning",
+      "key": "short_snake_case_key",
+      "value": "the thing to remember, one sentence, same language as the user",
+      "reason": "why this is worth keeping long-term"
+    }}
+  ]
+}}
+
+If nothing is worth remembering, reply: {{"decisions": []}}
+Do not invent facts that were not stated. Do not include any prose outside
+the JSON object.
+
+RECENT TURNS:
+{turns}
+
+JSON:"""
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Decision dataclass
 # ──────────────────────────────────────────────────────────────────────────────
@@ -227,12 +270,19 @@ class MemoryCurator:
         max_turns: int = 12,
         subject: str = "user",
         default_confidence: float = 0.55,
+        allow_learnings: bool = False,
     ) -> None:
         self._facts = facts_store
         self._llm = llm_call
         self._max_turns = int(max_turns)
         self._subject = subject
         self._default_confidence = float(default_confidence)
+        # WI-CC-5: when True, use the learnings-aware prompt AND allow the
+        # ``learning`` category through. Default False = byte-level BC: the
+        # base prompt never mentions ``learning`` and any stray ``learning``
+        # decision (e.g. hallucinated) is filtered out before persist/return.
+        # Set by main.py from cfg.memory.v2.auto_learnings.
+        self._allow_learnings = bool(allow_learnings)
 
     async def nudge(
         self,
@@ -278,7 +328,15 @@ class MemoryCurator:
             f"[{t.get('role')}] {str(t.get('content') or '')[:240]}"
             for t in turns
         )
-        prompt = _CURATION_PROMPT.format(turns=rendered)
+        # WI-CC-5: pick the learnings-aware prompt only when the flag is ON.
+        # flag OFF → base prompt (byte-identical to OH-4) → never mentions
+        # the ``learning`` category.
+        prompt_tmpl = (
+            _CURATION_PROMPT_WITH_LEARNINGS
+            if self._allow_learnings
+            else _CURATION_PROMPT
+        )
+        prompt = prompt_tmpl.format(turns=rendered)
 
         try:
             raw = await call(prompt)
@@ -295,6 +353,12 @@ class MemoryCurator:
             return []
 
         decisions = _coerce_decisions(obj)
+        # WI-CC-5 BC guard: when auto_learnings is OFF, drop any ``learning``
+        # decision the LLM may have emitted (the base prompt never asks for it,
+        # but defense-in-depth keeps OFF byte-level identical — no learning row
+        # is ever persisted or returned).
+        if not self._allow_learnings:
+            decisions = [d for d in decisions if d.category != "learning"]
         if not decisions:
             return []
 
