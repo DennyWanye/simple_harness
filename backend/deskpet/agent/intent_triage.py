@@ -162,7 +162,10 @@ class IntentTriage:
         llm_call: Optional[Callable[[str], Awaitable[str]]] = None,
         *,
         clarify_threshold: float = 0.7,
-        timeout_s: float = 6.0,    # 合并调用含矛盾分析，略放宽（原 intent 4s + contradiction 6s 合并）
+        timeout_s: float = 30.0,   # 真机修正(2026-06-24 E2E)：主 LLM gpt-5.5 是 thinking 模型，
+                                    # structured 预分析常 5-15s 思考再出 JSON；原 6s 必超时 → 每次 safe-fail
+                                    # 退化裸 ReAct，Step1+3 形同虚设。放宽到 30s 让合并预分析真完成。可经
+                                    # config.features.problem_pipeline.analysis_timeout_s 调（决策3：模型可换更快的）。
     ) -> None:
         self._llm_call = llm_call
         self._clarify_threshold = clarify_threshold

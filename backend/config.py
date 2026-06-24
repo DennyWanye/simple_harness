@@ -428,6 +428,7 @@ class ProblemPipelineConfig:
     enabled: bool = True                       # 总开关（kill-switch）：false → 整条短路回退现有链路
     intent_triage: bool = True                 # Step1+3 合并预分析（意图 + 主要矛盾）
     intent_clarify_threshold: float = 0.7      # 歧义澄清阈值
+    analysis_timeout_s: float = 30.0           # 预分析 LLM 超时（真机修正：gpt-5.5 thinking 需 5-15s，原 6s 必超时）
     evidence_gate: bool = True                 # Step2 取证门控
     evidence_max_nudges: int = 2               # 取证 nudge 上限
     evidence_investigative_tools: list[str] = field(default_factory=list)  # 空=用模块默认白名单

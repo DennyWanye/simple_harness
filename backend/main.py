@@ -1715,8 +1715,11 @@ try:
             ) if _analysis_base is not None else None
             service_context.register("problem_pipeline", ProblemHandlingPipeline(
                 enabled=True,
-                intent_triage=(IntentTriage(_pre_llm, clarify_threshold=_pp_cfg.intent_clarify_threshold)
-                               if _pp_cfg.intent_triage else None),
+                intent_triage=(IntentTriage(
+                                   _pre_llm,
+                                   clarify_threshold=_pp_cfg.intent_clarify_threshold,
+                                   timeout_s=getattr(_pp_cfg, "analysis_timeout_s", 30.0),
+                               ) if _pp_cfg.intent_triage else None),
                 observability_events=_pp_cfg.observability_events,
             ))
             if _pp_cfg.evidence_gate:
