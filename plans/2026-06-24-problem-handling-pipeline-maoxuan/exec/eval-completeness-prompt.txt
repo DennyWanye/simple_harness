@@ -1,0 +1,45 @@
+你是一名严格的代码审查员。任务：评估「七步问题处理流水线」plan 的实现完成度是否达到 100%。
+
+只读评估，不要改任何文件。仓库根目录 = G:\projects\deskpet。
+
+## Plan 文档（实现规格）
+- plans/2026-06-24-problem-handling-pipeline-maoxuan/04-implementation-plan.md（逐文件逐函数规格 + §6 WI 拆分）
+- plans/2026-06-24-problem-handling-pipeline-maoxuan/03-design-7step-pipeline.md（7步+3闸设计）
+- plans/2026-06-24-problem-handling-pipeline-maoxuan/05-test-and-rollout.md（测试金字塔 L0-L3）
+
+## 应交付清单（逐项核对实现是否存在且与规格一致）
+新建文件（backend/deskpet/agent/）：
+1. intent_triage.py — IntentTriage.analyze() 合并 Step1+3(意图+矛盾)一次LLM；chitchat纯规则短路0次LLM；3级JSON容错；safe-fail
+2. evidence_gate.py — EvidenceGate.check(needs_investigation,evidence_gathered,nudges_used)；is_investigative；max_nudges耗尽放行
+3. self_check_gate.py — SelfCheckGate 按problem_type选档(debug严/chitchat off)；整合VerifyGate+异体评分
+4. convergence_controller.py — ConvergenceController 量化收敛+止损报告；resource_capped鲁棒补集判据(MINOR③)
+5. problem_pipeline.py — ProblemHandlingPipeline.run_pre_loop PRE-LOOP编排+短路/澄清出口
+
+修改文件：
+6. backend/config.py — ProblemPipelineConfig(enabled默认true) + FeaturesConfig字段 + load_config两处pop子表
+7. backend/context.py — _VALID_SERVICES + ServiceContext 加4个pipeline service key
+8. backend/agent/plan.py — companion_enabled/problem_type/attack_order参数(BC); PLAN_SCHEMA_COMPANION; parallelizable; _extract_json
+9. backend/agent/agent_loop.py — __init__注入3闸; PipelineEvent; Step2 EvidenceGate接守门链; dispatch置evidence_gathered;
+   Step6 SelfCheckGate if/elif整合; Step7 ConvergenceController 触顶止损(2d-①)+收敛标记(2d-②); external_evaluator pipeline on跳过
+10. backend/main.py — 3a PRE-LOOP编排; 3b plan传参; 3c build_agent透传; 3d PipelineEvent转发;
+    3e lifespan构造资产+build_agent内SelfCheckGate工厂(B3); _make_str_llm_call加response_format
+
+测试文件（backend/tests/）：
+- test_problem_pipeline_config.py / test_intent_triage.py / test_problem_pipeline.py /
+  test_evidence_gate.py / test_self_check_gate.py / test_convergence_controller.py /
+  test_plan_companion.py / test_agent_loop_pipeline.py
+
+## 关键不可妥协点（逐一确认）
+- 决策1：enabled 默认 true（出厂即开）；self_check 是 bool（非多档灰度）
+- 决策2：code 模式 plan 分支字节级不动（共享 PLAN_SCHEMA 未被污染，companion 用独立 schema）
+- 决策3：analysis_model/self_check_model 留空=主LLM，不硬依赖 haiku
+- 决策4：Step1+3 合并成 IntentTriage.analyze() 一次 LLM（非两次串行）
+- BC：flag off 时所有新分支早 return/None（kill-switch 回退）
+- B1：4个service key用register(name,None)占位(禁止下标赋值)
+- B3：self_check=true 但 tools.verifier off 时强制自建verify_gate+evaluator，二者皆无则降级warning
+- R1：evidence判定用布尔标志(对compaction免疫)，非working_messages切片
+- MINOR③：resource_capped用补集判据 reason not in (running/success/user_interrupted)
+
+## 输出格式（严格）
+对上述每一项给出：[完成/部分/缺失] + 文件:行号证据 + 偏差说明（若有）。
+最后给总判：完成度百分比 + 列出所有「未达100%」的具体缺口（如有）。若100%完成，明确说 COMPLETE。
