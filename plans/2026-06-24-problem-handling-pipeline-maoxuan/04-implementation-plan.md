@@ -728,8 +728,14 @@ __all__ = ["SelfCheckGate", "SelfCheckOutcome"]
 
 ### N5 · `backend/deskpet/agent/convergence_controller.py`（Step7 收敛止损，整合 TerminationGate）
 
-> 已核实 TerminationGate API（termination.py）：`allows_call()->(bool,reason)`、`summary()->{reason,turns_used,tools_used,elapsed_seconds,cost_usd}`、
-> `record_final_answer()`、硬上限默认极大（max_turns=10000 等，真死循环靠 per_tool_max_consecutive=8）。
+> 已核实 TerminationGate API（termination.py）：`allows_call()->(bool,reason)`、`summary()->{reason,turns_used,tools_used,elapsed_seconds,cost_usd}`（@:242-254）、
+> `record_final_answer()`、硬上限默认极大（`max_turns=10000`@:76、`wall_clock_seconds=None`@:79、`max_budget_usd=None`@:80，真死循环靠 `per_tool_max_consecutive=8`@:86→`hallucination`）。
+>
+> **`summary()["reason"]` 真实取值全集（已核实 `TerminationReason` 枚举 @ termination.py:30-52）**——MINOR③ 判据依据：
+> - 正常收尾/未触顶（3 个）：`success`(@:38) / `user_interrupted`(@:39) / `running`（未 terminate 时 `summary()` 合成 @:248）
+> - 硬上限触顶：`error_max_turns`(@:42) / `error_tool_budget`(@:43) / `error_wall_clock_exceeded`(@:44) / `error_max_budget_usd`(@:45)
+> - 错误态触顶：`permanent_tool_error`(@:48) / `all_providers_failed`(@:49) / `context_budget_block`(@:50) / `hallucination`(@:51) / `circuit_breaker_open`(@:52)
+> - **⚠️ 不存在 `budget` 这个值**（05 TC-5 旧期望臆造，已修）。`resource_capped` 改用补集判据：`reason not in ("running","success","user_interrupted")`。
 
 ```python
 # SPDX-FileCopyrightText: 2026 DennyWanye
@@ -781,10 +787,17 @@ class ConvergenceController:
         """量化收敛判据（胸中有数）：主要矛盾解 + 无未对账声明 + 资源未触顶。"""
         summary = gate_summary or (self._gate.summary() if self._gate is not None else {})
         reason = str(summary.get("reason", "running"))
-        # 资源触顶 = TerminationGate 已 terminate 且 reason 不是 success
-        resource_capped = reason.startswith("error_") or reason in (
-            "hallucination", "circuit_breaker_open", "context_budget_block",
-        )
+        # 资源触顶判据（⚠️ round-3 MINOR③ 修正：硬编码触顶 reason 集合不全 → 改鲁棒补集）。
+        # 已核实 termination.py:30-52 `TerminationReason` 全集 + :242-254 `summary()`：
+        #   正常收尾/未触顶的 reason 只有 3 个：success / user_interrupted / running（未 terminate 合成）。
+        #   其余全是触顶/错误态：error_max_turns / error_tool_budget / error_wall_clock_exceeded /
+        #   error_max_budget_usd / permanent_tool_error / all_providers_failed / context_budget_block /
+        #   hallucination / circuit_breaker_open。
+        # 原 `reason.startswith("error_") or reason in (hallucination, circuit_breaker_open, context_budget_block)`
+        # 漏掉 permanent_tool_error / all_providers_failed → 这两类触顶时 resource_capped 恒 False → 止损报告永不触发。
+        # 改成"非正常收尾即触顶"的补集形式，对 termination.py 未来新增触顶 reason 也鲁棒（默认归类触顶，保守不漏报止损）。
+        _NON_CAPPED_REASONS = ("running", "success", "user_interrupted")
+        resource_capped = reason not in _NON_CAPPED_REASONS
 
         converged = principal_resolved and unverified_claims == 0 and not resource_capped
 
@@ -1207,7 +1220,8 @@ completion_probe 块从 :1409；EvidenceGate 要插在 :1409 **之前**，即 en
 > 在 :2101 循环按白名单 + history 快照置位），既排除 bundle.history 注入的历史 tool（原 M-2），又**对 compaction
 > 整体替换 working_messages（@ :999/:1003）免疫**（新 R1）——压缩不动已置位的布尔，不再误判"零取证"强注入 nudge。
 
-**改动 2c — Step6 SelfCheckGate 整合**（已核实现有 verify_gate 块 :1486、external_evaluator 块 :1878）：
+**改动 2c — Step6 SelfCheckGate 整合**（已核实现有 verify_gate 块 :1486、external_evaluator 块 :1878；
+**verify-exhausted 终态机制已核实 @ agent_loop.py:1382-1400（终态分支）+ :1630-1644（置 `_verify_final_done`/`_force_finish_queued`）+ :806-809（`_force_finish_queued→_force_finish_next` 提升）**——MINOR① 耗尽分支复用之）：
 
 **第一期推荐做法（低风险）**：**不删**现有 verify_gate(:1486)/external_evaluator(:1878) 守门块；
 SelfCheckGate **复用** `self.verify_gate`/`self.external_evaluator` 实例做编排。具体：
@@ -1258,7 +1272,46 @@ SelfCheckGate **复用** `self.verify_gate`/`self.external_evaluator` 实例做�
                         logger.info("self_check_nudge_injected sid=%s mode=%s nudge=%d",
                                     session_id, _sc.mode, verify_nudges_used)
                         continue
-                    # passed 或耗尽 → 落到下面（不再走旧 verify_gate 块）
+                    # ─── 耗尽分支（⚠️ round-3 MINOR① 修正：复用 verify-exhausted 终态，勿静默放过）。
+                    # 已核实旧 verify 块耗尽时的真实终态机制（agent_loop.py）：
+                    #   - 耗尽且失败 → 置 `_verify_final_done=True` + `_force_finish_queued=True` + 注入
+                    #     "本轮必须 end_turn、不再调工具"的 system 消息 + `continue`（已核实 @ :1630-1644）。
+                    #   - 下一迭代循环顶部把 `_force_finish_queued` 提升为 `_force_finish_next=True`（已核实 @ :806-809），
+                    #     该轮强制 `tool_choice="none"` 产纯文本总结。
+                    #   - 这条强制总结轮走到 end_turn 块时命中终态分支 `if _verify_final_done and _force_finish_next:`
+                    #     → `yield ErrorEvent(reason="verify_exhausted", detail=总结); return`（已核实 @ :1382-1400）。
+                    # SelfCheckGate 路径**必须复用同一终态**：自检失败但 nudge 耗尽时，不能"落到下面 → completion_probe →
+                    # FinalEvent"把失败当成功静默收尾。改为置同样两个旗标走 verify-exhausted 终态：
+                    if (
+                        not _sc.passed
+                        and verify_nudges_used >= self.max_verify_nudges
+                        and self.force_finish_via_tool_choice
+                        and not _verify_final_done
+                    ):
+                        _verify_final_done = True
+                        _force_finish_queued = True
+                        working_messages.append({"role": "system", "content": (
+                            "自检多次未通过（声明与凭据不符），本轮必须 end_turn："
+                            "向用户如实总结做了什么、哪些未能验证、建议下一步。不要再调用任何工具。"
+                        )})
+                        logger.warning("self_check_exhausted sid=%s nudge=%d/%d → force_finish",
+                                       session_id, verify_nudges_used, self.max_verify_nudges)
+                        continue
+                    # ⚠️ force_finish_via_tool_choice=False（极少见配置）时无强制总结轮 → 仍不能静默放过：
+                    # 直接发 verify_exhausted 终态（与旧块 @ :1652-1663 的直发路径同构）。
+                    if not _sc.passed and verify_nudges_used >= self.max_verify_nudges:
+                        if self._tracer:
+                            self._tracer.record({"kind": "end", "iter": iteration,
+                                                 "reason": "verify_exhausted",
+                                                 "gate_summary": self._gate.summary()})
+                        yield ErrorEvent(
+                            type="error", task_id=tid, iteration=iteration,
+                            reason="verify_exhausted",
+                            detail=(response.content
+                                    or f"self-check: all retries exhausted after {verify_nudges_used} nudge(s)"),
+                        )
+                        return
+                    # passed（_sc.passed=True）→ 落到下面（不再走旧 verify_gate 块）
                 elif (
                     iteration < _SELFCHECK_TIER3_AT
                     and self.verify_gate is not None
@@ -1395,7 +1448,8 @@ class PipelineEvent(AgentEvent):
 ### M3 · `backend/main.py`（Step1/3 编排 + 事件转发 + build_agent 传参）
 
 **改动 3a — PRE-LOOP 编排插在 plan 调用之前**（已核实：`_msgs` 落地 @ :6268/:6274；
-`_in_code_mode` @ :6425；plan 调用 @ :6696）。
+`_in_code_mode` @ :6425；plan 调用 @ :6696；`_sdb=service_context.get("session_db")` @ :6033；
+**澄清出口持久化 API 已核实 @ main.py:7212-7219**：`await _sdb.append_message(session_id=, role="assistant", content=, reasoning_content=)`）。
 
 ⚠️**顺序坑**：`_in_code_mode` 在 :6425 才赋值，但 PRE-LOOP（Step1）想在 `_msgs` 构造后尽早跑。
 建议把 ProblemHandlingPipeline 的 `run_pre_loop` 调用插在 **plan 调用之前**（:6691 `try:` 前），
@@ -1444,11 +1498,25 @@ class PipelineEvent(AgentEvent):
                                             await _sa_clar.set_status(_sid, "idle")   # 清前端转圈/状态
                                     except Exception as _se:  # noqa: BLE001
                                         logger.debug("clarify_set_idle_failed sid=%s err=%s", _sid, str(_se)[:120])
-                                    # 持久化这条澄清回复为 assistant 行（若 _sdb 存在，对齐 FinalEvent 的 P4-S24 持久化）：
-                                    # ⚠️待实现时复核：照 FinalEvent handler 里 (final_text and _sdb) 的写法补一行 assistant 持久化，
-                                    #    否则下轮用户答复时上下文缺这条澄清问题。
+                                    # 持久化这条澄清回复为 assistant 行（对齐 FinalEvent 的 P4-S24 持久化）。
+                                    # ⚠️已核实 @ main.py:7212-7219：FinalEvent handler 用
+                                    #   `_asst_id_inline = await _sdb.append_message(session_id=_sid, role="assistant",
+                                    #    content=final_text or "", reasoning_content=(final_reasoning or None))`
+                                    #   持久化最终 assistant 回复。`_sdb` 已在 :6033 赋值（service_context.get("session_db")），
+                                    #   在本 PRE-LOOP 块作用域内可直接用。澄清问题就是本轮 assistant 的"最终回复"，
+                                    #   必须照同一 API 落库，否则下轮用户答复时 history 重建缺这条澄清问题 → 多轮澄清断裂（M-5 要堵的坑）。
+                                    if _sdb is not None:
+                                        try:
+                                            await _sdb.append_message(
+                                                session_id=_sid,
+                                                role="assistant",
+                                                content=_clar_text or "",
+                                            )
+                                        except Exception as _pe2:  # noqa: BLE001 — 持久化失败不阻断澄清出口
+                                            logger.warning("clarify_persist_assistant_failed sid=%s err=%s",
+                                                           _sid, str(_pe2)[:160])
                                     logger.info("pipeline_clarification_pause sid=%s", _sid)
-                                    return  # ✅ 收尾三件（emit + set idle + 持久化）已补，可安全 return
+                                    return  # ✅ 收尾三件（emit chat_v2_final + set idle + 持久化 assistant 行）已补，可安全 return
                                 else:
                                     # 注入 <意图>/<主要矛盾> system 消息（插在 system 栈尾）
                                     for _inj in _pre.system_injections:
@@ -1915,8 +1983,8 @@ WI-0 (config)  ──┬─► WI-1 (Step1+3 合并预分析 IntentTriage[含矛
 | **WI-3** | M1 plan.py 三升级（**仅 Companion 新增 plan，code 模式分支不动**，决策2）| 依赖 WI-0，可与 WI-1 并行 | 单测：旧签名 BC（不传新参 = 旧行为）、**code mode 行为不回归**、companion_enabled 分支、attack_order 注入、parallelizable 解析 |
 | **WI-4a** | N2 evidence_gate.py | 依赖 WI-0，独立 | 单测：BLOCK 条件（`evidence_gathered=False`）、`evidence_gathered=True` 放行、`is_investigative` 白名单判定、max_nudges 耗尽放行；**R1 回归：compaction 后（working_messages 被整体替换变短）`evidence_gathered=True` 仍放行不误注入** |
 | **WI-4b** | N4 self_check_gate.py | 依赖 WI-0，独立 | 单测：按 problem_type 选严格度（debug→严/chitchat→skip）、复用 verify_gate（mock）、异体评分触发条件（model 取 self_check_model，留空=主 LLM，决策3）、chitchat 跳过 |
-| **WI-4c** | N5 convergence_controller.py | 依赖 WI-0，独立 | 单测：量化收敛判据、止损报告、资源触顶判定（mock TerminationGate.summary）|
-| **WI-5** | M3 改动 3a/3b/3d/3e（main.py PRE-LOOP 编排 + plan 传参 + 事件转发 + lifespan 构造）| 依赖 WI-1/3 | live smoke：flag on 时 PRE-LOOP 跑通发事件；kill-switch（flag off）回退 |
+| **WI-4c** | N5 convergence_controller.py | 依赖 WI-0，独立 | 单测：量化收敛判据、止损报告、资源触顶判定（mock TerminationGate.summary）；**MINOR③ 回归：`reason` 取 `permanent_tool_error`/`all_providers_failed` 时 `resource_capped=True`（旧硬编码集合会漏判）；`reason in (success/running/user_interrupted)` 时 `resource_capped=False`** |
+| **WI-5** | M3 改动 3a/3b/3d/3e（main.py PRE-LOOP 编排 + plan 传参 + 事件转发 + lifespan 构造）| 依赖 WI-1/3 | live smoke：flag on 时 PRE-LOOP 跑通发事件；kill-switch（flag off）回退；**M-5 持久化单测：澄清出口（needs_clarification）走完后，`_sdb.append_message(role="assistant")` 被调一次且 content==澄清问题（mock _sdb 断 `assert_awaited`），下一轮 history/working_messages 含该澄清问题** |
 | **WI-6** | M2 全部 + M3 改动 3c（agent_loop IN-LOOP 三闸 + build_agent 透传 + SelfCheckGate 内构造）| 依赖 WI-4a/4b/4c | 单测：三闸 None=回退；flag on 时 Step2 拦截 / Step6 编排 / Step7 止损 |
 | **WI-7** | 真机 windows-mcp E2E + 2300+ kill-switch 回退回归（05 文档）| 依赖全部 | ★ 关 flag 不回归；3 类问题（debug/多症状/闲聊）流水线证据；闲聊不拖慢（0 次 LLM）|
 
@@ -2047,3 +2115,17 @@ WI-0 (config)  ──┬─► WI-1 (Step1+3 合并预分析 IntentTriage[含矛
 - §8 **遗漏:Step6**"fresh **model**"措辞 → **决策3 校正为** "fresh **context** 独立子代理"（单模型中转站下不保证不同 model，
   默认就是主 LLM；模型仅在 `self_check_model` 配了不同 model 时才异）。
 - 凡 §8/§8.1 提到 `self_check_mode` 四档 / `contradiction_analyzer` 独立模块的措辞，均被决策1（bool）/ 决策4（合并）替换。
+
+### 8.3 第 3 轮可执行性复审修订记录（round-3 review，决策回写后内置红队，1 MAJOR + 4 MINOR 已就地修）
+
+> round-3 决策回写后再做一轮可执行性复审：**0 BLOCKER、4 决策回写干净**，但揪出 1 MAJOR + 4 MINOR 可执行性缺口。
+> 全部回真实 master 代码核实行号后就地改正。执行者按正文做即可，本表供索引 + 验证。
+
+| 编号 | 缺陷 | 修复落点（正文章节）| 核实锚 |
+|---|---|---|---|
+| **MAJOR** | 澄清出口"持久化 assistant 行"只有 TODO 注释、无可粘贴代码——工程师照做会漏持久化 → 用户答澄清时上下文缺这条澄清问题 → 多轮澄清断裂（正是 M-5 要堵的坑）| §M3 改动 3a：把澄清出口持久化从注释升级为**可粘贴代码骨架**（`if _sdb is not None: await _sdb.append_message(session_id=_sid, role="assistant", content=_clar_text)`，try/except 吞错不阻断）；§M3 3a 头部锚加持久化 API 行；§6 WI-5 + 05 §L1.5 加"澄清出口后下一轮 history 含该澄清问题"单测 | FinalEvent 持久化真实写法 `await _sdb.append_message(session_id=, role="assistant", content=final_text or "", reasoning_content=)` @ main.py:7212-7219；`_sdb=service_context.get("session_db")` @ :6033 |
+| **MINOR①** | SelfCheckGate 耗尽 nudge 后与 verify-exhausted 终态分支交互未定义——耗尽后既不走 verify-exhausted 终态、也无强制收尾 → 自检失败却当成功静默放过 | §M2 改动 2c：耗尽分支复用旧 verify 块的 `_verify_final_done=True`+`_force_finish_queued=True`+注入"必须 end_turn"system 消息+`continue` → 走同一 verify-exhausted 终态；`force_finish_via_tool_choice=False` 时直发 `ErrorEvent(verify_exhausted); return`，不静默放过；2c 头部锚加机制行 | 终态分支 `if _verify_final_done and _force_finish_next: yield ErrorEvent(verify_exhausted); return` @ agent_loop.py:1382-1400；旧块置位 `_verify_final_done=True`/`_force_finish_queued=True`+注入+continue @ :1630-1644；`_force_finish_queued→_force_finish_next` 提升 @ :806-809；直发路径 @ :1652-1663；`force_finish_via_tool_choice` 默认 True @ :518 |
+| **MINOR②** | 05 TC-4/TC-5 断言与决策3/默认 config 自相矛盾——TC-4 期望评分 model≠主 LLM（但默认 `self_check_model=""`=主 LLM 必相等）；TC-5 期望 `stop_reason=budget`（但硬上限默认极大且无 budget 这个值）| 05 §L3：TC-4 改为"验 fresh-context 独立 provider 实例（日志 `pipeline_external_evaluator_model`），model **可以**==主 LLM"，对齐决策3 诚实降级；TC-5 改为"真测前临时收紧 `max_turns`/`per_tool_max_consecutive` 构造触顶，或改判真实 `stop_reason`（非 budget）"；05 §6 加 reason 全集附录 | `self_check_model:str=""`@config 决策3；`max_turns=10000`/`wall_clock_seconds=None`/`max_budget_usd=None` @ termination.py:76/79/80；`per_tool_max_consecutive=8`→`hallucination` @ :86/165-166；无 `budget` 值（枚举 @ :30-52）|
+| **MINOR③** | ConvergenceController `resource_capped` 硬编码 reason 集合不全——漏 `permanent_tool_error`/`all_providers_failed` → 这两类触顶时 `resource_capped` 恒 False → 止损报告永不触发（TC-5 又挂）| §N5：`resource_capped` 改鲁棒补集判据 `reason not in ("running","success","user_interrupted")`（非正常收尾即触顶，对未来新增 reason 也鲁棒）；§N5 头部锚 + 05 §6 列全 termination.py 真实 reason 全集作依据；§6 WI-4c 加 MINOR③ 回归单测 | `TerminationReason` 枚举全集 @ termination.py:30-52；`summary()["reason"]` 合成 running @ :242-254；正常收尾仅 success/user_interrupted/running，其余全触顶 |
+
+> **MINOR③ — termination.py 真实 reason 取值集合（复审核实，喂判据）**：正常收尾/未触顶 = `success` / `user_interrupted` / `running`（未 terminate 合成）；硬上限触顶 = `error_max_turns` / `error_tool_budget` / `error_wall_clock_exceeded` / `error_max_budget_usd`；错误态触顶 = `permanent_tool_error` / `all_providers_failed` / `context_budget_block` / `hallucination` / `circuit_breaker_open`。**无 `budget` 值**。

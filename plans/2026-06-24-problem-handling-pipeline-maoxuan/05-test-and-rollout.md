@@ -51,6 +51,25 @@
   反向断言 `mock_llm.await_count == 1`（确认合并预分析**只调一次** LLM 同时出 intent+contradiction，决策4），
   避免"全都不调"的假短路掩盖 bug；并对一条复杂问题断言返回的 `card.contradiction is not None`（矛盾段在同一次调用产出）。
 
+### L1.5 · WI-5 澄清出口持久化单测（M-5 / round-3 MAJOR 补）
+
+> 背景：澄清出口（`needs_clarification`）裸 emit `chat_v2_final` 后 `return`，不进 agent loop，**FinalEvent 收尾路径
+> 不会触发**——澄清问题这条 assistant 消息必须由澄清出口分支**自己**持久化（04 §M3 改动 3a，已核实持久化 API
+> @ main.py:7212-7219 = `_sdb.append_message(session_id=, role="assistant", content=)`）。漏持久化 → 下轮用户答澄清时
+> history 重建缺这条澄清问题 → 多轮澄清断裂。本测守这一条：
+
+  ```python
+  # mock _sdb（AsyncMock），构造 needs_clarification=True 的 IntentCard（clarifying_questions 非空），
+  # 走 PRE-LOOP 澄清出口分支后断言：
+  _sdb.append_message.assert_awaited()                  # 至少落库一次
+  _call = _sdb.append_message.await_args
+  assert _call.kwargs["role"] == "assistant"            # 落的是 assistant 行
+  assert _call.kwargs["content"] == "\n".join(card.clarifying_questions)  # content==澄清问题
+  # 反向：模拟"下一轮"history 重建（用同 sid 拉 messages），断言其中含该澄清问题文本——
+  # working_messages/history 含该澄清问题（多轮澄清不断裂的硬证据）。
+  ```
+  若 `_sdb is None`（无 SessionDB），澄清出口仍须 emit + set idle + return（持久化静默跳过），断言不抛异常。
+
 ### L2 · 集成 / live smoke（跨层契约，对齐 [[feedback_cross_layer_contract]]）
 
 - `scripts/e2e_problem_pipeline_smoke.py`：起真 backend（dev python，不打 relay 用 stub LLM 或单次真调），发 3 类问题，断言：
@@ -74,8 +93,8 @@
 > 补一层闲聊兜底规则（如 LLM 重判后仍按 chitchat 短路），并把该度量数值写进 TC-1 报告（硬证据，不只 PASS/FAIL）。
 | **TC-2 debug 取证门控** | "我的 XX 功能报错了，帮我看看"（无更多信息） | 日志 `evidence_gate blocked=true`（模型想直接下结论被拦）→ 模型转而调 read/grep 取证 → 放行；`<调查>` 事件出现 |
 | **TC-3 多症状抓主要矛盾** | 抛一个含 2-3 个症状的复合问题 | 日志 `contradiction principal=<id> attack_order=[...]`；`<主要矛盾>` 事件；计划首步对准 principal；截图前端"主攻"卡片（若渲染） |
-| **TC-4 异体自检** | 让桌宠完成一个可验证产物类任务，诱导其"假装完成" | 日志 `self_check heterogeneous=true passed=false`（异体子代理打回）→ 二次修正 → passed=true；确认评分 provider ≠ 主 LLM（`model=` 不同） |
-| **TC-5 收敛止损** | 构造一个解不动的问题逼近迭代上限 | 日志 `convergence converged=false principal_resolved=false stop_reason=budget`；桌宠输出**诚实止损报告**（"卡在哪+建议"）而非假装完成 |
+| **TC-4 异体自检** | 让桌宠完成一个可验证产物类任务，诱导其"假装完成" | 日志 `self_check heterogeneous=true passed=false`（异体子代理打回）→ 二次修正 → passed=true。**⚠️ round-3 MINOR② 修正（对齐决策3 诚实降级）**：`self_check_model` 默认留空=主 LLM gpt-5.5（中转站单模型不保证不同 model），故**不能断言 `model=` 不同**——验的是**fresh-context 独立子代理**而非 diff-model。硬证据改为：日志 `pipeline_external_evaluator_model model=<x> base=<y>`（确认评分走经 `_resolve_ephemeral_provider` 克隆出的**独立 provider 实例**、新开 context、非执行者本人），`model` **可以** == 主 LLM。仅当显式把 `self_check_model` 配成不同 model 时，才另断 `model=` ≠ 主 LLM（可选增强）。 |
+| **TC-5 收敛止损** | 构造一个解不动的问题逼近迭代上限 | 桌宠输出**诚实止损报告**（"卡在哪+建议"）而非假装完成；日志 `convergence converged=false principal_resolved=false should_stop_loss=true`。**⚠️ round-3 MINOR②/③ 修正**：默认 `GateConfig` 硬上限**极大**（已核实 termination.py:76 `max_turns=10000`、:79 `wall_clock_seconds=None` 禁用、:80 `max_budget_usd=None` 禁用），自然跑**逼不出** budget/turns 触顶，且不存在 `stop_reason=budget` 这个值。两条二选一：**(a)** 真测前临时收紧 gate——给 backend 注入小 `max_turns`（如 4）或小 `per_tool_max_consecutive`（如 3，制造同工具同参重复触发 `hallucination`）构造触顶；**(b)** 直接验真实触顶 `stop_reason`（取值见 §6 注：`error_max_turns`/`error_tool_budget`/`hallucination`/`circuit_breaker_open`/`context_budget_block`/`all_providers_failed`/`permanent_tool_error`，**不是** `budget`）。报告里写明用了哪种构造方式 + 实际 `stop_reason` 值。 |
 
 - **失败 retry ≥3 次不同 workaround 才能标"环境受限"**；跳过任何 case 须显式声明 + 理由 + 等用户确认。
 - **中文输入 workaround**：STA Runspace + `Clipboard.SetText` + Ctrl+V；焦点不在目标窗口先 Click 聚焦。
@@ -125,3 +144,32 @@
 4. L3 真机 5 个 TC 全 PASS（截图 + 日志硬证据），闲聊不拖慢有时间戳对比证据。
 5. 更新 `STATUS/status.md` §3 新增"问题处理流水线"模块行 + §4 里程碑（对齐项目 STATUS 纪律）。
 6. **测试环境出厂即开 ship（决策1）**：`enabled=true` 全量验证；无 shadow→strict 灰度仪式，flag 仅留 kill-switch + 单步调试。
+
+---
+
+## 6. 附：TerminationGate 真实 reason 取值集合（已核实 @ termination.py，TC-5/ConvergenceController 依据）
+
+> `gate.summary()["reason"]`（已核实 termination.py:242-254）= `TerminationReason.value`，未 terminate 时合成 `"running"`。
+> **全部取值**（已核实 `TerminationReason` 枚举 @ termination.py:30-52）：
+
+| 类别 | value | 触发 |
+|---|---|---|
+| 自然收尾（非触顶） | `success` | end_turn 正常结束（`record_final_answer`→`terminate(SUCCESS)`，:225-226）|
+| 自然收尾（非触顶） | `user_interrupted` | 用户中断 |
+| 合成（未 terminate） | `running` | gate 尚未 terminate（`summary()` 兜底，:248）|
+| 硬上限触顶 | `error_max_turns` | `turns_used >= max_turns`（默认 10000，:142）|
+| 硬上限触顶 | `error_tool_budget` | 工具预算耗尽 |
+| 硬上限触顶 | `error_wall_clock_exceeded` | 墙钟超限（默认 `wall_clock_seconds=None` **禁用**，:79）|
+| 硬上限触顶 | `error_max_budget_usd` | 成本超限（默认 `max_budget_usd=None` **禁用**，:80）|
+| 错误态触顶 | `permanent_tool_error` | 工具永久失败 |
+| 错误态触顶 | `all_providers_failed` | provider 全挂 |
+| 错误态触顶 | `context_budget_block` | 上下文预算阻断 |
+| 错误态触顶 | `hallucination` | `per_tool_max_consecutive` 触发（默认 8，:165-166）= 真死循环主防线 |
+| 错误态触顶 | `circuit_breaker_open` | 熔断 |
+
+> **关键结论（喂 TC-5 + 04 §N5 MINOR③）**：
+> ① **不存在 `budget` 这个 value**——TC-5 原期望 `stop_reason=budget` 是臆造值，必挂。
+> ② 默认配置下 `max_turns=10000` + `wall_clock`/`max_budget` 均 `None`（禁用）→ 自然跑**逼不出**这些硬上限；
+>    实操真死循环靠 `per_tool_max_consecutive=8`→`hallucination`。真测要么临时收紧 `max_turns`，要么制造同工具同参重复触 `hallucination`。
+> ③ "正常收尾"的 reason 只有 `success` / `user_interrupted` / `running` 三个；其余**全是触顶/错误**（应让 `resource_capped=True`）。
+>    故 04 §N5 把 `resource_capped` 改成鲁棒补集判据：`reason not in ("running","success","user_interrupted")` 即视为触顶。
