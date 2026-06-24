@@ -26,9 +26,11 @@
 | 守门4 external_evaluator | :1869 | **@ agent_loop.py:1878**（`if self.external_evaluator is not None`，在 `record_final_answer()` @ :1957 之前）| 行微漂，逻辑准确 |
 | FinalEvent emit | — | **`yield FinalEvent(` @ agent_loop.py:1971**；`self._gate.record_final_answer()` @ :1957 | 新核实 |
 | 工具结果 emit | :2098-2240 | **dispatch loop @ agent_loop.py:2098；`yield ToolResultEvent(` @ :2223**（主路径）+ :2136（gate-blocked flush 路径）| ✅ 准确，但有**两处** ToolResultEvent emit（Step5 label 要都覆盖）|
-| self-check 三级注入 | agent_loop.py:1188 / 171 | **常量 `_SELFCHECK_TIER1/2/3` @ agent_loop.py:140/149/159；注入在 loop 内 @ :1061-1090**（`if iteration % _SELFCHECK_EVERY == 0`）| 01 的 :1188 不准；真实注入点在 :1061 |
+| self-check 三级注入 | agent_loop.py:1188 / 171 | **注入在 loop 内 @ :1061-1090**（`if iteration % _SELFCHECK_EVERY == 0`）。⚠️**红队 m-2 已核实**：`_SELFCHECK_TIER1/2/3 @ :140/149/159` 是**提示文本字符串常量**，不是阈值；真实阈值常量只有 `_SELFCHECK_EVERY=10`(@:134)、`_SELFCHECK_TIER2_AT=20`(@:135)、`_SELFCHECK_TIER3_AT=30`(@:136)——**没有 `_SELFCHECK_TIER1_AT`**（tier1 直接用 `_SELFCHECK_EVERY=10`）| 01 的 :1188 不准；真实注入点在 :1061；阈值/文本两类常量勿混淆 |
 | `ClassifierResult` | classifier.py:242 | **dataclass `ClassifierResult{task_type, path, confidence, latency_ms, rationale}` @ classifier.py:46；`async def classify(self, user_message) -> ClassifierResult` @ classifier.py:242** | ✅ 准确 |
-| `_resolve_ephemeral_provider` | — | **`def _resolve_ephemeral_provider(base_provider, model_name)` @ main.py:703** | 新核实（Step6 异体评分复用它）|
+| `_resolve_ephemeral_provider` | — | **`def _resolve_ephemeral_provider(base_provider, model_name)` @ main.py:703**；verify_gate 已用它 @ main.py:1001 | 新核实（Step6 异体评分复用它走 fresh model）|
+| `ServiceContext` 容器类型 | — | **`@dataclass class ServiceContext` @ context.py:89**；`_VALID_SERVICES` frozenset @ **context.py:9-87**；`register(name,provider)` @ **:145**（name∉frozenset → `raise ValueError` @ :147）；`get(name)` @ **:153**（同样 :155 raise）。**无 `__getitem__/__setitem__`** | ⚠️**红队 B1 已核实**：不能用 `service_context["x"]=` 下标，也不能 `.get("problem_pipeline")` 未注册 key → 必须先扩 frozenset + dataclass 字段（见 §M5 新增步骤）|
+| `_MIGRATABLE_SECTIONS` backfill | — | **`_MIGRATABLE_SECTIONS` tuple @ config.py:775-788**；whole-section copy 路径 @ **:854-865**；逐 key 循环对嵌套子表 `_is_toml_table(bval)` → `continue` skip @ **:870-871** | ⚠️**红队 B2 已核实**：清单含 `("memory","v2")` + `("memory","v2","facts")` 双条→证明嵌套子表必须各自单列一条；缺 `("features","problem_pipeline")` → 存量 install 永远拿不到默认 off（见 §M4 backfill 步骤）|
 | `_make_str_llm_call` | — | **`def _make_str_llm_call(provider, *, max_tokens=512)` @ main.py:684** | 新核实（把 provider 适配成 `(prompt)->str` async） |
 | assemble 调用点 | main.py:6151 | **`_assembler = service_context.get("context_assembler")` @ main.py:6151；`_bundle.build_messages(...)` @ :6268；`_msgs` 落地 @ :6268/:6274** | ✅ 准确。**关键新发现**：`ContextBundle.task_type` 存在（bundle.py:259）→ Step1 可直接读 `_bundle.task_type`，**无需重跑 classifier** |
 | `_in_code_mode` | — | **`_in_code_mode = bool(_cmm and _cmm.is_enabled(_sid))` @ main.py:6425** | 新核实。注意它在 `_msgs` 构造（:6268）**之后**才赋值 |
@@ -51,13 +53,16 @@
 | M1 | `backend/agent/plan.py` | 改造 | Step4 |
 | M2 | `backend/agent/agent_loop.py` | 改造 | Step2/5/6/7 + `__init__` |
 | M3 | `backend/main.py` | 改造 | Step1/3/4 编排 + 事件转发 + build_agent 传参 |
-| M4 | `backend/config.py` | 改造 | flag 段 |
+| M4 | `backend/config.py` | 改造 | flag 段 + `_MIGRATABLE_SECTIONS` backfill（B2）|
+| M5 | `backend/context.py` | 改造 | 注册 4 个 pipeline service key（B1，BLOCKER，其余 main.py 改动硬前置）|
 
 **模块约定（已核实 verify_gate.py / classifier.py / reflection.py 的头部风格）**：
 - 头两行：`# SPDX-FileCopyrightText: 2026 DennyWanye` / `# SPDX-License-Identifier: BUSL-1.1`
 - `from __future__ import annotations`
 - logger：新模块统一用 **`structlog`**（`import structlog; logger = structlog.get_logger(__name__)`，对齐 classifier.py:40）。注意 verify_gate.py 用的是 stdlib `logging`——两种都存在，**新模块选 structlog**（结构化 kv 日志，便于真测 grep `pipeline_step step=N`）。
 - LLM 调用统一接 `(prompt:str)->Awaitable[str]` callable（复用 `main.py:_make_str_llm_call` 产物），**不在新模块里 import provider**——provider 解析留在 main.py，新模块只收注入的 callable（与 external_evaluator/verify_gate 同构）。
+- ⚠️**红队 M-3 已核实并采纳（方案①：给 `_make_str_llm_call` 加 `response_format` 透传）**：当前 `_make_str_llm_call(provider,*,max_tokens=512)`（**已核实 main.py:684-700**）只透传 `max_tokens/temperature`，**不传 `response_format`** → intent/contradiction 新模块的 `json_schema` 会失效（质量不如 plan.py:134 那种直调 `chat_with_tools(...,response_format=PLAN_SCHEMA)`）。**修复**：把签名改成 `_make_str_llm_call(provider,*,max_tokens=512,response_format=None)`，内部 `_call` 里 `if response_format is not None: kwargs["response_format"]=response_format` 再 `await provider.chat_with_tools(...,**kwargs)`（**已核实 `chat_with_tools` 接受 `response_format`，见 plan.py:139**）。lifespan 构造 pipeline 的 `_pp_llm` 时**不传** schema（intent/contradiction 各自的 schema 不同，单一 callable 无法同时携带两个 schema）——改为：IntentTriage/ContradictionAnalyzer 各自构造时收一个**已绑定自己 schema 的 callable**（见 §M3 改动 3e 修正：用 `functools.partial`/闭包按模块绑定 `response_format=_INTENT_SCHEMA` / `=_SCHEMA`）。
+- ⚠️**失败兜底（M-3 同款，硬要求）**：即便 relay 接受 `response_format`，thinking-model 仍高 400 率（plan.py:142 注释证实）→ 新模块的 `_extract_json` 三级容错（裸/fenced/bare，N1/N3 已含）+ **LLM 抛异常时整步降级**（IntentTriage→`_safe_card` 退裸 ReAct；ContradictionAnalyzer→返回 `None` 跳过注入）是刚需，不能省。`response_format` 调用失败（HTTP 400）必须被各模块 `try/except` 吞成 safe-fail，**不卡死**整条流水线。
 
 ---
 
@@ -74,7 +79,7 @@
 收到用户问题，先做一次轻量结构化意图分诊，产出 IntentCard：
   - 重述用户真正诉求（restated_intent）
   - 归类 problem_type（复用组装期 ClassifierResult.task_type 派生，避免重复分类 LLM）
-  - 估歧义分（ambiguity_score）→ 高则出澄清问题（走现有 ask_clarification 出口）
+  - 估歧义分（ambiguity_score）→ 高则出澄清问题（走独立 chat_v2_final 澄清出口，非 ask_clarification 工具）
   - 标 needs_investigation / needs_decomposition（喂 Step2 取证门 / Step3 主要矛盾）
 
 短路纪律（硬性能要求）：
@@ -747,9 +752,12 @@ __all__ = ["SelfCheckGate", "SelfCheckOutcome"]
 ```
 
 > `⚠️待实现时复核`：SelfCheckGate 在 agent_loop 里**替换**现有散落的 verify_gate(:1486)+external_evaluator(:1878)
-> 守门时，要保留它们当前的 `iteration < _SELFCHECK_TIER3_AT` 准入条件 + nudge 计数；建议**第一期不删旧守门**，
-> 而是让 SelfCheckGate **复用旧守门里已构造好的 verify_gate/external_evaluator 实例**（agent_loop 已有 `self.verify_gate`/`self.external_evaluator`），
-> 即 SelfCheckGate 是「旧守门链的编排封装」而非平行新路径，避免双重对账。
+> 守门时，要保留它们当前的 `iteration < _SELFCHECK_TIER3_AT` 准入条件 + nudge 计数；**第一期不删旧守门**（pipeline
+> off 时仍走它们）。**⚠️ B3 修正（去掉"复用已构造实例"的误导措辞）**：SelfCheckGate **不能**简单"复用旧守门里
+> 已构造好的实例"——因为 `self.verify_gate`/`self.external_evaluator` 仅当 `tools.verifier` 两 flag 开时才非 None。
+> 用户只开 `self_check_mode=strict` 不开 tools.verifier → 拿到 None → strict 空门。正确做法见 §M3 改动 3e 的 B3 修正：
+> **当 `self_check_mode != "off"` 时，在 build_agent 内强制自建一套 verify_gate/external_evaluator 喂给 SelfCheckGate**，
+> 独立于 tools.verifier flag；二者皆不可得时降级并 `logger.warning` 告警（不静默 pass）。
 
 ---
 
@@ -891,7 +899,7 @@ logger = structlog.get_logger(__name__)
 class PreLoopResult:
     """PRE-LOOP 三步产出。main.py 据此注入 system 消息 + 发事件 + 决定是否短路/澄清。"""
     short_circuit: bool = False           # 闲聊短路：整条流水线跳过，裸 ReAct
-    needs_clarification: bool = False     # 歧义高：暂停问澄清（走 ask_clarification 出口）
+    needs_clarification: bool = False     # 歧义高：暂停问澄清（走独立 chat_v2_final 澄清出口）
     intent: Optional[IntentCard] = None
     contradiction: Optional[ContradictionMap] = None
     system_injections: list[str] = field(default_factory=list)  # 注入 _msgs 的 system 文本（按序）
@@ -946,7 +954,7 @@ class ProblemHandlingPipeline:
 
         if card.needs_clarification:
             res.needs_clarification = True
-            return res  # main.py 走 ask_clarification 出口（emit 澄清问题 + 暂停）
+            return res  # main.py 走独立 chat_v2_final 澄清出口（emit 澄清问题 + 显式收尾 + 暂停，见改动 3a）
 
         res.system_injections.append(intent_to_system_message(card))
 
@@ -1026,6 +1034,14 @@ async def maybe_extract_plan(
 > **BC 保证**：旧调用方不传新参数 → `companion_enabled=False` → `not in_code_mode` 分支
 > 仍 `return None`，与改前**完全一致**。只有 flag on 显式传 `companion_enabled=True` 才进新分支。
 
+> **⚠️ 升级1 补 json 容错（红队 M-4，硬要求）**：**已核实** maybe_extract_plan 当前解析 plan JSON 只有
+> `data = json.loads(content)` **一层**（**已核实 plan.py:153-158**），无 fenced/bare fallback。code 场景下主 LLM
+> 通常吐干净 JSON 还能撑；但**升级1 解除 code-only 后，companion 走默认 gpt-5.5**，对 `response_format` 兼容性更差、
+> 更易吐 ```json 围栏或夹带 thinking 文本 → `json.loads` 直接挂 → 计划静默丢。**修复**：把 plan.py:153 的单层
+> `json.loads` 换成**三级容错** `_extract_json`（裸/fenced/bare，复用 N1/N3 同款实现，可抽到 plan.py 本地或共享
+> util）；**抽取失败时静默跳过 plan（`return None`，不阻断**主 ReAct，对齐 :147 现有"无 plan = 裸 ReAct"的优雅降级
+> 语义）。companion 路径失败率高于 code，这层容错是刚需，不是 nice-to-have。
+
 **升级 2（吃主要矛盾 attack_order）** —— 在构造 user 消息时（plan.py:116-125 附近）把 attack_order 注入 prompt，让计划首步对准 principal：
 
 ```python
@@ -1080,23 +1096,40 @@ schema `properties` 内（plan.py:67 附近）加：
 ```python
         # ─── 七步流水线 IN-LOOP 三闸（plans/2026-06-24-problem-pipeline）。
         # 全 None (默认) → 跳过所有 pipeline 分支（字节级 BC）。
-        evidence_gate: Optional[Any] = None,           # deskpet.agent.evidence_gate.EvidenceGate
-        self_check_gate: Optional[Any] = None,         # deskpet.agent.self_check_gate.SelfCheckGate
-        convergence_controller: Optional[Any] = None,  # deskpet.agent.convergence_controller.ConvergenceController
+        evidence_gate: Optional[Any] = None,           # deskpet.agent.evidence_gate.EvidenceGate（service 实例，caller 传）
+        self_check_gate: Optional[Any] = None,         # deskpet.agent.self_check_gate.SelfCheckGate（build_agent 内构造后传，见 B3）
+        convergence_report_on_stop: bool = False,      # Step7：True → __init__ 末尾用 self._gate 自建 ConvergenceController（见 3c 修正）
         pipeline_problem_type: Optional[str] = None,   # Step1 产出的 problem_type（喂 Step6 选档）
         pipeline_needs_investigation: bool = False,    # IntentCard.needs_investigation（喂 Step2）
         pipeline_observability: bool = False,          # 发 chat_v2_evidence_gate / _selfcheck / _convergence 事件
 ```
-赋值（在 __init__ body 末尾，self._curation_every 之后）：
+赋值（在 __init__ body 末尾，self._curation_every 之后；**注意 ConvergenceController 必须在 self._gate 构造之后**自建）：
 ```python
         self._evidence_gate = evidence_gate
         self._self_check_gate = self_check_gate
-        self._convergence_controller = convergence_controller
         self._pipeline_problem_type = pipeline_problem_type
         self._pipeline_needs_investigation = pipeline_needs_investigation
         self._pipeline_observability = bool(pipeline_observability)
         self._evidence_nudges_used = 0   # Step2 nudge 计数
+        self._evidence_baseline_len = 0  # Step2 取证 baseline（run() 开头重设，见改动 2b-0）
+        # Step7 ConvergenceController 自建（依赖 self._gate，已核实 gate 构造 @ :618 在此之前）：
+        self._convergence_controller = None
+        if convergence_report_on_stop:
+            from deskpet.agent.convergence_controller import ConvergenceController  # noqa: PLC0415
+            self._convergence_controller = ConvergenceController(
+                self._gate, report_on_stop=True,
+            )
 ```
+
+**改动 2b-0 — run() 开头记 evidence baseline**（⚠️**红队 M-2 修正**，硬前置）。**已核实** `working_messages =
+list(messages)` @ agent_loop.py:659，`messages` 含 `bundle.history` 注入的历史 tool 消息（带 `name` 字段）。
+在 :659 紧随其后记基线长度：
+```python
+        working_messages: list[dict[str, Any]] = list(messages)   # 已核实 :659
+        self._evidence_baseline_len = len(working_messages)       # ← M-2：取证门只看此之后新增的 tool 消息
+```
+> 这样 EvidenceGate 只统计**本 run 内真正发生**的取证工具调用，历史 tool 消息（首轮就在 working_messages 里）
+> 不会被误数成"已调查"。对齐 03 §3 Step2"本轮已发生的工具调用记录"的真实语义。
 
 **改动 2b — Step2 EvidenceGate 接在守门链最前**（已核实：end_turn 块从 agent_loop.py:1371 开始，
 completion_probe 块从 :1409；EvidenceGate 要插在 :1409 **之前**，即 end_turn 判定刚进入处）：
@@ -1118,7 +1151,11 @@ completion_probe 块从 :1409；EvidenceGate 要插在 :1409 **之前**，即 en
                     and self._evidence_gate is not None
                     and self._pipeline_needs_investigation
                 ):
-                    _tool_names_so_far = self._collect_tool_names(working_messages)
+                    # ⚠️ M-2 修正：只看本 run 内新增的 tool 消息（baseline 之后），
+                    # 不数 bundle.history 注入的历史 tool 消息（否则有历史会话恒判"已取证"，取证门失效）。
+                    _tool_names_so_far = self._collect_tool_names(
+                        working_messages[self._evidence_baseline_len:]
+                    )
                     _ev_dec = self._evidence_gate.check(
                         needs_investigation=self._pipeline_needs_investigation,
                         tool_names_so_far=_tool_names_so_far,
@@ -1145,9 +1182,10 @@ completion_probe 块从 :1409；EvidenceGate 要插在 :1409 **之前**，即 en
 辅助方法（新增到类内，靠近 `_maybe_fire_curation_nudge`）：
 ```python
     @staticmethod
-    def _collect_tool_names(working_messages: list[dict]) -> list[str]:
-        """从 working_messages 收集已发生的 tool 调用名（role=='tool' 的 name 字段）。"""
-        return [m.get("name", "") for m in working_messages if m.get("role") == "tool"]
+    def _collect_tool_names(messages_slice: list[dict]) -> list[str]:
+        """从**本 run baseline 之后**的 working_messages 切片收集 tool 调用名（role=='tool' 的 name）。
+        调用方传 working_messages[self._evidence_baseline_len:]（M-2：排除 history 注入的旧 tool 消息）。"""
+        return [m.get("name", "") for m in messages_slice if m.get("role") == "tool"]
 
     def _pipeline_event(self, ev_type: str, iteration: int, payload: dict):
         """构造 pipeline WS 事件（复用 ErrorEvent? 不——用专用轻量事件，见下）。"""
@@ -1156,9 +1194,10 @@ completion_probe 块从 :1409；EvidenceGate 要插在 :1409 **之前**，即 en
                              iteration=iteration, payload=payload)
 ```
 
-> `⚠️待实现时复核`：`working_messages` 里 tool 消息的结构 = `{"role":"tool","tool_call_id":..,"name":..,"content":..}`
-> （已核实 agent_loop.py:2251-2257 append 处），故 `m.get("name")` 可取。但**已发生的工具调用**也包括
-> 本轮之前 iteration 的——这正是我们要的（"整轮 working_messages 中已发生的工具调用记录"，对齐 03 §3 Step2 输入）。
+> `working_messages` 里 tool 消息的结构 = `{"role":"tool","tool_call_id":..,"name":..,"content":..}`
+> （已核实 agent_loop.py:2251-2257 append 处），故 `m.get("name")` 可取。**已解决（M-2）**：通过
+> `working_messages[self._evidence_baseline_len:]` 切片，只数本 run 内新增 tool 消息，bundle.history 注入的
+> 历史 tool 消息（带 name）被排除——不再误判"已取证"。`_collect_tool_names` 入参即切片后的子列表。
 
 **改动 2c — Step6 SelfCheckGate 整合**（已核实现有 verify_gate 块 :1486、external_evaluator 块 :1878）：
 
@@ -1226,45 +1265,77 @@ SelfCheckGate **复用** `self.verify_gate`/`self.external_evaluator` 实例做�
         return ""
 ```
 
-**改动 2d — Step7 ConvergenceController 收尾整合**（已核实 FinalEvent emit 在 :1971，
-`self._gate.record_final_answer()` 在 :1957）：
+**改动 2d — Step7 ConvergenceController 收尾整合**（⚠️**红队 M-1 已核实并修正插点**）。
 
-在 :1957 `record_final_answer()` **之前**插收敛判定（pipeline on 时）：
+> **红队 M-1 核实结论**：硬上限/资源触顶的终止走的是**循环顶部** `_ok,_reason = self._gate.allows_call()`
+> （**已核实 agent_loop.py:820**），`not _ok` 时 `yield ErrorEvent(...)` 然后 **`return`**（**已核实 :821-829**）
+> ——**直接退出 run()，根本走不到 `record_final_answer()`(@:1957) / FinalEvent(@:1971)**。所以把止损报告插在 :1957
+> 前是**死代码**：到 :1957 时 `gate.summary()["reason"]` 仍是 `"running"`（gate 还没 terminate），止损判据恒 False，
+> `<收敛>` 止损报告永不发，05 TC-5 必挂。**正确插点 = 循环顶部 allows_call 返回 False 的 break(return) 分支（:821-829）**。
+
+**2d-① 资源触顶止损报告 → 插在 :821-829 的 `not _ok` 分支**（pipeline on 时，把原 ErrorEvent 收尾替换为
+"止损报告 + FinalEvent"，让桌宠诚实交代而非只发 error）：
 ```python
-                # ─── Step7 ConvergenceController（量化收敛 + 止损报告，闸③）。
-                # pipeline off 时 self._convergence_controller=None → 跳过（BC，直接 record_final_answer）。
-                _convergence_report = ""
-                if self._convergence_controller is not None:
-                    _principal_resolved = True  # ⚠️待实现时复核：从 todo/ledger 推断主要矛盾首步是否 done
-                    _unverified = 0  # 若 Step6 跑过，用其 claims_unverified
-                    _verdict = self._convergence_controller.evaluate(
-                        principal_resolved=_principal_resolved,
-                        unverified_claims=_unverified,
-                        gate_summary=self._gate.summary(),
+                _ok, _reason = self._gate.allows_call()    # 已核实 :820
+                if not _ok:
+                    # ─── Step7 止损（闸③）：硬上限/资源触顶 → 不硬撑，产出诚实止损报告。
+                    # pipeline off 时 self._convergence_controller=None → 走原 ErrorEvent return（字节级 BC）。
+                    if self._convergence_controller is not None:
+                        _verdict = self._convergence_controller.evaluate(
+                            principal_resolved=False,           # 触顶即未收敛
+                            unverified_claims=0,
+                            gate_summary=self._gate.summary(),   # 此处 reason 已是 error_*/触顶，判据成立
+                        )
+                        if self._pipeline_observability:
+                            yield self._pipeline_event("chat_v2_convergence", iteration, {
+                                "converged": _verdict.converged,
+                                "principal_resolved": _verdict.principal_resolved,
+                                "stop_reason": _verdict.stop_reason,
+                                "report": _verdict.report,
+                            })
+                        if _verdict.should_stop_loss and _verdict.report:
+                            yield FinalEvent(            # 诚实止损：发 final 带报告，而非裸 error
+                                type="final",
+                                task_id=tid,
+                                iteration=iteration,
+                                content=_verdict.report,
+                                # ...（其余 FinalEvent 字段照 :1971 现有构造补齐）
+                            )
+                            return
+                    # pipeline off 或非止损情形 → 原行为（ErrorEvent + return），字节级 BC：
+                    yield ErrorEvent(
+                        type="error", task_id=tid, iteration=iteration,
+                        reason=(_reason.value if _reason is not None else "unknown"),
+                        detail="Termination gate blocked LLM call",
                     )
-                    if self._pipeline_observability:
-                        yield self._pipeline_event("chat_v2_convergence", iteration, {
-                            "converged": _verdict.converged,
-                            "principal_resolved": _verdict.principal_resolved,
-                            "stop_reason": _verdict.stop_reason,
-                            "report": _verdict.report,
-                        })
-                    if _verdict.should_stop_loss and _verdict.report:
-                        _convergence_report = "\n\n" + _verdict.report  # 附到 FinalEvent content 末尾
-
-                self._gate.record_final_answer()
-                ...
-                yield FinalEvent(
-                    type="final",
-                    ...
-                    content=(response.content or "") + _convergence_report,  # ← 止损报告附在末尾
-                    ...
-                )
+                    return
 ```
 
-> **BC 保证**：`_convergence_controller is None` → `_convergence_report=""` → FinalEvent.content 末尾拼空串
-> = 原 content，字节级一致。⚠️注意 `(response.content or "") + ""` 与 `response.content` 在 content=None 时
-> **不一致**（前者出 `""`，后者出 `None`）——**BC 写法必须是**：`content=response.content if not _convergence_report else (response.content or "") + _convergence_report`。
+> **BC 保证（2d-①）**：`self._convergence_controller is None` → 整个 `if` 块 skip → 直接落到原 `yield ErrorEvent(...);
+> return`，与改前 :821-829 **字节级一致**。
+
+**2d-② 自然收尾的收敛标记 → 留在 :1957 `record_final_answer()` 之前**（**仅观测/标记，不再承担止损**）。
+模型自己 end_turn 正常收尾（走到 :1957）时，gate 尚未 terminate（reason="running"），此处只用于**发 converged=true
+观测事件 + 附「收敛成功」标记**，**不触发止损报告**（止损只可能发生在 2d-① 的触顶分支）：
+```python
+                # ─── Step7 收敛标记（自然收尾路径，仅观测；止损在循环顶部 2d-① 已处理）。
+                if self._convergence_controller is not None and self._pipeline_observability:
+                    _v = self._convergence_controller.evaluate(
+                        principal_resolved=True, unverified_claims=0,
+                        gate_summary=self._gate.summary(),   # reason=="running" → converged 按判据算
+                    )
+                    yield self._pipeline_event("chat_v2_convergence", iteration, {
+                        "converged": _v.converged, "principal_resolved": _v.principal_resolved,
+                        "stop_reason": _v.stop_reason, "report": "",
+                    })
+                self._gate.record_final_answer()   # 已核实 :1957，不动
+                ...
+                yield FinalEvent(type="final", ..., content=response.content, ...)  # 自然收尾 content 不拼接
+```
+> **BC 保证（2d-②）**：`_convergence_controller is None` 或 `observability=False` → 整块 skip → FinalEvent.content
+> 仍是 `response.content`（**不拼接任何字符串**，避免 content=None→"" 的类型漂移）。自然收尾路径**不改 content**，
+> 止损报告只在 2d-① 的触顶 FinalEvent 里独立产出。`⚠️待实现时复核`：`principal_resolved` 第一期固定传 True
+> （或从 todo/ledger 推断主要矛盾首步是否 done），属保守占位，不影响止损正确性。
 
 **改动 2e — Step5 工具结果 pipeline label**（已核实两处 ToolResultEvent emit：:2136 + :2223）：
 
@@ -1337,17 +1408,30 @@ class PipelineEvent(AgentEvent):
                                 if _pre.short_circuit:
                                     logger.info("pipeline_short_circuit sid=%s", _sid)
                                 elif _pre.needs_clarification and _pre.intent:
-                                    # 澄清出口：复用 ask_clarification 机制，发问 + 暂停本轮
+                                    # ⚠️ M-5 修正：这是**独立 chat_v2_final 澄清出口**（不是"复用 ask_clarification
+                                    # 机制"——ask_clarification 是 code_tool（已核实 clarify_tool.py），不是 pause 通道）。
+                                    # 自 emit chat_v2_final 发澄清问题，但**裸 return 会跳过 _run_chat 收尾**
+                                    # （已核实收尾段：set_status(idle) @ main.py:7029（FinalEvent 转发路径）、assembler
+                                    #  feedback @ :7374、preference_memory 意图记忆 @ :6592/:7232）。故必须显式补收尾：
+                                    _clar_text = "\n".join(_pre.intent.clarifying_questions)
                                     _clar_evt = {
                                         "type": "chat_v2_final",
-                                        "payload": {"session_id": _sid, "text": (
-                                            "\n".join(_pre.intent.clarifying_questions)
-                                        )},
+                                        "payload": {"session_id": _sid, "text": _clar_text},
                                     }
                                     await _ws.send_json(_clar_evt)
                                     await _broadcast_default_chat_peers(_ws, _clar_evt)
+                                    # ── 显式补收尾（澄清不进 agent loop，FinalEvent 收尾路径不会触发）──
+                                    try:
+                                        _sa_clar = service_context.get("session_activity")
+                                        if _sa_clar is not None:
+                                            await _sa_clar.set_status(_sid, "idle")   # 清前端转圈/状态
+                                    except Exception as _se:  # noqa: BLE001
+                                        logger.debug("clarify_set_idle_failed sid=%s err=%s", _sid, str(_se)[:120])
+                                    # 持久化这条澄清回复为 assistant 行（若 _sdb 存在，对齐 FinalEvent 的 P4-S24 持久化）：
+                                    # ⚠️待实现时复核：照 FinalEvent handler 里 (final_text and _sdb) 的写法补一行 assistant 持久化，
+                                    #    否则下轮用户答复时上下文缺这条澄清问题。
                                     logger.info("pipeline_clarification_pause sid=%s", _sid)
-                                    return  # ⚠️待实现时复核：return 是否会漏掉 _run_chat 收尾清理（见风险§）
+                                    return  # ✅ 收尾三件（emit + set idle + 持久化）已补，可安全 return
                                 else:
                                     # 注入 <意图>/<主要矛盾> system 消息（插在 system 栈尾）
                                     for _inj in _pre.system_injections:
@@ -1398,13 +1482,12 @@ class PipelineEvent(AgentEvent):
 在 build_agent 调用处补传（紧跟 `memory_curator=_curator_for_agent`）：
 ```python
                             memory_curator=_curator_for_agent,
-                            # ─── 七步流水线 IN-LOOP 三闸（flag off → 全 None → BC）───
+                            # ─── 七步流水线 IN-LOOP 闸（flag off → 全 None/False → BC）───
+                            # ⚠️ 只传 evidence_gate（service 实例）+ 标量；self_check_gate 由 build_agent
+                            #    内构造（B3，依赖本函数的 verify_gate/external_evaluator），convergence 由
+                            #    AgentLoop 内构造（依赖 self._gate）——**caller 不传这两个实例**，见下方说明。
                             evidence_gate=(service_context.get("pipeline_evidence_gate")
                                            if (_pre and not _pre.short_circuit) else None),
-                            self_check_gate=(service_context.get("pipeline_self_check_gate")
-                                             if (_pre and not _pre.short_circuit) else None),
-                            convergence_controller=service_context.get("pipeline_convergence_controller")
-                                             if (_pre and not _pre.short_circuit) else None,
                             pipeline_problem_type=_pipe_problem_type,
                             pipeline_needs_investigation=bool(
                                 _pre.intent.needs_investigation if (_pre and _pre.intent) else False
@@ -1413,12 +1496,19 @@ class PipelineEvent(AgentEvent):
                                 getattr(getattr(config, "features", None), "problem_pipeline", None)
                                 and config.features.problem_pipeline.observability_events
                             ),
+                            convergence_report_on_stop=bool(
+                                _pre and not _pre.short_circuit
+                                and getattr(getattr(config, "features", None), "problem_pipeline", None)
+                                and config.features.problem_pipeline.convergence_report_on_stop
+                            ),
                         )
 ```
-> ⚠️ build_agent 当前签名（main.py:924-952）**不接受**这些参数——M2 改动外，**build_agent 也要加 6 个
+> ⚠️ build_agent 当前签名（main.py:924-952）**不接受**这些参数——M2 改动外，**build_agent 也要加这些
 > kwargs 透传给 `_AgentLoop(...)`**（已核实 _AgentLoop 构造 @ main.py:1125）。即 build_agent signature 加：
-> `evidence_gate=None, self_check_gate=None, convergence_controller=None, pipeline_problem_type=None,
-> pipeline_needs_investigation=False, pipeline_observability=False`，并在 :1125 的 `return _AgentLoop(...)` 末尾透传。
+> `evidence_gate=None, pipeline_problem_type=None, pipeline_needs_investigation=False,
+> pipeline_observability=False, convergence_report_on_stop=False`（**不含** self_check_gate/convergence_controller
+> ——这两个 build_agent 内部自建，见下），并在 :1125 的 `return _AgentLoop(...)` 末尾透传（self_check_gate 传内部
+> 构造的 `_self_check_gate`，convergence 传 `convergence_report_on_stop` flag）。
 >
 > **ConvergenceController 注意**：它需要 agent_loop 的 `self._gate`（TerminationGate），但 gate 在 _AgentLoop
 > 内部构造（:618）。故 ConvergenceController **不能在 main.py 预构造时拿到 gate**。解决：让 _AgentLoop 在
@@ -1445,7 +1535,7 @@ class PipelineEvent(AgentEvent):
 > 加 `from agent.agent_loop import PipelineEvent as _PipeEv`。
 
 **改动 3e — lifespan 构造 pipeline 资产**（在 service_context 初始化处，与 `context_assembler`/`goal_checker`
-等同处构造，`⚠️待实现时复核`具体行；搜 `service_context["context_assembler"] =` 或 `service_context.get("goal_checker")` 的写入点）：
+等同处构造，`⚠️待实现时复核`具体行；搜 `service_context.register("context_assembler"` 或 `service_context.register("goal_checker"` 的写入点——**真实代码用 `register(name,obj)` 不是下标**，见 §M5 B1）：
 ```python
         # ─── 七步流水线资产构造（features.problem_pipeline.enabled off → 全不构造/enabled=False）───
         _pp_cfg = getattr(config.features, "problem_pipeline", None)
@@ -1455,42 +1545,84 @@ class PipelineEvent(AgentEvent):
             from deskpet.agent.evidence_gate import EvidenceGate
             from deskpet.agent.self_check_gate import SelfCheckGate
             from deskpet.agent.problem_pipeline import ProblemHandlingPipeline
-            _pp_llm = _make_str_llm_call(local_llm or cloud_llm, max_tokens=1024)
-            service_context["problem_pipeline"] = ProblemHandlingPipeline(
+            from deskpet.agent.intent_triage import _INTENT_SCHEMA
+            from deskpet.agent.contradiction_analyzer import _SCHEMA as _CONTRA_SCHEMA
+            _pp_base = local_llm or cloud_llm
+            # ⚠️ M-3 修正：每模块绑定**自己的 schema**（单一 callable 无法同时携两个 schema）。
+            #    _make_str_llm_call 已加 response_format 透传（见 §1 约定）。schema 调用失败由模块内 safe-fail 兜。
+            _intent_llm = _make_str_llm_call(_pp_base, max_tokens=1024, response_format=_INTENT_SCHEMA)
+            _contra_llm = _make_str_llm_call(_pp_base, max_tokens=1024, response_format=_CONTRA_SCHEMA)
+            # ⚠️ B1 修正：register(name,obj)，禁止下标赋值（ServiceContext 是 dataclass，无 __setitem__）。
+            service_context.register("problem_pipeline", ProblemHandlingPipeline(
                 enabled=True,
-                intent_triage=(IntentTriage(_pp_llm, clarify_threshold=_pp_cfg.intent_clarify_threshold)
+                intent_triage=(IntentTriage(_intent_llm, clarify_threshold=_pp_cfg.intent_clarify_threshold)
                                if _pp_cfg.intent_triage else None),
-                contradiction_analyzer=(ContradictionAnalyzer(_pp_llm)
+                contradiction_analyzer=(ContradictionAnalyzer(_contra_llm)
                                         if _pp_cfg.contradiction_analyzer else None),
                 observability_events=_pp_cfg.observability_events,
-            )
+            ))
             if _pp_cfg.evidence_gate:
-                service_context["pipeline_evidence_gate"] = EvidenceGate(
+                service_context.register("pipeline_evidence_gate", EvidenceGate(
                     investigative_tools=_pp_cfg.evidence_investigative_tools or None,
                     max_nudges=_pp_cfg.evidence_max_nudges,
-                )
-            if _pp_cfg.self_check_mode != "off":
-                # 复用 build_agent 已构造的 verify_gate/external_evaluator 难——它们在 build_agent 内构造。
-                # SelfCheckGate 改为在 build_agent 内构造（拿到 verify_gate/_external_evaluator 实例）。
-                pass  # ⚠️待实现时复核：见下方说明
+                ))
+            else:
+                service_context.register("pipeline_evidence_gate", None)
+            # self_check / convergence 在 build_agent / AgentLoop 内构造，lifespan 只占位 None：
+            service_context.register("pipeline_self_check_gate", None)
+            service_context.register("pipeline_convergence_controller", None)
+            # self_check / convergence 闸**不在 lifespan 构造**（依赖 build_agent 内的 verify_gate/
+            # external_evaluator + AgentLoop 内的 _gate）——见 §M3 改动 3c/3e 修正 + §M5。
+        else:
+            # ⚠️ B1 修正（硬要求）：flag off 时也必须 register(None) 占位，否则后续
+            #    service_context.get("problem_pipeline") 会因 name∉_VALID_SERVICES 抛 ValueError
+            #    （与 session_goal_store/context_compressor 占位同理，见 context.py:48/57 注释）。
+            service_context.register("problem_pipeline", None)
+            service_context.register("pipeline_evidence_gate", None)
+            service_context.register("pipeline_self_check_gate", None)
+            service_context.register("pipeline_convergence_controller", None)
 ```
-> **SelfCheckGate 装配位置修正**：verify_gate/external_evaluator 实例在 **build_agent 内**构造（main.py:1019/1097），
-> 故 SelfCheckGate **也应在 build_agent 内构造**（拿到那两个实例），而非 lifespan。即在 build_agent 的
-> `return _AgentLoop(...)` 之前加：
+> **SelfCheckGate 装配位置修正（含红队 B3 — BLOCKER）**：verify_gate/external_evaluator 实例在 **build_agent 内**
+> 构造（已核实 main.py:1019 verify_gate / :1071-1076 external_evaluator）。**红队 B3 核实结论**：这俩**只在**
+> `verifier_cfg.verify_gate_mode != "off"`（**已核实 main.py:982**）/ `verifier_cfg.external_evaluator == True`
+> （**已核实 main.py:1072-1076**）时才构造，否则是 `None`。若用户**只开** `problem_pipeline.self_check_mode=strict`
+> 而**没开** `tools.verifier` 那两个 flag → SelfCheckGate 拿到两个 None → 对账层(verify pass)+异体评分双跳过 →
+> **strict 退化成永远 pass 的空门，且不报错**。这是隐蔽 BLOCKER（用户以为开了 strict 自检，实际啥也没做）。
+>
+> **修复（硬要求）**：当 `self_check_mode != "off"` 时，在 build_agent 内**强制自建一套** verify_gate /
+> external_evaluator **专供 SelfCheckGate**，**不依赖** tools.verifier 两 flag。即把 build_agent 现有 verify_gate
+> 构造块（:980-1038）的核心抽成一个 `_build_verify_gate(mode)` 小工厂，pipeline 路径用
+> `pipeline_self_check_mode` 当 mode 调它；external_evaluator 同理抽 `_build_external_evaluator()`。在
+> `return _AgentLoop(...)` 之前：
 > ```python
 > _self_check_gate = None
 > _pp = getattr(getattr(cfg, "features", None), "problem_pipeline", None)
 > if _pp is not None and _pp.enabled and _pp.self_check_mode != "off":
 >     from deskpet.agent.self_check_gate import SelfCheckGate
+>     # ⚠️ B3：不复用上面那俩（它们随 tools.verifier flag 可能为 None）——强制为 pipeline 自建。
+>     _sc_verify_gate = verify_gate
+>     if _sc_verify_gate is None and receipt_store is not None:
+>         # tools.verifier.verify_gate_mode=off 时上面没建 → 用 self_check_mode 当 mode 强制建一套对账。
+>         # mode 映射：strict→"strict"/light→"shadow"（轻量对账不阻塞）；缺 receipt_store 则只能退化（见下）。
+>         _sc_mode = "strict" if _pp.self_check_mode == "strict" else "shadow"
+>         _sc_verify_gate = _build_verify_gate(_sc_mode)   # 抽自 :980-1038 的工厂
+>     _sc_external = _external_evaluator
+>     if _sc_external is None and _pp.self_check_heterogeneous:
+>         # tools.verifier.external_evaluator=off 时上面没建 → 强制为异体评分建一套（走 _resolve_ephemeral_provider）。
+>         _sc_external = _build_external_evaluator()        # 抽自 :1076-1097 的工厂；fresh model 见"遗漏:Step6"
 >     _self_check_gate = SelfCheckGate(
->         verify_gate=verify_gate,                 # 复用本函数已构造的
->         external_evaluator=_external_evaluator,  # 复用本函数已构造的
+>         verify_gate=_sc_verify_gate,
+>         external_evaluator=_sc_external,
 >         heterogeneous_enabled=_pp.self_check_heterogeneous,
 >     )
 > ```
 > 然后 _AgentLoop(...) 传 `self_check_gate=_self_check_gate`。build_agent 新增形参 `self_check_gate` 由 main.py
 > caller 透传时**忽略**（build_agent 自己构造），即 build_agent 不需要 caller 传 self_check_gate——删掉 3c 里的
-> `self_check_gate=...` caller 传参，改为 build_agent 内部构造。（`⚠️待实现时复核` 此装配细节。）
+> `self_check_gate=...` caller 传参，改为 build_agent 内部构造。
+> > **降级兜底（B3）**：若 `receipt_store is None`（无凭据账本）→ 对账层无法工作 → SelfCheckGate 仍可只跑异体评分
+> > （非执行者打分）；二者皆不可得（无 receipt 且 heterogeneous=off）→ SelfCheckGate.check() 退化为 pass，但**启动期
+> > `logger.warning("self_check_degraded reason=no_verify_no_evaluator")`** 显式告警，**不再静默空门**（这是 B3 的核心：
+> > 哪怕降级也要可观测，而非伪装通过）。`⚠️待实现时复核` `_build_verify_gate`/`_build_external_evaluator` 工厂抽取细节。
 
 ---
 
@@ -1541,8 +1673,28 @@ class ProblemPipelineConfig:
         config.features = _load_section(FeaturesConfig, raw_features)
         config.features.problem_pipeline = _load_section(ProblemPipelineConfig, raw_pp)
 ```
-> ⚠️ config.py:1332 和 :1359 **两处都加载 features**（历史 bug 残留），**两处都要改**，否则第二次加载会用
-> 不含 problem_pipeline 处理的 raw 覆盖掉。或者更稳：删掉重复的 :1358-1359 块（`⚠️待实现时复核`其安全性）。
+> ⚠️**红队 m-3 已核实并采纳**：`config.features = _load_section(FeaturesConfig, raw["features"])` **两处都存在**
+> ——**已核实 config.py:1333 和 config.py:1359**（第一处是 2026-05 补读 slash_commands/goal_mode/agent_parallel；
+> 第二处 Companion+Code v1/v2 重复加载）。**两处都必须改成上面的 pop 子表写法**，**不要盲删第二处**：第二处
+> 若承载了任何 runtime override（如 lifespan 后续对 raw["features"] 的二次修改），盲删会丢。安全做法 = **两处都
+> pop+构建**（幂等，第二次 pop 拿同样的 raw_pp，构建结果一致）。若确认第二处纯冗余可删，须先 grep 确认 :1334-1358
+> 之间无对 `config.features` 的依赖再删（`⚠️待实现时复核`）。
+
+**`_merge_missing_feature_flags` backfill 加 allowlist（红队 B2，硬要求）**——**已核实 `_MIGRATABLE_SECTIONS`
+@ config.py:775-788**：该 tuple 驱动存量 install 的默认 flag 回填（`_merge_missing_feature_flags` @ config.py:818）。
+**关键核实**：清单里 `("memory","v2")` 与 `("memory","v2","facts")` **两条都在**——证明**嵌套子表必须各自单列一条 allowlist**，
+因为逐 key 回填循环对 `_is_toml_table(bval)` 的 key **直接 `continue` skip**（**已核实 config.py:870-871**：
+"nested sub-table handled via its own allowlist entry"）。所以缺 `("features","problem_pipeline")` →
+存量用户的 config.toml 永远拿不到这段默认（即使 bundle 默认有）→ 灰度永远开不了。**修复**：在 `_MIGRATABLE_SECTIONS`
+末尾加一条：
+```python
+    ("features", "problem_pipeline"),   # ← B2 修复：嵌套子表必须单列（同 ("memory","v2")）
+```
+> **whole-section copy 对父表 [features] 已存在的情形生效吗？已核实**：回填走 :854-865 的 "Whole section missing"
+> 分支——`user_tbl = _dig_table(user_doc, ("features","problem_pipeline"))` 为 None（用户没这段），
+> `parent = _dig_table(user_doc, ("features",))` = 用户**已存在**的 [features] 表（非 None，`_is_toml_table` 真）→
+> `parent["problem_pipeline"] = deepcopy(bundle_tbl)` 整段拷过去（连注释 trivia）。**故父表已存在的情形 copy 生效**，
+> 正是我们要的。前提：bundle 默认 config.toml 里**确实有** `[features.problem_pipeline]` 整段（上面 toml 块已给）。
 
 **config.toml 注释块**（加到 bundle 的默认 config.toml，全 OFF）：
 ```toml
@@ -1565,10 +1717,48 @@ convergence_report_on_stop = true
 observability_events = false
 ```
 
-> **无 invariant 冲突风险**：problem_pipeline 与 `[tools.verifier]` 的 verify_gate_mode 独立——SelfCheckGate
-> **复用** verify_gate 实例（不另起对账），但只在 `self.verify_gate.mode != "off"` 时调 check（已在 N4 守好）。
-> 若用户开 `self_check_mode=strict` 但 `verify_gate_mode=off`，SelfCheckGate 的对账层会跳过（verify pass），
-> 只剩异体评分——这是**可接受的降级**，不报错。`⚠️待实现时复核`：是否要加启动期 warn 提示这种组合。
+> **invariant（B3 已修正）**：problem_pipeline 与 `[tools.verifier]` 的 verify_gate_mode 独立，但 SelfCheckGate
+> **不能依赖** tools.verifier flag 才有对账/异体能力——否则用户单开 `self_check_mode=strict` 不开 tools.verifier →
+> 双 None → strict 空门（红队 B3）。**修复**：`self_check_mode != "off"` 时 build_agent 内**强制自建** verify_gate
+> （用 self_check_mode 当 mode）+ external_evaluator（见 §M3 改动 3e 的 B3 块）。二者皆不可得（无 receipt_store
+> 且 heterogeneous=off）→ 降级为 pass **但启动期 `logger.warning("self_check_degraded ...")`**，不静默空门。
+
+---
+
+### M5 · `backend/context.py`（注册 4 个 pipeline service key — 红队 B1，BLOCKER）
+
+> **已核实**：`ServiceContext` 是 `@dataclass`（context.py:89），**不是 dict**。`register(name,provider)`（:145）
+> 与 `get(name)`（:153）在 `name not in _VALID_SERVICES`（frozenset @ context.py:9-87）时**直接 `raise ValueError`**
+> （:147 / :155），且类**无 `__getitem__/__setitem__`**。故 04 全文里所有 `service_context["x"]=` 下标赋值与
+> `service_context.get("problem_pipeline")`（未注册 key）**都会炸**。**本步是其余所有 main.py 改动的硬前置。**
+
+**改动 5a — `_VALID_SERVICES` frozenset 加 4 个 key**（context.py:86 `"permission_gate",` 之后，闭合 `})` 之前）：
+```python
+    # --- 七步问题处理流水线 (plans/2026-06-24-problem-handling-pipeline-maoxuan/) ---
+    # flag features.problem_pipeline.enabled OFF（默认）时 lifespan 仍 register(None)
+    # 占位（见 §M3 改动 3e 的 else 分支）—— 否则 get()/register() 抛 "Unknown service"
+    # （仿 session_goal_store 注释 context.py:48 / context_compressor :57 的占位约定）。
+    "problem_pipeline",                  # ProblemHandlingPipeline（PRE-LOOP 编排器）
+    "pipeline_evidence_gate",            # EvidenceGate（Step2 取证门，build_agent caller 透传）
+    "pipeline_self_check_gate",          # 预留：第一期由 build_agent 内构造，service 仅占位
+    "pipeline_convergence_controller",   # 预留：第一期由 AgentLoop 内构造，service 仅占位
+```
+
+**改动 5b — `ServiceContext` dataclass 加 4 个字段**（context.py:143 `permission_gate: Any | None = None` 之后）：
+```python
+    # --- 七步问题处理流水线 -----------------------------------------------------
+    problem_pipeline: Any | None = None
+    pipeline_evidence_gate: Any | None = None
+    pipeline_self_check_gate: Any | None = None
+    pipeline_convergence_controller: Any | None = None
+```
+
+> **全 plan 写入纪律（B1 硬约束）**：所有对这 4 个 key 的**写入一律用 `service_context.register(name, obj)`**
+> （含 flag off 时的 `register(name, None)` 占位，见 §M3 改动 3e 的 `else` 分支）；**禁止任何 `service_context["..."] = ...`
+> 下标赋值**。读取用 `service_context.get(name)`（已注册 → 不抛）。`pipeline_self_check_gate` /
+> `pipeline_convergence_controller` 第一期实际实例**不经 service_context 流转**（前者 build_agent 内构造直接传
+> `_AgentLoop`，后者 `_AgentLoop.__init__` 内自建），service key 仅为占位 + 未来扩展预留——但**仍须 register(None)**
+> 占位，保证万一有 `get()` 调用不抛。
 
 ---
 
@@ -1594,16 +1784,18 @@ observability_events = false
 
 | 改动 | flag off 时的早 return / 不变行为 |
 |---|---|
-| N1-N6 新模块 | flag off → service_context 根本不构造它们（`_pp_cfg.enabled` 为 False）→ `service_context.get("problem_pipeline")` 返回 None |
+| M5 context.py（B1）| flag off → lifespan **仍 `register(name,None)` 占位**（4 个 key）→ `service_context.get("problem_pipeline")` 返回 None（不抛 ValueError）。这是其余 BC 行的前提 |
+| M4 backfill（B2）| `_MIGRATABLE_SECTIONS` 加 `("features","problem_pipeline")` 只**回填默认 off 段**，不改任何已存在 flag 值（additive，幂等）→ 存量 install 拿到 `enabled=false` = 字节级 BC |
+| N1-N6 新模块 | flag off → lifespan 不构造组件实例（`_pp_cfg.enabled` False）但 register(None) 占位 → `service_context.get(...)` 返回 None |
 | M1 plan.py 升级1 | `companion_enabled` 默认 False → `not in_code_mode` 分支仍 `return None`，与改前字节级一致 |
 | M1 plan.py 升级2/3 | `attack_order=None`/`contradiction_descs=None` → `_ao_hint=""` → prompt 与改前一致；`parallelizable` 默认 False，旧渲染/注入不读 |
-| M2 agent_loop __init__ | 新参数全默认 None/False → `self._evidence_gate`/`self._self_check_gate`/`self._convergence_controller` 全 None |
+| M2 agent_loop __init__ | 新参数全默认 None/False（`evidence_gate=None`/`self_check_gate=None`/`convergence_report_on_stop=False`）→ `self._evidence_gate`/`self._self_check_gate`/`self._convergence_controller` 全 None |
 | M2 Step2 块 | `self._evidence_gate is None` → 整段 skip，直接到 completion_probe |
 | M2 Step6 块 | `self._self_check_gate is None` → 走 `elif` 原 verify_gate 块（字节级一致）|
-| M2 Step7 块 | `self._convergence_controller is None` → `_convergence_report=""`，FinalEvent.content 用 `response.content`（**不拼空串**，见 2d 警告）|
+| M2 Step7 块（M-1 修正）| `convergence_report_on_stop=False` → `self._convergence_controller is None` → 循环顶 :821 的 `not _ok` 分支走原 `yield ErrorEvent;return`（字节级一致）；自然收尾路径不拼接 content（仍 `response.content`）|
 | M2 Step5 label | `self._pipeline_observability=False` → `pipeline_label=None`，前端不读 = 无影响 |
 | M3 PRE-LOOP | `_pipeline is None or not enabled` → 整段 skip，`_pre=None`，plan 调用走原参数（companion_enabled=False）|
-| M3 build_agent 传参 | `_pre is None`（或 short_circuit）→ 三闸传 None → AgentLoop 字节级 BC |
+| M3 build_agent 传参 | `_pre is None`（或 short_circuit）→ evidence_gate 传 None + `convergence_report_on_stop=False` + self_check_gate 内部不构造（`self_check_mode=="off"`）→ AgentLoop 字节级 BC |
 | M3 事件转发 | pipeline off → AgentLoop 不 yield PipelineEvent → 转发分支不触发 |
 | M4 config | `problem_pipeline.enabled=False`（默认）→ lifespan 不构造 → 全链路回退 |
 
@@ -1628,7 +1820,7 @@ WI-0 (config)  ──┬─► WI-1 (Step1 IntentTriage + 编排器壳)
 
 | WI | 内容 | 并行性 | 验收点 |
 |---|---|---|---|
-| **WI-0** | M4 config（ProblemPipelineConfig + 加载 + toml）| 先做（其他全依赖）| `pytest test_config*`：默认全 OFF；`[features.problem_pipeline]` 解析正确；现有 config 测试零回归 |
+| **WI-0** | M4 config（ProblemPipelineConfig + 双处 pop 加载 + `_MIGRATABLE_SECTIONS` 加 `("features","problem_pipeline")` + toml）**＋ M5 context.py（注册 4 个 service key + dataclass 字段）**| 先做（其他全依赖；M5 是 main.py 所有 register/get 的硬前置）| `pytest test_config*`：默认全 OFF；`[features.problem_pipeline]` 解析正确；backfill 对缺该段的存量 config 能整段 copy；`ServiceContext.register("problem_pipeline",None)`/`.get(...)` 不抛；现有 config/context 测试零回归 |
 | **WI-1** | N1 intent_triage.py + N6 problem_pipeline.py 壳 | 依赖 WI-0 | 单测：chitchat 短路、歧义澄清出口、safe-fail、prior_task_type 映射 |
 | **WI-2** | N3 contradiction_analyzer.py | 依赖 WI-1（用 IntentCard.problem_type）| 单测：should_trigger 条件、safe-fail、attack_order 解析 |
 | **WI-3** | M1 plan.py 三升级 | 依赖 WI-0，可与 WI-1/2 并行 | 单测：旧签名 BC（不传新参 = 旧行为）、companion_enabled 分支、attack_order 注入、parallelizable 解析 |
@@ -1654,13 +1846,15 @@ WI-0 (config)  ──┬─► WI-1 (Step1 IntentTriage + 编排器壳)
    闲聊会被拖进完整流水线。缓解：Step1 的 LLM 调用（非短路路径）会重判 problem_type，但代价是已经
    多调了一次 LLM。**接受这个 tradeoff**：误判闲聊为 task 只是多一次 LLM，不破坏正确性。
 
-3. **ephemeral provider 复用 `_resolve_ephemeral_provider`（已核实 main.py:703）**：Step6 异体评分子代理
-   应走独立模型（非主 LLM 自评）。但本 plan 的 SelfCheckGate **复用 build_agent 已构造的 `_external_evaluator`**
-   （它内部已用 evaluator persona + 可配 provider）——**不需要**再调 `_resolve_ephemeral_provider`。
-   若要让异体评分走专用模型，复用 verify_gate 的 ephemeral 路径（build_agent:1001 已调
-   `_resolve_ephemeral_provider`）。`⚠️待实现时复核`：确认 SelfCheckGate 的"异体"语义由 ExternalEvaluator
-   的独立 persona 满足，还是必须换 provider（03 §3 Step6 写"fresh model"，倾向后者——则需在 build_agent
-   里把 `_resolve_ephemeral_provider` 产物喂给 SelfCheckGate 的一个独立 evaluator 实例）。
+3. **★ 异体评分必须走 fresh model（`_resolve_ephemeral_provider`）——红队"遗漏:Step6"已修正**：03 §3 Step6 + 00
+   明写异体评分走 **fresh model / 独立模型**（"the agent doing the work isn't the one grading it"），**不是**"同模型不同
+   persona"。04 此前退化成"复用 ExternalEvaluator 的 persona 即可"是降级。**已核实**：`_resolve_ephemeral_provider`
+   @ main.py:703 克隆出独立 model provider（只换 model，复用 base_url/key），verify_gate 的 ephemeral 救援路径 @
+   main.py:1001 已用它。**修复**：§M3 改动 3e 的 `_build_external_evaluator()` 工厂内，evaluator 的 provider 必须经
+   `_resolve_ephemeral_provider(local_llm or cloud_llm, _pp.evaluator_model 或 verifier_cfg.ephemeral_subagent_model)`
+   解析出**独立 model provider** 再喂 ExternalEvaluator；**缺省/解析失败回退主 LLM**（与 :711 回退语义一致，保持可用）。
+   真测 TC-4 须确认评分 provider 的 `model=` ≠ 主 LLM（05 已要求）。`⚠️待实现时复核`：evaluator_model 是否需在
+   ProblemPipelineConfig 新增一个字段，或直接复用 `[tools.verifier].ephemeral_subagent_model`（倾向复用，少加 flag）。
 
 4. **装配顺序硬约束（ConvergenceController 需 TerminationGate）**：gate 在 `_AgentLoop.__init__`(:618) 内构造，
    main.py 拿不到。**必须**让 _AgentLoop 自己构造 ConvergenceController（M3 改动 3c 已给修正方案：传
@@ -1668,9 +1862,12 @@ WI-0 (config)  ──┬─► WI-1 (Step1 IntentTriage + 编排器壳)
    实例（build_agent 内构造），**必须**在 build_agent 内构造 SelfCheckGate（M3 改动 3e 修正已给）。
    **不要**试图在 lifespan 预构造这两个——拿不到依赖。
 
-5. **澄清出口 `return` 漏收尾清理**（M3 改动 3a 标了 `⚠️`）：PRE-LOOP needs_clarification 时直接 `return`
-   会跳过 `_run_chat` 后续的 session_activity set_status(idle) / artifact 后置等收尾。**必须**核对 :7453+
-   收尾段，把澄清出口改成"发问 + set idle + return"完整三件，或用 flag 让主流程自然走完（不进 agent loop）。
+5. **✅ 澄清出口 `return` 漏收尾清理 — 红队 M-5 已修正**：`ask_clarification` 是 code_tool（已核实
+   clarify_tool.py），**不是 pause 通道**——04 此前"复用 ask_clarification 机制"措辞错误，实为自 emit
+   `chat_v2_final` + return。裸 return 会跳过 `_run_chat` 收尾：`set_status(idle)`（已核实 main.py:7029，在
+   FinalEvent 转发路径）、assembler feedback（:7374）、preference_memory 意图记忆（:6592/:7232）。**修复**（改动 3a 已落）：
+   澄清出口改为"emit chat_v2_final + 显式 `set_status(idle)` + 持久化 assistant 行 + return"完整三件；全 plan 措辞
+   统一改为"**独立 chat_v2_final 澄清出口**"。
 
 6. **schema strict + additionalProperties:False**（M1 升级3 标了 `⚠️`）：plan.py PLAN_SCHEMA `strict:True`，
    加 `parallelizable` 必须同步进 step 的 `required`，否则 relay strict 拒。intent/contradiction 的新 schema
@@ -1681,10 +1878,10 @@ WI-0 (config)  ──┬─► WI-1 (Step1 IntentTriage + 编排器壳)
    否则第二次 `_load_section(FeaturesConfig, raw["features"])` 用未 pop problem_pipeline 的 raw 覆盖第一次结果。
 
 8. **working_messages tool name 收集**（M2 改动 2b 的 `_collect_tool_names`）：依赖 tool 消息有 `name` 字段
-   （已核实 :2251-2257 append 结构含 name）。但 EvidenceGate 看的是"**本轮 working_messages 中已发生**的工具调用"，
-   包含历史 iteration 的 tool 消息——这正确（对齐 03 §3 Step2"已发生的工具调用记录"），但要注意 history
-   注入的旧 tool 消息（bundle.history）是否也带 name——若带，会误判"已取证"。`⚠️待实现时复核`：建议只数
-   **本 run 内**新增的 tool 消息（用 iteration 边界或单独 counter），而非整个 working_messages。
+   （已核实 :2251-2257 append 结构含 name）。**✅ 红队 M-2 已修复**：bundle.history 注入的旧 tool 消息**确实带
+   name**，会误判"已取证"使取证门对有历史会话恒失效。修复 = 改动 2b-0 在 run() 开头（:659 之后）记
+   `self._evidence_baseline_len = len(working_messages)`，EvidenceGate 只看 `working_messages[baseline:]` 切片，
+   排除历史 tool 消息。此前的"⚠️待复核"已落实为硬代码改动，不再是悬而未决项。
 
 9. **Step6 双重对账风险**：SelfCheckGate 复用 self.verify_gate.check()，而旧 verify_gate 守门块（:1486）
    也调 check()。M2 改动 2c 用 `if self._self_check_gate is not None: ... elif verify_gate ...` 互斥保证
@@ -1692,4 +1889,33 @@ WI-0 (config)  ──┬─► WI-1 (Step1 IntentTriage + 编排器壳)
 
 10. **`response.content` 为 None 时的 BC**（M2 改动 2d 标了 `⚠️`）：止损报告拼接必须用条件表达式
     避免把 `None` content 变成 `""`，否则 flag on 但无止损时也改了 content 类型，前端可能 break。
-```
+    （✅ M-1 修正后：自然收尾路径 FinalEvent.content 直接用 `response.content` 不拼接；止损报告只在循环顶
+    :821 触顶分支以独立 FinalEvent 产出，不存在拼接 None 的问题。）
+
+---
+
+## 8. 第 1 轮对抗审查修订记录（红队缺陷 → 修复落点）
+
+> 本节汇总第 1 轮红队对抗审查揪出的可执行性缺口及修复落点。**正文相应章节已就地改正**（非仅此处追加），
+> 执行者按正文做即可；本表供索引 + 验证修了哪些。所有行号均回真实 master 代码核实（标"已核实 @ file:line"）。
+
+| 编号 | 缺陷 | 修复落点（正文章节）| 核实锚 |
+|---|---|---|---|
+| **B1** BLOCKER | `ServiceContext` 是白名单 `@dataclass`，非 dict——`["x"]=`/未注册 `.get()` 直接 `raise ValueError`，无 `__getitem__/__setitem__` | 新增 **§M5**（context.py 加 4 个 `_VALID_SERVICES` key + dataclass 字段）；§M3 改动 3e 所有写入改 `register(name,obj)`，flag off 也 `register(name,None)` 占位；§0 锚点表加行 | `_VALID_SERVICES` @ context.py:9-87；`register` raise @ :147；`get` raise @ :155；dataclass @ :89 |
+| **B2** BLOCKER | backfill 漏嵌套子表——`_MIGRATABLE_SECTIONS` 对 sub-table key `continue` skip，缺 `("features","problem_pipeline")` → 存量 install 拿不到默认 off | §M4 加步骤"`_MIGRATABLE_SECTIONS` 末尾加 `("features","problem_pipeline")`"；核实 whole-section copy 对父表已存在情形生效 | `_MIGRATABLE_SECTIONS` @ config.py:775-788；sub-table skip @ :870-871；whole-section copy @ :854-865 |
+| **B3** BLOCKER | self_check 复用实例致 strict 空门——verify_gate/external_evaluator 仅当 tools.verifier 两 flag 开才构造；只开 self_check_mode=strict → 拿到 None → 双跳过 = 永远 pass 空门 | §M3 改动 3e 改为"`self_check_mode!="off"` 时 build_agent 内**强制自建**一套 verify_gate/external_evaluator（不依赖 tools.verifier flag）"；降级时 `logger.warning` 不静默；§N4 去掉"复用已构造实例"误导措辞；§M4 invariant 改正 | verify_gate 仅 `verify_gate_mode!="off"` 构造 @ main.py:982；external_evaluator 仅 flag on @ :1072-1076 |
+| **M-1** MAJOR | 止损报告插错位致死代码——硬上限走循环顶 :820 `allows_call` → :829 `return`，走不到 :1957 | §M2 改动 2d 拆成 2d-①（止损报告插 :821-829 `not _ok` 分支，发 FinalEvent 带报告）+ 2d-②（自然收尾仅观测标记，留 :1957）| `allows_call()` @ :820；`not _ok` → `yield ErrorEvent;return` @ :821-829；`record_final_answer` @ :1957 |
+| **M-2** MAJOR | EvidenceGate 误判已取证——`working_messages=list(messages)` 含 history 注入的带 name 的旧 tool 消息，首轮就被数成"已调查" | §M2 改动 2b-0：run() 开头记 `self._evidence_baseline_len=len(working_messages)`，EvidenceGate 只看 `[baseline:]` 切片 | `working_messages=list(messages)` @ :659 |
+| **M-3** MAJOR | 新模块 schema 不透传 response_format——`_make_str_llm_call` 只传 max_tokens/temperature → json_schema 失效 | 采纳方案①：§1 约定 + §M3 3e 给 `_make_str_llm_call` 加 `response_format=None` 透传，每模块绑自己 schema；明确 `_extract_json` 三级容错 + LLM 异常整步降级兜底 | `_make_str_llm_call` @ main.py:684-700（无 response_format）；`chat_with_tools` 接受 response_format 证据 @ plan.py:139 |
+| **M-4** MAJOR | companion plan 缺 json 容错——`maybe_extract_plan` 仅 `json.loads` 一层，companion 走 gpt-5.5 失败率高 | §M1 升级1 补"换 `_extract_json` 三级容错 + 失败 `return None` 静默跳过（不阻断）" | 单层 `json.loads` @ plan.py:153-158 |
+| **M-5** MAJOR | 澄清出口裸 return 漏收尾 + "复用 ask_clarification 机制"措辞错（它是 code_tool 不是 pause 通道）| §M3 改动 3a 改为"emit chat_v2_final + 显式 set idle + 持久化 + return"；全 plan（含 03 §3 Step1/§6、05）措辞改"独立 chat_v2_final 澄清出口" | `ask_clarification` = code_tool @ clarify_tool.py；收尾 `set_status(idle)` @ main.py:7029；assembler feedback @ :7374 |
+| **m-2** MINOR | §0 锚点表把 `_SELFCHECK_TIER1/2/3`（提示文本常量）当阈值——真实阈值只有 `_SELFCHECK_EVERY=10`/`_TIER2_AT=20`/`_TIER3_AT=30`，无 `TIER1_AT` | §0 锚点表该行改正措辞 | 文本常量 @ :140/149/159；阈值常量 @ :134/135/136 |
+| **m-3** MINOR | config features 双加载（:1333+:1359）——倾向删第二处有丢 runtime override 风险 | §M4 改为"两处都改成 pop 子表，别盲删；要删须先 grep 确认无依赖" | `config.features=_load_section(...)` @ config.py:1333 和 :1359 |
+| **遗漏:Step6** | 异体语义被降级——03 §3 Step6 写 `_resolve_ephemeral_provider` fresh model，04 退化成"同模型不同 persona" | §风险#3 + §M3 3e `_build_external_evaluator()`：evaluator provider 经 `_resolve_ephemeral_provider` 克隆独立 model，缺省/失败回退主 LLM；对齐 03/00 | `_resolve_ephemeral_provider` @ main.py:703；verify_gate 已用它 @ :1001 |
+| **05 补** | L1 缺 chitchat zero-LLM-call 断言写法；TC-1 缺 classifier chat/emotion 覆盖率前置度量 | 05 §L1 补 `AsyncMock`+`assert_not_called()`/`call_count==0` 写法 + 非闲聊反向 `await_count==1`；05 §L3 TC-1 补闲聊语料覆盖率度量（≥80% 阈值 + 写进报告）| — |
+
+**装配顺序硬约束（B1/B3/M-1 联动，实现者务必按此 DAG）**：
+1. **先做 M5（context.py 注册 4 key）+ M4（config + backfill）** = WI-0，是后续所有 register/get/flag 读取的前置。
+2. SelfCheckGate 在 **build_agent 内**构造（拿 verify_gate/external_evaluator，B3 强制自建）；ConvergenceController 在
+   **AgentLoop.__init__ 末尾**构造（拿 self._gate）——**都不能在 lifespan 预构造**（拿不到依赖）。
+3. EvidenceGate 可在 lifespan 构造（无内部依赖），经 service_context 注册 + caller 透传。

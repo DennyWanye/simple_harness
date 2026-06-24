@@ -27,7 +27,25 @@
 | 编排 | `test_problem_pipeline.py` | flag off 全短路（断言各组件 never called）；shadow 模式跑但不阻塞；problem_type 路由决定哪几步跑；标签事件 payload schema |
 
 - **风格**：照现有 `test_verify_gate*.py`（monkeypatch LLM、mock provider）。LLM 调用一律 mock，不打真 relay。
-- **★ 关键断言**：闲聊路径 `intent_triage` 不触发任何 LLM 调用（守性能红线，对齐 04 风险#2）。
+- **★ 关键断言 — 闲聊路径 zero LLM call（守性能红线，对齐 04 风险#2）**：给 IntentTriage 注入一个 mock 的
+  `llm_call`，断言闲聊路径下它 **`call_count == 0`**。具体写法（照 test_verify_gate 的 monkeypatch 风格）：
+  ```python
+  import asyncio
+  from unittest.mock import AsyncMock
+  from deskpet.agent.intent_triage import IntentTriage
+
+  def test_chitchat_zero_llm_call():
+      mock_llm = AsyncMock(return_value="{}")          # 若被调用会返回空 JSON
+      triage = IntentTriage(mock_llm)
+      # prior_task_type=="chat"/"emotion" → _TASKTYPE_TO_PROBLEM 派生 chitchat → 纯规则短路
+      card = asyncio.run(triage.triage("你好呀今天天气真好", prior_task_type="chat"))
+      assert card.short_circuit is True
+      assert card.problem_type == "chitchat"
+      mock_llm.assert_not_called()                     # ★ 一票否决：闲聊绝不调 LLM
+      assert mock_llm.call_count == 0
+  ```
+  对 `prior_task_type="emotion"`（"我心情不好"）再断一次 `call_count == 0`。**非闲聊路径**（如 `prior_task_type="code"`）
+  反向断言 `mock_llm.await_count == 1`（确认正常路径确实调了一次 intent LLM），避免"全都不调"的假短路掩盖 bug。
 
 ### L2 · 集成 / live smoke（跨层契约，对齐 [[feedback_cross_layer_contract]]）
 
@@ -43,6 +61,13 @@
 | TC | 场景 | 期望（日志/截图硬证据） |
 |---|---|---|
 | **TC-1 闲聊不拖慢** | 桌宠发"你好呀今天天气真好" | 日志 `pipeline_step intent problem_type=chitchat short_circuit=true`；**无** contradiction/plan LLM 调用；回复延迟与 flag off 基线相当（截两次时间戳对比） |
+
+> **TC-1 前置度量（classifier 落 chat/emotion 覆盖率）**：闲聊纯规则短路依赖组装期 `_bundle.task_type` 落
+> `chat`/`emotion`（→`_TASKTYPE_TO_PROBLEM` 派生 chitchat）。**若 classifier 把闲聊误判成 `code`/`task`，短路失效→
+> 闲聊被拖进完整流水线**（对齐 04 风险#2）。故 TC-1 前先跑一组**闲聊语料覆盖率度量**：取 ≥10 条代表性闲聊/情绪
+> 输入（"你好"/"今天天气真好"/"我有点累"/"陪我聊聊"…），在 backend 日志确认 `task_type` 落 chat/emotion 的命中率
+> （记一行 `intent_triage.shortcircuit reason=chitchat_rule task_type=<...>`）。命中率 < 阈值（建议 ≥80%）则需在 Step1
+> 补一层闲聊兜底规则（如 LLM 重判后仍按 chitchat 短路），并把该度量数值写进 TC-1 报告（硬证据，不只 PASS/FAIL）。
 | **TC-2 debug 取证门控** | "我的 XX 功能报错了，帮我看看"（无更多信息） | 日志 `evidence_gate blocked=true`（模型想直接下结论被拦）→ 模型转而调 read/grep 取证 → 放行；`<调查>` 事件出现 |
 | **TC-3 多症状抓主要矛盾** | 抛一个含 2-3 个症状的复合问题 | 日志 `contradiction principal=<id> attack_order=[...]`；`<主要矛盾>` 事件；计划首步对准 principal；截图前端"主攻"卡片（若渲染） |
 | **TC-4 异体自检** | 让桌宠完成一个可验证产物类任务，诱导其"假装完成" | 日志 `self_check heterogeneous=true passed=false`（异体子代理打回）→ 二次修正 → passed=true；确认评分 provider ≠ 主 LLM（`model=` 不同） |
@@ -73,7 +98,8 @@
 ## 3. BC 守护清单（逐处，落地时勾选）
 
 - [ ] `config.py` 新 flag 全部默认 False/off（`ProblemPipelineConfig` 字段默认值单测）。
-- [ ] `_merge_missing_feature_flags` allow-list 加入 `features.problem_pipeline` 段（让存量 install 也能拿到默认 off，不是拿不到→将来开不了；参考 6/23 backfill 里程碑）。
+- [ ] **（B2）** `config.py:_MIGRATABLE_SECTIONS`（@:775）末尾加 `("features","problem_pipeline")`——嵌套子表**必须单列一条**（逐 key 回填对 sub-table `continue` skip，已核实 :870-871；同 `("memory","v2")`/`("memory","v2","facts")` 双条）。否则存量 install 永远拿不到默认 off → 灰度开不了。单测：对缺该段的存量 config，backfill 后整段 `[features.problem_pipeline]` 被 copy 进来（含默认值）。
+- [ ] **（B1）** `context.py:_VALID_SERVICES`（@:9）加 4 个 key + `ServiceContext` dataclass（@:89）加 4 个 `Any|None=None` 字段（problem_pipeline / pipeline_evidence_gate / pipeline_self_check_gate / pipeline_convergence_controller）。所有写入用 `register(name,obj)`（**禁止下标**，dataclass 无 `__setitem__`）；flag off 时也 `register(name,None)` 占位。单测：`register(...,None)` + `get(...)` 均不抛 ValueError。
 - [ ] flag off 时：`main.py` PRE-LOOP 编排早 return（不构造 IntentTriage/ContradictionAnalyzer）。
 - [ ] flag off 时：`agent_loop.py` 守门链走原 VerifyGate/external_evaluator 块（SelfCheckGate/EvidenceGate/ConvergenceController 不介入）。
 - [ ] flag off 时：`plan.py` 走原 code-only 逻辑（companion 分支不进）。

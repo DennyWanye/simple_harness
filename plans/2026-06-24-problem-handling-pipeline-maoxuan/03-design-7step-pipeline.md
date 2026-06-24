@@ -79,7 +79,7 @@
     "needs_decomposition": false
   }
   ```
-- **门控判据**：`ambiguity_score ≥ intent.clarify_threshold`（默认 0.7）→ emit `ask_clarification`，**暂停**等用户答（复用现有 ask_clarification 机制），不进 loop。否则注入 `<意图>` system 提示 + 发 `chat_v2_intent` WS 事件。
+- **门控判据**：`ambiguity_score ≥ intent.clarify_threshold`（默认 0.7）→ 走**独立 chat_v2_final 澄清出口**（自 emit `chat_v2_final` 发澄清问题 + 显式补 `set_status(idle)` + 持久化 + return），**暂停**等用户答，不进 loop。⚠️ `ask_clarification` 是 code_tool（clarify_tool.py），**不是 pause 通道**，不能"复用"它做暂停——详见 04 改动 3a 的 M-5 修正。否则注入 `<意图>` system 提示 + 发 `chat_v2_intent` WS 事件。
 - **短路**：`problem_type == chitchat` 且 `ambiguity_score` 低 → **整条流水线短路**，直接走裸 ReAct（闲聊不被拖慢，硬性能要求）。
 - **映射**：复用 `classifier.py` 结果；新 `intent_triage.py`；装配在 `main.py` 组装后、plan 前。
 
@@ -196,7 +196,7 @@
 | VerifyGate / StructuredReflection / external_evaluator | **整合**进 SelfCheckGate 编排，非废弃 | 三件原 API 不动，SelfCheckGate 只调度 |
 | TerminationGate + self-check 三级 | **整合**进 ConvergenceController | 硬上限逻辑复用，只加量化收敛判据 |
 | goal_checker | 与 Step7 并存（/goal 场景）；problem_pipeline 不接管 goal | 两条路径互不干扰，goal_mode 仍独立 |
-| ask_clarification | **复用**为 Step1 澄清出口 | 不新造澄清通道 |
+| ask_clarification (code_tool) | **不复用**为暂停通道（它是工具不是 pause 通道）；Step1 澄清走**独立 chat_v2_final 出口** | M-5 修正：emit chat_v2_final + set idle + 持久化 + return |
 | CapabilityGate | 保留在 Step1 之前（拒绝类先挡） | 顺序不变 |
 
 > **关键 BC 不变量**：`features.problem_pipeline.enabled == false` 时，`_run_chat` 与 `AgentLoop.run` 的可观测行为（消息序列、工具调用、事件流）与本 plan 落地前**逐字节相同**。这是 ★ 一票否决验收项（05 文档）。
