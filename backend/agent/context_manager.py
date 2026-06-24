@@ -340,12 +340,19 @@ class ContextManager:
 
     def check_budget(
         self, messages: list[dict[str, Any]], *, model: str,
+        real_prompt_tokens_floor: int = 0,
     ) -> BudgetCheckResult:
         """Pre-call token budget check delegating to B3.
 
         Returns the full ``BudgetCheckResult`` (verdict + estimated
         tokens + window + ratio + advice string).  Caller decides what
         to do with WARN/BLOCK.
+
+        ``real_prompt_tokens_floor`` (default 0 → BC): the actual
+        ``prompt_tokens`` of the last LLM call, threaded down to
+        :func:`token_budget.check_budget` as a floor so the gate accounts
+        for the fixed system/tool-schema base the estimate of
+        ``working_messages`` alone misses. See that function's docstring.
         """
         # Phase 1.1 followup: pass the already-resolved per-model window
         # (config.model_info carries the full builtin/global/project
@@ -362,6 +369,7 @@ class ContextManager:
             warn_pct=self.config.budget_warn_pct,
             block_pct=self.config.budget_block_pct,
             context_window=_window,
+            real_prompt_tokens_floor=real_prompt_tokens_floor,
         )
 
     # ───────────────────── B2 history compaction ─────────────────────

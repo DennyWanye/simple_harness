@@ -115,6 +115,20 @@ def _spill_dir() -> Optional[Path]:
 _SPILL_MAX_FILES = 400  # 目录文件数上限,超出按 mtime 清最老
 
 
+def _env_int(name: str, default: int) -> int:
+    """安全读取正整数 env 覆盖;缺失/非法/<=0 → default。"""
+    import os as _os
+
+    raw = _os.environ.get(name)
+    if not raw:
+        return default
+    try:
+        v = int(raw)
+        return v if v > 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
 class ToolResultRefStore:
     """LRU 内存 + 磁盘 spill 的全文 tool_result 存储,按 ref_id 取。
 
@@ -124,8 +138,24 @@ class ToolResultRefStore:
     get() 内存 miss 时读盘回填。落盘失败静默退化为纯内存(行为同旧版)。
     """
 
-    def __init__(self, *, max_entries: int = DEFAULT_MAX_ENTRIES) -> None:
-        self._cap = int(max_entries)
+    def __init__(
+        self,
+        *,
+        max_entries: int | None = None,
+        spill_max_files: int | None = None,
+    ) -> None:
+        # Risk-1 收窄: 内存 LRU 上限 + 磁盘 spill 文件数上限均可配。
+        # 真正的丢失边界是磁盘 spill 窗口(不可重跑的临时输出超此窗口才会真丢;
+        # 文件读取永远可重读,不受影响)。显式参数 > env > 模块默认(256/400)。
+        # env: DESKPET_TOOL_REF_MAX_ENTRIES / DESKPET_TOOL_REF_SPILL_MAX_FILES。
+        self._cap = (
+            int(max_entries) if max_entries is not None
+            else _env_int("DESKPET_TOOL_REF_MAX_ENTRIES", DEFAULT_MAX_ENTRIES)
+        )
+        self._spill_max = (
+            int(spill_max_files) if spill_max_files is not None
+            else _env_int("DESKPET_TOOL_REF_SPILL_MAX_FILES", _SPILL_MAX_FILES)
+        )
         # OrderedDict gives us O(1) move-to-end (LRU update) + popitem(last=False).
         self._store: "OrderedDict[str, str]" = OrderedDict()
 
@@ -178,16 +208,16 @@ class ToolResultRefStore:
 
     # ── disk spill ──────────────────────────────────────────────
 
-    @staticmethod
-    def _spill_write(ref: str, content: str) -> None:
+    def _spill_write(self, ref: str, content: str) -> None:
         try:
             d = _spill_dir()
             if d is None:
                 return
             (d / f"{ref}.txt").write_text(content, encoding="utf-8")
-            # 容量管理: 超上限按 mtime 清最老(best-effort)
+            # 容量管理: 超上限按 mtime 清最老(best-effort)。上限取本 store 的
+            # self._spill_max(可经 env/参数调大),不再读模块常量。
             files = sorted(d.glob("*.txt"), key=lambda p: p.stat().st_mtime)
-            for old in files[: max(0, len(files) - _SPILL_MAX_FILES)]:
+            for old in files[: max(0, len(files) - self._spill_max)]:
                 try:
                     old.unlink()
                 except OSError:

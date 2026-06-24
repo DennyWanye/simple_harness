@@ -208,6 +208,7 @@ def check_budget(
     warn_pct: float = DEFAULT_WARN_PCT,
     block_pct: float = DEFAULT_BLOCK_PCT,
     context_window: int | None = None,
+    real_prompt_tokens_floor: int = 0,
 ) -> BudgetCheckResult:
     """Pre-call budget check.
 
@@ -222,8 +223,24 @@ def check_budget(
     (possibly stale) window from :func:`get_context_window` here. When
     ``None`` (legacy / v1-rollback / direct callers) we fall back to the
     name-based lookup.
+
+    ``real_prompt_tokens_floor``: the actual ``prompt_tokens`` of the last
+    real LLM call (``response.usage.input_tokens``), used as a *floor* on
+    the estimate. ``estimate_tokens(messages)`` only counts
+    ``working_messages`` (the conversation history) — it does **not** see the
+    fixed base every request carries (system persona + tool schemas + skill
+    prelude, often several thousand tokens, added by the provider at call
+    time). Without this floor the gate undercounts the real prompt and can
+    fail to fire even when the model receives an over-window prompt (observed:
+    real prompt 113% of window, ratio seen as 16%, no BLOCK). The real
+    last-prompt size already includes that base, so ``max(estimate, floor)``
+    gives a window-accurate numerator. Default ``0`` → byte-level BC (the
+    floor never raises the estimate; identical to the old working_messages-only
+    behaviour). Mirrors the same signal the compaction trigger uses.
     """
     tokens = estimate_tokens(messages)
+    if real_prompt_tokens_floor > tokens:
+        tokens = int(real_prompt_tokens_floor)
     window = (
         context_window
         if context_window is not None and context_window > 0

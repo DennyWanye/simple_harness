@@ -847,8 +847,15 @@ class AgentLoop:
                     _first = provider_chain[0]
                     _budget_model = getattr(_first, "model", None) or use_model
                 _resolved_model = _budget_model or "unknown"
+                # Risk-2 fix: floor the estimate with the last real prompt
+                # size (response.usage.input_tokens) so the gate accounts for
+                # the fixed system/tool-schema base that estimate_tokens(
+                # working_messages) misses — otherwise a genuinely over-window
+                # prompt (real 113%) reads as ~16% and never BLOCKs. Default
+                # floor 0 on iter-0 → BC. Mirrors the compaction trigger.
                 _budget = self._ctx.check_budget(
                     working_messages, model=_resolved_model,
+                    real_prompt_tokens_floor=_last_real_prompt_tokens,
                 )
                 if _budget.verdict is _BudgetCheck.BLOCK:
                     logger.error(
