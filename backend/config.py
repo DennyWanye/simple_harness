@@ -415,6 +415,32 @@ class SkillsConfig:
 
 
 @dataclass
+class ProblemPipelineConfig:
+    """``[features.problem_pipeline]`` — 七步问题处理流水线（plans/2026-06-24-...，仅 Companion 主线）。
+
+    决策1（测试环境）：出厂即开全量验证——enabled 默认 **True**，各子 flag 默认 on；
+      flag 仅作 kill-switch + 单步调试开关（出问题时关某步或整条 enabled=false 一键回退）。
+      **不做 shadow→light→strict 灰度档**：self_check 是 bool，严格度由 SelfCheckGate 内部按
+      problem_type 选（debug/creation 严、factual 轻、chitchat 跳过）。
+    决策3（模型可配）：analysis_model / self_check_model 留空 = 复用主 LLM gpt-5.5（中转站只保证主模型），
+      不硬依赖 haiku；非空才解析独立 model（失败回退主 LLM）。
+    """
+    enabled: bool = True                       # 总开关（kill-switch）：false → 整条短路回退现有链路
+    intent_triage: bool = True                 # Step1+3 合并预分析（意图 + 主要矛盾）
+    intent_clarify_threshold: float = 0.7      # 歧义澄清阈值
+    evidence_gate: bool = True                 # Step2 取证门控
+    evidence_max_nudges: int = 2               # 取证 nudge 上限
+    evidence_investigative_tools: list[str] = field(default_factory=list)  # 空=用模块默认白名单
+    plan_companion_enabled: bool = True        # Step4 为 Companion 主线新增 plan（code 模式不动）
+    analysis_model: str = ""                   # 决策3：意图+矛盾分析模型（留空=主 LLM gpt-5.5）
+    self_check: bool = True                    # Step6 自检总开关（bool；严格度内部按 problem_type 选）
+    self_check_model: str = ""                 # 决策3：异体自检评分模型（留空=主 LLM gpt-5.5）
+    self_check_heterogeneous: bool = True      # 失败 N 次后启异体（fresh-context 子代理）评分
+    convergence_report_on_stop: bool = True    # Step7 止损报告
+    observability_events: bool = True          # 是否发 <标签> WS 事件
+
+
+@dataclass
 class FeaturesConfig:
     """``[features]`` 父表 — Companion + Code 升级 v1 (plans/2026-05-25-...).
 
@@ -487,6 +513,9 @@ class FeaturesConfig:
     # 默认 OFF = 字节级 BC(microcompact 仍按"保护最近 N 条")。ON 时保护策略改
     # "最近 N 条 + 累计字节 ≤ M",避免最近 N 条里混入巨型 tool_result 仍撑爆窗口。
     microcompact_size_aware: bool = False
+    # 七步问题处理流水线（plans/2026-06-24-problem-handling-pipeline-maoxuan/）。
+    # 嵌套子表，由 load_config 手动 pop 构建（同 [tools.verifier] 模式）。
+    problem_pipeline: ProblemPipelineConfig = field(default_factory=ProblemPipelineConfig)
 
 
 @dataclass
@@ -1330,7 +1359,12 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
     # goal_mode / agent_parallel 在 config.toml 配了也不生效(config.features
     # 永远是默认全 False)。补读使这三个功能能真正开启。
     if "features" in raw:
-        config.features = _load_section(FeaturesConfig, raw["features"])
+        # [features.problem_pipeline] 是嵌套子表（同 [memory.v2] / [tools.verifier]）
+        # —— _load_section 只做平铺解析会丢弃它，必须先 pop 出来单独构建（plans/2026-06-24-...）。
+        raw_features = dict(raw["features"])
+        raw_pp = dict(raw_features.pop("problem_pipeline", {}) or {})
+        config.features = _load_section(FeaturesConfig, raw_features)
+        config.features.problem_pipeline = _load_section(ProblemPipelineConfig, raw_pp)
     if "memory" in raw:
         # [memory.v2] / [memory.v2.facts] 是嵌套子表，_load_section 只做
         # 平铺解析 —— 先把 v2 pop 出来单独构建，再装回。
@@ -1356,7 +1390,12 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
     # Companion+Code v1/v2 — [features] flat dataclass 解析。
     # 包含 slash_commands / goal_mode / agent_parallel 3 flag（默认 OFF）.
     if "features" in raw:
-        config.features = _load_section(FeaturesConfig, raw["features"])
+        # [features.problem_pipeline] 嵌套子表幂等 pop 构建（同上方第一处；两处都需，勿盲删，
+        # 见 plans/2026-06-24-... §M4 红队 m-3）。
+        raw_features = dict(raw["features"])
+        raw_pp = dict(raw_features.pop("problem_pipeline", {}) or {})
+        config.features = _load_section(FeaturesConfig, raw_features)
+        config.features.problem_pipeline = _load_section(ProblemPipelineConfig, raw_pp)
     # WI-4.1 skills 分级披露 + WI-4.3 技能自创配置加载（[skills.auto_disclosure]
     # / [skills.codify] 子表）.
     # 2026-06-06 真机手测抓 bug：原加载器只 pop auto_disclosure，**从不解析 codify**

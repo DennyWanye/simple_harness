@@ -84,6 +84,14 @@ _VALID_SERVICES = frozenset({
     # PermissionGate 注册成 service 让 p4_ipc 的只读「列 pending」接口拿到它，
     # 供 ApprovalCenterPanel 聚合展示。只读 — 不改 gate 决策路径。
     "permission_gate",     # PermissionGate — 只读 list_pending 供审批聚合面板
+    # --- 七步问题处理流水线 (plans/2026-06-24-problem-handling-pipeline-maoxuan/) ---
+    # flag features.problem_pipeline.enabled OFF 时 lifespan 仍 register(None)
+    # 占位（见 main.py lifespan 的 else 分支）—— 否则 get()/register() 抛
+    # "Unknown service"（仿 session_goal_store 注释 :48 / context_compressor :57 的占位约定）。
+    "problem_pipeline",                  # ProblemHandlingPipeline（PRE-LOOP 编排器）
+    "pipeline_evidence_gate",            # EvidenceGate（Step2 取证门，build_agent caller 透传）
+    "pipeline_self_check_gate",          # 预留：第一期由 build_agent 内构造，service 仅占位
+    "pipeline_convergence_controller",   # 预留：第一期由 AgentLoop 内构造，service 仅占位
 })
 
 @dataclass
@@ -141,6 +149,11 @@ class ServiceContext:
     memory_curator: Any | None = None
     # --- WI-TG-2 审批 UX 聚合 -------------------------------------------------
     permission_gate: Any | None = None
+    # --- 七步问题处理流水线 (plans/2026-06-24-problem-handling-pipeline-maoxuan/) ---
+    problem_pipeline: Any | None = None
+    pipeline_evidence_gate: Any | None = None
+    pipeline_self_check_gate: Any | None = None
+    pipeline_convergence_controller: Any | None = None
 
     def register(self, name: str, provider: Any) -> None:
         if name not in _VALID_SERVICES:
