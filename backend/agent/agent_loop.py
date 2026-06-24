@@ -343,6 +343,9 @@ class ToolResultEvent(AgentEvent):
     tool_call_id: str = ""
     tool_name: str = ""
     result: str = ""  # JSON string
+    # 七步流水线 Step5 标签（plans/2026-06-24-...）：{"step":5,"observation_summary":"..."}。
+    # pipeline off → None = BC（前端不读即无影响）。
+    pipeline_label: Optional[dict] = None
 
     def __post_init__(self) -> None:
         if not self.type:
@@ -439,6 +442,21 @@ class ContextCompactedEvent(AgentEvent):
             self.type = "context_compacted"
 
 
+@dataclass
+class PipelineEvent(AgentEvent):
+    """七步问题处理流水线观测事件（plans/2026-06-24-...）。
+
+    type ∈ {chat_v2_intent, chat_v2_contradiction, chat_v2_evidence_gate,
+    chat_v2_selfcheck, chat_v2_convergence}。仅 pipeline_observability=True 时 yield；
+    main.py 据 .type 直接 send_json。flag off 时**永不构造**（零开销，BC）。"""
+
+    payload: dict = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # type 由构造方显式给（多种事件复用本类），不在此覆盖。
+        pass
+
+
 # ───────────────────── protocols for caller dependencies ─────────────────────
 
 
@@ -529,6 +547,14 @@ class AgentLoop:
         # 一次 nudge（异步，不挡主回合，照 vector_worker 模式）。
         memory_curator: Optional[Any] = None,  # deskpet.memory.curation.MemoryCurator
         curation_nudge_every_n_turns: int = 8,
+        # ─── 七步问题处理流水线 IN-LOOP 三闸（plans/2026-06-24-problem-pipeline）。
+        # 全 None/False → 跳过所有 pipeline 分支（kill-switch 回退到今天的链路，BC）。
+        evidence_gate: Optional[Any] = None,           # deskpet.agent.evidence_gate.EvidenceGate
+        self_check_gate: Optional[Any] = None,         # deskpet.agent.self_check_gate.SelfCheckGate（build_agent 内构造后传）
+        convergence_report_on_stop: bool = False,      # Step7：True → __init__ 末尾用 self._gate 自建 ConvergenceController
+        pipeline_problem_type: Optional[str] = None,   # Step1 产出的 problem_type（喂 Step6 选档）
+        pipeline_needs_investigation: bool = False,    # IntentCard.needs_investigation（喂 Step2）
+        pipeline_observability: bool = False,          # 发 chat_v2_evidence_gate / _selfcheck / _convergence 事件
     ) -> None:
         self.llm = llm_registry
         self.tools = tool_registry
@@ -632,6 +658,26 @@ class AgentLoop:
             else ContextManager()
         )
 
+        # ─── 七步问题处理流水线 IN-LOOP 三闸赋值（plans/2026-06-24-problem-pipeline）。
+        # 必须在 self._gate 构造（上方）之后——ConvergenceController 依赖 self._gate。
+        self._evidence_gate = evidence_gate
+        self._self_check_gate = self_check_gate
+        self._pipeline_problem_type = pipeline_problem_type
+        self._pipeline_needs_investigation = bool(pipeline_needs_investigation)
+        self._pipeline_observability = bool(pipeline_observability)
+        self._evidence_nudges_used = 0   # Step2 nudge 计数
+        # ⚠️ R1（round-2）：弃用绝对长度切片基线 → 改布尔累积标志（对 compaction 免疫）。
+        # run() 开头重设；本 run dispatch 出取证工具 → 置 True。
+        self._evidence_gathered = False
+        self._history_tool_names: set[str] = set()
+        # Step7 ConvergenceController 自建（依赖 self._gate）：
+        self._convergence_controller = None
+        if convergence_report_on_stop:
+            from deskpet.agent.convergence_controller import ConvergenceController  # noqa: PLC0415
+            self._convergence_controller = ConvergenceController(
+                self._gate, report_on_stop=True,
+            )
+
     async def run(
         self,
         messages: list[dict[str, Any]],
@@ -656,7 +702,14 @@ class AgentLoop:
         behaviour for callers that don't need partial output.
         """
         tid = task_id or new_task_id()
+        self._current_tid = tid  # 供 _pipeline_event 构造观测事件用（plans/2026-06-24-...）
         working_messages: list[dict[str, Any]] = list(messages)
+        # ⚠️ R1（round-2，plans/2026-06-24-...）：Step2 取证布尔累积标志，对 compaction 免疫
+        # （compaction 整体替换 working_messages 不会改这个已置位的布尔）。run() 开头重设 +
+        # 快照 history 注入的旧 tool name → 本 run 只认「新 dispatch 且不在 history 快照里」的取证。
+        self._evidence_gathered = False
+        self._evidence_nudges_used = 0
+        self._history_tool_names = set(self._collect_tool_names(working_messages))
         tool_schemas = self.tools.schemas(enabled_toolsets=tools_filter)
 
         totals = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
@@ -819,6 +872,38 @@ class AgentLoop:
             # for "should this loop keep going?".
             _ok, _reason = self._gate.allows_call()
             if not _ok:
+                # ─── Step7 止损（闸③，plans/2026-06-24-...）：硬上限/资源触顶 → 不硬撑，
+                # 产出诚实止损报告（桌宠交代"卡在哪+建议"，而非只发 error）。
+                # pipeline off 时 self._convergence_controller=None → 走原 ErrorEvent return（字节级 BC）。
+                if self._convergence_controller is not None:
+                    # ⚠️ allows_call() 返回 (False, reason) 但**不调 terminate()**（已核实 termination.py:142）
+                    # → 此刻 gate.summary()["reason"] 仍是合成 "running"。真实触顶 reason 在 _reason 里，
+                    # 必须用它覆盖 summary 的 reason，否则 resource_capped 判 False → 止损永不触发。
+                    _cap_summary = dict(self._gate.summary())
+                    if _reason is not None:
+                        _cap_summary["reason"] = _reason.value
+                    _verdict = self._convergence_controller.evaluate(
+                        principal_resolved=False,           # 触顶即未收敛
+                        unverified_claims=0,
+                        gate_summary=_cap_summary,
+                    )
+                    if self._pipeline_observability:
+                        yield self._pipeline_event("chat_v2_convergence", iteration, {
+                            "converged": _verdict.converged,
+                            "principal_resolved": _verdict.principal_resolved,
+                            "stop_reason": _verdict.stop_reason,
+                            "report": _verdict.report,
+                        })
+                    if _verdict.should_stop_loss and _verdict.report:
+                        self._gate.record_final_answer()
+                        yield FinalEvent(
+                            type="final",
+                            task_id=tid,
+                            iteration=iteration,
+                            content=_verdict.report,
+                            stop_reason="stop_loss",
+                        )
+                        return
                 yield ErrorEvent(
                     type="error",
                     task_id=tid,
@@ -1398,6 +1483,41 @@ class AgentLoop:
                         ),
                     )
                     return
+                # ─── Step2 EvidenceGate（取证门控，核心闸①，plans/2026-06-24-...）。
+                # needs_investigation 且本 run 尚未取证就想 end_turn → 拦截注入 <调查> nudge。
+                # flag off 时 self._evidence_gate=None → 跳过整段（BC）。判定走 self._evidence_gathered
+                # 布尔（dispatch 时按白名单+history 快照置位），对 compaction 整体替换 working_messages 免疫（R1）。
+                if (
+                    iteration < _SELFCHECK_TIER3_AT
+                    and self._evidence_gate is not None
+                    and self._pipeline_needs_investigation
+                ):
+                    _ev_dec = self._evidence_gate.check(
+                        needs_investigation=self._pipeline_needs_investigation,
+                        evidence_gathered=self._evidence_gathered,
+                        nudges_used=self._evidence_nudges_used,
+                    )
+                    if self._pipeline_observability:
+                        yield self._pipeline_event(
+                            "chat_v2_evidence_gate", iteration,
+                            {"blocked": _ev_dec.blocked, "reason": _ev_dec.reason,
+                             "nudge_count": _ev_dec.nudge_count},
+                        )
+                    if _ev_dec.blocked:
+                        self._evidence_nudges_used = _ev_dec.nudge_count
+                        if response.content:
+                            working_messages.append(
+                                {"role": "assistant", "content": response.content}
+                            )
+                        working_messages.append(
+                            {"role": "system", "content": _ev_dec.nudge}
+                        )
+                        logger.info(
+                            "evidence_gate_nudge_injected sid=%s nudge=%d",
+                            session_id, _ev_dec.nudge_count,
+                        )
+                        continue
+
                 # P5-S2 Hook A: completion guard. Before truly finalizing,
                 # ask the caller (via ``completion_probe``) whether session-
                 # level work (todos) is actually finished. If the LLM said
@@ -1478,12 +1598,99 @@ class AgentLoop:
                             "reason": "",
                         })
 
+                # ─── Step6 SelfCheckGate（整合 verify_gate + reflection + 异体评分，
+                # plans/2026-06-24-...）。pipeline on 时走编排；off 时落到下方 elif 原 verify_gate 块（BC）。
+                # ⚠️ R2：补 `and response.content` 守卫，与原 verify_gate 块准入对齐。
+                if (
+                    iteration < _SELFCHECK_TIER3_AT
+                    and self._self_check_gate is not None
+                    and self._pipeline_problem_type is not None
+                    and response.content
+                ):
+                    _ledger = (
+                        self.receipt_store.load_session(session_id)
+                        if self.receipt_store is not None else []
+                    )
+                    _sc = await self._self_check_gate.check(
+                        problem_type=self._pipeline_problem_type,
+                        assistant_text=response.content or "",
+                        ledger=_ledger,
+                        goal_text=self._extract_goal_text(working_messages),
+                        failure_count=verify_nudges_used,
+                        produced_artifacts=[
+                            getattr(r, "tool_name", "?") for r in _ledger
+                        ],
+                        objective_evidence=[
+                            f"receipt ok: tool={getattr(r, 'tool_name', '?')}"
+                            for r in _ledger if getattr(r, "ok", True)
+                        ],
+                    )
+                    if self._pipeline_observability:
+                        yield self._pipeline_event("chat_v2_selfcheck", iteration, {
+                            "passed": _sc.passed, "mode": _sc.mode,
+                            "heterogeneous": _sc.heterogeneous,
+                            "claims_unverified": _sc.claims_unverified,
+                        })
+                    if not _sc.passed and verify_nudges_used < self.max_verify_nudges:
+                        verify_nudges_used += 1
+                        if response.content:
+                            working_messages.append(
+                                {"role": "assistant", "content": response.content}
+                            )
+                        working_messages.append({"role": "system", "content": (
+                            "<自检> 自检未通过：声明与凭据不符。"
+                            + _sc.reflection_instruction
+                        )})
+                        logger.info(
+                            "self_check_nudge_injected sid=%s mode=%s nudge=%d",
+                            session_id, _sc.mode, verify_nudges_used,
+                        )
+                        continue
+                    # ─── 耗尽分支（MINOR①：复用 verify-exhausted 终态，勿静默放过）。
+                    if (
+                        not _sc.passed
+                        and verify_nudges_used >= self.max_verify_nudges
+                        and self.force_finish_via_tool_choice
+                        and not _verify_final_done
+                    ):
+                        _verify_final_done = True
+                        _force_finish_queued = True
+                        working_messages.append({"role": "system", "content": (
+                            "自检多次未通过（声明与凭据不符），本轮必须 end_turn："
+                            "向用户如实总结做了什么、哪些未能验证、建议下一步。不要再调用任何工具。"
+                        )})
+                        logger.warning(
+                            "self_check_exhausted sid=%s nudge=%d/%d → force_finish",
+                            session_id, verify_nudges_used, self.max_verify_nudges,
+                        )
+                        continue
+                    # force_finish_via_tool_choice=False 时无强制总结轮 → 直发 verify_exhausted 终态。
+                    if not _sc.passed and verify_nudges_used >= self.max_verify_nudges:
+                        if self._tracer:
+                            self._tracer.record({
+                                "kind": "end", "iter": iteration,
+                                "reason": "verify_exhausted",
+                                "gate_summary": self._gate.summary(),
+                            })
+                        yield ErrorEvent(
+                            type="error", task_id=tid, iteration=iteration,
+                            reason="verify_exhausted",
+                            detail=(
+                                response.content
+                                or f"self-check: all retries exhausted after "
+                                   f"{verify_nudges_used} nudge(s)"
+                            ),
+                        )
+                        return
+                    # passed → 落到下面（不再走旧 verify_gate 块）
+
                 # WI-T2.6 last-mile P0-3: VerifyGate end_turn 守门（PRD §3 D6）。
                 # 同 completion_probe 模式 — 守门返回 outcome.passed=False 时
                 # 回灌 D8 schema system message + continue；max_verify_nudges
                 # 控制重试上限（PRD: failure_count==3 时调度 ephemeral → 仍
                 # fail 才强退）。flag-off 时 verify_gate=None 跳过整段（BC）。
-                if (
+                # ⚠️ pipeline on 时上方 SelfCheckGate if 已处理 → 此 elif 跳过；off 时走原块（BC）。
+                elif (
                     iteration < _SELFCHECK_TIER3_AT
                     and
                     self.verify_gate is not None
@@ -1875,7 +2082,9 @@ class AgentLoop:
                 # can spawn a replan. Runs at most ONCE per goal (here,
                 # before FinalEvent — revise → replan → new run, no loop).
                 # flag off (external_evaluator=None) → skip entirely (BC, 0 calls).
-                if self.external_evaluator is not None:
+                # ⚠️ plans/2026-06-24-...：pipeline on（self._self_check_gate 非 None）时
+                # 异体评分已由 Step6 SelfCheckGate 编排 → 此处跳过避免双重评分。
+                if self.external_evaluator is not None and self._self_check_gate is None:
                     try:
                         from deskpet.agent.external_evaluator import (  # noqa: PLC0415
                             is_high_consequence_goal as _is_hcg,
@@ -1950,6 +2159,20 @@ class AgentLoop:
                             "external_evaluator gate failed (sid=%s): %s — passing through",
                             session_id, exc,
                         )
+
+                # ─── Step7 收敛标记（自然收尾路径，仅观测；止损在循环顶部 2d-① 处理）。
+                # plans/2026-06-24-...：模型自己 end_turn 正常收尾时 gate 尚未 terminate
+                # （reason="running"），此处只发 converged 观测事件，**不触发止损**（止损只在触顶分支）。
+                if self._convergence_controller is not None and self._pipeline_observability:
+                    _v = self._convergence_controller.evaluate(
+                        principal_resolved=True, unverified_claims=0,
+                        gate_summary=self._gate.summary(),
+                    )
+                    yield self._pipeline_event("chat_v2_convergence", iteration, {
+                        "converged": _v.converged,
+                        "principal_resolved": _v.principal_resolved,
+                        "stop_reason": _v.stop_reason, "report": "",
+                    })
 
                 # P6 Phase 6 — gate records the natural terminal state
                 # before we emit the FinalEvent so consumers reading
@@ -2157,6 +2380,17 @@ class AgentLoop:
                 # longer trigger HALLUCINATION_DETECTED — only repeating the
                 # same path triggers).
                 self._gate.record_tool_call(tc.name, args=tc.arguments)
+                # ⚠️ R1（round-2，plans/2026-06-24-...）：Step2 本 run 真 dispatch 的取证类工具
+                # （白名单命中 且 不在 history 快照里）→ 置 evidence_gathered 布尔。置位后 compaction
+                # 整体替换 working_messages 也不影响（布尔不随列表走）。pipeline off → _evidence_gate=None → skip。
+                if (
+                    self._evidence_gate is not None
+                    and not self._evidence_gathered
+                    and self._evidence_gate.is_investigative(tc.name)
+                    and tc.name not in self._history_tool_names
+                ):
+                    self._evidence_gathered = True
+                    logger.info("evidence_gathered_set sid=%s tool=%s", session_id, tc.name)
                 # WI-4.2 skill remount: record skill_invoke calls so that
                 # _remount_skills() can re-inline their bodies after compaction.
                 if tc.name == "skill_invoke" and self.skill_loader is not None:
@@ -2227,6 +2461,11 @@ class AgentLoop:
                     tool_call_id=tc.id,
                     tool_name=tc.name,
                     result=result_str,
+                    # Step5 观测标签（plans/2026-06-24-...）：pipeline off → None = BC。
+                    pipeline_label=(
+                        {"step": 5, "observation_summary": str(result_str)[:120]}
+                        if self._pipeline_observability else None
+                    ),
                 )
                 # P6 Phase 6 — delegate truncation to
                 # self._ctx.record_tool_result. The skip_truncation_for_tools
@@ -2316,6 +2555,30 @@ class AgentLoop:
     # ------------------------------------------------------------------
     # WI-OH-4 — memory self-curation nudge (fire-and-forget)
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _collect_tool_names(messages: list[dict[str, Any]]) -> list[str]:
+        """收集 working_messages 里 tool 调用名（role=='tool' 的 name）。run() 开头用它快照
+        history 旧 tool（含 bundle.history 注入的带 name 旧 tool 消息），喂 self._history_tool_names。
+        plans/2026-06-24-... §M2 改动 2b-1。"""
+        return [m.get("name", "") for m in messages if m.get("role") == "tool"]
+
+    @staticmethod
+    def _extract_goal_text(working_messages: list[dict[str, Any]]) -> str:
+        """取首个 user 消息作 goal_text（复用 external_evaluator 块的 BC fallback 逻辑）。"""
+        for m in working_messages:
+            if m.get("role") == "user":
+                return str(m.get("content") or "")
+        return ""
+
+    def _pipeline_event(self, ev_type: str, iteration: int, payload: dict) -> "PipelineEvent":
+        """构造七步流水线 WS 观测事件（plans/2026-06-24-... §M2 改动 2f）。"""
+        return PipelineEvent(
+            type=ev_type,
+            task_id=getattr(self, "_current_tid", None) or "",
+            iteration=iteration,
+            payload=payload,
+        )
 
     def _maybe_fire_curation_nudge(
         self,
