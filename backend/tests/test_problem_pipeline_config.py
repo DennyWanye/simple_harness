@@ -36,6 +36,8 @@ def test_problem_pipeline_defaults_factory_on() -> None:
     assert pp.intent_clarify_threshold == 0.7
     assert pp.evidence_max_nudges == 2
     assert pp.evidence_investigative_tools == []
+    # 真机 E2E 修复：gpt-5.5 thinking 预分析超时（6s 必超时 → Step1+3 形同虚设）→ 默认 30s
+    assert pp.analysis_timeout_s == 30.0
 
 
 def test_problem_pipeline_parsed_from_nested_subtable(tmp_path: Path) -> None:
