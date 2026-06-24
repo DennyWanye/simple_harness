@@ -377,22 +377,28 @@ class EvidenceGate:
         self._tools = frozenset(investigative_tools) if investigative_tools else _DEFAULT_INVESTIGATIVE_TOOLS
         self._max_nudges = max_nudges
 
+    def is_investigative(self, tool_name: str) -> bool:
+        """该 tool 是否算「取证」（白名单命中）。agent_loop dispatch 时调它置 evidence_gathered 布尔。
+        把白名单判定收口到 gate 内部，避免 agent_loop 重复持有白名单。"""
+        return tool_name in self._tools
+
     def check(
         self,
         *,
         needs_investigation: bool,
-        tool_names_so_far: Iterable[str],
+        evidence_gathered: bool,
         nudges_used: int,
     ) -> EvidenceDecision:
         """判定是否拦截 end_turn。
 
-        BLOCK 条件：needs_investigation && 取证工具集 ∩ 已调用工具 == ∅ && nudges_used < max。
+        ⚠️ R1（round-2）：入参从 `tool_names_so_far`（依赖 working_messages 切片，对 compaction 不鲁棒）
+        改为 `evidence_gathered: bool`（agent_loop 在 dispatch 时按白名单 + history 快照累积置位，见 §M2 改动 2b-1）。
+        BLOCK 条件：needs_investigation && not evidence_gathered && nudges_used < max。
         """
         if not needs_investigation:
             return EvidenceDecision(blocked=False, reason="no_investigation_needed")
 
-        called = set(tool_names_so_far)
-        if called & self._tools:
+        if evidence_gathered:
             return EvidenceDecision(blocked=False, reason="evidence_present")
 
         if nudges_used >= self._max_nudges:
@@ -1111,7 +1117,9 @@ schema `properties` 内（plan.py:67 附近）加：
         self._pipeline_needs_investigation = pipeline_needs_investigation
         self._pipeline_observability = bool(pipeline_observability)
         self._evidence_nudges_used = 0   # Step2 nudge 计数
-        self._evidence_baseline_len = 0  # Step2 取证 baseline（run() 开头重设，见改动 2b-0）
+        # ⚠️ R1（round-2）修正：弃用绝对长度切片基线 → 改布尔累积标志（对 compaction 免疫）。
+        self._evidence_gathered = False      # run() 开头重设；本 run dispatch 出取证工具 → 置 True（见 2b-0）
+        self._history_tool_names: set[str] = set()  # run() 开头快照 history 注入的旧 tool name（见 2b-0）
         # Step7 ConvergenceController 自建（依赖 self._gate，已核实 gate 构造 @ :618 在此之前）：
         self._convergence_controller = None
         if convergence_report_on_stop:
@@ -1121,15 +1129,31 @@ schema `properties` 内（plan.py:67 附近）加：
             )
 ```
 
-**改动 2b-0 — run() 开头记 evidence baseline**（⚠️**红队 M-2 修正**，硬前置）。**已核实** `working_messages =
-list(messages)` @ agent_loop.py:659，`messages` 含 `bundle.history` 注入的历史 tool 消息（带 `name` 字段）。
-在 :659 紧随其后记基线长度：
+**改动 2b-0 — run() 开头初始化 evidence 布尔标志**（⚠️**round-2 R1 修正 + 原 M-2**，硬前置）。
+**已核实** `working_messages = list(messages)` @ **agent_loop.py:659**（已核实 @ agent_loop.py:659），
+`messages` 含 `bundle.history` 注入的历史 tool 消息（带 `name` 字段）。
+
+> **⚠️ round-2 R1（MAJOR）背景**：第 1 轮用"绝对长度切片" `self._evidence_baseline_len=len(working_messages)` +
+> EvidenceGate 只看 `working_messages[baseline:]`。但 loop 内 **compaction 会整体替换 working_messages**：
+> `working_messages = _cresult.messages`（**已核实 @ agent_loop.py:999**，比原列表短，history tool 折进 summary）
+> 紧接 `working_messages = self._remount_skills(...)`（**已核实 @ agent_loop.py:1003**）再次整体重写。压缩后
+> `baseline_len > len(working_messages)` → 切片 `working_messages[baseline:]` 返回**空** → EvidenceGate 误判"零取证" →
+> 即便已大量取证、正常想收尾也被强注入 `<调查>` nudge。且压缩由 token 预算驱动，**长取证场景**（正是
+> needs_investigation 的主战场）最易触发——此 bug 命中率高。
+>
+> **R1 修复 = 弃用切片，改布尔累积标志**（dispatch 真发生取证 → 置位；压缩不动这个已置位的布尔，天然免疫）。
+
+在 :659 紧随其后初始化布尔标志 + 快照 history 旧 tool name：
 ```python
         working_messages: list[dict[str, Any]] = list(messages)   # 已核实 :659
-        self._evidence_baseline_len = len(working_messages)       # ← M-2：取证门只看此之后新增的 tool 消息
+        # ⚠️ R1（round-2）：布尔累积标志，对 compaction 免疫（compaction 整体替换 working_messages @ :999/:1003
+        # 不会改这个已置位的布尔）。快照 history 注入的旧 tool name → 本 run 只认「新 dispatch 且不在 history 快照里」的取证。
+        self._evidence_gathered = False
+        self._history_tool_names = set(self._collect_tool_names(working_messages))  # 首轮即在的旧 tool（含 history）
 ```
-> 这样 EvidenceGate 只统计**本 run 内真正发生**的取证工具调用，历史 tool 消息（首轮就在 working_messages 里）
-> 不会被误数成"已调查"。对齐 03 §3 Step2"本轮已发生的工具调用记录"的真实语义。
+> 这样 EvidenceGate 改看 `self._evidence_gathered` 布尔，只在**本 run dispatch 真发生取证类工具**时被置 True，
+> 历史 tool 消息（首轮就在 working_messages 里）被 `_history_tool_names` 快照排除——既不误数历史（原 M-2），
+> 又对 compaction 整体替换免疫（新 R1）。对齐 03 §3 Step2"本轮已发生的工具调用记录"的真实语义。
 
 **改动 2b — Step2 EvidenceGate 接在守门链最前**（已核实：end_turn 块从 agent_loop.py:1371 开始，
 completion_probe 块从 :1409；EvidenceGate 要插在 :1409 **之前**，即 end_turn 判定刚进入处）：
@@ -1151,14 +1175,11 @@ completion_probe 块从 :1409；EvidenceGate 要插在 :1409 **之前**，即 en
                     and self._evidence_gate is not None
                     and self._pipeline_needs_investigation
                 ):
-                    # ⚠️ M-2 修正：只看本 run 内新增的 tool 消息（baseline 之后），
-                    # 不数 bundle.history 注入的历史 tool 消息（否则有历史会话恒判"已取证"，取证门失效）。
-                    _tool_names_so_far = self._collect_tool_names(
-                        working_messages[self._evidence_baseline_len:]
-                    )
+                    # ⚠️ R1（round-2）修正：判定改看 self._evidence_gathered 布尔（dispatch 时置位，见 2b-1），
+                    # 不再用 working_messages[baseline:] 切片——对 compaction 整体替换 @ :999/:1003 免疫。
                     _ev_dec = self._evidence_gate.check(
                         needs_investigation=self._pipeline_needs_investigation,
-                        tool_names_so_far=_tool_names_so_far,
+                        evidence_gathered=self._evidence_gathered,
                         nudges_used=self._evidence_nudges_used,
                     )
                     if self._pipeline_observability:
@@ -1179,13 +1200,37 @@ completion_probe 块从 :1409；EvidenceGate 要插在 :1409 **之前**，即 en
                 # P5-S2 Hook A: completion guard. ...（原 completion_probe 块不动）
 ```
 
+**改动 2b-1 — dispatch 时置 evidence_gathered（⚠️round-2 R1 新增，布尔置位点）**。
+**已核实** dispatch 循环 `for tc in response.tool_calls:` @ **agent_loop.py:2101**，tool 结果 append
+`{"role":"tool","tool_call_id":..,"name":tc.name,"content":..}` @ **agent_loop.py:2251-2258**（已核实）。
+在 dispatch 循环内（:2101 起，每个真正被 dispatch 的 `tc`）判定该工具是否取证类、是否本 run 新出现，
+命中则置位 `self._evidence_gathered=True`。最稳的插点 = `for tc in response.tool_calls:` 循环体顶部
+（在 gate `allows_tool` 放行之后、协程入队处附近），保证只统计**真发起**的工具：
+```python
+            for tc in response.tool_calls:           # 已核实 :2101
+                ...
+                # ⚠️ R1（round-2）：本 run 真 dispatch 的取证类工具（白名单命中 且 不在 history 快照里）→ 置位。
+                # 置位后 compaction 整体替换 working_messages 也不影响（布尔不随列表走）。
+                if (
+                    self._evidence_gate is not None
+                    and not self._evidence_gathered
+                    and self._evidence_gate.is_investigative(tc.name)
+                    and tc.name not in self._history_tool_names
+                ):
+                    self._evidence_gathered = True
+                    logger.info("evidence_gathered_set sid=%s tool=%s", session_id, tc.name)
+```
+> **置位 vs 历史快照**：`tc.name not in self._history_tool_names` 排除"history 里就有同名 tool"的误置位
+> （承接原 M-2 语义）；`not self._evidence_gathered` 是幂等短路（已置位就不再判，省开销）。`is_investigative`
+> 是 EvidenceGate 新增的小判定方法（见 N2 改动），把白名单判定收口到 gate 内部，避免 agent_loop 重复持有白名单。
+
 辅助方法（新增到类内，靠近 `_maybe_fire_curation_nudge`）：
 ```python
     @staticmethod
-    def _collect_tool_names(messages_slice: list[dict]) -> list[str]:
-        """从**本 run baseline 之后**的 working_messages 切片收集 tool 调用名（role=='tool' 的 name）。
-        调用方传 working_messages[self._evidence_baseline_len:]（M-2：排除 history 注入的旧 tool 消息）。"""
-        return [m.get("name", "") for m in messages_slice if m.get("role") == "tool"]
+    def _collect_tool_names(messages: list[dict]) -> list[str]:
+        """收集 working_messages 里 tool 调用名（role=='tool' 的 name）。run() 开头用它快照 history 旧 tool
+        （含 bundle.history 注入的带 name 旧 tool 消息），喂 self._history_tool_names。"""
+        return [m.get("name", "") for m in messages if m.get("role") == "tool"]
 
     def _pipeline_event(self, ev_type: str, iteration: int, payload: dict):
         """构造 pipeline WS 事件（复用 ErrorEvent? 不——用专用轻量事件，见下）。"""
@@ -1195,9 +1240,10 @@ completion_probe 块从 :1409；EvidenceGate 要插在 :1409 **之前**，即 en
 ```
 
 > `working_messages` 里 tool 消息的结构 = `{"role":"tool","tool_call_id":..,"name":..,"content":..}`
-> （已核实 agent_loop.py:2251-2257 append 处），故 `m.get("name")` 可取。**已解决（M-2）**：通过
-> `working_messages[self._evidence_baseline_len:]` 切片，只数本 run 内新增 tool 消息，bundle.history 注入的
-> 历史 tool 消息（带 name）被排除——不再误判"已取证"。`_collect_tool_names` 入参即切片后的子列表。
+> （已核实 agent_loop.py:2251-2258 append 处），故 `m.get("name")` 可取，run() 开头用 `_collect_tool_names`
+> 快照 history 旧 tool name。**已解决（R1 + 原 M-2）**：判定改走 `self._evidence_gathered` 布尔（dispatch 时
+> 在 :2101 循环按白名单 + history 快照置位），既排除 bundle.history 注入的历史 tool（原 M-2），又**对 compaction
+> 整体替换 working_messages（@ :999/:1003）免疫**（新 R1）——压缩不动已置位的布尔，不再误判"零取证"强注入 nudge。
 
 **改动 2c — Step6 SelfCheckGate 整合**（已核实现有 verify_gate 块 :1486、external_evaluator 块 :1878）：
 
@@ -1212,10 +1258,14 @@ SelfCheckGate **复用** `self.verify_gate`/`self.external_evaluator` 实例做�
 ```python
                 # ─── Step6 SelfCheckGate（整合 verify_gate + reflection + 异体评分）。
                 # pipeline on 时走编排；off 时走原 verify_gate 块（BC）。
+                # ⚠️ R2（round-2）修正：补 `and response.content` 守卫，与原 verify_gate 块准入对齐
+                # （已核实原块 @ agent_loop.py:1486-1493 含 `... and verify_nudges_used<max and response.content`）。
+                # end_turn 但 content 为空/None 时用空 assistant_text 跑 check() 会误判 → 必须守。
                 if (
                     iteration < _SELFCHECK_TIER3_AT
                     and self._self_check_gate is not None
                     and self._pipeline_problem_type is not None
+                    and response.content
                 ):
                     _ledger = (self.receipt_store.load_session(session_id)
                                if self.receipt_store is not None else [])
@@ -1251,8 +1301,13 @@ SelfCheckGate **复用** `self.verify_gate`/`self.external_evaluator` 实例做�
                     iteration < _SELFCHECK_TIER3_AT
                     and self.verify_gate is not None
                     and getattr(self.verify_gate, "mode", "off") != "off"
+                    and verify_nudges_used < self.max_verify_nudges
+                    and response.content
                 ):
                     # ...（原 verify_gate 块整体保留，作为 pipeline off 时的路径）
+                    # ⚠️ R2：elif 准入必须**逐字复制** :1486-1493 原块的全部条件
+                    #    （含 `verify_nudges_used < self.max_verify_nudges` 与 `response.content`），
+                    #    勿因示意省略而丢条件——否则 pipeline off 路径行为漂移、破坏 BC。
 ```
 
 辅助方法 `_extract_goal_text`（复用 external_evaluator 块 :1896-1901 的 BC fallback 逻辑）：
@@ -1591,38 +1646,102 @@ class PipelineEvent(AgentEvent):
 >
 > **修复（硬要求）**：当 `self_check_mode != "off"` 时，在 build_agent 内**强制自建一套** verify_gate /
 > external_evaluator **专供 SelfCheckGate**，**不依赖** tools.verifier 两 flag。即把 build_agent 现有 verify_gate
-> 构造块（:980-1038）的核心抽成一个 `_build_verify_gate(mode)` 小工厂，pipeline 路径用
-> `pipeline_self_check_mode` 当 mode 调它；external_evaluator 同理抽 `_build_external_evaluator()`。在
-> `return _AgentLoop(...)` 之前：
+> 构造块（**已核实 main.py:979-1038**）+ external_evaluator 块（**已核实 main.py:1076-1099**）的核心各抽成一个
+> 参数化工厂 `_build_verify_gate(mode)` / `_build_external_evaluator()`，pipeline 路径独立调它们。
+>
+> **⏯ evaluator_model 拍板（round-2 R3）**：**复用 `[tools.verifier].ephemeral_subagent_model`**
+> （**已核实 config.py:295 该字段存在，`str = "haiku"` 默认 + VG-INVARIANT-5 白名单校验 @ config.py:662-673**），
+> **不新增** `problem_pipeline.self_check_model`——少加 flag、与 verify_gate ephemeral 救援共用同一异体模型语义一致。
+> 缺省/解析失败由 `_resolve_ephemeral_provider` 回退主 LLM（**已核实回退语义 @ main.py:711-721**）。
+>
+> **⚠️ B3 关键差异（核实）**：原 external_evaluator 块走 `llm_registry.providers[0]`（**已核实 main.py:1089**）——
+> 这是**主 LLM 同模型**，**不是** fresh model。B3/"遗漏:Step6" 要求异体评分走 `_resolve_ephemeral_provider` 出
+> **独立 model**。故 `_build_external_evaluator()` 工厂**不照抄** :1089 的 providers[0] 路径，改走 ephemeral provider。
+>
+> **两个工厂的可粘贴骨架**（抽到 build_agent 内部，闭包捕获 `cfg/local_llm/cloud_llm/llm_registry/receipt_store`）：
+> ```python
+>     # ── 工厂①：参数化 verify_gate 构造（抽自 :979-1038；mode 由调用方传，不绑 verifier_cfg.verify_gate_mode）。
+>     def _build_verify_gate(mode: str):
+>         """mode ∈ {"shadow","strict"}（"off" 由调用方提前短路，不进这里）。失败 → None（保守）。"""
+>         try:
+>             from pathlib import Path as _Path
+>             from deskpet.agent.verify_gate import (
+>                 RegexExtractor, VerifyGate, load_claim_patterns, make_ephemeral_verifier,
+>             )
+>             _vc = getattr(getattr(cfg, "tools", None), "verifier", None)
+>             # claim_patterns_file 缺省（verifier 段整体未配）时退默认路径（已核实默认 @ config.py:298）。
+>             _pf = _Path(getattr(_vc, "claim_patterns_file", "verify/claim_patterns.yaml")
+>                         if _vc else "verify/claim_patterns.yaml")
+>             if not _pf.is_absolute():
+>                 _pf = _Path(__file__).parent / _pf            # 同 :991-993，相对 backend/ 解析
+>             _patterns = load_claim_patterns(_pf)
+>             # 异体救援子代理走 ephemeral 独立模型（复用 ephemeral_subagent_model；解析失败回退主 LLM）。
+>             _eb = local_llm or cloud_llm                       # 同 :1000 _ephemeral_base
+>             _ep = _resolve_ephemeral_provider(
+>                 _eb, getattr(_vc, "ephemeral_subagent_model", "haiku") if _vc else "haiku",
+>             )
+>             _ell = _make_str_llm_call(_ep, max_tokens=256) if _ep is not None else None
+>             _sub = make_ephemeral_verifier(_ell) if _ell is not None else None
+>             return VerifyGate(extractor=RegexExtractor(_patterns), mode=mode, ephemeral_subagent=_sub)
+>         except Exception as _e:  # noqa: BLE001 — 接电失败不崩，退 None（SelfCheckGate 降级 + 告警）
+>             logger.warning("pipeline_build_verify_gate_failed err=%s", str(_e)[:200])
+>             return None
+>
+>     # ── 工厂②：external_evaluator 构造（抽自 :1076-1099，但 provider 改走 fresh model，B3 硬要求）。
+>     def _build_external_evaluator():
+>         """异体评分子代理：走 _resolve_ephemeral_provider 出独立 model（非执行者打分）。失败 → None。"""
+>         try:
+>             from deskpet.agent.external_evaluator import ExternalEvaluator as _EE  # noqa: PLC0415
+>             _vc = getattr(getattr(cfg, "tools", None), "verifier", None)
+>             _eb = local_llm or cloud_llm
+>             # ⚠️ B3/"遗漏:Step6"：必须 fresh model（≠ 主 LLM），故走 _resolve_ephemeral_provider，
+>             #    不走原 :1089 的 llm_registry.providers[0]（那是同模型）。缺省/失败回退主 LLM（保持可用）。
+>             _evp = _resolve_ephemeral_provider(
+>                 _eb, getattr(_vc, "ephemeral_subagent_model", "haiku") if _vc else "haiku",
+>             )
+>             if _evp is None:
+>                 return None
+>             logger.info("pipeline_external_evaluator_model model=%s base=%s",
+>                         getattr(_evp, "model", "?"), getattr(_eb, "model", "?"))
+>             _evc = _make_str_llm_call(_evp, max_tokens=512)
+>             # conservative_on_error=True：异体评分仅高后果触发，超时/错误保守拦（返 revise）非放行（同 :1097-1098）。
+>             return _EE(llm_call=_evc, conservative_on_error=True)
+>         except Exception as _e:  # noqa: BLE001
+>             logger.warning("pipeline_build_external_evaluator_failed err=%s", str(_e)[:200])
+>             return None
+> ```
+> 在 `return _AgentLoop(...)` 之前用这两个工厂装配 SelfCheckGate：
 > ```python
 > _self_check_gate = None
 > _pp = getattr(getattr(cfg, "features", None), "problem_pipeline", None)
 > if _pp is not None and _pp.enabled and _pp.self_check_mode != "off":
 >     from deskpet.agent.self_check_gate import SelfCheckGate
->     # ⚠️ B3：不复用上面那俩（它们随 tools.verifier flag 可能为 None）——强制为 pipeline 自建。
->     _sc_verify_gate = verify_gate
+>     # ⚠️ B3：不复用上面随 tools.verifier flag 可能为 None 的实例——强制为 pipeline 自建。
+>     _sc_verify_gate = verify_gate                    # tools.verifier 已开 → 直接复用（同模型语义一致）
 >     if _sc_verify_gate is None and receipt_store is not None:
 >         # tools.verifier.verify_gate_mode=off 时上面没建 → 用 self_check_mode 当 mode 强制建一套对账。
->         # mode 映射：strict→"strict"/light→"shadow"（轻量对账不阻塞）；缺 receipt_store 则只能退化（见下）。
+>         # mode 映射：strict→"strict"；light/shadow→"shadow"（VerifyGate 仅接受 off|shadow|strict，已核实
+>         # config.py:293 + verify_gate.py:292 raise on other）。缺 receipt_store 则只能退化（见下降级兜底）。
 >         _sc_mode = "strict" if _pp.self_check_mode == "strict" else "shadow"
->         _sc_verify_gate = _build_verify_gate(_sc_mode)   # 抽自 :980-1038 的工厂
->     _sc_external = _external_evaluator
+>         _sc_verify_gate = _build_verify_gate(_sc_mode)
+>     _sc_external = _external_evaluator                # tools.verifier.external_evaluator 已开 → 复用
 >     if _sc_external is None and _pp.self_check_heterogeneous:
->         # tools.verifier.external_evaluator=off 时上面没建 → 强制为异体评分建一套（走 _resolve_ephemeral_provider）。
->         _sc_external = _build_external_evaluator()        # 抽自 :1076-1097 的工厂；fresh model 见"遗漏:Step6"
+>         _sc_external = _build_external_evaluator()    # 强制为异体评分自建（fresh model）
+>     # 降级可观测（B3 核心）：二者皆不可得 → 不静默空门，启动期显式告警。
+>     if _sc_verify_gate is None and _sc_external is None:
+>         logger.warning("self_check_degraded reason=no_verify_no_evaluator sid_scope=build_agent")
 >     _self_check_gate = SelfCheckGate(
 >         verify_gate=_sc_verify_gate,
 >         external_evaluator=_sc_external,
 >         heterogeneous_enabled=_pp.self_check_heterogeneous,
 >     )
 > ```
-> 然后 _AgentLoop(...) 传 `self_check_gate=_self_check_gate`。build_agent 新增形参 `self_check_gate` 由 main.py
-> caller 透传时**忽略**（build_agent 自己构造），即 build_agent 不需要 caller 传 self_check_gate——删掉 3c 里的
-> `self_check_gate=...` caller 传参，改为 build_agent 内部构造。
-> > **降级兜底（B3）**：若 `receipt_store is None`（无凭据账本）→ 对账层无法工作 → SelfCheckGate 仍可只跑异体评分
-> > （非执行者打分）；二者皆不可得（无 receipt 且 heterogeneous=off）→ SelfCheckGate.check() 退化为 pass，但**启动期
-> > `logger.warning("self_check_degraded reason=no_verify_no_evaluator")`** 显式告警，**不再静默空门**（这是 B3 的核心：
-> > 哪怕降级也要可观测，而非伪装通过）。`⚠️待实现时复核` `_build_verify_gate`/`_build_external_evaluator` 工厂抽取细节。
+> 然后 _AgentLoop(...) 传 `self_check_gate=_self_check_gate`。build_agent **不需要** caller 传 self_check_gate
+> （内部构造）——删掉 3c 里的 `self_check_gate=...` caller 传参。
+> > **降级兜底（B3）**：`receipt_store is None`（无凭据账本）→ 对账层无法工作（`_build_verify_gate` 那支被
+> > `receipt_store is not None` 守门跳过）→ SelfCheckGate 仍可只跑异体评分；二者皆不可得（无 receipt 且
+> > heterogeneous=off）→ SelfCheckGate.check() 退化为 pass，但上面**启动期 `logger.warning("self_check_degraded
+> > reason=no_verify_no_evaluator")`** 已显式告警，**不再静默空门**（B3 核心：哪怕降级也可观测，不伪装通过）。
 
 ---
 
@@ -1824,7 +1943,7 @@ WI-0 (config)  ──┬─► WI-1 (Step1 IntentTriage + 编排器壳)
 | **WI-1** | N1 intent_triage.py + N6 problem_pipeline.py 壳 | 依赖 WI-0 | 单测：chitchat 短路、歧义澄清出口、safe-fail、prior_task_type 映射 |
 | **WI-2** | N3 contradiction_analyzer.py | 依赖 WI-1（用 IntentCard.problem_type）| 单测：should_trigger 条件、safe-fail、attack_order 解析 |
 | **WI-3** | M1 plan.py 三升级 | 依赖 WI-0，可与 WI-1/2 并行 | 单测：旧签名 BC（不传新参 = 旧行为）、companion_enabled 分支、attack_order 注入、parallelizable 解析 |
-| **WI-4a** | N2 evidence_gate.py | 依赖 WI-0，独立 | 单测：BLOCK 条件、白名单命中放行、max_nudges 耗尽放行 |
+| **WI-4a** | N2 evidence_gate.py | 依赖 WI-0，独立 | 单测：BLOCK 条件（`evidence_gathered=False`）、`evidence_gathered=True` 放行、`is_investigative` 白名单判定、max_nudges 耗尽放行；**R1 回归：compaction 后（working_messages 被整体替换变短）`evidence_gathered=True` 仍放行不误注入** |
 | **WI-4b** | N4 self_check_gate.py | 依赖 WI-0，独立 | 单测：按 problem_type 选档、复用 verify_gate（mock）、异体评分触发条件、chitchat 跳过 |
 | **WI-4c** | N5 convergence_controller.py | 依赖 WI-0，独立 | 单测：量化收敛判据、止损报告、资源触顶判定（mock TerminationGate.summary）|
 | **WI-5** | M3 改动 3a/3b/3d/3e（main.py PRE-LOOP 编排 + plan 传参 + 事件转发 + lifespan 构造）| 依赖 WI-1/2/3 | live smoke：flag on 时 PRE-LOOP 跑通发事件；flag off 时 BC |
@@ -1853,8 +1972,11 @@ WI-0 (config)  ──┬─► WI-1 (Step1 IntentTriage + 编排器壳)
    main.py:1001 已用它。**修复**：§M3 改动 3e 的 `_build_external_evaluator()` 工厂内，evaluator 的 provider 必须经
    `_resolve_ephemeral_provider(local_llm or cloud_llm, _pp.evaluator_model 或 verifier_cfg.ephemeral_subagent_model)`
    解析出**独立 model provider** 再喂 ExternalEvaluator；**缺省/解析失败回退主 LLM**（与 :711 回退语义一致，保持可用）。
-   真测 TC-4 须确认评分 provider 的 `model=` ≠ 主 LLM（05 已要求）。`⚠️待实现时复核`：evaluator_model 是否需在
-   ProblemPipelineConfig 新增一个字段，或直接复用 `[tools.verifier].ephemeral_subagent_model`（倾向复用，少加 flag）。
+   真测 TC-4 须确认评分 provider 的 `model=` ≠ 主 LLM（05 已要求）。**✅ round-2 R3 已拍板**：evaluator_model
+   **复用 `[tools.verifier].ephemeral_subagent_model`**（已核实 config.py:295 存在，默认 `"haiku"` + 白名单校验
+   @ :662-673），**不新增** `problem_pipeline.self_check_model`——少加 flag、与 verify_gate ephemeral 同语义。
+   `_build_external_evaluator()` 完整骨架见 §M3 改动 3e；注意它**不照抄**原块 :1089 的 `llm_registry.providers[0]`
+   （那是主 LLM 同模型），改走 `_resolve_ephemeral_provider` 出 fresh model（已核实差异）。
 
 4. **装配顺序硬约束（ConvergenceController 需 TerminationGate）**：gate 在 `_AgentLoop.__init__`(:618) 内构造，
    main.py 拿不到。**必须**让 _AgentLoop 自己构造 ConvergenceController（M3 改动 3c 已给修正方案：传
@@ -1877,11 +1999,14 @@ WI-0 (config)  ──┬─► WI-1 (Step1 IntentTriage + 编排器壳)
 7. **config features 加载两次**（已核实 config.py:1332 + :1359）：M4 改 load_config 时**两处都要改**或删重复块，
    否则第二次 `_load_section(FeaturesConfig, raw["features"])` 用未 pop problem_pipeline 的 raw 覆盖第一次结果。
 
-8. **working_messages tool name 收集**（M2 改动 2b 的 `_collect_tool_names`）：依赖 tool 消息有 `name` 字段
-   （已核实 :2251-2257 append 结构含 name）。**✅ 红队 M-2 已修复**：bundle.history 注入的旧 tool 消息**确实带
-   name**，会误判"已取证"使取证门对有历史会话恒失效。修复 = 改动 2b-0 在 run() 开头（:659 之后）记
-   `self._evidence_baseline_len = len(working_messages)`，EvidenceGate 只看 `working_messages[baseline:]` 切片，
-   排除历史 tool 消息。此前的"⚠️待复核"已落实为硬代码改动，不再是悬而未决项。
+8. **★ evidence 取证判定对 compaction 必须鲁棒**（M2 改动 2b-0/2b-1/2b 的布尔累积标志）：依赖 tool 消息有 `name`
+   字段（已核实 :2251-2258 append 结构含 name）。**✅ round-2 R1 已修复（替换原 M-2 的切片方案）**：第 1 轮"绝对
+   长度切片 `working_messages[baseline:]`"对 loop 内 compaction **不鲁棒**——compaction 整体替换 working_messages
+   （`= _cresult.messages` @ :999、`= self._remount_skills(...)` @ :1003，均已核实）后 `baseline_len > len` → 切片返空
+   → 误判"零取证"强注入 `<调查>`；且压缩由 token 预算驱动，长取证场景（正是 needs_investigation 主战场）最易触发。
+   **修复 = 布尔累积标志**：run() 开头（:659 后）`self._evidence_gathered=False` + 快照 `self._history_tool_names`；
+   dispatch（:2101 循环）真发起取证类工具（白名单命中 且 不在 history 快照）→ 置 True；EvidenceGate 改看该布尔。
+   布尔不随 working_messages 列表走，**compaction 整体替换天然免疫**，同时仍排除 history 旧 tool（承接 M-2 语义）。
 
 9. **Step6 双重对账风险**：SelfCheckGate 复用 self.verify_gate.check()，而旧 verify_gate 守门块（:1486）
    也调 check()。M2 改动 2c 用 `if self._self_check_gate is not None: ... elif verify_gate ...` 互斥保证
@@ -1913,6 +2038,16 @@ WI-0 (config)  ──┬─► WI-1 (Step1 IntentTriage + 编排器壳)
 | **m-3** MINOR | config features 双加载（:1333+:1359）——倾向删第二处有丢 runtime override 风险 | §M4 改为"两处都改成 pop 子表，别盲删；要删须先 grep 确认无依赖" | `config.features=_load_section(...)` @ config.py:1333 和 :1359 |
 | **遗漏:Step6** | 异体语义被降级——03 §3 Step6 写 `_resolve_ephemeral_provider` fresh model，04 退化成"同模型不同 persona" | §风险#3 + §M3 3e `_build_external_evaluator()`：evaluator provider 经 `_resolve_ephemeral_provider` 克隆独立 model，缺省/失败回退主 LLM；对齐 03/00 | `_resolve_ephemeral_provider` @ main.py:703；verify_gate 已用它 @ :1001 |
 | **05 补** | L1 缺 chitchat zero-LLM-call 断言写法；TC-1 缺 classifier chat/emotion 覆盖率前置度量 | 05 §L1 补 `AsyncMock`+`assert_not_called()`/`call_count==0` 写法 + 非闲聊反向 `await_count==1`；05 §L3 TC-1 补闲聊语料覆盖率度量（≥80% 阈值 + 写进报告）| — |
+
+### 8.1 第 2 轮对抗审查修订记录（round-2，无 BLOCKER，3 个缺陷已就地修）
+
+> 第 2 轮红队复审确认无 BLOCKER。3 个需修缺陷已在正文就地改正（非仅此处追加）。所有行号回真实 master 核实。
+
+| 编号 | 缺陷 | 修复落点（正文章节）| 核实锚 |
+|---|---|---|---|
+| **R1** MAJOR | evidence baseline 对 compaction 不鲁棒——第 1 轮 `working_messages[baseline:]` 绝对长度切片，但 loop 内 compaction 整体替换 working_messages（变短）→ `baseline>len` → 切片返空 → EvidenceGate 误判"零取证"强注入 `<调查>`；压缩由 token 预算驱动，长取证场景最易触发 | **弃用切片，改布尔累积标志**：§M2 改动 2a（`self._evidence_gathered=False`+`self._history_tool_names`）/ 2b-0（run() 开头初始化+快照 history）/ 2b-1（dispatch 时按白名单+history 快照置位，**新增**）/ 2b（EvidenceGate.check 改收 `evidence_gathered: bool`）；§N2 加 `is_investigative()` + check 签名换；§7 风险#8、§6 WI-4a 同步改 | compaction 整体替换 `working_messages=_cresult.messages` @ agent_loop.py:999、`=self._remount_skills(...)` @ :1003；`working_messages=list(messages)` @ :659；dispatch `for tc in response.tool_calls` @ :2101；tool append 含 name @ :2251-2258 |
+| **R2** MINOR | Step6 SelfCheckGate 新分支丢 `response.content` 守卫——原 verify_gate 块准入含 `... and response.content`，新分支只有 `iteration<TIER3 and self._self_check_gate is not None and problem_type is not None`，end_turn 但 content 空时用空 assistant_text 跑 check() 误判 | §M2 改动 2c：新 if 分支补 `and response.content`；同步把 `elif`（原 verify_gate 路径）补回 `verify_nudges_used < self.max_verify_nudges` + `response.content` 全条件，勿因示意省略丢条件 | 原 verify_gate 块准入 `... and verify_nudges_used<max and response.content` @ agent_loop.py:1486-1493 |
+| **R3** MINOR | B3 工厂缺可粘贴实现 + evaluator_model 未拍板——3e 仍标 `⚠️待复核`，`_build_verify_gate`/`_build_external_evaluator` 无骨架；external_evaluator 原走 `providers[0]`（主 LLM 同模型）≠ B3 要的 fresh model | §M3 改动 3e：补两个工厂**完整可粘贴骨架**（内部依赖 cfg/local_llm/cloud_llm/receipt_store 怎么拿、provider 统一走 `_resolve_ephemeral_provider`、失败回退主 LLM）；**拍板 evaluator_model = 复用 `[tools.verifier].ephemeral_subagent_model`**（不新增 flag）；去掉 `⚠️待复核` 标记；§7 风险#3 同步 | verify_gate 构造块 @ main.py:979-1038；external_evaluator 块 @ :1076-1099（`providers[0]` @ :1089）；`_resolve_ephemeral_provider` @ :703（回退 @ :711-721）；`_make_str_llm_call` @ :684；`ephemeral_subagent_model:str="haiku"` @ config.py:295（白名单 @ :662-673）；VerifyGate 仅接受 off\|shadow\|strict @ verify_gate.py:292 |
 
 **装配顺序硬约束（B1/B3/M-1 联动，实现者务必按此 DAG）**：
 1. **先做 M5（context.py 注册 4 key）+ M4（config + backfill）** = WI-0，是后续所有 register/get/flag 读取的前置。
