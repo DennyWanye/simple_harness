@@ -97,6 +97,25 @@ run_tests = false
 # Claim 短语规则文件（regex + ReDoS 拒）
 claim_patterns_file = "verify/claim_patterns.yaml"
 
+[features.problem_pipeline]
+# 七步问题处理流水线（毛选方法论锚，仅 Companion 主线）。决策1：测试环境出厂即开全量验证。
+# flag 仅作 kill-switch + 单步调试：出问题时关某步（如 evidence_gate=false）或整条 enabled=false 一键回退。
+# 不做 shadow→light→strict 灰度档；self_check 是 bool，严格度由内部按 problem_type 选。
+# 决策3：analysis_model / self_check_model 留空=复用主 LLM gpt-5.5（不硬依赖 haiku）。
+enabled = true
+intent_triage = true             # Step1+3 合并预分析（意图 + 主要矛盾，1 次 LLM）
+intent_clarify_threshold = 0.7
+evidence_gate = true
+evidence_max_nudges = 2
+# evidence_investigative_tools = ["search","read","grep","inspect","web_search","deepresearch"]
+plan_companion_enabled = true    # 为 Companion 主线新增 plan（code 模式不动）
+analysis_model = ""              # 留空=主 LLM gpt-5.5
+self_check = true                # 自检总开关（bool；严格度内部按 problem_type 选）
+self_check_model = ""            # 留空=主 LLM gpt-5.5
+self_check_heterogeneous = true
+convergence_report_on_stop = true
+observability_events = true
+
 [asr]
 provider = "faster-whisper"
 model = "large-v3-turbo"
