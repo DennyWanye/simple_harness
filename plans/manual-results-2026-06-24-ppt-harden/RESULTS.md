@@ -26,10 +26,20 @@
 
 **判定**：3 项硬化代码本身已单测充分验证（穿过真实 `_render_pro`）;完整惊艳渲染路径 **2026-06-24 早些时候已在 C: 真机全程 PASS**（同一渲染代码）。本轮 G: 真测因 **stale dev 环境配置**（8000-token agent-loop 预算块）阻断,非产品/改动缺陷。
 
-## 待办（环境/产品，独立于本次硬化）
+## 根因已查清（8000-token 预算块）
 
-- 🔎 **查 `p5s2_token_budget_block window=8000` 来源** —— 若 agent-loop 预算真有 8000 硬默认且不随 `context_window_tokens` 走,长会话用户会被误拦,值得修。（C: window=1000000 不复现 → 优先对比两份 config。）
-- 🧹 G: `backend/userdata` 的 Jun-22 旧会话/config 偏 stale,后续真测建议先核对 config 或清旧默认会话。
+**非代码 bug —— 是 G: 的配置误设。** `backend/userdata/model_overrides.toml` 把
+`[models."gpt-5.5"] context_window = 8000`（某次 SettingsPanel「模型上下文」卡片误设/测试遗留）。
+`llm/model_info.py::resolve()` 三层解析（builtin 1M ← **global override** ← project）
+正确应用了这个 global 层 → agent-loop 预算块按 window=8000 判定 → 任何 >8000 token
+的对话（ppt_pro 多轮编排必然超）被 `CONTEXT_BUDGET_BLOCK`。今早 C: `source=global
+window=1000000` 不复现，正是因为 C: 同名文件是 1M。**预算块代码本身无误**（正确用了
+resolved window）。**已修**：G: override 改回 `context_window = 1000000`（与 builtin 对齐）。
+
+### 残留产品观察（非阻塞，edge）
+- 用户若在 SettingsPanel 把窗口设得过小（如 8000），`ppt_pro` 这类多轮后台编排会被
+  硬 BLOCK 且只在后端 ERROR 日志可见、前端无明确提示。属极端误设（gpt-5.5 名义 1M），
+  优先级低；若要硬化可在 ppt_pro 启动前对过小窗口给前端提示。
 
 ## 证据
 `tauri-dev.log` / `tauri-dev2.log`（两轮后端日志）· `screenshots/`（路由确认、大纲阶段、卡片 stall）· `launch-dev-g.ps1` / `send-prompt.ps1`（SendInput 圣杯：WebView2 既忽略老式 mouse_event 也忽略 SendKeys，键鼠都走 SendInput）。
