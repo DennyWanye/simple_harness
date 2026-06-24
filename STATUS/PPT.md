@@ -106,8 +106,9 @@ else:
 
 ---
 
-## 8. 真机验证状态(2026-06-22)
+## 8. 真机验证状态(2026-06-24 更新)
 
+- **`ppt_pro` 惊艳生图路径 × doubao-seedream-4.0** ✅ **PASS(2026-06-24)** —— 补齐之前被 gpt-image-2 403 卡住、从未验证过的 happy path:主题「在AI时代,程序员的核心竞争力是什么?」→ 路由 ppt_pro(image_mode=true)→ 真 deepresearch(3 源)→ 大纲卡(带引用 `[^1][^2][^3]`)+ SendInput 真点确认 → **8× `images/generations 200`(seedream-4.0)** → `render path=fromscratch(惊艳)`(**未降级模板**)→ 2.88MB/8 页 pptx 落盘 → WPS 自动打开(8 页全 AI 整页图)。耗时 ~13min/8 图(超时预算内)。真测中发现 **C: 盘满**致持久化 disk I/O error,但 orchestration best-effort 降级未崩、清盘后自恢复。证据 [plans/manual-results-2026-06-24-ppt-seedream/](../plans/manual-results-2026-06-24-ppt-seedream/RESULTS.md)。
 - **`ppt_pro` F1-F4 端到端逻辑链路** ✅ PASS(2026-06-22):F1 deepresearch 真调研(搜狗百科直连)→ F2 拟纲 6K+ 字流 → F3 大纲卡真渲染 + SendInput 真点击确认 → F4 首图实测判定(gpt-image-2 真 403→切模板)→ deck 5 页落盘自动打开(WPS)。TC-4 模板回退 PASS;TC-9 preempt 不杀确认链路 PASS。真测中**揪出并修复 2 真 bug**(路由缺口 / 渲染 executor 线程 hang 双根因)。证据 [plans/manual-results-2026-06-22-ppt-pro/](../plans/manual-results-2026-06-22-ppt-pro/)。
 - **模板设计页 + 预览图视觉选** ✅ PASS(2026-06-20):LLM 选大类「高级色」→ 真 vision `vision chose id=77 → (177).pptx` → design-pages 填充 + 模板视觉闭环 2 轮 → 5 页产物。
 - **AI 整页配图(gpt-image-2)** ✅ PASS(2026-06-20):「深海探秘」3 页 → gpt-image-2 出图 200×3 → 视觉评审 `issues=0` → 落盘 + 自动打开(WPS)。深海潜航器/幽光水母/海沟全屏电影感大图。
