@@ -65,6 +65,7 @@
 
 | 日期 | 里程碑 |
 |---|---|
+| 2026-06-24 | **Code 模式入口暂关闭（聚焦主线程 Companion）+ 问题处理流水线 plan 定稿 EXECUTABLE-AS-IS ✅** — 产品侧关闭 Code 模式入口（`Toolbar.tsx CODE_MODE_ENTRY_ENABLED=false` + `App.tsx` 抑制 `code_mode_suggest`，翻 true 即恢复），`tsc -b` 通过 + **windows-mcp 真机截图确认工具栏 terminal 按钮消失**（证据 `plans/2026-06-24-problem-handling-pipeline-maoxuan/exec/toolbar-crop.png`）；待主线做实后另开 plan 优化 Code 模式重新上线。**问题处理流水线 plan**（毛选方法论锚的显式七步 + 取证门控/异体自检/收敛止损三道闸，只作用 Companion 主线）经 **5 轮子代理对抗迭代**收敛至 EXECUTABLE-AS-IS（codex 撞 Windows ConstrainedLanguage 沙箱墙 err1223 → 回退内置子代理）；尚未实现，待执行：[plan 目录](../plans/2026-06-24-problem-handling-pipeline-maoxuan/)。 |
 | 2026-06-24 | **PPT 惊艳生图路径真机 E2E PASS × doubao-seedream-4.0；gpt-image-2 全面下线 ✅** — relay 下线 gpt-image-2（`8cb6b3d9`），图像默认切 `doubao-seedream-4.0`（真链路实测可用，`image_tools.py:44`）；`ppt_pro` 惊艳生图路径端到端跑通真机 PASS（`719a0b49`）；SKILL.md/注释/plan 清理残留 gpt-image-2 引用 + depth 不再作 LLM 参数（`58ee7a08`/`228a3d59`）。 |
 | 2026-06-24 | **上下文管理 — 三处盲区修复 (Risk 1/2/3)，常见场景生产可用 ✅** — `ffd4f748` 修三处盲区（调查报告 `63683121`：3 针对性真测 + Risk1/2/3 处置）。结论按报告原口径：**主力（检索增强截断 + agent 回读）真机证明稳、常见场景可上生产**；B2 LLM 压缩 + 95% BLOCK 闸为休眠兜底（不影响安全）。⚠️ 诚实保留两处窄风险：单会话 256+ 次截断后不可重跑 stdout 的 ref 被 LRU 淘汰；BLOCK 闸分母只数 working_messages 漏算 base（小 window+大 schema 模型下可能不响）。 |
 | 2026-06-24 | **dev 数据路径修复 — 源码跑时数据落 repo `backend/userdata`(G:)，不再污染 C: %AppData% ✅** — `8ada7269`，对齐 [[reference_dev_userdata_dir_on_g]] 记忆；dev 模式从源码跑时数据目录落仓库内，避免掉 C: 盘满。 |
