@@ -4662,7 +4662,7 @@ def _register_ppt_tool() -> None:
             _handle_ppt_create,
             permission_category="write_file",
             # 纯文本/模板填充约 1~3s;但带 image_prompt 的整页生图(B-2)会
-            # 在 _autofill_image_prompts 里串行调 gpt-image-2(每张 70~180s,
+            # 在 _autofill_image_prompts 里串行调 AI 出图(每张 70~190s,
             # 偶发等满 300s),N 页 deck 可达数分钟。给足预算避免 registry
             # 在生图跑完前杀掉 handler。注:同步阻塞 UX 由后续异步化改善。
             timeout_seconds=1200.0,

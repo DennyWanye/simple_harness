@@ -1,5 +1,14 @@
 # PPT 能力优化 — DeepResearch 调研 → 大纲确认 → 惊艳生图(gpt-image-2) / 模板兜底
 
+> ⚠️ **2026-06-24 实现后偏差批注（不改下方 LOCKED 正文，只记实现已偏离之处）**：
+> 1. **图像模型**：本文通篇写 `gpt-image-2`，但中转站已下线该模型 →
+>    **实现默认改用 `doubao-seedream-4.0`**（真链路实测可用，commit `8cb6b3d9`）。
+>    文中所有 "gpt-image-2" 应读作"当前默认图像模型"。换模型只改 `config.toml [image].model`。
+> 2. **depth 参数**：WI-7 的 `_PPT_PRO_SCHEMA` 原暴露 `depth:enum` 给 LLM →
+>    **实现已锁死 `[ppt].pro_default_depth=deep` 并从 schema 删除**（用户决策"档位锁成 deep"），
+>    LLM 不能再传 depth。SKILL.md 已同步（commit `58ee7a08`）。
+> 3. 其余 WI（F1–F4 全链路、大纲卡、回退、receipt/artifact 通道）均已按本文落地。
+
 > **状态**: **v1.3 LOCKED — R6 终判 `VERDICT: EXECUTABLE-AS-IS`（3 处微修全部「修对」、无新坑、无连锁）。可执行。**
 > **对抗轨迹**：R1 codex 4B+3M / architect 2B+4M → R2 codex 1B+3M → R3 codex **EXECUTABLE-AS-IS**（v1.0 LOCKED）→ v1.1 并入用户决策（FP-5 风格大纲卡+历史/deep档/落盘/不注明费用）→ R4 codex 0B+3M（大纲卡 delta）→ v1.2 → R5 codex 1B+2M（v1.2 修复自身的并发细节：cancel-race/跨重启死卡/double-pop）→ v1.3 → R6 codex **EXECUTABLE-AS-IS**。BLOCKING 轨迹 6→1→0→0→1→0 收敛。6 轮挑战记录见 `.challenge-r{1..6}.out`。
 > **建档**: 2026-06-21
