@@ -2,7 +2,10 @@
 
 > **Plan 目录**: `plans/2026-06-24-problem-handling-pipeline-maoxuan/`
 > **创建**: 2026-06-24
-> **状态**: DRAFT（待子代理对抗迭代 → EXECUTABLE-AS-IS → 用户 review）
+> **状态**: ✅ EXECUTABLE-AS-IS（2026-06-24 经 5 轮子代理对抗迭代收敛：决策前 3 轮 3 BLOCKER+5 MAJOR→0；
+> 按用户 4 决策回写后内置 1 轮 1 MAJOR+4 MINOR→全修；独立终审 0 BLOCKER 0 MAJOR）。
+> 注：codex(gpt-5.5) 子代理经 3 变体实测撞 Windows ConstrainedLanguage 沙箱墙(err 1223)无法运行，
+> 按 codex-usage.md 回退内置子代理对抗。待用户最终 review → 执行。
 > **一句话**: 把 DeskPet 当前"收到问题就裸 ReAct 反应式作答"的处理方式，升级为一条
 > 以《毛泽东选集》方法论为骨、以现代 agent 工程（Claude Code / OpenHands / Hermes）为
 > 肉的**显式七步问题处理流水线**，并把"取证门控 / 异体自检 / 收敛止损"三道闸做成主干。
