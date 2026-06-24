@@ -20,6 +20,11 @@ import { Icon, type IconName } from "./Icon";
 import { ContextRing } from "./ContextRing";
 import type { ContextUsageSnapshot } from "../stores/sessionsStore";
 
+// 2026-06-24：暂时关闭 Code 模式入口。决策见
+// plans/2026-06-24-problem-handling-pipeline-maoxuan/ —— 先把主线程(Companion)
+// 问题处理能力做实，再单独对 Code 模式优化并重新上线。翻回 true 即恢复入口按钮。
+const CODE_MODE_ENTRY_ENABLED = false;
+
 interface Props {
   /** @deprecated chat path is unified now; kept to avoid prop-drilling churn */
   useToolUseLoop?: boolean;
@@ -125,13 +130,15 @@ export const Toolbar: React.FC<Props> = ({
       <IconButton title="设置" testId="settings-toggle" icon="settings" onClick={onSettings} />
       <IconButton title="技能商店" testId="skill-store-toggle" icon="store" onClick={onSkillStore} />
       <IconButton title="反馈问题" testId="feedback-toggle" icon="bug" onClick={onFeedback} />
-      <IconButton
-        title={codeModeActive ? "Code 模式已开启 — 点击切换项目" : "进入 Code 模式（编程助手）"}
-        testId="code-mode-toggle"
-        icon="terminal"
-        onClick={onCodeMode}
-        active={codeModeActive}
-      />
+      {CODE_MODE_ENTRY_ENABLED && (
+        <IconButton
+          title={codeModeActive ? "Code 模式已开启 — 点击切换项目" : "进入 Code 模式（编程助手）"}
+          testId="code-mode-toggle"
+          icon="terminal"
+          onClick={onCodeMode}
+          active={codeModeActive}
+        />
+      )}
       <IconButton
         title="退出 DeskPet"
         testId="exit-toggle"

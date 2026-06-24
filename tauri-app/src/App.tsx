@@ -647,8 +647,11 @@ function App() {
       const items = (lastMessage.payload as any)?.items || [];
       setCodeTodos(items);
     } else if (lastMessage.type === "code_mode_suggest") {
-      const p: any = lastMessage.payload || {};
-      setCodeSuggest({ trigger_text: p.trigger_text || "" });
+      // 2026-06-24: Code 模式入口已暂时关闭（见 Toolbar.tsx CODE_MODE_ENTRY_ENABLED），
+      // 不再弹"进入 Code 模式"建议条（其"接受"会经 codeEnterHandlerRef 进入 code 模式，
+      // 属第二软入口）。恢复 Code 模式时一并恢复下面两行。
+      // const p: any = lastMessage.payload || {};
+      // setCodeSuggest({ trigger_text: p.trigger_text || "" });
     }
   }, [lastMessage]);
 

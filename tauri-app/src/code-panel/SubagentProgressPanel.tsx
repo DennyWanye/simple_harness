@@ -16,7 +16,7 @@
  *     → 渲染成「🚫 已取消」而非「❌ 失败」（区分主动取消 vs 真失败）。
  *   • 出现/消失带淡入动画（index.css `@keyframes deskpet-subagent-*`）。
  */
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSubagentStore, type SubagentRunView } from "./subagentStore";
 
 const KIND_LABEL: Record<string, string> = {
