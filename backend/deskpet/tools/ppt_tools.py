@@ -2331,6 +2331,55 @@ def _autofill_with_connectivity_gate(slides: list[SlideOutline]) -> tuple[bool, 
     return True, n_ok
 
 
+def _drive_free_bytes(path: Path) -> Optional[int]:
+    """Free bytes on the volume containing ``path``, walking up to the first
+    existing parent (the dir may not exist yet on a fresh install). Returns
+    None if it can't be determined. Never raises."""
+    import shutil
+
+    p = path
+    for _ in range(8):
+        try:
+            return shutil.disk_usage(str(p)).free
+        except Exception:  # noqa: BLE001
+            if p.parent == p:
+                return None
+            p = p.parent
+    return None
+
+
+def _disk_preflight(*, image_mode: bool, pages: int) -> Optional[str]:
+    """Return a user-facing error message if the user-data volume is too low
+    on free space to safely generate images + write the ``.pptx``, else None.
+
+    Conservative estimate so we fail *early* with a clear ask instead of
+    crashing mid-render with a ``disk I/O error`` (observed 2026-06-24 when
+    C: hit 0 bytes). Never raises — on any uncertainty it returns None so a
+    space check can never itself block a valid render."""
+    try:
+        from paths import user_data_dir  # type: ignore[import-not-found]
+
+        base = user_data_dir()
+    except Exception:  # noqa: BLE001
+        return None
+    free = _drive_free_bytes(base)
+    if free is None:
+        return None
+    per_page_mb = 8 if image_mode else 1  # seedream PNG ~1-3MB/page + headroom
+    need_mb = 60 + max(1, int(pages)) * per_page_mb
+    free_mb = int(free / (1024 * 1024))
+    if free_mb >= need_mb:
+        return None
+    try:
+        drive = base.anchor or str(base)
+    except Exception:  # noqa: BLE001
+        drive = str(base)
+    return (
+        f"磁盘空间不足：{drive} 仅剩 {free_mb}MB，生成这份 PPT 约需 "
+        f"{need_mb}MB，请清理磁盘后重试。"
+    )
+
+
 def _render_pro(
     slides: list[SlideOutline],
     *,
@@ -2346,6 +2395,11 @@ def _render_pro(
     working = [copy.deepcopy(s).normalize() for s in slides]
     log.info("ppt_pro _render_pro start image_mode=%s pages=%d", image_mode, len(working))
 
+    disk_err = _disk_preflight(image_mode=image_mode, pages=len(working))
+    if disk_err:
+        log.warning("ppt_pro disk preflight blocked render: %s", disk_err)
+        return {"ok": False, "error": disk_err}
+
     if image_mode and not probe_image_reachable(timeout_s=probe_timeout_s):
         use_template = True
         notify("AI 配图暂时连不上，已切换模板生成。")
@@ -2355,6 +2409,18 @@ def _render_pro(
         if not reachable:
             use_template = True
             notify("AI 配图暂时用不了，已切换模板生成。")
+        else:
+            # Partial-failure visibility: the gate skips images that fail
+            # after the first one succeeds (those slides keep their prompt
+            # but no image_path). Tell the user instead of silently shipping
+            # a deck with blank image slots.
+            n_want = sum(1 for s in working if s.image_prompt)
+            n_got = sum(1 for s in working if s.image_prompt and s.image_path)
+            if 0 < n_got < n_want:
+                notify(
+                    f"有 {n_want - n_got}/{n_want} 张配图没生成成功，"
+                    f"这些页改用纯色版式（其余 {n_got} 张已配图）。"
+                )
 
     if use_template:
         # bug#2 修：回退**不走大类名 vision 选图**（外部 2.8GB 库 PIL 拼 contact-sheet
@@ -4384,8 +4450,17 @@ async def _ppt_pro_report_done(result: dict, *, notifier, session_id: str) -> No
                 except Exception as exc:  # noqa: BLE001
                     log.warning("ppt_pro receipt report failed: %s", exc)
             if path:
-                _open_image_file(str(path))
-                await _notify(notifier, session_id, f"✨ PPT 做好啦，已自动打开：{path}")
+                opened = _open_image_file(str(path))
+                if opened:
+                    await _notify(notifier, session_id, f"✨ PPT 做好啦，已自动打开：{path}")
+                else:
+                    # No associated app (e.g. no WPS/PowerPoint installed) or
+                    # the open call was refused — don't claim we opened it.
+                    await _notify(
+                        notifier,
+                        session_id,
+                        f"✨ PPT 做好啦，已保存到：{path}\n（没能自动打开，麻烦你手动打开看看～）",
+                    )
             else:
                 await _notify(notifier, session_id, "✨ PPT 做好啦。")
             return

@@ -61,7 +61,10 @@ def _slides() -> list[SlideOutline]:
 def test_render_pro_probe_false_uses_template_and_skips_image_gen(monkeypatch):
     calls: list[tuple[object, dict]] = []
     monkeypatch.setattr(ppt_tools, "probe_image_reachable", lambda *, timeout_s: False, raising=False)
-    monkeypatch.setattr(ppt_tools, "_default_template", lambda: "tpl")
+    # Template fallback uses the deterministic bundled-template path (bug#2 fix),
+    # not the legacy _default_template / vision picker.
+    monkeypatch.setattr(ppt_tools, "_fallback_template_path", lambda: "tpl")
+    monkeypatch.setattr(ppt_tools, "_disk_preflight", lambda **_k: None)
 
     def fake_ppt_create(outline, **kwargs):
         calls.append((outline, kwargs))
@@ -85,7 +88,8 @@ def test_render_pro_probe_false_uses_template_and_skips_image_gen(monkeypatch):
     outline, kwargs = calls[0]
     assert kwargs["skip_image_gen"] is True
     assert kwargs["template"] == "tpl"
-    assert all(slide.image_prompt is None for slide in outline)
+    # _render_pro passes asdict() dicts to ppt_create (bug#2-b fix), not SlideOutline.
+    assert all(slide["image_prompt"] is None for slide in outline)
     assert messages
 
 
@@ -142,6 +146,7 @@ def test_render_pro_all_success_uses_image_path_without_second_generation(monkey
 
     calls: list[tuple[object, dict]] = []
     monkeypatch.setattr(ppt_tools, "generate_images", fake_generate, raising=False)
+    monkeypatch.setattr(ppt_tools, "_disk_preflight", lambda **_k: None)
     monkeypatch.setattr(ppt_tools, "ppt_create", lambda outline, **kwargs: calls.append((outline, kwargs)) or {"ok": True})
 
     result = ppt_tools._render_pro(
@@ -159,7 +164,99 @@ def test_render_pro_all_success_uses_image_path_without_second_generation(monkey
     outline, kwargs = calls[0]
     assert kwargs["skip_image_gen"] is True
     assert "template" not in kwargs or kwargs["template"] is None
-    assert [s.image_path for s in outline] == ["0.png", "0.png"]
+    # outline items are asdict() dicts (bug#2-b), not SlideOutline objects.
+    assert [s["image_path"] for s in outline] == ["0.png", "0.png"]
+
+
+def test_disk_preflight_blocks_when_low_and_passes_when_enough(monkeypatch):
+    # Low free space → clear user-facing error.
+    monkeypatch.setattr(ppt_tools, "_drive_free_bytes", lambda _p: 10 * 1024 * 1024)
+    msg = ppt_tools._disk_preflight(image_mode=True, pages=8)
+    assert msg is not None and "磁盘空间不足" in msg
+    # Plenty of space → no block.
+    monkeypatch.setattr(ppt_tools, "_drive_free_bytes", lambda _p: 50 * 1024 * 1024 * 1024)
+    assert ppt_tools._disk_preflight(image_mode=True, pages=8) is None
+    # Unknown free space (probe failed) → must never block a valid render.
+    monkeypatch.setattr(ppt_tools, "_drive_free_bytes", lambda _p: None)
+    assert ppt_tools._disk_preflight(image_mode=True, pages=8) is None
+
+
+def test_render_pro_aborts_early_on_low_disk(monkeypatch):
+    monkeypatch.setattr(ppt_tools, "_disk_preflight", lambda **_k: "磁盘空间不足：C:\\ 仅剩 5MB，请清理后重试。")
+    called = {"ppt_create": 0, "probe": 0}
+    monkeypatch.setattr(ppt_tools, "ppt_create", lambda *a, **k: called.__setitem__("ppt_create", called["ppt_create"] + 1) or {"ok": True})
+    monkeypatch.setattr(ppt_tools, "probe_image_reachable", lambda *, timeout_s: called.__setitem__("probe", called["probe"] + 1) or True, raising=False)
+
+    result = ppt_tools._render_pro(
+        _slides(), theme="minimal", title="D", author="T",
+        output_path=None, image_mode=True, probe_timeout_s=0.01, notify=lambda _m: None,
+    )
+
+    assert result["ok"] is False
+    assert "磁盘空间不足" in result["error"]
+    assert called["ppt_create"] == 0  # aborted before any render
+    assert called["probe"] == 0       # aborted before image probe too
+
+
+def test_render_pro_partial_image_failure_notifies(monkeypatch):
+    monkeypatch.setattr(ppt_tools, "probe_image_reachable", lambda *, timeout_s: True, raising=False)
+    monkeypatch.setattr(ppt_tools, "_disk_preflight", lambda **_k: None)
+    seq = {"n": 0}
+
+    def fake_generate(prompts, *, size, model=None):
+        seq["n"] += 1
+        if seq["n"] == 1:  # first image (connectivity gate) succeeds
+            return [{"prompt": prompts[0], "path": "cover.png", "error": None, "error_kind": None}]
+        return [{"prompt": prompts[0], "path": None, "error": "blocked", "error_kind": "content"}]
+
+    monkeypatch.setattr(ppt_tools, "generate_images", fake_generate, raising=False)
+    monkeypatch.setattr(ppt_tools, "ppt_create", lambda outline, **kwargs: {"ok": True, "path": "deck.pptx"})
+    messages: list[str] = []
+
+    result = ppt_tools._render_pro(
+        _slides(), theme="minimal", title="D", author="T",
+        output_path=None, image_mode=True, probe_timeout_s=0.01, notify=messages.append,
+    )
+
+    assert result["ok"] is True
+    # Reachable (gate passed) but 1 of 2 images failed → user is told, not silent.
+    assert any("没生成成功" in m for m in messages)
+    assert any("1/2" in m for m in messages)
+
+
+@pytest.mark.asyncio
+async def test_report_done_open_failure_tells_user_the_path(monkeypatch):
+    """No associated app (e.g. no WPS/PowerPoint) → _open_image_file returns
+    False → message must not claim '已自动打开', must give the saved path."""
+    monkeypatch.setattr(ppt_tools, "_open_image_file", lambda path: False)
+    msgs: list[str] = []
+
+    async def notifier(_sid, message):
+        msgs.append(message)
+
+    await ppt_tools._ppt_pro_report_done(
+        {"ok": True, "path": "C:/x/deck.pptx", "artifacts": []},
+        notifier=notifier, session_id="s",
+    )
+
+    assert any("已保存到" in m for m in msgs)
+    assert all("已自动打开" not in m for m in msgs)
+
+
+@pytest.mark.asyncio
+async def test_report_done_open_success_says_opened(monkeypatch):
+    monkeypatch.setattr(ppt_tools, "_open_image_file", lambda path: True)
+    msgs: list[str] = []
+
+    async def notifier(_sid, message):
+        msgs.append(message)
+
+    await ppt_tools._ppt_pro_report_done(
+        {"ok": True, "path": "C:/x/deck.pptx", "artifacts": []},
+        notifier=notifier, session_id="s",
+    )
+
+    assert any("已自动打开" in m for m in msgs)
 
 
 def test_degrade_to_template_clears_image_fields_and_keeps_content():
