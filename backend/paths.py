@@ -183,7 +183,12 @@ def user_data_dir() -> Path:
       1. ``DESKPET_USER_DATA_DIR`` env override (tests, power users).
       2. **Portable mode** — ``<install_dir>/userdata/`` (if sentinel
          present). All state lives next to the install, not under C:.
-      3. Classic — Windows ``%AppData%\\deskpet\\``, macOS/Linux XDG.
+      3. **Dev-from-source** — ``DESKPET_DEV_MODE=1`` and not frozen →
+         repo-local ``backend/userdata/`` (same target as
+         ``scripts/dev-start.ps1``). Guardrail so ad-hoc dev launches that
+         forget to set ``DESKPET_USER_DATA_DIR`` still keep state on the
+         repo's disk instead of polluting ``%AppData%`` on C:.
+      4. Classic — Windows ``%AppData%\\deskpet\\``, macOS/Linux XDG.
     """
     override = os.environ.get("DESKPET_USER_DATA_DIR")
     if override:
@@ -191,6 +196,9 @@ def user_data_dir() -> Path:
     portable = _portable_userdata_dir()
     if portable is not None:
         return portable
+    if os.environ.get("DESKPET_DEV_MODE") == "1" and not getattr(sys, "frozen", False):
+        # backend/userdata — paths.py lives in backend/, so .parent is it.
+        return Path(__file__).resolve().parent / "userdata"
     return Path(platformdirs.user_data_dir(_APP_NAME, appauthor=_APP_AUTHOR, roaming=True))
 
 

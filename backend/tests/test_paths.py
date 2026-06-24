@@ -37,6 +37,7 @@ def clean_env(monkeypatch):
         "DESKPET_USER_DATA_DIR",
         "DESKPET_USER_CACHE_DIR",
         "DESKPET_USER_LOG_DIR",
+        "DESKPET_DEV_MODE",
     ):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.delattr(sys, "_MEIPASS", raising=False)
@@ -112,6 +113,35 @@ def test_user_data_dir_default_is_absolute(clean_env):
     p = paths.user_data_dir()
     assert p.is_absolute()
     assert p.name == "deskpet"
+
+
+def test_user_data_dir_dev_mode_uses_repo_userdata(clean_env):
+    """DESKPET_DEV_MODE=1 (dev-from-source) → repo-local backend/userdata,
+    never %AppData% on C:. Guardrail for ad-hoc dev launches that forget
+    to set DESKPET_USER_DATA_DIR explicitly (matches dev-start.ps1)."""
+    clean_env.setenv("DESKPET_DEV_MODE", "1")
+    clean_env.delattr(sys, "frozen", raising=False)
+    p = paths.user_data_dir()
+    assert p.name == "userdata"
+    assert p.parent.name == "backend"
+
+
+def test_user_data_dir_explicit_override_beats_dev_mode(clean_env, tmp_path):
+    """Explicit DESKPET_USER_DATA_DIR (priority 1) wins over the dev-mode
+    repo-userdata guardrail."""
+    clean_env.setenv("DESKPET_DEV_MODE", "1")
+    clean_env.setenv("DESKPET_USER_DATA_DIR", str(tmp_path))
+    assert paths.user_data_dir() == tmp_path
+
+
+def test_user_data_dir_dev_mode_ignored_when_frozen(clean_env):
+    """When frozen (installed build), the dev-mode branch is skipped even if
+    DESKPET_DEV_MODE leaks; portable/classic resolution takes over."""
+    clean_env.setenv("DESKPET_DEV_MODE", "1")
+    clean_env.setattr(sys, "frozen", True, raising=False)
+    clean_env.setattr(paths, "_portable_userdata_dir", lambda: None)
+    p = paths.user_data_dir()
+    assert p.name == "deskpet"  # platformdirs classic, not backend/userdata
 
 
 def test_user_cache_dir_env_override(clean_env, tmp_path):
