@@ -4,9 +4,11 @@
 """generate_image tool — text→image via the existing the relay endpoint.
 
 User says 生成图片 → agent calls this tool → POST
-{base_url}/images/generations with model gpt-image-2 (reusing the exact
-base_url+api_key the working chat path uses) → PNG saved into the
-workspace folder → opened with the OS default viewer.
+{base_url}/images/generations with the configured image model (default
+``doubao-seedream-4.0`` — relay 下线 gpt-image-2 后于 2026-06-24 切换，
+真链路实测可用；reusing the exact base_url+api_key the working chat path
+uses) → PNG saved into the workspace folder → opened with the OS default
+viewer.
 
 Flat auto-discovered module (same as web_tools.py / file_tools.py):
 ``registry.register`` at module scope, zero main.py change.
@@ -35,7 +37,11 @@ from .registry import registry
 
 log = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "gpt-image-2"
+# 2026-06-24：relay 下线 gpt-image-2。真链路实测 doubao-seedream-4.0 可用
+# （返回 b64，接受 1024x1024 / 1536x1024 / 1792x1024 / 1344x768，落在 300s
+# 读超时预算内）。同库的 seedream-4.5 / 5.0-lite 也活着但拒绝 1024x1024、
+# 强制 ≥2K，会打断现有 1024 侧栏出图路径，故不选作默认。
+_DEFAULT_MODEL = "doubao-seedream-4.0"
 _DEFAULT_SIZE = "1024x1024"
 _DEFAULT_QUALITY = "medium"
 # 2026-06-11 超时根因修正（中转站侧 Caddy 访问日志 + RequestLog 交叉证据

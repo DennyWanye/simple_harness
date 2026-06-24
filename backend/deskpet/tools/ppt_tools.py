@@ -2354,7 +2354,7 @@ def _render_pro(
         log.info("ppt_pro gate reachable=%s n_ok=%s", reachable, _n_ok)
         if not reachable:
             use_template = True
-            notify("gpt-image-2 暂时用不了，已切换模板生成。")
+            notify("AI 配图暂时用不了，已切换模板生成。")
 
     if use_template:
         # bug#2 修：回退**不走大类名 vision 选图**（外部 2.8GB 库 PIL 拼 contact-sheet
@@ -4095,7 +4095,7 @@ _PPT_SCHEMA = {
         "两种视觉风格(二选一,别混用):\n"
         "① AI 整页生图(最惊艳,适合'用AI配图/惊艳/视觉冲击/封面海报感'的需求): "
         "每页 layout='image_full' + 写一段英文 image_prompt,DeskPet 会用 "
-        "gpt-image-2 生成电影感全屏背景图铺满整页、标题压在底部暗带。"
+        "AI 出图生成电影感全屏背景图铺满整页、标题压在底部暗带。"
         "这种模式【不要】传 template 参数。每张图约 1~2 分钟,4 页请耐心等。\n"
         "② 模板填充(可编辑/正式商务): 传 template=模板名,用模板的设计页填文字。"
         "这种模式【不要】给页面写 image_prompt(模板自带配图,AI 图用不上会白生成)。"
@@ -4116,7 +4116,7 @@ _PPT_SCHEMA = {
                     "bullets(3-4 条,每条≤24字精炼) → 全幅图+左侧深色面板放标题和要点"
                     "(我方自控排版,不挤)。这样既惊艳又有内容,做整份 AI 视觉 PPT 时"
                     "每页都用 image_full(封面无 bullets,内容页带 bullets)。\n"
-                    "image_prompt = 该页要 AI 生成的图(gpt-image-2)。image_full 页必配。"
+                    "image_prompt = 该页要 AI 生成的图。image_full 页必配。"
                     "传了 template 时也可写 image_prompt: 会把 AI 图换进模板的图片位"
                     "(模板专业排版 + 定制 AI 视觉)。"
                 ),
@@ -4604,8 +4604,8 @@ _PPT_PRO_SCHEMA = {
         "【做 PPT 首选工具】用户只给一个主题就要做（正式/调研型/惊艳/AI配图）PPT 时，"
         "用这个，不要用 ppt_create、也不要自己先 web_search/todo_write 调研。"
         "它会自动一条龙：① 用 deepresearch 深度调研该主题；② 基于调研拟大纲；"
-        "③ 弹「大纲确认卡」给用户确认/修改/取消/复用历史；④ 用户确认后优先用 gpt-image-2 "
-        "生成惊艳整页配图 PPT，连不上 gpt-image-2 则自动回退精美模板。只需调一次、传 topic 即可。"
+        "③ 弹「大纲确认卡」给用户确认/修改/取消/复用历史；④ 用户确认后优先用 AI "
+        "出图生成惊艳整页配图 PPT，连不上出图服务则自动回退精美模板。只需调一次、传 topic 即可。"
         "返回 status='researching'（或 'already_running'）表示已在后台进行——"
         "【不要】重复调用、不要因没看到成品就重试，安静等后台推进度/成品。"
     ),

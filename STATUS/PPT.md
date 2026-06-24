@@ -73,9 +73,10 @@ else:
 
 ---
 
-## 5. AI 配图(gpt-image-2)
+## 5. AI 配图(doubao-seedream-4.0)
 
-- `image_tools.generate_images(prompts)` 同步批量原语 → relay `images/generations`(gpt-image-2)。`_MAX_ATTEMPTS=2`(**刻意**:省钱权衡 — 读超时/504 不重试防双倍扣费;只连接级失败重试,SSL 已归类瞬时)。
+- **2026-06-24 换模型**:relay 下线 gpt-image-2 → 默认切 `doubao-seedream-4.0`(真链路实测可用,返回 b64,接受 1024x1024/1536x1024/1792x1024,落 300s 读超时内)。同库 seedream-4.5/5.0-lite 也活着但**拒绝 1024、强制 ≥2K**,会打断侧栏 1024 出图路径故不选默认。换模型只改 `config.toml [image].model` 一行(代码默认 `image_tools._DEFAULT_MODEL` 同步改了)。
+- `image_tools.generate_images(prompts)` 同步批量原语 → relay `images/generations`(模型走 `[image].model`)。`_MAX_ATTEMPTS=2`(**刻意**:省钱权衡 — 读超时/504 不重试防双倍扣费;只连接级失败重试,SSL 已归类瞬时)。
 - `_autofill_image_prompts` 在渲染前把 `image_prompt` 批量出图回填 `image_path`;`image_full` 全幅铺图 / `image` 插图。失败优雅降级占位。
 - 版式变体(`image_variant`):cover/split_left/split_right/top/card/quote,`_assign_image_layouts` 自动轮换;`_place_cover` object-fit cover 比例裁切零变形;`_set_fill_alpha` 真半透明遮罩。
 

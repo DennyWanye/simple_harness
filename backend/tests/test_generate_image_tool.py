@@ -97,7 +97,7 @@ def test_b64_response_saves_png_to_workspace(img_mod):
     _FakeClient.post_resp = _Resp(200, {"data": [{"b64_json": _B64}]})
     out = json.loads(m._handle_generate_image({"prompt": "一只猫"}, ""))
     # confirmed the relay contract: OpenAI Images API, explicit b64_json
-    assert _FakeClient.last_payload["model"] == "gpt-image-2"
+    assert _FakeClient.last_payload["model"] == "doubao-seedream-4.0"
     assert _FakeClient.last_payload["response_format"] == "b64_json"
     assert _FakeClient.last_payload["n"] == 1
     assert out["ok"] is True

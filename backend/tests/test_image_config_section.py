@@ -34,7 +34,7 @@ def _point_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str) ->
 
 def test_image_section_values_are_read(tmp_path, monkeypatch):
     """[image] 段全字段非默认值 → 工具必须读到这些非默认值(证伪死代码)。"""
-    # 每个值都故意偏离 image_tools 里的默认(gpt-image-2 / medium / False / True)
+    # 每个值都故意偏离 image_tools 里的默认(doubao-seedream-4.0 / medium / False / True)
     _point_config(
         tmp_path,
         monkeypatch,
@@ -76,7 +76,7 @@ def test_missing_section_falls_back_to_defaults(tmp_path, monkeypatch):
     """[image] 段缺失 → 工具回落各自默认值(不抛,helper 返回 {})。"""
     _point_config(tmp_path, monkeypatch, "[other]\nx = 1\n")
 
-    assert it._image_model() == "gpt-image-2"
+    assert it._image_model() == "doubao-seedream-4.0"
     assert it._image_quality() == "medium"
     assert it._trust_env_proxy() is False
     assert it._async_enabled() is True

@@ -230,7 +230,11 @@ write_scope_enforced = true
 # model 缺省 gpt-image-2；要换别的图像模型改这里即可（端点不支持时
 # 工具返回 ok:false 不崩）。
 [image]
-model = "gpt-image-2"
+# 2026-06-24：relay 下线 gpt-image-2。真链路实测 doubao-seedream-4.0 可用
+# （返回 b64，接受 1024x1024 / 1536x1024 / 1792x1024，落在 300s 读超时内）。
+# 同库 seedream-4.5 / 5.0-lite 也活着但拒绝 1024、强制 ≥2K，会打断现有侧栏
+# 1024 出图路径，故不选默认。换模型只改这一行即可（工具走 [image].model）。
+model = "doubao-seedream-4.0"
 # OpenSpec 2026-05-16-async-image-gen：true（默认）→ generate_image 秒
 # 返回，ImageGenerationWorker 后台出图、画好自动推回桌宠（agent 回合
 # 不阻塞 60-240s）。false → 退回旧同步阻塞实现（Strangler-Fig 回退）。
