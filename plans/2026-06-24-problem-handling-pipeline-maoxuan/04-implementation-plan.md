@@ -30,7 +30,7 @@
 | `ClassifierResult` | classifier.py:242 | **dataclass `ClassifierResult{task_type, path, confidence, latency_ms, rationale}` @ classifier.py:46；`async def classify(self, user_message) -> ClassifierResult` @ classifier.py:242** | ✅ 准确 |
 | `_resolve_ephemeral_provider` | — | **`def _resolve_ephemeral_provider(base_provider, model_name)` @ main.py:703**；verify_gate 已用它 @ main.py:1001 | 新核实（Step6 异体评分复用它走 fresh model）|
 | `ServiceContext` 容器类型 | — | **`@dataclass class ServiceContext` @ context.py:89**；`_VALID_SERVICES` frozenset @ **context.py:9-87**；`register(name,provider)` @ **:145**（name∉frozenset → `raise ValueError` @ :147）；`get(name)` @ **:153**（同样 :155 raise）。**无 `__getitem__/__setitem__`** | ⚠️**红队 B1 已核实**：不能用 `service_context["x"]=` 下标，也不能 `.get("problem_pipeline")` 未注册 key → 必须先扩 frozenset + dataclass 字段（见 §M5 新增步骤）|
-| `_MIGRATABLE_SECTIONS` backfill | — | **`_MIGRATABLE_SECTIONS` tuple @ config.py:775-788**；whole-section copy 路径 @ **:854-865**；逐 key 循环对嵌套子表 `_is_toml_table(bval)` → `continue` skip @ **:870-871** | ⚠️**红队 B2 已核实**：清单含 `("memory","v2")` + `("memory","v2","facts")` 双条→证明嵌套子表必须各自单列一条；缺 `("features","problem_pipeline")` → 存量 install 永远拿不到默认 off（见 §M4 backfill 步骤）|
+| ~~`_MIGRATABLE_SECTIONS` backfill~~（决策1 已删 B2）| — | — | **决策1（round-3）：删除 B2 存量 backfill**——测试环境无存量迁移需求，**不再**往 `_MIGRATABLE_SECTIONS` 加 `("features","problem_pipeline")`。老 config 缺该段由 dataclass 默认值（enabled=true）兜底（见 §M4）|
 | `_make_str_llm_call` | — | **`def _make_str_llm_call(provider, *, max_tokens=512)` @ main.py:684** | 新核实（把 provider 适配成 `(prompt)->str` async） |
 | assemble 调用点 | main.py:6151 | **`_assembler = service_context.get("context_assembler")` @ main.py:6151；`_bundle.build_messages(...)` @ :6268；`_msgs` 落地 @ :6268/:6274** | ✅ 准确。**关键新发现**：`ContextBundle.task_type` 存在（bundle.py:259）→ Step1 可直接读 `_bundle.task_type`，**无需重跑 classifier** |
 | `_in_code_mode` | — | **`_in_code_mode = bool(_cmm and _cmm.is_enabled(_sid))` @ main.py:6425** | 新核实。注意它在 `_msgs` 构造（:6268）**之后**才赋值 |
@@ -40,21 +40,28 @@
 
 ---
 
-## 1. 总览：改动清单（6 新建 + 4 改造 + 1 config）
+## 1. 总览：改动清单（5 新建 + 4 改造 + 1 config）
+
+> **round-3 决策修订（决策1-4）已就地回写**，索引见 §8.2。关键结构变化：**N3 contradiction_analyzer.py 已删除**
+> ——决策4 把 Step1（意图）+ Step3（主要矛盾）合并成 `IntentTriage.analyze()` 一次 LLM 调用，矛盾分析作为
+> `IntentCard.contradiction` 段在同一次调用产出（N1 承接原 N3 职责）。
 
 | # | 文件 | 类型 | 对应 Step |
 |---|---|---|---|
-| N1 | `backend/deskpet/agent/intent_triage.py` | 新建 | Step1 |
+| N1 | `backend/deskpet/agent/intent_triage.py` | 新建 | **Step1+3 合并预分析**（意图 + 主要矛盾，1 次 LLM，决策4）|
 | N2 | `backend/deskpet/agent/evidence_gate.py` | 新建 | Step2 |
-| N3 | `backend/deskpet/agent/contradiction_analyzer.py` | 新建 | Step3 |
 | N4 | `backend/deskpet/agent/self_check_gate.py` | 新建 | Step6 |
 | N5 | `backend/deskpet/agent/convergence_controller.py` | 新建 | Step7 |
 | N6 | `backend/deskpet/agent/problem_pipeline.py` | 新建 | 编排器 |
-| M1 | `backend/agent/plan.py` | 改造 | Step4 |
+| M1 | `backend/agent/plan.py` | 改造 | Step4（**仅 Companion 新增 plan 能力，code 模式分支不动**，决策2）|
 | M2 | `backend/agent/agent_loop.py` | 改造 | Step2/5/6/7 + `__init__` |
-| M3 | `backend/main.py` | 改造 | Step1/3/4 编排 + 事件转发 + build_agent 传参 |
-| M4 | `backend/config.py` | 改造 | flag 段 + `_MIGRATABLE_SECTIONS` backfill（B2）|
+| M3 | `backend/main.py` | 改造 | Step1+3/4 编排 + 事件转发 + build_agent 传参 |
+| M4 | `backend/config.py` | 改造 | flag 段（**enabled 默认 true，自检 bool，含 analysis_model/self_check_model**；**无 B2 backfill**，决策1+3）|
 | M5 | `backend/context.py` | 改造 | 注册 4 个 pipeline service key（B1，BLOCKER，其余 main.py 改动硬前置）|
+
+> **N3 已并入 N1（决策4）**：原 `contradiction_analyzer.py` 不再单独建文件。其 `ContradictionMap` dataclass +
+> `_SCHEMA` + parse + `contradiction_to_system_message` 全部**迁入 `intent_triage.py`**（见 §2 N1 重写），由合并后的
+> `analyze()` 一次调用同时产出 intent + contradiction。
 
 **模块约定（已核实 verify_gate.py / classifier.py / reflection.py 的头部风格）**：
 - 头两行：`# SPDX-FileCopyrightText: 2026 DennyWanye` / `# SPDX-License-Identifier: BUSL-1.1`
@@ -68,23 +75,34 @@
 
 ## 2. 新建文件骨架（可直接粘贴）
 
-### N1 · `backend/deskpet/agent/intent_triage.py`（Step1 意图分诊）
+### N1 · `backend/deskpet/agent/intent_triage.py`（Step1+3 合并预分析：意图 + 主要矛盾，1 次 LLM，决策4）
+
+> **决策4（round-3）**：原 Step1（IntentTriage）+ Step3（ContradictionAnalyzer 即旧 N3）合并成**单一 `analyze()` 一次
+> structured-output LLM 调用**。`IntentCard` 加可选 `contradiction: ContradictionMap | None` 字段；`ContradictionMap`/parse/
+> `contradiction_to_system_message` 全部迁入本文件（**不再有独立 N3**）。闲聊纯规则短路（0 次 LLM）；非闲聊调 1 次，
+> 同时返回 intent + （复杂问题才填的）contradiction。
+> **决策3（round-3）**：`analyze` 走可配 `analysis_model`（留空=主 LLM gpt-5.5），调用 LLM 的 callable 由 main.py 注入，
+> 本模块不关心模型是谁——不硬依赖 haiku。
 
 ```python
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""Step1 IntentTriage — 听诉求·辨意图（从群众中来 + 不耻下问 + 具体问题具体分析）。
+"""Step1+3 IntentTriage — 听诉求·辨意图 + 抓主要矛盾（决策4：合并成 1 次 LLM 调用）。
 
-收到用户问题，先做一次轻量结构化意图分诊，产出 IntentCard：
+收到用户问题，做一次轻量结构化预分析，产出 IntentCard（含可选 contradiction 段）：
   - 重述用户真正诉求（restated_intent）
   - 归类 problem_type（复用组装期 ClassifierResult.task_type 派生，避免重复分类 LLM）
   - 估歧义分（ambiguity_score）→ 高则出澄清问题（走独立 chat_v2_final 澄清出口，非 ask_clarification 工具）
-  - 标 needs_investigation / needs_decomposition（喂 Step2 取证门 / Step3 主要矛盾）
+  - 标 needs_investigation / needs_decomposition（喂 Step2 取证门）
+  - contradiction（仅复杂问题填）：抓主要矛盾 + 决定性方面 + attack_order（喂 Step4 计划排序）
+
+语义 7 步 / 实现 Step1+3 共用 1 次 LLM（决策4）：方法论上"意图分诊"与"抓主要矛盾"仍是两个语义步骤，
+但实现上一次调用同时产出，省一次串行往返。简单 factual_qa 返回 contradiction=None；复杂问题填两者。
 
 短路纪律（硬性能要求）：
-  - chitchat 且歧义低 → IntentCard.short_circuit=True，编排器整条流水线短路（裸 ReAct）。
-  - LLM 调用失败 / 超时 → safe-fail：返回保守 IntentCard（不澄清、不阻塞），降级裸 ReAct。
+  - chitchat 且歧义低 → IntentCard.short_circuit=True，编排器整条流水线短路（裸 ReAct，0 次 LLM）。
+  - LLM 调用失败 / 超时 / 畸形 JSON → safe-fail：返回保守 IntentCard（contradiction=None、不澄清、不阻塞），降级裸 ReAct。
 """
 from __future__ import annotations
 
@@ -98,11 +116,14 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
-# ─── problem_type 取值（03 §3 Step1）。注意与 classifier 8 类 task_type 的映射见下。
+# ─── problem_type 取值（03 §3 Step1+3）。注意与 classifier 8 类 task_type 的映射见下。
 _PROBLEM_TYPES = (
     "chitchat", "factual_qa", "debug", "research",
     "creation", "multi_task", "ambiguous",
 )
+
+# 触发主要矛盾分析（同一次调用里填 contradiction 段）的 problem_type。
+_CONTRADICTION_TRIGGER_TYPES = frozenset({"debug", "research", "multi_task", "creation"})
 
 # classifier task_type(8 类: chat/code/recall/web_search/plan/emotion/command/task)
 # → problem_type 映射。未命中 → factual_qa（保守，触发取证而非闲聊短路）。
@@ -119,24 +140,46 @@ _TASKTYPE_TO_PROBLEM = {
 
 
 @dataclass
+class Contradiction:
+    id: int
+    desc: str
+    severity: float = 0.0
+    aspect: str = ""
+
+
+@dataclass
+class ContradictionMap:
+    """Step3 产物（决策4 后由 analyze 同一次调用产出，作为 IntentCard.contradiction）。"""
+    contradictions: list[Contradiction] = field(default_factory=list)
+    principal: int = 0                 # principal contradiction id
+    principal_aspect: str = ""
+    attack_order: list[int] = field(default_factory=list)
+    rationale: str = ""
+
+
+@dataclass
 class IntentCard:
-    """Step1 产物。short_circuit / needs_clarification 是编排器的两个出口信号。"""
+    """Step1+3 合并产物。short_circuit / needs_clarification 是编排器的两个出口信号；
+    contradiction 仅复杂问题填（决策4：同一次调用产出）。"""
     restated_intent: str = ""
     problem_type: str = "factual_qa"
     ambiguity_score: float = 0.0
     clarifying_questions: list[str] = field(default_factory=list)
     needs_investigation: bool = True
     needs_decomposition: bool = False
+    contradiction: Optional[ContradictionMap] = None   # ← 决策4：复杂问题才填，简单/闲聊=None
     # 编排器出口信号（派生字段，非 LLM 直出）
     short_circuit: bool = False       # chitchat + 低歧义 → 整条流水线短路
     needs_clarification: bool = False  # ambiguity_score ≥ 阈值 → 暂停等用户答
 
 
-# OpenAI/relay structured-output schema（与 plan.py:PLAN_SCHEMA 同范式）
-_INTENT_SCHEMA: dict = {
+# OpenAI/relay structured-output schema（与 plan.py:PLAN_SCHEMA 同范式）。
+# 决策4：单一 schema 同时含 intent 字段 + 可空 contradiction 段。contradiction 用 ["object","null"]
+# 让简单问题可回 null（strict 模式下 nullable 段须显式声明 type 含 "null"）。
+_PRE_ANALYSIS_SCHEMA: dict = {
     "type": "json_schema",
     "json_schema": {
-        "name": "intent_card",
+        "name": "pre_analysis",
         "strict": True,
         "schema": {
             "type": "object",
@@ -150,51 +193,82 @@ _INTENT_SCHEMA: dict = {
                 },
                 "needs_investigation": {"type": "boolean"},
                 "needs_decomposition": {"type": "boolean"},
+                "contradiction": {
+                    "type": ["object", "null"],          # ← 简单/闲聊问题回 null
+                    "additionalProperties": False,
+                    "properties": {
+                        "contradictions": {
+                            "type": "array", "minItems": 1,
+                            "items": {
+                                "type": "object", "additionalProperties": False,
+                                "properties": {
+                                    "id": {"type": "integer"},
+                                    "desc": {"type": "string"},
+                                    "severity": {"type": "number"},
+                                    "aspect": {"type": "string"},
+                                },
+                                "required": ["id", "desc", "severity", "aspect"],
+                            },
+                        },
+                        "principal": {"type": "integer"},
+                        "principal_aspect": {"type": "string"},
+                        "attack_order": {"type": "array", "items": {"type": "integer"}},
+                        "rationale": {"type": "string"},
+                    },
+                    "required": ["contradictions", "principal", "principal_aspect",
+                                 "attack_order", "rationale"],
+                },
             },
             "required": [
                 "restated_intent", "problem_type", "ambiguity_score",
                 "clarifying_questions", "needs_investigation", "needs_decomposition",
+                "contradiction",
             ],
         },
     },
 }
 
-_INTENT_SYSTEM = (
-    "你是问题分诊助手。给定用户消息 + 系统已判定的初步任务类型，"
-    "用一句话重述用户真正想要什么，判定问题类型、歧义程度，"
-    "并标注是否需要取证调查 / 是否需要任务分解。严格按 JSON schema 回应。"
+_PRE_ANALYSIS_SYSTEM = (
+    "你是问题预分析助手。给定用户消息 + 系统已判定的初步任务类型，一次性产出："
+    "①用一句话重述用户真正想要什么；②判定问题类型、歧义程度；"
+    "③标注是否需取证调查 / 是否需任务分解。"
+    "若问题属 debug/research/multi_task/creation（或需分解），再按《矛盾论》方法填 contradiction："
+    "找出若干矛盾、评估严重度、点名**主要矛盾**及其**决定性方面**、给攻击顺序（先主后次）；"
+    "否则 contradiction 置为 null。严格按 JSON schema 回应，不写代码。"
 )
 
 
 class IntentTriage:
-    """Step1 编排单元。flag off 时调用方根本不构造它（None 短路）。"""
+    """Step1+3 合并预分析单元。flag off 时调用方根本不构造它（None 短路）。
+
+    决策3：llm_call 由 main.py 注入（绑定 analysis_model；留空=主 LLM gpt-5.5），本模块不关心模型是谁。
+    """
 
     def __init__(
         self,
         llm_call: Optional[Callable[[str], Awaitable[str]]] = None,
         *,
         clarify_threshold: float = 0.7,
-        timeout_s: float = 4.0,
-        structured_output: bool = True,
+        timeout_s: float = 6.0,    # 合并调用含矛盾分析，略放宽（原 intent 4s + contradiction 6s 合并）
     ) -> None:
         self._llm_call = llm_call
         self._clarify_threshold = clarify_threshold
         self._timeout_s = timeout_s
-        self._structured_output = structured_output
 
-    async def triage(
+    async def analyze(
         self,
         user_message: str,
         *,
         prior_task_type: Optional[str] = None,
     ) -> IntentCard:
-        """产出 IntentCard。prior_task_type = 组装期 ClassifierResult.task_type（复用，免重分类）。
+        """决策4：一次调用产出 IntentCard（含可选 contradiction）。
+        prior_task_type = 组装期 ClassifierResult.task_type（复用，免重分类）。
 
-        safe-fail：llm_call=None / 异常 / 超时 → 用 prior_task_type 派生保守 IntentCard。
+        safe-fail：llm_call=None / 异常 / 超时 / 畸形 JSON → 用 prior_task_type 派生保守 IntentCard（contradiction=None）。
         """
         derived_pt = _TASKTYPE_TO_PROBLEM.get(prior_task_type or "", "factual_qa")
 
-        # ── 纯规则短路：闲聊/情绪类不调 LLM，直接短路（硬性能要求）
+        # ── 纯规则短路：闲聊/情绪类不调 LLM，直接短路（硬性能要求，0 次 LLM）
         if derived_pt == "chitchat":
             logger.info("intent_triage.shortcircuit", reason="chitchat_rule",
                         task_type=prior_task_type)
@@ -203,6 +277,7 @@ class IntentTriage:
                 problem_type="chitchat",
                 ambiguity_score=0.0,
                 needs_investigation=False,
+                contradiction=None,
                 short_circuit=True,
             )
 
@@ -210,7 +285,7 @@ class IntentTriage:
             return self._safe_card(user_message, derived_pt)
 
         prompt = (
-            f"{_INTENT_SYSTEM}\n\n"
+            f"{_PRE_ANALYSIS_SYSTEM}\n\n"
             f"[系统初判类型] {prior_task_type or '(无)'} → {derived_pt}\n"
             f"[用户消息]\n{user_message}"
         )
@@ -234,8 +309,13 @@ class IntentTriage:
             "intent_triage.done", problem_type=card.problem_type,
             ambiguity=card.ambiguity_score, clarify=card.needs_clarification,
             short_circuit=card.short_circuit,
+            has_contradiction=card.contradiction is not None,
         )
         return card
+
+    # 兼容别名：编排器/旧调用点用 analyze；保留 triage 作向后兼容薄包装（同一次合并调用）。
+    async def triage(self, user_message: str, *, prior_task_type: Optional[str] = None) -> IntentCard:
+        return await self.analyze(user_message, prior_task_type=prior_task_type)
 
     def _safe_card(self, user_message: str, derived_pt: str) -> IntentCard:
         return IntentCard(
@@ -244,6 +324,7 @@ class IntentTriage:
             ambiguity_score=0.0,
             needs_investigation=(derived_pt in ("debug", "research", "factual_qa")),
             needs_decomposition=(derived_pt in ("multi_task", "creation")),
+            contradiction=None,   # safe-fail 不填矛盾段，编排器跳过 <主要矛盾> 注入
         )
 
     def _parse(self, raw: str, *, fallback_pt: str, user_message: str) -> IntentCard:
@@ -258,13 +339,22 @@ class IntentTriage:
             amb = max(0.0, min(1.0, float(obj.get("ambiguity_score", 0.0))))
         except (TypeError, ValueError):
             amb = 0.0
+        needs_decomp = bool(obj.get("needs_decomposition", False))
+        # contradiction 段：仅复杂问题或需分解才解析（与 schema 触发条件一致）
+        cmap = None
+        raw_contra = obj.get("contradiction")
+        if isinstance(raw_contra, dict) and (
+            pt in _CONTRADICTION_TRIGGER_TYPES or needs_decomp
+        ):
+            cmap = _parse_contradiction(raw_contra)
         return IntentCard(
             restated_intent=str(obj.get("restated_intent") or user_message[:80]),
             problem_type=pt,
             ambiguity_score=amb,
             clarifying_questions=[str(q) for q in (obj.get("clarifying_questions") or [])][:2],
             needs_investigation=bool(obj.get("needs_investigation", True)),
-            needs_decomposition=bool(obj.get("needs_decomposition", False)),
+            needs_decomposition=needs_decomp,
+            contradiction=cmap,
         )
 
 
@@ -275,6 +365,40 @@ def intent_to_system_message(card: IntentCard) -> str:
         f"用户真正诉求：{card.restated_intent}\n"
         f"问题类型：{card.problem_type}\n"
         "（先对齐这个诉求再行动；如理解有偏差，先澄清而非硬猜。）"
+    )
+
+
+def contradiction_to_system_message(cmap: ContradictionMap) -> str:
+    """注入 <主要矛盾> system 提示（决策4：从 IntentCard.contradiction 读取）。"""
+    principal = next((c for c in cmap.contradictions if c.id == cmap.principal), None)
+    desc = principal.desc if principal else (cmap.contradictions[0].desc if cmap.contradictions else "")
+    return (
+        "<主要矛盾>\n"
+        f"本次主攻：{desc}\n"
+        f"决定性方面：{cmap.principal_aspect}\n"
+        "（集中优势兵力先解决它，其余次要矛盾随后弹钢琴统筹。）"
+    )
+
+
+def _parse_contradiction(obj: dict) -> Optional[ContradictionMap]:
+    cons = [
+        Contradiction(
+            id=int(c.get("id", i)),
+            desc=str(c.get("desc", "")),
+            severity=float(c.get("severity", 0.0) or 0.0),
+            aspect=str(c.get("aspect", "")),
+        )
+        for i, c in enumerate(obj.get("contradictions") or [], 1)
+        if isinstance(c, dict)
+    ]
+    if not cons:
+        return None
+    return ContradictionMap(
+        contradictions=cons,
+        principal=int(obj.get("principal", cons[0].id) or cons[0].id),
+        principal_aspect=str(obj.get("principal_aspect", "")),
+        attack_order=[int(x) for x in (obj.get("attack_order") or []) if isinstance(x, int)],
+        rationale=str(obj.get("rationale", "")),
     )
 
 
@@ -313,13 +437,21 @@ def _extract_json(raw: str) -> Optional[dict]:
     return None
 
 
-__all__ = ["IntentCard", "IntentTriage", "intent_to_system_message"]
+__all__ = [
+    "Contradiction", "ContradictionMap", "IntentCard", "IntentTriage",
+    "intent_to_system_message", "contradiction_to_system_message",
+]
 ```
 
-> **复用 ClassifierResult（03 §6 去重契约）**：`triage(prior_task_type=...)` 接收的就是
+> **复用 ClassifierResult（03 §6 去重契约）**：`analyze(prior_task_type=...)` 接收的就是
 > `_bundle.task_type`（已核实 bundle.py:259 暴露 `task_type`），**不再调 classifier**。映射表 `_TASKTYPE_TO_PROBLEM`
 > 把 8 类压成 7 类 problem_type。`⚠️待实现时复核`：classifier 8 类的真实取值集合见 `bundle.py:TASK_TYPES`，
 > 实现时打开核对（rule tier 出 code/recall/web_search/plan/emotion/command，embed/llm 出完整 8 类）。
+>
+> **决策4 合并的失败兜底**：`_PRE_ANALYSIS_SCHEMA` 的 `contradiction: ["object","null"]` 在部分 relay 的 strict
+> 模式可能 400（nullable 段 + strict）——故 `analyze` 的 `_extract_json` 三级容错 + LLM 异常整步降级（`_safe_card`，
+> contradiction=None）是刚需。若实测 nullable+strict 400 率高，可把 `_PRE_ANALYSIS_SCHEMA` 放宽 `strict:False`
+> （`⚠️待实现时复核`），三级容错仍兜底。
 
 ---
 
@@ -425,188 +557,14 @@ __all__ = ["EvidenceGate", "EvidenceDecision"]
 
 ---
 
-### N3 · `backend/deskpet/agent/contradiction_analyzer.py`（Step3 主要矛盾，PRE-LOOP）
+### N3 · 已删除（决策4：合并进 N1 intent_triage.py）
 
-```python
-# SPDX-FileCopyrightText: 2026 DennyWanye
-# SPDX-License-Identifier: BUSL-1.1
-
-"""Step3 ContradictionAnalyzer — 抓主要矛盾（《矛盾论》+ 胸中有数）。
-
-仅当 problem_type ∈ {debug,research,multi_task,creation} 或 needs_decomposition=True 触发
-（简单/闲聊/单一事实问答不触发，省 token）。一次结构化 LLM 调用出 ContradictionMap：
-排序多症状、点名主要矛盾及其决定性方面、给 attack_order 喂 Step4 计划排序。
-"""
-from __future__ import annotations
-
-import asyncio
-import json
-from dataclasses import dataclass, field
-from typing import Awaitable, Callable, Optional
-
-import structlog
-
-logger = structlog.get_logger(__name__)
-
-_TRIGGER_TYPES = frozenset({"debug", "research", "multi_task", "creation"})
-
-
-@dataclass
-class Contradiction:
-    id: int
-    desc: str
-    severity: float = 0.0
-    aspect: str = ""
-
-
-@dataclass
-class ContradictionMap:
-    contradictions: list[Contradiction] = field(default_factory=list)
-    principal: int = 0                 # principal contradiction id
-    principal_aspect: str = ""
-    attack_order: list[int] = field(default_factory=list)
-    rationale: str = ""
-
-
-_SCHEMA: dict = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "contradiction_map",
-        "strict": True,
-        "schema": {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {
-                "contradictions": {
-                    "type": "array", "minItems": 1,
-                    "items": {
-                        "type": "object", "additionalProperties": False,
-                        "properties": {
-                            "id": {"type": "integer"},
-                            "desc": {"type": "string"},
-                            "severity": {"type": "number"},
-                            "aspect": {"type": "string"},
-                        },
-                        "required": ["id", "desc", "severity", "aspect"],
-                    },
-                },
-                "principal": {"type": "integer"},
-                "principal_aspect": {"type": "string"},
-                "attack_order": {"type": "array", "items": {"type": "integer"}},
-                "rationale": {"type": "string"},
-            },
-            "required": ["contradictions", "principal", "principal_aspect",
-                         "attack_order", "rationale"],
-        },
-    },
-}
-
-_SYSTEM = (
-    "你按《矛盾论》方法分析问题。找出问题中的若干矛盾（症状/难点），"
-    "评估各自严重度，点出**主要矛盾**及其**决定性的那一方面**，"
-    "给出攻击顺序（先主要矛盾后次要）。严格按 JSON schema 回应，不写代码。"
-)
-
-
-class ContradictionAnalyzer:
-    def __init__(
-        self,
-        llm_call: Optional[Callable[[str], Awaitable[str]]] = None,
-        *,
-        timeout_s: float = 6.0,
-    ) -> None:
-        self._llm_call = llm_call
-        self._timeout_s = timeout_s
-
-    def should_trigger(self, problem_type: str, needs_decomposition: bool) -> bool:
-        return problem_type in _TRIGGER_TYPES or needs_decomposition
-
-    async def analyze(self, user_message: str, *, restated_intent: str = "") -> Optional[ContradictionMap]:
-        """safe-fail：llm_call=None / 异常 / 超时 / 畸形 JSON → None（编排器跳过注入，BC）。"""
-        if self._llm_call is None:
-            return None
-        prompt = (
-            f"{_SYSTEM}\n\n[用户诉求] {restated_intent or user_message}\n[原始消息]\n{user_message}"
-        )
-        try:
-            raw = await asyncio.wait_for(self._llm_call(prompt), timeout=self._timeout_s)
-        except (asyncio.TimeoutError, Exception) as exc:  # noqa: BLE001
-            logger.warning("contradiction.llm_failed", error=str(exc)[:200])
-            return None
-        cmap = _parse(raw)
-        if cmap is None:
-            logger.warning("contradiction.parse_failed", preview=(raw or "")[:120])
-            return None
-        logger.info("contradiction.done", principal=cmap.principal,
-                    n=len(cmap.contradictions), attack_order=cmap.attack_order)
-        return cmap
-
-
-def contradiction_to_system_message(cmap: ContradictionMap) -> str:
-    principal = next((c for c in cmap.contradictions if c.id == cmap.principal), None)
-    desc = principal.desc if principal else (cmap.contradictions[0].desc if cmap.contradictions else "")
-    return (
-        "<主要矛盾>\n"
-        f"本次主攻：{desc}\n"
-        f"决定性方面：{cmap.principal_aspect}\n"
-        "（集中优势兵力先解决它，其余次要矛盾随后弹钢琴统筹。）"
-    )
-
-
-def _parse(raw: str) -> Optional[ContradictionMap]:
-    obj = _extract_json(raw)
-    if obj is None:
-        return None
-    cons = [
-        Contradiction(
-            id=int(c.get("id", i)),
-            desc=str(c.get("desc", "")),
-            severity=float(c.get("severity", 0.0) or 0.0),
-            aspect=str(c.get("aspect", "")),
-        )
-        for i, c in enumerate(obj.get("contradictions") or [], 1)
-        if isinstance(c, dict)
-    ]
-    if not cons:
-        return None
-    return ContradictionMap(
-        contradictions=cons,
-        principal=int(obj.get("principal", cons[0].id) or cons[0].id),
-        principal_aspect=str(obj.get("principal_aspect", "")),
-        attack_order=[int(x) for x in (obj.get("attack_order") or []) if isinstance(x, int)],
-        rationale=str(obj.get("rationale", "")),
-    )
-
-
-import re as _re  # noqa: E402
-
-_FENCED = _re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", _re.DOTALL | _re.IGNORECASE)
-_BARE = _re.compile(r"\{.*\}", _re.DOTALL)
-
-
-def _extract_json(raw: str) -> Optional[dict]:
-    s = (raw or "").strip()
-    try:
-        o = json.loads(s)
-        if isinstance(o, dict):
-            return o
-    except (json.JSONDecodeError, ValueError):
-        pass
-    for rx in (_FENCED, _BARE):
-        m = rx.search(s)
-        if m:
-            try:
-                o = json.loads(m.group(1) if rx is _FENCED else m.group(0))
-                if isinstance(o, dict):
-                    return o
-            except (json.JSONDecodeError, ValueError):
-                pass
-    return None
-
-
-__all__ = ["Contradiction", "ContradictionMap", "ContradictionAnalyzer",
-           "contradiction_to_system_message"]
-```
+> **决策4（round-3）**：原 `contradiction_analyzer.py` 不再单独建文件。Step3 抓主要矛盾已与 Step1 意图分诊**合并成
+> `IntentTriage.analyze()` 一次 structured-output LLM 调用**（见 §2 N1 重写）。`Contradiction` / `ContradictionMap` /
+> `_parse_contradiction` / `contradiction_to_system_message` 全部迁入 `intent_triage.py`，矛盾段作为
+> `IntentCard.contradiction`（复杂问题才填，简单/闲聊=None）在同一次调用产出。**触发条件不变**：
+> `problem_type ∈ {debug,research,multi_task,creation}` 或 `needs_decomposition`。所有原引用 `contradiction_analyzer`
+> 模块/`ContradictionAnalyzer` 类的地方，改为从 `intent_triage` import + 读 `IntentCard.contradiction`。
 
 ---
 
@@ -761,9 +719,10 @@ __all__ = ["SelfCheckGate", "SelfCheckOutcome"]
 > 守门时，要保留它们当前的 `iteration < _SELFCHECK_TIER3_AT` 准入条件 + nudge 计数；**第一期不删旧守门**（pipeline
 > off 时仍走它们）。**⚠️ B3 修正（去掉"复用已构造实例"的误导措辞）**：SelfCheckGate **不能**简单"复用旧守门里
 > 已构造好的实例"——因为 `self.verify_gate`/`self.external_evaluator` 仅当 `tools.verifier` 两 flag 开时才非 None。
-> 用户只开 `self_check_mode=strict` 不开 tools.verifier → 拿到 None → strict 空门。正确做法见 §M3 改动 3e 的 B3 修正：
-> **当 `self_check_mode != "off"` 时，在 build_agent 内强制自建一套 verify_gate/external_evaluator 喂给 SelfCheckGate**，
-> 独立于 tools.verifier flag；二者皆不可得时降级并 `logger.warning` 告警（不静默 pass）。
+> 用户只开 `self_check=true`（决策1：bool）不开 tools.verifier → 拿到 None → 自检空门。正确做法见 §M3 改动 3e 的 B3 修正：
+> **当 `self_check`（bool）为 True 时，在 build_agent 内强制自建一套 verify_gate/external_evaluator 喂给 SelfCheckGate**，
+> 独立于 tools.verifier flag；二者皆不可得时降级并 `logger.warning` 告警（不静默 pass）。严格度由 SelfCheckGate 内部
+> 按 problem_type 选（决策1：不再有 off/shadow/light/strict 外部档）。
 
 ---
 
@@ -872,17 +831,20 @@ __all__ = ["ConvergenceController", "ConvergenceVerdict"]
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""ProblemHandlingPipeline — 七步问题处理流水线编排器（薄）。
+"""ProblemHandlingPipeline — 七步问题处理流水线编排器（薄，仅 Companion 主线）。
 
-只做：按 problem_type 决定哪几步跑 + 串接 PRE-LOOP 三步（意图/主要矛盾/方案）+
-发标签事件 + flag 短路。真活由各组件干（IntentTriage/ContradictionAnalyzer/plan.py/
+只做：按 problem_type 决定哪几步跑 + 串接 PRE-LOOP（Step1+3 合并预分析 + Step4 方案）+
+发标签事件 + flag 短路。真活由各组件干（IntentTriage[含矛盾]/plan.py/
 EvidenceGate/SelfCheckGate/ConvergenceController）。
 
-IN-LOOP 三闸（EvidenceGate/SelfCheckGate/ConvergenceController）由本编排器构造好后
+决策4（round-3）：Step1 意图 + Step3 主要矛盾**合并为 IntentTriage.analyze() 一次 LLM 调用**——
+编排器不再持有独立 ContradictionAnalyzer，矛盾段直接从 IntentCard.contradiction 读取。
+
+IN-LOOP 三闸（EvidenceGate/SelfCheckGate/ConvergenceController）由本编排器/build_agent 构造好后
 **注入 AgentLoop**，在 loop 内被调用（见 agent_loop.py 改造）。本类只负责 PRE-LOOP 编排
 + 把 in-loop 组件交给 build_agent。
 
-enabled=False（flag off）→ run_pre_loop 直接返回空结果，main.py 走今天的链路（字节级 BC）。
+enabled=False（kill-switch）→ run_pre_loop 直接返回空结果，main.py 走今天的链路（回退）。
 """
 from __future__ import annotations
 
@@ -892,10 +854,8 @@ from typing import Any, Awaitable, Callable, Optional
 import structlog
 
 from deskpet.agent.intent_triage import (
-    IntentCard, IntentTriage, intent_to_system_message,
-)
-from deskpet.agent.contradiction_analyzer import (
-    ContradictionAnalyzer, ContradictionMap, contradiction_to_system_message,
+    ContradictionMap, IntentCard, IntentTriage,
+    contradiction_to_system_message, intent_to_system_message,
 )
 
 logger = structlog.get_logger(__name__)
@@ -903,7 +863,7 @@ logger = structlog.get_logger(__name__)
 
 @dataclass
 class PreLoopResult:
-    """PRE-LOOP 三步产出。main.py 据此注入 system 消息 + 发事件 + 决定是否短路/澄清。"""
+    """PRE-LOOP 产出。main.py 据此注入 system 消息 + 发事件 + 决定是否短路/澄清。"""
     short_circuit: bool = False           # 闲聊短路：整条流水线跳过，裸 ReAct
     needs_clarification: bool = False     # 歧义高：暂停问澄清（走独立 chat_v2_final 澄清出口）
     intent: Optional[IntentCard] = None
@@ -918,12 +878,10 @@ class ProblemHandlingPipeline:
         *,
         enabled: bool = False,
         intent_triage: Optional[IntentTriage] = None,
-        contradiction_analyzer: Optional[ContradictionAnalyzer] = None,
         observability_events: bool = False,
     ) -> None:
         self.enabled = enabled
-        self._intent = intent_triage
-        self._contradiction = contradiction_analyzer
+        self._intent = intent_triage   # 决策4：单一合并预分析器（含矛盾）
         self._obs_events = observability_events
 
     async def run_pre_loop(
@@ -932,16 +890,16 @@ class ProblemHandlingPipeline:
         *,
         prior_task_type: Optional[str] = None,
     ) -> PreLoopResult:
-        """PRE-LOOP 编排：Step1 意图 → (短路/澄清出口) → Step3 主要矛盾。
+        """PRE-LOOP 编排（决策4：Step1+3 一次调用）：analyze → (短路/澄清出口) → 读 contradiction 段。
         Step4 plan 由 main.py 现有 plan 调用点处理（吃 attack_order，见 M1/M3）。
         """
         if not self.enabled or self._intent is None:
-            return PreLoopResult()  # BC：flag off → 空结果
+            return PreLoopResult()  # 回退：flag off → 空结果
 
         res = PreLoopResult()
 
-        # ── Step1 意图分诊
-        card = await self._intent.triage(user_message, prior_task_type=prior_task_type)
+        # ── Step1+3 合并预分析：一次 LLM 调用同时出 intent + (复杂问题的) contradiction
+        card = await self._intent.analyze(user_message, prior_task_type=prior_task_type)
         res.intent = card
         if self._obs_events:
             res.events.append({
@@ -964,25 +922,20 @@ class ProblemHandlingPipeline:
 
         res.system_injections.append(intent_to_system_message(card))
 
-        # ── Step3 主要矛盾（条件触发）
-        if self._contradiction is not None and self._contradiction.should_trigger(
-            card.problem_type, card.needs_decomposition
-        ):
-            cmap = await self._contradiction.analyze(
-                user_message, restated_intent=card.restated_intent,
-            )
-            if cmap is not None:
-                res.contradiction = cmap
-                res.system_injections.append(contradiction_to_system_message(cmap))
-                if self._obs_events:
-                    res.events.append({
-                        "type": "chat_v2_contradiction",
-                        "payload": {
-                            "principal": cmap.principal,
-                            "attack_order": cmap.attack_order,
-                            "rationale": cmap.rationale,
-                        },
-                    })
+        # ── Step3 主要矛盾：决策4 后无独立 LLM 调用，直接读 analyze 已产出的 contradiction 段
+        cmap = card.contradiction
+        if cmap is not None:
+            res.contradiction = cmap
+            res.system_injections.append(contradiction_to_system_message(cmap))
+            if self._obs_events:
+                res.events.append({
+                    "type": "chat_v2_contradiction",
+                    "payload": {
+                        "principal": cmap.principal,
+                        "attack_order": cmap.attack_order,
+                        "rationale": cmap.rationale,
+                    },
+                })
 
         logger.info("pipeline.pre_loop_done",
                     injections=len(res.system_injections), events=len(res.events))
@@ -1014,7 +967,11 @@ async def maybe_extract_plan(
         return None
 ```
 
-**升级 1（解除 code-only 限制）** —— 新增可选参数 `companion_enabled` + `problem_type`，**保持旧签名 BC**：
+**升级 1（为 Companion 主线新增 plan 能力，code 模式分支原样不动 — 决策2）** —— 新增可选参数 `companion_enabled` + `problem_type`，**保持旧签名 BC**：
+
+> **决策2（round-3）**：本期**纯聚焦 Companion**——**不修改 code 模式现有 plan 行为**。`in_code_mode==True` 那条路径
+> 在本函数里**字节级原样不动**（仍按 `_PLAN_MIN_CHARS` 出计划）；新能力**只**在 `not in_code_mode` 且 `companion_enabled`
+> 时进入新 companion 分支。下方 `if not in_code_mode:` 块只**收窄了 companion 的早退条件**，code 路径根本不经过它。
 
 ```python
 async def maybe_extract_plan(
@@ -1023,13 +980,15 @@ async def maybe_extract_plan(
     project_root: str | None,
     *,
     in_code_mode: bool,
-    companion_enabled: bool = False,        # ← 新增：Step4 扩 companion（flag off=False=BC）
+    companion_enabled: bool = False,        # ← 新增：Step4 为 Companion 新增 plan（flag off=False=BC）
     problem_type: str | None = None,        # ← 新增：companion 模式按 problem_type 决定是否出计划
-    attack_order: list[int] | None = None,  # ← 新增：吃 Step3 主要矛盾排序
+    attack_order: list[int] | None = None,  # ← 新增：吃 Step3 主要矛盾排序（来自 IntentCard.contradiction）
     contradiction_descs: dict[int, str] | None = None,  # ← 新增：id→desc 供首步对准 principal
 ) -> Plan | None:
     ...
-    # 升级1：companion 模式在 flag on + 复杂 problem_type 时也出计划
+    # 决策2：code 模式分支不动——in_code_mode==True 直接跳过下面这个 companion-only 早退块，
+    #        走原有 code 路径（仅受 _PLAN_MIN_CHARS 约束，与改前完全一致）。
+    # 升级1：仅 companion（not in_code_mode）模式在 flag on + 复杂 problem_type 时才新增出计划。
     if not in_code_mode:
         if not (companion_enabled and problem_type in {"debug", "research", "multi_task", "creation"}):
             return None   # ← BC：companion_enabled=False（默认）时行为与旧代码字节级一致
@@ -1038,15 +997,18 @@ async def maybe_extract_plan(
 ```
 
 > **BC 保证**：旧调用方不传新参数 → `companion_enabled=False` → `not in_code_mode` 分支
-> 仍 `return None`，与改前**完全一致**。只有 flag on 显式传 `companion_enabled=True` 才进新分支。
+> 仍 `return None`，与改前**完全一致**。**code 模式路径（`in_code_mode==True`）无论 flag 如何都不进新分支、字节级不变**
+> （决策2：本期不碰 code 模式）。只有 flag on 且 companion 路径才进新分支。
 
 > **⚠️ 升级1 补 json 容错（红队 M-4，硬要求）**：**已核实** maybe_extract_plan 当前解析 plan JSON 只有
 > `data = json.loads(content)` **一层**（**已核实 plan.py:153-158**），无 fenced/bare fallback。code 场景下主 LLM
-> 通常吐干净 JSON 还能撑；但**升级1 解除 code-only 后，companion 走默认 gpt-5.5**，对 `response_format` 兼容性更差、
+> 通常吐干净 JSON 还能撑；但**升级1 为 companion 新增 plan 后，companion 走默认 gpt-5.5**，对 `response_format` 兼容性更差、
 > 更易吐 ```json 围栏或夹带 thinking 文本 → `json.loads` 直接挂 → 计划静默丢。**修复**：把 plan.py:153 的单层
-> `json.loads` 换成**三级容错** `_extract_json`（裸/fenced/bare，复用 N1/N3 同款实现，可抽到 plan.py 本地或共享
+> `json.loads` 换成**三级容错** `_extract_json`（裸/fenced/bare，复用 N1 同款实现，可抽到 plan.py 本地或共享
 > util）；**抽取失败时静默跳过 plan（`return None`，不阻断**主 ReAct，对齐 :147 现有"无 plan = 裸 ReAct"的优雅降级
-> 语义）。companion 路径失败率高于 code，这层容错是刚需，不是 nice-to-have。
+> 语义）。**⚠️ 仅改 companion 路径用到的解析**——若 code 路径与 companion 共用同一处 `json.loads`，加容错是纯增强
+> （对 code 路径只多了 fallback、不改成功路径行为，仍属"不修改 code 模式现有行为"的安全增强）。companion 路径
+> 失败率高于 code，这层容错是刚需，不是 nice-to-have。
 
 **升级 2（吃主要矛盾 attack_order）** —— 在构造 user 消息时（plan.py:116-125 附近）把 attack_order 注入 prompt，让计划首步对准 principal：
 
@@ -1101,7 +1063,7 @@ schema `properties` 内（plan.py:67 附近）加：
 
 ```python
         # ─── 七步流水线 IN-LOOP 三闸（plans/2026-06-24-problem-pipeline）。
-        # 全 None (默认) → 跳过所有 pipeline 分支（字节级 BC）。
+        # 全 None → 跳过所有 pipeline 分支（kill-switch 回退到今天的链路）。
         evidence_gate: Optional[Any] = None,           # deskpet.agent.evidence_gate.EvidenceGate（service 实例，caller 传）
         self_check_gate: Optional[Any] = None,         # deskpet.agent.self_check_gate.SelfCheckGate（build_agent 内构造后传，见 B3）
         convergence_report_on_stop: bool = False,      # Step7：True → __init__ 末尾用 self._gate 自建 ConvergenceController（见 3c 修正）
@@ -1441,7 +1403,7 @@ class PipelineEvent(AgentEvent):
 
 在 main.py:6690 附近（plan 块 `_gate_on = ...` 之前）插入：
 ```python
-                        # ─── 七步流水线 PRE-LOOP（Step1 意图 / Step3 主要矛盾）。
+                        # ─── 七步流水线 PRE-LOOP（决策4：Step1 意图 + Step3 主要矛盾合并 1 次 analyze 调用）。
                         # flag off → pipeline.enabled=False → run_pre_loop 返回空 → 不改任何行为（BC）。
                         _pipeline = service_context.get("problem_pipeline")
                         _pre = None
@@ -1593,27 +1555,29 @@ class PipelineEvent(AgentEvent):
 等同处构造，`⚠️待实现时复核`具体行；搜 `service_context.register("context_assembler"` 或 `service_context.register("goal_checker"` 的写入点——**真实代码用 `register(name,obj)` 不是下标**，见 §M5 B1）：
 ```python
         # ─── 七步流水线资产构造（features.problem_pipeline.enabled off → 全不构造/enabled=False）───
+        # 决策1：测试环境出厂 enabled 默认 true → 这里默认进入构造分支。
         _pp_cfg = getattr(config.features, "problem_pipeline", None)
         if _pp_cfg is not None and _pp_cfg.enabled:
-            from deskpet.agent.intent_triage import IntentTriage
-            from deskpet.agent.contradiction_analyzer import ContradictionAnalyzer
+            from deskpet.agent.intent_triage import IntentTriage, _PRE_ANALYSIS_SCHEMA
             from deskpet.agent.evidence_gate import EvidenceGate
             from deskpet.agent.self_check_gate import SelfCheckGate
             from deskpet.agent.problem_pipeline import ProblemHandlingPipeline
-            from deskpet.agent.intent_triage import _INTENT_SCHEMA
-            from deskpet.agent.contradiction_analyzer import _SCHEMA as _CONTRA_SCHEMA
             _pp_base = local_llm or cloud_llm
-            # ⚠️ M-3 修正：每模块绑定**自己的 schema**（单一 callable 无法同时携两个 schema）。
+            # ⚠️ 决策3：分析模型可配——analysis_model 留空 → 复用主 LLM（_pp_base，gpt-5.5）；
+            #    非空 → 经 _resolve_ephemeral_provider 克隆出独立 model provider（失败回退主 LLM）。
+            #    不硬依赖 haiku。
+            _analysis_base = _pp_base
+            if getattr(_pp_cfg, "analysis_model", ""):
+                _analysis_base = _resolve_ephemeral_provider(_pp_base, _pp_cfg.analysis_model) or _pp_base
+            # ⚠️ 决策4：Step1+3 合并成一次调用 → 只需**一个**绑定合并 schema 的 callable（_PRE_ANALYSIS_SCHEMA
+            #    同时含 intent 字段 + 可空 contradiction 段），不再分 intent/contra 两个 callable/两个 schema。
             #    _make_str_llm_call 已加 response_format 透传（见 §1 约定）。schema 调用失败由模块内 safe-fail 兜。
-            _intent_llm = _make_str_llm_call(_pp_base, max_tokens=1024, response_format=_INTENT_SCHEMA)
-            _contra_llm = _make_str_llm_call(_pp_base, max_tokens=1024, response_format=_CONTRA_SCHEMA)
+            _pre_llm = _make_str_llm_call(_analysis_base, max_tokens=1536, response_format=_PRE_ANALYSIS_SCHEMA)
             # ⚠️ B1 修正：register(name,obj)，禁止下标赋值（ServiceContext 是 dataclass，无 __setitem__）。
             service_context.register("problem_pipeline", ProblemHandlingPipeline(
                 enabled=True,
-                intent_triage=(IntentTriage(_intent_llm, clarify_threshold=_pp_cfg.intent_clarify_threshold)
+                intent_triage=(IntentTriage(_pre_llm, clarify_threshold=_pp_cfg.intent_clarify_threshold)
                                if _pp_cfg.intent_triage else None),
-                contradiction_analyzer=(ContradictionAnalyzer(_contra_llm)
-                                        if _pp_cfg.contradiction_analyzer else None),
                 observability_events=_pp_cfg.observability_events,
             ))
             if _pp_cfg.evidence_gate:
@@ -1640,23 +1604,26 @@ class PipelineEvent(AgentEvent):
 > **SelfCheckGate 装配位置修正（含红队 B3 — BLOCKER）**：verify_gate/external_evaluator 实例在 **build_agent 内**
 > 构造（已核实 main.py:1019 verify_gate / :1071-1076 external_evaluator）。**红队 B3 核实结论**：这俩**只在**
 > `verifier_cfg.verify_gate_mode != "off"`（**已核实 main.py:982**）/ `verifier_cfg.external_evaluator == True`
-> （**已核实 main.py:1072-1076**）时才构造，否则是 `None`。若用户**只开** `problem_pipeline.self_check_mode=strict`
+> （**已核实 main.py:1072-1076**）时才构造，否则是 `None`。若用户**只开** `problem_pipeline.self_check=true`（决策1：bool）
 > 而**没开** `tools.verifier` 那两个 flag → SelfCheckGate 拿到两个 None → 对账层(verify pass)+异体评分双跳过 →
-> **strict 退化成永远 pass 的空门，且不报错**。这是隐蔽 BLOCKER（用户以为开了 strict 自检，实际啥也没做）。
+> **自检退化成永远 pass 的空门，且不报错**。这是隐蔽 BLOCKER（用户以为开了自检，实际啥也没做）。
 >
-> **修复（硬要求）**：当 `self_check_mode != "off"` 时，在 build_agent 内**强制自建一套** verify_gate /
+> **修复（硬要求）**：当 `self_check`（bool，决策1）为 True 时，在 build_agent 内**强制自建一套** verify_gate /
 > external_evaluator **专供 SelfCheckGate**，**不依赖** tools.verifier 两 flag。即把 build_agent 现有 verify_gate
 > 构造块（**已核实 main.py:979-1038**）+ external_evaluator 块（**已核实 main.py:1076-1099**）的核心各抽成一个
 > 参数化工厂 `_build_verify_gate(mode)` / `_build_external_evaluator()`，pipeline 路径独立调它们。
 >
-> **⏯ evaluator_model 拍板（round-2 R3）**：**复用 `[tools.verifier].ephemeral_subagent_model`**
-> （**已核实 config.py:295 该字段存在，`str = "haiku"` 默认 + VG-INVARIANT-5 白名单校验 @ config.py:662-673**），
-> **不新增** `problem_pipeline.self_check_model`——少加 flag、与 verify_gate ephemeral 救援共用同一异体模型语义一致。
-> 缺省/解析失败由 `_resolve_ephemeral_provider` 回退主 LLM（**已核实回退语义 @ main.py:711-721**）。
+> **⏯ 评分模型可配、不硬依赖 haiku（决策3，round-3 改写）**：新增 `[features.problem_pipeline].self_check_model: str = ""`
+> ——**留空 = 复用主 LLM gpt-5.5**（中转站只保证有主模型，不保证真有 haiku）；非空才经 `_resolve_ephemeral_provider`
+> 克隆出独立 model provider（**已核实回退语义 @ main.py:711-721**：解析失败回退主 LLM）。**异体诚实降级（决策3）**：
+> 单模型中转站下"异体" = **新开 context 的独立子代理 + 对抗式提示**（非执行者本人、无自我辩护偏置），**不是不同模型**，
+> 仍有价值；若中转站日后有更便宜/不同模型，把 `self_check_model` 配过去即可。`_resolve_ephemeral_provider` 复用保留
+> （它正好做"克隆端点 + 换 wire model id，失败回退主 LLM"），只是默认 model 取 `self_check_model`（留空→主 LLM）而非写死 haiku。
 >
 > **⚠️ B3 关键差异（核实）**：原 external_evaluator 块走 `llm_registry.providers[0]`（**已核实 main.py:1089**）——
-> 这是**主 LLM 同模型**，**不是** fresh model。B3/"遗漏:Step6" 要求异体评分走 `_resolve_ephemeral_provider` 出
-> **独立 model**。故 `_build_external_evaluator()` 工厂**不照抄** :1089 的 providers[0] 路径，改走 ephemeral provider。
+> 这是**主 LLM 同模型**，**不是** fresh-context 子代理。B3/"遗漏:Step6" 要求异体评分走 `_resolve_ephemeral_provider` 出
+> **新开 context 的独立子代理**（model 可配，留空=主 LLM）。故 `_build_external_evaluator()` 工厂**不照抄** :1089 的
+> providers[0] 路径，改走 `_resolve_ephemeral_provider(_eb, self_check_model)`（留空时回退主 LLM，仍是 fresh-context 子代理）。
 >
 > **两个工厂的可粘贴骨架**（抽到 build_agent 内部，闭包捕获 `cfg/local_llm/cloud_llm/llm_registry/receipt_store`）：
 > ```python
@@ -1675,11 +1642,11 @@ class PipelineEvent(AgentEvent):
 >             if not _pf.is_absolute():
 >                 _pf = _Path(__file__).parent / _pf            # 同 :991-993，相对 backend/ 解析
 >             _patterns = load_claim_patterns(_pf)
->             # 异体救援子代理走 ephemeral 独立模型（复用 ephemeral_subagent_model；解析失败回退主 LLM）。
+>             # 决策3：异体救援子代理模型 = self_check_model（留空 → _resolve 回退主 LLM gpt-5.5）；
+>             #        不硬依赖 haiku。_resolve_ephemeral_provider 失败也回退主 LLM。
 >             _eb = local_llm or cloud_llm                       # 同 :1000 _ephemeral_base
->             _ep = _resolve_ephemeral_provider(
->                 _eb, getattr(_vc, "ephemeral_subagent_model", "haiku") if _vc else "haiku",
->             )
+>             _scm = getattr(_pp, "self_check_model", "") or ""  # 留空=主 LLM
+>             _ep = _resolve_ephemeral_provider(_eb, _scm) if _scm else _eb
 >             _ell = _make_str_llm_call(_ep, max_tokens=256) if _ep is not None else None
 >             _sub = make_ephemeral_verifier(_ell) if _ell is not None else None
 >             return VerifyGate(extractor=RegexExtractor(_patterns), mode=mode, ephemeral_subagent=_sub)
@@ -1692,13 +1659,12 @@ class PipelineEvent(AgentEvent):
 >         """异体评分子代理：走 _resolve_ephemeral_provider 出独立 model（非执行者打分）。失败 → None。"""
 >         try:
 >             from deskpet.agent.external_evaluator import ExternalEvaluator as _EE  # noqa: PLC0415
->             _vc = getattr(getattr(cfg, "tools", None), "verifier", None)
 >             _eb = local_llm or cloud_llm
->             # ⚠️ B3/"遗漏:Step6"：必须 fresh model（≠ 主 LLM），故走 _resolve_ephemeral_provider，
->             #    不走原 :1089 的 llm_registry.providers[0]（那是同模型）。缺省/失败回退主 LLM（保持可用）。
->             _evp = _resolve_ephemeral_provider(
->                 _eb, getattr(_vc, "ephemeral_subagent_model", "haiku") if _vc else "haiku",
->             )
+>             # ⚠️ B3/"遗漏:Step6" + 决策3：异体 = 新开 context 的独立子代理（model 可配，留空=主 LLM gpt-5.5）。
+>             #    不走原 :1089 的 llm_registry.providers[0]（那是同 context 主 LLM）。self_check_model 留空时
+>             #    _resolve 回退主 LLM，仍是 fresh-context 子代理（非执行者打分），不硬依赖 haiku。
+>             _scm = getattr(_pp, "self_check_model", "") or ""
+>             _evp = _resolve_ephemeral_provider(_eb, _scm) if _scm else _eb
 >             if _evp is None:
 >                 return None
 >             logger.info("pipeline_external_evaluator_model model=%s base=%s",
@@ -1714,19 +1680,20 @@ class PipelineEvent(AgentEvent):
 > ```python
 > _self_check_gate = None
 > _pp = getattr(getattr(cfg, "features", None), "problem_pipeline", None)
-> if _pp is not None and _pp.enabled and _pp.self_check_mode != "off":
+> if _pp is not None and _pp.enabled and _pp.self_check:   # ⚠️ 决策1：self_check 现在是 bool（默认 true）
 >     from deskpet.agent.self_check_gate import SelfCheckGate
 >     # ⚠️ B3：不复用上面随 tools.verifier flag 可能为 None 的实例——强制为 pipeline 自建。
->     _sc_verify_gate = verify_gate                    # tools.verifier 已开 → 直接复用（同模型语义一致）
+>     _sc_verify_gate = verify_gate                    # tools.verifier 已开 → 直接复用（同 endpoint 语义一致）
 >     if _sc_verify_gate is None and receipt_store is not None:
->         # tools.verifier.verify_gate_mode=off 时上面没建 → 用 self_check_mode 当 mode 强制建一套对账。
->         # mode 映射：strict→"strict"；light/shadow→"shadow"（VerifyGate 仅接受 off|shadow|strict，已核实
->         # config.py:293 + verify_gate.py:292 raise on other）。缺 receipt_store 则只能退化（见下降级兜底）。
->         _sc_mode = "strict" if _pp.self_check_mode == "strict" else "shadow"
->         _sc_verify_gate = _build_verify_gate(_sc_mode)
+>         # tools.verifier.verify_gate_mode=off 时上面没建 → 强制建一套对账供 SelfCheckGate。
+>         # ⚠️ 决策1：self_check 已是 bool，不再有 shadow/light/strict 档；这里底层 VerifyGate 的 mode 直接
+>         # 取 "strict"（严格对账）——SelfCheckGate 内部再**按 problem_type 选严格度**（debug/creation 严、
+>         # factual 轻、chitchat 跳过，见 N4 _MODE_BY_PROBLEM），不靠外部 flag 分档。VerifyGate 仅接受
+>         # off|shadow|strict（已核实 verify_gate.py:292 raise on other）。缺 receipt_store 则只能退化（见下降级兜底）。
+>         _sc_verify_gate = _build_verify_gate("strict")
 >     _sc_external = _external_evaluator                # tools.verifier.external_evaluator 已开 → 复用
 >     if _sc_external is None and _pp.self_check_heterogeneous:
->         _sc_external = _build_external_evaluator()    # 强制为异体评分自建（fresh model）
+>         _sc_external = _build_external_evaluator()    # 强制为异体评分自建（fresh-context 子代理，model 可配）
 >     # 降级可观测（B3 核心）：二者皆不可得 → 不静默空门，启动期显式告警。
 >     if _sc_verify_gate is None and _sc_external is None:
 >         logger.warning("self_check_degraded reason=no_verify_no_evaluator sid_scope=build_agent")
@@ -1756,26 +1723,33 @@ class PipelineEvent(AgentEvent):
 ```python
 @dataclass
 class ProblemPipelineConfig:
-    """``[features.problem_pipeline]`` — 七步问题处理流水线（plans/2026-06-24-...）。
+    """``[features.problem_pipeline]`` — 七步问题处理流水线（plans/2026-06-24-...，仅 Companion 主线）。
 
-    全 flag 默认 OFF；enabled=False 时整条流水线短路回退现有链路（字节级 BC）。
-    灰度路径（对齐 verify_gate shadow→strict）：
-      self_check_mode: off（纯回退）→ shadow（跑不阻塞，只发事件/日志）→ light → strict。
-    出厂建议 enabled=false；真测确认不误伤闲聊/不拖慢后再灰度开。
+    决策1（测试环境）：出厂即开全量验证——enabled 默认 **True**，各子 flag 默认 on；
+      flag 仅作 kill-switch + 单步调试开关（出问题时关某步或整条 enabled=false 一键回退）。
+      **不做 shadow→light→strict 灰度档**：self_check 是 bool，严格度由 SelfCheckGate 内部按 problem_type 选
+      （debug/creation 严、factual 轻、chitchat 跳过）。
+    决策3（模型可配）：analysis_model / self_check_model 留空 = 复用主 LLM gpt-5.5（中转站只保证主模型），
+      不硬依赖 haiku；非空才解析独立 model（失败回退主 LLM）。
     """
-    enabled: bool = False                      # 总开关：off → 整条短路回退（BC）
-    intent_triage: bool = False                # Step1
+    enabled: bool = True                       # 总开关（kill-switch）：false → 整条短路回退现有链路
+    intent_triage: bool = True                 # Step1+3 合并预分析（意图 + 主要矛盾）
     intent_clarify_threshold: float = 0.7      # 歧义澄清阈值
-    evidence_gate: bool = False                # Step2 取证门控
+    evidence_gate: bool = True                 # Step2 取证门控
     evidence_max_nudges: int = 2               # 取证 nudge 上限
     evidence_investigative_tools: list[str] = field(default_factory=list)  # 空=用模块默认白名单
-    contradiction_analyzer: bool = False       # Step3
-    plan_companion_enabled: bool = False       # Step4 计划扩到 companion
-    self_check_mode: str = "off"               # Step6: off/shadow/light/strict
-    self_check_heterogeneous: bool = True      # 失败 N 次后启异体评分子代理
+    plan_companion_enabled: bool = True        # Step4 为 Companion 主线新增 plan（code 模式不动）
+    analysis_model: str = ""                   # 决策3：意图+矛盾分析模型（留空=主 LLM gpt-5.5）
+    self_check: bool = True                    # Step6 自检总开关（bool；严格度内部按 problem_type 选）
+    self_check_model: str = ""                 # 决策3：异体自检评分模型（留空=主 LLM gpt-5.5）
+    self_check_heterogeneous: bool = True      # 失败 N 次后启异体（fresh-context 子代理）评分
     convergence_report_on_stop: bool = True    # Step7 止损报告
-    observability_events: bool = False         # 是否发 <标签> WS 事件
+    observability_events: bool = True          # 是否发 <标签> WS 事件
 ```
+
+> **注意（决策4）**：原 `contradiction_analyzer: bool` flag **已删除**——Step3 矛盾分析已合并进 Step1 的
+> `intent_triage`（同一次 LLM 调用），由 `intent_triage` 这一个 flag 控制；矛盾段是否填由 problem_type 决定（运行时），
+> 不需独立 flag。
 
 **FeaturesConfig 加字段**（config.py:489 microcompact_size_aware 之后）：
 ```python
@@ -1799,48 +1773,41 @@ class ProblemPipelineConfig:
 > pop+构建**（幂等，第二次 pop 拿同样的 raw_pp，构建结果一致）。若确认第二处纯冗余可删，须先 grep 确认 :1334-1358
 > 之间无对 `config.features` 的依赖再删（`⚠️待实现时复核`）。
 
-**`_merge_missing_feature_flags` backfill 加 allowlist（红队 B2，硬要求）**——**已核实 `_MIGRATABLE_SECTIONS`
-@ config.py:775-788**：该 tuple 驱动存量 install 的默认 flag 回填（`_merge_missing_feature_flags` @ config.py:818）。
-**关键核实**：清单里 `("memory","v2")` 与 `("memory","v2","facts")` **两条都在**——证明**嵌套子表必须各自单列一条 allowlist**，
-因为逐 key 回填循环对 `_is_toml_table(bval)` 的 key **直接 `continue` skip**（**已核实 config.py:870-871**：
-"nested sub-table handled via its own allowlist entry"）。所以缺 `("features","problem_pipeline")` →
-存量用户的 config.toml 永远拿不到这段默认（即使 bundle 默认有）→ 灰度永远开不了。**修复**：在 `_MIGRATABLE_SECTIONS`
-末尾加一条：
-```python
-    ("features", "problem_pipeline"),   # ← B2 修复：嵌套子表必须单列（同 ("memory","v2")）
-```
-> **whole-section copy 对父表 [features] 已存在的情形生效吗？已核实**：回填走 :854-865 的 "Whole section missing"
-> 分支——`user_tbl = _dig_table(user_doc, ("features","problem_pipeline"))` 为 None（用户没这段），
-> `parent = _dig_table(user_doc, ("features",))` = 用户**已存在**的 [features] 表（非 None，`_is_toml_table` 真）→
-> `parent["problem_pipeline"] = deepcopy(bundle_tbl)` 整段拷过去（连注释 trivia）。**故父表已存在的情形 copy 生效**，
-> 正是我们要的。前提：bundle 默认 config.toml 里**确实有** `[features.problem_pipeline]` 整段（上面 toml 块已给）。
+**~~`_merge_missing_feature_flags` backfill（原红队 B2）~~ — 决策1 已删除（测试环境无存量迁移需求）**：
 
-**config.toml 注释块**（加到 bundle 的默认 config.toml，全 OFF）：
+> **决策1（round-3）：删除 B2 存量 backfill 工作**。本期是测试环境，不存在"存量 install 拿不到默认"的迁移诉求
+> ——**不再往 `_MIGRATABLE_SECTIONS`（config.py:775）加 `("features","problem_pipeline")`**。仍**保留** config 加
+> `[features.problem_pipeline]` 段定义 + load_config 的 pop 子表读取（上方 dataclass + load_config 改造照旧），
+> 只是**不做存量回填**。新装/重置的 config 直接带上面默认（enabled=true 出厂即开）；老 config 缺该段时
+> `_load_section` 用 dataclass 默认值兜底（enabled 默认 true），无需 backfill 也能跑。
+
+**config.toml 注释块**（加到 bundle 的默认 config.toml，**出厂即开**，决策1）：
 ```toml
 [features.problem_pipeline]
-# 七步问题处理流水线（毛选方法论锚）。全默认 OFF；enabled=false 时字节级回退现有链路。
-# 灰度路径：先 enabled=true + observability_events=true（shadow 观测，不阻塞），
-# 真测确认不误伤闲聊/不拖慢后，再逐步开 intent_triage / evidence_gate / contradiction_analyzer，
-# 最后把 self_check_mode 从 off→shadow→light→strict 升档。
-enabled = false
-intent_triage = false
+# 七步问题处理流水线（毛选方法论锚，仅 Companion 主线）。决策1：测试环境出厂即开全量验证。
+# flag 仅作 kill-switch + 单步调试：出问题时关某步（如 evidence_gate=false）或整条 enabled=false 一键回退。
+# 不做 shadow→light→strict 灰度档；self_check 是 bool，严格度由内部按 problem_type 选。
+# 决策3：analysis_model / self_check_model 留空=复用主 LLM gpt-5.5（不硬依赖 haiku）。
+enabled = true
+intent_triage = true             # Step1+3 合并预分析（意图 + 主要矛盾，1 次 LLM）
 intent_clarify_threshold = 0.7
-evidence_gate = false
+evidence_gate = true
 evidence_max_nudges = 2
 # evidence_investigative_tools = ["search","read","grep","inspect","web_search","deepresearch"]
-contradiction_analyzer = false
-plan_companion_enabled = false
-self_check_mode = "off"          # off | shadow | light | strict
+plan_companion_enabled = true    # 为 Companion 主线新增 plan（code 模式不动）
+analysis_model = ""              # 留空=主 LLM gpt-5.5
+self_check = true                # 自检总开关（bool；严格度内部按 problem_type 选）
+self_check_model = ""            # 留空=主 LLM gpt-5.5
 self_check_heterogeneous = true
 convergence_report_on_stop = true
-observability_events = false
+observability_events = true
 ```
 
 > **invariant（B3 已修正）**：problem_pipeline 与 `[tools.verifier]` 的 verify_gate_mode 独立，但 SelfCheckGate
-> **不能依赖** tools.verifier flag 才有对账/异体能力——否则用户单开 `self_check_mode=strict` 不开 tools.verifier →
-> 双 None → strict 空门（红队 B3）。**修复**：`self_check_mode != "off"` 时 build_agent 内**强制自建** verify_gate
-> （用 self_check_mode 当 mode）+ external_evaluator（见 §M3 改动 3e 的 B3 块）。二者皆不可得（无 receipt_store
-> 且 heterogeneous=off）→ 降级为 pass **但启动期 `logger.warning("self_check_degraded ...")`**，不静默空门。
+> **不能依赖** tools.verifier flag 才有对账/异体能力——否则用户单开 `self_check=true`（决策1：bool）不开 tools.verifier →
+> 双 None → 自检空门（红队 B3）。**修复**：`self_check` 为 True 时 build_agent 内**强制自建** verify_gate
+> （mode 固定 "strict"，严格度由 SelfCheckGate 内部按 problem_type 选）+ external_evaluator（见 §M3 改动 3e 的 B3 块）。
+> 二者皆不可得（无 receipt_store 且 heterogeneous=off）→ 降级为 pass **但启动期 `logger.warning("self_check_degraded ...")`**，不静默空门。
 
 ---
 
@@ -1899,84 +1866,87 @@ observability_events = false
 
 ---
 
-## 5. BC 短路保证（逐处）
+## 5. kill-switch 回退保证（逐处）
 
-| 改动 | flag off 时的早 return / 不变行为 |
+> 决策1：测试环境 `enabled` 默认 **true**（出厂即开）。本表证明 **kill-switch（设 `enabled=false`）能干净回退到今天的
+> 链路**——每处新分支在 flag off 时早 return / 不进新代码路径。**不再做字节级行为快照 diff ceremony**；验收以
+> "关 flag 后现有 2300+ pytest 不回归"为准（05 §1 L0）。**B2 存量 backfill 行已删**（决策1）。
+
+| 改动 | flag off（kill-switch）时的早 return / 不变行为 |
 |---|---|
-| M5 context.py（B1）| flag off → lifespan **仍 `register(name,None)` 占位**（4 个 key）→ `service_context.get("problem_pipeline")` 返回 None（不抛 ValueError）。这是其余 BC 行的前提 |
-| M4 backfill（B2）| `_MIGRATABLE_SECTIONS` 加 `("features","problem_pipeline")` 只**回填默认 off 段**，不改任何已存在 flag 值（additive，幂等）→ 存量 install 拿到 `enabled=false` = 字节级 BC |
-| N1-N6 新模块 | flag off → lifespan 不构造组件实例（`_pp_cfg.enabled` False）但 register(None) 占位 → `service_context.get(...)` 返回 None |
-| M1 plan.py 升级1 | `companion_enabled` 默认 False → `not in_code_mode` 分支仍 `return None`，与改前字节级一致 |
+| M5 context.py（B1）| flag off → lifespan **仍 `register(name,None)` 占位**（4 个 key）→ `service_context.get("problem_pipeline")` 返回 None（不抛 ValueError）。这是其余回退行的前提 |
+| N1/N2/N4/N5/N6 新模块 | flag off → lifespan 不构造组件实例（`_pp_cfg.enabled` False）但 register(None) 占位 → `service_context.get(...)` 返回 None |
+| M1 plan.py 升级1 | `companion_enabled` 默认随 flag；flag off → `not in_code_mode` companion 分支仍 `return None`，与改前一致；**code 路径无论 flag 都不进新分支（决策2）** |
 | M1 plan.py 升级2/3 | `attack_order=None`/`contradiction_descs=None` → `_ao_hint=""` → prompt 与改前一致；`parallelizable` 默认 False，旧渲染/注入不读 |
 | M2 agent_loop __init__ | 新参数全默认 None/False（`evidence_gate=None`/`self_check_gate=None`/`convergence_report_on_stop=False`）→ `self._evidence_gate`/`self._self_check_gate`/`self._convergence_controller` 全 None |
 | M2 Step2 块 | `self._evidence_gate is None` → 整段 skip，直接到 completion_probe |
-| M2 Step6 块 | `self._self_check_gate is None` → 走 `elif` 原 verify_gate 块（字节级一致）|
-| M2 Step7 块（M-1 修正）| `convergence_report_on_stop=False` → `self._convergence_controller is None` → 循环顶 :821 的 `not _ok` 分支走原 `yield ErrorEvent;return`（字节级一致）；自然收尾路径不拼接 content（仍 `response.content`）|
+| M2 Step6 块 | `self._self_check_gate is None` → 走 `elif` 原 verify_gate 块（行为一致）|
+| M2 Step7 块（M-1 修正）| `convergence_report_on_stop=False` → `self._convergence_controller is None` → 循环顶 :821 的 `not _ok` 分支走原 `yield ErrorEvent;return`（行为一致）；自然收尾路径不拼接 content（仍 `response.content`）|
 | M2 Step5 label | `self._pipeline_observability=False` → `pipeline_label=None`，前端不读 = 无影响 |
 | M3 PRE-LOOP | `_pipeline is None or not enabled` → 整段 skip，`_pre=None`，plan 调用走原参数（companion_enabled=False）|
-| M3 build_agent 传参 | `_pre is None`（或 short_circuit）→ evidence_gate 传 None + `convergence_report_on_stop=False` + self_check_gate 内部不构造（`self_check_mode=="off"`）→ AgentLoop 字节级 BC |
+| M3 build_agent 传参 | `_pre is None`（或 short_circuit）→ evidence_gate 传 None + `convergence_report_on_stop=False` + self_check_gate 内部不构造（`self_check`=False 时）→ AgentLoop 回退原行为 |
 | M3 事件转发 | pipeline off → AgentLoop 不 yield PipelineEvent → 转发分支不触发 |
-| M4 config | `problem_pipeline.enabled=False`（默认）→ lifespan 不构造 → 全链路回退 |
+| M4 config | `problem_pipeline.enabled=False`（kill-switch）→ lifespan 不构造 → 全链路回退 |
 
-**★ 一票否决验收（05 文档）**：`features.problem_pipeline.enabled == false` 时跑全套现有测试（2300+）零回归，
-`_run_chat` + `AgentLoop.run` 的消息序列/工具调用/事件流逐字节相同。
+**★ 一票否决验收（05 文档，决策1 已降级口径）**：把 flag 关掉（`enabled == false`，kill-switch）时跑全套现有测试
+（2300+）**不回归**——证明 kill-switch 可安全回退。**不做字节级行为快照比对**（测试环境无须生产级 rollout 仪式）。
 
 ---
 
 ## 6. 实施顺序（DAG）+ WI 拆分
 
 ```
-WI-0 (config)  ──┬─► WI-1 (Step1 IntentTriage + 编排器壳)
-                 │        └─► WI-2 (Step3 ContradictionAnalyzer)  ──┐
-                 │                                                   ├─► WI-5 (main.py PRE-LOOP 编排 + 事件转发)
-                 ├─► WI-3 (Step4 plan.py 升级)  ─────────────────────┘
+WI-0 (config)  ──┬─► WI-1 (Step1+3 合并预分析 IntentTriage[含矛盾] + 编排器壳)  ──┐
+                 │                                                                  ├─► WI-5 (main.py PRE-LOOP 编排 + 事件转发)
+                 ├─► WI-3 (Step4 plan.py 为 Companion 新增 plan)  ──────────────────┘
                  │
                  ├─► WI-4a (Step2 EvidenceGate)        ──┐
                  ├─► WI-4b (Step6 SelfCheckGate)        ─┼─► WI-6 (agent_loop.py IN-LOOP 三闸接入 + build_agent 透传)
                  └─► WI-4c (Step7 ConvergenceController)─┘
-                                                            └─► WI-7 (真机 E2E + BC 回归，见 05)
+                                                            └─► WI-7 (真机 E2E + kill-switch 回退回归，见 05)
 ```
+> **决策4：WI-1 + 原 WI-2 已合并**——Step3 矛盾分析并入 Step1 的 `IntentTriage.analyze()`（同一次 LLM），不再有
+> 独立 `contradiction_analyzer.py` / 独立 WI。WI-5 现只依赖 WI-1 + WI-3。
 
 | WI | 内容 | 并行性 | 验收点 |
 |---|---|---|---|
-| **WI-0** | M4 config（ProblemPipelineConfig + 双处 pop 加载 + `_MIGRATABLE_SECTIONS` 加 `("features","problem_pipeline")` + toml）**＋ M5 context.py（注册 4 个 service key + dataclass 字段）**| 先做（其他全依赖；M5 是 main.py 所有 register/get 的硬前置）| `pytest test_config*`：默认全 OFF；`[features.problem_pipeline]` 解析正确；backfill 对缺该段的存量 config 能整段 copy；`ServiceContext.register("problem_pipeline",None)`/`.get(...)` 不抛；现有 config/context 测试零回归 |
-| **WI-1** | N1 intent_triage.py + N6 problem_pipeline.py 壳 | 依赖 WI-0 | 单测：chitchat 短路、歧义澄清出口、safe-fail、prior_task_type 映射 |
-| **WI-2** | N3 contradiction_analyzer.py | 依赖 WI-1（用 IntentCard.problem_type）| 单测：should_trigger 条件、safe-fail、attack_order 解析 |
-| **WI-3** | M1 plan.py 三升级 | 依赖 WI-0，可与 WI-1/2 并行 | 单测：旧签名 BC（不传新参 = 旧行为）、companion_enabled 分支、attack_order 注入、parallelizable 解析 |
+| **WI-0** | M4 config（ProblemPipelineConfig + 双处 pop 加载 + toml；**无 B2 backfill**，决策1）**＋ M5 context.py（注册 4 个 service key + dataclass 字段）**| 先做（其他全依赖；M5 是 main.py 所有 register/get 的硬前置）| `pytest test_config*`：**enabled 默认 true、子 flag 默认 on**（决策1）；`analysis_model`/`self_check_model` 默认 `""`；`[features.problem_pipeline]` 解析正确；老 config 缺该段由 dataclass 默认值兜底；`ServiceContext.register("problem_pipeline",None)`/`.get(...)` 不抛；现有 config/context 测试不回归 |
+| **WI-1** | N1 intent_triage.py（**合并 Step1+3：意图 + 矛盾，一次 analyze()**，决策4）+ N6 problem_pipeline.py 壳 | 依赖 WI-0 | 单测：chitchat 纯规则短路（**0 次 LLM**）、歧义澄清出口、safe-fail（contradiction=None）、prior_task_type 映射、**复杂问题一次调用同时出 intent+contradiction（`await_count==1`）**、attack_order 解析 |
+| **WI-3** | M1 plan.py 三升级（**仅 Companion 新增 plan，code 模式分支不动**，决策2）| 依赖 WI-0，可与 WI-1 并行 | 单测：旧签名 BC（不传新参 = 旧行为）、**code mode 行为不回归**、companion_enabled 分支、attack_order 注入、parallelizable 解析 |
 | **WI-4a** | N2 evidence_gate.py | 依赖 WI-0，独立 | 单测：BLOCK 条件（`evidence_gathered=False`）、`evidence_gathered=True` 放行、`is_investigative` 白名单判定、max_nudges 耗尽放行；**R1 回归：compaction 后（working_messages 被整体替换变短）`evidence_gathered=True` 仍放行不误注入** |
-| **WI-4b** | N4 self_check_gate.py | 依赖 WI-0，独立 | 单测：按 problem_type 选档、复用 verify_gate（mock）、异体评分触发条件、chitchat 跳过 |
+| **WI-4b** | N4 self_check_gate.py | 依赖 WI-0，独立 | 单测：按 problem_type 选严格度（debug→严/chitchat→skip）、复用 verify_gate（mock）、异体评分触发条件（model 取 self_check_model，留空=主 LLM，决策3）、chitchat 跳过 |
 | **WI-4c** | N5 convergence_controller.py | 依赖 WI-0，独立 | 单测：量化收敛判据、止损报告、资源触顶判定（mock TerminationGate.summary）|
-| **WI-5** | M3 改动 3a/3b/3d/3e（main.py PRE-LOOP 编排 + plan 传参 + 事件转发 + lifespan 构造）| 依赖 WI-1/2/3 | live smoke：flag on 时 PRE-LOOP 跑通发事件；flag off 时 BC |
-| **WI-6** | M2 全部 + M3 改动 3c（agent_loop IN-LOOP 三闸 + build_agent 透传 + SelfCheckGate 内构造）| 依赖 WI-4a/4b/4c | 单测：三闸 None=BC；flag on 时 Step2 拦截 / Step6 编排 / Step7 止损 |
-| **WI-7** | 真机 windows-mcp E2E + 2300+ BC 回归（05 文档）| 依赖全部 | ★ flag off 零回归；3 类问题（debug/多症状/闲聊）流水线证据；闲聊不拖慢 |
+| **WI-5** | M3 改动 3a/3b/3d/3e（main.py PRE-LOOP 编排 + plan 传参 + 事件转发 + lifespan 构造）| 依赖 WI-1/3 | live smoke：flag on 时 PRE-LOOP 跑通发事件；kill-switch（flag off）回退 |
+| **WI-6** | M2 全部 + M3 改动 3c（agent_loop IN-LOOP 三闸 + build_agent 透传 + SelfCheckGate 内构造）| 依赖 WI-4a/4b/4c | 单测：三闸 None=回退；flag on 时 Step2 拦截 / Step6 编排 / Step7 止损 |
+| **WI-7** | 真机 windows-mcp E2E + 2300+ kill-switch 回退回归（05 文档）| 依赖全部 | ★ 关 flag 不回归；3 类问题（debug/多症状/闲聊）流水线证据；闲聊不拖慢（0 次 LLM）|
 
 ---
 
 ## 7. 风险与坑（实现时必看）
 
-1. **★ 1500ms 组装超时与 PRE-LOOP 延迟预算分离**：组装期（assembler.py fanout 1500ms 超时）与
-   PRE-LOOP（Step1/3 各一次 LLM 调用）是**两个独立阶段**，PRE-LOOP 在组装之后跑。但 Step1+Step3
-   串行各 ~一次 LLM 调用 = **额外 2 次 LLM 往返**（intent 4s timeout + contradiction 6s timeout）。
-   闲聊**必须**在 Step1 纯规则短路（不调 LLM），否则每条"你好"都多等数秒——这是硬性能红线
-   （已在 N1 用 `_TASKTYPE_TO_PROBLEM["chat"]="chitchat"` + 纯规则短路守住）。`⚠️` 实现时务必真测闲聊延迟。
+1. **★ 1500ms 组装超时与 PRE-LOOP 延迟预算分离（决策4：Step1+3 合并成 1 次调用）**：组装期（assembler.py
+   fanout 1500ms 超时）与 PRE-LOOP（**合并的预分析一次 LLM 调用**）是**两个独立阶段**，PRE-LOOP 在组装之后跑。
+   **决策4 把原 Step1(intent)+Step3(contradiction) 两次串行往返合并成 1 次**（`IntentTriage.analyze`，timeout 6s）——
+   **非闲聊每问题只多 1 次 gpt-5.5 调用**（性能红线），不再是原来的 2 次。闲聊**必须**纯规则短路（**0 次 LLM**），
+   否则每条"你好"都多等数秒（已在 N1 用 `_TASKTYPE_TO_PROBLEM["chat"]="chitchat"` + 纯规则短路守住）。
+   `⚠️` 实现时务必真测闲聊延迟 + 非闲聊只调 1 次（日志确认）。
 
 2. **闲聊短路必须最先判 + 不能误伤**：classifier 的 rule tier 对"你好今天天气"可能落 `chat`，但对
    "我心情不好"落 `emotion`——两者都映射 chitchat 短路。但若 classifier 落 `code`/`task`（误判），
    闲聊会被拖进完整流水线。缓解：Step1 的 LLM 调用（非短路路径）会重判 problem_type，但代价是已经
    多调了一次 LLM。**接受这个 tradeoff**：误判闲聊为 task 只是多一次 LLM，不破坏正确性。
 
-3. **★ 异体评分必须走 fresh model（`_resolve_ephemeral_provider`）——红队"遗漏:Step6"已修正**：03 §3 Step6 + 00
-   明写异体评分走 **fresh model / 独立模型**（"the agent doing the work isn't the one grading it"），**不是**"同模型不同
-   persona"。04 此前退化成"复用 ExternalEvaluator 的 persona 即可"是降级。**已核实**：`_resolve_ephemeral_provider`
-   @ main.py:703 克隆出独立 model provider（只换 model，复用 base_url/key），verify_gate 的 ephemeral 救援路径 @
-   main.py:1001 已用它。**修复**：§M3 改动 3e 的 `_build_external_evaluator()` 工厂内，evaluator 的 provider 必须经
-   `_resolve_ephemeral_provider(local_llm or cloud_llm, _pp.evaluator_model 或 verifier_cfg.ephemeral_subagent_model)`
-   解析出**独立 model provider** 再喂 ExternalEvaluator；**缺省/解析失败回退主 LLM**（与 :711 回退语义一致，保持可用）。
-   真测 TC-4 须确认评分 provider 的 `model=` ≠ 主 LLM（05 已要求）。**✅ round-2 R3 已拍板**：evaluator_model
-   **复用 `[tools.verifier].ephemeral_subagent_model`**（已核实 config.py:295 存在，默认 `"haiku"` + 白名单校验
-   @ :662-673），**不新增** `problem_pipeline.self_check_model`——少加 flag、与 verify_gate ephemeral 同语义。
-   `_build_external_evaluator()` 完整骨架见 §M3 改动 3e；注意它**不照抄**原块 :1089 的 `llm_registry.providers[0]`
-   （那是主 LLM 同模型），改走 `_resolve_ephemeral_provider` 出 fresh model（已核实差异）。
+3. **★ 异体评分走 fresh-context 子代理，模型可配不硬依赖 haiku（决策3，round-3 改写）**：03 §3 Step6 + 00
+   明写异体评分走 **新开 context 的独立子代理 + 对抗式提示**（"the agent doing the work isn't the one grading it"），
+   **不是**"同 context 主 LLM 自评"。**决策3 诚实降级**：单模型中转站只保证主模型 gpt-5.5，**不保证真有 haiku**
+   （haiku/sonnet 只是别名、底层端点仍 gpt-5.5，真机实证 `model='sonnet' base='gpt-5.5'`）——所以"异体"的核心价值
+   是 **fresh context + 对抗提示 + 非执行者**，**不是不同模型**。**模型可配**：新增 `problem_pipeline.self_check_model: str = ""`
+   （**留空=主 LLM gpt-5.5**），非空才经 `_resolve_ephemeral_provider` 出独立 model（失败回退主 LLM）。**已核实**：
+   `_resolve_ephemeral_provider` @ main.py:703 克隆 provider（只换 model，复用 base_url/key，回退语义 @ :711），
+   verify_gate ephemeral 救援 @ main.py:1001 已用它。**修复**：§M3 改动 3e 的 `_build_external_evaluator()` 工厂内，
+   evaluator provider 走 `_resolve_ephemeral_provider(_eb, self_check_model)`（留空→主 LLM，仍是 fresh-context 子代理）；
+   **不照抄**原块 :1089 的 `llm_registry.providers[0]`（那是同 context 主 LLM）。真测 TC-4 确认评分走独立子代理
+   （日志 `pipeline_external_evaluator_model`）；若 `self_check_model` 配了不同 model，`model=` ≠ 主 LLM（05 已要求）。
 
 4. **装配顺序硬约束（ConvergenceController 需 TerminationGate）**：gate 在 `_AgentLoop.__init__`(:618) 内构造，
    main.py 拿不到。**必须**让 _AgentLoop 自己构造 ConvergenceController（M3 改动 3c 已给修正方案：传
@@ -1992,9 +1962,11 @@ WI-0 (config)  ──┬─► WI-1 (Step1 IntentTriage + 编排器壳)
    统一改为"**独立 chat_v2_final 澄清出口**"。
 
 6. **schema strict + additionalProperties:False**（M1 升级3 标了 `⚠️`）：plan.py PLAN_SCHEMA `strict:True`，
-   加 `parallelizable` 必须同步进 step 的 `required`，否则 relay strict 拒。intent/contradiction 的新 schema
-   同理——relay 对 thinking-model 的 strict json_schema **本来就高 400 率**（plan.py:141 注释证实），
-   故 IntentTriage/ContradictionAnalyzer 的 `_extract_json` 三级 fallback + safe-fail 是刚需，不能省。
+   加 `parallelizable` 必须同步进 step 的 `required`，否则 relay strict 拒。**决策4 合并的 `_PRE_ANALYSIS_SCHEMA`
+   同理 + 额外坑**：它的 `contradiction` 段用 `["object","null"]`（让简单问题回 null），**strict + nullable 段**对
+   thinking-model **400 率更高**（plan.py:141 注释证实 strict json_schema 本就高 400）。故 N1 `IntentTriage` 的
+   `_extract_json` 三级 fallback + safe-fail（异常→contradiction=None 降级）是刚需，不能省；若实测 nullable+strict
+   400 率过高，可把 `_PRE_ANALYSIS_SCHEMA` 放宽 `strict:False`（三级容错仍兜底）。
 
 7. **config features 加载两次**（已核实 config.py:1332 + :1359）：M4 改 load_config 时**两处都要改**或删重复块，
    否则第二次 `_load_section(FeaturesConfig, raw["features"])` 用未 pop problem_pipeline 的 raw 覆盖第一次结果。
@@ -2050,7 +2022,28 @@ WI-0 (config)  ──┬─► WI-1 (Step1 IntentTriage + 编排器壳)
 | **R3** MINOR | B3 工厂缺可粘贴实现 + evaluator_model 未拍板——3e 仍标 `⚠️待复核`，`_build_verify_gate`/`_build_external_evaluator` 无骨架；external_evaluator 原走 `providers[0]`（主 LLM 同模型）≠ B3 要的 fresh model | §M3 改动 3e：补两个工厂**完整可粘贴骨架**（内部依赖 cfg/local_llm/cloud_llm/receipt_store 怎么拿、provider 统一走 `_resolve_ephemeral_provider`、失败回退主 LLM）；**拍板 evaluator_model = 复用 `[tools.verifier].ephemeral_subagent_model`**（不新增 flag）；去掉 `⚠️待复核` 标记；§7 风险#3 同步 | verify_gate 构造块 @ main.py:979-1038；external_evaluator 块 @ :1076-1099（`providers[0]` @ :1089）；`_resolve_ephemeral_provider` @ :703（回退 @ :711-721）；`_make_str_llm_call` @ :684；`ephemeral_subagent_model:str="haiku"` @ config.py:295（白名单 @ :662-673）；VerifyGate 仅接受 off\|shadow\|strict @ verify_gate.py:292 |
 
 **装配顺序硬约束（B1/B3/M-1 联动，实现者务必按此 DAG）**：
-1. **先做 M5（context.py 注册 4 key）+ M4（config + backfill）** = WI-0，是后续所有 register/get/flag 读取的前置。
+1. **先做 M5（context.py 注册 4 key）+ M4（config，决策1 已删 backfill）** = WI-0，是后续所有 register/get/flag 读取的前置。
 2. SelfCheckGate 在 **build_agent 内**构造（拿 verify_gate/external_evaluator，B3 强制自建）；ConvergenceController 在
    **AgentLoop.__init__ 末尾**构造（拿 self._gate）——**都不能在 lifespan 预构造**（拿不到依赖）。
 3. EvidenceGate 可在 lifespan 构造（无内部依赖），经 service_context 注册 + caller 透传。
+
+### 8.2 第 3 轮决策修订记录（round-3，用户 review 后 4 项决策 → 就地回写）
+
+> 用户 review 后定了 4 项决策，已就地改正正文（00/03/04/05）。本表供索引 + 验证修了哪些。**注意**：上方 §8 / §8.1
+> 部分行（B2、R3 evaluator_model 拍板、遗漏:Step6 的"复用 ephemeral_subagent_model"）已被本轮决策**部分推翻/替换**，
+> 见下方"被覆盖项"。
+
+| 决策 | 内容 | 回写落点 |
+|---|---|---|
+| **决策1** 测试环境去 rollout ceremony | `enabled` 默认 **true**（出厂即开）+ 子 flag 默认 on；**删 shadow→light→strict 多档灰度**（`self_check` 改 bool，严格度内部按 problem_type 选）；**删 B2 存量 backfill**；★ 一票否决降级为"关 flag 后 pytest 不回归"（**删字节级快照 diff**）| 00 §3/§4、03 §5/§6 BC 不变量、04 §1 表/§M4 dataclass+toml+删 B2/§5 标题+表/§6 WI-0、05 §1 L0/§2 灰度整节/§3 清单/§5 DoD |
+| **决策2** 范围只作用 Companion | 流水线**只作用主线程 Companion**，**完全不碰 Code 模式**；Step4 改为"为 Companion 新增 plan 能力，code 模式 plan 分支原样不动"；背景注 code 入口已产品侧暂关（`Toolbar.tsx:26 CODE_MODE_ENTRY_ENABLED=false`）| 00 §1 Q1 范围注/Q3/§3、03 §3 Step4/§设计原则/§6、04 §1 表/§M1 升级1 措辞+code 路径不动/§6 WI-3 |
+| **决策3** 模型可配不依赖 haiku | 新增 `analysis_model`/`self_check_model`（**留空=主 LLM gpt-5.5**）；异体诚实降级说明（单模型下"异体"=fresh-context 独立子代理 + 对抗提示，非不同模型）；`_resolve_ephemeral_provider` 默认 model 取 self_check_model 不写死 haiku | 00 §4、03 §3 Step1+3/Step6/§5、04 §2 N1/§M3 3e 两工厂+lifespan/§M4 dataclass+toml/§7 风险#3 |
+| **决策4** 合并意图分诊+主要矛盾为 1 次 LLM | Step1(IntentTriage)+Step3(ContradictionAnalyzer) **两次串行往返合并成 1 次** structured-output 调用（`IntentTriage.analyze` 返回 `IntentCard`，含可选 `contradiction` 段）；闲聊纯规则短路 0 次 LLM；**删独立 N3 / 删 `contradiction_analyzer` flag / 合并 WI-1+WI-2**；非闲聊每问题只多 1 次 gpt-5.5 调用 | 00 §2 注、03 §2 架构图/§3 Step1+3+Step3/§设计原则、04 §1 表/§2 N1 重写+删 N3/§N6 编排器/§M3 3e lifespan/§6 DAG+WI/§7 风险#1+#6、05 §1 L1+TC-1 |
+
+**被本轮决策覆盖的旧条目（实现以本轮为准，旧条目作废）**：
+- §8 **B2**（backfill 加 `("features","problem_pipeline")`）→ **决策1 删除**：测试环境无存量迁移需求，不做 backfill。
+- §8.1 **R3** 的"evaluator_model **复用** `[tools.verifier].ephemeral_subagent_model`、**不新增** `self_check_model`" →
+  **决策3 反转**：**新增** `analysis_model`/`self_check_model`（留空=主 LLM gpt-5.5），不再绑 haiku 别名。
+- §8 **遗漏:Step6**"fresh **model**"措辞 → **决策3 校正为** "fresh **context** 独立子代理"（单模型中转站下不保证不同 model，
+  默认就是主 LLM；模型仅在 `self_check_model` 配了不同 model 时才异）。
+- 凡 §8/§8.1 提到 `self_check_mode` 四档 / `contradiction_analyzer` 独立模块的措辞，均被决策1（bool）/ 决策4（合并）替换。

@@ -17,6 +17,11 @@
 
 **结论：Companion（默认会话）模式本质是"单步反应式"；Code 模式有弱结构但反思多默认关。**
 
+> **本期范围锚（决策2，round-3）**：本流水线**只作用于主线程 Companion 桌宠对话**，**完全不碰 Code 模式**。
+> Code 模式入口已于 2026-06-24 在产品侧暂时关闭（`Toolbar.tsx:26 CODE_MODE_ENTRY_ENABLED=false` + App.tsx 抑制
+> `code_mode_suggest`），故本期可安心只做主线。下文凡谈"现状"会提到 code mode 仅为对照背景；Code 模式的流水线
+> 优化**不在本 plan 范围**，待主线做实后另开 plan。
+
 当前真实链路（完整带 file:line 见 [`01-current-flow-and-gaps.md`](./01-current-flow-and-gaps.md)）：
 
 ```
@@ -52,9 +57,11 @@
 
 ### Q3. 怎么优化"收到用户问题→分析→处理"的流程？
 
-**核心方案：引入一条显式七步问题处理流水线 `ProblemHandlingPipeline`**，把现有散落、默认关、仅 code 模式的能力（TaskClassifier / plan / VerifyGate / reflection / TerminationGate / goal_checker）**编排成一条可观测、可门控、Companion 也适用的主干**，并补三个新模块（意图分诊 / 取证门控 / 主要矛盾分析）。设计见 [`03-design-7step-pipeline.md`](./03-design-7step-pipeline.md)，逐函数代码改动见 [`04-implementation-plan.md`](./04-implementation-plan.md)。
+**核心方案：引入一条显式七步问题处理流水线 `ProblemHandlingPipeline`**，把现有散落、默认关、仅 code 模式的能力（TaskClassifier / plan / VerifyGate / reflection / TerminationGate / goal_checker）**编排成一条可观测、可门控的 Companion 主线主干**，并补三个新模块（意图分诊 / 取证门控 / 主要矛盾分析）。设计见 [`03-design-7step-pipeline.md`](./03-design-7step-pipeline.md)，逐函数代码改动见 [`04-implementation-plan.md`](./04-implementation-plan.md)。
 
-**不是推倒重来**——80% 是"接电 + 编排 + 升级现有组件"，新增模块只有 3 个轻量类。全部 feature-flag 门控、默认 OFF、字节级向后兼容（BC）。
+**范围只作用 Companion 主线（决策2）**：本期**为 Companion 主线新增规划能力**（复用/改造 `maybe_extract_plan` 的能力，但**不修改 code 模式现有 plan 行为**，code 模式那条分支原样不动）；流水线**完全不碰 Code 模式**。
+
+**不是推倒重来**——80% 是"接电 + 编排 + 升级现有组件"，新增模块只有 3 个轻量类。全部 feature-flag 门控、出厂即开（测试环境全量验证），flag 仅留作 kill-switch + 单步调试开关。
 
 ### Q4. 毛选处理事情的方法论（本次优化的方法论锚）
 
@@ -84,30 +91,36 @@
 - **异体自检**（毛选④ + Anthropic 非执行者打分）→ 堵"自己批改自己"。
 - **收敛止损**（毛选⑦⑧ + OpenHands 外层 controller）→ 堵"死循环烧预算"。
 
+> **语义 7 步 / 实现上 Step1+3 共用 1 次 LLM（决策4）**：方法论上"意图分诊（Step1）"与"抓主要矛盾（Step3）"仍是
+> **两个独立语义步骤**，文档照旧分述。但**实现上把这两次串行 LLM 往返合并成 1 次** structured-output 调用降延迟：
+> 闲聊纯规则短路（0 次 LLM）；非闲聊调 1 次，返回 `{意图字段 + (复杂问题才填的)主要矛盾字段}`。性能红线：非闲聊
+> 每问题只多 **1 次 gpt-5.5 调用**。三道闸与 7 步方法论精神不变。
+
 ---
 
 ## 3. 范围与非目标
 
 **In scope**：
-- 新增 `ProblemHandlingPipeline` 编排器 + 3 个新模块（IntentTriage / EvidenceGate / ContradictionAnalyzer）。
-- 升级并接电现有组件（plan 扩到 companion / VerifyGate / StructuredReflection / 异体自检 / TerminationGate 整合为收敛 controller）。
+- 新增 `ProblemHandlingPipeline` 编排器 + 新模块：`IntentTriage`（决策4：意图分诊 + 主要矛盾分析合并为 1 次调用）/ `EvidenceGate`（取证门控）/ `SelfCheckGate`（异体自检编排）/ `ConvergenceController`（收敛止损）。
+- 升级并接电现有组件（**为 Companion 主线新增 plan 能力，code 模式 plan 行为原样不动** / VerifyGate / StructuredReflection / 异体自检 / TerminationGate 整合为收敛 controller）。
 - Hermes 式显式标签事件（`<意图>/<调查>/<主要矛盾>/<方案>/<执行>/<自检>/<收敛>`）→ WS 可观测 + 日志可审计。
-- 全部 feature-flag 门控，默认 OFF，BC 守护。
+- 全部 feature-flag 门控，**出厂即开（测试环境全量验证）**，flag 仅作 kill-switch + 单步调试开关。
 
 **Non-goals（本期不做）**：
+- **不碰 Code 模式**（决策2）：Code 模式入口产品侧已暂关，其流水线优化待主线做实后另开 plan。
 - 不改语音管线 / Live2D 渲染 / 记忆底层 schema。
-- 不引入新 LLM provider。
+- 不引入新 LLM provider；**意图+矛盾分析默认复用主 LLM（gpt-5.5），不硬依赖 haiku**（决策3，模型可配，留空=主 LLM）。
 - 不做沙箱/权限护栏（对齐 [[feedback_no_sandbox_constraints]]，桌宠只防手滑级破坏）。
-- 不强制全量用户开启——出厂 OFF，灰度 shadow→on（对齐 verify_gate 升级路径）。
+- **不做生产级灰度 rollout ceremony**（决策1）：测试环境直接全开，flag 仅留 kill-switch + 单步调试；不做 shadow→light→strict 多档灰度、不做字节级 BC 快照比对。
 
 ---
 
 ## 4. 验收总纲（硬证据，详见 [`05-test-and-rollout.md`](./05-test-and-rollout.md)）
 
-- **★ 一票否决**：默认 flag OFF 时，全套现有测试（2300+）零回归、行为字节级不变（BC 基线守）。
+- **★ 一票否决（决策1 已降级口径）**：把 flag 关掉（`enabled=false` kill-switch）时，全套现有测试（2300+）**不回归**——这是 kill-switch 的回退价值证明。**不再做字节级行为快照 diff**（测试环境无须生产级 ceremony）。
 - 七步流水线每步单测覆盖（输入/输出契约 + 门控判据）。
 - **真机 windows-mcp E2E**（对齐项目硬纪律 [[feedback_real_test_discipline]]）：至少 3 类问题（debug 取证类 / 多症状主要矛盾类 / 闲聊直答类）走完整流水线，截图 + 抓 backend 日志确认 `<调查>/<主要矛盾>/<自检>/<收敛>` 标签事件按预期触发；闲聊类必须**不被流水线误拖慢**（短路证据）。
-- 异体自检由非执行者（fresh model / 独立子代理）打分的真链路证据。
+- **异体自检诚实降级（决策3）**：单模型中转站下，"异体" = **新开 context 的独立子代理 + 对抗式"尝试反驳"提示**（非执行者本人、无自我辩护包袱），**不保证是不同模型**——中转站只保证有主模型 gpt-5.5（config.toml:19），haiku/sonnet 只是别名、底层端点仍 gpt-5.5（真机实证 `model='sonnet' base='gpt-5.5'`）。评分模型走可配 `self_check_model`（留空=主 LLM）；若中转站日后有更便宜/不同模型，配过去即可。真链路证据 = 评分由独立 fresh-context 子代理产出。
 
 ---
 
@@ -120,4 +133,4 @@
 | `02-benchmark-claude-openhands-hermes.md` | Q2 详解：三家做法 + 通用范式选型 + 可借鉴点 |
 | `03-design-7step-pipeline.md` | 七步流水线架构设计：每步输入/输出契约 + 门控判据 + 映射到现有/新代码 |
 | `04-implementation-plan.md` | **可执行核心**：逐文件逐函数代码改动 + 新文件 + config key + 事件 + 装配点 |
-| `05-test-and-rollout.md` | 单测 + 真机 E2E 用例 + flag 灰度 + BC 守护 + 回滚 |
+| `05-test-and-rollout.md` | 单测 + 真机 E2E 用例 + flag 策略（kill-switch，无灰度）+ 回退守护 + 回滚 |
