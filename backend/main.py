@@ -681,20 +681,27 @@ except NameError:
 # 记忆系统升级 WI-M1.2/M1.7: facts 抽取 / reflection 需要一个
 # (prompt:str)->str 的 LLMCall —— summarizer.make_llm_call 走的是
 # messages->dict 形状，不匹配。这里把 provider 适配成纯字符串形状。
-def _make_str_llm_call(provider, *, max_tokens: int = 512):
+def _make_str_llm_call(provider, *, max_tokens: int = 512, response_format=None):
     """Adapt an OpenAICompatibleProvider into a ``(prompt: str) -> str``
     async callable. provider=None → return None so callers can skip
     (用户未配置 / 离线时 facts/reflection 静默跳过，不报错)。
+
+    response_format（M-3，plans/2026-06-24-...）：可选 json_schema structured-output
+    透传给 chat_with_tools。留 None = 旧行为（不传，字节级 BC）；非 None 时供七步流水线
+    intent/contradiction 合并预分析绑定 schema（中转站 thinking-model 仍可能 400，调用方各自 safe-fail）。
     """
     if provider is None:
         return None
 
     async def _call(prompt: str) -> str:
-        result = await provider.chat_with_tools(
+        _kwargs = dict(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=max_tokens,
             temperature=0.2,  # 抽取/反思要稳定，不发散
         )
+        if response_format is not None:
+            _kwargs["response_format"] = response_format
+        result = await provider.chat_with_tools(**_kwargs)
         return (result or {}).get("content") or ""
 
     return _call
@@ -949,6 +956,14 @@ def build_agent(
     # WI-OH-4 — 记忆 self-curation nudge。None (默认) → agent_loop 不调 nudge
     # （字节级 BC）。非 None 时每 N 回合 fire-and-forget 触发一次。
     memory_curator=None,
+    # ─── 七步问题处理流水线 IN-LOOP 闸透传（plans/2026-06-24-...）。全默认 None/False = BC。
+    # self_check_gate / convergence_controller 不由 caller 传——前者 build_agent 内构造（B3，
+    # 依赖本函数的 verify_gate/external_evaluator），后者 AgentLoop 内自建（依赖 self._gate）。
+    evidence_gate=None,
+    pipeline_problem_type=None,
+    pipeline_needs_investigation=False,
+    pipeline_observability=False,
+    convergence_report_on_stop=False,
 ):
     """Build a wired _AgentLoop with optional VerifyGate + ReceiptStore.
 
@@ -1122,6 +1137,72 @@ def build_agent(
             logger.warning("iteration_tracer_init_failed: %s", exc)
             _tracer = None
 
+    # ─── Step6 SelfCheckGate 装配（plans/2026-06-24-..., 红队 B3）。
+    # 关键：SelfCheckGate **不依赖** tools.verifier 两 flag——用户单开 problem_pipeline.self_check
+    # 不开 tools.verifier 时，强制自建一套 verify_gate(mode=strict) + external_evaluator(异体 fresh-context)
+    # 供 SelfCheckGate，避免"自检空门"。二者皆不可得 → 降级 pass **但启动期 warning**，不静默空门。
+    def _build_pipeline_verify_gate(_scm: str):
+        """为 SelfCheckGate 自建 strict 对账门（抽自上方 :979 构造逻辑；不绑 verifier_cfg.mode）。"""
+        try:
+            from pathlib import Path as _Path
+            from deskpet.agent.verify_gate import (
+                RegexExtractor, VerifyGate, load_claim_patterns, make_ephemeral_verifier,
+            )
+            _vc = getattr(getattr(cfg, "tools", None), "verifier", None)
+            _pf = _Path(getattr(_vc, "claim_patterns_file", "verify/claim_patterns.yaml")
+                        if _vc else "verify/claim_patterns.yaml")
+            if not _pf.is_absolute():
+                _pf = _Path(__file__).parent / _pf
+            _patterns = load_claim_patterns(_pf)
+            _eb = local_llm or cloud_llm
+            _ep = _resolve_ephemeral_provider(_eb, _scm) if _scm else _eb
+            _ell = _make_str_llm_call(_ep, max_tokens=256) if _ep is not None else None
+            _sub = make_ephemeral_verifier(_ell) if _ell is not None else None
+            return VerifyGate(extractor=RegexExtractor(_patterns), mode="strict", ephemeral_subagent=_sub)
+        except Exception as _e:  # noqa: BLE001
+            logger.warning("pipeline_build_verify_gate_failed err=%s", str(_e)[:200])
+            return None
+
+    def _build_pipeline_external_evaluator(_scm: str):
+        """异体评分子代理：走 _resolve_ephemeral_provider 出独立 model（非执行者打分）。失败 → None。"""
+        try:
+            from deskpet.agent.external_evaluator import ExternalEvaluator as _EE  # noqa: PLC0415
+            _eb = local_llm or cloud_llm
+            _evp = _resolve_ephemeral_provider(_eb, _scm) if _scm else _eb
+            if _evp is None:
+                return None
+            logger.info("pipeline_external_evaluator_model model=%s base=%s",
+                        getattr(_evp, "model", "?"), getattr(_eb, "model", "?"))
+            _evc = _make_str_llm_call(_evp, max_tokens=512)
+            return _EE(llm_call=_evc, conservative_on_error=True)
+        except Exception as _e:  # noqa: BLE001
+            logger.warning("pipeline_build_external_evaluator_failed err=%s", str(_e)[:200])
+            return None
+
+    _self_check_gate = None
+    _pp = getattr(getattr(cfg, "features", None), "problem_pipeline", None)
+    if _pp is not None and getattr(_pp, "enabled", False) and getattr(_pp, "self_check", False):
+        try:
+            from deskpet.agent.self_check_gate import SelfCheckGate as _SCG  # noqa: PLC0415
+            _scm = getattr(_pp, "self_check_model", "") or ""
+            _sc_hetero = bool(getattr(_pp, "self_check_heterogeneous", True))
+            _sc_verify_gate = verify_gate                    # tools.verifier 已开 → 复用
+            if _sc_verify_gate is None and receipt_store is not None:
+                _sc_verify_gate = _build_pipeline_verify_gate(_scm)
+            _sc_external = _external_evaluator                # tools.verifier.external_evaluator 已开 → 复用
+            if _sc_external is None and _sc_hetero:
+                _sc_external = _build_pipeline_external_evaluator(_scm)
+            if _sc_verify_gate is None and _sc_external is None:
+                logger.warning("self_check_degraded reason=no_verify_no_evaluator sid_scope=build_agent")
+            _self_check_gate = _SCG(
+                verify_gate=_sc_verify_gate,
+                external_evaluator=_sc_external,
+                heterogeneous_enabled=_sc_hetero,
+            )
+        except Exception as _exc:  # noqa: BLE001
+            logger.warning("self_check_gate build failed: %s", _exc)
+            _self_check_gate = None
+
     return _AgentLoop(
         llm_registry=llm_registry,
         tool_registry=tool_registry,
@@ -1169,6 +1250,13 @@ def build_agent(
         subagent_registry=globals().get("service_context").get("subagent_registry")
         if globals().get("service_context") is not None
         else None,
+        # ─── 七步问题处理流水线 IN-LOOP 闸（plans/2026-06-24-...）。flag off → 全 None/False = BC。
+        evidence_gate=evidence_gate,
+        self_check_gate=_self_check_gate,
+        convergence_report_on_stop=convergence_report_on_stop,
+        pipeline_problem_type=pipeline_problem_type,
+        pipeline_needs_investigation=pipeline_needs_investigation,
+        pipeline_observability=pipeline_observability,
     )
 
 
@@ -1569,6 +1657,14 @@ try:
                     _gt_resolver = (
                         lambda: _session_goal_store.get_active_goal_context()
                     )
+                    # 工具可见性门控：仅当存在活跃 goal 时才把 goal_task_* 暴露
+                    # 给 LLM。否则普通聊天里 LLM 看不到这些工具，不会被「拆解
+                    # 任务」类描述诱导误调（误触发 goal 流程）。handler 仍有
+                    # 「请先 /goal」兜底，门控只是从源头不让它进 prompt。
+                    _gt_visible = (
+                        lambda: _session_goal_store.get_active_goal_context()
+                        is not None
+                    )
                     for _gt_name, _gt_schema, _gt_handler in _build_global_gt(
                         task_graph_store=_global_tg_store,
                         goal_resolver=_gt_resolver,
@@ -1586,6 +1682,7 @@ try:
                                 "goal_task_list", "goal_task_get",
                             ),
                             replace_allowed=True,
+                            visible_when=_gt_visible,
                         )
                     logger.info("goal_task_tools_registered_global count=4")
             except Exception as _gt_exc:  # noqa: BLE001
@@ -1597,6 +1694,55 @@ try:
             _goal_checker = None
     service_context.register("session_goal_store", _session_goal_store)
     service_context.register("goal_checker", _goal_checker)
+
+    # ─── 七步问题处理流水线资产构造（plans/2026-06-24-problem-handling-pipeline-maoxuan）───
+    # 决策1：测试环境出厂 enabled 默认 true → 默认进入构造分支。flag off → 全 register(None) 占位
+    # （B1：否则后续 service_context.get("problem_pipeline") 因 name∉_VALID_SERVICES 抛 ValueError）。
+    _pp_cfg = getattr(getattr(config, "features", None), "problem_pipeline", None)
+    if _pp_cfg is not None and getattr(_pp_cfg, "enabled", False):
+        try:
+            from deskpet.agent.intent_triage import IntentTriage, _PRE_ANALYSIS_SCHEMA
+            from deskpet.agent.evidence_gate import EvidenceGate
+            from deskpet.agent.problem_pipeline import ProblemHandlingPipeline
+            _pp_base = local_llm or cloud_llm
+            # 决策3：analysis_model 留空 → 复用主 LLM（gpt-5.5）；非空 → 克隆独立 model（失败回退主 LLM）。
+            _analysis_base = _pp_base
+            if getattr(_pp_cfg, "analysis_model", ""):
+                _analysis_base = _resolve_ephemeral_provider(_pp_base, _pp_cfg.analysis_model) or _pp_base
+            # 决策4：Step1+3 合并 → 单一绑定合并 schema 的 callable（_make_str_llm_call 透传 response_format）。
+            _pre_llm = _make_str_llm_call(
+                _analysis_base, max_tokens=1536, response_format=_PRE_ANALYSIS_SCHEMA,
+            ) if _analysis_base is not None else None
+            service_context.register("problem_pipeline", ProblemHandlingPipeline(
+                enabled=True,
+                intent_triage=(IntentTriage(_pre_llm, clarify_threshold=_pp_cfg.intent_clarify_threshold)
+                               if _pp_cfg.intent_triage else None),
+                observability_events=_pp_cfg.observability_events,
+            ))
+            if _pp_cfg.evidence_gate:
+                service_context.register("pipeline_evidence_gate", EvidenceGate(
+                    investigative_tools=_pp_cfg.evidence_investigative_tools or None,
+                    max_nudges=_pp_cfg.evidence_max_nudges,
+                ))
+            else:
+                service_context.register("pipeline_evidence_gate", None)
+            # self_check / convergence 在 build_agent / AgentLoop 内构造，service 仅占位 None：
+            service_context.register("pipeline_self_check_gate", None)
+            service_context.register("pipeline_convergence_controller", None)
+            logger.info("problem_pipeline_init enabled=true intent=%s evidence=%s self_check=%s",
+                        _pp_cfg.intent_triage, _pp_cfg.evidence_gate, _pp_cfg.self_check)
+        except Exception as _pp_exc:  # noqa: BLE001 — 构造失败不崩 boot，退回 None 占位（kill-switch）
+            logger.warning("problem_pipeline_init_failed: %s — disabled", _pp_exc)
+            service_context.register("problem_pipeline", None)
+            service_context.register("pipeline_evidence_gate", None)
+            service_context.register("pipeline_self_check_gate", None)
+            service_context.register("pipeline_convergence_controller", None)
+    else:
+        # flag off：register(None) 占位（B1 硬要求）。
+        service_context.register("problem_pipeline", None)
+        service_context.register("pipeline_evidence_gate", None)
+        service_context.register("pipeline_self_check_gate", None)
+        service_context.register("pipeline_convergence_controller", None)
 
     # WI-4.0 compaction：ContextCompressor 构造 + 注入 build_agent。
     # flag OFF（默认）→ _context_compressor = None → AgentLoop BC（不调）。
@@ -6406,6 +6552,7 @@ async def control_channel(ws: WebSocket):
                             FinalEvent as _FinEv,
                             ErrorEvent as _ErrEv,
                             ContextCompactedEvent as _CtxCompactedEv,
+                            PipelineEvent as _PipeEv,
                         )
                         from agent.tool_use_shim import OpenAICompatibleAgentLLM as _Shim
                         # P4-S20-LLM-Unified: 单一 endpoint。local_llm 来自
@@ -6673,6 +6820,71 @@ async def control_channel(ws: WebSocket):
                                     _sid, _ws_exc,
                                 )
 
+                        # ─── 七步流水线 PRE-LOOP（决策4：Step1 意图 + Step3 主要矛盾合并 1 次 analyze）。
+                        # plans/2026-06-24-... §M3 改动 3a。flag off → pipeline.enabled=False →
+                        # run_pre_loop 返回空 → 不改任何行为（BC）。此处 _in_code_mode/_msgs/_bundle 均已就绪。
+                        _pipeline = service_context.get("problem_pipeline")
+                        _pre = None
+                        _pipe_attack_order = None
+                        _pipe_contra_descs = None
+                        _pipe_problem_type = None
+                        if (
+                            _pipeline is not None and getattr(_pipeline, "enabled", False)
+                            and not _is_sentinel
+                        ):
+                            try:
+                                _prior_tt = getattr(_bundle, "task_type", None) if _bundle else None
+                                _pre = await _pipeline.run_pre_loop(_text, prior_task_type=_prior_tt)
+                                for _pev in _pre.events:
+                                    _pev_full = {"type": _pev["type"],
+                                                 "payload": {"session_id": _sid, **_pev["payload"]}}
+                                    await _ws.send_json(_pev_full)
+                                    await _broadcast_default_chat_peers(_ws, _pev_full)
+                                if _pre.short_circuit:
+                                    logger.info("pipeline_short_circuit sid=%s", _sid)
+                                elif _pre.needs_clarification and _pre.intent:
+                                    # 独立 chat_v2_final 澄清出口（裸 return 会跳过 _run_chat 收尾 → 显式补收尾）。
+                                    _clar_text = "\n".join(_pre.intent.clarifying_questions)
+                                    _clar_evt = {"type": "chat_v2_final",
+                                                 "payload": {"session_id": _sid, "text": _clar_text}}
+                                    await _ws.send_json(_clar_evt)
+                                    await _broadcast_default_chat_peers(_ws, _clar_evt)
+                                    try:
+                                        _sa_clar = service_context.get("session_activity")
+                                        if _sa_clar is not None:
+                                            await _sa_clar.set_status(_sid, "idle")
+                                    except Exception as _se:  # noqa: BLE001
+                                        logger.debug("clarify_set_idle_failed sid=%s err=%s",
+                                                     _sid, str(_se)[:120])
+                                    # 持久化澄清回复为 assistant 行（对齐 FinalEvent 持久化，防多轮澄清断裂）。
+                                    if _sdb is not None:
+                                        try:
+                                            await _sdb.append_message(
+                                                session_id=_sid, role="assistant",
+                                                content=_clar_text or "",
+                                            )
+                                        except Exception as _pe2:  # noqa: BLE001
+                                            logger.warning("clarify_persist_assistant_failed sid=%s err=%s",
+                                                           _sid, str(_pe2)[:160])
+                                    logger.info("pipeline_clarification_pause sid=%s", _sid)
+                                    return
+                                else:
+                                    # 注入 <意图>/<主要矛盾> system 消息（插在 system 栈尾）。
+                                    for _inj in _pre.system_injections:
+                                        _ins_at = 0
+                                        while _ins_at < len(_msgs) and _msgs[_ins_at].get("role") == "system":
+                                            _ins_at += 1
+                                        _msgs.insert(_ins_at, {"role": "system", "content": _inj})
+                                    _pipe_problem_type = _pre.intent.problem_type if _pre.intent else None
+                                    if _pre.contradiction is not None:
+                                        _pipe_attack_order = _pre.contradiction.attack_order
+                                        _pipe_contra_descs = {
+                                            c.id: c.desc for c in _pre.contradiction.contradictions
+                                        }
+                            except Exception as _pe:  # noqa: BLE001 — safe-fail：pipeline 异常退回裸链路
+                                logger.warning("pipeline_pre_loop_failed sid=%s err=%s", _sid, str(_pe)[:200])
+                                _pre = None
+
                         # P4-S25 A2: Plan/Replan — for non-trivial code-mode
                         # requests, do a structured-output plan call BEFORE
                         # the ReAct loop. The plan is sent to the frontend
@@ -6693,11 +6905,19 @@ async def control_channel(ws: WebSocket):
                                 maybe_extract_plan as _maybe_plan,
                                 plan_to_system_message as _plan_to_sys,
                             )
+                            _companion_plan_on = bool(
+                                getattr(getattr(config, "features", None), "problem_pipeline", None)
+                                and config.features.problem_pipeline.plan_companion_enabled
+                            )
                             _plan = await _maybe_plan(
                                 _provider,
                                 _text,
                                 str(_cmm.project_root(_sid)) if _in_code_mode and _cmm else None,
                                 in_code_mode=_in_code_mode,
+                                companion_enabled=_companion_plan_on,
+                                problem_type=_pipe_problem_type,
+                                attack_order=_pipe_attack_order,
+                                contradiction_descs=_pipe_contra_descs,
                             )
                             if _plan is not None:
                                 # Layer 1B 计划记忆: 语义相似且以往批准过 → 自动确认,
@@ -6955,6 +7175,23 @@ async def control_channel(ws: WebSocket):
                             skill_matcher=_skill_matcher_for_agent,
                             tool_path_recorder=_tp_recorder_for_agent,
                             memory_curator=_curator_for_agent,
+                            # ─── 七步流水线 IN-LOOP 闸（plans/2026-06-24-...）。flag off → 全 None/False = BC。
+                            # self_check_gate 由 build_agent 内构造（B3）；convergence 由 AgentLoop 内自建。
+                            evidence_gate=(service_context.get("pipeline_evidence_gate")
+                                           if (_pre and not _pre.short_circuit) else None),
+                            pipeline_problem_type=_pipe_problem_type,
+                            pipeline_needs_investigation=bool(
+                                _pre.intent.needs_investigation if (_pre and _pre.intent) else False
+                            ),
+                            pipeline_observability=bool(
+                                getattr(getattr(config, "features", None), "problem_pipeline", None)
+                                and config.features.problem_pipeline.observability_events
+                            ),
+                            convergence_report_on_stop=bool(
+                                _pre and not _pre.short_circuit
+                                and getattr(getattr(config, "features", None), "problem_pipeline", None)
+                                and config.features.problem_pipeline.convergence_report_on_stop
+                            ),
                         )
                         # P4-S25 A1: stream by default — gives the user
                         # instant visible feedback on thinking-mode
@@ -7360,6 +7597,16 @@ async def control_channel(ws: WebSocket):
                                     await _ws.send_json(_cc_msg)
                                 except Exception as exc:  # noqa: BLE001
                                     logger.debug("context_compacted_ws_failed sid=%s err=%s", _sid, exc)
+
+                            elif isinstance(ev, _PipeEv):
+                                # 七步流水线观测事件（plans/2026-06-24-...）：直接转 ws + 广播 peer。
+                                _p_evt = {"type": ev.type,
+                                          "payload": {"session_id": _sid, **ev.payload}}
+                                try:
+                                    await _ws.send_json(_p_evt)
+                                    await _broadcast_default_chat_peers(_ws, _p_evt)
+                                except Exception as exc:  # noqa: BLE001
+                                    logger.debug("pipeline_event_ws_failed sid=%s err=%s", _sid, exc)
 
                         # P4-S24: assistant persistence moved INTO the
                         # FinalEvent handler above so a same-sid task
