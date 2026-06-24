@@ -36,6 +36,15 @@
 window=1000000` 不复现，正是因为 C: 同名文件是 1M。**预算块代码本身无误**（正确用了
 resolved window）。**已修**：G: override 改回 `context_window = 1000000`（与 builtin 对齐）。
 
+### 修复后干净重跑验证（2026-06-24 晚）
+改回 1M 后重启重跑：`model_context_resolved gpt-5.5 window=1000000 source=global` →
+ppt_pro(image_mode=true) 路由 → deepresearch 真跑 → **大纲草稿 4886 字生成，全程零
+`token_budget_block`**（上一轮正死在 iter2 预算块、调研都没进；本轮顺畅穿过到拟纲）。
+**→ 8000 修复确凿生效。** 后续确认→出图→渲染未经 GUI 跑完：windows-mcp 对桌宠
+「显示消息面板」按钮(y≈1087)的 SendInput 点击在 150% DPI 下误触发 File Explorer，
+无法稳定点到 → 属 **测试 harness 交互限制**（输入框/发送 y≈1464 的点击都正常、消息真
+到达、路由真发生）。编排本身健康、停在确认闸门等待用户决策；完整渲染路径今早 C: 已 PASS。
+
 ### 残留产品观察（非阻塞，edge）
 - 用户若在 SettingsPanel 把窗口设得过小（如 8000），`ppt_pro` 这类多轮后台编排会被
   硬 BLOCK 且只在后端 ERROR 日志可见、前端无明确提示。属极端误设（gpt-5.5 名义 1M），
