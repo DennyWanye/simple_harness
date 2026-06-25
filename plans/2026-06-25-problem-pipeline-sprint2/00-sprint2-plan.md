@@ -44,14 +44,14 @@
 - embed 层撞 embedder lock 竞争 1500ms 超时（真机 4× `status='timeout'`）→ 返回 None
 - **llm 层 main.py:1977 `llm_registry=None` 彻底关掉**（且默认 model=claude-haiku-4-5 relay 没有）
 
-**方案选项**（§5 决策点 D1）：
-- **A（推荐）词法兜底**：rule/embed 无结论时，别默认 `chat`；加轻量词法启发式（疑问词「为什么/怎么/哪/吗」+ 技术名词 + 祈使动词 + 长度阈值）→ 兜底成非 chat（task/code），只有真没信号才 chat。**零额外 LLM 延迟、最小改动**。
-- B 接 llm 层 + 换可用模型（gpt-5.4-mini）：准，但每条 rule/embed-miss 消息 +1 次 LLM 往返延迟（当初设 None 多半就为省这个）。
-- C 短路前二次确认：intent_triage.py:188 chitchat 短路前，对"看着不像闲聊"的文本再走词法校验，别只信 prior_task_type。
-- **组合 A+C** 最稳：分类兜底 + 短路前再保一道。
+**拍板方案（D1）：接 LLM 层，模型 deepseek-v4-pro**
+- main.py:1977 `build_default_assembler(llm_registry=None)` → 传**真 llm_registry**；`llm_model` 从 `claude-haiku-4-5`(relay 没有) → **`deepseek-v4-pro`**（relay 有、stream+json_schema 实测稳）。
+- 这样 classifier 三层 rule→embed→**llm(deepseek-v4-pro)** 真级联：rule/embed miss 时 LLM 兜底判，**不再 default chat**。
+- ⚠️ **吃 §5.2 张力**：是"每条 miss 都 LLM"(成本) 还是"只不确定才 LLM"(方案 X)，codex 挑战时定。倾向 X：rule/embed 命中明显闲聊仍秒回，只有拿不准才 deepseek 判。
+- 同时削 BUG-C：classifier 判准了 → 喂 intent_triage 的 prior_task_type hint 也准 → 不再带偏。
 
-**验收**：默认配置（无开关）发"光合作用的暗反应在叶绿体哪个部位"等无关键词非闲聊问题 → `intent_triage.done`（走预分析），**不再** `intent_triage.shortcircuit reason=chitchat_rule`。补 classifier fail-open 回归单测。
-**相关**：classifier.py / assembler/__init__.py:79-130 / main.py:1975-1977 / intent_triage.py:185-201。
+**验收**：默认配置（无任何 env 开关）发"光合作用的暗反应在叶绿体哪个部位"等无关键词非闲聊问题 → `intent_triage.done`（走预分析），**不再** `intent_triage.shortcircuit reason=chitchat_rule`；闲聊"你好"仍快回（方案 X 下）。补 classifier LLM 层接电 + fail-open 回归单测；删本轮临时开关 `DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT`。
+**相关**：classifier.py:220-273（llm 层 + 默认 chat）/ assembler/__init__.py:79-130 / main.py:1975-1977 / intent_triage.py:185-210（短路 + hint）。
 
 ---
 
@@ -74,26 +74,25 @@
 - (a) **误判**：依赖 classifier（BUG-B），把真实问题误短路（WI-1 治根因，本 WI 治短路侧）。
 - (b) **非闲聊延迟**：每条非闲聊问题先 +1 次预分析（gpt-5.5 thinking ~10-15s，relay 慢时更久）才进主 loop。
 
-**方案选项**（§5 决策点 D3，可与 WI-1 合并）：
-- **正确性**：短路判定别只信 classifier 一票——结合词法（WI-1 的 A/C）+ 短问题/明确情绪词才短路，拿不准默认走流水线（宁可慢一点别误短路）。
-- **延迟（择一/组合）**：
-  - ① 预分析换快模型/关思考（`analysis_model` 配快模型，~10-15s→1-2s；BUG-A workaround 也吃这个红利）
-  - ② 非阻塞：桌宠先给轻反应（表情/"让我看看"气泡/先流式开口），预分析后台并行，结果出来再校正
-  - ③ 分级：简单事实问答也走轻路径（不做完整七步），只复杂问题上完整流水线
-**验收**：闲聊仍快（短路或轻路径）；非闲聊误短路率↓；非闲聊首响应延迟↓（②/③ 后桌宠"秒有反应"）。
-**相关**：intent_triage.py:185-198 / main.py PRE-LOOP 6826-6890 / RESULTS 已知 UX 成本段。
+**拍板方案（D3）：判断统一交 deepseek-v4-pro，与 WI-1 合并实现**
+- 短路/problem_type 判断**直接用 deepseek-v4-pro**（不靠脆弱 rule/embed/haiku 一票）。与 WI-1 同根：classifier LLM 层 + 预分析 analysis_model 都是 deepseek-v4-pro。
+- **延迟**：deepseek-v4-pro 实测预分析 stream+json_schema ~5-18s（比 gpt-5.5 thinking 稳）。若要更快可叠 ① 关思考/换更快变体（后续）。
+- ⚠️ **§5.2 张力**：方案 X（保留 rule/embed 快路径 + LLM 兜底，闲聊不退化）vs Y（每条都 LLM 判，闲聊也慢）。**codex 挑战须给出 X 的可行设计 + 量化闲聊延迟影响**。
+- ② 非阻塞（先轻反应后台预分析）/ ③ 分级（简单问答走轻路径）**留 Sprint 3**（②有竞态风险，本 Sprint 不做）。
+**验收**：判断准（不误短路真实问题，deepseek-v4-pro 实测分类正确）；闲聊不退化（方案 X）；非闲聊延迟可接受。
+**相关**：intent_triage.py:185-210 / classifier.py / main.py PRE-LOOP 6826-6890 / RESULTS 已知 UX 成本段。
 
 ---
 
 ### WI-4 预分析对 relay 不稳健壮化（BUG-A）— P1
 **问题**：relay 对 `gpt-5.5 + stream:True + json_schema strict` 间歇 502/503（chat_with_tools 强制 stream openai_compatible.py:262）→ 预分析挂到 `analysis_timeout_s`(默认30s)满才 safe-fail。
 
-**方案选项**（§5 决策点 D4）：
-- A 预分析失败更快降级：检测到 502/503/连续无字节，别等满 timeout，立即 safe-fail（降感知延迟）。
-- B `analysis_model` 默认换更稳模型（deepseek-v4-pro/gpt-5.4-mini 实测 stream+json_schema 稳）——但改了默认模型。
-- C stream+json_schema 失败时 fallback 到 json_object 或 non-stream 重试一次（probe 实测两者都稳）。
-**验收**：relay 502 时预分析在 ≤5s 内 safe-fail（非挂满 30/90s）；或 fallback 后成功。
-**相关**：openai_compatible.py:252-275 / intent_triage.py:208-217 / main.py:1714（max_tokens/schema 绑定）。
+**拍板方案（D4）：默认模型换 deepseek-v4-pro + 快降级 A + fallback C**
+- **B 已拍板**：预分析 + classifier LLM 层默认模型 = **deepseek-v4-pro**（实测 stream+json_schema 稳，直接规避 gpt-5.5 间歇 502）。落进 config 默认（不只 dev override）。
+- **A**：预分析检测到 502/503/连续无字节，别等满 `analysis_timeout_s` 才 safe-fail，**立即降级**（降感知延迟）。
+- **C**：stream+json_schema 仍失败时 fallback 到 json_object 或 non-stream 重试一次（probe 实测两者稳）作二次保险。
+**验收**：默认 deepseek-v4-pro 下预分析稳定 `intent_triage.done`；偶发 502 时 ≤5s safe-fail 或 fallback 成功，不挂满超时。
+**相关**：openai_compatible.py:252-275 / intent_triage.py:208-217 / main.py:1701-1722（analysis_model 绑定）/ config.py ProblemPipelineConfig。
 
 ---
 
@@ -140,16 +139,31 @@ WI-6 (测试基建) ── 贯穿
 
 ---
 
-## 5. ⭐ 待 Review 决策点（请拍板）
+## 5. ⭐ Review 决策（已拍板 2026-06-25）
 
-| # | 决策 | 选项 | 倾向 |
-|---|---|---|---|
-| **D1** | WI-1 classifier 怎么修 | A 词法兜底 / B 接LLM层 / C 短路前二次确认 / A+C | **A+C**（零延迟+双保险）|
-| **D2** | WI-2 止损怎么接 | A loop耗尽走Controller / B 修off-by-one / C 全触顶接Controller / A+C | **A+C** |
-| **D3** | WI-3 短路重做范围 | 只修正确性 / 正确性+延迟①快模型 / 全做(①+②非阻塞+③分级) | **正确性 + ①快模型**（②③作后续）|
-| **D4** | WI-4 relay 硬化 + 默认模型 | A 快降级 / B 换默认模型 / C fallback重试 / 组合；analysis_model 默认是否换 deepseek | **A+C**；默认暂不换（留"") |
-| **D5** | Sprint 范围 | 只 P0(WI-1,2)先上线 / P0+P1全做 / 全做含UX | 待定（看你节奏）|
-| **D6** | 执行方式 | codex 子代理并行 / Claude 直接做 / 混合 | 待定 |
+| # | 决策 | **用户拍板** |
+|---|---|---|
+| **D1** | WI-1 classifier 怎么修 | **接 LLM 层判断，模型用 deepseek-v4-pro**（不再 fail-open；不靠 claude-haiku/None）|
+| **D2** | WI-2 止损怎么接 | **A+C**（loop 耗尽走 ConvergenceController + 全触顶接）|
+| **D3** | WI-3 短路/分析判断 | **直接用 deepseek-v4-pro 做判断**（统一到 LLM，不靠脆弱 rule/embed/haiku）|
+| **D4** | WI-4 relay 硬化 + 默认模型 | **预分析默认模型 = deepseek-v4-pro**（实测 stream+json_schema 稳，一并解 BUG-A）+ 快降级 A + fallback C |
+| **D5** | Sprint 范围 | **全做 WI-1~6（含测试基建）** |
+| **D6** | 执行方式 | **先 codex gpt-5.5 对抗挑战 plan 到 EXECUTABLE-AS-IS，再实现** |
+
+### 5.1 拍板后的统一主线（D1+D3+D4 合并）
+**核心**：把"是不是闲聊 / problem_type 判断"统一交给 **deepseek-v4-pro LLM**，不再信脆弱的组装期 classifier（rule miss + embed 超时 + haiku 没有）做短路决策。
+- **WI-1**：classifier LLM 层接电（main.py:1977 `llm_registry` 传真值 + `llm_model="deepseek-v4-pro"`）→ rule/embed miss 时 LLM 兜底判，**不再默认 chat**。
+- **WI-3**：预分析 `analysis_model="deepseek-v4-pro"`（已设），由它可靠产出 problem_type（含真闲聊）。
+- **WI-4**：deepseek-v4-pro 实测 stream+json_schema 稳 → 同时解 BUG-A（gpt-5.5 间歇 502）。
+- 一条线同时解 **BUG-A（relay 不稳）+ BUG-B（fail-open）+ BUG-C（hint 带偏）**。
+
+### 5.2 ⚠️ 留给 codex 挑战 + 二次确认的张力（HARD）
+**"统一用 deepseek-v4-pro 判断" 与 "闲聊 0 LLM 快回（TC-1 性能红线）" 冲突**：
+- 若**每条消息**（含"你好"）都走 deepseek-v4-pro 判 → 闲聊从秒回变 ~5-18s，**TC-1 红线破**。
+- **待定方案**（codex 挑战时明确，倾向 X）：
+  - **X（倾向）保留快路径 + LLM 兜底**：rule/embed 命中明显闲聊仍 0-LLM 秒回；只有 rule/embed **拿不准**才 deepseek-v4-pro 判（LLM 成本只花在不确定的消息上）。既治 fail-open 又保闲聊快回。
+  - **Y 真·每条都 LLM 判**：最准，但闲聊也慢，牺牲 TC-1 红线 + 每条消息 LLM 成本。
+- **codex 挑战须回答**：X 能不能既"不 fail-open"又"闲聊不退化"？rule/embed"拿不准"的判据怎么定？deepseek-v4-pro 判断的延迟/成本（每条 vs 仅不确定）量级？
 
 ---
 
