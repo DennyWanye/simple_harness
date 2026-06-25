@@ -225,9 +225,12 @@ class IntentTriage:
         if _disable_sc and card.problem_type == "chitchat":
             card.problem_type = "factual_qa"
         # 出口信号派生
+        # 测试开关 DESKPET_DISABLE_CLARIFICATION=1：强制不走澄清出口，让消息直接进 IN-LOOP，
+        # 用于真机硬触发 Step2 取证门 / Step7 收敛止损（否则 under-specified 问题先被澄清门拦）。默认未设=BC。
         card.needs_clarification = (
             card.ambiguity_score >= self._clarify_threshold
             and bool(card.clarifying_questions)
+            and os.environ.get("DESKPET_DISABLE_CLARIFICATION") != "1"
         )
         card.short_circuit = (
             card.problem_type == "chitchat"
