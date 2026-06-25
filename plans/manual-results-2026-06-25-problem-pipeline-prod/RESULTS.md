@@ -196,3 +196,38 @@ deepseek-v3     -> HTTP 403  （同上）
 | TC-2/3/4/5/9 + IDEM-2~6 | ⏳ 受阻 | §7.2：relay 对预分析 call 间歇不稳（上游，plan §6 范围外）→ 无法稳定取干净结构化证据；safe-fail 兜底使用户可见行为正确 |
 
 **上线判定**：headline P0（BUG-B Y-light + BUG-D 收敛止损 + safe-fail 误短路）已修 + 关键 ★（TC-1/IDEM-1）默认配置 PASS。剩余 ★ 受 relay 上游稳定性阻断，需 relay 稳定窗口 + WI-4-C 正式落地后另起一轮补齐。
+
+---
+
+## 8. WI-5(b) 全量 ★ 真测完成（2026-06-25 晚 · 并发限制解除 + WI-4-C 落地后）
+
+### 8.1 解阻历程（三层环境问题，全部克服）
+
+1. **relay 账号余额**（§6.3）：旧 cloud-llm slot 账号耗尽 → 用户充值 + 给新 key，经 launcher env 注入（删 keychain slot 让 process_manager 不覆盖）。
+2. **relay 并发限制**（§7 修正）：真错误 = `rate_limit_error: Concurrency limit exceeded for account`（非"抽风"）→ 出诊断报告 [RELAY-ISSUE-REPORT.md](RELAY-ISSUE-REPORT.md) → **用户让 relay 调高并发上限**（6 并发 probe 全 200 确认解除）。
+3. **预分析结构化调用不稳（BUG-A）**：deepseek `stream+json_schema` 偶发慢/空 body → **WI-4-C** 落地（commit）：①非流式预分析(保留 strict schema，probe 实测 4-6s 稳) ②剥 `<think>` CoT 前缀（thinking 模型）③`_parse_contradiction` 防御性 int/float（防 LLM 乱填数值崩 run_pre_loop）。
+
+### 8.2 ★ 全量结果（默认配置 windows-mcp 真测，UIA Type+press_enter 发送 / loggrep de-wrap 判定）
+
+| Case | ★ | 真证据 | log |
+|---|---|---|---|
+| **TC-1** | ★ | 闲聊`done short_circuit=True`不进 IN-LOOP；非闲聊`done factual_qa short_circuit=False`走完整流水线；无早期 chitchat_rule | wi5 |
+| **TC-2** | ★ | `evidence_gate.blocked nudges_used=1`+`evidence_gate_nudge_injected nudge=1`→`evidence_gathered_set tool=glob/grep`（模型被拦后真取证） | wi5i/q/s |
+| **TC-3** | ★ | `intent_triage.done problem_type='debug' has_contradiction=True`；桌宠点名"主要矛盾=500崩溃优先解决" | wi5l |
+| **TC-4** | ★ | `intent_triage.done problem_type='creation'`+`pipeline_external_evaluator_model`+`self_check.done passed=True`（heterogeneous=False 因 self_check_model="" 用主LLM，属配置项） | wi5l |
+| **TC-5** | ★ | （改源码 max_iter 触顶）`convergence.stop_loss reason='error_max_turns' principal_resolved=False`恰1次+桌宠诚实止损报告"<收敛>主要矛盾是否解决：否"（非假装完成、非 budget/hallucination） | wi5o |
+| **TC-9** | ★ | `enabled=false`重启→**零**流水线 log（intent_triage/pipeline/chat_v2/evidence/self_check/convergence 全0）+ 主对话 2×200OK 正常答（BC） | wi5m |
+| **IDEM-1** | ★ | 同句闲聊×3 各`done short_circuit=True`(ambiguity 一致)、早期 chitchat_rule=0、闲聊轮零 IN-LOOP 残留 | wi5 |
+| **IDEM-3** | ★ | 歧义`done ambiguous ambiguity=0.9 clarify=True`→`pipeline_clarification_pause`+`persist_failed=0`；**重启后**答澄清→桌宠承接报表整理任务(问报表文件夹)**不重新反问**=持久化跨重启 | wi5s/t |
+| **IDEM-4** | ★ | **重启后**新进程 debug 轮重新`evidence_gathered_set tool=grep`(per-run 标记随进程销毁、新进程干净起跑、不跳过取证) | wi5r/s |
+| **IDEM-5** | ★ | 失败轮(坏 analysis_model)`llm_failed HTTP 503`→safe-fail→桌宠仍3×200OK答+**无** clarification/contradiction 乱触发+无 pre_loop 崩；还原后自愈轮`done problem_type='debug'`恢复 | wi5p/q |
+| **IDEM-6** | (含TC-5) | `convergence.stop_loss`同 run 恰1次不刷屏 | wi5o |
+
+**TC-7/IDEM-2** 已被上述覆盖（多次非闲聊各 1 次 done；evidence per-run 由 IDEM-4/TC-2 体现）。**TC-8 code 模式** env-limited（入口产品侧关，决策2 字节不动由单测覆盖，同 Sprint1）。
+
+### 8.3 上线门（Production Ship Gate）
+
+- **★ 必过全绿**：功能 TC-1/TC-9 + 幂等 IDEM-1/IDEM-3/IDEM-4/IDEM-5 ✅；功能 ★ TC-2/3/4/5 ✅。
+- **headline P0 全修+真机验证**：BUG-B(Y-light)/BUG-D(WI-2 收敛止损 error_max_turns)/safe-fail 误短路/WI-4-C 预分析稳健化。
+- **遗留（上游，非项目侧）**：relay 对结构化预分析调用仍偶发失败（已大幅降低，由 safe-fail 兜底，用户可见行为正确）；relay 稳定性属 plan §6 范围外。
+- **结论**：**默认配置上线门通过。**

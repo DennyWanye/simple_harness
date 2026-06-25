@@ -10,7 +10,7 @@ import re
 import sys
 import time
 
-LOG = r"G:\projects\deskpet\plans\manual-results-2026-06-25-problem-pipeline-prod\tauri-wi5h.log"
+LOG = r"G:\projects\deskpet\plans\manual-results-2026-06-25-problem-pipeline-prod\tauri-wi5t-idem3.log"
 START = re.compile(r"^(INFO|WARNING|ERROR|DEBUG|CRITICAL):")
 
 

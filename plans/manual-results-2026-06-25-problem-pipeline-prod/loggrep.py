@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""De-wrap the UTF-16LE tauri-wi5.log (hard-wrapped ~116 chars by the Rust pipe)
+"""De-wrap the UTF-16LE tauri-wi5t-idem3.log (hard-wrapped ~116 chars by the Rust pipe)
 and grep pipeline events from a given baseline line offset.
 
 Usage:
@@ -11,7 +11,7 @@ summary of key pipeline events in that window.
 import re
 import sys
 
-LOG = r"G:\projects\deskpet\plans\manual-results-2026-06-25-problem-pipeline-prod\tauri-wi5h.log"
+LOG = r"G:\projects\deskpet\plans\manual-results-2026-06-25-problem-pipeline-prod\tauri-wi5t-idem3.log"
 
 # A logical line starts with a python-logging level prefix.
 START = re.compile(r"^(INFO|WARNING|ERROR|DEBUG|CRITICAL):")
