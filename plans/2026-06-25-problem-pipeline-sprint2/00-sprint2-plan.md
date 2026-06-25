@@ -41,14 +41,14 @@
 ### WI-1 ★（Y 重构）取消闲聊短路 + 每条走 deepseek 预分析 — P0
 > **Y 拍板后本 WI 重构**：核心不再是"修 classifier"，而是**取消闲聊纯规则短路、让每条消息都走 deepseek-v4-pro 预分析**。classifier fail-open 修复降级为 WI-1b(P2，只影响组装质量)。
 
-**核心改动（P0）**：
-1. **删 intent_triage 早期 chitchat 短路**（intent_triage.py:185-198 的 `if derived_pt=="chitchat": return shortcircuit`）→ 每条消息都进 deepseek 预分析。本轮临时 env 开关 `DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT` 转正（删开关、默认就是不短路）。
-2. **中和 prior_task_type hint**（intent_triage.py:210 `[系统初判类型] ... → {derived_pt}`）：classifier 不可靠时别喂 chitchat 倾向带偏 deepseek——chitchat 派生重映射 factual_qa 或干脆不喂 task_type hint，让 deepseek 裸判。
-3. **config 默认 analysis_model = deepseek-v4-pro**（config.py:436，B1：通过 `_resolve_ephemeral_provider` 克隆生效，main.py:1710 已是此范式）+ `analysis_timeout_s` 30→≥45（M1，deepseek thinking 慢）。
-4. **chitchat 轻收尾**：predeepseek 判 problem_type=chitchat → 走轻路径（不上完整七步取证/自检/收敛），保闲聊回复不啰嗦（虽非 0-LLM）。
+**核心改动（P0，Y-light）**：
+1. **只删 intent_triage.py:185-198 早期纯规则短路**（`if derived_pt=="chitchat": return`，靠 classifier task_type）→ 每条消息都进 deepseek 预分析。**保留 :235-238 LLM 派生 short_circuit**（deepseek 判 chitchat+低歧义 → 短路轻收尾）。临时 env 开关 `DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT` 转正后删除。
+2. **不喂 task_type hint（裸判）**：删 intent_triage.py:210 的 `[系统初判类型] ... → {derived_pt}` 注入（classifier 不可靠，喂了带偏 deepseek，解 BUG-C）。让 deepseek 裸判 problem_type。
+3. **chitchat 强制 needs_investigation=False**（belt-and-suspenders，R2 M-1）：deepseek 判 chitchat 时，`_parse` 后强制 `needs_investigation=False`，防"万一没短路（高歧义 chitchat 走澄清）"时被取证门（evidence_gate.py 只看 needs_investigation 不看 problem_type）误 nudge"先调查再回答你好"。
+4. **config 默认 analysis_model = deepseek-v4-pro**（config.py:436，B1：必须经 `_resolve_ephemeral_provider` 克隆生效——传 model 参数被 shim 忽略，main.py:1710 已是此范式）+ `analysis_timeout_s` 30→≥45（M1）。
 
-**验收**：默认配置（无 env 开关）发任意非闲聊问题（含无关键词"光合作用…"）→ `intent_triage.done` 走完整流水线，**永不**被误短路；闲聊→`problem_type=chitchat` 轻收尾正常回复。删 `DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT` 开关。
-**相关（绝对路径）**：`backend\deskpet\agent\intent_triage.py`(:185-210) / `backend\main.py`(:1701-1722 预分析装配/:1710 ephemeral provider) / `backend\config.py`(:431/:436)。
+**验收**：默认配置（无 env 开关）发无关键词非闲聊问题（"光合作用…"）→ `intent_triage.done`（deepseek 裸判 problem_type≠chitchat）走完整流水线，**永不**被误短路；闲聊"你好"→ `intent_triage.done problem_type=chitchat` → `pipeline.short_circuit` 轻收尾、**不进取证门**。删 `DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT` 开关。
+**相关（绝对路径）**：`backend\deskpet\agent\intent_triage.py`(:185-198 删/:210 删 hint/:235 留/:286 needs_investigation) / `backend\deskpet\agent\evidence_gate.py`(:57-72 只看 needs_investigation) / `backend\main.py`(:1701-1722/:1710) / `backend\config.py`(:431/:436)。
 
 ---
 
@@ -87,7 +87,7 @@
 
 **⚠️ 内部挑战 R1 修正 2 处（方案 A 接 :2546 的陷阱，plan 原没提）**：
 1. **gate reason 必须手动覆盖**：:2546 处 gate **从未 terminate**，`gate.summary()["reason"]` 是合成 `"running"` → ConvergenceController 判 `resource_capped=False`（convergence_controller.py:57）→ **止损照样不触发**。必须仿 :882-884 把 summary 的 reason 覆盖成 `TerminationReason.HARD_MAX_TURNS.value` 再 evaluate。
-2. **principal_resolved 不能硬编码 False**：否则"任务其实最后一轮做完了、只是没发 terminal stop_reason"会被误判成止损报告 → **正常完成倒退成"卡在哪/建议"**。需信号源：:2546 处检测最后一轮**是否产出 assistant final content / 有无 unanswered tool_calls**；或对纯轮数耗尽用区分措辞（"轮数用尽，已完成 N 步"vs"卡死"），别统一"卡在哪"。
+2. **principal_resolved 在 :2546 取 False 是对的（R2 B-1 厘清）**：循环 `:1456` 一遇 `stop_reason!="tool_use" or 无 tool_calls` 就早 return（:2194）——**正常完成根本走不到 :2546**；能到 :2546 必是"每轮都在调工具没收尾"=真没收敛。故 :2546 处 `principal_resolved=False` 正确，**不需要也无法靠"检测 final content/unanswered tool_calls"区分**（该出口这俩信号恒指向未完成，无区分力）。**报告措辞**用 convergence_controller.py:83-90 已有的轮数区分（"轮数用尽，已完成 N 轮工具调用，卡在 X"），别笼统"卡死"即可。（删 R1 那句"检测 final content 来定 principal_resolved"——自相矛盾。）
 
 **验收**：收紧 max_turns 真机触顶 → `convergence.stop_loss reason=error_max_turns` + 桌宠出诚实报告；**且正常完成的任务不被误判成止损**；制造死循环 → hallucination 也出止损报告。补集成测试断言"loop 耗尽时也出 stop_loss"+"正常完成不误触"。
 **相关（绝对路径）**：`backend\agent\agent_loop.py`(:647/:823/:873-906/:1442/:2546) / `backend\agent\termination.py`(:138-174) / `backend\deskpet\agent\convergence_controller.py`(:48-76)。
@@ -121,16 +121,20 @@
 - **B 已拍板**：预分析 + classifier LLM 层默认模型 = **deepseek-v4-pro**（实测 stream+json_schema 稳，直接规避 gpt-5.5 间歇 502）。落进 config 默认（不只 dev override）。
 - **A**：预分析检测到 502/503/连续无字节，别等满 `analysis_timeout_s` 才 safe-fail，**立即降级**（降感知延迟）。
 - **C**：stream+json_schema 仍失败时 fallback 到 json_object 或 non-stream 重试一次（probe 实测两者稳）作二次保险。
-**验收**：默认 deepseek-v4-pro 下预分析稳定 `intent_triage.done`；偶发 502 时 ≤5s safe-fail 或 fallback 成功，不挂满超时。
-**相关**：openai_compatible.py:252-275 / intent_triage.py:208-217 / main.py:1701-1722（analysis_model 绑定）/ config.py ProblemPipelineConfig。
+- **D（R2 M-3 补）延迟 SLA 量化**：Y 下每条消息阻塞 +1 次 deepseek（`main.py:6840 await run_pre_loop`）。须定量化口径供 WI-5 判 PASS/FAIL：**非闲聊预分析 p95 ≤ 20s、闲聊 ≤ 15s**（闲聊预期短可设更短 timeout 档）；超 `analysis_timeout_s`(≥45s) → safe-fail 降级裸 ReAct（已有）。**验收无量化数 = WI-5 无法判延迟 PASS/FAIL。**
+**验收**：默认 deepseek-v4-pro 下预分析稳定 `intent_triage.done`；偶发 502 时 ≤5s safe-fail 或 fallback 成功，不挂满超时；首响应延迟达上面 p95 SLA。
+**相关**：openai_compatible.py:252-275 / intent_triage.py:208-217 / main.py:1701-1722/:6840（阻塞预分析）/ config.py ProblemPipelineConfig。
 
 ---
 
-### WI-5 默认配置全量真测回归（依赖 WI-1/2/4）— P1
-不开任何 env 开关、analysis_model 回默认（或 WI-4 定的新默认），重跑：
-- TC-1~10 + IDEM-1~6 全套，取**默认配置真证据**（当前多在非默认配置取得）
-- 补本轮未做：**TC-5/IDEM-6**（WI-2 后真出 stop_loss）、**TC-8 code 模式**（真测或显式 env-limited）、**IDEM-5 自愈轮**（主动构造坏 analysis_model + 还原对照）
-**验收**：testcase 100% 覆盖（PASS / best-effort / env-limited 标注清楚），默认配置可上线门全过。
+### WI-5 默认配置全量真测回归 + testcase 按 Y 重写（依赖 WI-1/2/4）— P1
+**(a) 先按 Y 重写失效用例（R2 M-2，HARD，否则"上线门绿"是假象）**：
+- **TC-1（★上线门）**：原"闲聊 0 次 LLM + `intent_triage.shortcircuit reason=chitchat_rule`"作废 → 重写"闲聊 → **1 次** `intent_triage.done problem_type=chitchat` → `pipeline.short_circuit`（deepseek 决定）→ 不进 evidence/self_check、无残留"。
+- **IDEM-1（★上线门）**：原"`intent_triage.shortcircuit`×3 + 副作用恒 0" → 重写"N 次闲聊各 **1 次** done、**无早期 chitchat_rule 短路 log**、无 IN-LOOP 残留"。
+- **§2 副作用地图**：删/改引 `intent_triage.py:189 shortcircuit`/`main.py:6847` 的行（Y 后早期 chitchat_rule 短路 log 不再出现）。
+- 同步 testcase 上线门汇总（line 356/371）的 TC-1/IDEM-1 口径。
+**(b) 不开任何 env 开关、analysis_model=deepseek-v4-pro（WI-4 新默认）重跑**：TC-1~10 + IDEM-1~6 全套取**默认配置真证据**；补 **TC-5/IDEM-6**（WI-2 后真出 stop_loss）、**TC-8 code 模式**（真测或显式 env-limited）、**IDEM-5 自愈轮**。
+**验收**：失效用例已按 Y 重写；testcase 100% 覆盖（PASS/best-effort/env-limited 标注清楚）；默认配置上线门全过 + 延迟达 WI-4 的 p95 SLA。
 
 ---
 
@@ -190,17 +194,28 @@ WI-6 (测试基建) ── 贯穿
 ### 5.2 ✅ X-vs-Y 已拍板：**Y（真·每条都 deepseek-v4-pro 判）**
 **用户拍板 Y**：接受闲聊也走 LLM（5-18s）+ 每条消息一次 LLM 成本，换"判断统一、最准、逻辑最简"。**显式放弃 TC-1"闲聊 0 LLM 秒回"红线**（改为"闲聊也走 LLM，但路径轻/不上完整七步"）。
 
-**Y 的关键简化（重要）**：既然每条消息都走 deepseek 预分析，**「闲聊纯规则短路」直接取消**（不再靠组装期 classifier 的 task_type 决定短不短路）：
-- **intent_triage 删掉早期 chitchat 短路**（intent_triage.py:185-198）→ 每条消息都跑 deepseek 预分析，由它产出 problem_type（含 chitchat）。chitchat 仍可走"轻收尾"（不上完整七步取证/自检），但 LLM 已调用（非 0-LLM）。
-- **BUG-B（classifier fail-open）的流水线影响自动消解**：不再有短路被误触发 → 真实问题不会被误当闲聊跳过。classifier fail-open **降级为"只影响上下文组装质量"的次要问题**（WI-1 改为 P2，见下）。
-- **BUG-C（hint 带偏）**：删短路后预分析仍可能被 `[系统初判类型] chat` hint 带偏 → **中和 hint**（classifier 不确定时不喂 chitchat 倾向，或干脆不喂 task_type hint 让 deepseek 裸判）。
+**Y = Y-light（R2 厘清，重要）**：「每条都 deepseek 判」= 把**短路决策权从坏掉的组装期 classifier 交给 deepseek**，不是删掉短路机制本身：
+- **只删 intent_triage.py:185-198 的"早期纯规则短路"**（那条靠 classifier 的 task_type，是 BUG-B 误短路根源）。
+- **保留 intent_triage.py:235-238 的"LLM 派生 short_circuit"**（deepseek 真判 problem_type=chitchat + 低歧义 → short_circuit=True → problem_pipeline.py:84-86 整条轻收尾）。**即每条消息都付 1 次 deepseek 判，由 deepseek（可靠）决定是不是闲聊该短路**，不再由坏 classifier 决定。
+- **BUG-B 解决**：deepseek 不会像 classifier 那样把"光合作用…"误判 chitchat → 真实问题不再被误短路。classifier fail-open 降级 P2（WI-1b，只影响组装质量）。
+- **chitchat 轻收尾天然成立**：deepseek 判 chitchat → short_circuit → **在进 IN-LOOP 取证门之前就整条返回**，不会误触取证门（解 R2 M-1）。
+- **BUG-C（hint 带偏）**：删早期短路后，**不再给 deepseek 喂 `[系统初判类型]` task_type hint**（让它裸判，intent_triage.py:210）+ **chitchat 强制 needs_investigation=False**（belt-and-suspenders，防万一不短路时误触取证门）。
 
-**TC-1 验收口径改写**：原"闲聊 0 次 LLM"作废 → 新口径"闲聊走预分析但**不上完整七步**（problem_type=chitchat → 轻收尾，无取证/自检/收敛），延迟可接受"。
+**TC-1/IDEM-1 验收口径改写（R2 M-2，必须重写）**：原"闲聊 0 次 LLM + `intent_triage.shortcircuit reason=chitchat_rule`"作废 → 新口径"闲聊 → **1 次** `intent_triage.done problem_type=chitchat` → `pipeline.short_circuit`（deepseek 决定）→ 不进 IN-LOOP 三闸、无残留；N 次闲聊各 1 次 done、无早期 chitchat_rule 短路 log"。
 
 ### 5.3 内部挑战 R1 结论（codex 本环境挂起，用内部 architect opus 对抗替代）
 **VERDICT: NEEDS-FIX → 已修订**：修了 B1(shim 忽略 model→classifier/预分析须用 `_resolve_ephemeral_provider` 克隆 deepseek provider，传 model 参数无效)/B2(止损 :2546 须覆盖 gate reason=HARD_MAX_TURNS + principal_resolved 不能硬编码 False)/M1(config.py:436 默认须改 deepseek-v4-pro + timeout≥45s) 致命修订，并入 WI-1/2/4。
 > 注：m3(classifier llm_timeout 2s) 在 Y 下**降级**——Y 取消短路、不再靠 classifier 的 task_type 决定流水线，classifier 仅服务上下文组装；其 LLM 层是否接 deepseek、超时多少，归到 WI-1(P2) 的"组装质量"范畴，不再是流水线关键路径。
 **下一步**：跑 R2 内部对抗挑战（验 Y 重构后的 plan）→ 收敛 → 派实现。
+
+### 5.4 内部挑战 R2 结论（验 Y 重构）
+**VERDICT: NEEDS-FIX → 已修订**。R2 实读核实修了：
+- **B-1（BLOCKING）**：WI-2 `:2546` 出口 principal_resolved 信号自相矛盾 → 厘清：正常完成走不到 :2546（:1456 早 return），到 :2546 必是真没收敛 → `principal_resolved=False` 正确，删"检测 final content"那句，用轮数区分措辞。
+- **M-1**：chitchat 轻收尾无代码（evidence_gate 只看 needs_investigation）→ Y-light 下 chitchat 在取证门前就 short_circuit（不误触）+ chitchat 强制 needs_investigation=False 兜底。
+- **M-2**：TC-1/IDEM-1（★上线门）Y 后判定失效 → WI-5(a) 显式列入按 Y 重写 + 改 §2 副作用地图。
+- **M-3**：每条 +5-18s 无 SLA → WI-4(D) 补 p95 量化（非闲聊≤20s/闲聊≤15s）。
+- **m-1**：厘清 Y=Y-light（删 :185-198 规则短路、留 :235 deepseek 派生短路，短路决策权交 deepseek 不是删机制）。
+**收敛判断**：R1→R2 坑从"致命接线"收敛到"口径/测试重写/SLA"，趋势收敛。**plan 现 EXECUTABLE-AS-IS**，可派实现（建议实现前再过一遍本 §5.1~5.4 修订清单当 checklist）。
 
 ---
 
