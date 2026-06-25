@@ -170,6 +170,39 @@ def test_safe_fail_on_malformed_json() -> None:
     assert card.contradiction is None
 
 
+def test_safe_fail_malformed_json_with_chat_classifier_does_not_shortcircuit() -> None:
+    """★ 真机 2026-06-25 回归：deepseek 畸形 JSON + 坏 classifier 给 prior_task_type='chat'
+    → 旧实现 safe-fail 派生 chitchat 再派生 short_circuit=True，把真实问题误短路成闲聊（BUG-B 经
+    safe-fail 路径复活）。修复后 safe-fail **绝不短路**（降级裸 ReAct，进流水线由主 loop 兜）。"""
+    mock_llm = AsyncMock(return_value='{"restated_intent": "截断了的畸形 JSON')  # 不可解析
+    triage = IntentTriage(mock_llm)
+    card = asyncio.run(triage.analyze("我的导出功能报错了帮我查查", prior_task_type="chat"))
+    assert mock_llm.await_count == 1
+    assert card.short_circuit is False            # ★ 关键：safe-fail 绝不短路
+    assert card.contradiction is None
+
+
+def test_pua_char_json_still_parses_correct_type() -> None:
+    """真机 2026-06-25：deepseek 偶发把私用区字符(U+E160)塞进 JSON 字符串值 → 原实现 parse_failed
+    → safe-fail。净化私用区/控制字符后正确 problem_type=debug 存活，不再误降级。"""
+    payload = json.dumps({
+        "restated_intent": "调查 export_report.py 的 KeyError",
+        "problem_type": "debug",
+        "ambiguity_score": 0.2,
+        "clarifying_questions": [],
+        "needs_investigation": True,
+        "needs_decomposition": False,
+        "contradiction": None,
+    })
+    # 注入一个私用区字符(U+E160)模拟 deepseek 真机输出
+    dirty = payload.replace("KeyError", "KeyError")  # 注入控制字符 U+001F，json.loads strict 会拒
+    mock_llm = AsyncMock(return_value=dirty)
+    triage = IntentTriage(mock_llm)
+    card = asyncio.run(triage.analyze("export_report.py 报 KeyError", prior_task_type="chat"))
+    assert card.problem_type == "debug"           # 净化后正确判断存活
+    assert card.short_circuit is False
+
+
 def test_fenced_json_extraction() -> None:
     """三级容错：fenced ```json 围栏也能解析。"""
     fenced = "思考中...\n```json\n" + _complex_payload() + "\n```\n收工"

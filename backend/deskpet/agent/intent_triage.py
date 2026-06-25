@@ -201,6 +201,12 @@ class IntentTriage:
             return self._safe_card(user_message, derived_pt)
 
         card = self._parse(raw, fallback_pt=derived_pt, user_message=user_message)
+        if card is None:
+            # 畸形 JSON → safe-fail：返回保守 card 直接 return，**绝不派生 short_circuit**
+            # （docstring 承诺"降级裸 ReAct"，裸 ReAct ≠ chitchat 短路；坏 classifier 的
+            # derived_pt 可能=chitchat，若让它派生短路就把真 debug 误当闲聊跳过流水线）。
+            logger.warning("intent_triage.parse_failed", preview=(raw or "")[:120])
+            return self._safe_card(user_message, derived_pt)
         # Y-light：deepseek 判 chitchat → 不需要取证（防 evidence_gate 只看 needs_investigation 误 nudge 闲聊"先调查再回答你好"）
         if card.problem_type == "chitchat":
             card.needs_investigation = False
@@ -235,11 +241,13 @@ class IntentTriage:
             contradiction=None,   # safe-fail 不填矛盾段，编排器跳过 <主要矛盾> 注入
         )
 
-    def _parse(self, raw: str, *, fallback_pt: str, user_message: str) -> IntentCard:
+    def _parse(self, raw: str, *, fallback_pt: str, user_message: str) -> Optional[IntentCard]:
+        """解析成功→真 IntentCard；JSON 提取失败→返回 None（由 analyze 走 safe-fail，
+        **不**让坏 classifier 的 fallback_pt 派生出 chitchat 短路 —— 真机 2026-06-25 实测过
+        deepseek 偶发畸形 JSON → 原实现 fallback_pt=chitchat 把真 debug 误短路成闲聊）。"""
         obj = _extract_json(raw)
         if obj is None:
-            logger.warning("intent_triage.parse_failed", preview=(raw or "")[:120])
-            return self._safe_card(user_message, fallback_pt)
+            return None
         pt = str(obj.get("problem_type") or fallback_pt)
         if pt not in _PROBLEM_TYPES:
             pt = fallback_pt
@@ -317,31 +325,42 @@ _FENCED_JSON_RX = _re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", _re.DOTALL | _r
 _BARE_JSON_RX = _re.compile(r"\{.*\}", _re.DOTALL)
 
 
+# 私用区(U+E000–U+F8FF) + C0/C1 控制字符(除 \t\n\r) —— deepseek/relay 偶发把这类
+# 非法字符塞进 JSON 字符串值里(真机 2026-06-25 实测 )，json.loads 不一定直接报错，
+# 但常与截断/转义问题同现导致 parse_failed → safe-fail 误判。预清洗提升正确判断存活率。
+_BAD_CHARS_RX = _re.compile(r"[-\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+
+
+def _sanitize_json_text(s: str) -> str:
+    return _BAD_CHARS_RX.sub("", s)
+
+
+def _try_loads(candidate: str) -> Optional[dict]:
+    for c in (candidate, _sanitize_json_text(candidate)):
+        try:
+            obj = json.loads(c)
+            if isinstance(obj, dict):
+                return obj
+        except (json.JSONDecodeError, ValueError):
+            continue
+    return None
+
+
 def _extract_json(raw: str) -> Optional[dict]:
     s = (raw or "").strip()
-    for candidate in (s,):
-        try:
-            obj = json.loads(candidate)
-            if isinstance(obj, dict):
-                return obj
-        except (json.JSONDecodeError, ValueError):
-            pass
+    obj = _try_loads(s)
+    if obj is not None:
+        return obj
     m = _FENCED_JSON_RX.search(s)
     if m:
-        try:
-            obj = json.loads(m.group(1))
-            if isinstance(obj, dict):
-                return obj
-        except (json.JSONDecodeError, ValueError):
-            pass
+        obj = _try_loads(m.group(1))
+        if obj is not None:
+            return obj
     m = _BARE_JSON_RX.search(s)
     if m:
-        try:
-            obj = json.loads(m.group(0))
-            if isinstance(obj, dict):
-                return obj
-        except (json.JSONDecodeError, ValueError):
-            pass
+        obj = _try_loads(m.group(0))
+        if obj is not None:
+            return obj
     return None
 
 
