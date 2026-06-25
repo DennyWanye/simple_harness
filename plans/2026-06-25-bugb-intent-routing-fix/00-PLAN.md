@@ -1,6 +1,6 @@
 # BUG-B 修复 plan v2 — 意图路由 followup（组装质量 + 闲聊快路径 + 单一来源）
 
-> **状态**：📋 执行中（v2 = 经 R1+R2 两轮对抗挑战硬化 + 对齐 master 最新代码）。
+> **状态**：✅ **已完成（2026-06-26）** — Phase 1/2/3 全落地，每阶段单测全绿 + 子代理评估 100% + 手测文档 + windows-mcp 真机；**最终验收 §6 ★5（BUGB-1/2/3/4/6）全 PASS、0 FAIL，收敛标准达成**。证据 [final RESULTS](../manual-results-2026-06-26-bugb-final/RESULTS.md)。（v2 = 经 R1+R2 两轮对抗挑战硬化 + 对齐 master 最新代码）。
 > **创建**：2026-06-25　**v2 硬化/对齐**：2026-06-26
 > **重要前提（已坐实）**：BUG-B 的 **headline P0「真问题被误判闲聊短路」已由 commit `16758f8b`(safe-fail 不短路) + `717b0424`/`67f78e15`(WI-4-C 非流式预分析) 修复**，默认配置全量真机 **10/10 ★ PASS、上线门通过**（`RESULTS.md §8`）。本 plan **不再解 P0**，只做 RESULTS §8.2 列出的非阻断残留：
 >   - **P2 组装质量**：组装期 classifier 仍 fail-open 到 `chat` → 真 code/debug 问题拿到错误 persona/工具/skill bundle（**Phase 2**）。
