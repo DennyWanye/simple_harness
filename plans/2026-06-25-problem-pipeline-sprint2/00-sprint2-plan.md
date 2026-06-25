@@ -44,14 +44,20 @@
 - embed 层撞 embedder lock 竞争 1500ms 超时（真机 4× `status='timeout'`）→ 返回 None
 - **llm 层 main.py:1977 `llm_registry=None` 彻底关掉**（且默认 model=claude-haiku-4-5 relay 没有）
 
-**拍板方案（D1）：接 LLM 层，模型 deepseek-v4-pro**
-- main.py:1977 `build_default_assembler(llm_registry=None)` → 传**真 llm_registry**；`llm_model` 从 `claude-haiku-4-5`(relay 没有) → **`deepseek-v4-pro`**（relay 有、stream+json_schema 实测稳）。
-- 这样 classifier 三层 rule→embed→**llm(deepseek-v4-pro)** 真级联：rule/embed miss 时 LLM 兜底判，**不再 default chat**。
-- ⚠️ **吃 §5.2 张力**：是"每条 miss 都 LLM"(成本) 还是"只不确定才 LLM"(方案 X)，codex 挑战时定。倾向 X：rule/embed 命中明显闲聊仍秒回，只有拿不准才 deepseek 判。
-- 同时削 BUG-C：classifier 判准了 → 喂 intent_triage 的 prior_task_type hint 也准 → 不再带偏。
+**拍板方案（D1）：接 LLM 层，模型 deepseek-v4-pro** —— ⚠️ 内部挑战 R1 修正 4 处致命坑，照下面做：
+1. **【B1 致命】不能靠传 `llm_model` 参数**：`OpenAICompatibleAgentLLM` shim 的 `model` 参数被忽略（tool_use_shim.py:45-48「provider already locked at construction」）→ 传 `llm_model="deepseek-v4-pro"` 会被丢弃、实际跑 shim 绑定的主 LLM gpt-5.5。**正确做法（仿预分析 main.py:1710-1711）**：
+   ```
+   _clf_provider = _resolve_ephemeral_provider(_pp_base, "deepseek-v4-pro")
+   _clf_shim = OpenAICompatibleAgentLLM(provider=_clf_provider)   # 不能复用 codify shim(绑主LLM)
+   build_default_assembler(llm_registry=_clf_shim, llm_model="deepseek-v4-pro", ...)  # llm_model 仅日志
+   ```
+2. **【m3 近致命】classifier `llm_timeout_s=2.0`（classifier.py:229）**：deepseek thinking 30-60s 起步 → 2s 必超时 → return None → **fail-open 到 chat 复活**，接了等于没接。必须提到 **≥20s**（与预分析同量级）。
+3. **【M1】config 默认必须改**：config.py:436 `analysis_model=""`（=主 LLM gpt-5.5）→ 改 **`"deepseek-v4-pro"`**，否则默认配置预分析仍跑 gpt-5.5 撞 BUG-A。同步 config.py:431 `analysis_timeout_s` 30→**≥45**（deepseek thinking 慢时逼近 30s）。
+4. **删** classifier.py:17-21 + :228 + __init__.py:84 的 `claude-haiku-4-5` 默认/注释（误导）。
+- 同时削 BUG-C：classifier 判准 → 喂 intent_triage 的 prior_task_type hint 也准。
 
-**验收**：默认配置（无任何 env 开关）发"光合作用的暗反应在叶绿体哪个部位"等无关键词非闲聊问题 → `intent_triage.done`（走预分析），**不再** `intent_triage.shortcircuit reason=chitchat_rule`；闲聊"你好"仍快回（方案 X 下）。补 classifier LLM 层接电 + fail-open 回归单测；删本轮临时开关 `DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT`。
-**相关**：classifier.py:220-273（llm 层 + 默认 chat）/ assembler/__init__.py:79-130 / main.py:1975-1977 / intent_triage.py:185-210（短路 + hint）。
+**验收**：默认配置（无 env 开关）发"光合作用…"等无关键词非闲聊问题 → `intent_triage.done`（不再短路）；闲聊"你好"仍快回（**靠 WI-3 的 X 细化，见下**）。补 classifier LLM 层接电（真跑 deepseek）+ fail-open 回归单测；删临时开关 `DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT`。
+**相关（绝对路径）**：`backend\deskpet\agent\assembler\classifier.py`(:229/:267/:333) / `backend\agent\tool_use_shim.py`(:45) / `backend\main.py`(:1710/:1977) / `backend\config.py`(:431/:436)。
 
 ---
 
@@ -64,8 +70,12 @@
 - C 把 hallucination/permanent_tool_error 等 allows_tool 触顶也接进 ConvergenceController（所有"非正常收尾"都出诚实止损）。
 - **组合 A+C**：覆盖最常见的两类触顶。
 
-**验收**：收紧 max_turns 真机触顶 → `convergence.stop_loss reason=error_max_turns` + 桌宠出"已做什么/卡在哪/建议"诚实报告；制造死循环 → hallucination 也出止损报告。补集成测试断言"loop 耗尽时也出 stop_loss"。
-**相关**：agent_loop.py:647/823/873-906/2166/2546 / termination.py:138-174 / convergence_controller.py。
+**⚠️ 内部挑战 R1 修正 2 处（方案 A 接 :2546 的陷阱，plan 原没提）**：
+1. **gate reason 必须手动覆盖**：:2546 处 gate **从未 terminate**，`gate.summary()["reason"]` 是合成 `"running"` → ConvergenceController 判 `resource_capped=False`（convergence_controller.py:57）→ **止损照样不触发**。必须仿 :882-884 把 summary 的 reason 覆盖成 `TerminationReason.HARD_MAX_TURNS.value` 再 evaluate。
+2. **principal_resolved 不能硬编码 False**：否则"任务其实最后一轮做完了、只是没发 terminal stop_reason"会被误判成止损报告 → **正常完成倒退成"卡在哪/建议"**。需信号源：:2546 处检测最后一轮**是否产出 assistant final content / 有无 unanswered tool_calls**；或对纯轮数耗尽用区分措辞（"轮数用尽，已完成 N 步"vs"卡死"），别统一"卡在哪"。
+
+**验收**：收紧 max_turns 真机触顶 → `convergence.stop_loss reason=error_max_turns` + 桌宠出诚实报告；**且正常完成的任务不被误判成止损**；制造死循环 → hallucination 也出止损报告。补集成测试断言"loop 耗尽时也出 stop_loss"+"正常完成不误触"。
+**相关（绝对路径）**：`backend\agent\agent_loop.py`(:647/:823/:873-906/:1442/:2546) / `backend\agent\termination.py`(:138-174) / `backend\deskpet\agent\convergence_controller.py`(:48-76)。
 
 ---
 
@@ -157,13 +167,24 @@ WI-6 (测试基建) ── 贯穿
 - **WI-4**：deepseek-v4-pro 实测 stream+json_schema 稳 → 同时解 BUG-A（gpt-5.5 间歇 502）。
 - 一条线同时解 **BUG-A（relay 不稳）+ BUG-B（fail-open）+ BUG-C（hint 带偏）**。
 
-### 5.2 ⚠️ 留给 codex 挑战 + 二次确认的张力（HARD）
-**"统一用 deepseek-v4-pro 判断" 与 "闲聊 0 LLM 快回（TC-1 性能红线）" 冲突**：
-- 若**每条消息**（含"你好"）都走 deepseek-v4-pro 判 → 闲聊从秒回变 ~5-18s，**TC-1 红线破**。
-- **待定方案**（codex 挑战时明确，倾向 X）：
-  - **X（倾向）保留快路径 + LLM 兜底**：rule/embed 命中明显闲聊仍 0-LLM 秒回；只有 rule/embed **拿不准**才 deepseek-v4-pro 判（LLM 成本只花在不确定的消息上）。既治 fail-open 又保闲聊快回。
-  - **Y 真·每条都 LLM 判**：最准，但闲聊也慢，牺牲 TC-1 红线 + 每条消息 LLM 成本。
-- **codex 挑战须回答**：X 能不能既"不 fail-open"又"闲聊不退化"？rule/embed"拿不准"的判据怎么定？deepseek-v4-pro 判断的延迟/成本（每条 vs 仅不确定）量级？
+### 5.2 ⚠️ X-vs-Y 张力 — 内部挑战 R1 已给结论（需用户二次确认）
+**纯 LLM 判断（Y）会让闲聊从秒回变 5-18s；方案 X 当前代码下"形式成立但实质退化成 Y"，必须叠附加条件才守得住闲聊快回。**
+
+**为什么 X 当前会退化**（挑战 R1 实读核实）：
+- `exemplars.jsonl` 的 **chat 标签只有 8 条且偏问候式** → "你好"/裸闲聊与之 cosine 常 0.6-0.7 **< 0.75 阈值** → embed 层 return None → 落 LLM 层 → 闲聊也打 deepseek（5-18s）。
+- embedder 还**间歇超时**（BUG 根因之一，本 plan 未根治）→ 超时也 return None → 落 LLM。
+- 叠加 → 相当比例闲聊会落 deepseek → **TC-1 闲聊秒回红线破 + 每条闲聊多花一次 LLM**。
+
+**✅ 拍板细化（X+，挑战 R1 推荐，已写进 WI-1/WI-3）— 在 LLM 兜底前加一道"廉价闲聊短路"**：
+1. **扩 chat exemplar 池 8→30+**（覆盖问候/寒暄/泛闲聊/确认词"好的""谢谢"/纯表情）；**emotion 也纳入短路**（情绪安抚本就不该走七步）。
+2. **加廉价词法闲聊兜底**：打 LLM 前最后一道——明显闲聊（短问候/确认词/纯表情）词法判 chitchat **直接秒回**。"拿不准才打 LLM"判据 = `rule miss ∧ embed<0.75 ∧ 闲聊词法兜底未命中` → 才交 deepseek。**闲聊永不退化，LLM 成本只花在真模糊的非闲聊上。**
+3. classifier `llm_timeout_s` 2→≥20s（否则 deepseek 必超时回退 default chat，X/Y 都不成立）。
+4. embedder timeout：本 Sprint 至少加退避 + 显式标"X 快路径依赖 embedder 健康"（根治留 Sprint 3，[[project_assembler_embedder_unreliable]] 老坑）。
+
+> **❓ 需你二次确认**：你原话"只用 LLM 判断 / 直接用 deepseek 判"——但实测纯 LLM 会让闲聊也慢。**X+ = 明显闲聊仍词法秒回，只把真模糊的交 deepseek 判**（能廉价判明的不劳烦 LLM）。**确认走 X+？** 还是接受闲聊也慢、真·每条都 deepseek（Y）？
+
+### 5.3 内部挑战 R1 结论（codex 本环境挂起，用内部 architect 对抗替代）
+**VERDICT: NEEDS-FIX → 已修订**：修了 B1(shim 忽略 model→classifier 跑不到 deepseek，须用 `_resolve_ephemeral_provider`)/B2(止损 reason 不覆盖+principal_resolved 误判正常完成)/m3(classifier 2s 超时必回退)/M1(config 默认仍 gpt-5.5) 4 处致命 + X 退化结论，均并入 WI-1/2/3。**下一步**：用户确认 X+ 后跑 R2 挑战收敛 → 派实现。
 
 ---
 
