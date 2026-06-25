@@ -114,3 +114,45 @@
 | IDEM-5 自愈轮 | **半做** | 失败轮 organic 已验（BUG-A）；"改坏 analysis_model 主动构造 + 还原后自愈轮"未对照跑（done 正常已在 runE-M 多次旁证）|
 | 默认配置全量重跑 | **阻塞** | 依赖先修 BUG-B（task_742d3399），否则默认配置流水线被误短路 |
 </content>
+
+---
+
+## 6. WI-5(b) 默认配置全量重跑（Sprint 2 落地后 · 2026-06-25 下午）
+
+> 前置全部满足：默认配置（**无任何 env 开关**，config.toml `[features.problem_pipeline]` 全闸 on、analysis_model 留空→config.py 默认 **deepseek-v4-pro**/45s）、Dev python（worktree 非 frozen，log 确认 `[backend_launch] Dev python=...backend`）、`problem_pipeline_init enabled=true`、boot 见 `model_context_resolved model=deepseek-v4-pro`。
+> 收发：windows-mcp UIA `Type`(loc 3416,1464) + SendInput `click-at.ps1`(3543,1464) 发送；log 用 `loggrep.py`（de-wrap ~116 字符硬换行 + UTF-16LE→UTF-8 + 事件计数）。
+
+### 6.1 deepseek 健康期已取证（log: tauri-wi5.log）
+
+| Case | ★ | 真证据（默认配置） | 判定 |
+|---|---|---|---|
+| **TC-1**（闲聊+非闲聊对照）| ★ | 闲聊"你好呀今天天气真好"→`intent_triage.done problem_type=chitchat ambiguity=0.0 short_circuit=True`×1 → `pipeline.short_circuit`×1 → 无 IN-LOOP；桌宠闲聊回复正常。非闲聊"光合作用暗反应在叶绿体哪个部位"→`done problem_type=factual_qa short_circuit=False` 走完整流水线，答"叶绿体的基质(stroma)"正确。**全程无 `intent_triage.shortcircuit chitchat_rule`（早期规则短路已删）** | **✅ PASS**（headline BUG-B 修复：无关键词非闲聊问题不再被误短路）|
+| **IDEM-1**（重复闲聊×3）| ★ | 同句闲聊×3 → `done problem_type=chitchat short_circuit=True`×3（ambiguity=0.1 一致，决策幂等）+ `pipeline.short_circuit`×3；早期 chitchat_rule 短路 log=0；llm_failed/parse_failed=0；3 轮窗口内无 IN-LOOP 闸残留（唯一 self_check@06:47:26 经时间戳核实属 TC-1 factual_qa，非闲聊轮）；3 次都正常回复 | **✅ PASS** |
+
+### 6.2 真测中发现并修复一个真 bug（safe-fail 误短路 · commit 16758f8b）
+
+**复现**：明确 debug 问题"export_report.py 报 KeyError: 'amount'，你先查清楚再下结论" → deepseek **正确判 `problem_type=debug`** 但返回**畸形 JSON**（含 U+E160 私用区/控制字符或截断）→ `intent_triage.parse_failed` → safe-fail 回退 `derived_pt`（来自坏 classifier fail-open `chat`→`chitchat`）→ `analyze()` 据此**派生 `short_circuit=True`** → **真 debug 被误当闲聊短路跳过流水线**（= BUG-B 经 safe-fail 路径复活，违反 docstring 承诺的"降级裸 ReAct"）。
+
+**修复**（intent_triage.py）：
+1. **Fix B（关键）**：`_parse` 失败返回 `None`，`analyze()` 据此**直接 return `_safe_card`，绝不派生 short_circuit** —— safe-fail 一律降级裸 ReAct（进流水线由主 loop 兜），不再让坏 classifier 的 chitchat 误判短路真实问题。统一了 llm_failed（本就不短路）与 parse_failed 两路。
+2. **Fix A（加固）**：`_extract_json` 预清洗私用区(U+E000–F8FF)+C0/C1 控制字符（控制字符令 json.loads strict 直接拒），提升 deepseek 偶发畸形输出里正确判断的存活率。
+3. 回归单测 2 条：`test_safe_fail_malformed_json_with_chat_classifier_does_not_shortcircuit` ★ + `test_pua_char_json_still_parses_correct_type`（注入 U+001F 真考验净化器）。intent_triage 13 + pipeline 23 套件全绿。
+
+**修复后真机复测**（tauri-wi5b.log）：同 debug 问题 → 即便 deepseek 这次返 403（见 §6.3）→ `intent_triage.llm_failed` → safe-fail → **debug 仍进流水线、`evidence_gathered_set tool=glob` 真取证调查（UI 显示"✓ grep 结果"工件卡）、未被误短路** ✓。证明 safe-fail 鲁棒性在真 relay 失败下成立。
+
+### 6.3 ⛔ 阻断：relay 账户 USD 余额耗尽 → 全模型 403（外部账户问题，非代码）
+
+跑到 §6.2 复测时，relay（chinzy.com）开始对**所有**模型返 403。直连 probe（`scripts/probe_deepseek_now.py`）确认：
+
+```
+deepseek-v4-pro -> HTTP 403  {"code":"FORBIDDEN","message":"Available USD credit is too low to accept relay traffic."}
+gpt-5.5         -> HTTP 403  （同上）
+deepseek-chat   -> HTTP 403  （同上）
+deepseek-v3     -> HTTP 403  （同上）
+```
+
+**根因 = relay 账户余额不足**（非 deepseek 单独问题、非限流、非 token 过期——key 本身鉴权通过，返的是 FORBIDDEN+credit too low 而非 401）。第一个 run（§6.1）deepseek 还正常，本轮 ~10 条消息把剩余额度耗光。**无本地 chat LLM 兜底 → 任何需 LLM 的流水线路径全部跑不了。**
+
+**剩余 ★ 用例阻塞**（需 relay 充值后续跑）：TC-2 取证门完整链路 / TC-3 抓主要矛盾 / TC-4 异体自检 / TC-5+IDEM-6 收敛止损（改源码构造）/ TC-6+IDEM-3 澄清+重启 / IDEM-4 重启隔离 / IDEM-5 自愈轮 / TC-9 kill-switch BC。
+
+> 注：TC-6 澄清路径在本轮已**部分取证**（泛问"导出功能报错"→deepseek 判 `ambiguity=0.9 clarify=True`→`pipeline_clarification_pause`→桌宠真反问"具体错误提示或代码是什么"，截图 `TC-6-01-clarify-question.png`）；完整"答澄清→承接续接"因余额耗尽未跑完。
