@@ -32,7 +32,7 @@
    `DESKPET_DEV_MODE=1` / `DESKPET_USER_DATA_DIR=G:\projects\deskpet\backend\userdata`。
    启动后 log **必须**出现 `[backend_launch] Dev python=... backend_dir=G:\projects\deskpet\backend`；
    若见 `Bundled exe=...` → 跑的是旧 frozen，**测了等于白测，立即停下重配**。
-3. **流水线装上**：grep `problem_pipeline_init enabled=true intent=... evidence=... self_check=...`(main.py:1732)。grep 不到 → 全部用例无意义。
+3. **流水线装上**：grep `problem_pipeline_init enabled=true intent=... evidence=... self_check=...`(main.py:**1735**)。grep 不到 → 全部用例无意义。
 4. **日志落盘**：启动命令把输出重定向到 `plans/manual-results-2026-06-25-problem-pipeline-prod/tauri-dev.log`，所有 log 证据 grep 这份。
 
 ### 0.2 windows-mcp 真测纪律（HARD CONSTRAINT — 不可妥协）
@@ -65,17 +65,19 @@
 
 | 步 | 锚点字符串 | 代码位置 | 含义 |
 |---|---|---|---|
-| 装配 | `problem_pipeline_init enabled=true ...` | main.py:1732 | 编排器构造成功 |
-| Step1+3 | `intent_triage.shortcircuit reason=chitchat_rule task_type=<...>` | intent_triage.py:186 | 闲聊纯规则短路(0 次 LLM) |
-| Step1+3 | `intent_triage.done problem_type=<...> ambiguity=<f> ... has_contradiction=<bool>` | intent_triage.py:221 | 非闲聊调 1 次 LLM 出意图+矛盾 |
-| Step1+3 | `intent_triage.llm_failed error=...` | intent_triage.py:208 | 预分析失败 → safe-fail 降级裸 ReAct |
+| 装配 | `problem_pipeline_init enabled=true ...` | main.py:1735 | 编排器构造成功 |
+| Step1+3 | `intent_triage.shortcircuit reason=chitchat_rule task_type=<...>` | intent_triage.py:189 | 闲聊纯规则短路(0 次 LLM) |
+| Step1+3 | `intent_triage.done problem_type=<...> ambiguity=<f> ... has_contradiction=<bool>` | intent_triage.py:224 | 非闲聊调 1 次 LLM 出意图+矛盾 |
+| Step1+3 | `intent_triage.llm_failed error=...`（logger.**warning**） | intent_triage.py:211 | 预分析失败 → safe-fail 降级裸 ReAct |
 | PRE-LOOP | `pipeline_short_circuit sid=<...>` | main.py:6847 | 闲聊整条短路，不进 IN-LOOP |
 | PRE-LOOP | `pipeline_clarification_pause sid=<...>` | main.py:6872 | needs_clarification → 暂停反问 |
 | PRE-LOOP | `clarify_persist_assistant_failed sid=<...>` | main.py:6870 | 澄清持久化失败(bug 信号，正常应为 0) |
 | Step2 | `evidence_gathered_set sid=<...> tool=<name>` | agent_loop.py:2393 | **本 run 内**首次命中取证工具，置 `_evidence_gathered=True` |
 | Step2 | `evidence_gate.blocked nudges_used=<n>` | evidence_gate.py:88 | 未取证就下结论被拦 |
+| Step2 | `evidence_gate_nudge_injected sid=<...> nudge=<n>` | agent_loop.py:1516 | `<调查>` nudge 注入（per-run 计数，nudge 从 1 起算）|
 | Step2 | `evidence_gate_exhausted nudges_used=<n>` | evidence_gate.py:77 | 超 max_nudges 放行(防死循环) |
 | Step6 | `self_check.done mode=<...> passed=<bool> heterogeneous=<bool> unmatched=<n>` | self_check_gate.py:128 | 异体自检结论 |
+| Step6 | `self_check_nudge_injected sid=<...> mode=<...> nudge=<n>` | agent_loop.py:1645 | `<自检>` 反思注入（per-run 计数）|
 | Step7 | `convergence.stop_loss reason=<...> principal_resolved=<bool> unverified=<n>` | convergence_controller.py:71 | 资源触顶 → 诚实止损 |
 
 > WS 事件(`chat_v2_intent/contradiction/evidence_gate/selfcheck/convergence`)是**瞬态广播**，判定主依据是 backend log + 截图。
@@ -90,11 +92,11 @@
 |---|---|---|---|---|---|---|---|---|
 | **S1** | 置 `_evidence_gathered=True` | agent_loop.py:2392 | 内存布尔(per-run) | `self._evidence_gathered` + 守卫 `not self._evidence_gathered`(:2388) | **否**(by design)：`run()` 起 :710-711 重置 | **否**：置一次后守卫挡住，本 run 不重置；每 run 重新起算 | N/A(纯内存，无外部副作用) | IDEM-2 / IDEM-4 |
 | **S2** | evidence nudge 注入 + 计数 | agent_loop.py:1507 | 内存计数(per-run，**有界**) | `_evidence_nudges_used < max_nudges`，超限 :76 `exhausted` 放行 | 否(:710-711 重置) | **否**：有界 max_nudges(默认2)防死循环；每 run 从 0 起 | N/A | IDEM-2 |
-| **S3** | self_check/verify nudge 计数 | agent_loop.py:1635 | 内存计数(per-run，**有界**) | `verify_nudges_used < max_verify_nudges` | 否(:753 本轮起算) | **否**：有界；每 run 从 0 起 | N/A | IDEM-4 |
-| **S4** | **持久化澄清 assistant 行** | main.py:6865 `append_message` | **DB 写(持久化)** | 无 dedup key —— **靠「每轮一条」turn 语义**(对齐 FinalEvent 持久化) | **是**：写 session_db，重启重载进 history | **每个 user turn 写 1 条**(语义正确，非重复 bug)；**同一次 send 不双写**(单条 await) | 失败记 `clarify_persist_assistant_failed`，**不卡死**(已 try/except) | **IDEM-3** |
+| **S3** | self_check/verify nudge 计数 | agent_loop.py:1635 | 内存计数(per-run，**有界**) | `verify_nudges_used < max_verify_nudges` | 否(:753-755 本轮起算) | **否**：有界；每 run 从 0 起 | N/A | IDEM-4 |
+| **S4** | **持久化澄清 assistant 行** | main.py:6865 `append_message`（**注：该调用本身不打 log**） | **DB 写(持久化)** | 无 dedup key —— **靠「每轮一条」turn 语义**(对齐 FinalEvent 持久化) | **是**：写 session_db，重启重载进 history | **每个 user turn 写 1 条**(语义正确，非重复 bug)；**同一次 send 不双写**(单条 await) | 失败记 `clarify_persist_assistant_failed`，**不卡死**(已 try/except) | **IDEM-3** |
 | **S5** | 持久化 user 消息 | main.py:6184 `append_message` | DB 写(持久化) | `_user_msg_id`(既有链路，非流水线新增) | 是 | 每 turn 写 1 条(既有 chat 语义) | — | IDEM-3 旁证 |
-| **S6** | `chat_v2_intent/contradiction/convergence` WS 事件 | problem_pipeline.py:76/102，agent_loop.py:891/2171 | 瞬态广播 | 无(无状态 emit) | 否 | **否**：无状态，重发即重新计算并重发，不累积 | N/A | IDEM-1 旁证 |
-| **S7** | 收敛止损报告 | agent_loop.py(convergence) | 瞬态(随 final answer 落库) | `should_stop_loss` 每 run 判一次 | 报告文本随 final answer 持久化(每 run 1 次) | **否**：每触顶 run 出 1 份，不每轮刷屏 | — | IDEM-6 |
+| **S6** | `chat_v2_intent/contradiction/convergence` WS 事件 + **peer 广播** | problem_pipeline.py:76/102，agent_loop.py:891/2171；peer fan-out main.py:6845 `_broadcast_default_chat_peers` | 瞬态广播 | 无(无状态 emit) | 否 | **否**：无状态，重发即重新计算并重发，不累积；**多连接 N → 每事件 N 份是设计(fan-out)非重复 bug** | N/A | IDEM-1 旁证 |
+| **S7** | 收敛止损报告 | agent_loop.py:891/2171 emit + :897 FinalEvent(stop_reason="stop_loss") | 瞬态(随 final answer 落库) | `should_stop_loss` 每 run 判一次；ConvergenceController **无任何跨 run 可变状态**(controller 全文无 self 状态) | 报告文本随 final answer 持久化(每 run 1 次) | **否**：每触顶 run 出 1 份，不每轮刷屏；**结构上无跨 run 残留面** | — | IDEM-6 |
 
 ### 2.1 上线评审结论（一句话）
 
@@ -130,7 +132,7 @@
 3. **关键幂等断言**：这 3 轮窗口内 `intent_triage.done` 计数 = **0**、`intent_triage.llm_failed` = **0**、
    `chat_v2_intent` / `chat_v2_contradiction` = **0**（**预分析 LLM 副作用恒 = 0，跑 N 次不变**）。
 4. **无残留串扰**：这 3 轮窗口内 **无** `evidence_gathered_set` / `evidence_gate.blocked` / `self_check.done` / `convergence.stop_loss`
-   （闲聊不触发任何 IN-LOOP 闸，重复发也不会「攒出」一次）。
+   （闲聊在 PRE-LOOP 即 `pipeline_short_circuit` 后 `return`，**根本不进 IN-LOOP**，故所有 IN-LOOP 闸 log 必为 0；重复发也不会「攒出」一次）。
 5. 3 次桌宠回复都正常（闲聊式，不卡顿、不报错）。
 
 **判定**：PASS = shortcircuit×3 + done/llm_failed/intent 事件全 0 + 无 IN-LOOP 闸残留 + 3 次都正常回复。
@@ -155,7 +157,8 @@
 **期望硬证据（幂等断言）**
 1. **每轮独立取证**：`evidence_gathered_set sid=<...> tool=<...>` 在**两轮各自的时间窗内都出现**（第 2 轮没有因为第 1 轮已置位而跳过——
    证明 `_evidence_gathered` 已随 `run()` 重置，:710-711）。
-2. **nudge 计数每轮从 0 起**：若两轮都触发 `evidence_gate.blocked`，则第 2 轮的 `nudges_used` **从 1 重新起算**（不接着第 1 轮累计冲破 max_nudges → 第 2 轮不应一上来就 `evidence_gate_exhausted`）。
+2. **nudge 计数每轮从 0 起**：若两轮都触发 `evidence_gate.blocked`，则第 2 轮 grep `evidence_gate_nudge_injected sid=<...> nudge=<n>`(agent_loop.py:1516) **首次 `nudge=1`**（证明计数从 0 重新起算，不接着第 1 轮累计冲破 max_nudges → 第 2 轮不应一上来就 `evidence_gate_exhausted`）。
+   > ⚠️ 注：`evidence_gate_nudge_injected` 仅在模型**真想不取证下结论被拦**时才出。若 gate 两轮都不 block（模型本就先取证），则 S2 nudge 重置**无正向 log 可证**——此时降级到断言 1（每轮各自 `evidence_gathered_set`，证 S1 per-run 重置），并在报告注明「gate 未 block，S2 nudge 重置无法独立观测」。
 3. **放行后本轮不反复 block**：每轮一旦 `evidence_gathered_set`，该轮后续 `evidence_gate` 不再 block（有界、收敛）。
 4. 两轮桌宠都基于取证结果回答(非凭空猜)。
 
@@ -177,12 +180,12 @@
 **步骤**
 1. `动作=click 聚焦`
 2. **触发澄清**：`动作=粘贴 "帮我搞一下那个东西" → 发送`，截图 `IDEM-3-01-vague.png`，等桌宠**反问澄清**，截图 `IDEM-3-02-clarify.png`。
-3. **核对单 send 不双写**：grep 本轮 `append_message`(role=assistant) **恰 1 次** + **无** `clarify_persist_assistant_failed`。
+3. **核对单 send 不双写**：⚠️ `append_message` 调用本身**不打 log**，无法直接 grep 计数。改用两路判定：(a) **无** `clarify_persist_assistant_failed`(持久化没出错)；(b) **前端 UI 只渲染 1 条澄清气泡**(截图 `IDEM-3-02-clarify.png` 核对，不是两条重复澄清)。
 4. **重启桌宠**：`动作=restart`（taskkill deskpet.exe + 重启 Tauri，env 同 §0.1）。等 `problem_pipeline_init enabled=true` 恢复。
 5. **重启后答澄清(同会话)**：`动作=粘贴 "我是说帮我把桌面上的报表整理成一张汇总表" → 发送`，截图 `IDEM-3-03-answer-after-restart.png`，等回完，截图 `IDEM-3-04-continue.png`。
 
 **期望硬证据（幂等断言）**
-1. 首轮：`intent_triage.done ... clarify=true` → `pipeline_clarification_pause sid=<...>`；**该轮 `append_message`(assistant) 恰 1 次**(单 send 不双写)。
+1. 首轮：`intent_triage.done ... clarify=true` → `pipeline_clarification_pause sid=<...>`；**前端只渲染 1 条澄清气泡**(单 send 不双写，UI 截图核对；append_message 不打 log 故不可 grep 计数)。
 2. **`clarify_persist_assistant_failed` 全程 = 0**(持久化成功)。
 3. **重启后**：第二轮桌宠**承接澄清**继续推进——**不再重新反问同样的澄清**、**不把答案当全新无关问题**
    （证明澄清 assistant 行 S4 已持久化、重启重载进 history、多轮不断裂）。
@@ -237,40 +240,51 @@
 4. **自愈轮**：发**同类**非闲聊问题 `"帮我分析为什么这段查找代码结果不对"`，截图 `IDEM-5-02-heal.png`，等回完。
 
 **期望硬证据（幂等断言）**
-1. 失败轮：log `intent_triage.llm_failed error=...`(safe-fail 命中) + 桌宠**仍正常回复**(降级裸 ReAct) + **无未捕获 traceback 致 _run_chat 死亡**。
-2. 失败轮 safe-fail 返回保守 card(不澄清、不阻塞)→ **不应**出现 `pipeline_clarification_pause` / 矛盾事件(失败不乱触发副作用)。
+1. 失败轮：log `intent_triage.llm_failed error=...`(safe-fail 命中) + 桌宠**仍正常回复** + **无未捕获 traceback 致 _run_chat 死亡**。
+   > ⚠️ 注：safe-fail 的 `_safe_card`(intent_triage.py:241) 对 debug/research/factual_qa 仍置 `needs_investigation=True` → **失败轮可能正常进 Step2 出 `evidence_gate.*`/`evidence_gathered_set` log，这不算 FAIL**（safe-fail 降级保留取证语义是合理的）。
+2. 失败轮 safe-fail 返回保守 card(`contradiction=None`、不设澄清)→ **不应**出现 `pipeline_clarification_pause` / `chat_v2_contradiction` 事件(失败不乱触发**澄清/矛盾**副作用)。
 3. **自愈轮**(还原后)：log `intent_triage.done problem_type=<...>` **正常出**(预分析恢复)；桌宠正常回复。
 4. **幂等断言**：失败轮**不卡死、不留半截状态**；自愈轮**完全不带失败轮的残留**(per-run，干净)，证明失败可重试、不被误杀。
 
-**判定**：PASS = 失败轮被 safe-fail 接住仍回复不卡死 + 不乱触发澄清/矛盾 + 还原后自愈轮 `intent_triage.done` 正常 + 无跨轮污染。
-若预分析失败导致整轮挂掉/无回复/traceback = safe-fail 没兜住(FAIL)；若失败轮污染后续轮 = 状态残留(FAIL)。**★ 一票否决。**
+**判定**：PASS = 失败轮被 safe-fail 接住仍回复不卡死 + 不乱触发**澄清/矛盾** + 还原后自愈轮 `intent_triage.done` 正常 + 无跨轮污染。
+（失败轮出现 `evidence_gate.*` 属正常，见上注，不作 FAIL 依据。）
+唯一 FAIL：预分析失败导致整轮挂掉/无回复/traceback = safe-fail 没兜住；或失败轮冒 `pipeline_clarification_pause`/`chat_v2_contradiction`；或失败轮污染后续轮。**★ 一票否决。**
 
 **测后还原**：务必还原 analysis_model(或删 override)重启确认恢复。
 
 ---
 
-### IDEM-6 收敛止损报告幂等（每触顶 1 份，不刷屏 + 会话级不残留）
+### IDEM-6 收敛止损报告幂等（每触顶 1 份，不刷屏）
 
-**幂等命题**：S7 止损报告每触顶 run 出 1 份诚实报告(不每轮刷屏)；同会话后续正常问题**不带上次 stop_reason 残留**，重新评估收敛。
+**幂等命题**：S7 止损报告每触顶 run 出 1 份诚实报告(不每轮刷屏、不累积)。
 
-**前置**：§0 满足。**⚠️ 默认 GateConfig 硬上限极大(max_turns=10000)，自然跑逼不出触顶**，必须**构造触顶**：
-改 dev config 注入小 `max_turns`(如 4) 重启(同功能 doc TC-5 构造方式 a)。**不存在 `stop_reason=budget`**(臆造值)。
+> ⚠️ **C2 实证修正**：`ConvergenceController`(convergence_controller.py)**无任何跨 run 可变状态**，`_verdict` 是每个 run 内新构造的局部量(agent_loop.py:885)。
+> 故"会话级 stop_reason 残留"在**架构上不可能发生**——这条原断言无法构造 FAIL(不可证伪)。本 TC 因此**只保留可证伪的「每触顶 1 份不刷屏」**为硬断言；
+> "还原后简单轮正常"降为**旁证观测**(结构上恒 PASS，仅确认无意外残留，不作独立 FAIL 依据)。
 
-**步骤**
-1. （构造）config 注入小 max_turns 重启，确认装配 log。
-2. **触顶轮**：`动作=粘贴 "帮我把这个含 5 个互相依赖、信息都缺失的子问题彻底解决，每个都要查证" → 发送`，截图 `IDEM-6-01-stoploss.png`，等桌宠逼近上限止损。
-3. **还原 + 简单轮**：还原 max_turns **重启**；同会话发 `"1+1 等于几"`，截图 `IDEM-6-02-after.png`，等回完。
+**前置（C1 实证修正 — max_turns 不是 config key！）**：⚠️ `max_turns`/`per_tool_max_consecutive` **都是 `GateConfig` dataclass 硬编码字段**(termination.py:76/86)，
+**TOML 不可注入**；companion 唯一收紧途径是改源码 `main.py:6576` 的 `_max_iter = 50 if _in_code_mode else 16`。默认 `max_turns=10000` 自然跑逼不出。
+**二选一构造触顶**(报告写明用哪种 + 实际 `stop_reason` 值)：
+- **构造 (b)·推荐·不改任何代码**：抛让模型**反复用相同参数调同一工具**的死循环型任务，触 `per_tool_max_consecutive=8` 的 `hallucination`(termination.py:86)。
+- **构造 (a)·改源码**：临时把 `main.py:6576` 的 `else 16` 改 `else 4` 重启(报告须标注"改源码非 config")，触 `error_max_turns`。
 
-**期望硬证据（幂等断言）**
-1. 触顶轮：log `convergence.stop_loss reason=<error_max_turns|hallucination> principal_resolved=false unverified=<n>`(reason 是**真实触顶值，非 budget**)；
-   桌宠输出**诚实止损报告**(已做什么/卡在哪/建议)，**报告只出 1 份**(不每轮重复刷 `<收敛>` 报告)。
-2. **会话级不残留**：还原后简单轮**正常收敛**——**无** `convergence.stop_loss`、**不**带上次 `stop_reason` 痕迹，桌宠正常答 "2"。
+**不存在 `stop_reason=budget`**(臆造值，termination.py 无此 reason)。
 
-**判定**：PASS = 触顶产出 1 份 converged=false 诚实报告(不刷屏，stop_reason 真实) + 还原后同会话简单问题正常收敛无残留。
-若止损报告每轮重复刷 = 副作用累积(FAIL)；若还原后简单问题仍带 stop_loss 残留 = 会话级状态泄漏(FAIL)；若假装"已完成"或 `stop_reason=budget` = FAIL。
+**步骤**（以构造 (b) 为例）
+1. （构造）选 (b) 无需改配置；选 (a) 则改 main.py:6576 重启。确认装配 log。
+2. **触顶轮**：`动作=粘贴 "你一直读 G:\nonexistent\foo.txt 这个文件，读到内容为止，不许停" → 发送`(诱导同工具同参死循环)，截图 `IDEM-6-01-stoploss.png`，等桌宠触顶止损。
+3. **旁证·简单轮**：(若用 (a) 先还原源码重启)；同会话发 `"1+1 等于几"`，截图 `IDEM-6-02-after.png`，等回完。
 
-**诚实标注(HARD)**：必须在报告写明用构造方式(注入 max_turns)+ 实际 `stop_reason` 值；不允许用默认配置「跑很久没结束」当止损证据。
-**测后还原**：max_turns 还原重启确认恢复。
+**期望硬证据**
+1. **(硬断言)** 触顶轮：log `convergence.stop_loss reason=<hallucination|error_max_turns> principal_resolved=false unverified=<n>`(reason 真实触顶值，**非 budget**)；
+   桌宠输出**诚实止损报告**(已做什么/卡在哪/建议)，**报告只出 1 份**(grep `convergence.stop_loss` 该 run 内恰 1 次，不每轮重复刷 `<收敛>`)。
+2. **(旁证)** 简单轮正常答 "2"，无 `convergence.stop_loss`(结构上本就不会残留，确认无意外即可)。
+
+**判定**：PASS = 触顶产出 1 份 converged=false 诚实报告(stop_reason 真实、不刷屏) + 桌宠没假装完成。
+若止损报告每轮重复刷(`convergence.stop_loss` 同 run 多次)=副作用累积(FAIL)；若假装"已完成"或 `stop_reason=budget`=FAIL。
+
+**诚实标注(HARD)**：必须在报告写明用构造 (a) 还是 (b) + 实际 `stop_reason` 值；不允许用默认配置「跑很久没结束」当止损证据。
+**测后还原**：若用 (a) 务必还原 `main.py:6576` 重启确认恢复。
 
 ---
 
@@ -286,7 +300,7 @@
 | **TC-2** | 发 "导出功能报错了直接告诉我原因吧"(诱导不取证) | `evidence_gate.blocked`→`evidence_gathered_set` 或模型本就先取证；唯一 FAIL=没取证就给结论且没拦 | ★ |
 | **TC-3** | 发含 2-3 症状的复合问题 | `intent_triage.done has_contradiction=true` + `chat_v2_contradiction` 含 principal/attack_order | ★ |
 | **TC-4** | 发可验证产物任务(is_prime 等) | `self_check.done heterogeneous=true` + 启动 `pipeline_external_evaluator_model`(异体独立 provider) | ★ |
-| **TC-5** | 构造触顶(注入 max_turns) | `convergence.stop_loss reason=真实触顶值` + 诚实止损报告(非假装完成、非 budget) | ★ |
+| **TC-5** | 构造触顶(见 IDEM-6 前置：hallucination 死循环 **或** 改源码 main.py:6576，**非 config**) | `convergence.stop_loss reason=真实触顶值` + 诚实止损报告(非假装完成、非 budget) | ★ |
 | **TC-6** | 发歧义问题 → 答澄清 | `clarify=true`→`pipeline_clarification_pause`→答后承接继续(多轮不断裂) | |
 | **TC-7** | 发 3 条非闲聊(factual/debug/research) | 每条 `intent_triage.done` 恰 1 次；简单 `has_contradiction=false`/复杂 `=true` | |
 | **TC-8** | code 模式典型请求(若入口可达) | code 路径**无任何** `intent_triage.*`/`pipeline_*`(决策2 边界)；入口关则声明 env-limited 等确认 | |
@@ -305,7 +319,7 @@
 |---|---|---|---|---|---|---|---|
 | IDEM-1 | 重复闲聊预分析副作用恒 0 | ★ | | | | shortcircuit ___×、done ___× | |
 | IDEM-2 | 取证 per-run 重置不累积 nudge | | | | | 各轮 evidence_gathered_set ___ | |
-| IDEM-3 | 澄清单 send 不双写+重启不断裂 | ★ | | | | append(assistant) ___×、persist_failed ___ | |
+| IDEM-3 | 澄清单 send 不双写+重启不断裂 | ★ | | | | UI 澄清气泡 ___条、persist_failed ___ | |
 | IDEM-4 | 重启后 per-run 标记不残留 | ★ | | | | 重启后闲聊轮 evidence ___ | |
 | IDEM-5 | 预分析失败可重试自愈 | ★ | | | | llm_failed→还原后 done ___ | |
 | IDEM-6 | 止损报告每触顶 1 份不残留 | | | | | stop_loss ___×、stop_reason=___ | |
@@ -346,7 +360,8 @@
 | 核心功能上线门 | 10（TC-1~10，引用姊妹 doc），★6 必过(TC-1/2/3/4/5/9) |
 | 上线 ★ 必过合计 | 6（功能 TC-1/9 + 幂等 IDEM-1/3/4/5） |
 | 是否需 windows-mcp 真测 | **是**（每例真坐标点击 + 真中文输入 + 截图 + log grep；禁 WS 直注/pytest/import 当 UI 证据） |
-| 需改 config 重启的用例 | IDEM-5(坏 analysis_model)/IDEM-6(小 max_turns)/TC-5/TC-9/TC-10——测后均须还原 |
+| 需改 config 重启的用例 | IDEM-5(坏 analysis_model)/TC-9(enabled=false)/TC-10(坏 analysis_model)——测后均须还原 |
+| 需构造触顶的用例 | IDEM-6/TC-5：hallucination 死循环(不改代码) 或 改源码 main.py:6576(**max_turns 非 config key**)——非 config 注入 |
 | 需进程重启的幂等用例 | IDEM-3(重启验持久化)/IDEM-4(重启验状态隔离)/IDEM-5(还原重启)/IDEM-6(还原重启) |
 | best-effort/env-limited | IDEM-2(依赖 LLM 是否想直接下结论)/IDEM-3 澄清触发(依赖歧义≥0.7)/TC-2/3/4/6/8(见功能 doc) |
 </content>
