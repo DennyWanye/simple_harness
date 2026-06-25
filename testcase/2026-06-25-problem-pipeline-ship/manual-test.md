@@ -62,7 +62,7 @@
 | Case | 验收点 | 类别 |
 |---|---|---|
 | **TC-1** | 闲聊走 1 次 deepseek `intent_triage.done problem_type=chitchat short_circuit=true` → 轻收尾不进 IN-LOOP；非闲聊对照走完整流水线（**Y-light：不是"0 LLM 纯规则短路"**） | 功能(短路正确性) |
-| **TC-2** | debug 取证门控：没取证就下结论被拦 `evidence_gate.blocked` → `evidence_gathered_set`（或模型本就先取证） | 功能(取证) |
+| **TC-2** | debug 取证门控**武装**：出现 `evidence_gathered_set` 或 `evidence_gate.blocked`/`exhausted`（没取证就给结论且门没拦 = FAIL） | 功能(取证) |
 | **TC-9** | kill-switch（enabled=false）零回归 BC | 功能(BC 守护) |
 | **IDEM-1** | 重复发同一闲聊 N 次，每次各 **1 次** done、**无早期 chitchat_rule 短路 log**、无 IN-LOOP 残留 | 幂等(决策幂等) |
 | **IDEM-3** | 澄清持久化单 send 只写 1 条 + 重启后多轮不断裂不重复 | 幂等(持久化) |
@@ -97,6 +97,7 @@
 | Step7 | `convergence.stop_loss reason=<...> principal_resolved=<bool> unverified=<n>` | convergence_controller.py:71 | 资源触顶 → 诚实止损 |
 
 > ⚠️ **grep 区分两条同形 log**：`pipeline.short_circuit`（problem_pipeline.py:86，**带点**）与 `pipeline_short_circuit`（main.py:6868，**下划线**）是两条不同 log。用正则 grep `pipeline.short_circuit` 时 `.` 会通配同时匹配两条导致计数翻倍——**用字面匹配**（`grep -F 'pipeline.short_circuit'` / `grep -F 'pipeline_short_circuit'`）分别计数。
+> ⚠️ **structlog vs %-style 渲染差异**：部分锚点是 structlog kv 事件（`intent_triage.done`/`evidence_gate.blocked`/`self_check.done`/`convergence.stop_loss`），渲染到 stderr 后**事件名可能带 `event=` 前缀**（如 `event='evidence_gate.blocked' nudges_used=1`）；另一些是 `%`-style positional（`evidence_gathered_set sid=... tool=...`/`pipeline_short_circuit sid=...`，裸串）。**grep 一律用子串匹配、不要锚行首**，否则 structlog 事件会漏判。
 > WS 事件(`chat_v2_intent/contradiction/evidence_gate/selfcheck/convergence`)是**瞬态广播**，判定主依据是 backend log + 截图。
 
 ---
@@ -157,7 +158,7 @@
 
 **观察项（主观·不作硬判定）**：桌宠回复**基于取证结果**（不是凭空猜原因）—— 人工读，仅记录不卡 PASS/FAIL。
 
-**判定**：PASS = 出现 `evidence_gathered_set`（无论是否先被 block）。唯一硬 FAIL = **没取证就给结论且 gate 没拦**（无 `evidence_gathered_set` 也无 `evidence_gate.blocked`，却给了确定原因）。**★ 一票否决。**
+**判定**：PASS = **门控武装**——出现 `evidence_gathered_set` **或** `evidence_gate.blocked`/`exhausted`（与 IDEM-2/4 同口径，避免复用 history 同名工具时 set 被去重吞掉的假 FAIL）。唯一硬 FAIL = **没取证就给结论且 gate 没拦**（既无 `evidence_gathered_set`、又无 `evidence_gate.blocked`/`exhausted`，却给了确定原因）。**★ 一票否决。**
 
 **best-effort 标注**：是否 `evidence_gate.blocked` 依赖 LLM 首轮是否真想直接下结论。若模型先取证（gate 不 block），降级断言 = 出现 `evidence_gathered_set` 即证取证门语义成立，报告注明「gate 未 block」。
 
@@ -273,7 +274,7 @@
 1. `intent_triage.done problem_type=<debug|multi_task> has_contradiction=true`（预分析 parse 成功且填了矛盾段）。
 2. 该轮窗口内 `intent_triage.parse_failed` = **0**、`intent_triage.llm_failed` = **0**（既没 LLM 失败也没畸形 JSON 兜底 → 证 think-strip/三级提取真把带 CoT 的输出救了回来）。
 
-**判定**：PASS = `intent_triage.done has_contradiction=true` + parse_failed/llm_failed=0。**best-effort 标注**：是否真出现 `<think>` 前缀依赖 deepseek 当次行为，无法强制；若该轮恰好 parse_failed=1 但桌宠仍 safe-fail 正常回复（不卡死），记 best-effort + 注明"本轮预分析未救回，safe-fail 兜住"，不作 ship 阻断（safe-fail 不卡死由 TC-10/IDEM-5 ★ 兜）。
+**判定**：PASS = `intent_triage.done has_contradiction=true` + parse_failed/llm_failed=0。**best-effort 标注**：是否真出现 `<think>` 前缀依赖 deepseek 当次行为，无法强制（"没出 `<think>` 也 PASS" 的空洞风险存在）；**若要强证 strip 生效**，可在报告附该轮 raw LLM 输出截断片段确认含/不含 `<think>`，把证据等级写实。若该轮恰好 parse_failed=1 但桌宠仍 safe-fail 正常回复（不卡死），记 best-effort + 注明"本轮预分析未救回，safe-fail 兜住"，不作 ship 阻断（safe-fail 不卡死由 TC-10/IDEM-5 ★ 兜）。
 
 ---
 
@@ -370,7 +371,7 @@
 2. `pipeline.short_circuit problem_type=chitchat` + `pipeline_short_circuit sid=...` 各 **恰 3 次**。
 3. **关键幂等断言**：3 轮窗口内 `intent_triage.shortcircuit reason=chitchat_rule` = **0**（旧代码已删）；`intent_triage.llm_failed`/`parse_failed` = **0**。
 4. **无残留串扰**：3 轮窗口内 **无** `evidence_gathered_set`/`evidence_gate.blocked`/`self_check.done`/`convergence.stop_loss`。
-   > ⚠️ 机制澄清(实证 main.py:6867-6868)：闲聊短路分支**不 return**（只有澄清分支 :6894 才 return）；短路时 `evidence_gate=None` + `_pipe_problem_type=None`(:7204/:7206 附近) → IN-LOOP 三闸**全不接电** → 无任何闸 log。即"仍进 `_agent.run`，但闸被置 None 关掉"，不是"没进 loop"。可观测断言(无闸 log)不变。
+   > ⚠️ 机制澄清(实证 main.py)：闲聊短路分支(:6867-6868)**不 return**（只有澄清分支 :6894 才 return）；短路时 `evidence_gate=None`(:7204-7205 三元 `if not short_circuit else None`) + `_pipe_problem_type` 保持 **None**(:6854 初值，短路不进 :6902 的 `else` 覆盖) → IN-LOOP 三闸**全不接电** → 无任何闸 log。即"仍进 `_agent.run`，但闸被置 None 关掉"，不是"没进 loop"。可观测断言(无闸 log)不变。
 5. 3 次回复都正常（闲聊式，不卡顿）；记每轮实测耗时（WI 闲聊 p95 ≤ 15s）。
 
 **判定**：PASS = done(chitchat,sc=true)×3 + chitchat_rule=0 + llm_failed/parse_failed=0 + 无 IN-LOOP 闸残留 + 3 次正常回复。任一轮 short_circuit=false 误进 IN-LOOP / 冒 IN-LOOP 闸 log / 冒 chitchat_rule = FAIL。**★ 一票否决。**
@@ -505,7 +506,7 @@
 | TC-2 | ★ | | | | evidence_gathered_set ___、blocked ___ | |
 | TC-3 | | | | | has_contradiction=true ___、principal/attack_order ___ | |
 | TC-4 | | | | | self_check.done mode=strict ___、heterogeneous=___ | |
-| TC-5 | ★ | | | | stop_loss reason=___（应=error_max_turns）| |
+| TC-5 | (best-effort) | | | | stop_loss reason=___（应=error_max_turns）；未触发记实测轮数 | |
 | TC-6 | | | | | clarify=true→pause ___、承接 ___ | |
 | TC-7 | | | | | 各条 done ___×（应各 1）| |
 | TC-8 | | | | | code 轮 pipeline log ___(应=0) | |
