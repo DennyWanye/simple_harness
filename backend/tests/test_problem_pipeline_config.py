@@ -30,14 +30,15 @@ def test_problem_pipeline_defaults_factory_on() -> None:
     assert pp.self_check_heterogeneous is True
     assert pp.convergence_report_on_stop is True
     assert pp.observability_events is True
-    # 决策3：模型留空 = 主 LLM
-    assert pp.analysis_model == ""
+    # WI-4-B：预分析默认走 deepseek-v4-pro（relay 实测 stream+json_schema 稳，规避 gpt-5.5 间歇 502）；
+    #          self_check 仍留空 = 主 LLM。
+    assert pp.analysis_model == "deepseek-v4-pro"
     assert pp.self_check_model == ""
     assert pp.intent_clarify_threshold == 0.7
     assert pp.evidence_max_nudges == 2
     assert pp.evidence_investigative_tools == []
-    # 真机 E2E 修复：gpt-5.5 thinking 预分析超时（6s 必超时 → Step1+3 形同虚设）→ 默认 30s
-    assert pp.analysis_timeout_s == 30.0
+    # WI-4-B：deepseek-v4-pro thinking 慢 → 超时放宽 30s → 45s（给足时间，原 30s 仍偶超时）
+    assert pp.analysis_timeout_s == 45.0
 
 
 def test_problem_pipeline_parsed_from_nested_subtable(tmp_path: Path) -> None:

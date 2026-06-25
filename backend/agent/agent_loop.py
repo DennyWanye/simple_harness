@@ -2364,6 +2364,36 @@ class AgentLoop:
                                 tool_name=_ftc.name,
                                 result=_fres_str,
                             )
+                    # ─── Step7 止损（WI-2，plans/2026-06-24-...）：allows_tool 触顶
+                    # （hallucination / permanent_tool_error 等）也接 ConvergenceController →
+                    # 诚实止损报告，而非只发 error。这里 gate 已返回真实触顶 _treason，用它覆盖
+                    # summary 的 reason（同 allows_call 路径 :873）。pipeline off → controller=None → BC。
+                    if self._convergence_controller is not None:
+                        _cap_summary = dict(self._gate.summary())
+                        if _treason is not None:
+                            _cap_summary["reason"] = _treason.value
+                        _verdict = self._convergence_controller.evaluate(
+                            principal_resolved=False,
+                            unverified_claims=0,
+                            gate_summary=_cap_summary,
+                        )
+                        if self._pipeline_observability:
+                            yield self._pipeline_event("chat_v2_convergence", iteration, {
+                                "converged": _verdict.converged,
+                                "principal_resolved": _verdict.principal_resolved,
+                                "stop_reason": _verdict.stop_reason,
+                                "report": _verdict.report,
+                            })
+                        if _verdict.should_stop_loss and _verdict.report:
+                            self._gate.record_final_answer()
+                            yield FinalEvent(
+                                type="final",
+                                task_id=tid,
+                                iteration=iteration,
+                                content=_verdict.report,
+                                stop_reason="stop_loss",
+                            )
+                            return
                     yield ErrorEvent(
                         type="error",
                         task_id=tid,
@@ -2544,6 +2574,36 @@ class AgentLoop:
 
         # Hit max_iterations — spec §11.4 says emit warning + final.
         logger.warning("agent loop task %s hit max_iterations=%d", tid, self.max_iterations)
+        # ─── Step7 止损（WI-2，plans/2026-06-24-...）：loop range 耗尽（每轮都 tool_use 跑满
+        # max_iterations）也接 ConvergenceController，产出诚实止损报告，而非只发 error。
+        # 此出口 gate 不一定 terminate()，summary()["reason"] 多半还是合成 "running" → 必须手动
+        # 覆盖成 HARD_MAX_TURNS.value（"error_max_turns"），否则 resource_capped 判 False → 止损不触发。
+        # pipeline off 时 self._convergence_controller=None → 保持原 warning+ErrorEvent（字节级 BC）。
+        if self._convergence_controller is not None:
+            _cap_summary = dict(self._gate.summary())
+            _cap_summary["reason"] = TerminationReason.HARD_MAX_TURNS.value
+            _verdict = self._convergence_controller.evaluate(
+                principal_resolved=False,   # 跑满 range 必是每轮都在调工具没收尾 → 未收敛
+                unverified_claims=0,
+                gate_summary=_cap_summary,
+            )
+            if self._pipeline_observability:
+                yield self._pipeline_event("chat_v2_convergence", self.max_iterations, {
+                    "converged": _verdict.converged,
+                    "principal_resolved": _verdict.principal_resolved,
+                    "stop_reason": _verdict.stop_reason,
+                    "report": _verdict.report,
+                })
+            if _verdict.should_stop_loss and _verdict.report:
+                self._gate.record_final_answer()
+                yield FinalEvent(
+                    type="final",
+                    task_id=tid,
+                    iteration=self.max_iterations,
+                    content=_verdict.report,
+                    stop_reason="stop_loss",
+                )
+                return
         yield ErrorEvent(
             type="error",
             task_id=tid,

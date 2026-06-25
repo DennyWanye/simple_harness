@@ -4,7 +4,7 @@
 """WI-1 单测 — IntentTriage（决策4：Step1+3 合并，一次 analyze() LLM 调用）。
 
 覆盖（plans/2026-06-24-... §6 WI-1 + 05 L1）：
-  - chitchat 纯规则短路（**0 次 LLM**，一票否决）
+  - Y-light：chitchat 由预分析 LLM(deepseek) 裸判后短路（删早期规则短路修 BUG-B；现调 1 次 LLM）
   - 非闲聊只调 1 次 LLM（await_count==1，证明 Step1+3 合一）
   - 复杂问题一次调用同时出 intent + contradiction；简单 factual_qa 返回 contradiction=None
   - ambiguity≥阈值 → needs_clarification 澄清出口
@@ -45,24 +45,53 @@ def _complex_payload() -> str:
     })
 
 
-def test_chitchat_zero_llm_call() -> None:
-    """★ 一票否决：闲聊纯规则短路，绝不调 LLM。"""
-    mock_llm = AsyncMock(return_value="{}")
+def _chitchat_payload() -> str:
+    return json.dumps({
+        "restated_intent": "打招呼闲聊",
+        "problem_type": "chitchat",
+        "ambiguity_score": 0.0,
+        "clarifying_questions": [],
+        "needs_investigation": False,
+        "needs_decomposition": False,
+        "contradiction": None,
+    })
+
+
+def test_chitchat_shortcircuit_via_llm() -> None:
+    """Y-light：闲聊判断权交给预分析 LLM(deepseek)。LLM 判 chitchat + 低歧义 → short_circuit。
+
+    （重构前是"靠 classifier task_type 的早期纯规则短路、0 次 LLM"；BUG-B：坏 classifier 会把
+     真实非闲聊误判成 chat 致整条流水线短路。Y-light 删早期规则短路，由 deepseek 裸判，故现在调 1 次 LLM。）
+    """
+    mock_llm = AsyncMock(return_value=_chitchat_payload())
     triage = IntentTriage(mock_llm)
     card = asyncio.run(triage.analyze("你好呀今天天气真好", prior_task_type="chat"))
     assert card.short_circuit is True
     assert card.problem_type == "chitchat"
+    assert card.needs_investigation is False     # Y-light：chitchat 强制不取证
     assert card.contradiction is None
-    mock_llm.assert_not_called()
-    assert mock_llm.call_count == 0
+    assert mock_llm.await_count == 1             # 不再是 0 次：闲聊判断也走 LLM
 
 
-def test_emotion_zero_llm_call() -> None:
-    mock_llm = AsyncMock(return_value="{}")
+def test_emotion_shortcircuit_via_llm() -> None:
+    mock_llm = AsyncMock(return_value=_chitchat_payload())
     triage = IntentTriage(mock_llm)
     card = asyncio.run(triage.analyze("我心情不好", prior_task_type="emotion"))
     assert card.short_circuit is True
-    assert mock_llm.call_count == 0
+    assert card.needs_investigation is False
+    assert mock_llm.await_count == 1
+
+
+def test_chitchat_no_early_shortcircuit_when_classifier_wrong() -> None:
+    """★ BUG-B 回归：classifier 误判 chat，但 deepseek 判出真实类型(debug) → 不短路、进流水线。"""
+    mock_llm = AsyncMock(return_value=_complex_payload())  # LLM 裸判为 debug + 矛盾段
+    triage = IntentTriage(mock_llm)
+    # prior_task_type="chat" 模拟坏 classifier；Y-light 下不再据此早期短路
+    card = asyncio.run(triage.analyze("我的登录功能报错了帮我看看", prior_task_type="chat"))
+    assert mock_llm.await_count == 1
+    assert card.problem_type == "debug"
+    assert card.short_circuit is False
+    assert card.contradiction is not None
 
 
 def test_complex_single_llm_call_with_contradiction() -> None:

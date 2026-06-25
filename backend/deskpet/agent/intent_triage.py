@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Optional
 
@@ -183,35 +182,16 @@ class IntentTriage:
 
         safe-fail：llm_call=None / 异常 / 超时 / 畸形 JSON → 用 prior_task_type 派生保守 IntentCard（contradiction=None）。
         """
+        # derived_pt 仅作 _safe_card / _parse 的 fallback（Y-light：不再据此做早期纯规则短路，
+        # 改由预分析 LLM(deepseek-v4-pro) 裸判是否 chitchat → 修坏掉的 classifier 把真实问题误判成 chat 的 BUG-B）。
         derived_pt = _TASKTYPE_TO_PROBLEM.get(prior_task_type or "", "factual_qa")
-
-        # ── 纯规则短路：闲聊/情绪类不调 LLM，直接短路（硬性能要求，0 次 LLM）
-        # 临时调试开关（followup：闲聊短路逻辑后续重做 + classifier fail-open 修复 task_742d3399）：
-        #   DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT=1 → 强制所有消息走完整非闲聊预分析：
-        #   ① 关掉早期纯规则短路；② 把 chitchat 派生（多半来自 classifier fail-open）重映射成 factual_qa，
-        #   否则下游 prompt 的 [系统初判类型] hint / safe_card / 解析 fallback 会继续把 LLM 带偏判 chitchat。
-        #   默认未设=原行为字节不变（短路照常）。
-        _disable_sc = os.environ.get("DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT") == "1"
-        if _disable_sc and derived_pt == "chitchat":
-            derived_pt = "factual_qa"
-        if derived_pt == "chitchat":  # 此时必然 not _disable_sc
-            logger.info("intent_triage.shortcircuit", reason="chitchat_rule",
-                        task_type=prior_task_type)
-            return IntentCard(
-                restated_intent=user_message[:80],
-                problem_type="chitchat",
-                ambiguity_score=0.0,
-                needs_investigation=False,
-                contradiction=None,
-                short_circuit=True,
-            )
 
         if self._llm_call is None:
             return self._safe_card(user_message, derived_pt)
 
+        # Y-light：prompt 不再带 [系统初判类型] hint，让 deepseek 裸判，不被坏 classifier 的 task_type 带偏（BUG-C）。
         prompt = (
             f"{_PRE_ANALYSIS_SYSTEM}\n\n"
-            f"[系统初判类型] {prior_task_type or '(无)'} → {derived_pt}\n"
             f"[用户消息]\n{user_message}"
         )
         try:
@@ -221,16 +201,13 @@ class IntentTriage:
             return self._safe_card(user_message, derived_pt)
 
         card = self._parse(raw, fallback_pt=derived_pt, user_message=user_message)
-        # 测试开关：即便经过 hint 中和，LLM 仍可能返回 chitchat → 重映射成 factual_qa 强制进流水线。
-        if _disable_sc and card.problem_type == "chitchat":
-            card.problem_type = "factual_qa"
+        # Y-light：deepseek 判 chitchat → 不需要取证（防 evidence_gate 只看 needs_investigation 误 nudge 闲聊"先调查再回答你好"）
+        if card.problem_type == "chitchat":
+            card.needs_investigation = False
         # 出口信号派生
-        # 测试开关 DESKPET_DISABLE_CLARIFICATION=1：强制不走澄清出口，让消息直接进 IN-LOOP，
-        # 用于真机硬触发 Step2 取证门 / Step7 收敛止损（否则 under-specified 问题先被澄清门拦）。默认未设=BC。
         card.needs_clarification = (
             card.ambiguity_score >= self._clarify_threshold
             and bool(card.clarifying_questions)
-            and os.environ.get("DESKPET_DISABLE_CLARIFICATION") != "1"
         )
         card.short_circuit = (
             card.problem_type == "chitchat"

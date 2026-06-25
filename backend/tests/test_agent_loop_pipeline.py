@@ -169,3 +169,53 @@ async def test_convergence_off_is_bc_error_event():
     # BC：触顶发 ErrorEvent，无 stop_loss FinalEvent
     assert any(isinstance(e, ErrorEvent) for e in events)
     assert not any(isinstance(e, FinalEvent) and e.stop_reason == "stop_loss" for e in events)
+
+
+@pytest.mark.asyncio
+async def test_convergence_stop_loss_on_loop_exhaustion():
+    """WI-2 A 出口：loop range 耗尽（gate 不触顶，每轮都 tool_use 跑满 max_iterations）
+    也产出 stop_loss FinalEvent。
+
+    关键区别于 test_convergence_stop_loss_on_turn_cap：那条让 allows_call(:873) 在
+    max_turns(2) 触顶提前 return；本条 **不注入** termination_gate（默认 max_turns=10000
+    远大于 max_iterations），让 gate 永不触顶 → for range(1, max_iterations+1) 跑满耗尽 →
+    落到 :2546 "hit max_iterations" 出口（A）。验证该出口手动覆盖 reason=error_max_turns
+    后 ConvergenceController 仍判 resource_capped=True 并止损。"""
+    # 每轮都调工具不同参数（避免 hallucination 在 allows_tool 提前拦），永不 end_turn。
+    llm = FakeLLM([_tool("read", {"path": f"f{i}.py"}) for i in range(20)])
+    agent = AgentLoop(
+        llm_registry=llm, tool_registry=FakeTools({"read": json.dumps({"ok": True})}),
+        max_iterations=3,                       # 小 max_iterations → range 先耗尽
+        # 不注入 termination_gate → 默认 max_turns=10000，gate 永不触顶
+        convergence_report_on_stop=True,
+        pipeline_observability=True,
+    )
+    events = [ev async for ev in agent.run(
+        task_id="t6", session_id="s6",
+        messages=[{"role": "user", "content": "无限循环不收尾"}],
+    )]
+    finals = [e for e in events if isinstance(e, FinalEvent)]
+    # A 出口止损：发了 stop_loss FinalEvent 且 content 含收敛报告
+    assert any(e.stop_reason == "stop_loss" and "<收敛>" in e.content for e in finals)
+    # 发了 convergence 观测事件且 report 非空
+    conv = [e for e in events if isinstance(e, PipelineEvent) and e.type == "chat_v2_convergence"]
+    assert any(e.payload.get("report") for e in conv)
+
+
+@pytest.mark.asyncio
+async def test_convergence_off_loop_exhaustion_is_bc():
+    """WI-2 A 出口 BC：pipeline off（controller=None）+ loop 耗尽 → 原 max_iterations
+    ErrorEvent，无 stop_loss FinalEvent（字节级保持原行为）。"""
+    llm = FakeLLM([_tool("read", {"path": f"f{i}.py"}) for i in range(20)])
+    agent = AgentLoop(
+        llm_registry=llm, tool_registry=FakeTools({"read": json.dumps({"ok": True})}),
+        max_iterations=3,
+        # convergence_report_on_stop 默认 False → controller=None
+    )
+    events = [ev async for ev in agent.run(
+        task_id="t7", session_id="s7",
+        messages=[{"role": "user", "content": "无限循环不收尾"}],
+    )]
+    # BC：max_iterations ErrorEvent，无 stop_loss
+    assert any(isinstance(e, ErrorEvent) and e.reason == "max_iterations" for e in events)
+    assert not any(isinstance(e, FinalEvent) and e.stop_reason == "stop_loss" for e in events)

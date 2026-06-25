@@ -428,12 +428,12 @@ class ProblemPipelineConfig:
     enabled: bool = True                       # 总开关（kill-switch）：false → 整条短路回退现有链路
     intent_triage: bool = True                 # Step1+3 合并预分析（意图 + 主要矛盾）
     intent_clarify_threshold: float = 0.7      # 歧义澄清阈值
-    analysis_timeout_s: float = 30.0           # 预分析 LLM 超时（真机修正：gpt-5.5 thinking 需 5-15s，原 6s 必超时）
+    analysis_timeout_s: float = 45.0           # 预分析 LLM 超时（真机修正：deepseek-v4-pro thinking 慢，需给足时间；原 30s 仍偶超时）
     evidence_gate: bool = True                 # Step2 取证门控
     evidence_max_nudges: int = 2               # 取证 nudge 上限
     evidence_investigative_tools: list[str] = field(default_factory=list)  # 空=用模块默认白名单
     plan_companion_enabled: bool = True        # Step4 为 Companion 主线新增 plan（code 模式不动）
-    analysis_model: str = ""                   # 决策3：意图+矛盾分析模型（留空=主 LLM gpt-5.5）
+    analysis_model: str = "deepseek-v4-pro"    # 决策3：意图+矛盾分析模型（relay 实测 stream+json_schema 稳，规避 gpt-5.5 间歇 502）
     self_check: bool = True                    # Step6 自检总开关（bool；严格度内部按 problem_type 选）
     self_check_model: str = ""                 # 决策3：异体自检评分模型（留空=主 LLM gpt-5.5）
     self_check_heterogeneous: bool = True      # 失败 N 次后启异体（fresh-context 子代理）评分
