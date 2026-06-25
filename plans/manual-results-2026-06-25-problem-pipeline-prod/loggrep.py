@@ -11,7 +11,7 @@ summary of key pipeline events in that window.
 import re
 import sys
 
-LOG = r"G:\projects\deskpet\plans\manual-results-2026-06-25-problem-pipeline-prod\tauri-wi5f.log"
+LOG = r"G:\projects\deskpet\plans\manual-results-2026-06-25-problem-pipeline-prod\tauri-wi5h.log"
 
 # A logical line starts with a python-logging level prefix.
 START = re.compile(r"^(INFO|WARNING|ERROR|DEBUG|CRITICAL):")

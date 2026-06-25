@@ -8,10 +8,13 @@
 
 本地部署的桌面语音宠物：Live2D 桌宠 + 全本地语音交互管线（VAD → ASR → LLM → TTS）。
 
-> 📊 **状态档总索引**: [`STATUS/index.md`](./STATUS/index.md) —
-> 登记所有状态档及其作用。其中 [`status.md`](./STATUS/status.md) 是全局项目状态
-> （所有并行 worktree / 功能模块完成度 / 最近里程碑 / 已知问题），
-> [`DeepResearch.md`](./STATUS/DeepResearch.md) 是 deep research 模块专项状态。
+> 📊 **`STATUS/` 状态档文件夹**: 一页式看清项目/各模块当前进展的"状态档"集中地——
+> 全局项目状态 + 各功能模块专项状态都放这里，每完成一个里程碑/合并一个 worktree 即更新。
+> 入口是 [`STATUS/index.md`](./STATUS/index.md)（登记所有状态档及其作用）。其中
+> [`status.md`](./STATUS/status.md) 是全局项目状态（所有并行 worktree / 功能模块完成度 /
+> 最近里程碑 / 已知问题），[`DeepResearch.md`](./STATUS/DeepResearch.md) / [`AgentLoop.md`](./STATUS/AgentLoop.md) /
+> [`AgentImprovements.md`](./STATUS/AgentImprovements.md) / [`PPT.md`](./STATUS/PPT.md) 是各模块专项状态。
+> 新 session / 子代理接手项目前先读这里。
 
 ---
 

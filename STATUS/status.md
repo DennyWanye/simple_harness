@@ -1,6 +1,6 @@
 # DeskPet — 全局项目状态
 
-> **最后更新**: 2026-06-24
+> **最后更新**: 2026-06-25
 > **维护方式**: 每完成一个里程碑 / 合并一个 worktree 后更新本文件。
 > **用途**: 一页看清整个项目（所有并行工作流）的当前状态。新 session / 子代理
 > 接手前先读这里。
@@ -66,6 +66,7 @@
 
 | 日期 | 里程碑 |
 |---|---|
+| 2026-06-25 | **七步流水线 Sprint2 收敛 + 真测发现并修 safe-fail 误短路 ✅；同时挖出 relay 账号脱节 P1（记录待修）** — Sprint2 经 R1/R2 内部对抗挑战至 EXECUTABLE-AS-IS（`88c13365`），按 Y 方案重构：**WI-1 取消闲聊短路、每条问题统一走 deepseek-v4-pro 预分析**（`fecd0eeb`/`7cc79b39`）+ **WI-2 收敛止损** + **WI-4 分类/判断默认 deepseek**；**真测抓修 2 真 bug**：① `intent_triage` safe-fail 失败时**绝不短路**为 chat + JSON 净化控制字符（`16758f8b`，真测发现 LLM 返回带控制字符致解析失败误降级）；② WI-5(b) 默认配置真测 TC-1/IDEM-1 ★PASS（`c3b3ca1b`）。**⚠️ 同轮真测深挖出 P1 账号脱节**（见 §5）：relay 全模型 403 credit-too-low 实为 backend 用了 `cloud-llm` slot 里**很久前手填的旧账号 key**，relay 登录的实际账号（有额度）从不被写进该 slot → 本轮先用根目录 `.env` 固定 key 临时绕过续测，修复留后续 sprint。证据 [manual-results-2026-06-25-problem-pipeline-prod/](../plans/manual-results-2026-06-25-problem-pipeline-prod/) · followup [relay-cloud-key-sync](../plans/2026-06-25-relay-cloud-key-sync-followup.md) |
 | 2026-06-24 | **七步问题处理流水线实现 + 真机 windows-mcp E2E 核心 PASS ✅** — 按毛选方法论把"收到问题→处理"落成显式七步（Step1+3 预分析合并/Step2 取证门控/Step4 弹钢琴/Step6 异体自检/Step7 收敛止损，仅 Companion）。**子代理并行实现 8 WI**（WI-0 config+context / WI-1 IntentTriage+编排器 / WI-4 三闸 / WI-3 plan companion / WI-6 agent_loop 接入 / WI-5 main.py 编排）；5 新模块 + 5 改造，flag off 全 BC（kill-switch）。**56 单测全绿** + 关 flag 2300+ pytest 不回归。子代理评估完成度 100%（VERDICT: COMPLETE）。**真机 E2E**（SendInput 真点击+UIA Type 真中文输入+截图+log grep）：TC-1 闲聊短路 0 LLM★/TC-2 取证 glob★/TC-3 抓主要矛盾★/TC-4 异体自检 strict★/TC-6 澄清多轮不断裂/TC-7 合并证明/TC-9 kill-switch 三闸全 None★/TC-10 safe-fail 全 PASS（TC-5 止损 best-effort 单测覆盖、TC-8 code 模式 env-limited）。**真机抓修 BUG**：预分析超时 6s→30s。证据 [RESULTS](../plans/manual-results-2026-06-24-problem-pipeline/RESULTS.md)。 |
 | 2026-06-24 | **Code 模式入口暂关闭（聚焦主线程 Companion）+ 问题处理流水线 plan 定稿 EXECUTABLE-AS-IS ✅** — 产品侧关闭 Code 模式入口（`Toolbar.tsx CODE_MODE_ENTRY_ENABLED=false` + `App.tsx` 抑制 `code_mode_suggest`，翻 true 即恢复），`tsc -b` 通过 + **windows-mcp 真机截图确认工具栏 terminal 按钮消失**（证据 `plans/2026-06-24-problem-handling-pipeline-maoxuan/exec/toolbar-crop.png`）；待主线做实后另开 plan 优化 Code 模式重新上线。**问题处理流水线 plan**（毛选方法论锚的显式七步 + 取证门控/异体自检/收敛止损三道闸，只作用 Companion 主线）经 **5 轮子代理对抗迭代**收敛至 EXECUTABLE-AS-IS（codex 撞 Windows ConstrainedLanguage 沙箱墙 err1223 → 回退内置子代理）；尚未实现，待执行：[plan 目录](../plans/2026-06-24-problem-handling-pipeline-maoxuan/)。 |
 | 2026-06-24 | **PPT 惊艳生图路径真机 E2E PASS × doubao-seedream-4.0；gpt-image-2 全面下线 ✅** — relay 下线 gpt-image-2（`8cb6b3d9`），图像默认切 `doubao-seedream-4.0`（真链路实测可用，`image_tools.py:44`）；`ppt_pro` 惊艳生图路径端到端跑通真机 PASS（`719a0b49`）；SKILL.md/注释/plan 清理残留 gpt-image-2 引用 + depth 不再作 LLM 参数（`58ee7a08`/`228a3d59`）。 |
@@ -146,6 +147,7 @@
   不能用单测 / 协议层替代。真桌宠 WebView2 测试用 CDP 9222（dev 默认开）注入真实输入。
 - **DPI 坐标**：这台开发机 OS scale 150% + WebView dpr 2.13；SendInput 物理点击需正确
   换算（详 [16-sendinput-webview2-final-diagnosis](../plans/2026-05-25-companion-code-skill-upgrade/16-sendinput-webview2-final-diagnosis.md)）。
+- **⚠️ P1 — relay 登录与 backend cloud-llm key 账号脱节**（2026-06-25 真测发现）：relay 登录 / device_key rotate **从不**把账号 key 写进 backend 读的 keychain slot `default.deskpet-cloud-llm`（唯一写点是 `SettingsPanel` 手填）→ backend 长期用最初手填的旧账号 key，用户换/充值新账号完全感知不到，旧账号耗尽即静默 403 → 流水线 safe-fail 降级（体验是"变笨"而非报错）。**根因 + 修复方向已立 followup**：[plans/2026-06-25-relay-cloud-key-sync-followup.md](../plans/2026-06-25-relay-cloud-key-sync-followup.md)（§4 候选三方向：登录/refresh 后同步 cloud-llm slot · rotate 时热更新运行中 backend key · 缺额度给前端清晰信号；待后续 sprint 处理）。**完整代码级优化 plan（路线 B：relay 新增长期 key 端点 → 客户端铸 key 存本地 → 收编进 LLMProviderRegistry 作为可统一管理的 provider）**：[plans/2026-06-25-relay-local-apikey-provider/](../plans/2026-06-25-relay-local-apikey-provider/00-PLAN.md)（待 review/执行）。
 - 其它已知问题见 `README.md` §已知问题（Known Issues）+ `docs/beta/已知问题.md`。
 
 ---

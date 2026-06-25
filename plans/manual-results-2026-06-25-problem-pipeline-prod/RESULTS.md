@@ -156,3 +156,43 @@ deepseek-v3     -> HTTP 403  （同上）
 **剩余 ★ 用例阻塞**（需 relay 充值后续跑）：TC-2 取证门完整链路 / TC-3 抓主要矛盾 / TC-4 异体自检 / TC-5+IDEM-6 收敛止损（改源码构造）/ TC-6+IDEM-3 澄清+重启 / IDEM-4 重启隔离 / IDEM-5 自愈轮 / TC-9 kill-switch BC。
 
 > 注：TC-6 澄清路径在本轮已**部分取证**（泛问"导出功能报错"→deepseek 判 `ambiguity=0.9 clarify=True`→`pipeline_clarification_pause`→桌宠真反问"具体错误提示或代码是什么"，截图 `TC-6-01-clarify-question.png`）；完整"答澄清→承接续接"因余额耗尽未跑完。
+
+---
+
+## 7. WI-5(b) 续跑结论（2026-06-25 晚 · relay 解阻后）
+
+### 7.1 relay 鉴权解阻（详见 plans/2026-06-25-relay-cloud-key-sync-followup.md）
+
+§6.3 的"全模型 403"根因 = **账号脱节**（backend cloud-llm slot 用旧耗尽账号，relay 登录从不同步），叠加 Windows 凭据 Persist realm 坑 + .env 的 key 行被 GBK 中文注释挤行。**解阻**：删 keychain cloud-llm slot + launcher 用 `tsk_[A-Za-z0-9]+` 正则（UTF8 读、不限行首）从根目录 .env 注入 `DESKPET_CLOUD_API_KEY` → `process_manager.rs` 读不到 keychain 就不覆盖 env → backend 拿到用户新给的有额度 key（`tsk_48b…` → 200 OK）。boot log 出现 `llm_api_key_from_keychain` = key 已就绪。
+
+解阻后真机验证 deepseek 默认配置跑通：`POST chinzy.com/v1/chat/completions 200 OK` + `intent_triage.done problem_type='factual_qa' short_circuit=False`（"月球为什么总是同一面朝向地球" → 走完整流水线，再次坐实 headline BUG-B 修复）。
+
+### 7.2 ⚠️ BUG-A（relay 对预分析 call 间歇不稳）阻断剩余 ★ 干净取证 —— 上游问题（plan §6 范围外）
+
+七步预分析走 `chat_with_tools`（强制 `stream:True`）+ `json_schema` strict。真机观测：relay 对 `deepseek-v4-pro + stream + json_schema` **时好时坏**——
+- relay 健康时：`intent_triage.done` 正常出（如 7.1 的"月球"）。
+- relay 瞬时坏一阵时（真机抓到 11:09–11:10 一段）：调用 hang ~15–45s 后返回**空 body**（`p4s25_stream_empty_response_raw_dump` / `stream_empty_body_unparseable`）→ 预分析空手而归 → `intent_triage.llm_failed error=''`（慢-空还吃满 `analysis_timeout_s=45`）。同一坏窗内 stream / 非流式 / gpt-5.5 **三者全挂**，证明是 relay 整体瞬时抖动，非单一模型/路径问题。
+- probe 直连刻画（relay 恢复后）：deepseek **非流式 4–6s 稳**、流式 9–13s OK、gpt-5.5 非流式 36–42s OK。
+
+**关键：safe-fail 正确兜住** —— 预分析失败时桌宠降级裸 ReAct 仍给出正确答案（实测 TC-3 多症状问题，即便预分析 llm_failed，主 loop gpt-5.5 仍答出"主要矛盾 = 偶尔 500 崩溃，优先解决"）。即**用户可见行为正确，只是流水线的结构化预分析事件（intent_triage.done / chat_v2_contradiction）在 relay 坏窗内不触发**。
+
+**定性**：这是 **relay 中转站对结构化预分析调用的上游稳定性问题**，Sprint 2 plan §6 明确列为**范围外（上游，非项目侧）**。流水线代码本身正确（safe-fail 设计验证有效）。剩余 ★ 用例（TC-2/4/5/9 + IDEM-2~6）需要预分析**每次**都成功才能拿干净结构化证据，而 relay 当前时好时坏，无法在本轮稳定满足。
+
+### 7.3 WI-4-C 建议（留后续，本轮未 ship）
+
+试过两版客户端硬化（① 空响应重试 ② 非流式裸补全优先回退流式），但都无法克服 relay **整体瞬时抖动**（坏窗内非流式也空），且 E2E 因环境太抖**未能干净验证**，按"改代码必须真测验证"纪律**已回退**（main.py 保持提交态）。后续 WI-4-C 正式做时建议：
+- 预分析改**非流式优先**（probe 实测 deepseek 非流式 4–6s 最快最稳，且避开 stream-empty-body 失败模式）；
+- 配 `_extract_json` 已有的 3 级容错 + 控制字符净化（commit 16758f8b 已加）接住裸 JSON；
+- relay 整体坏窗仍靠 safe-fail 兜底（已有，验证有效）。
+- 另：`analysis_timeout_s` 慢-空场景会被吃满，可加"连续无字节即早 safe-fail"（plan WI-4-A）降感知延迟。
+
+### 7.4 本轮 ★ 覆盖小结
+
+| 用例 | 状态 | 证据 |
+|---|---|---|
+| TC-1 ★ / IDEM-1 ★ | ✅ PASS（默认配置） | §6.1（tauri-wi5.log）：闲聊 short_circuit + 非闲聊走流水线 + 无早期 chitchat_rule |
+| safe-fail 误短路 bug | ✅ 修复 + 单测 + 真机复测 | §6.2（commit 16758f8b） |
+| deepseek 默认配置跑通 | ✅ 验证 | §7.1（200 OK + intent_triage.done factual_qa） |
+| TC-2/3/4/5/9 + IDEM-2~6 | ⏳ 受阻 | §7.2：relay 对预分析 call 间歇不稳（上游，plan §6 范围外）→ 无法稳定取干净结构化证据；safe-fail 兜底使用户可见行为正确 |
+
+**上线判定**：headline P0（BUG-B Y-light + BUG-D 收敛止损 + safe-fail 误短路）已修 + 关键 ★（TC-1/IDEM-1）默认配置 PASS。剩余 ★ 受 relay 上游稳定性阻断，需 relay 稳定窗口 + WI-4-C 正式落地后另起一轮补齐。
