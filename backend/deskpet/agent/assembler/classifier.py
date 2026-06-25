@@ -36,6 +36,7 @@ from typing import Any, Optional
 import structlog
 
 from deskpet.agent.assembler.bundle import TASK_TYPES
+from deskpet.agent.lexicon import has_code_signal, is_obvious_chitchat
 
 logger = structlog.get_logger(__name__)
 
@@ -264,12 +265,25 @@ class TaskClassifier:
             if llm_result is not None:
                 return llm_result
 
+        # WI-6/WI-7 词法地板（fail-closed，原则 2/4）：所有上游 tier 都没命中
+        # （embed 撞锁/超时 fallback、llm 关或失败）→ **不再无脑 chat**。确定寒暄 → chat；
+        # 否则倒向能力侧（有 code 信号 → code，否则 → task），让真 code/debug 问题拿到
+        # 带工具的 bundle，而非 chat persona。复用 intent_triage 同款共享词法模块（避免双词表，原则 3）。
+        return self._lexical_floor(user_message, start)
+
+    def _lexical_floor(self, user_message: str, start: float) -> ClassifierResult:
+        if is_obvious_chitchat(user_message):
+            task_type, rationale = "chat", "lexical floor: obvious chitchat"
+        elif has_code_signal(user_message):
+            task_type, rationale = "code", "lexical floor: code signal → capability side"
+        else:
+            task_type, rationale = "task", "lexical floor: fail-closed to capability"
         return ClassifierResult(
-            task_type="chat",
+            task_type=task_type,
             path="default",
             confidence=0.0,
             latency_ms=(time.monotonic() - start) * 1000.0,
-            rationale="no tier matched",
+            rationale=rationale,
         )
 
     async def _embed_tier(

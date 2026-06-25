@@ -1993,9 +1993,25 @@ try:
 
     from deskpet.agent.assembler import build_default_assembler as _build_assembler
     _persona_inject_flag = bool(getattr(_v2_cfg, "persona_inject", False))
+    # BUG-B Phase 2 WI-5：复活组装期 classifier llm 层。原 llm_registry=None → classifier
+    # 跳过 llm tier，embed 撞锁时直接 default='chat'（真 code/debug 问题拿到 chat persona/工具/skill
+    # bundle，P2 组装质量缺陷）。注入现成 shim（范式同 codify main.py:1868）让 llm tier 真跑。
+    # R2 命门：shim 忽略 classifier 传入的 model（tool_use_shim.py:45），实际跑 local_llm.model
+    # (relay 主模型 gpt-5.5)；timeout 经 build_default_assembler 调到 ≥6s 适配 thinking 4-6s。
+    _classifier_llm = None
+    try:
+        from agent.tool_use_shim import OpenAICompatibleAgentLLM as _ClsShim
+        _cls_provider = local_llm or cloud_llm
+        if _cls_provider is not None:
+            _classifier_llm = _ClsShim(provider=_cls_provider)
+            logger.info("assembler_classifier_llm_injected provider=%s", type(_cls_provider).__name__)
+    except Exception as _cls_exc:  # noqa: BLE001 — 注入失败退回 None（classifier 降级 WI-6 词法地板，不崩 boot）
+        logger.warning("assembler_classifier_llm_inject_failed: %s — fallback lexical floor", _cls_exc)
+        _classifier_llm = None
     _assembler = _build_assembler(
         embedder=_embedder,
-        llm_registry=None,
+        llm_registry=_classifier_llm,
+        llm_timeout_s=8.0,
         enabled=True,
         context_window=32_000,
         budget_ratio=0.6,

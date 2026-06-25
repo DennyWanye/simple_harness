@@ -101,7 +101,11 @@ class TestS14AssemblerHook:
             session_id="sess-1",
         )
         assert bundle is not None
-        assert bundle.task_type in {"chat", "tool_use", "memory", "skill"}
+        # BUG-B Phase 2 WI-6：无 embedder/llm → 词法地板 fail-closed。"hello pet" 非确定寒暄
+        # （整句锚定 fullmatch 失败）非 code → 'task'（不再无脑 chat）。断言为合法 task_type 即可，
+        # 本测试本意是"无 embedder/llm 不崩"，不锁定具体类型。
+        from deskpet.agent.assembler.bundle import TASK_TYPES as _TT
+        assert bundle.task_type in _TT
         # Decisions auto-stamped:
         assert bundle.decisions.assembly_latency_ms >= 0.0
 

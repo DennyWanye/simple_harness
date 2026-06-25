@@ -82,6 +82,7 @@ def build_default_assembler(
     llm_registry=None,
     enabled: bool = True,
     llm_model: str = "claude-haiku-4-5",
+    llm_timeout_s: float = 6.0,
     context_window: int = 200_000,
     budget_ratio: float = 0.6,
     workspace_memory_store=None,
@@ -127,6 +128,10 @@ def build_default_assembler(
         embedder=embedder,
         llm_registry=llm_registry,
         llm_model=llm_model,
+        # WI-5 R2 命门：classifier llm tier 默认 timeout 2.0s，但 shim 忽略 llm_model 实际
+        # 跑 local_llm.model（relay 主模型 gpt-5.5，thinking 4-6s）→ 2s 必超时 = 接了等于没接。
+        # 放宽到 ≥6s 让 llm tier 真出结果。
+        llm_timeout_s=llm_timeout_s,
     )
 
     budget = BudgetAllocator(

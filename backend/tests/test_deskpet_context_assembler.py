@@ -208,8 +208,9 @@ async def test_classifier_llm_fallback(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_classifier_unknown_falls_back_to_chat(tmp_path: Path):
-    """Spec: llm returns garbage → assembler falls back to chat."""
+async def test_classifier_unknown_fail_closed_to_capability(tmp_path: Path):
+    """BUG-B Phase 2 WI-6：llm 返回垃圾 + 上游全不命中 → **不再无脑 chat**，倒向能力侧。
+    非寒暄非 code 的英文串 → fail-closed 'task'（而非 chat）。"""
     exemplars_path = tmp_path / "ex.jsonl"
     exemplars_path.write_text("", encoding="utf-8")
     fake_llm = FakeLLM("gibberish_not_a_task_type")
@@ -220,7 +221,30 @@ async def test_classifier_unknown_falls_back_to_chat(tmp_path: Path):
     )
     res = await classifier.classify("random unclassifiable text")
     assert res.path == "default"
-    assert res.task_type == "chat"
+    assert res.task_type == "task"  # WI-6 fail-closed，不再是 chat
+
+
+@pytest.mark.asyncio
+async def test_classifier_lexical_floor_branches(tmp_path: Path):
+    """WI-6 词法地板三分支：确定寒暄→chat；有 code 信号→code；否则→task。
+    llm_registry=None（不接 llm 层）→ 必落 default 词法地板。"""
+    exemplars_path = tmp_path / "ex.jsonl"
+    exemplars_path.write_text("", encoding="utf-8")
+    classifier = TaskClassifier(
+        embedder=None,           # embed 层跳过
+        llm_registry=None,       # llm 层跳过 → 必落词法地板
+        exemplars_path=exemplars_path,
+    )
+    # 确定寒暄 → chat
+    r_chat = await classifier.classify("你好呀")
+    assert r_chat.path == "default" and r_chat.task_type == "chat"
+    # code 信号 → code（倒向能力侧）。注意 rule 层已先吃 'python' 等关键词；这里用
+    # 不被 rule 命中但含 code 信号的串（栈帧符号），确保走到词法地板的 code 分支。
+    r_code = await classifier.classify("这个 foo() 抛 IndexError 越界了")
+    assert r_code.task_type == "code"
+    # 非寒暄非 code → task（fail-closed）
+    r_task = await classifier.classify("钠离子电池的工作原理")
+    assert r_task.path == "default" and r_task.task_type == "task"
 
 
 # ---------------------------------------------------------------------------
