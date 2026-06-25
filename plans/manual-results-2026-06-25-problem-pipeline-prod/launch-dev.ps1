@@ -18,9 +18,21 @@ Remove-Item Env:\ALL_PROXY   -ErrorAction SilentlyContinue
 Remove-Item Env:\all_proxy   -ErrorAction SilentlyContinue
 $env:NO_PROXY  = '*'
 $env:no_proxy  = '*'
-# Test instrumentation (user-requested): disable the chitchat short-circuit so EVERY message
-# runs the full non-chitchat pre-analysis, bypassing the buggy assembler classifier (followup task).
-# NOTE: test env switches removed — Sprint2 WI-1 made Y-light the code default (no env switch needed).
+# Cloud LLM key: the keychain cloud-llm slot got tangled across Windows credential persistence
+# realms (keyring-rs ENTERPRISE vs win32cred LOCAL_MACHINE) and the relay login flow never syncs
+# it (followup 2026-06-25-relay-cloud-key-sync). We deleted the keychain slot, so process_manager.rs
+# sees no key and does NOT override DESKPET_CLOUD_API_KEY -> the backend inherits this launcher value.
+# NOTE: .env is UTF-8 with Chinese comments; read -Raw -Encoding UTF8 and match the tsk_ token
+# anywhere (a comment line above can merge into the key line under the wrong codepage, which broke
+# a line-anchored regex).
+$envFile = 'G:\projects\deskpet\.env'
+if (Test-Path $envFile) {
+    $raw = Get-Content $envFile -Raw -Encoding UTF8
+    if ($raw -match 'DESKPET_CLOUD_API_KEY\s*=\s*(tsk_[A-Za-z0-9]+)') {
+        $env:DESKPET_CLOUD_API_KEY = $matches[1]
+    }
+}
+Write-Host ("[launch] DESKPET_CLOUD_API_KEY len=" + ($env:DESKPET_CLOUD_API_KEY).Length)
 
 $logDir = 'G:\projects\deskpet\plans\manual-results-2026-06-25-problem-pipeline-prod'
 New-Item -ItemType Directory -Force -Path "$logDir\screenshots" | Out-Null
