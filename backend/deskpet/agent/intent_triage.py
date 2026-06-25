@@ -42,6 +42,16 @@ _CONTRADICTION_TRIGGER_TYPES = frozenset({"debug", "research", "multi_task", "cr
 
 # classifier task_type(8 类: chat/code/recall/web_search/plan/emotion/command/task)
 # → problem_type 映射。未命中 → factual_qa（保守，触发取证而非闲聊短路）。
+#
+# ⚠️ WI-8a 单一来源护栏（lossy 桥，deferred 全量合并）：
+#   本表是 **safe-fail 专用 fallback**，**不是**意图来源。原则1：IntentTriage 的 LLM 裸判
+#   (problem_type) 才是唯一权威意图来源；analyze() 正常路径**不读** prior_task_type 当 hint
+#   （Y-light 已删，见 _PRE_ANALYSIS_SYSTEM / analyze() 注释）。本表仅在 LLM 挂/超时/畸形 JSON 的
+#   _safe_card / _parse fallback 里用一次，把组装期 classifier 的 task_type 降级映射成保守
+#   problem_type。**禁止**把它重新接回正常路径当 hint（会复活 BUG-C：坏 classifier 带偏意图）。
+#   单一来源全量收口（让 IntentTriage.problem_type 直接成为组装 task_type 来源、删冗余 classifier
+#   llm 层 + 本桥）影响 >3 文件且动 assemble() 主流程 → 按 plan §4 决策点 **deferred 独立 plan**
+#   （见 plans/2026-06-25-bugb-intent-routing-fix/00-PLAN.md §4 WI-8）。
 _TASKTYPE_TO_PROBLEM = {
     "chat": "chitchat",
     "emotion": "chitchat",
@@ -144,7 +154,9 @@ _PRE_ANALYSIS_SCHEMA: dict = {
 }
 
 _PRE_ANALYSIS_SYSTEM = (
-    "你是问题预分析助手。给定用户消息 + 系统已判定的初步任务类型，一次性产出："
+    # WI-9b：Y-light 已删 prompt 里的 [系统初判类型] hint（让 deepseek 裸判，不被坏 classifier 带偏，
+    # 修 BUG-C）。prompt 文本同步去掉"系统已判定的初步任务类型"，否则与去 hint 行为漂移误导模型去找不存在的输入。
+    "你是问题预分析助手。给定用户消息，一次性产出："
     "①用一句话重述用户真正想要什么；②判定问题类型、歧义程度；"
     "③标注是否需取证调查 / 是否需任务分解。"
     "若问题属 debug/research/multi_task/creation（或需分解），再按《矛盾论》方法填 contradiction："

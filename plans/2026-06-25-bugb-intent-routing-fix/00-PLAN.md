@@ -1,177 +1,147 @@
-# BUG-B 修复 plan — 意图路由（chitchat vs 真问题）对齐最佳实践
+# BUG-B 修复 plan v2 — 意图路由 followup（组装质量 + 闲聊快路径 + 单一来源）
 
-> **状态**：📋 待执行（spec-first；本文为 spec/plan，未动代码）
-> **创建**：2026-06-25
-> **严重度**：P0（默认配置下七步流水线形同虚设 —— 真实非闲聊问题被静默丢进闲聊快路径）
-> **关联**：spawn `task_742d3399`（本 plan 取代/细化它）；WI-5(b) 续跑结论 commit `e3698466`；
-> `plans/manual-results-2026-06-25-problem-pipeline-prod/RESULTS.md` §0 BUG-B；
-> 记忆 `project_assembler_embedder_unreliable` / `project_pipeline_preanalysis_blockers`
-> **被测代码（接地）**：
-> - `backend/deskpet/agent/assembler/classifier.py`（TaskClassifier 三层级联）
-> - `backend/deskpet/agent/intent_triage.py`（预分析 LLM + 短路派生）
-> - `backend/main.py:1994-2002`（`build_default_assembler(llm_registry=None)`）
+> **状态**：📋 执行中（v2 = 经 R1+R2 两轮对抗挑战硬化 + 对齐 master 最新代码）。
+> **创建**：2026-06-25　**v2 硬化/对齐**：2026-06-26
+> **重要前提（已坐实）**：BUG-B 的 **headline P0「真问题被误判闲聊短路」已由 commit `16758f8b`(safe-fail 不短路) + `717b0424`/`67f78e15`(WI-4-C 非流式预分析) 修复**，默认配置全量真机 **10/10 ★ PASS、上线门通过**（`RESULTS.md §8`）。本 plan **不再解 P0**，只做 RESULTS §8.2 列出的非阻断残留：
+>   - **P2 组装质量**：组装期 classifier 仍 fail-open 到 `chat` → 真 code/debug 问题拿到错误 persona/工具/skill bundle（**Phase 2**）。
+>   - **P3 闲聊快路径**：闲聊也走 1 次预分析 LLM（成本/UX）（**Phase 1**）。
+>   - 架构收口：两个意图判定器 + lossy 桥（**Phase 3**）。
+> **关联**：commit `16758f8b`/`717b0424`/`67f78e15`/`c004c630`；`RESULTS.md §8`；记忆 `project_assembler_embedder_unreliable`。
+> **R1/R2 存档**：`exec/challenge-r1.txt`、`exec/allowlist_probe.py`（已验证规格，19PASS/4安全假阴性）。
 
 ---
 
-## 0. 问题陈述（BUG-B 是什么）
+## 0. 当前真实代码状态（master，2026-06-26 已对齐）
 
-收到用户消息后，系统要决定：**走完整七步问题流水线（真问题）还是闲聊快路径短路（裸 ReAct，0 次预分析 LLM）**。
-当前这个 routing 决策由**组装期 `TaskClassifier`** 把关，而它的最终兜底是 `default='chat'`（**fail-open**）。生产真测（2026-06-25）发现：无 code 关键词的真实问题（"光合作用为什么需要光"、纯中文 debug 追问）被判 `task_type='chat'` → 派生 `chitchat` → **整条流水线跳过**，"调查先于发言 / 抓主要矛盾 / 异体自检"全部失效。
-
-**默认配置真实覆盖率 ≈ 40%**（RESULTS 诚实声明）；多数 ★PASS 是在三重非默认开关
-（`DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT=1` + `DESKPET_DISABLE_CLARIFICATION=1` + `analysis_model=deepseek-v4-pro`）
-下取得的。**本 plan 的终极验收 = 关掉所有 bypass 开关，默认配置下真能用。**
-
----
-
-## 1. 根因结构（代码级，接地）
-
-### 1.1 两个意图判定器并存 + lossy 桥接
-| 判定器 | 位置 | 产物 | 驱动什么 |
-|---|---|---|---|
-| 组装期 `TaskClassifier` | `classifier.py` | 8 类 `task_type`（chat/code/recall/web_search/plan/emotion/command/task） | **上下文组装**（哪些 component / persona / 工具 / skill 进 bundle）|
-| 预分析 `IntentTriage` | `intent_triage.py` | 7 类 `problem_type`（chitchat/factual_qa/debug/...） | **流水线短路 / 澄清 / 主要矛盾** |
-
-两者用 `_TASKTYPE_TO_PROBLEM`（`intent_triage.py:43`）做**有损映射**，`chat→chitchat`、`emotion→chitchat`。
-
-### 1.2 三层级联在生产全失效 → 默认 `chat`
-1. **rule 层**（`classifier.py:62-92`）：只认 code/报错/python/搜索/计划/情绪关键词。**无关键词的真问题 miss**。
-2. **embed 层**（`classifier.py:275-319`）：依赖组装期 embedder，真机多次 `component='memory' status='timeout'`（lock 竞争，见记忆 `project_assembler_embedder_unreliable`）→ 返回 None。
-3. **llm 层**（`classifier.py:321-374`）：**`main.py:1998` 硬传 `llm_registry=None` → 该层彻底关闭**；且默认 `llm_model='claude-haiku-4-5'`（`classifier.py:228`）当前 relay 根本没有。
-4. → `default 'chat'`（`classifier.py:267-273`）。
-
-### 1.3 fail-open 方向错了（核心反模式）
-短路的代价**不对称**：
-- 假阴性（真问题误判 chitchat → **跳过流水线**）= 产品形同虚设，**灾难**。
-- 假阳性（闲聊误判真问题 → 多跑一遍流水线）= 多花几秒延迟，**可接受**。
-
-→ 兜底**必须倒向能力侧**（跑流水线），而非便宜侧（chat）。当前恰好反了。
-
-### 1.4 WI-5(b) 已修的部分（**不可回退**，必须加回归测试钉死）
-- `intent_triage.py:186`：**不再**据 classifier task_type 做早期纯规则短路。
-- `intent_triage.py:192`：prompt 去掉 `[系统初判类型]` hint → deepseek 裸判（修 BUG-C 级联带偏）。
-- `intent_triage.py:205-209, 218-221`：safe-fail（LLM 失败/超时/畸形 JSON）**绝不派生 short_circuit**，降级裸 ReAct。
-- 净效果：**short_circuit 现在要求预分析 LLM 成功 + 明确判 chitchat + 低歧义**才成立。
-
-### 1.5 残留 BUG-B（本 plan 要修的）
-1. **短路完全押在一次脆弱的 LLM 调用上**：LLM 一挂（BUG-A relay 抖动）就 safe-fail 到裸 ReAct。"不跳过"是对的，但**真挂时每条挨 30s 超时**；且**没有便宜的确定性快路径**给真·闲聊。桌宠会收到海量"你好/在吗/哈哈/晚安"，每条都打一次易超时的 LLM 往返（或全裸 ReAct）= 另一种 UX 退化。
-2. **组装期 classifier 仍是坏的，且仍驱动上下文组装**：真 `code` 问题被判 `chat` → 即便流水线现在会跑，它拿到的 persona/工具/skill bundle 仍是错的（闲聊态人格给 code 干活，见 `persona.py:107` 注释）。**BUG-B 只补了短路症状，routing 大脑还是死的。**
-3. **两个 source of truth + 有损映射 = 漂移隐患工厂**。
+| 事实 | 证据 |
+|---|---|
+| short_circuit 已 fail-closed | `intent_triage.py:212-215` 仅 `problem_type=='chitchat' and ambiguity<threshold` 才短路；LLM 来自真实返回(无 hint) |
+| safe-fail 不短路 | `intent_triage.py:181-203` 三出口 `return _safe_card`，`short_circuit` dataclass 默认 False |
+| WI-4-C 非流式已落地 | `intent_triage.py:166 non_stream=True` + `:224 _supports_non_stream()` 探测 llm_call kwarg |
+| 预分析默认模型 | `config.py:436 analysis_model="deepseek-v4-pro"`；`analysis_timeout_s=45.0`(config.py:431) |
+| bypass flag 已退役 | `DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT`/`_CLARIFICATION` 在 backend 全仓 **0 读取点**(git -S 证 `7cc79b39` 删除) |
+| 组装期 classifier llm 层关闭 | `main.py:1998 build_default_assembler(llm_registry=None)` → `classifier.py:262 self._llm is not None` 为假 → 跳过 llm 层 → `default='chat'`(classifier.py:267-273) |
+| classifier llm shim 已存在 | `OpenAICompatibleAgentLLM(provider=local_llm)`(`backend/agent/tool_use_shim.py:38` 有 `chat_with_fallback`)；范式见 `main.py:1868` codify。**注意 shim 忽略 model 参数(tool_use_shim.py:45)，实际跑 `local_llm.model`** |
+| `_safe_card` 取证门漏洞仍在 | `intent_triage.py:243` chitchat derived_pt → `needs_investigation=False` → evidence_gate 跳过取证 |
+| 测试套件 | `backend/tests/test_intent_triage.py` 15 函数；mock 方式 = `AsyncMock(return_value=<json_str>)` 直 mock llm_call callable；helper `_complex_payload()`/`_chitchat_payload()` |
 
 ---
 
-## 2. 横向调研：四个 harness 怎么做 routing
+## 1. 设计原则（横向调研 Claude Code/Codex/Hermes/OpenClaw → 5 原则）
 
-| Harness | routing 机制 | 关键点 |
+1. **In-band，让在环能力模型决定**（IntentTriage 是唯一意图来源）。
+2. **Fail-CLOSED 倒向能力侧**（短路侧已对；**组装侧 Phase 2 修**）。
+3. **Single source of truth**（Phase 3 合并，删 lossy 桥）。
+4. **便宜确定性层只做地板不做天花板**（记忆 `project_assembler_embedder_unreliable`）。
+5. **快路径用高精度 allowlist（整句锚定），不是 block-list**。
+
+> 来源：[OpenClaw](https://github.com/openclaw/openclaw)、[Hermes-Function-Calling](https://github.com/NousResearch/Hermes-Function-Calling)、[Claude Code vs OpenClaw](https://www.eigent.ai/blog/openclaw-vs-claude-code)
+
+---
+
+## 2. Phase 1 — 闲聊快路径 allowlist + safe-fail 兜底（P3，主改 intent_triage.py）
+
+### 2.1 WI 列表
+- **WI-1**：新增共享词法模块 `backend/deskpet/agent/lexicon.py`，实现 `is_obvious_chitchat(msg) -> bool`（整句锚定，规格 §2.2，基于 `exec/allowlist_probe.py` 清理版）。**Phase 2 的 WI-6 词法地板复用同一模块**（满足原则 3，避免双词表，R2-B4）。
+- **WI-2**：`intent_triage.analyze()` 在 LLM 调用**之前**插入 allowlist 分支：命中 → 直接产出短路 IntentCard（`problem_type='chitchat'`, `short_circuit=True`, `needs_investigation=False`）+ 打 **`intent_triage.allowlist_hit`** 结构化日志（BUGB-3 唯一硬证据），**不调 LLM**。不命中 → 走现有 LLM 路径（不变）。
+- **WI-2b**：`_safe_card` 对 `chitchat` derived_pt 兜底改 `factual_qa`（修 §0 取证门漏洞：真问题 LLM 挂 + prior='chat' 时不该跳过取证）。
+- **WI-4**：回归测试 `backend/tests/test_intent_triage.py` 扩充：
+  - 钉死已修行为（safe-fail 不短路 / 无 hint / 短路 fail-closed）—— 已有测试不动，确认仍绿。
+  - allowlist 边界表（§2.3）全部新用例。
+  - `allowlist_hit` 日志断言（可用 caplog/structlog capture）。
+  - WI-2b：prior_task_type='chat' + llm 异常 → safe-fail card `problem_type` 不为 chitchat（兜底 factual_qa）且 `needs_investigation` 合理。
+
+> WI-3（原"退役 bypass flag"）**删除**：flag 已不存在（R1/R2 证实），改为 WI-4 里加一条 `grep` 断言"仓内无 bypass 读取点"。
+
+### 2.2 allowlist 规格（整句锚定，禁止子串；R2 已实跑验证）
+```
+is_obvious_chitchat(msg):
+  s = msg.strip(); 空 → False
+  纯 emoji/纯标点（无字母数字汉字）→ True
+  否决项任一命中 → False（否决优先）：
+    问号 [?？] | 疑问助词 [吗么] | 祈使/求助 (帮|请|给我|看下|看看|查|搜|写|改|修|生成|做|算|解释|分析|为什么|怎么|如何|啥|什么)
+    | 故障/code (报错|debug|python|java|代码|崩|卡死|异常|error|bug|失败|不行)
+  整句锚定 re.fullmatch( (招呼词) + 容许尾缀 ) → True；否则 False
+  招呼词根: 你好|您好|嗨|hi|hello|早|早安|午安|晚安|晚上好|在吗|在不|谢谢|多谢|感谢|thx|thanks|拜拜|再见|哈喽|你好呀
+  尾缀: [呀啊哟哦呢嘛吧~！!。.，,\s]*
+```
+> **R2 决策点（本 plan 拍板）**：`在吗`/`在不` 含疑问助词 `吗`，与"否决疑问助词"冲突 → **从招呼词根里把 `在吗`/`在不` 保留，但疑问助词否决只在"招呼锚定未命中时"才生效**（实现：先查否决项里**去掉** `吗么`，改为"问号 `[?？]`"否决兜底；`在吗在吗` 这类纯催促寒暄靠整句锚定放行）。即否决用 `[?？]`（真问句），不再用裸 `吗么`（否则误杀"在吗"）。验收用例钉死。
+
+### 2.3 allowlist 边界用例表（WI-4 必覆盖）
+| 输入 | 期望 | 理由 |
 |---|---|---|
-| **Claude Code** | **无事前分类器**。单一 agent loop，模型在生成的一部分里自行决定是否调工具（**in-band**）。"hi" 素回，"fix this bug" 伸手够工具 | 不存在"落了就降级到 dumb path"的旁路；成本控制靠模型本身不过度调工具 + 工具结果才是贵的部分 |
-| **Codex CLI** | 同为单循环 agentic，**不用 intent 分类去 gate pipeline**。approval mode 是 policy 不是 intent | 路由 in-band，无脆弱前置门 |
-| **Hermes (Nous Research)** | **function-calling fine-tune 本身就是路由器**：`<tools></tools>`（ChatML）里给 schema，模型输出 `<tool_call>` 或素文本由 weights 判 | "让模型决定"直接烧进权重；hermes-agent 还提议把**复杂度→模型切换**做成 **agent 可调用的 tool**（issue #16525），即把"要不要升级处理"当成一次工具调用而非外部分类 |
-| **OpenClaw** | 个人 AI 助手（2026-01 一周破 10 万星）。skill + 自主 tool-discovery，**in-band** 判断执行 | 不依赖固定事前分类门；把代码也当文本处理（无语义路由） |
+| `你好`/`谢谢`/`晚安`/`😄`/`。。。` | 短路 | 纯寒暄 |
+| `你好呀~`/`晚安啊`/`在吗在吗` | 短路 | 寒暄+尾缀/催促 |
+| `你好，帮我看下这段为什么报错` | 不短路 | 含祈使+故障词 |
+| `崩了`/`报错`/`卡死` | 不短路 | 故障词否决 |
+| `光合作用为什么需要光` | 不短路 | 含"为什么" |
+| `在吗？我代码崩了` | 不短路 | 问号+故障词 |
+| `谢谢，那这个报错怎么办` | 不短路 | 故障词+疑问 |
+| `hi 帮我 debug` | 不短路 | 祈使+code |
 
-**共识**：现代 agent harness **没有一个**用"独立的、会 fail-open 到 dumb path 的事前分类器"来 gate。路由要么 in-band（模型生成时自决），要么把"升级/降级处理"当成模型可观测的一次决策，且**永远倒向能力侧**。
-
-> 来源：[Claude Code](https://www.eigent.ai/blog/openclaw-vs-claude-code)、[OpenClaw](https://github.com/openclaw/openclaw)、[Hermes-Function-Calling](https://github.com/NousResearch/Hermes-Function-Calling)、[hermes-agent issue #16525](https://github.com/NousResearch/hermes-agent/issues/16525)
-
----
-
-## 3. 当前最佳实践（提炼 5 原则）
-
-1. **In-band，让在环的能力模型决定** —— 不要再用独立脆弱前置分类器硬路由。DeskPet 已有在环预分析 LLM（IntentTriage），它就该是唯一意图来源。
-2. **Fail-CLOSED，倒向能力侧** —— 任何不确定（分类器失败/超时/畸形/低置信）→ 跑完整流水线（或至少全上下文裸 ReAct），**绝不**默认闲聊短路。
-3. **Single source of truth** —— 一次意图判定，pipeline 门和上下文组装都消费同一个结果，删掉有损 `_TASKTYPE_TO_PROBLEM` 桥。
-4. **便宜确定性层只做"地板"不做"天花板"** —— 词法/规则只当 fallback 的下限保险，绝不当 fail-open 的最终兜底（记忆 `project_assembler_embedder_unreliable` 已立此规矩）。
-5. **快路径用高精度 allowlist，不是 block-list** —— 只放行**明显**的寒暄（你好/谢谢/晚安/纯 emoji），假阴性（漏判→落到流水线）天然安全，假阳性靠构造稀有。取代危险的"default chat"。
+### 2.4 Phase 1 自测
+`cd backend && .venv/Scripts/python.exe -m pytest tests/test_intent_triage.py -q`（全绿，含新边界用例）。
 
 ---
 
-## 4. DeskPet 修复方案
+## 3. Phase 2 — 复活组装期 classifier（P2 组装质量，主改 classifier.py + main.py）
 
-### 4.1 设计决策
+### 3.1 WI 列表
+- **WI-5**：`main.py:1998` 把 `llm_registry=None` 改为注入 `OpenAICompatibleAgentLLM(provider=local_llm)`（复用现成 shim，范式同 codify `main.py:1868`）。
+  - **R2 命门**：shim **忽略** classifier 传入的 `model` 参数（tool_use_shim.py:45），实际跑 `local_llm.model`（即 relay 主模型）。故 classifier `llm_model` 默认值（`claude-haiku-4-5`）改不改都无效——保留或改成注释说明"shim 锁定 local_llm.model"。
+  - **R2 命门**：classifier `_llm_tier` timeout 默认 **2.0s**（`classifier.py:_llm_timeout_s`），主模型 thinking 4-6s → 2s 必超时 → 接了等于没接。**必须把 build_default_assembler 传入的 classifier llm timeout 调到 ≥6s**（加构造参数或在 build_default_assembler 设）。
+  - **R2 命门**：classifier llm 层走 `chat_with_tools`/stream？确认其调用对 relay 是否踩 BUG-A（stream+json_schema）。classifier `_llm_tier` 用的是 `chat_with_fallback(max_tokens=32)` 非 json_schema，风险低；若仍不稳，限定非流式。
+- **WI-6**：classifier `default='chat'`（`classifier.py:267-273`）→ **词法地板**：调 `lexicon.is_obvious_chitchat()`（WI-1 同模块）；命中 → `chat`；否则 → 倒向能力侧（有 code 信号→`code`，否则→`task`），**不再无脑 chat**（fail-closed）。
+- **WI-7**：embed 层超时（`classifier.py` 已 warning）→ 确认 fallback 落 WI-6 词法地板，非 chat。
 
-- **D1 — 意图单一来源 = IntentTriage 预分析**。把组装期 `TaskClassifier` 从"门"降级为"**纯上下文组装提示**"，其输出**永不**再驱动 short_circuit（WI-5(b) 已实质如此 → 本 plan **形式化 + 加回归测试 + 代码注释/护栏**钉死，防有人重新接回去）。
-- **D2 — Fail-CLOSED**：short_circuit **只允许**在 (a) 确定性寒暄 allowlist 命中，或 (b) 预分析 LLM 成功且明确返回 chitchat+低歧义 时成立。失败/超时/畸形/低置信一律不短路（(b) 已具备 → 补 (a) + 显式置信门）。
-- **D3 — 确定性寒暄 allowlist（唯一允许的便宜快路径）**：在预分析 LLM 调用**之前**先过一个**高精度** allowlist（招呼/感谢/告别/纯 emoji/纯标点 + 长度 ≤ N + 无问号 + 无祈使动词 + 无 code token）。命中 → 直接 short_circuit（省一次 LLM）；**任何不命中 → 落到预分析 LLM → 流水线**。这给桌宠"你好"快路径而无需 LLM，且因是精度优先 allowlist 而安全。**这取代"default chat"**。
-- **D4 — 修复/退役组装期 classifier（让上下文组装重新正确）**：
-  - **D4a（先发，止血）**：把 `build_default_assembler` 的 `llm_registry` 真接上（参数已铺好，`main.py:1998` 只是传了 None）绑 **relay 可用的便宜模型**（**不是** relay 没有的 `claude-haiku-4-5`，用配置的 analysis_model / 一个 relay 便宜模型）；并把 `default='chat'` 改成**词法地板**（有 task/code 信号 → 倒向 task/code，仅 allowlist 式寒暄 → chat）。
-  - **D4b（目标态，更对齐最佳实践）**：**合并成一次调用**。IntentTriage 已用 LLM 产 `problem_type` → 反向把它喂给组装器当 task_type，pipeline 门和上下文组装消费**同一个**结果，删掉冗余 classifier llm 层 + 有损 `_TASKTYPE_TO_PROBLEM`。组装器只保留 rule+embed 当"triage 之前必须先组装"的罕见兜底提示。
-
-### 4.2 分阶段（按风险递增、价值递减排序）
-
-> **Phase 1 单独就能让默认配置真能用**（解 P0），Phase 2/3 是架构正确性收尾。
-
-**Phase 1（P0 止血，最小爆炸半径）= D2 + D3**
-- WI-1：实现确定性寒暄 allowlist（新 helper，精度优先；含 emoji/标点/长度/问号/祈使/code-token 否决项）。
-- WI-2：把 short_circuit 派生改为 **allowlist 命中 OR (LLM 成功且 chitchat 且低歧义)**；其余路径一律不短路（形式化 D2，加置信门）。
-- WI-3：删/弃用 `DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT` bypass —— Phase 1 之后默认配置就该正确，bypass 不再需要（保留一版兼容期 warning 再删）。
-- WI-4：回归测试钉死 WI-5(b) 已修行为（safe-fail 不短路、无 hint、无早期规则短路）+ 新 allowlist 边界用例。
-
-**Phase 2（routing 大脑复活）= D4a**
-- WI-5：`main.py:1998` 注入真 `llm_registry`（绑 relay 可用便宜模型）；classifier `llm_model` 默认改 relay 可用模型。
-- WI-6：classifier `default` 兜底从 `chat` 改词法地板（fail-closed 倒向 task/code）。
-- WI-7：embed 层超时不再静默吞（已 warning）→ 确认 fallback 落到 WI-6 词法地板而非 chat。
-
-**Phase 3（架构收口，可选）= D4b**
-- WI-8：调换 assemble() 调用次序，让 IntentTriage 的 problem_type 成为组装器 task_type 的来源；删冗余 classifier llm 层 + `_TASKTYPE_TO_PROBLEM` 有损桥。
-- WI-9：单一意图来源后，更新 trace UI / 日志字段（避免双分类字段误导）。
-
-### 4.3 不做什么（避免过度工程）
-- 不引入新的独立 ML 分类模型 / 新依赖（记忆 `feedback_no_sandbox_constraints`：桌宠只防手滑级）。
-- 不删 rule/embed 层（它们当"地板"仍有价值，省一次 LLM）。
-- 不改流水线七步语义本身（本 plan 只修 routing 入口）。
+### 3.2 Phase 2 自测
+- `pytest backend/tests/test_*classifier* tests/test_deskpet_context_assembler.py -q`（全绿）。
+- 启动 smoke：backend 起得来，log 出现 classifier llm 层真跑（注入后）。
 
 ---
 
-## 5. WI 分解与改动面（file:line 接地）
+## 4. Phase 3 — 单一意图来源收口（架构，可选但"不少做"→做）
 
-| WI | 文件 | 改动 | 风险 |
+- **WI-8**：调换 assemble() 与 triage 次序 / 让 IntentTriage 的 `problem_type` 成为组装 task_type 来源；评估能否删冗余 classifier llm 层 + `_TASKTYPE_TO_PROBLEM`（`intent_triage.py:43`）。**删桥须同步**把 `_safe_card`/`_parse` 兜底默认硬编码 `factual_qa`（否则失依据）。
+  - **风险高**：若改动面过大/牵动 assemble 调用链，Phase 3 降级为"文档化单一来源方案 + 标注 deferred"，不强行重构（避免破坏已 10/10 PASS 的链路）。决策点：实现时若影响 >3 文件或动 assemble 主流程 → 拆出独立 plan，本轮只做 WI-8a（去重表/注释护栏）。
+  - **✅ 决策（2026-06-26 执行）：触发降级 → 只做 WI-8a。** 理由：(1) 全量收口要动 `assemble()` 主流程 + main.py wiring + intent_triage + classifier ≥4 文件，超 3 文件门槛；(2) 与 **Phase 2 刚复活的 classifier llm 层（组装 bundle 选择，与意图路由是两个不同用途）直接冲突** —— 删它会回退 Phase 2 的 BUGB-6 修复。**WI-8a 已落地**：在 `_TASKTYPE_TO_PROBLEM`（`intent_triage.py`）加单一来源护栏注释，钉死"本桥仅 safe-fail fallback、IntentTriage LLM 裸判才是唯一权威意图来源、禁止重新接回正常路径当 hint（防 BUG-C 复活）"，全量合并标 deferred 独立 plan。
+- **WI-9b**：修 `_PRE_ANALYSIS_SYSTEM`（`intent_triage.py` prompt 文本仍写"系统已判定的初步任务类型"，与去 hint 行为漂移）。**✅ 已修**：prompt 去掉"+ 系统已判定的初步任务类型"，与 Y-light 去 hint 行为对齐。
+
+### 4.1 Phase 3 自测
+全量 `pytest backend/tests/test_intent_triage.py backend/tests/test_*classifier* -q` + 启动 smoke 不回归。
+
+---
+
+## 5. 每阶段执行循环（用户硬要求）
+每个 Phase 完成后**必须**依次：
+1. **自测**（pytest 对应套件全绿）。
+2. **子代理评估 100%**：派只读子代理对照本 plan 该 Phase 的 WI 逐条核实完成度；<100% → 补完 → 再评估，直到 100%。
+3. **子代理生成手测文档** → 我评估迭代到"能测出该 Phase 各种 bug/边界" → 存 `testcase/2026-06-26-bugb-<phase>/manual-test.md` + 更新 `testcase/index.md`。
+4. **windows-mcp 真机人工测试**（HARD：真坐标点击 + 真中文输入 + 截图 + tauri-dev.log 判定；动作前 declare `坐标|动作|期望`；失败 retry≥3 不同 workaround 才标 env-limited）。全部 PASS；有问题→修复→复测。
+
+---
+
+## 6. 最终验收（默认配置，全功能真机人工测试，不可省略/不可降级）
+> 默认配置 = §0 表（无任何 bypass env、analysis_model=deepseek-v4-pro、非流式预分析）。真测 run 头部记录该清单。
+
+| TC | 用例 | ★ | 硬证据（防假绿）|
 |---|---|---|---|
-| WI-1 寒暄 allowlist | `intent_triage.py`（新 `_is_obvious_chitchat()`）| 高精度确定性匹配 | 低（纯新增） |
-| WI-2 短路派生改 fail-closed | `intent_triage.py:218-221` | allowlist OR (LLM∧chitchat∧低歧义)；其余不短路 | 中（核心逻辑） |
-| WI-3 弃用 bypass flag | `intent_triage.py`（读 `DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT` 处）| 兼容期 warning → 删 | 低 |
-| WI-4 回归测试 | `backend/tests/test_intent_triage*.py`（新/扩）| 钉死 WI-5(b) + allowlist 边界 | 低 |
-| WI-5 接 llm_registry | `main.py:1998` | None → 真 registry，绑 relay 便宜模型 | 中（启动期装配） |
-| WI-6 classifier 兜底改词法地板 | `classifier.py:267-273` | `default='chat'` → fail-closed 词法 | 中 |
-| WI-7 embed 超时兜底确认 | `classifier.py:275-319` | 落 WI-6 地板非 chat | 低 |
-| WI-8 合并单一来源（可选） | `assembler.py` / `intent_triage.py:43` | 删有损桥，调次序 | 高（架构） |
+| BUGB-1 | "光合作用为什么需要光" | ★ | **必须见 `intent_triage.done problem_type=factual_qa short_circuit=False`（非 safe-fail）**；无 short_circuit；流水线真跑 |
+| BUGB-2 | 纯中文 debug"刚那段为什么越界" | ★ | `intent_triage.done problem_type∈{debug,factual_qa} short_circuit=False` |
+| BUGB-3 | 闲聊"你好呀" | ★ | **`intent_triage.allowlist_hit`（WI-2 新事件）+ 短路 + 无 `intent_triage.done`/`llm_failed`（证 0 次 LLM）** |
+| BUGB-4 | 打挂预分析(analysis_model 设 relay 不存在串) | ★ | `intent_triage.llm_failed` + 无短路 → 裸 ReAct 答对 |
+| BUGB-6 | 真 code"帮我看这段 python 为何 IndexError" | ★ | **Phase 2 后**：组装 bundle `task_type` 非 chat（classifier 复活）+ 流水线真跑 |
 
----
-
-## 6. 验收（真测纪律 — HARD CONSTRAINT）
-
-> 触发"真测" → 全局 `~/.claude/knowledge-base/windows-mcp-e2e.md` + 项目 CLAUDE.md 手测纪律强制生效。
-> **不许**用 ws 直注 / pytest / import 查 registry / log grep 当 UI 证据。每 case：真坐标点击 + 真中文输入 + 截图 + tauri-dev.log 日志判定；动作前 declare `坐标=(x,y)|动作=|期望=`；失败 retry ≥3 不同 workaround 才标"环境受限"。
-
-### 6.1 单测/集成（先决，非充分）
-- `pytest backend/tests/test_intent_triage*.py`（WI-4 新用例全绿）。
-- allowlist 边界表：`你好`/`谢谢`/`晚安`/`😄` → 短路；`你好，帮我看下这段为什么报错` / `光合作用为什么需要光` / `在吗？我代码崩了` → **不**短路。
-
-### 6.2 真机 E2E（★ 一票否决，**默认配置，关掉所有 bypass 开关**）
-| TC | 用例 | ★ | 期望硬证据（tauri-dev.log）|
-|---|---|---|---|
-| **BUGB-1** | 默认配置发"光合作用为什么需要光"（无 code 关键词） | ★ | `intent_triage.done problem_type='factual_qa' short_circuit=False`；**无** `pipeline.short_circuit`；流水线真跑 |
-| **BUGB-2** | 默认配置发纯中文 debug 追问"刚那段为什么会越界" | ★ | `intent_triage.done problem_type ∈ {debug,factual_qa}` 且 `short_circuit=False` |
-| **BUGB-3** | 发真·闲聊"你好呀" | | allowlist 命中 → `pipeline.short_circuit`；**0 次预分析 LLM 调用**（快路径，省 token）|
-| **BUGB-4** | 预分析 LLM 故意打挂（relay 抖动/换无效模型）发真问题 | ★ | safe-fail → **不短路** → 裸 ReAct 仍答对（不静默丢进闲聊）|
-| **BUGB-5** | 全程**不设** `DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT` / `DESKPET_DISABLE_CLARIFICATION` | ★ | 上述 BUGB-1/2 仍 PASS（证明默认配置真能用，bypass 可退役）|
-
-**收敛标准**：默认配置真实覆盖率从 ≈40% → ≥ 85%；`DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT` 可删。
+**收敛标准**：上述 ★ 全 PASS；组装期 `task_type` 对真 code/debug 不再恒 `chat`；闲聊 0 次 LLM。
 
 ---
 
 ## 7. 风险 / 回退
+- **R-踩踏**：另一进程曾同时写 master（已停、已合并）。每阶段前 `git log` 确认 HEAD 稳定；真机测试独占端口。
+- **R-allowlist 误放行**：§2.2 整句锚定 + 故障词否决；假阴性安全。回退收窄词根。
+- **R-Phase2 timeout/BUG-A**：timeout≥6s + 必要时非流式；shim 忽略 model 已知。
+- **R-Phase3 重构过大**：超 3 文件/动 assemble 主流程 → 降级 deferred，不破坏已过门链路。
+- **R-真机 relay 不稳**：用稳定窗口；safe-fail 保证不卡死。
 
-- **R1 allowlist 误放行真问题**：精度优先 + 否决项（问号/祈使/code-token）兜底；假阴性安全。回退：allowlist 收窄到只剩招呼/感谢。
-- **R2 接 llm_registry 引入每回合第二次 LLM 调用（成本）**：Phase 3（D4b）合并消除；Phase 2 期间用 relay 便宜模型 + 32 token 限。
-- **R3 relay 上游抖动（BUG-A）干扰真测**：等稳定窗口或用 D4a 的便宜稳模型；safe-fail 已保证不短路，不阻塞本 plan 逻辑验证。
-- **R4 改动触碰启动期装配（main.py）**：先 pytest + 启动 smoke，再真机；按端口隔离纪律跑 worktree（`DESKPET_BACKEND_DIR` + `DESKPET_PYTHON`）。
-
----
-
-## 8. 执行顺序建议
-
-1. 先 **Phase 1（WI-1~4）** —— 单独就解 P0，最小风险，先让默认配置真能用 + 真机 E2E（BUGB-1~5）跑绿。
-2. 跑通后更新 `STATUS/status.md`（HARD 纪律）+ 退役 bypass flag。
-3. 再 **Phase 2（WI-5~7）** 复活上下文组装正确性。
-4. **Phase 3（WI-8~9）** 视收益决定是否做架构收口（单一意图来源）。
-5. 全程可先用 codex gpt-5.5 子代理写实现，Claude 做 Lead + 真机验收（全局规范）。
+## 8. 执行顺序
+Phase 1 → 循环(§5) → Phase 2 → 循环(§5) → Phase 3 → 循环(§5) → 最终验收(§6) → 更新 `STATUS/status.md`(HARD)。
