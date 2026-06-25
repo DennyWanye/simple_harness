@@ -35,9 +35,16 @@
 
 ---
 
+## ⚠️ 关键诚实声明（opus 4.8 核对结论，必读）
+
+**除 IDEM-1（runA 真默认短路）与 TC-9（killswitch）外，几乎所有"流水线触发类"★ PASS 都是在「关闭闲聊短路 `DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT=1` + 关闭澄清门 `DESKPET_DISABLE_CLARIFICATION=1` + analysis_model=deepseek-v4-pro」三重非默认配置下取得的。** 原因：默认配置下 **BUG-B 让真实非闲聊问题被误当闲聊短路 → 流水线形同虚设**。
+- **默认生产配置真实覆盖率 ≈ 40%**；非默认（绕开 bug）配置下 ≈ 65%。
+- 含义：这些 PASS 证明的是**「机制本身正确」**（绕开环境/分类 bug 后，七步逻辑真在 UI 链路生效），**不等于「默认配置下用户真能用」**。
+- 要让默认配置真能用，**必须先修 BUG-B（task_742d3399）+ BUG-D（task_bc7826ba），再在不开任何开关下重跑全部流水线类用例**。
+
 ## 1. 结果汇总
 
-> 经 BUG-A workaround（analysis_model=deepseek-v4-pro）+ BUG-C 开关（强制非闲聊）后，非闲聊流水线可稳定触发。
+> 经 BUG-A workaround（analysis_model=deepseek-v4-pro）+ BUG-C 开关（强制非闲聊）后，非闲聊流水线可稳定触发（非默认配置，见上声明）。
 
 | TC | 维度 | ★ | 判定 | 硬证据 |
 |---|---|---|---|---|
@@ -53,7 +60,7 @@
 | **IDEM-2** | 取证 per-run 重置 | ★ | **PASS** | 同一 debug 问题连发×2，**两轮各自独立** `evidence_gathered_set tool=glob`（第2轮没因第1轮已取证而跳过→`_evidence_gathered` per-run 重置确认）。截图 IDEM-2-* |
 | **IDEM-4** | 重启后 per-run 标记不残留 | ★ | **PASS** | 埋 debug 取证态→**重启**→再发 debug → `intent_triage.done`+`evidence_gathered_set tool=glob` 重新出（新进程干净起跑重新取证，per-run 内存态不跨进程残留）。截图 IDEM-4-* |
 | **TC-5 / IDEM-6** | 收敛止损 | ★ | **FAIL/缺口（真 bug）** | 改源码 main.py:6576 `else 16→4` 收紧 max_turns，复杂任务真机 `hit max_iterations=4`（cap 生效），但 **`convergence.stop_loss`/`chat_v2_convergence`=0** —— **Step7 诚实止损报告没触发**！根因：loop `range(max_iterations)` 先于 gate `allows_call`(turns_used>=max_turns) 耗尽（off-by-one，max_turns==max_iterations + record_turn 底部自增），走了普通 loop-exhaustion warning（agent_loop.py:2546）绕过 ConvergenceController；hallucination 又走 ErrorEvent。**companion 默认下 Step7 止损路径实际不可达**。已 followup `task_bc7826ba` |
-| **IDEM-3**(重启段) | 澄清持久化重启后不丢 | ★ | **部分** | 单 send 不双写(UI 单气泡)+`clarify_persist_assistant_failed`=0+答澄清承接已验（见 TC-6）；**重启后 history 持久化**段未单独跑（本批 runs 关了澄清门，与该段互斥）|
+| **IDEM-3**(重启段) | 澄清持久化重启后不丢 | ★ | **PASS** | runN: 模糊问"把那个报表搞一下"→`ambiguous ambiguity=0.9 clarify=True`→`clarification_pause`+`clarify_persist_failed=0`(持久化成功)；**重启**(runO 新进程)→答"把销售报表整理成月度汇总表"→**第2轮 `clarification_pause`=0 不重问 + 桌宠承接干活**（证明澄清 history 跨重启重载、多轮不断裂）。截图 IDEM-3-Q1-* / IDEM-3-post-restart-* |
 
 ---
 
@@ -91,7 +98,19 @@
 
 ## 4. 证据文件
 
-- 截图：screenshots/IDEM-1-*（闲聊幂等）/ TC-7-factual-* / TC-4-selfcheck-* / TC-3-TC-6-* / IDEM-3_TC-6-* / ENV-relay-*（safe-fail）
-- 日志：tauri-dev-runA~runI.log（runA 默认 / runB-D 调 timeout+proxy / runE gpt-5.4-mini / runF killswitch / runG 开关验证 / runH-I deepseek）
+- 截图：screenshots/IDEM-1-*（闲聊幂等）/ TC-7-factual-* / TC-4-selfcheck-* / TC-2-evidence-* / IDEM-2-* / IDEM-4-* / TC-3-TC-6-* / IDEM-3_TC-6-* / ENV-relay-*（safe-fail）
+- 日志：tauri-dev-runA~runM.log
+  - runA 默认（IDEM-1 真短路）/ runB-D 调 timeout+proxy（BUG-A 排查）/ runE gpt-5.4-mini / runF killswitch（TC-9）/ runG 开关验证 / runH-I deepseek（TC-4/TC-3/TC-6）
+  - **runJ TC-2 取证门 / runK TC-5 收敛（缺口）/ runL IDEM-2 per-run / runM IDEM-4 重启隔离**
 - relay 诊断 probe：backend/scripts/probe_preanalysis_models.py / probe_preanalysis_exact.py / probe_stream_schema.py
+
+## 5. 未做 / 半做（opus 核对补充，诚实登记）
+
+| 项 | 状态 | 原因 |
+|---|---|---|
+| TC-5/IDEM-6 收敛止损 | **真 FAIL** | BUG-D，Step7 止损路径不可达，需修 task_bc7826ba 后重跑 |
+| IDEM-3 重启持久化段 | **✅ 已补 PASS**（runN/runO） | 模糊问→澄清→重启→答→承接不重问，跨重启 history 重载验证通过 |
+| TC-8 code 模式 | **env-limited（未跑）** | code 入口产品侧已关（`CODE_MODE_ENTRY_ENABLED=false`）；决策2 字节不动由上次会话单测 `test_plan_companion` 覆盖。真机不可达，标 env-limited |
+| IDEM-5 自愈轮 | **半做** | 失败轮 organic 已验（BUG-A）；"改坏 analysis_model 主动构造 + 还原后自愈轮"未对照跑（done 正常已在 runE-M 多次旁证）|
+| 默认配置全量重跑 | **阻塞** | 依赖先修 BUG-B（task_742d3399），否则默认配置流水线被误短路 |
 </content>
