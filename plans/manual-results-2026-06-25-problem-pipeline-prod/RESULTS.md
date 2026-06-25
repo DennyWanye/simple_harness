@@ -49,19 +49,30 @@
 | **TC-4** | 异体自检（非执行者打分） | ★ | **PASS**(best-effort) | is_prime creation 任务 → `self_check.done mode='strict' passed=True heterogeneous=False` + 启动 `pipeline_external_evaluator_model`（异体 provider 已克隆）。heterogeneous=False=任务一次就对没诱发打回（doc 允许的 best-effort 形态）。截图 TC-4-* |
 | **TC-9** | kill-switch（enabled=false）零回归 BC | ★ | **PASS** | enabled=false 重启：**无 `problem_pipeline_init`**（pipeline 不构造）；发 debug 全程 `intent_triage`/`pipeline_*`/`evidence_*`/`self_check`/`convergence`/`chat_v2_*`=**0**；对话仍正常（chat_stream 工作）。测后还原 |
 | **IDEM-5/TC-10** | safe-fail 不卡死 | ★ | **PASS**(organic) | BUG-A 触发时 organically：`intent_triage.llm_failed`(超时) → 降级裸 ReAct → 桌宠仍正常回复（出澄清卡），不卡死、无 traceback。截图 ENV-relay-* |
-| **TC-2 / IDEM-2** | debug 取证门控 | ★ | **best-effort/未触发** | 4 次尝试：under-specified debug 问题 **Step1 澄清门（clarify=True）先于 Step2 取证门触发** → 走 `pipeline_clarification_pause` 没进 IN-LOOP evidence gate。gate 本身已接线（上次会话单测 `test_agent_loop_pipeline` PASS 覆盖）。真机难凑"specific 到不澄清 + 又确实 needs_investigation + 模型还想直接猜"的窄触发点（doc 已标 best-effort）|
-| **TC-5 / IDEM-6** | 收敛止损 | ★ | **未测（需源码改 main.py:6576）** | 默认 max_turns=10000 自然跑逼不出；唯一可达 stop_loss=改源码 `else 16→4`（hallucination 走 ErrorEvent 不出 stop_loss，第2轮挑战已证）。本轮未做源码改 |
-| **IDEM-3**(重启段) | 澄清持久化重启后不丢 | ★ | **部分**(未重启验) | 单 send 不双写 + 答澄清承接已验（见 TC-6）；**重启后 history 持久化**段未单独跑 |
-| **IDEM-4** | 重启后 per-run 标记不残留 | ★ | **未测** | 需"埋 debug 取证态→重启→再 debug 验重新取证"，依赖 evidence gate 能触发（同 TC-2 受阻）|
+| **TC-2** | debug 取证门控（没有调查就没有发言权） | ★ | **PASS**(best-effort) | 关澄清门(DESKPET_DISABLE_CLARIFICATION=1 硬触发到 IN-LOOP)后：debug 问题 `clarify=False`→进 IN-LOOP→模型**先取证再发言** `evidence_gathered_set sid=default tool=glob`（doc 允许的 PASS 形态：模型本就先取证=「调查先于发言」语义成立）。`evidence_gate.blocked`=0（模型自发取证没逼到拦）。截图 TC-2-* |
+| **IDEM-2** | 取证 per-run 重置 | ★ | **PASS** | 同一 debug 问题连发×2，**两轮各自独立** `evidence_gathered_set tool=glob`（第2轮没因第1轮已取证而跳过→`_evidence_gathered` per-run 重置确认）。截图 IDEM-2-* |
+| **IDEM-4** | 重启后 per-run 标记不残留 | ★ | **PASS** | 埋 debug 取证态→**重启**→再发 debug → `intent_triage.done`+`evidence_gathered_set tool=glob` 重新出（新进程干净起跑重新取证，per-run 内存态不跨进程残留）。截图 IDEM-4-* |
+| **TC-5 / IDEM-6** | 收敛止损 | ★ | **FAIL/缺口（真 bug）** | 改源码 main.py:6576 `else 16→4` 收紧 max_turns，复杂任务真机 `hit max_iterations=4`（cap 生效），但 **`convergence.stop_loss`/`chat_v2_convergence`=0** —— **Step7 诚实止损报告没触发**！根因：loop `range(max_iterations)` 先于 gate `allows_call`(turns_used>=max_turns) 耗尽（off-by-one，max_turns==max_iterations + record_turn 底部自增），走了普通 loop-exhaustion warning（agent_loop.py:2546）绕过 ConvergenceController；hallucination 又走 ErrorEvent。**companion 默认下 Step7 止损路径实际不可达**。已 followup `task_bc7826ba` |
+| **IDEM-3**(重启段) | 澄清持久化重启后不丢 | ★ | **部分** | 单 send 不双写(UI 单气泡)+`clarify_persist_assistant_failed`=0+答澄清承接已验（见 TC-6）；**重启后 history 持久化**段未单独跑（本批 runs 关了澄清门，与该段互斥）|
 
 ---
 
-## 2. 上线门结论（诚实口径）
+### BUG-D（TC-5 真测挖出）：Step7 收敛止损报告在 max_turns 触顶时不触发
+- 改源码收紧 max_turns 真机触顶（`hit max_iterations=4`），但 `convergence.stop_loss`=0 —— Step7 诚实止损报告**没产出**。
+- 根因：loop `range(max_iterations)` 先于 gate `allows_call` 耗尽（off-by-one，max_turns==max_iterations + record_turn 底部自增），走 loop-exhaustion warning 绕过 ConvergenceController；hallucination 又走 ErrorEvent。**companion 默认下 Step7 止损路径实际不可达**。已 followup `task_bc7826ba`。
 
-- **已真机 PASS 的 ★**：IDEM-1（幂等）/ TC-1（合并预分析）/ TC-3（抓主要矛盾机制）/ TC-4（自检 best-effort）/ TC-9（kill-switch BC）/ IDEM-5（safe-fail）。
-- **机制接通但真机触发受阻**：TC-2 取证门（被 Step1 澄清门拦截在前）/ TC-5 收敛止损（需源码构造）/ IDEM-3 重启段 / IDEM-4 → 这些**逻辑已由上次会话单测覆盖**，真机触发受 LLM 行为 + 上面 3 个环境/跨层 bug 影响。
-- **3 个真 bug**（BUG-A relay 502 / BUG-B classifier fail-open / BUG-C hint 带偏）是本轮 E2E 的最大产出 —— 其中 **BUG-B 直接威胁流水线在生产的可用性**（真实非闲聊问题被误短路），已 followup `task_742d3399`。
-- **上线建议**：BUG-B 修复前，七步流水线对"无关键词非闲聊问题"形同虚设；应优先修 classifier fail-open，再回归 TC-2/4/5 真机触发。
+---
+
+## 2. 上线门结论（诚实口径，已更新）
+
+- **已真机 PASS 的 ★（11 项）**：IDEM-1（闲聊幂等）/ IDEM-2（取证 per-run 重置）/ IDEM-4（重启状态隔离）/ TC-1（合并预分析）/ TC-2（取证门，模型先取证 best-effort）/ TC-3（抓主要矛盾）/ TC-4（自检 best-effort）/ TC-9（kill-switch BC）/ IDEM-5（safe-fail）+ 非★ TC-6（澄清多轮）/ TC-7（factual 不填矛盾）。
+- **真测挖出 4 个真 bug**（E2E 最大产出）：
+  - **BUG-A** relay 间歇 502 stream+json_schema → 预分析挂超时（workaround：analysis_model 换稳模型）
+  - **BUG-B ★上线拦路** classifier fail-open 成 chat → 真实非闲聊问题被误当闲聊短路跳过流水线（task_742d3399）
+  - **BUG-C** 预分析被 classifier 的 chat hint 带偏继续误判 chitchat（已用开关 + 重映射绕过）
+  - **BUG-D ★** Step7 收敛止损报告在 max_turns 触顶时不触发（task_bc7826ba）
+- **未单独跑**：IDEM-3 重启持久化段（与本批"关澄清门"互斥，核心 persist+承接已由 TC-6 验）。
+- **上线建议**：核心 9 步机制真机都跑通；但 **BUG-B（误短路真实问题）+ BUG-D（止损报告不出）是两个上线前应修的真缺口** —— 修复前流水线对"无关键词问题"形同虚设、且触顶不会诚实止损。建议先清这两个 followup 再上线。
 
 ---
 

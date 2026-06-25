@@ -21,6 +21,9 @@ $env:no_proxy  = '*'
 # Test instrumentation (user-requested): disable the chitchat short-circuit so EVERY message
 # runs the full non-chitchat pre-analysis, bypassing the buggy assembler classifier (followup task).
 $env:DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT = '1'
+# Hard-trigger IN-LOOP gates: skip the Step1 clarification exit so debug questions reach
+# Step2 evidence gate / Step7 convergence (otherwise under-specified questions clarify first).
+$env:DESKPET_DISABLE_CLARIFICATION = '1'
 
 $logDir = 'G:\projects\deskpet\plans\manual-results-2026-06-25-problem-pipeline-prod'
 New-Item -ItemType Directory -Force -Path "$logDir\screenshots" | Out-Null
