@@ -296,12 +296,31 @@ def contradiction_to_system_message(cmap: ContradictionMap) -> str:
     )
 
 
+def _safe_int(v, default: int = 0) -> int:
+    """防御性 int —— LLM 自由输出（无 strict schema 时）可能把数值字段填成中文/乱码/小数串，
+    裸 int()/float() 抛 ValueError 会让整个 run_pre_loop 崩掉跳过流水线（真测 2026-06-25）。"""
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        try:
+            return int(float(v))
+        except (TypeError, ValueError):
+            return default
+
+
+def _safe_float(v, default: float = 0.0) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return default
+
+
 def _parse_contradiction(obj: dict) -> Optional[ContradictionMap]:
     cons = [
         Contradiction(
-            id=int(c.get("id", i)),
+            id=_safe_int(c.get("id", i), i),
             desc=str(c.get("desc", "")),
-            severity=float(c.get("severity", 0.0) or 0.0),
+            severity=_safe_float(c.get("severity", 0.0)),
             aspect=str(c.get("aspect", "")),
         )
         for i, c in enumerate(obj.get("contradictions") or [], 1)
@@ -311,9 +330,10 @@ def _parse_contradiction(obj: dict) -> Optional[ContradictionMap]:
         return None
     return ContradictionMap(
         contradictions=cons,
-        principal=int(obj.get("principal", cons[0].id) or cons[0].id),
+        principal=_safe_int(obj.get("principal", cons[0].id), cons[0].id),
         principal_aspect=str(obj.get("principal_aspect", "")),
-        attack_order=[int(x) for x in (obj.get("attack_order") or []) if isinstance(x, int)],
+        attack_order=[_safe_int(x) for x in (obj.get("attack_order") or [])
+                      if isinstance(x, (int, float, str))],
         rationale=str(obj.get("rationale", "")),
     )
 
@@ -323,6 +343,9 @@ import re as _re  # noqa: E402
 
 _FENCED_JSON_RX = _re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", _re.DOTALL | _re.IGNORECASE)
 _BARE_JSON_RX = _re.compile(r"\{.*\}", _re.DOTALL)
+# deepseek-v4-pro 等 thinking 模型在非流式裸补全里把 CoT 包在 <think>…</think> 里再跟 JSON（真测
+# 2026-06-25）→ 残留的 think 文本（含花括号）会让贪婪 bare regex 抓花导致 parse_failed。提取前先剥。
+_THINK_RX = _re.compile(r"<think>.*?</think>", _re.DOTALL | _re.IGNORECASE)
 
 
 # 私用区(U+E000–U+F8FF) + C0/C1 控制字符(除 \t\n\r) —— deepseek/relay 偶发把这类
@@ -347,7 +370,7 @@ def _try_loads(candidate: str) -> Optional[dict]:
 
 
 def _extract_json(raw: str) -> Optional[dict]:
-    s = (raw or "").strip()
+    s = _THINK_RX.sub("", raw or "").strip()  # 先剥 thinking-model 的 <think>…</think> CoT 前缀
     obj = _try_loads(s)
     if obj is not None:
         return obj

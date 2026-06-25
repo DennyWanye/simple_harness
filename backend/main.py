@@ -694,14 +694,31 @@ def _make_str_llm_call(provider, *, max_tokens: int = 512, response_format=None)
         return None
 
     async def _call(prompt: str) -> str:
-        _kwargs = dict(
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=max_tokens,
-            temperature=0.2,  # 抽取/反思要稳定，不发散
-        )
+        # WI-4-C（2026-06-25 真测）：relay 对 `stream:True + json_schema strict` 偶发慢(9-20s,
+        # 偶尔超 analysis_timeout_s) 或上游瞬时错返空 body → 预分析被 safe-fail 误降级。直连实测
+        # **非流式裸补全（无 strict schema）稳定 5-6s**（launcher 已 NO_PROXY）。故带 schema（=七步
+        # 预分析专用路径）时**非流式裸补全优先**（模型仍按提示出 JSON，调用方 _extract_json 3 级容错
+        # +控制字符净化接住），空/异常才回退流式+schema；relay 整体坏窗两条都空时由上层 safe-fail 兜。
+        _msgs = [{"role": "user", "content": prompt}]
         if response_format is not None:
-            _kwargs["response_format"] = response_format
-        result = await provider.chat_with_tools(**_kwargs)
+            try:
+                result = await provider._legacy_chat_with_tools_nonstream(
+                    messages=_msgs, max_tokens=max_tokens, temperature=0.2,
+                )
+                content = (result or {}).get("content") or ""
+                if content.strip():
+                    return content
+            except Exception:  # noqa: BLE001 — 非流式失败回退流式
+                pass
+            result = await provider.chat_with_tools(
+                messages=_msgs, max_tokens=max_tokens, temperature=0.2,
+                response_format=response_format,
+            )
+            return (result or {}).get("content") or ""
+        # 无 schema（facts/reflection 等）：保持流式，字节级 BC。
+        result = await provider.chat_with_tools(
+            messages=_msgs, max_tokens=max_tokens, temperature=0.2,
+        )
         return (result or {}).get("content") or ""
 
     return _call

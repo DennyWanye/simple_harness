@@ -203,6 +203,48 @@ def test_pua_char_json_still_parses_correct_type() -> None:
     assert card.short_circuit is False
 
 
+def test_contradiction_nonnumeric_fields_do_not_crash() -> None:
+    """★ 真机 2026-06-25：非流式裸补全(无 strict schema)时 deepseek 可能把 severity/id/principal
+    填成中文/乱码 → 旧实现裸 float()/int() 抛 ValueError 让整个 run_pre_loop 崩掉跳过流水线。
+    防御性转换后不崩，落默认值。"""
+    payload = json.dumps({
+        "restated_intent": "复合问题",
+        "problem_type": "multi_task",
+        "ambiguity_score": 0.2,
+        "clarifying_questions": [],
+        "needs_investigation": True,
+        "needs_decomposition": True,
+        "contradiction": {
+            "contradictions": [{"id": "一", "desc": "慢", "severity": "高", "aspect": "性能"}],
+            "principal": "乱码", "principal_aspect": "X",
+            "attack_order": ["1", "二", 3], "rationale": "r",
+        },
+    })
+    mock_llm = AsyncMock(return_value=payload)
+    triage = IntentTriage(mock_llm)
+    card = asyncio.run(triage.analyze("网站又慢又崩", prior_task_type="plan"))
+    assert card.problem_type == "multi_task"
+    assert card.contradiction is not None           # 不崩，矛盾段照常解析
+    assert card.contradiction.contradictions[0].severity == 0.0   # 乱码→默认
+
+
+def test_thinking_model_cot_prefix_stripped() -> None:
+    """真机 2026-06-25：deepseek-v4-pro 非流式裸补全把 CoT 包在 <think>…</think> 里再跟 JSON，
+    残留 think 文本(含花括号)会让贪婪 bare regex 抓花 → parse_failed。提取前剥 <think> 块。"""
+    raw = (
+        "<think>我需要按要求输出 JSON，字段有 problem_type {注意这里有花括号干扰}，"
+        "用户是要写代码，应该是 creation</think>\n\n"
+        '{"restated_intent": "写质数函数", "problem_type": "creation", '
+        '"ambiguity_score": 0.1, "clarifying_questions": [], '
+        '"needs_investigation": false, "needs_decomposition": true, "contradiction": null}'
+    )
+    mock_llm = AsyncMock(return_value=raw)
+    triage = IntentTriage(mock_llm)
+    card = asyncio.run(triage.analyze("帮我写个判断质数的函数", prior_task_type="task"))
+    assert card.problem_type == "creation"   # 剥 think 后正确解析，不再 safe-fail
+    assert card.short_circuit is False
+
+
 def test_fenced_json_extraction() -> None:
     """三级容错：fenced ```json 围栏也能解析。"""
     fenced = "思考中...\n```json\n" + _complex_payload() + "\n```\n收工"
