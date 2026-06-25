@@ -38,8 +38,23 @@
 
 ## 2. 工作项（WI）
 
-### WI-1 ★ 修 classifier fail-open（BUG-B）— P0 上线拦路
-**问题**：组装期 TaskClassifier 三层级联 rule→embed→llm 全失效 → 默认 `chat`（classifier.py:267）→ 流水线误短路。
+### WI-1 ★（Y 重构）取消闲聊短路 + 每条走 deepseek 预分析 — P0
+> **Y 拍板后本 WI 重构**：核心不再是"修 classifier"，而是**取消闲聊纯规则短路、让每条消息都走 deepseek-v4-pro 预分析**。classifier fail-open 修复降级为 WI-1b(P2，只影响组装质量)。
+
+**核心改动（P0）**：
+1. **删 intent_triage 早期 chitchat 短路**（intent_triage.py:185-198 的 `if derived_pt=="chitchat": return shortcircuit`）→ 每条消息都进 deepseek 预分析。本轮临时 env 开关 `DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT` 转正（删开关、默认就是不短路）。
+2. **中和 prior_task_type hint**（intent_triage.py:210 `[系统初判类型] ... → {derived_pt}`）：classifier 不可靠时别喂 chitchat 倾向带偏 deepseek——chitchat 派生重映射 factual_qa 或干脆不喂 task_type hint，让 deepseek 裸判。
+3. **config 默认 analysis_model = deepseek-v4-pro**（config.py:436，B1：通过 `_resolve_ephemeral_provider` 克隆生效，main.py:1710 已是此范式）+ `analysis_timeout_s` 30→≥45（M1，deepseek thinking 慢）。
+4. **chitchat 轻收尾**：predeepseek 判 problem_type=chitchat → 走轻路径（不上完整七步取证/自检/收敛），保闲聊回复不啰嗦（虽非 0-LLM）。
+
+**验收**：默认配置（无 env 开关）发任意非闲聊问题（含无关键词"光合作用…"）→ `intent_triage.done` 走完整流水线，**永不**被误短路；闲聊→`problem_type=chitchat` 轻收尾正常回复。删 `DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT` 开关。
+**相关（绝对路径）**：`backend\deskpet\agent\intent_triage.py`(:185-210) / `backend\main.py`(:1701-1722 预分析装配/:1710 ephemeral provider) / `backend\config.py`(:431/:436)。
+
+---
+
+### WI-1b（降级 P2）修 classifier fail-open（组装质量）
+> Y 取消短路后，classifier 的 task_type **不再决定流水线短不短路**，只服务上下文组装（哪些组件/预算）。fail-open 成 chat **不再让流水线形同虚设**，只让组装策略次优。故降 P2。
+**问题（仅组装质量）**：组装期 TaskClassifier 三层级联 rule→embed→llm 全失效 → 默认 `chat`（classifier.py:267）。
 - rule 层只认 code/报错/python/搜索/计划/情绪 关键词（classifier.py:62-92）→ 无关键词问题 miss
 - embed 层撞 embedder lock 竞争 1500ms 超时（真机 4× `status='timeout'`）→ 返回 None
 - **llm 层 main.py:1977 `llm_registry=None` 彻底关掉**（且默认 model=claude-haiku-4-5 relay 没有）
@@ -79,8 +94,12 @@
 
 ---
 
-### WI-3 闲聊短路逻辑重做 + 延迟体验（用户拍板项）— P1
-**背景**：当前闲聊短路 0 LLM 保闲聊快回，但两个体验问题：
+### WI-3（Y 下大幅收缩）闲聊短路重做 — 主体并入 WI-1，延迟优化留 Sprint 3
+> **Y 拍板后**：短路逻辑重做 = WI-1 的"删短路 + 每条走 deepseek + chitchat 轻收尾"，**已并入 WI-1**。本 WI 只剩"延迟优化"，而 Y **显式接受闲聊也慢（5-18s）**→ 延迟优化（①快模型变体/②非阻塞先轻反应/③分级轻路径）**整体留 Sprint 3**。本 Sprint WI-3 ≈ 空（仅在 WI-1 里做 chitchat 轻收尾）。
+
+<details><summary>（原 WI-3 延迟优化备选，留 Sprint 3）</summary>
+
+**背景**：Y 下每条非闲聊+闲聊都走 deepseek 预分析（5-18s），首响应延迟是已知成本：
 - (a) **误判**：依赖 classifier（BUG-B），把真实问题误短路（WI-1 治根因，本 WI 治短路侧）。
 - (b) **非闲聊延迟**：每条非闲聊问题先 +1 次预分析（gpt-5.5 thinking ~10-15s，relay 慢时更久）才进主 loop。
 
@@ -91,6 +110,7 @@
 - ② 非阻塞（先轻反应后台预分析）/ ③ 分级（简单问答走轻路径）**留 Sprint 3**（②有竞态风险，本 Sprint 不做）。
 **验收**：判断准（不误短路真实问题，deepseek-v4-pro 实测分类正确）；闲聊不退化（方案 X）；非闲聊延迟可接受。
 **相关**：intent_triage.py:185-210 / classifier.py / main.py PRE-LOOP 6826-6890 / RESULTS 已知 UX 成本段。
+</details>
 
 ---
 
@@ -167,24 +187,20 @@ WI-6 (测试基建) ── 贯穿
 - **WI-4**：deepseek-v4-pro 实测 stream+json_schema 稳 → 同时解 BUG-A（gpt-5.5 间歇 502）。
 - 一条线同时解 **BUG-A（relay 不稳）+ BUG-B（fail-open）+ BUG-C（hint 带偏）**。
 
-### 5.2 ⚠️ X-vs-Y 张力 — 内部挑战 R1 已给结论（需用户二次确认）
-**纯 LLM 判断（Y）会让闲聊从秒回变 5-18s；方案 X 当前代码下"形式成立但实质退化成 Y"，必须叠附加条件才守得住闲聊快回。**
+### 5.2 ✅ X-vs-Y 已拍板：**Y（真·每条都 deepseek-v4-pro 判）**
+**用户拍板 Y**：接受闲聊也走 LLM（5-18s）+ 每条消息一次 LLM 成本，换"判断统一、最准、逻辑最简"。**显式放弃 TC-1"闲聊 0 LLM 秒回"红线**（改为"闲聊也走 LLM，但路径轻/不上完整七步"）。
 
-**为什么 X 当前会退化**（挑战 R1 实读核实）：
-- `exemplars.jsonl` 的 **chat 标签只有 8 条且偏问候式** → "你好"/裸闲聊与之 cosine 常 0.6-0.7 **< 0.75 阈值** → embed 层 return None → 落 LLM 层 → 闲聊也打 deepseek（5-18s）。
-- embedder 还**间歇超时**（BUG 根因之一，本 plan 未根治）→ 超时也 return None → 落 LLM。
-- 叠加 → 相当比例闲聊会落 deepseek → **TC-1 闲聊秒回红线破 + 每条闲聊多花一次 LLM**。
+**Y 的关键简化（重要）**：既然每条消息都走 deepseek 预分析，**「闲聊纯规则短路」直接取消**（不再靠组装期 classifier 的 task_type 决定短不短路）：
+- **intent_triage 删掉早期 chitchat 短路**（intent_triage.py:185-198）→ 每条消息都跑 deepseek 预分析，由它产出 problem_type（含 chitchat）。chitchat 仍可走"轻收尾"（不上完整七步取证/自检），但 LLM 已调用（非 0-LLM）。
+- **BUG-B（classifier fail-open）的流水线影响自动消解**：不再有短路被误触发 → 真实问题不会被误当闲聊跳过。classifier fail-open **降级为"只影响上下文组装质量"的次要问题**（WI-1 改为 P2，见下）。
+- **BUG-C（hint 带偏）**：删短路后预分析仍可能被 `[系统初判类型] chat` hint 带偏 → **中和 hint**（classifier 不确定时不喂 chitchat 倾向，或干脆不喂 task_type hint 让 deepseek 裸判）。
 
-**✅ 拍板细化（X+，挑战 R1 推荐，已写进 WI-1/WI-3）— 在 LLM 兜底前加一道"廉价闲聊短路"**：
-1. **扩 chat exemplar 池 8→30+**（覆盖问候/寒暄/泛闲聊/确认词"好的""谢谢"/纯表情）；**emotion 也纳入短路**（情绪安抚本就不该走七步）。
-2. **加廉价词法闲聊兜底**：打 LLM 前最后一道——明显闲聊（短问候/确认词/纯表情）词法判 chitchat **直接秒回**。"拿不准才打 LLM"判据 = `rule miss ∧ embed<0.75 ∧ 闲聊词法兜底未命中` → 才交 deepseek。**闲聊永不退化，LLM 成本只花在真模糊的非闲聊上。**
-3. classifier `llm_timeout_s` 2→≥20s（否则 deepseek 必超时回退 default chat，X/Y 都不成立）。
-4. embedder timeout：本 Sprint 至少加退避 + 显式标"X 快路径依赖 embedder 健康"（根治留 Sprint 3，[[project_assembler_embedder_unreliable]] 老坑）。
+**TC-1 验收口径改写**：原"闲聊 0 次 LLM"作废 → 新口径"闲聊走预分析但**不上完整七步**（problem_type=chitchat → 轻收尾，无取证/自检/收敛），延迟可接受"。
 
-> **❓ 需你二次确认**：你原话"只用 LLM 判断 / 直接用 deepseek 判"——但实测纯 LLM 会让闲聊也慢。**X+ = 明显闲聊仍词法秒回，只把真模糊的交 deepseek 判**（能廉价判明的不劳烦 LLM）。**确认走 X+？** 还是接受闲聊也慢、真·每条都 deepseek（Y）？
-
-### 5.3 内部挑战 R1 结论（codex 本环境挂起，用内部 architect 对抗替代）
-**VERDICT: NEEDS-FIX → 已修订**：修了 B1(shim 忽略 model→classifier 跑不到 deepseek，须用 `_resolve_ephemeral_provider`)/B2(止损 reason 不覆盖+principal_resolved 误判正常完成)/m3(classifier 2s 超时必回退)/M1(config 默认仍 gpt-5.5) 4 处致命 + X 退化结论，均并入 WI-1/2/3。**下一步**：用户确认 X+ 后跑 R2 挑战收敛 → 派实现。
+### 5.3 内部挑战 R1 结论（codex 本环境挂起，用内部 architect opus 对抗替代）
+**VERDICT: NEEDS-FIX → 已修订**：修了 B1(shim 忽略 model→classifier/预分析须用 `_resolve_ephemeral_provider` 克隆 deepseek provider，传 model 参数无效)/B2(止损 :2546 须覆盖 gate reason=HARD_MAX_TURNS + principal_resolved 不能硬编码 False)/M1(config.py:436 默认须改 deepseek-v4-pro + timeout≥45s) 致命修订，并入 WI-1/2/4。
+> 注：m3(classifier llm_timeout 2s) 在 Y 下**降级**——Y 取消短路、不再靠 classifier 的 task_type 决定流水线，classifier 仅服务上下文组装；其 LLM 层是否接 deepseek、超时多少，归到 WI-1(P2) 的"组装质量"范畴，不再是流水线关键路径。
+**下一步**：跑 R2 内部对抗挑战（验 Y 重构后的 plan）→ 收敛 → 派实现。
 
 ---
 
