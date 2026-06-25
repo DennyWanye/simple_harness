@@ -702,8 +702,12 @@ def _make_str_llm_call(provider, *, max_tokens: int = 512, response_format=None)
         _msgs = [{"role": "user", "content": prompt}]
         if response_format is not None:
             try:
+                # 非流式**保留 strict schema**：probe 实测 deepseek 非流式+schema 4-6s 稳，
+                # 且 schema 的 enum 约束保证 problem_type 分类准（丢 schema 会让 deepseek 把
+                # 清晰 debug 误判 chitchat → 变相重现 BUG-B，真测 2026-06-25 实证）。
                 result = await provider._legacy_chat_with_tools_nonstream(
                     messages=_msgs, max_tokens=max_tokens, temperature=0.2,
+                    response_format=response_format,
                 )
                 content = (result or {}).get("content") or ""
                 if content.strip():
