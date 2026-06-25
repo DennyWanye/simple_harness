@@ -26,6 +26,8 @@ from typing import Awaitable, Callable, Optional
 
 import structlog
 
+from deskpet.agent.lexicon import is_obvious_chitchat
+
 logger = structlog.get_logger(__name__)
 
 
@@ -182,6 +184,23 @@ class IntentTriage:
 
         safe-fail：llm_call=None / 异常 / 超时 / 畸形 JSON → 用 prior_task_type 派生保守 IntentCard（contradiction=None）。
         """
+        # WI-2（Phase 1 P3 闲聊快路径）：LLM 调用之前先过高精度词法 allowlist（整句锚定）。
+        # 命中 → 直接产出短路 IntentCard，**不调 LLM**（省成本/延迟），打 allowlist_hit 结构化
+        # 日志（BUGB-3 唯一硬证据：短路 + 无 intent_triage.done/llm_failed 证 0 次 LLM）。
+        # 不命中 → 走现有 LLM 路径（原则 5：只放行确定寒暄，假阴性多走一次 LLM 安全）。
+        if is_obvious_chitchat(user_message):
+            logger.info("intent_triage.allowlist_hit", preview=user_message[:40])
+            return IntentCard(
+                restated_intent=user_message[:80],
+                problem_type="chitchat",
+                ambiguity_score=0.0,
+                needs_investigation=False,
+                needs_decomposition=False,
+                contradiction=None,
+                short_circuit=True,
+                needs_clarification=False,
+            )
+
         # derived_pt 仅作 _safe_card / _parse 的 fallback（Y-light：不再据此做早期纯规则短路，
         # 改由预分析 LLM(deepseek-v4-pro) 裸判是否 chitchat → 修坏掉的 classifier 把真实问题误判成 chat 的 BUG-B）。
         derived_pt = _TASKTYPE_TO_PROBLEM.get(prior_task_type or "", "factual_qa")
@@ -232,6 +251,13 @@ class IntentTriage:
         return await self.analyze(user_message, prior_task_type=prior_task_type)
 
     def _safe_card(self, user_message: str, derived_pt: str) -> IntentCard:
+        # WI-2b（修 §0 取证门漏洞）：safe-fail 绝不产出 chitchat。LLM 挂/超时/畸形 JSON 时
+        # 无法确认是否真寒暄；若 derived_pt 来自坏 classifier 的 prior='chat'/'emotion'，硬当
+        # chitchat 会让 needs_investigation=False → evidence_gate 跳过取证，真问题失去调查。
+        # 倒向能力侧保守 factual_qa（触发取证）。真寒暄已在 analyze() 入口被 allowlist 短路兜住，
+        # 不会落到这里，故此处不再需要 chitchat 分支。
+        if derived_pt == "chitchat":
+            derived_pt = "factual_qa"
         return IntentCard(
             restated_intent=user_message[:80],
             problem_type=derived_pt,

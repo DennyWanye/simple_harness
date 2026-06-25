@@ -255,6 +255,136 @@ def test_fenced_json_extraction() -> None:
     assert card.contradiction.principal == 1
 
 
+# ───────────────────────────────────────────────────────────────────────────
+# WI-2 / WI-4：闲聊快路径 allowlist（整句锚定，命中 → 0 次 LLM 短路）
+# ───────────────────────────────────────────────────────────────────────────
+import pytest
+from structlog.testing import capture_logs
+
+
+_ALLOWLIST_SHORTCIRCUIT = [
+    "你好", "谢谢", "晚安", "😄", "。。。",
+    "你好呀~", "晚安啊", "在吗在吗", "早上好", "hi 你好", "嗯嗯", "哈哈",
+]
+_ALLOWLIST_NO_SHORTCIRCUIT = [
+    "你好，帮我看下这段为什么报错", "崩了", "报错", "卡死",
+    "光合作用为什么需要光", "在吗？我代码崩了", "谢谢，那这个报错怎么办",
+    "hi 帮我 debug", "在吗？", "ok 那你帮我改一下", "早上代码崩了",
+]
+
+
+@pytest.mark.parametrize("msg", _ALLOWLIST_SHORTCIRCUIT)
+def test_allowlist_shortcircuits_without_llm(msg: str) -> None:
+    """★ 命中 allowlist → 短路 + problem_type=chitchat + needs_investigation=False + 0 次 LLM。"""
+    mock_llm = AsyncMock(return_value=_complex_payload())  # 若被调会判成 debug，借此证明没调
+    triage = IntentTriage(mock_llm)
+    card = asyncio.run(triage.analyze(msg, prior_task_type="chat"))
+    assert mock_llm.await_count == 0, f"allowlist 命中却调了 LLM: {msg!r}"
+    assert card.short_circuit is True
+    assert card.problem_type == "chitchat"
+    assert card.needs_investigation is False
+    assert card.needs_clarification is False
+    assert card.contradiction is None
+
+
+@pytest.mark.parametrize("msg", _ALLOWLIST_NO_SHORTCIRCUIT)
+def test_allowlist_miss_goes_to_llm(msg: str) -> None:
+    """不命中 allowlist（含祈使/故障/问号）→ 不早期短路，进 LLM 路径（await_count==1）。"""
+    mock_llm = AsyncMock(return_value=_complex_payload())
+    triage = IntentTriage(mock_llm)
+    card = asyncio.run(triage.analyze(msg, prior_task_type="chat"))
+    assert mock_llm.await_count == 1, f"非寒暄却被 allowlist 误短路: {msg!r}"
+    # LLM 裸判为 debug（_complex_payload），证明走到了 LLM 路径而非 allowlist 短路
+    assert card.problem_type == "debug"
+    assert card.short_circuit is False
+
+
+def test_allowlist_hit_emits_structured_log() -> None:
+    """BUGB-3 硬证据：命中打 intent_triage.allowlist_hit，且无 intent_triage.done/llm_failed。"""
+    mock_llm = AsyncMock(return_value=_chitchat_payload())
+    triage = IntentTriage(mock_llm)
+    with capture_logs() as logs:
+        card = asyncio.run(triage.analyze("你好呀", prior_task_type="chat"))
+    events = [e.get("event") for e in logs]
+    assert "intent_triage.allowlist_hit" in events
+    assert "intent_triage.done" not in events       # 证 0 次 LLM 完成
+    assert "intent_triage.llm_failed" not in events
+    assert card.short_circuit is True
+    assert mock_llm.await_count == 0
+
+
+def test_allowlist_hit_even_when_llm_call_none() -> None:
+    """llm_call=None（pipeline 降级）时寒暄仍走 allowlist 短路，不落 safe-fail。"""
+    triage = IntentTriage(None)
+    card = asyncio.run(triage.analyze("晚安", prior_task_type="chat"))
+    assert card.short_circuit is True
+    assert card.problem_type == "chitchat"
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# WI-2b：safe-fail 绝不产出 chitchat（修取证门漏洞）
+# ───────────────────────────────────────────────────────────────────────────
+def test_safe_fail_chat_classifier_does_not_derive_chitchat() -> None:
+    """★ 真问题 + 坏 classifier(prior='chat') + LLM 异常 → safe-fail 兜底 factual_qa（非 chitchat），
+    且 needs_investigation=True（不跳过取证），short_circuit=False。"""
+    async def _boom(_prompt: str) -> str:
+        raise RuntimeError("relay 502")
+
+    triage = IntentTriage(_boom)
+    # 非寒暄（含故障词"报错"，不会被 allowlist 短路），prior='chat' → derived chitchat
+    card = asyncio.run(triage.analyze("我的导出功能报错了", prior_task_type="chat"))
+    assert card.problem_type != "chitchat"
+    assert card.problem_type == "factual_qa"      # WI-2b 兜底
+    assert card.needs_investigation is True        # 取证门不被跳过
+    assert card.short_circuit is False
+
+
+def test_safe_fail_emotion_classifier_does_not_derive_chitchat() -> None:
+    """prior='emotion' 同样映射 chitchat → safe-fail 兜底 factual_qa。"""
+    async def _boom(_prompt: str) -> str:
+        raise RuntimeError("timeout")
+
+    triage = IntentTriage(_boom)
+    card = asyncio.run(triage.analyze("我的程序为什么会内存泄漏", prior_task_type="emotion"))
+    assert card.problem_type == "factual_qa"
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# WI-3（退役校验）：仓内无 bypass flag 读取点
+# ───────────────────────────────────────────────────────────────────────────
+def test_no_bypass_flag_read_points_in_backend() -> None:
+    """plan WI-3：DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT / _CLARIFICATION 已退役，
+    backend 源码（非测试）应 0 读取点。防回归引入新短路旁路。"""
+    import os
+    from pathlib import Path
+
+    backend = Path(__file__).resolve().parent.parent
+    needles = (
+        "DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT",
+        "DESKPET_DISABLE_CLARIFICATION",
+    )
+    offenders = []
+    for root, dirs, files in os.walk(backend):
+        # 跳过虚拟环境 / 缓存 / 测试自身
+        parts = set(Path(root).parts)
+        if any(p.startswith(".") and p not in (".",) for p in Path(root).relative_to(backend).parts):
+            continue
+        if "tests" in Path(root).relative_to(backend).parts:
+            continue
+        for fn in files:
+            if not fn.endswith(".py"):
+                continue
+            fp = Path(root) / fn
+            try:
+                text = fp.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            for needle in needles:
+                if needle in text:
+                    offenders.append(str(fp))
+    assert not offenders, f"发现已退役 bypass flag 读取点: {offenders}"
+
+
 def test_system_message_helpers() -> None:
     card = IntentCard(restated_intent="修复登录", problem_type="debug")
     msg = intent_to_system_message(card)
