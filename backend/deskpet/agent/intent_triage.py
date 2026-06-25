@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Optional
 
@@ -185,7 +186,11 @@ class IntentTriage:
         derived_pt = _TASKTYPE_TO_PROBLEM.get(prior_task_type or "", "factual_qa")
 
         # ── 纯规则短路：闲聊/情绪类不调 LLM，直接短路（硬性能要求，0 次 LLM）
-        if derived_pt == "chitchat":
+        # 临时调试开关（followup：闲聊短路逻辑后续重做 + classifier fail-open 修复 task_742d3399）：
+        #   DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT=1 → 关闭短路，让所有消息（含被组装期 classifier
+        #   误判成 chat 的真实非闲聊问题）都走完整非闲聊预分析。默认未设=原行为字节不变（短路照常）。
+        _disable_sc = os.environ.get("DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT") == "1"
+        if derived_pt == "chitchat" and not _disable_sc:
             logger.info("intent_triage.shortcircuit", reason="chitchat_rule",
                         task_type=prior_task_type)
             return IntentCard(
