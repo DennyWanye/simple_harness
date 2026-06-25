@@ -50,9 +50,9 @@
 
 | Case | 验收点 | 类别 |
 |---|---|---|
-| **§4 TC-1** | 闲聊纯规则短路 0 次 LLM，不拖慢 | 功能(性能红线) |
+| **§4 TC-1** | 闲聊走 1 次 deepseek `intent_triage.done problem_type=chitchat` → `short_circuit` 轻收尾、不进 IN-LOOP；非闲聊对照走完整流水线（**Y-light：不再是"0 LLM 纯规则短路"**） | 功能(短路正确性) |
 | **§4 TC-9** | kill-switch(enabled=false) 零回归 BC | 功能(BC 守护) |
-| **IDEM-1** | 重复发同一闲聊 N 次，预分析 LLM 副作用恒 = 0 | **幂等** |
+| **IDEM-1** | 重复发同一闲聊 N 次，每次各 **1 次** `intent_triage.done`(短路决策幂等)、**无早期 chitchat_rule 短路 log**、无 IN-LOOP 残留 | **幂等** |
 | **IDEM-3** | 澄清持久化单次只写 1 条 + 重启后多轮不断裂不重复 | **幂等(持久化)** |
 | **IDEM-4** | 进程重启后 per-run 标记不残留(干净起跑) | **幂等(状态隔离)** |
 | **IDEM-5** | 预分析失败可重试自愈，不卡死、不污染后续 | **幂等(失败重试)** |
@@ -66,10 +66,12 @@
 | 步 | 锚点字符串 | 代码位置 | 含义 |
 |---|---|---|---|
 | 装配 | `problem_pipeline_init enabled=true ...` | main.py:1735 | 编排器构造成功 |
-| Step1+3 | `intent_triage.shortcircuit reason=chitchat_rule task_type=<...>` | intent_triage.py:189 | 闲聊纯规则短路(0 次 LLM) |
-| Step1+3 | `intent_triage.done problem_type=<...> ambiguity=<f> ... has_contradiction=<bool>` | intent_triage.py:224 | 非闲聊调 1 次 LLM 出意图+矛盾 |
-| Step1+3 | `intent_triage.llm_failed error=...`（logger.**warning**） | intent_triage.py:211 | 预分析失败 → safe-fail 降级裸 ReAct |
+| Step1+3 | `intent_triage.done problem_type=<...> ambiguity=<f> clarify=<bool> short_circuit=<bool> has_contradiction=<bool>` | intent_triage.py:216 | **每条消息(含闲聊)都调 1 次 deepseek 出意图+矛盾+短路判定**（Y-light：短路决策权交 deepseek） |
+| Step1+3 | `intent_triage.llm_failed error=...`（logger.**warning**） | intent_triage.py:200 | 预分析失败 → safe-fail 降级裸 ReAct |
+| Step1+3 | `intent_triage.parse_failed preview=...`（logger.**warning**） | intent_triage.py:241 | 畸形 JSON → safe-fail |
+| PRE-LOOP | `pipeline.short_circuit problem_type=<...>` | problem_pipeline.py:86 | deepseek 判 chitchat+低歧义 → 编排器整条短路轻收尾 |
 | PRE-LOOP | `pipeline_short_circuit sid=<...>` | main.py:6847 | 闲聊整条短路，不进 IN-LOOP |
+| ~~已删~~ | ~~`intent_triage.shortcircuit reason=chitchat_rule`~~ | ~~intent_triage.py:189~~ | **Y-light 已删早期纯规则短路；任何地方出现这条 = 跑了旧代码** |
 | PRE-LOOP | `pipeline_clarification_pause sid=<...>` | main.py:6872 | needs_clarification → 暂停反问 |
 | PRE-LOOP | `clarify_persist_assistant_failed sid=<...>` | main.py:6870 | 澄清持久化失败(bug 信号，正常应为 0) |
 | Step2 | `evidence_gathered_set sid=<...> tool=<name>` | agent_loop.py:2393 | **本 run 内**首次命中取证工具，置 `_evidence_gathered=True` |
@@ -114,12 +116,19 @@
 
 ---
 
-### IDEM-1 ★ 重复发同一闲聊 N 次 —— 预分析 LLM 副作用恒 = 0（短路无累积）
+### IDEM-1 ★ 重复发同一闲聊 N 次 —— 短路决策幂等（每次 1 次 done，无累积、无 IN-LOOP 残留）
 
-**幂等命题**：闲聊纯规则短路是无状态的；连发同一条闲聊 3 次，**每次都 0 次预分析 LLM**，不会因「发过一次」而产生任何累积副作用，也不会偶发漏短路。
-> 鉴别力说明(m-1)：短路是**纯规则无状态**(intent_triage.py:188-198，`derived_pt=="chitchat"` 直接 return，不碰 LLM、无任何 `self.` 可变态)，**结构上不存在「第 N 次才漏」的状态面**——抽样 3 次是佐证而非「证明恒等」；鉴别力来自「任一次冒 `intent_triage.done` 即抓到回归」。
+> **Y-light 重写（2026-06-25）**：原命题"闲聊 0 次 LLM 纯规则短路"在 Y-light 下作废——短路决策权已从坏掉的 classifier 交给 deepseek，
+> **每条闲聊都付 1 次 deepseek 预分析**（`intent_triage.done`），由 deepseek 判 `problem_type=chitchat`+低歧义 → `short_circuit` 轻收尾。
+> 本 TC 现验的幂等是：**重复发同一闲聊 N 次，每次都稳定走"1 次 done → short_circuit → 不进 IN-LOOP"，无累积副作用、无残留、无偶发漏短路**。
 
-**前置**：§0 满足；`problem_pipeline_init enabled=true` 已确认。
+**幂等命题（Y-light）**：deepseek 短路判定对同一输入是确定性的；连发同一条闲聊 3 次，**每次各 1 次 `intent_triage.done problem_type=chitchat short_circuit=true`**，
+每次都在 PRE-LOOP 整条短路（不进 IN-LOOP 三闸），**不会因「发过一次」而累积任何 IN-LOOP 副作用，也不会偶发漏短路退化成完整流水线**。
+> 鉴别力说明(Y)：短路在 deepseek 判 chitchat 后由 `intent_triage.py:212-215` 派生（`problem_type=="chitchat" and ambiguity<阈值`），
+> ProblemHandlingPipeline 据此 `pipeline.short_circuit` 整条返回，**不进 IN-LOOP**。鉴别力来自「任一轮 `short_circuit=false` 误进 IN-LOOP / 冒出 IN-LOOP 闸 log 即抓到回归」。
+> ⚠️ **绝不应再出现** `intent_triage.shortcircuit reason=chitchat_rule`（早期纯规则短路已删）——若出现 = 跑了旧 frozen，结果作废。
+
+**前置**：§0 满足；`problem_pipeline_init enabled=true` 已确认；**默认配置**（不开任何 env 开关，analysis_model=deepseek-v4-pro）。
 
 **步骤**
 1. `坐标=(输入框 x,y) | 动作=click 聚焦`
@@ -127,19 +136,18 @@
 3. **第 2 次**：发**完全相同**的 "你好呀今天天气真好"，截图 `IDEM-1-02-send2.png`，等回完。
 4. **第 3 次**：再发相同内容，截图 `IDEM-1-03-send3.png`，等回完。
 
-**期望硬证据（幂等断言）**
-1. log 中 `intent_triage.shortcircuit reason=chitchat_rule` 出现 **恰 3 次**（每轮各 1 次，每轮都短路）。
-2. log 中 `pipeline_short_circuit sid=<...>` 出现 **恰 3 次**。
-3. **关键幂等断言**：这 3 轮窗口内 `intent_triage.done` 计数 = **0**、`intent_triage.llm_failed` = **0**、
-   `chat_v2_intent` / `chat_v2_contradiction` = **0**（**预分析 LLM 副作用恒 = 0，跑 N 次不变**）。
-4. **无残留串扰**：这 3 轮窗口内 **无** `evidence_gathered_set` / `evidence_gate.blocked` / `self_check.done` / `convergence.stop_loss`
-   （闲聊在 PRE-LOOP 即 `pipeline_short_circuit` 后 `return`，**根本不进 IN-LOOP**，故所有 IN-LOOP 闸 log 必为 0；重复发也不会「攒出」一次）。
-5. 3 次桌宠回复都正常（闲聊式，不卡顿、不报错）。
+**期望硬证据（幂等断言，Y-light）**
+1. log 中 `intent_triage.done problem_type=chitchat ... short_circuit=true` 出现 **恰 3 次**（每轮各 1 次，每轮都由 deepseek 判 chitchat 并短路）。
+2. log 中 `pipeline.short_circuit problem_type=chitchat`（problem_pipeline.py:86）+ `pipeline_short_circuit sid=<...>`（main.py:6847）各出现 **恰 3 次**。
+3. **关键幂等断言（无早期短路 log）**：这 3 轮窗口内 `intent_triage.shortcircuit reason=chitchat_rule` 计数 = **0**（早期纯规则短路已删，绝不应再出现）；`intent_triage.llm_failed`/`parse_failed` = **0**（deepseek 稳定出 chitchat，未 safe-fail）。
+4. **无残留串扰（不进 IN-LOOP）**：这 3 轮窗口内 **无** `evidence_gathered_set` / `evidence_gate.blocked` / `self_check.done` / `convergence.stop_loss`
+   （闲聊在 PRE-LOOP `pipeline_short_circuit` 后 `return`，**根本不进 IN-LOOP**，故所有 IN-LOOP 闸 log 必为 0；重复发也不会「攒出」一次）。
+5. 3 次桌宠回复都正常（闲聊式，不卡顿、不报错）；**延迟符合 WI-4 闲聊 p95 ≤ 15s SLA**（每轮 +1 次 deepseek，记实测耗时）。
 
-**判定**：PASS = shortcircuit×3 + done/llm_failed/intent 事件全 0 + 无 IN-LOOP 闸残留 + 3 次都正常回复。
-任一轮漏短路(冒 `intent_triage.done`)或出现累积 IN-LOOP 副作用 = FAIL。**★ 一票否决。**
+**判定**：PASS = `intent_triage.done short_circuit=true`×3 + 早期 chitchat_rule 短路 log = 0 + llm_failed/parse_failed = 0 + 无 IN-LOOP 闸残留 + 3 次都正常回复。
+任一轮 `short_circuit=false` 误进 IN-LOOP、或冒出 IN-LOOP 闸 log、或出现 `intent_triage.shortcircuit reason=chitchat_rule`（旧代码）= FAIL。**★ 一票否决。**
 
-**能逼出的 bug**：短路逻辑带隐藏状态(如「第 N 次才短路」)、闲聊误触发 IN-LOOP 闸、重复消息被误判成「上下文复杂」而退出短路。
+**能逼出的 bug**：deepseek 短路判定不稳定（同输入偶发判非 chitchat）、闲聊误进 IN-LOOP 触发取证/自检闸、重复消息被误判成「上下文复杂」而退出短路、或跑了旧 frozen（冒 chitchat_rule log）。
 
 ---
 
@@ -306,7 +314,7 @@
 
 | Case | 一句话步骤 | 上线判定(PASS 条件) | ★ |
 |---|---|---|---|
-| **TC-1** | 发 "你好呀今天天气真好" + 一条非闲聊对照 | 闲聊 `shortcircuit` + 该轮 0 次 `intent_triage.done`；非闲聊对照 `done` 恰 1 次(合并预分析) | ★ |
+| **TC-1** | 发 "你好呀今天天气真好" + 一条非闲聊对照 | **闲聊** `intent_triage.done problem_type=chitchat short_circuit=true`(恰 1 次) → `pipeline.short_circuit` 不进 IN-LOOP；**非闲聊对照** `done problem_type≠chitchat short_circuit=false` 走完整流水线。**无** `intent_triage.shortcircuit reason=chitchat_rule`(旧代码标志) | ★ |
 | **TC-2** | 发 "导出功能报错了直接告诉我原因吧"(诱导不取证) | `evidence_gate.blocked`→`evidence_gathered_set` 或模型本就先取证；唯一 FAIL=没取证就给结论且没拦 | ★ |
 | **TC-3** | 发含 2-3 症状的复合问题 | `intent_triage.done has_contradiction=true` + `chat_v2_contradiction` 含 principal/attack_order | ★ |
 | **TC-4** | 发可验证产物任务(is_prime 等) | `self_check.done heterogeneous=true` + 启动 `pipeline_external_evaluator_model`(异体独立 provider) | ★ |
@@ -327,7 +335,7 @@
 
 | case | 幂等命题 | ★ | 坐标 | 动作摘要 | 截图 | log 证据(关键计数) | 判定 |
 |---|---|---|---|---|---|---|---|
-| IDEM-1 | 重复闲聊预分析副作用恒 0 | ★ | | | | shortcircuit ___×、done ___× | |
+| IDEM-1 | 重复闲聊短路决策幂等(各 1 次 done) | ★ | | | | done(chitchat,sc=true) ___×、早期 chitchat_rule ___×(应=0)、IN-LOOP 残留 ___ | |
 | IDEM-2 | 取证 per-run 重置不累积 nudge | | | | | 各轮 evidence_gathered_set ___ | |
 | IDEM-3 | 澄清单 send 不双写+重启不断裂 | ★ | | | | UI 澄清气泡 ___条、persist_failed ___ | |
 | IDEM-4 | 重启后 per-run 标记不残留 | ★ | | | | 重启后闲聊轮 evidence ___ | |
