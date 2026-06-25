@@ -187,10 +187,14 @@ class IntentTriage:
 
         # ── 纯规则短路：闲聊/情绪类不调 LLM，直接短路（硬性能要求，0 次 LLM）
         # 临时调试开关（followup：闲聊短路逻辑后续重做 + classifier fail-open 修复 task_742d3399）：
-        #   DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT=1 → 关闭短路，让所有消息（含被组装期 classifier
-        #   误判成 chat 的真实非闲聊问题）都走完整非闲聊预分析。默认未设=原行为字节不变（短路照常）。
+        #   DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT=1 → 强制所有消息走完整非闲聊预分析：
+        #   ① 关掉早期纯规则短路；② 把 chitchat 派生（多半来自 classifier fail-open）重映射成 factual_qa，
+        #   否则下游 prompt 的 [系统初判类型] hint / safe_card / 解析 fallback 会继续把 LLM 带偏判 chitchat。
+        #   默认未设=原行为字节不变（短路照常）。
         _disable_sc = os.environ.get("DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT") == "1"
-        if derived_pt == "chitchat" and not _disable_sc:
+        if _disable_sc and derived_pt == "chitchat":
+            derived_pt = "factual_qa"
+        if derived_pt == "chitchat":  # 此时必然 not _disable_sc
             logger.info("intent_triage.shortcircuit", reason="chitchat_rule",
                         task_type=prior_task_type)
             return IntentCard(
@@ -217,6 +221,9 @@ class IntentTriage:
             return self._safe_card(user_message, derived_pt)
 
         card = self._parse(raw, fallback_pt=derived_pt, user_message=user_message)
+        # 测试开关：即便经过 hint 中和，LLM 仍可能返回 chitchat → 重映射成 factual_qa 强制进流水线。
+        if _disable_sc and card.problem_type == "chitchat":
+            card.problem_type = "factual_qa"
         # 出口信号派生
         card.needs_clarification = (
             card.ambiguity_score >= self._clarify_threshold
