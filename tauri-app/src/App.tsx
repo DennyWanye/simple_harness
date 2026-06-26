@@ -2098,7 +2098,8 @@ function App() {
           </button>
         )}
 
-        <div style={{ position: "relative", flex: 1, minWidth: 0, display: "flex" }}>
+        {/* SlashDropdown 绝对定位浮在整条输入条上方（composer row 已是 position:absolute
+            作定位上下文）；input 回到直接 flex:1 子元素，撑满中间、不与发送按钮重叠。 */}
         <SlashDropdown
           candidates={slashCandidates}
           selectedIdx={slashIdx}
@@ -2164,7 +2165,7 @@ function App() {
           }
           disabled={state !== "connected"}
           style={{
-            width: "100%",
+            flex: 1,
             minWidth: 0,
             height: 36,
             padding: "0 15px",
@@ -2178,7 +2179,6 @@ function App() {
             transition: "border-color 140ms ease, box-shadow 140ms ease, background 140ms ease",
           }}
         />
-        </div>
         {(() => {
           const active = state === "connected" && !!chatText.trim();
           return (
@@ -2192,6 +2192,7 @@ function App() {
                 gap: 5,
                 padding: "0 15px",
                 height: 36,
+                flexShrink: 0,
                 borderRadius: 18,
                 border: `1px solid ${active ? "rgba(96,165,250,0.6)" : "rgba(255,255,255,0.07)"}`,
                 background: active
