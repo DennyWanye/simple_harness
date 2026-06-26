@@ -34,9 +34,9 @@ def test_t6_2_key_keyword_in_body():
     assert classify_relay_error(403, "device key expired") == RELAY_KEY_INVALID
 
 
-def test_balance_wins_over_key_when_both_signals():
-    # A 401 whose body says "insufficient balance" is a balance problem.
-    assert classify_relay_error(401, "insufficient balance") == INSUFFICIENT_BALANCE
+def test_401_status_wins_for_key_self_heal():
+    # WI-5 v7: relay 401 means the device key must be re-signed.
+    assert classify_relay_error(401, "insufficient balance") == RELAY_KEY_INVALID
 
 
 def test_unrelated_error_returns_none():

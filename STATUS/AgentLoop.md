@@ -3,7 +3,7 @@
 > 本档回答一个问题：**桌宠收到一句话后，agent 是怎么把一个任务跑完的？**
 > 聚焦后端 ReAct 执行引擎（P6 重构后现状）。细节散在各 `plans/` 与 `openspec/`，本档只做一页式骨架 + 关键代码引用。
 >
-> 最后更新：2026-06-20 ｜ 调研基线：读码核实（master）｜ 主入口 [`backend/agent/agent_loop.py`](../backend/agent/agent_loop.py)
+> 最后更新：2026-06-21 ｜ 调研基线：读码核实（master）｜ 主入口 [`backend/agent/agent_loop.py`](../backend/agent/agent_loop.py)
 >
 > 配套优化方案见 [`AgentImprovements.md`](./AgentImprovements.md)（缺陷审计 + 业界对标 + 落地路线）。
 
@@ -35,9 +35,9 @@ P6 把原来散落在 `main.py` 的 14 个 P5-S2 补丁收敛成三个命名层�
 
 `AgentLoop.run()` 是个 `async generator`，对 `range(1, max_iterations+1)` 迭代（Companion 默认 16，Code 模式 50）。yield 出 `AgentEvent` 流：`assistant_message` / `assistant_delta`（流式 token）/ `tool_call` / `tool_result` / `final` / `error` / `provider_chain_fallback`。
 
-**循环前（一次性）**：若 session 有活跃目标，注入一条常驻 `[目标锚定]` system 消息（WI-4a always-on，永不被压缩、整轮恒 ≤1 条，防任务漂移）。见 [agent_loop.py:615](../backend/agent/agent_loop.py)。
+**循环前（一次性）**：若 session 有活跃目标，注入一条常驻 `[目标锚定]` system 消息（WI-4a always-on，永不被压缩、整轮恒 ≤1 条，防任务漂移）。见 [agent_loop.py:683-690](../backend/agent/agent_loop.py)。
 
-**每一轮**（`agent_loop.py:657` 起）：
+**每一轮**（`agent_loop.py:728` 起 `for iteration in range(...)`）：
 
 ```
 1. gate.allows_call()          ── 硬上限预检（轮数/墙钟/花费超 → ErrorEvent + return）
@@ -67,7 +67,7 @@ P6 把原来散落在 `main.py` 的 14 个 P5-S2 补丁收敛成三个命名层�
 循环耗尽 max_iterations → gate.record_error(HARD_MAX_TURNS) + ErrorEvent(max_iterations)
 ```
 
-关键点：循环**不碰网络也不碰 WS**，只 yield 事件；网络在 ProviderAdapter，WS 转发在 main.py。工具分发是**并发**的（`asyncio.gather`，`agent_loop.py:1514`）。
+关键点：循环**不碰网络也不碰 WS**，只 yield 事件；网络在 ProviderAdapter，WS 转发在 main.py。工具分发是**并发**的（`asyncio.gather`，`agent_loop.py:2063`）。
 
 ---
 
@@ -118,10 +118,10 @@ AgentLoop 优先用 `execute_tool`（检测 `callable(execute_tool)`），它返
 
 | 守门 | 代码位置 | LLM 调用 | 输入 → 判定 | 不过怎么办 | 预算 |
 |---|---|---|---|---|---|
-| **completion_probe** | agent_loop.py:1120 | ✗ 纯规则 | 查 SessionDB code todos，status ∉ {completed,cancelled} 即未完成 | 注入「还剩 N 项 todo」system | 2 次 nudge |
-| **VerifyGate** | agent_loop.py:1179 | ✓ 仅 ephemeral 救援 | regex 从 assistant_text 抽 claim → 对 receipt ledger 严格对账 | 注入 D8-schema rebound；2 次失败/stagnation→ephemeral 子代理；再不过 `verify_exhausted` 强退 | 2 nudge + 1 ephemeral |
+| **completion_probe** | agent_loop.py:1325 | ✗ 纯规则 | 查 SessionDB code todos，status ∉ {completed,cancelled} 即未完成 | 注入「还剩 N 项 todo」system | 2 次 nudge |
+| **VerifyGate** | agent_loop.py:1402 | ✓ 仅 ephemeral 救援 | regex 从 assistant_text 抽 claim → 对 receipt ledger 严格对账 | 注入 D8-schema rebound；2 次失败/stagnation→ephemeral 子代理；再不过 `verify_exhausted` 强退 | 2 nudge + 1 ephemeral |
 | **goal_checker** | agent_loop.py（goal 块） | ✓ 每次 1 调 | LLM-as-judge：goal_text + 最近 5 轮 assistant 摘要 → `{done, hint}` | 注入 hint system | SessionGoal.max_iterations(默认10) |
-| **external_evaluator** | agent_loop.py:1296 | ✓ 高后果 1 调 | 仅 high-consequence goal 触发；跨人格 QA 评质量分 0-10 + verdict | verify_exhausted 前最后救援；revise 则拦 | 成本护栏（<10% 目标触发） |
+| **external_evaluator** | agent_loop.py:1775 | ✓ 高后果 1 调 | 仅 high-consequence goal 触发；跨人格 QA 评质量分 0-10 + verdict | verify_exhausted 前最后救援；revise 则拦 | 成本护栏（<10% 目标触发） |
 
 补充细节：
 
@@ -177,14 +177,14 @@ AgentLoop 优先用 `execute_tool`（检测 `callable(execute_tool)`），它返
 
 ## 7. main.py 如何装配这一切
 
-WS handler `/ws/control`（main.py:3676 附近），`chat` / `chat_v2` 消息走统一 tool_use loop。
+WS handler `/ws/control`（main.py:3976），`chat` / `chat_v2` 消息走统一 tool_use loop。
 
-**用户消息 → AgentLoop 之间的预处理链**（`_run_chat`，main.py:5121 起）：
+**用户消息 → AgentLoop 之间的预处理链**（`_run_chat`，main.py:5446 起）：
 用户消息持久化(SessionDB+向量库) → **能力门控**（classify_request 拒绝图像/视频/3D 等无能力请求，防漂移）→ **ContextAssembler.assemble**（长期记忆+技能+MCP 工具描述装入消息栈）→ 哨兵文本处理（`<<auto_resume>>` 等换成明确续跑指令）→ supervisor hint 注入 → LLM 提示调优 → ContextManager 构造 → **provider 链解析** → pre-flight 历史压缩（`prepare_chat_messages_for_chain`）。
 
 **provider 链解析**（main.py:5551 起，[`resolution.py`](../backend/llm/resolution.py)）：`resolve_provider_for_session()` 读 SessionDB 的 per-session binding 行 → 有绑定且 provider 启用 → 单元素链 `[provider]`；无绑定 → `registry.get_chain()` 全局链（按优先级）；binding 被删/禁用 → 自动恢复全局链；`preferred_model` 覆盖 entry.model（仅内存）。每个 entry 包成 `OpenAICompatibleProvider`。registry/sdb 为空 → 降级单 provider（`_provider_chain=None`）。
 
-**装配工厂 `build_agent()`**（main.py:820 起，调用处 5932 附近）。注入参数开/关：
+**装配工厂 `build_agent()`**（main.py:851 起，调用处 6279 附近）。注入参数开/关：
 
 | 注入项 | 状态 | flag / 来源 |
 |---|---|---|
@@ -200,7 +200,7 @@ WS handler `/ws/control`（main.py:3676 附近），`chat` / `chat_v2` 消息走
 
 > 默认配置（flag 多 off）下，agent 跑的是「裸 ReAct + 硬 gate + 上下文管理 + completion_probe」；verify_gate / goal_checker / external_evaluator 是逐步加固的可选守门。
 
-**事件 → WS 转发**（main.py:5969 起 `async for ev in _agent.run(...)`）：`AssistantDeltaEvent→chat_v2_delta`、`AssistantMessageEvent→chat_response`（带 tool_calls 才发）、`ToolCallEvent→tool_use_event+tool_call`、`ToolResultEvent→tool_use_event+tool_result`、`FinalEvent→chat_v2_final`、`ErrorEvent→`（先判 auto-resume，不可恢复才 `chat_v2_error`）。各事件同步入 SessionDB。
+**事件 → WS 转发**（main.py:6317 起 `async for ev in _agent.run(...)`）：`AssistantDeltaEvent→chat_v2_delta`、`AssistantMessageEvent→chat_response`（带 tool_calls 才发）、`ToolCallEvent→tool_use_event+tool_call`、`ToolResultEvent→tool_use_event+tool_result`、`FinalEvent→chat_v2_final`、`ErrorEvent→`（先判 auto-resume，不可恢复才 `chat_v2_error`）。各事件同步入 SessionDB。
 
 **Recovery 三层防守**：① WS 连接异常捕获（benign ws-close 静默返回）② Auto-Resume（[`auto_resume.py`](../backend/agent/auto_resume.py)：ErrorEvent reason 命中可恢复集 → orchestrator 起新 task，suppress 弹窗）③ Supervisor hint follow-up（task done 后 nudge_queue 有料 → 起 `<<supervisor_followup>>` 合成 task）。所有 chat turn 都 fire-and-forget 跑在后台 task，保证 WS recv loop 能持续处理 permission_response。
 

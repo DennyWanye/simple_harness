@@ -3,7 +3,7 @@
 > 一份文档看清：桌宠 agent **现在怎么跑** → **哪里弱** → **业界优秀 agent 怎么做** → **我们怎么改、先改什么**。
 > 配套架构细节见 [`AgentLoop.md`](./AgentLoop.md)（执行引擎源码级骨架）。
 >
-> 最后更新：2026-06-20 ｜ 基线：读码核实 + 业界源码级调研（master）
+> 最后更新：2026-06-21 ｜ 基线：读码核实 + 业界源码级调研（master）
 >
 > ⚠️ **信源说明**：业界部分原计划用 deepwiki MCP，调研期间该 server 掉线，改用 **WebFetch 抓 deepwiki.com 页面 + GitHub raw 源码 + WebSearch** 替代。对标报告里的**具体行号/文件名未逐一核实**（经网页抓取，细节可能有偏差），**方向可信，落地前请对照官方仓库**。
 
@@ -130,7 +130,7 @@ flowchart TD
 
 | # | 缺陷 | 真实性 | 严重度 | 证据 |
 |---|---|---|---|---|
-| 5 | 四道守门靠注入 system nudge + `continue`；"禁止 tool_call"只是文字、可被无视；三套 nudge 计数器堆积污染 context | 有 | 🔴 高 | [agent_loop.py:1120-1311](../backend/agent/agent_loop.py)、tier3 :118-128 |
+| 5 | 四道守门靠注入 system nudge + `continue`；"禁止 tool_call"只是文字、可被无视；三套 nudge 计数器堆积污染 context | 有 | 🔴 高 | [agent_loop.py:1325-1800](../backend/agent/agent_loop.py)（四道守门）、tier3 :136-186 |
 | 7 | 日志零散，**tool_call 的 args 完全不记**，`str(exc)[:200]` 截断，无"每轮 LLM I/O 快照" | 有 | 🔴 高 | metrics 是白名单事件非 trace |
 | 2 | 压缩把中段历史压成 ≤600 字摘要，**文件改动/工具参数无硬保护**会被压没 | 部分 | 🟠 中高 | [history_compactor.py](../backend/agent/history_compactor.py)、`skip_truncation` 白名单只保 fetch_tool_result |
 | 1 | 规划非强制：`maybe_extract_plan` 可选前置、失败静默降级；探索期权限没切只读 | 部分 | 🟡 中 | [plan.py:96-182](../backend/agent/plan.py) |
@@ -218,7 +218,7 @@ flowchart TD
 
 | 方案 | 借鉴 | 维度 | 可行性 | 说明 |
 |---|---|---|---|---|
-| **SEARCH/REPLACE diff 编辑 + 多层降级 + 错误反馈** | Aider editblock / Cline | 工具 | 中 | `edit_file` 从全文覆盖 → 改动块。**只改局部 → 直接绕开输出截断卡死**（见 [agent_loop.py:901-910](../backend/agent/agent_loop.py) 那段 max_tokens 注释）。Aider `editblock_coder.py` 有可移植实现 |
+| **SEARCH/REPLACE diff 编辑 + 多层降级 + 错误反馈** | Aider editblock / Cline | 工具 | 中 | `edit_file` 从全文覆盖 → 改动块。**只改局部 → 直接绕开输出截断卡死**（见 [agent_loop.py:2367-2411](../backend/agent/agent_loop.py) 那段 max_tokens 截断注释）。Aider `editblock_coder.py` 有可移植实现 |
 | **`ask_clarification` 澄清工具** | Cline ask_followup_question | 工具 | 高 | 模型遇歧义主动反问而非猜。桌宠语音/Live2D 场景天然契合 |
 | **RepoMap 代码地图** | Aider repomap.py | 工具 | 中·重 | tree-sitter 抽符号 + PageRank 排序 + token 二分裁剪。**工作量大、code 模式次要** → 想认真做 code 能力时再上 |
 

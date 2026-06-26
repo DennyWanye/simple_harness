@@ -288,8 +288,11 @@ def _contains_chinese(s: str) -> bool:
 
 
 @pytest.mark.asyncio
-async def test_default_search_with_mock_client() -> None:
+async def test_default_search_with_mock_client(monkeypatch) -> None:
     import httpx
+    # §6.0: 默认队列改 google-cdp(cdp渲染/可达门控,非httpx);本测显式锁 ddg 验 DDG HTTP 路径仍工作
+    from deskpet.tools import search_provider as _sp
+    monkeypatch.setattr(_sp, "_engine_queue", lambda: ["duckduckgo"])
 
     captured: dict[str, Any] = {}
 
