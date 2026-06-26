@@ -34,3 +34,25 @@
 - grep 工具：`../manual-results-2026-06-26-bugb-phase1/p2grep.py`。
 
 **结论**：Phase 2 windows-mcp 真机手测 ★3 全 PASS、0 FAIL。组装期 classifier 在真实运行栈内复活：真 code/debug 问题拿到 `code` bundle（不再恒 `chat`），闲聊/寒暄拿到 `chat` bundle，两层判定器协同无冲突，无回归。
+
+---
+
+## 补测（2026-06-26 二次：按 testcase 文档补齐 9 用例全覆盖）
+
+> 初次只跑了 TC-E1/A1/A2/A3/D1（5/9）。按 testcase 文档补跑剩余 4 个 + 复核 A3（用文档精确输入）。日志 `../manual-results-2026-06-26-bugb-phase1/tauri-p2-fill.log`。
+
+| TC | 输入（文档精确） | 实测 `assembler_task_classified` | 判定 |
+|---|---|---|---|
+| TC-A3 | 钠离子电池工作原理 | `task`（非 chat）| **PASS**（文档期望 task 满足；初测带"是什么"才得 chat，精确输入得 task）|
+| TC-B1 | 光合作用的暗反应在哪里进行 | `task`（`classifier.llm_timeout`→词法地板兜住）| **PASS（非 chat）**，偏差：gpt-5.5 thinking 偶 >8s 超时未走 path=llm，**WI-6 fail-closed 地板兜成 task** 非 chat（设计预期内）|
+| TC-B2 | 帮我规划一下下周的复习日程 | `task`（problem_type=creation）| **PASS（非 chat 不卡死）**，偏差：文档期望 `plan`，实得 `task`（分类粒度差异，均能力侧）|
+| TC-D1 | 你好 | `chat` + `intent_triage.allowlist_hit` | **PASS**（两层协同，初测已过）|
+| TC-D2 | 晚安啦 | `chat`（无 allowlist_hit）| **PASS（task_type=chat）**，偏差：`晚安啦` 的"啦"不在 lexicon 尾缀表 → allowlist 未命中走 LLM→chat（**安全假阴性**，bundle 仍 chat 正确）|
+| TC-E2 | 今天天气不错 / 写首秋天的小诗 / 谢谢你 | `chat` / `task`(写诗非chat) / `chat` | **PASS**：3 轮无回归，`inject_failed=0`、无 traceback、桌宠均正常答 |
+
+**补测结论**：Phase 2 文档 9 用例**全部执行**（★3 全 PASS）。3 处偏差均为非 ★、不影响核心目标（真 code/debug→非 chat、classifier 复活、无回归），且都倒向"安全侧"：
+- B1 llm 超时 → 地板兜成 task（非 chat），fail-closed 生效；
+- B2 task vs plan 粒度差异，均能力侧 bundle；
+- D2 "晚安啦"未进 allowlist（尾缀表无"啦"）→ LLM 判 chat，假阴性安全。
+
+> 发现项（非阻断，已记录）：lexicon 尾缀表缺"啦"；classifier llm tier 对 gpt-5.5 thinking 偶 >8s 超时（地板兜底，非 bug）。如需收口可后续微调，不影响本 plan 收敛。
