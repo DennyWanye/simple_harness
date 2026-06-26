@@ -1,6 +1,6 @@
 # 优化 Plan — relay 登录后自动配置「本地 apikey + 可统一管理的 LLM provider」
 
-> **状态**：📋 草案 v6（2026-06-25 立项；v1-v4 = 路线 B「relay 加 `POST /v1/keys`」+ R1/R2/R3 三轮对抗；v5 = 对齐中转站「`/v1/providers` 复用」handoff 重写；**v6 = R5 挑战 v5 改动部分后修订** —— 补 3 BLOCKER：inflight 单槽 dedup 会把 force 合并进 reuse、login 不载缓存、缺「换 key⇒必镜像」不变式；+ 2 MAJOR：既有 `AccountSettingsPanel` CNY 余额与新 USD `balance_minor` 双源冲突、`classify_relay_error` 真要扩参收 code）
+> **状态**：📋 草案 v7（v1-v4 路线 B + R1/R2/R3 三轮；v5 对齐中转站复用 handoff；v6 R5 挑战 v5 改动修 3 BLOCKER+2 MAJOR；**v7 = 中转站 2026-06-25 答复 3 澄清后定案** —— Q1 币种实证「我方 ¥ 是陈旧 bug、钱包早 USD 本位」→ WI-C 改成修 bug+收口 USD（今天可做）；Q2 余额不足两表面（403 统一信封 + 402 OpenAI 透传）+ 401 `INVALID/EXPIRED_TOKEN` + 过渡期 `FORBIDDEN` → WI-5 精确化；Q3 prefix 12 字符但未上线 → WI-B 分级回落）
 > **路线（v5 定）**：**不再要自定义长期 key 端点**。中转站把 `/v1/providers` 改成**复用三态**（默认复用返 `api_key:null`、`?rotate=force` 才重签），device key 自此**稳定**。我方 = 实现中转站三任务（A 持久化 device_id / B 缓存+复用 device key / C 显示账号余额）**＋ 把这把稳定 key 收编进 `LLMProviderRegistry`**，让它在设置面板与手填 provider 一起被正常管理。
 > **权威契约**：[`02-relay-handoff-device-key-reuse.md`](./02-relay-handoff-device-key-reuse.md)（中转站 handoff 原文留档）。任务对齐 + 联调 + rollout：[`01-relay-api-contract.md`](./01-relay-api-contract.md)。
 > **关联**：根因 [`plans/2026-06-25-relay-cloud-key-sync-followup.md`](../2026-06-25-relay-cloud-key-sync-followup.md)；STATUS §5 P1。
@@ -111,7 +111,7 @@ restore │ on login(reason=login)/restoreSession.ok(restore)/error_class=relay_
 ### WI-B —— device key 复用三态 + 冷启动载缓存 + prefix 自愈 + force（任务 B，核心改造）
 **文件** `RelayAuthAdapter.ts`、`types.ts`。
 
-1. **`Provider` 类型加 `prefix?: string`**（`types.ts:62`，中转站每 provider 返 key 前缀 `tsk_xxxxxxxx`；实证无字段冲突）。
+1. **`Provider` 类型加 `prefix?: string`**（`types.ts:62`，无字段冲突）。✅ 中转站 Q3 答复：prefix = **前 12 字符**（`tsk_`+8 hex，= `key.slice(0,12)`），故 `cached.startsWith(prefix)` 直接成立。⚠️ **但 `/v1/providers` 现在还没这字段**（随中转站 PR-6/WS1-A 上线）→ **分级启用**：prefix 未上线时走**回落**（`api_key:null` 且本地无缓存 → 直接 `?rotate=force`，不依赖 prefix）；prefix 上线后启用精细失配判定。下方 `syncDeviceKey` 的 `!!serverPrefix` 守卫已让其**自动降级**（serverPrefix 为空时 mismatch=false，只在 `!cached` 时 force）—— 无需为上线时序改代码，字段一到自动生效。
 2. **`fetchProvidersInternal` 改三态 + 返回 prefix + ⚠️按 mode 分槽 dedup（修 B1）**：现 `:402` 是**单槽 `inflightProviders`**——三态下会把 `force`（要拿新明文）错误合并进在途 `reuse`（返 null 不缓存）→ force 失效。**必须改**：
    ```ts
    // 字段：private inflightByMode = new Map<"reuse"|"meta", Promise<...>>();  // force 永不 dedup
@@ -233,21 +233,26 @@ export const relayProviderRegistration = new RelayProviderRegistration();
 - `AddProviderModal` relay draft 禁 id/base_url/api_key。
 - **测试**：relay 行徽章+可拖拽+可启停+重置按钮调 recover；user 行不变。
 
-### WI-C —— 前端：登录态显示账号 email + 余额 + 测试账号标识（任务 C，复用既有面板，修 M1 双余额源冲突）
-> ⚠️ **R5 实证**：仓库**已有** `tauri-app/src/auth/AccountSettingsPanel.tsx`，已渲染「账户余额/钱包余额」用 `/v1/usage/summary` 的 `balance.amount_minor` 按 **CN¥**（`formatCny` `:63`，¥713.17）。中转站新 `/v1/me.balance_minor` 是 **USD-cents**（$756.14）。**绝不能再加第二个 USD 余额** → 会出现「¥713.17」「$756.14」双源双币种打架（`feedback_cross_layer_contract`）。
-1. **先与中转站澄清币种**（`01` checklist 加一问）：`/v1/me.balance_minor`(USD) 与 `/v1/usage/summary.balance.amount_minor`(CNY) 是**同一个钱包的不同币种展示**，还是两个账？据答复定唯一余额源。
-2. **`User` 类型加** `balance_minor?: number`、`is_test_account?: boolean`（`types.ts:20`）。`fetchMe()`(`:539`) 取 `/v1/me` 自动带上。
-3. **复用 `AccountSettingsPanel`**（不新建余额 UI）：
-   - **email + 测试账号徽章**：在 `AccountSettingsPanel` 现有账号区 + 登录后主界面账号入口，显示 `currentUser().email`；`is_test_account` → 显眼「测试账号」徽章（红/黄）。
-   - **余额**：按第 1 点澄清结果**收口到单一源 + 单一币种**（推荐：若同一钱包，统一用 `usage_summary` 既有 CNY 渲染，`/v1/me.balance_minor` 仅作 `is_test_account` 判定与一致性校验；若两个账，明确各自标签）。不在 RelayEdition 另起一个 USD 余额。
-4. **余额刷新挂点（修「没落地的 TODO」）**：登录成功 + 收到 `insufficient_balance` 错误时，调既有 `usage_summary`/`fetchMe` 刷新并更新 `AccountSettingsPanel`/账号入口显示（明确挂在这两个真实事件，不是泛泛"周期"）。
-**测试**（vitest）：渲染 email；测试账号显徽章；余额单一源单一币种（无 USD/CNY 并存）；余额 0 显警示。
+### WI-C —— 前端：修 ¥ 陈旧 bug→USD + 显示 email + 测试账号标识（任务 C；中转站 Q1 答复定案）
+> ✅ **中转站 Q1 答复**：只有**一个钱包**（`WalletAccount`，userId 唯一），`/v1/usage/summary.balance.amount_minor` 与将加的 `/v1/me.balance_minor` **同字段、同值、单位都是 USD-cents**。钱包**早已从 CN¥ 迁为 USD 本位**，`/v1/usage/summary` 响应已声明 `balance.currency==="USD"`、`period.unit==="USD_cents"`。
+> ⚠️ **我方 `AccountSettingsPanel.tsx` 的 `¥713.17` 是陈旧 bug**（写死 `¥` 标签 + 旧缓存值；$756.14≠¥713.17 既非同值也非汇率，是旧值/双源残留）。**没有 CN¥ 钱包接口了。** → WI-C 第一要务是**修这个展示 bug**，且**今天就能做、不依赖中转站任何改动**（中转站点名「请先并行做」）。
+1. **修 ¥→USD（bug fix，立即可做）**：`AccountSettingsPanel.tsx`：删掉写死 `¥` 的 `formatCny`（`:63`）渲染；改为**读响应 `balance.currency` 决定符号**（"USD"→`$`），`amount_minor/100`→`$756.14`。**收口单一余额源 = `/v1/usage/summary.balance`**（今天就可用，不必等 `/v1/me`）。grep 全仓任何按 `¥`/CNY 取数处一并切 USD 源。
+2. **`User` 类型加** `balance_minor?: number`、`is_test_account?: boolean`（`types.ts:20`，中转站 PR-1 上线 `/v1/me` 后带；`fetchMe()` `:539` 自动带上）。`/v1/me.balance_minor` 上线后与 `usage_summary` 同源，任选其一。
+3. **email + 测试账号徽章**：`AccountSettingsPanel` 账号区 + 登录后主界面账号入口显示 `currentUser().email`；`is_test_account` → 显眼「测试账号」徽章（红/黄），直接消灭「登错测试号→静默没额度」。
+4. **余额刷新挂点**：登录成功 + 收到余额不足错误（WI-5）时，调 `usage_summary`/`fetchMe` 刷新并更新展示（挂这两个真实事件）。
+**测试**（vitest）：渲染 `$` 美元余额（**断言无 `¥`**）；email；测试账号徽章；余额 0 显警示；`balance.currency` 驱动符号。
 
 ### WI-5 —— backend：结构化 `INSUFFICIENT_BALANCE` + 401 自愈（比 v4 更简单，中转站给了 code）
 **文件** `openai_adapter.py`、`errors.py`、`relay_errors.py`、`main.py:6685`。
 1. `_map_error`(`openai_adapter.py:98`) 去 `@staticmethod`→实例方法（调用点 `:218/:312` 已 `self._map_error`，零改）；`OpenAICompatibleProvider.__init__` 加 `is_relay:bool=False`，`main.py:6685` 构造时传 `is_relay=(_entry.source=="relay")`（派生 provider 默认 False）。
-2. `_map_error` 401/403 分支：`resp=getattr(exc,"response",None)`；**优先取结构化 code**：`body=getattr(exc,"body",None)`（openai SDK `APIStatusError.body` 是 parsed JSON dict）→ `code=body.get("code") if isinstance(body,dict) else None`；`text=getattr(resp,"text","")` 作 fallback。`if self._is_relay: ec=classify_relay_error(status, text, code=code)`（见 3）→ `LLMAuthError(str(exc), provider=self.name, status_code=status, error_class=ec)`。⚠️ **status_code 必须透传真实值（403 不能压成 401）**，否则前端分不清 `insufficient_balance`(403) vs `relay_key_invalid`(401)。
-3. **`classify_relay_error`(`relay_errors.py:11`) 扩签名 + 接电**（现 `(status_code, body_text="")` 纯文本启发式 `:23-31`，余额先判）：加第三参 `code: str|None=None`，**优先按 code**：`if code=="INSUFFICIENT_BALANCE": return INSUFFICIENT_BALANCE`，否则回落现有「402/text 含 insufficient → INSUFFICIENT_BALANCE；401/403 → RELAY_KEY_INVALID」（注：中转站结构化 body 文本本就含 `insufficient`，现有 `_BALANCE_HINTS` 已能命中，但显式 code 更稳）。该函数现**零调用=死代码**，本 WI 让 `_map_error` 真调它。`LLMAuthError.__init__`(`errors.py:66`) 现写死 `status_code=401` 不收 `error_class` → **扩参** `def __init__(self,message,*,provider=None,status_code=401,error_class=None)` 转基类（基类 `:21-39` 已支持 `status_code`/`error_class`）。返回值前端映射：`INSUFFICIENT_BALANCE`→`insufficient_balance`、`RELAY_KEY_INVALID`→`relay_key_invalid`（与 `error_class` 字符串对齐 `App.tsx:942`）。
+2. `_map_error` 拓到 **401/402/403** 分支（402 新增）：`resp=getattr(exc,"response",None)`；`body=getattr(exc,"body",None)`（openai SDK `APIStatusError.body` = parsed JSON dict）；`text=getattr(resp,"text","")` 兜底。`if self._is_relay: ec=classify_relay_error(status, text, body=body)` → `LLMAuthError(str(exc), provider=self.name, status_code=status, error_class=ec)`。⚠️ **status_code 透传真实值**（403/402 不可压成 401）。
+3. **`classify_relay_error`(`relay_errors.py:11`) 扩签名 + 覆盖中转站 Q2 答复的两类表面 + 接电**（现 `(status_code, body_text="")` 纯文本启发式 `:23-31`，零调用=死代码）。中转站 Q2 实证错误结构：
+   - **401 鉴权**（统一信封 `{code,message,request_id}`）：`code∈{INVALID_TOKEN, EXPIRED_TOKEN}` → 都映射 `RELAY_KEY_INVALID`（前端 `relay_key_invalid` → `recover` 走 `?rotate=force` 重签）。
+   - **余额不足两个表面**：① **403 软门**（统一信封）：`code=="INSUFFICIENT_BALANCE"`（中转站 **PR-1 前仍是 `FORBIDDEN`** → **过渡期同时接受 `FORBIDDEN`(403)**，上线后切）+ `balance_minor`；② **402 预扣不足**（OpenAI 透传，**非统一信封**）：`body.error.code=="insufficient_balance"`（小写、嵌在 `error` 下）。两者都映射 `INSUFFICIENT_BALANCE`。
+   - 实现：加 `body: dict|None=None` 参，按上述取 `top=body.get("code")`、`nested=body.get("error",{}).get("code")`；`INSUFFICIENT_BALANCE`/`insufficient_balance`(任一) 或 `(status==403 and top=="FORBIDDEN" 过渡期)` → `INSUFFICIENT_BALANCE`；`INVALID_TOKEN`/`EXPIRED_TOKEN` 或 `status==401` → `RELAY_KEY_INVALID`；文本 `_BALANCE_HINTS`/`_KEY_HINTS` 作最后回落。其它码（`RATE_LIMITED`/`UPSTREAM_ERROR`/`DEVICE_KEY_MISSING` 等）→ None（不当 relay key/余额错处理）。
+   - `LLMAuthError.__init__`(`errors.py:66`) 写死 `status_code=401` 不收 `error_class` → **扩参** `def __init__(self,message,*,provider=None,status_code=401,error_class=None)` 转基类（基类 `:21-39` 已支持）。前端映射：`INSUFFICIENT_BALANCE`→`insufficient_balance`、`RELAY_KEY_INVALID`→`relay_key_invalid`（对齐 `App.tsx:942`）。
+
+**测试补**：402 OpenAI 嵌套 `error.code` → insufficient_balance；403 `FORBIDDEN` 过渡期 → insufficient_balance；403 `INSUFFICIENT_BALANCE` → insufficient_balance；401 `EXPIRED_TOKEN`/`INVALID_TOKEN` → relay_key_invalid；`RATE_LIMITED`/`DEVICE_KEY_MISSING` → None（不误判）。
 4. **前端**：`insufficient_balance`→「账号余额不足，请充值」+ 充值入口（`relayConfig.ts` console URL）+ 显示 `balance_minor`，**不提重登**；`relay_key_invalid`→`recover`（WI-3，syncDeviceKey force）；chain 空态唯一 disabled relay→`relay_logged_out`「已登出，重新登录后恢复」。`relayErrorText.ts`+`App.tsx:942` 增分支。
 **测试**：relay 403 `INSUFFICIENT_BALANCE`→insufficient_balance；relay 401→relay_key_invalid；manual 401 不被映射；`classify_relay_error` 真被调；disabled-relay→logged_out。
 
@@ -322,4 +327,12 @@ export const relayProviderRegistration = new RelayProviderRegistration();
 | MINOR 一次 sync 打 relay 2-3 次（冗余 meta）| `fetchProvidersInternal` 返回带 `keyPrefix`，删 meta 往返，正常 sync 1 次 |
 | MINOR flag 关阶段 registry 镜像抖动未承认 | §6.1 如实记 + 5-key 兜底 |
 
-> **收敛声明**：v6 后 v5 改动部分（WI-B/WI-C/WI-5/镜像/rollout）3 BLOCKER + 2 MAJOR 全部消化；收编主体（WI-1/2/3/4/6）在 v1-v4 已三轮收敛。**唯一外部 gap = 中转站灰度开 `DEVICE_KEY_REUSE_ENABLED`，且必须晚于我方发版（§6 断点铁律）。**
+> **收敛声明**：v6 后 v5 改动部分（WI-B/WI-C/WI-5/镜像/rollout）3 BLOCKER + 2 MAJOR 全部消化；收编主体（WI-1/2/3/4/6）在 v1-v4 已三轮收敛。
+- **v7（中转站答复 3 澄清后定案）修了**：
+| 中转站答复 | v7 处置 |
+|---|---|
+| Q1 同一钱包 USD-cents、我方 `¥713.17` 是陈旧 bug（钱包早 USD 本位）| WI-C 改成**修 bug**：删 `formatCny` 写死 ¥、按 `balance.currency` 渲染 USD、收口单一源 `usage_summary`——**今天可做不依赖中转站**（其点名先并行做）|
+| Q2 余额不足**两表面**（403 统一信封 `INSUFFICIENT_BALANCE`〔PR-1 前 `FORBIDDEN`〕+ 402 OpenAI 透传 `error.code`），401 `INVALID/EXPIRED_TOKEN` | WI-5 `classify_relay_error` 扩 `body` 参，覆盖 403 顶层 code + 402 嵌套 `error.code` + 过渡期 `FORBIDDEN` + 401 两码；补 5 测 |
+| Q3 prefix=前 12 字符但 `/v1/providers` 现无此字段（随 PR-6 上线）| WI-B 分级：未上线走回落 `null+无缓存→?rotate=force`，`!!serverPrefix` 守卫自动降级，字段到即生效 |
+
+> **唯一外部 gap = 中转站 PR-1（`/v1/me` 字段 + `INSUFFICIENT_BALANCE` 入白名单）/ PR-6（复用 flag + prefix）上线**；我方 **WI-C 修 ¥ bug / WI-1/2/3/4/6 收编 / WI-5 错误分类**全部**不依赖**这些、现在即可做（过渡期对 `FORBIDDEN`/无 prefix 已写回落）。rollout 断点铁律见 §6。

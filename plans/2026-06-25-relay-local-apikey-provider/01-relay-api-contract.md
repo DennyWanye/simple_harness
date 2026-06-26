@@ -20,10 +20,19 @@
 - 余额不足 403 结构化 `{"code":"INSUFFICIENT_BALANCE","message":"...","balance_minor":N}`。
 - feature flag `DEVICE_KEY_REUSE_ENABLED`（默认关，灰度）。
 
-## 2.1 需向中转站澄清的问题
-- [ ] **币种**：`/v1/me.balance_minor`(USD-cents, $756.14) 与既有 `/v1/usage/summary.balance.amount_minor`(我方 UI 现按 CN¥ 渲染 ¥713.17) 是**同一钱包的不同币种展示**，还是两个独立账户？（我方 `AccountSettingsPanel.tsx` 已有 CNY 余额 UI，需据答复收口单一余额源，避免双币种并存——见 `00-PLAN.md` WI-C / R5-M1）
-- [ ] **401 结构**：余额不足是 403 `{code:INSUFFICIENT_BALANCE}`；401（key 失效）的 body 结构是什么（有无 `code`）？我方 `classify_relay_error` 据此精确分类。
-- [ ] **prefix 长度**：响应 `prefix` 是固定前 N 位（handoff 写「前 8 位」但示例 `tsk_553d694a` 是 12 字符）？确认我方 `cached.startsWith(prefix)` 失配判定的 prefix 取值。
+## 2.1 三澄清 —— 中转站已答复（2026-06-25）
+- ✅ **Q1 币种**：**同一个钱包、同字段、同值、单位 USD-cents**（`WalletAccount.balanceMinor`）。钱包早已 USD 本位，`/v1/usage/summary.balance.currency==="USD"`。**我方 `AccountSettingsPanel.tsx` 的 `¥713.17` 是陈旧 bug**（写死 ¥ + 旧值）→ 收口单一源 `/v1/usage/summary.balance`、读 `balance.currency` 渲染美元、删 CN¥ 写死。**今天即可做、不依赖中转站**（中转站点名先并行做）。→ `00-PLAN.md` WI-C。
+- ✅ **Q2 错误结构**：统一信封 `{code,message,request_id}`。401 鉴权 `code∈{INVALID_TOKEN,EXPIRED_TOKEN}`→重签。余额不足**两个表面**：① 403 软门统一信封 `INSUFFICIENT_BALANCE`+`balance_minor`（**PR-1 前仍是 `FORBIDDEN`**，过渡期同时接受）；② 402 预扣 OpenAI 透传 `body.error.code==="insufficient_balance"`（小写嵌套）。其它码 `RATE_LIMITED`(429)/`UPSTREAM_*`(502/503)/`DEVICE_KEY_MISSING`(404)。→ `00-PLAN.md` WI-5。
+- ✅ **Q3 prefix**：前 **12 字符**（`key.slice(0,12)`，如 `tsk_553d694a`），`startsWith` 直接成立。⚠️ `/v1/providers` **现无此字段**（随 PR-6 上线）→ 上线前用回落 `null+无缓存→?rotate=force`。→ `00-PLAN.md` WI-B。
+
+## 2.2 中转站 action items（其 P0 排期）
+| 中转站改动 | PR | 对我方影响 |
+|---|---|---|
+| `INSUFFICIENT_BALANCE` 入白名单 + BalanceGuard 结构化 + `balance_minor` | PR-1 | 上线前 403 仍回 `FORBIDDEN`，我方过渡期双接受 |
+| `/v1/me` 加 `balance_minor`+`is_test_account` | PR-1 | WI-C 第 2/3 点依赖 |
+| `/v1/providers` 每 provider 加 `prefix` | PR-6/WS1-A | WI-B prefix 精细自愈依赖；未上线走回落 |
+| 复用三态 + `DEVICE_KEY_REUSE_ENABLED` flag | PR-6 | 灰度待我方 WI-B 发版 |
+| active key 上限兜底（不依赖我方）| PR-2 | 先行止血，无需我方配合 |
 
 ## 3. 联调 checklist（对照中转站 handoff §6）
 - [ ] **任务 A**：多次重启抓包，`X-Device-Id` 恒为同一 UUID。
