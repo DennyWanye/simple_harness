@@ -2,53 +2,100 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * AccountSettingsPanel — pure-helper coverage.
+ * AccountSettingsPanel - pure-helper + targeted render coverage.
  *
  * Same convention as RelayAuthModal.test.tsx: testable logic extracted
  * into named helpers, vitest pins their contracts. The component itself
- * is verified via the windows-mcp launch smoke + manual scrutiny.
+ * gets narrow render coverage only for account metadata that can regress
+ * without launching the full settings panel.
  */
-import { describe, expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
-  formatCny,
+  AccountSettingsPanel,
+  formatMoney,
   formatResetDate,
   validatePasswordChange,
 } from "./AccountSettingsPanel";
+import type { RelayAuthAdapter } from "./RelayAuthAdapter";
+import type { User } from "./types";
 
-describe("formatCny", () => {
-  it("formats a real balance into ¥X.YY", () => {
-    expect(formatCny(71317)).toBe("¥713.17");
+afterEach(() => {
+  cleanup();
+});
+
+function makeAdapter(user: User | null): RelayAuthAdapter {
+  return {
+    currentUser: () => user,
+    getUsage: async () => null,
+    onEvent: () => () => {},
+    logout: async () => {},
+  } as unknown as RelayAuthAdapter;
+}
+
+describe("formatMoney", () => {
+  it("formats USD cents with a dollar symbol", () => {
+    expect(formatMoney(75614, "USD")).toBe("$756.14");
   });
 
-  it("formats zero", () => {
-    expect(formatCny(0)).toBe("¥0.00");
+  it("formats USD zero", () => {
+    expect(formatMoney(0, "USD")).toBe("$0.00");
   });
 
-  it("formats a single-yuan balance with leading 0", () => {
-    expect(formatCny(50)).toBe("¥0.50");
+  it("defaults missing currency to USD", () => {
+    expect(formatMoney(50)).toBe("$0.50");
   });
 
-  it("formats a huge balance", () => {
-    expect(formatCny(123456789)).toBe("¥1234567.89");
+  it("formats CNY with a yuan symbol", () => {
+    expect(formatMoney(71317, "CNY")).toBe("¥713.17");
   });
 
   it("returns em-dash for null / undefined / NaN", () => {
-    expect(formatCny(null)).toBe("—");
-    expect(formatCny(undefined)).toBe("—");
-    expect(formatCny(NaN)).toBe("—");
+    expect(formatMoney(null, "USD")).toBe("—");
+    expect(formatMoney(undefined, "USD")).toBe("—");
+    expect(formatMoney(NaN, "USD")).toBe("—");
   });
 
-  it("handles non-integer fen without exploding (relay never sends them)", () => {
+  it("does not leak the yuan symbol into USD formatting", () => {
+    expect(formatMoney(75614, "USD")).not.toContain("¥");
+  });
+
+  it("formats a huge balance", () => {
+    expect(formatMoney(123456789, "USD")).toBe("$1234567.89");
+  });
+
+  it("handles non-integer minor units without exploding", () => {
     // Relay always sends integer `amount_minor`, but defend against
     // float drift in case some middleware ever serialises through
-    // JSON.parse with locale tweaks. `toFixed(2)` is the contract;
-    // 99.5 / 100 == 0.995, which IEEE-754 stores as 0.994999...,
-    // so toFixed(2) returns "0.99". We lock in that behaviour rather
-    // than the mathematical .995 → 1.00 expectation, because the
-    // production input is always an integer anyway. If we ever need
-    // mathematical rounding, switch to Math.round(amount_minor) / 100.
-    expect(formatCny(99.5)).toBe("¥0.99");
+    // JSON.parse with locale tweaks. `toFixed(2)` is the contract.
+    expect(formatMoney(99.5, "USD")).toBe("$0.99");
+  });
+});
+
+describe("AccountSettingsPanel account badge", () => {
+  const baseUser: User = {
+    id: "user_123456",
+    email: "paid@example.com",
+    plan: "prepaid",
+  };
+
+  it("renders the test-account badge only for explicit test accounts", () => {
+    render(
+      <AccountSettingsPanel
+        adapter={makeAdapter({ ...baseUser, is_test_account: true })}
+      />,
+    );
+
+    expect(screen.getByText("paid@example.com")).toBeTruthy();
+    expect(screen.getByText("测试账号")).toBeTruthy();
+  });
+
+  it("does not render the test-account badge by default", () => {
+    render(<AccountSettingsPanel adapter={makeAdapter(baseUser)} />);
+
+    expect(screen.getByText("paid@example.com")).toBeTruthy();
+    expect(screen.queryByText("测试账号")).toBeNull();
   });
 });
 
@@ -63,7 +110,7 @@ describe("formatResetDate", () => {
   });
 
   it("returns the original string when it isn't a parseable date", () => {
-    // We surface garbage rather than silently erasing it — easier to
+    // We surface garbage rather than silently erasing it; easier to
     // notice a contract drift than to debug a missing field.
     expect(formatResetDate("not-a-date")).toBe("not-a-date");
   });
@@ -95,7 +142,11 @@ describe("validatePasswordChange", () => {
   });
 
   it("rejects new password < 8 chars", () => {
-    const errs = validatePasswordChange({ ...valid, next: "short", confirm: "short" });
+    const errs = validatePasswordChange({
+      ...valid,
+      next: "short",
+      confirm: "short",
+    });
     expect(errs.next).toMatch(/至少 8 位/);
   });
 

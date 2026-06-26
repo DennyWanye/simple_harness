@@ -8,7 +8,7 @@
  * AuthAdapter is RelayAuthAdapter. Surfaces:
  *
  *   - User email + plan
- *   - Wallet balance (CN¥, derived from `balance.amount_minor / 100`)
+ *   - Wallet balance (currency-aware, derived from `balance.amount_minor / 100`)
  *   - This-month usage + reset date
  *   - Rate-limit ceiling
  *   - "修改密码"  — inline form, calls adapter.changePassword()
@@ -52,18 +52,37 @@ const DEFAULT_CONSOLE_URL = "https://chinzy.com/console/devices";
 // ── Pure helpers (exported for vitest) ──────────────────────────
 
 /**
- * Format `amount_minor` (CN¥ fen) as a human-readable string with the
- * yuan symbol and 2-decimal precision. Returns "—" for null/undefined
- * so the UI doesn't render "¥undefined".
+ * Format `amount_minor` as a human-readable money string with 2-decimal
+ * precision. Relay's wallet is currently USD-cents; missing currency
+ * therefore defaults to USD so legacy responses degrade correctly.
  *
- *   formatCny(71317)  → "¥713.17"
- *   formatCny(0)      → "¥0.00"
- *   formatCny(null)   → "—"
+ *   formatMoney(75614, "USD")  → "$756.14"
+ *   formatMoney(71317, "CNY")  → "¥713.17"
+ *   formatMoney(null, "USD")   → "—"
  */
-export function formatCny(amount_minor: number | null | undefined): string {
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: "$",
+  CNY: "¥",
+  EUR: "€",
+  GBP: "£",
+  JPY: "¥",
+  HKD: "HK$",
+  TWD: "NT$",
+  KRW: "₩",
+  AUD: "A$",
+  CAD: "C$",
+  SGD: "S$",
+};
+
+export function formatMoney(
+  amount_minor: number | null | undefined,
+  currency?: string | null,
+): string {
   if (amount_minor == null || !Number.isFinite(amount_minor)) return "—";
-  const yuan = amount_minor / 100;
-  return `¥${yuan.toFixed(2)}`;
+  const code = currency?.trim().toUpperCase() || "USD";
+  const prefix = CURRENCY_SYMBOLS[code] ?? `${code} `;
+  const major = amount_minor / 100;
+  return `${prefix}${major.toFixed(2)}`;
 }
 
 /**
@@ -185,7 +204,20 @@ export function AccountSettingsPanel({
     <div style={rootStyle}>
       <header style={headerStyle}>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>{user.email}</div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
+            <span>{user.email}</span>
+            {user.is_test_account === true && (
+              <span style={testAccountBadgeStyle}>测试账号</span>
+            )}
+          </div>
           <div style={mutedStyle}>
             {user.plan ?? "prepaid"}
             {user.id ? ` · #${user.id.slice(-6)}` : ""}
@@ -267,18 +299,18 @@ function UsageDetails({ usage }: { usage: UsageSummary | null }) {
   if (!usage) {
     return <div style={mutedStyle}>暂无用量数据。</div>;
   }
+  const balanceCurrency = usage.balance?.currency || "USD";
   return (
     <dl style={dlStyle}>
       <dt style={dtStyle}>钱包余额</dt>
       <dd style={ddStyle}>
-        {formatCny(usage.balance?.amount_minor)}{" "}
-        {usage.balance?.currency && usage.balance.currency !== "CNY" && (
-          <span style={mutedStyle}>({usage.balance.currency})</span>
-        )}
+        {formatMoney(usage.balance?.amount_minor, balanceCurrency)}
       </dd>
 
       <dt style={dtStyle}>本月已用</dt>
-      <dd style={ddStyle}>{formatCny(usage.period?.used_minor)}</dd>
+      <dd style={ddStyle}>
+        {formatMoney(usage.period?.used_minor, balanceCurrency)}
+      </dd>
 
       <dt style={dtStyle}>下次重置</dt>
       <dd style={ddStyle}>{formatResetDate(usage.period?.reset_at)}</dd>
@@ -479,6 +511,17 @@ const sectionTitleStyle: React.CSSProperties = {
 const mutedStyle: React.CSSProperties = {
   color: "#6b7280",
   fontSize: 11,
+};
+
+const testAccountBadgeStyle: React.CSSProperties = {
+  display: "inline-block",
+  padding: "1px 6px",
+  borderRadius: 4,
+  border: "1px solid #fdba74",
+  background: "#fff7ed",
+  color: "#c2410c",
+  fontSize: 11,
+  fontWeight: 600,
 };
 
 const fieldStyle: React.CSSProperties = {

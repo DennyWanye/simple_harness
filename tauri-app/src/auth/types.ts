@@ -27,6 +27,10 @@ export interface User {
   role?: string;
   /** Account plan tier ("free" | "pro" | "prepaid" | ...). */
   plan?: string;
+  /** Wallet balance minor units from `/v1/me` when the relay includes it. */
+  balance_minor?: number;
+  /** True only for relay-side test accounts. Missing means production account. */
+  is_test_account?: boolean;
   /** ISO 8601 created-at, for "member since" UI. */
   created_at?: string;
 }
