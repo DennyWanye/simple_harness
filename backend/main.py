@@ -5370,6 +5370,46 @@ async def control_channel(ws: WebSocket):
                 except Exception as exc:  # noqa: BLE001
                     logger.debug("context_breakdown_send_failed err=%s", exc)
 
+            elif msg_type == "sessions_list":
+                # 消息面板「历史会话」下拉：列 companion 会话(default + task-*)，
+                # 含每会话首条 user 消息预览。排除 code-* / 内部会话(mr_/epi_ 等)。
+                _sl_sdb = service_context.get("session_db")
+                _sl_out: list = []
+                if _sl_sdb is not None:
+                    try:
+                        _sl_rows = await _sl_sdb.list_sessions_with_preview()
+                        for _sr in _sl_rows:
+                            _ssid = _sr.get("session_id") or ""
+                            if _ssid == "default" or _ssid.startswith("task-"):
+                                _sl_out.append(_sr)
+                    except Exception as _sl_exc:  # noqa: BLE001
+                        logger.warning("sessions_list_failed", error=str(_sl_exc))
+                await ws.send_json({
+                    "type": "sessions_list_response",
+                    "payload": {"sessions": _sl_out},
+                })
+
+            elif msg_type == "session_delete":
+                # 删除一个会话的全部消息（消息面板下拉里每项的 X）。
+                _sd_payload = raw.get("payload", {}) or {}
+                _sd_sid = _sd_payload.get("session_id") or ""
+                _sd_sdb = service_context.get("session_db")
+                _sd_ok = False
+                if _sd_sdb is not None and _sd_sid:
+                    try:
+                        await _sd_sdb.clear(_sd_sid)
+                        _sd_ok = True
+                        logger.info("session_deleted sid=%s", _sd_sid)
+                    except Exception as _sd_exc:  # noqa: BLE001
+                        logger.warning(
+                            "session_delete_failed", error=str(_sd_exc),
+                            session_id=_sd_sid,
+                        )
+                await ws.send_json({
+                    "type": "session_deleted",
+                    "payload": {"session_id": _sd_sid, "ok": _sd_ok},
+                })
+
             elif msg_type == "session_messages_load":
                 # P4-S23: panel reload (F5) needs to rehydrate chat
                 # history from SessionDB. Returns messages for the

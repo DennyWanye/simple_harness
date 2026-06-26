@@ -50,9 +50,19 @@ import { useAudioPlayer } from "../hooks/useAudioPlayer";
 
 const DEFAULT_SID = "default"; // the pet's companion main thread
 
+type SessionEntry = {
+  session_id: string;
+  turn_count: number;
+  last_message_at: number;
+  preview: string;
+};
+
 export function MessagePanelRoot() {
   const [activeSid, setActiveSid] = useState(DEFAULT_SID);
   const [filter, setFilter] = useState<StreamFilter>("all");
+  // 历史会话下拉（选择 / 删除之前的会话）。
+  const [sessionList, setSessionList] = useState<SessionEntry[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [showModelModal, setShowModelModal] = useState(false);
   // 2026-05-31 restore — context breakdown modal state + snapshot subscriber.
   const [contextModalOpen, setContextModalOpen] = useState(false);
@@ -132,6 +142,50 @@ export function MessagePanelRoot() {
     useSessionsStore.getState().set_active(DEFAULT_SID);
     setActiveSid(DEFAULT_SID);
   }, []);
+
+  // 历史会话下拉：拉清单 / 切会话 / 删会话。
+  const loadSessions = useCallback(() => {
+    codePanelWS.send({ type: "sessions_list" });
+  }, []);
+
+  const switchToSession = useCallback((sid: string) => {
+    useSessionsStore.getState().ensure(sid);
+    useSessionsStore.getState().set_active(sid);
+    setActiveSid(sid);
+    // 拉该会话历史回灌 store（ws.ts 的 session_messages_response → set_messages）。
+    codePanelWS.send({
+      type: "session_messages_load",
+      payload: { session_id: sid, limit: 200 },
+    });
+    setPickerOpen(false);
+  }, []);
+
+  const deleteSession = useCallback(
+    (sid: string) => {
+      codePanelWS.send({ type: "session_delete", payload: { session_id: sid } });
+      // 乐观移除 + 若删的是当前会话则切回 default。
+      setSessionList((prev) => prev.filter((s) => s.session_id !== sid));
+      if (sid === activeSid && sid !== DEFAULT_SID) {
+        switchToDefault();
+      }
+    },
+    [activeSid, switchToDefault],
+  );
+
+  // 监听后端 sessions_list_response / session_deleted；面板打开时拉一次清单。
+  useEffect(() => {
+    const off = codePanelWS.on_message((msg: any) => {
+      if (msg?.type === "sessions_list_response") {
+        const arr = Array.isArray(msg?.payload?.sessions) ? msg.payload.sessions : [];
+        setSessionList(arr);
+      } else if (msg?.type === "session_deleted") {
+        // 后端确认删除 → 重新拉清单保持一致。
+        loadSessions();
+      }
+    });
+    loadSessions();
+    return off;
+  }, [loadSessions]);
 
   const toggleRecording = useCallback(async () => {
     if (isRecording) {
@@ -317,30 +371,158 @@ export function MessagePanelRoot() {
           >
             <Icon name="chevron-left" size={14} />
           </button>
-          <span
+          {/* 历史会话选择器：点标题展开下拉，列出之前的会话，可切换 / 删除(每项 ×)。 */}
+          <div
             onMouseDown={(e) => e.stopPropagation()}
-            onClick={activeSid === DEFAULT_SID ? undefined : switchToDefault}
-            title={activeSid === DEFAULT_SID ? "当前话题" : "回到默认话题"}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 7,
-              flex: 1,
-              minWidth: 0,
-              cursor: activeSid === DEFAULT_SID ? "default" : "pointer",
-            }}
+            style={{ position: "relative", flex: 1, minWidth: 0 }}
           >
-            <Icon name="message" size={14} style={{ color: "#a5b4fc" }} />
-            <span
+            <button
+              type="button"
+              onClick={() => {
+                if (!pickerOpen) loadSessions();
+                setPickerOpen((v) => !v);
+              }}
+              title="选择历史会话"
               style={{
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+                width: "100%",
+                minWidth: 0,
+                background: "transparent",
+                border: "none",
+                color: "inherit",
+                font: "inherit",
+                cursor: "pointer",
+                padding: 0,
               }}
             >
-              {activeSid === DEFAULT_SID ? "消息 · default" : `消息 · ${activeSid}`}
-            </span>
-          </span>
+              <Icon name="message" size={14} style={{ color: "#a5b4fc" }} />
+              <span
+                style={{
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  flex: 1,
+                  textAlign: "left",
+                }}
+              >
+                {activeSid === DEFAULT_SID ? "消息 · 默认话题" : `消息 · ${activeSid}`}
+              </span>
+              <span style={{ flexShrink: 0, opacity: 0.7, fontSize: 10 }}>▾</span>
+            </button>
+            {pickerOpen && (
+              <>
+                {/* 点空白处关闭 */}
+                <div
+                  onClick={() => setPickerOpen(false)}
+                  style={{ position: "fixed", inset: 0, zIndex: 998 }}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    left: 0,
+                    marginTop: 6,
+                    minWidth: 260,
+                    maxWidth: 360,
+                    maxHeight: 340,
+                    overflowY: "auto",
+                    background: "rgba(20,24,36,0.99)",
+                    border: "1px solid rgba(148,163,184,0.3)",
+                    borderRadius: 10,
+                    boxShadow: "0 8px 28px rgba(0,0,0,0.5)",
+                    zIndex: 999,
+                    padding: 4,
+                  }}
+                >
+                  {sessionList.length === 0 && (
+                    <div style={{ padding: "10px 12px", color: "#64748b", fontSize: 12 }}>
+                      暂无历史会话
+                    </div>
+                  )}
+                  {sessionList.map((s) => {
+                    const selected = s.session_id === activeSid;
+                    const isDefault = s.session_id === DEFAULT_SID;
+                    const label = isDefault
+                      ? "默认话题"
+                      : s.preview || s.session_id;
+                    return (
+                      <div
+                        key={s.session_id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "7px 8px",
+                          borderRadius: 7,
+                          background: selected
+                            ? "rgba(37,99,235,0.22)"
+                            : "transparent",
+                          borderLeft: selected
+                            ? "3px solid #60a5fa"
+                            : "3px solid transparent",
+                        }}
+                      >
+                        <div
+                          onClick={() => switchToSession(s.session_id)}
+                          style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
+                        >
+                          <div
+                            style={{
+                              color: selected ? "#bfdbfe" : "#e2e8f0",
+                              fontSize: 13,
+                              fontWeight: selected ? 600 : 500,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {label}
+                          </div>
+                          <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 1 }}>
+                            {s.turn_count} 条
+                            {!isDefault && ` · ${s.session_id}`}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteSession(s.session_id);
+                          }}
+                          title={isDefault ? "清空默认话题" : "删除该会话"}
+                          aria-label="删除该会话"
+                          style={{
+                            flexShrink: 0,
+                            width: 22,
+                            height: 22,
+                            borderRadius: 6,
+                            border: "none",
+                            background: "transparent",
+                            color: "#94a3b8",
+                            cursor: "pointer",
+                            fontSize: 15,
+                            lineHeight: "20px",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = "rgba(239,68,68,0.18)";
+                            e.currentTarget.style.color = "#f87171";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = "transparent";
+                            e.currentTarget.style.color = "#94a3b8";
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
           <button
             type="button"
             onMouseDown={(e) => e.stopPropagation()}

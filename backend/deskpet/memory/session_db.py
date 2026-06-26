@@ -573,6 +573,39 @@ class SessionDB:
             for row in rows
         ]
 
+    async def list_sessions_with_preview(self) -> list[dict[str, Any]]:
+        """会话清单 + 每个会话首条 user 消息预览（一次查询）。
+
+        用于消息面板「选择历史会话」下拉。preview = 该会话最早一条非空 user
+        消息前 60 字（相关子查询）。newest-first。
+        """
+        if not self._initialized:
+            await self.initialize()
+        async with aiosqlite.connect(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT m.session_id, COUNT(*), MAX(m.created_at), "
+                "  (SELECT content FROM messages "
+                "     WHERE session_id = m.session_id AND role = 'user' "
+                "       AND content IS NOT NULL AND content <> '' "
+                "     ORDER BY created_at ASC LIMIT 1) "
+                "FROM messages m GROUP BY m.session_id "
+                "ORDER BY MAX(m.created_at) DESC"
+            )
+            rows = await cursor.fetchall()
+            await cursor.close()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            preview = (row[3] or "")
+            if len(preview) > 60:
+                preview = preview[:60]
+            out.append({
+                "session_id": str(row[0]),
+                "turn_count": int(row[1] or 0),
+                "last_message_at": float(row[2] or 0.0),
+                "preview": preview,
+            })
+        return out
+
     # ---- P5-S2 code_session_provider binding -------------------------
 
     async def get_code_session_provider_binding(
