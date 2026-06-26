@@ -1,8 +1,10 @@
 # Followup — relay 登录不同步 backend cloud-llm key（账号脱节）
 
-> **状态**：📋 待后续 sprint 处理（用户 2026-06-25 拍板：先记录，本轮先用手填的固定 key 续测）
-> **严重度**：P1（生产隐患——backend 可能长期用一个已耗尽/错误账号的 key，用户充值的账号根本没接上）
+> **状态**：✅ **已解决（2026-06-26）** —— 经 **relay-provider 收编工作线**关闭，**不是**按本文 §4 的 cloud-llm slot 同步方向修的，而是换架构：relay 登录后收编进 `LLMProviderRegistry`（`relay-cloud`/`source=relay`/`account_ref`），聊天经 registry chain **每请求按需读 key**（绕开固定 env + 旧 `default.deskpet-cloud-llm` slot，换账号无需重启）；登出删 key、`account_ref` 防串号；缺额度走结构化 403 提示。真机端到端 PASS（`p5s2_chain_resolved` + `chinzy.com 200 OK`）。冷启动收编竞态补修见 commit `37e40526`。详见 [relay-local-apikey-provider plan](2026-06-25-relay-local-apikey-provider/00-PLAN.md) + [STATUS §已知问题](../STATUS/status.md)（P1 已划线关闭）。
+> **严重度**：~~P1~~（已关闭）
 > **发现**：2026-06-25 WI-5(b) 默认配置真机重跑期间，relay 全模型 403 → 深挖发现是账号脱节，非真没钱。
+>
+> ⚠️ 下面 §1–§6 是 2026-06-25 当时的诊断与"设想的修复方向"，**保留作历史记录**；实际落地方案与之不同（见上方状态行）。
 
 ---
 
