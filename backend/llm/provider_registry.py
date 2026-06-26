@@ -108,6 +108,14 @@ class NoProviderConfiguredError(RuntimeError):
         super().__init__(message)
 
 
+class KeyMissingError(RuntimeError):
+    """Managed provider exists but its keychain secret is missing."""
+
+    def __init__(self, provider_id: str) -> None:
+        self.provider_id = provider_id
+        super().__init__(f"api key missing for provider {provider_id!r}")
+
+
 # ───────────────────────── data ─────────────────────────
 
 
@@ -134,6 +142,8 @@ class ProviderEntry:
     default_model: str | None = None
     priority: int = 1
     enabled: bool = True
+    source: str = "user"
+    account_ref: str = ""
 
     @property
     def model(self) -> str:
@@ -229,6 +239,10 @@ def _format_providers_section(entries: list[ProviderEntry]) -> str:
         out.append(f'api_key_ref = "{_escape_toml_string(e.api_key_ref)}"')
         out.append(f"priority = {int(e.priority)}")
         out.append(f"enabled = {'true' if e.enabled else 'false'}")
+        if e.source != "user":
+            out.append(f'source = "{_escape_toml_string(e.source)}"')
+        if e.account_ref:
+            out.append(f'account_ref = "{_escape_toml_string(e.account_ref)}"')
         out.append("")  # blank line between entries
     return "\n".join(out)
 
@@ -337,6 +351,8 @@ class LLMProviderRegistry:
                         api_key_ref=str(raw.get("api_key_ref", f"{KEYCHAIN_REF_PREFIX}{raw['id']}")),
                         priority=int(raw.get("priority", 1)),
                         enabled=bool(raw.get("enabled", True)),
+                        source=str(raw.get("source", "user")),
+                        account_ref=str(raw.get("account_ref", "")),
                     )
                 )
             except (KeyError, TypeError, ValueError) as exc:
@@ -463,6 +479,8 @@ class LLMProviderRegistry:
             api_key_ref=f"{KEYCHAIN_REF_PREFIX}{provider_id}",
             priority=int(fields.get("priority", len(self._entries) + 1)),
             enabled=bool(fields.get("enabled", True)),
+            source=str(fields.get("source", "user")),
+            account_ref=str(fields.get("account_ref", "")),
         )
 
         self._keychain_save(provider_id, str(api_key))
@@ -563,6 +581,10 @@ class LLMProviderRegistry:
             elif k == "default_model":
                 if v and str(v) in entry.models:
                     entry.default_model = str(v)
+            elif k == "source":
+                entry.source = str(v)
+            elif k == "account_ref":
+                entry.account_ref = str(v)
             elif k == "api_key_ref":
                 entry.api_key_ref = str(v)
             # Silently ignore unknown keys — IPC layer validates first.
@@ -571,6 +593,39 @@ class LLMProviderRegistry:
         return entry
 
     # ───────── public readers ─────────
+
+    async def ensure_provider(self, fields: dict[str, Any]) -> ProviderEntry:
+        """Idempotently add/update a managed provider row."""
+        pid = fields.get("id", "")
+        _validate_provider_id(pid)
+        idx = self._find_index(pid)
+
+        if idx is None:
+            if self._entries:
+                fields.setdefault("priority", min(e.priority for e in self._entries) - 1)
+            else:
+                fields.setdefault("priority", 1)
+            entry = await self.add_provider(fields)
+            self._normalize_priorities()
+            return entry
+
+        if not fields.get("api_key") and self.resolve_api_key(pid) is None:
+            raise KeyMissingError(pid)
+
+        patch = {
+            k: fields[k]
+            for k in (
+                "name",
+                "base_url",
+                "models",
+                "default_model",
+                "source",
+                "account_ref",
+                "api_key",
+            )
+            if k in fields and fields[k] is not None
+        }
+        return await self.update_provider(pid, **patch)
 
     def list_providers(self) -> list[dict[str, Any]]:
         """Return all providers (enabled + disabled) with api_key redacted."""
@@ -596,6 +651,15 @@ class LLMProviderRegistry:
         return self._entries[idx] if idx is not None else None
 
     # ───────── internal ─────────
+
+    def get_account_ref(self, provider_id: str) -> str | None:
+        entry = self.get_entry(provider_id)
+        return entry.account_ref if entry else None
+
+    def _normalize_priorities(self) -> None:
+        for i, entry in enumerate(sorted(self._entries, key=lambda e: e.priority), start=1):
+            entry.priority = i
+        self._persist_to_toml()
 
     def _find_index(self, provider_id: str) -> int | None:
         for i, e in enumerate(self._entries):
@@ -694,5 +758,6 @@ __all__ = [
     "LLMProviderRegistry",
     "ProviderEntry",
     "NoProviderConfiguredError",
+    "KeyMissingError",
     "_migrate_legacy_provider_config",
 ]

@@ -395,3 +395,242 @@ def test_migration_no_op_on_fresh_install(empty_toml: Path, fake_keyring):
 
     after_data = tomli.loads(after)
     assert "providers" not in after_data.get("llm", {})
+
+
+# ───────────────────────── relay-managed provider upsert ─────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_source_and_account_ref_roundtrip_toml(empty_toml: Path, fake_keyring):
+    """Relay-managed metadata persists to toml and reloads into public dicts."""
+    from llm.provider_registry import LLMProviderRegistry
+
+    reg = LLMProviderRegistry(empty_toml)
+    await reg.add_provider(
+        _make_provider_kwargs(
+            id="relay-cloud",
+            source="relay",
+            account_ref="acct-123",
+        )
+    )
+
+    reloaded = LLMProviderRegistry(empty_toml)
+    items = reloaded.list_providers()
+    assert items[0]["source"] == "relay"
+    assert items[0]["account_ref"] == "acct-123"
+
+    import tomli
+
+    with empty_toml.open("rb") as fh:
+        data = tomli.load(fh)
+    provider = data["llm"]["endpoints"][0]
+    assert provider["source"] == "relay"
+    assert provider["account_ref"] == "acct-123"
+
+
+@pytest.mark.asyncio
+async def test_user_provider_omits_source_account_lines(empty_toml: Path, fake_keyring):
+    """Manual providers keep byte-level TOML shape: no default metadata lines."""
+    from llm.provider_registry import LLMProviderRegistry
+
+    reg = LLMProviderRegistry(empty_toml)
+    await reg.add_provider(_make_provider_kwargs(id="manual-one"))
+
+    text = empty_toml.read_text(encoding="utf-8")
+    assert "\nsource = " not in text
+    assert "\naccount_ref = " not in text
+
+
+@pytest.mark.asyncio
+async def test_ensure_provider_idempotent(empty_toml: Path, fake_keyring):
+    """ensure_provider inserts once, then updates the same relay row."""
+    from llm.provider_registry import LLMProviderRegistry
+
+    reg = LLMProviderRegistry(empty_toml)
+    first = await reg.ensure_provider(
+        _make_provider_kwargs(
+            id="relay-cloud",
+            source="relay",
+            account_ref="acct-a",
+        )
+    )
+    second = await reg.ensure_provider(
+        {
+            "id": "relay-cloud",
+            "name": "Relay Cloud Updated",
+            "base_url": "https://relay.example.com/v2",
+            "models": ["gpt-4o-mini"],
+            "source": "relay",
+            "account_ref": "acct-b",
+        }
+    )
+
+    assert first.id == second.id == "relay-cloud"
+    items = reg.list_providers()
+    assert [p["id"] for p in items] == ["relay-cloud"]
+    assert items[0]["name"] == "Relay Cloud Updated"
+    assert items[0]["account_ref"] == "acct-b"
+
+
+@pytest.mark.asyncio
+async def test_ensure_preserves_user_reorder(empty_toml: Path, fake_keyring):
+    """Relay priority steal keeps existing manual relative order intact."""
+    from llm.provider_registry import LLMProviderRegistry
+
+    reg = LLMProviderRegistry(empty_toml)
+    await reg.add_provider(_make_provider_kwargs(id="manual-a", priority=1))
+    await reg.add_provider(_make_provider_kwargs(id="manual-b", priority=2))
+    await reg.reorder(["manual-b", "manual-a"])
+
+    relay_payload = _make_provider_kwargs(
+        id="relay-cloud",
+        source="relay",
+        account_ref="acct",
+    )
+    relay_payload.pop("priority")
+    await reg.ensure_provider(relay_payload)
+
+    chain_ids = [p["id"] for p in reg.get_chain()]
+    assert chain_ids == ["relay-cloud", "manual-b", "manual-a"]
+
+
+@pytest.mark.asyncio
+async def test_ensure_updates_key(empty_toml: Path, fake_keyring):
+    """ensure_provider rewrites keychain when api_key is supplied."""
+    from llm.provider_registry import LLMProviderRegistry
+
+    reg = LLMProviderRegistry(empty_toml)
+    await reg.ensure_provider(
+        _make_provider_kwargs(
+            id="relay-cloud",
+            api_key="sk-old",
+            source="relay",
+            account_ref="acct",
+        )
+    )
+    await reg.ensure_provider(
+        {
+            "id": "relay-cloud",
+            "api_key": "sk-new",
+            "source": "relay",
+            "account_ref": "acct",
+        }
+    )
+
+    assert reg.resolve_api_key("relay-cloud") == "sk-new"
+
+
+@pytest.mark.asyncio
+async def test_ensure_first_login_steals_default_priority(empty_toml: Path, fake_keyring):
+    """First relay login becomes the default provider ahead of manual rows."""
+    from llm.provider_registry import LLMProviderRegistry
+
+    reg = LLMProviderRegistry(empty_toml)
+    await reg.add_provider(_make_provider_kwargs(id="manual-one", priority=1))
+
+    relay_payload = _make_provider_kwargs(
+        id="relay-cloud",
+        source="relay",
+        account_ref="acct",
+    )
+    relay_payload.pop("priority")
+    await reg.ensure_provider(relay_payload)
+
+    public = reg.list_providers()
+    assert {p["id"]: p["priority"] for p in public} == {
+        "manual-one": 2,
+        "relay-cloud": 1,
+    }
+    assert [p["id"] for p in reg.get_chain()] == ["relay-cloud", "manual-one"]
+
+
+@pytest.mark.asyncio
+async def test_ensure_raises_key_missing_when_keychain_empty(empty_toml: Path, fake_keyring):
+    """Existing managed provider without a stored key asks caller to recover."""
+    from llm.provider_registry import KeyMissingError, LLMProviderRegistry
+
+    reg = LLMProviderRegistry(empty_toml)
+    await reg.ensure_provider(
+        _make_provider_kwargs(
+            id="relay-cloud",
+            source="relay",
+            account_ref="acct",
+        )
+    )
+    fake_keyring.delete_password("deskpet", "provider.relay-cloud")
+
+    with pytest.raises(KeyMissingError) as excinfo:
+        await reg.ensure_provider(
+            {
+                "id": "relay-cloud",
+                "source": "relay",
+                "account_ref": "acct",
+            }
+        )
+
+    assert excinfo.value.provider_id == "relay-cloud"
+
+
+@pytest.mark.asyncio
+async def test_ensure_updates_base_url_models(empty_toml: Path, fake_keyring):
+    """ensure_provider updates mutable endpoint metadata on existing rows."""
+    from llm.provider_registry import LLMProviderRegistry
+
+    reg = LLMProviderRegistry(empty_toml)
+    await reg.ensure_provider(
+        _make_provider_kwargs(
+            id="relay-cloud",
+            base_url="https://relay.example.com/v1",
+            model="old-model",
+            source="relay",
+            account_ref="acct",
+        )
+    )
+    await reg.ensure_provider(
+        {
+            "id": "relay-cloud",
+            "base_url": "https://relay.example.com/v2",
+            "models": ["new-a", "new-b"],
+            "default_model": "new-b",
+            "source": "relay",
+            "account_ref": "acct",
+        }
+    )
+
+    item = reg.list_providers()[0]
+    assert item["base_url"] == "https://relay.example.com/v2"
+    assert item["models"] == ["new-a", "new-b"]
+    assert item["default_model"] == "new-b"
+    assert item["model"] == "new-b"
+
+
+@pytest.mark.asyncio
+async def test_normalize_priorities_unique(empty_toml: Path, fake_keyring):
+    """_normalize_priorities rewrites stable priority order to 1..N."""
+    from llm.provider_registry import LLMProviderRegistry
+
+    reg = LLMProviderRegistry(empty_toml)
+    await reg.add_provider(_make_provider_kwargs(id="a", priority=5))
+    await reg.add_provider(_make_provider_kwargs(id="b", priority=5))
+    await reg.add_provider(_make_provider_kwargs(id="c", priority=3))
+
+    reg._normalize_priorities()
+
+    items = sorted(reg.list_providers(), key=lambda p: p["priority"])
+    assert [(p["id"], p["priority"]) for p in items] == [
+        ("c", 1),
+        ("a", 2),
+        ("b", 3),
+    ]
+
+
+def test_ws_settings_provider_relay_messages_are_wired():
+    """WI-2 guard: relay provider WS messages enter the registry branch."""
+    main_py = Path(__file__).resolve().parents[1] / "main.py"
+    text = main_py.read_text(encoding="utf-8")
+
+    assert '"settings_providers_ensure"' in text
+    assert '"settings_providers_relay_logout"' in text
+    assert "KeyMissingError" in text
+    assert "def _key_fp(" in text
+    assert "relay_provider_ensured" in text

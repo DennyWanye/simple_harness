@@ -17,6 +17,7 @@ from deskpet.frozen_worker_dispatch import dispatch_frozen_worker_if_requested
 dispatch_frozen_worker_if_requested()
 
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -266,6 +267,10 @@ def _resolve_llm_api_key(configured: str) -> str:
         # 占位符 + 没 env → 保持占位符（Ollama 会接受任何值；云端会 401）
     return configured
 
+def _key_fp(k: str | None) -> str | None:
+    return None if not k else hashlib.sha256(k.encode()).hexdigest()[:8]
+
+
 _resolved_api_key = _resolve_llm_api_key(config.llm.local.api_key)
 
 # 2026-05-17 deepseek-inline-cot-dsml-sanitize Strangler-Fig flag (default
@@ -327,6 +332,7 @@ service_context.register("billing_ledger", billing_ledger)
 # 供 ws handler (`settings_providers_*`) 读写。
 try:
     from llm.provider_registry import (
+        KeyMissingError,
         LLMProviderRegistry,
         _migrate_legacy_provider_config,
     )
@@ -5798,6 +5804,8 @@ async def control_channel(ws: WebSocket):
                 "settings_providers_update",
                 "settings_providers_remove",
                 "settings_providers_reorder",
+                "settings_providers_ensure",
+                "settings_providers_relay_logout",
             ):
                 # P5-S2 multi-provider-management Phase 2:
                 # CRUD + reorder against LLMProviderRegistry. Mutations
@@ -5875,6 +5883,45 @@ async def control_channel(ws: WebSocket):
                             "payload": {"provider": entry.to_public_dict()},
                         })
                         await _broadcast_providers_changed()
+
+                elif msg_type == "settings_providers_ensure":
+                    _payload = raw.get("payload", {}) or {}
+                    if _payload.get("source") not in ("relay",):
+                        await ws.send_json({
+                            "type": "settings_providers_error",
+                            "payload": {
+                                "reason": "ensure_only_managed",
+                                "detail": "source=relay only",
+                            },
+                        })
+                    else:
+                        try:
+                            _entry = await _reg.ensure_provider(_payload)
+                            logger.info(
+                                "relay_provider_ensured id=%s account_ref=%s base_url=%s key_fp=%s",
+                                _entry.id,
+                                _entry.account_ref,
+                                _entry.base_url,
+                                _key_fp(_reg.resolve_api_key(_entry.id)),
+                            )
+                            await _broadcast_providers_changed()
+                        except KeyMissingError as _e:
+                            await ws.send_json({
+                                "type": "settings_providers_error",
+                                "payload": {
+                                    "reason": "key_missing",
+                                    "detail": str(_e),
+                                    "provider_id": _payload.get("id"),
+                                },
+                            })
+
+                elif msg_type == "settings_providers_relay_logout":
+                    try:
+                        await _reg.update_provider("relay-cloud", enabled=False, account_ref="")
+                        _reg._keychain_delete("relay-cloud")
+                        await _broadcast_providers_changed()
+                    except KeyError:
+                        pass
 
                 elif msg_type == "settings_providers_update":
                     _pid = _payload.get("id")
