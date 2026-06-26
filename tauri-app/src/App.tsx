@@ -93,7 +93,6 @@ import { BACKEND_PORT } from "./backendPort";
 import { getAuthAdapter } from "./auth";
 import { RelayAuthAdapter } from "./auth/RelayAuthAdapter";
 import { RelayEdition } from "./auth/RelayEdition";
-import { relayProviderBridge } from "./auth/relayProviderBridge";
 import { relayProviderRegistration } from "./auth/relayProviderRegistration";
 import { friendlyChatErrorMessage } from "./auth/relayErrorText";
 
@@ -960,6 +959,7 @@ function App() {
         // WI-3: key 失效 → registration.recover（force 重铸 + 镜像进
         // registry，带 60s/≥2 次熔断防死循环）。取代旧 relayProviderBridge
         // 旁路（后者仅在 relay_managed_provider flag OFF 时回退，WI-6）。
+        // insufficient_balance 只显示充值提示，不触发重签/重登引导。
         if (p.error_class === "relay_key_invalid" && relayAdapter) {
           void relayProviderRegistration.recover(relayAdapter);
         }

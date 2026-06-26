@@ -467,6 +467,13 @@ class FeaturesConfig:
       返回「规划期只读」deny，**不执行**；只读工具（read_file/network 等）照常放行。
       用户点[执行]→解禁。OFF（默认）= 规划期不切只读、写类工具照常（字节级 BC）。
       注：需 plan_confirm_gate 一并 ON 才有挂起窗口可锁。
+    * ``relay_managed_provider`` — WI-3/WI-6（plans/2026-06-25-relay-local-apikey-provider）。
+      **默认 ON**（与前端 `relayConfig.RELAY_MANAGED_PROVIDER` 镜像）。relay 登录后
+      把账户收编进 `LLMProviderRegistry` 作为一条 `source="relay"` 的正常 provider
+      （前端 `relayProviderRegistration` 发 ``settings_providers_ensure``）。本后端
+      flag 是 kill-switch：OFF 时后端**拒绝** ``settings_providers_ensure``（回退到
+      旧 `relayProviderBridge` 旁路 = 前端 flag 也须同步 OFF）。主控由前端 flag 决定
+      （它决定发不发 ensure）；本 flag 提供后端侧防御性兜底。
     """
     slash_commands: bool = False
     goal_mode: bool = False
@@ -474,6 +481,7 @@ class FeaturesConfig:
     plan_confirm_gate: bool = False
     preference_memory: bool = False
     plan_read_only: bool = False
+    relay_managed_provider: bool = True
     # --- 子代理并发驱动（plans/2026-06-21-subagent-concurrency-driver/）---------
     # 全默认 OFF；OFF 时新代码 short-circuit，agent_parallel 退回扁平 gather（字节级 BC）。
     #   subagent_driver       — 总开关：事务分型(task_kinds)路由 + 有界调度(scheduler)接入

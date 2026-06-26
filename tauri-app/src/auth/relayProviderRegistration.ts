@@ -15,7 +15,17 @@ import type { Provider, User } from "./types";
 const RELAY_PROVIDER_ID = "relay-cloud";
 
 type EnsureReason = "login" | "restore" | "recover";
-type ControlChannel = { send: (m: unknown) => void };
+// Loose `any` on send so the real control channel (whose send takes a typed
+// OutgoingMessage) is assignable here without a contravariance error.
+type ControlChannel = { send: (m: any) => void };
+
+/** Only the adapter surface registration actually needs — keeps the module
+ * decoupled and lets callers/tests pass a narrow stub. A full
+ * RelayAuthAdapter is structurally assignable. */
+type RegistrationAdapter = Pick<
+  RelayAuthAdapter,
+  "currentUser" | "syncDeviceKey" | "fetchRelayProviderMeta"
+>;
 
 export class RelayProviderRegistration {
   private getChannel: (() => ControlChannel | null) | null = null;
@@ -33,7 +43,7 @@ export class RelayProviderRegistration {
   }
 
   ensure(
-    adapter: RelayAuthAdapter,
+    adapter: RegistrationAdapter,
     reason: EnsureReason = "login",
     force = false,
   ): Promise<void> {
@@ -46,7 +56,7 @@ export class RelayProviderRegistration {
     return p;
   }
 
-  recover(adapter: RelayAuthAdapter): Promise<void> {
+  recover(adapter: RegistrationAdapter): Promise<void> {
     const now = Date.now();
     this.recoverHits = this.recoverHits.filter((t) => now - t < 60_000);
     if (this.recoverHits.length >= 2) {
@@ -59,7 +69,7 @@ export class RelayProviderRegistration {
   }
 
   private async ensureOnce(
-    adapter: RelayAuthAdapter,
+    adapter: RegistrationAdapter,
     reason: EnsureReason,
     force: boolean,
   ): Promise<void> {

@@ -5924,15 +5924,27 @@ async def control_channel(ws: WebSocket):
                     # WI-2: decision logic lives in llm.relay_provider_ops
                     # (unit-testable without importing main.py). Returns an
                     # error payload or None on success.
-                    _payload = raw.get("payload", {}) or {}
-                    _err = await ensure_relay_provider(_reg, _payload)
-                    if _err is not None:
+                    # WI-6 kill-switch: reject when the backend feature flag is
+                    # OFF (primary gate is the frontend RELAY_MANAGED_PROVIDER,
+                    # which decides whether to send this at all).
+                    if not config.features.relay_managed_provider:
                         await ws.send_json({
                             "type": "settings_providers_error",
-                            "payload": _err,
+                            "payload": {
+                                "reason": "relay_managed_disabled",
+                                "detail": "relay_managed_provider feature off",
+                            },
                         })
                     else:
-                        await _broadcast_providers_changed()
+                        _payload = raw.get("payload", {}) or {}
+                        _err = await ensure_relay_provider(_reg, _payload)
+                        if _err is not None:
+                            await ws.send_json({
+                                "type": "settings_providers_error",
+                                "payload": _err,
+                            })
+                        else:
+                            await _broadcast_providers_changed()
 
                 elif msg_type == "settings_providers_relay_logout":
                     await relay_logout(_reg)
