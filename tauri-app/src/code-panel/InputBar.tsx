@@ -484,7 +484,6 @@ export const _testing = {
   },
   resetCache: () => {
     _cachedCommands = null;
-    _cachedCommandsPromise = null;
   },
   filterCommands,
   HISTORY_MAX,

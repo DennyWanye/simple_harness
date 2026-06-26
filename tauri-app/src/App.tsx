@@ -1475,6 +1475,9 @@ function App() {
       setWorking(true);
     }
   }, [getControlChannel, chatText]);
+  // 主界面「新话题」按钮已移除（见下方注释），但 handleNewTopic 刻意保留供潜在
+  // 调用/兼容。引用一次以满足 noUnusedLocals（删按钮后的孤儿声明）。
+  void handleNewTopic;
 
   const handleSwitchDefault = useCallback(() => {
     switchActiveSid(DEFAULT_SESSION_ID);
@@ -2244,7 +2247,6 @@ function App() {
                 cursor: active ? "pointer" : "not-allowed",
                 boxShadow: active ? "0 4px 14px rgba(37,99,235,0.42)" : "none",
                 transition: "background 140ms ease, box-shadow 140ms ease, transform 120ms ease",
-                flexShrink: 0,
               }}
               onMouseEnter={(e) => {
                 if (active) {
