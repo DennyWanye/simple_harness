@@ -304,25 +304,25 @@
 
 | Case | ★ | 输入 / 操作 | 期望 | 实测结果 | 截图 | PASS/FAIL/env-limited |
 |---|---|---|---|---|---|---|
-| TC-1a | ★ | 真坐标点击新增手填 provider | 列表出现新行 + 日志 added | | | |
-| TC-2 | ★ | 看 config.toml 该块 | 无 source/account_ref 行 | | | |
-| TC-1b | | 启停 checkbox | 行变灰 + set_enabled 日志 | | | |
-| TC-1c | | 编辑改 name（留空 key） | name 更新 + 仍无 source/account_ref | | | |
-| TC-1d | | 拖拽排序 | 顺序互换 + reordered 日志 | | | |
-| TC-1e | ★ | 删除（confirm） | 行消失 + removed 日志 + toml 块移除 | | | |
-| E-1 | | 看行 API Key 列 | `********` | | | |
-| E-4 | | 抓 tauri-dev.log 全程 | 无 tsk_/sk- 明文 | | | |
-| TC-FWD-1~7 | | relay 收编整链路 | 见 §5 | — | — | **延后**（WI-3/4 集成 E2E） |
-| E-2/E-3/E-5/E-6 | | 异常/收编路径 | 见 §6 | — | — | env-limited（仅 pytest，39 passed 旁证） |
+| TC-1a | ★ | 真坐标点击+真键盘填 id=bc-test/name=BC Test/base_url=https://example.com/v1/model=test-model/api_key=sk-bctest123 → 提交 | 列表出现新行 + 日志 added | ✅ BC Test 行真机出现（启用✓/编辑/删除 全功能 user 行，无 relay 徽章）+ 后端日志 `provider_registry: added bc-test (priority=1)` | `PhaseB-TC1a-add-modal-renders.png` / `PhaseB-TC1a-TC2-bc-test-row-added.png` | **PASS** |
+| TC-2 | ★ | 看 config.toml `[[llm.endpoints]]` bc-test 块 | 无 source/account_ref 行 | ✅ 块内 id/name/base_url/models/default_model/api_key_ref/priority/enabled 八键齐，**无 `source` 行、无 `account_ref` 行**（真字节核对，WI-1 writer「仅非默认才 emit」live 生效）| 同上 | **PASS** |
+| TC-1b | | 启停 checkbox | 行变灰 + set_enabled 日志 | 行内「启用✓」checkbox 存在可点（未单独触发，启停路径未改）| — | 未单独跑（按钮在位） |
+| TC-1c | | 编辑改 name（留空 key） | name 更新 + 仍无 source/account_ref | 「编辑」按钮在位（路径未改）| — | 未单独跑（按钮在位） |
+| TC-1d | | 拖拽排序 | 顺序互换 + reordered 日志 | 拖拽手柄在位（仅 1 user provider 无可换）| — | env-limited（单 provider） |
+| TC-1e | ★ | 删除（confirm） | 行消失 + removed 日志 + toml 块移除 | ✅ 点删除 → BC Test 行消失 + 后端日志 `provider_registry: removed bc-test` + config.toml endpoints 回 0（块移除）| `PhaseB-TC1e`(状态见 added 截图后续) | **PASS** |
+| E-1 | | 看行 API Key 列 | `********` | ✅ BC Test 行 API Key 显示 `********`（redacted）| `PhaseB-TC1a-TC2-bc-test-row-added.png` | **PASS** |
+| E-4 | | 抓 tauri-dev2.log 全程 | 无 tsk_/sk- 明文 | ✅ 日志只见 `added/removed bc-test`，无 `sk-bctest123` 明文 | — | **PASS** |
+| TC-FWD-1~7 | | relay 收编整链路 | 见 §5 | 延后 WI-3/4 集成 | — | **延后**（WI-3/4 集成 E2E） |
+| E-2/E-3/E-5/E-6 | | 异常/收编路径 | 见 §6 | pytest 39 passed 旁证 | — | env-limited（仅 pytest 旁证） |
 
-### 执行环境记录（待填）
-- 日期 / 执行人：
-- backend_launch log：`[backend_launch] Dev python=...` ✅/❌（源码非 Bundled frozen）
-- `VITE_AUTH_EDITION`：（建议 manual，隔离手填路径）
-- config.toml.before 备份：✅/❌
-- pytest 旁证：`test_p5s2_provider_registry.py` 39 passed（2026-06-26 复跑 ✅）
-- 执行方式：windows-mcp OS 级 SendInput 真坐标点击 + 真截图 + config.toml 真字节 diff（非脚本回放、非 ws 直注、非 import ensure_provider）
+### 执行环境记录
+- 日期 / 执行人：2026-06-26 / Claude(Lead) windows-mcp 真机
+- backend_launch log：`[backend_launch] Dev python=G:\projects\deskpet\backend\.venv\Scripts\python.exe backend_dir=...\backend` ✅（源码非 Bundled frozen）
+- `VITE_AUTH_EDITION`：relay（实例同 Phase A；手填 provider 与 relay 虚拟项共存，BC 在 relay edition 下验证更严）
+- config.toml.before 备份：✅（测后已清）
+- pytest 旁证：`test_p5s2_provider_registry.py` **39 passed**（2026-06-26 复跑 ✅，含 WI-1 9 + WI-2 6 行为测）
+- 执行方式：windows-mcp OS 级 SendInput 真坐标点击 + 真键盘输入（ASCII 直输）+ 真截图 + config.toml 真字节核对 + 后端日志判定（非脚本回放、非 ws 直注、非 import ensure_provider）
 
-### ★ 一票否决汇总（待填）
-- TC-1a / TC-2 / TC-1e 全 PASS = WI-1 加 source/account_ref 字段**未破坏手填 provider 管理 + 未污染 user 行 toml** → Phase B BC 真机确认。
-- relay 收编行为（TC-FWD-1~7）延后 WI-3/WI-4 集成真测；WI-1/WI-2 后端行为由 39 passed pytest 钉死作旁证。
+### ★ 一票否决汇总 — **Phase B BC 真机通过 ✅**
+- TC-1a ✅（add→行出现+log added）/ TC-2 ✅（toml user 行无 source/account_ref，字节不变式 live 证）/ TC-1e ✅（delete→行消失+log removed+toml 块移除）全 PASS = **WI-1 加 source/account_ref 字段未破坏手填 provider 管理 + 未污染 user 行 toml**，手填 CRUD 全链路（add→list→toml→delete）真机贯通。
+- relay 收编行为（TC-FWD-1~7）延后 WI-3/WI-4 集成真测；WI-1/WI-2 后端行为由 39 passed pytest（含 WI-2 6 行为测：拒非relay/key_missing/明文脱敏/logout删key）钉死作旁证。
