@@ -53,7 +53,6 @@ import {
 } from "./petModels";
 import { DialogBar } from "./components/DialogBar";
 import { SlashDropdown, type SlashCommand } from "./code-panel/SlashDropdown";
-import { BACKEND_PORT } from "./backendPort";
 import { UserBubble } from "./components/UserBubble";
 import { StartupOverlay, type BootState } from "./components/StartupOverlay";
 import { useBudgetToast } from "./hooks/useBudgetToast";
@@ -1480,13 +1479,20 @@ function App() {
     setMessages([]);
   }, [switchActiveSid]);
 
-  // #4 slash：挂载时拉一次命令清单（缓存命中即返；后端 reload skill 可刷新）。
-  useEffect(() => {
+  // #4 slash：拉命令清单。后端在前端挂载时可能还没起来（boot 早期）→ fetch 失败静默，
+  // 由首次输入 "/" 按需重试（loadSlashCommands），避免"挂载只拉一次、失败后永远空"的坑。
+  const loadSlashCommands = useCallback(() => {
     fetch(`http://127.0.0.1:${BACKEND_PORT}/api/commands/help`)
       .then((r) => (r.ok ? r.json() : { commands: [] }))
-      .then((d) => setSlashCommands(Array.isArray(d?.commands) ? d.commands : []))
+      .then((d) => {
+        const cs = Array.isArray(d?.commands) ? d.commands : [];
+        if (cs.length) setSlashCommands(cs);
+      })
       .catch(() => {});
   }, []);
+  useEffect(() => {
+    loadSlashCommands();
+  }, [loadSlashCommands]);
 
   // 当前候选命令（仅在输入以 / 开头、且还没打空格进入参数阶段时显示）。
   const slashCandidates = useMemo<SlashCommand[]>(() => {
@@ -2135,6 +2141,7 @@ function App() {
             setChatText(v);
             // #4 slash 状态机：/ 开头且还没打空格 → 开候选面板。
             if (v.startsWith("/")) {
+              if (slashCommands.length === 0) loadSlashCommands(); // 按需重试（boot 早期失败兜底）
               const firstWord = v.slice(1).split(/\s+/)[0] ?? "";
               setSlashOpen(v.length <= firstWord.length + 1);
               setSlashIdx(0);

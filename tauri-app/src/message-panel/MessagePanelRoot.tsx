@@ -17,7 +17,7 @@
  *    the current session, exactly like Code mode.
  *  · header is a drag region; ⛶ maximizes / restores the window.
  */
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import { Icon } from "../components/Icon";
@@ -251,21 +251,34 @@ export function MessagePanelRoot() {
     useSessionsStore.getState().dismiss_alert(sid, alert_id);
   };
 
-  // Drag the frameless window. The ACTUAL bug behind "拖动不行" was a
-  // missing Tauri capability: `message-panel` was absent from
-  // capabilities/default.json's `windows` list, so EVERY core:window
-  // IPC (start-dragging, set-position, …) from this window was denied
-  // and silently swallowed. With the window now in the capability,
-  // startDragging() — the idiomatic Windows move-loop API, robust to
-  // the cursor leaving the moving window, multi-monitor and DPI — works
-  // for a real mouse. (data-tauri-drag-region kept as a harmless extra
-  // hint.) Left button only; header buttons stopPropagation so their
-  // own clicks never start a drag.
+  // Drag the frameless window via startDragging() — the idiomatic Windows
+  // move-loop API, robust to the cursor leaving the window, multi-monitor & DPI.
+  //
+  // 2026-06-26 修复"拖动不行"(回归)：原实现在 onMouseDown 里**异步** `import(
+  // "@tauri-apps/api/window")` 再调 startDragging() —— 动态 import 的 promise 要到
+  // 下一个 microtask 才 resolve，而 Windows 的 SC_MOVE 移动循环**必须在 mousedown
+  // 同步帧内**发起才能接管拖动；晚一拍 → OS 不进入移动循环 → 拖不动。改为像
+  // Live2DCanvas(FIX-R3) 一样**预加载** startDragging 到 ref，onMouseDown 里**同步**调用。
+  const startDraggingRef = useRef<(() => Promise<unknown>) | null>(null);
+  useEffect(() => {
+    let alive = true;
+    import("@tauri-apps/api/window")
+      .then(({ getCurrentWindow }) => {
+        if (!alive) return;
+        const w = getCurrentWindow();
+        startDraggingRef.current = () => w.startDragging();
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
   const startDrag = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
-    import("@tauri-apps/api/window")
-      .then(({ getCurrentWindow }) => getCurrentWindow().startDragging())
-      .catch((err) => console.warn("[msg-panel] startDragging failed:", err));
+    // 同步调用预加载好的 startDragging（晚一拍就拖不动，见上方注释）。
+    startDraggingRef.current?.().catch((err) =>
+      console.warn("[msg-panel] startDragging failed:", err),
+    );
   };
 
   const toggleMaximize = async () => {
