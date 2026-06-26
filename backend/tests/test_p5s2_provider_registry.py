@@ -625,12 +625,118 @@ async def test_normalize_priorities_unique(empty_toml: Path, fake_keyring):
 
 
 def test_ws_settings_provider_relay_messages_are_wired():
-    """WI-2 guard: relay provider WS messages enter the registry branch."""
+    """WI-2 guard: relay provider WS messages enter the registry branch and
+    delegate to llm.relay_provider_ops (behaviour tested below)."""
     main_py = Path(__file__).resolve().parents[1] / "main.py"
     text = main_py.read_text(encoding="utf-8")
 
+    # msg types enter the settings_providers branch
     assert '"settings_providers_ensure"' in text
     assert '"settings_providers_relay_logout"' in text
-    assert "KeyMissingError" in text
-    assert "def _key_fp(" in text
-    assert "relay_provider_ensured" in text
+    # handler delegates to the testable ops module
+    assert "ensure_relay_provider" in text
+    assert "relay_logout" in text
+
+    ops_py = main_py.parent / "llm" / "relay_provider_ops.py"
+    ops_text = ops_py.read_text(encoding="utf-8")
+    assert "relay_provider_ensured" in ops_text
+    assert "key_fingerprint" in ops_text
+
+
+# ───────────── Phase B / WI-2: relay_provider_ops behaviour ─────────────
+# Behaviour-level coverage of the WS-handler decision logic, extracted to
+# llm.relay_provider_ops so it is testable without importing main.py.
+
+_RELAY_PAYLOAD = {
+    "id": "relay-cloud",
+    "source": "relay",
+    "account_ref": "acct-a",
+    "name": "中转站 · chinzy",
+    "base_url": "https://chinzy.com/v1",
+    "models": ["gpt-5.5"],
+    "default_model": "gpt-5.5",
+    "api_key": "tsk_live_SUPERSECRET123",
+}
+
+
+@pytest.mark.asyncio
+async def test_ws_ensure_rejects_non_relay_source(empty_toml: Path, fake_keyring):
+    from llm.provider_registry import LLMProviderRegistry
+    from llm.relay_provider_ops import ensure_relay_provider
+
+    reg = LLMProviderRegistry(empty_toml)
+    err = await ensure_relay_provider(reg, {**_RELAY_PAYLOAD, "id": "x", "source": "user"})
+    assert err is not None and err["reason"] == "ensure_only_managed"
+    assert reg.get_entry("x") is None  # rejected, never added
+
+
+@pytest.mark.asyncio
+async def test_ws_ensure_relay_provider_succeeds_and_lists(empty_toml: Path, fake_keyring):
+    from llm.provider_registry import LLMProviderRegistry
+    from llm.relay_provider_ops import ensure_relay_provider
+
+    reg = LLMProviderRegistry(empty_toml)
+    err = await ensure_relay_provider(reg, dict(_RELAY_PAYLOAD))
+    assert err is None
+    pub = [p for p in reg.list_providers() if p["id"] == "relay-cloud"]
+    assert pub, "relay-cloud should appear in list_providers()"
+    assert pub[0]["source"] == "relay"
+    assert pub[0]["account_ref"] == "acct-a"
+    assert pub[0]["api_key"] == "********"  # redacted in public view
+    assert reg.resolve_api_key("relay-cloud") == "tsk_live_SUPERSECRET123"  # real key stored
+
+
+@pytest.mark.asyncio
+async def test_ws_ensure_key_missing_returns_error(empty_toml: Path, fake_keyring):
+    from llm.provider_registry import LLMProviderRegistry
+    from llm.relay_provider_ops import ensure_relay_provider
+
+    reg = LLMProviderRegistry(empty_toml)
+    await ensure_relay_provider(reg, dict(_RELAY_PAYLOAD))
+    fake_keyring.delete_password("deskpet", "provider.relay-cloud")  # simulate local key loss
+    # ensure again WITHOUT api_key → must signal key_missing for re-mint
+    err = await ensure_relay_provider(
+        reg, {k: v for k, v in _RELAY_PAYLOAD.items() if k != "api_key"}
+    )
+    assert err is not None
+    assert err["reason"] == "key_missing"
+    assert err["provider_id"] == "relay-cloud"
+
+
+@pytest.mark.asyncio
+async def test_ws_ensure_never_logs_plaintext_key(empty_toml: Path, fake_keyring, caplog):
+    import logging
+
+    from llm.provider_registry import LLMProviderRegistry
+    from llm.relay_provider_ops import ensure_relay_provider, key_fingerprint
+
+    reg = LLMProviderRegistry(empty_toml)
+    secret = _RELAY_PAYLOAD["api_key"]
+    with caplog.at_level(logging.INFO):
+        await ensure_relay_provider(reg, dict(_RELAY_PAYLOAD))
+    assert secret not in caplog.text  # plaintext key NEVER logged
+    assert key_fingerprint(secret) in caplog.text  # only the fingerprint
+
+
+@pytest.mark.asyncio
+async def test_ws_relay_logout_disables_and_deletes_key(empty_toml: Path, fake_keyring):
+    from llm.provider_registry import LLMProviderRegistry
+    from llm.relay_provider_ops import ensure_relay_provider, relay_logout
+
+    reg = LLMProviderRegistry(empty_toml)
+    await ensure_relay_provider(reg, dict(_RELAY_PAYLOAD))
+    await relay_logout(reg)
+    entry = reg.get_entry("relay-cloud")
+    assert entry is not None
+    assert entry.enabled is False  # disabled, not deleted (preserves ordering)
+    assert entry.account_ref == ""  # account fingerprint cleared
+    assert reg.resolve_api_key("relay-cloud") is None  # A's key deleted — never reused by B
+
+
+@pytest.mark.asyncio
+async def test_ws_relay_logout_noop_when_absent(empty_toml: Path, fake_keyring):
+    from llm.provider_registry import LLMProviderRegistry
+    from llm.relay_provider_ops import relay_logout
+
+    reg = LLMProviderRegistry(empty_toml)
+    await relay_logout(reg)  # no relay-cloud row → must not raise
