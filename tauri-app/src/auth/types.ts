@@ -71,6 +71,8 @@ export interface Provider {
   base_url: string;
   /** Bearer key for this provider; null/empty = user must fill it. */
   api_key?: string | null;
+  /** First characters of the active relay device key, when returned by relay. */
+  prefix?: string;
   models: ProviderModel[];
   openai_compatible: boolean;
   supports_streaming: boolean;

@@ -45,7 +45,7 @@
  *
  *   We dedupe in-flight refresh and listProviders calls so a burst of
  *   401s doesn't fire three refreshes (which would mutually invalidate
- *   each other). See `inflightRefresh` / `inflightProviders` below.
+ *   each other). See `inflightRefresh` / `inflightByMode` below.
  *
  * NOT implemented in this commit:
  *
@@ -121,6 +121,13 @@ interface ProvidersResponse {
   providers: Provider[];
 }
 
+type ProviderFetchMode = "reuse" | "meta" | "force";
+
+interface ProvidersFetchResult {
+  providers: Provider[];
+  keyPrefix: string;
+}
+
 export class RelayAuthAdapter implements AuthAdapter {
   readonly id = "relay";
   readonly displayName = "中转账户";
@@ -148,12 +155,14 @@ export class RelayAuthAdapter implements AuthAdapter {
    *      makes them invalidate each other's device key in a race.
    */
   private inflightRefresh: Promise<void> | null = null;
-  private inflightProviders: Promise<Provider[]> | null = null;
+  private inflightByMode = new Map<
+    Exclude<ProviderFetchMode, "force">,
+    Promise<ProvidersFetchResult>
+  >();
 
   constructor(opts: RelayAdapterOptions = {}) {
     this.baseUrl = (opts.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
-    this.fetchImpl =
-      opts.fetchImpl ?? ((...args) => globalThis.fetch(...args));
+    this.fetchImpl = opts.fetchImpl ?? ((...args) => globalThis.fetch(...args));
     this.bindings = opts.bindings ?? (relayBindings as RelayBindings);
   }
 
@@ -185,7 +194,7 @@ export class RelayAuthAdapter implements AuthAdapter {
     }
     this.accessToken = access;
     this.refreshToken = refresh;
-    this.deviceKey = await this.bindings.getRelayDeviceKey();
+    this.deviceKey ??= await this.bindings.getRelayDeviceKey();
     // WI-R2 bugfix: a restored session must also load the device
     // identity. Without this, `listProviders()` on cold start sends an
     // empty `X-Device-Id` header and the relay rejects it — the
@@ -225,6 +234,7 @@ export class RelayAuthAdapter implements AuthAdapter {
     }
     const data = (await res.json()) as AuthTokenResponse;
     await this.persistTokens(data);
+    this.deviceKey ??= await this.bindings.getRelayDeviceKey();
     this.user = data.user ?? (await this.fetchMe());
     this.emit({ type: "login", user: this.user });
     return this.user;
@@ -259,6 +269,7 @@ export class RelayAuthAdapter implements AuthAdapter {
     }
     const data = (await res.json()) as AuthTokenResponse;
     await this.persistTokens(data);
+    this.deviceKey ??= await this.bindings.getRelayDeviceKey();
 
     // v1.3 happy path: register includes the User inline.
     if (data.user) {
@@ -295,7 +306,10 @@ export class RelayAuthAdapter implements AuthAdapter {
    * Throws RelayApiError on failure (INVALID_CREDENTIALS for wrong
    * current password, VALIDATION for bad new password).
    */
-  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  async changePassword(
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
     await this.authedJson<{ refresh_tokens_revoked: number }>(
       "POST",
       "/v1/auth/password",
@@ -348,7 +362,7 @@ export class RelayAuthAdapter implements AuthAdapter {
    * NEVER schedule this on a timer.
    */
   async listProviders(): Promise<Provider[]> {
-    return this.fetchProvidersInternal({ rotate: true });
+    return (await this.fetchProvidersInternal({ mode: "reuse" })).providers;
   }
 
   /**
@@ -371,7 +385,7 @@ export class RelayAuthAdapter implements AuthAdapter {
     opts: { failOnMissing?: boolean } = {},
   ): Promise<Provider[]> {
     try {
-      return await this.fetchProvidersInternal({ rotate: false });
+      return (await this.fetchProvidersInternal({ mode: "meta" })).providers;
     } catch (err) {
       if (
         err instanceof RelayApiError &&
@@ -380,9 +394,45 @@ export class RelayAuthAdapter implements AuthAdapter {
       ) {
         // Fall back to the rotating call so the user isn't stuck in
         // a "no key, but we won't mint one" purgatory.
-        return await this.fetchProvidersInternal({ rotate: true });
+        return (await this.fetchProvidersInternal({ mode: "force" })).providers;
       }
       throw err;
+    }
+  }
+
+  async syncDeviceKey(
+    opts: { force?: boolean } = {},
+  ): Promise<{ key: string; prefix: string } | null> {
+    this.deviceKey ??= await this.bindings.getRelayDeviceKey();
+    if (opts.force) {
+      const r = await this.fetchProvidersInternal({ mode: "force" });
+      return this.deviceKey
+        ? { key: this.deviceKey, prefix: r.keyPrefix }
+        : null;
+    }
+
+    const r = await this.fetchProvidersInternal({ mode: "reuse" });
+    const serverPrefix = r.keyPrefix;
+    const cached = this.deviceKey;
+    const mismatch =
+      !!cached && !!serverPrefix && !cached.startsWith(serverPrefix);
+    if (!cached || mismatch) {
+      const f = await this.fetchProvidersInternal({ mode: "force" });
+      return this.deviceKey
+        ? { key: this.deviceKey, prefix: f.keyPrefix }
+        : null;
+    }
+    return { key: cached, prefix: serverPrefix };
+  }
+
+  async fetchRelayProviderMeta(): Promise<Provider | null> {
+    try {
+      return (
+        (await this.fetchProvidersInternal({ mode: "meta" })).providers[0] ??
+        null
+      );
+    } catch {
+      return null;
     }
   }
 
@@ -391,51 +441,65 @@ export class RelayAuthAdapter implements AuthAdapter {
    * share the dedup + headers logic; only the URL query string and
    * the "rotate the cached key on response" step differ.
    */
-  private async fetchProvidersInternal(
-    opts: { rotate: boolean },
-  ): Promise<Provider[]> {
-    if (!this.accessToken) return [];
+  private async fetchProvidersInternal(opts: {
+    mode: ProviderFetchMode;
+  }): Promise<ProvidersFetchResult> {
+    if (!this.accessToken) return { providers: [], keyPrefix: "" };
     // Coalesce concurrent calls — when rotating, two concurrent calls
     // means the first invocation's key is dead before its caller
     // can use it. We dedup non-rotating calls too because there's
     // no value in two parallel "fetch the same data" requests.
-    if (this.inflightProviders) return this.inflightProviders;
-    this.inflightProviders = (async () => {
-      try {
-        const path = opts.rotate ? "/v1/providers" : "/v1/providers?rotate=false";
-        const data = await this.authedJson<ProvidersResponse>(
-          "GET",
-          path,
-          undefined,
-          {
-            "X-Device-Id": this.deviceId ?? "",
-            "X-Device-Name": this.deviceName ?? "",
-          },
-        );
-        const providers = data.providers ?? [];
-        if (opts.rotate) {
-          // Rotate mode: response carries a fresh tsk_*. Cache it.
-          const key = providers.find((p) => p.api_key)?.api_key ?? null;
-          if (key) {
-            this.deviceKey = key;
-            await this.bindings.setRelayDeviceKey(key);
-          }
+    if (opts.mode !== "force") {
+      const live = this.inflightByMode.get(opts.mode);
+      if (live) return live;
+    }
+
+    const run = (async (): Promise<ProvidersFetchResult> => {
+      const path =
+        opts.mode === "meta"
+          ? "/v1/providers?rotate=false"
+          : opts.mode === "force"
+            ? "/v1/providers?rotate=force"
+            : "/v1/providers";
+      const data = await this.authedJson<ProvidersResponse>(
+        "GET",
+        path,
+        undefined,
+        {
+          "X-Device-Id": this.deviceId ?? "",
+          "X-Device-Name": this.deviceName ?? "",
+        },
+      );
+      const providers = data.providers ?? [];
+      const keyPrefix = providers.find((p) => p.prefix)?.prefix ?? "";
+      if (opts.mode !== "meta") {
+        // Rotate mode: response carries a fresh tsk_*. Cache it.
+        const key = providers.find((p) => p.api_key)?.api_key ?? null;
+        if (key) {
+          await this.setDeviceKey(key);
         }
-        // In non-rotate mode every api_key is null per §3.7. We do
-        // NOT overwrite the cached `this.deviceKey` — that's the
-        // whole point of asking for the non-rotating endpoint.
-        this.emit({ type: "providers-updated", providers });
-        return providers;
-      } finally {
-        this.inflightProviders = null;
       }
+      // In non-rotate mode every api_key is null per §3.7. We do
+      // NOT overwrite the cached `this.deviceKey` — that's the
+      // whole point of asking for the non-rotating endpoint.
+      this.emit({ type: "providers-updated", providers });
+      return { providers, keyPrefix };
     })();
-    return this.inflightProviders;
+
+    if (opts.mode !== "force") this.inflightByMode.set(opts.mode, run);
+    try {
+      return await run;
+    } finally {
+      if (opts.mode !== "force") this.inflightByMode.delete(opts.mode);
+    }
   }
 
   async getUsage(): Promise<UsageSummary | null> {
     if (!this.accessToken) return null;
-    const data = await this.authedJson<UsageSummary>("GET", "/v1/usage/summary");
+    const data = await this.authedJson<UsageSummary>(
+      "GET",
+      "/v1/usage/summary",
+    );
     this.emit({ type: "usage-updated", usage: data });
     return data;
   }
@@ -463,6 +527,11 @@ export class RelayAuthAdapter implements AuthAdapter {
     if (!this.deviceName) {
       this.deviceName = await this.bindings.getDefaultDeviceName();
     }
+  }
+
+  private async setDeviceKey(key: string): Promise<void> {
+    this.deviceKey = key;
+    await this.bindings.setRelayDeviceKey(key);
   }
 
   /**

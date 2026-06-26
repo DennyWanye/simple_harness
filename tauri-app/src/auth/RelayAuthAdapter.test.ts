@@ -64,7 +64,9 @@ function mkResponse(opts: {
     headers,
     json: async () => opts.body ?? {},
     text: async () =>
-      typeof opts.body === "string" ? opts.body : JSON.stringify(opts.body ?? {}),
+      typeof opts.body === "string"
+        ? opts.body
+        : JSON.stringify(opts.body ?? {}),
   } as Response;
 }
 
@@ -83,6 +85,20 @@ function queueFetch(responses: Response[]): typeof fetch {
     }
     return responses[i++];
   }) as typeof fetch;
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
 }
 
 const SAMPLE_USER = {
@@ -158,6 +174,23 @@ describe("RelayAuthAdapter.login", () => {
     expect(events).toEqual([{ type: "login", user: SAMPLE_USER }]);
   });
 
+  it("loads cached device key after successful login", async () => {
+    const bindings = makeBindings({
+      getRelayDeviceKey: vi.fn(async () => "tsk_cached_login"),
+    });
+    const fetchImpl = vi.fn(
+      queueFetch([
+        mkResponse({ body: { ...SAMPLE_TOKENS, user: SAMPLE_USER } }),
+      ]),
+    );
+    const adapter = new RelayAuthAdapter({ fetchImpl, bindings });
+
+    await adapter.login({ email: "a@b.c", password: "min8chars" });
+
+    expect(bindings.getRelayDeviceKey).toHaveBeenCalled();
+    expect(adapter._testGetState().deviceKey).toBe("tsk_cached_login");
+  });
+
   it("wraps 401 INVALID_CREDENTIALS in RelayApiError", async () => {
     const fetchImpl = queueFetch([
       mkResponse({
@@ -170,7 +203,10 @@ describe("RelayAuthAdapter.login", () => {
         headers: { "X-Request-Id": "req_xyz" },
       }),
     ]);
-    const adapter = new RelayAuthAdapter({ fetchImpl, bindings: makeBindings() });
+    const adapter = new RelayAuthAdapter({
+      fetchImpl,
+      bindings: makeBindings(),
+    });
     await expect(
       adapter.login({ email: "a@b.c", password: "wrong123" }),
     ).rejects.toMatchObject({
@@ -186,7 +222,10 @@ describe("RelayAuthAdapter.login", () => {
     const fetchImpl = vi.fn(async () => {
       throw new TypeError("Failed to fetch");
     }) as unknown as typeof fetch;
-    const adapter = new RelayAuthAdapter({ fetchImpl, bindings: makeBindings() });
+    const adapter = new RelayAuthAdapter({
+      fetchImpl,
+      bindings: makeBindings(),
+    });
     const err = (await adapter
       .login({ email: "a@b.c", password: "x" })
       .catch((e: unknown) => e)) as RelayApiError;
@@ -233,7 +272,10 @@ describe("RelayAuthAdapter.register", () => {
           body: {
             ...SAMPLE_TOKENS,
             user: null,
-            activation: { token: "verify_abc", expiresAt: "2026-05-22T00:00:00Z" },
+            activation: {
+              token: "verify_abc",
+              expiresAt: "2026-05-22T00:00:00Z",
+            },
           },
         }),
         // /v1/auth/activate → returns user
@@ -277,7 +319,11 @@ describe("RelayAuthAdapter.register", () => {
         // /v1/auth/activate not yet deployed (pre-PR-#16)
         mkResponse({
           status: 404,
-          body: { code: "NOT_FOUND", message: "no such route", request_id: "r" },
+          body: {
+            code: "NOT_FOUND",
+            message: "no such route",
+            request_id: "r",
+          },
         }),
         // legacy path succeeds
         mkResponse({ body: SAMPLE_USER }),
@@ -310,7 +356,10 @@ describe("RelayAuthAdapter.register", () => {
         },
       }),
     ]);
-    const adapter = new RelayAuthAdapter({ fetchImpl, bindings: makeBindings() });
+    const adapter = new RelayAuthAdapter({
+      fetchImpl,
+      bindings: makeBindings(),
+    });
     await expect(
       adapter.register({ email: "dup@example.com", password: "min8chars" }),
     ).rejects.toMatchObject({ code: "EMAIL_TAKEN", status: 409 });
@@ -353,7 +402,9 @@ describe("RelayAuthAdapter refresh-on-401", () => {
 
     // Refresh must have rotated tokens in keyring.
     expect(bindings.setRelayAccessToken).toHaveBeenLastCalledWith("access_v2");
-    expect(bindings.setRelayRefreshToken).toHaveBeenLastCalledWith("refresh_v2");
+    expect(bindings.setRelayRefreshToken).toHaveBeenLastCalledWith(
+      "refresh_v2",
+    );
   });
 
   it("dedupes concurrent 401s into one refresh", async () => {
@@ -385,7 +436,10 @@ describe("RelayAuthAdapter refresh-on-401", () => {
       // Successful retry with new token.
       if (u.endsWith("/v1/usage/summary")) {
         return mkResponse({
-          body: { plan: "prepaid", balance: { amount_minor: 100, currency: "CNY" } },
+          body: {
+            plan: "prepaid",
+            balance: { amount_minor: 100, currency: "CNY" },
+          },
         });
       }
       if (u.endsWith("/v1/providers")) {
@@ -437,7 +491,11 @@ describe("RelayAuthAdapter refresh-on-401", () => {
         // refresh → 504 网关瞬时故障
         mkResponse({
           status: 504,
-          body: { code: "UPSTREAM_TIMEOUT", message: "gw timeout", request_id: "r" },
+          body: {
+            code: "UPSTREAM_TIMEOUT",
+            message: "gw timeout",
+            request_id: "r",
+          },
         }),
         // 调用方稍后重试:再 401 → refresh 用「同一个」保留下来的 token 成功
         mkResponse({
@@ -448,7 +506,10 @@ describe("RelayAuthAdapter refresh-on-401", () => {
           body: { access_token: "access_v2", refresh_token: "refresh_v2" },
         }),
         mkResponse({
-          body: { plan: "prepaid", balance: { amount_minor: 7, currency: "CNY" } },
+          body: {
+            plan: "prepaid",
+            balance: { amount_minor: 7, currency: "CNY" },
+          },
         }),
       ]),
     );
@@ -464,7 +525,9 @@ describe("RelayAuthAdapter refresh-on-401", () => {
     // 第二次:保留的 refresh token 直接复活
     const usage = await adapter.getUsage();
     expect(usage?.balance?.amount_minor).toBe(7);
-    expect(bindings.setRelayRefreshToken).toHaveBeenLastCalledWith("refresh_v2");
+    expect(bindings.setRelayRefreshToken).toHaveBeenLastCalledWith(
+      "refresh_v2",
+    );
   });
 
   it("clears state when refresh itself fails", async () => {
@@ -480,7 +543,11 @@ describe("RelayAuthAdapter refresh-on-401", () => {
         // refresh → also 401 (refresh token revoked)
         mkResponse({
           status: 401,
-          body: { code: "INVALID_TOKEN", message: "rt invalid", request_id: "r" },
+          body: {
+            code: "INVALID_TOKEN",
+            message: "rt invalid",
+            request_id: "r",
+          },
         }),
       ]),
     );
@@ -507,7 +574,9 @@ describe("RelayAuthAdapter.listProviders", () => {
         name: "OpenAI (relay)",
         base_url: "https://the relay.test/v1",
         api_key: "tsk_AAA",
-        models: [{ id: "gpt-5.2", context_window: 400000, capabilities: ["chat"] }],
+        models: [
+          { id: "gpt-5.2", context_window: 400000, capabilities: ["chat"] },
+        ],
         openai_compatible: true,
         supports_streaming: true,
         priority: 1,
@@ -600,6 +669,234 @@ describe("RelayAuthAdapter.listProviders", () => {
 
 // ── 5. logout + 429 / retry-after handling ──────────────────────
 
+describe("RelayAuthAdapter device key reuse", () => {
+  const providerWithoutKey: Provider = {
+    id: "relay-openai",
+    name: "OpenAI (relay)",
+    base_url: "https://the relay.test/v1",
+    api_key: null,
+    models: [],
+    openai_compatible: true,
+    supports_streaming: true,
+    prefix: "tsk_cached12",
+  };
+
+  const providerWithFreshKey: Provider = {
+    ...providerWithoutKey,
+    api_key: "tsk_fresh123456",
+    prefix: "tsk_fresh123",
+  };
+
+  it("uses cached key when reuse returns api_key:null without overwriting keyring", async () => {
+    const bindings = makeBindings({
+      getRelayDeviceKey: vi.fn(async () => "tsk_cached123456"),
+    });
+    const fetchImpl = vi.fn(
+      queueFetch([
+        mkResponse({ body: { ...SAMPLE_TOKENS, user: SAMPLE_USER } }),
+        mkResponse({ body: { providers: [providerWithoutKey] } }),
+      ]),
+    );
+    const adapter = new RelayAuthAdapter({ fetchImpl, bindings });
+    await adapter.login({ email: "a@b.c", password: "min8chars" });
+
+    const synced = await adapter.syncDeviceKey();
+
+    expect(synced).toEqual({
+      key: "tsk_cached123456",
+      prefix: "tsk_cached12",
+    });
+    expect(bindings.setRelayDeviceKey).not.toHaveBeenCalled();
+  });
+
+  it("persists fresh key returned by force sync", async () => {
+    const bindings = makeBindings();
+    const fetchImpl = vi.fn(
+      queueFetch([
+        mkResponse({ body: { ...SAMPLE_TOKENS, user: SAMPLE_USER } }),
+        mkResponse({ body: { providers: [providerWithFreshKey] } }),
+      ]),
+    );
+    const adapter = new RelayAuthAdapter({
+      baseUrl: "https://the relay.test",
+      fetchImpl,
+      bindings,
+    });
+    await adapter.login({ email: "a@b.c", password: "min8chars" });
+
+    const synced = await adapter.syncDeviceKey({ force: true });
+
+    expect(fetchImpl.mock.calls[1][0]).toBe(
+      "https://the relay.test/v1/providers?rotate=force",
+    );
+    expect(bindings.setRelayDeviceKey).toHaveBeenCalledWith("tsk_fresh123456");
+    expect(synced).toEqual({
+      key: "tsk_fresh123456",
+      prefix: "tsk_fresh123",
+    });
+  });
+
+  it("does not merge force sync into an in-flight reuse request", async () => {
+    const bindings = makeBindings({
+      getRelayDeviceKey: vi.fn(async () => "tsk_cached123456"),
+    });
+    const reuse = deferred<Response>();
+    const urls: string[] = [];
+    const fetchImpl = vi.fn(async (url: string) => {
+      urls.push(String(url));
+      if (String(url).endsWith("/v1/auth/login")) {
+        return mkResponse({ body: { ...SAMPLE_TOKENS, user: SAMPLE_USER } });
+      }
+      if (String(url).endsWith("/v1/providers?rotate=force")) {
+        return mkResponse({ body: { providers: [providerWithFreshKey] } });
+      }
+      if (String(url).endsWith("/v1/providers")) {
+        return await reuse.promise;
+      }
+      throw new Error(`unexpected: ${url}`);
+    }) as unknown as typeof fetch;
+    const adapter = new RelayAuthAdapter({
+      baseUrl: "https://the relay.test",
+      fetchImpl,
+      bindings,
+    });
+    await adapter.login({ email: "a@b.c", password: "min8chars" });
+
+    const reusePromise = adapter.listProviders();
+    await vi.waitFor(() => {
+      expect(urls).toContain("https://the relay.test/v1/providers");
+    });
+
+    const forced = await adapter.syncDeviceKey({ force: true });
+    reuse.resolve(mkResponse({ body: { providers: [providerWithoutKey] } }));
+    await reusePromise;
+
+    expect(urls).toContain("https://the relay.test/v1/providers?rotate=force");
+    expect(bindings.setRelayDeviceKey).toHaveBeenCalledWith("tsk_fresh123456");
+    expect(forced?.key).toBe("tsk_fresh123456");
+  });
+
+  it("forces rotation on prefix mismatch", async () => {
+    const bindings = makeBindings({
+      getRelayDeviceKey: vi.fn(async () => "tsk_cached123456"),
+    });
+    const fetchImpl = vi.fn(
+      queueFetch([
+        mkResponse({ body: { ...SAMPLE_TOKENS, user: SAMPLE_USER } }),
+        mkResponse({
+          body: {
+            providers: [{ ...providerWithoutKey, prefix: "tsk_server12" }],
+          },
+        }),
+        mkResponse({ body: { providers: [providerWithFreshKey] } }),
+      ]),
+    );
+    const adapter = new RelayAuthAdapter({
+      baseUrl: "https://the relay.test",
+      fetchImpl,
+      bindings,
+    });
+    await adapter.login({ email: "a@b.c", password: "min8chars" });
+
+    const synced = await adapter.syncDeviceKey();
+
+    expect(fetchImpl.mock.calls[1][0]).toBe(
+      "https://the relay.test/v1/providers",
+    );
+    expect(fetchImpl.mock.calls[2][0]).toBe(
+      "https://the relay.test/v1/providers?rotate=force",
+    );
+    expect(synced?.key).toBe("tsk_fresh123456");
+  });
+
+  it("does not force when prefix is missing and cached key exists", async () => {
+    const bindings = makeBindings({
+      getRelayDeviceKey: vi.fn(async () => "tsk_cached123456"),
+    });
+    const fetchImpl = vi.fn(
+      queueFetch([
+        mkResponse({ body: { ...SAMPLE_TOKENS, user: SAMPLE_USER } }),
+        mkResponse({
+          body: {
+            providers: [{ ...providerWithoutKey, prefix: undefined }],
+          },
+        }),
+      ]),
+    );
+    const adapter = new RelayAuthAdapter({
+      baseUrl: "https://the relay.test",
+      fetchImpl,
+      bindings,
+    });
+    await adapter.login({ email: "a@b.c", password: "min8chars" });
+
+    const synced = await adapter.syncDeviceKey();
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(synced).toEqual({ key: "tsk_cached123456", prefix: "" });
+    expect(bindings.setRelayDeviceKey).not.toHaveBeenCalled();
+  });
+
+  it("forces when reuse has no prefix and there is no cached key", async () => {
+    const bindings = makeBindings();
+    const fetchImpl = vi.fn(
+      queueFetch([
+        mkResponse({ body: { ...SAMPLE_TOKENS, user: SAMPLE_USER } }),
+        mkResponse({
+          body: {
+            providers: [{ ...providerWithoutKey, prefix: undefined }],
+          },
+        }),
+        mkResponse({ body: { providers: [providerWithFreshKey] } }),
+      ]),
+    );
+    const adapter = new RelayAuthAdapter({
+      baseUrl: "https://the relay.test",
+      fetchImpl,
+      bindings,
+    });
+    await adapter.login({ email: "a@b.c", password: "min8chars" });
+
+    const synced = await adapter.syncDeviceKey();
+
+    expect(fetchImpl.mock.calls[2][0]).toBe(
+      "https://the relay.test/v1/providers?rotate=force",
+    );
+    expect(synced?.key).toBe("tsk_fresh123456");
+  });
+
+  it("fetchRelayProviderMeta uses meta mode and does not overwrite cached key", async () => {
+    const bindings = makeBindings({
+      getRelayDeviceKey: vi.fn(async () => "tsk_cached123456"),
+    });
+    const fetchImpl = vi.fn(
+      queueFetch([
+        mkResponse({ body: { ...SAMPLE_TOKENS, user: SAMPLE_USER } }),
+        mkResponse({
+          body: {
+            providers: [{ ...providerWithFreshKey, api_key: "tsk_meta_leak" }],
+          },
+        }),
+      ]),
+    );
+    const adapter = new RelayAuthAdapter({
+      baseUrl: "https://the relay.test",
+      fetchImpl,
+      bindings,
+    });
+    await adapter.login({ email: "a@b.c", password: "min8chars" });
+
+    const meta = await adapter.fetchRelayProviderMeta();
+
+    expect(fetchImpl.mock.calls[1][0]).toBe(
+      "https://the relay.test/v1/providers?rotate=false",
+    );
+    expect(meta?.id).toBe("relay-openai");
+    expect(adapter._testGetState().deviceKey).toBe("tsk_cached123456");
+    expect(bindings.setRelayDeviceKey).not.toHaveBeenCalled();
+  });
+});
+
 describe("RelayAuthAdapter.logout", () => {
   it("calls /v1/auth/logout and clears all keyring slots", async () => {
     const bindings = makeBindings();
@@ -647,7 +944,10 @@ describe("RelayApiError retry-after parsing", () => {
         headers: { "Retry-After": "17", "X-Request-Id": "r" },
       }),
     ]);
-    const adapter = new RelayAuthAdapter({ fetchImpl, bindings: makeBindings() });
+    const adapter = new RelayAuthAdapter({
+      fetchImpl,
+      bindings: makeBindings(),
+    });
     const err = (await adapter
       .login({ email: "a@b.c", password: "x" })
       .catch((e: unknown) => e)) as RelayApiError;
@@ -799,7 +1099,10 @@ describe("RelayApiError envelope mapping", () => {
         body: { code: "TEAPOT", message: "I am a teapot", request_id: "r" },
       }),
     ]);
-    const adapter = new RelayAuthAdapter({ fetchImpl, bindings: makeBindings() });
+    const adapter = new RelayAuthAdapter({
+      fetchImpl,
+      bindings: makeBindings(),
+    });
     const err = (await adapter
       .login({ email: "a@b.c", password: "x" })
       .catch((e: unknown) => e)) as RelayApiError;
@@ -808,10 +1111,11 @@ describe("RelayApiError envelope mapping", () => {
   });
 
   it("infers code from HTTP status when body is empty", async () => {
-    const fetchImpl = queueFetch([
-      mkResponse({ status: 502, body: null }),
-    ]);
-    const adapter = new RelayAuthAdapter({ fetchImpl, bindings: makeBindings() });
+    const fetchImpl = queueFetch([mkResponse({ status: 502, body: null })]);
+    const adapter = new RelayAuthAdapter({
+      fetchImpl,
+      bindings: makeBindings(),
+    });
     const err = (await adapter
       .login({ email: "a@b.c", password: "x" })
       .catch((e: unknown) => e)) as RelayApiError;
@@ -832,7 +1136,10 @@ describe("RelayApiError envelope mapping", () => {
         },
       }),
     ]);
-    const adapter = new RelayAuthAdapter({ fetchImpl, bindings: makeBindings() });
+    const adapter = new RelayAuthAdapter({
+      fetchImpl,
+      bindings: makeBindings(),
+    });
     const err = (await adapter
       .login({ email: "a@b.c", password: "x" })
       .catch((e: unknown) => e)) as RelayApiError;
@@ -925,7 +1232,7 @@ describe("RelayAuthAdapter.listProvidersUsingCache", () => {
     expect(providers[0].api_key).toBe("tsk_fresh");
     expect(bindings.setRelayDeviceKey).toHaveBeenCalledWith("tsk_fresh");
     expect(fetchImpl.mock.calls[2][0]).toBe(
-      "https://the relay.test/v1/providers",
+      "https://the relay.test/v1/providers?rotate=force",
     );
   });
 
@@ -943,7 +1250,10 @@ describe("RelayAuthAdapter.listProvidersUsingCache", () => {
         }),
       ]),
     );
-    const adapter = new RelayAuthAdapter({ fetchImpl, bindings: makeBindings() });
+    const adapter = new RelayAuthAdapter({
+      fetchImpl,
+      bindings: makeBindings(),
+    });
     await adapter.login({ email: "a@b.c", password: "min8chars" });
 
     await expect(
@@ -1025,7 +1335,10 @@ describe("RelayAuthAdapter.changePassword", () => {
         }),
       ]),
     );
-    const adapter = new RelayAuthAdapter({ fetchImpl, bindings: makeBindings() });
+    const adapter = new RelayAuthAdapter({
+      fetchImpl,
+      bindings: makeBindings(),
+    });
     await adapter.login({ email: "a@b.c", password: "min8chars" });
 
     const err = (await adapter
