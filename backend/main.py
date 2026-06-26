@@ -5771,6 +5771,9 @@ async def control_channel(ws: WebSocket):
                 _model_ids: list[str] = []
                 _source = "none"
                 _base_url = ""
+                # 生效的 provider 默认模型：preferred_model 留空(跟随 provider 默认)
+                # 时,UI 据此显示「当前真正用的模型」而非「默认模型」占位词。
+                _default_model = ""
                 if _reg is not None:
                     try:
                         _chain = _reg.get_chain()
@@ -5782,6 +5785,8 @@ async def control_channel(ws: WebSocket):
                         _entry0 = _reg.get_entry(_pid0) if _pid0 else None
                         if _entry0 is not None:
                             _base_url = str(getattr(_entry0, "base_url", "") or "")
+                            # ProviderEntry.model = default_model or models[0]。
+                            _default_model = str(getattr(_entry0, "model", "") or "")
                             _cfg_models = list(getattr(_entry0, "models", []) or [])
                             _api_key = _reg.resolve_api_key(_pid0)
                             try:
@@ -5816,6 +5821,10 @@ async def control_channel(ws: WebSocket):
                             _model_ids = _live_ll
                             _source = "live-local_llm"
                             _base_url = _ll_base
+                # registry chain 为空时,生效默认模型取 local_llm 的运行时 model
+                # (onboarding 登录中转站后已写 gpt-5.5)。
+                if not _default_model and local_llm is not None:
+                    _default_model = str(getattr(local_llm, "model", "") or "")
                 from llm.model_catalog import build_catalog as _bc
                 await ws.send_json({
                     "type": "code_models_list_response",
@@ -5823,6 +5832,7 @@ async def control_channel(ws: WebSocket):
                         "models": _bc(_model_ids),
                         "source": _source,
                         "base_url": _base_url,
+                        "default_model": _default_model,
                     },
                 })
 

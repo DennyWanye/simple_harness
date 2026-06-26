@@ -41,6 +41,7 @@ import {
   useCodeModelsStore,
   contextWindowForModel,
   formatContextWindow,
+  effectiveModelId,
 } from "../code-panel/codeModelsStore";
 import { codePanelWS } from "../code-panel/ws";
 import { useAudioChannel } from "../hooks/useAudioChannel";
@@ -76,9 +77,14 @@ export function MessagePanelRoot() {
   const model_params = useSessionsStore(
     (s) => s.sessions[activeSid]?.model_params ?? null,
   );
-  // 模型按钮显示「模型-上下文长度(K/M)」: 从 catalog 取当前模型上下文窗口。
+  // 模型按钮显示「模型-上下文长度(K/M)」。未固定 preferred_model 时,显示
+  // 生效的 provider 默认模型(后端经 code_models_list_response 下发),让用户
+  // 看到「当前真正在用的模型」而非「默认模型」占位词。
   const modelCatalog = useCodeModelsStore((s) => s.models);
-  const ctx_window = contextWindowForModel(preferred_model, modelCatalog);
+  const default_model = useCodeModelsStore((s) => s.default_model);
+  const eff_model = effectiveModelId(preferred_model, default_model);
+  const is_following_default = !((preferred_model ?? "").trim());
+  const ctx_window = contextWindowForModel(eff_model, modelCatalog);
   const ctx_label = formatContextWindow(ctx_window);
 
   // ── Voice pipeline (parity with the pet's main mic) ──────────────
@@ -528,8 +534,10 @@ export function MessagePanelRoot() {
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => setShowModelModal(true)}
             title={
-              preferred_model
-                ? `模型与参数（当前 ${preferred_model}）`
+              eff_model
+                ? is_following_default
+                  ? `模型与参数（当前 ${eff_model} · 跟随 provider 默认）`
+                  : `模型与参数（当前 ${eff_model}）`
                 : "选择模型与参数"
             }
             aria-label="模型与参数"
@@ -542,10 +550,10 @@ export function MessagePanelRoot() {
                 whiteSpace: "nowrap",
               }}
             >
-              {preferred_model
+              {eff_model
                 ? ctx_label
-                  ? `${preferred_model}-${ctx_label}`
-                  : preferred_model
+                  ? `${eff_model}-${ctx_label}`
+                  : eff_model
                 : "默认模型"}
             </span>
             <Icon name="edit" size={11} style={{ flexShrink: 0 }} />

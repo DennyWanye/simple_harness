@@ -878,6 +878,7 @@ function dispatch(msg: any) {
         .set_catalog(
           Array.isArray(p.models) ? p.models : [],
           typeof p.source === "string" ? p.source : "none",
+          typeof p.default_model === "string" ? p.default_model : "",
         );
       break;
     }

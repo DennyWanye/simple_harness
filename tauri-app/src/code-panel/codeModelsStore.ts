@@ -72,22 +72,37 @@ interface CodeModelsStore {
   models: CatalogModel[];
   /** "live" (relay /models), "config" (registry fallback), "none". */
   source: string;
+  /** 生效的 provider 默认模型 id（preferred_model 留空时实际出站的模型）。
+   *  UI 据此把「默认模型 / 跟随 provider 默认」展示成真实模型名。 */
+  default_model: string;
   loaded: boolean;
-  set_catalog(models: CatalogModel[], source: string): void;
+  set_catalog(models: CatalogModel[], source: string, default_model?: string): void;
 }
 
 export const useCodeModelsStore = create<CodeModelsStore>((set) => ({
   models: [],
   source: "none",
+  default_model: "",
   loaded: false,
-  set_catalog(models, source) {
+  set_catalog(models, source, default_model) {
     set({
       models: Array.isArray(models) ? models : [],
       source: source || "none",
+      default_model: typeof default_model === "string" ? default_model : "",
       loaded: true,
     });
   },
 }));
+
+/** 当前生效模型名：会话固定了 preferred_model 就用它,否则用 provider 默认。 */
+export function effectiveModelId(
+  preferred_model: string | null | undefined,
+  default_model: string | null | undefined,
+): string {
+  const pinned = (preferred_model ?? "").trim();
+  if (pinned) return pinned;
+  return (default_model ?? "").trim();
+}
 
 // --------------------------------------------------------------------
 // Pure helpers — exported for vitest without a React tree.
@@ -119,9 +134,14 @@ export function capsForModel(
 export function buildModelOptionsFromCatalog(
   current_model: string | null | undefined,
   catalog: CatalogModel[],
+  default_model?: string | null,
 ): Array<{ value: string; label: string }> {
+  const def = (default_model ?? "").trim();
   const opts: Array<{ value: string; label: string }> = [
-    { value: "", label: "跟随 provider 默认" },
+    {
+      value: "",
+      label: def ? `跟随 provider 默认（${def}）` : "跟随 provider 默认",
+    },
   ];
   for (const m of catalog) opts.push({ value: m.id, label: m.label });
   const cur = (current_model ?? "").trim();

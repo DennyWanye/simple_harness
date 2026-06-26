@@ -62,7 +62,12 @@ export function ChangeModelModal({
   onClose,
 }: ChangeModelModalProps) {
   const catalog = useCodeModelsStore((s) => s.models);
-  const model_opts = buildModelOptionsFromCatalog(current_model, catalog);
+  const default_model = useCodeModelsStore((s) => s.default_model);
+  const model_opts = buildModelOptionsFromCatalog(
+    current_model,
+    catalog,
+    default_model,
+  );
   const [model, set_model] = useState<string>(current_model ?? "");
   // Thinking (重推理/慢) and Fast (低延迟/快) are mutually exclusive —
   // a single-select "推理模式" instead of two independent toggles.
@@ -181,6 +186,13 @@ export function ChangeModelModal({
               </option>
             ))}
           </select>
+          {/* 当前真正生效的模型：固定了就是它,否则是 provider 默认。 */}
+          {(model.trim() || default_model.trim()) && (
+            <span style={hintStyle}>
+              当前生效：{model.trim() || default_model.trim()}
+              {!model.trim() && default_model.trim() ? "（provider 默认）" : ""}
+            </span>
+          )}
 
           {/* Reasoning mode — single-select (Thinking ⟺ Fast are
               mutually exclusive: high reasoning/slow vs low latency).
