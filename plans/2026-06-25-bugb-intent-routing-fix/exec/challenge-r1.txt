@@ -1,0 +1,39 @@
+你是一名极其严苛的只读对抗审查者（adversarial reviewer）。你没有本次对话的任何上下文，必须自己读文件。
+
+# 背景
+DeskPet 是单机桌宠项目（Python backend + Tauri）。有人写了一份修复 plan，针对 "BUG-B"：
+组装期分类器把真实非闲聊问题误判成 chat → 派生 chitchat → 七步问题流水线被短路跳过，
+默认配置下流水线形同虚设。现在要你对这份 plan 做对抗挑战，找出会导致执行失败的问题。
+
+# 必读文件（绝对路径，只读）
+1. plan 本体：G:/projects/deskpet/plans/2026-06-25-bugb-intent-routing-fix/00-PLAN.md
+2. G:/projects/deskpet/backend/deskpet/agent/intent_triage.py
+3. G:/projects/deskpet/backend/deskpet/agent/assembler/classifier.py
+4. G:/projects/deskpet/backend/deskpet/agent/problem_pipeline.py
+5. G:/projects/deskpet/backend/deskpet/agent/assembler/__init__.py
+6. G:/projects/deskpet/backend/main.py 的第 1960-2030 行附近（build_default_assembler 调用处）
+7. 真测结论：G:/projects/deskpet/plans/manual-results-2026-06-25-problem-pipeline-prod/RESULTS.md 的 §0
+
+# 你必须主动 grep/搜索核实的点（不要只信 plan 的说法）
+- `DESKPET_DISABLE_CHITCHAT_SHORTCIRCUIT` 在 backend 全仓的**所有读取点**（plan 说要退役它，但可能有多处读取，漏改会留半残状态）。
+- `short_circuit` / `pipeline.short_circuit` 的**所有消费方**（problem_pipeline.py、self_check_gate.py、evidence_gate、编排器入口），确认 plan 改了 intent_triage 的派生后，下游是否还有别的地方独立判 chitchat 短路。
+- `_TASKTYPE_TO_PROBLEM`、`prior_task_type`、`ClassifierResult.task_type` 的**实际调用链**：plan 声称"组装期 classifier 仍驱动上下文组装"，核实它的输出到底被谁消费、改它会不会有别的副作用。
+- plan 引用的 file:line（如 classifier.py:267-273、main.py:1998、intent_triage.py:218-221）是否**真实存在且语义吻合**。逐条核对，引用失实直接标 BLOCKER。
+- plan 说 "WI-5(b) 已修 safe-fail 不短路 / 去 hint / 无早期规则短路"——核实当前代码是否真如此（别把已修当未修，或把未修当已修）。
+
+# 输出要求（中文，结构化）
+对每个发现，按严重度分级，给出**证据(file:line 或 grep 结果)** + **具体修法**：
+- **[BLOCKER]** 会导致执行直接失败/方案解不了 P0/引用失实 的问题
+- **[MAJOR]** 会导致半残状态/遗漏耦合点/验收无法真证伪 的问题
+- **[MINOR]** 改进建议
+
+特别审查这几个角度：
+A. 根因判断是否准确（plan 对 BUG-B 残留问题的描述是否与当前真实代码一致）。
+B. Phase 1（allowlist 快路径 + fail-closed 短路）**单独**是否真能让默认配置下"真问题不被短路"。有没有遗漏的下游短路点让 Phase 1 不彻底。
+C. allowlist 设计有没有可被绕过/误判的边界（中文、emoji、混合"你好+真问题"）。
+D. 验收用例（BUGB-1~5）能否真正证伪 BUG-B；"默认配置"具体指哪些 config 值/env，plan 有没有说清。
+E. Phase 2 接 llm_registry 会不会引入新问题（每回合第二次 LLM 调用、relay 没有的模型、启动期装配顺序）。
+
+# 最终裁决（必须给）
+最后一行输出二选一：
+`VERDICT: EXECUTABLE-AS-IS`  或  `VERDICT: NEEDS-REVISION（附 top-3 必改项）`
