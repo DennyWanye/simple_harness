@@ -1753,6 +1753,20 @@ function App() {
     });
   }, [relayAdapter]);
 
+  // WI-3 cold-start race fix: on a fresh launch the relay `login` event
+  // (restoreSession / dev auto-login) can fire BEFORE the control WS is
+  // connected, so the first ensure aborts at "no channel". Re-fire ensure
+  // when the ws transitions to "connected" (idempotent: lastEnsured cache
+  // makes a duplicate a no-op). Without this, 收编 silently never happens
+  // on a real user's cold start (it only worked under HMR because the
+  // channel was already up).
+  useEffect(() => {
+    if (!relayAdapter || state !== "connected") return;
+    if (relayAdapter.isAuthenticated()) {
+      void relayProviderRegistration.ensure(relayAdapter, "login");
+    }
+  }, [state, relayAdapter]);
+
   // WI-3 (B-C2 self-heal): backend signals the local relay key is gone
   // (keychain cleared / never minted) via settings_providers_error
   // {reason:key_missing}. Re-mint via recover (force). The recover

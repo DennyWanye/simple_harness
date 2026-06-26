@@ -81,6 +81,16 @@ export class RelayProviderRegistration {
       this.lastEnsured.keyPresent;
     if (reason === "restore" && ok && !force) return;
 
+    // Channel check FIRST — on cold start the `login` event (from
+    // restoreSession / auto-login) can fire before the control WS is
+    // connected. Aborting here (before syncDeviceKey) avoids a wasted
+    // device-key rotation; App.tsx re-triggers ensure on ws "connected".
+    const ch = this.getChannel?.();
+    if (!ch) {
+      console.warn("[reg] no channel (will retry on ws connect)");
+      return;
+    }
+
     const synced = await adapter.syncDeviceKey({ force: force || !ok });
     if (!synced) {
       console.warn("[reg] no device key");
@@ -91,12 +101,6 @@ export class RelayProviderRegistration {
     const models = (meta?.models ?? []).map((m) => m.id);
     if (!meta || !models.length) {
       console.warn("[reg] empty models");
-      return;
-    }
-
-    const ch = this.getChannel?.();
-    if (!ch) {
-      console.warn("[reg] no channel");
       return;
     }
 

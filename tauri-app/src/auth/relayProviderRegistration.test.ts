@@ -152,7 +152,12 @@ describe("RelayProviderRegistration.ensure", () => {
 
     await registration.ensure(adapter);
 
-    expect(console.warn).toHaveBeenCalledWith("[reg] no channel");
+    expect(console.warn).toHaveBeenCalledWith(
+      "[reg] no channel (will retry on ws connect)",
+    );
+    // Cold-start fix: channel checked BEFORE syncDeviceKey, so no wasted
+    // device-key rotation when the ws isn't connected yet.
+    expect(adapter.syncDeviceKey).not.toHaveBeenCalled();
   });
 
   it("serializes concurrent ensure calls (2nd syncDeviceKey waits for 1st)", async () => {
