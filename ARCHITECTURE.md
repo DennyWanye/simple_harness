@@ -134,9 +134,19 @@ deskpet/
 |---|---|---|
 | 触发 | `npm run dev` / `npm run build` | `npm run dev:relay` / `npm run build:relay` |
 | 登录窗 | ❌ 没有 | ✅ 强制 |
-| LLM key 来源 | 用户在 Settings 手填 | relay 服务下发到 keychain |
+| LLM key 来源 | 用户在 Settings 手填 | relay 登录下发 device key（复用，见下） |
+| LLM provider | 用户手填，进 `LLMProviderRegistry`（`config.toml [[llm.endpoints]]`）| **登录后自动收编进同一 registry**，作为 `source="relay"` 的 `relay-cloud` 行，设置面板可统一管理 |
 
 OSS 用户走 `manual`；维护者带 relay 服务的用 `relay`。两套共享主体代码。
+
+> **relay 收编（2026-06-25，`plans/2026-06-25-relay-local-apikey-provider/`）**：relay 登录后由前端
+> `relayProviderRegistration` 把 device key 镜像进 `LLMProviderRegistry` 的 `relay-cloud` 条目
+> （key 存 keychain `deskpet/provider.relay-cloud`，账号指纹 `account_ref`），聊天经 `resolve_provider_for_session`
+> → registry chain **按需读 key**，绕开 spawn 期固定的 `DESKPET_CLOUD_API_KEY` env 与 `deskpet-cloud-llm`
+> keychain slot（后两者**自此仅服务 manual/legacy 手填路径**）。device key 复用三态见
+> [`02-relay-handoff-device-key-reuse.md`](./plans/2026-06-25-relay-local-apikey-provider/02-relay-handoff-device-key-reuse.md)。
+> 门控：前端 `relayConfig.RELAY_MANAGED_PROVIDER` + 后端 `[features].relay_managed_provider`（默认 ON；
+> OFF 回退旧 `relayProviderBridge` 旁路）。`X-Device-Id` 持久化在 `<user_data>/device_id`（`device.rs`，跨重启稳定）。
 
 ### 4. 三层记忆
 
