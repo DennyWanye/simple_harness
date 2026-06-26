@@ -154,6 +154,44 @@ describe("RelayProviderRegistration.ensure", () => {
 
     expect(console.warn).toHaveBeenCalledWith("[reg] no channel");
   });
+
+  it("serializes concurrent ensure calls (2nd syncDeviceKey waits for 1st)", async () => {
+    // G2: the inflight chain must serialize ensures so two near-simultaneous
+    // login events never run syncDeviceKey (→ /v1/providers) in parallel and
+    // rotate each other's key away.
+    const registration = new RelayProviderRegistration();
+    const adapter = makeAdapter();
+    const deferred: Array<(v: { key: string; prefix: string }) => void> = [];
+    vi.mocked(adapter.syncDeviceKey).mockImplementation(
+      () =>
+        new Promise<{ key: string; prefix: string }>((resolve) => {
+          deferred.push(resolve);
+        }),
+    );
+    const channel = { send: vi.fn() };
+    registration.attach(() => channel, vi.fn());
+
+    const flush = async () => {
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    };
+
+    const p1 = registration.ensure(adapter, "login");
+    const p2 = registration.ensure(adapter, "login");
+
+    await flush();
+    // Serialized: only ensure#1 has reached its (blocked) syncDeviceKey;
+    // ensure#2 is still queued behind the inflight chain.
+    expect(deferred).toHaveLength(1);
+
+    deferred[0]({ key: "tsk_stable", prefix: "tsk_stable_1" });
+    await flush();
+    // ensure#1 finished (sent) → ensure#2 now starts its own syncDeviceKey.
+    expect(deferred).toHaveLength(2);
+
+    deferred[1]({ key: "tsk_stable", prefix: "tsk_stable_1" });
+    await Promise.all([p1, p2]);
+    expect(channel.send).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("RelayProviderRegistration.recover", () => {

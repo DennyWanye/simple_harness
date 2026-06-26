@@ -38,6 +38,7 @@ import type { ControlChannel } from "../ws/ControlChannel";
 import type { IncomingMessage } from "../types/messages";
 import type { RelayAuthAdapter } from "../auth/RelayAuthAdapter";
 import type { Provider as RelayProvider } from "../auth/types";
+import { RELAY_MANAGED_PROVIDER } from "../auth/relayConfig";
 
 // ---- Relay-edition virtual providers --------------------------------------
 //
@@ -454,7 +455,13 @@ export function SettingsProviders({
   // 下发的 provider 当作只读虚拟项 merge 进列表。无 adapter（OSS 默认）
   // → relayProviders 保持空 → 行为零回归。
   useEffect(() => {
-    if (!relayAdapter) {
+    // WI-3: in managed mode the relay account is collected into the
+    // backend registry as a real `relay-cloud` provider (shown via the
+    // normal registry list), so the legacy frontend-only virtual
+    // "chinzy" row + its extra `/v1/providers` fetch are retired.
+    // (WI-4 will add the relay-managed readonly badge to that registry
+    // row.) Flag OFF → legacy virtual row (BC).
+    if (!relayAdapter || RELAY_MANAGED_PROVIDER) {
       setRelayProviders([]);
       return;
     }
