@@ -68,7 +68,7 @@ relay 登录态下，端到端串起以下四条改动链路（核对源码锚�
 
 | TC | 一句话 | ★ | 状态 | 证据 |
 |---|---|---|---|---|
-| **TC-1** | 登录后 relay-cloud 自动收编进 registry（config.toml + 日志） | ★ | ✅ **PASS** | `screenshots/PhaseCD-relay-cloud-managed-row.png`；`backend/userdata/config.toml:480-489`（`id="relay-cloud" source="relay" account_ref="cmoztk8nl0000po07jjr8wvu8"`）；日志 `relay_provider_ensured` |
+| **TC-1** | 登录后 relay-cloud 自动收编进 registry（config.toml + 日志） | ★ | ✅ **PASS**（含冷启动复验） | `screenshots/PhaseCD-relay-cloud-managed-row.png`；`backend/userdata/config.toml:480-489`（`id="relay-cloud" source="relay" account_ref="cmoztk8nl0000po07jjr8wvu8"`）；日志 `relay_provider_ensured`；**冷启动复验** `EVIDENCE-coldstart-fix.txt`（见下方 🐛 备注） |
 | **TC-2** | 设置面板 relay-cloud = relay 受限三态（徽章 + 重置 key 按钮） | ★ | ✅ **PASS** | `screenshots/PhaseCD-relay-cloud-managed-row.png` + `screenshots/PhaseCD-relay-managed-full-row-reset-btn.png`（行 = 「中转站 · chinzy」+ relay 蓝徽章 + 默认 `gpt-5.5` 下拉 + 启用✓ + 编辑 + 🔄重置 key） |
 | **TC-3** | 聊天走 registry chain(relay-cloud) → chinzy 200 OK → 真回复 | ★ | ✅ **PASS** | `screenshots/PhaseCDE-chat-via-relay-cloud-sent.png`；`EVIDENCE-chat-routes-relay-cloud.txt`（`p5s2_chain_resolved ... n_entries=1 models=['gpt-5.5']` + 多条 `POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"`） |
 | TC-4 | device key 复用（`api_key:null` 用缓存，不每登换 key） | ★ | ⏸ **env-limited** | 见 §4.1（需中转站 PR-6 开 `DEVICE_KEY_REUSE_ENABLED`） |
@@ -78,6 +78,12 @@ relay 登录态下，端到端串起以下四条改动链路（核对源码锚�
 | TC-8 | 重置 key 按钮真点 → force 轮换 | — | ⏸ **env-limited** | 见 §4.5（可真测但触发 force 轮换，建议单独验） |
 
 **集成门结论（2026-06-26）**：★3 必过项（TC-1/TC-2/TC-3）**全 PASS** —— 用户核心需求「relay 自动收编为可管理 provider + 聊天走它打 chinzy」真机成立。env-limited 5 项依赖中转站灰度 / 特殊账号，诚实标注未真测。
+
+> 🐛 **诚实补记 — 一次真登录测试揪出冷启动收编不触发的真 bug（`37e40526` 已修）**
+> 上面 TC-1/2/3 首轮真测是在 dev 边改代码边测时跑通的，事后用 **fresh 冷启动**复测发现：relay login 事件（`restoreSession` / auto-login）在 control WS `connect` **之前** emit → `relayProviderRegistration.ensure` 在 `[reg] no channel` 处中止 → **真实用户冷启动收编根本不触发**。首轮之所以"PASS"，是 vite **HMR 反复重挂**在 WS 已连后又触发了 ensure，**掩盖**了这个竞态。
+> **修复**：① `App.tsx` 加 connect-trigger（`state==="connected" && isAuthenticated()` 时重发 `ensure(adapter,"login")`，幂等）；② `relayProviderRegistration.ensureOnce` 把 channel 检查移到 `syncDeviceKey` **之前**（no channel 时不浪费一次 device-key 轮换）。
+> **冷启动真机复验**：删空 `config.toml` 的 `relay-cloud` 块 → fresh 启动应用 → `relay_provider_ensured` **精确 1 次**（非 HMR churn）+ relay-cloud **从零收编回** + 聊天 `chinzy 200 OK` + 无 `[reg]` 警告。证据 `EVIDENCE-coldstart-fix.txt`。
+> 单测同步：`relayProviderRegistration.test.ts` "missing channel" 用例断言 `syncDeviceKey` **未**被调用（channel-check-first）。
 
 ---
 
