@@ -29,6 +29,12 @@ import { Icon } from "../components/Icon";
 const _slashInputHistory: string[] = [];
 const HISTORY_MAX = 50;
 
+// 两排式输入条统一高度（修"输入框与按钮高度视觉不一致"）：
+//   INPUT_H — 第一排「输入框」与「发送」按钮严格等高；
+//   CTRL_H  — 第二排控件（麦克风 / 新话题）等高，与 MessagePanelRoot 传入的 36px 麦克风对齐。
+const INPUT_H = 44;
+const CTRL_H = 36;
+
 function pushHistory(entry: string) {
   if (!entry.startsWith("/")) return;
   if (_slashInputHistory[_slashInputHistory.length - 1] === entry) return;
@@ -330,39 +336,13 @@ export function InputBar({
           currentArgIndex={currentArgIndex}
         />
       )}
-      <div style={{ display: "flex", gap: 8, alignItems: "flex-end", position: "relative" }}>
+      {/* 第一排：输入框独占一行 + 发送按钮（两者严格等高 INPUT_H，视觉一致）。 */}
+      <div style={{ display: "flex", gap: 8, alignItems: "stretch", position: "relative" }}>
         <SlashDropdown
           candidates={candidates}
           selectedIdx={selectedIdx}
           onAccept={acceptCandidate}
         />
-        {leftAccessory}
-        <button
-          type="button"
-          onClick={startNewTopic}
-          disabled={!sid}
-          title="新话题"
-          aria-label="新话题"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 5,
-            // 极简：去掉青绿强调色，改中性 ghost，让蓝色「发送」成为唯一强调色。
-            background: "rgba(255,255,255,0.05)",
-            color: "#cbd5e1",
-            border: "1px solid rgba(255,255,255,0.10)",
-            borderRadius: 10,
-            padding: "0 12px",
-            fontSize: 12,
-            fontWeight: 600,
-            cursor: sid ? "pointer" : "not-allowed",
-            height: 36,
-            flexShrink: 0,
-          }}
-        >
-          <Icon name="plus" size={14} />
-          <span>新话题</span>
-        </button>
         <textarea
           ref={taRef}
           value={text}
@@ -381,13 +361,15 @@ export function InputBar({
             background: "rgba(255,255,255,0.05)",
             color: "#e8edf6",
             border: "1px solid rgba(255,255,255,0.10)",
-            borderRadius: 10,
-            padding: "8px 13px",
+            borderRadius: 12,
+            // 上下 padding 撑到与发送按钮同高(INPUT_H=44)：minHeight 44 - border2 - padding(11*2)=20 行高区。
+            padding: "11px 14px",
             fontSize: 13,
-            lineHeight: 1.5,
+            lineHeight: 1.45,
             fontFamily: "inherit",
-            minHeight: 36,
-            maxHeight: 120,
+            minHeight: INPUT_H,
+            maxHeight: 132,
+            boxSizing: "border-box",
             outline: "none",
           }}
         />
@@ -398,6 +380,8 @@ export function InputBar({
           onClick={() => (text.trim() ? void send() : inflight ? stop() : undefined)}
           disabled={!inflight && !text.trim()}
           style={{
+            alignSelf: "flex-end",
+            height: INPUT_H,
             background: text.trim()
               ? "#2563eb"
               : inflight
@@ -405,35 +389,75 @@ export function InputBar({
                 : "rgba(255,255,255,0.07)",
             color: text.trim() || inflight ? "#fff" : "rgba(148,163,184,0.7)",
             border: "none",
-            borderRadius: 10,
-            padding: "8px 18px",
+            borderRadius: 12,
+            padding: "0 20px",
             fontSize: 13,
             fontWeight: 600,
             cursor: inflight || text.trim() ? "pointer" : "not-allowed",
-            height: 36,
             flexShrink: 0,
+            boxSizing: "border-box",
           }}
         >
           {text.trim() ? "发送" : inflight ? "■ 停止" : "发送"}
         </button>
       </div>
-      <div
-        style={{
-          display: "flex",
-          gap: 12,
-          fontSize: 11,
-          color: "#94a3b8",
-        }}
-      >
-        <StatusPill status={status} />
-        {queued > 0 && (
-          <span style={{ color: "#fde68a" }}>
-            等待中: {queued}（the relay 并发上限 {inflight_max}）
+      {/* 第二排：控件(麦克风 + 新话题) 左对齐，状态/提示 右对齐。麦克风右边不放下拉箭头。 */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        {leftAccessory}
+        <button
+          type="button"
+          onClick={startNewTopic}
+          disabled={!sid}
+          title="新话题"
+          aria-label="新话题"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            background: "rgba(255,255,255,0.05)",
+            color: "#cbd5e1",
+            border: "1px solid rgba(255,255,255,0.10)",
+            borderRadius: 999,
+            padding: "0 13px",
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: sid ? "pointer" : "not-allowed",
+            height: CTRL_H,
+            flexShrink: 0,
+            boxSizing: "border-box",
+          }}
+        >
+          <Icon name="plus" size={13} />
+          <span>新话题</span>
+        </button>
+        <div
+          style={{
+            marginLeft: "auto",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            fontSize: 11,
+            color: "#94a3b8",
+            minWidth: 0,
+          }}
+        >
+          <StatusPill status={status} />
+          {queued > 0 && (
+            <span style={{ color: "#fde68a" }}>
+              等待 {queued}（上限 {inflight_max}）
+            </span>
+          )}
+          <span
+            style={{
+              opacity: 0.55,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Enter 发送 · Shift+Enter 换行 · / 命令
           </span>
-        )}
-        <span style={{ marginLeft: "auto", opacity: 0.6 }}>
-          Enter 发送 · Shift+Enter 换行 · / 弹命令 · ↑ 历史
-        </span>
+        </div>
       </div>
     </div>
   );
