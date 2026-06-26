@@ -315,12 +315,12 @@ export function InputBar({
     <div
       style={{
         position: "relative",  // for absolute SlashDropdown
-        borderTop: "1px solid rgba(148, 163, 184, 0.18)",
-        background: "rgba(15, 18, 28, 0.95)",
-        padding: "10px 14px",
+        borderTop: "1px solid rgba(255,255,255,0.06)",
+        background: "rgba(15, 18, 28, 0.55)",
+        padding: "12px 14px",
         display: "flex",
         flexDirection: "column",
-        gap: 6,
+        gap: 8,
       }}
     >
       {argHintCmd && (
@@ -347,11 +347,12 @@ export function InputBar({
             display: "inline-flex",
             alignItems: "center",
             gap: 5,
-            background: "rgba(20, 184, 166, 0.16)",
-            color: "#99f6e4",
-            border: "1px solid rgba(45, 212, 191, 0.35)",
-            borderRadius: 8,
-            padding: "0 10px",
+            // 极简：去掉青绿强调色，改中性 ghost，让蓝色「发送」成为唯一强调色。
+            background: "rgba(255,255,255,0.05)",
+            color: "#cbd5e1",
+            border: "1px solid rgba(255,255,255,0.10)",
+            borderRadius: 10,
+            padding: "0 12px",
             fontSize: 12,
             fontWeight: 600,
             cursor: sid ? "pointer" : "not-allowed",
@@ -377,11 +378,11 @@ export function InputBar({
           style={{
             flex: 1,
             resize: "none",
-            background: "rgba(30, 35, 48, 0.85)",
-            color: "#e2e8f0",
-            border: "1px solid rgba(148, 163, 184, 0.22)",
-            borderRadius: 8,
-            padding: "8px 10px",
+            background: "rgba(255,255,255,0.05)",
+            color: "#e8edf6",
+            border: "1px solid rgba(255,255,255,0.10)",
+            borderRadius: 10,
+            padding: "8px 13px",
             fontSize: 13,
             lineHeight: 1.5,
             fontFamily: "inherit",
@@ -401,15 +402,16 @@ export function InputBar({
               ? "#2563eb"
               : inflight
                 ? "#dc2626"
-                : "rgba(148, 163, 184, 0.2)",
-            color: "#fff",
+                : "rgba(255,255,255,0.07)",
+            color: text.trim() || inflight ? "#fff" : "rgba(148,163,184,0.7)",
             border: "none",
-            borderRadius: 8,
-            padding: "8px 16px",
+            borderRadius: 10,
+            padding: "8px 18px",
             fontSize: 13,
             fontWeight: 600,
             cursor: inflight || text.trim() ? "pointer" : "not-allowed",
             height: 36,
+            flexShrink: 0,
           }}
         >
           {text.trim() ? "发送" : inflight ? "■ 停止" : "发送"}

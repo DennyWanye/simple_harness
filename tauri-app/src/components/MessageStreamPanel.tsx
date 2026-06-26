@@ -102,8 +102,8 @@ type StreamRow =
 const PALETTE = {
   warn: { accent: "#f59e0b", soft: "rgba(245, 158, 11, 0.18)", border: "rgba(245, 158, 11, 0.45)" },
   err:  { accent: "#ef4444", soft: "rgba(239, 68, 68, 0.18)", border: "rgba(239, 68, 68, 0.45)" },
-  user: { bg: "rgba(59, 130, 246, 0.85)", fg: "#f0f6ff" },
-  asst: { bg: "rgba(30, 30, 50, 0.85)",   fg: "#e5e7eb" },
+  user: { bg: "rgba(59, 130, 246, 0.92)", fg: "#f5f9ff" },
+  asst: { bg: "rgba(255, 255, 255, 0.055)", fg: "#e8edf6" },
 } as const;
 
 export function MessageStreamPanel({
@@ -502,20 +502,20 @@ const embeddedWrapperStyle: CSSProperties = {
 const listStyle: CSSProperties = {
   flex: 1,
   overflowY: "auto",
-  padding: 6,
+  padding: "14px 14px 8px",
   display: "flex",
   flexDirection: "column",
-  gap: 5,
+  gap: 12,
 };
 
 const rowBaseStyle: CSSProperties = {
-  maxWidth: "92%",
-  padding: "6px 9px",
-  borderRadius: 8,
+  maxWidth: "84%",
+  padding: "9px 13px",
+  borderRadius: 14,
   border: "1px solid transparent",
   display: "flex",
   flexDirection: "column",
-  gap: 3,
+  gap: 4,
   wordBreak: "break-word",
   whiteSpace: "pre-wrap",
 };
@@ -523,13 +523,14 @@ const rowBaseStyle: CSSProperties = {
 const metaStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
-  fontSize: 9.5,
+  fontSize: 10,
+  opacity: 0.65,
   color: "#9ca3af",
 };
 
 const bodyStyle: CSSProperties = {
-  fontSize: 11.5,
-  lineHeight: 1.45,
+  fontSize: 12.5,
+  lineHeight: 1.6,
   color: "inherit",
 };
 

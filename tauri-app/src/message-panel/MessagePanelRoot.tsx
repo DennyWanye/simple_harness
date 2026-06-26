@@ -708,41 +708,42 @@ const cardStyle: React.CSSProperties = {
   height: "100%",
   borderRadius: 16,
   overflow: "hidden",
+  // 极简：扁平双段深色背景，去掉多段渐变与内高光噪点。
   background:
-    "linear-gradient(165deg, rgba(26,30,46,0.96) 0%, rgba(15,17,26,0.97) 60%, rgba(17,20,34,0.97) 100%)",
-  border: "1px solid rgba(255,255,255,0.09)",
-  boxShadow:
-    "0 18px 50px rgba(0,0,0,0.62), inset 0 1px 0 rgba(255,255,255,0.07)",
-  backdropFilter: "blur(22px) saturate(1.5)",
-  WebkitBackdropFilter: "blur(22px) saturate(1.5)",
+    "linear-gradient(180deg, rgba(22,26,40,0.97) 0%, rgba(15,17,26,0.98) 100%)",
+  border: "1px solid rgba(255,255,255,0.07)",
+  boxShadow: "0 16px 44px rgba(0,0,0,0.55)",
+  backdropFilter: "blur(22px) saturate(1.4)",
+  WebkitBackdropFilter: "blur(22px) saturate(1.4)",
 };
 
 const headerStyle: React.CSSProperties = {
   flexShrink: 0,
-  padding: "10px 12px",
-  fontSize: 12.5,
+  padding: "11px 14px",
+  fontSize: 13,
   fontWeight: 600,
-  letterSpacing: 0.3,
-  color: "#dbe2f0",
+  letterSpacing: 0.2,
+  color: "#e8edf6",
   display: "flex",
   alignItems: "center",
   gap: 8,
-  borderBottom: "1px solid rgba(255,255,255,0.06)",
-  background:
-    "linear-gradient(180deg, rgba(99,102,241,0.16), rgba(99,102,241,0))",
+  borderBottom: "1px solid rgba(255,255,255,0.05)",
+  // 极简：去掉靛蓝渐变，扁平透明，靠分隔线区分。
+  background: "transparent",
 };
 
+// 统一图标按钮：扁平、低对比、一致尺寸（28），无重边框。
 const iconBtnStyle: React.CSSProperties = {
-  width: 27,
-  height: 27,
+  width: 28,
+  height: 28,
   flexShrink: 0,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  background: "rgba(255,255,255,0.06)",
+  background: "rgba(255,255,255,0.045)",
   color: "#c7d2fe",
-  border: "1px solid rgba(255,255,255,0.12)",
-  borderRadius: 8,
+  border: "1px solid rgba(255,255,255,0.07)",
+  borderRadius: 9,
   cursor: "pointer",
   padding: 0,
 };
@@ -750,16 +751,17 @@ const iconBtnStyle: React.CSSProperties = {
 const modelChipStyle: React.CSSProperties = {
   flexShrink: 0,
   maxWidth: 150,
-  height: 27,
-  padding: "0 9px",
+  height: 28,
+  padding: "0 11px",
   display: "flex",
   alignItems: "center",
   gap: 5,
-  background: "rgba(99,102,241,0.16)",
+  // 与图标按钮同款低对比底色，保持工整一致（不再单独用靛蓝高亮）。
+  background: "rgba(255,255,255,0.045)",
   color: "#c7d2fe",
-  border: "1px solid rgba(129,140,248,0.34)",
+  border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 999,
-  fontSize: 10.5,
+  fontSize: 11,
   fontWeight: 600,
   cursor: "pointer",
 };
