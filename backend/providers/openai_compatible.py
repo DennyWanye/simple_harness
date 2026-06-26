@@ -72,11 +72,13 @@ class OpenAICompatibleProvider:
         timeout: float | None = None,
         sanitize_inline_cot_dsml: bool = True,
         code_params: dict | None = None,
+        is_relay: bool = False,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
         self.temperature = temperature
+        self._is_relay = is_relay
         # code-session-model-params: per-code-session request fragment
         # (e.g. {"reasoning_effort":"high","extra_body":{...}}) produced
         # by llm.code_params; merged into the chat payload. None/{} = no
@@ -130,6 +132,24 @@ class OpenAICompatibleProvider:
         # Production code MUST leave this None; otherwise every request goes
         # through the mock and never reaches the real endpoint.
         self._test_transport: httpx.BaseTransport | None = None
+
+    def _relay_error_class(
+        self,
+        status_code: int | None,
+        body_text: str = "",
+        response: httpx.Response | None = None,
+    ) -> str | None:
+        if not self._is_relay:
+            return None
+        body: dict | None = None
+        if response is not None:
+            try:
+                parsed = response.json()
+                if isinstance(parsed, dict):
+                    body = parsed
+            except Exception:  # noqa: BLE001
+                body = None
+        return classify_relay_error(status_code, body_text, body=body)
 
     def _client(self, timeout: float | httpx.Timeout) -> httpx.AsyncClient:
         headers = {
@@ -502,8 +522,8 @@ class OpenAICompatibleProvider:
                         f"LLM HTTP {exc2.response.status_code} {exc2.response.reason_phrase}: "
                         f"{body2}",
                         status_code=exc2.response.status_code,
-                        error_class=classify_relay_error(
-                            exc2.response.status_code, body2
+                        error_class=self._relay_error_class(
+                            exc2.response.status_code, body2, exc2.response
                         ),
                     ) from exc2
             elif (
@@ -530,8 +550,8 @@ class OpenAICompatibleProvider:
                         f"LLM HTTP {exc2.response.status_code} {exc2.response.reason_phrase}: "
                         f"{body2}",
                         status_code=exc2.response.status_code,
-                        error_class=classify_relay_error(
-                            exc2.response.status_code, body2
+                        error_class=self._relay_error_class(
+                            exc2.response.status_code, body2, exc2.response
                         ),
                     ) from exc2
             else:
@@ -543,8 +563,8 @@ class OpenAICompatibleProvider:
                     f"LLM HTTP {exc.response.status_code} {exc.response.reason_phrase}: "
                     f"{body_snippet[:300]}",
                     status_code=exc.response.status_code,
-                    error_class=classify_relay_error(
-                        exc.response.status_code, body_snippet
+                    error_class=self._relay_error_class(
+                        exc.response.status_code, body_snippet, exc.response
                     ),
                 ) from exc
         except (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout) as exc:
@@ -841,8 +861,8 @@ class OpenAICompatibleProvider:
                 raise LLMProviderError(
                     f"LLM HTTP {exc.response.status_code} {exc.response.reason_phrase}: {body[:300]}",
                     status_code=exc.response.status_code,
-                    error_class=classify_relay_error(
-                        exc.response.status_code, body
+                    error_class=self._relay_error_class(
+                        exc.response.status_code, body, exc.response
                     ),
                 ) from exc
             except transient as exc:

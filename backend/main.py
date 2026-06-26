@@ -6794,6 +6794,7 @@ async def control_channel(ws: WebSocket):
                                             temperature=getattr(_entry, "temperature", 0.7),
                                             sanitize_inline_cot_dsml=_sanitize_cot_dsml,
                                             code_params=getattr(_entry, "code_params", None),
+                                            is_relay=(_entry.source == "relay"),
                                         ))
                                     _provider_chain = _chain
                                 logger.info(

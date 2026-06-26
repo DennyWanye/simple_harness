@@ -31,6 +31,7 @@ from llm.errors import (
     LLMTimeoutError,
 )
 from llm.keys import get_api_key, mask_key
+from llm.relay_errors import classify_relay_error
 from llm.types import ChatChunk, ChatResponse, ChatUsage, ToolCall
 
 logger = logging.getLogger("deskpet.llm.openai")
@@ -49,10 +50,12 @@ class OpenAIAdapter(BaseLLMAdapter):
         default_model: Optional[str] = None,
         timeout: float = 60.0,
         base_url: Optional[str] = None,
+        is_relay: bool = False,
     ) -> None:
         self.default_model = default_model or self.default_model
         self.timeout = timeout
         self.base_url = base_url
+        self._is_relay = is_relay
         self._api_key = api_key or get_api_key("openai")
         self._client: Any = None
 
@@ -94,10 +97,9 @@ class OpenAIAdapter(BaseLLMAdapter):
 
     # ───────────────────── helpers ─────────────────────
 
-    @staticmethod
-    def _map_error(exc: Exception) -> Exception:
+    def _map_error(self, exc: Exception) -> Exception:
         status = getattr(exc, "status_code", None)
-        provider = "openai"
+        provider = self.name
         name = type(exc).__name__
         if status == 429 or "RateLimit" in name:
             retry_after = None
@@ -110,8 +112,26 @@ class OpenAIAdapter(BaseLLMAdapter):
                 except Exception:  # noqa: BLE001
                     pass
             return LLMRateLimitError(str(exc), provider=provider, retry_after=retry_after)
-        if status in (401, 403) or "Authentication" in name or "PermissionDenied" in name:
-            return LLMAuthError(str(exc), provider=provider)
+        if (
+            status in (401, 403)
+            or (self._is_relay and status == 402)
+            or "Authentication" in name
+            or "PermissionDenied" in name
+        ):
+            body = getattr(exc, "body", None)
+            resp = getattr(exc, "response", None)
+            text = getattr(resp, "text", "") if resp is not None else ""
+            error_class = (
+                classify_relay_error(status, text, body=body)
+                if self._is_relay
+                else None
+            )
+            return LLMAuthError(
+                str(exc),
+                provider=provider,
+                status_code=status or 401,
+                error_class=error_class,
+            )
         # 2026-06-06 真机：中转 relay 经代理（Clash Verge 等）间歇掉**流式/长连接**，
         # httpx 抛 ReadError / ConnectError / RemoteProtocolError（name 不含 "Timeout"）
         # → 之前落 LLMProviderError(不重试同 provider) → agent turn 立即崩。这类连接级

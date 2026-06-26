@@ -63,8 +63,21 @@ class LLMTimeoutError(LLMProviderError):
 class LLMAuthError(LLMProviderError):
     """401 / 403. Key is invalid or expired — drop provider from registry."""
 
-    def __init__(self, message: str, *, provider: Optional[str] = None) -> None:
-        super().__init__(message, provider=provider, status_code=401, retriable=False)
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider: Optional[str] = None,
+        status_code: int = 401,
+        error_class: Optional[str] = None,
+    ) -> None:
+        super().__init__(
+            message,
+            provider=provider,
+            status_code=status_code,
+            retriable=False,
+            error_class=error_class,
+        )
 
 
 class LLMBudgetExceededError(LLMProviderError):

@@ -40,21 +40,48 @@ _KEY_HINTS = (
 def classify_relay_error(
     status_code: int | None,
     body_text: str = "",
+    *,
+    body: dict | None = None,
 ) -> str | None:
     """Classify a relay HTTP failure into a structured error code.
 
     Returns :data:`INSUFFICIENT_BALANCE`, :data:`RELAY_KEY_INVALID`, or
     ``None`` when the failure is neither (caller surfaces it generically).
 
-    Balance is checked first: a 401 whose body says "insufficient
-    balance" is a balance problem, not a key problem.
+    Structured relay codes are authoritative. A 401 always means the
+    device key should be re-signed; 402/403 balance surfaces map to a
+    recharge prompt.
     """
+    top = body.get("code") if isinstance(body, dict) else None
+    nested_error = body.get("error") if isinstance(body, dict) else None
+    nested = nested_error.get("code") if isinstance(nested_error, dict) else None
+
+    if (
+        top == "INSUFFICIENT_BALANCE"
+        or nested == "insufficient_balance"
+        or (status_code == 403 and top == "FORBIDDEN")
+    ):
+        return INSUFFICIENT_BALANCE
+
+    if top in {"INVALID_TOKEN", "EXPIRED_TOKEN"} or status_code == 401:
+        return RELAY_KEY_INVALID
+
+    ignored_codes = {
+        "RATE_LIMITED",
+        "UPSTREAM_ERROR",
+        "UPSTREAM_TIMEOUT",
+        "UPSTREAM_UNAVAILABLE",
+        "DEVICE_KEY_MISSING",
+    }
+    if top in ignored_codes or nested in ignored_codes:
+        return None
+
     text = (body_text or "").lower()
 
     if status_code == 402 or any(h in text for h in _BALANCE_HINTS):
         return INSUFFICIENT_BALANCE
 
-    if status_code in (401, 403) or any(h in text for h in _KEY_HINTS):
+    if any(h in text for h in _KEY_HINTS):
         return RELAY_KEY_INVALID
 
     return None
