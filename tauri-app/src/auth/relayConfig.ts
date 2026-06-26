@@ -20,3 +20,15 @@ export const DEVICE_CONSOLE_URL = "https://chinzy.com/console/devices";
  * 优先挑这个；挑不到则回退到 models[0]。与 config.toml 默认值一致。
  */
 export const PREFERRED_MODEL = "gpt-5.5";
+
+/**
+ * WI-3 / WI-6: when true, relay is collected into the backend
+ * LLMProviderRegistry as a normal managed provider
+ * (`relayProviderRegistration`), and the OLD `relayProviderBridge`
+ * one-shot `local_llm` push path is disabled. This MUST be a single
+ * source of truth: if both ran they would each call `/v1/providers`
+ * and rotate the other's device key away (esp. before the relay reuse
+ * flag ships). Set to false to fall back to the legacy bridge
+ * (byte-level BC). Backend mirror flag: `[features].relay_managed_provider`.
+ */
+export const RELAY_MANAGED_PROVIDER = true;

@@ -94,6 +94,7 @@ import { getAuthAdapter } from "./auth";
 import { RelayAuthAdapter } from "./auth/RelayAuthAdapter";
 import { RelayEdition } from "./auth/RelayEdition";
 import { relayProviderBridge } from "./auth/relayProviderBridge";
+import { relayProviderRegistration } from "./auth/relayProviderRegistration";
 import { friendlyChatErrorMessage } from "./auth/relayErrorText";
 
 const DEFAULT_SESSION_ID = "default";
@@ -956,10 +957,11 @@ function App() {
         // "⚠ ..." assistant bubble that the bottom DialogBar would
         // then render over the pet persistently.
         setPetError(msg);
-        // WI-R5: key 失效 → drive the cross-layer recovery loop so the
-        // next message works (fetch a fresh key → re-push to backend).
+        // WI-3: key 失效 → registration.recover（force 重铸 + 镜像进
+        // registry，带 60s/≥2 次熔断防死循环）。取代旧 relayProviderBridge
+        // 旁路（后者仅在 relay_managed_provider flag OFF 时回退，WI-6）。
         if (p.error_class === "relay_key_invalid" && relayAdapter) {
-          void relayProviderBridge.recoverFromKeyInvalid(relayAdapter);
+          void relayProviderRegistration.recover(relayAdapter);
         }
         break;
       }
@@ -1718,11 +1720,49 @@ function App() {
   useEffect(() => {
     if (!relayAdapter) return;
     setRelayAuthed(relayAdapter.isAuthenticated());
+    // WI-3: mirror the relay device key into the backend provider
+    // registry (so relay shows up as a normal, managed provider). attach
+    // injects the control channel (resolved lazily per send) + the pet
+    // error toast for the recover circuit-breaker. `login` (also emitted
+    // by restoreSession / dev auto-login) triggers the ensure mirror;
+    // `logout` tears down the local key so account A's long-lived key is
+    // never reused by a subsequently logged-in account B. Manual edition
+    // (relayAdapter === null) returns early above → never attached (inert).
+    relayProviderRegistration.attach(getControlChannel, setPetError);
+    if (relayAdapter.isAuthenticated()) {
+      // Already authed at mount (restore/auto-login fired before we
+      // subscribed). Idempotent: inflight + lastEnsured cache make a
+      // duplicate login a no-op.
+      void relayProviderRegistration.ensure(relayAdapter, "login");
+    }
     return relayAdapter.onEvent((e) => {
-      if (e.type === "login") setRelayAuthed(true);
-      if (e.type === "logout") setRelayAuthed(false);
+      if (e.type === "login") {
+        setRelayAuthed(true);
+        void relayProviderRegistration.ensure(relayAdapter, "login");
+      }
+      if (e.type === "logout") {
+        setRelayAuthed(false);
+        relayProviderRegistration.onLogout();
+        getControlChannel()?.send({
+          type: "settings_providers_relay_logout",
+        });
+      }
     });
   }, [relayAdapter]);
+
+  // WI-3 (B-C2 self-heal): backend signals the local relay key is gone
+  // (keychain cleared / never minted) via settings_providers_error
+  // {reason:key_missing}. Re-mint via recover (force). The recover
+  // circuit-breaker (60s/≥2) stops a runaway loop if it keeps failing.
+  useEffect(() => {
+    if (!relayAdapter || !lastMessage) return;
+    if ((lastMessage as { type?: string }).type !== "settings_providers_error")
+      return;
+    const p = (lastMessage as { payload?: Record<string, unknown> }).payload ?? {};
+    if (p.reason === "key_missing" && p.provider_id === "relay-cloud") {
+      void relayProviderRegistration.recover(relayAdapter);
+    }
+  }, [lastMessage, relayAdapter]);
 
   return (
     <div

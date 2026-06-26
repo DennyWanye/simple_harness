@@ -35,6 +35,7 @@ import { AccountSettingsPanel } from "./AccountSettingsPanel";
 import type { RelayAuthAdapter } from "./RelayAuthAdapter";
 import { RelayAuthModal } from "./RelayAuthModal";
 import { relayProviderBridge, type BridgeStatus } from "./relayProviderBridge";
+import { RELAY_MANAGED_PROVIDER } from "./relayConfig";
 
 interface RelayEditionProps {
   adapter: RelayAuthAdapter;
@@ -94,7 +95,10 @@ export function RelayEdition({ adapter, brandName, openAccountRef }: RelayEditio
           }
         }
         // WI-R2: already-logged-in (或自动登录成功) cold start → push provider to backend.
-        if (restored && !cancelled) refreshProviders();
+        // WI-3: when managed, App.tsx's relayProviderRegistration owns the
+        // relay→backend path (single source of truth; avoids double
+        // /v1/providers rotation). Legacy bridge only runs when flag OFF.
+        if (restored && !cancelled && !RELAY_MANAGED_PROVIDER) refreshProviders();
       } finally {
         if (!cancelled) {
           setAuthed(adapter.isAuthenticated());
@@ -115,7 +119,8 @@ export function RelayEdition({ adapter, brandName, openAccountRef }: RelayEditio
       if (e.type === "login") {
         setAuthed(true);
         // WI-R2: fresh login → fetch providers → bridge to backend.
-        refreshProviders();
+        // WI-3: managed mode → registration owns this (App.tsx). Skip.
+        if (!RELAY_MANAGED_PROVIDER) refreshProviders();
       }
       if (e.type === "logout") {
         setAuthed(false);
@@ -123,7 +128,9 @@ export function RelayEdition({ adapter, brandName, openAccountRef }: RelayEditio
       }
       // WI-R2: every /v1/providers result (incl. key rotation) flows
       // through the bridge to the backend LLM endpoint.
-      if (e.type === "providers-updated") {
+      // WI-3: managed mode → registration mirrors into the registry
+      // instead; the legacy local_llm bridge push is disabled.
+      if (e.type === "providers-updated" && !RELAY_MANAGED_PROVIDER) {
         void relayProviderBridge.apply(e.providers);
       }
     });
