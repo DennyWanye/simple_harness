@@ -22,10 +22,13 @@ import type { Provider } from "./SettingsProviders";
 
 export interface ProviderDraft {
   id: string;
+  source?: "user" | "relay";
+  account_ref?: string;
   name: string;
   base_url: string;
   models: string[];
   default_model: string;
+  enabled?: boolean;
   /** Plaintext from the input field. Empty string means "don't touch
    * the existing keychain entry" when editing. */
   api_key: string;
@@ -92,10 +95,13 @@ export function prefillFromProvider(p: Provider): ProviderDraft {
     : (models[0] || "");
   return {
     id: p.id,
+    source: p.source,
+    account_ref: p.account_ref,
     name: p.name,
     base_url: p.base_url,
     models,
     default_model,
+    enabled: p.enabled,
     api_key: "",
   };
 }
@@ -193,10 +199,12 @@ interface AddProviderModalProps {
 
 const blank_draft: ProviderDraft = {
   id: "",
+  source: "user",
   name: "",
   base_url: "",
   models: [],
   default_model: "",
+  enabled: true,
   api_key: "",
 };
 
@@ -239,6 +247,7 @@ export function AddProviderModal({
   }, [probedModels]);
 
   const isEditing = editing !== null;
+  const isRelayEditing = isEditing && draft.source === "relay";
   const validation = useMemo(
     () => validateProviderDraft(draft, { editing: isEditing }),
     [draft, isEditing],
@@ -322,6 +331,7 @@ export function AddProviderModal({
           <span>name</span>
           <input
             data-testid="provider-name-input"
+            disabled={isRelayEditing}
             value={draft.name}
             onChange={(e) => setDraft({ ...draft, name: e.target.value })}
             placeholder="DeepSeek via My Relay"
@@ -336,6 +346,7 @@ export function AddProviderModal({
           <span>base_url</span>
           <input
             data-testid="provider-base-url-input"
+            disabled={isRelayEditing}
             value={draft.base_url}
             onChange={(e) => setDraft({ ...draft, base_url: e.target.value })}
             placeholder="https://your-llm-relay.example.com/v1"
@@ -374,7 +385,7 @@ export function AddProviderModal({
                   onProbeModels(draft.base_url, draft.api_key);
                 }
               }}
-              disabled={!canProbe || probing}
+              disabled={isRelayEditing || !canProbe || probing}
               style={probeBtn}
               title="向 base_url/models 拉取支持的模型列表"
               data-testid="provider-probe-models-button"
@@ -430,11 +441,12 @@ export function AddProviderModal({
                   <button
                     type="button"
                     onClick={() => removeModel(m)}
+                    disabled={isRelayEditing}
                     style={{
                       background: "transparent",
                       border: "none",
                       color: "#b91c1c",
-                      cursor: "pointer",
+                      cursor: isRelayEditing ? "not-allowed" : "pointer",
                       fontSize: 11,
                     }}
                     aria-label={`删除 ${m}`}
@@ -446,6 +458,7 @@ export function AddProviderModal({
             </div>
               <div style={{ display: "flex", gap: 4 }}>
                 <input
+                  disabled={isRelayEditing}
                   value={newModel}
                   onChange={(e) => setNewModel(e.target.value)}
                   onKeyDown={(e) => {
@@ -461,7 +474,7 @@ export function AddProviderModal({
                 <button
                   type="button"
                   onClick={addModel}
-                  disabled={!newModel.trim()}
+                  disabled={isRelayEditing || !newModel.trim()}
                   style={smallAddBtn}
                   data-testid="provider-add-model-button"
                 >
@@ -483,6 +496,7 @@ export function AddProviderModal({
           <input
             data-testid="provider-api-key-input"
             type="password"
+            disabled={isRelayEditing}
             value={draft.api_key}
             onChange={(e) => setDraft({ ...draft, api_key: e.target.value })}
             placeholder={isEditing ? "(已配置)" : "sk-..."}
@@ -492,7 +506,24 @@ export function AddProviderModal({
           {submitted && validation.errors.api_key && (
             <span style={errStyle}>{validation.errors.api_key}</span>
           )}
+          {isRelayEditing && (
+            <span style={{ fontSize: 11, color: "#6b7280" }}>
+              由登录自动铸，点「重置 key」刷新。
+            </span>
+          )}
         </label>
+
+        {isRelayEditing && (
+          <label style={{ ...fieldStyle, display: "flex", flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <input
+              type="checkbox"
+              checked={draft.enabled ?? true}
+              onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
+              data-testid="provider-enabled-input"
+            />
+            <span>启用</span>
+          </label>
+        )}
 
         <footer style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
           <button type="button" onClick={onClose} style={cancelBtn}>

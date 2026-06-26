@@ -39,6 +39,7 @@ import type { IncomingMessage } from "../types/messages";
 import type { RelayAuthAdapter } from "../auth/RelayAuthAdapter";
 import type { Provider as RelayProvider } from "../auth/types";
 import { RELAY_MANAGED_PROVIDER } from "../auth/relayConfig";
+import { relayProviderRegistration } from "../auth/relayProviderRegistration";
 
 // ---- Relay-edition virtual providers --------------------------------------
 //
@@ -56,6 +57,7 @@ export function relayProviderToDisplay(rp: RelayProvider): Provider {
   const models = (rp.models ?? []).map((m) => m.id);
   return {
     id: `${RELAY_PROVIDER_ID_PREFIX}${rp.id}`,
+    source: "relay",
     name: rp.name + " · 中转站",
     base_url: rp.base_url,
     models,
@@ -87,15 +89,17 @@ export function relayListToChinzy(list: RelayProvider[]): Provider[] {
   return [{ ...disp, name: "chinzy · 中转站" }];
 }
 
-/** 判断某个 Provider 是不是 relay 虚拟项。 */
-export function isRelayProvider(p: Pick<Provider, "id">): boolean {
-  return p.id.startsWith(RELAY_PROVIDER_ID_PREFIX);
+/** 判断某个 Provider 是不是 relay 管理项。 */
+export function isRelayProvider(p: Pick<Provider, "source">): boolean {
+  return p.source === "relay";
 }
 
 // ---- Domain types ---------------------------------------------------------
 
 export interface Provider {
   id: string;
+  source?: "user" | "relay";
+  account_ref?: string;
   name: string;
   base_url: string;
   /** P5-S2 v2: canonical model list (a provider can serve multiple models). */
@@ -297,14 +301,23 @@ interface SettingsProvidersProps {
 interface SortableRowProps {
   provider: Provider;
   onToggle(id: string, next_enabled: boolean): void;
+  onDefaultModelChange(id: string, default_model: string): void;
   onDelete(id: string): void;
   onEdit(provider: Provider): void;
+  onResetKey(id: string): void;
 }
 
-function SortableRow({ provider, onToggle, onDelete, onEdit }: SortableRowProps) {
-  const readonly = isRelayProvider(provider);
+function SortableRow({
+  provider,
+  onToggle,
+  onDefaultModelChange,
+  onDelete,
+  onEdit,
+  onResetKey,
+}: SortableRowProps) {
+  const relayManaged = isRelayProvider(provider);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: provider.id, disabled: readonly });
+    useSortable({ id: provider.id, disabled: false });
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -342,12 +355,12 @@ function SortableRow({ provider, onToggle, onDelete, onEdit }: SortableRowProps)
     >
       <div style={headerRow}>
         <span
-          {...(readonly ? {} : attributes)}
-          {...(readonly ? {} : listeners)}
-          aria-label={readonly ? "中转站 provider 不可拖拽" : `拖拽 ${provider.name}`}
+          {...attributes}
+          {...listeners}
+          aria-label={`拖拽 ${provider.name}`}
           style={{
-            cursor: readonly ? "default" : "grab",
-            color: readonly ? "#d1d5db" : "#9ca3af",
+            cursor: "grab",
+            color: "#9ca3af",
             userSelect: "none",
             flexShrink: 0,
             lineHeight: "16px",
@@ -358,8 +371,9 @@ function SortableRow({ provider, onToggle, onDelete, onEdit }: SortableRowProps)
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{provider.name}</span>
-            {readonly && (
+            {relayManaged && (
               <span
+                data-testid="provider-relay-badge"
                 style={{
                   fontSize: 10,
                   padding: "1px 6px",
@@ -389,36 +403,60 @@ function SortableRow({ provider, onToggle, onDelete, onEdit }: SortableRowProps)
         </div>
       </div>
       <div style={actionsRow}>
-        {readonly ? (
-          <span style={{ fontSize: 11, color: "#6b7280" }}>
-            登录账户面板管理
-          </span>
+        {relayManaged && provider.models.length > 0 && (
+          <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
+            默认
+            <select
+              value={provider.default_model || provider.model || provider.models[0] || ""}
+              onChange={(e) => onDefaultModelChange(provider.id, e.target.value)}
+              style={selectStyle}
+              data-testid={`provider-default-model-select-${provider.id}`}
+              aria-label={`默认模型 ${provider.name}`}
+            >
+              {provider.models.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
+          <input
+            type="checkbox"
+            checked={provider.enabled}
+            onChange={(e) => onToggle(provider.id, e.target.checked)}
+            aria-label={`启用 ${provider.name}`}
+          />
+          启用
+        </label>
+        <button
+          type="button"
+          onClick={() => onEdit(provider)}
+          style={{ ...rowBtn }}
+          data-testid={`provider-edit-btn-${provider.id}`}
+        >
+          编辑
+        </button>
+        {relayManaged ? (
+          <button
+            type="button"
+            onClick={() => onResetKey(provider.id)}
+            style={{ ...rowBtn, color: "#1d4ed8" }}
+            data-testid={`provider-reset-key-btn-${provider.id}`}
+            title="重新向中转站申请并写入本机 provider key"
+          >
+            🔄 重置 key
+          </button>
         ) : (
-          <>
-            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
-              <input
-                type="checkbox"
-                checked={provider.enabled}
-                onChange={(e) => onToggle(provider.id, e.target.checked)}
-                aria-label={`启用 ${provider.name}`}
-              />
-              启用
-            </label>
-            <button
-              type="button"
-              onClick={() => onEdit(provider)}
-              style={{ ...rowBtn }}
-            >
-              编辑
-            </button>
-            <button
-              type="button"
-              onClick={() => onDelete(provider.id)}
-              style={{ ...rowBtn, color: "#b91c1c" }}
-            >
-              删除
-            </button>
-          </>
+          <button
+            type="button"
+            onClick={() => onDelete(provider.id)}
+            style={{ ...rowBtn, color: "#b91c1c" }}
+            data-testid={`provider-delete-btn-${provider.id}`}
+          >
+            删除
+          </button>
         )}
       </div>
     </li>
@@ -549,6 +587,16 @@ export function SettingsProviders({
     [send],
   );
 
+  const handleDefaultModelChange = useCallback(
+    (id: string, default_model: string) => {
+      send({
+        type: "settings_providers_update",
+        payload: { id, patch: { default_model } },
+      });
+    },
+    [send],
+  );
+
   const handleDelete = useCallback(
     (id: string) => {
       if (!window.confirm(`确认删除 provider "${id}"？`)) return;
@@ -557,20 +605,32 @@ export function SettingsProviders({
     [send],
   );
 
+  const handleResetKey = useCallback(
+    (_id: string) => {
+      if (relayAdapter) void relayProviderRegistration.recover(relayAdapter);
+    },
+    [relayAdapter],
+  );
+
   const handleSaveDraft = useCallback(
     (draft: ProviderDraft, editing: Provider | null) => {
       const models = draft.models.map((m) => m.trim()).filter(Boolean);
       const default_model = draft.default_model.trim() || models[0] || "";
       if (editing) {
-        // Build update patch — only include fields the user might've changed.
-        const patch: Record<string, unknown> = {
-          name: draft.name,
-          base_url: draft.base_url,
-          models,
-          default_model,
-        };
-        if (draft.api_key && draft.api_key.trim().length > 0) {
+        // relay-managed provider 由登录自动铸 key；编辑弹窗只允许改默认模型/启用。
+        const patch: Record<string, unknown> = isRelayProvider(editing)
+          ? { default_model }
+          : {
+              name: draft.name,
+              base_url: draft.base_url,
+              models,
+              default_model,
+            };
+        if (!isRelayProvider(editing) && draft.api_key && draft.api_key.trim().length > 0) {
           patch.api_key = draft.api_key.trim();
+        }
+        if (isRelayProvider(editing) && typeof draft.enabled === "boolean") {
+          patch.enabled = draft.enabled;
         }
         send({
           type: "settings_providers_update",
@@ -677,11 +737,13 @@ export function SettingsProviders({
                   key={p.id}
                   provider={p}
                   onToggle={handleToggle}
+                  onDefaultModelChange={handleDefaultModelChange}
                   onDelete={handleDelete}
                   onEdit={(prov) => {
                     setEditTarget(prov);
                     setAddOpen(true);
                   }}
+                  onResetKey={handleResetKey}
                 />
               ))}
             </ul>
@@ -726,6 +788,15 @@ const rowBtn: React.CSSProperties = {
   background: "white",
   fontSize: 11,
   cursor: "pointer",
+};
+
+const selectStyle: React.CSSProperties = {
+  maxWidth: 180,
+  padding: "2px 6px",
+  borderRadius: 4,
+  border: "1px solid #d1d5db",
+  background: "white",
+  fontSize: 11,
 };
 
 const addBtnStyle: React.CSSProperties = {
