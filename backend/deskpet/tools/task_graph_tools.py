@@ -44,7 +44,8 @@ _SCHEMA_GOAL_TASK_LIST: dict[str, Any] = {
     "name": "goal_task_list",
     "description": (
         "List all tasks in the shared goal task graph for the current goal. "
-        "Returns task_id, title, status, depends_on, result for each task."
+        "Returns task_id, title, status, depends_on, result for each task. "
+        "Only relevant when a `/goal` is active — do NOT call in ordinary chat."
     ),
     "parameters": {
         "type": "object",
@@ -56,7 +57,8 @@ _SCHEMA_GOAL_TASK_UPDATE: dict[str, Any] = {
     "name": "goal_task_update",
     "description": (
         "Update the status (and optionally result) of a task in the shared "
-        "goal task graph. Valid statuses: 'done', 'failed', 'in_progress'."
+        "goal task graph. Valid statuses: 'done', 'failed', 'in_progress'. "
+        "Only relevant when a `/goal` is active — do NOT call in ordinary chat."
     ),
     "parameters": {
         "type": "object",
@@ -82,11 +84,14 @@ _SCHEMA_GOAL_TASK_UPDATE: dict[str, Any] = {
 _SCHEMA_GOAL_TASK_CREATE: dict[str, Any] = {
     "name": "goal_task_create",
     "description": (
-        "Create a new task in the shared goal task graph for the current "
-        "active goal (set via /goal). Use this to break a goal down into "
-        "concrete, trackable steps. Returns the new task_id. Requires an "
-        "active goal — if none is set, returns an error asking the user to "
-        "run /goal first."
+        "Break the CURRENT active long-term goal into a trackable sub-task. "
+        "⛔ ONLY call this when the user has explicitly run `/goal` to set a "
+        "long-term goal AND that goal is still active. Do NOT call it to plan "
+        "or decompose an ordinary chat request — normal conversation has NO "
+        "active goal, and calling it then is a mistake that confuses the user. "
+        "If you are not certain a `/goal` is active, do NOT call. Just answer "
+        "the user directly instead. Returns the new task_id; with no active "
+        "goal it returns an error telling the user to run /goal first."
     ),
     "parameters": {
         "type": "object",
@@ -120,7 +125,8 @@ _SCHEMA_GOAL_TASK_GET: dict[str, Any] = {
     "name": "goal_task_get",
     "description": (
         "Fetch a single task from the shared goal task graph by task_id. "
-        "Returns task_id, title, status, depends_on, claimed_by, result."
+        "Returns task_id, title, status, depends_on, claimed_by, result. "
+        "Only relevant when a `/goal` is active — do NOT call in ordinary chat."
     ),
     "parameters": {
         "type": "object",

@@ -59,6 +59,12 @@ logger = logging.getLogger(__name__)
 # doesn't have one handy) and MUST return a JSON-encodable string.
 ToolHandler = Callable[[dict[str, Any], str], str]
 CheckFn = Callable[[], bool]
+# Dynamic visibility predicate. Returns True iff the tool should be exposed
+# to the LLM *this turn*. Unlike ``requires_env`` (static env check) this is
+# re-evaluated on every ``schemas()`` call, so it can depend on per-session
+# runtime state (e.g. "only show goal_task_* tools when a /goal is active").
+# ``None`` (the default) means "always visible".
+VisibilityFn = Callable[[], bool]
 
 
 # WI-CC-2 (plan mode 物理只读): 写/执行类 permission_category 集中维护。
@@ -166,10 +172,36 @@ class ToolSpec:
     # 用法：partition_dispatch() 把 safe 全 asyncio.gather 并发，unsafe 串行 await。
     # 注册写工具时显式传 ``concurrency_safe=False``。
     concurrency_safe: bool = True
+    # Dynamic per-turn visibility predicate (see ``VisibilityFn``). ``None``
+    # → always visible. Used to hide a tool from the LLM prompt until some
+    # runtime precondition holds (e.g. goal_task_* tools stay hidden until the
+    # user runs /goal). Only gates *schema* exposure — ``execute_tool`` still
+    # dispatches if the LLM somehow calls a hidden tool (handler guards apply).
+    visible_when: Optional[VisibilityFn] = None
 
     def env_satisfied(self) -> bool:
         """True iff every ``requires_env`` var is present AND non-empty."""
         return all(os.environ.get(e) for e in self.requires_env)
+
+    def is_visible(self) -> bool:
+        """True iff this tool should appear in the LLM schema list this turn.
+
+        ``visible_when is None`` → always visible (legacy default). A predicate
+        that raises is treated as "hide" (fail-closed): we'd rather omit a
+        gated tool than expose it on a transient error, since the only callers
+        that set a predicate are opt-in features that prefer invisibility when
+        their precondition can't be confirmed.
+        """
+        if self.visible_when is None:
+            return True
+        try:
+            return bool(self.visible_when())
+        except Exception as exc:  # noqa: BLE001 — never break schema build
+            logger.warning(
+                "tool %r visible_when predicate raised, hiding: %s",
+                self.name, exc,
+            )
+            return False
 
     @property
     def description_for_llm(self) -> str:
@@ -335,6 +367,7 @@ class ToolRegistry:
         timeout_seconds: float = 60.0,
         replace_allowed: bool = False,
         concurrency_safe: bool = True,
+        visible_when: Optional[VisibilityFn] = None,
     ) -> None:
         """Register a single tool.
 
@@ -410,6 +443,7 @@ class ToolRegistry:
             timeout_seconds=float(timeout_seconds),
             replace_allowed=replace_allowed,
             concurrency_safe=bool(concurrency_safe),
+            visible_when=visible_when,
         )
         # 后续 dict 查 / 冲突检测都用 qualified_name
         name = qualified_name
@@ -460,6 +494,9 @@ class ToolRegistry:
         Filtering rules (applied in order):
           1. ``requires_env`` — any missing/empty env var hides the tool
              so the LLM never sees a feature it can't invoke.
+          1b. ``visible_when`` — per-turn dynamic predicate; False (or a
+             raised exception) hides the tool. Used to keep goal_task_*
+             tools out of the prompt until a /goal is active.
           2. ``enabled_toolsets`` — if provided, only tools whose
              ``toolset`` is in the whitelist survive. ``None`` (the
              default) returns everything.
@@ -497,6 +534,11 @@ class ToolRegistry:
         out: list[dict[str, Any]] = []
         for spec in specs:
             if not spec.env_satisfied():
+                continue
+            # Dynamic per-turn visibility (e.g. goal_task_* hidden until a
+            # /goal is active). Keeps gated tools out of the LLM prompt so
+            # the model isn't tempted to call a feature with no precondition.
+            if not spec.is_visible():
                 continue
             if allowed is not None and spec.toolset not in allowed:
                 continue
