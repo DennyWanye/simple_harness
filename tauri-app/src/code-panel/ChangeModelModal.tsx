@@ -82,16 +82,23 @@ export function ChangeModelModal({
   const [effort, set_effort] = useState<EffortValue>(
     current_params?.effort ?? "medium",
   );
+  // 用于查 caps / 上下文档位的「生效模型」：用户显式选了就用它,否则会话
+  // 固定的 preferred_model,再否则 provider 默认。2026-06-26 修复:此前只取
+  // `model || current_model`,「跟随 provider 默认」时两者皆空 → caps/档位
+  // 查不到 → 上下文窗口退化成只读「由 provider 决定」、选不了档,且保存时
+  // model_context_set 拿空 id 被后端 save_global_window_override 拒。补上
+  // default_model 兜底后,gpt-5.5 的 128K/400K/1M 三档正常可选 + 可存。
+  const ctx_model = (model || current_model || default_model || "").trim();
   // Per-model capability map — gpt-5.x exposes reasoning_effort, claude
   // opus/sonnet exposes thinking; the picker only renders the controls
   // the chosen model actually supports. Unknown/custom id → permissive.
-  const caps = capsForModel(model || current_model, catalog);
+  const caps = capsForModel(ctx_model, catalog);
   // 2026-06-12: 上下文窗口从「只读」升级为「按型号可选档位」。
   // supported_windows > 1 档(如 gpt-5.5: 128K/400K/1M) → 渲染下拉,
   // 选择经 model_context_set 持久化到 backend 全局 override(压缩阈值/
   // 预算同步生效);单档/未知 → 保持只读 chip。
-  const ctx_window = contextWindowForModel(model || current_model, catalog);
-  const ctx_options = supportedWindowsForModel(model || current_model, catalog);
+  const ctx_window = contextWindowForModel(ctx_model, catalog);
+  const ctx_options = supportedWindowsForModel(ctx_model, catalog);
   const [ctx_choice, set_ctx_choice] = useState<number | null>(null);
   // 切换模型 → 档位选择回到该模型当前值
   useEffect(() => {
@@ -132,7 +139,8 @@ export function ChangeModelModal({
         type: "model_context_set",
         payload: {
           scope: "global",
-          model: (model || current_model || "").trim(),
+          // 用生效模型(含 default_model 兜底),否则跟随默认时拿空 id 被后端拒。
+          model: ctx_model,
           fields: { context_window: ctx_choice },
         },
       });
