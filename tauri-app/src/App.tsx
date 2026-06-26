@@ -2071,34 +2071,8 @@ function App() {
           </button>
         )}
 
-        <button
-          type="button"
-          onClick={handleNewTopic}
-          disabled={state !== "connected"}
-          title="新话题"
-          aria-label="新话题"
-          style={{
-            height: 36,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 5,
-            padding: "0 11px",
-            borderRadius: 18,
-            border: "1px solid rgba(45,212,191,0.42)",
-            background:
-              state === "connected"
-                ? "rgba(20,184,166,0.16)"
-                : "rgba(255,255,255,0.05)",
-            color: state === "connected" ? "#99f6e4" : "rgba(148,163,184,0.6)",
-            fontSize: 12,
-            fontWeight: 700,
-            cursor: state === "connected" ? "pointer" : "not-allowed",
-            flexShrink: 0,
-          }}
-        >
-          <Icon name="plus" size={14} />
-          <span>新话题</span>
-        </button>
+        {/* 主界面「新话题」按钮已移除（仅保留左侧消息面板内的）。handleNewTopic 仍保留
+            供潜在调用 / 兼容；此处不再渲染。 */}
 
         {activeSid !== DEFAULT_SESSION_ID && (
           <button

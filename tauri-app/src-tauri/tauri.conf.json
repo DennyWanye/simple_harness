@@ -15,9 +15,9 @@
       {
         "label": "main",
         "title": "Desktop Pet",
-        "width": 360,
-        "height": 600,
-        "minWidth": 240,
+        "width": 500,
+        "height": 640,
+        "minWidth": 360,
         "minHeight": 360,
         "maxWidth": 1200,
         "maxHeight": 1600,
