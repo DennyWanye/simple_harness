@@ -52,6 +52,8 @@ import {
   type PetModel,
 } from "./petModels";
 import { DialogBar } from "./components/DialogBar";
+import { SlashDropdown, type SlashCommand } from "./code-panel/SlashDropdown";
+import { BACKEND_PORT } from "./backendPort";
 import { UserBubble } from "./components/UserBubble";
 import { StartupOverlay, type BootState } from "./components/StartupOverlay";
 import { useBudgetToast } from "./hooks/useBudgetToast";
@@ -115,6 +117,11 @@ function App() {
 
   const [fps, setFps] = useState(0);
   const [chatText, setChatText] = useState("");
+  // #4 slash 命令面板（与 code-panel InputBar 同款；桌宠主输入框也支持 /命令 自动补全）
+  const chatInputRef = useRef<HTMLInputElement>(null);
+  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
+  const [slashOpen, setSlashOpen] = useState(false);
+  const [slashIdx, setSlashIdx] = useState(0);
   const [activeSid, setActiveSid] = useState(DEFAULT_SESSION_ID);
   const activeSidRef = useRef(DEFAULT_SESSION_ID);
   // Track whether the backend is routing through cloud or local.
@@ -901,6 +908,19 @@ function App() {
         }
         break;
       }
+      case "slash_command_result": {
+        // #4 slash 命令结果：渲染成一条 assistant 气泡（result.message），关「努力工作」。
+        if (!isActivePayload) break;
+        setWorking(false);
+        thinkingObsRef.current.notifyEnd(performance.now());
+        const _r = (lastMessage as any).payload?.result || {};
+        const _cmd = (lastMessage as any).payload?.command || "";
+        const _msg =
+          (typeof _r.message === "string" && _r.message) ||
+          (_r.type === "error" ? `/${_cmd} 执行出错` : `/${_cmd} 已完成`);
+        setMessages((prev) => [...prev, { role: "assistant", text: String(_msg) }]);
+        break;
+      }
       case "session_messages_response": {
         // 2026-05-18: 重启/连接后从 SessionDB 回灌历史会话 → 左侧消息
         // 面板显示历史记录（之前只有实时消息，重启即空）。只取
@@ -1417,10 +1437,23 @@ function App() {
     // P4-S21 #14: backend unified chat / chat_v2 — both route to tool_use
     // AgentLoop. Always send via sendChatV2 (the toolbar toggle is gone).
     const ch = getControlChannel();
-    ch?.send({
-      type: "chat_v2",
-      payload: { text: chatText, session_id: activeSidRef.current },
-    });
+    const trimmed = chatText.trim();
+    if (trimmed.startsWith("/")) {
+      // #4 slash 命令：路由到 slash_command（后端直接 dispatch，不走 AgentLoop）。
+      const m = trimmed.slice(1).match(/^(\S+)\s*(.*)$/);
+      const cmd = m ? m[1] : "";
+      const args = m ? (m[2] ?? "") : "";
+      ch?.send({
+        type: "slash_command",
+        payload: { command: cmd, args, session_id: activeSidRef.current },
+      });
+    } else {
+      ch?.send({
+        type: "chat_v2",
+        payload: { text: chatText, session_id: activeSidRef.current },
+      });
+    }
+    setSlashOpen(false);
     setChatText("");
   };
 
@@ -1447,7 +1480,64 @@ function App() {
     setMessages([]);
   }, [switchActiveSid]);
 
+  // #4 slash：挂载时拉一次命令清单（缓存命中即返；后端 reload skill 可刷新）。
+  useEffect(() => {
+    fetch(`http://127.0.0.1:${BACKEND_PORT}/api/commands/help`)
+      .then((r) => (r.ok ? r.json() : { commands: [] }))
+      .then((d) => setSlashCommands(Array.isArray(d?.commands) ? d.commands : []))
+      .catch(() => {});
+  }, []);
+
+  // 当前候选命令（仅在输入以 / 开头、且还没打空格进入参数阶段时显示）。
+  const slashCandidates = useMemo<SlashCommand[]>(() => {
+    if (!slashOpen || !chatText.startsWith("/")) return [];
+    const q = chatText.slice(1).split(/\s+/)[0] ?? "";
+    if (chatText.length > q.length + 1) return []; // 已输空格 → 进参数阶段，关候选
+    const lower = q.toLowerCase();
+    if (!lower) return slashCommands;
+    const prefix = slashCommands.filter((c) => c.name.toLowerCase().startsWith(lower));
+    const substr = slashCommands.filter(
+      (c) => !c.name.toLowerCase().startsWith(lower) && c.name.toLowerCase().includes(lower),
+    );
+    return [...prefix, ...substr];
+  }, [slashOpen, chatText, slashCommands]);
+
+  const acceptSlash = useCallback(
+    (idx: number) => {
+      const cmd = slashCandidates[idx];
+      if (!cmd) return;
+      setChatText(`/${cmd.name} `);
+      setSlashOpen(false);
+      setSlashIdx(0);
+      chatInputRef.current?.focus();
+    },
+    [slashCandidates],
+  );
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // slash 候选打开时优先拦截方向键 / Tab / Enter / ESC（别让 Enter 直接发送）。
+    if (slashOpen && slashCandidates.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashIdx((i) => (i + 1) % slashCandidates.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashIdx((i) => (i - 1 + slashCandidates.length) % slashCandidates.length);
+        return;
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+        e.preventDefault();
+        acceptSlash(slashIdx);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSlashOpen(false);
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -2028,12 +2118,30 @@ function App() {
           </button>
         )}
 
+        <div style={{ position: "relative", flex: 1, minWidth: 0, display: "flex" }}>
+        <SlashDropdown
+          candidates={slashCandidates}
+          selectedIdx={slashIdx}
+          onAccept={acceptSlash}
+        />
         <input
+          ref={chatInputRef}
           data-testid="chat-input"
           className="bp-chat-input"
           type="text"
           value={chatText}
-          onChange={(e) => setChatText(e.target.value)}
+          onChange={(e) => {
+            const v = e.target.value;
+            setChatText(v);
+            // #4 slash 状态机：/ 开头且还没打空格 → 开候选面板。
+            if (v.startsWith("/")) {
+              const firstWord = v.slice(1).split(/\s+/)[0] ?? "";
+              setSlashOpen(v.length <= firstWord.length + 1);
+              setSlashIdx(0);
+            } else {
+              setSlashOpen(false);
+            }
+          }}
           onFocus={(e) => {
             // v2 B1: focus arms the observer but doesn't activate until keystroke.
             userInputStateRef.current = userInputObsRef.current.onFocus(
@@ -2075,7 +2183,7 @@ function App() {
           }
           disabled={state !== "connected"}
           style={{
-            flex: 1,
+            width: "100%",
             minWidth: 0,
             height: 36,
             padding: "0 15px",
@@ -2089,6 +2197,7 @@ function App() {
             transition: "border-color 140ms ease, box-shadow 140ms ease, background 140ms ease",
           }}
         />
+        </div>
         {(() => {
           const active = state === "connected" && !!chatText.trim();
           return (

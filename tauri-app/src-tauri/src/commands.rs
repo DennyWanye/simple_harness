@@ -321,9 +321,11 @@ pub fn open_message_panel(app: AppHandle) -> Result<(), String> {
     dock_message_panel_impl(&app)?;
     panel.show().map_err(|e| e.to_string())?;
     let _ = panel.unminimize();
-    // Pulse alwaysOnTop so it sits ABOVE the alwaysOnTop pet rather than
-    // behind it. Don't steal focus (the pet keeps interaction).
+    // 打开时 PULSE alwaysOnTop（true→false）：瞬间把面板顶到最前（含盖过桌宠），
+    // 但**不长期置顶** —— 用户要求面板和桌宠一样是普通窗口，被别的聚焦窗口覆盖
+    // （issue #3）。Don't steal focus (the pet keeps interaction).
     let _ = panel.set_always_on_top(true);
+    let _ = panel.set_always_on_top(false);
     emit_panel_visibility(&app, true);
     Ok(())
 }
@@ -365,7 +367,9 @@ pub fn toggle_message_panel(app: AppHandle) -> Result<bool, String> {
         dock_message_panel_impl(&app)?;
         panel.show().map_err(|e| e.to_string())?;
         let _ = panel.unminimize();
+        // PULSE（见 open_message_panel）：开面板瞬间顶到最前，不长期置顶（issue #3）。
         let _ = panel.set_always_on_top(true);
+        let _ = panel.set_always_on_top(false);
         emit_panel_visibility(&app, true);
         Ok(true)
     }

@@ -6151,6 +6151,12 @@ async def control_channel(ws: WebSocket):
                         except Exception:
                             pass
                         await _broadcast_default_chat_peers(ws, _switch_evt)
+                # 空消息守护：输入框为空时点「新话题」会发一条 text="" 的 chat_v2
+                # （new_session=true）。会话切换/新建事件已在上方广播，这里**不再**跑
+                # AgentLoop —— 否则空消息进预分析被判 ambiguous → 桌宠反问"你想说什么"
+                # （UX 毛刺）。非 new_session 的空消息同样直接忽略（前端本就不该发）。
+                if not (text or "").strip():
+                    continue
                 if (
                     deskpet_tool_registry_v2 is None
                     or permission_gate_v2 is None
