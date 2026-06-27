@@ -166,6 +166,7 @@ def test_recover_noop_when_canonical_healthy(tmp_path, monkeypatch):
         """
 [[llm.endpoints]]
 id = "existing"
+base_url = "https://relay.example.com/v1"
 enabled = true
 """.lstrip(),
     )
@@ -176,6 +177,7 @@ enabled = true
         """
 [[llm.endpoints]]
 id = "relay-cloud"
+base_url = "https://relay.example.com/v1"
 enabled = true
 """.lstrip(),
     )
@@ -199,6 +201,7 @@ def test_recover_idempotent(tmp_path, monkeypatch):
         """
 [[llm.endpoints]]
 id = "relay-cloud"
+base_url = "https://relay.example.com/v1"
 enabled = true
 """.lstrip(),
     )
@@ -266,6 +269,7 @@ def test_recover_preserves_other_sections_verbatim(tmp_path, monkeypatch):
         """
 [[llm.endpoints]]
 id = "relay-cloud"
+base_url = "https://relay.example.com/v1"
 enabled = true
 """.lstrip(),
     )
@@ -313,3 +317,56 @@ def test_load_config_legacy_relative_path_reroutes_to_user_data(isolated_dirs, t
     cfg.write_text('[memory]\ndb_path = "./data/memory.db"\n', encoding="utf-8")
     loaded = config_module.load_config(cfg)
     assert Path(loaded.memory.db_path) == user_data / "data" / "memory.db"
+
+
+def test_recover_triggers_when_canonical_has_malformed_enabled(tmp_path, monkeypatch):
+    """canonical 有 enabled 但缺 base_url 的 malformed endpoint → 不算 healthy，
+    仍从有效源恢复（可用性校验修复：enabled 还需有 base_url 才算可用）。"""
+    canonical = tmp_path / "portable" / "config.toml"
+    _write_config(
+        canonical,
+        '[[llm.endpoints]]\nid = "broken"\nenabled = true\n',  # 无 base_url → 不可用
+    )
+    appdata = tmp_path / "appdata" / "deskpet"
+    _write_config(
+        appdata / "config.toml",
+        '[[llm.endpoints]]\nid = "relay-cloud"\n'
+        'base_url = "https://relay.example.com/v1"\nenabled = true\n',
+    )
+    monkeypatch.setattr(
+        config_module.platformdirs, "user_data_dir", lambda *a, **k: str(appdata)
+    )
+    assert config_module._recover_orphaned_endpoints(canonical) is True
+    assert 'id = "relay-cloud"' in canonical.read_text(encoding="utf-8")
+
+
+def test_recover_skips_bad_source_then_recovers_from_next(tmp_path, monkeypatch):
+    """候选源里坏 TOML 不阻断后续有效源恢复（per-candidate try/catch）。
+    AppData 候选坏 TOML → 跳过 → 从 frozen 安装目录的有效源恢复。"""
+    import sys as _sys
+
+    install = tmp_path / "install"
+    (install / "backend").mkdir(parents=True)
+    fake_exe = install / "backend" / "deskpet-backend.exe"
+    fake_exe.write_bytes(b"")
+    monkeypatch.setattr(_sys, "frozen", True, raising=False)
+    monkeypatch.setattr(_sys, "executable", str(fake_exe))
+
+    # canonical = portable install/userdata（无 endpoints）
+    canonical = install / "userdata" / "config.toml"
+    _write_config(canonical, '[memory]\ndb_path = ""\n')
+    # 候选源1 = AppData：坏 TOML（应被跳过，不抛）
+    appdata = tmp_path / "appdata" / "deskpet"
+    _write_config(appdata / "config.toml", "[[llm.endpoints]\nnot toml")
+    monkeypatch.setattr(
+        config_module.platformdirs, "user_data_dir", lambda *a, **k: str(appdata)
+    )
+    # 候选源2 = install/backend/userdata：有效 endpoints
+    _write_config(
+        install / "backend" / "userdata" / "config.toml",
+        '[[llm.endpoints]]\nid = "relay-cloud"\n'
+        'base_url = "https://relay.example.com/v1"\nenabled = true\n',
+    )
+
+    assert config_module._recover_orphaned_endpoints(canonical) is True
+    assert 'id = "relay-cloud"' in canonical.read_text(encoding="utf-8")

@@ -1042,7 +1042,14 @@ def _recover_orphaned_endpoints(canonical_path: Path) -> bool:
         return [ep for ep in endpoints if isinstance(ep, dict)]
 
     def _enabled_endpoints(raw: object) -> list[dict]:
-        return [ep for ep in _endpoints(raw) if ep.get("enabled") is not False]
+        # "可用" = 未显式 disabled 且有 base_url。malformed/半成品 endpoint
+        # 不算可用，否则 canonical 里一行坏 endpoint（enabled 但缺 base_url）
+        # 会挡住自愈恢复；同理源侧也只认真正可用的 endpoint。
+        return [
+            ep
+            for ep in _endpoints(raw)
+            if ep.get("enabled") is not False and str(ep.get("base_url") or "").strip()
+        ]
 
     def _same_path(a: Path, b: Path) -> bool:
         try:
@@ -1098,8 +1105,14 @@ def _recover_orphaned_endpoints(canonical_path: Path) -> bool:
         source_path: Path | None = None
         enabled_count = 0
         for candidate in sources:
-            with open(candidate, "rb") as f:
-                source_raw = tomli.load(f)
+            try:
+                with open(candidate, "rb") as f:
+                    source_raw = tomli.load(f)
+            except Exception as e:  # noqa: BLE001 — 坏 TOML/读失败不阻断后续候选
+                logger.warning(
+                    "endpoints_recover_skip_bad_source src=%s err=%s", candidate, e
+                )
+                continue
             enabled = _enabled_endpoints(source_raw)
             if enabled:
                 source_path = candidate

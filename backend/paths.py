@@ -50,6 +50,9 @@ _APP_AUTHOR: str | bool = False
 logger = logging.getLogger(__name__)
 _UNSET = object()
 _PORTABLE_CACHE: Path | None | object = _UNSET
+# 进程内记忆化 user_data_dir 的非 env 解析结果（env 每次仍优先），
+# 防 portable 探针/解析抖动导致同进程内 config.toml / state.db 落不同目录。
+_USER_DATA_DIR_CACHE: Path | object = _UNSET
 
 
 def _install_dir() -> Path | None:
@@ -126,9 +129,10 @@ def _portable_userdata_dir() -> Path | None:
 
 
 def reset_path_cache() -> None:
-    """Tests call this to clear memoized portable resolution."""
-    global _PORTABLE_CACHE
+    """Tests call this to clear memoized portable + user_data_dir resolution."""
+    global _PORTABLE_CACHE, _USER_DATA_DIR_CACHE
     _PORTABLE_CACHE = _UNSET
+    _USER_DATA_DIR_CACHE = _UNSET
 
 
 def is_portable_mode() -> bool:
@@ -204,16 +208,27 @@ def user_data_dir() -> Path:
          repo's disk instead of polluting ``%AppData%`` on C:.
       4. Classic — Windows ``%AppData%\\deskpet\\``, macOS/Linux XDG.
     """
+    # env 永远优先（不进缓存——power-user / 测试可在进程内切换）。
     override = os.environ.get("DESKPET_USER_DATA_DIR")
     if override:
         return Path(override)
+    # 非 env 解析记忆化：首解析后钉死，防同进程内 portable 探针/解析抖动
+    # 让 config.toml / state.db 落到不同目录（装机版路径漂移的进程内变体）。
+    global _USER_DATA_DIR_CACHE
+    if _USER_DATA_DIR_CACHE is not _UNSET:
+        return _USER_DATA_DIR_CACHE  # type: ignore[return-value]
     portable = _portable_userdata_dir()
     if portable is not None:
-        return portable
-    if os.environ.get("DESKPET_DEV_MODE") == "1" and not getattr(sys, "frozen", False):
+        resolved = portable
+    elif os.environ.get("DESKPET_DEV_MODE") == "1" and not getattr(sys, "frozen", False):
         # backend/userdata — paths.py lives in backend/, so .parent is it.
-        return Path(__file__).resolve().parent / "userdata"
-    return Path(platformdirs.user_data_dir(_APP_NAME, appauthor=_APP_AUTHOR, roaming=True))
+        resolved = Path(__file__).resolve().parent / "userdata"
+    else:
+        resolved = Path(
+            platformdirs.user_data_dir(_APP_NAME, appauthor=_APP_AUTHOR, roaming=True)
+        )
+    _USER_DATA_DIR_CACHE = resolved
+    return resolved
 
 
 def output_dir(kind: str = "") -> Path:

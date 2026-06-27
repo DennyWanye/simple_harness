@@ -1287,6 +1287,11 @@ class AgentLoop:
                             detail=(
                                 f"tried {tried}, last_error: {last_text}"
                             ),
+                            # 把最后一个 provider 的结构化 error_class 透传给前端，
+                            # 让 chain 全失败路径也能 surface 友好分类（如
+                            # empty_api_key→"请重新登录" / relay 402→充值），而不是
+                            # 退化成无分类的通用错误。
+                            error_class=getattr(last_exc, "error_class", "") or "",
                         )
                         return
                 elif stream_capable:

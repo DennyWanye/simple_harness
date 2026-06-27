@@ -303,3 +303,30 @@ def test_env_var_always_wins_over_portable(clean_env, tmp_path, monkeypatch):
         assert paths.user_data_dir() == env_dir
     finally:
         paths.reset_path_cache()
+
+
+def test_user_data_dir_memoized_until_reset(clean_env, monkeypatch, tmp_path):
+    """user_data_dir() 非 env 解析记忆化：首解析后钉死（同进程不漂移），
+    reset_path_cache() 后才重算。"""
+    monkeypatch.setattr(paths.sys, "frozen", False, raising=False)
+    monkeypatch.delenv("DESKPET_USER_DATA_DIR", raising=False)
+    monkeypatch.delenv("DESKPET_DEV_MODE", raising=False)
+
+    calls = {"n": 0}
+
+    def fake_portable():
+        calls["n"] += 1
+        return tmp_path / f"ud{calls['n']}"
+
+    monkeypatch.setattr(paths, "_portable_userdata_dir", fake_portable)
+    paths.reset_path_cache()
+
+    a = paths.user_data_dir()
+    b = paths.user_data_dir()
+    assert a == b == tmp_path / "ud1"   # 缓存命中：fake_portable 只调一次
+    assert calls["n"] == 1
+
+    paths.reset_path_cache()
+    c = paths.user_data_dir()
+    assert c == tmp_path / "ud2"          # reset 后重算
+    assert calls["n"] == 2
