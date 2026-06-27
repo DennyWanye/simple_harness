@@ -21,8 +21,8 @@
 
 | | |
 |---|---|
-| 当前版本 | **v0.6.0-beta.3** |
-| 国内直链(COS) | `https://defaultbucket-1300194691.cos.ap-guangzhou.myqcloud.com/deskpet/DeskPet_0.6.0-beta.3_x64-setup.exe` |
+| 当前版本 | **v0.6.0-beta.6** |
+| 国内直链(COS) | `https://defaultbucket-1300194691.cos.ap-guangzhou.myqcloud.com/deskpet/DeskPet_0.6.0-beta.6_x64-setup.exe` |
 | GitHub Release | https://github.com/DennyWanye/deskpet/releases/latest |
 
 **分享给用户**：发上面任一下载链接（国内发 COS）。用户**双击装一次**（per-user，免管理员）→ 之后**全自动更新**，不用再分享。
@@ -81,6 +81,7 @@ python scripts/publish_models_to_cos.py --models-dir F:/DeskPetData/models   # �
 - **NSIS 必须 per-user** —— 默认 `currentUser`(HKCU)，自更新免管理员。**别装 per-machine MSI**（要管理员 + 和 NSIS 共目录会触发 "must be Administrator" 弹窗）。
 - **hf-mirror 不可用** —— 与 `huggingface_hub 0.36` 下载 API 不兼容（元数据 HEAD 失败，关 Xet 无效）→ 模型改走**自建 COS 直下**（`backend/deskpet/model_provisioner.py`）。
 - **构建必须 CPU torch** —— 见 §3，CUDA torch 撑爆 NSIS。
+- **签名步骤会卡在密码 prompt（致命，曾挂一整夜）** —— `~/.tauri/deskpet.key` 是 minisign **加密**私钥（第一行解码=`rsign encrypted secret key`），即便口令为空，签名也要拿到那个空口令去解密。PowerShell 里 `$env:..._PASSWORD = ""` / `-p ""` 都不可靠（空值被吞），`tauri build` 内嵌签名就**静默卡在隐藏密码 prompt 等 stdin**（无 .sig、无报错、无退出码）。**根治办法**：安装包先建出来（unsigned 也没关系），再用 **Git Bash** 单独签：`TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" npx tauri signer sign --private-key-path <key> <setup.exe> < /dev/null`。`< /dev/null` 关 stdin（任何 prompt 立刻 EOF），bash 的 `VAR="" cmd` 能正确传空口令——秒签不挂。
 
 ## 6. 相关文档 / 脚本
 
