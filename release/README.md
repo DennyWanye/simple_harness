@@ -13,7 +13,7 @@
 
 **私密仓 `deskpet-private` 本地构建 + 签名 → 发布到公开仓 `deskpet` 的 Release(Latest) + 腾讯 COS(国内主源) → 客户端 `tauri-plugin-updater` 启动检查/手动「检查更新」自动升级。**
 
-- 安装包**瘦身**：模型不内嵌（`DESKPET_BUNDLE_MODELS=0`，304MB 安装包），首启从 COS 下 ~3.9GB 模型。
+- 安装包**瘦身**：ML 模型不内嵌（`DESKPET_BUNDLE_MODELS=0`），首启从 COS 下 ~3.9GB 模型。Live2D 人物形象（~81MB）**自 beta.7 起内嵌**（estella 默认 + hiyori + Azuki-san + HoshinoAi + Snow Leopard + Estella-DG），装机即带形象 → 安装包 ~347MB。
 - updater endpoints：**COS 主**（国内快）+ **GitHub 备**（fallback）。
 - 安装为 **per-user（HKCU，免管理员）**，所以自更新无需提权。
 
@@ -21,8 +21,8 @@
 
 | | |
 |---|---|
-| 当前版本 | **v0.6.0-beta.6** |
-| 国内直链(COS) | `https://defaultbucket-1300194691.cos.ap-guangzhou.myqcloud.com/deskpet/DeskPet_0.6.0-beta.6_x64-setup.exe` |
+| 当前版本 | **v0.6.0-beta.7**（含 Live2D 形象资源） |
+| 国内直链(COS) | `https://defaultbucket-1300194691.cos.ap-guangzhou.myqcloud.com/deskpet/DeskPet_0.6.0-beta.7_x64-setup.exe` |
 | GitHub Release | https://github.com/DennyWanye/deskpet/releases/latest |
 
 **分享给用户**：发上面任一下载链接（国内发 COS）。用户**双击装一次**（per-user，免管理员）→ 之后**全自动更新**，不用再分享。
