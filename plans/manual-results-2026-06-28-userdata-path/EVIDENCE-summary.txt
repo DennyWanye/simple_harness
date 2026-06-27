@@ -1,0 +1,14 @@
+﻿===== tauri-dev.log =====
+[backend_launch] Dev python=G:\projects\deskpet\backend\.venv\Scripts\python.exe backend_dir=G:\projects\deskpet\backen
+INFO:__main__:event='config_loaded' level='info' timestamp='2026-06-27T19:32:55.544337Z' path='G:\\projects\\deskpet\\b
+mptykey' user_models_dir='F:\\DeskPetData\\models' model_root='F:\\DeskPetData\\models' portable=False env_pinned=True
+INFO:deskpet.llm.provider_registry:provider_registry_ready n=1 enabled=1 ids=['test-empty-key']
+INFO:__main__:event='problem_pipeline_init enabled=true intent=%s evidence=%s self_check=%s' level='info' timestamp='20
+LocalProtocolError_count=0
+===== tauri-dev5.log =====
+[backend_launch] Dev python=G:\projects\deskpet\backend\.venv\Scripts\python.exe backend_dir=G:\projects\deskpet\backen
+INFO:__main__:event='config_loaded' level='info' timestamp='2026-06-27T20:03:55.542203Z' path='G:\\projects\\deskpet\\b
+mptykey' user_models_dir='F:\\DeskPetData\\models' model_root='F:\\DeskPetData\\models' portable=False env_pinned=True
+INFO:deskpet.llm.provider_registry:provider_registry_ready n=2 enabled=2 ids=['test-empty-key', 'relay-cloud']
+INFO:__main__:event='problem_pipeline_init enabled=true intent=%s evidence=%s self_check=%s' level='info' timestamp='20
+LocalProtocolError_count=0
