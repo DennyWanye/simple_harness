@@ -96,6 +96,35 @@ run_build = false
 run_tests = false
 # Claim 短语规则文件（regex + ReDoS 拒）
 claim_patterns_file = "verify/claim_patterns.yaml"
+# D8 高后果异体评分（cross-persona quality judge）。2026-06-27 测试阶段点亮。
+external_evaluator = true
+
+# 2026-06-27 测试阶段全量点亮：Companion 主线能力开关全开（不灰度）。dataclass 默认已同步翻 True。
+# 注意：TOML 里裸 [features] 键必须排在 [features.problem_pipeline] 子表之前，否则会被归到子表。
+[features]
+slash_commands = true            # / 命令解析
+goal_mode = true                 # /goal 长期目标 + 末轮 goal_checker
+agent_parallel = true            # agent_parallel 多子代理工具
+plan_confirm_gate = true         # plan 确认门
+preference_memory = true         # BGE-M3 语义偏好记忆（plan 自动确认）
+subagent_driver = true           # 子代理并发驱动总开关
+agent_team = true                # spawn_team 工具 + TeamStore
+subagent_nonblocking = true      # 非阻塞 spawn/await + completion queue
+ctx_observability = true         # 压缩可观测（toast）
+adaptive_compact_pct = true      # 自适应 compact 触发线
+summary_quality_loop = true      # 摘要质量回路
+microcompact_size_aware = true   # size-aware microcompact
+# plan_read_only 仍 OFF（B 表：归 WI-1.2 自治档统一处理）
+
+# 2026-06-27 测试阶段点亮：技能能力栈。
+[skills]
+knowledge_enabled = true         # 触发式背景知识注入
+
+[skills.auto_disclosure]
+enabled = true                   # 语义自动披露（skill body inline）
+
+[skills.codify]
+enabled = true                   # 技能自创闭环
 
 [features.problem_pipeline]
 # 七步问题处理流水线（毛选方法论锚，仅 Companion 主线）。决策1：测试环境出厂即开全量验证。
@@ -318,14 +347,22 @@ salience_weight = 0.05
 # merge/supersede + Zep 式软失效 + 跨键治理 + 时序链）早已建好且 37 测试全绿，
 # 只差出厂开关。dataclass 默认仍全 False（保字节级契约，G4 测试仍绿）；这里是
 # 出厂运行配置。代价：每条用户消息后台 LLM 抽取（asyncio.create_task 不阻塞回复）。
-feedback_loop      = false   # WI-M1.1 用户 thumbs-up 回路
+# 2026-06-27 测试阶段全量点亮：语义事实记忆栈全开（不灰度）。dataclass 默认已同步翻 True。
+feedback_loop      = true    # WI-M1.1 用户 thumbs-up 回路（测试阶段点亮）
 facts_extract      = true    # WI-M1.2 写入端事实抽取（审计 #4 出厂开）
-rerank             = false   # WI-M1.3 cross-encoder 重排（无 GPU，审计建议保持关）
+rerank             = true    # WI-M1.3 cross-encoder 重排（测试阶段点亮；无 GPU 时 CPU 跑慢但不崩，出问题可单条关）
 enhanced_retriever = true    # WI-M1.4 facts 进 RRF（审计 #4 出厂开，依赖 facts_extract）
-chunking           = false   # WI-M1.5 长消息切块
-query_rewrite      = false   # WI-M1.5 短查询改写
+chunking           = true    # WI-M1.5 长消息切块（测试阶段点亮）
+query_rewrite      = true    # WI-M1.5 短查询改写（测试阶段点亮）
 workspace_memory   = true    # WI-M1.6 code 工作记忆（F4 2026-05-31: 出厂默认开，code 模式读文件进 workspace_state 供跨轮召回。dataclass 默认仍 False 保字节级契约）
-reflection         = false   # WI-M1.7 反思 / skill memory
+reflection         = true    # WI-M1.7 反思 / skill memory（测试阶段点亮）
+goal_facts         = true    # WI-3.1 goal/decision/constraint 记忆抽取（测试阶段点亮）
+light_write        = true    # WI-3.4 light 快路（测试阶段点亮；实际生效仍需调用方传 skip_embed）
+persona_inject     = true    # WI-3.2 人格画像注入（测试阶段点亮）
+goal_facts_hook    = true    # B-10 goal→facts 双写钩（测试阶段点亮）
+memory_forget      = true    # WI-S2.1a 显式遗忘工具（fact_id 模式；NL 模式仍由下方 forget.enable_natural_language 守门）
+entity_path        = true    # WI-S2.2 entity 索引检索路（测试阶段点亮）
+episodic_to_semantic = true  # WI-S2.4 summary 抽 facts（测试阶段点亮）
 cross_key_merge    = true    # WI-S2.1a 跨 key 矛盾治理（审计 #4 出厂开，需 superseded_by 列；ALTER 失败时 main.py 自动降级关闭）
 # WI-OH-4 + WI-CC-5（2026-06-23 出厂开）：记忆 self-curation nudge。dataclass
 # 默认仍 False 保字节级契约；此前能力已建 + 12 单测全绿但**出厂 flag 漏配** →

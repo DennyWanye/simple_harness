@@ -13,7 +13,7 @@
 > 入口是 [`STATUS/index.md`](./STATUS/index.md)（登记所有状态档及其作用）。其中
 > [`status.md`](./STATUS/status.md) 是全局项目状态（所有并行 worktree / 功能模块完成度 /
 > 最近里程碑 / 已知问题），[`DeepResearch.md`](./STATUS/DeepResearch.md) / [`AgentLoop.md`](./STATUS/AgentLoop.md) /
-> [`AgentImprovements.md`](./STATUS/AgentImprovements.md) / [`PPT.md`](./STATUS/PPT.md) 是各模块专项状态。
+> [`PPT.md`](./STATUS/PPT.md) 是各模块专项状态。
 > 新 session / 子代理接手项目前先读这里。
 
 ---

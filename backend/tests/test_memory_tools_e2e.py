@@ -259,3 +259,56 @@ async def test_g3_5c_read_nonexistent_id(bound_facts: FactsStore) -> None:
         await memory_tools._memory_read_handle({"memory_id": 999999}, "t")
     )
     assert r["ok"] is False and "not found" in r["error"]
+
+
+# ----------------------------------------------------------------------
+# G3.6 — IDEM：同一文本 memory_write 两次 → facts 行数第二次不增（去重幂等）
+# ----------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_g3_6_write_same_text_twice_is_idempotent(
+    bound_facts: FactsStore, tmp_path: Path
+) -> None:
+    """重复 memory_write 同一文本不应在 facts 表堆积重复记录。
+
+    历史 bug（2026-06-27 windows-mcp IDEM-B 真测发现）：``memory_write`` 用
+    ``key = f"memory_{int(time.time()*1000)}"`` 时间戳 key → 每次新插一行 →
+    重复发同句累积。修复 = 内容稳定 key（归一化哈希）+ ``find_active`` 命中即
+    ``update_value`` touch 不插行。本测断言"跑两次副作用次数不变"（幂等根基）。
+    """
+    import sqlite3
+
+    db = tmp_path / "facts.db"
+
+    def count_facts() -> int:
+        con = sqlite3.connect(db)
+        try:
+            return con.execute("SELECT count(*) FROM facts").fetchone()[0]
+        finally:
+            con.close()
+
+    text = "我叫小王，是后端程序员，最爱 neovim 和 Rust。"
+
+    w1 = json.loads(await memory_tools._memory_write_handle({"text": text}, "t1"))
+    assert w1["ok"] is True
+    assert w1.get("deduped") is False  # 首次落库
+    n1 = count_facts()
+    assert n1 == 1, f"首次写应落 1 行，实际 {n1}"
+
+    # 完全相同文本再写一次（含前后空白/大小写无关的归一化）
+    w2 = json.loads(
+        await memory_tools._memory_write_handle({"text": "  " + text + "  "}, "t2")
+    )
+    assert w2["ok"] is True
+    assert w2.get("deduped") is True, "第二次相同文本应去重（touch 不插行）"
+    assert w2["memory_id"] == w1["memory_id"], "去重应复用既有 fact id"
+    n2 = count_facts()
+    assert n2 == n1, f"重复写同一文本 facts 行数不应增长: {n1} -> {n2}"
+
+    # 不同文本仍应新增一行（去重不误杀不同内容）
+    w3 = json.loads(
+        await memory_tools._memory_write_handle(
+            {"text": "我养了一只叫咪咪的猫。"}, "t3"
+        )
+    )
+    assert w3["ok"] is True and w3.get("deduped") is False
+    assert count_facts() == n1 + 1, "不同内容应新增 1 行"

@@ -159,6 +159,9 @@ class MemoryV2FactsConfig:
     model_override: str = ""      # 留空 = 用主 LLM
     # Stage 2 D8 v2：entity 路 RRF 权重；v1 是 0.15，保守降为 0.10。
     entity_weight: float = 0.10
+    # 2026-06-27 内容哈希幂等去重（FactExtractor Layer 1）：TTL 与缓存上限。
+    content_dedup_ttl_s: int = 3600        # 相同内容近期(秒)抽过则跳过重抽
+    content_dedup_cache_max: int = 256     # in-process 内容哈希 LRU 上限
 
 
 @dataclass
@@ -181,21 +184,21 @@ class MemoryV2Config:
     全部默认 False → 行为与第一代"三层 + RRF"逐字节一致。每个 flag 单独
     控制一个 v2 模块的接入（Strangler-Fig：关 flag 即回退第一代）。
     """
-    feedback_loop: bool = False       # WI-M1.1 用户 thumbs-up 回路
-    facts_extract: bool = False       # WI-M1.2 写入端事实抽取
-    rerank: bool = False              # WI-M1.3 cross-encoder 重排
-    enhanced_retriever: bool = False  # WI-M1.4 facts 进 RRF
-    chunking: bool = False            # WI-M1.5 长消息切块
-    query_rewrite: bool = False       # WI-M1.5 短查询改写
-    workspace_memory: bool = False    # WI-M1.6 code 工作记忆
-    reflection: bool = False          # WI-M1.7 反思 / skill memory
+    feedback_loop: bool = True        # WI-M1.1 用户 thumbs-up 回路（测试阶段出厂点亮）
+    facts_extract: bool = True        # WI-M1.2 写入端事实抽取（测试阶段出厂点亮）
+    rerank: bool = True               # WI-M1.3 cross-encoder 重排（测试阶段出厂点亮；无 GPU 时 CPU 跑慢但不崩）
+    enhanced_retriever: bool = True   # WI-M1.4 facts 进 RRF（测试阶段出厂点亮）
+    chunking: bool = True             # WI-M1.5 长消息切块（测试阶段出厂点亮）
+    query_rewrite: bool = True        # WI-M1.5 短查询改写（测试阶段出厂点亮）
+    workspace_memory: bool = False    # WI-M1.6 code 工作记忆（B 表：code 模式专属，主线不开）
+    reflection: bool = True           # WI-M1.7 反思 / skill memory（测试阶段出厂点亮）
     # Stage 2 新增 4 flag（PRD §2.1 G1-G5 / §3 D16）：
-    cross_key_merge: bool = False         # WI-S2.1a 跨 key 矛盾治理
-    memory_forget: bool = False           # WI-S2.1a 显式遗忘工具
-    entity_path: bool = False             # WI-S2.2 entity 索引检索路
-    episodic_to_semantic: bool = False    # WI-S2.4 summary 抽 facts
+    cross_key_merge: bool = True          # WI-S2.1a 跨 key 矛盾治理（测试阶段出厂点亮）
+    memory_forget: bool = True            # WI-S2.1a 显式遗忘工具（fact_id 模式；NL 模式仍由 forget.enable_natural_language 独立守门）
+    entity_path: bool = True              # WI-S2.2 entity 索引检索路（测试阶段出厂点亮）
+    episodic_to_semantic: bool = True     # WI-S2.4 summary 抽 facts（测试阶段出厂点亮）
     # FP-4 WI-3.1：goal / decision / constraint 类别抽取
-    goal_facts: bool = False              # WI-3.1 goal/decision/constraint 记忆抽取
+    goal_facts: bool = True               # WI-3.1 goal/decision/constraint 记忆抽取（测试阶段出厂点亮）
     # FP-4 WI-3.3 / WI-OH-2 决策①：PreferenceMemory 半衰期衰减默认开。
     # 桌宠自动淡忘老偏好（老条目 effective 分沉底）；pinned 偏好跳衰减。
     # 硬前置：用户保留偏好的 pin 入口（memory_write pinned=True / memory_pin
@@ -208,17 +211,17 @@ class MemoryV2Config:
     #         仍可召回）。适用于语音 VAD tick / 截屏低信息判定等高频低信息流。
     # 实际生效取决于调用方是否传 skip_embed=True；flag 关闭时任何 skip_embed=True
     # 应被调用方屏蔽（有效 skip_embed = flag AND caller_intent）。
-    light_write: bool = False             # WI-3.4 light 快路开关
+    light_write: bool = True              # WI-3.4 light 快路开关（测试阶段出厂点亮；实际生效仍需调用方传 skip_embed）
     # FP-4 WI-3.2：人格画像主动注入 Component（默认 False，dev 先开）。
     # False → PreferenceProfileComponent 返回空 Slice → bundle 字节级等同当前（BC）。
-    persona_inject: bool = False          # WI-3.2 preference profile injection
+    persona_inject: bool = True           # WI-3.2 preference profile injection（测试阶段出厂点亮）
     # FP-4 B-10：goal→facts 双写钩（默认 False）。
     # False → bind_on_goal_set 不接电 → goal_store.set() BC。
-    goal_facts_hook: bool = False         # B-10 goal→facts double-write hook
+    goal_facts_hook: bool = True          # B-10 goal→facts double-write hook（测试阶段出厂点亮）
     # WI-OH-4：记忆 self-curation nudge（agent 主动判断该不该记，对标 hermes
     # 周期性自省 + openhuman self-curation）。默认 False = 字节级 BC：
     # flag OFF → MemoryCurator 不构造、agent_loop 不调 nudge、不写 facts。
-    curation_nudge: bool = False          # WI-OH-4 记忆自策展 nudge 开关
+    curation_nudge: bool = True           # WI-OH-4 记忆自策展 nudge 开关（测试阶段出厂点亮）
     # WI-OH-4 频率门控：每 N 个回合触发一次 nudge（对齐 hermes「周期性」）。
     # 仅在 curation_nudge=True 时生效。
     curation_nudge_every_n_turns: int = 8
@@ -227,7 +230,10 @@ class MemoryV2Config:
     # 周报的步骤」），写 facts 表（慢衰减）+ 由 preference_profile 注入。
     # 默认 False = 字节级 BC：flag OFF → curator 不产 learning、注入不含 learning。
     # 仅在 curation_nudge=True 且 auto_learnings=True 时产 learning。
-    auto_learnings: bool = False          # WI-CC-5 auto-memory learnings 开关
+    auto_learnings: bool = True           # WI-CC-5 auto-memory learnings 开关（测试阶段出厂点亮；仅 curation_nudge=True 时产 learning）
+    # 2026-06-27 内容哈希幂等去重（FactExtractor Layer 1）：相同内容跳过重抽，防重复事实累积。
+    # 测试阶段出厂点亮（与 facts_extract 同档）。OFF 时 FactExtractor 不启用内容去重 = 字节级 BC。
+    extract_content_dedup: bool = True
     facts: MemoryV2FactsConfig = field(default_factory=MemoryV2FactsConfig)
     forget: MemoryV2ForgetConfig = field(
         default_factory=MemoryV2ForgetConfig,
@@ -305,8 +311,8 @@ class ToolsVerifierConfig:
     # WI-HM-1 决策①：出厂默认点亮（原 False=BC）。
     structured_reflection: bool = True
     # WI-2.4 external evaluator: cross-persona quality judge for high-consequence
-    # goals (prod off / dev on). Default False = BC (0 extra LLM calls).
-    external_evaluator: bool = False
+    # goals (prod off / dev on). 测试阶段出厂点亮（高后果异体评分）。
+    external_evaluator: bool = True
     # Provider key to use for the evaluator (default = reuse main LLM provider).
     # "default" means: reuse build_agent's local_llm with evaluator system persona.
     evaluator_provider: str = "default"
@@ -381,9 +387,9 @@ class SkillsAutoDisclosureConfig:
 
     Default ``enabled=False`` → byte-identical to pre-WI-4.1 behavior.
     Set ``enabled=True`` in config.toml (or ``[features] …``) to activate
-    automatic skill body inlining.
+    automatic skill body inlining. 测试阶段出厂点亮。
     """
-    enabled: bool = False
+    enabled: bool = True
     strong_threshold: float = 0.55   # cos-sim threshold for "strong match"
     budget_tokens: int = 8000        # total token budget for inlined bodies
     per_skill_max_tokens: int = 2000  # single-skill body truncation cap
@@ -396,17 +402,17 @@ class SkillsCodifyConfig:
     Default ``enabled=False`` (dev on / prod off).
     Set ``[skills.codify] enabled = true`` in config.toml to activate.
     ``max_candidates_per_day`` caps how many pending candidates can be
-    generated per calendar day (防打扰).
+    generated per calendar day (防打扰). 测试阶段出厂点亮。
     """
-    enabled: bool = False
+    enabled: bool = True
     max_candidates_per_day: int = 3
 
 
 @dataclass
 class SkillsConfig:
     """``[skills]`` top-level config table (WI-4.1+)."""
-    # WI-5: triggered background knowledge snippets. Default OFF for BC.
-    knowledge_enabled: bool = False
+    # WI-5: triggered background knowledge snippets. 测试阶段出厂点亮。
+    knowledge_enabled: bool = True
     auto_disclosure: SkillsAutoDisclosureConfig = field(
         default_factory=SkillsAutoDisclosureConfig
     )
@@ -475,21 +481,21 @@ class FeaturesConfig:
       旧 `relayProviderBridge` 旁路 = 前端 flag 也须同步 OFF）。主控由前端 flag 决定
       （它决定发不发 ensure）；本 flag 提供后端侧防御性兜底。
     """
-    slash_commands: bool = False
-    goal_mode: bool = False
-    agent_parallel: bool = False
-    plan_confirm_gate: bool = False
-    preference_memory: bool = False
-    plan_read_only: bool = False
+    slash_commands: bool = True            # 测试阶段出厂点亮
+    goal_mode: bool = True                 # 测试阶段出厂点亮
+    agent_parallel: bool = True            # 测试阶段出厂点亮
+    plan_confirm_gate: bool = True         # 测试阶段出厂点亮
+    preference_memory: bool = True         # 测试阶段出厂点亮
+    plan_read_only: bool = False           # B 表：归 WI-1.2 自治档统一处理（开了 plan 期禁写，与效率优先冲突）
     relay_managed_provider: bool = True
     # --- 子代理并发驱动（plans/2026-06-21-subagent-concurrency-driver/）---------
     # 全默认 OFF；OFF 时新代码 short-circuit，agent_parallel 退回扁平 gather（字节级 BC）。
     #   subagent_driver       — 总开关：事务分型(task_kinds)路由 + 有界调度(scheduler)接入
     #   agent_team            — 暴露 spawn_team LLM 工具 + 构造 TeamStore/TaskGraphStore
     #   subagent_nonblocking  — 非阻塞 spawn_subagents/await_subagents + completion queue 回灌
-    subagent_driver: bool = False
-    agent_team: bool = False
-    subagent_nonblocking: bool = False
+    subagent_driver: bool = True           # 测试阶段出厂点亮
+    agent_team: bool = True                # 测试阶段出厂点亮
+    subagent_nonblocking: bool = True      # 测试阶段出厂点亮
     # WI-4.0 compaction: wire ContextCompressor into AgentLoop.
     # WI-6 (compaction-bestpractice-upgrade, 2026-06-16): 默认翻 True。
     # gate 已满足: P-B 修复(窗口按有效出站模型解析) + 第1/2期单测全绿 + 小窗口长
@@ -505,23 +511,23 @@ class FeaturesConfig:
     # ("context_compacted", ...) 全部不变。ON 时压缩命中额外:① metrics_sink
     # record 一条 "context_compacted" 事件(ratio/model);② agent_loop yield
     # ContextCompactedEvent;③ main.py 转一条 ws → 前端浮 toast「已压缩,省 N token」。
-    ctx_observability: bool = False
+    ctx_observability: bool = True         # 测试阶段出厂点亮
     # WI-1B-3 自适应 compact_at_pct (plans/.../ compaction 三件套):
     # 默认 OFF = 字节级 BC。OFF 时 ContextConfig.compact_at_tokens_for() 直接
     # 返回 compact_at_tokens 属性,agent_loop 走原触发线。ON 时按本 run 是否
     # agentic(工具调用计数≥阈值)微调触发线: agentic 提前压(留 buffer)、纯对话
     # 延后压(少打断闲聊),结果 clamp 在 [0.6,0.95]×window。
-    adaptive_compact_pct: bool = False
+    adaptive_compact_pct: bool = True      # 测试阶段出厂点亮
     # WI-1B-4 摘要质量回路 (同上):
     # 默认 OFF = 字节级 BC。OFF 时 _run_chat 用户消息预处理不加任何分支。ON 时
     # 对用户消息跑词法匹配(刚才|之前说的|你忘了|我们在弄|上一个) + 本 session
     # 发生过压缩(L1 有任务态快照) → 命中则从 L1 重新注入一条任务态 system 提示
     # (不立刻重摘,只补回被摘掉的任务连续性)。
-    summary_quality_loop: bool = False
+    summary_quality_loop: bool = True      # 测试阶段出厂点亮
     # WI-1B-5 microcompact size-aware (同上):
     # 默认 OFF = 字节级 BC(microcompact 仍按"保护最近 N 条")。ON 时保护策略改
     # "最近 N 条 + 累计字节 ≤ M",避免最近 N 条里混入巨型 tool_result 仍撑爆窗口。
-    microcompact_size_aware: bool = False
+    microcompact_size_aware: bool = True   # 测试阶段出厂点亮
     # 七步问题处理流水线（plans/2026-06-24-problem-handling-pipeline-maoxuan/）。
     # 嵌套子表，由 load_config 手动 pop 构建（同 [tools.verifier] 模式）。
     problem_pipeline: ProblemPipelineConfig = field(default_factory=ProblemPipelineConfig)
@@ -823,6 +829,11 @@ _MIGRATABLE_SECTIONS: tuple[tuple[str, ...], ...] = (
     ("context", "assembler"),
     ("code_e2e",),
     ("research",),
+    # 2026-06-27 全量点亮：[features]/[skills] 新默认须能回灌进存量用户 config。
+    ("features",),
+    ("skills",),
+    ("skills", "auto_disclosure"),
+    ("skills", "codify"),
 )
 
 

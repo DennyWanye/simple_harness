@@ -1432,12 +1432,16 @@ try:
                 cross_key_llm=_facts_llm,
                 embedder=_embedder,
                 goal_facts=_v2_cfg.goal_facts,  # FP-4 WI-3.1
+                content_dedup=_v2_cfg.extract_content_dedup,  # 2026-06-27 内容哈希幂等去重
+                content_ttl_s=_v2_cfg.facts.content_dedup_ttl_s,
+                content_cache_max=_v2_cfg.facts.content_dedup_cache_max,
             )
             logger.info(
                 "p4_fact_extractor_ready",
                 min_chars=_v2_cfg.facts.min_user_chars,
                 cross_key_merge=_cross_key_enabled,
                 goal_facts=_v2_cfg.goal_facts,
+                content_dedup=_v2_cfg.extract_content_dedup,  # boot 实证 flag 真传进去
             )
         else:
             logger.info("p4_fact_extractor_skipped", reason="no_llm_provider")

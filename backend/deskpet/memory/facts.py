@@ -36,12 +36,14 @@ them; for now we set a sensible default of 0.02 (same as P4 messages).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import math
 import re
 import time
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional, Sequence
@@ -79,6 +81,14 @@ VALID_CATEGORIES = frozenset(_CATEGORY_DECAY.keys())
 
 # Type aliases — strict to keep mocks trivial in tests.
 LLMCall = Callable[[str], Awaitable[str]]
+
+
+def _content_hash(source: str, text: str) -> str:
+    """内容寻址哈希：归一化(strip+折叠内部空白+小写)后含 source 做 sha1。
+    同一内容恒得同一 hash → 重发完全相同内容可被短路。
+    """
+    norm = " ".join(text.strip().split()).lower()
+    return hashlib.sha1((source + "\x00" + norm).encode("utf-8")).hexdigest()
 
 
 # Prompts. We pin them as module constants for testability + auditability.
@@ -976,6 +986,9 @@ class FactExtractor:
         embedder: Any | None = None,
         forget_within_days: int = 7,
         goal_facts: bool = False,  # FP-4 WI-3.1: enable goal/decision/constraint extraction
+        content_dedup: bool = False,
+        content_ttl_s: int = 3600,
+        content_cache_max: int = 256,
     ) -> None:
         self._store = store
         self._extract_llm = extract_llm
@@ -1002,6 +1015,36 @@ class FactExtractor:
         self._embedder = embedder
         # R-MISS-2：被 forgotten 的 subject/key 在 N 天内不重新插。
         self._forget_within_days = int(forget_within_days)
+        self._content_dedup = bool(content_dedup)
+        self._content_ttl_s = int(content_ttl_s)
+        self._content_cache_max = int(content_cache_max)
+        self._recent_content: "OrderedDict[str, float]" = OrderedDict()
+        self._dedup_lock = asyncio.Lock()
+
+    async def _revoke_placeholder(self, h):
+        if h is not None:
+            async with self._dedup_lock:
+                self._recent_content.pop(h, None)
+
+    async def _refresh_placeholder(self, h):
+        """把占位时间戳刷新为"处理完成时刻"（MAJOR-1：TTL 基准对齐"内容已处理完"，
+        而非抢占登记的"LLM 调用前"时刻）+ LRU 提鲜。空数组成功 与 持久化成功 都调。"""
+        if h is not None:
+            async with self._dedup_lock:
+                if h in self._recent_content:
+                    self._recent_content[h] = time.time()
+                    self._recent_content.move_to_end(h)
+
+    async def clear_content_cache(self) -> None:
+        """清空内容哈希去重缓存（R5 自愈钩）。
+
+        memory_forget 删掉某事实后，若用户在 content_ttl_s 窗口内逐字重发同句
+        想重记，会被内容哈希短路挡住。调用本方法清缓存即可让同内容重新被抽取。
+        最小改动暂未接线到 forget 工具（memory_tools 只持 facts_store 不持
+        extractor）；提供本公有钩供将来按需接线，并供单测验证自愈可用。
+        """
+        async with self._dedup_lock:
+            self._recent_content.clear()
 
     async def process_message(
         self,
@@ -1032,15 +1075,43 @@ class FactExtractor:
             return []
         if not content or len(content.strip()) < self._min_chars:
             return []
+
+        # Layer 1 内容哈希幂等短路（仅 user_message；summarizer 等不短路）。
+        h = None
+        if self._content_dedup and source == "user_message":
+            h = _content_hash(source, content)
+            async with self._dedup_lock:
+                now = time.time()
+                while self._recent_content:
+                    k0, t0 = next(iter(self._recent_content.items()))
+                    if now - t0 >= self._content_ttl_s:
+                        self._recent_content.popitem(last=False)
+                    else:
+                        break
+                hit_t = self._recent_content.get(h)
+                if hit_t is not None:
+                    log.info("facts_extract_skip_dup seen_ago=%.0fs", now - hit_t)
+                    return []
+                self._recent_content[h] = now
+                self._recent_content.move_to_end(h)
+                while len(self._recent_content) > self._content_cache_max:
+                    self._recent_content.popitem(last=False)
+
         # FP-4 WI-3.1: select prompt based on goal_facts flag
         _prompt_tmpl = _EXTRACT_PROMPT_WITH_GOALS if self._goal_facts else _EXTRACT_PROMPT
         try:
             raw = await self._extract_llm(_prompt_tmpl.format(content=content[:2000]))
         except Exception as exc:  # noqa: BLE001
             log.warning("FactExtractor.extract LLM failed: %s", exc)
+            await self._revoke_placeholder(h)
             return []
-        extracted = _parse_extracted(raw)
+        extracted, parse_ok = _try_parse_facts(raw)
+        if not parse_ok:
+            await self._revoke_placeholder(h)
+            return []
         if not extracted:
+            # parse_ok 但 0 条（LLM 确说无可抽）→ 保留占位，并刷新为完成时刻（MAJOR-1）
+            await self._refresh_placeholder(h)
             return []
 
         # Stage 2 D13 v2：summarizer 来源 → category override
@@ -1050,8 +1121,19 @@ class FactExtractor:
 
         # 持久化阶段串行化（评审缺口 2）—— LLM extract 已并发跑完，这里
         # 锁住 find→merge→upsert 防同 (subject,key) 并发双插。
-        async with self._persist_lock:
-            return await self._persist_extracted(extracted, message_id)
+        try:
+            async with self._persist_lock:
+                persisted = await self._persist_extracted(extracted, message_id)
+        except Exception:  # noqa: BLE001
+            # safe-fail（评估补 #2）：持久化抛异常（如 DB 错）→ 撤销占位，
+            # 否则相同内容下次会被误短路、事实永久记不上。撤销后再抛（DB 错是真 bug，
+            # 与现有 "DB error → re-raise" 契约一致，由上层 _extract_facts_bg 兜住）。
+            await self._revoke_placeholder(h)
+            raise
+
+        # 成功持久化 → 刷新占位为完成时刻（MAJOR-1）
+        await self._refresh_placeholder(h)
+        return persisted
 
     async def _persist_extracted(
         self,
@@ -1352,9 +1434,15 @@ def _strip_reasoning_blocks(text: str) -> str:
     return text.strip()
 
 
-def _parse_extracted(raw: str) -> list[ExtractedFact]:
+def _try_parse_facts(raw: str) -> tuple[list["ExtractedFact"], bool]:
+    """返回 (facts, parse_ok)。
+
+    parse_ok=False 表示 raw 畸形/无数组/JSONDecodeError/非 list（应撤销占位、
+    允许重抽）；parse_ok=True 表示成功解析出合法 JSON 数组（即便为空=LLM
+    说无可抽）。
+    """
     if not raw:
-        return []
+        return [], False
     text = raw.strip()
     if text.startswith("```"):
         nl = text.find("\n")
@@ -1366,13 +1454,13 @@ def _parse_extracted(raw: str) -> list[ExtractedFact]:
     text = _strip_reasoning_blocks(text)
     lb, rb = text.find("["), text.rfind("]")
     if not (0 <= lb < rb):
-        return []
+        return [], False
     try:
         arr = json.loads(text[lb:rb + 1])
     except json.JSONDecodeError:
-        return []
+        return [], False
     if not isinstance(arr, list):
-        return []
+        return [], False
     out: list[ExtractedFact] = []
     for item in arr:
         if not isinstance(item, dict):
@@ -1388,7 +1476,12 @@ def _parse_extracted(raw: str) -> list[ExtractedFact]:
             ))
         except (TypeError, ValueError):
             continue
-    return out
+    return out, True
+
+
+def _parse_extracted(raw: str) -> list[ExtractedFact]:
+    facts, _ = _try_parse_facts(raw)
+    return facts
 
 
 def _parse_cross_key_decision(raw: str) -> CrossKeyDecision:

@@ -27,6 +27,7 @@ WI-T3.1 v3 schema migration（本文件 append）：
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
@@ -407,6 +408,19 @@ _MEMORY_SEARCH_SCHEMA: dict[str, Any] = {
 }
 
 
+def _stable_memory_key(text: str) -> str:
+    """内容稳定 key：归一化文本后哈希 → **同一内容恒得同一 key**。
+
+    替代历史的时间戳 key（``f"memory_{int(time.time()*1000)}"``，每次唯一 →
+    重复发同一句话每次都新插一行，facts 表堆积重复记录，2026-06-27 windows-mcp
+    IDEM-B 真测发现）。归一化 = strip + 折叠内部空白 + 小写，使"请记住：X" 连发
+    两次得同 key → 配合 ``find_active`` 去重路径 → 第二次不增行（幂等）。
+    """
+    norm = " ".join(text.strip().split()).lower()
+    digest = hashlib.sha1(norm.encode("utf-8")).hexdigest()[:16]
+    return f"memory_{digest}"
+
+
 async def _memory_write_handle(args: dict, task_id: str) -> str:  # noqa: ARG001
     """memory_write handler — schema migration 翻译到 facts.upsert."""
     if _facts_store is None:
@@ -428,20 +442,37 @@ async def _memory_write_handle(args: dict, task_id: str) -> str:  # noqa: ARG001
         salience = 0.5
     # confidence ≈ salience（旧 schema 没有 confidence 字段，复用 salience 语义）
     confidence = max(0.0, min(1.0, salience))
-    # key 用时间戳保证唯一（旧 schema 没传 key 字段 → 自动生成）
-    key = f"memory_{int(time.time() * 1000)}"
+    # 内容稳定 key（替代历史时间戳 key）：同一内容 → 同一 key → 可去重。
+    key = _stable_memory_key(text)
     # WI-OH-2 path(a): pinned=True → 偏好钉住跳衰减（用户保留偏好逃生口）。
     pinned = bool(args.get("pinned", False))
+    value = text.strip()
+    deduped = False
     try:
-        new_id = await _facts_store.upsert(
-            category=category,
-            subject="user",
-            key=key,
-            value=text.strip(),
-            confidence=confidence,
-            source_msg_id=None,
-            evidence="memory_write tool call",
-        )
+        # 去重：同 (subject,key) 已有 active 行 = 同内容（key 即归一化内容哈希）
+        # → 不再插新行，只 touch（刷新 value/confidence/updated_at），返回既有 id。
+        # 这才让"重复发同一句话第二次不增行"成立（IDEM 幂等）。
+        existing = await _facts_store.find_active(subject="user", key=key)
+        if existing is not None:
+            new_id = int(existing["id"])
+            await _facts_store.update_value(
+                new_id,
+                value=value,
+                confidence=confidence,
+                key=key,
+                evidence="memory_write tool call (dedup touch)",
+            )
+            deduped = True
+        else:
+            new_id = await _facts_store.upsert(
+                category=category,
+                subject="user",
+                key=key,
+                value=value,
+                confidence=confidence,
+                source_msg_id=None,
+                evidence="memory_write tool call",
+            )
     except Exception as exc:  # noqa: BLE001
         return json.dumps({
             "ok": False,
@@ -462,6 +493,7 @@ async def _memory_write_handle(args: dict, task_id: str) -> str:  # noqa: ARG001
         "category": category,
         "tier": tier,
         "pinned": pin_applied,
+        "deduped": deduped,
     }, ensure_ascii=False)
 
 
