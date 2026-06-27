@@ -199,3 +199,7 @@ resources/PPT_Template/
 
 # codex challenge 临时产物
 plans/2026-06-22-context-and-agent-optimization/.challenge-*.out
+
+# 2026-06-28 真测原始大日志(本地保留,不入库)
+plans/manual-results-2026-06-28-userdata-path/tauri-dev*.log
+plans/manual-results-2026-06-28-userdata-path/EVIDENCE-run*.log
