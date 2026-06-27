@@ -22,7 +22,11 @@ logger = structlog.get_logger()
 # 友好的 LLMProviderError(error_class=empty_api_key)，由 chat 层照常 surface 成
 # "请重新登录/配置 provider"，而不是崩在传输层。本地 ollama（key 占位、server
 # 忽略）放行。
-_UNUSABLE_API_KEYS = {"", "from-keychain", "from-env", "your-key-here"}
+# 注意含 "ollama"：chain 路径（main.py resolve_api_key(...) or "ollama"）在
+# keychain key 缺失时会把 key 默认成 "ollama"。对**非本地** endpoint，"ollama"
+# 等于"没有真 key"，必须拦截给友好错误（否则给云端发 Bearer ollama → 401，
+# 对用户不可读）；本地 ollama/localhost endpoint 由 _is_local_base_url 放行。
+_UNUSABLE_API_KEYS = {"", "ollama", "from-keychain", "from-env", "your-key-here"}
 
 
 def _is_local_base_url(base_url: str) -> bool:

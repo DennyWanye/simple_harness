@@ -26,7 +26,9 @@ from providers.openai_compatible import OpenAICompatibleProvider
 
 # ───────── 生产聊天 provider：providers.openai_compatible ─────────
 
-@pytest.mark.parametrize("api_key", ["", "   ", "from-keychain", "from-env", "your-key-here"])
+@pytest.mark.parametrize(
+    "api_key", ["", "   ", "ollama", "from-keychain", "from-env", "your-key-here"]
+)
 def test_openai_compatible_empty_or_placeholder_cloud_raises(api_key: str):
     """非本地 endpoint + 空/占位符 key → _client() 抛 LLMProviderError，
     error_class=empty_api_key（不构造 client、不发请求、不拼空 Bearer）。"""
