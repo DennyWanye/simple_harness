@@ -191,3 +191,115 @@ def test_ensure_user_dirs_idempotent(clean_env, tmp_path):
     paths.ensure_user_dirs()
     paths.ensure_user_dirs()  # must not raise
     assert (tmp_path / "d" / "data").is_dir()
+
+
+# ---- portable user data ----------------------------------------------
+
+def _freeze_backend_install(monkeypatch, install_root: Path) -> None:
+    backend_dir = install_root / "backend"
+    backend_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(paths.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(paths.sys, "executable", str(backend_dir / "x.exe"))
+
+
+def test_portable_resolves_install_userdata_only(clean_env, tmp_path, monkeypatch):
+    paths.reset_path_cache()
+    try:
+        install_root = tmp_path / "deskpet"
+        _freeze_backend_install(monkeypatch, install_root)
+
+        resolved = paths._portable_userdata_dir()
+
+        assert resolved == install_root / "userdata"
+        assert resolved != tmp_path / "userdata"
+        assert resolved.parent == install_root
+    finally:
+        paths.reset_path_cache()
+
+
+def test_portable_memoized_no_drift(clean_env, tmp_path, monkeypatch):
+    paths.reset_path_cache()
+    try:
+        install_root = tmp_path / "deskpet"
+        _freeze_backend_install(monkeypatch, install_root)
+
+        first = paths._portable_userdata_dir()
+
+        def fail_if_probe_retried(self, data):
+            raise AssertionError(f"portable cache miss: {self}")
+
+        monkeypatch.setattr(Path, "write_bytes", fail_if_probe_retried)
+        second = paths._portable_userdata_dir()
+
+        assert second is first
+        assert second == install_root / "userdata"
+    finally:
+        paths.reset_path_cache()
+
+
+def test_portable_unwritable_falls_back_appdata_and_logs_error(
+    clean_env,
+    tmp_path,
+    monkeypatch,
+    caplog,
+):
+    paths.reset_path_cache()
+    try:
+        install_root = tmp_path / "deskpet"
+        appdata = tmp_path / "AppData" / "deskpet"
+        _freeze_backend_install(monkeypatch, install_root)
+        monkeypatch.setattr(
+            paths.platformdirs,
+            "user_data_dir",
+            lambda *args, **kwargs: str(appdata),
+        )
+
+        def fail_probe(self, data):
+            raise OSError("read-only")
+
+        monkeypatch.setattr(Path, "write_bytes", fail_probe)
+
+        with caplog.at_level("ERROR", logger=paths.__name__):
+            resolved = paths.user_data_dir()
+
+        assert resolved == appdata
+        assert "portable_userdata_unwritable" in caplog.text
+    finally:
+        paths.reset_path_cache()
+
+
+def test_sentinel_forces_binding(clean_env, tmp_path, monkeypatch):
+    paths.reset_path_cache()
+    try:
+        install_root = tmp_path / "deskpet"
+        _freeze_backend_install(monkeypatch, install_root)
+        userdata = install_root / "userdata"
+        userdata.mkdir(parents=True)
+        (userdata / ".deskpet-portable").touch()
+
+        def fail_probe(self, data):
+            raise OSError("transient write failure")
+
+        monkeypatch.setattr(Path, "write_bytes", fail_probe)
+
+        assert paths._portable_userdata_dir() == userdata
+    finally:
+        paths.reset_path_cache()
+
+
+def test_env_var_always_wins_over_portable(clean_env, tmp_path, monkeypatch):
+    paths.reset_path_cache()
+    try:
+        install_root = tmp_path / "deskpet"
+        env_dir = tmp_path / "env-userdata"
+        _freeze_backend_install(monkeypatch, install_root)
+        monkeypatch.setenv("DESKPET_USER_DATA_DIR", str(env_dir))
+        monkeypatch.setattr(
+            paths,
+            "_portable_userdata_dir",
+            lambda: (_ for _ in ()).throw(AssertionError("portable was called")),
+        )
+
+        assert paths.user_data_dir() == env_dir
+    finally:
+        paths.reset_path_cache()

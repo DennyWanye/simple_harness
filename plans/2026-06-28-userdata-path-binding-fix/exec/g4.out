@@ -1,0 +1,3628 @@
+Reading additional input from stdin...
+OpenAI Codex v0.125.0 (research preview)
+--------
+workdir: G:\projects\deskpet
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0a5e-6f94-7242-a165-ffdd89b0b2c1
+--------
+user
+# 任务 G4 — Rust 侧 userdata 单一事实源 + 注入 env（Phase 2，核心）
+
+你是编码 Expert（Rust）。仓库根：`G:\projects\deskpet`，crate 在 `tauri-app\src-tauri`。只改下列文件，**不要 git commit**。
+背景见 `G:\projects\deskpet\plans\2026-06-28-userdata-path-binding-fix\00-PLAN.md` §2.3 + §5 Phase 2。
+
+## 问题
+Rust 和 Python 各有一套 portable userdata 解析，**判定条件不一致**：
+- Rust `paths.rs::portable_userdata_dir`（约 69-85 行）要求 `<install>/userdata` **已存在**（`is_dir()`）才认 portable，否则回落 `%AppData%`。
+- Python `backend/paths.py` **主动 mkdir** 创建。
+- 且 `process_manager.rs::spawn_once` 给 backend 注了 `DESKPET_CLOUD_API_KEY` 等却**没注 `DESKPET_USER_DATA_DIR`** → Python 完全独立解析。
+
+跨会话 + 目录存在性时序差异 → 两边/两次解析到不同 userdata → relay-cloud provider 写一个 config.toml、重启从另一个读 → 丢失。
+
+## 修复目标
+让 **Rust 解析一次** userdata 并通过 env **传给 backend**，Python（`backend/paths.py:193` 已 priority-1 读 `DESKPET_USER_DATA_DIR`）直接用 → 双解析归一，永不漂移。
+
+## 1. `tauri-app\src-tauri\src\paths.rs` — `portable_userdata_dir`（非 test cfg，约 69-85）改成 create-then-return
+先读现有实现。把"要求已存在"改成"主动创建 + 探针写验证可写"，与 Python 对齐：
+```rust
+#[cfg(not(test))]
+fn portable_userdata_dir() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let parent = exe.parent()?;
+    let root = if parent
+        .file_name()
+        .map(|n| n.to_string_lossy().eq_ignore_ascii_case("backend"))
+        .unwrap_or(false)
+    {
+        parent.parent()?.to_path_buf()
+    } else {
+        parent.to_path_buf()
+    };
+    let ud = root.join("userdata");
+    if std::fs::create_dir_all(&ud).is_ok() {
+        let probe = ud.join(".deskpet-write-probe");
+        if std::fs::write(&probe, b"").is_ok() {
+            let _ = std::fs::remove_file(&probe);
+            return Some(ud);
+        }
+    }
+    None
+}
+```
+保持 `#[cfg(test)]` 版（返回 None）不变。`user_data_dir_with` 的优先级链（env → portable → AppData）不变。
+
+## 2. `tauri-app\src-tauri\src\process_manager.rs` — `spawn_once` 注入 env
+先读 `spawn_once`（约 148-219），找到已设 `.env("PYTHONIOENCODING", ...)` / `DESKPET_CLOUD_API_KEY` 的位置。在同段加入（用 Rust 解析出的唯一 userdata，覆盖 backend 的独立解析）：
+```rust
+// 路径单一事实源：把 Rust 解析出的 userdata 钉给 backend，
+// 防 Rust/Python 双解析漂移（config.toml/state.db 落不同目录的根因）。
+if let Some(ud) = crate::paths::user_data_dir() {
+    let _ = std::fs::create_dir_all(&ud);
+    cmd.env("DESKPET_USER_DATA_DIR", ud.to_string_lossy().to_string());
+}
+```
+（确认 `crate::paths::user_data_dir()` 可见；若 `cmd` 变量名不同则按实际。`DESKPET_USER_DATA_DIR` 名称必须与 Python `backend/paths.py` priority-1 读的完全一致。）
+
+## 3. 测试
+- `paths.rs`：若已有可注入 exe 路径的 `*_with` 测试结构，加用例验证 portable 解析（create-then-return）。若现有测试架构不便注入 `current_exe`，至少新增/保留一个针对 `user_data_dir_with` 的用例：`DESKPET_USER_DATA_DIR` 设置时永远优先返回该值。**不得破坏现有 Rust 测试。**
+- 如果给 `spawn_once` 注 env 难以单测（spawn 本身要起进程），不强求单测；但要保证编译通过。
+
+## 验收（自己跑通）
+```
+cd G:\projects\deskpet\tauri-app\src-tauri
+cargo build 2>&1 | tail -30
+cargo test --lib 2>&1 | tail -40
+```
+`cargo build` 必须成功（这是最关键验收，因为装机版靠它重打包）。现有 `cargo test` 不回归。完成后输出改动摘要 + build/test 结果。若 cargo 因环境（缺 toolchain）跑不动，明确说明并保证代码语法/类型正确。
+codex
+我会按项目约束先读必要工作流和现有实现，再做最小范围改动，只碰 `paths.rs` 和 `process_manager.rs`。随后在 Rust crate 里跑指定的 build/test 验收。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content -Raw C:\\Users\\24378\\.agents\\skills\\sp-test-driven-development\\SKILL.md" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content -Raw C:\\Users\\24378\\.agents\\skills\\sp-using-superpowers\\SKILL.md" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content -Raw C:\\Users\\24378\\.agents\\skills\\sp-verification-before-completion\\SKILL.md" in G:\projects\deskpet
+ succeeded in 163ms:
+---
+name: using-superpowers
+description: Use when starting any conversation - establishes how to find and use skills, requiring Skill tool invocation before ANY response including clarifying questions
+---
+
+<SUBAGENT-STOP>
+If you were dispatched as a subagent to execute a specific task, skip this skill.
+</SUBAGENT-STOP>
+
+<EXTREMELY-IMPORTANT>
+If you think there is even a 1% chance a skill might apply to what you are doing, you ABSOLUTELY MUST invoke the skill.
+
+IF A SKILL APPLIES TO YOUR TASK, YOU DO NOT HAVE A CHOICE. YOU MUST USE IT.
+
+This is not negotiable. This is not optional. You cannot rationalize your way out of this.
+</EXTREMELY-IMPORTANT>
+
+## Instruction Priority
+
+Superpowers skills override default system prompt behavior, but **user instructions always take precedence**:
+
+1. **User's explicit instructions** (AGENTS.md, GEMINI.md, AGENTS.md, direct requests) 鈥?highest priority
+2. **Superpowers skills** 鈥?override default system behavior where they conflict
+3. **Default system prompt** 鈥?lowest priority
+
+If AGENTS.md, GEMINI.md, or AGENTS.md says "don't use TDD" and a skill says "always use TDD," follow the user's instructions. The user is in control.
+
+## How to Access Skills
+
+**In Codex:** Use the `Skill` tool. When you invoke a skill, its content is loaded and presented to you鈥攆ollow it directly. Never use the Read tool on skill files.
+
+**In Copilot CLI:** Use the `skill` tool. Skills are auto-discovered from installed plugins. The `skill` tool works the same as Codex's `Skill` tool.
+
+**In Gemini CLI:** Skills activate via the `activate_skill` tool. Gemini loads skill metadata at session start and activates the full content on demand.
+
+**In other environments:** Check your platform's documentation for how skills are loaded.
+
+## Platform Adaptation
+
+Skills use Codex tool names. Non-CC platforms: see `references/copilot-tools.md` (Copilot CLI), `references/codex-tools.md` (Codex) for tool equivalents. Gemini CLI users get the tool mapping loaded automatically via GEMINI.md.
+
+# Using Skills
+
+## The Rule
+
+**Invoke relevant or requested skills BEFORE any response or action.** Even a 1% chance a skill might apply means that you should invoke the skill to check. If an invoked skill turns out to be wrong for the situation, you don't need to use it.
+
+```dot
+digraph skill_flow {
+    "User message received" [shape=doublecircle];
+    "About to EnterPlanMode?" [shape=doublecircle];
+    "Already brainstormed?" [shape=diamond];
+    "Invoke brainstorming skill" [shape=box];
+    "Might any skill apply?" [shape=diamond];
+    "Invoke Skill tool" [shape=box];
+    "Announce: 'Using [skill] to [purpose]'" [shape=box];
+    "Has checklist?" [shape=diamond];
+    "Create TodoWrite todo per item" [shape=box];
+    "Follow skill exactly" [shape=box];
+    "Respond (including clarifications)" [shape=doublecircle];
+
+    "About to EnterPlanMode?" -> "Already brainstormed?";
+    "Already brainstormed?" -> "Invoke brainstorming skill" [label="no"];
+    "Already brainstormed?" -> "Might any skill apply?" [label="yes"];
+    "Invoke brainstorming skill" -> "Might any skill apply?";
+
+    "User message received" -> "Might any skill apply?";
+    "Might any skill apply?" -> "Invoke Skill tool" [label="yes, even 1%"];
+    "Might any skill apply?" -> "Respond (including clarifications)" [label="definitely not"];
+    "Invoke Skill tool" -> "Announce: 'Using [skill] to [purpose]'";
+    "Announce: 'Using [skill] to [purpose]'" -> "Has checklist?";
+    "Has checklist?" -> "Create TodoWrite todo per item" [label="yes"];
+    "Has checklist?" -> "Follow skill exactly" [label="no"];
+    "Create TodoWrite todo per item" -> "Follow skill exactly";
+}
+```
+
+## Red Flags
+
+These thoughts mean STOP鈥攜ou're rationalizing:
+
+| Thought | Reality |
+|---------|---------|
+| "This is just a simple question" | Questions are tasks. Check for skills. |
+| "I need more context first" | Skill check comes BEFORE clarifying questions. |
+| "Let me explore the codebase first" | Skills tell you HOW to explore. Check first. |
+| "I can check git/files quickly" | Files lack conversation context. Check for skills. |
+| "Let me gather information first" | Skills tell you HOW to gather information. |
+| "This doesn't need a formal skill" | If a skill exists, use it. |
+| "I remember this skill" | Skills evolve. Read current version. |
+| "This doesn't count as a task" | Action = task. Check for skills. |
+| "The skill is overkill" | Simple things become complex. Use it. |
+| "I'll just do this one thing first" | Check BEFORE doing anything. |
+| "This feels productive" | Undisciplined action wastes time. Skills prevent this. |
+| "I know what that means" | Knowing the concept 鈮?using the skill. Invoke it. |
+
+## Skill Priority
+
+When multiple skills could apply, use this order:
+
+1. **Process skills first** (brainstorming, debugging) - these determine HOW to approach the task
+2. **Implementation skills second** (frontend-design, mcp-builder) - these guide execution
+
+"Let's build X" 鈫?brainstorming first, then implementation skills.
+"Fix this bug" 鈫?debugging first, then domain-specific skills.
+
+## Skill Types
+
+**Rigid** (TDD, debugging): Follow exactly. Don't adapt away discipline.
+
+**Flexible** (patterns): Adapt principles to context.
+
+The skill itself tells you which.
+
+## User Instructions
+
+Instructions say WHAT, not HOW. "Add X" or "Fix Y" doesn't mean skip workflows.
+
+
+ succeeded in 183ms:
+---
+name: test-driven-development
+description: Use when implementing any feature or bugfix, before writing implementation code
+---
+
+# Test-Driven Development (TDD)
+
+## Overview
+
+Write the test first. Watch it fail. Write minimal code to pass.
+
+**Core principle:** If you didn't watch the test fail, you don't know if it tests the right thing.
+
+**Violating the letter of the rules is violating the spirit of the rules.**
+
+## When to Use
+
+**Always:**
+- New features
+- Bug fixes
+- Refactoring
+- Behavior changes
+
+**Exceptions (ask your human partner):**
+- Throwaway prototypes
+- Generated code
+- Configuration files
+
+Thinking "skip TDD just this once"? Stop. That's rationalization.
+
+## The Iron Law
+
+```
+NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST
+```
+
+Write code before the test? Delete it. Start over.
+
+**No exceptions:**
+- Don't keep it as "reference"
+- Don't "adapt" it while writing tests
+- Don't look at it
+- Delete means delete
+
+Implement fresh from tests. Period.
+
+## Red-Green-Refactor
+
+```dot
+digraph tdd_cycle {
+    rankdir=LR;
+    red [label="RED\nWrite failing test", shape=box, style=filled, fillcolor="#ffcccc"];
+    verify_red [label="Verify fails\ncorrectly", shape=diamond];
+    green [label="GREEN\nMinimal code", shape=box, style=filled, fillcolor="#ccffcc"];
+    verify_green [label="Verify passes\nAll green", shape=diamond];
+    refactor [label="REFACTOR\nClean up", shape=box, style=filled, fillcolor="#ccccff"];
+    next [label="Next", shape=ellipse];
+
+    red -> verify_red;
+    verify_red -> green [label="yes"];
+    verify_red -> red [label="wrong\nfailure"];
+    green -> verify_green;
+    verify_green -> refactor [label="yes"];
+    verify_green -> green [label="no"];
+    refactor -> verify_green [label="stay\ngreen"];
+    verify_green -> next;
+    next -> red;
+}
+```
+
+### RED - Write Failing Test
+
+Write one minimal test showing what should happen.
+
+<Good>
+```typescript
+test('retries failed operations 3 times', async () => {
+  let attempts = 0;
+  const operation = () => {
+    attempts++;
+    if (attempts < 3) throw new Error('fail');
+    return 'success';
+  };
+
+  const result = await retryOperation(operation);
+
+  expect(result).toBe('success');
+  expect(attempts).toBe(3);
+});
+```
+Clear name, tests real behavior, one thing
+</Good>
+
+<Bad>
+```typescript
+test('retry works', async () => {
+  const mock = jest.fn()
+    .mockRejectedValueOnce(new Error())
+    .mockRejectedValueOnce(new Error())
+    .mockResolvedValueOnce('success');
+  await retryOperation(mock);
+  expect(mock).toHaveBeenCalledTimes(3);
+});
+```
+Vague name, tests mock not code
+</Bad>
+
+**Requirements:**
+- One behavior
+- Clear name
+- Real code (no mocks unless unavoidable)
+
+### Verify RED - Watch It Fail
+
+**MANDATORY. Never skip.**
+
+```bash
+npm test path/to/test.test.ts
+```
+
+Confirm:
+- Test fails (not errors)
+- Failure message is expected
+- Fails because feature missing (not typos)
+
+**Test passes?** You're testing existing behavior. Fix test.
+
+**Test errors?** Fix error, re-run until it fails correctly.
+
+### GREEN - Minimal Code
+
+Write simplest code to pass the test.
+
+<Good>
+```typescript
+async function retryOperation<T>(fn: () => Promise<T>): Promise<T> {
+  for (let i = 0; i < 3; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (i === 2) throw e;
+    }
+  }
+  throw new Error('unreachable');
+}
+```
+Just enough to pass
+</Good>
+
+<Bad>
+```typescript
+async function retryOperation<T>(
+  fn: () => Promise<T>,
+  options?: {
+    maxRetries?: number;
+    backoff?: 'linear' | 'exponential';
+    onRetry?: (attempt: number) => void;
+  }
+): Promise<T> {
+  // YAGNI
+}
+```
+Over-engineered
+</Bad>
+
+Don't add features, refactor other code, or "improve" beyond the test.
+
+### Verify GREEN - Watch It Pass
+
+**MANDATORY.**
+
+```bash
+npm test path/to/test.test.ts
+```
+
+Confirm:
+- Test passes
+- Other tests still pass
+- Output pristine (no errors, warnings)
+
+**Test fails?** Fix code, not test.
+
+**Other tests fail?** Fix now.
+
+### REFACTOR - Clean Up
+
+After green only:
+- Remove duplication
+- Improve names
+- Extract helpers
+
+Keep tests green. Don't add behavior.
+
+### Repeat
+
+Next failing test for next feature.
+
+## Good Tests
+
+| Quality | Good | Bad |
+|---------|------|-----|
+| **Minimal** | One thing. "and" in name? Split it. | `test('validates email and domain and whitespace')` |
+| **Clear** | Name describes behavior | `test('test1')` |
+| **Shows intent** | Demonstrates desired API | Obscures what code should do |
+
+## Why Order Matters
+
+**"I'll write tests after to verify it works"**
+
+Tests written after code pass immediately. Passing immediately proves nothing:
+- Might test wrong thing
+- Might test implementation, not behavior
+- Might miss edge cases you forgot
+- You never saw it catch the bug
+
+Test-first forces you to see the test fail, proving it actually tests something.
+
+**"I already manually tested all the edge cases"**
+
+Manual testing is ad-hoc. You think you tested everything but:
+- No record of what you tested
+- Can't re-run when code changes
+- Easy to forget cases under pressure
+- "It worked when I tried it" 鈮?comprehensive
+
+Automated tests are systematic. They run the same way every time.
+
+**"Deleting X hours of work is wasteful"**
+
+Sunk cost fallacy. The time is already gone. Your choice now:
+- Delete and rewrite with TDD (X more hours, high confidence)
+- Keep it and add tests after (30 min, low confidence, likely bugs)
+
+The "waste" is keeping code you can't trust. Working code without real tests is technical debt.
+
+**"TDD is dogmatic, being pragmatic means adapting"**
+
+TDD IS pragmatic:
+- Finds bugs before commit (faster than debugging after)
+- Prevents regressions (tests catch breaks immediately)
+- Documents behavior (tests show how to use code)
+- Enables refactoring (change freely, tests catch breaks)
+
+"Pragmatic" shortcuts = debugging in production = slower.
+
+**"Tests after achieve the same goals - it's spirit not ritual"**
+
+No. Tests-after answer "What does this do?" Tests-first answer "What should this do?"
+
+Tests-after are biased by your implementation. You test what you built, not what's required. You verify remembered edge cases, not discovered ones.
+
+Tests-first force edge case discovery before implementing. Tests-after verify you remembered everything (you didn't).
+
+30 minutes of tests after 鈮?TDD. You get coverage, lose proof tests work.
+
+## Common Rationalizations
+
+| Excuse | Reality |
+|--------|---------|
+| "Too simple to test" | Simple code breaks. Test takes 30 seconds. |
+| "I'll test after" | Tests passing immediately prove nothing. |
+| "Tests after achieve same goals" | Tests-after = "what does this do?" Tests-first = "what should this do?" |
+| "Already manually tested" | Ad-hoc 鈮?systematic. No record, can't re-run. |
+| "Deleting X hours is wasteful" | Sunk cost fallacy. Keeping unverified code is technical debt. |
+| "Keep as reference, write tests first" | You'll adapt it. That's testing after. Delete means delete. |
+| "Need to explore first" | Fine. Throw away exploration, start with TDD. |
+| "Test hard = design unclear" | Listen to test. Hard to test = hard to use. |
+| "TDD will slow me down" | TDD faster than debugging. Pragmatic = test-first. |
+| "Manual test faster" | Manual doesn't prove edge cases. You'll re-test every change. |
+| "Existing code has no tests" | You're improving it. Add tests for existing code. |
+
+## Red Flags - STOP and Start Over
+
+- Code before test
+- Test after implementation
+- Test passes immediately
+- Can't explain why test failed
+- Tests added "later"
+- Rationalizing "just this once"
+- "I already manually tested it"
+- "Tests after achieve the same purpose"
+- "It's about spirit not ritual"
+- "Keep as reference" or "adapt existing code"
+- "Already spent X hours, deleting is wasteful"
+- "TDD is dogmatic, I'm being pragmatic"
+- "This is different because..."
+
+**All of these mean: Delete code. Start over with TDD.**
+
+## Example: Bug Fix
+
+**Bug:** Empty email accepted
+
+**RED**
+```typescript
+test('rejects empty email', async () => {
+  const result = await submitForm({ email: '' });
+  expect(result.error).toBe('Email required');
+});
+```
+
+**Verify RED**
+```bash
+$ npm test
+FAIL: expected 'Email required', got undefined
+```
+
+**GREEN**
+```typescript
+function submitForm(data: FormData) {
+  if (!data.email?.trim()) {
+    return { error: 'Email required' };
+  }
+  // ...
+}
+```
+
+**Verify GREEN**
+```bash
+$ npm test
+PASS
+```
+
+**REFACTOR**
+Extract validation for multiple fields if needed.
+
+## Verification Checklist
+
+Before marking work complete:
+
+- [ ] Every new function/method has a test
+- [ ] Watched each test fail before implementing
+- [ ] Each test failed for expected reason (feature missing, not typo)
+- [ ] Wrote minimal code to pass each test
+- [ ] All tests pass
+- [ ] Output pristine (no errors, warnings)
+- [ ] Tests use real code (mocks only if unavoidable)
+- [ ] Edge cases and errors covered
+
+Can't check all boxes? You skipped TDD. Start over.
+
+## When Stuck
+
+| Problem | Solution |
+|---------|----------|
+| Don't know how to test | Write wished-for API. Write assertion first. Ask your human partner. |
+| Test too complicated | Design too complicated. Simplify interface. |
+| Must mock everything | Code too coupled. Use dependency injection. |
+| Test setup huge | Extract helpers. Still complex? Simplify design. |
+
+## Debugging Integration
+
+Bug found? Write failing test reproducing it. Follow TDD cycle. Test proves fix and prevents regression.
+
+Never fix bugs without a test.
+
+## Testing Anti-Patterns
+
+When adding mocks or test utilities, read @testing-anti-patterns.md to avoid common pitfalls:
+- Testing mock behavior instead of real behavior
+- Adding test-only methods to production classes
+- Mocking without understanding dependencies
+
+## Final Rule
+
+```
+Production code 鈫?test exists and failed first
+Otherwise 鈫?not TDD
+```
+
+No exceptions without your human partner's permission.
+
+
+ succeeded in 181ms:
+---
+name: verification-before-completion
+description: Use when about to claim work is complete, fixed, or passing, before committing or creating PRs - requires running verification commands and confirming output before making any success claims; evidence before assertions always
+---
+
+# Verification Before Completion
+
+## Overview
+
+Claiming work is complete without verification is dishonesty, not efficiency.
+
+**Core principle:** Evidence before claims, always.
+
+**Violating the letter of this rule is violating the spirit of this rule.**
+
+## The Iron Law
+
+```
+NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE
+```
+
+If you haven't run the verification command in this message, you cannot claim it passes.
+
+## The Gate Function
+
+```
+BEFORE claiming any status or expressing satisfaction:
+
+1. IDENTIFY: What command proves this claim?
+2. RUN: Execute the FULL command (fresh, complete)
+3. READ: Full output, check exit code, count failures
+4. VERIFY: Does output confirm the claim?
+   - If NO: State actual status with evidence
+   - If YES: State claim WITH evidence
+5. ONLY THEN: Make the claim
+
+Skip any step = lying, not verifying
+```
+
+## Common Failures
+
+| Claim | Requires | Not Sufficient |
+|-------|----------|----------------|
+| Tests pass | Test command output: 0 failures | Previous run, "should pass" |
+| Linter clean | Linter output: 0 errors | Partial check, extrapolation |
+| Build succeeds | Build command: exit 0 | Linter passing, logs look good |
+| Bug fixed | Test original symptom: passes | Code changed, assumed fixed |
+| Regression test works | Red-green cycle verified | Test passes once |
+| Agent completed | VCS diff shows changes | Agent reports "success" |
+| Requirements met | Line-by-line checklist | Tests passing |
+
+## Red Flags - STOP
+
+- Using "should", "probably", "seems to"
+- Expressing satisfaction before verification ("Great!", "Perfect!", "Done!", etc.)
+- About to commit/push/PR without verification
+- Trusting agent success reports
+- Relying on partial verification
+- Thinking "just this once"
+- Tired and wanting work over
+- **ANY wording implying success without having run verification**
+
+## Rationalization Prevention
+
+| Excuse | Reality |
+|--------|---------|
+| "Should work now" | RUN the verification |
+| "I'm confident" | Confidence 鈮?evidence |
+| "Just this once" | No exceptions |
+| "Linter passed" | Linter 鈮?compiler |
+| "Agent said success" | Verify independently |
+| "I'm tired" | Exhaustion 鈮?excuse |
+| "Partial check is enough" | Partial proves nothing |
+| "Different words so rule doesn't apply" | Spirit over letter |
+
+## Key Patterns
+
+**Tests:**
+```
+鉁?[Run test command] [See: 34/34 pass] "All tests pass"
+鉂?"Should pass now" / "Looks correct"
+```
+
+**Regression tests (TDD Red-Green):**
+```
+鉁?Write 鈫?Run (pass) 鈫?Revert fix 鈫?Run (MUST FAIL) 鈫?Restore 鈫?Run (pass)
+鉂?"I've written a regression test" (without red-green verification)
+```
+
+**Build:**
+```
+鉁?[Run build] [See: exit 0] "Build passes"
+鉂?"Linter passed" (linter doesn't check compilation)
+```
+
+**Requirements:**
+```
+鉁?Re-read plan 鈫?Create checklist 鈫?Verify each 鈫?Report gaps or completion
+鉂?"Tests pass, phase complete"
+```
+
+**Agent delegation:**
+```
+鉁?Agent reports success 鈫?Check VCS diff 鈫?Verify changes 鈫?Report actual state
+鉂?Trust agent report
+```
+
+## Why This Matters
+
+From 24 failure memories:
+- your human partner said "I don't believe you" - trust broken
+- Undefined functions shipped - would crash
+- Missing requirements shipped - incomplete features
+- Time wasted on false completion 鈫?redirect 鈫?rework
+- Violates: "Honesty is a core value. If you lie, you'll be replaced."
+
+## When To Apply
+
+**ALWAYS before:**
+- ANY variation of success/completion claims
+- ANY expression of satisfaction
+- ANY positive statement about work state
+- Committing, PR creation, task completion
+- Moving to next task
+- Delegating to agents
+
+**Rule applies to:**
+- Exact phrases
+- Paraphrases and synonyms
+- Implications of success
+- ANY communication suggesting completion/correctness
+
+## The Bottom Line
+
+**No shortcuts for verification.**
+
+Run the command. Read the output. THEN claim the result.
+
+This is non-negotiable.
+
+
+codex
+已加载 `using-superpowers`、`test-driven-development` 和 `verification-before-completion`：本次按“先读上下文、先写失败测试、再改实现、最后用新鲜命令验证”的顺序执行。现在读取计划背景和两个目标文件，确认现有测试结构后再动代码。
+  → 读取计划背景与现有 Rust 实现/测试
+  • 先添加能暴露优先级/portable 行为的测试并验证失败
+  • 修改 paths.rs 与 process_manager.rs
+  • 运行 cargo build 与 cargo test --lib 验收
+  • 复查 diff 并汇总结果
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "rg -n \"Phase 2|2\\.3|userdata|portable|DESKPET_USER_DATA_DIR\" plans\\2026-06-28-userdata-path-binding-fix\\00-PLAN.md" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content tauri-app\\src-tauri\\src\\paths.rs" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content tauri-app\\src-tauri\\src\\process_manager.rs" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "git status --short -- tauri-app\\src-tauri\\src\\paths.rs tauri-app\\src-tauri\\src\\process_manager.rs" in G:\projects\deskpet
+ succeeded in 212ms:
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
+//! P3-S8 鈥?Rust-side mirror of `backend/paths.py`.
+//!
+//! Both the Tauri supervisor and the Python backend need to agree on
+//! *where* user data lives (`%AppData%\deskpet\`) so the UI can open
+//! log / data directories without round-tripping through the backend.
+//! We intentionally re-derive the paths here instead of asking the
+//! backend: the "open log dir" button must work **even when the backend
+//! refuses to start** (that's precisely when the user most needs it).
+//!
+//! Priority (per env var):
+//!   user_data_dir  鈫?`$DESKPET_USER_DATA` || `%AppData%\deskpet`
+//!   user_log_dir   鈫?`$DESKPET_USER_LOG`  || `<user_data>\logs`
+//!   user_models_dir 鈫?`$DESKPET_MODEL_ROOT` || `%LocalAppData%\deskpet\models`
+//!
+//! The `resolve_*_with` variants accept an env-lookup closure and a
+//! pair of base-dir overrides (AppData / LocalAppData) so tests can
+//! exercise every branch without mutating real process environment.
+
+use std::path::{Path, PathBuf};
+
+pub type EnvLookup<'a> = &'a dyn Fn(&str) -> Option<String>;
+
+#[derive(Debug, Clone)]
+pub struct BaseDirs {
+    pub app_data: Option<PathBuf>,      // %AppData% (Roaming)
+    pub local_app_data: Option<PathBuf>, // %LocalAppData%
+}
+
+impl BaseDirs {
+    /// Resolve base dirs from the real OS environment.
+    #[cfg(not(test))]
+    pub fn from_env() -> Self {
+        Self {
+            app_data: std::env::var("APPDATA").ok().map(PathBuf::from),
+            local_app_data: std::env::var("LOCALAPPDATA").ok().map(PathBuf::from),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn from_env() -> Self {
+        // Under cfg(test) we never want to touch real %AppData%.
+        Self { app_data: None, local_app_data: None }
+    }
+}
+
+fn resolve_with(
+    env_key: &str,
+    env_lookup: EnvLookup<'_>,
+    fallback: Option<PathBuf>,
+) -> Option<PathBuf> {
+    if let Some(v) = env_lookup(env_key).filter(|s| !s.is_empty()) {
+        return Some(PathBuf::from(v));
+    }
+    fallback
+}
+
+/// Portable-mode userdata dir: when running from a frozen install, data
+/// lives in `<install>/userdata/` next to the exe (mirrors Python
+/// `backend/paths.py::_portable_userdata_dir`). Returns None in dev mode
+/// (current_exe isn't in the install layout) or when no userdata/ exists.
+///
+/// Layout: `<install>/deskpet.exe` + `<install>/userdata/`; the backend
+/// exe sits at `<install>/backend/deskpet-backend.exe`, so we also check
+/// one level up when the exe's parent is named "backend".
+#[cfg(not(test))]
+fn portable_userdata_dir() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let parent = exe.parent()?;
+    let mut anchors: Vec<PathBuf> = vec![parent.to_path_buf()];
+    if parent.file_name().and_then(|s| s.to_str()) == Some("backend") {
+        if let Some(up) = parent.parent() {
+            anchors.insert(0, up.to_path_buf());
+        }
+    }
+    for anchor in anchors {
+        let ud = anchor.join("userdata");
+        if ud.is_dir() {
+            return Some(ud);
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+fn portable_userdata_dir() -> Option<PathBuf> {
+    // 娴嬭瘯涓嬩笉鎺㈡祴鐪熷疄 current_exe(閬垮厤 test runner 鏃佺宸х殑 userdata 骞叉壈
+    // 鐜版湁鍗曟祴鐨?%AppData% 鏈熸湜)銆?    None
+}
+
+pub fn user_data_dir_with(base: &BaseDirs, env_lookup: EnvLookup<'_>) -> Option<PathBuf> {
+    // 1. DESKPET_USER_DATA_DIR 鈥?涓?Python backend/paths.py 缁熶竴鐨?env 鍚?    //    (鍘嗗彶 bug: Rust 璇?DESKPET_USER_DATA銆丳ython 璇?DESKPET_USER_DATA_DIR,
+    //    鍚嶅瓧涓嶄竴鑷?鈫?device_id/onboarding 鍜?config/db 钀藉埌涓嶅悓鐩綍)銆?    if let Some(v) = env_lookup("DESKPET_USER_DATA_DIR").filter(|s| !s.is_empty()) {
+        return Some(PathBuf::from(v));
+    }
+    // 2. 鍏煎鏃?DESKPET_USER_DATA(鏃?_DIR) 鈥?鑰佺敤鎴峰彲鑳借杩?鍒牬鍧忋€?    if let Some(v) = env_lookup("DESKPET_USER_DATA").filter(|s| !s.is_empty()) {
+        return Some(PathBuf::from(v));
+    }
+    // 3. portable: frozen 瀹夎鏃?<install>/userdata(涓?Python portable 涓€鑷?銆?    if let Some(p) = portable_userdata_dir() {
+        return Some(p);
+    }
+    // 4. classic: %AppData%\deskpet銆?    base.app_data.as_ref().map(|p| p.join("deskpet"))
+}
+
+pub fn user_log_dir_with(base: &BaseDirs, env_lookup: EnvLookup<'_>) -> Option<PathBuf> {
+    if let Some(v) = env_lookup("DESKPET_USER_LOG").filter(|s| !s.is_empty()) {
+        return Some(PathBuf::from(v));
+    }
+    user_data_dir_with(base, env_lookup).map(|p| p.join("logs"))
+}
+
+pub fn user_models_dir_with(base: &BaseDirs, env_lookup: EnvLookup<'_>) -> Option<PathBuf> {
+    if let Some(v) = env_lookup("DESKPET_MODEL_ROOT").filter(|s| !s.is_empty()) {
+        return Some(PathBuf::from(v));
+    }
+    // portable: <install>/userdata/models(涓?Python paths.py 涓€鑷?銆?    if let Some(p) = portable_userdata_dir() {
+        return Some(p.join("models"));
+    }
+    base.local_app_data.as_ref().map(|p| p.join("deskpet").join("models"))
+}
+
+// ---- Public convenience wrappers reading real env ----
+// Note: BaseDirs::from_env() returns empty under cfg(test), so these
+// helpers safely no-op in unit-test binaries instead of leaking into
+// the real %AppData%.
+
+fn real_env(k: &str) -> Option<String> { std::env::var(k).ok() }
+
+pub fn user_data_dir() -> Option<PathBuf> {
+    user_data_dir_with(&BaseDirs::from_env(), &real_env)
+}
+
+pub fn user_log_dir() -> Option<PathBuf> {
+    user_log_dir_with(&BaseDirs::from_env(), &real_env)
+}
+
+pub fn user_models_dir() -> Option<PathBuf> {
+    user_models_dir_with(&BaseDirs::from_env(), &real_env)
+}
+
+/// Ensure `path` exists, creating parent dirs as needed. No-op if Some
+/// already points to an existing directory. Returns the path back for
+/// chaining in the Tauri command handlers.
+#[allow(dead_code)]
+pub fn ensure_dir(path: &Path) -> std::io::Result<()> {
+    if path.is_dir() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env_map(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {
+        move |k: &str| {
+            pairs
+                .iter()
+                .find(|(kk, _)| *kk == k)
+                .map(|(_, v)| v.to_string())
+        }
+    }
+
+    fn env_empty() -> impl Fn(&str) -> Option<String> {
+        |_: &str| None
+    }
+
+    fn base_win() -> BaseDirs {
+        BaseDirs {
+            app_data: Some(PathBuf::from("C:/Users/U/AppData/Roaming")),
+            local_app_data: Some(PathBuf::from("C:/Users/U/AppData/Local")),
+        }
+    }
+
+    #[test]
+    fn user_data_dir_defaults_to_appdata_deskpet() {
+        let env = env_empty();
+        let out = user_data_dir_with(&base_win(), &env).unwrap();
+        assert_eq!(out, PathBuf::from("C:/Users/U/AppData/Roaming/deskpet"));
+    }
+
+    #[test]
+    fn user_data_dir_env_override_wins() {
+        let env = env_map(&[("DESKPET_USER_DATA", "D:/custom/deskpet")]);
+        let out = user_data_dir_with(&base_win(), &env).unwrap();
+        assert_eq!(out, PathBuf::from("D:/custom/deskpet"));
+    }
+
+    #[test]
+    fn user_data_dir_prefers_dir_suffix_env() {
+        // 缁熶竴鍚? DESKPET_USER_DATA_DIR(涓?Python 涓€鑷?浼樺厛浜庢棫 DESKPET_USER_DATA銆?        let env = env_map(&[
+            ("DESKPET_USER_DATA_DIR", "D:/new/userdata"),
+            ("DESKPET_USER_DATA", "E:/old/deskpet"),
+        ]);
+        let out = user_data_dir_with(&base_win(), &env).unwrap();
+        assert_eq!(out, PathBuf::from("D:/new/userdata"));
+    }
+
+    #[test]
+    fn user_data_dir_falls_back_to_legacy_env() {
+        // 鍙鏃?DESKPET_USER_DATA 鏃朵粛鍏煎(涓嶇牬鍧忚€佺敤鎴?銆?        let env = env_map(&[("DESKPET_USER_DATA", "E:/old/deskpet")]);
+        let out = user_data_dir_with(&base_win(), &env).unwrap();
+        assert_eq!(out, PathBuf::from("E:/old/deskpet"));
+    }
+
+    #[test]
+    fn user_data_dir_empty_env_treated_as_unset() {
+        let env = env_map(&[("DESKPET_USER_DATA", "")]);
+        let out = user_data_dir_with(&base_win(), &env).unwrap();
+        assert_eq!(out, PathBuf::from("C:/Users/U/AppData/Roaming/deskpet"));
+    }
+
+    #[test]
+    fn user_log_dir_nests_under_user_data() {
+        let env = env_empty();
+        let out = user_log_dir_with(&base_win(), &env).unwrap();
+        assert_eq!(out, PathBuf::from("C:/Users/U/AppData/Roaming/deskpet/logs"));
+    }
+
+    #[test]
+    fn user_log_dir_independent_env_override() {
+        let env = env_map(&[("DESKPET_USER_LOG", "E:/logs")]);
+        let out = user_log_dir_with(&base_win(), &env).unwrap();
+        assert_eq!(out, PathBuf::from("E:/logs"));
+    }
+
+    #[test]
+    fn user_models_dir_defaults_to_local_app_data() {
+        let env = env_empty();
+        let out = user_models_dir_with(&base_win(), &env).unwrap();
+        assert_eq!(out, PathBuf::from("C:/Users/U/AppData/Local/deskpet/models"));
+    }
+
+    #[test]
+    fn user_models_dir_env_override() {
+        let env = env_map(&[("DESKPET_MODEL_ROOT", "F:/models")]);
+        let out = user_models_dir_with(&base_win(), &env).unwrap();
+        assert_eq!(out, PathBuf::from("F:/models"));
+    }
+
+    #[test]
+    fn missing_app_data_returns_none() {
+        let base = BaseDirs { app_data: None, local_app_data: None };
+        let env = env_empty();
+        assert!(user_data_dir_with(&base, &env).is_none());
+        assert!(user_log_dir_with(&base, &env).is_none());
+        assert!(user_models_dir_with(&base, &env).is_none());
+    }
+}
+
+ succeeded in 226ms:
+1:# Plan — userdata/config 路径与安装目录绑定修复 + 空 Bearer 护栏
+31:### 2.3 路径会在会话间漂移（"安装目录绑定"问题）
+32:两套 userdata 解析**条件不一致**，且 backend 自己独立解析（Tauri 没钉 env）：
+34:| | Rust `paths.rs::portable_userdata_dir` | Python `paths.py::_portable_userdata_dir` |
+37:| 判定 | `ud.is_dir()` —— **要求目录已存在**，否则回落 `%AppData%` | **主动 `mkdir`+探针写**，candidates_up=2 时甚至会落到 `F:\userdata`(盘邻居) |
+38:| 创建时机 | `lib.rs:162` 在 `.setup()` 里才 `create_dir_all(<install>/userdata)` | 调用即建 |
+40:- `process_manager.rs::spawn_once`（148-219）只注了 `DESKPET_CLOUD_API_KEY`/`PYTHONIOENCODING`/`PYTHONUNBUFFERED`，**没注 `DESKPET_USER_DATA_DIR`** ⟹ Python 完全独立解析。
+41:- ⟹ 登录会话 vs 重启会话，因 `userdata/` 存在性时序 + 两套判定差异，**"portable vs %AppData%" 的结论可能翻转**：provider 写进 A 目录的 config.toml，重启从 B 目录读 → endpoint "丢失"。
+42:- 用户确实在 `F:\deskpet\userdata\config.toml` 找到了 relay-cloud provider，但运行中的 backend 极可能读的是**另一个** config.toml（或同目录但该行 disabled/malformed —— Phase 0 区分）。
+55:1. **单一事实源**：userdata/config 路径**唯一地绑定到安装目录**，Rust/Python 同一答案，跨会话恒定不漂移。
+64:目的：区分 2.3「路径漂移」vs「同目录但 disabled/malformed」，并为修复后验证留基线。
+68:Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "config_loaded" | Select-Object -Last 5
+70:Get-Content "F:\deskpet\userdata\config.toml" | Select-String -Pattern "endpoints|id =|enabled|base_url|relay" -Context 0,1
+77:- A 的 `path=`/`user_data_dir=` 若**两期不同** → 2.3 漂移坐实，重点 Phase 1+2。
+79:- C 存在且有 endpoints → 漂移铁证（provider 落在 AppData，运行读 portable）。
+101:> 同样给 `_portable_userdata_dir()` 加一次性 cache（成功结果），避免每次 probe-write 抖动。
+103:**1b. 去掉危险的盘邻居回落**（`_portable_userdata_dir`）
+104:- 现 `candidates_up=(1,2,0)`，steps_up=2 会落到 `F:\userdata`（盘根邻居），是脏数据源。
+105:- 改为：name=="backend" → **只认 `<install_root>/userdata`**（1 级上）；standalone → 只认 `<exe_dir>/userdata`。不可写时 **`logger.error` 大声报** 再显式回落 `%AppData%`（不再静悄悄落到盘邻居）。
+107:def _portable_userdata_dir() -> Path | None:
+112:    candidate = root / "userdata"
+118:        logger.error("portable_userdata_unwritable dir=%s err=%s — falling back to AppData", candidate, e)
+123:**1c. sentinel 固化绑定**：首次成功解析后落 `<install>/userdata/.deskpet-portable`；后续启动若 sentinel 存在则**无条件**绑定该目录（用户意图：钉死安装目录），即便某次 probe 抖动也不漂走。
+125:### Phase 2 — Rust 单一事实源 + 注入 env（`tauri-app/src-tauri`）★核心
+127:让 **Rust 解析一次** userdata 并**通过 env 传给 backend**，Python 走 priority-1 直接用 → 双解析彻底归一。
+129:**2a. `paths.rs::portable_userdata_dir`** 改成「**create 再返回**」（与 Python 对齐，不再要求预先存在）：
+131:fn portable_userdata_dir() -> Option<PathBuf> {
+137:    let ud = root.join("userdata");
+138:    // 探针写：可写才认 portable，否则 None→%AppData%
+150:    cmd.env("DESKPET_USER_DATA_DIR", ud.to_string_lossy().to_string());
+153:> Python `paths.py:193` 已 priority-1 读 `DESKPET_USER_DATA_DIR` → backend 不再独立解析 → Rust=Python=同一目录。device_id/onboarding/config/db 全部归一。
+161:- 规则：canonical `<user_data>/config.toml` 若 **缺 `[[llm.endpoints]]` 或全 disabled**，扫已知候选位（`%AppData%\deskpet\config.toml`、`<install>/userdata\config.toml`、盘邻居 `<drive>\userdata\config.toml`）。
+184:- `main.py:101 config_loaded` 扩展字段：`portable=<bool>`、`env_pinned=<DESKPET_USER_DATA_DIR 是否设>`、`n_endpoints`、`n_enabled`（registry 构造后补一条 `provider_registry_ready ids=[...] enabled=[...]`）。
+201:- `test_paths.py`：① portable 确定化（mock `sys.frozen`+executable → 唯一 `<install>/userdata`，不落盘邻居）；② 记忆化（改 env 后同进程仍返回首解析）；③ `DESKPET_USER_DATA_DIR` env 永远优先；④ 不可写时回落 AppData 且 log error。
+207:- `paths.rs`：`portable_userdata_dir` create-then-return（可注入 exe 路径的 `*_with` 变体）；不可写 → None。
+208:- `process_manager`：抽 `build_backend_env()` 纯函数，断言含 `DESKPET_USER_DATA_DIR`（spawn 本身难单测）。
+225:4. Phase 2（Rust，cargo test）。
+229:- Phase 2 改 Rust 需 `cargo build` + 重打包，迭代重。→ 故 Python 侧（1/3/4）独立成立，即使不动 Rust 也能靠"记忆化+去盘邻居+自愈+env 优先"大幅收敛；Phase 2 是根治双解析的最后一锤。
+
+ succeeded in 219ms:
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
+use std::io::{BufRead, BufReader};
+use std::net::TcpListener;
+use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use tauri::{command, AppHandle, Emitter, Manager, State};
+
+use crate::backend_launch::{self, BackendLaunch};
+
+/// P3-S8: hard cap on how long we'll wait for the backend to print its
+/// SHARED_SECRET line. Cold boot on a fresh machine (torch + CUDA init +
+/// whisper load) has measured 30鈥?5 s in P3-S4 profiling, so 90 s gives
+/// generous headroom while still failing fast when the backend is
+/// actually wedged (e.g. Python import error, missing DLL).
+const SECRET_TIMEOUT_SECS: u64 = 90;
+
+/// Backend FastAPI port. Default 8100; overridable via the
+/// `DESKPET_BACKEND_PORT` env var so a second checkout / git worktree
+/// can run its own dev backend without colliding on the port. The
+/// Python side reads the SAME env var (see backend/config.py) so both
+/// halves of the handshake always agree.
+const DEFAULT_BACKEND_PORT: u16 = 8100;
+
+fn backend_port() -> u16 {
+    std::env::var("DESKPET_BACKEND_PORT")
+        .ok()
+        .and_then(|s| s.trim().parse::<u16>().ok())
+        .unwrap_or(DEFAULT_BACKEND_PORT)
+}
+
+/// How many times the supervisor will respawn a crashed backend before it
+/// gives up. Hitting this likely means a config bug, not a transient fault.
+const MAX_RESTARTS_PER_WINDOW: u32 = 5;
+
+/// Sliding window for `MAX_RESTARTS_PER_WINDOW`. If uptime between crashes
+/// exceeds this, the restart counter resets 鈥?so a daily intermittent crash
+/// doesn't eventually trigger "give up".
+const RESTART_WINDOW_SECS: u64 = 60;
+
+/// Cooldown between a crash and the next spawn attempt. Kept short so we
+/// meet the V5 搂1.1 "crash self-heal within 10s" bar even after counting
+/// the time it takes the child to actually exit.
+const RESTART_COOLDOWN_MS: u64 = 2_000;
+
+pub struct BackendProcess {
+    child: Mutex<Option<Child>>,
+    shared_secret: Mutex<Option<String>>,
+    /// P3-S3: single source of truth for *how* to spawn the backend,
+    /// replacing the old `python_path` + `backend_dir` string pair.
+    /// Populated by `start_backend` from `backend_launch::resolve(app)`;
+    /// the supervisor reads it back to respawn with identical args.
+    launch: Mutex<Option<BackendLaunch>>,
+    /// Set true by stop_backend / window-destroy. The supervisor reads
+    /// this to distinguish "user asked to stop" from "process crashed".
+    shutdown_requested: Arc<AtomicBool>,
+    /// Incremented every time the supervisor respawns. Reset when the
+    /// child has been up longer than RESTART_WINDOW_SECS.
+    restart_count: Arc<AtomicU32>,
+    /// P3-S8: last human-readable start-up error so the frontend can
+    /// render a dialog even if the Err from start_backend already got
+    /// swallowed by a React effect retry.
+    startup_error: Mutex<Option<String>>,
+}
+
+impl BackendProcess {
+    pub fn new() -> Self {
+        Self {
+            child: Mutex::new(None),
+            shared_secret: Mutex::new(None),
+            launch: Mutex::new(None),
+            shutdown_requested: Arc::new(AtomicBool::new(false)),
+            restart_count: Arc::new(AtomicU32::new(0)),
+            startup_error: Mutex::new(None),
+        }
+    }
+
+    /// P3-S8: expose latest startup failure to the frontend.
+    pub fn set_startup_error(&self, msg: Option<String>) {
+        if let Ok(mut guard) = self.startup_error.lock() {
+            *guard = msg;
+        }
+    }
+
+    /// Fire-and-forget teardown used by the window-destroyed handler.
+    /// Sets `shutdown_requested` so any in-flight supervisor bails, kills
+    /// the child if we still have a direct handle, and clears
+    /// `shared_secret` so the next `start_backend` invocation is treated
+    /// as a fresh spawn rather than a no-op idempotent return.
+    pub fn kill_child(&self) {
+        self.shutdown_requested.store(true, Ordering::SeqCst);
+        if let Ok(mut guard) = self.child.lock() {
+            if let Some(mut child) = guard.take() {
+                let _ = child.kill();
+            }
+        }
+        if let Ok(mut guard) = self.shared_secret.lock() {
+            *guard = None;
+        }
+    }
+
+    /// P4-S21 #1: read-only access for the IPC bridge command.
+    /// Returns None when backend isn't running (no SHARED_SECRET captured
+    /// yet) 鈥?the caller surfaces that as "backend not running yet".
+    pub fn shared_secret_clone(&self) -> Option<String> {
+        self.shared_secret
+            .lock()
+            .ok()
+            .and_then(|g| g.clone())
+    }
+
+    /// P4-S21 #1: backend listen port. Currently a const (8100) 鈥?pulled
+    /// out into an accessor so the IPC bridge doesn't have to re-import
+    /// the module-private constant.
+    pub fn port(&self) -> u16 { backend_port() }
+}
+
+/// Spawn the Python backend and read its SHARED_SECRET announcement.
+/// Shared logic between the initial `start_backend` command and the
+/// supervisor's respawn path.
+///
+/// P2-1-S3: before spawning we peek at the OS keychain via `secrets::`
+/// and, if a cloud LLM API key is configured, inject it as
+/// `DESKPET_CLOUD_API_KEY` so `backend/main.py::_resolve_cloud_api_key`
+/// can find it. When nothing is saved the backend logs "cloud disabled"
+/// and carries on local-only 鈥?that's the documented first-launch flow.
+/// P3-S8: quick precheck that 8100 is free. Returning Err early here
+/// swaps the generic "Backend exited without printing SHARED_SECRET"
+/// failure for the far more actionable "绔彛宸茶鍗犵敤". We bind+drop on
+/// 127.0.0.1:PORT; if another process has the port we get an OS error.
+fn check_port_free(port: u16) -> Result<(), String> {
+    match TcpListener::bind(("127.0.0.1", port)) {
+        Ok(l) => {
+            drop(l);
+            Ok(())
+        }
+        Err(e) => Err(format!(
+            "绔彛 {port} 宸茶鍏跺畠绋嬪簭鍗犵敤锛堥敊璇細{e}锛夈€俓n\
+             璇峰叧闂叾瀹?DeskPet 瀹炰緥鎴栧崰鐢ㄨ绔彛鐨勭▼搴忓悗閲嶈瘯銆?
+        )),
+    }
+}
+
+fn spawn_once(launch: &BackendLaunch) -> Result<(Child, String), String> {
+    // P3-S8: port precheck. Have to do it here (not only in start_backend)
+    // because the supervisor respawn path also goes through spawn_once 鈥?
+    // if a zombie backend survived a window close, we want the friendly
+    // message on every retry, not just the initial attempt.
+    check_port_free(backend_port())?;
+
+    let mut cmd = match launch {
+        BackendLaunch::Bundled { exe } => {
+            let mut c = Command::new(exe);
+            // cwd = exe's directory so the frozen PyInstaller onedir can
+            // find its bundled _internal/ next to it.
+            if let Some(parent) = exe.parent() {
+                c.current_dir(parent);
+            }
+            c
+        }
+        BackendLaunch::Dev { python, backend_dir } => {
+            let mut c = Command::new(python);
+            c.arg("main.py").current_dir(backend_dir);
+            c
+        }
+    };
+    cmd.stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        // Windows 涓?structlog 鍐欏叆 piped stdout 鏃跺鏋滅郴缁熼粯璁ら潪 UTF-8
+        // 锛圙BK/CP936锛変細瀵逛腑鏂囨棩蹇楁姏 OSError[Errno 22]锛宐ackend 绔嬪埢宕╁湪
+        // lifespan 鐨?"preloading models..." 琛屻€傛墜鍔ㄩ拤姝?UTF-8 + 鏃犵紦鍐诧紝
+        // 杩欐牱 SHARED_SECRET 涔熻兘琚強鏃惰鍒般€?
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("PYTHONUNBUFFERED", "1");
+
+    // P4-S21 #8: suppress the orphan console window on Windows.
+    //
+    // PyInstaller spec keeps `console=True` so the bundled exe is a
+    // console-subsystem program (needed because Rust still reads
+    // SHARED_SECRET from stdout and stdout/stderr are piped to us).
+    // When Windows spawns a console-subsystem child without an explicit
+    // creation flag, it allocates a brand-new console window and shows
+    // it 鈥?that's the "black cmd window next to the pet" users complain
+    // about. The window is visually distinct from a normal app window,
+    // and closing it kills the backend (very confusing UX).
+    //
+    // CREATE_NO_WINDOW (0x08000000) tells the OS "don't allocate a
+    // console; the parent already has one or doesn't need it shown."
+    // The piped stdout / stderr handles work the same way either path.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+
+    // Read key from keychain. Errors are logged to stderr but don't
+    // block startup 鈥?if the keychain itself is busted, local-only is
+    // still useful.
+    match crate::secrets::get_cloud_api_key() {
+        Ok(Some(key)) if !key.is_empty() => {
+            cmd.env("DESKPET_CLOUD_API_KEY", key);
+        }
+        Ok(_) => {
+            // Not configured 鈥?backend will skip cloud provider init.
+        }
+        Err(e) => {
+            eprintln!(
+                "[process_manager] warning: could not read cloud API key from keychain: {e}"
+            );
+        }
+    }
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn backend: {e}"))?;
+
+    // 瀛ゅ効杩涚▼淇锛氭妸鍒?spawn 鐨?backend 缁戝畾鍒板叏灞€ Job Object
+    // (KILL_ON_JOB_CLOSE)銆傝繖鏍锋棤璁?deskpet.exe 濡備綍閫€鍑猴紙姝ｅ父 / panic /
+    // 琚?taskkill锛夛紝OS 閮戒細杩炲甫缁堟杩欎釜 python 瀛愯繘绋嬶紝閬垮厤瀹冩畫鐣欏崰鐢?8100
+    // 绔彛銆俿upervisor respawn 璺緞涔熻蛋 spawn_once锛屾墍浠ユ瘡娆￠噸鍚殑鏂?backend
+    // 鍚屾牱鍙椾繚鎶ゃ€傝瑙?crate::job_object 妯″潡鏂囨。銆?
+    crate::job_object::assign_to_global(&child);
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "No stdout on spawned backend".to_string())?;
+
+    // P3-S8: wall-clock timeout on SHARED_SECRET. The previous version
+    // read_line'd on the main thread, which blocks forever if Python hangs
+    // mid-import (we've seen this with missing CUDA DLLs). Move the reader
+    // to a worker thread and recv_timeout from a channel 鈥?the worker
+    // keeps the pipe open (crucial on Windows, see the long comment below)
+    // and we flip it into "drain silently" mode after the secret arrives.
+    //
+    // Why we must NOT drop the reader: on Windows, closing the pipe read
+    // end makes Python's next stdout write (structlog "preloading
+    // models..." etc.) raise OSError[Errno 22] and crash lifespan. The
+    // worker thread therefore owns the reader for the child's full life.
+    let reader = BufReader::new(stdout);
+    let (tx, rx) = mpsc::channel::<Result<String, String>>();
+    std::thread::spawn(move || {
+        let mut reader = reader;
+        let mut line_buf = String::new();
+        let mut secret_sent = false;
+        loop {
+            line_buf.clear();
+            match reader.read_line(&mut line_buf) {
+                Ok(0) => {
+                    if !secret_sent {
+                        let _ = tx.send(Err(
+                            "Backend exited without printing SHARED_SECRET".into()
+                        ));
+                    }
+                    return;
+                }
+                Ok(_) => {
+                    let trimmed = line_buf.trim_end_matches(['\r', '\n']);
+                    if !secret_sent && trimmed.starts_with("SHARED_SECRET=") {
+                        let s = trimmed.trim_start_matches("SHARED_SECRET=").to_string();
+                        let _ = tx.send(Ok(s));
+                        secret_sent = true;
+                        // Keep draining silently from here on.
+                    }
+                }
+                Err(e) => {
+                    if !secret_sent {
+                        let _ = tx.send(Err(format!(
+                            "Failed to read backend stdout: {e}"
+                        )));
+                    }
+                    return;
+                }
+            }
+        }
+    });
+
+    let secret = match rx.recv_timeout(Duration::from_secs(SECRET_TIMEOUT_SECS)) {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => {
+            let _ = child.kill();
+            return Err(e);
+        }
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            let _ = child.kill();
+            return Err(format!(
+                "Backend 鍚姩瓒呮椂锛坽SECRET_TIMEOUT_SECS}s 鍐呮湭涓婃姤 SHARED_SECRET锛夈€俓n\
+                 甯歌鍘熷洜锛欳UDA / 妯″瀷鍔犺浇澶辫触銆傝鎵撳紑鏃ュ織鐩綍鎺掓煡銆?
+            ));
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            let _ = child.kill();
+            return Err("Backend stdout pipe disconnected before SHARED_SECRET".into());
+        }
+    };
+
+    Ok((child, secret))
+}
+
+/// Spawn backend 鈥?runs in async context so it won't block the UI thread.
+///
+/// After the child process is up, installs a supervisor task that waits
+/// on it. If the child exits without the user asking to stop, the
+/// supervisor respawns with the same args after RESTART_COOLDOWN_MS.
+/// The frontend is notified via the `backend-crashed` / `backend-restarted`
+/// / `backend-dead` events so it can refresh its shared-secret cache.
+#[command]
+pub async fn start_backend(
+    app: AppHandle,
+    state: State<'_, BackendProcess>,
+) -> Result<String, String> {
+    // P3-S3: Rust now resolves the backend path itself. Frontend no
+    // longer passes python_path / backend_dir 鈥?those hardcoded values
+    // were dev-box-only. See `backend_launch::resolve` for priority.
+    let launch = match backend_launch::resolve(&app) {
+        Ok(l) => l,
+        Err(e) => {
+            let msg = backend_launch::format_user_message(&e);
+            state.set_startup_error(Some(msg.clone()));
+            return Err(msg);
+        }
+    };
+
+    // P3-S5: log which branch resolved so e2e smoke scripts can grep
+    // the dev log to confirm Bundled vs Dev path was picked. Use stderr
+    // because tauri dev redirects both streams to the same log file.
+    match &launch {
+        BackendLaunch::Bundled { exe } => {
+            eprintln!("[backend_launch] Bundled exe={}", exe.display());
+        }
+        BackendLaunch::Dev { python, backend_dir } => {
+            eprintln!(
+                "[backend_launch] Dev python={} backend_dir={}",
+                python.display(),
+                backend_dir.display(),
+            );
+        }
+    }
+
+    // 骞傜瓑锛氫互 shared_secret 浣滀负"宸叉湁涓€涓椿鐫€鎴栨鍦ㄩ噸鍚腑鐨?backend"鐨?
+    // 鐪熷疄鍒ゆ嵁锛岃€屼笉鏄?state.child銆傚師鍥狅細install_supervisor 鍦ㄨ皟 wait()
+    // 涔嬪墠浼氭妸 Child 浠?Mutex 閲?take() 鍑烘潵鎸佹湁鍦ㄧ嚎绋嬫爤涓婏紝鎵€浠?backend
+    // 娲荤潃鐨?99.99% 鏃堕棿閲?state.child 閮芥槸 None銆傚彧鏈?shared_secret 鏄?
+    // 鍦?鍚姩 / respawn 鎴愬姛"鏃?Some锛?stop / kill_child / supervisor 鏀惧純"
+    // 鏃?None 鈥斺€?杩欎笁鏉″叧闂矾寰勯兘浼氭樉寮忔竻绌哄畠锛岃涔変竴鑷淬€?
+    //
+    // 鏁堟灉锛氬墠绔?F5 / StrictMode 閲嶆寕杞介噷鏃犺剳 invoke start_backend 涓嶄細
+    // 鍐嶆 spawn 鍑轰竴涓拰鐜颁换 backend 鎶?8100 绔彛鐨?Python銆?
+    {
+        let secret_guard = state.shared_secret.lock().map_err(|e| e.to_string())?;
+        if let Some(existing) = secret_guard.as_ref() {
+            return Ok(existing.clone());
+        }
+    }
+
+    // Clone up-front so the supervisor owns its own copy.
+    let launch_for_spawn = launch.clone();
+
+    // Initial spawn runs on a blocking thread 鈥?the BufReader loop that
+    // waits for SHARED_SECRET is blocking I/O.
+    let spawn_result = tauri::async_runtime::spawn_blocking(move || {
+        spawn_once(&launch_for_spawn)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))?;
+    let (child, secret) = match spawn_result {
+        Ok(pair) => pair,
+        Err(e) => {
+            state.set_startup_error(Some(e.clone()));
+            return Err(e);
+        }
+    };
+    // Clear any stale error from a prior failed attempt.
+    state.set_startup_error(None);
+
+    // Record launch so the supervisor can respawn.
+    *state.launch.lock().map_err(|e| e.to_string())? = Some(launch.clone());
+    *state.shared_secret.lock().map_err(|e| e.to_string())? = Some(secret.clone());
+    *state.child.lock().map_err(|e| e.to_string())? = Some(child);
+    state.shutdown_requested.store(false, Ordering::SeqCst);
+    state.restart_count.store(0, Ordering::SeqCst);
+
+    // Install the supervisor. It keeps its own Arc handles to the shared
+    // atomics and the BackendProcess state (via AppHandle::state()).
+    install_supervisor(app, launch);
+
+    Ok(secret)
+}
+
+/// Background loop: wait for the current child to exit; if the user
+/// didn't ask for a shutdown, respawn. Emits lifecycle events so the
+/// frontend can re-fetch the secret and reconnect its WebSockets.
+fn install_supervisor(app: AppHandle, launch: BackendLaunch) {
+    std::thread::spawn(move || {
+        loop {
+            // Wait for the current child to exit. We have to release the
+            // mutex while waiting so stop_backend can still seize the lock.
+            let exit_status = {
+                let state = app.state::<BackendProcess>();
+                let mut guard = match state.child.lock() {
+                    Ok(g) => g,
+                    Err(_) => return,
+                };
+                let Some(mut child) = guard.take() else {
+                    // Someone already removed the child (stop_backend or
+                    // window-destroy). Supervisor's job is done.
+                    return;
+                };
+                drop(guard);
+                child.wait()
+            };
+
+            let state = app.state::<BackendProcess>();
+            if state.shutdown_requested.load(Ordering::SeqCst) {
+                // Clean shutdown 鈥?don't respawn.
+                return;
+            }
+
+            // The child died on its own. Tell the frontend so it can
+            // drop its WS connections; the restart path will give it a
+            // new secret to reconnect with.
+            let reason = match &exit_status {
+                Ok(status) => format!("exit:{status}"),
+                Err(e) => format!("wait_err:{e}"),
+            };
+            let _ = app.emit("backend-crashed", reason);
+
+            // Restart budget: if we've crashed too many times in the
+            // sliding window, give up and let the user manually retry.
+            let count = state.restart_count.fetch_add(1, Ordering::SeqCst) + 1;
+            if count > MAX_RESTARTS_PER_WINDOW {
+                // 娓呯┖ secret 鈥斺€?涔嬪悗鍓嶇鍐?invoke start_backend 鏃?
+                // 骞傜瓑妫€鏌ヨ鑳借瀹冪湡鐨勫幓 spawn 涓€涓柊 backend锛堟墜鍔ㄨ嚜鎰堬級銆?
+                if let Ok(mut guard) = state.shared_secret.lock() {
+                    *guard = None;
+                }
+                let _ = app.emit("backend-dead", "restart budget exhausted");
+                return;
+            }
+
+            std::thread::sleep(Duration::from_millis(RESTART_COOLDOWN_MS));
+
+            // Respawn.
+            let started = Instant::now();
+            let spawn_result = spawn_once(&launch);
+            match spawn_result {
+                Ok((new_child, new_secret)) => {
+                    if let Ok(mut guard) = state.shared_secret.lock() {
+                        *guard = Some(new_secret.clone());
+                    }
+                    if let Ok(mut guard) = state.child.lock() {
+                        *guard = Some(new_child);
+                    }
+                    let _ = app.emit("backend-restarted", new_secret);
+
+                    // If the previous life lasted longer than the
+                    // restart window, zero the counter 鈥?a sporadic
+                    // crash months apart shouldn't accumulate.
+                    if started.elapsed() > Duration::from_secs(RESTART_WINDOW_SECS) {
+                        state.restart_count.store(0, Ordering::SeqCst);
+                    }
+                }
+                Err(e) => {
+                    // 鍚屾牱鐨勯亾鐞嗭細respawn 澶辫触绛変簬杩欎竴鐢熺殑 backend 鍒版
+                    // 涓烘浜嗭紝secret 寰楁竻鎺夊ソ璁╁悗缁墜鍔ㄩ噸鍚兘鐪熺殑 spawn銆?
+                    if let Ok(mut guard) = state.shared_secret.lock() {
+                        *guard = None;
+                    }
+                    let _ = app.emit("backend-dead", format!("respawn failed: {e}"));
+                    return;
+                }
+            }
+        }
+    });
+}
+
+#[command]
+pub fn stop_backend(state: State<'_, BackendProcess>) -> Result<(), String> {
+    state.shutdown_requested.store(true, Ordering::SeqCst);
+    let mut child_guard = state.child.lock().map_err(|e| e.to_string())?;
+    if let Some(mut child) = child_guard.take() {
+        child.kill().map_err(|e| e.to_string())?;
+    }
+    // 璁╁箓绛夋鏌ユ仮澶?鏃?backend"鍒ゆ柇锛屽ソ璁╀箣鍚庣殑 start_backend 鑳界湡姝?
+    // spawn锛岃€屼笉鏄繑鍥炶繖鏉″凡缁忚鏉€姝荤殑 stale secret銆?
+    *state.shared_secret.lock().map_err(|e| e.to_string())? = None;
+    Ok(())
+}
+
+#[command]
+pub fn is_backend_running(state: State<'_, BackendProcess>) -> Result<bool, String> {
+    let mut child_guard = state.child.lock().map_err(|e| e.to_string())?;
+    match child_guard.as_mut() {
+        Some(child) => match child.try_wait() {
+            Ok(Some(_)) => {
+                *child_guard = None;
+                Ok(false)
+            }
+            Ok(None) => Ok(true),
+            Err(e) => Err(e.to_string()),
+        },
+        None => Ok(false),
+    }
+}
+
+#[command]
+pub fn get_shared_secret(state: State<'_, BackendProcess>) -> Result<String, String> {
+    state
+        .shared_secret
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or("No secret available (backend not started?)".into())
+}
+
+/// P3-S8 鈥?returns the last classified startup error (human-readable
+/// Chinese) or None. Frontend polls this after start_backend rejects
+/// and also on window focus so crashes surfaced via `backend-dead` can
+/// be re-displayed.
+#[command]
+pub fn get_startup_error(state: State<'_, BackendProcess>) -> Result<Option<String>, String> {
+    Ok(state.startup_error.lock().map_err(|e| e.to_string())?.clone())
+}
+
+/// P3-S8 鈥?clear the recorded startup error once the dialog is dismissed
+/// so a successful retry doesn't re-show it.
+#[command]
+pub fn clear_startup_error(state: State<'_, BackendProcess>) -> Result<(), String> {
+    *state.startup_error.lock().map_err(|e| e.to_string())? = None;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn port_precheck_reports_bound_port() {
+        // Bind an ephemeral port, then assert check_port_free on that
+        // port fails with a user-readable Chinese message.
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let err = check_port_free(port).expect_err("expected busy port to fail");
+        assert!(err.contains(&port.to_string()), "error missing port: {err}");
+        assert!(err.contains("鍗犵敤"), "error not chinese: {err}");
+    }
+
+    #[test]
+    fn port_precheck_passes_on_free_port() {
+        // Pick a random high port, bind+drop to learn it's free, then
+        // re-check. Race-y in theory; in practice fine for unit tests.
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        assert!(check_port_free(port).is_ok());
+    }
+
+    #[test]
+    fn startup_error_round_trip() {
+        let bp = BackendProcess::new();
+        assert!(bp.startup_error.lock().unwrap().is_none());
+        bp.set_startup_error(Some("boom".into()));
+        assert_eq!(bp.startup_error.lock().unwrap().as_deref(), Some("boom"));
+        bp.set_startup_error(None);
+        assert!(bp.startup_error.lock().unwrap().is_none());
+    }
+}
+
+ succeeded in 246ms:
+codex
+现有 `paths.rs` 在 test cfg 下直接让 portable 返回 `None`，没有可注入 exe 的 portable helper；已经有 `DESKPET_USER_DATA_DIR` 优先级测试。为了覆盖这次核心行为，我会先加一个内部 helper 的测试，让它在实现前因缺少 create-then-return 能力失败。
+  ✓ 读取计划背景与现有 Rust 实现/测试
+  → 先添加能暴露优先级/portable 行为的测试并验证失败
+  • 修改 paths.rs 与 process_manager.rs
+  • 运行 cargo build 与 cargo test --lib 验收
+  • 复查 diff 并汇总结果
+codex
+准备只在 `paths.rs` 里加入一个单测：模拟 `<install>/backend/deskpet-backend.exe`，断言解析会创建 `<install>/userdata` 并返回它。先不改生产逻辑，马上运行该测试确认红灯。
+2026-06-27T18:37:08.382037Z ERROR codex_core::tools::router: error=apply_patch verification failed: Failed to find expected lines in G:\projects\deskpet\tauri-app\src-tauri\src\paths.rs:
+    fn user_data_dir_prefers_dir_suffix_env() {
+        // 缁熶竴鍚? DESKPET_USER_DATA_DIR(涓?Python 涓€鑷?浼樺厛浜庢棫 DESKPET_USER_DATA銆?        let env = env_map(&[
+            ("DESKPET_USER_DATA_DIR", "D:/new/userdata"),
+            ("DESKPET_USER_DATA", "E:/old/deskpet"),
+        ]);
+        let out = user_data_dir_with(&base_win(), &env).unwrap();
+        assert_eq!(out, PathBuf::from("D:/new/userdata"));
+    }
+
+    #[test]
+    fn user_data_dir_falls_back_to_legacy_env() {
+        // 鍙鏃?DESKPET_USER_DATA 鏃朵粛鍏煎(涓嶇牬鍧忚€佺敤鎴?銆?        let env = env_map(&[("DESKPET_USER_DATA", "E:/old/deskpet")]);
+codex
+补丁没套上是因为文件里部分中文注释编码显示异常、且注释和代码粘在同一行。先用行号定位稳定上下文，再按更小锚点插入测试。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$i=1; Get-Content tauri-app'"\\src-tauri\\src\\paths.rs | ForEach-Object { '{0,4}: {1}' -f "'$i, $_; $i++ } | Select-Object -Skip 170 -First 80' in G:\projects\deskpet
+ succeeded in 236ms:
+ 171:     fn base_win() -> BaseDirs {
+ 172:         BaseDirs {
+ 173:             app_data: Some(PathBuf::from("C:/Users/U/AppData/Roaming")),
+ 174:             local_app_data: Some(PathBuf::from("C:/Users/U/AppData/Local")),
+ 175:         }
+ 176:     }
+ 177: 
+ 178:     #[test]
+ 179:     fn user_data_dir_defaults_to_appdata_deskpet() {
+ 180:         let env = env_empty();
+ 181:         let out = user_data_dir_with(&base_win(), &env).unwrap();
+ 182:         assert_eq!(out, PathBuf::from("C:/Users/U/AppData/Roaming/deskpet"));
+ 183:     }
+ 184: 
+ 185:     #[test]
+ 186:     fn user_data_dir_env_override_wins() {
+ 187:         let env = env_map(&[("DESKPET_USER_DATA", "D:/custom/deskpet")]);
+ 188:         let out = user_data_dir_with(&base_win(), &env).unwrap();
+ 189:         assert_eq!(out, PathBuf::from("D:/custom/deskpet"));
+ 190:     }
+ 191: 
+ 192:     #[test]
+ 193:     fn user_data_dir_prefers_dir_suffix_env() {
+ 194:         // 缁熶竴鍚? DESKPET_USER_DATA_DIR(涓?Python 涓€鑷?浼樺厛浜庢棫 DESKPET_USER_DATA銆?        let env = env_map(&[
+ 195:             ("DESKPET_USER_DATA_DIR", "D:/new/userdata"),
+ 196:             ("DESKPET_USER_DATA", "E:/old/deskpet"),
+ 197:         ]);
+ 198:         let out = user_data_dir_with(&base_win(), &env).unwrap();
+ 199:         assert_eq!(out, PathBuf::from("D:/new/userdata"));
+ 200:     }
+ 201: 
+ 202:     #[test]
+ 203:     fn user_data_dir_falls_back_to_legacy_env() {
+ 204:         // 鍙鏃?DESKPET_USER_DATA 鏃朵粛鍏煎(涓嶇牬鍧忚€佺敤鎴?銆?        let env = env_map(&[("DESKPET_USER_DATA", "E:/old/deskpet")]);
+ 205:         let out = user_data_dir_with(&base_win(), &env).unwrap();
+ 206:         assert_eq!(out, PathBuf::from("E:/old/deskpet"));
+ 207:     }
+ 208: 
+ 209:     #[test]
+ 210:     fn user_data_dir_empty_env_treated_as_unset() {
+ 211:         let env = env_map(&[("DESKPET_USER_DATA", "")]);
+ 212:         let out = user_data_dir_with(&base_win(), &env).unwrap();
+ 213:         assert_eq!(out, PathBuf::from("C:/Users/U/AppData/Roaming/deskpet"));
+ 214:     }
+ 215: 
+ 216:     #[test]
+ 217:     fn user_log_dir_nests_under_user_data() {
+ 218:         let env = env_empty();
+ 219:         let out = user_log_dir_with(&base_win(), &env).unwrap();
+ 220:         assert_eq!(out, PathBuf::from("C:/Users/U/AppData/Roaming/deskpet/logs"));
+ 221:     }
+ 222: 
+ 223:     #[test]
+ 224:     fn user_log_dir_independent_env_override() {
+ 225:         let env = env_map(&[("DESKPET_USER_LOG", "E:/logs")]);
+ 226:         let out = user_log_dir_with(&base_win(), &env).unwrap();
+ 227:         assert_eq!(out, PathBuf::from("E:/logs"));
+ 228:     }
+ 229: 
+ 230:     #[test]
+ 231:     fn user_models_dir_defaults_to_local_app_data() {
+ 232:         let env = env_empty();
+ 233:         let out = user_models_dir_with(&base_win(), &env).unwrap();
+ 234:         assert_eq!(out, PathBuf::from("C:/Users/U/AppData/Local/deskpet/models"));
+ 235:     }
+ 236: 
+ 237:     #[test]
+ 238:     fn user_models_dir_env_override() {
+ 239:         let env = env_map(&[("DESKPET_MODEL_ROOT", "F:/models")]);
+ 240:         let out = user_models_dir_with(&base_win(), &env).unwrap();
+ 241:         assert_eq!(out, PathBuf::from("F:/models"));
+ 242:     }
+ 243: 
+ 244:     #[test]
+ 245:     fn missing_app_data_returns_none() {
+ 246:         let base = BaseDirs { app_data: None, local_app_data: None };
+ 247:         let env = env_empty();
+ 248:         assert!(user_data_dir_with(&base, &env).is_none());
+ 249:         assert!(user_log_dir_with(&base, &env).is_none());
+ 250:         assert!(user_models_dir_with(&base, &env).is_none());
+
+codex
+我会用稳定的函数结尾作为锚点插入测试；这一步只添加测试，不改实现。
+2026-06-27T18:37:19.330306Z ERROR codex_core::tools::router: error=apply_patch verification failed: Failed to find expected lines in G:\projects\deskpet\tauri-app\src-tauri\src\paths.rs:
+    fn user_data_dir_prefers_dir_suffix_env() {
+        // 缁熶竴鍚? DESKPET_USER_DATA_DIR(涓?Python 涓€鑷?浼樺厛浜庢棫 DESKPET_USER_DATA銆?        let env = env_map(&[
+            ("DESKPET_USER_DATA_DIR", "D:/new/userdata"),
+            ("DESKPET_USER_DATA", "E:/old/deskpet"),
+        ]);
+        let out = user_data_dir_with(&base_win(), &env).unwrap();
+        assert_eq!(out, PathBuf::from("D:/new/userdata"));
+    }
+
+    #[test]
+    fn user_data_dir_falls_back_to_legacy_env() {
+codex
+再缩小锚点，避开乱码注释行。
+apply patch
+patch: completed
+G:\projects\deskpet\tauri-app\src-tauri\src\paths.rs
+diff --git a/tauri-app/src-tauri/src/paths.rs b/tauri-app/src-tauri/src/paths.rs
+index 6b9aa486376fb206a844dc3e05c7d43ad9810dfa..1b62c36ca4e7b497c6b1cb0ccbb1da489e250574
+--- a/tauri-app/src-tauri/src/paths.rs
++++ b/tauri-app/src-tauri/src/paths.rs
+@@ -208,6 +208,24 @@
+     }
+ 
+     #[test]
++    fn portable_userdata_dir_creates_install_userdata_for_backend_exe() {
++        let root = std::env::temp_dir().join(format!(
++            "deskpet-portable-test-{}",
++            std::process::id()
++        ));
++        let backend_dir = root.join("backend");
++        std::fs::create_dir_all(&backend_dir).unwrap();
++        let exe = backend_dir.join("deskpet-backend.exe");
++
++        let out = portable_userdata_dir_from_exe(&exe).unwrap();
++
++        assert_eq!(out, root.join("userdata"));
++        assert!(out.is_dir());
++
++        let _ = std::fs::remove_dir_all(root);
++    }
++
++    #[test]
+     fn user_data_dir_falls_back_to_legacy_env() {
+         // 只设旧 DESKPET_USER_DATA 时仍兼容(不破坏老用户)。
+         let env = env_map(&[("DESKPET_USER_DATA", "E:/old/deskpet")]);
+
+diff --git a/tauri-app/src-tauri/src/paths.rs b/tauri-app/src-tauri/src/paths.rs
+index 6b9aa486376fb206a844dc3e05c7d43ad9810dfa..1b62c36ca4e7b497c6b1cb0ccbb1da489e250574
+--- a/tauri-app/src-tauri/src/paths.rs
++++ b/tauri-app/src-tauri/src/paths.rs
+@@ -208,6 +208,24 @@
+     }
+ 
+     #[test]
++    fn portable_userdata_dir_creates_install_userdata_for_backend_exe() {
++        let root = std::env::temp_dir().join(format!(
++            "deskpet-portable-test-{}",
++            std::process::id()
++        ));
++        let backend_dir = root.join("backend");
++        std::fs::create_dir_all(&backend_dir).unwrap();
++        let exe = backend_dir.join("deskpet-backend.exe");
++
++        let out = portable_userdata_dir_from_exe(&exe).unwrap();
++
++        assert_eq!(out, root.join("userdata"));
++        assert!(out.is_dir());
++
++        let _ = std::fs::remove_dir_all(root);
++    }
++
++    #[test]
+     fn user_data_dir_falls_back_to_legacy_env() {
+         // 只设旧 DESKPET_USER_DATA 时仍兼容(不破坏老用户)。
+         let env = env_map(&[("DESKPET_USER_DATA", "E:/old/deskpet")]);
+
+codex
+测试已先写入。现在只跑这个新增测试，预期会因为目标 helper 尚未实现而失败，从而确认测试确实覆盖缺失行为。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command 'cargo test portable_userdata_dir_creates_install_userdata_for_backend_exe --lib' in G:\projects\deskpet\tauri-app\src-tauri
+2026-06-27T18:37:36.614994Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 8.7 seconds
+Output:
+   Compiling deskpet v0.6.0-beta.6 (G:\projects\deskpet\tauri-app\src-tauri)
+error[E0425]: cannot find function `portable_userdata_dir_from_exe` in this scope
+   --> src\paths.rs:220:19
+    |
+ 88 | fn portable_userdata_dir() -> Option<PathBuf> {
+    | --------------------------------------------- similarly named function `portable_userdata_dir` defined here
+...
+220 |         let out = portable_userdata_dir_from_exe(&exe).unwrap();
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: a function with a similar name exists
+    |
+220 -         let out = portable_userdata_dir_from_exe(&exe).unwrap();
+220 +         let out = portable_userdata_dir(&exe).unwrap();
+    |
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `deskpet` (lib test) due to 1 previous error
+
+ exited 1 in 8678ms:
+   Compiling deskpet v0.6.0-beta.6 (G:\projects\deskpet\tauri-app\src-tauri)
+error[E0425]: cannot find function `portable_userdata_dir_from_exe` in this scope
+   --> src\paths.rs:220:19
+    |
+ 88 | fn portable_userdata_dir() -> Option<PathBuf> {
+    | --------------------------------------------- similarly named function `portable_userdata_dir` defined here
+...
+220 |         let out = portable_userdata_dir_from_exe(&exe).unwrap();
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: a function with a similar name exists
+    |
+220 -         let out = portable_userdata_dir_from_exe(&exe).unwrap();
+220 +         let out = portable_userdata_dir(&exe).unwrap();
+    |
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `deskpet` (lib test) due to 1 previous error
+
+diff --git a/tauri-app/src-tauri/src/paths.rs b/tauri-app/src-tauri/src/paths.rs
+index 6b9aa486376fb206a844dc3e05c7d43ad9810dfa..1b62c36ca4e7b497c6b1cb0ccbb1da489e250574
+--- a/tauri-app/src-tauri/src/paths.rs
++++ b/tauri-app/src-tauri/src/paths.rs
+@@ -208,6 +208,24 @@
+     }
+ 
+     #[test]
++    fn portable_userdata_dir_creates_install_userdata_for_backend_exe() {
++        let root = std::env::temp_dir().join(format!(
++            "deskpet-portable-test-{}",
++            std::process::id()
++        ));
++        let backend_dir = root.join("backend");
++        std::fs::create_dir_all(&backend_dir).unwrap();
++        let exe = backend_dir.join("deskpet-backend.exe");
++
++        let out = portable_userdata_dir_from_exe(&exe).unwrap();
++
++        assert_eq!(out, root.join("userdata"));
++        assert!(out.is_dir());
++
++        let _ = std::fs::remove_dir_all(root);
++    }
++
++    #[test]
+     fn user_data_dir_falls_back_to_legacy_env() {
+         // 只设旧 DESKPET_USER_DATA 时仍兼容(不破坏老用户)。
+         let env = env_map(&[("DESKPET_USER_DATA", "E:/old/deskpet")]);
+
+codex
+红灯符合预期：新增测试因为 `portable_userdata_dir_from_exe` 不存在而编译失败。现在实现最小 helper，让生产 `current_exe()` 走同一逻辑，并在 `spawn_once` 注入 Rust 侧解析出的 `DESKPET_USER_DATA_DIR`。
+  ✓ 读取计划背景与现有 Rust 实现/测试
+  ✓ 先添加能暴露优先级/portable 行为的测试并验证失败
+  → 修改 paths.rs 与 process_manager.rs
+  • 运行 cargo build 与 cargo test --lib 验收
+  • 复查 diff 并汇总结果
+diff --git a/tauri-app/src-tauri/src/paths.rs b/tauri-app/src-tauri/src/paths.rs
+index 6b9aa486376fb206a844dc3e05c7d43ad9810dfa..1b62c36ca4e7b497c6b1cb0ccbb1da489e250574
+--- a/tauri-app/src-tauri/src/paths.rs
++++ b/tauri-app/src-tauri/src/paths.rs
+@@ -208,6 +208,24 @@
+     }
+ 
+     #[test]
++    fn portable_userdata_dir_creates_install_userdata_for_backend_exe() {
++        let root = std::env::temp_dir().join(format!(
++            "deskpet-portable-test-{}",
++            std::process::id()
++        ));
++        let backend_dir = root.join("backend");
++        std::fs::create_dir_all(&backend_dir).unwrap();
++        let exe = backend_dir.join("deskpet-backend.exe");
++
++        let out = portable_userdata_dir_from_exe(&exe).unwrap();
++
++        assert_eq!(out, root.join("userdata"));
++        assert!(out.is_dir());
++
++        let _ = std::fs::remove_dir_all(root);
++    }
++
++    #[test]
+     fn user_data_dir_falls_back_to_legacy_env() {
+         // 只设旧 DESKPET_USER_DATA 时仍兼容(不破坏老用户)。
+         let env = env_map(&[("DESKPET_USER_DATA", "E:/old/deskpet")]);
+
+codex
+接下来编辑两处生产代码：`paths.rs` 把 portable 判定改为创建目录并探针写，`process_manager.rs` 在启动 backend 前设置 `DESKPET_USER_DATA_DIR`。保持 test cfg 的 `portable_userdata_dir() -> None` 不变。
+apply patch
+patch: completed
+G:\projects\deskpet\tauri-app\src-tauri\src\paths.rs
+diff --git a/tauri-app/src-tauri/src/paths.rs b/tauri-app/src-tauri/src/paths.rs
+index 6b9aa486376fb206a844dc3e05c7d43ad9810dfa..2487f2be3b280175016cf4353a645236cbe70cf8
+--- a/tauri-app/src-tauri/src/paths.rs
++++ b/tauri-app/src-tauri/src/paths.rs
+@@ -60,30 +60,39 @@
+ /// Portable-mode userdata dir: when running from a frozen install, data
+ /// lives in `<install>/userdata/` next to the exe (mirrors Python
+ /// `backend/paths.py::_portable_userdata_dir`). Returns None in dev mode
+-/// (current_exe isn't in the install layout) or when no userdata/ exists.
++/// (current_exe isn't in the install layout) or when userdata/ is not writable.
+ ///
+ /// Layout: `<install>/deskpet.exe` + `<install>/userdata/`; the backend
+ /// exe sits at `<install>/backend/deskpet-backend.exe`, so we also check
+ /// one level up when the exe's parent is named "backend".
+-#[cfg(not(test))]
+-fn portable_userdata_dir() -> Option<PathBuf> {
+-    let exe = std::env::current_exe().ok()?;
++fn portable_userdata_dir_from_exe(exe: &Path) -> Option<PathBuf> {
+     let parent = exe.parent()?;
+-    let mut anchors: Vec<PathBuf> = vec![parent.to_path_buf()];
+-    if parent.file_name().and_then(|s| s.to_str()) == Some("backend") {
+-        if let Some(up) = parent.parent() {
+-            anchors.insert(0, up.to_path_buf());
+-        }
+-    }
+-    for anchor in anchors {
+-        let ud = anchor.join("userdata");
+-        if ud.is_dir() {
++    let root = if parent
++        .file_name()
++        .map(|n| n.to_string_lossy().eq_ignore_ascii_case("backend"))
++        .unwrap_or(false)
++    {
++        parent.parent()?.to_path_buf()
++    } else {
++        parent.to_path_buf()
++    };
++    let ud = root.join("userdata");
++    if std::fs::create_dir_all(&ud).is_ok() {
++        let probe = ud.join(".deskpet-write-probe");
++        if std::fs::write(&probe, b"").is_ok() {
++            let _ = std::fs::remove_file(&probe);
+             return Some(ud);
+         }
+     }
+     None
+ }
+ 
++#[cfg(not(test))]
++fn portable_userdata_dir() -> Option<PathBuf> {
++    let exe = std::env::current_exe().ok()?;
++    portable_userdata_dir_from_exe(&exe)
++}
++
+ #[cfg(test)]
+ fn portable_userdata_dir() -> Option<PathBuf> {
+     // 测试下不探测真实 current_exe(避免 test runner 旁碰巧的 userdata 干扰
+@@ -208,6 +217,24 @@
+     }
+ 
+     #[test]
++    fn portable_userdata_dir_creates_install_userdata_for_backend_exe() {
++        let root = std::env::temp_dir().join(format!(
++            "deskpet-portable-test-{}",
++            std::process::id()
++        ));
++        let backend_dir = root.join("backend");
++        std::fs::create_dir_all(&backend_dir).unwrap();
++        let exe = backend_dir.join("deskpet-backend.exe");
++
++        let out = portable_userdata_dir_from_exe(&exe).unwrap();
++
++        assert_eq!(out, root.join("userdata"));
++        assert!(out.is_dir());
++
++        let _ = std::fs::remove_dir_all(root);
++    }
++
++    #[test]
+     fn user_data_dir_falls_back_to_legacy_env() {
+         // 只设旧 DESKPET_USER_DATA 时仍兼容(不破坏老用户)。
+         let env = env_map(&[("DESKPET_USER_DATA", "E:/old/deskpet")]);
+
+diff --git a/tauri-app/src-tauri/src/paths.rs b/tauri-app/src-tauri/src/paths.rs
+index 6b9aa486376fb206a844dc3e05c7d43ad9810dfa..2487f2be3b280175016cf4353a645236cbe70cf8
+--- a/tauri-app/src-tauri/src/paths.rs
++++ b/tauri-app/src-tauri/src/paths.rs
+@@ -60,30 +60,39 @@
+ /// Portable-mode userdata dir: when running from a frozen install, data
+ /// lives in `<install>/userdata/` next to the exe (mirrors Python
+ /// `backend/paths.py::_portable_userdata_dir`). Returns None in dev mode
+-/// (current_exe isn't in the install layout) or when no userdata/ exists.
++/// (current_exe isn't in the install layout) or when userdata/ is not writable.
+ ///
+ /// Layout: `<install>/deskpet.exe` + `<install>/userdata/`; the backend
+ /// exe sits at `<install>/backend/deskpet-backend.exe`, so we also check
+ /// one level up when the exe's parent is named "backend".
+-#[cfg(not(test))]
+-fn portable_userdata_dir() -> Option<PathBuf> {
+-    let exe = std::env::current_exe().ok()?;
++fn portable_userdata_dir_from_exe(exe: &Path) -> Option<PathBuf> {
+     let parent = exe.parent()?;
+-    let mut anchors: Vec<PathBuf> = vec![parent.to_path_buf()];
+-    if parent.file_name().and_then(|s| s.to_str()) == Some("backend") {
+-        if let Some(up) = parent.parent() {
+-            anchors.insert(0, up.to_path_buf());
+-        }
+-    }
+-    for anchor in anchors {
+-        let ud = anchor.join("userdata");
+-        if ud.is_dir() {
++    let root = if parent
++        .file_name()
++        .map(|n| n.to_string_lossy().eq_ignore_ascii_case("backend"))
++        .unwrap_or(false)
++    {
++        parent.parent()?.to_path_buf()
++    } else {
++        parent.to_path_buf()
++    };
++    let ud = root.join("userdata");
++    if std::fs::create_dir_all(&ud).is_ok() {
++        let probe = ud.join(".deskpet-write-probe");
++        if std::fs::write(&probe, b"").is_ok() {
++            let _ = std::fs::remove_file(&probe);
+             return Some(ud);
+         }
+     }
+     None
+ }
+ 
++#[cfg(not(test))]
++fn portable_userdata_dir() -> Option<PathBuf> {
++    let exe = std::env::current_exe().ok()?;
++    portable_userdata_dir_from_exe(&exe)
++}
++
+ #[cfg(test)]
+ fn portable_userdata_dir() -> Option<PathBuf> {
+     // 测试下不探测真实 current_exe(避免 test runner 旁碰巧的 userdata 干扰
+@@ -208,6 +217,24 @@
+     }
+ 
+     #[test]
++    fn portable_userdata_dir_creates_install_userdata_for_backend_exe() {
++        let root = std::env::temp_dir().join(format!(
++            "deskpet-portable-test-{}",
++            std::process::id()
++        ));
++        let backend_dir = root.join("backend");
++        std::fs::create_dir_all(&backend_dir).unwrap();
++        let exe = backend_dir.join("deskpet-backend.exe");
++
++        let out = portable_userdata_dir_from_exe(&exe).unwrap();
++
++        assert_eq!(out, root.join("userdata"));
++        assert!(out.is_dir());
++
++        let _ = std::fs::remove_dir_all(root);
++    }
++
++    #[test]
+     fn user_data_dir_falls_back_to_legacy_env() {
+         // 只设旧 DESKPET_USER_DATA 时仍兼容(不破坏老用户)。
+         let env = env_map(&[("DESKPET_USER_DATA", "E:/old/deskpet")]);
+
+apply patch
+patch: completed
+G:\projects\deskpet\tauri-app\src-tauri\src\process_manager.rs
+diff --git a/tauri-app/src-tauri/src/paths.rs b/tauri-app/src-tauri/src/paths.rs
+index 6b9aa486376fb206a844dc3e05c7d43ad9810dfa..2487f2be3b280175016cf4353a645236cbe70cf8
+--- a/tauri-app/src-tauri/src/paths.rs
++++ b/tauri-app/src-tauri/src/paths.rs
+@@ -60,30 +60,39 @@
+ /// Portable-mode userdata dir: when running from a frozen install, data
+ /// lives in `<install>/userdata/` next to the exe (mirrors Python
+ /// `backend/paths.py::_portable_userdata_dir`). Returns None in dev mode
+-/// (current_exe isn't in the install layout) or when no userdata/ exists.
++/// (current_exe isn't in the install layout) or when userdata/ is not writable.
+ ///
+ /// Layout: `<install>/deskpet.exe` + `<install>/userdata/`; the backend
+ /// exe sits at `<install>/backend/deskpet-backend.exe`, so we also check
+ /// one level up when the exe's parent is named "backend".
+-#[cfg(not(test))]
+-fn portable_userdata_dir() -> Option<PathBuf> {
+-    let exe = std::env::current_exe().ok()?;
++fn portable_userdata_dir_from_exe(exe: &Path) -> Option<PathBuf> {
+     let parent = exe.parent()?;
+-    let mut anchors: Vec<PathBuf> = vec![parent.to_path_buf()];
+-    if parent.file_name().and_then(|s| s.to_str()) == Some("backend") {
+-        if let Some(up) = parent.parent() {
+-            anchors.insert(0, up.to_path_buf());
+-        }
+-    }
+-    for anchor in anchors {
+-        let ud = anchor.join("userdata");
+-        if ud.is_dir() {
++    let root = if parent
++        .file_name()
++        .map(|n| n.to_string_lossy().eq_ignore_ascii_case("backend"))
++        .unwrap_or(false)
++    {
++        parent.parent()?.to_path_buf()
++    } else {
++        parent.to_path_buf()
++    };
++    let ud = root.join("userdata");
++    if std::fs::create_dir_all(&ud).is_ok() {
++        let probe = ud.join(".deskpet-write-probe");
++        if std::fs::write(&probe, b"").is_ok() {
++            let _ = std::fs::remove_file(&probe);
+             return Some(ud);
+         }
+     }
+     None
+ }
+ 
++#[cfg(not(test))]
++fn portable_userdata_dir() -> Option<PathBuf> {
++    let exe = std::env::current_exe().ok()?;
++    portable_userdata_dir_from_exe(&exe)
++}
++
+ #[cfg(test)]
+ fn portable_userdata_dir() -> Option<PathBuf> {
+     // 测试下不探测真实 current_exe(避免 test runner 旁碰巧的 userdata 干扰
+@@ -208,6 +217,24 @@
+     }
+ 
+     #[test]
++    fn portable_userdata_dir_creates_install_userdata_for_backend_exe() {
++        let root = std::env::temp_dir().join(format!(
++            "deskpet-portable-test-{}",
++            std::process::id()
++        ));
++        let backend_dir = root.join("backend");
++        std::fs::create_dir_all(&backend_dir).unwrap();
++        let exe = backend_dir.join("deskpet-backend.exe");
++
++        let out = portable_userdata_dir_from_exe(&exe).unwrap();
++
++        assert_eq!(out, root.join("userdata"));
++        assert!(out.is_dir());
++
++        let _ = std::fs::remove_dir_all(root);
++    }
++
++    #[test]
+     fn user_data_dir_falls_back_to_legacy_env() {
+         // 只设旧 DESKPET_USER_DATA 时仍兼容(不破坏老用户)。
+         let env = env_map(&[("DESKPET_USER_DATA", "E:/old/deskpet")]);
+diff --git a/tauri-app/src-tauri/src/process_manager.rs b/tauri-app/src-tauri/src/process_manager.rs
+index 7b6bba54ccca8d5895c3344bd41442eb99300454..01fc6179dc6690ba0f199e7cb5a734779948788e
+--- a/tauri-app/src-tauri/src/process_manager.rs
++++ b/tauri-app/src-tauri/src/process_manager.rs
+@@ -174,12 +174,19 @@
+         // （GBK/CP936）会对中文日志抛 OSError[Errno 22]，backend 立刻崩在
+         // lifespan 的 "preloading models..." 行。手动钉死 UTF-8 + 无缓冲，
+         // 这样 SHARED_SECRET 也能被及时读到。
+-        .env("PYTHONIOENCODING", "utf-8")
+-        .env("PYTHONUNBUFFERED", "1");
+-
+-    // P4-S21 #8: suppress the orphan console window on Windows.
+-    //
+-    // PyInstaller spec keeps `console=True` so the bundled exe is a
++        .env("PYTHONIOENCODING", "utf-8")
++        .env("PYTHONUNBUFFERED", "1");
++
++    // 路径单一事实源：把 Rust 解析出的 userdata 钉给 backend，
++    // 防 Rust/Python 双解析漂移（config.toml/state.db 落不同目录的根因）。
++    if let Some(ud) = crate::paths::user_data_dir() {
++        let _ = std::fs::create_dir_all(&ud);
++        cmd.env("DESKPET_USER_DATA_DIR", ud.to_string_lossy().to_string());
++    }
++
++    // P4-S21 #8: suppress the orphan console window on Windows.
++    //
++    // PyInstaller spec keeps `console=True` so the bundled exe is a
+     // console-subsystem program (needed because Rust still reads
+     // SHARED_SECRET from stdout and stdout/stderr are piped to us).
+     // When Windows spawns a console-subsystem child without an explicit
+
+diff --git a/tauri-app/src-tauri/src/paths.rs b/tauri-app/src-tauri/src/paths.rs
+index 6b9aa486376fb206a844dc3e05c7d43ad9810dfa..2487f2be3b280175016cf4353a645236cbe70cf8
+--- a/tauri-app/src-tauri/src/paths.rs
++++ b/tauri-app/src-tauri/src/paths.rs
+@@ -60,30 +60,39 @@
+ /// Portable-mode userdata dir: when running from a frozen install, data
+ /// lives in `<install>/userdata/` next to the exe (mirrors Python
+ /// `backend/paths.py::_portable_userdata_dir`). Returns None in dev mode
+-/// (current_exe isn't in the install layout) or when no userdata/ exists.
++/// (current_exe isn't in the install layout) or when userdata/ is not writable.
+ ///
+ /// Layout: `<install>/deskpet.exe` + `<install>/userdata/`; the backend
+ /// exe sits at `<install>/backend/deskpet-backend.exe`, so we also check
+ /// one level up when the exe's parent is named "backend".
+-#[cfg(not(test))]
+-fn portable_userdata_dir() -> Option<PathBuf> {
+-    let exe = std::env::current_exe().ok()?;
++fn portable_userdata_dir_from_exe(exe: &Path) -> Option<PathBuf> {
+     let parent = exe.parent()?;
+-    let mut anchors: Vec<PathBuf> = vec![parent.to_path_buf()];
+-    if parent.file_name().and_then(|s| s.to_str()) == Some("backend") {
+-        if let Some(up) = parent.parent() {
+-            anchors.insert(0, up.to_path_buf());
+-        }
+-    }
+-    for anchor in anchors {
+-        let ud = anchor.join("userdata");
+-        if ud.is_dir() {
++    let root = if parent
++        .file_name()
++        .map(|n| n.to_string_lossy().eq_ignore_ascii_case("backend"))
++        .unwrap_or(false)
++    {
++        parent.parent()?.to_path_buf()
++    } else {
++        parent.to_path_buf()
++    };
++    let ud = root.join("userdata");
++    if std::fs::create_dir_all(&ud).is_ok() {
++        let probe = ud.join(".deskpet-write-probe");
++        if std::fs::write(&probe, b"").is_ok() {
++            let _ = std::fs::remove_file(&probe);
+             return Some(ud);
+         }
+     }
+     None
+ }
+ 
++#[cfg(not(test))]
++fn portable_userdata_dir() -> Option<PathBuf> {
++    let exe = std::env::current_exe().ok()?;
++    portable_userdata_dir_from_exe(&exe)
++}
++
+ #[cfg(test)]
+ fn portable_userdata_dir() -> Option<PathBuf> {
+     // 测试下不探测真实 current_exe(避免 test runner 旁碰巧的 userdata 干扰
+@@ -208,6 +217,24 @@
+     }
+ 
+     #[test]
++    fn portable_userdata_dir_creates_install_userdata_for_backend_exe() {
++        let root = std::env::temp_dir().join(format!(
++            "deskpet-portable-test-{}",
++            std::process::id()
++        ));
++        let backend_dir = root.join("backend");
++        std::fs::create_dir_all(&backend_dir).unwrap();
++        let exe = backend_dir.join("deskpet-backend.exe");
++
++        let out = portable_userdata_dir_from_exe(&exe).unwrap();
++
++        assert_eq!(out, root.join("userdata"));
++        assert!(out.is_dir());
++
++        let _ = std::fs::remove_dir_all(root);
++    }
++
++    #[test]
+     fn user_data_dir_falls_back_to_legacy_env() {
+         // 只设旧 DESKPET_USER_DATA 时仍兼容(不破坏老用户)。
+         let env = env_map(&[("DESKPET_USER_DATA", "E:/old/deskpet")]);
+diff --git a/tauri-app/src-tauri/src/process_manager.rs b/tauri-app/src-tauri/src/process_manager.rs
+index 7b6bba54ccca8d5895c3344bd41442eb99300454..01fc6179dc6690ba0f199e7cb5a734779948788e
+--- a/tauri-app/src-tauri/src/process_manager.rs
++++ b/tauri-app/src-tauri/src/process_manager.rs
+@@ -174,12 +174,19 @@
+         // （GBK/CP936）会对中文日志抛 OSError[Errno 22]，backend 立刻崩在
+         // lifespan 的 "preloading models..." 行。手动钉死 UTF-8 + 无缓冲，
+         // 这样 SHARED_SECRET 也能被及时读到。
+-        .env("PYTHONIOENCODING", "utf-8")
+-        .env("PYTHONUNBUFFERED", "1");
+-
+-    // P4-S21 #8: suppress the orphan console window on Windows.
+-    //
+-    // PyInstaller spec keeps `console=True` so the bundled exe is a
++        .env("PYTHONIOENCODING", "utf-8")
++        .env("PYTHONUNBUFFERED", "1");
++
++    // 路径单一事实源：把 Rust 解析出的 userdata 钉给 backend，
++    // 防 Rust/Python 双解析漂移（config.toml/state.db 落不同目录的根因）。
++    if let Some(ud) = crate::paths::user_data_dir() {
++        let _ = std::fs::create_dir_all(&ud);
++        cmd.env("DESKPET_USER_DATA_DIR", ud.to_string_lossy().to_string());
++    }
++
++    // P4-S21 #8: suppress the orphan console window on Windows.
++    //
++    // PyInstaller spec keeps `console=True` so the bundled exe is a
+     // console-subsystem program (needed because Rust still reads
+     // SHARED_SECRET from stdout and stdout/stderr are piped to us).
+     // When Windows spawns a console-subsystem child without an explicit
+
+codex
+实现已落到两个指定文件。现在先跑刚才新增的单测看红灯是否转绿，再跑完整验收命令。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command 'cargo test portable_userdata_dir_creates_install_userdata_for_backend_exe --lib' in G:\projects\deskpet\tauri-app\src-tauri
+ succeeded in 6324ms:
+
+running 1 test
+test paths::tests::portable_userdata_dir_creates_install_userdata_for_backend_exe ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 68 filtered out; finished in 0.00s
+
+   Compiling deskpet v0.6.0-beta.6 (G:\projects\deskpet\tauri-app\src-tauri)
+warning: function `resolve_with` is never used
+  --> src\paths.rs:49:4
+   |
+49 | fn resolve_with(
+   |    ^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `deskpet` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.71s
+     Running unittests src\lib.rs (target\debug\deps\deskpet_lib-f48b9c949a47efb2.exe)
+
+diff --git a/tauri-app/src-tauri/src/paths.rs b/tauri-app/src-tauri/src/paths.rs
+index 6b9aa486376fb206a844dc3e05c7d43ad9810dfa..2487f2be3b280175016cf4353a645236cbe70cf8
+--- a/tauri-app/src-tauri/src/paths.rs
++++ b/tauri-app/src-tauri/src/paths.rs
+@@ -60,30 +60,39 @@
+ /// Portable-mode userdata dir: when running from a frozen install, data
+ /// lives in `<install>/userdata/` next to the exe (mirrors Python
+ /// `backend/paths.py::_portable_userdata_dir`). Returns None in dev mode
+-/// (current_exe isn't in the install layout) or when no userdata/ exists.
++/// (current_exe isn't in the install layout) or when userdata/ is not writable.
+ ///
+ /// Layout: `<install>/deskpet.exe` + `<install>/userdata/`; the backend
+ /// exe sits at `<install>/backend/deskpet-backend.exe`, so we also check
+ /// one level up when the exe's parent is named "backend".
+-#[cfg(not(test))]
+-fn portable_userdata_dir() -> Option<PathBuf> {
+-    let exe = std::env::current_exe().ok()?;
++fn portable_userdata_dir_from_exe(exe: &Path) -> Option<PathBuf> {
+     let parent = exe.parent()?;
+-    let mut anchors: Vec<PathBuf> = vec![parent.to_path_buf()];
+-    if parent.file_name().and_then(|s| s.to_str()) == Some("backend") {
+-        if let Some(up) = parent.parent() {
+-            anchors.insert(0, up.to_path_buf());
+-        }
+-    }
+-    for anchor in anchors {
+-        let ud = anchor.join("userdata");
+-        if ud.is_dir() {
++    let root = if parent
++        .file_name()
++        .map(|n| n.to_string_lossy().eq_ignore_ascii_case("backend"))
++        .unwrap_or(false)
++    {
++        parent.parent()?.to_path_buf()
++    } else {
++        parent.to_path_buf()
++    };
++    let ud = root.join("userdata");
++    if std::fs::create_dir_all(&ud).is_ok() {
++        let probe = ud.join(".deskpet-write-probe");
++        if std::fs::write(&probe, b"").is_ok() {
++            let _ = std::fs::remove_file(&probe);
+             return Some(ud);
+         }
+     }
+     None
+ }
+ 
++#[cfg(not(test))]
++fn portable_userdata_dir() -> Option<PathBuf> {
++    let exe = std::env::current_exe().ok()?;
++    portable_userdata_dir_from_exe(&exe)
++}
++
+ #[cfg(test)]
+ fn portable_userdata_dir() -> Option<PathBuf> {
+     // 测试下不探测真实 current_exe(避免 test runner 旁碰巧的 userdata 干扰
+@@ -208,6 +217,24 @@
+     }
+ 
+     #[test]
++    fn portable_userdata_dir_creates_install_userdata_for_backend_exe() {
++        let root = std::env::temp_dir().join(format!(
++            "deskpet-portable-test-{}",
++            std::process::id()
++        ));
++        let backend_dir = root.join("backend");
++        std::fs::create_dir_all(&backend_dir).unwrap();
++        let exe = backend_dir.join("deskpet-backend.exe");
++
++        let out = portable_userdata_dir_from_exe(&exe).unwrap();
++
++        assert_eq!(out, root.join("userdata"));
++        assert!(out.is_dir());
++
++        let _ = std::fs::remove_dir_all(root);
++    }
++
++    #[test]
+     fn user_data_dir_falls_back_to_legacy_env() {
+         // 只设旧 DESKPET_USER_DATA 时仍兼容(不破坏老用户)。
+         let env = env_map(&[("DESKPET_USER_DATA", "E:/old/deskpet")]);
+diff --git a/tauri-app/src-tauri/src/process_manager.rs b/tauri-app/src-tauri/src/process_manager.rs
+index 7b6bba54ccca8d5895c3344bd41442eb99300454..01fc6179dc6690ba0f199e7cb5a734779948788e
+--- a/tauri-app/src-tauri/src/process_manager.rs
++++ b/tauri-app/src-tauri/src/process_manager.rs
+@@ -174,12 +174,19 @@
+         // （GBK/CP936）会对中文日志抛 OSError[Errno 22]，backend 立刻崩在
+         // lifespan 的 "preloading models..." 行。手动钉死 UTF-8 + 无缓冲，
+         // 这样 SHARED_SECRET 也能被及时读到。
+-        .env("PYTHONIOENCODING", "utf-8")
+-        .env("PYTHONUNBUFFERED", "1");
+-
+-    // P4-S21 #8: suppress the orphan console window on Windows.
+-    //
+-    // PyInstaller spec keeps `console=True` so the bundled exe is a
++        .env("PYTHONIOENCODING", "utf-8")
++        .env("PYTHONUNBUFFERED", "1");
++
++    // 路径单一事实源：把 Rust 解析出的 userdata 钉给 backend，
++    // 防 Rust/Python 双解析漂移（config.toml/state.db 落不同目录的根因）。
++    if let Some(ud) = crate::paths::user_data_dir() {
++        let _ = std::fs::create_dir_all(&ud);
++        cmd.env("DESKPET_USER_DATA_DIR", ud.to_string_lossy().to_string());
++    }
++
++    // P4-S21 #8: suppress the orphan console window on Windows.
++    //
++    // PyInstaller spec keeps `console=True` so the bundled exe is a
+     // console-subsystem program (needed because Rust still reads
+     // SHARED_SECRET from stdout and stdout/stderr are piped to us).
+     // When Windows spawns a console-subsystem child without an explicit
+
+codex
+新增测试已转绿。接下来按验收要求在 `tauri-app/src-tauri` 下跑 `cargo build`，再跑 `cargo test --lib`，以完整编译结果为准。
+  ✓ 读取计划背景与现有 Rust 实现/测试
+  ✓ 先添加能暴露优先级/portable 行为的测试并验证失败
+  ✓ 修改 paths.rs 与 process_manager.rs
+  → 运行 cargo build 与 cargo test --lib 验收
+  • 复查 diff 并汇总结果
+diff --git a/tauri-app/src-tauri/src/paths.rs b/tauri-app/src-tauri/src/paths.rs
+index 6b9aa486376fb206a844dc3e05c7d43ad9810dfa..2487f2be3b280175016cf4353a645236cbe70cf8
+--- a/tauri-app/src-tauri/src/paths.rs
++++ b/tauri-app/src-tauri/src/paths.rs
+@@ -60,30 +60,39 @@
+ /// Portable-mode userdata dir: when running from a frozen install, data
+ /// lives in `<install>/userdata/` next to the exe (mirrors Python
+ /// `backend/paths.py::_portable_userdata_dir`). Returns None in dev mode
+-/// (current_exe isn't in the install layout) or when no userdata/ exists.
++/// (current_exe isn't in the install layout) or when userdata/ is not writable.
+ ///
+ /// Layout: `<install>/deskpet.exe` + `<install>/userdata/`; the backend
+ /// exe sits at `<install>/backend/deskpet-backend.exe`, so we also check
+ /// one level up when the exe's parent is named "backend".
+-#[cfg(not(test))]
+-fn portable_userdata_dir() -> Option<PathBuf> {
+-    let exe = std::env::current_exe().ok()?;
++fn portable_userdata_dir_from_exe(exe: &Path) -> Option<PathBuf> {
+     let parent = exe.parent()?;
+-    let mut anchors: Vec<PathBuf> = vec![parent.to_path_buf()];
+-    if parent.file_name().and_then(|s| s.to_str()) == Some("backend") {
+-        if let Some(up) = parent.parent() {
+-            anchors.insert(0, up.to_path_buf());
+-        }
+-    }
+-    for anchor in anchors {
+-        let ud = anchor.join("userdata");
+-        if ud.is_dir() {
++    let root = if parent
++        .file_name()
++        .map(|n| n.to_string_lossy().eq_ignore_ascii_case("backend"))
++        .unwrap_or(false)
++    {
++        parent.parent()?.to_path_buf()
++    } else {
++        parent.to_path_buf()
++    };
++    let ud = root.join("userdata");
++    if std::fs::create_dir_all(&ud).is_ok() {
++        let probe = ud.join(".deskpet-write-probe");
++        if std::fs::write(&probe, b"").is_ok() {
++            let _ = std::fs::remove_file(&probe);
+             return Some(ud);
+         }
+     }
+     None
+ }
+ 
++#[cfg(not(test))]
++fn portable_userdata_dir() -> Option<PathBuf> {
++    let exe = std::env::current_exe().ok()?;
++    portable_userdata_dir_from_exe(&exe)
++}
++
+ #[cfg(test)]
+ fn portable_userdata_dir() -> Option<PathBuf> {
+     // 测试下不探测真实 current_exe(避免 test runner 旁碰巧的 userdata 干扰
+@@ -208,6 +217,24 @@
+     }
+ 
+     #[test]
++    fn portable_userdata_dir_creates_install_userdata_for_backend_exe() {
++        let root = std::env::temp_dir().join(format!(
++            "deskpet-portable-test-{}",
++            std::process::id()
++        ));
++        let backend_dir = root.join("backend");
++        std::fs::create_dir_all(&backend_dir).unwrap();
++        let exe = backend_dir.join("deskpet-backend.exe");
++
++        let out = portable_userdata_dir_from_exe(&exe).unwrap();
++
++        assert_eq!(out, root.join("userdata"));
++        assert!(out.is_dir());
++
++        let _ = std::fs::remove_dir_all(root);
++    }
++
++    #[test]
+     fn user_data_dir_falls_back_to_legacy_env() {
+         // 只设旧 DESKPET_USER_DATA 时仍兼容(不破坏老用户)。
+         let env = env_map(&[("DESKPET_USER_DATA", "E:/old/deskpet")]);
+diff --git a/tauri-app/src-tauri/src/process_manager.rs b/tauri-app/src-tauri/src/process_manager.rs
+index 7b6bba54ccca8d5895c3344bd41442eb99300454..01fc6179dc6690ba0f199e7cb5a734779948788e
+--- a/tauri-app/src-tauri/src/process_manager.rs
++++ b/tauri-app/src-tauri/src/process_manager.rs
+@@ -174,12 +174,19 @@
+         // （GBK/CP936）会对中文日志抛 OSError[Errno 22]，backend 立刻崩在
+         // lifespan 的 "preloading models..." 行。手动钉死 UTF-8 + 无缓冲，
+         // 这样 SHARED_SECRET 也能被及时读到。
+-        .env("PYTHONIOENCODING", "utf-8")
+-        .env("PYTHONUNBUFFERED", "1");
+-
+-    // P4-S21 #8: suppress the orphan console window on Windows.
+-    //
+-    // PyInstaller spec keeps `console=True` so the bundled exe is a
++        .env("PYTHONIOENCODING", "utf-8")
++        .env("PYTHONUNBUFFERED", "1");
++
++    // 路径单一事实源：把 Rust 解析出的 userdata 钉给 backend，
++    // 防 Rust/Python 双解析漂移（config.toml/state.db 落不同目录的根因）。
++    if let Some(ud) = crate::paths::user_data_dir() {
++        let _ = std::fs::create_dir_all(&ud);
++        cmd.env("DESKPET_USER_DATA_DIR", ud.to_string_lossy().to_string());
++    }
++
++    // P4-S21 #8: suppress the orphan console window on Windows.
++    //
++    // PyInstaller spec keeps `console=True` so the bundled exe is a
+     // console-subsystem program (needed because Rust still reads
+     // SHARED_SECRET from stdout and stdout/stderr are piped to us).
+     // When Windows spawns a console-subsystem child without an explicit
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command 'cargo build 2>&1 | tail -30' in G:\projects\deskpet\tauri-app\src-tauri
+2026-06-27T18:38:38.224366Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 16 seconds
+Output:
+﻿cargo :    Compiling deskpet v0.6.0-beta.6 (G:\projects\deskpet\tauri-app\src-tauri)
+At line:2 char:1
++ cargo build 2>&1 | tail -30
++ ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling de...-app\src-tauri):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+warning: function `resolve_with` is never used
+  --> src\paths.rs:49:4
+   |
+49 | fn resolve_with(
+   |    ^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `deskpet` (lib) generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 15.43s
+
+ exited 1 in 16034ms:
+﻿cargo :    Compiling deskpet v0.6.0-beta.6 (G:\projects\deskpet\tauri-app\src-tauri)
+At line:2 char:1
++ cargo build 2>&1 | tail -30
++ ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling de...-app\src-tauri):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+warning: function `resolve_with` is never used
+  --> src\paths.rs:49:4
+   |
+49 | fn resolve_with(
+   |    ^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `deskpet` (lib) generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 15.43s
+
+diff --git a/tauri-app/src-tauri/src/paths.rs b/tauri-app/src-tauri/src/paths.rs
+index 6b9aa486376fb206a844dc3e05c7d43ad9810dfa..2487f2be3b280175016cf4353a645236cbe70cf8
+--- a/tauri-app/src-tauri/src/paths.rs
++++ b/tauri-app/src-tauri/src/paths.rs
+@@ -60,30 +60,39 @@
+ /// Portable-mode userdata dir: when running from a frozen install, data
+ /// lives in `<install>/userdata/` next to the exe (mirrors Python
+ /// `backend/paths.py::_portable_userdata_dir`). Returns None in dev mode
+-/// (current_exe isn't in the install layout) or when no userdata/ exists.
++/// (current_exe isn't in the install layout) or when userdata/ is not writable.
+ ///
+ /// Layout: `<install>/deskpet.exe` + `<install>/userdata/`; the backend
+ /// exe sits at `<install>/backend/deskpet-backend.exe`, so we also check
+ /// one level up when the exe's parent is named "backend".
+-#[cfg(not(test))]
+-fn portable_userdata_dir() -> Option<PathBuf> {
+-    let exe = std::env::current_exe().ok()?;
++fn portable_userdata_dir_from_exe(exe: &Path) -> Option<PathBuf> {
+     let parent = exe.parent()?;
+-    let mut anchors: Vec<PathBuf> = vec![parent.to_path_buf()];
+-    if parent.file_name().and_then(|s| s.to_str()) == Some("backend") {
+-        if let Some(up) = parent.parent() {
+-            anchors.insert(0, up.to_path_buf());
+-        }
+-    }
+-    for anchor in anchors {
+-        let ud = anchor.join("userdata");
+-        if ud.is_dir() {
++    let root = if parent
++        .file_name()
++        .map(|n| n.to_string_lossy().eq_ignore_ascii_case("backend"))
++        .unwrap_or(false)
++    {
++        parent.parent()?.to_path_buf()
++    } else {
++        parent.to_path_buf()
++    };
++    let ud = root.join("userdata");
++    if std::fs::create_dir_all(&ud).is_ok() {
++        let probe = ud.join(".deskpet-write-probe");
++        if std::fs::write(&probe, b"").is_ok() {
++            let _ = std::fs::remove_file(&probe);
+             return Some(ud);
+         }
+     }
+     None
+ }
+ 
++#[cfg(not(test))]
++fn portable_userdata_dir() -> Option<PathBuf> {
++    let exe = std::env::current_exe().ok()?;
++    portable_userdata_dir_from_exe(&exe)
++}
++
+ #[cfg(test)]
+ fn portable_userdata_dir() -> Option<PathBuf> {
+     // 测试下不探测真实 current_exe(避免 test runner 旁碰巧的 userdata 干扰
+@@ -208,6 +217,24 @@
+     }
+ 
+     #[test]
++    fn portable_userdata_dir_creates_install_userdata_for_backend_exe() {
++        let root = std::env::temp_dir().join(format!(
++            "deskpet-portable-test-{}",
++            std::process::id()
++        ));
++        let backend_dir = root.join("backend");
++        std::fs::create_dir_all(&backend_dir).unwrap();
++        let exe = backend_dir.join("deskpet-backend.exe");
++
++        let out = portable_userdata_dir_from_exe(&exe).unwrap();
++
++        assert_eq!(out, root.join("userdata"));
++        assert!(out.is_dir());
++
++        let _ = std::fs::remove_dir_all(root);
++    }
++
++    #[test]
+     fn user_data_dir_falls_back_to_legacy_env() {
+         // 只设旧 DESKPET_USER_DATA 时仍兼容(不破坏老用户)。
+         let env = env_map(&[("DESKPET_USER_DATA", "E:/old/deskpet")]);
+diff --git a/tauri-app/src-tauri/src/process_manager.rs b/tauri-app/src-tauri/src/process_manager.rs
+index 7b6bba54ccca8d5895c3344bd41442eb99300454..01fc6179dc6690ba0f199e7cb5a734779948788e
+--- a/tauri-app/src-tauri/src/process_manager.rs
++++ b/tauri-app/src-tauri/src/process_manager.rs
+@@ -174,12 +174,19 @@
+         // （GBK/CP936）会对中文日志抛 OSError[Errno 22]，backend 立刻崩在
+         // lifespan 的 "preloading models..." 行。手动钉死 UTF-8 + 无缓冲，
+         // 这样 SHARED_SECRET 也能被及时读到。
+-        .env("PYTHONIOENCODING", "utf-8")
+-        .env("PYTHONUNBUFFERED", "1");
+-
+-    // P4-S21 #8: suppress the orphan console window on Windows.
+-    //
+-    // PyInstaller spec keeps `console=True` so the bundled exe is a
++        .env("PYTHONIOENCODING", "utf-8")
++        .env("PYTHONUNBUFFERED", "1");
++
++    // 路径单一事实源：把 Rust 解析出的 userdata 钉给 backend，
++    // 防 Rust/Python 双解析漂移（config.toml/state.db 落不同目录的根因）。
++    if let Some(ud) = crate::paths::user_data_dir() {
++        let _ = std::fs::create_dir_all(&ud);
++        cmd.env("DESKPET_USER_DATA_DIR", ud.to_string_lossy().to_string());
++    }
++
++    // P4-S21 #8: suppress the orphan console window on Windows.
++    //
++    // PyInstaller spec keeps `console=True` so the bundled exe is a
+     // console-subsystem program (needed because Rust still reads
+     // SHARED_SECRET from stdout and stdout/stderr are piped to us).
+     // When Windows spawns a console-subsystem child without an explicit
+
+codex
+`cargo build 2>&1 | tail -30` 打出了 `Finished dev profile`，但 PowerShell 把 cargo 的 stderr 诊断包装成了 `NativeCommandError`，导致管道命令自身返回 1。为避免误判，我会重新捕获 stdout/stderr 到临时日志，并用 `$LASTEXITCODE` 作为 cargo 的真实退出码。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$log = Join-Path $env:TEMP '"'deskpet-cargo-build.log'; cargo build *> "'$log; $code = $LASTEXITCODE; Get-Content $log -Tail 30; exit $code' in G:\projects\deskpet\tauri-app\src-tauri
+ succeeded in 1158ms:
+cargo : warning: function `resolve_with` is never used
+At line:2 char:55
++ ... Path $env:TEMP 'deskpet-cargo-build.log'; cargo build *> $log; $code  ...
++                                               ~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (warning: functi...` is never used:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  --> src\paths.rs:49:4
+   |
+49 | fn resolve_with(
+   |    ^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `deskpet` (lib) generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.57s
+
+diff --git a/tauri-app/src-tauri/src/paths.rs b/tauri-app/src-tauri/src/paths.rs
+index 6b9aa486376fb206a844dc3e05c7d43ad9810dfa..2487f2be3b280175016cf4353a645236cbe70cf8
+--- a/tauri-app/src-tauri/src/paths.rs
++++ b/tauri-app/src-tauri/src/paths.rs
+@@ -60,30 +60,39 @@
+ /// Portable-mode userdata dir: when running from a frozen install, data
+ /// lives in `<install>/userdata/` next to the exe (mirrors Python
+ /// `backend/paths.py::_portable_userdata_dir`). Returns None in dev mode
+-/// (current_exe isn't in the install layout) or when no userdata/ exists.
++/// (current_exe isn't in the install layout) or when userdata/ is not writable.
+ ///
+ /// Layout: `<install>/deskpet.exe` + `<install>/userdata/`; the backend
+ /// exe sits at `<install>/backend/deskpet-backend.exe`, so we also check
+ /// one level up when the exe's parent is named "backend".
+-#[cfg(not(test))]
+-fn portable_userdata_dir() -> Option<PathBuf> {
+-    let exe = std::env::current_exe().ok()?;
++fn portable_userdata_dir_from_exe(exe: &Path) -> Option<PathBuf> {
+     let parent = exe.parent()?;
+-    let mut anchors: Vec<PathBuf> = vec![parent.to_path_buf()];
+-    if parent.file_name().and_then(|s| s.to_str()) == Some("backend") {
+-        if let Some(up) = parent.parent() {
+-            anchors.insert(0, up.to_path_buf());
+-        }
+-    }
+-    for anchor in anchors {
+-        let ud = anchor.join("userdata");
+-        if ud.is_dir() {
++    let root = if parent
++        .file_name()
++        .map(|n| n.to_string_lossy().eq_ignore_ascii_case("backend"))
++        .unwrap_or(false)
++    {
++        parent.parent()?.to_path_buf()
++    } else {
++        parent.to_path_buf()
++    };
++    let ud = root.join("userdata");
++    if std::fs::create_dir_all(&ud).is_ok() {
++        let probe = ud.join(".deskpet-write-probe");
++        if std::fs::write(&probe, b"").is_ok() {
++            let _ = std::fs::remove_file(&probe);
+             return Some(ud);
+         }
+     }
+     None
+ }
+ 
++#[cfg(not(test))]
++fn portable_userdata_dir() -> Option<PathBuf> {
++    let exe = std::env::current_exe().ok()?;
++    portable_userdata_dir_from_exe(&exe)
++}
++
+ #[cfg(test)]
+ fn portable_userdata_dir() -> Option<PathBuf> {
+     // 测试下不探测真实 current_exe(避免 test runner 旁碰巧的 userdata 干扰
+@@ -208,6 +217,24 @@
+     }
+ 
+     #[test]
++    fn portable_userdata_dir_creates_install_userdata_for_backend_exe() {
++        let root = std::env::temp_dir().join(format!(
++            "deskpet-portable-test-{}",
++            std::process::id()
++        ));
++        let backend_dir = root.join("backend");
++        std::fs::create_dir_all(&backend_dir).unwrap();
++        let exe = backend_dir.join("deskpet-backend.exe");
++
++        let out = portable_userdata_dir_from_exe(&exe).unwrap();
++
++        assert_eq!(out, root.join("userdata"));
++        assert!(out.is_dir());
++
++        let _ = std::fs::remove_dir_all(root);
++    }
++
++    #[test]
+     fn user_data_dir_falls_back_to_legacy_env() {
+         // 只设旧 DESKPET_USER_DATA 时仍兼容(不破坏老用户)。
+         let env = env_map(&[("DESKPET_USER_DATA", "E:/old/deskpet")]);
+diff --git a/tauri-app/src-tauri/src/process_manager.rs b/tauri-app/src-tauri/src/process_manager.rs
+index 7b6bba54ccca8d5895c3344bd41442eb99300454..01fc6179dc6690ba0f199e7cb5a734779948788e
+--- a/tauri-app/src-tauri/src/process_manager.rs
++++ b/tauri-app/src-tauri/src/process_manager.rs
+@@ -174,12 +174,19 @@
+         // （GBK/CP936）会对中文日志抛 OSError[Errno 22]，backend 立刻崩在
+         // lifespan 的 "preloading models..." 行。手动钉死 UTF-8 + 无缓冲，
+         // 这样 SHARED_SECRET 也能被及时读到。
+-        .env("PYTHONIOENCODING", "utf-8")
+-        .env("PYTHONUNBUFFERED", "1");
+-
+-    // P4-S21 #8: suppress the orphan console window on Windows.
+-    //
+-    // PyInstaller spec keeps `console=True` so the bundled exe is a
++        .env("PYTHONIOENCODING", "utf-8")
++        .env("PYTHONUNBUFFERED", "1");
++
++    // 路径单一事实源：把 Rust 解析出的 userdata 钉给 backend，
++    // 防 Rust/Python 双解析漂移（config.toml/state.db 落不同目录的根因）。
++    if let Some(ud) = crate::paths::user_data_dir() {
++        let _ = std::fs::create_dir_all(&ud);
++        cmd.env("DESKPET_USER_DATA_DIR", ud.to_string_lossy().to_string());
++    }
++
++    // P4-S21 #8: suppress the orphan console window on Windows.
++    //
++    // PyInstaller spec keeps `console=True` so the bundled exe is a
+     // console-subsystem program (needed because Rust still reads
+     // SHARED_SECRET from stdout and stdout/stderr are piped to us).
+     // When Windows spawns a console-subsystem child without an explicit
+
+codex
+真实 cargo 退出码为 0，build 通过；仅有既存的 `resolve_with` unused warning。现在跑完整 `cargo test --lib`，同样以 cargo 真实退出码判断。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$log = Join-Path $env:TEMP '"'deskpet-cargo-test-lib.log'; cargo test --lib *> "'$log; $code = $LASTEXITCODE; Get-Content $log -Tail 40; exit $code' in G:\projects\deskpet\tauri-app\src-tauri
+ succeeded in 3010ms:
+test paths::tests::user_data_dir_prefers_dir_suffix_env ... ok
+test paths::tests::user_log_dir_independent_env_override ... ok
+test paths::tests::user_models_dir_defaults_to_local_app_data ... ok
+test paths::tests::user_models_dir_env_override ... ok
+test device::tests::first_call_generates_and_persists ... ok
+test paths::tests::user_data_dir_falls_back_to_legacy_env ... ok
+test process_manager::tests::startup_error_round_trip ... ok
+test device::tests::second_call_returns_persisted_id ... ok
+test secrets::tests::relay_service_constant_is_stable ... ok
+test process_manager::tests::port_precheck_passes_on_free_port ... ok
+test secrets::tests::relay_set_rejects_empty_token ... ok
+test device::tests::corrupt_file_regenerates ... ok
+test process_manager::tests::port_precheck_reports_bound_port ... ok
+test secrets::tests::service_and_username_constants_are_stable ... ok
+test secrets::tests::set_rejects_empty_string ... ok
+test diagnostics::tests::redacted_provider_drops_api_key ... ok
+test secrets::tests::set_rejects_whitespace_only ... ok
+test secrets::tests::relay_slot_constants_are_stable ... ok
+test user_data::tests::accepts_deskpet_dir ... ok
+test user_data::tests::accepts_logs_dir ... ok
+test user_data::tests::accepts_models_dir ... ok
+test device::tests::whitespace_only_file_regenerates ... ok
+test user_data::tests::rejects_shallow_path ... ok
+test device::tests::empty_file_regenerates ... ok
+test user_data::tests::validate_target_path_rejects_empty ... ok
+test user_data::tests::rejects_drive_root ... ok
+test user_data::tests::rejects_appdata_root_itself ... ok
+test user_data::tests::validate_target_path_rejects_shell_metachars ... ok
+test user_data::tests::validate_target_path_accepts_normal_path ... ok
+test user_data::tests::validate_target_path_rejects_drive_root ... ok
+test user_data::tests::validate_target_path_rejects_relative ... ok
+test paths::tests::portable_userdata_dir_creates_install_userdata_for_backend_exe ... ok
+test user_data::tests::dir_size_bytes_sums_all_files ... ok
+test user_data::tests::copy_dir_recursive_handles_nested_tree ... ok
+test diagnostics::tests::copy_recent_keeps_newest_n ... ok
+test job_object::imp::tests::kill_on_close_terminates_child ... ok
+test commands::tests::backend_http_client_bypasses_proxy_for_loopback_backend ... ok
+
+test result: ok. 69 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.08s
+
+
+diff --git a/tauri-app/src-tauri/src/paths.rs b/tauri-app/src-tauri/src/paths.rs
+index 6b9aa486376fb206a844dc3e05c7d43ad9810dfa..2487f2be3b280175016cf4353a645236cbe70cf8
+--- a/tauri-app/src-tauri/src/paths.rs
++++ b/tauri-app/src-tauri/src/paths.rs
+@@ -60,30 +60,39 @@
+ /// Portable-mode userdata dir: when running from a frozen install, data
+ /// lives in `<install>/userdata/` next to the exe (mirrors Python
+ /// `backend/paths.py::_portable_userdata_dir`). Returns None in dev mode
+-/// (current_exe isn't in the install layout) or when no userdata/ exists.
++/// (current_exe isn't in the install layout) or when userdata/ is not writable.
+ ///
+ /// Layout: `<install>/deskpet.exe` + `<install>/userdata/`; the backend
+ /// exe sits at `<install>/backend/deskpet-backend.exe`, so we also check
+ /// one level up when the exe's parent is named "backend".
+-#[cfg(not(test))]
+-fn portable_userdata_dir() -> Option<PathBuf> {
+-    let exe = std::env::current_exe().ok()?;
++fn portable_userdata_dir_from_exe(exe: &Path) -> Option<PathBuf> {
+     let parent = exe.parent()?;
+-    let mut anchors: Vec<PathBuf> = vec![parent.to_path_buf()];
+-    if parent.file_name().and_then(|s| s.to_str()) == Some("backend") {
+-        if let Some(up) = parent.parent() {
+-            anchors.insert(0, up.to_path_buf());
+-        }
+-    }
+-    for anchor in anchors {
+-        let ud = anchor.join("userdata");
+-        if ud.is_dir() {
++    let root = if parent
++        .file_name()
++        .map(|n| n.to_string_lossy().eq_ignore_ascii_case("backend"))
++        .unwrap_or(false)
++    {
++        parent.parent()?.to_path_buf()
++    } else {
++        parent.to_path_buf()
++    };
++    let ud = root.join("userdata");
++    if std::fs::create_dir_all(&ud).is_ok() {
++        let probe = ud.join(".deskpet-write-probe");
++        if std::fs::write(&probe, b"").is_ok() {
++            let _ = std::fs::remove_file(&probe);
+             return Some(ud);
+         }
+     }
+     None
+ }
+ 
++#[cfg(not(test))]
++fn portable_userdata_dir() -> Option<PathBuf> {
++    let exe = std::env::current_exe().ok()?;
++    portable_userdata_dir_from_exe(&exe)
++}
++
+ #[cfg(test)]
+ fn portable_userdata_dir() -> Option<PathBuf> {
+     // 测试下不探测真实 current_exe(避免 test runner 旁碰巧的 userdata 干扰
+@@ -208,6 +217,24 @@
+     }
+ 
+     #[test]
++    fn portable_userdata_dir_creates_install_userdata_for_backend_exe() {
++        let root = std::env::temp_dir().join(format!(
++            "deskpet-portable-test-{}",
++            std::process::id()
++        ));
++        let backend_dir = root.join("backend");
++        std::fs::create_dir_all(&backend_dir).unwrap();
++        let exe = backend_dir.join("deskpet-backend.exe");
++
++        let out = portable_userdata_dir_from_exe(&exe).unwrap();
++
++        assert_eq!(out, root.join("userdata"));
++        assert!(out.is_dir());
++
++        let _ = std::fs::remove_dir_all(root);
++    }
++
++    #[test]
+     fn user_data_dir_falls_back_to_legacy_env() {
+         // 只设旧 DESKPET_USER_DATA 时仍兼容(不破坏老用户)。
+         let env = env_map(&[("DESKPET_USER_DATA", "E:/old/deskpet")]);
+diff --git a/tauri-app/src-tauri/src/process_manager.rs b/tauri-app/src-tauri/src/process_manager.rs
+index 7b6bba54ccca8d5895c3344bd41442eb99300454..01fc6179dc6690ba0f199e7cb5a734779948788e
+--- a/tauri-app/src-tauri/src/process_manager.rs
++++ b/tauri-app/src-tauri/src/process_manager.rs
+@@ -174,12 +174,19 @@
+         // （GBK/CP936）会对中文日志抛 OSError[Errno 22]，backend 立刻崩在
+         // lifespan 的 "preloading models..." 行。手动钉死 UTF-8 + 无缓冲，
+         // 这样 SHARED_SECRET 也能被及时读到。
+-        .env("PYTHONIOENCODING", "utf-8")
+-        .env("PYTHONUNBUFFERED", "1");
+-
+-    // P4-S21 #8: suppress the orphan console window on Windows.
+-    //
+-    // PyInstaller spec keeps `console=True` so the bundled exe is a
++        .env("PYTHONIOENCODING", "utf-8")
++        .env("PYTHONUNBUFFERED", "1");
++
++    // 路径单一事实源：把 Rust 解析出的 userdata 钉给 backend，
++    // 防 Rust/Python 双解析漂移（config.toml/state.db 落不同目录的根因）。
++    if let Some(ud) = crate::paths::user_data_dir() {
++        let _ = std::fs::create_dir_all(&ud);
++        cmd.env("DESKPET_USER_DATA_DIR", ud.to_string_lossy().to_string());
++    }
++
++    // P4-S21 #8: suppress the orphan console window on Windows.
++    //
++    // PyInstaller spec keeps `console=True` so the bundled exe is a
+     // console-subsystem program (needed because Rust still reads
+     // SHARED_SECRET from stdout and stdout/stderr are piped to us).
+     // When Windows spawns a console-subsystem child without an explicit
+
+codex
+完整 lib 测试通过：69 个测试全绿。最后我会做一次 diff 复查和空白检查，确认只改了允许的两个文件。
+  ✓ 读取计划背景与现有 Rust 实现/测试
+  ✓ 先添加能暴露优先级/portable 行为的测试并验证失败
+  ✓ 修改 paths.rs 与 process_manager.rs
+  ✓ 运行 cargo build 与 cargo test --lib 验收
+  → 复查 diff 并汇总结果
+diff --git a/tauri-app/src-tauri/src/paths.rs b/tauri-app/src-tauri/src/paths.rs
+index 6b9aa486376fb206a844dc3e05c7d43ad9810dfa..2487f2be3b280175016cf4353a645236cbe70cf8
+--- a/tauri-app/src-tauri/src/paths.rs
++++ b/tauri-app/src-tauri/src/paths.rs
+@@ -60,30 +60,39 @@
+ /// Portable-mode userdata dir: when running from a frozen install, data
+ /// lives in `<install>/userdata/` next to the exe (mirrors Python
+ /// `backend/paths.py::_portable_userdata_dir`). Returns None in dev mode
+-/// (current_exe isn't in the install layout) or when no userdata/ exists.
++/// (current_exe isn't in the install layout) or when userdata/ is not writable.
+ ///
+ /// Layout: `<install>/deskpet.exe` + `<install>/userdata/`; the backend
+ /// exe sits at `<install>/backend/deskpet-backend.exe`, so we also check
+ /// one level up when the exe's parent is named "backend".
+-#[cfg(not(test))]
+-fn portable_userdata_dir() -> Option<PathBuf> {
+-    let exe = std::env::current_exe().ok()?;
++fn portable_userdata_dir_from_exe(exe: &Path) -> Option<PathBuf> {
+     let parent = exe.parent()?;
+-    let mut anchors: Vec<PathBuf> = vec![parent.to_path_buf()];
+-    if parent.file_name().and_then(|s| s.to_str()) == Some("backend") {
+-        if let Some(up) = parent.parent() {
+-            anchors.insert(0, up.to_path_buf());
+-        }
+-    }
+-    for anchor in anchors {
+-        let ud = anchor.join("userdata");
+-        if ud.is_dir() {
++    let root = if parent
++        .file_name()
++        .map(|n| n.to_string_lossy().eq_ignore_ascii_case("backend"))
++        .unwrap_or(false)
++    {
++        parent.parent()?.to_path_buf()
++    } else {
++        parent.to_path_buf()
++    };
++    let ud = root.join("userdata");
++    if std::fs::create_dir_all(&ud).is_ok() {
++        let probe = ud.join(".deskpet-write-probe");
++        if std::fs::write(&probe, b"").is_ok() {
++            let _ = std::fs::remove_file(&probe);
+             return Some(ud);
+         }
+     }
+     None
+ }
+ 
++#[cfg(not(test))]
++fn portable_userdata_dir() -> Option<PathBuf> {
++    let exe = std::env::current_exe().ok()?;
++    portable_userdata_dir_from_exe(&exe)
++}
++
+ #[cfg(test)]
+ fn portable_userdata_dir() -> Option<PathBuf> {
+     // 测试下不探测真实 current_exe(避免 test runner 旁碰巧的 userdata 干扰
+@@ -208,6 +217,24 @@
+     }
+ 
+     #[test]
++    fn portable_userdata_dir_creates_install_userdata_for_backend_exe() {
++        let root = std::env::temp_dir().join(format!(
++            "deskpet-portable-test-{}",
++            std::process::id()
++        ));
++        let backend_dir = root.join("backend");
++        std::fs::create_dir_all(&backend_dir).unwrap();
++        let exe = backend_dir.join("deskpet-backend.exe");
++
++        let out = portable_userdata_dir_from_exe(&exe).unwrap();
++
++        assert_eq!(out, root.join("userdata"));
++        assert!(out.is_dir());
++
++        let _ = std::fs::remove_dir_all(root);
++    }
++
++    #[test]
+     fn user_data_dir_falls_back_to_legacy_env() {
+         // 只设旧 DESKPET_USER_DATA 时仍兼容(不破坏老用户)。
+         let env = env_map(&[("DESKPET_USER_DATA", "E:/old/deskpet")]);
+diff --git a/tauri-app/src-tauri/src/process_manager.rs b/tauri-app/src-tauri/src/process_manager.rs
+index 7b6bba54ccca8d5895c3344bd41442eb99300454..01fc6179dc6690ba0f199e7cb5a734779948788e
+--- a/tauri-app/src-tauri/src/process_manager.rs
++++ b/tauri-app/src-tauri/src/process_manager.rs
+@@ -174,12 +174,19 @@
+         // （GBK/CP936）会对中文日志抛 OSError[Errno 22]，backend 立刻崩在
+         // lifespan 的 "preloading models..." 行。手动钉死 UTF-8 + 无缓冲，
+         // 这样 SHARED_SECRET 也能被及时读到。
+-        .env("PYTHONIOENCODING", "utf-8")
+-        .env("PYTHONUNBUFFERED", "1");
+-
+-    // P4-S21 #8: suppress the orphan console window on Windows.
+-    //
+-    // PyInstaller spec keeps `console=True` so the bundled exe is a
++        .env("PYTHONIOENCODING", "utf-8")
++        .env("PYTHONUNBUFFERED", "1");
++
++    // 路径单一事实源：把 Rust 解析出的 userdata 钉给 backend，
++    // 防 Rust/Python 双解析漂移（config.toml/state.db 落不同目录的根因）。
++    if let Some(ud) = crate::paths::user_data_dir() {
++        let _ = std::fs::create_dir_all(&ud);
++        cmd.env("DESKPET_USER_DATA_DIR", ud.to_string_lossy().to_string());
++    }
++
++    // P4-S21 #8: suppress the orphan console window on Windows.
++    //
++    // PyInstaller spec keeps `console=True` so the bundled exe is a
+     // console-subsystem program (needed because Rust still reads
+     // SHARED_SECRET from stdout and stdout/stderr are piped to us).
+     // When Windows spawns a console-subsystem child without an explicit
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "git diff -- tauri-app\\src-tauri\\src\\paths.rs tauri-app\\src-tauri\\src\\process_manager.rs" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "git diff --check -- tauri-app\\src-tauri\\src\\paths.rs tauri-app\\src-tauri\\src\\process_manager.rs" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "git status --short -- tauri-app\\src-tauri\\src\\paths.rs tauri-app\\src-tauri\\src\\process_manager.rs" in G:\projects\deskpet
+ succeeded in 194ms:
+diff --git a/tauri-app/src-tauri/src/paths.rs b/tauri-app/src-tauri/src/paths.rs
+index 6b9aa486..2487f2be 100644
+--- a/tauri-app/src-tauri/src/paths.rs
++++ b/tauri-app/src-tauri/src/paths.rs
+@@ -60,30 +60,39 @@ fn resolve_with(
+ /// Portable-mode userdata dir: when running from a frozen install, data
+ /// lives in `<install>/userdata/` next to the exe (mirrors Python
+ /// `backend/paths.py::_portable_userdata_dir`). Returns None in dev mode
+-/// (current_exe isn't in the install layout) or when no userdata/ exists.
++/// (current_exe isn't in the install layout) or when userdata/ is not writable.
+ ///
+ /// Layout: `<install>/deskpet.exe` + `<install>/userdata/`; the backend
+ /// exe sits at `<install>/backend/deskpet-backend.exe`, so we also check
+ /// one level up when the exe's parent is named "backend".
+-#[cfg(not(test))]
+-fn portable_userdata_dir() -> Option<PathBuf> {
+-    let exe = std::env::current_exe().ok()?;
++fn portable_userdata_dir_from_exe(exe: &Path) -> Option<PathBuf> {
+     let parent = exe.parent()?;
+-    let mut anchors: Vec<PathBuf> = vec![parent.to_path_buf()];
+-    if parent.file_name().and_then(|s| s.to_str()) == Some("backend") {
+-        if let Some(up) = parent.parent() {
+-            anchors.insert(0, up.to_path_buf());
+-        }
+-    }
+-    for anchor in anchors {
+-        let ud = anchor.join("userdata");
+-        if ud.is_dir() {
++    let root = if parent
++        .file_name()
++        .map(|n| n.to_string_lossy().eq_ignore_ascii_case("backend"))
++        .unwrap_or(false)
++    {
++        parent.parent()?.to_path_buf()
++    } else {
++        parent.to_path_buf()
++    };
++    let ud = root.join("userdata");
++    if std::fs::create_dir_all(&ud).is_ok() {
++        let probe = ud.join(".deskpet-write-probe");
++        if std::fs::write(&probe, b"").is_ok() {
++            let _ = std::fs::remove_file(&probe);
+             return Some(ud);
+         }
+     }
+     None
+ }
+ 
++#[cfg(not(test))]
++fn portable_userdata_dir() -> Option<PathBuf> {
++    let exe = std::env::current_exe().ok()?;
++    portable_userdata_dir_from_exe(&exe)
++}
++
+ #[cfg(test)]
+ fn portable_userdata_dir() -> Option<PathBuf> {
+     // 测试下不探测真实 current_exe(避免 test runner 旁碰巧的 userdata 干扰
+@@ -207,6 +216,24 @@ mod tests {
+         assert_eq!(out, PathBuf::from("D:/new/userdata"));
+     }
+ 
++    #[test]
++    fn portable_userdata_dir_creates_install_userdata_for_backend_exe() {
++        let root = std::env::temp_dir().join(format!(
++            "deskpet-portable-test-{}",
++            std::process::id()
++        ));
++        let backend_dir = root.join("backend");
++        std::fs::create_dir_all(&backend_dir).unwrap();
++        let exe = backend_dir.join("deskpet-backend.exe");
++
++        let out = portable_userdata_dir_from_exe(&exe).unwrap();
++
++        assert_eq!(out, root.join("userdata"));
++        assert!(out.is_dir());
++
++        let _ = std::fs::remove_dir_all(root);
++    }
++
+     #[test]
+     fn user_data_dir_falls_back_to_legacy_env() {
+         // 只设旧 DESKPET_USER_DATA 时仍兼容(不破坏老用户)。
+diff --git a/tauri-app/src-tauri/src/process_manager.rs b/tauri-app/src-tauri/src/process_manager.rs
+index 7b6bba54..01fc6179 100644
+--- a/tauri-app/src-tauri/src/process_manager.rs
++++ b/tauri-app/src-tauri/src/process_manager.rs
+@@ -177,6 +177,13 @@ fn spawn_once(launch: &BackendLaunch) -> Result<(Child, String), String> {
+         .env("PYTHONIOENCODING", "utf-8")
+         .env("PYTHONUNBUFFERED", "1");
+ 
++    // 路径单一事实源：把 Rust 解析出的 userdata 钉给 backend，
++    // 防 Rust/Python 双解析漂移（config.toml/state.db 落不同目录的根因）。
++    if let Some(ud) = crate::paths::user_data_dir() {
++        let _ = std::fs::create_dir_all(&ud);
++        cmd.env("DESKPET_USER_DATA_DIR", ud.to_string_lossy().to_string());
++    }
++
+     // P4-S21 #8: suppress the orphan console window on Windows.
+     //
+     // PyInstaller spec keeps `console=True` so the bundled exe is a
+warning: in the working copy of 'tauri-app/src-tauri/src/paths.rs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tauri-app/src-tauri/src/process_manager.rs', LF will be replaced by CRLF the next time Git touches it
+
+ succeeded in 221ms:
+warning: in the working copy of 'tauri-app/src-tauri/src/paths.rs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tauri-app/src-tauri/src/process_manager.rs', LF will be replaced by CRLF the next time Git touches it
+
+ succeeded in 169ms:
+ M tauri-app/src-tauri/src/paths.rs
+ M tauri-app/src-tauri/src/process_manager.rs
+
+diff --git a/tauri-app/src-tauri/src/paths.rs b/tauri-app/src-tauri/src/paths.rs
+index 6b9aa486376fb206a844dc3e05c7d43ad9810dfa..2487f2be3b280175016cf4353a645236cbe70cf8
+--- a/tauri-app/src-tauri/src/paths.rs
++++ b/tauri-app/src-tauri/src/paths.rs
+@@ -60,30 +60,39 @@
+ /// Portable-mode userdata dir: when running from a frozen install, data
+ /// lives in `<install>/userdata/` next to the exe (mirrors Python
+ /// `backend/paths.py::_portable_userdata_dir`). Returns None in dev mode
+-/// (current_exe isn't in the install layout) or when no userdata/ exists.
++/// (current_exe isn't in the install layout) or when userdata/ is not writable.
+ ///
+ /// Layout: `<install>/deskpet.exe` + `<install>/userdata/`; the backend
+ /// exe sits at `<install>/backend/deskpet-backend.exe`, so we also check
+ /// one level up when the exe's parent is named "backend".
+-#[cfg(not(test))]
+-fn portable_userdata_dir() -> Option<PathBuf> {
+-    let exe = std::env::current_exe().ok()?;
++fn portable_userdata_dir_from_exe(exe: &Path) -> Option<PathBuf> {
+     let parent = exe.parent()?;
+-    let mut anchors: Vec<PathBuf> = vec![parent.to_path_buf()];
+-    if parent.file_name().and_then(|s| s.to_str()) == Some("backend") {
+-        if let Some(up) = parent.parent() {
+-            anchors.insert(0, up.to_path_buf());
+-        }
+-    }
+-    for anchor in anchors {
+-        let ud = anchor.join("userdata");
+-        if ud.is_dir() {
++    let root = if parent
++        .file_name()
++        .map(|n| n.to_string_lossy().eq_ignore_ascii_case("backend"))
++        .unwrap_or(false)
++    {
++        parent.parent()?.to_path_buf()
++    } else {
++        parent.to_path_buf()
++    };
++    let ud = root.join("userdata");
++    if std::fs::create_dir_all(&ud).is_ok() {
++        let probe = ud.join(".deskpet-write-probe");
++        if std::fs::write(&probe, b"").is_ok() {
++            let _ = std::fs::remove_file(&probe);
+             return Some(ud);
+         }
+     }
+     None
+ }
+ 
++#[cfg(not(test))]
++fn portable_userdata_dir() -> Option<PathBuf> {
++    let exe = std::env::current_exe().ok()?;
++    portable_userdata_dir_from_exe(&exe)
++}
++
+ #[cfg(test)]
+ fn portable_userdata_dir() -> Option<PathBuf> {
+     // 测试下不探测真实 current_exe(避免 test runner 旁碰巧的 userdata 干扰
+@@ -208,6 +217,24 @@
+     }
+ 
+     #[test]
++    fn portable_userdata_dir_creates_install_userdata_for_backend_exe() {
++        let root = std::env::temp_dir().join(format!(
++            "deskpet-portable-test-{}",
++            std::process::id()
++        ));
++        let backend_dir = root.join("backend");
++        std::fs::create_dir_all(&backend_dir).unwrap();
++        let exe = backend_dir.join("deskpet-backend.exe");
++
++        let out = portable_userdata_dir_from_exe(&exe).unwrap();
++
++        assert_eq!(out, root.join("userdata"));
++        assert!(out.is_dir());
++
++        let _ = std::fs::remove_dir_all(root);
++    }
++
++    #[test]
+     fn user_data_dir_falls_back_to_legacy_env() {
+         // 只设旧 DESKPET_USER_DATA 时仍兼容(不破坏老用户)。
+         let env = env_map(&[("DESKPET_USER_DATA", "E:/old/deskpet")]);
+diff --git a/tauri-app/src-tauri/src/process_manager.rs b/tauri-app/src-tauri/src/process_manager.rs
+index 7b6bba54ccca8d5895c3344bd41442eb99300454..01fc6179dc6690ba0f199e7cb5a734779948788e
+--- a/tauri-app/src-tauri/src/process_manager.rs
++++ b/tauri-app/src-tauri/src/process_manager.rs
+@@ -174,12 +174,19 @@
+         // （GBK/CP936）会对中文日志抛 OSError[Errno 22]，backend 立刻崩在
+         // lifespan 的 "preloading models..." 行。手动钉死 UTF-8 + 无缓冲，
+         // 这样 SHARED_SECRET 也能被及时读到。
+-        .env("PYTHONIOENCODING", "utf-8")
+-        .env("PYTHONUNBUFFERED", "1");
+-
+-    // P4-S21 #8: suppress the orphan console window on Windows.
+-    //
+-    // PyInstaller spec keeps `console=True` so the bundled exe is a
++        .env("PYTHONIOENCODING", "utf-8")
++        .env("PYTHONUNBUFFERED", "1");
++
++    // 路径单一事实源：把 Rust 解析出的 userdata 钉给 backend，
++    // 防 Rust/Python 双解析漂移（config.toml/state.db 落不同目录的根因）。
++    if let Some(ud) = crate::paths::user_data_dir() {
++        let _ = std::fs::create_dir_all(&ud);
++        cmd.env("DESKPET_USER_DATA_DIR", ud.to_string_lossy().to_string());
++    }
++
++    // P4-S21 #8: suppress the orphan console window on Windows.
++    //
++    // PyInstaller spec keeps `console=True` so the bundled exe is a
+     // console-subsystem program (needed because Rust still reads
+     // SHARED_SECRET from stdout and stdout/stderr are piped to us).
+     // When Windows spawns a console-subsystem child without an explicit
+
+codex
+Diff 复查显示只改了允许的两个文件，`git diff --check` 没有空白错误，只有 Git 的 CRLF 提示。准备汇总改动和验收结果。
+  ✓ 读取计划背景与现有 Rust 实现/测试
+  ✓ 先添加能暴露优先级/portable 行为的测试并验证失败
+  ✓ 修改 paths.rs 与 process_manager.rs
+  ✓ 运行 cargo build 与 cargo test --lib 验收
+  ✓ 复查 diff 并汇总结果
+diff --git a/tauri-app/src-tauri/src/paths.rs b/tauri-app/src-tauri/src/paths.rs
+index 6b9aa486376fb206a844dc3e05c7d43ad9810dfa..2487f2be3b280175016cf4353a645236cbe70cf8
+--- a/tauri-app/src-tauri/src/paths.rs
++++ b/tauri-app/src-tauri/src/paths.rs
+@@ -60,30 +60,39 @@
+ /// Portable-mode userdata dir: when running from a frozen install, data
+ /// lives in `<install>/userdata/` next to the exe (mirrors Python
+ /// `backend/paths.py::_portable_userdata_dir`). Returns None in dev mode
+-/// (current_exe isn't in the install layout) or when no userdata/ exists.
++/// (current_exe isn't in the install layout) or when userdata/ is not writable.
+ ///
+ /// Layout: `<install>/deskpet.exe` + `<install>/userdata/`; the backend
+ /// exe sits at `<install>/backend/deskpet-backend.exe`, so we also check
+ /// one level up when the exe's parent is named "backend".
+-#[cfg(not(test))]
+-fn portable_userdata_dir() -> Option<PathBuf> {
+-    let exe = std::env::current_exe().ok()?;
++fn portable_userdata_dir_from_exe(exe: &Path) -> Option<PathBuf> {
+     let parent = exe.parent()?;
+-    let mut anchors: Vec<PathBuf> = vec![parent.to_path_buf()];
+-    if parent.file_name().and_then(|s| s.to_str()) == Some("backend") {
+-        if let Some(up) = parent.parent() {
+-            anchors.insert(0, up.to_path_buf());
+-        }
+-    }
+-    for anchor in anchors {
+-        let ud = anchor.join("userdata");
+-        if ud.is_dir() {
++    let root = if parent
++        .file_name()
++        .map(|n| n.to_string_lossy().eq_ignore_ascii_case("backend"))
++        .unwrap_or(false)
++    {
++        parent.parent()?.to_path_buf()
++    } else {
++        parent.to_path_buf()
++    };
++    let ud = root.join("userdata");
++    if std::fs::create_dir_all(&ud).is_ok() {
++        let probe = ud.join(".deskpet-write-probe");
++        if std::fs::write(&probe, b"").is_ok() {
++            let _ = std::fs::remove_file(&probe);
+             return Some(ud);
+         }
+     }
+     None
+ }
+ 
++#[cfg(not(test))]
++fn portable_userdata_dir() -> Option<PathBuf> {
++    let exe = std::env::current_exe().ok()?;
++    portable_userdata_dir_from_exe(&exe)
++}
++
+ #[cfg(test)]
+ fn portable_userdata_dir() -> Option<PathBuf> {
+     // 测试下不探测真实 current_exe(避免 test runner 旁碰巧的 userdata 干扰
+@@ -208,6 +217,24 @@
+     }
+ 
+     #[test]
++    fn portable_userdata_dir_creates_install_userdata_for_backend_exe() {
++        let root = std::env::temp_dir().join(format!(
++            "deskpet-portable-test-{}",
++            std::process::id()
++        ));
++        let backend_dir = root.join("backend");
++        std::fs::create_dir_all(&backend_dir).unwrap();
++        let exe = backend_dir.join("deskpet-backend.exe");
++
++        let out = portable_userdata_dir_from_exe(&exe).unwrap();
++
++        assert_eq!(out, root.join("userdata"));
++        assert!(out.is_dir());
++
++        let _ = std::fs::remove_dir_all(root);
++    }
++
++    #[test]
+     fn user_data_dir_falls_back_to_legacy_env() {
+         // 只设旧 DESKPET_USER_DATA 时仍兼容(不破坏老用户)。
+         let env = env_map(&[("DESKPET_USER_DATA", "E:/old/deskpet")]);
+diff --git a/tauri-app/src-tauri/src/process_manager.rs b/tauri-app/src-tauri/src/process_manager.rs
+index 7b6bba54ccca8d5895c3344bd41442eb99300454..01fc6179dc6690ba0f199e7cb5a734779948788e
+--- a/tauri-app/src-tauri/src/process_manager.rs
++++ b/tauri-app/src-tauri/src/process_manager.rs
+@@ -174,12 +174,19 @@
+         // （GBK/CP936）会对中文日志抛 OSError[Errno 22]，backend 立刻崩在
+         // lifespan 的 "preloading models..." 行。手动钉死 UTF-8 + 无缓冲，
+         // 这样 SHARED_SECRET 也能被及时读到。
+-        .env("PYTHONIOENCODING", "utf-8")
+-        .env("PYTHONUNBUFFERED", "1");
+-
+-    // P4-S21 #8: suppress the orphan console window on Windows.
+-    //
+-    // PyInstaller spec keeps `console=True` so the bundled exe is a
++        .env("PYTHONIOENCODING", "utf-8")
++        .env("PYTHONUNBUFFERED", "1");
++
++    // 路径单一事实源：把 Rust 解析出的 userdata 钉给 backend，
++    // 防 Rust/Python 双解析漂移（config.toml/state.db 落不同目录的根因）。
++    if let Some(ud) = crate::paths::user_data_dir() {
++        let _ = std::fs::create_dir_all(&ud);
++        cmd.env("DESKPET_USER_DATA_DIR", ud.to_string_lossy().to_string());
++    }
++
++    // P4-S21 #8: suppress the orphan console window on Windows.
++    //
++    // PyInstaller spec keeps `console=True` so the bundled exe is a
+     // console-subsystem program (needed because Rust still reads
+     // SHARED_SECRET from stdout and stdout/stderr are piped to us).
+     // When Windows spawns a console-subsystem child without an explicit
+
+codex
+已完成，未提交 git commit。
+
+改动摘要：
+- [paths.rs](G:/projects/deskpet/tauri-app/src-tauri/src/paths.rs)：新增 `portable_userdata_dir_from_exe`，portable userdata 现在会 `create_dir_all` 后用 `.deskpet-write-probe` 探针验证可写，再返回 `<install>/userdata`；`#[cfg(test)] portable_userdata_dir() -> None` 保持不变。
+- [process_manager.rs](G:/projects/deskpet/tauri-app/src-tauri/src/process_manager.rs)：`spawn_once` 启动 backend 前注入 `DESKPET_USER_DATA_DIR`，值来自 `crate::paths::user_data_dir()`。
+- 新增单测：验证 backend exe 位于 `<install>/backend/` 时，会创建并返回 `<install>/userdata`。
+
+验证结果：
+- TDD 红灯：新增测试先因缺少 `portable_userdata_dir_from_exe` 编译失败。
+- 定向测试：`cargo test portable_userdata_dir_creates_install_userdata_for_backend_exe --lib` 通过。
+- `cargo build`：cargo 真实退出码 `0`，成功；仅有既存 `resolve_with` unused warning。
+- `cargo test --lib`：通过，`69 passed; 0 failed`。
+- `git diff --check`：无空白错误；仅 Git CRLF 提示。
+diff --git a/tauri-app/src-tauri/src/paths.rs b/tauri-app/src-tauri/src/paths.rs
+index 6b9aa486376fb206a844dc3e05c7d43ad9810dfa..2487f2be3b280175016cf4353a645236cbe70cf8
+--- a/tauri-app/src-tauri/src/paths.rs
++++ b/tauri-app/src-tauri/src/paths.rs
+@@ -60,30 +60,39 @@
+ /// Portable-mode userdata dir: when running from a frozen install, data
+ /// lives in `<install>/userdata/` next to the exe (mirrors Python
+ /// `backend/paths.py::_portable_userdata_dir`). Returns None in dev mode
+-/// (current_exe isn't in the install layout) or when no userdata/ exists.
++/// (current_exe isn't in the install layout) or when userdata/ is not writable.
+ ///
+ /// Layout: `<install>/deskpet.exe` + `<install>/userdata/`; the backend
+ /// exe sits at `<install>/backend/deskpet-backend.exe`, so we also check
+ /// one level up when the exe's parent is named "backend".
+-#[cfg(not(test))]
+-fn portable_userdata_dir() -> Option<PathBuf> {
+-    let exe = std::env::current_exe().ok()?;
++fn portable_userdata_dir_from_exe(exe: &Path) -> Option<PathBuf> {
+     let parent = exe.parent()?;
+-    let mut anchors: Vec<PathBuf> = vec![parent.to_path_buf()];
+-    if parent.file_name().and_then(|s| s.to_str()) == Some("backend") {
+-        if let Some(up) = parent.parent() {
+-            anchors.insert(0, up.to_path_buf());
+-        }
+-    }
+-    for anchor in anchors {
+-        let ud = anchor.join("userdata");
+-        if ud.is_dir() {
++    let root = if parent
++        .file_name()
++        .map(|n| n.to_string_lossy().eq_ignore_ascii_case("backend"))
++        .unwrap_or(false)
++    {
++        parent.parent()?.to_path_buf()
++    } else {
++        parent.to_path_buf()
++    };
++    let ud = root.join("userdata");
++    if std::fs::create_dir_all(&ud).is_ok() {
++        let probe = ud.join(".deskpet-write-probe");
++        if std::fs::write(&probe, b"").is_ok() {
++            let _ = std::fs::remove_file(&probe);
+             return Some(ud);
+         }
+     }
+     None
+ }
+ 
++#[cfg(not(test))]
++fn portable_userdata_dir() -> Option<PathBuf> {
++    let exe = std::env::current_exe().ok()?;
++    portable_userdata_dir_from_exe(&exe)
++}
++
+ #[cfg(test)]
+ fn portable_userdata_dir() -> Option<PathBuf> {
+     // 测试下不探测真实 current_exe(避免 test runner 旁碰巧的 userdata 干扰
+@@ -208,6 +217,24 @@
+     }
+ 
+     #[test]
++    fn portable_userdata_dir_creates_install_userdata_for_backend_exe() {
++        let root = std::env::temp_dir().join(format!(
++            "deskpet-portable-test-{}",
++            std::process::id()
++        ));
++        let backend_dir = root.join("backend");
++        std::fs::create_dir_all(&backend_dir).unwrap();
++        let exe = backend_dir.join("deskpet-backend.exe");
++
++        let out = portable_userdata_dir_from_exe(&exe).unwrap();
++
++        assert_eq!(out, root.join("userdata"));
++        assert!(out.is_dir());
++
++        let _ = std::fs::remove_dir_all(root);
++    }
++
++    #[test]
+     fn user_data_dir_falls_back_to_legacy_env() {
+         // 只设旧 DESKPET_USER_DATA 时仍兼容(不破坏老用户)。
+         let env = env_map(&[("DESKPET_USER_DATA", "E:/old/deskpet")]);
+diff --git a/tauri-app/src-tauri/src/process_manager.rs b/tauri-app/src-tauri/src/process_manager.rs
+index 7b6bba54ccca8d5895c3344bd41442eb99300454..01fc6179dc6690ba0f199e7cb5a734779948788e
+--- a/tauri-app/src-tauri/src/process_manager.rs
++++ b/tauri-app/src-tauri/src/process_manager.rs
+@@ -174,12 +174,19 @@
+         // （GBK/CP936）会对中文日志抛 OSError[Errno 22]，backend 立刻崩在
+         // lifespan 的 "preloading models..." 行。手动钉死 UTF-8 + 无缓冲，
+         // 这样 SHARED_SECRET 也能被及时读到。
+-        .env("PYTHONIOENCODING", "utf-8")
+-        .env("PYTHONUNBUFFERED", "1");
+-
+-    // P4-S21 #8: suppress the orphan console window on Windows.
+-    //
+-    // PyInstaller spec keeps `console=True` so the bundled exe is a
++        .env("PYTHONIOENCODING", "utf-8")
++        .env("PYTHONUNBUFFERED", "1");
++
++    // 路径单一事实源：把 Rust 解析出的 userdata 钉给 backend，
++    // 防 Rust/Python 双解析漂移（config.toml/state.db 落不同目录的根因）。
++    if let Some(ud) = crate::paths::user_data_dir() {
++        let _ = std::fs::create_dir_all(&ud);
++        cmd.env("DESKPET_USER_DATA_DIR", ud.to_string_lossy().to_string());
++    }
++
++    // P4-S21 #8: suppress the orphan console window on Windows.
++    //
++    // PyInstaller spec keeps `console=True` so the bundled exe is a
+     // console-subsystem program (needed because Rust still reads
+     // SHARED_SECRET from stdout and stdout/stderr are piped to us).
+     // When Windows spawns a console-subsystem child without an explicit
+
+2026-06-27T18:39:17.737541Z ERROR codex_core::session: failed to record rollout items: thread 019f0a5e-6f94-7242-a165-ffdd89b0b2c1 not found
+tokens used
+83,666
+已完成，未提交 git commit。
+
+改动摘要：
+- [paths.rs](G:/projects/deskpet/tauri-app/src-tauri/src/paths.rs)：新增 `portable_userdata_dir_from_exe`，portable userdata 现在会 `create_dir_all` 后用 `.deskpet-write-probe` 探针验证可写，再返回 `<install>/userdata`；`#[cfg(test)] portable_userdata_dir() -> None` 保持不变。
+- [process_manager.rs](G:/projects/deskpet/tauri-app/src-tauri/src/process_manager.rs)：`spawn_once` 启动 backend 前注入 `DESKPET_USER_DATA_DIR`，值来自 `crate::paths::user_data_dir()`。
+- 新增单测：验证 backend exe 位于 `<install>/backend/` 时，会创建并返回 `<install>/userdata`。
+
+验证结果：
+- TDD 红灯：新增测试先因缺少 `portable_userdata_dir_from_exe` 编译失败。
+- 定向测试：`cargo test portable_userdata_dir_creates_install_userdata_for_backend_exe --lib` 通过。
+- `cargo build`：cargo 真实退出码 `0`，成功；仅有既存 `resolve_with` unused warning。
+- `cargo test --lib`：通过，`69 passed; 0 failed`。
+- `git diff --check`：无空白错误；仅 Git CRLF 提示。

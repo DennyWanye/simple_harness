@@ -36,6 +36,8 @@ from llm.types import ChatChunk, ChatResponse, ChatUsage, ToolCall
 
 logger = logging.getLogger("deskpet.llm.openai")
 
+_PLACEHOLDER_KEYS = {"", "ollama", "from-keychain", "from-env", "your-key-here"}
+
 
 class OpenAIAdapter(BaseLLMAdapter):
     """Adapter over the openai SDK (>=1.40)."""
@@ -64,9 +66,25 @@ class OpenAIAdapter(BaseLLMAdapter):
     def available(self) -> bool:
         return bool(self._api_key)
 
+    def _is_local_base_url(self) -> bool:
+        base_url = (self.base_url or "").lower()
+        return (
+            "localhost" in base_url
+            or "127.0.0.1" in base_url
+            or "0.0.0.0" in base_url
+        )
+
+    def _ensure_api_key_usable(self) -> None:
+        if (self._api_key or "").strip().lower() in _PLACEHOLDER_KEYS:
+            if not self._is_local_base_url():
+                from llm.provider_registry import EmptyApiKeyError
+
+                raise EmptyApiKeyError(getattr(self, "_provider_id", "local"))
+
     def _get_client(self) -> Any:
         if self._client is not None:
             return self._client
+        self._ensure_api_key_usable()
         if not self._api_key:
             raise LLMAuthError("OPENAI_API_KEY not set", provider=self.name)
         try:
@@ -213,6 +231,7 @@ class OpenAIAdapter(BaseLLMAdapter):
         stream: bool = False,
         **kwargs: Any,
     ) -> Union[ChatResponse, AsyncIterator[ChatChunk]]:
+        self._ensure_api_key_usable()
         client = self._get_client()
         use_model = model or self.default_model
 

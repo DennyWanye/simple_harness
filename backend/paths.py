@@ -48,6 +48,9 @@ import platformdirs
 _APP_NAME = "deskpet"
 _APP_AUTHOR: str | bool = False
 logger = logging.getLogger(__name__)
+_UNSET = object()
+_PORTABLE_CACHE: Path | None | object = _UNSET
+
 
 def _install_dir() -> Path | None:
     """Return the directory containing the frozen exe, or None in dev mode."""
@@ -73,48 +76,59 @@ def _portable_userdata_dir() -> Path | None:
                 logs/
                 skills/
 
-    The backend exe's ``Path.parent`` is `<install>/backend/`; we walk
-    upward to find a sibling ``userdata/`` directory (or its parent
-    that *should* contain one). We don't gate on a sentinel file —
-    DeskPet has no legacy users to preserve `%AppData%` state for, so
-    "frozen ⇒ portable" is the simpler invariant.
+    The backend exe's ``Path.parent`` is `<install>/backend/`; that
+    layout binds only to `<install>/userdata/`. Standalone frozen
+    builds bind only to `<exe_dir>/userdata/`. Once the portable
+    sentinel exists, it pins the install-local directory.
 
     The MSI installer's component manifest does NOT list any files
     under ``userdata/``, so MSI uninstall leaves the entire userdata
     tree (state.db, config.toml, models/, skills/) untouched. That's
     how "uninstall doesn't lose my chat history" works.
     """
+    global _PORTABLE_CACHE
+    if _PORTABLE_CACHE is not _UNSET:
+        return _PORTABLE_CACHE if isinstance(_PORTABLE_CACHE, Path) else None
+
     base = _install_dir()
     if base is None:
+        _PORTABLE_CACHE = None
         return None
-    # Pick the "install root" deterministically based on the exe's
-    # parent dir name:
-    #   exe parent named "backend" → Tauri layout, root is 1 level up
-    #   anything else              → standalone, exe parent IS the root
-    # Defensive: if the chosen root isn't writable (e.g. Program Files
-    # without admin), walk one more level up before giving up.
-    if base.name.lower() == "backend":
-        candidates_up = (1, 2, 0)
-    else:
-        candidates_up = (0, 1, 2)
-    for steps_up in candidates_up:
-        anchor = base
-        for _ in range(steps_up):
-            anchor = anchor.parent
-        candidate = anchor / "userdata"
-        try:
-            candidate.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            continue
-        # Prove the dir is writable: probe-write then delete.
-        probe = candidate / ".deskpet-write-probe"
-        try:
-            probe.write_bytes(b"")
-            probe.unlink()
-        except OSError:
-            continue
+    # Deterministic binding: backend exe -> install root, standalone exe
+    # -> exe dir. Never walk up to drive-root neighbor userdata folders.
+    root = base.parent if base.name.lower() == "backend" else base
+    candidate = root / "userdata"
+    sentinel = candidate / ".deskpet-portable"
+    if sentinel.exists():
+        _PORTABLE_CACHE = candidate
         return candidate
-    return None
+
+    try:
+        candidate.mkdir(parents=True, exist_ok=True)
+        probe = candidate / ".deskpet-write-probe"
+        probe.write_bytes(b"")
+        probe.unlink()
+    except OSError as e:
+        logger.error(
+            "portable_userdata_unwritable dir=%s err=%s — falling back to AppData",
+            candidate,
+            e,
+        )
+        _PORTABLE_CACHE = None
+        return None
+
+    try:
+        sentinel.touch(exist_ok=True)
+    except OSError:
+        pass
+    _PORTABLE_CACHE = candidate
+    return candidate
+
+
+def reset_path_cache() -> None:
+    """Tests call this to clear memoized portable resolution."""
+    global _PORTABLE_CACHE
+    _PORTABLE_CACHE = _UNSET
 
 
 def is_portable_mode() -> bool:

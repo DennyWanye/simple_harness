@@ -12,6 +12,8 @@ from pathlib import Path
 from dataclasses import dataclass, field, fields as dc_fields
 from typing import Optional
 
+import platformdirs
+
 import paths as _paths
 
 logger = logging.getLogger(__name__)
@@ -1014,6 +1016,125 @@ def seed_user_config_if_missing() -> Path | None:
         return None
 
 
+def _recover_orphaned_endpoints(canonical_path: Path) -> bool:
+    """Recover enabled provider endpoints from historical userdata locations.
+
+    This is a startup self-heal for installs affected by earlier userdata path
+    drift. It never raises: a recovery failure must not block backend startup.
+    """
+    try:
+        import copy
+
+        import tomlkit
+    except Exception as e:  # pragma: no cover - import guard
+        logger.warning("endpoints_recover_failed: %s", e)
+        return False
+
+    def _endpoints(raw: object) -> list[dict]:
+        if not isinstance(raw, dict):
+            return []
+        llm = raw.get("llm") or {}
+        if not isinstance(llm, dict):
+            return []
+        endpoints = llm.get("endpoints") or []
+        if not isinstance(endpoints, list):
+            return []
+        return [ep for ep in endpoints if isinstance(ep, dict)]
+
+    def _enabled_endpoints(raw: object) -> list[dict]:
+        return [ep for ep in _endpoints(raw) if ep.get("enabled") is not False]
+
+    def _same_path(a: Path, b: Path) -> bool:
+        try:
+            return a.resolve(strict=False) == b.resolve(strict=False)
+        except OSError:
+            return a.absolute() == b.absolute()
+
+    try:
+        with open(canonical_path, "rb") as f:
+            canonical_raw = tomli.load(f)
+        if _enabled_endpoints(canonical_raw):
+            return False
+
+        candidates: list[Path] = [
+            Path(
+                platformdirs.user_data_dir(
+                    "deskpet",
+                    appauthor=False,
+                    roaming=True,
+                )
+            )
+            / "config.toml"
+        ]
+
+        if getattr(sys, "frozen", False):
+            exe_parent = Path(sys.executable).parent
+            install_root = (
+                exe_parent.parent
+                if exe_parent.name.lower() == "backend"
+                else exe_parent
+            )
+            candidates.extend(
+                [
+                    install_root / "userdata" / "config.toml",
+                    install_root / "backend" / "userdata" / "config.toml",
+                ]
+            )
+            if install_root.anchor:
+                candidates.append(
+                    Path(install_root.anchor) / "userdata" / "config.toml"
+                )
+
+        seen: set[Path] = set()
+        sources: list[Path] = []
+        for candidate in candidates:
+            resolved = candidate.resolve(strict=False)
+            if resolved in seen or _same_path(candidate, canonical_path):
+                continue
+            seen.add(resolved)
+            if candidate.is_file():
+                sources.append(candidate)
+
+        source_path: Path | None = None
+        enabled_count = 0
+        for candidate in sources:
+            with open(candidate, "rb") as f:
+                source_raw = tomli.load(f)
+            enabled = _enabled_endpoints(source_raw)
+            if enabled:
+                source_path = candidate
+                enabled_count = len(enabled)
+                break
+
+        if source_path is None:
+            return False
+
+        user_doc = tomlkit.parse(canonical_path.read_text(encoding="utf-8"))
+        source_doc = tomlkit.parse(source_path.read_text(encoding="utf-8"))
+        source_llm = source_doc.get("llm")
+        if not _is_toml_table(source_llm) or "endpoints" not in source_llm:
+            return False
+
+        user_llm = user_doc.get("llm")
+        if not _is_toml_table(user_llm):
+            user_llm = tomlkit.table()
+            user_doc["llm"] = user_llm
+        user_llm["endpoints"] = copy.deepcopy(source_llm["endpoints"])
+
+        bak = canonical_path.with_suffix(".pre-recover-bak")
+        shutil.copyfile(canonical_path, bak)
+        canonical_path.write_text(tomlkit.dumps(user_doc), encoding="utf-8")
+        logger.info(
+            "endpoints_recovered_from src=%s count=%d",
+            source_path,
+            enabled_count,
+        )
+        return True
+    except Exception as e:
+        logger.warning("endpoints_recover_failed: %s", e)
+        return False
+
+
 def get_subagent_concurrency(cfg: "AppConfig") -> tuple[int, dict[str, int]]:
     """子代理并发驱动：从 ``cfg.raw['agent']['concurrency']`` 读全局/各 lane cap。
 
@@ -1068,6 +1189,10 @@ def resolve_config_path() -> Path:
     # Try (or create) the user-data copy.
     seeded = seed_user_config_if_missing()
     if seeded is not None and seeded.is_file():
+        try:
+            _recover_orphaned_endpoints(seeded)
+        except Exception as e:  # noqa: BLE001 - self-heal must not block startup
+            logger.warning("endpoints_recover_unexpected: %s", e)
         return seeded
 
     # Fall through: bundle default.

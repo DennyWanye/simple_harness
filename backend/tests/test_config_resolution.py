@@ -115,6 +115,170 @@ def test_load_config_empty_db_path_maps_to_user_data(isolated_dirs, tmp_path):
     assert loaded.billing.db_path == user_data / "data" / "billing.db"
 
 
+# ---- orphaned LLM endpoint recovery ---------------------------------
+
+def _write_config(path: Path, body: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+
+
+def test_recover_merges_enabled_endpoints_from_appdata(tmp_path, monkeypatch, caplog):
+    canonical = tmp_path / "portable" / "config.toml"
+    _write_config(
+        canonical,
+        "# keep me\n[memory]\ndb_path = \"./data/memory.db\"\n",
+    )
+    appdata = tmp_path / "appdata" / "deskpet"
+    _write_config(
+        appdata / "config.toml",
+        """
+[[llm.endpoints]]
+id = "relay-cloud"
+kind = "openai_compatible"
+base_url = "https://relay.example/v1"
+model = "gpt-5.5"
+api_key_ref = "keyring:deskpet:relay-cloud"
+enabled = true
+""".lstrip(),
+    )
+    monkeypatch.setattr(
+        config_module.platformdirs,
+        "user_data_dir",
+        lambda *args, **kwargs: str(appdata),
+    )
+
+    with caplog.at_level("INFO", logger=config_module.logger.name):
+        changed = config_module._recover_orphaned_endpoints(canonical)
+
+    assert changed is True
+    recovered = canonical.read_text(encoding="utf-8")
+    assert "[memory]\ndb_path = \"./data/memory.db\"" in recovered
+    assert 'id = "relay-cloud"' in recovered
+    assert 'enabled = true' in recovered
+    assert canonical.with_suffix(".pre-recover-bak").is_file()
+    assert "endpoints_recovered_from" in caplog.text
+
+
+def test_recover_noop_when_canonical_healthy(tmp_path, monkeypatch):
+    canonical = tmp_path / "portable" / "config.toml"
+    _write_config(
+        canonical,
+        """
+[[llm.endpoints]]
+id = "existing"
+enabled = true
+""".lstrip(),
+    )
+    original = canonical.read_text(encoding="utf-8")
+    appdata = tmp_path / "appdata" / "deskpet"
+    _write_config(
+        appdata / "config.toml",
+        """
+[[llm.endpoints]]
+id = "relay-cloud"
+enabled = true
+""".lstrip(),
+    )
+    monkeypatch.setattr(
+        config_module.platformdirs,
+        "user_data_dir",
+        lambda *args, **kwargs: str(appdata),
+    )
+
+    assert config_module._recover_orphaned_endpoints(canonical) is False
+    assert canonical.read_text(encoding="utf-8") == original
+    assert not canonical.with_suffix(".pre-recover-bak").exists()
+
+
+def test_recover_idempotent(tmp_path, monkeypatch):
+    canonical = tmp_path / "portable" / "config.toml"
+    _write_config(canonical, "[memory]\ndb_path = \"\"\n")
+    appdata = tmp_path / "appdata" / "deskpet"
+    _write_config(
+        appdata / "config.toml",
+        """
+[[llm.endpoints]]
+id = "relay-cloud"
+enabled = true
+""".lstrip(),
+    )
+    monkeypatch.setattr(
+        config_module.platformdirs,
+        "user_data_dir",
+        lambda *args, **kwargs: str(appdata),
+    )
+
+    assert config_module._recover_orphaned_endpoints(canonical) is True
+    first = canonical.read_text(encoding="utf-8")
+    assert config_module._recover_orphaned_endpoints(canonical) is False
+    assert canonical.read_text(encoding="utf-8") == first
+
+
+def test_recover_ignores_all_disabled_source(tmp_path, monkeypatch):
+    canonical = tmp_path / "portable" / "config.toml"
+    _write_config(canonical, "[memory]\ndb_path = \"\"\n")
+    appdata = tmp_path / "appdata" / "deskpet"
+    _write_config(
+        appdata / "config.toml",
+        """
+[[llm.endpoints]]
+id = "relay-cloud"
+enabled = false
+""".lstrip(),
+    )
+    monkeypatch.setattr(
+        config_module.platformdirs,
+        "user_data_dir",
+        lambda *args, **kwargs: str(appdata),
+    )
+
+    assert config_module._recover_orphaned_endpoints(canonical) is False
+    assert not canonical.with_suffix(".pre-recover-bak").exists()
+    assert 'id = "relay-cloud"' not in canonical.read_text(encoding="utf-8")
+
+
+def test_recover_never_raises_on_garbage(tmp_path, monkeypatch):
+    canonical = tmp_path / "portable" / "config.toml"
+    _write_config(canonical, "[memory]\ndb_path = \"\"\n")
+    appdata = tmp_path / "appdata" / "deskpet"
+    _write_config(appdata / "config.toml", "[[llm.endpoints]\nnot toml")
+    monkeypatch.setattr(
+        config_module.platformdirs,
+        "user_data_dir",
+        lambda *args, **kwargs: str(appdata),
+    )
+
+    assert config_module._recover_orphaned_endpoints(canonical) is False
+
+
+def test_recover_preserves_other_sections_verbatim(tmp_path, monkeypatch):
+    canonical = tmp_path / "portable" / "config.toml"
+    memory_section = (
+        "# memory comment\n"
+        "[memory]\n"
+        "# path comment\n"
+        "db_path = \"./data/memory.db\"\n"
+    )
+    _write_config(canonical, memory_section)
+    appdata = tmp_path / "appdata" / "deskpet"
+    _write_config(
+        appdata / "config.toml",
+        """
+[[llm.endpoints]]
+id = "relay-cloud"
+enabled = true
+""".lstrip(),
+    )
+    monkeypatch.setattr(
+        config_module.platformdirs,
+        "user_data_dir",
+        lambda *args, **kwargs: str(appdata),
+    )
+
+    assert config_module._recover_orphaned_endpoints(canonical) is True
+    assert memory_section in canonical.read_text(encoding="utf-8")
+
+
 def test_load_config_missing_memory_section_still_resolves(isolated_dirs, tmp_path):
     _tmp, user_data = isolated_dirs
     cfg = tmp_path / "cfg.toml"

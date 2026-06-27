@@ -1,0 +1,1537 @@
+Reading additional input from stdin...
+OpenAI Codex v0.125.0 (research preview)
+--------
+workdir: G:\projects\deskpet
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0a5e-74b8-7d32-83f5-b8aa7e6525fb
+--------
+user
+# 任务 G5 — PyInstaller spec 钉死 keyring frozen 后端（Phase 6）
+
+你是编码 Expert。仓库根：`G:\projects\deskpet`。只改 1 个文件，**不要 git commit**。
+背景见 `G:\projects\deskpet\plans\2026-06-28-userdata-path-binding-fix\00-PLAN.md` §2.5 + §5 Phase 6。
+
+## 问题
+`backend\deskpet-backend.spec` 的 `hiddenimports` 没有显式列 `keyring` 及其 Windows 后端。keyring 的后端走 entry-point 动态加载，PyInstaller 静态分析看不到 → frozen 版**有概率**整个 keyring 失效（`keyring.get_password` 静默返回 None / 抛错），导致 provider api_key 读写不可靠。属定时炸弹，钉死。
+
+## 改 `G:\projects\deskpet\backend\deskpet-backend.spec`
+在 hiddenimports 组装区（约 36-79 行，`hiddenimports += [...]` 那一段）追加：
+```python
+# 2026-06-28: keyring 后端走 entry-point 动态加载，PyInstaller 静态分析
+# 看不到 → frozen 版可能整个 keyring 失效（provider api_key 读写不可靠）。
+# 显式钉死 keyring + Windows 凭据后端及其底层 win32ctypes。
+hiddenimports += collect_submodules("keyring")
+hiddenimports += [
+    "keyring.backends.Windows",
+    "keyring.backends.null",
+    "keyring.backends.fail",
+    "win32ctypes.core",
+    "win32ctypes.pywin32",
+    "win32ctypes.core.cffi",
+    "win32ctypes.core.ctypes",
+]
+```
+注意：
+- `collect_submodules` 已在文件顶部 import，直接用。
+- 用 try/except 容错并非必须，但**若某子模块在当前 venv 不存在会导致 spec 解析报错**，请改成稳健写法：对 `win32ctypes.*` 这种可能缺失的，用
+```python
+import importlib.util as _ilu
+for _m in ["win32ctypes.core", "win32ctypes.pywin32", "keyring.backends.Windows"]:
+    if _ilu.find_spec(_m) is not None:
+        hiddenimports.append(_m)
+```
+确保即使本机缺某依赖，spec 仍能正常被 PyInstaller 加载（不阻塞构建），存在的才加入。`collect_submodules("keyring")` 同样用 try/except 包住，缺失则跳过并 `print("[spec] WARN: keyring not importable, skip")`。
+
+## 验收（自己跑通）
+spec 是 Python 文件，验证它能被正常 exec / 不报语法错误：
+```
+cd G:\projects\deskpet\backend
+.venv\Scripts\python.exe -c "import ast; ast.parse(open('deskpet-backend.spec',encoding='utf-8').read()); print('SPEC_PARSE_OK')"
+.venv\Scripts\python.exe -c "import keyring, keyring.backends.Windows; print('keyring import ok')"
+```
+（不要求真跑 PyInstaller 全量打包——太慢。能 ast.parse + keyring 可 import 即可。）确认 `collect_submodules("keyring")` 在本机能返回非空列表（说明 keyring 已装）。完成后输出改动摘要 + 验证结果。
+codex
+我会按现有 spec 的结构只改 `backend\deskpet-backend.spec`，先读计划相关段落和当前文件，确认插入位置后再补稳健 hiddenimports。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content -Path .\\plans\\2026-06-28-userdata-path-binding-fix\\00-PLAN.md" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command 'git status --short' in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content -Path .\\backend\\deskpet-backend.spec" in G:\projects\deskpet
+ succeeded in 209ms:
+# P3-S4 鈥?PyInstaller spec for the frozen backend.
+#
+# Produces `dist/deskpet-backend/deskpet-backend.exe` + a `_internal/`
+# sidecar directory with all Python bytecode, native DLLs, and the
+# data files listed below. The Rust supervisor (post-P3-S3) picks
+# this up via the `Bundled` branch of `backend_launch::resolve`.
+#
+# Usage (from `backend/`):
+#   .\.venv\Scripts\python.exe -m PyInstaller deskpet-backend.spec --noconfirm --clean
+#
+# Or via the wrapper:
+#   powershell ..\scripts\build_backend.ps1
+
+# ruff: noqa 鈥?PyInstaller injects builtins like `Analysis`, `PYZ`, `EXE`,
+# `COLLECT`, `block_cipher` into this file's scope.
+
+import glob
+import os
+import sysconfig
+
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
+# --- 0. mypyc runtime shims ---------------------------------------------
+# `tomli` (and a few other deps) are compiled with mypyc. Mypyc emits a
+# companion top-level `<hash>__mypyc.cp311-win_amd64.pyd` module alongside
+# the package; both must be importable or `import tomli` raises
+# `ModuleNotFoundError: No module named '<hash>__mypyc'` at startup.
+# Auto-discover them so the hash is never hardcoded (it changes when the
+# upstream wheel is rebuilt).
+_site_packages = sysconfig.get_paths()["purelib"]
+_mypyc_modules = [
+    os.path.basename(p).split(".", 1)[0]
+    for p in glob.glob(os.path.join(_site_packages, "*__mypyc.*.pyd"))
+]
+
+# --- 1. Hidden imports --------------------------------------------------
+# Providers that dlopen / importlib their implementations at runtime
+# won't be discovered by the default import graph. List every top-level
+# package that the frozen exe must be able to `import` lazily.
+hiddenimports: list[str] = []
+hiddenimports += collect_submodules("faster_whisper")
+hiddenimports += collect_submodules("ctranslate2")
+hiddenimports += collect_submodules("silero_vad")
+# 2026-05-30 P0 bug fix #10: deskpet/tools/__init__.py uses pkgutil
+# .iter_modules to dynamically discover + import every tool module
+# (excel_tools, doc_tools, ppt_tools, image_tools, etc). PyInstaller's
+# static analysis can't see these 鈥?without explicit hidden_imports the
+# office tools (excel_create / doc_create / ppt_create) NEVER reach the
+# registry 鈫?LLM tool list lacks them 鈫?B1/B2/B5 (and many others) fail.
+# Discovered via CDP-driven prompt asking LLM to enumerate tools.
+hiddenimports += collect_submodules("deskpet.tools")
+hiddenimports += collect_submodules("deskpet.skills")
+hiddenimports += ["sqlite_vec"]                    # P4-S20: L3 vector recall
+hiddenimports += [
+    "tzdata",                   # zoneinfo needs this on Windows
+    # config.py additive feature-flag backfill writes via tomlkit. It's a
+    # static import inside _merge_missing_feature_flags (lazy, try-guarded),
+    # so static analysis may miss it 鈥?pin it explicitly to be safe.
+    "tomlkit",
+    "prometheus_client",
+    "aiosqlite",
+    # P3-S6+S7: user data / cache / models dir resolution at startup.
+    "platformdirs",
+    # uvicorn auto-loaders
+    "uvicorn.logging",
+    "uvicorn.loops.auto",
+    "uvicorn.loops.asyncio",
+    "uvicorn.protocols.http.auto",
+    "uvicorn.protocols.http.h11_impl",
+    "uvicorn.protocols.websockets.auto",
+    "uvicorn.protocols.websockets.websockets_impl",
+    "uvicorn.lifespan.on",
+    # edge-tts uses aiohttp via optional import chain
+    "edge_tts",
+    # deep-research CDP-Edge JS 娓叉煋鍏滃簳(research_cdp_edge.py)鐩存帴 import websockets
+    # 杩炴湰鍦版棤澶?Edge 鈫?鏄惧紡鍏ュ寘,浣垮喕缁撴寮忓寘涔熻兘鐢?js_render=cdp-edge(Windows)銆?
+    "websockets",
+]
+hiddenimports += _mypyc_modules
+
+# --- 2. Data files ------------------------------------------------------
+# (source, dest-inside-bundle) tuples. Use collect_data_files() for
+# installed packages; hardcode relative paths for our own repo files.
+datas: list[tuple[str, str]] = []
+datas += collect_data_files("silero_vad")          # silero_vad/data/*.jit
+datas += collect_data_files("faster_whisper")      # tokenizer.json
+datas += collect_data_files("tzdata")              # IANA tz db
+datas += collect_data_files("ctranslate2")         # any shipped configs
+datas += collect_data_files("sqlite_vec", includes=["*.dll"])  # vec0.dll for L3 recall
+datas += [
+    # P4-S22 fix: ship the canonical migrations directory under
+    # ``deskpet/memory/migrations`` (where the actual v9/v10/v11 SQL
+    # files live). The legacy ``memory/migrations`` only contains
+    # ``001_initial.sql`` (long stale) 鈥?keep both for back-compat
+    # with any tests that still touch the legacy path.
+    ("memory/migrations", "memory/migrations"),    # legacy path
+    ("deskpet/memory/migrations", "deskpet/memory/migrations"),  # canonical
+    # 2026-05-30 P0 bug fix #7: ship builtin skills directory.
+    # Production install had `skill.reload_ok count=0` because PyInstaller
+    # never bundled `deskpet/skills/builtin/` (it's a data tree, not a
+    # Python module). Result: B1-B10 skill tests all failed 鈥?LLM鐪熼€?
+    # skill_invoke 浣?SkillLoader 鎵句笉鍒?excel-generate / doc-edit / ppt-
+    # generate 绛?鈫?娌℃枃浠剁敓鎴?鈫?fake completion 婕忕綉銆?
+    # Discovered via CDP-driven R3-3 test + backend log skill.reload_ok=0.
+    ("deskpet/skills/builtin", "deskpet/skills/builtin"),
+    # P4-S21 #12: ship the unified-schema config.toml so seed_user_config_if_missing
+    # has a source to seed from / migrate legacy installs against. Without this,
+    # frozen builds with no <exe_dir>/config.toml returned None and the migration
+    # path was a no-op.
+    ("../config.toml", "."),
+]
+
+# --- 2a-bis. busybox-w32 (P5-S2 鈥?2026-05-10) --------------------------
+# Ship the ~700KB busybox.exe so end users without Git for Windows still
+# get a competent unix-like shell for run_shell. run_shell.py picks
+# this up via _bundled_busybox_path() 鈥?checks _MEIPASS first, so the
+# datas entry below is what makes the frozen build self-sufficient.
+#
+# The file is fetched by `scripts/download_busybox.ps1` and committed
+# to the repo at `resources/busybox-w32/busybox.exe`. If that file
+# isn't present at build time, the spec gracefully omits it (the
+# runtime falls back to PowerShell or cmd, which the tier system
+# handles).
+import os as _os  # noqa: PLC0415
+_busybox_src = _os.path.join("..", "resources", "busybox-w32", "busybox.exe")
+if _os.path.isfile(_busybox_src):
+    datas += [(_busybox_src, ".")]
+    print(f"[spec] bundling busybox: {_busybox_src}")
+else:
+    print(
+        f"[spec] WARNING: busybox not found at {_busybox_src} 鈥?"
+        "frozen build will rely on Git Bash / PowerShell / cmd at runtime. "
+        "Run scripts/download_busybox.ps1 to enable bundled fallback."
+    )
+
+# --- 2b. Bundled model weights (P4-S20+ install bundle) -----------------
+# Ship BGE-M3 (vector embedder, ~2.2 GB) and faster-whisper-large-v3-turbo
+# INT8 (ASR, ~1.5 GB) inside the frozen bundle. Lands at
+# `_internal/models/<subdir>/...` and is picked up by paths.resolve_model_dir
+# when the user has not provisioned `%LocalAppData%/deskpet/models/<subdir>/`.
+#
+# Together these add ~3.7 GB to the bundle. NSIS LZMA compression usually
+# halves it, so the final installer is ~2 GB. Acceptable for "download &
+# run, no further setup" UX.
+#
+# Sources are populated by the dev workflow:
+#   - assets/bge-m3-int8/                        (robocopy from %LocalAppData%/deskpet/models/)
+#   - assets/faster-whisper-large-v3-turbo/      (copied from HF cache,
+#                                                 mobiuslabsgmbh INT8 ct2 build)
+# Both directories are gitignored 鈥?see backend/.gitignore.
+# P4-S20 install bundle Plan A (post-NSIS-mmap-failure):
+# We previously bundled BGE-M3 (1.1 GB fp16) + faster-whisper INT8 (1.5 GB)
+# directly into the PyInstaller dist. Tauri NSIS makensis is 32-bit and
+# its cumulative mmap address space caps out around ~3.5 GB; bundling
+# 7.7 GB of resources blows that limit with `Internal compiler error
+# #12345: error mmapping file (...) is out of range`. NSIS amd64-Unicode
+# builds exist as community forks (e.g. negrutiu/nsis) but introduce a
+# trust dependency we'd rather avoid.
+#
+# Plan A: ship a thin (~1.5 GB) bundle, rely on first-run download.
+# `paths.resolve_model_dir` already does multi-source fallback
+# (user_models_dir 鈫?_MEIPASS/models 鈫?backend/assets), so:
+#  - Frozen bundle: models NOT bundled 鈫?first-run code (or user-run
+#    download script) populates `%LocalAppData%/deskpet/models/`.
+#  - Dev mode: backend/assets/ still has the weights 鈫?resolves there.
+# Either way the runtime path is identical.
+#
+# P4-S20 MSI fat bundle: ship models inside the installer for true
+# zero-config "download 鈫?install 鈫?launch" UX. Set
+# DESKPET_BUNDLE_MODELS=0 to opt out (yields a thin bundle that relies
+# on first-run download via scripts/setup_models.py).
+if os.environ.get("DESKPET_BUNDLE_MODELS", "1") == "1":
+    _BUNDLED_MODELS = [
+        ("assets/bge-m3-int8", "models/bge-m3-int8"),
+        ("assets/faster-whisper-large-v3-turbo", "models/faster-whisper-large-v3-turbo"),
+    ]
+    for _src, _dest in _BUNDLED_MODELS:
+        if os.path.isdir(_src):
+            datas.append((_src, _dest))
+            print(f"[spec] bundling model: {_src} -> {_dest}")
+        else:
+            print(f"[spec] WARN: bundled model source missing, skipping: {_src}")
+else:
+    print("[spec] thin bundle: models NOT bundled (DESKPET_BUNDLE_MODELS=0)")
+
+# --- 3. Analysis --------------------------------------------------------
+a = Analysis(
+    ["main.py"],
+    pathex=["."],
+    binaries=[],
+    datas=datas,
+    hiddenimports=hiddenimports,
+    hookspath=[],
+    runtime_hooks=[],
+    excludes=[
+        # Things torch/transformers sometimes drag in that we never use.
+        # Keep this conservative 鈥?overzealous excludes cause runtime
+        # ImportError deep in a stack trace.
+        "tkinter",
+        "matplotlib",
+        "IPython",
+        "notebook",
+        "jupyter",
+        "pytest",
+        "_pytest",
+        # FlagEmbedding 鎺ㄧ悊缁?transformers.trainer 鎷夊叆 datasets(璁粌鐢?锛?
+        # 浣嗘帹鐞?lazy `is_datasets_available()` 鍙€夛紱鍏?PyInstaller 闅旂
+        # 瀛愯繘绋?bindepend 瀵煎叆浼氬穿(SubprocessDiedError)鈫?鎺掗櫎鍗充慨澶?+
+        # 鍑忎綋绉紝杩愯鏃?is_datasets_available()鈫扚alse 瀹夊叏闄嶇骇銆?
+        "datasets",
+    ],
+    noarchive=False,
+)
+
+# --- 3b. Defensive torch CUDA DLL strip ---------------------------------
+# REQUIRED SETUP: the backend venv MUST install torch's CPU-only wheel
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
+# torch is used ONLY for VRAM detection (observability/vram.py), which
+# wraps every call in try/except and falls back to vram_gb = 0.0 (鈫?CPU
+# tier) when CUDA is unavailable. faster-whisper's GPU path uses
+# ctranslate2's independent CUDA DLLs under _internal/ctranslate2/.
+# If someone accidentally installs torch+cu124 (3.5 GB of CUDA DLLs under
+# torch/lib/), the filter below strips the biggest offenders at build
+# time so the bundle stays under P3-G2's 3.5 GB budget. On a CPU-only
+# install this filter is a no-op.
+_CUDA_DLL_PREFIXES = (
+    # P4-S20 fat MSI bundle: empty strip list 鈥?keep the full torch
+    # CUDA stack. shm.dll directly imports torch_cuda.dll which in
+    # turn lazily binds cudnn / cublas / cufft / etc., so cherry-
+    # picking what to strip is fragile (broke on first try).
+    # MSI (vs NSIS) handles 7+ GB dist sizes natively, so we don't
+    # need the strip dance.
+    # Original aggressive list (kept for reference, was active in
+    # P3-S5's NSIS-only era):
+    #   "torch_cuda", "cudnn", "cublas", "cufft", "cusparse",
+    #   "cusolver", "curand", "nvrtc", "nvjitlink", "cupti",
+    #   "nvtoolsext", "c10_cuda", "caffe2_nvrtc", "cudart",
+)
+
+
+def _is_torch_cuda_bloat(entry):
+    dest = entry[0].replace("\\", "/").lower()
+    if not dest.startswith("torch/lib/"):
+        return False
+    name = dest.rsplit("/", 1)[-1]
+    return any(name.startswith(p) for p in _CUDA_DLL_PREFIXES)
+
+
+# P4-S20 thin bundle: re-enabled strip. We keep c10_cuda + cudart in
+# torch/lib/ (removed from `_CUDA_DLL_PREFIXES`) so shm.dll's deps
+# resolve, while everything else (cudnn family, cufft, curand,
+# cusolver, cusparse 鈥?collectively ~3 GB) is dropped. main.py
+# registers `_MEIPASS/ctranslate2/` in the DLL search path BEFORE any
+# `import torch`, so torch's `_load_dll_libraries` finds cudart/cublas
+# there. Without the strip, dist is ~5 GB (vs ~1.5 GB with strip),
+# which blows NSIS 32-bit makensis's cumulative mmap budget.
+a.binaries = [b for b in a.binaries if not _is_torch_cuda_bloat(b)]
+
+# --- 3c. Re-bundle the minimal CUDA DLLs ctranslate2 actually needs -----
+# After the torch CUDA strip above (saves ~2.9 GB), ctranslate2's GPU
+# path dlopen's a small set of NVIDIA DLLs that torch's filter removed:
+#   cublas64_12.dll, cublasLt64_12.dll  鈥?matrix kernels (~370 MB together)
+#   cudart64_12.dll                     鈥?CUDA runtime shim (~600 KB)
+#   nvrtc64_120_0.dll, nvrtc-builtins64_129.dll 鈥?runtime kernel compile
+# ctranslate2 already ships cudnn64_9.dll in its own wheel.
+#
+# These DLLs come from the standalone pip packages:
+#   pip install nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 nvidia-cuda-nvrtc-cu12
+# Dropped into `_internal/ctranslate2/` alongside cudnn64_9.dll so they
+# resolve via ctranslate2's own AddDllDirectory registration.
+_NVIDIA_DLL_DIRS = [
+    os.path.join(_site_packages, "nvidia", "cublas", "bin"),
+    os.path.join(_site_packages, "nvidia", "cuda_runtime", "bin"),
+    os.path.join(_site_packages, "nvidia", "cuda_nvrtc", "bin"),
+]
+for _dir in _NVIDIA_DLL_DIRS:
+    if not os.path.isdir(_dir):
+        continue
+    for _dll in glob.glob(os.path.join(_dir, "*.dll")):
+        # Dest "ctranslate2/<name>.dll" 鈫?ends up next to cudnn64_9.dll
+        # inside the ctranslate2 search dir registered by the wheel.
+        a.binaries.append(
+            (f"ctranslate2/{os.path.basename(_dll)}", _dll, "BINARY")
+        )
+
+pyz = PYZ(a.pure, a.zipped_data)
+
+# --- 4. EXE + COLLECT ---------------------------------------------------
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name="deskpet-backend",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,                                     # UPX breaks CUDA DLLs
+    console=True,                                  # SHARED_SECRET on stdout
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name="deskpet-backend",                        # dist/<this>/
+)
+
+ succeeded in 220ms:
+ M .claude/launch.json
+ M .claude/settings.local.json
+ M LOCAL-DEV-CREDENTIALS.md.example
+ M backend/tests/test_config.py
+ M backend/tests/test_deskpet_skill_codifier.py
+ M backend/tests/test_light_write_path.py
+ M backend/tests/test_memory_curation.py
+ M backend/tests/test_memory_g4_flag_matrix.py
+ M backend/tests/test_memory_reflection_integration.py
+ M backend/tests/test_memory_v2_config.py
+ M backend/tests/test_oh4_curation_wiring.py
+ M backend/tests/test_slash_commands.py
+ M backend/tests/test_subagent_config.py
+ M backend/tests/test_wi5_trigger_inject.py
+ M plans/2026-06-21-deepresearch-subagent-fanout/exec/relaunch_p2.out
+ M plans/manual-results-2026-06-25-problem-pipeline-prod/loggrep.py
+ M plans/manual-results-2026-06-25-problem-pipeline-prod/wait_idle.py
+ M tauri-app/public/assets/pet/character.png
+?? DeepResearch/
+?? backend/catl_2024_annual_report.pdf
+?? backend/catl_2024_annual_report.txt
+?? backend/catl_2024_ar.pdf
+?? backend/catl_2024_ar.txt
+?? plans/2026-06-13-mesh-engine-s3/
+?? plans/2026-06-21-ppt-deepresearch-pro/exec/P-settings.out
+?? plans/2026-06-21-ppt-deepresearch-pro/exec/P1.out
+?? plans/2026-06-21-ppt-deepresearch-pro/exec/P2.out
+?? plans/2026-06-21-ppt-deepresearch-pro/exec/P3.out
+?? plans/2026-06-21-ppt-deepresearch-pro/exec/S-main.out
+?? plans/2026-06-21-ppt-deepresearch-pro/exec/S-pptA.out
+?? plans/2026-06-21-ppt-deepresearch-pro/exec/S-pptB.out
+?? plans/2026-06-21-ppt-deepresearch-pro/exec/tauri-dev.log.err
+?? plans/2026-06-22-context-and-agent-optimization/exec/B2-CODEMODE-RESULT.md
+?? plans/2026-06-22-context-and-agent-optimization/exec/gen_abtest.py
+?? plans/2026-06-22-context-and-agent-optimization/exec/launch-b2.ps1
+?? plans/2026-06-28-userdata-path-binding-fix/exec/
+?? plans/manual-results-2026-06-20-deepresearch-6.0/tauri-dev.log.err
+?? plans/manual-results-2026-06-20-deepresearch-6.0/tauri-dev2.log.err
+?? plans/manual-results-2026-06-20-deepresearch-6.0/tauri-dev3.log.err
+?? plans/manual-results-2026-06-20-deepresearch-6.0/tauri-dev4.log.err
+?? plans/manual-results-2026-06-20-deepresearch-6.0/tauri-dev5.log.err
+?? plans/manual-results-2026-06-20-deepresearch-6.0/tauri-dev6.log.err
+?? plans/manual-results-2026-06-20-deepresearch-6.0/tauri-dev7.log.err
+?? plans/manual-results-2026-06-20-deepresearch/tauri-dev.log.err
+?? plans/manual-results-2026-06-20/screenshots/render_img_ppt/
+?? plans/manual-results-2026-06-20/screenshots/render_template177/
+?? plans/manual-results-2026-06-23-backfill/pre_deskpet_pids.txt
+?? plans/manual-results-2026-06-23-backfill/userdata/
+?? plans/manual-results-2026-06-25-problem-pipeline-ship/save-shot.ps1
+?? plans/manual-results-2026-06-26-bugb-phase1/composer-crop.png
+?? plans/manual-results-2026-06-26-bugb-phase1/composer2.png
+?? plans/manual-results-2026-06-26-bugb-phase1/panel-redesign.png
+?? plans/manual-results-2026-06-26-bugb-phase1/slash-crop.png
+?? plans/manual-results-2026-06-26-relay-provider-wiC/
+?? plans/manual-results-2026-06-27-enable-flags/config.toml.IDEM-backup
+?? plans/manual-results-2026-06-27-enable-flags/config.toml.factextractor-backup
+?? "tauri-app/public/assets/live2d/#Free# Snow Leopard/"
+?? tauri-app/public/assets/live2d/Azuki-san/
+?? tauri-app/public/assets/live2d/Design_genius_White/
+?? "tauri-app/public/assets/live2d/Estella Belongs_to_DG_STUDIO_free/"
+?? tauri-app/public/assets/live2d/HoshinoAi/
+?? tauri-app/public/assets/live2d/estella/
+
+ succeeded in 231ms:
+# Plan 鈥?userdata/config 璺緞涓庡畨瑁呯洰褰曠粦瀹氫慨澶?+ 绌?Bearer 鎶ゆ爮
+
+> 鏃ユ湡锛?026-06-28 锝?瑙﹀彂锛氳鏈虹増(F:\deskpet)鑱婂ぉ鎶?`Illegal header value b'Bearer '`
+> 鐘舵€侊細**寰呮墽琛?*锛坮oot cause 宸查攣瀹氾紝Phase 0 璇婃柇寰呯敤鎴峰湪 F:\deskpet 璺戜竴鏉＄‘璁ょ簿纭垎鏀級
+
+---
+
+## 1. 鐜拌薄
+
+瑁呮満鐗堬紙鑷畾涔夌洰褰?`F:\deskpet`锛孉dministrator锛夊璇濇姤锛?
+```
+Illegal header value b'Bearer ' 鈥?LocalProtocolError
+```
+
+backend.log 鍚屾椂鍑虹幇锛歚relay_provider_ensured key_fp=4dce0997`銆乣p5s2_provider_chain_resolve_failed sid=... err=no LLM provider configured`銆佸鏉?`Bearer` 閿欒銆傞噸鍚悗渚濇棫銆?
+---
+
+## 2. Root cause锛堝凡閿佸畾锛屼笁灞傝瘉鎹級
+
+### 2.1 涓嶆槸 keychain bug
+- `main.py:6815`锛歚_api_key = _registry.resolve_api_key(_entry.id) or "ollama"`銆傝嫢 keychain 璇讳笉鍑猴紝relay provider 浼氬彂 **`Bearer ollama`**锛?*涓嶅彲鑳?*鏄┖ `Bearer `銆?- `relay_provider_ensured key_fp=4dce0997`锛坄relay_provider_ops.py:63` 鐨?`key_fingerprint(reg.resolve_api_key(...))`锛夎瘉鏄?*鐧诲綍閭ｆ** keychain 璇诲啓閮芥甯搞€?- 鉄?绌?`Bearer ` 鍙兘鏉ヨ嚜 **legacy 鍏滃簳璺緞**锛坄get_chain()` 鎶?`NoProviderConfiguredError` 鍚?fallback锛夈€?
+### 2.2 鐪熷洜锛歳egistry 璇荤殑 config.toml 閲屾病鏈?enabled 鐨?relay-cloud endpoint
+- 绌?Bearer 鉄?`resolve_provider_for_session` 鈫?`registry.get_chain()` 鎶?`NoProviderConfiguredError`锛坄provider_registry.py:642`锛屾棤 enabled 椤癸級鉄?`main.py:6835` 鎹曡幏 鈫?log `p5s2_provider_chain_resolve_failed` 鈫?`_provider_chain=None` 鈫?閫€ legacy 绌?key銆?- relay-cloud 杩欒 endpoint **涓嶆槸鍑哄巶 bundle config.toml 鑷甫鐨?*锛屾槸**鐧诲綍鏃?* `ensure_relay_provider`鈫抈add_provider`鈫抈_persist_to_toml` 鎵嶅啓杩?`<user_data>/config.toml` 鐨勩€?
+### 2.3 璺緞浼氬湪浼氳瘽闂存紓绉伙紙"瀹夎鐩綍缁戝畾"闂锛?涓ゅ userdata 瑙ｆ瀽**鏉′欢涓嶄竴鑷?*锛屼笖 backend 鑷繁鐙珛瑙ｆ瀽锛圱auri 娌￠拤 env锛夛細
+
+| | Rust `paths.rs::portable_userdata_dir` | Python `paths.py::_portable_userdata_dir` |
+|---|---|---|
+| 閿氱偣 | `current_exe()`=`F:\deskpet\deskpet.exe` 鈫?parent `F:\deskpet` | `sys.executable`=`F:\deskpet\backend\鈥xe` 鈫?parent `F:\deskpet\backend`锛宯ame=="backend" 鏁?candidates_up=`(1,2,0)` |
+| 鍒ゅ畾 | `ud.is_dir()` 鈥斺€?**瑕佹眰鐩綍宸插瓨鍦?*锛屽惁鍒欏洖钀?`%AppData%` | **涓诲姩 `mkdir`+鎺㈤拡鍐?*锛宑andidates_up=2 鏃剁敋鑷充細钀藉埌 `F:\userdata`(鐩橀偦灞? |
+| 鍒涘缓鏃舵満 | `lib.rs:162` 鍦?`.setup()` 閲屾墠 `create_dir_all(<install>/userdata)` | 璋冪敤鍗冲缓 |
+
+- `process_manager.rs::spawn_once`锛?48-219锛夊彧娉ㄤ簡 `DESKPET_CLOUD_API_KEY`/`PYTHONIOENCODING`/`PYTHONUNBUFFERED`锛?*娌℃敞 `DESKPET_USER_DATA_DIR`** 鉄?Python 瀹屽叏鐙珛瑙ｆ瀽銆?- 鉄?鐧诲綍浼氳瘽 vs 閲嶅惎浼氳瘽锛屽洜 `userdata/` 瀛樺湪鎬ф椂搴?+ 涓ゅ鍒ゅ畾宸紓锛?*"portable vs %AppData%" 鐨勭粨璁哄彲鑳界炕杞?*锛歱rovider 鍐欒繘 A 鐩綍鐨?config.toml锛岄噸鍚粠 B 鐩綍璇?鈫?endpoint "涓㈠け"銆?- 鐢ㄦ埛纭疄鍦?`F:\deskpet\userdata\config.toml` 鎵惧埌浜?relay-cloud provider锛屼絾杩愯涓殑 backend 鏋佸彲鑳借鐨勬槸**鍙︿竴涓?* config.toml锛堟垨鍚岀洰褰曚絾璇ヨ disabled/malformed 鈥斺€?Phase 0 鍖哄垎锛夈€?
+### 2.4 娆＄敓 bug锛氱┖ key 鐩存帴鎷?Bearer 澶?鈫?宕?- `main.py:6087` `_headers["Authorization"] = f"Bearer {_api_key}"`锛宍_api_key` 绌烘椂鎷煎嚭闈炴硶澶?`Bearer ` 鈫?httpx `LocalProtocolError`锛屾妸 chat/facts/classifier 鍏ㄥ埛宕╋紝涓旀姤閿欏鐢ㄦ埛涓嶅彲璇汇€?- legacy `local_llm`锛坄main.py:281`锛塳ey 鏉ヨ嚜鍗犱綅绗?keychain锛宖rozen 涓嬮€€鍖栦负绌?鍗犱綅绗︺€?
+### 2.5 鏃佽瘉锛堥潪鏈?bug 浣嗛渶椤烘墜纭寲锛?- `deskpet-backend.spec` 鐨?hiddenimports **娌℃湁鏄惧紡鍒?`keyring` / `keyring.backends.Windows` / `win32ctypes.core`**銆俴eyring 鍚庣璧?entry-point 鍔ㄦ€佸姞杞斤紝PyInstaller 闈欐€佸垎鏋愮湅涓嶅埌 鈫?frozen 鐗?*鏈夋鐜?*鏁翠釜 keyring 澶辨晥銆傛湰鏈虹幇鍦ㄨ兘鐢紙`key_fp` 璇佹槑锛夛紝浣嗗睘瀹氭椂鐐稿脊锛屼竴骞堕拤姝汇€?
+---
+
+## 3. 淇鐩爣
+
+1. **鍗曚竴浜嬪疄婧?*锛歶serdata/config 璺緞**鍞竴鍦扮粦瀹氬埌瀹夎鐩綍**锛孯ust/Python 鍚屼竴绛旀锛岃法浼氳瘽鎭掑畾涓嶆紓绉汇€?2. **鑷剤**锛氬凡缁忔妸 config 鍐欓敊鍦版柟鐨勫瓨閲忚鏈猴紙濡傛湰鐢ㄦ埛锛夋棤闇€閲嶇櫥鍗冲彲鎭㈠銆?3. **浼橀泤澶辫触**锛氭棤鍙敤 provider / 绌?key 鏃剁粰"璇烽噸鏂扮櫥褰?鍙閿欒锛岀粷涓嶆嫾绌?`Bearer ` 宕╂簝銆?4. **鍙娴?*锛氬惎鍔ㄦ棩蹇椾竴鐪肩湅鍑鸿В鏋愬埌鍝€佸姞杞戒簡鍑犱釜 endpoint銆佸嚑涓?enabled銆?
+---
+
+## 4. Phase 0 鈥斺€?绮剧‘鍒嗘敮纭锛堢敤鎴峰湪 F:\deskpet 璺戯紝30 绉掞級
+
+鐩殑锛氬尯鍒?2.3銆岃矾寰勬紓绉汇€峷s銆屽悓鐩綍浣?disabled/malformed銆嶏紝骞朵负淇鍚庨獙璇佺暀鍩虹嚎銆?
+```powershell
+# A. 鐪?backend 瀹為檯鍔犺浇浜嗗摢涓?config锛堝姣旂櫥褰曟湡 vs 鏈€杩戜竴娆￠噸鍚湡锛?Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "config_loaded" | Select-Object -Last 5
+# B. dump 閭ｄ釜 config.toml 鐨?endpoints 娈碉紙enabled?锛?Get-Content "F:\deskpet\userdata\config.toml" | Select-String -Pattern "endpoints|id =|enabled|base_url|relay" -Context 0,1
+# C. 鏈夋病鏈夌浜屼釜 config.toml 鍦?AppData锛堟紓绉婚搧璇侊級
+Get-Content "$env:APPDATA\deskpet\config.toml" -ErrorAction SilentlyContinue | Select-String "endpoints|relay|enabled"
+Test-Path "$env:APPDATA\deskpet\config.toml"
+```
+
+**鍒よ**锛?- A 鐨?`path=`/`user_data_dir=` 鑻?*涓ゆ湡涓嶅悓** 鈫?2.3 婕傜Щ鍧愬疄锛岄噸鐐?Phase 1+2銆?- A 涓ゆ湡鐩稿悓浣?B 鏄剧ず endpoint `enabled = false`/瀛楁缂哄け 鈫?閲嶇偣 Phase 3 鑷剤 + 澶嶆煡 logout 璇Е鍙戙€?- C 瀛樺湪涓旀湁 endpoints 鈫?婕傜Щ閾佽瘉锛坧rovider 钀藉湪 AppData锛岃繍琛岃 portable锛夈€?
+> 淇璁捐瀵?*鎵€鏈?*鍒嗘敮閮介瞾妫掞紝Phase 0 浠呯敤浜庣‘璁?+ 楠岃瘉锛屼笉闃诲缂栫爜銆?
+---
+
+## 5. 淇鏂规锛堝埌浠ｇ爜绾э級
+
+### Phase 1 鈥?Python 渚ц矾寰勭‘瀹氬寲 + 璁板繂鍖栵紙`backend/paths.py`锛?
+**1a. `user_data_dir()` 璁板繂鍖?+ env 姘歌繙浼樺厛**锛堥槻杩涚▼鍐呮紓绉伙級
+```python
+_USER_DATA_DIR_CACHE: Path | None = None
+
+def user_data_dir() -> Path:
+    global _USER_DATA_DIR_CACHE
+    if _USER_DATA_DIR_CACHE is not None:
+        return _USER_DATA_DIR_CACHE
+    resolved = _resolve_user_data_dir()      # 鍘熻В鏋愰€昏緫鎼繘鏉?    _USER_DATA_DIR_CACHE = resolved
+    return resolved
+```
+> 鍚屾牱缁?`_portable_userdata_dir()` 鍔犱竴娆℃€?cache锛堟垚鍔熺粨鏋滐級锛岄伩鍏嶆瘡娆?probe-write 鎶栧姩銆?
+**1b. 鍘绘帀鍗遍櫓鐨勭洏閭诲眳鍥炶惤**锛坄_portable_userdata_dir`锛?- 鐜?`candidates_up=(1,2,0)`锛宻teps_up=2 浼氳惤鍒?`F:\userdata`锛堢洏鏍归偦灞咃級锛屾槸鑴忔暟鎹簮銆?- 鏀逛负锛歯ame=="backend" 鈫?**鍙 `<install_root>/userdata`**锛? 绾т笂锛夛紱standalone 鈫?鍙 `<exe_dir>/userdata`銆備笉鍙啓鏃?**`logger.error` 澶у０鎶?* 鍐嶆樉寮忓洖钀?`%AppData%`锛堜笉鍐嶉潤鎮勬倓钀藉埌鐩橀偦灞咃級銆?```python
+def _portable_userdata_dir() -> Path | None:
+    base = _install_dir()
+    if base is None:
+        return None
+    root = base.parent if base.name.lower() == "backend" else base
+    candidate = root / "userdata"
+    try:
+        candidate.mkdir(parents=True, exist_ok=True)
+        probe = candidate / ".deskpet-write-probe"
+        probe.write_bytes(b""); probe.unlink()
+    except OSError as e:
+        logger.error("portable_userdata_unwritable dir=%s err=%s 鈥?falling back to AppData", candidate, e)
+        return None
+    return candidate
+```
+
+**1c. sentinel 鍥哄寲缁戝畾**锛氶娆℃垚鍔熻В鏋愬悗钀?`<install>/userdata/.deskpet-portable`锛涘悗缁惎鍔ㄨ嫢 sentinel 瀛樺湪鍒?*鏃犳潯浠?*缁戝畾璇ョ洰褰曪紙鐢ㄦ埛鎰忓浘锛氶拤姝诲畨瑁呯洰褰曪級锛屽嵆渚挎煇娆?probe 鎶栧姩涔熶笉婕傝蛋銆?
+### Phase 2 鈥?Rust 鍗曚竴浜嬪疄婧?+ 娉ㄥ叆 env锛坄tauri-app/src-tauri`锛夆槄鏍稿績
+
+璁?**Rust 瑙ｆ瀽涓€娆?* userdata 骞?*閫氳繃 env 浼犵粰 backend**锛孭ython 璧?priority-1 鐩存帴鐢?鈫?鍙岃В鏋愬交搴曞綊涓€銆?
+**2a. `paths.rs::portable_userdata_dir`** 鏀规垚銆?*create 鍐嶈繑鍥?*銆嶏紙涓?Python 瀵归綈锛屼笉鍐嶈姹傞鍏堝瓨鍦級锛?```rust
+fn portable_userdata_dir() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let parent = exe.parent()?;
+    let root = if parent.file_name()?.to_string_lossy().eq_ignore_ascii_case("backend") {
+        parent.parent()?.to_path_buf()
+    } else { parent.to_path_buf() };
+    let ud = root.join("userdata");
+    // 鎺㈤拡鍐欙細鍙啓鎵嶈 portable锛屽惁鍒?None鈫?AppData%
+    if std::fs::create_dir_all(&ud).is_ok() {
+        let probe = ud.join(".deskpet-write-probe");
+        if std::fs::write(&probe, b"").is_ok() { let _ = std::fs::remove_file(&probe); return Some(ud); }
+    }
+    None
+}
+```
+
+**2b. `process_manager.rs::spawn_once`** 鍦ㄦ敞 env 澶勫姞涓€琛岋紙涓?`DESKPET_CLOUD_API_KEY` 鍚屾锛夛細
+```rust
+if let Some(ud) = crate::paths::user_data_dir() {
+    cmd.env("DESKPET_USER_DATA_DIR", ud.to_string_lossy().to_string());
+}
+```
+> Python `paths.py:193` 宸?priority-1 璇?`DESKPET_USER_DATA_DIR` 鈫?backend 涓嶅啀鐙珛瑙ｆ瀽 鈫?Rust=Python=鍚屼竴鐩綍銆俤evice_id/onboarding/config/db 鍏ㄩ儴褰掍竴銆?
+**2c.** `lib.rs:160-164` 鐨勯鍒涘缓淇濈暀锛堟棤瀹筹級锛屼絾涓嶅啀鏄纭€т緷璧栥€?
+### Phase 3 鈥?瀛橀噺瑁呮満鑷剤杩佺Щ锛坄backend/config.py`锛?
+`resolve_config_path()` 鍐呫€乣seed_user_config_if_missing()` 涔嬪悗鍔犱竴姝?`_recover_orphaned_endpoints()`锛?
+- 瑙勫垯锛歝anonical `<user_data>/config.toml` 鑻?**缂?`[[llm.endpoints]]` 鎴栧叏 disabled**锛屾壂宸茬煡鍊欓€変綅锛坄%AppData%\deskpet\config.toml`銆乣<install>/userdata\config.toml`銆佺洏閭诲眳 `<drive>\userdata\config.toml`锛夈€?- 鎵惧埌**鍚?enabled endpoints** 鐨勶紝鎶婂叾 `[[llm.endpoints]]` 娈靛苟鍏?canonical锛坱omlkit锛屼粎琛?endpoints锛屼繚鐣?canonical 鍏朵綑鍐呭 + 鍐?`.pre-recover-bak`锛夛紝`logger.info("endpoints_recovered_from=%s count=%d", src, n)`銆?- keychain 鏄郴缁熺骇锛堥潪璺緞缁戝畾锛夛紝key 鏈氨鎵惧緱鍒帮紝鏃犻渶杩佺Щ銆?- 骞傜瓑锛歝anonical 宸叉湁 enabled endpoints 鍒?no-op銆?
+### Phase 4 鈥?绌?key 鎶ゆ爮 + 鍙閿欒
+
+**4a. 鐩磋繛澶?*锛坄main.py:6087` 涓€甯︼級锛氭嫾澶村墠鍒ょ┖
+```python
+if not (_api_key or "").strip():
+    raise EmptyApiKeyError(provider_id=getattr(_entry, "id", "?"))
+_headers["Authorization"] = f"Bearer {_api_key}"
+```
+锛圥hase 0 鍚庣‘璁?6087 鐨?`_api_key` 鏉ユ簮锛涜嫢璇ュ瀹為檯涓嶇┖锛屽垯閲嶅績鍦?4b legacy 璺緞銆傦級
+
+**4b. legacy 鍏滃簳涓嶅啀鍙戠┖ key**锛坄main.py:6835` fallback 娈?/ `OpenAICompatibleProvider`锛夛細
+- `get_chain()` 澶辫触鍥為€€鏃讹紝鑻?legacy `local_llm` 鐨?key 涓虹┖/鍗犱綅绗︼紙`{"", "from-keychain", "from-env", "your-key-here"}`锛夛紝**涓?*鍙戣姹傦紝鏀?emit 涓€鏉″彲鎿嶄綔 error 浜嬩欢缁欏墠绔細`reason="no_provider_or_login_required"`锛屾枃妗?鏈娴嬪埌鍙敤鐨?LLM 鎻愪緵鏂癸紝璇烽噸鏂扮櫥褰曞悗閲嶈瘯"銆?- 鏂板 `EmptyApiKeyError`锛坄llm/provider_registry.py` 鎴?`llm/keys.py`锛夛紝chat handler 鎹曡幏 鈫?鍚屼笂 error 浜嬩欢锛屼笉鎶?`LocalProtocolError`銆?
+**4c. openai_adapter**锛歚OpenAICompatibleProvider` 鍙戣姹傚墠鑻?`self._api_key` 绌?鈫?鎶?`EmptyApiKeyError`锛堢粺涓€鎷︽埅鐐癸紝闃蹭换浣曡矾寰勬紡缃戯級銆?
+### Phase 5 鈥?鍙娴嬫€?
+- `main.py:101 config_loaded` 鎵╁睍瀛楁锛歚portable=<bool>`銆乣env_pinned=<DESKPET_USER_DATA_DIR 鏄惁璁?`銆乣n_endpoints`銆乣n_enabled`锛坮egistry 鏋勯€犲悗琛ヤ竴鏉?`provider_registry_ready ids=[...] enabled=[...]`锛夈€?- `LLMProviderRegistry.__init__` 鏈熬 log 鍔犺浇鍒扮殑 ids + enabled 鏁般€?
+### Phase 6 鈥?keyring frozen 纭寲锛坄backend/deskpet-backend.spec`锛?
+hiddenimports 杩藉姞锛?```python
+hiddenimports += collect_submodules("keyring")
+hiddenimports += ["keyring.backends.Windows", "win32ctypes.core", "win32ctypes.pywin32"]
+```
+> 娑堥櫎 frozen 鐗?keyring 鍚庣闈欓粯缂哄け椋庨櫓锛堟梺璇?2.5锛夈€?
+---
+
+## 6. 娴嬭瘯
+
+### 6.1 pytest锛堜笉闇€閲嶆墦鍖咃紝绾€昏緫锛?- `test_paths.py`锛氣憼 portable 纭畾鍖栵紙mock `sys.frozen`+executable 鈫?鍞竴 `<install>/userdata`锛屼笉钀界洏閭诲眳锛夛紱鈶?璁板繂鍖栵紙鏀?env 鍚庡悓杩涚▼浠嶈繑鍥為瑙ｆ瀽锛夛紱鈶?`DESKPET_USER_DATA_DIR` env 姘歌繙浼樺厛锛涒懀 涓嶅彲鍐欐椂鍥炶惤 AppData 涓?log error銆?- `test_config_resolution.py` 澧烇細`_recover_orphaned_endpoints` 鈥斺€?canonical 鏃?endpoints + AppData 鏈?enabled 鈫?杩佺Щ鎴愬姛銆佸箓绛夈€佸浠界敓鎴愩€乧anonical 鍏朵綑鍐呭涓嶅彉銆?- 鏂?`test_empty_api_key_guard.py`锛氱┖/鍗犱綅绗?key 鈫?`EmptyApiKeyError`锛沜hat fallback emit `no_provider_or_login_required` 鑰岄潪 `LocalProtocolError`锛涢潪绌?key 涓嶅彈褰卞搷锛圔C锛夈€?- 鍏ㄩ噺鍥炲綊锛歚backend/tests` 缁裤€?
+### 6.2 Rust 鍗曟祴
+- `paths.rs`锛歚portable_userdata_dir` create-then-return锛堝彲娉ㄥ叆 exe 璺緞鐨?`*_with` 鍙樹綋锛夛紱涓嶅彲鍐?鈫?None銆?- `process_manager`锛氭娊 `build_backend_env()` 绾嚱鏁帮紝鏂█鍚?`DESKPET_USER_DATA_DIR`锛坰pawn 鏈韩闅惧崟娴嬶級銆?
+### 6.3 鐪熸満锛堟渶缁堣瘉鎹?鈥斺€?闇€閲嶆墦鍖咃級
+- `scripts/build_backend.ps1` + Tauri NSIS 閲嶆墦 installer 鈫?**鍏ㄦ柊瑁呭埌 `F:\deskpet`** 鈫?鐧诲綍 鈫?**閲嶅惎** 鈫?瀵硅瘽銆屼綘濂姐€嶆垚鍔燂紙鏃犵┖ Bearer锛夈€?- 楠岃瘉 `config_loaded` 鐧诲綍鏈?vs 閲嶅惎鏈?`path=`/`user_data_dir=` **瀹屽叏涓€鑷?*锛沗provider_registry_ready enabled>=1`銆?- 瀛橀噺鑷剤锛氫繚鐣欐棫 AppData orphan config 瑁呮柊鐗?鈫?棣栧惎 log `endpoints_recovered_from=...` 鈫?涓嶉噸鐧诲嵆鍙亰銆?- 璧伴」鐩湡娴嬬邯寰嬶紙windows-mcp 鐪熺偣鐪熻緭鍏?+ 鎴浘 + 鎶?tauri-dev/backend log锛夈€?
+> 鈿狅笍 鐪熸満楠岃瘉蹇呴』**閲嶆墦鍖?*锛堣鏈虹増璺?frozen exe锛孌ESKPET_BACKEND_DIR 瑕嗙洊鏄?dev 鎵嬫锛夈€俻ytest/Rust 鍗曟祴鍏堣鍏滀綇閫昏緫锛涢噸鎵撳寘鍓嶇敤鎴风敤 env 鍏滃簳锛坄DESKPET_CLOUD_API_KEY`锛夌户缁祴搴旂敤鍏朵綑鍔熻兘銆?
+---
+
+## 7. 鎵ц椤哄簭涓庨闄?
+1. Phase 0 璇婃柇锛堢敤鎴凤紝骞惰锛夆啋 纭鍒嗘敮銆?2. Phase 1+4+5+6锛堢函 Python/spec锛屽厛钀斤紝pytest 楠岋級銆?3. Phase 3 鑷剤锛圥ython锛宲ytest 楠岋級銆?4. Phase 2锛圧ust锛宑argo test锛夈€?5. 閲嶆墦鍖?鈫?鐪熸満楠屾敹 鈫?STATUS 鏇存柊銆?
+**椋庨櫓**锛?- Phase 2 鏀?Rust 闇€ `cargo build` + 閲嶆墦鍖咃紝杩唬閲嶃€傗啋 鏁?Python 渚э紙1/3/4锛夌嫭绔嬫垚绔嬶紝鍗充娇涓嶅姩 Rust 涔熻兘闈?璁板繂鍖?鍘荤洏閭诲眳+鑷剤+env 浼樺厛"澶у箙鏀舵暃锛汸hase 2 鏄牴娌诲弻瑙ｆ瀽鐨勬渶鍚庝竴閿ゃ€?- 鑷剤杩佺Щ璇苟鍏?*浠栦汉/杩囨湡** endpoints锛熲啋 浠呮壂鍥哄畾鍊欓€変綅 + 浠呭綋 canonical 鏃?enabled 鏃惰Е鍙?+ 鍐欏浠?+ 骞傜瓑锛屼綆椋庨櫓锛沰eychain key 瀵逛笉涓婂垯鍚庣画 4c 鍙嬪ソ鎶ラ敊鑰岄潪宕┿€?
+
+codex
+我看到工作区已有很多未提交改动，但目标文件目前未改动在状态列表里；我会只触碰这一个 spec 文件。接下来按 TDD/验证流程处理这个很小的构建脚本改动：先明确可验证条件，再改，再跑指定命令。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content -Path C:\\Users\\24378\\.agents\\skills\\sp-test-driven-development\\SKILL.md" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content -Path C:\\Users\\24378\\.agents\\skills\\sp-verification-before-completion\\SKILL.md" in G:\projects\deskpet
+ succeeded in 176ms:
+---
+name: test-driven-development
+description: Use when implementing any feature or bugfix, before writing implementation code
+---
+
+# Test-Driven Development (TDD)
+
+## Overview
+
+Write the test first. Watch it fail. Write minimal code to pass.
+
+**Core principle:** If you didn't watch the test fail, you don't know if it tests the right thing.
+
+**Violating the letter of the rules is violating the spirit of the rules.**
+
+## When to Use
+
+**Always:**
+- New features
+- Bug fixes
+- Refactoring
+- Behavior changes
+
+**Exceptions (ask your human partner):**
+- Throwaway prototypes
+- Generated code
+- Configuration files
+
+Thinking "skip TDD just this once"? Stop. That's rationalization.
+
+## The Iron Law
+
+```
+NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST
+```
+
+Write code before the test? Delete it. Start over.
+
+**No exceptions:**
+- Don't keep it as "reference"
+- Don't "adapt" it while writing tests
+- Don't look at it
+- Delete means delete
+
+Implement fresh from tests. Period.
+
+## Red-Green-Refactor
+
+```dot
+digraph tdd_cycle {
+    rankdir=LR;
+    red [label="RED\nWrite failing test", shape=box, style=filled, fillcolor="#ffcccc"];
+    verify_red [label="Verify fails\ncorrectly", shape=diamond];
+    green [label="GREEN\nMinimal code", shape=box, style=filled, fillcolor="#ccffcc"];
+    verify_green [label="Verify passes\nAll green", shape=diamond];
+    refactor [label="REFACTOR\nClean up", shape=box, style=filled, fillcolor="#ccccff"];
+    next [label="Next", shape=ellipse];
+
+    red -> verify_red;
+    verify_red -> green [label="yes"];
+    verify_red -> red [label="wrong\nfailure"];
+    green -> verify_green;
+    verify_green -> refactor [label="yes"];
+    verify_green -> green [label="no"];
+    refactor -> verify_green [label="stay\ngreen"];
+    verify_green -> next;
+    next -> red;
+}
+```
+
+### RED - Write Failing Test
+
+Write one minimal test showing what should happen.
+
+<Good>
+```typescript
+test('retries failed operations 3 times', async () => {
+  let attempts = 0;
+  const operation = () => {
+    attempts++;
+    if (attempts < 3) throw new Error('fail');
+    return 'success';
+  };
+
+  const result = await retryOperation(operation);
+
+  expect(result).toBe('success');
+  expect(attempts).toBe(3);
+});
+```
+Clear name, tests real behavior, one thing
+</Good>
+
+<Bad>
+```typescript
+test('retry works', async () => {
+  const mock = jest.fn()
+    .mockRejectedValueOnce(new Error())
+    .mockRejectedValueOnce(new Error())
+    .mockResolvedValueOnce('success');
+  await retryOperation(mock);
+  expect(mock).toHaveBeenCalledTimes(3);
+});
+```
+Vague name, tests mock not code
+</Bad>
+
+**Requirements:**
+- One behavior
+- Clear name
+- Real code (no mocks unless unavoidable)
+
+### Verify RED - Watch It Fail
+
+**MANDATORY. Never skip.**
+
+```bash
+npm test path/to/test.test.ts
+```
+
+Confirm:
+- Test fails (not errors)
+- Failure message is expected
+- Fails because feature missing (not typos)
+
+**Test passes?** You're testing existing behavior. Fix test.
+
+**Test errors?** Fix error, re-run until it fails correctly.
+
+### GREEN - Minimal Code
+
+Write simplest code to pass the test.
+
+<Good>
+```typescript
+async function retryOperation<T>(fn: () => Promise<T>): Promise<T> {
+  for (let i = 0; i < 3; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (i === 2) throw e;
+    }
+  }
+  throw new Error('unreachable');
+}
+```
+Just enough to pass
+</Good>
+
+<Bad>
+```typescript
+async function retryOperation<T>(
+  fn: () => Promise<T>,
+  options?: {
+    maxRetries?: number;
+    backoff?: 'linear' | 'exponential';
+    onRetry?: (attempt: number) => void;
+  }
+): Promise<T> {
+  // YAGNI
+}
+```
+Over-engineered
+</Bad>
+
+Don't add features, refactor other code, or "improve" beyond the test.
+
+### Verify GREEN - Watch It Pass
+
+**MANDATORY.**
+
+```bash
+npm test path/to/test.test.ts
+```
+
+Confirm:
+- Test passes
+- Other tests still pass
+- Output pristine (no errors, warnings)
+
+**Test fails?** Fix code, not test.
+
+**Other tests fail?** Fix now.
+
+### REFACTOR - Clean Up
+
+After green only:
+- Remove duplication
+- Improve names
+- Extract helpers
+
+Keep tests green. Don't add behavior.
+
+### Repeat
+
+Next failing test for next feature.
+
+## Good Tests
+
+| Quality | Good | Bad |
+|---------|------|-----|
+| **Minimal** | One thing. "and" in name? Split it. | `test('validates email and domain and whitespace')` |
+| **Clear** | Name describes behavior | `test('test1')` |
+| **Shows intent** | Demonstrates desired API | Obscures what code should do |
+
+## Why Order Matters
+
+**"I'll write tests after to verify it works"**
+
+Tests written after code pass immediately. Passing immediately proves nothing:
+- Might test wrong thing
+- Might test implementation, not behavior
+- Might miss edge cases you forgot
+- You never saw it catch the bug
+
+Test-first forces you to see the test fail, proving it actually tests something.
+
+**"I already manually tested all the edge cases"**
+
+Manual testing is ad-hoc. You think you tested everything but:
+- No record of what you tested
+- Can't re-run when code changes
+- Easy to forget cases under pressure
+- "It worked when I tried it" 鈮?comprehensive
+
+Automated tests are systematic. They run the same way every time.
+
+**"Deleting X hours of work is wasteful"**
+
+Sunk cost fallacy. The time is already gone. Your choice now:
+- Delete and rewrite with TDD (X more hours, high confidence)
+- Keep it and add tests after (30 min, low confidence, likely bugs)
+
+The "waste" is keeping code you can't trust. Working code without real tests is technical debt.
+
+**"TDD is dogmatic, being pragmatic means adapting"**
+
+TDD IS pragmatic:
+- Finds bugs before commit (faster than debugging after)
+- Prevents regressions (tests catch breaks immediately)
+- Documents behavior (tests show how to use code)
+- Enables refactoring (change freely, tests catch breaks)
+
+"Pragmatic" shortcuts = debugging in production = slower.
+
+**"Tests after achieve the same goals - it's spirit not ritual"**
+
+No. Tests-after answer "What does this do?" Tests-first answer "What should this do?"
+
+Tests-after are biased by your implementation. You test what you built, not what's required. You verify remembered edge cases, not discovered ones.
+
+Tests-first force edge case discovery before implementing. Tests-after verify you remembered everything (you didn't).
+
+30 minutes of tests after 鈮?TDD. You get coverage, lose proof tests work.
+
+## Common Rationalizations
+
+| Excuse | Reality |
+|--------|---------|
+| "Too simple to test" | Simple code breaks. Test takes 30 seconds. |
+| "I'll test after" | Tests passing immediately prove nothing. |
+| "Tests after achieve same goals" | Tests-after = "what does this do?" Tests-first = "what should this do?" |
+| "Already manually tested" | Ad-hoc 鈮?systematic. No record, can't re-run. |
+| "Deleting X hours is wasteful" | Sunk cost fallacy. Keeping unverified code is technical debt. |
+| "Keep as reference, write tests first" | You'll adapt it. That's testing after. Delete means delete. |
+| "Need to explore first" | Fine. Throw away exploration, start with TDD. |
+| "Test hard = design unclear" | Listen to test. Hard to test = hard to use. |
+| "TDD will slow me down" | TDD faster than debugging. Pragmatic = test-first. |
+| "Manual test faster" | Manual doesn't prove edge cases. You'll re-test every change. |
+| "Existing code has no tests" | You're improving it. Add tests for existing code. |
+
+## Red Flags - STOP and Start Over
+
+- Code before test
+- Test after implementation
+- Test passes immediately
+- Can't explain why test failed
+- Tests added "later"
+- Rationalizing "just this once"
+- "I already manually tested it"
+- "Tests after achieve the same purpose"
+- "It's about spirit not ritual"
+- "Keep as reference" or "adapt existing code"
+- "Already spent X hours, deleting is wasteful"
+- "TDD is dogmatic, I'm being pragmatic"
+- "This is different because..."
+
+**All of these mean: Delete code. Start over with TDD.**
+
+## Example: Bug Fix
+
+**Bug:** Empty email accepted
+
+**RED**
+```typescript
+test('rejects empty email', async () => {
+  const result = await submitForm({ email: '' });
+  expect(result.error).toBe('Email required');
+});
+```
+
+**Verify RED**
+```bash
+$ npm test
+FAIL: expected 'Email required', got undefined
+```
+
+**GREEN**
+```typescript
+function submitForm(data: FormData) {
+  if (!data.email?.trim()) {
+    return { error: 'Email required' };
+  }
+  // ...
+}
+```
+
+**Verify GREEN**
+```bash
+$ npm test
+PASS
+```
+
+**REFACTOR**
+Extract validation for multiple fields if needed.
+
+## Verification Checklist
+
+Before marking work complete:
+
+- [ ] Every new function/method has a test
+- [ ] Watched each test fail before implementing
+- [ ] Each test failed for expected reason (feature missing, not typo)
+- [ ] Wrote minimal code to pass each test
+- [ ] All tests pass
+- [ ] Output pristine (no errors, warnings)
+- [ ] Tests use real code (mocks only if unavoidable)
+- [ ] Edge cases and errors covered
+
+Can't check all boxes? You skipped TDD. Start over.
+
+## When Stuck
+
+| Problem | Solution |
+|---------|----------|
+| Don't know how to test | Write wished-for API. Write assertion first. Ask your human partner. |
+| Test too complicated | Design too complicated. Simplify interface. |
+| Must mock everything | Code too coupled. Use dependency injection. |
+| Test setup huge | Extract helpers. Still complex? Simplify design. |
+
+## Debugging Integration
+
+Bug found? Write failing test reproducing it. Follow TDD cycle. Test proves fix and prevents regression.
+
+Never fix bugs without a test.
+
+## Testing Anti-Patterns
+
+When adding mocks or test utilities, read @testing-anti-patterns.md to avoid common pitfalls:
+- Testing mock behavior instead of real behavior
+- Adding test-only methods to production classes
+- Mocking without understanding dependencies
+
+## Final Rule
+
+```
+Production code 鈫?test exists and failed first
+Otherwise 鈫?not TDD
+```
+
+No exceptions without your human partner's permission.
+
+ succeeded in 166ms:
+---
+name: verification-before-completion
+description: Use when about to claim work is complete, fixed, or passing, before committing or creating PRs - requires running verification commands and confirming output before making any success claims; evidence before assertions always
+---
+
+# Verification Before Completion
+
+## Overview
+
+Claiming work is complete without verification is dishonesty, not efficiency.
+
+**Core principle:** Evidence before claims, always.
+
+**Violating the letter of this rule is violating the spirit of this rule.**
+
+## The Iron Law
+
+```
+NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE
+```
+
+If you haven't run the verification command in this message, you cannot claim it passes.
+
+## The Gate Function
+
+```
+BEFORE claiming any status or expressing satisfaction:
+
+1. IDENTIFY: What command proves this claim?
+2. RUN: Execute the FULL command (fresh, complete)
+3. READ: Full output, check exit code, count failures
+4. VERIFY: Does output confirm the claim?
+   - If NO: State actual status with evidence
+   - If YES: State claim WITH evidence
+5. ONLY THEN: Make the claim
+
+Skip any step = lying, not verifying
+```
+
+## Common Failures
+
+| Claim | Requires | Not Sufficient |
+|-------|----------|----------------|
+| Tests pass | Test command output: 0 failures | Previous run, "should pass" |
+| Linter clean | Linter output: 0 errors | Partial check, extrapolation |
+| Build succeeds | Build command: exit 0 | Linter passing, logs look good |
+| Bug fixed | Test original symptom: passes | Code changed, assumed fixed |
+| Regression test works | Red-green cycle verified | Test passes once |
+| Agent completed | VCS diff shows changes | Agent reports "success" |
+| Requirements met | Line-by-line checklist | Tests passing |
+
+## Red Flags - STOP
+
+- Using "should", "probably", "seems to"
+- Expressing satisfaction before verification ("Great!", "Perfect!", "Done!", etc.)
+- About to commit/push/PR without verification
+- Trusting agent success reports
+- Relying on partial verification
+- Thinking "just this once"
+- Tired and wanting work over
+- **ANY wording implying success without having run verification**
+
+## Rationalization Prevention
+
+| Excuse | Reality |
+|--------|---------|
+| "Should work now" | RUN the verification |
+| "I'm confident" | Confidence 鈮?evidence |
+| "Just this once" | No exceptions |
+| "Linter passed" | Linter 鈮?compiler |
+| "Agent said success" | Verify independently |
+| "I'm tired" | Exhaustion 鈮?excuse |
+| "Partial check is enough" | Partial proves nothing |
+| "Different words so rule doesn't apply" | Spirit over letter |
+
+## Key Patterns
+
+**Tests:**
+```
+鉁?[Run test command] [See: 34/34 pass] "All tests pass"
+鉂?"Should pass now" / "Looks correct"
+```
+
+**Regression tests (TDD Red-Green):**
+```
+鉁?Write 鈫?Run (pass) 鈫?Revert fix 鈫?Run (MUST FAIL) 鈫?Restore 鈫?Run (pass)
+鉂?"I've written a regression test" (without red-green verification)
+```
+
+**Build:**
+```
+鉁?[Run build] [See: exit 0] "Build passes"
+鉂?"Linter passed" (linter doesn't check compilation)
+```
+
+**Requirements:**
+```
+鉁?Re-read plan 鈫?Create checklist 鈫?Verify each 鈫?Report gaps or completion
+鉂?"Tests pass, phase complete"
+```
+
+**Agent delegation:**
+```
+鉁?Agent reports success 鈫?Check VCS diff 鈫?Verify changes 鈫?Report actual state
+鉂?Trust agent report
+```
+
+## Why This Matters
+
+From 24 failure memories:
+- your human partner said "I don't believe you" - trust broken
+- Undefined functions shipped - would crash
+- Missing requirements shipped - incomplete features
+- Time wasted on false completion 鈫?redirect 鈫?rework
+- Violates: "Honesty is a core value. If you lie, you'll be replaced."
+
+## When To Apply
+
+**ALWAYS before:**
+- ANY variation of success/completion claims
+- ANY expression of satisfaction
+- ANY positive statement about work state
+- Committing, PR creation, task completion
+- Moving to next task
+- Delegating to agents
+
+**Rule applies to:**
+- Exact phrases
+- Paraphrases and synonyms
+- Implications of success
+- ANY communication suggesting completion/correctness
+
+## The Bottom Line
+
+**No shortcuts for verification.**
+
+Run the command. Read the output. THEN claim the result.
+
+This is non-negotiable.
+
+codex
+这里属于 PyInstaller spec/配置文件变更，TDD 技能对“配置文件”本身列了例外；我不新增测试文件，而是把用户给的 `ast.parse`、实际 import、`collect_submodules("keyring")` 非空作为验收门槛。先改最小片段，并保持缺依赖时 spec 可加载。
+apply patch
+patch: completed
+G:\projects\deskpet\backend\deskpet-backend.spec
+diff --git a/backend/deskpet-backend.spec b/backend/deskpet-backend.spec
+index 6c7b7a249a072b9742b1845cc2a410cf90f23d5e..f4218e7fddb93a348caa14c5619687bc9228d81d
+--- a/backend/deskpet-backend.spec
++++ b/backend/deskpet-backend.spec
+@@ -14,9 +14,10 @@
+ # ruff: noqa — PyInstaller injects builtins like `Analysis`, `PYZ`, `EXE`,
+ # `COLLECT`, `block_cipher` into this file's scope.
+ 
+-import glob
+-import os
+-import sysconfig
++import glob
++import importlib.util as _ilu
++import os
++import sysconfig
+ 
+ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+ 
+@@ -38,12 +39,35 @@
+ # won't be discovered by the default import graph. List every top-level
+ # package that the frozen exe must be able to `import` lazily.
+ hiddenimports: list[str] = []
+-hiddenimports += collect_submodules("faster_whisper")
+-hiddenimports += collect_submodules("ctranslate2")
+-hiddenimports += collect_submodules("silero_vad")
+-# 2026-05-30 P0 bug fix #10: deskpet/tools/__init__.py uses pkgutil
+-# .iter_modules to dynamically discover + import every tool module
+-# (excel_tools, doc_tools, ppt_tools, image_tools, etc). PyInstaller's
++hiddenimports += collect_submodules("faster_whisper")
++hiddenimports += collect_submodules("ctranslate2")
++hiddenimports += collect_submodules("silero_vad")
++# 2026-06-28: keyring backends are loaded through entry-points, so
++# PyInstaller's static import graph may miss them in frozen builds. Pin
++# keyring + Windows credential backends and their win32ctypes shims when
++# available; keep spec loading tolerant on envs without those optional deps.
++try:
++    hiddenimports += collect_submodules("keyring")
++except Exception:
++    print("[spec] WARN: keyring not importable, skip")
++
++for _m in [
++    "keyring.backends.Windows",
++    "keyring.backends.null",
++    "keyring.backends.fail",
++    "win32ctypes.core",
++    "win32ctypes.pywin32",
++    "win32ctypes.core.cffi",
++    "win32ctypes.core.ctypes",
++]:
++    try:
++        if _ilu.find_spec(_m) is not None:
++            hiddenimports.append(_m)
++    except (ImportError, ValueError):
++        pass
++# 2026-05-30 P0 bug fix #10: deskpet/tools/__init__.py uses pkgutil
++# .iter_modules to dynamically discover + import every tool module
++# (excel_tools, doc_tools, ppt_tools, image_tools, etc). PyInstaller's
+ # static analysis can't see these — without explicit hidden_imports the
+ # office tools (excel_create / doc_create / ppt_create) NEVER reach the
+ # registry → LLM tool list lacks them → B1/B2/B5 (and many others) fail.
+
+diff --git a/backend/deskpet-backend.spec b/backend/deskpet-backend.spec
+index 6c7b7a249a072b9742b1845cc2a410cf90f23d5e..f4218e7fddb93a348caa14c5619687bc9228d81d
+--- a/backend/deskpet-backend.spec
++++ b/backend/deskpet-backend.spec
+@@ -14,9 +14,10 @@
+ # ruff: noqa — PyInstaller injects builtins like `Analysis`, `PYZ`, `EXE`,
+ # `COLLECT`, `block_cipher` into this file's scope.
+ 
+-import glob
+-import os
+-import sysconfig
++import glob
++import importlib.util as _ilu
++import os
++import sysconfig
+ 
+ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+ 
+@@ -38,12 +39,35 @@
+ # won't be discovered by the default import graph. List every top-level
+ # package that the frozen exe must be able to `import` lazily.
+ hiddenimports: list[str] = []
+-hiddenimports += collect_submodules("faster_whisper")
+-hiddenimports += collect_submodules("ctranslate2")
+-hiddenimports += collect_submodules("silero_vad")
+-# 2026-05-30 P0 bug fix #10: deskpet/tools/__init__.py uses pkgutil
+-# .iter_modules to dynamically discover + import every tool module
+-# (excel_tools, doc_tools, ppt_tools, image_tools, etc). PyInstaller's
++hiddenimports += collect_submodules("faster_whisper")
++hiddenimports += collect_submodules("ctranslate2")
++hiddenimports += collect_submodules("silero_vad")
++# 2026-06-28: keyring backends are loaded through entry-points, so
++# PyInstaller's static import graph may miss them in frozen builds. Pin
++# keyring + Windows credential backends and their win32ctypes shims when
++# available; keep spec loading tolerant on envs without those optional deps.
++try:
++    hiddenimports += collect_submodules("keyring")
++except Exception:
++    print("[spec] WARN: keyring not importable, skip")
++
++for _m in [
++    "keyring.backends.Windows",
++    "keyring.backends.null",
++    "keyring.backends.fail",
++    "win32ctypes.core",
++    "win32ctypes.pywin32",
++    "win32ctypes.core.cffi",
++    "win32ctypes.core.ctypes",
++]:
++    try:
++        if _ilu.find_spec(_m) is not None:
++            hiddenimports.append(_m)
++    except (ImportError, ValueError):
++        pass
++# 2026-05-30 P0 bug fix #10: deskpet/tools/__init__.py uses pkgutil
++# .iter_modules to dynamically discover + import every tool module
++# (excel_tools, doc_tools, ppt_tools, image_tools, etc). PyInstaller's
+ # static analysis can't see these — without explicit hidden_imports the
+ # office tools (excel_create / doc_create / ppt_create) NEVER reach the
+ # registry → LLM tool list lacks them → B1/B2/B5 (and many others) fail.
+
+codex
+已把 keyring hiddenimports 插入到现有动态导入组装区，并用 `find_spec`/`try` 包住可选依赖探测。现在跑三项验收：spec 语法解析、keyring Windows 后端导入、`collect_submodules("keyring")` 返回数量。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command ".venv\\Scripts\\python.exe -c \"import ast; ast.parse(open('deskpet-backend.spec',encoding='utf-8').read()); print('SPEC_PARSE_OK')\"" in G:\projects\deskpet\backend
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command ".venv\\Scripts\\python.exe -c \"import keyring, keyring.backends.Windows; print('keyring import ok')\"" in G:\projects\deskpet\backend
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command ".venv\\Scripts\\python.exe -c \"from PyInstaller.utils.hooks import collect_submodules; mods=collect_submodules('keyring'); print('KEYRING_SUBMODULES', len(mods)); raise SystemExit(0 if mods else 1)\"" in G:\projects\deskpet\backend
+ succeeded in 271ms:
+SPEC_PARSE_OK
+
+ succeeded in 412ms:
+keyring import ok
+
+ succeeded in 798ms:
+KEYRING_SUBMODULES 28
+
+diff --git a/backend/deskpet-backend.spec b/backend/deskpet-backend.spec
+index 6c7b7a249a072b9742b1845cc2a410cf90f23d5e..f4218e7fddb93a348caa14c5619687bc9228d81d
+--- a/backend/deskpet-backend.spec
++++ b/backend/deskpet-backend.spec
+@@ -14,9 +14,10 @@
+ # ruff: noqa — PyInstaller injects builtins like `Analysis`, `PYZ`, `EXE`,
+ # `COLLECT`, `block_cipher` into this file's scope.
+ 
+-import glob
+-import os
+-import sysconfig
++import glob
++import importlib.util as _ilu
++import os
++import sysconfig
+ 
+ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+ 
+@@ -38,12 +39,35 @@
+ # won't be discovered by the default import graph. List every top-level
+ # package that the frozen exe must be able to `import` lazily.
+ hiddenimports: list[str] = []
+-hiddenimports += collect_submodules("faster_whisper")
+-hiddenimports += collect_submodules("ctranslate2")
+-hiddenimports += collect_submodules("silero_vad")
+-# 2026-05-30 P0 bug fix #10: deskpet/tools/__init__.py uses pkgutil
+-# .iter_modules to dynamically discover + import every tool module
+-# (excel_tools, doc_tools, ppt_tools, image_tools, etc). PyInstaller's
++hiddenimports += collect_submodules("faster_whisper")
++hiddenimports += collect_submodules("ctranslate2")
++hiddenimports += collect_submodules("silero_vad")
++# 2026-06-28: keyring backends are loaded through entry-points, so
++# PyInstaller's static import graph may miss them in frozen builds. Pin
++# keyring + Windows credential backends and their win32ctypes shims when
++# available; keep spec loading tolerant on envs without those optional deps.
++try:
++    hiddenimports += collect_submodules("keyring")
++except Exception:
++    print("[spec] WARN: keyring not importable, skip")
++
++for _m in [
++    "keyring.backends.Windows",
++    "keyring.backends.null",
++    "keyring.backends.fail",
++    "win32ctypes.core",
++    "win32ctypes.pywin32",
++    "win32ctypes.core.cffi",
++    "win32ctypes.core.ctypes",
++]:
++    try:
++        if _ilu.find_spec(_m) is not None:
++            hiddenimports.append(_m)
++    except (ImportError, ValueError):
++        pass
++# 2026-05-30 P0 bug fix #10: deskpet/tools/__init__.py uses pkgutil
++# .iter_modules to dynamically discover + import every tool module
++# (excel_tools, doc_tools, ppt_tools, image_tools, etc). PyInstaller's
+ # static analysis can't see these — without explicit hidden_imports the
+ # office tools (excel_create / doc_create / ppt_create) NEVER reach the
+ # registry → LLM tool list lacks them → B1/B2/B5 (and many others) fail.
+
+codex
+三项指定验收都已通过，`collect_submodules("keyring")` 本机返回 28 个子模块。最后我看一下 diff，确认只改了目标文件且没有带入其他变化。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command 'git diff -- backend/deskpet-backend.spec' in G:\projects\deskpet
+ succeeded in 186ms:
+diff --git a/backend/deskpet-backend.spec b/backend/deskpet-backend.spec
+index 6c7b7a24..f4218e7f 100644
+--- a/backend/deskpet-backend.spec
++++ b/backend/deskpet-backend.spec
+@@ -15,6 +15,7 @@
+ # `COLLECT`, `block_cipher` into this file's scope.
+ 
+ import glob
++import importlib.util as _ilu
+ import os
+ import sysconfig
+ 
+@@ -41,6 +42,29 @@ hiddenimports: list[str] = []
+ hiddenimports += collect_submodules("faster_whisper")
+ hiddenimports += collect_submodules("ctranslate2")
+ hiddenimports += collect_submodules("silero_vad")
++# 2026-06-28: keyring backends are loaded through entry-points, so
++# PyInstaller's static import graph may miss them in frozen builds. Pin
++# keyring + Windows credential backends and their win32ctypes shims when
++# available; keep spec loading tolerant on envs without those optional deps.
++try:
++    hiddenimports += collect_submodules("keyring")
++except Exception:
++    print("[spec] WARN: keyring not importable, skip")
++
++for _m in [
++    "keyring.backends.Windows",
++    "keyring.backends.null",
++    "keyring.backends.fail",
++    "win32ctypes.core",
++    "win32ctypes.pywin32",
++    "win32ctypes.core.cffi",
++    "win32ctypes.core.ctypes",
++]:
++    try:
++        if _ilu.find_spec(_m) is not None:
++            hiddenimports.append(_m)
++    except (ImportError, ValueError):
++        pass
+ # 2026-05-30 P0 bug fix #10: deskpet/tools/__init__.py uses pkgutil
+ # .iter_modules to dynamically discover + import every tool module
+ # (excel_tools, doc_tools, ppt_tools, image_tools, etc). PyInstaller's
+warning: in the working copy of 'backend/deskpet-backend.spec', LF will be replaced by CRLF the next time Git touches it
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command 'git status --short -- backend/deskpet-backend.spec' in G:\projects\deskpet
+ succeeded in 183ms:
+ M backend/deskpet-backend.spec
+
+diff --git a/backend/deskpet-backend.spec b/backend/deskpet-backend.spec
+index 6c7b7a249a072b9742b1845cc2a410cf90f23d5e..f4218e7fddb93a348caa14c5619687bc9228d81d
+--- a/backend/deskpet-backend.spec
++++ b/backend/deskpet-backend.spec
+@@ -14,9 +14,10 @@
+ # ruff: noqa — PyInstaller injects builtins like `Analysis`, `PYZ`, `EXE`,
+ # `COLLECT`, `block_cipher` into this file's scope.
+ 
+-import glob
+-import os
+-import sysconfig
++import glob
++import importlib.util as _ilu
++import os
++import sysconfig
+ 
+ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+ 
+@@ -38,12 +39,35 @@
+ # won't be discovered by the default import graph. List every top-level
+ # package that the frozen exe must be able to `import` lazily.
+ hiddenimports: list[str] = []
+-hiddenimports += collect_submodules("faster_whisper")
+-hiddenimports += collect_submodules("ctranslate2")
+-hiddenimports += collect_submodules("silero_vad")
+-# 2026-05-30 P0 bug fix #10: deskpet/tools/__init__.py uses pkgutil
+-# .iter_modules to dynamically discover + import every tool module
+-# (excel_tools, doc_tools, ppt_tools, image_tools, etc). PyInstaller's
++hiddenimports += collect_submodules("faster_whisper")
++hiddenimports += collect_submodules("ctranslate2")
++hiddenimports += collect_submodules("silero_vad")
++# 2026-06-28: keyring backends are loaded through entry-points, so
++# PyInstaller's static import graph may miss them in frozen builds. Pin
++# keyring + Windows credential backends and their win32ctypes shims when
++# available; keep spec loading tolerant on envs without those optional deps.
++try:
++    hiddenimports += collect_submodules("keyring")
++except Exception:
++    print("[spec] WARN: keyring not importable, skip")
++
++for _m in [
++    "keyring.backends.Windows",
++    "keyring.backends.null",
++    "keyring.backends.fail",
++    "win32ctypes.core",
++    "win32ctypes.pywin32",
++    "win32ctypes.core.cffi",
++    "win32ctypes.core.ctypes",
++]:
++    try:
++        if _ilu.find_spec(_m) is not None:
++            hiddenimports.append(_m)
++    except (ImportError, ValueError):
++        pass
++# 2026-05-30 P0 bug fix #10: deskpet/tools/__init__.py uses pkgutil
++# .iter_modules to dynamically discover + import every tool module
++# (excel_tools, doc_tools, ppt_tools, image_tools, etc). PyInstaller's
+ # static analysis can't see these — without explicit hidden_imports the
+ # office tools (excel_create / doc_create / ppt_create) NEVER reach the
+ # registry → LLM tool list lacks them → B1/B2/B5 (and many others) fail.
+
+codex
+已按要求只修改 [backend/deskpet-backend.spec](G:/projects/deskpet/backend/deskpet-backend.spec)，未 commit。
+
+改动摘要：
+- 引入 `importlib.util as _ilu`
+- `collect_submodules("keyring")` 用 `try/except` 包住，缺失时打印：
+  `"[spec] WARN: keyring not importable, skip"`
+- 对 `keyring.backends.Windows/null/fail` 和 `win32ctypes.*` 逐个 `find_spec`，存在才加入 `hiddenimports`
+
+验证结果：
+- `SPEC_PARSE_OK`
+- `keyring import ok`
+- `collect_submodules("keyring")` 返回 `28` 个子模块
+
+确认 `git status --short -- backend/deskpet-backend.spec` 只显示该目标文件已修改。
+diff --git a/backend/deskpet-backend.spec b/backend/deskpet-backend.spec
+index 6c7b7a249a072b9742b1845cc2a410cf90f23d5e..f4218e7fddb93a348caa14c5619687bc9228d81d
+--- a/backend/deskpet-backend.spec
++++ b/backend/deskpet-backend.spec
+@@ -14,9 +14,10 @@
+ # ruff: noqa — PyInstaller injects builtins like `Analysis`, `PYZ`, `EXE`,
+ # `COLLECT`, `block_cipher` into this file's scope.
+ 
+-import glob
+-import os
+-import sysconfig
++import glob
++import importlib.util as _ilu
++import os
++import sysconfig
+ 
+ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+ 
+@@ -38,12 +39,35 @@
+ # won't be discovered by the default import graph. List every top-level
+ # package that the frozen exe must be able to `import` lazily.
+ hiddenimports: list[str] = []
+-hiddenimports += collect_submodules("faster_whisper")
+-hiddenimports += collect_submodules("ctranslate2")
+-hiddenimports += collect_submodules("silero_vad")
+-# 2026-05-30 P0 bug fix #10: deskpet/tools/__init__.py uses pkgutil
+-# .iter_modules to dynamically discover + import every tool module
+-# (excel_tools, doc_tools, ppt_tools, image_tools, etc). PyInstaller's
++hiddenimports += collect_submodules("faster_whisper")
++hiddenimports += collect_submodules("ctranslate2")
++hiddenimports += collect_submodules("silero_vad")
++# 2026-06-28: keyring backends are loaded through entry-points, so
++# PyInstaller's static import graph may miss them in frozen builds. Pin
++# keyring + Windows credential backends and their win32ctypes shims when
++# available; keep spec loading tolerant on envs without those optional deps.
++try:
++    hiddenimports += collect_submodules("keyring")
++except Exception:
++    print("[spec] WARN: keyring not importable, skip")
++
++for _m in [
++    "keyring.backends.Windows",
++    "keyring.backends.null",
++    "keyring.backends.fail",
++    "win32ctypes.core",
++    "win32ctypes.pywin32",
++    "win32ctypes.core.cffi",
++    "win32ctypes.core.ctypes",
++]:
++    try:
++        if _ilu.find_spec(_m) is not None:
++            hiddenimports.append(_m)
++    except (ImportError, ValueError):
++        pass
++# 2026-05-30 P0 bug fix #10: deskpet/tools/__init__.py uses pkgutil
++# .iter_modules to dynamically discover + import every tool module
++# (excel_tools, doc_tools, ppt_tools, image_tools, etc). PyInstaller's
+ # static analysis can't see these — without explicit hidden_imports the
+ # office tools (excel_create / doc_create / ppt_create) NEVER reach the
+ # registry → LLM tool list lacks them → B1/B2/B5 (and many others) fail.
+
+2026-06-27T18:37:21.981778Z ERROR codex_core::session: failed to record rollout items: thread 019f0a5e-74b8-7d32-83f5-b8aa7e6525fb not found
+tokens used
+42,198
+已按要求只修改 [backend/deskpet-backend.spec](G:/projects/deskpet/backend/deskpet-backend.spec)，未 commit。
+
+改动摘要：
+- 引入 `importlib.util as _ilu`
+- `collect_submodules("keyring")` 用 `try/except` 包住，缺失时打印：
+  `"[spec] WARN: keyring not importable, skip"`
+- 对 `keyring.backends.Windows/null/fail` 和 `win32ctypes.*` 逐个 `find_spec`，存在才加入 `hiddenimports`
+
+验证结果：
+- `SPEC_PARSE_OK`
+- `keyring import ok`
+- `collect_submodules("keyring")` 返回 `28` 个子模块
+
+确认 `git status --short -- backend/deskpet-backend.spec` 只显示该目标文件已修改。

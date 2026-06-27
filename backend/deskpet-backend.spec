@@ -15,6 +15,7 @@
 # `COLLECT`, `block_cipher` into this file's scope.
 
 import glob
+import importlib.util as _ilu
 import os
 import sysconfig
 
@@ -41,6 +42,29 @@ hiddenimports: list[str] = []
 hiddenimports += collect_submodules("faster_whisper")
 hiddenimports += collect_submodules("ctranslate2")
 hiddenimports += collect_submodules("silero_vad")
+# 2026-06-28: keyring backends are loaded through entry-points, so
+# PyInstaller's static import graph may miss them in frozen builds. Pin
+# keyring + Windows credential backends and their win32ctypes shims when
+# available; keep spec loading tolerant on envs without those optional deps.
+try:
+    hiddenimports += collect_submodules("keyring")
+except Exception:
+    print("[spec] WARN: keyring not importable, skip")
+
+for _m in [
+    "keyring.backends.Windows",
+    "keyring.backends.null",
+    "keyring.backends.fail",
+    "win32ctypes.core",
+    "win32ctypes.pywin32",
+    "win32ctypes.core.cffi",
+    "win32ctypes.core.ctypes",
+]:
+    try:
+        if _ilu.find_spec(_m) is not None:
+            hiddenimports.append(_m)
+    except (ImportError, ValueError):
+        pass
 # 2026-05-30 P0 bug fix #10: deskpet/tools/__init__.py uses pkgutil
 # .iter_modules to dynamically discover + import every tool module
 # (excel_tools, doc_tools, ppt_tools, image_tools, etc). PyInstaller's

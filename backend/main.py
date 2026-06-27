@@ -105,6 +105,11 @@ logger.info(
     user_data_dir=str(_paths.user_data_dir()),
     user_models_dir=str(_paths.user_models_dir()),
     model_root=str(_paths.model_root()),
+    # 2026-06-28 路径绑定可观测：portable=是否走 <install>/userdata；
+    # env_pinned=Tauri 是否注入了 DESKPET_USER_DATA_DIR（单一事实源生效）。
+    # 装机版路径漂移诊断就看这两个 + path 跨会话是否恒定。
+    portable=_paths.is_portable_mode(),
+    env_pinned=bool(os.environ.get("DESKPET_USER_DATA_DIR")),
 )
 PROJECT_ROOT = _CONFIG_PATH.parent
 SHARED_SECRET = secrets.token_hex(16)

@@ -116,6 +116,18 @@ class KeyMissingError(RuntimeError):
         super().__init__(f"api key missing for provider {provider_id!r}")
 
 
+class EmptyApiKeyError(RuntimeError):
+    """Provider has no usable api_key (empty/placeholder) - caller should
+    surface a 'login required / configure provider' message instead of
+    sending an illegal empty 'Bearer ' header."""
+
+    def __init__(self, provider_id: str = "?") -> None:
+        self.provider_id = provider_id
+        super().__init__(
+            f"empty api key for provider {provider_id!r} - login or configure required"
+        )
+
+
 # ───────────────────────── data ─────────────────────────
 
 
@@ -306,6 +318,12 @@ class LLMProviderRegistry:
         self._config_path = Path(config_path)
         self._entries: list[ProviderEntry] = []
         self._load_from_toml()
+        logger.info(
+            "provider_registry_ready n=%d enabled=%d ids=%s",
+            len(self._entries),
+            sum(1 for e in self._entries if e.enabled),
+            [e.id for e in self._entries],
+        )
 
     # ───────── persistence ─────────
 
@@ -759,5 +777,6 @@ __all__ = [
     "ProviderEntry",
     "NoProviderConfiguredError",
     "KeyMissingError",
+    "EmptyApiKeyError",
     "_migrate_legacy_provider_config",
 ]

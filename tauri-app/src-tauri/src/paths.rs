@@ -60,28 +60,37 @@ fn resolve_with(
 /// Portable-mode userdata dir: when running from a frozen install, data
 /// lives in `<install>/userdata/` next to the exe (mirrors Python
 /// `backend/paths.py::_portable_userdata_dir`). Returns None in dev mode
-/// (current_exe isn't in the install layout) or when no userdata/ exists.
+/// (current_exe isn't in the install layout) or when userdata/ is not writable.
 ///
 /// Layout: `<install>/deskpet.exe` + `<install>/userdata/`; the backend
 /// exe sits at `<install>/backend/deskpet-backend.exe`, so we also check
 /// one level up when the exe's parent is named "backend".
-#[cfg(not(test))]
-fn portable_userdata_dir() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
+fn portable_userdata_dir_from_exe(exe: &Path) -> Option<PathBuf> {
     let parent = exe.parent()?;
-    let mut anchors: Vec<PathBuf> = vec![parent.to_path_buf()];
-    if parent.file_name().and_then(|s| s.to_str()) == Some("backend") {
-        if let Some(up) = parent.parent() {
-            anchors.insert(0, up.to_path_buf());
-        }
-    }
-    for anchor in anchors {
-        let ud = anchor.join("userdata");
-        if ud.is_dir() {
+    let root = if parent
+        .file_name()
+        .map(|n| n.to_string_lossy().eq_ignore_ascii_case("backend"))
+        .unwrap_or(false)
+    {
+        parent.parent()?.to_path_buf()
+    } else {
+        parent.to_path_buf()
+    };
+    let ud = root.join("userdata");
+    if std::fs::create_dir_all(&ud).is_ok() {
+        let probe = ud.join(".deskpet-write-probe");
+        if std::fs::write(&probe, b"").is_ok() {
+            let _ = std::fs::remove_file(&probe);
             return Some(ud);
         }
     }
     None
+}
+
+#[cfg(not(test))]
+fn portable_userdata_dir() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    portable_userdata_dir_from_exe(&exe)
 }
 
 #[cfg(test)]
@@ -205,6 +214,24 @@ mod tests {
         ]);
         let out = user_data_dir_with(&base_win(), &env).unwrap();
         assert_eq!(out, PathBuf::from("D:/new/userdata"));
+    }
+
+    #[test]
+    fn portable_userdata_dir_creates_install_userdata_for_backend_exe() {
+        let root = std::env::temp_dir().join(format!(
+            "deskpet-portable-test-{}",
+            std::process::id()
+        ));
+        let backend_dir = root.join("backend");
+        std::fs::create_dir_all(&backend_dir).unwrap();
+        let exe = backend_dir.join("deskpet-backend.exe");
+
+        let out = portable_userdata_dir_from_exe(&exe).unwrap();
+
+        assert_eq!(out, root.join("userdata"));
+        assert!(out.is_dir());
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

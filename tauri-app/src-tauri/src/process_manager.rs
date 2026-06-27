@@ -177,6 +177,13 @@ fn spawn_once(launch: &BackendLaunch) -> Result<(Child, String), String> {
         .env("PYTHONIOENCODING", "utf-8")
         .env("PYTHONUNBUFFERED", "1");
 
+    // 路径单一事实源：把 Rust 解析出的 userdata 钉给 backend，
+    // 防 Rust/Python 双解析漂移（config.toml/state.db 落不同目录的根因）。
+    if let Some(ud) = crate::paths::user_data_dir() {
+        let _ = std::fs::create_dir_all(&ud);
+        cmd.env("DESKPET_USER_DATA_DIR", ud.to_string_lossy().to_string());
+    }
+
     // P4-S21 #8: suppress the orphan console window on Windows.
     //
     // PyInstaller spec keeps `console=True` so the bundled exe is a

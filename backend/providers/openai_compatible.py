@@ -15,6 +15,20 @@ from providers._response_sanitizer import sanitize_response
 
 logger = structlog.get_logger()
 
+# 2026-06-28: 空/占位符 api_key 会被拼成非法头 "Authorization: Bearer "
+# → httpx LocalProtocolError 把整轮对话刷崩（装机版 relay provider 路径丢失
+# 后退到 legacy 空 key 时的次生崩溃，见 plans/2026-06-28-userdata-path-binding-fix）。
+# 在唯一的 client 构造点 _client() 拦截：非本地 endpoint 且 key 不可用时抛
+# 友好的 LLMProviderError(error_class=empty_api_key)，由 chat 层照常 surface 成
+# "请重新登录/配置 provider"，而不是崩在传输层。本地 ollama（key 占位、server
+# 忽略）放行。
+_UNUSABLE_API_KEYS = {"", "from-keychain", "from-env", "your-key-here"}
+
+
+def _is_local_base_url(base_url: str) -> bool:
+    b = (base_url or "").lower()
+    return "localhost" in b or "127.0.0.1" in b or "0.0.0.0" in b
+
 
 def _record_tool_choice_none_unsupported(provider: str, model: str) -> None:
     try:
@@ -152,6 +166,15 @@ class OpenAICompatibleProvider:
         return classify_relay_error(status_code, body_text, body=body)
 
     def _client(self, timeout: float | httpx.Timeout) -> httpx.AsyncClient:
+        # 空 key 护栏：唯一的出站 client 构造点。非本地 endpoint 且 key 不可用
+        # （空/占位符）时不构造 client、不发请求，抛友好错误，避免拼出非法的
+        # "Authorization: Bearer " 头崩在 httpx 传输层（LocalProtocolError）。
+        if (self.api_key or "").strip().lower() in _UNUSABLE_API_KEYS and not _is_local_base_url(self.base_url):
+            raise LLMProviderError(
+                "未检测到可用的 LLM API Key（可能未登录或登录已失效）。"
+                "请重新登录，或在 设置 → LLM Providers 配置 API Key 后重试。",
+                error_class="empty_api_key",
+            )
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
