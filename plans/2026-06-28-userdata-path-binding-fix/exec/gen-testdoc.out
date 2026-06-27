@@ -1,0 +1,3758 @@
+Reading additional input from stdin...
+OpenAI Codex v0.125.0 (research preview)
+--------
+workdir: G:\projects\deskpet
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0a83-caee-7bb1-be9c-26909cd79948
+--------
+user
+# 任务 — 生成详细手工测试文档（windows-mcp 真机用）
+
+你是测试设计 Expert。仓库根：`G:\projects\deskpet`。**只生成一个 Markdown 测试文档文件**，写到：
+`G:\projects\deskpet\testcase\2026-06-28-userdata-path-binding\manual-test.md`
+不要改其他文件、不跑 git。
+
+## 被测改动（本次修复）
+背景 plan：`plans/2026-06-28-userdata-path-binding-fix/00-PLAN.md`。修复装机版 config.toml 路径跨会话漂移 + 空 Bearer 崩溃。落地点：
+- **Phase 1** `backend/paths.py`：portable userdata 解析确定化（只认 `<install>/userdata`，去掉盘邻居回落）+ 记忆化 + `.deskpet-portable` sentinel 固化绑定 + 不可写 logger.error 回落 AppData。
+- **Phase 2** `tauri-app/src-tauri`：Rust 解析一次 userdata，`spawn_once` 注入 `DESKPET_USER_DATA_DIR` 给 backend（priority-1），双解析归一。
+- **Phase 3** `backend/config.py`：`_recover_orphaned_endpoints` 启动自愈——canonical config 无可用 endpoint 时从 AppData/安装目录等候选位迁回 `[[llm.endpoints]]`，写 `.pre-recover-bak`，幂等不抛。
+- **Phase 4** `backend/providers/openai_compatible.py`：`_client` 空/占位符 key（含 `ollama`，非本地 endpoint）抛友好 `LLMProviderError(error_class="empty_api_key")`，不再拼非法 `Bearer ` 崩 httpx；localhost 放行。chain 全失败时 error_class 透传 `ErrorEvent`。
+- **Phase 5** 可观测：`config_loaded` 加 `portable`/`env_pinned`；`provider_registry_ready n/enabled/ids`。
+- **Phase 6** spec 钉死 keyring frozen 后端。
+
+## 关键根因（测试要能验出来）
+空 `Bearer ` 来自 legacy 兜底：`get_chain()` 无 enabled provider → 回退 legacy 空 key。根因是 registry 读的 config.toml 路径 ≠ provider 写入的路径（Rust/Python 双解析 + 未注 env 致跨会话漂移）。relay-cloud endpoint 是登录时才写进 config.toml。
+
+## 文档要求
+覆盖率要能测出各种 bug 和边界。每个 testcase 含：**前置/步骤(真坐标点击+真输入)/预期/判定证据(截图+日志 grep 关键字)**。明确标注哪些需 **frozen 装机版**（路径绑定只在 frozen 生效）、哪些 **dev 模式(npx tauri dev)** 即可、哪些 **单测兜底**。必含：
+
+1. **空 key 友好错误（★ 用户实际撞到的崩溃，dev 可测）**：制造无可用 key（如 keychain 无 relay key / 置占位符）→ 真机发消息 → 预期出现可读"请重新登录/配置 provider"类提示，**不出现** `Illegal header value b'Bearer '` / LocalProtocolError / 整轮崩。日志判据：`empty_api_key` / 不再有 `LocalProtocolError`。
+2. **正常聊天不回归（dev）**：有效 key → 发消息 → 正常流式回复。
+3. **路径跨会话不漂移（★ frozen 装机版）**：装到自定义目录（如 F:\deskpet）→ 登录 → 完全退出 → 重启 → 聊天成功。日志判据：登录期 vs 重启期 `config_loaded` 的 `path=`/`user_data_dir=` **完全一致** + `env_pinned=True` + `provider_registry_ready enabled>=1`。
+4. **存量自愈（frozen 或构造）**：canonical 无 endpoints 但 AppData 有 → 启动出现 `endpoints_recovered_from src=... count=N` + 不重登可聊 + 生成 `.pre-recover-bak`。
+5. **boot 可观测（任意）**：`config_loaded portable=.. env_pinned=..` + `provider_registry_ready` 能在日志看到。
+6. **边界**：① 本地 ollama（localhost + key=ollama）放行能正常用；② 云端 + ollama 占位被拦友好报错；③ sentinel 存在时即便 userdata 偶发不可写仍绑定；④ 安装目录不可写 → 日志 `portable_userdata_unwritable` 回落 AppData；⑤ chain 全 provider 失败 → ErrorEvent 带 error_class。标注哪些可真机、哪些单测兜底。
+
+## 真机纪律（写进文档头部）
+严格模拟人工：每 case 先 declare `坐标=(x,y)|动作=click/type|期望=...`；截图存 `plans/manual-results-2026-06-28-userdata-path/screenshots/`；中文输入用剪贴板 Ctrl+V；backend 日志在 tauri-dev log（UTF-16）。失败 retry ≥3 不同 workaround 才可标"环境受限"。
+
+## 输出
+生成结构化 Markdown：标题/环境/真机纪律/§ 各 TC 表 + 判定汇总表 + DECISION 占位。中文。文件路径见上。生成后输出文档大纲摘要。
+codex
+我会先读取项目里的计划文件和相关目录状态，只生成指定的 Markdown 文件，不执行 git 操作。因为这是当前会话的起始工作，我先按本地 skill 规则读取 `using-superpowers` 的必要说明。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content -LiteralPath 'G:\\projects\\deskpet\\plans\\2026-06-28-userdata-path-binding-fix\\00-PLAN.md' -TotalCount 260" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Test-Path -LiteralPath 'G:\\projects\\deskpet\\testcase\\2026-06-28-userdata-path-binding'; if (Test-Path -LiteralPath 'G:\\projects\\deskpet\\testcase\\2026-06-28-userdata-path-binding\\manual-test.md') { Get-Item -LiteralPath 'G:\\projects\\deskpet\\testcase\\2026-06-28-userdata-path-binding\\manual-test.md' | Select-Object FullName,Length,LastWriteTime }" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content -LiteralPath 'C:\\Users\\24378\\.agents\\skills\\sp-using-superpowers\\SKILL.md' -TotalCount 120" in G:\projects\deskpet
+ succeeded in 166ms:
+# Plan 鈥?userdata/config 璺緞涓庡畨瑁呯洰褰曠粦瀹氫慨澶?+ 绌?Bearer 鎶ゆ爮
+
+> 鏃ユ湡锛?026-06-28 锝?瑙﹀彂锛氳鏈虹増(F:\deskpet)鑱婂ぉ鎶?`Illegal header value b'Bearer '`
+> 鐘舵€侊細**寰呮墽琛?*锛坮oot cause 宸查攣瀹氾紝Phase 0 璇婃柇寰呯敤鎴峰湪 F:\deskpet 璺戜竴鏉＄‘璁ょ簿纭垎鏀級
+
+---
+
+## 1. 鐜拌薄
+
+瑁呮満鐗堬紙鑷畾涔夌洰褰?`F:\deskpet`锛孉dministrator锛夊璇濇姤锛?
+```
+Illegal header value b'Bearer ' 鈥?LocalProtocolError
+```
+
+backend.log 鍚屾椂鍑虹幇锛歚relay_provider_ensured key_fp=4dce0997`銆乣p5s2_provider_chain_resolve_failed sid=... err=no LLM provider configured`銆佸鏉?`Bearer` 閿欒銆傞噸鍚悗渚濇棫銆?
+---
+
+## 2. Root cause锛堝凡閿佸畾锛屼笁灞傝瘉鎹級
+
+### 2.1 涓嶆槸 keychain bug
+- `main.py:6815`锛歚_api_key = _registry.resolve_api_key(_entry.id) or "ollama"`銆傝嫢 keychain 璇讳笉鍑猴紝relay provider 浼氬彂 **`Bearer ollama`**锛?*涓嶅彲鑳?*鏄┖ `Bearer `銆?- `relay_provider_ensured key_fp=4dce0997`锛坄relay_provider_ops.py:63` 鐨?`key_fingerprint(reg.resolve_api_key(...))`锛夎瘉鏄?*鐧诲綍閭ｆ** keychain 璇诲啓閮芥甯搞€?- 鉄?绌?`Bearer ` 鍙兘鏉ヨ嚜 **legacy 鍏滃簳璺緞**锛坄get_chain()` 鎶?`NoProviderConfiguredError` 鍚?fallback锛夈€?
+### 2.2 鐪熷洜锛歳egistry 璇荤殑 config.toml 閲屾病鏈?enabled 鐨?relay-cloud endpoint
+- 绌?Bearer 鉄?`resolve_provider_for_session` 鈫?`registry.get_chain()` 鎶?`NoProviderConfiguredError`锛坄provider_registry.py:642`锛屾棤 enabled 椤癸級鉄?`main.py:6835` 鎹曡幏 鈫?log `p5s2_provider_chain_resolve_failed` 鈫?`_provider_chain=None` 鈫?閫€ legacy 绌?key銆?- relay-cloud 杩欒 endpoint **涓嶆槸鍑哄巶 bundle config.toml 鑷甫鐨?*锛屾槸**鐧诲綍鏃?* `ensure_relay_provider`鈫抈add_provider`鈫抈_persist_to_toml` 鎵嶅啓杩?`<user_data>/config.toml` 鐨勩€?
+### 2.3 璺緞浼氬湪浼氳瘽闂存紓绉伙紙"瀹夎鐩綍缁戝畾"闂锛?涓ゅ userdata 瑙ｆ瀽**鏉′欢涓嶄竴鑷?*锛屼笖 backend 鑷繁鐙珛瑙ｆ瀽锛圱auri 娌￠拤 env锛夛細
+
+| | Rust `paths.rs::portable_userdata_dir` | Python `paths.py::_portable_userdata_dir` |
+|---|---|---|
+| 閿氱偣 | `current_exe()`=`F:\deskpet\deskpet.exe` 鈫?parent `F:\deskpet` | `sys.executable`=`F:\deskpet\backend\鈥xe` 鈫?parent `F:\deskpet\backend`锛宯ame=="backend" 鏁?candidates_up=`(1,2,0)` |
+| 鍒ゅ畾 | `ud.is_dir()` 鈥斺€?**瑕佹眰鐩綍宸插瓨鍦?*锛屽惁鍒欏洖钀?`%AppData%` | **涓诲姩 `mkdir`+鎺㈤拡鍐?*锛宑andidates_up=2 鏃剁敋鑷充細钀藉埌 `F:\userdata`(鐩橀偦灞? |
+| 鍒涘缓鏃舵満 | `lib.rs:162` 鍦?`.setup()` 閲屾墠 `create_dir_all(<install>/userdata)` | 璋冪敤鍗冲缓 |
+
+- `process_manager.rs::spawn_once`锛?48-219锛夊彧娉ㄤ簡 `DESKPET_CLOUD_API_KEY`/`PYTHONIOENCODING`/`PYTHONUNBUFFERED`锛?*娌℃敞 `DESKPET_USER_DATA_DIR`** 鉄?Python 瀹屽叏鐙珛瑙ｆ瀽銆?- 鉄?鐧诲綍浼氳瘽 vs 閲嶅惎浼氳瘽锛屽洜 `userdata/` 瀛樺湪鎬ф椂搴?+ 涓ゅ鍒ゅ畾宸紓锛?*"portable vs %AppData%" 鐨勭粨璁哄彲鑳界炕杞?*锛歱rovider 鍐欒繘 A 鐩綍鐨?config.toml锛岄噸鍚粠 B 鐩綍璇?鈫?endpoint "涓㈠け"銆?- 鐢ㄦ埛纭疄鍦?`F:\deskpet\userdata\config.toml` 鎵惧埌浜?relay-cloud provider锛屼絾杩愯涓殑 backend 鏋佸彲鑳借鐨勬槸**鍙︿竴涓?* config.toml锛堟垨鍚岀洰褰曚絾璇ヨ disabled/malformed 鈥斺€?Phase 0 鍖哄垎锛夈€?
+### 2.4 娆＄敓 bug锛氱┖ key 鐩存帴鎷?Bearer 澶?鈫?宕?- `main.py:6087` `_headers["Authorization"] = f"Bearer {_api_key}"`锛宍_api_key` 绌烘椂鎷煎嚭闈炴硶澶?`Bearer ` 鈫?httpx `LocalProtocolError`锛屾妸 chat/facts/classifier 鍏ㄥ埛宕╋紝涓旀姤閿欏鐢ㄦ埛涓嶅彲璇汇€?- legacy `local_llm`锛坄main.py:281`锛塳ey 鏉ヨ嚜鍗犱綅绗?keychain锛宖rozen 涓嬮€€鍖栦负绌?鍗犱綅绗︺€?
+### 2.5 鏃佽瘉锛堥潪鏈?bug 浣嗛渶椤烘墜纭寲锛?- `deskpet-backend.spec` 鐨?hiddenimports **娌℃湁鏄惧紡鍒?`keyring` / `keyring.backends.Windows` / `win32ctypes.core`**銆俴eyring 鍚庣璧?entry-point 鍔ㄦ€佸姞杞斤紝PyInstaller 闈欐€佸垎鏋愮湅涓嶅埌 鈫?frozen 鐗?*鏈夋鐜?*鏁翠釜 keyring 澶辨晥銆傛湰鏈虹幇鍦ㄨ兘鐢紙`key_fp` 璇佹槑锛夛紝浣嗗睘瀹氭椂鐐稿脊锛屼竴骞堕拤姝汇€?
+---
+
+## 3. 淇鐩爣
+
+1. **鍗曚竴浜嬪疄婧?*锛歶serdata/config 璺緞**鍞竴鍦扮粦瀹氬埌瀹夎鐩綍**锛孯ust/Python 鍚屼竴绛旀锛岃法浼氳瘽鎭掑畾涓嶆紓绉汇€?2. **鑷剤**锛氬凡缁忔妸 config 鍐欓敊鍦版柟鐨勫瓨閲忚鏈猴紙濡傛湰鐢ㄦ埛锛夋棤闇€閲嶇櫥鍗冲彲鎭㈠銆?3. **浼橀泤澶辫触**锛氭棤鍙敤 provider / 绌?key 鏃剁粰"璇烽噸鏂扮櫥褰?鍙閿欒锛岀粷涓嶆嫾绌?`Bearer ` 宕╂簝銆?4. **鍙娴?*锛氬惎鍔ㄦ棩蹇椾竴鐪肩湅鍑鸿В鏋愬埌鍝€佸姞杞戒簡鍑犱釜 endpoint銆佸嚑涓?enabled銆?
+---
+
+## 4. Phase 0 鈥斺€?绮剧‘鍒嗘敮纭锛堢敤鎴峰湪 F:\deskpet 璺戯紝30 绉掞級
+
+鐩殑锛氬尯鍒?2.3銆岃矾寰勬紓绉汇€峷s銆屽悓鐩綍浣?disabled/malformed銆嶏紝骞朵负淇鍚庨獙璇佺暀鍩虹嚎銆?
+```powershell
+# A. 鐪?backend 瀹為檯鍔犺浇浜嗗摢涓?config锛堝姣旂櫥褰曟湡 vs 鏈€杩戜竴娆￠噸鍚湡锛?Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "config_loaded" | Select-Object -Last 5
+# B. dump 閭ｄ釜 config.toml 鐨?endpoints 娈碉紙enabled?锛?Get-Content "F:\deskpet\userdata\config.toml" | Select-String -Pattern "endpoints|id =|enabled|base_url|relay" -Context 0,1
+# C. 鏈夋病鏈夌浜屼釜 config.toml 鍦?AppData锛堟紓绉婚搧璇侊級
+Get-Content "$env:APPDATA\deskpet\config.toml" -ErrorAction SilentlyContinue | Select-String "endpoints|relay|enabled"
+Test-Path "$env:APPDATA\deskpet\config.toml"
+```
+
+**鍒よ**锛?- A 鐨?`path=`/`user_data_dir=` 鑻?*涓ゆ湡涓嶅悓** 鈫?2.3 婕傜Щ鍧愬疄锛岄噸鐐?Phase 1+2銆?- A 涓ゆ湡鐩稿悓浣?B 鏄剧ず endpoint `enabled = false`/瀛楁缂哄け 鈫?閲嶇偣 Phase 3 鑷剤 + 澶嶆煡 logout 璇Е鍙戙€?- C 瀛樺湪涓旀湁 endpoints 鈫?婕傜Щ閾佽瘉锛坧rovider 钀藉湪 AppData锛岃繍琛岃 portable锛夈€?
+> 淇璁捐瀵?*鎵€鏈?*鍒嗘敮閮介瞾妫掞紝Phase 0 浠呯敤浜庣‘璁?+ 楠岃瘉锛屼笉闃诲缂栫爜銆?
+---
+
+## 5. 淇鏂规锛堝埌浠ｇ爜绾э級
+
+### Phase 1 鈥?Python 渚ц矾寰勭‘瀹氬寲 + 璁板繂鍖栵紙`backend/paths.py`锛?
+**1a. `user_data_dir()` 璁板繂鍖?+ env 姘歌繙浼樺厛**锛堥槻杩涚▼鍐呮紓绉伙級
+```python
+_USER_DATA_DIR_CACHE: Path | None = None
+
+def user_data_dir() -> Path:
+    global _USER_DATA_DIR_CACHE
+    if _USER_DATA_DIR_CACHE is not None:
+        return _USER_DATA_DIR_CACHE
+    resolved = _resolve_user_data_dir()      # 鍘熻В鏋愰€昏緫鎼繘鏉?    _USER_DATA_DIR_CACHE = resolved
+    return resolved
+```
+> 鍚屾牱缁?`_portable_userdata_dir()` 鍔犱竴娆℃€?cache锛堟垚鍔熺粨鏋滐級锛岄伩鍏嶆瘡娆?probe-write 鎶栧姩銆?
+**1b. 鍘绘帀鍗遍櫓鐨勭洏閭诲眳鍥炶惤**锛坄_portable_userdata_dir`锛?- 鐜?`candidates_up=(1,2,0)`锛宻teps_up=2 浼氳惤鍒?`F:\userdata`锛堢洏鏍归偦灞咃級锛屾槸鑴忔暟鎹簮銆?- 鏀逛负锛歯ame=="backend" 鈫?**鍙 `<install_root>/userdata`**锛? 绾т笂锛夛紱standalone 鈫?鍙 `<exe_dir>/userdata`銆備笉鍙啓鏃?**`logger.error` 澶у０鎶?* 鍐嶆樉寮忓洖钀?`%AppData%`锛堜笉鍐嶉潤鎮勬倓钀藉埌鐩橀偦灞咃級銆?```python
+def _portable_userdata_dir() -> Path | None:
+    base = _install_dir()
+    if base is None:
+        return None
+    root = base.parent if base.name.lower() == "backend" else base
+    candidate = root / "userdata"
+    try:
+        candidate.mkdir(parents=True, exist_ok=True)
+        probe = candidate / ".deskpet-write-probe"
+        probe.write_bytes(b""); probe.unlink()
+    except OSError as e:
+        logger.error("portable_userdata_unwritable dir=%s err=%s 鈥?falling back to AppData", candidate, e)
+        return None
+    return candidate
+```
+
+**1c. sentinel 鍥哄寲缁戝畾**锛氶娆℃垚鍔熻В鏋愬悗钀?`<install>/userdata/.deskpet-portable`锛涘悗缁惎鍔ㄨ嫢 sentinel 瀛樺湪鍒?*鏃犳潯浠?*缁戝畾璇ョ洰褰曪紙鐢ㄦ埛鎰忓浘锛氶拤姝诲畨瑁呯洰褰曪級锛屽嵆渚挎煇娆?probe 鎶栧姩涔熶笉婕傝蛋銆?
+### Phase 2 鈥?Rust 鍗曚竴浜嬪疄婧?+ 娉ㄥ叆 env锛坄tauri-app/src-tauri`锛夆槄鏍稿績
+
+璁?**Rust 瑙ｆ瀽涓€娆?* userdata 骞?*閫氳繃 env 浼犵粰 backend**锛孭ython 璧?priority-1 鐩存帴鐢?鈫?鍙岃В鏋愬交搴曞綊涓€銆?
+**2a. `paths.rs::portable_userdata_dir`** 鏀规垚銆?*create 鍐嶈繑鍥?*銆嶏紙涓?Python 瀵归綈锛屼笉鍐嶈姹傞鍏堝瓨鍦級锛?```rust
+fn portable_userdata_dir() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let parent = exe.parent()?;
+    let root = if parent.file_name()?.to_string_lossy().eq_ignore_ascii_case("backend") {
+        parent.parent()?.to_path_buf()
+    } else { parent.to_path_buf() };
+    let ud = root.join("userdata");
+    // 鎺㈤拡鍐欙細鍙啓鎵嶈 portable锛屽惁鍒?None鈫?AppData%
+    if std::fs::create_dir_all(&ud).is_ok() {
+        let probe = ud.join(".deskpet-write-probe");
+        if std::fs::write(&probe, b"").is_ok() { let _ = std::fs::remove_file(&probe); return Some(ud); }
+    }
+    None
+}
+```
+
+**2b. `process_manager.rs::spawn_once`** 鍦ㄦ敞 env 澶勫姞涓€琛岋紙涓?`DESKPET_CLOUD_API_KEY` 鍚屾锛夛細
+```rust
+if let Some(ud) = crate::paths::user_data_dir() {
+    cmd.env("DESKPET_USER_DATA_DIR", ud.to_string_lossy().to_string());
+}
+```
+> Python `paths.py:193` 宸?priority-1 璇?`DESKPET_USER_DATA_DIR` 鈫?backend 涓嶅啀鐙珛瑙ｆ瀽 鈫?Rust=Python=鍚屼竴鐩綍銆俤evice_id/onboarding/config/db 鍏ㄩ儴褰掍竴銆?
+**2c.** `lib.rs:160-164` 鐨勯鍒涘缓淇濈暀锛堟棤瀹筹級锛屼絾涓嶅啀鏄纭€т緷璧栥€?
+### Phase 3 鈥?瀛橀噺瑁呮満鑷剤杩佺Щ锛坄backend/config.py`锛?
+`resolve_config_path()` 鍐呫€乣seed_user_config_if_missing()` 涔嬪悗鍔犱竴姝?`_recover_orphaned_endpoints()`锛?
+- 瑙勫垯锛歝anonical `<user_data>/config.toml` 鑻?**缂?`[[llm.endpoints]]` 鎴栧叏 disabled**锛屾壂宸茬煡鍊欓€変綅锛坄%AppData%\deskpet\config.toml`銆乣<install>/userdata\config.toml`銆佺洏閭诲眳 `<drive>\userdata\config.toml`锛夈€?- 鎵惧埌**鍚?enabled endpoints** 鐨勶紝鎶婂叾 `[[llm.endpoints]]` 娈靛苟鍏?canonical锛坱omlkit锛屼粎琛?endpoints锛屼繚鐣?canonical 鍏朵綑鍐呭 + 鍐?`.pre-recover-bak`锛夛紝`logger.info("endpoints_recovered_from=%s count=%d", src, n)`銆?- keychain 鏄郴缁熺骇锛堥潪璺緞缁戝畾锛夛紝key 鏈氨鎵惧緱鍒帮紝鏃犻渶杩佺Щ銆?- 骞傜瓑锛歝anonical 宸叉湁 enabled endpoints 鍒?no-op銆?
+### Phase 4 鈥?绌?key 鎶ゆ爮 + 鍙閿欒
+
+**4a. 鐩磋繛澶?*锛坄main.py:6087` 涓€甯︼級锛氭嫾澶村墠鍒ょ┖
+```python
+if not (_api_key or "").strip():
+    raise EmptyApiKeyError(provider_id=getattr(_entry, "id", "?"))
+_headers["Authorization"] = f"Bearer {_api_key}"
+```
+锛圥hase 0 鍚庣‘璁?6087 鐨?`_api_key` 鏉ユ簮锛涜嫢璇ュ瀹為檯涓嶇┖锛屽垯閲嶅績鍦?4b legacy 璺緞銆傦級
+
+**4b. legacy 鍏滃簳涓嶅啀鍙戠┖ key**锛坄main.py:6835` fallback 娈?/ `OpenAICompatibleProvider`锛夛細
+- `get_chain()` 澶辫触鍥為€€鏃讹紝鑻?legacy `local_llm` 鐨?key 涓虹┖/鍗犱綅绗︼紙`{"", "from-keychain", "from-env", "your-key-here"}`锛夛紝**涓?*鍙戣姹傦紝鏀?emit 涓€鏉″彲鎿嶄綔 error 浜嬩欢缁欏墠绔細`reason="no_provider_or_login_required"`锛屾枃妗?鏈娴嬪埌鍙敤鐨?LLM 鎻愪緵鏂癸紝璇烽噸鏂扮櫥褰曞悗閲嶈瘯"銆?- 鏂板 `EmptyApiKeyError`锛坄llm/provider_registry.py` 鎴?`llm/keys.py`锛夛紝chat handler 鎹曡幏 鈫?鍚屼笂 error 浜嬩欢锛屼笉鎶?`LocalProtocolError`銆?
+**4c. openai_adapter**锛歚OpenAICompatibleProvider` 鍙戣姹傚墠鑻?`self._api_key` 绌?鈫?鎶?`EmptyApiKeyError`锛堢粺涓€鎷︽埅鐐癸紝闃蹭换浣曡矾寰勬紡缃戯級銆?
+### Phase 5 鈥?鍙娴嬫€?
+- `main.py:101 config_loaded` 鎵╁睍瀛楁锛歚portable=<bool>`銆乣env_pinned=<DESKPET_USER_DATA_DIR 鏄惁璁?`銆乣n_endpoints`銆乣n_enabled`锛坮egistry 鏋勯€犲悗琛ヤ竴鏉?`provider_registry_ready ids=[...] enabled=[...]`锛夈€?- `LLMProviderRegistry.__init__` 鏈熬 log 鍔犺浇鍒扮殑 ids + enabled 鏁般€?
+### Phase 6 鈥?keyring frozen 纭寲锛坄backend/deskpet-backend.spec`锛?
+hiddenimports 杩藉姞锛?```python
+hiddenimports += collect_submodules("keyring")
+hiddenimports += ["keyring.backends.Windows", "win32ctypes.core", "win32ctypes.pywin32"]
+```
+> 娑堥櫎 frozen 鐗?keyring 鍚庣闈欓粯缂哄け椋庨櫓锛堟梺璇?2.5锛夈€?
+---
+
+## 6. 娴嬭瘯
+
+### 6.1 pytest锛堜笉闇€閲嶆墦鍖咃紝绾€昏緫锛?- `test_paths.py`锛氣憼 portable 纭畾鍖栵紙mock `sys.frozen`+executable 鈫?鍞竴 `<install>/userdata`锛屼笉钀界洏閭诲眳锛夛紱鈶?璁板繂鍖栵紙鏀?env 鍚庡悓杩涚▼浠嶈繑鍥為瑙ｆ瀽锛夛紱鈶?`DESKPET_USER_DATA_DIR` env 姘歌繙浼樺厛锛涒懀 涓嶅彲鍐欐椂鍥炶惤 AppData 涓?log error銆?- `test_config_resolution.py` 澧烇細`_recover_orphaned_endpoints` 鈥斺€?canonical 鏃?endpoints + AppData 鏈?enabled 鈫?杩佺Щ鎴愬姛銆佸箓绛夈€佸浠界敓鎴愩€乧anonical 鍏朵綑鍐呭涓嶅彉銆?- 鏂?`test_empty_api_key_guard.py`锛氱┖/鍗犱綅绗?key 鈫?`EmptyApiKeyError`锛沜hat fallback emit `no_provider_or_login_required` 鑰岄潪 `LocalProtocolError`锛涢潪绌?key 涓嶅彈褰卞搷锛圔C锛夈€?- 鍏ㄩ噺鍥炲綊锛歚backend/tests` 缁裤€?
+### 6.2 Rust 鍗曟祴
+- `paths.rs`锛歚portable_userdata_dir` create-then-return锛堝彲娉ㄥ叆 exe 璺緞鐨?`*_with` 鍙樹綋锛夛紱涓嶅彲鍐?鈫?None銆?- `process_manager`锛氭娊 `build_backend_env()` 绾嚱鏁帮紝鏂█鍚?`DESKPET_USER_DATA_DIR`锛坰pawn 鏈韩闅惧崟娴嬶級銆?
+### 6.3 鐪熸満锛堟渶缁堣瘉鎹?鈥斺€?闇€閲嶆墦鍖咃級
+- `scripts/build_backend.ps1` + Tauri NSIS 閲嶆墦 installer 鈫?**鍏ㄦ柊瑁呭埌 `F:\deskpet`** 鈫?鐧诲綍 鈫?**閲嶅惎** 鈫?瀵硅瘽銆屼綘濂姐€嶆垚鍔燂紙鏃犵┖ Bearer锛夈€?- 楠岃瘉 `config_loaded` 鐧诲綍鏈?vs 閲嶅惎鏈?`path=`/`user_data_dir=` **瀹屽叏涓€鑷?*锛沗provider_registry_ready enabled>=1`銆?- 瀛橀噺鑷剤锛氫繚鐣欐棫 AppData orphan config 瑁呮柊鐗?鈫?棣栧惎 log `endpoints_recovered_from=...` 鈫?涓嶉噸鐧诲嵆鍙亰銆?- 璧伴」鐩湡娴嬬邯寰嬶紙windows-mcp 鐪熺偣鐪熻緭鍏?+ 鎴浘 + 鎶?tauri-dev/backend log锛夈€?
+> 鈿狅笍 鐪熸満楠岃瘉蹇呴』**閲嶆墦鍖?*锛堣鏈虹増璺?frozen exe锛孌ESKPET_BACKEND_DIR 瑕嗙洊鏄?dev 鎵嬫锛夈€俻ytest/Rust 鍗曟祴鍏堣鍏滀綇閫昏緫锛涢噸鎵撳寘鍓嶇敤鎴风敤 env 鍏滃簳锛坄DESKPET_CLOUD_API_KEY`锛夌户缁祴搴旂敤鍏朵綑鍔熻兘銆?
+---
+
+## 7. 鎵ц椤哄簭涓庨闄?
+1. Phase 0 璇婃柇锛堢敤鎴凤紝骞惰锛夆啋 纭鍒嗘敮銆?2. Phase 1+4+5+6锛堢函 Python/spec锛屽厛钀斤紝pytest 楠岋級銆?3. Phase 3 鑷剤锛圥ython锛宲ytest 楠岋級銆?4. Phase 2锛圧ust锛宑argo test锛夈€?5. 閲嶆墦鍖?鈫?鐪熸満楠屾敹 鈫?STATUS 鏇存柊銆?
+**椋庨櫓**锛?- Phase 2 鏀?Rust 闇€ `cargo build` + 閲嶆墦鍖咃紝杩唬閲嶃€傗啋 鏁?Python 渚э紙1/3/4锛夌嫭绔嬫垚绔嬶紝鍗充娇涓嶅姩 Rust 涔熻兘闈?璁板繂鍖?鍘荤洏閭诲眳+鑷剤+env 浼樺厛"澶у箙鏀舵暃锛汸hase 2 鏄牴娌诲弻瑙ｆ瀽鐨勬渶鍚庝竴閿ゃ€?- 鑷剤杩佺Щ璇苟鍏?*浠栦汉/杩囨湡** endpoints锛熲啋 浠呮壂鍥哄畾鍊欓€変綅 + 浠呭綋 canonical 鏃?enabled 鏃惰Е鍙?+ 鍐欏浠?+ 骞傜瓑锛屼綆椋庨櫓锛沰eychain key 瀵逛笉涓婂垯鍚庣画 4c 鍙嬪ソ鎶ラ敊鑰岄潪宕┿€?
+
+ succeeded in 177ms:
+False
+
+ succeeded in 171ms:
+---
+name: using-superpowers
+description: Use when starting any conversation - establishes how to find and use skills, requiring Skill tool invocation before ANY response including clarifying questions
+---
+
+<SUBAGENT-STOP>
+If you were dispatched as a subagent to execute a specific task, skip this skill.
+</SUBAGENT-STOP>
+
+<EXTREMELY-IMPORTANT>
+If you think there is even a 1% chance a skill might apply to what you are doing, you ABSOLUTELY MUST invoke the skill.
+
+IF A SKILL APPLIES TO YOUR TASK, YOU DO NOT HAVE A CHOICE. YOU MUST USE IT.
+
+This is not negotiable. This is not optional. You cannot rationalize your way out of this.
+</EXTREMELY-IMPORTANT>
+
+## Instruction Priority
+
+Superpowers skills override default system prompt behavior, but **user instructions always take precedence**:
+
+1. **User's explicit instructions** (AGENTS.md, GEMINI.md, AGENTS.md, direct requests) 鈥?highest priority
+2. **Superpowers skills** 鈥?override default system behavior where they conflict
+3. **Default system prompt** 鈥?lowest priority
+
+If AGENTS.md, GEMINI.md, or AGENTS.md says "don't use TDD" and a skill says "always use TDD," follow the user's instructions. The user is in control.
+
+## How to Access Skills
+
+**In Codex:** Use the `Skill` tool. When you invoke a skill, its content is loaded and presented to you鈥攆ollow it directly. Never use the Read tool on skill files.
+
+**In Copilot CLI:** Use the `skill` tool. Skills are auto-discovered from installed plugins. The `skill` tool works the same as Codex's `Skill` tool.
+
+**In Gemini CLI:** Skills activate via the `activate_skill` tool. Gemini loads skill metadata at session start and activates the full content on demand.
+
+**In other environments:** Check your platform's documentation for how skills are loaded.
+
+## Platform Adaptation
+
+Skills use Codex tool names. Non-CC platforms: see `references/copilot-tools.md` (Copilot CLI), `references/codex-tools.md` (Codex) for tool equivalents. Gemini CLI users get the tool mapping loaded automatically via GEMINI.md.
+
+# Using Skills
+
+## The Rule
+
+**Invoke relevant or requested skills BEFORE any response or action.** Even a 1% chance a skill might apply means that you should invoke the skill to check. If an invoked skill turns out to be wrong for the situation, you don't need to use it.
+
+```dot
+digraph skill_flow {
+    "User message received" [shape=doublecircle];
+    "About to EnterPlanMode?" [shape=doublecircle];
+    "Already brainstormed?" [shape=diamond];
+    "Invoke brainstorming skill" [shape=box];
+    "Might any skill apply?" [shape=diamond];
+    "Invoke Skill tool" [shape=box];
+    "Announce: 'Using [skill] to [purpose]'" [shape=box];
+    "Has checklist?" [shape=diamond];
+    "Create TodoWrite todo per item" [shape=box];
+    "Follow skill exactly" [shape=box];
+    "Respond (including clarifications)" [shape=doublecircle];
+
+    "About to EnterPlanMode?" -> "Already brainstormed?";
+    "Already brainstormed?" -> "Invoke brainstorming skill" [label="no"];
+    "Already brainstormed?" -> "Might any skill apply?" [label="yes"];
+    "Invoke brainstorming skill" -> "Might any skill apply?";
+
+    "User message received" -> "Might any skill apply?";
+    "Might any skill apply?" -> "Invoke Skill tool" [label="yes, even 1%"];
+    "Might any skill apply?" -> "Respond (including clarifications)" [label="definitely not"];
+    "Invoke Skill tool" -> "Announce: 'Using [skill] to [purpose]'";
+    "Announce: 'Using [skill] to [purpose]'" -> "Has checklist?";
+    "Has checklist?" -> "Create TodoWrite todo per item" [label="yes"];
+    "Has checklist?" -> "Follow skill exactly" [label="no"];
+    "Create TodoWrite todo per item" -> "Follow skill exactly";
+}
+```
+
+## Red Flags
+
+These thoughts mean STOP鈥攜ou're rationalizing:
+
+| Thought | Reality |
+|---------|---------|
+| "This is just a simple question" | Questions are tasks. Check for skills. |
+| "I need more context first" | Skill check comes BEFORE clarifying questions. |
+| "Let me explore the codebase first" | Skills tell you HOW to explore. Check first. |
+| "I can check git/files quickly" | Files lack conversation context. Check for skills. |
+| "Let me gather information first" | Skills tell you HOW to gather information. |
+| "This doesn't need a formal skill" | If a skill exists, use it. |
+| "I remember this skill" | Skills evolve. Read current version. |
+| "This doesn't count as a task" | Action = task. Check for skills. |
+| "The skill is overkill" | Simple things become complex. Use it. |
+| "I'll just do this one thing first" | Check BEFORE doing anything. |
+| "This feels productive" | Undisciplined action wastes time. Skills prevent this. |
+| "I know what that means" | Knowing the concept 鈮?using the skill. Invoke it. |
+
+## Skill Priority
+
+When multiple skills could apply, use this order:
+
+1. **Process skills first** (brainstorming, debugging) - these determine HOW to approach the task
+2. **Implementation skills second** (frontend-design, mcp-builder) - these guide execution
+
+"Let's build X" 鈫?brainstorming first, then implementation skills.
+"Fix this bug" 鈫?debugging first, then domain-specific skills.
+
+## Skill Types
+
+**Rigid** (TDD, debugging): Follow exactly. Don't adapt away discipline.
+
+**Flexible** (patterns): Adapt principles to context.
+
+The skill itself tells you which.
+
+## User Instructions
+
+Instructions say WHAT, not HOW. "Add X" or "Fix Y" doesn't mean skip workflows.
+
+codex
+计划文件在当前控制台显示为编码乱码，但用户任务里已经给了完整修复范围和必测点，足够设计用例。目标目录目前不存在；我会只创建这个目标目录和目标 `manual-test.md`，不触碰其他文件。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-ChildItem -LiteralPath 'G:\\projects\\deskpet' -Force | Select-Object Name,Mode" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "if (Test-Path -LiteralPath 'G:\\projects\\deskpet\\testcase') { Get-ChildItem -LiteralPath 'G:\\projects\\deskpet\\testcase' -Force | Select-Object Name,Mode } else { 'NO_TESTCASE_DIR' }" in G:\projects\deskpet
+ succeeded in 212ms:
+
+Name                             Mode  
+----                             ----  
+.claude                          d-----
+.dev-userdata                    d-----
+.dev-userdata-f3f4verify         d-----
+.git                             d--h--
+.github                          d-----
+.oh4-gui-userdata                d-----
+.pytest_cache                    d-----
+.tmp                             d-----
+backend                          d-----
+codex-installer-package          d-----
+crash_reports                    d-----
+data                             d-----
+DeepResearch                     d-----
+docs                             d-----
+evidence                         d-----
+licenses                         d-----
+logs                             d-----
+node_modules                     d-----
+openspec                         d-----
+plans                            d-----
+release                          d-----
+research                         d-----
+resources                        d-----
+scripts                          d-----
+STATUS                           d-----
+tauri-app                        d-----
+temp                             d-----
+testcase                         d-----
+tests                            d-----
+UI                               d-----
+verify                           d-----
+.env                             -a----
+.env.example                     -a----
+.gitattributes                   -a----
+.gitignore                       -a----
+ARCHITECTURE.md                  -a----
+CHANGELOG.md                     -a----
+CLAUDE.md                        -a----
+CODE_OF_CONDUCT.md               -a----
+config.toml                      -a----
+CONTRIBUTING.md                  -a----
+HARDWARE_COMPROMISES.md          -a----
+LICENSE                          -a----
+LICENSE.FAQ.md                   -a----
+LOCAL-DEV-CREDENTIALS.md         -a----
+LOCAL-DEV-CREDENTIALS.md.example -a----
+QUICKSTART.md                    -a----
+README.en.md                     -a----
+README.md                        -a----
+RELEASE.md                       -a----
+RELEASE_CHECKLIST.md             -a----
+SECURITY.md                      -a----
+
+
+
+ succeeded in 218ms:
+
+Name                                                       Mode  
+----                                                       ----  
+2026-06-15-deep-search-phase2                              d-----
+2026-06-16-compaction-bestpractice-phase1                  d-----
+2026-06-16-effective-llm-model                             d-----
+2026-06-16-js-render-cdp-edge                              d-----
+2026-06-20-agent-loop-batch-a                              d-----
+2026-06-20-agent-loop-batch-b                              d-----
+2026-06-20-agent-loop-batch-c                              d-----
+2026-06-20-deepresearch-search-reliability                 d-----
+2026-06-20-deepresearch-upgrade                            d-----
+2026-06-20-task-drift-fix                                  d-----
+2026-06-21-deepresearch-subagent-fanout                    d-----
+2026-06-21-task-drift-v2-phaseA                            d-----
+2026-06-21-task-drift-v2-phaseB                            d-----
+2026-06-21-task-drift-v2-phaseCD                           d-----
+2026-06-22-context-agent-opt-P0                            d-----
+2026-06-22-context-agent-opt-P1                            d-----
+2026-06-22-context-agent-opt-P2                            d-----
+2026-06-22-ppt-pro                                         d-----
+2026-06-24-problem-pipeline-maoxuan                        d-----
+2026-06-25-problem-pipeline-production                     d-----
+2026-06-25-problem-pipeline-ship                           d-----
+2026-06-26-bugb-phase1                                     d-----
+2026-06-26-bugb-phase2                                     d-----
+2026-06-26-bugb-phase3-final                               d-----
+2026-06-26-relay-provider-integration                      d-----
+2026-06-26-relay-provider-phaseA-wiC                       d-----
+2026-06-26-relay-provider-phaseB-registry                  d-----
+2026-06-27-enable-flags                                    d-----
+2026-06-27-factextractor-dedup                             d-----
+goal-completion                                            d-----
+screenshots                                                d-----
+2026-06-07-da-youhua-cross-layer-regression-manual-test.md -a----
+deskpet-input.ps1                                          -a----
+goal-completion-manual-test.md                             -a----
+index.md                                                   -a----
+status-file-manual-test.md                                 -a----
+tool-layer-manual-test.md                                  -a----
+tool-layer-RESULTS.md                                      -a----
+tool-layer-RIGOROUS-manual-test.md                         -a----
+_approve.py                                                -a----
+_build_backend.log                                         -a----
+_build_msi.log                                             -a----
+_build_tauri.log                                           -a----
+_build_venv_install.log                                    -a----
+_cdp.py                                                    -a----
+_hover_click_toolbar.py                                    -a----
+_restore_devvenv.log                                       -a----
+_runtime_tauri_dev.log                                     -a----
+_send.py                                                   -a----
+_zip.log                                                   -a----
+
+
+
+codex
+接下来我会写测试文档本体：按 dev / frozen / 单测兜底分层，给每个用例写前置、人工坐标声明、步骤、预期和日志证据。不会运行应用、不会执行 git。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "New-Item -ItemType Directory -Path 'G:\\projects\\deskpet\\testcase\\2026-06-28-userdata-path-binding' -Force | Out-Null" in G:\projects\deskpet
+ succeeded in 200ms:
+apply patch
+patch: completed
+G:\projects\deskpet\testcase\2026-06-28-userdata-path-binding\manual-test.md
+diff --git a/testcase/2026-06-28-userdata-path-binding/manual-test.md b/testcase/2026-06-28-userdata-path-binding/manual-test.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fe313178025deb946df960dffacdfb3e60473458
+--- /dev/null
++++ b/testcase/2026-06-28-userdata-path-binding/manual-test.md
+@@ -0,0 +1,738 @@
++# 2026-06-28 userdata 路径绑定与空 Bearer 手工测试
++
++被测计划：`plans/2026-06-28-userdata-path-binding-fix/00-PLAN.md`
++
++被测范围：装机版 `config.toml` 路径跨会话漂移修复、Rust/Python userdata 归一、存量 endpoint 自愈、空/占位 API key 友好错误、启动可观测日志、keyring frozen 后端钉死。
++
++## 环境
++
++| 项 | 要求 |
++|---|---|
++| OS | Windows 真机，建议 Windows 10/11 |
++| dev 模式 | 仓库根 `G:\projects\deskpet`，`npx tauri dev` 可启动 |
++| frozen 装机版 | 必须使用本次修复后重新打包的安装包，安装到自定义目录，例如 `F:\deskpet` |
++| 结果目录 | 截图固定保存到 `plans/manual-results-2026-06-28-userdata-path/screenshots/` |
++| 日志 | dev：tauri-dev 控制台日志通常为 UTF-16；frozen：优先查 `<userdata>\logs\backend.log` 和安装目录/用户目录日志 |
++| 输入方式 | 中文输入必须使用剪贴板 `Ctrl+V`，不要依赖 IME 逐字输入 |
++| 禁止事项 | 不跑 git，不修改非测试数据文件，不把失败直接判成环境受限 |
++
++## 真机纪律
++
++1. 严格模拟人工。每个用例执行前必须先声明本次窗口里的真实坐标，格式固定为：
++
++   ```text
++   坐标=(x,y)|动作=click|期望=焦点落在聊天输入框
++   坐标=(x,y)|动作=type|期望=通过剪贴板粘贴中文消息
++   坐标=(x,y)|动作=click|期望=发送按钮被点击
++   ```
++
++2. 文档中的 `CHAT_INPUT`、`SEND_BUTTON`、`SETTINGS_BUTTON` 等是坐标名，不是占位结果。执行时必须用 windows-mcp/截图读取到的当前真实 `(x,y)` 替换后再操作，并把声明写进执行记录。
++3. 每个关键步骤后截图，命名建议：`TCxx-stepNN-说明.png`，保存到 `plans/manual-results-2026-06-28-userdata-path/screenshots/`。
++4. 中文输入统一：复制文本到剪贴板，再点击输入框，按 `Ctrl+V`。
++5. 日志 grep 优先使用 PowerShell，UTF-16 tauri-dev 日志使用 `-Encoding Unicode` 读取。例如：
++
++   ```powershell
++   Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++     Select-String "config_loaded|provider_registry_ready|empty_api_key|LocalProtocolError|Illegal header"
++   ```
++
++6. 失败后至少 retry 3 次，并尝试 3 种不同 workaround，才可标记“环境受限”。建议 workaround：重启前端、清理本用例临时 userdata、重新登录/退出登录、切换网络、重启 Windows、改用管理员/非管理员权限对照。
++7. 判定必须同时看 UI、截图、日志。只有 UI 现象而无日志证据，不能判通过。
++
++## 公共日志命令
++
++dev 模式日志示例：
++
++```powershell
++# 如果 npx tauri dev 输出被保存为 UTF-16 日志
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "config_loaded|provider_registry_ready|empty_api_key|ErrorEvent|LocalProtocolError|Illegal header"
++```
++
++frozen 装机版日志示例：
++
++```powershell
++$ud = "F:\deskpet\userdata"
++Get-Content "$ud\logs\backend.log" -ErrorAction Stop |
++  Select-String "config_loaded|provider_registry_ready|endpoints_recovered_from|portable_userdata_unwritable|empty_api_key|ErrorEvent|LocalProtocolError|Illegal header"
++```
++
++路径一致性对比示例：
++
++```powershell
++Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "config_loaded|provider_registry_ready" |
++  Select-Object -Last 20
++```
++
++## 用例总览
++
++| ID | 名称 | 执行类型 | 优先级 | 目标 |
++|---|---|---:|---:|---|
++| TC01 | 空 key 友好错误 | dev 可测 | P0 | 复现用户实际崩溃场景，确认不再出现空 Bearer 崩溃 |
++| TC02 | 正常聊天不回归 | dev 可测 | P0 | 有效 key 下流式回复正常 |
++| TC03 | 路径跨会话不漂移 | frozen 装机版必测 | P0 | 登录期与重启期 config/userdata 路径完全一致 |
++| TC04 | 存量 orphan endpoint 自愈 | frozen 或构造 | P0 | canonical 无 endpoint、AppData 有 endpoint 时自动迁回 |
++| TC05 | boot 可观测日志 | 任意模式 | P1 | 启动日志含 portable/env_pinned/provider registry 摘要 |
++| TC06 | 本地 Ollama 放行 | 真机优先，单测兜底 | P1 | localhost + key=ollama 不被空 key 保护误拦 |
++| TC07 | 云端 + ollama 占位拦截 | dev 可测，单测兜底 | P1 | 非本地 endpoint 使用 ollama/占位 key 时友好报错 |
++| TC08 | sentinel 固化绑定 | frozen 优先，单测兜底 | P1 | sentinel 存在时偶发不可写不漂移 |
++| TC09 | 安装目录不可写回落 AppData | frozen 优先，单测兜底 | P1 | 不可写时记录 error 并显式回落 AppData |
++| TC10 | chain 全 provider 失败 ErrorEvent | dev 可测，单测兜底 | P1 | 全失败时 error_class 透传到前端错误事件 |
++
++---
++
++## TC01 空 key 友好错误
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | dev 可测 |
++| 优先级 | P0，用户实际撞到的崩溃 |
++| 覆盖风险 | `get_chain()` 无 enabled provider 后 fallback legacy 空 key，拼出 `Bearer ` 导致 httpx `LocalProtocolError` |
++
++### 前置
++
++1. 使用 dev 模式启动：`npx tauri dev`。
++2. 准备一个隔离 userdata，避免污染真实登录态。推荐设置 `DESKPET_USER_DATA_DIR=G:\projects\deskpet\.dev-userdata-empty-key` 后启动。
++3. 确保没有可用 relay key：退出登录，或清理本测试 userdata 的 `config.toml` 中 enabled provider，或把云端 provider 的 key 设置为占位符/空值。
++4. 如果 key 存在于 Windows Credential Manager/keyring，先通过应用退出登录或测试专用账号解除，不能删除真实用户凭据。
++
++### 坐标声明
++
++执行前记录真实坐标：
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“你好，测试空 key 保护”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=消息发送
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 启动 dev 应用，等待主界面可操作 | 主窗口加载完成，没有启动崩溃 | `TC01-01-boot.png` |
++| 2 | 点击 `CHAT_INPUT` | 输入框出现光标 | `TC01-02-focus.png` |
++| 3 | 剪贴板写入 `你好，测试空 key 保护`，按 `Ctrl+V` | 输入框显示完整中文 | `TC01-03-paste.png` |
++| 4 | 点击 `SEND_BUTTON` | 出现用户消息，随后出现可读错误提示 | `TC01-04-friendly-error.png` |
++| 5 | 停留 10 秒，继续点击输入框 | 整轮对话未崩，应用仍可交互 | `TC01-05-still-alive.png` |
++
++### 预期
++
++1. UI 显示可读提示，语义应接近“请重新登录”或“请配置 provider/API key”。
++2. 不出现 `Illegal header value b'Bearer '`。
++3. 不出现 `LocalProtocolError`。
++4. 不出现整轮崩溃、白屏、前端完全不可交互。
++
++### 判定证据
++
++必查日志：
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "empty_api_key|ErrorEvent|LocalProtocolError|Illegal header|Bearer "
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 截图 | `TC01-04-friendly-error.png` 有可读错误提示 |
++| 日志 | 有 `empty_api_key` 或等价 error_class |
++| 日志 | 没有 `LocalProtocolError` |
++| 日志 | 没有 `Illegal header value b'Bearer '` |
++
++---
++
++## TC02 正常聊天不回归
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | dev 可测 |
++| 优先级 | P0 |
++| 覆盖风险 | 空 key 保护不能误伤有效 relay/provider；流式响应不能回归 |
++
++### 前置
++
++1. dev 模式启动。
++2. 使用有效登录态或有效 provider key。
++3. 日志中 `provider_registry_ready enabled>=1`。
++
++### 坐标声明
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“请用一句话回复：路径绑定回归测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=发送并开始流式回复
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 启动应用并确认已登录/已配置 provider | 主界面可用，无登录错误 | `TC02-01-ready.png` |
++| 2 | 粘贴 `请用一句话回复：路径绑定回归测试` | 输入完整显示 | `TC02-02-input.png` |
++| 3 | 点击发送 | 出现流式 token 或加载状态 | `TC02-03-streaming.png` |
++| 4 | 等待回复完成 | 有完整助手回复，输入框恢复可用 | `TC02-04-complete.png` |
++
++### 预期
++
++1. 正常流式回复。
++2. 没有空 key 相关错误。
++3. 没有 provider registry 为空导致的 legacy fallback。
++
++### 判定证据
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "provider_registry_ready|empty_api_key|NoProviderConfigured|LocalProtocolError|Illegal header"
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 截图 | `TC02-04-complete.png` 有助手回复 |
++| 日志 | `provider_registry_ready` 中 `enabled>=1` |
++| 日志 | 无 `empty_api_key`、无 `LocalProtocolError`、无 `Illegal header` |
++
++---
++
++## TC03 路径跨会话不漂移
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | frozen 装机版必测 |
++| 优先级 | P0 |
++| 覆盖风险 | Rust/Python 双解析不一致、未注入 `DESKPET_USER_DATA_DIR`、登录期写 A 路径而重启读 B 路径 |
++
++### 前置
++
++1. 使用本次修复后的 frozen 安装包。
++2. 全新安装到自定义目录，例如 `F:\deskpet`。
++3. 确保 `F:\deskpet\userdata` 可写。
++4. 不设置 `DESKPET_BACKEND_DIR` 等 dev 覆盖变量。
++
++### 坐标声明
++
++登录期：
++
++```text
++坐标=(LOGIN_BUTTON_X,LOGIN_BUTTON_Y)|动作=click|期望=进入登录流程
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“登录期路径绑定测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=发送成功
++```
++
++重启期：
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“重启期路径绑定测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=不重新登录即可发送成功
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 安装到 `F:\deskpet` 并启动 | 主界面启动，创建 `F:\deskpet\userdata` | `TC03-01-installed.png` |
++| 2 | 完成登录 | 登录成功，provider 写入 config | `TC03-02-login-ok.png` |
++| 3 | 发送 `登录期路径绑定测试` | 聊天成功 | `TC03-03-login-chat.png` |
++| 4 | 完全退出应用，包括托盘/后台进程 | 任务管理器无 deskpet/backend 进程 | `TC03-04-exited.png` |
++| 5 | 重新启动 frozen 应用 | 不要求重新登录 | `TC03-05-rebooted.png` |
++| 6 | 发送 `重启期路径绑定测试` | 聊天成功 | `TC03-06-restart-chat.png` |
++
++### 预期
++
++1. 登录期和重启期都使用同一个 `config.toml`。
++2. 登录期与重启期 `config_loaded` 的 `path=` 完全一致。
++3. 登录期与重启期 `config_loaded` 的 `user_data_dir=` 完全一致。
++4. `env_pinned=True`。
++5. `provider_registry_ready enabled>=1`。
++6. 不出现重启后 provider 丢失、空 Bearer、要求重新登录但 key 实际存在的异常。
++
++### 判定证据
++
++```powershell
++Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "config_loaded|provider_registry_ready|empty_api_key|LocalProtocolError|Illegal header" |
++  Select-Object -Last 40
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 截图 | `TC03-03-login-chat.png` 和 `TC03-06-restart-chat.png` 均聊天成功 |
++| 日志 | 两个会话 `config_loaded path=` 完全一致 |
++| 日志 | 两个会话 `user_data_dir=` 完全一致 |
++| 日志 | `env_pinned=True` |
++| 日志 | `provider_registry_ready enabled>=1` |
++| 日志 | 无 `LocalProtocolError` / `Illegal header value b'Bearer '` |
++
++---
++
++## TC04 存量 orphan endpoint 自愈
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | frozen 或构造；推荐 frozen 真机 |
++| 优先级 | P0 |
++| 覆盖风险 | 旧版本把 relay-cloud endpoint 写到 AppData/盘邻居，canonical config 无 enabled endpoints，重启后无法聊天 |
++
++### 前置
++
++构造方式 A，frozen 推荐：
++
++1. 安装到 `F:\deskpet`。
++2. canonical：`F:\deskpet\userdata\config.toml` 存在但没有 `[[llm.endpoints]]`，或 endpoints 全 disabled。
++3. orphan：`$env:APPDATA\deskpet\config.toml` 存在且包含 enabled `relay-cloud` endpoint。
++4. keyring 中仍有对应 relay key，或测试账号可保持有效登录态。
++
++构造方式 B，dev 兜底：
++
++1. 设置 `DESKPET_USER_DATA_DIR` 指向测试目录。
++2. 在 canonical config 中移除 enabled endpoints。
++3. 在 AppData 候选 config 中放入 enabled endpoints。
++
++### 坐标声明
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“存量自愈测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=无需重登即可发送
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 按前置构造 canonical 无 endpoints、AppData 有 endpoints | 文件状态符合构造 | `TC04-01-files-before.png` |
++| 2 | 启动应用 | 启动不崩溃，日志出现 recovery | `TC04-02-boot.png` |
++| 3 | 不重新登录，发送 `存量自愈测试` | 聊天成功 | `TC04-03-chat-ok.png` |
++| 4 | 检查 canonical 目录 | 出现 `.pre-recover-bak` 备份 | `TC04-04-backup.png` |
++| 5 | 再次重启应用 | recovery 幂等，不重复破坏 config | `TC04-05-idempotent.png` |
++
++### 预期
++
++1. 启动日志出现 `endpoints_recovered_from src=... count=N`，`N>=1`。
++2. 不重登即可聊天。
++3. canonical config 生成 `.pre-recover-bak`。
++4. 重启第二次不重复污染 config，不抛异常。
++
++### 判定证据
++
++```powershell
++Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "endpoints_recovered_from|provider_registry_ready|empty_api_key|LocalProtocolError|Illegal header" |
++  Select-Object -Last 60
++
++Get-ChildItem "F:\deskpet\userdata" -Force |
++  Where-Object { $_.Name -like "*.pre-recover-bak" -or $_.Name -like "*pre-recover*" }
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 日志 | 有 `endpoints_recovered_from` 且 `count` 大于 0 |
++| 文件 | 有 `.pre-recover-bak` |
++| 日志 | recovery 后 `provider_registry_ready enabled>=1` |
++| 截图 | 不重登聊天成功 |
++| 日志 | 无 `LocalProtocolError` / `Illegal header` |
++
++---
++
++## TC05 boot 可观测日志
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | 任意模式 |
++| 优先级 | P1 |
++| 覆盖风险 | 修复后必须能从启动日志一眼看到 config 路径、portable/env pin 状态、provider registry 数量 |
++
++### 前置
++
++1. dev 或 frozen 均可。
++2. 至少启动一次应用并让 backend 完成初始化。
++
++### 坐标声明
++
++本用例不要求聊天；如果需要唤醒主界面：
++
++```text
++坐标=(APP_WINDOW_X,APP_WINDOW_Y)|动作=click|期望=窗口获得焦点
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 启动应用 | 主窗口显示 | `TC05-01-boot.png` |
++| 2 | 等待 10 秒 | backend 初始化完成 | `TC05-02-ready.png` |
++| 3 | grep 日志 | 能看到 config/provider registry 摘要 | `TC05-03-log.png` |
++
++### 预期
++
++日志至少包含：
++
++1. `config_loaded`
++2. `portable=...`
++3. `env_pinned=...`
++4. `path=...`
++5. `user_data_dir=...`
++6. `provider_registry_ready`
++7. `n=` 或 provider 总数
++8. `enabled=` 或 enabled 数
++9. `ids=` 或 provider id 列表
++
++### 判定证据
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "config_loaded|provider_registry_ready"
++```
++
++frozen：
++
++```powershell
++Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "config_loaded|provider_registry_ready" |
++  Select-Object -Last 20
++```
++
++通过判据：上述字段齐全，且字段值能解释当前运行模式。
++
++---
++
++## TC06 本地 Ollama 放行
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | 真机优先，单测兜底 |
++| 优先级 | P1 |
++| 覆盖风险 | `key=ollama` 对 localhost 是合法约定，不能被空 key/占位符保护误拦 |
++
++### 前置
++
++1. 本机启动 Ollama 或 OpenAI-compatible 本地服务。
++2. endpoint `base_url` 指向 `http://localhost:11434`、`http://127.0.0.1:11434` 或等价本地地址。
++3. provider key 设置为 `ollama`。
++4. provider enabled。
++
++### 坐标声明
++
++```text
++坐标=(SETTINGS_BUTTON_X,SETTINGS_BUTTON_Y)|动作=click|期望=进入 provider 设置
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“本地 ollama 放行测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=发送到本地 provider
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 确认本地服务可用 | 本地模型接口响应正常 | `TC06-01-local-service.png` |
++| 2 | 配置 provider 为 localhost + key `ollama` | provider 保存成功 | `TC06-02-provider.png` |
++| 3 | 发送 `本地 ollama 放行测试` | 本地模型回复 | `TC06-03-chat-ok.png` |
++
++### 预期
++
++1. localhost/127.0.0.1 endpoint 不因 key=`ollama` 被拦截。
++2. 如果本地模型自身失败，应显示本地服务错误，而不是 `empty_api_key`。
++
++### 判定证据
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "provider_registry_ready|empty_api_key|ollama|localhost|127.0.0.1|ErrorEvent"
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 截图 | 本地模型正常回复 |
++| 日志 | 无 `empty_api_key` |
++| 日志 | provider 指向 localhost/127.0.0.1 |
++
++单测兜底：覆盖 `_client` 或 key guard，断言 localhost + `ollama` 不抛 `LLMProviderError(error_class="empty_api_key")`。
++
++---
++
++## TC07 云端 + ollama 占位拦截
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | dev 可测，单测兜底 |
++| 优先级 | P1 |
++| 覆盖风险 | 非本地云端 endpoint 使用 `ollama` 或其他占位符时，不应发出伪 Bearer 请求 |
++
++### 前置
++
++1. dev 启动。
++2. 配置一个非本地 OpenAI-compatible endpoint，例如 `https://example-cloud.invalid/v1` 或测试云端 endpoint。
++3. key 设置为 `ollama`、空字符串、`your-key-here`、`from-keychain` 中任一占位符。
++4. provider enabled。
++
++### 坐标声明
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“云端占位 key 拦截测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=触发友好 provider 配置错误
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 保存非本地 endpoint + 占位 key | 保存成功 | `TC07-01-provider.png` |
++| 2 | 发送 `云端占位 key 拦截测试` | UI 显示请配置 provider/key 的友好错误 | `TC07-02-friendly-error.png` |
++| 3 | 等待 10 秒后继续点击输入框 | 应用仍可交互 | `TC07-03-still-alive.png` |
++
++### 预期
++
++1. 不向云端发送 `Authorization: Bearer ollama` 或 `Bearer `。
++2. 抛出/透传 `LLMProviderError(error_class="empty_api_key")`。
++3. UI 有可读提示。
++
++### 判定证据
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "empty_api_key|ErrorEvent|Bearer ollama|Bearer |LocalProtocolError|Illegal header"
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 日志 | 有 `empty_api_key` |
++| 截图 | 有可读 provider/key 配置提示 |
++| 日志 | 无 `LocalProtocolError` / `Illegal header` |
++
++单测兜底：非 localhost endpoint + `ollama` 断言抛 `LLMProviderError(error_class="empty_api_key")`。
++
++---
++
++## TC08 sentinel 固化绑定
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | frozen 优先，单测兜底 |
++| 优先级 | P1 |
++| 覆盖风险 | `<install>/userdata/.deskpet-portable` 存在时，偶发 probe/write 抖动不应导致路径漂移到 AppData 或盘邻居 |
++
++### 前置
++
++1. frozen 安装到 `F:\deskpet`。
++2. 已成功启动过一次，存在 `F:\deskpet\userdata\.deskpet-portable`。
++3. 记录当前 `config_loaded path=` 与 `user_data_dir=`。
++4. 模拟偶发不可写时要谨慎：只对测试安装目录操作，不碰真实用户数据。
++
++### 坐标声明
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“sentinel 固化绑定测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=仍使用 portable userdata 发送
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 确认 sentinel 文件存在 | `F:\deskpet\userdata\.deskpet-portable` 存在 | `TC08-01-sentinel.png` |
++| 2 | 制造一次轻量不可写抖动，例如临时去掉当前用户对 `userdata` 的写权限后启动 | 应用仍识别 portable 绑定，不漂移到 `F:\userdata` | `TC08-02-boot.png` |
++| 3 | 恢复写权限，发送测试消息 | 聊天成功或给出非路径漂移类错误 | `TC08-03-chat.png` |
++| 4 | grep 启动日志 | `user_data_dir` 仍为 `F:\deskpet\userdata` | `TC08-04-log.png` |
++
++### 预期
++
++1. sentinel 存在时绑定 `<install>/userdata`。
++2. 不出现盘邻居 `F:\userdata`。
++3. 不因单次 probe 不可写而跨会话漂移。
++
++### 判定证据
++
++```powershell
++Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "config_loaded|portable_userdata_unwritable|AppData|F:\\userdata|user_data_dir" |
++  Select-Object -Last 60
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 文件 | `.deskpet-portable` 存在 |
++| 日志 | `user_data_dir=F:\deskpet\userdata` |
++| 日志 | 不出现 `F:\userdata` 作为 userdata/config |
++
++单测兜底：mock sentinel 存在、probe 写失败，断言解析结果仍固定到 `<install>/userdata`，且不尝试盘邻居回落。
++
++---
++
++## TC09 安装目录不可写回落 AppData
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | frozen 优先，单测兜底 |
++| 优先级 | P1 |
++| 覆盖风险 | `<install>/userdata` 不可写时必须 `logger.error` 明确记录并回落 AppData，而不是静默漂移或落到盘邻居 |
++
++### 前置
++
++1. 使用测试安装目录，例如 `C:\Program Files\Deskpet-Test` 或手工移除当前用户写权限的 `F:\deskpet`。
++2. 确保没有 sentinel 固化场景干扰；本用例验证“首次不可写回落”。
++3. 只在测试目录做权限操作。
++
++### 坐标声明
++
++```text
++坐标=(APP_WINDOW_X,APP_WINDOW_Y)|动作=click|期望=应用窗口获得焦点
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 准备不可写安装目录并启动 frozen | 应用能启动，不崩溃 | `TC09-01-boot.png` |
++| 2 | 等待 backend 初始化 | 日志出现 portable 不可写 error | `TC09-02-ready.png` |
++| 3 | grep 日志 | 回落路径是 `%AppData%\deskpet`，不是盘邻居 | `TC09-03-log.png` |
++
++### 预期
++
++1. 日志出现 `portable_userdata_unwritable`，级别为 error 或等价错误日志。
++2. 明确回落 AppData。
++3. 不创建/使用 `F:\userdata` 这类盘邻居路径。
++
++### 判定证据
++
++```powershell
++Select-String -Path "$env:APPDATA\deskpet\logs\backend.log" -Pattern "portable_userdata_unwritable|config_loaded|user_data_dir|F:\\userdata" |
++  Select-Object -Last 60
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 日志 | 有 `portable_userdata_unwritable` |
++| 日志 | `user_data_dir` 指向 `%AppData%\deskpet` |
++| 日志 | 不出现盘邻居 userdata |
++
++单测兜底：mock `<install>/userdata` mkdir/probe 写失败，断言返回 AppData 且记录 `portable_userdata_unwritable`。
++
++---
++
++## TC10 chain 全 provider 失败 ErrorEvent
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | dev 可测，单测兜底 |
++| 优先级 | P1 |
++| 覆盖风险 | provider chain 全失败时，最终前端错误事件必须保留底层 `error_class`，不能退化成不可读通用错误 |
++
++### 前置
++
++1. dev 启动。
++2. 配置 2 个 enabled provider：
++   - provider A：非本地 endpoint + 空/占位 key，预期 `empty_api_key`。
++   - provider B：不可达 endpoint 或明确返回认证失败的测试 endpoint。
++3. 确认 chain 会尝试多个 provider，最终全失败。
++
++### 坐标声明
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“chain 全失败错误透传测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=最终 ErrorEvent 带 error_class
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 配置两个必失败 provider 并启用 | registry enabled 数量至少 2 | `TC10-01-providers.png` |
++| 2 | 发送 `chain 全失败错误透传测试` | UI 显示可读失败提示 | `TC10-02-error-ui.png` |
++| 3 | grep 日志和前端事件 | ErrorEvent 带 `error_class` | `TC10-03-log.png` |
++
++### 预期
++
++1. chain 不会因第一个 provider 的空 key 崩溃。
++2. 全 provider 失败后，最终 `ErrorEvent` 带 `error_class`。
++3. 如果首要错误是空 key，`error_class=empty_api_key` 应可见；如果最终选择其他错误类，也必须保留具体 class。
++
++### 判定证据
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "provider_registry_ready|chain|ErrorEvent|error_class|empty_api_key|LocalProtocolError|Illegal header"
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 日志 | 有 `ErrorEvent` 且包含 `error_class` |
++| 日志 | 有具体错误类，例如 `empty_api_key` |
++| 截图 | UI 有可读错误提示 |
++| 日志 | 无 `LocalProtocolError` / `Illegal header` |
++
++单测兜底：构造 chain 内全部 provider 抛错，断言最终事件 payload 保留 `error_class`。
++
++---
++
++## 单测兜底清单
++
++这些边界可手工验证，但若真机环境难以稳定构造，必须至少有单测覆盖：
++
++| 边界 | 推荐单测断言 |
++|---|---|
++| portable 只认 `<install>/userdata` | frozen + `sys.executable=<install>\backend\...exe` 时返回 `<install>\userdata`，不返回 `<drive>\userdata` |
++| `DESKPET_USER_DATA_DIR` priority-1 | env 设置后 Python 直接使用 env 路径 |
++| 记忆化 | 同进程首次解析后，即使 env/文件状态变化，也不漂移 |
++| sentinel 固化 | `.deskpet-portable` 存在时，probe 抖动不改绑定 |
++| 不可写回落 | probe 写失败记录 `portable_userdata_unwritable` 并回落 AppData |
++| `_recover_orphaned_endpoints` | canonical 无 enabled endpoints、AppData 有 enabled endpoints 时迁移、备份、幂等 |
++| localhost + `ollama` | 不抛 `empty_api_key` |
++| 云端 + `ollama`/空/占位 key | 抛 `LLMProviderError(error_class="empty_api_key")` |
++| chain 全失败 | ErrorEvent payload 保留 `error_class` |
++| frozen keyring | PyInstaller spec 包含 keyring/Windows backend hiddenimports |
++
++## 判定汇总表
++
++执行人填写：
++
++| TC | 执行类型 | 结果 | 关键截图 | 关键日志证据 | 备注 |
++|---|---|---|---|---|---|
++| TC01 空 key 友好错误 | dev | PASS / FAIL / BLOCKED |  | `empty_api_key`；无 `LocalProtocolError` |  |
++| TC02 正常聊天不回归 | dev | PASS / FAIL / BLOCKED |  | `provider_registry_ready enabled>=1` |  |
++| TC03 路径跨会话不漂移 | frozen | PASS / FAIL / BLOCKED |  | 登录期/重启期 `path` 与 `user_data_dir` 完全一致 |  |
++| TC04 存量自愈 | frozen/构造 | PASS / FAIL / BLOCKED |  | `endpoints_recovered_from count=N`，`.pre-recover-bak` |  |
++| TC05 boot 可观测 | 任意 | PASS / FAIL / BLOCKED |  | `config_loaded portable/env_pinned`，`provider_registry_ready` |  |
++| TC06 本地 Ollama 放行 | 真机/单测 | PASS / FAIL / BLOCKED |  | localhost + no `empty_api_key` |  |
++| TC07 云端占位拦截 | dev/单测 | PASS / FAIL / BLOCKED |  | `empty_api_key`，无非法 Bearer |  |
++| TC08 sentinel 固化 | frozen/单测 | PASS / FAIL / BLOCKED |  | `.deskpet-portable`，不漂移 |  |
++| TC09 不可写回落 AppData | frozen/单测 | PASS / FAIL / BLOCKED |  | `portable_userdata_unwritable`，AppData |  |
++| TC10 chain 全失败 ErrorEvent | dev/单测 | PASS / FAIL / BLOCKED |  | `ErrorEvent error_class=...` |  |
++
++## DECISION
++
++结论占位：
++
++```text
++DECISION: PASS / FAIL / BLOCKED
++版本/构建号:
++执行日期:
++执行人:
++必须修复项:
++可延期项:
++环境受限说明:
++```
++
++发布门槛：
++
++1. TC01、TC02、TC03、TC04 必须 PASS。
++2. TC05 必须 PASS，否则后续线上定位能力不足。
++3. TC06-TC10 至少真机或单测兜底 PASS；若标 BLOCKED，必须附 3 次 retry 和 3 种 workaround 记录。
++4. 任一日志出现 `Illegal header value b'Bearer '` 或 `LocalProtocolError`，本轮直接 FAIL。
+
+diff --git a/testcase/2026-06-28-userdata-path-binding/manual-test.md b/testcase/2026-06-28-userdata-path-binding/manual-test.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fe313178025deb946df960dffacdfb3e60473458
+--- /dev/null
++++ b/testcase/2026-06-28-userdata-path-binding/manual-test.md
+@@ -0,0 +1,738 @@
++# 2026-06-28 userdata 路径绑定与空 Bearer 手工测试
++
++被测计划：`plans/2026-06-28-userdata-path-binding-fix/00-PLAN.md`
++
++被测范围：装机版 `config.toml` 路径跨会话漂移修复、Rust/Python userdata 归一、存量 endpoint 自愈、空/占位 API key 友好错误、启动可观测日志、keyring frozen 后端钉死。
++
++## 环境
++
++| 项 | 要求 |
++|---|---|
++| OS | Windows 真机，建议 Windows 10/11 |
++| dev 模式 | 仓库根 `G:\projects\deskpet`，`npx tauri dev` 可启动 |
++| frozen 装机版 | 必须使用本次修复后重新打包的安装包，安装到自定义目录，例如 `F:\deskpet` |
++| 结果目录 | 截图固定保存到 `plans/manual-results-2026-06-28-userdata-path/screenshots/` |
++| 日志 | dev：tauri-dev 控制台日志通常为 UTF-16；frozen：优先查 `<userdata>\logs\backend.log` 和安装目录/用户目录日志 |
++| 输入方式 | 中文输入必须使用剪贴板 `Ctrl+V`，不要依赖 IME 逐字输入 |
++| 禁止事项 | 不跑 git，不修改非测试数据文件，不把失败直接判成环境受限 |
++
++## 真机纪律
++
++1. 严格模拟人工。每个用例执行前必须先声明本次窗口里的真实坐标，格式固定为：
++
++   ```text
++   坐标=(x,y)|动作=click|期望=焦点落在聊天输入框
++   坐标=(x,y)|动作=type|期望=通过剪贴板粘贴中文消息
++   坐标=(x,y)|动作=click|期望=发送按钮被点击
++   ```
++
++2. 文档中的 `CHAT_INPUT`、`SEND_BUTTON`、`SETTINGS_BUTTON` 等是坐标名，不是占位结果。执行时必须用 windows-mcp/截图读取到的当前真实 `(x,y)` 替换后再操作，并把声明写进执行记录。
++3. 每个关键步骤后截图，命名建议：`TCxx-stepNN-说明.png`，保存到 `plans/manual-results-2026-06-28-userdata-path/screenshots/`。
++4. 中文输入统一：复制文本到剪贴板，再点击输入框，按 `Ctrl+V`。
++5. 日志 grep 优先使用 PowerShell，UTF-16 tauri-dev 日志使用 `-Encoding Unicode` 读取。例如：
++
++   ```powershell
++   Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++     Select-String "config_loaded|provider_registry_ready|empty_api_key|LocalProtocolError|Illegal header"
++   ```
++
++6. 失败后至少 retry 3 次，并尝试 3 种不同 workaround，才可标记“环境受限”。建议 workaround：重启前端、清理本用例临时 userdata、重新登录/退出登录、切换网络、重启 Windows、改用管理员/非管理员权限对照。
++7. 判定必须同时看 UI、截图、日志。只有 UI 现象而无日志证据，不能判通过。
++
++## 公共日志命令
++
++dev 模式日志示例：
++
++```powershell
++# 如果 npx tauri dev 输出被保存为 UTF-16 日志
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "config_loaded|provider_registry_ready|empty_api_key|ErrorEvent|LocalProtocolError|Illegal header"
++```
++
++frozen 装机版日志示例：
++
++```powershell
++$ud = "F:\deskpet\userdata"
++Get-Content "$ud\logs\backend.log" -ErrorAction Stop |
++  Select-String "config_loaded|provider_registry_ready|endpoints_recovered_from|portable_userdata_unwritable|empty_api_key|ErrorEvent|LocalProtocolError|Illegal header"
++```
++
++路径一致性对比示例：
++
++```powershell
++Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "config_loaded|provider_registry_ready" |
++  Select-Object -Last 20
++```
++
++## 用例总览
++
++| ID | 名称 | 执行类型 | 优先级 | 目标 |
++|---|---|---:|---:|---|
++| TC01 | 空 key 友好错误 | dev 可测 | P0 | 复现用户实际崩溃场景，确认不再出现空 Bearer 崩溃 |
++| TC02 | 正常聊天不回归 | dev 可测 | P0 | 有效 key 下流式回复正常 |
++| TC03 | 路径跨会话不漂移 | frozen 装机版必测 | P0 | 登录期与重启期 config/userdata 路径完全一致 |
++| TC04 | 存量 orphan endpoint 自愈 | frozen 或构造 | P0 | canonical 无 endpoint、AppData 有 endpoint 时自动迁回 |
++| TC05 | boot 可观测日志 | 任意模式 | P1 | 启动日志含 portable/env_pinned/provider registry 摘要 |
++| TC06 | 本地 Ollama 放行 | 真机优先，单测兜底 | P1 | localhost + key=ollama 不被空 key 保护误拦 |
++| TC07 | 云端 + ollama 占位拦截 | dev 可测，单测兜底 | P1 | 非本地 endpoint 使用 ollama/占位 key 时友好报错 |
++| TC08 | sentinel 固化绑定 | frozen 优先，单测兜底 | P1 | sentinel 存在时偶发不可写不漂移 |
++| TC09 | 安装目录不可写回落 AppData | frozen 优先，单测兜底 | P1 | 不可写时记录 error 并显式回落 AppData |
++| TC10 | chain 全 provider 失败 ErrorEvent | dev 可测，单测兜底 | P1 | 全失败时 error_class 透传到前端错误事件 |
++
++---
++
++## TC01 空 key 友好错误
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | dev 可测 |
++| 优先级 | P0，用户实际撞到的崩溃 |
++| 覆盖风险 | `get_chain()` 无 enabled provider 后 fallback legacy 空 key，拼出 `Bearer ` 导致 httpx `LocalProtocolError` |
++
++### 前置
++
++1. 使用 dev 模式启动：`npx tauri dev`。
++2. 准备一个隔离 userdata，避免污染真实登录态。推荐设置 `DESKPET_USER_DATA_DIR=G:\projects\deskpet\.dev-userdata-empty-key` 后启动。
++3. 确保没有可用 relay key：退出登录，或清理本测试 userdata 的 `config.toml` 中 enabled provider，或把云端 provider 的 key 设置为占位符/空值。
++4. 如果 key 存在于 Windows Credential Manager/keyring，先通过应用退出登录或测试专用账号解除，不能删除真实用户凭据。
++
++### 坐标声明
++
++执行前记录真实坐标：
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“你好，测试空 key 保护”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=消息发送
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 启动 dev 应用，等待主界面可操作 | 主窗口加载完成，没有启动崩溃 | `TC01-01-boot.png` |
++| 2 | 点击 `CHAT_INPUT` | 输入框出现光标 | `TC01-02-focus.png` |
++| 3 | 剪贴板写入 `你好，测试空 key 保护`，按 `Ctrl+V` | 输入框显示完整中文 | `TC01-03-paste.png` |
++| 4 | 点击 `SEND_BUTTON` | 出现用户消息，随后出现可读错误提示 | `TC01-04-friendly-error.png` |
++| 5 | 停留 10 秒，继续点击输入框 | 整轮对话未崩，应用仍可交互 | `TC01-05-still-alive.png` |
++
++### 预期
++
++1. UI 显示可读提示，语义应接近“请重新登录”或“请配置 provider/API key”。
++2. 不出现 `Illegal header value b'Bearer '`。
++3. 不出现 `LocalProtocolError`。
++4. 不出现整轮崩溃、白屏、前端完全不可交互。
++
++### 判定证据
++
++必查日志：
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "empty_api_key|ErrorEvent|LocalProtocolError|Illegal header|Bearer "
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 截图 | `TC01-04-friendly-error.png` 有可读错误提示 |
++| 日志 | 有 `empty_api_key` 或等价 error_class |
++| 日志 | 没有 `LocalProtocolError` |
++| 日志 | 没有 `Illegal header value b'Bearer '` |
++
++---
++
++## TC02 正常聊天不回归
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | dev 可测 |
++| 优先级 | P0 |
++| 覆盖风险 | 空 key 保护不能误伤有效 relay/provider；流式响应不能回归 |
++
++### 前置
++
++1. dev 模式启动。
++2. 使用有效登录态或有效 provider key。
++3. 日志中 `provider_registry_ready enabled>=1`。
++
++### 坐标声明
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“请用一句话回复：路径绑定回归测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=发送并开始流式回复
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 启动应用并确认已登录/已配置 provider | 主界面可用，无登录错误 | `TC02-01-ready.png` |
++| 2 | 粘贴 `请用一句话回复：路径绑定回归测试` | 输入完整显示 | `TC02-02-input.png` |
++| 3 | 点击发送 | 出现流式 token 或加载状态 | `TC02-03-streaming.png` |
++| 4 | 等待回复完成 | 有完整助手回复，输入框恢复可用 | `TC02-04-complete.png` |
++
++### 预期
++
++1. 正常流式回复。
++2. 没有空 key 相关错误。
++3. 没有 provider registry 为空导致的 legacy fallback。
++
++### 判定证据
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "provider_registry_ready|empty_api_key|NoProviderConfigured|LocalProtocolError|Illegal header"
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 截图 | `TC02-04-complete.png` 有助手回复 |
++| 日志 | `provider_registry_ready` 中 `enabled>=1` |
++| 日志 | 无 `empty_api_key`、无 `LocalProtocolError`、无 `Illegal header` |
++
++---
++
++## TC03 路径跨会话不漂移
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | frozen 装机版必测 |
++| 优先级 | P0 |
++| 覆盖风险 | Rust/Python 双解析不一致、未注入 `DESKPET_USER_DATA_DIR`、登录期写 A 路径而重启读 B 路径 |
++
++### 前置
++
++1. 使用本次修复后的 frozen 安装包。
++2. 全新安装到自定义目录，例如 `F:\deskpet`。
++3. 确保 `F:\deskpet\userdata` 可写。
++4. 不设置 `DESKPET_BACKEND_DIR` 等 dev 覆盖变量。
++
++### 坐标声明
++
++登录期：
++
++```text
++坐标=(LOGIN_BUTTON_X,LOGIN_BUTTON_Y)|动作=click|期望=进入登录流程
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“登录期路径绑定测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=发送成功
++```
++
++重启期：
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“重启期路径绑定测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=不重新登录即可发送成功
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 安装到 `F:\deskpet` 并启动 | 主界面启动，创建 `F:\deskpet\userdata` | `TC03-01-installed.png` |
++| 2 | 完成登录 | 登录成功，provider 写入 config | `TC03-02-login-ok.png` |
++| 3 | 发送 `登录期路径绑定测试` | 聊天成功 | `TC03-03-login-chat.png` |
++| 4 | 完全退出应用，包括托盘/后台进程 | 任务管理器无 deskpet/backend 进程 | `TC03-04-exited.png` |
++| 5 | 重新启动 frozen 应用 | 不要求重新登录 | `TC03-05-rebooted.png` |
++| 6 | 发送 `重启期路径绑定测试` | 聊天成功 | `TC03-06-restart-chat.png` |
++
++### 预期
++
++1. 登录期和重启期都使用同一个 `config.toml`。
++2. 登录期与重启期 `config_loaded` 的 `path=` 完全一致。
++3. 登录期与重启期 `config_loaded` 的 `user_data_dir=` 完全一致。
++4. `env_pinned=True`。
++5. `provider_registry_ready enabled>=1`。
++6. 不出现重启后 provider 丢失、空 Bearer、要求重新登录但 key 实际存在的异常。
++
++### 判定证据
++
++```powershell
++Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "config_loaded|provider_registry_ready|empty_api_key|LocalProtocolError|Illegal header" |
++  Select-Object -Last 40
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 截图 | `TC03-03-login-chat.png` 和 `TC03-06-restart-chat.png` 均聊天成功 |
++| 日志 | 两个会话 `config_loaded path=` 完全一致 |
++| 日志 | 两个会话 `user_data_dir=` 完全一致 |
++| 日志 | `env_pinned=True` |
++| 日志 | `provider_registry_ready enabled>=1` |
++| 日志 | 无 `LocalProtocolError` / `Illegal header value b'Bearer '` |
++
++---
++
++## TC04 存量 orphan endpoint 自愈
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | frozen 或构造；推荐 frozen 真机 |
++| 优先级 | P0 |
++| 覆盖风险 | 旧版本把 relay-cloud endpoint 写到 AppData/盘邻居，canonical config 无 enabled endpoints，重启后无法聊天 |
++
++### 前置
++
++构造方式 A，frozen 推荐：
++
++1. 安装到 `F:\deskpet`。
++2. canonical：`F:\deskpet\userdata\config.toml` 存在但没有 `[[llm.endpoints]]`，或 endpoints 全 disabled。
++3. orphan：`$env:APPDATA\deskpet\config.toml` 存在且包含 enabled `relay-cloud` endpoint。
++4. keyring 中仍有对应 relay key，或测试账号可保持有效登录态。
++
++构造方式 B，dev 兜底：
++
++1. 设置 `DESKPET_USER_DATA_DIR` 指向测试目录。
++2. 在 canonical config 中移除 enabled endpoints。
++3. 在 AppData 候选 config 中放入 enabled endpoints。
++
++### 坐标声明
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“存量自愈测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=无需重登即可发送
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 按前置构造 canonical 无 endpoints、AppData 有 endpoints | 文件状态符合构造 | `TC04-01-files-before.png` |
++| 2 | 启动应用 | 启动不崩溃，日志出现 recovery | `TC04-02-boot.png` |
++| 3 | 不重新登录，发送 `存量自愈测试` | 聊天成功 | `TC04-03-chat-ok.png` |
++| 4 | 检查 canonical 目录 | 出现 `.pre-recover-bak` 备份 | `TC04-04-backup.png` |
++| 5 | 再次重启应用 | recovery 幂等，不重复破坏 config | `TC04-05-idempotent.png` |
++
++### 预期
++
++1. 启动日志出现 `endpoints_recovered_from src=... count=N`，`N>=1`。
++2. 不重登即可聊天。
++3. canonical config 生成 `.pre-recover-bak`。
++4. 重启第二次不重复污染 config，不抛异常。
++
++### 判定证据
++
++```powershell
++Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "endpoints_recovered_from|provider_registry_ready|empty_api_key|LocalProtocolError|Illegal header" |
++  Select-Object -Last 60
++
++Get-ChildItem "F:\deskpet\userdata" -Force |
++  Where-Object { $_.Name -like "*.pre-recover-bak" -or $_.Name -like "*pre-recover*" }
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 日志 | 有 `endpoints_recovered_from` 且 `count` 大于 0 |
++| 文件 | 有 `.pre-recover-bak` |
++| 日志 | recovery 后 `provider_registry_ready enabled>=1` |
++| 截图 | 不重登聊天成功 |
++| 日志 | 无 `LocalProtocolError` / `Illegal header` |
++
++---
++
++## TC05 boot 可观测日志
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | 任意模式 |
++| 优先级 | P1 |
++| 覆盖风险 | 修复后必须能从启动日志一眼看到 config 路径、portable/env pin 状态、provider registry 数量 |
++
++### 前置
++
++1. dev 或 frozen 均可。
++2. 至少启动一次应用并让 backend 完成初始化。
++
++### 坐标声明
++
++本用例不要求聊天；如果需要唤醒主界面：
++
++```text
++坐标=(APP_WINDOW_X,APP_WINDOW_Y)|动作=click|期望=窗口获得焦点
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 启动应用 | 主窗口显示 | `TC05-01-boot.png` |
++| 2 | 等待 10 秒 | backend 初始化完成 | `TC05-02-ready.png` |
++| 3 | grep 日志 | 能看到 config/provider registry 摘要 | `TC05-03-log.png` |
++
++### 预期
++
++日志至少包含：
++
++1. `config_loaded`
++2. `portable=...`
++3. `env_pinned=...`
++4. `path=...`
++5. `user_data_dir=...`
++6. `provider_registry_ready`
++7. `n=` 或 provider 总数
++8. `enabled=` 或 enabled 数
++9. `ids=` 或 provider id 列表
++
++### 判定证据
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "config_loaded|provider_registry_ready"
++```
++
++frozen：
++
++```powershell
++Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "config_loaded|provider_registry_ready" |
++  Select-Object -Last 20
++```
++
++通过判据：上述字段齐全，且字段值能解释当前运行模式。
++
++---
++
++## TC06 本地 Ollama 放行
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | 真机优先，单测兜底 |
++| 优先级 | P1 |
++| 覆盖风险 | `key=ollama` 对 localhost 是合法约定，不能被空 key/占位符保护误拦 |
++
++### 前置
++
++1. 本机启动 Ollama 或 OpenAI-compatible 本地服务。
++2. endpoint `base_url` 指向 `http://localhost:11434`、`http://127.0.0.1:11434` 或等价本地地址。
++3. provider key 设置为 `ollama`。
++4. provider enabled。
++
++### 坐标声明
++
++```text
++坐标=(SETTINGS_BUTTON_X,SETTINGS_BUTTON_Y)|动作=click|期望=进入 provider 设置
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“本地 ollama 放行测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=发送到本地 provider
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 确认本地服务可用 | 本地模型接口响应正常 | `TC06-01-local-service.png` |
++| 2 | 配置 provider 为 localhost + key `ollama` | provider 保存成功 | `TC06-02-provider.png` |
++| 3 | 发送 `本地 ollama 放行测试` | 本地模型回复 | `TC06-03-chat-ok.png` |
++
++### 预期
++
++1. localhost/127.0.0.1 endpoint 不因 key=`ollama` 被拦截。
++2. 如果本地模型自身失败，应显示本地服务错误，而不是 `empty_api_key`。
++
++### 判定证据
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "provider_registry_ready|empty_api_key|ollama|localhost|127.0.0.1|ErrorEvent"
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 截图 | 本地模型正常回复 |
++| 日志 | 无 `empty_api_key` |
++| 日志 | provider 指向 localhost/127.0.0.1 |
++
++单测兜底：覆盖 `_client` 或 key guard，断言 localhost + `ollama` 不抛 `LLMProviderError(error_class="empty_api_key")`。
++
++---
++
++## TC07 云端 + ollama 占位拦截
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | dev 可测，单测兜底 |
++| 优先级 | P1 |
++| 覆盖风险 | 非本地云端 endpoint 使用 `ollama` 或其他占位符时，不应发出伪 Bearer 请求 |
++
++### 前置
++
++1. dev 启动。
++2. 配置一个非本地 OpenAI-compatible endpoint，例如 `https://example-cloud.invalid/v1` 或测试云端 endpoint。
++3. key 设置为 `ollama`、空字符串、`your-key-here`、`from-keychain` 中任一占位符。
++4. provider enabled。
++
++### 坐标声明
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“云端占位 key 拦截测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=触发友好 provider 配置错误
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 保存非本地 endpoint + 占位 key | 保存成功 | `TC07-01-provider.png` |
++| 2 | 发送 `云端占位 key 拦截测试` | UI 显示请配置 provider/key 的友好错误 | `TC07-02-friendly-error.png` |
++| 3 | 等待 10 秒后继续点击输入框 | 应用仍可交互 | `TC07-03-still-alive.png` |
++
++### 预期
++
++1. 不向云端发送 `Authorization: Bearer ollama` 或 `Bearer `。
++2. 抛出/透传 `LLMProviderError(error_class="empty_api_key")`。
++3. UI 有可读提示。
++
++### 判定证据
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "empty_api_key|ErrorEvent|Bearer ollama|Bearer |LocalProtocolError|Illegal header"
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 日志 | 有 `empty_api_key` |
++| 截图 | 有可读 provider/key 配置提示 |
++| 日志 | 无 `LocalProtocolError` / `Illegal header` |
++
++单测兜底：非 localhost endpoint + `ollama` 断言抛 `LLMProviderError(error_class="empty_api_key")`。
++
++---
++
++## TC08 sentinel 固化绑定
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | frozen 优先，单测兜底 |
++| 优先级 | P1 |
++| 覆盖风险 | `<install>/userdata/.deskpet-portable` 存在时，偶发 probe/write 抖动不应导致路径漂移到 AppData 或盘邻居 |
++
++### 前置
++
++1. frozen 安装到 `F:\deskpet`。
++2. 已成功启动过一次，存在 `F:\deskpet\userdata\.deskpet-portable`。
++3. 记录当前 `config_loaded path=` 与 `user_data_dir=`。
++4. 模拟偶发不可写时要谨慎：只对测试安装目录操作，不碰真实用户数据。
++
++### 坐标声明
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“sentinel 固化绑定测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=仍使用 portable userdata 发送
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 确认 sentinel 文件存在 | `F:\deskpet\userdata\.deskpet-portable` 存在 | `TC08-01-sentinel.png` |
++| 2 | 制造一次轻量不可写抖动，例如临时去掉当前用户对 `userdata` 的写权限后启动 | 应用仍识别 portable 绑定，不漂移到 `F:\userdata` | `TC08-02-boot.png` |
++| 3 | 恢复写权限，发送测试消息 | 聊天成功或给出非路径漂移类错误 | `TC08-03-chat.png` |
++| 4 | grep 启动日志 | `user_data_dir` 仍为 `F:\deskpet\userdata` | `TC08-04-log.png` |
++
++### 预期
++
++1. sentinel 存在时绑定 `<install>/userdata`。
++2. 不出现盘邻居 `F:\userdata`。
++3. 不因单次 probe 不可写而跨会话漂移。
++
++### 判定证据
++
++```powershell
++Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "config_loaded|portable_userdata_unwritable|AppData|F:\\userdata|user_data_dir" |
++  Select-Object -Last 60
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 文件 | `.deskpet-portable` 存在 |
++| 日志 | `user_data_dir=F:\deskpet\userdata` |
++| 日志 | 不出现 `F:\userdata` 作为 userdata/config |
++
++单测兜底：mock sentinel 存在、probe 写失败，断言解析结果仍固定到 `<install>/userdata`，且不尝试盘邻居回落。
++
++---
++
++## TC09 安装目录不可写回落 AppData
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | frozen 优先，单测兜底 |
++| 优先级 | P1 |
++| 覆盖风险 | `<install>/userdata` 不可写时必须 `logger.error` 明确记录并回落 AppData，而不是静默漂移或落到盘邻居 |
++
++### 前置
++
++1. 使用测试安装目录，例如 `C:\Program Files\Deskpet-Test` 或手工移除当前用户写权限的 `F:\deskpet`。
++2. 确保没有 sentinel 固化场景干扰；本用例验证“首次不可写回落”。
++3. 只在测试目录做权限操作。
++
++### 坐标声明
++
++```text
++坐标=(APP_WINDOW_X,APP_WINDOW_Y)|动作=click|期望=应用窗口获得焦点
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 准备不可写安装目录并启动 frozen | 应用能启动，不崩溃 | `TC09-01-boot.png` |
++| 2 | 等待 backend 初始化 | 日志出现 portable 不可写 error | `TC09-02-ready.png` |
++| 3 | grep 日志 | 回落路径是 `%AppData%\deskpet`，不是盘邻居 | `TC09-03-log.png` |
++
++### 预期
++
++1. 日志出现 `portable_userdata_unwritable`，级别为 error 或等价错误日志。
++2. 明确回落 AppData。
++3. 不创建/使用 `F:\userdata` 这类盘邻居路径。
++
++### 判定证据
++
++```powershell
++Select-String -Path "$env:APPDATA\deskpet\logs\backend.log" -Pattern "portable_userdata_unwritable|config_loaded|user_data_dir|F:\\userdata" |
++  Select-Object -Last 60
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 日志 | 有 `portable_userdata_unwritable` |
++| 日志 | `user_data_dir` 指向 `%AppData%\deskpet` |
++| 日志 | 不出现盘邻居 userdata |
++
++单测兜底：mock `<install>/userdata` mkdir/probe 写失败，断言返回 AppData 且记录 `portable_userdata_unwritable`。
++
++---
++
++## TC10 chain 全 provider 失败 ErrorEvent
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | dev 可测，单测兜底 |
++| 优先级 | P1 |
++| 覆盖风险 | provider chain 全失败时，最终前端错误事件必须保留底层 `error_class`，不能退化成不可读通用错误 |
++
++### 前置
++
++1. dev 启动。
++2. 配置 2 个 enabled provider：
++   - provider A：非本地 endpoint + 空/占位 key，预期 `empty_api_key`。
++   - provider B：不可达 endpoint 或明确返回认证失败的测试 endpoint。
++3. 确认 chain 会尝试多个 provider，最终全失败。
++
++### 坐标声明
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“chain 全失败错误透传测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=最终 ErrorEvent 带 error_class
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 配置两个必失败 provider 并启用 | registry enabled 数量至少 2 | `TC10-01-providers.png` |
++| 2 | 发送 `chain 全失败错误透传测试` | UI 显示可读失败提示 | `TC10-02-error-ui.png` |
++| 3 | grep 日志和前端事件 | ErrorEvent 带 `error_class` | `TC10-03-log.png` |
++
++### 预期
++
++1. chain 不会因第一个 provider 的空 key 崩溃。
++2. 全 provider 失败后，最终 `ErrorEvent` 带 `error_class`。
++3. 如果首要错误是空 key，`error_class=empty_api_key` 应可见；如果最终选择其他错误类，也必须保留具体 class。
++
++### 判定证据
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "provider_registry_ready|chain|ErrorEvent|error_class|empty_api_key|LocalProtocolError|Illegal header"
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 日志 | 有 `ErrorEvent` 且包含 `error_class` |
++| 日志 | 有具体错误类，例如 `empty_api_key` |
++| 截图 | UI 有可读错误提示 |
++| 日志 | 无 `LocalProtocolError` / `Illegal header` |
++
++单测兜底：构造 chain 内全部 provider 抛错，断言最终事件 payload 保留 `error_class`。
++
++---
++
++## 单测兜底清单
++
++这些边界可手工验证，但若真机环境难以稳定构造，必须至少有单测覆盖：
++
++| 边界 | 推荐单测断言 |
++|---|---|
++| portable 只认 `<install>/userdata` | frozen + `sys.executable=<install>\backend\...exe` 时返回 `<install>\userdata`，不返回 `<drive>\userdata` |
++| `DESKPET_USER_DATA_DIR` priority-1 | env 设置后 Python 直接使用 env 路径 |
++| 记忆化 | 同进程首次解析后，即使 env/文件状态变化，也不漂移 |
++| sentinel 固化 | `.deskpet-portable` 存在时，probe 抖动不改绑定 |
++| 不可写回落 | probe 写失败记录 `portable_userdata_unwritable` 并回落 AppData |
++| `_recover_orphaned_endpoints` | canonical 无 enabled endpoints、AppData 有 enabled endpoints 时迁移、备份、幂等 |
++| localhost + `ollama` | 不抛 `empty_api_key` |
++| 云端 + `ollama`/空/占位 key | 抛 `LLMProviderError(error_class="empty_api_key")` |
++| chain 全失败 | ErrorEvent payload 保留 `error_class` |
++| frozen keyring | PyInstaller spec 包含 keyring/Windows backend hiddenimports |
++
++## 判定汇总表
++
++执行人填写：
++
++| TC | 执行类型 | 结果 | 关键截图 | 关键日志证据 | 备注 |
++|---|---|---|---|---|---|
++| TC01 空 key 友好错误 | dev | PASS / FAIL / BLOCKED |  | `empty_api_key`；无 `LocalProtocolError` |  |
++| TC02 正常聊天不回归 | dev | PASS / FAIL / BLOCKED |  | `provider_registry_ready enabled>=1` |  |
++| TC03 路径跨会话不漂移 | frozen | PASS / FAIL / BLOCKED |  | 登录期/重启期 `path` 与 `user_data_dir` 完全一致 |  |
++| TC04 存量自愈 | frozen/构造 | PASS / FAIL / BLOCKED |  | `endpoints_recovered_from count=N`，`.pre-recover-bak` |  |
++| TC05 boot 可观测 | 任意 | PASS / FAIL / BLOCKED |  | `config_loaded portable/env_pinned`，`provider_registry_ready` |  |
++| TC06 本地 Ollama 放行 | 真机/单测 | PASS / FAIL / BLOCKED |  | localhost + no `empty_api_key` |  |
++| TC07 云端占位拦截 | dev/单测 | PASS / FAIL / BLOCKED |  | `empty_api_key`，无非法 Bearer |  |
++| TC08 sentinel 固化 | frozen/单测 | PASS / FAIL / BLOCKED |  | `.deskpet-portable`，不漂移 |  |
++| TC09 不可写回落 AppData | frozen/单测 | PASS / FAIL / BLOCKED |  | `portable_userdata_unwritable`，AppData |  |
++| TC10 chain 全失败 ErrorEvent | dev/单测 | PASS / FAIL / BLOCKED |  | `ErrorEvent error_class=...` |  |
++
++## DECISION
++
++结论占位：
++
++```text
++DECISION: PASS / FAIL / BLOCKED
++版本/构建号:
++执行日期:
++执行人:
++必须修复项:
++可延期项:
++环境受限说明:
++```
++
++发布门槛：
++
++1. TC01、TC02、TC03、TC04 必须 PASS。
++2. TC05 必须 PASS，否则后续线上定位能力不足。
++3. TC06-TC10 至少真机或单测兜底 PASS；若标 BLOCKED，必须附 3 次 retry 和 3 种 workaround 记录。
++4. 任一日志出现 `Illegal header value b'Bearer '` 或 `LocalProtocolError`，本轮直接 FAIL。
+
+codex
+文档已经写入指定位置。现在我只做文件存在性和结构检查，确认没有漏掉必需章节和关键用例，不运行 git。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content -LiteralPath 'C:\\Users\\24378\\.agents\\skills\\sp-verification-before-completion\\SKILL.md' -TotalCount 160" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Item -LiteralPath 'G:\\projects\\deskpet\\testcase\\2026-06-28-userdata-path-binding\\manual-test.md' | Select-Object FullName,Length,LastWriteTime" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Select-String -LiteralPath 'G:\\projects\\deskpet\\testcase\\2026-06-28-userdata-path-binding\\manual-test.md' -Pattern '"'^## TC|DECISION|判定汇总表|真机纪律|empty_api_key|provider_registry_ready|endpoints_recovered_from|portable_userdata_unwritable|LocalProtocolError'"'" in G:\projects\deskpet
+ succeeded in 180ms:
+---
+name: verification-before-completion
+description: Use when about to claim work is complete, fixed, or passing, before committing or creating PRs - requires running verification commands and confirming output before making any success claims; evidence before assertions always
+---
+
+# Verification Before Completion
+
+## Overview
+
+Claiming work is complete without verification is dishonesty, not efficiency.
+
+**Core principle:** Evidence before claims, always.
+
+**Violating the letter of this rule is violating the spirit of this rule.**
+
+## The Iron Law
+
+```
+NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE
+```
+
+If you haven't run the verification command in this message, you cannot claim it passes.
+
+## The Gate Function
+
+```
+BEFORE claiming any status or expressing satisfaction:
+
+1. IDENTIFY: What command proves this claim?
+2. RUN: Execute the FULL command (fresh, complete)
+3. READ: Full output, check exit code, count failures
+4. VERIFY: Does output confirm the claim?
+   - If NO: State actual status with evidence
+   - If YES: State claim WITH evidence
+5. ONLY THEN: Make the claim
+
+Skip any step = lying, not verifying
+```
+
+## Common Failures
+
+| Claim | Requires | Not Sufficient |
+|-------|----------|----------------|
+| Tests pass | Test command output: 0 failures | Previous run, "should pass" |
+| Linter clean | Linter output: 0 errors | Partial check, extrapolation |
+| Build succeeds | Build command: exit 0 | Linter passing, logs look good |
+| Bug fixed | Test original symptom: passes | Code changed, assumed fixed |
+| Regression test works | Red-green cycle verified | Test passes once |
+| Agent completed | VCS diff shows changes | Agent reports "success" |
+| Requirements met | Line-by-line checklist | Tests passing |
+
+## Red Flags - STOP
+
+- Using "should", "probably", "seems to"
+- Expressing satisfaction before verification ("Great!", "Perfect!", "Done!", etc.)
+- About to commit/push/PR without verification
+- Trusting agent success reports
+- Relying on partial verification
+- Thinking "just this once"
+- Tired and wanting work over
+- **ANY wording implying success without having run verification**
+
+## Rationalization Prevention
+
+| Excuse | Reality |
+|--------|---------|
+| "Should work now" | RUN the verification |
+| "I'm confident" | Confidence 鈮?evidence |
+| "Just this once" | No exceptions |
+| "Linter passed" | Linter 鈮?compiler |
+| "Agent said success" | Verify independently |
+| "I'm tired" | Exhaustion 鈮?excuse |
+| "Partial check is enough" | Partial proves nothing |
+| "Different words so rule doesn't apply" | Spirit over letter |
+
+## Key Patterns
+
+**Tests:**
+```
+鉁?[Run test command] [See: 34/34 pass] "All tests pass"
+鉂?"Should pass now" / "Looks correct"
+```
+
+**Regression tests (TDD Red-Green):**
+```
+鉁?Write 鈫?Run (pass) 鈫?Revert fix 鈫?Run (MUST FAIL) 鈫?Restore 鈫?Run (pass)
+鉂?"I've written a regression test" (without red-green verification)
+```
+
+**Build:**
+```
+鉁?[Run build] [See: exit 0] "Build passes"
+鉂?"Linter passed" (linter doesn't check compilation)
+```
+
+**Requirements:**
+```
+鉁?Re-read plan 鈫?Create checklist 鈫?Verify each 鈫?Report gaps or completion
+鉂?"Tests pass, phase complete"
+```
+
+**Agent delegation:**
+```
+鉁?Agent reports success 鈫?Check VCS diff 鈫?Verify changes 鈫?Report actual state
+鉂?Trust agent report
+```
+
+## Why This Matters
+
+From 24 failure memories:
+- your human partner said "I don't believe you" - trust broken
+- Undefined functions shipped - would crash
+- Missing requirements shipped - incomplete features
+- Time wasted on false completion 鈫?redirect 鈫?rework
+- Violates: "Honesty is a core value. If you lie, you'll be replaced."
+
+## When To Apply
+
+**ALWAYS before:**
+- ANY variation of success/completion claims
+- ANY expression of satisfaction
+- ANY positive statement about work state
+- Committing, PR creation, task completion
+- Moving to next task
+- Delegating to agents
+
+**Rule applies to:**
+- Exact phrases
+- Paraphrases and synonyms
+- Implications of success
+- ANY communication suggesting completion/correctness
+
+## The Bottom Line
+
+**No shortcuts for verification.**
+
+Run the command. Read the output. THEN claim the result.
+
+This is non-negotiable.
+
+ succeeded in 205ms:
+
+FullName                                                                     Length LastWriteTime    
+--------                                                                     ------ -------------    
+G:\projects\deskpet\testcase\2026-06-28-userdata-path-binding\manual-test.md  28813 2026/6/28 3:19:52
+
+
+
+ succeeded in 270ms:
+
+testcase\2026-06-28-userdata-path-binding\manual-test.md:19:## 真机纪律
+testcase\2026-06-28-userdata-path-binding\manual-test.md:36:     Select-String "config_loaded|provider_registry_ready|e
+mpty_api_key|LocalProtocolError|Illegal header"
+testcase\2026-06-28-userdata-path-binding\manual-test.md:49:  Select-String "config_loaded|provider_registry_ready|empt
+y_api_key|ErrorEvent|LocalProtocolError|Illegal header"
+testcase\2026-06-28-userdata-path-binding\manual-test.md:57:  Select-String "config_loaded|provider_registry_ready|endp
+oints_recovered_from|portable_userdata_unwritable|empty_api_key|ErrorEvent|LocalProtocolError|Illegal header"
+testcase\2026-06-28-userdata-path-binding\manual-test.md:63:Select-String -Path "F:\deskpet\userdata\logs\backend.log" 
+-Pattern "config_loaded|provider_registry_ready" |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:84:## TC01 空 key 友好错误
+testcase\2026-06-28-userdata-path-binding\manual-test.md:90:| 覆盖风险 | `get_chain()` 无 enabled provider 后 fallback legacy
+ 空 key，拼出 `Bearer ` 导致 httpx `LocalProtocolError` |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:123:3. 不出现 `LocalProtocolError`。
+testcase\2026-06-28-userdata-path-binding\manual-test.md:132:  Select-String "empty_api_key|ErrorEvent|LocalProtocolErr
+or|Illegal header|Bearer "
+testcase\2026-06-28-userdata-path-binding\manual-test.md:140:| 日志 | 有 `empty_api_key` 或等价 error_class |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:141:| 日志 | 没有 `LocalProtocolError` |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:146:## TC02 正常聊天不回归
+testcase\2026-06-28-userdata-path-binding\manual-test.md:158:3. 日志中 `provider_registry_ready enabled>=1`。
+testcase\2026-06-28-userdata-path-binding\manual-test.md:187:  Select-String "provider_registry_ready|empty_api_key|NoP
+roviderConfigured|LocalProtocolError|Illegal header"
+testcase\2026-06-28-userdata-path-binding\manual-test.md:195:| 日志 | `provider_registry_ready` 中 `enabled>=1` |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:196:| 日志 | 无 `empty_api_key`、无 `LocalProtocolError`、无 `Illegal
+ header` |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:200:## TC03 路径跨会话不漂移
+testcase\2026-06-28-userdata-path-binding\manual-test.md:251:5. `provider_registry_ready enabled>=1`。
+testcase\2026-06-28-userdata-path-binding\manual-test.md:257:Select-String -Path "F:\deskpet\userdata\logs\backend.log"
+ -Pattern "config_loaded|provider_registry_ready|empty_api_key|LocalProtocolError|Illegal header" |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:269:| 日志 | `provider_registry_ready enabled>=1` |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:270:| 日志 | 无 `LocalProtocolError` / `Illegal header value b'Be
+arer '` |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:274:## TC04 存量 orphan endpoint 自愈
+testcase\2026-06-28-userdata-path-binding\manual-test.md:317:1. 启动日志出现 `endpoints_recovered_from src=... count=N`，`N>=1
+`。
+testcase\2026-06-28-userdata-path-binding\manual-test.md:325:Select-String -Path "F:\deskpet\userdata\logs\backend.log"
+ -Pattern "endpoints_recovered_from|provider_registry_ready|empty_api_key|LocalProtocolError|Illegal header" |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:336:| 日志 | 有 `endpoints_recovered_from` 且 `count` 大于 0 |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:338:| 日志 | recovery 后 `provider_registry_ready enabled>=1` |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:340:| 日志 | 无 `LocalProtocolError` / `Illegal header` |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:344:## TC05 boot 可观测日志
+testcase\2026-06-28-userdata-path-binding\manual-test.md:382:6. `provider_registry_ready`
+testcase\2026-06-28-userdata-path-binding\manual-test.md:391:  Select-String "config_loaded|provider_registry_ready"
+testcase\2026-06-28-userdata-path-binding\manual-test.md:397:Select-String -Path "F:\deskpet\userdata\logs\backend.log"
+ -Pattern "config_loaded|provider_registry_ready" |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:405:## TC06 本地 Ollama 放行
+testcase\2026-06-28-userdata-path-binding\manual-test.md:440:2. 如果本地模型自身失败，应显示本地服务错误，而不是 `empty_api_key`。
+testcase\2026-06-28-userdata-path-binding\manual-test.md:446:  Select-String "provider_registry_ready|empty_api_key|oll
+ama|localhost|127.0.0.1|ErrorEvent"
+testcase\2026-06-28-userdata-path-binding\manual-test.md:454:| 日志 | 无 `empty_api_key` |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:457:单测兜底：覆盖 `_client` 或 key guard，断言 localhost + `ollama` 不抛 `
+LLMProviderError(error_class="empty_api_key")`。
+testcase\2026-06-28-userdata-path-binding\manual-test.md:461:## TC07 云端 + ollama 占位拦截
+testcase\2026-06-28-userdata-path-binding\manual-test.md:495:2. 抛出/透传 `LLMProviderError(error_class="empty_api_key")`。
+testcase\2026-06-28-userdata-path-binding\manual-test.md:502:  Select-String "empty_api_key|ErrorEvent|Bearer ollama|Be
+arer |LocalProtocolError|Illegal header"
+testcase\2026-06-28-userdata-path-binding\manual-test.md:509:| 日志 | 有 `empty_api_key` |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:511:| 日志 | 无 `LocalProtocolError` / `Illegal header` |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:513:单测兜底：非 localhost endpoint + `ollama` 断言抛 `LLMProviderError
+(error_class="empty_api_key")`。
+testcase\2026-06-28-userdata-path-binding\manual-test.md:517:## TC08 sentinel 固化绑定
+testcase\2026-06-28-userdata-path-binding\manual-test.md:558:Select-String -Path "F:\deskpet\userdata\logs\backend.log"
+ -Pattern "config_loaded|portable_userdata_unwritable|AppData|F:\\userdata|user_data_dir" |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:574:## TC09 安装目录不可写回落 AppData
+testcase\2026-06-28-userdata-path-binding\manual-test.md:604:1. 日志出现 `portable_userdata_unwritable`，级别为 error 或等价错误日志。
+testcase\2026-06-28-userdata-path-binding\manual-test.md:611:Select-String -Path "$env:APPDATA\deskpet\logs\backend.log
+" -Pattern "portable_userdata_unwritable|config_loaded|user_data_dir|F:\\userdata" |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:619:| 日志 | 有 `portable_userdata_unwritable` |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:623:单测兜底：mock `<install>/userdata` mkdir/probe 写失败，断言返回 AppDat
+a 且记录 `portable_userdata_unwritable`。
+testcase\2026-06-28-userdata-path-binding\manual-test.md:627:## TC10 chain 全 provider 失败 ErrorEvent
+testcase\2026-06-28-userdata-path-binding\manual-test.md:639:   - provider A：非本地 endpoint + 空/占位 key，预期 `empty_api_key`
+。
+testcase\2026-06-28-userdata-path-binding\manual-test.md:663:3. 如果首要错误是空 key，`error_class=empty_api_key` 应可见；如果最终选择其他错误
+类，也必须保留具体 class。
+testcase\2026-06-28-userdata-path-binding\manual-test.md:669:  Select-String "provider_registry_ready|chain|ErrorEvent|
+error_class|empty_api_key|LocalProtocolError|Illegal header"
+testcase\2026-06-28-userdata-path-binding\manual-test.md:677:| 日志 | 有具体错误类，例如 `empty_api_key` |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:679:| 日志 | 无 `LocalProtocolError` / `Illegal header` |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:695:| 不可写回落 | probe 写失败记录 `portable_userdata_unwritable` 并回落 A
+ppData |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:697:| localhost + `ollama` | 不抛 `empty_api_key` |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:698:| 云端 + `ollama`/空/占位 key | 抛 `LLMProviderError(error_class
+="empty_api_key")` |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:702:## 判定汇总表
+testcase\2026-06-28-userdata-path-binding\manual-test.md:708:| TC01 空 key 友好错误 | dev | PASS / FAIL / BLOCKED |  | `empt
+y_api_key`；无 `LocalProtocolError` |  |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:709:| TC02 正常聊天不回归 | dev | PASS / FAIL / BLOCKED |  | `provide
+r_registry_ready enabled>=1` |  |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:711:| TC04 存量自愈 | frozen/构造 | PASS / FAIL / BLOCKED |  | `endp
+oints_recovered_from count=N`，`.pre-recover-bak` |  |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:712:| TC05 boot 可观测 | 任意 | PASS / FAIL / BLOCKED |  | `config_
+loaded portable/env_pinned`，`provider_registry_ready` |  |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:713:| TC06 本地 Ollama 放行 | 真机/单测 | PASS / FAIL / BLOCKED |  | l
+ocalhost + no `empty_api_key` |  |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:714:| TC07 云端占位拦截 | dev/单测 | PASS / FAIL / BLOCKED |  | `empty
+_api_key`，无非法 Bearer |  |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:716:| TC09 不可写回落 AppData | frozen/单测 | PASS / FAIL / BLOCKED |
+  | `portable_userdata_unwritable`，AppData |  |
+testcase\2026-06-28-userdata-path-binding\manual-test.md:719:## DECISION
+testcase\2026-06-28-userdata-path-binding\manual-test.md:724:DECISION: PASS / FAIL / BLOCKED
+testcase\2026-06-28-userdata-path-binding\manual-test.md:738:4. 任一日志出现 `Illegal header value b'Bearer '` 或 `LocalProtoc
+olError`，本轮直接 FAIL。
+
+
+
+diff --git a/testcase/2026-06-28-userdata-path-binding/manual-test.md b/testcase/2026-06-28-userdata-path-binding/manual-test.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fe313178025deb946df960dffacdfb3e60473458
+--- /dev/null
++++ b/testcase/2026-06-28-userdata-path-binding/manual-test.md
+@@ -0,0 +1,738 @@
++# 2026-06-28 userdata 路径绑定与空 Bearer 手工测试
++
++被测计划：`plans/2026-06-28-userdata-path-binding-fix/00-PLAN.md`
++
++被测范围：装机版 `config.toml` 路径跨会话漂移修复、Rust/Python userdata 归一、存量 endpoint 自愈、空/占位 API key 友好错误、启动可观测日志、keyring frozen 后端钉死。
++
++## 环境
++
++| 项 | 要求 |
++|---|---|
++| OS | Windows 真机，建议 Windows 10/11 |
++| dev 模式 | 仓库根 `G:\projects\deskpet`，`npx tauri dev` 可启动 |
++| frozen 装机版 | 必须使用本次修复后重新打包的安装包，安装到自定义目录，例如 `F:\deskpet` |
++| 结果目录 | 截图固定保存到 `plans/manual-results-2026-06-28-userdata-path/screenshots/` |
++| 日志 | dev：tauri-dev 控制台日志通常为 UTF-16；frozen：优先查 `<userdata>\logs\backend.log` 和安装目录/用户目录日志 |
++| 输入方式 | 中文输入必须使用剪贴板 `Ctrl+V`，不要依赖 IME 逐字输入 |
++| 禁止事项 | 不跑 git，不修改非测试数据文件，不把失败直接判成环境受限 |
++
++## 真机纪律
++
++1. 严格模拟人工。每个用例执行前必须先声明本次窗口里的真实坐标，格式固定为：
++
++   ```text
++   坐标=(x,y)|动作=click|期望=焦点落在聊天输入框
++   坐标=(x,y)|动作=type|期望=通过剪贴板粘贴中文消息
++   坐标=(x,y)|动作=click|期望=发送按钮被点击
++   ```
++
++2. 文档中的 `CHAT_INPUT`、`SEND_BUTTON`、`SETTINGS_BUTTON` 等是坐标名，不是占位结果。执行时必须用 windows-mcp/截图读取到的当前真实 `(x,y)` 替换后再操作，并把声明写进执行记录。
++3. 每个关键步骤后截图，命名建议：`TCxx-stepNN-说明.png`，保存到 `plans/manual-results-2026-06-28-userdata-path/screenshots/`。
++4. 中文输入统一：复制文本到剪贴板，再点击输入框，按 `Ctrl+V`。
++5. 日志 grep 优先使用 PowerShell，UTF-16 tauri-dev 日志使用 `-Encoding Unicode` 读取。例如：
++
++   ```powershell
++   Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++     Select-String "config_loaded|provider_registry_ready|empty_api_key|LocalProtocolError|Illegal header"
++   ```
++
++6. 失败后至少 retry 3 次，并尝试 3 种不同 workaround，才可标记“环境受限”。建议 workaround：重启前端、清理本用例临时 userdata、重新登录/退出登录、切换网络、重启 Windows、改用管理员/非管理员权限对照。
++7. 判定必须同时看 UI、截图、日志。只有 UI 现象而无日志证据，不能判通过。
++
++## 公共日志命令
++
++dev 模式日志示例：
++
++```powershell
++# 如果 npx tauri dev 输出被保存为 UTF-16 日志
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "config_loaded|provider_registry_ready|empty_api_key|ErrorEvent|LocalProtocolError|Illegal header"
++```
++
++frozen 装机版日志示例：
++
++```powershell
++$ud = "F:\deskpet\userdata"
++Get-Content "$ud\logs\backend.log" -ErrorAction Stop |
++  Select-String "config_loaded|provider_registry_ready|endpoints_recovered_from|portable_userdata_unwritable|empty_api_key|ErrorEvent|LocalProtocolError|Illegal header"
++```
++
++路径一致性对比示例：
++
++```powershell
++Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "config_loaded|provider_registry_ready" |
++  Select-Object -Last 20
++```
++
++## 用例总览
++
++| ID | 名称 | 执行类型 | 优先级 | 目标 |
++|---|---|---:|---:|---|
++| TC01 | 空 key 友好错误 | dev 可测 | P0 | 复现用户实际崩溃场景，确认不再出现空 Bearer 崩溃 |
++| TC02 | 正常聊天不回归 | dev 可测 | P0 | 有效 key 下流式回复正常 |
++| TC03 | 路径跨会话不漂移 | frozen 装机版必测 | P0 | 登录期与重启期 config/userdata 路径完全一致 |
++| TC04 | 存量 orphan endpoint 自愈 | frozen 或构造 | P0 | canonical 无 endpoint、AppData 有 endpoint 时自动迁回 |
++| TC05 | boot 可观测日志 | 任意模式 | P1 | 启动日志含 portable/env_pinned/provider registry 摘要 |
++| TC06 | 本地 Ollama 放行 | 真机优先，单测兜底 | P1 | localhost + key=ollama 不被空 key 保护误拦 |
++| TC07 | 云端 + ollama 占位拦截 | dev 可测，单测兜底 | P1 | 非本地 endpoint 使用 ollama/占位 key 时友好报错 |
++| TC08 | sentinel 固化绑定 | frozen 优先，单测兜底 | P1 | sentinel 存在时偶发不可写不漂移 |
++| TC09 | 安装目录不可写回落 AppData | frozen 优先，单测兜底 | P1 | 不可写时记录 error 并显式回落 AppData |
++| TC10 | chain 全 provider 失败 ErrorEvent | dev 可测，单测兜底 | P1 | 全失败时 error_class 透传到前端错误事件 |
++
++---
++
++## TC01 空 key 友好错误
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | dev 可测 |
++| 优先级 | P0，用户实际撞到的崩溃 |
++| 覆盖风险 | `get_chain()` 无 enabled provider 后 fallback legacy 空 key，拼出 `Bearer ` 导致 httpx `LocalProtocolError` |
++
++### 前置
++
++1. 使用 dev 模式启动：`npx tauri dev`。
++2. 准备一个隔离 userdata，避免污染真实登录态。推荐设置 `DESKPET_USER_DATA_DIR=G:\projects\deskpet\.dev-userdata-empty-key` 后启动。
++3. 确保没有可用 relay key：退出登录，或清理本测试 userdata 的 `config.toml` 中 enabled provider，或把云端 provider 的 key 设置为占位符/空值。
++4. 如果 key 存在于 Windows Credential Manager/keyring，先通过应用退出登录或测试专用账号解除，不能删除真实用户凭据。
++
++### 坐标声明
++
++执行前记录真实坐标：
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“你好，测试空 key 保护”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=消息发送
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 启动 dev 应用，等待主界面可操作 | 主窗口加载完成，没有启动崩溃 | `TC01-01-boot.png` |
++| 2 | 点击 `CHAT_INPUT` | 输入框出现光标 | `TC01-02-focus.png` |
++| 3 | 剪贴板写入 `你好，测试空 key 保护`，按 `Ctrl+V` | 输入框显示完整中文 | `TC01-03-paste.png` |
++| 4 | 点击 `SEND_BUTTON` | 出现用户消息，随后出现可读错误提示 | `TC01-04-friendly-error.png` |
++| 5 | 停留 10 秒，继续点击输入框 | 整轮对话未崩，应用仍可交互 | `TC01-05-still-alive.png` |
++
++### 预期
++
++1. UI 显示可读提示，语义应接近“请重新登录”或“请配置 provider/API key”。
++2. 不出现 `Illegal header value b'Bearer '`。
++3. 不出现 `LocalProtocolError`。
++4. 不出现整轮崩溃、白屏、前端完全不可交互。
++
++### 判定证据
++
++必查日志：
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "empty_api_key|ErrorEvent|LocalProtocolError|Illegal header|Bearer "
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 截图 | `TC01-04-friendly-error.png` 有可读错误提示 |
++| 日志 | 有 `empty_api_key` 或等价 error_class |
++| 日志 | 没有 `LocalProtocolError` |
++| 日志 | 没有 `Illegal header value b'Bearer '` |
++
++---
++
++## TC02 正常聊天不回归
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | dev 可测 |
++| 优先级 | P0 |
++| 覆盖风险 | 空 key 保护不能误伤有效 relay/provider；流式响应不能回归 |
++
++### 前置
++
++1. dev 模式启动。
++2. 使用有效登录态或有效 provider key。
++3. 日志中 `provider_registry_ready enabled>=1`。
++
++### 坐标声明
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“请用一句话回复：路径绑定回归测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=发送并开始流式回复
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 启动应用并确认已登录/已配置 provider | 主界面可用，无登录错误 | `TC02-01-ready.png` |
++| 2 | 粘贴 `请用一句话回复：路径绑定回归测试` | 输入完整显示 | `TC02-02-input.png` |
++| 3 | 点击发送 | 出现流式 token 或加载状态 | `TC02-03-streaming.png` |
++| 4 | 等待回复完成 | 有完整助手回复，输入框恢复可用 | `TC02-04-complete.png` |
++
++### 预期
++
++1. 正常流式回复。
++2. 没有空 key 相关错误。
++3. 没有 provider registry 为空导致的 legacy fallback。
++
++### 判定证据
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "provider_registry_ready|empty_api_key|NoProviderConfigured|LocalProtocolError|Illegal header"
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 截图 | `TC02-04-complete.png` 有助手回复 |
++| 日志 | `provider_registry_ready` 中 `enabled>=1` |
++| 日志 | 无 `empty_api_key`、无 `LocalProtocolError`、无 `Illegal header` |
++
++---
++
++## TC03 路径跨会话不漂移
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | frozen 装机版必测 |
++| 优先级 | P0 |
++| 覆盖风险 | Rust/Python 双解析不一致、未注入 `DESKPET_USER_DATA_DIR`、登录期写 A 路径而重启读 B 路径 |
++
++### 前置
++
++1. 使用本次修复后的 frozen 安装包。
++2. 全新安装到自定义目录，例如 `F:\deskpet`。
++3. 确保 `F:\deskpet\userdata` 可写。
++4. 不设置 `DESKPET_BACKEND_DIR` 等 dev 覆盖变量。
++
++### 坐标声明
++
++登录期：
++
++```text
++坐标=(LOGIN_BUTTON_X,LOGIN_BUTTON_Y)|动作=click|期望=进入登录流程
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“登录期路径绑定测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=发送成功
++```
++
++重启期：
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“重启期路径绑定测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=不重新登录即可发送成功
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 安装到 `F:\deskpet` 并启动 | 主界面启动，创建 `F:\deskpet\userdata` | `TC03-01-installed.png` |
++| 2 | 完成登录 | 登录成功，provider 写入 config | `TC03-02-login-ok.png` |
++| 3 | 发送 `登录期路径绑定测试` | 聊天成功 | `TC03-03-login-chat.png` |
++| 4 | 完全退出应用，包括托盘/后台进程 | 任务管理器无 deskpet/backend 进程 | `TC03-04-exited.png` |
++| 5 | 重新启动 frozen 应用 | 不要求重新登录 | `TC03-05-rebooted.png` |
++| 6 | 发送 `重启期路径绑定测试` | 聊天成功 | `TC03-06-restart-chat.png` |
++
++### 预期
++
++1. 登录期和重启期都使用同一个 `config.toml`。
++2. 登录期与重启期 `config_loaded` 的 `path=` 完全一致。
++3. 登录期与重启期 `config_loaded` 的 `user_data_dir=` 完全一致。
++4. `env_pinned=True`。
++5. `provider_registry_ready enabled>=1`。
++6. 不出现重启后 provider 丢失、空 Bearer、要求重新登录但 key 实际存在的异常。
++
++### 判定证据
++
++```powershell
++Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "config_loaded|provider_registry_ready|empty_api_key|LocalProtocolError|Illegal header" |
++  Select-Object -Last 40
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 截图 | `TC03-03-login-chat.png` 和 `TC03-06-restart-chat.png` 均聊天成功 |
++| 日志 | 两个会话 `config_loaded path=` 完全一致 |
++| 日志 | 两个会话 `user_data_dir=` 完全一致 |
++| 日志 | `env_pinned=True` |
++| 日志 | `provider_registry_ready enabled>=1` |
++| 日志 | 无 `LocalProtocolError` / `Illegal header value b'Bearer '` |
++
++---
++
++## TC04 存量 orphan endpoint 自愈
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | frozen 或构造；推荐 frozen 真机 |
++| 优先级 | P0 |
++| 覆盖风险 | 旧版本把 relay-cloud endpoint 写到 AppData/盘邻居，canonical config 无 enabled endpoints，重启后无法聊天 |
++
++### 前置
++
++构造方式 A，frozen 推荐：
++
++1. 安装到 `F:\deskpet`。
++2. canonical：`F:\deskpet\userdata\config.toml` 存在但没有 `[[llm.endpoints]]`，或 endpoints 全 disabled。
++3. orphan：`$env:APPDATA\deskpet\config.toml` 存在且包含 enabled `relay-cloud` endpoint。
++4. keyring 中仍有对应 relay key，或测试账号可保持有效登录态。
++
++构造方式 B，dev 兜底：
++
++1. 设置 `DESKPET_USER_DATA_DIR` 指向测试目录。
++2. 在 canonical config 中移除 enabled endpoints。
++3. 在 AppData 候选 config 中放入 enabled endpoints。
++
++### 坐标声明
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“存量自愈测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=无需重登即可发送
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 按前置构造 canonical 无 endpoints、AppData 有 endpoints | 文件状态符合构造 | `TC04-01-files-before.png` |
++| 2 | 启动应用 | 启动不崩溃，日志出现 recovery | `TC04-02-boot.png` |
++| 3 | 不重新登录，发送 `存量自愈测试` | 聊天成功 | `TC04-03-chat-ok.png` |
++| 4 | 检查 canonical 目录 | 出现 `.pre-recover-bak` 备份 | `TC04-04-backup.png` |
++| 5 | 再次重启应用 | recovery 幂等，不重复破坏 config | `TC04-05-idempotent.png` |
++
++### 预期
++
++1. 启动日志出现 `endpoints_recovered_from src=... count=N`，`N>=1`。
++2. 不重登即可聊天。
++3. canonical config 生成 `.pre-recover-bak`。
++4. 重启第二次不重复污染 config，不抛异常。
++
++### 判定证据
++
++```powershell
++Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "endpoints_recovered_from|provider_registry_ready|empty_api_key|LocalProtocolError|Illegal header" |
++  Select-Object -Last 60
++
++Get-ChildItem "F:\deskpet\userdata" -Force |
++  Where-Object { $_.Name -like "*.pre-recover-bak" -or $_.Name -like "*pre-recover*" }
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 日志 | 有 `endpoints_recovered_from` 且 `count` 大于 0 |
++| 文件 | 有 `.pre-recover-bak` |
++| 日志 | recovery 后 `provider_registry_ready enabled>=1` |
++| 截图 | 不重登聊天成功 |
++| 日志 | 无 `LocalProtocolError` / `Illegal header` |
++
++---
++
++## TC05 boot 可观测日志
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | 任意模式 |
++| 优先级 | P1 |
++| 覆盖风险 | 修复后必须能从启动日志一眼看到 config 路径、portable/env pin 状态、provider registry 数量 |
++
++### 前置
++
++1. dev 或 frozen 均可。
++2. 至少启动一次应用并让 backend 完成初始化。
++
++### 坐标声明
++
++本用例不要求聊天；如果需要唤醒主界面：
++
++```text
++坐标=(APP_WINDOW_X,APP_WINDOW_Y)|动作=click|期望=窗口获得焦点
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 启动应用 | 主窗口显示 | `TC05-01-boot.png` |
++| 2 | 等待 10 秒 | backend 初始化完成 | `TC05-02-ready.png` |
++| 3 | grep 日志 | 能看到 config/provider registry 摘要 | `TC05-03-log.png` |
++
++### 预期
++
++日志至少包含：
++
++1. `config_loaded`
++2. `portable=...`
++3. `env_pinned=...`
++4. `path=...`
++5. `user_data_dir=...`
++6. `provider_registry_ready`
++7. `n=` 或 provider 总数
++8. `enabled=` 或 enabled 数
++9. `ids=` 或 provider id 列表
++
++### 判定证据
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "config_loaded|provider_registry_ready"
++```
++
++frozen：
++
++```powershell
++Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "config_loaded|provider_registry_ready" |
++  Select-Object -Last 20
++```
++
++通过判据：上述字段齐全，且字段值能解释当前运行模式。
++
++---
++
++## TC06 本地 Ollama 放行
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | 真机优先，单测兜底 |
++| 优先级 | P1 |
++| 覆盖风险 | `key=ollama` 对 localhost 是合法约定，不能被空 key/占位符保护误拦 |
++
++### 前置
++
++1. 本机启动 Ollama 或 OpenAI-compatible 本地服务。
++2. endpoint `base_url` 指向 `http://localhost:11434`、`http://127.0.0.1:11434` 或等价本地地址。
++3. provider key 设置为 `ollama`。
++4. provider enabled。
++
++### 坐标声明
++
++```text
++坐标=(SETTINGS_BUTTON_X,SETTINGS_BUTTON_Y)|动作=click|期望=进入 provider 设置
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“本地 ollama 放行测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=发送到本地 provider
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 确认本地服务可用 | 本地模型接口响应正常 | `TC06-01-local-service.png` |
++| 2 | 配置 provider 为 localhost + key `ollama` | provider 保存成功 | `TC06-02-provider.png` |
++| 3 | 发送 `本地 ollama 放行测试` | 本地模型回复 | `TC06-03-chat-ok.png` |
++
++### 预期
++
++1. localhost/127.0.0.1 endpoint 不因 key=`ollama` 被拦截。
++2. 如果本地模型自身失败，应显示本地服务错误，而不是 `empty_api_key`。
++
++### 判定证据
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "provider_registry_ready|empty_api_key|ollama|localhost|127.0.0.1|ErrorEvent"
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 截图 | 本地模型正常回复 |
++| 日志 | 无 `empty_api_key` |
++| 日志 | provider 指向 localhost/127.0.0.1 |
++
++单测兜底：覆盖 `_client` 或 key guard，断言 localhost + `ollama` 不抛 `LLMProviderError(error_class="empty_api_key")`。
++
++---
++
++## TC07 云端 + ollama 占位拦截
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | dev 可测，单测兜底 |
++| 优先级 | P1 |
++| 覆盖风险 | 非本地云端 endpoint 使用 `ollama` 或其他占位符时，不应发出伪 Bearer 请求 |
++
++### 前置
++
++1. dev 启动。
++2. 配置一个非本地 OpenAI-compatible endpoint，例如 `https://example-cloud.invalid/v1` 或测试云端 endpoint。
++3. key 设置为 `ollama`、空字符串、`your-key-here`、`from-keychain` 中任一占位符。
++4. provider enabled。
++
++### 坐标声明
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“云端占位 key 拦截测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=触发友好 provider 配置错误
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 保存非本地 endpoint + 占位 key | 保存成功 | `TC07-01-provider.png` |
++| 2 | 发送 `云端占位 key 拦截测试` | UI 显示请配置 provider/key 的友好错误 | `TC07-02-friendly-error.png` |
++| 3 | 等待 10 秒后继续点击输入框 | 应用仍可交互 | `TC07-03-still-alive.png` |
++
++### 预期
++
++1. 不向云端发送 `Authorization: Bearer ollama` 或 `Bearer `。
++2. 抛出/透传 `LLMProviderError(error_class="empty_api_key")`。
++3. UI 有可读提示。
++
++### 判定证据
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "empty_api_key|ErrorEvent|Bearer ollama|Bearer |LocalProtocolError|Illegal header"
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 日志 | 有 `empty_api_key` |
++| 截图 | 有可读 provider/key 配置提示 |
++| 日志 | 无 `LocalProtocolError` / `Illegal header` |
++
++单测兜底：非 localhost endpoint + `ollama` 断言抛 `LLMProviderError(error_class="empty_api_key")`。
++
++---
++
++## TC08 sentinel 固化绑定
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | frozen 优先，单测兜底 |
++| 优先级 | P1 |
++| 覆盖风险 | `<install>/userdata/.deskpet-portable` 存在时，偶发 probe/write 抖动不应导致路径漂移到 AppData 或盘邻居 |
++
++### 前置
++
++1. frozen 安装到 `F:\deskpet`。
++2. 已成功启动过一次，存在 `F:\deskpet\userdata\.deskpet-portable`。
++3. 记录当前 `config_loaded path=` 与 `user_data_dir=`。
++4. 模拟偶发不可写时要谨慎：只对测试安装目录操作，不碰真实用户数据。
++
++### 坐标声明
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“sentinel 固化绑定测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=仍使用 portable userdata 发送
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 确认 sentinel 文件存在 | `F:\deskpet\userdata\.deskpet-portable` 存在 | `TC08-01-sentinel.png` |
++| 2 | 制造一次轻量不可写抖动，例如临时去掉当前用户对 `userdata` 的写权限后启动 | 应用仍识别 portable 绑定，不漂移到 `F:\userdata` | `TC08-02-boot.png` |
++| 3 | 恢复写权限，发送测试消息 | 聊天成功或给出非路径漂移类错误 | `TC08-03-chat.png` |
++| 4 | grep 启动日志 | `user_data_dir` 仍为 `F:\deskpet\userdata` | `TC08-04-log.png` |
++
++### 预期
++
++1. sentinel 存在时绑定 `<install>/userdata`。
++2. 不出现盘邻居 `F:\userdata`。
++3. 不因单次 probe 不可写而跨会话漂移。
++
++### 判定证据
++
++```powershell
++Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "config_loaded|portable_userdata_unwritable|AppData|F:\\userdata|user_data_dir" |
++  Select-Object -Last 60
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 文件 | `.deskpet-portable` 存在 |
++| 日志 | `user_data_dir=F:\deskpet\userdata` |
++| 日志 | 不出现 `F:\userdata` 作为 userdata/config |
++
++单测兜底：mock sentinel 存在、probe 写失败，断言解析结果仍固定到 `<install>/userdata`，且不尝试盘邻居回落。
++
++---
++
++## TC09 安装目录不可写回落 AppData
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | frozen 优先，单测兜底 |
++| 优先级 | P1 |
++| 覆盖风险 | `<install>/userdata` 不可写时必须 `logger.error` 明确记录并回落 AppData，而不是静默漂移或落到盘邻居 |
++
++### 前置
++
++1. 使用测试安装目录，例如 `C:\Program Files\Deskpet-Test` 或手工移除当前用户写权限的 `F:\deskpet`。
++2. 确保没有 sentinel 固化场景干扰；本用例验证“首次不可写回落”。
++3. 只在测试目录做权限操作。
++
++### 坐标声明
++
++```text
++坐标=(APP_WINDOW_X,APP_WINDOW_Y)|动作=click|期望=应用窗口获得焦点
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 准备不可写安装目录并启动 frozen | 应用能启动，不崩溃 | `TC09-01-boot.png` |
++| 2 | 等待 backend 初始化 | 日志出现 portable 不可写 error | `TC09-02-ready.png` |
++| 3 | grep 日志 | 回落路径是 `%AppData%\deskpet`，不是盘邻居 | `TC09-03-log.png` |
++
++### 预期
++
++1. 日志出现 `portable_userdata_unwritable`，级别为 error 或等价错误日志。
++2. 明确回落 AppData。
++3. 不创建/使用 `F:\userdata` 这类盘邻居路径。
++
++### 判定证据
++
++```powershell
++Select-String -Path "$env:APPDATA\deskpet\logs\backend.log" -Pattern "portable_userdata_unwritable|config_loaded|user_data_dir|F:\\userdata" |
++  Select-Object -Last 60
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 日志 | 有 `portable_userdata_unwritable` |
++| 日志 | `user_data_dir` 指向 `%AppData%\deskpet` |
++| 日志 | 不出现盘邻居 userdata |
++
++单测兜底：mock `<install>/userdata` mkdir/probe 写失败，断言返回 AppData 且记录 `portable_userdata_unwritable`。
++
++---
++
++## TC10 chain 全 provider 失败 ErrorEvent
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | dev 可测，单测兜底 |
++| 优先级 | P1 |
++| 覆盖风险 | provider chain 全失败时，最终前端错误事件必须保留底层 `error_class`，不能退化成不可读通用错误 |
++
++### 前置
++
++1. dev 启动。
++2. 配置 2 个 enabled provider：
++   - provider A：非本地 endpoint + 空/占位 key，预期 `empty_api_key`。
++   - provider B：不可达 endpoint 或明确返回认证失败的测试 endpoint。
++3. 确认 chain 会尝试多个 provider，最终全失败。
++
++### 坐标声明
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“chain 全失败错误透传测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=最终 ErrorEvent 带 error_class
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 配置两个必失败 provider 并启用 | registry enabled 数量至少 2 | `TC10-01-providers.png` |
++| 2 | 发送 `chain 全失败错误透传测试` | UI 显示可读失败提示 | `TC10-02-error-ui.png` |
++| 3 | grep 日志和前端事件 | ErrorEvent 带 `error_class` | `TC10-03-log.png` |
++
++### 预期
++
++1. chain 不会因第一个 provider 的空 key 崩溃。
++2. 全 provider 失败后，最终 `ErrorEvent` 带 `error_class`。
++3. 如果首要错误是空 key，`error_class=empty_api_key` 应可见；如果最终选择其他错误类，也必须保留具体 class。
++
++### 判定证据
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "provider_registry_ready|chain|ErrorEvent|error_class|empty_api_key|LocalProtocolError|Illegal header"
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 日志 | 有 `ErrorEvent` 且包含 `error_class` |
++| 日志 | 有具体错误类，例如 `empty_api_key` |
++| 截图 | UI 有可读错误提示 |
++| 日志 | 无 `LocalProtocolError` / `Illegal header` |
++
++单测兜底：构造 chain 内全部 provider 抛错，断言最终事件 payload 保留 `error_class`。
++
++---
++
++## 单测兜底清单
++
++这些边界可手工验证，但若真机环境难以稳定构造，必须至少有单测覆盖：
++
++| 边界 | 推荐单测断言 |
++|---|---|
++| portable 只认 `<install>/userdata` | frozen + `sys.executable=<install>\backend\...exe` 时返回 `<install>\userdata`，不返回 `<drive>\userdata` |
++| `DESKPET_USER_DATA_DIR` priority-1 | env 设置后 Python 直接使用 env 路径 |
++| 记忆化 | 同进程首次解析后，即使 env/文件状态变化，也不漂移 |
++| sentinel 固化 | `.deskpet-portable` 存在时，probe 抖动不改绑定 |
++| 不可写回落 | probe 写失败记录 `portable_userdata_unwritable` 并回落 AppData |
++| `_recover_orphaned_endpoints` | canonical 无 enabled endpoints、AppData 有 enabled endpoints 时迁移、备份、幂等 |
++| localhost + `ollama` | 不抛 `empty_api_key` |
++| 云端 + `ollama`/空/占位 key | 抛 `LLMProviderError(error_class="empty_api_key")` |
++| chain 全失败 | ErrorEvent payload 保留 `error_class` |
++| frozen keyring | PyInstaller spec 包含 keyring/Windows backend hiddenimports |
++
++## 判定汇总表
++
++执行人填写：
++
++| TC | 执行类型 | 结果 | 关键截图 | 关键日志证据 | 备注 |
++|---|---|---|---|---|---|
++| TC01 空 key 友好错误 | dev | PASS / FAIL / BLOCKED |  | `empty_api_key`；无 `LocalProtocolError` |  |
++| TC02 正常聊天不回归 | dev | PASS / FAIL / BLOCKED |  | `provider_registry_ready enabled>=1` |  |
++| TC03 路径跨会话不漂移 | frozen | PASS / FAIL / BLOCKED |  | 登录期/重启期 `path` 与 `user_data_dir` 完全一致 |  |
++| TC04 存量自愈 | frozen/构造 | PASS / FAIL / BLOCKED |  | `endpoints_recovered_from count=N`，`.pre-recover-bak` |  |
++| TC05 boot 可观测 | 任意 | PASS / FAIL / BLOCKED |  | `config_loaded portable/env_pinned`，`provider_registry_ready` |  |
++| TC06 本地 Ollama 放行 | 真机/单测 | PASS / FAIL / BLOCKED |  | localhost + no `empty_api_key` |  |
++| TC07 云端占位拦截 | dev/单测 | PASS / FAIL / BLOCKED |  | `empty_api_key`，无非法 Bearer |  |
++| TC08 sentinel 固化 | frozen/单测 | PASS / FAIL / BLOCKED |  | `.deskpet-portable`，不漂移 |  |
++| TC09 不可写回落 AppData | frozen/单测 | PASS / FAIL / BLOCKED |  | `portable_userdata_unwritable`，AppData |  |
++| TC10 chain 全失败 ErrorEvent | dev/单测 | PASS / FAIL / BLOCKED |  | `ErrorEvent error_class=...` |  |
++
++## DECISION
++
++结论占位：
++
++```text
++DECISION: PASS / FAIL / BLOCKED
++版本/构建号:
++执行日期:
++执行人:
++必须修复项:
++可延期项:
++环境受限说明:
++```
++
++发布门槛：
++
++1. TC01、TC02、TC03、TC04 必须 PASS。
++2. TC05 必须 PASS，否则后续线上定位能力不足。
++3. TC06-TC10 至少真机或单测兜底 PASS；若标 BLOCKED，必须附 3 次 retry 和 3 种 workaround 记录。
++4. 任一日志出现 `Illegal header value b'Bearer '` 或 `LocalProtocolError`，本轮直接 FAIL。
+
+codex
+已生成指定测试文档：
+
+[manual-test.md](G:/projects/deskpet/testcase/2026-06-28-userdata-path-binding/manual-test.md)
+
+大纲摘要：
+- 环境与真机纪律：坐标声明、截图目录、UTF-16 日志 grep、失败 retry 规则
+- 公共日志命令：dev/frozen 路径与关键 grep
+- 10 个测试用例：
+  - TC01 空 key 友好错误
+  - TC02 正常聊天不回归
+  - TC03 frozen 路径跨会话不漂移
+  - TC04 存量 orphan endpoint 自愈
+  - TC05 boot 可观测日志
+  - TC06 本地 Ollama 放行
+  - TC07 云端 + ollama 占位拦截
+  - TC08 sentinel 固化绑定
+  - TC09 安装目录不可写回落 AppData
+  - TC10 chain 全 provider 失败 ErrorEvent
+- 单测兜底清单
+- 判定汇总表
+- `DECISION` 占位
+
+我只做了文件存在性与关键章节/关键字结构检查，未运行 git、未启动应用。
+diff --git a/testcase/2026-06-28-userdata-path-binding/manual-test.md b/testcase/2026-06-28-userdata-path-binding/manual-test.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fe313178025deb946df960dffacdfb3e60473458
+--- /dev/null
++++ b/testcase/2026-06-28-userdata-path-binding/manual-test.md
+@@ -0,0 +1,738 @@
++# 2026-06-28 userdata 路径绑定与空 Bearer 手工测试
++
++被测计划：`plans/2026-06-28-userdata-path-binding-fix/00-PLAN.md`
++
++被测范围：装机版 `config.toml` 路径跨会话漂移修复、Rust/Python userdata 归一、存量 endpoint 自愈、空/占位 API key 友好错误、启动可观测日志、keyring frozen 后端钉死。
++
++## 环境
++
++| 项 | 要求 |
++|---|---|
++| OS | Windows 真机，建议 Windows 10/11 |
++| dev 模式 | 仓库根 `G:\projects\deskpet`，`npx tauri dev` 可启动 |
++| frozen 装机版 | 必须使用本次修复后重新打包的安装包，安装到自定义目录，例如 `F:\deskpet` |
++| 结果目录 | 截图固定保存到 `plans/manual-results-2026-06-28-userdata-path/screenshots/` |
++| 日志 | dev：tauri-dev 控制台日志通常为 UTF-16；frozen：优先查 `<userdata>\logs\backend.log` 和安装目录/用户目录日志 |
++| 输入方式 | 中文输入必须使用剪贴板 `Ctrl+V`，不要依赖 IME 逐字输入 |
++| 禁止事项 | 不跑 git，不修改非测试数据文件，不把失败直接判成环境受限 |
++
++## 真机纪律
++
++1. 严格模拟人工。每个用例执行前必须先声明本次窗口里的真实坐标，格式固定为：
++
++   ```text
++   坐标=(x,y)|动作=click|期望=焦点落在聊天输入框
++   坐标=(x,y)|动作=type|期望=通过剪贴板粘贴中文消息
++   坐标=(x,y)|动作=click|期望=发送按钮被点击
++   ```
++
++2. 文档中的 `CHAT_INPUT`、`SEND_BUTTON`、`SETTINGS_BUTTON` 等是坐标名，不是占位结果。执行时必须用 windows-mcp/截图读取到的当前真实 `(x,y)` 替换后再操作，并把声明写进执行记录。
++3. 每个关键步骤后截图，命名建议：`TCxx-stepNN-说明.png`，保存到 `plans/manual-results-2026-06-28-userdata-path/screenshots/`。
++4. 中文输入统一：复制文本到剪贴板，再点击输入框，按 `Ctrl+V`。
++5. 日志 grep 优先使用 PowerShell，UTF-16 tauri-dev 日志使用 `-Encoding Unicode` 读取。例如：
++
++   ```powershell
++   Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++     Select-String "config_loaded|provider_registry_ready|empty_api_key|LocalProtocolError|Illegal header"
++   ```
++
++6. 失败后至少 retry 3 次，并尝试 3 种不同 workaround，才可标记“环境受限”。建议 workaround：重启前端、清理本用例临时 userdata、重新登录/退出登录、切换网络、重启 Windows、改用管理员/非管理员权限对照。
++7. 判定必须同时看 UI、截图、日志。只有 UI 现象而无日志证据，不能判通过。
++
++## 公共日志命令
++
++dev 模式日志示例：
++
++```powershell
++# 如果 npx tauri dev 输出被保存为 UTF-16 日志
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "config_loaded|provider_registry_ready|empty_api_key|ErrorEvent|LocalProtocolError|Illegal header"
++```
++
++frozen 装机版日志示例：
++
++```powershell
++$ud = "F:\deskpet\userdata"
++Get-Content "$ud\logs\backend.log" -ErrorAction Stop |
++  Select-String "config_loaded|provider_registry_ready|endpoints_recovered_from|portable_userdata_unwritable|empty_api_key|ErrorEvent|LocalProtocolError|Illegal header"
++```
++
++路径一致性对比示例：
++
++```powershell
++Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "config_loaded|provider_registry_ready" |
++  Select-Object -Last 20
++```
++
++## 用例总览
++
++| ID | 名称 | 执行类型 | 优先级 | 目标 |
++|---|---|---:|---:|---|
++| TC01 | 空 key 友好错误 | dev 可测 | P0 | 复现用户实际崩溃场景，确认不再出现空 Bearer 崩溃 |
++| TC02 | 正常聊天不回归 | dev 可测 | P0 | 有效 key 下流式回复正常 |
++| TC03 | 路径跨会话不漂移 | frozen 装机版必测 | P0 | 登录期与重启期 config/userdata 路径完全一致 |
++| TC04 | 存量 orphan endpoint 自愈 | frozen 或构造 | P0 | canonical 无 endpoint、AppData 有 endpoint 时自动迁回 |
++| TC05 | boot 可观测日志 | 任意模式 | P1 | 启动日志含 portable/env_pinned/provider registry 摘要 |
++| TC06 | 本地 Ollama 放行 | 真机优先，单测兜底 | P1 | localhost + key=ollama 不被空 key 保护误拦 |
++| TC07 | 云端 + ollama 占位拦截 | dev 可测，单测兜底 | P1 | 非本地 endpoint 使用 ollama/占位 key 时友好报错 |
++| TC08 | sentinel 固化绑定 | frozen 优先，单测兜底 | P1 | sentinel 存在时偶发不可写不漂移 |
++| TC09 | 安装目录不可写回落 AppData | frozen 优先，单测兜底 | P1 | 不可写时记录 error 并显式回落 AppData |
++| TC10 | chain 全 provider 失败 ErrorEvent | dev 可测，单测兜底 | P1 | 全失败时 error_class 透传到前端错误事件 |
++
++---
++
++## TC01 空 key 友好错误
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | dev 可测 |
++| 优先级 | P0，用户实际撞到的崩溃 |
++| 覆盖风险 | `get_chain()` 无 enabled provider 后 fallback legacy 空 key，拼出 `Bearer ` 导致 httpx `LocalProtocolError` |
++
++### 前置
++
++1. 使用 dev 模式启动：`npx tauri dev`。
++2. 准备一个隔离 userdata，避免污染真实登录态。推荐设置 `DESKPET_USER_DATA_DIR=G:\projects\deskpet\.dev-userdata-empty-key` 后启动。
++3. 确保没有可用 relay key：退出登录，或清理本测试 userdata 的 `config.toml` 中 enabled provider，或把云端 provider 的 key 设置为占位符/空值。
++4. 如果 key 存在于 Windows Credential Manager/keyring，先通过应用退出登录或测试专用账号解除，不能删除真实用户凭据。
++
++### 坐标声明
++
++执行前记录真实坐标：
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“你好，测试空 key 保护”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=消息发送
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 启动 dev 应用，等待主界面可操作 | 主窗口加载完成，没有启动崩溃 | `TC01-01-boot.png` |
++| 2 | 点击 `CHAT_INPUT` | 输入框出现光标 | `TC01-02-focus.png` |
++| 3 | 剪贴板写入 `你好，测试空 key 保护`，按 `Ctrl+V` | 输入框显示完整中文 | `TC01-03-paste.png` |
++| 4 | 点击 `SEND_BUTTON` | 出现用户消息，随后出现可读错误提示 | `TC01-04-friendly-error.png` |
++| 5 | 停留 10 秒，继续点击输入框 | 整轮对话未崩，应用仍可交互 | `TC01-05-still-alive.png` |
++
++### 预期
++
++1. UI 显示可读提示，语义应接近“请重新登录”或“请配置 provider/API key”。
++2. 不出现 `Illegal header value b'Bearer '`。
++3. 不出现 `LocalProtocolError`。
++4. 不出现整轮崩溃、白屏、前端完全不可交互。
++
++### 判定证据
++
++必查日志：
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "empty_api_key|ErrorEvent|LocalProtocolError|Illegal header|Bearer "
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 截图 | `TC01-04-friendly-error.png` 有可读错误提示 |
++| 日志 | 有 `empty_api_key` 或等价 error_class |
++| 日志 | 没有 `LocalProtocolError` |
++| 日志 | 没有 `Illegal header value b'Bearer '` |
++
++---
++
++## TC02 正常聊天不回归
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | dev 可测 |
++| 优先级 | P0 |
++| 覆盖风险 | 空 key 保护不能误伤有效 relay/provider；流式响应不能回归 |
++
++### 前置
++
++1. dev 模式启动。
++2. 使用有效登录态或有效 provider key。
++3. 日志中 `provider_registry_ready enabled>=1`。
++
++### 坐标声明
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“请用一句话回复：路径绑定回归测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=发送并开始流式回复
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 启动应用并确认已登录/已配置 provider | 主界面可用，无登录错误 | `TC02-01-ready.png` |
++| 2 | 粘贴 `请用一句话回复：路径绑定回归测试` | 输入完整显示 | `TC02-02-input.png` |
++| 3 | 点击发送 | 出现流式 token 或加载状态 | `TC02-03-streaming.png` |
++| 4 | 等待回复完成 | 有完整助手回复，输入框恢复可用 | `TC02-04-complete.png` |
++
++### 预期
++
++1. 正常流式回复。
++2. 没有空 key 相关错误。
++3. 没有 provider registry 为空导致的 legacy fallback。
++
++### 判定证据
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "provider_registry_ready|empty_api_key|NoProviderConfigured|LocalProtocolError|Illegal header"
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 截图 | `TC02-04-complete.png` 有助手回复 |
++| 日志 | `provider_registry_ready` 中 `enabled>=1` |
++| 日志 | 无 `empty_api_key`、无 `LocalProtocolError`、无 `Illegal header` |
++
++---
++
++## TC03 路径跨会话不漂移
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | frozen 装机版必测 |
++| 优先级 | P0 |
++| 覆盖风险 | Rust/Python 双解析不一致、未注入 `DESKPET_USER_DATA_DIR`、登录期写 A 路径而重启读 B 路径 |
++
++### 前置
++
++1. 使用本次修复后的 frozen 安装包。
++2. 全新安装到自定义目录，例如 `F:\deskpet`。
++3. 确保 `F:\deskpet\userdata` 可写。
++4. 不设置 `DESKPET_BACKEND_DIR` 等 dev 覆盖变量。
++
++### 坐标声明
++
++登录期：
++
++```text
++坐标=(LOGIN_BUTTON_X,LOGIN_BUTTON_Y)|动作=click|期望=进入登录流程
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“登录期路径绑定测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=发送成功
++```
++
++重启期：
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“重启期路径绑定测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=不重新登录即可发送成功
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 安装到 `F:\deskpet` 并启动 | 主界面启动，创建 `F:\deskpet\userdata` | `TC03-01-installed.png` |
++| 2 | 完成登录 | 登录成功，provider 写入 config | `TC03-02-login-ok.png` |
++| 3 | 发送 `登录期路径绑定测试` | 聊天成功 | `TC03-03-login-chat.png` |
++| 4 | 完全退出应用，包括托盘/后台进程 | 任务管理器无 deskpet/backend 进程 | `TC03-04-exited.png` |
++| 5 | 重新启动 frozen 应用 | 不要求重新登录 | `TC03-05-rebooted.png` |
++| 6 | 发送 `重启期路径绑定测试` | 聊天成功 | `TC03-06-restart-chat.png` |
++
++### 预期
++
++1. 登录期和重启期都使用同一个 `config.toml`。
++2. 登录期与重启期 `config_loaded` 的 `path=` 完全一致。
++3. 登录期与重启期 `config_loaded` 的 `user_data_dir=` 完全一致。
++4. `env_pinned=True`。
++5. `provider_registry_ready enabled>=1`。
++6. 不出现重启后 provider 丢失、空 Bearer、要求重新登录但 key 实际存在的异常。
++
++### 判定证据
++
++```powershell
++Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "config_loaded|provider_registry_ready|empty_api_key|LocalProtocolError|Illegal header" |
++  Select-Object -Last 40
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 截图 | `TC03-03-login-chat.png` 和 `TC03-06-restart-chat.png` 均聊天成功 |
++| 日志 | 两个会话 `config_loaded path=` 完全一致 |
++| 日志 | 两个会话 `user_data_dir=` 完全一致 |
++| 日志 | `env_pinned=True` |
++| 日志 | `provider_registry_ready enabled>=1` |
++| 日志 | 无 `LocalProtocolError` / `Illegal header value b'Bearer '` |
++
++---
++
++## TC04 存量 orphan endpoint 自愈
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | frozen 或构造；推荐 frozen 真机 |
++| 优先级 | P0 |
++| 覆盖风险 | 旧版本把 relay-cloud endpoint 写到 AppData/盘邻居，canonical config 无 enabled endpoints，重启后无法聊天 |
++
++### 前置
++
++构造方式 A，frozen 推荐：
++
++1. 安装到 `F:\deskpet`。
++2. canonical：`F:\deskpet\userdata\config.toml` 存在但没有 `[[llm.endpoints]]`，或 endpoints 全 disabled。
++3. orphan：`$env:APPDATA\deskpet\config.toml` 存在且包含 enabled `relay-cloud` endpoint。
++4. keyring 中仍有对应 relay key，或测试账号可保持有效登录态。
++
++构造方式 B，dev 兜底：
++
++1. 设置 `DESKPET_USER_DATA_DIR` 指向测试目录。
++2. 在 canonical config 中移除 enabled endpoints。
++3. 在 AppData 候选 config 中放入 enabled endpoints。
++
++### 坐标声明
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“存量自愈测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=无需重登即可发送
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 按前置构造 canonical 无 endpoints、AppData 有 endpoints | 文件状态符合构造 | `TC04-01-files-before.png` |
++| 2 | 启动应用 | 启动不崩溃，日志出现 recovery | `TC04-02-boot.png` |
++| 3 | 不重新登录，发送 `存量自愈测试` | 聊天成功 | `TC04-03-chat-ok.png` |
++| 4 | 检查 canonical 目录 | 出现 `.pre-recover-bak` 备份 | `TC04-04-backup.png` |
++| 5 | 再次重启应用 | recovery 幂等，不重复破坏 config | `TC04-05-idempotent.png` |
++
++### 预期
++
++1. 启动日志出现 `endpoints_recovered_from src=... count=N`，`N>=1`。
++2. 不重登即可聊天。
++3. canonical config 生成 `.pre-recover-bak`。
++4. 重启第二次不重复污染 config，不抛异常。
++
++### 判定证据
++
++```powershell
++Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "endpoints_recovered_from|provider_registry_ready|empty_api_key|LocalProtocolError|Illegal header" |
++  Select-Object -Last 60
++
++Get-ChildItem "F:\deskpet\userdata" -Force |
++  Where-Object { $_.Name -like "*.pre-recover-bak" -or $_.Name -like "*pre-recover*" }
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 日志 | 有 `endpoints_recovered_from` 且 `count` 大于 0 |
++| 文件 | 有 `.pre-recover-bak` |
++| 日志 | recovery 后 `provider_registry_ready enabled>=1` |
++| 截图 | 不重登聊天成功 |
++| 日志 | 无 `LocalProtocolError` / `Illegal header` |
++
++---
++
++## TC05 boot 可观测日志
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | 任意模式 |
++| 优先级 | P1 |
++| 覆盖风险 | 修复后必须能从启动日志一眼看到 config 路径、portable/env pin 状态、provider registry 数量 |
++
++### 前置
++
++1. dev 或 frozen 均可。
++2. 至少启动一次应用并让 backend 完成初始化。
++
++### 坐标声明
++
++本用例不要求聊天；如果需要唤醒主界面：
++
++```text
++坐标=(APP_WINDOW_X,APP_WINDOW_Y)|动作=click|期望=窗口获得焦点
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 启动应用 | 主窗口显示 | `TC05-01-boot.png` |
++| 2 | 等待 10 秒 | backend 初始化完成 | `TC05-02-ready.png` |
++| 3 | grep 日志 | 能看到 config/provider registry 摘要 | `TC05-03-log.png` |
++
++### 预期
++
++日志至少包含：
++
++1. `config_loaded`
++2. `portable=...`
++3. `env_pinned=...`
++4. `path=...`
++5. `user_data_dir=...`
++6. `provider_registry_ready`
++7. `n=` 或 provider 总数
++8. `enabled=` 或 enabled 数
++9. `ids=` 或 provider id 列表
++
++### 判定证据
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "config_loaded|provider_registry_ready"
++```
++
++frozen：
++
++```powershell
++Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "config_loaded|provider_registry_ready" |
++  Select-Object -Last 20
++```
++
++通过判据：上述字段齐全，且字段值能解释当前运行模式。
++
++---
++
++## TC06 本地 Ollama 放行
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | 真机优先，单测兜底 |
++| 优先级 | P1 |
++| 覆盖风险 | `key=ollama` 对 localhost 是合法约定，不能被空 key/占位符保护误拦 |
++
++### 前置
++
++1. 本机启动 Ollama 或 OpenAI-compatible 本地服务。
++2. endpoint `base_url` 指向 `http://localhost:11434`、`http://127.0.0.1:11434` 或等价本地地址。
++3. provider key 设置为 `ollama`。
++4. provider enabled。
++
++### 坐标声明
++
++```text
++坐标=(SETTINGS_BUTTON_X,SETTINGS_BUTTON_Y)|动作=click|期望=进入 provider 设置
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“本地 ollama 放行测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=发送到本地 provider
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 确认本地服务可用 | 本地模型接口响应正常 | `TC06-01-local-service.png` |
++| 2 | 配置 provider 为 localhost + key `ollama` | provider 保存成功 | `TC06-02-provider.png` |
++| 3 | 发送 `本地 ollama 放行测试` | 本地模型回复 | `TC06-03-chat-ok.png` |
++
++### 预期
++
++1. localhost/127.0.0.1 endpoint 不因 key=`ollama` 被拦截。
++2. 如果本地模型自身失败，应显示本地服务错误，而不是 `empty_api_key`。
++
++### 判定证据
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "provider_registry_ready|empty_api_key|ollama|localhost|127.0.0.1|ErrorEvent"
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 截图 | 本地模型正常回复 |
++| 日志 | 无 `empty_api_key` |
++| 日志 | provider 指向 localhost/127.0.0.1 |
++
++单测兜底：覆盖 `_client` 或 key guard，断言 localhost + `ollama` 不抛 `LLMProviderError(error_class="empty_api_key")`。
++
++---
++
++## TC07 云端 + ollama 占位拦截
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | dev 可测，单测兜底 |
++| 优先级 | P1 |
++| 覆盖风险 | 非本地云端 endpoint 使用 `ollama` 或其他占位符时，不应发出伪 Bearer 请求 |
++
++### 前置
++
++1. dev 启动。
++2. 配置一个非本地 OpenAI-compatible endpoint，例如 `https://example-cloud.invalid/v1` 或测试云端 endpoint。
++3. key 设置为 `ollama`、空字符串、`your-key-here`、`from-keychain` 中任一占位符。
++4. provider enabled。
++
++### 坐标声明
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“云端占位 key 拦截测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=触发友好 provider 配置错误
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 保存非本地 endpoint + 占位 key | 保存成功 | `TC07-01-provider.png` |
++| 2 | 发送 `云端占位 key 拦截测试` | UI 显示请配置 provider/key 的友好错误 | `TC07-02-friendly-error.png` |
++| 3 | 等待 10 秒后继续点击输入框 | 应用仍可交互 | `TC07-03-still-alive.png` |
++
++### 预期
++
++1. 不向云端发送 `Authorization: Bearer ollama` 或 `Bearer `。
++2. 抛出/透传 `LLMProviderError(error_class="empty_api_key")`。
++3. UI 有可读提示。
++
++### 判定证据
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "empty_api_key|ErrorEvent|Bearer ollama|Bearer |LocalProtocolError|Illegal header"
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 日志 | 有 `empty_api_key` |
++| 截图 | 有可读 provider/key 配置提示 |
++| 日志 | 无 `LocalProtocolError` / `Illegal header` |
++
++单测兜底：非 localhost endpoint + `ollama` 断言抛 `LLMProviderError(error_class="empty_api_key")`。
++
++---
++
++## TC08 sentinel 固化绑定
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | frozen 优先，单测兜底 |
++| 优先级 | P1 |
++| 覆盖风险 | `<install>/userdata/.deskpet-portable` 存在时，偶发 probe/write 抖动不应导致路径漂移到 AppData 或盘邻居 |
++
++### 前置
++
++1. frozen 安装到 `F:\deskpet`。
++2. 已成功启动过一次，存在 `F:\deskpet\userdata\.deskpet-portable`。
++3. 记录当前 `config_loaded path=` 与 `user_data_dir=`。
++4. 模拟偶发不可写时要谨慎：只对测试安装目录操作，不碰真实用户数据。
++
++### 坐标声明
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“sentinel 固化绑定测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=仍使用 portable userdata 发送
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 确认 sentinel 文件存在 | `F:\deskpet\userdata\.deskpet-portable` 存在 | `TC08-01-sentinel.png` |
++| 2 | 制造一次轻量不可写抖动，例如临时去掉当前用户对 `userdata` 的写权限后启动 | 应用仍识别 portable 绑定，不漂移到 `F:\userdata` | `TC08-02-boot.png` |
++| 3 | 恢复写权限，发送测试消息 | 聊天成功或给出非路径漂移类错误 | `TC08-03-chat.png` |
++| 4 | grep 启动日志 | `user_data_dir` 仍为 `F:\deskpet\userdata` | `TC08-04-log.png` |
++
++### 预期
++
++1. sentinel 存在时绑定 `<install>/userdata`。
++2. 不出现盘邻居 `F:\userdata`。
++3. 不因单次 probe 不可写而跨会话漂移。
++
++### 判定证据
++
++```powershell
++Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "config_loaded|portable_userdata_unwritable|AppData|F:\\userdata|user_data_dir" |
++  Select-Object -Last 60
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 文件 | `.deskpet-portable` 存在 |
++| 日志 | `user_data_dir=F:\deskpet\userdata` |
++| 日志 | 不出现 `F:\userdata` 作为 userdata/config |
++
++单测兜底：mock sentinel 存在、probe 写失败，断言解析结果仍固定到 `<install>/userdata`，且不尝试盘邻居回落。
++
++---
++
++## TC09 安装目录不可写回落 AppData
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | frozen 优先，单测兜底 |
++| 优先级 | P1 |
++| 覆盖风险 | `<install>/userdata` 不可写时必须 `logger.error` 明确记录并回落 AppData，而不是静默漂移或落到盘邻居 |
++
++### 前置
++
++1. 使用测试安装目录，例如 `C:\Program Files\Deskpet-Test` 或手工移除当前用户写权限的 `F:\deskpet`。
++2. 确保没有 sentinel 固化场景干扰；本用例验证“首次不可写回落”。
++3. 只在测试目录做权限操作。
++
++### 坐标声明
++
++```text
++坐标=(APP_WINDOW_X,APP_WINDOW_Y)|动作=click|期望=应用窗口获得焦点
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 准备不可写安装目录并启动 frozen | 应用能启动，不崩溃 | `TC09-01-boot.png` |
++| 2 | 等待 backend 初始化 | 日志出现 portable 不可写 error | `TC09-02-ready.png` |
++| 3 | grep 日志 | 回落路径是 `%AppData%\deskpet`，不是盘邻居 | `TC09-03-log.png` |
++
++### 预期
++
++1. 日志出现 `portable_userdata_unwritable`，级别为 error 或等价错误日志。
++2. 明确回落 AppData。
++3. 不创建/使用 `F:\userdata` 这类盘邻居路径。
++
++### 判定证据
++
++```powershell
++Select-String -Path "$env:APPDATA\deskpet\logs\backend.log" -Pattern "portable_userdata_unwritable|config_loaded|user_data_dir|F:\\userdata" |
++  Select-Object -Last 60
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 日志 | 有 `portable_userdata_unwritable` |
++| 日志 | `user_data_dir` 指向 `%AppData%\deskpet` |
++| 日志 | 不出现盘邻居 userdata |
++
++单测兜底：mock `<install>/userdata` mkdir/probe 写失败，断言返回 AppData 且记录 `portable_userdata_unwritable`。
++
++---
++
++## TC10 chain 全 provider 失败 ErrorEvent
++
++| 字段 | 内容 |
++|---|---|
++| 执行类型 | dev 可测，单测兜底 |
++| 优先级 | P1 |
++| 覆盖风险 | provider chain 全失败时，最终前端错误事件必须保留底层 `error_class`，不能退化成不可读通用错误 |
++
++### 前置
++
++1. dev 启动。
++2. 配置 2 个 enabled provider：
++   - provider A：非本地 endpoint + 空/占位 key，预期 `empty_api_key`。
++   - provider B：不可达 endpoint 或明确返回认证失败的测试 endpoint。
++3. 确认 chain 会尝试多个 provider，最终全失败。
++
++### 坐标声明
++
++```text
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=click|期望=焦点落在聊天输入框
++坐标=(CHAT_INPUT_X,CHAT_INPUT_Y)|动作=type|期望=剪贴板粘贴“chain 全失败错误透传测试”
++坐标=(SEND_BUTTON_X,SEND_BUTTON_Y)|动作=click|期望=最终 ErrorEvent 带 error_class
++```
++
++### 步骤
++
++| 步骤 | 人工动作 | 期望即时现象 | 截图 |
++|---:|---|---|---|
++| 1 | 配置两个必失败 provider 并启用 | registry enabled 数量至少 2 | `TC10-01-providers.png` |
++| 2 | 发送 `chain 全失败错误透传测试` | UI 显示可读失败提示 | `TC10-02-error-ui.png` |
++| 3 | grep 日志和前端事件 | ErrorEvent 带 `error_class` | `TC10-03-log.png` |
++
++### 预期
++
++1. chain 不会因第一个 provider 的空 key 崩溃。
++2. 全 provider 失败后，最终 `ErrorEvent` 带 `error_class`。
++3. 如果首要错误是空 key，`error_class=empty_api_key` 应可见；如果最终选择其他错误类，也必须保留具体 class。
++
++### 判定证据
++
++```powershell
++Get-Content "testcase\_runtime_tauri_dev.log" -Encoding Unicode |
++  Select-String "provider_registry_ready|chain|ErrorEvent|error_class|empty_api_key|LocalProtocolError|Illegal header"
++```
++
++通过判据：
++
++| 证据 | 通过条件 |
++|---|---|
++| 日志 | 有 `ErrorEvent` 且包含 `error_class` |
++| 日志 | 有具体错误类，例如 `empty_api_key` |
++| 截图 | UI 有可读错误提示 |
++| 日志 | 无 `LocalProtocolError` / `Illegal header` |
++
++单测兜底：构造 chain 内全部 provider 抛错，断言最终事件 payload 保留 `error_class`。
++
++---
++
++## 单测兜底清单
++
++这些边界可手工验证，但若真机环境难以稳定构造，必须至少有单测覆盖：
++
++| 边界 | 推荐单测断言 |
++|---|---|
++| portable 只认 `<install>/userdata` | frozen + `sys.executable=<install>\backend\...exe` 时返回 `<install>\userdata`，不返回 `<drive>\userdata` |
++| `DESKPET_USER_DATA_DIR` priority-1 | env 设置后 Python 直接使用 env 路径 |
++| 记忆化 | 同进程首次解析后，即使 env/文件状态变化，也不漂移 |
++| sentinel 固化 | `.deskpet-portable` 存在时，probe 抖动不改绑定 |
++| 不可写回落 | probe 写失败记录 `portable_userdata_unwritable` 并回落 AppData |
++| `_recover_orphaned_endpoints` | canonical 无 enabled endpoints、AppData 有 enabled endpoints 时迁移、备份、幂等 |
++| localhost + `ollama` | 不抛 `empty_api_key` |
++| 云端 + `ollama`/空/占位 key | 抛 `LLMProviderError(error_class="empty_api_key")` |
++| chain 全失败 | ErrorEvent payload 保留 `error_class` |
++| frozen keyring | PyInstaller spec 包含 keyring/Windows backend hiddenimports |
++
++## 判定汇总表
++
++执行人填写：
++
++| TC | 执行类型 | 结果 | 关键截图 | 关键日志证据 | 备注 |
++|---|---|---|---|---|---|
++| TC01 空 key 友好错误 | dev | PASS / FAIL / BLOCKED |  | `empty_api_key`；无 `LocalProtocolError` |  |
++| TC02 正常聊天不回归 | dev | PASS / FAIL / BLOCKED |  | `provider_registry_ready enabled>=1` |  |
++| TC03 路径跨会话不漂移 | frozen | PASS / FAIL / BLOCKED |  | 登录期/重启期 `path` 与 `user_data_dir` 完全一致 |  |
++| TC04 存量自愈 | frozen/构造 | PASS / FAIL / BLOCKED |  | `endpoints_recovered_from count=N`，`.pre-recover-bak` |  |
++| TC05 boot 可观测 | 任意 | PASS / FAIL / BLOCKED |  | `config_loaded portable/env_pinned`，`provider_registry_ready` |  |
++| TC06 本地 Ollama 放行 | 真机/单测 | PASS / FAIL / BLOCKED |  | localhost + no `empty_api_key` |  |
++| TC07 云端占位拦截 | dev/单测 | PASS / FAIL / BLOCKED |  | `empty_api_key`，无非法 Bearer |  |
++| TC08 sentinel 固化 | frozen/单测 | PASS / FAIL / BLOCKED |  | `.deskpet-portable`，不漂移 |  |
++| TC09 不可写回落 AppData | frozen/单测 | PASS / FAIL / BLOCKED |  | `portable_userdata_unwritable`，AppData |  |
++| TC10 chain 全失败 ErrorEvent | dev/单测 | PASS / FAIL / BLOCKED |  | `ErrorEvent error_class=...` |  |
++
++## DECISION
++
++结论占位：
++
++```text
++DECISION: PASS / FAIL / BLOCKED
++版本/构建号:
++执行日期:
++执行人:
++必须修复项:
++可延期项:
++环境受限说明:
++```
++
++发布门槛：
++
++1. TC01、TC02、TC03、TC04 必须 PASS。
++2. TC05 必须 PASS，否则后续线上定位能力不足。
++3. TC06-TC10 至少真机或单测兜底 PASS；若标 BLOCKED，必须附 3 次 retry 和 3 种 workaround 记录。
++4. 任一日志出现 `Illegal header value b'Bearer '` 或 `LocalProtocolError`，本轮直接 FAIL。
+
+2026-06-27T19:20:06.634855Z ERROR codex_core::session: failed to record rollout items: thread 019f0a83-caee-7bb1-be9c-26909cd79948 not found
+tokens used
+44,128
+已生成指定测试文档：
+
+[manual-test.md](G:/projects/deskpet/testcase/2026-06-28-userdata-path-binding/manual-test.md)
+
+大纲摘要：
+- 环境与真机纪律：坐标声明、截图目录、UTF-16 日志 grep、失败 retry 规则
+- 公共日志命令：dev/frozen 路径与关键 grep
+- 10 个测试用例：
+  - TC01 空 key 友好错误
+  - TC02 正常聊天不回归
+  - TC03 frozen 路径跨会话不漂移
+  - TC04 存量 orphan endpoint 自愈
+  - TC05 boot 可观测日志
+  - TC06 本地 Ollama 放行
+  - TC07 云端 + ollama 占位拦截
+  - TC08 sentinel 固化绑定
+  - TC09 安装目录不可写回落 AppData
+  - TC10 chain 全 provider 失败 ErrorEvent
+- 单测兜底清单
+- 判定汇总表
+- `DECISION` 占位
+
+我只做了文件存在性与关键章节/关键字结构检查，未运行 git、未启动应用。
