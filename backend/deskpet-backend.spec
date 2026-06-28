@@ -74,6 +74,13 @@ for _m in [
 # Discovered via CDP-driven prompt asking LLM to enumerate tools.
 hiddenimports += collect_submodules("deskpet.tools")
 hiddenimports += collect_submodules("deskpet.skills")
+# NOTE(2026-06-28): the frozen embedder subprocess worker
+# (`sys.executable -m deskpet.memory.embedder_worker`) dies with
+# "No module named 'datasets'" → silently falls back to MOCK embedder in
+# every shipped build. Adding `collect_submodules("datasets")` here did NOT
+# fix it (datasets still doesn't reach the -m subprocess under PyInstaller),
+# so it's intentionally NOT added — the real fix is the frozen worker import
+# resolution, tracked separately. Don't add a half-working datasets collect.
 hiddenimports += ["sqlite_vec"]                    # P4-S20: L3 vector recall
 hiddenimports += [
     "tzdata",                   # zoneinfo needs this on Windows
