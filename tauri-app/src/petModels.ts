@@ -23,9 +23,10 @@ export interface PetModel {
 
 export const PET_MODELS: readonly PetModel[] = [
   {
-    id: "estella",
-    name: "Estella（蓝衣）",
-    modelPath: "/assets/live2d/estella/estella.model3.json",
+    id: "design-genius-white",
+    name: "Design_genius_White",
+    modelPath:
+      "/assets/live2d/Design_genius_White/Design_genius_White/Design_genius(1).model3.json",
   },
   {
     id: "hiyori",
@@ -34,7 +35,7 @@ export const PET_MODELS: readonly PetModel[] = [
   },
 ];
 
-export const DEFAULT_PET_MODEL_ID = "estella";
+export const DEFAULT_PET_MODEL_ID = "design-genius-white";
 
 /** localStorage key — 记住用户上次选的形象。 */
 export const PET_MODEL_LS_KEY = "deskpet_pet_model_id";
