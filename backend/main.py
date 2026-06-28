@@ -5419,6 +5419,35 @@ async def control_channel(ws: WebSocket):
                     "payload": {"session_id": _sd_sid, "ok": _sd_ok},
                 })
 
+            elif msg_type == "session_rename":
+                # 消息面板「重命名话题」：写自定义标题（空=还原自动预览）。
+                _sr_payload = raw.get("payload", {}) or {}
+                _sr_sid = _sr_payload.get("session_id") or ""
+                _sr_title = _sr_payload.get("title") or ""
+                _sr_sdb = service_context.get("session_db")
+                _sr_ok = False
+                _sr_stored = ""
+                if _sr_sdb is not None and _sr_sid:
+                    try:
+                        _sr_stored = await _sr_sdb.set_session_title(_sr_sid, _sr_title)
+                        _sr_ok = True
+                        logger.info(
+                            "session_renamed sid=%s title_len=%d", _sr_sid, len(_sr_stored)
+                        )
+                    except Exception as _sr_exc:  # noqa: BLE001
+                        logger.warning(
+                            "session_rename_failed", error=str(_sr_exc),
+                            session_id=_sr_sid,
+                        )
+                await ws.send_json({
+                    "type": "session_renamed",
+                    "payload": {
+                        "session_id": _sr_sid,
+                        "title": _sr_stored,
+                        "ok": _sr_ok,
+                    },
+                })
+
             elif msg_type == "session_messages_load":
                 # P4-S23: panel reload (F5) needs to rehydrate chat
                 # history from SessionDB. Returns messages for the

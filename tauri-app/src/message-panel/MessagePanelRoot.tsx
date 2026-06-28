@@ -44,6 +44,11 @@ import {
   effectiveModelId,
 } from "../code-panel/codeModelsStore";
 import { codePanelWS } from "../code-panel/ws";
+import {
+  MAX_TITLE_LEN,
+  normalizeTopicTitle,
+  topicDisplayLabel,
+} from "./topicTitle";
 import { useAudioChannel } from "../hooks/useAudioChannel";
 import { BACKEND_PORT } from "../backendPort";
 import { useAudioRecorder } from "../hooks/useAudioRecorder";
@@ -56,6 +61,8 @@ type SessionEntry = {
   turn_count: number;
   last_message_at: number;
   preview: string;
+  /** User-set custom title (empty = unnamed → fall back to preview). */
+  title?: string;
 };
 
 export function MessagePanelRoot() {
@@ -64,6 +71,13 @@ export function MessagePanelRoot() {
   // 历史会话下拉（选择 / 删除之前的会话）。
   const [sessionList, setSessionList] = useState<SessionEntry[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // 「重命名话题」内联编辑：一次只编辑一行。
+  const [editingSid, setEditingSid] = useState<string | null>(null);
+  const [draftTitle, setDraftTitle] = useState("");
+  // Enter/Esc 会把 editingSid 置空 → input 卸载触发 onBlur；用这个标记让那次
+  // 善后 blur 不要再二次提交。startRename 时清零，避免污染下一次编辑。
+  const skipBlurRef = useRef(false);
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
   const [showModelModal, setShowModelModal] = useState(false);
   // 2026-05-31 restore — context breakdown modal state + snapshot subscriber.
   const [contextModalOpen, setContextModalOpen] = useState(false);
@@ -178,7 +192,52 @@ export function MessagePanelRoot() {
     [activeSid, switchToDefault],
   );
 
-  // 监听后端 sessions_list_response / session_deleted；面板打开时拉一次清单。
+  // ── 重命名话题 ───────────────────────────────────────────────────
+  const startRename = useCallback((s: SessionEntry) => {
+    skipBlurRef.current = false; // clear any stale blur-skip from a prior edit
+    setEditingSid(s.session_id);
+    setDraftTitle((s.title || "").trim());
+  }, []);
+
+  // commit=false → 取消(不改)。commit=true → trim/clamp 后若有变化才发 ws +
+  // 乐观更新；空串表示清除自定义名(后端删行、回退 preview)。
+  const finishRename = useCallback(
+    (sid: string, commit: boolean) => {
+      skipBlurRef.current = true; // the unmount-blur that follows must not re-commit
+      setEditingSid(null);
+      if (!commit) return;
+      const next = normalizeTopicTitle(draftTitle);
+      const current = (
+        sessionList.find((x) => x.session_id === sid)?.title || ""
+      ).trim();
+      if (next === current) return; // unchanged → no-op
+      setSessionList((prev) =>
+        prev.map((x) => (x.session_id === sid ? { ...x, title: next } : x)),
+      );
+      codePanelWS.send({
+        type: "session_rename",
+        payload: { session_id: sid, title: next },
+      });
+    },
+    [draftTitle, sessionList],
+  );
+
+  // 关闭下拉时丢弃未完成的编辑态，避免下次打开残留。
+  useEffect(() => {
+    if (!pickerOpen && editingSid !== null) setEditingSid(null);
+  }, [pickerOpen, editingSid]);
+
+  // 进入编辑后聚焦 + 选中文本。
+  useEffect(() => {
+    if (editingSid !== null) {
+      const el = renameInputRef.current;
+      el?.focus();
+      el?.select();
+    }
+  }, [editingSid]);
+
+  // 监听后端 sessions_list_response / session_deleted / session_renamed；
+  // 面板打开时拉一次清单。
   useEffect(() => {
     const off = codePanelWS.on_message((msg: any) => {
       if (msg?.type === "sessions_list_response") {
@@ -187,6 +246,13 @@ export function MessagePanelRoot() {
       } else if (msg?.type === "session_deleted") {
         // 后端确认删除 → 重新拉清单保持一致。
         loadSessions();
+      } else if (msg?.type === "session_renamed" && msg?.payload?.ok) {
+        // 后端确认 → 用规范化后的 title 校正本地(防 trim/clamp 漂移)。
+        const sid = msg.payload.session_id as string;
+        const title = (msg.payload.title as string) ?? "";
+        setSessionList((prev) =>
+          prev.map((x) => (x.session_id === sid ? { ...x, title } : x)),
+        );
       }
     });
     loadSessions();
@@ -450,9 +516,16 @@ export function MessagePanelRoot() {
                   {sessionList.map((s) => {
                     const selected = s.session_id === activeSid;
                     const isDefault = s.session_id === DEFAULT_SID;
-                    const label = isDefault
+                    const autoLabel = isDefault
                       ? "默认话题"
                       : s.preview || s.session_id;
+                    const label = topicDisplayLabel({
+                      isDefault,
+                      title: s.title,
+                      preview: s.preview,
+                      session_id: s.session_id,
+                    });
+                    const isEditing = editingSid === s.session_id;
                     return (
                       <div
                         key={s.session_id}
@@ -470,58 +543,137 @@ export function MessagePanelRoot() {
                             : "3px solid transparent",
                         }}
                       >
-                        <div
-                          onClick={() => switchToSession(s.session_id)}
-                          style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
-                        >
-                          <div
-                            style={{
-                              color: selected ? "#bfdbfe" : "#e2e8f0",
-                              fontSize: 13,
-                              fontWeight: selected ? 600 : 500,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
+                        {isEditing ? (
+                          <input
+                            ref={renameInputRef}
+                            value={draftTitle}
+                            maxLength={MAX_TITLE_LEN}
+                            placeholder={autoLabel}
+                            aria-label="重命名话题"
+                            data-testid={`session-rename-input-${s.session_id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => setDraftTitle(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                finishRename(s.session_id, true);
+                              } else if (e.key === "Escape") {
+                                e.preventDefault();
+                                finishRename(s.session_id, false);
+                              }
                             }}
-                          >
-                            {label}
-                          </div>
-                          <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 1 }}>
-                            {s.turn_count} 条
-                            {!isDefault && ` · ${s.session_id}`}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteSession(s.session_id);
-                          }}
-                          title={isDefault ? "清空默认话题" : "删除该会话"}
-                          aria-label="删除该会话"
-                          style={{
-                            flexShrink: 0,
-                            width: 22,
-                            height: 22,
-                            borderRadius: 6,
-                            border: "none",
-                            background: "transparent",
-                            color: "#94a3b8",
-                            cursor: "pointer",
-                            fontSize: 15,
-                            lineHeight: "20px",
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = "rgba(239,68,68,0.18)";
-                            e.currentTarget.style.color = "#f87171";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = "transparent";
-                            e.currentTarget.style.color = "#94a3b8";
-                          }}
-                        >
-                          ×
-                        </button>
+                            onBlur={() => {
+                              if (skipBlurRef.current) {
+                                skipBlurRef.current = false;
+                                return;
+                              }
+                              finishRename(s.session_id, true);
+                            }}
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              fontSize: 13,
+                              padding: "4px 7px",
+                              borderRadius: 6,
+                              border: "1px solid #60a5fa",
+                              background: "#0f172a",
+                              color: "#e2e8f0",
+                              outline: "none",
+                            }}
+                          />
+                        ) : (
+                          <>
+                            <div
+                              onClick={() => switchToSession(s.session_id)}
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                startRename(s);
+                              }}
+                              title="单击切换 · 双击重命名"
+                              style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
+                            >
+                              <div
+                                style={{
+                                  color: selected ? "#bfdbfe" : "#e2e8f0",
+                                  fontSize: 13,
+                                  fontWeight: selected ? 600 : 500,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {label}
+                              </div>
+                              <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 1 }}>
+                                {s.turn_count} 条
+                                {!isDefault && ` · ${s.session_id}`}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startRename(s);
+                              }}
+                              title="重命名话题"
+                              aria-label="重命名话题"
+                              data-testid={`session-rename-btn-${s.session_id}`}
+                              style={{
+                                flexShrink: 0,
+                                width: 22,
+                                height: 22,
+                                borderRadius: 6,
+                                border: "none",
+                                background: "transparent",
+                                color: "#94a3b8",
+                                cursor: "pointer",
+                                fontSize: 13,
+                                lineHeight: "20px",
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = "rgba(96,165,250,0.18)";
+                                e.currentTarget.style.color = "#93c5fd";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = "transparent";
+                                e.currentTarget.style.color = "#94a3b8";
+                              }}
+                            >
+                              ✎
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteSession(s.session_id);
+                              }}
+                              title={isDefault ? "清空默认话题" : "删除该会话"}
+                              aria-label="删除该会话"
+                              style={{
+                                flexShrink: 0,
+                                width: 22,
+                                height: 22,
+                                borderRadius: 6,
+                                border: "none",
+                                background: "transparent",
+                                color: "#94a3b8",
+                                cursor: "pointer",
+                                fontSize: 15,
+                                lineHeight: "20px",
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = "rgba(239,68,68,0.18)";
+                                e.currentTarget.style.color = "#f87171";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = "transparent";
+                                e.currentTarget.style.color = "#94a3b8";
+                              }}
+                            >
+                              ×
+                            </button>
+                          </>
+                        )}
                       </div>
                     );
                   })}

@@ -318,3 +318,67 @@ async def test_busy_retry_helper_classifies_errors(tmp_path: Path):
     assert _is_busy_error(busy) is True
     assert _is_busy_error(other) is False
     assert _is_busy_error(not_op) is False
+
+
+# ── 自定义会话标题（消息面板「重命名话题」）─────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_session_title_set_and_listed(db: SessionDB):
+    await db.append("task-1", "user", "hello")
+    stored = await db.set_session_title("task-1", "我的话题")
+    assert stored == "我的话题"
+    rows = await db.list_sessions_with_preview()
+    row = next(r for r in rows if r["session_id"] == "task-1")
+    assert row["title"] == "我的话题"
+    # 自定义标题不影响 preview（仍由 messages 派生）。
+    assert row["preview"] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_session_title_empty_clears(db: SessionDB):
+    await db.append("task-2", "user", "hi")
+    await db.set_session_title("task-2", "named")
+    cleared = await db.set_session_title("task-2", "   ")
+    assert cleared == ""
+    rows = await db.list_sessions_with_preview()
+    row = next(r for r in rows if r["session_id"] == "task-2")
+    assert row["title"] == ""
+
+
+@pytest.mark.asyncio
+async def test_session_title_trimmed_and_clamped(db: SessionDB):
+    await db.append("task-3", "user", "x")
+    stored = await db.set_session_title("task-3", "  " + "a" * 200 + "  ")
+    assert stored == "a" * 80  # trim + clamp 到 MAX_TITLE_LEN
+    rows = await db.list_sessions_with_preview()
+    row = next(r for r in rows if r["session_id"] == "task-3")
+    assert row["title"] == "a" * 80
+
+
+@pytest.mark.asyncio
+async def test_delete_session_clears_custom_title(db: SessionDB):
+    await db.append("task-4", "user", "msg")
+    await db.set_session_title("task-4", "to be deleted")
+    await db.clear("task-4")
+    # 重建同名会话 → 不能继承旧标题（删除时已连带清掉）。
+    await db.append("task-4", "user", "fresh")
+    rows = await db.list_sessions_with_preview()
+    row = next(r for r in rows if r["session_id"] == "task-4")
+    assert row["title"] == ""
+
+
+@pytest.mark.asyncio
+async def test_set_session_title_blank_sid_is_noop(db: SessionDB):
+    assert await db.set_session_title("", "x") == ""
+    assert await db.set_session_title("   ", "x") == ""
+
+
+@pytest.mark.asyncio
+async def test_session_title_upsert_overwrites(db: SessionDB):
+    await db.append("task-5", "user", "m")
+    await db.set_session_title("task-5", "first")
+    await db.set_session_title("task-5", "second")
+    rows = await db.list_sessions_with_preview()
+    row = next(r for r in rows if r["session_id"] == "task-5")
+    assert row["title"] == "second"

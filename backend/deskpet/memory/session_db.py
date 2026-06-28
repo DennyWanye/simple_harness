@@ -123,6 +123,15 @@ class SessionDB:
             # synchronous=NORMAL 在 WAL 下是常规选择：崩溃最多丢最后一个事务
             # 而非破坏数据库。full 对单用户桌宠过于保守。
             await db.execute("PRAGMA synchronous=NORMAL")
+            # 用户自定义会话标题（消息面板「重命名话题」）。放侧表，不触碰
+            # messages 派生的清单/preview 逻辑；CREATE IF NOT EXISTS 幂等，无需迁移。
+            await db.execute(
+                "CREATE TABLE IF NOT EXISTS session_titles ("
+                "  session_id TEXT PRIMARY KEY,"
+                "  title TEXT NOT NULL,"
+                "  updated_at REAL NOT NULL"
+                ")"
+            )
             await db.commit()
 
         # 3. 尝试加载 sqlite-vec 扩展并建 messages_vec 虚拟表
@@ -476,6 +485,11 @@ class SessionDB:
                         "DELETE FROM messages WHERE session_id = ?",
                         (session_id,),
                     )
+                    # 连带清掉自定义标题，避免删后重建同名会话残留旧名。
+                    await db.execute(
+                        "DELETE FROM session_titles WHERE session_id = ?",
+                        (session_id,),
+                    )
                     await db.commit()
 
         await self._with_retry(_do)
@@ -587,7 +601,9 @@ class SessionDB:
                 "  (SELECT content FROM messages "
                 "     WHERE session_id = m.session_id AND role = 'user' "
                 "       AND content IS NOT NULL AND content <> '' "
-                "     ORDER BY created_at ASC LIMIT 1) "
+                "     ORDER BY created_at ASC LIMIT 1), "
+                "  (SELECT title FROM session_titles "
+                "     WHERE session_id = m.session_id) "
                 "FROM messages m GROUP BY m.session_id "
                 "ORDER BY MAX(m.created_at) DESC"
             )
@@ -603,8 +619,52 @@ class SessionDB:
                 "turn_count": int(row[1] or 0),
                 "last_message_at": float(row[2] or 0.0),
                 "preview": preview,
+                # 用户自定义标题（空串=未命名，前端回退到 preview）。
+                "title": (row[4] or ""),
             })
         return out
+
+    #: Hard cap on a user-set session title (UI also enforces; this is the
+    #: server-side backstop so a crafted ws message can't store a huge blob).
+    MAX_TITLE_LEN = 80
+
+    async def set_session_title(self, session_id: str, title: str) -> str:
+        """Set or clear a user custom title for a companion session.
+
+        - Empty/whitespace ``title`` clears the custom name (the list falls
+          back to the auto preview). Idempotent.
+        - Non-empty is trimmed + clamped to ``MAX_TITLE_LEN``.
+
+        Returns the stored title ("" when cleared) so the caller can echo the
+        canonical value back to the UI.
+        """
+        if not self._initialized:
+            await self.initialize()
+        sid = (session_id or "").strip()
+        if not sid:
+            return ""
+        clean = (title or "").strip()[: self.MAX_TITLE_LEN]
+
+        async def _do() -> None:
+            async with self._write_lock:
+                async with aiosqlite.connect(self._db_path) as db:
+                    await db.execute("PRAGMA busy_timeout=5000")
+                    if clean:
+                        await db.execute(
+                            "INSERT INTO session_titles(session_id, title, updated_at) "
+                            "VALUES(?, ?, ?) "
+                            "ON CONFLICT(session_id) DO UPDATE SET "
+                            "  title = excluded.title, updated_at = excluded.updated_at",
+                            (sid, clean, time.time()),
+                        )
+                    else:
+                        await db.execute(
+                            "DELETE FROM session_titles WHERE session_id = ?", (sid,)
+                        )
+                    await db.commit()
+
+        await self._with_retry(_do)
+        return clean
 
     # ---- P5-S2 code_session_provider binding -------------------------
 
