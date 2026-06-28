@@ -74,13 +74,19 @@ for _m in [
 # Discovered via CDP-driven prompt asking LLM to enumerate tools.
 hiddenimports += collect_submodules("deskpet.tools")
 hiddenimports += collect_submodules("deskpet.skills")
-# NOTE(2026-06-28): the frozen embedder subprocess worker
-# (`sys.executable -m deskpet.memory.embedder_worker`) dies with
-# "No module named 'datasets'" → silently falls back to MOCK embedder in
-# every shipped build. Adding `collect_submodules("datasets")` here did NOT
-# fix it (datasets still doesn't reach the -m subprocess under PyInstaller),
-# so it's intentionally NOT added — the real fix is the frozen worker import
-# resolution, tracked separately. Don't add a half-working datasets collect.
+# NOTE(2026-06-28, RESOLVED): the frozen embedder subprocess worker used to die
+# with "No module named 'datasets'" → silently fall back to MOCK embedder in
+# every shipped build. ROOT CAUSE (located on the real exe, see
+# plans/2026-06-28-frozen-embedder-datasets-fix/): FlagEmbedding's *inference*
+# import chain hard-`import datasets` (a training-only dep) in
+# abc/finetune/embedder/AbsDataset.py, plus two more frozen-only transformers
+# quirks (inspect.getsource on docstring decorators; dynamic import of
+# transformers.models.* during tokenizer autodetection). The fix is NOT a spec
+# change — it's `deskpet.memory.embedder_worker._apply_frozen_compat()`, which
+# injects a tiny `datasets` stub + patches the two transformers code paths
+# right before `import FlagEmbedding`. Keep datasets EXCLUDED below (bundling it
+# drags ~150MB of pyarrow/pandas and historically crashed build-time analysis).
+# Do NOT add collect_submodules("datasets") — it does nothing useful here.
 hiddenimports += ["sqlite_vec"]                    # P4-S20: L3 vector recall
 hiddenimports += [
     "tzdata",                   # zoneinfo needs this on Windows

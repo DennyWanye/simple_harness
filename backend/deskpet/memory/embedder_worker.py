@@ -107,8 +107,147 @@ class _WorkerState:
         self.load_elapsed_ms: float = 0.0
 
 
+def _apply_frozen_compat() -> None:
+    """让 PyInstaller frozen 包里的 FlagEmbedding/transformers 推理链路跑得起来。
+
+    **仅 frozen 生效**；dev / source 模式下这三个坑都不存在（磁盘有真 .py 源码、
+    transformers 全部子模块可见、datasets 真包在 site-packages），所以直接跳过，
+    对开发态零影响。
+
+    根因（2026-06-28 在真二进制下逐层定位，见
+    ``plans/2026-06-28-frozen-embedder-datasets-fix/``）——`from FlagEmbedding
+    import BGEM3FlagModel` + 构建 tokenizer 在 frozen 下连撞三层，每层都让
+    embedder worker fatal → 静默降级 mock embedder（历史所有发布版都中招）：
+
+    1. **datasets**：FlagEmbedding 的*推理* import 链
+       (``inference...m3`` → ``finetune...m3`` → ``abc/finetune/embedder/
+       AbsDataset.py:5``) 里有一句裸 ``import datasets``。datasets 纯属*训练*
+       依赖（且会拖 pyarrow/pandas/dill 等 ~150MB，并曾让 PyInstaller 构建期
+       依赖分析崩 SubprocessDiedError），故 spec 里 ``excludes=["datasets"]``。
+       推理根本不调 datasets（唯一的模块加载期引用是 AbsDataset 里一处函数
+       注解 ``datasets.Dataset``）→ 注入一个只含 ``Dataset`` 的 stub module 到
+       ``sys.modules`` 即可满足 import，真用到（训练）才报错。
+    2. **inspect.getsource**：transformers 的 docstring 装饰器
+       (``utils/doc.py:get_docstring_indentation_level``) 对*方法*会调
+       ``inspect.getsource``，frozen 下没有 .py 源码 → ``OSError: could not get
+       source code``（reranker MiniCPM modeling 定义期触发）。容错回退到固定
+       缩进级别。
+    3. **transformers.models.\\***：构建 tokenizer 时 ``tokenizer_class_from_name``
+       会按 ``TOKENIZER_MAPPING_NAMES`` 动态 ``import_module`` 各模型子包；
+       BGE-M3 的 XLMRobertaTokenizerFast 也挂在 MetaCLIP-2 名下，遍历到字母序
+       靠前的 ``metaclip_2`` 时 frozen 没打包该子模块 → ``ModuleNotFoundError``。
+       容错跳过缺失的无关模型，继续遍历到真正的 ``xlm_roberta``。
+
+    三层都已在真 ``deskpet-backend.exe`` 上验证：worker ``ready`` (is_mock=False)
+    且能真 encode 出归一化的 1024 维向量。
+    """
+    if not getattr(sys, "frozen", False):
+        return
+    _install_datasets_stub()
+    _patch_transformers_frozen_quirks()
+
+
+def _install_datasets_stub() -> bool:
+    """坑 1：注入 ``datasets`` stub 到 ``sys.modules``（已存在则不动）。
+
+    返回 True 表示这次确实注入了 stub。推理永远不会真调用 datasets —— 唯一的
+    模块加载期引用是 AbsDataset 里一处函数注解 ``datasets.Dataset``，所以只需
+    提供 ``Dataset``；其余训练期符号被真用到时才显式报错。
+    """
+    if "datasets" in sys.modules:
+        return False
+
+    import types
+
+    stub = types.ModuleType("datasets")
+
+    class _StubDataset:  # 仅作 AbsDataset 里的函数注解占位，永不实例化
+        pass
+
+    def _stub_getattr(name: str) -> Any:
+        # dunder（__file__/__path__/__spec__/__wrapped__ …）走标准"无此属性"
+        # 语义：repr / importlib / inspect 等内省都用 getattr(..., default) 或
+        # try/except AttributeError，抛 AttributeError 才能让它们优雅降级；抛别的
+        # 异常会把无辜的内省调用打挂（如 _module_repr 读 __file__）。
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(name)
+        # 真正的训练期符号（load_dataset / concatenate_datasets …）被用到才报错
+        raise RuntimeError(
+            f"datasets.{name} 是 DeskPet 推理专用 frozen 包里的 stub —— "
+            "真 HuggingFace datasets 已从安装包剔除，不支持微调。"
+        )
+
+    stub.Dataset = _StubDataset  # type: ignore[attr-defined]
+    stub.__getattr__ = _stub_getattr  # type: ignore[attr-defined]  # PEP 562
+    stub.__version__ = "0.0.0-deskpet-stub"  # type: ignore[attr-defined]
+    # transformers `_is_package_available` 走 importlib.util.find_spec("datasets")，
+    # 命中 sys.modules 后会读 module.__spec__；ModuleType 默认 __spec__ 是 None，
+    # 而 find_spec 对 None 抛 ValueError。给一个真 ModuleSpec 让它返回非 None。
+    import importlib.machinery
+
+    stub.__spec__ = importlib.machinery.ModuleSpec(  # type: ignore[attr-defined]
+        "datasets", loader=None
+    )
+    sys.modules["datasets"] = stub
+    return True
+
+
+def _patch_transformers_frozen_quirks() -> None:
+    """坑 2 & 3：修补 transformers 在 frozen 下的两处崩点。失败不致命。"""
+    # --- 坑 2：docstring 装饰器在 frozen 拿不到 .py 源码 ---
+    try:
+        import inspect
+
+        import transformers.utils.doc as _tdoc  # type: ignore
+
+        _orig_gdil = _tdoc.get_docstring_indentation_level
+
+        def _safe_gdil(func: Any) -> int:
+            try:
+                return _orig_gdil(func)
+            except (OSError, TypeError):
+                # 4 = class 体缩进；8 = 方法体缩进（4 + def 自身 4）
+                return 4 if inspect.isclass(func) else 8
+
+        _tdoc.get_docstring_indentation_level = _safe_gdil  # type: ignore[assignment]
+    except Exception:  # noqa: BLE001 — patch 失败不致命，让真错暴露在下游
+        pass
+
+    # --- 坑 3：tokenizer 自动枚举撞 frozen 未打包的无关模型子模块 ---
+    try:
+        import importlib as _il
+
+        import transformers.models.auto.tokenization_auto as _tauto  # type: ignore
+
+        def _safe_tokenizer_class_from_name(class_name: str) -> Any:
+            if class_name == "PreTrainedTokenizerFast":
+                return _tauto.PreTrainedTokenizerFast
+            for module_name, tokenizers in _tauto.TOKENIZER_MAPPING_NAMES.items():
+                if class_name in tokenizers:
+                    mod_name = _tauto.model_type_to_module_name(module_name)
+                    try:
+                        module = _il.import_module(
+                            f".{mod_name}", "transformers.models"
+                        )
+                    except ModuleNotFoundError:
+                        # frozen 没打包这个无关模型子模块 —— 跳过继续找
+                        continue
+                    try:
+                        return getattr(module, class_name)
+                    except AttributeError:
+                        continue
+            return None
+
+        _tauto.tokenizer_class_from_name = _safe_tokenizer_class_from_name  # type: ignore[assignment]
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _load_model(state: _WorkerState, model_path: Path, device: str) -> None:
     """同步加载 BGE-M3。失败抛异常给 caller。"""
+    # frozen 兼容补丁必须在 import FlagEmbedding 之前生效（坑 1/2 在 import 链路
+    # 中触发，坑 3 在下面构建 tokenizer 时触发）。dev 模式下是 no-op。
+    _apply_frozen_compat()
     # Lazy import — 让进程在没收到 model_path 之前不要拉 transformers/torch。
     # 这意味着 ping 等轻命令零开销。
     from FlagEmbedding import BGEM3FlagModel  # type: ignore
