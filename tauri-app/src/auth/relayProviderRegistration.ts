@@ -15,6 +15,23 @@ import type { Provider, User } from "./types";
 const RELAY_PROVIDER_ID = "relay-cloud";
 
 type EnsureReason = "login" | "restore" | "recover";
+
+/** Why a registration attempt did not complete. Surfaced to the UI so the
+ * reset-key button (and login flow) can show an actionable message instead
+ * of failing silently (the historical bug: expired token → empty models →
+ * silent `return`, user left wondering whether anything happened). */
+export type EnsureFailReason =
+  | "not_logged_in" // no current relay user / account ref
+  | "no_channel" // backend control WS not connected yet
+  | "no_device_key" // relay refused to (re)issue a device key — auth likely expired
+  | "empty_models" // relay /models returned nothing — key invalid / 401
+  | "repeated_failure" // rate-limited: key kept failing within the window
+  | "error"; // unexpected exception while talking to the relay
+
+export type EnsureResult =
+  | { ok: true }
+  | { ok: false; reason: EnsureFailReason; detail?: string };
+
 // Loose `any` on send so the real control channel (whose send takes a typed
 // OutgoingMessage) is assignable here without a contravariance error.
 type ControlChannel = { send: (m: any) => void };
@@ -30,7 +47,7 @@ type RegistrationAdapter = Pick<
 export class RelayProviderRegistration {
   private getChannel: (() => ControlChannel | null) | null = null;
   private onFatal: ((msg: string) => void) | null = null;
-  private inflight: Promise<void> | null = null;
+  private inflight: Promise<EnsureResult> | null = null;
   private lastEnsured: { accountRef: string; keyPresent: boolean } | null = null;
   private recoverHits: number[] = [];
 
@@ -46,9 +63,13 @@ export class RelayProviderRegistration {
     adapter: RegistrationAdapter,
     reason: EnsureReason = "login",
     force = false,
-  ): Promise<void> {
+  ): Promise<EnsureResult> {
     const run = () => this.ensureOnce(adapter, reason, force);
-    const p = (this.inflight ?? Promise.resolve()).then(run, run);
+    // Chain after any in-flight attempt so concurrent ensures serialize, but
+    // each caller still gets ITS OWN run's result (the button awaits this).
+    const p: Promise<EnsureResult> = (
+      this.inflight ?? Promise.resolve<EnsureResult>({ ok: true })
+    ).then(run, run);
     this.inflight = p;
     p.finally(() => {
       if (this.inflight === p) this.inflight = null;
@@ -56,13 +77,13 @@ export class RelayProviderRegistration {
     return p;
   }
 
-  recover(adapter: RegistrationAdapter): Promise<void> {
+  recover(adapter: RegistrationAdapter): Promise<EnsureResult> {
     const now = Date.now();
     this.recoverHits = this.recoverHits.filter((t) => now - t < 60_000);
     if (this.recoverHits.length >= 2) {
       this.recoverHits = [];
       this.onFatal?.("中转站 key 反复失效，请重新登录或检查余额");
-      return Promise.resolve();
+      return Promise.resolve<EnsureResult>({ ok: false, reason: "repeated_failure" });
     }
     this.recoverHits.push(now);
     return this.ensure(adapter, "recover", true);
@@ -72,14 +93,16 @@ export class RelayProviderRegistration {
     adapter: RegistrationAdapter,
     reason: EnsureReason,
     force: boolean,
-  ): Promise<void> {
+  ): Promise<EnsureResult> {
     const user: User | null = adapter.currentUser();
     const acct = user?.id ?? "";
+    if (!acct) return { ok: false, reason: "not_logged_in" };
     const ok =
       !!this.lastEnsured &&
       this.lastEnsured.accountRef === acct &&
       this.lastEnsured.keyPresent;
-    if (reason === "restore" && ok && !force) return;
+    // Idempotent no-op on restore when already ensured — treated as success.
+    if (reason === "restore" && ok && !force) return { ok: true };
 
     // Channel check FIRST — on cold start the `login` event (from
     // restoreSession / auto-login) can fire before the control WS is
@@ -88,36 +111,46 @@ export class RelayProviderRegistration {
     const ch = this.getChannel?.();
     if (!ch) {
       console.warn("[reg] no channel (will retry on ws connect)");
-      return;
+      return { ok: false, reason: "no_channel" };
     }
 
-    const synced = await adapter.syncDeviceKey({ force: force || !ok });
-    if (!synced) {
-      console.warn("[reg] no device key");
-      return;
-    }
+    try {
+      const synced = await adapter.syncDeviceKey({ force: force || !ok });
+      if (!synced) {
+        console.warn("[reg] no device key");
+        return { ok: false, reason: "no_device_key" };
+      }
 
-    const meta: Provider | null = await adapter.fetchRelayProviderMeta();
-    const models = (meta?.models ?? []).map((m) => m.id);
-    if (!meta || !models.length) {
-      console.warn("[reg] empty models");
-      return;
-    }
+      const meta: Provider | null = await adapter.fetchRelayProviderMeta();
+      const models = (meta?.models ?? []).map((m) => m.id);
+      if (!meta || !models.length) {
+        console.warn("[reg] empty models");
+        return { ok: false, reason: "empty_models" };
+      }
 
-    ch.send({
-      type: "settings_providers_ensure",
-      payload: {
-        id: RELAY_PROVIDER_ID,
-        source: "relay",
-        account_ref: acct,
-        name: "中转站 · chinzy",
-        base_url: meta.base_url,
-        models,
-        default_model: pickModel(meta),
-        api_key: synced.key,
-      },
-    });
-    this.lastEnsured = { accountRef: acct, keyPresent: true };
+      ch.send({
+        type: "settings_providers_ensure",
+        payload: {
+          id: RELAY_PROVIDER_ID,
+          source: "relay",
+          account_ref: acct,
+          name: "中转站 · chinzy",
+          base_url: meta.base_url,
+          models,
+          default_model: pickModel(meta),
+          api_key: synced.key,
+        },
+      });
+      this.lastEnsured = { accountRef: acct, keyPresent: true };
+      return { ok: true };
+    } catch (e) {
+      console.warn("[reg] ensure error", e);
+      return {
+        ok: false,
+        reason: "error",
+        detail: e instanceof Error ? e.message : String(e),
+      };
+    }
   }
 
   onLogout(): void {

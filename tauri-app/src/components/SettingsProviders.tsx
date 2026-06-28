@@ -13,7 +13,7 @@
  * needing a DOM — matches the project's existing test convention
  * (see AutoResumeBanner.test.tsx / SettingsToggle.test.tsx).
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
 import {
   DndContext,
@@ -39,7 +39,34 @@ import type { IncomingMessage } from "../types/messages";
 import type { RelayAuthAdapter } from "../auth/RelayAuthAdapter";
 import type { Provider as RelayProvider } from "../auth/types";
 import { RELAY_MANAGED_PROVIDER } from "../auth/relayConfig";
-import { relayProviderRegistration } from "../auth/relayProviderRegistration";
+import {
+  relayProviderRegistration,
+  type EnsureFailReason,
+} from "../auth/relayProviderRegistration";
+
+// ---- Reset-key button UI state --------------------------------------------
+// Per-provider transient feedback for the relay "🔄 重置 key" action so the
+// click is never silent: in-flight (disabled + spinner), then success/error.
+type ResetUiState = { status: "pending" | "ok" | "error"; message?: string };
+
+/** Map a registration failure reason to an actionable, user-facing message. */
+function resetFailText(reason: EnsureFailReason): string {
+  switch (reason) {
+    case "not_logged_in":
+      return "请先登录中转站账户";
+    case "no_channel":
+      return "后端未连接，请稍候重试";
+    case "no_device_key":
+    case "empty_models":
+      return "中转站未签发新 key（登录可能已失效），请重新登录";
+    case "repeated_failure":
+      return "key 反复失效，请重新登录或检查账户余额";
+    case "error":
+      return "重置出错，请稍候重试";
+    default:
+      return "重置失败";
+  }
+}
 
 // ---- Relay-edition virtual providers --------------------------------------
 //
@@ -305,6 +332,7 @@ interface SortableRowProps {
   onDelete(id: string): void;
   onEdit(provider: Provider): void;
   onResetKey(id: string): void;
+  resetState?: ResetUiState;
 }
 
 function SortableRow({
@@ -314,6 +342,7 @@ function SortableRow({
   onDelete,
   onEdit,
   onResetKey,
+  resetState,
 }: SortableRowProps) {
   const relayManaged = isRelayProvider(provider);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -442,11 +471,18 @@ function SortableRow({
           <button
             type="button"
             onClick={() => onResetKey(provider.id)}
-            style={{ ...rowBtn, color: "#1d4ed8" }}
+            disabled={resetState?.status === "pending"}
+            aria-busy={resetState?.status === "pending"}
+            style={{
+              ...rowBtn,
+              color: "#1d4ed8",
+              opacity: resetState?.status === "pending" ? 0.6 : 1,
+              cursor: resetState?.status === "pending" ? "progress" : "pointer",
+            }}
             data-testid={`provider-reset-key-btn-${provider.id}`}
             title="重新向中转站申请并写入本机 provider key"
           >
-            🔄 重置 key
+            {resetState?.status === "pending" ? "⏳ 重置中…" : "🔄 重置 key"}
           </button>
         ) : (
           <button
@@ -459,6 +495,21 @@ function SortableRow({
           </button>
         )}
       </div>
+      {relayManaged && resetState && resetState.status !== "pending" && resetState.message && (
+        <div
+          role="status"
+          aria-live="polite"
+          data-testid={`provider-reset-status-${provider.id}`}
+          style={{
+            marginTop: 4,
+            fontSize: 11,
+            color: resetState.status === "ok" ? "#15803d" : "#b91c1c",
+          }}
+        >
+          {resetState.status === "ok" ? "✅ " : "⚠️ "}
+          {resetState.message}
+        </div>
+      )}
     </li>
   );
 }
@@ -475,6 +526,21 @@ export function SettingsProviders({
   // 2026-05-26: relay 虚拟 providers — 来自 RelayAuthAdapter 的 in-memory
   // cache，不进 backend LLMProviderRegistry（避免 tsk_xxx key 明文落盘）。
   const [relayProviders, setRelayProviders] = useState<Provider[]>([]);
+  // Per-provider "🔄 重置 key" feedback (pending / ok / error). See handleResetKey.
+  const [resetUi, setResetUi] = useState<Record<string, ResetUiState>>({});
+  // Re-entrancy guard independent of React state (button-disable already
+  // prevents double-clicks; this also blocks programmatic / racy re-entry).
+  const resettingRef = useRef<Set<string>>(new Set());
+  // Auto-clear timers per provider; cleared on unmount so we never setState
+  // after the component is gone.
+  const resetTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      Object.values(resetTimersRef.current).forEach((t) => clearTimeout(t));
+    };
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -606,8 +672,52 @@ export function SettingsProviders({
   );
 
   const handleResetKey = useCallback(
-    (_id: string) => {
-      if (relayAdapter) void relayProviderRegistration.recover(relayAdapter);
+    async (id: string) => {
+      // Boundary: no relay session → can't rotate; tell the user.
+      if (!relayAdapter) {
+        setResetUi((s) => ({
+          ...s,
+          [id]: { status: "error", message: "请先登录中转站账户" },
+        }));
+        return;
+      }
+      // Boundary: re-entrancy. Button is disabled while pending, but guard
+      // against any racy / programmatic double-trigger too.
+      if (resettingRef.current.has(id)) return;
+      resettingRef.current.add(id);
+
+      // Clear any lingering auto-clear timer + show the in-flight state.
+      if (resetTimersRef.current[id]) {
+        clearTimeout(resetTimersRef.current[id]);
+        delete resetTimersRef.current[id];
+      }
+      setResetUi((s) => ({ ...s, [id]: { status: "pending" } }));
+
+      let next: ResetUiState;
+      try {
+        const result = await relayProviderRegistration.recover(relayAdapter);
+        next = result.ok
+          ? { status: "ok", message: "key 已重置" }
+          : { status: "error", message: resetFailText(result.reason) };
+      } catch {
+        next = { status: "error", message: "重置出错，请稍候重试" };
+      } finally {
+        resettingRef.current.delete(id);
+      }
+
+      // Boundary: component may have unmounted during the await.
+      if (!mountedRef.current) return;
+      setResetUi((s) => ({ ...s, [id]: next }));
+      // Auto-clear the transient feedback after a few seconds.
+      resetTimersRef.current[id] = setTimeout(() => {
+        delete resetTimersRef.current[id];
+        if (!mountedRef.current) return;
+        setResetUi((s) => {
+          const copy = { ...s };
+          delete copy[id];
+          return copy;
+        });
+      }, 4500);
     },
     [relayAdapter],
   );
@@ -744,6 +854,7 @@ export function SettingsProviders({
                     setAddOpen(true);
                   }}
                   onResetKey={handleResetKey}
+                  resetState={resetUi[p.id]}
                 />
               ))}
             </ul>

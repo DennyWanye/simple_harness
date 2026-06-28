@@ -220,3 +220,89 @@ describe("RelayProviderRegistration.recover", () => {
     );
   });
 });
+
+// The reset-key button + login flow rely on these return values to give the
+// user feedback instead of failing silently. Each failure mode must report a
+// distinct, classifiable reason.
+describe("RelayProviderRegistration result contract", () => {
+  it("ensure success returns { ok: true }", async () => {
+    const registration = new RelayProviderRegistration();
+    registration.attach(() => ({ send: vi.fn() }), vi.fn());
+    expect(await registration.ensure(makeAdapter())).toEqual({ ok: true });
+  });
+
+  it("not logged in -> not_logged_in", async () => {
+    const registration = new RelayProviderRegistration();
+    registration.attach(() => ({ send: vi.fn() }), vi.fn());
+    expect(await registration.ensure(makeAdapter(null))).toEqual({
+      ok: false,
+      reason: "not_logged_in",
+    });
+  });
+
+  it("no channel -> no_channel", async () => {
+    const registration = new RelayProviderRegistration();
+    registration.attach(() => null, vi.fn());
+    expect(await registration.ensure(makeAdapter())).toEqual({
+      ok: false,
+      reason: "no_channel",
+    });
+  });
+
+  it("relay refuses device key -> no_device_key", async () => {
+    const registration = new RelayProviderRegistration();
+    const adapter = makeAdapter();
+    vi.mocked(adapter.syncDeviceKey).mockResolvedValueOnce(null);
+    registration.attach(() => ({ send: vi.fn() }), vi.fn());
+    expect(await registration.ensure(adapter)).toEqual({
+      ok: false,
+      reason: "no_device_key",
+    });
+  });
+
+  it("empty models -> empty_models", async () => {
+    const registration = new RelayProviderRegistration();
+    const adapter = makeAdapter();
+    vi.mocked(adapter.fetchRelayProviderMeta).mockResolvedValueOnce(
+      makeProvider({ models: [] }),
+    );
+    registration.attach(() => ({ send: vi.fn() }), vi.fn());
+    expect(await registration.ensure(adapter)).toEqual({
+      ok: false,
+      reason: "empty_models",
+    });
+  });
+
+  it("relay call throws -> error (no unhandled rejection)", async () => {
+    const registration = new RelayProviderRegistration();
+    const adapter = makeAdapter();
+    vi.mocked(adapter.fetchRelayProviderMeta).mockRejectedValueOnce(
+      new Error("network down"),
+    );
+    registration.attach(() => ({ send: vi.fn() }), vi.fn());
+    expect(await registration.ensure(adapter)).toEqual({
+      ok: false,
+      reason: "error",
+      detail: "network down",
+    });
+  });
+
+  it("recover breaker returns repeated_failure on the third hit", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-26T00:00:00.000Z"));
+    const registration = new RelayProviderRegistration();
+    const adapter = makeAdapter();
+    vi.mocked(adapter.syncDeviceKey).mockResolvedValue(null);
+    registration.attach(() => ({ send: vi.fn() }), vi.fn());
+
+    expect(await registration.recover(adapter)).toEqual({
+      ok: false,
+      reason: "no_device_key",
+    });
+    await registration.recover(adapter);
+    expect(await registration.recover(adapter)).toEqual({
+      ok: false,
+      reason: "repeated_failure",
+    });
+  });
+});

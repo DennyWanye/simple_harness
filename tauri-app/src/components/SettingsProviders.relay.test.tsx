@@ -9,7 +9,7 @@
  * still need restricted editing affordances.
  */
 import React from "react";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Provider } from "./SettingsProviders";
@@ -48,7 +48,11 @@ vi.mock("@dnd-kit/utilities", () => ({
 }));
 
 vi.mock("../auth/relayProviderRegistration", () => ({
-  relayProviderRegistration: { recover: vi.fn() },
+  relayProviderRegistration: {
+    // Default to success so callers that don't care about the result still
+    // exercise the happy-path feedback; individual tests override per-case.
+    recover: vi.fn(() => Promise.resolve({ ok: true })),
+  },
 }));
 
 const relayProvider: Provider = {
@@ -143,7 +147,7 @@ describe("SettingsProviders relay-managed rows", () => {
     expect(relaySortableCall?.[0]).toMatchObject({ id: "relay-cloud", disabled: false });
   });
 
-  it("clicking relay reset key calls relayProviderRegistration.recover with relayAdapter", () => {
+  it("clicking relay reset key calls relayProviderRegistration.recover with relayAdapter", async () => {
     dndMocks.useSortable.mockReturnValue({
       attributes: {},
       listeners: {},
@@ -157,6 +161,10 @@ describe("SettingsProviders relay-managed rows", () => {
     fireEvent.click(screen.getByTestId("provider-reset-key-btn-relay-cloud"));
 
     expect(relayProviderRegistration.recover).toHaveBeenCalledWith(relayAdapter);
+    // flush the async success feedback so no act() warning / dangling state
+    expect(
+      (await screen.findByTestId("provider-reset-status-relay-cloud")).textContent,
+    ).toContain("已重置");
   });
 
   it("keeps user rows unchanged with no relay badge and normal delete button", () => {
@@ -174,6 +182,104 @@ describe("SettingsProviders relay-managed rows", () => {
     expect(within(userRow).queryByTestId("provider-relay-badge")).toBeNull();
     expect(within(userRow).getByTestId("provider-delete-btn-user-openai")).toBeTruthy();
     expect(within(userRow).queryByTestId("provider-reset-key-btn-user-openai")).toBeNull();
+  });
+});
+
+describe("SettingsProviders reset-key feedback (boundaries)", () => {
+  function setupRow() {
+    dndMocks.useSortable.mockReturnValue({
+      attributes: {},
+      listeners: {},
+      setNodeRef: vi.fn(),
+      transform: null,
+      transition: undefined,
+      isDragging: false,
+    });
+  }
+
+  it("shows pending + disables the button while rotating, blocking double-clicks", async () => {
+    setupRow();
+    let resolveRecover!: (r: { ok: true }) => void;
+    vi.mocked(relayProviderRegistration.recover).mockReturnValueOnce(
+      new Promise<{ ok: true }>((r) => {
+        resolveRecover = r;
+      }) as Promise<any>,
+    );
+    renderSettings([relayProvider]);
+    const btn = screen.getByTestId("provider-reset-key-btn-relay-cloud");
+
+    fireEvent.click(btn);
+    // in-flight: disabled + busy + label changed
+    expect(btn).toHaveProperty("disabled", true);
+    expect(btn.getAttribute("aria-busy")).toBe("true");
+    expect(btn.textContent).toContain("重置中");
+
+    // second click while pending must be a no-op (button disabled)
+    fireEvent.click(btn);
+    expect(relayProviderRegistration.recover).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveRecover({ ok: true });
+    });
+    expect(screen.getByTestId("provider-reset-status-relay-cloud").textContent).toContain(
+      "已重置",
+    );
+    expect(screen.getByTestId("provider-reset-key-btn-relay-cloud")).toHaveProperty(
+      "disabled",
+      false,
+    );
+  });
+
+  it("maps a failure reason to an actionable message (empty_models -> 重新登录)", async () => {
+    setupRow();
+    vi.mocked(relayProviderRegistration.recover).mockResolvedValueOnce({
+      ok: false,
+      reason: "empty_models",
+    } as any);
+    renderSettings([relayProvider]);
+
+    fireEvent.click(screen.getByTestId("provider-reset-key-btn-relay-cloud"));
+
+    const status = await screen.findByTestId("provider-reset-status-relay-cloud");
+    expect(status.textContent).toContain("请重新登录");
+  });
+
+  it("repeated_failure surfaces the re-login / balance hint", async () => {
+    setupRow();
+    vi.mocked(relayProviderRegistration.recover).mockResolvedValueOnce({
+      ok: false,
+      reason: "repeated_failure",
+    } as any);
+    renderSettings([relayProvider]);
+
+    fireEvent.click(screen.getByTestId("provider-reset-key-btn-relay-cloud"));
+
+    const status = await screen.findByTestId("provider-reset-status-relay-cloud");
+    expect(status.textContent).toContain("反复失效");
+  });
+
+  it("without a relay session, prompts to log in and never calls recover", async () => {
+    setupRow();
+    const send = vi.fn();
+    const channel = { state: "connected" as const, send };
+    render(
+      <SettingsProviders
+        getChannel={() => channel as any}
+        lastMessage={
+          {
+            type: "settings_providers_list_response",
+            payload: { providers: [relayProvider] },
+          } as any
+        }
+        relayAdapter={null as any}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("provider-reset-key-btn-relay-cloud"));
+
+    const status = await screen.findByTestId("provider-reset-status-relay-cloud");
+    expect(status.textContent).toContain("请先登录");
+    expect(relayProviderRegistration.recover).not.toHaveBeenCalled();
   });
 });
 
