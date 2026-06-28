@@ -13,7 +13,7 @@
 
 **私密仓 `deskpet-private` 本地构建 + 签名 → 发布到公开仓 `deskpet` 的 Release(Latest) + 腾讯 COS(国内主源) → 客户端 `tauri-plugin-updater` 启动检查/手动「检查更新」自动升级。**
 
-- 安装包**瘦身**：模型不内嵌（`DESKPET_BUNDLE_MODELS=0`，304MB 安装包），首启从 COS 下 ~3.9GB 模型。
+- 安装包**瘦身**：ML 模型不内嵌（`DESKPET_BUNDLE_MODELS=0`），首启从 COS 下 ~3.9GB 模型。Live2D 人物形象（~81MB）**自 beta.7 起内嵌**（estella 默认 + hiyori + Azuki-san + HoshinoAi + Snow Leopard + Estella-DG），装机即带形象 → 安装包 ~347MB。
 - updater endpoints：**COS 主**（国内快）+ **GitHub 备**（fallback）。
 - 安装为 **per-user（HKCU，免管理员）**，所以自更新无需提权。
 
@@ -21,8 +21,8 @@
 
 | | |
 |---|---|
-| 当前版本 | **v0.6.0-beta.6** |
-| 国内直链(COS) | `https://defaultbucket-1300194691.cos.ap-guangzhou.myqcloud.com/deskpet/DeskPet_0.6.0-beta.6_x64-setup.exe` |
+| 当前版本 | **v0.6.0-beta.7**（含 Live2D 形象资源） |
+| 国内直链(COS) | `https://defaultbucket-1300194691.cos.ap-guangzhou.myqcloud.com/deskpet/DeskPet_0.6.0-beta.7_x64-setup.exe` |
 | GitHub Release | https://github.com/DennyWanye/deskpet/releases/latest |
 
 **分享给用户**：发上面任一下载链接（国内发 COS）。用户**双击装一次**（per-user，免管理员）→ 之后**全自动更新**，不用再分享。
@@ -42,31 +42,48 @@
 
 ## 4. 出一个新版本（步骤）
 
-```powershell
-# 0. 在构建/发布工作区(worktree fix-backend-orphan，junction backend/dist-portable→F:\deskpet-build\dist 已配)
-# 1. bump 版本(3 处)：tauri.conf.json / Cargo.toml / package.json → 0.6.0-beta.N
+> 工作区 = worktree `fix-backend-orphan`（junction `backend/dist-portable`→`F:\deskpet-build\dist` 已配）。
+> ⚠️ **签名步骤一律走 Git Bash**（PowerShell 传空口令会让签名静默卡死，见 §5）。下面命令都按 Git Bash 写。
 
-# 2. 重打瘦 backend(含最新代码)
+```bash
+# 0. bump 版本(4 处)：tauri.conf.json / Cargo.toml / package.json / Cargo.lock(deskpet 包) → 0.6.0-beta.N
+
+# 1. Live2D 人物形象资源(beta.7 起内嵌)
+#    模型解压到 tauri-app/public/assets/live2d/<干净目录名>/<name>.model3.json(+ .moc3/textures/motions)。
+#    vite petModelsManifestPlugin 扫目录生成 /assets/live2d/models.json → 进 dist → NSIS 随 frontendDist 打包。
+#    设置面板「桌宠形象」下拉读 models.json；默认形象 = petModels.ts DEFAULT_PET_MODEL_ID(estella)，
+#    目录缺失则回退程序化占位图。⚠️ 第三方模型授权自核(多数仅限直播/视频，软件分发授权另说)；
+#    残缺(无 model3.json)的目录扫描器会跳过，别白占体积。安装包每带 ~81MB 模型 → ~347MB。
+
+# 2. 瘦 backend
+#    backend 自上版未改 → 直接复用 F:\deskpet-build\dist 里的 bundle，跳过本步(省 PyInstaller 重打)。
+#    backend 改了 → 用 CPU venv 重打(主仓 .venv 是 CUDA torch，会撑爆 NSIS makensis ~2GB 上限)：
 cd backend
-$env:DESKPET_BUNDLE_MODELS = "0"
-F:\deskpet-build\venv\Scripts\python.exe -m PyInstaller deskpet-backend.spec --noconfirm --clean `
-    --distpath F:/deskpet-build/dist --workpath F:/deskpet-build/build
+DESKPET_BUNDLE_MODELS=0 F:/deskpet-build/venv/Scripts/python.exe -m PyInstaller deskpet-backend.spec \
+    --noconfirm --clean --distpath F:/deskpet-build/dist --workpath F:/deskpet-build/build
 
-# 3. 签名 NSIS
-cd ..\tauri-app
-$env:TAURI_SIGNING_PRIVATE_KEY = Get-Content $env:USERPROFILE\.tauri\deskpet.key -Raw
-$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
-npm run tauri build -- --bundles nsis
-# → target/release/bundle/nsis/DeskPet_<v>_x64-setup.exe (+ .sig)
+# 3. 构建 + 签名 NSIS —— Git Bash，空口令 + < /dev/null(任何隐藏密码 prompt 立即 EOF，不挂死)
+cd ../tauri-app
+TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/deskpet.key)" \
+TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
+    npm run tauri build -- --bundles nsis < /dev/null
+# → target/release/bundle/nsis/DeskPet_<v>_x64-setup.exe (+ .sig，428B)
 
-# 4. 生成 latest.json(COS 版 url→COS、GitHub 版 url→GitHub、signature=.sig 内容)
-# 5. 发 GitHub(Latest, 非 prerelease!)
-gh release create v0.6.0-beta.N --repo DennyWanye/deskpet --latest `
-    DeskPet_<v>_x64-setup.exe DeskPet_<v>_x64-setup.exe.sig latest.json
-# 6. 传 COS(installer + latest.json)
-F:\deskpet-build\coscli.exe cp DeskPet_<v>_x64-setup.exe cos://defaultbucket-1300194691/deskpet/DeskPet_<v>_x64-setup.exe
-F:\deskpet-build\coscli.exe cp latest.json cos://defaultbucket-1300194691/deskpet/latest.json
-# 7. 验证两个 endpoint latest.json 都返回新版本号
+# 4. 生成 latest.json 两版(用 Python，别用 PowerShell —— 中文 notes 会坏)
+#    latest.json      : platforms.windows-x86_64.url → GitHub  (作 GitHub release 的 latest.json 资产)
+#    latest.cos.json  : 同上但 url → COS                       (coscli 传成 .../deskpet/latest.json)
+#    signature = .sig 文件原文；version / notes / pub_date 一致
+
+# 5. 发 GitHub(必须 --latest 且非 prerelease；API 走代理，大包不带代理传)
+HTTPS_PROXY=http://127.0.0.1:7897 gh release create v0.6.0-beta.N --repo DennyWanye/deskpet --latest \
+    --notes "..." latest.json DeskPet_<v>_x64-setup.exe.sig          # 先附小文件(走代理)
+gh release upload v0.6.0-beta.N DeskPet_<v>_x64-setup.exe            # 大包单独传(不带代理，Clash 掐空闲长连接)
+
+# 6. 传 COS(coscli 直连，不走代理)
+F:/deskpet-build/coscli.exe cp DeskPet_<v>_x64-setup.exe cos://defaultbucket-1300194691/deskpet/DeskPet_<v>_x64-setup.exe
+F:/deskpet-build/coscli.exe cp latest.cos.json     cos://defaultbucket-1300194691/deskpet/latest.json
+
+# 7. 验证两 endpoint latest.json 都返回新版本号 + 安装包 HEAD 200
 ```
 
 **模型只需首次传一次**（之后版本复用，除非模型本身变）：
