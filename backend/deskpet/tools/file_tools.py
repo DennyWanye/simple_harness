@@ -31,6 +31,7 @@ import json
 import logging
 import os
 import re
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +42,33 @@ from .registry import registry
 logger = logging.getLogger(__name__)
 
 _APP_NAME = "deskpet"
+
+_DEFAULT_GLOB_SKIP_DIR_NAMES = {
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".svn",
+    ".uv-cache",
+    ".venv",
+    "__pycache__",
+    "build",
+    "coverage",
+    "dist",
+    "node_modules",
+    "target",
+    "venv",
+}
+
+_DEFAULT_GLOB_SKIP_REL_PARTS = {
+    "backend/assets",
+    "backend/dist-msi",
+    "backend/dist-portable",
+    "backend/models",
+    "tauri-app/coverage",
+    "tauri-app/node_modules",
+}
 
 
 # ---------------------------------------------------------------------
@@ -163,6 +191,82 @@ def _resolve_within_workspace(path_str: str) -> Path | None:
 
 def _err(msg: str, retriable: bool = False) -> str:
     return json.dumps({"error": msg, "retriable": retriable}, ensure_ascii=False)
+
+
+def _workspace_rel(path: Path, workspace: Path) -> str | None:
+    try:
+        return str(path.resolve().relative_to(workspace)).replace("\\", "/")
+    except ValueError:
+        return None
+
+
+def _should_skip_glob_dir(path: Path, workspace: Path) -> bool:
+    rel = _workspace_rel(path, workspace)
+    if rel is None:
+        return True
+    rel_norm = rel.strip("/")
+    if path.name in _DEFAULT_GLOB_SKIP_DIR_NAMES:
+        return True
+    return any(
+        rel_norm == skip or rel_norm.startswith(f"{skip}/")
+        for skip in _DEFAULT_GLOB_SKIP_REL_PARTS
+    )
+
+
+def _is_under_skipped_glob_dir(path: Path, workspace: Path) -> bool:
+    rel = _workspace_rel(path, workspace)
+    if rel is None:
+        return True
+    parts = Path(rel).parts
+    if any(part in _DEFAULT_GLOB_SKIP_DIR_NAMES for part in parts):
+        return True
+    rel_norm = rel.strip("/")
+    return any(
+        rel_norm == skip or rel_norm.startswith(f"{skip}/")
+        for skip in _DEFAULT_GLOB_SKIP_REL_PARTS
+    )
+
+
+def _iter_glob_matches(
+    root: Path, pattern: str, workspace: Path,
+) -> tuple[list[Path], list[str]]:
+    """Iterate glob matches while pruning heavyweight generated dirs."""
+    skipped: set[str] = set()
+    matches: list[Path] = []
+    prune_skipped_dirs = not _should_skip_glob_dir(root, workspace)
+
+    if "**" not in pattern:
+        for path in root.glob(pattern):
+            if prune_skipped_dirs and _is_under_skipped_glob_dir(path, workspace):
+                parent = path if path.is_dir() else path.parent
+                rel = _workspace_rel(parent, workspace)
+                if rel:
+                    skipped.add(rel)
+                continue
+            matches.append(path)
+        return matches, sorted(skipped)
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        current = Path(dirpath)
+        kept_dirnames: list[str] = []
+        for dirname in dirnames:
+            child = current / dirname
+            if prune_skipped_dirs and _should_skip_glob_dir(child, workspace):
+                rel = _workspace_rel(child, workspace)
+                if rel:
+                    skipped.add(rel)
+                continue
+            kept_dirnames.append(dirname)
+        dirnames[:] = kept_dirnames
+
+        candidates: Iterator[Path] = (
+            current / name for name in [*kept_dirnames, *filenames]
+        )
+        for candidate in candidates:
+            rel = _workspace_rel(candidate, root)
+            if rel is not None and candidate.match(pattern):
+                matches.append(candidate)
+    return matches, sorted(skipped)
 
 
 # ---------------------------------------------------------------------
@@ -307,9 +411,10 @@ async def _handle_file_write(args: dict[str, Any], task_id: str) -> str:
 _SCHEMA_GLOB: dict[str, Any] = {
     "name": "file_glob",
     "description": (
-        "List workspace files matching a glob pattern. Uses pathlib rglob "
-        "semantics (e.g. '**/*.md' for recursive markdown). Returns "
-        "workspace-relative paths."
+        "List workspace files matching a glob pattern. Uses pathlib glob "
+        "semantics (e.g. '**/*.md' for recursive markdown), while recursive "
+        "workspace scans skip heavyweight generated directories by default. "
+        "Returns workspace-relative paths."
     ),
     "parameters": {
         "type": "object",
@@ -341,10 +446,12 @@ def _handle_file_glob(args: dict[str, Any], task_id: str) -> str:
         return json.dumps({"matches": [], "count": 0})
     workspace = _workspace_root()
     matches: list[str] = []
+    skipped_dirs: list[str] = []
     try:
         # Use glob for patterns with ** — rglob is "**/<pattern>" which
         # mangles user intent. Path.glob("**/*.md") is what we want.
-        for p in root.glob(pattern):
+        found, skipped_dirs = _iter_glob_matches(root, pattern, workspace)
+        for p in found:
             try:
                 rel = p.resolve().relative_to(workspace)
             except ValueError:
@@ -354,7 +461,15 @@ def _handle_file_glob(args: dict[str, Any], task_id: str) -> str:
     except OSError as exc:
         return _err(f"glob failed: {exc}", retriable=True)
     matches.sort()
-    return json.dumps({"matches": matches, "count": len(matches)}, ensure_ascii=False)
+    return json.dumps(
+        {
+            "matches": matches,
+            "count": len(matches),
+            "skipped_dirs": skipped_dirs,
+            "skipped_count": len(skipped_dirs),
+        },
+        ensure_ascii=False,
+    )
 
 
 # ---------------------------------------------------------------------

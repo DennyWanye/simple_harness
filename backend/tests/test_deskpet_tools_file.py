@@ -175,6 +175,98 @@ def test_glob_finds_files(sandbox: Path):
     )
     assert sorted(r["matches"]) == ["a.md", "dir/b.md"]
     assert r["count"] == 2
+    assert r["skipped_dirs"] == []
+    assert r["skipped_count"] == 0
+
+
+def test_glob_skips_generated_and_heavy_dirs_by_default(sandbox: Path):
+    (sandbox / "keep").mkdir()
+    (sandbox / "keep" / "a.md").write_text("ok")
+    for dirname in ("node_modules", "__pycache__", ".uv-cache"):
+        hidden = sandbox / dirname
+        hidden.mkdir()
+        (hidden / "hidden.md").write_text("noise")
+
+    r = json.loads(
+        registry.dispatch("file_glob", {"pattern": "**/*.md"})
+    )
+
+    assert r["matches"] == ["keep/a.md"]
+    assert r["count"] == 1
+    assert set(r["skipped_dirs"]) == {"node_modules", "__pycache__", ".uv-cache"}
+    assert r["skipped_count"] == 3
+
+
+def test_glob_skips_nested_backend_assets_relative_path(sandbox: Path):
+    (sandbox / "backend" / "assets" / "model").mkdir(parents=True)
+    (sandbox / "backend" / "assets" / "model" / "hidden.md").write_text("noise")
+    (sandbox / "backend" / "src").mkdir(parents=True)
+    (sandbox / "backend" / "src" / "visible.md").write_text("ok")
+
+    r = json.loads(
+        registry.dispatch("file_glob", {"pattern": "**/*.md"})
+    )
+
+    assert r["matches"] == ["backend/src/visible.md"]
+    assert r["count"] == 1
+    assert r["skipped_dirs"] == ["backend/assets"]
+    assert r["skipped_count"] == 1
+
+
+def test_glob_allows_explicit_root_inside_default_skipped_dir(sandbox: Path):
+    (sandbox / "node_modules" / "pkg").mkdir(parents=True)
+    (sandbox / "node_modules" / "pkg" / "visible.md").write_text("ok")
+
+    r = json.loads(
+        registry.dispatch(
+            "file_glob", {"pattern": "**/*.md", "root": "node_modules"}
+        )
+    )
+
+    assert r["matches"] == ["node_modules/pkg/visible.md"]
+    assert r["count"] == 1
+    assert r["skipped_dirs"] == []
+    assert r["skipped_count"] == 0
+
+
+def test_glob_root_parameter_preserves_recursive_pathlib_semantics(sandbox: Path):
+    (sandbox / "dir" / "nested").mkdir(parents=True)
+    (sandbox / "dir" / "nested" / "a.md").write_text("ok")
+    (sandbox / "other.md").write_text("nope")
+
+    r = json.loads(
+        registry.dispatch("file_glob", {"pattern": "**/*.md", "root": "dir"})
+    )
+
+    assert r["matches"] == ["dir/nested/a.md"]
+    assert r["count"] == 1
+
+
+def test_glob_directory_prefixed_recursive_pattern_matches_from_workspace_root(
+    sandbox: Path,
+):
+    (sandbox / "dir" / "nested").mkdir(parents=True)
+    (sandbox / "dir" / "nested" / "a.md").write_text("ok")
+    (sandbox / "other" / "nested").mkdir(parents=True)
+    (sandbox / "other" / "nested" / "a.md").write_text("nope")
+
+    r = json.loads(
+        registry.dispatch("file_glob", {"pattern": "dir/**/*.md"})
+    )
+
+    assert r["matches"] == ["dir/nested/a.md"]
+    assert r["count"] == 1
+
+
+def test_glob_non_recursive_pattern_stays_non_recursive(sandbox: Path):
+    (sandbox / "a.md").write_text("ok")
+    (sandbox / "dir").mkdir()
+    (sandbox / "dir" / "b.md").write_text("nested")
+
+    r = json.loads(registry.dispatch("file_glob", {"pattern": "*.md"}))
+
+    assert r["matches"] == ["a.md"]
+    assert r["count"] == 1
 
 
 def test_glob_missing_root_returns_empty(sandbox: Path):
