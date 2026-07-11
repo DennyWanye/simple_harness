@@ -69,6 +69,7 @@
 
 | 日期 | 里程碑 |
 |---|---|
+| 2026-07-11 | **DeepResearch 子调研 fan-out 默认开启 ✅** — 出厂配置、当前开发配置与代码缺省统一为 ON；宽主题拆出至少 2 个子问题时有界并发执行，默认 research lane 并发 2、最多 6 个子问题，子跑自动降档后统一综合引用。验证：TOML 解析通过，联合回归 `57 passed`。 |
 | 2026-07-09 | **file_glob 扫描降噪与加速完成 ✅** — 后端 workspace `file_glob` 默认递归扫描会剪枝重型/生成目录（`node_modules`、`__pycache__`、`.uv-cache`、`backend/assets` 等），减少 agent 文件工具噪声；返回去重排序的 `skipped_dirs/skipped_count` 便于诊断。挑战反馈补强显式 root 兼容边界：用户明确 `root="node_modules"` 时仍可访问，不把默认优化变成能力删除。测试：执行前 baseline `27 passed`；实现后 `backend/tests/test_deskpet_tools_file.py` `33 passed in 0.87s`，相邻 registry/search 工具 `31 passed`；无 UI 改动，windows-mcp 不需要。 |
 | 2026-07-09 | **Agent harness hardening Round 5 一步到位 gate 完成 ✅** — 在 Round 4 AST 调用点基础上，`test_agent_harness_main_callsite_contract.py` 增加动态 `/ws/control` 执行：TestClient 真实发送 `chat` 和 `chat_v2`，仅替换 `build_agent`、broadcast/context-usage 副作用和 problem pipeline，断言 sentinel services 进入 `build_agent(...)`、pre-loop system injection 进入 fake agent messages、`_agent.run(...)` 带 runtime context、WS 发出 `chat_v2_final`。聚合验证：`112 passed in 6.96s`。 |
 | 2026-07-09 | **Agent harness hardening Round 4 生产调用点补强完成 ✅** — 新增 `test_agent_harness_main_callsite_contract.py`，AST 检查 `main.py` 真实 chat 路径 `_agent = build_agent(...)` 是否传入 goal store/checker、context compressor、skill loader/matcher、tool path recorder、memory curator、evidence gate、pipeline problem/investigation/observability/convergence 参数；同时检查这些资源来自 `service_context`、evidence gate 受 pre-loop short-circuit 保护、`_agent.run(...)` 带 session/runtime context。聚合验证：`110 passed in 5.41s`。 |

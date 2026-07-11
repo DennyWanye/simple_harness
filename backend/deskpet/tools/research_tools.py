@@ -167,7 +167,8 @@ def get_subagent_scheduler():
 
 
 def _fanout_enabled() -> bool:
-    return bool(_research_raw().get("subagent_fanout", False))
+    # 测试阶段：已完成并通过真机 E2E 的能力出厂即开启。
+    return bool(_research_raw().get("subagent_fanout", True))
 
 
 def _fanout_min_subquestions() -> int:

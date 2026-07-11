@@ -465,7 +465,7 @@ def test_tg5_fanout_config_helpers_fall_back_without_raw_stub(monkeypatch) -> No
     monkeypatch.setattr(config, "resolve_config_path", lambda: None)
     r._RESEARCH_RAW_CACHE = None
 
-    assert r._fanout_enabled() is False
+    assert r._fanout_enabled() is True
     assert r._fanout_min_subquestions() == 2
     assert r._fanout_max_subquestions() == 6
     assert r._fanout_subrun_mode("standard") == "light"

@@ -576,6 +576,12 @@ timeout = 60.0
 
 # deep-research 抓取/检索增强开关(真实默认在代码 research_tools._research_raw(),此处为文档)。
 [research]
+# DeepResearch fan-out: plan 拆出至少 2 个子问题时，交给 research lane 有界并发执行，
+# 再由主线程统一综合和重排引用。依赖 [features].subagent_driver=true。
+subagent_fanout = true
+fanout_min_subquestions = 2
+fanout_max_subquestions = 6
+fanout_subrun_mode = "auto"
 # JS 渲染抓取兜底:治 trafilatura 抓到的 JS/SPA 空壳站。默认关(opt-in)。中国可用(本地渲染)。
 js_render = false
 # 渲染引擎:
