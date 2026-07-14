@@ -340,6 +340,8 @@ class FetchExtractService:
             response.raise_for_status()
         except Exception:
             return None
+        if not raw_content and not isinstance(self.client, httpx.AsyncClient):
+            raw_content = str(getattr(response, "text", "") or "").encode("utf-8")
         encoding = getattr(response, "encoding", None) or "utf-8"
         try:
             body = raw_content.decode(encoding, errors="replace")
