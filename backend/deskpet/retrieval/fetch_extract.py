@@ -124,14 +124,21 @@ class FetchExtractService:
                 # Legacy injected renderers accepted only the URL.
                 rendered = await render_call(url)
             if rendered:
-                r_title, r_text, r_published, r_extractor = self._extract(rendered)
-                if len(r_text) > len(text):
-                    html, title, text, published, extractor, fetcher = rendered, r_title, r_text, r_published, r_extractor, "cdp-edge"
-                    _metric("fetch_extract_fallback", {"stage": "cdp", "fetcher": "cdp-edge", "ok": True})
+                if len(rendered.encode("utf-8", errors="replace")) <= _MAX_RESPONSE_BYTES:
+                    r_title, r_text, r_published, r_extractor = self._extract(rendered)
+                    if len(r_text) > len(text):
+                        html, title, text, published, extractor, fetcher = rendered, r_title, r_text, r_published, r_extractor, "cdp-edge"
+                        _metric("fetch_extract_fallback", {"stage": "cdp", "fetcher": "cdp-edge", "ok": True})
+                else:
+                    _metric("fetch_extract_fallback", {"stage": "cdp", "fetcher": "cdp-edge", "ok": False, "error_code": "response_too_large"})
 
         if len(text) < 300 and request.allow_jina and self.allow_jina:
             jina = await self._jina(url, min(request.timeout, 8.0))
-            if jina is not None and len(jina[1]) > len(text):
+            if (
+                jina is not None
+                and len(jina[1].encode("utf-8", errors="replace")) <= _MAX_RESPONSE_BYTES
+                and len(jina[1]) > len(text)
+            ):
                 title, text, extractor, fetcher = jina[0] or title, jina[1], "jina", "jina"
                 _metric("fetch_extract_fallback", {"stage": "jina", "fetcher": "jina", "ok": True})
 
@@ -194,7 +201,9 @@ class FetchExtractService:
                 }
         _metric("fetch_extract_fallback", {"stage": "httpx", "fetcher": "httpx"})
         try:
-            response = await self.client.get(request.url, timeout=request.timeout)
+            response, raw_content = await self._bounded_httpx_get(
+                request.url, timeout=request.timeout
+            )
         except httpx.TimeoutException as exc:
             raise FetchExtractError("timeout") from exc
         except httpx.HTTPError as exc:
@@ -210,8 +219,7 @@ class FetchExtractService:
             raise FetchExtractError("http_status", retriable=False, status=status_code)
         if not _supported_content_type(content_type):
             raise FetchExtractError("unsupported_content_type", retriable=False, status=status_code)
-        raw_content = bytes(getattr(response, "content", b""))
-        if not raw_content:
+        if not raw_content and not isinstance(self.client, httpx.AsyncClient):
             # Compatibility with lightweight injected clients used by the
             # legacy v1 port and tests; real httpx responses expose content.
             response_text = str(getattr(response, "text", "") or "")
@@ -227,6 +235,48 @@ class FetchExtractService:
             "status": status_code, "url_final": str(getattr(response, "url", request.url)),
             "fetcher": "httpx", "content_type": content_type, "content": content,
         }
+
+    async def _bounded_httpx_get(
+        self,
+        url: str,
+        *,
+        timeout: float,
+        headers: dict[str, str] | None = None,
+    ):
+        """Stream real httpx responses and stop once the hard cap is crossed."""
+
+        if isinstance(self.client, httpx.AsyncClient):
+            async with self.client.stream(
+                "GET", url, timeout=timeout, headers=headers
+            ) as response:
+                content_length = response.headers.get("content-length")
+                if content_length:
+                    try:
+                        if int(content_length) > _MAX_RESPONSE_BYTES:
+                            raise FetchExtractError(
+                                "response_too_large",
+                                retriable=False,
+                                status=response.status_code,
+                            )
+                    except ValueError:
+                        pass
+                chunks: list[bytes] = []
+                size = 0
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > _MAX_RESPONSE_BYTES:
+                        raise FetchExtractError(
+                            "response_too_large",
+                            retriable=False,
+                            status=response.status_code,
+                        )
+                    chunks.append(chunk)
+                return response, b"".join(chunks)
+        if headers is None:
+            response = await self.client.get(url, timeout=timeout)
+        else:
+            response = await self.client.get(url, timeout=timeout, headers=headers)
+        return response, bytes(getattr(response, "content", b""))
 
     async def _allowed_by_robots(self, url: str, timeout: float) -> bool:
         if not self.respect_robots: return True
@@ -282,11 +332,19 @@ class FetchExtractService:
 
     async def _jina(self, url: str, timeout: float) -> tuple[str, str] | None:
         try:
-            response = await self.client.get("https://r.jina.ai/" + url, timeout=timeout, headers={"Accept": "text/plain"})
+            response, raw_content = await self._bounded_httpx_get(
+                "https://r.jina.ai/" + url,
+                timeout=timeout,
+                headers={"Accept": "text/plain"},
+            )
             response.raise_for_status()
         except Exception:
             return None
-        body = response.text
+        encoding = getattr(response, "encoding", None) or "utf-8"
+        try:
+            body = raw_content.decode(encoding, errors="replace")
+        except LookupError:
+            body = raw_content.decode("utf-8", errors="replace")
         title_match = re.search(r"^Title:\s*(.+)$", body, re.M)
         marker = body.find("Markdown Content:")
         text = body[marker + len("Markdown Content:"):].strip() if marker >= 0 else body.strip()

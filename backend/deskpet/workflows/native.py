@@ -642,6 +642,50 @@ class NativeWorkflowExecutable:
         validate_json_value(attributes, path="$.trace.deepresearch_v2")
         return attributes
 
+    @staticmethod
+    def _emit_v2_metrics(attributes: Mapping[str, JsonValue]) -> None:
+        """Mirror safe v2 trace dimensions into the fixed local metric schema."""
+
+        try:
+            from observability.metrics_sink import record
+
+            branch = attributes.get("deepresearch_v2_branch")
+            if isinstance(branch, Mapping):
+                record(
+                    "deepresearch_v2_branch",
+                    {
+                        "branch_id": branch.get("branch_id"),
+                        "stage": branch.get("stage"),
+                        "count": branch.get("result_count"),
+                        "dropped": branch.get("error_count"),
+                    },
+                )
+            stage = attributes.get("deepresearch_v2_stage")
+            if isinstance(stage, Mapping):
+                detail = {
+                    "stage": stage.get("stage_id"),
+                    "duration_ms": stage.get("duration_ms"),
+                    "degraded": stage.get("degraded"),
+                }
+                metrics = stage.get("metrics")
+                if isinstance(metrics, Mapping):
+                    detail.update(metrics)
+                record("deepresearch_v2_stage", detail)
+            quality = attributes.get("deepresearch_v2_claim_support")
+            if isinstance(quality, Mapping):
+                record(
+                    "deepresearch_claim_support",
+                    {
+                        "count": quality.get("claim_count"),
+                        "supported": quality.get("supported_claim_count"),
+                        "unsupported": quality.get("unsupported_count"),
+                        "support_rate": quality.get("support_rate"),
+                    },
+                )
+        except Exception:
+            # Metrics must never affect durable execution or delivery.
+            return
+
     async def _run_task_worker(self, snapshot: NativeSnapshotEnvelope, task: NativeTask, context: WorkflowContext, config: Mapping[str, JsonValue], responses: Mapping[str, JsonValue], first_attempt_time: float | None) -> NodeTaskOutcome:
         info, identity = self._identity(snapshot, task, first_attempt_time)
         observer = context.ports.get("observer")
@@ -663,6 +707,8 @@ class NativeWorkflowExecutable:
                 await self.store.commit_task_result(operation_id=_hash(snapshot.run_id, snapshot.checkpoint_id, "task", task.task_id), expected_head=snapshot.checkpoint_id, task=task, execution_info=info, patch=patch, blob_refs=self._patch_blob_refs(patch), configurable=config)
             except Exception as exc:
                 raise _CommitUncertain from exc
+            v2_attributes = self._v2_observer_attributes(patch)
+            self._emit_v2_metrics(v2_attributes)
             if observer is not None:
                 patch_values = patch.to_dict()
                 values = patch_values.get("values", {})
@@ -673,7 +719,7 @@ class NativeWorkflowExecutable:
                     if isinstance(route, dict) and isinstance(route.get("agent_reach"), dict)
                     else None
                 )
-                attributes = self._v2_observer_attributes(patch)
+                attributes = v2_attributes
                 if agent_reach_trace is not None:
                     validate_json_value(agent_reach_trace, path="$.trace.agent_reach")
                     attributes["agent_reach"] = agent_reach_trace

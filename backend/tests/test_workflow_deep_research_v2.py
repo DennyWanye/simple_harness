@@ -11,7 +11,9 @@ from deskpet.workflows.definitions.research_core import (
     ResearchArtifactPort,
     ResearchLLMPort,
     ResearchSearchPort,
+    ResearchSearchResults,
 )
+from deskpet.workflows.definitions.deep_research_v2_nodes import rerank_handler
 from deskpet.workflows.definitions.v2.deep_research import DEEP_RESEARCH_V2, DEEP_RESEARCH_V2_DEFINITION, initial_state
 from deskpet.workflows.definitions.v1.deep_research import DEEP_RESEARCH_V1
 from deskpet.workflows.definitions.v1 import register_v1_workflows
@@ -375,3 +377,122 @@ async def test_v2_claim_support_awaits_async_semantic_scorer():
 
     assert semantic_calls > 0
     assert result["values"]["report_payload"]["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_deep_mode_uses_two_gap_rounds_and_scores_followup_with_recency():
+    calls: list[str] = []
+
+    async def search(query: str, *, max_results: int):
+        calls.append(query)
+        if query.endswith("official primary source"):
+            return ResearchSearchResults(
+                [{
+                    "url": "https://who.int/deep-gap",
+                    "title": "Primary evidence",
+                    "published_at": "2026-01-15",
+                }],
+                observation={"degraded": False, "engines_hit": ["test"]},
+            )
+        return ResearchSearchResults([], observation={"degraded": False})
+
+    async def fetch(url: str):
+        return {
+            "url": url,
+            "title": "Primary evidence",
+            "published_at": "2026-01-15",
+            "text": "missing question verified primary evidence " * 20,
+        }
+
+    context = WorkflowContext(ports={
+        "llm": ResearchLLMPort(_llm),
+        "search": ResearchSearchPort(search),
+        "fetch": FetchPort(fetch),
+        "native_execution_policy": NativeExecutionPolicy(2),
+    })
+    result = await DEEP_RESEARCH_V2.bind().ainvoke(
+        initial_state(
+            topic="gap",
+            run_id="run-deep-gap",
+            mode="deep",
+            research_config={"sub_questions": ["missing question"]},
+        ),
+        context,
+        thread_id="run-deep-gap",
+        run_id="run-deep-gap",
+    )
+
+    assert result["values"]["research_config"]["max_rounds"] == 2
+    assert result["values"]["gap_rounds_completed"] == 2
+    assert calls[-1].endswith("official primary source")
+    scored = result["values"]["gap_evidence"][0]
+    assert scored["published_at"] == "2026-01-15"
+    assert scored["score_dims"]["recency"] > 3
+
+
+@pytest.mark.asyncio
+async def test_global_rerank_blends_semantics_and_prioritizes_domain_diversity():
+    async def semantic_score(query: str, passages: list[str]):
+        return [0.1, 0.9, 0.8]
+
+    state = initial_state(topic="topic", run_id="run-rerank")
+    state["values"].update({
+        "joined_score": [
+            {"url": "https://a.test/1", "canonical_url": "https://a.test/1", "content_hash": "1", "text": "one", "score": 0.95},
+            {"url": "https://a.test/2", "canonical_url": "https://a.test/2", "content_hash": "2", "text": "two", "score": 0.90},
+            {"url": "https://b.test/1", "canonical_url": "https://b.test/1", "content_hash": "3", "text": "three", "score": 0.80},
+        ],
+        "gap_evidence": [],
+    })
+    patch = await rerank_handler(
+        state,
+        WorkflowContext(ports={"llm": ResearchLLMPort(_llm, semantic_score=semantic_score)}),
+    )
+    values = patch.to_dict()["values"]
+    ranked = values["ranked_evidence"]
+    assert [row["url"].split("/")[2] for row in ranked[:2]] == ["a.test", "b.test"]
+    assert values["rerank_semantic_applied"] is True
+    assert all("semantic_score" in row for row in ranked)
+
+
+@pytest.mark.asyncio
+async def test_v2_emits_fixed_schema_metrics_without_an_observer(monkeypatch):
+    events: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        "observability.metrics_sink.record",
+        lambda event, detail=None: events.append((event, dict(detail or {}))),
+    )
+    await DEEP_RESEARCH_V2.bind().ainvoke(
+        initial_state(topic="metrics", run_id="run-metric-sink"),
+        _context(),
+        thread_id="run-metric-sink",
+        run_id="run-metric-sink",
+    )
+    names = {event for event, _ in events}
+    assert {
+        "deepresearch_v2_branch",
+        "deepresearch_v2_stage",
+        "deepresearch_claim_support",
+    } <= names
+    assert "metrics" not in str(events).lower()
+
+
+@pytest.mark.asyncio
+async def test_no_results_report_keeps_error_summary_visible():
+    async def empty_search(query: str, *, max_results: int):
+        raise RuntimeError("provider down")
+
+    base = _context()
+    result = await DEEP_RESEARCH_V2.bind().ainvoke(
+        initial_state(topic="empty", run_id="run-empty"),
+        WorkflowContext(ports={
+            **base.ports,
+            "search": ResearchSearchPort(empty_search),
+        }),
+        thread_id="run-empty",
+        run_id="run-empty",
+    )
+    report = result["values"]["report_payload"]
+    assert report["status"] == "no_results"
+    assert "## Degraded / Error Summary" in report["report_md"]
+    assert "provider_failure" in report["report_md"]

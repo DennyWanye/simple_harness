@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent } from "react";
 
 import type { Message, WorkflowProgressStatus } from "../../stores/sessionsStore";
 
@@ -74,11 +74,17 @@ export function WorkflowProgressGroup({
   stages,
 }: WorkflowProgressGroupProps) {
   const [expanded, setExpanded] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const orderedStages = useMemo(() => sortStages(stages), [stages]);
   const fallback = orderedStages.at(-1);
   const status = summary?.workflow_status ??
     (fallback?.workflow_stage_id === "finalize" ? "completed" : "running");
   const tone = STATUS_TONES[status];
+  useEffect(() => {
+    if (status !== "running" && status !== "waiting") return undefined;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [status]);
   const total = Math.max(
     1,
     summary?.workflow_total ?? fallback?.workflow_total ?? (stages.length > 0 ? 13 : 1),
@@ -110,7 +116,14 @@ export function WorkflowProgressGroup({
     .filter((ts): ts is number => typeof ts === "number" && Number.isFinite(ts));
   const startedAt = timestamps.length > 0 ? Math.min(...timestamps) : 0;
   const endedAt = Math.max(...timestamps, startedAt);
-  const elapsedMs = summary?.workflow_elapsed_ms ?? Math.max(0, endedAt - startedAt);
+  const recordedElapsed = summary?.workflow_elapsed_ms ?? Math.max(0, endedAt - startedAt);
+  const liveDelta = (
+    (status === "running" || status === "waiting") &&
+    typeof summary?.workflow_updated_at === "number"
+  )
+    ? Math.max(0, now - summary.workflow_updated_at)
+    : 0;
+  const elapsedMs = recordedElapsed + liveDelta;
   const name = summary?.workflow_name || fallback?.workflow_name || "深度调研";
   const currentStage = summary?.workflow_error || summary?.workflow_stage ||
     fallback?.workflow_stage || "等待总体进度";

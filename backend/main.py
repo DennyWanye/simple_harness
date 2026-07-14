@@ -3355,6 +3355,7 @@ async def lifespan(app: FastAPI):
             FetchPort,
             ResearchArtifactPort,
             ResearchSearchPort,
+            ResearchSearchResults,
             legacy_ports,
         )
         from deskpet.workflows.definitions.v1 import deep_research_initial_state
@@ -3397,8 +3398,6 @@ async def lifespan(app: FastAPI):
             legacy = legacy_ports(llm_call=llm_call, search=None, extract=None)
             gateway = get_default_gateway()
             run_id = str(row.get("run_id") or "")
-            search_observation: dict[str, object] = {}
-
             async def _search(query: str, *, max_results: int) -> list[dict]:
                 response = await gateway.search(
                     SearchRequest(
@@ -3415,16 +3414,15 @@ async def lifespan(app: FastAPI):
                     for value in attempts
                     if isinstance(value, dict) and value.get("public_error_code")
                 ]
-                search_observation.clear()
-                search_observation.update(
-                    {
+                return ResearchSearchResults(
+                    list(payload["results"]),
+                    observation={
                         "degraded": bool(response.degraded),
                         "reason_code": public_codes[-1] if public_codes else None,
                         "engines_tried": list(response.engines_tried),
                         "engines_hit": list(response.engines_hit),
-                    }
+                    },
                 )
-                return list(payload["results"])
 
             async def _extract(url: str) -> dict:
                 if gateway.fetch_service is None:
@@ -3453,7 +3451,6 @@ async def lifespan(app: FastAPI):
                         search_call=_search,
                         direct_call=legacy.search.direct_call,
                         reset_runtime=legacy.search.reset_runtime,
-                        observe_runtime=lambda: dict(search_observation),
                     ),
                     "fetch": FetchPort(_extract),
                     "artifact": ResearchArtifactPort(_save_artifact),

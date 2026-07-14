@@ -1,10 +1,13 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Message } from "../../stores/sessionsStore";
 import { WorkflowProgressGroup } from "./WorkflowProgressGroup";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 function summary(overrides: Partial<Message> = {}): Message {
   return {
@@ -113,5 +116,23 @@ describe("WorkflowProgressGroup", () => {
     );
     expect(screen.getByText(/13\/13/)).toBeTruthy();
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("99");
+  });
+
+  it("updates elapsed time while a workflow remains active", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
+    render(
+      <WorkflowProgressGroup
+        runId="run-group"
+        summary={summary({
+          workflow_elapsed_ms: 10_000,
+          workflow_updated_at: 10_000,
+        })}
+        stages={[]}
+      />,
+    );
+    expect(screen.getByText(/10 绉?/)).toBeTruthy();
+    act(() => vi.advanceTimersByTime(5_000));
+    expect(screen.getByText(/15 绉?/)).toBeTruthy();
   });
 });

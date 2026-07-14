@@ -123,6 +123,24 @@ class DirectOutcome:
     observation: Mapping[str, Any] = field(default_factory=dict)
 
 
+class ResearchSearchResults(list[dict[str, Any]]):
+    """List-compatible search rows carrying request-local diagnostics.
+
+    The legacy workflow still sees a plain list contract, while concurrent v2
+    branches can inspect the observation that belongs to their own request
+    instead of racing on a shared "last search" dictionary.
+    """
+
+    def __init__(
+        self,
+        values: Iterable[dict[str, Any]] = (),
+        *,
+        observation: Mapping[str, Any] | None = None,
+    ) -> None:
+        super().__init__(values)
+        self.observation = dict(observation or {})
+
+
 @dataclass(frozen=True, slots=True)
 class ResearchSearchPort:
     search_call: SearchCall
@@ -1177,6 +1195,7 @@ __all__ = [
     "ResearchLLMPort",
     "ResearchPorts",
     "ResearchSearchPort",
+    "ResearchSearchResults",
     "citation_stage",
     "direct_stage",
     "expand_stage",

@@ -18,10 +18,18 @@ def render_report(
     coverage: Mapping[str, JsonValue],
     errors: Sequence[Mapping[str, JsonValue]],
 ) -> dict[str, JsonValue]:
+    visible_errors = (
+        "\n".join(
+            f"- {item.get('stage', 'unknown')}: {item.get('error_code', 'degraded')}"
+            for item in errors
+        )
+        or "- None"
+    )
     if not citations or not supported_findings:
         reason = "未找到可核验的可用来源" if not citations else "已有来源不足以支持任何事实性结论"
         markdown = f"# {topic}\n\n{reason}，因此本次调研未生成基于模型预训练知识的结论。"
         status = "no_results"
+        markdown += f"\n\n## Degraded / Error Summary\n\n{visible_errors}"
     else:
         findings = "\n".join(f"- {value}" for value in supported_findings) or "- 暂无已支持发现"
         analysis = "\n".join(f"- 推断：{value}" for value in inferences) or "- 无"

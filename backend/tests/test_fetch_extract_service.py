@@ -146,6 +146,65 @@ async def test_raw_transport_hard_rejects_binary_and_oversized_bodies(
 
 
 @pytest.mark.asyncio
+async def test_render_and_jina_fallbacks_share_the_two_megabyte_gate():
+    shell = "<html><title>Shell</title><body>short</body></html>"
+    transport = _Transport({"ok": True, "status": 200, "html": shell})
+    oversized = "x" * (2 * 1024 * 1024 + 1)
+    service = FetchExtractService(
+        transport=transport,
+        client=httpx.AsyncClient(),
+        respect_robots=False,
+        request_interval_ms=0,
+        allow_jina=True,
+        render_call=AsyncMock(return_value=oversized),
+    )
+    service._jina = AsyncMock(return_value=("Jina", oversized))
+    budget = SearchBudget.create(
+        total_timeout_s=5,
+        provider_concurrency=1,
+        per_provider_timeout_s=2,
+        cdp_budget=1,
+        hydrate_budget=0,
+    )
+    try:
+        document = await service.fetch(FetchRequest(
+            "https://limit.test/",
+            request_budget=budget,
+            allow_jina=True,
+        ))
+    finally:
+        await service.close()
+        await service.client.aclose()
+    assert document.fetcher not in {"cdp-edge", "jina"}
+
+
+@pytest.mark.asyncio
+async def test_httpx_fallback_stream_aborts_when_body_crosses_hard_cap():
+    transport = _Transport({"ok": False, "error": "scrapling_failed"})
+
+    async def handler(request):
+        return httpx.Response(
+            200,
+            content=b"x" * (2 * 1024 * 1024 + 1),
+            headers={"content-type": "text/html"},
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    service = FetchExtractService(
+        transport=transport,
+        client=client,
+        respect_robots=False,
+        request_interval_ms=0,
+    )
+    try:
+        with pytest.raises(FetchExtractError, match="response_too_large"):
+            await service.fetch_raw(FetchRequest("https://limit.test/stream"))
+    finally:
+        await service.close()
+        await client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_concurrent_same_url_fetch_is_coalesced_into_cache():
     transport = _Transport({"ok": True, "status": 200, "html": "<html><body>cached text</body></html>"}, delay=.05)
     service = FetchExtractService(transport=transport, client=httpx.AsyncClient(), respect_robots=False, request_interval_ms=0)

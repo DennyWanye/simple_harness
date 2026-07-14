@@ -110,6 +110,7 @@ export interface Message {
   workflow_metrics?: Record<string, string | number | boolean>;
   workflow_duration_ms?: number;
   workflow_elapsed_ms?: number;
+  workflow_updated_at?: number;
   workflow_degraded?: boolean;
   workflow_warning_count?: number;
   workflow_next_stage?: string;
@@ -542,6 +543,7 @@ export function applyWorkflowEvent(
     workflow_event_id: String(event.event_id || ""),
     workflow_elapsed_ms:
       workflowNumber(payload.elapsed_ms) ?? previous?.workflow_elapsed_ms,
+    workflow_updated_at: workflowEventTime(event),
     workflow_warning_count:
       workflowNumber(payload.warning_count) ?? previous?.workflow_warning_count,
     workflow_error:
