@@ -76,17 +76,17 @@ _RULE_PATTERNS: tuple[tuple[re.Pattern[str], str, str], ...] = (
         "memory-probe trigger",
     ),
     (
+        re.compile(r"(搜索|查一下|帮我查|百度|谷歌|search|google)", re.IGNORECASE),
+        "web_search",
+        "web-search keyword overrides searched subject",
+    ),
+    (
         re.compile(
             r"(写.{0,4}代码|修.{0,12}bug|debug|报错|stack\s*trace|python|javascript|typescript)",
             re.IGNORECASE,
         ),
         "code",
         "code/debug keyword",
-    ),
-    (
-        re.compile(r"(搜索|查一下|帮我查|百度|谷歌|search|google)", re.IGNORECASE),
-        "web_search",
-        "web-search keyword",
     ),
     (
         re.compile(r"(计划|规划|安排.{0,3}(行程|任务|日程)|todo|待办)", re.IGNORECASE),

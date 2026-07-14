@@ -824,6 +824,13 @@ def test_deep_research_rule_is_deterministic():
     assert _rule_classify("帮我深度调研 Agent-Reach")[0] == "web_search"
 
 
+def test_explicit_search_overrides_programming_language_subject():
+    prompt = "请搜索并告诉我 Python 官方最新稳定版本，给出至少三个来源链接"
+    assert _rule_classify(prompt)[0] == "web_search"
+    assert _rule_classify("search the latest TypeScript release")[0] == "web_search"
+    assert _rule_classify("帮我写 Python 代码")[0] == "code"
+
+
 # ---------------------------------------------------------------------------
 # TTS pre-narration (tasks 12.14, 12.15)
 # ---------------------------------------------------------------------------
