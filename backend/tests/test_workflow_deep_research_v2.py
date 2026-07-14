@@ -21,7 +21,7 @@ async def _llm(prompt: str) -> str:
     return "{}"
 
 
-def _context(*, delay_reverse: bool = False) -> WorkflowContext:
+def _context(*, delay_reverse: bool = False, llm=_llm) -> WorkflowContext:
     async def search(query: str, *, max_results: int):
         digest = hashlib.sha256(query.encode()).hexdigest()[:12]
         if delay_reverse:
@@ -33,7 +33,7 @@ def _context(*, delay_reverse: bool = False) -> WorkflowContext:
 
     return WorkflowContext(
         ports={
-            "llm": ResearchLLMPort(_llm),
+            "llm": ResearchLLMPort(llm),
             "search": ResearchSearchPort(search),
             "fetch": FetchPort(fetch),
             "native_execution_policy": NativeExecutionPolicy(3),
@@ -101,6 +101,56 @@ async def test_v2_fanout_slots_and_noop_schema(questions, fanout, active_count):
         assert result["branch_expand"]["b0"]["questions"] == sorted(questions)
     assert len(result["values"]["public_progress"]["completed_stage_ids"]) == 13
     assert result["values"]["report_payload"]["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_default_new_run_uses_llm_plan_to_activate_native_fanout():
+    plan_calls = 0
+
+    async def planning_llm(prompt: str) -> str:
+        nonlocal plan_calls
+        if "sub_questions" in prompt and "do not answer" in prompt:
+            plan_calls += 1
+            return '{"sub_questions":["official specification","independent evidence","known limitations"]}'
+        return "{}"
+
+    result = await DEEP_RESEARCH_V2.bind().ainvoke(
+        initial_state(topic="research a new product", run_id="run-default"),
+        _context(llm=planning_llm), thread_id="run-default", run_id="run-default",
+    )
+    assert plan_calls == 1
+    assert result["values"]["active_branch_count"] == 3
+    assert all(result["branch_expand"][f"b{index}"]["active"] for index in range(3))
+
+
+@pytest.mark.asyncio
+async def test_llm_plan_parse_failure_falls_back_to_topic_without_fanout():
+    async def invalid_llm(prompt: str) -> str:
+        return "not-json"
+
+    result = await DEEP_RESEARCH_V2.bind().ainvoke(
+        initial_state(topic="fallback topic", run_id="run-fallback"),
+        _context(llm=invalid_llm), thread_id="run-fallback", run_id="run-fallback",
+    )
+    assert result["values"]["sub_questions"] == ["fallback topic"]
+    assert result["values"]["active_branch_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_llm_plan_timeout_falls_back_to_topic():
+    async def slow_llm(prompt: str) -> str:
+        await asyncio.sleep(1)
+        return '{"sub_questions":["late one","late two"]}'
+
+    result = await DEEP_RESEARCH_V2.bind().ainvoke(
+        initial_state(
+            topic="timeout topic", run_id="run-timeout",
+            research_config={"plan_timeout_seconds": 0.1},
+        ),
+        _context(llm=slow_llm), thread_id="run-timeout", run_id="run-timeout",
+    )
+    assert result["values"]["sub_questions"] == ["timeout topic"]
+    assert result["values"]["active_branch_count"] == 1
 
 
 @pytest.mark.asyncio

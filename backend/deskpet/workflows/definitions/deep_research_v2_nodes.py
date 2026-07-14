@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import hashlib
 import json
@@ -85,6 +86,20 @@ def _budget(config: Mapping[str, Any]) -> BranchBudgetState:
     )
 
 
+def _parse_planned_questions(raw: str, *, maximum: int) -> list[str]:
+    payload = raw.strip()
+    if payload.startswith("```") and payload.endswith("```"):
+        lines = payload.splitlines()
+        payload = "\n".join(lines[1:-1]).strip()
+    parsed = json.loads(payload)
+    if not isinstance(parsed, Mapping) or set(parsed) != {"sub_questions"}:
+        raise ValueError("invalid_sub_question_plan")
+    values = parsed["sub_questions"]
+    if not isinstance(values, list) or any(not isinstance(value, str) for value in values):
+        raise ValueError("invalid_sub_question_plan")
+    return sorted({value.strip()[:500] for value in values if value.strip()})[:maximum]
+
+
 async def normalize_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
     topic = str(_values(state).get("topic") or "").strip()
     config = _config(_values(state))
@@ -99,7 +114,6 @@ async def normalize_handler(state: WorkflowState, context: WorkflowContext) -> S
 
 
 async def plan_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
-    del context
     values = _values(state)
     config = _config(values)
     raw_questions = config.get("sub_questions")
@@ -107,7 +121,31 @@ async def plan_handler(state: WorkflowState, context: WorkflowContext) -> StateP
         questions = sorted({str(value).strip() for value in raw_questions if str(value).strip()})[:6]
     else:
         topic = str(values.get("topic") or "").strip()
-        questions = [topic] if topic else []
+        questions = []
+        llm = context.ports.get("llm")
+        try:
+            maximum = max(2, min(6, int(config.get("max_sub_questions", 6))))
+        except (TypeError, ValueError):
+            maximum = 6
+        try:
+            timeout = max(0.1, min(60.0, float(config.get("plan_timeout_seconds", 20.0))))
+        except (TypeError, ValueError):
+            timeout = 20.0
+        if topic and isinstance(llm, ResearchLLMPort):
+            try:
+                raw_plan = await asyncio.wait_for(
+                    llm.complete(
+                        "Break the research topic into distinct, independently searchable sub-questions. "
+                        f"Return only strict JSON with exactly this schema: {{\"sub_questions\":[\"...\"]}}. "
+                        f"Return 2 to {maximum} items and do not answer them. Topic: {topic}"
+                    ),
+                    timeout=timeout,
+                )
+                questions = _parse_planned_questions(raw_plan, maximum=maximum)
+            except Exception:
+                questions = []
+        if not questions and topic:
+            questions = [topic]
     fanout = bool(config.get("subagent_fanout", True))
     threshold = max(2, int(config.get("fanout_threshold", 2)))
     active_count = min(6, len(questions)) if fanout and len(questions) >= threshold else int(bool(questions))
