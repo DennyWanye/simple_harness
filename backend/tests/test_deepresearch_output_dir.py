@@ -222,3 +222,28 @@ def test_save_report_uses_deepresearch_dir_not_output_research(monkeypatch, tmp_
     assert saved.parent == tmp_path / "DeepResearch"
     assert saved.exists()
     assert "OutPut" not in str(saved)
+
+
+def test_save_workflow_report_is_idempotent_and_returns_verified_file(monkeypatch, tmp_path):
+    monkeypatch.setenv("DESKPET_DEEPRESEARCH_DIR", str(tmp_path / "DeepResearch"))
+
+    first = r.save_workflow_report(
+        topic="中文主题",
+        report_md="# 第一版",
+        report_hash="hash-one",
+        run_id="run:one",
+    )
+    second = r.save_workflow_report(
+        topic="中文主题",
+        report_md="# 第二版",
+        report_hash="hash-two",
+        run_id="run:one",
+    )
+
+    assert first["path"] == second["path"]
+    path = Path(str(second["path"]))
+    assert path.read_text(encoding="utf-8") == "# 第二版"
+    assert second["kind"] == "file"
+    assert second["mime"] == "text/markdown"
+    assert second["size_bytes"] == len("# 第二版".encode("utf-8"))
+    assert not list(path.parent.glob("*.tmp"))

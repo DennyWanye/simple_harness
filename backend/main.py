@@ -3353,6 +3353,7 @@ async def lifespan(app: FastAPI):
         from deskpet.workflows.contracts import WorkflowContext
         from deskpet.workflows.definitions.research_core import (
             FetchPort,
+            ResearchArtifactPort,
             ResearchSearchPort,
             legacy_ports,
         )
@@ -3396,6 +3397,7 @@ async def lifespan(app: FastAPI):
             legacy = legacy_ports(llm_call=llm_call, search=None, extract=None)
             gateway = get_default_gateway()
             run_id = str(row.get("run_id") or "")
+            search_observation: dict[str, object] = {}
 
             async def _search(query: str, *, max_results: int) -> list[dict]:
                 response = await gateway.search(
@@ -3406,7 +3408,23 @@ async def lifespan(app: FastAPI):
                         run_id=run_id,
                     )
                 )
-                return list(response.to_dict()["results"])
+                payload = response.to_dict()
+                attempts = list(payload.get("attempts") or [])
+                public_codes = [
+                    str(value.get("public_error_code"))
+                    for value in attempts
+                    if isinstance(value, dict) and value.get("public_error_code")
+                ]
+                search_observation.clear()
+                search_observation.update(
+                    {
+                        "degraded": bool(response.degraded),
+                        "reason_code": public_codes[-1] if public_codes else None,
+                        "engines_tried": list(response.engines_tried),
+                        "engines_hit": list(response.engines_hit),
+                    }
+                )
+                return list(payload["results"])
 
             async def _extract(url: str) -> dict:
                 if gateway.fetch_service is None:
@@ -3416,6 +3434,17 @@ async def lifespan(app: FastAPI):
                 )
                 return document.to_dict()
 
+            async def _save_artifact(
+                *, topic: str, report_md: str, report_hash: str, run_id: str
+            ) -> dict[str, object]:
+                return await asyncio.to_thread(
+                    _workflow_research_tools.save_workflow_report,
+                    topic=topic,
+                    report_md=report_md,
+                    report_hash=report_hash,
+                    run_id=run_id,
+                )
+
             blob_root = _paths.user_data_dir() / "workflows" / "blobs"
             return WorkflowContext(
                 ports={
@@ -3424,9 +3453,10 @@ async def lifespan(app: FastAPI):
                         search_call=_search,
                         direct_call=legacy.search.direct_call,
                         reset_runtime=legacy.search.reset_runtime,
-                        observe_runtime=legacy.search.observe_runtime,
+                        observe_runtime=lambda: dict(search_observation),
                     ),
                     "fetch": FetchPort(_extract),
+                    "artifact": ResearchArtifactPort(_save_artifact),
                     "blob": RegisteredBlobStore(
                         blob_root,
                         _workflow_service.run_store.path,

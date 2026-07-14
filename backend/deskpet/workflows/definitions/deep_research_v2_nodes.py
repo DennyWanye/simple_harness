@@ -22,7 +22,12 @@ from .deep_research_v2_contracts import (
 )
 from .deep_research_v2_quality import apply_repair, evaluate_support, parse_claims, quality_payload
 from .deep_research_v2_report import render_report
-from .research_core import FetchPort, ResearchLLMPort, ResearchSearchPort
+from .research_core import (
+    FetchPort,
+    ResearchArtifactPort,
+    ResearchLLMPort,
+    ResearchSearchPort,
+)
 
 
 PUBLIC_STAGE_IDS = (
@@ -273,6 +278,10 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
                 except Exception:
                     rows = []
                     errors.append(_event(branch_id, stage, "provider_failure"))
+                observation = port.observation()
+                if isinstance(observation, Mapping) and observation.get("degraded"):
+                    code = str(observation.get("reason_code") or "search_degraded")
+                    errors.append(_event(branch_id, stage, code))
                 for row in rows:
                     if not isinstance(row, Mapping) or not row.get("url"):
                         continue
@@ -556,11 +565,34 @@ async def cite_handler(state: WorkflowState, context: WorkflowContext) -> StateP
 
 
 async def persist_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
-    del context
     report = copy.deepcopy(_values(state).get("report_payload"))
     if not isinstance(report, Mapping):
         raise ValueError("report payload is missing")
-    return _public_patch(state, "persist", {"artifact_count": 1, "report_bytes": len(str(report.get("report_md") or "").encode())}, updates={"report_payload": dict(report)})
+    report_md = str(report.get("report_md") or "")
+    artifact: dict[str, JsonValue] | None = None
+    artifact_port = context.ports.get("artifact")
+    if isinstance(artifact_port, ResearchArtifactPort) and report_md:
+        run_id = context.identity.run_id if context.identity else str(state.get("run_id") or "")
+        saved = await artifact_port.save(
+            topic=str(report.get("topic") or "DeepResearch"),
+            report_md=report_md,
+            report_hash=str(report.get("report_hash") or ""),
+            run_id=run_id,
+        )
+        artifact = {str(key): copy.deepcopy(value) for key, value in saved.items()}
+    updates: dict[str, JsonValue] = {"report_payload": dict(report)}
+    if artifact is not None:
+        updates["report_artifact"] = artifact
+    return _public_patch(
+        state,
+        "persist",
+        {
+            "artifact_count": int(artifact is not None),
+            "report_bytes": len(report_md.encode()),
+        },
+        updates=updates,
+        degraded=artifact is None,
+    )
 
 
 async def finalize_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
@@ -568,10 +600,21 @@ async def finalize_handler(state: WorkflowState, context: WorkflowContext) -> St
     report = copy.deepcopy(values.get("report_payload"))
     if not isinstance(report, Mapping):
         raise ValueError("report payload is missing")
+    artifact = copy.deepcopy(values.get("report_artifact"))
     run_id = context.identity.run_id if context.identity else str(state.get("run_id") or "")
+    artifact_payload: dict[str, JsonValue] = {
+        "artifact_type": "research_report",
+        "preview": str(report.get("report_md") or "")[:500],
+    }
+    if isinstance(artifact, Mapping):
+        artifact_payload["artifacts"] = [dict(artifact)]
+    else:
+        # Tests and recovery of checkpoints created before the artifact port
+        # was introduced still deliver a valid text artifact.
+        artifact_payload["report"] = dict(report)
     intents: list[dict[str, JsonValue]] = [
         {"intent_id": f"{run_id}:report", "kind": "report", "channel": "workflow_report", "payload": {"report": dict(report)}},
-        {"intent_id": f"{run_id}:artifact", "kind": "artifact_card", "channel": "artifact", "payload": {"artifact": {"kind": "markdown", "report": dict(report)}}},
+        {"intent_id": f"{run_id}:artifact", "kind": "artifact_card", "channel": "artifact", "payload": artifact_payload},
         {"intent_id": f"{run_id}:assistant", "kind": "assistant", "channel": "final", "payload": {"text": str(report.get("report_md") or ""), "report_hash": str(report.get("report_hash") or "")}},
     ]
     return _public_patch(state, "finalize", {"citations": len(report.get("citations", [])), "status": str(report.get("status") or "failed")}, updates={"delivery_intents": intents, "terminal_status": "completed" if report.get("status") == "completed" else "error", "terminal_error": None if report.get("status") == "completed" else {"code": "deep_research_no_results", "user_message": "未找到可核验来源"}})

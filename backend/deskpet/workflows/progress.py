@@ -147,7 +147,14 @@ def validated_v2_stage_text(payload: Mapping[str, Any]) -> str:
     return text
 
 
-def public_stage_for(workflow_name: str, node_id: str) -> PublicWorkflowStage | None:
+def public_stage_for(
+    workflow_name: str,
+    node_id: str,
+    workflow_version: str | None = None,
+) -> PublicWorkflowStage | None:
+    if workflow_name == "deep_research" and workflow_version == "v2":
+        stage_id = node_id[:-5] if node_id.endswith("_join") else node_id
+        return DEEP_RESEARCH_V2_STAGES.get(stage_id)
     stages = PUBLIC_WORKFLOW_STAGES.get(workflow_name)
     return stages.get(node_id) if stages is not None else None
 
@@ -253,25 +260,45 @@ class WorkflowProgressReporter:
         identity: NodeExecutionIdentity,
         transition: ProgressTransition | str,
     ) -> str | None:
-        stage = public_stage_for(identity.workflow_name, identity.node_id)
+        stage = public_stage_for(
+            identity.workflow_name,
+            identity.node_id,
+            identity.workflow_version,
+        )
         if stage is None or transition not in _TRANSITIONS:
             return None
         normalized_transition = transition  # narrowed by the fixed allowlist above
         workflow_label = _WORKFLOW_LABELS[identity.workflow_name]
-        payload: dict[str, JsonValue] = {
-            "kind": "progress",
-            "workflow_name": workflow_label,
-            "stage": stage.label,
-            "ordinal": stage.ordinal,
-            "total": stage.total,
-            "status": normalized_transition,
-            "text": _progress_text(workflow_label, stage, normalized_transition),
-        }
+        payload: dict[str, JsonValue]
+        if (identity.workflow_name, identity.workflow_version) == ("deep_research", "v2"):
+            payload = {
+                "schema_version": 2,
+                "kind": "progress",
+                "workflow_name": "deep_research",
+                "workflow_version": "v2",
+                "workflow_label": workflow_label,
+                "stage_id": stage.node_id,
+                "stage": stage.label,
+                "ordinal": stage.ordinal,
+                "total": stage.total,
+                "status": normalized_transition,
+                "text": _progress_text(workflow_label, stage, normalized_transition),
+            }
+        else:
+            payload = {
+                "kind": "progress",
+                "workflow_name": workflow_label,
+                "stage": stage.label,
+                "ordinal": stage.ordinal,
+                "total": stage.total,
+                "status": normalized_transition,
+                "text": _progress_text(workflow_label, stage, normalized_transition),
+            }
         try:
             event = await self._service.outbox.ensure_event(
                 run_id=identity.run_id,
                 event_key=(
-                    f"progress:v1:{identity.workflow_name}:"
+                    f"progress:{identity.workflow_version}:{identity.workflow_name}:"
                     f"{identity.node_id}:attempt:{identity.attempt}:"
                     f"{normalized_transition}"
                 ),

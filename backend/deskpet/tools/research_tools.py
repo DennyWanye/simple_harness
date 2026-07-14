@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import hashlib
 import json
 import logging
 import os
@@ -1076,6 +1077,7 @@ async def default_extract(
             respect_robots=False,
             request_interval_ms=0,
             allow_jina=_jina_enabled(),
+            render_call=_js_render_dispatch,
         )
         owns_service = True
     try:
@@ -1955,6 +1957,33 @@ def _save_report(topic: str, report: "ResearchReport") -> Optional[Path]:
     path = base / f"{slug}-{ts}.md"
     path.write_text(body, encoding="utf-8")
     return path
+
+
+def save_workflow_report(
+    *, topic: str, report_md: str, report_hash: str, run_id: str
+) -> dict[str, object]:
+    """Persist one idempotent durable-workflow Markdown artifact."""
+    from paths import deepresearch_dir  # type: ignore[import-not-found]
+
+    from .office_paths import title_slug
+
+    base = deepresearch_dir()
+    base.mkdir(parents=True, exist_ok=True)
+    safe_topic = title_slug(topic, max_grapheme=40) or "report"
+    safe_run = re.sub(r"[^A-Za-z0-9_-]+", "-", run_id).strip("-")[:32] or report_hash[:16]
+    path = base / f"{safe_topic}-{safe_run}.md"
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(report_md, encoding="utf-8")
+    os.replace(temporary, path)
+    payload = path.read_bytes()
+    return {
+        "kind": "file",
+        "path": str(path),
+        "mime": "text/markdown",
+        "title": path.name,
+        "size_bytes": len(payload),
+        "sha256": hashlib.sha256(payload).hexdigest(),
+    }
 
 
 # An optional process-global live-LLM bridge. ``main.py`` may set this at

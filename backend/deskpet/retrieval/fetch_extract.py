@@ -20,6 +20,15 @@ from .ranking import canonicalize_url, stable_candidate_id
 from .transports import ScraplingTransport
 
 
+_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+_TEXT_CONTENT_TYPES = ("text/", "application/xhtml", "application/xml", "application/json")
+
+
+def _supported_content_type(value: str) -> bool:
+    lowered = value.lower().split(";", 1)[0].strip()
+    return not lowered or any(kind in lowered for kind in _TEXT_CONTENT_TYPES)
+
+
 def _metric(event: str, detail: dict) -> None:
     try:
         from observability.metrics_sink import record
@@ -45,6 +54,7 @@ class FetchExtractService:
         cache_size: int = 128,
         cache_ttl_s: float = 120.0,
         allow_jina: bool = False,
+        render_call=None,
     ) -> None:
         self.transport = transport or ScraplingTransport()
         self._owns_client = client is None
@@ -56,6 +66,7 @@ class FetchExtractService:
         self.respect_robots = respect_robots
         self.request_interval_s = max(0, request_interval_ms) / 1000
         self.allow_jina = allow_jina
+        self.render_call = render_call
         self.cache: AsyncTTLCache[EvidenceDocument] = AsyncTTLCache(max_size=cache_size, ttl_s=cache_ttl_s)
         self._robots: dict[str, urllib.robotparser.RobotFileParser] = {}
         self._robots_lock = asyncio.Lock()
@@ -102,8 +113,16 @@ class FetchExtractService:
             request.render_policy == "auto" and looks_like_app_shell(html, text)
         )
         if should_render and (request.request_budget is None or await request.request_budget.claim_cdp()):
-            from deskpet.tools.research_cdp_edge import cdp_edge_render
-            rendered = await cdp_edge_render(url, timeout=min(request.timeout, 10.0))
+            render_call = self.render_call
+            if render_call is None:
+                from deskpet.tools.research_cdp_edge import cdp_edge_render
+
+                render_call = cdp_edge_render
+            try:
+                rendered = await render_call(url, timeout=min(request.timeout, 10.0))
+            except TypeError:
+                # Legacy injected renderers accepted only the URL.
+                rendered = await render_call(url)
             if rendered:
                 r_title, r_text, r_published, r_extractor = self._extract(rendered)
                 if len(r_text) > len(text):
@@ -161,6 +180,11 @@ class FetchExtractService:
         if scraped.get("ok"):
             status = int(scraped.get("status") or 0)
             html = str(scraped.get("html") or "")
+            scraped_content_type = str(scraped.get("content_type") or "text/html")
+            if not _supported_content_type(scraped_content_type):
+                raise FetchExtractError("unsupported_content_type", retriable=False, status=status)
+            if len(html.encode("utf-8", errors="replace")) > _MAX_RESPONSE_BYTES:
+                raise FetchExtractError("response_too_large", retriable=False, status=status)
             if 200 <= status < 300 and html and "captcha" not in quality_flags(text="", html=html, content_type="text/html"):
                 return {
                     "status": status, "url_final": scraped.get("url_final") or request.url,
@@ -184,7 +208,21 @@ class FetchExtractService:
             raise FetchExtractError("upstream_error", status=status_code)
         if status_code >= 400:
             raise FetchExtractError("http_status", retriable=False, status=status_code)
-        content = response.text[: request.max_chars]
+        if not _supported_content_type(content_type):
+            raise FetchExtractError("unsupported_content_type", retriable=False, status=status_code)
+        raw_content = bytes(getattr(response, "content", b""))
+        if not raw_content:
+            # Compatibility with lightweight injected clients used by the
+            # legacy v1 port and tests; real httpx responses expose content.
+            response_text = str(getattr(response, "text", "") or "")
+            raw_content = response_text.encode("utf-8")
+        if len(raw_content) > _MAX_RESPONSE_BYTES:
+            raise FetchExtractError("response_too_large", retriable=False, status=status_code)
+        encoding = getattr(response, "encoding", None) or "utf-8"
+        try:
+            content = raw_content.decode(encoding, errors="replace")[: request.max_chars]
+        except LookupError:
+            content = raw_content.decode("utf-8", errors="replace")[: request.max_chars]
         return {
             "status": status_code, "url_final": str(getattr(response, "url", request.url)),
             "fetcher": "httpx", "content_type": content_type, "content": content,

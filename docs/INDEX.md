@@ -83,6 +83,7 @@
 | 文档 | 角色 |
 |---|---|
 | [`P4-agent-harness-prd.md`](./P4-agent-harness-prd.md) | P4 主 PRD（已签字，已落地） |
+| [`search-and-deepresearch.md`](./search-and-deepresearch.md) | Search Gateway 默认行为、可选 SearXNG 与 DeepResearch 进度说明 |
 | [`P3-S10-installer-smoke-runbook.md`](./P3-S10-installer-smoke-runbook.md) | P3 installer smoke 测试 runbook |
 | [`P3-S10-smoke-report-rc1.md`](./P3-S10-smoke-report-rc1.md) | P3 rc1 实测报告 |
 | [`P3-rc2-backlog.md`](./P3-rc2-backlog.md) | P3 rc2 GA 前必办清单 |

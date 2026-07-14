@@ -399,3 +399,24 @@ def test_v2_completed_event_key_ignores_retry_attempt_and_session_text_is_allowl
     assert first_intent["event_key"] == retry_intent["event_key"]
     assert first_intent["payload"] == retry_intent["payload"]
     assert validated_v2_stage_text(first_intent["payload"]) == first_intent["payload"]["summary"]
+
+
+@pytest.mark.asyncio
+async def test_v2_started_progress_uses_thirteen_stage_projection_for_join_nodes():
+    service = _Service()
+    reporter = WorkflowProgressReporter(service, (("websocket", "session-1"),))
+    identity = NodeExecutionIdentity(
+        "deep_research", "v2", "thread", "run-v2", "checkpoint", "",
+        "task-search-join", "search_join", 1,
+    )
+
+    event_id = await reporter.report(identity, "started")
+
+    assert event_id is not None
+    payload = list(service.outbox.events.values())[-1]["payload"]
+    assert payload["schema_version"] == 2
+    assert payload["workflow_name"] == "deep_research"
+    assert payload["workflow_version"] == "v2"
+    assert payload["stage_id"] == "search"
+    assert payload["ordinal"] == 4
+    assert payload["total"] == 13

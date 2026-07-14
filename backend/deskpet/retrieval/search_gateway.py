@@ -81,6 +81,20 @@ class SearchGateway:
         started = time.monotonic()
         if not request.query:
             return SearchResponse(query="", results=(), degraded=True)
+        if not self.config.enabled:
+            attempt = ProviderAttempt(
+                "gateway",
+                AttemptStatus.UNAVAILABLE,
+                0,
+                public_error_code=PublicErrorCode.UNAVAILABLE,
+            )
+            return SearchResponse(
+                request.query,
+                (),
+                (attempt,),
+                elapsed_ms=int((time.monotonic() - started) * 1000),
+                degraded=True,
+            )
         cache_key = self._cache_key(request)
         cached = await self.cache.get(cache_key)
         if cached is not None:

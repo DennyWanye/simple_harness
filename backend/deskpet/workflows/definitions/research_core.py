@@ -37,6 +37,17 @@ class DirectCall(Protocol):
     ) -> object: ...
 
 
+class ArtifactSaveCall(Protocol):
+    async def __call__(
+        self,
+        *,
+        topic: str,
+        report_md: str,
+        report_hash: str,
+        run_id: str,
+    ) -> Mapping[str, Any]: ...
+
+
 MaybeAsync = Callable[[], object | Awaitable[object]]
 
 
@@ -78,6 +89,28 @@ class ResearchLLMPort:
     complete: LLMCall
     rerank: LLMCall | None = None
     semantic_score: Callable[[str, list[str]], object] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ResearchArtifactPort:
+    """Run-owned adapter that persists the final Markdown report."""
+
+    save_call: ArtifactSaveCall
+
+    async def save(
+        self,
+        *,
+        topic: str,
+        report_md: str,
+        report_hash: str,
+        run_id: str,
+    ) -> Mapping[str, Any]:
+        return await self.save_call(
+            topic=topic,
+            report_md=report_md,
+            report_hash=report_hash,
+            run_id=run_id,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1140,6 +1173,7 @@ __all__ = [
     "FetchPort",
     "ResearchCoreConfig",
     "ResearchCoreState",
+    "ResearchArtifactPort",
     "ResearchLLMPort",
     "ResearchPorts",
     "ResearchSearchPort",

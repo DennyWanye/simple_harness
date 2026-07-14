@@ -6,7 +6,12 @@ import hashlib
 import pytest
 
 from deskpet.workflows.contracts import WorkflowContext
-from deskpet.workflows.definitions.research_core import FetchPort, ResearchLLMPort, ResearchSearchPort
+from deskpet.workflows.definitions.research_core import (
+    FetchPort,
+    ResearchArtifactPort,
+    ResearchLLMPort,
+    ResearchSearchPort,
+)
 from deskpet.workflows.definitions.v2.deep_research import DEEP_RESEARCH_V2, DEEP_RESEARCH_V2_DEFINITION, initial_state
 from deskpet.workflows.definitions.v1.deep_research import DEEP_RESEARCH_V1
 from deskpet.workflows.definitions.v1 import register_v1_workflows
@@ -274,3 +279,40 @@ async def test_v2_observer_emits_only_safe_branch_stage_and_claim_metrics():
     assert any("deepresearch_v2_branch" in value for value in attributes)
     assert any("deepresearch_v2_stage" in value and value["deepresearch_v2_stage"]["duration_ms"] >= 0 for value in attributes)
     assert any("deepresearch_v2_claim_support" in value for value in attributes)
+
+
+@pytest.mark.asyncio
+async def test_v2_persists_one_real_markdown_artifact_and_delivers_file_card(tmp_path):
+    async def save_artifact(*, topic: str, report_md: str, report_hash: str, run_id: str):
+        path = tmp_path / f"{run_id}.md"
+        path.write_text(report_md, encoding="utf-8")
+        payload = path.read_bytes()
+        return {
+            "kind": "file",
+            "path": str(path),
+            "mime": "text/markdown",
+            "title": path.name,
+            "size_bytes": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
+
+    base = _context()
+    context = WorkflowContext(
+        ports={**base.ports, "artifact": ResearchArtifactPort(save_artifact)}
+    )
+    result = await DEEP_RESEARCH_V2.bind().ainvoke(
+        initial_state(topic="artifact", run_id="run-artifact"),
+        context,
+        thread_id="run-artifact",
+        run_id="run-artifact",
+    )
+    artifact = result["values"]["report_artifact"]
+    assert artifact["kind"] == "file"
+    assert artifact["mime"] == "text/markdown"
+    assert (tmp_path / "run-artifact.md").read_text(encoding="utf-8") == result["values"]["report_payload"]["report_md"]
+    intent = next(
+        value for value in result["values"]["delivery_intents"]
+        if value["channel"] == "artifact"
+    )
+    assert intent["payload"]["artifacts"] == [artifact]
+    assert "report" not in intent["payload"]

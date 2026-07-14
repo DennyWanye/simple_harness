@@ -106,3 +106,21 @@ class AsyncSearch:
     def __call__(self, request):
         async def _result(): return self.response
         return _result()
+
+
+@pytest.mark.asyncio
+async def test_disabled_gateway_is_an_effective_kill_switch() -> None:
+    cfg = replace(SearchGatewayConfig(), enabled=False, providers=["duckduckgo"])
+    provider = _Provider("duckduckgo")
+    gateway = SearchGateway(config=cfg, providers=[provider], client=httpx.AsyncClient())
+    try:
+        response = await gateway.search(SearchRequest("must not leave the process"))
+    finally:
+        await gateway.client.aclose()
+        await gateway.shutdown()
+
+    assert response.count == 0
+    assert response.degraded is True
+    assert response.engines_tried == ["gateway"]
+    assert response.errors == [{"provider": "gateway", "code": "unavailable"}]
+    assert provider.calls == 0
