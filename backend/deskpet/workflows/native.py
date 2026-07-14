@@ -594,6 +594,54 @@ class NativeWorkflowExecutable:
         data["values"] = values
         return StatePatch(data)
 
+    def _v2_observer_attributes(self, patch: StatePatch) -> dict[str, JsonValue]:
+        if (self.manifest.workflow_name, self.manifest.workflow_version) != ("deep_research", "v2"):
+            return {}
+        data = patch.to_dict()
+        attributes: dict[str, JsonValue] = {}
+        for channel, value in data.items():
+            if not channel.startswith("branch_") or channel == "branch_events" or not isinstance(value, Mapping):
+                continue
+            for branch_id, raw in value.items():
+                if not isinstance(raw, Mapping):
+                    continue
+                budget = raw.get("budget_after")
+                budget = budget if isinstance(budget, Mapping) else {}
+                attributes["deepresearch_v2_branch"] = {
+                    "branch_id": str(branch_id),
+                    "stage": str(raw.get("stage") or ""),
+                    "active": bool(raw.get("active")),
+                    "result_count": len(raw.get("result", [])) if isinstance(raw.get("result"), list) else 0,
+                    "error_count": len(raw.get("errors", [])) if isinstance(raw.get("errors"), list) else 0,
+                    "query_remaining": int(budget.get("query_remaining") or 0),
+                    "fetch_remaining": int(budget.get("fetch_remaining") or 0),
+                    "llm_remaining": int(budget.get("llm_remaining") or 0),
+                }
+                break
+        values = data.get("values")
+        if isinstance(values, Mapping):
+            public = values.get("public_progress")
+            projection = public.get("stage_projection") if isinstance(public, Mapping) else None
+            if isinstance(projection, Mapping):
+                metrics = projection.get("metrics")
+                attributes["deepresearch_v2_stage"] = {
+                    "stage_id": str(projection.get("stage_id") or ""),
+                    "metrics": copy.deepcopy(dict(metrics)) if isinstance(metrics, Mapping) else {},
+                    "duration_ms": max(0, int(projection.get("duration_ms") or 0)),
+                    "degraded": bool(projection.get("degraded")),
+                }
+            quality = values.get("claim_quality")
+            if isinstance(quality, Mapping):
+                attributes["deepresearch_v2_claim_support"] = {
+                    "claim_count": int(quality.get("claim_count") or 0),
+                    "supported_claim_count": int(quality.get("supported_claim_count") or 0),
+                    "unsupported_count": int(quality.get("unsupported_count") or 0),
+                    "support_rate": float(quality.get("support_rate") or 0.0),
+                    "repair_attempted": bool(quality.get("repair_attempted")),
+                }
+        validate_json_value(attributes, path="$.trace.deepresearch_v2")
+        return attributes
+
     async def _run_task_worker(self, snapshot: NativeSnapshotEnvelope, task: NativeTask, context: WorkflowContext, config: Mapping[str, JsonValue], responses: Mapping[str, JsonValue], first_attempt_time: float | None) -> NodeTaskOutcome:
         info, identity = self._identity(snapshot, task, first_attempt_time)
         observer = context.ports.get("observer")
@@ -625,15 +673,14 @@ class NativeWorkflowExecutable:
                     if isinstance(route, dict) and isinstance(route.get("agent_reach"), dict)
                     else None
                 )
+                attributes = self._v2_observer_attributes(patch)
                 if agent_reach_trace is not None:
                     validate_json_value(agent_reach_trace, path="$.trace.agent_reach")
-                    await observer.node_finished(
-                        identity,
-                        "succeeded_pending",
-                        attributes={"agent_reach": agent_reach_trace},
-                    )
-                else:
-                    await observer.node_finished(identity, "succeeded_pending")
+                    attributes["agent_reach"] = agent_reach_trace
+                await observer.node_finished(
+                    identity, "succeeded_pending",
+                    attributes=attributes or None,
+                )
             return NodeTaskOutcome(task, patch, tuple(control.consumed_interrupt_ids), None, identity)
         except WorkflowSuspended as exc:
             return NodeTaskOutcome(task, None, tuple(control.consumed_interrupt_ids), exc, identity)

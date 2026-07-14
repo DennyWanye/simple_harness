@@ -14,6 +14,7 @@ from deskpet.workflows.definitions.v2 import DEFAULT_DEEP_RESEARCH_VERSION, regi
 from deskpet.workflows.native import NativeExecutionPolicy
 from deskpet.workflows.native import InMemoryNativeCheckpointStore
 from deskpet.workflows.progress import WorkflowProgressReporter
+from deskpet.workflows.store import RegisteredBlobStore
 from deskpet.workflows.runner import WorkflowRegistry
 
 
@@ -190,3 +191,86 @@ async def test_v2_materializes_exactly_one_completed_intent_per_public_stage():
         "normalize", "plan", "expand", "search", "direct", "fetch", "score",
         "gap", "rerank", "synth", "cite", "persist", "finalize",
     }
+
+
+@pytest.mark.asyncio
+async def test_blob_backed_evidence_is_scored_synthesized_and_cited(tmp_path):
+    marker = "Large verified evidence marker for 2026. "
+    large_text = marker * 80
+
+    async def search(query: str, *, max_results: int):
+        return [{"url": "https://example.com/large", "title": "Large source", "snippet": marker}]
+
+    async def fetch(url: str):
+        return {"url": url, "title": "Large source", "text": large_text}
+
+    blob_store = RegisteredBlobStore(tmp_path / "blobs", tmp_path / "workflow.db")
+    context = WorkflowContext(ports={
+        "llm": ResearchLLMPort(_llm), "search": ResearchSearchPort(search),
+        "fetch": FetchPort(fetch), "blob": blob_store,
+        "native_execution_policy": NativeExecutionPolicy(3),
+    })
+    result = await DEEP_RESEARCH_V2.bind().ainvoke(
+        initial_state(topic="large", run_id="run-large", research_config={"sub_questions": ["large evidence"]}),
+        context, thread_id="run-large", run_id="run-large",
+    )
+    fetched = result["branch_fetch"]["b0"]["result"][0]
+    assert "blob_ref" in fetched and "text" not in fetched
+    assert result["branch_score"]["b0"]["result"][0]["score"] == 1.0
+    report = result["values"]["report_payload"]
+    assert report["status"] == "completed"
+    assert "Large verified evidence marker" in report["report_md"]
+    assert result["values"]["claim_quality"]["supported_claim_count"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_gap_performs_one_bounded_followup_and_rerank_includes_it():
+    search_calls = 0
+
+    async def search(query: str, *, max_results: int):
+        nonlocal search_calls
+        search_calls += 1
+        if search_calls <= 2:
+            return []
+        return [{"url": "https://example.com/gap", "title": "Gap source", "snippet": "gap evidence"}]
+
+    async def fetch(url: str):
+        return {"url": url, "title": "Gap source", "text": "Gap follow-up evidence confirms the missing question in 2026."}
+
+    context = WorkflowContext(ports={
+        "llm": ResearchLLMPort(_llm), "search": ResearchSearchPort(search),
+        "fetch": FetchPort(fetch), "native_execution_policy": NativeExecutionPolicy(2),
+    })
+    result = await DEEP_RESEARCH_V2.bind().ainvoke(
+        initial_state(topic="gap", run_id="run-gap", research_config={"sub_questions": ["missing question"]}),
+        context, thread_id="run-gap", run_id="run-gap",
+    )
+    assert search_calls == 3
+    assert result["values"]["gap_evidence"][0]["question"] == "missing question"
+    assert any(value["canonical_url"] == "https://example.com/gap" for value in result["values"]["ranked_evidence"])
+    assert result["values"]["report_payload"]["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_v2_observer_emits_only_safe_branch_stage_and_claim_metrics():
+    attributes = []
+
+    class Observer:
+        async def node_started(self, identity): return None
+        async def node_finished(self, identity, status, *, error=None, attributes=None):
+            if attributes:
+                globals_ = attributes
+                assert "metric evidence" not in str(globals_).lower()
+                assert "https://" not in str(globals_).lower()
+                attributes_list.append(globals_)
+
+    attributes_list = attributes
+    base = _context()
+    context = WorkflowContext(ports={**base.ports, "observer": Observer()})
+    await DEEP_RESEARCH_V2.bind().ainvoke(
+        initial_state(topic="metrics", run_id="run-metrics", research_config={"sub_questions": ["metric evidence"]}),
+        context, thread_id="run-metrics", run_id="run-metrics",
+    )
+    assert any("deepresearch_v2_branch" in value for value in attributes)
+    assert any("deepresearch_v2_stage" in value and value["deepresearch_v2_stage"]["duration_ms"] >= 0 for value in attributes)
+    assert any("deepresearch_v2_claim_support" in value for value in attributes)

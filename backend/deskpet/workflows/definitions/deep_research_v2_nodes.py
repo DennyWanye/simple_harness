@@ -192,6 +192,48 @@ def _event(branch_id: str, stage: str, code: str) -> dict[str, JsonValue]:
     return {"id": f"{branch_id}:{stage}:{code}", "branch_id": branch_id, "stage": stage, "error_code": code}
 
 
+async def _resolved_document_text(document: Mapping[str, Any], context: WorkflowContext) -> str:
+    inline = str(document.get("text") or "")
+    if inline:
+        return inline
+    raw_ref = document.get("blob_ref")
+    blob_store = context.ports.get("blob")
+    if not isinstance(raw_ref, Mapping) or not isinstance(blob_store, RegisteredBlobStore):
+        return ""
+    digest = str(raw_ref.get("sha256") or "")
+    if not digest:
+        return ""
+    try:
+        return (await blob_store.get(digest)).decode("utf-8")
+    except (OSError, UnicodeDecodeError, ValueError):
+        return ""
+
+
+async def _evidence_document(
+    *, candidate: Mapping[str, Any], extracted: Mapping[str, Any], context: WorkflowContext,
+) -> tuple[dict[str, JsonValue] | None, dict[str, JsonValue] | None]:
+    text = str(extracted.get("text") or extracted.get("content") or candidate.get("snippet") or "")
+    if not text.strip():
+        return None, None
+    url = str(candidate.get("url") or "")
+    digest = hashlib.sha256(text.encode()).hexdigest()
+    document: dict[str, JsonValue] = {
+        "url": url,
+        "canonical_url": canonical_url(str(candidate.get("canonical_url") or url)),
+        "title": str(extracted.get("title") or candidate.get("title") or ""),
+        "question": str(candidate.get("question") or ""),
+        "content_hash": digest,
+        "text": text,
+    }
+    blob_store = context.ports.get("blob")
+    if isinstance(blob_store, RegisteredBlobStore) and context.identity is not None and len(text.encode()) >= 2048:
+        ref = await blob_store.put(text.encode(), context.identity, media_type="text/plain; charset=utf-8")
+        document["blob_ref"] = ref.to_json()
+        document.pop("text", None)
+        return document, {"id": ref.sha256, "sha256": ref.sha256}
+    return document, None
+
+
 async def branch_handler(stage: str, branch_id: str, state: WorkflowState, context: WorkflowContext) -> StatePatch:
     item, initial_budget = _work_item(state, branch_id)
     previous = _previous_patch(state, branch_id, stage)
@@ -211,7 +253,10 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
     if stage == "expand":
         maximum = min(len(item.questions) * 2, budget.query_remaining)
         for question in item.questions:
-            result.extend(({"query": question, "kind": "question"}, {"query": f"{question} official", "kind": "official"}))
+            result.extend((
+                {"query": question, "question": question, "kind": "question"},
+                {"query": f"{question} official", "question": question, "kind": "official"},
+            ))
         result = result[:maximum]
         after = budget.consume(query_remaining=len(result))
     elif stage == "search":
@@ -222,6 +267,7 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
         else:
             for spec in specs[: budget.query_remaining]:
                 query = str(spec.get("query") if isinstance(spec, Mapping) else spec)
+                question = str(spec.get("question") or query) if isinstance(spec, Mapping) else query
                 try:
                     rows = await port.search(query, max_results=min(5, budget.url_remaining))
                 except Exception:
@@ -234,6 +280,7 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
                         "url": str(row["url"]), "canonical_url": canonical_url(str(row["url"])),
                         "title": str(row.get("title") or ""), "snippet": str(row.get("snippet") or row.get("body") or ""),
                         "provider": str(row.get("provider") or row.get("engine") or "search"),
+                        "question": question,
                     })
             result = sorted(result, key=lambda value: (str(value["canonical_url"]), str(value["title"])))[: budget.url_remaining]
             after = budget.consume(query_remaining=min(len(specs), budget.query_remaining), url_remaining=len(result))
@@ -253,6 +300,7 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
                                 "url": str(row["url"]), "canonical_url": canonical_url(str(row["url"])),
                                 "title": str(row.get("title") or ""), "snippet": str(row.get("snippet") or ""),
                                 "provider": outcome.source, "direct": True,
+                                "question": question,
                             })
             after = budget.consume(query_remaining=min(len(item.questions), budget.query_remaining), url_remaining=len(result))
     elif stage == "fetch":
@@ -260,7 +308,6 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
         direct_rows = list((state.get("branch_direct") or {}).get(branch_id, {}).get("result", []))  # type: ignore[union-attr]
         candidates = {str(row.get("canonical_url")): row for row in (*search_rows, *direct_rows) if isinstance(row, Mapping) and row.get("canonical_url")}
         fetch = context.ports.get("fetch")
-        blob_store = context.ports.get("blob")
         refs: list[dict[str, JsonValue]] = []
         for url, candidate in sorted(candidates.items())[: budget.fetch_remaining]:
             try:
@@ -268,21 +315,14 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
             except Exception:
                 extracted = {}
                 errors.append(_event(branch_id, stage, "fetch_failure"))
-            text = str(extracted.get("text") or extracted.get("content") or candidate.get("snippet") or "") if isinstance(extracted, Mapping) else ""
-            if not text.strip():
-                continue
-            digest = hashlib.sha256(text.encode()).hexdigest()
-            document: dict[str, JsonValue] = {
-                "url": str(candidate.get("url") or url), "canonical_url": url,
-                "title": str(extracted.get("title") or candidate.get("title") or "") if isinstance(extracted, Mapping) else str(candidate.get("title") or ""),
-                "content_hash": digest, "text": text,
-            }
-            if isinstance(blob_store, RegisteredBlobStore) and context.identity is not None and len(text.encode()) >= 2048:
-                ref = await blob_store.put(text.encode(), context.identity, media_type="text/plain; charset=utf-8")
-                document["blob_ref"] = ref.to_json()
-                document.pop("text", None)
-                refs.append({"id": ref.sha256, "sha256": ref.sha256})
-            result.append(document)
+            document, ref = await _evidence_document(
+                candidate={**candidate, "url": str(candidate.get("url") or url)},
+                extracted=extracted if isinstance(extracted, Mapping) else {}, context=context,
+            )
+            if document is not None:
+                result.append(document)
+            if ref is not None:
+                refs.append(ref)
         after = budget.consume(fetch_remaining=min(len(candidates), budget.fetch_remaining))
         payload: dict[str, JsonValue] = {
             f"branch_{stage}": {branch_id: branch_patch(work_item=item, stage=stage, result=result, errors=errors, budget_before=budget, budget_after=after)}
@@ -297,7 +337,10 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
         for document in documents:
             if not isinstance(document, Mapping):
                 continue
-            text = str(document.get("text") or "")
+            text = await _resolved_document_text(document, context)
+            if not text:
+                errors.append(_event(branch_id, stage, "blob_unavailable"))
+                continue
             score = min(1.0, max(0.0, len(text) / 2000))
             result.append({**copy.deepcopy(dict(document)), "score": score})
         result.sort(key=lambda value: (-float(value.get("score", 0)), str(value.get("canonical_url", "")), str(value.get("content_hash", ""))))
@@ -355,37 +398,101 @@ def make_join_handler(stage: str):
 
 
 async def gap_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
-    del context
-    evidence = list(_values(state).get("joined_score", []))
-    questions = list(_values(state).get("sub_questions", []))
-    missing = max(0, len(questions) - len(evidence))
-    return _public_patch(state, "gap", {"iteration": 1, "followup_count": missing, "new_evidence": 0}, degraded=bool(missing))
+    values = _values(state)
+    evidence = [dict(value) for value in values.get("joined_score", []) if isinstance(value, Mapping)]
+    questions = [str(value) for value in values.get("sub_questions", [])]
+    covered = {str(value.get("question") or "") for value in evidence}
+    missing_questions = [question for question in questions if question not in covered]
+    score_channels = state.get("branch_score")
+    budgets = [
+        BranchBudgetState.from_json(value.get("budget_after", {}))
+        for value in (score_channels.values() if isinstance(score_channels, Mapping) else ())
+        if isinstance(value, Mapping) and value.get("active")
+    ]
+    query_budget = sum(value.query_remaining for value in budgets)
+    fetch_budget = sum(value.fetch_remaining for value in budgets)
+    config = _config(values)
+    limit = min(
+        len(missing_questions), query_budget, fetch_budget,
+        max(0, min(6, int(config.get("gap_followup_limit", 3)))),
+    )
+    search = context.ports.get("search")
+    fetch = context.ports.get("fetch")
+    new_evidence: list[dict[str, JsonValue]] = []
+    refs: list[dict[str, JsonValue]] = []
+    errors = 0
+    attempted = 0
+    if isinstance(search, ResearchSearchPort) and isinstance(fetch, FetchPort):
+        for question in missing_questions[:limit]:
+            attempted += 1
+            try:
+                rows = await search.search(question, max_results=1)
+            except Exception:
+                rows = []
+                errors += 1
+            for row in rows[:1]:
+                if not isinstance(row, Mapping) or not row.get("url"):
+                    continue
+                candidate = {**dict(row), "question": question, "canonical_url": canonical_url(str(row["url"]))}
+                try:
+                    extracted = await fetch.extract(str(row["url"]))
+                except Exception:
+                    errors += 1
+                    continue
+                document, ref = await _evidence_document(candidate=candidate, extracted=extracted, context=context)
+                if document is not None:
+                    text = await _resolved_document_text(document, context)
+                    if text:
+                        document["score"] = min(1.0, max(0.0, len(text) / 2000))
+                        new_evidence.append(document)
+                if ref is not None:
+                    refs.append(ref)
+    patch = _public_patch(
+        state, "gap",
+        {"iteration": 1, "followup_count": attempted, "new_evidence": len(new_evidence)},
+        updates={
+            "gap_evidence": new_evidence,
+            "gap_budget_after": {
+                "query_remaining": max(0, query_budget - attempted),
+                "fetch_remaining": max(0, fetch_budget - len(new_evidence)),
+            },
+        },
+        degraded=bool(errors or len(new_evidence) < len(missing_questions)),
+    ).to_dict()
+    if refs:
+        patch["blob_refs"] = refs
+    return StatePatch(patch)
 
 
 async def rerank_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
-    del context
-    evidence = [dict(value) for value in _values(state).get("joined_score", []) if isinstance(value, Mapping)]
+    values = _values(state)
+    evidence = [dict(value) for value in (*values.get("joined_score", []), *values.get("gap_evidence", [])) if isinstance(value, Mapping)]
+    for value in evidence:
+        if "score" not in value:
+            text = await _resolved_document_text(value, context)
+            value["score"] = min(1.0, max(0.0, len(text) / 2000)) if text else 0.0
     evidence.sort(key=lambda value: (-float(value.get("score", 0)), str(value.get("canonical_url", "")), str(value.get("content_hash", ""))))
     domains = {urlparse(str(value.get("url") or "")).netloc.lower() for value in evidence}
     return _public_patch(state, "rerank", {"passages": len(evidence), "domains": len(domains - {""})}, updates={"ranked_evidence": evidence})
 
 
 async def synth_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
-    del context
     evidence = [dict(value) for value in _values(state).get("ranked_evidence", []) if isinstance(value, Mapping)]
     findings = []
-    for index, item in enumerate(evidence[:12], 1):
-        text = str(item.get("text") or item.get("title") or "").strip().replace("\n", " ")
+    citation_evidence: list[dict[str, JsonValue]] = []
+    for item in evidence[:12]:
+        text = (await _resolved_document_text(item, context)).strip().replace("\n", " ")
         if text:
-            findings.append(f"{text[:240]} [{index}]")
+            citation_evidence.append(item)
+            findings.append(f"{text[:240]} [{len(citation_evidence)}]")
     draft = "\n\n".join(findings)
-    return _public_patch(state, "synth", {"sections": int(bool(draft)), "claim_count": len(findings)}, updates={"draft_report": draft})
+    return _public_patch(state, "synth", {"sections": int(bool(draft)), "claim_count": len(findings)}, updates={"draft_report": draft, "citation_evidence": citation_evidence})
 
 
 async def cite_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
     values = _values(state)
-    evidence_rows = [dict(value) for value in values.get("ranked_evidence", []) if isinstance(value, Mapping)]
-    evidence = {index: str(row.get("text") or row.get("title") or "") for index, row in enumerate(evidence_rows, 1)}
+    evidence_rows = [dict(value) for value in values.get("citation_evidence", []) if isinstance(value, Mapping)]
+    evidence = {index: await _resolved_document_text(row, context) for index, row in enumerate(evidence_rows, 1)}
     claims = parse_claims(str(values.get("draft_report") or ""))
     semantic = None
     llm = context.ports.get("llm")

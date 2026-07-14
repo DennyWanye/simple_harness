@@ -18,8 +18,9 @@ def render_report(
     coverage: Mapping[str, JsonValue],
     errors: Sequence[Mapping[str, JsonValue]],
 ) -> dict[str, JsonValue]:
-    if not citations:
-        markdown = f"# {topic}\n\n未找到可核验的可用来源，因此本次调研未生成基于模型预训练知识的结论。"
+    if not citations or not supported_findings:
+        reason = "未找到可核验的可用来源" if not citations else "已有来源不足以支持任何事实性结论"
+        markdown = f"# {topic}\n\n{reason}，因此本次调研未生成基于模型预训练知识的结论。"
         status = "no_results"
     else:
         findings = "\n".join(f"- {value}" for value in supported_findings) or "- 暂无已支持发现"

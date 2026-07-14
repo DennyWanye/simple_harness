@@ -68,3 +68,13 @@ def test_report_hash_and_citation_numbering_are_stable_across_ten_runs():
     ]
     assert len({value["report_hash"] for value in reports}) == 1
     assert all("[1] A" in value["report_md"] for value in reports)
+
+
+def test_report_with_citations_but_no_supported_findings_is_not_completed():
+    report = render_report(
+        topic="unsupported", supported_findings=(), inferences=(), limitations=(),
+        citations=({"url": "https://a.example", "title": "A"},),
+        coverage={"support_rate": 0.0}, errors=(),
+    )
+    assert report["status"] == "no_results"
+    assert "不足以支持" in report["report_md"]

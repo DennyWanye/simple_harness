@@ -78,7 +78,7 @@ def _channels() -> dict[str, ChannelSpec]:
         "branch_events": ChannelSpec(JsonType.ARRAY, ReducerKind.STABLE_LIST, frozenset(_BRANCH_NODE_IDS)),
         "blob_refs": ChannelSpec(
             JsonType.ARRAY, ReducerKind.STABLE_LIST,
-            frozenset(f"fetch_{branch_id}" for branch_id in BRANCH_IDS),
+            frozenset({"gap", *(f"fetch_{branch_id}" for branch_id in BRANCH_IDS)}),
         ),
     }
     for stage in BRANCH_STAGES:
