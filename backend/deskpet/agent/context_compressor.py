@@ -36,11 +36,18 @@ configurable via ``config.context`` section.
 """
 from __future__ import annotations
 
+import hashlib
 import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import structlog
+
+from agent.context_messages import (
+    CONTEXT_MESSAGE_META_KEY,
+    ContextMessageMeta,
+    tag_message,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -203,12 +210,80 @@ class ContextCompressor:
             return False
         return prompt_tokens >= self.trigger_tokens()
 
+    async def _call_summary_model(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        resolved_provider: Any = None,
+        resolved_model: str | None = None,
+    ) -> Any:
+        from agent.context_messages import provider_purpose_scope
+
+        if resolved_provider is None:
+            if self._llm is None:
+                raise RuntimeError("compression_model_unavailable")
+            with provider_purpose_scope("compressor"):
+                return await self._llm.chat_with_fallback(
+                    messages,
+                    model=resolved_model or self.model,
+                    max_tokens=self.summary_max_tokens,
+                    temperature=0.0,
+                )
+        direct = getattr(resolved_provider, "chat_with_tools", None)
+        if not callable(direct):
+            raise RuntimeError("compression_provider_not_callable")
+        # One exact provider/model attempt.  Do not route through a registry
+        # fallback when Context OS selected a dedicated compaction candidate.
+        with provider_purpose_scope("compressor"):
+            return await direct(
+                messages,
+                tools=None,
+                max_tokens=self.summary_max_tokens,
+                temperature=0.0,
+            )
+
+    async def compress_coverage_job(
+        self,
+        job: Any,
+        *,
+        resolved_provider: Any,
+        resolved_model: str,
+        compaction_cycle_id: str,
+    ) -> str:
+        transcript = _render_transcript(list(job.messages))
+        if not transcript.strip():
+            raise RuntimeError("coverage_compaction_source_empty")
+        response = await self._call_summary_model(
+            [
+                {"role": "system", "content": self._SUMMARY_SYSTEM},
+                {"role": "user", "content": transcript},
+            ],
+            resolved_provider=resolved_provider,
+            resolved_model=resolved_model,
+        )
+        summary = _response_content(response).strip()
+        if not summary:
+            raise RuntimeError("coverage_compaction_summary_empty")
+        logger.info(
+            "coverage_compaction_completed",
+            cycle_id=compaction_cycle_id,
+            first_message_id=int(job.first_message_id),
+            last_message_id=int(job.last_message_id),
+            source_hash=str(job.source_hash),
+            provider=getattr(resolved_provider, "id", type(resolved_provider).__name__),
+            model=resolved_model,
+        )
+        return summary
+
     async def compress(
         self,
         messages: list[dict[str, Any]],
         *,
         goal_text: "str | None" = None,
         pending_tasks: "list[str] | None" = None,
+        resolved_provider: Any = None,
+        resolved_model: str | None = None,
+        compaction_cycle_id: str | None = None,
     ) -> CompressionResult:
         """Produce a compressed messages list.
 
@@ -280,7 +355,7 @@ class ContextCompressor:
                 },
             )
 
-        if self._llm is None:
+        if self._llm is None and resolved_provider is None:
             return CompressionResult(
                 messages=_sanitize_tool_pairs(work) if n_micro > 0 else list(work),
                 compressed=n_micro > 0,
@@ -300,17 +375,23 @@ class ContextCompressor:
         middle_text = _render_transcript(middle_for_summary)
         if not middle_text.strip():
             if prior_summary:
-                summary_message = {
-                    "role": "assistant",
-                    "content": _format_summary(prior_summary),
-                }
+                summary_message = _summary_message(
+                    prior_summary, source_messages=work
+                )
                 has_anchor = any(
                     m.get("role") == "system"
                     and str(m.get("content") or "").startswith("[目标锚定]")
                     for m in system_msgs
                 )
                 anchor_msgs = (
-                    [] if has_anchor else _build_goal_anchor(goal_text, pending_tasks)
+                    []
+                    if has_anchor
+                    else _build_goal_anchor(
+                        goal_text,
+                        pending_tasks,
+                        metadata_enabled=_metadata_enabled(work),
+                        anchor_after=_latest_fragment_id(system_msgs),
+                    )
                 )
                 new_messages = _sanitize_tool_pairs(
                     list(system_msgs)
@@ -347,14 +428,13 @@ class ContextCompressor:
             )
 
         try:
-            response = await self._llm.chat_with_fallback(
+            response = await self._call_summary_model(
                 [
                     {"role": "system", "content": summary_system},
                     {"role": "user", "content": middle_text},
                 ],
-                model=self.model,
-                max_tokens=self.summary_max_tokens,
-                temperature=0.0,
+                resolved_provider=resolved_provider,
+                resolved_model=resolved_model,
             )
         except Exception as exc:
             logger.warning(
@@ -373,7 +453,7 @@ class ContextCompressor:
                 meta={"tool_results_pruned": n_micro},
             )
 
-        summary_text = str(getattr(response, "content", "") or "").strip()
+        summary_text = _response_content(response).strip()
         if not summary_text:
             return CompressionResult(
                 messages=_sanitize_tool_pairs(work) if n_micro > 0 else list(messages),
@@ -399,10 +479,7 @@ class ContextCompressor:
                 summary_text = prior_summary
 
         output_tokens = _approx_tokens(summary_text)
-        summary_message = {
-            "role": "assistant",
-            "content": _format_summary(summary_text),
-        }
+        summary_message = _summary_message(summary_text, source_messages=work)
 
         # WI-4a 去重: 整合路径里 agent_loop 已注入 always-on [目标锚定] system,
         # 它经 _partition 进 system_msgs。若已存在就**不再**自注第二条(满足
@@ -414,7 +491,14 @@ class ContextCompressor:
             for m in system_msgs
         )
         anchor_msgs = (
-            [] if has_existing_anchor else _build_goal_anchor(goal_text, pending_tasks)
+            []
+            if has_existing_anchor
+            else _build_goal_anchor(
+                goal_text,
+                pending_tasks,
+                metadata_enabled=_metadata_enabled(work),
+                anchor_after=_latest_fragment_id(system_msgs),
+            )
         )
         new_messages = _sanitize_tool_pairs(
             list(system_msgs)
@@ -465,6 +549,59 @@ class ContextCompressor:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+def _response_content(response: Any) -> str:
+    if isinstance(response, dict):
+        return str(response.get("content") or "")
+    return str(getattr(response, "content", "") or "")
+
+
+def _message_metadata(message: dict[str, Any]) -> dict[str, Any] | None:
+    metadata = message.get(CONTEXT_MESSAGE_META_KEY)
+    return metadata if isinstance(metadata, dict) else None
+
+
+def _causal_group_id(message: dict[str, Any]) -> str | None:
+    metadata = _message_metadata(message)
+    group_id = metadata.get("causal_group_id") if metadata else None
+    return str(group_id) if group_id else None
+
+
+def _latest_fragment_id(messages: list[dict[str, Any]]) -> str | None:
+    for message in reversed(messages):
+        metadata = _message_metadata(message)
+        fragment_id = metadata.get("fragment_id") if metadata else None
+        if fragment_id:
+            return str(fragment_id)
+    return None
+
+
+def _metadata_enabled(messages: list[dict[str, Any]]) -> bool:
+    return any(_message_metadata(message) is not None for message in messages)
+
+
+def _summary_message(
+    summary_text: str, *, source_messages: list[dict[str, Any]]
+) -> dict[str, Any]:
+    message = {
+        "role": "assistant",
+        "content": _format_summary(summary_text),
+    }
+    if not _metadata_enabled(source_messages):
+        return message
+    digest = hashlib.sha256(summary_text.encode("utf-8")).hexdigest()[:16]
+    return tag_message(
+        message,
+        ContextMessageMeta(
+            placement="transcript",
+            lifetime="history",
+            source="context_compressor.summary",
+            trim_policy="summarize",
+            fragment_id=f"context-compressor:summary:{digest}",
+            reason="compressed_middle",
+        ),
+    )
+
+
 def _partition(
     messages: list[dict[str, Any]], first_n: int, last_n: int
 ) -> tuple[list[dict], list[dict], list[dict], list[dict]]:
@@ -484,12 +621,16 @@ def _partition(
         tool 响应)。
       * tail 从头部收缩：开头的 tool 消息(配对在 middle)挪进 middle。
     """
-    system_msgs: list[dict[str, Any]] = [
-        m for m in messages if (m.get("role") == "system")
-    ]
-    non_system: list[dict[str, Any]] = [
-        m for m in messages if (m.get("role") != "system")
-    ]
+    def _is_prefix_system(message: dict[str, Any]) -> bool:
+        if message.get("role") != "system":
+            return False
+        metadata = message.get(CONTEXT_MESSAGE_META_KEY)
+        if not isinstance(metadata, dict):
+            return True
+        return metadata.get("placement") == "prefix"
+
+    system_msgs = [m for m in messages if _is_prefix_system(m)]
+    non_system = [m for m in messages if not _is_prefix_system(m)]
     n = len(non_system)
     if n <= first_n + last_n:
         return system_msgs, non_system, [], []
@@ -514,6 +655,20 @@ def _partition(
 
     # tail 开头不以孤儿 tool 起步：配对 assistant 在 middle 已被压缩。
     while cut_tail < n and non_system[cut_tail].get("role") == "tool":
+        cut_tail += 1
+
+    # Context OS sidecars make the causal unit explicit.  Keep every tagged
+    # assistant+tool-result group on one side of either cut even if a future
+    # provider introduces a non-tool message shape inside that group.
+    while cut_head > 0 and cut_head < n:
+        left_group = _causal_group_id(non_system[cut_head - 1])
+        if not left_group or left_group != _causal_group_id(non_system[cut_head]):
+            break
+        cut_head -= 1
+    while cut_tail > 0 and cut_tail < n:
+        left_group = _causal_group_id(non_system[cut_tail - 1])
+        if not left_group or left_group != _causal_group_id(non_system[cut_tail]):
+            break
         cut_tail += 1
 
     if cut_tail <= cut_head:
@@ -744,6 +899,9 @@ def _approx_tokens(text: str) -> int:
 def _build_goal_anchor(
     goal_text: "str | None",
     pending_tasks: "list[str] | None",
+    *,
+    metadata_enabled: bool = False,
+    anchor_after: str | None = None,
 ) -> list[dict]:
     """Build zero or one system-role anchor message for goal re-anchoring.
 
@@ -788,4 +946,19 @@ def _build_goal_anchor(
     lines.append("请确保接下来的动作仍服务于上述目标，不要被中间步骤带偏。")
 
     content = "\n".join(lines)
-    return [{"role": "system", "content": content}]
+    message = {"role": "system", "content": content}
+    if metadata_enabled:
+        message = tag_message(
+            message,
+            ContextMessageMeta(
+                placement="control",
+                lifetime="current",
+                source="context_compressor.goal_anchor",
+                protected=True,
+                trim_policy="never",
+                fragment_id="context-compressor:goal-anchor",
+                anchor_after=anchor_after,
+                reason="post_compaction_goal_reanchor",
+            ),
+        )
+    return [message]

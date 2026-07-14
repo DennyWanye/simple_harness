@@ -149,16 +149,35 @@ class MemoryManager:
                 self._safe_l2(session_id, l2_top_k)
             )
         if self._retriever is not None and l3_top_k > 0:
-            tasks["l3"] = asyncio.create_task(
-                self._safe_l3(query, l3_top_k, policy)
-            )
+            l3_coro = self._safe_l3(query, l3_top_k, policy)
+            l3_timeout_s = policy.get("l3_timeout_s")
+            if l3_timeout_s is not None:
+                l3_coro = asyncio.wait_for(
+                    l3_coro,
+                    timeout=max(0.05, float(l3_timeout_s)),
+                )
+            tasks["l3"] = asyncio.create_task(l3_coro)
 
         if tasks:
             await asyncio.gather(*tasks.values(), return_exceptions=True)
 
         l1_result = tasks["l1"].result() if "l1" in tasks else None
         l2_result = tasks["l2"].result() if "l2" in tasks else []
-        l3_result = tasks["l3"].result() if "l3" in tasks else []
+        l3_result = []
+        if "l3" in tasks and not tasks["l3"].cancelled():
+            try:
+                l3_result = tasks["l3"].result()
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "memory_manager.l3_timed_out",
+                    timeout_s=policy.get("l3_timeout_s"),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "memory_manager.l3_task_failed",
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
 
         return {
             "l1": l1_result,
@@ -284,7 +303,11 @@ class MemoryManager:
             db = self._session_db
             # Honour whichever read method the backend exposes.
             # Preferred: S1's get_messages(session_id, limit).
-            if hasattr(db, "get_messages"):
+            if hasattr(db, "get_recent_messages"):
+                rows = await db.get_recent_messages(
+                    session_id=session_id, limit=top_k
+                )
+            elif hasattr(db, "get_messages"):
                 rows = await db.get_messages(
                     session_id=session_id, limit=top_k
                 )

@@ -10,6 +10,8 @@ dispatch 同模式（_load_section 平铺，[tools] 父表把子表 pop 出来�
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 import config as _config_mod
@@ -41,6 +43,15 @@ def _write(tmp_path, body: str):
     p = tmp_path / "config.toml"
     p.write_text(body, encoding="utf-8")
     return str(p)
+
+
+def test_repo_config_verifier_ships_strict():
+    repo_config = Path(__file__).resolve().parents[2] / "config.toml"
+    cfg = load_config(repo_config)
+
+    assert cfg.tools.verifier.emit_receipts is True
+    assert cfg.tools.verifier.verify_gate_mode == "strict"
+    assert cfg.tools.verifier.structured_reflection is True
 
 
 # ─── T1-1 ~ T1-6 基础解析 ───────────────────────────────────

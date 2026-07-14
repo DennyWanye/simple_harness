@@ -27,6 +27,7 @@ import asyncio
 import json
 import re
 import time
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -474,14 +475,14 @@ async def test_research_run_happy_path() -> None:
         "https://nature.com/articles/qc": {
             "ok": True, "url": "https://nature.com/articles/qc",
             "title": "Quantum hardware scaling — Nature",
-            "text": "Modern quantum hardware has scaled past 1000 physical "
+                "text": "Modern quantum computing hardware has scaled past 1000 physical "
                     "qubits with error rates near 0.1%. " * 30,
             "fetched_at": time.time(),
         },
         "https://arxiv.org/abs/2401.0001": {
             "ok": True, "url": "https://arxiv.org/abs/2401.0001",
             "title": "On the value of quantum supremacy",
-            "text": "Near-term quantum advantage remains contested. " * 40,
+                "text": "Near-term quantum computing advantage remains contested. " * 40,
             "fetched_at": time.time(),
         },
     })
@@ -624,7 +625,7 @@ async def test_research_run_direct_sources_run_even_when_search_empty(monkeypatc
     monkeypatch.setattr(_rs, "direct_source_for", lambda q: ["cninfo"])
 
     async def _fake_cninfo(q, *, max_results=3, client=None):
-        return [{"ok": True, "url": "https://static.cninfo.com.cn/x.pdf", "title": "年报",
+            return [{"ok": True, "url": "https://static.cninfo.com.cn/x.pdf", "title": "公司财报年报",
                  "text": "营业收入与净利润等关键财务数据。" * 40,
                  "fetched_at": time.time(), "source": "cninfo"}]
     monkeypatch.setitem(_rs.DIRECT_FETCHERS, "cninfo", _fake_cninfo)
@@ -675,7 +676,7 @@ async def test_research_run_direct_sources_multi_dispatch_and_dedup(monkeypatch)
     extract = make_extract({
         "https://web.example.com/a": {
             "ok": True, "url": "https://web.example.com/a", "title": "Web",
-            "text": "web evidence about the topic with enough length. " * 50,
+                "text": "公司 X 年报要点 web evidence with enough length. " * 50,
             "fetched_at": time.time(),
         },
     })
@@ -685,7 +686,7 @@ async def test_research_run_direct_sources_multi_dispatch_and_dedup(monkeypatch)
     async def _fake_wiki(q, *, max_results=3, client=None):
         return [
             {"ok": True, "url": "https://en.wikipedia.org/wiki/X", "title": "X",
-             "text": "authoritative wikipedia evidence on the topic. " * 50,
+                 "text": "公司 X 年报要点 authoritative wikipedia evidence. " * 50,
              "fetched_at": time.time(), "source": "wikipedia"},
             # 与普通搜索同 URL(末尾斜杠差异) → 应被契约-7 归一化去重
             {"ok": True, "url": "https://web.example.com/a/", "title": "dup",
@@ -751,6 +752,8 @@ async def test_research_run_all_searches_fail() -> None:
     assert report.citations == []
     assert any("no search results" in e for e in report.errors)
     assert "未能找到可用的来源" in report.report_md or "未能找到" in report.report_md
+    assert "scrapling_fetch" in report.report_md
+    assert "`web_fetch`" not in report.report_md
 
 
 @pytest.mark.asyncio
@@ -1712,6 +1715,111 @@ async def test_research_run_site_directed_off(monkeypatch):
 
     await research_run("topic", llm_call=llm, search=_search, extract=_extract)
     assert not any("site:" in q for q in searched)  # 关了 → 无 site: 定向
+
+
+# --- Source packs (topic-specific authoritative directed search) ---
+
+
+def test_source_pack_queries_for_ukraine_and_kill_switch(monkeypatch):
+    qs = r._source_pack_queries_for("请调研一下俄乌最近的局势和乌克兰前线变化")
+    assert [name for name, _ in qs] == ["geopolitics_ukraine"] * 3
+    suffixes = " ".join(s for _, s in qs)
+    assert "understandingwar.org" in suffixes
+    assert "un.org" in suffixes
+    assert "reuters.com" in suffixes
+    assert "apnews.com" in suffixes
+    assert "bbc.com" in suffixes
+    assert "aljazeera.com" in suffixes
+    assert all(query.startswith("Russia Ukraine") for _, query in qs)
+    assert not any("请调研" in query or "俄乌" in query or "乌克兰" in query for _, query in qs)
+
+    monkeypatch.setattr(r, "_source_packs_enabled", lambda: False)
+    assert r._source_pack_queries_for("俄乌最近的局势") == []
+
+
+@pytest.mark.asyncio
+async def test_research_run_source_pack_queries_and_coverage(monkeypatch):
+    """俄乌/Ukraine 主题 → 自动追加 source-pack 权威来源定向搜索,并进入 coverage。"""
+    monkeypatch.setattr(r, "_RERANK_LLM_CALL", None)
+    plan = json.dumps(["俄乌最近的局势和前线变化有哪些?"])
+    synth = "# T\n## TL;DR\n\n据战况评估 [^1]."
+    llm = FakeLLM([plan, synth])
+    searched: list[str] = []
+
+    async def _search(q, *, max_results=5):
+        searched.append(q)
+        if "understandingwar.org" in q:
+            return [{"url": "https://www.understandingwar.org/backgrounder/russian-offensive-campaign-assessment",
+                     "title": "Russian Offensive Campaign Assessment", "snippet": ""}]
+        return []
+
+    async def _extract(url):
+        return {
+            "ok": True,
+            "url": url,
+            "title": "Russian Offensive Campaign Assessment",
+            "text": "Ukraine frontline assessment and Russian offensive campaign details. " * 40,
+            "fetched_at": time.time(),
+        }
+
+    report = await research_run(
+        "请调研一下俄乌最近的局势",
+        llm_call=llm,
+        search=_search,
+        extract=_extract,
+        max_total_passages=3,
+        min_passage_chars=40,
+    )
+
+    assert any("site:understandingwar.org" in q for q in searched)
+    assert any("site:un.org" in q for q in searched)
+    assert any("site:reuters.com" in q and "site:apnews.com" in q for q in searched)
+    route = report.coverage["route"]
+    assert route["source_packs_enabled"] is True
+    assert route["source_packs_hit"] == ["geopolitics_ukraine"]
+    assert route["source_pack_queries"] == 3
+
+
+@pytest.mark.asyncio
+async def test_research_run_source_pack_kill_switch(monkeypatch):
+    monkeypatch.setattr(r, "_source_packs_enabled", lambda: False)
+    monkeypatch.setattr(r, "_RERANK_LLM_CALL", None)
+    plan = json.dumps(["俄乌最近的局势?"])
+    synth = "# T\n## TL;DR\n\nA [^1]."
+    llm = FakeLLM([plan, synth])
+    searched: list[str] = []
+
+    async def _search(q, *, max_results=5):
+        searched.append(q)
+        return [{"url": "https://example.com/a", "title": "A", "snippet": ""}]
+
+    async def _extract(url):
+        return {"ok": True, "url": url, "title": "A",
+                "text": "Ukraine Russia current situation source text. " * 40,
+                "fetched_at": time.time()}
+
+    report = await research_run(
+        "请调研一下俄乌最近的局势",
+        llm_call=llm,
+        search=_search,
+        extract=_extract,
+        max_total_passages=2,
+        min_passage_chars=40,
+    )
+
+    assert not any("understandingwar.org" in q or "reuters.com" in q for q in searched)
+    route = report.coverage["route"]
+    assert route["source_packs_enabled"] is False
+    assert route["source_packs_hit"] == []
+    assert route["source_pack_queries"] == 0
+
+
+def test_deep_research_skill_mentions_source_packs_and_scrapling_first():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "deskpet" / "skills" / "builtin" / "deep-research" / "SKILL.md").read_text(encoding="utf-8")
+    assert "source packs" in text
+    assert "Scrapling" in text
+    assert "禁止自己用 `web_search` +" in text
 
 
 # --- P2 query expansion (multi-query / HyDE) ---

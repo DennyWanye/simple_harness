@@ -4,6 +4,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ControlChannel } from "../ws/ControlChannel";
 import type {
+  ContextCompactionGetResponse,
+  ContextCompactionSetAck,
   IncomingMessage,
   ModelContextGetResponse,
   ModelContextResolved,
@@ -21,6 +23,14 @@ type Props = {
 
 export function buildModelContextGetMessage(model: string) {
   return { type: "model_context_get" as const, payload: { model } };
+}
+
+export function buildContextCompactionGetMessage() {
+  return { type: "context_compaction_get" as const, payload: {} };
+}
+
+export function buildContextCompactionSetMessage(model: string) {
+  return { type: "context_compaction_set" as const, payload: { model } };
 }
 
 export function buildModelContextSetMessage(
@@ -98,6 +108,9 @@ export function ModelContextCard({ getChannel }: Props) {
   const [windowEdit, setWindowEdit] = useState<string>("");
   const [compactEdit, setCompactEdit] = useState<string>("");
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [compactionModel, setCompactionModel] = useState("follow_session");
+  const [compactionModels, setCompactionModels] = useState<string[]>([]);
+  const [compactionSaveMsg, setCompactionSaveMsg] = useState<string | null>(null);
   // 2026-06-13: 下拉不再只列 BUILTIN 画像表的几个模型 —— 经
   // code_models_list 拉中转站 live 目录,下拉 = 目录全量 ∪ builtin。
   // 非 builtin 模型选中后 resolve 落 _default 保守画像(显示的就是
@@ -146,6 +159,15 @@ export function ModelContextCard({ getChannel }: Props) {
         } else {
           setSaveMsg(`保存失败：${a.payload.reason || "未知错误"}`);
         }
+      } else if (msg.type === "context_compaction_get_response") {
+        const p = (msg as ContextCompactionGetResponse).payload;
+        setCompactionModel(p.model || p.default_model);
+        setCompactionModels(p.available_models || []);
+      } else if (msg.type === "context_compaction_set_ack") {
+        const p = (msg as ContextCompactionSetAck).payload;
+        setCompactionSaveMsg(
+          p.ok ? "压缩模型已保存" : `保存失败：${p.reason || "未知错误"}`,
+        );
       } else if ((msg as { type?: string }).type === "code_models_list_response") {
         // 中转站 live 目录 → 下拉全量(旁路订阅,不影响主分发)
         const p = (msg as { payload?: { models?: Array<{ id?: string }> } }).payload;
@@ -158,6 +180,7 @@ export function ModelContextCard({ getChannel }: Props) {
     requestGet(model);
     // 拉中转站目录(复用 code_models_list 通道;失败静默,下拉退化为 builtin)
     ch.send({ type: "code_models_list" } as never);
+    ch.send(buildContextCompactionGetMessage());
     return unsub;
     // model 变化时重新拉取在 onModelChange 里手动触发，这里只挂一次。
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -187,6 +210,16 @@ export function ModelContextCard({ getChannel }: Props) {
     setSaveMsg("保存中…");
     ch.send(buildModelContextSetMessage("global", model, fields));
   }, [getChannel, model, windowEdit, compactEdit]);
+
+  const onCompactionModelSave = useCallback(() => {
+    const ch = getChannel();
+    if (!ch) {
+      setCompactionSaveMsg("控制通道未连接");
+      return;
+    }
+    setCompactionSaveMsg("保存中…");
+    ch.send(buildContextCompactionSetMessage(compactionModel));
+  }, [compactionModel, getChannel]);
 
   return (
     <div
@@ -294,6 +327,22 @@ export function ModelContextCard({ getChannel }: Props) {
               placeholder="如 0.75 = 75% 时触发压缩"
               style={inputStyle}
             />
+            <label htmlFor="mc-compaction-model">压缩模型</label>
+            <select
+              id="mc-compaction-model"
+              data-testid="context-compaction-model-select"
+              value={compactionModel}
+              onChange={(e) => {
+                setCompactionModel(e.target.value);
+                setCompactionSaveMsg(null);
+              }}
+              style={inputStyle}
+            >
+              <option value="follow_session">跟随当前会话</option>
+              {compactionModels.map((candidate) => (
+                <option key={candidate} value={candidate}>{candidate}</option>
+              ))}
+            </select>
           </div>
 
           <div
@@ -319,9 +368,29 @@ export function ModelContextCard({ getChannel }: Props) {
             >
               保存到全局
             </button>
+            <button
+              data-testid="context-compaction-model-save"
+              onClick={onCompactionModelSave}
+              style={{
+                background: "#2563eb",
+                color: "white",
+                border: "none",
+                borderRadius: "3px",
+                padding: "2px 10px",
+                fontSize: "11px",
+                cursor: "pointer",
+              }}
+            >
+              保存压缩模型
+            </button>
             {saveMsg && (
               <span style={{ fontSize: "10px", color: "#94a3b8" }}>
                 {saveMsg}
+              </span>
+            )}
+            {compactionSaveMsg && (
+              <span style={{ fontSize: "10px", color: "#94a3b8" }}>
+                {compactionSaveMsg}
               </span>
             )}
           </div>

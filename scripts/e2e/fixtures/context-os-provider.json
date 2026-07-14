@@ -1,0 +1,10 @@
+{
+  "base_url": "http://127.0.0.1:18992/v1",
+  "api_key": "ctx-e2e-local-key",
+  "models": [
+    {"id": "ctx-primary", "context_window": 8192},
+    {"id": "ctx-fallback", "context_window": 8192}
+  ],
+  "provider_chain": ["ctx-primary", "ctx-fallback"],
+  "external_network_allowed": false
+}

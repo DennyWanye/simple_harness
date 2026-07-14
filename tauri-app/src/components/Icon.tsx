@@ -23,6 +23,7 @@ export type IconName =
   | "mic-off"
   | "send"
   | "close"
+  | "copy"
   | "chevron-right"
   | "chevron-left"
   | "stop"
@@ -30,6 +31,7 @@ export type IconName =
   | "sparkle"
   | "search"
   | "plus"
+  | "loader"
   | "trash"
   | "check"
   | "alert"
@@ -116,6 +118,12 @@ const PATHS: Record<IconName, ReactElement> = {
     </>
   ),
   close: <path d="M6 6 18 18M18 6 6 18" />,
+  copy: (
+    <>
+      <rect x="8" y="8" width="11" height="11" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" />
+    </>
+  ),
   "chevron-right": <path d="m9 5 7 7-7 7" />,
   "chevron-left": <path d="m15 5-7 7 7 7" />,
   stop: <rect x="6" y="6" width="12" height="12" rx="2.4" />,
@@ -132,6 +140,12 @@ const PATHS: Record<IconName, ReactElement> = {
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,
+  loader: (
+    <>
+      <path d="M12 3a9 9 0 0 1 9 9" />
+      <path d="M12 21a9 9 0 0 1-9-9" />
+    </>
+  ),
   trash: (
     <path d="M4 7h16M10 4h4M9.5 7l.7 12.5a1.5 1.5 0 0 0 1.5 1.4h.6a1.5 1.5 0 0 0 1.5-1.4L15.5 7M10 11v6M14 11v6" />
   ),

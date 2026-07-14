@@ -22,11 +22,14 @@ from __future__ import annotations
 import asyncio
 import inspect
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Optional
 
 import pytest
 
 from agent.agent_loop import AgentLoop
+from deskpet.agent.assembler.bundle import PageInRef, PreparedContext
+from deskpet.tools.context_page_in_tools import ContextPageInStore
 
 
 # ---------------------------------------------------------------------------
@@ -37,6 +40,29 @@ _REMOUNT_MARKER = "[已重挂技能 / remounted skills]"
 
 _SKILL_A_BODY = "## Skill A\nStep 1: do this.\nStep 2: do that.\n"
 _SKILL_B_BODY = "## Skill B\nStep X: foo.\nStep Y: bar.\n"
+
+
+def test_context_page_in_active_skill_remounts_and_stale_hash_fails_closed() -> None:
+    import hashlib
+
+    loader = _FakeSkillLoader({"skill_a": _SKILL_A_BODY})
+    loop = AgentLoop(llm_registry=_FakeLLM(), tool_registry=_FakeToolRegistry(),
+                     skill_loader=loader)
+    store = ContextPageInStore()
+    authority = store.put(kind="skill", source="skill_a", content=_SKILL_A_BODY,
+                          session_id="sid", request_id="request", scope_id="scope")
+    prepared = PreparedContext(
+        messages=[], tool_set=SimpleNamespace(scope_id="scope"), page_in_store=store,
+        page_in_refs=(PageInRef(authority.reference_id, "skill", "skill_a",
+                                authority.source_hash, "skill:skill_a"),),
+    )
+    # Merely overflowing into a reference does not activate/remount it.
+    assert loop._remount_skills([], "sid", prepared_context=prepared) == []
+    store.mark_active(authority.reference_id)
+    mounted = loop._remount_skills([], "sid", prepared_context=prepared)
+    assert _SKILL_A_BODY in mounted[0]["content"]
+    loader._skills["skill_a"] = "changed"
+    assert loop._remount_skills([], "sid", prepared_context=prepared) == []
 
 
 class _FakeToolRegistry:
@@ -505,8 +531,10 @@ async def test_full_run_skill_invoke_then_compaction_remounts():
 
         def should_compress(self, prompt_tokens):
             self._should_calls += 1
-            # Fire only on 2nd+ call (iteration 2 and later)
-            return self._should_calls >= 2
+            # AgentLoop performs an initial provider-budget probe before
+            # the first dispatch; fire on the next iteration, after the
+            # skill call has been tracked.
+            return self._should_calls >= 3
 
         async def compress(self, messages, *, goal_text=None, pending_tasks=None):
             from deskpet.agent.context_compressor import CompressionResult

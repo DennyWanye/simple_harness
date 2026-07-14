@@ -521,6 +521,38 @@ async def test_ensure_updates_key(empty_toml: Path, fake_keyring):
 
 
 @pytest.mark.asyncio
+async def test_ensure_reenables_existing_relay_provider(empty_toml: Path, fake_keyring):
+    """A fresh relay login must turn a previously disabled managed row back on."""
+    from llm.provider_registry import LLMProviderRegistry
+
+    reg = LLMProviderRegistry(empty_toml)
+    await reg.ensure_provider(
+        _make_provider_kwargs(
+            id="relay-cloud",
+            api_key="sk-old",
+            source="relay",
+            account_ref="acct",
+            enabled=False,
+        )
+    )
+
+    await reg.ensure_provider(
+        {
+            "id": "relay-cloud",
+            "api_key": "sk-new",
+            "source": "relay",
+            "account_ref": "acct",
+            "enabled": True,
+        }
+    )
+
+    providers = {p["id"]: p for p in reg.list_providers()}
+    assert providers["relay-cloud"]["enabled"] is True
+    assert reg.get_chain()[0]["id"] == "relay-cloud"
+    assert reg.resolve_api_key("relay-cloud") == "sk-new"
+
+
+@pytest.mark.asyncio
 async def test_ensure_first_login_steals_default_priority(empty_toml: Path, fake_keyring):
     """First relay login becomes the default provider ahead of manual rows."""
     from llm.provider_registry import LLMProviderRegistry

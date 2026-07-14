@@ -300,6 +300,7 @@ def build_agent_parallel_tool(
     kind_overrides: Optional[dict[str, Any]] = None,
     termination_gate_factory: Optional[Callable[[], Any]] = None,
     shim_resolver: Optional[Callable[[str], Any]] = None,
+    context_prepare: Optional[Callable[..., Awaitable[tuple[Any, str]]]] = None,
 ):
     """Construct the ``agent_parallel`` tool handler.
 
@@ -342,12 +343,14 @@ def build_agent_parallel_tool(
             parent_session_id_resolver=parent_session_id_resolver,
             termination_gate_factory=termination_gate_factory,
             shim_resolver=shim_resolver,
+            context_prepare=context_prepare,
         )
     else:
         runner = _make_default_runner(
             llm_shim=llm_shim,
             parent_tool_registry=parent_tool_registry,
             parent_session_id_resolver=parent_session_id_resolver,
+            context_prepare=context_prepare,
         )
     resolve_parent_prompt: Callable[[], str] = (
         parent_system_prompt_resolver or (lambda: "")
@@ -518,6 +521,7 @@ def _make_default_runner(
     llm_shim: Any,
     parent_tool_registry: Any,
     parent_session_id_resolver: Callable[[], str],
+    context_prepare: Optional[Callable[..., Awaitable[tuple[Any, str]]]] = None,
 ) -> SubagentRunner:
     """Build the default per-subagent runner that delegates to agent_tool.
 
@@ -541,6 +545,7 @@ def _make_default_runner(
             llm_shim=llm_shim,
             parent_tool_registry=parent_tool_registry,
             parent_session_id_resolver=_child_sid_resolver,
+            context_prepare=context_prepare,
         )
 
         # agent_tool's handler is sync (it manages its own asyncio loop
@@ -585,6 +590,7 @@ def _make_async_native_runner(
     parent_session_id_resolver: Callable[[], str],
     termination_gate_factory: Optional[Callable[[], Any]] = None,
     shim_resolver: Optional[Callable[[str], Any]] = None,
+    context_prepare: Optional[Callable[..., Awaitable[tuple[Any, str]]]] = None,
 ) -> SubagentRunner:
     """WI-1.3 (F10) — scheduler 路径专用 runner：**直接在协程内**构造并 await
     子 ``AgentLoop``，不经 ``run_in_executor`` 线程跳转。
@@ -645,8 +651,19 @@ def _make_async_native_runner(
                 _sub_kwargs["termination_gate"] = termination_gate_factory()
             except Exception:  # noqa: BLE001
                 pass
-        sub = _AgentLoop(**_sub_kwargs)
         sub_sid = f"{parent_sid}.par-{sa_task_id}"
+        sub = _AgentLoop(**_sub_kwargs)
+        prepared_context = None
+        context_request_id = None
+        if context_prepare is not None:
+            prepared_context, context_request_id = await context_prepare(
+                messages=msgs,
+                session_id=sub_sid,
+                user_message=str(sa_for_runner["prompt"]),
+                tool_names=tuple(tools),
+                venue=str(sa_for_runner.get("_kind") or "code_subagent"),
+            )
+            msgs = prepared_context.messages
         final = ""
         # WI-OC-1：子代理深度 = 父深度+1，注入 env 让子代理的
         # current_spawn_depth() 比父深一层（depth gate flag ON 时生效；OFF 时
@@ -657,7 +674,13 @@ def _make_async_native_runner(
         _prev_depth = os.environ.get(_DEPTH_ENV)
         os.environ.update(child_depth_env())
         try:
-            async for ev in sub.run(msgs, session_id=sub_sid):
+            _run_kwargs = {"session_id": sub_sid}
+            if prepared_context is not None:
+                _run_kwargs.update(
+                    prepared_context=prepared_context,
+                    context_request_id=context_request_id,
+                )
+            async for ev in sub.run(msgs, **_run_kwargs):
                 if isinstance(ev, _FinEv):
                     final = ev.content or ""
                     break

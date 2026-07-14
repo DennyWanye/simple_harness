@@ -144,8 +144,8 @@ async def _record_workspace_action(
         logger.debug("workspace record_action failed: %s", exc)
 
 
-def _workspace_root() -> Path:
-    override = os.environ.get("DESKPET_WORKSPACE_DIR")
+def _workspace_root(override: str | Path | None = None) -> Path:
+    override = override or os.environ.get("DESKPET_WORKSPACE_DIR")
     if override:
         root = Path(override).resolve()
     else:
@@ -160,7 +160,14 @@ def _workspace_root() -> Path:
     return root
 
 
-def _resolve_within_workspace(path_str: str) -> Path | None:
+def _context_workspace_root(args: dict[str, Any]) -> Path:
+    override = args.get("_project_root") or args.get("_write_scope_root")
+    return _workspace_root(str(override) if override else None)
+
+
+def _resolve_within_workspace(
+    path_str: str, workspace: str | Path | None = None
+) -> Path | None:
     """Resolve ``path_str`` against the workspace. Return a Path inside
     the workspace on success, or None if the path escapes / is malformed.
 
@@ -180,7 +187,7 @@ def _resolve_within_workspace(path_str: str) -> Path | None:
     if p.is_absolute() or str(p).startswith(("\\\\", "//")):
         return None
 
-    root = _workspace_root()
+    root = _workspace_root(workspace)
     candidate = (root / path_str).resolve()
     try:
         candidate.relative_to(root)
@@ -304,7 +311,8 @@ _SCHEMA_READ: dict[str, Any] = {
 async def _handle_file_read(args: dict[str, Any], task_id: str) -> str:
     # WI-M1.6: handler 改 async —— 成功读后直接 await record_action 记
     # 工作记忆（registry dispatch 对 async handler 直接 await）。
-    target = _resolve_within_workspace(str(args.get("path", "")))
+    workspace = _context_workspace_root(args)
+    target = _resolve_within_workspace(str(args.get("path", "")), workspace)
     if target is None:
         return _err("path outside workspace", retriable=False)
     offset = int(args.get("offset", 0) or 0)
@@ -326,7 +334,7 @@ async def _handle_file_read(args: dict[str, Any], task_id: str) -> str:
                 lines.append(line)
     except OSError as exc:
         return _err(f"read failed: {exc}", retriable=True)
-    rel_path = str(target.relative_to(_workspace_root())).replace("\\", "/")
+    rel_path = str(target.relative_to(workspace)).replace("\\", "/")
     content = "".join(lines)
     await _record_workspace_action(
         session_id=task_id, path=rel_path, action="read", content=content,
@@ -375,7 +383,8 @@ _SCHEMA_WRITE: dict[str, Any] = {
 
 async def _handle_file_write(args: dict[str, Any], task_id: str) -> str:
     # WI-M1.6: handler 改 async —— 成功写后 await record_action 记工作记忆。
-    target = _resolve_within_workspace(str(args.get("path", "")))
+    workspace = _context_workspace_root(args)
+    target = _resolve_within_workspace(str(args.get("path", "")), workspace)
     if target is None:
         return _err("path outside workspace", retriable=False)
     content = args.get("content", "")
@@ -391,7 +400,7 @@ async def _handle_file_write(args: dict[str, Any], task_id: str) -> str:
             written = f.write(content)
     except OSError as exc:
         return _err(f"write failed: {exc}", retriable=True)
-    rel_path = str(target.relative_to(_workspace_root())).replace("\\", "/")
+    rel_path = str(target.relative_to(workspace)).replace("\\", "/")
     await _record_workspace_action(
         session_id=task_id, path=rel_path, action="write", content=content,
     )
@@ -439,12 +448,12 @@ def _handle_file_glob(args: dict[str, Any], task_id: str) -> str:
     if not pattern:
         return _err("pattern is required", retriable=False)
     root_rel = str(args.get("root", ".") or ".")
-    root = _resolve_within_workspace(root_rel)
+    workspace = _context_workspace_root(args)
+    root = _resolve_within_workspace(root_rel, workspace)
     if root is None:
         return _err("path outside workspace", retriable=False)
     if not root.exists():
         return json.dumps({"matches": [], "count": 0})
-    workspace = _workspace_root()
     matches: list[str] = []
     skipped_dirs: list[str] = []
     try:
@@ -508,7 +517,8 @@ def _handle_file_grep(args: dict[str, Any], task_id: str) -> str:
     pattern = str(args.get("pattern", "") or "")
     if not pattern:
         return _err("pattern is required", retriable=False)
-    target = _resolve_within_workspace(str(args.get("path", "")))
+    workspace = _context_workspace_root(args)
+    target = _resolve_within_workspace(str(args.get("path", "")), workspace)
     if target is None:
         return _err("path outside workspace", retriable=False)
     max_matches = int(args.get("max_matches", 50) or 50)

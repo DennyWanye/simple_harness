@@ -38,8 +38,9 @@ TIER_1 = {  # 9-10: peer-reviewed / official bodies / primary
     "cell.com", "pnas.org", "ieee.org", "acm.org",
     "who.int", "nih.gov", "cdc.gov", "europa.eu",
     "arxiv.org", "semanticscholar.org",
-    # Reference-grade (V8's list omitted these; they are curated + cited)
-    "wikipedia.org", "britannica.com",
+    # First-party AI system and framework documentation.
+    "openai.com", "anthropic.com", "deepmind.google", "langchain.com",
+    "microsoft.com", "learn.microsoft.com",
     # Chinese academic / official
     "cnki.net", "wanfangdata.com.cn", "cqvip.com",
     "cas.cn", "nsfc.gov.cn", "xueshu.baidu.com", "gov.cn",
@@ -53,6 +54,8 @@ TIER_2 = {  # 7-8: reputable news / established industry
     "techcrunch.com", "arstechnica.com", "wired.com",
     "github.com", "stackoverflow.com", "hbr.org",
     "mckinsey.com", "bcg.com", "gartner.com",
+    # Reference sources are useful context, but not primary evidence.
+    "wikipedia.org", "britannica.com",
     # Chinese reputable news / tech media
     "xinhuanet.com", "people.com.cn", "thepaper.cn",
     "36kr.com", "infoq.cn", "juejin.cn", "jiqizhixin.com",
@@ -62,7 +65,6 @@ TIER_2 = {  # 7-8: reputable news / established industry
 TIER_3 = {  # 5-6: industry blogs / vendor / community
     "medium.com", "substack.com", "dev.to",
     "engineering.fb.com", "blog.google", "aws.amazon.com",
-    "openai.com", "anthropic.com", "deepmind.google",
     "huggingface.co", "pytorch.org", "tensorflow.org",
     # Chinese industry / community
     "zhihu.com", "csdn.net", "segmentfault.com",

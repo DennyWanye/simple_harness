@@ -10,7 +10,11 @@ import httpx
 import pytest
 
 from providers.openai_compatible import OpenAICompatibleProvider
-from agent.tool_use_shim import OpenAICompatibleAgentLLM
+from agent.tool_use_shim import (
+    OpenAICompatibleAgentLLM,
+    OpenAICompatibleAgentLLMChain,
+)
+from llm.errors import LLMAuthError
 
 
 def _mock_handler(captured: list, response_body: dict):
@@ -165,6 +169,39 @@ async def test_shim_returns_chatresponse() -> None:
     assert resp.tool_calls[0].name == "read_file"
     assert resp.tool_calls[0].arguments == {"path": "a.txt"}
     assert resp.usage.input_tokens == 10
+
+
+@pytest.mark.asyncio
+async def test_chain_shim_falls_back_in_resolved_order() -> None:
+    calls: list[str] = []
+
+    class Provider:
+        def __init__(self, name: str, *, fail: bool) -> None:
+            self.name = name
+            self.model = f"{name}-model"
+            self.fail = fail
+
+        async def chat_with_tools(self, messages, **kwargs):
+            calls.append(self.name)
+            if self.fail:
+                raise LLMAuthError("expired", provider=self.name)
+            return {
+                "content": "fallback worked",
+                "tool_calls": [],
+                "stop_reason": "end_turn",
+                "model": self.model,
+                "usage": {},
+            }
+
+    chain = OpenAICompatibleAgentLLMChain(
+        [Provider("first", fail=True), Provider("second", fail=False)]
+    )
+    response = await chain.chat_with_fallback([{"role": "user", "content": "go"}])
+
+    assert calls == ["first", "second"]
+    assert response.content == "fallback worked"
+    assert chain.name == "second"
+    assert chain.model == "second-model"
 
 
 # Regression: your-llm-relay.example.com / sealos thinking-mode endpoints sometimes

@@ -39,33 +39,47 @@ _ALL_FLAGS = [
 _REPO_CONFIG = Path(__file__).resolve().parent.parent.parent / "config.toml"
 
 
-# ----------------------------------------------------------------------
-# G4.1 — dataclass 默认全 False（字节级契约根基）
-# ----------------------------------------------------------------------
-def test_g4_1_dataclass_defaults_all_false() -> None:
-    """MemoryV2Config 全部 flag 字段的 **dataclass 默认值** 必须 False。
+# 2026-06-27 测试阶段全量点亮（CLAUDE.md §测试阶段不灰度）：A 表语义记忆 flag 的
+# dataclass 默认翻 True；仅 B 表（code 专属，主线不开）保持默认 False。原"全 flag
+# 默认 False = 字节级 BC"契约对 A 表已**有意废弃**。
+_B_TABLE_DEFAULT_FALSE = {"workspace_memory"}  # WI-M1.6 code 工作记忆，归 code 模式
 
-    这是 Strangler-Fig "全 flag 默认 False = 字节级等同 gen-1" 契约的根基。
-    任何 flag 默认改 True 都会破坏字节级一致性 → test_byte_level_consistency
-    会红。这里直接钉死默认值，让"误改默认"在 config 层就被抓。
+
+# ----------------------------------------------------------------------
+# G4.1 — dataclass 默认符合测试阶段点亮（A 表 True / B 表 False）
+# ----------------------------------------------------------------------
+def test_g4_1_dataclass_defaults_match_testing_phase() -> None:
+    """MemoryV2Config flag 的 **dataclass 默认值**：A 表语义 flag 全 True
+    （测试阶段点亮、不灰度），B 表（workspace_memory）仍 False。
+
+    2026-06-27 测试阶段定调：开发完成的能力立即默认 ON。原 Strangler-Fig
+    "全 flag 默认 False = 字节级等同 gen-1" 契约对 A 表已有意废弃（见
+    CLAUDE.md §🚀 测试阶段：能力即开即用）。test_byte_level_consistency 仍靠
+    **显式 False** 构造校验回退路径，不受本默认变更影响。
     """
     cfg = MemoryV2Config()
     for flag in _ALL_FLAGS:
         assert hasattr(cfg, flag), f"MemoryV2Config 缺 flag 字段: {flag}"
-        assert getattr(cfg, flag) is False, (
-            f"dataclass 默认 {flag} 必须 False（字节级契约根基），"
+        expected = flag not in _B_TABLE_DEFAULT_FALSE
+        assert getattr(cfg, flag) is expected, (
+            f"dataclass 默认 {flag} 应为 {expected}（A 表测试阶段点亮 / B 表保 False），"
             f"实际 = {getattr(cfg, flag)}"
         )
 
 
-def test_g4_1b_no_unexpected_bool_flag_defaults_true() -> None:
-    """防御：MemoryV2Config 不该有任何 bool 字段默认 True（防新增 flag 默认开）。"""
+def test_g4_1b_only_b_table_flags_default_false() -> None:
+    """防御反转：除 B 表（workspace_memory）外，MemoryV2Config 的 bool flag
+    默认都应 True（测试阶段全量点亮）。防"A 表能力漏点亮 / 被误关"。"""
     for f in dataclasses.fields(MemoryV2Config):
-        if f.type == "bool" or f.default is True or f.default is False:
-            if isinstance(f.default, bool):
+        if isinstance(f.default, bool):
+            if f.name in _B_TABLE_DEFAULT_FALSE:
                 assert f.default is False, (
-                    f"flag {f.name} dataclass 默认 True —— 破坏字节级契约。"
-                    f"新功能默认必须 False，出厂开靠 config.toml。"
+                    f"B 表 flag {f.name} 应默认 False（code 专属，主线不开）"
+                )
+            else:
+                assert f.default is True, (
+                    f"flag {f.name} dataclass 默认 False —— 测试阶段应点亮（不灰度）。"
+                    f"若属有意保 OFF，请加入 _B_TABLE_DEFAULT_FALSE 并注明原因。"
                 )
 
 
@@ -94,43 +108,34 @@ def test_g4_2_f4_invariant_toml_true_dataclass_false() -> None:
 
 
 # ----------------------------------------------------------------------
-# G4.3 — config.toml 出厂开集合（审计 #4 点亮语义记忆栈 + F4 工作记忆）
+# G4.3 — config.toml 出厂全量点亮（测试阶段不灰度）
 # ----------------------------------------------------------------------
-# 2026-06-02 审计 #4：config.toml 出厂开的 v2 flag 集合。dataclass 默认仍全
-# False（字节契约，见 G4.1）；这里是出厂运行配置层。改这个集合 = 改"出厂默认
-# 开哪些 v2 功能"，需同步本断言。
-_FACTORY_ON_FLAGS = {
-    "workspace_memory",    # F4 (2026-05-31) code 工作记忆
-    "facts_extract",       # 审计 #4 写入端事实抽取
-    "enhanced_retriever",  # 审计 #4 facts 进 RRF
-    "cross_key_merge",     # 审计 #4 跨 key 冲突消解
+# 出厂运行配置层必须出现的关键语义 flag（防漏配）。测试阶段它们全 True。
+_FACTORY_REQUIRED_FLAGS = {
+    "facts_extract", "enhanced_retriever", "cross_key_merge",
+    "reflection", "feedback_loop", "query_rewrite", "workspace_memory",
 }
 
 
-def test_g4_3_factory_on_set_matches_audit_decision() -> None:
-    """config.toml [memory.v2]：出厂开的 flag 恰为 _FACTORY_ON_FLAGS，其余 false。
+def test_g4_3_factory_config_fully_lit() -> None:
+    """config.toml [memory.v2]：测试阶段全量点亮 —— 所有 bool flag 出厂 True。
 
-    审计 #4（2026-06-02）点亮 facts_extract + enhanced_retriever + cross_key_merge
-    （F4 已开 workspace_memory）。dataclass 默认仍全 False（G4.1 钉住字节契约），
-    出厂运行行为靠本 toml。这条钉住"哪些出厂开"，防误开/漏开/误关。
+    2026-06-27 测试阶段定调（CLAUDE.md §测试阶段不灰度）：已开发完成的记忆能力
+    出厂即开。原"仅审计 #4 子集出厂开、其余 False"已被取代。这条改为钉住
+    "出厂 config 不留 OFF 的记忆 flag"，防误关 / 漏配。
     """
     raw = tomllib.loads(_REPO_CONFIG.read_text(encoding="utf-8"))
     toml_v2 = raw.get("memory", {}).get("v2", {})
     for flag, val in toml_v2.items():
         if not isinstance(val, bool):
             continue
-        if flag in _FACTORY_ON_FLAGS:
-            assert val is True, (
-                f"config.toml [memory.v2] {flag} 应出厂开（审计 #4 / F4），实际 {val}"
-            )
-        else:
-            assert val is False, (
-                f"config.toml [memory.v2] {flag}={val} —— 非出厂开集合，应为 False"
-            )
-    # 反向：出厂开集合里的 flag 都得在 toml 真出现（防漏配）。
-    for flag in _FACTORY_ON_FLAGS:
+        assert val is True, (
+            f"config.toml [memory.v2] {flag}={val} —— 测试阶段应全量点亮（出厂 True）"
+        )
+    # 反向：关键语义 flag 都得在 toml 真出现（防漏配）。
+    for flag in _FACTORY_REQUIRED_FLAGS:
         assert flag in toml_v2, (
-            f"出厂开 flag {flag} 未出现在 config.toml [memory.v2]（漏配）"
+            f"语义记忆 flag {flag} 未出现在 config.toml [memory.v2]（漏配）"
         )
 
 

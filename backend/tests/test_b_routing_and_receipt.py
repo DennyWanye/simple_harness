@@ -78,6 +78,44 @@ async def test_receipt_args_strip_injected_keys(caplog, monkeypatch):
     )
 
 
+@pytest.mark.asyncio
+async def test_receipt_marks_handler_domain_error_as_failed(monkeypatch):
+    from deskpet.tools.registry import ToolRegistry
+    import deskpet.tools.receipt_store as receipt_store
+
+    captured: dict[str, object] = {}
+
+    class _Store:
+        key = b"\x34" * 32
+
+    def _fake_emit_receipt(_store, **kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(receipt_store, "emit_receipt", _fake_emit_receipt)
+    registry = ToolRegistry()
+    registry.register(
+        "domain_failure",
+        "control",
+        {
+            "name": "domain_failure",
+            "description": "domain failure",
+            "parameters": {"type": "object", "properties": {}},
+        },
+        lambda _args, _task: json.dumps(
+            {"error": "tool_catalog_stale", "retriable": False}
+        ),
+    )
+    registry.set_receipt_store_provider(lambda: _Store())
+
+    envelope = await registry.execute_tool(
+        "domain_failure", {}, session_id="s1", task_id="t1"
+    )
+
+    assert envelope["ok"] is True
+    assert captured["ok"] is False
+
+
 def test_generate_image_description_disambiguates():
     from deskpet.tools import image_tools
 

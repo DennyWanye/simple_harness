@@ -52,7 +52,35 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 DEFAULT_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 # v9 是 P4 的起手目标版本。spec "Schema Migration v8 → v9" 定义。
-TARGET_SCHEMA_VERSION = 17  # memory-v2 (Phase A-E): tables created at runtime via memory_v2_schema
+TARGET_SCHEMA_VERSION = 18  # Context OS snapshots + coverage segments
+_V17_MIGRATION = "009_memory_v2_v17.sql"
+_V17_SCHEMA_VERSION = 17
+_V18_MIGRATION = "010_context_os_v18.sql"
+
+
+async def _execute_transactional_script(
+    db: aiosqlite.Connection,
+    sql: str,
+) -> None:
+    """Execute a simple migration script without ``executescript`` commits.
+
+    ``sqlite3.executescript`` commits an open transaction before running the
+    script.  V18 needs its DDL, marker, and ``user_version`` to share one
+    transaction, so statements are split with SQLite's own completeness
+    parser and executed one by one.
+    """
+
+    pending = ""
+    for line in sql.splitlines(keepends=True):
+        pending += line
+        if not sqlite3.complete_statement(pending):
+            continue
+        statement = pending.strip()
+        pending = ""
+        if statement:
+            await db.execute(statement)
+    if pending.strip():
+        raise sqlite3.OperationalError("incomplete migration statement")
 
 
 class MigrationError(RuntimeError):
@@ -185,8 +213,8 @@ async def run_migrations(
       2. 打开 aiosqlite 连接
       3. 建 ``schema_migrations`` 表（幂等）
       4. 读取已应用版本集合
-      5. 对每个未应用文件：``executescript`` + ``INSERT schema_migrations``
-         + ``commit`` —— 每条迁移独立事务，失败只影响当前条
+      5. 对每个未应用文件：普通迁移执行 ``executescript``；v17 执行
+         Python introspection callback，并在同一事务内写 marker/user_version
       6. 任何 SQL 异常 → 抛 ``MigrationError``，当前 commit 不落盘，但
          **之前成功的迁移已落盘**。调用方用 backup 兜底完整 DB 回滚。
     """
@@ -208,6 +236,58 @@ async def run_migrations(
             if version in already:
                 continue
             sql = path.read_text(encoding="utf-8")
+            if version == _V17_MIGRATION:
+                try:
+                    from deskpet.memory.memory_v2_schema import (
+                        migrate_memory_v2_v17,
+                    )
+
+                    await db.execute("BEGIN IMMEDIATE")
+                    await migrate_memory_v2_v17(db)
+                    await db.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) "
+                        "VALUES (?, ?)",
+                        (version, time.time()),
+                    )
+                    await db.execute(f"PRAGMA user_version={_V17_SCHEMA_VERSION}")
+                    await db.commit()
+                except Exception as exc:  # noqa: BLE001
+                    await db.rollback()
+                    log.error(
+                        "migration %s failed: %s (db=%s)",
+                        version,
+                        exc,
+                        db_path,
+                    )
+                    raise MigrationError(
+                        f"migration {version} failed: {exc}"
+                    ) from exc
+                applied_now.append(version)
+                continue
+            if version == _V18_MIGRATION:
+                try:
+                    await db.execute("BEGIN IMMEDIATE")
+                    await _execute_transactional_script(db, sql)
+                    await db.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) "
+                        "VALUES (?, ?)",
+                        (version, time.time()),
+                    )
+                    await db.execute(f"PRAGMA user_version={TARGET_SCHEMA_VERSION}")
+                    await db.commit()
+                except Exception as exc:  # noqa: BLE001
+                    await db.rollback()
+                    log.error(
+                        "migration %s failed: %s (db=%s)",
+                        version,
+                        exc,
+                        db_path,
+                    )
+                    raise MigrationError(
+                        f"migration {version} failed: {exc}"
+                    ) from exc
+                applied_now.append(version)
+                continue
             try:
                 # executescript 跑多语句；隐式 BEGIN/COMMIT 由 aiosqlite
                 # 的 isolation 控制，这里显式再 commit 一次保险。
@@ -228,6 +308,26 @@ async def run_migrations(
                     f"migration {version} failed: {exc}"
                 ) from exc
             applied_now.append(version)
+
+        # Re-applying an older migration during a repair can lower
+        # user_version even though a newer marker is already durable. Restore
+        # only to the highest marker actually present; V17 must not claim V18
+        # before the V18 DDL transaction commits.
+        durable_markers = already | set(applied_now)
+        durable_version = (
+            TARGET_SCHEMA_VERSION
+            if _V18_MIGRATION in durable_markers
+            else _V17_SCHEMA_VERSION
+            if _V17_MIGRATION in durable_markers
+            else None
+        )
+        if durable_version is not None:
+            cursor = await db.execute("PRAGMA user_version")
+            row = await cursor.fetchone()
+            await cursor.close()
+            if row is None or int(row[0]) < durable_version:
+                await db.execute(f"PRAGMA user_version={durable_version}")
+                await db.commit()
 
     return applied_now
 

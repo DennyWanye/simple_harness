@@ -303,6 +303,20 @@ class VoicePipeline:
             )
             effective_sid = decision.effective_sid
             if decision.created:
+                sdb = self._service_context.get("session_db") if self._service_context else None
+                ensure_session = getattr(sdb, "ensure_session", None)
+                if callable(ensure_session):
+                    try:
+                        await ensure_session(
+                            effective_sid,
+                            {
+                                "origin": "voice_task",
+                                "base_session_id": self.session_id,
+                                "reason": decision.reason,
+                            },
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("voice_session_ensure_failed sid=%s err=%s", effective_sid, exc)
                 task_session_manager.remap_peer_group(self.session_id, effective_sid)
             text = decision.stripped_text
 
@@ -468,17 +482,22 @@ class VoicePipeline:
         messages = [{"role": "user", "content": text}]
         parser = StreamingTagParser()
         async with stage_timer("agent", session_id=self.session_id):
-            async for token in self.agent.chat_stream(
-                messages, session_id=self.session_id
+            from agent.context_messages import provider_purpose_scope
+
+            with provider_purpose_scope(
+                "agent_response", session_id=self.session_id
             ):
-                if self._interrupted:
-                    logger.info("agent_interrupted")
-                    break
-                for item in parser.feed(token):
-                    if isinstance(item, TagEvent):
-                        await self._emit_tag_event(item)
-                    else:
-                        response_text += item
+                async for token in self.agent.chat_stream(
+                    messages, session_id=self.session_id
+                ):
+                    if self._interrupted:
+                        logger.info("agent_interrupted")
+                        break
+                    for item in parser.feed(token):
+                        if isinstance(item, TagEvent):
+                            await self._emit_tag_event(item)
+                        else:
+                            response_text += item
             # Flush trailing buffer (dangling '[' at EOS)
             for item in parser.flush():
                 if isinstance(item, TagEvent):
@@ -514,6 +533,10 @@ class VoicePipeline:
         from deskpet.agent.assembler.bundle import ContextBundle as _Bundle  # noqa: F401  (used via assembler)
         sc = self._service_context
         effective_sid = session_id or self.session_id
+        context_os_active = bool(
+            self._app_config is not None
+            and getattr(getattr(self._app_config, "features", None), "context_os_v1", False)
+        )
 
         def _ctx(name: str):
             getter = getattr(sc, "get", None)
@@ -543,11 +566,13 @@ class VoicePipeline:
                 bundle = await assembler.assemble(
                     user_message=text,
                     memory_manager=_ctx("memory_manager"),
-                    tool_registry=_ctx("tool_router"),
+                    tool_registry=self._tool_registry_v2,
                     skill_registry=_ctx("skill_loader"),
                     mcp_manager=_ctx("mcp_manager"),
                     session_id=effective_sid,
+                    current_message_id=user_msg_id,
                     config={
+                        "features": {"context_os_v1": context_os_active},
                         "llm": {
                             "model": getattr(self._local_llm, "model", "unknown"),
                             "base_url": getattr(self._local_llm, "base_url", ""),
@@ -561,6 +586,30 @@ class VoicePipeline:
                     error_type=type(exc).__name__,
                 )
                 bundle = None
+
+        if context_os_active and bundle is None:
+            raise RuntimeError("context_os_voice_assembly_unavailable")
+        if context_os_active and bundle is not None:
+            from deskpet.agent.assembler.bundle import ContextFragment
+
+            bundle.fragments.append(
+                ContextFragment(
+                    fragment_id="venue.voice.response",
+                    source="voice_pipeline",
+                    role="system",
+                    content=(
+                        "This request came from voice input. Keep the final answer "
+                        "natural to speak aloud; tool use remains governed by the "
+                        "prepared capability set."
+                    ),
+                    lifetime="task",
+                    placement="prefix",
+                    priority=95,
+                    trim_policy="never",
+                    protected=True,
+                    reason="voice venue response contract",
+                )
+            )
 
         if bundle is not None:
             messages = bundle.build_messages(
@@ -587,6 +636,7 @@ class VoicePipeline:
         # app_config 缺失(legacy/单测) → 回退裸 _AgentLoop（字节级 BC）。
         sc = self._service_context
         loop = None
+        _ctx_mgr = None
         if self._app_config is not None:
             try:
                 from main import (  # noqa: PLC0415 — lazy: avoid circular import
@@ -628,6 +678,8 @@ class VoicePipeline:
                 logger.warning("voice_build_agent_failed_fallback", error=str(_ba_exc))
                 loop = None
         if loop is None:
+            if context_os_active:
+                raise RuntimeError("context_os_voice_agent_unavailable")
             loop = _AgentLoop(
                 llm_registry=shim,
                 tool_registry=self._tool_registry_v2,
@@ -636,6 +688,50 @@ class VoicePipeline:
 
         final_text = ""
         parser = StreamingTagParser()
+        prepared_context = None
+        context_request_id = None
+        if context_os_active:
+            planner = _ctx("context_request_planner")
+            scope_store = _ctx("tool_capability_scope_store")
+            if planner is None or scope_store is None or _ctx_mgr is None:
+                raise RuntimeError("context_os_voice_runtime_unavailable")
+            import uuid
+
+            from deskpet.tools.capabilities import ToolEligibilityContext
+
+            context_request_id = uuid.uuid4().hex
+            eligibility = ToolEligibilityContext(
+                session_id=effective_sid,
+                request_id=context_request_id,
+                task_type=bundle.task_type,
+                mode="voice",
+            )
+            model_info = _ctx_mgr.config._resolved_model_info()
+            from deskpet.agent.attachment_budget import collect_attachment_budget
+
+            attachment_refs, attachment_tokens = collect_attachment_budget(messages)
+            planned = await planner.prepare_initial(
+                bundle,
+                base_system="",
+                history=bundle.history,
+                user_message=text,
+                eligibility=eligibility,
+                context_window=model_info.context_window,
+                effective_pct=model_info.effective_pct,
+                generation_reserve=min(
+                    8192, max(512, int(model_info.context_window) // 8)
+                ),
+                current_message_id=user_msg_id,
+                attachment_refs=attachment_refs,
+                attachment_tokens=attachment_tokens,
+            )
+            prepared_context = planned.prepared_context
+            messages = prepared_context.messages
+            scope_store.open(
+                prepared_context.tool_set,
+                eligibility,
+                snapshot_handle=prepared_context.active_snapshot_handle,
+            )
 
         # Tag the permission requests as voice-sourced so the gate can
         # add a TTS audible prompt next to the popup (#13 design step C).
@@ -654,6 +750,8 @@ class VoicePipeline:
                     messages,
                     session_id=effective_sid,
                     loop_user_request=text,
+                    prepared_context=prepared_context,
+                    context_request_id=context_request_id,
                 ):
                     if self._interrupted:
                         logger.info("agent_interrupted")

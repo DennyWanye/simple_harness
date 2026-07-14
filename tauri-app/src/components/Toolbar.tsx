@@ -23,7 +23,10 @@ import type { ContextUsageSnapshot } from "../stores/sessionsStore";
 // 2026-06-24：暂时关闭 Code 模式入口。决策见
 // plans/2026-06-24-problem-handling-pipeline-maoxuan/ —— 先把主线程(Companion)
 // 问题处理能力做实，再单独对 Code 模式优化并重新上线。翻回 true 即恢复入口按钮。
-const CODE_MODE_ENTRY_ENABLED = false;
+// Durable code workflows are production-wired and must be reachable during
+// the current test phase. Keep the entry visible; the backend feature flag
+// remains the compatibility rollback switch.
+const CODE_MODE_ENTRY_ENABLED = true;
 
 interface Props {
   /** @deprecated chat path is unified now; kept to avoid prop-drilling churn */

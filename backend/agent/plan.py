@@ -204,6 +204,8 @@ async def maybe_extract_plan(
         },
     ]
     try:
+        from agent.context_messages import provider_purpose_scope
+
         # P5-S1 D fix: bumped 800 → 2048. thinking-mode models
         # (deepseek-v4-pro etc.) commonly use 800-1500 tokens just
         # for <think>...</think> chain-of-thought before producing the
@@ -211,13 +213,14 @@ async def maybe_extract_plan(
         # almost every call → `p4s25_plan_invalid_json` warnings →
         # silent fallback to non-planned ReAct. 2048 leaves comfortable
         # room for thinking + the small JSON output schema.
-        raw = await provider.chat_with_tools(
-            messages,
-            tools=None,
-            max_tokens=2048,
-            temperature=0.3,
-            response_format=_schema,
-        )
+        with provider_purpose_scope("planner"):
+            raw = await provider.chat_with_tools(
+                messages,
+                tools=None,
+                max_tokens=2048,
+                temperature=0.3,
+                response_format=_schema,
+            )
     except Exception as exc:  # noqa: BLE001
         # the relay / sealos proxies often reject response_format with
         # thinking-mode models (HTTP 400). The fallback is graceful —

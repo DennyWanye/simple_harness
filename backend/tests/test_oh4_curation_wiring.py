@@ -85,14 +85,15 @@ def test_load_config_parses_curation_flags(tmp_path):
     assert v2.auto_learnings is True
 
 
-def test_curation_flags_default_false_when_absent(tmp_path):
-    """缺 [memory.v2] → 两 flag 默认 False（字节级 BC）。这正是死链的成因：
+def test_curation_flags_default_on_when_absent(tmp_path):
+    """缺 [memory.v2] → 两 flag 落 dataclass 默认 True（2026-06-27 测试阶段点亮）。
 
-    出厂 config 漏配时运行时就是这个状态 → 必须靠 test ① 守住出厂值。
+    历史上这两 flag 默认 False 导致 curator 死链；测试阶段出厂即开，此处钉住
+    "漏配 config 也默认点亮"，防回退到死链状态。
     """
     cfg = load_config(_write(tmp_path, "[memory]\nembedding_model = \"bge-m3\"\n"))
-    assert cfg.memory.v2.curation_nudge is False
-    assert cfg.memory.v2.auto_learnings is False
+    assert cfg.memory.v2.curation_nudge is True
+    assert cfg.memory.v2.auto_learnings is True
 
 
 # ─── ③④⑤ build_agent → _AgentLoop 接电 ──────────────────────────────

@@ -147,6 +147,126 @@ async def test_t2_3_receipt_duration_ms_zero_for_instant_handler():
 
 
 @pytest.mark.asyncio
+async def test_receipt_projects_relative_artifact_when_public_envelope_is_off(tmp_path):
+    """Receipt authority is independent from the public artifact envelope flag."""
+    import hashlib
+    import json as _json
+    from types import SimpleNamespace
+
+    from deskpet.tools.receipt_store import ReceiptStore
+    from deskpet.tools.registry import ToolRegistry, ToolSpec
+
+    workspace = tmp_path / "workspace"
+    artifact = workspace / "reports" / "result.md"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_bytes(b"authoritative artifact")
+    expected_sha = hashlib.sha256(artifact.read_bytes()).hexdigest()
+
+    def _maker(args: dict, task_id: str = "") -> str:
+        return _json.dumps({"ok": True, "path": "reports/result.md"})
+
+    store = ReceiptStore(tmp_path / "receipts", key=b"\x42" * 32)
+    registry = ToolRegistry()
+    spec = ToolSpec(
+        name="maker_relative",
+        toolset="test",
+        schema={"description": "relative artifact probe", "parameters": {}},
+        handler=_maker,
+        permission_category="read_file",
+    )
+    with registry._lock:
+        registry._tools["maker_relative"] = spec
+    registry.set_session_context("artifact_session", {"_project_root": str(workspace)})
+    registry.set_receipt_store_provider(lambda: store)
+    registry.set_tools_config_provider(
+        lambda: SimpleNamespace(last_mile=SimpleNamespace(artifact_envelope=False))
+    )
+
+    result = await registry.execute_tool(
+        "maker_relative", params={}, session_id="artifact_session", task_id="t"
+    )
+
+    assert result["ok"] is True
+    assert "artifacts" not in result
+    ledger = store.load_session("artifact_session")
+    assert len(ledger) == 1
+    assert ledger[0].artifacts == [expected_sha]
+
+
+@pytest.mark.asyncio
+async def test_receipt_rejects_relative_artifact_traversal(tmp_path):
+    import json as _json
+    from types import SimpleNamespace
+
+    from deskpet.tools.receipt_store import ReceiptStore
+    from deskpet.tools.registry import ToolRegistry, ToolSpec
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_bytes(b"must not become session artifact authority")
+    registry = ToolRegistry()
+    with registry._lock:
+        registry._tools["maker_escape"] = ToolSpec(
+            name="maker_escape",
+            toolset="test",
+            schema={"description": "escape probe", "parameters": {}},
+            handler=lambda args, task_id="": _json.dumps(
+                {"ok": True, "path": "../outside.txt"}
+            ),
+            permission_category="read_file",
+        )
+    store = ReceiptStore(tmp_path / "receipts", key=b"\x42" * 32)
+    registry.set_session_context("escape", {"_project_root": str(workspace)})
+    registry.set_receipt_store_provider(lambda: store)
+    registry.set_tools_config_provider(
+        lambda: SimpleNamespace(last_mile=SimpleNamespace(artifact_envelope=False))
+    )
+
+    await registry.execute_tool(
+        "maker_escape", params={}, session_id="escape", task_id="t"
+    )
+
+    assert store.load_session("escape")[0].artifacts == []
+
+
+@pytest.mark.asyncio
+async def test_receipt_never_resolves_relative_artifact_against_process_cwd(
+    tmp_path, monkeypatch
+):
+    import json as _json
+    from types import SimpleNamespace
+
+    from deskpet.tools.receipt_store import ReceiptStore
+    from deskpet.tools.registry import ToolRegistry, ToolSpec
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "cwd-artifact.txt").write_bytes(b"cwd is not authority")
+    registry = ToolRegistry()
+    with registry._lock:
+        registry._tools["maker_cwd"] = ToolSpec(
+            name="maker_cwd",
+            toolset="test",
+            schema={"description": "cwd probe", "parameters": {}},
+            handler=lambda args, task_id="": _json.dumps(
+                {"ok": True, "path": "cwd-artifact.txt"}
+            ),
+            permission_category="read_file",
+        )
+    store = ReceiptStore(tmp_path / "receipts", key=b"\x42" * 32)
+    registry.set_receipt_store_provider(lambda: store)
+    registry.set_tools_config_provider(
+        lambda: SimpleNamespace(last_mile=SimpleNamespace(artifact_envelope=False))
+    )
+
+    await registry.execute_tool(
+        "maker_cwd", params={}, session_id="cwd", task_id="t"
+    )
+
+    assert store.load_session("cwd")[0].artifacts == []
+
+
+@pytest.mark.asyncio
 async def test_receipt_copies_artifact_shas_from_envelope(tmp_path):
     """Bug#3 子问题 (2026-06-11)：envelope 有 artifacts 时 receipt.artifacts
     应带产物 sha256(原 registry 从不传 artifact_shas → receipt 恒 [])。

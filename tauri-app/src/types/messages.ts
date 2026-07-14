@@ -3,6 +3,8 @@
 
 export interface ControlMessage {
   type: string;
+  request_id?: string;
+  expected_version?: number;
   payload?: Record<string, unknown>;
 }
 
@@ -36,6 +38,11 @@ export interface BudgetStatusMessage {
 export interface ChatTurnTimeoutResponse {
   type: "chat_turn_timeout_response";
   payload: { minutes: number };
+}
+
+export interface PermissionAutoModeResponse {
+  type: "permission_auto_mode_response";
+  payload: { enabled: boolean };
 }
 
 // WI-1B-2 压缩可观测 — 上下文压缩命中时后端推送（仅 features.ctx_observability
@@ -262,10 +269,79 @@ export interface DecisionRecord {
   session_id?: string;
 }
 
+export interface ContextAttemptSnapshot {
+  session_id: string;
+  request_id: string;
+  attempt_id: string;
+  purpose: string;
+  state: "planned" | "sent" | "succeeded" | "failed" | "cancelled" | "cancelled_before_send";
+  provider_id: string;
+  model_id: string;
+  adapter_id: string;
+  adapter_version: string;
+  message_hash: string;
+  logical_tool_hash: string;
+  wire_tool_hash: string;
+  schema_fingerprint: string;
+  policy_fingerprint: string;
+  registry_revision: number;
+  tool_scope_revision: number;
+  direct_tool_count: number;
+  activated_tool_count: number;
+  deferred_tool_count: number;
+  schema_tokens_by_name: Array<[string, number]>;
+  selection_reasons: string[];
+  fragments: Array<{
+    fragment_id: string;
+    action: "loaded" | "trimmed" | "omitted";
+    reason: string;
+    estimated_tokens: number;
+    cache_scope: string;
+    cache_hash: string;
+  }>;
+  coverage_entries: Array<{
+    kind: string;
+    message_ids: number[];
+    segment_id: string;
+    source_hash: string;
+  }>;
+  coverage_valid?: boolean | null;
+  coverage_gaps: number[];
+  coverage_overlaps: number[];
+  coverage_stale_segment_ids: string[];
+  coverage_broken_causal_groups: string[];
+  coverage_page_in_refs: number;
+  tool_tokens: number;
+  message_tokens: number;
+  attachment_tokens: number;
+  reserve_tokens: number;
+  effective_input_budget: number;
+  context_window: number;
+  planned_tokens: number;
+  estimate_method: string;
+  cache_boundary?: number | null;
+  cache_fingerprint: string;
+  actual_input_tokens?: number | null;
+  actual_output_tokens?: number | null;
+  actual_cache_read_tokens?: number | null;
+  actual_cache_write_tokens?: number | null;
+  transport_retry_count: number;
+  requested_compression_model: string;
+  resolved_compression_model: string;
+  actual_compression_model: string;
+  compression_provider: string;
+  compression_source: string;
+  compression_failure: string;
+  reasons: string[];
+  created_at: number;
+  updated_at: number;
+}
+
 export interface DecisionsListResponse {
   type: "decisions_list_response";
   payload: {
     decisions: DecisionRecord[];
+    attempts?: ContextAttemptSnapshot[];
     reason?: string;
   };
 }
@@ -513,6 +589,161 @@ export interface CodeModeSuggestMessage {
   };
 }
 
+export interface ContextCompactionGetRequest {
+  type: "context_compaction_get";
+  payload: Record<string, never>;
+}
+
+export interface ContextCompactionGetResponse {
+  type: "context_compaction_get_response";
+  payload: {
+    model: string;
+    default_model: "follow_session";
+    available_models: string[];
+  };
+}
+
+export interface ContextCompactionSetRequest {
+  type: "context_compaction_set";
+  payload: { model: string };
+}
+
+export interface ContextCompactionSetAck {
+  type: "context_compaction_set_ack";
+  payload: { ok: boolean; model?: string; reason?: string };
+}
+
+export interface WorkflowRunsListResponse {
+  type: "workflow_runs_list_response";
+  request_id: string;
+  ok: true;
+  payload: {
+    runs: Array<{
+      run_id: string;
+      workflow_name: string;
+      workflow_version: string;
+      status: "created" | "running" | "waiting" | "retryable" | "cancel_requested" | "cancelling" | "blocked" | "completed" | "failed" | "cancelled";
+      created_at: number;
+      updated_at: number;
+      active_nodes: string[];
+      run_version?: number;
+      trace_id?: string | null;
+      recovery_action?: string | null;
+      next_retry_at?: number | null;
+      error?: unknown;
+    }>;
+    next_cursor?: string | null;
+  };
+}
+
+export interface WorkflowRunDetailResponse {
+  type: "workflow_run_detail_response";
+  request_id: string;
+  ok: true;
+  payload: {
+    run_id: string;
+    run_version?: number;
+    run?: WorkflowRunsListResponse["payload"]["runs"][number];
+    nodes: Array<{ id: string; label: string; status: string; attempt?: number; error?: string | null; recovery_action?: string | null; next_retry_at?: number | null; started_at?: number | null; ended_at?: number | null }>;
+    edges: Array<{ source: string; target: string; label?: string }>;
+    spans: Array<{ span_id: string; parent_span_id?: string | null; name: string; kind: string; status: string; duration_ms?: number | null; error?: string | null; input_summary?: string | null; output_summary?: string | null; redacted?: boolean }>;
+    checkpoints: Array<{ checkpoint_id: string; checkpoint_ns?: string; node_id?: string | null; created_at: number; status: string; can_fork?: boolean; fork_reason?: string | null; requires_effect_confirmation?: boolean; effect_summary?: string | null }>;
+    evaluations: Array<{ evaluation_id: string; evaluator_name: string; evaluator_version: string; verdict: string; score?: number | null; explanation?: string | null; labels?: string[]; comment?: string | null; experiment_version?: string | null; created_at?: number | null }>;
+    decisions?: Array<{
+      decision_id: string;
+      run_id: string;
+      kind: string;
+      status: "open" | "expired" | "resolved" | "cancelled" | "abandoned";
+      prompt: unknown;
+      nonce: string;
+      version: number;
+      expires_at?: number | null;
+      created_at: number;
+      options?: Array<{ label: string; value: unknown; description?: string | null; dangerous?: boolean }>;
+    }>;
+    deliveries?: Array<{ delivery_id: string; run_id?: string; channel?: string | null; status: string; attempts?: number; version: number; next_attempt_at?: number | null; last_error?: string | null }>;
+  };
+}
+
+export interface WorkflowCheckpointForkResponse {
+  type: "workflow_checkpoint_fork_response";
+  request_id: string;
+  ok: true;
+  payload: {
+    source_run_id?: string;
+    checkpoint_id?: string;
+    run_id?: string;
+    audit?: string | null;
+  };
+}
+
+export interface WorkflowDecisionResolveResponse {
+  type: "workflow_decision_resolve_response";
+  request_id: string;
+  ok: true;
+  payload: {
+    run_id?: string;
+    decision_id: string;
+    status?: string;
+    version?: number;
+    audit?: string | null;
+  };
+}
+
+export interface WorkflowEvaluationSubmitResponse {
+  type: "workflow_evaluation_submit_response";
+  request_id: string;
+  ok: true;
+  payload: {
+    evaluation_id: string;
+    trace_id: string;
+    run_id?: string | null;
+    evaluator_name: string;
+    evaluator_version: string;
+    verdict: string;
+    score?: number | null;
+    explanation?: string | null;
+    labels?: string[];
+    created_at?: number | null;
+    audit?: string | null;
+  };
+}
+
+export interface WorkflowDeliveryMutationResponse {
+  type: "workflow_delivery_retry_response" | "workflow_delivery_discard_response";
+  request_id: string;
+  ok: true;
+  payload: { delivery_id: string; run_id?: string; status: string; version: number; audit?: string | null };
+}
+
+export interface WorkflowLifecycleEvent {
+  type: "workflow_event" | "workflow_final";
+  payload: {
+    event_id: string;
+    event_type: string;
+    run_id: string;
+    seq: number;
+    session_id: string;
+    payload: {
+      kind?: string;
+      status?: string;
+      text?: string;
+      payload?: { text?: string; [key: string]: unknown };
+      card?: Record<string, unknown>;
+      [key: string]: unknown;
+    };
+  };
+}
+
+export interface WorkflowIPCErrorResponse {
+  type: "workflow_ipc_error";
+  request_type?: string | null;
+  request_id?: string | null;
+  ok: false;
+  error: { code: string; message: string; retryable: boolean; current_version?: number; details?: Record<string, unknown> };
+  payload: { error: WorkflowIPCErrorResponse["error"] };
+}
+
 export type IncomingMessage =
   | ChatResponse
   | PongMessage
@@ -528,6 +759,7 @@ export type IncomingMessage =
   | ProviderTestConnectionResult
   | BudgetStatusMessage
   | ChatTurnTimeoutResponse
+  | PermissionAutoModeResponse
   | SkillsListResponse
   | DecisionsListResponse
   | MemorySearchResponse
@@ -540,6 +772,8 @@ export type IncomingMessage =
   | ModelProvisionStatusResponse
   | ModelContextGetResponse
   | ModelContextSetAck
+  | ContextCompactionGetResponse
+  | ContextCompactionSetAck
   | PermissionsPendingListResponse
   | PermissionRequest
   | ClarificationRequest
@@ -549,6 +783,14 @@ export type IncomingMessage =
   | CodeModeStateMessage
   | CodeTodoUpdateMessage
   | CodeModeSuggestMessage
+  | WorkflowRunsListResponse
+  | WorkflowRunDetailResponse
+  | WorkflowCheckpointForkResponse
+  | WorkflowDecisionResolveResponse
+  | WorkflowEvaluationSubmitResponse
+  | WorkflowDeliveryMutationResponse
+  | WorkflowLifecycleEvent
+  | WorkflowIPCErrorResponse
   | ContextCompactedMessage;
 
 export type AudioMessage = VADEvent | TranscriptMessage | TTSEndMessage | TTSBargeInMessage | ErrorMessage;

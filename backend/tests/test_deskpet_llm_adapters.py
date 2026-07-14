@@ -15,6 +15,13 @@ from typing import Any
 
 import pytest
 
+from agent.context_messages import (
+    CONTEXT_MESSAGE_META_KEY,
+    ContextMessageMeta,
+    ProviderAttemptOptions,
+    context_attempt_scope,
+    tag_message,
+)
 from llm.anthropic_adapter import AnthropicAdapter
 from llm.errors import LLMProviderError
 from llm.gemini_adapter import GeminiAdapter
@@ -37,6 +44,40 @@ def test_anthropic_system_split_adds_cache_control():
     assert system[-1]["cache_control"] == {"type": "ephemeral"}
     assert system[-1]["text"] == "Frozen policy."
     assert len(chat) == 1 and chat[0]["role"] == "user"
+
+
+def test_anthropic_explicit_boundary_marks_stable_not_dynamic_system():
+    messages = [
+        tag_message(
+            {"role": "system", "content": "Stable policy."},
+            ContextMessageMeta(
+                placement="prefix",
+                lifetime="stable",
+                source="persona",
+                protected=True,
+                trim_policy="never",
+            ),
+        ),
+        tag_message(
+            {"role": "system", "content": "Dynamic recall."},
+            ContextMessageMeta(
+                placement="prefix",
+                lifetime="retrieved",
+                source="memory.l3",
+                trim_policy="drop",
+            ),
+        ),
+        {"role": "user", "content": "Hi"},
+    ]
+
+    with context_attempt_scope(ProviderAttemptOptions(cache_boundary=0)):
+        system, chat = AnthropicAdapter._split_system_messages(messages)
+
+    assert system[0]["cache_control"] == {"type": "ephemeral"}
+    assert "cache_control" not in system[1]
+    assert chat == [{"role": "user", "content": "Hi"}]
+    assert all(CONTEXT_MESSAGE_META_KEY not in block for block in system + chat)
+    assert CONTEXT_MESSAGE_META_KEY in messages[0]
 
 
 def test_anthropic_tool_conversion_marks_last_tool_cacheable():

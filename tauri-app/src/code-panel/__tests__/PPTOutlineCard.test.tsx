@@ -94,12 +94,13 @@ describe("PPTOutlineCard", () => {
       type: "ppt_outline_decision",
       payload: { outline_id: "outline-1", action: "accept" },
     });
+    expect(screen.getByText("已确认生成")).toBeTruthy();
     const msg = useSessionsStore.getState().sessions.default.messages[0];
     expect(msg.ppt_outline_awaiting).toBe(false);
   });
 
   it("opens modify textarea and sends feedback only on submit", () => {
-    renderCard();
+    const rendered = renderCard();
 
     fireEvent.click(screen.getByRole("button", { name: /修改/ }));
     expect(sendMock).not.toHaveBeenCalled();
@@ -117,6 +118,18 @@ describe("PPTOutlineCard", () => {
         feedback: "第 3 页改成竞品对比",
       },
     });
+    expect(screen.getByText("已提交修改，正在生成新版大纲")).toBeTruthy();
+
+    const persisted = useSessionsStore.getState().sessions.default.messages[0];
+    expect(persisted.ppt_outline_decision_status).toBe(
+      "已提交修改，正在生成新版大纲",
+    );
+    rendered.unmount();
+    renderCard({
+      awaiting: false,
+      decisionStatus: persisted.ppt_outline_decision_status,
+    });
+    expect(screen.getByText("已提交修改，正在生成新版大纲")).toBeTruthy();
   });
 
   it("sends cancel decision", () => {
@@ -128,6 +141,7 @@ describe("PPTOutlineCard", () => {
       type: "ppt_outline_decision",
       payload: { outline_id: "outline-1", action: "cancel" },
     });
+    expect(screen.getByText("已取消生成")).toBeTruthy();
   });
 
   it("sends reuse decision from history", () => {
@@ -145,6 +159,7 @@ describe("PPTOutlineCard", () => {
         reuse_id: "old-1",
       },
     });
+    expect(screen.getByText("已采用历史大纲")).toBeTruthy();
   });
 
   it("deduplicates awaiting outline cards by outline_id", () => {
@@ -211,5 +226,25 @@ describe("PPTOutlineCard", () => {
       .getState()
       .sessions.default.messages.find((m) => m.outline_id === "alive-1");
     expect(msg?.ppt_outline_awaiting).toBe(false);
+  });
+
+  it("preserves the specific decision when the resolved broadcast wins the race", () => {
+    renderCard();
+    const store = useSessionsStore.getState();
+
+    store.resolve_ppt_outline("default", "outline-1");
+    store.resolve_ppt_outline(
+      "default",
+      "outline-1",
+      "已提交修改，正在生成新版大纲",
+    );
+
+    const msg = useSessionsStore
+      .getState()
+      .sessions.default.messages.find((item) => item.outline_id === "outline-1");
+    expect(msg?.ppt_outline_awaiting).toBe(false);
+    expect(msg?.ppt_outline_decision_status).toBe(
+      "已提交修改，正在生成新版大纲",
+    );
   });
 });

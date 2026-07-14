@@ -30,6 +30,7 @@ from deskpet.agent.assembler.bundle import (
     AssemblyPolicy,
     MemoryPolicy,
 )
+from deskpet.tools.capabilities import ToolExposurePolicy
 
 logger = structlog.get_logger(__name__)
 
@@ -72,7 +73,14 @@ def load_policies(
                 got=type(body).__name__,
             )
             continue
-        policies[task_type] = _to_policy(task_type, body)
+        try:
+            policies[task_type] = _to_policy(task_type, body)
+        except (TypeError, ValueError) as exc:
+            logger.warning(
+                "assembler.policy_entry_invalid",
+                task_type=task_type,
+                error=str(exc),
+            )
 
     # Ensure every canonical task_type has a policy — fall back to chat's
     # policy cloned with the right task_type tag.
@@ -86,6 +94,7 @@ def load_policies(
                 must=list(base.must),
                 prefer=list(base.prefer),
                 tools=list(base.tools),
+                tool_exposure=base.tool_exposure,
                 memory=MemoryPolicy(
                     l1=base.memory.l1,
                     l2_top_k=base.memory.l2_top_k,
@@ -217,19 +226,52 @@ def _to_policy(task_type: str, body: dict[str, Any]) -> AssemblyPolicy:
         l2_keep_on_shift=int(memory_raw.get("l2_keep_on_shift", 1)),
         topic_shift_min_len=int(memory_raw.get("topic_shift_min_len", 16)),
     )
+    raw_tools = body.get("tools", ["*"])
+    tools = [
+        str(c) for c in (raw_tools or []) if isinstance(c, str) and c
+    ]
+    if "tools" not in body and not tools:
+        tools = ["*"]
+    exposure = _to_tool_exposure(body.get("tool_exposure"), tools)
     return AssemblyPolicy(
         task_type=task_type,
         must=[str(c) for c in (body.get("must") or []) if isinstance(c, str) and c] or [_CORE_MUST],
         prefer=[
             str(c) for c in (body.get("prefer") or []) if isinstance(c, str) and c
         ],
-        tools=[
-            str(c) for c in (body.get("tools") or []) if isinstance(c, str) and c
-        ] or ["*"],
+        tools=tools,
+        tool_exposure=exposure,
         memory=mem,
         budget_ratio=(
             float(body["budget_ratio"]) if "budget_ratio" in body else None
         ),
+    )
+
+
+def _to_tool_exposure(raw: Any, legacy_tools: list[str]) -> ToolExposurePolicy:
+    """Materialise the ON-only policy while preserving legacy ``tools``."""
+    if raw is None:
+        return ToolExposurePolicy(direct=tuple(legacy_tools))
+    if not isinstance(raw, dict):
+        raise ValueError("tool_exposure must be a mapping")
+
+    def selectors(key: str) -> tuple[str, ...]:
+        value = raw.get(key, [])
+        if value is None:
+            value = []
+        if not isinstance(value, list):
+            raise ValueError(f"tool_exposure.{key} must be a list")
+        out = tuple(str(item) for item in value if isinstance(item, str) and item)
+        valid_prefixes = ("toolset:", "source:mcp:", "source:plugin:")
+        for item in out:
+            if ":" in item and item != "source:builtin" and not item.startswith(valid_prefixes):
+                raise ValueError(f"unknown tool selector: {item!r}")
+        return out
+
+    return ToolExposurePolicy(
+        direct=selectors("direct"),
+        discoverable=selectors("discoverable"),
+        deny=selectors("deny"),
     )
 
 
@@ -255,6 +297,10 @@ def _builtin_chat_policy() -> AssemblyPolicy:
         must=["memory", "persona"],
         prefer=["tool", "time", "workspace"],
         tools=["*"],
+        tool_exposure=ToolExposurePolicy(
+            direct=("source:builtin",),
+            discoverable=("source:mcp:*", "source:plugin:*"),
+        ),
         memory=MemoryPolicy(l1="snapshot", l2_top_k=5, l3_top_k=5),
     )
 
@@ -294,7 +340,14 @@ def _builtin_defaults_raw() -> dict[str, Any]:
         "web_search": {
             "must": ["memory"],
             "prefer": ["persona", "tool", "time"],
-            "tools": ["web_search", "web_fetch", "web_crawl"],
+            "tools": [
+                "deepresearch",
+                "gold_price_lookup",
+                "web_search",
+                "scrapling_fetch",
+                "web_fetch",
+                "web_crawl",
+            ],
             "memory": {"l1": "snapshot", "l2_top_k": 2, "l3_top_k": 3},
         },
         "plan": {

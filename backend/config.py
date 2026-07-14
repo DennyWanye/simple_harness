@@ -490,6 +490,9 @@ class FeaturesConfig:
     preference_memory: bool = True         # 测试阶段出厂点亮
     plan_read_only: bool = False           # B 表：归 WI-1.2 自治档统一处理（开了 plan 期禁写，与效率优先冲突）
     relay_managed_provider: bool = True
+    # Context OS V1 master rollback. Kept OFF until every wave and E2E gate
+    # passes; Task 5.1 flips the shipped default ON in one isolated change.
+    context_os_v1: bool = True
     # --- 子代理并发驱动（plans/2026-06-21-subagent-concurrency-driver/）---------
     # 全默认 OFF；OFF 时新代码 short-circuit，agent_parallel 退回扁平 gather（字节级 BC）。
     #   subagent_driver       — 总开关：事务分型(task_kinds)路由 + 有界调度(scheduler)接入
@@ -536,6 +539,32 @@ class FeaturesConfig:
 
 
 @dataclass
+class WorkflowsConfig:
+    """Durable graph routing, local trace and retention policy."""
+
+    enabled: bool = True
+    deep_research: bool = True
+    ppt_pro: bool = True
+    code_complex: bool = True
+    trace_enabled: bool = True
+    trace_detail: bool = True
+    eval_local_only: bool = True
+    terminal_retention_days: int = 30
+    evaluation_retention_days: int = 180
+    orphan_grace_hours: int = 24
+
+
+@dataclass
+class ContextCompactionConfig:
+    model: str = "follow_session"
+
+
+@dataclass
+class ContextSettingsConfig:
+    compaction: ContextCompactionConfig = field(default_factory=ContextCompactionConfig)
+
+
+@dataclass
 class AppConfig:
     backend: BackendConfig = field(default_factory=BackendConfig)
     llm: LLMRoutingConfig = field(default_factory=LLMRoutingConfig)
@@ -553,6 +582,8 @@ class AppConfig:
     features: FeaturesConfig = field(default_factory=FeaturesConfig)
     # WI-4.1 Skills 分级披露.  全 flag 默认 OFF（字节级 BC）.
     skills: SkillsConfig = field(default_factory=SkillsConfig)
+    workflows: WorkflowsConfig = field(default_factory=WorkflowsConfig)
+    context: ContextSettingsConfig = field(default_factory=ContextSettingsConfig)
     # P4-S15: capture the raw TOML so layers that don't have a dataclass
     # yet (P4 [mcp], [agent], [context.assembler], [memory.l3], [tools.web])
     # can read their config without us having to migrate all of them at once.
@@ -836,6 +867,7 @@ _MIGRATABLE_SECTIONS: tuple[tuple[str, ...], ...] = (
     ("skills",),
     ("skills", "auto_disclosure"),
     ("skills", "codify"),
+    ("workflows",),
 )
 
 
@@ -1523,6 +1555,12 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
         raw_pp = dict(raw_features.pop("problem_pipeline", {}) or {})
         config.features = _load_section(FeaturesConfig, raw_features)
         config.features.problem_pipeline = _load_section(ProblemPipelineConfig, raw_pp)
+    if "context" in raw:
+        raw_context = dict(raw.get("context") or {})
+        raw_compaction = dict(raw_context.get("compaction") or {})
+        config.context = ContextSettingsConfig(
+            compaction=_load_section(ContextCompactionConfig, raw_compaction)
+        )
     if "memory" in raw:
         # [memory.v2] / [memory.v2.facts] 是嵌套子表，_load_section 只做
         # 平铺解析 —— 先把 v2 pop 出来单独构建，再装回。
@@ -1562,7 +1600,12 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
     # 全 None → 技能自创确认卡生产永不弹（boot 无 fp5_codify_wiring_ready 印证）。
     if "skills" in raw:
         raw_skills = dict(raw["skills"])
-        knowledge_enabled = bool(raw_skills.pop("knowledge_enabled", False))
+        knowledge_enabled = bool(
+            raw_skills.pop(
+                "knowledge_enabled",
+                SkillsConfig().knowledge_enabled,
+            )
+        )
         raw_ad = dict(raw_skills.pop("auto_disclosure", {}) or {})
         ad = _load_section(SkillsAutoDisclosureConfig, raw_ad)
         raw_cd = dict(raw_skills.pop("codify", {}) or {})
@@ -1572,6 +1615,16 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
             auto_disclosure=ad,
             codify=cd,
         )
+    if "workflows" in raw:
+        config.workflows = _load_section(WorkflowsConfig, dict(raw["workflows"]))
+    if config.workflows.terminal_retention_days < 1:
+        raise ConfigError("[workflows].terminal_retention_days must be at least 1")
+    if config.workflows.evaluation_retention_days < config.workflows.terminal_retention_days:
+        raise ConfigError(
+            "[workflows].evaluation_retention_days must be >= terminal_retention_days"
+        )
+    if config.workflows.orphan_grace_hours < 1:
+        raise ConfigError("[workflows].orphan_grace_hours must be at least 1")
     # P4-S15: stash the raw parsed TOML so consumers (MCP bootstrap, agent
     # bootstrap, etc.) can pick out their sections without us bolting on
     # a dataclass for each one.

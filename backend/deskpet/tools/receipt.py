@@ -16,7 +16,7 @@ import hmac
 import json
 import os
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -58,10 +58,44 @@ class ToolReceipt:
     actual_outcome: Optional[str] = None          # 用户行为弱信号占位
     verify_latency_ms: Optional[int] = None       # verify 耗时（ms），用于 p95 聚合
     degradation_flags: list[str] = field(default_factory=list)  # 降级事实列表
+    # Durable workflow receipt v2. ``None`` means the field was absent on a
+    # legacy v1 record; this distinction is required for v1 HMAC verification.
+    sig_version: Optional[int] = None
+    phase: Optional[str] = None                   # accepted | delivered | executed
+    outcome: Optional[str] = None                 # pending | success | failed
+    run_id: Optional[str] = None
+    node_execution_id: Optional[str] = None
+    effect_id: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         """字段顺序稳定 (按 dataclass 定义)。"""
         return asdict(self)
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "ToolReceipt":
+        """Load v1/v2 without injecting v2 defaults into legacy HMAC input."""
+
+        allowed = {item.name for item in fields(cls)}
+        payload = {key: item for key, item in value.items() if key in allowed}
+        if "sig_version" not in value:
+            payload.update(
+                sig_version=None,
+                phase=None,
+                outcome=None,
+                run_id=None,
+                node_execution_id=None,
+                effect_id=None,
+            )
+        return cls(**payload)
+
+    def append_once_key(self) -> str:
+        """Stable phase identity used by ReceiptStore.append_once."""
+
+        if self.sig_version == 2 and self.phase in {"accepted", "delivered"}:
+            owner = self.effect_id or self.run_id
+            if owner:
+                return f"workflow:{owner}:{self.tool_name}:{self.phase}"
+        return f"receipt:{self.receipt_id}"
 
 
 # ─── HMAC helpers ────────────────────────────────────────────
@@ -87,6 +121,22 @@ _HMAC_EXCLUDED_FIELDS: frozenset[str] = frozenset({
     "degradation_flags",
 })
 
+_V2_FIELDS: frozenset[str] = frozenset(
+    {"sig_version", "phase", "outcome", "run_id", "node_execution_id", "effect_id"}
+)
+
+
+def _hmac_payload(receipt: ToolReceipt) -> dict[str, Any]:
+    d = receipt.to_dict()
+    for field_name in _HMAC_EXCLUDED_FIELDS:
+        d.pop(field_name, None)
+    if receipt.sig_version in {None, 1}:
+        for field_name in _V2_FIELDS:
+            d.pop(field_name, None)
+    elif receipt.sig_version != 2:
+        raise ValueError(f"unsupported receipt sig_version: {receipt.sig_version}")
+    return d
+
 
 def hmac_sign(receipt: ToolReceipt, secret: bytes = _TEST_HMAC_KEY) -> str:
     """HMAC-SHA256(secret, canonical_json(core receipt fields))。
@@ -95,16 +145,16 @@ def hmac_sign(receipt: ToolReceipt, secret: bytes = _TEST_HMAC_KEY) -> str:
     degradation_flags）被排除在 HMAC 载荷之外，保证旧格式收据（无这些 key）
     与新格式收据（含这些 key）的 HMAC 计算结果一致（R-T6 BC 保证）。
     """
-    d = receipt.to_dict()
-    for f in _HMAC_EXCLUDED_FIELDS:
-        d.pop(f, None)
-    payload = canonical_json(d).encode("utf-8")
+    payload = canonical_json(_hmac_payload(receipt)).encode("utf-8")
     return hmac.new(secret, payload, hashlib.sha256).hexdigest()
 
 
 def hmac_verify(receipt: ToolReceipt, secret: bytes = _TEST_HMAC_KEY) -> bool:
     """验证 receipt.sig 字段。"""
-    expected = hmac_sign(receipt, secret)
+    try:
+        expected = hmac_sign(receipt, secret)
+    except (TypeError, ValueError):
+        return False
     return hmac.compare_digest(expected, receipt.sig)
 
 
@@ -119,11 +169,33 @@ def make_receipt(
     iteration: int = 0,
     error_class: Optional[str] = None,
     artifact_shas: Optional[list[str]] = None,
+    receipt_id: Optional[str] = None,
+    sig_version: int = 2,
+    phase: str = "executed",
+    outcome: Optional[str] = None,
+    run_id: Optional[str] = None,
+    node_execution_id: Optional[str] = None,
+    effect_id: Optional[str] = None,
     secret: bytes = _TEST_HMAC_KEY,
 ) -> ToolReceipt:
     """Convenience factory — 构造 receipt + 自动签名。"""
+    if sig_version != 2:
+        raise ValueError("new receipts must use sig_version=2")
+    if phase not in {"accepted", "delivered", "executed"}:
+        raise ValueError(f"invalid receipt phase: {phase}")
+    resolved_outcome = outcome or ("success" if ok else "failed")
+    if resolved_outcome not in {"pending", "success", "failed"}:
+        raise ValueError(f"invalid receipt outcome: {resolved_outcome}")
+    if phase == "accepted" and resolved_outcome != "pending":
+        raise ValueError("accepted receipts must have pending outcome")
+    if resolved_outcome == "pending" and ok:
+        raise ValueError("pending receipts cannot be completion evidence")
+    if resolved_outcome == "success" and not ok:
+        raise ValueError("successful receipts must remain legacy ok completion evidence")
+    if resolved_outcome == "failed" and ok:
+        raise ValueError("failed receipts cannot be legacy ok completion evidence")
     r = ToolReceipt(
-        receipt_id=str(uuid.uuid4()),
+        receipt_id=receipt_id or str(uuid.uuid4()),
         tool_name=tool_name,
         args_hash=args_hash(args),
         started_at=started_at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -134,12 +206,19 @@ def make_receipt(
         artifacts=list(artifact_shas or []),
         session_id=session_id,
         iteration=iteration,
+        sig_version=sig_version,
+        phase=phase,
+        outcome=resolved_outcome,
+        run_id=run_id,
+        node_execution_id=node_execution_id,
+        effect_id=effect_id,
     )
     r.sig = hmac_sign(r, secret)
     return r
 
 
 __all__ = [
+    "Receipt",
     "ToolReceipt",
     "canonical_json",
     "args_hash",
@@ -147,3 +226,8 @@ __all__ = [
     "hmac_verify",
     "make_receipt",
 ]
+
+
+# Public v2 name; ToolReceipt remains the compatibility name used throughout
+# the existing verifier and persistence code.
+Receipt = ToolReceipt

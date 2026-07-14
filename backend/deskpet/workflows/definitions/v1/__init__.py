@@ -1,0 +1,46 @@
+"""Immutable production workflow definitions."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from .code_task import (
+    CODE_COMPLEX_V1,
+    CODE_COMPLEX_V1_DEFINITION,
+    initial_state as code_complex_initial_state,
+)
+from .deep_research import (
+    DEEP_RESEARCH_V1,
+    DEEP_RESEARCH_V1_DEFINITION,
+    initial_state as deep_research_initial_state,
+)
+from .ppt_pro import (
+    PPT_PRO_V1,
+    PPT_PRO_V1_DEFINITION,
+    initial_state as ppt_pro_initial_state,
+)
+
+if TYPE_CHECKING:
+    from ...runner import WorkflowRegistry
+
+
+def register_v1_workflows(registry: "WorkflowRegistry") -> None:
+    """Register every available immutable v1 graph."""
+
+    registry.register(DEEP_RESEARCH_V1)
+    registry.register(PPT_PRO_V1)
+    registry.register(CODE_COMPLEX_V1)
+
+
+__all__ = [
+    "CODE_COMPLEX_V1",
+    "CODE_COMPLEX_V1_DEFINITION",
+    "DEEP_RESEARCH_V1",
+    "DEEP_RESEARCH_V1_DEFINITION",
+    "PPT_PRO_V1",
+    "PPT_PRO_V1_DEFINITION",
+    "code_complex_initial_state",
+    "deep_research_initial_state",
+    "ppt_pro_initial_state",
+    "register_v1_workflows",
+]

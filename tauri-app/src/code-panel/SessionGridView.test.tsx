@@ -189,7 +189,7 @@ describe("test_tile_skill_candidate_confirm", () => {
 
   it("dashboard tile renders the skill candidate card and ignore resolves it", () => {
     resetStores();
-    const send = vi.spyOn(codePanelWS, "send").mockImplementation(() => {});
+    const send = vi.spyOn(codePanelWS, "send").mockImplementation(() => true);
     useSessionsStore.getState().ensure("code-skill", {
       base_session_id: "code-skill",
       code_session_id: "code-1",

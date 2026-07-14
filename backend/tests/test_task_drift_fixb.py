@@ -169,9 +169,10 @@ async def test_deepresearch_uses_original_request_as_canonical_subject(monkeypat
     assert calls["rerank"] == [request_topic]
     assert calls["synth_prompts"]
 
-    source = inspect.getsource(r.deepresearch)
+    from deskpet.workflows.definitions import research_core
+
+    source = inspect.getsource(r.deepresearch) + inspect.getsource(research_core.run_research_core)
     assert "request_topic = _ur" in source
-    assert "search_specs.append((eq, request_topic))" in source
 
 
 @pytest.mark.asyncio

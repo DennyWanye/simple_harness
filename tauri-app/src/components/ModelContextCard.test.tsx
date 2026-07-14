@@ -15,10 +15,31 @@
 import { describe, it, expect } from "vitest";
 
 import {
+  buildContextCompactionGetMessage,
+  buildContextCompactionSetMessage,
   buildModelContextGetMessage,
   buildModelContextSetMessage,
   parseModelContextEdits,
 } from "./ModelContextCard";
+
+describe("Context OS compaction model messages", () => {
+  it("gets the default/current compaction setting", () => {
+    expect(buildContextCompactionGetMessage()).toEqual({
+      type: "context_compaction_get",
+      payload: {},
+    });
+  });
+
+  it("sets follow_session or an explicit catalog model", () => {
+    expect(buildContextCompactionSetMessage("follow_session")).toEqual({
+      type: "context_compaction_set",
+      payload: { model: "follow_session" },
+    });
+    expect(buildContextCompactionSetMessage("gpt-5-mini").payload.model).toBe(
+      "gpt-5-mini",
+    );
+  });
+});
 
 describe("ModelContextCard — ws message builders", () => {
   it("test_get_message_shape — model_context_get 携带 model", () => {

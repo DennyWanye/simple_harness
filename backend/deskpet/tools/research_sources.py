@@ -29,6 +29,8 @@ from xml.etree import ElementTree as ET
 
 import httpx
 
+from .agent_reach_port import agent_reach_port
+
 log = logging.getLogger(__name__)
 
 _UA = (
@@ -53,9 +55,10 @@ _DIRECT_TIMEOUT = 6.0
 _DIRECT_TEXT_MAX = 18_000
 _DIRECT_TITLE_MAX = 200
 _DIRECT_SOURCE_DEFAULT_TYPES = [
-    "cninfo", "openstd", "baidu_baike", "sogou_baike", "wikipedia", "arxiv",
+    "agent_reach", "cninfo", "openstd", "wikipedia", "arxiv",
 ]
 _DIRECT_SOURCE_ORDER = (
+    "agent_reach",
     "cninfo",
     "openstd",
     "baidu_baike",
@@ -65,16 +68,7 @@ _DIRECT_SOURCE_ORDER = (
     "semantic_scholar",
     "wikidata",
 )
-_ALL_DIRECT_SOURCE_TYPES = {
-    "cninfo",
-    "openstd",
-    "baidu_baike",
-    "sogou_baike",
-    "wikipedia",
-    "arxiv",
-    "semantic_scholar",
-    "wikidata",
-}
+_ALL_DIRECT_SOURCE_TYPES = set(_DIRECT_SOURCE_ORDER)
 _DIRECT_SOURCE_ALIASES = {"s2": "semantic_scholar", "semantic-scholar": "semantic_scholar"}
 _REACHABLE_TTL = 300.0
 _REACHABLE_CACHE: dict[str, tuple[float, bool]] = {}
@@ -149,6 +143,11 @@ _WIKIDATA_KW = (
     "结构化事实", "结构化", "实体", "事实", "知识图谱", "属性", "出生",
     "成立", "总部", "人口", "wikidata", " q",
 )
+_AGENT_REACH_KW = (
+    "github", "repository", "repositories", "repo", "open source", "open-source",
+    "source code", "codebase", "youtube", "reddit", "v2ex", "rss", "bilibili",
+    "x.com", "twitter", "开源", "仓库", "代码库", "源码", "小红书", "推特", "b站",
+)
 
 
 _RESEARCH_RAW_CACHE: Optional[dict[str, Any]] = None
@@ -212,6 +211,8 @@ def direct_source_for(text: str) -> list[str]:
         hits.extend(["arxiv", "semantic_scholar"])
     if any(k in t for k in _WIKIDATA_KW) or re.search(r"\bq\d{2,}\b", t):
         hits.append("wikidata")
+    if re.search(r"https?://\S+", text or ""):
+        hits.append("agent_reach")
 
     enabled = set(_direct_source_types())
     out: list[str] = []
@@ -1299,8 +1300,74 @@ async def edgar_search(
             await cli.aclose()
     return []
 
+def _agent_reach_url(keyword: str) -> str:
+    match = re.search(r"https?://[^\s，。；;]+", keyword or "", flags=re.I)
+    if match:
+        return match.group(0).rstrip(")]}'\"")
+    return ""
+
+
+def _agent_reach_urls(keyword: str, *, limit: int = 4) -> list[str]:
+    urls: list[str] = []
+    for match in re.findall(r"https?://\S+", keyword or "", flags=re.I):
+        url = match.rstrip("，。；;)]}'\"")
+        if url not in urls:
+            urls.append(url)
+        if len(urls) >= limit:
+            break
+    return urls
+
+
+async def agent_reach_search_with_status(
+    keyword: str,
+    *,
+    max_results: int = 3,
+) -> tuple[list[dict[str, Any]], str, Optional[str], Optional[str], str, dict[str, Any]]:
+    """Read an explicit platform URL through Agent-Reach's selected backend."""
+
+    del max_results
+    url = _agent_reach_url(keyword)
+    if not url:
+        return [], "empty", None, None, "web", {}
+    evidence = await agent_reach_port.read_url_async(url, max_chars=_DIRECT_TEXT_MAX)
+    doctor = agent_reach_port.doctor(names=[evidence.channel, "web"])
+    if not evidence.ok:
+        return (
+            [],
+            "degraded" if evidence.status not in {"empty", "off"} else evidence.status,
+            evidence.reason_code,
+            evidence.active_backend,
+            evidence.channel,
+            doctor,
+        )
+    item = _direct_item(
+        "agent_reach",
+        url=evidence.url,
+        title=evidence.title,
+        text=evidence.text,
+    )
+    if item is None:
+        return [], "empty", "empty", evidence.active_backend, evidence.channel, doctor
+    item["agent_reach_channel"] = evidence.channel
+    item["agent_reach_backend"] = evidence.active_backend
+    return [item], "hit", None, evidence.active_backend, evidence.channel, doctor
+
+
+async def agent_reach_search(
+    keyword: str,
+    *,
+    max_results: int = 3,
+    client: Optional[httpx.AsyncClient] = None,
+) -> list[dict[str, Any]]:
+    del client
+    items, _status, _reason, _backend, _channel, _doctor = (
+        await agent_reach_search_with_status(keyword, max_results=max_results)
+    )
+    return items
+
 
 DIRECT_FETCHERS: dict[str, Callable[..., Any]] = {
+    "agent_reach": agent_reach_search,
     "cninfo": cninfo_search,
     "openstd": openstd_search,
     "baidu_baike": baidu_baike_search,
@@ -1324,6 +1391,8 @@ __all__ = [
     "arxiv_search",
     "semantic_scholar_search",
     "wikidata_search",
+    "agent_reach_search",
+    "agent_reach_search_with_status",
     "parse_openstd",
     "edgar_search",
 ]

@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  type WorkflowEventEnvelope,
   type SessionState,
   type SupervisorAlertEntry,
   collect_inbox,
@@ -16,6 +17,22 @@ import {
   severity_score_breakdown,
   useSessionsStore,
 } from "./sessionsStore";
+
+function workflowEvent(
+  seq: number,
+  event_type: string,
+  payload: Record<string, unknown>,
+  run_id = "run-1",
+): WorkflowEventEnvelope {
+  return {
+    event_id: `${run_id}-event-${seq}`,
+    run_id,
+    seq,
+    event_type,
+    payload,
+    created_at: seq,
+  };
+}
 
 function mk(over: Partial<SessionState>): SessionState {
   return {
@@ -257,5 +274,125 @@ describe("pet_focus_sid", () => {
       }),
     };
     expect(pet_focus_sid(sids, now)).toBe("code-real");
+  });
+});
+
+describe("workflow progress reducer (AC-23)", () => {
+  it("updates one card by run and keeps loop percentage monotonic", () => {
+    let messages: SessionState["messages"] = [];
+    const apply = (event: WorkflowEventEnvelope) => {
+      useSessionsStore.setState({ sessions: { default: mk({ messages }) } });
+      useSessionsStore.getState().reduce_workflow_event("default", event);
+      messages = useSessionsStore.getState().sessions.default.messages;
+    };
+
+    apply(workflowEvent(1, "workflow.accepted", { workflow_name: "PPT" }));
+    apply(workflowEvent(2, "workflow.progress", {
+      workflow_name: "PPT", stage: "检查页面质量", ordinal: 11, total: 12, status: "started",
+    }));
+    apply(workflowEvent(3, "workflow.progress", {
+      workflow_name: "PPT", stage: "重新生成页面", ordinal: 8, total: 12, status: "started",
+    }));
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      role: "workflow_progress",
+      workflow_stage: "重新生成页面",
+      workflow_ordinal: 8,
+      workflow_display_ordinal: 11,
+      workflow_seq: 3,
+      workflow_status: "running",
+    });
+  });
+
+  it("allows attempt recovery, rejects old seq, and locks terminal final", () => {
+    const store = useSessionsStore.getState();
+    store.ensure("workflow-test");
+    store.reduce_workflow_event("workflow-test", workflowEvent(2, "workflow.progress", {
+      workflow_name: "代码任务", stage: "运行测试", ordinal: 7, total: 9, status: "failed",
+    }));
+    store.reduce_workflow_event("workflow-test", workflowEvent(3, "workflow.progress", {
+      workflow_name: "代码任务", stage: "运行测试", ordinal: 7, total: 9, status: "started",
+    }));
+    store.reduce_workflow_event("workflow-test", workflowEvent(1, "workflow.progress", {
+      workflow_name: "代码任务", stage: "旧状态", ordinal: 1, total: 9, status: "waiting",
+    }));
+    store.reduce_workflow_event("workflow-test", workflowEvent(4, "workflow.final", {
+      workflow_name: "代码任务", status: "completed",
+    }));
+    store.reduce_workflow_event("workflow-test", workflowEvent(5, "workflow.progress", {
+      workflow_name: "代码任务", stage: "不应回退", ordinal: 1, total: 9, status: "started",
+    }));
+
+    expect(useSessionsStore.getState().sessions["workflow-test"].messages[0]).toMatchObject({
+      workflow_status: "completed",
+      workflow_terminal: true,
+      workflow_stage: "运行测试",
+      workflow_seq: 4,
+    });
+  });
+
+  it("keeps concurrent runs separate and late history cannot replace live state", () => {
+    const store = useSessionsStore.getState();
+    store.ensure("race");
+    store.reduce_workflow_event("race", workflowEvent(5, "workflow.progress", {
+      workflow_name: "PPT", stage: "发布", ordinal: 12, total: 12, status: "started",
+    }, "run-a"));
+    store.reduce_workflow_event("race", workflowEvent(1, "workflow.accepted", {
+      workflow_name: "调研",
+    }, "run-b"));
+    store.push_message("race", { id: "live-tool", role: "tool_result", tool_name: "x", ts: 5000 });
+    store.push_message("race", { id: "run-a-event-1", role: "assistant", text: "旧进度文本", ts: 900 });
+
+    store.merge_history_messages(
+      "race",
+      [{ id: "old-user", role: "user", text: "start", ts: 1000 }],
+      [workflowEvent(1, "workflow.accepted", { workflow_name: "PPT" }, "run-a")],
+    );
+
+    const messages = useSessionsStore.getState().sessions.race.messages;
+    expect(messages.filter((message) => message.role === "workflow_progress")).toHaveLength(2);
+    expect(messages.find((message) => message.workflow_run_id === "run-a")).toMatchObject({
+      workflow_seq: 5,
+      workflow_stage: "发布",
+    });
+    expect(messages.some((message) => message.id === "live-tool")).toBe(true);
+    expect(messages.some((message) => message.id === "old-user")).toBe(true);
+    expect(messages.some((message) => message.id === "run-a-event-1")).toBe(false);
+  });
+});
+
+describe("durable workflow decisions", () => {
+  it("rehydrates an actionable PPT outline card from a decision event", () => {
+    const store = useSessionsStore.getState();
+    store.ensure("decision-session");
+    const handled = store.reduce_workflow_event(
+      "decision-session",
+      workflowEvent(7, "workflow.decision", {
+        status: "open",
+        decision_id: "decision-1",
+        decision_kind: "ppt_outline",
+        prompt: {
+          kind: "ppt_outline",
+          outline_id: "workflow:run-1:0",
+          topic: "Native workflow",
+          outline_markdown: "# Slide 1",
+          sources_count: 2,
+          no_research: false,
+        },
+      }),
+    );
+
+    expect(handled).toBe(true);
+    expect(useSessionsStore.getState().sessions["decision-session"].messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "ppt_outline",
+          outline_id: "workflow:run-1:0",
+          outline_md: "# Slide 1",
+          ppt_outline_awaiting: true,
+        }),
+      ]),
+    );
   });
 });

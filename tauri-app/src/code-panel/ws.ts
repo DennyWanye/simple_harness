@@ -49,7 +49,7 @@ const listeners: Set<Listener> = G.__deskpet_panel_listeners__ ?? new Set<Listen
 G.__deskpet_panel_listeners__ = listeners;
 
 export interface CodePanelWS {
-  send(msg: { type: string; payload?: Record<string, unknown> }): void;
+  send(msg: { type: string; payload?: Record<string, unknown> }): boolean;
   on_message(fn: Listener): () => void;
   state(): "disconnected" | "connecting" | "connected";
 }
@@ -64,7 +64,16 @@ async function open_socket() {
   // module reload was calling open_socket() while the old socket
   // was still mid-handshake.
   const existing = G.__deskpet_panel_ws__;
-  if (existing && (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)) {
+  if (existing && existing.readyState === WebSocket.OPEN) {
+    ws = existing;
+    current_state = "connected";
+    while (_outbox.length > 0) {
+      const queued = _outbox.shift();
+      if (queued) ws.send(queued);
+    }
+    return;
+  }
+  if (existing && existing.readyState === WebSocket.CONNECTING) {
     ws = existing;
     return;
   }
@@ -344,6 +353,28 @@ function dispatch(msg: any) {
       store.upsert(sid, { status: "idle", inflight: false });
       break;
     }
+    case "workflow_event":
+    case "workflow_final": {
+      const event = msg.payload || {};
+      const eventId = String(event.event_id || "");
+      const body = event.payload || {};
+      const nested = body.payload || {};
+      const text = String(nested.text || body.text || "").trim();
+      if (store.reduce_workflow_event(sid, event)) break;
+      const current = store.sessions[sid];
+      if (eventId && current?.messages.some((message) => message.id === eventId)) break;
+      if (text) {
+        store.push_message(sid, {
+          id: eventId || undefined,
+          role: "assistant",
+          text,
+        });
+      }
+      // Workflow lifecycle is independent from an ordinary chat turn. A
+      // workflow final must not clear another request's inflight indicator.
+      store.upsert(sid, { last_activity: Date.now() });
+      break;
+    }
     case "chat_v2_error": {
       const p = msg.payload || {};
       const parts = [p.error, p.detail, p.reason].filter(Boolean);
@@ -482,11 +513,15 @@ function dispatch(msg: any) {
     }
     case "tool_result": {
       const p = msg.payload || {};
+      const resultRaw =
+        Array.isArray(p.artifacts) && p.artifacts.length > 0
+          ? JSON.stringify(p)
+          : p.result;
       store.push_message(sid, {
         role: "tool_result",
         tool_name: p.tool,
         tool_ok: p.ok,
-        tool_result: p.result,
+        tool_result: resultRaw,
       });
       break;
     }
@@ -639,6 +674,7 @@ function dispatch(msg: any) {
       const target = msg.payload?.session_id || sid;
       const items: any[] = msg.payload?.messages ?? [];
       const restored: any[] = [];
+      const workflowEvents: any[] = [];
       // P6 bugfix 2026-05-14: build tool_call_id → tool_name map first pass
       // so the subsequent tool reply row can show the right tool name
       // (instead of "(unknown)"). Backend SessionDB schema doesn't store
@@ -654,20 +690,42 @@ function dispatch(msg: any) {
           if (id && name) tcid_to_name.set(id, name);
         }
       }
-      for (const m of items) {
-        const base_id = m.id || `r-${Math.random().toString(36).slice(2, 10)}`;
+      for (const [itemIndex, m] of items.entries()) {
         const ts = m.ts || Date.now();
+        const base_id = m.id || `history:${target}:${itemIndex}:${ts}`;
         const role = m.role || "assistant";
         const tool_calls = Array.isArray(m.tool_calls) ? m.tool_calls : null;
+        const workflowEvent = m.workflow_event;
+        if (workflowEvent && typeof workflowEvent === "object") {
+          const eventType = String(workflowEvent.event_type || "");
+          if (
+            eventType === "workflow.accepted" ||
+            eventType === "workflow.progress" ||
+            eventType === "workflow.decision" ||
+            eventType === "workflow.final"
+          ) {
+            workflowEvents.push(workflowEvent);
+            continue;
+          }
+          // final_assistant and unknown workflow projections retain their
+          // ordinary persisted message row for backward compatibility.
+        }
 
         if (role === "tool") {
           // Tool reply row → tool_result bubble. Reverse-map tool name
           // via the previously-built tcid → name dictionary.
           const tcid: string | undefined = m.tool_call_id;
+          let embeddedToolName: string | undefined;
+          try {
+            const parsed = JSON.parse(String(m.text || ""));
+            embeddedToolName = typeof parsed?.tool === "string" ? parsed.tool : undefined;
+          } catch {
+            embeddedToolName = undefined;
+          }
           restored.push({
             id: base_id,
             role: "tool_result",
-            tool_name: (tcid && tcid_to_name.get(tcid)) || undefined,
+            tool_name: (tcid && tcid_to_name.get(tcid)) || embeddedToolName,
             tool_ok: true,
             tool_result: m.text || "",
             ts,
@@ -709,7 +767,7 @@ function dispatch(msg: any) {
           ts,
         });
       }
-      store.set_messages(target, restored);
+      store.merge_history_messages(target, restored, workflowEvents);
       // FEAT-A4: rehydration 重建 awaiting plan card。后端在 payload.plan
       // 单独带回（不混进被白名单过滤的 messages），awaiting 时重建 plan
       // bubble + [执行]/[取消] 栏（对齐 chat_v2_plan handler 的字段）。
@@ -923,13 +981,29 @@ const _OUTBOX_MAX = 50;
 
 export const codePanelWS: CodePanelWS = {
   send(msg) {
+    const serialized = JSON.stringify(msg);
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(msg));
+      try {
+        ws.send(serialized);
+        return true;
+      } catch (e) {
+        console.warn("[code-panel] socket send failed; queueing message", e);
+        _outbox.push(serialized);
+        if (_outbox.length > _OUTBOX_MAX) _outbox.shift();
+        schedule_reconnect();
+        return false;
+      }
     } else {
+      if (msg.type === "chat_v2" || msg.type === "slash_command") {
+        console.warn("[code-panel] socket not open; refusing interactive message");
+        schedule_reconnect();
+        return false;
+      }
       console.warn("[code-panel] socket not open; queueing message for flush on reconnect");
-      _outbox.push(JSON.stringify(msg));
+      _outbox.push(serialized);
       if (_outbox.length > _OUTBOX_MAX) _outbox.shift();
       schedule_reconnect();
+      return true;
     }
   },
   on_message(fn) {

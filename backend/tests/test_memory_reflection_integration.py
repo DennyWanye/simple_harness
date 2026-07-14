@@ -77,8 +77,9 @@ async def test_t7_2_skill_memory_store_crud(db_path):
 
 
 # --- T7-3：reflection flag 默认关（lifespan 据此不注册定时任务）--------
-def test_t7_3_reflection_flag_defaults_off():
-    assert MemoryV2Config().reflection is False
+def test_t7_3_reflection_flag_defaults_on():
+    # 2026-06-27 测试阶段点亮：reflection 出厂默认 ON。
+    assert MemoryV2Config().reflection is True
 
 
 # --- T7-4：reflection 跑时无可用 LLM → 跳过本次，不报错 ----------------

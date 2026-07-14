@@ -396,23 +396,26 @@ class ContextManager:
             return list(messages)
 
         async def _summarize(text: str) -> str:
-            r = await llm_for_summarize.chat_with_tools(
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Compress the following conversation into a concise "
-                            "Chinese summary capturing: completed steps, key "
-                            "decisions, tool results' outcomes, current state. "
-                            "≤ 600 chars."
-                        ),
-                    },
-                    {"role": "user", "content": text[:50_000]},
-                ],
-                tools=None,
-                max_tokens=800,
-                temperature=0.1,
-            )
+            from agent.context_messages import provider_purpose_scope
+
+            with provider_purpose_scope("context_manager"):
+                r = await llm_for_summarize.chat_with_tools(
+                    [
+                        {
+                            "role": "system",
+                            "content": (
+                                "Compress the following conversation into a concise "
+                                "Chinese summary capturing: completed steps, key "
+                                "decisions, tool results' outcomes, current state. "
+                                "≤ 600 chars."
+                            ),
+                        },
+                        {"role": "user", "content": text[:50_000]},
+                    ],
+                    tools=None,
+                    max_tokens=800,
+                    temperature=0.1,
+                )
             return r.get("content", "") if isinstance(r, dict) else ""
 
         return await compact_messages(

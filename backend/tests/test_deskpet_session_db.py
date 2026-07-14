@@ -20,6 +20,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+import aiosqlite
 import pytest
 import pytest_asyncio
 
@@ -74,6 +75,48 @@ async def test_create_session_returns_uuid(db: SessionDB):
 
 
 @pytest.mark.asyncio
+async def test_ensure_session_persists_caller_supplied_uuid(db: SessionDB):
+    sid = "11111111-1111-4111-8111-111111111111"
+    stored = await db.ensure_session(sid, {"origin": "pytest"})
+    stored_again = await db.ensure_session(sid, {"origin": "ignored"})
+    assert stored == sid
+    assert stored_again == sid
+    async with aiosqlite.connect(db._db_path) as conn:
+        cur = await conn.execute("SELECT COUNT(*) FROM sessions WHERE id = ?", (sid,))
+        row = await cur.fetchone()
+        await cur.close()
+    assert row[0] == 1
+
+
+@pytest.mark.asyncio
+async def test_code_session_registration_exposes_base_session_to_chat(db: SessionDB):
+    await db.upsert_code_session(
+        base_session_id="code-project-base",
+        code_session_id="code-project-memory",
+        project_root=r"F:\projects\deskpet",
+        project_name="deskpet",
+    )
+
+    async with aiosqlite.connect(db._db_path) as conn:
+        session = await (
+            await conn.execute(
+                "SELECT metadata FROM sessions WHERE id = ?",
+                ("code-project-base",),
+            )
+        ).fetchone()
+        delivery = await (
+            await conn.execute(
+                "SELECT epoch, deleted_at FROM session_delivery_state WHERE session_id = ?",
+                ("code-project-base",),
+            )
+        ).fetchone()
+
+    assert session is not None
+    assert '"origin": "code_mode"' in session[0]
+    assert delivery == (0, None)
+
+
+@pytest.mark.asyncio
 async def test_append_and_get_messages(db: SessionDB):
     sid = await db.create_session()
     id1 = await db.append_message(sid, "user", "hello world")
@@ -86,6 +129,113 @@ async def test_append_and_get_messages(db: SessionDB):
     assert msgs[0]["id"] == id1
     # salience 默认 0.5
     assert msgs[0]["salience"] == pytest.approx(0.5)
+
+
+@pytest.mark.asyncio
+async def test_get_messages_returns_stable_workflow_event_id(db: SessionDB):
+    sid = await db.create_session()
+    await db.append_message(
+        sid,
+        "assistant",
+        "PPT进度：生成完整页面（8/12）",
+        workflow_event_id="workflow-progress-event-1",
+    )
+
+    messages = await db.get_messages(sid)
+
+    assert messages[0]["workflow_event_id"] == "workflow-progress-event-1"
+
+
+@pytest.mark.asyncio
+async def test_get_messages_exposes_derived_summary_metadata(db: SessionDB):
+    sid = await db.create_session()
+    message_id = await db.append_message(sid, "assistant", "legacy derived row")
+    async with aiosqlite.connect(db._db_path) as conn:
+        await conn.execute(
+            "UPDATE messages SET is_summary = 1, summary_of = ? WHERE id = ?",
+            ("1-4", message_id),
+        )
+        await conn.commit()
+
+    messages = await db.get_messages(sid)
+
+    assert messages[0]["is_summary"] is True
+    assert messages[0]["summary_of"] == "1-4"
+
+
+@pytest.mark.asyncio
+async def test_get_recent_messages_selects_tail_and_restores_chronological_order(
+    db: SessionDB,
+):
+    sid = await db.create_session()
+    for index in range(8):
+        await db.append_message(sid, "user", f"message-{index}")
+
+    recent = await db.get_recent_messages(sid, limit=3)
+
+    assert [row["content"] for row in recent] == [
+        "message-5",
+        "message-6",
+        "message-7",
+    ]
+    # The legacy transcript API remains oldest-first pagination.
+    oldest = await db.get_messages(sid, limit=3)
+    assert [row["content"] for row in oldest] == [
+        "message-0",
+        "message-1",
+        "message-2",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_recent_messages_does_not_orphan_tool_result_boundary(db: SessionDB):
+    sid = await db.create_session()
+    await db.append_message(sid, "user", "old")
+    await db.append_message(
+        sid,
+        "assistant",
+        "calling",
+        tool_calls=[{"id": "call-1", "name": "lookup", "arguments": {}}],
+    )
+    await db.append_message(
+        sid,
+        "tool",
+        '{"ok":true}',
+        tool_call_id="call-1",
+    )
+    await db.append_message(sid, "assistant", "done")
+
+    recent = await db.get_recent_messages(sid, limit=2)
+
+    assert [row["role"] for row in recent] == ["assistant", "tool", "assistant"]
+    assert recent[0]["tool_calls"]
+
+
+@pytest.mark.asyncio
+async def test_get_recent_messages_expands_large_tool_group_by_exact_call_id(
+    db: SessionDB,
+):
+    sid = await db.create_session()
+    calls = [
+        {"id": f"call-{index}", "name": "lookup", "arguments": {}}
+        for index in range(25)
+    ]
+    await db.append_message(sid, "assistant", "calling many", tool_calls=calls)
+    for index in range(25):
+        await db.append_message(
+            sid,
+            "tool",
+            f'{{"ok":true,"index":{index}}}',
+            tool_call_id=f"call-{index}",
+        )
+    await db.append_message(sid, "assistant", "done")
+
+    recent = await db.get_recent_messages(sid, limit=2)
+
+    assert recent[0]["role"] == "assistant"
+    assert len(recent[0]["tool_calls"]) == 25
+    assert recent[-1]["content"] == "done"
+    assert len(recent) == 27
 
 
 @pytest.mark.asyncio

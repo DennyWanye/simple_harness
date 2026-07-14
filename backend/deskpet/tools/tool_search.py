@@ -25,6 +25,7 @@ import json
 from typing import Any
 
 from .registry import registry
+from .capabilities import ToolCapabilityBridgeService
 
 _SCHEMA: dict[str, Any] = {
     "name": "tool_search",
@@ -106,3 +107,106 @@ registry.register(
     schema=_SCHEMA,
     handler=_handle_tool_search,
 )
+
+
+_DESCRIBE_SCHEMA: dict[str, Any] = {
+    "name": "tool_describe",
+    "description": "Return the exact schema for one deferred capability in this request.",
+    "parameters": {
+        "type": "object",
+        "properties": {"capability_id": {"type": "string"}},
+        "required": ["capability_id"],
+    },
+}
+
+_ACTIVATE_SCHEMA: dict[str, Any] = {
+    "name": "tool_activate",
+    "description": "Activate a previously described capability for the next model iteration.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "capability_id": {"type": "string"},
+            "schema_hash": {"type": "string"},
+            "describe_nonce": {"type": "string"},
+        },
+        "required": ["capability_id", "schema_hash", "describe_nonce"],
+    },
+}
+
+
+def register_capability_bridge_tools(
+    target_registry,
+    service: ToolCapabilityBridgeService,
+) -> None:
+    """Replace legacy search and add describe/activate for Context OS ON."""
+
+    def search_handler(args: dict[str, Any], _task_id: str) -> str:
+        try:
+            result = service.search(
+                str(args.get("query", "")),
+                limit=int(args.get("limit", 10) or 10),
+                cursor=int(args.get("cursor", 0) or 0),
+            )
+            return json.dumps(result, ensure_ascii=False)
+        except Exception as exc:  # noqa: BLE001
+            return json.dumps({"error": str(exc), "retriable": False})
+
+    def describe_handler(args: dict[str, Any], _task_id: str) -> str:
+        try:
+            return json.dumps(
+                service.describe(str(args.get("capability_id", ""))),
+                ensure_ascii=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return json.dumps({"error": str(exc), "retriable": False})
+
+    def activate_handler(args: dict[str, Any], _task_id: str) -> str:
+        try:
+            proposal = service.activate(
+                str(args.get("capability_id", "")),
+                str(args.get("schema_hash", "")),
+                str(args.get("describe_nonce", "")),
+            )
+            return json.dumps(
+                {
+                    "status": "activation_proposed",
+                    "__deskpet_control": {
+                        "kind": "tool_activation",
+                        "base_scope_revision": proposal.base_scope_revision,
+                        "nonce": proposal.nonce,
+                        "capability_id": proposal.prepared_capability.ref.capability_id,
+                        "schema_hash": proposal.prepared_capability.ref.schema_hash,
+                        "schema": proposal.prepared_capability.schema_copy(),
+                    },
+                },
+                ensure_ascii=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return json.dumps({"error": str(exc), "retriable": False})
+
+    search_schema = {
+        **_SCHEMA,
+        "description": "Search only deferred capabilities authorized for this request.",
+        "parameters": {
+            **_SCHEMA["parameters"],
+            "properties": {
+                **_SCHEMA["parameters"]["properties"],
+                "limit": {"type": "integer", "minimum": 1, "maximum": 10},
+                "cursor": {"type": "integer", "minimum": 0},
+            },
+        },
+    }
+    for name, schema, handler in (
+        ("tool_search", search_schema, search_handler),
+        ("tool_describe", _DESCRIBE_SCHEMA, describe_handler),
+        ("tool_activate", _ACTIVATE_SCHEMA, activate_handler),
+    ):
+        target_registry.register(
+            name=name,
+            toolset="control",
+            schema=schema,
+            handler=handler,
+            source="builtin",
+            replace_allowed=True,
+            concurrency_safe=False if name == "tool_activate" else True,
+        )

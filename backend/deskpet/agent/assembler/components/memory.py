@@ -28,7 +28,7 @@ from typing import Any
 
 import structlog
 
-from deskpet.agent.assembler.bundle import Slice
+from deskpet.agent.assembler.bundle import ContextFragment, Slice
 from deskpet.agent.assembler.components.base import Component, ComponentContext
 from deskpet.memory.entity_extractor import _STOPWORDS
 
@@ -91,6 +91,15 @@ class MemoryComponent:
             "l3_top_k": policy_memory.l3_top_k,
             "session_id": ctx.session_id,
         }
+        # L2 is the continuity baseline; L3 is optional enrichment.  Bound the
+        # semantic lookup inside MemoryManager so a cold/busy embedder cannot
+        # consume this component's whole 1.5s deadline and erase L2 with it.
+        remaining_ms = ctx.time_remaining_ms()
+        if remaining_ms is not None:
+            call_policy["l3_timeout_s"] = max(
+                0.05,
+                min(0.75, (remaining_ms / 1000.0) * 0.5),
+            )
         l2_page_in = getattr(policy_memory, "l2_page_in", "always")
         if l2_page_in == "off":
             call_policy["l2_top_k"] = 0
@@ -99,6 +108,19 @@ class MemoryComponent:
             and not _starts_with_anaphora(ctx.user_message)
         ):
             call_policy["l2_top_k"] = 0
+
+        # The E2E control plane is dev+loopback gated.  A forced L3 timeout
+        # must exercise the real component degradation path without erasing
+        # L2 continuity, so skip only semantic enrichment for this request.
+        e2e_l3_fault = None
+        try:
+            from deskpet.context_os_e2e_hooks import consume_context_os_e2e_fault
+
+            e2e_l3_fault = consume_context_os_e2e_fault("l3_timeout")
+        except RuntimeError as exc:
+            e2e_l3_fault = str(exc)
+        if e2e_l3_fault:
+            call_policy["l3_top_k"] = 0
 
         try:
             result = await mm.recall(ctx.user_message, policy=call_policy)
@@ -113,6 +135,22 @@ class MemoryComponent:
 
         l2_rows = result.get("l2") or []
         l3_hits = result.get("l3") or []
+
+        # The text chat path persists the current user row before assembly.
+        # Remove only that exact row by id; text-based dedupe would corrupt a
+        # legitimate repeated user message ("再试一次", "再试一次").
+        current_row_deduped = False
+        if ctx.current_message_id is not None and l2_rows:
+            before = len(l2_rows)
+            l2_rows = [
+                row
+                for row in l2_rows
+                if not (
+                    isinstance(row, dict)
+                    and row.get("id") == ctx.current_message_id
+                )
+            ]
+            current_row_deduped = len(l2_rows) != before
 
         topic_shift_gate = bool(getattr(policy_memory, "topic_shift_gate", False))
         relabel_l2 = bool(getattr(policy_memory, "relabel_l2", False))
@@ -134,7 +172,25 @@ class MemoryComponent:
                 for row in l2_rows
                 if isinstance(row, dict) and (row.get("content") or "").strip()
             )
-            gate_sim = await _topic_similarity(emb, ctx.user_message, l2_concat)
+            gate_timeout_s = 0.25
+            remaining_ms = ctx.time_remaining_ms()
+            if remaining_ms is not None:
+                gate_timeout_s = max(
+                    0.05,
+                    min(gate_timeout_s, (remaining_ms / 1000.0) * 0.5),
+                )
+            try:
+                gate_sim = await asyncio.wait_for(
+                    _topic_similarity(emb, ctx.user_message, l2_concat),
+                    timeout=gate_timeout_s,
+                )
+            except asyncio.TimeoutError:
+                logger.info(
+                    "task_drift_sim_skip",
+                    reason="component_deadline",
+                    timeout_s=round(gate_timeout_s, 3),
+                )
+                gate_sim = None
             # Primary signal = embedding cosine. But the BGE-M3 subprocess
             # can be lock-contended (vector-worker backfill / research load)
             # and time out under the ~1500ms component budget — real E2E
@@ -179,6 +235,13 @@ class MemoryComponent:
         tokens = _approx_tokens(combined)
         elapsed_ms = (time.monotonic() - start) * 1000.0
 
+        features = ctx.config.get("features", {}) if isinstance(ctx.config, dict) else {}
+        context_os_on = bool(
+            features.get("context_os_v1", False)
+            if isinstance(features, dict)
+            else getattr(features, "context_os_v1", False)
+        )
+
         # Promote L2 raw rows to OpenAI message format. The assembler's
         # `_stitch` reads meta["l2_history"] and assigns to bundle.history.
         l2_history: list[dict[str, Any]] = []
@@ -190,9 +253,19 @@ class MemoryComponent:
             # System summaries (is_summary=1) live in messages too — keep
             # them as system-role hints so the LLM treats them as context
             # without confusing "assistant" turn boundaries.
-            if not content or role not in ("user", "assistant", "system"):
+            allowed_roles = (
+                ("user", "assistant", "system", "tool")
+                if context_os_on
+                else ("user", "assistant", "system")
+            )
+            has_tool_calls = role == "assistant" and bool(row.get("tool_calls"))
+            if (not content and not has_tool_calls) or role not in allowed_roles:
                 continue
             entry: dict[str, Any] = {"role": role, "content": content}
+            if context_os_on:
+                for key in ("tool_calls", "tool_call_id", "name"):
+                    if row.get(key) is not None:
+                        entry[key] = row[key]
             # P4-S24: thinking-mode round-trip. If a prior assistant
             # message stored a reasoning_content (DeepSeek V4 Pro /
             # Qwen3 thinking / GLM-4.5), echo it back into history so
@@ -223,25 +296,76 @@ class MemoryComponent:
             l2_count_out=len(l2_rows),
         )
 
+        meta = {
+            "l1_bytes": len(frozen_text),
+            "l2_count": len(l2_rows),
+            "l3_count": len(l3_hits),
+            "current_row_deduped": current_row_deduped,
+            "latency_ms": round(elapsed_ms, 2),
+            "l2_history": l2_history,
+            **(
+                {"l3_degraded": True, "l3_failure": str(e2e_l3_fault)}
+                if e2e_l3_fault
+                else {}
+            ),
+            **(
+                {"late_system_nudge": _CURRENT_REQUEST_NUDGE}
+                if anchor_current
+                else {}
+            ),
+        }
+        if context_os_on:
+            fragments: list[ContextFragment] = []
+            if frozen_text:
+                fragments.append(
+                    ContextFragment(
+                        fragment_id="memory:l1",
+                        source="memory:l1",
+                        role="system",
+                        content=frozen_text,
+                        lifetime="stable",
+                        placement="prefix",
+                        priority=100,
+                        trim_policy="never",
+                        protected=True,
+                        reason="l1_core_memory",
+                        cache_scope="session",
+                    )
+                )
+            if dynamic_text:
+                fragments.append(
+                    ContextFragment(
+                        fragment_id="memory:l3",
+                        source="memory:l3",
+                        role="system",
+                        content=dynamic_text,
+                        lifetime="retrieved",
+                        placement="prefix",
+                        priority=55,
+                        trim_policy="page_in",
+                        reason="semantic_recall",
+                        meta={
+                            "page_in_kind": "memory_l3",
+                            "page_in_source": "memory:l3",
+                            "page_in_content": dynamic_text,
+                        },
+                    )
+                )
+            return Slice(
+                component_name=self.name,
+                fragments=fragments,
+                tokens=tokens,
+                priority=100,
+                meta=meta,
+            )
+
         return Slice(
             component_name=self.name,
             text_content=combined,
             tokens=tokens,
             priority=100,
             bucket="dynamic" if dynamic_text else "frozen",
-            meta={
-                "l1_bytes": len(frozen_text),
-                "l2_count": len(l2_rows),
-                "l3_count": len(l3_hits),
-                "latency_ms": round(elapsed_ms, 2),
-                # NEW: assembler picks this up and assigns to bundle.history
-                "l2_history": l2_history,
-                **(
-                    {"late_system_nudge": _CURRENT_REQUEST_NUDGE}
-                    if anchor_current
-                    else {}
-                ),
-            },
+            meta=meta,
         )
 
 

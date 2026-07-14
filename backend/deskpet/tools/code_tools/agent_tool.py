@@ -46,6 +46,7 @@ def build_agent_tool(
     default_tool_subset: tuple[str, ...] = _DEFAULT_READONLY_TOOLS,
     default_framing: str = "",
     termination_gate_factory: Callable[[], Any] | None = None,
+    context_prepare: Callable[..., Awaitable[tuple[Any, str]]] | None = None,
 ):
     """Construct the agent (subagent) tool handler.
 
@@ -183,7 +184,24 @@ def build_agent_tool(
 
         async def _run():
             final_text = ""
-            async for ev in sub_loop.run(sub_messages, session_id=sub_sid):
+            prepared_context = None
+            context_request_id = None
+            if context_prepare is not None:
+                prepared_context, context_request_id = await context_prepare(
+                    messages=sub_messages,
+                    session_id=sub_sid,
+                    user_message=prompt,
+                    tool_names=tuple(tool_subset),
+                    venue="code_subagent",
+                )
+                sub_messages[:] = prepared_context.messages
+            _run_kwargs = {"session_id": sub_sid}
+            if prepared_context is not None:
+                _run_kwargs.update(
+                    prepared_context=prepared_context,
+                    context_request_id=context_request_id,
+                )
+            async for ev in sub_loop.run(sub_messages, **_run_kwargs):
                 if isinstance(ev, _FinEv):
                     final_text = ev.content or ""
                     break
@@ -234,6 +252,20 @@ class _SubsetRegistryAdapter:
     def __init__(self, parent_registry, allowed_names: list[str]) -> None:
         self._parent = parent_registry
         self._allowed = set(allowed_names)
+
+    @property
+    def capability_scope_store(self):
+        return getattr(self._parent, "capability_scope_store", None)
+
+    def validate_prepared_tool_set(self, prepared, *, eligibility):
+        names = {
+            cap.ref.name for cap in (*prepared.direct, *prepared.activated)
+        }
+        if not names.issubset(self._allowed):
+            raise PermissionError("prepared tool set exceeds subagent subset")
+        return self._parent.validate_prepared_tool_set(
+            prepared, eligibility=eligibility
+        )
 
     def schemas(self, enabled_toolsets=None):
         all_schemas = self._parent.schemas(enabled_toolsets=enabled_toolsets)

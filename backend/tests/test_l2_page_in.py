@@ -68,6 +68,25 @@ async def test_l2_page_in_always_fetches_l2_and_preserves_reasoning_content():
 
 
 @pytest.mark.asyncio
+async def test_e2e_l3_fault_preserves_l2_and_skips_only_semantic_recall(monkeypatch):
+    mm = _MemoryManager([{"role": "user", "content": "continuity marker"}])
+    monkeypatch.setattr(
+        "deskpet.context_os_e2e_hooks.consume_context_os_e2e_fault",
+        lambda name: "forced-timeout" if name == "l3_timeout" else None,
+    )
+
+    sl = await MemoryComponent().provide(
+        _ctx(MemoryPolicy(l2_top_k=2, l3_top_k=3, l2_page_in="always"), mm=mm)
+    )
+
+    assert mm.calls[-1]["l2_top_k"] == 2
+    assert mm.calls[-1]["l3_top_k"] == 0
+    assert sl.meta["l2_count"] == 1
+    assert sl.meta["l3_degraded"] is True
+    assert sl.meta["l3_failure"] == "forced-timeout"
+
+
+@pytest.mark.asyncio
 async def test_l2_page_in_off_skips_l2_with_top_k_zero():
     mm = _MemoryManager()
 
@@ -161,8 +180,10 @@ policies:
 def test_default_profile_l2_page_in_values():
     policies = load_policies()
 
-    assert policies["task"].memory.l2_page_in == "followup"
-    assert policies["web_search"].memory.l2_page_in == "followup"
+    assert policies["task"].memory.l2_page_in == "always"
+    assert policies["web_search"].memory.l2_page_in == "always"
+    assert policies["task"].memory.l2_top_k == 8
+    assert policies["web_search"].memory.l2_top_k == 8
     assert policies["command"].memory.l2_page_in == "followup"
     for task_type in ("recall", "chat", "emotion", "plan", "code"):
         assert policies[task_type].memory.l2_page_in == "always"

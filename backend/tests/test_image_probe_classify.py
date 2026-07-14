@@ -20,6 +20,7 @@ class _FakeClient:
     get_status = 200
     get_exc: Exception | None = None
     post_resp: _Resp | None = None
+    post_kwargs: dict | None = None
 
     def __init__(self, *args, **kwargs):
         type(self).init_kwargs = kwargs
@@ -41,6 +42,7 @@ class _FakeClient:
 
     def post(self, url, **kwargs):
         assert url == "https://relay.example/v1/images/generations"
+        type(self).post_kwargs = kwargs
         return type(self).post_resp
 
 
@@ -108,3 +110,26 @@ def test_generate_images_failure_result_includes_error_kind(monkeypatch):
     assert out[0]["path"] is None
     assert out[0]["error"]
     assert out[0]["error_kind"] == "model_unavailable"
+
+
+def test_seedream_generation_explicitly_disables_provider_watermark(monkeypatch):
+    import base64
+    import deskpet.tools.image_tools as m
+
+    monkeypatch.setattr(m.httpx, "Client", _FakeClient)
+    monkeypatch.setattr(
+        m,
+        "_resolve_relay_base_and_key",
+        lambda: ("https://relay.example/v1", "key"),
+    )
+    _FakeClient.post_resp = _Resp(
+        200,
+        {"data": [{"b64_json": base64.b64encode(b"png").decode("ascii")}]},
+    )
+
+    content, error = m._generate_png(
+        "clean PPT background", "1792x1024", "doubao-seedream-4.0"
+    )
+
+    assert content == b"png" and error is None
+    assert _FakeClient.post_kwargs["json"]["watermark"] is False

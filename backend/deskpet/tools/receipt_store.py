@@ -174,6 +174,50 @@ class ReceiptStore:
             # PRD §6 R10: degrade gracefully — log but don't break main loop
             logger.warning("receipt append failed (%s): %s", path, exc)
 
+    def append_once(self, receipt: ToolReceipt) -> bool:
+        """Durably append one receipt identity at most once per session.
+
+        Accepted and delivered receipts dedupe independently by workflow
+        effect/run plus phase. A trailing partial JSONL record is discarded
+        before the atomic temp-file replacement, so a prior interrupted write
+        cannot poison later verification.
+        """
+
+        self.receipts_dir.mkdir(parents=True, exist_ok=True)
+        path = self.receipts_dir / f"{receipt.session_id or 'default'}.jsonl"
+        temp_path = path.with_suffix(path.suffix + ".tmp")
+        identity = receipt.append_once_key()
+        try:
+            with self._lock:
+                existing = path.read_bytes() if path.exists() else b""
+                if existing and not existing.endswith(b"\n"):
+                    last_newline = existing.rfind(b"\n")
+                    existing = existing[: last_newline + 1] if last_newline >= 0 else b""
+                for raw_line in existing.splitlines():
+                    if not raw_line.strip():
+                        continue
+                    try:
+                        loaded = ToolReceipt.from_dict(json.loads(raw_line))
+                    except (json.JSONDecodeError, TypeError, KeyError, AttributeError, ValueError):
+                        continue
+                    if hmac_verify(loaded, self.key) and loaded.append_once_key() == identity:
+                        return False
+                encoded = canonical_json(receipt.to_dict()).encode("utf-8") + b"\n"
+                with open(temp_path, "wb") as handle:
+                    handle.write(existing)
+                    handle.write(encoded)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(temp_path, path)
+                return True
+        except OSError as exc:
+            logger.warning("receipt append-once failed (%s): %s", path, exc)
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return False
+
     def load_session(self, session_id: str) -> list[ToolReceipt]:
         """Load all sig-valid receipts for a session (N1: filter sig-invalid)."""
         path = self.receipts_dir / f"{session_id}.jsonl"
@@ -188,8 +232,14 @@ class ReceiptStore:
                     continue
                 try:
                     d = json.loads(line)
-                    r = ToolReceipt(**d)
-                except (json.JSONDecodeError, TypeError, KeyError) as exc:
+                    r = ToolReceipt.from_dict(d)
+                except (
+                    json.JSONDecodeError,
+                    TypeError,
+                    KeyError,
+                    AttributeError,
+                    ValueError,
+                ) as exc:
                     logger.warning("receipt parse failed: %s", exc)
                     continue
                 # N1 信任面：sig-invalid 整条剔除，emit metric
@@ -273,6 +323,12 @@ def emit_receipt(
     iteration: int = 0,
     error_class: Optional[str] = None,
     artifact_shas: Optional[list[str]] = None,
+    receipt_id: Optional[str] = None,
+    phase: str = "executed",
+    outcome: Optional[str] = None,
+    run_id: Optional[str] = None,
+    node_execution_id: Optional[str] = None,
+    effect_id: Optional[str] = None,
 ) -> ToolReceipt:
     """End-to-end: build → sign with store.key → append → return."""
     r = make_receipt(
@@ -285,10 +341,42 @@ def emit_receipt(
         iteration=iteration,
         error_class=error_class,
         artifact_shas=artifact_shas,
+        receipt_id=receipt_id,
+        phase=phase,
+        outcome=outcome,
+        run_id=run_id,
+        node_execution_id=node_execution_id,
+        effect_id=effect_id,
         secret=store.key,
     )
-    store.append(r)
+    store.append_once(r)
     return r
+
+
+def emit_accepted_receipt(
+    store: ReceiptStore,
+    **kwargs: Any,
+) -> ToolReceipt:
+    """Append the non-completion receipt emitted when an async run starts."""
+
+    return emit_receipt(store, ok=False, phase="accepted", outcome="pending", **kwargs)
+
+
+def emit_delivered_receipt(
+    store: ReceiptStore,
+    *,
+    ok: bool,
+    **kwargs: Any,
+) -> ToolReceipt:
+    """Append terminal workflow delivery exactly once for its effect/run."""
+
+    return emit_receipt(
+        store,
+        ok=ok,
+        phase="delivered",
+        outcome="success" if ok else "failed",
+        **kwargs,
+    )
 
 
 __all__ = [
@@ -296,4 +384,6 @@ __all__ = [
     "load_or_create_hmac_key",
     "sanity_echo",
     "emit_receipt",
+    "emit_accepted_receipt",
+    "emit_delivered_receipt",
 ]

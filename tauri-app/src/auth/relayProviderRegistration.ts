@@ -9,6 +9,7 @@
  * injected control channel, without depending on any concrete channel class.
  */
 import type { RelayAuthAdapter } from "./RelayAuthAdapter";
+import { updateCloudConfig } from "../bindings/config";
 import { pickModel } from "./relayProviderBridge";
 import type { Provider, User } from "./types";
 
@@ -134,6 +135,7 @@ export class RelayProviderRegistration {
           id: RELAY_PROVIDER_ID,
           source: "relay",
           account_ref: acct,
+          enabled: true,
           name: "中转站 · chinzy",
           base_url: meta.base_url,
           models,
@@ -141,6 +143,16 @@ export class RelayProviderRegistration {
           api_key: synced.key,
         },
       });
+      try {
+        await updateCloudConfig("", {
+          base_url: meta.base_url,
+          model: pickModel(meta),
+          api_key: synced.key,
+          persist_key: false,
+        });
+      } catch (e) {
+        console.warn("[reg] live cloud config update failed", e);
+      }
       this.lastEnsured = { accountRef: acct, keyPresent: true };
       return { ok: true };
     } catch (e) {

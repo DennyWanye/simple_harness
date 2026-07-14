@@ -42,12 +42,27 @@ Design notes
 from __future__ import annotations
 
 import asyncio
+import contextvars
+import copy
+import hashlib
 import json
 import logging
 import os
 import threading
-from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+import time
+from dataclasses import dataclass, field, replace
+from pathlib import Path
+from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
+
+from .capabilities import (
+    ToolCapabilityScopeStore,
+    ToolEligibilityContext,
+    ToolExecutionContext,
+    ToolPolicySnapshot,
+    current_tool_execution_context,
+    reset_tool_execution_context,
+    set_tool_execution_context,
+)
 
 from .error_classifier import classify as _classify_retriable
 
@@ -64,7 +79,169 @@ CheckFn = Callable[[], bool]
 # re-evaluated on every ``schemas()`` call, so it can depend on per-session
 # runtime state (e.g. "only show goal_task_* tools when a /goal is active").
 # ``None`` (the default) means "always visible".
-VisibilityFn = Callable[[], bool]
+VisibilityFn = Callable[..., bool]
+OutcomeParser = Callable[[Any], Any]
+PrepareFn = Callable[
+    [dict[str, Any], str, str],
+    tuple[Mapping[str, Any], Sequence[Any]],
+]
+LifecycleFn = Callable[..., Any]
+
+
+_OUTCOME_PARSER_VERSION = "v1"
+_GRAPH_STAGED_FILE_TOOLS: frozenset[str] = frozenset(
+    {
+        "write_file",
+        "edit_file",
+        "file_write",
+        "desktop_create_file",
+        "doc_create",
+        "doc_edit",
+        "excel_create",
+        "pdf_export",
+    }
+)
+_GRAPH_EXCLUDED_WRITE_TOOLS: frozenset[str] = frozenset(
+    {"file_organize", "memory_write", "memory_forget", "ppt_create"}
+)
+_GRAPH_OPAQUE_WRITE_TOOLS: frozenset[str] = frozenset(
+    {
+        "run_shell",
+        "run_browser_task",
+        "screen_click",
+        "screen_move",
+        "screen_type",
+        "screen_key",
+        "screen_scroll",
+    }
+)
+
+
+def _canonical_hash(value: Any) -> str:
+    payload = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _schema_hash(schema: Mapping[str, Any]) -> str:
+    return _canonical_hash(dict(schema))
+
+
+def _parser_hash(parser_id: str, version: str) -> str:
+    return _canonical_hash({"parser_id": parser_id, "version": version})
+
+
+def _schema_defaults(schema: Mapping[str, Any], params: Mapping[str, Any]) -> dict[str, Any]:
+    """Apply top-level JSON-schema defaults without mutating caller input."""
+
+    out = dict(params)
+    parameters = schema.get("parameters", {})
+    properties = parameters.get("properties", {}) if isinstance(parameters, Mapping) else {}
+    if isinstance(properties, Mapping):
+        for key, definition in properties.items():
+            if key not in out and isinstance(definition, Mapping) and "default" in definition:
+                out[str(key)] = definition["default"]
+    return out
+
+
+def _result_payload(raw: Any) -> Any:
+    if not isinstance(raw, str):
+        return raw
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return raw
+
+
+def _failure_message(payload: Mapping[str, Any]) -> str:
+    error = payload.get("error")
+    if isinstance(error, Mapping):
+        return str(error.get("message") or error.get("code") or "tool failed")
+    return str(error or payload.get("message") or "tool failed")
+
+
+def _normalize_with_parser(parser_id: str, raw: Any) -> Any:
+    """Parse a handler result into the durable workflow outcome contract."""
+
+    from deskpet.workflows.effects import NormalizedToolOutcome
+
+    payload = _result_payload(raw)
+    if parser_id == "opaque_manual_v1":
+        return NormalizedToolOutcome.malformed(
+            "opaque tool outcome requires manual reconciliation"
+        )
+    if parser_id == "mcp_explicit_v1":
+        if not isinstance(payload, Mapping) or "isError" not in payload:
+            return NormalizedToolOutcome.malformed(
+                "dynamic tool did not provide an explicit isError outcome"
+            )
+        if bool(payload.get("isError")):
+            return NormalizedToolOutcome.failure(
+                "tool_failed", _failure_message(payload), value=dict(payload)
+            )
+        return NormalizedToolOutcome.success(dict(payload))
+    if parser_id == "shell_exit_v1":
+        if not isinstance(payload, Mapping) or "exit_code" not in payload:
+            return NormalizedToolOutcome.malformed("shell outcome has no exit_code")
+        if payload.get("exit_code") == 0:
+            return NormalizedToolOutcome.success(dict(payload))
+        return NormalizedToolOutcome.failure(
+            "nonzero_exit", _failure_message(payload), value=dict(payload)
+        )
+    if parser_id == "accepted_run_v1":
+        if isinstance(payload, Mapping) and payload.get("accepted") is True and payload.get("run_id"):
+            return NormalizedToolOutcome.success(dict(payload))
+        if isinstance(payload, Mapping) and (payload.get("ok") is False or payload.get("error")):
+            return NormalizedToolOutcome.failure(
+                "tool_failed", _failure_message(payload), value=dict(payload)
+            )
+        return NormalizedToolOutcome.malformed("accepted outcome needs accepted=true and run_id")
+    if parser_id == "artifact_envelope_v1":
+        if isinstance(payload, Mapping) and (payload.get("ok") is False or payload.get("error")):
+            return NormalizedToolOutcome.failure(
+                "tool_failed", _failure_message(payload), value=dict(payload)
+            )
+        if isinstance(payload, Mapping) and any(
+            payload.get(key) for key in ("path", "output_path", "artifact", "artifacts")
+        ):
+            return NormalizedToolOutcome.success(dict(payload))
+        return NormalizedToolOutcome.malformed("artifact outcome has no artifact or path")
+    if parser_id == "code_array_or_error_v1":
+        if isinstance(payload, list):
+            return NormalizedToolOutcome.success(payload)
+        if isinstance(payload, Mapping):
+            if payload.get("ok") is False or payload.get("error"):
+                return NormalizedToolOutcome.failure(
+                    "tool_failed", _failure_message(payload), value=dict(payload)
+                )
+            return NormalizedToolOutcome.success(dict(payload))
+        return NormalizedToolOutcome.malformed("code search outcome is not an array or object")
+    if parser_id == "json_error_envelope_v1":
+        if not isinstance(payload, Mapping):
+            return NormalizedToolOutcome.malformed("tool outcome is not a JSON object")
+        if payload.get("ok") is False or payload.get("error"):
+            return NormalizedToolOutcome.failure(
+                "tool_failed", _failure_message(payload), value=dict(payload)
+            )
+        return NormalizedToolOutcome.success(dict(payload))
+    return NormalizedToolOutcome.malformed(f"unknown outcome parser: {parser_id}")
+
+
+def _default_parser_id(name: str, source: str, permission_category: str) -> str:
+    if source.startswith(("plugin:", "mcp:")):
+        return "opaque_manual_v1"
+    if name == "run_shell":
+        return "shell_exit_v1"
+    if name in {"glob", "grep"}:
+        return "code_array_or_error_v1"
+    if name in {"deepresearch", "ppt_pro"}:
+        return "accepted_run_v1"
+    if name in _GRAPH_STAGED_FILE_TOOLS:
+        return "artifact_envelope_v1"
+    if permission_category in _WRITE_PERMISSION_CATEGORIES:
+        return "opaque_manual_v1"
+    return "json_error_envelope_v1"
 
 
 # WI-CC-2 (plan mode 物理只读): 写/执行类 permission_category 集中维护。
@@ -101,9 +278,9 @@ def _envelope_indicates_success(handler_result: str) -> bool:
     accounting?
 
     Handlers return JSON strings. By Phase 0 convention, the structured
-    payload uses ``{"ok": false, "error": "..."}`` for known failure
-    modes (missing param / would_overwrite / not_found / etc) even when
-    no Python exception was raised. We treat those as breaker failures
+    payload uses ``{"ok": false, "error": "..."}`` or an error-only
+    envelope for known failure modes (missing param / would_overwrite /
+    not_found / etc) even when no Python exception was raised. We treat those as breaker failures
     — otherwise an LLM that keeps invoking ``write_file`` with no
     ``path`` parameter would never trip the breaker.
 
@@ -120,9 +297,127 @@ def _envelope_indicates_success(handler_result: str) -> bool:
     if not isinstance(payload, dict):
         return True
     ok = payload.get("ok")
-    if ok is False:
+    if ok is False or payload.get("error") not in (None, "", False):
         return False
     return True
+
+
+def _default_effect_policy(name: str, source: str, permission_category: str) -> Any:
+    from deskpet.workflows.contracts import EffectKind, EffectPolicy
+
+    if name in _GRAPH_STAGED_FILE_TOOLS:
+        kind = EffectKind.STAGED_FILE
+    elif (
+        source.startswith(("plugin:", "mcp:"))
+        or permission_category in _WRITE_PERMISSION_CATEGORIES
+        or name in _GRAPH_OPAQUE_WRITE_TOOLS
+    ):
+        kind = EffectKind.OPAQUE_MANUAL
+    else:
+        kind = EffectKind.IDEMPOTENT_READ
+    return EffectPolicy(
+        policy_id=f"deskpet:{name}:{kind.value}",
+        version="v1",
+        kind=kind,
+        max_attempts=1,
+    )
+
+
+def _default_completion_semantics(name: str) -> str:
+    return "accepted_async" if name in {"deepresearch", "ppt_pro"} else "sync"
+
+
+def _target_path_for_call(
+    name: str,
+    params: dict[str, Any],
+    *,
+    session_id: str,
+    stable_call_id: str,
+) -> tuple[str | None, str | None]:
+    """Resolve a graph-staged tool's output path and parameter key."""
+
+    key_by_tool = {
+        "write_file": "path",
+        "edit_file": "path",
+        "file_write": "path",
+        "doc_create": "output_path",
+        "doc_edit": "file_path",
+        "excel_create": "output_path",
+        "pdf_export": "output_path",
+    }
+    key = key_by_tool.get(name)
+    if name == "desktop_create_file":
+        desktop_name = str(params.get("name") or "")
+        return (str(Path.home() / "Desktop" / desktop_name), None) if desktop_name else (None, None)
+    if key is None:
+        return None, None
+    value = params.get(key)
+    if value:
+        return str(value), key
+    suffix_by_tool = {
+        "doc_create": ".docx",
+        "excel_create": ".xlsx",
+        "pdf_export": ".pdf",
+    }
+    suffix = suffix_by_tool.get(name)
+    if suffix is None:
+        return None, key
+    safe_session = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in session_id)
+    safe_call = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in stable_call_id)
+    generated = Path.cwd() / "outputs" / f"{name}-{safe_session}-{safe_call}{suffix}"
+    params[key] = str(generated)
+    return str(generated), key
+
+
+def _default_prepared_targets(
+    name: str,
+    params: dict[str, Any],
+    *,
+    session_id: str,
+    stable_call_id: str,
+) -> tuple[Any, ...]:
+    from deskpet.workflows.effects import PreparedTarget, TargetMode
+
+    if name not in _GRAPH_STAGED_FILE_TOOLS:
+        return ()
+    raw_path, _ = _target_path_for_call(
+        name, params, session_id=session_id, stable_call_id=stable_call_id
+    )
+    if not raw_path:
+        return ()
+    final = Path(raw_path).expanduser()
+    if not final.is_absolute():
+        workspace = params.get("_project_root") or params.get("_write_scope_root")
+        if workspace:
+            final = Path(str(workspace)).expanduser() / final
+    final = final.resolve(strict=False)
+    exists = final.is_file()
+    if name in {"edit_file", "doc_edit"}:
+        mode = TargetMode.EDIT
+    elif name == "file_write" and str(params.get("mode", "overwrite")) == "append":
+        mode = TargetMode.APPEND
+    elif exists:
+        mode = TargetMode.REPLACE
+    else:
+        mode = TargetMode.CREATE
+    return (
+        PreparedTarget.prepare(
+            final,
+            run_id=session_id,
+            stable_call_id=stable_call_id,
+            mode=mode,
+            format=final.suffix.lower().lstrip(".") or None,
+        ),
+    )
+
+
+def _staged_lifecycle_method(method: str) -> LifecycleFn:
+    def invoke(*args: Any, **kwargs: Any) -> Any:
+        from deskpet.workflows.effects import StagedFileLifecycle
+
+        return getattr(StagedFileLifecycle(), method)(*args, **kwargs)
+
+    return invoke
 
 
 @dataclass(frozen=True)
@@ -178,12 +473,35 @@ class ToolSpec:
     # user runs /goal). Only gates *schema* exposure — ``execute_tool`` still
     # dispatches if the LLM somehow calls a hidden tool (handler guards apply).
     visible_when: Optional[VisibilityFn] = None
+    visibility_scope: str = "global"
+    fixture_epoch: int = 0
+    fixture_spec_hash: str = ""
+    fixture_spec_version: str = ""
+    fixture_remote_name: str = ""
+    # Durable workflow metadata. Legacy registrations receive conservative,
+    # versioned defaults in ``register``; explicit plugin/MCP opt-in can
+    # replace every field without changing the handler contract.
+    spec_version: str = "v1"
+    schema_hash: str = ""
+    permission_policy_version: str = "v1"
+    effect_policy: Any = None
+    outcome_parser: Optional[OutcomeParser] = None
+    outcome_parser_id: str = ""
+    outcome_parser_version: str = ""
+    outcome_parser_hash: str = ""
+    completion_semantics: str = "sync"
+    prepare: Optional[PrepareFn] = None
+    stage: Optional[LifecycleFn] = None
+    validate: Optional[LifecycleFn] = None
+    commit: Optional[LifecycleFn] = None
+    rollback: Optional[LifecycleFn] = None
+    reconcile: Optional[LifecycleFn] = None
 
     def env_satisfied(self) -> bool:
         """True iff every ``requires_env`` var is present AND non-empty."""
         return all(os.environ.get(e) for e in self.requires_env)
 
-    def is_visible(self) -> bool:
+    def is_visible(self, context: Optional[ToolEligibilityContext] = None) -> bool:
         """True iff this tool should appear in the LLM schema list this turn.
 
         ``visible_when is None`` → always visible (legacy default). A predicate
@@ -195,6 +513,16 @@ class ToolSpec:
         if self.visible_when is None:
             return True
         try:
+            if self.visibility_scope == "session":
+                if context is None:
+                    # Explicit legacy adapter: old zero-arg predicates keep
+                    # their rollback semantics; new context predicates may
+                    # choose to accept None for the same path.
+                    try:
+                        return bool(self.visible_when())
+                    except TypeError:
+                        return bool(self.visible_when(None))
+                return bool(self.visible_when(context))
             return bool(self.visible_when())
         except Exception as exc:  # noqa: BLE001 — never break schema build
             logger.warning(
@@ -214,6 +542,12 @@ class ToolSpec:
     def input_schema_json(self) -> dict[str, Any]:
         """Convenience accessor — pulls ``parameters`` out of the schema."""
         return dict(self.schema.get("parameters", {}))
+
+
+@dataclass(frozen=True)
+class ToolCatalogSnapshot:
+    revision: int
+    specs: tuple[ToolSpec, ...]
 
 
 def _run_coro_sync(coro: Any) -> Any:
@@ -248,6 +582,11 @@ class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, ToolSpec] = {}
         self._lock = threading.Lock()
+        self._catalog_revision = 0
+        self._capability_scope_store: Optional[ToolCapabilityScopeStore] = None
+        self._context_os_enabled_provider: Callable[[], bool] = lambda: False
+        self._context_os_e2e_hooks: Optional[Any] = None
+        self._mcp_catalog_stale_callback: Optional[Callable[[str], None]] = None
         # P4-S20: optional permission gate. When set, ``execute_tool``
         # awaits ``gate.check(...)`` before running the handler. Tests
         # and legacy ``dispatch()`` paths leave it unset (no gating).
@@ -281,6 +620,11 @@ class ToolRegistry:
         # 工具。默认空集 = 无 session 处于只读 = 字节级 BC（features.plan_read_only
         # OFF 时 main.py 永不置位，此集恒空）。
         self._plan_read_only_sessions: set[str] = set()
+        # PreparedToolCall intentionally contains only durable JSON fields.
+        # These caches retain same-process session/effect-policy context; a
+        # resumed workflow supplies the same facts through its durable grant.
+        self._prepared_session_ids: dict[tuple[str, str, str], str] = {}
+        self._prepared_effect_policy_versions: dict[tuple[str, str, str], str] = {}
 
     def set_permission_gate(self, gate) -> None:  # type: ignore[no-untyped-def]
         """Wire a PermissionGate. Called once at backend startup."""
@@ -294,6 +638,62 @@ class ToolRegistry:
         返回 None 时按 BC 路径（不包装 envelope）。
         """
         self._tools_config_provider = provider
+
+    def set_capability_scope_store(
+        self, store: Optional[ToolCapabilityScopeStore]
+    ) -> None:
+        self._capability_scope_store = store
+
+    @property
+    def capability_scope_store(self) -> Optional[ToolCapabilityScopeStore]:
+        return self._capability_scope_store
+
+    def set_context_os_enabled_provider(self, provider: Callable[[], bool]) -> None:
+        self._context_os_enabled_provider = provider
+
+    def set_context_os_e2e_hooks(self, hooks: Optional[Any]) -> None:
+        self._context_os_e2e_hooks = hooks
+
+    def set_mcp_catalog_stale_callback(
+        self, callback: Optional[Callable[[str], None]]
+    ) -> None:
+        self._mcp_catalog_stale_callback = callback
+
+    def invalidate_mcp_catalog_sources(self, sources: Iterable[str]) -> None:
+        """Atomically invalidate whole MCP server catalogs and reconnect them."""
+        source_set = {str(source) for source in sources if str(source).startswith("mcp:")}
+        if not source_set:
+            return
+        with self._lock:
+            stale_names = [
+                name for name, spec in self._tools.items() if spec.source in source_set
+            ]
+            for name in stale_names:
+                self._tools.pop(name, None)
+            if stale_names:
+                self._catalog_revision += 1
+        callback = self._mcp_catalog_stale_callback
+        if callback is not None:
+            for source in sorted(source_set):
+                try:
+                    callback(source)
+                except Exception:
+                    logger.warning("mcp_catalog_stale_callback_failed", exc_info=True)
+
+    @property
+    def context_os_e2e_hooks(self) -> Optional[Any]:
+        return self._context_os_e2e_hooks
+
+    def read_policy_snapshot(self, *, strict: bool) -> ToolPolicySnapshot:
+        if self._tools_config_provider is None:
+            return ToolPolicySnapshot.from_config(None)
+        try:
+            return ToolPolicySnapshot.from_config(self._tools_config_provider())
+        except Exception:
+            if strict:
+                raise RuntimeError("tool_policy_unavailable")
+            logger.warning("tools_config_provider read failed", exc_info=True)
+            return ToolPolicySnapshot.from_config(None)
 
     def set_receipt_store_provider(self, provider) -> None:  # type: ignore[no-untyped-def]
         """WI-T2.2 P0 修：wire a callable returning current ``ReceiptStore`` (or None).
@@ -368,6 +768,25 @@ class ToolRegistry:
         replace_allowed: bool = False,
         concurrency_safe: bool = True,
         visible_when: Optional[VisibilityFn] = None,
+        visibility_scope: str = "global",
+        fixture_epoch: int = 0,
+        fixture_spec_hash: str = "",
+        fixture_spec_version: str = "",
+        fixture_remote_name: str = "",
+        spec_version: str = "v1",
+        permission_policy_version: str = "v1",
+        effect_policy: Any = None,
+        outcome_parser: Optional[OutcomeParser] = None,
+        outcome_parser_id: Optional[str] = None,
+        outcome_parser_version: str = _OUTCOME_PARSER_VERSION,
+        outcome_parser_hash: Optional[str] = None,
+        completion_semantics: Optional[str] = None,
+        prepare: Optional[PrepareFn] = None,
+        stage: Optional[LifecycleFn] = None,
+        validate: Optional[LifecycleFn] = None,
+        commit: Optional[LifecycleFn] = None,
+        rollback: Optional[LifecycleFn] = None,
+        reconcile: Optional[LifecycleFn] = None,
     ) -> None:
         """Register a single tool.
 
@@ -397,6 +816,12 @@ class ToolRegistry:
             raise TypeError(f"schema must be dict, got {type(schema).__name__}")
         if not callable(handler):
             raise TypeError("handler must be callable")
+        if not spec_version or not permission_policy_version:
+            raise ValueError("tool spec and permission policy versions are required")
+        if visibility_scope not in {"global", "session"}:
+            raise ValueError("visibility_scope must be global or session")
+        if completion_semantics not in {None, "sync", "accepted_async"}:
+            raise ValueError("completion_semantics must be sync or accepted_async")
 
         # WI-T4.2 v3 spec D3：plugin 工具自动加 ``<plugin>:`` 前缀防 namespace
         # 冲突（两个 plugin 注册同名 tool 时第二个会因 ToolNameConflictError 崩）。
@@ -430,6 +855,22 @@ class ToolRegistry:
                         name, qualified_name, source,
                     )
 
+        resolved_policy = effect_policy or _default_effect_policy(
+            qualified_name, source, permission_category
+        )
+        resolved_parser_id = outcome_parser_id or _default_parser_id(
+            qualified_name, source, permission_category
+        )
+        resolved_parser_hash = outcome_parser_hash or _parser_hash(
+            resolved_parser_id, outcome_parser_version
+        )
+        is_staged = getattr(getattr(resolved_policy, "kind", None), "value", None) == "staged_file"
+        if is_staged:
+            stage = stage or _staged_lifecycle_method("stage")
+            commit = commit or _staged_lifecycle_method("commit")
+            rollback = rollback or _staged_lifecycle_method("rollback")
+            reconcile = reconcile or _staged_lifecycle_method("reconcile")
+
         spec = ToolSpec(
             name=qualified_name,
             toolset=toolset,
@@ -444,6 +885,28 @@ class ToolRegistry:
             replace_allowed=replace_allowed,
             concurrency_safe=bool(concurrency_safe),
             visible_when=visible_when,
+            visibility_scope=visibility_scope,
+            fixture_epoch=int(fixture_epoch or 0),
+            fixture_spec_hash=str(fixture_spec_hash or ""),
+            fixture_spec_version=str(fixture_spec_version or ""),
+            fixture_remote_name=str(fixture_remote_name or ""),
+            spec_version=spec_version,
+            schema_hash=_schema_hash(schema),
+            permission_policy_version=permission_policy_version,
+            effect_policy=resolved_policy,
+            outcome_parser=outcome_parser,
+            outcome_parser_id=resolved_parser_id,
+            outcome_parser_version=outcome_parser_version,
+            outcome_parser_hash=resolved_parser_hash,
+            completion_semantics=(
+                completion_semantics or _default_completion_semantics(qualified_name)
+            ),
+            prepare=prepare,
+            stage=stage,
+            validate=validate,
+            commit=commit,
+            rollback=rollback,
+            reconcile=reconcile,
         )
         # 后续 dict 查 / 冲突检测都用 qualified_name
         name = qualified_name
@@ -465,6 +928,7 @@ class ToolRegistry:
                     name, existing.toolset, toolset, existing.source, source,
                 )
             self._tools[name] = spec
+            self._catalog_revision += 1
 
     def has(self, name: str) -> bool:
         """Return True iff a tool with this name is currently registered.
@@ -481,11 +945,146 @@ class ToolRegistry:
         tools on disconnect (P4-S9 task 14.5 + 14.6).
         """
         with self._lock:
-            return self._tools.pop(name, None) is not None
+            removed = self._tools.pop(name, None)
+            if removed is not None:
+                self._catalog_revision += 1
+            return removed is not None
 
     # ------------------------------------------------------------------
     # Schema export
     # ------------------------------------------------------------------
+    def catalog_snapshot(self) -> ToolCatalogSnapshot:
+        """Copy a single immutable catalog view under the registry lock."""
+        with self._lock:
+            specs = tuple(
+                replace(
+                    spec,
+                    schema=copy.deepcopy(spec.schema),
+                    requires_env=list(spec.requires_env),
+                )
+                for spec in self._tools.values()
+            )
+            return ToolCatalogSnapshot(self._catalog_revision, specs)
+
+    def eligible_specs(
+        self,
+        *,
+        context: ToolEligibilityContext,
+        policy_snapshot: ToolPolicySnapshot,
+        catalog: Optional[ToolCatalogSnapshot] = None,
+        enabled_toolsets: Optional[Sequence[str]] = None,
+    ) -> tuple[ToolSpec, ...]:
+        """Single host/session eligibility owner for the Context OS path."""
+        snapshot = catalog or self.catalog_snapshot()
+        allowed = set(enabled_toolsets) if enabled_toolsets is not None else None
+        out: list[ToolSpec] = []
+        for spec in snapshot.specs:
+            if not spec.env_satisfied() or not spec.is_visible(context):
+                continue
+            if allowed is not None and spec.toolset not in allowed:
+                continue
+            if spec.toolset in policy_snapshot.disabled_toolsets:
+                continue
+            if spec.toolset in policy_snapshot.schema_only_toolsets:
+                continue
+            if (
+                policy_snapshot.dangerous_allowlist
+                and spec.dangerous
+                and spec.name not in policy_snapshot.dangerous_allowlist
+            ):
+                continue
+            out.append(spec)
+        return tuple(out)
+
+    def validate_prepared_tool_set(
+        self,
+        prepared: Any,
+        *,
+        eligibility: ToolEligibilityContext,
+    ) -> None:
+        policy = self.read_policy_snapshot(strict=True)
+        if policy.fingerprint != prepared.policy_fingerprint:
+            raise RuntimeError("capability_stale")
+        with self._lock:
+            current = dict(self._tools)
+        fixture_specs: list[ToolSpec] = []
+        for capability in (*prepared.direct, *prepared.activated):
+            spec = current.get(capability.ref.name)
+            stale_reason = ""
+            if spec is None:
+                stale_reason = "missing"
+            elif spec.schema_hash != capability.ref.schema_hash:
+                stale_reason = "schema_hash"
+            elif spec.spec_version != capability.ref.spec_version:
+                stale_reason = "spec_version"
+            elif (
+                spec.permission_policy_version
+                != capability.ref.permission_policy_version
+            ):
+                stale_reason = "permission_policy_version"
+            elif not spec.env_satisfied():
+                stale_reason = "environment"
+            elif not spec.is_visible(eligibility):
+                stale_reason = "visibility"
+            elif spec.toolset in policy.disabled_toolsets:
+                stale_reason = "disabled_toolset"
+            elif (
+                policy.dangerous_allowlist
+                and spec.dangerous
+                and spec.name not in policy.dangerous_allowlist
+            ):
+                stale_reason = "dangerous_allowlist"
+            if stale_reason:
+                logger.warning(
+                    "prepared_tool_catalog_stale tool=%s reason=%s session_id=%s request_id=%s",
+                    capability.ref.name,
+                    stale_reason,
+                    eligibility.session_id,
+                    eligibility.request_id,
+                )
+                raise RuntimeError("tool_catalog_stale")
+            if spec.fixture_spec_hash:
+                fixture_specs.append(spec)
+        if self._context_os_e2e_hooks is not None and fixture_specs:
+            remote_names = [spec.fixture_remote_name or spec.name for spec in fixture_specs]
+            try:
+                meta = self._context_os_e2e_hooks.catalog(remote_names)
+            except RuntimeError as exc:
+                self.invalidate_mcp_catalog_sources(spec.source for spec in fixture_specs)
+                raise RuntimeError("tool_catalog_stale") from exc
+            remote = meta.get("tools") if isinstance(meta, dict) else None
+            stale = not isinstance(remote, dict)
+            if not stale:
+                for spec in fixture_specs:
+                    item = remote.get(spec.fixture_remote_name or spec.name)
+                    if (
+                        not isinstance(item, dict)
+                        or int(item.get("fixture_epoch", -1)) != spec.fixture_epoch
+                        or str(item.get("fixture_spec_hash", "")) != spec.fixture_spec_hash
+                        or str(item.get("fixture_spec_version", "")) != spec.fixture_spec_version
+                    ):
+                        logger.warning(
+                            "fixture_tool_catalog_stale tool=%s remote=%s "
+                            "expected_epoch=%s actual_epoch=%s "
+                            "expected_hash=%s actual_hash=%s "
+                            "expected_version=%s actual_version=%s",
+                            spec.name,
+                            spec.fixture_remote_name or spec.name,
+                            spec.fixture_epoch,
+                            item.get("fixture_epoch") if isinstance(item, dict) else None,
+                            spec.fixture_spec_hash[:12],
+                            str(item.get("fixture_spec_hash", ""))[:12]
+                            if isinstance(item, dict) else None,
+                            spec.fixture_spec_version,
+                            item.get("fixture_spec_version")
+                            if isinstance(item, dict) else None,
+                        )
+                        stale = True
+                        break
+            if stale:
+                self.invalidate_mcp_catalog_sources(spec.source for spec in fixture_specs)
+                raise RuntimeError("tool_catalog_stale")
+
     def schemas(
         self, enabled_toolsets: Optional[list[str]] = None
     ) -> list[dict[str, Any]]:
@@ -702,6 +1301,8 @@ class ToolRegistry:
         params: dict[str, Any],
         session_id: str,
         task_id: str = "",
+        *,
+        execution_context: Optional[ToolExecutionContext] = None,
     ) -> dict[str, Any]:
         """Permission-gated async tool execution.
 
@@ -721,9 +1322,62 @@ class ToolRegistry:
         if spec is None:
             return {"ok": False, "result": None, "error": f"unknown tool: {name}"}
 
+        context_os_on = bool(self._context_os_enabled_provider())
+        active_policy: Optional[ToolPolicySnapshot] = None
+        if context_os_on:
+            if execution_context is None or execution_context.origin != "agent":
+                return {
+                    "ok": False,
+                    "result": None,
+                    "error": "capability_denied: missing execution context",
+                }
+            if (
+                execution_context.session_id != session_id
+                or not execution_context.scope_id
+            ):
+                return {"ok": False, "result": None, "error": "capability_denied"}
+            if self._capability_scope_store is None:
+                return {
+                    "ok": False,
+                    "result": None,
+                    "error": "tool_capability_runtime_unavailable",
+                }
+            try:
+                active_policy = self.read_policy_snapshot(strict=True)
+            except RuntimeError:
+                return {"ok": False, "result": None, "error": "tool_policy_unavailable"}
+            record = self._capability_scope_store.get(
+                execution_context.scope_id,
+                session_id=execution_context.session_id,
+                request_id=execution_context.request_id,
+            )
+            if record is None:
+                return {"ok": False, "result": None, "error": "capability_denied"}
+            prepared = record.prepared.capability(name)
+            if prepared is None:
+                return {"ok": False, "result": None, "error": "capability_denied"}
+            if active_policy.fingerprint != record.prepared.policy_fingerprint:
+                return {"ok": False, "result": None, "error": "capability_stale"}
+            if (
+                prepared.ref.schema_hash != spec.schema_hash
+                or prepared.ref.spec_version != spec.spec_version
+                or prepared.ref.permission_policy_version
+                != spec.permission_policy_version
+                or not spec.env_satisfied()
+                or not spec.is_visible(record.eligibility)
+                or spec.toolset in active_policy.disabled_toolsets
+                or (
+                    active_policy.dangerous_allowlist
+                    and spec.dangerous
+                    and spec.name not in active_policy.dangerous_allowlist
+                )
+            ):
+                return {"ok": False, "result": None, "error": "capability_stale"}
+
         # WI-T5.1 v3：disabled_toolsets 双层挡 — strict 模式下 execute_tool
         # 也拒绝（schema_only 仅 schemas() 过滤，execute_tool 仍可调）。
-        if self._tools_config_provider is not None:
+        # Context OS already evaluated the immutable strict snapshot above.
+        if not context_os_on and self._tools_config_provider is not None:
             try:
                 cfg = self._tools_config_provider()
                 disabled_strict = set(getattr(cfg, "disabled_toolsets", []) or [])
@@ -792,7 +1446,13 @@ class ToolRegistry:
         # explicitly passing ``path`` to glob the user's home dir
         # instead of the project root).
         merged_params: dict[str, Any] = {}
-        merged_params.update(self._session_context.get(session_id, {}))
+        # MCP is a serialization and trust boundary. Host-only session
+        # objects (for example ``_image_worker``) are implementation details
+        # for local handlers and must never be forwarded to a remote MCP
+        # process. MCP handlers receive only the arguments exposed in their
+        # schema and explicitly supplied by the model.
+        if not spec.source.startswith("mcp:"):
+            merged_params.update(self._session_context.get(session_id, {}))
         merged_params.update(dict(params or {}))
 
         # P4-S22: run sync handlers in a thread executor. Some new
@@ -833,12 +1493,31 @@ class ToolRegistry:
             timeout_s = float(getattr(spec, "timeout_seconds", cfg_default_timeout)) or cfg_default_timeout
 
             async def _run_handler() -> Any:
-                if _inspect.iscoroutinefunction(spec.handler):
-                    return await spec.handler(merged_params, task_id)
-                loop = _asyncio.get_running_loop()
-                return await loop.run_in_executor(
-                    None, spec.handler, merged_params, task_id
+                host_context = execution_context
+                if host_context is not None and active_policy is not None:
+                    host_context = ToolExecutionContext(
+                        scope_id=host_context.scope_id,
+                        session_id=host_context.session_id,
+                        request_id=host_context.request_id,
+                        origin=host_context.origin,
+                        policy_snapshot=active_policy,
+                    )
+                token = (
+                    set_tool_execution_context(host_context)
+                    if host_context is not None
+                    else None
                 )
+                try:
+                    if _inspect.iscoroutinefunction(spec.handler):
+                        return await spec.handler(merged_params, task_id)
+                    loop = _asyncio.get_running_loop()
+                    copied = contextvars.copy_context()
+                    return await loop.run_in_executor(
+                        None, copied.run, spec.handler, merged_params, task_id
+                    )
+                finally:
+                    if token is not None:
+                        reset_tool_execution_context(token)
 
             try:
                 result = await _asyncio.wait_for(_run_handler(), timeout=timeout_s)
@@ -909,10 +1588,11 @@ class ToolRegistry:
                         self._session_iteration.get(session_id, 0) + 1
                     )
                     iteration = self._session_iteration[session_id]
-                    # use envelope.ok 表示工具是否成功（即便 handler 返了
-                    # ok=False 也算 dispatch 完成 - 而 envelope.ok=True 仅
-                    # 表示 dispatch 路径没有异常）
-                    envelope_ok = envelope.get("ok") is True
+                    # The outer registry envelope only says that Python
+                    # dispatch completed.  A handler can still return a
+                    # structured domain failure without raising, so receipts
+                    # use the same outcome classifier as the breaker.
+                    envelope_ok = _envelope_indicates_success(result)
                     # WI-T2.3 v3 P0 修：用真实 _started_at（dispatch 开始时记
                     # 录）+ now() 算 duration_ms。原 v2.1 用两次 now() 间隔仅
                     # 微秒，导致 receipt duration_ms ~0 → p95 监控失效。
@@ -934,21 +1614,65 @@ class ToolRegistry:
                     # 仅 file 产物且文件可读才算；失败静默跳过不破 dispatch。
                     _artifact_shas: Optional[list[str]] = None
                     _env_arts = envelope.get("artifacts")
+                    if not (isinstance(_env_arts, list) and _env_arts) and envelope_ok:
+                        # Receipt authority is not controlled by the public
+                        # artifact-envelope compatibility flag.  Infer the
+                        # same paths privately so Context OS can preserve a
+                        # real artifact identity even when response bytes must
+                        # retain the legacy {ok,result,error} shape.
+                        from deskpet.tools.artifact import extract_artifacts_from_result
+
+                        _env_arts = [
+                            artifact.to_dict()
+                            for artifact in extract_artifacts_from_result(
+                                tool_name=name,
+                                result_json=result,
+                            )
+                        ]
                     if isinstance(_env_arts, list) and _env_arts:
                         import hashlib as _hashlib
+                        from pathlib import Path as _Path
+
                         _shas: list[str] = []
+                        _workspace = (
+                            merged_params.get("_project_root")
+                            or merged_params.get("_write_scope_root")
+                        )
+                        _workspace_root = None
+                        if _workspace:
+                            try:
+                                _workspace_root = _Path(str(_workspace)).resolve()
+                            except OSError:
+                                _workspace_root = None
                         for _a in _env_arts:
                             _p = _a.get("path") if isinstance(_a, dict) else None
                             if not _p:
                                 continue
                             try:
+                                _artifact_path = _Path(str(_p))
+                                if not _artifact_path.is_absolute():
+                                    # Relative paths are meaningful only
+                                    # against the session's explicit workspace;
+                                    # never fall back to the process CWD.
+                                    if _workspace_root is None:
+                                        continue
+                                    _artifact_path = _workspace_root / _artifact_path
+                                _artifact_path = _artifact_path.resolve(strict=True)
+                                if _workspace_root is not None:
+                                    try:
+                                        _artifact_path.relative_to(_workspace_root)
+                                    except ValueError:
+                                        # Reject traversal and symlink escapes.
+                                        continue
                                 _h = _hashlib.sha256()
-                                with open(_p, "rb") as _f:
+                                with _artifact_path.open("rb") as _f:
                                     for _chunk in iter(
                                         lambda: _f.read(65536), b""
                                     ):
                                         _h.update(_chunk)
-                                _shas.append(_h.hexdigest())
+                                _digest = _h.hexdigest()
+                                if _digest not in _shas:
+                                    _shas.append(_digest)
                             except OSError:
                                 continue
                         _artifact_shas = _shas or None
@@ -977,6 +1701,372 @@ class ToolRegistry:
             outcome_ok = _envelope_indicates_success(result)
             await self._breaker.record_call(session_id, name, ok=outcome_ok)
         return envelope
+
+    # ------------------------------------------------------------------
+    # Durable workflow adapter APIs
+    # ------------------------------------------------------------------
+    def prepare_call(
+        self,
+        tool_name: str,
+        raw_params: Mapping[str, Any],
+        session_id: str,
+        stable_call_id: str,
+    ) -> Any:
+        """Freeze one tool call after context/default/path resolution.
+
+        The legacy handler contract remains ``handler(dict, task_id)``. This
+        method only snapshots the exact arguments and capability versions that
+        a durable workflow will later recheck before dispatch.
+        """
+
+        from deskpet.workflows.effects import PreparedToolCall
+
+        if not stable_call_id:
+            raise ValueError("stable_call_id is required")
+        with self._lock:
+            spec = self._tools.get(tool_name)
+        if spec is None:
+            raise KeyError(f"unknown tool: {tool_name}")
+
+        params: dict[str, Any] = {}
+        params.update(self._session_context.get(session_id, {}))
+        params.update(dict(raw_params or {}))
+        params = _schema_defaults(spec.schema, params)
+        input_blob_hashes = tuple(
+            str(item) for item in params.pop("_input_blob_hashes", ()) or ()
+        )
+        targets: Sequence[Any]
+        if spec.prepare is not None:
+            prepared_result = spec.prepare(dict(params), session_id, stable_call_id)
+            if isinstance(prepared_result, PreparedToolCall):
+                prepared = prepared_result
+                if prepared.tool_name != tool_name or prepared.stable_call_id != stable_call_id:
+                    raise ValueError("custom prepare returned a mismatched call identity")
+                cache_key = (tool_name, stable_call_id, prepared.args_hash)
+                self._prepared_session_ids[cache_key] = session_id
+                self._prepared_effect_policy_versions[cache_key] = str(
+                    getattr(spec.effect_policy, "version", "")
+                )
+                return prepared
+            final_params, targets = prepared_result
+            params = dict(final_params)
+        else:
+            targets = _default_prepared_targets(
+                tool_name,
+                params,
+                session_id=session_id,
+                stable_call_id=stable_call_id,
+            )
+
+        effect_type = str(getattr(getattr(spec.effect_policy, "kind", None), "value", None) or "opaque_manual")
+        prepared = PreparedToolCall.prepare(
+            tool_name=tool_name,
+            stable_call_id=stable_call_id,
+            final_params=params,
+            prepared_targets=tuple(targets),
+            tool_spec_version=spec.spec_version,
+            schema_hash=spec.schema_hash,
+            permission_policy_version=spec.permission_policy_version,
+            effect_type=effect_type,
+            input_blob_hashes=input_blob_hashes,
+        )
+        cache_key = (tool_name, stable_call_id, prepared.args_hash)
+        self._prepared_session_ids[cache_key] = session_id
+        self._prepared_effect_policy_versions[cache_key] = str(
+            getattr(spec.effect_policy, "version", "")
+        )
+        return prepared
+
+    def _normalize_result(self, spec: ToolSpec, raw: Any) -> Any:
+        from deskpet.workflows.effects import NormalizedToolOutcome
+
+        try:
+            outcome = (
+                spec.outcome_parser(raw)
+                if spec.outcome_parser is not None
+                else _normalize_with_parser(spec.outcome_parser_id, raw)
+            )
+        except Exception as exc:  # noqa: BLE001 - parser failures fail closed
+            return NormalizedToolOutcome.malformed(
+                f"outcome parser {spec.outcome_parser_id} raised {type(exc).__name__}"
+            )
+        if not isinstance(outcome, NormalizedToolOutcome):
+            return NormalizedToolOutcome.malformed(
+                f"outcome parser {spec.outcome_parser_id} returned an unsupported value"
+            )
+        return outcome
+
+    async def execute_tool_outcome(
+        self,
+        name: str,
+        params: dict[str, Any],
+        session_id: str,
+        task_id: str = "",
+        *,
+        execution_context: Optional[ToolExecutionContext] = None,
+    ) -> Any:
+        """Compatibility adapter returning a three-state durable outcome."""
+
+        from deskpet.workflows.effects import NormalizedToolOutcome
+
+        with self._lock:
+            spec = self._tools.get(name)
+        envelope = await self.execute_tool(
+            name,
+            params,
+            session_id,
+            task_id,
+            execution_context=execution_context,
+        )
+        if spec is None:
+            return NormalizedToolOutcome.failure(
+                "unknown_tool", str(envelope.get("error") or f"unknown tool: {name}")
+            )
+        if envelope.get("ok") is not True:
+            return NormalizedToolOutcome.failure(
+                "transport_failed", str(envelope.get("error") or "tool dispatch failed")
+            )
+        return self._normalize_result(spec, envelope.get("result"))
+
+    @staticmethod
+    def _grant_value(grant: object, key: str) -> Any:
+        if isinstance(grant, Mapping):
+            return grant.get(key)
+        return getattr(grant, key, None)
+
+    def _validate_authorization(
+        self,
+        authorization: object,
+        *,
+        prepared: Any,
+        effect_id: str,
+    ) -> str | None:
+        expected = {
+            "effect_id": effect_id,
+            "tool_name": prepared.tool_name,
+            "args_hash": prepared.args_hash,
+            "permission_policy_version": prepared.permission_policy_version,
+        }
+        for key, value in expected.items():
+            if self._grant_value(authorization, key) != value:
+                return f"authorization_{key}_mismatch"
+        expires_at = self._grant_value(authorization, "expires_at")
+        if expires_at is None:
+            return "authorization_expiry_missing"
+        try:
+            if float(expires_at) <= time.time():
+                return "authorization_expired"
+        except (TypeError, ValueError):
+            return "authorization_expiry_invalid"
+        return None
+
+    async def execute_prepared(
+        self,
+        prepared: Any,
+        *,
+        effect_id: str,
+        authorization: object | None = None,
+    ) -> Any:
+        """Execute exact prepared params after fail-closed capability recheck."""
+
+        import inspect as _inspect
+
+        from deskpet.workflows.effects import NormalizedToolOutcome
+
+        with self._lock:
+            spec = self._tools.get(prepared.tool_name)
+        if spec is None:
+            return NormalizedToolOutcome.failure("prepared_tool_missing", "tool is no longer registered")
+
+        cache_key = (prepared.tool_name, prepared.stable_call_id, prepared.args_hash)
+        current_effect_type = str(
+            getattr(getattr(spec.effect_policy, "kind", None), "value", None)
+            or "opaque_manual"
+        )
+        snapshots = {
+            "tool_spec_version": (prepared.tool_spec_version, spec.spec_version),
+            "schema_hash": (prepared.schema_hash, spec.schema_hash),
+            "permission_policy_version": (
+                prepared.permission_policy_version,
+                spec.permission_policy_version,
+            ),
+            "effect_type": (prepared.effect_type, current_effect_type),
+        }
+        for field_name, (old, current) in snapshots.items():
+            if old != current:
+                return NormalizedToolOutcome.failure(
+                    "prepared_call_stale", f"{field_name} changed; re-prepare and re-authorize"
+                )
+        cached_policy_version = self._prepared_effect_policy_versions.get(cache_key)
+        current_policy_version = str(getattr(spec.effect_policy, "version", ""))
+        if cached_policy_version is not None and cached_policy_version != current_policy_version:
+            return NormalizedToolOutcome.failure(
+                "prepared_call_stale", "effect policy changed; re-prepare and re-authorize"
+            )
+
+        grant_session_id = (
+            self._grant_value(authorization, "session_id")
+            if authorization is not None
+            else None
+        )
+        session_id = str(
+            grant_session_id or self._prepared_session_ids.get(cache_key, "")
+        )
+        if self._tools_config_provider is not None:
+            try:
+                cfg = self._tools_config_provider()
+                if spec.toolset in set(getattr(cfg, "disabled_toolsets", []) or []):
+                    return NormalizedToolOutcome.failure("tool_disabled", "toolset is disabled")
+            except Exception as exc:  # noqa: BLE001
+                return NormalizedToolOutcome.failure(
+                    "policy_recheck_failed", f"tools config unavailable: {type(exc).__name__}"
+                )
+        if not spec.env_satisfied():
+            return NormalizedToolOutcome.failure("tool_disabled", "required environment is unavailable")
+        if session_id in self._plan_read_only_sessions and spec.permission_category in _WRITE_PERMISSION_CATEGORIES:
+            return NormalizedToolOutcome.failure("plan_read_only", "write tool is disabled during planning")
+        if spec.check_fn is not None:
+            try:
+                if not bool(spec.check_fn()):
+                    return NormalizedToolOutcome.failure("tool_not_ready", "dynamic tool check failed")
+            except Exception as exc:  # noqa: BLE001
+                return NormalizedToolOutcome.failure(
+                    "tool_not_ready", f"dynamic tool check raised {type(exc).__name__}"
+                )
+        if self._breaker is not None and not await self._breaker.can_call(session_id, prepared.tool_name):
+            return NormalizedToolOutcome.failure("circuit_open", "tool circuit breaker is open")
+        if authorization is not None:
+            grant_error = self._validate_authorization(
+                authorization, prepared=prepared, effect_id=effect_id
+            )
+            if grant_error is not None:
+                return NormalizedToolOutcome.failure(grant_error, "authorization grant is invalid")
+        elif self._gate is not None:
+            return NormalizedToolOutcome.failure(
+                "authorization_required", "prepared execution requires a durable authorization grant"
+            )
+
+        exact_params = dict(prepared.to_dict()["final_params"])
+        started_at = None
+        raw: Any = None
+        try:
+            from datetime import datetime, timezone
+
+            started_at = datetime.now(timezone.utc)
+
+            async def invoke() -> Any:
+                if _inspect.iscoroutinefunction(spec.handler):
+                    return await spec.handler(exact_params, effect_id)
+                loop = asyncio.get_running_loop()
+                return await loop.run_in_executor(None, spec.handler, exact_params, effect_id)
+
+            raw = await asyncio.wait_for(invoke(), timeout=spec.timeout_seconds)
+            outcome = self._normalize_result(spec, raw)
+        except asyncio.TimeoutError:
+            if current_effect_type in {"staged_file", "opaque_manual"}:
+                outcome = NormalizedToolOutcome.malformed(
+                    "opaque or write tool timed out; manual reconciliation is required"
+                )
+            else:
+                outcome = NormalizedToolOutcome.failure(
+                    "tool_timeout", "read-only tool execution timed out"
+                )
+        except Exception as exc:  # noqa: BLE001
+            outcome = NormalizedToolOutcome.failure(
+                "tool_handler_error", f"{type(exc).__name__}: {exc}"
+            )
+
+        if self._receipt_store_provider is not None and started_at is not None:
+            try:
+                from datetime import datetime, timezone
+                from deskpet.tools.receipt_store import emit_receipt
+
+                store = self._receipt_store_provider()
+                if store is not None:
+                    success = outcome.state.value == "success"
+                    accepted = spec.completion_semantics == "accepted_async" and success
+                    # generate_image can return immediately with a queued job
+                    # even though its registry semantics remain sync-compatible
+                    # for the worker-unavailable fallback. A queued acknowledgement
+                    # is not evidence that an image artifact already exists.
+                    if success and prepared.tool_name == "generate_image":
+                        try:
+                            queued_payload = (
+                                json.loads(raw) if isinstance(raw, str) else raw
+                            )
+                            accepted = bool(
+                                isinstance(queued_payload, dict)
+                                and queued_payload.get("status") == "generating"
+                            )
+                        except (TypeError, ValueError, json.JSONDecodeError):
+                            accepted = False
+                    emit_receipt(
+                        store,
+                        tool_name=prepared.tool_name,
+                        args={k: v for k, v in exact_params.items() if not str(k).startswith("_")},
+                        started_at=started_at,
+                        ended_at=datetime.now(timezone.utc),
+                        ok=success and not accepted,
+                        session_id=session_id,
+                        phase="accepted" if accepted else "executed",
+                        outcome="pending" if accepted else ("success" if success else "failed"),
+                        effect_id=effect_id,
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("prepared receipt emission failed for %r: %s", prepared.tool_name, exc)
+        if self._breaker is not None:
+            await self._breaker.record_call(
+                session_id, prepared.tool_name, ok=outcome.state.value == "success"
+            )
+        return outcome
+
+    def tool_inventory(self, names: Optional[Sequence[str]] = None) -> list[Any]:
+        """Return one versioned workflow inventory row per selected ToolSpec."""
+
+        from deskpet.workflows.contracts import ToolAccess, ToolInventoryEntry
+
+        selected = set(names) if names is not None else None
+        with self._lock:
+            specs = list(self._tools.values())
+        entries: list[Any] = []
+        for spec in sorted(specs, key=lambda item: item.name):
+            if selected is not None and spec.name not in selected:
+                continue
+            access = (
+                ToolAccess.WRITE
+                if spec.permission_category in _WRITE_PERMISSION_CATEGORIES or spec.dangerous
+                else ToolAccess.READ
+            )
+            entries.append(
+                ToolInventoryEntry(
+                    name=spec.name,
+                    access=access,
+                    spec_version=spec.spec_version,
+                    schema_hash=spec.schema_hash,
+                    effect_policy=spec.effect_policy,
+                    outcome_parser_id=spec.outcome_parser_id,
+                    outcome_parser_version=spec.outcome_parser_version,
+                    outcome_parser_hash=spec.outcome_parser_hash,
+                )
+            )
+        if selected is not None:
+            missing = sorted(selected - {entry.name for entry in entries})
+            if missing:
+                raise KeyError(f"unknown tools in inventory: {', '.join(missing)}")
+        return entries
+
+    workflow_tool_inventory = tool_inventory
+
+    def graph_write_inventory(self) -> list[Any]:
+        """Committed v1 write classification exposed to graph compilers."""
+
+        names = sorted(
+            name
+            for name in self.list_tools()
+            if name not in _GRAPH_EXCLUDED_WRITE_TOOLS
+            and (name in _GRAPH_STAGED_FILE_TOOLS or name in _GRAPH_OPAQUE_WRITE_TOOLS)
+        )
+        return self.tool_inventory(names)
 
     # ------------------------------------------------------------------
     # G3 (companion-code-v2): partition_dispatch — safe 并发 / unsafe 串行

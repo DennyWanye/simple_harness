@@ -37,6 +37,7 @@ import {
 } from "../components/MessageStreamPanel";
 import { InputBar } from "../code-panel/InputBar";
 import { ChangeModelModal } from "../code-panel/ChangeModelModal";
+import { ConfirmDialog } from "../code-panel/ConfirmDialog";
 import {
   useCodeModelsStore,
   contextWindowForModel,
@@ -74,6 +75,7 @@ export function MessagePanelRoot() {
   // 「重命名话题」内联编辑：一次只编辑一行。
   const [editingSid, setEditingSid] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<SessionEntry | null>(null);
   // Enter/Esc 会把 editingSid 置空 → input 卸载触发 onBlur；用这个标记让那次
   // 善后 blur 不要再二次提交。startRename 时清零，避免污染下一次编辑。
   const skipBlurRef = useRef(false);
@@ -84,6 +86,7 @@ export function MessagePanelRoot() {
   const contextUsage = useSessionsStore((s) => s.sessions[activeSid]?.context_usage ?? null);
 
   const sessions = useSessionsStore((s) => s.sessions);
+  const storeActiveSid = useSessionsStore((s) => s.active_sid);
   const messages = useSessionsStore((s) => s.sessions[activeSid]?.messages ?? []);
   const preferred_model = useSessionsStore(
     (s) => s.sessions[activeSid]?.preferred_model ?? null,
@@ -146,13 +149,38 @@ export function MessagePanelRoot() {
   } = useAudioPlayer(getChannel());
 
   useEffect(() => {
+    if (storeActiveSid && storeActiveSid !== activeSid) {
+      setActiveSid(storeActiveSid);
+    }
+  }, [storeActiveSid, activeSid]);
+
+  useEffect(() => {
     return codePanelWS.on_message((msg: any) => {
-      if (msg?.type !== "session_switched" && msg?.type !== "task_session_started") {
-        return;
+      const p = msg?.payload || {};
+      let nextSid = "";
+      if (msg?.type === "session_switched" || msg?.type === "task_session_started") {
+        nextSid = typeof p.new_sid === "string" ? p.new_sid : "";
+      } else if (
+        msg?.type === "chat_response" ||
+        msg?.type === "chat_v2_final" ||
+        msg?.type === "tool_call" ||
+        msg?.type === "tool_result" ||
+        msg?.type === "ppt_outline_proposed"
+      ) {
+        const payloadSid =
+          typeof p.session_id === "string"
+            ? p.session_id
+            : typeof p.code_session_id === "string"
+              ? p.code_session_id
+              : "";
+        if (payloadSid && payloadSid !== DEFAULT_SID && payloadSid !== "message-panel-main") {
+          nextSid = payloadSid;
+        }
       }
-      const nextSid = msg?.payload?.new_sid;
-      if (typeof nextSid !== "string" || !nextSid) return;
-      useSessionsStore.getState().ensure(nextSid);
+      if (!nextSid) return;
+      const store = useSessionsStore.getState();
+      store.ensure(nextSid);
+      store.set_active(nextSid);
       setActiveSid(nextSid);
     });
   }, []);
@@ -172,13 +200,21 @@ export function MessagePanelRoot() {
     useSessionsStore.getState().ensure(sid);
     useSessionsStore.getState().set_active(sid);
     setActiveSid(sid);
-    // 拉该会话历史回灌 store（ws.ts 的 session_messages_response → set_messages）。
-    codePanelWS.send({
-      type: "session_messages_load",
-      payload: { session_id: sid, limit: 200 },
-    });
     setPickerOpen(false);
   }, []);
+
+  useEffect(() => {
+    if (!activeSid) return;
+    useSessionsStore.getState().ensure(activeSid);
+    codePanelWS.send({
+      type: "session_messages_load",
+      payload: { session_id: activeSid, limit: 200 },
+    });
+    codePanelWS.send({
+      type: "context_usage_request",
+      payload: { session_id: activeSid },
+    });
+  }, [activeSid]);
 
   const deleteSession = useCallback(
     (sid: string) => {
@@ -191,6 +227,25 @@ export function MessagePanelRoot() {
     },
     [activeSid, switchToDefault],
   );
+
+  const activeSession = useMemo<SessionEntry>(() => {
+    const found = sessionList.find((s) => s.session_id === activeSid);
+    if (found) return found;
+    return {
+      session_id: activeSid,
+      turn_count: messages.length,
+      last_message_at: 0,
+      preview: "",
+      title: "",
+    };
+  }, [activeSid, messages.length, sessionList]);
+
+  const activeTitle = topicDisplayLabel({
+    isDefault: activeSid === DEFAULT_SID,
+    title: activeSession.title,
+    preview: activeSession.preview,
+    session_id: activeSid,
+  });
 
   // ── 重命名话题 ───────────────────────────────────────────────────
   const startRename = useCallback((s: SessionEntry) => {
@@ -318,8 +373,8 @@ export function MessagePanelRoot() {
 
   const chatMessages = useMemo(() => {
     const out: ChatStreamMessage[] = [];
-    messages.forEach((m, i) => {
-      const ts = Date.now() - (messages.length - i) * 1000;
+    messages.forEach((m) => {
+      const ts = m.ts;
       if (m.role === "user") {
         out.push({ role: "user", text: m.text ?? "", ts });
         return;
@@ -343,11 +398,18 @@ export function MessagePanelRoot() {
           role: "tool",
           text: `${m.tool_ok === false ? "❌" : "✅"} ${m.tool_name || "(工具)"} 完成`,
           ts,
+          toolName: m.tool_name,
+          toolOk: m.tool_ok,
+          toolResultRaw: m.tool_result,
         });
         return;
       }
       if (m.role === "ppt_outline") {
         out.push({ role: "ppt_outline", message: m, session_id: activeSid, ts });
+        return;
+      }
+      if (m.role === "workflow_progress") {
+        out.push({ role: "workflow_progress", message: m, ts });
         return;
       }
       const clean = forPet(m.text);
@@ -448,41 +510,50 @@ export function MessagePanelRoot() {
             onMouseDown={(e) => e.stopPropagation()}
             style={{ position: "relative", flex: 1, minWidth: 0 }}
           >
-            <button
-              type="button"
-              onClick={() => {
-                if (!pickerOpen) loadSessions();
-                setPickerOpen((v) => !v);
-              }}
-              title="选择历史会话"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 7,
-                width: "100%",
-                minWidth: 0,
-                background: "transparent",
-                border: "none",
-                color: "inherit",
-                font: "inherit",
-                cursor: "pointer",
-                padding: 0,
-              }}
-            >
-              <Icon name="message" size={14} style={{ color: "#a5b4fc" }} />
-              <span
+            <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!pickerOpen) loadSessions();
+                  setPickerOpen((v) => !v);
+                }}
+                title="选择历史会话"
                 style={{
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 7,
                   flex: 1,
-                  textAlign: "left",
+                  minWidth: 0,
+                  background: "transparent",
+                  border: "none",
+                  color: "inherit",
+                  font: "inherit",
+                  cursor: "pointer",
+                  padding: 0,
                 }}
               >
-                {activeSid === DEFAULT_SID ? "消息 · 默认话题" : `消息 · ${activeSid}`}
+                <Icon name="message" size={14} style={{ color: "#a5b4fc" }} />
+                <span
+                  style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    flex: 1,
+                    textAlign: "left",
+                  }}
+                >
+                  {`消息 · ${activeTitle}`}
+                </span>
+                <span style={{ flexShrink: 0, opacity: 0.7, fontSize: 10 }}>▾</span>
+              </button>
+              <span
+                title="Session ID，可选中复制"
+                onMouseDown={(e) => e.stopPropagation()}
+                style={sessionIdChipStyle}
+              >
+                {activeSid}
               </span>
-              <span style={{ flexShrink: 0, opacity: 0.7, fontSize: 10 }}>▾</span>
-            </button>
+            </div>
             {pickerOpen && (
               <>
                 {/* 点空白处关闭 */}
@@ -604,9 +675,25 @@ export function MessagePanelRoot() {
                               >
                                 {label}
                               </div>
-                              <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 1 }}>
-                                {s.turn_count} 条
-                                {!isDefault && ` · ${s.session_id}`}
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 6,
+                                  color: "#94a3b8",
+                                  fontSize: 11,
+                                  marginTop: 3,
+                                  minWidth: 0,
+                                }}
+                              >
+                                <span style={{ flexShrink: 0 }}>{s.turn_count} 条</span>
+                                <span
+                                  title="Session ID，可选中复制"
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={sessionIdChipStyle}
+                                >
+                                  {s.session_id}
+                                </span>
                               </div>
                             </div>
                             <button
@@ -645,7 +732,7 @@ export function MessagePanelRoot() {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                deleteSession(s.session_id);
+                                setPendingDelete(s);
                               }}
                               title={isDefault ? "清空默认话题" : "删除该会话"}
                               aria-label="删除该会话"
@@ -840,6 +927,37 @@ export function MessagePanelRoot() {
         onMessage={(fn) => codePanelWS.on_message(fn)}
       />
 
+      {pendingDelete && (
+        <ConfirmDialog
+          title={pendingDelete.session_id === DEFAULT_SID ? "清空默认话题" : "删除会话"}
+          message={
+            <>
+              确定要{pendingDelete.session_id === DEFAULT_SID ? "清空" : "删除"}会话{" "}
+              <strong>{topicDisplayLabel({
+                isDefault: pendingDelete.session_id === DEFAULT_SID,
+                title: pendingDelete.title,
+                preview: pendingDelete.preview,
+                session_id: pendingDelete.session_id,
+              })}</strong>
+              吗？
+              <br />
+              <span style={{ color: "#facc15", userSelect: "text" }}>
+                {pendingDelete.session_id}
+              </span>
+            </>
+          }
+          confirm_label={pendingDelete.session_id === DEFAULT_SID ? "清空" : "删除"}
+          cancel_label="取消"
+          variant="danger"
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={() => {
+            const sid = pendingDelete.session_id;
+            setPendingDelete(null);
+            deleteSession(sid);
+          }}
+        />
+      )}
+
       {/* Recording-button pulse — this window has its own DOM, so it
           needs its own copy of the keyframes (App's is pet-window only). */}
       <style>{`
@@ -890,6 +1008,25 @@ const headerStyle: React.CSSProperties = {
   borderBottom: "1px solid rgba(255,255,255,0.05)",
   // 极简：去掉靛蓝渐变，扁平透明，靠分隔线区分。
   background: "transparent",
+};
+
+const sessionIdChipStyle: React.CSSProperties = {
+  flexShrink: 0,
+  maxWidth: 150,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  userSelect: "text",
+  cursor: "text",
+  border: "1px solid rgba(250, 204, 21, 0.7)",
+  borderRadius: 4,
+  padding: "1px 5px",
+  background: "rgba(250, 204, 21, 0.12)",
+  color: "#facc15",
+  fontFamily:
+    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+  fontSize: 11,
+  lineHeight: 1.35,
 };
 
 // 统一图标按钮：扁平、低对比、一致尺寸（28），无重边框。

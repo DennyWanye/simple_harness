@@ -63,6 +63,14 @@ class ClassifierResult:
 _RULE_PATTERNS: tuple[tuple[re.Pattern[str], str, str], ...] = (
     (re.compile(r"^\s*/\S"), "command", "slash-command prefix"),
     (
+        re.compile(
+            r"(深度调研|深入调研|调研报告|研究报告|调查研究|做.{0,4}调研|技术选型|竞品研究|政策分析)",
+            re.IGNORECASE,
+        ),
+        "web_search",
+        "deep-research trigger",
+    ),
+    (
         re.compile(r"(还记得|记得|之前.{0,5}(说|提|讲))"),
         "recall",
         "memory-probe trigger",
@@ -341,15 +349,18 @@ class TaskClassifier:
             {"role": "user", "content": user_message},
         ]
         try:
-            response = await asyncio.wait_for(
-                self._llm.chat_with_fallback(
-                    messages,
-                    model=self._llm_model,
-                    max_tokens=32,
-                    temperature=0.0,
-                ),
-                timeout=self._llm_timeout_s,
-            )
+            from agent.context_messages import provider_purpose_scope
+
+            with provider_purpose_scope("classifier"):
+                response = await asyncio.wait_for(
+                    self._llm.chat_with_fallback(
+                        messages,
+                        model=self._llm_model,
+                        max_tokens=32,
+                        temperature=0.0,
+                    ),
+                    timeout=self._llm_timeout_s,
+                )
         except asyncio.TimeoutError:
             logger.warning(
                 "classifier.llm_timeout", timeout_s=self._llm_timeout_s

@@ -21,6 +21,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from deskpet.memory.memory_v2_schema import PPT_OUTLINE_HISTORY_DDL
+
 log = logging.getLogger(__name__)
 
 ConnectionFactory = Callable[[], sqlite3.Connection]
@@ -28,18 +30,7 @@ ConnectionFactory = Callable[[], sqlite3.Connection]
 _VALID_STATUSES = frozenset(
     {"proposed", "accepted", "rejected", "cancelled", "expired", "superseded"}
 )
-
-_DDL_PPT_OUTLINE_HISTORY = """
-CREATE TABLE IF NOT EXISTS ppt_outline_history (
-    outline_id TEXT PRIMARY KEY,
-    session_id TEXT,
-    topic TEXT,
-    created_at TEXT,
-    slides_json TEXT,
-    sources_count INTEGER,
-    status TEXT
-);
-"""
+_WORKFLOW_OUTLINE_PREFIX = "workflow:"
 
 
 class PPTOutlineWaiters:
@@ -70,13 +61,13 @@ class PPTOutlineWaiters:
 def ensure_ppt_outline_table(conn: sqlite3.Connection) -> None:
     """幂等创建 PPT 大纲历史表。
 
-    这是独立 DDL，不进入共享 schema/migration，保持 flag-off 时字节级 BC。
+    v17 已正式迁移该表；这里保留幂等 ensure 兼容隔离 store。
     """
     if not _outline_history_enabled():
         return
     try:
         conn.execute("PRAGMA busy_timeout=5000")
-        conn.executescript(_DDL_PPT_OUTLINE_HISTORY)
+        conn.executescript(PPT_OUTLINE_HISTORY_DDL)
         conn.commit()
     except Exception as exc:  # noqa: BLE001
         log.warning("ppt outline table ensure failed: %s", exc)
@@ -221,13 +212,63 @@ def expire_dangling_proposed(
             ensure_ppt_outline_table(conn)
             cur = conn.execute(
                 "UPDATE ppt_outline_history SET status = 'expired' "
-                "WHERE status = 'proposed'"
+                "WHERE status = 'proposed' AND outline_id NOT LIKE ?",
+                (f"{_WORKFLOW_OUTLINE_PREFIX}%",),
             )
             conn.commit()
             return int(cur.rowcount or 0)
     except Exception as exc:  # noqa: BLE001
         log.warning("ppt outline expire failed: %s", exc)
         return 0
+
+
+def workflow_outline_id(run_id: str, revision: int) -> str:
+    """Return the idempotent projection key owned by a workflow checkpoint."""
+
+    return f"{_WORKFLOW_OUTLINE_PREFIX}{str(run_id)}:{max(0, int(revision))}"
+
+
+def project_workflow_outline(
+    outline_id: str,
+    session_id: str,
+    topic: str,
+    slides: list,
+    sources_count: int,
+    *,
+    conn_factory: ConnectionFactory | None = None,
+) -> bool:
+    """Project graph-owned outline state into the legacy history view."""
+
+    if not str(outline_id).startswith(_WORKFLOW_OUTLINE_PREFIX):
+        raise ValueError("workflow outline projections require a workflow: id")
+    return save_outline(
+        outline_id,
+        session_id,
+        topic,
+        slides,
+        sources_count,
+        conn_factory=conn_factory,
+    )
+
+
+def project_workflow_decision(
+    outline_id: str,
+    action: str,
+    *,
+    conn_factory: ConnectionFactory | None = None,
+) -> bool:
+    """Project an authoritative generic decision into legacy status values."""
+
+    status = {
+        "accept": "accepted",
+        "reuse": "accepted",
+        "modify": "rejected",
+        "revise": "rejected",
+        "cancel": "cancelled",
+    }.get(str(action).strip().lower())
+    if status is None:
+        return False
+    return mark_status(outline_id, status, conn_factory=conn_factory)
 
 
 def _slide_to_dict(slide: Any) -> dict[str, Any]:

@@ -166,35 +166,41 @@ pub fn run() {
             // P4-S21 #7: system tray icon with Show/Hide/Quit menu.
             // Without this the only way to surface a hidden pet (or a
             // pet whose toolbar is offscreen) is to kill the process.
-            let show_item = MenuItem::with_id(app, "show", "显示桌宠", true, None::<&str>)?;
-            let hide_item = MenuItem::with_id(app, "hide", "隐藏桌宠", true, None::<&str>)?;
-            let quit_item = MenuItem::with_id(app, "quit", "退出 DeskPet", true, None::<&str>)?;
-            let tray_menu = Menu::with_items(app, &[&show_item, &hide_item, &quit_item])?;
-            let _tray = TrayIconBuilder::with_id("deskpet-tray")
-                .icon(app.default_window_icon().cloned().expect("icon set in tauri.conf.json"))
-                .tooltip("DeskPet")
-                .menu(&tray_menu)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show" => {
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
+            let tray_result = (|| -> tauri::Result<()> {
+                let show_item = MenuItem::with_id(app, "show", "显示桌宠", true, None::<&str>)?;
+                let hide_item = MenuItem::with_id(app, "hide", "隐藏桌宠", true, None::<&str>)?;
+                let quit_item = MenuItem::with_id(app, "quit", "退出 DeskPet", true, None::<&str>)?;
+                let tray_menu = Menu::with_items(app, &[&show_item, &hide_item, &quit_item])?;
+                TrayIconBuilder::with_id("deskpet-tray")
+                    .icon(app.default_window_icon().cloned().expect("icon set in tauri.conf.json"))
+                    .tooltip("DeskPet")
+                    .menu(&tray_menu)
+                    .on_menu_event(|app, event| match event.id.as_ref() {
+                        "show" => {
+                            if let Some(w) = app.get_webview_window("main") {
+                                let _ = w.show();
+                                let _ = w.set_focus();
+                            }
                         }
-                    }
-                    "hide" => {
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.hide();
+                        "hide" => {
+                            if let Some(w) = app.get_webview_window("main") {
+                                let _ = w.hide();
+                            }
                         }
-                    }
-                    "quit" => {
-                        if let Some(state) = app.try_state::<BackendProcess>() {
-                            state.kill_child();
+                        "quit" => {
+                            if let Some(state) = app.try_state::<BackendProcess>() {
+                                state.kill_child();
+                            }
+                            app.exit(0);
                         }
-                        app.exit(0);
-                    }
-                    _ => {}
-                })
-                .build(app)?;
+                        _ => {}
+                    })
+                    .build(app)?;
+                Ok(())
+            })();
+            if let Err(e) = tray_result {
+                eprintln!("[setup] tray initialization skipped: {e:?}");
+            }
 
             Ok(())
         })

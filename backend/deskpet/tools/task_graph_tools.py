@@ -113,7 +113,9 @@ _SCHEMA_GOAL_TASK_CREATE: dict[str, Any] = {
                 "type": "string",
                 "description": (
                     "Optional free-text note stored as the task's initial "
-                    "result/context."
+                    "result/context. Prefix an approved durable decision with "
+                    "'[decision] ' so Context OS can preserve it as typed "
+                    "decision authority; unprefixed text remains progress only."
                 ),
             },
         },

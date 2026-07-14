@@ -1,6 +1,6 @@
 # PPT 生成 — 模块专项状态
 
-> **最后更新**: 2026-06-22
+> **最后更新**: 2026-07-11
 > **用途**: 一页看清 DeskPet「生成 PPT」全链路怎么工作、由哪些文件承担、能力边界与已知短板。要动 PPT 功能前先读这里。
 > **同级**: [status.md](./status.md)(全局) · [AgentLoop.md](./AgentLoop.md)(执行引擎)
 
@@ -11,6 +11,10 @@
 桌宠把「一个主题 / 一段大纲 / 一份研究报告」变成可下载、可二次编辑的 `.pptx`。
 **大纲由 LLM(+ppt-generate skill)产出 → `ppt_create` 工具渲染成 pptx**。两层职责分明:
 **skill/LLM 层管「写什么」(内容/大纲),工具层管「画成什么样」(版式/渲染)**。
+
+**2026-07-11 image-mode 真机状态**：`ppt_pro` durable graph 已在普通 Session 显示 1/12-12/12，并真实交付 `deskpet-ppt-1783724870.pptx`；结构检查为 21 页、每页一个铺满 slide bounds 的 1792x1008 picture、零文本 shape，蒙版抽查无 provider 水印/黑块。短 deck 的工具 schema 与 Durable Graph 均已从最少 3 页修为 1-20 页，1/2 页跨层自动化通过；该页数修复发生在上述真机运行之后，短 deck 生图 E2E 仍待补跑。底图合成不再无条件裁掉底部 120px，像素回归已覆盖底部内容保真。
+
+**2026-07-11 多构图与进度 UI 状态**：durable `full_page_images` 已增加确定性 deck-level planner，支持 `cover_band/text_left/text_right/visual_top/floating_card/quote_center` 六类构图；最终真实 run `371e34dd90c044c0963c748f7a3ce6c9` 成功交付 6 页整页图 deck，每页恰好一个全幅 picture，视觉审查 6/6 `ok`、无质量警告。Session 不再把每个 `workflow.progress` 追加成消息气泡，而是按 `run_id/seq` 原地更新一张进度卡；真实点击覆盖修改大纲、再次确认、质量修订、完成、滚动锚定与应用重启后的历史恢复。显式整页图模式禁止静默模板回退；连接错误只重试未完成页，视觉审查预算耗尽时保留整页图并向用户显示质量警告。
 
 ---
 
@@ -108,6 +112,7 @@ else:
 
 ## 8. 真机验证状态(2026-06-24 更新)
 
+- **Durable PPT Pro + Session 实时进度 + 一图一页** ✅ **PASS（2026-07-11）**：大纲修改显示“正在修改/生成新版大纲”而非冒充确认；确认后同一 Session 可见 1/12-12/12；图片模型只生成无字底图，生产 compositor 裁除底部 provider 标识并确定性绘制中文，PPTX 每页仅一个铺满 slide bounds 的 picture、无文本 shape。真机 Session `897028cd-1fd2-48ed-8c49-3390d928f23e`；最终修正版 `deskpet-ppt-1783707010-corrected.pptx`；证据 [manual results](../plans/manual-results-2026-07-11-ppt-session-progress-full-page/RESULTS.md)。
 - **`ppt_pro` 惊艳生图路径 × doubao-seedream-4.0** ✅ **PASS(2026-06-24)** —— 补齐之前被 gpt-image-2 403 卡住、从未验证过的 happy path:主题「在AI时代,程序员的核心竞争力是什么?」→ 路由 ppt_pro(image_mode=true)→ 真 deepresearch(3 源)→ 大纲卡(带引用 `[^1][^2][^3]`)+ SendInput 真点确认 → **8× `images/generations 200`(seedream-4.0)** → `render path=fromscratch(惊艳)`(**未降级模板**)→ 2.88MB/8 页 pptx 落盘 → WPS 自动打开(8 页全 AI 整页图)。耗时 ~13min/8 图(超时预算内)。真测中发现 **C: 盘满**致持久化 disk I/O error,但 orchestration best-effort 降级未崩、清盘后自恢复。证据 [plans/manual-results-2026-06-24-ppt-seedream/](../plans/manual-results-2026-06-24-ppt-seedream/RESULTS.md)。
 - **`ppt_pro` F1-F4 端到端逻辑链路** ✅ PASS(2026-06-22):F1 deepresearch 真调研(搜狗百科直连)→ F2 拟纲 6K+ 字流 → F3 大纲卡真渲染 + SendInput 真点击确认 → F4 首图实测判定(gpt-image-2 真 403→切模板)→ deck 5 页落盘自动打开(WPS)。TC-4 模板回退 PASS;TC-9 preempt 不杀确认链路 PASS。真测中**揪出并修复 2 真 bug**(路由缺口 / 渲染 executor 线程 hang 双根因)。证据 [plans/manual-results-2026-06-22-ppt-pro/](../plans/manual-results-2026-06-22-ppt-pro/)。
 - **模板设计页 + 预览图视觉选** ✅ PASS(2026-06-20):LLM 选大类「高级色」→ 真 vision `vision chose id=77 → (177).pptx` → design-pages 填充 + 模板视觉闭环 2 轮 → 5 页产物。

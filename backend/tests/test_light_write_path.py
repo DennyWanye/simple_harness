@@ -226,13 +226,16 @@ async def test_normal_message_embedding_also_null_without_worker(plain_db):
 # ─── TG-4: MemoryV2Config.light_write flag ───────────────────────────────────
 
 
-def test_memory_v2_config_light_write_default_false():
-    """TG-4a: MemoryV2Config.light_write 默认 False（flag 关闭 = 当前行为不变）。"""
+def test_memory_v2_config_light_write_default_on():
+    """TG-4a: MemoryV2Config.light_write 默认 True（2026-06-27 测试阶段点亮）。
+
+    注：实际是否跳 embed 仍取决于调用方传 skip_embed（flag 只是放行闸）。
+    """
     from config import MemoryV2Config
 
     cfg = MemoryV2Config()
-    assert cfg.light_write is False, (
-        f"light_write should default to False, got {cfg.light_write!r}"
+    assert cfg.light_write is True, (
+        f"light_write should default to True (testing phase), got {cfg.light_write!r}"
     )
 
 
@@ -272,7 +275,7 @@ async def test_flag_false_hook_always_fires(hooked_db):
     from config import MemoryV2Config
 
     db, hook = hooked_db
-    cfg = MemoryV2Config()  # light_write=False
+    cfg = MemoryV2Config(light_write=False)  # 显式 OFF：验 kill-switch 回退路径
 
     sid = await db.create_session()
 
@@ -377,7 +380,7 @@ async def test_high_frequency_source_flag_off_all_embed_bc(hooked_db):
     db, hook = hooked_db
     mgr = _make_manager(db)
     sid = await db.create_session()
-    cfg = MemoryV2Config()  # light_write=False
+    cfg = MemoryV2Config(light_write=False)  # 显式 OFF：验 kill-switch 回退路径
 
     is_high_freq = True
     effective_light = cfg.light_write and is_high_freq  # False（flag OFF 压制）

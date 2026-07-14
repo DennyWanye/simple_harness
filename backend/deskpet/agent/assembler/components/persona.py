@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from deskpet.agent.assembler.bundle import Slice
+from deskpet.agent.assembler.bundle import ContextFragment, Slice
 from deskpet.agent.assembler.components.base import Component, ComponentContext
 
 
@@ -78,6 +78,60 @@ class PersonaComponent:
 
     async def provide(self, ctx: ComponentContext) -> Slice:
         persona_text = _resolve_persona(ctx.config)
+        features = ctx.config.get("features", {}) if isinstance(ctx.config, dict) else {}
+        context_os_on = bool(
+            features.get("context_os_v1", False)
+            if isinstance(features, dict)
+            else getattr(features, "context_os_v1", False)
+        )
+        if context_os_on:
+            stable_config = dict(ctx.config)
+            stable_config["llm"] = {"model": "runtime-model", "base_url": "runtime"}
+            code_cfg = stable_config.get("code_mode")
+            project_root = ""
+            if isinstance(code_cfg, dict):
+                project_root = str(code_cfg.get("project_root", ""))
+                stable_config["code_mode"] = {
+                    **code_cfg,
+                    "project_root": "runtime-workspace",
+                }
+            stable_text = _resolve_persona(stable_config)
+            fragments = [
+                ContextFragment(
+                    fragment_id="persona:identity",
+                    source="persona",
+                    role="system",
+                    content=stable_text,
+                    lifetime="platform",
+                    placement="prefix",
+                    priority=90,
+                    trim_policy="never",
+                    protected=True,
+                    reason="stable_identity",
+                    cache_scope="platform",
+                )
+            ]
+            if project_root:
+                fragments.append(
+                    ContextFragment(
+                        fragment_id="persona:workspace",
+                        source="code_mode",
+                        role="system",
+                        content=f"[当前工作区]\n{project_root}",
+                        lifetime="task",
+                        placement="prefix",
+                        priority=80,
+                        trim_policy="truncate",
+                        reason="verified_workspace",
+                    )
+                )
+            return Slice(
+                component_name=self.name,
+                fragments=fragments,
+                tokens=_approx_tokens(stable_text) + _approx_tokens(project_root),
+                priority=90,
+                meta={"source": "config" if ctx.config.get("agent") else "default"},
+            )
         return Slice(
             component_name=self.name,
             text_content=persona_text,

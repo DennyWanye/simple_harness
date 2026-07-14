@@ -20,7 +20,7 @@ def test_get_domain_multipart_cn():
 
 def test_authority_tier1_academic():
     assert rs.score_authority("https://arxiv.org/abs/1234") == 9.5
-    assert rs.score_authority("https://en.wikipedia.org/wiki/X") == 9.5
+    assert rs.score_authority("https://en.wikipedia.org/wiki/X") == 7.5
 
 
 def test_authority_chinese_sources_recognized():

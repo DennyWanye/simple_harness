@@ -37,8 +37,8 @@ def test_direct_source_for(monkeypatch):
     assert "openstd" in rs.direct_source_for("钠离子电池国家标准 GB/T")
     assert "openstd" in rs.direct_source_for("锂电池技术规范标准号")
     wiki_sources = rs.direct_source_for("XX综述")
-    assert "baidu_baike" in wiki_sources
-    assert "sogou_baike" in wiki_sources
+    assert "baidu_baike" not in wiki_sources
+    assert "sogou_baike" not in wiki_sources
     assert "wikipedia" in wiki_sources
     assert "arxiv" in rs.direct_source_for("钠离子电池论文和技术选型研究")
     assert "semantic_scholar" not in rs.direct_source_for("钠离子电池论文和技术选型研究")
@@ -66,8 +66,8 @@ def test_direct_source_types_default(monkeypatch):
     monkeypatch.setattr(rs, "_research_raw", lambda: {})
 
     types = rs._direct_source_types()
-    assert "baidu_baike" in types
-    assert "sogou_baike" in types
+    assert "baidu_baike" not in types
+    assert "sogou_baike" not in types
     assert "wikipedia" in types
 
 
@@ -485,6 +485,7 @@ async def test_semantic_scholar_429_degrades_to_empty():
 
 
 def test_direct_fetchers_mapping_contains_all_sources():
+    assert rs.DIRECT_FETCHERS["agent_reach"] is rs.agent_reach_search
     assert rs.DIRECT_FETCHERS["cninfo"] is rs.cninfo_search
     assert rs.DIRECT_FETCHERS["openstd"] is rs.openstd_search
     assert rs.DIRECT_FETCHERS["baidu_baike"] is rs.baidu_baike_search
@@ -493,3 +494,24 @@ def test_direct_fetchers_mapping_contains_all_sources():
     assert rs.DIRECT_FETCHERS["arxiv"] is rs.arxiv_search
     assert rs.DIRECT_FETCHERS["semantic_scholar"] is rs.semantic_scholar_search
     assert rs.DIRECT_FETCHERS["wikidata"] is rs.wikidata_search
+
+
+def test_agent_reach_urls_are_explicit_deduplicated_and_bounded():
+    text = " ".join(
+        [
+            "https://github.com/a/one",
+            "https://github.com/a/one",
+            "https://www.youtube.com/watch?v=two",
+            "https://v2ex.com/t/three",
+            "https://example.com/four",
+            "https://example.com/five",
+        ]
+    )
+
+    assert rs._agent_reach_urls(text) == [
+        "https://github.com/a/one",
+        "https://www.youtube.com/watch?v=two",
+        "https://v2ex.com/t/three",
+        "https://example.com/four",
+    ]
+    assert rs.direct_source_for("GitHub repositories without a URL") == []

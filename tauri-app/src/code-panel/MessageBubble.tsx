@@ -11,7 +11,6 @@
  *   4. error                   → red banner
  */
 import { useMemo, useState, type ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
 import { invoke } from "@tauri-apps/api/core";
 
 const LOCAL_FILE_EXTENSIONS =
@@ -87,39 +86,14 @@ if (typeof window !== "undefined" && !window.__deskpetLocalMarkdownLinkHandlerIn
 
 import type { Message } from "../stores/sessionsStore";
 import { useSessionsStore } from "../stores/sessionsStore";
-import { CodeBlock, InlineCode } from "./CodeBlock";
+import { CopyMessageButton } from "../components/CopyMessageButton";
+import { MarkdownMessage } from "../components/MarkdownMessage";
 import { ArtifactCard, extractArtifactsFromResult } from "./ArtifactCard";
 import { codePanelWS } from "./ws";
 import { PPTOutlineCard } from "./PPTOutlineCard";
 
 interface Props {
   msg: Message;
-}
-
-// 判断 markdown 链接 href 是否指向本地文件（而非 http(s)/mailto 等网络链接）。
-// 命中：Windows 盘符路径 (C:\... / C:/...)、UNC (\\server\...)、file:// 协议、POSIX 绝对路径 (/...)。
-function isLocalFilePath(href: string): boolean {
-  if (!href) return false;
-  const h = href.trim();
-  if (/^[a-zA-Z]:[\\/]/.test(h)) return true; // C:\... or C:/...
-  if (h.startsWith("\\\\")) return true; // UNC \\server\share
-  if (/^file:\/\//i.test(h)) return true; // file:// 协议
-  if (h.startsWith("/")) return true; // POSIX 绝对路径
-  return false;
-}
-
-// 把 href 规整成 artifact_open 可用的本地路径（剥掉 file:// 前缀）。
-function toLocalPath(href: string): string {
-  const h = href.trim();
-  if (/^file:\/\//i.test(h)) {
-    try {
-      // file:///C:/x.pptx → C:/x.pptx ; file://server/share → //server/share
-      return decodeURIComponent(h.replace(/^file:\/\//i, "").replace(/^\/([a-zA-Z]:)/, "$1"));
-    } catch {
-      return h.replace(/^file:\/\//i, "");
-    }
-  }
-  return h;
 }
 
 export function MessageBubble({ msg }: Props) {
@@ -169,16 +143,23 @@ export function MessageBubble({ msg }: Props) {
       );
     case "ppt_outline":
       return (
-        <PPTOutlineCard
-          outlineId={msg.outline_id ?? ""}
-          topic={msg.topic ?? ""}
-          outlineMd={msg.outline_md ?? ""}
-          sourcesCount={msg.sources_count ?? 0}
-          noResearch={!!msg.no_research}
-          history={msg.history ?? []}
-          awaiting={!!msg.ppt_outline_awaiting}
-          sessionId={msg.outline_id ? findMessageSession(msg.outline_id) : undefined}
-        />
+        <div style={{ margin: "8px 0" }}>
+          <PPTOutlineCard
+            outlineId={msg.outline_id ?? ""}
+            topic={msg.topic ?? ""}
+            outlineMd={msg.outline_md ?? ""}
+            sourcesCount={msg.sources_count ?? 0}
+            noResearch={!!msg.no_research}
+            history={msg.history ?? []}
+            awaiting={!!msg.ppt_outline_awaiting}
+            decisionStatus={msg.ppt_outline_decision_status}
+            sessionId={msg.outline_id ? findMessageSession(msg.outline_id) : undefined}
+          />
+          <CopyMessageButton
+            text={[msg.topic, msg.outline_md].filter(Boolean).join("\n\n")}
+            tone="dark"
+          />
+        </div>
       );
     case "tool_call":
       return (
@@ -221,23 +202,33 @@ function findMessageSession(outlineId: string) {
 
 function UserBubble({ text }: { text: string }) {
   return (
-    <div style={{ display: "flex", justifyContent: "flex-end", margin: "8px 0" }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-end",
+        margin: "8px 0",
+      }}
+    >
       <div
         data-bp-selectable=""
         style={{
           maxWidth: "85%",
-          background: "#2563eb",
-          color: "#fff",
+          background: "linear-gradient(135deg, rgba(15, 76, 129, 0.96), rgba(12, 58, 105, 0.96))",
+          color: "#eaf6ff",
           padding: "8px 12px",
           borderRadius: "12px 12px 2px 12px",
           fontSize: 13.5,
           lineHeight: 1.55,
+          border: "1px solid rgba(125, 211, 252, 0.20)",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 18px rgba(8,47,73,0.22)",
           whiteSpace: "pre-wrap",
           wordBreak: "break-word",
         }}
       >
         {text}
       </div>
+      <CopyMessageButton text={text} align="right" tone="blue" />
     </div>
   );
 }
@@ -327,7 +318,7 @@ function AssistantBubbleWithThink({
 
 function AssistantBubble({ text }: { text: string }) {
   return (
-    <div style={{ display: "flex", margin: "8px 0" }}>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", margin: "8px 0" }}>
       <div
         data-bp-selectable=""
         style={{
@@ -344,60 +335,9 @@ function AssistantBubble({ text }: { text: string }) {
             '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
         }}
       >
-        <ReactMarkdown
-          components={{
-            code: ({ inline, className, children }: any) => {
-              const match = /language-(\w+)/.exec(className || "");
-              if (!inline && match) {
-                return (
-                  <CodeBlock language={match[1]}>
-                    {String(children).replace(/\n$/, "")}
-                  </CodeBlock>
-                );
-              }
-              return <InlineCode>{children}</InlineCode>;
-            },
-            p: ({ children }: any) => (
-              <p style={{ margin: "4px 0" }}>{children}</p>
-            ),
-            ul: ({ children }: any) => (
-              <ul style={{ margin: "6px 0", paddingLeft: 22 }}>{children}</ul>
-            ),
-            ol: ({ children }: any) => (
-              <ol style={{ margin: "6px 0", paddingLeft: 22 }}>{children}</ol>
-            ),
-            a: ({ href, children }: any) => {
-              const url = typeof href === "string" ? href : "";
-              if (isLocalFilePath(url)) {
-                // 本地文件链接（如 LLM 写的 [打开 PPT](C:\...\xxx.pptx)）：
-                // webview 里 href 打不开 → 改走 Tauri artifact_open 用系统默认应用打开。
-                const localPath = toLocalPath(url);
-                return (
-                  <a
-                    href={url}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      void invoke("artifact_open", { path: localPath }).catch(
-                        (err) => console.error("[artifact_open] failed", err),
-                      );
-                    }}
-                    style={{ color: "#67e8f9", cursor: "pointer" }}
-                    title={localPath}
-                  >
-                    {children}
-                  </a>
-                );
-              }
-              return (
-                <a href={url} target="_blank" rel="noreferrer noopener"
-                   style={{ color: "#67e8f9" }}>{children}</a>
-              );
-            },
-          }}
-        >
-          {text}
-        </ReactMarkdown>
+        <MarkdownMessage>{text}</MarkdownMessage>
       </div>
+      <CopyMessageButton text={text} tone="dark" />
     </div>
   );
 }
@@ -524,9 +464,9 @@ function ToolResultCard({
             </span>
           </>
         }
-        open={true}
-        onToggle={() => { /* artifact 卡片本身可折叠 */ }}
-      >
+      open={true}
+      onToggle={() => { /* artifact 卡片本身可折叠 */ }}
+    >
         <div data-testid="artifact-card-list" style={{ padding: "4px 8px" }}>
           {artifacts.map((a, i) => (
             <ArtifactCard key={i} artifact={a} toolName={name} />
@@ -695,6 +635,13 @@ function PlanCard({
           </button>
         </div>
       )}
+      <CopyMessageButton
+        text={[
+          rationale,
+          ...steps.map((s, i) => `${i + 1}. ${s.title}${s.detail ? ` — ${s.detail}` : ""}`),
+        ].filter(Boolean).join("\n")}
+        tone="dark"
+      />
     </div>
   );
 }
@@ -830,13 +777,17 @@ function SkillCandidateCard({
           {accepted ? "✓ 已保存为技能" : "已忽略"}
         </div>
       )}
+      <CopyMessageButton
+        text={[name, description, ...steps].filter(Boolean).join("\n")}
+        tone="dark"
+      />
     </div>
   );
 }
 
 function ReasoningBubble({ text }: { text: string }) {
   return (
-    <div style={{ display: "flex", margin: "4px 0" }}>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", margin: "4px 0" }}>
       <div
         data-bp-selectable=""
         style={{
@@ -855,13 +806,14 @@ function ReasoningBubble({ text }: { text: string }) {
       >
         💭 {text}
       </div>
+      <CopyMessageButton text={text} tone="dark" />
     </div>
   );
 }
 
 function SlashResultBubble({ text }: { text: string }) {
   return (
-    <div style={{ display: "flex", margin: "8px 0" }}>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", margin: "8px 0" }}>
       <div
         data-bp-selectable=""
         data-testid="slash-result-bubble"
@@ -882,25 +834,28 @@ function SlashResultBubble({ text }: { text: string }) {
       >
         {text}
       </div>
+      <CopyMessageButton text={text} tone="dark" />
     </div>
   );
 }
 
 function ErrorBanner({ text }: { text: string }) {
   return (
-    <div
-      data-bp-selectable=""
-      style={{
-        margin: "8px 0",
-        padding: "8px 12px",
-        borderRadius: 6,
-        background: "rgba(220, 38, 38, 0.18)",
-        color: "#fca5a5",
-        border: "1px solid rgba(220, 38, 38, 0.45)",
-        fontSize: 12.5,
-      }}
-    >
-      ⚠ {text}
+    <div style={{ margin: "8px 0" }}>
+      <div
+        data-bp-selectable=""
+        style={{
+          padding: "8px 12px",
+          borderRadius: 6,
+          background: "rgba(220, 38, 38, 0.18)",
+          color: "#fca5a5",
+          border: "1px solid rgba(220, 38, 38, 0.45)",
+          fontSize: 12.5,
+        }}
+      >
+        ⚠ {text}
+      </div>
+      <CopyMessageButton text={text} tone="dark" />
     </div>
   );
 }

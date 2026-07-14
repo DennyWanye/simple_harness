@@ -235,7 +235,7 @@ export function SettingsPanel({
         {/* ================ 自动模式 (P4-S21 #13) ================ */}
         <section style={sectionStyle}>
           <h3 style={h3Style}>权限</h3>
-          <AutoModeToggle getChannel={getChannel} />
+          <AutoModeToggle getChannel={getChannel} lastMessage={lastMessage} />
           <ChatTurnTimeoutSetting getChannel={getChannel} />
         </section>
 
@@ -455,7 +455,11 @@ function UpdateSection() {
 // ----------------------------------------------------------------------
 function AutoModeToggle({
   getChannel,
-}: { getChannel: () => ControlChannel | null }) {
+  lastMessage,
+}: {
+  getChannel: () => ControlChannel | null;
+  lastMessage: IncomingMessage | null;
+}) {
   const [enabled, setEnabled] = useState<boolean>(() => {
     try { return localStorage.getItem("deskpet.auto_mode") === "true"; }
     catch { return false; }
@@ -463,15 +467,40 @@ function AutoModeToggle({
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Push current state to backend whenever the channel becomes available.
-  // Channel may be null on first render (still connecting); the effect
-  // re-runs when getChannel returns a live channel.
   useEffect(() => {
-    const ch = getChannel();
-    if (!ch) return;
-    try { ch.send({ type: "permission_auto_mode_set", payload: { enabled } }); }
-    catch { /* will retry on next toggle */ }
-  }, [getChannel, enabled]);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let attempts = 0;
+
+    const requestBackendState = () => {
+      if (cancelled) return;
+      const ch = getChannel();
+      if (!ch) {
+        if (attempts++ < 10) timer = setTimeout(requestBackendState, 250);
+        return;
+      }
+      try {
+        ch.send({ type: "permission_auto_mode_get", payload: {} });
+      } catch {
+        if (attempts++ < 10) timer = setTimeout(requestBackendState, 250);
+      }
+    };
+
+    requestBackendState();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [getChannel]);
+
+  useEffect(() => {
+    if (lastMessage?.type !== "permission_auto_mode_response") return;
+    const next = Boolean(lastMessage.payload?.enabled);
+    setEnabled(next);
+    setPending(false);
+    try { localStorage.setItem("deskpet.auto_mode", String(next)); }
+    catch { /* localStorage full / disabled - non-fatal */ }
+  }, [lastMessage]);
 
   const onToggle = useCallback(() => {
     setErr(null);
@@ -481,12 +510,9 @@ function AutoModeToggle({
       const ch = getChannel();
       if (!ch) throw new Error("控制通道未连接");
       ch.send({ type: "permission_auto_mode_set", payload: { enabled: next } });
-      try { localStorage.setItem("deskpet.auto_mode", String(next)); }
-      catch { /* localStorage full / disabled — non-fatal */ }
       setEnabled(next);
     } catch (e) {
       setErr(String(e));
-    } finally {
       setPending(false);
     }
   }, [enabled, getChannel]);
@@ -510,13 +536,12 @@ function AutoModeToggle({
           disabled={pending}
         />
         <span>
-          自动模式（高级）：所有工具自动允许，不弹确认窗口
+          Agent 全开模式：所有 Agent 工具自动允许，不弹确认窗口
         </span>
       </label>
       <p style={{ fontSize: 11, color: "#64748b", margin: 0, lineHeight: 1.5 }}>
-        关闭时（默认），DeskPet 在执行写文件、运行 shell 等操作前会弹出确认。
-        语音模式下还会同时朗读"请点击允许"，提醒你回到屏幕。开启此项 = 跳过
-        所有确认（仅在你完全信任 LLM 配置时使用）。
+        开启后，读写文件、运行命令、联网、技能安装等 Agent 工具权限会直接放行；
+        关闭后恢复逐项确认。这个开关不等于 Windows 管理员权限，也不会绕过系统级限制。
       </p>
       {err && <span style={{ color: "#b91c1c", fontSize: 11 }}>{err}</span>}
     </div>
@@ -634,7 +659,7 @@ function ChatTurnTimeoutSetting({
 // ----------------------------------------------------------------------
 // P5-S1 — supervisor toggle.
 //
-// Backend default is on. Toggling here sends `supervisor_toggle` ws msg
+// Backend default is off. Toggling here sends `supervisor_toggle` ws msg
 // (handled in main.py). The toggle persists locally (localStorage) so
 // the user's preference survives a refresh; the backend's runtime flag
 // resyncs from this on connect.
@@ -645,9 +670,9 @@ function SupervisorToggleSection({
   const [enabled, setEnabled] = useState<boolean>(() => {
     try {
       const v = localStorage.getItem("deskpet.supervisor.enabled");
-      return v === null ? true : v !== "false"; // default ON
+      return v === null ? false : v === "true"; // default OFF
     } catch {
-      return true;
+      return false;
     }
   });
   const [pending, setPending] = useState(false);
@@ -1331,4 +1356,3 @@ const hintStyle: React.CSSProperties = {
   margin: 0,
   lineHeight: 1.6,
 };
-

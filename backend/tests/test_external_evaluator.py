@@ -501,3 +501,18 @@ async def test_evaluator_prompt_no_persona_leakage():
     assert "## 原始用户目标" in prompt
     assert "## 产物清单" in prompt
     assert "## 客观执行证据" in prompt
+
+
+@pytest.mark.asyncio
+async def test_conservative_evaluator_blocks_malformed_json():
+    async def _malformed(_prompt: str) -> str:
+        return "not-json"
+
+    evaluator = ExternalEvaluator(
+        llm_call=_malformed,
+        conservative_on_error=True,
+    )
+    result = await evaluator.evaluate("删除旧文件", [], [], "")
+    assert result["verdict"] == "revise"
+    assert result["quality_score"] == 0
+    assert "manual confirmation" in result["issues"][0]

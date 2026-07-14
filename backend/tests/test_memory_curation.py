@@ -434,10 +434,10 @@ def test_learning_category_has_decay():
     assert "learning" in VALID_CATEGORIES
 
 
-def test_memory_v2_config_auto_learnings_default_false():
-    """CC-5: MemoryV2Config.auto_learnings 默认 False（BC）。"""
+def test_memory_v2_config_auto_learnings_default_on():
+    """CC-5: MemoryV2Config.auto_learnings 默认 True（2026-06-27 测试阶段点亮）。"""
     from config import MemoryV2Config
 
     cfg = MemoryV2Config()
-    assert cfg.auto_learnings is False
-    assert MemoryV2Config(auto_learnings=True).auto_learnings is True
+    assert cfg.auto_learnings is True
+    assert MemoryV2Config(auto_learnings=False).auto_learnings is False

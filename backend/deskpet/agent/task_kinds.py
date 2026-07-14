@@ -160,7 +160,7 @@ class KindProfile:
 # 工具名全部对真实注册表核实（registration.py / os_tools / ppt_tools /
 # research_tools / image_tools / excel_tools / doc_tools）：
 #   read_file write_file edit_file glob grep list_directory run_shell
-#   web_search web_fetch ppt_create doc_create excel_create deepresearch
+#   gold_price_lookup scrapling_fetch web_search web_fetch ppt_create doc_create excel_create deepresearch
 #   generate_image skill_invoke
 _BUILTIN_KINDS: dict[str, KindProfile] = {
     "general": KindProfile(
@@ -172,7 +172,7 @@ _BUILTIN_KINDS: dict[str, KindProfile] = {
     ),
     "research": KindProfile(
         "research",
-        ("web_search", "web_fetch", "read_file"),
+        ("gold_price_lookup", "web_search", "scrapling_fetch", "web_fetch", "read_file"),
         12,
         framing="你是调研子代理：检索权威来源、交叉验证、给带依据的结论。",
         lane_concurrency=2,
@@ -215,7 +215,12 @@ _BUILTIN_KINDS: dict[str, KindProfile] = {
     ),
     "web": KindProfile(
         "web",
-        ("web_search", "web_fetch"),
+        (
+            "gold_price_lookup",
+            "web_search",
+            "scrapling_fetch",
+            "web_fetch",
+        ),
         8,
         framing="你是联网快查子代理：快速找事实/网址，不深挖。",
         lane_concurrency=3,

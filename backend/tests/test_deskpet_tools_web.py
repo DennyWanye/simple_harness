@@ -36,10 +36,11 @@ from deskpet.tools.registry import registry
 # Autouse: reset module state between tests
 # ---------------------------------------------------------------------
 @pytest.fixture(autouse=True)
-def reset_web_state():
+def reset_web_state(monkeypatch: pytest.MonkeyPatch):
     web_tools._last_fetch_ts.clear()
     web_tools._robots_cache.clear()
     web_tools._block_cache.clear()
+    monkeypatch.setattr(web_tools, "_scrapling_fetch_html", lambda url, timeout: None)
     _reset_config_cache()
     yield
     web_tools._last_fetch_ts.clear()
@@ -86,6 +87,65 @@ def test_web_fetch_returns_status_content_type(monkeypatch: pytest.MonkeyPatch):
     assert out["status"] == 200
     assert "text/html" in out["content_type"]
     assert "hi" in out["content"]
+
+
+def test_web_fetch_prefers_scrapling_before_httpx(monkeypatch: pytest.MonkeyPatch):
+    calls = {"httpx": 0, "scrapling": 0}
+
+    monkeypatch.setattr(
+        web_tools,
+        "load_web_config",
+        lambda: web_tools.WebToolsConfig(
+            user_agent="DeskPet/test",
+            respect_robots_txt=False,
+            request_interval_ms=0,
+            per_domain_max_concurrency=2,
+            crawl_default_max_pages=5,
+            crawl_default_max_depth=1,
+            preferred_sources=[],
+        ),
+    )
+
+    def _scrapling(url: str, timeout: float):
+        calls["scrapling"] += 1
+        return {
+            "ok": True,
+            "status": 200,
+            "html": "<html><body>scrapling body</body></html>",
+            "url_final": url,
+            "fetcher": "scrapling",
+        }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["httpx"] += 1
+        return httpx.Response(500, text="httpx should not fetch the page")
+
+    monkeypatch.setattr(web_tools, "_scrapling_fetch_html", _scrapling)
+    _patch_httpx_client(monkeypatch, handler)
+
+    out = json.loads(registry.dispatch("web_fetch", {"url": "https://example.com/"}))
+    assert out["fetcher"] == "scrapling"
+    assert list(out).index("fetcher") < list(out).index("content")
+    assert "scrapling body" in out["content"]
+    assert calls == {"httpx": 0, "scrapling": 1}
+
+
+def test_web_fetch_schema_explains_scrapling_first_compatibility_name():
+    description = web_tools._SCHEMA_FETCH["description"]
+    assert "稳定接口名是 web_fetch" in description
+    assert "底层优先使用 Scrapling" in description
+
+
+def test_web_fetch_httpx_result_labels_fallback_fetcher(monkeypatch: pytest.MonkeyPatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        return httpx.Response(200, text="ok", headers={"content-type": "text/plain"})
+
+    _patch_httpx_client(monkeypatch, handler)
+    out = json.loads(registry.dispatch("web_fetch", {"url": "https://example.com/foo"}))
+    assert out["fetcher"] == "httpx"
+    assert list(out).index("fetcher") < list(out).index("content")
 
 
 def test_web_fetch_user_agent_header_present(monkeypatch: pytest.MonkeyPatch):

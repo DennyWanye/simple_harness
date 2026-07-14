@@ -21,12 +21,14 @@
 
 | | |
 |---|---|
-| 当前版本 | **v0.6.0-beta.7**（含 Live2D 形象资源） |
-| 国内直链(COS) | `https://defaultbucket-1300194691.cos.ap-guangzhou.myqcloud.com/deskpet/DeskPet_0.6.0-beta.7_x64-setup.exe` |
+| 当前版本 | **v0.6.0-beta.8**（最新已发布/可分享版本） |
+| 国内直链(COS) | `https://defaultbucket-1300194691.cos.ap-guangzhou.myqcloud.com/deskpet/DeskPet_0.6.0-beta.8_x64-setup.exe` |
 | GitHub Release | https://github.com/DennyWanye/deskpet/releases/latest |
 
 **分享给用户**：发上面任一下载链接（国内发 COS）。用户**双击装一次**（per-user，免管理员）→ 之后**全自动更新**，不用再分享。
 > ⚠️ 首次启动会从 COS 下 ~3.9GB 模型（语音/记忆，仅一次，有进度横幅），下完才有完整 ASR/记忆。
+
+> 2026-07-08 audit: `v0.6.0-beta.9` now has a full Tauri release rebuild and regenerated NSIS candidate, but it is **not publishable yet**. MSVC Build Tools are installed and full build works. The remaining blockers are: updater signing key is empty (`TAURI_SIGNING_PRIVATE_KEY` length 0 in `.env`, no usable `~/.tauri/deskpet.key`), the existing beta.9 `.sig` is still the old 2026-06-28 file, and real UI E2E has not passed. Do not upload beta.9 or update `latest.json` until a valid `.sig` is generated and UI E2E passes.
 
 ## 3. 构建/发布前置（一次性，本机已就位）
 

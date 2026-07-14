@@ -34,6 +34,10 @@ import json
 import logging
 from typing import Any, AsyncIterator, Optional, Union
 
+from agent.context_messages import (
+    current_provider_attempt_options,
+    split_wire_messages,
+)
 from llm.base import BaseLLMAdapter
 from llm.errors import (
     LLMAuthError,
@@ -111,14 +115,22 @@ class AnthropicAdapter(BaseLLMAdapter):
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """Split OpenAI-style messages into anthropic-native (system, chat).
 
-        Multiple system messages are joined as a list of blocks — Anthropic
-        accepts `system: [{"type": "text", "text": "..."}]`. The LAST
-        block gets cache_control={"type":"ephemeral"} (Requirement §
-        llm-providers."Cache breakpoint placed at frozen boundary").
+        With explicit attempt options, the latest system block at or before
+        the inclusive cache boundary is marked.  Without a hint, the legacy
+        behaviour of marking the final system block is preserved.
         """
+        messages, _ = split_wire_messages(messages)
+        attempt_options = current_provider_attempt_options()
+        cache_boundary = (
+            attempt_options.cache_boundary if attempt_options is not None else None
+        )
+        if cache_boundary is not None and cache_boundary >= len(messages):
+            raise ValueError("cache boundary is outside the message list")
+
         system_blocks: list[dict[str, Any]] = []
         chat: list[dict[str, Any]] = []
-        for msg in messages:
+        cache_block_index = -1
+        for message_index, msg in enumerate(messages):
             role = msg.get("role")
             if role == "system":
                 content = msg.get("content", "")
@@ -126,6 +138,11 @@ class AnthropicAdapter(BaseLLMAdapter):
                     system_blocks.append({"type": "text", "text": content})
                 elif isinstance(content, list):
                     system_blocks.extend(content)
+                if (
+                    system_blocks
+                    and (cache_boundary is None or message_index <= cache_boundary)
+                ):
+                    cache_block_index = len(system_blocks) - 1
             elif role == "tool":
                 # OpenAI tool message -> Anthropic user message with tool_result.
                 chat.append(
@@ -167,11 +184,11 @@ class AnthropicAdapter(BaseLLMAdapter):
             else:
                 chat.append({"role": role, "content": msg.get("content", "")})
 
-        # Mark the last system block as a cache breakpoint.
-        if system_blocks:
-            last = dict(system_blocks[-1])
-            last["cache_control"] = {"type": "ephemeral"}
-            system_blocks = [*system_blocks[:-1], last]
+        if cache_block_index >= 0:
+            marked = dict(system_blocks[cache_block_index])
+            marked["cache_control"] = {"type": "ephemeral"}
+            system_blocks = list(system_blocks)
+            system_blocks[cache_block_index] = marked
         return system_blocks, chat
 
     @staticmethod

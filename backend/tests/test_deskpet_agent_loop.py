@@ -44,7 +44,12 @@ class FakeLLMRegistry:
         model: Optional[str] = None,
         **kwargs: Any,
     ) -> ChatResponse:
-        self.calls.append({"messages": messages, "tools": tools, "model": model})
+        self.calls.append({
+            "messages": messages,
+            "tools": tools,
+            "model": model,
+            "kwargs": dict(kwargs),
+        })
         if not self._responses:
             raise AssertionError("FakeLLMRegistry ran out of programmed responses")
         item = self._responses.pop(0)
@@ -107,6 +112,39 @@ async def test_happy_path_no_tools():
 
 
 @pytest.mark.asyncio
+async def test_tool_name_filter_reaches_llm_schema_surface():
+    llm = FakeLLMRegistry(
+        responses=[
+            ChatResponse(
+                content="done",
+                stop_reason="end_turn",
+                usage=ChatUsage(input_tokens=1, output_tokens=1),
+                model="test",
+            )
+        ]
+    )
+    tools = FakeToolRegistry(
+        schemas=[
+            {"type": "function", "function": {"name": "deepresearch"}},
+            {"type": "function", "function": {"name": "agent_reach_read"}},
+        ]
+    )
+    loop = AgentLoop(llm_registry=llm, tool_registry=tools)
+
+    _ = [
+        event
+        async for event in loop.run(
+            messages=[{"role": "user", "content": "research"}],
+            tool_names_filter=["deepresearch"],
+        )
+    ]
+
+    assert [schema["function"]["name"] for schema in llm.calls[0]["tools"]] == [
+        "deepresearch"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_happy_path_one_tool_use_then_final():
     llm = FakeLLMRegistry(
         responses=[
@@ -155,6 +193,78 @@ async def test_happy_path_one_tool_use_then_final():
     assert isinstance(final, FinalEvent)
     assert final.total_input_tokens == 50
     assert final.total_output_tokens == 15
+
+
+@pytest.mark.asyncio
+async def test_deepresearch_complete_result_forces_final_turn_without_tools():
+    llm = FakeLLMRegistry(
+        responses=[
+            ChatResponse(
+                content="我先调研一下。",
+                tool_calls=[
+                    ToolCall(
+                        id="dr_1",
+                        name="deepresearch",
+                        arguments={"topic": "俄乌最近局势"},
+                    )
+                ],
+                stop_reason="tool_use",
+                usage=ChatUsage(input_tokens=20, output_tokens=10),
+            ),
+            ChatResponse(
+                content="基于已生成的调研报告，结论如下。",
+                stop_reason="end_turn",
+                usage=ChatUsage(input_tokens=30, output_tokens=8),
+            ),
+        ]
+    )
+
+    def deepresearch_handler(args):
+        return {
+            "ok": True,
+            "topic": args["topic"],
+            "report_md": "# 报告\n\n已有结论。",
+            "citations": [{"id": 1, "url": "https://example.com", "title": "source"}],
+            "path": "DeepResearch/report.md",
+        }
+
+    tools = FakeToolRegistry(
+        schemas=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "deepresearch",
+                    "description": "research",
+                    "parameters": {"type": "object"},
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "web_search",
+                    "description": "search",
+                    "parameters": {"type": "object"},
+                },
+            },
+        ],
+        handlers={
+            "deepresearch": deepresearch_handler,
+            "web_search": lambda args: pytest.fail("web_search should not run after deepresearch"),
+        },
+    )
+    loop = AgentLoop(llm_registry=llm, tool_registry=tools, max_iterations=5)
+    events = [e async for e in loop.run(messages=[{"role": "user", "content": "请调研俄乌局势"}])]
+
+    assert [c["name"] for c in tools.calls] == ["deepresearch"]
+    assert len(llm.calls) == 2
+    assert llm.calls[1]["tools"] is None
+    assert llm.calls[1]["kwargs"]["tool_choice"] == "none"
+    assert any(
+        m.get("role") == "system" and "deepresearch 已完成" in (m.get("content") or "")
+        for m in llm.calls[1]["messages"]
+    )
+    assert isinstance(events[-1], FinalEvent)
+    assert "调研报告" in events[-1].content
 
 
 @pytest.mark.asyncio

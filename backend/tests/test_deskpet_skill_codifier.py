@@ -557,13 +557,14 @@ class TestSkillCodifier:
 # ---------------------------------------------------------------------------
 
 class TestConfigFlag:
-    def test_skills_codify_enabled_default_false(self):
+    def test_skills_codify_enabled_default_on(self):
+        # 2026-06-27 测试阶段点亮：codify 自创闭环出厂默认 ON。
         from config import AppConfig
         cfg = AppConfig()
         # Access skills.codify.enabled
         codify = getattr(cfg.skills, "codify", None)
         assert codify is not None
-        assert codify.enabled is False
+        assert codify.enabled is True
 
     def test_max_candidates_per_day_default(self):
         from config import AppConfig

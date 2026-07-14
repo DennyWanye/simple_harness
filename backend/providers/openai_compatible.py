@@ -9,6 +9,16 @@ from typing import AsyncIterator
 import httpx
 import structlog
 
+from agent.context_messages import (
+    current_provider_attempt_options,
+    split_wire_messages,
+)
+from agent.context_report import (
+    auto_context_attempt_call,
+    auto_context_attempt_iter,
+    mark_current_attempt_sent,
+    mark_current_attempt_transport_retry,
+)
 from llm.errors import LLMProviderError
 from llm.relay_errors import classify_relay_error
 from providers._response_sanitizer import sanitize_response
@@ -157,8 +167,6 @@ class OpenAICompatibleProvider:
         body_text: str = "",
         response: httpx.Response | None = None,
     ) -> str | None:
-        if not self._is_relay:
-            return None
         body: dict | None = None
         if response is not None:
             try:
@@ -167,6 +175,14 @@ class OpenAICompatibleProvider:
                     body = parsed
             except Exception:  # noqa: BLE001
                 body = None
+        error = body.get("error") if isinstance(body, dict) else None
+        upstream_code = (
+            str(error.get("code") or "") if isinstance(error, dict) else ""
+        )
+        if upstream_code in {"tool_catalog_stale", "tool_policy_unavailable"}:
+            return upstream_code
+        if not self._is_relay:
+            return None
         return classify_relay_error(status_code, body_text, body=body)
 
     def _client(self, timeout: float | httpx.Timeout) -> httpx.AsyncClient:
@@ -183,6 +199,8 @@ class OpenAICompatibleProvider:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
+        from deskpet.context_os_e2e_hooks import trusted_provider_headers
+        headers.update(trusted_provider_headers(self.base_url))
         # P5-S2 F1 (2026-05-12) — the relay integration guide root cause for
         # "succeeds then next request ConnectError" (docs/中转站建议.md
         # Failure Mode 2):
@@ -226,7 +244,32 @@ class OpenAICompatibleProvider:
         temperature: float | None = None,
         max_tokens: int = 8192,
     ) -> AsyncIterator[str]:
+        async for token in auto_context_attempt_iter(
+            provider=self,
+            messages=messages,
+            tools=None,
+            model_id=self.model,
+            mark_sent_at_dispatch=False,
+            generation_reserve=max_tokens,
+            iterator=lambda: self._chat_stream_impl(
+                messages, temperature=temperature, max_tokens=max_tokens
+            ),
+        ):
+            yield token
+
+    async def _chat_stream_impl(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        temperature: float | None = None,
+        max_tokens: int = 8192,
+    ) -> AsyncIterator[str]:
         temp = temperature if temperature is not None else self.temperature
+        messages, _ = split_wire_messages(messages)
+        _attempt_options = current_provider_attempt_options()
+        _cache_boundary = (
+            _attempt_options.cache_boundary if _attempt_options is not None else None
+        )
         # P2-1-S8: reset per-call so stale data from the previous stream
         # never leaks into billing when the current stream carries no usage.
         self.last_usage = None
@@ -242,12 +285,28 @@ class OpenAICompatibleProvider:
             "max_tokens": max_tokens,
         }
         payload = _merge_code_params(payload, self.code_params)
+        if (
+            _cache_boundary is not None
+            and messages
+            and any(m.get("role") == "system" for m in messages)
+            and _is_anthropic_endpoint(self.base_url)
+        ):
+            payload["messages"] = _stamp_cache_control(
+                messages, boundary_index=_cache_boundary
+            )
+        mark_current_attempt_sent()
         async with self._client(timeout=self.timeout) as client:
             async with client.stream(
                 "POST",
                 f"{self.base_url}/chat/completions",
                 json=payload,
             ) as response:
+                # Read structured error bodies before leaving the streaming
+                # response context.  Otherwise ``response.text`` raises
+                # ResponseNotRead in the outer HTTPStatusError handler and
+                # request-authority codes such as tool_catalog_stale are lost.
+                if response.status_code >= 400:
+                    await response.aread()
                 response.raise_for_status()
                 # Log the upstream's self-reported identity on the first SSE
                 # frame. The `model`/`id`/`system_fingerprint` come straight
@@ -297,6 +356,33 @@ class OpenAICompatibleProvider:
                         yield token
 
     async def chat_with_tools(
+        self,
+        messages: list[dict],
+        *,
+        tools: list[dict] | None = None,
+        max_tokens: int = 8192,
+        temperature: float | None = None,
+        response_format: dict | None = None,
+        tool_choice: str | None = None,
+    ) -> dict:
+        return await auto_context_attempt_call(
+            provider=self,
+            messages=messages,
+            tools=tools,
+            model_id=self.model,
+            mark_sent_at_dispatch=False,
+            generation_reserve=max_tokens,
+            invoke=lambda: self._chat_with_tools_impl(
+                messages,
+                tools=tools,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                response_format=response_format,
+                tool_choice=tool_choice,
+            ),
+        )
+
+    async def _chat_with_tools_impl(
         self,
         messages: list[dict],
         *,
@@ -363,6 +449,33 @@ class OpenAICompatibleProvider:
         response_format: dict | None = None,
         tool_choice: str | None = None,
     ) -> dict:
+        return await auto_context_attempt_call(
+            provider=self,
+            messages=messages,
+            tools=tools,
+            model_id=self.model,
+            mark_sent_at_dispatch=False,
+            generation_reserve=max_tokens,
+            invoke=lambda: self._legacy_chat_with_tools_nonstream_impl(
+                messages,
+                tools=tools,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                response_format=response_format,
+                tool_choice=tool_choice,
+            ),
+        )
+
+    async def _legacy_chat_with_tools_nonstream_impl(
+        self,
+        messages: list[dict],
+        *,
+        tools: list[dict] | None = None,
+        max_tokens: int = 8192,
+        temperature: float | None = None,
+        response_format: dict | None = None,
+        tool_choice: str | None = None,
+    ) -> dict:
         """DEPRECATED: original ``stream: False`` implementation.
 
         Preserved temporarily in case we need to A/B compare against
@@ -396,6 +509,11 @@ class OpenAICompatibleProvider:
         # 字段。即便此方法当前只作流式 fallback 用，调用方传进来的
         # messages 已是流式路径 stabilize 过的副本；这里再 stabilize
         # 一次是幂等的，且保证此方法被直接调用时同样有前缀稳定保证。
+        messages, _ = split_wire_messages(messages)
+        _attempt_options = current_provider_attempt_options()
+        _cache_boundary = (
+            _attempt_options.cache_boundary if _attempt_options is not None else None
+        )
         messages = _stabilize_prefix(messages)
         payload: dict = {
             "model": self.model,
@@ -427,7 +545,9 @@ class OpenAICompatibleProvider:
             and any(m.get("role") == "system" for m in messages)
             and _is_anthropic_endpoint(self.base_url)
         ):
-            payload["messages"] = _stamp_cache_control(messages)
+            payload["messages"] = _stamp_cache_control(
+                messages, boundary_index=_cache_boundary
+            )
         # P4-S22 fix: wrap httpx errors so AgentLoop's existing
         # `except LLMProviderError` catches them and emits a clean
         # ErrorEvent instead of the bare ConnectError bubbling all the
@@ -459,6 +579,15 @@ class OpenAICompatibleProvider:
         import asyncio as _asyncio
 
         async def _send(_msgs: list[dict]) -> dict:
+            _wire_msgs = _msgs
+            if (
+                _wire_msgs
+                and any(m.get("role") == "system" for m in _wire_msgs)
+                and _is_anthropic_endpoint(self.base_url)
+            ):
+                _wire_msgs = _stamp_cache_control(
+                    _wire_msgs, boundary_index=_cache_boundary
+                )
             transient = (
                 httpx.RemoteProtocolError,
                 httpx.ConnectError,
@@ -479,9 +608,16 @@ class OpenAICompatibleProvider:
                     await _asyncio.sleep(delay)
                 try:
                     async with self._client(timeout=self.timeout) as _client:
+                        if attempt == 0:
+                            # Exact actual-send boundary: the transport
+                            # coroutine has control and is about to perform its
+                            # first network await/write.
+                            mark_current_attempt_sent()
+                        else:
+                            mark_current_attempt_transport_retry()
                         _r = await _client.post(
                             f"{self.base_url}/chat/completions",
-                            json={**payload, "messages": _msgs},
+                            json={**payload, "messages": _wire_msgs},
                         )
                         _r.raise_for_status()
                         return _r.json()
@@ -731,6 +867,34 @@ class OpenAICompatibleProvider:
         response_format: dict | None = None,
         tool_choice: str | None = None,
     ):
+        async for event in auto_context_attempt_iter(
+            provider=self,
+            messages=messages,
+            tools=tools,
+            model_id=self.model,
+            mark_sent_at_dispatch=False,
+            generation_reserve=max_tokens,
+            iterator=lambda: self._chat_stream_with_tools_impl(
+                messages,
+                tools=tools,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                response_format=response_format,
+                tool_choice=tool_choice,
+            ),
+        ):
+            yield event
+
+    async def _chat_stream_with_tools_impl(
+        self,
+        messages: list[dict],
+        *,
+        tools: list[dict] | None = None,
+        max_tokens: int = 8192,
+        temperature: float | None = None,
+        response_format: dict | None = None,
+        tool_choice: str | None = None,
+    ):
         """P4-S25 A1: streaming version of chat_with_tools.
 
         Yields events as they arrive from the SSE stream:
@@ -763,6 +927,11 @@ class OpenAICompatibleProvider:
         # reasoning_content），让出站字节前缀跨轮稳定 —— prefix cache
         # 命中的硬前提。下游所有分支（reasoning-400 strip 重试 /
         # _stamp_cache_control / 非流 fallback）都建立在这个稳定副本上。
+        messages, _ = split_wire_messages(messages)
+        _attempt_options = current_provider_attempt_options()
+        _cache_boundary = (
+            _attempt_options.cache_boundary if _attempt_options is not None else None
+        )
         messages = _stabilize_prefix(messages)
         payload: dict = {
             "model": self.model,
@@ -793,7 +962,9 @@ class OpenAICompatibleProvider:
             and any(m.get("role") == "system" for m in messages)
             and _is_anthropic_endpoint(self.base_url)
         ):
-            payload["messages"] = _stamp_cache_control(messages)
+            payload["messages"] = _stamp_cache_control(
+                messages, boundary_index=_cache_boundary
+            )
 
         # Streaming retry layer: same transient-error policy as the
         # non-streaming path. Bumped to 2 retries since SSE is more
@@ -826,6 +997,8 @@ class OpenAICompatibleProvider:
             if delay:
                 await _asyncio.sleep(delay)
             try:
+                if attempt > 0:
+                    mark_current_attempt_transport_retry()
                 async for ev in self._stream_one_attempt(used_payload):
                     yield ev
                 return
@@ -859,7 +1032,9 @@ class OpenAICompatibleProvider:
                     ]
                     used_payload = {**payload, "messages": used_messages}
                     if used_messages and any(m.get("role") == "system" for m in used_messages):
-                        used_payload["messages"] = _stamp_cache_control(used_messages)
+                        used_payload["messages"] = _stamp_cache_control(
+                            used_messages, boundary_index=_cache_boundary
+                        )
                     logger.warning(
                         "p4s25_stream_reasoning_400_retry",
                         original=len(messages),
@@ -1012,6 +1187,11 @@ class OpenAICompatibleProvider:
 
     async def _stream_one_attempt(self, payload: dict):
         """Single-attempt SSE consumer. Used by chat_stream_with_tools."""
+        # Context OS send boundary: this is the first synchronous statement
+        # after the transport coroutine receives control and before any
+        # network await/write.  Re-entry is an internal transport retry, not a
+        # new logical provider attempt.
+        mark_current_attempt_sent()
         import json as _json
         # Accumulators for assembling the final event.
         full_content = ""
@@ -1032,6 +1212,12 @@ class OpenAICompatibleProvider:
                 f"{self.base_url}/chat/completions",
                 json=payload,
             ) as response:
+                # Unlike MockTransport, a real streamed error response is not
+                # buffered.  Read it while the response context is still
+                # open so the outer HTTPStatusError path can retain its JSON
+                # error code and must-not-fallback classification.
+                if response.status_code >= 400:
+                    await response.aread()
                 response.raise_for_status()
                 # P4-S25 fix: the relay / sealos / DashScope sometimes ignore
                 # `stream: True` for thinking-mode models and return a
@@ -1712,19 +1898,27 @@ def _is_anthropic_endpoint(base_url: str) -> bool:
     return "anthropic.com" in u or "claude" in u
 
 
-def _stamp_cache_control(messages: list[dict]) -> list[dict]:
-    """Return a copy of `messages` with cache_control on the last system msg.
+def _stamp_cache_control(
+    messages: list[dict], *, boundary_index: int | None = None
+) -> list[dict]:
+    """Copy messages and mark the explicit or legacy system breakpoint.
 
-    P4-S25: Anthropic prompt caching uses ``cache_control: {type:"ephemeral"}``
-    on the message whose prefix should be cached. The frozen system stack
-    (persona + skill_prelude + memory_block) lives at the front of every
-    request; marking the last system message tells Anthropic "everything
-    up to here is cacheable". OpenAI ignores the field; gpt-4o auto-caches
-    based on prefix. Ollama / the relay strip unknown fields. Safe to always
-    emit.
+    ``boundary_index`` is a zero-based inclusive stable-prefix boundary.  The
+    latest system message at or before it is marked.  ``None`` preserves the
+    legacy behaviour of marking the last system message in the whole request.
     """
+    if boundary_index is not None:
+        if isinstance(boundary_index, bool) or not isinstance(boundary_index, int):
+            raise TypeError("cache boundary must be an integer or None")
+        if boundary_index < 0 or boundary_index >= len(messages):
+            raise ValueError("cache boundary is outside the message list")
+        search_end = boundary_index
+    else:
+        search_end = len(messages) - 1
     last_sys_idx = -1
     for i, m in enumerate(messages):
+        if i > search_end:
+            break
         if m.get("role") == "system":
             last_sys_idx = i
     if last_sys_idx < 0:

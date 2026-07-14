@@ -18,7 +18,7 @@
  */
 import { useState, useCallback, useRef, useEffect } from "react";
 
-import { useSessionsStore, chatLimiter } from "../stores/sessionsStore";
+import { useSessionsStore } from "../stores/sessionsStore";
 import { BACKEND_PORT } from "../backendPort";
 import { codePanelWS } from "./ws";
 import { SlashDropdown, type SlashCommand } from "./SlashDropdown";
@@ -99,6 +99,7 @@ export function InputBar({
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [argHintCmd, setArgHintCmd] = useState<SlashCommand | null>(null);
   const [historyIdx, setHistoryIdx] = useState<number | null>(null);
+  const [newTopicPending, setNewTopicPending] = useState(false);
 
   const active_sid = useSessionsStore((s) => s.active_sid);
   const sid = sessionId ?? active_sid;
@@ -110,6 +111,17 @@ export function InputBar({
   useEffect(() => {
     fetchCommands().then(setAllCommands).catch(() => setAllCommands([]));
   }, []);
+
+  useEffect(() => {
+    if (!newTopicPending) return;
+    return codePanelWS.on_message((msg: any) => {
+      if (msg?.type === "session_switched" || msg?.type === "task_session_started") {
+        setNewTopicPending(false);
+      } else if (msg?.type === "chat_v2_error") {
+        setNewTopicPending(false);
+      }
+    });
+  }, [newTopicPending]);
 
   // Auto-grow textarea
   useEffect(() => {
@@ -177,12 +189,20 @@ export function InputBar({
       status: "thinking",
       inflight: true,
     });
-    void chatLimiter.run(async () => {
-      codePanelWS.send({
-        type: "chat_v2",
-        payload: { text: t, session_id: sid },
-      });
+    const sent = codePanelWS.send({
+      type: "chat_v2",
+      payload: { text: t, session_id: sid },
     });
+    if (!sent) {
+      useSessionsStore.getState().push_message(sid, {
+        role: "error",
+        text: "消息发送失败：控制通道未连接，请稍后重试。",
+      });
+      useSessionsStore.getState().upsert(sid, {
+        status: "error",
+        inflight: false,
+      });
+    }
   }, [text, sid]);
 
   const stop = useCallback(() => {
@@ -195,15 +215,31 @@ export function InputBar({
   }, [sid]);
 
   const startNewTopic = useCallback(() => {
-    if (!sid) return;
+    if (!sid || newTopicPending) return;
     const t = text.trim();
+    pushHistory(t);
+    setHistoryIdx(null);
+    set_text("");
     setDropdownOpen(false);
     setArgHintCmd(null);
-    codePanelWS.send({
+    setNewTopicPending(true);
+    const sent = codePanelWS.send({
       type: "chat_v2",
       payload: { session_id: sid, new_session: true, text: t },
     });
-  }, [sid, text]);
+    if (!sent) {
+      setNewTopicPending(false);
+      if (t) set_text(t);
+      useSessionsStore.getState().push_message(sid, {
+        role: "error",
+        text: "新话题创建失败：控制通道未连接，请稍后重试。",
+      });
+      useSessionsStore.getState().upsert(sid, {
+        status: "error",
+        inflight: false,
+      });
+    }
+  }, [sid, text, newTopicPending]);
 
   const onChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const v = e.target.value;
@@ -316,6 +352,12 @@ export function InputBar({
   const status = session?.status ?? "idle";
   const queued = Math.max(0, inflight_count - inflight_max);
   const inflight = !!session?.inflight;
+  const newTopicDraft = text.trim();
+  const newTopicButtonLabel = newTopicPending
+    ? "创建中"
+    : newTopicDraft
+      ? "作为新话题发送"
+      : "新话题";
 
   return (
     <div
@@ -407,28 +449,37 @@ export function InputBar({
         <button
           type="button"
           onClick={startNewTopic}
-          disabled={!sid}
-          title="新话题"
-          aria-label="新话题"
+          disabled={!sid || newTopicPending}
+          title={
+            newTopicDraft
+              ? "用当前输入开启一个新话题"
+              : "开启一个空白新话题"
+          }
+          aria-label={newTopicButtonLabel}
           style={{
             display: "inline-flex",
             alignItems: "center",
             gap: 5,
-            background: "rgba(255,255,255,0.05)",
-            color: "#cbd5e1",
-            border: "1px solid rgba(255,255,255,0.10)",
+            background: newTopicDraft
+              ? "rgba(37,99,235,0.20)"
+              : "rgba(255,255,255,0.05)",
+            color: newTopicDraft ? "#bfdbfe" : "#cbd5e1",
+            border: newTopicDraft
+              ? "1px solid rgba(96,165,250,0.35)"
+              : "1px solid rgba(255,255,255,0.10)",
             borderRadius: 999,
             padding: "0 13px",
             fontSize: 12,
             fontWeight: 600,
-            cursor: sid ? "pointer" : "not-allowed",
+            cursor: sid && !newTopicPending ? "pointer" : "not-allowed",
             height: CTRL_H,
             flexShrink: 0,
             boxSizing: "border-box",
+            opacity: newTopicPending ? 0.72 : 1,
           }}
         >
-          <Icon name="plus" size={13} />
-          <span>新话题</span>
+          <Icon name={newTopicPending ? "loader" : "plus"} size={13} />
+          <span>{newTopicButtonLabel}</span>
         </button>
         <div
           style={{

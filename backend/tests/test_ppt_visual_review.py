@@ -40,6 +40,33 @@ def test_parse_review_json_tolerates_fences():
 
 def test_parse_review_json_garbage_returns_empty():
     assert _parse_review_json("不是 json") == []
+
+
+def test_full_page_review_compares_exact_copy_and_returns_reason_codes(monkeypatch):
+    import deskpet.tools.ppt_visual_review as review_module
+
+    captured = {}
+    monkeypatch.setattr(review_module, "_b64_image", lambda _path: "encoded")
+
+    def fake_vision(content, *, system, **kwargs):
+        captured.update(content=content, system=system, kwargs=kwargs)
+        return (
+            '[{"page":1,"ok":false,"issues":["missing"],'
+            '"reason_codes":["text_missing"],"action":"regenerate_page"}]'
+        )
+
+    monkeypatch.setattr(review_module, "vision_chat", fake_vision)
+    result = review_module.review_slides(
+        ["page.png"],
+        [{"expected_text": {"title": "精确标题", "bullets": ["正文"]}}],
+        mode="full_page_images",
+    )
+
+    assert result[0]["reason_codes"] == ["text_missing"]
+    assert result[0]["action"] == "regenerate_page"
+    assert "text_missing" in captured["system"]
+    text_parts = [item["text"] for item in captured["content"] if item["type"] == "text"]
+    assert any("精确标题" in text and "正文" in text for text in text_parts)
     assert _parse_review_json("") == []
 
 

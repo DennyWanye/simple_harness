@@ -126,7 +126,7 @@ async def test_initialize_creates_v15_table_and_version(tmp_path: Path):
 
     async with aiosqlite.connect(db_path) as conn:
         cur = await conn.execute("PRAGMA user_version")
-        assert (await cur.fetchone())[0] == 16
+        assert (await cur.fetchone())[0] == 18
 
         cur = await conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' "
@@ -167,7 +167,7 @@ async def test_migration_idempotent(tmp_path: Path):
     async with aiosqlite.connect(db_path) as conn:
         cur = await conn.execute("PRAGMA user_version")
         ver = (await cur.fetchone())[0]
-    assert ver == 16
+    assert ver == 18
 
 
 # ---- 0.7 v13 → v14 升级保留老数据 --------------------------------------
@@ -222,7 +222,7 @@ async def test_migration_v14_to_v15_works(tmp_path: Path):
     async with aiosqlite.connect(db_path) as conn:
         cur = await conn.execute("PRAGMA user_version")
         ver = (await cur.fetchone())[0]
-    assert ver == 16
+    assert ver == 18
 
     # 表已建
     async with aiosqlite.connect(db_path) as conn:

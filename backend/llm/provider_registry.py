@@ -637,6 +637,7 @@ class LLMProviderRegistry:
                 "base_url",
                 "models",
                 "default_model",
+                "enabled",
                 "source",
                 "account_ref",
                 "api_key",

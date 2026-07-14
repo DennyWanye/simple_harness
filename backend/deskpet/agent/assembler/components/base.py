@@ -38,6 +38,7 @@ class ComponentContext:
     user_message: str
     history: list[dict[str, Any]] = field(default_factory=list)
     session_id: Optional[str] = None
+    current_message_id: Optional[int] = None
     # Injected dependencies — may be None when unit tests swap in fakes.
     memory_manager: Any = None
     tool_registry: Any = None

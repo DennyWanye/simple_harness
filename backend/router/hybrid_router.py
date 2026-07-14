@@ -19,6 +19,8 @@ from typing import AsyncIterator
 
 import structlog
 
+from agent.context_report import auto_context_attempt_iter
+
 from observability.metrics import llm_ttft_seconds
 from providers.base import LLMProvider
 from router.types import BudgetContext, BudgetHook, allow_all_budget
@@ -159,8 +161,16 @@ class HybridRouter:
         """
         t0 = _now()
         first = True
-        async for tok in provider.chat_stream(
-            messages, temperature=temperature, max_tokens=max_tokens
+        async for tok in auto_context_attempt_iter(
+            provider=provider,
+            messages=messages,
+            tools=None,
+            model_id=str(getattr(provider, "model", "") or ""),
+            mark_sent_at_dispatch=True,
+            generation_reserve=max_tokens,
+            iterator=lambda: provider.chat_stream(
+                messages, temperature=temperature, max_tokens=max_tokens
+            ),
         ):
             # Only a truthy (non-empty) chunk counts as the first token.
             # Some providers yield an empty string as a keep-alive before

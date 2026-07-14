@@ -276,15 +276,18 @@ async def _llm_fallback(
         {"role": "user", "content": text},
     ]
     try:
-        resp = await asyncio.wait_for(
-            llm_registry.chat_with_fallback(
-                messages,
-                model="claude-haiku-4-5",
-                max_tokens=8,
-                temperature=0.0,
-            ),
-            timeout=timeout_s,
-        )
+        from agent.context_messages import provider_purpose_scope
+
+        with provider_purpose_scope("capability_gate"):
+            resp = await asyncio.wait_for(
+                llm_registry.chat_with_fallback(
+                    messages,
+                    model="claude-haiku-4-5",
+                    max_tokens=8,
+                    temperature=0.0,
+                ),
+                timeout=timeout_s,
+            )
     except asyncio.TimeoutError:
         logger.warning("capability_gate.llm_timeout", timeout_s=timeout_s)
         return None

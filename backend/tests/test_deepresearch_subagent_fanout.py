@@ -231,6 +231,66 @@ async def test_tg2_fanout_runs_subreports_depth_one_and_merges(monkeypatch) -> N
 
 
 @pytest.mark.asyncio
+async def test_fanout_stably_merges_agent_reach_observations(monkeypatch) -> None:
+    calls: list[str] = []
+    async def _inner(topic: str, **kwargs):
+        calls.append(topic)
+        report = _sub_report(topic, len(calls))
+        hit = topic != "repo two"
+        report.coverage["route"] = {
+            "agent_reach": {
+                "planned_channels": ["github"],
+                "planned_urls": ["https://github.com/example/repo"],
+                "doctor": {"web": {"status": "ok", "active_backend": "Jina Reader"}},
+                "hits": ([{"channel": "github", "active_backend": "Jina Reader",
+                           "status": "hit", "reason_code": None}] if hit else []),
+                "degraded": ([] if hit else [{
+                    "channel": "github", "active_backend": "Jina Reader",
+                    "status": "degraded", "reason_code": "read_failed",
+                }]),
+            }
+        }
+        return report
+
+    monkeypatch.setattr(r, "deepresearch", _inner)
+    monkeypatch.setattr(r, "_fanout_concurrency", lambda: 3)
+    report = await r._run_subagent_fanout(
+        topic="outer topic",
+        sub_questions=["repo one", "repo two", "repo three"],
+        llm_call=RefAwareSynthLLM(),
+        search=_make_search({}),
+        extract=_make_extract({}),
+        scheduler=DirectScheduler(),
+        parent_sid="sid-budget",
+        mode="standard",
+        user_request="outer topic",
+        errors=[],
+        route={
+            "agent_reach": {
+                "planned_channels": ["github"],
+                "planned_urls": ["https://github.com/example/repo"],
+                "doctor": {},
+                "hits": [],
+                "degraded": [],
+            },
+        },
+    )
+
+    assert calls == ["repo one", "repo two", "repo three"]
+    route = report.coverage["route"]["agent_reach"]
+    assert route["planned_channels"] == ["github"]
+    assert route["planned_urls"] == ["https://github.com/example/repo"]
+    assert route["hits"] == [{
+        "channel": "github", "active_backend": "Jina Reader",
+        "status": "hit", "reason_code": None,
+    }]
+    assert route["degraded"] == [{
+        "channel": "github", "active_backend": "Jina Reader",
+        "status": "degraded", "reason_code": "read_failed",
+    }]
+
+
+@pytest.mark.asyncio
 async def test_tg2_fanout_isolates_one_failed_subagent(monkeypatch) -> None:
     async def _inner(topic: str, **kwargs):
         if topic == "q2?":

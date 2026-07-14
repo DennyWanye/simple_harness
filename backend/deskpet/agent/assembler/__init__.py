@@ -23,16 +23,22 @@ from deskpet.agent.assembler.bundle import (
     TASK_TYPES,
     AssemblyDecisions,
     AssemblyPolicy,
+    AttachmentRef,
     ComponentTrace,
+    ContextDecision,
+    ContextFragment,
     ContextBundle,
     MemoryPolicy,
+    PreparedContext,
     Slice,
+    legacy_slice_to_fragment,
 )
 from deskpet.agent.assembler.budget import BudgetAllocator, BudgetResult
 from deskpet.agent.assembler.classifier import ClassifierResult, TaskClassifier
 from deskpet.agent.assembler.components.base import Component, ComponentContext
 from deskpet.agent.assembler.components.memory import MemoryComponent
 from deskpet.agent.assembler.components.persona import PersonaComponent
+from deskpet.agent.assembler.components.project_rules import ProjectRulesComponent
 from deskpet.agent.assembler.components.skill import SkillComponent
 from deskpet.agent.assembler.components.time_component import TimeComponent
 from deskpet.agent.assembler.components.tool import ToolComponent
@@ -51,6 +57,7 @@ __all__ = [
     "TASK_TYPES",
     "AssemblyDecisions",
     "AssemblyPolicy",
+    "AttachmentRef",
     "BudgetAllocator",
     "BudgetResult",
     "ClassifierResult",
@@ -58,13 +65,18 @@ __all__ = [
     "ComponentContext",
     "ComponentRegistry",
     "ComponentTrace",
+    "ContextDecision",
+    "ContextFragment",
     "ContextAssembler",
     "ContextBundle",
     "MemoryComponent",
     "MemoryPolicy",
+    "PreparedContext",
     "PersonaComponent",
+    "ProjectRulesComponent",
     "SkillComponent",
     "Slice",
+    "legacy_slice_to_fragment",
     "TaskClassifier",
     "TTSPreNarrator",
     "TimeComponent",
@@ -117,12 +129,19 @@ def build_default_assembler(
     registry.register(PersonaComponent())
     registry.register(TimeComponent())
     registry.register(WorkspaceComponent())
+    registry.register(ProjectRulesComponent())
     registry.register(WorkspaceMemoryComponent(store=workspace_memory_store))
     registry.register(
         PreferenceProfileComponent(store=facts_store, flag_enabled=persona_inject)
     )
 
     policies = load_policies()
+    code_policy = policies.get("code")
+    if code_policy is not None and "project_rules" not in code_policy.prefer:
+        # Keep packaged/user YAML byte-compatible while making the new
+        # code-only component reachable. It still fail-closes before any disk
+        # access unless the workspace root came from a verified host context.
+        code_policy.prefer = [*code_policy.prefer, "project_rules"]
 
     classifier = TaskClassifier(
         embedder=embedder,

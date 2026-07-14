@@ -24,6 +24,41 @@ def _patterns():
     return load_claim_patterns(_YAML)
 
 
+def test_generated_image_claim_requires_generate_image_receipt():
+    gate = VerifyGate(extractor=RegexExtractor(_patterns()), mode="strict")
+
+    outcome = gate.check(
+        assistant_text="给你生成了一把科幻风脉冲步枪。",
+        ledger=[],
+    )
+
+    assert outcome.passed is False
+    assert outcome.unmatched_claims[0].pattern_id == "zh_generated_image"
+
+
+def test_generated_image_claim_rejects_pending_accepted_receipt():
+    gate = VerifyGate(extractor=RegexExtractor(_patterns()), mode="strict")
+    t0 = datetime.now(timezone.utc)
+    pending = make_receipt(
+        tool_name="generate_image",
+        args={},
+        started_at=t0,
+        ended_at=t0 + timedelta(milliseconds=5),
+        ok=False,
+        session_id="s1",
+        phase="accepted",
+        outcome="pending",
+    )
+
+    outcome = gate.check(
+        assistant_text="给你生成了一只科幻猫。",
+        ledger=[pending],
+    )
+
+    assert outcome.passed is False
+    assert outcome.unmatched_claims[0].pattern_id == "zh_generated_image"
+
+
 def _receipt(tool_name: str, ok: bool = True):
     t0 = datetime.now(timezone.utc)
     return make_receipt(tool_name=tool_name, args={}, started_at=t0,

@@ -28,7 +28,7 @@ class SkillCandidateWaiters
 ----------------------
 - 不生成可执行 script.py；requires_script 硬编码 false。
 - 不照搬 hermes 自动执行；所有技能必须通过用户确认门才落盘。
-- flag OFF = 字节级 BC（codifier 不构造 / propose 短路返回 None）。
+- flag OFF 时 codifier 不构造 / propose 短路返回 None，v17 schema 可存在但零行。
 """
 from __future__ import annotations
 
@@ -42,6 +42,8 @@ from typing import Any, Awaitable, Callable, Optional
 
 import aiosqlite
 
+from deskpet.memory.memory_v2_schema import PENDING_SKILL_CANDIDATES_DDL
+
 log = logging.getLogger(__name__)
 
 _LLMCall = Callable[[str], Awaitable[str]]
@@ -49,18 +51,6 @@ _LLMCall = Callable[[str], Awaitable[str]]
 # ---------------------------------------------------------------------------
 # DDL for pending_skill_candidates (独立表，不污染 skill_memory)
 # ---------------------------------------------------------------------------
-_DDL_PENDING = """
-CREATE TABLE IF NOT EXISTS pending_skill_candidates (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    name            TEXT    NOT NULL,
-    description     TEXT    NOT NULL,
-    trigger_pattern TEXT,
-    steps_json      TEXT    NOT NULL DEFAULT '[]',
-    status          TEXT    NOT NULL DEFAULT 'pending',
-    created_at      REAL    NOT NULL
-);
-"""
-
 # ---------------------------------------------------------------------------
 # Prompt for candidate generation
 # ---------------------------------------------------------------------------
@@ -198,7 +188,7 @@ class SkillCandidateStore:
 
     async def _ensure_table(self) -> None:
         async with aiosqlite.connect(self._db_path) as conn:
-            await conn.executescript(_DDL_PENDING)
+            await conn.executescript(PENDING_SKILL_CANDIDATES_DDL)
             await conn.commit()
 
     async def write_pending(self, candidate: dict[str, Any]) -> int:

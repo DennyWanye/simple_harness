@@ -72,6 +72,7 @@ class _EntryNS:
         self.api_key_ref = fields.get("api_key_ref", f"keychain://{self.id}")
         self.priority = int(fields.get("priority", 1))
         self.enabled = bool(fields.get("enabled", True))
+        self.source = fields.get("source", "user")
 
 
 class _StubSessionDB:
@@ -146,6 +147,38 @@ async def test_unbound_session_returns_global_chain() -> None:
     )
 
     assert [p.id for p in chain] == ["relay", "openrouter"]
+
+
+@pytest.mark.asyncio
+async def test_chain_entries_preserve_source_for_agent_loop() -> None:
+    """Regression: AgentLoop reads entry.source to mark relay providers."""
+    from llm.resolution import resolve_provider_for_session
+
+    registry = _StubRegistry([
+        {"id": "relay-cloud", "base_url": "https://chinzy.com/v1",
+         "model": "gpt-5.5", "api_key": "k1", "enabled": True,
+         "source": "relay"},
+    ])
+    sdb = _StubSessionDB({})
+
+    global_chain = await resolve_provider_for_session(
+        "default",
+        is_code_session=False,
+        registry=registry,
+        session_db=sdb,
+    )
+    assert global_chain[0].source == "relay"
+
+    pinned_sdb = _StubSessionDB({
+        "default": {"provider_id": "relay-cloud", "preferred_model": None},
+    })
+    pinned_chain = await resolve_provider_for_session(
+        "default",
+        is_code_session=False,
+        registry=registry,
+        session_db=pinned_sdb,
+    )
+    assert pinned_chain[0].source == "relay"
 
 
 @pytest.mark.asyncio

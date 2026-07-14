@@ -76,6 +76,15 @@ class CodeModeManager:
         if s is None:
             return 0
         rows = await s.list_code_sessions()
+        for r in rows:
+            await s.ensure_session(
+                r["base_session_id"],
+                {
+                    "origin": "code_mode",
+                    "project_root": r["project_root"],
+                    "project_name": r["project_name"],
+                },
+            )
         with self._lock:
             for r in rows:
                 bsid = r["base_session_id"]

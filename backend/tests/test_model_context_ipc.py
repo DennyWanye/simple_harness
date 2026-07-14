@@ -38,6 +38,14 @@ class FakeServiceContext:
         return self._services.get(name)
 
 
+class FakeProviderRegistry:
+    def list_providers(self):
+        return [
+            {"id": "primary", "models": ["gpt-5.5", "gpt-5-mini"]},
+            {"id": "backup", "models": ["claude-sonnet-4-5"]},
+        ]
+
+
 @pytest.fixture()
 def isolated_user_data(monkeypatch, tmp_path):
     user_data = tmp_path / "user_data"
@@ -241,3 +249,109 @@ async def test_model_context_types_registered():
     """两个新类型进了 P4_IPC_MESSAGE_TYPES，main.py dispatch 才会路由进来。"""
     assert "model_context_get" in p4_ipc.P4_IPC_MESSAGE_TYPES
     assert "model_context_set" in p4_ipc.P4_IPC_MESSAGE_TYPES
+
+
+@pytest.mark.asyncio
+async def test_context_compaction_defaults_to_follow_session(isolated_user_data):
+    ws = FakeWebSocket()
+    await p4_ipc.handle(
+        ws,
+        "s1",
+        "context_compaction_get",
+        {},
+        FakeServiceContext(provider_registry=FakeProviderRegistry()),
+    )
+    assert ws.sent == [{
+        "type": "context_compaction_get_response",
+        "payload": {
+            "model": "follow_session",
+            "default_model": "follow_session",
+            "available_models": [
+                "claude-sonnet-4-5", "gpt-5-mini", "gpt-5.5"
+            ],
+        },
+    }]
+
+
+@pytest.mark.asyncio
+async def test_context_compaction_merges_trusted_e2e_live_catalog(
+    isolated_user_data, monkeypatch
+):
+    monkeypatch.setenv("DESKPET_DEV_MODE", "1")
+    monkeypatch.setenv(
+        "DESKPET_CONTEXT_OS_E2E_DAEMON_URL", "http://127.0.0.1:18991"
+    )
+    monkeypatch.setenv(
+        "DESKPET_CONTEXT_OS_E2E_PROVIDER_URL", "http://127.0.0.1:18992/v1"
+    )
+
+    class _Reply:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def read(self):
+            return b'{"data":[{"id":"ctx-primary"},{"id":"ctx-compact-fixture"}]}'
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda *_a, **_k: _Reply())
+    ws = FakeWebSocket()
+    await p4_ipc.handle(
+        ws,
+        "s1",
+        "context_compaction_get",
+        {},
+        FakeServiceContext(provider_registry=FakeProviderRegistry()),
+    )
+    models = ws.sent[0]["payload"]["available_models"]
+    assert "ctx-primary" in models
+    assert "ctx-compact-fixture" in models
+
+
+@pytest.mark.asyncio
+async def test_context_compaction_set_persists_explicit_model(isolated_user_data):
+    ws = FakeWebSocket()
+    sc = FakeServiceContext(provider_registry=FakeProviderRegistry())
+    await p4_ipc.handle(
+        ws, "s1", "context_compaction_set", {"model": "gpt-5-mini"}, sc
+    )
+    assert ws.sent[0]["payload"] == {"ok": True, "model": "gpt-5-mini"}
+    import tomllib
+
+    raw = tomllib.loads((isolated_user_data / "config.toml").read_text("utf-8"))
+    assert raw["context"]["compaction"]["model"] == "gpt-5-mini"
+
+    ws2 = FakeWebSocket()
+    await p4_ipc.handle(ws2, "s1", "context_compaction_get", {}, sc)
+    assert ws2.sent[0]["payload"]["model"] == "gpt-5-mini"
+
+
+@pytest.mark.asyncio
+async def test_context_compaction_explicit_unknown_fails_closed(isolated_user_data):
+    ws = FakeWebSocket()
+    await p4_ipc.handle(
+        ws,
+        "s1",
+        "context_compaction_set",
+        {"model": "missing-model"},
+        FakeServiceContext(provider_registry=FakeProviderRegistry()),
+    )
+    assert ws.sent[0]["payload"] == {
+        "ok": False,
+        "reason": "compression_model_unavailable:missing-model",
+    }
+    assert not (isolated_user_data / "config.toml").exists()
+
+
+@pytest.mark.asyncio
+async def test_context_compaction_follow_session_does_not_need_catalog(
+    isolated_user_data,
+):
+    ws = FakeWebSocket()
+    await p4_ipc.handle(
+        ws,
+        "s1",
+        "context_compaction_set",
+        {"model": "follow_session"},
+        FakeServiceContext(),
+    )
+    assert ws.sent[0]["payload"] == {"ok": True, "model": "follow_session"}
+    assert "context_compaction_get" in p4_ipc.P4_IPC_MESSAGE_TYPES
+    assert "context_compaction_set" in p4_ipc.P4_IPC_MESSAGE_TYPES

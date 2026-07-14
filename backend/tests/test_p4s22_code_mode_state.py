@@ -88,3 +88,39 @@ def test_all_sessions_returns_snapshot_copy(tmp_path):
     snap = mgr.all_sessions()
     snap.clear()  # mutating snapshot must not affect manager
     assert mgr.is_enabled("default")
+
+
+@pytest.mark.asyncio
+async def test_load_persisted_registers_legacy_base_session(tmp_path):
+    class FakeSessionDB:
+        def __init__(self):
+            self.ensured = []
+
+        async def list_code_sessions(self):
+            return [
+                {
+                    "base_session_id": "code-legacy-base",
+                    "code_session_id": "code-legacy-memory",
+                    "project_root": str(tmp_path),
+                    "project_name": "legacy",
+                }
+            ]
+
+        async def ensure_session(self, session_id, metadata):
+            self.ensured.append((session_id, metadata))
+
+    persistence = FakeSessionDB()
+    mgr = CodeModeManager()
+
+    assert await mgr.load_persisted(persistence) == 1
+    assert persistence.ensured == [
+        (
+            "code-legacy-base",
+            {
+                "origin": "code_mode",
+                "project_root": str(tmp_path),
+                "project_name": "legacy",
+            },
+        )
+    ]
+    assert mgr.is_enabled("code-legacy-base")

@@ -72,6 +72,28 @@ def test_llm_base_url_fallback_is_read(tmp_path, monkeypatch):
     assert base_url == "https://relay.example.test/v1"
 
 
+def test_runtime_endpoint_resolver_takes_priority(tmp_path, monkeypatch):
+    """Running desktop backend injects the live provider-registry key.
+
+    llm_runtime.json intentionally does not persist api_key, so image tools
+    must prefer the injected resolver over standalone config/keychain fallback.
+    """
+    _point_config(
+        tmp_path,
+        monkeypatch,
+        "[llm]\n"
+        'base_url = "https://stale.example.test/v1"\n',
+    )
+    it.set_endpoint_resolver(lambda: ("https://relay.example.test/v1", "tsk_live"))
+    try:
+        base_url, api_key = it._resolve_endpoint()
+    finally:
+        it.set_endpoint_resolver(None)
+
+    assert base_url == "https://relay.example.test/v1"
+    assert api_key == "tsk_live"
+
+
 def test_missing_section_falls_back_to_defaults(tmp_path, monkeypatch):
     """[image] 段缺失 → 工具回落各自默认值(不抛,helper 返回 {})。"""
     _point_config(tmp_path, monkeypatch, "[other]\nx = 1\n")

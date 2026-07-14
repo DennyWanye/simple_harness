@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -96,3 +97,45 @@ def test_gate_factory_passed(patched):  # 4.1.1
 def test_no_gate_by_default(patched):  # 4.1.2 BC
     _build()({"description": "d", "prompt": "p"}, "")
     assert "termination_gate" not in patched.instances[-1]
+
+
+def test_context_os_subagent_forwards_exact_prepared_contract(monkeypatch):
+    captured = {}
+
+    class _PreparedLoop:
+        def __init__(self, **kwargs):
+            pass
+
+        async def run(self, messages, **kwargs):
+            captured["messages"] = messages
+            captured["run"] = kwargs
+            yield _Final("prepared-result")
+
+    monkeypatch.setattr("agent.agent_loop.AgentLoop", _PreparedLoop, raising=False)
+    monkeypatch.setattr("agent.agent_loop.FinalEvent", _Final, raising=False)
+    monkeypatch.setattr("agent.agent_loop.ErrorEvent", _Err, raising=False)
+
+    async def _prepare(**kwargs):
+        captured["prepare"] = kwargs
+        tool_set = SimpleNamespace(schema_fingerprint="exact-schema-hash")
+        return (
+            SimpleNamespace(
+                messages=[{"role": "user", "content": "budgeted"}],
+                tool_set=tool_set,
+            ),
+            "request-code-1",
+        )
+
+    result = json.loads(_build(context_prepare=_prepare)(
+        {"description": "d", "prompt": "p", "tools": ["grep", "web_search"]},
+        "task",
+    ))
+    assert result["result"] == "prepared-result"
+    assert captured["prepare"]["session_id"] == "sid.sub"
+    assert captured["prepare"]["venue"] == "code_subagent"
+    assert captured["prepare"]["tool_names"] == ("grep", "web_search")
+    assert captured["messages"] == [{"role": "user", "content": "budgeted"}]
+    assert captured["run"]["prepared_context"].tool_set.schema_fingerprint == (
+        "exact-schema-hash"
+    )
+    assert captured["run"]["context_request_id"] == "request-code-1"

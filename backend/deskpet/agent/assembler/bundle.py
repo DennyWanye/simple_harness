@@ -28,7 +28,9 @@ Spec: openspec/changes/p4-poseidon-agent-harness/specs/context-assembler/spec.md
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Mapping, Optional
+
+from deskpet.tools.capabilities import ToolExposureIntent, ToolExposurePolicy
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +99,81 @@ class Slice:
     priority: int = 50
     bucket: Optional[str] = None
     meta: dict[str, Any] = field(default_factory=dict)
+    fragments: list["ContextFragment"] = field(default_factory=list)
+    tool_exposure_intent: Optional[ToolExposureIntent] = None
+
+
+@dataclass(frozen=True)
+class ContextFragment:
+    """Typed context contribution used by the Context OS path."""
+
+    fragment_id: str
+    source: str
+    role: Literal["system", "user", "assistant", "tool"]
+    content: str | list[dict[str, Any]]
+    lifetime: Literal[
+        "platform", "stable", "task", "retrieved", "history", "current"
+    ]
+    placement: Literal["prefix", "transcript", "control"]
+    priority: int
+    trim_policy: Literal["never", "truncate", "drop", "summarize", "page_in"]
+    protected: bool = False
+    reason: str = ""
+    cache_scope: Optional[str] = None
+    causal_group_id: Optional[str] = None
+    anchor_after: Optional[str] = None
+    meta: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ContextDecision:
+    fragment_id: str
+    action: Literal["loaded", "trimmed", "omitted"]
+    reason: str = ""
+    estimated_tokens: int = 0
+
+
+@dataclass(frozen=True)
+class AttachmentRef:
+    """Token attribution for one provider-normalized media content block."""
+
+    fragment_id: str
+    message_index: int
+    content_index: int
+    media_type: str
+    byte_size: int
+    estimated_tokens: int = 0
+    estimate_method: str = "provider_estimator"
+
+
+@dataclass(frozen=True)
+class PageInRef:
+    """Body-free attribution for one request-scoped page-in authority record."""
+
+    reference_id: str
+    kind: str
+    source: str
+    source_hash: str
+    fragment_id: str
+
+
+@dataclass
+class PreparedContext:
+    messages: list[dict[str, Any]]
+    tool_set: Any = None
+    stable_prefix_boundary: Optional[int] = None
+    stable_prefix_fingerprint: Optional[str] = None
+    assembly_decisions: list[ContextDecision] = field(default_factory=list)
+    active_snapshot_handle: Any = None
+    coverage_report: Any = None
+    coverage_compaction_jobs: tuple[Any, ...] = ()
+    replan_after_compaction: Any = None
+    replan_for_budget: Any = None
+    attachment_refs: tuple[AttachmentRef, ...] = ()
+    attachment_tokens: int = 0
+    request_budget: Any = None
+    page_in_refs: tuple[PageInRef, ...] = ()
+    page_in_store: Any = None
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +231,9 @@ class AssemblyPolicy:
         default_factory=lambda: ["persona", "time", "workspace"]
     )
     tools: list[str] = field(default_factory=lambda: ["*"])
+    # Context OS ON-only policy.  ``tools`` remains the exact legacy truth for
+    # the global rollback path and must never be reconstructed from this field.
+    tool_exposure: Optional[ToolExposurePolicy] = None
     memory: MemoryPolicy = field(default_factory=MemoryPolicy)
     budget_ratio: Optional[float] = None
 
@@ -272,6 +352,8 @@ class ContextBundle:
     # to do?'" failure mode).
     history: list[dict[str, Any]] = field(default_factory=list)
     late_system_nudge: str = ""
+    fragments: list[ContextFragment] = field(default_factory=list)
+    tool_exposure_intent: Optional[ToolExposureIntent] = None
 
     def build_messages(
         self,
@@ -322,3 +404,73 @@ class ContextBundle:
             messages.append({"role": "user", "content": user_message})
 
         return messages
+
+    def prepare_request(
+        self,
+        base_system: str = "",
+        *,
+        history: Optional[list[dict[str, Any]]] = None,
+        late_system_nudge: Optional[str] = None,
+        user_message: Optional[str] = None,
+        tool_set: Any = None,
+        attachment_refs: tuple[AttachmentRef, ...] = (),
+        attachment_tokens: int = 0,
+    ) -> PreparedContext:
+        """Compatibility bridge to the typed request contract.
+
+        Until the ContextRequestPlanner takes ownership, the message bytes are
+        intentionally identical to :meth:`build_messages`.
+        """
+        messages = self.build_messages(
+            base_system,
+            history=history,
+            late_system_nudge=late_system_nudge,
+            user_message=user_message,
+        )
+        decisions = [
+            ContextDecision(
+                fragment_id=fragment.fragment_id,
+                action="loaded",
+                reason=fragment.reason,
+            )
+            for fragment in self.fragments
+        ]
+        return PreparedContext(
+            messages=messages,
+            tool_set=tool_set,
+            assembly_decisions=decisions,
+            attachment_refs=tuple(attachment_refs),
+            attachment_tokens=max(0, int(attachment_tokens)),
+        )
+
+
+def legacy_slice_to_fragment(slice_: Slice) -> Optional[ContextFragment]:
+    """Map one legacy textual Slice to one fragment without double injection."""
+    if slice_.fragments:
+        if slice_.text_content:
+            raise ValueError(
+                f"component {slice_.component_name!r} produced fragments and legacy text"
+            )
+        return None
+    if not slice_.text_content:
+        return None
+    bucket = (slice_.bucket or "frozen").lower()
+    if bucket == "dynamic":
+        lifetime, placement, trim = "retrieved", "prefix", "summarize"
+    elif bucket == "skill":
+        lifetime, placement, trim = "task", "prefix", "page_in"
+    else:
+        lifetime, placement, trim = "stable", "prefix", "truncate"
+    return ContextFragment(
+        fragment_id=f"legacy:{slice_.component_name}",
+        source=slice_.component_name,
+        role="system",
+        content=slice_.text_content,
+        lifetime=lifetime,
+        placement=placement,
+        priority=slice_.priority,
+        trim_policy=trim,
+        protected=slice_.priority >= 90,
+        reason="legacy_slice_adapter",
+        meta=dict(slice_.meta),
+    )

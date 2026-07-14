@@ -68,6 +68,15 @@ def test_resolve_same_model_returns_base():
     assert _resolve_ephemeral_provider(base, "haiku") is base
 
 
+def test_resolve_e2e_provider_keeps_strict_primary(monkeypatch):
+    """The loopback E2E catalog is authoritative for every auxiliary call."""
+    import main
+
+    base = _base_provider("ctx-primary")
+    monkeypatch.setattr(main, "_e2e_provider_base", "http://127.0.0.1:18992/v1")
+    assert main._resolve_ephemeral_provider(base, "deepseek-v4-pro") is base
+
+
 def test_resolve_none_base_returns_none():
     """base=None（用户离线/未配 LLM）→ None，调用方整体跳过 ephemeral."""
     from main import _resolve_ephemeral_provider

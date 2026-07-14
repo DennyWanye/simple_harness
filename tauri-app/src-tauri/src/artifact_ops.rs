@@ -18,7 +18,9 @@
 //!   5. case-normalize on Windows (`normcase`-equivalent)
 //!   6. final compare: `final.starts_with(allowed_root)`
 //!
-//! Allowed roots (whitelist): `<user_data>/artifacts/` and `<user_data>/downloads/`.
+//! Allowed roots (whitelist): `<user_data>/artifacts/`, `<user_data>/downloads/`,
+//! `<user_data>/OutPut/` (the user-visible Office/export output tree), and
+//! the runtime `DeepResearch/` report directory.
 //! `<user_data>` resolution via [`crate::paths::user_data_dir`].
 //!
 //! See PRD §3 D3 + TDD §B TG-4 T4-1~T4-10.
@@ -54,7 +56,7 @@ impl From<ArtifactError> for String {
 // ─── Path canonicalization + whitelist ───────────────────────
 
 /// Allowed subtree names under `<user_data>` for artifact actions.
-const ALLOWED_SUBDIRS: &[&str] = &["artifacts", "downloads"];
+const ALLOWED_SUBDIRS: &[&str] = &["artifacts", "downloads", "OutPut"];
 
 /// Return the list of allowed root paths (canonicalized).
 fn allowed_roots() -> Vec<PathBuf> {
@@ -63,7 +65,7 @@ fn allowed_roots() -> Vec<PathBuf> {
         for sub in ALLOWED_SUBDIRS {
             let p = base.join(sub);
             if let Ok(c) = p.canonicalize() {
-                roots.push(c);
+                roots.push(strip_extended_prefix(c));
             } else {
                 // Path may not exist yet; push the un-canonical form so
                 // first-time creation still validates by prefix.
@@ -71,6 +73,60 @@ fn allowed_roots() -> Vec<PathBuf> {
             }
         }
     }
+    roots.extend(deepresearch_roots());
+    roots
+}
+
+fn push_existing_canonical_root(roots: &mut Vec<PathBuf>, p: PathBuf) {
+    if let Ok(c) = p.canonicalize() {
+        let c = strip_extended_prefix(c);
+        if !roots.iter().any(|r| normcase(r) == normcase(&c)) {
+            roots.push(c);
+        }
+    }
+}
+
+/// Candidate DeepResearch report roots shared with Python `paths.deepresearch_dir`.
+///
+/// DeepResearch intentionally saves reports in a user-visible `DeepResearch/`
+/// folder rather than under `<user_data>/artifacts`, so ArtifactCard actions
+/// need this extra root. We still require the root to exist and canonicalize
+/// cleanly, preserving the same anti-UNC / prefix checks as normal artifacts.
+fn deepresearch_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+
+    if let Some(dir) = std::env::var_os("DESKPET_DEEPRESEARCH_DIR") {
+        push_existing_canonical_root(&mut roots, PathBuf::from(dir));
+    }
+
+    if let Some(backend_dir) = std::env::var_os("DESKPET_BACKEND_DIR").map(PathBuf::from) {
+        if let Some(repo_root) = backend_dir.parent() {
+            push_existing_canonical_root(&mut roots, repo_root.join("DeepResearch"));
+        }
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let install_root = if parent
+                .file_name()
+                .map(|n| n.to_string_lossy().eq_ignore_ascii_case("backend"))
+                .unwrap_or(false)
+            {
+                parent.parent().unwrap_or(parent)
+            } else {
+                parent
+            };
+            push_existing_canonical_root(&mut roots, install_root.join("DeepResearch"));
+        }
+    }
+
+    if let Ok(cwd) = std::env::current_dir() {
+        push_existing_canonical_root(&mut roots, cwd.join("DeepResearch"));
+        if let Some(parent) = cwd.parent() {
+            push_existing_canonical_root(&mut roots, parent.join("DeepResearch"));
+        }
+    }
+
     roots
 }
 
@@ -312,6 +368,68 @@ pub async fn artifact_save_as(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, MutexGuard, OnceLock};
+
+    fn env_test_lock() -> MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
+
+    #[test]
+    fn t4_int_output_tree_is_allowed_for_generated_artifacts() {
+        let _guard = env_test_lock();
+        let base = std::env::temp_dir().join(format!(
+            "deskpet-artifact-out-root-test-{}",
+            std::process::id()
+        ));
+        let ppt_dir = base.join("OutPut").join("PPT");
+        std::fs::create_dir_all(&ppt_dir).unwrap();
+        let deck = ppt_dir.join("deck.pptx");
+        std::fs::write(&deck, b"ppt").unwrap();
+
+        let prev = std::env::var_os("DESKPET_USER_DATA_DIR");
+        std::env::set_var("DESKPET_USER_DATA_DIR", &base);
+        let result = canonicalize_for_artifact(deck.to_str().unwrap());
+        match prev {
+            Some(v) => std::env::set_var("DESKPET_USER_DATA_DIR", v),
+            None => std::env::remove_var("DESKPET_USER_DATA_DIR"),
+        }
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert!(result.is_ok(), "OutPut artifacts should be allowed: {result:?}");
+    }
+
+    #[test]
+    fn deepresearch_report_root_is_allowed_from_backend_dir() {
+        let _guard = env_test_lock();
+        let base = std::env::temp_dir().join(format!(
+            "deskpet-artifact-deepresearch-root-test-{}",
+            std::process::id()
+        ));
+        let backend = base.join("backend");
+        let reports = base.join("DeepResearch");
+        std::fs::create_dir_all(&backend).unwrap();
+        std::fs::create_dir_all(&reports).unwrap();
+        let report = reports.join("report.md");
+        std::fs::write(&report, b"# report").unwrap();
+
+        let prev_backend = std::env::var_os("DESKPET_BACKEND_DIR");
+        let prev_userdata = std::env::var_os("DESKPET_USER_DATA_DIR");
+        std::env::set_var("DESKPET_BACKEND_DIR", &backend);
+        std::env::set_var("DESKPET_USER_DATA_DIR", base.join("userdata"));
+        let result = canonicalize_for_artifact(report.to_str().unwrap());
+        match prev_backend {
+            Some(v) => std::env::set_var("DESKPET_BACKEND_DIR", v),
+            None => std::env::remove_var("DESKPET_BACKEND_DIR"),
+        }
+        match prev_userdata {
+            Some(v) => std::env::set_var("DESKPET_USER_DATA_DIR", v),
+            None => std::env::remove_var("DESKPET_USER_DATA_DIR"),
+        }
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert!(result.is_ok(), "DeepResearch reports should be allowed: {result:?}");
+    }
 
     #[test]
     fn t4_1_empty_path_rejected() {

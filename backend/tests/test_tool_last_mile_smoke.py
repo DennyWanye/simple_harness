@@ -54,12 +54,17 @@ def test_t0_4_registry_execute_tool_signature_compatible():
     from deskpet.tools.registry import ToolRegistry
     sig = inspect.signature(ToolRegistry.execute_tool)
     params = list(sig.parameters.values())
-    # self + name + params + session_id + task_id
-    assert len(params) == 5
+    # Existing positional contract remains unchanged; Context OS adds one
+    # optional keyword-only execution context and therefore cannot break old
+    # callers.
+    assert len(params) == 6
     assert params[1].name == "name"
     assert params[2].name == "params"
     assert params[3].name == "session_id"
     assert params[4].name == "task_id"
+    assert params[5].name == "execution_context"
+    assert params[5].kind is inspect.Parameter.KEYWORD_ONLY
+    assert params[5].default is None
 
 
 def test_t0_5_config_tools_dataclass_chain():

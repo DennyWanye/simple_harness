@@ -15,6 +15,7 @@ export interface PPTOutlineCardProps {
   noResearch: boolean;
   history: PPTOutlineHistoryItem[];
   awaiting?: boolean;
+  decisionStatus?: string;
   sessionId?: string;
 }
 
@@ -26,12 +27,16 @@ export function PPTOutlineCard({
   noResearch,
   history,
   awaiting = false,
+  decisionStatus: persistedDecisionStatus,
   sessionId,
 }: PPTOutlineCardProps) {
   const [editing, setEditing] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [decided, setDecided] = useState(!awaiting);
+  const [decisionStatus, setDecisionStatus] = useState(
+    persistedDecisionStatus ?? "已提交决定",
+  );
   const resolve_ppt_outline = useSessionsStore((s) => s.resolve_ppt_outline);
 
   const effectiveAwaiting = awaiting && !decided;
@@ -42,9 +47,16 @@ export function PPTOutlineCard({
       type: "ppt_outline_decision",
       payload,
     });
+    const nextDecisionStatus = {
+      accept: "已确认生成",
+      modify: "已提交修改，正在生成新版大纲",
+      reuse: "已采用历史大纲",
+      cancel: "已取消生成",
+    }[payload.action];
+    setDecisionStatus(nextDecisionStatus);
     setDecided(true);
     if (sessionId) {
-      resolve_ppt_outline(sessionId, outlineId);
+      resolve_ppt_outline(sessionId, outlineId, nextDecisionStatus);
     }
   };
 
@@ -155,7 +167,7 @@ export function PPTOutlineCard({
         </>
       ) : (
         <div data-testid="ppt-outline-resolved" style={resolvedStyle}>
-          已提交决定
+          {decisionStatus}
         </div>
       )}
     </div>

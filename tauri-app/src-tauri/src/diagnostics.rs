@@ -177,6 +177,7 @@ pub fn build_diagnostic_bundle(
 
     // --- meta.json (REDACTED, allow-list only) -----------------------
     let state_db_size = dir_file_size(&data_dir.join("data").join("state.db"));
+    let workflow_db_size = dir_file_size(&data_dir.join("data").join("workflow.db"));
     let app_version = app
         .config()
         .version
@@ -187,6 +188,7 @@ pub fn build_diagnostic_bundle(
         "os": std::env::consts::OS,
         "arch": std::env::consts::ARCH,
         "state_db_bytes": state_db_size,
+        "workflow_db_bytes": workflow_db_size,
         "provider": redacted_provider_info(&data_dir),  // api_key dropped
         "generated_at": ts,
         "note_len": user_note.chars().count(),

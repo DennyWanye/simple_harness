@@ -41,6 +41,16 @@ def test_problem_pipeline_defaults_factory_on() -> None:
     assert pp.analysis_timeout_s == 45.0
 
 
+def test_repo_config_problem_pipeline_ships_deepseek_analysis_model() -> None:
+    repo_config = Path(__file__).resolve().parents[2] / "config.toml"
+    cfg = load_config(repo_config)
+
+    pp = cfg.features.problem_pipeline
+    assert pp.enabled is True
+    assert pp.analysis_model == "deepseek-v4-pro"
+    assert pp.analysis_timeout_s == 45.0
+
+
 def test_problem_pipeline_parsed_from_nested_subtable(tmp_path: Path) -> None:
     """[features.problem_pipeline] 嵌套子表被 pop 解析（非平铺丢弃）。"""
     cfg_path = tmp_path / "config.toml"

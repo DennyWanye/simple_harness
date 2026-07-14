@@ -6,8 +6,9 @@
 Four tools, all built on httpx + trafilatura + selectolax — no paid
 search APIs (D5 decision, enforced by CI grep guard task 9.9).
 
-* ``web_fetch(url)`` — single-page HTTP GET → structured payload
-  (status, content, content_type). HTML > 2MB gets truncated.
+* ``web_fetch(url)`` — single-page fetch → structured payload
+  (status, content, content_type). Scrapling is tried first for modern
+  pages, then httpx falls back. HTML > 2MB gets truncated.
 * ``web_crawl(seed_url, ...)`` — BFS same-origin crawl with robots.txt
   + rate limiting + keyword scoring.
 * ``web_extract_article(url_or_html)`` — trafilatura structured
@@ -196,13 +197,34 @@ def _detect_captcha(text: str) -> bool:
     return any(n in lowered for n in needles)
 
 
+def _scrapling_fetch_html(url: str, timeout: float) -> dict[str, Any] | None:
+    """Best-effort Scrapling fetch used before plain httpx.
+
+    Kept as a tiny indirection so tests can disable it without importing
+    Scrapling or making real network calls.
+    """
+    try:
+        from .scrapling_tools import _scrapling_get_html
+
+        fetched = _scrapling_get_html(url, timeout=timeout)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("scrapling fetch layer unavailable for %s: %s", url, exc)
+        return None
+    if not fetched.get("ok"):
+        logger.debug("scrapling fetch layer failed for %s: %s", url, fetched.get("error"))
+        return None
+    return fetched
+
+
 # ---------------------------------------------------------------------
 # web_fetch
 # ---------------------------------------------------------------------
 _SCHEMA_FETCH: dict[str, Any] = {
     "name": "web_fetch",
     "description": (
-        "抓取网页文本内容做调研：HTTP GET a URL and return status + content + content_type. "
+        "抓取网页文本内容做调研。稳定接口名是 web_fetch，但底层优先使用 "
+        "Scrapling 抓取，只有 Scrapling 不可用、失败或被拦截时才回退 httpx。"
+        "Returns status + content + content_type. "
         "Follows up to 5 redirects. HTML truncated to 2MB. Respects "
         "robots.txt and per-domain rate limits from config. "
         "web_fetch 不是用来生成或获取图片；用户要生成、画图片请用 generate_image。"
@@ -223,7 +245,7 @@ _SCHEMA_FETCH: dict[str, Any] = {
 
 
 def _fetch_one(url: str, timeout: float) -> dict[str, Any]:
-    """Low-level fetch helper used by both web_fetch and web_crawl.
+    """Scrapling-first fetch helper used by web_fetch and web_crawl.
 
     Returns a dict with either ``{"status", "content", "content_type",
     "url_final"}`` on success or ``{"error", "retriable"}`` on failure.
@@ -238,6 +260,25 @@ def _fetch_one(url: str, timeout: float) -> dict[str, Any]:
     if not _respect_robots(url):
         return {"error": "blocked by robots.txt", "retriable": False}
     _throttle(host)
+    scraped = _scrapling_fetch_html(url, timeout)
+    if scraped is not None:
+        status = int(scraped.get("status") or 0)
+        body = str(scraped.get("html") or "")
+        if body and 200 <= status < 300 and not _detect_captcha(body):
+            _clear_block(host)
+            if len(body.encode("utf-8", "replace")) > _MAX_HTML_BYTES:
+                body = body.encode("utf-8", "replace")[:_MAX_HTML_BYTES].decode(
+                    "utf-8", errors="replace"
+                )
+            return {
+                "status": status,
+                "url_final": str(scraped.get("url_final") or url),
+                "fetcher": scraped.get("fetcher") or "scrapling",
+                "content_type": "text/html; charset=utf-8",
+                "content": body,
+            }
+        if status in (403, 429) or _detect_captcha(body):
+            logger.debug("scrapling returned blocked-ish page for %s status=%s; falling back to httpx", url, status)
     try:
         with httpx.Client(
             headers=_client_headers(),
@@ -260,6 +301,7 @@ def _fetch_one(url: str, timeout: float) -> dict[str, Any]:
             "error": f"blocked (status={status})",
             "retriable": True,
             "status": status,
+            "fetcher": "httpx",
         }
     if 200 <= status < 300:
         _clear_block(host)
@@ -271,9 +313,10 @@ def _fetch_one(url: str, timeout: float) -> dict[str, Any]:
         )
     return {
         "status": status,
-        "content": body,
-        "content_type": content_type,
         "url_final": str(resp.url),
+        "fetcher": "httpx",
+        "content_type": content_type,
+        "content": body,
     }
 
 
@@ -289,6 +332,8 @@ def _handle_web_fetch(args: dict[str, Any], task_id: str) -> str:
         payload = {"error": result["error"], "retriable": result["retriable"]}
         if "status" in result:
             payload["status"] = result["status"]
+        if "fetcher" in result:
+            payload["fetcher"] = result["fetcher"]
         return json.dumps(payload, ensure_ascii=False)
     return json.dumps(result, ensure_ascii=False)
 
@@ -373,8 +418,12 @@ def _handle_web_extract_article(args: dict[str, Any], task_id: str) -> str:
             }
             return json.dumps(payload, ensure_ascii=False)
         html = fetched.get("content", "") or ""
+        fetcher = str(fetched.get("fetcher") or "")
+        source_url = str(fetched.get("url_final") or inp)
     else:
         html = inp
+        fetcher = "inline"
+        source_url = None
 
     try:
         import trafilatura  # type: ignore
@@ -390,6 +439,8 @@ def _handle_web_extract_article(args: dict[str, Any], task_id: str) -> str:
             favor_precision=True,
         )
         payload: dict[str, Any] = {
+            "fetcher": fetcher,
+            "source_url": source_url,
             "title": None,
             "author": None,
             "date": None,
@@ -426,6 +477,8 @@ def _handle_web_extract_article(args: dict[str, Any], task_id: str) -> str:
     except Exception as exc:  # noqa: BLE001
         logger.warning("trafilatura extract failed: %s", exc)
         payload = {
+            "fetcher": fetcher,
+            "source_url": source_url,
             "title": None,
             "author": None,
             "date": None,

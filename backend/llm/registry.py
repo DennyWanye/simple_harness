@@ -25,6 +25,7 @@ import asyncio
 import logging
 from typing import Any, Optional
 
+from agent.context_report import auto_context_attempt_call
 from llm.anthropic_adapter import AnthropicAdapter
 from llm.base import BaseLLMAdapter
 from llm.budget import DailyBudget
@@ -202,12 +203,20 @@ class LLMRegistry:
             last_exc: Optional[Exception] = None
             for attempt in range(1, max_retries + 1):
                 try:
-                    response = await adapter.chat(
-                        messages,
+                    response = await auto_context_attempt_call(
+                        provider=adapter,
+                        messages=messages,
                         tools=tools,
-                        model=use_model,
-                        stream=False,
-                        **kwargs,
+                        model_id=use_model or "",
+                        mark_sent_at_dispatch=True,
+                        generation_reserve=int(kwargs.get("max_tokens", 0) or 0),
+                        invoke=lambda adapter=adapter, use_model=use_model: adapter.chat(
+                            messages,
+                            tools=tools,
+                            model=use_model,
+                            stream=False,
+                            **kwargs,
+                        ),
                     )
                     # Contract: non-stream chat returns ChatResponse directly.
                     assert isinstance(response, ChatResponse), (

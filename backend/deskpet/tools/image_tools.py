@@ -29,7 +29,7 @@ import ssl
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -74,6 +74,8 @@ _ImageErrorContext = tuple[int | None, dict[str, Any] | str | None, Exception | 
 _LAST_IMAGE_ERROR_CONTEXT: ContextVar[_ImageErrorContext] = ContextVar(
     "_LAST_IMAGE_ERROR_CONTEXT", default=(None, None, None)
 )
+_EndpointResolver = Callable[[], tuple[str | None, str | None] | None]
+_ENDPOINT_RESOLVER: _EndpointResolver | None = None
 
 _SCHEMA: dict[str, Any] = {
     "name": "generate_image",
@@ -105,6 +107,18 @@ def _err(error: str, hint: str, **extra: Any) -> str:
     return json.dumps(body, ensure_ascii=False)
 
 
+def set_endpoint_resolver(resolver: _EndpointResolver | None) -> None:
+    """Inject the live backend provider resolver.
+
+    The desktop app's relay key lives in the provider registry/keychain and
+    is deliberately not written to llm_runtime.json. Standalone scripts can
+    still use the config fallback below; the running backend wires this to
+    the same relay provider used by chat.
+    """
+    global _ENDPOINT_RESOLVER
+    _ENDPOINT_RESOLVER = resolver
+
+
 def _resolve_endpoint() -> tuple[str, str | None]:
     """(base_url, api_key) — the SAME creds the working chat path uses.
 
@@ -115,6 +129,16 @@ def _resolve_endpoint() -> tuple[str, str | None]:
     """
     base_url = ""
     api_key: str | None = None
+    if _ENDPOINT_RESOLVER is not None:
+        try:
+            resolved = _ENDPOINT_RESOLVER()
+            if resolved:
+                r_base, r_key = resolved
+                if r_base:
+                    return str(r_base).rstrip("/"), (str(r_key) if r_key else None)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("image endpoint resolver failed: %s", exc)
+
     try:
         from paths import user_data_dir  # type: ignore[import-not-found]
 
@@ -386,6 +410,10 @@ def _generate_png(
         "quality": _image_quality(),
         "response_format": "b64_json",
     }
+    # Seedream supports an explicit watermark switch. PPT full-page generation
+    # needs a clean background because exact copy is composed locally.
+    if "seedream" in str(model).lower():
+        payload["watermark"] = False
 
     # 中转站上游对慢/复杂出图偶发瞬时断连（RemoteProtocolError
     # "Server disconnected"）。瞬时错误（连接断/SSL/502/503）重试带退避；

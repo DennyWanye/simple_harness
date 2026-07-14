@@ -235,6 +235,19 @@ class SessionGoalStore:
         best = max(candidates, key=lambda g: g.updated_at or g.set_at)
         return (best.goal_id, best.session_id)
 
+    def get_active_goal_context_for_session(
+        self, session_id: str
+    ) -> Optional[tuple[str, str]]:
+        """Strict session lookup used by Context OS capability eligibility.
+
+        Unlike :meth:`get_active_goal_context`, this method never falls back
+        to another session when the requested session has no active goal.
+        """
+        g = self._goals.get(session_id)
+        if g is None or not g.goal_id or g.status != "active":
+            return None
+        return (g.goal_id, g.session_id)
+
     def get_pending_tasks(self, session_id: str) -> list[str]:
         """子目标列表（供 WI-4a always-on [当前子目标] 注入）。
 

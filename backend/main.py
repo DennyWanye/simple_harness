@@ -115,6 +115,35 @@ PROJECT_ROOT = _CONFIG_PATH.parent
 SHARED_SECRET = secrets.token_hex(16)
 
 service_context = ServiceContext()
+service_context.register("workflow_service", None)
+
+
+def _persist_supervisor_enabled(enabled: bool) -> bool:
+    """Persist the runtime supervisor toggle into config.toml."""
+    try:
+        import tomlkit
+
+        path = _CONFIG_PATH
+        try:
+            text = path.read_text(encoding="utf-8") if path.exists() else ""
+            doc = tomlkit.parse(text) if text.strip() else tomlkit.document()
+        except Exception:
+            doc = tomlkit.document()
+        sup = doc.get("supervisor")
+        if not hasattr(sup, "__setitem__"):
+            sup = tomlkit.table()
+            doc["supervisor"] = sup
+        sup["enabled"] = bool(enabled)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+        try:
+            config.raw.setdefault("supervisor", {})["enabled"] = bool(enabled)
+        except Exception:
+            pass
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("supervisor_toggle_persist_failed enabled=%s err=%s", enabled, exc)
+        return False
 
 # P3-S5 / P4-S20: register the bundled CUDA DLL dir BEFORE any provider
 # import that drags in torch (silero_vad / faster_whisper_asr both do).
@@ -273,6 +302,14 @@ def _resolve_llm_api_key(configured: str) -> str:
 
 
 _resolved_api_key = _resolve_llm_api_key(config.llm.local.api_key)
+from deskpet.context_os_e2e_hooks import ContextOSE2EHooks as _ContextOSE2EHooks
+_context_os_e2e_boot_hooks = _ContextOSE2EHooks.from_env()
+_e2e_provider_base = (
+    _context_os_e2e_boot_hooks.provider_url
+    if _context_os_e2e_boot_hooks is not None
+    and _context_os_e2e_boot_hooks.provider_url
+    else ""
+)
 
 # 2026-05-17 deepseek-inline-cot-dsml-sanitize Strangler-Fig flag (default
 # on). Read once; passed to every OpenAICompatibleProvider so setting
@@ -284,9 +321,9 @@ _sanitize_cot_dsml = bool(
 logger.info("sanitize_inline_cot_dsml_flag", enabled=_sanitize_cot_dsml)
 
 local_llm = OpenAICompatibleProvider(
-    base_url=config.llm.local.base_url,
-    api_key=_resolved_api_key,
-    model=config.llm.local.model,
+    base_url=_e2e_provider_base or config.llm.local.base_url,
+    api_key="ctx-e2e-local-key" if _e2e_provider_base else _resolved_api_key,
+    model="ctx-primary" if _e2e_provider_base else config.llm.local.model,
     temperature=config.llm.local.temperature,
     sanitize_inline_cot_dsml=_sanitize_cot_dsml,
 )
@@ -381,6 +418,8 @@ service_context.register("tool_router", tool_registry)
 # auto-discovered file/web/memory tools from earlier slices.
 # PermissionGate is wired with the control-WS responder so user
 # popups appear before any sensitive op runs.
+_tool_capability_scope_store = None
+_tool_capability_resolver = None
 try:
     from deskpet.tools.registry import registry as deskpet_tool_registry_v2
     from deskpet.tools.os_tools import register_os_tools as _register_os_tools_v2
@@ -416,6 +455,32 @@ try:
     deskpet_tool_registry_v2.set_tools_config_provider(
         lambda: getattr(config, "tools", None)
     )
+    from deskpet.tools.capabilities import (
+        ToolCapabilityBridgeService as _ToolCapabilityBridgeService,
+        ToolCapabilityResolver as _ToolCapabilityResolver,
+        ToolCapabilityScopeStore as _ToolCapabilityScopeStore,
+    )
+    _tool_capability_scope_store = _ToolCapabilityScopeStore()
+    _tool_capability_resolver = _ToolCapabilityResolver(deskpet_tool_registry_v2)
+    deskpet_tool_registry_v2.set_capability_scope_store(
+        _tool_capability_scope_store
+    )
+    deskpet_tool_registry_v2.set_context_os_enabled_provider(
+        lambda: bool(getattr(getattr(config, "features", None), "context_os_v1", False))
+    )
+    # Test-only Context OS E2E seam. ``from_env`` returns None unless dev
+    # mode is explicit and the configured control/data planes are loopback.
+    _context_os_e2e_hooks = _context_os_e2e_boot_hooks
+    deskpet_tool_registry_v2.set_context_os_e2e_hooks(_context_os_e2e_hooks)
+    if bool(getattr(getattr(config, "features", None), "context_os_v1", False)):
+        from deskpet.tools.tool_search import register_capability_bridge_tools
+
+        register_capability_bridge_tools(
+            deskpet_tool_registry_v2,
+            _ToolCapabilityBridgeService(
+                deskpet_tool_registry_v2, _tool_capability_scope_store
+            ),
+        )
 
     # WI-T1.5 last-mile: 解析 default_artifact_dir 空字符串 → 默认
     # <user_data>/artifacts/。这样 config.toml 用户留空也能拿到合理默认；
@@ -609,6 +674,11 @@ except Exception as _v2_exc:  # noqa: BLE001 — non-fatal, log + degrade
     _skill_staged = {}
     plugin_manager = None
 
+service_context.register(
+    "tool_capability_scope_store", _tool_capability_scope_store
+)
+service_context.register("tool_capability_resolver", _tool_capability_resolver)
+
 # S8 (R9): log the current hardware tier once so the dispatch decision is
 # visible in the startup banner. The tier itself doesn't force provider
 # swaps yet — that's Phase 2 work when we ship multiple LLM/TTS binaries.
@@ -688,7 +758,13 @@ except NameError:
 # 记忆系统升级 WI-M1.2/M1.7: facts 抽取 / reflection 需要一个
 # (prompt:str)->str 的 LLMCall —— summarizer.make_llm_call 走的是
 # messages->dict 形状，不匹配。这里把 provider 适配成纯字符串形状。
-def _make_str_llm_call(provider, *, max_tokens: int = 512, response_format=None):
+def _make_str_llm_call(
+    provider,
+    *,
+    max_tokens: int = 512,
+    response_format=None,
+    purpose: str = "auxiliary_unknown",
+):
     """Adapt an OpenAICompatibleProvider into a ``(prompt: str) -> str``
     async callable. provider=None → return None so callers can skip
     (用户未配置 / 离线时 facts/reflection 静默跳过，不报错)。
@@ -701,6 +777,8 @@ def _make_str_llm_call(provider, *, max_tokens: int = 512, response_format=None)
         return None
 
     async def _call(prompt: str) -> str:
+        from agent.context_messages import provider_purpose_scope
+
         # WI-4-C（2026-06-25 真测）：relay 对 `stream:True + json_schema strict` 偶发慢(9-20s,
         # 偶尔超 analysis_timeout_s) 或上游瞬时错返空 body → 预分析被 safe-fail 误降级。直连实测
         # **非流式裸补全（无 strict schema）稳定 5-6s**（launcher 已 NO_PROXY）。故带 schema（=七步
@@ -712,24 +790,27 @@ def _make_str_llm_call(provider, *, max_tokens: int = 512, response_format=None)
                 # 非流式**保留 strict schema**：probe 实测 deepseek 非流式+schema 4-6s 稳，
                 # 且 schema 的 enum 约束保证 problem_type 分类准（丢 schema 会让 deepseek 把
                 # 清晰 debug 误判 chitchat → 变相重现 BUG-B，真测 2026-06-25 实证）。
-                result = await provider._legacy_chat_with_tools_nonstream(
-                    messages=_msgs, max_tokens=max_tokens, temperature=0.2,
-                    response_format=response_format,
-                )
+                with provider_purpose_scope(purpose):
+                    result = await provider._legacy_chat_with_tools_nonstream(
+                        messages=_msgs, max_tokens=max_tokens, temperature=0.2,
+                        response_format=response_format,
+                    )
                 content = (result or {}).get("content") or ""
                 if content.strip():
                     return content
             except Exception:  # noqa: BLE001 — 非流式失败回退流式
                 pass
-            result = await provider.chat_with_tools(
-                messages=_msgs, max_tokens=max_tokens, temperature=0.2,
-                response_format=response_format,
-            )
+            with provider_purpose_scope(purpose):
+                result = await provider.chat_with_tools(
+                    messages=_msgs, max_tokens=max_tokens, temperature=0.2,
+                    response_format=response_format,
+                )
             return (result or {}).get("content") or ""
         # 无 schema（facts/reflection 等）：保持流式，字节级 BC。
-        result = await provider.chat_with_tools(
-            messages=_msgs, max_tokens=max_tokens, temperature=0.2,
-        )
+        with provider_purpose_scope(purpose):
+            result = await provider.chat_with_tools(
+                messages=_msgs, max_tokens=max_tokens, temperature=0.2,
+            )
         return (result or {}).get("content") or ""
 
     return _call
@@ -751,6 +832,11 @@ def _resolve_ephemeral_provider(base_provider, model_name: str):
     """
     if base_provider is None:
         return None
+    # Context OS E2E uses a strict loopback provider catalog. Auxiliary
+    # classifiers/verifiers must stay on ctx-primary; cloning an arbitrary
+    # configured model here would bypass the hermetic provider-chain override.
+    if _e2e_provider_base:
+        return base_provider
     name = (model_name or "").strip()
     if not name:
         return base_provider
@@ -779,7 +865,9 @@ def _resolve_ephemeral_provider(base_provider, model_name: str):
 # relay（修旧 _resolve_default_llm_call 读 providers[0] 丢 key 的隐患）。
 try:
     from deskpet.tools import research_tools as _research_tools
-    _research_tools.set_live_llm_call(_make_str_llm_call(local_llm, max_tokens=4096))
+    _research_tools.set_live_llm_call(
+        _make_str_llm_call(local_llm, max_tokens=4096, purpose="research")
+    )
 
     # LLM 重排桥: 用【廉价模型】(默认 gpt-4.1-mini,中转站有)做 research 召回后的
     # cross-encoder 式精排 —— 免下载本地 bge-reranker、免占本地内存,复用 relay。
@@ -798,7 +886,9 @@ try:
                 model=_rerank_model,
             )
             _research_tools.set_rerank_llm_call(
-                _make_str_llm_call(_rerank_provider, max_tokens=2048)
+                _make_str_llm_call(
+                    _rerank_provider, max_tokens=2048, purpose="research"
+                )
             )
     except Exception as _exc2:  # noqa: BLE001 — 未注入则 research 跳过精排
         logger.debug("research_rerank_wiring_skipped", error=str(_exc2))
@@ -812,6 +902,96 @@ except Exception as _exc:  # noqa: BLE001 — research 仍可回退 config 重�
 # 后台任务 await 不阻塞 WS recv loop，所以无需抽取 ReAct 块（最小改动）。
 # 单用户桌宠：按 session_id key 足够（code session id 唯一；门只在 code 模式触发）。
 # value = {"fut": Future[str], "text": 原始任务文本}（text 供 Layer 1B 计划记忆记录）。
+def _resolve_relay_registry_provider():
+    """Return the current relay provider from the provider registry."""
+    try:
+        _reg = service_context.get("provider_registry")
+        if _reg is None:
+            return None
+        from llm.relay_provider_ops import RELAY_PROVIDER_ID
+
+        _entry = _reg.get_entry(RELAY_PROVIDER_ID)
+        if _entry is None or not bool(getattr(_entry, "enabled", False)):
+            return None
+        _api_key = _reg.resolve_api_key(_entry.id)
+        if not _api_key:
+            return None
+        return OpenAICompatibleProvider(
+            base_url=_entry.base_url,
+            api_key=_api_key,
+            model=_entry.model,
+            temperature=getattr(_entry, "temperature", 0.7),
+            sanitize_inline_cot_dsml=_sanitize_cot_dsml,
+            is_relay=(getattr(_entry, "source", "") == "relay"),
+        )
+    except Exception as _exc:  # noqa: BLE001
+        logger.debug("research_relay_provider_resolve_skipped", error=str(_exc))
+    return None
+
+
+def _refresh_image_endpoint_resolver() -> None:
+    """Keep image/PPT generation aligned with the active relay provider."""
+    try:
+        from deskpet.tools import image_tools as _image_tools
+
+        def _resolver() -> tuple[str | None, str | None] | None:
+            _provider = _resolve_relay_registry_provider()
+            if _provider is None:
+                return None
+            return (
+                str(getattr(_provider, "base_url", "") or ""),
+                str(getattr(_provider, "api_key", "") or ""),
+            )
+
+        _image_tools.set_endpoint_resolver(_resolver)
+        logger.info("image_endpoint_resolver_wired")
+    except Exception as _exc:  # noqa: BLE001
+        logger.debug("image_endpoint_resolver_wiring_skipped", error=str(_exc))
+
+
+def _refresh_research_live_llm(provider=None) -> None:
+    """Keep deep-research/PPT background LLM aligned with chat routing."""
+    try:
+        from deskpet.tools import research_tools as _research_tools
+
+        _provider = provider or _resolve_relay_registry_provider() or local_llm
+        _research_tools.set_live_llm_call(
+            _make_str_llm_call(_provider, max_tokens=4096, purpose="research")
+        )
+
+        try:
+            _r_base = str(getattr(_provider, "base_url", "") or "")
+            if _r_base and not _research_tools._is_loopback_url(_r_base):
+                _rerank_model = str(
+                    (config.raw.get("research") or {}).get("reranker_model", "gpt-4.1-mini")
+                )
+                _rerank_provider = OpenAICompatibleProvider(
+                    base_url=_r_base,
+                    api_key=getattr(_provider, "api_key", ""),
+                    model=_rerank_model,
+                    sanitize_inline_cot_dsml=_sanitize_cot_dsml,
+                )
+                _research_tools.set_rerank_llm_call(
+                    _make_str_llm_call(
+                        _rerank_provider, max_tokens=2048, purpose="research"
+                    )
+                )
+        except Exception as _exc2:  # noqa: BLE001
+            logger.debug("research_rerank_wiring_skipped", error=str(_exc2))
+
+        logger.info(
+            "research_live_llm_refreshed base_url=%s model=%s",
+            getattr(_provider, "base_url", ""),
+            getattr(_provider, "model", ""),
+        )
+    except Exception as _exc:  # noqa: BLE001
+        logger.debug("research_live_llm_wiring_skipped", error=str(_exc))
+
+
+_refresh_image_endpoint_resolver()
+_refresh_research_live_llm()
+
+
 _PLAN_CONFIRM_WAITERS: dict[str, dict] = {}
 
 # ─── WI-4.3 技能自创闭环：skill_candidate_confirm Future-await ────────
@@ -876,10 +1056,12 @@ async def _maybe_codify_skill(service_context, config, sid, ws, waiters):
             return
 
         async def _make_codify_llm_call(prompt: str) -> str:
+            from agent.context_messages import provider_purpose_scope
             from llm.types import ChatResponse as _CR
-            _cr: _CR = await _llm_for_codify.chat_with_fallback(
-                [{"role": "user", "content": prompt}], model=None,
-            )
+            with provider_purpose_scope("codifier", session_id=sid):
+                _cr: _CR = await _llm_for_codify.chat_with_fallback(
+                    [{"role": "user", "content": prompt}], model=None,
+                )
             return _cr.content or ""
 
         _codifier = _SCodifier(
@@ -956,6 +1138,163 @@ async def _maybe_codify_skill(service_context, config, sid, ws, waiters):
 # 内部 verify check，但 main.py:_AgentLoop(...) 构造调用没传 `verify_gate=` /
 # `receipt_store=` / `max_verify_nudges=`，导致生产抓获率 0%。本工厂兜底所有
 # 接电点 — 调用方只需替换 `_AgentLoop(...)` 为 `build_agent(cfg, ...)`。
+def _configured_context_compaction_model(cfg) -> str:
+    context_cfg = getattr(cfg, "context", None)
+    compaction_cfg = getattr(context_cfg, "compaction", None)
+    return str(getattr(compaction_cfg, "model", "follow_session") or "follow_session")
+
+
+def _live_context_compaction_model() -> str:
+    """Read the mtime-cached user config for the next compaction cycle."""
+
+    try:
+        # The settings IPC persists the user override under the active
+        # DESKPET_USER_DATA_DIR.  Read that exact source first; consulting only
+        # the boot DESKPET_CONFIG path made the UI acknowledge a save that the
+        # next AgentLoop compaction never observed.
+        from p4_ipc import (
+            _context_compaction_config_path,
+            _read_context_compaction_model,
+        )
+
+        if _context_compaction_config_path().is_file():
+            return _read_context_compaction_model()
+        return _configured_context_compaction_model(load_config(_CONFIG_PATH))
+    except Exception as exc:  # noqa: BLE001 - preserve the last startup value
+        logger.warning("context_compaction_model_reload_failed err=%s", str(exc)[:160])
+        return _configured_context_compaction_model(config)
+
+
+def _build_context_task_projector(
+    *,
+    session_goal_store=None,
+    receipt_store=None,
+):
+    """Build the shared read-only projection owner from live authority stores."""
+
+    from deskpet.agent.context_task import (
+        GoalProjectionAdapter,
+        ReceiptProjectionAdapter,
+        TaskContextProjector,
+        WorkflowProjectionAdapter,
+    )
+
+    services = globals().get("service_context")
+    task_graph = None
+    workflow_service = None
+    if services is not None:
+        try:
+            task_graph = services.get("task_graph_store")
+        except Exception:
+            pass
+        try:
+            workflow_service = services.get("workflow_service")
+        except Exception:
+            pass
+        if session_goal_store is None:
+            try:
+                session_goal_store = services.get("session_goal_store")
+            except Exception:
+                pass
+    if receipt_store is None:
+        getter = globals().get("_get_receipt_store")
+        if callable(getter):
+            receipt_store = getter()
+    return TaskContextProjector(
+        workflow_source=(
+            WorkflowProjectionAdapter(workflow_service)
+            if workflow_service is not None
+            else None
+        ),
+        goal_source=(
+            GoalProjectionAdapter(session_goal_store, task_graph)
+            if session_goal_store is not None
+            else None
+        ),
+        receipt_source=(
+            ReceiptProjectionAdapter(receipt_store)
+            if receipt_store is not None
+            else None
+        ),
+    )
+
+
+async def _project_initial_context_snapshot(
+    *,
+    session_id: str,
+    request_id: str,
+    user_text: str,
+    explicit_new: bool = False,
+):
+    """Project active authorities plus typed evidence for a new long task."""
+
+    from deskpet.agent.context_task import TaskFact
+
+    evidence = (
+        (
+            TaskFact(
+                fact_id=f"request:{request_id}",
+                text=str(user_text).strip(),
+                source="session_request",
+                status="pending",
+            ),
+        )
+        if explicit_new and str(user_text).strip()
+        else ()
+    )
+    return await _build_context_task_projector().project(
+        effective_sid=session_id,
+        request_id=request_id,
+        user_text=user_text,
+        explicit_new=explicit_new,
+        structured_evidence=evidence,
+    )
+
+
+def _attach_task_snapshot_to_request(bundle, messages, snapshot) -> None:
+    """Mount one protected task fragment into bundle facts and wire messages."""
+
+    if snapshot is None:
+        return
+    from agent.context_messages import ContextMessageMeta, tag_message
+    from deskpet.agent.assembler.bundle import ContextFragment
+
+    task = snapshot.to_protected_fragment()
+    if not any(fragment.fragment_id == task.fragment_id for fragment in bundle.fragments):
+        bundle.fragments.append(
+            ContextFragment(
+                fragment_id=task.fragment_id,
+                source=task.source,
+                role="system",
+                content=task.content,
+                lifetime="task",
+                placement="prefix",
+                priority=task.priority,
+                trim_policy="never",
+                protected=True,
+                reason=task.reason,
+            )
+        )
+    tagged = tag_message(
+        {"role": "system", "content": task.content},
+        ContextMessageMeta(
+            placement="prefix",
+            lifetime="task",
+            source=task.source,
+            protected=True,
+            trim_policy="never",
+            fragment_id=task.fragment_id,
+            priority=task.priority,
+            reason=task.reason,
+        ),
+    )
+    insert_at = next(
+        (index for index, message in enumerate(messages) if message.get("role") != "system"),
+        len(messages),
+    )
+    messages.insert(insert_at, tagged)
+
+
 def build_agent(
     cfg,
     *,
@@ -992,6 +1331,8 @@ def build_agent(
     pipeline_needs_investigation=False,
     pipeline_observability=False,
     convergence_report_on_stop=False,
+    trace_store=None,
+    context_attempt_store=None,
 ):
     """Build a wired _AgentLoop with optional VerifyGate + ReceiptStore.
 
@@ -1045,9 +1386,25 @@ def build_agent(
                 _ephemeral_base,
                 getattr(verifier_cfg, "ephemeral_subagent_model", ""),
             )
-            _ephemeral_llm = _make_str_llm_call(
-                _ephemeral_provider, max_tokens=256
-            ) if _ephemeral_provider is not None else None
+            if _ephemeral_provider is not None:
+                # Preserve compatibility with injected/legacy two-argument
+                # factories while the production adapter accepts purpose.
+                import inspect as _inspect_ephemeral_factory
+
+                _factory_params = _inspect_ephemeral_factory.signature(
+                    _make_str_llm_call
+                ).parameters
+                _ephemeral_llm = _make_str_llm_call(
+                    _ephemeral_provider,
+                    max_tokens=256,
+                    **(
+                        {"purpose": "supervisor"}
+                        if "purpose" in _factory_params
+                        else {}
+                    ),
+                )
+            else:
+                _ephemeral_llm = None
             if _ephemeral_provider is not None:
                 logger.info(
                     "ephemeral_verifier_model",
@@ -1132,7 +1489,9 @@ def build_agent(
                 _ev_provider = getattr(llm_registry, "providers", [None])[0] if llm_registry else None
             except Exception:  # noqa: BLE001
                 pass
-            _ev_llm_call = _make_str_llm_call(_ev_provider, max_tokens=512)
+            _ev_llm_call = _make_str_llm_call(
+                _ev_provider, max_tokens=512, purpose="supervisor"
+            )
             # FP-3 R-T3 接线：evaluator 仅对高后果目标触发（is_high_consequence_goal
             # 门控），故超时/错误时应保守拦截（返 revise）而非放行 —— 高后果场景
             # 漏放代价远大于误拦。生产构造启用 conservative_on_error（之前默认 False
@@ -1184,7 +1543,11 @@ def build_agent(
             _patterns = load_claim_patterns(_pf)
             _eb = local_llm or cloud_llm
             _ep = _resolve_ephemeral_provider(_eb, _scm) if _scm else _eb
-            _ell = _make_str_llm_call(_ep, max_tokens=256) if _ep is not None else None
+            _ell = (
+                _make_str_llm_call(_ep, max_tokens=256, purpose="supervisor")
+                if _ep is not None
+                else None
+            )
             _sub = make_ephemeral_verifier(_ell) if _ell is not None else None
             return VerifyGate(extractor=RegexExtractor(_patterns), mode="strict", ephemeral_subagent=_sub)
         except Exception as _e:  # noqa: BLE001
@@ -1201,7 +1564,9 @@ def build_agent(
                 return None
             logger.info("pipeline_external_evaluator_model model=%s base=%s",
                         getattr(_evp, "model", "?"), getattr(_eb, "model", "?"))
-            _evc = _make_str_llm_call(_evp, max_tokens=512)
+            _evc = _make_str_llm_call(
+                _evp, max_tokens=512, purpose="supervisor"
+            )
             return _EE(llm_call=_evc, conservative_on_error=True)
         except Exception as _e:  # noqa: BLE001
             logger.warning("pipeline_build_external_evaluator_failed err=%s", str(_e)[:200])
@@ -1231,6 +1596,39 @@ def build_agent(
             logger.warning("self_check_gate build failed: %s", _exc)
             _self_check_gate = None
 
+    if trace_store is None and getattr(getattr(cfg, "workflows", None), "trace_enabled", False):
+        workflow_service = service_context.get("workflow_service")
+        trace_store = getattr(workflow_service, "trace_store", None)
+
+    _context_projector = None
+    _context_snapshot_store_for_loop = None
+    _context_segment_store_for_loop = None
+    _compression_model_resolver_for_loop = None
+    _compression_model = "follow_session"
+    _compression_model_provider = None
+    if bool(getattr(getattr(cfg, "features", None), "context_os_v1", False)):
+        try:
+            _services = globals().get("service_context")
+            _context_snapshot_store_for_loop = _services.get(
+                "context_snapshot_store"
+            )
+            _context_segment_store_for_loop = _services.get(
+                "context_segment_store"
+            )
+            _compression_model_resolver_for_loop = _services.get(
+                "compression_model_resolver"
+            )
+            _context_projector = _build_context_task_projector(
+                session_goal_store=session_goal_store,
+                receipt_store=receipt_store,
+            )
+            _compression_model = _configured_context_compaction_model(cfg)
+            _compression_model_provider = _live_context_compaction_model
+        except Exception as _context_os_exc:  # noqa: BLE001
+            raise RuntimeError(
+                f"context_os_compaction_wiring_failed:{_context_os_exc}"
+            ) from _context_os_exc
+
     return _AgentLoop(
         llm_registry=llm_registry,
         tool_registry=tool_registry,
@@ -1254,6 +1652,12 @@ def build_agent(
         external_evaluator=_external_evaluator,
         # ─── WI-4.0 compaction（flag off = compressor=None = BC）───
         compressor=compressor,
+        context_projector=_context_projector,
+        context_snapshot_store=_context_snapshot_store_for_loop,
+        context_segment_store=_context_segment_store_for_loop,
+        compression_model_resolver=_compression_model_resolver_for_loop,
+        compression_model=_compression_model,
+        compression_model_provider=_compression_model_provider,
         # ─── WI-1B-2 压缩可观测（flag off = False = BC，压缩路径零额外行为）───
         ctx_observability=_ctx_observability,
         # ─── FP-5 缺口 5a：WI-4.2 remount + 自动披露（flag off = None = BC）───
@@ -1263,6 +1667,8 @@ def build_agent(
         tool_path_recorder=tool_path_recorder,
         # ─── WI-OH-4：记忆 self-curation nudge（curator None = BC，不调 nudge）───
         memory_curator=memory_curator,
+        trace_store=trace_store,
+        context_attempt_store=context_attempt_store,
         curation_nudge_every_n_turns=int(
             getattr(getattr(getattr(cfg, "memory", None), "v2", None),
                     "curation_nudge_every_n_turns", 8) or 8
@@ -1298,6 +1704,7 @@ _facts_store = None  # type: ignore[assignment]
 # 会被 Python 3.11+ GC 静默吞掉，引发"Task was destroyed but it is pending"
 # warning + 数据丢失。lifespan shutdown 时 gather 等所有 task 完成。
 _episodic_background_tasks: set = set()
+_workflow_ipc_background_tasks: set = set()
 # 记忆系统升级 WI-M1.5: 长消息切块器。fanout 在 chunking flag 开时用它
 # 切块 + embed 进 messages_chunks；EnhancedRetriever 读侧复用做向量召回。
 _message_chunker = None  # type: ignore[assignment]
@@ -1378,6 +1785,105 @@ try:
     # close those gaps (2026-06-02 audit FATAL-A); see _vector_backfill_bg.
     _state_db_path = _l1_dir / "state.db"
     _session_db = _SessionDB(db_path=_state_db_path)
+    from deskpet.agent.compression_model_resolver import (
+        CompressionModelResolver as _CompressionModelResolver,
+    )
+    from deskpet.agent.context_request_planner import (
+        ContextRequestPlanner as _ContextRequestPlanner,
+    )
+    from deskpet.memory.context_snapshot_store import (
+        ContextSnapshotStore as _ContextSnapshotStore,
+    )
+    from deskpet.memory.context_segment_store import (
+        ContextSegmentStore as _ContextSegmentStore,
+    )
+    from deskpet.agent.session_history_planner import (
+        SessionHistoryPlanner as _SessionHistoryPlanner,
+    )
+    from agent.context_report import (
+        ContextAttemptStore as _ContextAttemptStore,
+        set_context_attempt_store as _set_context_attempt_store,
+    )
+
+    _context_os_enabled = bool(
+        getattr(getattr(config, "features", None), "context_os_v1", False)
+    )
+    _context_snapshot_store = _ContextSnapshotStore(
+        _state_db_path, enabled=_context_os_enabled
+    )
+    _context_segment_store = _ContextSegmentStore(
+        _state_db_path, enabled=_context_os_enabled
+    )
+    _session_history_planner = _SessionHistoryPlanner(
+        _session_db, _context_segment_store
+    )
+    _context_page_in_store = None
+    if _context_os_enabled:
+        from deskpet.tools.capabilities import current_tool_execution_context
+        from deskpet.tools.context_page_in_tools import (
+            ContextPageInStore,
+            register_context_page_in,
+        )
+        from deskpet.tools.session_history_tools import (
+            register_session_history_page_in,
+        )
+
+        register_session_history_page_in(
+            deskpet_tool_registry_v2,
+            _context_segment_store,
+            _session_db,
+            session_id_getter=current_tool_execution_context,
+            # Page-in is itself included in the next request budget. Keep one
+            # causal group below the normal generation reserve.
+            budget_getter=lambda: 8192,
+        )
+        _context_page_in_store = ContextPageInStore()
+
+        def _read_page_in_skill(name: str) -> str:
+            loader = service_context.get("skill_loader")
+            if loader is None:
+                raise KeyError(name)
+            return loader.read_body(name)
+
+        register_context_page_in(
+            deskpet_tool_registry_v2,
+            _context_page_in_store,
+            execution_context_getter=current_tool_execution_context,
+            skill_body_getter=_read_page_in_skill,
+        )
+    _context_request_planner = (
+        _ContextRequestPlanner(
+            _tool_capability_resolver,
+            history_planner=_session_history_planner,
+            snapshot_store=_context_snapshot_store,
+            page_in_store=_context_page_in_store,
+        )
+        if _tool_capability_resolver is not None
+        else None
+    )
+    _compression_model_resolver = _CompressionModelResolver()
+    _context_attempt_store = (
+        _ContextAttemptStore() if _context_os_enabled else None
+    )
+    _set_context_attempt_store(_context_attempt_store)
+    service_context.register("context_snapshot_store", _context_snapshot_store)
+    service_context.register("context_segment_store", _context_segment_store)
+    service_context.register("context_page_in_store", _context_page_in_store)
+    service_context.register("context_request_planner", _context_request_planner)
+    service_context.register(
+        "compression_model_resolver", _compression_model_resolver
+    )
+    logger.info(
+        "context_os_v1 %s owner=context_request_planner+agent_loop "
+        "resolved_window=per_session_model migration_version=18 "
+        "compaction_model=%s registry_revision=%d",
+        "ACTIVE" if _context_os_enabled else "ROLLBACK",
+        getattr(getattr(config, "context", None), "compaction", None).model
+        if getattr(getattr(config, "context", None), "compaction", None) is not None
+        else "follow_session",
+        deskpet_tool_registry_v2.catalog_snapshot().revision,
+    )
+    service_context.register("context_attempt_store", _context_attempt_store)
 
     # P4-S15: VectorWorker — drains a queue of (msg_id, text) into the
     # vec0 virtual table on a 1s interval. Stays empty until SessionDB
@@ -1409,7 +1915,7 @@ try:
         # embedding 列（WI-M1.4 facts 向量召回）。mock embedder 时 _embed_fact
         # 自动返回 None（不写向量），召回端降级 LIKE。
         _facts_store = _FactsStore(_state_db_path, embedder=_embedder)
-        _facts_llm = _make_str_llm_call(local_llm)
+        _facts_llm = _make_str_llm_call(local_llm, purpose="memory_summarizer")
         if _facts_llm is not None:
             # Stage 2 / WI-S2.1a — cross_key_merge 需要 forgotten_at + superseded_by
             # 列可用；R8 v2 / D17 v2：列 ALTER 失败时强制关 flag。
@@ -1511,7 +2017,9 @@ try:
                 from deskpet.memory.query_rewriter import (
                     LLMQueryRewriter as _LLMQueryRewriter,
                 )
-                _qr_llm = _make_str_llm_call(local_llm, max_tokens=128)
+                _qr_llm = _make_str_llm_call(
+                    local_llm, max_tokens=128, purpose="classifier"
+                )
                 if _qr_llm is not None:
                     _query_rewriter = _LLMQueryRewriter(_qr_llm)
             # WI-M1.4: enhanced_retriever 依赖 facts_extract —— 单独开
@@ -1541,7 +2049,9 @@ try:
                         NoopEntityExtractor as _NoopEx,
                         RegexEntityExtractor as _RegexEx,
                     )
-                    _ent_llm = _make_str_llm_call(local_llm, max_tokens=128)
+                    _ent_llm = _make_str_llm_call(
+                        local_llm, max_tokens=128, purpose="classifier"
+                    )
                     _llm_ex = _LLMEx(_ent_llm) if _ent_llm is not None else _NoopEx()
                     _entity_extractor = _Composite(_llm_ex, _RegexEx())
                     logger.info(
@@ -1661,7 +2171,11 @@ try:
             from deskpet.agent.goal_store import SessionGoalStore as _GS
             from deskpet.agent.goal_checker import GoalChecker as _GC
             _session_goal_store = _GS()
-            _goal_checker = _GC(llm_call=_make_str_llm_call(local_llm or cloud_llm))
+            _goal_checker = _GC(
+                llm_call=_make_str_llm_call(
+                    local_llm or cloud_llm, purpose="supervisor"
+                )
+            )
             # R-T1：接电持久化。_session_db 在上方已构造。
             try:
                 _session_goal_store.bind_persistence(_session_db)
@@ -1682,21 +2196,33 @@ try:
                     from deskpet.tools.task_graph_tools import (
                         build_global_goal_task_tools as _build_global_gt,
                     )
+                    from deskpet.tools.capabilities import (
+                        current_tool_execution_context as _current_tool_execution_context,
+                    )
                     _global_tg_store = _TGS_global(db=_session_db)
                     service_context.register(
                         "task_graph_store", _global_tg_store
                     )
-                    _gt_resolver = (
-                        lambda: _session_goal_store.get_active_goal_context()
-                    )
+                    def _gt_resolver():
+                        _exec_ctx = _current_tool_execution_context()
+                        if _exec_ctx is not None:
+                            return _session_goal_store.get_active_goal_context_for_session(
+                                _exec_ctx.session_id
+                            )
+                        return _session_goal_store.get_active_goal_context()
                     # 工具可见性门控：仅当存在活跃 goal 时才把 goal_task_* 暴露
                     # 给 LLM。否则普通聊天里 LLM 看不到这些工具，不会被「拆解
                     # 任务」类描述诱导误调（误触发 goal 流程）。handler 仍有
                     # 「请先 /goal」兜底，门控只是从源头不让它进 prompt。
-                    _gt_visible = (
-                        lambda: _session_goal_store.get_active_goal_context()
-                        is not None
-                    )
+                    def _gt_visible(_eligibility_ctx=None):
+                        if _eligibility_ctx is not None:
+                            return (
+                                _session_goal_store.get_active_goal_context_for_session(
+                                    _eligibility_ctx.session_id
+                                )
+                                is not None
+                            )
+                        return _session_goal_store.get_active_goal_context() is not None
                     for _gt_name, _gt_schema, _gt_handler in _build_global_gt(
                         task_graph_store=_global_tg_store,
                         goal_resolver=_gt_resolver,
@@ -1715,6 +2241,7 @@ try:
                             ),
                             replace_allowed=True,
                             visible_when=_gt_visible,
+                            visibility_scope="session",
                         )
                     logger.info("goal_task_tools_registered_global count=4")
             except Exception as _gt_exc:  # noqa: BLE001
@@ -1743,7 +2270,10 @@ try:
                 _analysis_base = _resolve_ephemeral_provider(_pp_base, _pp_cfg.analysis_model) or _pp_base
             # 决策4：Step1+3 合并 → 单一绑定合并 schema 的 callable（_make_str_llm_call 透传 response_format）。
             _pre_llm = _make_str_llm_call(
-                _analysis_base, max_tokens=1536, response_format=_PRE_ANALYSIS_SCHEMA,
+                _analysis_base,
+                max_tokens=1536,
+                response_format=_PRE_ANALYSIS_SCHEMA,
+                purpose="classifier",
             ) if _analysis_base is not None else None
             service_context.register("problem_pipeline", ProblemHandlingPipeline(
                 enabled=True,
@@ -2103,7 +2633,9 @@ try:
             _memory_tools.bind(
                 facts_store=_facts_store,
                 embedder=_embedder,
-                llm_call=_make_str_llm_call(local_llm),
+                llm_call=_make_str_llm_call(
+                    local_llm, purpose="memory_summarizer"
+                ),
                 enable_natural_language=_forget_nl,
             )
             logger.info(
@@ -2304,10 +2836,93 @@ try:
                             return base_sid
                 return "default"
 
+            async def _prepare_subagent_context_os(
+                *, messages, session_id, user_message, tool_names, venue
+            ):
+                import uuid as _uuid_subctx
+                from agent.context_manager import ContextManager as _SubCtxMgr
+                from deskpet.agent.assembler.bundle import ContextFragment
+                from deskpet.tools.capabilities import (
+                    ToolEligibilityContext as _SubEligibility,
+                    ToolExposureIntent as _SubIntent,
+                )
+
+                _planner = service_context.get("context_request_planner")
+                _scope_store = service_context.get("tool_capability_scope_store")
+                _assembler_for_sub = service_context.get("context_assembler")
+                if _planner is None or _scope_store is None or _assembler_for_sub is None:
+                    raise RuntimeError("context_os_subagent_runtime_unavailable")
+                _task_type = "web_search" if str(venue) in {"web", "research"} else "code"
+                _bundle_for_sub = await _assembler_for_sub.assemble(
+                    user_message=str(user_message),
+                    memory_manager=service_context.get("memory_manager"),
+                    tool_registry=deskpet_tool_registry_v2,
+                    skill_registry=service_context.get("skill_loader"),
+                    mcp_manager=service_context.get("mcp_manager"),
+                    session_id=str(session_id),
+                    task_type_override=_task_type,
+                )
+                _bundle_for_sub.tool_exposure_intent = _SubIntent(
+                    direct_selectors=tuple(str(name) for name in tool_names)
+                )
+                _bundle_for_sub.fragments.append(ContextFragment(
+                    fragment_id=f"venue.{venue}.subagent",
+                    source="code_subagent_entrypoint",
+                    role="system",
+                    content=f"Isolated {venue} subagent capability scope.",
+                    lifetime="task",
+                    placement="prefix",
+                    priority=100,
+                    trim_policy="never",
+                    protected=True,
+                    reason="subagent venue isolation",
+                ))
+                _request_id = _uuid_subctx.uuid4().hex
+                _eligibility = _SubEligibility(
+                    session_id=str(session_id), request_id=_request_id,
+                    task_type=_task_type, mode=str(venue),
+                )
+                _sub_ctx_mgr = _SubCtxMgr.for_session(
+                    model=getattr(local_llm, "model", "unknown"),
+                    project_root=None, v2_enabled=True,
+                )
+                _sub_model_info = _sub_ctx_mgr.config._resolved_model_info()
+                from deskpet.agent.attachment_budget import (
+                    collect_attachment_budget as _collect_subagent_attachments,
+                )
+                _sub_attachment_refs, _sub_attachment_tokens = (
+                    _collect_subagent_attachments(list(messages))
+                )
+                _planned = await _planner.prepare_initial(
+                    _bundle_for_sub, base_system="",
+                    history=_bundle_for_sub.history,
+                    user_message=str(user_message), eligibility=_eligibility,
+                    context_window=_sub_model_info.context_window,
+                    effective_pct=_sub_model_info.effective_pct,
+                    generation_reserve=min(
+                        8192, max(512, int(_model_info.context_window) // 8)
+                    ),
+                    prebuilt_messages=list(messages),
+                    attachment_refs=_sub_attachment_refs,
+                    attachment_tokens=_sub_attachment_tokens,
+                )
+                _scope_store.open(
+                    _planned.prepared_context.tool_set, _eligibility,
+                    snapshot_handle=_planned.prepared_context.active_snapshot_handle,
+                )
+                return _planned.prepared_context, _request_id
+
+            _subagent_context_prepare = (
+                _prepare_subagent_context_os
+                if bool(getattr(config.features, "context_os_v1", False))
+                else None
+            )
+
             _agent_handler, _agent_schema = _build_agent_tool(
                 llm_shim=_shim_for_agent,
                 parent_tool_registry=deskpet_tool_registry_v2,
                 parent_session_id_resolver=_resolve_parent_sid,
+                context_prepare=_subagent_context_prepare,
             )
 
             # ===== 子代理并发驱动 (plans/2026-06-21-subagent-concurrency-driver/) =====
@@ -2392,6 +3007,7 @@ try:
                         scheduler=_subagent_scheduler,
                         kind_overrides=_kind_overrides,
                         shim_resolver=_make_shim_for_model,  # WI-4.2 per-kind 模型路由
+                        context_prepare=_subagent_context_prepare,
                     )
                     logger.info(
                         "companion_code_v1_agent_parallel_ready scheduler=%s",
@@ -2620,6 +3236,270 @@ async def lifespan(app: FastAPI):
             logger.info("p4_session_db_ready", path=str(_sdb._db_path))
         except Exception as exc:
             logger.warning("p4_session_db_init_failed", error=str(exc))
+    try:
+        from deskpet.workflows.bootstrap import build_workflow_service
+        from deskpet.workflows.retention import RetentionPolicy
+
+        async def _workflow_delivery_epoch(event, delivery) -> int | None:
+            if _sdb is None or _workflow_service is None:
+                return None
+            run_id = str(event.get("run_id") or "")
+            target_sid = str(delivery.get("target_id") or "default")
+            ref = await _workflow_service.run_store.get_session_ref(run_id, "delivery")
+            if ref is None or str(ref["session_id"]) != target_sid:
+                return None
+            state = await _sdb.get_session_delivery_state(target_sid)
+            if state.get("deleted_at") is not None:
+                return None
+            expected_epoch = int(ref["session_epoch"])
+            if int(state.get("epoch", 0)) != expected_epoch:
+                return None
+            return expected_epoch
+
+        async def _workflow_session_delivery(event, delivery):
+            target_sid = str(delivery.get("target_id") or "default")
+            expected_epoch = await _workflow_delivery_epoch(event, delivery)
+            if expected_epoch is None:
+                return
+            payload = dict(event.get("payload") or {})
+            nested = payload.get("payload")
+            nested = dict(nested) if isinstance(nested, dict) else {}
+            text = str(nested.get("text") or payload.get("text") or "").strip()
+            if not text:
+                if event.get("event_type") == "workflow.accepted":
+                    text = f"{payload.get('workflow_name', '任务')} 已开始"
+                elif event.get("event_type") == "workflow.decision":
+                    text = "Workflow decision is waiting for your confirmation."
+                elif event.get("event_type") == "workflow.final":
+                    text = f"任务已结束：{payload.get('status', 'unknown')}"
+                else:
+                    return
+            if _sdb is not None:
+                await _sdb.append_message_if_epoch(
+                    target_sid,
+                    "assistant",
+                    text,
+                    expected_epoch=expected_epoch,
+                    workflow_event_id=str(event["event_id"]),
+                )
+
+        async def _workflow_websocket_delivery(event, delivery):
+            if await _workflow_delivery_epoch(event, delivery) is None:
+                return
+            envelope_type = (
+                "workflow_final"
+                if event.get("event_type") == "workflow.final"
+                else "workflow_event"
+            )
+            envelope = {
+                "type": envelope_type,
+                "payload": {
+                    **dict(event),
+                    "session_id": str(delivery.get("target_id") or "default"),
+                },
+            }
+            seen: set[int] = set()
+            for target_ws in list(_control_connections.values()):
+                marker = id(target_ws)
+                if marker in seen:
+                    continue
+                seen.add(marker)
+                await asyncio.wait_for(target_ws.send_json(envelope), timeout=1.0)
+
+        product_handlers = {}
+        if _sdb is not None:
+            from deskpet.workflows.adapters.product_delivery import ProductDeliveryAdapter
+            from deskpet.workflows.store import WorkflowRunStore
+
+            product_delivery = ProductDeliveryAdapter(
+                session_db=_sdb,
+                receipt_store=_get_receipt_store(),
+                workflow_store=WorkflowRunStore(
+                    _paths.user_data_dir() / "data" / "workflow.db"
+                ),
+            )
+            product_handlers = product_delivery.handlers()
+
+        _workflow_service = await build_workflow_service(
+            _paths.user_data_dir(),
+            delivery_handlers={
+                "session_message": _workflow_session_delivery,
+                "websocket": _workflow_websocket_delivery,
+                **product_handlers,
+            },
+            retention_policy=RetentionPolicy.from_days(
+                terminal_days=config.workflows.terminal_retention_days,
+                evaluation_tombstone_days=config.workflows.evaluation_retention_days,
+                orphan_grace_hours=config.workflows.orphan_grace_hours,
+            ),
+        )
+        from deskpet.workflows.contracts import WorkflowContext
+        from deskpet.workflows.definitions.research_core import legacy_ports
+        from deskpet.workflows.definitions.v1 import deep_research_initial_state
+        from deskpet.workflows.launcher import WorkflowLauncher
+        from deskpet.tools import research_tools as _workflow_research_tools
+
+        _workflow_launcher = WorkflowLauncher(_workflow_service)
+        setattr(_workflow_service, "launcher", _workflow_launcher)
+
+        async def _deep_context_factory(row, start_payload) -> WorkflowContext:
+            llm_call = await _workflow_research_tools._resolve_default_llm_call()
+            ports = legacy_ports(llm_call=llm_call, search=None, extract=None)
+            return WorkflowContext(
+                ports={"llm": ports.llm, "search": ports.search, "fetch": ports.fetch},
+                request_id=str(row.get("request_id") or ""),
+                turn_id=str(row.get("turn_id") or ""),
+            )
+
+        def _deep_state_factory(**values):
+            return deep_research_initial_state(
+                topic=str(values["topic"]),
+                run_id=str(values["run_id"]),
+                thread_id=str(values["thread_id"]),
+                session_id=str(values["session_id"]),
+                mode=str(values.get("mode") or "standard"),
+                research_config=dict(values.get("research_config") or {}),
+                blob_root=str(values.get("blob_root") or ""),
+            )
+
+        _workflow_launcher.register_adapter(
+            "deep_research",
+            "v1",
+            state_factory=_deep_state_factory,
+            context_factory=_deep_context_factory,
+        )
+
+        from agent.tool_use_shim import OpenAICompatibleAgentLLM as _RecoveryShim
+        from deskpet.workflows.adapters.code_runtime import (
+            ProposalPort as _RecoveryProposalPort,
+            ToolDispatchPort as _RecoveryToolDispatchPort,
+        )
+        from deskpet.workflows.definitions.v1 import (
+            code_complex_initial_state as _code_recovery_initial_state,
+        )
+
+        def _code_recovery_state_factory(**values):
+            return _code_recovery_initial_state(
+                request=str(values["request"]),
+                run_id=str(values["run_id"]),
+                thread_id=str(values["thread_id"]),
+                session_id=str(values["session_id"]),
+                session_ref=dict(values["session_ref"]),
+                capability_snapshot=list(values["capability_snapshot"]),
+                messages=list(values["messages"]),
+                plan_steps=list(values["plan_steps"]),
+                approval_required=bool(values["approval_required"]),
+                started_at=float(values["started_at"]),
+                request_id=str(values["request_id"]),
+                turn_id=str(values["turn_id"]),
+                provider_snapshot=dict(values["provider_snapshot"]),
+                model_snapshot=dict(values["model_snapshot"]),
+            )
+
+        def _code_recovery_context_factory(row, start_payload):
+            provider = local_llm or cloud_llm
+            shim = _RecoveryShim(provider=provider)
+            session_id = str(row.get("session_id") or "default")
+            provider_name = str(
+                dict(start_payload.get("provider_snapshot") or {}).get("provider") or ""
+            )
+            model_name = str(
+                dict(start_payload.get("model_snapshot") or {}).get("model") or ""
+            )
+            return WorkflowContext(
+                ports={
+                    "llm": _RecoveryProposalPort(
+                        shim,
+                        deskpet_tool_registry_v2,
+                        session_id=session_id,
+                        provider_name=provider_name,
+                        model_name=model_name,
+                    ),
+                    "tool": _RecoveryToolDispatchPort(
+                        deskpet_tool_registry_v2,
+                        session_id=session_id,
+                    ),
+                },
+                request_id=str(row.get("request_id") or ""),
+                turn_id=str(row.get("turn_id") or ""),
+            )
+
+        _workflow_launcher.register_adapter(
+            "code_complex",
+            "v1",
+            state_factory=_code_recovery_state_factory,
+            context_factory=_code_recovery_context_factory,
+        )
+
+        async def _start_deepresearch_graph(args: dict, task_id: str) -> dict:
+            topic = str(args.get("topic") or "").strip()
+            depth = str(args.get("depth") or "standard").lower()
+            research_config = {
+                key: int(args[key])
+                for key in (
+                    "max_sub_questions",
+                    "max_urls_per_query",
+                    "max_total_passages",
+                    "max_rounds",
+                )
+                if args.get(key) is not None
+            }
+
+            sid = str(args.get("_session_id") or "default")
+            async with _workflow_service.session_lock(sid):
+                delivery_state = (
+                    await _sdb.get_session_delivery_state(sid)
+                    if _sdb is not None else {"epoch": 0}
+                )
+                if delivery_state.get("deleted_at") is not None:
+                    raise RuntimeError("workflow delivery session was deleted")
+                return await _workflow_launcher.launch(
+                    workflow_name="deep_research",
+                    workflow_version="v1",
+                    session_id=sid,
+                    request_id=str(args.get("_request_id") or task_id),
+                    turn_id=str(args.get("_turn_id") or task_id),
+                    start_payload={
+                        "topic": topic,
+                        "mode": depth,
+                        "research_config": research_config,
+                        "blob_root": str(_paths.user_data_dir() / "workflows" / "blobs"),
+                    },
+                    capability_snapshot={"tools": ["deepresearch"], "schema_version": 1},
+                    state_factory=_deep_state_factory,
+                    context_factory=_deep_context_factory,
+                    base_epoch=int(delivery_state.get("epoch", 0)),
+                )
+
+        _workflow_research_tools.set_deepresearch_workflow_starter(
+            _start_deepresearch_graph
+            if config.workflows.enabled and config.workflows.deep_research
+            else None
+        )
+        startup_recoveries = await _workflow_service.runner.recover_expired()
+        recovered_decisions = await _workflow_launcher.recover_open_decision_events()
+        recovered_deliveries = await _workflow_launcher.recover_due_deliveries()
+        recovered_runs = await _workflow_launcher.recover_pending()
+        _workflow_launcher.start_dispatcher()
+        service_context.register("workflow_service", _workflow_service)
+        logger.info(
+            "workflow_service_ready",
+            db_path=str(_workflow_service.run_store.path),
+            versions=_workflow_service.runner.registry.versions(),
+            recovered_runs=len(recovered_runs),
+            startup_recoveries=len(startup_recoveries),
+            recovered_decisions=len(recovered_decisions),
+            recovered_deliveries=len(recovered_deliveries),
+        )
+    except Exception as exc:  # noqa: BLE001 - old ReAct stays available
+        service_context.register("workflow_service", None)
+        try:
+            from deskpet.tools import research_tools as _workflow_research_tools
+
+            _workflow_research_tools.set_deepresearch_workflow_starter(None)
+        except Exception:
+            pass
+        logger.warning("workflow_service_init_failed", error=str(exc))
     _expire_ppt_outline_dangling_for_startup()
     try:
         _wire_ppt_pro_services_for_startup()
@@ -2813,7 +3693,9 @@ async def lifespan(app: FastAPI):
         and _facts_store is not None
         and _summarizer_state_db_path is not None
     ):
-        _reflection_llm = _make_str_llm_call(local_llm, max_tokens=256)
+        _reflection_llm = _make_str_llm_call(
+            local_llm, max_tokens=256, purpose="memory_summarizer"
+        )
         if _reflection_llm is None:
             logger.info("p4_reflection_skipped", reason="no_llm_provider")
         else:
@@ -2854,7 +3736,9 @@ async def lifespan(app: FastAPI):
     elif _cur_facts is None:
         logger.info("oh4_curation_skipped", reason="no_facts_store")
     else:
-        _curation_llm = _make_str_llm_call(local_llm, max_tokens=512)
+        _curation_llm = _make_str_llm_call(
+            local_llm, max_tokens=512, purpose="memory_summarizer"
+        )
         if _curation_llm is None:
             logger.info("oh4_curation_skipped", reason="no_llm_provider")
         else:
@@ -2907,9 +3791,47 @@ async def lifespan(app: FastAPI):
         # 的 keyword API (register(name=..., toolset=..., schema=..., handler=...))，
         # 不是老的 tools.registry.ToolRegistry (register(tool) 单参)。传错 registry
         # 会导致每个 MCP 工具都 TypeError("unexpected keyword 'name'") 注册失败。
+        _mcp_app_config = config.raw
+        if (
+            _context_os_e2e_boot_hooks is not None
+            and os.environ.get(
+                "DESKPET_CONTEXT_OS_E2E_FIXTURE_CATALOG", "1"
+            ).strip() != "0"
+        ):
+            import copy as _copy_e2e_mcp
+
+            _mcp_app_config = _copy_e2e_mcp.deepcopy(config.raw)
+            _mcp_app_config["mcp"] = {
+                "enabled": True,
+                "servers": [
+                    {
+                        "name": "context-os-e2e",
+                        "enabled": True,
+                        "transport": "stdio",
+                        "command": sys.executable,
+                        "args": [
+                            str(
+                                Path(__file__).resolve().parents[1]
+                                / "scripts"
+                                / "e2e"
+                                / "context_os_mcp_fixture.py"
+                            )
+                        ],
+                        "env": {
+                            "DESKPET_DEV_MODE": "1",
+                            "DESKPET_CONTEXT_OS_E2E_DAEMON_URL": (
+                                _context_os_e2e_boot_hooks.daemon_url
+                            ),
+                        },
+                    }
+                ],
+            }
         _mcp_manager = await _mcp_bootstrap(
-            app_config=config.raw,
+            app_config=_mcp_app_config,
             tool_registry=deskpet_tool_registry_v2,
+        )
+        deskpet_tool_registry_v2.set_mcp_catalog_stale_callback(
+            _mcp_manager.handle_catalog_stale
         )
         service_context.register("mcp_manager", _mcp_manager)
         logger.info("p4_mcp_manager_ready", states=_mcp_manager.server_state())
@@ -2959,7 +3881,7 @@ async def lifespan(app: FastAPI):
     # skip construction entirely so the asyncio.Task isn't even created.
     try:
         _sup_cfg = (config.raw.get("supervisor") if hasattr(config, "raw") else None) or {}
-        if bool(_sup_cfg.get("enabled", True)):
+        if bool(_sup_cfg.get("enabled", False)):
             from agent.watchdog import WatchdogLoop as _WatchdogLoop
             from agent.supervisor import (
                 SupervisorAgent as _SupAgent,
@@ -3419,6 +4341,13 @@ async def lifespan(app: FastAPI):
 
     logger.info("startup complete")
     yield
+    _workflow_service = service_context.get("workflow_service")
+    _workflow_launcher = getattr(_workflow_service, "launcher", None)
+    if _workflow_launcher is not None:
+        try:
+            await _workflow_launcher.shutdown()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("workflow_launcher_shutdown_failed", error=str(exc))
     # P5-S1: stop the watchdog cleanly so its task doesn't dangle past
     # shutdown and produce "Task was destroyed but it is pending!" noise.
     _wd = service_context.get("watchdog")
@@ -3532,6 +4461,20 @@ async def _ppt_outline_propose(
         "history": list_history(sid, 20) if history_enabled else [],
     }
     await _broadcast_control({"type": "ppt_outline_proposed", "payload": payload})
+    try:
+        text = f"PPT 大纲确认 · {topic}\n\n{outline_md}".strip()
+        sdb = service_context.get("session_db")
+        if sdb is not None:
+            msg_id = await sdb.append_message(
+                session_id=sid or "default",
+                role="assistant",
+                content=text,
+            )
+            vw = service_context.get("vector_worker")
+            if vw is not None and msg_id is not None:
+                await vw.enqueue(msg_id, text)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ppt_outline_persist_failed sid=%s err=%s", sid, exc)
 
     loop = asyncio.get_running_loop()
     fut = loop.create_future()
@@ -3560,6 +4503,88 @@ async def _ppt_outline_propose(
         }.get(action, "rejected"),
     )
     return dict(decision or {})
+
+
+async def _ppt_workflow_outline_notify(payload: dict) -> None:
+    """Project a durable PPT decision into the existing session card UI."""
+
+    sid = str(payload.get("session_id") or "default")
+    oid = str(payload.get("outline_id") or "")
+    topic = str(payload.get("topic") or "")
+    outline_md = str(payload.get("outline_md") or "")
+    card = {
+        "outline_id": oid,
+        "topic": topic,
+        "outline_md": outline_md,
+        "session_id": sid,
+        "sources_count": int(payload.get("sources_count") or 0),
+        "no_research": bool(payload.get("no_research")),
+        "history": list_history(sid, 20),
+    }
+    await _broadcast_control({"type": "ppt_outline_proposed", "payload": card})
+
+    session_db = service_context.get("session_db")
+    if session_db is not None and oid:
+        text = f"PPT 大纲确认 · {topic}\n\n{outline_md}".strip()
+        try:
+            await session_db.append_message(
+                session_id=sid,
+                role="assistant",
+                content=text,
+                workflow_event_id=f"ppt-outline:{oid}",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ppt_workflow_outline_persist_failed sid=%s err=%s", sid, exc)
+
+
+async def _resume_workflow_ppt_outline(service, decision, response: dict, sid: str) -> None:
+    try:
+        await service.resolve_decision(
+            decision.decision_id,
+            nonce=decision.nonce,
+            response=response,
+            expected_version=decision.version,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "ppt_workflow_outline_resume_failed run_id=%s error=%s",
+            decision.run_id,
+            exc,
+        )
+        await _ppt_notify_chat_bubble(sid, f"PPT 大纲确认失败：{exc}")
+
+
+async def _start_workflow_ppt_outline_resume(oid: str, response: dict) -> str | None:
+    if not oid.startswith("workflow:"):
+        return None
+    parts = oid.split(":", 2)
+    if len(parts) != 3 or not parts[1]:
+        return None
+    run_id = parts[1]
+    service = service_context.get("workflow_service")
+    if service is None:
+        return None
+    decisions = await service.human_store.list_open_decisions(run_id=run_id)
+    decision = next(
+        (
+            item
+            for item in decisions
+            if item.kind == "ppt_outline"
+            and isinstance(item.prompt, dict)
+            and str(item.prompt.get("outline_id") or "") == oid
+        ),
+        None,
+    )
+    if decision is None:
+        return None
+    row = await service.run_store.get_run(run_id)
+    sid = str((row or {}).get("session_id") or "default")
+    task = asyncio.create_task(
+        _resume_workflow_ppt_outline(service, decision, response, sid)
+    )
+    _workflow_ipc_background_tasks.add(task)
+    task.add_done_callback(_workflow_ipc_background_tasks.discard)
+    return sid
 
 
 # ─── WI-1B-4 摘要质量回路 — 纯检测/构造 helper（main.py 闭包 + 单测共用）──────
@@ -3610,38 +4635,76 @@ async def _handle_control_ws_message(raw: dict, *, session_id: str, ws: WebSocke
     oid = str(payload.get("outline_id") or "")
     decision = {
         "action": str(payload.get("action") or "").strip().lower(),
-        "feedback": str(payload.get("feedback") or ""),
+        "feedback": str(payload.get("feedback") or "").strip(),
         "reuse_id": payload.get("reuse_id") or None,
     }
-    if oid and _PPT_OUTLINE_WAITERS.resolve(oid, decision):
+    if decision["action"] == "modify" and not decision["feedback"]:
+        await _ppt_notify_chat_bubble(
+            session_id,
+            "请先填写需要修改的大纲内容，再提交修改。",
+        )
+        logger.info("ppt_outline_decision_invalid_feedback", outline_id=oid)
+        return True
+    workflow_sid = None
+    resolved = bool(oid and _PPT_OUTLINE_WAITERS.resolve(oid, decision))
+    if oid and not resolved:
+        workflow_sid = await _start_workflow_ppt_outline_resume(oid, decision)
+        resolved = workflow_sid is not None
+    if resolved:
         await _broadcast_control({
             "type": "ppt_outline_resolved",
             "payload": {"outline_id": oid},
         })
+        if workflow_sid is not None:
+            await _ppt_notify_chat_bubble(
+                workflow_sid,
+                _ppt_outline_decision_notice(decision["action"]),
+            )
         logger.info("ppt_outline_decision_resolved", outline_id=oid)
     else:
         logger.info("ppt_outline_decision_no_pending", outline_id=oid)
     return True
 
 
+def _ppt_outline_decision_notice(action: str) -> str:
+    return {
+        "modify": (
+            "收到修改意见，正在修改 PPT 大纲。"
+            "修改完成后会在当前会话展示新版本，请再次确认。"
+        ),
+        "reuse": "已采用历史大纲，正在生成 PPT。完成后文件会发送到当前会话。",
+        "cancel": "已取消本次 PPT 生成。",
+    }.get(
+        str(action or "").strip().lower(),
+        "大纲已确认，正在生成 PPT。完成后文件会发送到当前会话。",
+    )
+
+
 async def _ppt_notify_chat_bubble(sid: str, text: str) -> None:
+    target_sid = sid or "default"
     msg = {
         "type": "chat_response",
         "payload": {
             "text": str(text or ""),
             "provider": "ppt_pro",
-            "session_id": sid or "default",
+            "session_id": target_sid,
         },
     }
-    ws = _control_connections.get(sid) or _control_connections.get("default")
-    if ws is None:
-        return
-    try:
-        await ws.send_json(msg)
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("ppt_notify_send_failed sid=%s err=%s", sid, exc)
-        return
-    await _broadcast_default_chat_peers(ws, msg)
+    sdb = service_context.get("session_db")
+    if sdb is not None and str(text or "").strip():
+        try:
+            msg_id = await sdb.append_message(
+                session_id=target_sid,
+                role="assistant",
+                content=str(text or ""),
+            )
+            vw = service_context.get("vector_worker")
+            if vw is not None and msg_id is not None:
+                await vw.enqueue(msg_id, str(text or ""))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ppt_notify_persist_failed sid=%s err=%s", target_sid, exc)
+
+    await _broadcast_control(msg)
 
 
 async def _ppt_artifact_push(sid: str, artifacts: list, text: str = "") -> None:
@@ -3653,16 +4716,6 @@ async def _ppt_artifact_push(sid: str, artifacts: list, text: str = "") -> None:
         "artifacts": list(artifacts or []),
         "session_id": sid or "default",
     }
-    msg = {"type": "tool_result", "payload": payload}
-    ws = _control_connections.get(sid) or _control_connections.get("default")
-    if ws is not None:
-        try:
-            await ws.send_json(msg)
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("ppt_artifact_push_send_failed sid=%s err=%s", sid, exc)
-        else:
-            await _broadcast_default_chat_peers(ws, msg)
-
     sdb = service_context.get("session_db")
     if sdb is not None:
         try:
@@ -3674,6 +4727,7 @@ async def _ppt_artifact_push(sid: str, artifacts: list, text: str = "") -> None:
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("ppt_artifact_push_persist_failed", error=str(exc))
+    await _broadcast_control({"type": "tool_result", "payload": payload})
 
 
 def _ppt_receipt_report(
@@ -3727,12 +4781,103 @@ _PPT_PRO_RENDER_EXECUTOR = _cf.ThreadPoolExecutor(max_workers=2, thread_name_pre
 
 
 def _wire_ppt_pro_services_for_startup() -> None:
+    workflow_starter = None
+    workflow_service = service_context.get("workflow_service")
+    launcher = getattr(workflow_service, "launcher", None)
+    if (
+        launcher is not None
+        and config.workflows.enabled
+        and config.workflows.ppt_pro
+    ):
+        from deskpet.workflows.adapters.ppt_runtime import PptRuntime
+        from deskpet.workflows.contracts import WorkflowContext
+        from deskpet.workflows.definitions.research_core import legacy_ports
+        from deskpet.workflows.definitions.v1 import ppt_pro_initial_state
+        from deskpet.tools import research_tools as _workflow_research_tools
+
+        ppt_runtime = PptRuntime(executor=_PPT_PRO_RENDER_EXECUTOR)
+
+        async def _ppt_context_factory(row, start_payload) -> WorkflowContext:
+            llm_call = await _workflow_research_tools._resolve_default_llm_call()
+            ports = legacy_ports(llm_call=llm_call, search=None, extract=None)
+            return WorkflowContext(
+                ports={
+                    "llm": ports.llm,
+                    "search": ports.search,
+                    "fetch": ports.fetch,
+                    "effect": ppt_runtime,
+                    "evaluator": ppt_runtime,
+                    "notifier": _ppt_workflow_outline_notify,
+                },
+                request_id=str(row.get("request_id") or ""),
+                turn_id=str(row.get("turn_id") or ""),
+            )
+
+        def _ppt_state_factory(**values):
+            return ppt_pro_initial_state(
+                topic=str(values["topic"]),
+                run_id=str(values["run_id"]),
+                thread_id=str(values["thread_id"]),
+                session_id=str(values["session_id"]),
+                pages=int(values.get("pages") or 8),
+                depth=str(values.get("depth") or "deep"),
+                theme=str(values.get("theme") or "minimal"),
+                image_mode=bool(values.get("image_mode", True)),
+                title=str(values.get("title") or values["topic"]),
+                author=str(values.get("author") or "DeskPet"),
+                output_path=values.get("output_path"),
+                blob_root=str(values.get("blob_root") or ""),
+            )
+
+        launcher.register_adapter(
+            "ppt_pro",
+            "v1",
+            state_factory=_ppt_state_factory,
+            context_factory=_ppt_context_factory,
+        )
+
+        async def workflow_starter(payload: dict) -> dict:
+            sid = str(payload.get("session_id") or "default")
+            start_payload = {
+                key: payload.get(key)
+                for key in (
+                    "topic", "pages", "depth", "theme", "image_mode",
+                    "title", "author", "output_path",
+                )
+            }
+            start_payload["blob_root"] = str(
+                _paths.user_data_dir() / "workflows" / "blobs"
+            )
+            async with workflow_service.session_lock(sid):
+                session_db = service_context.get("session_db")
+                delivery_state = (
+                    await session_db.get_session_delivery_state(sid)
+                    if session_db is not None else {"epoch": 0}
+                )
+                if delivery_state.get("deleted_at") is not None:
+                    raise RuntimeError("workflow delivery session was deleted")
+                return await launcher.launch(
+                    workflow_name="ppt_pro",
+                    workflow_version="v1",
+                    session_id=sid,
+                    request_id=str(payload["request_id"]),
+                    turn_id=str(payload["turn_id"]),
+                    start_payload=start_payload,
+                    capability_snapshot={"tools": ["ppt_pro"], "schema_version": 1},
+                    state_factory=_ppt_state_factory,
+                    context_factory=_ppt_context_factory,
+                    base_epoch=int(delivery_state.get("epoch", 0)),
+                )
+
+        asyncio.create_task(launcher.recover_pending())
+
     ppt_tools.set_ppt_pro_services(
         outline_propose=_ppt_outline_propose,
         notifier=_ppt_notify_chat_bubble,
         run_blocking=lambda fn: asyncio.get_running_loop().run_in_executor(_PPT_PRO_RENDER_EXECUTOR, fn),
         artifact_pusher=_ppt_artifact_push,
         receipt_reporter=_ppt_receipt_report,
+        workflow_starter=workflow_starter,
     )
 
 
@@ -3781,6 +4926,106 @@ def _resolve_chat_task_scope(
     return decision
 
 
+def _select_code_workflow_provider(*, local_llm, cloud_llm):
+    """Select the legacy fallback when no session provider chain resolves."""
+
+    return local_llm or cloud_llm
+
+
+def _build_code_workflow_provider_chain(*, entries, registry):
+    """Build every provider resolved for a durable Code workflow, in order."""
+
+    providers = []
+    for entry in entries:
+        api_key = registry.resolve_api_key(entry.id) or "ollama"
+        provider = OpenAICompatibleProvider(
+                base_url=entry.base_url,
+                api_key=api_key,
+                model=entry.model,
+                temperature=getattr(entry, "temperature", 0.7),
+                sanitize_inline_cot_dsml=_sanitize_cot_dsml,
+                code_params=getattr(entry, "code_params", None),
+                is_relay=(entry.source == "relay"),
+            )
+        provider.provider_id = str(entry.id)
+        providers.append(provider)
+    return providers
+
+
+async def _attach_workflow_history_events(
+    *,
+    rows: list[dict[str, Any]],
+    messages: list[dict[str, Any]],
+    session_id: str,
+    session_db: Any,
+    workflow_service: Any,
+) -> None:
+    """Attach fenced durable envelopes to SessionDB history messages in place."""
+
+    event_ids = list(
+        dict.fromkeys(
+            str(row.get("workflow_event_id") or "").strip()
+            for row in rows
+            if str(row.get("workflow_event_id") or "").strip()
+        )
+    )
+    if not event_ids or workflow_service is None:
+        return
+    delivery_state = await session_db.get_session_delivery_state(session_id)
+    hydrated = await workflow_service.hydrate_session_history_event_ids(
+        session_id,
+        event_ids,
+        current_session_epoch=int(delivery_state.get("epoch", 0)),
+        session_deleted=delivery_state.get("deleted_at") is not None,
+    )
+    events_by_id = {
+        str(event.get("event_id") or ""): event
+        for event in hydrated.get("events", [])
+    }
+    human_store = getattr(workflow_service, "human_store", None)
+    for event in events_by_id.values():
+        if event.get("event_type") != "workflow.decision" or human_store is None:
+            continue
+        payload = event.get("payload")
+        decision_id = str((payload or {}).get("decision_id") or "")
+        if not decision_id:
+            continue
+        decision = await human_store.get_decision(decision_id)
+        if decision is not None and isinstance(payload, dict):
+            run = await workflow_service.run_store.get_run(decision.run_id)
+            payload["status"] = (
+                decision.status.value
+                if run is not None and str(run.get("status") or "") == "waiting"
+                else str((run or {}).get("status") or "unavailable")
+            )
+    for message in messages:
+        event = events_by_id.get(str(message.get("id") or ""))
+        if event is not None:
+            message["workflow_event"] = event
+
+
+def _is_companion_history_session_id(
+    session_id: str,
+    *,
+    code_base_session_ids: set[str] | None = None,
+) -> bool:
+    """Return whether a session id should be shown in the message panel list."""
+    sid = (session_id or "").strip()
+    if sid == "default":
+        return True
+    # Legacy task ids remain visible so old history can still be renamed,
+    # copied, or deleted. Newly generated task sessions are opaque UUIDs.
+    if sid.startswith("task-"):
+        return True
+    if code_base_session_ids and sid in code_base_session_ids:
+        return True
+    try:
+        uuid.UUID(sid)
+        return True
+    except (TypeError, ValueError, AttributeError):
+        return False
+
+
 # 2026-05-28 — per-session context-usage snapshot for the frontend Claude-Code-
 # style ring gauge. Keyed by chat session_id (e.g. "default", "code-XXX").
 # Updated on every successful LLM turn; pushed via ``context_usage`` ws event.
@@ -3805,6 +5050,32 @@ def _snapshot_context_usage_event(
     except Exception:  # noqa: BLE001
         _resolve_model = None  # type: ignore[assignment]
 
+    # Read Context OS attempts before inspecting legacy provider state.  Some
+    # adapters (including the strict E2E seam) intentionally do not expose a
+    # mutable ``last_usage`` attribute, while still reporting authoritative
+    # usage through ContextAttemptStore.
+    try:
+        _attempt_store = service_context.get("context_attempt_store")
+    except Exception:
+        _attempt_store = None
+    _attempts: list[dict[str, Any]] = []
+    _latest_attempt: dict[str, Any] | None = None
+    if _attempt_store is not None:
+        try:
+            _attempts = _attempt_store.public_for_session(session_id)
+            _latest_attempt = next(
+                (
+                    attempt
+                    for attempt in reversed(_attempts)
+                    if attempt.get("purpose") == "agent_response"
+                    and attempt.get("state") == "succeeded"
+                ),
+                None,
+            )
+        except Exception:  # noqa: BLE001
+            _attempts = []
+            _latest_attempt = None
+
     # Pick first provider with non-None last_usage.
     _picked = None
     _candidates: list[Any] = []
@@ -3820,10 +5091,10 @@ def _snapshot_context_usage_event(
         if _u:
             _picked = _p
             break
-    if _picked is None:
+    if _picked is None and _latest_attempt is None:
         return None
-    usage = getattr(_picked, "last_usage", None) or {}
-    model = getattr(_picked, "model", "") or ""
+    usage = getattr(_picked, "last_usage", None) or {} if _picked is not None else {}
+    model = getattr(_picked, "model", "") or "" if _picked is not None else ""
     prompt_tokens = int(usage.get("prompt_tokens") or 0)
     completion_tokens = int(usage.get("completion_tokens") or 0)
     cached_tokens = 0
@@ -3834,6 +5105,22 @@ def _snapshot_context_usage_event(
         cached_tokens = int(_details.get("cached_tokens") or 0)
     if not cached_tokens:
         cached_tokens = int(usage.get("cached_tokens") or 0)
+
+    # Context OS is the authoritative source for the actual attempt.  A
+    # provider chain may retain ``last_usage`` from an older/fallback provider,
+    # which previously made the header ring disagree with ContextTrace (for
+    # example, showing the configured 380k model while the request actually ran
+    # against an 8k fixture model).  Prefer the latest successful agent attempt
+    # for model/window/usage while retaining the provider snapshot as a legacy
+    # fallback when Context OS is disabled.
+    if _latest_attempt is not None:
+        model = str(_latest_attempt.get("model_id") or model)
+        if _latest_attempt.get("actual_input_tokens") is not None:
+            prompt_tokens = int(_latest_attempt["actual_input_tokens"])
+        if _latest_attempt.get("actual_output_tokens") is not None:
+            completion_tokens = int(_latest_attempt["actual_output_tokens"])
+        if _latest_attempt.get("actual_cache_read_tokens") is not None:
+            cached_tokens = int(_latest_attempt["actual_cache_read_tokens"])
 
     # Resolve model context window + thresholds.
     context_window = 32_000
@@ -3849,6 +5136,8 @@ def _snapshot_context_usage_event(
             recall_sweet = int(_info.recall_sweet_tokens)
         except Exception:  # noqa: BLE001
             pass
+    if _latest_attempt is not None and int(_latest_attempt.get("context_window") or 0) > 0:
+        context_window = int(_latest_attempt["context_window"])
     payload = {
         "session_id": session_id,
         "model": model,
@@ -3861,6 +5150,8 @@ def _snapshot_context_usage_event(
         "recall_sweet": recall_sweet,
         "updated_at": time.time(),
     }
+    if _attempts:
+        payload["attempts"] = _attempts
     _session_context_state[session_id] = payload
     return {"type": "context_usage", "payload": payload}
 
@@ -4068,7 +5359,10 @@ async def _compute_context_breakdown(session_id: str) -> dict[str, Any]:
     }
 
 
-async def _broadcast_default_chat_peers(originator_ws: WebSocket, msg: dict) -> None:
+_PEER_BROADCAST_TIMEOUT_S = 1.0
+
+
+async def _broadcast_default_chat_peers(originator_ws: WebSocket | None, msg: dict) -> None:
     """2026-05-28 — 多窗口共享 "default" 会话同步广播。
 
     主桌宠窗口 (`session_id=default`) 和左侧消息面板窗口
@@ -4097,12 +5391,81 @@ async def _broadcast_default_chat_peers(originator_ws: WebSocket, msg: dict) -> 
         if _main_group != payload_sid and _manager_group != payload_sid:
             continue
         try:
-            await _peer_ws.send_json(msg)
+            await asyncio.wait_for(
+                _peer_ws.send_json(msg),
+                timeout=_PEER_BROADCAST_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError:
+            logger.debug(
+                "default_chat_peer_broadcast_timeout sid=%s timeout_s=%.1f",
+                _peer_sid,
+                _PEER_BROADCAST_TIMEOUT_S,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.debug(
                 "default_chat_peer_broadcast_failed sid=%s err=%s",
                 _peer_sid, exc,
             )
+
+
+async def _send_chat_final(
+    originator_ws: WebSocket,
+    msg: dict,
+    *,
+    session_id: str,
+    request_id: str = "",
+) -> None:
+    """Deliver a terminal frame without one stale socket blocking its peers."""
+    payload = msg.get("payload") if isinstance(msg, dict) else {}
+    text_len = len(str((payload or {}).get("text") or ""))
+    logger.info(
+        "chat_v2_final_send_started sid=%s request_id=%s chars=%d",
+        session_id, request_id, text_len,
+    )
+
+    async def _send_originator() -> None:
+        try:
+            await asyncio.wait_for(
+                originator_ws.send_json(msg),
+                timeout=_PEER_BROADCAST_TIMEOUT_S,
+            )
+            logger.info(
+                "chat_v2_final_send_completed sid=%s request_id=%s chars=%d",
+                session_id, request_id, text_len,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "chat_v2_final_send_timeout sid=%s request_id=%s timeout_s=%.1f chars=%d",
+                session_id, request_id, _PEER_BROADCAST_TIMEOUT_S, text_len,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "chat_v2_final_send_failed sid=%s request_id=%s err=%s",
+                session_id, request_id, exc,
+            )
+
+    await asyncio.gather(
+        _send_originator(),
+        _broadcast_default_chat_peers(originator_ws, msg),
+    )
+
+
+async def _send_new_session_origin_user_echo(
+    originator_ws: WebSocket,
+    session_id: str,
+    text: str,
+) -> None:
+    """Echo the first draft message back after a new session id is known."""
+    if not (text or "").strip():
+        return
+    try:
+        await originator_ws.send_json({
+            "type": "chat_v2_user_echo",
+            "payload": {"session_id": session_id, "text": text},
+        })
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("new_session_origin_echo_failed sid=%s err=%s", session_id, exc)
+
 
 # P4-S23: track in-flight chat tasks per session_id so multi-session
 # panels can cancel-on-retry without leaking stale AgentLoop runs.
@@ -4219,6 +5582,25 @@ async def update_cloud_config(body: CloudConfigRequest, request: Request):
                 headers={"WWW-Authenticate": 'Bearer realm="config"'},
             )
 
+    # The relay bridge pushes the signed-in account provider shortly after
+    # the UI connects.  In the isolated Context OS E2E runtime that would
+    # silently replace the loopback fixture and invalidate every oracle.
+    # The boot hook is already restricted to DEV_MODE + loopback URLs.
+    if _e2e_provider_base:
+        logger.info(
+            "context_os_e2e_provider_override_ignored requested_model=%s",
+            body.model,
+        )
+        return {
+            "ok": True,
+            "cloud_configured": True,
+            "base_url": _e2e_provider_base,
+            "model": "ctx-primary",
+            "has_api_key": True,
+            "strategy": llm._strategy.value,
+            "e2e_locked": True,
+        }
+
     # Resolve api_key: explicit body value > current in-process key >
     # config.llm.local.api_key (Ollama default "ollama" is OK).
     resolved_key: str | None = body.api_key
@@ -4247,6 +5629,7 @@ async def update_cloud_config(body: CloudConfigRequest, request: Request):
     # provider — no restart needed.
     local_llm = new_provider
     _current_cloud_api_key = resolved_key
+    _refresh_research_live_llm(new_provider)
 
     # Persist so next backend restart picks it up. api_key only stored
     # if user explicitly typed one (otherwise stays in keychain via
@@ -4909,6 +6292,16 @@ async def control_channel(ws: WebSocket):
                     "payload": {"enabled": enabled},
                 })
 
+            elif msg_type == "permission_auto_mode_get":
+                enabled = bool(
+                    permission_gate_v2 is not None
+                    and getattr(permission_gate_v2, "auto_mode", False)
+                )
+                await ws.send_json({
+                    "type": "permission_auto_mode_response",
+                    "payload": {"enabled": enabled},
+                })
+
             elif msg_type == "chat_turn_timeout_set":
                 # 设置面板写「对话超时(分钟)」。持久化到 llm_runtime.json,夹 1~60 分钟。
                 payload = raw.get("payload", {}) or {}
@@ -5380,16 +6773,23 @@ async def control_channel(ws: WebSocket):
                     logger.debug("context_breakdown_send_failed err=%s", exc)
 
             elif msg_type == "sessions_list":
-                # 消息面板「历史会话」下拉：列 companion 会话(default + task-*)，
-                # 含每会话首条 user 消息预览。排除 code-* / 内部会话(mr_/epi_ 等)。
+                # 消息面板「历史会话」下拉：列 companion 会话(default + UUID)，
+                # 并保留旧 task-* 历史兼容。排除 code-* / 内部会话(mr_/epi_ 等)。
                 _sl_sdb = service_context.get("session_db")
                 _sl_out: list = []
                 if _sl_sdb is not None:
                     try:
                         _sl_rows = await _sl_sdb.list_sessions_with_preview()
+                        _sl_code_base_ids = {
+                            str(row.get("base_session_id") or "")
+                            for row in await _sl_sdb.list_code_sessions()
+                        }
                         for _sr in _sl_rows:
                             _ssid = _sr.get("session_id") or ""
-                            if _ssid == "default" or _ssid.startswith("task-"):
+                            if _is_companion_history_session_id(
+                                _ssid,
+                                code_base_session_ids=_sl_code_base_ids,
+                            ):
                                 _sl_out.append(_sr)
                     except Exception as _sl_exc:  # noqa: BLE001
                         logger.warning("sessions_list_failed", error=str(_sl_exc))
@@ -5406,7 +6806,19 @@ async def control_channel(ws: WebSocket):
                 _sd_ok = False
                 if _sd_sdb is not None and _sd_sid:
                     try:
-                        await _sd_sdb.clear(_sd_sid)
+                        _sd_workflows = service_context.get("workflow_service")
+                        if _sd_workflows is not None:
+                            async with _sd_workflows.session_lock(_sd_sid):
+                                await _sd_sdb.clear(_sd_sid)
+                                await _sd_workflows.cancel_runs_for_session(
+                                    _sd_sid,
+                                    reason="session_deleted",
+                                )
+                        else:
+                            await _sd_sdb.clear(_sd_sid)
+                        _sd_attempts = service_context.get("context_attempt_store")
+                        if _sd_attempts is not None:
+                            _sd_attempts.purge_session(_sd_sid)
                         _sd_ok = True
                         logger.info("session_deleted sid=%s", _sd_sid)
                     except Exception as _sd_exc:  # noqa: BLE001
@@ -5475,7 +6887,9 @@ async def control_channel(ws: WebSocket):
                             if _row_role not in ("user", "assistant", "tool"):
                                 continue  # 仍跳过 system 等
                             _entry: dict[str, Any] = {
-                                "id": str(r.get("id") or ""),
+                                "id": str(
+                                    r.get("workflow_event_id") or r.get("id") or ""
+                                ),
                                 "role": _row_role,
                                 "text": r.get("content") or "",
                                 "ts": float(r.get("created_at") or 0) * 1000,
@@ -5496,6 +6910,15 @@ async def control_channel(ws: WebSocket):
                             if _tcid:
                                 _entry["tool_call_id"] = _tcid
                             msgs.append(_entry)
+
+                        _workflow_history = service_context.get("workflow_service")
+                        await _attach_workflow_history_events(
+                            rows=rows,
+                            messages=msgs,
+                            session_id=target_sid,
+                            session_db=sdb,
+                            workflow_service=_workflow_history,
+                        )
                     except Exception as exc:  # noqa: BLE001
                         logger.warning(
                             "session_messages_load_failed",
@@ -5695,25 +7118,44 @@ async def control_channel(ws: WebSocket):
                 cmm = service_context.get("code_mode")
                 sdb = service_context.get("session_db")
                 deleted_csid: str | None = None
-                if cmm is not None:
-                    # P4-S25 B4: cmm.delete drops in-memory state AND
-                    # the code_sessions persistence row, so the project
-                    # truly disappears across restart. (Old cmm.exit
-                    # only cleared memory; would resurrect on next boot.)
-                    deleted_csid = await cmm.delete(target_sid)
-                # Clear injected project_root from tool registry context
-                if deskpet_tool_registry_v2 is not None:
-                    deskpet_tool_registry_v2.set_session_context(target_sid, None)
+                workflows = service_context.get("workflow_service")
+                candidate_csid = (
+                    str(cmm.code_session_id(target_sid) or "") if cmm is not None else ""
+                )
+                held_locks = []
                 deleted_todos = 0
-                if sdb is not None and deleted_csid:
-                    try:
-                        deleted_todos = await sdb.delete_code_todos(deleted_csid)
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning(
-                            "code_session_delete_todos_failed",
-                            error=str(exc),
-                            session_id=deleted_csid,
+                try:
+                    if workflows is not None:
+                        for lock_sid in sorted({target_sid, candidate_csid} - {""}):
+                            lock = workflows.session_lock(lock_sid)
+                            await lock.acquire()
+                            held_locks.append(lock)
+                    if cmm is not None:
+                        deleted_csid = await cmm.delete(target_sid)
+                    if deskpet_tool_registry_v2 is not None:
+                        deskpet_tool_registry_v2.set_session_context(target_sid, None)
+                    if sdb is not None and deleted_csid:
+                        await sdb.tombstone_session(
+                            deleted_csid,
+                            reason="code_session_deleted",
                         )
+                        if workflows is not None:
+                            await workflows.cancel_runs_for_session(
+                                deleted_csid,
+                                session_kind="code",
+                                reason="code_session_deleted",
+                            )
+                        deleted_todos = await sdb.delete_code_todos(deleted_csid)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "code_session_delete_todos_failed",
+                        error=str(exc),
+                        session_id=deleted_csid,
+                    )
+                finally:
+                    for lock in reversed(held_locks):
+                        if lock.locked():
+                            lock.release()
                 await ws.send_json({
                     "type": "code_session_deleted",
                     "payload": {
@@ -5992,10 +7434,12 @@ async def control_channel(ws: WebSocket):
                                 "payload": _err,
                             })
                         else:
+                            _refresh_research_live_llm()
                             await _broadcast_providers_changed()
 
                 elif msg_type == "settings_providers_relay_logout":
                     await relay_logout(_reg)
+                    _refresh_research_live_llm()
                     await _broadcast_providers_changed()
 
                 elif msg_type == "settings_providers_update":
@@ -6029,6 +7473,7 @@ async def control_channel(ws: WebSocket):
                             "type": "settings_providers_updated",
                             "payload": {"provider": entry.to_public_dict()},
                         })
+                        _refresh_research_live_llm()
                         await _broadcast_providers_changed()
 
                 elif msg_type == "settings_providers_remove":
@@ -6242,6 +7687,12 @@ async def control_channel(ws: WebSocket):
                 # (which is "default" for the pet's chat).
                 _payload = raw.get("payload", {}) or {}
                 text = _payload.get("text", "")
+                from deskpet.agent.attachment_budget import (
+                    normalize_user_attachment_blocks as _normalize_attachment_blocks,
+                )
+                _attachment_blocks = _normalize_attachment_blocks(
+                    _payload.get("attachments")
+                )
                 _msg_sid = _payload.get("session_id") or session_id
                 _base_msg_sid = _msg_sid
                 _scope_decision = _resolve_chat_task_scope(
@@ -6261,6 +7712,25 @@ async def control_channel(ws: WebSocket):
                     else None
                 )
                 if _scope_decision.created:
+                    _sdb_for_session = service_context.get("session_db")
+                    if _sdb_for_session is not None:
+                        _ensure_session = getattr(_sdb_for_session, "ensure_session", None)
+                        if callable(_ensure_session):
+                            try:
+                                await _ensure_session(
+                                    _msg_sid,
+                                    {
+                                        "origin": "chat_task",
+                                        "base_session_id": _base_msg_sid,
+                                        "reason": _scope_decision.reason,
+                                    },
+                                )
+                            except Exception as _ens_exc:  # noqa: BLE001
+                                logger.warning(
+                                    "session_ensure_failed sid=%s err=%s",
+                                    _msg_sid,
+                                    _ens_exc,
+                                )
                     _switch_payload = {
                         "old_sid": _base_msg_sid,
                         "new_sid": _msg_sid,
@@ -6273,6 +7743,7 @@ async def control_channel(ws: WebSocket):
                         except Exception:
                             pass
                         await _broadcast_default_chat_peers(ws, _switch_evt)
+                    await _send_new_session_origin_user_echo(ws, _msg_sid, text)
                 # 空消息守护：输入框为空时点「新话题」会发一条 text="" 的 chat_v2
                 # （new_session=true）。会话切换/新建事件已在上方广播，这里**不再**跑
                 # AgentLoop —— 否则空消息进预分析被判 ambiguous → 桌宠反问"你想说什么"
@@ -6328,6 +7799,8 @@ async def control_channel(ws: WebSocket):
                     _text,
                     _sid,
                     _memory_policy_override=None,
+                    _task_scope_explicit_new=False,
+                    _user_attachment_blocks=(),
                 ):
                     # P4-S20-LLM-Unified-fix: 持久化用户消息到 SessionDB
                     # 并入向量库。老 chat 路径靠 SimpleLLMAgent.chat_stream
@@ -6546,10 +8019,17 @@ async def control_channel(ws: WebSocket):
                             _bundle = await _assembler.assemble(
                                 user_message=_text,
                                 memory_manager=service_context.get("memory_manager"),
-                                tool_registry=service_context.get("tool_router"),
+                                # Use the same schema-aware registry that the
+                                # AgentLoop dispatches against.  The legacy
+                                # tool_router only contains three bootstrap
+                                # tools, which made the assembler silently
+                                # remove web_search from an otherwise-correct
+                                # web_search policy.
+                                tool_registry=deskpet_tool_registry_v2,
                                 skill_registry=service_context.get("skill_loader"),
                                 mcp_manager=service_context.get("mcp_manager"),
                                 session_id=_sid,
+                                current_message_id=_user_msg_id,
                                 task_type_override=_tt_override,
                                 memory_policy_override=_memory_policy_override,
                                 config={
@@ -6559,6 +8039,15 @@ async def control_channel(ws: WebSocket):
                                     },
                                     "code_mode": _code_cfg,
                                     "skills": _ad_cfg_dict,
+                                    "features": {
+                                        "context_os_v1": bool(
+                                            getattr(
+                                                getattr(config, "features", None),
+                                                "context_os_v1",
+                                                False,
+                                            )
+                                        )
+                                    },
                                 },
                             )
                             if _bundle is not None and _bundle.decisions is not None:
@@ -6586,6 +8075,14 @@ async def control_channel(ws: WebSocket):
                         )
                     else:
                         _msgs = [{"role": "user", "content": _text}]
+
+                    if _user_attachment_blocks:
+                        from deskpet.agent.attachment_budget import (
+                            append_user_attachment_blocks as _append_attachment_blocks,
+                        )
+                        _msgs = _append_attachment_blocks(
+                            _msgs, _user_attachment_blocks
+                        )
 
                     # 2026-05-16 bugfix（实测：companion 让生成 Excel，做到
                     # 一半 max_iter=8 触发 auto_resume，LLM 收到字面
@@ -6717,6 +8214,7 @@ async def control_channel(ws: WebSocket):
                             AssistantDeltaEvent as _AsstDelta,
                             ToolCallEvent as _TCEv,
                             ToolResultEvent as _TREv,
+                            AsyncHandoffEvent as _AsyncHandoffEv,
                             FinalEvent as _FinEv,
                             ErrorEvent as _ErrEv,
                             ContextCompactedEvent as _CtxCompactedEv,
@@ -6726,7 +8224,10 @@ async def control_channel(ws: WebSocket):
                         # P4-S20-LLM-Unified: 单一 endpoint。local_llm 来自
                         # 统一 [llm] 段（base_url + api_key + model）；不管你
                         # 把它指向 Ollama 还是任何 OpenAI 兼容云端都一样。
-                        _provider = local_llm or cloud_llm
+                        _provider = _select_code_workflow_provider(
+                            local_llm=local_llm,
+                            cloud_llm=cloud_llm,
+                        )
                         _shim = _Shim(provider=_provider)
                         # P4-S22: Code mode bumps max_iterations to 50 so
                         # long tool-use chains (read → grep → edit → bash
@@ -6739,6 +8240,482 @@ async def control_channel(ws: WebSocket):
                         _cmm = service_context.get("code_mode")
                         _in_code_mode = bool(_cmm and _cmm.is_enabled(_sid))
                         _max_iter = 50 if _in_code_mode else 16
+                        from deskpet.context_os_e2e_hooks import (
+                            trusted_context_os_e2e_case as _trusted_context_os_e2e_case,
+                        )
+                        _e2e_max_iter_raw = os.environ.get(
+                            "DESKPET_CONTEXT_OS_E2E_MAX_ITERATIONS", ""
+                        ).strip()
+                        if not _trusted_context_os_e2e_case(
+                            allowed_cases=("E2E-CTX-10",), session_id=_sid
+                        ):
+                            _e2e_max_iter_raw = ""
+                        if _e2e_max_iter_raw:
+                            _e2e_max_iter = int(_e2e_max_iter_raw)
+                            if not 1 <= _e2e_max_iter <= 100:
+                                raise ValueError(
+                                    "DESKPET_CONTEXT_OS_E2E_MAX_ITERATIONS must be in [1, 100]"
+                                )
+                            _max_iter = _e2e_max_iter
+                            logger.info(
+                                "context_os_e2e_max_iterations_override",
+                                max_iterations=_max_iter,
+                                session_id=_sid,
+                            )
+
+                        # Durable Complex Code v1 ingress. Classification happens
+                        # before plan extraction and AgentLoop construction so a
+                        # write/action turn has one owner. WorkflowLauncher retains
+                        # the graph task after this chat turn returns.
+                        if (
+                            _in_code_mode
+                            and not _is_sentinel
+                            and config.workflows.enabled
+                            and config.workflows.code_complex
+                        ):
+                            from deskpet.workflows.adapters.code_runtime import (
+                                ProposalPort as _CodeProposalPort,
+                                ToolDispatchPort as _CodeToolDispatchPort,
+                                capability_snapshot as _code_capability_snapshot,
+                                workflow_session_ref as _code_workflow_session_ref,
+                            )
+                            from deskpet.workflows.contracts import WorkflowContext as _WorkflowContext
+                            from deskpet.workflows.definitions.v1 import (
+                                code_complex_initial_state as _code_initial_state,
+                            )
+                            from deskpet.workflows.routing import (
+                                WorkflowRoute as _WorkflowRoute,
+                                route_task as _route_workflow_task,
+                            )
+
+                            _route_decision = _route_workflow_task(
+                                _text or "",
+                                workspace_context=True,
+                            )
+                            if _route_decision.route is _WorkflowRoute.CODE_COMPLEX:
+                                _workflow_service = service_context.get("workflow_service")
+                                _workflow_launcher = getattr(
+                                    _workflow_service, "launcher", None
+                                )
+                                if _workflow_launcher is not None:
+                                    _accepted = None
+                                    _held_session_locks = []
+                                    try:
+                                        import hashlib as _hashlib
+
+                                        _code_sid = str(_cmm.code_session_id(_sid) or "")
+                                        _project_root = _cmm.project_root(_sid)
+                                        if not _code_sid or _project_root is None:
+                                            raise RuntimeError(
+                                                "code workflow session binding is incomplete"
+                                            )
+                                        for _lock_sid in sorted({_sid, _code_sid}):
+                                            _lock = _workflow_service.session_lock(_lock_sid)
+                                            await _lock.acquire()
+                                            _held_session_locks.append(_lock)
+                                        _base_epoch = 0
+                                        _code_epoch = 0
+                                        if _sdb is not None:
+                                            _base_delivery = await _sdb.get_session_delivery_state(
+                                                _sid
+                                            )
+                                            _code_delivery = await _sdb.get_session_delivery_state(
+                                                _code_sid
+                                            )
+                                            _base_epoch = int(_base_delivery.get("epoch", 0))
+                                            _code_epoch = int(_code_delivery.get("epoch", 0))
+                                            if (
+                                                _base_delivery.get("deleted_at") is not None
+                                                or _code_delivery.get("deleted_at") is not None
+                                            ):
+                                                raise RuntimeError(
+                                                    "code workflow session was deleted"
+                                                )
+                                        _session_ref = _code_workflow_session_ref(
+                                            base_session_id=_sid,
+                                            code_session_id=_code_sid,
+                                            delivery_session_id=_sid,
+                                            project_root=_project_root,
+                                            base_epoch=_base_epoch,
+                                            code_epoch=_code_epoch,
+                                        )
+                                        deskpet_tool_registry_v2.set_session_context(
+                                            _sid,
+                                            {
+                                                "_project_root": str(_project_root),
+                                                "_write_scope_root": str(_project_root),
+                                                "_session_id": _sid,
+                                            },
+                                        )
+                                        _capabilities = _code_capability_snapshot(
+                                            deskpet_tool_registry_v2
+                                        )
+                                        _capability_payload = [
+                                            item.to_dict() for item in _capabilities
+                                        ]
+                                        # Resolve the same per-session provider/keychain
+                                        # binding used by AgentLoop.  The durable graph
+                                        # starts before the legacy chain-resolution block
+                                        # below, so reusing module-level local/cloud objects
+                                        # here can retain an expired API key after login.
+                                        _code_provider = _provider
+                                        _code_registry = service_context.get(
+                                            "provider_registry"
+                                        )
+                                        if _code_registry is not None and _sdb is not None:
+                                            from llm.resolution import (
+                                                resolve_provider_for_session as _resolve_code_chain,
+                                            )
+
+                                            _agent_cfg = (
+                                                config.raw.get("agent")
+                                                if hasattr(config, "raw")
+                                                else None
+                                            ) or {}
+                                            _code_default_model = (
+                                                str(_agent_cfg.get("code_model") or "").strip()
+                                                or None
+                                            )
+                                            _code_entries = await _resolve_code_chain(
+                                                _sid,
+                                                is_code_session=True,
+                                                registry=_code_registry,
+                                                session_db=_sdb,
+                                                code_default_model=_code_default_model,
+                                            )
+                                            if _code_entries:
+                                                _code_providers = (
+                                                    _build_code_workflow_provider_chain(
+                                                        entries=_code_entries,
+                                                        registry=_code_registry,
+                                                    )
+                                                )
+                                                from agent.tool_use_shim import (
+                                                    OpenAICompatibleAgentLLMChain as _CodeChainShim,
+                                                )
+
+                                                _code_shim = _CodeChainShim(_code_providers)
+                                                _code_provider = _code_providers[0]
+                                            else:
+                                                _code_shim = _Shim(provider=_code_provider)
+                                        else:
+                                            _code_shim = _Shim(provider=_code_provider)
+                                        _fallback_turn_key = _hashlib.sha256(
+                                            f"{_sid}\0{_text}".encode("utf-8")
+                                        ).hexdigest()[:24]
+                                        _turn_key = str(
+                                            _user_msg_id or _fallback_turn_key
+                                        )
+                                        _request_id = f"chat:{_sid}:{_turn_key}"
+                                        _turn_id = f"turn:{_sid}:{_turn_key}"
+                                        _provider_name = str(
+                                            getattr(_code_provider, "name", "")
+                                            or "openai_compatible"
+                                        )
+                                        _model_name = str(
+                                            getattr(_code_provider, "model", "") or ""
+                                        )
+                                        _code_context_os = bool(
+                                            getattr(config.features, "context_os_v1", False)
+                                        )
+                                        _code_prepared_context = None
+                                        _code_eligibility = None
+                                        if _code_context_os:
+                                            from llm.model_info import resolve as _resolve_code_model_info
+                                            from deskpet.tools.capabilities import (
+                                                ToolEligibilityContext as _CodeEligibility,
+                                                ToolExecutionContext as _CodeExecutionContext,
+                                                ToolExposureIntent as _CodeToolIntent,
+                                            )
+
+                                            _code_planner = service_context.get(
+                                                "context_request_planner"
+                                            )
+                                            _code_scope_store = service_context.get(
+                                                "tool_capability_scope_store"
+                                            )
+                                            if _code_planner is None or _code_scope_store is None:
+                                                raise RuntimeError(
+                                                    "context_os_code_workflow_runtime_unavailable"
+                                                )
+                                            _code_eligibility = _CodeEligibility(
+                                                session_id=_sid,
+                                                request_id=_request_id,
+                                                task_type="code",
+                                                mode="code_workflow",
+                                            )
+                                            _bundle.tool_exposure_intent = _CodeToolIntent(
+                                                direct_selectors=tuple(
+                                                    str(item.get("tool_name") or "")
+                                                    for item in _capability_payload
+                                                    if item.get("tool_name")
+                                                )
+                                            )
+                                            _code_model_info = _resolve_code_model_info(
+                                                _model_name or "_default"
+                                            )
+                                            _code_active_snapshot = (
+                                                await _project_initial_context_snapshot(
+                                                    session_id=_sid,
+                                                    request_id=_request_id,
+                                                    user_text=str(_text or ""),
+                                                    explicit_new=True,
+                                                )
+                                            )
+                                            _attach_task_snapshot_to_request(
+                                                _bundle,
+                                                _msgs,
+                                                _code_active_snapshot,
+                                            )
+                                            from deskpet.agent.attachment_budget import (
+                                                collect_attachment_budget as _collect_code_attachments,
+                                            )
+                                            (
+                                                _code_attachment_refs,
+                                                _code_attachment_tokens,
+                                            ) = _collect_code_attachments(_msgs)
+                                            _code_planned = await _code_planner.prepare_initial(
+                                                _bundle,
+                                                base_system="",
+                                                history=_bundle.history,
+                                                user_message=str(_text or ""),
+                                                eligibility=_code_eligibility,
+                                                context_window=_code_model_info.context_window,
+                                                effective_pct=_code_model_info.effective_pct,
+                                                generation_reserve=min(
+                                                    8192,
+                                                    max(
+                                                        512,
+                                                        int(_code_model_info.context_window) // 8,
+                                                    ),
+                                                ),
+                                                 active_snapshot=_code_active_snapshot,
+                                                 prebuilt_messages=list(_msgs),
+                                                 current_message_id=_user_msg_id,
+                                                 attachment_refs=_code_attachment_refs,
+                                                 attachment_tokens=_code_attachment_tokens,
+                                             )
+                                            _code_prepared_context = (
+                                                _code_planned.prepared_context
+                                            )
+                                            _code_scope_store.open(
+                                                _code_prepared_context.tool_set,
+                                                _code_eligibility,
+                                                snapshot_handle=(
+                                                    _code_prepared_context.active_snapshot_handle
+                                                ),
+                                            )
+                                            _msgs = _code_prepared_context.messages
+                                        _start_payload = {
+                                            "request": str(_text or ""),
+                                            "session_ref": _session_ref.to_dict(),
+                                            "capability_snapshot": _capability_payload,
+                                            "messages": [dict(message) for message in _msgs],
+                                            "plan_steps": [str(_text or "")],
+                                            "approval_required": bool(
+                                                getattr(
+                                                    config.features,
+                                                    "plan_confirm_gate",
+                                                    True,
+                                                )
+                                            ),
+                                            "started_at": time.time(),
+                                            "request_id": _request_id,
+                                            "turn_id": _turn_id,
+                                            "provider_snapshot": {
+                                                "provider": _provider_name
+                                            },
+                                            "model_snapshot": {"model": _model_name},
+                                        }
+
+                                        def _code_state_factory(**values):
+                                            return _code_initial_state(
+                                                request=str(values["request"]),
+                                                run_id=str(values["run_id"]),
+                                                thread_id=str(values["thread_id"]),
+                                                session_id=str(values["session_id"]),
+                                                session_ref=dict(values["session_ref"]),
+                                                capability_snapshot=list(
+                                                    values["capability_snapshot"]
+                                                ),
+                                                messages=list(values["messages"]),
+                                                plan_steps=list(values["plan_steps"]),
+                                                approval_required=bool(
+                                                    values["approval_required"]
+                                                ),
+                                                started_at=float(values["started_at"]),
+                                                request_id=str(values["request_id"]),
+                                                turn_id=str(values["turn_id"]),
+                                                provider_snapshot=dict(
+                                                    values["provider_snapshot"]
+                                                ),
+                                                model_snapshot=dict(
+                                                    values["model_snapshot"]
+                                                ),
+                                            )
+
+                                        def _code_context_factory():
+                                            return _WorkflowContext(
+                                                ports={
+                                                    "llm": _CodeProposalPort(
+                                                        _code_shim,
+                                                        deskpet_tool_registry_v2,
+                                                        session_id=_sid,
+                                                        provider_name=_provider_name,
+                                                        model_name=_model_name,
+                                                        context_os_v1=_code_context_os,
+                                                        prepared_tool_set=(
+                                                            _code_prepared_context.tool_set
+                                                            if _code_prepared_context is not None
+                                                            else None
+                                                        ),
+                                                        eligibility=_code_eligibility,
+                                                    ),
+                                                    "tool": _CodeToolDispatchPort(
+                                                        deskpet_tool_registry_v2,
+                                                        session_id=_sid,
+                                                        execution_context=(
+                                                            _CodeExecutionContext(
+                                                                _code_prepared_context.tool_set.scope_id,
+                                                                _sid,
+                                                                _request_id,
+                                                            )
+                                                            if _code_prepared_context is not None
+                                                            else None
+                                                        ),
+                                                    ),
+                                                },
+                                                request_id=_request_id,
+                                                turn_id=_turn_id,
+                                            )
+
+                                        _accepted = await _workflow_launcher.launch(
+                                            workflow_name="code_complex",
+                                            workflow_version="v1",
+                                            session_id=_sid,
+                                            code_session_id=_code_sid,
+                                            request_id=_request_id,
+                                            turn_id=_turn_id,
+                                            start_payload=_start_payload,
+                                            capability_snapshot={
+                                                "schema_version": 1,
+                                                "tools": _capability_payload,
+                                            },
+                                            state_factory=_code_state_factory,
+                                            context_factory=_code_context_factory,
+                                            base_epoch=_base_epoch,
+                                            code_epoch=_code_epoch,
+                                        )
+                                        _accepted_final = {
+                                            "type": "chat_v2_final",
+                                            "payload": {
+                                                "text": "Code workflow started.",
+                                                "iterations": 0,
+                                                "session_id": _sid,
+                                                "accepted": True,
+                                                "completion_semantics": "accepted_async",
+                                                "run_id": _accepted["run_id"],
+                                            },
+                                        }
+                                        await _ws.send_json(_accepted_final)
+                                        await _broadcast_default_chat_peers(
+                                            _ws, _accepted_final
+                                        )
+                                        logger.info(
+                                            "code_workflow_accepted sid=%s run_id=%s reason=%s",
+                                            _sid,
+                                            _accepted["run_id"],
+                                            _route_decision.reason,
+                                        )
+                                        return
+                                    except Exception as _workflow_exc:  # noqa: BLE001
+                                        if _accepted is not None:
+                                            logger.warning(
+                                                "code_workflow_accept_frame_failed sid=%s run_id=%s err=%s",
+                                                _sid,
+                                                _accepted.get("run_id", ""),
+                                                _workflow_exc,
+                                            )
+                                            return
+                                        logger.warning(
+                                            "code_workflow_start_failed sid=%s err=%s",
+                                            _sid,
+                                            _workflow_exc,
+                                        )
+                                    finally:
+                                        for _lock in reversed(_held_session_locks):
+                                            if _lock.locked():
+                                                _lock.release()
+
+                        # Strong DeepResearch intent has deterministic ingress.
+                        # Do not ask the outer ReAct model whether to call the
+                        # durable tool: that can bypass progress/checkpoint/Trace
+                        # or answer from pretraining without evidence.
+                        if (
+                            not _in_code_mode
+                            and not _is_sentinel
+                            and config.workflows.enabled
+                            and config.workflows.deep_research
+                        ):
+                            from deskpet.agent.assembler.components.tool import (
+                                is_deep_research_request as _is_deep_research_request,
+                            )
+
+                            if _is_deep_research_request(_text or ""):
+                                import hashlib as _hashlib
+                                import json as _json
+                                from deskpet.tools.research_tools import (
+                                    _handle_deepresearch as _start_deepresearch,
+                                )
+
+                                _fallback_turn_key = _hashlib.sha256(
+                                    f"{_sid}\0{_text}".encode("utf-8")
+                                ).hexdigest()[:24]
+                                _turn_key = str(_user_msg_id or _fallback_turn_key)
+                                _request_id = f"chat:{_sid}:{_turn_key}"
+                                _turn_id = f"turn:{_sid}:{_turn_key}"
+                                _started_raw = await _start_deepresearch(
+                                    {
+                                        "topic": str(_text or ""),
+                                        "user_request": str(_text or ""),
+                                        "depth": (
+                                            "deep"
+                                            if any(
+                                                token in str(_text or "")
+                                                for token in ("完整报告", "全面", "深入")
+                                            )
+                                            else "standard"
+                                        ),
+                                        "_session_id": _sid,
+                                        "_request_id": _request_id,
+                                        "_turn_id": _turn_id,
+                                    },
+                                    _request_id,
+                                )
+                                _started = _json.loads(_started_raw)
+                                if not _started.get("accepted"):
+                                    raise RuntimeError(
+                                        str(_started.get("error") or "DeepResearch start failed")
+                                    )
+                                _handoff_final = {
+                                    "type": "chat_v2_final",
+                                    "payload": {
+                                        "text": "",
+                                        "iterations": 0,
+                                        "session_id": _sid,
+                                        "handoff_run_id": _started["run_id"],
+                                    },
+                                }
+                                await _ws.send_json(_handoff_final)
+                                await _broadcast_default_chat_peers(
+                                    _ws, _handoff_final
+                                )
+                                logger.info(
+                                    "deepresearch_workflow_accepted sid=%s run_id=%s",
+                                    _sid,
+                                    _started["run_id"],
+                                )
+                                return
 
                         # P5-S2 D2: long tool_call args reliability hint.
                         # Models (deepseek-v4-pro etc.) corrupt JSON escapes
@@ -6790,7 +8767,11 @@ async def control_channel(ws: WebSocket):
                             ((config.raw.get("context") or {}).get("manager") or {})
                             .get("v2_enabled", True)
                         )
-                        _ctx_model = getattr(_provider, "model", "") or "_default"
+                        _ctx_model = (
+                            "ctx-primary"
+                            if _e2e_provider_base
+                            else (getattr(_provider, "model", "") or "_default")
+                        )
                         _ctx_proot = (
                             _cmm.project_root(_sid)
                             if (_in_code_mode and _cmm is not None)
@@ -6872,33 +8853,64 @@ async def control_channel(ws: WebSocket):
                                 _sid, str(_resolve_exc)[:200],
                             )
                             _provider_chain = None
+                        if _e2e_provider_base:
+                            # The isolated fixture must own every selected
+                            # attempt, independent of persisted relay/session
+                            # provider bindings in the signed-in UI.
+                            # Keep all deterministic E2E candidates in the
+                            # real AgentLoop chain so fallback and explicit
+                            # compaction-model selection exercise production
+                            # retry/resolution code rather than a fixture-only
+                            # HTTP replay.
+                            _provider_chain = [
+                                OpenAICompatibleProvider(
+                                    base_url=_e2e_provider_base,
+                                    api_key="ctx-e2e-local-key",
+                                    model=_model,
+                                    temperature=config.llm.local.temperature,
+                                    sanitize_inline_cot_dsml=_sanitize_cot_dsml,
+                                )
+                                for _model in (
+                                    "ctx-primary",
+                                    "ctx-fallback",
+                                    "ctx-compact-fixture",
+                                )
+                            ]
 
                         # P6 Phase 6 — ContextManager-based preflight
                         # compaction. Uses ``_provider_chain[0]`` (resolved
                         # above) for the summarize step. Best-effort: any
                         # exception falls back to the original messages
                         # (better long context than a hard error mid-task).
-                        try:
-                            from agent.chat_prep import (
-                                prepare_chat_messages_for_chain as _prep_chat_msgs,
+                        _context_os_active = bool(
+                            getattr(
+                                getattr(config, "features", None),
+                                "context_os_v1",
+                                False,
                             )
-                            _orig_len = len(_msgs)
-                            _msgs = await _prep_chat_msgs(
-                                _msgs,
-                                provider_chain=_provider_chain,
-                                ctx_mgr=_ctx_mgr,
-                                fallback_summarizer=local_llm,
-                            )
-                            if len(_msgs) != _orig_len:
-                                logger.info(
-                                    "p6_history_compacted sid=%s orig=%d new=%d",
-                                    _sid, _orig_len, len(_msgs),
+                        )
+                        if not _context_os_active:
+                            try:
+                                from agent.chat_prep import (
+                                    prepare_chat_messages_for_chain as _prep_chat_msgs,
                                 )
-                        except Exception as _p6_exc:  # noqa: BLE001
-                            logger.warning(
-                                "p6_chat_prep_failed sid=%s err=%s",
-                                _sid, str(_p6_exc)[:200],
-                            )
+                                _orig_len = len(_msgs)
+                                _msgs = await _prep_chat_msgs(
+                                    _msgs,
+                                    provider_chain=_provider_chain,
+                                    ctx_mgr=_ctx_mgr,
+                                    fallback_summarizer=local_llm,
+                                )
+                                if len(_msgs) != _orig_len:
+                                    logger.info(
+                                        "p6_history_compacted sid=%s orig=%d new=%d",
+                                        _sid, _orig_len, len(_msgs),
+                                    )
+                            except Exception as _p6_exc:  # noqa: BLE001
+                                logger.warning(
+                                    "p6_chat_prep_failed sid=%s err=%s",
+                                    _sid, str(_p6_exc)[:200],
+                                )
 
                         # superpowers Layer 1B WI-A1 — 意图记忆 hint 注入。
                         # 匹配以往同类消息的意图(ask/task)，注入 system hint 引导
@@ -7344,6 +9356,9 @@ async def control_channel(ws: WebSocket):
                             skill_matcher=_skill_matcher_for_agent,
                             tool_path_recorder=_tp_recorder_for_agent,
                             memory_curator=_curator_for_agent,
+                            context_attempt_store=service_context.get(
+                                "context_attempt_store"
+                            ),
                             # ─── 七步流水线 IN-LOOP 闸（plans/2026-06-24-...）。flag off → 全 None/False = BC。
                             # self_check_gate 由 build_agent 内构造（B3）；convergence 由 AgentLoop 内自建。
                             evidence_gate=(service_context.get("pipeline_evidence_gate")
@@ -7382,6 +9397,110 @@ async def control_channel(ws: WebSocket):
 
                         # WI-A1: 本轮是否真调过工具 — 决定意图记忆记 task/ask。
                         _had_tool_call = False
+                        _prepared_context = None
+                        _context_request_id = None
+                        if _context_os_active:
+                            if _bundle is None:
+                                raise RuntimeError(
+                                    "context_os_v1 requires a successful ContextBundle"
+                                )
+                            _request_planner = service_context.get(
+                                "context_request_planner"
+                            )
+                            _scope_store = service_context.get(
+                                "tool_capability_scope_store"
+                            )
+                            if _request_planner is None or _scope_store is None:
+                                raise RuntimeError(
+                                    "tool_capability_runtime_unavailable"
+                                )
+                            from deskpet.tools.capabilities import (
+                                ToolEligibilityContext as _ToolEligibilityContext,
+                            )
+                            import uuid as _uuid_context_os
+
+                            _context_request_id = _uuid_context_os.uuid4().hex
+                            _eligibility = _ToolEligibilityContext(
+                                session_id=_sid,
+                                request_id=_context_request_id,
+                                task_type=_bundle.task_type,
+                                mode=("code" if _in_code_mode else "companion"),
+                            )
+                            _model_info = _ctx_mgr.config._resolved_model_info()
+                            _active_snapshot = await _project_initial_context_snapshot(
+                                session_id=_sid,
+                                request_id=_context_request_id,
+                                user_text=_text,
+                                explicit_new=bool(_task_scope_explicit_new),
+                            )
+                            _attach_task_snapshot_to_request(
+                                _bundle,
+                                _msgs,
+                                _active_snapshot,
+                            )
+                            from deskpet.agent.attachment_budget import (
+                                collect_attachment_budget as _collect_chat_attachments,
+                            )
+                            (
+                                _chat_attachment_refs,
+                                _chat_attachment_tokens,
+                            ) = _collect_chat_attachments(_msgs)
+                            _planned_request = await _request_planner.prepare_initial(
+                                _bundle,
+                                base_system="",
+                                history=_bundle.history,
+                                user_message=_text,
+                                eligibility=_eligibility,
+                                context_window=_model_info.context_window,
+                                effective_pct=_model_info.effective_pct,
+                                generation_reserve=min(
+                                    8192,
+                                    max(512, int(_model_info.context_window) // 8),
+                                ),
+                                active_snapshot=_active_snapshot,
+                                prebuilt_messages=_msgs,
+                                current_message_id=_user_msg_id,
+                                attachment_refs=_chat_attachment_refs,
+                                attachment_tokens=_chat_attachment_tokens,
+                            )
+                            _prepared_context = _planned_request.prepared_context
+                            _prepared_context.request_budget = _planned_request.budget
+                            _msgs = _prepared_context.messages
+                            _scope_store.open(
+                                _prepared_context.tool_set,
+                                _eligibility,
+                                snapshot_handle=_prepared_context.active_snapshot_handle,
+                            )
+                        _bundle_tool_names = (
+                            (
+                                [
+                                    cap.ref.name
+                                    for cap in _prepared_context.tool_set.direct
+                                ]
+                                if _prepared_context is not None
+                                else [
+                                str(
+                                    (
+                                        schema.get("function", {})
+                                        if isinstance(schema.get("function"), dict)
+                                        else schema
+                                    ).get("name", "")
+                                )
+                                for schema in _bundle.tool_schemas
+                                if isinstance(schema, dict)
+                                ]
+                            )
+                            if _bundle is not None
+                            else None
+                        )
+                        from deskpet.agent.assembler.components.tool import (
+                            has_image_completion_claim as _has_image_completion_claim,
+                            is_short_contextual_followup as _is_short_contextual_followup,
+                        )
+                        _buffer_short_followup_stream = (
+                            _is_short_contextual_followup(_text)
+                            and "generate_image" not in (_bundle_tool_names or [])
+                        )
                         async for ev in _agent.run(
                             _msgs,
                             session_id=_sid,
@@ -7389,6 +9508,11 @@ async def control_channel(ws: WebSocket):
                             provider_chain=_provider_chain,
                             loop_user_request=(None if _is_sentinel else _text),
                             is_sentinel_run=_is_sentinel,
+                            tool_names_filter=(
+                                None if _prepared_context is not None else _bundle_tool_names
+                            ),
+                            prepared_context=_prepared_context,
+                            context_request_id=_context_request_id,
                         ):
                             # WI-A1: track tool usage for intent memory.
                             if isinstance(ev, _TCEv) and getattr(ev, "tool_call", None):
@@ -7418,6 +9542,15 @@ async def control_channel(ws: WebSocket):
                                             iteration=ev.iteration,
                                             max_iterations=_max_iter,
                                         )
+                                    elif isinstance(ev, _AsyncHandoffEv):
+                                        await _sa_store.bump(
+                                            _sid,
+                                            event_type="async_handoff",
+                                            name=ev.tool_name,
+                                            iteration=ev.iteration,
+                                            max_iterations=_max_iter,
+                                        )
+                                        await _sa_store.set_status(_sid, "idle")
                                     elif isinstance(ev, _AsstEv):
                                         await _sa_store.bump(
                                             _sid,
@@ -7445,6 +9578,13 @@ async def control_channel(ws: WebSocket):
                                 except Exception as _bump_exc:  # noqa: BLE001
                                     logger.debug("session_activity_bump_failed", error=str(_bump_exc))
                             if isinstance(ev, _AsstDelta):
+                                # Short elliptical follow-ups rely on L2 for
+                                # their meaning. Buffer their deltas until the
+                                # terminal evidence guards have run; otherwise
+                                # an unsupported "image generated" claim could
+                                # reach the UI before VerifyGate can rebound it.
+                                if _buffer_short_followup_stream:
+                                    continue
                                 _delta_msg = {
                                     "type": "chat_v2_delta",
                                     "payload": {
@@ -7588,9 +9728,43 @@ async def control_channel(ws: WebSocket):
                                             "chat_persist_tool_result_failed",
                                             error=str(exc),
                                         )
+                            elif isinstance(ev, _AsyncHandoffEv):
+                                # The durable workflow owns all subsequent UI
+                                # progress and final delivery. End only the
+                                # originating chat turn so the composer does
+                                # not remain stuck on "Stop" while the graph
+                                # continues in the background.
+                                _handoff_final_msg = {
+                                    "type": "chat_v2_final",
+                                    "payload": {
+                                        "text": "",
+                                        "iterations": ev.iteration,
+                                        "session_id": _sid,
+                                        "handoff_run_id": ev.run_id,
+                                    },
+                                }
+                                await _ws.send_json(_handoff_final_msg)
+                                await _broadcast_default_chat_peers(
+                                    _ws, _handoff_final_msg
+                                )
                             elif isinstance(ev, _FinEv):
                                 final_text = ev.content
                                 final_reasoning = ev.reasoning_content
+                                if (
+                                    _buffer_short_followup_stream
+                                    and _has_image_completion_claim(final_text)
+                                ):
+                                    logger.warning(
+                                        "unsupported_image_completion_claim_blocked "
+                                        "sid=%s text=%s",
+                                        _sid,
+                                        (final_text or "")[:160],
+                                    )
+                                    final_text = (
+                                        "我刚才没有调用图片生成工具，也没有生成图片。"
+                                        "这是一条依赖上文的补充说明；"
+                                        "我会回到前文语境继续回答，而不是把它当作生图请求。"
+                                    )
                                 # P4-S24: persist the assistant row IN-LINE
                                 # so a same-sid cancellation (next user
                                 # message arriving before this task's
@@ -7627,10 +9801,14 @@ async def control_channel(ws: WebSocket):
                                         )
                                 _final_msg = {
                                     "type": "chat_v2_final",
-                                    "payload": {"text": ev.content, "iterations": ev.iteration, "session_id": _sid},
+                                    "payload": {"text": final_text, "iterations": ev.iteration, "session_id": _sid},
                                 }
-                                await _ws.send_json(_final_msg)
-                                await _broadcast_default_chat_peers(_ws, _final_msg)
+                                await _send_chat_final(
+                                    _ws,
+                                    _final_msg,
+                                    session_id=_sid,
+                                    request_id=_context_request_id,
+                                )
                                 # WI-A1: 记意图记忆 — 本轮真调过工具→"task"，纯回答
                                 # →"ask"。仅 code 模式 + pref_mem + 非 sentinel。
                                 # fire-and-forget，不阻塞 final。record 内部去重。
@@ -7866,11 +10044,26 @@ async def control_channel(ws: WebSocket):
                 # 对话回合硬超时包装(默认 15 分钟,设置里可调)。relay/网络持续
                 # 不可用时 agent 会无限重试让桌宠"努力工作中"死转 —— 超时即优雅
                 # 停止 + 发 chat_v2_final 友好告知,清掉前端转圈。
-                async def _run_chat_with_timeout(_g_ws, _g_text, _g_sid, _g_mp=None):
+                async def _run_chat_with_timeout(
+                    _g_ws,
+                    _g_text,
+                    _g_sid,
+                    _g_mp=None,
+                    _g_explicit_new=False,
+                    _g_attachment_blocks=(),
+                ):
                     _g_to = _chat_turn_timeout_s()
                     try:
                         await asyncio.wait_for(
-                            _run_chat(_g_ws, _g_text, _g_sid, _g_mp), timeout=_g_to,
+                            _run_chat(
+                                _g_ws,
+                                _g_text,
+                                _g_sid,
+                                _g_mp,
+                                _g_explicit_new,
+                                _g_attachment_blocks,
+                            ),
+                            timeout=_g_to,
                         )
                     except asyncio.TimeoutError:
                         _g_min = int(round(_g_to / 60))
@@ -7904,6 +10097,8 @@ async def control_channel(ws: WebSocket):
                         text,
                         _msg_sid,
                         _memory_policy_override,
+                        bool(_scope_decision.created),
+                        _attachment_blocks,
                     )
                 )
                 _chat_inflight[_msg_sid] = _chat_task
@@ -8014,6 +10209,33 @@ async def control_channel(ws: WebSocket):
                     raw.get("payload", {}) or {},
                     service_context,
                 )
+
+            elif msg_type.startswith("workflow_"):
+                # Durable Graph/Trace/Replay/Eval IPC. The service is built
+                # during lifespan startup; keeping the dispatcher here avoids
+                # coupling the workflow core to FastAPI/WebSocket types.
+                from deskpet.workflows.ipc import start_workflow_ipc_dispatch
+
+                workflow_service = service_context.get("workflow_service")
+                if workflow_service is None:
+                    await ws.send_json({
+                        "type": "workflow_ipc_error",
+                        "request_type": msg_type,
+                        "request_id": raw.get("request_id"),
+                        "ok": False,
+                        "error": {
+                            "code": "workflow_service_unavailable",
+                            "message": "Durable workflow service is unavailable",
+                            "retryable": True,
+                        },
+                    })
+                else:
+                    start_workflow_ipc_dispatch(
+                        workflow_service,
+                        raw,
+                        ws.send_json,
+                        _workflow_ipc_background_tasks,
+                    )
 
             elif msg_type == "provider_test_connection":
                 # P2-1-S3: SettingsPanel「测试连接」button. The candidate
@@ -8132,6 +10354,7 @@ async def control_channel(ws: WebSocket):
                 # full restart is recommended for reliability).
                 _payload = raw.get("payload", {}) or {}
                 _enabled = bool(_payload.get("enabled", True))
+                _persisted = _persist_supervisor_enabled(_enabled)
                 _wd_inst = service_context.get("watchdog")
                 if _enabled:
                     if _wd_inst is None or not _wd_inst.is_running():
@@ -8151,7 +10374,7 @@ async def control_channel(ws: WebSocket):
                     logger.info("supervisor_toggle_disabled")
                 await ws.send_json({
                     "type": "supervisor_toggle_ack",
-                    "payload": {"enabled": _enabled},
+                    "payload": {"enabled": _enabled, "persisted": _persisted},
                 })
 
             elif msg_type == "__debug_force_error_pending":

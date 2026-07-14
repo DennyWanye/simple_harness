@@ -19,7 +19,27 @@ import importlib.util as _ilu
 import os
 import sysconfig
 
+import PyInstaller.building.build_main as _pyi_build_main
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
+
+_orig_find_binary_dependencies = _pyi_build_main.find_binary_dependencies
+
+
+def _find_binary_dependencies_skip_flagembedding(binaries, import_packages, symlink_suppression_patterns):
+    # FlagEmbedding is pure Python at the package level; importing it in
+    # PyInstaller's isolated DLL scan can crash on Windows in this venv.
+    import_packages = [
+        p for p in import_packages if not (p == "FlagEmbedding" or p.startswith("FlagEmbedding."))
+    ]
+    return _orig_find_binary_dependencies(
+        binaries,
+        import_packages,
+        symlink_suppression_patterns,
+    )
+
+
+_pyi_build_main.find_binary_dependencies = _find_binary_dependencies_skip_flagembedding
 
 # --- 0. mypyc runtime shims ---------------------------------------------
 # `tomli` (and a few other deps) are compiled with mypyc. Mypyc emits a
@@ -74,6 +94,12 @@ for _m in [
 # Discovered via CDP-driven prompt asking LLM to enumerate tools.
 hiddenimports += collect_submodules("deskpet.tools")
 hiddenimports += collect_submodules("deskpet.skills")
+for _pkg in ["scrapling", "curl_cffi", "browserforge", "w3lib", "protego"]:
+    try:
+        hiddenimports += collect_submodules(_pkg)
+    except Exception:
+        print(f"[spec] WARN: {_pkg} not importable, skip")
+hiddenimports += collect_submodules("agent_reach")
 # NOTE(2026-06-28, RESOLVED): the frozen embedder subprocess worker used to die
 # with "No module named 'datasets'" → silently fall back to MOCK embedder in
 # every shipped build. ROOT CAUSE (located on the real exe, see
@@ -124,6 +150,12 @@ datas += collect_data_files("faster_whisper")      # tokenizer.json
 datas += collect_data_files("tzdata")              # IANA tz db
 datas += collect_data_files("ctranslate2")         # any shipped configs
 datas += collect_data_files("sqlite_vec", includes=["*.dll"])  # vec0.dll for L3 recall
+for _pkg in ["scrapling", "browserforge", "apify_fingerprint_datapoints"]:
+    try:
+        datas += collect_data_files(_pkg)
+    except Exception:
+        print(f"[spec] WARN: {_pkg} data not importable, skip")
+datas += collect_data_files("agent_reach")
 datas += [
     # P4-S22 fix: ship the canonical migrations directory under
     # ``deskpet/memory/migrations`` (where the actual v9/v10/v11 SQL
@@ -145,6 +177,7 @@ datas += [
     # frozen builds with no <exe_dir>/config.toml returned None and the migration
     # path was a no-op.
     ("../config.toml", "."),
+    ("../resources/diagnostic-redaction.json", "resources"),
 ]
 
 # --- 2a-bis. busybox-w32 (P5-S2 — 2026-05-10) --------------------------

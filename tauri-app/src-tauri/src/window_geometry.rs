@@ -86,10 +86,31 @@ pub fn save(g: WindowGeometry) -> std::io::Result<()> {
 pub fn clamp_position_to_screen(win: &WebviewWindow) {
     let monitor = match win.current_monitor() {
         Ok(Some(m)) => m,
-        _ => {
-            eprintln!("[window_geometry] clamp_position: no current_monitor, skip");
-            return;
-        }
+        _ => match win.available_monitors() {
+            Ok(monitors) => match monitors.into_iter().next() {
+                Some(m) => {
+                    eprintln!(
+                        "[window_geometry] clamp_position: no current_monitor, fallback to first available monitor"
+                    );
+                    m
+                }
+                None => {
+                    eprintln!("[window_geometry] clamp_position: no monitors, skip");
+                    return;
+                }
+            },
+            Err(e) => {
+                eprintln!(
+                    "[window_geometry] clamp_position: available_monitors failed: {e:?}; moving to safe fallback"
+                );
+                if let Err(set_err) = win.set_position(PhysicalPosition::new(100, 100)) {
+                    eprintln!(
+                        "[window_geometry] clamp_position: safe fallback set_position failed: {set_err:?}"
+                    );
+                }
+                return;
+            }
+        },
     };
     let mon_size = monitor.size();
     let mon_pos = monitor.position();

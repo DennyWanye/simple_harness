@@ -130,6 +130,52 @@ async def test_spawn_returns_immediately_and_await_collects(monkeypatch):  # 3.2
     assert aout["ok"] and len(aout["results"]) == 2
     assert all(r["status"] == "completed" for r in aout["results"])
     assert all(r["output"].startswith("res:") for r in aout["results"])
+    assert reg.completion_queue.empty()
+
+
+@pytest.mark.asyncio
+async def test_await_omitted_collects_already_completed_runs(monkeypatch):
+    reg = SubagentRegistry()
+    sched = SubagentScheduler()
+    (spawn_h, _s), (await_h, _a) = _build_tools(monkeypatch, reg, sched)
+
+    out = json.loads(
+        await spawn_h(
+            {"subagents": [{"task_id": "a", "prompt": "x", "kind": "research"}]},
+            "",
+        )
+    )
+    await asyncio.sleep(0.05)
+
+    aout = json.loads(await await_h({}, ""))
+
+    assert out["ok"]
+    assert aout["ok"] and len(aout["results"]) == 1
+    assert aout["results"][0]["run_id"] == out["run_ids"][0]
+    assert aout["results"][0]["status"] == "completed"
+    assert reg.completion_queue.empty()
+
+
+@pytest.mark.asyncio
+async def test_explicit_await_consumes_completion_queue(monkeypatch):
+    reg = SubagentRegistry()
+    sched = SubagentScheduler()
+    (spawn_h, _s), (await_h, _a) = _build_tools(monkeypatch, reg, sched)
+
+    out = json.loads(
+        await spawn_h(
+            {"subagents": [{"task_id": "a", "prompt": "x", "kind": "research"}]},
+            "",
+        )
+    )
+    await asyncio.sleep(0.05)
+    assert reg.completion_queue.qsize() == 1
+
+    aout = json.loads(await await_h({"run_ids": out["run_ids"]}, ""))
+
+    assert aout["ok"] and len(aout["results"]) == 1
+    assert aout["results"][0]["status"] == "completed"
+    assert reg.completion_queue.empty()
 
 
 @pytest.mark.asyncio

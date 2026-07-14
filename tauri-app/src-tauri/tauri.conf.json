@@ -85,7 +85,8 @@
       }
     },
     "resources": {
-      "../../backend/dist-portable/deskpet-backend": "backend"
+      "../../backend/dist-portable/deskpet-backend": "backend",
+      "../../resources/diagnostic-redaction.json": "resources/diagnostic-redaction.json"
     }
   },
   "plugins": {

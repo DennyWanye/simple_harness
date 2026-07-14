@@ -38,6 +38,7 @@ from typing import Awaitable, Callable, Optional
 import aiosqlite
 
 from deskpet.memory.schema import initialize_state_db
+from deskpet.memory.memory_v2_schema import SESSION_TITLES_DDL
 
 log = logging.getLogger(__name__)
 
@@ -124,14 +125,9 @@ class SessionDB:
             # 而非破坏数据库。full 对单用户桌宠过于保守。
             await db.execute("PRAGMA synchronous=NORMAL")
             # 用户自定义会话标题（消息面板「重命名话题」）。放侧表，不触碰
-            # messages 派生的清单/preview 逻辑；CREATE IF NOT EXISTS 幂等，无需迁移。
-            await db.execute(
-                "CREATE TABLE IF NOT EXISTS session_titles ("
-                "  session_id TEXT PRIMARY KEY,"
-                "  title TEXT NOT NULL,"
-                "  updated_at REAL NOT NULL"
-                ")"
-            )
+            # messages 派生的清单/preview 逻辑；v17 已正式迁移，
+            # 这里保留幂等 ensure 兼容隔离调用。
+            await db.executescript(SESSION_TITLES_DDL)
             await db.commit()
 
         # 3. 尝试加载 sqlite-vec 扩展并建 messages_vec 虚拟表
@@ -236,6 +232,26 @@ class SessionDB:
         if not self._initialized:
             await self.initialize()
         session_id = str(uuid.uuid4())
+        await self.ensure_session(session_id, metadata)
+        return session_id
+
+    async def ensure_session(
+        self,
+        session_id: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Ensure a session row exists and return the normalized id.
+
+        New companion task sessions already receive their UUID before the
+        first message is written so frontend, receipts, and messages can all
+        share one stable id. This method persists that caller-supplied id in
+        the canonical ``sessions`` table without changing existing metadata.
+        """
+        if not self._initialized:
+            await self.initialize()
+        sid = (session_id or "").strip()
+        if not sid:
+            raise ValueError("session_id must be non-empty")
         meta_json = json.dumps(metadata) if metadata else None
 
         async def _do():
@@ -244,13 +260,22 @@ class SessionDB:
                     await db.execute("PRAGMA busy_timeout=5000")
                     await db.execute(
                         "INSERT INTO sessions(id, created_at, metadata) "
-                        "VALUES (?, ?, ?)",
-                        (session_id, time.time(), meta_json),
+                        "VALUES (?, ?, ?) "
+                        "ON CONFLICT(id) DO NOTHING",
+                        (sid, time.time(), meta_json),
+                    )
+                    await db.execute(
+                        "INSERT INTO session_delivery_state("
+                        "session_id, epoch, deleted_at, reason) "
+                        "VALUES (?, 0, NULL, NULL) "
+                        "ON CONFLICT(session_id) DO UPDATE SET "
+                        "deleted_at=NULL, reason=NULL",
+                        (sid,),
                     )
                     await db.commit()
 
         await self._with_retry(_do)
-        return session_id
+        return sid
 
     # ------------------------------------------------------------------
     # Messages
@@ -265,6 +290,7 @@ class SessionDB:
         tool_calls: list[dict[str, Any]] | None = None,
         reasoning_content: str | None = None,
         skip_embed: bool = False,
+        workflow_event_id: str | None = None,
     ) -> int:
         """写入一条 message。
 
@@ -282,31 +308,33 @@ class SessionDB:
         tool_calls_json = json.dumps(tool_calls) if tool_calls else None
         reasoning = reasoning_content if reasoning_content else None
 
-        async def _do():
+        async def _do() -> tuple[int, bool]:
             async with self._write_lock:
                 async with aiosqlite.connect(self._db_path) as db:
                     await db.execute("PRAGMA busy_timeout=5000")
-                    cursor = await db.execute(
-                        "INSERT INTO messages("
-                        "session_id, role, content, created_at, "
-                        "tool_call_id, tool_calls, reasoning_content"
-                        ") VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (
-                            session_id,
-                            role,
-                            content,
-                            time.time(),
-                            tool_call_id,
-                            tool_calls_json,
-                            reasoning,
-                        ),
+                    if workflow_event_id is None:
+                        await db.execute(
+                            "INSERT INTO session_delivery_state("
+                            "session_id, epoch, deleted_at, reason) "
+                            "VALUES (?, 0, NULL, NULL) "
+                            "ON CONFLICT(session_id) DO UPDATE SET "
+                            "deleted_at=NULL, reason=NULL",
+                            (session_id,),
+                        )
+                    result = await self._insert_message_row(
+                        db,
+                        session_id=session_id,
+                        role=role,
+                        content=content,
+                        tool_call_id=tool_call_id,
+                        tool_calls_json=tool_calls_json,
+                        reasoning=reasoning,
+                        workflow_event_id=workflow_event_id,
                     )
-                    msg_id = cursor.lastrowid
-                    await cursor.close()
                     await db.commit()
-                    return int(msg_id or 0)
+                    return result
 
-        msg_id = await self._with_retry(_do)
+        msg_id, inserted = await self._with_retry(_do)
 
         # P4-S2 hook：消息已落盘，异步通知订阅者（典型：VectorWorker）。
         # 契约：
@@ -314,7 +342,7 @@ class SessionDB:
         #   * hook 抛异常只 log warn，不影响返回值
         #   * FP-4 WI-3.4: skip_embed=True 时跳过 hook（消息仍入 messages 表
         #     + FTS5 trigger 自动同步；仅 L3 向量 embedding 被跳过）。
-        if self._on_message_written is not None and not skip_embed:
+        if inserted and self._on_message_written is not None and not skip_embed:
             try:
                 await self._on_message_written(msg_id, content)
             except Exception as exc:  # noqa: BLE001
@@ -325,6 +353,195 @@ class SessionDB:
                 )
 
         return msg_id
+
+    async def _insert_message_row(
+        self,
+        db: aiosqlite.Connection,
+        *,
+        session_id: str,
+        role: str,
+        content: str,
+        tool_call_id: str | None,
+        tool_calls_json: str | None,
+        reasoning: str | None,
+        workflow_event_id: str | None,
+    ) -> tuple[int, bool]:
+        cursor = await db.execute(
+            "INSERT INTO messages("
+            "session_id, role, content, created_at, tool_call_id, tool_calls, "
+            "reasoning_content, workflow_event_id"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(workflow_event_id) "
+            "WHERE workflow_event_id IS NOT NULL DO NOTHING",
+            (
+                session_id,
+                role,
+                content,
+                time.time(),
+                tool_call_id,
+                tool_calls_json,
+                reasoning,
+                workflow_event_id,
+            ),
+        )
+        inserted = int(cursor.rowcount or 0) > 0
+        msg_id = int(cursor.lastrowid or 0) if inserted else 0
+        await cursor.close()
+        if not inserted:
+            if workflow_event_id is None:
+                raise RuntimeError("message insert was ignored without an event id")
+            cursor = await db.execute(
+                "SELECT id FROM messages WHERE workflow_event_id = ?",
+                (workflow_event_id,),
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
+            if row is None:
+                raise RuntimeError(
+                    f"workflow message conflict has no row: {workflow_event_id}"
+                )
+            msg_id = int(row[0])
+        return msg_id, inserted
+
+    async def append_message_if_epoch(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        *,
+        expected_epoch: int,
+        workflow_event_id: str,
+        tool_call_id: str | None = None,
+        tool_calls: list[dict[str, Any]] | None = None,
+        reasoning_content: str | None = None,
+        skip_embed: bool = False,
+    ) -> int | None:
+        """Append a workflow delivery only while the session fence is live.
+
+        ``None`` means the epoch changed or the session was tombstoned. A
+        repeated ``workflow_event_id`` returns the original row and does not
+        fire the embedding hook again.
+        """
+        if not self._initialized:
+            await self.initialize()
+        event_id = str(workflow_event_id or "").strip()
+        if not event_id:
+            raise ValueError("workflow_event_id must be non-empty")
+
+        tool_calls_json = json.dumps(tool_calls) if tool_calls else None
+        reasoning = reasoning_content if reasoning_content else None
+
+        async def _do() -> tuple[int | None, bool]:
+            async with self._write_lock:
+                async with aiosqlite.connect(self._db_path) as db:
+                    await db.execute("PRAGMA busy_timeout=5000")
+                    await db.execute("BEGIN IMMEDIATE")
+                    cursor = await db.execute(
+                        "SELECT epoch, deleted_at FROM session_delivery_state "
+                        "WHERE session_id = ?",
+                        (session_id,),
+                    )
+                    row = await cursor.fetchone()
+                    await cursor.close()
+                    current_epoch = int(row[0]) if row else 0
+                    deleted_at = row[1] if row else None
+                    if current_epoch != int(expected_epoch) or deleted_at is not None:
+                        await db.rollback()
+                        return None, False
+                    if row is None:
+                        await db.execute(
+                            "INSERT INTO session_delivery_state("
+                            "session_id, epoch, deleted_at, reason) "
+                            "VALUES (?, 0, NULL, NULL)",
+                            (session_id,),
+                        )
+                    msg_id, inserted = await self._insert_message_row(
+                        db,
+                        session_id=session_id,
+                        role=role,
+                        content=content,
+                        tool_call_id=tool_call_id,
+                        tool_calls_json=tool_calls_json,
+                        reasoning=reasoning,
+                        workflow_event_id=event_id,
+                    )
+                    await db.commit()
+                    return msg_id, inserted
+
+        msg_id, inserted = await self._with_retry(_do)
+        if (
+            msg_id is not None
+            and inserted
+            and self._on_message_written is not None
+            and not skip_embed
+        ):
+            try:
+                await self._on_message_written(msg_id, content)
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "on_message_written hook failed for msg_id=%s: %s",
+                    msg_id,
+                    exc,
+                )
+        return msg_id
+
+    async def get_session_delivery_state(self, session_id: str) -> dict[str, Any]:
+        """Return the durable session epoch; absent rows mean live epoch zero."""
+        if not self._initialized:
+            await self.initialize()
+        async with aiosqlite.connect(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT epoch, deleted_at, reason FROM session_delivery_state "
+                "WHERE session_id = ?",
+                (session_id,),
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
+        if row is None:
+            return {"session_id": session_id, "epoch": 0, "deleted_at": None, "reason": None}
+        return {
+            "session_id": session_id,
+            "epoch": int(row[0]),
+            "deleted_at": row[1],
+            "reason": row[2],
+        }
+
+    async def tombstone_session(
+        self,
+        session_id: str,
+        *,
+        reason: str = "deleted",
+        deleted_at: float | None = None,
+    ) -> int:
+        """Increment the delivery epoch and make late workflow appends fail."""
+        if not self._initialized:
+            await self.initialize()
+        timestamp = time.time() if deleted_at is None else float(deleted_at)
+
+        async def _do() -> int:
+            async with self._write_lock:
+                async with aiosqlite.connect(self._db_path) as db:
+                    await db.execute("PRAGMA busy_timeout=5000")
+                    await db.execute("BEGIN IMMEDIATE")
+                    await db.execute(
+                        "INSERT INTO session_delivery_state("
+                        "session_id, epoch, deleted_at, reason) "
+                        "VALUES (?, 1, ?, ?) "
+                        "ON CONFLICT(session_id) DO UPDATE SET "
+                        "epoch=session_delivery_state.epoch + 1, "
+                        "deleted_at=excluded.deleted_at, reason=excluded.reason",
+                        (session_id, timestamp, str(reason)),
+                    )
+                    cursor = await db.execute(
+                        "SELECT epoch FROM session_delivery_state WHERE session_id = ?",
+                        (session_id,),
+                    )
+                    row = await cursor.fetchone()
+                    await cursor.close()
+                    await db.commit()
+                    return int(row[0])
+
+        return await self._with_retry(_do)
 
     async def get_message_role(self, msg_id: int) -> Optional[str]:
         """返回单条消息的 role（按主键查，O(1)）。msg 不存在 → None。
@@ -357,7 +574,8 @@ class SessionDB:
             cursor = await db.execute(
                 "SELECT id, session_id, role, content, created_at, "
                 "salience, decay_last_touch, user_emotion, audio_file_path, "
-                "tool_call_id, tool_calls, reasoning_content "
+                "tool_call_id, tool_calls, reasoning_content, workflow_event_id, "
+                "is_summary, summary_of "
                 "FROM messages WHERE session_id = ? "
                 "ORDER BY created_at ASC, id ASC "
                 "LIMIT ? OFFSET ?",
@@ -366,7 +584,112 @@ class SessionDB:
             rows = await cursor.fetchall()
             await cursor.close()
 
-        return [_row_to_dict(r) for r in rows]
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            item = _row_to_dict(row[: len(_BASE_COLUMNS)])
+            item["workflow_event_id"] = row[len(_BASE_COLUMNS)]
+            item["is_summary"] = bool(row[len(_BASE_COLUMNS) + 1])
+            item["summary_of"] = row[len(_BASE_COLUMNS) + 2]
+            result.append(item)
+        return result
+
+    async def get_recent_messages(
+        self,
+        session_id: str,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Return the newest ``limit`` messages in chronological order.
+
+        ``get_messages`` is the oldest-first paginated transcript API.  Memory
+        assembly needs the opposite selection semantics (the contiguous tail),
+        but still needs chronological ordering when the rows are sent to an
+        LLM.  Keep those contracts separate so UI pagination does not silently
+        change when L2 recall is fixed.
+        """
+        if not self._initialized:
+            await self.initialize()
+        safe_limit = max(0, int(limit))
+        if safe_limit == 0:
+            return []
+
+        # Fetch a small prefix beyond the requested window so a boundary that
+        # lands on a tool result can be expanded to include its assistant call.
+        fetch_limit = safe_limit + 20
+        async with aiosqlite.connect(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT id, session_id, role, content, created_at, "
+                "salience, decay_last_touch, user_emotion, audio_file_path, "
+                "tool_call_id, tool_calls, reasoning_content, workflow_event_id "
+                "FROM ("
+                "  SELECT id, session_id, role, content, created_at, "
+                "  salience, decay_last_touch, user_emotion, audio_file_path, "
+                "  tool_call_id, tool_calls, reasoning_content, workflow_event_id "
+                "  FROM messages WHERE session_id = ? "
+                "  ORDER BY created_at DESC, id DESC LIMIT ?"
+                ") ORDER BY created_at ASC, id ASC",
+                (session_id, safe_limit),
+            )
+            rows = await cursor.fetchall()
+            await cursor.close()
+
+        all_rows: list[dict[str, Any]] = []
+        for row in rows:
+            item = _row_to_dict(row[: len(_BASE_COLUMNS)])
+            item["workflow_event_id"] = row[len(_BASE_COLUMNS)]
+            all_rows.append(item)
+
+        if not all_rows or all_rows[0].get("role") != "tool":
+            return all_rows
+
+        # The tail boundary landed inside a tool-call group. Resolve the exact
+        # assistant by tool_call_id instead of using a fixed lookback window or
+        # accepting an unrelated assistant row.
+        boundary_call_id = str(all_rows[0].get("tool_call_id") or "")
+        if not boundary_call_id:
+            return all_rows
+        boundary_id = int(all_rows[0]["id"])
+        end_id = int(all_rows[-1]["id"])
+        async with aiosqlite.connect(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT id, tool_calls FROM messages "
+                "WHERE session_id = ? AND role = 'assistant' "
+                "AND id < ? AND tool_calls IS NOT NULL ORDER BY id DESC",
+                (session_id, boundary_id),
+            )
+            candidates = await cursor.fetchall()
+            await cursor.close()
+            assistant_id: int | None = None
+            for candidate_id, raw_calls in candidates:
+                try:
+                    calls = json.loads(raw_calls or "[]")
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    continue
+                if any(
+                    str(call.get("id") or "") == boundary_call_id
+                    for call in calls
+                    if isinstance(call, dict)
+                ):
+                    assistant_id = int(candidate_id)
+                    break
+            if assistant_id is None:
+                return all_rows
+            cursor = await db.execute(
+                "SELECT id, session_id, role, content, created_at, "
+                "salience, decay_last_touch, user_emotion, audio_file_path, "
+                "tool_call_id, tool_calls, reasoning_content, workflow_event_id "
+                "FROM messages WHERE session_id = ? AND id BETWEEN ? AND ? "
+                "ORDER BY created_at ASC, id ASC",
+                (session_id, assistant_id, end_id),
+            )
+            expanded_rows = await cursor.fetchall()
+            await cursor.close()
+
+        expanded: list[dict[str, Any]] = []
+        for row in expanded_rows:
+            item = _row_to_dict(row[: len(_BASE_COLUMNS)])
+            item["workflow_event_id"] = row[len(_BASE_COLUMNS)]
+            expanded.append(item)
+        return expanded
 
     async def search_fts(
         self,
@@ -458,7 +781,7 @@ class SessionDB:
         """Implement ``MemoryStore.get_recent`` via ``get_messages``."""
         from memory.base import ConversationTurn
 
-        rows = await self.get_messages(session_id, limit=limit)
+        rows = await self.get_recent_messages(session_id, limit=limit)
         return [
             ConversationTurn(
                 role=str(row.get("role", "")),
@@ -489,6 +812,15 @@ class SessionDB:
                     await db.execute(
                         "DELETE FROM session_titles WHERE session_id = ?",
                         (session_id,),
+                    )
+                    await db.execute(
+                        "INSERT INTO session_delivery_state("
+                        "session_id, epoch, deleted_at, reason) "
+                        "VALUES (?, 1, ?, 'deleted') "
+                        "ON CONFLICT(session_id) DO UPDATE SET "
+                        "epoch=session_delivery_state.epoch + 1, "
+                        "deleted_at=excluded.deleted_at, reason=excluded.reason",
+                        (session_id, time.time()),
                     )
                     await db.commit()
 
@@ -860,7 +1192,8 @@ class SessionDB:
                 async with aiosqlite.connect(self._db_path) as db:
                     await db.execute("PRAGMA busy_timeout=5000")
                     await db.execute(
-                        "DELETE FROM code_todos WHERE session_id = ?",
+                        "DELETE FROM code_todos "
+                        "WHERE session_id = ? AND workflow_run_id IS NULL",
                         (session_id,),
                     )
                     for idx, item in enumerate(items):
@@ -895,7 +1228,8 @@ class SessionDB:
                 await db.execute("PRAGMA busy_timeout=5000")
                 cursor = await db.execute(
                     """
-                    SELECT content, active_form, status, sort_order
+                    SELECT content, active_form, status, sort_order,
+                           workflow_run_id, workflow_step_id
                     FROM code_todos
                     WHERE session_id = ?
                     ORDER BY sort_order
@@ -910,11 +1244,97 @@ class SessionDB:
                         "activeForm": row[1],
                         "status": row[2],
                         "sort_order": row[3],
+                        "workflow_run_id": row[4],
+                        "workflow_step_id": row[5],
                     }
                     for row in rows
                 ]
 
         return await self._with_retry(_do)
+
+    async def sync_workflow_code_todos(
+        self,
+        session_id: str,
+        workflow_run_id: str,
+        items: list[dict[str, Any]],
+    ) -> None:
+        """Project one workflow run's stable steps without touching legacy rows."""
+        if not self._initialized:
+            await self.initialize()
+        run_id = str(workflow_run_id or "").strip()
+        if not run_id:
+            raise ValueError("workflow_run_id must be non-empty")
+
+        normalized: list[tuple[str, str, str, str, int]] = []
+        seen_steps: set[str] = set()
+        for index, item in enumerate(items):
+            step_id = str(item.get("workflow_step_id") or "").strip()
+            if not step_id:
+                raise ValueError(f"items[{index}].workflow_step_id is required")
+            if step_id in seen_steps:
+                raise ValueError(f"duplicate workflow_step_id: {step_id}")
+            seen_steps.add(step_id)
+            status = str(item.get("status", "pending"))
+            if status not in {"pending", "in_progress", "completed"}:
+                status = "pending"
+            normalized.append(
+                (
+                    step_id,
+                    str(item.get("content", ""))[:2000],
+                    str(item.get("activeForm", item.get("active_form", "")))[:2000],
+                    status,
+                    int(item.get("sort_order", index)),
+                )
+            )
+
+        async def _do() -> None:
+            async with self._write_lock:
+                async with aiosqlite.connect(self._db_path) as db:
+                    await db.execute("PRAGMA busy_timeout=5000")
+                    await db.execute("BEGIN IMMEDIATE")
+                    for step_id, content, active_form, status, sort_order in normalized:
+                        await db.execute(
+                            """
+                            INSERT INTO code_todos(
+                                session_id, content, active_form, status, sort_order,
+                                workflow_run_id, workflow_step_id
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(workflow_run_id, workflow_step_id)
+                            WHERE workflow_step_id IS NOT NULL DO UPDATE SET
+                                session_id=excluded.session_id,
+                                content=excluded.content,
+                                active_form=excluded.active_form,
+                                status=excluded.status,
+                                sort_order=excluded.sort_order,
+                                updated_at=julianday('now')
+                            """,
+                            (
+                                session_id,
+                                content,
+                                active_form,
+                                status,
+                                sort_order,
+                                run_id,
+                                step_id,
+                            ),
+                        )
+                    if seen_steps:
+                        placeholders = ",".join("?" for _ in seen_steps)
+                        await db.execute(
+                            "DELETE FROM code_todos "
+                            "WHERE session_id = ? AND workflow_run_id = ? "
+                            f"AND workflow_step_id NOT IN ({placeholders})",
+                            (session_id, run_id, *sorted(seen_steps)),
+                        )
+                    else:
+                        await db.execute(
+                            "DELETE FROM code_todos "
+                            "WHERE session_id = ? AND workflow_run_id = ?",
+                            (session_id, run_id),
+                        )
+                    await db.commit()
+
+        await self._with_retry(_do)
 
     async def upsert_code_session(
         self,
@@ -936,6 +1356,27 @@ class SessionDB:
             async with self._write_lock:
                 async with aiosqlite.connect(self._db_path) as db:
                     await db.execute("PRAGMA busy_timeout=5000")
+                    metadata = json.dumps(
+                        {
+                            "origin": "code_mode",
+                            "project_root": project_root,
+                            "project_name": project_name,
+                        }
+                    )
+                    await db.execute(
+                        "INSERT INTO sessions(id, created_at, metadata) "
+                        "VALUES (?, ?, ?) "
+                        "ON CONFLICT(id) DO NOTHING",
+                        (base_session_id, time.time(), metadata),
+                    )
+                    await db.execute(
+                        "INSERT INTO session_delivery_state("
+                        "session_id, epoch, deleted_at, reason) "
+                        "VALUES (?, 0, NULL, NULL) "
+                        "ON CONFLICT(session_id) DO UPDATE SET "
+                        "deleted_at=NULL, reason=NULL",
+                        (base_session_id,),
+                    )
                     await db.execute(
                         """
                         INSERT INTO code_sessions(

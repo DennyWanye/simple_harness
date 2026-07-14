@@ -296,13 +296,34 @@ def test_load_config_skills_knowledge_enabled_flag(tmp_path: Path) -> None:
     assert cfg.skills.knowledge_enabled is True
 
 
-def test_load_config_skills_knowledge_enabled_defaults_off(tmp_path: Path) -> None:
+def test_load_config_skills_knowledge_enabled_defaults_on(tmp_path: Path) -> None:
+    # 2026-06-27 测试阶段点亮：触发式知识注入出厂默认 ON。
     cfg_path = tmp_path / "config.toml"
     cfg_path.write_text("schema_version = 1\n", encoding="utf-8")
 
     cfg = load_config(cfg_path)
 
-    assert cfg.skills.knowledge_enabled is False
+    assert cfg.skills.knowledge_enabled is True
+
+
+def test_load_config_skills_subtable_keeps_knowledge_default_on(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(
+        dedent(
+            """
+            schema_version = 1
+
+            [skills.codify]
+            enabled = true
+            """
+        ).strip(),
+        encoding="utf-8",
+    )
+
+    cfg = load_config(cfg_path)
+
+    assert cfg.skills.knowledge_enabled is True
+    assert cfg.skills.codify.enabled is True
 
 
 @pytest.mark.asyncio

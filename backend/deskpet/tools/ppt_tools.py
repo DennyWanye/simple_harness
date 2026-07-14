@@ -50,8 +50,10 @@ import json
 import logging
 import os
 import re
+import struct
 import tempfile
 import time
+from functools import lru_cache
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from types import SimpleNamespace
@@ -124,16 +126,29 @@ def _cfg_str(raw: dict[str, Any], key: str, default: str) -> str:
 def _ppt_pro_cfg() -> SimpleNamespace:
     """读取 PPT Pro 配置，兼容 ``pro_*`` 与短字段，缺失时使用计划默认值。"""
     raw = _ppt_config_section()
+    # PPT Pro is sold to the user as a research-first workflow. Keep enough
+    # room for real DeepResearch; quick no-research outlines must be an
+    # explicit opt-in, not the default path.
+    default_research_timeout_s = 360.0
     cfg = SimpleNamespace(
         enabled=_cfg_bool(raw, "pro_enabled", _cfg_bool(raw, "enabled", True)),
         default_depth=_cfg_str(raw, "pro_default_depth", _cfg_str(raw, "default_depth", "deep")),
         max_revisions=_cfg_int(raw, "pro_max_revisions", _cfg_int(raw, "max_revisions", 2)),
-        research_timeout_s=_cfg_float(raw, "pro_research_timeout_s", _cfg_float(raw, "research_timeout_s", 360.0)),
+        research_timeout_s=_cfg_float(
+            raw,
+            "pro_research_timeout_s",
+            _cfg_float(raw, "research_timeout_s", default_research_timeout_s),
+        ),
         confirm_timeout_s=_cfg_float(raw, "pro_confirm_timeout_s", _cfg_float(raw, "confirm_timeout_s", 1800.0)),
         image_probe_timeout_s=_cfg_float(raw, "pro_image_probe_timeout_s", _cfg_float(raw, "image_probe_timeout_s", 8.0)),
         render_timeout_s=_cfg_float(raw, "pro_render_timeout_s", _cfg_float(raw, "render_timeout_s", 0.0)),
         save_research=_cfg_bool(raw, "pro_save_research", _cfg_bool(raw, "save_research", True)),
         outline_history=_cfg_bool(raw, "pro_outline_history", _cfg_bool(raw, "outline_history", True)),
+        allow_no_research_outline=_cfg_bool(
+            raw,
+            "pro_allow_no_research_outline",
+            _cfg_bool(raw, "allow_no_research_outline", False),
+        ),
     )
     # 编排骨架里曾使用 pro_* 命名；这里提供别名，避免下一趟接线重复适配。
     cfg.pro_enabled = cfg.enabled
@@ -145,6 +160,7 @@ def _ppt_pro_cfg() -> SimpleNamespace:
     cfg.pro_render_timeout_s = cfg.render_timeout_s
     cfg.pro_save_research = cfg.save_research
     cfg.pro_outline_history = cfg.outline_history
+    cfg.pro_allow_no_research_outline = cfg.allow_no_research_outline
     return cfg
 
 
@@ -236,6 +252,109 @@ VALID_LAYOUTS = (
     "title", "section", "bullet", "two_column", "image", "image_full", "quote", "toc", "chart",
 )
 VALID_THEMES = ("minimal", "dark", "playful")
+FULL_PAGE_IMAGE_SIZE = "1792x1024"
+FULL_PAGE_TARGET_SIZE = (1792, 1008)
+FULL_PAGE_PROMPT_SCHEMA_VERSION = "ppt-full-page-background-prompt-v4"
+FULL_PAGE_NORMALIZER_VERSION = "ppt-full-page-normalizer-v2"
+FULL_PAGE_LAYOUT_SPEC_VERSION = "ppt-full-page-layout-spec-v1"
+FULL_PAGE_COMPOSITOR_VERSION = "ppt-full-page-compositor-v3"
+FULL_PAGE_FONT_POLICY_VERSION = "ppt-full-page-font-policy-v1"
+FULL_PAGE_LAYOUTS = (
+    "cover_band",
+    "text_left",
+    "text_right",
+    "visual_top",
+    "floating_card",
+    "quote_center",
+)
+
+
+class FullPageLayoutError(ValueError):
+    """A user-safe failure raised before a full-page image effect is committed."""
+
+    _MESSAGES = {
+        "text_overflow": ("页面文字过多，无法在安全字号内完整排版。", "精简本页文字后重试。"),
+        "cjk_font_unavailable": ("未找到能完整显示本页中文的字体。", "安装微软雅黑或其他完整中文字体后重试。"),
+        "layout_unavailable": ("没有可容纳本页内容的安全构图。", "调整本页内容结构后重试。"),
+    }
+
+    def __init__(
+        self,
+        code: str,
+        user_message: str | None = None,
+        recovery_action: str | None = None,
+    ) -> None:
+        safe_code = code if code in self._MESSAGES else "layout_unavailable"
+        default_message, default_recovery = self._MESSAGES[safe_code]
+        self.code = safe_code
+        self.user_message = user_message or default_message
+        self.recovery_action = recovery_action or default_recovery
+        super().__init__(self.user_message)
+
+    def as_dict(self) -> dict[str, str]:
+        return {
+            "code": self.code,
+            "user_message": self.user_message,
+            "recovery_action": self.recovery_action,
+        }
+
+
+@dataclass(frozen=True)
+class FullPageLayoutSpec:
+    name: str
+    panel_box: tuple[int, int, int, int]
+    text_box: tuple[int, int, int, int]
+    align: Literal["left", "center"]
+    negative_space_instruction: str
+    min_title_font: int = 30
+    max_title_font: int = 58
+    min_body_font: int = 20
+    max_body_font: int = 32
+    panel_alpha: int = 218
+
+
+FULL_PAGE_LAYOUT_SPECS: dict[str, FullPageLayoutSpec] = {
+    "cover_band": FullPageLayoutSpec(
+        "cover_band", (42, 690, 1750, 974), (92, 720, 1700, 944), "left",
+        "Keep the lower 31% calm, dark, and low-detail for a wide title band.",
+        min_title_font=34, max_title_font=64, min_body_font=18, max_body_font=25,
+    ),
+    "text_left": FullPageLayoutSpec(
+        "text_left", (42, 42, 850, 966), (94, 82, 802, 924), "left",
+        "Place the main subject on the right 48%; keep the left 48% calm and low-detail for text.",
+    ),
+    "text_right": FullPageLayoutSpec(
+        "text_right", (942, 42, 1750, 966), (990, 82, 1698, 924), "left",
+        "Place the main subject on the left 48%; keep the right 48% calm and low-detail for text.",
+    ),
+    "visual_top": FullPageLayoutSpec(
+        "visual_top", (42, 628, 1750, 974), (94, 658, 1698, 940), "left",
+        "Keep the lower 37% calm and low-detail; concentrate the visual subject in the upper 60%.",
+        min_title_font=28, max_title_font=48, min_body_font=18, max_body_font=26,
+    ),
+    "floating_card": FullPageLayoutSpec(
+        "floating_card", (966, 142, 1746, 866), (1014, 184, 1698, 824), "left",
+        "Keep a calm low-detail pocket in the right-center for a floating text card; place the subject left.",
+        min_title_font=28, max_title_font=48, min_body_font=18, max_body_font=28,
+        panel_alpha=224,
+    ),
+    "quote_center": FullPageLayoutSpec(
+        "quote_center", (236, 186, 1556, 822), (302, 238, 1490, 770), "center",
+        "Use a cinematic full-width scene with a calm, dark, low-detail center for a large centered quote.",
+        min_title_font=34, max_title_font=64, min_body_font=20, max_body_font=32,
+        panel_alpha=188,
+    ),
+}
+
+
+def _resolve_ppt_image_model() -> str:
+    """Resolve the concrete image model used by durable PPT effects."""
+    try:
+        from . import image_tools
+
+        return str(image_tools._image_model())  # type: ignore[attr-defined]
+    except Exception:  # noqa: BLE001
+        return "doubao-seedream-4.0"
 # 模板源已迁到外部大库 resources/PPT_Template(见 ppt_template_picker)。
 # 不再有 git 跟踪的 bundled 模板目录。
 
@@ -265,6 +384,8 @@ class SlideOutline:
     # 整页生图版式变体(版式多样化): cover/split_left/split_right/top/card/
     # quote。空 = 由 _assign_image_layouts 按内容自动分配(相邻不重复)。
     image_variant: str = ""
+    # Durable full-page compositor layout. Kept separate from legacy image_variant.
+    full_page_layout: str = ""
     # 视觉评审闭环的 shrink_text 动作: 渲染字号 × 此系数(默认 1.0)。
     font_scale: float = 1.0
     caption: str = ""
@@ -296,6 +417,11 @@ class SlideOutline:
             image_path=(self.image_path or None),
             image_prompt=(self.image_prompt or None),
             image_variant=(self.image_variant or "").strip().lower(),
+            full_page_layout=(
+                (self.full_page_layout or "").strip().lower()
+                if (self.full_page_layout or "").strip().lower() in FULL_PAGE_LAYOUTS
+                else ""
+            ),
             font_scale=(
                 float(self.font_scale)
                 if isinstance(self.font_scale, (int, float)) and 0.5 <= float(self.font_scale) <= 1.5
@@ -533,12 +659,12 @@ async def _research_topic_for_ppt(topic: str, *, depth: str, timeout_s: float):
     try:
         return await asyncio.wait_for(_run(), timeout=timeout_s)
     except asyncio.TimeoutError:
-        log.warning("ppt_pro research timeout -> degrade to no-research outline")
+        log.warning("ppt_pro research timeout")
         return None
     except Exception as exc:  # noqa: BLE001
         if _is_config_or_auth_error(exc):
             raise
-        log.warning("ppt_pro research failed: %s -> degrade to no-research outline", exc)
+        log.warning("ppt_pro research failed: %s", exc)
         return None
 
 
@@ -2164,6 +2290,449 @@ def _crop_image_to_169(path: str) -> str:
 
 
 # 每个版式对应的「负空间」构图指令(调研: prompt 主动留白给文字才不盖字)。
+def _normalize_full_page_image(path: str, *, output_path: str | None = None) -> str:
+    """Create the exact 16:9 page asset committed by a full-page image effect."""
+    from PIL import Image, ImageOps  # type: ignore
+
+    source = Path(path).expanduser().resolve()
+    if not source.is_file():
+        raise FileNotFoundError(f"full-page source image is missing: {source}")
+    target = (
+        Path(output_path).expanduser().resolve()
+        if output_path
+        else source.with_name(f"{source.stem}_full_page_169.png")
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target_width, target_height = FULL_PAGE_TARGET_SIZE
+    target_ratio = target_width / target_height
+
+    with Image.open(source) as opened:
+        image = ImageOps.exif_transpose(opened).convert("RGB")
+        width, height = image.size
+        if width <= 0 or height <= 0:
+            raise ValueError("full-page source image has invalid dimensions")
+        ratio = width / height
+        if ratio > target_ratio:
+            crop_width = max(1, int(round(height * target_ratio)))
+            left = max(0, (width - crop_width) // 2)
+            image = image.crop((left, 0, left + crop_width, height))
+        elif ratio < target_ratio:
+            crop_height = max(1, int(round(width / target_ratio)))
+            top = max(0, (height - crop_height) // 2)
+            image = image.crop((0, top, width, top + crop_height))
+        if image.size != FULL_PAGE_TARGET_SIZE:
+            image = image.resize(FULL_PAGE_TARGET_SIZE, Image.Resampling.LANCZOS)
+        image.save(target, format="PNG")
+
+    with Image.open(target) as verified:
+        if verified.size != FULL_PAGE_TARGET_SIZE:
+            raise ValueError(
+                f"full-page normalization produced {verified.size}, expected "
+                f"{FULL_PAGE_TARGET_SIZE}"
+            )
+    return str(target)
+
+
+def _visible_codepoints(text: str) -> set[int]:
+    return {ord(char) for char in str(text or "") if not char.isspace() and ord(char) >= 32}
+
+
+def _contains_cjk(text: str) -> bool:
+    return any(
+        0x3400 <= code <= 0x9FFF or 0xF900 <= code <= 0xFAFF or code >= 0x20000
+        for code in _visible_codepoints(text)
+    )
+
+
+@lru_cache(maxsize=16)
+def _font_cmap(path: str) -> frozenset[int]:
+    """Read format 4/12 cmap tables using only the standard library."""
+    data = Path(path).read_bytes()
+    sfnt = 0
+    if data[:4] == b"ttcf":
+        if len(data) < 16 or struct.unpack_from(">I", data, 8)[0] < 1:
+            return frozenset()
+        sfnt = struct.unpack_from(">I", data, 12)[0]
+    if sfnt + 12 > len(data):
+        return frozenset()
+    num_tables = struct.unpack_from(">H", data, sfnt + 4)[0]
+    cmap_offset = None
+    for idx in range(num_tables):
+        record = sfnt + 12 + idx * 16
+        if record + 16 > len(data):
+            break
+        tag, _checksum, offset, _length = struct.unpack_from(">4sIII", data, record)
+        if tag == b"cmap":
+            cmap_offset = offset
+            break
+    if cmap_offset is None or cmap_offset + 4 > len(data):
+        return frozenset()
+    num_subtables = struct.unpack_from(">H", data, cmap_offset + 2)[0]
+    codepoints: set[int] = set()
+    for idx in range(num_subtables):
+        record = cmap_offset + 4 + idx * 8
+        if record + 8 > len(data):
+            break
+        _platform, _encoding, relative = struct.unpack_from(">HHI", data, record)
+        table = cmap_offset + relative
+        if table + 4 > len(data):
+            continue
+        fmt = struct.unpack_from(">H", data, table)[0]
+        if fmt == 12 and table + 16 <= len(data):
+            groups = struct.unpack_from(">I", data, table + 12)[0]
+            for group in range(groups):
+                pos = table + 16 + group * 12
+                if pos + 12 > len(data):
+                    break
+                start, end, glyph = struct.unpack_from(">III", data, pos)
+                if glyph:
+                    codepoints.update(range(start, end + 1))
+        elif fmt == 4 and table + 16 <= len(data):
+            seg_count = struct.unpack_from(">H", data, table + 6)[0] // 2
+            end_base = table + 14
+            start_base = end_base + seg_count * 2 + 2
+            delta_base = start_base + seg_count * 2
+            range_base = delta_base + seg_count * 2
+            for segment in range(seg_count):
+                end = struct.unpack_from(">H", data, end_base + segment * 2)[0]
+                start = struct.unpack_from(">H", data, start_base + segment * 2)[0]
+                delta = struct.unpack_from(">h", data, delta_base + segment * 2)[0]
+                range_offset_pos = range_base + segment * 2
+                range_offset = struct.unpack_from(">H", data, range_offset_pos)[0]
+                for code in range(start, min(end, 0xFFFE) + 1):
+                    if range_offset == 0:
+                        glyph = (code + delta) & 0xFFFF
+                    else:
+                        glyph_pos = range_offset_pos + range_offset + (code - start) * 2
+                        glyph = struct.unpack_from(">H", data, glyph_pos)[0] if glyph_pos + 2 <= len(data) else 0
+                        if glyph:
+                            glyph = (glyph + delta) & 0xFFFF
+                    if glyph:
+                        codepoints.add(code)
+    return frozenset(codepoints)
+
+
+def _full_page_font(size: int, *, bold: bool = False, text: str = ""):
+    from PIL import ImageFont  # type: ignore
+
+    names = (
+        ("C:/Windows/Fonts/msyhbd.ttc", "C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/simhei.ttf")
+        if bold
+        else ("C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/simhei.ttf")
+    )
+    required = _visible_codepoints(text)
+    cjk_required = _contains_cjk(text)
+    for name in names:
+        try:
+            font = ImageFont.truetype(name, size=size)
+            if required and not required.issubset(_font_cmap(name)):
+                continue
+            return font
+        except (OSError, ValueError, struct.error):
+            continue
+    if cjk_required:
+        raise FullPageLayoutError("cjk_font_unavailable")
+    return ImageFont.load_default()
+
+
+def _wrap_full_page_text(draw: Any, text: str, font: Any, max_width: int) -> list[str]:
+    text = str(text or "").strip()
+    if not text:
+        return []
+    lines: list[str] = []
+    current = ""
+    closing = set("，。！？；：、）》】』」〉〕）]}.!?,;:")
+    for char in text:
+        if char == "\n":
+            lines.append(current)
+            current = ""
+            continue
+        candidate = current + char
+        if current and draw.textlength(candidate, font=font) > max_width:
+            if char in closing and len(current) > 1:
+                lines.append(current[:-1])
+                current = current[-1] + char
+            else:
+                lines.append(current)
+                current = char
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    return lines
+
+
+def _full_page_visible_entries(slide: Mapping[str, Any]) -> tuple[str, str, list[str], str]:
+    parsed = parse_outline([dict(slide)])[0]
+    entries = list(parsed.bullets)
+    if parsed.left_title:
+        entries.append(parsed.left_title)
+    entries.extend(parsed.left)
+    if parsed.right_title:
+        entries.append(parsed.right_title)
+    entries.extend(parsed.right)
+    if parsed.quote:
+        entries.append(f"“{parsed.quote}”")
+    if parsed.caption:
+        entries.append(parsed.caption)
+    return parsed.title, parsed.subtitle, entries, parsed.cite
+
+
+def _full_page_copy_text(slide: Mapping[str, Any]) -> str:
+    title, subtitle, entries, cite = _full_page_visible_entries(slide)
+    return "\n".join([title, subtitle, *entries, cite])
+
+
+def _fit_full_page_copy(slide: Mapping[str, Any], layout: str) -> dict[str, Any]:
+    from PIL import Image, ImageDraw  # type: ignore
+
+    spec = FULL_PAGE_LAYOUT_SPECS.get(layout)
+    if spec is None:
+        raise FullPageLayoutError("layout_unavailable")
+    title, subtitle, entries, cite = _full_page_visible_entries(slide)
+    all_text = _full_page_copy_text(slide)
+    # A 1792x1008 page cannot contain this many glyphs at any allowed safe font.
+    # Reject the obvious case before entering the measured font-size search.
+    if len(all_text) > 5000:
+        raise FullPageLayoutError("text_overflow")
+    probe = Image.new("RGB", (4, 4))
+    draw = ImageDraw.Draw(probe)
+    left, top, right, bottom = spec.text_box
+    width, height = right - left, bottom - top
+    entry_width = width if spec.align == "center" else max(40, width - 34)
+    for body_size in range(spec.max_body_font, spec.min_body_font - 1, -2):
+        subtitle_size = min(30, body_size + 4)
+        cite_size = max(16, min(20, body_size - 2))
+        body_font = _full_page_font(body_size, text=all_text)
+        subtitle_font = _full_page_font(subtitle_size, text=all_text)
+        cite_font = _full_page_font(cite_size, text=all_text)
+        for title_size in range(spec.max_title_font, spec.min_title_font - 1, -2):
+            title_font = _full_page_font(title_size, bold=True, text=all_text)
+            title_lines = _wrap_full_page_text(draw, title, title_font, width)
+            subtitle_lines = _wrap_full_page_text(draw, subtitle, subtitle_font, width)
+            entry_lines = [_wrap_full_page_text(draw, entry, body_font, entry_width) for entry in entries]
+            cite_lines = _wrap_full_page_text(draw, cite, cite_font, width)
+            title_lh = max(36, int(title_size * 1.18))
+            subtitle_lh = max(28, int(subtitle_size * 1.22))
+            body_lh = max(26, int(body_size * 1.32))
+            cite_lh = max(22, int(cite_size * 1.25))
+            needed = len(title_lines) * title_lh
+            needed += (12 + len(subtitle_lines) * subtitle_lh) if subtitle_lines else 0
+            needed += (20 + sum(len(lines) * body_lh + 10 for lines in entry_lines)) if entry_lines else 0
+            needed += (14 + len(cite_lines) * cite_lh) if cite_lines else 0
+            if needed <= height:
+                return {
+                    "spec": spec,
+                    "title_font": title_font,
+                    "subtitle_font": subtitle_font,
+                    "body_font": body_font,
+                    "cite_font": cite_font,
+                    "title_lines": title_lines,
+                    "subtitle_lines": subtitle_lines,
+                    "entry_lines": entry_lines,
+                    "cite_lines": cite_lines,
+                    "title_lh": title_lh,
+                    "subtitle_lh": subtitle_lh,
+                    "body_lh": body_lh,
+                    "cite_lh": cite_lh,
+                    "height": needed,
+                }
+    raise FullPageLayoutError("text_overflow")
+
+
+def preflight_full_page_copy(slide: Mapping[str, Any], layout: str) -> None:
+    _fit_full_page_copy(slide, layout)
+
+
+def _layout_candidates(slide: SlideOutline, index: int) -> list[str]:
+    rotation = list(FULL_PAGE_LAYOUTS[index % len(FULL_PAGE_LAYOUTS):]) + list(
+        FULL_PAGE_LAYOUTS[: index % len(FULL_PAGE_LAYOUTS)]
+    )
+    preferred: list[str] = []
+    if slide.full_page_layout:
+        preferred.append(slide.full_page_layout)
+    if index == 0:
+        preferred.append("cover_band")
+    if slide.quote:
+        preferred.append("quote_center")
+    if slide.left or slide.right or len(slide.bullets) >= 5:
+        preferred.append("visual_top")
+    return list(dict.fromkeys([*preferred, *rotation]))
+
+
+def plan_full_page_layouts(
+    slides: Sequence[SlideOutline],
+    *,
+    locked_layouts: Mapping[int, str] | None = None,
+    strict_coverage: bool = True,
+) -> list[SlideOutline]:
+    """Assign deterministic, capacity-safe layouts across a complete deck."""
+    planned = [copy.deepcopy(slide).normalize() for slide in slides]
+    locked = {
+        int(index): str(layout)
+        for index, layout in dict(locked_layouts or {}).items()
+        if str(layout) in FULL_PAGE_LAYOUTS
+    }
+    for index, slide in enumerate(planned):
+        if index in locked:
+            slide.full_page_layout = locked[index]
+            continue
+        previous = planned[index - 1].full_page_layout if index else ""
+        next_locked = locked.get(index + 1, "")
+        chosen = ""
+        last_error: FullPageLayoutError | None = None
+        for candidate in _layout_candidates(slide, index):
+            if candidate == previous or candidate == next_locked:
+                continue
+            try:
+                preflight_full_page_copy(asdict(slide), candidate)
+            except FullPageLayoutError as exc:
+                last_error = exc
+                continue
+            chosen = candidate
+            break
+        if not chosen:
+            raise last_error or FullPageLayoutError("layout_unavailable")
+        slide.full_page_layout = chosen
+
+    if strict_coverage and len(planned) >= 6 and len({slide.full_page_layout for slide in planned}) < 5:
+        missing = [layout for layout in FULL_PAGE_LAYOUTS if layout not in {s.full_page_layout for s in planned}]
+        for candidate in missing:
+            for index in range(1, len(planned) - 1):
+                if index in locked:
+                    continue
+                previous = planned[index - 1].full_page_layout
+                following = planned[index + 1].full_page_layout
+                if candidate in {previous, following}:
+                    continue
+                try:
+                    preflight_full_page_copy(asdict(planned[index]), candidate)
+                except FullPageLayoutError:
+                    continue
+                planned[index].full_page_layout = candidate
+                break
+            if len({slide.full_page_layout for slide in planned}) >= 5:
+                break
+        if len({slide.full_page_layout for slide in planned}) < 5:
+            raise FullPageLayoutError("layout_unavailable")
+    return planned
+
+
+def next_full_page_layout(
+    slide: Mapping[str, Any], current: str, *, forbidden: Iterable[str] = ()
+) -> str:
+    blocked = set(forbidden)
+    start = FULL_PAGE_LAYOUTS.index(current) + 1 if current in FULL_PAGE_LAYOUTS else 0
+    for offset in range(len(FULL_PAGE_LAYOUTS)):
+        candidate = FULL_PAGE_LAYOUTS[(start + offset) % len(FULL_PAGE_LAYOUTS)]
+        if candidate in blocked:
+            continue
+        try:
+            preflight_full_page_copy(slide, candidate)
+        except FullPageLayoutError:
+            continue
+        return candidate
+    raise FullPageLayoutError("layout_unavailable")
+
+
+def _compose_full_page_image(
+    path: str,
+    slide: Mapping[str, Any],
+    *,
+    output_path: str | None = None,
+) -> str:
+    """Flatten generated art and exact outline copy into one deterministic page image."""
+    from PIL import Image, ImageDraw  # type: ignore
+
+    source = Path(path).expanduser().resolve()
+    target = (
+        Path(output_path).expanduser().resolve()
+        if output_path
+        else source.with_name(f"{source.stem}_full_page_composed.png")
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    normalized = _normalize_full_page_image(str(source))
+    parsed = parse_outline([dict(slide)])[0]
+    layout = parsed.full_page_layout or "text_left"
+    fit = _fit_full_page_copy(asdict(parsed), layout)
+    spec: FullPageLayoutSpec = fit["spec"]
+
+    with Image.open(normalized) as opened:
+        page = opened.convert("RGBA")
+    width, height = page.size
+    overlay = Image.new("RGBA", page.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    panel_x, panel_y, panel_right, panel_bottom = spec.panel_box
+    if layout == "quote_center":
+        draw.rectangle((0, 0, width, height), fill=(5, 10, 18, 92))
+    draw.rounded_rectangle(
+        spec.panel_box,
+        radius=26,
+        fill=(5, 10, 18, spec.panel_alpha),
+        outline=(94, 206, 255, 150),
+        width=2,
+    )
+    text_x, cursor_y, text_right, _text_bottom = spec.text_box
+
+    def draw_line(line: str, y: int, font: Any, fill: tuple[int, int, int, int], *, indent: int = 0) -> None:
+        x = text_x + indent
+        if spec.align == "center":
+            line_width = draw.textlength(line, font=font)
+            x = int(text_x + (text_right - text_x - line_width) / 2)
+        draw.text((x, y), line, font=font, fill=fill)
+
+    for line in fit["title_lines"]:
+        draw_line(line, cursor_y, fit["title_font"], (248, 252, 255, 255))
+        cursor_y += fit["title_lh"]
+    if fit["subtitle_lines"]:
+        cursor_y += 12
+        for line in fit["subtitle_lines"]:
+            draw_line(line, cursor_y, fit["subtitle_font"], (139, 225, 255, 255))
+            cursor_y += fit["subtitle_lh"]
+    if fit["entry_lines"]:
+        cursor_y += 20
+    for lines in fit["entry_lines"]:
+        if not lines:
+            continue
+        indent = 0 if spec.align == "center" else 30
+        if spec.align != "center":
+            draw.ellipse((text_x, cursor_y + 9, text_x + 11, cursor_y + 20), fill=(52, 211, 245, 255))
+        for line in lines:
+            draw_line(line, cursor_y, fit["body_font"], (236, 242, 247, 255), indent=indent)
+            cursor_y += fit["body_lh"]
+        cursor_y += 10
+    if fit["cite_lines"]:
+        cursor_y += 4
+        for line in fit["cite_lines"]:
+            draw_line(line, cursor_y, fit["cite_font"], (174, 186, 198, 255))
+            cursor_y += fit["cite_lh"]
+
+    composed = Image.alpha_composite(page, overlay).convert("RGB")
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=target.parent, suffix=".png", delete=False) as handle:
+            temporary = Path(handle.name)
+        composed.save(temporary, format="PNG")
+        os.replace(temporary, target)
+    finally:
+        if temporary is not None and temporary.exists():
+            temporary.unlink(missing_ok=True)
+    with Image.open(target) as verified:
+        if verified.size != FULL_PAGE_TARGET_SIZE:
+            raise ValueError(f"full-page compositor produced {verified.size}")
+    return str(target)
+
+
+def _is_normalized_full_page_image(path: str) -> bool:
+    try:
+        from PIL import Image  # type: ignore
+
+        with Image.open(path) as image:
+            return image.size == FULL_PAGE_TARGET_SIZE
+    except Exception:  # noqa: BLE001
+        return False
+
+
 _VARIANT_NEG_SPACE = {
     "cover": "Composition: keep the bottom third darker, simpler and uncluttered as clean negative space for a title overlay.",
     "split_right": "Composition: place the main subject on the RIGHT two-thirds; keep the LEFT third clean, simple and darker as negative space for text.",
@@ -3848,6 +4417,93 @@ def ppt_create(
         }
 
 
+def _render_full_page_images(
+    slides: Sequence[SlideOutline],
+    *,
+    title: str,
+    author: str,
+    output_path: str | None,
+) -> dict[str, Any]:
+    """Assemble committed 16:9 page images without adding slide shapes."""
+    if not _HAS_PPTX:
+        return {"ok": False, "error_kind": "pptx_unavailable", "error": "python-pptx not installed"}
+    if not slides:
+        return {"ok": False, "error_kind": "missing_page_image", "error": "no full-page slides"}
+
+    from PIL import Image  # type: ignore
+
+    normalized_slides = [copy.deepcopy(slide).normalize() for slide in slides]
+    page_images: list[dict[str, Any]] = []
+    for index, slide in enumerate(normalized_slides, start=1):
+        path = Path(str(slide.image_path or "")).expanduser()
+        if not path.is_file():
+            return {
+                "ok": False,
+                "error_kind": "missing_page_image",
+                "error": f"full-page image missing for slide {index}",
+            }
+        try:
+            with Image.open(path) as image:
+                width, height = image.size
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error_kind": "invalid_page_image",
+                "error": f"full-page image unreadable for slide {index}: {exc}",
+            }
+        if (width, height) != FULL_PAGE_TARGET_SIZE or width * 9 != height * 16:
+            return {
+                "ok": False,
+                "error_kind": "invalid_page_image",
+                "error": (
+                    f"full-page image for slide {index} is {width}x{height}; "
+                    f"expected {FULL_PAGE_TARGET_SIZE[0]}x{FULL_PAGE_TARGET_SIZE[1]}"
+                ),
+            }
+        page_images.append({"page": index, "path": str(path.resolve())})
+
+    out_path = _resolve_output_path(output_path)
+    prs = _Presentation()
+    prs.slide_width = _SLIDE_WIDTH
+    prs.slide_height = _SLIDE_HEIGHT
+    blank_layout = prs.slide_layouts[6]
+    for slide_spec in normalized_slides:
+        slide = prs.slides.add_slide(blank_layout)
+        slide.shapes.add_picture(
+            str(Path(str(slide_spec.image_path)).expanduser().resolve()),
+            0,
+            0,
+            width=_SLIDE_WIDTH,
+            height=_SLIDE_HEIGHT,
+        )
+        if slide_spec.notes:
+            slide.notes_slide.notes_text_frame.text = slide_spec.notes
+    try:
+        properties = prs.core_properties
+        if title:
+            properties.title = title
+        if author:
+            properties.author = author
+            properties.last_modified_by = author
+    except Exception:  # noqa: BLE001
+        pass
+    prs.save(out_path)
+    return {
+        "ok": True,
+        "path": str(out_path),
+        "slide_count": len(normalized_slides),
+        "theme": "full_page_images",
+        "render_mode": "full_page_images",
+        "page_images": page_images,
+        "artifacts": [{
+            "kind": "file",
+            "path": str(out_path),
+            "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "title": out_path.name,
+        }],
+    }
+
+
 def _render_fromscratch(
     slides: list[SlideOutline],
     theme_obj: Theme,
@@ -4411,6 +5067,7 @@ def set_ppt_pro_services(
     run_blocking=None,
     artifact_pusher=None,
     receipt_reporter=None,
+    workflow_starter=None,
 ) -> None:
     _PPT_PRO_CTX.update({
         "outline_propose": outline_propose,
@@ -4418,7 +5075,52 @@ def set_ppt_pro_services(
         "run_blocking": run_blocking,
         "artifact_pusher": artifact_pusher,
         "receipt_reporter": receipt_reporter,
+        "workflow_starter": workflow_starter,
     })
+
+
+def _ppt_pro_graph_enabled() -> bool:
+    """Return the new-run kill switch without changing an active run's route."""
+
+    try:
+        from config import standalone_config_section  # type: ignore[import-not-found]
+
+        raw = standalone_config_section("workflows") or {}
+        return _cfg_bool(raw, "enabled", True) and _cfg_bool(raw, "ppt_pro", True)
+    except Exception:  # noqa: BLE001
+        return True
+
+
+async def _start_ppt_pro_graph(
+    starter,
+    *,
+    args: dict[str, Any],
+    session_id: str,
+    task_id: str,
+) -> dict[str, Any]:
+    payload = {
+        **_coerce_ppt_pro_args(args),
+        "session_id": session_id,
+        "request_id": str(args.get("_request_id") or task_id or "ppt-pro"),
+        "turn_id": str(args.get("_turn_id") or task_id or "ppt-pro"),
+        "call_id": str(task_id or args.get("_call_id") or ""),
+        "workflow_name": "ppt_pro",
+        "workflow_version": "v1",
+    }
+    accepted = await _maybe_await(starter(payload))
+    result = dict(accepted or {}) if isinstance(accepted, dict) else {}
+    run_id = str(result.get("run_id") or "")
+    if not run_id:
+        raise ValueError("PPT Pro workflow starter returned no run_id")
+    return {
+        "ok": True,
+        "status": "accepted",
+        "run_id": run_id,
+        "call_id": payload["call_id"],
+        "request_id": payload["request_id"],
+        "turn_id": payload["turn_id"],
+        "message": "收到，PPT 工作流已开始；大纲准备好后会等待你确认。",
+    }
 
 
 def _ppt_pro_cancel(sid: str) -> None:
@@ -4504,6 +5206,13 @@ async def _ppt_pro_orchestrate(
         if report is not None:
             await _notify(notifier, session_id, f"📚 调研完成（{n_src} 个来源），正在拟大纲…")
         else:
+            if not bool(getattr(cfg, "allow_no_research_outline", False)):
+                await _notify(
+                    notifier,
+                    session_id,
+                    "调研没有拿到可用结果，我先不生成大纲，避免把普通知识当成深度调研结论。请稍后重试，或明确告诉我“跳过调研先做大纲”。",
+                )
+                return
             await _notify(notifier, session_id, "📝 调研未取得来源，按通用知识拟大纲…")
 
         from deskpet.tools.research_tools import _resolve_default_llm_call
@@ -4591,7 +5300,7 @@ async def _ppt_pro_orchestrate(
 def _coerce_ppt_pro_args(args: dict[str, Any]) -> dict[str, Any]:
     cfg = _ppt_pro_cfg()
     topic = str(args.get("topic") or "").strip()
-    pages = max(3, min(20, _cfg_int(args, "pages", 8)))
+    pages = max(1, min(20, _cfg_int(args, "pages", 8)))
     # 调研档位**锁死为配置值(默认 deep),忽略 LLM 传入的 depth** —— 用户要求
     # "充分调研"，不让 LLM 降档到 standard/light。pro_default_depth 见 [ppt] 配置。
     depth = str(cfg.default_depth or "deep").strip().lower()
@@ -4612,8 +5321,26 @@ def _coerce_ppt_pro_args(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def _handle_ppt_pro(args: dict, task_id: str = "") -> dict[str, Any]:  # noqa: ARG001
+async def _handle_ppt_pro(args: dict, task_id: str = "") -> dict[str, Any]:
     sid = str(args.get("_session_id") or "default")
+    workflow_starter = _PPT_PRO_CTX.get("workflow_starter")
+    if _ppt_pro_graph_enabled() and workflow_starter is not None:
+        try:
+            return await _start_ppt_pro_graph(
+                workflow_starter,
+                args=dict(args or {}),
+                session_id=sid,
+                task_id=task_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.exception("ppt_pro graph start failed")
+            return {
+                "ok": False,
+                "status": "graph_start_failed",
+                "error": f"{type(exc).__name__}: {exc}",
+                "call_id": str(task_id or args.get("_call_id") or ""),
+            }
+
     outline_propose = _PPT_PRO_CTX.get("outline_propose")
     notifier = _PPT_PRO_CTX.get("notifier")
     run_blocking = _PPT_PRO_CTX.get("run_blocking")
@@ -4693,7 +5420,7 @@ _PPT_PRO_SCHEMA = {
             },
             "pages": {
                 "type": "integer",
-                "minimum": 3,
+                "minimum": 1,
                 "maximum": 20,
                 "default": 8,
             },
@@ -4761,6 +5488,7 @@ def _register_ppt_pro_tool() -> None:
             permission_category="write_file",
             timeout_seconds=60.0,
             concurrency_safe=False,
+            completion_semantics="accepted_async",
         )
     except Exception as exc:  # noqa: BLE001
         log.debug("ppt_pro tool registration skipped: %s", exc)

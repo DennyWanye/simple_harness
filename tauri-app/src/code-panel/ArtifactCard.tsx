@@ -144,6 +144,44 @@ const buttonStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
+type ActionStatus = "idle" | "pending" | "success" | "error";
+
+interface CurrentAction {
+  id: ActionId;
+  status: ActionStatus;
+  message: string;
+}
+
+const actionMessageStyle: React.CSSProperties = {
+  marginTop: 6,
+  fontSize: 11.5,
+  lineHeight: 1.45,
+};
+
+function actionMessageColor(status: ActionStatus): string {
+  if (status === "success") return "#86efac";
+  if (status === "error") return "#fca5a5";
+  return "#bfdbfe";
+}
+
+function actionErrorMessage(e: unknown): string {
+  if (typeof e === "string") return e;
+  if (e instanceof Error) return e.message;
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return "未知错误";
+  }
+}
+
+function successMessage(id: ActionId, dest?: string | null): string {
+  if (id === "open") return "已请求系统打开文件";
+  if (id === "show_in_folder") return "已在文件夹中定位";
+  if (id === "copy_path") return "路径已复制";
+  if (id === "save_as") return dest ? `已另存为：${dest}` : "已取消另存为";
+  return "操作完成";
+}
+
 // ─── Kind icon (MIME → emoji) ─────────────────────────────────
 
 function mimeIcon(mime?: string | null, kind?: ArtifactKind): string {
@@ -171,6 +209,7 @@ function humanSize(bytes?: number | null): string {
 
 function FileArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; toolName: string }) {
   const path = artifact.path || "";
+  const [currentAction, setCurrentAction] = useState<CurrentAction | null>(null);
   const actions = useMemo<ArtifactAction[]>(
     () => artifact.actions ?? [
       { id: "open", label: "打开" },
@@ -181,16 +220,32 @@ function FileArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; tool
     [artifact.actions],
   );
   const handle = useCallback(
-    (id: ActionId) => {
-      if (!path) return;
-      if (id === "open") void invokeArtifactOpen(path, toolName);
-      else if (id === "show_in_folder") void invokeShowInFolder(path, toolName);
-      else if (id === "copy_path") void invokeCopyPath(path, toolName);
-      else if (id === "save_as")
-        void invokeSaveAs(path, artifact.title || "untitled", toolName);
+    async (id: ActionId) => {
+      if (!path) {
+        setCurrentAction({ id, status: "error", message: "文件路径为空，无法操作" });
+        return;
+      }
+      setCurrentAction({ id, status: "pending", message: "正在处理..." });
+      try {
+        let dest: string | null | undefined;
+        if (id === "open") await invokeArtifactOpen(path, toolName);
+        else if (id === "show_in_folder") await invokeShowInFolder(path, toolName);
+        else if (id === "copy_path") await invokeCopyPath(path, toolName);
+        else if (id === "save_as") {
+          dest = await invokeSaveAs(path, artifact.title || "untitled", toolName);
+        }
+        setCurrentAction({ id, status: "success", message: successMessage(id, dest) });
+      } catch (e) {
+        setCurrentAction({
+          id,
+          status: "error",
+          message: `操作失败：${actionErrorMessage(e)}`,
+        });
+      }
     },
     [path, artifact.title, toolName],
   );
+  const pendingId = currentAction?.status === "pending" ? currentAction.id : null;
   return (
     <div style={cardStyle} data-testid="artifact-card-file">
       <div style={titleStyle}>
@@ -204,14 +259,38 @@ function FileArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; tool
           <button
             key={a.id}
             type="button"
-            style={buttonStyle}
+            style={{
+              ...buttonStyle,
+              opacity: pendingId && pendingId !== a.id ? 0.55 : 1,
+              cursor: pendingId ? "wait" : "pointer",
+            }}
+            disabled={!!pendingId}
             data-testid={`artifact-action-${a.id}`}
-            onClick={() => handle(a.id)}
+            aria-busy={pendingId === a.id}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              void handle(a.id);
+            }}
           >
             {a.label || a.id}
           </button>
         ))}
       </div>
+      {currentAction && (
+        <div
+          data-testid="artifact-action-status"
+          role={currentAction.status === "error" ? "alert" : "status"}
+          title={currentAction.message}
+          style={{
+            ...actionMessageStyle,
+            color: actionMessageColor(currentAction.status),
+            wordBreak: "break-all",
+          }}
+        >
+          {currentAction.message}
+        </div>
+      )}
     </div>
   );
 }
@@ -300,6 +379,29 @@ function TextArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; tool
 function ImageArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; toolName: string }) {
   // 与 file 类似，但显示更简洁
   const path = artifact.path || "";
+  const [currentAction, setCurrentAction] = useState<CurrentAction | null>(null);
+  const run = useCallback(
+    async (id: Extract<ActionId, "open" | "show_in_folder">) => {
+      if (!path) {
+        setCurrentAction({ id, status: "error", message: "文件路径为空，无法操作" });
+        return;
+      }
+      setCurrentAction({ id, status: "pending", message: "正在处理..." });
+      try {
+        if (id === "open") await invokeArtifactOpen(path, toolName);
+        else await invokeShowInFolder(path, toolName);
+        setCurrentAction({ id, status: "success", message: successMessage(id) });
+      } catch (e) {
+        setCurrentAction({
+          id,
+          status: "error",
+          message: `操作失败：${actionErrorMessage(e)}`,
+        });
+      }
+    },
+    [path, toolName],
+  );
+  const pending = currentAction?.status === "pending";
   return (
     <div style={cardStyle} data-testid="artifact-card-image">
       <div style={titleStyle}>
@@ -311,21 +413,45 @@ function ImageArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; too
       <div style={actionRowStyle}>
         <button
           type="button"
-          style={buttonStyle}
+          style={{ ...buttonStyle, cursor: pending ? "wait" : "pointer" }}
+          disabled={pending}
           data-testid="artifact-action-open"
-          onClick={() => path && void invokeArtifactOpen(path, toolName)}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            void run("open");
+          }}
         >
           打开
         </button>
         <button
           type="button"
-          style={buttonStyle}
+          style={{ ...buttonStyle, cursor: pending ? "wait" : "pointer" }}
+          disabled={pending}
           data-testid="artifact-action-show_in_folder"
-          onClick={() => path && void invokeShowInFolder(path, toolName)}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            void run("show_in_folder");
+          }}
         >
           在文件夹中显示
         </button>
       </div>
+      {currentAction && (
+        <div
+          data-testid="artifact-action-status"
+          role={currentAction.status === "error" ? "alert" : "status"}
+          title={currentAction.message}
+          style={{
+            ...actionMessageStyle,
+            color: actionMessageColor(currentAction.status),
+            wordBreak: "break-all",
+          }}
+        >
+          {currentAction.message}
+        </div>
+      )}
     </div>
   );
 }

@@ -25,6 +25,8 @@ Test matrix:
 from __future__ import annotations
 
 import asyncio
+import inspect
+import json
 import re
 import sys
 from contextlib import asynccontextmanager
@@ -351,6 +353,55 @@ async def test_crash_reconnect_exponential_backoff(
 
 
 @pytest.mark.asyncio
+async def test_catalog_stale_callback_from_worker_thread_reconnects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _build_fake_env(
+        monkeypatch,
+        default_script={"tools": [_FakeTool("ping")]},
+    )
+
+    async def _fast_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(mcp_manager_mod.asyncio, "sleep", _fast_sleep)
+    registry = ToolRegistry()
+    mgr = MCPManager(
+        {
+            "enabled": True,
+            "servers": [
+                {
+                    "name": "srv",
+                    "enabled": True,
+                    "transport": "stdio",
+                    "command": "srv",
+                    "args": [],
+                }
+            ],
+        },
+        registry,
+    )
+    await mgr.start()
+    registry.set_mcp_catalog_stale_callback(mgr.handle_catalog_stale)
+    try:
+        assert "mcp_srv_ping" in registry.list_tools()
+        await asyncio.to_thread(
+            registry.invalidate_mcp_catalog_sources, ("mcp:srv",)
+        )
+        for _ in range(20):
+            runtime = mgr._servers["srv"]  # noqa: SLF001
+            if runtime.reconnect_task is not None:
+                break
+            await asyncio.sleep(0)
+        assert runtime.reconnect_task is not None
+        await runtime.reconnect_task
+        assert mgr.server_state()["srv"] == "running"
+        assert "mcp_srv_ping" in registry.list_tools()
+    finally:
+        await mgr.stop()
+
+
+@pytest.mark.asyncio
 async def test_max_retries_marks_server_failed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -636,5 +687,41 @@ async def test_mcp_call_success_returns_dict(
         result = await mgr.mcp_call("srv", "echo", {"msg": "hi"})
         assert result.get("isError") is False
         assert result["content"][0]["text"] == "hello"
+    finally:
+        await mgr.stop()
+
+
+@pytest.mark.asyncio
+async def test_registered_mcp_handler_stays_on_async_owner_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _build_fake_env(
+        monkeypatch,
+        default_script={"tools": [_FakeTool("echo")], "call_text": "hello"},
+    )
+    registry = ToolRegistry()
+    mgr = MCPManager(
+        {
+            "enabled": True,
+            "servers": [
+                {
+                    "name": "srv",
+                    "enabled": True,
+                    "transport": "stdio",
+                    "command": "srv",
+                    "args": [],
+                }
+            ],
+        },
+        registry,
+    )
+    await mgr.start()
+    try:
+        spec = registry.get("mcp_srv_echo")
+        assert spec is not None
+        assert inspect.iscoroutinefunction(spec.handler)
+        result = await registry.execute_tool("mcp_srv_echo", {"x": "hi"}, "s")
+        assert result["ok"] is True
+        assert json.loads(result["result"])["content"][0]["text"] == "hello"
     finally:
         await mgr.stop()

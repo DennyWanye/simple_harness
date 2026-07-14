@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import re
+import uuid
 from dataclasses import dataclass
 from threading import RLock
-from typing import Optional
+from typing import Callable, Optional
 
 
 @dataclass(frozen=True)
@@ -20,16 +21,17 @@ class TaskScopeDecision:
 class TaskSessionManager:
     """In-process task-session scope resolver.
 
-    Explicit ``/new`` creates a deterministic per-base sid using a
-    monotonic counter. ``/continue`` stays in the base sid and marks a
-    future L2 page-in override without implementing page-in here.
+    Explicit ``/new`` creates an opaque UUID session id. ``/continue``
+    stays in the base sid and marks a future L2 page-in override without
+    implementing page-in here.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, id_factory: Callable[[], str] | None = None) -> None:
         self._lock = RLock()
-        self._counters: dict[str, int] = {}
         self._active: dict[str, str] = {}
         self._peer_groups: dict[str, str] = {}
+        self._parents: dict[str, str] = {}
+        self._id_factory = id_factory or (lambda: str(uuid.uuid4()))
 
     def resolve(
         self,
@@ -39,6 +41,7 @@ class TaskSessionManager:
         force_l2: bool = False,
     ) -> TaskScopeDecision:
         base = base_sid or "default"
+        root_base = self._root_base_sid(base)
         raw_text = text or ""
         stripped_new = self._strip_command(raw_text, "/new")
         stripped_continue = self._strip_command(raw_text, "/continue")
@@ -48,10 +51,9 @@ class TaskSessionManager:
         if explicit_new or has_new:
             body = stripped_new if has_new else raw_text
             with self._lock:
-                seq = self._counters.get(base, 0) + 1
-                self._counters[base] = seq
-                effective_sid = f"task-{self._sid_key(base)}-{seq}"
-                self._active[base] = effective_sid
+                effective_sid = self._new_session_id()
+                self._parents[effective_sid] = root_base
+                self._active[root_base] = effective_sid
             return TaskScopeDecision(
                 effective_sid=effective_sid,
                 created=True,
@@ -77,7 +79,7 @@ class TaskSessionManager:
         )
 
     def active_sid(self, base_sid: str) -> str:
-        base = base_sid or "default"
+        base = self._root_base_sid(base_sid or "default")
         with self._lock:
             return self._active.get(base, base)
 
@@ -122,11 +124,34 @@ class TaskSessionManager:
     def _initial_peer_group(transport_sid: str) -> str:
         return "default" if transport_sid in {"default", "message-panel-main"} else transport_sid
 
-    @staticmethod
-    def _sid_key(base_sid: str) -> str:
-        key = re.sub(r"[^A-Za-z0-9_-]+", "-", base_sid).strip("-")
-        return key or "default"
+    def _new_session_id(self) -> str:
+        sid = str(self._id_factory()).strip()
+        return sid or str(uuid.uuid4())
+
+    def _root_base_sid(self, base_sid: str) -> str:
+        """Collapse generated task ids back to their stable parent sid.
+
+        The frontend can legitimately send the current effective sid on a
+        later "new topic" action. Without normalization, creating a new task
+        from ``task-default-1`` produced ``task-task-default-1-1`` and split
+        conversational history across nested task ids.
+        """
+        sid = base_sid or "default"
+        parent = self._parents.get(sid)
+        if parent:
+            return parent
+        if not sid.startswith("task-"):
+            return sid
+        match = re.fullmatch(r"task-(?P<base>.+)-(?P<seq>\d+)", sid)
+        if not match:
+            return sid
+        base = match.group("base")
+        while base.startswith("task-"):
+            inner = re.fullmatch(r"task-(?P<base>.+)-(?P<seq>\d+)", base)
+            if inner is None:
+                break
+            base = inner.group("base")
+        return base or "default"
 
 
 task_session_manager = TaskSessionManager()
-

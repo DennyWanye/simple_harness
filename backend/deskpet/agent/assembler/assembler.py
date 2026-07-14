@@ -48,6 +48,7 @@ from deskpet.agent.assembler.bundle import (
     ContextBundle,
     Slice,
     TASK_TYPES,
+    legacy_slice_to_fragment,
 )
 from deskpet.agent.assembler.budget import BudgetAllocator, BudgetResult
 from deskpet.agent.assembler.classifier import ClassifierResult, TaskClassifier
@@ -132,6 +133,7 @@ class ContextAssembler:
         mcp_manager: Any = None,
         config: Optional[dict[str, Any]] = None,
         session_id: Optional[str] = None,
+        current_message_id: Optional[int] = None,
         task_type_override: Optional[str] = None,
         memory_policy_override: Optional[dict[str, Any]] = None,
     ) -> ContextBundle:
@@ -261,6 +263,7 @@ class ContextAssembler:
             user_message=user_message,
             history=list(history or []),
             session_id=session_id,
+            current_message_id=current_message_id,
             memory_manager=memory_manager,
             tool_registry=tool_registry,
             skill_registry=skill_registry,
@@ -340,8 +343,24 @@ class ContextAssembler:
         seen_tool_names: set[str] = set()
         merged_schemas: list[dict[str, Any]] = []
         cost_hint: dict[str, int] = {}
+        fragments = []
+        tool_exposure_intent = None
 
         for sl in budget_result.slices:
+            if sl.fragments and sl.text_content:
+                raise ValueError(
+                    f"component {sl.component_name!r} produced both fragments and legacy text"
+                )
+            if sl.fragments:
+                fragments.extend(sl.fragments)
+            else:
+                fragment = legacy_slice_to_fragment(sl)
+                if fragment is not None:
+                    fragments.append(fragment)
+            if sl.tool_exposure_intent is not None:
+                if tool_exposure_intent is not None:
+                    raise ValueError("multiple tool exposure intent producers")
+                tool_exposure_intent = sl.tool_exposure_intent
             cost_hint[sl.component_name] = max(0, sl.tokens)
             if sl.tool_schemas:
                 for schema in sl.tool_schemas:
@@ -369,6 +388,8 @@ class ContextAssembler:
         bundle.skill_prelude = "\n\n".join(skill_chunks).strip()
         bundle.tool_schemas = merged_schemas
         bundle.cost_hint = cost_hint
+        bundle.fragments = fragments
+        bundle.tool_exposure_intent = tool_exposure_intent
 
         # P4-S21 #16 fix: pull L2 raw history out of MemoryComponent's slice
         # meta and promote to bundle.history (real OpenAI messages[]).

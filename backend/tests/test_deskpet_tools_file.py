@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 
 from deskpet.tools.registry import registry
+from deskpet.tools import file_tools
 
 
 @pytest.fixture
@@ -54,6 +55,37 @@ def test_write_creates_parent_dirs(sandbox: Path):
     )
     assert res["bytes_written"] == 1
     assert (sandbox / "nested" / "dir" / "b.txt").is_file()
+
+
+@pytest.mark.asyncio
+async def test_code_session_project_root_controls_write_and_staged_target(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    args = {
+        "path": "plans/result.txt",
+        "content": "ok",
+        "_project_root": str(project),
+    }
+
+    result = json.loads(await file_tools._handle_file_write(args, "code-session"))
+    registry.set_session_context("code-session", {"_project_root": str(project)})
+    try:
+        prepared = registry.prepare_call(
+            "file_write",
+            {"path": "plans/result.txt", "content": "ok"},
+            "code-session",
+            "stable-code-write",
+        )
+    finally:
+        registry.set_session_context("code-session", None)
+
+    assert result["path"] == "plans/result.txt"
+    assert (project / "plans" / "result.txt").read_text(encoding="utf-8") == "ok"
+    assert prepared.prepared_targets[0].final_path == str(
+        (project / "plans" / "result.txt").resolve()
+    )
 
 
 def test_append_mode_accumulates(sandbox: Path):

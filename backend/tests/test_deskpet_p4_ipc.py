@@ -63,6 +63,11 @@ class FakeAssembler:
         return list(self._decisions)
 
 
+class FakeAttemptStore:
+    def public_for_session(self, session_id: str) -> list[dict[str, Any]]:
+        return [{"session_id": session_id, "attempt_id": "a1", "state": "succeeded"}]
+
+
 class FakeMemoryManager:
     """Emulates MemoryManager.recall() → object with .l3 attribute."""
 
@@ -203,6 +208,17 @@ class TestDecisionsList:
         m = ws.sent[0]
         assert m["payload"]["decisions"] == []
         assert m["payload"]["reason"] == "context_assembler_not_registered"
+
+    @pytest.mark.asyncio
+    async def test_context_os_attempts_are_scoped_to_requested_session(self) -> None:
+        ws = FakeWebSocket()
+        sc = FakeServiceContext(context_attempt_store=FakeAttemptStore())
+        await p4_ipc.handle(ws, "session-a", "decisions_list", {"limit": 5}, sc)
+        payload = ws.sent[0]["payload"]
+        assert payload["attempts"] == [
+            {"session_id": "session-a", "attempt_id": "a1", "state": "succeeded"}
+        ]
+        assert "reason" not in payload
 
 
 # ---------------------------------------------------------------------------
@@ -675,6 +691,8 @@ def test_message_type_membership() -> None:
     # Phase 1.1.6（context-1m-rearch）：模型上下文配置卡片新增 2 个类型。
     assert "model_context_get" in p4_ipc.P4_IPC_MESSAGE_TYPES
     assert "model_context_set" in p4_ipc.P4_IPC_MESSAGE_TYPES
+    assert "context_compaction_get" in p4_ipc.P4_IPC_MESSAGE_TYPES
+    assert "context_compaction_set" in p4_ipc.P4_IPC_MESSAGE_TYPES
     # Stage 2 WI-S2.1a：MemoryPanel facts view + memory_forget UI 桥接。
     assert "memory_facts_list" in p4_ipc.P4_IPC_MESSAGE_TYPES
     assert "memory_forget" in p4_ipc.P4_IPC_MESSAGE_TYPES
@@ -685,7 +703,7 @@ def test_message_type_membership() -> None:
     assert "memory_unpin" in p4_ipc.P4_IPC_MESSAGE_TYPES
     # WI-TG-2：ApprovalCenterPanel 只读「列 pending 权限请求」。
     assert "permissions_pending_list" in p4_ipc.P4_IPC_MESSAGE_TYPES
-    assert len(p4_ipc.P4_IPC_MESSAGE_TYPES) == 15
+    assert len(p4_ipc.P4_IPC_MESSAGE_TYPES) == 17
 
 
 # ---------------------------------------------------------------------------

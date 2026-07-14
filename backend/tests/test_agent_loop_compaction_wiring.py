@@ -13,12 +13,15 @@ Verifies that:
 from __future__ import annotations
 
 import asyncio
+import copy
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from agent.agent_loop import AgentLoop
+from agent.context_messages import CONTEXT_MESSAGE_META_KEY
 
 
 # ---------------------------------------------------------------------------
@@ -98,8 +101,23 @@ class _FakeContextManager:
         self.config = _Cfg()
         self.config.compact_at_tokens = compact_at_tokens
 
-    def check_budget(self, messages, *, model: str):
-        return self.result
+    def check_budget(
+        self, messages, *, model: str, real_prompt_tokens_floor: int = 0
+    ):
+        from agent.token_budget import BudgetCheckResult
+
+        estimated = max(
+            self.result.estimated_tokens, int(real_prompt_tokens_floor or 0)
+        )
+        return BudgetCheckResult(
+            verdict=self.result.verdict,
+            estimated_tokens=estimated,
+            context_window=self.result.context_window,
+            ratio=estimated / self.result.context_window,
+        )
+
+    def record_tool_result(self, *, tool_name: str, result: str):
+        return result, None
 
 
 def _make_msgs(n_non_system: int = 4, with_system: bool = True):
@@ -144,6 +162,54 @@ def test_agent_loop_compressor_none_by_default():
         tool_registry=_FakeToolRegistry(),
     )
     assert loop.compressor is None
+
+
+@pytest.mark.asyncio
+async def test_context_os_compaction_round_trip_keeps_message_sidecars():
+    """Prepared-context metadata survives AgentLoop -> compressor -> LLM."""
+
+    class _RoundTripCompressor:
+        def __init__(self):
+            self.received = []
+
+        def should_compress(self, prompt_tokens: int) -> bool:
+            return True
+
+        async def compress(self, messages, **kwargs):
+            from deskpet.agent.context_compressor import CompressionResult
+
+            self.received = copy.deepcopy(messages)
+            return CompressionResult(messages=list(messages), compressed=True)
+
+    class _RecordingLLM(_FakeLLM):
+        def __init__(self):
+            super().__init__()
+            self.messages = []
+
+        async def chat_with_fallback(self, messages, **kwargs):
+            self.messages = copy.deepcopy(messages)
+            return await super().chat_with_fallback(messages, **kwargs)
+
+    compressor = _RoundTripCompressor()
+    llm = _RecordingLLM()
+    loop = AgentLoop(
+        llm_registry=llm,
+        tool_registry=_FakeToolRegistry(),
+        compressor=compressor,
+    )
+
+    async for _ in loop.run(
+        _make_msgs(),
+        task_id="sidecar-round-trip",
+        prepared_context=SimpleNamespace(tool_set=None),
+    ):
+        pass
+
+    assert compressor.received
+    assert all(CONTEXT_MESSAGE_META_KEY in m for m in compressor.received)
+    assert [m[CONTEXT_MESSAGE_META_KEY] for m in llm.messages] == [
+        m[CONTEXT_MESSAGE_META_KEY] for m in compressor.received
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -512,6 +578,10 @@ async def test_real_usage_feedback_overrides_low_estimate():
         llm_registry=_HighUsageTwoTurnLLM(),
         tool_registry=_FakeToolRegistry(),
         compressor=comp,
+        context_manager=_FakeContextManager(
+            estimated_tokens=10,
+            compact_at_tokens=100_000,
+        ),
     )
     msgs = [{"role": "user", "content": "短消息"}]
     async for _ev in loop.run(msgs, session_id="s-realfb", task_id="t-realfb"):

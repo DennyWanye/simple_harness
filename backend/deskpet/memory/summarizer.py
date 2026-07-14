@@ -497,9 +497,12 @@ async def _commit_summary_txn(
 def make_llm_call(provider, *, max_tokens: int = DEFAULT_SUMMARY_MAX_TOKENS) -> LLMCall:
     """Adapt OpenAICompatibleProvider into the LLMCall protocol."""
     async def _call(messages: list[dict[str, str]]) -> dict[str, Any]:
-        return await provider.chat_with_tools(
-            messages=messages,
-            max_tokens=max_tokens,
-            temperature=0.3,  # 总结任务要稳定，不要发散
-        )
+        from agent.context_messages import provider_purpose_scope
+
+        with provider_purpose_scope("memory_summarizer"):
+            return await provider.chat_with_tools(
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=0.3,  # 总结任务要稳定，不要发散
+            )
     return _call

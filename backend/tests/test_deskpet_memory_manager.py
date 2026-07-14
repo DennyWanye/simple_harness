@@ -17,6 +17,7 @@ that fallback path.
 """
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Optional
 
@@ -70,6 +71,12 @@ class FakeRetriever:
         return self._hits
 
 
+class SlowRetriever:
+    async def recall(self, query: str, **kwargs) -> list[dict]:
+        await asyncio.sleep(1.0)
+        return [{"text": "too late"}]
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -97,6 +104,35 @@ def manager(file_memory: FileMemory, session_db: FakeSessionDB) -> MemoryManager
         session_db=session_db,
         retriever=None,  # S4 skeleton — L3 wired later
     )
+
+
+@pytest.mark.asyncio
+async def test_l3_timeout_preserves_completed_l2(
+    file_memory: FileMemory,
+    session_db: FakeSessionDB,
+):
+    session_db.messages.append(
+        {"session_id": "s1", "role": "user", "content": "recent context"}
+    )
+    mgr = MemoryManager(
+        file_memory=file_memory,
+        session_db=session_db,
+        retriever=SlowRetriever(),
+    )
+
+    result = await mgr.recall(
+        "follow up",
+        policy={
+            "session_id": "s1",
+            "l1": "off",
+            "l2_top_k": 5,
+            "l3_top_k": 5,
+            "l3_timeout_s": 0.05,
+        },
+    )
+
+    assert [row["content"] for row in result["l2"]] == ["recent context"]
+    assert result["l3"] == []
 
 
 # ---------------------------------------------------------------------------

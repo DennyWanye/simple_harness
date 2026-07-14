@@ -24,6 +24,7 @@ from agent.agent_loop import (
     FinalEvent,
     ToolCallEvent,
     ToolResultEvent,
+    _invalidate_stale_mcp_catalog,
 )
 from llm.errors import LLMProviderError
 
@@ -208,6 +209,59 @@ async def test_transient_error_falls_to_next_provider() -> None:
     # No ErrorEvent in the final output.
     errors = [e for e in events if isinstance(e, ErrorEvent)]
     assert errors == []
+
+
+@pytest.mark.asyncio
+async def test_tool_catalog_stale_does_not_fall_to_next_provider() -> None:
+    """A stale immutable tool payload must never be resent to a fallback."""
+    a = _FakeProvider(
+        "A",
+        raise_exc=LLMProviderError(
+            "LLM HTTP 409: tool_catalog_stale",
+            status_code=409,
+            error_class="tool_catalog_stale",
+        ),
+    )
+    b = _FakeProvider("B", responses=[_ok_response("unsafe", "B")])
+
+    loop = AgentLoop(llm_registry=None, tool_registry=_NoopTools())
+    events = await _collect(
+        loop.run(
+            [{"role": "user", "content": "go"}],
+            session_id="stale-chain",
+            provider_chain=[a, b],
+        )
+    )
+
+    assert a.call_count == 1
+    assert b.call_count == 0
+    errors = [e for e in events if isinstance(e, ErrorEvent)]
+    assert len(errors) == 1
+    assert errors[0].reason == "tool_catalog_stale"
+    assert errors[0].error_class == "tool_catalog_stale"
+
+
+def test_stale_payload_invalidates_only_its_mcp_sources() -> None:
+    class Registry:
+        invalidated: set[str] | None = None
+
+        def invalidate_mcp_catalog_sources(self, sources) -> None:
+            self.invalidated = set(sources)
+
+    def capability(source: str):
+        return type("Cap", (), {"ref": type("Ref", (), {"source": source})()})()
+
+    registry = Registry()
+    tool_set = type(
+        "ToolSet",
+        (),
+        {
+            "direct": (capability("builtin"), capability("mcp:alpha")),
+            "activated": (capability("mcp:beta"), capability("mcp:alpha")),
+        },
+    )()
+    _invalidate_stale_mcp_catalog(registry, tool_set)
+    assert registry.invalidated == {"mcp:alpha", "mcp:beta"}
 
 
 @pytest.mark.asyncio

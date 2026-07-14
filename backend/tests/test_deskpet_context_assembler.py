@@ -39,6 +39,11 @@ from deskpet.agent.assembler import (
 )
 from deskpet.agent.assembler.bundle import MemoryPolicy, TASK_TYPES
 from deskpet.agent.assembler.classifier import _rule_classify
+from deskpet.agent.assembler.components.tool import (
+    has_image_completion_claim,
+    is_explicit_image_generation_request,
+    is_short_contextual_followup,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -328,6 +333,14 @@ def test_policies_packaged_default_has_all_task_types():
         assert tt in policies, f"{tt} missing from default policies"
     # chat must have memory in must
     assert "memory" in policies["chat"].must
+
+
+def test_web_search_policy_exposes_deepresearch_for_research_requests():
+    policies = load_policies()
+    tools = policies["web_search"].tools
+    assert "deepresearch" in tools
+    assert "web_search" in tools
+    assert tools.index("deepresearch") < tools.index("web_search")
 
 
 def test_user_override_adds_new_policy(tmp_path: Path):
@@ -681,6 +694,134 @@ async def test_tool_component_respects_wildcard_and_named_lists():
     ctx.policy = AssemblyPolicy(task_type="chat", tools=[])
     s = await tool.provide(ctx)
     assert s.tool_schemas == []
+
+
+@pytest.mark.asyncio
+async def test_deep_research_trigger_exposes_only_durable_entrypoint():
+    registry = FakeToolRegistry(
+        schemas=[
+            {"type": "function", "function": {"name": "deepresearch"}},
+            {"type": "function", "function": {"name": "agent_reach_read"}},
+            {"type": "function", "function": {"name": "web_fetch"}},
+        ]
+    )
+    ctx = ComponentContext(
+        task_type="task",
+        policy=AssemblyPolicy(task_type="task", tools=["*"]),
+        user_message="帮我深度调研 Agent-Reach 并给出调研报告",
+        tool_registry=registry,
+    )
+
+    result = await ToolComponent().provide(ctx)
+
+    assert [schema["function"]["name"] for schema in result.tool_schemas] == [
+        "deepresearch"
+    ]
+    assert result.meta["forced_deep_research"] is True
+
+
+@pytest.mark.asyncio
+async def test_short_clarification_filters_generate_image_but_explicit_request_keeps_it():
+    registry = FakeToolRegistry(
+        schemas=[
+            {"type": "function", "function": {"name": "generate_image"}},
+            {"type": "function", "function": {"name": "web_search"}},
+        ]
+    )
+    policy = AssemblyPolicy(task_type="chat", tools=["*"])
+
+    clarification = await ToolComponent().provide(ComponentContext(
+        task_type="chat",
+        policy=policy,
+        user_message="是一个脉冲步枪",
+        tool_registry=registry,
+    ))
+    explicit = await ToolComponent().provide(ComponentContext(
+        task_type="chat",
+        policy=policy,
+        user_message="请生成一张脉冲步枪图片",
+        tool_registry=registry,
+    ))
+
+    assert [s["function"]["name"] for s in clarification.tool_schemas] == [
+        "web_search"
+    ]
+    assert clarification.meta["image_tool_filtered"] is True
+    assert [s["function"]["name"] for s in explicit.tool_schemas] == [
+        "generate_image",
+        "web_search",
+    ]
+    assert explicit.meta["image_tool_filtered"] is False
+
+
+@pytest.mark.asyncio
+async def test_web_search_tool_component_grounds_actual_availability():
+    registry = FakeToolRegistry(
+        schemas=[
+            {"type": "function", "function": {"name": "web_search"}},
+            {"type": "function", "function": {"name": "web_fetch"}},
+        ]
+    )
+    result = await ToolComponent().provide(ComponentContext(
+        task_type="web_search",
+        policy=AssemblyPolicy(
+            task_type="web_search", tools=["web_search", "web_fetch"]
+        ),
+        user_message="你能自己去查一下吗？中文网站里面应该都有",
+        tool_registry=registry,
+    ))
+
+    assert "可以调用 web_search 联网搜索" in result.text_content
+    assert "不得声称自己没有联网" in result.text_content
+    assert "用上文已明确的对象补全搜索词" in result.text_content
+
+
+def test_image_intent_and_completion_claim_boundaries():
+    assert is_short_contextual_followup("是一个脉冲步枪")
+    assert not is_explicit_image_generation_request("是一个脉冲步枪")
+    assert is_explicit_image_generation_request("帮我画一张科幻武器图片")
+    assert is_explicit_image_generation_request("请生成一个头像")
+    assert is_explicit_image_generation_request("画只猫")
+    assert is_explicit_image_generation_request("请帮我画只猫")
+    assert not is_explicit_image_generation_request("这幅画是什么")
+    assert not is_explicit_image_generation_request("画质怎么样")
+    assert not is_short_contextual_followup("请生成一个头像")
+    assert has_image_completion_claim("给你生成了一把科幻风脉冲步枪")
+    assert has_image_completion_claim("给你生成了一辆科幻汽车")
+
+
+@pytest.mark.asyncio
+async def test_memory_component_dedupes_only_exact_current_message_id():
+    mm = FakeMemoryManager(recall_result={
+        "l1": None,
+        "l2": [
+            {"id": 1, "role": "user", "content": "再试一次"},
+            {"id": 2, "role": "assistant", "content": "好的"},
+            {"id": 3, "role": "user", "content": "再试一次"},
+        ],
+        "l3": [],
+    })
+    result = await MemoryComponent().provide(ComponentContext(
+        task_type="chat",
+        policy=AssemblyPolicy(
+            task_type="chat",
+            memory=MemoryPolicy(relabel_l2=False),
+        ),
+        user_message="再试一次",
+        session_id="s1",
+        current_message_id=3,
+        memory_manager=mm,
+    ))
+
+    assert [m["content"] for m in result.meta["l2_history"]] == [
+        "再试一次",
+        "好的",
+    ]
+    assert result.meta["current_row_deduped"] is True
+
+
+def test_deep_research_rule_is_deterministic():
+    assert _rule_classify("帮我深度调研 Agent-Reach")[0] == "web_search"
 
 
 # ---------------------------------------------------------------------------

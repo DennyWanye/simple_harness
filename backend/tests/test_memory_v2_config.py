@@ -17,14 +17,17 @@ def _write(tmp_path, body: str):
     return str(p)
 
 
-def test_t1_1_no_v2_section_all_flags_false(tmp_path):
+def test_t1_1_no_v2_section_defaults_match_testing_phase(tmp_path):
+    # 2026-06-27 测试阶段点亮：无 [memory.v2] 段时 A 表语义 flag 落 dataclass
+    # 默认 True；仅 workspace_memory（B 表 code 工作记忆）仍 False。
     cfg = load_config(_write(tmp_path, "[memory]\nembedding_model = \"bge-m3\"\n"))
     v2 = cfg.memory.v2
     assert isinstance(v2, MemoryV2Config)
     for flag in ("feedback_loop", "facts_extract", "rerank",
                  "enhanced_retriever", "chunking", "query_rewrite",
-                 "workspace_memory", "reflection"):
-        assert getattr(v2, flag) is False, flag
+                 "reflection"):
+        assert getattr(v2, flag) is True, flag
+    assert v2.workspace_memory is False  # B 表：code 专属，主线不开
     # nested facts defaults
     assert isinstance(v2.facts, MemoryV2FactsConfig)
     assert v2.facts.min_user_chars == 8
@@ -36,7 +39,10 @@ def test_t1_2_explicit_flag_true(tmp_path):
         "[memory]\n[memory.v2]\nfacts_extract = true\nrerank = true\n"))
     assert cfg.memory.v2.facts_extract is True
     assert cfg.memory.v2.rerank is True
-    assert cfg.memory.v2.enhanced_retriever is False  # untouched → default
+    # untouched flag → dataclass 默认（测试阶段已点亮为 True）；
+    # workspace_memory 仍 False 可验"未设即取默认"。
+    assert cfg.memory.v2.enhanced_retriever is True
+    assert cfg.memory.v2.workspace_memory is False
 
 
 def test_t1_3_nested_facts_section(tmp_path):
@@ -44,8 +50,8 @@ def test_t1_3_nested_facts_section(tmp_path):
         "[memory]\n[memory.v2.facts]\nmin_user_chars = 12\nfacts_weight = 0.35\n"))
     assert cfg.memory.v2.facts.min_user_chars == 12
     assert cfg.memory.v2.facts.facts_weight == 0.35
-    # flags still default
-    assert cfg.memory.v2.facts_extract is False
+    # flag 未设 → dataclass 默认（测试阶段点亮为 True）
+    assert cfg.memory.v2.facts_extract is True
 
 
 def test_t1_4_unknown_key_in_v2_does_not_crash(tmp_path):

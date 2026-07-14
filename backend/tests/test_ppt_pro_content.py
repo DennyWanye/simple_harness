@@ -136,6 +136,15 @@ def test_ppt_pro_content_outline_to_markdown_multiple_pages():
     assert "  - 第二条" in md
 
 
+def test_ppt_pro_content_default_research_timeout_preserves_deep_research(monkeypatch):
+    monkeypatch.setattr(ppt_tools, "_ppt_config_section", lambda: {})
+
+    cfg = ppt_tools._ppt_pro_cfg()
+
+    assert cfg.research_timeout_s >= 300.0
+    assert cfg.allow_no_research_outline is False
+
+
 @pytest.mark.asyncio
 async def test_ppt_pro_content_research_timeout_returns_none(monkeypatch):
     from deskpet.tools import research_tools

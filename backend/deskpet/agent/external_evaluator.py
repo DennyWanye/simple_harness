@@ -359,7 +359,20 @@ class ExternalEvaluator:
             except (json.JSONDecodeError, ValueError):
                 pass
 
-        logger.warning("external_evaluator: failed to parse LLM output → safe-fail pass")
+        if self._conservative_on_error:
+            logger.warning(
+                "external_evaluator: failed to parse LLM output -> conservative revise"
+            )
+            self._record_metric(
+                "evaluator_conservative_block", {"reason": "malformed_json"}
+            )
+            return {
+                "quality_score": 0,
+                "issues": ["evaluator returned malformed output - manual confirmation required"],
+                "verdict": "revise",
+                "reason": "parse_error (conservative block)",
+            }
+        logger.warning("external_evaluator: failed to parse LLM output -> safe-fail pass")
         return {
             "quality_score": 10,
             "issues": [],

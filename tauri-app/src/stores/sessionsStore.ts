@@ -17,6 +17,7 @@
 import { create } from "zustand";
 
 import type { PPTOutlineHistoryItem } from "../types/skillPlatform";
+import type { ContextAttemptSnapshot } from "../types/messages";
 
 export type MessageRole =
   | "user"
@@ -28,8 +29,25 @@ export type MessageRole =
   | "plan"              // P4-S25 A2: plan card preceding execution
   | "skill_candidate"   // FP-5 WI-4.3c: 技能自创确认卡（后端 propose → 用户确认）
   | "ppt_outline"       // PPT Pro WI-4: 大纲确认卡（后端 propose → 用户确认/修改/复用）
+  | "workflow_progress"
   | "slash_result"      // FEAT-A2: /slash 命令结果（help/goal/prefs/skill/error）
   | "error";
+
+export type WorkflowProgressStatus =
+  | "running"
+  | "waiting"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface WorkflowEventEnvelope {
+  event_id?: string;
+  run_id?: string;
+  seq?: number;
+  event_type?: string;
+  payload?: Record<string, unknown>;
+  created_at?: number;
+}
 
 export interface PlanStep {
   title: string;
@@ -71,6 +89,20 @@ export interface Message {
   no_research?: boolean;
   history?: PPTOutlineHistoryItem[];
   ppt_outline_awaiting?: boolean;
+  ppt_outline_decision_status?: string;
+  // AC-23: one in-stream projection per durable workflow run.
+  workflow_run_id?: string;
+  workflow_name?: string;
+  workflow_status?: WorkflowProgressStatus;
+  workflow_stage?: string;
+  workflow_ordinal?: number;
+  workflow_display_ordinal?: number;
+  workflow_total?: number;
+  workflow_seq?: number;
+  workflow_terminal?: boolean;
+  workflow_event_id?: string;
+  workflow_error?: string;
+  workflow_recovery_action?: string;
   // Bookkeeping
   ts: number;
 }
@@ -125,6 +157,8 @@ export interface ContextUsageSnapshot {
    *  turn has happened (prompt_tokens=0). UI may render this slightly
    *  dimmer than a real measured snapshot. */
   stub?: boolean;
+  /** Context OS ON only: body-free facts for actual provider attempts. */
+  attempts?: ContextAttemptSnapshot[];
 }
 
 export interface SessionState {
@@ -205,6 +239,12 @@ interface SessionsStore {
    * rehydration when the panel reloads and pulls history from
    * SessionDB via `session_messages_load`. */
   set_messages(sid: string, messages: Message[]): void;
+  reduce_workflow_event(sid: string, event: WorkflowEventEnvelope): boolean;
+  merge_history_messages(
+    sid: string,
+    messages: Message[],
+    workflowEvents: WorkflowEventEnvelope[],
+  ): void;
   /** superpowers 决策2: 用户点了 plan 卡片的 [执行]/[取消] 后，清掉该
    *  plan 消息的 awaiting_confirm（按钮消失）。msgId 可空 → 清该会话最近
    *  一条仍 awaiting 的 plan（超时取消路径用）。 */
@@ -215,7 +255,7 @@ interface SessionsStore {
   resolve_skill_candidate(sid: string, candidateId: number, accepted: boolean): void;
   /** PPT Pro WI-4: 清掉指定 outline_id 的待确认卡。用于本地 decision
    *  以及后端 `ppt_outline_resolved` 广播清理 stale 副本。 */
-  resolve_ppt_outline(sid: string, outlineId: string): void;
+  resolve_ppt_outline(sid: string, outlineId: string, decisionStatus?: string): void;
   upsert_todos(sid: string, todos: Todo[]): void;
   remove(sid: string): void;
   set_inflight(delta: number): void;
@@ -246,6 +286,165 @@ function dedupe_ppt_outline_messages(messages: Message[]): Message[] {
     if (m.role !== "ppt_outline" || !m.outline_id) return true;
     return lastByOutlineId.get(m.outline_id) === idx;
   });
+}
+
+const WORKFLOW_CARD_EVENTS = new Set([
+  "workflow.accepted",
+  "workflow.progress",
+  "workflow.decision",
+  "workflow.final",
+]);
+
+function workflowEventTime(event: WorkflowEventEnvelope): number {
+  const created = Number(event.created_at);
+  return Number.isFinite(created) && created > 0 ? created * 1000 : Date.now();
+}
+
+function workflowErrorText(value: unknown): string | undefined {
+  if (!value) return undefined;
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    const item = value as Record<string, unknown>;
+    for (const key of ["message", "message_ref", "reason", "code"]) {
+      if (typeof item[key] === "string" && item[key]) return item[key] as string;
+    }
+  }
+  return undefined;
+}
+
+export function applyWorkflowEvent(
+  messages: Message[],
+  event: WorkflowEventEnvelope,
+): { messages: Message[]; handled: boolean } {
+  const eventType = String(event.event_type || "");
+  if (!WORKFLOW_CARD_EVENTS.has(eventType)) {
+    return { messages, handled: false };
+  }
+  if (eventType === "workflow.decision") {
+    const payload = event.payload || {};
+    const prompt = payload.prompt && typeof payload.prompt === "object"
+      ? payload.prompt as Record<string, unknown>
+      : {};
+    if (String(payload.decision_kind || prompt.kind || "") !== "ppt_outline") {
+      return { messages, handled: true };
+    }
+    const outlineId = String(prompt.outline_id || prompt.decision_id || "").trim();
+    if (!outlineId) return { messages, handled: true };
+    const decisionStatus = String(payload.status || "open");
+    const next: Message = {
+      id: `workflow-decision:${String(payload.decision_id || outlineId)}`,
+      role: "ppt_outline",
+      ts: workflowEventTime(event),
+      outline_id: outlineId,
+      topic: String(prompt.topic || ""),
+      outline_md: String(prompt.outline_markdown || ""),
+      sources_count: Number(prompt.sources_count || 0),
+      no_research: Boolean(prompt.no_research),
+      history: [],
+      ppt_outline_awaiting: decisionStatus === "open",
+      ppt_outline_decision_status: decisionStatus === "open" ? undefined : decisionStatus,
+    };
+    return {
+      messages: dedupe_ppt_outline_messages([
+        ...messages.filter((message) => message.outline_id !== outlineId),
+        next,
+      ]),
+      handled: true,
+    };
+  }
+  const runId = String(event.run_id || "").trim();
+  const seq = Number(event.seq);
+  if (!runId || !Number.isInteger(seq) || seq < 0) {
+    return { messages, handled: false };
+  }
+
+  const payload = event.payload || {};
+  const cardId = `workflow-run:${runId}`;
+  const index = messages.findIndex(
+    (message) =>
+      message.role === "workflow_progress" && message.workflow_run_id === runId,
+  );
+  const previous = index >= 0 ? messages[index] : undefined;
+  if (
+    previous?.workflow_terminal ||
+    (typeof previous?.workflow_seq === "number" && seq <= previous.workflow_seq)
+  ) {
+    return { messages, handled: true };
+  }
+
+  const incomingOrdinal = Number(payload.ordinal);
+  const ordinal = Number.isFinite(incomingOrdinal) && incomingOrdinal >= 0
+    ? incomingOrdinal
+    : previous?.workflow_ordinal ?? 0;
+  const incomingTotal = Number(payload.total);
+  const total = Number.isFinite(incomingTotal) && incomingTotal >= 0
+    ? incomingTotal
+    : previous?.workflow_total ?? 0;
+  let status: WorkflowProgressStatus = previous?.workflow_status ?? "running";
+  let terminal = false;
+  if (eventType === "workflow.progress") {
+    const transition = String(payload.status || "started");
+    status = transition === "waiting"
+      ? "waiting"
+      : transition === "failed"
+        ? "failed"
+        : transition === "cancelled"
+          ? "cancelled"
+          : "running";
+  } else if (eventType === "workflow.final") {
+    const finalStatus = String(payload.status || "failed");
+    status = finalStatus === "completed"
+      ? "completed"
+      : finalStatus === "cancelled"
+        ? "cancelled"
+        : "failed";
+    terminal = true;
+  } else {
+    status = "running";
+  }
+
+  const next: Message = {
+    id: cardId,
+    role: "workflow_progress",
+    ts: previous?.ts ?? workflowEventTime(event),
+    workflow_run_id: runId,
+    workflow_name: String(
+      eventType === "workflow.progress"
+        ? payload.workflow_name || previous?.workflow_name || "任务"
+        : previous?.workflow_name || payload.workflow_name || "任务",
+    ),
+    workflow_status: status,
+    workflow_stage: String(payload.stage || previous?.workflow_stage || "准备中"),
+    workflow_ordinal: ordinal,
+    // Graph revision loops may return to an earlier stage. Keep the stage
+    // truthful while the visual percentage remains monotonic.
+    workflow_display_ordinal: Math.max(
+      previous?.workflow_display_ordinal ?? previous?.workflow_ordinal ?? 0,
+      ordinal,
+    ),
+    workflow_total: total,
+    workflow_seq: seq,
+    workflow_terminal: terminal,
+    workflow_event_id: String(event.event_id || ""),
+    workflow_error:
+      eventType === "workflow.final"
+        ? workflowErrorText(payload.error) ?? previous?.workflow_error
+        : previous?.workflow_error,
+    workflow_recovery_action:
+      eventType === "workflow.final" && payload.recovery_action
+        ? String(payload.recovery_action)
+        : previous?.workflow_recovery_action,
+  };
+
+  if (index >= 0) {
+    const updated = [...messages];
+    updated[index] = next;
+    return { messages: updated, handled: true };
+  }
+  const insertAt = messages.findIndex((message) => message.ts > next.ts);
+  const updated = [...messages];
+  updated.splice(insertAt < 0 ? updated.length : insertAt, 0, next);
+  return { messages: updated, handled: true };
 }
 
 const blank_session = (sid: string): SessionState => ({
@@ -423,7 +622,70 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
     });
   },
 
-  resolve_ppt_outline(sid, outlineId) {
+  reduce_workflow_event(sid, event) {
+    let handled = false;
+    set((state) => {
+      const cur = state.sessions[sid] ?? blank_session(sid);
+      const reduced = applyWorkflowEvent(cur.messages, event);
+      handled = reduced.handled;
+      if (!reduced.handled || reduced.messages === cur.messages) return state;
+      return {
+        sessions: {
+          ...state.sessions,
+          [sid]: {
+            ...cur,
+            messages: reduced.messages,
+            last_activity: Date.now(),
+          },
+        },
+      };
+    });
+    return handled;
+  },
+
+  merge_history_messages(sid, messages, workflowEvents) {
+    set((state) => {
+      const cur = state.sessions[sid] ?? blank_session(sid);
+      const consumedEventIds = new Set(
+        workflowEvents
+          .filter((event) => WORKFLOW_CARD_EVENTS.has(String(event.event_type || "")))
+          .map((event) => String(event.event_id || ""))
+          .filter(Boolean),
+      );
+      const byId = new Map<string, Message>();
+      for (const message of [...cur.messages, ...messages]) {
+        if (consumedEventIds.has(message.id) && message.role !== "workflow_progress") {
+          continue;
+        }
+        if (!byId.has(message.id)) byId.set(message.id, message);
+      }
+      let merged = [...byId.values()]
+        .map((message, index) => ({ message, index }))
+        .sort((a, b) => a.message.ts - b.message.ts || a.index - b.index)
+        .map(({ message }) => message);
+      const orderedEvents = workflowEvents
+        .map((event, index) => ({ event, index }))
+        .sort((a, b) => {
+          const run = String(a.event.run_id || "").localeCompare(String(b.event.run_id || ""));
+          return run || Number(a.event.seq || 0) - Number(b.event.seq || 0) || a.index - b.index;
+        });
+      for (const { event } of orderedEvents) {
+        merged = applyWorkflowEvent(merged, event).messages;
+      }
+      return {
+        sessions: {
+          ...state.sessions,
+          [sid]: {
+            ...cur,
+            messages: dedupe_ppt_outline_messages(merged),
+            last_activity: Date.now(),
+          },
+        },
+      };
+    });
+  },
+
+  resolve_ppt_outline(sid, outlineId, decisionStatus) {
     set((state) => {
       const cur = state.sessions[sid];
       if (!cur) return {};
@@ -431,13 +693,18 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
       const next = cur.messages.map((m) => {
         if (
           m.role !== "ppt_outline" ||
-          !m.ppt_outline_awaiting ||
-          m.outline_id !== outlineId
+          m.outline_id !== outlineId ||
+          (!m.ppt_outline_awaiting && !decisionStatus)
         ) {
           return m;
         }
         cleared = true;
-        return { ...m, ppt_outline_awaiting: false };
+        return {
+          ...m,
+          ppt_outline_awaiting: false,
+          ppt_outline_decision_status:
+            decisionStatus ?? m.ppt_outline_decision_status,
+        };
       });
       if (!cleared) return {};
       return {

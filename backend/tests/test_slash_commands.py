@@ -158,16 +158,19 @@ async def test_dispatch_skill_exception_safe():
 
 
 def test_features_config_has_3_v1_fields():
-    """plans/2026-05-25-... WI-D1：FeaturesConfig 必须有 3 个 flag."""
+    """plans/2026-05-25-... WI-D1：FeaturesConfig 必须有 3 个 flag.
+
+    2026-06-27 测试阶段点亮：三者出厂默认 ON。
+    """
     from config import FeaturesConfig
     cfg = FeaturesConfig()
-    assert cfg.slash_commands is False  # 默认 OFF
-    assert cfg.goal_mode is False
-    assert cfg.agent_parallel is False
+    assert cfg.slash_commands is True
+    assert cfg.goal_mode is True
+    assert cfg.agent_parallel is True
 
 
 def test_app_config_includes_features():
     from config import AppConfig
     cfg = AppConfig()
     assert hasattr(cfg, "features")
-    assert cfg.features.slash_commands is False
+    assert cfg.features.slash_commands is True  # 测试阶段点亮

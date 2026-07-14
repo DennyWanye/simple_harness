@@ -16,6 +16,8 @@ from __future__ import annotations
 import pytest
 import httpx
 
+from agent.context_messages import provider_purpose_scope
+from agent.context_report import ContextAttemptStore, set_context_attempt_store
 from providers.base import LLMProvider
 from providers.openai_compatible import OpenAICompatibleProvider
 from router.hybrid_router import (
@@ -100,6 +102,37 @@ class _FakeProvider:
             raise self._chat_raises
         for c in self._chat_chunks:
             yield c
+
+
+async def _collect_attempt_stream(stream) -> str:
+    return "".join([chunk async for chunk in stream])
+
+
+@pytest.mark.asyncio
+async def test_hybrid_router_selected_provider_has_attempt_and_off_path_has_none():
+    provider = _FakeProvider(chat_chunks=["ok"])
+    provider.model = "tiny-local"
+    provider.context_window = 8_000
+    provider.effective_pct = 0.95
+    router = HybridRouter(local=provider, cloud=None)
+    store = ContextAttemptStore()
+    set_context_attempt_store(store)
+    with provider_purpose_scope("agent_response", session_id="voice-s"):
+        assert await _collect_attempt_stream(
+            router.chat_stream(
+                [{"role": "user", "content": "hello"}], max_tokens=64
+            )
+        ) == "ok"
+    report = store.list_for_session("voice-s")[0]
+    assert report.purpose == "agent_response"
+    assert report.provider_id == "_FakeProvider"
+    assert report.state == "succeeded"
+
+    set_context_attempt_store(None)
+    assert await _collect_attempt_stream(
+        router.chat_stream([{"role": "user", "content": "again"}], max_tokens=64)
+    ) == "ok"
+    assert len(store.list_for_session("voice-s")) == 1
 
 
 @pytest.mark.asyncio

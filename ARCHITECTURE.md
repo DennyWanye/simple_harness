@@ -1,10 +1,12 @@
-# DeskPet 架构总览
+# DeskPet 部署架构总览（参考）
 
-> 高层结构 + 模块边界 + 数据流。读完这份对项目目录在哪、改什么放哪一目了然。
+> 本文件只解释桌面应用的部署层和目录布局，不是 Agent/Harness 的代码级
+> canonical baseline。长任务 Harness、持久化、恢复与 Trace/Eval 请以
+> [`ARCHITECTURE/index.md`](./ARCHITECTURE/index.md) 为准。
 
 ---
 
-## 三层架构
+## 三层部署架构
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -168,22 +170,16 @@ OSS 用户走 `manual`；维护者带 relay 服务的用 `relay`。两套共享�
 
 ---
 
-## 数据流：一次对话
+## 数据流入口（简化）
 
 ```
-用户讲话
-  │
-  ▼ (麦克风 / Tauri permissions)
-前端采音 ─────▶ 后端 /pipeline/listen
-  │              │
-  │              ▼ VAD 检测 speech boundary
-  │              ▼ ASR 转文字
-  │              ▼ LLM agent loop（带记忆 + 工具）
-  │              ▼ TTS 合成
-  │              ▼ Live2D motion / expression 派发
-  ▼ (ws control channel)
-前端：渲染对话气泡 + 触发 Live2D lipsync + 播放音频
+文字：React /ws/control -> main.py text-chat adapter -> Harness/AgentLoop
+语音：React /ws/audio   -> VoicePipeline -> ContextAssembler/AgentLoop -> TTS
+控制：slash/admin/Tauri commands 可走独立 handler，不保证经过 AgentLoop
 ```
+
+各入口的真实顺序和差异见
+[`ARCHITECTURE/ARCHITECTURE.md`](./ARCHITECTURE/ARCHITECTURE.md)。
 
 ---
 
@@ -209,4 +205,4 @@ OSS 用户走 `manual`；维护者带 relay 服务的用 `relay`。两套共享�
 
 ---
 
-*Last updated: 2026-05-27*
+*Last updated: 2026-07-10*

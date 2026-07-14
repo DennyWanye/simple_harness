@@ -32,6 +32,7 @@ async def prepare_chat_messages_for_chain(
     provider_chain: Optional[list[Any]],
     ctx_mgr: Any,
     fallback_summarizer: Any = None,
+    context_os_v1: bool = False,
 ) -> list[dict[str, Any]]:
     """Run optional preflight compaction via ContextManager.
 
@@ -55,7 +56,7 @@ async def prepare_chat_messages_for_chain(
         ``ctx_mgr`` is None or compaction was a no-op) or a new list
         with old turns folded into a single system summary message.
     """
-    if ctx_mgr is None:
+    if context_os_v1 or ctx_mgr is None:
         return messages
 
     if provider_chain:

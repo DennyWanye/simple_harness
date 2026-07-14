@@ -58,6 +58,12 @@ def _slides() -> list[SlideOutline]:
     ]
 
 
+def test_ppt_pro_accepts_short_decks_and_preserves_requested_page_count():
+    assert ppt_tools._PPT_PRO_SCHEMA["parameters"]["properties"]["pages"]["minimum"] == 1
+    assert ppt_tools._coerce_ppt_pro_args({"topic": "short", "pages": 2})["pages"] == 2
+    assert ppt_tools._coerce_ppt_pro_args({"topic": "single", "pages": 1})["pages"] == 1
+
+
 def test_render_pro_probe_false_uses_template_and_skips_image_gen(monkeypatch):
     calls: list[tuple[object, dict]] = []
     monkeypatch.setattr(ppt_tools, "probe_image_reachable", lambda *, timeout_s: False, raising=False)
@@ -438,6 +444,7 @@ async def test_orchestrate_cancel_reuse_modify_and_render_timeout_paths(monkeypa
         render_timeout_s=0.01,
         save_research=False,
         outline_history=True,
+        allow_no_research_outline=True,
     ))
 
     cancel_events: list[str] = []
@@ -511,6 +518,49 @@ async def test_orchestrate_cancel_reuse_modify_and_render_timeout_paths(monkeypa
         session_id="s1",
     )
     assert timeout_events
+
+
+@pytest.mark.asyncio
+async def test_orchestrate_stops_when_research_missing_by_default(monkeypatch):
+    events: list[str] = []
+    proposed = False
+
+    monkeypatch.setattr(ppt_tools, "_research_topic_for_ppt", lambda *a, **k: None)
+    monkeypatch.setattr(ppt_tools, "_ppt_pro_cfg", lambda: SimpleNamespace(
+        enabled=True,
+        default_depth="deep",
+        max_revisions=2,
+        research_timeout_s=0.1,
+        confirm_timeout_s=0.1,
+        image_probe_timeout_s=0.1,
+        render_timeout_s=0.01,
+        save_research=False,
+        outline_history=True,
+        allow_no_research_outline=False,
+    ))
+
+    async def outline_propose(*args, **kwargs):
+        nonlocal proposed
+        proposed = True
+        return {"action": "accept"}
+
+    await ppt_tools._ppt_pro_orchestrate(
+        topic="Research required",
+        pages=3,
+        depth="deep",
+        theme="minimal",
+        image_mode=False,
+        title="",
+        author="Tester",
+        output_path=None,
+        outline_propose=outline_propose,
+        notifier=lambda sid, msg: events.append(msg),
+        run_blocking=lambda fn: fn(),
+        session_id="s1",
+    )
+
+    assert proposed is False
+    assert any("不生成大纲" in msg for msg in events)
 
 
 @pytest.mark.asyncio

@@ -92,6 +92,17 @@ _VALID_SERVICES = frozenset({
     "pipeline_evidence_gate",            # EvidenceGate（Step2 取证门，build_agent caller 透传）
     "pipeline_self_check_gate",          # 预留：第一期由 build_agent 内构造，service 仅占位
     "pipeline_convergence_controller",   # 预留：第一期由 AgentLoop 内构造，service 仅占位
+    # Durable graph runtime and unified Trace/Replay/Eval facade.
+    "workflow_service",
+    # --- Context OS V1 ------------------------------------------------------
+    "tool_capability_scope_store",
+    "tool_capability_resolver",
+    "context_request_planner",
+    "context_snapshot_store",
+    "context_segment_store",
+    "context_page_in_store",
+    "context_attempt_store",
+    "compression_model_resolver",
 })
 
 @dataclass
@@ -154,6 +165,15 @@ class ServiceContext:
     pipeline_evidence_gate: Any | None = None
     pipeline_self_check_gate: Any | None = None
     pipeline_convergence_controller: Any | None = None
+    workflow_service: Any | None = None
+    tool_capability_scope_store: Any | None = None
+    tool_capability_resolver: Any | None = None
+    context_request_planner: Any | None = None
+    context_snapshot_store: Any | None = None
+    context_segment_store: Any | None = None
+    context_page_in_store: Any | None = None
+    context_attempt_store: Any | None = None
+    compression_model_resolver: Any | None = None
 
     def register(self, name: str, provider: Any) -> None:
         if name not in _VALID_SERVICES:

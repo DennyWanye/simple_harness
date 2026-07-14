@@ -6,11 +6,11 @@ from __future__ import annotations
 from config import AppConfig, get_subagent_concurrency
 
 
-def test_default_flags_off():  # 0.3.1
+def test_default_flags_on():  # 0.3.1 — 2026-06-27 测试阶段点亮
     f = AppConfig().features
-    assert f.subagent_driver is False
-    assert f.agent_team is False
-    assert f.subagent_nonblocking is False
+    assert f.subagent_driver is True
+    assert f.agent_team is True
+    assert f.subagent_nonblocking is True
 
 
 def test_concurrency_default():  # 0.3.2

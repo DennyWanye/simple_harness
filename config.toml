@@ -85,7 +85,7 @@ artifact_dir_retention_days = 30
 emit_receipts = true
 # D6 verify 模式 — "shadow" 仅 warn log 不阻断，先收集 1-2 周 metric
 # 验证 fake_completion_caught_rate ≥ 95% 后再升 "strict"（真拦截）
-verify_gate_mode = "shadow"
+verify_gate_mode = "strict"
 # 小 LLM fallback（regex 漏抓时兜底）
 extractor_fallback_enabled = true
 # 第 3 次失败救援用的 ephemeral subagent 模型
@@ -102,6 +102,7 @@ external_evaluator = true
 # 2026-06-27 测试阶段全量点亮：Companion 主线能力开关全开（不灰度）。dataclass 默认已同步翻 True。
 # 注意：TOML 里裸 [features] 键必须排在 [features.problem_pipeline] 子表之前，否则会被归到子表。
 [features]
+context_os_v1 = true
 slash_commands = true            # / 命令解析
 goal_mode = true                 # /goal 长期目标 + 末轮 goal_checker
 agent_parallel = true            # agent_parallel 多子代理工具
@@ -138,7 +139,7 @@ evidence_gate = true
 evidence_max_nudges = 2
 # evidence_investigative_tools = ["search","read","grep","inspect","web_search","deepresearch"]
 plan_companion_enabled = true    # 为 Companion 主线新增 plan（code 模式不动）
-analysis_model = ""              # 留空=主 LLM gpt-5.5
+analysis_model = "deepseek-v4-pro"
 self_check = true                # 自检总开关（bool；严格度内部按 problem_type 选）
 self_check_model = ""            # 留空=主 LLM gpt-5.5
 self_check_heterogeneous = true
@@ -202,7 +203,7 @@ tts_cooldown_ms = 300
 # trigger; max_hints_per_session caps queued supervisor hints to prevent
 # context bloat.
 [supervisor]
-enabled = true
+enabled = false
 scan_interval_seconds = 60
 stuck_threshold_seconds = 900
 dedup_seconds = 720
@@ -419,6 +420,9 @@ tts_pre_narration = true
 #
 # 内置模型表见 backend/llm/model_info.py::BUILTIN；用户/项目覆盖通过
 # SettingsPanel「模型上下文」卡片就地编辑写回对应 TOML。
+[context.compaction]
+model = "follow_session"
+
 [context.manager]
 v2_enabled = true
 
@@ -582,6 +586,12 @@ subagent_fanout = true
 fanout_min_subquestions = 2
 fanout_max_subquestions = 6
 fanout_subrun_mode = "auto"
+# Source packs: 默认开启。按主题自动追加少量权威来源定向搜索,例如俄乌局势会补
+# ISW/UN/Reuters/AP/BBC/Al Jazeera,金价会补 LBMA/World Gold Council/Investing。
+# 关闭后 deepresearch 仍保留普通搜索、site-directed、query expansion、直连源。
+source_packs = true
+# 每个子问题最多追加多少条 source-pack 查询。范围 0..6,默认 3;调大可提高召回但会增加搜索量。
+source_pack_max_queries_per_question = 3
 # JS 渲染抓取兜底:治 trafilatura 抓到的 JS/SPA 空壳站。默认关(opt-in)。中国可用(本地渲染)。
 js_render = false
 # 渲染引擎:
@@ -592,3 +602,28 @@ js_render = false
 js_render_engine = "cdp-edge"
 # 单页渲染超时(秒),超时优雅降级到 jina/原结果
 js_render_timeout = 20
+[workflows]
+# Long-running tasks use durable graphs by default during the test stage.
+# Explicit false values are compatibility kill-switches for newly started runs.
+enabled = true
+deep_research = true
+ppt_pro = true
+code_complex = true
+trace_enabled = true
+trace_detail = true
+eval_local_only = true
+terminal_retention_days = 30
+evaluation_retention_days = 180
+orphan_grace_hours = 24
+
+[[llm.endpoints]]
+id = "relay-cloud"
+name = "中转站 · chinzy"
+base_url = "https://chinzy.com/v1"
+models = ["ali-qwen-flash", "ali-qwen-long", "ali-qwen-math-plus", "ali-qwen-max", "ali-qwen-mt-flash", "ali-qwen-mt-lite", "ali-qwen-mt-plus", "ali-qwen-mt-turbo", "ali-qwen-vl-ocr", "ali-qwen3-coder-flash", "ali-qwen3-vl-plus", "ali-qwen3.5-122b-a10b", "ali-qwen3.5-27b", "ali-qwen3.5-35b-a3b", "ali-qwen3.5-397b-a17b", "ali-qwen3.5-flash", "ali-qwen3.5-ocr", "ali-qwen3.5-plus", "ali-qwen3.6-27b", "ali-qwen3.6-35b-a3b", "ali-qwen3.6-flash", "ali-qwen3.6-plus", "ali-qwen3.7-max", "ali-qwen3.7-plus", "ali-text-embedding-v3", "ali-text-embedding-v4", "deepseek-v4-flash", "deepseek-v4-pro", "doubao-1.5-lite-32k", "doubao-1.5-pro-32k", "doubao-1.5-pro-32k-character", "doubao-1.5-vision-pro", "doubao-embedding-vision", "doubao-seed-1.6", "doubao-seed-1.6-flash", "doubao-seed-1.6-vision", "doubao-seed-1.8", "doubao-seed-2.0-code", "doubao-seed-2.0-lite", "doubao-seed-2.0-mini", "doubao-seed-2.0-pro", "doubao-seed-2.1-pro", "doubao-seed-2.1-turbo", "doubao-seed-character", "doubao-seed-code", "doubao-seed-evolving", "doubao-seed-translation", "doubao-seedance-1.0-pro", "doubao-seedance-1.0-pro-fast", "doubao-seedance-1.5-pro", "doubao-seedance-2-0-pro", "doubao-seedance-2.0-fast", "doubao-seedream-4.0", "doubao-seedream-4.5", "doubao-seedream-5.0-lite", "gpt-5.2", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-openai-compact", "gpt-5.4-xhigh-fast", "gpt-5.5", "gpt-5.5-openai-compact", "gpt-5.5-xhigh-fast", "minimax-m2", "minimax-m2.1", "minimax-m2.1-highspeed", "minimax-m2.5", "minimax-m2.5-highspeed", "minimax-m2.7", "minimax-m2.7-highspeed", "minimax-m3", "sf-bge-large-en", "sf-bge-large-zh", "sf-bge-m3", "sf-deepseek-ocr", "sf-deepseek-r1", "sf-deepseek-r1-qwen3-8b", "sf-deepseek-v3", "sf-deepseek-v3.1-terminus", "sf-deepseek-v3.2", "sf-deepseek-v4-flash", "sf-deepseek-v4-pro", "sf-ernie-image-turbo", "sf-glm-4-32b", "sf-glm-4-9b", "sf-glm-4.5-air", "sf-glm-4.5v", "sf-glm-5.1", "sf-glm-5.2", "sf-glm-z1-9b", "sf-hunyuan-a13b", "sf-hunyuan-mt-7b", "sf-kimi-k2.6", "sf-kimi-k2.7-code", "sf-kolors", "sf-ling-flash-2.0", "sf-ling-mini-2.0", "sf-longcat-2.0", "sf-minimax-m2.5", "sf-nex-n2-pro", "sf-paddleocr-vl", "sf-pro-bge-m3", "sf-pro-qwen2.5-7b", "sf-qwen-image", "sf-qwen-image-edit", "sf-qwen-image-edit-2509", "sf-qwen2.5-14b", "sf-qwen2.5-32b", "sf-qwen2.5-72b", "sf-qwen2.5-72b-128k", "sf-qwen2.5-7b", "sf-qwen3-14b", "sf-qwen3-30b-a3b", "sf-qwen3-32b", "sf-qwen3-8b", "sf-qwen3-coder-30b-a3b", "sf-qwen3-embedding-0.6b", "sf-qwen3-embedding-4b", "sf-qwen3-embedding-8b", "sf-qwen3-omni-30b-a3b-captioner", "sf-qwen3-omni-30b-a3b-instruct", "sf-qwen3-omni-30b-a3b-thinking", "sf-qwen3-vl-30b-a3b-instruct", "sf-qwen3-vl-30b-a3b-thinking", "sf-qwen3-vl-32b-instruct", "sf-qwen3-vl-32b-thinking", "sf-qwen3-vl-8b-instruct", "sf-qwen3-vl-8b-thinking", "sf-qwen3.5-122b-a10b", "sf-qwen3.5-27b", "sf-qwen3.5-35b-a3b", "sf-qwen3.5-397b-a17b", "sf-qwen3.5-4b", "sf-qwen3.5-9b", "sf-qwen3.6-27b", "sf-qwen3.6-35b-a3b", "sf-seed-oss-36b", "sf-step-3.5-flash", "sf-z-image", "sf-z-image-turbo", "volc-deepseek-v3.2", "volc-deepseek-v4-flash", "volc-deepseek-v4-pro", "volc-glm-4.7"]
+default_model = "gpt-5.5"
+api_key_ref = "deskpet.provider.relay-cloud"
+priority = 1
+enabled = true
+source = "relay"
+account_ref = "cmoztk8nl0000po07jjr8wvu8"

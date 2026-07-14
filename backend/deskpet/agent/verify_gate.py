@@ -446,6 +446,13 @@ class VerifyGate:
         for r in ledger:
             if not r.ok:
                 continue
+            # Durable/queued receipts are acknowledgements, not completion
+            # evidence. Only terminal success (or legacy receipts without v2
+            # fields) may satisfy an "already generated/saved" claim.
+            if getattr(r, "phase", None) == "accepted":
+                continue
+            if getattr(r, "outcome", None) not in {None, "success"}:
+                continue
             if tool_hints:
                 if r.tool_name in tool_hints:
                     return True

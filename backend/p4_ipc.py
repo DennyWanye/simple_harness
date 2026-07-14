@@ -46,6 +46,10 @@ P4_IPC_MESSAGE_TYPES = frozenset(
         # Phase 1.1.6（context-1m-rearch）: SettingsPanel「模型上下文」卡片。
         "model_context_get",
         "model_context_set",
+        # Context OS V1: compaction model is independent from context-window
+        # overrides.  ``follow_session`` keeps the historical behaviour.
+        "context_compaction_get",
+        "context_compaction_set",
         # Stage 2 WI-S2.1a / E3 v2 — MemoryPanel facts view + 🗑 + undo
         "memory_facts_list",
         "memory_forget",
@@ -76,7 +80,7 @@ async def handle(
         if msg_type == "skills_list":
             await _handle_skills_list(ws, payload, service_context)
         elif msg_type == "decisions_list":
-            await _handle_decisions_list(ws, payload, service_context)
+            await _handle_decisions_list(ws, session_id, payload, service_context)
         elif msg_type == "memory_search":
             await _handle_memory_search(ws, session_id, payload, service_context)
         elif msg_type == "memory_l1_list":
@@ -91,6 +95,10 @@ async def handle(
             await _handle_model_context_get(ws, payload)
         elif msg_type == "model_context_set":
             await _handle_model_context_set(ws, payload)
+        elif msg_type == "context_compaction_get":
+            await _handle_context_compaction_get(ws, service_context)
+        elif msg_type == "context_compaction_set":
+            await _handle_context_compaction_set(ws, payload, service_context)
         elif msg_type == "memory_facts_list":
             await _handle_memory_facts_list(ws, payload, service_context)
         elif msg_type == "memory_forget":
@@ -147,7 +155,7 @@ async def _handle_skills_list(
 
 
 async def _handle_decisions_list(
-    ws: Any, payload: dict[str, Any], sc: Any
+    ws: Any, session_id: str, payload: dict[str, Any], sc: Any
 ) -> None:
     raw_limit = payload.get("limit")
     if raw_limit is None:
@@ -159,14 +167,19 @@ async def _handle_decisions_list(
             limit = 50
 
     assembler = _get_service(sc, "context_assembler")
+    attempt_store = _get_service(sc, "context_attempt_store")
     if assembler is None:
+        response_payload: dict[str, Any] = {"decisions": []}
+        if attempt_store is not None:
+            response_payload["attempts"] = attempt_store.public_for_session(session_id)[
+                -limit:
+            ]
+        else:
+            response_payload["reason"] = "context_assembler_not_registered"
         await ws.send_json(
             {
                 "type": "decisions_list_response",
-                "payload": {
-                    "decisions": [],
-                    "reason": "context_assembler_not_registered",
-                },
+                "payload": response_payload,
             }
         )
         return
@@ -175,11 +188,13 @@ async def _handle_decisions_list(
     except Exception as exc:
         logger.warning("p4_ipc.decisions_list_failed", error=str(exc))
         decisions = []
+    response_payload: dict[str, Any] = {"decisions": list(decisions)}
+    if attempt_store is not None:
+        response_payload["attempts"] = attempt_store.public_for_session(session_id)[
+            -limit:
+        ]
     await ws.send_json(
-        {
-            "type": "decisions_list_response",
-            "payload": {"decisions": list(decisions)},
-        }
+        {"type": "decisions_list_response", "payload": response_payload}
     )
 
 
@@ -883,6 +898,163 @@ async def _handle_model_context_set(ws: Any, payload: dict[str, Any]) -> None:
         {
             "type": "model_context_set_ack",
             "payload": {"ok": True, "scope": scope, "model": model},
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# Context OS V1 -- compaction-model setting
+# ---------------------------------------------------------------------------
+
+_FOLLOW_SESSION = "follow_session"
+
+
+def _provider_model_ids(service_context: Any) -> list[str]:
+    """Return the configured provider catalog's model ids, deterministically.
+
+    Explicit compaction selections are validated against this live catalog.
+    An unavailable catalog therefore fails closed instead of accepting a value
+    that would later be silently replaced by the session model.
+    """
+    registry = _get_service(service_context, "provider_registry")
+    if registry is None:
+        return []
+    try:
+        providers = registry.list_providers()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("p4_ipc.context_compaction_catalog_failed", error=str(exc))
+        return []
+    found: set[str] = set()
+    for provider in providers or []:
+        if not isinstance(provider, dict):
+            continue
+        models = provider.get("models")
+        if not isinstance(models, list):
+            models = [provider.get("model")]
+        for model in models:
+            value = str(model or "").strip()
+            if value:
+                found.add(value)
+    # In hermetic Context OS E2E runs the loopback provider control plane is
+    # the live catalog.  Merge it only behind the same DEV_MODE+loopback gate
+    # used by the product hooks so the settings UI can select a model added
+    # after boot without changing production registry semantics.
+    try:
+        from deskpet.context_os_e2e_hooks import ContextOSE2EHooks
+        import json as _json
+        import urllib.request as _urlrequest
+
+        hooks = ContextOSE2EHooks.from_env()
+        if hooks is not None and hooks.provider_url:
+            with _urlrequest.urlopen(
+                hooks.provider_url.rstrip("/") + "/models",
+                timeout=hooks.timeout_seconds,
+            ) as response:
+                payload = _json.load(response)
+            for item in payload.get("data", []):
+                value = str(item.get("id") or "").strip()
+                if value:
+                    found.add(value)
+    except Exception as exc:  # noqa: BLE001 - settings remains fail closed
+        logger.warning("p4_ipc.context_compaction_e2e_catalog_failed", error=str(exc))
+    return sorted(found)
+
+
+def _context_compaction_config_path() -> Path:
+    import paths as _paths
+
+    return _paths.user_data_dir() / "config.toml"
+
+
+def _read_context_compaction_model() -> str:
+    path = _context_compaction_config_path()
+    if not path.is_file():
+        return _FOLLOW_SESSION
+    try:
+        raw = tomllib.loads(path.read_text("utf-8"))
+        value = str(
+            ((raw.get("context") or {}).get("compaction") or {}).get("model")
+            or _FOLLOW_SESSION
+        ).strip()
+        return value or _FOLLOW_SESSION
+    except (OSError, tomllib.TOMLDecodeError, AttributeError, TypeError):
+        return _FOLLOW_SESSION
+
+
+def _write_context_compaction_model(model: str) -> None:
+    """Round-trip the unified user config without discarding other sections."""
+    import tomlkit
+
+    path = _context_compaction_config_path()
+    try:
+        text = path.read_text("utf-8") if path.is_file() else ""
+        doc = tomlkit.parse(text) if text.strip() else tomlkit.document()
+    except Exception as exc:  # malformed config must not be overwritten
+        raise ValueError(f"invalid_config: {type(exc).__name__}") from exc
+    context = doc.get("context")
+    if not hasattr(context, "__setitem__"):
+        context = tomlkit.table()
+        doc["context"] = context
+    compaction = context.get("compaction")
+    if not hasattr(compaction, "__setitem__"):
+        compaction = tomlkit.table()
+        context["compaction"] = compaction
+    compaction["model"] = model
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+
+
+async def _handle_context_compaction_get(ws: Any, service_context: Any) -> None:
+    await ws.send_json(
+        {
+            "type": "context_compaction_get_response",
+            "payload": {
+                "model": _read_context_compaction_model(),
+                "default_model": _FOLLOW_SESSION,
+                "available_models": _provider_model_ids(service_context),
+            },
+        }
+    )
+
+
+async def _handle_context_compaction_set(
+    ws: Any, payload: dict[str, Any], service_context: Any
+) -> None:
+    model = str(payload.get("model") or "").strip()
+    if not model:
+        await ws.send_json(
+            {
+                "type": "context_compaction_set_ack",
+                "payload": {"ok": False, "reason": "model required"},
+            }
+        )
+        return
+    available = _provider_model_ids(service_context)
+    if model != _FOLLOW_SESSION and model not in available:
+        await ws.send_json(
+            {
+                "type": "context_compaction_set_ack",
+                "payload": {
+                    "ok": False,
+                    "reason": f"compression_model_unavailable:{model}",
+                },
+            }
+        )
+        return
+    try:
+        _write_context_compaction_model(model)
+    except (OSError, ValueError) as exc:
+        await ws.send_json(
+            {
+                "type": "context_compaction_set_ack",
+                "payload": {"ok": False, "reason": str(exc)},
+            }
+        )
+        return
+    await ws.send_json(
+        {
+            "type": "context_compaction_set_ack",
+            "payload": {"ok": True, "model": model},
         }
     )
 

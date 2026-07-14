@@ -15,6 +15,18 @@
 # every end_turn. Add patterns as you observe real fake-completion incidents.
 
 patterns:
+  - id: zh_generated_image
+    regex: '(?:已|给你|我已经).{0,8}(?:生成|画好|制作好|创建).{0,16}(?:图片|图像|插画|海报|头像|壁纸|封面|照片|脉冲步枪|武器|角色|场景|猫|狗)'
+    artifact_kind: file
+    tool_hint:
+      - generate_image
+
+  - id: en_generated_image
+    regex: 'I (?:have )?(?:generated|created|made) (?:an? )?(?:image|picture|illustration|poster)'
+    artifact_kind: file
+    tool_hint:
+      - generate_image
+
   - id: zh_generated_pptx
     regex: '已生成 (?P<title>[^\s，。]+\.pptx)'
     artifact_kind: file

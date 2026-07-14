@@ -25,6 +25,9 @@ dependencies = [
     "mss>=9.0",
     "pyautogui>=0.9.54",
     "aiosqlite>=0.22.1",
+    # Imported by the production voice providers during backend startup.
+    "edge-tts>=7.0",
+    "faster-whisper>=1.1",
     # P2-0-S4: scripts/perf/rss_sampler.py uses psutil to watch process RSS.
     "psutil>=5.9.0",
     # P2-1-S6: /metrics endpoint exposes TTFT Histogram.
@@ -96,6 +99,13 @@ dependencies = [
     # P4-S5: web tool suite — selectolax is a fast lxml-free HTML parser
     # used by web_crawl for TF-based keyword scoring on titles + body.
     "selectolax>=0.3",
+    # 2026-07-08: modern/dynamic page fetch fallback. [fetchers] brings
+    # Fetcher/StealthyFetcher dependencies; handlers import lazily so fresh
+    # installs degrade with a clear tool error instead of breaking startup.
+    "scrapling[fetchers]>=0.4",
+    # Agent-Reach is currently distributed from GitHub rather than PyPI.
+    # Pin the audited commit so channel/doctor behavior is reproducible.
+    "agent-reach @ https://github.com/Panniantong/Agent-Reach/archive/e825f6740d24c6c315c3b0dc41907e6c87ff39a5.zip",
     # 2026-05-22 ppt-generate skill: local .pptx generation. python-pptx
     # is pure-Python (no native deps), PyInstaller-friendly, ships as a
     # ~600KB wheel. Used by deskpet.tools.ppt_tools — gracefully degrades
@@ -187,6 +197,13 @@ packages = [
     "deskpet.skills.builtin",
     "deskpet.mcp",
     "deskpet.llm",
+    "deskpet.workflows",
+    "deskpet.workflows.store",
+    "deskpet.workflows.trace",
+    "deskpet.workflows.evaluation",
+    "deskpet.workflows.adapters",
+    "deskpet.workflows.definitions",
+    "deskpet.workflows.definitions.v1",
 ]
 
 [tool.setuptools.package-data]

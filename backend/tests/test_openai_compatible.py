@@ -209,6 +209,47 @@ async def test_chat_stream_raises_on_http_error():
             pass
 
 
+@pytest.mark.asyncio
+async def test_tool_stream_preserves_structured_catalog_stale_error():
+    from llm.errors import LLMProviderError
+
+    class DeferredErrorBody(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield json.dumps(
+                {
+                    "error": {
+                        "message": "tool_catalog_stale",
+                        "type": "scenario_error",
+                        "code": "tool_catalog_stale",
+                    }
+                }
+            ).encode()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            409,
+            headers={"content-type": "application/json"},
+            stream=DeferredErrorBody(),
+        )
+
+    provider = OpenAICompatibleProvider(
+        base_url="http://example.invalid/v1",
+        api_key="k",
+        model="m",
+    )
+    provider._test_transport = httpx.MockTransport(handler)
+
+    with pytest.raises(LLMProviderError) as ei:
+        async for _ in provider._chat_stream_with_tools_impl(
+            [{"role": "user", "content": "x"}],
+            tools=[{"type": "function", "function": {"name": "demo"}}],
+        ):
+            pass
+    assert ei.value.status_code == 409
+    assert ei.value.error_class == "tool_catalog_stale"
+    assert "tool_catalog_stale" in str(ei.value)
+
+
 # --------------------------------------------------------------------------
 # P2-1-S8 — last_usage capture from the OpenAI stream_options.include_usage
 # terminal chunk. The provider must record it for BillingLedger to bill.

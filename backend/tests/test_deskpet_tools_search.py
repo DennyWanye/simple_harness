@@ -19,11 +19,17 @@ import json
 
 import pytest
 
-from deskpet.tools.registry import registry
+from deskpet.tools.tool_search import _handle_tool_search
+
+
+def _dispatch_legacy(args: dict) -> str:
+    """Exercise the legacy search handler independent of main's ON bridge."""
+
+    return _handle_tool_search(args, "legacy-tool-search-test")
 
 
 def test_tool_search_finds_file_tools():
-    out = json.loads(registry.dispatch("tool_search", {"query": "file"}))
+    out = json.loads(_dispatch_legacy({"query": "file"}))
     names = [m["function"]["name"] for m in out["matches"]]
     assert out["count"] >= 4
     # All four file_* should turn up.
@@ -32,7 +38,7 @@ def test_tool_search_finds_file_tools():
 
 
 def test_tool_search_returns_openai_envelope():
-    out = json.loads(registry.dispatch("tool_search", {"query": "write"}))
+    out = json.loads(_dispatch_legacy({"query": "write"}))
     assert isinstance(out["matches"], list)
     for entry in out["matches"]:
         assert entry["type"] == "function"
@@ -41,7 +47,7 @@ def test_tool_search_returns_openai_envelope():
 
 
 def test_tool_search_excludes_itself():
-    out = json.loads(registry.dispatch("tool_search", {"query": "tool"}))
+    out = json.loads(_dispatch_legacy({"query": "tool"}))
     names = [m["function"]["name"] for m in out["matches"]]
     assert "tool_search" not in names
 
@@ -50,16 +56,14 @@ def test_tool_search_all_tokens_required():
     # "crawl xyz123_nonexistent" should produce 0 matches because no
     # tool description contains the second token.
     out = json.loads(
-        registry.dispatch("tool_search", {"query": "crawl xyz123_nonexistent"})
+        _dispatch_legacy({"query": "crawl xyz123_nonexistent"})
     )
     assert out["count"] == 0
 
 
 def test_tool_search_toolset_filter():
     out = json.loads(
-        registry.dispatch(
-            "tool_search", {"query": "read", "toolset": "memory"}
-        )
+        _dispatch_legacy({"query": "read", "toolset": "memory"})
     )
     names = [m["function"]["name"] for m in out["matches"]]
     # "read" appears in memory_read's description.
@@ -69,14 +73,14 @@ def test_tool_search_toolset_filter():
 
 
 def test_tool_search_rejects_empty_query():
-    out = json.loads(registry.dispatch("tool_search", {"query": "   "}))
+    out = json.loads(_dispatch_legacy({"query": "   "}))
     assert out["error"].startswith("query")
     assert out["retriable"] is False
 
 
 def test_tool_search_case_insensitive():
-    lower = json.loads(registry.dispatch("tool_search", {"query": "write"}))
-    upper = json.loads(registry.dispatch("tool_search", {"query": "WRITE"}))
+    lower = json.loads(_dispatch_legacy({"query": "write"}))
+    upper = json.loads(_dispatch_legacy({"query": "WRITE"}))
     lower_names = sorted(m["function"]["name"] for m in lower["matches"])
     upper_names = sorted(m["function"]["name"] for m in upper["matches"])
     assert lower_names == upper_names

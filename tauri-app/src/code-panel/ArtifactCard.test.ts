@@ -3,15 +3,28 @@
 
 // TG-5 部分 — ArtifactCard 纯函数测试（WI-T1.4 / WI-T1.7）
 //
-// vitest 当前为 node env（无 DOM），DOM 渲染/点击测试留 jsdom follow-up；
 // 本文件覆盖：
 //   - extractArtifactsFromResult 各种 result JSON 形态（核心解析逻辑）
 //   - 字节级回落：无 artifacts 字段 → 空数组（TG-5 T5-5 守护）
-//
-// MR-22 埋点链路（emitArtifactAction）需要 DOM 才能测 button click，
-// 留 follow-up。
-import { describe, expect, it } from "vitest";
-import { extractArtifactsFromResult, type ToolArtifact } from "./ArtifactCard";
+//   - 文件 artifact 按钮点击后的 Tauri invoke + UI 状态反馈
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createElement } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ArtifactCard, extractArtifactsFromResult, type ToolArtifact } from "./ArtifactCard";
+
+const invokeMock = vi.fn();
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (...args: unknown[]) => invokeMock(...args),
+}));
+
+beforeEach(() => {
+  invokeMock.mockReset();
+});
+
+afterEach(() => {
+  cleanup();
+});
 
 describe("extractArtifactsFromResult — envelope 解析", () => {
   // T5-5 字节级硬保证：无 artifacts → []
@@ -95,5 +108,41 @@ describe("extractArtifactsFromResult — envelope 解析", () => {
   // T5-5 守护：empty string → []，不 throw
   it("returns [] on empty string", () => {
     expect(extractArtifactsFromResult("")).toEqual([]);
+  });
+});
+
+describe("ArtifactCard file actions", () => {
+  const artifact: ToolArtifact = {
+    kind: "file",
+    path: "F:\\projects\\deskpet\\DeepResearch\\report.md",
+    title: "report.md",
+    mime: "text/markdown",
+  };
+
+  it("opens a file artifact and shows action feedback", async () => {
+    invokeMock.mockResolvedValue(undefined);
+
+    render(createElement(ArtifactCard, { artifact, toolName: "deepresearch" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开" }));
+
+    expect(invokeMock).toHaveBeenCalledWith("artifact_open", {
+      path: artifact.path,
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("artifact-action-status").textContent).toContain(
+        "已请求系统打开文件",
+      );
+    });
+  });
+
+  it("surfaces artifact action failures in the card", async () => {
+    invokeMock.mockRejectedValue("[path_not_allowed] blocked");
+
+    render(createElement(ArtifactCard, { artifact, toolName: "deepresearch" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("操作失败");
+    expect(alert.textContent).toContain("path_not_allowed");
   });
 });

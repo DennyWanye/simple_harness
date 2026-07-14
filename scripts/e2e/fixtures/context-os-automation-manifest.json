@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "AT-CTX-01",
+      "assertions": ["A01-LIFECYCLE", "A02-CACHE", "A03-L123"],
+      "command": ["backend/.venv/Scripts/python.exe", "-m", "pytest", "backend/tests/test_context_fragments_compat.py", "backend/tests/test_deskpet_context_assembler.py", "-q"]
+    },
+    {
+      "id": "AT-CTX-02",
+      "assertions": ["A04-TASK-PROJECTION", "A05-PREFLUSH", "A10-REMOUNT"],
+      "command": ["backend/.venv/Scripts/python.exe", "-m", "pytest", "backend/tests/test_task_context_projector.py", "backend/tests/test_context_precompact_flush.py", "backend/tests/test_context_snapshot_store.py", "-q"]
+    },
+    {
+      "id": "AT-CTX-03",
+      "assertions": ["A06-ONE-OWNER", "A07-TOOL-GROUP"],
+      "command": ["backend/.venv/Scripts/python.exe", "-m", "pytest", "backend/tests/test_deskpet_context_compressor.py", "backend/tests/test_context_control_causality.py", "-q"]
+    },
+    {
+      "id": "AT-CTX-04",
+      "assertions": ["A08-BUDGET"],
+      "command": ["backend/.venv/Scripts/python.exe", "-m", "pytest", "backend/tests/test_context_request_planner.py", "backend/tests/test_context_attachment_budget.py", "-q"]
+    },
+    {
+      "id": "AT-CTX-05",
+      "assertions": ["A09-DISCLOSURE", "A16-COVERAGE"],
+      "command": ["backend/.venv/Scripts/python.exe", "-m", "pytest", "backend/tests/test_project_rules_component.py", "backend/tests/test_session_history_planner.py", "backend/tests/test_session_history_page_in.py", "-q"]
+    },
+    {
+      "id": "AT-CTX-06",
+      "assertions": ["A12-ENTRY-MATRIX", "A13-DEFAULT-ROLLBACK", "A15-COMPACTION-MODEL"],
+      "command": ["backend/.venv/Scripts/python.exe", "-m", "pytest", "backend/tests/test_model_context_ipc.py", "backend/tests/test_compression_model_resolver.py", "-q"]
+    },
+    {
+      "id": "AT-CTX-07",
+      "assertions": ["A17-ONE-TOOL-TRUTH", "A18-ACTIVATION"],
+      "command": ["backend/.venv/Scripts/python.exe", "-m", "pytest", "backend/tests/test_tool_capability_resolver.py", "backend/tests/test_tool_capability_hydration.py", "-q"]
+    },
+    {
+      "id": "AT-CTX-08",
+      "assertions": ["A19-EXEC-GUARD"],
+      "command": ["backend/.venv/Scripts/python.exe", "-m", "pytest", "backend/tests/test_tool_capability_execution_guard.py", "-q"]
+    },
+    {
+      "id": "AT-CTX-09",
+      "assertions": ["A11-ATTEMPT-REPORT"],
+      "commands": [
+        {
+          "name": "context-trace-and-model-settings-vitest",
+          "scope": "testcase section 2 AT-09 frontend components",
+          "command": ["C:/Users/Administrator/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe", "tauri-app/node_modules/vitest/vitest.mjs", "run", "--root", "tauri-app", "src/components/ContextTracePanel.workflow.test.tsx", "src/components/ModelContextCard.test.tsx"]
+        },
+        {
+          "name": "typescript-build",
+          "scope": "testcase section 2 AT-09 tsc -b tauri-app",
+          "command": ["C:/Users/Administrator/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe", "tauri-app/node_modules/typescript/bin/tsc", "-b", "tauri-app"]
+        }
+      ]
+    },
+    {
+      "id": "AT-CTX-10",
+      "assertions": ["A14-LONG-SESSION", "FIXTURE-SINGLE-OWNER", "FIXTURE-500-TOOLS", "FIXTURE-PROVIDER-STATE"],
+      "commands": [
+        {"name":"backend-shard-a","scope":"full backend test files a","backend_shard":"a","expected_redlines":["backend\\tests\\test_agent_parallel.py::test_two_subagents_run_concurrently"],"command":["backend/.venv/Scripts/python.exe","-m","pytest"]},
+        {"name":"backend-shard-b","scope":"full backend test files b","backend_shard":"b","expected_redlines":[],"command":["backend/.venv/Scripts/python.exe","-m","pytest"]},
+        {"name":"backend-shard-c","scope":"full backend test files c","backend_shard":"c","expected_redlines":[],"command":["backend/.venv/Scripts/python.exe","-m","pytest"]},
+        {"name":"backend-shard-d-f","scope":"full backend test files d through f","backend_shard":"d-f","expected_redlines":["backend\\tests\\test_e2e_integration.py::test_memory_store_is_redacting_session_db"],"command":["backend/.venv/Scripts/python.exe","-m","pytest"]},
+        {"name":"backend-shard-g-l","scope":"full backend test files g through l","backend_shard":"g-l","expected_redlines":["backend\\tests\\test_hybrid_router.py::test_router_with_real_providers_routes_to_local_when_healthy","backend\\tests\\test_image_config_section.py::test_llm_base_url_fallback_is_read"],"command":["backend/.venv/Scripts/python.exe","-m","pytest"]},
+        {"name":"backend-shard-m-r","scope":"full backend test files m through r","backend_shard":"m-r","expected_redlines":["backend\\tests\\test_model_catalog.py::test_build_catalog_carries_context_window","backend\\tests\\test_model_catalog.py::test_model_context_window_is_per_model_not_uniform","backend\\tests\\test_openai_compatible.py::test_integration_ollama_v1_roundtrip","backend\\tests\\test_outcome_verifier.py::test_t10_4_git_diff_skipped_when_not_git_repo","backend\\tests\\test_p4s21_context_bundle_history.py::test_memory_component_promotes_l2_to_meta_l2_history","backend\\tests\\test_p4s21_context_bundle_history.py::test_memory_component_skips_empty_or_unknown_role_rows","backend\\tests\\test_p4s21_context_bundle_history.py::test_memory_component_text_block_no_longer_includes_l2","backend\\tests\\test_p4s22_web_search.py::test_web_search_caps_at_max_results","backend\\tests\\test_p4s22_web_search.py::test_web_search_parses_results"],"command":["backend/.venv/Scripts/python.exe","-m","pytest"]},
+        {"name":"backend-shard-s-z","scope":"full backend test files s through z","backend_shard":"s-z","expected_redlines":["backend\\tests\\test_workflow_eval_cli.py::test_builtin_adapter_executes_all_three_graphs_and_returns_trace_projection","backend\\tests\\test_workflow_eval_cli.py::test_deliberately_broken_fixture_turns_evaluator_red_and_keeps_denominator[complex_code_write_test_fix.json-<lambda>-audit_failure]","backend\\tests\\test_workflow_eval_cli.py::test_deliberately_broken_fixture_turns_evaluator_red_and_keeps_denominator[deep_research_citation.json-<lambda>-missing_required_node]","backend\\tests\\test_workflow_eval_cli.py::test_deliberately_broken_fixture_turns_evaluator_red_and_keeps_denominator[ppt_outline_render_qa.json-<lambda>-qa_failure]","backend\\tests\\test_workflow_eval_cli.py::test_fixture_output_is_not_used_by_default_graph_execution","backend\\tests\\test_workflow_eval_cli.py::test_graph_cli_is_repeatable_and_emits_exact_report_schema","backend\\tests\\test_workflow_eval_cli.py::test_graph_version_change_trips_regression_gate","backend\\tests\\test_workflow_eval_cli.py::test_malformed_fixture_is_counted_as_a_required_failure"],"command":["backend/.venv/Scripts/python.exe","-m","pytest"]},
+        {
+          "name": "full-vitest",
+          "scope": "all tauri-app Vitest files",
+          "command": ["C:/Users/Administrator/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe", "tauri-app/node_modules/vitest/vitest.mjs", "run", "--root", "tauri-app"]
+        },
+        {
+          "name": "typescript-build",
+          "scope": "full tauri-app typecheck",
+          "command": ["C:/Users/Administrator/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe", "tauri-app/node_modules/typescript/bin/tsc", "-b", "tauri-app"]
+        },
+        {
+          "name": "context-os-benchmark",
+          "scope": "provider-free ON compare with 500 deferred capabilities",
+          "command": ["backend/.venv/Scripts/python.exe", "scripts/perf/context_os_bench.py", "--mode", "on", "--compare", "plans/2026-07-13-context-os-v1/context-perf-baseline.json"]
+        }
+      ]
+    }
+  ]
+}

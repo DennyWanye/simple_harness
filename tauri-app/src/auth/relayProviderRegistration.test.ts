@@ -8,8 +8,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RelayAuthAdapter } from "./RelayAuthAdapter";
+import { updateCloudConfig } from "../bindings/config";
 import type { Provider, User } from "./types";
 import { RelayProviderRegistration } from "./relayProviderRegistration";
+
+vi.mock("../bindings/config", () => ({
+  updateCloudConfig: vi.fn(async () => ({
+    ok: true,
+    cloud_configured: true,
+    base_url: "https://relay.example.com/v1",
+    model: "gpt-5.5",
+    has_api_key: true,
+    strategy: "cloud",
+  })),
+}));
 
 type RegistrationAdapter = Pick<
   RelayAuthAdapter,
@@ -45,6 +57,7 @@ function makeAdapter(user: User | null = makeUser()): RegistrationAdapter {
 }
 
 beforeEach(() => {
+  vi.clearAllMocks();
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
 });
 
@@ -70,8 +83,15 @@ describe("RelayProviderRegistration.ensure", () => {
         id: "relay-cloud",
         source: "relay",
         account_ref: "acct-1",
+        enabled: true,
         api_key: "tsk_stable",
       }),
+    });
+    expect(updateCloudConfig).toHaveBeenCalledWith("", {
+      base_url: "https://relay.example.com/v1",
+      model: "gpt-5.5",
+      api_key: "tsk_stable",
+      persist_key: false,
     });
   });
 

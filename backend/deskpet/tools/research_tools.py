@@ -32,6 +32,7 @@ side calls the orchestrator via the ToolRegistry façade.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import logging
 import os
@@ -55,12 +56,22 @@ log = logging.getLogger(__name__)
 # [0,1]) so relevance uses real semantics. Unset → keyword coverage only
 # (graceful degrade, no embedder dependency in tests).
 _SEMANTIC_SCORER = None
+_WORKFLOW_STARTER: Optional[Callable[[dict[str, Any], str], Awaitable[dict[str, Any]]]] = None
 
 
 def set_semantic_scorer(fn) -> None:
     """Wire a BGE-M3-backed relevance scorer (called from main.py)."""
     global _SEMANTIC_SCORER
     _SEMANTIC_SCORER = fn
+
+
+def set_deepresearch_workflow_starter(
+    fn: Optional[Callable[[dict[str, Any], str], Awaitable[dict[str, Any]]]],
+) -> None:
+    """Route new deepresearch tool calls to the durable graph when wired."""
+
+    global _WORKFLOW_STARTER
+    _WORKFLOW_STARTER = fn
 
 
 # Optional LLM-as-reranker (默认精排手段)。main.py 注入一个【廉价模型】
@@ -121,6 +132,86 @@ def _site_directive_for(text: str) -> Optional[str]:
         if any(k in t for k in kws):
             return site
     return None
+
+
+# Source packs add a small, deterministic set of source-directed searches for
+# topics where generic SERP ranking often misses the sources users actually
+# need. Keep these as standalone source-directed queries (not direct fetches) so the existing
+# search/extract/scoring/rerank pipeline still decides what is usable.
+_SOURCE_PACK_RULES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
+    (
+        "ai_agent_harness",
+        (
+            "ai agent", "agent harness", "agentic system", "agent framework",
+            "智能体", "智能体框架", "智能体工程", "代理框架",
+        ),
+        (
+            "AI agent harness best practices site:anthropic.com OR site:openai.com",
+            "durable AI agent execution human in the loop site:langchain.com OR site:microsoft.com",
+            "AI agent observability evaluation tracing site:openai.com OR site:langchain.com",
+        ),
+    ),
+    (
+        "geopolitics_ukraine",
+        (
+            "俄乌", "乌克兰", "俄乌战争", "俄乌局势", "俄军", "乌军",
+            "russia ukraine", "ukraine war", "russian invasion",
+            "ukraine front", "russian offensive", "isw",
+        ),
+        (
+            "Russia Ukraine latest situation ISW site:understandingwar.org",
+            "Russia Ukraine civilian casualties humanitarian impact latest site:un.org",
+            "Russia Ukraine war latest Reuters AP BBC Al Jazeera (site:reuters.com OR site:apnews.com OR site:bbc.com OR site:aljazeera.com)",
+        ),
+    ),
+    (
+        "gold_market",
+        (
+            "金价", "黄金价格", "黄金走势", "黄金市场", "xau", "xau/usd",
+            "gold price", "gold market", "spot gold",
+        ),
+        (
+            "gold price benchmark latest site:lbma.org.uk",
+            "gold demand trends latest site:gold.org",
+            "XAU USD gold price latest site:investing.com",
+        ),
+    ),
+)
+
+
+def _source_packs_enabled() -> bool:
+    """``[research].source_packs`` (默认 True)。"""
+    return bool(_research_raw().get("source_packs", True))
+
+
+def _source_pack_max_queries_per_question() -> int:
+    """Bound source-pack expansion so broad plans do not explode search cost."""
+    try:
+        n = int(_research_raw().get("source_pack_max_queries_per_question", 3))
+    except (TypeError, ValueError):
+        n = 3
+    return max(0, min(n, 6))
+
+
+def _source_pack_queries_for(text: str) -> list[tuple[str, str]]:
+    """Return ``[(pack_name, source_query)]`` for source packs matching text."""
+    if not _source_packs_enabled():
+        return []
+    t = (text or "").lower()
+    if not t:
+        return []
+    limit = _source_pack_max_queries_per_question()
+    if limit <= 0:
+        return []
+    out: list[tuple[str, str]] = []
+    for pack_name, keywords, suffixes in _SOURCE_PACK_RULES:
+        if not any(kw in t for kw in keywords):
+            continue
+        for source_query in suffixes:
+            out.append((pack_name, source_query))
+            if len(out) >= limit:
+                return out
+    return out
 
 
 # [research] 配置读取 —— 统一缓存入口。
@@ -263,13 +354,50 @@ def _js_render_timeout() -> float:
 # 单次 research 内 JS 渲染触发计数(护 deepresearch 300s 预算,见 plan WI-3 双闸②)。
 _JS_RENDER_MAX_PER_RUN = 4
 _JS_RENDER_MIN_SHELL_HTML = 20_000   # 原始 HTML > 此值 + trafilatura 短 = 疑 JS 空壳(双闸①)
-_js_render_run_count = 0             # 每次 deepresearch 开头 _reset_js_render_budget() 归零
+
+
+@dataclass(slots=True)
+class _StandaloneJSRenderBudget:
+    """Compatibility budget for callers using ``default_extract`` directly.
+
+    DeepResearch runs pass an explicit workflow ``FetchPort`` instead.  This
+    task-local fallback keeps the public extractor useful without restoring a
+    process-global counter that concurrent runs could corrupt.
+    """
+
+    limit: int = _JS_RENDER_MAX_PER_RUN
+    used: int = 0
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+    async def claim_js_render(self) -> bool:
+        async with self.lock:
+            if self.used >= self.limit:
+                return False
+            self.used += 1
+            return True
+
+
+_standalone_js_budget: contextvars.ContextVar[
+    Optional[_StandaloneJSRenderBudget]
+] = contextvars.ContextVar("deskpet_research_js_budget", default=None)
 
 
 def _reset_js_render_budget() -> None:
-    """deepresearch 开头调,归零本轮 JS 渲染触发计数。"""
-    global _js_render_run_count
-    _js_render_run_count = 0
+    """Reset the task-local compatibility budget for direct extractor calls."""
+    _standalone_js_budget.set(_StandaloneJSRenderBudget())
+
+
+async def _claim_js_render(fetch_port: object | None) -> bool:
+    budget = fetch_port
+    if budget is None:
+        budget = _standalone_js_budget.get()
+        if budget is None:
+            budget = _StandaloneJSRenderBudget()
+            _standalone_js_budget.set(budget)
+    claim = getattr(budget, "claim_js_render", None)
+    if claim is None:
+        raise TypeError("fetch_port must provide async claim_js_render()")
+    return bool(await claim())
 
 
 async def _js_render_dispatch(url: str) -> Optional[str]:
@@ -440,6 +568,7 @@ async def _llm_rerank(
         rel = max(0.0, min(10.0, float(s)))
         d = p.dims or {}
         d["relevance"] = rel
+        d["llm_rerank_verified"] = True
         p.dims = d
         p.score = research_scoring.composite_score(
             authority=float(d.get("authority", 3.0)),
@@ -467,6 +596,8 @@ def _relevance_score(text: str, *, keywords: Iterable[str]) -> float:
         return 0.0
     tl = text.lower()
     return (sum(1 for k in kws if k in tl) / float(len(kws))) * 10.0
+
+
 
 
 # ----------------------------------------------------------------------
@@ -861,10 +992,34 @@ async def _jina_extract(url: str, *, client: httpx.AsyncClient) -> Optional[dict
     return _parse_jina(body)
 
 
+def _scrapling_fetch_html(url: str, timeout: float = _DEFAULT_TIMEOUT) -> Optional[dict[str, Any]]:
+    """Fetch HTML with Scrapling for real deepresearch runs.
+
+    The indirection keeps Scrapling optional at import time and lets tests
+    monkeypatch this layer without pulling in browser-like fetchers.
+    """
+    try:
+        from .scrapling_tools import _scrapling_get_html
+
+        fetched = _scrapling_get_html(url, timeout=timeout)
+    except Exception as exc:  # noqa: BLE001
+        log.debug("scrapling extract fetch unavailable for %s: %s", url, exc)
+        return None
+    if not fetched.get("ok"):
+        log.debug("scrapling extract fetch failed for %s: %s", url, fetched.get("error"))
+        return None
+    html = str(fetched.get("html") or "")
+    status = int(fetched.get("status") or 0)
+    if not html or not (200 <= status < 300):
+        return None
+    return fetched
+
+
 async def default_extract(
     url: str,
     *,
     client: Optional[httpx.AsyncClient] = None,
+    fetch_port: object | None = None,
 ) -> dict[str, Any]:
     """Fetch + extract main article text via trafilatura, with a Jina Reader
     二级兜底 for JS-rendered pages trafilatura can't read.
@@ -879,12 +1034,21 @@ async def default_extract(
         follow_redirects=True,
     )
     try:
-        try:
-            resp = await cli.get(url)
-            resp.raise_for_status()
-        except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": str(exc), "url": url}
-        html = resp.text
+        fetcher = "httpx"
+        html = ""
+        scrapled: Optional[dict[str, Any]] = None
+        if owns_client:
+            scrapled = await asyncio.to_thread(_scrapling_fetch_html, url, _DEFAULT_TIMEOUT)
+        if scrapled is not None:
+            html = str(scrapled.get("html") or "")
+            fetcher = str(scrapled.get("fetcher") or "scrapling")
+        else:
+            try:
+                resp = await cli.get(url)
+                resp.raise_for_status()
+            except Exception as exc:  # noqa: BLE001
+                return {"ok": False, "error": str(exc), "url": url}
+            html = resp.text
         title = ""
         text = ""
         date = ""
@@ -905,13 +1069,11 @@ async def default_extract(
             if m:
                 title = re.sub(r"\s+", " ", m.group(1)).strip()
         # 二级兜底(疑似 JS 空壳): 先本地渲染(cdp-edge/webview/crawl4ai), 再 Jina(国外)。
-        extractor = "trafilatura"
-        global _js_render_run_count
+        extractor = "scrapling+trafilatura" if fetcher == "scrapling" else "trafilatura"
         # 本地 JS 渲染兜底(本地、中国可用,排在 jina 之前)。双闸防误触发 + 护超时预算:
         #   ①trafilatura 短 且 原始 HTML 够大(疑被 JS 藏的富页) ②本轮触发未超上限
         if (len(text) < _JINA_MIN_CHARS and len(html) > _JS_RENDER_MIN_SHELL_HTML
-                and _js_render_enabled() and _js_render_run_count < _JS_RENDER_MAX_PER_RUN):
-            _js_render_run_count += 1
+                and _js_render_enabled() and await _claim_js_render(fetch_port)):
             rendered = await _js_render_dispatch(url)
             if rendered:
                 try:
@@ -932,7 +1094,7 @@ async def default_extract(
                     html = rendered   # 后续 ai_generated/mojibake 改扫【渲染后 HTML】(plan WI-3)
         # Jina Reader 二级兜底: 仅当本地渲染未命中(extractor 仍 trafilatura)才试,避免
         # 一个空壳站连跑两个重型兜底使超时翻倍(plan R6 去重)。
-        if extractor == "trafilatura" and len(text) < _JINA_MIN_CHARS and _jina_enabled():
+        if extractor in {"trafilatura", "scrapling+trafilatura"} and len(text) < _JINA_MIN_CHARS and _jina_enabled():
             jina = await _jina_extract(url, client=cli)
             if jina and len(jina.get("text", "")) > len(text):
                 text = jina["text"]
@@ -949,6 +1111,7 @@ async def default_extract(
             "date": date,
             "ai_generated": research_scoring.is_ai_generated(html),
             "extractor": extractor,
+            "fetcher": fetcher,
         }
     finally:
         if owns_client:
@@ -1256,10 +1419,50 @@ async def _run_subagent_fanout(
         "per_subrun_timeout_s": timeout,
         "per_subquestion": per_subquestion,
     }
+    aggregate_route = dict(route)
+    channel_routes = [
+        dict(report.coverage.get("route", {}))
+        for _, report in sub_reports
+        if isinstance(report.coverage.get("route"), dict)
+    ]
+    parent_agent_reach = aggregate_route.get("agent_reach", {})
+    agent_reach = dict(parent_agent_reach) if isinstance(parent_agent_reach, dict) else {}
+    planned = [str(value) for value in agent_reach.get("planned_channels", [])]
+    planned_urls = [str(value) for value in agent_reach.get("planned_urls", [])]
+    doctor = dict(agent_reach.get("doctor", {})) if isinstance(agent_reach.get("doctor"), dict) else {}
+    hits = [dict(value) for value in agent_reach.get("hits", []) if isinstance(value, dict)]
+    degraded = [dict(value) for value in agent_reach.get("degraded", []) if isinstance(value, dict)]
+    for source_route in [aggregate_route, *channel_routes]:
+        child = source_route.get("agent_reach", {})
+        if not isinstance(child, dict):
+            continue
+        for value in child.get("planned_channels", []):
+            name = str(value)
+            if name not in planned:
+                planned.append(name)
+        for value in child.get("planned_urls", []):
+            url = str(value)
+            if url not in planned_urls and len(planned_urls) < 4:
+                planned_urls.append(url)
+        if isinstance(child.get("doctor"), dict):
+            doctor.update(child["doctor"])
+        for key, target in (("hits", hits), ("degraded", degraded)):
+            for value in child.get(key, []):
+                if isinstance(value, dict) and dict(value) not in target:
+                    target.append(dict(value))
+    aggregate_route["agent_reach"] = {
+        "planned_channels": planned,
+        "planned_urls": planned_urls,
+        "doctor": doctor,
+        "hits": hits,
+        "degraded": degraded,
+    }
+
     base_cov = {
         "n_sub_questions": len(sub_questions),
         "mode": "fanout",
         "subagent_fanout": fanout_obs,
+        "route": aggregate_route,
     }
 
     if not sub_reports:
@@ -1357,488 +1560,38 @@ async def deepresearch(
     _depth: int = 0,
     skip_plan: bool = False,
 ) -> ResearchReport:
-    """End-to-end research pipeline. See module docstring.
+    """Legacy blocking adapter over the reusable DeepResearch stages.
 
-    All network / LLM I/O is injected so unit tests can mock everything.
-    Defaults wire up to :func:`default_search` + :func:`default_extract`.
+    Report persistence, artifact publication, and delivery remain in the tool
+    handler below; the extracted core only performs research computation.
     """
-    if not topic or not topic.strip():
-        return ResearchReport(
-            topic="", summary="", report_md="",
-            citations=[], sub_questions=[],
-            coverage={"n_sources": 0, "n_domains": 0, "n_sub_questions": 0},
-            errors=["empty topic"],
-        )
-    topic = topic.strip()
-    _ur = (user_request or topic).strip()
-    request_topic = _ur            # canonical subject (authoritative)
-    llm_topic = topic              # untrusted candidate
-    search_fn = search or default_search
-    extract_fn = extract or default_extract
-    errors: list[str] = []
-    mode = (mode or "standard").lower()
-    # route 扩成集合(§6.0.2 观测): 记本 run 实际命中的搜索引擎 + 直连源。
-    # str→dict 破坏性类型变更已核 coverage["route"] 无下游按 str 消费。
-    _route_fallback = str(
-        getattr(search_fn, "route", None)
-        or getattr(search_fn, "provider", None)
-        or getattr(search_fn, "engine", None)
-        or "ddg"
+
+    from ..workflows.definitions.research_core import (
+        ResearchCoreConfig,
+        legacy_ports,
+        run_research_core,
     )
-    route: dict[str, Any] = {
-        "engines_hit": [], "direct_sources_hit": [], "fallback": _route_fallback,
-    }
-    # 每轮开头重置 search_provider 运行态(cdp 预算/engines_hit/errors),best-effort
-    try:
-        from . import search_provider as _sp_reset
-        _sp_reset.reset_search_runtime_state()
-        _sp_reset.reset_search_cdp_budget()  # 每轮归零 search-CDP 预算(模块级跨run累加防护)
-    except Exception:  # noqa: BLE001
-        pass
-    dropped_by_reason = {
-        "ai_generated": 0,
-        "low_quality": 0,
-        "mojibake": 0,
-        "too_short": 0,
-        "direct_source_empty": 0,
-    }
-    elapsed_ms_per_stage = {
-        "plan": 0,
-        "search": 0,
-        "fetch": 0,
-        "score": 0,
-        "synth": 0,
-        "direct": 0,
-    }
 
-    def _stage_ms(start: float) -> int:
-        return max(0, int(round((time.perf_counter() - start) * 1000)))
-
-    def _observability_coverage() -> dict[str, Any]:
-        return {
-            "route": route,
-            "mode": mode,
-            "n_dropped_by_reason": dict(dropped_by_reason),
-            "elapsed_ms_per_stage": dict(elapsed_ms_per_stage),
-        }
-    _reset_js_render_budget()   # 本轮 JS 渲染触发计数归零(护 300s 预算)
-
-    # ---- 1. plan ----------------------------------------------------
-    stage_start = time.perf_counter()
-    if skip_plan:
-        sub_questions = [request_topic]
-    else:
-        try:
-            plan_raw = await llm_call(_PLAN_PROMPT.format(
-                topic=llm_topic,
-                user_request=request_topic,
-            ))
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"plan_llm: {exc}")
-            plan_raw = ""
-        sub_questions = parse_sub_questions(plan_raw, max_questions=max_sub_questions)
-    if not sub_questions:
-        # Fall back to the topic itself as the single sub-question. This
-        # lets users with offline / failing LLM still get *something*.
-        sub_questions = [request_topic]
-        errors.append("plan_fallback: using topic verbatim")
-    elapsed_ms_per_stage["plan"] = _stage_ms(stage_start)
-
-    fanout_on = (scheduler is not None and _depth == 0
-                 and len(sub_questions) >= _fanout_min_subquestions()
-                 and _fanout_enabled())
-    if fanout_on:
-        return await _run_subagent_fanout(
-            topic=request_topic,
-            sub_questions=sub_questions,
-            llm_call=llm_call,
-            search=search_fn,
-            extract=extract_fn,
-            scheduler=scheduler,
-            parent_sid=parent_sid,
-            mode=mode,
-            user_request=request_topic,
-            errors=errors,
-            route=route,
-        )
-
-    # ---- 1.5 query expansion (multi-query + HyDE) -------------------
-    # 一次 LLM 调用产出额外搜索 query(改写+HyDE),提升召回。归属 topic(不偏向
-    # 某子问题的关键词打分)。失败静默。
-    expansion_qs: list[str] = []
-    if _query_expansion_enabled():
-        expansion_qs = await _expand_queries(llm_call, request_topic, sub_questions, errors)
-
-    # ---- 2. search --------------------------------------------------
-    stage_start = time.perf_counter()
-    # 每个子问题: 普通搜 + (命中政策/企业/学术意图时)site: 定向官方域加一搜,
-    # 让一手权威源(gov.cn/cninfo/arxiv)进候选池。site_directed 可关。
-    # 末尾追加 query expansion 的额外查询(归属 topic)。
-    site_on = _site_directed_enabled()
-    search_specs: list[tuple[str, str]] = []  # (实际搜索串, 归属子问题)
-    for q in sub_questions:
-        search_specs.append((q, q))
-        site = _site_directive_for(q) if site_on else None
-        if site:
-            search_specs.append((f"{q} {site}", q))
-    for eq in expansion_qs:
-        search_specs.append((eq, request_topic))
-    search_tasks = [
-        search_fn(sq, max_results=max_urls_per_query) for sq, _ in search_specs
-    ]
-    raw_results = await _gather_safe(search_tasks, label="search")
-    elapsed_ms_per_stage["search"] = _stage_ms(stage_start)
-    # Dedup by URL, mapping back to the OWNING sub-question for keyword scoring.
-    url_to_question: dict[str, str] = {}
-    for (sq, owner), hits in zip(search_specs, raw_results):
-        if isinstance(hits, BaseException):
-            errors.append(f"search:{sq!r}: {hits}")
-            continue
-        for h in hits or []:
-            u = h.get("url")
-            if not u or u in url_to_question:
-                continue
-            url_to_question[u] = owner
-
-    # 记录本 run 实际命中的搜索引擎(§6.0.2 观测) + 收集引擎级侧信道错误
-    # (含 bing_cdp_captcha_suspected — §6.0.4 🔴 一票否决门:errors 须如实),best-effort
-    try:
-        from . import search_provider as _sp_hit
-        route["engines_hit"] = _sp_hit.get_last_engines_hit()
-        for _e in _sp_hit.get_last_search_errors():
-            if _e not in errors:
-                errors.append(_e)
-    except Exception:  # noqa: BLE001
-        pass
-
-    if not url_to_question:
-        # §6.0 修复(真机 E2E 暴露的严重 bug): 普通搜索 0 结果(最常见因 SERP 被 IP 封)时
-        # **不再 early-return** —— 否则 §4.4 直连源(bypass SERP,正是为封禁场景兜底)永远跑
-        # 不到,§6.0-A 直连源的全部价值会在"最需要它"时失效。改为:记 error 后继续走 fetch(空候选)
-        # → score → §4.4 直连源 → 由后面"no usable passages"兜底真正全空的情况。
-        errors.append("no search results")
-
-    # ---- 3. fetch + extract ----------------------------------------
-    # Cap how many URLs we actually fetch so we don't burn 5 minutes. 用
-    # len(search_specs)(含 site: 定向搜)作上限,确保一手权威源不被普通结果挤掉。
-    candidate_urls = list(url_to_question.keys())[
-        : max_urls_per_query * len(search_specs)
-    ]
-    stage_start = time.perf_counter()
-    extract_tasks = [extract_fn(u) for u in candidate_urls]
-    extracted = await _gather_safe(extract_tasks, label="extract")
-    elapsed_ms_per_stage["fetch"] = _stage_ms(stage_start)
-
-    # ---- 4. score + filter -----------------------------------------
-    stage_start = time.perf_counter()
-    # V8 tiered composite: authority(分层,含中文源) × recency(按 topic
-    # velocity) × relevance(关键词覆盖,可选 BGE-M3 语义) × depth(长度).
-    keywords = _topic_keywords(request_topic) + [
-        k for q in sub_questions for k in _topic_keywords(q)
-    ]
-    velocity = research_scoring.infer_topic_velocity(request_topic)
-
-    def _passage_from(url: str, payload: Any) -> Optional[Passage]:
-        """Build a scored Passage from one extract result, or None (with an
-        error appended) when the source is unusable. Closure over keywords/
-        velocity so both round-1 and reflection round-2 score identically."""
-        if isinstance(payload, BaseException):
-            errors.append(f"extract:{url}: {payload}")
-            return None
-        if not isinstance(payload, dict) or not payload.get("ok"):
-            err = (payload or {}).get("error", "extract failed") if isinstance(payload, dict) else "unknown"
-            errors.append(f"extract:{url}: {err}")
-            return None
-        # 字典/词义站直接剔除(主题词被拆成单字时命中"X字的意思"页污染结果)。
-        if research_scoring.is_low_quality(url):
-            dropped_by_reason["low_quality"] += 1
-            errors.append(f"dropped_low_quality:{url}")
-            return None
-        text = (payload.get("text") or "").strip()
-        if len(text) < min_passage_chars:
-            dropped_by_reason["too_short"] += 1
-            return None
-        # 源质量过滤: 页面自带"包含 AI 生成内容"声明 → 直接剔除(不可作正式引据)。
-        # 双层: payload["ai_generated"](extract 阶段扫原始 HTML,抓 boilerplate 里
-        # 的声明)+ 抽取后正文兜底(自定义 extract_fn 没带该 flag 时)。
-        if payload.get("ai_generated") or research_scoring.is_ai_generated(text):
-            dropped_by_reason["ai_generated"] += 1
-            errors.append(f"dropped_ai_generated:{url}")
-            return None
-        # 乱码源剔除(编码声明错→抽出整段 mojibake,不可引据)。
-        if research_scoring.is_mojibake(text):
-            dropped_by_reason["mojibake"] += 1
-            errors.append(f"dropped_mojibake:{url}")
-            return None
-        snippet = text[:min_passage_chars].replace("\n", " ").strip()
-        authority = research_scoring.score_authority(url)
-        recency = research_scoring.score_recency(
-            str(payload.get("date") or ""), topic_velocity=velocity
-        )
-        relevance = _relevance_score(text, keywords=keywords)
-        depth = min(len(text) / 2000.0, 1.0) * 10.0
-        sc = research_scoring.composite_score(
-            authority=authority, recency=recency,
-            relevance=relevance, depth=depth, topic_velocity=velocity,
-        )
-        return Passage(
-            citation=Citation(
-                n=0, url=url, title=(payload.get("title") or url)[:200],
-                snippet=snippet,
-                fetched_at=float(payload.get("fetched_at", time.time())),
-                authority=authority,
-            ),
-            text=text, score=sc,
-            dims={"authority": authority, "recency": recency,
-                  "relevance": relevance, "depth": depth},
-        )
-
-    passages: list[Passage] = []
-    for url, payload in zip(candidate_urls, extracted):
-        p = _passage_from(url, payload)
-        if p is not None:
-            passages.append(p)
-
-    # ---- 4.4 直连权威源 (中文一手源 cninfo/openstd + wikipedia/arxiv/s2/wikidata) ----
-    # §6.0-A: bypass SERP 的官方 API 直连;direct_source_for→多源(list);并发 gather +
-    # T_direct(默认45s)截断;契约-7 URL 归一化去重(不与普通搜索/彼此重复,dup≠drop);
-    # 命中源记入 route.direct_sources_hit;整源空记 direct_source_empty。高新鲜度跳长度门。
-    if _direct_sources_enabled():
-        from . import research_sources as _rs
-
-        seen_passage_urls = {_norm_url(u) for u in candidate_urls}
-        direct_sources_hit: list[str] = []
-        stage_start = time.perf_counter()
-
-        async def _run_direct(q: str, src: str) -> tuple[str, list[dict]]:
-            try:
-                if src == "cninfo":
-                    items = await _rs.cninfo_search(q, max_results=3)
-                    if not items:   # A股没命中(美股/外企)→ EDGAR 兜底,best-effort
-                        items = await _rs.edgar_search(q, max_results=1)
-                else:
-                    fetcher = _rs.DIRECT_FETCHERS.get(src)
-                    items = await fetcher(q, max_results=3) if fetcher else []
-                return src, list(items or [])
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"direct:{src}:{q!r}: {exc}")
-                return src, []
-
-        _direct_tasks = [
-            _run_direct(q, src)
-            for q in sub_questions
-            for src in _rs.direct_source_for(q)
-        ]
-        if _direct_tasks:
-            try:
-                _direct_results = await asyncio.wait_for(
-                    _gather_safe(_direct_tasks, label="direct"),
-                    timeout=float(_research_raw().get("direct_timeout", 45.0)),
-                )
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"direct_stage: {exc}")
-                _direct_results = []
-            for _res in _direct_results:
-                if isinstance(_res, BaseException) or not _res:
-                    continue
-                src, items = _res
-                _added = 0
-                for payload in items:
-                    d_url = payload.get("url", "")
-                    d_text = (payload.get("text") or "").strip()
-                    if not d_url or not d_text:
-                        continue
-                    if _norm_url(d_url) in seen_passage_urls:
-                        continue  # 契约-7: 与普通搜索/彼此去重(dup≠drop,不计入 empty)
-                    seen_passage_urls.add(_norm_url(d_url))
-                    d_auth = research_scoring.score_authority(d_url)
-                    d_rel = _relevance_score(d_text, keywords=keywords)
-                    d_depth = min(len(d_text) / 2000.0, 1.0) * 10.0
-                    d_sc = research_scoring.composite_score(
-                        authority=d_auth, recency=8.0, relevance=d_rel,
-                        depth=d_depth, topic_velocity=velocity,
-                    )
-                    passages.append(Passage(
-                        citation=Citation(
-                            n=0, url=d_url, title=(payload.get("title") or d_url)[:200],
-                            snippet=d_text[:250].replace("\n", " ").strip(),
-                            fetched_at=float(payload.get("fetched_at", time.time())),
-                            authority=d_auth,
-                        ),
-                        text=d_text, score=d_sc,
-                        dims={"authority": d_auth, "recency": 8.0,
-                              "relevance": d_rel, "depth": d_depth},
-                    ))
-                    _added += 1
-                if _added > 0:
-                    if src not in direct_sources_hit:
-                        direct_sources_hit.append(src)
-                else:
-                    dropped_by_reason["direct_source_empty"] += 1
-        route["direct_sources_hit"] = direct_sources_hit
-        elapsed_ms_per_stage["direct"] = _stage_ms(stage_start)
-
-    # ---- 4.5 reflection round (V8 iterative deepening) -------------
-    # depth=deep → after round-1 evidence, ask the LLM what gaps remain,
-    # generate 1-3 follow-up queries, and fetch a 2nd round before synth.
-    rounds = 1
-    if max_rounds >= 2 and passages:
-        seen_urls = set(candidate_urls)
-        follow_qs = await _gap_followup_queries(
-            llm_call, request_topic, sub_questions, passages, errors
-        )
-        if follow_qs:
-            rounds = 2
-            r2_hits = await _gather_safe(
-                [search_fn(q, max_results=max_urls_per_query) for q in follow_qs],
-                label="search2",
-            )
-            r2_urls: list[str] = []
-            for hits in r2_hits:
-                if isinstance(hits, BaseException):
-                    continue
-                for h in hits or []:
-                    u = h.get("url")
-                    if u and u not in seen_urls:
-                        seen_urls.add(u)
-                        r2_urls.append(u)
-            r2_urls = r2_urls[: max_urls_per_query * len(follow_qs)]
-            if r2_urls:
-                r2_extracted = await _gather_safe(
-                    [extract_fn(u) for u in r2_urls], label="extract2"
-                )
-                for url, payload in zip(r2_urls, r2_extracted):
-                    p = _passage_from(url, payload)
-                    if p is not None:
-                        passages.append(p)
-
-    # ---- 4.6 optional BGE-M3 semantic relevance refine -------------
-    # When a semantic scorer is wired (main.py injects the memory
-    # embedder), blend cosine(topic, passage) into relevance and recompute
-    # the composite. Degrades silently to keyword-only when unwired/failing.
-    if _SEMANTIC_SCORER is not None and passages:
-        try:
-            sims = await _maybe_await(
-                _SEMANTIC_SCORER(request_topic, [p.text[:2000] for p in passages])
-            )
-        except Exception as exc:  # noqa: BLE001
-            sims = None
-            log.debug("semantic relevance skipped: %s", exc)
-        if sims and len(sims) == len(passages):
-            for p, sim in zip(passages, sims):
-                sem_rel = max(0.0, min(1.0, float(sim))) * 10.0
-                d = p.dims or {}
-                # take the stronger signal so semantic lifts, never buries,
-                # a keyword-strong source
-                blended = max(float(d.get("relevance", 0.0)), sem_rel)
-                d["relevance"] = blended
-                p.dims = d
-                p.score = research_scoring.composite_score(
-                    authority=float(d.get("authority", 3.0)),
-                    recency=float(d.get("recency", 3.0)),
-                    relevance=blended, depth=float(d.get("depth", 0.0)),
-                    topic_velocity=velocity,
-                )
-
-    passages.sort(key=lambda p: -p.score)
-
-    # ---- 4.7 LLM rerank (默认精排;免下载本地 cross-encoder) -----------
-    # 召回+打分后用廉价中转站模型(gpt-4.1-mini)做 cross-encoder 式精排,把
-    # "真回答问题且权威"的源顶进 top-K。候选池限 [N, 24] 以控 token + 防输出截断;
-    # 仅当 rerank 桥已注入(main.py 默认注入)且未关时触发;未注入则跳过(不回退主
-    # llm,省一次 gpt-5.5 调用)。失败/超时/低覆盖 → 保留原打分并如实标注。
-    rerank_used = "off"
-    if _rerank_mode() != "off" and passages and _RERANK_LLM_CALL is not None:
-        # 精排候选 = 按当前分 top min(2N, 24);只在这池里选最终 top-K,避免未精排
-        # 的 tail 在池内被降分后"翻上来"绕过精排。
-        pool_size = min(len(passages), max(max_total_passages, min(max_total_passages * 2, 24)))
-        pool = passages[:pool_size]
-        applied = await _llm_rerank(request_topic, pool, _RERANK_LLM_CALL, errors, velocity=velocity)
-        if applied:
-            pool.sort(key=lambda p: -p.score)  # 用 rerank 后的分在池内重排
-            passages = pool
-            rerank_used = "llm"
-        else:
-            rerank_used = "llm_failed"  # 桥在但本次没成功 → 如实标注(不误标 llm)
-
-    passages = passages[:max_total_passages]
-    # Re-number citations 1..N in score order
-    for i, p in enumerate(passages, start=1):
-        p.citation = Citation(
-            n=i, url=p.citation.url, title=p.citation.title,
-            snippet=p.citation.snippet, fetched_at=p.citation.fetched_at,
-            authority=p.citation.authority,
-        )
-
-    elapsed_ms_per_stage["score"] = _stage_ms(stage_start)
-
-    if not passages:
-        errors.append("no usable passages")
-        return ResearchReport(
-            topic=request_topic, summary="",
-            report_md=_no_results_template(request_topic, sub_questions),
-            citations=[], sub_questions=sub_questions,
-            coverage={
-                "n_sources": 0, "n_domains": 0,
-                "n_sub_questions": len(sub_questions),
-                **_observability_coverage(),
-            },
-            errors=errors,
-        )
-
-    # ---- 5. synthesize ---------------------------------------------
-    stage_start = time.perf_counter()
-    passage_block = _format_passages_for_llm(passages)
-    try:
-        report_md = await llm_call(_SYNTH_PROMPT.format(
-            topic=llm_topic,
-            request_topic=request_topic,
-            user_request=request_topic,
-            n_passages=len(passages),
-            passages=passage_block,
-        ))
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"synth_llm: {exc}")
-        report_md = _passages_only_fallback(request_topic, passages)
-
-    report_md = (report_md or "").strip()
-    if not report_md:
-        report_md = _passages_only_fallback(request_topic, passages)
-    elapsed_ms_per_stage["synth"] = _stage_ms(stage_start)
-
-    # ---- 6. cite_check ---------------------------------------------
-    citations = [p.citation for p in passages]
-    report_md, citations, cc = _finalize_report_md(report_md, citations, errors)
-
-    # ---- 7. summary / coverage / return ----------------------------
-    summary = _extract_summary(report_md)
-    domains = {_host(c.url) for c in citations if _host(c.url)}
-    div = research_scoring.diversity_report([c.url for c in citations])
-    coverage = {
-        "n_sources": len(citations),
-        "n_domains": len(domains),
-        "n_sub_questions": len(sub_questions),
-        "cite_check_ok": cc["ok"],
-        "cite_missing": cc["missing"],
-        "cite_unused": cc["unused"],
-        # V8 diversity / concentration (no single domain should dominate)
-        "topic_velocity": velocity,
-        "unique_domains": div["unique_domains"],
-        "max_single_domain_share": div["max_single_domain_share"],
-        "source_types": div["source_types"],
-        "diversity_ok": div["passes"],
-        "rounds": rounds,
-        "reranker": rerank_used,
-        **_observability_coverage(),
-    }
-    return ResearchReport(
-        topic=request_topic,
-        summary=summary,
-        report_md=report_md,
-        citations=citations,
-        sub_questions=sub_questions,
-        coverage=coverage,
-        errors=errors,
+    config = ResearchCoreConfig.from_legacy(
+        max_sub_questions=max_sub_questions,
+        max_urls_per_query=max_urls_per_query,
+        max_total_passages=max_total_passages,
+        min_passage_chars=min_passage_chars,
+        max_rounds=max_rounds,
+    )
+    _ur = (user_request or "").strip()
+    request_topic = _ur or topic.strip()
+    ports = legacy_ports(llm_call=llm_call, search=search, extract=extract)
+    return await run_research_core(
+        topic,
+        ports=ports,
+        config=config,
+        mode=mode,
+        user_request=request_topic,
+        scheduler=scheduler,
+        parent_sid=parent_sid,
+        depth=_depth,
+        skip_plan=skip_plan,
     )
 
 
@@ -1984,7 +1737,7 @@ def _no_results_template(topic: str, sub_questions: list[str]) -> str:
         f"## TL;DR\n\n"
         f"未能找到可用的来源（搜索失败或抓取失败）。已尝试以下子问题：\n\n"
         f"{questions_md}\n\n"
-        f"请稍后重试，或使用 `web_fetch` 工具针对具体网址手动取证。\n"
+        f"请稍后重试，或使用 `scrapling_fetch` 针对具体网址手动取证。\n"
     )
 
 
@@ -2128,6 +1881,9 @@ async def _handle_deepresearch(args: dict, task_id: str) -> str:
         )
     user_request = str(args.get("user_request") or "").strip() or None
     sid = str(args.get("_session_id") or "default")
+    if _WORKFLOW_STARTER is not None:
+        accepted = await _WORKFLOW_STARTER(dict(args), task_id)
+        return json.dumps(accepted, ensure_ascii=False)
 
     # Resolve an LLM callable from the running provider chain. We import
     # lazily so test environments without an LLM still pass.
@@ -2255,11 +2011,14 @@ async def _resolve_default_llm_call() -> _LLMCall:
     )
 
     async def _call(prompt: str) -> str:
-        result = await provider.chat_with_tools(
-            messages=[{"role": "user", "content": prompt}],
-            tools=[],
-            max_tokens=4096,  # synthesis needs room (was 2048 → truncated long reports)
-        )
+        from agent.context_messages import provider_purpose_scope
+
+        with provider_purpose_scope("research"):
+            result = await provider.chat_with_tools(
+                messages=[{"role": "user", "content": prompt}],
+                tools=[],
+                max_tokens=4096,  # synthesis needs room (was 2048 → truncated long reports)
+            )
         return (result or {}).get("content") or ""
 
     return _call

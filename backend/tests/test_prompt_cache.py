@@ -36,10 +36,18 @@ import httpx
 import pytest
 import structlog
 
+from agent.context_messages import (
+    CONTEXT_MESSAGE_META_KEY,
+    ContextMessageMeta,
+    ProviderAttemptOptions,
+    context_attempt_scope,
+    tag_message,
+)
 from providers.openai_compatible import (
     OpenAICompatibleProvider,
     _cache_breakpoint_order,
     _extract_cached_tokens,
+    _stamp_cache_control,
     _stabilize_prefix,
 )
 
@@ -140,6 +148,23 @@ def test_breakpoint_order_no_memory_block_collapses_memory_slot():
     ]
     order = _cache_breakpoint_order(messages, has_tools=False)
     assert "memory" not in order
+
+
+def test_cache_control_explicit_boundary_excludes_dynamic_system_tail():
+    messages = [
+        {"role": "system", "content": "stable persona"},
+        {"role": "system", "content": "dynamic retrieval"},
+        {"role": "user", "content": "question"},
+    ]
+
+    explicit = _stamp_cache_control(messages, boundary_index=0)
+    legacy = _stamp_cache_control(messages)
+
+    assert explicit[0]["cache_control"] == {"type": "ephemeral"}
+    assert "cache_control" not in explicit[1]
+    assert "cache_control" not in legacy[0]
+    assert legacy[1]["cache_control"] == {"type": "ephemeral"}
+    assert all("cache_control" not in message for message in messages)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -392,3 +417,98 @@ async def test_stream_outgoing_messages_are_prefix_stabilized():
     )
     # 原始入参不被原地改
     assert "content" not in msgs[2]
+
+
+@pytest.mark.asyncio
+async def test_stream_strips_sidecar_and_uses_explicit_cache_boundary():
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            content=_sse([_delta("ok"), "[DONE]"]),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    provider = OpenAICompatibleProvider(
+        base_url="https://api.anthropic.com/v1", api_key="k", model="m"
+    )
+    provider._test_transport = httpx.MockTransport(handler)
+    stable = tag_message(
+        {"role": "system", "content": "stable persona"},
+        ContextMessageMeta(
+            placement="prefix",
+            lifetime="stable",
+            source="persona",
+            protected=True,
+            trim_policy="never",
+        ),
+    )
+    dynamic = tag_message(
+        {"role": "system", "content": "dynamic retrieval"},
+        ContextMessageMeta(
+            placement="prefix",
+            lifetime="retrieved",
+            source="memory.l3",
+            trim_policy="drop",
+        ),
+    )
+    messages = [stable, dynamic, {"role": "user", "content": "question"}]
+
+    with context_attempt_scope(ProviderAttemptOptions(cache_boundary=0)):
+        _ = [ev async for ev in provider.chat_stream_with_tools(messages)]
+
+    sent = captured["body"]["messages"]
+    assert all(CONTEXT_MESSAGE_META_KEY not in message for message in sent)
+    assert sent[0]["cache_control"] == {"type": "ephemeral"}
+    assert "cache_control" not in sent[1]
+    assert CONTEXT_MESSAGE_META_KEY in messages[0]
+
+
+@pytest.mark.asyncio
+async def test_nonstream_serializer_strips_sidecar_and_uses_boundary():
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "model": "m",
+                "choices": [
+                    {
+                        "message": {"content": "ok", "tool_calls": []},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {},
+            },
+        )
+
+    provider = OpenAICompatibleProvider(
+        base_url="https://api.anthropic.com/v1", api_key="k", model="m"
+    )
+    provider._test_transport = httpx.MockTransport(handler)
+    messages = [
+        tag_message(
+            {"role": "system", "content": "stable"},
+            ContextMessageMeta(
+                placement="prefix",
+                lifetime="stable",
+                source="persona",
+                trim_policy="never",
+            ),
+        ),
+        {"role": "system", "content": "dynamic"},
+        {"role": "user", "content": "question"},
+    ]
+
+    with context_attempt_scope(ProviderAttemptOptions(cache_boundary=0)):
+        response = await provider._legacy_chat_with_tools_nonstream(messages)
+
+    assert response["content"] == "ok"
+    sent = captured["body"]["messages"]
+    assert all(CONTEXT_MESSAGE_META_KEY not in message for message in sent)
+    assert sent[0]["cache_control"] == {"type": "ephemeral"}
+    assert "cache_control" not in sent[1]

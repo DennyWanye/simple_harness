@@ -136,3 +136,18 @@ class TestChatPrep:
         # ContextManager.prepare_chat_messages returns list(messages)
         # when no compaction is needed; identity not required.
         assert out == msgs
+
+    @pytest.mark.asyncio
+    async def test_context_os_skips_legacy_preflight_lossy_owner(self):
+        ctx = _RecordingCtx(return_value=[{"role": "system", "content": "lossy"}])
+        msgs = [{"role": "user", "content": "authoritative raw"}]
+
+        out = await prepare_chat_messages_for_chain(
+            msgs,
+            provider_chain=[_StubProvider("p1")],
+            ctx_mgr=ctx,
+            context_os_v1=True,
+        )
+
+        assert out is msgs
+        assert ctx.calls == []

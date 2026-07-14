@@ -16,6 +16,8 @@
 > [`PPT.md`](./STATUS/PPT.md) 是各模块专项状态。
 > 新 session / 子代理接手项目前先读这里。
 
+> 🧭 **架构基线**: [`ARCHITECTURE/index.md`](./ARCHITECTURE/index.md) 记录 DeskPet Harness、长任务、持久化、恢复与 Trace/Eval 等关键模块的当前架构说明。
+
 ---
 
 > ## 🔑 开发期登录测试凭据
@@ -105,6 +107,8 @@ deskpet/
 ├── tauri-app/        # Tauri + React 桌面前端
 │   └── src-tauri/    # Rust 原生层 (窗口透明、麦克风权限)
 ├── docs/superpowers/plans/  # 设计文档 (OpenSpec plans)
+├── ARCHITECTURE/    # 关键模块 scoped 架构基线
+├── testcase/        # 手工 / 回归测试用例索引与分步用例
 ├── config.toml       # 全局配置
 └── plans/            # 功能规划 / PRD / 路线图（见 plans/index.md 总索引）
     └── index.md      # 📑 所有规划工作项的一页式导航

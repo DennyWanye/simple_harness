@@ -8,12 +8,32 @@ $errLog = Join-Path $tmp "stderr.log"
 $env:DESKPET_USER_DATA_DIR = $tmp
 $env:DESKPET_DEV_MODE = "1"
 $env:DESKPET_BACKEND_PORT = "8125"
-$p = Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe) `
-    -RedirectStandardError $errLog -RedirectStandardOutput (Join-Path $tmp "out.log") `
-    -PassThru -WindowStyle Hidden
-Write-Host "pid=$($p.Id) running 32s (waiting for embedder worker)..."
-Start-Sleep -Seconds 32
+$outLog = Join-Path $tmp "out.log"
+$psi = [System.Diagnostics.ProcessStartInfo]::new()
+$psi.FileName = $exe
+$psi.WorkingDirectory = Split-Path $exe
+$psi.RedirectStandardError = $true
+$psi.RedirectStandardOutput = $true
+$psi.UseShellExecute = $false
+$psi.CreateNoWindow = $true
+$psi.Environment.Clear()
+$seen = @{}
+Get-ChildItem Env: | ForEach-Object {
+  $key = $_.Name.ToUpperInvariant()
+  if (-not $seen.ContainsKey($key)) {
+    $seen[$key] = $true
+    $psi.Environment[$_.Name] = $_.Value
+  }
+}
+$p = [System.Diagnostics.Process]::Start($psi)
+$stderrTask = $p.StandardError.ReadToEndAsync()
+$stdoutTask = $p.StandardOutput.ReadToEndAsync()
+Write-Host "pid=$($p.Id) running 75s (waiting for embedder worker)..."
+Start-Sleep -Seconds 75
 taskkill /F /T /PID $p.Id 2>$null | Out-Null
+$p.WaitForExit(3000) | Out-Null
+[System.IO.File]::WriteAllText($errLog, $stderrTask.Result)
+[System.IO.File]::WriteAllText($outLog, $stdoutTask.Result)
 Start-Sleep 1
 $L = Get-Content $errLog
 Write-Host "`n===== embedder / mock / datasets signals ====="

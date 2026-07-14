@@ -183,6 +183,7 @@ class MCPManager:
         self._servers: dict[str, _ServerRuntime] = {}
         self._lock = asyncio.Lock()
         self._stopped = False
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     # ------------------------------------------------------------------
     # Public lifecycle
@@ -195,6 +196,7 @@ class MCPManager:
         prevent the others from coming up (§14.2 "each server's failure
         is independent").
         """
+        self._loop = asyncio.get_running_loop()
         if not self._config.get("enabled", True):
             logger.info("mcp_disabled_globally")
             return
@@ -438,6 +440,25 @@ class MCPManager:
                 registered.append(qualified)
                 continue
             try:
+                annotations = getattr(tool, "annotations", None)
+                if hasattr(annotations, "model_dump"):
+                    annotations = annotations.model_dump()
+                annotations = annotations if isinstance(annotations, dict) else {}
+                meta = getattr(tool, "meta", None) or getattr(tool, "_meta", None)
+                if hasattr(meta, "model_dump"):
+                    meta = meta.model_dump()
+                if isinstance(meta, dict):
+                    annotations = {**annotations, **meta}
+                fixture_hash = str(annotations.get("fixture_spec_hash", "") or "")
+                e2e_hooks = getattr(self._registry, "context_os_e2e_hooks", None)
+                visible_when = None
+                visibility_scope = "global"
+                if fixture_hash and e2e_hooks is not None:
+                    visibility_scope = "session"
+                    visible_when = lambda context, _name=qualified, _hooks=e2e_hooks: (
+                        context is not None
+                        and _hooks.visible(session_id=context.session_id, tool=_name)
+                    )
                 # WI-T4.1 v3: MCP server reconnect / hot-replace 合法场景，
                 # 显式 opt-in 避免 ToolNameConflictError 误抛。
                 self._registry.register(
@@ -448,6 +469,12 @@ class MCPManager:
                     check_fn=_make_check_fn(self, runtime.name),
                     source=f"mcp:{runtime.name}",
                     replace_allowed=True,
+                    visible_when=visible_when,
+                    visibility_scope=visibility_scope,
+                    fixture_epoch=int(annotations.get("fixture_epoch", 0) or 0),
+                    fixture_spec_hash=fixture_hash,
+                    fixture_spec_version=str(annotations.get("fixture_spec_version", "") or ""),
+                    fixture_remote_name=_tool_name(tool),
                 )
                 registered.append(qualified)
             except Exception as exc:  # noqa: BLE001
@@ -539,6 +566,28 @@ class MCPManager:
     # ------------------------------------------------------------------
     # Internal: reconnect loop
     # ------------------------------------------------------------------
+
+    def handle_catalog_stale(self, source: str) -> None:
+        """Reconnect the MCP server whose authoritative catalog went stale."""
+        server_name = str(source).removeprefix("mcp:")
+        runtime = self._servers.get(server_name)
+        if runtime is None:
+            return
+        # Tool handlers may detect stale catalogs inside the registry's
+        # worker executor.  Reconnect lifecycle mutation and task creation
+        # must always happen on the manager's owning event loop.
+        loop = self._loop
+        if loop is not None and loop.is_running():
+            loop.call_soon_threadsafe(
+                lambda: self._mark_disconnected(
+                    runtime, reason="catalog_stale"
+                )
+            )
+            return
+        logger.warning(
+            "mcp_catalog_stale_without_running_loop",
+            server=runtime.name,
+        )
 
     def _mark_disconnected(
         self, runtime: _ServerRuntime, *, reason: str
@@ -702,44 +751,19 @@ def _tool_to_schema(qualified: str, tool: Any) -> dict[str, Any]:
 
 def _make_tool_handler(
     manager: "MCPManager", server_name: str, tool: Any
-) -> Callable[[dict[str, Any], str], str]:
-    """Build the sync handler stored in ToolRegistry.
+) -> Callable[[dict[str, Any], str], Any]:
+    """Build an async registry handler bound to the MCP session loop.
 
-    ToolRegistry's handler contract is ``(args, task_id) -> str`` —
-    a synchronous call returning a JSON string. We bridge to the
-    async ``mcp_call`` by running it on the current loop.
+    ``ClientSession`` owns background readers on the loop where the MCP
+    manager started. Calling it from a worker thread or a fresh loop can send
+    a request but strand its response. ToolRegistry natively awaits coroutine
+    handlers, so keep the MCP call on the owning application loop.
     """
     tool_name = _tool_name(tool)
 
-    def _handler(args: dict[str, Any], task_id: str) -> str:
-        del task_id  # unused — MCP has its own correlation
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = None
-
-        async def _invoke() -> dict[str, Any]:
-            return await manager.mcp_call(server_name, tool_name, args)
-
-        if loop is not None and loop.is_running():
-            # Tool handlers are called synchronously from agent loops
-            # that are themselves async — the caller must
-            # ``run_in_executor`` or the project's tool dispatcher
-            # already runs handlers off-loop. If we're stuck on a
-            # running loop with no executor escape, we at best can
-            # schedule the coroutine and return a not-ready marker.
-            # In practice the deskpet ToolRegistry dispatches
-            # handlers from a worker thread, so this branch is cold.
-            future = asyncio.run_coroutine_threadsafe(_invoke(), loop)
-            try:
-                result = future.result(timeout=30.0)
-            except Exception as exc:  # noqa: BLE001
-                return json.dumps(
-                    {"error": f"mcp_handler_error: {exc!r}"}
-                )
-            return json.dumps(result, ensure_ascii=False)
-
-        result = asyncio.run(_invoke())
+    async def _handler(args: dict[str, Any], task_id: str) -> str:
+        del task_id
+        result = await manager.mcp_call(server_name, tool_name, args)
         return json.dumps(result, ensure_ascii=False)
 
     return _handler

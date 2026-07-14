@@ -28,7 +28,7 @@ import logging
 import time
 from typing import Any, Optional
 
-from deskpet.agent.assembler.bundle import Slice
+from deskpet.agent.assembler.bundle import ContextFragment, Slice
 from deskpet.agent.assembler.components.base import Component, ComponentContext
 from deskpet.agent.tokens import count_text_tokens
 
@@ -207,22 +207,33 @@ class SkillComponent:
         auto_loaded_count = 0
         knowledge_loaded_count = 0
         body_sections: list[str] = []
+        page_fragments: list[ContextFragment] = []
         used_tokens = 0
+        context_os_on = bool((ctx.config.get("features") or {}).get("context_os_v1", False))
 
         for nm, sim in strong_matches:
-            if used_tokens >= budget_tokens:
-                break
             try:
                 raw_body = self._loader.read_body(nm)
             except Exception:  # noqa: BLE001
                 continue
+            authority_body = raw_body
             # Per-skill truncation
             max_chars = per_skill_max_tokens * _CHARS_PER_TOKEN
             if len(raw_body) > max_chars:
                 raw_body = raw_body[:max_chars] + "\n…（已截断）"
             body_tokens = count_text_tokens(raw_body)
-            if used_tokens + body_tokens > budget_tokens:
-                break
+            overflow = used_tokens >= budget_tokens or used_tokens + body_tokens > budget_tokens
+            if context_os_on:
+                page_fragments.append(ContextFragment(
+                    fragment_id=f"skill:{nm}", source=f"skill:{nm}", role="system",
+                    content=(f"[Skill {nm} available by page-in]" if overflow else raw_body),
+                    lifetime="task", placement="prefix", priority=70,
+                    trim_policy="page_in", reason="skill_auto_disclosure",
+                    meta={"page_in_kind": "skill", "page_in_source": nm,
+                          "page_in_content": authority_body, "overflow": overflow},
+                ))
+            if overflow:
+                continue
             is_knowledge = _is_knowledge(nm, skills)
             heading = "知识片段（自动注入）" if is_knowledge else "技能正文（自动预载）"
             body_sections.append(
@@ -257,6 +268,25 @@ class SkillComponent:
             [nm for nm, _ in strong_matches[:5]],
             (ranked[0][1] if ranked else 0.0),
         )
+        if context_os_on:
+            fragments = []
+            if desc_text:
+                fragments.append(ContextFragment(
+                    fragment_id="skill:catalog", source="skill:catalog", role="system",
+                    content=desc_text, lifetime="stable", placement="prefix", priority=85,
+                    trim_policy="never", protected=True, reason="skill_catalog",
+                    cache_scope="session",
+                ))
+            fragments.extend(page_fragments)
+            return Slice(
+                component_name=self.name, fragments=fragments,
+                tokens=count_text_tokens(desc_text) + used_tokens, priority=85,
+                meta={"count": len(visible_skills), "auto_loaded_count": auto_loaded_count,
+                      "knowledge_loaded_count": knowledge_loaded_count,
+                      "page_in_count": sum(1 for f in page_fragments if f.meta.get("overflow")),
+                      "triggered": bool(page_fragments), "protected": knowledge_loaded_count > 0,
+                      "latency_ms": round(elapsed_ms, 2)},
+            )
         return Slice(
             component_name=self.name,
             text_content=text,

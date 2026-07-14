@@ -4,6 +4,7 @@
 import pytest
 from context import ServiceContext
 from providers.base import LLMProvider
+from deskpet.agent.harness_manifest import harness_service_names
 
 
 class FakeLLM:
@@ -48,3 +49,29 @@ def test_service_context_register_unknown_raises():
     ctx = ServiceContext()
     with pytest.raises(ValueError, match="Unknown service"):
         ctx.register("unknown_engine", object())
+
+
+@pytest.mark.parametrize("name", harness_service_names())
+def test_harness_manifest_services_are_whitelisted(name: str):
+    ctx = ServiceContext()
+    ctx.register(name, None)
+    assert ctx.get(name) is None
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "context_assembler",
+        "context_compressor",
+        "subagent_scheduler",
+        "subagent_registry",
+        "pipeline_evidence_gate",
+        "pipeline_self_check_gate",
+        "pipeline_convergence_controller",
+        "permission_gate",
+    ],
+)
+def test_critical_harness_services_register_none_without_error(name: str):
+    ctx = ServiceContext()
+    ctx.register(name, None)
+    assert ctx.get(name) is None

@@ -1,48 +1,414 @@
-# DeskPet DeepResearch 架构基线
+<!-- last-calibrated: 280e1a712fff715fd66649e51634473fa120f398 -->
+# DeskPet Long-Running Agent Architecture Baseline
 
-## 范围
+> Last verified: 2026-07-13. The original sections retain the pre-upgrade baseline; Section 13 records the implemented durable workflow runtime, Section 14 calibrates the direct LangGraph coupling that is being replaced by a DeskPet-native engine, and Section 15 records the shipped Context OS V1 ownership and rollback boundary. Target requirements live in [`../acceptance.md`](../acceptance.md).
 
-本文只记录本次 deepresearch source-pack 优化相关的后端与技能架构，不覆盖 DeskPet 全仓库。
+## 1. System Shape
 
-## 关键模块
+DeskPet is a local desktop product, not a generic agent framework. The application has four runtime layers:
 
-| 模块 | 职责 | 当前行为 |
+```text
+Tauri shell + React UI
+        | WebSocket / HTTP / Tauri commands
+backend/main.py orchestration and adapters
+        | service_context + build_agent
+DeskPet Harness
+        | AgentLoop / ContextAssembler / ToolRegistry / completion gates
+Product capabilities and local persistence
+        | Office / research / files / permissions / artifacts / state.db
+```
+
+The product Harness is valuable and remains the main agent execution boundary. The durable workflow upgrade must compose with it rather than replace it. The canonical text-chat stages and their current persistence/recovery boundaries are defined in [`AGENT_HARNESS.md`](AGENT_HARNESS.md) and `backend/deskpet/agent/harness_manifest.py`.
+
+## 2. Current Request Lifecycle
+
+The production text-chat path is:
+
+```text
+ws_ingress
+  -> context_assembly
+  -> pre_loop_problem_pipeline
+  -> AgentLoop ReAct turns
+       <-> LLM chooses tool calls
+       <-> ToolRegistry permission/timeout/receipt/artifact dispatch
+       <-> completion/verification gates
+       <-> optional sidecar subagents
+       -> ws_egress for each emitted event
+```
+
+`backend/main.py` owns the WebSocket adapter, provider resolution, service construction, plan/permission/clarification round trips, persistence calls, and event mapping. `AgentLoop.run()` is the dynamic reasoning loop. It emits typed events but does not own WebSocket or SessionDB writes. `ContextAssembler` selects persona, memory, skills and tool schemas before the problem pipeline and loop. `ToolRegistry.execute_tool()` is the top-level execution gate for tools selected by AgentLoop, not a universal boundary for every product action.
+
+The flow above is documented as ordered lifecycle stages, but it is not a general durable graph runtime. DeskPet already has a persisted goal `TaskGraphStore` and SQLite-backed TeamStore task data; neither drives the parent AgentLoop or the three long-running product workflows with compiled edges, shared typed workflow state, leases and exact node checkpoints.
+
+The default chat policy currently exposes the wildcard tool set. “Short chat stays on ReAct” therefore means routing and behavior compatibility, not a physically tool-free runtime. Code planning, todos and goal tasks are also three separate state models with no shared executable step id.
+
+Other ingress venues are not identical:
+
+- `/ws/audio` uses `VoicePipeline`: SessionDB/context assembly -> AgentLoop -> TTS. It does not share every text-chat problem-pipeline, plan-confirm and provider-resolution step.
+- Slash/admin/control commands are handled directly in `main.py` and can bypass AgentLoop and ToolRegistry.
+- Tauri commands and background workers can perform product actions outside the text-chat lifecycle.
+
+The runtime also spans two Python package trees: `backend/agent/*` contains the parent loop and legacy/P6 services, while `backend/deskpet/agent/*` contains newer assembler, gates and product-agent services. New workflow core code needs one explicit owner to avoid extending this split.
+
+## 3. Current Persistence
+
+The primary local database is `state.db`, managed by `deskpet.memory.session_db.SessionDB` and `deskpet.memory.schema.initialize_state_db`.
+
+| Data | Current store | Durability | Limitation for workflows |
+|---|---|---|---|
+| Sessions and messages | `sessions`, `messages`, FTS/optional vec tables | Durable | Records conversation, not executable node state. |
+| Code todos | `code_todos` | Durable | Full-list replacement; no node attempt/result/checkpoint model. |
+| Code project binding | `code_sessions` | Durable | Identifies project/session only. |
+| Awaiting code plan | `session_plans` | Durable record | The actual waiter is an in-memory `Future`; restart reloads the card but cannot resume the suspended coroutine. |
+| Goals and goal tasks | `session_goals`, goal task tables | Durable | Completion tracking, not general workflow execution. |
+| Team tasks/messages/permissions | Per-team SQLite files | Durable data | Worker coroutines and reclaim logic are process-local. |
+| PPT outline history | `ppt_outline_history` in `state.db` | Durable record | Proposal status survives, but the running task and waiter are process-local. |
+| Tool receipts | Receipt store | Durable evidence | Can prove side effects, but is not yet keyed to a workflow node attempt. |
+| Artifacts | User data/output directories plus message envelopes | Durable files | No generic graph state references or replay policy. |
+| Agent iteration trace | `<user_data>/traces/<task>.jsonl` | Append-only file | Flat per-run records, optional, no span tree/checkpoint link. |
+| Anonymous metrics | `<user_data>/metrics.jsonl` | Rotating append-only file | Strict whitelist, intentionally too small for rich trace/replay. |
+| Context decisions | In-memory `ContextAssembler` ring | Process-local | Context Trace UI loses history after restart. |
+
+Additional stores include facts/workspace/skill memory and feedback tables in `state.db`, `billing.db`, supervisor hints, pending skill candidates, provider bindings, preference/runtime JSON files and permission-auto-mode state. Some are owned by formal migrations, while PPT outline and skill-candidate tables are still created lazily by their business modules. The workflow plan must inventory schema ownership and retention without attempting to merge unrelated product data into graph state.
+
+`SessionDB` already provides WAL, busy timeout, an application write lock, retry with backoff, and idempotent migrations. It is the natural physical store for workflow metadata, but the graph core must depend on a storage protocol rather than directly on `SessionDB`.
+
+The persistence layer currently has a version-contract defect that must be resolved before adding workflow tables: the configured target schema version is ahead of the highest effective migration/test baseline, while several memory-v2 tables are still created lazily by business modules. A single migration owner is required before the durable store becomes authoritative.
+
+## 4. Long-Running Workflows Today
+
+### 4.1 DeepResearch
+
+`backend/deskpet/tools/research_tools.py::deepresearch()` is the large async library pipeline. `_handle_deepresearch()` is the ToolRegistry handler that saves the finished report and updates the index:
+
+```text
+plan sub-questions
+  -> query expansion
+  -> search
+  -> fetch/extract
+  -> direct authoritative sources
+  -> score/filter/rerank
+  -> optional evidence-gap second round
+  -> synthesize
+  -> citation check
+  -> handler saves/indexes report
+```
+
+It already records per-stage timings and returns coverage/errors. Search and fetch operations can fan out concurrently. However, intermediate lists such as sub-questions, URLs and passages live in the coroutine. A process exit during fetch or synthesize loses executable progress; a retry starts a new research run.
+
+The outer `deepresearch` call passes through ToolRegistry, but plan/search/fetch/direct-source/rerank/synthesis are internal Python calls. They do not each receive ToolRegistry permission, receipt or trace semantics. Optional research subagent fan-out is disabled by default and stores progress events, not durable child checkpoints.
+
+### 4.2 PPT Pro
+
+`backend/deskpet/tools/ppt_tools.py::_ppt_pro_orchestrate()` is an explicit but process-local workflow:
+
+```text
+DeepResearch
+  -> draft outline
+  -> user accept/modify/reuse/cancel loop
+  -> render PPT
+  -> preview/visual review
+  -> artifact and receipt reporting
+```
+
+`ppt_outline_history` persists proposals. `_PPT_PRO_RUNNING`, `_PPT_PRO_TASKS` and the outline waiter registry hold active tasks/Futures in memory. Restarting the backend cannot continue the original coroutine after an outline decision. Rendering is a side-effecting boundary and must not be repeated blindly after recovery.
+
+The top-level ToolRegistry handler returns `researching` immediately, so its first success receipt describes background-task acceptance rather than final deck delivery. The background path directly calls DeepResearch, LLM outline generation, image generation, rendering and visual review, then manually emits terminal artifacts/receipts. A graph migration must make those two meanings explicit instead of treating one tool receipt as the whole workflow.
+
+The older `ppt_create` image path also starts a background worker and returns `generating` before the file exists. It shares the same acceptance-versus-delivery receipt and cancellation problem even though AC-7 focuses on PPT Pro.
+
+### 4.3 Complex Code Tasks
+
+Code mode uses the same `AgentLoop`, augmented by:
+
+- a code persona that asks the LLM to clarify, plan, execute and verify;
+- an optional persisted plan-confirm card;
+- durable `code_todos` and code-session/project binding;
+- `ask_clarification`, permission Futures and UI responses;
+- completion probes, VerifyGate, GoalChecker, external evaluator and self-check;
+- optional sidecar subagents/teams.
+
+These features discipline ReAct behavior but do not make plan steps executable nodes. Todos are advisory state read back into prompts. Auto-resume starts a fresh agent run with a supervisor hint; it does not resume the exact LLM/tool step.
+
+Subagent execution has three separate shapes: blocking `agent_parallel`, process-local nonblocking subagent registry/queue, and a team task SQLite store whose workers are still process-local. None currently provides a durable lease and crash reclaim contract for workflow nodes.
+
+## 5. Human-In-The-Loop Today
+
+DeskPet has several real user gates:
+
+| Gate | Durable record | Active waiter | Restart behavior |
+|---|---|---|---|
+| Tool permission | Audit/receipt around tool execution | In-memory `Future` in permission gate | Pending execution cannot resume exactly. |
+| Code plan confirmation | `session_plans.awaiting` | `_PLAN_CONFIRM_WAITERS` Future map in `main.py` | UI card can rehydrate; original coroutine is gone. |
+| `ask_clarification` | Conversation/UI event | In-memory pending Future | No durable suspended node. |
+| PPT outline confirmation | `ppt_outline_history.status` | In-memory outline Future registry | Proposal survives; workflow continuation does not. |
+| Skill candidate confirmation | Pending candidate row | In-memory timed Future | Candidate survives, but production does not rebuild the waiter on restart. |
+| Team permission/decision | Per-team SQLite data | Process-local teammate coordination | Data survives; active worker continuation does not. |
+
+The UI interactions are genuine Human-in-the-loop, but the suspension mechanism is not durable. A future graph runtime should turn each gate into a persisted `waiting` node plus an idempotent response command.
+
+## 6. Recovery Today
+
+Recovery is reactive:
+
+- Session messages, goals, todos, plans, artifacts and receipts survive restart.
+- `AutoResumeOrchestrator` classifies selected `ErrorEvent` reasons, asks the supervisor for a nudge, then dispatches a new chat run.
+- Supervisor follow-up can enqueue another synthetic turn.
+- Tool circuit breakers, termination gates and convergence controls stop local failure loops.
+- A new message for the same session cancels the previous chat task, but cancellation does not guarantee that threadpool-backed side effects have stopped.
+
+This is useful resilience, but the recovery unit is a chat run. There is no persisted node lease, committed state version, compare-and-swap owner, retry policy per node, or deterministic state merge for parallel branches.
+
+## 7. Observability And Evaluation Today
+
+Current observability is split across several systems:
+
+1. `IterationTracer` writes optional JSONL events keyed by task/session.
+2. `MetricsSink` writes privacy-safe whitelisted counters to `metrics.jsonl`.
+3. `ContextAssembler` keeps a 50-record in-memory decisions ring exposed by `ContextTracePanel`.
+4. Prometheus exposes a small set of operational metrics such as LLM TTFT.
+5. Individual workflows emit their own coverage, timings, logs, artifacts and receipts.
+6. Structlog/log files, crash reports and supervisor audit records provide additional diagnostics.
+
+The iteration tracer is currently disabled unless an unconfigured `[agent].iteration_trace_enabled` key is added; `[context.assembler].trace_enabled` controls a different feature. Its construction also uses a generated task id and empty session id, so correlation with the production AgentLoop run is unreliable. Context Trace is a global process-local ring rather than a persisted, session-filtered trace.
+
+Current quality checks are runtime gates rather than an evaluation platform:
+
+- VerifyGate matches completion claims against receipt evidence.
+- GoalChecker uses an LLM judge for active goal completion.
+- ExternalEvaluator uses a different model/persona and returns score/issues/pass-or-revise.
+- PPT visual review evaluates rendered slides.
+- Existing scripts/tests provide domain-specific regression checks.
+
+Missing platform concepts are a common trace/span schema, parent-child trees, persisted run index, checkpoint links, read-only replay, forked replay, evaluator records, datasets and version comparison.
+
+There are concrete contract gaps behind that summary: evaluators return incompatible tuple/dataclass/dict shapes; some evaluator event names and score fields are not accepted by the metrics whitelist; and the diagnostic bundle does not include trace/checkpoint/evaluation summaries. These must be unified without weakening the existing privacy boundary of anonymous metrics.
+
+## 8. External And Platform Dependencies
+
+| Area | Current dependency/boundary |
+|---|---|
+| Desktop | Tauri/Rust, WebView2, React/TypeScript, Pixi/Live2D. |
+| Backend | Python asyncio/FastAPI/WebSocket adapters. |
+| Persistence | SQLite/aiosqlite, WAL, optional sqlite-vec. |
+| Models/audio | Torch/CUDA, BGE-M3, Silero, faster-whisper, CosyVoice/edge-TTS. |
+| LLM/secrets | OpenAI-compatible provider registry, relay, OS keychain and per-session resolution. |
+| Research/browser | Search providers, Scrapling/trafilatura, browser-use/Chromium or system Edge CDP, optional Jina/direct-source adapters. |
+| PPT/Office | python-pptx, image generation provider, LibreOffice plus WPS/Office COM rendering on Windows. |
+| Extensions | MCP subprocess/client integration and filesystem-based skills. |
+| Local execution | AgentLoop-selected ToolRegistry path, plus slash handlers, background workers and Tauri commands. |
+
+The graph core must remain Python-only and UI-agnostic. It must not require a cloud trace service. Tauri/WebSocket, provider, tool and storage concerns enter through adapters.
+
+## 9. Ownership Boundaries For The Upgrade
+
+The following boundaries are stable enough to build on:
+
+```text
+workflow core
+  definitions / validation / runner / state patches / policies
+        |
+workflow ports
+  checkpoint store / trace store / evaluator / human response / clock
+        |
+DeskPet adapters
+  SessionDB / ToolRegistry / provider / WebSocket events / artifacts / receipts
+        |
+workflow definitions
+  DeepResearch / PPT Pro / Complex Code
+```
+
+The current Harness remains responsible for product policy. Workflow adapters must reuse ToolRegistry where a registered tool exists. Internal workflow stages that are not public tools still need equivalent centralized permission, trace, idempotency, artifact and receipt ports; they must not silently preserve today's bypasses.
+
+## 10. Technical Debt And Risks
+
+| Risk | Current evidence | Planning consequence |
 |---|---|---|
-| `backend/deskpet/skills/builtin/deep-research/SKILL.md` | 面向 LLM 的技能说明和路由约束 | 要求深度调研时一次性调用 `deepresearch`，不要外层手动 `web_search` + `web_fetch` 拼报告。 |
-| `backend/deskpet/tools/research_tools.py` | deepresearch 主编排器 | plan 拆子问题、query expansion、source packs 定向权威源搜索、普通搜索、Scrapling-first 抓取抽正文、直连权威源、打分/精排、合成报告、引用自检、coverage 返回。 |
-| `backend/deskpet/tools/search_provider.py` | 通用搜索 provider | 提供 google-cdp / bing-cdp / searxng / opt-in fallback 搜索队列，记录命中的 engine 和侧信道错误。 |
-| `backend/deskpet/tools/scrapling_tools.py` | Scrapling-backed 抓取工具 | `scrapling_fetch` 和 `gold_price_lookup`，并提供 `_scrapling_get_html()` 给 `web_fetch` / `default_extract` 复用。 |
-| `backend/deskpet/tools/file_tools.py` | workspace 文件工具 | `file_read`/`file_write`/`file_grep` 保持 workspace 沙箱；`file_glob` 在默认递归扫描时剪枝重型生成目录，并返回跳过目录元数据。显式 `root` 指到被跳过目录时仍允许访问。 |
-| `backend/agent/agent_loop.py` | 外层 ReAct loop | deepresearch 成功返回完整报告后，下一轮强制 `tools=None` + `tool_choice=none`，避免报告已出还继续 web_search。 |
+| `main.py` owns too much orchestration | Provider, WebSocket, plans, permissions, service wiring and persistence meet there. | Add adapters and service registration; avoid placing graph algorithms in `main.py`. |
+| Three workflows may fork their own runtimes | Research, PPT and Code already have separate state conventions. | Build and test one generic runtime before workflow migrations. |
+| Side effects are not node-addressable | Receipts exist but lack workflow/node attempt identity. | Add idempotency keys and receipt linkage before replay. |
+| Durable waiting is split-brain | DB records survive while Futures do not. | Persist waiting commands first; Futures become transport optimizations only. |
+| State payloads can become huge | Research passages and rendered images are large. | Checkpoints store references/artifacts for large blobs, not unlimited inline JSON. |
+| Parallel state merge can be nondeterministic | Research fan-out and subagents complete in arbitrary order. | Require reducers or conflict detection per state field. |
+| Trace privacy is stricter than debug needs | Metrics intentionally rejects rich payloads. | Keep metrics separate; trace uses explicit redaction and local retention policy. |
+| Replay can repeat destructive actions | File/Office/system tools have side effects. | Default replay reuses committed outputs; re-execution requires policy and confirmation. |
+| Migration blast radius | `state.db` contains messages, memory, code and goals. | Add idempotent migrations, backup/rollback tests and repository-level compatibility tests. |
+| Schema ownership is already split | Formal migrations and lazy runtime table creation disagree on the target version. | Repair the migration baseline before adding workflow tables; prohibit new business-owned DDL. |
+| Cancellation cannot stop all effects | Cancelling an asyncio task does not terminate already-running threadpool work. | Model `cancel_requested` separately from terminal `cancelled`; reconcile late effect results. |
+| Existing task claims have no lease | Goal/team/task state is not a general crash-reclaim coordinator. | Add owner, epoch, expiry and CAS transitions to workflow runs/nodes. |
+| Trace correlation is unreliable | Iteration trace is default-off and generated ids do not match the live run. | Create trace/run ids at ingress and pass one context through every adapter. |
+| Evaluation telemetry can disappear | Runtime evaluators emit shapes/events outside MetricsSink's closed schema. | Persist normalized evaluation records first; metrics becomes a low-cardinality projection. |
+| Multiple ingress venues drift | Text, voice, slash/control and background workers do not share one call sequence. | Route workflows through a venue-independent coordinator and keep venue adapters thin. |
+| Tool timeout can outlive its receipt | `wait_for` cannot kill a running threadpool handler; the caller may return before the effect finishes. | Persist effect intent before dispatch and reconcile late completion before retry/replay. |
 
-## deepresearch 数据流
+## 11. Relevant Feature Defaults
 
-1. 技能触发后，LLM 调 `deepresearch(topic, depth, ...)`。
-2. `deepresearch()` 解析 depth preset，调用 `research_run()`。
-3. `research_run()` 通过 LLM 拆 3-6 个子问题，并可选生成 query expansion。
-4. 搜索阶段为每个子问题构造搜索 query，目前包括普通 query、site-directed 官方域 query、source-pack 权威来源 query、query expansion query。
-5. 抓取阶段调用 `default_extract()`；真实运行中 `client is None` 时优先 `_scrapling_fetch_html()`，成功后再交给 trafilatura 抽正文，必要时走 JS render / Jina fallback。
-6. scoring 阶段过滤低质/AI/乱码源，按 authority、recency、relevance、depth 综合打分，可选 BGE-M3 semantic scorer 和 LLM reranker。
-7. direct sources 阶段追加巨潮、EDGAR、国标、百科、Wikipedia/arXiv 等 bypass SERP 的来源。
-8. synth 阶段要求 LLM 基于 passages 生成带 `[^n]` 引用的 Markdown 报告。
-9. `cite_check` 自检引用编号，并将 coverage/errors/report 返回；handler 落盘到 `DeepResearch/` 并更新 index。
+| Capability | Current default/source | Baseline meaning |
+|---|---|---|
+| Plan confirm / agent team | Enabled in `[features]` | UI gates and team tools are active, but waiting/execution is not durable. |
+| VerifyGate / ExternalEvaluator | Strict / enabled | Runtime completion gates are active; outcomes are not a unified eval record. |
+| Context decisions trace | `[context.assembler].trace_enabled=true` | In-memory Context Trace view. |
+| Agent iteration trace | No configured `[agent].iteration_trace_enabled` | Effectively off by default. |
+| Research subagent fan-out | Code default `false` | Production DeepResearch normally uses the flat internal pipeline. |
+| PPT preview/outline history | Code defaults enabled | Preview files and outline rows exist; active background task/Future remains process-local. |
 
-## source-pack 优化现状
+## 12. Test Boundaries
 
-- 高时效国际局势问题命中 `geopolitics_ukraine` pack 时，会追加 ISW、UN、Reuters/AP/BBC/Al Jazeera 定向搜索。
-- 黄金/金价问题命中 `gold_market` pack 时，会追加 LBMA、World Gold Council、Investing 定向搜索。
-- `coverage.route` 暴露 `source_packs_enabled`、`source_packs_hit`、`source_pack_queries`，用于测试与后续 UI/日志观测。
-- deep-research skill 文案已说明 source packs + Scrapling-first 的组合策略。
+- Pure graph definitions, state reducers, checkpoint transitions, leases and trace serialization: deterministic pytest.
+- Crash/restart, SQLite migration, duplicate response and side-effect replay: integration tests with failure injection.
+- Existing Harness adapters and three production workflows: focused regression suites plus live stack tests.
+- Trace viewer, durable pause/resume, replay confirmation and human scores: project-mandated windows-mcp true UI testing with screenshots and backend logs.
 
-## 约束
+No protocol-level WebSocket injection may replace real UI evidence for user-visible behavior.
 
-- 不引入付费搜索 API。
-- source-pack 查询必须有数量上限，不能让一次 deepresearch 搜索量失控。
-- 所有新增能力默认开启，但保留 `[research]` kill-switch。
+## 13. 2026-07-11 Durable Runtime Calibration
 
-## file_glob 扫描约束
+The durable workflow upgrade is now present under `backend/deskpet/workflows/`. `WorkflowLauncher` owns accepted-async background driving and terminal outbox publication; `WorkflowRunner` owns leases, resume and terminal convergence; `WorkflowExecutionObserver` records node executions and structured spans. `workflow.db` is authoritative for runs, node executions, checkpoints, events, deliveries and trace/evaluation data.
 
-- `file_glob` 仍只接受 workspace-relative `root`，逃逸 workspace 的 root 继续返回 `path outside workspace`。
-- 默认递归扫描跳过常见重型目录名（如 `node_modules`、`__pycache__`、`.uv-cache`）和 DeskPet 大资产相对路径（如 `backend/assets`、`backend/models`）。
-- 跳过只发生在从祖先目录扫入这些目录时；如果调用方显式把 `root` 设为沙箱内的 `node_modules` / `backend/assets`，仍可读取其中匹配文件，避免兼容性倒退。
-- `skipped_dirs` 为去重、排序、workspace-relative、正斜杠目录路径；`skipped_count` 为唯一跳过目录数量。
+The current session projection uses one durable public path:
+
+```text
+Workflow node wrapper
+  -> WorkflowExecutionObserver
+  -> node execution + Trace span persisted
+
+Workflow node wrapper
+  -> WorkflowProgressReporter (public-node whitelist)
+  -> stable workflow.progress Outbox event
+  -> SessionDB workflow_event_id + WebSocket delivery
+
+WorkflowLauncher
+  -> workflow.accepted / terminal intents / workflow.final
+  -> WorkflowOutbox
+  -> SessionDB + WebSocket delivery handlers in backend/main.py
+  -> ws.ts reduces structured events into the original session
+```
+
+DeepResearch, PPT Pro and Complex Code publish user-safe stage starts through this reporter. The progress `event_key` contains workflow/node/transition/attempt and is scoped by Outbox `run_id`, so a new retry attempt receives a higher durable event sequence while replay of the same attempt remains idempotent. `ws.ts` and hydrated history now feed the same reducer instead of appending each event as a normal assistant message.
+
+AC-23 changes the product projection, not the durable event source: live and hydrated history envelopes feed one `run_id`-keyed reducer, monotonic `seq` rejects replay and out-of-order regression, and one `workflow_progress` component is updated in place. A late history response reduces into the current store rather than replacing a newer live component. `workflow.accepted` creates the component, `workflow.progress` updates its node-level display state, `workflow.final` alone locks completed/failed/cancelled run terminal state, and `workflow.final_assistant` remains a separate answer bubble. Node-level failed/cancelled progress may be superseded by a later higher-seq recovery event. Waiting remains visible until the next public stage starts or the run reaches final. Progress projection never carries raw prompts, tool arguments or file content; unrelated ordinary tool messages keep their existing UI semantics.
+
+Progress may be emitted when a public stage starts. A node wrapper's `succeeded_pending` callback is not a durable completion boundary, so it must not publish “completed” before the following checkpoint/superstep is committed. The next public stage start is the safe user-visible evidence that the previous stage advanced; waiting, failure, cancellation and final states remain explicit. Recovery, manual resume and retry must reconstruct the persisted `delivery` session reference rather than substituting `workflow_runs.session_id`, otherwise the epoch guard in `backend/main.py` correctly discards the event.
+
+PPT outline decisions are a separate product state machine: `modify` validates non-empty feedback, resolves the current decision into `revise_outline`, creates a new revision and a new pending decision/card, and must say “正在修改大纲”; `accept` and `reuse` enter generation; `cancel` terminates without generation. Duplicate responses retain the existing durable decision CAS semantics.
+
+PPT Pro v1 creates stable slide records, checkpoints each generated background, and uses a deterministic deck-level planner plus six Pillow compositors. The planner assigns `cover_band/text_left/text_right/visual_top/floating_card/quote_center`, enforces deck coverage and adjacency constraints, and runs the same text-fit policy used by the compositor before any image effect is committed.
+
+The planner runs before effect identity is computed, aligns each text-free image prompt's negative-space direction with the corresponding Pillow safe region, validates a CJK-capable font, and fails explicitly on unfit copy. Variant, layout-spec, compositor and font-policy versions enter the effect hash. The final boundary remains a 1792x1008 raster page; `python-pptx` inserts exactly that one picture and adds no visible text or decoration shapes.
+
+For AC-21 the image-mode boundary becomes:
+
+```text
+confirmed outline deck (AC-22 target)
+  -> deterministic layout plan + variant-specific text-free background prompt
+  -> exact visible copy + layout variant/spec version in the input hash
+  -> one durable image effect per stable slide id + content revision/input hash
+  -> 16:9 normalization + variant-aware deterministic text compositor
+  -> blank PPT slide with exactly one full-bleed picture
+  -> preview + visual evaluation
+  -> regenerate only pages named by visual issues
+  -> publish artifact
+```
+
+Template mode remains available for legacy/compatibility requests. Explicit `full_page_images` is strict: provider failure during initial generation or a visual revision terminates with a user-safe recoverable error and never reports a template deck as a successful full-page result. Full-page image mode intentionally trades away element-level editability; speaker notes and the outer `.pptx` artifact remain.
+
+Visual issue invalidation is explicit: issue page -> stable slide id -> incremented page revision -> revised full-page prompt -> recomputed input hash -> only that record returns to `pending` -> image map generates a new effect. The PPT production adapter validates the generated file and the dedicated assembler owns 16:9 normalization and the `blank slide + exactly one full-bleed picture` invariant; the assembler never probes or calls the image provider.
+
+## 14. Native Workflow Engine Replacement Baseline
+
+The durable layer currently uses LangGraph as a narrow execution kernel, not as the product Harness. `WorkflowDefinition.bind()` converts DeskPet nodes, edges, reducers and retry policies into `StateGraph`; `WorkflowExecutable` forwards `ainvoke`, stream and `Command(resume=...)`; four pause points call `langgraph.types.interrupt` (one PPT outline gate and three Code clarification/plan/tool-approval gates). `FencedAsyncSqliteSaver` implements LangGraph's checkpoint protocol while adding DeskPet run fences, branch heads, pending writes, decisions, node projections and ownership rows.
+
+The production coupling is concentrated but semantically deep:
+
+| Coupling | Current owner | Native replacement boundary |
+|---|---|---|
+| Graph scheduling, join and retry | `workflows/definition.py::WorkflowDefinition.bind` | Execute `WorkflowDefinition` directly with a versioned static frontier; support sequential/conditional edges, multi-source join, exclusive barriers, bounded loops/retry and max-step cancellation checks. Dynamic map/Send is not part of the current contract. |
+| Execution identity | LangGraph `runtime.execution_info` -> `NodeExecutionIdentity` | Deterministically generate checkpoint/task/attempt/first-attempt identities from run lineage, base checkpoint, invocation key and retry attempt before calling a handler. |
+| Node lifecycle SPI | LangGraph node wrapper in `definition.py` | Native wrapper owns observer/progress callbacks, trace span activation, retry classification and `succeeded_pending`; storage remains external but these hooks are an engine contract. |
+| Interrupt control flow | `definitions/v1/ppt_pro.py`, `definitions/code_nodes.py` | Raise a DeskPet `WorkflowInterrupt` carrying JSON-safe prompt/id. Native checkpoint commit atomically writes pending state, open decision and run `waiting`; Runner only owns lease/invocation/terminal convergence. |
+| Checkpoint commit/projection | `store/checkpointer.py::aput_writes/aput` | Store canonical JSON native snapshots and preserve the two-phase invariant: handler success projects `succeeded_pending`; only the fenced checkpoint/head/ownership transaction promotes it to `succeeded`. |
+| Resume/replay/fork | `definition.py::WorkflowExecutable`, `replay.py` | Resume from persisted native frontier; history/fork consume native snapshots. V1 fork remains root-namespace only, rejects pending writes/active fan-out, and requires the existing explicit confirmation gate for dangerous effects. |
+| Evaluation adapter | `scripts/workflow_eval_adapter.py` | Use an in-memory/native checkpoint store and DeskPet interrupt metadata; preserve dataset/experiment behavior without framework types. |
+| Legacy compatibility | `JsonPlusSerializer` typed checkpoint blobs | Detect by explicit persisted type. An isolated no-pickle reader may expose allowlisted metadata/state for read-only legacy history only; every legacy nonterminal run becomes safely blocked and is never converted or resumed. |
+| Packaging and guard | `pyproject.toml`, `uv.lock`, `deskpet-backend.spec`, runtime hook, dependency smoke | Remove LangGraph/LangChain direct and transitive dependencies, hidden-import collection and strict-msgpack hook; replace smoke with a source/import/clean-interpreter guard and record lock/frozen deltas. |
+
+The replacement must not duplicate a general Pregel engine. The three registered workflows require sequential nodes, conditional routes, bounded loops, multi-source joins, exclusive interrupt barriers and stable per-domain map effects. They do not require arbitrary dynamic topology, distributed scheduling or cross-machine consensus. ToolRegistry, permissions, effect ledger, Artifact/Receipt delivery, Trace/Evaluation storage, Session delivery, lease/CAS and retention remain authoritative product services outside the scheduler. Their execution lifecycle adapters do not remain untouched: observer/progress/waiting/failed classification and evaluation execution must be rewired as native engine SPI.
+
+Checkpoint compatibility is a versioned boundary. New rows use `checkpoint_type="deskpet-native-json-v1"` and a canonical snapshot with `engine_kind="deskpet-native"`, `snapshot_version=1`, `state`, `frontier`, `step`, `node_writes`, `interrupt`, `parent_checkpoint_id` and deterministic identity metadata. Completed legacy runs keep their durable run/event/trace/artifact history; an isolated no-pickle reader may decode allowlisted legacy values only for that read-only view. Every legacy nonterminal run is blocked with a safe recovery action and is never converted, resumed, silently restarted or used to execute a side effect.
+
+The engine switch changes implementation identity. Native registrations publish new implementation/engine metadata and do not pretend to match a legacy LangGraph implementation hash. Terminal legacy runs remain queryable. Legacy nonterminal runs are not converted or resumed in this migration: startup deterministically moves them to `blocked` with `legacy_checkpoint_incompatible`, preserves their existing run/session/decision/pending-write rows as read-only evidence, closes no decision and executes no effect. A user retry creates a new native run through normal ingress, so decision nonce/version and Session run identity never cross engine identities. This is deliberately separate from the existing fork saga, whose `prepare_fork()` copies source workflow/version/hashes and therefore cannot be used as an engine migration transaction. Existing native fork restrictions remain fail-closed, with dangerous effects allowed only after the existing explicit confirmation.
+
+## 15. Context OS V1 Runtime
+
+Context OS V1 is the default request-context path. Both the bundled `config.toml` and `FeaturesConfig.context_os_v1` default to `true`. The single compatibility rollback is `context_os_v1=false`; it restores the preserved legacy assembler/preflight/schema path. ON and OFF are mutually exclusive for one request: Context OS does not shadow-run a second assembler, tool resolver or lossy compressor.
+
+### 15.1 Owners and request flow
+
+The production flow is:
+
+```text
+text/code/voice ingress
+  -> SessionDB append (authoritative transcript)
+  -> ContextAssembler
+       typed fragments + ToolExposureIntent + task projection inputs
+  -> ContextRequestPlanner.prepare_initial
+       one catalog/policy resolve
+       PreparedToolSet + fixed prefix/current turn/attachments/reserve
+       SessionHistoryPlanner coverage plan
+       common-safe provider-chain budget
+  -> optional CoverageCompactionJob[]
+       AgentLoop -> ContextCompressor -> ContextSegmentStore commit
+       -> planner replan with the same PreparedToolSet
+  -> AgentLoop
+       exact prepared messages and logical tool set
+       per-provider/model attempt re-budget
+       provider transport
+  -> ContextAttemptStore / ContextTrace
+       planned -> sent -> terminal, matching usage and coverage facts
+```
+
+Ownership is deliberately narrow:
+
+| Concern | Authoritative owner |
+|---|---|
+| Raw conversation and message identity | `SessionDB`; assembler top-k history is never treated as complete Session coverage. |
+| Fragment lifecycle and stable-prefix candidates | `ContextAssembler` and typed `ContextFragment` metadata. |
+| Initial whole-request plan and common provider-chain safe budget | `ContextRequestPlanner`; protected prefix, current turn, actual tool payload, attachment estimates and generation reserve are charged before history. |
+| Lossy summarization | `ContextCompressor` only. The planner may return jobs but does not call an LLM or commit a summary. |
+| Reactive execution, compaction ordering and post-compact remount | `AgentLoop`; snapshot flush precedes lossy compaction, and protected/stable fragments, active skills/path rules and the latest complete causal tail are remounted. |
+| Provider-specific budget and request lifecycle | The immediate provider-attempt seam plus the public transport marker. Each candidate is re-estimated for its actual provider/model/window and `tools` or `None`; a budget failure cannot send and may continue to the next fallback candidate. |
+
+Provider chains first plan against the candidate with the smallest effective input budget. The order is estimate, reversible history planning, required coverage compaction, replan, then recoverable block. Every actual attempt is checked again, so a provider-specific window or adapter difference cannot reuse an earlier provider's budget result.
+
+Attachments remain provider message content blocks. `attachment_budget` creates body-free `AttachmentRef` records containing only message/content indexes, media type, byte size and estimate metadata; attachment bodies are neither copied into snapshots nor exposed by ContextTrace. Text, code, voice and subagent preparation all pass the resulting refs and token total into the same planner.
+
+### 15.2 Snapshot and coverage persistence
+
+`state.db` migration V18 owns two Context OS tables:
+
+- `session_context_snapshots` stores a derived `TaskContextSnapshot` and a bounded prepared-tool summary. Workflow/goal/receipt/artifact stores remain authoritative; the snapshot is a recoverable projection and cannot promote pending evidence to completed state.
+- `session_context_segments` stores raw/summary coverage nodes, continuous message-id ranges, source hashes, child lineage, token estimates and page-in references. `ContextSegmentStore` validates source hashes and commits summaries through CAS-safe operations.
+
+Snapshot writes use distinct DB row revisions and typed `ContextSnapshotHandle`/`SnapshotWriteReceipt` values. Initial projection, activation and provider-attempt adapter updates settle asynchronous CAS outcomes before scope activation or transport; cancellation after a DB commit cannot make an unknown write authoritative.
+
+For one Session, every eligible, undeleted user/assistant/tool message is covered exactly once. If all raw rows fit, all raw rows are loaded. Otherwise `SessionHistoryPlanner` selects a continuous raw tail plus valid summary nodes and page-in references. A reference does not count as content coverage. Gaps, overlaps, stale source hashes, broken tool-call causal groups or residual compaction jobs fail closed before provider transport. `session_history_page_in` is bound to the current runtime Session and pages only at complete causal-group boundaries.
+
+### 15.3 Tool capability plane
+
+`ContextAssembler` produces provider-neutral `ToolExposureIntent`. `ToolCapabilityResolver` reads one strict, session-aware catalog/policy snapshot and freezes an immutable `PreparedToolSet` containing exact direct schemas, bounded deferred references, deny decisions, registry/policy revisions and fingerprints. AgentLoop and diagnostics consume that same set; ON mode does not reduce it to names and reconstruct schemas later.
+
+Deferred capabilities are exposed only through scoped `tool_search`, `tool_describe` and `tool_activate` bridges. Search cannot enumerate another Session or policy-hidden tools. Activation is an exclusive turn: eligibility, current spec hash, policy, budget and snapshot serialization are validated before the candidate revision is committed. Every provider attempt and real tool execution revalidates direct/activated references; MCP unregister/replace or policy drift makes the old reference stale and fails closed. Existing PermissionGate, durable effect authorization, receipts, artifacts, VerifyGate, timeouts and breakers remain downstream authorities.
+
+### 15.4 Attempt diagnostics and rollback
+
+`ContextAttemptStore` is a body-free, bounded in-memory diagnostic ring. It records `purpose`, Session/request/attempt identity, provider/model/window, adapter identity, message and tool hashes, fragment decisions, tool-set revisions, attachment/reserve attribution, compression resolution, Session coverage facts and matching authoritative usage. Auxiliary capability-gate/classifier/planner/compressor/research/workflow calls receive explicit purposes; provider bottom seams create an attempt if no complete outer attempt scope exists. The public transport coroutine changes `planned` to `sent` only after it obtains send control; completion, failure and cancellation close the same attempt.
+
+ContextTrace renders these frozen facts, including raw/summary/reference coverage, gaps/overlaps/stale counts and page-in references, without credentials, full tool arguments, attachment bodies or sensitive file content.
+
+Rollback is intentionally one-dimensional:
+
+- `context_os_v1=true` is the shipped default and activates the planner, snapshot/segment stores, capability scope and attempt diagnostics.
+- `context_os_v1=false` restores the preserved legacy `tools` names/order, legacy preflight/reactive behavior and legacy context-usage payload. It does not read Context OS snapshots/segments or register an attempt store.
+- A startup log states the active owner, resolved window and migration version without prompt content.
+
+Automated verification and benchmark results are recorded in [`../plans/2026-07-13-context-os-v1/results.md`](../plans/2026-07-13-context-os-v1/results.md). Real Windows UI E2E remains a separate evidence boundary and is never inferred from unit tests or protocol-level calls.

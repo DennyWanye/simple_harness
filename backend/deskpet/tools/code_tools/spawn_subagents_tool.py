@@ -208,11 +208,21 @@ def build_spawn_subagents_tools(
             runs = [registry.get(r) for r in run_ids]
             runs = [r for r in runs if r is not None]
         else:
-            runs = registry.list(active_only=True)
+            runs = registry.list(active_only=False)
         tasks = [r.task for r in runs if r.task is not None]
         if tasks:
             await asyncio.wait(tasks)
         results = [r.to_result() for r in runs]
+        consumed = {r.run_id for r in runs}
+        if consumed:
+            queued = []
+            queue = registry.completion_queue
+            while not queue.empty():
+                done = queue.get_nowait()
+                if done.run_id not in consumed:
+                    queued.append(done)
+            for done in queued:
+                queue.put_nowait(done)
         return json.dumps({"ok": True, "results": results}, ensure_ascii=False)
 
     return (_spawn, _SPAWN_SCHEMA), (_await, _AWAIT_SCHEMA)

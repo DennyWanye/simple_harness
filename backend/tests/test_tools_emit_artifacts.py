@@ -126,7 +126,14 @@ async def test_e2e_ppt_artifacts_in_envelope(tmp_path):
     class _Cfg:
         class last_mile:
             artifact_envelope = True
+    previous_context_os_provider = _global._context_os_enabled_provider
+    previous_gate = _global._gate
     _global.set_tools_config_provider(lambda: _Cfg)
+    # main.py may have been imported earlier in the shard and switched the
+    # singleton to request-scoped capability enforcement. This legacy envelope
+    # test intentionally exercises execute_tool without a capability context.
+    _global.set_context_os_enabled_provider(lambda: False)
+    _global.set_permission_gate(None)
     try:
         out = tmp_path / "e2e.pptx"
         env = await _global.execute_tool(
@@ -141,3 +148,5 @@ async def test_e2e_ppt_artifacts_in_envelope(tmp_path):
         assert env["artifacts"][0]["path"] == str(out)
     finally:
         _global.set_tools_config_provider(None)
+        _global.set_context_os_enabled_provider(previous_context_os_provider)
+        _global.set_permission_gate(previous_gate)

@@ -71,6 +71,49 @@ input, textarea, [contenteditable="true"], pre, code,
   color: inherit;
 }
 
+.bp-chat-bubble::selection, .bp-chat-bubble *::selection,
+.bp-dialog-bar::selection, .bp-dialog-bar *::selection,
+.bp-user-bubble::selection, .bp-user-bubble *::selection,
+[data-bp-selectable]::selection, [data-bp-selectable] *::selection {
+  background: rgba(125, 211, 252, 0.48);
+  color: #ffffff;
+}
+
+.deskpet-copy-message-btn {
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    opacity 120ms ease,
+    transform 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.deskpet-copy-message-btn:hover:not(:disabled) {
+  opacity: 1 !important;
+  transform: none;
+  box-shadow: none;
+}
+
+.deskpet-copy-message-btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.deskpet-copy-message-btn:focus-visible {
+  outline: 2px solid rgba(125, 211, 252, 0.72);
+  outline-offset: 2px;
+}
+
+.deskpet-copy-message-btn--blue:hover:not(:disabled) {
+  background: rgba(125, 211, 252, 0.10) !important;
+}
+
+.deskpet-copy-message-btn--dark:hover:not(:disabled),
+.deskpet-copy-message-btn--muted:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.10) !important;
+}
+
 /* Custom scrollbar — slim + neutral */
 ::-webkit-scrollbar {
   width: 8px;

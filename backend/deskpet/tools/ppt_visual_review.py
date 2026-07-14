@@ -54,6 +54,20 @@ _REVIEW_SYSTEM_TEMPLATE = _REVIEW_CHECKS + """
  {"page":2,"ok":false,"issues":["目录数字与文字重叠"],"action":"change_page"}]"""
 
 
+_REVIEW_SYSTEM_FULL_PAGE = """You are a strict presentation-page reviewer. Each image is a
+complete rasterized slide. Compare it against the supplied EXACT_COPY for that page.
+Fail a page when expected text is missing, incorrect, unreadable, clipped, or occluded;
+when extra text appears; or when the composition is blank or unsuitable. Field names in
+EXACT_COPY are structural and must not appear in the image.
+
+For each failed page, action must be "regenerate_page" and reason_codes must contain one
+or more of: text_missing, text_incorrect, text_extra, text_unreadable, text_overflow,
+text_occluded, layout_misfit, blank. Return only a strict JSON array:
+[{"page":1,"ok":true,"issues":[],"reason_codes":[],"action":"ok"},
+ {"page":2,"ok":false,"issues":["title is misspelled"],
+  "reason_codes":["text_incorrect"],"action":"regenerate_page"}]"""
+
+
 def _b64_image(path: str, *, max_w: int = 768) -> str | None:
     """读图→缩到 max_w→JPEG base64(控 token)。失败 None。"""
     try:
@@ -158,6 +172,9 @@ def _parse_review_json(text: str) -> list[dict[str, Any]]:
                 "issues": [str(x) for x in (item.get("issues") or [])][:5],
                 "action": str(item.get("action") or "ok"),
                 "variant": str(item.get("variant") or ""),
+                "reason_codes": [
+                    str(x) for x in (item.get("reason_codes") or [])
+                ][:8],
             })
         return out
     except Exception as exc:  # noqa: BLE001
@@ -170,7 +187,7 @@ def review_slides(
     pages_meta: list[dict[str, Any]],
     *,
     mode: str = "image",
-    max_pages: int = 12,
+    max_pages: int = 20,
     timeout: float = 120.0,
 ) -> list[dict[str, Any]]:
     """让多模态 LLM 看每页截图,返回评审动作列表。
@@ -183,12 +200,24 @@ def review_slides(
     """
     try:
         content: list[dict[str, Any]] = []
-        n = min(len(png_paths), max_pages)
+        n = (
+            len(png_paths)
+            if mode == "full_page_images"
+            else min(len(png_paths), max_pages)
+        )
         for i in range(n):
             b64 = _b64_image(png_paths[i])
             if not b64:
                 continue
             meta = pages_meta[i] if i < len(pages_meta) else {}
+            if mode == "full_page_images":
+                content.append({
+                    "type": "text",
+                    "text": (
+                        f"Page {i + 1} | EXACT_COPY="
+                        f"{json.dumps(meta.get('expected_text', {}), ensure_ascii=False, sort_keys=True)}"
+                    ),
+                })
             content.append({
                 "type": "text",
                 "text": (
@@ -208,7 +237,9 @@ def review_slides(
         })
 
         system_prompt = (
-            _REVIEW_SYSTEM_TEMPLATE if mode == "template" else _REVIEW_SYSTEM
+            _REVIEW_SYSTEM_FULL_PAGE
+            if mode == "full_page_images"
+            else _REVIEW_SYSTEM_TEMPLATE if mode == "template" else _REVIEW_SYSTEM
         )
         text = vision_chat(
             content, system=system_prompt, timeout=timeout, max_tokens=1500

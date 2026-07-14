@@ -18,6 +18,8 @@ from __future__ import annotations
 from pathlib import Path
 from textwrap import dedent
 
+import tomli
+
 from config import TTSConfig, load_config
 
 
@@ -52,6 +54,14 @@ def test_load_config_ignores_unknown_toml_keys(tmp_path: Path) -> None:
     assert cfg.llm.local.api_key == "ollama"
     # The unknown field was filtered out (no attribute, no crash).
     assert not hasattr(cfg.llm, "future_experimental_knob")
+
+
+def test_factory_config_keeps_supervisor_disabled_by_default() -> None:
+    repo_config = Path(__file__).resolve().parents[2] / "config.toml"
+    with repo_config.open("rb") as fh:
+        raw = tomli.load(fh)
+
+    assert raw.get("supervisor", {}).get("enabled") is False
 
 
 def test_load_config_parses_llm_routing_with_local_and_cloud(tmp_path):
@@ -234,9 +244,9 @@ def test_load_config_parses_skills_codify_flag(tmp_path: Path) -> None:
     )
 
 
-def test_load_config_skills_codify_defaults_off(tmp_path: Path) -> None:
-    """无 [skills.codify] 段时默认 enabled=False（BC，flag-OFF 字节契约）。"""
+def test_load_config_skills_codify_defaults_on(tmp_path: Path) -> None:
+    """无 [skills.codify] 段时落 dataclass 默认 enabled=True（2026-06-27 测试阶段点亮）。"""
     cfg_path = tmp_path / "config.toml"
     cfg_path.write_text("schema_version = 1\n")
     cfg = load_config(cfg_path)
-    assert cfg.skills.codify.enabled is False
+    assert cfg.skills.codify.enabled is True

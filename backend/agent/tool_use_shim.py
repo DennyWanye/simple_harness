@@ -24,7 +24,9 @@ Production wiring:
 """
 from __future__ import annotations
 
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Sequence
+
+from llm.errors import LLMProviderError
 
 from llm.types import ChatResponse, ChatUsage, ToolCall
 
@@ -59,6 +61,112 @@ class OpenAICompatibleAgentLLM:
             response_format=response_format,
         )
         return _raw_to_response(raw)
+
+    async def chat_with_fallback_stream(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        model: str | None = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[dict]:
+        """Stream one provider, retrying only before the first event."""
+        import asyncio as _aio
+
+        max_tokens = int(kwargs.get("max_tokens", 2048))
+        temperature = kwargs.get("temperature")
+        response_format = kwargs.get("response_format")
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            yielded_any = False
+            try:
+                async for event in self._provider.chat_stream_with_tools(
+                    messages,
+                    tools=tools,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    response_format=response_format,
+                ):
+                    yielded_any = True
+                    yield event
+                return
+            except Exception as exc:  # noqa: BLE001
+                name = type(exc).__name__
+                transient = (
+                    "Timeout" in name
+                    or name
+                    in {
+                        "ReadError",
+                        "ConnectError",
+                        "RemoteProtocolError",
+                        "ProtocolError",
+                        "ConnectionError",
+                        "APIConnectionError",
+                        "APITimeoutError",
+                        "WriteError",
+                        "PoolTimeout",
+                    }
+                    or isinstance(exc, (TimeoutError, ConnectionError))
+                )
+                if yielded_any or not transient or attempt >= max_retries:
+                    raise
+                await _aio.sleep(0.5 * (2 ** (attempt - 1)))
+
+
+class OpenAICompatibleAgentLLMChain:
+    """Adapter for an ordered chain of OpenAI-compatible providers.
+
+    Durable workflows call the registry-shaped ``chat_with_fallback`` API.
+    Walking the complete resolved chain here keeps their failover behavior in
+    line with AgentLoop instead of silently pinning them to the first entry.
+    """
+
+    def __init__(self, providers: Sequence[Any]) -> None:
+        self._providers = list(providers)
+        if not self._providers:
+            raise ValueError("provider chain must not be empty")
+        self._active_provider = self._providers[0]
+        self._provider = self._active_provider
+
+    @property
+    def name(self) -> str:
+        return str(
+            getattr(self._active_provider, "provider_id", "")
+            or getattr(self._active_provider, "name", "")
+            or "openai_compatible"
+        )
+
+    @property
+    def model(self) -> str:
+        return str(getattr(self._active_provider, "model", "") or "")
+
+    async def chat_with_fallback(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        model: str | None = None,
+        **kwargs: Any,
+    ) -> ChatResponse:
+        errors: list[str] = []
+        for provider in self._providers:
+            try:
+                response = await OpenAICompatibleAgentLLM(provider).chat_with_fallback(
+                    messages,
+                    tools=tools,
+                    model=model,
+                    **kwargs,
+                )
+            except LLMProviderError as exc:
+                errors.append(
+                    f"{getattr(provider, 'provider_id', '') or getattr(provider, 'name', 'openai_compatible')}: {exc}"
+                )
+                continue
+            self._active_provider = provider
+            self._provider = provider
+            return response
+        raise LLMProviderError(
+            "all providers failed: " + "; ".join(errors),
+            provider="provider_chain",
+        )
 
     async def chat_with_fallback_stream(
         self,

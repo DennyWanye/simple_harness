@@ -134,6 +134,7 @@ async def resolve_provider_for_session(
                 api_key_ref=str(getattr(entry, "api_key_ref", "")),
                 priority=int(getattr(entry, "priority", 1)),
                 enabled=bool(getattr(entry, "enabled", True)),
+                source=str(getattr(entry, "source", "user")),
             )
             if preferred_model:
                 pinned.model = preferred_model
@@ -199,7 +200,7 @@ class _ChainEntry:
 
     __slots__ = (
         "id", "name", "base_url", "model", "api_key_ref",
-        "priority", "enabled", "code_params",
+        "priority", "enabled", "source", "code_params",
     )
 
     def __init__(
@@ -212,6 +213,7 @@ class _ChainEntry:
         api_key_ref: str = "",
         priority: int = 1,
         enabled: bool = True,
+        source: str = "user",
     ) -> None:
         self.id = id
         self.name = name
@@ -220,6 +222,7 @@ class _ChainEntry:
         self.api_key_ref = api_key_ref
         self.priority = priority
         self.enabled = enabled
+        self.source = source
         # code-session-model-params: filled by _attach_code_params.
         self.code_params: dict = {}
 
@@ -233,6 +236,7 @@ class _ChainEntry:
             api_key_ref=str(d.get("api_key_ref", "")),
             priority=int(d.get("priority", 1)),
             enabled=bool(d.get("enabled", True)),
+            source=str(d.get("source", "user")),
         )
 
 
