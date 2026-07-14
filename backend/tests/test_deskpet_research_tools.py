@@ -290,42 +290,25 @@ def _contains_chinese(s: str) -> bool:
 
 @pytest.mark.asyncio
 async def test_default_search_with_mock_client(monkeypatch) -> None:
-    import httpx
-    # §6.0: 默认队列改 google-cdp(cdp渲染/可达门控,非httpx);本测显式锁 ddg 验 DDG HTTP 路径仍工作
-    from deskpet.tools import search_provider as _sp
-    monkeypatch.setattr(_sp, "_engine_queue", lambda: ["duckduckgo"])
-
-    captured: dict[str, Any] = {}
-
-    class _MockTransport(httpx.AsyncBaseTransport):
-        async def handle_async_request(self, request):
-            captured["url"] = str(request.url)
-            captured["method"] = request.method
-            return httpx.Response(200, text=_DDG_SAMPLE_HTML)
-
-    client = httpx.AsyncClient(transport=_MockTransport())
-    try:
-        out = await r.default_search("test query", max_results=5, client=client)
-    finally:
-        await client.aclose()
-    assert len(out) == 2
-    assert "html.duckduckgo.com" in captured["url"]
-    assert captured["method"] == "POST"
+    expected = [
+        {"url": "https://a.test", "title": "A", "snippet": "one"},
+        {"url": "https://b.test", "title": "B", "snippet": "two"},
+    ]
+    async def _gateway_search(*args, **kwargs):
+        return expected
+    from deskpet.tools import search_provider
+    monkeypatch.setattr(search_provider, "search_async", _gateway_search)
+    out = await r.default_search("test query", max_results=5, client=object())
+    assert out == expected
 
 
 @pytest.mark.asyncio
-async def test_default_search_network_failure_returns_empty() -> None:
-    import httpx
-
-    class _BoomTransport(httpx.AsyncBaseTransport):
-        async def handle_async_request(self, request):
-            raise httpx.ConnectError("simulated")
-
-    client = httpx.AsyncClient(transport=_BoomTransport())
-    try:
-        out = await r.default_search("q", client=client)
-    finally:
-        await client.aclose()
+async def test_default_search_network_failure_returns_empty(monkeypatch) -> None:
+    from deskpet.tools import search_provider
+    async def _failed(*args, **kwargs):
+        return []
+    monkeypatch.setattr(search_provider, "search_async", _failed)
+    out = await r.default_search("q", client=object())
     assert out == []
 
 

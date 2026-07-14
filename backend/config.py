@@ -13,6 +13,7 @@ from dataclasses import dataclass, field, fields as dc_fields
 from typing import Optional
 
 import platformdirs
+from urllib.parse import urlsplit
 
 import paths as _paths
 
@@ -555,6 +556,33 @@ class WorkflowsConfig:
 
 
 @dataclass
+class SearchGatewayConfig:
+    """In-process retrieval gateway. Enabled by default during test stage."""
+
+    enabled: bool = True
+    route: str = "auto"
+    providers: list[str] = field(default_factory=lambda: [
+        "baidu", "duckduckgo", "google-cdp", "bing-cdp",
+    ])
+    quick_total_timeout_s: float = 5.0
+    per_provider_timeout_s: float = 2.0
+    quick_min_results: int = 5
+    quick_min_domains: int = 2
+    research_target_results: int = 20
+    research_target_domains: int = 5
+    research_total_timeout_s: float = 30.0
+    max_concurrency: int = 4
+    request_cdp_budget: int = 2
+    request_hydrate_budget: int = 3
+    cache_size: int = 128
+    cache_ttl_s: float = 120.0
+    cooldown_threshold: int = 2
+    cooldown_ttl_s: float = 300.0
+    searxng_url: str = ""
+    serp_hardening: bool = False
+
+
+@dataclass
 class ContextCompactionConfig:
     model: str = "follow_session"
 
@@ -583,6 +611,7 @@ class AppConfig:
     # WI-4.1 Skills 分级披露.  全 flag 默认 OFF（字节级 BC）.
     skills: SkillsConfig = field(default_factory=SkillsConfig)
     workflows: WorkflowsConfig = field(default_factory=WorkflowsConfig)
+    search_gateway: SearchGatewayConfig = field(default_factory=SearchGatewayConfig)
     context: ContextSettingsConfig = field(default_factory=ContextSettingsConfig)
     # P4-S15: capture the raw TOML so layers that don't have a dataclass
     # yet (P4 [mcp], [agent], [context.assembler], [memory.l3], [tools.web])
@@ -1617,6 +1646,37 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
         )
     if "workflows" in raw:
         config.workflows = _load_section(WorkflowsConfig, dict(raw["workflows"]))
+    # Search Gateway values are typed. Legacy [research] aliases are read
+    # only when the equivalent new key was not explicitly supplied.
+    raw_gateway = dict(raw.get("search_gateway") or {})
+    raw_research = dict(raw.get("research") or {})
+    alias_map = {
+        "search_engines": "providers",
+        "searxng_url": "searxng_url",
+        "serp_hardening": "serp_hardening",
+    }
+    for legacy, current in alias_map.items():
+        if current not in raw_gateway and legacy in raw_research:
+            raw_gateway[current] = raw_research[legacy]
+    if raw_gateway:
+        config.search_gateway = _load_section(SearchGatewayConfig, raw_gateway)
+    sg = config.search_gateway
+    allowed_providers = {"baidu", "duckduckgo", "google-cdp", "bing-cdp", "bing", "searxng"}
+    unknown_providers = sorted(set(sg.providers) - allowed_providers)
+    if unknown_providers:
+        raise ConfigError(f"SG-CONFIG-1: unknown providers: {unknown_providers}")
+    if sg.route != "auto":
+        raise ConfigError("SG-CONFIG-2: route must be 'auto'")
+    if sg.quick_total_timeout_s <= 0 or sg.research_total_timeout_s <= 0 or sg.per_provider_timeout_s <= 0:
+        raise ConfigError("SG-CONFIG-3: timeouts must be positive")
+    if not 1 <= sg.max_concurrency <= 6:
+        raise ConfigError("SG-CONFIG-4: max_concurrency must be in [1, 6]")
+    if sg.searxng_url:
+        parsed = urlsplit(sg.searxng_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.path.rstrip("/") != "/search":
+            raise ConfigError("SG-CONFIG-5: searxng_url must be an http(s) /search endpoint")
+        if "searxng" not in sg.providers:
+            sg.providers = ["searxng", *sg.providers]
     if config.workflows.terminal_retention_days < 1:
         raise ConfigError("[workflows].terminal_retention_days must be at least 1")
     if config.workflows.evaluation_retention_days < config.workflows.terminal_retention_days:

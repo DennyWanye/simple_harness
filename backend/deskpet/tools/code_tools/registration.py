@@ -128,8 +128,8 @@ def register_code_tools(
         schema=_schema(
             "web_search",
             # 唯一的 web_search 注册(聊天/Code 都见,chat 传 tools_filter=None
-            # 看全部工具)。底层走统一 search_provider(区域感知 DDG,中文→中文区)。
-            "联网搜索(DuckDuckGo)返回 top-N {title,url,snippet}。用于【快速查一下】"
+            # 看全部工具)。底层走异步 SearchGateway 动态路由。
+            "联网搜索返回 top-N {title,url,snippet}。用于【快速查一下】"
             "事实/找网址/看有哪些来源,区域按查询语言自动切(中文走中文区)。"
             "要【深度调研出带引用的报告】请改用 deepresearch。不生成图片(画图用 generate_image)。",
             {
@@ -137,6 +137,10 @@ def register_code_tools(
                 "max_results": {
                     "type": "integer",
                     "description": "Default 5, hard cap 10.",
+                },
+                "hydrate_top": {
+                    "type": "integer",
+                    "description": "Fetch/extract正文 for top N results; default 0, hard cap 3.",
                 },
             },
             ["query"],

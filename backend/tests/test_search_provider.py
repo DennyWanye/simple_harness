@@ -492,7 +492,7 @@ async def test_search_async_searxng_parses_json_when_configured(monkeypatch):
             return _Resp()
 
     client = _Client()
-    results = await sp.search_async("topic", client=client)
+    results = await sp.search_async("topic", client=client, engines=["searxng"])
 
     assert results == [
         {"url": "https://example.com/a", "title": "A", "snippet": "Alpha"},

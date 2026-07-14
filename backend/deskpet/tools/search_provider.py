@@ -706,6 +706,30 @@ async def search_async(
     """异步搜索(兼容性降级队列)→ ``[{url, title, snippet}]``(research 管线形状)。
     按队列依次试,第一个非空就返回;全失败 → ``[]``。"""
     q = (query or "").strip()
+    # Production default route: request-local SearchGateway diagnostics and
+    # async providers. Explicit engines preserve the legacy v1 adapter used by
+    # older callers/tests that require a fixed HTTP/CDP sequence.
+    if engines is None:
+        from deskpet.retrieval.contracts import SearchRequest
+        from deskpet.retrieval.runtime import get_default_gateway
+        response = await get_default_gateway().search(SearchRequest(
+            query=q,
+            max_results=max_results,
+            region=region,
+            mode="research",
+            total_timeout_s=timeout,
+        ))
+        return [
+            {
+                "url": item.url,
+                "title": item.title,
+                "snippet": item.snippet,
+                "provider": item.provider,
+                "rank": item.provider_rank,
+                "searched_at": item.searched_at,
+            }
+            for item in response.results
+        ]
     _reset_last_observation()
     if not q:
         return []

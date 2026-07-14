@@ -3197,6 +3197,15 @@ service_context.register("agent_engine", agent)
 async def lifespan(app: FastAPI):
     """Preload models on startup (best-effort — failures logged but don't block)."""
     logger.info("preloading models...")
+    from deskpet.retrieval.runtime import build_search_gateway, set_default_gateway
+    _search_gateway = build_search_gateway(config)
+    set_default_gateway(_search_gateway)
+    service_context.register("search_gateway", _search_gateway)
+    logger.info(
+        "search_gateway_ready",
+        enabled=config.search_gateway.enabled,
+        providers=config.search_gateway.providers,
+    )
     # Stage 2 round 2 fix：workspace_memory hook (os_tools/read_file 等
     # sync handler) 依赖 file_tools._workspace_loop 引用主 loop。set_
     # workspace_store 在 module top-level 跑时拿不到 loop —— 这里补绑。
@@ -4341,6 +4350,8 @@ async def lifespan(app: FastAPI):
 
     logger.info("startup complete")
     yield
+    from deskpet.retrieval.runtime import shutdown_default_gateway
+    await shutdown_default_gateway()
     _workflow_service = service_context.get("workflow_service")
     _workflow_launcher = getattr(_workflow_service, "launcher", None)
     if _workflow_launcher is not None:

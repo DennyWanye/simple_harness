@@ -578,6 +578,27 @@ timeout = 60.0
 default_model = "gemini-1.5-pro"
 timeout = 60.0
 
+[search_gateway]
+enabled = true
+route = "auto"
+providers = ["baidu", "duckduckgo", "google-cdp", "bing-cdp"]
+quick_total_timeout_s = 5.0
+per_provider_timeout_s = 2.0
+quick_min_results = 5
+quick_min_domains = 2
+research_target_results = 20
+research_target_domains = 5
+research_total_timeout_s = 30.0
+max_concurrency = 4
+request_cdp_budget = 2
+request_hydrate_budget = 3
+cache_size = 128
+cache_ttl_s = 120.0
+cooldown_threshold = 2
+cooldown_ttl_s = 300.0
+searxng_url = ""
+serp_hardening = false
+
 # deep-research 抓取/检索增强开关(真实默认在代码 research_tools._research_raw(),此处为文档)。
 [research]
 # DeepResearch fan-out: plan 拆出至少 2 个子问题时，交给 research lane 有界并发执行，
