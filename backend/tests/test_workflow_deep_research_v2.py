@@ -52,7 +52,19 @@ def test_v2_definition_is_fixed_six_slot_five_phase_and_v1_is_untouched():
         "normalize", "plan", "expand", "search", "direct", "fetch", "score",
         "gap", "rerank", "synth", "cite", "persist", "finalize",
     ]
-    assert DEEP_RESEARCH_V1.manifest.implementation_bundle_hash == "8b75b88824dda7e8d2312e0e865836275fcbddfbbf2ebe9263c50059900ac804"
+    # ``uv.lock`` is checked out as CRLF in the primary Windows tree and LF
+    # in some git worktrees. The manifest intentionally hashes raw lockfile
+    # bytes, so pin both byte-equivalent checkout variants while keeping all
+    # other v1 inputs immutable.
+    v1_golden_by_lock_hash = {
+        "1013a7b449853880a44dd4219d1fe8090dff38055fd4a42d6902887693e4c8ef":
+            "9290fc347e425fa16c7a1eea61b8c4772d3118a5ed2caf4e857cd33c61518497",
+        "ff691f62e113477ba230f0897488fb6ec9f1d1009b003947497cbecc6ea895e5":
+            "8b75b88824dda7e8d2312e0e865836275fcbddfbbf2ebe9263c50059900ac804",
+    }
+    lock_hash = DEEP_RESEARCH_V1.manifest.dependency_lock_hash
+    assert lock_hash in v1_golden_by_lock_hash
+    assert DEEP_RESEARCH_V1.manifest.implementation_bundle_hash == v1_golden_by_lock_hash[lock_hash]
 
 
 def test_registry_keeps_v1_for_recovery_and_exposes_v2_as_new_default():

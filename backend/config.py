@@ -553,6 +553,10 @@ class WorkflowsConfig:
     terminal_retention_days: int = 30
     evaluation_retention_days: int = 180
     orphan_grace_hours: int = 24
+    # New DeepResearch runs use the immutable v2 graph. v1 stays registered
+    # exclusively for checkpoint/history recovery.
+    deep_research_version: str = "v2"
+    deep_research_max_parallel_tasks: int = 4
 
 
 @dataclass

@@ -3273,7 +3273,15 @@ async def lifespan(app: FastAPI):
             payload = dict(event.get("payload") or {})
             nested = payload.get("payload")
             nested = dict(nested) if isinstance(nested, dict) else {}
-            text = str(nested.get("text") or payload.get("text") or "").strip()
+            text = ""
+            if event.get("event_type") == "workflow.progress":
+                v2_payload = payload if payload.get("schema_version") == 2 else nested
+                if v2_payload.get("schema_version") == 2:
+                    from deskpet.workflows.progress import validated_v2_stage_text
+
+                    text = validated_v2_stage_text(v2_payload).strip()
+            if not text:
+                text = str(nested.get("text") or payload.get("text") or "").strip()
             if not text:
                 if event.get("event_type") == "workflow.accepted":
                     text = f"{payload.get('workflow_name', '任务')} 已开始"
@@ -3343,9 +3351,18 @@ async def lifespan(app: FastAPI):
             ),
         )
         from deskpet.workflows.contracts import WorkflowContext
-        from deskpet.workflows.definitions.research_core import legacy_ports
+        from deskpet.workflows.definitions.research_core import (
+            FetchPort,
+            ResearchSearchPort,
+            legacy_ports,
+        )
         from deskpet.workflows.definitions.v1 import deep_research_initial_state
+        from deskpet.workflows.definitions.v2 import (
+            deep_research_initial_state as deep_research_v2_initial_state,
+        )
         from deskpet.workflows.launcher import WorkflowLauncher
+        from deskpet.workflows.native import NativeExecutionPolicy
+        from deskpet.workflows.store import RegisteredBlobStore
         from deskpet.tools import research_tools as _workflow_research_tools
 
         _workflow_launcher = WorkflowLauncher(_workflow_service)
@@ -3371,11 +3388,85 @@ async def lifespan(app: FastAPI):
                 blob_root=str(values.get("blob_root") or ""),
             )
 
+        async def _deep_v2_context_factory(row, start_payload) -> WorkflowContext:
+            from deskpet.retrieval.contracts import FetchRequest, SearchRequest
+            from deskpet.retrieval.runtime import get_default_gateway
+
+            llm_call = await _workflow_research_tools._resolve_default_llm_call()
+            legacy = legacy_ports(llm_call=llm_call, search=None, extract=None)
+            gateway = get_default_gateway()
+            run_id = str(row.get("run_id") or "")
+
+            async def _search(query: str, *, max_results: int) -> list[dict]:
+                response = await gateway.search(
+                    SearchRequest(
+                        query=query,
+                        max_results=max_results,
+                        mode="research",
+                        run_id=run_id,
+                    )
+                )
+                return list(response.to_dict()["results"])
+
+            async def _extract(url: str) -> dict:
+                if gateway.fetch_service is None:
+                    return await legacy.fetch.extract(url)
+                document = await gateway.fetch_service.fetch(
+                    FetchRequest(url=url, timeout=15.0, render_policy="auto")
+                )
+                return document.to_dict()
+
+            blob_root = _paths.user_data_dir() / "workflows" / "blobs"
+            return WorkflowContext(
+                ports={
+                    "llm": legacy.llm,
+                    "search": ResearchSearchPort(
+                        search_call=_search,
+                        direct_call=legacy.search.direct_call,
+                        reset_runtime=legacy.search.reset_runtime,
+                        observe_runtime=legacy.search.observe_runtime,
+                    ),
+                    "fetch": FetchPort(_extract),
+                    "blob": RegisteredBlobStore(
+                        blob_root,
+                        _workflow_service.run_store.path,
+                    ),
+                    "native_execution_policy": NativeExecutionPolicy(
+                        max_parallel_tasks=max(
+                            2,
+                            min(
+                                6,
+                                int(config.workflows.deep_research_max_parallel_tasks),
+                            ),
+                        )
+                    ),
+                },
+                request_id=str(row.get("request_id") or ""),
+                turn_id=str(row.get("turn_id") or ""),
+            )
+
+        def _deep_v2_state_factory(**values):
+            return deep_research_v2_initial_state(
+                topic=str(values["topic"]),
+                run_id=str(values["run_id"]),
+                thread_id=str(values["thread_id"]),
+                session_id=str(values["session_id"]),
+                mode=str(values.get("mode") or "standard"),
+                research_config=dict(values.get("research_config") or {}),
+                blob_root=str(values.get("blob_root") or ""),
+            )
+
         _workflow_launcher.register_adapter(
             "deep_research",
             "v1",
             state_factory=_deep_state_factory,
             context_factory=_deep_context_factory,
+        )
+        _workflow_launcher.register_adapter(
+            "deep_research",
+            "v2",
+            state_factory=_deep_v2_state_factory,
+            context_factory=_deep_v2_context_factory,
         )
 
         from agent.tool_use_shim import OpenAICompatibleAgentLLM as _RecoveryShim
@@ -3462,9 +3553,12 @@ async def lifespan(app: FastAPI):
                 )
                 if delivery_state.get("deleted_at") is not None:
                     raise RuntimeError("workflow delivery session was deleted")
+                workflow_version = str(config.workflows.deep_research_version or "v2")
+                if workflow_version != "v2":
+                    workflow_version = "v2"
                 return await _workflow_launcher.launch(
                     workflow_name="deep_research",
-                    workflow_version="v1",
+                    workflow_version=workflow_version,
                     session_id=sid,
                     request_id=str(args.get("_request_id") or task_id),
                     turn_id=str(args.get("_turn_id") or task_id),
@@ -3475,8 +3569,8 @@ async def lifespan(app: FastAPI):
                         "blob_root": str(_paths.user_data_dir() / "workflows" / "blobs"),
                     },
                     capability_snapshot={"tools": ["deepresearch"], "schema_version": 1},
-                    state_factory=_deep_state_factory,
-                    context_factory=_deep_context_factory,
+                    state_factory=_deep_v2_state_factory,
+                    context_factory=_deep_v2_context_factory,
                     base_epoch=int(delivery_state.get("epoch", 0)),
                 )
 
