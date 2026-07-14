@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "measured_at": "2026-07-14T15:21:59.863773+00:00",
+  "production_wiring": true,
+  "mocked": false,
+  "searches": [
+    {
+      "language": "zh-CN",
+      "query": "生成式人工智能服务管理暂行办法 官方",
+      "count": 8,
+      "engines_tried": [
+        "baidu",
+        "google-cdp",
+        "bing-cdp",
+        "duckduckgo"
+      ],
+      "engines_hit": [
+        "duckduckgo"
+      ],
+      "errors": [
+        {
+          "provider": "google-cdp",
+          "code": "timeout"
+        },
+        {
+          "provider": "bing-cdp",
+          "code": "timeout"
+        }
+      ],
+      "elapsed_ms": 4250,
+      "degraded": true,
+      "top_results": [
+        {
+          "title": "生成式人工智能服务管理暂行办法_国务院部门文件_中国政府网",
+          "url": "https://www.gov.cn/zhengce/zhengceku/202307/content_6891752.htm",
+          "provider": "duckduckgo",
+          "providers": [
+            "duckduckgo"
+          ]
+        },
+        {
+          "title": "生成式人工智能服务管理暂行办法",
+          "url": "https://www.moj.gov.cn/pub/sfbgw/flfggz/flfggzbmgz/202401/t20240109_493171.html",
+          "provider": "duckduckgo",
+          "providers": [
+            "duckduckgo"
+          ]
+        },
+        {
+          "title": "生成式人工智能服务管理暂行办法_中央网络安全和信息化委员 ...",
+          "url": "https://www.cac.gov.cn/2023-07/13/c_1690898327029107.htm",
+          "provider": "duckduckgo",
+          "providers": [
+            "duckduckgo"
+          ]
+        }
+      ]
+    },
+    {
+      "language": "en",
+      "query": "Rust async book official documentation",
+      "count": 8,
+      "engines_tried": [
+        "duckduckgo",
+        "google-cdp"
+      ],
+      "engines_hit": [
+        "duckduckgo"
+      ],
+      "errors": [
+        {
+          "provider": "google-cdp",
+          "code": "timeout"
+        }
+      ],
+      "elapsed_ms": 2000,
+      "degraded": true,
+      "top_results": [
+        {
+          "title": "Introduction - Async programming in Rust with async-std",
+          "url": "https://book.async.rs/",
+          "provider": "duckduckgo",
+          "providers": [
+            "duckduckgo"
+          ]
+        },
+        {
+          "title": "Introduction - Asynchronous Programming in Rust",
+          "url": "https://rust-lang.github.io/async-book/",
+          "provider": "duckduckgo",
+          "providers": [
+            "duckduckgo"
+          ]
+        },
+        {
+          "title": "async - Rust",
+          "url": "https://doc.rust-lang.org/std/keyword.async.html",
+          "provider": "duckduckgo",
+          "providers": [
+            "duckduckgo"
+          ]
+        }
+      ]
+    }
+  ],
+  "fetch": {
+    "ok": true,
+    "url": "https://developer.mozilla.org/en-US/docs/Web/API/WebGPU_API",
+    "canonical_url": "https://developer.mozilla.org/en-US/docs/Web/API/WebGPU_API",
+    "title": "WebGPU API - Web APIs",
+    "text_chars": 408,
+    "content_hash": "357f7cf80989137e292caaabbc460bfcdecadb03e78bf936a4940bc013027171",
+    "fetcher": "scrapling",
+    "extractor": "trafilatura",
+    "quality_flags": []
+  },
+  "decision": "PASS"
+}

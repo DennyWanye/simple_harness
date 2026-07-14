@@ -1,0 +1,458 @@
+{
+  "schema_version": 1,
+  "measured_at": "2026-07-14T15:22:37.527689+00:00",
+  "dataset_version": "2026-07-14.1",
+  "network_results_are_date_sensitive": true,
+  "config": {
+    "max_results": 10,
+    "hydrate_top": 0,
+    "timeout_s": 5.0
+  },
+  "summary": {
+    "cases": 10,
+    "success_rate": 0.7,
+    "empty_rate": 0.3,
+    "mean_recall_at_5": 0.45,
+    "p95_ms": 4342
+  },
+  "cases": [
+    {
+      "id": "zh_fact_capital",
+      "language": "zh-CN",
+      "category": "fact",
+      "success": true,
+      "empty": false,
+      "count": 10,
+      "elapsed_ms": 4342,
+      "cache_hit": false,
+      "degraded": true,
+      "engines_tried": [
+        "baidu",
+        "google-cdp",
+        "bing-cdp",
+        "duckduckgo"
+      ],
+      "engines_hit": [
+        "duckduckgo"
+      ],
+      "errors": [
+        {
+          "provider": "google-cdp",
+          "code": "timeout"
+        },
+        {
+          "provider": "bing-cdp",
+          "code": "timeout"
+        }
+      ],
+      "top5_domains": [
+        "au0061.com",
+        "baike.baidu.com",
+        "nsyj.cn",
+        "zh.wikipedia.org"
+      ],
+      "expected_domain_hits": {
+        "australia.com": false,
+        "britannica.com": false
+      },
+      "expected_keyword_hits": {
+        "堪培拉": true,
+        "Canberra": true
+      },
+      "recall_at_5": 0.0
+    },
+    {
+      "id": "en_fact_speed_light",
+      "language": "en",
+      "category": "fact",
+      "success": true,
+      "empty": false,
+      "count": 9,
+      "elapsed_ms": 2016,
+      "cache_hit": false,
+      "degraded": true,
+      "engines_tried": [
+        "duckduckgo",
+        "google-cdp"
+      ],
+      "engines_hit": [
+        "duckduckgo"
+      ],
+      "errors": [
+        {
+          "provider": "google-cdp",
+          "code": "timeout"
+        }
+      ],
+      "top5_domains": [
+        "britannica.com",
+        "en.wikipedia.org",
+        "phyfundamentals.org",
+        "physicsfundamentals.org",
+        "sciencenotes.org"
+      ],
+      "expected_domain_hits": {
+        "bipm.org": false,
+        "nist.gov": false
+      },
+      "expected_keyword_hits": {
+        "299792458": false,
+        "metres per second": true,
+        "meters per second": true
+      },
+      "recall_at_5": 0.0
+    },
+    {
+      "id": "zh_latest_python",
+      "language": "zh-CN",
+      "category": "latest",
+      "success": true,
+      "empty": false,
+      "count": 10,
+      "elapsed_ms": 3000,
+      "cache_hit": false,
+      "degraded": true,
+      "engines_tried": [
+        "baidu",
+        "google-cdp",
+        "bing-cdp",
+        "duckduckgo"
+      ],
+      "engines_hit": [
+        "duckduckgo"
+      ],
+      "errors": [
+        {
+          "provider": "google-cdp",
+          "code": "cooldown"
+        },
+        {
+          "provider": "bing-cdp",
+          "code": "timeout"
+        }
+      ],
+      "top5_domains": [
+        "blog.csdn.net",
+        "docs.python.org",
+        "docs.pythonlang.cn",
+        "ithome.com"
+      ],
+      "expected_domain_hits": {
+        "python.org": true
+      },
+      "expected_keyword_hits": {
+        "Python": true,
+        "release": false
+      },
+      "recall_at_5": 1.0
+    },
+    {
+      "id": "en_official_rust",
+      "language": "en",
+      "category": "official_docs",
+      "success": true,
+      "empty": false,
+      "count": 10,
+      "elapsed_ms": 906,
+      "cache_hit": false,
+      "degraded": true,
+      "engines_tried": [
+        "duckduckgo",
+        "google-cdp"
+      ],
+      "engines_hit": [
+        "duckduckgo"
+      ],
+      "errors": [
+        {
+          "provider": "google-cdp",
+          "code": "cooldown"
+        }
+      ],
+      "top5_domains": [
+        "book.async.rs",
+        "doc.rust-lang.org",
+        "rust-lang.github.io"
+      ],
+      "expected_domain_hits": {
+        "rust-lang.org": true
+      },
+      "expected_keyword_hits": {
+        "async": true,
+        "await": true,
+        "Rust": true
+      },
+      "recall_at_5": 1.0
+    },
+    {
+      "id": "en_academic_attention",
+      "language": "en",
+      "category": "academic",
+      "success": true,
+      "empty": false,
+      "count": 9,
+      "elapsed_ms": 1000,
+      "cache_hit": false,
+      "degraded": true,
+      "engines_tried": [
+        "duckduckgo",
+        "google-cdp"
+      ],
+      "engines_hit": [
+        "duckduckgo"
+      ],
+      "errors": [
+        {
+          "provider": "google-cdp",
+          "code": "cooldown"
+        }
+      ],
+      "top5_domains": [
+        "archive.org",
+        "arxiv.org",
+        "en.wikipedia.org",
+        "proceedings.neurips.cc"
+      ],
+      "expected_domain_hits": {
+        "arxiv.org": true,
+        "neurips.cc": true
+      },
+      "expected_keyword_hits": {
+        "Transformer": true,
+        "Vaswani": false
+      },
+      "recall_at_5": 1.0
+    },
+    {
+      "id": "zh_policy_ai",
+      "language": "zh-CN",
+      "category": "policy",
+      "success": true,
+      "empty": false,
+      "count": 8,
+      "elapsed_ms": 1063,
+      "cache_hit": false,
+      "degraded": true,
+      "engines_tried": [
+        "baidu",
+        "google-cdp",
+        "bing-cdp",
+        "duckduckgo"
+      ],
+      "engines_hit": [
+        "duckduckgo"
+      ],
+      "errors": [
+        {
+          "provider": "baidu",
+          "code": "cooldown"
+        },
+        {
+          "provider": "google-cdp",
+          "code": "cooldown"
+        },
+        {
+          "provider": "bing-cdp",
+          "code": "cooldown"
+        }
+      ],
+      "top5_domains": [
+        "cac.gov.cn",
+        "miit.gov.cn",
+        "moj.gov.cn",
+        "mps.gov.cn"
+      ],
+      "expected_domain_hits": {
+        "gov.cn": true,
+        "cac.gov.cn": true
+      },
+      "expected_keyword_hits": {
+        "生成式人工智能": true,
+        "暂行办法": true
+      },
+      "recall_at_5": 1.0
+    },
+    {
+      "id": "zh_financial_report",
+      "language": "zh-CN",
+      "category": "financial_report",
+      "success": true,
+      "empty": false,
+      "count": 10,
+      "elapsed_ms": 858,
+      "cache_hit": false,
+      "degraded": true,
+      "engines_tried": [
+        "baidu",
+        "google-cdp",
+        "bing-cdp",
+        "duckduckgo"
+      ],
+      "engines_hit": [
+        "duckduckgo"
+      ],
+      "errors": [
+        {
+          "provider": "baidu",
+          "code": "cooldown"
+        },
+        {
+          "provider": "google-cdp",
+          "code": "cooldown"
+        },
+        {
+          "provider": "bing-cdp",
+          "code": "cooldown"
+        }
+      ],
+      "top5_domains": [
+        "catl.com",
+        "max.book118.com",
+        "np-info.eastmoney.com",
+        "scribd.com"
+      ],
+      "expected_domain_hits": {
+        "cninfo.com.cn": false,
+        "catl.com": true
+      },
+      "expected_keyword_hits": {
+        "2024": true,
+        "年度报告": true,
+        "宁德时代": true
+      },
+      "recall_at_5": 0.5
+    },
+    {
+      "id": "en_js_page",
+      "language": "en",
+      "category": "javascript_page",
+      "success": false,
+      "empty": true,
+      "count": 0,
+      "elapsed_ms": 359,
+      "cache_hit": false,
+      "degraded": true,
+      "engines_tried": [
+        "duckduckgo",
+        "google-cdp",
+        "bing-cdp",
+        "baidu"
+      ],
+      "engines_hit": [],
+      "errors": [
+        {
+          "provider": "google-cdp",
+          "code": "cooldown"
+        },
+        {
+          "provider": "bing-cdp",
+          "code": "cooldown"
+        },
+        {
+          "provider": "baidu",
+          "code": "cooldown"
+        }
+      ],
+      "top5_domains": [],
+      "expected_domain_hits": {
+        "developer.mozilla.org": false
+      },
+      "expected_keyword_hits": {
+        "WebGPU": false,
+        "browser compatibility": false
+      },
+      "recall_at_5": 0.0
+    },
+    {
+      "id": "zh_duplicate_reprints",
+      "language": "zh-CN",
+      "category": "duplicate_reprints",
+      "success": false,
+      "empty": true,
+      "count": 0,
+      "elapsed_ms": 531,
+      "cache_hit": false,
+      "degraded": true,
+      "engines_tried": [
+        "baidu",
+        "google-cdp",
+        "bing-cdp",
+        "duckduckgo"
+      ],
+      "engines_hit": [],
+      "errors": [
+        {
+          "provider": "baidu",
+          "code": "cooldown"
+        },
+        {
+          "provider": "google-cdp",
+          "code": "cooldown"
+        },
+        {
+          "provider": "bing-cdp",
+          "code": "cooldown"
+        }
+      ],
+      "top5_domains": [],
+      "expected_domain_hits": {
+        "cnsa.gov.cn": false,
+        "gov.cn": false,
+        "news.cn": false
+      },
+      "expected_keyword_hits": {
+        "嫦娥六号": false,
+        "月背": false,
+        "返回": false
+      },
+      "recall_at_5": 0.0
+    },
+    {
+      "id": "en_conflicting_sources",
+      "language": "en",
+      "category": "conflicting_sources",
+      "success": false,
+      "empty": true,
+      "count": 0,
+      "elapsed_ms": 14,
+      "cache_hit": false,
+      "degraded": true,
+      "engines_tried": [
+        "duckduckgo",
+        "google-cdp",
+        "bing-cdp",
+        "baidu"
+      ],
+      "engines_hit": [],
+      "errors": [
+        {
+          "provider": "duckduckgo",
+          "code": "cooldown"
+        },
+        {
+          "provider": "google-cdp",
+          "code": "cooldown"
+        },
+        {
+          "provider": "bing-cdp",
+          "code": "cooldown"
+        },
+        {
+          "provider": "baidu",
+          "code": "cooldown"
+        }
+      ],
+      "top5_domains": [],
+      "expected_domain_hits": {
+        "nih.gov": false,
+        "cochranelibrary.com": false
+      },
+      "expected_keyword_hits": {
+        "coffee": false,
+        "risk": false,
+        "review": false
+      },
+      "recall_at_5": 0.0
+    }
+  ]
+}
