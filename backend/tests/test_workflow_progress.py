@@ -349,3 +349,39 @@ async def test_compiled_workflow_progress_persists_once_to_original_session(
         message["workflow_event_id"]
         for message in await session_db.get_messages(session_id)
     ] == [*event_ids, duplicate_id]
+
+
+def test_v2_completed_intent_is_pure_safe_and_stable():
+    reporter = WorkflowProgressReporter(
+        object(), (("session_message", "session-1"), ("websocket", "session-1"))
+    )
+    identity = NodeExecutionIdentity(
+        "deep_research", "v2", "thread-1", "run-1", "checkpoint-1", "",
+        "task-1", "search_join", 2, 100.0,
+    )
+    projection = {
+        "stage_id": "search",
+        "metrics": {"providers": 2, "candidates": 8, "kept": 5},
+        "duration_ms": 1250,
+        "completed_count": 4,
+        "degraded": False,
+        "next_stage": "direct",
+    }
+    first = reporter.build_completion_intent(identity, projection)
+    second = reporter.build_completion_intent(identity, projection)
+    assert first == second
+    assert first is not None
+    assert first["payload"]["text"] == first["payload"]["summary"]
+    assert first["payload"]["workflow_name"] == "deep_research"
+    assert first["event_key"].endswith(":task-1:completed")
+    assert projection["metrics"] == {"providers": 2, "candidates": 8, "kept": 5}
+
+
+def test_v2_completed_intent_rejects_unknown_metrics():
+    reporter = WorkflowProgressReporter(object(), ())
+    identity = NodeExecutionIdentity(
+        "deep_research", "v2", "thread", "run", "checkpoint", "", "task", "search_join", 1
+    )
+    assert reporter.build_completion_intent(
+        identity, {"stage_id": "search", "metrics": {"secret_query": "do not leak"}}
+    ) is None

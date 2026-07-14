@@ -1429,6 +1429,7 @@ class NativeCheckpointStore:
         *,
         operation_id: str | None = None,
         execution_info: object | None = None,
+        blob_refs: Sequence[str] = (),
         configurable: Mapping[str, JsonValue] | None = None,
     ) -> dict[str, Any] | None:
         protocol_call = configurable is not None
@@ -1459,6 +1460,7 @@ class NativeCheckpointStore:
             "node_id": node_id,
             "attempt": attempt,
             "patch": patch_data,
+            "blob_refs": sorted({str(value) for value in blob_refs}),
         }
         request_hash = self._request_hash(payload)
         now = self._clock()
@@ -1505,6 +1507,24 @@ class NativeCheckpointStore:
                 write_index=0, write_kind="state_patch", payload=payload,
                 node_execution_id=execution_id, task_path=str(task_data.get("task_path") or ""),
             )
+            pending_owner = f"{fence.run_id}:{expected_head}:{task_id}"
+            for sha256 in payload["blob_refs"]:
+                if len(str(sha256)) != 64 or any(ch not in "0123456789abcdef" for ch in str(sha256)):
+                    raise NativeCheckpointError("invalid_blob_ref", "task result contains an invalid blob digest")
+                exists = await (
+                    await db.execute("SELECT 1 FROM workflow_blobs WHERE sha256=?", (str(sha256),))
+                ).fetchone()
+                if exists is None:
+                    raise NativeCheckpointError("blob_not_found", f"unknown blob reference: {sha256}")
+                await db.execute(
+                    """INSERT OR IGNORE INTO workflow_blob_refs(
+                    sha256,owner_kind,owner_id,created_at) VALUES(?,'pending_task',?,?)""",
+                    (str(sha256), pending_owner, now),
+                )
+                await db.execute(
+                    "DELETE FROM workflow_blob_refs WHERE sha256=? AND owner_kind='run_staging' AND owner_id=?",
+                    (str(sha256), fence.run_id),
+                )
             result: dict[str, JsonValue] = {
                 "run_id": fence.run_id,
                 "checkpoint_id": expected_head,
@@ -1936,6 +1956,15 @@ class NativeCheckpointStore:
                         sha256,owner_kind,owner_id,created_at
                     ) VALUES(?,'checkpoint',?,?)""",
                     (str(sha256), checkpoint_id, now),
+                )
+            pending_owner_ids = tuple(
+                f"{fence.run_id}:{expected_head}:{task_id}" for task_id in sorted(expected_task_ids)
+            )
+            if pending_owner_ids:
+                await db.execute(
+                    f"""DELETE FROM workflow_blob_refs WHERE owner_kind='pending_task'
+                    AND owner_id IN ({','.join('?' for _ in pending_owner_ids)})""",
+                    pending_owner_ids,
                 )
             event_ids = [
                 await self._materialize_intent(db, run=run, intent=intent, now=now)

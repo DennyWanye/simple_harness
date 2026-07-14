@@ -465,7 +465,9 @@ class WorkflowLauncher:
             context,
             ports={
                 **context.ports,
-                "progress": WorkflowProgressReporter(self.service, targets),
+                "progress": WorkflowProgressReporter(
+                    self.service, targets, notify_dispatcher=self.notify_dispatcher
+                ),
             },
         )
 

@@ -328,7 +328,7 @@ class WorkflowRetentionManager:
                     trace_ids,
                 )
             checkpoint_keys = await self._checkpoint_candidates(db, full_run_ids)
-            dangling_ref_owners = await self._dangling_ref_owners(db)
+            dangling_ref_owners = await self._dangling_ref_owners(db, full_run_ids)
             return _CleanupPlan(
                 full_run_ids=full_run_ids,
                 final_run_ids=tuple(final_run_ids),
@@ -364,6 +364,7 @@ class WorkflowRetentionManager:
     @staticmethod
     async def _dangling_ref_owners(
         db: aiosqlite.Connection,
+        cleanup_run_ids: tuple[str, ...] = (),
     ) -> tuple[tuple[str, str], ...]:
         dangling: set[tuple[str, str]] = set()
         for owner_kind, (table, id_column) in _REF_OWNER_TABLES.items():
@@ -378,6 +379,21 @@ class WorkflowRetentionManager:
                 )
             ).fetchall()
             dangling.update((owner_kind, str(row["owner_id"])) for row in rows)
+        provisional = await (
+            await db.execute(
+                """SELECT DISTINCT owner_kind,owner_id FROM workflow_blob_refs
+                WHERE owner_kind IN ('run_staging','pending_task')"""
+            )
+        ).fetchall()
+        for row in provisional:
+            owner_kind = str(row["owner_kind"])
+            owner_id = str(row["owner_id"])
+            run_id = owner_id if owner_kind == "run_staging" else owner_id.split(":", 1)[0]
+            run = await (
+                await db.execute("SELECT status FROM workflow_runs WHERE run_id=?", (run_id,))
+            ).fetchone()
+            if run is None or run_id in cleanup_run_ids or str(run["status"]) in TERMINAL_RUN_STATUSES:
+                dangling.add((owner_kind, owner_id))
         return tuple(sorted(dangling))
 
     @staticmethod

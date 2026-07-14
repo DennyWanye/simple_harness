@@ -1,6 +1,7 @@
 """Durable local storage for DeskPet workflows."""
 
 from .blob_store import BlobRef, BlobStore
+from .registered_blob_store import RegisteredBlobStore
 from .checkpointer import (
     NATIVE_CHECKPOINT_TYPE,
     NATIVE_ENGINE_KIND,
@@ -19,6 +20,7 @@ from .schema import WORKFLOW_SCHEMA_VERSION, initialize_workflow_db
 __all__ = [
     "BlobRef",
     "BlobStore",
+    "RegisteredBlobStore",
     "AsyncOnlyWorkflowError",
     "FencedAsyncSqliteSaver",
     "LegacyCheckpointStore",

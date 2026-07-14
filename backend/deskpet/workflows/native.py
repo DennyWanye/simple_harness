@@ -27,6 +27,10 @@ ENGINE_KIND = "deskpet-native"
 SNAPSHOT_VERSION = 1
 
 
+class _CommitUncertain(RuntimeError):
+    pass
+
+
 def _hash(*parts: object) -> str:
     return hashlib.sha256("|".join(str(part) for part in parts).encode("utf-8")).hexdigest()
 
@@ -75,6 +79,26 @@ class NativeExecutionInfo:
     node_first_attempt_time: float | None
     activation_id: str
     invocation_key: str
+
+
+@dataclass(frozen=True, slots=True)
+class NativeExecutionPolicy:
+    """Run-local bounded concurrency policy for native parallel frontiers."""
+
+    max_parallel_tasks: int = 1
+
+    def __post_init__(self) -> None:
+        if isinstance(self.max_parallel_tasks, bool) or self.max_parallel_tasks < 1:
+            raise ValueError("max_parallel_tasks must be a positive integer")
+
+
+@dataclass(frozen=True, slots=True)
+class NodeTaskOutcome:
+    task: NativeTask
+    patch: StatePatch | None
+    consumed_interrupt_ids: tuple[str, ...]
+    error: BaseException | None
+    identity: NodeExecutionIdentity
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,9 +167,9 @@ class NativeCommitResult:
 class NativeCheckpointStore(Protocol):
     async def ensure_genesis(self, *, operation_id: str, snapshot: NativeSnapshotEnvelope, configurable: Mapping[str, JsonValue]) -> NativeSnapshotEnvelope: ...
     async def load_execution(self, *, run_id: str, thread_id: str, checkpoint_ns: str) -> NativeExecution: ...
-    async def commit_task_result(self, *, operation_id: str, expected_head: str, task: NativeTask, execution_info: NativeExecutionInfo, patch: StatePatch, configurable: Mapping[str, JsonValue]) -> None: ...
+    async def commit_task_result(self, *, operation_id: str, expected_head: str, task: NativeTask, execution_info: NativeExecutionInfo, patch: StatePatch, blob_refs: Sequence[str], configurable: Mapping[str, JsonValue]) -> None: ...
     async def commit_route_selection(self, *, operation_id: str, expected_head: str, source: str, selected_route: str, next_frontier_payload_hash: str, task_id: str, configurable: Mapping[str, JsonValue]) -> Mapping[str, JsonValue]: ...
-    async def commit_frontier(self, *, operation_id: str, expected_head: str, state: WorkflowState, frontier: Sequence[NativeTask], completed_activations: Mapping[str, tuple[str, ...]], join_firings: Sequence[str], consumed_interrupt_ids: Sequence[str], intents: Sequence[Mapping[str, JsonValue]], terminal_status: str | None, terminal_error: Mapping[str, JsonValue] | None, recovery_action: str | None, configurable: Mapping[str, JsonValue]) -> NativeCommitResult: ...
+    async def commit_frontier(self, *, operation_id: str, expected_head: str, state: WorkflowState, frontier: Sequence[NativeTask], completed_activations: Mapping[str, tuple[str, ...]], join_firings: Sequence[str], consumed_interrupt_ids: Sequence[str], intents: Sequence[Mapping[str, JsonValue]], blob_refs: Sequence[str], terminal_status: str | None, terminal_error: Mapping[str, JsonValue] | None, recovery_action: str | None, configurable: Mapping[str, JsonValue]) -> NativeCommitResult: ...
     async def commit_retry(self, *, operation_id: str, expected_head: str, task: NativeTask, error: WorkflowNodeError, next_attempt_at: float, configurable: Mapping[str, JsonValue]) -> None: ...
     async def commit_interrupt(self, *, operation_id: str, expected_head: str, task: NativeTask, interrupt: Mapping[str, JsonValue], configurable: Mapping[str, JsonValue]) -> None: ...
     async def commit_failure(self, *, operation_id: str, expected_head: str, task: NativeTask, error: WorkflowNodeError, configurable: Mapping[str, JsonValue]) -> None: ...
@@ -161,6 +185,7 @@ class InMemoryNativeCheckpointStore:
         self.interrupt: dict[str, JsonValue] | None = None
         self.retry_attempts: dict[str, int] = {}
         self.route_selections: dict[str, dict[str, JsonValue]] = {}
+        self.materialized_intents: dict[str, dict[str, JsonValue]] = {}
 
     async def ensure_genesis(self, *, operation_id: str, snapshot: NativeSnapshotEnvelope, configurable: Mapping[str, JsonValue]) -> NativeSnapshotEnvelope:
         if self.snapshot is None:
@@ -198,7 +223,7 @@ class InMemoryNativeCheckpointStore:
             raise InvalidStatePatch("route_nondeterminism", "Route selection changed")
         return copy.deepcopy(existing)
 
-    async def commit_frontier(self, *, operation_id: str, state: WorkflowState, frontier: Sequence[NativeTask], completed_activations: Mapping[str, tuple[str, ...]], join_firings: Sequence[str], **_: object) -> NativeCommitResult:
+    async def commit_frontier(self, *, operation_id: str, state: WorkflowState, frontier: Sequence[NativeTask], completed_activations: Mapping[str, tuple[str, ...]], join_firings: Sequence[str], intents: Sequence[Mapping[str, JsonValue]] = (), **_: object) -> NativeCommitResult:
         if self.snapshot is None:
             raise InvalidStatePatch("checkpoint_missing", "Ephemeral workflow has no checkpoint")
         self.snapshot = NativeSnapshotEnvelope(
@@ -218,7 +243,17 @@ class InMemoryNativeCheckpointStore:
         self.pending.clear()
         self.route_selections.clear()
         self.interrupt = None
-        return NativeCommitResult(self.snapshot)
+        event_ids: list[str] = []
+        for intent in intents:
+            event_key = str(intent.get("event_key") or intent.get("intent_id") or "")
+            if not event_key:
+                raise InvalidStatePatch("invalid_delivery_intent", "intent identity is required")
+            copied = copy.deepcopy(dict(intent))
+            existing = self.materialized_intents.setdefault(event_key, copied)
+            if existing != copied:
+                raise InvalidStatePatch("outbox_intent_conflict", "intent content changed")
+            event_ids.append(_hash(self.snapshot.run_id, event_key))
+        return NativeCommitResult(self.snapshot, tuple(event_ids))
 
     async def commit_retry(self, *, task: NativeTask, **_: object) -> None:
         self.retry_attempts[task.task_id] = task.retry_attempt + 1
@@ -324,14 +359,9 @@ class NativeWorkflowExecutable:
                 error = WorkflowNodeError(code=WorkflowErrorCode.INVALID_STATE, message_ref="workflow_engine:max_supersteps")
                 await self.store.commit_engine_failure(operation_id=_hash(run_id, snapshot.checkpoint_id, "max_supersteps"), expected_head=snapshot.checkpoint_id, frontier=snapshot.frontier, error=error, configurable=config)
                 raise error
-            patches: dict[str, StatePatch] = dict(execution.pending_results)
-            consumed: list[str] = []
-            for task in sorted(snapshot.frontier, key=lambda item: item.task_id):
-                if task.task_id in patches:
-                    continue
-                patch, used = await self._run_task(snapshot, task, context, config, responses, execution.first_attempt_times.get(task.task_id))
-                patches[task.task_id] = patch
-                consumed.extend(used)
+            patches, consumed = await self._run_frontier_tasks(
+                execution, context, config, responses
+            )
             try:
                 ordered_writes = [(task.node_id, patches[task.task_id]) for task in sorted(snapshot.frontier, key=lambda item: item.task_id)]
                 delta = self.workflow.merge_patches(ordered_writes)
@@ -351,13 +381,17 @@ class NativeWorkflowExecutable:
                 terminal_status, terminal_error, recovery_action = self._terminal_projection(
                     state, frontier
                 )
-                intents = self._terminal_intents(
+                completion_intents = self._completion_intents(
+                    snapshot, patches, context, execution.first_attempt_times
+                )
+                intents = (*completion_intents, *self._terminal_intents(
                     state,
                     run_id=run_id,
                     status=terminal_status,
                     error=terminal_error,
                     recovery_action=recovery_action,
-                )
+                ))
+                blob_refs = self._state_blob_refs(state)
                 result = await self.store.commit_frontier(
                     operation_id=frontier_operation,
                     expected_head=snapshot.checkpoint_id,
@@ -367,11 +401,19 @@ class NativeWorkflowExecutable:
                     join_firings=firings,
                     consumed_interrupt_ids=tuple(consumed),
                     intents=intents,
+                    blob_refs=blob_refs,
                     terminal_status=terminal_status,
                     terminal_error=terminal_error,
                     recovery_action=recovery_action,
                     configurable=config,
                 )
+                if completion_intents:
+                    notify = getattr(context.ports.get("progress"), "notify_dispatcher", None)
+                    if callable(notify):
+                        try:
+                            notify()
+                        except Exception:
+                            pass
             except (InvalidStatePatch, StateMergeConflict, WorkflowNodeError) as exc:
                 error = exc if isinstance(exc, WorkflowNodeError) else WorkflowNodeError(code=WorkflowErrorCode.INVALID_STATE, message_ref=f"workflow_engine:{exc.code}")
                 await self.store.commit_engine_failure(operation_id=_hash(run_id, snapshot.checkpoint_id, "engine_failure"), expected_head=snapshot.checkpoint_id, frontier=snapshot.frontier, error=error, configurable=config)
@@ -472,9 +514,88 @@ class NativeWorkflowExecutable:
         validate_json_value(result, path="$.terminal_intents")
         return tuple(result)
 
-    async def _run_task(self, snapshot: NativeSnapshotEnvelope, task: NativeTask, context: WorkflowContext, config: Mapping[str, JsonValue], responses: Mapping[str, JsonValue], first_attempt_time: float | None) -> tuple[StatePatch, tuple[str, ...]]:
-        info = NativeExecutionInfo(snapshot.thread_id, snapshot.run_id, snapshot.checkpoint_id, snapshot.checkpoint_ns, task.task_id, task.retry_attempt, first_attempt_time or time.time(), task.activation_id, task.invocation_key)
-        identity = NodeExecutionIdentity.from_execution_info(workflow_name=self.manifest.workflow_name, workflow_version=self.manifest.workflow_version, node_id=task.node_id, execution_info=info, state=snapshot.state)
+    @staticmethod
+    def _state_blob_refs(state: Mapping[str, JsonValue]) -> tuple[str, ...]:
+        raw = state.get("blob_refs", [])
+        if not isinstance(raw, list):
+            raise InvalidStatePatch("invalid_blob_refs", "blob_refs must be a list")
+        normalized: set[str] = set()
+        for value in raw:
+            if isinstance(value, Mapping):
+                digest = str(value.get("sha256") or value.get("id") or "")
+            else:
+                digest = str(value)
+            if digest:
+                normalized.add(digest)
+        refs = tuple(sorted(normalized))
+        if any(len(value) != 64 or any(ch not in "0123456789abcdef" for ch in value) for value in refs):
+            raise InvalidStatePatch("invalid_blob_refs", "blob_refs must contain SHA-256 digests")
+        return refs
+
+    @staticmethod
+    def _patch_blob_refs(patch: StatePatch) -> tuple[str, ...]:
+        return NativeWorkflowExecutable._state_blob_refs(patch.to_dict()) if "blob_refs" in patch.to_dict() else ()
+
+    def _policy(self, context: WorkflowContext) -> NativeExecutionPolicy:
+        raw = context.ports.get("native_execution_policy")
+        if raw is None:
+            return NativeExecutionPolicy()
+        if isinstance(raw, NativeExecutionPolicy):
+            return raw
+        if isinstance(raw, Mapping):
+            return NativeExecutionPolicy(int(raw.get("max_parallel_tasks", 1)))
+        raise InvalidStatePatch("invalid_native_execution_policy", "native execution policy is invalid")
+
+    def _identity(
+        self, snapshot: NativeSnapshotEnvelope, task: NativeTask, first_attempt_time: float | None
+    ) -> tuple[NativeExecutionInfo, NodeExecutionIdentity]:
+        info = NativeExecutionInfo(
+            snapshot.thread_id, snapshot.run_id, snapshot.checkpoint_id,
+            snapshot.checkpoint_ns, task.task_id, task.retry_attempt,
+            first_attempt_time or time.time(), task.activation_id, task.invocation_key,
+        )
+        return info, NodeExecutionIdentity.from_execution_info(
+            workflow_name=self.manifest.workflow_name,
+            workflow_version=self.manifest.workflow_version,
+            node_id=task.node_id,
+            execution_info=info,
+            state=snapshot.state,
+        )
+
+    def _freeze_public_progress(
+        self, patch: StatePatch, *, first_attempt_time: float, finished_at: float
+    ) -> StatePatch:
+        if (self.manifest.workflow_name, self.manifest.workflow_version) != ("deep_research", "v2"):
+            return patch
+        data = patch.to_dict()
+        values = data.get("values")
+        if not isinstance(values, dict):
+            return patch
+        public = values.get("public_progress")
+        if not isinstance(public, dict):
+            return patch
+        projection = public.get("stage_projection")
+        if not isinstance(projection, dict) or not projection.get("stage_id"):
+            return patch
+        frozen = copy.deepcopy(projection)
+        completed_ids = public.get("completed_stage_ids", [])
+        if not isinstance(completed_ids, list):
+            raise InvalidStatePatch("invalid_public_progress", "completed_stage_ids must be a list")
+        frozen.update(
+            {
+                "started_at": float(first_attempt_time),
+                "finished_at": float(finished_at),
+                "duration_ms": max(0, round((finished_at - first_attempt_time) * 1000)),
+                "completed_count": len({str(value) for value in completed_ids}),
+            }
+        )
+        public["stage_projection"] = frozen
+        values["public_progress"] = public
+        data["values"] = values
+        return StatePatch(data)
+
+    async def _run_task_worker(self, snapshot: NativeSnapshotEnvelope, task: NativeTask, context: WorkflowContext, config: Mapping[str, JsonValue], responses: Mapping[str, JsonValue], first_attempt_time: float | None) -> NodeTaskOutcome:
+        info, identity = self._identity(snapshot, task, first_attempt_time)
         observer = context.ports.get("observer")
         progress = context.ports.get("progress")
         span_id = await observer.node_started(identity) if observer is not None else None
@@ -487,7 +608,13 @@ class NativeWorkflowExecutable:
                         patch = await self.workflow.run_node(task.node_id, snapshot.state, context, info)
                 else:
                     patch = await self.workflow.run_node(task.node_id, snapshot.state, context, info)
-            await self.store.commit_task_result(operation_id=_hash(snapshot.run_id, snapshot.checkpoint_id, "task", task.task_id), expected_head=snapshot.checkpoint_id, task=task, execution_info=info, patch=patch, configurable=config)
+            patch = self._freeze_public_progress(
+                patch, first_attempt_time=float(info.node_first_attempt_time or time.time()), finished_at=time.time()
+            )
+            try:
+                await self.store.commit_task_result(operation_id=_hash(snapshot.run_id, snapshot.checkpoint_id, "task", task.task_id), expected_head=snapshot.checkpoint_id, task=task, execution_info=info, patch=patch, blob_refs=self._patch_blob_refs(patch), configurable=config)
+            except Exception as exc:
+                raise _CommitUncertain from exc
             if observer is not None:
                 patch_values = patch.to_dict()
                 values = patch_values.get("values", {})
@@ -507,36 +634,157 @@ class NativeWorkflowExecutable:
                     )
                 else:
                     await observer.node_finished(identity, "succeeded_pending")
-            return patch, tuple(control.consumed_interrupt_ids)
+            return NodeTaskOutcome(task, patch, tuple(control.consumed_interrupt_ids), None, identity)
         except WorkflowSuspended as exc:
-            await self.store.commit_interrupt(operation_id=_hash(snapshot.run_id, snapshot.checkpoint_id, "interrupt", task.task_id), expected_head=snapshot.checkpoint_id, task=task, interrupt=exc.interrupt.to_dict(), configurable=config)
-            if observer is not None:
-                await observer.node_finished(identity, "waiting", error=exc)
-            await _report(progress, identity, "waiting")
-            raise
+            return NodeTaskOutcome(task, None, tuple(control.consumed_interrupt_ids), exc, identity)
         except asyncio.CancelledError as exc:
             if observer is not None:
                 await observer.node_finished(identity, "cancelled", error=exc)
             await _report(progress, identity, "cancelled")
             raise
+        except _CommitUncertain as exc:
+            assert exc.__cause__ is not None
+            raise exc.__cause__
         except WorkflowNodeError as exc:
-            node = self.workflow.node(task.node_id)
-            retryable = (
-                exc.retryable
-                and exc.code.value in node.retry_policy.retryable_codes
-                and task.retry_attempt < node.retry_policy.max_attempts
+            return NodeTaskOutcome(task, None, tuple(control.consumed_interrupt_ids), exc, identity)
+        except Exception:
+            error = WorkflowNodeError(
+                code=WorkflowErrorCode.PERMANENT,
+                message_ref="workflow_engine:unexpected_node_failure",
+                node_id=task.node_id,
             )
-            if retryable:
-                delay = min(node.retry_policy.max_delay_seconds, node.retry_policy.initial_delay_seconds * (node.retry_policy.backoff_multiplier ** (task.retry_attempt - 1)))
-                await self.store.commit_retry(operation_id=_hash(snapshot.run_id, snapshot.checkpoint_id, "retry", task.task_id, task.retry_attempt), expected_head=snapshot.checkpoint_id, task=task, error=exc, next_attempt_at=time.time() + delay, configurable=config)
-                if observer is not None:
-                    await observer.node_finished(identity, "retryable", error=exc)
+            return NodeTaskOutcome(task, None, tuple(control.consumed_interrupt_ids), error, identity)
+
+    async def _run_frontier_tasks(
+        self,
+        execution: NativeExecution,
+        context: WorkflowContext,
+        config: Mapping[str, JsonValue],
+        responses: Mapping[str, JsonValue],
+    ) -> tuple[dict[str, StatePatch], list[str]]:
+        snapshot = execution.snapshot
+        patches: dict[str, StatePatch] = dict(execution.pending_results)
+        pending = [task for task in sorted(snapshot.frontier, key=lambda item: item.task_id) if task.task_id not in patches]
+        outcomes: list[NodeTaskOutcome] = []
+        if pending:
+            nodes = [self.workflow.node(task.node_id) for task in pending]
+            parallel = all(
+                str(node.dispatch) == "parallel" and not node.barrier and not node.interrupt_capable
+                for node in nodes
+            )
+            if parallel and self._policy(context).max_parallel_tasks > 1:
+                semaphore = asyncio.Semaphore(self._policy(context).max_parallel_tasks)
+
+                async def bounded(task: NativeTask) -> NodeTaskOutcome:
+                    async with semaphore:
+                        return await self._run_task_worker(
+                            snapshot, task, context, config, responses,
+                            execution.first_attempt_times.get(task.task_id),
+                        )
+
+                children = [asyncio.create_task(bounded(task)) for task in pending]
+                try:
+                    outcomes = list(await asyncio.gather(*children))
+                except asyncio.CancelledError:
+                    for child in children:
+                        child.cancel()
+                    await asyncio.gather(*children, return_exceptions=True)
+                    raise
             else:
-                await self.store.commit_failure(operation_id=_hash(snapshot.run_id, snapshot.checkpoint_id, "failure", task.task_id), expected_head=snapshot.checkpoint_id, task=task, error=exc, configurable=config)
+                for task in pending:
+                    outcomes.append(await self._run_task_worker(
+                        snapshot, task, context, config, responses,
+                        execution.first_attempt_times.get(task.task_id),
+                    ))
+
+        errors = [outcome for outcome in outcomes if outcome.error is not None]
+        suspends = [outcome for outcome in errors if isinstance(outcome.error, WorkflowSuspended)]
+        if suspends:
+            selected = min(suspends, key=lambda item: item.task.task_id)
+            node = self.workflow.node(selected.task.node_id)
+            if len(snapshot.frontier) != 1 or str(node.dispatch) == "parallel":
+                selected = replace(
+                    selected,
+                    error=WorkflowNodeError(
+                        code=WorkflowErrorCode.INVALID_STATE,
+                        message_ref="workflow_engine:parallel_interrupt_invariant",
+                        node_id=selected.task.node_id,
+                    ),
+                )
+            else:
+                assert isinstance(selected.error, WorkflowSuspended)
+                await self.store.commit_interrupt(
+                    operation_id=_hash(snapshot.run_id, snapshot.checkpoint_id, "interrupt", selected.task.task_id),
+                    expected_head=snapshot.checkpoint_id, task=selected.task,
+                    interrupt=selected.error.interrupt.to_dict(), configurable=config,
+                )
+                observer = context.ports.get("observer")
                 if observer is not None:
-                    await observer.node_finished(identity, "failed", error=exc)
-                await _report(progress, identity, "failed")
-            raise
+                    await observer.node_finished(selected.identity, "waiting", error=selected.error)
+                await _report(context.ports.get("progress"), selected.identity, "waiting")
+                raise selected.error
+
+        failures: list[tuple[int, str, NodeTaskOutcome, WorkflowNodeError, bool]] = []
+        for outcome in errors:
+            error = outcome.error
+            if not isinstance(error, WorkflowNodeError):
+                error = WorkflowNodeError(code=WorkflowErrorCode.PERMANENT, message_ref="workflow_engine:unexpected_node_failure", node_id=outcome.task.node_id)
+            node = self.workflow.node(outcome.task.node_id)
+            retryable = bool(
+                error.retryable
+                and error.code.value in node.retry_policy.retryable_codes
+                and outcome.task.retry_attempt < node.retry_policy.max_attempts
+            )
+            failures.append((1 if retryable else 0, outcome.task.task_id, outcome, error, retryable))
+        if failures:
+            _, _, selected, error, retryable = min(failures, key=lambda item: (item[0], item[1]))
+            observer = context.ports.get("observer")
+            if retryable:
+                node = self.workflow.node(selected.task.node_id)
+                delay = min(node.retry_policy.max_delay_seconds, node.retry_policy.initial_delay_seconds * (node.retry_policy.backoff_multiplier ** (selected.task.retry_attempt - 1)))
+                await self.store.commit_retry(operation_id=_hash(snapshot.run_id, snapshot.checkpoint_id, "retry", selected.task.task_id, selected.task.retry_attempt), expected_head=snapshot.checkpoint_id, task=selected.task, error=error, next_attempt_at=time.time() + delay, configurable=config)
+                if observer is not None:
+                    await observer.node_finished(selected.identity, "retryable", error=error)
+            else:
+                await self.store.commit_failure(operation_id=_hash(snapshot.run_id, snapshot.checkpoint_id, "failure", selected.task.task_id), expected_head=snapshot.checkpoint_id, task=selected.task, error=error, configurable=config)
+                if observer is not None:
+                    await observer.node_finished(selected.identity, "failed", error=error)
+                await _report(context.ports.get("progress"), selected.identity, "failed")
+            raise error
+
+        consumed: list[str] = []
+        for outcome in outcomes:
+            assert outcome.patch is not None
+            patches[outcome.task.task_id] = outcome.patch
+            consumed.extend(outcome.consumed_interrupt_ids)
+        return patches, consumed
+
+    def _completion_intents(
+        self,
+        snapshot: NativeSnapshotEnvelope,
+        patches: Mapping[str, StatePatch],
+        context: WorkflowContext,
+        first_attempt_times: Mapping[str, float],
+    ) -> tuple[dict[str, JsonValue], ...]:
+        if (self.manifest.workflow_name, self.manifest.workflow_version) != ("deep_research", "v2"):
+            return ()
+        builder = getattr(context.ports.get("progress"), "build_completion_intent", None)
+        if not callable(builder):
+            return ()
+        intents: list[dict[str, JsonValue]] = []
+        for task in sorted(snapshot.frontier, key=lambda item: item.task_id):
+            patch = patches[task.task_id].to_dict()
+            values = patch.get("values")
+            public = values.get("public_progress") if isinstance(values, dict) else None
+            projection = public.get("stage_projection") if isinstance(public, dict) else None
+            if not isinstance(projection, dict):
+                continue
+            _, identity = self._identity(snapshot, task, first_attempt_times.get(task.task_id))
+            intent = builder(identity, projection)
+            if isinstance(intent, Mapping):
+                intents.append(copy.deepcopy(dict(intent)))
+        validate_json_value(intents, path="$.completion_intents")
+        return tuple(intents)
 
     async def _next_frontier(
         self,
@@ -601,6 +849,6 @@ class NativeWorkflowExecutable:
 __all__ = [
     "CHECKPOINT_TYPE", "ENGINE_KIND", "SNAPSHOT_VERSION", "NativeCheckpointStore",
     "InMemoryNativeCheckpointStore",
-    "NativeCommitResult", "NativeExecution", "NativeExecutionInfo", "NativeSnapshotEnvelope",
-    "NativeTask", "NativeWorkflowExecutable",
+    "NativeCommitResult", "NativeExecution", "NativeExecutionInfo", "NativeExecutionPolicy",
+    "NativeSnapshotEnvelope", "NativeTask", "NativeWorkflowExecutable", "NodeTaskOutcome",
 ]

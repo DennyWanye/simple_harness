@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from deskpet.workflows.contracts import ChannelSpec, JsonType, ReducerKind, StatePatch, WorkflowContext
+from deskpet.workflows.contracts import ChannelSpec, JsonType, ReducerKind, RetryPolicy, StatePatch, WorkflowContext
 from deskpet.workflows.control import WorkflowSuspended, workflow_interrupt
 from deskpet.workflows.errors import WorkflowNodeError
 from deskpet.workflows.definition import (
@@ -15,11 +15,12 @@ from deskpet.workflows.definition import (
     ConditionalEdge,
     Edge,
     NodeDefinition,
+    NodeDispatch,
     WorkflowDefinition,
     WorkflowDefinitionError,
     compile_workflow,
 )
-from deskpet.workflows.native import NativeCommitResult, NativeExecution, NativeSnapshotEnvelope
+from deskpet.workflows.native import NativeCommitResult, NativeExecution, NativeExecutionPolicy, NativeSnapshotEnvelope
 
 
 def _lock(tmp_path: Path) -> Path:
@@ -68,7 +69,8 @@ class MemoryNativeStore:
     async def load_execution(self, *, run_id, thread_id, checkpoint_ns):
         return NativeExecution(self.snapshot, dict(self.pending), {}, copy.deepcopy(self.route_selections))
 
-    async def commit_task_result(self, *, operation_id, expected_head, task, execution_info, patch, configurable):
+    async def commit_task_result(self, *, operation_id, expected_head, task, execution_info, patch, configurable, blob_refs=()):
+        del blob_refs
         self.calls.append(f"commit_task:{task.node_id}")
         self.pending.setdefault(task.task_id, patch)
         if self.fail_after_task_commit:
@@ -89,7 +91,8 @@ class MemoryNativeStore:
             raise RuntimeError("after_route_commit_before_frontier")
         return copy.deepcopy(existing)
 
-    async def commit_frontier(self, *, operation_id, expected_head, state, frontier, completed_activations, join_firings, consumed_interrupt_ids, configurable, intents=(), terminal_status=None, terminal_error=None, recovery_action=None):
+    async def commit_frontier(self, *, operation_id, expected_head, state, frontier, completed_activations, join_firings, consumed_interrupt_ids, configurable, intents=(), blob_refs=(), terminal_status=None, terminal_error=None, recovery_action=None):
+        del blob_refs
         self.calls.append("commit_frontier")
         checkpoint_id = hashlib.sha256(operation_id.encode()).hexdigest()
         self.snapshot = NativeSnapshotEnvelope(
@@ -415,3 +418,86 @@ def test_native_snapshot_contains_versioned_json_lineage():
     assert payload["engine_kind"] == "deskpet-native"
     assert payload["parent_checkpoint_id"] == "parent"
     assert payload["frontier"][0]["task_id"] == "task"
+
+
+@pytest.mark.asyncio
+async def test_parallel_frontier_overlaps_with_a_hard_cap(tmp_path):
+    import asyncio
+
+    active = 0
+    peak = 0
+    release = asyncio.Event()
+
+    async def start(state, context):
+        return StatePatch({"values": {"started": True}})
+
+    def branch(name):
+        async def handler(state, context):
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            if peak == 2:
+                release.set()
+            await release.wait()
+            active -= 1
+            return StatePatch({"parts": {name: True}})
+        return handler
+
+    async def join(state, context):
+        return StatePatch({"values": {**state["values"], "joined": True}})
+
+    nodes = [
+        NodeDefinition("start", start),
+        NodeDefinition("left", branch("left"), dispatch=NodeDispatch.PARALLEL),
+        NodeDefinition("right", branch("right"), dispatch=NodeDispatch.PARALLEL),
+        NodeDefinition("join", join),
+    ]
+    channels = {
+        "values": ChannelSpec(JsonType.OBJECT, ReducerKind.SINGLE_WRITER, frozenset({"start", "join"})),
+        "parts": ChannelSpec(JsonType.OBJECT, ReducerKind.DICT_DISJOINT, frozenset({"left", "right"})),
+    }
+    compiled = compile_workflow(
+        _definition(nodes, [Edge("start", "left"), Edge("start", "right"), Edge(("left", "right"), "join"), Edge("join", END_NODE)], channels=channels),
+        dependency_lock_path=_lock(tmp_path),
+    )
+    initial = _state()
+    initial["parts"] = {}
+    result = await compiled.bind(checkpointer=MemoryNativeStore()).ainvoke(
+        initial, WorkflowContext(ports={"native_execution_policy": NativeExecutionPolicy(2)}),
+        thread_id="thread-1", run_id="run-1",
+    )
+    assert peak == 2
+    assert result["parts"] == {"left": True, "right": True}
+
+
+@pytest.mark.asyncio
+async def test_parallel_coordinator_prefers_permanent_over_retryable(tmp_path):
+    async def start(state, context):
+        return StatePatch({"values": {"started": True}})
+
+    async def retryable(state, context):
+        raise WorkflowNodeError(code="retryable_provider", message_ref="retry", retryable=True)
+
+    async def permanent(state, context):
+        raise WorkflowNodeError(code="permanent", message_ref="permanent")
+
+    compiled = compile_workflow(
+        _definition(
+            [
+                NodeDefinition("start", start),
+                NodeDefinition("retry", retryable, retry_policy=RetryPolicy(max_attempts=2, retryable_codes=frozenset({"retryable_provider"})), dispatch=NodeDispatch.PARALLEL),
+                NodeDefinition("permanent", permanent, dispatch=NodeDispatch.PARALLEL),
+            ],
+            [Edge("start", "retry"), Edge("start", "permanent"), Edge("retry", END_NODE), Edge("permanent", END_NODE)],
+        ),
+        dependency_lock_path=_lock(tmp_path),
+    )
+    store = MemoryNativeStore()
+    with pytest.raises(WorkflowNodeError) as caught:
+        await compiled.bind(checkpointer=store).ainvoke(
+            _state(), WorkflowContext(ports={"native_execution_policy": NativeExecutionPolicy(2)}),
+            thread_id="thread-1", run_id="run-1",
+        )
+    assert caught.value.code.value == "permanent"
+    assert store.calls.count("commit_failure") == 1
+    assert "commit_retry" not in store.calls

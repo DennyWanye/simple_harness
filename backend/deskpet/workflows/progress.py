@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import asyncio
+import copy
+import hashlib
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -17,7 +19,7 @@ from .contracts import JsonValue, NodeExecutionIdentity
 
 logger = logging.getLogger(__name__)
 
-ProgressTransition = Literal["started", "waiting", "failed", "cancelled"]
+ProgressTransition = Literal["started", "waiting", "failed", "cancelled", "completed"]
 _TRANSITIONS = frozenset({"started", "waiting", "failed", "cancelled"})
 
 
@@ -96,6 +98,34 @@ _WORKFLOW_LABELS = MappingProxyType(
     }
 )
 
+_V2_STAGE_VALUES = (
+    ("normalize", 1, "理解任务"), ("plan", 2, "规划调研"),
+    ("expand", 3, "扩展查询"), ("search", 4, "搜索资料"),
+    ("direct", 5, "补充一手来源"), ("fetch", 6, "抓取正文"),
+    ("score", 7, "筛选证据"), ("gap", 8, "检查证据缺口"),
+    ("rerank", 9, "全局整理证据"), ("synth", 10, "撰写报告"),
+    ("cite", 11, "核验论断与引用"), ("persist", 12, "保存报告"),
+    ("finalize", 13, "准备交付"),
+)
+DEEP_RESEARCH_V2_STAGES = _stages(13, _V2_STAGE_VALUES)
+_V2_METRIC_KEYS = MappingProxyType(
+    {
+        "normalize": frozenset({"mode"}),
+        "plan": frozenset({"question_count", "active_branch_count"}),
+        "expand": frozenset({"query_count"}),
+        "search": frozenset({"providers", "candidates", "kept"}),
+        "direct": frozenset({"direct_sources", "candidates"}),
+        "fetch": frozenset({"attempted", "succeeded", "dropped"}),
+        "score": frozenset({"passages", "kept"}),
+        "gap": frozenset({"iteration", "followup_count", "new_evidence"}),
+        "rerank": frozenset({"passages", "domains"}),
+        "synth": frozenset({"sections", "claim_count"}),
+        "cite": frozenset({"citations", "supported", "unsupported", "support_rate"}),
+        "persist": frozenset({"artifact_count", "report_bytes"}),
+        "finalize": frozenset({"citations", "status"}),
+    }
+)
+
 
 def public_stage_for(workflow_name: str, node_id: str) -> PublicWorkflowStage | None:
     stages = PUBLIC_WORKFLOW_STAGES.get(workflow_name)
@@ -120,13 +150,83 @@ def _progress_text(
 class WorkflowProgressReporter:
     """Persist and deliver fixed, user-safe workflow progress events."""
 
-    def __init__(self, service: Any, targets: Sequence[tuple[str, str]]) -> None:
+    def __init__(self, service: Any, targets: Sequence[tuple[str, str]], notify_dispatcher: Any = None) -> None:
         self._service = service
         self._targets = tuple((str(channel), str(target)) for channel, target in targets)
+        self._notify_dispatcher = notify_dispatcher
 
     @property
     def targets(self) -> tuple[tuple[str, str], ...]:
         return self._targets
+
+    def notify_dispatcher(self) -> None:
+        if callable(self._notify_dispatcher):
+            self._notify_dispatcher()
+
+    def build_completion_intent(
+        self,
+        identity: NodeExecutionIdentity,
+        frozen_projection: Mapping[str, Any],
+    ) -> dict[str, JsonValue] | None:
+        """Purely build one v2 stage intent; persistence belongs to commit_frontier."""
+
+        if (identity.workflow_name, identity.workflow_version) != ("deep_research", "v2"):
+            return None
+        stage_id = str(frozen_projection.get("stage_id") or "")
+        stage = DEEP_RESEARCH_V2_STAGES.get(stage_id)
+        if stage is None:
+            logger.warning("workflow_progress_unknown_v2_stage", extra={"stage_id": stage_id})
+            return None
+        raw_metrics = frozen_projection.get("metrics", {})
+        if not isinstance(raw_metrics, Mapping):
+            return None
+        allowed = _V2_METRIC_KEYS[stage_id]
+        if any(str(key) not in allowed for key in raw_metrics):
+            logger.warning("workflow_progress_unsafe_metrics", extra={"stage_id": stage_id})
+            return None
+        metrics = {str(key): copy.deepcopy(value) for key, value in raw_metrics.items()}
+        duration_ms = max(0, int(frozen_projection.get("duration_ms") or 0))
+        completed_count = max(0, min(stage.total, int(frozen_projection.get("completed_count") or 0)))
+        degraded = bool(frozen_projection.get("degraded", False))
+        counts = "、".join(f"{key}={value}" for key, value in sorted(metrics.items()))
+        summary = f"{stage.label}已完成"
+        if counts:
+            summary += f"（{counts}）"
+        if degraded:
+            summary += "，部分来源已降级"
+        stable_identity = f"v2:{identity.node_id}:{identity.task_id}:completed"
+        stage_instance_id = hashlib.sha256(stable_identity.encode("utf-8")).hexdigest()[:24]
+        payload: dict[str, JsonValue] = {
+            "schema_version": 2,
+            "kind": "stage",
+            "workflow_name": "deep_research",
+            "workflow_version": "v2",
+            "workflow_label": "深度调研",
+            "stage_id": stage_id,
+            "stage_instance_id": stage_instance_id,
+            "stage": stage.label,
+            "ordinal": stage.ordinal,
+            "total": stage.total,
+            "status": "completed",
+            "summary": summary,
+            "text": summary,
+            "completed_count": completed_count,
+            "metrics": metrics,
+            "duration_ms": duration_ms,
+            "degraded": degraded,
+            "next_stage": str(frozen_projection.get("next_stage") or ""),
+        }
+        return {
+            "intent_id": f"{identity.run_id}:{stable_identity}",
+            "event_key": f"progress:{stable_identity}",
+            "event_type": "workflow.progress",
+            "channel": "progress",
+            "payload": payload,
+            "deliveries": [
+                {"channel": channel, "target_id": target_id}
+                for channel, target_id in self._targets
+            ],
+        }
 
     async def report(
         self,
@@ -178,6 +278,7 @@ class WorkflowProgressReporter:
 
 __all__ = [
     "PUBLIC_WORKFLOW_STAGES",
+    "DEEP_RESEARCH_V2_STAGES",
     "PublicWorkflowStage",
     "WorkflowProgressReporter",
     "public_stage_for",
