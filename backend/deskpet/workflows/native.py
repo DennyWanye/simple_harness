@@ -684,12 +684,21 @@ class NativeWorkflowExecutable:
 
                 children = [asyncio.create_task(bounded(task)) for task in pending]
                 try:
-                    outcomes = list(await asyncio.gather(*children))
+                    gathered = await asyncio.gather(*children, return_exceptions=True)
                 except asyncio.CancelledError:
                     for child in children:
                         child.cancel()
                     await asyncio.gather(*children, return_exceptions=True)
                     raise
+                child_errors = [
+                    (task.task_id, value)
+                    for task, value in zip(pending, gathered, strict=True)
+                    if isinstance(value, BaseException)
+                ]
+                if child_errors:
+                    _, selected_error = min(child_errors, key=lambda item: item[0])
+                    raise selected_error
+                outcomes = [value for value in gathered if isinstance(value, NodeTaskOutcome)]
             else:
                 for task in pending:
                     outcomes.append(await self._run_task_worker(

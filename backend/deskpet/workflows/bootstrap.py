@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
 from .definitions.v1 import register_v1_workflows
+from .definitions.v2 import register_v2_workflows
 from .retention import ClockPort, RetentionPolicy, SystemClock, WorkflowRetentionManager
 from .runner import WorkflowRegistry, WorkflowRunner
 from .service import WorkflowService
@@ -31,6 +32,7 @@ async def build_workflow_service(
     saver = NativeCheckpointStore(db_path)
     registry = WorkflowRegistry()
     register_v1_workflows(registry)
+    register_v2_workflows(registry)
     await store.block_legacy_nonterminal_runs(
         native_implementation_hashes=registry.implementation_hashes()
     )

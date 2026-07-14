@@ -127,6 +127,26 @@ _V2_METRIC_KEYS = MappingProxyType(
 )
 
 
+class ProgressPayloadError(ValueError):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+def validated_v2_stage_text(payload: Mapping[str, Any]) -> str:
+    """Return SessionDB-safe text for the one allowed completed-stage payload."""
+
+    if payload.get("schema_version") != 2 or payload.get("kind") != "stage" or payload.get("status") != "completed":
+        raise ProgressPayloadError("workflow_stage_payload_not_completed_v2")
+    if str(payload.get("stage_id") or "") not in DEEP_RESEARCH_V2_STAGES:
+        raise ProgressPayloadError("workflow_stage_payload_unknown_stage")
+    text = payload.get("text")
+    summary = payload.get("summary")
+    if not isinstance(text, str) or not text.strip() or text != summary:
+        raise ProgressPayloadError("workflow_stage_payload_text_mismatch")
+    return text
+
+
 def public_stage_for(workflow_name: str, node_id: str) -> PublicWorkflowStage | None:
     stages = PUBLIC_WORKFLOW_STAGES.get(workflow_name)
     return stages.get(node_id) if stages is not None else None
@@ -280,6 +300,8 @@ __all__ = [
     "PUBLIC_WORKFLOW_STAGES",
     "DEEP_RESEARCH_V2_STAGES",
     "PublicWorkflowStage",
+    "ProgressPayloadError",
     "WorkflowProgressReporter",
     "public_stage_for",
+    "validated_v2_stage_text",
 ]

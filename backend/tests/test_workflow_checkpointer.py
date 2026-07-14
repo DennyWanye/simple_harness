@@ -4,11 +4,13 @@ import sqlite3
 
 import pytest
 
+from deskpet.workflows.contracts import NodeExecutionIdentity
 from deskpet.workflows.store import (
     NATIVE_ENGINE_KIND,
     LegacyCheckpointStore as FencedAsyncSqliteSaver,
     NativeCheckpointError,
     NativeCheckpointStore,
+    RegisteredBlobStore,
     StaleRunFence,
     WorkflowRunStore,
     initialize_workflow_db,
@@ -215,6 +217,43 @@ async def test_native_checkpoint_transaction_and_operation_replay(tmp_path):
             operation_id="operation-frontier",
         )
     assert conflict.value.code == "operation_identity_conflict"
+
+
+@pytest.mark.asyncio
+async def test_blob_owner_converts_staging_to_pending_to_checkpoint_atomically(tmp_path):
+    path, store, run_id, fence, _ = await _run_and_config(tmp_path)
+    saver = NativeCheckpointStore(path)
+    task = {"task_id": "task-blob", "activation_id": "activation", "node_id": "fetch_b0"}
+    state = {
+        "schema_version": 2, "workflow_name": "deep_research", "workflow_version": "v2",
+        "thread_id": run_id, "run_id": run_id, "session_id": "session", "values": {}, "blob_refs": [],
+    }
+    genesis = await saver.ensure_genesis(fence, run_id, state, [task], operation_id="blob-genesis")
+    registered = RegisteredBlobStore(tmp_path / "blobs", path)
+    identity = NodeExecutionIdentity("deep_research", "v2", run_id, run_id, genesis["checkpoint_id"], "", "task-blob", "fetch_b0", 1)
+    ref = await registered.put(b"large durable evidence", identity, media_type="text/plain")
+    await saver.commit_task_result(
+        fence, genesis["checkpoint_id"], task, 1,
+        {"blob_refs": [{"id": ref.sha256, "sha256": ref.sha256}]},
+        operation_id="blob-task", blob_refs=[ref.sha256],
+    )
+    db = sqlite3.connect(path)
+    try:
+        owners = db.execute("SELECT owner_kind FROM workflow_blob_refs WHERE sha256=? ORDER BY owner_kind", (ref.sha256,)).fetchall()
+    finally:
+        db.close()
+    assert owners == [("pending_task",)]
+    next_state = {**state, "blob_refs": [{"id": ref.sha256, "sha256": ref.sha256}]}
+    committed = await saver.commit_frontier(
+        fence, genesis["checkpoint_id"], state=next_state, frontier=[], step=1,
+        operation_id="blob-frontier", blob_refs=[ref.sha256],
+    )
+    db = sqlite3.connect(path)
+    try:
+        owner = db.execute("SELECT owner_kind,owner_id FROM workflow_blob_refs WHERE sha256=?", (ref.sha256,)).fetchone()
+    finally:
+        db.close()
+    assert owner == ("checkpoint", committed["checkpoint_id"])
 
 
 @pytest.mark.asyncio

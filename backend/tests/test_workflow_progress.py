@@ -19,6 +19,7 @@ from deskpet.workflows.definitions.research_core import (
 from deskpet.workflows.progress import (
     PUBLIC_WORKFLOW_STAGES,
     WorkflowProgressReporter,
+    validated_v2_stage_text,
 )
 from deskpet.workflows.definitions.v1 import (
     CODE_COMPLEX_V1_DEFINITION,
@@ -385,3 +386,16 @@ def test_v2_completed_intent_rejects_unknown_metrics():
     assert reporter.build_completion_intent(
         identity, {"stage_id": "search", "metrics": {"secret_query": "do not leak"}}
     ) is None
+
+
+def test_v2_completed_event_key_ignores_retry_attempt_and_session_text_is_allowlisted():
+    reporter = WorkflowProgressReporter(object(), ())
+    projection = {"stage_id": "finalize", "metrics": {"citations": 3, "status": "completed"}, "completed_count": 13}
+    first = NodeExecutionIdentity("deep_research", "v2", "thread", "run", "checkpoint", "", "task", "finalize", 1)
+    retried = NodeExecutionIdentity("deep_research", "v2", "thread", "run", "checkpoint", "", "task", "finalize", 2)
+    first_intent = reporter.build_completion_intent(first, projection)
+    retry_intent = reporter.build_completion_intent(retried, projection)
+    assert first_intent is not None and retry_intent is not None
+    assert first_intent["event_key"] == retry_intent["event_key"]
+    assert first_intent["payload"] == retry_intent["payload"]
+    assert validated_v2_stage_text(first_intent["payload"]) == first_intent["payload"]["summary"]
