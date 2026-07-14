@@ -9,7 +9,7 @@ import pytest
 
 from deskpet.workflows.contracts import ChannelSpec, JsonType, ReducerKind, RetryPolicy, StatePatch, WorkflowContext
 from deskpet.workflows.control import WorkflowSuspended, workflow_interrupt
-from deskpet.workflows.errors import WorkflowNodeError
+from deskpet.workflows.errors import InvalidStatePatch, WorkflowNodeError
 from deskpet.workflows.definition import (
     END_NODE,
     ConditionalEdge,
@@ -59,6 +59,7 @@ class MemoryNativeStore:
         self.fail_after_task_commit = False
         self.fail_after_route_commit = False
         self.route_selections = {}
+        self.committed_intents = []
 
     async def ensure_genesis(self, *, operation_id, snapshot, configurable):
         self.calls.append("genesis")
@@ -94,6 +95,7 @@ class MemoryNativeStore:
     async def commit_frontier(self, *, operation_id, expected_head, state, frontier, completed_activations, join_firings, consumed_interrupt_ids, configurable, intents=(), blob_refs=(), terminal_status=None, terminal_error=None, recovery_action=None):
         del blob_refs
         self.calls.append("commit_frontier")
+        self.committed_intents.append(copy.deepcopy(tuple(intents)))
         checkpoint_id = hashlib.sha256(operation_id.encode()).hexdigest()
         self.snapshot = NativeSnapshotEnvelope(
             thread_id=self.snapshot.thread_id,
@@ -148,10 +150,35 @@ class Progress:
         self.calls.append(f"progress:{identity.node_id}:{transition}")
 
 
-def _definition(nodes, edges, *, channels=None, conditional=(), loop_budgets=None, bindings=None):
+class CompletionProgress(Progress):
+    def __init__(self, calls):
+        super().__init__(calls)
+        self.build_calls = 0
+
+    def build_completion_intent(self, identity, frozen_projection):
+        self.build_calls += 1
+        return {
+            "intent_id": f"{identity.run_id}:{identity.task_id}",
+            "event_key": f"progress:{identity.task_id}",
+            "event_type": "workflow.progress",
+            "payload": copy.deepcopy(dict(frozen_projection)),
+        }
+
+
+def _definition(
+    nodes,
+    edges,
+    *,
+    channels=None,
+    conditional=(),
+    loop_budgets=None,
+    bindings=None,
+    name="native_test",
+    version="v1",
+):
     return WorkflowDefinition(
-        name="native_test",
-        version="v1",
+        name=name,
+        version=version,
         state_schema_version=1,
         entry_node=nodes[0].node_id,
         nodes=tuple(nodes),
@@ -239,6 +266,119 @@ async def test_pending_task_result_is_reused_after_commit_return_crash(tmp_path)
     )
     assert result["values"] == {"ok": True}
     assert invocations == 1
+
+
+@pytest.mark.asyncio
+async def test_route_failure_materializes_no_completed_intent(tmp_path):
+    async def normalize(state, context):
+        return StatePatch({
+            "values": {
+                "public_progress": {
+                    "stage_projection": {
+                        "stage_id": "normalize",
+                        "metrics": {},
+                        "completed_count": 1,
+                        "duration_ms": 10,
+                    }
+                }
+            }
+        })
+
+    async def fail_route(state, context):
+        raise InvalidStatePatch("route_failed", "route construction failed")
+
+    compiled = compile_workflow(
+        _definition(
+            [NodeDefinition("normalize", normalize)],
+            [],
+            conditional=(ConditionalEdge("normalize", fail_route, {"done": END_NODE}),),
+            name="deep_research",
+            version="v2",
+        ),
+        dependency_lock_path=_lock(tmp_path),
+    )
+    store = MemoryNativeStore()
+    progress = CompletionProgress([])
+    state = _state("deep_research")
+    state["workflow_version"] = "v2"
+
+    with pytest.raises(WorkflowNodeError):
+        await compiled.bind(checkpointer=store).ainvoke(
+            state,
+            WorkflowContext(ports={"progress": progress}),
+            thread_id="thread-1",
+            run_id="run-1",
+        )
+
+    assert progress.build_calls == 0
+    assert store.committed_intents == []
+
+
+@pytest.mark.asyncio
+async def test_reducer_failure_materializes_no_completed_intent(tmp_path):
+    async def start(state, context):
+        return StatePatch({"values": {"started": True}})
+
+    def stage_patch(stage_id):
+        return StatePatch({
+            "values": {
+                "writer": stage_id,
+                "public_progress": {
+                    "stage_projection": {
+                        "stage_id": stage_id,
+                        "metrics": {},
+                        "completed_count": 1,
+                        "duration_ms": 10,
+                    }
+                },
+            }
+        })
+
+    async def normalize(state, context):
+        return stage_patch("normalize")
+
+    async def plan(state, context):
+        return stage_patch("plan")
+
+    nodes = [
+        NodeDefinition("start", start),
+        NodeDefinition("normalize", normalize, dispatch=NodeDispatch.PARALLEL),
+        NodeDefinition("plan", plan, dispatch=NodeDispatch.PARALLEL),
+    ]
+    compiled = compile_workflow(
+        _definition(
+            nodes,
+            [
+                Edge("start", "normalize"),
+                Edge("start", "plan"),
+                Edge("normalize", END_NODE),
+                Edge("plan", END_NODE),
+            ],
+            name="deep_research",
+            version="v2",
+        ),
+        dependency_lock_path=_lock(tmp_path),
+    )
+    store = MemoryNativeStore()
+    progress = CompletionProgress([])
+    state = _state("deep_research")
+    state["workflow_version"] = "v2"
+
+    with pytest.raises(WorkflowNodeError):
+        await compiled.bind(checkpointer=store).ainvoke(
+            state,
+            WorkflowContext(
+                ports={
+                    "progress": progress,
+                    "native_execution_policy": NativeExecutionPolicy(2),
+                }
+            ),
+            thread_id="thread-1",
+            run_id="run-1",
+        )
+
+    assert progress.build_calls == 0
+    assert store.committed_intents == [()]
 
 
 @pytest.mark.asyncio

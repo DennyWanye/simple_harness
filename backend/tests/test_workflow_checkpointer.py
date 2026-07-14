@@ -5,6 +5,7 @@ import sqlite3
 import pytest
 
 from deskpet.workflows.contracts import NodeExecutionIdentity
+from deskpet.workflows.progress import WorkflowProgressReporter
 from deskpet.workflows.store import (
     NATIVE_ENGINE_KIND,
     LegacyCheckpointStore as FencedAsyncSqliteSaver,
@@ -341,6 +342,126 @@ async def test_terminal_checkpoint_run_status_and_outbox_commit_atomically(tmp_p
         terminal_status="completed",
     )
     assert len(replay["event_ids"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_task_result_crash_has_zero_progress_until_frontier_commit(tmp_path):
+    path, store, run_id, fence, _ = await _run_and_config(tmp_path)
+    crashed = False
+
+    async def inject(stage: str) -> None:
+        nonlocal crashed
+        if stage == "task_result.after_db_commit_before_return" and not crashed:
+            crashed = True
+            raise RuntimeError("simulated process loss after task result commit")
+
+    saver = NativeCheckpointStore(path, fault_injector=inject)
+    task = {
+        "task_id": "task-normalize",
+        "activation_id": "activation-normalize",
+        "node_id": "normalize",
+        "invocation_key": "normalize:1",
+    }
+    state = {
+        "schema_version": 2,
+        "workflow_name": "deep_research",
+        "workflow_version": "v2",
+        "thread_id": run_id,
+        "run_id": run_id,
+        "session_id": "session",
+        "values": {},
+    }
+    genesis = await saver.ensure_genesis(
+        fence, run_id, state, [task], operation_id="progress-genesis"
+    )
+    projection = {
+        "stage_id": "normalize",
+        "metrics": {},
+        "completed_count": 1,
+        "duration_ms": 17,
+        "degraded": False,
+        "next_stage": "plan",
+    }
+    patch = {
+        "values": {
+            "public_progress": {
+                "completed_stage_ids": ["normalize"],
+                "stage_projection": projection,
+            }
+        }
+    }
+
+    with pytest.raises(RuntimeError, match="process loss"):
+        await saver.commit_task_result(
+            fence,
+            genesis["checkpoint_id"],
+            task,
+            1,
+            patch,
+            operation_id="progress-task",
+        )
+
+    execution = await saver.load_execution(
+        run_id, thread_id=run_id, checkpoint_ns=""
+    )
+    assert execution.pending_results["task-normalize"].values == patch
+    db = sqlite3.connect(path)
+    try:
+        assert db.execute("SELECT COUNT(*) FROM workflow_events").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM workflow_deliveries").fetchone()[0] == 0
+    finally:
+        db.close()
+
+    identity = NodeExecutionIdentity(
+        "deep_research",
+        "v2",
+        run_id,
+        run_id,
+        genesis["checkpoint_id"],
+        "",
+        "task-normalize",
+        "normalize",
+        1,
+    )
+    reporter = WorkflowProgressReporter(
+        object(),
+        (("session_message", "session"), ("websocket", "session")),
+    )
+    frozen_projection = execution.pending_results["task-normalize"].values["values"][
+        "public_progress"
+    ]["stage_projection"]
+    intent = reporter.build_completion_intent(identity, frozen_projection)
+    assert intent is not None
+    assert intent == reporter.build_completion_intent(identity, projection)
+
+    committed = await saver.commit_frontier(
+        fence,
+        genesis["checkpoint_id"],
+        state={**state, "values": patch["values"]},
+        frontier=[],
+        step=1,
+        operation_id="progress-frontier",
+        intents=[intent],
+    )
+    assert len(committed["event_ids"]) == 1
+    db = sqlite3.connect(path)
+    try:
+        assert db.execute("SELECT COUNT(*) FROM workflow_events").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM workflow_deliveries").fetchone()[0] == 2
+        assert db.execute("SELECT COUNT(*) FROM workflow_pending_writes").fetchone()[0] == 0
+    finally:
+        db.close()
+
+    replay = await saver.commit_frontier(
+        fence,
+        genesis["checkpoint_id"],
+        state={**state, "values": patch["values"]},
+        frontier=[],
+        step=1,
+        operation_id="progress-frontier",
+        intents=[intent],
+    )
+    assert replay["event_ids"] == committed["event_ids"]
 
 
 @pytest.mark.asyncio

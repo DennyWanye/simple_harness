@@ -97,11 +97,6 @@ async def test_baidu_adapter_emits_standard_candidates(monkeypatch):
 async def test_cdp_adapters_share_budget_and_standard_contract(
     monkeypatch, provider, parser_path, captcha_path, expected_name
 ):
-    monkeypatch.setattr(
-        "deskpet.tools.research_cdp_edge.cdp_edge_render",
-        lambda *args, **kwargs: None,
-    )
-
     async def render(*args, **kwargs):
         return "<html>fixture</html>"
 
