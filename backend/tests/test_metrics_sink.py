@@ -126,6 +126,76 @@ def test_record_ts_override(sink: MetricsSink) -> None:
     assert sink.read_all()[0]["ts"] == 1700000000.0
 
 
+def test_search_gateway_and_deepresearch_events_use_closed_safe_schema(
+    sink: MetricsSink,
+) -> None:
+    events = (
+        "search_gateway_request",
+        "search_gateway_attempt",
+        "search_gateway_cache",
+        "search_gateway_cooldown",
+        "search_gateway_dedupe",
+        "search_gateway_hydrate",
+        "fetch_extract_fallback",
+        "fetch_extract_quality",
+        "deepresearch_v2_branch",
+        "deepresearch_v2_stage",
+        "deepresearch_claim_support",
+    )
+    safe_detail = {
+        "provider": "duckduckgo",
+        "error_code": "rate_limited",
+        "duration_ms": 321,
+        "cache_hit": True,
+        "candidates": 12,
+        "kept": 8,
+        "dropped": 4,
+        "domains": 5,
+        "stage": "b3",
+        "branch_id": "branch-2",
+        "degraded": False,
+        "supported": 7,
+        "unsupported": 1,
+        "support_rate": 0.875,
+        "fetcher": "httpx",
+        "extractor": "trafilatura",
+    }
+    for event in events:
+        assert sink.record(event, safe_detail) is True
+
+    rows = sink.read_all()
+    assert [row["event"] for row in rows] == list(events)
+    assert all(row["detail"] == safe_detail for row in rows)
+
+
+def test_search_metrics_cannot_persist_query_url_or_credentials(sink: MetricsSink) -> None:
+    assert sink.record(
+        "search_gateway_attempt",
+        {
+            "provider": "baidu",
+            "error_code": "timeout",
+            "query": "private medical question",
+            "url": "https://example.test/private?q=secret",
+            "prompt": "secret prompt",
+            "token": "secret-token",
+            "cookie": "session=secret",
+            "stage": ["container-must-drop"],
+            "branch_id": "x" * (_MAX_DETAIL_STR + 1),
+        },
+    )
+    row = sink.read_all()[0]
+    assert row["detail"] == {"provider": "baidu", "error_code": "timeout"}
+    raw = sink.path.read_text(encoding="utf-8")
+    for secret in (
+        "medical question",
+        "example.test",
+        "secret prompt",
+        "secret-token",
+        "session=secret",
+    ):
+        assert secret not in raw
+
+
 # ----------------------------------------------------------------------
 # Privacy invariant — the headline guarantee
 # ----------------------------------------------------------------------

@@ -97,6 +97,20 @@ VALID_EVENTS = frozenset({
     # detail: ratio(节省比) / model(摘要模型) / count(省下 token = in-out)。脱敏:
     # 全是数字/枚举,无用户文本。
     "context_compacted",
+    # SearchGateway / DeepResearch v2 fixed-schema observability. These
+    # events deliberately carry only operational dimensions; queries, URLs,
+    # snippets and generated report text are never accepted by the sink.
+    "search_gateway_request",
+    "search_gateway_attempt",
+    "search_gateway_cache",
+    "search_gateway_cooldown",
+    "search_gateway_dedupe",
+    "search_gateway_hydrate",
+    "fetch_extract_fallback",
+    "fetch_extract_quality",
+    "deepresearch_v2_branch",
+    "deepresearch_v2_stage",
+    "deepresearch_claim_support",
 })
 
 # Whitelisted ``detail`` keys. A caller can ONLY write these fields —
@@ -145,6 +159,22 @@ _ALLOWED_DETAIL_KEYS = frozenset({
     "teammate_id",     # team_task_claimed/done: who did the work
     # R-T3 §15.4 LLM 降级矩阵 detail keys.
     "degradation_type",  # which LLM dependency point degraded
+    # SearchGateway / DeepResearch v2 dimensions. Values are enums,
+    # counters, durations, ratios or booleans -- never free-form content.
+    "error_code",
+    "cache_hit",
+    "candidates",
+    "kept",
+    "dropped",
+    "domains",
+    "stage",
+    "branch_id",
+    "degraded",
+    "supported",
+    "unsupported",
+    "support_rate",
+    "fetcher",
+    "extractor",
 })
 
 # Max length of any *surviving* string value — defence-in-depth second
