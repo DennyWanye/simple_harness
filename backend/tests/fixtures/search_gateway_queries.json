@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "dataset_version": "2026-07-14.1",
+  "description": "Deterministic bilingual quality set for SearchGateway benchmarks. Expected domains and keywords are hints, not mocked results.",
+  "queries": [
+    {
+      "id": "zh_fact_capital",
+      "language": "zh-CN",
+      "category": "fact",
+      "query": "澳大利亚的首都是哪里",
+      "expected_keywords": ["堪培拉", "Canberra"],
+      "expected_domains": ["australia.com", "britannica.com"]
+    },
+    {
+      "id": "en_fact_speed_light",
+      "language": "en",
+      "category": "fact",
+      "query": "speed of light in vacuum exact value",
+      "expected_keywords": ["299792458", "metres per second", "meters per second"],
+      "expected_domains": ["bipm.org", "nist.gov"]
+    },
+    {
+      "id": "zh_latest_python",
+      "language": "zh-CN",
+      "category": "latest",
+      "query": "Python 最新稳定版本 发布说明",
+      "expected_keywords": ["Python", "release"],
+      "expected_domains": ["python.org"],
+      "time_sensitive": true
+    },
+    {
+      "id": "en_official_rust",
+      "language": "en",
+      "category": "official_docs",
+      "query": "Rust async book official documentation",
+      "expected_keywords": ["async", "await", "Rust"],
+      "expected_domains": ["rust-lang.org"]
+    },
+    {
+      "id": "en_academic_attention",
+      "language": "en",
+      "category": "academic",
+      "query": "Attention Is All You Need original paper",
+      "expected_keywords": ["Transformer", "Vaswani"],
+      "expected_domains": ["arxiv.org", "neurips.cc"]
+    },
+    {
+      "id": "zh_policy_ai",
+      "language": "zh-CN",
+      "category": "policy",
+      "query": "生成式人工智能服务管理暂行办法 官方",
+      "expected_keywords": ["生成式人工智能", "暂行办法"],
+      "expected_domains": ["gov.cn", "cac.gov.cn"]
+    },
+    {
+      "id": "zh_financial_report",
+      "language": "zh-CN",
+      "category": "financial_report",
+      "query": "宁德时代 2024 年年度报告 PDF",
+      "expected_keywords": ["2024", "年度报告", "宁德时代"],
+      "expected_domains": ["cninfo.com.cn", "catl.com"]
+    },
+    {
+      "id": "en_js_page",
+      "language": "en",
+      "category": "javascript_page",
+      "query": "MDN WebGPU API browser compatibility",
+      "expected_keywords": ["WebGPU", "browser compatibility"],
+      "expected_domains": ["developer.mozilla.org"]
+    },
+    {
+      "id": "zh_duplicate_reprints",
+      "language": "zh-CN",
+      "category": "duplicate_reprints",
+      "query": "嫦娥六号 月背采样 返回 地球 官方消息",
+      "expected_keywords": ["嫦娥六号", "月背", "返回"],
+      "expected_domains": ["cnsa.gov.cn", "gov.cn", "news.cn"]
+    },
+    {
+      "id": "en_conflicting_sources",
+      "language": "en",
+      "category": "conflicting_sources",
+      "query": "coffee health benefits risks systematic review",
+      "expected_keywords": ["coffee", "risk", "review"],
+      "expected_domains": ["nih.gov", "cochranelibrary.com"]
+    }
+  ]
+}
