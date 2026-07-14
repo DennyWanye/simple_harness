@@ -9,7 +9,10 @@ def stable_batches(query: str, configured: list[str], *, searxng: bool, google_r
     first = (["searxng"] if searxng else []) + (["baidu"] if chinese else ["duckduckgo"])
     if not chinese and not searxng and google_reachable: first.append("google-cdp")
     second = (["google-cdp"] if google_reachable else []) + ["bing-cdp"]
-    ordered = [name for name in first + second if name in enabled or name == "searxng"]
+    first = [name for name in first if name in enabled or name == "searxng"][:2]
+    second = [name for name in second if name in enabled and name not in first][:2]
+    ordered = first + second
     remaining = [name for name in configured if name not in ordered]
-    ordered.extend(remaining)
-    return [ordered[i:i + 2] for i in range(0, len(ordered), 2)]
+    batches = [batch for batch in (first, second) if batch]
+    batches.extend(remaining[i:i + 2] for i in range(0, len(remaining), 2))
+    return batches

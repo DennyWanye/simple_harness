@@ -872,6 +872,44 @@ async def default_search(
     )
 
 
+async def gateway_search_response(
+    query: str,
+    *,
+    max_results: int = 20,
+    run_id: str | None = None,
+):
+    """V2/native adapter exposing request-local diagnostics.
+
+    The v1 ``default_search`` list contract remains unchanged above. Native
+    workflows can consume this response without touching legacy process-global
+    ``_last_*`` observations.
+    """
+    from deskpet.retrieval.contracts import SearchRequest
+    from deskpet.retrieval.runtime import get_default_gateway
+    return await get_default_gateway().search(SearchRequest(
+        query=query,
+        max_results=max_results,
+        mode="research",
+        run_id=run_id,
+    ))
+
+
+def direct_items_to_candidates(items: list[dict[str, Any]], *, source: str):
+    """Normalize authoritative/direct-source rows into retrieval contracts."""
+    from deskpet.retrieval.providers.base import candidates_from_rows
+    candidates = candidates_from_rows(source, [
+        {
+            "url": str(item.get("url") or item.get("link") or ""),
+            "title": str(item.get("title") or item.get("name") or ""),
+            "snippet": str(item.get("snippet") or item.get("summary") or item.get("text") or ""),
+            "published_at": item.get("published_at") or item.get("date"),
+        }
+        for item in items
+    ])
+    from dataclasses import replace
+    return [replace(item, source_kind="direct") for item in candidates]
+
+
 def _parse_ddg_results(html: str, *, max_results: int) -> list[dict[str, Any]]:
     """Pure parser — easier to unit-test without network."""
     out: list[dict[str, Any]] = []
@@ -1021,101 +1059,58 @@ async def default_extract(
     client: Optional[httpx.AsyncClient] = None,
     fetch_port: object | None = None,
 ) -> dict[str, Any]:
-    """Fetch + extract main article text via trafilatura, with a Jina Reader
-    二级兜底 for JS-rendered pages trafilatura can't read.
+    """Thin DeepResearch adapter over the shared FetchExtractService."""
+    from deskpet.retrieval.contracts import FetchRequest
+    from deskpet.retrieval.fetch_extract import FetchExtractError, FetchExtractService
+    from deskpet.retrieval.runtime import get_default_gateway
 
-    Returns ``{ok, text, title, url, fetched_at, extractor}`` or
-    ``{ok: False, error, url}`` on failure.
-    """
-    owns_client = client is None
-    cli = client or httpx.AsyncClient(
-        headers={"User-Agent": _UA},
-        timeout=_DEFAULT_TIMEOUT,
-        follow_redirects=True,
-    )
+    service = get_default_gateway().fetch_service
+    owns_service = False
+    if client is not None:
+        class _InjectedClientTransport:
+            def fetch(self, url: str, *, timeout: float):
+                return {"ok": False, "error": "injected_client"}
+        service = FetchExtractService(
+            transport=_InjectedClientTransport(),
+            client=client,
+            respect_robots=False,
+            request_interval_ms=0,
+            allow_jina=_jina_enabled(),
+        )
+        owns_service = True
     try:
-        fetcher = "httpx"
-        html = ""
-        scrapled: Optional[dict[str, Any]] = None
-        if owns_client:
-            scrapled = await asyncio.to_thread(_scrapling_fetch_html, url, _DEFAULT_TIMEOUT)
-        if scrapled is not None:
-            html = str(scrapled.get("html") or "")
-            fetcher = str(scrapled.get("fetcher") or "scrapling")
-        else:
-            try:
-                resp = await cli.get(url)
-                resp.raise_for_status()
-            except Exception as exc:  # noqa: BLE001
-                return {"ok": False, "error": str(exc), "url": url}
-            html = resp.text
-        title = ""
-        text = ""
-        date = ""
-        try:
-            import trafilatura  # type: ignore
-            extracted = trafilatura.extract(
-                html, include_comments=False, include_tables=False,
-                favor_recall=False,
-            )
-            text = (extracted or "").strip()
-            meta = trafilatura.extract_metadata(html)
-            title = (getattr(meta, "title", None) or "").strip() if meta else ""
-            date = (getattr(meta, "date", None) or "").strip() if meta else ""
-        except Exception as exc:  # noqa: BLE001
-            log.debug("trafilatura extract failed for %s: %s", url, exc)
-        if not title:
-            m = re.search(r"<title>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
-            if m:
-                title = re.sub(r"\s+", " ", m.group(1)).strip()
-        # 二级兜底(疑似 JS 空壳): 先本地渲染(cdp-edge/webview/crawl4ai), 再 Jina(国外)。
-        extractor = "scrapling+trafilatura" if fetcher == "scrapling" else "trafilatura"
-        # 本地 JS 渲染兜底(本地、中国可用,排在 jina 之前)。双闸防误触发 + 护超时预算:
-        #   ①trafilatura 短 且 原始 HTML 够大(疑被 JS 藏的富页) ②本轮触发未超上限
-        if (len(text) < _JINA_MIN_CHARS and len(html) > _JS_RENDER_MIN_SHELL_HTML
-                and _js_render_enabled() and await _claim_js_render(fetch_port)):
-            rendered = await _js_render_dispatch(url)
-            if rendered:
-                try:
-                    import trafilatura  # type: ignore
-                    r_text = (trafilatura.extract(
-                        rendered, include_comments=False, include_tables=False,
-                        favor_recall=False) or "").strip()
-                    r_meta = trafilatura.extract_metadata(rendered)
-                except Exception:  # noqa: BLE001
-                    r_text = ""
-                    r_meta = None
-                if len(r_text) > len(text):
-                    text = r_text
-                    r_date = (getattr(r_meta, "date", None) or "").strip() if r_meta else ""
-                    if r_date:
-                        date = r_date
-                    extractor = _js_render_engine()   # "cdp-edge" / "crawl4ai"
-                    html = rendered   # 后续 ai_generated/mojibake 改扫【渲染后 HTML】(plan WI-3)
-        # Jina Reader 二级兜底: 仅当本地渲染未命中(extractor 仍 trafilatura)才试,避免
-        # 一个空壳站连跑两个重型兜底使超时翻倍(plan R6 去重)。
-        if extractor in {"trafilatura", "scrapling+trafilatura"} and len(text) < _JINA_MIN_CHARS and _jina_enabled():
-            jina = await _jina_extract(url, client=cli)
-            if jina and len(jina.get("text", "")) > len(text):
-                text = jina["text"]
-                title = title or jina.get("title") or ""
-                extractor = "jina"
-        if not text:
+        render_enabled = _js_render_enabled() and _js_render_engine() == "cdp-edge"
+        class _LegacyRenderBudget:
+            async def claim_cdp(self) -> bool:
+                return await _claim_js_render(fetch_port)
+        render_budget = _LegacyRenderBudget() if render_enabled else None
+        document = await service.fetch(FetchRequest(
+            url=url,
+            timeout=_DEFAULT_TIMEOUT,
+            render_policy="auto" if render_enabled else "never",
+            request_budget=render_budget,
+            allow_jina=_jina_enabled(),
+        ))
+        if not document.text:
             return {"ok": False, "error": "no text extracted", "url": url}
-        # 源质量过滤: AI 生成声明常在作者署名/页脚 boilerplate(如搜狐"作者声明:
-        # 本文包含人工智能生成内容"),trafilatura 抽正文时会把它剥掉 → 必须扫
-        # 【原始 HTML】才抓得到(codex 评审实测:只扫抽取后正文漏了 sohu 的 AI 页)。
         return {
-            "ok": True, "url": url, "title": title or url,
-            "text": text, "fetched_at": time.time(),
-            "date": date,
-            "ai_generated": research_scoring.is_ai_generated(html),
-            "extractor": extractor,
-            "fetcher": fetcher,
+            "ok": True, "url": document.canonical_url,
+            "title": document.title or url, "text": document.text,
+            "fetched_at": time.time(), "date": document.published_at or "",
+            "ai_generated": "ai_disclosure" in document.quality_flags,
+            "extractor": (
+                document.fetcher if document.fetcher in {"cdp-edge", "jina"}
+                else document.extractor
+            ),
+            "fetcher": document.fetcher,
+            "content_hash": document.content_hash,
+            "quality_flags": list(document.quality_flags),
         }
+    except FetchExtractError as exc:
+        return {"ok": False, "error": exc.code, "url": url}
     finally:
-        if owns_client:
-            await cli.aclose()
+        if owns_service:
+            await service.close()
 
 
 # ----------------------------------------------------------------------

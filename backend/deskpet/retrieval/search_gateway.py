@@ -24,6 +24,14 @@ from .ranking import dedupe_candidates, normalized_host, rank_candidates
 from .routing import stable_batches
 
 
+def _metric(event: str, detail: dict) -> None:
+    try:
+        from observability.metrics_sink import record
+        record(event, detail)
+    except Exception:
+        pass
+
+
 _FAILURE_STATUS = {
     PublicErrorCode.TIMEOUT: AttemptStatus.TIMEOUT,
     PublicErrorCode.BLOCKED: AttemptStatus.BLOCKED,
@@ -77,7 +85,9 @@ class SearchGateway:
         cached = await self.cache.get(cache_key)
         if cached is not None:
             attempt = ProviderAttempt("gateway", AttemptStatus.CACHE_HIT, 0, len(cached))
+            _metric("search_gateway_cache", {"cache_hit": True, "count": len(cached), "mode": request.mode})
             return SearchResponse(request.query, cached, (attempt,), cache_hit=True)
+        _metric("search_gateway_cache", {"cache_hit": False, "mode": request.mode})
 
         total_timeout = request.total_timeout_s or (
             self.config.quick_total_timeout_s if request.mode == "quick"
@@ -119,7 +129,13 @@ class SearchGateway:
                     candidates.extend(rows)
                     attempts.extend(batch_attempts)
                     executed.update(batch)
+                    before = len(candidates)
                     candidates = dedupe_candidates(candidates)
+                    _metric("search_gateway_dedupe", {
+                        "candidates": before, "kept": len(candidates),
+                        "dropped": before - len(candidates),
+                        "domains": len({normalized_host(c.canonical_url) for c in candidates}),
+                    })
                 if self._enough(request, candidates):
                     break
                 if index == 0 and probe_task is not None:
@@ -128,10 +144,13 @@ class SearchGateway:
                     except (asyncio.CancelledError, Exception):
                         self._google_reachable = False
                     if self._google_reachable and "google-cdp" in configured and "google-cdp" not in executed:
-                        rows, batch_attempts = await self._run_batch(["google-cdp"], request, budget)
+                        probe_wave = ["google-cdp"]
+                        if "bing-cdp" in configured and "bing-cdp" not in executed:
+                            probe_wave.append("bing-cdp")
+                        rows, batch_attempts = await self._run_batch(probe_wave, request, budget)
                         candidates.extend(rows)
                         attempts.extend(batch_attempts)
-                        executed.add("google-cdp")
+                        executed.update(probe_wave)
                         candidates = dedupe_candidates(candidates)
                         if self._enough(request, candidates):
                             break
@@ -159,6 +178,10 @@ class SearchGateway:
             a.status not in {AttemptStatus.HIT, AttemptStatus.CACHE_HIT} for a in attempts
         )
         response = SearchResponse(request.query, tuple(ranked), tuple(attempts), elapsed_ms, False, degraded)
+        _metric("search_gateway_request", {
+            "mode": request.mode, "duration_ms": elapsed_ms,
+            "count": len(ranked), "degraded": degraded,
+        })
         if ranked:
             await self.cache.put(cache_key, response.results)
         return response
@@ -183,8 +206,11 @@ class SearchGateway:
         started = time.monotonic()
         provider = self.providers[name]
         if await self.health.cooling_down(name):
+            _metric("search_gateway_cooldown", {"provider": name, "status": "active"})
+            _metric("search_gateway_attempt", {"provider": name, "status": "cooldown", "duration_ms": 0, "error_code": "cooldown"})
             return [], ProviderAttempt(name, AttemptStatus.COOLDOWN, 0, public_error_code=PublicErrorCode.COOLDOWN)
         if not await provider.is_available():
+            _metric("search_gateway_attempt", {"provider": name, "status": "unavailable", "duration_ms": 0, "error_code": "unavailable"})
             return [], ProviderAttempt(name, AttemptStatus.UNAVAILABLE, 0, public_error_code=PublicErrorCode.UNAVAILABLE)
         timeout = min(budget.per_provider_timeout_s, budget.remaining_s)
         if timeout <= 0:
@@ -194,20 +220,25 @@ class SearchGateway:
             elapsed = int((time.monotonic() - started) * 1000)
             if rows:
                 await self.health.record_success(name)
+                _metric("search_gateway_attempt", {"provider": name, "status": "hit", "duration_ms": elapsed, "count": len(rows)})
                 return rows, ProviderAttempt(name, AttemptStatus.HIT, elapsed, len(rows))
             await self.health.record_failure(name)
+            _metric("search_gateway_attempt", {"provider": name, "status": "empty", "duration_ms": elapsed, "count": 0})
             return [], ProviderAttempt(name, AttemptStatus.EMPTY, elapsed)
         except asyncio.TimeoutError:
             await self.health.record_failure(name)
             elapsed = int((time.monotonic() - started) * 1000)
+            _metric("search_gateway_attempt", {"provider": name, "status": "timeout", "duration_ms": elapsed, "error_code": "timeout"})
             return [], ProviderAttempt(name, AttemptStatus.TIMEOUT, elapsed, public_error_code=PublicErrorCode.TIMEOUT)
         except ProviderFailure as exc:
             await self.health.record_failure(name)
             elapsed = int((time.monotonic() - started) * 1000)
+            _metric("search_gateway_attempt", {"provider": name, "status": _FAILURE_STATUS.get(exc.code, AttemptStatus.ERROR).value, "duration_ms": elapsed, "error_code": exc.code.value})
             return [], ProviderAttempt(name, _FAILURE_STATUS.get(exc.code, AttemptStatus.ERROR), elapsed, public_error_code=exc.code)
         except Exception:
             await self.health.record_failure(name)
             elapsed = int((time.monotonic() - started) * 1000)
+            _metric("search_gateway_attempt", {"provider": name, "status": "error", "duration_ms": elapsed, "error_code": "http_error"})
             return [], ProviderAttempt(name, AttemptStatus.ERROR, elapsed, public_error_code=PublicErrorCode.HTTP_ERROR)
 
     async def _hydrate(self, ranked, request, budget):
@@ -222,6 +253,10 @@ class SearchGateway:
                 hydrated.append(replace(item, text=document.text[:4000]))
             except Exception:
                 hydrated.append(replace(item, hydration_error=PublicErrorCode.FETCH_FAILED.value))
+        _metric("search_gateway_hydrate", {
+            "count": sum(1 for item in hydrated if item.text),
+            "dropped": sum(1 for item in hydrated if item.hydration_error),
+        })
         return hydrated
 
     @staticmethod
@@ -246,6 +281,8 @@ class SearchGateway:
         if pending: await asyncio.gather(*pending, return_exceptions=True)
         await self.cache.clear()
         await self.health.clear()
+        if self.fetch_service is not None:
+            await self.fetch_service.close()
         if self._owns_client: await self.client.aclose()
 
     close = shutdown

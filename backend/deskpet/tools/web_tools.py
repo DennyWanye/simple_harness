@@ -21,6 +21,7 @@ top of this file so every tool uses the same politeness layer.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -244,96 +245,52 @@ _SCHEMA_FETCH: dict[str, Any] = {
 }
 
 
+def _fetch_service():
+    from deskpet.retrieval.runtime import get_default_gateway
+    service = get_default_gateway().fetch_service
+    if service is None:
+        from deskpet.retrieval.fetch_extract import FetchExtractService
+        service = FetchExtractService()
+        get_default_gateway().fetch_service = service
+    return service
+
+
+async def _fetch_raw_async(url: str, timeout: float) -> dict[str, Any]:
+    from deskpet.retrieval.contracts import FetchRequest
+    return await _fetch_service().fetch_raw(FetchRequest(
+        url=url, timeout=timeout, extract=False, include_html=True,
+        max_chars=_MAX_HTML_BYTES,
+    ))
+
+
 def _fetch_one(url: str, timeout: float) -> dict[str, Any]:
-    """Scrapling-first fetch helper used by web_fetch and web_crawl.
-
-    Returns a dict with either ``{"status", "content", "content_type",
-    "url_final"}`` on success or ``{"error", "retriable"}`` on failure.
-    Does NOT emit JSON — callers wrap.
-    """
-    host = _host(url)
-    if not host:
-        return {"error": "invalid url (no host)", "retriable": False}
-    allowed, msg = _check_block(host)
-    if not allowed:
-        return {"error": msg or "domain blocked", "retriable": True}
-    if not _respect_robots(url):
-        return {"error": "blocked by robots.txt", "retriable": False}
-    _throttle(host)
-    scraped = _scrapling_fetch_html(url, timeout)
-    if scraped is not None:
-        status = int(scraped.get("status") or 0)
-        body = str(scraped.get("html") or "")
-        if body and 200 <= status < 300 and not _detect_captcha(body):
-            _clear_block(host)
-            if len(body.encode("utf-8", "replace")) > _MAX_HTML_BYTES:
-                body = body.encode("utf-8", "replace")[:_MAX_HTML_BYTES].decode(
-                    "utf-8", errors="replace"
-                )
-            return {
-                "status": status,
-                "url_final": str(scraped.get("url_final") or url),
-                "fetcher": scraped.get("fetcher") or "scrapling",
-                "content_type": "text/html; charset=utf-8",
-                "content": body,
-            }
-        if status in (403, 429) or _detect_captcha(body):
-            logger.debug("scrapling returned blocked-ish page for %s status=%s; falling back to httpx", url, status)
+    """Legacy sync facade. Production consumers use ``_fetch_raw_async``."""
+    from deskpet.retrieval.fetch_extract import FetchExtractError
     try:
-        with httpx.Client(
-            headers=_client_headers(),
-            timeout=timeout,
-            follow_redirects=True,
-            max_redirects=_MAX_REDIRECTS,
-        ) as client:
-            resp = client.get(url)
-    except httpx.TimeoutException:
-        return {"error": "timeout", "retriable": True}
-    except httpx.HTTPError as exc:
-        return {"error": f"HTTPError: {exc}", "retriable": True}
-    status = resp.status_code
-    content_type = resp.headers.get("content-type", "")
-    if status in (403, 429) or (
-        "text/html" in content_type and _detect_captcha(resp.text)
-    ):
-        _register_block(host)
-        return {
-            "error": f"blocked (status={status})",
-            "retriable": True,
-            "status": status,
-            "fetcher": "httpx",
-        }
-    if 200 <= status < 300:
-        _clear_block(host)
-    # Truncate large HTML to keep agent prompts bounded.
-    body = resp.text
-    if "text/html" in content_type and len(body.encode("utf-8", "replace")) > _MAX_HTML_BYTES:
-        body = body.encode("utf-8", "replace")[:_MAX_HTML_BYTES].decode(
-            "utf-8", errors="replace"
-        )
-    return {
-        "status": status,
-        "url_final": str(resp.url),
-        "fetcher": "httpx",
-        "content_type": content_type,
-        "content": body,
-    }
+        asyncio.get_running_loop()
+    except RuntimeError:
+        try:
+            return asyncio.run(_fetch_raw_async(url, timeout))
+        except FetchExtractError as exc:
+            out = {"error": exc.code, "retriable": exc.retriable}
+            if exc.status is not None: out["status"] = exc.status
+            return out
+    raise RuntimeError("_fetch_one is legacy sync-only; await _fetch_raw_async")
 
 
-def _handle_web_fetch(args: dict[str, Any], task_id: str) -> str:
+async def _handle_web_fetch(args: dict[str, Any], task_id: str) -> str:
     url = str(args.get("url", "") or "").strip()
     if not url:
         return _err("url is required", retriable=False)
     timeout = float(args.get("timeout", 10) or 10)
     if timeout <= 0:
         return _err("timeout must be positive", retriable=False)
-    result = _fetch_one(url, timeout)
-    if "error" in result:
-        payload = {"error": result["error"], "retriable": result["retriable"]}
-        if "status" in result:
-            payload["status"] = result["status"]
-        if "fetcher" in result:
-            payload["fetcher"] = result["fetcher"]
+    from deskpet.retrieval.fetch_extract import FetchExtractError
+    try:
+        result = await _fetch_raw_async(url, timeout)
+    except FetchExtractError as exc:
+        payload = {"error": exc.code, "retriable": exc.retriable}
+        if exc.status is not None: payload["status"] = exc.status
         return json.dumps(payload, ensure_ascii=False)
     return json.dumps(result, ensure_ascii=False)
 
@@ -404,19 +361,17 @@ def _selectolax_fallback(html: str) -> dict[str, Any]:
     return {"title": title, "text": text}
 
 
-def _handle_web_extract_article(args: dict[str, Any], task_id: str) -> str:
+async def _handle_web_extract_article(args: dict[str, Any], task_id: str) -> str:
     inp = str(args.get("url_or_html", "") or "").strip()
     if not inp:
         return _err("url_or_html is required", retriable=False)
 
     if _looks_like_url(inp):
-        fetched = _fetch_one(inp, timeout=10.0)
-        if "error" in fetched:
-            payload = {
-                "error": fetched["error"],
-                "retriable": fetched["retriable"],
-            }
-            return json.dumps(payload, ensure_ascii=False)
+        from deskpet.retrieval.fetch_extract import FetchExtractError
+        try:
+            fetched = await _fetch_raw_async(inp, timeout=10.0)
+        except FetchExtractError as exc:
+            return json.dumps({"error": exc.code, "retriable": exc.retriable}, ensure_ascii=False)
         html = fetched.get("content", "") or ""
         fetcher = str(fetched.get("fetcher") or "")
         source_url = str(fetched.get("url_final") or inp)
@@ -609,7 +564,7 @@ def _extract_links(base_url: str, html: str) -> list[str]:
     return out
 
 
-def _handle_web_crawl(args: dict[str, Any], task_id: str) -> str:
+async def _handle_web_crawl(args: dict[str, Any], task_id: str) -> str:
     start_url = str(args.get("start_url", "") or "").strip()
     if not start_url:
         return _err("start_url is required", retriable=False)
@@ -644,10 +599,11 @@ def _handle_web_crawl(args: dict[str, Any], task_id: str) -> str:
                 or (parsed.hostname or "").lower() != seed.hostname.lower()
             ):
                 continue
-        fetched = _fetch_one(url, timeout=10.0)
-        if "error" in fetched:
+        try:
+            fetched = await _fetch_raw_async(url, timeout=10.0)
+        except Exception as exc:  # noqa: BLE001 - one URL cannot abort crawl
             # Keep going — a single failed URL shouldn't kill the crawl.
-            logger.debug("crawl skip %s: %s", url, fetched["error"])
+            logger.debug("crawl skip %s: %s", url, exc)
             continue
         content_type = fetched.get("content_type", "") or ""
         if "text/html" not in content_type and "text" not in content_type:
@@ -785,7 +741,7 @@ def _parse_sitemap_xml(xml_text: str) -> tuple[list[dict[str, str]], list[str]]:
     return urls, children
 
 
-def _handle_web_read_sitemap(args: dict[str, Any], task_id: str) -> str:
+async def _handle_web_read_sitemap(args: dict[str, Any], task_id: str) -> str:
     inp = str(args.get("sitemap_url", "") or "").strip()
     if not inp:
         return _err("sitemap_url is required", retriable=False)
@@ -803,9 +759,10 @@ def _handle_web_read_sitemap(args: dict[str, Any], task_id: str) -> str:
         if url in visited:
             continue
         visited.add(url)
-        fetched = _fetch_one(url, timeout=10.0)
         tried_any = True
-        if "error" in fetched:
+        try:
+            fetched = await _fetch_raw_async(url, timeout=10.0)
+        except Exception:
             continue
         status = fetched.get("status", 0)
         if status == 404:

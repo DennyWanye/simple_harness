@@ -1578,7 +1578,7 @@ async def test_js_render_budget_cap(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_default_extract_js_render_engine_crawl4ai(monkeypatch):
-    """engine=crawl4ai → 路由到 crawl4ai 适配器(本期 dev 档,mock 之)。"""
+    """Removed crawl4ai compatibility value no longer imports a dead branch."""
     monkeypatch.setattr(r, "_js_render_enabled", lambda: True)
     monkeypatch.setattr(r, "_js_render_engine", lambda: "crawl4ai")
     monkeypatch.setattr(r, "_jina_enabled", lambda: False)
@@ -1592,8 +1592,7 @@ async def test_default_extract_js_render_engine_crawl4ai(monkeypatch):
     monkeypatch.setitem(_sys.modules, "deskpet.tools.research_crawl4ai", fake_mod)
     _Resp, _FakeClient = _fake_client_factory()
     out = await r.default_extract("https://spa.com/x", client=_FakeClient(_JS_SHELL_BIG))
-    assert out["extractor"] == "crawl4ai"
-    assert "渲染后救回的真实正文" in out["text"]
+    assert out["ok"] is False
 
 
 @pytest.mark.asyncio

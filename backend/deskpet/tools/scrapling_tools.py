@@ -45,55 +45,9 @@ def _browser_headers() -> dict[str, str]:
 
 
 def _scrapling_get_html(url: str, *, timeout: float) -> dict[str, Any]:
-    """Return ``{ok, status, html, url_final, fetcher}``.
-
-    Scrapling is tried first. A plain httpx browser-like fallback keeps
-    tests and fresh dev installs useful when the optional dependency is
-    not installed yet.
-    """
-    try:
-        from scrapling.fetchers import Fetcher  # type: ignore
-
-        page = Fetcher.get(url, stealthy_headers=True, timeout=timeout)
-        body = getattr(page, "body", b"")
-        if isinstance(body, bytes):
-            html = body.decode(getattr(page, "encoding", None) or "utf-8", "ignore")
-        else:
-            html = str(body or getattr(page, "html_content", "") or "")
-        return {
-            "ok": True,
-            "status": int(getattr(page, "status", 0) or 0),
-            "html": html,
-            "url_final": str(getattr(page, "url", url) or url),
-            "fetcher": "scrapling",
-        }
-    except ModuleNotFoundError as exc:
-        missing = str(exc)
-        log.info("scrapling unavailable, falling back to httpx: %s", missing)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("scrapling fetch failed for %s: %s", url, exc)
-
-    try:
-        with httpx.Client(
-            headers=_browser_headers(),
-            timeout=timeout,
-            follow_redirects=True,
-            max_redirects=5,
-        ) as client:
-            resp = client.get(url)
-        return {
-            "ok": True,
-            "status": resp.status_code,
-            "html": resp.text,
-            "url_final": str(resp.url),
-            "fetcher": "httpx-browser-fallback",
-        }
-    except Exception as exc:  # noqa: BLE001
-        return {
-            "ok": False,
-            "error": f"scrapling/http fallback failed: {exc}",
-            "retriable": True,
-        }
+    """Legacy compatibility facade over the raw Scrapling transport."""
+    from deskpet.retrieval.transports.scrapling import ScraplingTransport
+    return ScraplingTransport().fetch(url, timeout=timeout)
 
 
 def _parse_number(raw: str | None) -> float | None:
@@ -146,16 +100,24 @@ _SCRAPLING_FETCH_SCHEMA: dict[str, Any] = {
 }
 
 
-def _handle_scrapling_fetch(args: dict[str, Any], task_id: str) -> str:
+async def _handle_scrapling_fetch(args: dict[str, Any], task_id: str) -> str:
     url = str(args.get("url", "") or "").strip()
     if not url.startswith(("http://", "https://")):
         return _json({"ok": False, "error": "url must be absolute http(s)"})
     timeout = float(args.get("timeout", 20) or 20)
     max_chars = int(args.get("max_chars", _MAX_SCRAPLING_CONTENT_CHARS) or _MAX_SCRAPLING_CONTENT_CHARS)
-    fetched = _scrapling_get_html(url, timeout=timeout)
-    if not fetched.get("ok"):
-        return _json({"ok": False, **fetched})
-    html = str(fetched.get("html") or "")
+    from deskpet.retrieval.contracts import FetchRequest
+    from deskpet.retrieval.fetch_extract import FetchExtractError
+    from deskpet.retrieval.runtime import get_default_gateway
+    service = get_default_gateway().fetch_service
+    try:
+        fetched = await service.fetch_raw(FetchRequest(
+            url=url, timeout=timeout, extract=False, include_html=True,
+            max_chars=_MAX_SCRAPLING_CONTENT_CHARS,
+        ))
+    except FetchExtractError as exc:
+        return _json({"ok": False, "error": exc.code, "retriable": exc.retriable})
+    html = str(fetched.get("content") or "")
     truncated = len(html) > max_chars
     if truncated:
         html = html[:max_chars]
@@ -193,12 +155,16 @@ _GOLD_PRICE_SCHEMA: dict[str, Any] = {
 }
 
 
-def _handle_gold_price_lookup(args: dict[str, Any], task_id: str) -> str:
+async def _handle_gold_price_lookup(args: dict[str, Any], task_id: str) -> str:
     timeout = float(args.get("timeout", 20) or 20)
-    xau_page = _scrapling_get_html(_INVESTING_XAU_USD, timeout=timeout)
-    if not xau_page.get("ok"):
-        return _json({"ok": False, "error": xau_page.get("error", "failed to fetch XAU/USD"), "source": _INVESTING_XAU_USD})
-    xau_usd = _extract_investing_last(str(xau_page.get("html") or ""))
+    from deskpet.retrieval.contracts import FetchRequest
+    from deskpet.retrieval.runtime import get_default_gateway
+    service = get_default_gateway().fetch_service
+    try:
+        xau_page = await service.fetch_raw(FetchRequest(_INVESTING_XAU_USD, timeout=timeout, extract=False, include_html=True))
+    except Exception as exc:  # noqa: BLE001
+        return _json({"ok": False, "error": str(exc), "source": _INVESTING_XAU_USD})
+    xau_usd = _extract_investing_last(str(xau_page.get("content") or ""))
     if xau_usd is None:
         return _json(
             {
@@ -211,9 +177,11 @@ def _handle_gold_price_lookup(args: dict[str, Any], task_id: str) -> str:
         )
 
     usd_cny: float | None = None
-    cny_page = _scrapling_get_html(_INVESTING_USD_CNY, timeout=timeout)
-    if cny_page.get("ok"):
-        usd_cny = _extract_investing_last(str(cny_page.get("html") or ""))
+    try:
+        cny_page = await service.fetch_raw(FetchRequest(_INVESTING_USD_CNY, timeout=timeout, extract=False, include_html=True))
+        usd_cny = _extract_investing_last(str(cny_page.get("content") or ""))
+    except Exception as exc:  # noqa: BLE001
+        cny_page = {"error": str(exc)}
 
     out: dict[str, Any] = {
         "ok": True,

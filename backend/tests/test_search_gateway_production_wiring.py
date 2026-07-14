@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import replace
 
 import httpx
@@ -60,3 +61,48 @@ async def test_concurrent_request_diagnostics_do_not_cross_talk():
     assert one.query == "one" and two.query == "two"
     assert one.results[0].title.startswith("one")
     assert two.results[0].title.startswith("two")
+
+
+@pytest.mark.asyncio
+async def test_tool_registry_awaits_production_async_web_search(monkeypatch):
+    from deskpet.retrieval import runtime
+    from deskpet.retrieval.contracts import SearchResponse
+    from deskpet.tools.code_tools.registration import register_code_tools
+    from deskpet.tools.registry import ToolRegistry
+
+    gateway = _Provider("duckduckgo")
+    search = asyncio.Future()
+    search.set_result(SearchResponse("query", tuple(await gateway.search(SearchRequest("query"), None, None))))
+    fake_gateway = type("Gateway", (), {"search": lambda self, request: search})()
+    monkeypatch.setattr(runtime, "get_default_gateway", lambda: fake_gateway)
+    registry = ToolRegistry()
+    register_code_tools(registry)
+    result = await registry.execute_tool("web_search", {"query": "query"}, "sid")
+    assert result["ok"] is True
+    payload = json.loads(result["result"])
+    assert payload["count"] == 1
+    assert payload["results"][0]["provider"] == "duckduckgo"
+
+
+@pytest.mark.asyncio
+async def test_research_v2_adapter_returns_response_while_v1_stays_list(monkeypatch):
+    from deskpet.retrieval import runtime
+    from deskpet.retrieval.contracts import SearchResponse
+    from deskpet.tools import research_tools
+
+    candidate = (await _Provider("duckduckgo").search(SearchRequest("topic"), None, None))[0]
+    fake = type("Gateway", (), {"search": AsyncSearch(SearchResponse("topic", (candidate,)))})()
+    monkeypatch.setattr(runtime, "get_default_gateway", lambda: fake)
+    response = await research_tools.gateway_search_response("topic", max_results=20, run_id="run")
+    legacy = await research_tools.default_search("topic", max_results=5)
+    assert isinstance(response, SearchResponse)
+    assert response.results[0].source_kind == "serp"
+    assert isinstance(legacy, list)
+    assert legacy[0]["url"] == candidate.url
+
+
+class AsyncSearch:
+    def __init__(self, response): self.response = response
+    def __call__(self, request):
+        async def _result(): return self.response
+        return _result()
