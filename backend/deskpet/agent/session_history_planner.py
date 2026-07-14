@@ -15,6 +15,7 @@ from deskpet.memory.context_segment_store import (
     conservative_token_estimate,
     eligible_session_messages,
     group_causal_messages,
+    recover_broken_causal_messages,
 )
 
 
@@ -69,6 +70,14 @@ def _message_id(message: Mapping[str, Any]) -> int:
 
 def _flatten(groups: Sequence[CausalMessageGroup]) -> list[Mapping[str, Any]]:
     return [message for group in groups for message in group.messages]
+
+
+def _coverage_entry_for_group(group: CausalMessageGroup) -> CoverageEntry:
+    recovered = any(
+        bool(message.get("__deskpet_recovered_causal_group"))
+        for message in group.messages
+    )
+    return CoverageEntry("recovered_raw" if recovered else "raw", group.message_ids)
 
 
 def _estimate_messages(
@@ -163,7 +172,9 @@ class SessionHistoryPlanner:
         current_message_id: int | None = None,
     ) -> SessionHistoryPlan:
         rows = await self._load_all(session_id)
-        eligible = eligible_session_messages(rows)
+        eligible, _recovery_errors = recover_broken_causal_messages(
+            eligible_session_messages(rows)
+        )
         eligible_ids = tuple(_message_id(message) for message in eligible)
         groups, group_errors = group_causal_messages(eligible)
         await self._segments.replace_raw_index(
@@ -232,7 +243,7 @@ class SessionHistoryPlanner:
             [CoverageEntry("current", current_group.message_ids)] if current_group else []
         )
         if raw_cost <= max(0, int(available_tokens)):
-            raw_entries = [CoverageEntry("raw", group.message_ids) for group in history_groups]
+            raw_entries = [_coverage_entry_for_group(group) for group in history_groups]
             report = build_coverage_report(
                 session_id,
                 eligible_ids,
@@ -288,7 +299,7 @@ class SessionHistoryPlanner:
                 )
                 for segment in cover
             ]
-            entries.extend(CoverageEntry("raw", group.message_ids) for group in tail_groups)
+            entries.extend(_coverage_entry_for_group(group) for group in tail_groups)
             entries.extend(current_entries)
             report = build_coverage_report(
                 session_id,
@@ -338,7 +349,7 @@ class SessionHistoryPlanner:
             compact_start_index=covered_prefix_count,
         )
         tail_messages = _flatten(tail_groups)
-        tail_entries = [CoverageEntry("raw", group.message_ids) for group in tail_groups]
+        tail_entries = [_coverage_entry_for_group(group) for group in tail_groups]
         report = build_coverage_report(
             session_id,
             eligible_ids,

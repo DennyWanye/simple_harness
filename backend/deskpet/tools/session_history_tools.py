@@ -14,6 +14,7 @@ from deskpet.memory.context_segment_store import (
     conservative_token_estimate,
     eligible_session_messages,
     group_causal_messages,
+    recover_broken_causal_messages,
 )
 
 
@@ -89,13 +90,14 @@ def build_session_history_page_in_handler(
             return _error("segment_stale")
 
         rows = await _load_all(session_db, session_id)
-        messages = [
+        raw_messages = [
             message
             for message in eligible_session_messages(rows)
             if segment.first_message_id
             <= int(message.get("id", message.get("message_id", 0)) or 0)
             <= segment.last_message_id
         ]
+        messages, _recovery_errors = recover_broken_causal_messages(raw_messages)
         if (
             len(messages) != segment.message_count
             or not messages

@@ -6,7 +6,10 @@ import sqlite3
 import pytest
 import pytest_asyncio
 
-from deskpet.memory.context_segment_store import ContextSegmentStore
+from deskpet.memory.context_segment_store import (
+    ContextSegmentStore,
+    recover_broken_causal_messages,
+)
 from deskpet.memory.migrator import run_migrations
 from deskpet.memory.session_db import SessionDB
 from deskpet.tools.session_history_tools import (
@@ -139,6 +142,48 @@ async def test_page_in_cursor_pages_only_at_group_boundaries(runtime):
     assert [item["content"] for item in first["messages"]] == ["one"]
     assert [item["content"] for item in second["messages"]] == ["two"]
     assert second["next_cursor"] is None
+
+
+@pytest.mark.asyncio
+async def test_page_in_replays_recovered_projection_for_incomplete_tool_history(runtime):
+    _, session_db, segment_store = runtime
+    await session_db.append_message(
+        "s1",
+        "assistant",
+        "",
+        tool_calls=[
+            {
+                "id": "missing-call",
+                "type": "function",
+                "function": {"name": "web_search", "arguments": "{}"},
+            }
+        ],
+    )
+    await session_db.append_message("s1", "assistant", "stream interrupted")
+    await session_db.append_message(
+        "s1", "tool", "detached result", tool_call_id="orphan-call"
+    )
+    raw = await session_db.get_messages("s1", limit=50)
+    recovered, errors = recover_broken_causal_messages(raw)
+    assert errors
+    segment = (
+        await segment_store.replace_raw_index("s1", recovered, max_messages=10)
+    )[0]
+    handler = build_session_history_page_in_handler(
+        segment_store,
+        session_db,
+        session_id_getter=lambda: "s1",
+        budget_getter=lambda: 10_000,
+    )
+
+    result = json.loads(await handler({"segment_id": segment.segment_id}, "task"))
+
+    assert result["ok"] is True
+    assert [message["id"] for message in result["messages"]] == [1, 2, 3]
+    assert all(message["role"] == "assistant" for message in result["messages"])
+    assert all(not message.get("tool_calls") for message in result["messages"])
+    assert all(not message.get("tool_call_id") for message in result["messages"])
+    assert "detached result" not in json.dumps(result, ensure_ascii=False)
 
 
 def test_tool_schema_has_no_session_parameter_and_registers_conditionally(runtime=None):

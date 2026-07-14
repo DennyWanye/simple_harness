@@ -99,6 +99,60 @@ async def test_current_message_is_covered_once_but_not_reinjected(segment_store)
 
 
 @pytest.mark.asyncio
+async def test_incomplete_legacy_tool_groups_recover_without_blocking_session(
+    segment_store,
+):
+    rows = [
+        _message(1, "search for Python"),
+        _message(
+            2,
+            "",
+            role="assistant",
+            tool_calls=[
+                {
+                    "id": "missing-call",
+                    "type": "function",
+                    "function": {"name": "web_search", "arguments": "{}"},
+                }
+            ],
+        ),
+        _message(3, "stream interrupted", role="assistant"),
+        _message(4, "detached result", role="tool", tool_call_id="orphan-call"),
+        _message(5, "try again"),
+    ]
+    planner = SessionHistoryPlanner(
+        _SessionDB(rows), segment_store, token_estimator=_estimate
+    )
+
+    plan = await planner.plan(
+        "s1",
+        available_tokens=1_000,
+        current_message_id=5,
+    )
+
+    assert plan.blocked is False
+    assert plan.coverage_report.valid is True
+    assert plan.coverage_report.eligible_message_ids == (1, 2, 3, 4, 5)
+    assert [message["id"] for message in plan.messages] == [1, 2, 3, 4]
+    recovered = [
+        message
+        for message in plan.messages
+        if message.get("__deskpet_recovered_causal_group")
+    ]
+    assert [message["id"] for message in recovered] == [2, 4]
+    assert all(message["role"] == "assistant" for message in recovered)
+    assert all("tool_calls" not in message for message in recovered)
+    assert all("tool_call_id" not in message for message in recovered)
+    assert [entry.kind for entry in plan.coverage_report.entries] == [
+        "raw",
+        "recovered_raw",
+        "raw",
+        "recovered_raw",
+        "current",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_summary_cover_plus_raw_tail_has_no_gap_or_overlap(segment_store):
     rows = [_message(index, "x" * 100) for index in range(1, 7)]
     leaves = await segment_store.replace_raw_index(

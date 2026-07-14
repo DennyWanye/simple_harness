@@ -77,6 +77,14 @@ _SUMMARY_MARKERS = (
     "[session history summary]",
 )
 
+_RECOVERED_CAUSAL_GROUP_KEY = "__deskpet_recovered_causal_group"
+_INCOMPLETE_TOOL_CALL_NOTICE = (
+    "[History recovery: an incomplete tool interaction was omitted.]"
+)
+_ORPHAN_TOOL_RESULT_NOTICE = (
+    "[History recovery: an incomplete tool result was omitted.]"
+)
+
 
 def is_eligible_session_message(message: Mapping[str, Any]) -> bool:
     if bool(message.get("is_summary", False)) or bool(message.get("deleted", False)):
@@ -160,6 +168,55 @@ def group_causal_messages(
             groups.append(CausalMessageGroup((message,), (message_id,)))
         index += 1
     return groups, tuple(errors)
+
+
+def recover_broken_causal_messages(
+    messages: Sequence[Mapping[str, Any]],
+) -> tuple[list[Mapping[str, Any]], tuple[str, ...]]:
+    """Build a provider-safe projection without mutating SessionDB history.
+
+    A process crash or an interrupted stream can leave an assistant tool call
+    without every corresponding result, or a detached tool result. Replaying
+    either shape through an OpenAI-compatible provider makes the whole session
+    unusable. Keep the authoritative rows intact for the chat UI, while
+    replacing only the model-facing projection with deterministic assistant
+    notices that preserve message ids and therefore gap-free coverage.
+    """
+
+    groups, errors = group_causal_messages(messages)
+    if not errors:
+        return list(messages), ()
+
+    recovered: list[Mapping[str, Any]] = []
+    for group in groups:
+        if group.valid:
+            recovered.extend(group.messages)
+            continue
+        for index, message in enumerate(group.messages):
+            safe = dict(message)
+            original_role = str(safe.get("role", ""))
+            safe["role"] = "assistant"
+            safe.pop("tool_calls", None)
+            safe.pop("tool_call_id", None)
+            safe.pop("name", None)
+            if index == 0 and original_role == "assistant":
+                original_content = str(safe.get("content", "") or "").strip()
+                safe["content"] = (
+                    f"{original_content}\n\n{_INCOMPLETE_TOOL_CALL_NOTICE}"
+                    if original_content
+                    else _INCOMPLETE_TOOL_CALL_NOTICE
+                )
+            else:
+                safe["content"] = _ORPHAN_TOOL_RESULT_NOTICE
+            safe[_RECOVERED_CAUSAL_GROUP_KEY] = group.error
+            recovered.append(safe)
+
+    _, recovery_errors = group_causal_messages(recovered)
+    if recovery_errors:
+        raise ContextSegmentError(
+            "causal history recovery failed: " + "; ".join(recovery_errors)
+        )
+    return recovered, errors
 
 
 def canonical_message_hash(messages: Sequence[Mapping[str, Any]]) -> str:
@@ -690,4 +747,5 @@ __all__ = [
     "eligible_session_messages",
     "group_causal_messages",
     "is_eligible_session_message",
+    "recover_broken_causal_messages",
 ]
