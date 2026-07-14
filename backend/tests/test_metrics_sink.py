@@ -159,6 +159,22 @@ def test_search_gateway_and_deepresearch_events_use_closed_safe_schema(
         "support_rate": 0.875,
         "fetcher": "httpx",
         "extractor": "trafilatura",
+        "query_count": 9,
+        "question_count": 3,
+        "active_branch_count": 3,
+        "providers": 2,
+        "direct_sources": 1,
+        "attempted": 8,
+        "succeeded": 6,
+        "passages": 10,
+        "iteration": 2,
+        "followup_count": 2,
+        "new_evidence": 1,
+        "sections": 4,
+        "claim_count": 7,
+        "citations": 6,
+        "artifact_count": 1,
+        "report_bytes": 4096,
     }
     for event in events:
         assert sink.record(event, safe_detail) is True

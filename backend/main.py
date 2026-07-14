@@ -3608,7 +3608,9 @@ async def lifespan(app: FastAPI):
         )
         startup_recoveries = await _workflow_service.runner.recover_expired()
         recovered_decisions = await _workflow_launcher.recover_open_decision_events()
-        recovered_deliveries = await _workflow_launcher.recover_due_deliveries()
+        recovered_deliveries = await _workflow_launcher.recover_due_deliveries(
+            recover_claimed=True
+        )
         recovered_runs = await _workflow_launcher.recover_pending()
         _workflow_launcher.start_dispatcher()
         service_context.register("workflow_service", _workflow_service)

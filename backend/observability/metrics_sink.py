@@ -175,6 +175,22 @@ _ALLOWED_DETAIL_KEYS = frozenset({
     "support_rate",
     "fetcher",
     "extractor",
+    "query_count",
+    "question_count",
+    "active_branch_count",
+    "providers",
+    "direct_sources",
+    "attempted",
+    "succeeded",
+    "passages",
+    "iteration",
+    "followup_count",
+    "new_evidence",
+    "sections",
+    "claim_count",
+    "citations",
+    "artifact_count",
+    "report_bytes",
 })
 
 # Max length of any *surviving* string value — defence-in-depth second

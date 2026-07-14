@@ -172,11 +172,16 @@ class WorkflowLauncher:
         *,
         run_id: str | None = None,
         now: float | None = None,
+        recover_claimed: bool = False,
     ) -> list[str]:
         """Redeliver unfinished outbox events without recreating them."""
 
         async with self._delivery_dispatch_lock:
-            return await self._recover_due_deliveries(run_id=run_id, now=now)
+            return await self._recover_due_deliveries(
+                run_id=run_id,
+                now=now,
+                recover_claimed=recover_claimed,
+            )
 
     async def recover_open_decision_events(self) -> list[str]:
         """Backfill actionable decision cards created before durable decision events."""
@@ -217,9 +222,28 @@ class WorkflowLauncher:
         *,
         run_id: str | None,
         now: float | None,
+        recover_claimed: bool = False,
     ) -> list[str]:
 
         current_time = time.time() if now is None else float(now)
+        if recover_claimed:
+            cursor: str | None = None
+            while True:
+                page = await self.service.outbox.list_deliveries(
+                    run_id=run_id,
+                    status="delivering",
+                    cursor=cursor,
+                    limit=_DELIVERY_PAGE_SIZE,
+                )
+                for delivery in page.get("items", ()):
+                    await self.service.outbox.retry_delivery(
+                        str(delivery["delivery_id"]),
+                        expected_version=int(delivery["version"]),
+                        reason="startup_recover_orphaned_claim",
+                    )
+                cursor = page.get("next_cursor")
+                if not cursor:
+                    break
         event_ids: list[str] = []
         seen: set[str] = set()
         next_deadline: float | None = None
