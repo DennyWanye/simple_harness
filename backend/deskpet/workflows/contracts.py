@@ -256,6 +256,7 @@ WORKFLOW_PORT_NAMES = frozenset(
         "observer",
         "progress",
         "native_execution_policy",
+        "blob",
     }
 )
 

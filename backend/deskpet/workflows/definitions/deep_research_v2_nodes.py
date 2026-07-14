@@ -222,7 +222,7 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
         direct_rows = list((state.get("branch_direct") or {}).get(branch_id, {}).get("result", []))  # type: ignore[union-attr]
         candidates = {str(row.get("canonical_url")): row for row in (*search_rows, *direct_rows) if isinstance(row, Mapping) and row.get("canonical_url")}
         fetch = context.ports.get("fetch")
-        blob_store = context.ports.get("artifact")
+        blob_store = context.ports.get("blob")
         refs: list[dict[str, JsonValue]] = []
         for url, candidate in sorted(candidates.items())[: budget.fetch_remaining]:
             try:
