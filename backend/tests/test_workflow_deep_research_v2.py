@@ -321,6 +321,12 @@ async def test_v2_persists_one_real_markdown_artifact_and_delivers_file_card(tmp
     )
     assert intent["payload"]["artifacts"] == [artifact]
     assert "report" not in intent["payload"]
+    final = next(
+        value for value in result["values"]["delivery_intents"]
+        if value["kind"] == "final_assistant"
+    )
+    assert final["channel"] == "final_assistant"
+    assert final["payload"]["text"] == result["values"]["report_payload"]["report_md"]
 
 
 @pytest.mark.asyncio

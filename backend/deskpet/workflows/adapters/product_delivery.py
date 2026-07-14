@@ -344,6 +344,17 @@ class ProductDeliveryAdapter:
         event_id = _event_id(event, delivery)
         target_id = _required_text(delivery.get("target_id"), "delivery target_id")
         kind, payload = _intent(event)
+        if kind in {"assistant", "final_assistant"}:
+            # Compatibility drain for v2 runs created before assistant output
+            # moved from business channel ``final`` to ``final_assistant``.
+            # Text was already persisted/broadcast by the other projections;
+            # consume the accidental receipt without minting completion proof.
+            return {
+                "channel": str(delivery.get("channel")),
+                "event_id": event_id,
+                "legacy_assistant_ignored": True,
+                "completion_evidence": False,
+            }
         if kind and kind not in {"accepted", "receipt", "final"}:
             raise ProductDeliveryError(f"receipt channel received {kind!r} intent")
 

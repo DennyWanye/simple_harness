@@ -895,7 +895,7 @@ async def finalize_handler(state: WorkflowState, context: WorkflowContext) -> St
     intents: list[dict[str, JsonValue]] = [
         {"intent_id": f"{run_id}:report", "kind": "report", "channel": "workflow_report", "payload": {"report": dict(report)}},
         {"intent_id": f"{run_id}:artifact", "kind": "artifact_card", "channel": "artifact", "payload": artifact_payload},
-        {"intent_id": f"{run_id}:assistant", "kind": "assistant", "channel": "final", "payload": {"text": str(report.get("report_md") or ""), "report_hash": str(report.get("report_hash") or "")}},
+        {"intent_id": f"{run_id}:assistant", "kind": "final_assistant", "channel": "final_assistant", "payload": {"text": str(report.get("report_md") or ""), "report_hash": str(report.get("report_hash") or "")}},
     ]
     return _public_patch(state, "finalize", {"citations": len(report.get("citations", [])), "status": str(report.get("status") or "failed")}, updates={"delivery_intents": intents, "terminal_status": "completed" if report.get("status") == "completed" else "error", "terminal_error": None if report.get("status") == "completed" else {"code": "deep_research_no_results", "user_message": "未找到可核验来源"}})
 

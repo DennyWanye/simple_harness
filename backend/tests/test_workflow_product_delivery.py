@@ -238,6 +238,31 @@ async def test_research_report_explicit_preview_hides_blob_reference(stores) -> 
 
 
 @pytest.mark.asyncio
+async def test_legacy_assistant_receipt_delivery_converges_without_evidence(stores) -> None:
+    session_db, receipt_store = stores
+    adapter = ProductDeliveryAdapter(session_db=session_db, receipt_store=receipt_store)
+    event = _event(
+        "legacy-assistant-receipt",
+        run_id="legacy-v2-run",
+        kind="assistant",
+        payload={"text": "already delivered report"},
+    )
+
+    result = await adapter.deliver_receipt(
+        event,
+        _delivery(event["event_id"], "receipt"),
+    )
+
+    assert result == {
+        "channel": "receipt",
+        "event_id": "legacy-assistant-receipt",
+        "legacy_assistant_ignored": True,
+        "completion_evidence": False,
+    }
+    assert receipt_store.load_session("session-1") == []
+
+
+@pytest.mark.asyncio
 async def test_artifact_handler_rejects_a_stale_declared_hash(stores, tmp_path: Path) -> None:
     session_db, receipt_store = stores
     adapter = ProductDeliveryAdapter(session_db=session_db, receipt_store=receipt_store)
