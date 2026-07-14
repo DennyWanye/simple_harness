@@ -1,0 +1,1214 @@
+{
+  "checkpoints": [
+    {
+      "snapshot": {
+        "checkpoint_id": "ac898db7348c77528640df690d3cb092dbc930e5970127b8c1f46765042ed77b",
+        "checkpoint_ns": "v1-compat-fixture",
+        "checkpoint_type": "deskpet-native-json-v1",
+        "completed_activations": {},
+        "engine_kind": "deskpet-native",
+        "frontier": [
+          {
+            "activation_id": "33a898d73a9e269f95b97531f5f2393afd080d93c5fa85710420e9cf42ab0d60",
+            "input": {},
+            "invocation_key": "plan:33a898d73a9e269f95b97531f5f2393afd080d93c5fa85710420e9cf42ab0d60:0",
+            "join_epoch": 0,
+            "next_attempt_at": null,
+            "node_id": "plan",
+            "retry_attempt": 1,
+            "task_id": "5c5fe77df1c0fceaa21524b7a110f12d2d99310076c01a514b5fdb96486a6334",
+            "task_path": [
+              "normalize",
+              "plan"
+            ]
+          }
+        ],
+        "interrupt": null,
+        "join_firings": [],
+        "metadata": {
+          "engine_kind": "deskpet-native"
+        },
+        "node_writes": {},
+        "parent_checkpoint_id": "7275ac2a2e1b29ab30eb568c4ee3759d516d82a5bc991b72d7a7cd9839f62371",
+        "run_id": "fixture-deep-research-v1-run",
+        "snapshot_version": 1,
+        "state": {
+          "active_nodes": [],
+          "active_step_id": null,
+          "artifact_refs": [],
+          "blob_refs": [],
+          "budgets": {
+            "gap_iterations": 1
+          },
+          "errors": [],
+          "loop_counters": {
+            "gap_iterations": 0
+          },
+          "receipt_refs": [],
+          "run_id": "fixture-deep-research-v1-run",
+          "schema_version": 1,
+          "session_id": "fixture-session",
+          "status": "pending",
+          "thread_id": "fixture-deep-research-v1-thread",
+          "values": {
+            "blob_root": "",
+            "mode": "standard",
+            "research_config": {
+              "direct_sources": false,
+              "direct_timeout": 45.0,
+              "max_rounds": 1,
+              "max_sub_questions": 3,
+              "max_total_passages": 4,
+              "max_urls_per_query": 2,
+              "min_passage_chars": 20,
+              "query_expansion": false,
+              "rerank_mode": "off",
+              "site_directed": false,
+              "source_packs": false
+            },
+            "research_state": {
+              "candidate_urls": [],
+              "citations": [],
+              "cite_result": {
+                "missing": [],
+                "ok": true,
+                "unused": []
+              },
+              "dropped_by_reason": {
+                "ai_generated": 0,
+                "direct_source_empty": 0,
+                "low_quality": 0,
+                "mojibake": 0,
+                "too_short": 0
+              },
+              "elapsed_ms_per_stage": {
+                "direct": 0,
+                "fetch": 0,
+                "plan": 0,
+                "score": 0,
+                "search": 0,
+                "synth": 0
+              },
+              "errors": [],
+              "expansion_queries": [],
+              "extracted": [],
+              "llm_topic": "Stable v1 contract",
+              "mode": "standard",
+              "passages": [],
+              "report_md": "",
+              "request_topic": "Stable v1 contract",
+              "reranker": "off",
+              "rounds": 1,
+              "route": {
+                "direct_sources_hit": [],
+                "engines_hit": [],
+                "fallback": "ddg",
+                "source_pack_queries": 0,
+                "source_packs_enabled": false,
+                "source_packs_hit": []
+              },
+              "search_specs": [],
+              "sub_questions": [],
+              "url_to_question": {},
+              "velocity": ""
+            },
+            "topic": "Stable v1 contract"
+          },
+          "workflow_name": "deep_research",
+          "workflow_version": "v1"
+        },
+        "state_schema_version": 1,
+        "step": 1,
+        "thread_id": "fixture-deep-research-v1-thread"
+      },
+      "stage": "normalize"
+    },
+    {
+      "snapshot": {
+        "checkpoint_id": "5f36c21d7c8fafd423fe50964f52f478cd28a76168a8ba7def412965a3c39586",
+        "checkpoint_ns": "v1-compat-fixture",
+        "checkpoint_type": "deskpet-native-json-v1",
+        "completed_activations": {},
+        "engine_kind": "deskpet-native",
+        "frontier": [
+          {
+            "activation_id": "9cc215ebfb2ff2cce7cdb14c5193904075823d589e6211e3fb9cf49f503b8d62",
+            "input": {},
+            "invocation_key": "direct:9cc215ebfb2ff2cce7cdb14c5193904075823d589e6211e3fb9cf49f503b8d62:0",
+            "join_epoch": 0,
+            "next_attempt_at": null,
+            "node_id": "direct",
+            "retry_attempt": 1,
+            "task_id": "f86d6d983b2771fc9484079fdef1aeac270e9e8b0d54a2d4acc19bc77e247fc5",
+            "task_path": [
+              "normalize",
+              "plan",
+              "expand",
+              "search",
+              "direct"
+            ]
+          }
+        ],
+        "interrupt": null,
+        "join_firings": [],
+        "metadata": {
+          "engine_kind": "deskpet-native"
+        },
+        "node_writes": {},
+        "parent_checkpoint_id": "9eed6ee429a94fdf77319d3d9d0874babed72d53a18ee37c1e02ab039407ae76",
+        "run_id": "fixture-deep-research-v1-run",
+        "snapshot_version": 1,
+        "state": {
+          "active_nodes": [],
+          "active_step_id": null,
+          "artifact_refs": [],
+          "blob_refs": [],
+          "budgets": {
+            "gap_iterations": 1
+          },
+          "errors": [],
+          "loop_counters": {
+            "gap_iterations": 0
+          },
+          "receipt_refs": [],
+          "run_id": "fixture-deep-research-v1-run",
+          "schema_version": 1,
+          "session_id": "fixture-session",
+          "status": "pending",
+          "thread_id": "fixture-deep-research-v1-thread",
+          "values": {
+            "blob_root": "",
+            "mode": "standard",
+            "research_config": {
+              "direct_sources": false,
+              "direct_timeout": 45.0,
+              "max_rounds": 1,
+              "max_sub_questions": 3,
+              "max_total_passages": 4,
+              "max_urls_per_query": 2,
+              "min_passage_chars": 20,
+              "query_expansion": false,
+              "rerank_mode": "off",
+              "site_directed": false,
+              "source_packs": false
+            },
+            "research_state": {
+              "candidate_urls": [],
+              "citations": [],
+              "cite_result": {
+                "missing": [],
+                "ok": true,
+                "unused": []
+              },
+              "dropped_by_reason": {
+                "ai_generated": 0,
+                "direct_source_empty": 0,
+                "low_quality": 0,
+                "mojibake": 0,
+                "too_short": 0
+              },
+              "elapsed_ms_per_stage": {
+                "direct": 0,
+                "fetch": 0,
+                "plan": 7,
+                "score": 0,
+                "search": 7,
+                "synth": 0
+              },
+              "errors": [],
+              "expansion_queries": [],
+              "extracted": [],
+              "llm_topic": "Stable v1 contract",
+              "mode": "standard",
+              "passages": [],
+              "report_md": "",
+              "request_topic": "Stable v1 contract",
+              "reranker": "off",
+              "rounds": 1,
+              "route": {
+                "agent_reach": {
+                  "degraded": [],
+                  "doctor": {
+                    "web": {
+                      "active_backend": "fixture-reader",
+                      "backends": [
+                        "fixture-reader"
+                      ],
+                      "message": "Deterministic v1 fixture backend.",
+                      "name": "Fixture web",
+                      "status": "ok",
+                      "tier": 0
+                    }
+                  },
+                  "hits": [],
+                  "planned_channels": [],
+                  "planned_urls": []
+                },
+                "direct_sources_hit": [],
+                "engines_hit": [],
+                "fallback": "ddg",
+                "source_pack_queries": 0,
+                "source_packs_enabled": false,
+                "source_packs_hit": []
+              },
+              "search_specs": [
+                [
+                  "What evidence makes the v1 contract stable?",
+                  "What evidence makes the v1 contract stable?"
+                ]
+              ],
+              "sub_questions": [
+                "What evidence makes the v1 contract stable?"
+              ],
+              "url_to_question": {
+                "https://example.com/v1-contract": "What evidence makes the v1 contract stable?"
+              },
+              "velocity": ""
+            },
+            "topic": "Stable v1 contract"
+          },
+          "workflow_name": "deep_research",
+          "workflow_version": "v1"
+        },
+        "state_schema_version": 1,
+        "step": 4,
+        "thread_id": "fixture-deep-research-v1-thread"
+      },
+      "stage": "search"
+    },
+    {
+      "snapshot": {
+        "checkpoint_id": "0fdff5642b55b200e92fc4ee8610f410c4496fa4777855ac69a247bb1572b565",
+        "checkpoint_ns": "v1-compat-fixture",
+        "checkpoint_type": "deskpet-native-json-v1",
+        "completed_activations": {},
+        "engine_kind": "deskpet-native",
+        "frontier": [
+          {
+            "activation_id": "752620e8ef609caa01a06100b8810afbd03045132834dd6525c511143ec4382f",
+            "input": {},
+            "invocation_key": "score:752620e8ef609caa01a06100b8810afbd03045132834dd6525c511143ec4382f:0",
+            "join_epoch": 0,
+            "next_attempt_at": null,
+            "node_id": "score",
+            "retry_attempt": 1,
+            "task_id": "426ea392d101115135aff6ec97a50d38cf20101cbdd39baf6c9bc88fbb388469",
+            "task_path": [
+              "normalize",
+              "plan",
+              "expand",
+              "search",
+              "direct",
+              "fetch",
+              "score"
+            ]
+          }
+        ],
+        "interrupt": null,
+        "join_firings": [],
+        "metadata": {
+          "engine_kind": "deskpet-native"
+        },
+        "node_writes": {},
+        "parent_checkpoint_id": "acf6953b2d907b81a2ef4eb3f9c2124e80384925e105d50a590958fc3f215d75",
+        "run_id": "fixture-deep-research-v1-run",
+        "snapshot_version": 1,
+        "state": {
+          "active_nodes": [],
+          "active_step_id": null,
+          "artifact_refs": [],
+          "blob_refs": [],
+          "budgets": {
+            "gap_iterations": 1
+          },
+          "errors": [],
+          "loop_counters": {
+            "gap_iterations": 0
+          },
+          "receipt_refs": [],
+          "run_id": "fixture-deep-research-v1-run",
+          "schema_version": 1,
+          "session_id": "fixture-session",
+          "status": "pending",
+          "thread_id": "fixture-deep-research-v1-thread",
+          "values": {
+            "blob_root": "",
+            "mode": "standard",
+            "research_config": {
+              "direct_sources": false,
+              "direct_timeout": 45.0,
+              "max_rounds": 1,
+              "max_sub_questions": 3,
+              "max_total_passages": 4,
+              "max_urls_per_query": 2,
+              "min_passage_chars": 20,
+              "query_expansion": false,
+              "rerank_mode": "off",
+              "site_directed": false,
+              "source_packs": false
+            },
+            "research_state": {
+              "candidate_urls": [
+                "https://example.com/v1-contract"
+              ],
+              "citations": [],
+              "cite_result": {
+                "missing": [],
+                "ok": true,
+                "unused": []
+              },
+              "dropped_by_reason": {
+                "ai_generated": 0,
+                "direct_source_empty": 0,
+                "low_quality": 0,
+                "mojibake": 0,
+                "too_short": 0
+              },
+              "elapsed_ms_per_stage": {
+                "direct": 0,
+                "fetch": 7,
+                "plan": 7,
+                "score": 0,
+                "search": 7,
+                "synth": 0
+              },
+              "errors": [],
+              "expansion_queries": [],
+              "extracted": [
+                {
+                  "fetched_at": 123.0,
+                  "ok": true,
+                  "text": "Stable v1 contract evidence provides deterministic primary source support. This v1 contract is stable, cited, and reproducible.",
+                  "title": "V1 Contract",
+                  "url": "https://example.com/v1-contract"
+                }
+              ],
+              "llm_topic": "Stable v1 contract",
+              "mode": "standard",
+              "passages": [],
+              "report_md": "",
+              "request_topic": "Stable v1 contract",
+              "reranker": "off",
+              "rounds": 1,
+              "route": {
+                "agent_reach": {
+                  "degraded": [],
+                  "doctor": {
+                    "web": {
+                      "active_backend": "fixture-reader",
+                      "backends": [
+                        "fixture-reader"
+                      ],
+                      "message": "Deterministic v1 fixture backend.",
+                      "name": "Fixture web",
+                      "status": "ok",
+                      "tier": 0
+                    }
+                  },
+                  "hits": [],
+                  "planned_channels": [],
+                  "planned_urls": []
+                },
+                "direct_sources_hit": [],
+                "engines_hit": [],
+                "fallback": "ddg",
+                "source_pack_queries": 0,
+                "source_packs_enabled": false,
+                "source_packs_hit": []
+              },
+              "search_specs": [
+                [
+                  "What evidence makes the v1 contract stable?",
+                  "What evidence makes the v1 contract stable?"
+                ]
+              ],
+              "sub_questions": [
+                "What evidence makes the v1 contract stable?"
+              ],
+              "url_to_question": {
+                "https://example.com/v1-contract": "What evidence makes the v1 contract stable?"
+              },
+              "velocity": ""
+            },
+            "topic": "Stable v1 contract"
+          },
+          "workflow_name": "deep_research",
+          "workflow_version": "v1"
+        },
+        "state_schema_version": 1,
+        "step": 6,
+        "thread_id": "fixture-deep-research-v1-thread"
+      },
+      "stage": "fetch"
+    },
+    {
+      "snapshot": {
+        "checkpoint_id": "cd8f31c9d59f48fdda02f3184c34e2d509d227d501cc327d5a5e8971f28fb5d1",
+        "checkpoint_ns": "v1-compat-fixture",
+        "checkpoint_type": "deskpet-native-json-v1",
+        "completed_activations": {},
+        "engine_kind": "deskpet-native",
+        "frontier": [
+          {
+            "activation_id": "b16d1274689235cc38ae9f192456d1739358df3a511e6096665545fcc29af8c2",
+            "input": {},
+            "invocation_key": "persist:b16d1274689235cc38ae9f192456d1739358df3a511e6096665545fcc29af8c2:0",
+            "join_epoch": 0,
+            "next_attempt_at": null,
+            "node_id": "persist",
+            "retry_attempt": 1,
+            "task_id": "5ee82792e56ce777743aeb68d907df09f6ce48fbbabc0026848074080c5bb0b1",
+            "task_path": [
+              "normalize",
+              "plan",
+              "expand",
+              "search",
+              "direct",
+              "fetch",
+              "score",
+              "gap",
+              "rerank",
+              "synth",
+              "cite",
+              "persist"
+            ]
+          }
+        ],
+        "interrupt": null,
+        "join_firings": [],
+        "metadata": {
+          "engine_kind": "deskpet-native"
+        },
+        "node_writes": {},
+        "parent_checkpoint_id": "b8007c9293ccde23fc4f3c090b1eb8ba1f408a2807a647c738f077245de04a04",
+        "run_id": "fixture-deep-research-v1-run",
+        "snapshot_version": 1,
+        "state": {
+          "active_nodes": [],
+          "active_step_id": null,
+          "artifact_refs": [],
+          "blob_refs": [],
+          "budgets": {
+            "gap_iterations": 1
+          },
+          "errors": [],
+          "loop_counters": {
+            "gap_iterations": 0
+          },
+          "receipt_refs": [],
+          "run_id": "fixture-deep-research-v1-run",
+          "schema_version": 1,
+          "session_id": "fixture-session",
+          "status": "pending",
+          "thread_id": "fixture-deep-research-v1-thread",
+          "values": {
+            "blob_root": "",
+            "mode": "standard",
+            "research_config": {
+              "direct_sources": false,
+              "direct_timeout": 45.0,
+              "max_rounds": 1,
+              "max_sub_questions": 3,
+              "max_total_passages": 4,
+              "max_urls_per_query": 2,
+              "min_passage_chars": 20,
+              "query_expansion": false,
+              "rerank_mode": "off",
+              "site_directed": false,
+              "source_packs": false
+            },
+            "research_state": {
+              "candidate_urls": [
+                "https://example.com/v1-contract"
+              ],
+              "citations": [
+                {
+                  "authority": 3.0,
+                  "fetched_at": 123.0,
+                  "n": 1,
+                  "snippet": "Stable v1 contract e",
+                  "title": "V1 Contract",
+                  "url": "https://example.com/v1-contract"
+                }
+              ],
+              "cite_result": {
+                "missing": [],
+                "ok": true,
+                "total_refs": 1,
+                "unused": []
+              },
+              "dropped_by_reason": {
+                "ai_generated": 0,
+                "direct_source_empty": 0,
+                "low_quality": 0,
+                "mojibake": 0,
+                "too_short": 0
+              },
+              "elapsed_ms_per_stage": {
+                "direct": 0,
+                "fetch": 7,
+                "plan": 7,
+                "score": 7,
+                "search": 7,
+                "synth": 7
+              },
+              "errors": [],
+              "expansion_queries": [],
+              "extracted": [],
+              "llm_topic": "Stable v1 contract",
+              "mode": "standard",
+              "passages": [
+                {
+                  "citation": {
+                    "authority": 3.0,
+                    "fetched_at": 123.0,
+                    "n": 1,
+                    "snippet": "Stable v1 contract e",
+                    "title": "V1 Contract",
+                    "url": "https://example.com/v1-contract"
+                  },
+                  "dims": {
+                    "authority": 3.0,
+                    "depth": 0.635,
+                    "recency": 3.0,
+                    "relevance": 7.5
+                  },
+                  "score": 3.877,
+                  "text": "Stable v1 contract evidence provides deterministic primary source support. This v1 contract is stable, cited, and reproducible."
+                }
+              ],
+              "report_md": "# Stable v1 research\n\n## TL;DR\n\nThe fixture preserves supported evidence [^1].\n\n---\n\n## \u5f15\u7528\n\n[^1]: [V1 Contract](https://example.com/v1-contract)\n",
+              "request_topic": "Stable v1 contract",
+              "reranker": "off",
+              "rounds": 1,
+              "route": {
+                "agent_reach": {
+                  "degraded": [],
+                  "doctor": {
+                    "web": {
+                      "active_backend": "fixture-reader",
+                      "backends": [
+                        "fixture-reader"
+                      ],
+                      "message": "Deterministic v1 fixture backend.",
+                      "name": "Fixture web",
+                      "status": "ok",
+                      "tier": 0
+                    }
+                  },
+                  "hits": [],
+                  "planned_channels": [],
+                  "planned_urls": []
+                },
+                "direct_sources_hit": [],
+                "engines_hit": [],
+                "fallback": "ddg",
+                "source_pack_queries": 0,
+                "source_packs_enabled": false,
+                "source_packs_hit": []
+              },
+              "search_specs": [
+                [
+                  "What evidence makes the v1 contract stable?",
+                  "What evidence makes the v1 contract stable?"
+                ]
+              ],
+              "sub_questions": [
+                "What evidence makes the v1 contract stable?"
+              ],
+              "url_to_question": {
+                "https://example.com/v1-contract": "What evidence makes the v1 contract stable?"
+              },
+              "velocity": "medium"
+            },
+            "topic": "Stable v1 contract"
+          },
+          "workflow_name": "deep_research",
+          "workflow_version": "v1"
+        },
+        "state_schema_version": 1,
+        "step": 11,
+        "thread_id": "fixture-deep-research-v1-thread"
+      },
+      "stage": "cite"
+    },
+    {
+      "snapshot": {
+        "checkpoint_id": "43c7db19f4eca7b8a4de7f85ef3308263ed1b4151059d576942a0cc67e1aeed7",
+        "checkpoint_ns": "v1-compat-fixture",
+        "checkpoint_type": "deskpet-native-json-v1",
+        "completed_activations": {},
+        "engine_kind": "deskpet-native",
+        "frontier": [
+          {
+            "activation_id": "d2913fba504ac8a1b1c8a0fbd22048686924e4fb146cb68c7a9f4fc295a0c4f3",
+            "input": {},
+            "invocation_key": "finalize:d2913fba504ac8a1b1c8a0fbd22048686924e4fb146cb68c7a9f4fc295a0c4f3:0",
+            "join_epoch": 0,
+            "next_attempt_at": null,
+            "node_id": "finalize",
+            "retry_attempt": 1,
+            "task_id": "3b36006619c56090ea24575279163b871ab1023396febdd5a65b50985f71006c",
+            "task_path": [
+              "normalize",
+              "plan",
+              "expand",
+              "search",
+              "direct",
+              "fetch",
+              "score",
+              "gap",
+              "rerank",
+              "synth",
+              "cite",
+              "persist",
+              "finalize"
+            ]
+          }
+        ],
+        "interrupt": null,
+        "join_firings": [],
+        "metadata": {
+          "engine_kind": "deskpet-native"
+        },
+        "node_writes": {},
+        "parent_checkpoint_id": "cd8f31c9d59f48fdda02f3184c34e2d509d227d501cc327d5a5e8971f28fb5d1",
+        "run_id": "fixture-deep-research-v1-run",
+        "snapshot_version": 1,
+        "state": {
+          "active_nodes": [],
+          "active_step_id": null,
+          "artifact_refs": [],
+          "blob_refs": [],
+          "budgets": {
+            "gap_iterations": 1
+          },
+          "errors": [],
+          "loop_counters": {
+            "gap_iterations": 0
+          },
+          "receipt_refs": [],
+          "run_id": "fixture-deep-research-v1-run",
+          "schema_version": 1,
+          "session_id": "fixture-session",
+          "status": "pending",
+          "thread_id": "fixture-deep-research-v1-thread",
+          "values": {
+            "blob_root": "",
+            "mode": "standard",
+            "report_payload": {
+              "report": {
+                "citations": [
+                  {
+                    "authority": 3.0,
+                    "fetched_at": 123.0,
+                    "n": 1,
+                    "snippet": "Stable v1 contract e",
+                    "title": "V1 Contract",
+                    "url": "https://example.com/v1-contract"
+                  }
+                ],
+                "coverage": {
+                  "cite_check_ok": true,
+                  "cite_missing": [],
+                  "cite_unused": [],
+                  "elapsed_ms_per_stage": {
+                    "direct": 0,
+                    "fetch": 7,
+                    "plan": 7,
+                    "score": 7,
+                    "search": 7,
+                    "synth": 7
+                  },
+                  "mode": "standard",
+                  "n_domains": 1,
+                  "n_dropped_by_reason": {
+                    "ai_generated": 0,
+                    "direct_source_empty": 0,
+                    "low_quality": 0,
+                    "mojibake": 0,
+                    "too_short": 0
+                  },
+                  "n_sources": 1,
+                  "n_sub_questions": 1,
+                  "reranker": "off",
+                  "rounds": 1,
+                  "route": {
+                    "agent_reach": {
+                      "degraded": [],
+                      "doctor": {
+                        "web": {
+                          "active_backend": "fixture-reader",
+                          "backends": [
+                            "fixture-reader"
+                          ],
+                          "message": "Deterministic v1 fixture backend.",
+                          "name": "Fixture web",
+                          "status": "ok",
+                          "tier": 0
+                        }
+                      },
+                      "hits": [],
+                      "planned_channels": [],
+                      "planned_urls": []
+                    },
+                    "direct_sources_hit": [],
+                    "engines_hit": [],
+                    "fallback": "ddg",
+                    "source_pack_queries": 0,
+                    "source_packs_enabled": false,
+                    "source_packs_hit": []
+                  },
+                  "topic_velocity": "medium"
+                },
+                "errors": [],
+                "report_md": "# Stable v1 research\n\n## TL;DR\n\nThe fixture preserves supported evidence [^1].\n\n---\n\n## \u5f15\u7528\n\n[^1]: [V1 Contract](https://example.com/v1-contract)\n",
+                "sub_questions": [
+                  "What evidence makes the v1 contract stable?"
+                ],
+                "summary": "The fixture preserves supported evidence [^1].",
+                "topic": "Stable v1 contract"
+              },
+              "schema_version": 1,
+              "status": "completed"
+            },
+            "research_config": {
+              "direct_sources": false,
+              "direct_timeout": 45.0,
+              "max_rounds": 1,
+              "max_sub_questions": 3,
+              "max_total_passages": 4,
+              "max_urls_per_query": 2,
+              "min_passage_chars": 20,
+              "query_expansion": false,
+              "rerank_mode": "off",
+              "site_directed": false,
+              "source_packs": false
+            },
+            "research_state": {
+              "candidate_urls": [
+                "https://example.com/v1-contract"
+              ],
+              "citations": [
+                {
+                  "authority": 3.0,
+                  "fetched_at": 123.0,
+                  "n": 1,
+                  "snippet": "Stable v1 contract e",
+                  "title": "V1 Contract",
+                  "url": "https://example.com/v1-contract"
+                }
+              ],
+              "cite_result": {
+                "missing": [],
+                "ok": true,
+                "total_refs": 1,
+                "unused": []
+              },
+              "dropped_by_reason": {
+                "ai_generated": 0,
+                "direct_source_empty": 0,
+                "low_quality": 0,
+                "mojibake": 0,
+                "too_short": 0
+              },
+              "elapsed_ms_per_stage": {
+                "direct": 0,
+                "fetch": 7,
+                "plan": 7,
+                "score": 7,
+                "search": 7,
+                "synth": 7
+              },
+              "errors": [],
+              "expansion_queries": [],
+              "extracted": [],
+              "llm_topic": "Stable v1 contract",
+              "mode": "standard",
+              "passages": [
+                {
+                  "citation": {
+                    "authority": 3.0,
+                    "fetched_at": 123.0,
+                    "n": 1,
+                    "snippet": "Stable v1 contract e",
+                    "title": "V1 Contract",
+                    "url": "https://example.com/v1-contract"
+                  },
+                  "dims": {
+                    "authority": 3.0,
+                    "depth": 0.635,
+                    "recency": 3.0,
+                    "relevance": 7.5
+                  },
+                  "score": 3.877,
+                  "text": "Stable v1 contract evidence provides deterministic primary source support. This v1 contract is stable, cited, and reproducible."
+                }
+              ],
+              "report_md": "# Stable v1 research\n\n## TL;DR\n\nThe fixture preserves supported evidence [^1].\n\n---\n\n## \u5f15\u7528\n\n[^1]: [V1 Contract](https://example.com/v1-contract)\n",
+              "request_topic": "Stable v1 contract",
+              "reranker": "off",
+              "rounds": 1,
+              "route": {
+                "agent_reach": {
+                  "degraded": [],
+                  "doctor": {
+                    "web": {
+                      "active_backend": "fixture-reader",
+                      "backends": [
+                        "fixture-reader"
+                      ],
+                      "message": "Deterministic v1 fixture backend.",
+                      "name": "Fixture web",
+                      "status": "ok",
+                      "tier": 0
+                    }
+                  },
+                  "hits": [],
+                  "planned_channels": [],
+                  "planned_urls": []
+                },
+                "direct_sources_hit": [],
+                "engines_hit": [],
+                "fallback": "ddg",
+                "source_pack_queries": 0,
+                "source_packs_enabled": false,
+                "source_packs_hit": []
+              },
+              "search_specs": [
+                [
+                  "What evidence makes the v1 contract stable?",
+                  "What evidence makes the v1 contract stable?"
+                ]
+              ],
+              "sub_questions": [
+                "What evidence makes the v1 contract stable?"
+              ],
+              "url_to_question": {
+                "https://example.com/v1-contract": "What evidence makes the v1 contract stable?"
+              },
+              "velocity": "medium"
+            },
+            "topic": "Stable v1 contract"
+          },
+          "workflow_name": "deep_research",
+          "workflow_version": "v1"
+        },
+        "state_schema_version": 1,
+        "step": 12,
+        "thread_id": "fixture-deep-research-v1-thread"
+      },
+      "stage": "persist"
+    },
+    {
+      "snapshot": {
+        "checkpoint_id": "c03cbaa05156765e1f528945e4f4a3da8faac985f3013bc78ea9d57b1acaf1ba",
+        "checkpoint_ns": "v1-compat-fixture",
+        "checkpoint_type": "deskpet-native-json-v1",
+        "completed_activations": {},
+        "engine_kind": "deskpet-native",
+        "frontier": [],
+        "interrupt": null,
+        "join_firings": [],
+        "metadata": {
+          "engine_kind": "deskpet-native"
+        },
+        "node_writes": {},
+        "parent_checkpoint_id": "43c7db19f4eca7b8a4de7f85ef3308263ed1b4151059d576942a0cc67e1aeed7",
+        "run_id": "fixture-deep-research-v1-run",
+        "snapshot_version": 1,
+        "state": {
+          "active_nodes": [],
+          "active_step_id": null,
+          "artifact_refs": [],
+          "blob_refs": [],
+          "budgets": {
+            "gap_iterations": 1
+          },
+          "errors": [],
+          "loop_counters": {
+            "gap_iterations": 0
+          },
+          "receipt_refs": [],
+          "run_id": "fixture-deep-research-v1-run",
+          "schema_version": 1,
+          "session_id": "fixture-session",
+          "status": "pending",
+          "thread_id": "fixture-deep-research-v1-thread",
+          "values": {
+            "delivery_intents": [
+              {
+                "channel": "workflow_report",
+                "intent_id": "fixture-deep-research-v1-run:report",
+                "kind": "report",
+                "payload": {
+                  "report": {
+                    "report": {
+                      "citations": [
+                        {
+                          "authority": 3.0,
+                          "fetched_at": 123.0,
+                          "n": 1,
+                          "snippet": "Stable v1 contract e",
+                          "title": "V1 Contract",
+                          "url": "https://example.com/v1-contract"
+                        }
+                      ],
+                      "coverage": {
+                        "cite_check_ok": true,
+                        "cite_missing": [],
+                        "cite_unused": [],
+                        "elapsed_ms_per_stage": {
+                          "direct": 0,
+                          "fetch": 7,
+                          "plan": 7,
+                          "score": 7,
+                          "search": 7,
+                          "synth": 7
+                        },
+                        "mode": "standard",
+                        "n_domains": 1,
+                        "n_dropped_by_reason": {
+                          "ai_generated": 0,
+                          "direct_source_empty": 0,
+                          "low_quality": 0,
+                          "mojibake": 0,
+                          "too_short": 0
+                        },
+                        "n_sources": 1,
+                        "n_sub_questions": 1,
+                        "reranker": "off",
+                        "rounds": 1,
+                        "route": {
+                          "agent_reach": {
+                            "degraded": [],
+                            "doctor": {
+                              "web": {
+                                "active_backend": "fixture-reader",
+                                "backends": [
+                                  "fixture-reader"
+                                ],
+                                "message": "Deterministic v1 fixture backend.",
+                                "name": "Fixture web",
+                                "status": "ok",
+                                "tier": 0
+                              }
+                            },
+                            "hits": [],
+                            "planned_channels": [],
+                            "planned_urls": []
+                          },
+                          "direct_sources_hit": [],
+                          "engines_hit": [],
+                          "fallback": "ddg",
+                          "source_pack_queries": 0,
+                          "source_packs_enabled": false,
+                          "source_packs_hit": []
+                        },
+                        "topic_velocity": "medium"
+                      },
+                      "errors": [],
+                      "report_md": "# Stable v1 research\n\n## TL;DR\n\nThe fixture preserves supported evidence [^1].\n\n---\n\n## \u5f15\u7528\n\n[^1]: [V1 Contract](https://example.com/v1-contract)\n",
+                      "sub_questions": [
+                        "What evidence makes the v1 contract stable?"
+                      ],
+                      "summary": "The fixture preserves supported evidence [^1].",
+                      "topic": "Stable v1 contract"
+                    },
+                    "schema_version": 1,
+                    "status": "completed"
+                  }
+                }
+              },
+              {
+                "channel": "artifact",
+                "intent_id": "fixture-deep-research-v1-run:artifact",
+                "kind": "artifact_card",
+                "payload": {
+                  "artifact_type": "research_report",
+                  "preview": "The fixture preserves supported evidence [^1].",
+                  "report": {
+                    "report": {
+                      "citations": [
+                        {
+                          "authority": 3.0,
+                          "fetched_at": 123.0,
+                          "n": 1,
+                          "snippet": "Stable v1 contract e",
+                          "title": "V1 Contract",
+                          "url": "https://example.com/v1-contract"
+                        }
+                      ],
+                      "coverage": {
+                        "cite_check_ok": true,
+                        "cite_missing": [],
+                        "cite_unused": [],
+                        "elapsed_ms_per_stage": {
+                          "direct": 0,
+                          "fetch": 7,
+                          "plan": 7,
+                          "score": 7,
+                          "search": 7,
+                          "synth": 7
+                        },
+                        "mode": "standard",
+                        "n_domains": 1,
+                        "n_dropped_by_reason": {
+                          "ai_generated": 0,
+                          "direct_source_empty": 0,
+                          "low_quality": 0,
+                          "mojibake": 0,
+                          "too_short": 0
+                        },
+                        "n_sources": 1,
+                        "n_sub_questions": 1,
+                        "reranker": "off",
+                        "rounds": 1,
+                        "route": {
+                          "agent_reach": {
+                            "degraded": [],
+                            "doctor": {
+                              "web": {
+                                "active_backend": "fixture-reader",
+                                "backends": [
+                                  "fixture-reader"
+                                ],
+                                "message": "Deterministic v1 fixture backend.",
+                                "name": "Fixture web",
+                                "status": "ok",
+                                "tier": 0
+                              }
+                            },
+                            "hits": [],
+                            "planned_channels": [],
+                            "planned_urls": []
+                          },
+                          "direct_sources_hit": [],
+                          "engines_hit": [],
+                          "fallback": "ddg",
+                          "source_pack_queries": 0,
+                          "source_packs_enabled": false,
+                          "source_packs_hit": []
+                        },
+                        "topic_velocity": "medium"
+                      },
+                      "errors": [],
+                      "report_md": "# Stable v1 research\n\n## TL;DR\n\nThe fixture preserves supported evidence [^1].\n\n---\n\n## \u5f15\u7528\n\n[^1]: [V1 Contract](https://example.com/v1-contract)\n",
+                      "sub_questions": [
+                        "What evidence makes the v1 contract stable?"
+                      ],
+                      "summary": "The fixture preserves supported evidence [^1].",
+                      "topic": "Stable v1 contract"
+                    },
+                    "schema_version": 1,
+                    "status": "completed"
+                  }
+                }
+              },
+              {
+                "channel": "final_assistant",
+                "intent_id": "fixture-deep-research-v1-run:final",
+                "kind": "final_assistant",
+                "payload": {
+                  "report": {
+                    "report": {
+                      "citations": [
+                        {
+                          "authority": 3.0,
+                          "fetched_at": 123.0,
+                          "n": 1,
+                          "snippet": "Stable v1 contract e",
+                          "title": "V1 Contract",
+                          "url": "https://example.com/v1-contract"
+                        }
+                      ],
+                      "coverage": {
+                        "cite_check_ok": true,
+                        "cite_missing": [],
+                        "cite_unused": [],
+                        "elapsed_ms_per_stage": {
+                          "direct": 0,
+                          "fetch": 7,
+                          "plan": 7,
+                          "score": 7,
+                          "search": 7,
+                          "synth": 7
+                        },
+                        "mode": "standard",
+                        "n_domains": 1,
+                        "n_dropped_by_reason": {
+                          "ai_generated": 0,
+                          "direct_source_empty": 0,
+                          "low_quality": 0,
+                          "mojibake": 0,
+                          "too_short": 0
+                        },
+                        "n_sources": 1,
+                        "n_sub_questions": 1,
+                        "reranker": "off",
+                        "rounds": 1,
+                        "route": {
+                          "agent_reach": {
+                            "degraded": [],
+                            "doctor": {
+                              "web": {
+                                "active_backend": "fixture-reader",
+                                "backends": [
+                                  "fixture-reader"
+                                ],
+                                "message": "Deterministic v1 fixture backend.",
+                                "name": "Fixture web",
+                                "status": "ok",
+                                "tier": 0
+                              }
+                            },
+                            "hits": [],
+                            "planned_channels": [],
+                            "planned_urls": []
+                          },
+                          "direct_sources_hit": [],
+                          "engines_hit": [],
+                          "fallback": "ddg",
+                          "source_pack_queries": 0,
+                          "source_packs_enabled": false,
+                          "source_packs_hit": []
+                        },
+                        "topic_velocity": "medium"
+                      },
+                      "errors": [],
+                      "report_md": "# Stable v1 research\n\n## TL;DR\n\nThe fixture preserves supported evidence [^1].\n\n---\n\n## \u5f15\u7528\n\n[^1]: [V1 Contract](https://example.com/v1-contract)\n",
+                      "sub_questions": [
+                        "What evidence makes the v1 contract stable?"
+                      ],
+                      "summary": "The fixture preserves supported evidence [^1].",
+                      "topic": "Stable v1 contract"
+                    },
+                    "schema_version": 1,
+                    "status": "completed"
+                  },
+                  "summary": "The fixture preserves supported evidence [^1].",
+                  "text": "# Stable v1 research\n\n## TL;DR\n\nThe fixture preserves supported evidence [^1].\n\n---\n\n## \u5f15\u7528\n\n[^1]: [V1 Contract](https://example.com/v1-contract)\n"
+                }
+              }
+            ]
+          },
+          "workflow_name": "deep_research",
+          "workflow_version": "v1"
+        },
+        "state_schema_version": 1,
+        "step": 13,
+        "thread_id": "fixture-deep-research-v1-thread"
+      },
+      "stage": "finalize"
+    }
+  ],
+  "compatible_manifest_hashes": [
+    "975e4b2fd739638f243df014206152ade09c820810f86228e27bb8a9c50f9138",
+    "0f9fa622ab016398bcc6e4cfc7b9509d0d923502de4ecbc2a2f7258cac91d9ff"
+  ],
+  "fixture_schema_version": 1,
+  "workflow": {
+    "name": "deep_research",
+    "version": "v1"
+  }
+}
