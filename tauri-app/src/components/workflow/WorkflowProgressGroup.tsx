@@ -143,6 +143,7 @@ export function WorkflowProgressGroup({
       aria-label={`${name}总体进度`}
       style={{
         alignSelf: "stretch",
+        flexShrink: 0,
         height: stages.length === 0 ? 104 : undefined,
         minHeight: 104,
         maxHeight: stages.length === 0 ? 104 : undefined,
@@ -206,7 +207,11 @@ export function WorkflowProgressGroup({
       </div>
 
       {orderedStages.length > 0 ? (
-        <div id={detailsId} hidden={!expanded} style={stageListStyle}>
+        <div
+          id={detailsId}
+          hidden={!expanded}
+          style={{ ...stageListStyle, display: expanded ? "grid" : "none" }}
+        >
           {orderedStages.map((stage) => (
             <article
               key={stage.workflow_event_id || stage.id}

@@ -69,9 +69,12 @@ describe("WorkflowProgressGroup", () => {
     expect(screen.getByText("4/13 · 已用时 1 分 2 秒")).toBeTruthy();
     expect(screen.getByText("⚠ 1")).toBeTruthy();
     const toggle = screen.getByRole("button", { name: "查看阶段 (2)" });
+    expect(screen.getByTestId("workflow-progress-run-group").style.flexShrink).toBe("0");
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     const detailsId = toggle.getAttribute("aria-controls")!;
-    expect(document.getElementById(detailsId)?.hidden).toBe(true);
+    const details = document.getElementById(detailsId);
+    expect(details?.hidden).toBe(true);
+    expect(details?.style.display).toBe("none");
   });
 
   it("expands with pointer and keyboard and renders only allowlisted metrics", () => {
@@ -92,12 +95,17 @@ describe("WorkflowProgressGroup", () => {
     const toggle = screen.getByRole("button", { name: "查看阶段 (1)" });
     fireEvent.keyDown(toggle, { key: " " });
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    const details = document.getElementById(toggle.getAttribute("aria-controls")!);
+    expect(details?.hidden).toBe(false);
+    expect(details?.style.display).toBe("grid");
     expect(screen.getByText("来源: 3")).toBeTruthy();
     expect(screen.getByText("候选: 18")).toBeTruthy();
     expect(screen.queryByText(/do-not-render/)).toBeNull();
     expect(screen.getByText("下一步：direct")).toBeTruthy();
     fireEvent.keyDown(toggle, { key: "Enter" });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(details?.hidden).toBe(true);
+    expect(details?.style.display).toBe("none");
   });
 
   it("counts repeated gap instances once and caps overall completion at 13", () => {

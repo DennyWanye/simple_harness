@@ -3323,6 +3323,16 @@ async def lifespan(app: FastAPI):
                 seen.add(marker)
                 await asyncio.wait_for(target_ws.send_json(envelope), timeout=1.0)
 
+        async def _workflow_artifact_publisher(payload):
+            envelope = {"type": "tool_result", "payload": dict(payload)}
+            seen: set[int] = set()
+            for target_ws in list(_control_connections.values()):
+                marker = id(target_ws)
+                if marker in seen:
+                    continue
+                seen.add(marker)
+                await asyncio.wait_for(target_ws.send_json(envelope), timeout=1.0)
+
         product_handlers = {}
         if _sdb is not None:
             from deskpet.workflows.adapters.product_delivery import ProductDeliveryAdapter
@@ -3334,6 +3344,7 @@ async def lifespan(app: FastAPI):
                 workflow_store=WorkflowRunStore(
                     _paths.user_data_dir() / "data" / "workflow.db"
                 ),
+                artifact_publisher=_workflow_artifact_publisher,
             )
             product_handlers = product_delivery.handlers()
 

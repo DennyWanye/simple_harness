@@ -35,6 +35,7 @@ from ..store.run_store import WorkflowRunStore
 DeliveryHandler = Callable[
     [Mapping[str, Any], Mapping[str, Any]], Awaitable[dict[str, Any]]
 ]
+ArtifactPublisher = Callable[[dict[str, Any]], Awaitable[None]]
 
 _ARTIFACT_CHANNELS = frozenset({"artifact", "artifact_message"})
 _RECEIPT_CHANNELS = frozenset({"receipt", "receipt_jsonl"})
@@ -245,10 +246,12 @@ class ProductDeliveryAdapter:
         session_db: SessionDB,
         receipt_store: ReceiptStore,
         workflow_store: WorkflowRunStore | None = None,
+        artifact_publisher: ArtifactPublisher | None = None,
     ) -> None:
         self.session_db = session_db
         self.receipt_store = receipt_store
         self.workflow_store = workflow_store
+        self.artifact_publisher = artifact_publisher
 
     def handlers(self) -> dict[str, DeliveryHandler]:
         return {
@@ -319,6 +322,14 @@ class ProductDeliveryAdapter:
                 content=content,
                 tool_call_id="",
                 workflow_event_id=event_id,
+            )
+        if self.artifact_publisher is not None:
+            await self.artifact_publisher(
+                {
+                    **envelope,
+                    "message_id": message_id,
+                    "workflow_event_id": event_id,
+                }
             )
         return {
             "channel": str(delivery.get("channel")),

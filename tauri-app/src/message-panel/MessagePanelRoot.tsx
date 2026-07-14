@@ -54,6 +54,7 @@ import { useAudioChannel } from "../hooks/useAudioChannel";
 import { BACKEND_PORT } from "../backendPort";
 import { useAudioRecorder } from "../hooks/useAudioRecorder";
 import { useAudioPlayer } from "../hooks/useAudioPlayer";
+import { shouldHideToolTrace } from "./messageVisibility";
 
 const DEFAULT_SID = "default"; // the pet's companion main thread
 
@@ -379,7 +380,7 @@ export function MessagePanelRoot() {
         out.push({ role: "user", text: m.text ?? "", ts });
         return;
       }
-      if (hideTools && ((m.role as string) === "tool_call" || (m.role as string) === "tool_result")) {
+      if (shouldHideToolTrace(m, hideTools)) {
         return;
       }
       if ((m.role as string) === "tool_call") {

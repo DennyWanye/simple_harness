@@ -513,15 +513,29 @@ function dispatch(msg: any) {
     }
     case "tool_result": {
       const p = msg.payload || {};
+      const workflowEventId = typeof p.workflow_event_id === "string"
+        ? p.workflow_event_id
+        : "";
+      const messageId = workflowEventId
+        ? `workflow-artifact:${workflowEventId}`
+        : undefined;
+      if (
+        messageId &&
+        store.sessions[sid]?.messages.some((message) => message.id === messageId)
+      ) {
+        break;
+      }
       const resultRaw =
         Array.isArray(p.artifacts) && p.artifacts.length > 0
           ? JSON.stringify(p)
           : p.result;
       store.push_message(sid, {
+        id: messageId,
         role: "tool_result",
         tool_name: p.tool,
         tool_ok: p.ok,
         tool_result: resultRaw,
+        workflow_event_id: workflowEventId || undefined,
       });
       break;
     }

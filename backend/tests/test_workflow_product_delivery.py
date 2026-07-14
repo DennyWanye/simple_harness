@@ -105,6 +105,41 @@ async def test_artifact_handler_persists_toolartifact_once_by_event_id(
 
 
 @pytest.mark.asyncio
+async def test_artifact_handler_publishes_persisted_tool_result_live(
+    stores, tmp_path: Path
+) -> None:
+    session_db, receipt_store = stores
+    published: list[dict] = []
+
+    async def publish(payload: dict) -> None:
+        published.append(payload)
+
+    adapter = ProductDeliveryAdapter(
+        session_db=session_db,
+        receipt_store=receipt_store,
+        artifact_publisher=publish,
+    )
+    report = tmp_path / "report.md"
+    report.write_text("# Report\n", encoding="utf-8")
+
+    result = await adapter.deliver_artifact(
+        _event(
+            "artifact-live-1",
+            run_id="research-live",
+            kind="artifact_card",
+            payload={"tool": "artifact_create", "path": str(report)},
+        ),
+        _delivery("artifact-live-1", "artifact"),
+    )
+
+    assert len(published) == 1
+    assert published[0]["message_id"] == result["message_id"]
+    assert published[0]["workflow_event_id"] == "artifact-live-1"
+    assert published[0]["session_id"] == "session-1"
+    assert published[0]["artifacts"][0]["path"] == str(report)
+
+
+@pytest.mark.asyncio
 async def test_artifact_handler_discards_after_delivery_session_tombstone(stores, tmp_path: Path) -> None:
     session_db, receipt_store = stores
     workflow_store = WorkflowRunStore(tmp_path / "workflow.db")

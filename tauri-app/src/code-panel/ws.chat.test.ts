@@ -241,4 +241,31 @@ describe("ws.dispatch chat final dedupe", () => {
       text: "✨ PPT 做好啦，已自动打开：deck.pptx",
     });
   });
+
+  it("renders a live workflow artifact once even if delivery is retried", () => {
+    const event = {
+      type: "tool_result",
+      payload: {
+        session_id: "default",
+        workflow_event_id: "artifact-event-live",
+        tool: "artifact_create",
+        ok: true,
+        artifacts: [{ kind: "file", path: "report.md", title: "report.md" }],
+      },
+    };
+
+    __test_dispatch(event);
+    __test_dispatch(event);
+
+    const artifacts = useSessionsStore.getState().sessions.default.messages.filter(
+      (message) => message.id === "workflow-artifact:artifact-event-live",
+    );
+    expect(artifacts).toHaveLength(1);
+    expect(artifacts[0]).toMatchObject({
+      role: "tool_result",
+      tool_name: "artifact_create",
+      workflow_event_id: "artifact-event-live",
+      tool_result: expect.stringContaining("report.md"),
+    });
+  });
 });
