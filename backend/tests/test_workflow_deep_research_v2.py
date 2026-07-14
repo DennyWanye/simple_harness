@@ -221,7 +221,10 @@ async def test_blob_backed_evidence_is_scored_synthesized_and_cited(tmp_path):
     )
     fetched = result["branch_fetch"]["b0"]["result"][0]
     assert "blob_ref" in fetched and "text" not in fetched
-    assert result["branch_score"]["b0"]["result"][0]["score"] == 1.0
+    assert result["branch_score"]["b0"]["result"][0]["score"] > 0
+    assert set(result["branch_score"]["b0"]["result"][0]["score_dims"]) == {
+        "authority", "recency", "relevance", "depth",
+    }
     report = result["values"]["report_payload"]
     assert report["status"] == "completed"
     assert "Large verified evidence marker" in report["report_md"]
@@ -316,3 +319,36 @@ async def test_v2_persists_one_real_markdown_artifact_and_delivers_file_card(tmp
     )
     assert intent["payload"]["artifacts"] == [artifact]
     assert "report" not in intent["payload"]
+
+
+@pytest.mark.asyncio
+async def test_v2_expands_matching_source_packs_and_uses_strict_llm_synthesis(monkeypatch):
+    monkeypatch.setattr(
+        "deskpet.workflows.definitions.deep_research_v2_nodes.legacy_research._source_pack_queries_for",
+        lambda question: [("official_docs", f"{question} site:example.com")],
+    )
+    prompts: list[str] = []
+
+    async def llm(prompt: str) -> str:
+        prompts.append(prompt)
+        if "sub_questions" in prompt and "do not answer" in prompt:
+            return '{"sub_questions":["verified topic"]}'
+        if "Synthesize only the supplied evidence" in prompt:
+            return '{"findings":["Primary evidence confirms the documented result in 2026 [1]"],"inferences":[]}'
+        return "{}"
+
+    result = await DEEP_RESEARCH_V2.bind().ainvoke(
+        initial_state(
+            topic="verified topic",
+            run_id="run-quality",
+            research_config={"fanout_threshold": 2, "source_packs": True},
+        ),
+        _context(llm=llm),
+        thread_id="run-quality",
+        run_id="run-quality",
+    )
+    expanded = result["branch_expand"]["b0"]["result"]
+    assert any(value.get("source_pack") == "official_docs" for value in expanded)
+    assert "Primary evidence confirms" in result["values"]["draft_report"]
+    assert any("Synthesize only the supplied evidence" in value for value in prompts)
+    assert "## Degraded / Error Summary" in result["values"]["report_payload"]["report_md"]

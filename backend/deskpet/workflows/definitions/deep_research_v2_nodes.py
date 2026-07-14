@@ -6,10 +6,13 @@ import asyncio
 import copy
 import hashlib
 import json
+import re
 import time
 from typing import Any, Mapping
 from urllib.parse import urlparse
 
+from ...tools import research_scoring
+from ...tools import research_tools as legacy_research
 from ..contracts import JsonValue, StatePatch, WorkflowContext, WorkflowState
 from ..store import RegisteredBlobStore
 from .deep_research_v2_contracts import (
@@ -256,13 +259,37 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
     result: list[JsonValue] = []
     after = budget
     if stage == "expand":
-        maximum = min(len(item.questions) * 2, budget.query_remaining)
+        config = _config(_values(state))
+        maximum = budget.query_remaining
+        seen: set[str] = set()
+
+        def append(query: str, question: str, kind: str, **extra: JsonValue) -> None:
+            normalized = query.strip()
+            key = normalized.casefold()
+            if not normalized or key in seen or len(result) >= maximum:
+                return
+            seen.add(key)
+            result.append(
+                {"query": normalized, "question": question, "kind": kind, **extra}
+            )
+
         for question in item.questions:
-            result.extend((
-                {"query": question, "question": question, "kind": "question"},
-                {"query": f"{question} official", "question": question, "kind": "official"},
-            ))
-        result = result[:maximum]
+            append(question, question, "question")
+            append(f"{question} official", question, "official")
+            if bool(config.get("source_packs", True)):
+                pack_limit = max(
+                    0,
+                    min(6, int(config.get("source_pack_max_queries_per_question", 3))),
+                )
+                for pack_name, source_query in legacy_research._source_pack_queries_for(
+                    question
+                )[:pack_limit]:
+                    append(
+                        source_query,
+                        question,
+                        "source_pack",
+                        source_pack=pack_name,
+                    )
         after = budget.consume(query_remaining=len(result))
     elif stage == "search":
         specs = list(previous.get("result", [])) if isinstance(previous, Mapping) else []
@@ -343,6 +370,13 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
         return StatePatch(payload)
     elif stage == "score":
         documents = list(previous.get("result", [])) if isinstance(previous, Mapping) else []
+        questions = " ".join(item.questions)
+        keywords = {
+            value.casefold()
+            for value in questions.replace("/", " ").replace("-", " ").split()
+            if len(value) > 1
+        }
+        velocity = research_scoring.infer_topic_velocity(questions)
         for document in documents:
             if not isinstance(document, Mapping):
                 continue
@@ -350,8 +384,43 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
             if not text:
                 errors.append(_event(branch_id, stage, "blob_unavailable"))
                 continue
-            score = min(1.0, max(0.0, len(text) / 2000))
-            result.append({**copy.deepcopy(dict(document)), "score": score})
+            if research_scoring.is_low_quality(str(document.get("url") or "")):
+                errors.append(_event(branch_id, stage, "low_quality_source"))
+                continue
+            if research_scoring.is_ai_generated(text) or research_scoring.is_mojibake(text):
+                errors.append(_event(branch_id, stage, "low_quality_content"))
+                continue
+            authority = research_scoring.score_authority(str(document.get("url") or ""))
+            recency = research_scoring.score_recency(
+                str(document.get("published_at") or document.get("date") or ""),
+                topic_velocity=velocity,
+            )
+            lowered = text.casefold()
+            relevance = (
+                min(10.0, 10.0 * sum(value in lowered for value in keywords) / len(keywords))
+                if keywords
+                else 3.0
+            )
+            depth = min(10.0, len(text) / 200.0)
+            composite = research_scoring.composite_score(
+                authority=authority,
+                recency=recency,
+                relevance=relevance,
+                depth=depth,
+                topic_velocity=velocity,
+            )
+            result.append(
+                {
+                    **copy.deepcopy(dict(document)),
+                    "score": round(composite / 10.0, 6),
+                    "score_dims": {
+                        "authority": authority,
+                        "recency": recency,
+                        "relevance": relevance,
+                        "depth": depth,
+                    },
+                }
+            )
         result.sort(key=lambda value: (-float(value.get("score", 0)), str(value.get("canonical_url", "")), str(value.get("content_hash", ""))))
     payload = {f"branch_{stage}": {branch_id: branch_patch(work_item=item, stage=stage, result=result, errors=errors, budget_before=budget, budget_after=after)}}
     if errors:
@@ -486,14 +555,65 @@ async def rerank_handler(state: WorkflowState, context: WorkflowContext) -> Stat
 
 
 async def synth_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
-    evidence = [dict(value) for value in _values(state).get("ranked_evidence", []) if isinstance(value, Mapping)]
-    findings = []
+    values = _values(state)
+    evidence = [dict(value) for value in values.get("ranked_evidence", []) if isinstance(value, Mapping)]
+    findings: list[str] = []
     citation_evidence: list[dict[str, JsonValue]] = []
+    prompt_evidence: list[dict[str, JsonValue]] = []
     for item in evidence[:12]:
         text = (await _resolved_document_text(item, context)).strip().replace("\n", " ")
         if text:
             citation_evidence.append(item)
             findings.append(f"{text[:240]} [{len(citation_evidence)}]")
+            prompt_evidence.append(
+                {
+                    "citation_id": len(citation_evidence),
+                    "title": str(item.get("title") or "")[:200],
+                    "text": text[:1200],
+                }
+            )
+    llm = context.ports.get("llm")
+    config = _config(values)
+    if prompt_evidence and isinstance(llm, ResearchLLMPort):
+        try:
+            raw = await asyncio.wait_for(
+                llm.complete(
+                    "Synthesize only the supplied evidence. Return strict JSON with exactly "
+                    '{"findings":["claim [1]"],"inferences":["clearly labeled inference [1]"]}. '
+                    "Every sentence must cite one or more valid citation ids in square brackets; "
+                    "do not introduce facts, URLs, or citation ids absent from the evidence.\n"
+                    + json.dumps(
+                        {
+                            "topic": str(values.get("topic") or ""),
+                            "evidence": prompt_evidence,
+                        },
+                        ensure_ascii=False,
+                    )
+                ),
+                timeout=max(
+                    0.1,
+                    min(120.0, float(config.get("synth_timeout_seconds", 60.0))),
+                ),
+            )
+            parsed = json.loads(raw)
+            if not isinstance(parsed, Mapping) or set(parsed) != {"findings", "inferences"}:
+                raise ValueError("invalid_synthesis_schema")
+            candidate_findings = [
+                str(value).strip()
+                for key in ("findings", "inferences")
+                for value in (parsed.get(key) if isinstance(parsed.get(key), list) else [])
+                if str(value).strip()
+            ]
+            valid_ids = set(range(1, len(citation_evidence) + 1))
+            if not candidate_findings or any(
+                not ({int(value) for value in re.findall(r"\[(\d+)\]", finding)} <= valid_ids)
+                or not re.search(r"\[\d+\]", finding)
+                for finding in candidate_findings
+            ):
+                raise ValueError("invalid_synthesis_citations")
+            findings = candidate_findings
+        except Exception:
+            pass
     draft = "\n\n".join(findings)
     return _public_patch(state, "synth", {"sections": int(bool(draft)), "claim_count": len(findings)}, updates={"draft_report": draft, "citation_evidence": citation_evidence})
 

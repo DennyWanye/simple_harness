@@ -30,10 +30,18 @@ def render_report(
             f"[{index}] {item.get('title') or item.get('url')} — {item.get('url')}"
             for index, item in enumerate(citations, 1)
         )
+        error_summary = (
+            "\n".join(
+                f"- {item.get('stage', 'unknown')}: {item.get('error_code', 'degraded')}"
+                for item in errors
+            )
+            or "- 无"
+        )
         markdown = (
             f"# {topic}\n\n## 直接回答\n\n{findings}\n\n## 来源支撑发现\n\n{findings}"
             f"\n\n## 分析与推断\n\n{analysis}\n\n## 局限与反证条件\n\n{limits}"
             f"\n\n## 引用 Appendix\n\n{appendix}\n\n## Coverage\n\n```json\n{canonical_json(dict(coverage))}\n```"
+            f"\n\n## Degraded / Error Summary\n\n{error_summary}"
         )
         status = "completed"
     payload: dict[str, JsonValue] = {
