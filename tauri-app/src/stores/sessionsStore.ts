@@ -30,6 +30,7 @@ export type MessageRole =
   | "skill_candidate"   // FP-5 WI-4.3c: 技能自创确认卡（后端 propose → 用户确认）
   | "ppt_outline"       // PPT Pro WI-4: 大纲确认卡（后端 propose → 用户确认/修改/复用）
   | "workflow_progress"
+  | "workflow_stage"
   | "slash_result"      // FEAT-A2: /slash 命令结果（help/goal/prefs/skill/error）
   | "error";
 
@@ -93,14 +94,25 @@ export interface Message {
   // AC-23: one in-stream projection per durable workflow run.
   workflow_run_id?: string;
   workflow_name?: string;
+  workflow_version?: string;
   workflow_status?: WorkflowProgressStatus;
   workflow_stage?: string;
+  workflow_stage_id?: string;
+  workflow_stage_instance_id?: string;
+  workflow_transition?: string;
   workflow_ordinal?: number;
   workflow_display_ordinal?: number;
   workflow_total?: number;
+  workflow_completed_count?: number;
   workflow_seq?: number;
   workflow_terminal?: boolean;
   workflow_event_id?: string;
+  workflow_metrics?: Record<string, string | number | boolean>;
+  workflow_duration_ms?: number;
+  workflow_elapsed_ms?: number;
+  workflow_degraded?: boolean;
+  workflow_warning_count?: number;
+  workflow_next_stage?: string;
   workflow_error?: string;
   workflow_recovery_action?: string;
   // Bookkeeping
@@ -295,6 +307,22 @@ const WORKFLOW_CARD_EVENTS = new Set([
   "workflow.final",
 ]);
 
+const DEEP_RESEARCH_STAGE_METRICS: Record<string, readonly string[]> = {
+  normalize: ["mode"],
+  plan: ["question_count", "active_branch_count"],
+  expand: ["query_count"],
+  search: ["providers", "candidates", "kept"],
+  direct: ["direct_sources", "candidates"],
+  fetch: ["attempted", "succeeded", "dropped"],
+  score: ["passages", "kept"],
+  gap: ["iteration", "followup_count", "new_evidence"],
+  rerank: ["passages", "domains"],
+  synth: ["sections", "claim_count"],
+  cite: ["citations", "supported", "unsupported", "support_rate"],
+  persist: ["artifact_count", "report_bytes"],
+  finalize: ["citations", "status"],
+};
+
 function workflowEventTime(event: WorkflowEventEnvelope): number {
   const created = Number(event.created_at);
   return Number.isFinite(created) && created > 0 ? created * 1000 : Date.now();
@@ -310,6 +338,88 @@ function workflowErrorText(value: unknown): string | undefined {
     }
   }
   return undefined;
+}
+
+function workflowNumber(value: unknown): number | undefined {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
+function sanitizeWorkflowMetrics(
+  stageId: string,
+  value: unknown,
+): Record<string, string | number | boolean> | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const allowed = DEEP_RESEARCH_STAGE_METRICS[stageId] ?? [];
+  const source = value as Record<string, unknown>;
+  const metrics: Record<string, string | number | boolean> = {};
+  for (const key of allowed) {
+    const item = source[key];
+    if (typeof item === "string" || typeof item === "boolean") {
+      metrics[key] = item;
+    } else if (typeof item === "number" && Number.isFinite(item)) {
+      metrics[key] = item;
+    }
+  }
+  return Object.keys(metrics).length > 0 ? metrics : undefined;
+}
+
+function isDeepResearchV2CompletedStage(payload: Record<string, unknown>): boolean {
+  return Number(payload.schema_version) === 2 &&
+    String(payload.kind || "") === "stage" &&
+    String(payload.workflow_name || "") === "deep_research" &&
+    String(payload.workflow_version || "") === "v2" &&
+    String(payload.status || payload.transition || "") === "completed";
+}
+
+function appendWorkflowStage(
+  messages: Message[],
+  event: WorkflowEventEnvelope,
+  payload: Record<string, unknown>,
+  runId: string,
+  seq: number,
+): Message[] {
+  if (!isDeepResearchV2CompletedStage(payload)) return messages;
+  const eventId = String(event.event_id || "").trim();
+  if (!eventId) return messages;
+  const duplicate = messages.some((message) =>
+    message.role === "workflow_stage" &&
+    message.workflow_run_id === runId &&
+    (message.workflow_event_id === eventId || message.workflow_seq === seq),
+  );
+  if (duplicate) return messages;
+
+  const stageId = String(payload.stage_id || "").trim();
+  const summary = String(payload.summary || payload.text || "").trim();
+  const child: Message = {
+    id: `workflow-stage:${eventId}`,
+    role: "workflow_stage",
+    text: summary,
+    ts: workflowEventTime(event),
+    workflow_run_id: runId,
+    workflow_name: String(payload.workflow_label || "深度调研"),
+    workflow_version: "v2",
+    workflow_status: "completed",
+    workflow_stage: String(payload.stage || stageId || "已完成阶段"),
+    workflow_stage_id: stageId,
+    workflow_stage_instance_id: String(payload.stage_instance_id || ""),
+    workflow_transition: "completed",
+    workflow_ordinal: workflowNumber(payload.ordinal),
+    workflow_total: workflowNumber(payload.total) ?? 13,
+    workflow_completed_count: workflowNumber(payload.completed_count),
+    workflow_seq: seq,
+    workflow_event_id: eventId,
+    workflow_metrics: sanitizeWorkflowMetrics(stageId, payload.metrics),
+    workflow_duration_ms: workflowNumber(payload.duration_ms),
+    workflow_degraded: Boolean(payload.degraded),
+    workflow_next_stage: typeof payload.next_stage === "string"
+      ? payload.next_stage
+      : undefined,
+  };
+  const insertAt = messages.findIndex((message) => message.ts > child.ts);
+  const updated = [...messages];
+  updated.splice(insertAt < 0 ? updated.length : insertAt, 0, child);
+  return updated;
 }
 
 export function applyWorkflowEvent(
@@ -360,16 +470,17 @@ export function applyWorkflowEvent(
 
   const payload = event.payload || {};
   const cardId = `workflow-run:${runId}`;
-  const index = messages.findIndex(
+  const messagesWithStage = appendWorkflowStage(messages, event, payload, runId, seq);
+  const index = messagesWithStage.findIndex(
     (message) =>
       message.role === "workflow_progress" && message.workflow_run_id === runId,
   );
-  const previous = index >= 0 ? messages[index] : undefined;
+  const previous = index >= 0 ? messagesWithStage[index] : undefined;
   if (
     previous?.workflow_terminal ||
     (typeof previous?.workflow_seq === "number" && seq <= previous.workflow_seq)
   ) {
-    return { messages, handled: true };
+    return { messages: messagesWithStage, handled: true };
   }
 
   const incomingOrdinal = Number(payload.ordinal);
@@ -410,9 +521,10 @@ export function applyWorkflowEvent(
     workflow_run_id: runId,
     workflow_name: String(
       eventType === "workflow.progress"
-        ? payload.workflow_name || previous?.workflow_name || "任务"
-        : previous?.workflow_name || payload.workflow_name || "任务",
+        ? payload.workflow_label || payload.workflow_name || previous?.workflow_name || "任务"
+        : previous?.workflow_name || payload.workflow_label || payload.workflow_name || "任务",
     ),
+    workflow_version: String(payload.workflow_version || previous?.workflow_version || ""),
     workflow_status: status,
     workflow_stage: String(payload.stage || previous?.workflow_stage || "准备中"),
     workflow_ordinal: ordinal,
@@ -423,9 +535,15 @@ export function applyWorkflowEvent(
       ordinal,
     ),
     workflow_total: total,
+    workflow_completed_count:
+      workflowNumber(payload.completed_count) ?? previous?.workflow_completed_count,
     workflow_seq: seq,
     workflow_terminal: terminal,
     workflow_event_id: String(event.event_id || ""),
+    workflow_elapsed_ms:
+      workflowNumber(payload.elapsed_ms) ?? previous?.workflow_elapsed_ms,
+    workflow_warning_count:
+      workflowNumber(payload.warning_count) ?? previous?.workflow_warning_count,
     workflow_error:
       eventType === "workflow.final"
         ? workflowErrorText(payload.error) ?? previous?.workflow_error
@@ -437,12 +555,12 @@ export function applyWorkflowEvent(
   };
 
   if (index >= 0) {
-    const updated = [...messages];
+    const updated = [...messagesWithStage];
     updated[index] = next;
     return { messages: updated, handled: true };
   }
-  const insertAt = messages.findIndex((message) => message.ts > next.ts);
-  const updated = [...messages];
+  const insertAt = messagesWithStage.findIndex((message) => message.ts > next.ts);
+  const updated = [...messagesWithStage];
   updated.splice(insertAt < 0 ? updated.length : insertAt, 0, next);
   return { messages: updated, handled: true };
 }

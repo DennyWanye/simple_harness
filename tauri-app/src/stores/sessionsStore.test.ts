@@ -34,6 +34,42 @@ function workflowEvent(
   };
 }
 
+function deepResearchStage(
+  seq: number,
+  stageId = "search",
+  runId = "research-run",
+  overrides: Record<string, unknown> = {},
+): WorkflowEventEnvelope {
+  return {
+    event_id: `${runId}-${stageId}-${seq}`,
+    run_id: runId,
+    seq,
+    event_type: "workflow.progress",
+    created_at: seq,
+    payload: {
+      schema_version: 2,
+      kind: "stage",
+      workflow_name: "deep_research",
+      workflow_version: "v2",
+      workflow_label: "深度调研",
+      stage_id: stageId,
+      stage_instance_id: `${stageId}-instance-${seq}`,
+      stage: "搜索资料",
+      ordinal: 4,
+      total: 13,
+      status: "completed",
+      summary: "已保留 11 条候选",
+      text: "已保留 11 条候选",
+      completed_count: 4,
+      metrics: { providers: 3, candidates: 18, kept: 11 },
+      duration_ms: 1240,
+      degraded: false,
+      next_stage: "direct",
+      ...overrides,
+    },
+  };
+}
+
 function mk(over: Partial<SessionState>): SessionState {
   return {
     base_session_id: "sid",
@@ -359,6 +395,133 @@ describe("workflow progress reducer (AC-23)", () => {
     expect(messages.some((message) => message.id === "live-tool")).toBe(true);
     expect(messages.some((message) => message.id === "old-user")).toBe(true);
     expect(messages.some((message) => message.id === "run-a-event-1")).toBe(false);
+  });
+
+  it("persists completed deep_research/v2 stages with only allowlisted metadata", () => {
+    const sid = "research-stage";
+    const store = useSessionsStore.getState();
+    store.ensure(sid);
+    const event = deepResearchStage(2, "search", "research-stage-run", {
+      metrics: {
+        providers: 3,
+        candidates: 18,
+        kept: 11,
+        prompt: "must-not-cross-the-boundary",
+        cookie: "secret",
+      },
+    });
+    store.reduce_workflow_event(sid, event);
+
+    const messages = useSessionsStore.getState().sessions[sid].messages;
+    expect(messages.filter((message) => message.role === "workflow_progress")).toHaveLength(1);
+    expect(messages.filter((message) => message.role === "workflow_stage")).toHaveLength(1);
+    expect(messages.find((message) => message.role === "workflow_stage")).toMatchObject({
+      id: `workflow-stage:${event.event_id}`,
+      workflow_run_id: "research-stage-run",
+      workflow_version: "v2",
+      workflow_stage_id: "search",
+      workflow_seq: 2,
+      workflow_metrics: { providers: 3, candidates: 18, kept: 11 },
+      workflow_duration_ms: 1240,
+      workflow_next_stage: "direct",
+    });
+    expect(JSON.stringify(messages)).not.toContain("must-not-cross-the-boundary");
+    expect(JSON.stringify(messages)).not.toContain("secret");
+  });
+
+  it("keeps a late stage child after terminal summary and dedupes by event id or seq", () => {
+    const sid = "research-terminal";
+    const runId = "research-terminal-run";
+    const store = useSessionsStore.getState();
+    store.ensure(sid);
+    store.reduce_workflow_event(sid, workflowEvent(
+      10,
+      "workflow.final",
+      { workflow_name: "深度调研", status: "completed" },
+      runId,
+    ));
+    const late = deepResearchStage(7, "gap", runId, {
+      stage: "补充证据",
+      metrics: { iteration: 1, followup_count: 2, new_evidence: 4 },
+    });
+    store.reduce_workflow_event(sid, late);
+    store.reduce_workflow_event(sid, { ...late, seq: 8 });
+    store.reduce_workflow_event(sid, {
+      ...late,
+      event_id: `${runId}-different-event-same-seq`,
+    });
+
+    const messages = useSessionsStore.getState().sessions[sid].messages;
+    expect(messages.filter((message) => message.role === "workflow_stage")).toHaveLength(1);
+    expect(messages.find((message) => message.role === "workflow_progress")).toMatchObject({
+      workflow_status: "completed",
+      workflow_terminal: true,
+      workflow_seq: 10,
+    });
+  });
+
+  it("preserves a stage that arrives before its lower-sequence summary event", () => {
+    const sid = "research-stage-first";
+    const runId = "research-stage-first-run";
+    const store = useSessionsStore.getState();
+    store.ensure(sid);
+    store.reduce_workflow_event(sid, deepResearchStage(2, "normalize", runId, {
+      stage: "理解问题",
+      completed_count: 1,
+      metrics: { mode: "deep" },
+    }));
+    store.reduce_workflow_event(sid, workflowEvent(
+      1,
+      "workflow.accepted",
+      { workflow_name: "深度调研" },
+      runId,
+    ));
+
+    const messages = useSessionsStore.getState().sessions[sid].messages;
+    expect(messages.filter((message) => message.role === "workflow_stage")).toHaveLength(1);
+    expect(messages.filter((message) => message.role === "workflow_progress")).toHaveLength(1);
+  });
+
+  it("keeps v1 workflow progress summary-only", () => {
+    const sid = "research-v1";
+    const store = useSessionsStore.getState();
+    store.ensure(sid);
+    store.reduce_workflow_event(sid, workflowEvent(2, "workflow.progress", {
+      schema_version: 1,
+      kind: "stage",
+      workflow_name: "deep_research",
+      workflow_version: "v1",
+      stage: "搜索资料",
+      status: "completed",
+    }, "research-v1-run"));
+    const messages = useSessionsStore.getState().sessions[sid].messages;
+    expect(messages.filter((message) => message.role === "workflow_progress")).toHaveLength(1);
+    expect(messages.some((message) => message.role === "workflow_stage")).toBe(false);
+  });
+
+  it("rehydrates durable stage children from history idempotently", () => {
+    const sid = "research-history";
+    const runId = "research-history-run";
+    const store = useSessionsStore.getState();
+    store.ensure(sid);
+    const child = deepResearchStage(2, "search", runId);
+    const final = workflowEvent(
+      3,
+      "workflow.final",
+      { workflow_name: "深度调研", status: "completed" },
+      runId,
+    );
+    store.merge_history_messages(sid, [], [child, final]);
+    store.merge_history_messages(sid, [], [child, final]);
+
+    const messages = useSessionsStore.getState().sessions[sid].messages;
+    expect(messages.filter((message) => message.role === "workflow_stage")).toHaveLength(1);
+    expect(messages.filter((message) => message.role === "workflow_progress")).toHaveLength(1);
+    expect(messages.find((message) => message.role === "workflow_progress")).toMatchObject({
+      workflow_status: "completed",
+      workflow_terminal: true,
+      workflow_seq: 3,
+    });
   });
 });
 

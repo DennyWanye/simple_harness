@@ -408,8 +408,8 @@ export function MessagePanelRoot() {
         out.push({ role: "ppt_outline", message: m, session_id: activeSid, ts });
         return;
       }
-      if (m.role === "workflow_progress") {
-        out.push({ role: "workflow_progress", message: m, ts });
+      if (m.role === "workflow_progress" || m.role === "workflow_stage") {
+        out.push({ role: m.role, message: m, ts });
         return;
       }
       const clean = forPet(m.text);

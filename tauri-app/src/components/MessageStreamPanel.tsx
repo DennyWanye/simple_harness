@@ -43,6 +43,7 @@ import { PPTOutlineCard } from "../code-panel/PPTOutlineCard";
 import { ArtifactCard, extractArtifactsFromResult } from "../code-panel/ArtifactCard";
 import { CopyMessageButton } from "./CopyMessageButton";
 import { MarkdownMessage } from "./MarkdownMessage";
+import { WorkflowProgressGroup } from "./workflow/WorkflowProgressGroup";
 
 export type StreamFilter = "all" | "chat" | "warn" | "err";
 
@@ -65,6 +66,11 @@ export type ChatStreamMessage =
     }
   | {
       role: "workflow_progress";
+      message: Message;
+      ts: number;
+    }
+  | {
+      role: "workflow_stage";
       message: Message;
       ts: number;
     };
@@ -108,6 +114,14 @@ type StreamRow =
       severity: "yellow" | "red";
       item: InboxItem;
       key: string;
+    }
+  | {
+      kind: "workflow_group";
+      ts: number;
+      runId: string;
+      summary?: Message;
+      stages: Message[];
+      key: string;
     };
 
 const PALETTE = {
@@ -140,12 +154,11 @@ export function MessageStreamPanel({
   // bottom"). Resilient to React batching; we read scrollTop just
   // after layout.
   const listRef = useRef<HTMLDivElement>(null);
+  const shouldStickToBottomRef = useRef(true);
   useEffect(() => {
     const el = listRef.current;
-    if (!el) return;
-    const nearBottom =
-      el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-    if (nearBottom) {
+    if (!el || !shouldStickToBottomRef.current) return;
+    if (shouldStickToBottomRef.current) {
       el.scrollTop = el.scrollHeight;
     }
   }, [rows.length]);
@@ -165,8 +178,10 @@ export function MessageStreamPanel({
       saved = null;
     }
     if (!saved || saved.atBottom) {
+      shouldStickToBottomRef.current = true;
       el.scrollTop = el.scrollHeight; // 榛樿/涓婃璐村簳 鈫?搴曢儴
     } else {
+      shouldStickToBottomRef.current = false;
       el.scrollTop = Math.max(0, Math.min(saved.top, el.scrollHeight));
     }
   }, []);
@@ -175,6 +190,7 @@ export function MessageStreamPanel({
     const el = listRef.current;
     if (!el) return;
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    shouldStickToBottomRef.current = atBottom;
     try {
       localStorage.setItem(
         MSGSTREAM_SCROLL_KEY,
@@ -202,7 +218,12 @@ export function MessageStreamPanel({
           鏃犲苟鍙戜换鍔℃椂璇ョ粍浠惰繑鍥?null锛屼笉鍗犱綅銆?*/}
       <SubagentProgressPanel variant="dark" />
 
-      <div ref={listRef} style={listStyle} onScroll={handleListScroll}>
+      <div
+        ref={listRef}
+        data-testid="msgstream-list"
+        style={listStyle}
+        onScroll={handleListScroll}
+      >
         {rows.length === 0 ? (
           <div style={emptyStyle}>
             {emptyMessage(filter)}
@@ -211,6 +232,13 @@ export function MessageStreamPanel({
           rows.map((r) =>
             r.kind === "chat" ? (
               <ChatRow key={r.key} msg={r.msg} />
+            ) : r.kind === "workflow_group" ? (
+              <WorkflowProgressGroup
+                key={r.key}
+                runId={r.runId}
+                summary={r.summary}
+                stages={r.stages}
+              />
             ) : (
               <AlertRow
                 key={r.key}
@@ -242,16 +270,78 @@ function buildRows(
 ): StreamRow[] {
   const rows: StreamRow[] = [];
   if (filter === "all" || filter === "chat") {
-    chats.forEach((m, i) =>
+    const groups = new Map<string, {
+      summary?: Message;
+      stages: Message[];
+      anchor: number;
+      ts: number;
+    }>();
+    chats.forEach((message, index) => {
+      if (message.role !== "workflow_progress" && message.role !== "workflow_stage") return;
+      const runId = String(message.message.workflow_run_id || "").trim();
+      if (!runId) return;
+      const group = groups.get(runId) ?? {
+        stages: [],
+        anchor: index,
+        ts: message.ts,
+      };
+      group.anchor = Math.min(group.anchor, index);
+      group.ts = Math.min(group.ts, message.ts);
+      if (message.role === "workflow_progress") {
+        if (!group.summary ||
+            (message.message.workflow_seq ?? -1) >= (group.summary.workflow_seq ?? -1)) {
+          group.summary = message.message;
+        }
+      } else {
+        const duplicate = group.stages.some((stage) =>
+          (stage.workflow_event_id &&
+            stage.workflow_event_id === message.message.workflow_event_id) ||
+          (stage.workflow_seq !== undefined &&
+            stage.workflow_seq === message.message.workflow_seq),
+        );
+        if (!duplicate) group.stages.push(message.message);
+      }
+      groups.set(runId, group);
+    });
+
+    const emitted = new Set<string>();
+    chats.forEach((message, index) => {
+      if (message.role === "workflow_progress" || message.role === "workflow_stage") {
+        const runId = String(message.message.workflow_run_id || "").trim();
+        const group = groups.get(runId);
+        if (group && !emitted.has(runId) && index === group.anchor) {
+          emitted.add(runId);
+          rows.push({
+            kind: "workflow_group",
+            ts: group.ts,
+            runId,
+            summary: group.summary,
+            stages: [...group.stages].sort((a, b) =>
+              (a.workflow_seq ?? Number.MAX_SAFE_INTEGER) -
+                (b.workflow_seq ?? Number.MAX_SAFE_INTEGER) ||
+              String(a.workflow_event_id || a.id).localeCompare(
+                String(b.workflow_event_id || b.id),
+              ),
+            ),
+            key: `workflow_group:${runId}`,
+          });
+        } else if (!group) {
+          rows.push({
+            kind: "chat",
+            ts: message.ts,
+            msg: message,
+            key: `c:${index}:${message.ts}`,
+          });
+        }
+        return;
+      }
       rows.push({
         kind: "chat",
-        ts: m.ts,
-        msg: m,
-        key: m.role === "workflow_progress"
-          ? `workflow:${m.message.workflow_run_id}`
-          : `c:${i}:${m.ts}`,
-      }),
-    );
+        ts: message.ts,
+        msg: message,
+        key: `c:${index}:${message.ts}`,
+      });
+    });
   }
   if (filter === "all" || filter === "warn") {
     warns.forEach((a) =>
@@ -297,8 +387,12 @@ function toolArtifactStatus(toolName?: string): string {
 }
 
 function ChatRow({ msg }: { msg: ChatStreamMessage }) {
-  if (msg.role === "workflow_progress") {
-    return <WorkflowProgressRow message={msg.message} />;
+  if (msg.role === "workflow_progress" || msg.role === "workflow_stage") {
+    return <WorkflowProgressGroup
+      runId={msg.message.workflow_run_id || msg.message.id}
+      summary={msg.role === "workflow_progress" ? msg.message : undefined}
+      stages={msg.role === "workflow_stage" ? [msg.message] : []}
+    />;
   }
   if (msg.role === "ppt_outline") {
     const m = msg.message;
@@ -591,141 +685,6 @@ function format_relative(ts: number, now: number = Date.now()): string {
   if (delta_s < 3600) return `${Math.round(delta_s / 60)}m 前`;
   if (delta_s < 86400) return `${Math.round(delta_s / 3600)}h 前`;
   return `${Math.round(delta_s / 86400)}d 前`;
-}
-
-function WorkflowProgressRow({ message }: { message: Message }) {
-  const status = message.workflow_status ?? "running";
-  const total = Math.max(0, message.workflow_total ?? 0);
-  const ordinal = Math.max(0, message.workflow_ordinal ?? 0);
-  const displayOrdinal = Math.max(
-    ordinal,
-    message.workflow_display_ordinal ?? ordinal,
-  );
-  const percent = status === "completed"
-    ? 100
-    : total > 0
-      ? Math.min(99, Math.round((displayOrdinal / total) * 100))
-      : 0;
-  const tones: Record<NonNullable<Message["workflow_status"]>, {
-    label: string;
-    accent: string;
-    soft: string;
-  }> = {
-    running: { label: "进行中", accent: "#38bdf8", soft: "rgba(56,189,248,0.14)" },
-    waiting: { label: "等待操作", accent: "#fbbf24", soft: "rgba(251,191,36,0.14)" },
-    completed: { label: "已完成", accent: "#34d399", soft: "rgba(52,211,153,0.14)" },
-    failed: { label: "失败", accent: "#f87171", soft: "rgba(248,113,113,0.14)" },
-    cancelled: { label: "已取消", accent: "#94a3b8", soft: "rgba(148,163,184,0.14)" },
-  };
-  const tone = tones[status];
-  const position = total > 0 ? `${ordinal}/${total}` : "准备中";
-  const detail = message.workflow_error || message.workflow_stage || "准备中";
-
-  return (
-    <div
-      data-testid={`workflow-progress-${message.workflow_run_id}`}
-      data-role="workflow_progress"
-      data-status={status}
-      style={{
-        alignSelf: "stretch",
-        height: 104,
-        minHeight: 104,
-        maxHeight: 104,
-        boxSizing: "border-box",
-        overflow: "hidden",
-        padding: "11px 13px",
-        borderRadius: 8,
-        border: `1px solid ${tone.accent}55`,
-        background: "rgba(18, 24, 35, 0.92)",
-        display: "grid",
-        gridTemplateRows: "22px 18px 8px 18px",
-        gap: 4,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-        <strong
-          style={{
-            minWidth: 0,
-            flex: 1,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            color: "#e8edf6",
-            fontSize: 12.5,
-            letterSpacing: 0,
-          }}
-        >
-          {message.workflow_name || "任务"}
-        </strong>
-        <span
-          style={{
-            flexShrink: 0,
-            padding: "2px 7px",
-            borderRadius: 4,
-            color: tone.accent,
-            background: tone.soft,
-            fontSize: 10.5,
-            fontWeight: 600,
-            whiteSpace: "nowrap",
-          }}
-        >
-          {tone.label}
-        </span>
-      </div>
-      <div
-        title={detail}
-        style={{
-          minWidth: 0,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          color: message.workflow_error ? tone.accent : "#b9c2d0",
-          fontSize: 11.5,
-          lineHeight: "18px",
-        }}
-      >
-        {detail}
-      </div>
-      <div
-        role="progressbar"
-        aria-label={`${message.workflow_name || "任务"}进度`}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={percent}
-        aria-valuetext={`${tone.label}，${message.workflow_stage || "准备中"}，${position}`}
-        style={{
-          height: 6,
-          alignSelf: "center",
-          borderRadius: 3,
-          overflow: "hidden",
-          background: "rgba(148,163,184,0.18)",
-        }}
-      >
-        <div
-          style={{
-            width: `${percent}%`,
-            height: "100%",
-            borderRadius: 3,
-            background: tone.accent,
-            transition: status === "running" ? "width 220ms ease" : "none",
-          }}
-        />
-      </div>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "end",
-          color: "#7f8a99",
-          fontSize: 10.5,
-          lineHeight: "18px",
-        }}
-      >
-        <span>{position}</span>
-        <span>{percent}%</span>
-      </div>
-    </div>
-  );
 }
 
 // ----------------------------------------------------------------------
