@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import hashlib
+import inspect
 import json
 import re
 import time
@@ -618,21 +619,48 @@ async def synth_handler(state: WorkflowState, context: WorkflowContext) -> State
     return _public_patch(state, "synth", {"sections": int(bool(draft)), "claim_count": len(findings)}, updates={"draft_report": draft, "citation_evidence": citation_evidence})
 
 
+async def _support_decisions(
+    claims: list[Any],
+    evidence: Mapping[int, str],
+    llm: object,
+):
+    scorer = llm.semantic_score if isinstance(llm, ResearchLLMPort) else None
+    if scorer is None:
+        return evaluate_support(claims, evidence)
+    cache: dict[tuple[str, str], float] = {}
+    for claim in claims:
+        combined = "\n".join(
+            evidence[value]
+            for value in claim.citation_ids
+            if evidence.get(value, "").strip()
+        )
+        if not combined:
+            continue
+        try:
+            raw = scorer(claim.text, [combined])
+            if inspect.isawaitable(raw):
+                raw = await raw
+            if isinstance(raw, list):
+                if raw:
+                    cache[(claim.text, combined)] = float(raw[0])
+            else:
+                cache[(claim.text, combined)] = float(raw)
+        except Exception:
+            continue
+
+    def semantic(claim: str, text: str) -> float:
+        return cache.get((claim, text), 0.0)
+
+    return evaluate_support(claims, evidence, semantic_scorer=semantic)
+
+
 async def cite_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
     values = _values(state)
     evidence_rows = [dict(value) for value in values.get("citation_evidence", []) if isinstance(value, Mapping)]
     evidence = {index: await _resolved_document_text(row, context) for index, row in enumerate(evidence_rows, 1)}
     claims = parse_claims(str(values.get("draft_report") or ""))
-    semantic = None
     llm = context.ports.get("llm")
-    if isinstance(llm, ResearchLLMPort) and llm.semantic_score is not None:
-        scorer = llm.semantic_score
-        def semantic(claim: str, text: str) -> float:
-            raw = scorer(claim, [text])
-            if isinstance(raw, list) and raw:
-                return float(raw[0])
-            return float(raw)
-    decisions = evaluate_support(claims, evidence, semantic_scorer=semantic)
+    decisions = await _support_decisions(claims, evidence, llm)
     repair_attempted = False
     if any(value.status == "unsupported" for value in decisions) and isinstance(llm, ResearchLLMPort):
         repair_attempted = True
@@ -656,7 +684,7 @@ async def cite_handler(state: WorkflowState, context: WorkflowContext) -> StateP
                 valid_citation_ids=set(evidence),
             )
             claims = parse_claims(repaired)
-            decisions = evaluate_support(claims, evidence, semantic_scorer=semantic)
+            decisions = await _support_decisions(claims, evidence, llm)
         except Exception:
             pass
     accepted_ids = {value.claim_id for value in decisions if value.status != "unsupported"}

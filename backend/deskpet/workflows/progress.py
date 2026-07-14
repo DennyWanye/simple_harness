@@ -134,15 +134,23 @@ class ProgressPayloadError(ValueError):
 
 
 def validated_v2_stage_text(payload: Mapping[str, Any]) -> str:
-    """Return SessionDB-safe text for the one allowed completed-stage payload."""
+    """Return SessionDB-safe text for a v2 summary or completed-stage payload."""
 
-    if payload.get("schema_version") != 2 or payload.get("kind") != "stage" or payload.get("status") != "completed":
+    kind = payload.get("kind")
+    status = payload.get("status")
+    if payload.get("schema_version") != 2 or (
+        (kind == "stage" and status != "completed")
+        or (kind == "progress" and status not in _TRANSITIONS)
+        or kind not in {"stage", "progress"}
+    ):
         raise ProgressPayloadError("workflow_stage_payload_not_completed_v2")
     if str(payload.get("stage_id") or "") not in DEEP_RESEARCH_V2_STAGES:
         raise ProgressPayloadError("workflow_stage_payload_unknown_stage")
     text = payload.get("text")
     summary = payload.get("summary")
-    if not isinstance(text, str) or not text.strip() or text != summary:
+    if not isinstance(text, str) or not text.strip() or (
+        kind == "stage" and text != summary
+    ):
         raise ProgressPayloadError("workflow_stage_payload_text_mismatch")
     return text
 

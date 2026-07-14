@@ -352,3 +352,26 @@ async def test_v2_expands_matching_source_packs_and_uses_strict_llm_synthesis(mo
     assert "Primary evidence confirms" in result["values"]["draft_report"]
     assert any("Synthesize only the supplied evidence" in value for value in prompts)
     assert "## Degraded / Error Summary" in result["values"]["report_payload"]["report_md"]
+
+
+@pytest.mark.asyncio
+async def test_v2_claim_support_awaits_async_semantic_scorer():
+    semantic_calls = 0
+
+    async def semantic_score(claim: str, passages: list[str]):
+        nonlocal semantic_calls
+        semantic_calls += 1
+        await asyncio.sleep(0)
+        return [0.9]
+
+    base = _context()
+    llm = ResearchLLMPort(_llm, semantic_score=semantic_score)
+    result = await DEEP_RESEARCH_V2.bind().ainvoke(
+        initial_state(topic="semantic", run_id="run-semantic"),
+        WorkflowContext(ports={**base.ports, "llm": llm}),
+        thread_id="run-semantic",
+        run_id="run-semantic",
+    )
+
+    assert semantic_calls > 0
+    assert result["values"]["report_payload"]["status"] == "completed"

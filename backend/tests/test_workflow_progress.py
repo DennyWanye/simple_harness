@@ -420,3 +420,4 @@ async def test_v2_started_progress_uses_thirteen_stage_projection_for_join_nodes
     assert payload["stage_id"] == "search"
     assert payload["ordinal"] == 4
     assert payload["total"] == 13
+    assert validated_v2_stage_text(payload) == payload["text"]
