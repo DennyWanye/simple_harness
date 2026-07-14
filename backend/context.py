@@ -94,6 +94,8 @@ _VALID_SERVICES = frozenset({
     "pipeline_convergence_controller",   # 预留：第一期由 AgentLoop 内构造，service 仅占位
     # Durable graph runtime and unified Trace/Replay/Eval facade.
     "workflow_service",
+    # Process-owned async retrieval gateway shared by web_search and research.
+    "search_gateway",
     # --- Context OS V1 ------------------------------------------------------
     "tool_capability_scope_store",
     "tool_capability_resolver",
@@ -166,6 +168,7 @@ class ServiceContext:
     pipeline_self_check_gate: Any | None = None
     pipeline_convergence_controller: Any | None = None
     workflow_service: Any | None = None
+    search_gateway: Any | None = None
     tool_capability_scope_store: Any | None = None
     tool_capability_resolver: Any | None = None
     context_request_planner: Any | None = None

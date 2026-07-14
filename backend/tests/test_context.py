@@ -51,6 +51,15 @@ def test_service_context_register_unknown_raises():
         ctx.register("unknown_engine", object())
 
 
+def test_service_context_accepts_search_gateway_runtime():
+    ctx = ServiceContext()
+    gateway = object()
+
+    ctx.register("search_gateway", gateway)
+
+    assert ctx.get("search_gateway") is gateway
+
+
 @pytest.mark.parametrize("name", harness_service_names())
 def test_harness_manifest_services_are_whitelisted(name: str):
     ctx = ServiceContext()
