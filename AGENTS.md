@@ -2,23 +2,25 @@
 
 本文件给 Codex 子代理 / 助手用，记录本仓库特有的开发上下文（区别于全局 `~/.Codex/AGENTS.md`）。
 
-> 📊 **接手前先读全局状态**: [`STATUS/status.md`](./STATUS/status.md) —
-> 所有并行 worktree / 功能模块完成度 / 最近里程碑 / 已知问题，一页看清。
+> 🧭 **接手前先读架构事实源**: [`ARCHITECTURE/index.md`](./ARCHITECTURE/index.md) —
+> 全局状态、模块生产链路、完成度、最近里程碑与已知问题统一从这里进入。
 
 ---
 
-## ✅ STATUS 更新纪律（HARD — 不可妥协）
+## ✅ ARCHITECTURE 更新纪律（HARD — 不可妥协）
 
-**任何任务一旦"通过测试完成"，必须同步更新 [`STATUS/status.md`](./STATUS/status.md)。**
+**任何任务一旦"通过测试完成"，必须同步更新 [`ARCHITECTURE/`](./ARCHITECTURE/index.md) 中对应的架构事实源。**
 
 - **触发条件**：一个 WI / slice / 功能模块跑通验收（pytest/vitest/cargo/手工 E2E 全绿）→ 视为"完成"。
 - **强制动作**（完成的同一次交付内，不能拖到下次）：
-  1. 更新 §3 模块完成度（🟡 进行中 → ✅，或新增行）
-  2. 若是里程碑级 → 追加一行到 §4 最近里程碑（倒序）
-  3. 若 worktree 合并到 master → 更新 §2 表格状态
-  4. 改顶部"最后更新"日期
-- **判定**："改了代码 / 跑过测试但没更新 STATUS" = 任务**未完成**。
-- **粒度**：细节放各 plan 文档，STATUS 只记状态 + 链接，保持一页能看完。
+  1. 更新对应 `ARCHITECTURE/<MODULE>.md` 的生产链路、边界或验证状态
+  2. 更新 [`ARCHITECTURE/PROJECT_STATUS.md`](./ARCHITECTURE/PROJECT_STATUS.md) 的模块完成度
+  3. 若是里程碑级 → 追加到 PROJECT_STATUS 最近里程碑（倒序）
+  4. 若 worktree 合并到 master → 更新 PROJECT_STATUS worktree 状态
+  5. 改相关架构文档顶部“最后更新”日期
+- **判定**："改了代码 / 跑过测试但没更新 ARCHITECTURE" = 任务**未完成**。
+- **禁止双写**：`STATUS/` 仅保留历史路径兼容跳转，不能再写入新的状态正文。
+- **粒度**：实现细节放各 plan，架构目录记录当前生产事实、边界、状态和证据链接。
 
 ---
 
@@ -66,9 +68,9 @@ DeskPet 的 LLM 调用走 中转站（默认 gpt-5.5）。用户首次启动时�
 
 ## 📁 分支 / 端口 / 关键文档
 
-- **分支策略**：master 直接开发（`feedback_deskpet_branch_strategy`），不走长寿命 feature 分支。worktree 拓扑与各模块完成度见 [`STATUS/status.md`](./STATUS/status.md) §2。
+- **分支策略**：master 直接开发（`feedback_deskpet_branch_strategy`），不走长寿命 feature 分支。worktree 拓扑与各模块完成度见 [`ARCHITECTURE/PROJECT_STATUS.md`](./ARCHITECTURE/PROJECT_STATUS.md) §2。
 - **端口隔离**（真测高频）：main 树 backend=**8100** / vite=**5173**（默认）；其他 worktree 经 `scripts/dev-worktree.ps1` 注入 `DESKPET_BACKEND_PORT`/`DESKPET_VITE_PORT` 错开。
-- **关键 plan/文档清单**：见各 `plans/<date>-*/00-*.md` 与 [`STATUS/status.md`](./STATUS/status.md)。last-mile 升级 PRD/TDD/手测用例在 `plans/2026-05-23-tool-last-mile-upgrade/`。
+- **关键 plan/文档清单**：当前生产事实以 [`ARCHITECTURE/index.md`](./ARCHITECTURE/index.md) 为准；实现过程见各 `plans/<date>-*/00-*.md`。last-mile 升级 PRD/TDD/手测用例在 `plans/2026-05-23-tool-last-mile-upgrade/`。
 - **last-mile 验收命令**：`python scripts/acceptance/last_mile_smoke.py`（期望 `DECISION: SHIP`）+ 对应 TG pytest 套件（命令清单见该 plan 目录）。
 
 ---

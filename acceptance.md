@@ -77,4 +77,4 @@
 - DeepResearch、PPT Pro、Complex Code 三条生产路径默认启用 Graph，并完成 windows-mcp 真机闭环。
 - 三条生产路径由 DeskPet 原生轻量 Graph 内核执行；生产、依赖与打包表面不存在 LangGraph。
 - 现有 Harness、短聊天和关键工具回归通过，无已知 P0/P1 回归。
-- `ARCHITECTURE/`、`plans/`、`testcase/`、`STATUS/status.md` 与用户文档同步。
+- `ARCHITECTURE/` 唯一事实源、`plans/`、`testcase/` 与用户文档同步；`STATUS/` 仅验证兼容跳转。

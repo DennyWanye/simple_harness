@@ -4,19 +4,13 @@
 
 `DeepResearch/` 是运行时生成的调研报告目录：开发环境位于仓库根目录，打包应用位于安装目录下。所有 `deepresearch` 报告都会写入这里，`DeepResearch/index.md` 是总索引，新报告倒序插入，文件链接可直接点开，方便复用历史调研。
 
-注意：[`STATUS/DeepResearch.md`](./STATUS/DeepResearch.md) 是仓库内的 deep research 模块状态文档；`DeepResearch/` 是运行时报告目录，二者用途不同。
+注意：[`ARCHITECTURE/DeepResearch.md`](./ARCHITECTURE/DeepResearch.md) 是仓库内的 DeepResearch 模块架构文档；`DeepResearch/` 是运行时报告目录，二者用途不同。
 
 本地部署的桌面语音宠物：Live2D 桌宠 + 全本地语音交互管线（VAD → ASR → LLM → TTS）。
 
-> 📊 **`STATUS/` 状态档文件夹**: 一页式看清项目/各模块当前进展的"状态档"集中地——
-> 全局项目状态 + 各功能模块专项状态都放这里，每完成一个里程碑/合并一个 worktree 即更新。
-> 入口是 [`STATUS/index.md`](./STATUS/index.md)（登记所有状态档及其作用）。其中
-> [`status.md`](./STATUS/status.md) 是全局项目状态（所有并行 worktree / 功能模块完成度 /
-> 最近里程碑 / 已知问题），[`DeepResearch.md`](./STATUS/DeepResearch.md) / [`AgentLoop.md`](./STATUS/AgentLoop.md) /
-> [`PPT.md`](./STATUS/PPT.md) 是各模块专项状态。
-> 新 session / 子代理接手项目前先读这里。
-
-> 🧭 **架构基线**: [`ARCHITECTURE/index.md`](./ARCHITECTURE/index.md) 记录 DeskPet Harness、长任务、持久化、恢复与 Trace/Eval 等关键模块的当前架构说明。
+> 🧭 **`ARCHITECTURE/` 唯一事实源**: [`ARCHITECTURE/index.md`](./ARCHITECTURE/index.md) 统一记录项目完成度、里程碑、已知问题，以及 Harness、长任务、持久化、恢复、搜索、DeepResearch、PPT 与 Trace/Eval 等模块的当前生产架构。全局聚合状态见 [`PROJECT_STATUS.md`](./ARCHITECTURE/PROJECT_STATUS.md)。新 session / 子代理接手项目前先读这里。
+>
+> `STATUS/` 仅保留旧链接兼容，不再维护新的状态正文。
 
 ---
 
@@ -107,7 +101,7 @@ deskpet/
 ├── tauri-app/        # Tauri + React 桌面前端
 │   └── src-tauri/    # Rust 原生层 (窗口透明、麦克风权限)
 ├── docs/superpowers/plans/  # 设计文档 (OpenSpec plans)
-├── ARCHITECTURE/    # 关键模块 scoped 架构基线
+├── ARCHITECTURE/    # 当前生产架构 + 项目状态唯一事实源
 ├── testcase/        # 手工 / 回归测试用例索引与分步用例
 ├── config.toml       # 全局配置
 └── plans/            # 功能规划 / PRD / 路线图（见 plans/index.md 总索引）
@@ -639,7 +633,7 @@ fake-completion 生产抓获率 0%）+ 替换 5 个 stub 工具为真实现 + �
 
 | 文档 | 作用 |
 |------|------|
-| [`plans/2026-05-21-memory-system-survey.md`](./plans/2026-05-21-memory-system-survey.md) | 记忆系统**调研 + 改造路线图** — 现状盘点、6 大痛点、mem0/Letta 对标、Phase A-E 设计 |
+| [`plans/archive/2026-05-21-memory-system-survey.md`](./plans/archive/2026-05-21-memory-system-survey.md) | 记忆系统**调研 + 改造路线图** — 现状盘点、6 大痛点、mem0/Letta 对标、Phase A-E 设计 |
 
 **memory-v2 新增模块**（commit `e3e090b`，全部默认 OFF）：
 - **Phase A 评估底座** — `deskpet/memory/eval/`：hit@k/MRR 回测 + thumbs-up 反馈

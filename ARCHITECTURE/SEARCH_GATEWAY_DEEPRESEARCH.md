@@ -232,3 +232,11 @@ public stage handler
 - 真实 DeepResearch 与 Windows W01～W05 已完成：13 阶段进度、运行中重启恢复、多 run 隔离、最终报告、历史 Artifact 操作和实时 Artifact 广播均有真机证据，详见计划目录 `results.md`。
 - 固定三类别真实 DeepResearch 样本完成率 2/3、nearest-rank P95 270.548s；政策样本 support rate 0.75，WebGPU 样本因持久化 cooldown 诚实 no-results。验收已完成，但 cooldown 突发容量仍是下一轮首要质量优化项。
 - 最终文本使用独立 `final_assistant` channel，只投递 SessionDB 与 websocket；历史错误 assistant receipt 会被兼容收敛且不生成完成凭证。
+
+## 12. 下一轮优化优先级与原因
+
+1. **隔离 provider 健康与 cooldown 作用域**：当前 cooldown 会跨请求、跨主题保留。政策调研运行期间及结束后紧随其后的两次 WebGPU 尝试都在 search 阶段得到 0 candidates，说明一次高压 run 可以让无关请求被整条 Gateway 连坐。下一轮应区分 provider 级退避、请求级预算和 Gateway 级无候选，允许健康 provider 或低成本 direct-source 路径继续工作。
+2. **提高 claim support，而不是单纯增加候选数**：官方技术文档成功样本有 8 个独立域和 12 条引用，但最终 support rate 约 0.109；政策样本同为 12 条引用却达到 0.75。差距说明瓶颈已从“能否搜到”转为“证据是否真正支撑报告论断”，应优化 query decomposition、passage selection、claim 粒度与 repair 策略。
+3. **收口后台 provider refresh**：辅助 FactExtractor 仍会记录旧 relay key 的 401 warning，虽然不阻断主聊天和 DeepResearch，但会制造噪音并浪费重试预算。应统一使用当前 provider registry 的动态凭据刷新路径。
+
+优先级判断来自真实 benchmark 和 live outbox/日志，不以新增 provider 数量或单测覆盖率代替线上质量信号。

@@ -4,7 +4,7 @@
 > 独立工作项（PRD/PLAN/ROADMAP + 子文档）。本索引一页看清"有哪些规划、各在干什么"。
 >
 > - 状态：✅ 已落地 · 🟡 进行中 · 📋 规划/参考
-> - 落地的功能状态以 [`STATUS/status.md`](../STATUS/status.md) 为准；本索引只做导航。
+> - 落地后的生产事实与完成状态以 [`ARCHITECTURE/index.md`](../ARCHITECTURE/index.md) 和 [`PROJECT_STATUS.md`](../ARCHITECTURE/PROJECT_STATUS.md) 为准；本索引只做过程导航。
 > - `archive/`、`manual-results-*`、`fun-*`、`test-*` 为归档/手测记录/一次性产物，不在下表。
 
 ## 按时间倒序
