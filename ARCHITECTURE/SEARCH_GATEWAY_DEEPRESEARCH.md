@@ -229,4 +229,6 @@ public stage handler
 
 - 聚焦与相邻自动化、前端全量、TypeScript 和 production build 已通过。
 - 真实 quick search 与正文 fetch smoke 已通过；5 秒连续查询 benchmark 会受到上游 timeout/cooldown 影响，最新样本成功率 70%。
-- 真实 DeepResearch 报告和 Windows W02～W05 当前被 relay `401 INVALID_TOKEN` 阻塞，因此完整 DoD 仍为 PARTIAL，详见计划目录 `results.md`。
+- 真实 DeepResearch 与 Windows W01～W05 已完成：13 阶段进度、运行中重启恢复、多 run 隔离、最终报告、历史 Artifact 操作和实时 Artifact 广播均有真机证据，详见计划目录 `results.md`。
+- 固定三类别真实 DeepResearch 样本完成率 2/3、nearest-rank P95 270.548s；政策样本 support rate 0.75，WebGPU 样本因持久化 cooldown 诚实 no-results。验收已完成，但 cooldown 突发容量仍是下一轮首要质量优化项。
+- 最终文本使用独立 `final_assistant` channel，只投递 SessionDB 与 websocket；历史错误 assistant receipt 会被兼容收敛且不生成完成凭证。

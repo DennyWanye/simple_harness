@@ -4,7 +4,7 @@
 <!-- finalized-by: plan-bs; user-approved: 2026-07-14 -->
 
 > 日期：2026-07-14
-> 状态：已执行；技术实现与自动化完成，真实 DeepResearch/Windows DoD 因 relay 401 待收口
+> 状态：已执行完成；自动化、真实网络 DeepResearch 与 Windows W01～W05 全部通过
 > 验收基线：[acceptance.md](acceptance.md)
 > 架构基线：[../../ARCHITECTURE/SEARCH_GATEWAY_DEEPRESEARCH.md](../../ARCHITECTURE/SEARCH_GATEWAY_DEEPRESEARCH.md)
 > 执行边界：本文只规划，不在 plan-bs 阶段实现代码。
@@ -564,6 +564,7 @@ WI-0 -> WI-5 -> WI-6 -> WI-7 --------+-> WI-10
 | Round 4 | PASS | 无剩余 P0/P1；blob 生命周期、pending duration、retry/provider/progress/UI/v1 兼容契约全部闭合 |
 | 执行审计 Round 1 | PARTIAL | 22 COMPLETE / 8 PARTIAL / 1 MISSING；据此补 recency/gap score/deep rounds/semantic diversity/metrics/request-local diagnostics/size gates/live elapsed/no-results |
 | 执行审计 Round 2 | NO-SHIP | 初审 26 COMPLETE / 5 PARTIAL；随后补齐生产 store task-result→frontier crash、route/reducer 零 completed 三测试，最终技术审计 27 COMPLETE / 4 PARTIAL；剩余均为 relay 401 导致的真实 N03/W02～W05 与对应指标证据 |
+| 执行审计 Round 3 | SHIP | 登录态恢复后完成 W01～W05；真实 run 覆盖 13 阶段、重启 reclaim、completed/no-results 多 run 隔离、历史 Artifact 操作和无需重载的实时 Artifact 广播；补齐固定三类别 benchmark 与 `final_assistant` 投递 P1；后端全量无新增失败，最终文档与 STATUS 同步收口 |
 
 ## 10. 完成审计清单
 
@@ -583,6 +584,6 @@ WI-0 -> WI-5 -> WI-6 -> WI-7 --------+-> WI-10
 - [x] public stage 时间冻结于 pending patch；task-result 后重启不会改变 duration、payload 或 intent request hash。
 - [x] v1/PPT/Code 不产生 v2 stage completed；SessionDB `text/workflow_event_id` 与 live frozen payload 一致。
 - [x] summary 始终可见，stage child 默认隐藏、可展开、可访问；stage-first、terminal-late-child、orphan、重复和多 run 均正确合组。
-- [x] restart/reconnect/history/concurrent run 的自动化恢复与幂等测试不重不丢不回退；真实运行中重启仍待有效 relay 会话补测。
-- [ ] benchmark、真实网络 smoke、Windows 真机证据齐全。
-- [x] 完成能力默认 ON，文档/testcase/results/ARCHITECTURE/STATUS 同步；STATUS 保持 🟡，未误标完整完成。
+- [x] restart/reconnect/history/concurrent run 的自动化恢复与幂等测试不重不丢不回退；真实 cite 阶段运行中重启后同一 run 恢复到 13/13。
+- [x] Search 与固定多类别 DeepResearch benchmark、真实网络 smoke、Windows W01～W05 真机证据齐全；失败样本诚实保留在分母中。
+- [x] 完成能力默认 ON；文档、testcase、results、ARCHITECTURE 与 STATUS 在最终门禁后同步。

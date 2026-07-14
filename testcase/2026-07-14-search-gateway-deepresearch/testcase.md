@@ -43,3 +43,20 @@
 - Windows 真机日志和截图说明：`plans/manual-results-2026-07-14-search-gateway-deepresearch/`。
 - 结果总表：`plans/2026-07-14-search-gateway-deepresearch/results.md`。
 - 遇到登录、relay、网络或验证码等外部阻断时，记录为 `BLOCKED`，不得写成 `PASS`；已完成的下层证据仍单独保留。
+
+## 2026-07-15 执行结果
+
+| 范围 | 结果 | 证据摘要 |
+|---|---:|---|
+| TC-A01～A07 | PASS | Gateway、Fetch、v2 fan-out/质量、durable progress 与 final-assistant delivery 聚焦测试全绿；新能力默认 ON |
+| TC-A08 | PASS（功能范围） | Frontend 77 files / 800 tests、TypeScript、production build 全绿；backend 全量与既有基线逐项对照见 results.md |
+| TC-N01 | PASS | 中英文真实搜索均经 Gateway，首选失败时降级；诊断与耗时已落 JSON |
+| TC-N02 | PASS | MDN WebGPU 真实正文由 Scrapling + Trafilatura 提取，canonical/hash/quality 完整 |
+| TC-N03 | PASS | 固定三类真实集 2 completed / 1 honest no-results；成功样本均含引用、独立域、support 与 Markdown Artifact |
+| TC-W01 | PASS | 真输入 Python 最新版本请求，真实调用 `web_search`，UI 返回三个 python.org 官方来源 |
+| TC-W02 | PASS | 总体卡可见、阶段默认折叠；Space/Enter 真键盘展开/收起，13 个 child 按序审计 |
+| TC-W03 | PASS | cite 运行中精确重启；同一 run lease_epoch 1→3 后恢复到 13/13，无重复 run |
+| TC-W04 | PASS | 报告、引用、错误摘要与 Markdown 卡可见；打开/文件夹定位通过；新 run 文件卡实时广播且去重 |
+| TC-W05 | PASS | 同 Session 双 run 分组独立；一个 completed、一个 no-results，进度、诊断、Artifact 与终态未覆盖 |
+
+完整真机叙述、run id 和指标：`plans/manual-results-2026-07-14-search-gateway-deepresearch/RESULTS.md`。

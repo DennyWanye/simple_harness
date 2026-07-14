@@ -1,7 +1,7 @@
 # 验收标准：DeskPet Search Gateway 与 DeepResearch 可视化升级
 
-> 状态：已确认并执行；技术实现与自动化完成，完整真实 DeepResearch/Windows DoD 因 relay 401 保持 PARTIAL。
-> 日期：2026-07-14
+> 状态：已确认并执行；自动化、真实网络 DeepResearch 与 Windows W01～W05 DoD 全部完成。
+> 日期：2026-07-14～2026-07-15
 
 ## 主要矛盾
 

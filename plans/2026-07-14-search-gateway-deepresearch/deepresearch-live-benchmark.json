@@ -1,0 +1,108 @@
+{
+  "schema_version": 2,
+  "captured_at": "2026-07-15T01:10:00+08:00",
+  "environment": "Windows Tauri dev, real relay LLM, real network, Search Gateway default providers",
+  "query_set": [
+    "official_technical_docs",
+    "cn_policy_latest",
+    "web_standard_dynamic"
+  ],
+  "sample_size": 3,
+  "aggregate": {
+    "completed": 2,
+    "failed_no_results": 1,
+    "completion_rate": 0.6666666667,
+    "p95_elapsed_ms": 270548,
+    "p95_method": "nearest-rank",
+    "mean_support_rate_all_runs": 0.2862318841,
+    "mean_support_rate_completed_runs": 0.4293478261,
+    "mean_independent_domains_all_runs": 6.6666666667,
+    "max_independent_domains": 12,
+    "total_citations": 24,
+    "note": "Fixed multi-category observational set. The WebGPU cooldown/no-results run remains in every all-run denominator."
+  },
+  "runs": [
+    {
+      "category": "official_technical_docs",
+      "query": "Python 3.14 free-threaded mode versus Python 3.13",
+      "run_id": "12f4fca62dac42ed8bb199fe8de8e841",
+      "status": "completed",
+      "elapsed_ms": 270548,
+      "candidates": 12,
+      "fetch_attempted": 18,
+      "fetch_succeeded": 14,
+      "fetch_dropped": 4,
+      "independent_domains": 8,
+      "passages": 12,
+      "synth_stage_claim_count": 17,
+      "citations": 12,
+      "supported_claims": 5,
+      "unsupported_claims": 41,
+      "support_rate": 0.1086956522,
+      "artifact_bytes": 3899,
+      "artifact_broadcast_live": true
+    },
+    {
+      "category": "cn_policy_latest",
+      "query": "Current regulatory requirements of China's Interim Measures for Generative AI Services",
+      "run_id": "e3f1a6a4d64b4b6680c95e76f1288c1a",
+      "status": "completed",
+      "elapsed_ms": 226795,
+      "candidates": 22,
+      "fetch_attempted": 29,
+      "fetch_succeeded": 23,
+      "fetch_dropped": 6,
+      "independent_domains": 12,
+      "passages": 12,
+      "synth_stage_claim_count": 32,
+      "citations": 12,
+      "supported_claims": 24,
+      "unsupported_claims": 8,
+      "support_rate": 0.75,
+      "artifact_bytes": 13280,
+      "artifact_broadcast_live": true
+    },
+    {
+      "category": "web_standard_dynamic",
+      "query": "Official browser support status for WebGPU",
+      "run_id": "d087a50e20bd4e01864a7194b89d5b58",
+      "status": "failed_no_results",
+      "elapsed_ms": 15250,
+      "candidates": 0,
+      "fetch_attempted": 0,
+      "fetch_succeeded": 0,
+      "fetch_dropped": 0,
+      "independent_domains": 0,
+      "passages": 0,
+      "synth_stage_claim_count": 0,
+      "citations": 0,
+      "supported_claims": 0,
+      "unsupported_claims": 0,
+      "support_rate": 0.0,
+      "artifact_bytes": 419,
+      "degraded_reasons": [
+        "search:cooldown"
+      ]
+    }
+  ],
+  "burst_stress_observations": [
+    {
+      "run_id": "753bb05bf72142908e5a750aa84d628b",
+      "status": "completed",
+      "elapsed_ms": 387373,
+      "restarted": true,
+      "independent_domains": 6,
+      "citations": 12,
+      "support_rate": 0.0681818182
+    },
+    {
+      "run_id": "0e3d02f3139b4aafa3acf826bd010a46",
+      "status": "failed_no_results",
+      "elapsed_ms": 404558,
+      "independent_domains": 7,
+      "citations": 12,
+      "support_rate": 0.0,
+      "note": "Retained as dual-run isolation and burst-pressure evidence, not part of the fixed three-category aggregate."
+    }
+  ]
+}
