@@ -6,6 +6,7 @@ import { shouldHideToolTrace } from "./messageVisibility";
 const message = (overrides: Partial<Message>): Message => ({
   id: "m1",
   role: "tool_result",
+  ts: 0,
   ...overrides,
 });
 
