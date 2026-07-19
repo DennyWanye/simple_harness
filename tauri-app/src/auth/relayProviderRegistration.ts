@@ -116,7 +116,13 @@ export class RelayProviderRegistration {
     }
 
     try {
-      const synced = await adapter.syncDeviceKey({ force: force || !ok });
+      // A cold renderer has no `lastEnsured` cache, but the OS keyring can
+      // already hold the server's active device key.  Let RelayAuthAdapter's
+      // reuse path compare the cached key with the server prefix and rotate
+      // only when it is actually missing/mismatched.  Unconditionally forcing
+      // here invalidates the same key that Tauri just injected into the newly
+      // spawned backend, leaving startup-created LLM consumers on a dead key.
+      const synced = await adapter.syncDeviceKey({ force });
       if (!synced) {
         console.warn("[reg] no device key");
         return { ok: false, reason: "no_device_key" };

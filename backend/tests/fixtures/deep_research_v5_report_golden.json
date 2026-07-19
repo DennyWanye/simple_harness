@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "SC-EDU",
+      "brief": {
+        "schema_version": 1,
+        "brief_id": "brief-edu",
+        "user_question": "当前教育政策实施情况、主要影响与下一步是什么？",
+        "profile": "policy_education",
+        "as_of_date": "2026-07-16",
+        "locale": "zh-CN",
+        "geography": "中国",
+        "subjects": ["教育政策"],
+        "expected_decision": "形成决策简报",
+        "dimensions": [
+          {"schema_version": 1, "dimension_id": "edu-current", "question": "政策实施现状", "importance": "core", "expected_source_types": ["official"], "query_targets": ["implementation"], "first_party_required": true, "not_applicable_when": []},
+          {"schema_version": 1, "dimension_id": "edu-next", "question": "影响与下一步", "importance": "core", "expected_source_types": ["official", "research"], "query_targets": ["impact", "next"], "first_party_required": true, "not_applicable_when": []},
+          {"schema_version": 1, "dimension_id": "edu-context", "question": "国际背景", "importance": "supporting", "expected_source_types": ["research"], "query_targets": ["context"], "first_party_required": false, "not_applicable_when": ["本题不要求国际比较"]}
+        ],
+        "not_applicable_conditions": ["本题不要求国际比较"]
+      },
+      "coverages": [
+        {"schema_version": 1, "dimension_id": "edu-current", "status": "covered", "evidence_passage_ids": ["edu-e1", "edu-e2"], "winning_evidence_ids": ["edu-e1", "edu-e2"], "source_family_ids": ["edu-f1", "edu-f2"], "first_party_satisfied": true, "relevance_score": 0.92, "gap_reasons": []},
+        {"schema_version": 1, "dimension_id": "edu-next", "status": "covered", "evidence_passage_ids": ["edu-e3", "edu-e4"], "winning_evidence_ids": ["edu-e3", "edu-e4"], "source_family_ids": ["edu-f3", "edu-f4"], "first_party_satisfied": true, "relevance_score": 0.9, "gap_reasons": []},
+        {"schema_version": 1, "dimension_id": "edu-context", "status": "not_applicable", "evidence_passage_ids": [], "winning_evidence_ids": [], "source_family_ids": [], "first_party_satisfied": false, "relevance_score": 0, "gap_reasons": []}
+      ],
+      "analyses": [
+        {"schema_version": 1, "dimension_id": "edu-current", "direct_answer": "政策已进入常态化落实阶段，但地区执行深度仍有差异。", "fact_claim_ids": ["edu-c4", "edu-c5", "edu-c6"], "inference_claim_ids": [], "limitation_claim_ids": [], "winning_evidence_ids": ["edu-e1", "edu-e2"], "relevance_score": 0.92, "confidence": "high"},
+        {"schema_version": 1, "dimension_id": "edu-next", "direct_answer": "下一阶段重点是把资源投入转化为可验证的实施效果。", "fact_claim_ids": ["edu-c7", "edu-c8", "edu-c9"], "inference_claim_ids": [], "limitation_claim_ids": [], "winning_evidence_ids": ["edu-e3", "edu-e4"], "relevance_score": 0.9, "confidence": "high"}
+      ],
+      "claims": [
+        {"claim_id": "edu-k1", "dimension_id": "edu-current", "text": "政策执行已从集中部署转向常态落实。", "kind": "key_judgment", "source_ids": ["edu-e1"], "supported_fact_refs": ["edu-p1"], "intent_tokens": ["政策", "实施"], "is_inference": false, "metadata_pseudo_judgment": false},
+        {"claim_id": "edu-k2", "dimension_id": "edu-next", "text": "资源配置改善，但效果差异仍需按地区持续核验。", "kind": "key_judgment", "source_ids": ["edu-e3"], "supported_fact_refs": ["edu-p3"], "intent_tokens": ["影响", "地区"], "is_inference": false, "metadata_pseudo_judgment": false},
+        {"claim_id": "edu-k3", "dimension_id": "edu-next", "text": "下一步应优先建立公开、可比较的实施成效指标。", "kind": "key_judgment", "source_ids": ["edu-e4"], "supported_fact_refs": ["edu-p4"], "intent_tokens": ["下一步", "成效"], "is_inference": true, "metadata_pseudo_judgment": false},
+        {"claim_id": "edu-c4", "dimension_id": "edu-current", "text": "地方执行机制已经形成。", "kind": "current_state", "source_ids": ["edu-e1"], "supported_fact_refs": ["edu-p1"], "intent_tokens": [], "is_inference": false, "metadata_pseudo_judgment": false},
+        {"claim_id": "edu-c5", "dimension_id": "edu-current", "text": "政策重心由部署转向持续落实。", "kind": "driver_change", "source_ids": ["edu-e2"], "supported_fact_refs": ["edu-p2"], "intent_tokens": [], "is_inference": false, "metadata_pseudo_judgment": false},
+        {"claim_id": "edu-c6", "dimension_id": "edu-current", "text": "学校执行负担趋于稳定。", "kind": "impact", "source_ids": ["edu-e2"], "supported_fact_refs": ["edu-p2"], "intent_tokens": [], "is_inference": false, "metadata_pseudo_judgment": false},
+        {"claim_id": "edu-c7", "dimension_id": "edu-next", "text": "资源投入已覆盖主要执行环节。", "kind": "current_state", "source_ids": ["edu-e3"], "supported_fact_refs": ["edu-p3"], "intent_tokens": [], "is_inference": false, "metadata_pseudo_judgment": false},
+        {"claim_id": "edu-c8", "dimension_id": "edu-next", "text": "地区基础差异影响政策转化效率。", "kind": "driver_change", "source_ids": ["edu-e4"], "supported_fact_refs": ["edu-p4"], "intent_tokens": [], "is_inference": false, "metadata_pseudo_judgment": false},
+        {"claim_id": "edu-c9", "dimension_id": "edu-next", "text": "统一指标有助于识别资源与成效之间的缺口。", "kind": "impact", "source_ids": ["edu-e4"], "supported_fact_refs": ["edu-p4"], "intent_tokens": [], "is_inference": true, "metadata_pseudo_judgment": false},
+        {"claim_id": "edu-c10", "dimension_id": "edu-current", "text": "持续公开地区执行数据。", "kind": "next_step", "source_ids": ["edu-e1"], "supported_fact_refs": ["edu-p1"], "intent_tokens": [], "is_inference": false, "metadata_pseudo_judgment": false},
+        {"claim_id": "edu-c11", "dimension_id": "edu-next", "text": "建立地区可比的成效指标。", "kind": "next_step", "source_ids": ["edu-e3"], "supported_fact_refs": ["edu-p3"], "intent_tokens": [], "is_inference": false, "metadata_pseudo_judgment": false}
+      ],
+      "sources": [
+        {"source_id": "edu-e1", "dimension_id": "edu-current", "family_id": "edu-f1", "title": "主管部门实施通报", "url": "https://example.test/edu/official", "first_party": true, "strong_family": true},
+        {"source_id": "edu-e2", "dimension_id": "edu-current", "family_id": "edu-f2", "title": "独立实施评估", "url": "https://example.test/edu/evaluation", "first_party": false, "strong_family": true},
+        {"source_id": "edu-e3", "dimension_id": "edu-next", "family_id": "edu-f3", "title": "资源配置公报", "url": "https://example.test/edu/resources", "first_party": true, "strong_family": true},
+        {"source_id": "edu-e4", "dimension_id": "edu-next", "family_id": "edu-f4", "title": "地区成效研究", "url": "https://example.test/edu/outcomes", "first_party": false, "strong_family": true}
+      ],
+      "expected": {"delivery_status": "completed", "components": [25.0, 25.0, 20.0, 15.0, 5.0, 5.0], "total_score": 95.0, "markdown_sha256": "6840735a9bd2689178beb6cf03e3007af35021319819084cd6aeb5037516b701"}
+    },
+    {
+      "id": "SC-AI",
+      "brief": {
+        "schema_version": 1,
+        "brief_id": "brief-ai",
+        "user_question": "生成式 AI 的模型能力、企业采用与主要风险如何变化？",
+        "profile": "technology_intelligence",
+        "as_of_date": "2026-07-16",
+        "locale": "zh-CN",
+        "geography": null,
+        "subjects": ["生成式 AI"],
+        "expected_decision": "形成技术情报报告",
+        "dimensions": [
+          {"schema_version": 1, "dimension_id": "ai-model", "question": "模型能力变化", "importance": "core", "expected_source_types": ["official", "benchmark"], "query_targets": ["model"], "first_party_required": true, "not_applicable_when": []},
+          {"schema_version": 1, "dimension_id": "ai-adoption", "question": "企业采用进展", "importance": "core", "expected_source_types": ["survey", "filing"], "query_targets": ["adoption"], "first_party_required": false, "not_applicable_when": []},
+          {"schema_version": 1, "dimension_id": "ai-risk", "question": "主要风险与约束", "importance": "core", "expected_source_types": ["regulator", "research"], "query_targets": ["risk"], "first_party_required": false, "not_applicable_when": []}
+        ],
+        "not_applicable_conditions": []
+      },
+      "coverages": [
+        {"schema_version": 1, "dimension_id": "ai-model", "status": "covered", "evidence_passage_ids": ["ai-e1", "ai-e2"], "winning_evidence_ids": ["ai-e1", "ai-e2"], "source_family_ids": ["ai-f1", "ai-f2"], "first_party_satisfied": true, "relevance_score": 0.9, "gap_reasons": []},
+        {"schema_version": 1, "dimension_id": "ai-adoption", "status": "covered", "evidence_passage_ids": ["ai-e3", "ai-e4"], "winning_evidence_ids": ["ai-e3", "ai-e4"], "source_family_ids": ["ai-f3", "ai-f4"], "first_party_satisfied": false, "relevance_score": 0.85, "gap_reasons": []},
+        {"schema_version": 1, "dimension_id": "ai-risk", "status": "partially_covered", "evidence_passage_ids": ["ai-e5"], "winning_evidence_ids": ["ai-e5"], "source_family_ids": ["ai-f5"], "first_party_satisfied": false, "relevance_score": 0.78, "gap_reasons": ["新监管数据仍有限"]}
+      ],
+      "analyses": [
+        {"schema_version": 1, "dimension_id": "ai-model", "direct_answer": "模型能力继续提升，但评测收益更依赖任务和成本约束。", "fact_claim_ids": ["ai-c1", "ai-c2", "ai-c3"], "inference_claim_ids": [], "limitation_claim_ids": [], "winning_evidence_ids": ["ai-e1", "ai-e2"], "relevance_score": 0.9, "confidence": "high"},
+        {"schema_version": 1, "dimension_id": "ai-adoption", "direct_answer": "企业采用从试点转向局部生产部署。", "fact_claim_ids": ["ai-c4", "ai-c5", "ai-c6"], "inference_claim_ids": [], "limitation_claim_ids": [], "winning_evidence_ids": ["ai-e3", "ai-e4"], "relevance_score": 0.85, "confidence": "high"},
+        {"schema_version": 1, "dimension_id": "ai-risk", "direct_answer": "风险治理仍落后于部署速度。", "fact_claim_ids": ["ai-c7", "ai-c8", "ai-c9"], "inference_claim_ids": ["ai-u1"], "limitation_claim_ids": ["ai-u1"], "winning_evidence_ids": ["ai-e5"], "relevance_score": 0.78, "confidence": "medium"}
+      ],
+      "claims": [
+        {"claim_id": "ai-k1", "dimension_id": "ai-model", "text": "模型能力提升仍然显著，但单位收益趋于任务化。", "kind": "key_judgment", "source_ids": ["ai-e1"], "supported_fact_refs": ["ai-p1"], "intent_tokens": ["模型", "能力"], "is_inference": false, "metadata_pseudo_judgment": false},
+        {"claim_id": "ai-k2", "dimension_id": "ai-adoption", "text": "企业采用正从试验转向受控生产部署。", "kind": "key_judgment", "source_ids": ["ai-e3"], "supported_fact_refs": ["ai-p3"], "intent_tokens": ["企业", "采用"], "is_inference": false, "metadata_pseudo_judgment": false},
+        {"claim_id": "ai-k3", "dimension_id": "ai-risk", "text": "治理能力与部署速度之间仍有明显缺口。", "kind": "key_judgment", "source_ids": ["ai-e5"], "supported_fact_refs": ["ai-p5"], "intent_tokens": ["风险", "治理"], "is_inference": true, "metadata_pseudo_judgment": false},
+        {"claim_id": "ai-c1", "dimension_id": "ai-model", "text": "核心任务评测继续改善。", "kind": "current_state", "source_ids": ["ai-e1"], "supported_fact_refs": ["ai-p1"], "intent_tokens": [], "is_inference": false, "metadata_pseudo_judgment": false},
+        {"claim_id": "ai-c2", "dimension_id": "ai-model", "text": "训练扩展转向推理效率和任务适配。", "kind": "driver_change", "source_ids": ["ai-e2"], "supported_fact_refs": ["ai-p2"], "intent_tokens": [], "is_inference": false, "metadata_pseudo_judgment": false},
+        {"claim_id": "ai-c3", "dimension_id": "ai-model", "text": "成本与延迟成为模型选择的核心约束。", "kind": "impact", "source_ids": ["ai-e2"], "supported_fact_refs": ["ai-p2"], "intent_tokens": [], "is_inference": false, "metadata_pseudo_judgment": false},
+        {"claim_id": "ai-c4", "dimension_id": "ai-adoption", "text": "生产部署比例开始上升。", "kind": "current_state", "source_ids": ["ai-e3"], "supported_fact_refs": ["ai-p3"], "intent_tokens": [], "is_inference": false, "metadata_pseudo_judgment": false},
+        {"claim_id": "ai-c5", "dimension_id": "ai-adoption", "text": "可观测性和数据边界推动受控部署。", "kind": "driver_change", "source_ids": ["ai-e4"], "supported_fact_refs": ["ai-p4"], "intent_tokens": [], "is_inference": false, "metadata_pseudo_judgment": false},
+        {"claim_id": "ai-c6", "dimension_id": "ai-adoption", "text": "采购决策更关注总成本和责任边界。", "kind": "impact", "source_ids": ["ai-e4"], "supported_fact_refs": ["ai-p4"], "intent_tokens": [], "is_inference": false, "metadata_pseudo_judgment": false},
+        {"claim_id": "ai-c7", "dimension_id": "ai-risk", "text": "风险控制仍以事后处置为主。", "kind": "current_state", "source_ids": ["ai-e5"], "supported_fact_refs": ["ai-p5"], "intent_tokens": [], "is_inference": false, "metadata_pseudo_judgment": false},
+        {"claim_id": "ai-c8", "dimension_id": "ai-risk", "text": "部署速度快于治理流程更新。", "kind": "driver_change", "source_ids": ["ai-e5"], "supported_fact_refs": ["ai-p5"], "intent_tokens": [], "is_inference": false, "metadata_pseudo_judgment": false},
+        {"claim_id": "ai-c9", "dimension_id": "ai-risk", "text": "责任认定和持续监控成本上升。", "kind": "impact", "source_ids": ["ai-e5"], "supported_fact_refs": ["ai-p5"], "intent_tokens": [], "is_inference": false, "metadata_pseudo_judgment": false},
+        {"claim_id": "ai-u1", "dimension_id": "ai-risk", "text": "监管执行强度仍有不确定性，需要持续核验。", "kind": "uncertainty", "source_ids": ["ai-e5"], "supported_fact_refs": ["ai-p5"], "intent_tokens": [], "is_inference": true, "metadata_pseudo_judgment": false},
+        {"claim_id": "ai-n1", "dimension_id": "ai-model", "text": "按任务成本而不是单一榜单选择模型。", "kind": "next_step", "source_ids": ["ai-e1"], "supported_fact_refs": ["ai-p1"], "intent_tokens": [], "is_inference": true, "metadata_pseudo_judgment": false},
+        {"claim_id": "ai-n2", "dimension_id": "ai-adoption", "text": "优先扩展已有审计能力的生产场景。", "kind": "next_step", "source_ids": ["ai-e3"], "supported_fact_refs": ["ai-p3"], "intent_tokens": [], "is_inference": true, "metadata_pseudo_judgment": false},
+        {"claim_id": "ai-n3", "dimension_id": "ai-risk", "text": "补齐持续监控和责任升级机制。", "kind": "next_step", "source_ids": ["ai-e5"], "supported_fact_refs": ["ai-p5"], "intent_tokens": [], "is_inference": true, "metadata_pseudo_judgment": false}
+      ],
+      "sources": [
+        {"source_id": "ai-e1", "dimension_id": "ai-model", "family_id": "ai-f1", "title": "模型发布说明", "url": "https://example.test/ai/model", "first_party": true, "strong_family": true, "time_sensitive": true, "within_time_window": true},
+        {"source_id": "ai-e2", "dimension_id": "ai-model", "family_id": "ai-f2", "title": "独立模型评测", "url": "https://example.test/ai/benchmark", "first_party": false, "strong_family": true, "time_sensitive": true, "within_time_window": true},
+        {"source_id": "ai-e3", "dimension_id": "ai-adoption", "family_id": "ai-f3", "title": "企业采用调查", "url": "https://example.test/ai/adoption", "first_party": false, "strong_family": true, "time_sensitive": true, "within_time_window": true},
+        {"source_id": "ai-e4", "dimension_id": "ai-adoption", "family_id": "ai-f4", "title": "企业技术披露", "url": "https://example.test/ai/filing", "first_party": true, "strong_family": true, "time_sensitive": true, "within_time_window": true},
+        {"source_id": "ai-e5", "dimension_id": "ai-risk", "family_id": "ai-f5", "title": "风险治理观察", "url": "https://example.test/ai/risk", "first_party": false, "strong_family": true, "time_sensitive": true, "within_time_window": false, "explicit_no_new_evidence": true}
+      ],
+      "expected": {"delivery_status": "partial", "components": [25.0, 21.7, 20.0, 15.0, 10.0, 5.0], "total_score": 96.7, "markdown_sha256": "11894c1a3fa0d81b8f9d2b609a5658b07d4eb5e0ef3b077992401c7439dae912"}
+    }
+  ]
+}

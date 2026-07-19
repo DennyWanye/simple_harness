@@ -19,7 +19,7 @@ export const DEVICE_CONSOLE_URL = "https://chinzy.com/console/devices";
  * 内测默认首选模型别名。`relayProviderBridge` 在 provider 的 models 列表里
  * 优先挑这个；挑不到则回退到 models[0]。与 config.toml 默认值一致。
  */
-export const PREFERRED_MODEL = "deepseek-v4-pro";
+export const PREFERRED_MODEL = "sf-glm-5.2";
 
 /**
  * WI-3 / WI-6: when true, relay is collected into the backend

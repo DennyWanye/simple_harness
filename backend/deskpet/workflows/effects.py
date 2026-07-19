@@ -14,6 +14,7 @@ import time
 import unicodedata
 import zipfile
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
@@ -22,6 +23,7 @@ from typing import Any, Callable, Mapping, Sequence
 import aiosqlite
 
 from .contracts import EffectKind, EffectPolicy, JsonValue, canonical_json, validate_json_value
+from .deadlines import DeadlineLeaseV1, DurableDeadlineV1, resume_deadline
 from .store import RunFence, StaleRunFence, initialize_workflow_db
 
 
@@ -35,6 +37,10 @@ class TargetReservationConflict(EffectJournalError):
 
 class EffectStateConflict(EffectJournalError):
     """An effect or target cannot make the requested state transition."""
+
+
+class BudgetReservationExceeded(EffectJournalError):
+    """A durable reservation would exceed the run's immutable budget capability."""
 
 
 class StagingPreconditionFailed(EffectJournalError):
@@ -430,6 +436,50 @@ class BeginEffectResult:
 
 
 @dataclass(frozen=True, slots=True)
+class IdempotentReadAttempt:
+    action: EffectAction
+    effect_id: str
+    logical_effect_id: str
+    attempt_no: int
+    status: EffectStatus
+    canonical_result_ref: str | None = None
+    dependency_refs: tuple[str, ...] = ()
+    result_kind: str | None = None
+    deadline_state: DurableDeadlineV1 | None = None
+    deadline_lease: DeadlineLeaseV1 | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BudgetReservationRecord:
+    effect_id: str
+    run_id: str
+    ledger_kind: str
+    input_reserved: int
+    output_reserved: int
+    cost_reserved_micros: int
+    input_actual: int | None
+    output_actual: int | None
+    cost_actual_micros: int | None
+    status: str
+    dispatch_state: str
+    upstream_started_at: float | None
+    created_at: float
+    updated_at: float
+
+
+@dataclass(frozen=True, slots=True)
+class BudgetLedgerSnapshot:
+    ledger_kind: str
+    max_input_tokens: int
+    max_output_tokens: int
+    max_cost_micros: int
+    charged_input_tokens: int
+    charged_output_tokens: int
+    charged_cost_micros: int
+    reservations: tuple[BudgetReservationRecord, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class EffectExecutionContext:
     """Fenced runtime identity required by production effect adapters."""
 
@@ -742,6 +792,910 @@ class EffectJournal:
         reuse_checkpoint: CheckpointEffectLink | None = None,
         reservation_ttl_seconds: float = 90.0,
     ) -> BeginEffectResult:
+        """Begin a legacy effect without changing its established semantics."""
+
+        return await self._begin(
+            fence,
+            node_execution_id=node_execution_id,
+            workflow_name=workflow_name,
+            workflow_version=workflow_version,
+            node_id=node_id,
+            logical_effect_key=logical_effect_key,
+            prepared=prepared,
+            policy=policy,
+            reuse_checkpoint=reuse_checkpoint,
+            reservation_ttl_seconds=reservation_ttl_seconds,
+            budget_reservation=None,
+            resource_budget_kind=None,
+        )
+
+    async def begin_with_budget(
+        self,
+        fence: RunFence,
+        *,
+        node_execution_id: str,
+        workflow_name: str,
+        workflow_version: str,
+        node_id: str,
+        logical_effect_key: str,
+        prepared: PreparedToolCall,
+        policy: EffectPolicy,
+        ledger_kind: str,
+        input_reserved: int,
+        output_reserved: int,
+        cost_reserved_micros: int,
+        capability_key: str = "research_llm_budget",
+        reuse_checkpoint: CheckpointEffectLink | None = None,
+        reservation_ttl_seconds: float = 90.0,
+        record_denial: bool = False,
+        denial_artifact_refs: Sequence[str] = (),
+        resource_budget_kind: str | None = None,
+    ) -> BeginEffectResult:
+        """Atomically fence, cap-check and reserve an effect's upstream budget."""
+
+        if not ledger_kind:
+            raise ValueError("ledger_kind is required")
+        reserved = (input_reserved, output_reserved, cost_reserved_micros)
+        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in reserved):
+            raise ValueError("budget reservations must be non-negative integers")
+        if not any(reserved):
+            raise ValueError("at least one budget reservation must be positive")
+        if not capability_key:
+            raise ValueError("capability_key is required")
+        if resource_budget_kind not in {None, "llm"}:
+            raise ValueError("unsupported v6 effect resource budget kind")
+        return await self._begin(
+            fence,
+            node_execution_id=node_execution_id,
+            workflow_name=workflow_name,
+            workflow_version=workflow_version,
+            node_id=node_id,
+            logical_effect_key=logical_effect_key,
+            prepared=prepared,
+            policy=policy,
+            reuse_checkpoint=reuse_checkpoint,
+            reservation_ttl_seconds=reservation_ttl_seconds,
+            budget_reservation=(
+                ledger_kind,
+                input_reserved,
+                output_reserved,
+                cost_reserved_micros,
+                capability_key,
+            ),
+            record_budget_denial=record_denial,
+            denial_artifact_refs=denial_artifact_refs,
+            resource_budget_kind=resource_budget_kind,
+        )
+
+    @staticmethod
+    def _deadline_epoch(value: object) -> float:
+        text = str(value)
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+
+    @staticmethod
+    def _v6_deadline_from_row(row: Mapping[str, object]) -> DurableDeadlineV1:
+        def wall(value: object | None) -> str | None:
+            if value is None:
+                return None
+            return datetime.fromtimestamp(float(value), timezone.utc).isoformat()
+
+        return DurableDeadlineV1.from_json(
+            {
+                "schema_version": int(row["schema_version"]),
+                "deadline_id": str(row["deadline_id"]),
+                "parent_deadline_id": row["parent_deadline_id"],
+                "logical_scope": str(row["logical_scope"]),
+                "policy_hash": str(row["policy_hash"]),
+                "budget_ms": int(row["budget_ms"]),
+                "remaining_ms": int(row["remaining_ms"]),
+                "created_at": wall(row["created_at"]),
+                "last_observed_at": wall(row["last_observed_at"]),
+                "wall_not_after": wall(row["wall_not_after"]),
+                "offline_policy": str(row["offline_policy"]),
+                "rollback_tolerance_ms": int(row["rollback_tolerance_ms"]),
+                "revision": int(row["revision"]),
+                "status": str(row["status"]),
+                "terminal_reason": row["terminal_reason"],
+                "terminal_at": wall(row["terminal_at"]),
+            }
+        )
+
+    async def _persist_v6_deadline_transition(
+        self,
+        db: aiosqlite.Connection,
+        *,
+        run_id: str,
+        previous_revision: int,
+        state: DurableDeadlineV1,
+    ) -> None:
+        cursor = await db.execute(
+            """UPDATE workflow_research_deadlines SET
+            remaining_ms=?,last_observed_at=?,revision=?,status=?,
+            terminal_reason=?,terminal_at=?
+            WHERE deadline_id=? AND run_id=? AND revision=? AND status='open'""",
+            (
+                state.remaining_ms,
+                self._deadline_epoch(state.last_observed_at),
+                state.revision,
+                state.status,
+                state.terminal_reason,
+                (
+                    self._deadline_epoch(state.terminal_at)
+                    if state.terminal_at is not None
+                    else None
+                ),
+                state.deadline_id,
+                run_id,
+                previous_revision,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise EffectStateConflict("v6 read deadline observation CAS lost")
+
+    async def persist_v6_deadline(
+        self,
+        fence: RunFence,
+        state: Mapping[str, JsonValue],
+        *,
+        expected_revision: int | None = None,
+    ) -> None:
+        """Insert or CAS-update one contract-owned v6 deadline row."""
+
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            await self._assert_fence(db, fence)
+            existing = await (
+                await db.execute(
+                    "SELECT * FROM workflow_research_deadlines WHERE deadline_id=?",
+                    (str(state["deadline_id"]),),
+                )
+            ).fetchone()
+            values = (
+                int(state["schema_version"]),
+                fence.run_id,
+                state.get("parent_deadline_id"),
+                str(state["logical_scope"]),
+                str(state["policy_hash"]),
+                int(state["budget_ms"]),
+                int(state["remaining_ms"]),
+                self._deadline_epoch(state["created_at"]),
+                self._deadline_epoch(state["last_observed_at"]),
+                self._deadline_epoch(state["wall_not_after"]),
+                str(state["offline_policy"]),
+                int(state["rollback_tolerance_ms"]),
+                int(state["revision"]),
+                str(state["status"]),
+                state.get("terminal_reason"),
+                (
+                    self._deadline_epoch(state["terminal_at"])
+                    if state.get("terminal_at") is not None
+                    else None
+                ),
+            )
+            if existing is None:
+                if expected_revision is not None:
+                    raise EffectStateConflict("v6 deadline CAS target is missing")
+                await db.execute(
+                    """INSERT INTO workflow_research_deadlines(
+                    deadline_id,schema_version,run_id,parent_deadline_id,logical_scope,
+                    policy_hash,budget_ms,remaining_ms,created_at,last_observed_at,
+                    wall_not_after,offline_policy,rollback_tolerance_ms,revision,status,
+                    terminal_reason,terminal_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (str(state["deadline_id"]), *values),
+                )
+            else:
+                if str(existing["run_id"]) != fence.run_id:
+                    raise EffectStateConflict("v6 deadline belongs to another run")
+                if expected_revision is None:
+                    immutable = (
+                        str(existing["logical_scope"]),
+                        str(existing["policy_hash"]),
+                        int(existing["budget_ms"]),
+                        existing["parent_deadline_id"],
+                    )
+                    requested = (
+                        str(state["logical_scope"]),
+                        str(state["policy_hash"]),
+                        int(state["budget_ms"]),
+                        state.get("parent_deadline_id"),
+                    )
+                    if immutable != requested:
+                        raise EffectStateConflict("v6 deadline immutable identity differs")
+                else:
+                    cursor = await db.execute(
+                        """UPDATE workflow_research_deadlines SET
+                        remaining_ms=?,last_observed_at=?,revision=?,status=?,
+                        terminal_reason=?,terminal_at=?
+                        WHERE deadline_id=? AND run_id=? AND revision=?""",
+                        (
+                            int(state["remaining_ms"]),
+                            self._deadline_epoch(state["last_observed_at"]),
+                            int(state["revision"]),
+                            str(state["status"]),
+                            state.get("terminal_reason"),
+                            (
+                                self._deadline_epoch(state["terminal_at"])
+                                if state.get("terminal_at") is not None
+                                else None
+                            ),
+                            str(state["deadline_id"]),
+                            fence.run_id,
+                            expected_revision,
+                        ),
+                    )
+                    if cursor.rowcount != 1:
+                        raise EffectStateConflict("v6 deadline revision changed")
+            await db.commit()
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def load_v6_deadline(
+        self, run_id: str, deadline_id: str
+    ) -> dict[str, JsonValue] | None:
+        db = await self._connect()
+        try:
+            row = await (
+                await db.execute(
+                    "SELECT * FROM workflow_research_deadlines WHERE run_id=? AND deadline_id=?",
+                    (run_id, deadline_id),
+                )
+            ).fetchone()
+            if row is None:
+                return None
+            def wall(value: object | None) -> str | None:
+                if value is None:
+                    return None
+                return datetime.fromtimestamp(float(value), timezone.utc).isoformat()
+            return {
+                "schema_version": int(row["schema_version"]),
+                "deadline_id": str(row["deadline_id"]),
+                "parent_deadline_id": row["parent_deadline_id"],
+                "logical_scope": str(row["logical_scope"]),
+                "policy_hash": str(row["policy_hash"]),
+                "budget_ms": int(row["budget_ms"]),
+                "remaining_ms": int(row["remaining_ms"]),
+                "created_at": wall(row["created_at"]),
+                "last_observed_at": wall(row["last_observed_at"]),
+                "wall_not_after": wall(row["wall_not_after"]),
+                "offline_policy": str(row["offline_policy"]),
+                "rollback_tolerance_ms": int(row["rollback_tolerance_ms"]),
+                "revision": int(row["revision"]),
+                "status": str(row["status"]),
+                "terminal_reason": row["terminal_reason"],
+                "terminal_at": wall(row["terminal_at"]),
+            }
+        finally:
+            await db.close()
+
+    async def ensure_v6_resource_budgets(
+        self,
+        fence: RunFence,
+        *,
+        policy_hash: str,
+        budgets: Mapping[str, int],
+    ) -> None:
+        expected = {"query", "fetch", "browser", "llm", "lane"}
+        if set(budgets) != expected:
+            raise ValueError("v6 route budgets must cover query/fetch/browser/llm/lane")
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            await self._assert_fence(db, fence)
+            for kind in sorted(expected):
+                limit = int(budgets[kind])
+                if limit < 0:
+                    raise ValueError("v6 route budget limits must be non-negative")
+                budget_id = hashlib.sha256(
+                    f"{fence.run_id}|{policy_hash}|{kind}".encode("utf-8")
+                ).hexdigest()
+                row = await (
+                    await db.execute(
+                        """SELECT * FROM workflow_research_resource_budgets
+                        WHERE run_id=? AND resource_kind=?""",
+                        (fence.run_id, kind),
+                    )
+                ).fetchone()
+                if row is None:
+                    await db.execute(
+                        """INSERT INTO workflow_research_resource_budgets(
+                        budget_id,run_id,policy_hash,resource_kind,hard_limit)
+                        VALUES(?,?,?,?,?)""",
+                        (budget_id, fence.run_id, policy_hash, kind, limit),
+                    )
+                elif str(row["policy_hash"]) != policy_hash or int(row["hard_limit"]) != limit:
+                    raise EffectStateConflict("persisted v6 route budget differs")
+            await db.commit()
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def begin_idempotent_read_attempt(
+        self,
+        fence: RunFence,
+        *,
+        node_execution_id: str,
+        node_id: str,
+        logical_effect_id: str,
+        attempt_no: int,
+        deadline_id: str,
+        deadline_revision: int,
+        deadline_now_wall: datetime | None = None,
+        deadline_now_monotonic_ns: int | None = None,
+        resource_kind: str,
+        resource_hard_limit: int,
+        resource_policy_hash: str,
+        prepared: PreparedToolCall,
+        fault_injector: Callable[[str], None] | None = None,
+    ) -> IdempotentReadAttempt:
+        """Atomically attach frozen v6 read identity, deadline and one resource unit."""
+
+        if len(logical_effect_id) != 64 or any(
+            ch not in "0123456789abcdef" for ch in logical_effect_id
+        ):
+            raise ValueError("logical_effect_id must be a lowercase SHA-256 digest")
+        if prepared.stable_call_id != logical_effect_id:
+            raise ValueError("v6 read stable_call_id must equal logical_effect_id")
+        if attempt_no not in {1, 2}:
+            raise ValueError("v6 read attempt_no must be 1 or 2")
+        if resource_kind not in {"query", "fetch", "browser"}:
+            raise ValueError("unsupported v6 read resource kind")
+        effect_id = hashlib.sha256(
+            f"{fence.run_id}|{logical_effect_id}|{attempt_no}".encode("utf-8")
+        ).hexdigest()
+        fingerprint = hashlib.sha256(
+            f"{logical_effect_id}|{attempt_no}".encode("utf-8")
+        ).hexdigest()
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            await self._assert_fence(db, fence)
+            existing = await (
+                await db.execute(
+                    """SELECT effect.*,head.canonical_effect_id FROM workflow_effects effect
+                    LEFT JOIN workflow_effect_attempt_heads head
+                    ON head.logical_effect_id=effect.logical_effect_id
+                    WHERE effect.run_id=? AND effect.logical_effect_id=? AND effect.attempt_no=?""",
+                    (fence.run_id, logical_effect_id, attempt_no),
+                )
+            ).fetchone()
+            if existing is not None:
+                raw = json.loads(existing["outcome_json"]) if existing["outcome_json"] else None
+                action = (
+                    EffectAction.REUSE
+                    if existing["status"] == "committed"
+                    and existing["canonical_effect_id"] == existing["effect_id"]
+                    else EffectAction.IN_FLIGHT
+                )
+                await db.commit()
+                return IdempotentReadAttempt(
+                    action=action,
+                    effect_id=str(existing["effect_id"]),
+                    logical_effect_id=logical_effect_id,
+                    attempt_no=attempt_no,
+                    status=EffectStatus(str(existing["status"])),
+                    canonical_result_ref=(
+                        str(raw["canonical_result_ref"])
+                        if action is EffectAction.REUSE and raw
+                        else None
+                    ),
+                    dependency_refs=(
+                        tuple(str(x) for x in raw["dependency_refs"])
+                        if action is EffectAction.REUSE and raw
+                        else ()
+                    ),
+                    result_kind=(
+                        str(raw["result_kind"])
+                        if action is EffectAction.REUSE and raw
+                        else None
+                    ),
+                )
+            deadline = await (
+                await db.execute(
+                    """SELECT * FROM workflow_research_deadlines
+                    WHERE deadline_id=? AND run_id=?""",
+                    (deadline_id, fence.run_id),
+                )
+            ).fetchone()
+            if deadline is None or int(deadline["revision"]) != deadline_revision:
+                raise EffectStateConflict("v6 read deadline revision differs")
+            if str(deadline["status"]) != "open":
+                raise EffectStateConflict("v6 read deadline is terminal")
+            deadline_state = self._v6_deadline_from_row(deadline)
+            deadline_lease: DeadlineLeaseV1 | None = None
+            if (deadline_now_wall is None) != (deadline_now_monotonic_ns is None):
+                raise ValueError("v6 read deadline observations must be supplied together")
+            if deadline_now_wall is not None and deadline_now_monotonic_ns is not None:
+                transition = resume_deadline(
+                    deadline_state,
+                    now_wall=deadline_now_wall,
+                    now_monotonic_ns=deadline_now_monotonic_ns,
+                )
+                await self._persist_v6_deadline_transition(
+                    db,
+                    run_id=fence.run_id,
+                    previous_revision=deadline_state.revision,
+                    state=transition.state,
+                )
+                deadline_state = transition.state
+                deadline_lease = transition.lease
+                deadline_revision = deadline_state.revision
+                if deadline_lease is None:
+                    await db.commit()
+                    raise EffectStateConflict("v6 read deadline expired before dispatch")
+                if fault_injector is not None:
+                    fault_injector("after_deadline_before_effect")
+            head = await (
+                await db.execute(
+                    "SELECT * FROM workflow_effect_attempt_heads WHERE logical_effect_id=?",
+                    (logical_effect_id,),
+                )
+            ).fetchone()
+            if head is None:
+                if attempt_no != 1:
+                    raise EffectStateConflict("first v6 read attempt must be 1")
+            elif (
+                str(head["run_id"]) != fence.run_id
+                or attempt_no != int(head["latest_attempt_no"]) + 1
+                or head["canonical_effect_id"] is not None
+            ):
+                raise EffectStateConflict("v6 read attempt does not extend its head")
+            budget_id = hashlib.sha256(
+                f"{fence.run_id}|{resource_policy_hash}|{resource_kind}".encode("utf-8")
+            ).hexdigest()
+            budget = await (
+                await db.execute(
+                    "SELECT * FROM workflow_research_resource_budgets WHERE run_id=? AND resource_kind=?",
+                    (fence.run_id, resource_kind),
+                )
+            ).fetchone()
+            if budget is None:
+                await db.execute(
+                    """INSERT INTO workflow_research_resource_budgets(
+                    budget_id,run_id,policy_hash,resource_kind,hard_limit)
+                    VALUES(?,?,?,?,?)""",
+                    (budget_id, fence.run_id, resource_policy_hash, resource_kind, resource_hard_limit),
+                )
+            elif (
+                str(budget["policy_hash"]) != resource_policy_hash
+                or int(budget["hard_limit"]) != resource_hard_limit
+            ):
+                raise EffectStateConflict("v6 read route budget identity differs")
+            budget = await (
+                await db.execute(
+                    "SELECT * FROM workflow_research_resource_budgets WHERE budget_id=?",
+                    (budget_id,),
+                )
+            ).fetchone()
+            assert budget is not None
+            if int(budget["reserved"]) + int(budget["consumed"]) >= int(budget["hard_limit"]):
+                raise BudgetReservationExceeded(f"v6 {resource_kind} route budget exhausted")
+            now = self._clock()
+            policy_json = canonical_json(
+                {
+                    "policy_id": "deep-research-v6-page-read-v1",
+                    "version": "v1",
+                    "kind": EffectKind.IDEMPOTENT_READ.value,
+                    "max_attempts": 2,
+                    "reusable_across_branches": False,
+                    "deadline_id": deadline_id,
+                    "deadline_revision": deadline_revision,
+                }
+            )
+            supersedes = None
+            if head is not None:
+                supersedes = hashlib.sha256(
+                    f"{fence.run_id}|{logical_effect_id}|{attempt_no - 1}".encode("utf-8")
+                ).hexdigest()
+            await db.execute(
+                """INSERT INTO workflow_effects(
+                effect_id,run_id,node_execution_id,effect_fingerprint,effect_type,
+                policy_json,args_hash,status,prepared_json,artifact_refs_json,
+                lease_epoch,started_at,updated_at,logical_effect_id,attempt_no,
+                supersedes_effect_id) VALUES(?,?,?,?,?,?,?,'running',?,'[]',?,?,?,?,?,?)""",
+                (
+                    effect_id, fence.run_id, node_execution_id, fingerprint,
+                    prepared.effect_type, policy_json, prepared.args_hash,
+                    canonical_json(prepared.to_dict()), fence.lease_epoch, now, now,
+                    logical_effect_id, attempt_no, supersedes,
+                ),
+            )
+            await db.execute(
+                "INSERT INTO workflow_node_effects(node_execution_id,effect_id) VALUES(?,?)",
+                (node_execution_id, effect_id),
+            )
+            reservation_id = hashlib.sha256(
+                f"{effect_id}|{budget_id}|{deadline_id}".encode("utf-8")
+            ).hexdigest()
+            await db.execute(
+                """INSERT INTO workflow_research_resource_reservations(
+                reservation_id,budget_id,deadline_id,effect_id,amount_reserved,
+                status,created_at,updated_at) VALUES(?,?,?,?,1,'reserved',?,?)""",
+                (reservation_id, budget_id, deadline_id, effect_id, now, now),
+            )
+            await db.execute(
+                """UPDATE workflow_research_resource_budgets
+                SET reserved=reserved+1,revision=revision+1 WHERE budget_id=?""",
+                (budget_id,),
+            )
+            if head is None:
+                await db.execute(
+                    """INSERT INTO workflow_effect_attempt_heads(
+                    logical_effect_id,run_id,latest_attempt_no,canonical_effect_id,
+                    policy_id,updated_at) VALUES(?,?,1,NULL,?,?)""",
+                    (logical_effect_id, fence.run_id, "deep-research-v6-page-read-v1", now),
+                )
+            else:
+                await db.execute(
+                    """UPDATE workflow_effect_attempt_heads SET latest_attempt_no=?,updated_at=?
+                    WHERE logical_effect_id=?""",
+                    (attempt_no, now, logical_effect_id),
+                )
+            if fault_injector is not None:
+                fault_injector("before_commit")
+            await db.commit()
+            if fault_injector is not None:
+                fault_injector("after_commit")
+            return IdempotentReadAttempt(
+                EffectAction.EXECUTE, effect_id, logical_effect_id, attempt_no,
+                EffectStatus.RUNNING,
+                deadline_state=deadline_state,
+                deadline_lease=deadline_lease,
+            )
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def commit_idempotent_read_attempt(
+        self,
+        fence: RunFence,
+        *,
+        effect_id: str,
+        canonical_result_ref: str,
+        dependency_refs: Sequence[str],
+        result_kind: str,
+        amount_actual: int = 1,
+        deadline_now_wall: datetime | None = None,
+        deadline_now_monotonic_ns: int | None = None,
+    ) -> IdempotentReadAttempt:
+        if result_kind not in {"official_search", "page_extraction"}:
+            raise ValueError("unsupported v6 read result kind")
+        wire_refs = tuple(sorted(set(str(ref) for ref in dependency_refs)))
+        if canonical_result_ref not in wire_refs:
+            raise ValueError("canonical v6 read result must belong to its closure")
+        digests = tuple(ref.removeprefix("sha256:") for ref in wire_refs)
+        if any(len(digest) != 64 for digest in digests):
+            raise ValueError("v6 read dependency refs must be wire SHA-256 refs")
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            await self._assert_fence(db, fence)
+            row = await (
+                await db.execute("SELECT * FROM workflow_effects WHERE effect_id=?", (effect_id,))
+            ).fetchone()
+            if row is None or row["logical_effect_id"] is None:
+                raise EffectStateConflict("v6 read effect is missing")
+            head = await (
+                await db.execute(
+                    "SELECT * FROM workflow_effect_attempt_heads WHERE logical_effect_id=?",
+                    (row["logical_effect_id"],),
+                )
+            ).fetchone()
+            if row["status"] == "committed" and head is not None and head["canonical_effect_id"] == effect_id:
+                raw = json.loads(row["outcome_json"])
+                await db.commit()
+                return IdempotentReadAttempt(
+                    EffectAction.REUSE, effect_id, str(row["logical_effect_id"]),
+                    int(row["attempt_no"]), EffectStatus.COMMITTED,
+                    str(raw["canonical_result_ref"]),
+                    tuple(str(x) for x in raw["dependency_refs"]),
+                    str(raw["result_kind"]),
+                )
+            if row["status"] != "running" or head is None or head["canonical_effect_id"] is not None:
+                raise EffectStateConflict("v6 read effect cannot become canonical")
+            if (deadline_now_wall is None) != (deadline_now_monotonic_ns is None):
+                raise ValueError("v6 read deadline observations must be supplied together")
+            deadline_state: DurableDeadlineV1 | None = None
+            deadline_lease: DeadlineLeaseV1 | None = None
+            if deadline_now_wall is not None and deadline_now_monotonic_ns is not None:
+                deadline_row = await (
+                    await db.execute(
+                        """SELECT deadline.* FROM workflow_research_deadlines deadline
+                        JOIN workflow_research_resource_reservations reservation
+                          ON reservation.deadline_id=deadline.deadline_id
+                        WHERE reservation.effect_id=? AND deadline.run_id=?""",
+                        (effect_id, fence.run_id),
+                    )
+                ).fetchone()
+                if deadline_row is None:
+                    raise EffectStateConflict("v6 read deadline is missing at commit")
+                deadline_state = self._v6_deadline_from_row(deadline_row)
+                if deadline_state.status == "open":
+                    transition = resume_deadline(
+                        deadline_state,
+                        now_wall=deadline_now_wall,
+                        now_monotonic_ns=deadline_now_monotonic_ns,
+                    )
+                    await self._persist_v6_deadline_transition(
+                        db,
+                        run_id=fence.run_id,
+                        previous_revision=deadline_state.revision,
+                        state=transition.state,
+                    )
+                    deadline_state = transition.state
+                    deadline_lease = transition.lease
+            for digest in digests:
+                blob = await (
+                    await db.execute("SELECT 1 FROM workflow_blobs WHERE sha256=?", (digest,))
+                ).fetchone()
+                owner = await (
+                    await db.execute(
+                        """SELECT 1 FROM workflow_blob_refs
+                        WHERE sha256=? AND owner_kind='run_staging' AND owner_id=?""",
+                        (digest, fence.run_id),
+                    )
+                ).fetchone()
+                if blob is None or owner is None:
+                    raise StagingPreconditionFailed("v6 read closure lacks same-run staging owner")
+            outcome = {
+                "schema_version": 1,
+                "canonical_result_ref": canonical_result_ref,
+                "dependency_refs": list(wire_refs),
+                "result_kind": result_kind,
+            }
+            now = self._clock()
+            await db.execute(
+                """UPDATE workflow_effects SET status='committed',outcome_json=?,
+                artifact_refs_json=?,updated_at=?,ended_at=? WHERE effect_id=?""",
+                (canonical_json(outcome), canonical_json(list(digests)), now, now, effect_id),
+            )
+            for digest in digests:
+                await db.execute(
+                    """INSERT OR IGNORE INTO workflow_blob_refs(
+                    sha256,owner_kind,owner_id,created_at) VALUES(?,'effect',?,?)""",
+                    (digest, effect_id, now),
+                )
+                await db.execute(
+                    """DELETE FROM workflow_blob_refs
+                    WHERE sha256=? AND owner_kind='run_staging' AND owner_id=?""",
+                    (digest, fence.run_id),
+                )
+            await db.execute(
+                """UPDATE workflow_effect_attempt_heads SET canonical_effect_id=?,updated_at=?
+                WHERE logical_effect_id=? AND canonical_effect_id IS NULL""",
+                (effect_id, now, row["logical_effect_id"]),
+            )
+            reservation = await (
+                await db.execute(
+                    """SELECT reservation.*,budget.reserved,budget.consumed
+                    FROM workflow_research_resource_reservations reservation
+                    JOIN workflow_research_resource_budgets budget USING(budget_id)
+                    WHERE reservation.effect_id=?""",
+                    (effect_id,),
+                )
+            ).fetchone()
+            if reservation is None or reservation["status"] != "reserved":
+                raise EffectStateConflict("v6 read resource reservation is missing")
+            actual = max(0, min(int(amount_actual), int(reservation["amount_reserved"])))
+            await db.execute(
+                """UPDATE workflow_research_resource_reservations SET
+                amount_actual=?,status='committed',updated_at=? WHERE effect_id=?""",
+                (actual, now, effect_id),
+            )
+            await db.execute(
+                """UPDATE workflow_research_resource_budgets SET
+                reserved=reserved-?,consumed=consumed+?,revision=revision+1
+                WHERE budget_id=?""",
+                (int(reservation["amount_reserved"]), actual, reservation["budget_id"]),
+            )
+            await db.commit()
+            return IdempotentReadAttempt(
+                EffectAction.REUSE, effect_id, str(row["logical_effect_id"]),
+                int(row["attempt_no"]), EffectStatus.COMMITTED,
+                canonical_result_ref, wire_refs, result_kind,
+                deadline_state=deadline_state,
+                deadline_lease=deadline_lease,
+            )
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def reconcile_idempotent_read_for_retry(
+        self,
+        fence: RunFence,
+        *,
+        logical_effect_id: str,
+        attempt_no: int,
+    ) -> IdempotentReadAttempt:
+        """Conservatively settle one stale read attempt before a separate retry begin.
+
+        This transaction never creates the successor attempt.  Keeping the head
+        on the real failed row prevents a crash from manufacturing an attempt
+        gap; the later ``begin_idempotent_read_attempt(attempt_no + 1)`` is the
+        only operation allowed to advance it.
+        """
+
+        if len(logical_effect_id) != 64 or any(
+            character not in "0123456789abcdef" for character in logical_effect_id
+        ):
+            raise ValueError("logical_effect_id must be a lowercase SHA-256 digest")
+        if attempt_no not in {1, 2}:
+            raise ValueError("v6 read attempt_no must be 1 or 2")
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            await self._assert_fence(db, fence)
+            head = await (
+                await db.execute(
+                    "SELECT * FROM workflow_effect_attempt_heads WHERE logical_effect_id=?",
+                    (logical_effect_id,),
+                )
+            ).fetchone()
+            row = await (
+                await db.execute(
+                    """SELECT * FROM workflow_effects
+                    WHERE run_id=? AND logical_effect_id=? AND attempt_no=?""",
+                    (fence.run_id, logical_effect_id, attempt_no),
+                )
+            ).fetchone()
+            if row is None or head is None or str(head["run_id"]) != fence.run_id:
+                raise EffectStateConflict("v6 read attempt/head is missing")
+            if (
+                head["canonical_effect_id"] is not None
+                and str(head["canonical_effect_id"]) == str(row["effect_id"])
+                and str(row["status"]) == "committed"
+            ):
+                outcome = json.loads(str(row["outcome_json"]))
+                await db.commit()
+                return IdempotentReadAttempt(
+                    EffectAction.REUSE,
+                    str(row["effect_id"]),
+                    logical_effect_id,
+                    attempt_no,
+                    EffectStatus.COMMITTED,
+                    str(outcome["canonical_result_ref"]),
+                    tuple(str(item) for item in outcome["dependency_refs"]),
+                    str(outcome["result_kind"]),
+                )
+            if str(row["status"]) == "failed":
+                await db.commit()
+                return IdempotentReadAttempt(
+                    EffectAction.FAILED,
+                    str(row["effect_id"]),
+                    logical_effect_id,
+                    attempt_no,
+                    EffectStatus.FAILED,
+                )
+            if int(head["latest_attempt_no"]) != attempt_no or head["canonical_effect_id"] is not None:
+                raise EffectStateConflict("v6 read head no longer names the stale attempt")
+            if str(row["status"]) not in {"running", "uncertain"}:
+                raise EffectStateConflict("v6 read attempt cannot be reconciled")
+            if int(row["lease_epoch"]) >= fence.lease_epoch:
+                raise EffectStateConflict("current-owner v6 read attempt is still in flight")
+            reservation = await (
+                await db.execute(
+                    """SELECT reservation.*,budget.reserved,budget.consumed
+                    FROM workflow_research_resource_reservations reservation
+                    JOIN workflow_research_resource_budgets budget USING(budget_id)
+                    WHERE reservation.effect_id=?""",
+                    (row["effect_id"],),
+                )
+            ).fetchone()
+            if reservation is None or str(reservation["status"]) != "reserved":
+                raise EffectStateConflict("stale v6 read reservation is not reserved")
+            amount = int(reservation["amount_reserved"])
+            now = self._clock()
+            outcome = {
+                "schema_version": 1,
+                "status": "failed",
+                "reason_code": "stale_owner_epoch",
+            }
+            await db.execute(
+                """UPDATE workflow_effects SET status='failed',outcome_json=?,
+                updated_at=?,ended_at=? WHERE effect_id=? AND status IN ('running','uncertain')""",
+                (canonical_json(outcome), now, now, row["effect_id"]),
+            )
+            await db.execute(
+                """UPDATE workflow_research_resource_reservations SET
+                amount_actual=amount_reserved,status='committed',updated_at=?
+                WHERE effect_id=? AND status='reserved'""",
+                (now, row["effect_id"]),
+            )
+            budget_cursor = await db.execute(
+                """UPDATE workflow_research_resource_budgets SET
+                reserved=reserved-?,consumed=consumed+?,revision=revision+1
+                WHERE budget_id=? AND reserved>=?""",
+                (amount, amount, reservation["budget_id"], amount),
+            )
+            if budget_cursor.rowcount != 1:
+                raise EffectStateConflict("stale v6 read budget settlement CAS lost")
+            await db.commit()
+            return IdempotentReadAttempt(
+                EffectAction.FAILED,
+                str(row["effect_id"]),
+                logical_effect_id,
+                attempt_no,
+                EffectStatus.FAILED,
+            )
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def assert_canonical_v6_read_result_owner(
+        self,
+        *,
+        run_id: str,
+        canonical_result_ref: str,
+        result_kind: str,
+    ) -> None:
+        """Require a typed result ref to be the same-run canonical effect head."""
+
+        if result_kind not in {"official_search", "page_extraction"}:
+            raise ValueError("unsupported v6 read result kind")
+        digest = canonical_result_ref.removeprefix("sha256:")
+        if len(digest) != 64 or any(
+            character not in "0123456789abcdef" for character in digest
+        ):
+            raise ValueError("canonical_result_ref must be a wire SHA-256 ref")
+        db = await self._connect()
+        try:
+            row = await (
+                await db.execute(
+                    """SELECT 1 FROM workflow_effects effect
+                    JOIN workflow_effect_attempt_heads head
+                      ON head.logical_effect_id=effect.logical_effect_id
+                     AND head.canonical_effect_id=effect.effect_id
+                    JOIN workflow_blob_refs owner
+                      ON owner.sha256=? AND owner.owner_kind='effect'
+                     AND owner.owner_id=effect.effect_id
+                    WHERE effect.run_id=? AND effect.status='committed'
+                      AND json_extract(effect.outcome_json,'$.canonical_result_ref')=?
+                      AND json_extract(effect.outcome_json,'$.result_kind')=?
+                    LIMIT 1""",
+                    (digest, run_id, canonical_result_ref, result_kind),
+                )
+            ).fetchone()
+            if row is None:
+                raise StagingPreconditionFailed(
+                    "v6 read result is not owned by the same-run canonical effect head"
+                )
+        finally:
+            await db.close()
+
+    async def _begin(
+        self,
+        fence: RunFence,
+        *,
+        node_execution_id: str,
+        workflow_name: str,
+        workflow_version: str,
+        node_id: str,
+        logical_effect_key: str,
+        prepared: PreparedToolCall,
+        policy: EffectPolicy,
+        reuse_checkpoint: CheckpointEffectLink | None,
+        reservation_ttl_seconds: float,
+        budget_reservation: tuple[str, int, int, int, str] | None,
+        record_budget_denial: bool = False,
+        denial_artifact_refs: Sequence[str] = (),
+        resource_budget_kind: str | None = None,
+    ) -> BeginEffectResult:
         fingerprint = effect_fingerprint(
             workflow_name=workflow_name,
             workflow_version=workflow_version,
@@ -764,6 +1718,24 @@ class EffectJournal:
             if existing is not None:
                 if existing["args_hash"] != prepared.args_hash:
                     raise EffectStateConflict("effect fingerprint resolved to different arguments")
+                if budget_reservation is not None:
+                    reservation = await (
+                        await db.execute(
+                            "SELECT * FROM workflow_effect_budget_reservations WHERE effect_id=?",
+                            (existing["effect_id"],),
+                        )
+                    ).fetchone()
+                    ledger_kind, input_reserved, output_reserved, cost_reserved, _ = budget_reservation
+                    if reservation is None or (
+                        reservation["run_id"] != fence.run_id
+                        or reservation["ledger_kind"] != ledger_kind
+                        or int(reservation["input_reserved"]) != input_reserved
+                        or int(reservation["output_reserved"]) != output_reserved
+                        or int(reservation["cost_reserved_micros"]) != cost_reserved
+                    ):
+                        raise EffectStateConflict(
+                            "existing effect has a different or missing budget reservation"
+                        )
                 if (
                     existing["status"] == EffectStatus.RUNNING
                     and int(existing["lease_epoch"]) != fence.lease_epoch
@@ -818,6 +1790,8 @@ class EffectJournal:
 
             reusable = None
             if (
+                budget_reservation is None
+                and
                 reuse_checkpoint is not None
                 and policy.kind is EffectKind.DETERMINISTIC_REUSABLE
                 and policy.reusable_across_branches
@@ -831,10 +1805,9 @@ class EffectJournal:
                 await db.commit()
                 return BeginEffectResult(EffectAction.REUSE, self._record(reusable))
 
-            await self._reserve_targets(
-                db, fence, prepared, "claimed", reservation_ttl_seconds
-            )
-            effect_id = hashlib.sha256(f"{fence.run_id}|{fingerprint}".encode("utf-8")).hexdigest()
+            effect_id = hashlib.sha256(
+                f"{fence.run_id}|{fingerprint}".encode("utf-8")
+            ).hexdigest()
             now = self._clock()
             policy_json = canonical_json(
                 {
@@ -845,6 +1818,126 @@ class EffectJournal:
                     "reusable_across_branches": policy.reusable_across_branches,
                 }
             )
+            resource_budget = None
+            resource_budget_denied = False
+            if resource_budget_kind is not None:
+                resource_budget = await (
+                    await db.execute(
+                        """SELECT * FROM workflow_research_resource_budgets
+                        WHERE run_id=? AND resource_kind=?""",
+                        (fence.run_id, resource_budget_kind),
+                    )
+                ).fetchone()
+                if resource_budget is None:
+                    raise EffectStateConflict(
+                        f"v6 {resource_budget_kind} route budget is missing"
+                    )
+                resource_budget_denied = (
+                    int(resource_budget["reserved"])
+                    + int(resource_budget["consumed"])
+                    >= int(resource_budget["hard_limit"])
+                )
+            if budget_reservation is not None:
+                ledger_kind, input_reserved, output_reserved, cost_reserved, capability_key = (
+                    budget_reservation
+                )
+                limits = await self._budget_limits_for_update(
+                    db, fence.run_id, capability_key
+                )
+                charged = await self._charged_budget_for_update(db, fence.run_id, ledger_kind)
+                requested = (input_reserved, output_reserved, cost_reserved)
+                capability_budget_denied = any(
+                    charged_value + requested_value > limit
+                    for charged_value, requested_value, limit in zip(charged, requested, limits)
+                )
+                if resource_budget_denied or capability_budget_denied:
+                    if record_budget_denial:
+                        if prepared.prepared_targets:
+                            raise EffectStateConflict(
+                                "recorded budget denial cannot own prepared targets"
+                            )
+                        denied = NormalizedToolOutcome.failure(
+                            "budget_denied",
+                            (
+                                "effect round exceeds frozen route resource budget"
+                                if resource_budget_denied
+                                else "effect reservation exceeds immutable run capability"
+                            ),
+                        )
+                        await db.execute(
+                            """INSERT INTO workflow_effects(
+                            effect_id,run_id,node_execution_id,effect_fingerprint,effect_type,
+                            policy_json,args_hash,status,outcome_json,prepared_json,artifact_refs_json,
+                            lease_epoch,started_at,updated_at,ended_at
+                            ) VALUES(?,?,?,?,?,?,?,'failed',?,?,?, ?,?,?,?)""",
+                            (
+                                effect_id,
+                                fence.run_id,
+                                node_execution_id,
+                                fingerprint,
+                                prepared.effect_type,
+                                policy_json,
+                                prepared.args_hash,
+                                canonical_json(denied.to_dict()),
+                                canonical_json(prepared.to_dict()),
+                                canonical_json(list(denial_artifact_refs)),
+                                fence.lease_epoch,
+                                now,
+                                now,
+                                now,
+                            ),
+                        )
+                        await db.execute(
+                            """INSERT INTO workflow_effect_budget_reservations(
+                            effect_id,run_id,ledger_kind,input_reserved,output_reserved,
+                            cost_reserved_micros,status,dispatch_state,created_at,updated_at
+                            ) VALUES(?,?,?,?,?,?,'released','not_started',?,?)""",
+                            (
+                                effect_id,
+                                fence.run_id,
+                                ledger_kind,
+                                input_reserved,
+                                output_reserved,
+                                cost_reserved,
+                                now,
+                                now,
+                            ),
+                        )
+                        await db.execute(
+                            """INSERT INTO workflow_node_effects(
+                            node_execution_id,effect_id) VALUES(?,?)""",
+                            (node_execution_id, effect_id),
+                        )
+                        for artifact_ref in sorted(set(denial_artifact_refs)):
+                            digest = str(artifact_ref).removeprefix("sha256:")
+                            blob = await (
+                                await db.execute(
+                                    "SELECT 1 FROM workflow_blobs WHERE sha256=?", (digest,)
+                                )
+                            ).fetchone()
+                            if blob is None:
+                                raise StagingPreconditionFailed(
+                                    f"budget denial dependency is not registered: {digest}"
+                                )
+                            await db.execute(
+                                """INSERT OR IGNORE INTO workflow_blob_refs(
+                                sha256,owner_kind,owner_id,created_at
+                                ) VALUES(?,'effect',?,?)""",
+                                (digest, effect_id, now),
+                            )
+                        row = await (
+                            await db.execute(
+                                "SELECT * FROM workflow_effects WHERE effect_id=?",
+                                (effect_id,),
+                            )
+                        ).fetchone()
+                        await db.commit()
+                        assert row is not None
+                        return BeginEffectResult(EffectAction.FAILED, self._record(row))
+                    raise BudgetReservationExceeded(
+                        f"{ledger_kind} reservation exceeds run capability snapshot"
+                    )
+            await self._reserve_targets(db, fence, prepared, "claimed", reservation_ttl_seconds)
             await db.execute(
                 """INSERT INTO workflow_effects(
                 effect_id,run_id,node_execution_id,effect_fingerprint,effect_type,policy_json,
@@ -877,6 +1970,33 @@ class EffectJournal:
                 "INSERT INTO workflow_node_effects(node_execution_id,effect_id) VALUES(?,?)",
                 (node_execution_id, effect_id),
             )
+            if budget_reservation is not None:
+                ledger_kind, input_reserved, output_reserved, cost_reserved, _ = budget_reservation
+                await db.execute(
+                    """INSERT INTO workflow_effect_budget_reservations(
+                    effect_id,run_id,ledger_kind,input_reserved,output_reserved,
+                    cost_reserved_micros,status,dispatch_state,created_at,updated_at
+                    ) VALUES(?,?,?,?,?,?,'reserved','not_started',?,?)""",
+                    (
+                        effect_id,
+                        fence.run_id,
+                        ledger_kind,
+                        input_reserved,
+                        output_reserved,
+                        cost_reserved,
+                        now,
+                        now,
+                    ),
+                )
+            if resource_budget is not None:
+                cursor = await db.execute(
+                    """UPDATE workflow_research_resource_budgets
+                    SET consumed=consumed+1,revision=revision+1
+                    WHERE budget_id=? AND reserved+consumed<hard_limit""",
+                    (resource_budget["budget_id"],),
+                )
+                if cursor.rowcount != 1:
+                    raise EffectStateConflict("v6 LLM route budget consume CAS lost")
             row = await (
                 await db.execute("SELECT * FROM workflow_effects WHERE effect_id=?", (effect_id,))
             ).fetchone()
@@ -937,6 +2057,216 @@ class EffectJournal:
             result = await self._effect_for_update(db, fence.run_id, effect_id)
             await db.commit()
             return self._record(result)
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def mark_upstream_started(
+        self, fence: RunFence, effect_id: str
+    ) -> BudgetReservationRecord:
+        """CAS a reserved call immediately before entering provider transport."""
+
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            await self._assert_fence(db, fence)
+            effect = await self._effect_for_update(db, fence.run_id, effect_id)
+            if int(effect["lease_epoch"]) != fence.lease_epoch:
+                raise StaleRunFence(f"effect belongs to stale epoch: {effect_id}")
+            reservation = await self._budget_reservation_for_update(db, fence.run_id, effect_id)
+            if reservation["status"] != "reserved":
+                raise EffectStateConflict(
+                    f"cannot dispatch budget reservation in state {reservation['status']}"
+                )
+            if reservation["dispatch_state"] == "not_started":
+                now = self._clock()
+                cursor = await db.execute(
+                    """UPDATE workflow_effect_budget_reservations
+                    SET dispatch_state='started',upstream_started_at=?,updated_at=?
+                    WHERE effect_id=? AND status='reserved' AND dispatch_state='not_started'""",
+                    (now, now, effect_id),
+                )
+                if cursor.rowcount != 1:
+                    raise EffectStateConflict("upstream dispatch CAS lost")
+                reservation = await self._budget_reservation_for_update(
+                    db, fence.run_id, effect_id
+                )
+            await db.commit()
+            return self._budget_reservation_record(reservation)
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def commit_or_hold(
+        self,
+        fence: RunFence,
+        effect_id: str,
+        outcome: NormalizedToolOutcome,
+        *,
+        input_actual: int | None = None,
+        output_actual: int | None = None,
+        cost_actual_micros: int | None = None,
+        receipt_ref: str | None = None,
+        artifact_refs: Sequence[str] = (),
+    ) -> EffectRecord:
+        """Settle known usage or conservatively hold a dispatched unknown call."""
+
+        actuals = (input_actual, output_actual, cost_actual_micros)
+        if any(value is not None for value in actuals) and not all(
+            value is not None for value in actuals
+        ):
+            raise ValueError("actual input, output and cost must be supplied together")
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in actuals
+            if value is not None
+        ):
+            raise ValueError("actual usage must be non-negative integers")
+
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            await self._assert_fence(db, fence)
+            effect = await self._effect_for_update(db, fence.run_id, effect_id)
+            reservation = await self._budget_reservation_for_update(db, fence.run_id, effect_id)
+            if reservation["status"] != "reserved":
+                await db.commit()
+                return self._record(effect)
+
+            usage_known = input_actual is not None
+            if usage_known and int(effect["lease_epoch"]) != fence.lease_epoch:
+                raise StaleRunFence(f"late usage belongs to stale epoch: {effect_id}")
+            now = self._clock()
+            if usage_known:
+                reservation_status = "committed"
+                effect_status = (
+                    EffectStatus.COMMITTED
+                    if outcome.state is ToolOutcomeState.SUCCESS
+                    else EffectStatus.FAILED
+                )
+            elif reservation["dispatch_state"] == "started":
+                reservation_status = "held_uncertain"
+                effect_status = EffectStatus.UNCERTAIN
+            else:
+                reservation_status = "released"
+                effect_status = EffectStatus.FAILED
+
+            if effect_status is EffectStatus.COMMITTED:
+                await self._assert_staged_targets_committed(db, effect)
+            await db.execute(
+                """UPDATE workflow_effect_budget_reservations
+                SET input_actual=?,output_actual=?,cost_actual_micros=?,status=?,updated_at=?
+                WHERE effect_id=? AND status='reserved'""",
+                (
+                    input_actual,
+                    output_actual,
+                    cost_actual_micros,
+                    reservation_status,
+                    now,
+                    effect_id,
+                ),
+            )
+            await db.execute(
+                """UPDATE workflow_effects SET status=?,outcome_json=?,receipt_ref=?,
+                artifact_refs_json=?,updated_at=?,ended_at=? WHERE effect_id=?""",
+                (
+                    effect_status.value,
+                    canonical_json(outcome.to_dict()),
+                    receipt_ref,
+                    canonical_json(list(artifact_refs)),
+                    now,
+                    now,
+                    effect_id,
+                ),
+            )
+            # Blob dependencies supplied by the effect adapter become durable
+            # effect-owned roots in the same transaction as the canonical
+            # effect outcome.  Keeping this promotion here (instead of in the
+            # blob store) closes the raw-result/outcome crash window: replay can
+            # only observe either the old reservation or the committed outcome
+            # together with all of its registered blob dependencies.
+            for artifact_ref in sorted(set(artifact_refs)):
+                digest = str(artifact_ref).strip()
+                if digest.startswith("sha256:"):
+                    digest = digest[7:]
+                if len(digest) != 64 or any(
+                    character not in "0123456789abcdef" for character in digest
+                ):
+                    raise ValueError("artifact_refs must contain lowercase SHA-256 refs")
+                blob = await (
+                    await db.execute(
+                        "SELECT 1 FROM workflow_blobs WHERE sha256=?", (digest,)
+                    )
+                ).fetchone()
+                if blob is None:
+                    raise StagingPreconditionFailed(
+                        f"effect blob dependency is not registered: {digest}"
+                    )
+                await db.execute(
+                    """INSERT OR IGNORE INTO workflow_blob_refs(
+                    sha256,owner_kind,owner_id,created_at
+                    ) VALUES(?,'effect',?,?)""",
+                    (digest, effect_id, now),
+                )
+            target_status = "committed" if effect_status is EffectStatus.COMMITTED else "released"
+            await db.execute(
+                """UPDATE workflow_target_reservations SET status=?,lease_expires_at=NULL,updated_at=?
+                WHERE reservation_key IN (
+                    SELECT reservation_key FROM workflow_effect_targets WHERE effect_id=?
+                )""",
+                (target_status, now, effect_id),
+            )
+            result = await self._effect_for_update(db, fence.run_id, effect_id)
+            await db.commit()
+            return self._record(result)
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def rebuild_budget_ledger(
+        self,
+        fence: RunFence,
+        *,
+        ledger_kind: str,
+        capability_key: str = "research_llm_budget",
+    ) -> BudgetLedgerSnapshot:
+        """Rebuild the authoritative ledger projection from durable reservations."""
+
+        if not ledger_kind or not capability_key:
+            raise ValueError("ledger_kind and capability_key are required")
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN")
+            await self._assert_fence(db, fence)
+            limits = await self._budget_limits_for_update(db, fence.run_id, capability_key)
+            charged = await self._charged_budget_for_update(db, fence.run_id, ledger_kind)
+            rows = await (
+                await db.execute(
+                    """SELECT * FROM workflow_effect_budget_reservations
+                    WHERE run_id=? AND ledger_kind=? ORDER BY created_at,effect_id""",
+                    (fence.run_id, ledger_kind),
+                )
+            ).fetchall()
+            await db.commit()
+            return BudgetLedgerSnapshot(
+                ledger_kind=ledger_kind,
+                max_input_tokens=limits[0],
+                max_output_tokens=limits[1],
+                max_cost_micros=limits[2],
+                charged_input_tokens=charged[0],
+                charged_output_tokens=charged[1],
+                charged_cost_micros=charged[2],
+                reservations=tuple(self._budget_reservation_record(row) for row in rows),
+            )
         except BaseException:
             if db.in_transaction:
                 await db.rollback()
@@ -1250,6 +2580,111 @@ class EffectJournal:
             )
 
     @staticmethod
+    async def _budget_limits_for_update(
+        db: aiosqlite.Connection, run_id: str, capability_key: str
+    ) -> tuple[int, int, int]:
+        row = await (
+            await db.execute(
+                """SELECT capability.snapshot_json FROM workflow_runs run
+                JOIN workflow_capabilities capability
+                  ON capability.capability_hash=run.capability_hash
+                WHERE run.run_id=?""",
+                (run_id,),
+            )
+        ).fetchone()
+        if row is None:
+            raise EffectStateConflict(f"run capability snapshot is missing: {run_id}")
+        snapshot = json.loads(str(row["snapshot_json"]))
+        raw_limits = snapshot.get(capability_key) if isinstance(snapshot, dict) else None
+        if not isinstance(raw_limits, dict):
+            raise EffectStateConflict(
+                f"run capability snapshot is missing budget key {capability_key}"
+            )
+        names = ("max_input_tokens", "max_output_tokens", "max_cost_micros")
+        limits: list[int] = []
+        for name in names:
+            value = raw_limits.get(name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise EffectStateConflict(
+                    f"run capability snapshot has invalid {capability_key}.{name}"
+                )
+            limits.append(value)
+        return limits[0], limits[1], limits[2]
+
+    @staticmethod
+    async def _charged_budget_for_update(
+        db: aiosqlite.Connection, run_id: str, ledger_kind: str
+    ) -> tuple[int, int, int]:
+        row = await (
+            await db.execute(
+                """SELECT
+                COALESCE(SUM(CASE
+                    WHEN status IN ('reserved','held_uncertain') THEN input_reserved
+                    WHEN status='committed' THEN COALESCE(input_actual,input_reserved)
+                    ELSE 0 END),0),
+                COALESCE(SUM(CASE
+                    WHEN status IN ('reserved','held_uncertain') THEN output_reserved
+                    WHEN status='committed' THEN COALESCE(output_actual,output_reserved)
+                    ELSE 0 END),0),
+                COALESCE(SUM(CASE
+                    WHEN status IN ('reserved','held_uncertain') THEN cost_reserved_micros
+                    WHEN status='committed' THEN COALESCE(cost_actual_micros,cost_reserved_micros)
+                    ELSE 0 END),0)
+                FROM workflow_effect_budget_reservations
+                WHERE run_id=? AND ledger_kind=?""",
+                (run_id, ledger_kind),
+            )
+        ).fetchone()
+        assert row is not None
+        return int(row[0]), int(row[1]), int(row[2])
+
+    @staticmethod
+    async def _budget_reservation_for_update(
+        db: aiosqlite.Connection, run_id: str, effect_id: str
+    ) -> aiosqlite.Row:
+        row = await (
+            await db.execute(
+                """SELECT * FROM workflow_effect_budget_reservations
+                WHERE effect_id=? AND run_id=?""",
+                (effect_id, run_id),
+            )
+        ).fetchone()
+        if row is None:
+            raise EffectStateConflict(f"effect has no budget reservation: {effect_id}")
+        return row
+
+    @staticmethod
+    def _budget_reservation_record(row: aiosqlite.Row) -> BudgetReservationRecord:
+        return BudgetReservationRecord(
+            effect_id=str(row["effect_id"]),
+            run_id=str(row["run_id"]),
+            ledger_kind=str(row["ledger_kind"]),
+            input_reserved=int(row["input_reserved"]),
+            output_reserved=int(row["output_reserved"]),
+            cost_reserved_micros=int(row["cost_reserved_micros"]),
+            input_actual=(
+                None if row["input_actual"] is None else int(row["input_actual"])
+            ),
+            output_actual=(
+                None if row["output_actual"] is None else int(row["output_actual"])
+            ),
+            cost_actual_micros=(
+                None
+                if row["cost_actual_micros"] is None
+                else int(row["cost_actual_micros"])
+            ),
+            status=str(row["status"]),
+            dispatch_state=str(row["dispatch_state"]),
+            upstream_started_at=(
+                None
+                if row["upstream_started_at"] is None
+                else float(row["upstream_started_at"])
+            ),
+            created_at=float(row["created_at"]),
+            updated_at=float(row["updated_at"]),
+        )
+
+    @staticmethod
     async def _effect_for_update(
         db: aiosqlite.Connection, run_id: str, effect_id: str
     ) -> aiosqlite.Row:
@@ -1346,6 +2781,9 @@ class EffectJournal:
 
 __all__ = [
     "BeginEffectResult",
+    "BudgetLedgerSnapshot",
+    "BudgetReservationExceeded",
+    "BudgetReservationRecord",
     "CheckpointEffectLink",
     "EffectAction",
     "EffectExecutionContext",
@@ -1354,6 +2792,7 @@ __all__ = [
     "EffectRecord",
     "EffectStateConflict",
     "EffectStatus",
+    "IdempotentReadAttempt",
     "NormalizedToolOutcome",
     "PreparedTarget",
     "PreparedToolCall",

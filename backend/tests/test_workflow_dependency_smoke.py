@@ -77,6 +77,12 @@ def test_pyinstaller_spec_has_no_removed_framework_hooks() -> None:
     assert not (BACKEND_DIR / "pyinstaller_runtime_hook_langgraph.py").exists()
 
 
+def test_pyinstaller_keeps_workflow_definition_source_for_stable_manifests() -> None:
+    spec_text = (BACKEND_DIR / "deskpet-backend.spec").read_text(encoding="utf-8")
+    assert 'module_collection_mode={"deskpet.workflows.definitions": "py"}' in spec_text
+    assert '("uv.lock", ".")' in spec_text
+
+
 def test_eval_adapter_uses_native_json_interrupt_contract() -> None:
     adapter = (REPO_ROOT / "scripts" / "workflow_eval_adapter.py").read_text(encoding="utf-8")
     assert "InMemorySaver" not in adapter

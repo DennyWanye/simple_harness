@@ -21,8 +21,9 @@ async def test_trace_tree_propagates_parent_and_redacts(tmp_path):
     with use_span(store.context(root)):
         child = await store.start_span(trace_id=run.trace_id, name="search", kind=SpanKind.NODE)
     now[0] = 10.5
-    await store.finish_span(child.span_id, SpanStatus.OK)
-    await store.finish_span(root.span_id, SpanStatus.OK)
+    assert await store.finish_span(child.span_id, SpanStatus.OK) is True
+    assert await store.finish_span(root.span_id, SpanStatus.OK) is True
+    assert await store.finish_span(root.span_id, SpanStatus.ERROR) is False
     await store.finish_run(run.trace_id, SpanStatus.OK)
 
     tree = await store.tree(run.trace_id)

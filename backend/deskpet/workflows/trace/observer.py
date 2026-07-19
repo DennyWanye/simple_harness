@@ -5,10 +5,15 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
+import structlog
+
 from ..contracts import NodeExecutionIdentity
 from ..store.run_store import WorkflowRunStore
 from .models import SpanKind, SpanStatus
 from .store import TraceStore
+
+
+logger = structlog.get_logger(__name__)
 
 
 class WorkflowExecutionObserver:
@@ -61,7 +66,7 @@ class WorkflowExecutionObserver:
         execution_id = self._executions.get((identity.task_id, identity.attempt))
         if execution_id is None:
             return
-        await self.store.record_node_finish(
+        timing = await self.store.record_node_finish(
             execution_id,
             identity.attempt,
             status,
@@ -78,6 +83,28 @@ class WorkflowExecutionObserver:
             error=error,
             attributes=attributes,
         )
+        if identity.workflow_name == "deep_research" and timing is not None:
+            detail = {
+                "run_id": identity.run_id,
+                "workflow_version": identity.workflow_version,
+                "stage": identity.node_id,
+                "attempt": identity.attempt,
+                "status": status,
+                "duration_ms": round(float(timing["duration_ms"]), 3),
+            }
+            logger.info(
+                "deepresearch_stage_timing",
+                **detail,
+                started_at=timing["started_at"],
+                ended_at=timing["ended_at"],
+            )
+            try:
+                from observability.metrics_sink import record
+
+                record("deepresearch_stage_timing", detail)
+            except Exception:
+                # Timing mirrors must never affect durable workflow execution.
+                pass
 
 
 __all__ = ["WorkflowExecutionObserver"]

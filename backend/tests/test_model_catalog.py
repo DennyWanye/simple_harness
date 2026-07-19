@@ -11,12 +11,20 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from llm.model_catalog import (
     build_catalog,
     fetch_models,
     model_context_window,
     model_param_caps,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolated_model_overrides(monkeypatch, tmp_path):
+    """Catalog defaults must not depend on a developer's saved UI override."""
+    monkeypatch.setenv("DESKPET_USER_DATA_DIR", str(tmp_path / "user_data"))
 
 
 def test_openai_family_supports_effort() -> None:
@@ -73,6 +81,8 @@ def test_model_context_window_is_per_model_not_uniform() -> None:
     assert model_context_window("claude-opus-4.5") == 200_000
     assert model_context_window("gemini-3-pro-preview") == 1_000_000
     assert model_context_window("deepseek-v4-pro") == 1_000_000
+    assert model_context_window("sf-glm-5.2") == 1_000_000
+    assert model_context_window("zai-org/GLM-5.2") == 1_000_000
     assert model_context_window("glm-4.7") == 200_000
 
 

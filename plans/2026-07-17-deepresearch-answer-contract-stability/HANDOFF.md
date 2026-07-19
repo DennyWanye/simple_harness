@@ -1,6 +1,6 @@
 # DeepResearch v6 完成交接
 
-> 交接时间：2026-07-18  
+> 交接时间：2026-07-19
 > 仓库：`F:\projects\deskpet`  
 > 分支 / 起始提交：`master` / `0117ad76`  
 > 当前结论：T11/T12/T13、自动化发布门、真实 UI 验收和 release identity fixture 受控提交均已完成。本文后续“剩余任务”正文仅作为历史记录。
@@ -11,7 +11,7 @@
 - 后端 815、前端 822、Rust 73、TypeScript/Vite/cargo check 全绿。
 - 最终 release identity 下真实 UI completed (`e58b0281…`)、partial (`2ed15e00…`)、insufficient/generate-now 双击 (`eeab90ba…` / command `9582bb5c…`) 与重启 history 全通过，证据在 [`evidence/t13-release-20260718/`](./evidence/t13-release-20260718/)。
 - 健康网络三次校准 0 timeout/cancel/预算违规，详见 [`timing-calibration.json`](./timing-calibration.json)。
-- 基础模型已切换并实证为 `deepseek-v4-pro`（1M）；生成请求当前受中转站余额不足 402 限制。
+- 基础模型与预分析模型已切换并实证为 Relay 别名 `sf-glm-5.2`；该别名与 canonical `zai-org/GLM-5.2` 暂时按 1M 上下文画像运行。源码 Tauri 重启后 UI Context usage 显示有效上限 950K / compaction 750K；真实 SC-STATS-2 run `81090268…` 的 GLM 请求均 HTTP 200，无 402，durable final/artifact/delivery 全部完成。证据见 [`evidence/glm52-live-20260719/`](./evidence/glm52-live-20260719/)。
 
 ## 1. 新 session 的任务
 

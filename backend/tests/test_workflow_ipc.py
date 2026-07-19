@@ -48,6 +48,14 @@ class FakeService:
             current_version=4,
         )
 
+    async def retry_run_from_start(self, run_id, **kwargs):
+        self.calls.append(("retry_run_from_start", {"run_id": run_id, **kwargs}))
+        return {"run_id": "retry-run", "source_run_id": run_id, "created": True}
+
+    async def execute_run_action(self, run_id, **kwargs):
+        self.calls.append(("execute_run_action", {"run_id": run_id, **kwargs}))
+        return {"run_id": run_id, "accepted": True, "action_id": kwargs["action_id"]}
+
 
 @pytest.mark.asyncio
 async def test_frontend_canonical_names_return_exact_response_types_and_payloads():
@@ -101,6 +109,109 @@ async def test_dotted_aliases_use_canonical_frontend_response_type():
 
     assert response["type"] == "workflow_runs_list_response"
     assert response["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_retry_from_start_requires_exact_safe_payload_and_forwards_once():
+    service = FakeService()
+    dispatcher = WorkflowIPCDispatcher(service)
+    retry_key = "123e4567-e89b-42d3-a456-426614174000"
+
+    response = await dispatcher.dispatch(
+        {
+            "type": "workflow_run_retry_from_start",
+            "request_id": "retry-command-1",
+            "payload": {
+                "run_id": "failed-run",
+                "action_id": "retry_from_start",
+                "retry_key": retry_key,
+            },
+        }
+    )
+    assert response == {
+        "type": "workflow_run_retry_from_start_response",
+        "request_id": "retry-command-1",
+        "ok": True,
+        "payload": {
+            "run_id": "retry-run",
+            "source_run_id": "failed-run",
+            "created": True,
+        },
+    }
+    assert service.calls[-1] == (
+        "retry_run_from_start",
+        {
+            "run_id": "failed-run",
+            "action_id": "retry_from_start",
+            "retry_key": retry_key,
+        },
+    )
+
+    for extra in ({"query": "private"}, {"url": "https://example.invalid"}, {"x": 1}):
+        rejected = await dispatcher.dispatch(
+            {
+                "type": "workflow_run_retry_from_start",
+                "request_id": "retry-command-invalid",
+                "payload": {
+                    "run_id": "failed-run",
+                    "action_id": "retry_from_start",
+                    "retry_key": retry_key,
+                    **extra,
+                },
+            }
+        )
+        assert rejected["ok"] is False
+        assert rejected["error"]["code"] == "invalid_payload"
+
+
+@pytest.mark.asyncio
+async def test_versioned_run_action_ipc_is_strict_and_forwards_once():
+    service = FakeService()
+    dispatcher = WorkflowIPCDispatcher(service)
+    response = await dispatcher.dispatch({
+        "type": "workflow.run.action",
+        "request_id": "action-1",
+        "payload": {
+            "run_id": "run-v5", "action_id": "generate_now",
+            "idempotency_key": "click-1", "expected_version": 7,
+            "action_payload": {"brief_checkpoint_ns": "", "brief_checkpoint_id": "brief-1"},
+        },
+    })
+    assert response["type"] == "workflow_run_action_response"
+    assert response["payload"] == {
+        "run_id": "run-v5", "accepted": True, "action_id": "generate_now"
+    }
+    assert service.calls[-1][0] == "execute_run_action"
+    continued = await dispatcher.dispatch({
+        "type": "workflow_run_action",
+        "request_id": "action-continue",
+        "payload": {
+            "run_id": "run-v5",
+            "action_id": "continue_research",
+            "idempotency_key": "click-continue",
+            "expected_version": 7,
+        },
+    })
+    assert continued["ok"] is True
+    assert service.calls[-1] == (
+        "execute_run_action",
+        {
+            "run_id": "run-v5",
+            "action_id": "continue_research",
+            "idempotency_key": "click-continue",
+            "expected_version": 7,
+            "payload": {},
+        },
+    )
+    rejected = await dispatcher.dispatch({
+        "type": "workflow_run_action", "request_id": "action-2",
+        "payload": {
+            "run_id": "run-v5", "action_id": "generate_now",
+            "idempotency_key": "click-2", "expected_version": 7, "secret": "no",
+        },
+    })
+    assert rejected["ok"] is False
+    assert rejected["error"]["code"] == "invalid_payload"
 
 
 @pytest.mark.asyncio

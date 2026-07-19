@@ -1,0 +1,20 @@
+{
+  "as_of_date": "2026-07-15",
+  "technology_case": {
+    "topic": "可以帮我调研一下，现在 AI 相关的最新最有价值的技术相关的信息吗？",
+    "window_start": "2026-01-16",
+    "window_end": "2026-07-15",
+    "topic_kinds": [
+      "model_inference",
+      "agent",
+      "multimodal",
+      "training_inference_system",
+      "open_infrastructure"
+    ]
+  },
+  "generic_cases": [
+    "AI 监管政策的最新变化",
+    "人工智能行业应用商业案例",
+    "History of transformer models"
+  ]
+}

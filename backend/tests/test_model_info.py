@@ -48,6 +48,12 @@ def test_builtin_table_has_required_models():
     assert BUILTIN["deepseek-v4-pro"].effective_pct == 0.95
     assert BUILTIN["deepseek-v4-pro"].recall_sweet_tokens == 384_000
 
+    for model_id in ("sf-glm-5.2", "zai-org/GLM-5.2"):
+        assert BUILTIN[model_id].context_window == 1_000_000
+        assert BUILTIN[model_id].compact_at_pct == 0.75
+        assert BUILTIN[model_id].effective_pct == 0.95
+        assert BUILTIN[model_id].recall_sweet_tokens == 384_000
+
     assert BUILTIN["claude-sonnet-4-5"].context_window == 200_000
     assert BUILTIN["claude-sonnet-4-5"].compact_at_pct == 0.83
     assert BUILTIN["claude-opus-4-5"].context_window == 200_000

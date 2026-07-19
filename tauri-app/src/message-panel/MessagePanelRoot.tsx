@@ -28,6 +28,7 @@ import {
   useSessionsStore,
   collect_inbox,
   type InboxItem,
+  type WorkflowV5ControlAction,
 } from "../stores/sessionsStore";
 import { forPet } from "../petText";
 import {
@@ -67,6 +68,16 @@ type SessionEntry = {
   title?: string;
 };
 
+type WorkflowRetryDeferred = {
+  promise: Promise<{ run_id: string }>;
+  resolve: (value: { run_id: string }) => void;
+  reject: (reason: Error) => void;
+};
+
+function workflowRetryError(message: string, code: string, definitive: boolean): Error {
+  return Object.assign(new Error(message), { code, definitive });
+}
+
 export function MessagePanelRoot() {
   const [activeSid, setActiveSid] = useState(DEFAULT_SID);
   const [filter, setFilter] = useState<StreamFilter>("all");
@@ -85,6 +96,7 @@ export function MessagePanelRoot() {
   // 2026-05-31 restore — context breakdown modal state + snapshot subscriber.
   const [contextModalOpen, setContextModalOpen] = useState(false);
   const contextUsage = useSessionsStore((s) => s.sessions[activeSid]?.context_usage ?? null);
+  const workflowRetryDeferreds = useRef(new Map<string, WorkflowRetryDeferred>());
 
   const sessions = useSessionsStore((s) => s.sessions);
   const storeActiveSid = useSessionsStore((s) => s.active_sid);
@@ -132,6 +144,115 @@ export function MessagePanelRoot() {
     return () => {
       alive = false;
     };
+  }, []);
+
+  useEffect(() => {
+    const deferreds = workflowRetryDeferreds.current;
+    const off = codePanelWS.on_message((raw: unknown) => {
+      const msg = raw as {
+        request_id?: unknown;
+        type?: unknown;
+        ok?: unknown;
+        request_type?: unknown;
+        payload?: { run_id?: unknown };
+        error?: { message?: unknown; code?: unknown };
+      };
+      const requestId = typeof msg?.request_id === "string" ? msg.request_id : "";
+      const deferred = deferreds.get(requestId);
+      if (!deferred) return;
+      if (msg?.type === "workflow_run_retry_from_start_response" && msg?.ok === true) {
+        const runId = typeof msg?.payload?.run_id === "string" ? msg.payload.run_id : "";
+        deferreds.delete(requestId);
+        if (runId) deferred.resolve({ run_id: runId });
+        else deferred.reject(workflowRetryError("重试响应缺少新 run", "invalid_response", true));
+      } else if (
+        msg?.type === "workflow_ipc_error" &&
+        msg?.request_type === "workflow_run_retry_from_start"
+      ) {
+        deferreds.delete(requestId);
+        deferred.reject(workflowRetryError(
+          String(msg?.error?.message || "重试请求被拒绝"),
+          String(msg?.error?.code || "workflow_retry_rejected"),
+          true,
+        ));
+      }
+    });
+    return () => {
+      off();
+      for (const deferred of deferreds.values()) {
+        deferred.reject(workflowRetryError("窗口已关闭", "window_unmounted", false));
+      }
+      deferreds.clear();
+    };
+  }, []);
+
+  const retryWorkflow = useCallback((
+    runId: string,
+    actionId: Exclude<WorkflowV5ControlAction, "none">,
+    retryKey: string,
+  ): Promise<{ run_id: string; accepted?: boolean }> => {
+    if (codePanelWS.state() !== "connected") {
+      return Promise.reject(workflowRetryError("连接后重试", "workflow_command_not_sent", false));
+    }
+    const request = <T extends Record<string, unknown>>(
+      type: string,
+      requestId: string,
+      payload: Record<string, unknown>,
+      responseType: string,
+    ): Promise<T> => new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return false;
+        settled = true;
+        off();
+        window.clearTimeout(timer);
+        return true;
+      };
+      const off = codePanelWS.on_message((raw: unknown) => {
+        const message = raw as {
+          type?: unknown; request_id?: unknown; request_type?: unknown;
+          ok?: unknown; payload?: unknown; error?: { message?: unknown; code?: unknown };
+        };
+        if (message.request_id !== requestId) return;
+        if (message.type === responseType && message.ok === true && message.payload && typeof message.payload === "object") {
+          if (finish()) resolve(message.payload as T);
+        } else if (message.type === "workflow_ipc_error" && message.request_type === type) {
+          if (finish()) reject(workflowRetryError(
+            String(message.error?.message || "操作被拒绝"),
+            String(message.error?.code || "workflow_action_rejected"),
+            true,
+          ));
+        }
+      });
+      const timer = window.setTimeout(() => {
+        if (finish()) reject(workflowRetryError("响应较慢，请重新连接后确认状态", "workflow_action_timeout", false));
+      }, 20_000);
+      if (!codePanelWS.send_command({ type, request_id: requestId, payload })) {
+        if (finish()) reject(workflowRetryError("连接后重试", "workflow_command_not_sent", false));
+      }
+    });
+    return request<{ run_id: string; run_version?: number; run?: { run_version?: number } }>(
+      "workflow_run_detail",
+      `workflow-detail:${runId}:${retryKey}`,
+      { run_id: runId },
+      "workflow_run_detail_response",
+    ).then((detail) => {
+      const expectedVersion = detail.run_version ?? detail.run?.run_version;
+      if (!Number.isInteger(expectedVersion) || (expectedVersion as number) < 0) {
+        throw workflowRetryError("任务详情缺少版本号", "workflow_run_version_missing", true);
+      }
+      return request<{ run_id: string; accepted?: boolean }>(
+        "workflow_run_action",
+        `workflow-action:${runId}:${retryKey}`,
+        {
+          run_id: runId,
+          action_id: actionId,
+          idempotency_key: retryKey,
+          expected_version: expectedVersion,
+        },
+        "workflow_run_action_response",
+      );
+    });
   }, []);
 
   const {
@@ -855,6 +976,7 @@ export function MessagePanelRoot() {
               /* single-thread panel — nothing to jump to */
             }}
             onChoice={onChoice}
+            onWorkflowRetry={retryWorkflow}
           />
         </div>
 

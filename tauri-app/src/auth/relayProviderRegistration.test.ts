@@ -41,7 +41,11 @@ function makeProvider(over: Partial<Provider> = {}): Provider {
     id: "relay-cloud",
     name: "Relay",
     base_url: "https://relay.example.com/v1",
-    models: [{ id: "gpt-5.5" }, { id: "deepseek-v4-pro" }],
+    models: [
+      { id: "gpt-5.5" },
+      { id: "deepseek-v4-pro" },
+      { id: "sf-glm-5.2" },
+    ],
     openai_compatible: true,
     supports_streaming: true,
     ...over,
@@ -67,7 +71,7 @@ afterEach(() => {
 });
 
 describe("RelayProviderRegistration.ensure", () => {
-  it("ensure absent -> mints and sends settings_providers_ensure", async () => {
+  it("cold ensure reuses or conditionally rotates through the adapter", async () => {
     const registration = new RelayProviderRegistration();
     const adapter = makeAdapter();
     const channel = { send: vi.fn() };
@@ -75,7 +79,7 @@ describe("RelayProviderRegistration.ensure", () => {
 
     await registration.ensure(adapter);
 
-    expect(adapter.syncDeviceKey).toHaveBeenCalledWith({ force: true });
+    expect(adapter.syncDeviceKey).toHaveBeenCalledWith({ force: false });
     expect(channel.send).toHaveBeenCalledTimes(1);
     expect(channel.send).toHaveBeenCalledWith({
       type: "settings_providers_ensure",
@@ -89,7 +93,7 @@ describe("RelayProviderRegistration.ensure", () => {
     });
     expect(updateCloudConfig).toHaveBeenCalledWith("", {
       base_url: "https://relay.example.com/v1",
-      model: "gpt-5.5",
+      model: "sf-glm-5.2",
       api_key: "tsk_stable",
       persist_key: false,
     });
@@ -113,7 +117,7 @@ describe("RelayProviderRegistration.ensure", () => {
     expect(channel.send).not.toHaveBeenCalled();
   });
 
-  it("account switch forces device key recast", async () => {
+  it("account switch delegates prefix validation to the adapter reuse path", async () => {
     const registration = new RelayProviderRegistration();
     let user = makeUser({ id: "acct-1" });
     const adapter = makeAdapter(user);
@@ -128,7 +132,7 @@ describe("RelayProviderRegistration.ensure", () => {
 
     await registration.ensure(adapter, "restore");
 
-    expect(adapter.syncDeviceKey).toHaveBeenCalledWith({ force: true });
+    expect(adapter.syncDeviceKey).toHaveBeenCalledWith({ force: false });
     expect(channel.send).toHaveBeenCalledWith({
       type: "settings_providers_ensure",
       payload: expect.objectContaining({

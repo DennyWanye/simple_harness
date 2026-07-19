@@ -1,0 +1,56 @@
+{
+  "modeling_output": {
+    "profile": "deep_research_modeling",
+    "locale": "Chinese",
+    "geography": "worldwide",
+    "subjects": ["AI 大模型"],
+    "expected_decision": "形成有证据的前十排名并解释每个模型的优缺点",
+    "dimensions": [
+      {
+        "dimension_id": "ai_ranking_method",
+        "question": "应按什么公开且可复核的方法形成当前排名？",
+        "importance": "high",
+        "expected_source_types": ["benchmark", "official_technical_report"],
+        "query_targets": ["AI model ranking methodology"],
+        "first_party_required": false,
+        "not_applicable_when": []
+      },
+      {
+        "dimension_id": "ai_candidate_models",
+        "question": "当前有哪些候选模型及其最新可用版本？",
+        "importance": "high",
+        "expected_source_types": ["official_release", "official_documentation"],
+        "query_targets": ["latest frontier model releases"],
+        "first_party_required": true,
+        "not_applicable_when": []
+      },
+      {
+        "dimension_id": "ai_capabilities",
+        "question": "各模型在推理、编码、多模态和长上下文上表现如何？",
+        "importance": "medium",
+        "expected_source_types": ["benchmark", "independent_research"],
+        "query_targets": ["frontier model capability comparison"],
+        "first_party_required": false,
+        "not_applicable_when": []
+      },
+      {
+        "dimension_id": "ai_pros_cons",
+        "question": "每个候选模型的主要优势、限制、价格和访问条件是什么？",
+        "importance": "medium",
+        "expected_source_types": ["official_pricing", "official_documentation"],
+        "query_targets": ["frontier model pricing access limitations"],
+        "first_party_required": true,
+        "not_applicable_when": []
+      },
+      {
+        "dimension_id": "ai_invalid_dimension",
+        "question": "此字段故意模拟真实 provider 枚举漂移",
+        "importance": "critical",
+        "expected_source_types": ["official"],
+        "query_targets": ["invalid enum fixture"],
+        "first_party_required": false,
+        "not_applicable_when": []
+      }
+    ]
+  }
+}

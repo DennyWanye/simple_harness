@@ -43,11 +43,14 @@ import time
 import urllib.parse
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Iterable, Optional, Protocol
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Iterable, Optional, Protocol
 
 import httpx
 
 from . import research_scoring
+
+if TYPE_CHECKING:
+    from ..workflows.definitions.deep_research_v5_contracts import ResearchLLMResult
 
 log = logging.getLogger(__name__)
 
@@ -837,6 +840,17 @@ class ResearchReport:
 
 class _LLMCall(Protocol):
     async def __call__(self, prompt: str) -> str: ...
+
+
+class _LLMCallV2(Protocol):
+    async def __call__(
+        self,
+        prompt: str,
+        *,
+        max_output_tokens: int,
+        stable_call_id: str,
+        response_format: Mapping[str, Any] | None = None,
+    ) -> "ResearchLLMResult": ...
 
 
 class _Searcher(Protocol):
@@ -1992,12 +2006,80 @@ def save_workflow_report(
 # through the live relay instead of a config-rebuilt provider. When unset we
 # fall back to reconstructing from config below.
 _LIVE_LLM_CALL: Optional[_LLMCall] = None
+_LIVE_LLM_CALL_V2: Optional[_LLMCallV2] = None
 
 
 def set_live_llm_call(fn: Optional[_LLMCall]) -> None:
     """Wire the running agent's LLM into deep-research (called from main.py)."""
     global _LIVE_LLM_CALL
     _LIVE_LLM_CALL = fn
+
+
+def set_live_llm_call_v2(fn: Optional[_LLMCallV2]) -> None:
+    """Wire the usage-bearing, at-most-once research transport."""
+
+    global _LIVE_LLM_CALL_V2
+    _LIVE_LLM_CALL_V2 = fn
+
+
+def _optional_usage_int(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def _research_llm_result_from_provider_response(
+    response: object,
+    *,
+    fallback_model: str,
+) -> "ResearchLLMResult":
+    """Normalize OpenAI and relay token fields without inventing usage."""
+
+    from ..workflows.definitions.deep_research_v5_contracts import ResearchLLMResult
+
+    payload = response if isinstance(response, dict) else {}
+    usage = payload.get("usage")
+    usage = usage if isinstance(usage, dict) else {}
+    input_tokens = _optional_usage_int(
+        usage.get("input_tokens")
+        if "input_tokens" in usage
+        else usage.get("prompt_tokens")
+    )
+    output_tokens = _optional_usage_int(
+        usage.get("output_tokens")
+        if "output_tokens" in usage
+        else usage.get("completion_tokens")
+    )
+    details = usage.get("prompt_tokens_details")
+    if not isinstance(details, dict):
+        details = usage.get("input_tokens_details")
+    details = details if isinstance(details, dict) else {}
+    cache_tokens = _optional_usage_int(
+        details.get("cached_tokens")
+        if "cached_tokens" in details
+        else usage.get("cached_tokens")
+    )
+    usage_complete = input_tokens is not None and output_tokens is not None
+    if not usage_complete:
+        input_tokens = output_tokens = cache_tokens = None
+    usage_source = "provider" if usage_complete else "usage_unknown"
+    request_id_raw = payload.get("request_id") or payload.get("id")
+    request_id = (
+        str(request_id_raw).strip()
+        if isinstance(request_id_raw, (str, int)) and not isinstance(request_id_raw, bool)
+        else None
+    )
+    if request_id == "":
+        request_id = None
+    return ResearchLLMResult(
+        content=str(payload.get("content") or ""),
+        model=str(payload.get("model") or fallback_model or "unknown"),
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cache_tokens=cache_tokens,
+        usage_source=usage_source,
+        request_id=request_id,
+    )
 
 
 async def _resolve_default_llm_call() -> _LLMCall:
@@ -2044,6 +2126,63 @@ async def _resolve_default_llm_call() -> _LLMCall:
                 max_tokens=4096,  # synthesis needs room (was 2048 → truncated long reports)
             )
         return (result or {}).get("content") or ""
+
+    return _call
+
+
+async def _resolve_default_llm_call_v2() -> _LLMCallV2:
+    """Resolve the usage-bearing transport for durable opaque LLM effects."""
+
+    if _LIVE_LLM_CALL_V2 is not None:
+        return _LIVE_LLM_CALL_V2
+
+    try:
+        from config import load_config, resolve_cloud_api_key  # type: ignore
+        from providers.openai_compatible import (  # type: ignore
+            OpenAICompatibleProvider,
+        )
+    except ImportError as exc:
+        raise RuntimeError(f"provider modules unavailable: {exc}") from exc
+
+    cfg = load_config()
+    local = getattr(cfg.llm, "local", None)
+    if local is None or not getattr(local, "base_url", ""):
+        raise RuntimeError("no llm provider configured")
+    api_key = resolve_cloud_api_key() or getattr(local, "api_key", "") or ""
+    provider = OpenAICompatibleProvider(
+        base_url=local.base_url,
+        api_key=api_key,
+        model=getattr(local, "model", ""),
+    )
+
+    async def _call(
+        prompt: str,
+        *,
+        max_output_tokens: int,
+        stable_call_id: str,
+        response_format: Mapping[str, Any] | None = None,
+    ) -> "ResearchLLMResult":
+        if not stable_call_id:
+            raise ValueError("stable_call_id is required")
+        if (
+            isinstance(max_output_tokens, bool)
+            or not isinstance(max_output_tokens, int)
+            or max_output_tokens < 1
+        ):
+            raise ValueError("max_output_tokens must be a positive integer")
+        from agent.context_messages import provider_purpose_scope
+
+        with provider_purpose_scope("research"):
+            result = await provider.chat_with_tools_at_most_once(
+                messages=[{"role": "user", "content": prompt}],
+                tools=[],
+                max_tokens=max_output_tokens,
+                response_format=(dict(response_format) if response_format else None),
+            )
+        return _research_llm_result_from_provider_response(
+            result,
+            fallback_model=str(getattr(provider, "model", "") or "unknown"),
+        )
 
     return _call
 

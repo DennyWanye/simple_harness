@@ -46,6 +46,55 @@ log = logging.getLogger(__name__)
 # MemoryManager / VectorWorker 在此接入 "消息落盘后异步跑 embedding"。
 OnMessageWritten = Callable[[int, str], Awaitable[None]]
 
+MESSAGE_PROJECTION_KINDS = frozenset(
+    {
+        "legacy_message", "user_message", "assistant_message", "tool_message",
+        "system_message", "final_assistant", "workflow_progress",
+        "workflow_accepted", "workflow_decision", "workflow_final_status",
+        "artifact_card",
+    }
+)
+CONTEXT_VISIBILITIES = frozenset({"conversation", "exclude"})
+_ROLE_DEFAULT_PROJECTION = {
+    "user": "user_message",
+    "assistant": "assistant_message",
+    "tool": "tool_message",
+    "system": "system_message",
+}
+_EXCLUDED_PROJECTIONS = frozenset(
+    {
+        "workflow_progress", "workflow_accepted", "workflow_decision",
+        "workflow_final_status", "artifact_card",
+    }
+)
+
+
+def normalize_message_projection(
+    role: str,
+    projection_kind: str | None = None,
+    context_visibility: str | None = None,
+) -> tuple[str, str]:
+    """Return a validated, explicit message projection classification."""
+    normalized_role = str(role or "").strip().lower()
+    projection = str(
+        projection_kind
+        or _ROLE_DEFAULT_PROJECTION.get(normalized_role, "legacy_message")
+    ).strip().lower()
+    if projection not in MESSAGE_PROJECTION_KINDS:
+        raise ValueError(f"invalid message projection_kind: {projection!r}")
+    expected_visibility = (
+        "exclude" if projection in _EXCLUDED_PROJECTIONS else "conversation"
+    )
+    visibility = str(context_visibility or expected_visibility).strip().lower()
+    if visibility not in CONTEXT_VISIBILITIES:
+        raise ValueError(f"invalid message context_visibility: {visibility!r}")
+    if visibility != expected_visibility:
+        raise ValueError(
+            "message projection visibility mismatch: "
+            f"{projection!r} requires {expected_visibility!r}"
+        )
+    return projection, visibility
+
 
 # SQLITE_BUSY retry 参数（3.3 要求）
 _MAX_RETRIES = 5
@@ -291,6 +340,8 @@ class SessionDB:
         reasoning_content: str | None = None,
         skip_embed: bool = False,
         workflow_event_id: str | None = None,
+        projection_kind: str | None = None,
+        context_visibility: str | None = None,
     ) -> int:
         """写入一条 message。
 
@@ -307,6 +358,10 @@ class SessionDB:
 
         tool_calls_json = json.dumps(tool_calls) if tool_calls else None
         reasoning = reasoning_content if reasoning_content else None
+        projection, visibility = normalize_message_projection(
+            role, projection_kind, context_visibility
+        )
+        effective_skip_embed = bool(skip_embed or visibility == "exclude")
 
         async def _do() -> tuple[int, bool]:
             async with self._write_lock:
@@ -330,6 +385,8 @@ class SessionDB:
                         tool_calls_json=tool_calls_json,
                         reasoning=reasoning,
                         workflow_event_id=workflow_event_id,
+                        projection_kind=projection,
+                        context_visibility=visibility,
                     )
                     await db.commit()
                     return result
@@ -342,7 +399,7 @@ class SessionDB:
         #   * hook 抛异常只 log warn，不影响返回值
         #   * FP-4 WI-3.4: skip_embed=True 时跳过 hook（消息仍入 messages 表
         #     + FTS5 trigger 自动同步；仅 L3 向量 embedding 被跳过）。
-        if inserted and self._on_message_written is not None and not skip_embed:
+        if inserted and self._on_message_written is not None and not effective_skip_embed:
             try:
                 await self._on_message_written(msg_id, content)
             except Exception as exc:  # noqa: BLE001
@@ -365,12 +422,14 @@ class SessionDB:
         tool_calls_json: str | None,
         reasoning: str | None,
         workflow_event_id: str | None,
+        projection_kind: str,
+        context_visibility: str,
     ) -> tuple[int, bool]:
         cursor = await db.execute(
             "INSERT INTO messages("
             "session_id, role, content, created_at, tool_call_id, tool_calls, "
-            "reasoning_content, workflow_event_id"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+            "reasoning_content, workflow_event_id, projection_kind, context_visibility"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(workflow_event_id) "
             "WHERE workflow_event_id IS NOT NULL DO NOTHING",
             (
@@ -382,6 +441,8 @@ class SessionDB:
                 tool_calls_json,
                 reasoning,
                 workflow_event_id,
+                projection_kind,
+                context_visibility,
             ),
         )
         inserted = int(cursor.rowcount or 0) > 0
@@ -391,7 +452,8 @@ class SessionDB:
             if workflow_event_id is None:
                 raise RuntimeError("message insert was ignored without an event id")
             cursor = await db.execute(
-                "SELECT id FROM messages WHERE workflow_event_id = ?",
+                "SELECT id, projection_kind, context_visibility FROM messages "
+                "WHERE workflow_event_id = ?",
                 (workflow_event_id,),
             )
             row = await cursor.fetchone()
@@ -399,6 +461,12 @@ class SessionDB:
             if row is None:
                 raise RuntimeError(
                     f"workflow message conflict has no row: {workflow_event_id}"
+                )
+            if str(row[1]) != projection_kind or str(row[2]) != context_visibility:
+                raise RuntimeError(
+                    "workflow_message_projection_conflict: "
+                    f"event_id={workflow_event_id!r} existing=({row[1]!r},{row[2]!r}) "
+                    f"requested=({projection_kind!r},{context_visibility!r})"
                 )
             msg_id = int(row[0])
         return msg_id, inserted
@@ -415,6 +483,8 @@ class SessionDB:
         tool_calls: list[dict[str, Any]] | None = None,
         reasoning_content: str | None = None,
         skip_embed: bool = False,
+        projection_kind: str | None = None,
+        context_visibility: str | None = None,
     ) -> int | None:
         """Append a workflow delivery only while the session fence is live.
 
@@ -430,6 +500,10 @@ class SessionDB:
 
         tool_calls_json = json.dumps(tool_calls) if tool_calls else None
         reasoning = reasoning_content if reasoning_content else None
+        projection, visibility = normalize_message_projection(
+            role, projection_kind, context_visibility
+        )
+        effective_skip_embed = bool(skip_embed or visibility == "exclude")
 
         async def _do() -> tuple[int | None, bool]:
             async with self._write_lock:
@@ -464,6 +538,8 @@ class SessionDB:
                         tool_calls_json=tool_calls_json,
                         reasoning=reasoning,
                         workflow_event_id=event_id,
+                        projection_kind=projection,
+                        context_visibility=visibility,
                     )
                     await db.commit()
                     return msg_id, inserted
@@ -473,7 +549,7 @@ class SessionDB:
             msg_id is not None
             and inserted
             and self._on_message_written is not None
-            and not skip_embed
+            and not effective_skip_embed
         ):
             try:
                 await self._on_message_written(msg_id, content)
@@ -575,7 +651,7 @@ class SessionDB:
                 "SELECT id, session_id, role, content, created_at, "
                 "salience, decay_last_touch, user_emotion, audio_file_path, "
                 "tool_call_id, tool_calls, reasoning_content, workflow_event_id, "
-                "is_summary, summary_of "
+                "projection_kind, context_visibility, is_summary, summary_of "
                 "FROM messages WHERE session_id = ? "
                 "ORDER BY created_at ASC, id ASC "
                 "LIMIT ? OFFSET ?",
@@ -588,8 +664,10 @@ class SessionDB:
         for row in rows:
             item = _row_to_dict(row[: len(_BASE_COLUMNS)])
             item["workflow_event_id"] = row[len(_BASE_COLUMNS)]
-            item["is_summary"] = bool(row[len(_BASE_COLUMNS) + 1])
-            item["summary_of"] = row[len(_BASE_COLUMNS) + 2]
+            item["projection_kind"] = row[len(_BASE_COLUMNS) + 1]
+            item["context_visibility"] = row[len(_BASE_COLUMNS) + 2]
+            item["is_summary"] = bool(row[len(_BASE_COLUMNS) + 3])
+            item["summary_of"] = row[len(_BASE_COLUMNS) + 4]
             result.append(item)
         return result
 
@@ -619,12 +697,14 @@ class SessionDB:
             cursor = await db.execute(
                 "SELECT id, session_id, role, content, created_at, "
                 "salience, decay_last_touch, user_emotion, audio_file_path, "
-                "tool_call_id, tool_calls, reasoning_content, workflow_event_id "
+                "tool_call_id, tool_calls, reasoning_content, workflow_event_id, "
+                "projection_kind, context_visibility "
                 "FROM ("
                 "  SELECT id, session_id, role, content, created_at, "
                 "  salience, decay_last_touch, user_emotion, audio_file_path, "
-                "  tool_call_id, tool_calls, reasoning_content, workflow_event_id "
-                "  FROM messages WHERE session_id = ? "
+                "  tool_call_id, tool_calls, reasoning_content, workflow_event_id, "
+                "  projection_kind, context_visibility "
+                "  FROM messages WHERE session_id = ? AND context_visibility = 'conversation' "
                 "  ORDER BY created_at DESC, id DESC LIMIT ?"
                 ") ORDER BY created_at ASC, id ASC",
                 (session_id, safe_limit),
@@ -636,6 +716,8 @@ class SessionDB:
         for row in rows:
             item = _row_to_dict(row[: len(_BASE_COLUMNS)])
             item["workflow_event_id"] = row[len(_BASE_COLUMNS)]
+            item["projection_kind"] = row[len(_BASE_COLUMNS) + 1]
+            item["context_visibility"] = row[len(_BASE_COLUMNS) + 2]
             all_rows.append(item)
 
         if not all_rows or all_rows[0].get("role") != "tool":
@@ -653,6 +735,7 @@ class SessionDB:
             cursor = await db.execute(
                 "SELECT id, tool_calls FROM messages "
                 "WHERE session_id = ? AND role = 'assistant' "
+                "AND context_visibility = 'conversation' "
                 "AND id < ? AND tool_calls IS NOT NULL ORDER BY id DESC",
                 (session_id, boundary_id),
             )
@@ -676,8 +759,10 @@ class SessionDB:
             cursor = await db.execute(
                 "SELECT id, session_id, role, content, created_at, "
                 "salience, decay_last_touch, user_emotion, audio_file_path, "
-                "tool_call_id, tool_calls, reasoning_content, workflow_event_id "
-                "FROM messages WHERE session_id = ? AND id BETWEEN ? AND ? "
+                "tool_call_id, tool_calls, reasoning_content, workflow_event_id, "
+                "projection_kind, context_visibility "
+                "FROM messages WHERE session_id = ? AND context_visibility = 'conversation' "
+                "AND id BETWEEN ? AND ? "
                 "ORDER BY created_at ASC, id ASC",
                 (session_id, assistant_id, end_id),
             )
@@ -688,6 +773,8 @@ class SessionDB:
         for row in expanded_rows:
             item = _row_to_dict(row[: len(_BASE_COLUMNS)])
             item["workflow_event_id"] = row[len(_BASE_COLUMNS)]
+            item["projection_kind"] = row[len(_BASE_COLUMNS) + 1]
+            item["context_visibility"] = row[len(_BASE_COLUMNS) + 2]
             expanded.append(item)
         return expanded
 
@@ -715,6 +802,7 @@ class SessionDB:
                 "FROM messages_fts "
                 "JOIN messages m ON m.id = messages_fts.rowid "
                 "WHERE messages_fts MATCH ? AND m.session_id = ? "
+                "AND m.context_visibility = 'conversation' "
                 "ORDER BY rank LIMIT ?"
             )
             params: tuple = (query, session_id, limit)
@@ -727,7 +815,7 @@ class SessionDB:
                 "messages_fts.rank AS rank "
                 "FROM messages_fts "
                 "JOIN messages m ON m.id = messages_fts.rowid "
-                "WHERE messages_fts MATCH ? "
+                "WHERE messages_fts MATCH ? AND m.context_visibility = 'conversation' "
                 "ORDER BY rank LIMIT ?"
             )
             params = (query, limit)

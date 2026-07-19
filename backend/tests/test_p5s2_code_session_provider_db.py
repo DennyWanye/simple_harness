@@ -26,7 +26,11 @@ import pytest
 import pytest_asyncio
 
 from deskpet.memory.session_db import SessionDB
-from deskpet.memory.migrator import DEFAULT_MIGRATIONS_DIR, run_migrations
+from deskpet.memory.migrator import (
+    DEFAULT_MIGRATIONS_DIR,
+    TARGET_SCHEMA_VERSION,
+    run_migrations,
+)
 
 
 @pytest_asyncio.fixture
@@ -126,7 +130,7 @@ async def test_initialize_creates_v15_table_and_version(tmp_path: Path):
 
     async with aiosqlite.connect(db_path) as conn:
         cur = await conn.execute("PRAGMA user_version")
-        assert (await cur.fetchone())[0] == 18
+        assert (await cur.fetchone())[0] == TARGET_SCHEMA_VERSION
 
         cur = await conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' "
@@ -167,7 +171,7 @@ async def test_migration_idempotent(tmp_path: Path):
     async with aiosqlite.connect(db_path) as conn:
         cur = await conn.execute("PRAGMA user_version")
         ver = (await cur.fetchone())[0]
-    assert ver == 18
+    assert ver == TARGET_SCHEMA_VERSION
 
 
 # ---- 0.7 v13 → v14 升级保留老数据 --------------------------------------
@@ -222,7 +226,7 @@ async def test_migration_v14_to_v15_works(tmp_path: Path):
     async with aiosqlite.connect(db_path) as conn:
         cur = await conn.execute("PRAGMA user_version")
         ver = (await cur.fetchone())[0]
-    assert ver == 18
+    assert ver == TARGET_SCHEMA_VERSION
 
     # 表已建
     async with aiosqlite.connect(db_path) as conn:

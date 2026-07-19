@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from deskpet.retrieval.contracts import RetrievalCandidate
+from deskpet.retrieval.query_terms import extract_query_terms
 from deskpet.retrieval.ranking import canonicalize_url, dedupe_candidates, normalized_host, rank_candidates
 
 
@@ -34,3 +35,37 @@ def test_ranking_is_stable_independent_of_completion_order():
     forward = [(item.canonical_url, item.score) for item in rank_candidates("query", rows)]
     reverse = [(item.canonical_url, item.score) for item in rank_candidates("query", list(reversed(rows)))]
     assert forward == reverse
+
+
+def test_legacy_ranking_score_remains_exact_without_optional_metadata():
+    row = _row("https://example.test", "query result", "duckduckgo", 1)
+    ranked = rank_candidates("query", [row])
+
+    assert ranked[0].score == 0.85
+
+
+def test_chinese_query_terms_produce_nonzero_discriminating_relevance():
+    relevant = _row(
+        "https://relevant.test",
+        "2024年小学教育现状与双减课后服务进展",
+        "duckduckgo",
+        1,
+    )
+    unrelated = _row(
+        "https://unrelated.test",
+        "今日天气与体育赛事安排",
+        "duckduckgo",
+        1,
+    )
+    query = "2024年小学教育现状 双减课后服务"
+
+    ranked = rank_candidates(
+        query,
+        [unrelated, relevant],
+        query_terms=extract_query_terms(query),
+        dimension_id="edu_double_reduction_after_school_burden",
+    )
+
+    scores = {item.canonical_url: item.score for item in ranked}
+    assert scores[relevant.canonical_url] > scores[unrelated.canonical_url]
+    assert ranked[0].canonical_url == relevant.canonical_url

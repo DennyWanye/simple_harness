@@ -101,5 +101,64 @@ class RegisteredBlobStore:
             raise ValueError(f"workflow blob size mismatch: {digest}")
         return data
 
+    async def attach_effect_owner(
+        self,
+        refs: list[str] | tuple[str, ...],
+        execution_identity: NodeExecutionIdentity,
+        *,
+        effect_id: str,
+    ) -> None:
+        """Atomically root registered dependencies under a same-run effect."""
+
+        await initialize_workflow_db(self.database)
+        db = await aiosqlite.connect(self.database)
+        db.row_factory = aiosqlite.Row
+        try:
+            await db.execute("PRAGMA foreign_keys=ON")
+            await db.execute("BEGIN IMMEDIATE")
+            effect = await (
+                await db.execute(
+                    "SELECT run_id FROM workflow_effects WHERE effect_id=?",
+                    (effect_id,),
+                )
+            ).fetchone()
+            if effect is None or str(effect["run_id"]) != execution_identity.run_id:
+                raise ValueError("effect owner does not belong to the current run")
+            now = self._clock()
+            for wire_ref in sorted(set(refs)):
+                digest = str(wire_ref).removeprefix("sha256:")
+                if len(digest) != 64 or any(
+                    character not in "0123456789abcdef" for character in digest
+                ):
+                    raise ValueError("effect dependency is not a SHA-256 ref")
+                owned = await (
+                    await db.execute(
+                        """SELECT 1 FROM workflow_blob_refs r WHERE r.sha256=? AND (
+                        (r.owner_kind='run_staging' AND r.owner_id=?) OR
+                        (r.owner_kind='effect' AND EXISTS(
+                          SELECT 1 FROM workflow_effects e
+                          WHERE e.effect_id=r.owner_id AND e.run_id=?
+                        ))) LIMIT 1""",
+                        (digest, execution_identity.run_id, execution_identity.run_id),
+                    )
+                ).fetchone()
+                if owned is None:
+                    raise ValueError(
+                        "effect dependency has no current-run provisional owner"
+                    )
+                await db.execute(
+                    """INSERT OR IGNORE INTO workflow_blob_refs(
+                    sha256,owner_kind,owner_id,created_at
+                    ) VALUES(?,'effect',?,?)""",
+                    (digest, effect_id, now),
+                )
+            await db.commit()
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
 
 __all__ = ["RegisteredBlobStore"]

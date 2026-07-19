@@ -12,6 +12,16 @@ def quality_flags(*, text: str, html: str, content_type: str) -> tuple[str, ...]
         flags.append("ai_disclosure")
     if any(marker in lowered for marker in ("captcha", "g-recaptcha", "are you a human", "unusual traffic")):
         flags.append("captcha")
+    if any(marker in lowered for marker in (
+        "security verification", "verify you are human", "安全验证", "访问验证",
+    )):
+        flags.append("security_verification")
+    if any(marker in lowered for marker in (
+        "sign in to continue", "login required", "please log in", "登录后继续", "请先登录",
+    )):
+        flags.append("login_wall")
+    if looks_like_app_shell(html, text):
+        flags.append("app_shell")
     if content_type and not any(kind in content_type.lower() for kind in ("text/", "application/xhtml", "application/xml", "application/json")):
         flags.append("unsupported_content_type")
     return tuple(flags)

@@ -547,7 +547,7 @@ async def test_router_with_real_providers_routes_to_local_when_healthy():
                               headers={"content-type": "text/event-stream"})
 
     local = OpenAICompatibleProvider(
-        base_url="http://local.invalid/v1", api_key="ollama", model="gemma4:e4b")
+        base_url="http://local.invalid/v1", api_key="sk-local", model="gemma4:e4b")
     local._test_transport = httpx.MockTransport(local_handler)
     cloud = OpenAICompatibleProvider(
         base_url="http://cloud.invalid/v1", api_key="sk", model="qwen3.6-plus")

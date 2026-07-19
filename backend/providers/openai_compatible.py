@@ -185,7 +185,12 @@ class OpenAICompatibleProvider:
             return None
         return classify_relay_error(status_code, body_text, body=body)
 
-    def _client(self, timeout: float | httpx.Timeout) -> httpx.AsyncClient:
+    def _client(
+        self,
+        timeout: float | httpx.Timeout,
+        *,
+        transport_retries: int = 1,
+    ) -> httpx.AsyncClient:
         # 空 key 护栏：唯一的出站 client 构造点。非本地 endpoint 且 key 不可用
         # （空/占位符）时不构造 client、不发请求，抛友好错误，避免拼出非法的
         # "Authorization: Bearer " 头崩在 httpx 传输层（LocalProtocolError）。
@@ -229,7 +234,7 @@ class OpenAICompatibleProvider:
         if self._test_transport is not None:
             transport = self._test_transport
         else:
-            transport = httpx.AsyncHTTPTransport(retries=1)
+            transport = httpx.AsyncHTTPTransport(retries=transport_retries)
         return httpx.AsyncClient(
             timeout=timeout,
             headers=headers,
@@ -382,6 +387,42 @@ class OpenAICompatibleProvider:
             ),
         )
 
+    async def chat_with_tools_at_most_once(
+        self,
+        messages: list[dict],
+        *,
+        tools: list[dict] | None = None,
+        max_tokens: int = 8192,
+        temperature: float | None = None,
+        response_format: dict | None = None,
+        tool_choice: str | None = None,
+    ) -> dict:
+        """Aggregate one provider transport attempt without fallback retries.
+
+        Durable opaque effects use this entrypoint because retrying after an
+        ambiguous transport failure could duplicate a completed upstream LLM
+        call.  The regular :meth:`chat_with_tools` path intentionally retains
+        its resilient retry and stream-to-nonstream fallback behaviour.
+        """
+
+        return await auto_context_attempt_call(
+            provider=self,
+            messages=messages,
+            tools=tools,
+            model_id=self.model,
+            mark_sent_at_dispatch=False,
+            generation_reserve=max_tokens,
+            invoke=lambda: self._chat_with_tools_impl(
+                messages,
+                tools=tools,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                response_format=response_format,
+                tool_choice=tool_choice,
+                retry_mode="at_most_once",
+            ),
+        )
+
     async def _chat_with_tools_impl(
         self,
         messages: list[dict],
@@ -391,6 +432,7 @@ class OpenAICompatibleProvider:
         temperature: float | None = None,
         response_format: dict | None = None,
         tool_choice: str | None = None,
+        retry_mode: str = "resilient",
     ) -> dict:
         """P4-S25 fix: HTTP-stream-as-transport, response-as-aggregate.
 
@@ -420,6 +462,7 @@ class OpenAICompatibleProvider:
             temperature=temperature,
             response_format=response_format,
             tool_choice=tool_choice,
+            retry_mode=retry_mode,
         ):
             if ev.get("type") == "final":
                 final_dict = ev
@@ -866,7 +909,10 @@ class OpenAICompatibleProvider:
         temperature: float | None = None,
         response_format: dict | None = None,
         tool_choice: str | None = None,
+        retry_mode: str = "resilient",
     ):
+        if retry_mode not in {"resilient", "at_most_once"}:
+            raise ValueError(f"unsupported retry_mode: {retry_mode}")
         async for event in auto_context_attempt_iter(
             provider=self,
             messages=messages,
@@ -881,6 +927,7 @@ class OpenAICompatibleProvider:
                 temperature=temperature,
                 response_format=response_format,
                 tool_choice=tool_choice,
+                retry_mode=retry_mode,
             ),
         ):
             yield event
@@ -894,6 +941,7 @@ class OpenAICompatibleProvider:
         temperature: float | None = None,
         response_format: dict | None = None,
         tool_choice: str | None = None,
+        retry_mode: str = "resilient",
     ):
         """P4-S25 A1: streaming version of chat_with_tools.
 
@@ -965,6 +1013,14 @@ class OpenAICompatibleProvider:
             payload["messages"] = _stamp_cache_control(
                 messages, boundary_index=_cache_boundary
             )
+
+        if retry_mode == "at_most_once":
+            async for event in self._stream_one_attempt(
+                payload,
+                transport_retries=0,
+            ):
+                yield event
+            return
 
         # Streaming retry layer: same transient-error policy as the
         # non-streaming path. Bumped to 2 retries since SSE is more
@@ -1185,7 +1241,12 @@ class OpenAICompatibleProvider:
             f"LLM 调用失败 [{_phase}]: {_advice} 原始错误: {_human_msg}"
         ) from last_exc
 
-    async def _stream_one_attempt(self, payload: dict):
+    async def _stream_one_attempt(
+        self,
+        payload: dict,
+        *,
+        transport_retries: int = 1,
+    ):
         """Single-attempt SSE consumer. Used by chat_stream_with_tools."""
         # Context OS send boundary: this is the first synchronous statement
         # after the transport coroutine receives control and before any
@@ -1206,7 +1267,10 @@ class OpenAICompatibleProvider:
         sse_lines = 0
         delta_keys_seen: set[str] = set()
 
-        async with self._client(timeout=self.timeout) as client:
+        async with self._client(
+            timeout=self.timeout,
+            transport_retries=transport_retries,
+        ) as client:
             async with client.stream(
                 "POST",
                 f"{self.base_url}/chat/completions",

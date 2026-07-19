@@ -1,9 +1,9 @@
 # DeepResearch v6 答案契约稳定性手工测试
 
-> 执行日期：2026-07-18  
+> 执行日期：2026-07-18；GLM-5.2 1M 增量复验：2026-07-19
 > 环境：Windows 11，source Tauri，隔离 userdata  
 > 证据：`plans/2026-07-17-deepresearch-answer-contract-stability/evidence/t13-release-20260718/`  
-> 结论：5/5 PASS；中转站生成请求因账户余额不足返回 402，模型路由本身 PASS。
+> 结论：5/5 PASS；当前基础/预分析模型为 `sf-glm-5.2`，1M 临时画像与真实 SC-STATS-2 增量复验 PASS，GLM 请求全部 HTTP 200。
 
 ## 前置与判定纪律
 
@@ -13,9 +13,10 @@
 
 ## TC-01 基础模型切换
 
-1. 启动隔离 userdata，观察顶部模型标识；期望显示 `deepseek-v4-pro-1M`。
-2. 在真实聊天框发送短消息；期望日志 `p5s2_chain_resolved` 和 `chat_stream_with_tools` 均选择 `deepseek-v4-pro`，上下文窗口为 1,000,000。
-3. 结果：PASS。中转站返回 HTTP 402 “余额不足”，证明请求已到目标模型路由；不把外部余额状态误判为切换失败。
+1. 启动隔离 userdata；期望有效模型为 Relay 别名 `sf-glm-5.2`。
+2. 打开 Context usage；期望有效上限 950,000、compaction 750K、recall sweet spot 384K，启动日志解析名义窗口 1,000,000。
+3. 在真实聊天框与 SC-STATS-2 中触发模型；期望所有 `chat_stream_with_tools` 选择 `sf-glm-5.2`，Relay completion 全 HTTP 200、无 DeepSeek/402。
+4. 结果：PASS。2026-07-19 源码 Tauri 重启和 run `8109026887b64b309723c004e35c85af` 满足上述条件；隔离模型/上下文回归 `58 passed`。
 
 ## TC-02 completed：2024 国家统计局 exact 三次
 
@@ -39,14 +40,14 @@
 
 1. 完全关闭并用同一 userdata 重启应用。
 2. 依次点击 2019 partial、generic generate-now、2024 completed 三个历史 session。
-3. 期望 partial 答案/动作、单个 insufficient 卡和完整中文 exact 事实均恢复；无重复卡、重复答案或仍可点击的旧 control；顶部仍显示 DeepSeek 1M。
+3. 期望 partial 答案/动作、单个 insufficient 卡和完整中文 exact 事实均恢复；无重复卡、重复答案或仍可点击的旧 control；当前有效模型显示 `sf-glm-5.2`，Context usage 有效上限 950K。
 4. 结果：PASS。`tauri-final14.stderr.log` 记录 `recovered_deliveries=0`；最终 identity partial 历史截图 `ui-partial-2019-release-after-restart.jpg` 与 DB 一致，无重复终态或仍可点击的旧 control。
 
 ## 汇总
 
 | 用例 | 结果 | 核心证据 |
 |---|---|---|
-| TC-01 模型切换 | PASS | 启动/聊天日志选择 `deepseek-v4-pro`，UI 显示 1M |
+| TC-01 模型切换 | PASS | 启动/聊天日志选择 `sf-glm-5.2`；名义 1M、UI 有效 950K、compact 750K；HTTP 200 |
 | TC-02 completed exact ×3 | PASS | 三个 run、NBS 引用、本地化答案、delivery once |
 | TC-03 partial | PASS | `answer_status=partial`，只发布 1465 万人 |
 | TC-04 generate-now 双击 | PASS | 单 command 完整 journal、单终态 |

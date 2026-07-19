@@ -1,7 +1,45 @@
 # Execution results
 
-> Updated: 2026-07-18  
+> Updated: 2026-07-19
 > Status: COMPLETE — T11/T12/T13 and all test/UI gates passed; the release identity fixture is included in the controlled release commit.
+
+## 2026-07-19 repository consolidation gate
+
+- All useful production, test, architecture, plan and testcase changes from the
+  former worktrees were retained in one staged closure. Patch-equivalent extra
+  worktrees, their merged local branches, caches, generated reports, runtime
+  userdata and unrelated mesh/GPU drafts were removed; only `master` and the
+  main worktree remain.
+- Frontend Vitest passed `822` tests, `npm run build:relay` passed TypeScript and
+  Vite production compilation, and `cargo check` passed.
+- The final backend full-order run reached `5312 passed, 16 skipped` with one
+  process-global image endpoint resolver isolation failure. The test fixture now
+  clears that resolver before and after every case; the collection-order
+  reproduction (`test_main_task_scope_wiring` + the complete image config suite)
+  passed `20 passed`. The original 13-failure repair set passed `28 passed,
+  1 skipped` after its timing, override, migration and integration-fixture
+  contracts were corrected.
+- Three independent read-only audits passed code/import closure, architecture
+  consistency and retention/credential hygiene. `git diff --cached --check`,
+  PowerShell parser validation and v4/v5 workflow imports passed.
+
+## 2026-07-19 GLM-5.2 1M context verification
+
+- Both the relay alias `sf-glm-5.2` and canonical id `zai-org/GLM-5.2` are
+  temporarily pinned to a 1,000,000-token nominal context in the per-model
+  runtime table. The effective ceiling is 950,000 and compaction starts at
+  750,000; provider-advertised metadata remains the intended long-term owner.
+- Isolated model/context regression passed `58 passed`; `py_compile` passed.
+- Fresh source-Tauri startup resolved `sf-glm-5.2` at 1,000,000 tokens, and the
+  real Context usage dialog showed `0 / 950,000`, `compact @ 750k`, and
+  `sweet @ 384k`.
+- Computer Use submitted SC-STATS-2 through the real UI. Run
+  `8109026887b64b309723c004e35c85af` completed under `deep_research@v6` with
+  all four relay requests on `sf-glm-5.2` returning HTTP 200, with no DeepSeek
+  outbound and no HTTP 402. SessionDB and delivery
+  records contain one final answer (`140828 万人`, `954 万人`, NBS citation),
+  one artifact, and all required durable deliveries completed in one attempt.
+- Incremental evidence is in [`evidence/glm52-live-20260719/`](./evidence/glm52-live-20260719/).
 
 ## 2026-07-18 final completion
 

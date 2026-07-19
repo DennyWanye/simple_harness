@@ -411,7 +411,22 @@ export class RelayAuthAdapter implements AuthAdapter {
         : null;
     }
 
-    const r = await this.fetchProvidersInternal({ mode: "reuse" });
+    let r: ProvidersFetchResult;
+    try {
+      // `rotate=false` is the only endpoint with a hard no-rotation
+      // contract.  The legacy `/v1/providers` route has changed semantics
+      // across relay versions and may mint a new key, so it is unsafe for
+      // cold-start validation when several WebViews restore concurrently.
+      r = await this.fetchProvidersInternal({ mode: "meta" });
+    } catch (err) {
+      if (err instanceof RelayApiError && err.code === "DEVICE_KEY_MISSING") {
+        const f = await this.fetchProvidersInternal({ mode: "force" });
+        return this.deviceKey
+          ? { key: this.deviceKey, prefix: f.keyPrefix }
+          : null;
+      }
+      throw err;
+    }
     const serverPrefix = r.keyPrefix;
     const cached = this.deviceKey;
     const mismatch =

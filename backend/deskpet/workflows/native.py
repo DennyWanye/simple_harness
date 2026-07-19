@@ -16,6 +16,14 @@ from typing import TYPE_CHECKING, AsyncIterator, Mapping, Protocol, Sequence, ru
 from .contracts import JsonValue, NodeExecutionIdentity, StatePatch, WorkflowContext, WorkflowState, canonical_json, validate_json_value
 from .control import ExecutionControl, WorkflowSuspended, bind_execution_control
 from .errors import InvalidStatePatch, StateMergeConflict, WorkflowErrorCode, WorkflowNodeError
+from .terminal_projection import (
+    TERMINAL_PUBLIC_CAPABILITY,
+    AsyncTerminalCommitProjectionRegistry,
+    TerminalProjectionRegistry,
+    build_default_async_terminal_commit_registry,
+    build_default_terminal_projection_registry,
+    parse_terminal_blob_ref,
+)
 from .trace.context import SpanContext, use_span
 
 if TYPE_CHECKING:
@@ -33,6 +41,10 @@ class _CommitUncertain(RuntimeError):
 
 def _hash(*parts: object) -> str:
     return hashlib.sha256("|".join(str(part) for part in parts).encode("utf-8")).hexdigest()
+
+
+def _uses_deep_research_stage_contract(manifest: "WorkflowManifest") -> bool:
+    return manifest.workflow_name == "deep_research" and manifest.workflow_version in {"v2", "v3", "v4", "v5"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -283,10 +295,22 @@ async def _report(progress: object | None, identity: NodeExecutionIdentity, tran
 
 
 class NativeWorkflowExecutable:
-    def __init__(self, workflow: "CompiledWorkflow", store: NativeCheckpointStore) -> None:
+    def __init__(
+        self,
+        workflow: "CompiledWorkflow",
+        store: NativeCheckpointStore,
+        terminal_projection_registry: TerminalProjectionRegistry | None = None,
+        async_terminal_commit_registry: AsyncTerminalCommitProjectionRegistry | None = None,
+    ) -> None:
         self.workflow = workflow
         self.store = store
         self.manifest: WorkflowManifest = workflow.manifest
+        self.terminal_projection_registry = (
+            terminal_projection_registry or build_default_terminal_projection_registry()
+        )
+        self.async_terminal_commit_registry = (
+            async_terminal_commit_registry or build_default_async_terminal_commit_registry()
+        )
 
     def _config(self, thread_id: str, run_id: str, checkpoint_ns: str, configurable: Mapping[str, JsonValue] | None) -> dict[str, JsonValue]:
         result = copy.deepcopy(dict(configurable or {}))
@@ -369,7 +393,80 @@ class NativeWorkflowExecutable:
                 frontier, completed, firings = await self._next_frontier(
                     snapshot, state, context, execution.route_selections, config
                 )
-                frontier_operation = _hash(
+                terminal_status, terminal_error, recovery_action = self._terminal_projection(
+                    state, frontier
+                )
+                completion_intents = self._completion_intents(
+                    snapshot, patches, context, execution.first_attempt_times
+                )
+                terminal_projection: dict[str, JsonValue] | None = None
+                terminal_capability = self.async_terminal_commit_registry.get(
+                    self.manifest.workflow_name,
+                    self.manifest.workflow_version,
+                )
+                if terminal_capability is not None and terminal_status == "completed":
+                    request = terminal_capability.request_factory(
+                        state=state,
+                        engine_status=terminal_status,
+                        engine_error_code=(
+                            str(terminal_error.get("code")) if terminal_error is not None else None
+                        ),
+                        recovery_action=recovery_action,
+                    )
+                    if not isinstance(request, Mapping):
+                        raise InvalidStatePatch(
+                            "invalid_terminal_commit",
+                            "terminal commit request factory must return an object",
+                        )
+                    request_value = copy.deepcopy(dict(request))
+                    validate_json_value(request_value, path="$.terminal_commit_request")
+                    terminal_projection = await self.async_terminal_commit_registry.project(
+                        workflow_name=self.manifest.workflow_name,
+                        workflow_version=self.manifest.workflow_version,
+                        capability=terminal_capability.capability,
+                        request=request_value,
+                        context=context,
+                    )
+                    projected_intents = terminal_projection.get("intents")
+                    projected_refs = terminal_projection.get("blob_refs")
+                    if not isinstance(projected_intents, list) or not isinstance(projected_refs, list):
+                        raise InvalidStatePatch(
+                            "invalid_terminal_projection",
+                            "async terminal projection must contain intents and blob_refs arrays",
+                        )
+                    manifest_ref = request_value.get("manifest_ref")
+                    manifest_hash = request_value.get("manifest_hash")
+                    if (
+                        terminal_projection.get("manifest_ref") != manifest_ref
+                        or terminal_projection.get("manifest_hash") != manifest_hash
+                    ):
+                        raise InvalidStatePatch(
+                            "invalid_terminal_projection",
+                            "projection manifest identity differs from commit request",
+                        )
+                    state_refs = self._state_blob_refs(state)
+                    manifest_digest = parse_terminal_blob_ref(manifest_ref)
+                    if manifest_digest not in state_refs:
+                        raise InvalidStatePatch(
+                            "invalid_terminal_projection",
+                            "checkpoint blob_refs must own the terminal manifest",
+                        )
+                    projection_digests = tuple(
+                        sorted({parse_terminal_blob_ref(ref) for ref in projected_refs})
+                    )
+                    intents = tuple(copy.deepcopy(projected_intents))
+                    blob_refs = tuple(sorted(set(state_refs) | set(projection_digests)))
+                else:
+                    intents = (*completion_intents, *self._terminal_intents(
+                        state,
+                        run_id=run_id,
+                        status=terminal_status,
+                        error=terminal_error,
+                        recovery_action=recovery_action,
+                        registry=self.terminal_projection_registry,
+                    ))
+                    blob_refs = self._state_blob_refs(state)
+                frontier_identity_parts: list[object] = [
                     run_id,
                     snapshot.checkpoint_id,
                     "frontier",
@@ -377,21 +474,14 @@ class NativeWorkflowExecutable:
                     "next",
                     *(task.task_id for task in frontier),
                     canonical_json(state),
-                )
-                terminal_status, terminal_error, recovery_action = self._terminal_projection(
-                    state, frontier
-                )
-                completion_intents = self._completion_intents(
-                    snapshot, patches, context, execution.first_attempt_times
-                )
-                intents = (*completion_intents, *self._terminal_intents(
-                    state,
-                    run_id=run_id,
-                    status=terminal_status,
-                    error=terminal_error,
-                    recovery_action=recovery_action,
-                ))
-                blob_refs = self._state_blob_refs(state)
+                ]
+                # Preserve byte-identical v1-v5 checkpoint identities. The
+                # async terminal projection is a v6-only identity input; adding
+                # a synthetic "legacy" suffix would rewrite every historical
+                # checkpoint even though its semantic payload is unchanged.
+                if terminal_projection is not None:
+                    frontier_identity_parts.append(canonical_json(terminal_projection))
+                frontier_operation = _hash(*frontier_identity_parts)
                 result = await self.store.commit_frontier(
                     operation_id=frontier_operation,
                     expected_head=snapshot.checkpoint_id,
@@ -467,13 +557,42 @@ class NativeWorkflowExecutable:
         status: str | None,
         error: Mapping[str, JsonValue] | None,
         recovery_action: str | None,
+        registry: TerminalProjectionRegistry | None = None,
     ) -> tuple[dict[str, JsonValue], ...]:
         if status is None:
             return ()
         values = state.get("values")
         values = values if isinstance(values, Mapping) else {}
+        raw_terminal_public = values.get("terminal_public")
+        workflow_identity = (
+            state.get("workflow_name"),
+            state.get("workflow_version"),
+        )
+        if raw_terminal_public is None:
+            terminal_public = None
+        elif all(isinstance(value, str) and value for value in workflow_identity):
+            selected_registry = registry or build_default_terminal_projection_registry()
+            terminal_public = selected_registry.project(
+                workflow_name=str(workflow_identity[0]),
+                workflow_version=str(workflow_identity[1]),
+                capability=TERMINAL_PUBLIC_CAPABILITY,
+                raw=raw_terminal_public,
+                engine_status=str(status),
+            )
+        else:
+            raise InvalidStatePatch(
+                "invalid_terminal_public",
+                "terminal_public is reserved for a supported deep_research version",
+            )
         result: list[dict[str, JsonValue]] = []
         raw_intents = values.get("delivery_intents")
+        v5_delivery_status = (
+            str(terminal_public.get("delivery_status"))
+            if workflow_identity == ("deep_research", "v5")
+            and isinstance(terminal_public, Mapping)
+            else None
+        )
+        v5_cardinalities = {"report": 0, "artifact": 0, "assistant": 0}
         if isinstance(raw_intents, list):
             for raw in raw_intents:
                 if not isinstance(raw, Mapping):
@@ -482,33 +601,65 @@ class NativeWorkflowExecutable:
                 if not intent_id:
                     continue
                 kind = str(raw.get("kind") or "progress")
+                if v5_delivery_status is not None:
+                    if kind == "final":
+                        raise InvalidStatePatch(
+                            "invalid_delivery_intent",
+                            "v5 terminal event is owned by the native engine",
+                        )
+                    bucket = (
+                        "artifact" if kind in {"artifact", "artifact_card"}
+                        else "report" if kind == "report"
+                        else "assistant" if kind in {"assistant", "final_assistant"}
+                        else None
+                    )
+                    if bucket is not None:
+                        v5_cardinalities[bucket] += 1
+                        if v5_cardinalities[bucket] > 1:
+                            raise InvalidStatePatch(
+                                "invalid_delivery_intent",
+                                f"v5 terminal may publish at most one {bucket} intent",
+                            )
+                    if v5_delivery_status == "insufficient_evidence" and bucket in {"artifact", "report"}:
+                        # Insufficient evidence may deliver a safe summary, never a
+                        # report-shaped artifact that implies completed research.
+                        continue
+                payload = {**copy.deepcopy(dict(raw)), "status": status}
+                if v5_delivery_status is not None:
+                    payload["delivery_status"] = v5_delivery_status
                 result.append(
                     {
                         "intent_id": intent_id,
                         "event_key": f"terminal:{intent_id}",
                         "event_type": f"workflow.{kind}",
                         "channel": str(raw.get("channel") or ""),
-                        "payload": {**copy.deepcopy(dict(raw)), "status": status},
+                        "payload": payload,
                     }
                 )
+        final_payload: dict[str, JsonValue] = {
+            "kind": "final",
+            "status": status,
+            "error": copy.deepcopy(dict(error)) if error is not None else None,
+            "recovery_action": recovery_action,
+            "card": {
+                "run_id": run_id,
+                "status": status,
+                "error": copy.deepcopy(dict(error)) if error is not None else None,
+                "recovery_action": recovery_action,
+            },
+        }
+        if terminal_public is not None:
+            final_payload.update(copy.deepcopy(terminal_public))
+            card = final_payload["card"]
+            if isinstance(card, dict):
+                card.update(copy.deepcopy(terminal_public))
         result.append(
             {
                 "intent_id": f"{run_id}:run-terminal",
                 "event_key": "run:terminal",
                 "event_type": "workflow.final",
                 "channel": "final",
-                "payload": {
-                    "kind": "final",
-                    "status": status,
-                    "error": copy.deepcopy(dict(error)) if error is not None else None,
-                    "recovery_action": recovery_action,
-                    "card": {
-                        "run_id": run_id,
-                        "status": status,
-                        "error": copy.deepcopy(dict(error)) if error is not None else None,
-                        "recovery_action": recovery_action,
-                    },
-                },
+                "payload": final_payload,
             }
         )
         validate_json_value(result, path="$.terminal_intents")
@@ -565,7 +716,7 @@ class NativeWorkflowExecutable:
     def _freeze_public_progress(
         self, patch: StatePatch, *, first_attempt_time: float, finished_at: float
     ) -> StatePatch:
-        if (self.manifest.workflow_name, self.manifest.workflow_version) != ("deep_research", "v2"):
+        if not _uses_deep_research_stage_contract(self.manifest):
             return patch
         data = patch.to_dict()
         values = data.get("values")
@@ -578,6 +729,11 @@ class NativeWorkflowExecutable:
         if not isinstance(projection, dict) or not projection.get("stage_id"):
             return patch
         frozen = copy.deepcopy(projection)
+        if self.manifest.workflow_version == "v5":
+            public["stage_projection"] = frozen
+            values["public_progress"] = public
+            data["values"] = values
+            return StatePatch(data)
         completed_ids = public.get("completed_stage_ids", [])
         if not isinstance(completed_ids, list):
             raise InvalidStatePatch("invalid_public_progress", "completed_stage_ids must be a list")
@@ -595,7 +751,7 @@ class NativeWorkflowExecutable:
         return StatePatch(data)
 
     def _v2_observer_attributes(self, patch: StatePatch) -> dict[str, JsonValue]:
-        if (self.manifest.workflow_name, self.manifest.workflow_version) != ("deep_research", "v2"):
+        if not _uses_deep_research_stage_contract(self.manifest):
             return {}
         data = patch.to_dict()
         attributes: dict[str, JsonValue] = {}
@@ -622,7 +778,7 @@ class NativeWorkflowExecutable:
         if isinstance(values, Mapping):
             public = values.get("public_progress")
             projection = public.get("stage_projection") if isinstance(public, Mapping) else None
-            if isinstance(projection, Mapping):
+            if isinstance(projection, Mapping) and self.manifest.workflow_version != "v5":
                 metrics = projection.get("metrics")
                 attributes["deepresearch_v2_stage"] = {
                     "stage_id": str(projection.get("stage_id") or ""),
@@ -705,6 +861,14 @@ class NativeWorkflowExecutable:
             )
             try:
                 await self.store.commit_task_result(operation_id=_hash(snapshot.run_id, snapshot.checkpoint_id, "task", task.task_id), expected_head=snapshot.checkpoint_id, task=task, execution_info=info, patch=patch, blob_refs=self._patch_blob_refs(patch), configurable=config)
+            except asyncio.CancelledError as exc:
+                # Cancellation can arrive after the checkpointer transaction has
+                # committed (for example at its post-commit fault boundary).  Do
+                # not overwrite the durable succeeded_pending projection with a
+                # best-effort "cancelled" observer update in that uncertain
+                # window.  Re-raise the original cancellation after preserving
+                # the checkpoint as the recovery authority.
+                raise _CommitUncertain from exc
             except Exception as exc:
                 raise _CommitUncertain from exc
             v2_attributes = self._v2_observer_attributes(patch)
@@ -868,7 +1032,7 @@ class NativeWorkflowExecutable:
         context: WorkflowContext,
         first_attempt_times: Mapping[str, float],
     ) -> tuple[dict[str, JsonValue], ...]:
-        if (self.manifest.workflow_name, self.manifest.workflow_version) != ("deep_research", "v2"):
+        if not _uses_deep_research_stage_contract(self.manifest):
             return ()
         builder = getattr(context.ports.get("progress"), "build_completion_intent", None)
         if not callable(builder):

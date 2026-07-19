@@ -359,6 +359,24 @@ async def test_integration_ollama_v1_roundtrip():
     if not await provider.health_check():
         pytest.skip("Ollama /v1 not reachable — start ollama or set DESKPET_OLLAMA_MODEL")
 
+    # A healthy Ollama daemon may not have this test's default model pulled.
+    # Treat that as an unavailable integration fixture, not a provider failure.
+    async with provider._client(timeout=5.0) as client:
+        models_response = await client.get(f"{provider.base_url}/models")
+    models_payload = models_response.json()
+    model_rows = models_payload.get("data") or models_payload.get("models") or []
+    model_ids = {
+        str(row.get("id") or row.get("name") or row.get("model"))
+        for row in model_rows
+        if isinstance(row, dict)
+        and (row.get("id") or row.get("name") or row.get("model"))
+    }
+    if provider.model not in model_ids:
+        pytest.skip(
+            f"Ollama model {provider.model!r} is not installed; "
+            "set DESKPET_OLLAMA_MODEL to an available model"
+        )
+
     tokens: list[str] = []
     async for tok in provider.chat_stream(
         [{"role": "user", "content": "Reply with the single word: ping"}],

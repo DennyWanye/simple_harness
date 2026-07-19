@@ -8,7 +8,9 @@ from deskpet.workflows.definition import WorkflowManifest
 from deskpet.workflows.evaluation import HumanEvaluationRecord
 from deskpet.workflows.outbox import OutboxError, stable_delivery_id, stable_event_id
 from deskpet.workflows.runner import WorkflowRegistry, WorkflowRunner
-from deskpet.workflows.service import WorkflowService, WorkflowServiceError
+from deskpet.workflows.contracts import WorkflowContext
+from deskpet.workflows.launcher import WorkflowLauncher
+from deskpet.workflows.service import START_SNAPSHOT_KEY, WorkflowService, WorkflowServiceError
 from deskpet.workflows.store import FencedAsyncSqliteSaver, WorkflowRunStore
 from deskpet.workflows.trace import SpanKind, TraceStore
 
@@ -55,6 +57,50 @@ async def _service(tmp_path):
     registry.register(_Workflow(executable.manifest), executable=executable)
     runner = WorkflowRunner(store, FencedAsyncSqliteSaver(path), registry, owner="service-test")
     return WorkflowService(store, runner), store
+
+
+async def _v4_service(tmp_path):
+    path = tmp_path / "workflow-v4.db"
+    store = WorkflowRunStore(path)
+    registry = WorkflowRegistry()
+    manifest = WorkflowManifest(
+        workflow_name="deep_research",
+        workflow_version="v4",
+        state_schema_version=1,
+        durability="sync",
+        recursion_limit=32,
+        max_supersteps=16,
+        definition_hash="definition-v4",
+        state_hash="state-v4",
+        prompt_hash="prompt-v4",
+        tool_hash="tool-v4",
+        policy_hash="policy-v4",
+        callable_source_hash="callable-v4",
+        dependency_lock_hash="lock-v4",
+        implementation_bundle_hash="implementation-v4",
+    )
+    executable = _Executable()
+    executable.manifest = manifest
+    registry.register(_Workflow(manifest), executable=executable)
+    runner = WorkflowRunner(store, FencedAsyncSqliteSaver(path), registry, owner="retry-v4-test")
+
+    async def delivery_state(session_id):
+        return {"session_id": session_id, "epoch": 4, "deleted_at": None}
+
+    service = WorkflowService(
+        store,
+        runner,
+        session_delivery_state_reader=delivery_state,
+    )
+    launcher = WorkflowLauncher(service)
+    service.launcher = launcher
+    launcher.register_adapter(
+        "deep_research",
+        "v4",
+        state_factory=lambda **values: values,
+        context_factory=WorkflowContext,
+    )
+    return service, store, launcher
 
 
 async def _start(service: WorkflowService, **overrides):
@@ -127,6 +173,173 @@ async def test_code_delivery_ref_uses_code_epoch_when_delivery_targets_code_sess
     assert (await store.get_session_ref(started["run_id"], "base"))["session_epoch"] == 2
     assert (await store.get_session_ref(started["run_id"], "code"))["session_epoch"] == 5
     assert (await store.get_session_ref(started["run_id"], "delivery"))["session_epoch"] == 5
+
+
+@pytest.mark.asyncio
+async def test_retry_from_start_is_same_key_idempotent_and_strips_reserved_snapshot(tmp_path):
+    service, store, launcher = await _v4_service(tmp_path)
+    source = await service.start_workflow(
+        venue="chat",
+        base_session_id="base-session",
+        code_session_id="code-session",
+        delivery_session_id="code-session",
+        base_epoch=2,
+        code_epoch=4,
+        request_id="source-request",
+        turn_id="source-turn",
+        workflow_name="deep_research",
+        workflow_version="v4",
+        logical_slot="accepted_async:0",
+        capability_snapshot={"tools": ["web_search"], "profile": "technology"},
+        start_payload={"topic_fingerprint": "safe-fixture"},
+    )
+    db = await store._connect()
+    try:
+        await db.execute(
+            "UPDATE workflow_runs SET status='failed' WHERE run_id=?",
+            (source["run_id"],),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    retry_key = "123e4567-e89b-42d3-a456-426614174000"
+    source_events_before = await store.events_after(source["run_id"], 0)
+    source_deliveries_before = await service.list_deliveries(run_id=source["run_id"])
+    first = await service.retry_run_from_start(
+        source["run_id"], action_id="retry_from_start", retry_key=retry_key
+    )
+    second = await service.retry_run_from_start(
+        source["run_id"], action_id="retry_from_start", retry_key=retry_key
+    )
+
+    assert first["run_id"] == second["run_id"]
+    assert first["created"] is True
+    assert second["created"] is False
+    retried = await store.get_start_snapshot(first["run_id"])
+    assert retried is not None
+    assert retried["identity"] == {
+        "venue": "chat",
+        "base_session_id": "base-session",
+        "code_session_id": "code-session",
+        "delivery_session_id": "code-session",
+        "base_epoch": 2,
+        "code_epoch": 4,
+        "request_id": f"retry:{retry_key}",
+        "turn_id": "source-turn",
+        "workflow_name": "deep_research",
+        "logical_slot": f"retry:{source['run_id']}:{retry_key}",
+    }
+    assert retried["original_capabilities"] == {
+        "tools": ["web_search"], "profile": "technology"
+    }
+    assert START_SNAPSHOT_KEY not in retried["original_capabilities"]
+    third = await service.retry_run_from_start(
+        source["run_id"],
+        action_id="retry_from_start",
+        retry_key="123e4567-e89b-42d3-a456-426614174002",
+    )
+    assert third["created"] is True
+    assert third["run_id"] != first["run_id"]
+    assert await store.events_after(source["run_id"], 0) == source_events_before
+    assert await service.list_deliveries(run_id=source["run_id"]) == source_deliveries_before
+    await launcher.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_retry_from_start_rejects_invalid_source_session_and_key(tmp_path):
+    service, store, launcher = await _v4_service(tmp_path)
+    source = await service.start_workflow(
+        venue="chat", base_session_id="base", delivery_session_id="delivery",
+        base_epoch=4, request_id="request", turn_id="turn",
+        workflow_name="deep_research", workflow_version="v4",
+        capability_snapshot={}, start_payload={"topic_fingerprint": "safe"},
+    )
+    db = await store._connect()
+    try:
+        await db.execute("UPDATE workflow_runs SET status='failed' WHERE run_id=?", (source["run_id"],))
+        await db.commit()
+    finally:
+        await db.close()
+
+    with pytest.raises(WorkflowServiceError) as invalid_key:
+        await service.retry_run_from_start(
+            source["run_id"], action_id="retry_from_start", retry_key="NOT-A-UUID"
+        )
+    assert invalid_key.value.code == "invalid_retry_key"
+
+    async def deleted_state(session_id):
+        return {"session_id": session_id, "epoch": 4, "deleted_at": 1.0}
+
+    service._session_delivery_state_reader = deleted_state
+    with pytest.raises(WorkflowServiceError) as deleted:
+        await service.retry_run_from_start(
+            source["run_id"],
+            action_id="retry_from_start",
+            retry_key="123e4567-e89b-42d3-a456-426614174001",
+        )
+    assert deleted.value.code == "session_deleted"
+    await launcher.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_retry_from_start_rejects_wrong_action_nonterminal_v3_and_epoch(tmp_path):
+    service, store, launcher = await _v4_service(tmp_path)
+    source = await service.start_workflow(
+        venue="chat", base_session_id="base", delivery_session_id="delivery",
+        base_epoch=4, request_id="request", turn_id="turn",
+        workflow_name="deep_research", workflow_version="v4",
+        capability_snapshot={}, start_payload={"topic_fingerprint": "safe"},
+    )
+    retry_key = "123e4567-e89b-42d3-a456-426614174003"
+
+    with pytest.raises(WorkflowServiceError) as invalid_action:
+        await service.retry_run_from_start(
+            source["run_id"], action_id="retry_with_query", retry_key=retry_key
+        )
+    assert invalid_action.value.code == "invalid_retry_action"
+
+    with pytest.raises(WorkflowServiceError) as nonterminal:
+        await service.retry_run_from_start(
+            source["run_id"], action_id="retry_from_start", retry_key=retry_key
+        )
+    assert nonterminal.value.code == "workflow_retry_not_allowed"
+
+    db = await store._connect()
+    try:
+        await db.execute(
+            "UPDATE workflow_runs SET status='failed', workflow_version='v3' WHERE run_id=?",
+            (source["run_id"],),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+    with pytest.raises(WorkflowServiceError) as legacy:
+        await service.retry_run_from_start(
+            source["run_id"], action_id="retry_from_start", retry_key=retry_key
+        )
+    assert legacy.value.code == "workflow_retry_not_allowed"
+
+    db = await store._connect()
+    try:
+        await db.execute(
+            "UPDATE workflow_runs SET workflow_version='v4' WHERE run_id=?",
+            (source["run_id"],),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    async def changed_epoch(session_id):
+        return {"session_id": session_id, "epoch": 5, "deleted_at": None}
+
+    service._session_delivery_state_reader = changed_epoch
+    with pytest.raises(WorkflowServiceError) as epoch:
+        await service.retry_run_from_start(
+            source["run_id"], action_id="retry_from_start", retry_key=retry_key
+        )
+    assert epoch.value.code == "session_epoch_mismatch"
+    await launcher.shutdown()
 
 
 @pytest.mark.asyncio

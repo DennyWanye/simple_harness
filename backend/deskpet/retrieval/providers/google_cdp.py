@@ -23,6 +23,10 @@ class GoogleCDPProvider:
         url = f"https://www.google.com/search?q={quote_plus(request.query)}"
         html = await cdp_edge_render(url, timeout=min(budget.per_provider_timeout_s, budget.remaining_s))
         if not html: raise ProviderFailure(PublicErrorCode.TIMEOUT)
-        rows = _parse_google_html(html, request.max_results)
-        if _looks_like_google_captcha(html, rows): raise ProviderFailure(PublicErrorCode.CAPTCHA)
+        try:
+            rows = _parse_google_html(html, request.max_results)
+            captcha = _looks_like_google_captcha(html, rows)
+        except Exception as exc:
+            raise ProviderFailure(PublicErrorCode.INVALID_RESPONSE) from exc
+        if captcha: raise ProviderFailure(PublicErrorCode.CAPTCHA)
         return candidates_from_rows(self.name, rows)

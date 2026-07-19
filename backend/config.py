@@ -10,7 +10,7 @@ import sys
 import tomli
 from pathlib import Path
 from dataclasses import dataclass, field, fields as dc_fields
-from typing import Optional
+from typing import Mapping, Optional
 
 import platformdirs
 from urllib.parse import urlsplit
@@ -18,6 +18,51 @@ from urllib.parse import urlsplit
 import paths as _paths
 
 logger = logging.getLogger(__name__)
+
+
+def resolve_deep_research_workflow_version(
+    configured_version: str,
+    *,
+    environment: Mapping[str, str] | None = None,
+    platform_default_user_data_dir: str | Path | None = None,
+) -> tuple[str, str]:
+    """Resolve the new-run version while preserving the guarded dev override.
+
+    The released factory default is v6.  v5 remains the sole supported explicit
+    pin for newly-created roots; v1-v4 stay registered only for persisted-run
+    recovery.  Invalid configured values fail back to the released factory
+    version instead of routing new work onto a recovery-only graph.
+    """
+
+    env = environment if environment is not None else os.environ
+    configured = str(configured_version or "").strip().lower()
+    configured_valid = configured in {"v5", "v6"}
+    selected = configured if configured_valid else "v6"
+    configured_reason = (
+        "configured" if configured_valid else "configured_invalid_factory_default"
+    )
+    requested = str(env.get("DESKPET_DEV_DEEPRESEARCH_VERSION") or "").strip().lower()
+    if not requested:
+        return selected, configured_reason
+    if requested != "v6":
+        return selected, "dev_override_unsupported"
+    if str(env.get("DESKPET_DEV_MODE") or "") != "1":
+        return selected, "dev_mode_required"
+    isolated = str(env.get("DESKPET_USER_DATA_DIR") or "").strip()
+    if not isolated:
+        return selected, "isolated_user_data_required"
+    default_path = Path(
+        platform_default_user_data_dir
+        or platformdirs.user_data_dir("deskpet", appauthor=False, roaming=True)
+    )
+    try:
+        isolated_path = Path(isolated).expanduser().resolve(strict=False)
+        default_path = default_path.expanduser().resolve(strict=False)
+    except (OSError, RuntimeError):
+        return selected, "isolated_user_data_invalid"
+    if os.path.normcase(str(isolated_path)) == os.path.normcase(str(default_path)):
+        return selected, "isolated_user_data_required"
+    return "v6", "dev_isolated_override"
 
 
 # ─── P6 agent-loop-refactor — process-wide feature flag ─────────
@@ -437,12 +482,12 @@ class ProblemPipelineConfig:
     enabled: bool = True                       # 总开关（kill-switch）：false → 整条短路回退现有链路
     intent_triage: bool = True                 # Step1+3 合并预分析（意图 + 主要矛盾）
     intent_clarify_threshold: float = 0.7      # 歧义澄清阈值
-    analysis_timeout_s: float = 45.0           # 预分析 LLM 超时（真机修正：deepseek-v4-pro thinking 慢，需给足时间；原 30s 仍偶超时）
+    analysis_timeout_s: float = 45.0           # 预分析 LLM 超时（远程模型调用保留充足响应窗口）
     evidence_gate: bool = True                 # Step2 取证门控
     evidence_max_nudges: int = 2               # 取证 nudge 上限
     evidence_investigative_tools: list[str] = field(default_factory=list)  # 空=用模块默认白名单
     plan_companion_enabled: bool = True        # Step4 为 Companion 主线新增 plan（code 模式不动）
-    analysis_model: str = "deepseek-v4-pro"    # 决策3：意图+矛盾分析模型（relay 实测 stream+json_schema 稳，规避 gpt-5.5 间歇 502）
+    analysis_model: str = "sf-glm-5.2"         # 意图+矛盾分析复用当前 Relay GLM-5.2 别名，避免旧 DeepSeek 402 降级
     self_check: bool = True                    # Step6 自检总开关（bool；严格度内部按 problem_type 选）
     self_check_model: str = ""                 # 决策3：异体自检评分模型（留空=主 LLM gpt-5.5）
     self_check_heterogeneous: bool = True      # 失败 N 次后启异体（fresh-context 子代理）评分
@@ -553,10 +598,28 @@ class WorkflowsConfig:
     terminal_retention_days: int = 30
     evaluation_retention_days: int = 180
     orphan_grace_hours: int = 24
-    # New DeepResearch runs use the immutable v2 graph. v1 stays registered
-    # exclusively for checkpoint/history recovery.
-    deep_research_version: str = "v2"
+    # New DeepResearch runs use frozen release v6. v1-v5 stay registered for
+    # checkpoint/history recovery; v5 is the sole supported explicit new-root pin.
+    deep_research_version: str = "v6"
+    # One-time factory-default migration marker. Only exact inherited
+    # v5/revision5 installations are promoted to v6/revision6; a current-revision
+    # v5 value is an explicit pin and remains respected.
+    deep_research_default_revision: int = 6
     deep_research_max_parallel_tasks: int = 4
+
+
+@dataclass
+class ResearchV5Config:
+    """Runtime budgets only; product evidence/quality policy remains hashed."""
+
+    soft_checkpoint_seconds: int = 300
+    lease_seconds: int = 120
+    auto_cap_seconds: int = 900
+    plateau_rounds: int = 2
+    llm_input_token_budget: int = 120_000
+    llm_output_token_budget: int = 32_000
+    llm_cost_budget_micros: int = 20_000_000
+    io_operation_budget: int = 256
 
 
 @dataclass
@@ -564,6 +627,7 @@ class SearchGatewayConfig:
     """In-process retrieval gateway. Enabled by default during test stage."""
 
     enabled: bool = True
+    playwright_renderer_enabled: bool = True
     route: str = "auto"
     providers: list[str] = field(default_factory=lambda: [
         "baidu", "duckduckgo", "google-cdp", "bing-cdp",
@@ -576,12 +640,43 @@ class SearchGatewayConfig:
     research_target_domains: int = 5
     research_total_timeout_s: float = 30.0
     max_concurrency: int = 4
+    provider_max_concurrency: int = 1
+    provider_queue_max_wait_s: float = 8.0
+    empty_rescue_enabled: bool = True
+    empty_rescue_max_per_request: int = 1
     request_cdp_budget: int = 2
     request_hydrate_budget: int = 3
     cache_size: int = 128
     cache_ttl_s: float = 120.0
     cooldown_threshold: int = 2
     cooldown_ttl_s: float = 300.0
+    # Classified provider circuit policies.  The legacy cooldown fields above
+    # remain accepted for callers that construct a config programmatically.
+    circuit_timeout_threshold: int = 2
+    circuit_timeout_open_s: float = 30.0
+    circuit_timeout_probe_base_s: float = 2.0
+    circuit_timeout_probe_max_s: float = 30.0
+    circuit_http_threshold: int = 2
+    circuit_http_open_s: float = 30.0
+    circuit_http_probe_base_s: float = 2.0
+    circuit_http_probe_max_s: float = 30.0
+    circuit_invalid_response_threshold: int = 2
+    circuit_invalid_response_open_s: float = 30.0
+    circuit_invalid_response_probe_base_s: float = 2.0
+    circuit_invalid_response_probe_max_s: float = 30.0
+    circuit_blocked_threshold: int = 1
+    circuit_blocked_open_s: float = 300.0
+    circuit_blocked_probe_base_s: float = 15.0
+    circuit_blocked_probe_max_s: float = 120.0
+    circuit_captcha_threshold: int = 1
+    circuit_captcha_open_s: float = 600.0
+    circuit_captcha_probe_base_s: float = 30.0
+    circuit_captcha_probe_max_s: float = 300.0
+    circuit_rate_limit_threshold: int = 1
+    circuit_rate_limit_open_s: float = 60.0
+    circuit_rate_limit_probe_base_s: float = 15.0
+    circuit_rate_limit_probe_max_s: float = 120.0
+    circuit_rate_limit_retry_after_max_s: float = 300.0
     searxng_url: str = ""
     serp_hardening: bool = False
 
@@ -615,6 +710,7 @@ class AppConfig:
     # WI-4.1 Skills 分级披露.  全 flag 默认 OFF（字节级 BC）.
     skills: SkillsConfig = field(default_factory=SkillsConfig)
     workflows: WorkflowsConfig = field(default_factory=WorkflowsConfig)
+    research_v5: ResearchV5Config = field(default_factory=ResearchV5Config)
     search_gateway: SearchGatewayConfig = field(default_factory=SearchGatewayConfig)
     context: ContextSettingsConfig = field(default_factory=ContextSettingsConfig)
     # P4-S15: capture the raw TOML so layers that don't have a dataclass
@@ -901,6 +997,8 @@ _MIGRATABLE_SECTIONS: tuple[tuple[str, ...], ...] = (
     ("skills", "auto_disclosure"),
     ("skills", "codify"),
     ("workflows",),
+    ("research_v5",),
+    ("search_gateway",),
 )
 
 
@@ -962,6 +1060,35 @@ def _merge_missing_feature_flags(user_target: Path, bundle_source: Path) -> bool
         return False
 
     added: list[str] = []
+
+    # ``deep_research_version`` is a factory revision, not a normal preference.
+    # The v6 release has one deliberately narrow migration: only the exact
+    # inherited v5/revision5 pair moves to v6/revision6. Any other pair is an
+    # explicit or unrecognised value and must remain byte-for-byte selected.
+    user_workflows = _dig_table(user_doc, ("workflows",))
+    bundle_workflows = _dig_table(bundle_doc, ("workflows",))
+    if _is_toml_table(user_workflows) and _is_toml_table(bundle_workflows):
+        revision_key = "deep_research_default_revision"
+        version_key = "deep_research_version"
+        bundle_revision = bundle_workflows.get(revision_key)  # type: ignore[union-attr]
+        user_revision = user_workflows.get(revision_key)  # type: ignore[union-attr]
+        inherited_v5_factory_default = (
+            bundle_revision == 6
+            and bundle_workflows.get(version_key) == "v6"  # type: ignore[union-attr]
+            and user_revision == 5
+            and user_workflows.get(version_key) == "v5"  # type: ignore[union-attr]
+        )
+        if (
+            inherited_v5_factory_default
+        ):
+            user_workflows[version_key] = "v6"  # type: ignore[index]
+            user_workflows[revision_key] = bundle_revision  # type: ignore[index]
+            added.extend(
+                [
+                    f"workflows.deep_research_version(default->v{bundle_revision})",
+                    "workflows.deep_research_default_revision",
+                ]
+            )
     for path in _MIGRATABLE_SECTIONS:
         bundle_tbl = _dig_table(bundle_doc, path)
         if not _is_toml_table(bundle_tbl):
@@ -1650,6 +1777,21 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
         )
     if "workflows" in raw:
         config.workflows = _load_section(WorkflowsConfig, dict(raw["workflows"]))
+    if "research_v5" in raw:
+        config.research_v5 = _load_section(ResearchV5Config, dict(raw["research_v5"]))
+    r5 = config.research_v5
+    r5.soft_checkpoint_seconds = max(30, min(900, int(r5.soft_checkpoint_seconds)))
+    r5.lease_seconds = max(30, min(600, int(r5.lease_seconds)))
+    r5.auto_cap_seconds = max(
+        r5.soft_checkpoint_seconds,
+        r5.lease_seconds,
+        min(3600, int(r5.auto_cap_seconds)),
+    )
+    r5.plateau_rounds = max(1, min(10, int(r5.plateau_rounds)))
+    r5.llm_input_token_budget = max(1_000, min(2_000_000, int(r5.llm_input_token_budget)))
+    r5.llm_output_token_budget = max(1_000, min(500_000, int(r5.llm_output_token_budget)))
+    r5.llm_cost_budget_micros = max(0, min(1_000_000_000, int(r5.llm_cost_budget_micros)))
+    r5.io_operation_budget = max(8, min(10_000, int(r5.io_operation_budget)))
     # Search Gateway values are typed. Legacy [research] aliases are read
     # only when the equivalent new key was not explicitly supplied.
     raw_gateway = dict(raw.get("search_gateway") or {})
@@ -1675,12 +1817,31 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
         raise ConfigError("SG-CONFIG-3: timeouts must be positive")
     if not 1 <= sg.max_concurrency <= 6:
         raise ConfigError("SG-CONFIG-4: max_concurrency must be in [1, 6]")
+    if not 1 <= sg.provider_max_concurrency <= 6:
+        raise ConfigError("SG-CONFIG-8: provider_max_concurrency must be in [1, 6]")
+    if sg.provider_queue_max_wait_s <= 0:
+        raise ConfigError("SG-CONFIG-9: provider_queue_max_wait_s must be positive")
+    if not 1 <= sg.empty_rescue_max_per_request <= 1:
+        raise ConfigError("SG-CONFIG-10: empty_rescue_max_per_request must be 1")
     if sg.searxng_url:
         parsed = urlsplit(sg.searxng_url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.path.rstrip("/") != "/search":
             raise ConfigError("SG-CONFIG-5: searxng_url must be an http(s) /search endpoint")
         if "searxng" not in sg.providers:
             sg.providers = ["searxng", *sg.providers]
+    for failure_class in (
+        "timeout", "http", "invalid_response", "blocked", "captcha", "rate_limit"
+    ):
+        threshold = int(getattr(sg, f"circuit_{failure_class}_threshold"))
+        open_s = float(getattr(sg, f"circuit_{failure_class}_open_s"))
+        probe_base_s = float(getattr(sg, f"circuit_{failure_class}_probe_base_s"))
+        probe_max_s = float(getattr(sg, f"circuit_{failure_class}_probe_max_s"))
+        if threshold < 1 or min(open_s, probe_base_s, probe_max_s) <= 0:
+            raise ConfigError("SG-CONFIG-6: circuit policy values must be positive")
+        if probe_base_s > probe_max_s:
+            raise ConfigError("SG-CONFIG-7: circuit probe_base must not exceed probe_max")
+    if sg.circuit_rate_limit_retry_after_max_s <= 0:
+        raise ConfigError("SG-CONFIG-6: circuit policy values must be positive")
     if config.workflows.terminal_retention_days < 1:
         raise ConfigError("[workflows].terminal_retention_days must be at least 1")
     if config.workflows.evaluation_retention_days < config.workflows.terminal_retention_days:

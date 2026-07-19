@@ -55,14 +55,48 @@ async def test_searxng_json_adapter_and_html_disabled_failure():
 
 
 @pytest.mark.asyncio
-async def test_http_provider_maps_429_to_typed_blocked_failure():
-    client = httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(429)))
+async def test_http_provider_maps_429_to_typed_rate_limit_failure():
+    client = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: httpx.Response(429, headers={"Retry-After": "12"})
+    ))
+    try:
+        with pytest.raises(ProviderFailure) as exc:
+            await DuckDuckGoProvider().search(SearchRequest("alpha"), _budget(), client)
+    finally:
+        await client.aclose()
+    assert exc.value.code == PublicErrorCode.RATE_LIMIT
+    assert exc.value.retry_after_s == 12
+
+
+@pytest.mark.asyncio
+async def test_http_provider_keeps_403_distinct_from_rate_limit():
+    client = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: httpx.Response(403)
+    ))
     try:
         with pytest.raises(ProviderFailure) as exc:
             await DuckDuckGoProvider().search(SearchRequest("alpha"), _budget(), client)
     finally:
         await client.aclose()
     assert exc.value.code == PublicErrorCode.BLOCKED
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_http_provider_maps_parser_exception_to_invalid_response(monkeypatch):
+    monkeypatch.setattr(
+        "deskpet.tools.search_provider.parse_ddg_html",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("bad html")),
+    )
+    client = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, text="not a result page")
+    ))
+    try:
+        with pytest.raises(ProviderFailure) as exc:
+            await DuckDuckGoProvider().search(SearchRequest("alpha"), _budget(), client)
+    finally:
+        await client.aclose()
+    assert exc.value.code == PublicErrorCode.INVALID_RESPONSE
 
 
 @pytest.mark.asyncio

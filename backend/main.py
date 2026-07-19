@@ -17,6 +17,7 @@ from deskpet.frozen_worker_dispatch import dispatch_frozen_worker_if_requested
 dispatch_frozen_worker_if_requested()
 
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -76,7 +77,12 @@ from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from pathlib import Path
 from pydantic import BaseModel, field_validator, model_validator
 
-from config import load_config, resolve_config_path, effective_llm_model
+from config import (
+    effective_llm_model,
+    load_config,
+    resolve_config_path,
+    resolve_deep_research_workflow_version,
+)
 import paths as _paths
 from paths import resolve_model_dir  # P3-S1
 from context import ServiceContext
@@ -177,6 +183,11 @@ from tools.registry import ToolRegistry
 from tools.get_time import get_time_tool
 from tools.clipboard import read_clipboard_tool
 from tools.reminder import list_reminders_tool
+from deskpet.tools.public_projection import (
+    project_public_tool_arguments,
+    project_public_tool_calls,
+    project_public_tool_result,
+)
 from observability.vram import classify_tier, recommend_asr_device
 from router.hybrid_router import HybridRouter, LLMUnavailableError, RoutingStrategy
 from billing.ledger import BillingLedger
@@ -295,7 +306,10 @@ def _resolve_llm_api_key(configured: str) -> str:
     if configured in placeholders:
         keychain_key = _resolve_cloud_api_key()
         if keychain_key:
-            logger.info("llm_api_key_from_keychain")
+            logger.info(
+                "llm_api_key_from_keychain",
+                key_fp=hashlib.sha256(keychain_key.encode("utf-8")).hexdigest()[:8],
+            )
             return keychain_key
         # 占位符 + 没 env → 保持占位符（Ollama 会接受任何值；云端会 401）
     return configured
@@ -816,6 +830,38 @@ def _make_str_llm_call(
     return _call
 
 
+def _make_research_llm_call_v2(provider):
+    """Adapt the active provider to the usage-bearing v5 research contract."""
+    if provider is None:
+        return None
+
+    async def _call(
+        prompt: str,
+        *,
+        max_output_tokens: int,
+        stable_call_id: str,
+        response_format=None,
+    ):
+        if not stable_call_id:
+            raise ValueError("stable_call_id is required")
+        from agent.context_messages import provider_purpose_scope
+        from deskpet.tools.research_tools import _research_llm_result_from_provider_response
+
+        with provider_purpose_scope("research"):
+            result = await provider.chat_with_tools_at_most_once(
+                messages=[{"role": "user", "content": prompt}],
+                tools=[],
+                max_tokens=max_output_tokens,
+                response_format=response_format,
+            )
+        return _research_llm_result_from_provider_response(
+            result,
+            fallback_model=str(getattr(provider, "model", "") or "unknown"),
+        )
+
+    return _call
+
+
 def _resolve_ephemeral_provider(base_provider, model_name: str):
     """Clone ``base_provider`` with its model overridden to ``model_name``.
 
@@ -868,6 +914,7 @@ try:
     _research_tools.set_live_llm_call(
         _make_str_llm_call(local_llm, max_tokens=4096, purpose="research")
     )
+    _research_tools.set_live_llm_call_v2(_make_research_llm_call_v2(local_llm))
 
     # LLM 重排桥: 用【廉价模型】(默认 gpt-4.1-mini,中转站有)做 research 召回后的
     # cross-encoder 式精排 —— 免下载本地 bge-reranker、免占本地内存,复用 relay。
@@ -958,6 +1005,7 @@ def _refresh_research_live_llm(provider=None) -> None:
         _research_tools.set_live_llm_call(
             _make_str_llm_call(_provider, max_tokens=4096, purpose="research")
         )
+        _research_tools.set_live_llm_call_v2(_make_research_llm_call_v2(_provider))
 
         try:
             _r_base = str(getattr(_provider, "base_url", "") or "")
@@ -3248,6 +3296,17 @@ async def lifespan(app: FastAPI):
     try:
         from deskpet.workflows.bootstrap import build_workflow_service
         from deskpet.workflows.retention import RetentionPolicy
+        from deskpet.workflows.store import RegisteredBlobStore
+
+        _workflow_delivery_blobs = RegisteredBlobStore(
+            _paths.user_data_dir() / "workflows" / "blobs",
+            _paths.user_data_dir() / "data" / "workflow.db",
+        )
+
+        async def _resolve_workflow_content(ref: str) -> bytes:
+            wire_ref = str(ref or "").strip()
+            digest = wire_ref[7:] if wire_ref.startswith("sha256:") else wire_ref
+            return await _workflow_delivery_blobs.get(digest)
 
         async def _workflow_delivery_epoch(event, delivery) -> int | None:
             if _sdb is None or _workflow_service is None:
@@ -3266,14 +3325,29 @@ async def lifespan(app: FastAPI):
             return expected_epoch
 
         async def _workflow_session_delivery(event, delivery):
+            from deskpet.workflows.delivery import DeliveryAttemptResultV1
+
             target_sid = str(delivery.get("target_id") or "default")
             expected_epoch = await _workflow_delivery_epoch(event, delivery)
             if expected_epoch is None:
-                return
+                return DeliveryAttemptResultV1.discarded_fenced(
+                    "session_epoch_mismatch"
+                )
             payload = dict(event.get("payload") or {})
             nested = payload.get("payload")
             nested = dict(nested) if isinstance(nested, dict) else {}
             text = ""
+            from deskpet.workflows.adapters.product_delivery import (
+                resolve_workflow_content_text,
+                workflow_message_projection,
+            )
+
+            content_payload = nested if nested.get("content_ref") else payload
+            resolved = await resolve_workflow_content_text(
+                content_payload, _resolve_workflow_content
+            )
+            if resolved is not None:
+                text = resolved
             if event.get("event_type") == "workflow.progress":
                 v2_payload = payload if payload.get("schema_version") == 2 else nested
                 if v2_payload.get("schema_version") == 2:
@@ -3290,19 +3364,57 @@ async def lifespan(app: FastAPI):
                 elif event.get("event_type") == "workflow.final":
                     text = f"任务已结束：{payload.get('status', 'unknown')}"
                 else:
-                    return
+                    return DeliveryAttemptResultV1.retryable_failure(
+                        "projection_content_missing"
+                    )
             if _sdb is not None:
-                await _sdb.append_message_if_epoch(
+                projection = workflow_message_projection(str(event.get("event_type") or ""))
+                message_id = await _sdb.append_message_if_epoch(
                     target_sid,
-                    "assistant",
+                    projection.role,
                     text,
                     expected_epoch=expected_epoch,
                     workflow_event_id=str(event["event_id"]),
+                    projection_kind=projection.projection_kind,
+                    context_visibility=projection.context_visibility,
+                    skip_embed=projection.skip_embed,
                 )
+                if message_id is None:
+                    return DeliveryAttemptResultV1.discarded_fenced(
+                        "session_epoch_mismatch"
+                    )
+                return DeliveryAttemptResultV1.delivered()
+            return DeliveryAttemptResultV1.retryable_failure(
+                "session_db_unavailable"
+            )
 
         async def _workflow_websocket_delivery(event, delivery):
+            from deskpet.workflows.delivery import DeliveryAttemptResultV1
+
             if await _workflow_delivery_epoch(event, delivery) is None:
-                return
+                return DeliveryAttemptResultV1.discarded_fenced(
+                    "session_epoch_mismatch"
+                )
+            from deskpet.workflows.adapters.product_delivery import (
+                resolve_workflow_content_text,
+            )
+
+            outbound_event = dict(event)
+            outbound_payload = dict(event.get("payload") or {})
+            nested = outbound_payload.get("payload")
+            content_payload = (
+                dict(nested)
+                if isinstance(nested, dict) and nested.get("content_ref")
+                else outbound_payload
+            )
+            resolved = await resolve_workflow_content_text(
+                content_payload, _resolve_workflow_content
+            )
+            if resolved is not None:
+                # Resolved bytes are transport-only.  The immutable outbox row
+                # remains ref-only and therefore replay-safe.
+                outbound_payload["text"] = resolved
+            outbound_event["payload"] = outbound_payload
             envelope_type = (
                 "workflow_final"
                 if event.get("event_type") == "workflow.final"
@@ -3311,17 +3423,15 @@ async def lifespan(app: FastAPI):
             envelope = {
                 "type": envelope_type,
                 "payload": {
-                    **dict(event),
+                    **outbound_event,
                     "session_id": str(delivery.get("target_id") or "default"),
                 },
             }
-            seen: set[int] = set()
-            for target_ws in list(_control_connections.values()):
-                marker = id(target_ws)
-                if marker in seen:
-                    continue
-                seen.add(marker)
-                await asyncio.wait_for(target_ws.send_json(envelope), timeout=1.0)
+            from deskpet.workflows.delivery import broadcast_websocket_best_effort
+
+            return await broadcast_websocket_best_effort(
+                envelope, list(_control_connections.values())
+            )
 
         async def _workflow_artifact_publisher(payload):
             envelope = {"type": "tool_result", "payload": dict(payload)}
@@ -3345,6 +3455,7 @@ async def lifespan(app: FastAPI):
                     _paths.user_data_dir() / "data" / "workflow.db"
                 ),
                 artifact_publisher=_workflow_artifact_publisher,
+                content_resolver=_resolve_workflow_content,
             )
             product_handlers = product_delivery.handlers()
 
@@ -3360,6 +3471,10 @@ async def lifespan(app: FastAPI):
                 evaluation_tombstone_days=config.workflows.evaluation_retention_days,
                 orphan_grace_hours=config.workflows.orphan_grace_hours,
             ),
+            session_delivery_state_reader=(
+                _sdb.get_session_delivery_state if _sdb is not None else None
+            ),
+            activate=False,
         )
         from deskpet.workflows.contracts import WorkflowContext
         from deskpet.workflows.definitions.research_core import (
@@ -3373,13 +3488,35 @@ async def lifespan(app: FastAPI):
         from deskpet.workflows.definitions.v2 import (
             deep_research_initial_state as deep_research_v2_initial_state,
         )
+        from deskpet.workflows.definitions.v3 import (
+            deep_research_initial_state as deep_research_v3_initial_state,
+        )
+        from deskpet.workflows.definitions.v4 import (
+            deep_research_initial_state as deep_research_v4_initial_state,
+        )
+        from deskpet.workflows.definitions.v5 import (
+            deep_research_initial_state as deep_research_v5_initial_state,
+        )
+        from deskpet.workflows.definitions.v6 import (
+            build_continuation_start_payload as build_deep_research_v6_continuation_payload,
+            decode_continuation_snapshot as decode_deep_research_v6_continuation_snapshot,
+            deep_research_initial_state as deep_research_v6_initial_state,
+        )
         from deskpet.workflows.launcher import WorkflowLauncher
         from deskpet.workflows.native import NativeExecutionPolicy
-        from deskpet.workflows.store import RegisteredBlobStore
+        from deskpet.workflows.runtime_adapters import (
+            DEEP_RESEARCH_EXTENSION,
+            DeepResearchContinuationAdapter,
+            DeepResearchRuntimeExtension,
+        )
+        from deskpet.workflows.terminal_projection import TERMINAL_COMMIT_CAPABILITY
         from deskpet.tools import research_tools as _workflow_research_tools
 
         _workflow_launcher = WorkflowLauncher(_workflow_service)
         setattr(_workflow_service, "launcher", _workflow_launcher)
+        # Runtime adapters must all be registered before the production
+        # registry is sealed and any durable recovery is allowed to run.
+        service_context.register("workflow_service", _workflow_service)
 
         async def _deep_context_factory(row, start_payload) -> WorkflowContext:
             llm_call = await _workflow_research_tools._resolve_default_llm_call()
@@ -3404,6 +3541,7 @@ async def lifespan(app: FastAPI):
         async def _deep_v2_context_factory(row, start_payload) -> WorkflowContext:
             from deskpet.retrieval.contracts import FetchRequest, SearchRequest
             from deskpet.retrieval.runtime import get_default_gateway
+            from deskpet.retrieval.query_terms import extract_query_terms
 
             llm_call = await _workflow_research_tools._resolve_default_llm_call()
             legacy = legacy_ports(llm_call=llm_call, search=None, extract=None)
@@ -3425,13 +3563,43 @@ async def lifespan(app: FastAPI):
                     for value in attempts
                     if isinstance(value, dict) and value.get("public_error_code")
                 ]
+                coverage = dict(response.coverage())
+                safe_attempts = [
+                    {
+                        "provider": str(value.get("provider") or ""),
+                        "status": str(value.get("status") or ""),
+                        "permit": str(value.get("permit") or "closed"),
+                        "probe_outcome": (
+                            str(value.get("probe_outcome"))
+                            if value.get("probe_outcome")
+                            else None
+                        ),
+                        "upstream_called": bool(value.get("upstream_called", False)),
+                        "is_rescue": bool(value.get("is_rescue", False)),
+                    }
+                    for value in attempts
+                    if isinstance(value, dict)
+                ]
                 return ResearchSearchResults(
                     list(payload["results"]),
                     observation={
+                        "request_id": str(payload.get("request_id") or ""),
+                        "run_id": str(payload.get("run_id") or run_id),
                         "degraded": bool(response.degraded),
                         "reason_code": public_codes[-1] if public_codes else None,
                         "engines_tried": list(response.engines_tried),
                         "engines_hit": list(response.engines_hit),
+                        "provider_attempt_count": int(coverage["actual_requests"]),
+                        "provider_probe_count": int(coverage["probes"]),
+                        "provider_attempts": safe_attempts,
+                        "rescue_status": str(response.rescue_status),
+                        "rescue_error_code": (
+                            response.rescue_error_code.value
+                            if response.rescue_error_code is not None
+                            else None
+                        ),
+                        "rescue_upstream_called": bool(response.rescue_upstream_called),
+                        "coverage": coverage,
                     },
                 )
 
@@ -3483,6 +3651,419 @@ async def lifespan(app: FastAPI):
                 turn_id=str(row.get("turn_id") or ""),
             )
 
+        async def _deep_v5_context_factory(row, start_payload) -> WorkflowContext:
+            import hashlib as _hashlib
+            import json as _json
+            import time as _time
+            from datetime import datetime as _datetime, timezone as _timezone
+            from deskpet.retrieval.contracts import (
+                DimensionSearchRequest,
+                FetchRequest,
+                SearchRequest,
+            )
+            from deskpet.retrieval.query_terms import extract_query_terms
+            from deskpet.retrieval.runtime import get_default_gateway
+            from deskpet.workflows.adapters.research_runtime import (
+                BoundResearchEffectContext,
+                DurableResearchCallEffectAdapter,
+                DurableResearchLLMStagePort,
+                MonotonicResearchClock,
+                DurableResearchReadEffectAdapter,
+                DurableResearchReadStagePort,
+                DurableResearchSnapshotPort,
+                DurableV5ControlPort,
+                WorkflowControlSignalHub,
+            )
+            from deskpet.workflows.adapters.deep_research_v5_evidence_runtime import (
+                candidate_from_document,
+                candidate_from_json,
+                evaluate_runtime_evidence,
+                select_dimension_fair_rows,
+            )
+            from deskpet.workflows.contracts import canonical_json
+            from deskpet.workflows.definitions.deep_research_v5_contracts import ResearchBrief
+            from deskpet.workflows.definitions.research_core import ResearchLLMPortV2
+            from deskpet.workflows.effects import EffectExecutionContext, EffectJournal
+            from deskpet.workflows.store import RunFence
+
+            run_id = str(row.get("run_id") or "")
+            session_id = str(row.get("session_id") or "")
+            db_path = _workflow_service.run_store.path
+            blobs = RegisteredBlobStore(
+                _paths.user_data_dir() / "workflows" / "blobs", db_path
+            )
+            journal = EffectJournal(db_path)
+            repository = _workflow_service.research_repository
+            signals = WorkflowControlSignalHub(repository)
+            async def _effect_context(identity):
+                current = await _workflow_service.run_store.get_run(identity.run_id)
+                if current is None or str(current.get("status")) != "running":
+                    raise RuntimeError("v5 research effect run is not active")
+                owner = str(current.get("lease_owner") or "")
+                if not owner:
+                    raise RuntimeError("v5 research effect run has no lease owner")
+                digest = _hashlib.sha256(
+                    f"{identity.run_id}:{identity.checkpoint_ns}:{identity.checkpoint_id}:"
+                    f"{identity.task_id}:{identity.attempt}".encode("utf-8")
+                ).hexdigest()
+                context = EffectExecutionContext(
+                    journal=journal,
+                    fence=RunFence(
+                        identity.run_id,
+                        owner,
+                        int(current.get("lease_epoch") or 0),
+                        int(current.get("run_version") or 0),
+                    ),
+                    node_execution_id=f"research-v5-{digest[:32]}",
+                    workflow_name="deep_research",
+                    workflow_version="v5",
+                    node_id=identity.node_id,
+                )
+                return BoundResearchEffectContext(identity, context)
+
+            llm_call = await _workflow_research_tools._resolve_default_llm_call_v2()
+            llm_effect = DurableResearchCallEffectAdapter(
+                journal=journal,
+                blobs=blobs,
+                llm=ResearchLLMPortV2(llm_call),
+                resolve_effect_context=_effect_context,
+                reserve_cost_micros=lambda _role, _input, output: max(0, output * 20),
+                actual_cost_micros=lambda result: max(
+                    0, int((result.input_tokens or 0) * 3 + (result.output_tokens or 0) * 15)
+                ),
+                control_signals=signals,
+            )
+
+            gateway = get_default_gateway()
+
+            async def _search_transport(payload, identity):
+                if payload.get("_stage") == "direct":
+                    return {"results": [], "executed_query_fingerprints": []}
+                brief_raw = payload.get("research_brief")
+                brief = ResearchBrief.from_json(brief_raw) if isinstance(brief_raw, dict) else None
+                dimensions = {
+                    item.dimension_id: item for item in brief.dimensions
+                } if brief is not None else {}
+                raw_queries = payload.get("initial_queries") or payload.get("query_strategy_queries") or []
+                query_rows = [item for item in raw_queries if isinstance(item, dict)] if isinstance(raw_queries, list) else []
+                work = payload.get("work_item")
+                if isinstance(work, dict) and work.get("query"):
+                    query_rows.append({
+                        "dimension_id": work.get("dimension_id"),
+                        "query": work.get("query"),
+                        "source_target": work.get("source_target"),
+                        "fingerprint": payload.get("query_fingerprint"),
+                    })
+                requests = []
+                metadata = {}
+                for index, item in enumerate(query_rows):
+                    query = str(item.get("query") or "").strip()
+                    dimension_id = str(item.get("dimension_id") or "").strip()
+                    if not query or not dimension_id or dimension_id not in dimensions:
+                        continue
+                    fingerprint = str(item.get("fingerprint") or "").strip() or _hashlib.sha256(
+                        query.casefold().encode("utf-8")
+                    ).hexdigest()
+                    dimension = dimensions[dimension_id]
+                    semantic_context = " ".join(
+                        (
+                            brief.user_question if brief is not None else "",
+                            dimension.question,
+                            *(brief.subjects if brief is not None else ()),
+                            *dimension.query_targets,
+                            query,
+                        )
+                    )
+                    semantic_terms = extract_query_terms(semantic_context)
+                    request = SearchRequest(
+                        query=query,
+                        max_results=10,
+                        mode="research",
+                        run_id=identity.run_id,
+                        dimension_id=dimension_id,
+                        query_terms=semantic_terms,
+                    )
+                    requests.append(DimensionSearchRequest(
+                        dimension_id=dimension_id,
+                        request=request,
+                        core=dimension.importance == "core",
+                        priority=100 - index,
+                        query_terms=semantic_terms,
+                        query_fingerprint=fingerprint,
+                    ))
+                    metadata[(dimension_id, query)] = {
+                        "query": query,
+                        "query_fingerprint": fingerprint,
+                        "source_target": str(item.get("source_target") or ""),
+                    }
+                batch = await gateway.search_dimension_batch(
+                    requests,
+                    min_results_per_core=1,
+                )
+                results = []
+                for dimension_result in batch.results:
+                    response = dimension_result.response
+                    meta = metadata.get(
+                        (dimension_result.dimension_id, response.query),
+                        {"query": response.query, "query_fingerprint": "", "source_target": ""},
+                    )
+                    for candidate in response.to_dict().get("results") or []:
+                        if isinstance(candidate, dict):
+                            results.append({
+                                **candidate,
+                                "dimension_id": dimension_result.dimension_id,
+                                **meta,
+                            })
+                output = {
+                    "results": results,
+                    "executed_query_fingerprints": sorted({
+                        request.budget_query_key for request in requests
+                    }),
+                    # The allocator keeps immutable tuples internally, while
+                    # durable effect outcomes require strict JSON.  Reuse the
+                    # retrieval contract's canonical projection instead of
+                    # leaking the internal budget snapshot into workflow state.
+                    "budget": batch.to_dict()["budget"],
+                }
+                # A gap unit is atomic search+fetch+admit under this durable
+                # effect fence.  Returning only URLs would make gap_join claim
+                # progress without adding any usable evidence.
+                if payload.get("_stage") == "gap_work":
+                    return await _fetch_transport(
+                        {**payload, "gap_work_result": output}, identity
+                    )
+                return output
+
+            search_effect = DurableResearchReadEffectAdapter(
+                journal=journal,
+                blobs=blobs,
+                resolve_effect_context=_effect_context,
+                transport=_search_transport,
+                control_signals=signals,
+            )
+
+            async def _fetch_transport(payload, identity):
+                rows = []
+                for key in ("search_result", "direct_result", "gap_work_result"):
+                    value = payload.get(key)
+                    if isinstance(value, dict) and isinstance(value.get("results"), list):
+                        rows.extend(item for item in value["results"] if isinstance(item, dict))
+                brief_raw = payload.get("research_brief")
+                if not isinstance(brief_raw, dict):
+                    raise ValueError("v5 evidence fetch requires research_brief")
+                brief = ResearchBrief.from_json(brief_raw)
+                dimension_by_id = {item.dimension_id: item for item in brief.dimensions}
+                documents = []
+                current_candidates = []
+                fetch_rows = select_dimension_fair_rows(
+                    rows,
+                    tuple(dimension_by_id),
+                    limit=24,
+                )
+                for raw in fetch_rows:
+                    url = str(raw.get("url") or "")
+                    dimension_id = str(raw.get("dimension_id") or "")
+                    if not url or dimension_id not in dimension_by_id:
+                        continue
+                    try:
+                        document = await gateway.fetch_service.fetch(
+                            FetchRequest(
+                                url=url,
+                                timeout=20.0,
+                                render_policy="auto",
+                                run_id=identity.run_id,
+                            )
+                        ) if gateway.fetch_service is not None else None
+                    except Exception:
+                        continue
+                    if document is not None:
+                        value = document.to_dict()
+                        documents.append(value)
+                        dimension = dimension_by_id[dimension_id]
+                        year_anchors = (
+                            tuple(re.findall(r"(?<!\d)(?:19|20)\d{2}(?!\d)", brief.user_question))
+                            if "official_statistics" in dimension.expected_source_types
+                            else ()
+                        )
+                        current_candidates.append(candidate_from_document(
+                            dimension_id=dimension_id,
+                            dimension_text=" ".join(
+                                (
+                                    dimension.question,
+                                    *dimension.query_targets,
+                                )
+                            ),
+                            query=str(raw.get("query") or ""),
+                            document=value,
+                            subjects=brief.subjects,
+                            required_anchors=year_anchors,
+                        ))
+                prior_candidates = []
+                for value in payload.get("evidence_candidates", []):
+                    if isinstance(value, dict):
+                        prior_candidates.append(candidate_from_json(value))
+                evaluated = evaluate_runtime_evidence(
+                    brief=brief,
+                    candidates=(*prior_candidates, *current_candidates),
+                )
+                ref_by_candidate = {}
+                current_by_id = {item.candidate_id: item for item in current_candidates}
+                for candidate_value in evaluated["evidence_candidates"]:
+                    if not candidate_value.get("admitted"):
+                        continue
+                    candidate_id = str(candidate_value["candidate_id"])
+                    candidate = current_by_id.get(candidate_id)
+                    if candidate is None:
+                        continue
+                    document = next(
+                        (item for item in documents if str(item.get("canonical_url") or item.get("url") or "") == str(candidate.canonical_url or candidate.url)),
+                        None,
+                    )
+                    if document is None:
+                        continue
+                    encoded = canonical_json(document).encode("utf-8")
+                    ref = await blobs.put(
+                        encoded, identity,
+                        media_type="application/vnd.deskpet.research-evidence+json",
+                    )
+                    ref_by_candidate[candidate_id] = ref.sha256
+                passage_refs = sorted(set(
+                    [str(item) for item in payload.get("passage_blob_refs", [])]
+                    + list(ref_by_candidate.values())
+                ))
+                executed = sorted(set(
+                    [str(item) for item in payload.get("executed_query_fingerprints", [])]
+                    + [
+                        str(item)
+                        for key in ("search_result", "gap_work_result")
+                        for item in (
+                            payload.get(key, {}).get("executed_query_fingerprints", [])
+                            if isinstance(payload.get(key), dict) else []
+                        )
+                    ]
+                ))
+                return {
+                    "documents": documents,
+                    **evaluated,
+                    "passage_blob_refs": passage_refs,
+                    "executed_query_fingerprints": executed,
+                    "budget_summary": {"io_documents": len(documents)},
+                }
+
+            fetch_effect = DurableResearchReadEffectAdapter(
+                journal=journal,
+                blobs=blobs,
+                resolve_effect_context=_effect_context,
+                transport=_fetch_transport,
+                control_signals=signals,
+            )
+
+            class _ArtifactStagePort:
+                async def execute(self, *, stage, payload, identity):
+                    synthesis = payload.get("synthesis_result")
+                    synthesis = synthesis if isinstance(synthesis, dict) else {}
+                    report_md = str(synthesis.get("report_md") or synthesis.get("summary") or "")
+                    if not report_md:
+                        raise ValueError("v5 report synthesis produced no report markdown")
+                    report_hash = _hashlib.sha256(report_md.encode("utf-8")).hexdigest()
+                    saved = await asyncio.to_thread(
+                        _workflow_research_tools.save_workflow_report,
+                        topic=str(payload.get("topic") or "research"),
+                        report_md=report_md,
+                        report_hash=report_hash,
+                        run_id=run_id,
+                    )
+                    return {**saved, "report_ref": f"sha256:{saved['sha256']}"}
+
+            return WorkflowContext(
+                ports={
+                    "llm": DurableResearchLLMStagePort(blobs=blobs, effect=llm_effect),
+                    "search": DurableResearchReadStagePort(effect=search_effect, effect_name="search"),
+                    "fetch": DurableResearchReadStagePort(effect=fetch_effect, effect_name="static_fetch"),
+                    "artifact": _ArtifactStagePort(),
+                    "control": DurableV5ControlPort(repository, signal_hub=signals),
+                    "snapshot": DurableResearchSnapshotPort(blobs=blobs, repository=repository),
+                    "clock": MonotonicResearchClock(),
+                    "native_execution_policy": NativeExecutionPolicy(
+                        max_parallel_tasks=max(2, min(6, int(config.workflows.deep_research_max_parallel_tasks)))
+                    ),
+                },
+                request_id=str(row.get("request_id") or ""),
+                turn_id=str(row.get("turn_id") or ""),
+            )
+
+        async def _deep_v6_context_factory(row, start_payload) -> WorkflowContext:
+            import hashlib as _hashlib
+
+            from deskpet.retrieval.runtime import get_default_gateway
+            from deskpet.workflows.adapters.deep_research_v6_bootstrap import (
+                build_deep_research_v6_context,
+            )
+            from deskpet.workflows.adapters.research_runtime import (
+                BoundResearchEffectContext,
+                WorkflowControlSignalHub,
+            )
+            from deskpet.workflows.effects import EffectExecutionContext, EffectJournal
+            from deskpet.workflows.store import RunFence
+
+            run_id = str(row.get("run_id") or "")
+            db_path = _workflow_service.run_store.path
+            blobs = RegisteredBlobStore(
+                _paths.user_data_dir() / "workflows" / "blobs",
+                db_path,
+            )
+            journal = EffectJournal(db_path)
+            repository = _workflow_service.research_repository
+            signals = WorkflowControlSignalHub(repository)
+            await repository.ensure_snapshot_lineage(
+                run_id=run_id,
+                operation_id=f"research:{run_id}",
+                budget_lease_id=_hashlib.sha256(
+                    f"deep-research-v6-root-budget|{run_id}".encode("utf-8")
+                ).hexdigest(),
+            )
+
+            async def _effect_context(identity):
+                current = await _workflow_service.run_store.get_run(identity.run_id)
+                if current is None or str(current.get("status")) != "running":
+                    raise RuntimeError("v6 research effect run is not active")
+                owner = str(current.get("lease_owner") or "")
+                if not owner:
+                    raise RuntimeError("v6 research effect run has no lease owner")
+                digest = _hashlib.sha256(
+                    f"{identity.run_id}:{identity.checkpoint_ns}:{identity.checkpoint_id}:"
+                    f"{identity.task_id}:{identity.attempt}".encode("utf-8")
+                ).hexdigest()
+                context = EffectExecutionContext(
+                    journal=journal,
+                    fence=RunFence(
+                        identity.run_id,
+                        owner,
+                        int(current.get("lease_epoch") or 0),
+                        int(current.get("run_version") or 0),
+                    ),
+                    node_execution_id=f"research-v6-{digest[:32]}",
+                    workflow_name="deep_research",
+                    workflow_version="v6",
+                    node_id=identity.node_id,
+                )
+                return BoundResearchEffectContext(identity, context)
+
+            llm_call = await _workflow_research_tools._resolve_default_llm_call_v2()
+            return build_deep_research_v6_context(
+                blobs=blobs,
+                journal=journal,
+                resolve_effect_context=_effect_context,
+                search_gateway=get_default_gateway(),
+                llm_call=llm_call,
+                control_signals=signals,
+                request_id=str(row.get("request_id") or ""),
+                turn_id=str(row.get("turn_id") or ""),
+                max_parallel_tasks=int(
+                    config.workflows.deep_research_max_parallel_tasks
+                ),
+            )
+
         def _deep_v2_state_factory(**values):
             return deep_research_v2_initial_state(
                 topic=str(values["topic"]),
@@ -3492,6 +4073,110 @@ async def lifespan(app: FastAPI):
                 mode=str(values.get("mode") or "standard"),
                 research_config=dict(values.get("research_config") or {}),
                 blob_root=str(values.get("blob_root") or ""),
+            )
+
+        def _deep_v3_state_factory(**values):
+            return deep_research_v3_initial_state(
+                topic=str(values["topic"]),
+                run_id=str(values["run_id"]),
+                thread_id=str(values["thread_id"]),
+                session_id=str(values["session_id"]),
+                mode=str(values.get("mode") or "standard"),
+                research_config=dict(values.get("research_config") or {}),
+                blob_root=str(values.get("blob_root") or ""),
+            )
+
+        def _deep_v4_state_factory(**values):
+            return deep_research_v4_initial_state(
+                topic=str(values["topic"]),
+                run_id=str(values["run_id"]),
+                thread_id=str(values["thread_id"]),
+                session_id=str(values["session_id"]),
+                mode=str(values.get("mode") or "standard"),
+                research_config=dict(values.get("research_config") or {}),
+                blob_root=str(values.get("blob_root") or ""),
+            )
+
+        def _deep_v5_state_factory(**values):
+            runtime = {
+                **dict(values.get("research_config") or {}),
+                "soft_checkpoint_seconds": config.research_v5.soft_checkpoint_seconds,
+                "lease_seconds": config.research_v5.lease_seconds,
+                "auto_cap_seconds": config.research_v5.auto_cap_seconds,
+                "plateau_rounds": config.research_v5.plateau_rounds,
+            }
+            return deep_research_v5_initial_state(
+                topic=str(values["topic"]),
+                run_id=str(values["run_id"]),
+                thread_id=str(values["thread_id"]),
+                session_id=str(values["session_id"]),
+                mode=str(values.get("mode") or "standard"),
+                research_config=runtime,
+                blob_root=str(values.get("blob_root") or ""),
+                operation_id=str(values.get("operation_id") or values["run_id"]),
+                continuation_snapshot=(
+                    dict(values["continuation_snapshot"])
+                    if isinstance(values.get("continuation_snapshot"), dict)
+                    else None
+                ),
+                parent_operation_id=(
+                    str(values["parent_operation_id"])
+                    if values.get("parent_operation_id") is not None
+                    else None
+                ),
+                only_gaps=bool(values.get("only_gaps", False)),
+            )
+
+        async def _deep_v6_state_factory(**values):
+            continuation_snapshot = None
+            topic = str(values.get("topic") or "")
+            answer_locale = str(values.get("answer_locale") or "zh-CN")
+            if values.get("source_snapshot_hash") is not None:
+                loader = getattr(
+                    _workflow_service.research_repository,
+                    "load_continuation_snapshot_v6",
+                    None,
+                )
+                if not callable(loader):
+                    raise RuntimeError("v6 continuation snapshot loader is unavailable")
+                continuation_snapshot = decode_deep_research_v6_continuation_snapshot(
+                    await loader(str(values["run_id"]))
+                )
+                blob_loader = getattr(_workflow_service, "_research_snapshot_loader", None)
+                if not callable(blob_loader):
+                    raise RuntimeError("v6 continuation registered blob loader is unavailable")
+                spec_bytes = await blob_loader(str(continuation_snapshot["spec_ref"])[7:])
+                spec_value = (
+                    json.loads(spec_bytes.decode("utf-8"))
+                    if isinstance(spec_bytes, bytes)
+                    else spec_bytes
+                )
+                if not isinstance(spec_value, dict):
+                    raise RuntimeError("v6 continuation spec blob is invalid")
+                topic = str(spec_value.get("normalized_question") or "")
+                answer_locale = str(spec_value.get("answer_locale") or "zh-CN")
+            return deep_research_v6_initial_state(
+                topic=topic,
+                run_id=str(values["run_id"]),
+                thread_id=str(values["thread_id"]),
+                session_id=str(values["session_id"]),
+                answer_locale=answer_locale,
+                schema_version=(
+                    int(values["schema_version"])
+                    if values.get("schema_version") is not None
+                    else None
+                ),
+                parent_run_id=(
+                    str(values["parent_run_id"])
+                    if values.get("parent_run_id") is not None
+                    else None
+                ),
+                source_snapshot_hash=(
+                    str(values["source_snapshot_hash"])
+                    if values.get("source_snapshot_hash") is not None
+                    else None
+                ),
+                continuation_snapshot=continuation_snapshot,
             )
 
         _workflow_launcher.register_adapter(
@@ -3505,6 +4190,41 @@ async def lifespan(app: FastAPI):
             "v2",
             state_factory=_deep_v2_state_factory,
             context_factory=_deep_v2_context_factory,
+        )
+        _workflow_launcher.register_adapter(
+            "deep_research",
+            "v3",
+            state_factory=_deep_v3_state_factory,
+            context_factory=_deep_v2_context_factory,
+        )
+        _workflow_launcher.register_adapter(
+            "deep_research",
+            "v4",
+            state_factory=_deep_v4_state_factory,
+            context_factory=_deep_v2_context_factory,
+        )
+        _workflow_launcher.register_adapter(
+            "deep_research",
+            "v5",
+            state_factory=_deep_v5_state_factory,
+            context_factory=_deep_v5_context_factory,
+        )
+        _workflow_launcher.register_adapter(
+            "deep_research",
+            "v6",
+            state_factory=_deep_v6_state_factory,
+            context_factory=_deep_v6_context_factory,
+            extensions={
+                DEEP_RESEARCH_EXTENSION: DeepResearchRuntimeExtension(
+                    new_runs_enabled=True,
+                    action_ids=("generate_now", "continue_research", "cancel_settle"),
+                    continuation=DeepResearchContinuationAdapter(
+                        decode_snapshot=decode_deep_research_v6_continuation_snapshot,
+                        build_child_payload=build_deep_research_v6_continuation_payload,
+                    ),
+                    terminal_commit_capability=TERMINAL_COMMIT_CAPABILITY,
+                )
+            },
         )
 
         from agent.tool_use_shim import OpenAICompatibleAgentLLM as _RecoveryShim
@@ -3582,6 +4302,14 @@ async def lifespan(app: FastAPI):
                 )
                 if args.get(key) is not None
             }
+            # Durable graph inputs must snapshot runtime research switches.
+            # Otherwise v4 silently falls back to True and ignores an explicit
+            # [research] direct_sources/source_packs=false configuration.
+            raw_research = config.raw.get("research", {})
+            if isinstance(raw_research, dict):
+                for key in ("direct_sources", "source_packs"):
+                    if key in raw_research:
+                        research_config.setdefault(key, bool(raw_research[key]))
 
             sid = str(args.get("_session_id") or "default")
             async with _workflow_service.session_lock(sid):
@@ -3591,9 +4319,18 @@ async def lifespan(app: FastAPI):
                 )
                 if delivery_state.get("deleted_at") is not None:
                     raise RuntimeError("workflow delivery session was deleted")
-                workflow_version = str(config.workflows.deep_research_version or "v2")
-                if workflow_version != "v2":
-                    workflow_version = "v2"
+                workflow_version, version_reason = resolve_deep_research_workflow_version(
+                    str(config.workflows.deep_research_version or "v6"),
+                    environment=os.environ,
+                )
+                logger.info(
+                    "deepresearch_version_selected",
+                    workflow_version=workflow_version,
+                    reason=version_reason,
+                )
+                runtime_adapter = _workflow_service.runtime_adapters.require(
+                    "deep_research", workflow_version
+                )
                 return await _workflow_launcher.launch(
                     workflow_name="deep_research",
                     workflow_version=workflow_version,
@@ -3606,16 +4343,43 @@ async def lifespan(app: FastAPI):
                         "research_config": research_config,
                         "blob_root": str(_paths.user_data_dir() / "workflows" / "blobs"),
                     },
-                    capability_snapshot={"tools": ["deepresearch"], "schema_version": 1},
-                    state_factory=_deep_v2_state_factory,
-                    context_factory=_deep_v2_context_factory,
+                    capability_snapshot={
+                        "tools": ["deepresearch"],
+                        "schema_version": 2 if workflow_version in {"v5", "v6"} else 1,
+                        **({
+                            "research_llm_budget": {
+                                "max_input_tokens": config.research_v5.llm_input_token_budget,
+                                "max_output_tokens": config.research_v5.llm_output_token_budget,
+                                "max_cost_micros": config.research_v5.llm_cost_budget_micros,
+                            },
+                            "research_io_budget": {
+                                "max_input_tokens": config.research_v5.io_operation_budget,
+                                "max_output_tokens": 0,
+                                "max_cost_micros": 0,
+                            },
+                        } if workflow_version in {"v5", "v6"} else {}),
+                    },
+                    state_factory=runtime_adapter.state_factory,
+                    context_factory=runtime_adapter.context_factory,
                     base_epoch=int(delivery_state.get("epoch", 0)),
+                    authorize_disabled_deep_research_v6_new_root=(
+                        workflow_version == "v6"
+                        and version_reason == "dev_isolated_override"
+                    ),
                 )
 
         _workflow_research_tools.set_deepresearch_workflow_starter(
             _start_deepresearch_graph
             if config.workflows.enabled and config.workflows.deep_research
             else None
+        )
+        try:
+            _wire_ppt_pro_services_for_startup(recover=False)
+            logger.info("ppt_pro_services_wired")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ppt_pro_services_wire_failed", error=str(exc))
+        await _workflow_service.activate_runtime(
+            required_runtime_identities=_workflow_service.runtime_adapters.identities()
         )
         startup_recoveries = await _workflow_service.runner.recover_expired()
         recovered_decisions = await _workflow_launcher.recover_open_decision_events()
@@ -3624,7 +4388,6 @@ async def lifespan(app: FastAPI):
         )
         recovered_runs = await _workflow_launcher.recover_pending()
         _workflow_launcher.start_dispatcher()
-        service_context.register("workflow_service", _workflow_service)
         logger.info(
             "workflow_service_ready",
             db_path=str(_workflow_service.run_store.path),
@@ -3644,11 +4407,6 @@ async def lifespan(app: FastAPI):
             pass
         logger.warning("workflow_service_init_failed", error=str(exc))
     _expire_ppt_outline_dangling_for_startup()
-    try:
-        _wire_ppt_pro_services_for_startup()
-        logger.info("ppt_pro_services_wired")
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("ppt_pro_services_wire_failed", error=str(exc))
     # P4-S25 B4: restore persisted code-mode projects from SessionDB.
     # Done after _sdb.initialize() so migration v13 (code_sessions
     # table) is in place. Failure is non-fatal — user just sees an
@@ -4925,7 +5683,7 @@ import concurrent.futures as _cf  # noqa: E402
 _PPT_PRO_RENDER_EXECUTOR = _cf.ThreadPoolExecutor(max_workers=2, thread_name_prefix="ppt_pro_render")
 
 
-def _wire_ppt_pro_services_for_startup() -> None:
+def _wire_ppt_pro_services_for_startup(*, recover: bool = True) -> None:
     workflow_starter = None
     workflow_service = service_context.get("workflow_service")
     launcher = getattr(workflow_service, "launcher", None)
@@ -5014,7 +5772,8 @@ def _wire_ppt_pro_services_for_startup() -> None:
                     base_epoch=int(delivery_state.get("epoch", 0)),
                 )
 
-        asyncio.create_task(launcher.recover_pending())
+        if recover:
+            asyncio.create_task(launcher.recover_pending())
 
     ppt_tools.set_ppt_pro_services(
         outline_propose=_ppt_outline_propose,
@@ -5117,15 +5876,22 @@ async def _attach_workflow_history_events(
     if not event_ids or workflow_service is None:
         return
     delivery_state = await session_db.get_session_delivery_state(session_id)
-    hydrated = await workflow_service.hydrate_session_history_event_ids(
-        session_id,
-        event_ids,
-        current_session_epoch=int(delivery_state.get("epoch", 0)),
-        session_deleted=delivery_state.get("deleted_at") is not None,
-    )
+    # The service deliberately caps one hydration request at 100 ids.  Chat
+    # sessions can legitimately contain more than that, especially now that a
+    # DeepResearch run publishes one durable event per visible stage.  Hydrate
+    # in bounded batches instead of rejecting the entire session history.
+    hydrated_events: list[dict[str, Any]] = []
+    for offset in range(0, len(event_ids), 100):
+        hydrated_page = await workflow_service.hydrate_session_history_event_ids(
+            session_id,
+            event_ids[offset : offset + 100],
+            current_session_epoch=int(delivery_state.get("epoch", 0)),
+            session_deleted=delivery_state.get("deleted_at") is not None,
+        )
+        hydrated_events.extend(hydrated_page.get("events", []))
     events_by_id = {
         str(event.get("event_id") or ""): event
-        for event in hydrated.get("events", [])
+        for event in hydrated_events
     }
     human_store = getattr(workflow_service, "human_store", None)
     for event in events_by_id.values():
@@ -7027,6 +7793,28 @@ async def control_channel(ws: WebSocket):
                         # 全部被丢，UI 重启后只剩 user 气泡。现在全部
                         # 返回，前端 ws.ts 决定怎么渲染。
                         msgs = []
+                        _history_tool_names: dict[str, str] = {}
+                        for _history_row in rows:
+                            _history_calls = _history_row.get("tool_calls")
+                            if not _history_calls:
+                                continue
+                            try:
+                                _history_calls = (
+                                    json.loads(_history_calls)
+                                    if isinstance(_history_calls, str)
+                                    else _history_calls
+                                )
+                                if isinstance(_history_calls, list):
+                                    for _history_call in _history_calls:
+                                        if not isinstance(_history_call, dict):
+                                            continue
+                                        _history_function = _history_call.get("function")
+                                        if isinstance(_history_function, dict):
+                                            _history_tool_names[str(_history_call.get("id") or "")] = str(
+                                                _history_function.get("name") or ""
+                                            )
+                            except Exception:
+                                continue
                         for r in rows:
                             _row_role = r.get("role") or ""
                             if _row_role not in ("user", "assistant", "tool"):
@@ -7044,7 +7832,7 @@ async def control_channel(ws: WebSocket):
                             if _tcs_raw:
                                 try:
                                     import json as _load_json
-                                    _entry["tool_calls"] = (
+                                    _entry["tool_calls"] = project_public_tool_calls(
                                         _load_json.loads(_tcs_raw)
                                         if isinstance(_tcs_raw, str) else _tcs_raw
                                     )
@@ -7054,6 +7842,16 @@ async def control_channel(ws: WebSocket):
                             _tcid = r.get("tool_call_id")
                             if _tcid:
                                 _entry["tool_call_id"] = _tcid
+                                if _row_role == "tool":
+                                    _public_history_result = project_public_tool_result(
+                                        _history_tool_names.get(str(_tcid), ""),
+                                        r.get("content") or "",
+                                    )
+                                    _entry["text"] = (
+                                        json.dumps(_public_history_result, ensure_ascii=False)
+                                        if not isinstance(_public_history_result, str)
+                                        else _public_history_result
+                                    )
                             msgs.append(_entry)
 
                         _workflow_history = service_context.get("workflow_service")
@@ -9769,12 +10567,16 @@ async def control_channel(ws: WebSocket):
                                 # 能看到工具执行过程,面板里"后台在干活但
                                 # 什么都不显示",用户体验差。与 chat_v2_delta
                                 # 同模式 fan-out。
+                                _public_tool_arguments = project_public_tool_arguments(
+                                    ev.tool_call.name,
+                                    ev.tool_call.arguments,
+                                )
                                 _tue_msg = {
                                     "type": "tool_use_event",
                                     "payload": {
                                         "kind": "request",
                                         "tool_name": ev.tool_call.name,
-                                        "params": ev.tool_call.arguments,
+                                        "params": _public_tool_arguments,
                                         "turn": ev.iteration,
                                         "session_id": _sid,
                                     },
@@ -9785,7 +10587,7 @@ async def control_channel(ws: WebSocket):
                                     "type": "tool_call",
                                     "payload": {
                                         "name": ev.tool_call.name,
-                                        "arguments": ev.tool_call.arguments,
+                                        "arguments": _public_tool_arguments,
                                         "turn": ev.iteration,
                                         "session_id": _sid,
                                     },
@@ -9828,12 +10630,21 @@ async def control_channel(ws: WebSocket):
                                     _parsed = ev.result
                                 # 2026-06-12: 同 tool_call —— 结果事件也广播
                                 # 给消息面板 peer,工具执行全过程两窗一致。
+                                _public_tool_result = project_public_tool_result(
+                                    ev.tool_name,
+                                    _parsed,
+                                )
+                                _public_tool_result_text = (
+                                    _public_tool_result
+                                    if isinstance(_public_tool_result, str)
+                                    else json.dumps(_public_tool_result, ensure_ascii=False)
+                                )
                                 _tur_msg = {
                                     "type": "tool_use_event",
                                     "payload": {
                                         "kind": "result",
                                         "tool_name": ev.tool_name,
-                                        "result": _parsed,
+                                        "result": _public_tool_result_text,
                                         "turn": ev.iteration,
                                         "session_id": _sid,
                                     },
@@ -9845,7 +10656,7 @@ async def control_channel(ws: WebSocket):
                                     "payload": {
                                         "tool": ev.tool_name,
                                         "ok": True,  # _TREv only fires on success; failures arrive as _ErrEv
-                                        "result": ev.result,
+                                        "result": _public_tool_result_text,
                                         "turn": ev.iteration,
                                         "session_id": _sid,
                                     },
@@ -10627,8 +11438,19 @@ async def audio_channel(ws: WebSocket):
     # originator，而非 audio 连接建立时的快照 —— backend respawn 后 audio_ws 常
     # 先于 control_ws 重连，快照会是 None/失效，导致守卫挡掉广播、或不能正确 skip
     # 主窗口（重复显示）。这里对齐文字路径（main.py chat handler 用实时 _ws）。
-    async def _voice_broadcast(_orig_ignored, _msg: dict) -> None:
-        await _broadcast_default_chat_peers(_control_connections.get(session_id), _msg)
+    async def _voice_broadcast(_origin_snapshot, _msg: dict) -> None:
+        current_control_ws = _control_connections.get(session_id)
+        # If the pipeline snapshot is still the live originator, it already
+        # received point-to-point tool activity and should be skipped here.
+        # After a reconnect the snapshot is None/stale, so broadcast to every
+        # current control peer; otherwise the new originator silently misses
+        # tool_call/tool_result while the tool itself still executes.
+        originator = (
+            current_control_ws
+            if _origin_snapshot is current_control_ws
+            else None
+        )
+        await _broadcast_default_chat_peers(originator, _msg)
 
     # V5 §2.3 + S1: voice pipeline routes through agent_engine (not llm directly)
     # so that S2 memory / S3 tools flow uniformly through voice and text paths.

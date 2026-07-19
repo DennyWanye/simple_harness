@@ -135,6 +135,14 @@ class WorkflowRunStore:
         finally:
             await db.close()
 
+    async def create_child_from_snapshot(self, **kwargs: Any) -> tuple[dict[str, Any], bool]:
+        """Delegate the v5 continuation transaction to its focused repository."""
+
+        from .research_repository import ResearchWorkflowRepository
+
+        repository = ResearchWorkflowRepository(self.path, clock=self._clock)
+        return await repository.create_child_from_snapshot(**kwargs)
+
     async def bind_session_refs(
         self,
         run_id: str,
@@ -382,6 +390,77 @@ class WorkflowRunStore:
         finally:
             await db.close()
 
+    async def get_start_snapshot(self, run_id: str) -> dict[str, Any] | None:
+        """Return the immutable start reference used by server-side retries.
+
+        The capability row is joined through the run's persisted capability
+        hash.  The reserved start envelope is validated here so callers never
+        have to re-inject it as a user capability snapshot.
+        """
+
+        await self.initialize()
+        db = await self._connect()
+        try:
+            row = await (
+                await db.execute(
+                    """SELECT run.*, capability.snapshot_json,
+                    start.request_key AS start_request_key
+                    FROM workflow_runs run
+                    JOIN workflow_capabilities capability
+                      ON capability.capability_hash=run.capability_hash
+                    JOIN workflow_start_requests start ON start.run_id=run.run_id
+                    WHERE run.run_id=?""",
+                    (run_id,),
+                )
+            ).fetchone()
+        finally:
+            await db.close()
+        if row is None:
+            return None
+        result = dict(row)
+        try:
+            snapshot = json.loads(str(result.pop("snapshot_json")))
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise WorkflowContractError(
+                "invalid_start_snapshot", "workflow capability snapshot is invalid"
+            ) from exc
+        if not isinstance(snapshot, dict):
+            raise WorkflowContractError(
+                "invalid_start_snapshot", "workflow capability snapshot must be an object"
+            )
+        metadata = snapshot.get("_workflow_start")
+        if not isinstance(metadata, dict):
+            raise WorkflowContractError(
+                "invalid_start_snapshot", "workflow start reference is missing"
+            )
+        identity = metadata.get("identity")
+        start_payload = metadata.get("start_payload")
+        if not isinstance(identity, dict) or not isinstance(start_payload, dict):
+            raise WorkflowContractError(
+                "invalid_start_snapshot", "workflow start identity or payload is invalid"
+            )
+        required_identity = {
+            "venue", "base_session_id", "code_session_id", "delivery_session_id",
+            "base_epoch", "code_epoch", "request_id", "turn_id", "workflow_name",
+            "logical_slot",
+        }
+        if set(identity) != required_identity:
+            raise WorkflowContractError(
+                "invalid_start_snapshot", "workflow start identity shape is invalid"
+            )
+        original_capabilities = {
+            str(key): value for key, value in snapshot.items() if key != "_workflow_start"
+        }
+        result.update(
+            {
+                "identity": identity,
+                "start_payload": start_payload,
+                "original_capabilities": original_capabilities,
+                "start_metadata": metadata,
+            }
+        )
+        return result
+
     async def record_node_start(
         self,
         *,
@@ -432,7 +511,7 @@ class WorkflowRunStore:
         status: str,
         *,
         error_ref: str | None = None,
-    ) -> None:
+    ) -> dict[str, float] | None:
         now = self._clock()
         db = await self._connect()
         try:
@@ -446,7 +525,23 @@ class WorkflowRunStore:
                 "UPDATE workflow_nodes SET latest_status=?,updated_at=? WHERE node_execution_id=?",
                 (status, now, execution_id),
             )
+            row = await (
+                await db.execute(
+                    """SELECT started_at,ended_at FROM workflow_node_attempts
+                    WHERE node_execution_id=? AND retry_attempt=?""",
+                    (execution_id, attempt),
+                )
+            ).fetchone()
             await db.commit()
+            if row is None or row["ended_at"] is None:
+                return None
+            started_at = float(row["started_at"])
+            ended_at = float(row["ended_at"])
+            return {
+                "started_at": started_at,
+                "ended_at": ended_at,
+                "duration_ms": max(0.0, (ended_at - started_at) * 1000.0),
+            }
         except BaseException:
             if db.in_transaction:
                 await db.rollback()

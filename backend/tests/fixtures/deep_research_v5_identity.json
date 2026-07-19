@@ -1,0 +1,25 @@
+{
+  "fixture_schema_version": 1,
+  "legacy_manifest_bundle_hashes": {
+    "v1": "9290fc347e425fa16c7a1eea61b8c4772d3118a5ed2caf4e857cd33c61518497",
+    "v2": "a5c1626cccf41351bdc9531f735f42f53278eb426c5462f1217c3692a022b9e2",
+    "v3": "b6162ce62bea41e963164dca64c6156554cb450edf0a885371ed85dfe1d29416",
+    "v4": "acf8bc5f442c372f5d0869f15b78cd8399565609cf20c64c82a2b8eb607f6c9f"
+  },
+  "v5_manifest": {
+    "callable_source_hash": "eaf1cdca031b99912bde5e0bb608746d77e507d5aa9a2a975d6e74e3c4468cc7",
+    "definition_hash": "0a6f17e038a5fe23fffb9f1a25d590707c6c3e0776556008283387da5a9e834f",
+    "dependency_lock_hash": "0082b2a5c7d7148fa54fb5d740520430e14bfebd56f2461c5bb7adda67ec4526",
+    "durability": "sync",
+    "implementation_bundle_hash": "3d15461a772ac33d54c8f9fd97e926fafe51f3e321b6c05128554cb4a85f3ce0",
+    "max_supersteps": 384,
+    "policy_hash": "74208b8afa9b1fb9e024b0a997127eadd722c00e18835b96dd613ce434175411",
+    "prompt_hash": "5e24b25ed3f49dbe0a36c08005db1f610c5da0356c7905273484a931791b11c1",
+    "recursion_limit": 512,
+    "state_hash": "2e36d69182a919379a6d9a4e9011ba887c6f392ed0f7cb2406f84eb198cd32dc",
+    "state_schema_version": 5,
+    "tool_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "workflow_name": "deep_research",
+    "workflow_version": "v5"
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "policy_id": "EvidenceAdmissionPolicyV1",
+  "policy_hash": "33538ebb585821eb9e158ae22df177f89e165a5c54ff6ae8d2cdafe434d62cee",
+  "source_family_cases": [
+    {
+      "candidate_id": "moe-original",
+      "dimension_id": "edu_national_next_plan",
+      "url": "https://www.moe.gov.cn/srcsite/A06/s3321/202401/t20240101_100001.html",
+      "title": "义务教育质量提升行动计划",
+      "body_seed": "教育部发布义务教育质量提升行动计划，明确国家下一步任务、政策安排和实施时间节点。",
+      "span_text": "明确国家下一步任务、政策安排和实施时间节点",
+      "relevance": 0.91,
+      "source_type": "official_policy",
+      "source_tier": "first_party",
+      "issuing_body": "教育部",
+      "document_number": "教基〔2024〕1号",
+      "published_date": "2024-01-01"
+    },
+    {
+      "candidate_id": "baidu-encyclopedia",
+      "dimension_id": "edu_national_next_plan",
+      "url": "https://baike.baidu.com/item/义务教育质量提升行动计划",
+      "title": "义务教育质量提升行动计划",
+      "body_seed": "百度百科整理了义务教育质量提升行动计划的背景、任务和公开时间线，内容来自公开资料汇编。",
+      "span_text": "义务教育质量提升行动计划的背景、任务和公开时间线",
+      "relevance": 0.86,
+      "source_type": "encyclopedia",
+      "source_tier": "aggregator",
+      "issuing_body": "教育部",
+      "document_number": "教基〔2024〕1号",
+      "published_date": "2024-01-01"
+    },
+    {
+      "candidate_id": "news-reprint",
+      "dimension_id": "edu_national_next_plan",
+      "url": "https://news.example/education-plan-reprint",
+      "title": "教育部印发义务教育质量提升行动计划",
+      "body_seed": "新闻转载介绍教育部印发的义务教育质量提升行动计划，并摘要列出实施任务与时间节点。",
+      "span_text": "摘要列出实施任务与时间节点",
+      "relevance": 0.82,
+      "source_type": "news_reprint",
+      "source_tier": "secondary",
+      "issuing_body": "教育部",
+      "document_number": "教基〔2024〕1号",
+      "published_date": "2024-01-01"
+    },
+    {
+      "candidate_id": "weak-commentary",
+      "dimension_id": "edu_national_next_plan",
+      "url": "https://analysis.example/education-plan-commentary",
+      "title": "义务教育质量提升行动计划",
+      "body_seed": "独立评论分析教育行动计划可能带来的学校治理影响与执行不确定性，但未确认原始发文机关。",
+      "span_text": "学校治理影响与执行不确定性",
+      "relevance": 0.73,
+      "source_type": "independent_analysis",
+      "source_tier": "secondary",
+      "issuing_body": null,
+      "document_number": null,
+      "published_date": "2024-01-01"
+    }
+  ]
+}

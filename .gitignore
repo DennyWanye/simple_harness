@@ -12,6 +12,26 @@ Thumbs.db
 crash_reports/
 logs/
 
+# Repo-local toolchains/build caches created by Codex and Windows E2E runs.
+/.build/
+/.dev-webview2/
+/.pnpm-store/
+/.toolchains/
+/.vite/
+
+# Generated DeepResearch reports and isolated runtime state are not source.
+/DeepResearch/
+backend/.tmp-debug/
+backend/build-portable/
+backend/plans/
+backend/catl_*.pdf
+backend/catl_*.txt
+plans/**/test-results/
+plans/**/userdata/
+plans/**/*.pid
+plans/voice/*.zip
+tauri-app/.codex-tauri-e2e.json
+
 # Voice pipeline model weights & runtime artifacts (GB-scale, not for git)
 # P3-S1: renamed assets/ -> models/; keep old path for local devs mid-migration.
 backend/models/

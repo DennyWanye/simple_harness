@@ -26,7 +26,11 @@ function makeProvider(over: Partial<Provider> = {}): Provider {
     name: "My Relay",
     base_url: "https://your-llm-relay.example.com/v1",
     api_key: "tsk_relay_abc",
-    models: [{ id: "gpt-5.5" }, { id: "deepseek-v4-pro" }],
+    models: [
+      { id: "gpt-5.5" },
+      { id: "deepseek-v4-pro" },
+      { id: "sf-glm-5.2" },
+    ],
     openai_compatible: true,
     supports_streaming: true,
     ...over,
@@ -44,7 +48,7 @@ afterEach(() => {
 
 describe("pickModel", () => {
   it("prefers PREFERRED_MODEL when present", () => {
-    expect(pickModel(makeProvider())).toBe("gpt-5.5");
+    expect(pickModel(makeProvider())).toBe("sf-glm-5.2");
   });
   it("falls back to first model when preferred absent", () => {
     expect(pickModel(makeProvider({ models: [{ id: "claude-x" }] }))).toBe("claude-x");
@@ -59,7 +63,7 @@ describe("T2-1 · apply pushes provider with persist_key=false", () => {
     const [, update] = updateCloudConfig.mock.calls[0];
     expect(update).toMatchObject({
       base_url: "https://your-llm-relay.example.com/v1",
-      model: "gpt-5.5",
+      model: "sf-glm-5.2",
       api_key: "tsk_relay_abc",
       persist_key: false,
     });

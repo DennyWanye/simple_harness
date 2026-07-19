@@ -132,6 +132,7 @@ def test_search_gateway_and_deepresearch_events_use_closed_safe_schema(
     events = (
         "search_gateway_request",
         "search_gateway_attempt",
+        "search_gateway_cancelled_wait",
         "search_gateway_cache",
         "search_gateway_cooldown",
         "search_gateway_dedupe",
@@ -140,12 +141,24 @@ def test_search_gateway_and_deepresearch_events_use_closed_safe_schema(
         "fetch_extract_quality",
         "deepresearch_v2_branch",
         "deepresearch_v2_stage",
+        "deepresearch_stage_timing",
+        "deepresearch_fetch_attempt_timing",
         "deepresearch_claim_support",
     )
     safe_detail = {
+        "request_id": "request-123",
+        "run_id": "run-456",
+        "workflow_version": "v5",
         "provider": "duckduckgo",
+        "permit": "half_open",
+        "circuit_generation": 3,
+        "probe_outcome": "hit",
+        "failure_class": "rate_limit",
+        "transition": "half_open_to_closed",
         "error_code": "rate_limited",
         "duration_ms": 321,
+        "attempt": 2,
+        "status": "succeeded",
         "cache_hit": True,
         "candidates": 12,
         "kept": 8,
@@ -175,6 +188,8 @@ def test_search_gateway_and_deepresearch_events_use_closed_safe_schema(
         "citations": 6,
         "artifact_count": 1,
         "report_bytes": 4096,
+        "upstream_called": True,
+        "is_rescue": False,
     }
     for event in events:
         assert sink.record(event, safe_detail) is True

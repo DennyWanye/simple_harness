@@ -662,7 +662,23 @@ export interface WorkflowRunDetailResponse {
       options?: Array<{ label: string; value: unknown; description?: string | null; dangerous?: boolean }>;
     }>;
     deliveries?: Array<{ delivery_id: string; run_id?: string; channel?: string | null; status: string; attempts?: number; version: number; next_attempt_at?: number | null; last_error?: string | null }>;
+    delivery_aggregate?: WorkflowDeliveryAggregate | null;
   };
+}
+
+export interface WorkflowDeliveryAggregate {
+  schema_version: 1;
+  run_id: string;
+  manifest_ref: string;
+  status: "queued" | "delivering" | "delivered" | "retrying" | "fenced" | "failed";
+  required_total: number;
+  pending: number;
+  delivering: number;
+  delivered: number;
+  retrying: number;
+  fenced: number;
+  failed: number;
+  updated_at: number;
 }
 
 export interface WorkflowCheckpointForkResponse {
@@ -716,6 +732,18 @@ export interface WorkflowDeliveryMutationResponse {
   payload: { delivery_id: string; run_id?: string; status: string; version: number; audit?: string | null };
 }
 
+export interface WorkflowRunRetryFromStartResponse {
+  type: "workflow_run_retry_from_start_response";
+  request_id: string;
+  ok: true;
+  payload: {
+    run_id: string;
+    source_run_id: string;
+    created: boolean;
+    accepted?: boolean;
+  };
+}
+
 export interface WorkflowLifecycleEvent {
   type: "workflow_event" | "workflow_final";
   payload: {
@@ -724,6 +752,7 @@ export interface WorkflowLifecycleEvent {
     run_id: string;
     seq: number;
     session_id: string;
+    delivery_aggregate?: WorkflowDeliveryAggregate | null;
     payload: {
       kind?: string;
       status?: string;
@@ -789,6 +818,7 @@ export type IncomingMessage =
   | WorkflowDecisionResolveResponse
   | WorkflowEvaluationSubmitResponse
   | WorkflowDeliveryMutationResponse
+  | WorkflowRunRetryFromStartResponse
   | WorkflowLifecycleEvent
   | WorkflowIPCErrorResponse
   | ContextCompactedMessage;

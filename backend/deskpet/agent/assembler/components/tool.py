@@ -30,7 +30,9 @@ from deskpet.tools.capabilities import ToolExposureIntent, ToolExposurePolicy
 
 
 _DEEP_RESEARCH_TRIGGER = re.compile(
-    r"(深度调研|深入调研|调研报告|研究报告|调查研究|做.{0,4}调研|技术选型|竞品研究|政策分析)",
+    r"(深度调研|深入调研|帮我调研|请.{0,4}调研|调研一下|调研下|调研报告|研究报告|"
+    r"调查研究|做.{0,4}调研|技术选型|竞品研究|政策分析|"
+    r"(?:请|帮我)?(?:基于|使用|用).{0,30}(?:官方|原始|第一方|资料|数据).{0,12}(?:调研|研究|分析))",
     re.IGNORECASE,
 )
 

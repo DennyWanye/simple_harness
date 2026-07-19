@@ -15,10 +15,43 @@ from typing import Any, Awaitable, Callable, Iterable, Mapping, Protocol
 
 from ...tools import research_scoring
 from ...tools import research_tools as legacy
+from ..contracts import NodeExecutionIdentity
+from .deep_research_v5_contracts import ResearchLLMResult
 
 
 class LLMCall(Protocol):
     async def __call__(self, prompt: str) -> str: ...
+
+
+class LLMCallV2(Protocol):
+    async def __call__(
+        self,
+        prompt: str,
+        *,
+        max_output_tokens: int,
+        stable_call_id: str,
+        response_format: Mapping[str, Any] | None = None,
+    ) -> ResearchLLMResult: ...
+
+
+class ResearchEffectCall(Protocol):
+    async def __call__(
+        self,
+        *,
+        role: str,
+        payload_ref: str,
+        max_output_tokens: int,
+        stable_call_id: str,
+        execution_identity: NodeExecutionIdentity,
+    ) -> ResearchLLMResult: ...
+
+
+class ResearchStageOutputError(ValueError):
+    """A committed provider response could not satisfy a stage output contract."""
+
+
+class ResearchStageCancelled(RuntimeError):
+    """A control fence cancelled an in-flight stage at a checkpoint-safe seam."""
 
 
 class SearchCall(Protocol):
@@ -89,6 +122,66 @@ class ResearchLLMPort:
     complete: LLMCall
     rerank: LLMCall | None = None
     semantic_score: Callable[[str, list[str]], object] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ResearchLLMPortV2:
+    """Raw at-most-once LLM transport used behind the durable effect port."""
+
+    complete: LLMCallV2
+
+
+RESEARCH_LLM_ROLES = frozenset(
+    {
+        "modeling",
+        "query_strategy",
+        "dimension_analysis",
+        "report_synthesis",
+        "quality_audit",
+        "targeted_repair",
+        "evidence_candidate_extract",
+        "evidence_inference_synthesize",
+        "evidence_structured_repair",
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ResearchCallEffectPort:
+    """Node-facing surface; durable implementation lands with the journal slice."""
+
+    complete_call: ResearchEffectCall
+
+    async def complete(
+        self,
+        *,
+        role: str,
+        payload_ref: str,
+        max_output_tokens: int,
+        stable_call_id: str,
+        execution_identity: NodeExecutionIdentity | None,
+    ) -> ResearchLLMResult:
+        if role not in RESEARCH_LLM_ROLES:
+            raise ValueError(f"unsupported research LLM role: {role}")
+        if not payload_ref:
+            raise ValueError("payload_ref is required")
+        if (
+            isinstance(max_output_tokens, bool)
+            or not isinstance(max_output_tokens, int)
+            or max_output_tokens < 1
+        ):
+            raise ValueError("max_output_tokens must be a positive integer")
+        if not stable_call_id:
+            raise ValueError("stable_call_id is required")
+        if not isinstance(execution_identity, NodeExecutionIdentity):
+            raise TypeError("research effect call requires context.identity")
+        return await self.complete_call(
+            role=role,
+            payload_ref=payload_ref,
+            max_output_tokens=max_output_tokens,
+            stable_call_id=stable_call_id,
+            execution_identity=execution_identity,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1192,7 +1285,11 @@ __all__ = [
     "ResearchCoreConfig",
     "ResearchCoreState",
     "ResearchArtifactPort",
+    "ResearchCallEffectPort",
     "ResearchLLMPort",
+    "ResearchLLMPortV2",
+    "ResearchLLMResult",
+    "RESEARCH_LLM_ROLES",
     "ResearchPorts",
     "ResearchSearchPort",
     "ResearchSearchResults",

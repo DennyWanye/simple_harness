@@ -1,0 +1,52 @@
+{
+  "defaults": {
+    "soft_checkpoint_seconds": 300.0,
+    "lease_seconds": 120.0,
+    "automatic_cap_seconds": 900.0,
+    "plateau_rounds": 2,
+    "settle_target_seconds": 30.0
+  },
+  "scenarios": [
+    {
+      "id": "SC-LEASE-GAIN",
+      "active_seconds": 300.0,
+      "progress": {
+        "coverage_points": 0.5,
+        "first_party_satisfied": 0,
+        "quality_score": 0.0
+      },
+      "expected_reason": "lease_renewed_measurable_gain",
+      "expected_next_review": 420.0
+    },
+    {
+      "id": "SC-LEASE-NO-GAIN",
+      "active_seconds": 300.0,
+      "progress": {
+        "coverage_points": 0.0,
+        "first_party_satisfied": 0,
+        "quality_score": 0.0
+      },
+      "expected_reason": "lease_not_renewed_no_gain",
+      "expected_settle_deadline": 330.0
+    },
+    {
+      "id": "SC-PLATEAU",
+      "rounds_without_gain": 2,
+      "active_seconds": 55.0,
+      "expected_reason": "plateau_settling",
+      "expected_settle_deadline": 85.0
+    },
+    {
+      "id": "SC-CAP",
+      "active_seconds": 900.0,
+      "expected_reason": "automatic_cap",
+      "expected_settle_deadline": 930.0
+    },
+    {
+      "id": "SC-NOW",
+      "active_seconds": 125.0,
+      "expected_reason": "generate_now_settling",
+      "expected_settle_deadline": 155.0
+    }
+  ]
+}

@@ -196,16 +196,18 @@ async def test_two_subagents_run_concurrently():
     are within 200ms of each other.
     """
     start_times: list[float] = []
+    end_times: list[float] = []
     barrier_lock = asyncio.Lock()
 
     async def _runner(sa_for_runner: dict[str, Any], task_id: str) -> str:
         async with barrier_lock:
-            start_times.append(time.time())
+            start_times.append(time.monotonic())
         await asyncio.sleep(0.1)
+        end_times.append(time.monotonic())
         return f"done:{task_id}"
 
     handler = _build_handler(runner=_runner)
-    t0 = time.time()
+    t0 = time.monotonic()
     out = json.loads(
         await handler(
             {
@@ -217,14 +219,16 @@ async def test_two_subagents_run_concurrently():
             "",
         )
     )
-    elapsed = time.time() - t0
+    elapsed = time.monotonic() - t0
     assert out["ok"] is True
     assert out["count"] == 2
     # Serial would be ≥ 200ms; concurrent should be ~100ms + overhead
-    assert elapsed < 0.18, f"expected concurrent < 0.18s, got {elapsed:.3f}s"
-    # Start timestamps within 200ms of each other
-    assert len(start_times) == 2
-    assert abs(start_times[1] - start_times[0]) < 0.2
+    # Wall-clock thresholds are flaky on a busy Windows runner. Interval
+    # overlap proves concurrency directly: both calls started before either
+    # sleeping call completed.
+    assert len(start_times) == len(end_times) == 2
+    assert max(start_times) < min(end_times)
+    assert elapsed < 1.0, f"concurrent handler stalled for {elapsed:.3f}s"
 
 
 @pytest.mark.asyncio

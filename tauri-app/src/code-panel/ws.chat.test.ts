@@ -242,6 +242,46 @@ describe("ws.dispatch chat final dedupe", () => {
     });
   });
 
+  it("restores a durable artifact envelope as an ArtifactCard instead of raw assistant JSON", () => {
+    __test_dispatch({
+      type: "session_messages_response",
+      payload: {
+        session_id: "default",
+        messages: [
+          {
+            id: "artifact-event-history",
+            role: "assistant",
+            text: JSON.stringify({
+              tool: "artifact_create",
+              ok: true,
+              result: "# 调研结论\n\n- 2024年末全国人口：140828万人",
+              artifacts: [
+                {
+                  kind: "text",
+                  title: "research_report",
+                  preview: "# 调研结论\n\n- 2024年末全国人口：140828万人",
+                },
+              ],
+            }),
+            ts: 2000,
+          },
+        ],
+      },
+    });
+
+    const messages = useSessionsStore.getState().sessions.default.messages;
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      id: "workflow-artifact:artifact-event-history",
+      role: "tool_result",
+      tool_name: "artifact_create",
+      tool_ok: true,
+      workflow_event_id: "artifact-event-history",
+      tool_result: expect.stringContaining("research_report"),
+    });
+    expect(messages.some((message) => message.role === "assistant")).toBe(false);
+  });
+
   it("renders a live workflow artifact once even if delivery is retried", () => {
     const event = {
       type: "tool_result",

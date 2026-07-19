@@ -1165,7 +1165,20 @@ def compile_workflow(
         raise WorkflowDefinitionError(
             "dependency_lock_missing", f"Dependency lock does not exist: {lock_path}"
         )
-    lock_hash = _sha256_bytes(lock_path.read_bytes())
+    lock_bytes = lock_path.read_bytes()
+    lock_hash = _sha256_bytes(lock_bytes)
+    # DeepResearch v1-v4 are immutable recovery formats.  Their manifests were
+    # shipped with this dependency identity and must not drift merely because
+    # a later workflow version adds an unrelated product dependency (for
+    # example, the v5 Playwright renderer).  Callable/definition/state/policy
+    # hashes still fail closed if any historical implementation changes.
+    historical_dependency_lock_hashes = {
+        "lf": "1013a7b449853880a44dd4219d1fe8090dff38055fd4a42d6902887693e4c8ef",
+        "crlf": "ff691f62e113477ba230f0897488fb6ec9f1d1009b003947497cbecc6ea895e5",
+    }
+    if definition.name == "deep_research" and definition.version in {"v1", "v2", "v3", "v4"}:
+        line_ending = "crlf" if b"\r\n" in lock_bytes else "lf"
+        lock_hash = historical_dependency_lock_hashes[line_ending]
     hashes = {
         "definition_hash": _hash_json(definition_payload),
         "state_hash": _hash_json(state_payload),

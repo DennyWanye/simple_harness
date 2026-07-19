@@ -1,0 +1,58 @@
+{
+  "profile": "policy_education",
+  "question": "Research the current state of primary education and the next national plan.",
+  "core_dimension_ids": [
+    "edu_current_state",
+    "edu_scale_trend",
+    "edu_equity_urban_rural_region",
+    "edu_teacher_finance",
+    "edu_double_reduction_after_school_burden",
+    "edu_national_next_plan"
+  ],
+  "analysis_case": {
+    "dimension_id": "edu_current_state",
+    "passage_id": "edu-current-official",
+    "span_text": "Official statistics show that primary enrollment reached 100 million students in 2025.",
+    "payload": {
+      "schema_version": 1,
+      "dimension_id": "edu_current_state",
+      "finding": {
+        "schema_version": 1,
+        "claim_id": "fact-current-enrollment",
+        "text": "Official statistics show that primary enrollment reached 100 million students in 2025.",
+        "kind": "fact",
+        "citation_ids": ["edu-current-official"]
+      },
+      "current_state": {
+        "schema_version": 1,
+        "claim_id": "fact-current-state",
+        "text": "Primary enrollment reached 100 million students in 2025.",
+        "kind": "fact",
+        "citation_ids": ["edu-current-official"]
+      },
+      "driver_or_change": {
+        "schema_version": 1,
+        "claim_id": "inference-demography",
+        "text": "Demographic change may alter future enrollment demand.",
+        "kind": "inference",
+        "citation_ids": []
+      },
+      "impact": {
+        "schema_version": 1,
+        "claim_id": "inference-capacity",
+        "text": "Local capacity planning should account for uneven demand.",
+        "kind": "inference",
+        "citation_ids": []
+      },
+      "uncertainty": {
+        "schema_version": 1,
+        "claim_id": "uncertainty-local",
+        "text": "The national aggregate does not establish local conditions.",
+        "kind": "inference",
+        "citation_ids": []
+      },
+      "counterevidence": null,
+      "citation_ids": ["edu-current-official"]
+    }
+  }
+}

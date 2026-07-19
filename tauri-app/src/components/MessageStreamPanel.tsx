@@ -35,7 +35,7 @@ import {
 // 娑堟伅娴佹粴鍔ㄤ綅缃寔涔呴敭(杩涘叆娑堟伅鐣岄潰鎭㈠涓婃浣嶇疆,瑙佷笅 useLayoutEffect)銆?
 const MSGSTREAM_SCROLL_KEY = "deskpet.msgstream.scroll.v1";
 
-import type { InboxItem, Message } from "../stores/sessionsStore";
+import type { InboxItem, Message, WorkflowV5ControlAction } from "../stores/sessionsStore";
 // 瀛愪唬鐞嗗苟鍙戣繘搴﹀崱鐗囷紙娣辫壊鍙樹綋锛屼笌鏈潰鏉跨幓鐠冩嫙鎬佷竴鑷达級銆俽uns 绌烘椂鑷覆鏌?null锛?
 // 闆朵镜鍏ワ紱鏁版嵁鐢辨湰绐楀彛 codePanelWS 鐨?subagent_progress 娲惧彂鍠?subagentStore銆?
 import { SubagentProgressPanel } from "../code-panel/SubagentProgressPanel";
@@ -99,6 +99,11 @@ export interface MessageStreamPanelProps {
    * identical; only positioning differs. Default false keeps the pet
    * window byte-identical (zero regression). */
   embedded?: boolean;
+  onWorkflowRetry?: (
+    runId: string,
+    actionId: Exclude<WorkflowV5ControlAction, "none">,
+    retryKey: string,
+  ) => Promise<{ run_id: string; accepted?: boolean }>;
 }
 
 type StreamRow =
@@ -140,6 +145,7 @@ export function MessageStreamPanel({
   onJumpToSession,
   onChoice,
   embedded = false,
+  onWorkflowRetry,
 }: MessageStreamPanelProps) {
   // 娉細onSetFilter / onDismissAll 浠嶄繚鐣欏湪 MessageStreamPanelProps 绫诲瀷閲?
   // 锛堣皟鐢ㄦ柟鐓у父浼狅級锛屼絾褰撳墠 render 鏈敤鍒扳€斺€斿崐鎺ョ嚎鐨勮繃婊ゆ潯鐗规€с€傚厛涓嶈В鏋?
@@ -231,13 +237,14 @@ export function MessageStreamPanel({
         ) : (
           rows.map((r) =>
             r.kind === "chat" ? (
-              <ChatRow key={r.key} msg={r.msg} />
+              <ChatRow key={r.key} msg={r.msg} onWorkflowRetry={onWorkflowRetry} />
             ) : r.kind === "workflow_group" ? (
               <WorkflowProgressGroup
                 key={r.key}
                 runId={r.runId}
                 summary={r.summary}
                 stages={r.stages}
+                onWorkflowRetry={onWorkflowRetry}
               />
             ) : (
               <AlertRow
@@ -386,12 +393,19 @@ function toolArtifactStatus(toolName?: string): string {
   return `${toolName || "工具"} 已生成文件`;
 }
 
-function ChatRow({ msg }: { msg: ChatStreamMessage }) {
+function ChatRow({
+  msg,
+  onWorkflowRetry,
+}: {
+  msg: ChatStreamMessage;
+  onWorkflowRetry?: MessageStreamPanelProps["onWorkflowRetry"];
+}) {
   if (msg.role === "workflow_progress" || msg.role === "workflow_stage") {
     return <WorkflowProgressGroup
       runId={msg.message.workflow_run_id || msg.message.id}
       summary={msg.role === "workflow_progress" ? msg.message : undefined}
       stages={msg.role === "workflow_stage" ? [msg.message] : []}
+      onWorkflowRetry={onWorkflowRetry}
     />;
   }
   if (msg.role === "ppt_outline") {

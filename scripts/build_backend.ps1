@@ -1,72 +1,88 @@
-# P3-S4 — Build the frozen backend.
-#
-# Produces `backend/dist/deskpet-backend/deskpet-backend.exe` that
-# Rust `backend_launch::resolve`'s Bundled branch can spawn directly
-# on the end user's machine without any Python installed.
-#
-# Usage (from repo root):
-#   powershell scripts/build_backend.ps1
-#
-# Requires `backend/.venv/` with `pyinstaller` + `pyinstaller-hooks-contrib`
-# installed (see `backend/pyproject.toml` `[project.optional-dependencies].dev`).
+param(
+    [string]$DistPath,
+    [string]$WorkPath,
+    [string]$BrowserCacheRoot,
+    [string]$BrowserArchive,
+    [string]$BuildPython,
+    [switch]$Offline,
+    [switch]$BundleModels
+)
 
+# Production backend build. The Playwright browser is acquired into a private,
+# short cache and validated before PyInstaller reads the spec.
 $ErrorActionPreference = "Stop"
-
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $backendDir = Join-Path $repoRoot "backend"
-$pyExe = if ($env:DESKPET_BUILD_PYEXE) { $env:DESKPET_BUILD_PYEXE } else { Join-Path $backendDir ".venv\Scripts\python.exe" }
+if (-not $BuildPython) {
+    $BuildPython = if ($env:DESKPET_BUILD_PYEXE) { $env:DESKPET_BUILD_PYEXE } else { Join-Path $backendDir ".venv\Scripts\python.exe" }
+}
+if (-not $DistPath) { $DistPath = Join-Path $backendDir "dist" }
+if (-not $WorkPath) { $WorkPath = Join-Path $backendDir "build" }
+if (-not $BrowserCacheRoot) { $BrowserCacheRoot = Join-Path $env:LOCALAPPDATA "DPW\pw-161-1228" }
 
-if (-not (Test-Path $pyExe)) {
-    Write-Error "Python venv not found at $pyExe — run 'python -m venv backend/.venv' first."
+if (-not (Test-Path -LiteralPath $BuildPython -PathType Leaf)) {
+    throw "Build Python not found: $BuildPython"
+}
+$DistPath = [IO.Path]::GetFullPath($DistPath)
+$WorkPath = [IO.Path]::GetFullPath($WorkPath)
+$BrowserCacheRoot = [IO.Path]::GetFullPath($BrowserCacheRoot)
+
+# Fail before deletion/build if the predicted deepest packaged browser path is
+# unsafe for Windows tooling. This check uses the same locked runtime contract.
+& $BuildPython -c "import sys; sys.path.insert(0, r'$backendDir'); from deskpet.playwright_bundle import assert_short_build_paths; from pathlib import Path; assert_short_build_paths(Path(r'$DistPath'), Path(r'$WorkPath'), Path(r'$BrowserCacheRoot'))"
+if ($LASTEXITCODE -ne 0) { throw "Playwright short-path assertion failed" }
+
+function Remove-BuildTree([string]$Path) {
+    $full = [IO.Path]::GetFullPath($Path).TrimEnd('\')
+    $root = [IO.Path]::GetPathRoot($full).TrimEnd('\')
+    if ($full.Length -lt 8 -or $full -eq $root -or $full -eq $repoRoot.TrimEnd('\')) {
+        throw "Refusing unsafe recursive delete: $full"
+    }
+    Remove-Item -LiteralPath $full -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# Clean previous build so leftover artefacts don't mask fresh failures.
-$distDir = Join-Path $backendDir "dist"
-$buildDir = Join-Path $backendDir "build"
-Remove-Item -Recurse -Force $distDir, $buildDir -ErrorAction SilentlyContinue
+$acquireArgs = @(
+    (Join-Path $repoRoot "scripts\acquire_playwright_browser.py"),
+    "--cache-root", $BrowserCacheRoot,
+    "--json"
+)
+if ($BrowserArchive) { $acquireArgs += @("--archive", [IO.Path]::GetFullPath($BrowserArchive)) }
+if ($Offline) { $acquireArgs += "--offline" }
+& $BuildPython @acquireArgs
+if ($LASTEXITCODE -ne 0) { throw "Pinned Playwright browser acquisition failed" }
 
-# P3-S4: fail fast if someone has torch+cuXXX installed — that drags in
-# ~3.5 GB of CUDA DLLs that blow past P3-G2's 3.5 GB total-size budget.
-# torch CPU-only is all we need; ctranslate2 bundles its own CUDA libs.
-$torchVer = & $pyExe -c "import torch; print(torch.__version__)" 2>$null
+$env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $BrowserCacheRoot "playwright-browsers"
+$env:PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1"
+# The production NSIS artifact must stay below the 32-bit makensis mmap
+# ceiling.  Models are provisioned by ModelProvisioner on first run, while the
+# pinned Playwright browser remains part of the offline-capable installer.
+# MSI/fat-bundle jobs can opt back in explicitly with -BundleModels.
+$env:DESKPET_BUNDLE_MODELS = if ($BundleModels) { "1" } else { "0" }
+Write-Host ("[build_backend] bundle models: {0}" -f $env:DESKPET_BUNDLE_MODELS)
+Remove-BuildTree $DistPath
+Remove-BuildTree $WorkPath
+
+$torchVer = & $BuildPython -c "import torch; print(torch.__version__)" 2>$null
 if ($torchVer -and $torchVer -notmatch "\+cpu$") {
-    Write-Error @"
-Detected torch '$torchVer' — backend bundling requires the CPU-only wheel.
-Run:
-    $pyExe -m pip uninstall -y torch torchaudio
-    $pyExe -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.6.0 torchaudio==2.6.0
-Then re-run this script.
-"@
+    throw "Detected torch '$torchVer'; production backend bundling requires the CPU-only wheel."
 }
 
 Push-Location $backendDir
 try {
-    Write-Host "[build_backend] running PyInstaller..."
     $t0 = Get-Date
-    & $pyExe -m PyInstaller deskpet-backend.spec --noconfirm --clean
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "PyInstaller failed with exit code $LASTEXITCODE"
-    }
-    $elapsed = ((Get-Date) - $t0).TotalSeconds
-    Write-Host ("[build_backend] build time: {0:N1}s" -f $elapsed)
+    & $BuildPython -m PyInstaller deskpet-backend.spec --noconfirm --clean --distpath $DistPath --workpath $WorkPath
+    if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
+    Write-Host ("[build_backend] build time: {0:N1}s" -f ((Get-Date) - $t0).TotalSeconds)
 }
 finally {
     Pop-Location
 }
 
-# Size report — we want to know when this drifts past the P3-G2 budget.
-$out = Join-Path $distDir "deskpet-backend"
+$out = Join-Path $DistPath "deskpet-backend"
 $exe = Join-Path $out "deskpet-backend.exe"
-if (-not (Test-Path $exe)) {
-    Write-Error "Expected $exe not produced. Check PyInstaller output."
-}
+if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Expected frozen backend not produced: $exe" }
+& $BuildPython (Join-Path $repoRoot "scripts\assert_playwright_packaging.py") $out --json
+if ($LASTEXITCODE -ne 0) { throw "Frozen Playwright packaging assertion failed" }
 
-$bytes = (Get-ChildItem $out -Recurse -File | Measure-Object -Property Length -Sum).Sum
-$mb = [math]::Round($bytes / 1MB, 1)
-Write-Host ""
-Write-Host "=========================================="
-Write-Host "  frozen backend: $exe"
-Write-Host ("  total size:     {0} MB" -f $mb)
-Write-Host "=========================================="
-Write-Host ""
-Write-Host "Smoke test with:  python scripts/smoke_frozen_backend.py"
+$bytes = (Get-ChildItem -LiteralPath $out -Recurse -File | Measure-Object -Property Length -Sum).Sum
+Write-Host ("[build_backend] frozen backend: {0}; total size: {1:N1} MB" -f $exe, ($bytes / 1MB))

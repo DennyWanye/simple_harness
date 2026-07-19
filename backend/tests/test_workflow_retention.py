@@ -8,6 +8,7 @@ import aiosqlite
 import pytest
 
 from deskpet.workflows.bootstrap import build_workflow_service
+from deskpet.workflows.contracts import WorkflowContext
 from deskpet.workflows.retention import (
     CLEANUP_STAGE_ORDER,
     ORPHAN_STAGE,
@@ -15,6 +16,7 @@ from deskpet.workflows.retention import (
     RetentionPolicy,
     WorkflowRetentionManager,
 )
+from deskpet.workflows.runtime_adapters import WorkflowRuntimeAdapter
 from deskpet.workflows.store.schema import initialize_workflow_db
 from deskpet.workflows.trace.redaction import TraceRedactor
 
@@ -567,6 +569,18 @@ async def test_bootstrap_runs_optional_startup_reconciliation(tmp_path: Path):
         tmp_path,
         retention_policy=_policy(),
         retention_clock=FixedClock(now),
+        activate=False,
+    )
+    service.runtime_adapters.register(
+        WorkflowRuntimeAdapter(
+            "deep_research",
+            "v1",
+            lambda **_values: {},
+            lambda *_args, **_kwargs: WorkflowContext(ports={}),
+        )
+    )
+    await service.activate_runtime(
+        required_runtime_identities=(("deep_research", "v1"),)
     )
     assert service.retention_diagnostics.stage_names == (
         RESERVATION_STAGE,

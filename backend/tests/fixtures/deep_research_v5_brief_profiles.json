@@ -1,0 +1,48 @@
+{
+  "cases": [
+    {
+      "id": "sc-edu-01-zh",
+      "question": "帮我调研一下，现在中国小学现在的教育现状和国家下一步计划",
+      "profile": "policy_education",
+      "locale": "zh-CN",
+      "geography": "China",
+      "subjects": ["primary education"],
+      "comparison_intents": []
+    },
+    {
+      "id": "education-en",
+      "question": "Research the current state of primary school education in China and the government's next plan",
+      "profile": "policy_education",
+      "locale": "en-US",
+      "geography": "China",
+      "subjects": ["primary education"],
+      "comparison_intents": []
+    },
+    {
+      "id": "education-paraphrase",
+      "question": "梳理我国义务教育的城乡均衡、师资财政、双减成效及后续国家安排",
+      "profile": "policy_education",
+      "locale": "zh-CN",
+      "geography": "China",
+      "subjects": ["compulsory education"],
+      "comparison_intents": ["urban_rural"]
+    },
+    {
+      "id": "generic-coffee",
+      "question": "Research who is affected, the current state, drivers, and outlook for global coffee prices",
+      "profile": "generic_research",
+      "locale": "en-US",
+      "geography": "Global",
+      "comparison_intents": []
+    },
+    {
+      "id": "technology-comparison",
+      "question": "Compare the latest GPT and Claude model releases, capabilities, benchmarks, risks, and outlook in 2026",
+      "profile": "technology_intelligence",
+      "locale": "en-US",
+      "geography": null,
+      "subjects": ["GPT", "Claude"],
+      "comparison_intents": ["entity_comparison"]
+    }
+  ]
+}

@@ -15,7 +15,9 @@ from deskpet.workflows.adapters.product_delivery import (
     ProductDeliveryAdapter,
     ProductDeliveryError,
     build_product_delivery_handlers,
+    resolve_workflow_content_text,
     stable_workflow_receipt_id,
+    workflow_message_projection,
 )
 from deskpet.workflows.outbox import WorkflowOutbox
 from deskpet.workflows.service import WorkflowService
@@ -23,6 +25,32 @@ from deskpet.workflows.store import WorkflowRunStore
 
 
 KEY = b"p" * 32
+
+
+@pytest.mark.parametrize(
+    ("event_type", "expected"),
+    [
+        ("workflow.final_assistant", ("assistant", "final_assistant", "conversation", False)),
+        ("workflow.progress", ("assistant", "workflow_progress", "exclude", True)),
+        ("workflow.accepted", ("assistant", "workflow_accepted", "exclude", True)),
+        ("workflow.decision", ("assistant", "workflow_decision", "exclude", True)),
+        ("workflow.final", ("assistant", "workflow_final_status", "exclude", True)),
+        ("workflow.artifact_card", ("assistant", "artifact_card", "exclude", True)),
+    ],
+)
+def test_workflow_message_projection_contract(event_type: str, expected: tuple) -> None:
+    projection = workflow_message_projection(event_type)
+    assert (
+        projection.role,
+        projection.projection_kind,
+        projection.context_visibility,
+        projection.skip_embed,
+    ) == expected
+
+
+def test_unknown_workflow_message_projection_fails_closed() -> None:
+    with pytest.raises(ProductDeliveryError, match="unsupported workflow message"):
+        workflow_message_projection("workflow.unknown")
 
 
 def _event(event_id: str, *, run_id: str, kind: str, payload: dict) -> dict:
@@ -99,9 +127,14 @@ async def test_artifact_handler_persists_toolartifact_once_by_event_id(
 
     with sqlite3.connect(tmp_path / "state.db") as db:
         rows = db.execute(
-            "SELECT workflow_event_id, role FROM messages WHERE workflow_event_id IS NOT NULL"
+            "SELECT workflow_event_id, role, projection_kind, context_visibility "
+            "FROM messages WHERE workflow_event_id IS NOT NULL"
         ).fetchall()
-    assert rows == [("artifact-event-1", "tool")]
+    assert rows == [
+        ("artifact-event-1", "assistant", "artifact_card", "exclude")
+    ]
+    assert await session_db.get_recent_messages("session-1") == []
+    assert await session_db.search_fts("Durable", session_id="session-1") == []
 
 
 @pytest.mark.asyncio
@@ -202,6 +235,62 @@ async def test_research_report_intent_persists_a_text_artifact(stores) -> None:
     assert artifact["title"] == "research_report"
     assert artifact["preview"] == "# Report\nBody"
     assert len(artifact["sha256"]) == 64
+
+
+@pytest.mark.asyncio
+async def test_v6_content_ref_materializes_exact_text_artifact_once(stores) -> None:
+    session_db, receipt_store = stores
+    report = "# 2024年人口\n\n年末全国人口 140828 万人，出生人口 954 万人。"
+    digest = hashlib.sha256(report.encode("utf-8")).hexdigest()
+    resolved: list[str] = []
+
+    async def resolve(ref: str) -> bytes:
+        resolved.append(ref)
+        assert ref == f"sha256:{digest}"
+        return report.encode("utf-8")
+
+    adapter = ProductDeliveryAdapter(
+        session_db=session_db,
+        receipt_store=receipt_store,
+        content_resolver=resolve,
+    )
+    event = {
+        "event_id": "v6-artifact-event",
+        "event_type": "workflow.artifact_card",
+        "run_id": "v6-run",
+        "payload": {
+            "schema_version": 1,
+            "manifest_ref": "sha256:" + "a" * 64,
+            "intent_id": "v6-artifact-intent",
+            "content_ref": f"sha256:{digest}",
+        },
+    }
+    delivery = _delivery(event["event_id"], "artifact")
+
+    first = await adapter.deliver_artifact(event, delivery)
+    second = await adapter.deliver_artifact(event, delivery)
+
+    assert first["message_id"] == second["message_id"]
+    assert resolved == [f"sha256:{digest}", f"sha256:{digest}"]
+    messages = await session_db.get_messages("session-1")
+    assert len(messages) == 1
+    envelope = json.loads(messages[0]["content"])
+    assert envelope["text"] == report
+    assert envelope["artifacts"][0]["preview"] == report
+    assert envelope["artifacts"][0]["sha256"] == digest
+    assert messages[0]["projection_kind"] == "artifact_card"
+    assert messages[0]["context_visibility"] == "exclude"
+
+
+@pytest.mark.asyncio
+async def test_content_ref_resolution_is_strict_utf8() -> None:
+    async def invalid(_ref: str) -> bytes:
+        return b"\xff"
+
+    with pytest.raises(ProductDeliveryError, match="strict UTF-8"):
+        await resolve_workflow_content_text(
+            {"content_ref": "sha256:" + "b" * 64}, invalid
+        )
 
 
 @pytest.mark.asyncio

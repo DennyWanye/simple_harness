@@ -133,6 +133,137 @@ def test_user_customised_value_is_preserved(fake_dirs):
     assert data["llm"]["model"] == "my-custom-model"
 
 
+def test_unrevisioned_legacy_value_is_not_promoted_by_factory_migrator(fake_dirs):
+    user_dir, bundle_src = fake_dirs
+    user_target = user_dir / "config.toml"
+    user_target.write_text(
+        OLD_USER_TOML
+        + '\n[workflows]\ndeep_research_version = "v3"\n',
+        encoding="utf-8",
+    )
+    bundle_src.write_text(
+        BUNDLE_TOML
+        + '\n[workflows]\ndeep_research_version = "v4"\n'
+        + "deep_research_default_revision = 4\n",
+        encoding="utf-8",
+    )
+
+    assert cfg._merge_missing_feature_flags(user_target, bundle_src) is True
+    data = _load(user_target)
+    assert data["workflows"]["deep_research_version"] == "v3"
+    assert data["workflows"]["deep_research_default_revision"] == 4
+    assert cfg._merge_missing_feature_flags(user_target, bundle_src) is False
+    assert _load(user_target)["workflows"]["deep_research_version"] == "v3"
+
+
+def test_explicit_legacy_v2_choice_is_not_promoted(fake_dirs):
+    user_dir, bundle_src = fake_dirs
+    user_target = user_dir / "config.toml"
+    user_target.write_text(
+        OLD_USER_TOML
+        + '\n[workflows]\ndeep_research_version = "v2"\n',
+        encoding="utf-8",
+    )
+    bundle_src.write_text(
+        BUNDLE_TOML
+        + '\n[workflows]\ndeep_research_version = "v4"\n'
+        + "deep_research_default_revision = 4\n",
+        encoding="utf-8",
+    )
+
+    assert cfg._merge_missing_feature_flags(user_target, bundle_src) is True
+    data = _load(user_target)
+    assert data["workflows"]["deep_research_version"] == "v2"
+    assert data["workflows"]["deep_research_default_revision"] == 4
+
+
+def test_historical_v4_factory_pair_is_not_migrated_by_v6_migrator(fake_dirs):
+    user_dir, bundle_src = fake_dirs
+    user_target = user_dir / "config.toml"
+    user_target.write_text(
+        OLD_USER_TOML
+        + '\n[workflows]\ndeep_research_version = "v4"\n'
+        + "deep_research_default_revision = 4\n",
+        encoding="utf-8",
+    )
+    bundle_src.write_text(
+        BUNDLE_TOML
+        + '\n[workflows]\ndeep_research_version = "v5"\n'
+        + "deep_research_default_revision = 5\n"
+        + '\n[research_v5]\nsoft_checkpoint_seconds = 300\nlease_seconds = 120\n',
+        encoding="utf-8",
+    )
+    assert cfg._merge_missing_feature_flags(user_target, bundle_src) is True
+    data = _load(user_target)
+    assert data["workflows"]["deep_research_version"] == "v4"
+    assert data["workflows"]["deep_research_default_revision"] == 4
+    assert data["research_v5"]["lease_seconds"] == 120
+
+
+def test_current_revision_explicit_v4_override_is_preserved(fake_dirs):
+    user_dir, bundle_src = fake_dirs
+    user_target = user_dir / "config.toml"
+    user_target.write_text(
+        OLD_USER_TOML
+        + '\n[workflows]\ndeep_research_version = "v4"\n'
+        + "deep_research_default_revision = 5\n",
+        encoding="utf-8",
+    )
+    bundle_src.write_text(
+        BUNDLE_TOML
+        + '\n[workflows]\ndeep_research_version = "v5"\n'
+        + "deep_research_default_revision = 5\n",
+        encoding="utf-8",
+    )
+    cfg._merge_missing_feature_flags(user_target, bundle_src)
+    assert _load(user_target)["workflows"]["deep_research_version"] == "v4"
+
+
+def test_exact_inherited_v5_factory_pair_is_promoted_to_v6(fake_dirs):
+    user_dir, bundle_src = fake_dirs
+    user_target = user_dir / "config.toml"
+    user_target.write_text(
+        OLD_USER_TOML
+        + '\n[workflows]\ndeep_research_version = "v5"\n'
+        + "deep_research_default_revision = 5\n",
+        encoding="utf-8",
+    )
+    bundle_src.write_text(
+        BUNDLE_TOML
+        + '\n[workflows]\ndeep_research_version = "v6"\n'
+        + "deep_research_default_revision = 6\n",
+        encoding="utf-8",
+    )
+
+    assert cfg._merge_missing_feature_flags(user_target, bundle_src) is True
+    data = _load(user_target)["workflows"]
+    assert data["deep_research_version"] == "v6"
+    assert data["deep_research_default_revision"] == 6
+
+
+def test_current_revision_explicit_v5_pin_is_preserved(fake_dirs):
+    user_dir, bundle_src = fake_dirs
+    user_target = user_dir / "config.toml"
+    user_target.write_text(
+        OLD_USER_TOML
+        + '\n[workflows]\ndeep_research_version = "v5"\n'
+        + "deep_research_default_revision = 6\n",
+        encoding="utf-8",
+    )
+    bundle_src.write_text(
+        BUNDLE_TOML
+        + '\n[workflows]\ndeep_research_version = "v6"\n'
+        + "deep_research_default_revision = 6\n",
+        encoding="utf-8",
+    )
+
+    cfg._merge_missing_feature_flags(user_target, bundle_src)
+    assert _load(user_target)["workflows"] == {
+        "deep_research_version": "v5",
+        "deep_research_default_revision": 6,
+    }
+
+
 def test_user_comments_survive_roundtrip(fake_dirs):
     user_dir, _bundle = fake_dirs
     user_target = user_dir / "config.toml"

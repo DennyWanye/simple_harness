@@ -87,6 +87,11 @@ class _StubCtx:
         self.policy = _StubPolicy()
         self.session_id = "default"
         self.user_message = "hello"
+        self.current_message_id = None
+        self.config = {}
+
+    def time_remaining_ms(self) -> float:
+        return 1_500.0
 
 
 @pytest.mark.asyncio

@@ -30,24 +30,24 @@ def test_problem_pipeline_defaults_factory_on() -> None:
     assert pp.self_check_heterogeneous is True
     assert pp.convergence_report_on_stop is True
     assert pp.observability_events is True
-    # WI-4-B：预分析默认走 deepseek-v4-pro（relay 实测 stream+json_schema 稳，规避 gpt-5.5 间歇 502）；
+    # 预分析默认走 Relay 中可实际调用的 GLM-5.2 别名；
     #          self_check 仍留空 = 主 LLM。
-    assert pp.analysis_model == "deepseek-v4-pro"
+    assert pp.analysis_model == "sf-glm-5.2"
     assert pp.self_check_model == ""
     assert pp.intent_clarify_threshold == 0.7
     assert pp.evidence_max_nudges == 2
     assert pp.evidence_investigative_tools == []
-    # WI-4-B：deepseek-v4-pro thinking 慢 → 超时放宽 30s → 45s（给足时间，原 30s 仍偶超时）
+    # 远程预分析调用保留 45 秒超时窗口。
     assert pp.analysis_timeout_s == 45.0
 
 
-def test_repo_config_problem_pipeline_ships_deepseek_analysis_model() -> None:
+def test_repo_config_problem_pipeline_ships_glm_analysis_model() -> None:
     repo_config = Path(__file__).resolve().parents[2] / "config.toml"
     cfg = load_config(repo_config)
 
     pp = cfg.features.problem_pipeline
     assert pp.enabled is True
-    assert pp.analysis_model == "deepseek-v4-pro"
+    assert pp.analysis_model == "sf-glm-5.2"
     assert pp.analysis_timeout_s == 45.0
 
 

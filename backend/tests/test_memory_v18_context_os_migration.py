@@ -45,10 +45,10 @@ async def test_fresh_db_migrates_to_v18_with_context_tables(tmp_path: Path):
 
     applied = await run_migrations(db_path)
 
-    assert applied[-1] == "010_context_os_v18.sql"
-    assert TARGET_SCHEMA_VERSION == 18
+    assert applied[-1] == "011_message_projection_visibility_v19.sql"
+    assert TARGET_SCHEMA_VERSION == 19
     with sqlite3.connect(db_path) as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 18
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 19
     tables = _objects(db_path, "table")
     indexes = _objects(db_path, "index")
     assert set(CONTEXT_OS_V18_TABLES).issubset(tables)
@@ -68,9 +68,12 @@ async def test_v17_to_v18_preserves_existing_rows(tmp_path: Path):
 
     applied = await run_migrations(db_path)
 
-    assert applied == ["010_context_os_v18.sql"]
+    assert applied == [
+        "010_context_os_v18.sql",
+        "011_message_projection_visibility_v19.sql",
+    ]
     with sqlite3.connect(db_path) as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 18
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 19
         assert conn.execute("SELECT id FROM sessions WHERE id='s1'").fetchone() == ("s1",)
 
 
@@ -80,7 +83,7 @@ async def test_v18_rerun_is_idempotent(tmp_path: Path):
     first = await run_migrations(db_path)
     second = await run_migrations(db_path)
 
-    assert first[-1] == "010_context_os_v18.sql"
+    assert first[-1] == "011_message_projection_visibility_v19.sql"
     assert second == []
     with sqlite3.connect(db_path) as conn:
         assert conn.execute(

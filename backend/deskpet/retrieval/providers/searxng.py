@@ -1,6 +1,6 @@
 from __future__ import annotations
 import httpx
-from .base import ProviderFailure, candidates_from_rows
+from .base import ProviderFailure, candidates_from_rows, raise_for_search_status
 from ..contracts import PublicErrorCode, SearchBudget, SearchRequest
 
 class SearXNGProvider:
@@ -12,9 +12,9 @@ class SearXNGProvider:
         from deskpet.tools.search_provider import _parse_searxng_json
         try:
             response = await client.get(self.url, params={"q": request.query, "format": "json"})
-            if response.status_code in {403, 429}: raise ProviderFailure(PublicErrorCode.BLOCKED, response.status_code)
-            response.raise_for_status()
+            raise_for_search_status(response)
             if "json" not in response.headers.get("content-type", "").lower(): raise ProviderFailure(PublicErrorCode.INVALID_RESPONSE)
             return candidates_from_rows(self.name, _parse_searxng_json(response.json(), request.max_results))
         except ProviderFailure: raise
-        except (httpx.HTTPError, ValueError) as exc: raise ProviderFailure(PublicErrorCode.INVALID_RESPONSE) from exc
+        except httpx.HTTPError as exc: raise ProviderFailure(PublicErrorCode.HTTP_ERROR) from exc
+        except (ValueError, TypeError) as exc: raise ProviderFailure(PublicErrorCode.INVALID_RESPONSE) from exc

@@ -1,0 +1,35 @@
+{
+  "question": "帮我调研一下，现在中国小学现在的教育现状和国家下一步计划",
+  "dimensions": [
+    {
+      "dimension_id": "edu_current_state",
+      "comparison_axis": "temporal_trend",
+      "relevant_text": "教育部发布小学教育质量、入学机会和学习条件的最新综合情况。"
+    },
+    {
+      "dimension_id": "edu_scale_trend",
+      "comparison_axis": "temporal_trend",
+      "relevant_text": "统计公报披露历年小学招生规模、在校生数量及学校规模变化趋势。"
+    },
+    {
+      "dimension_id": "edu_equity_urban_rural_region",
+      "comparison_axis": "urban_rural_region",
+      "relevant_text": "城乡与区域教育公平仍受师资和办学资源配置差异影响。"
+    },
+    {
+      "dimension_id": "edu_teacher_finance",
+      "comparison_axis": "urban_rural_region",
+      "relevant_text": "教师队伍配置、教师待遇与教育财政经费投入存在地区差异。"
+    },
+    {
+      "dimension_id": "edu_double_reduction_after_school_burden",
+      "comparison_axis": "policy_phase",
+      "relevant_text": "双减政策实施后，课后服务覆盖率提高，但学生和家庭负担仍需评估。"
+    },
+    {
+      "dimension_id": "edu_national_next_plan",
+      "comparison_axis": "policy_phase",
+      "relevant_text": "国家下一步计划列出已发布任务、政策时间节点和阶段性目标。"
+    }
+  ]
+}

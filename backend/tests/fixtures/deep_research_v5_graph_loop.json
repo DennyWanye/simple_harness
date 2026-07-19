@@ -1,0 +1,38 @@
+{
+  "fixture_schema_version": 1,
+  "budgets": {
+    "soft_checkpoint_seconds": 300.0,
+    "lease_seconds": 120.0,
+    "automatic_cap_seconds": 900.0,
+    "plateau_rounds": 2,
+    "gap_work_iterations": 64,
+    "repair_iterations": 16,
+    "max_supersteps": 384,
+    "recursion_limit": 512
+  },
+  "scenarios": {
+    "SC-LEASE-PLATEAU": {
+      "active_seconds": 300.0,
+      "expected_lease_count": 1,
+      "expected_gap_commits": 2,
+      "expected_control_mode": "plateau_settling"
+    },
+    "SC-CAP": {
+      "effect_start_seconds": 899.0,
+      "effect_finish_seconds": 900.0,
+      "expected_control_mode": "automatic_cap_settling",
+      "expected_gap_commits": 1
+    },
+    "SC-NOW": {
+      "active_seconds": 125.0,
+      "expected_control_mode": "generate_now_settling",
+      "expected_gap_calls": 0,
+      "settle_target_seconds": 30.0
+    },
+    "SC-CANCEL": {
+      "active_seconds": 125.0,
+      "expected_control_mode": "cancelled",
+      "expected_engine_status": "completed"
+    }
+  }
+}

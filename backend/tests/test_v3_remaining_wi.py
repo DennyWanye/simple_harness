@@ -157,10 +157,11 @@ def test_t5_1_cache_returns_same_instance_on_unchanged_mtime(tmp_path):
     )
 
 
-def test_t5_1_cache_invalidated_on_mtime_change(tmp_path):
+def test_t5_1_cache_invalidated_on_mtime_change(tmp_path, monkeypatch):
     """改 toml 后 mtime 变 → cache 失效，重新读."""
     from config import load_config, _reset_load_config_cache
 
+    monkeypatch.delenv("DESKPET_BACKEND_PORT", raising=False)
     _reset_load_config_cache()
     cfg_file = tmp_path / "test.toml"
     cfg_file.write_text("[backend]\nport = 9100\n", encoding="utf-8")
@@ -180,10 +181,11 @@ def test_t5_1_cache_invalidated_on_mtime_change(tmp_path):
     assert cfg2.backend.port == 9200
 
 
-def test_t5_1_cache_invalidated_on_path_change(tmp_path):
+def test_t5_1_cache_invalidated_on_path_change(tmp_path, monkeypatch):
     """不同 path → cache 不命中，分别读."""
     from config import load_config, _reset_load_config_cache
 
+    monkeypatch.delenv("DESKPET_BACKEND_PORT", raising=False)
     _reset_load_config_cache()
     a = tmp_path / "a.toml"
     a.write_text("[backend]\nport = 9100\n", encoding="utf-8")

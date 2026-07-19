@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -12,6 +13,10 @@ import structlog
 from fastapi import WebSocket
 
 from deskpet.session.task_scope import task_session_manager
+from deskpet.tools.public_projection import (
+    project_public_tool_arguments,
+    project_public_tool_result,
+)
 from observability.metrics import stage_timer
 from pipeline.barge_in_filter import BargeInFilter
 from pipeline.tag_parser import StreamingTagParser, TagEvent
@@ -770,29 +775,64 @@ class VoicePipeline:
                                 })
                             except Exception:  # noqa: BLE001
                                 pass
-                    elif isinstance(ev, _TCEv) and ev.tool_call and self.control_ws:
-                        try:
-                            await self.control_ws.send_json({
-                                "type": "tool_call",
-                                "payload": {
-                                    "name": ev.tool_call.get("name"),
-                                    "arguments": ev.tool_call.get("arguments"),
-                                },
-                            })
-                        except Exception:  # noqa: BLE001
-                            pass
-                    elif isinstance(ev, _TREv) and self.control_ws:
-                        try:
-                            await self.control_ws.send_json({
-                                "type": "tool_result",
-                                "payload": {
-                                    "tool": ev.tool_name,
-                                    "ok": ev.ok,
-                                    "result": ev.result,
-                                },
-                            })
-                        except Exception:  # noqa: BLE001
-                            pass
+                    elif isinstance(ev, _TCEv) and ev.tool_call:
+                        public_arguments = project_public_tool_arguments(
+                            ev.tool_call.name,
+                            ev.tool_call.arguments,
+                        )
+                        tool_call_message = {
+                            "type": "tool_call",
+                            "payload": {
+                                "name": ev.tool_call.name,
+                                "arguments": public_arguments,
+                            },
+                        }
+                        if self.control_ws:
+                            try:
+                                await self.control_ws.send_json(tool_call_message)
+                            except Exception:  # noqa: BLE001
+                                pass
+                        if self._broadcast:
+                            try:
+                                await self._broadcast(
+                                    self.control_ws,
+                                    tool_call_message,
+                                )
+                            except Exception:  # noqa: BLE001
+                                pass
+                    elif isinstance(ev, _TREv):
+                        public_result = project_public_tool_result(
+                            ev.tool_name,
+                            ev.result,
+                        )
+                        public_result_text = (
+                            public_result
+                            if isinstance(public_result, str)
+                            else json.dumps(public_result, ensure_ascii=False)
+                        )
+                        tool_result_message = {
+                            "type": "tool_result",
+                            "payload": {
+                                "tool": ev.tool_name,
+                                # AgentLoop emits ToolResultEvent only after
+                                # dispatch; terminal failures use ErrorEvent.
+                                "ok": True,
+                                "result": public_result_text,
+                            },
+                        }
+                        if self.control_ws:
+                            try:
+                                await self.control_ws.send_json(tool_result_message)
+                            except Exception:  # noqa: BLE001
+                                pass
+                        if self._broadcast:
+                            try:
+                                await self._broadcast(
+                                    self.control_ws,
+                                    tool_result_message,
+                                )
+                            except Exception:  # noqa: BLE001
+                                pass
                     elif isinstance(ev, _FinEv):
                         final_text = ev.content or ""
                         # FP-5 缺口 5k：技能自创闭环（方案 B：FinalEvent + ErrorEvent

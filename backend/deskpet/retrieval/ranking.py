@@ -1,10 +1,12 @@
 from __future__ import annotations
 import hashlib
 import re
+from collections.abc import Iterable
 from dataclasses import replace
 from datetime import datetime, timezone
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from .contracts import RetrievalCandidate
+from .query_terms import extract_query_terms, normalize_query_text
 
 _TRACKING = {"fbclid", "gclid", "mc_cid", "mc_eid"}
 
@@ -46,12 +48,38 @@ def dedupe_candidates(candidates: list[RetrievalCandidate]) -> list[RetrievalCan
         by_url[canonical] = replace(item, canonical_url=canonical, stable_id=stable_candidate_id(canonical))
     return list(by_url.values())
 
-def rank_candidates(query: str, candidates: list[RetrievalCandidate]) -> list[RetrievalCandidate]:
-    terms = {t for t in re.findall(r"[\w\u3400-\u9fff]+", query.lower()) if len(t) > 1}
+def rank_candidates(
+    query: str,
+    candidates: list[RetrievalCandidate],
+    *,
+    query_terms: Iterable[str] | None = None,
+    dimension_id: str | None = None,
+) -> list[RetrievalCandidate]:
+    """Rank candidates, preserving the exact legacy branch for old callers."""
+
+    if query_terms is None and dimension_id is None:
+        terms = {
+            term
+            for term in re.findall(r"[\w\u3400-\u9fff]+", query.lower())
+            if len(term) > 1
+        }
+    else:
+        if dimension_id is not None and not dimension_id.strip():
+            raise ValueError("dimension_id must be non-empty when supplied")
+        selected = tuple(query_terms) if query_terms is not None else extract_query_terms(query)
+        terms = {
+            normalize_query_text(term)
+            for term in selected
+            if isinstance(term, str) and normalize_query_text(term)
+        }
     provider_counts: dict[str, int] = {}
     ranked: list[RetrievalCandidate] = []
     for item in candidates:
-        haystack = f"{item.title} {item.snippet}".lower()
+        haystack = (
+            f"{item.title} {item.snippet}".lower()
+            if query_terms is None and dimension_id is None
+            else normalize_query_text(f"{item.title} {item.snippet}")
+        )
         relevance = sum(1 for term in terms if term in haystack) / max(1, len(terms))
         rank_score = 1.0 / max(1, item.provider_rank)
         freshness = 0.0

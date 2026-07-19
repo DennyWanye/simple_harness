@@ -914,9 +914,28 @@ async def _arxiv_fetch(
     cli: httpx.AsyncClient,
     max_results: int,
 ) -> list[dict[str, Any]]:
+    # ArXiv treats ``all:foo bar baz`` as a very broad expression.  Build an
+    # explicit conjunction so a technology source pack cannot return a paper
+    # that merely mentions one generic token (for example ``model``), and ask
+    # for the newest matching submissions because DeepResearch uses this
+    # adapter for recent-technology discovery.
+    terms = [
+        value
+        for value in re.findall(r"[A-Za-z0-9][A-Za-z0-9+._-]*|[\u3400-\u9fff]+", keyword)
+        if value.casefold() not in {"a", "an", "the", "and", "or", "use", "ai"}
+    ]
+    search_query = " AND ".join(f'all:"{value}"' for value in terms[:8])
+    if not search_query:
+        search_query = f'all:"{keyword.strip()}"'
     r = await cli.get(
         _ARXIV_API,
-        params={"search_query": f"all:{keyword}", "start": 0, "max_results": max_results},
+        params={
+            "search_query": search_query,
+            "start": 0,
+            "max_results": max_results,
+            "sortBy": "submittedDate",
+            "sortOrder": "descending",
+        },
     )
     r.raise_for_status()
     root = ET.fromstring(r.text)

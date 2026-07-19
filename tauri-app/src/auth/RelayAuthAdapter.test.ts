@@ -801,7 +801,7 @@ describe("RelayAuthAdapter device key reuse", () => {
     const synced = await adapter.syncDeviceKey();
 
     expect(fetchImpl.mock.calls[1][0]).toBe(
-      "https://the relay.test/v1/providers",
+      "https://the relay.test/v1/providers?rotate=false",
     );
     expect(fetchImpl.mock.calls[2][0]).toBe(
       "https://the relay.test/v1/providers?rotate=force",

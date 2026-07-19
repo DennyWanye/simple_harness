@@ -23,6 +23,16 @@ import config
 from deskpet.tools import image_tools as it
 
 
+@pytest.fixture(autouse=True)
+def _isolate_endpoint_resolver():
+    """Keep process-wide resolver wiring from leaking across test modules."""
+    it.set_endpoint_resolver(None)
+    try:
+        yield
+    finally:
+        it.set_endpoint_resolver(None)
+
+
 def _point_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str) -> Path:
     """写一个 tmp config.toml,让 DESKPET_CONFIG 指向它,并清 load_config 缓存。"""
     cfg = tmp_path / "config.toml"

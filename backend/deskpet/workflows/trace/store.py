@@ -153,30 +153,41 @@ class TraceStore:
         output_ref: str | None = None,
         error: Any = None,
         attributes: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> bool:
         ended = self._clock()
         db = await self._connect()
         try:
+            await db.execute("BEGIN IMMEDIATE")
             row = await (await db.execute(
-                "SELECT started_at,attributes_json FROM trace_spans WHERE span_id=?",
+                "SELECT started_at,attributes_json,status FROM trace_spans WHERE span_id=?",
                 (span_id,),
             )).fetchone()
             if row is None:
                 raise KeyError(span_id)
+            if str(row["status"]) != SpanStatus.RUNNING:
+                await db.rollback()
+                return False
             merged_attributes = json.loads(str(row["attributes_json"]) or "{}")
             if attributes:
                 merged_attributes.update(self.redactor.redact(attributes))
-            await db.execute(
+            cursor = await db.execute(
                 """UPDATE trace_spans SET status=?,ended_at=?,duration_ms=?,output_ref=?,error_json=?,attributes_json=?
-                WHERE span_id=?""",
+                WHERE span_id=? AND status=?""",
                 (
                     status, ended, max(0.0, (ended - float(row["started_at"])) * 1000.0), output_ref,
                     json.dumps(self.redactor.redact(error), ensure_ascii=False) if error is not None else None,
                     json.dumps(merged_attributes, ensure_ascii=False, sort_keys=True),
-                    span_id,
+                    span_id, SpanStatus.RUNNING,
                 ),
             )
+            updated = int(cursor.rowcount or 0) > 0
+            await cursor.close()
             await db.commit()
+            return updated
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
         finally:
             await db.close()
 
@@ -214,6 +225,16 @@ class TraceStore:
                 await db.execute("SELECT * FROM trace_spans WHERE trace_id=? ORDER BY started_at,span_id", (trace_id,))
             ).fetchall()
             return {"run": dict(run), "spans": [dict(span) for span in spans]}
+        finally:
+            await db.close()
+
+    async def span(self, span_id: str) -> dict[str, Any] | None:
+        db = await self._connect()
+        try:
+            row = await (
+                await db.execute("SELECT * FROM trace_spans WHERE span_id=?", (span_id,))
+            ).fetchone()
+            return dict(row) if row is not None else None
         finally:
             await db.close()
 

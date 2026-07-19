@@ -50,8 +50,15 @@ G.__deskpet_panel_listeners__ = listeners;
 
 export interface CodePanelWS {
   send(msg: { type: string; payload?: Record<string, unknown> }): boolean;
+  send_command(msg: WorkflowCommand): boolean;
   on_message(fn: Listener): () => void;
   state(): "disconnected" | "connecting" | "connected";
+}
+
+export interface WorkflowCommand {
+  type: string;
+  request_id: string;
+  payload: Record<string, unknown>;
 }
 
 let current_state: CodePanelWS["state"] extends () => infer R ? R : never = "disconnected";
@@ -725,6 +732,42 @@ function dispatch(msg: any) {
           // ordinary persisted message row for backward compatibility.
         }
 
+        // Durable workflow artifacts are persisted as assistant rows carrying
+        // the public artifact_create envelope. The live path receives the
+        // same envelope as a tool_result, but history hydration previously
+        // treated it as ordinary assistant text and exposed raw JSON after a
+        // restart. Restore the live shape so ArtifactCard rendering and the
+        // workflow-event idempotency key stay identical across reconnects.
+        if (role === "assistant" && !tool_calls) {
+          let artifactEnvelope: any = null;
+          try {
+            const parsed = JSON.parse(String(m.text || ""));
+            if (
+              parsed &&
+              typeof parsed === "object" &&
+              parsed.tool === "artifact_create" &&
+              Array.isArray(parsed.artifacts) &&
+              parsed.artifacts.length > 0
+            ) {
+              artifactEnvelope = parsed;
+            }
+          } catch {
+            artifactEnvelope = null;
+          }
+          if (artifactEnvelope) {
+            restored.push({
+              id: `workflow-artifact:${base_id}`,
+              role: "tool_result",
+              tool_name: "artifact_create",
+              tool_ok: artifactEnvelope.ok !== false,
+              tool_result: JSON.stringify(artifactEnvelope),
+              workflow_event_id: base_id,
+              ts,
+            });
+            continue;
+          }
+        }
+
         if (role === "tool") {
           // Tool reply row → tool_result bubble. Reverse-map tool name
           // via the previously-built tcid → name dictionary.
@@ -1018,6 +1061,20 @@ export const codePanelWS: CodePanelWS = {
       if (_outbox.length > _OUTBOX_MAX) _outbox.shift();
       schedule_reconnect();
       return true;
+    }
+  },
+  send_command(msg) {
+    if (current_state !== "connected" || !ws || ws.readyState !== WebSocket.OPEN) {
+      schedule_reconnect();
+      return false;
+    }
+    try {
+      ws.send(JSON.stringify(msg));
+      return true;
+    } catch (e) {
+      console.warn("[code-panel] workflow command send failed", e);
+      schedule_reconnect();
+      return false;
     }
   },
   on_message(fn) {

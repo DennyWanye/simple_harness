@@ -18,6 +18,14 @@ import {
   useSessionsStore,
 } from "./sessionsStore";
 
+const PRODUCTION_V3_DIAGNOSTICS = [
+  "deadline_exhausted", "search_port_unavailable", "provider_failure",
+  "direct_failure", "fetch_failure", "blob_unavailable", "low_quality_source",
+  "low_quality_content", "search_degraded", "support_rate_below_threshold",
+  "published_factual_below_threshold", "citation_count_below_threshold",
+  "domain_count_below_threshold", "body_bytes_below_threshold",
+];
+
 function workflowEvent(
   seq: number,
   event_type: string,
@@ -65,9 +73,64 @@ function deepResearchStage(
       duration_ms: 1240,
       degraded: false,
       next_stage: "direct",
+      action: "搜索可用资料来源",
+      result: "尝试 3 个来源，找到 18 条候选，保留 11 条",
+      result_code: "stage_ok",
+      diagnostic_codes: [],
       ...overrides,
     },
   };
+}
+
+function deepResearchV5Stage(
+  seq: number,
+  runId = "research-v5-run",
+  overrides: Record<string, unknown> = {},
+): WorkflowEventEnvelope {
+  return workflowEvent(seq, "workflow.progress", {
+    schema_version: 5,
+    capability: "deep_research_progress_v5",
+    kind: "stage",
+    workflow_name: "deep_research",
+    workflow_version: "v5",
+    workflow_label: "深度调研",
+    stage_id: "gap_evaluate",
+    public_stage_id: "gap",
+    stage_instance_id: "0123456789abcdef01234567",
+    stage: "检查缺口",
+    ordinal: 4,
+    total: 9,
+    status: "completed",
+    summary: "检查缺口已完成",
+    text: "检查缺口已完成",
+    visibility: "visible",
+    action: "evaluate_gaps",
+    result: "completed",
+    discarded: 1,
+    remaining_gap: 2,
+    next_step: "research_gap",
+    dimension_counts: {
+      total: 5, core_total: 3, covered: 2, partially_covered: 2,
+      uncovered: 1, not_applicable: 0, core_covered: 2,
+      core_partially_covered: 1, core_uncovered: 0,
+    },
+    dimension_status_changes: { improved: 1, regressed: 0, unchanged: 4 },
+    source_counts: { valid: 7, first_party: 2 },
+    active_gap: { status: "running", work_kind: "query", dimension_ordinal: 2 },
+    elapsed_seconds: 321,
+    soft_checkpoint: "reached",
+    lease_reason: "lease_renewed_measurable_gain",
+    quality_score: 82,
+    hard_failures: [],
+    predicted_delivery: "partial",
+    token_budget_ratio: 40,
+    control_action: "generate_now",
+    control_status: "open",
+    parent_operation: "none",
+    failed_dimensions: [],
+    rejection_reasons: [],
+    ...overrides,
+  }, runId);
 }
 
 function mk(over: Partial<SessionState>): SessionState {
@@ -314,6 +377,137 @@ describe("pet_focus_sid", () => {
 });
 
 describe("workflow progress reducer (AC-23)", () => {
+  it("projects required receipt aggregate and accepts a newer same-event CAS view", () => {
+    const sid = "workflow-v6-delivery";
+    const runId = "workflow-v6-delivery-run";
+    const terminal = workflowEvent(9, "workflow.final", {
+      kind: "final", status: "completed", workflow_version: "v6",
+    }, runId);
+    terminal.delivery_aggregate = {
+      schema_version: 1, run_id: runId, manifest_ref: "manifest-v6", status: "queued",
+      required_total: 1, pending: 1, delivering: 0, delivered: 0,
+      retrying: 0, fenced: 0, failed: 0, updated_at: 10,
+    };
+    const store = useSessionsStore.getState();
+    store.reduce_workflow_event(sid, terminal);
+    let summary = useSessionsStore.getState().sessions[sid].messages.find(
+      (message) => message.role === "workflow_progress",
+    );
+    expect(summary?.workflow_delivery?.status).toBe("queued");
+
+    store.reduce_workflow_event(sid, {
+      ...terminal,
+      delivery_aggregate: {
+        schema_version: 1, run_id: runId, manifest_ref: "manifest-v6", status: "delivered",
+        required_total: 1, pending: 0, delivering: 0, delivered: 1,
+        retrying: 0, fenced: 0, failed: 0, updated_at: 11,
+      },
+    });
+    summary = useSessionsStore.getState().sessions[sid].messages.find(
+      (message) => message.role === "workflow_progress",
+    );
+    expect(summary?.workflow_delivery?.status).toBe("delivered");
+
+    // Invalid aggregate cardinality cannot overwrite the honest derived view.
+    store.reduce_workflow_event(sid, {
+      ...terminal,
+      delivery_aggregate: {
+        schema_version: 1, run_id: runId, manifest_ref: "manifest-v6", status: "failed",
+        required_total: 1, pending: 0, delivering: 0, delivered: 1,
+        retrying: 0, fenced: 0, failed: 1, updated_at: 12,
+      },
+    });
+    summary = useSessionsStore.getState().sessions[sid].messages.find(
+      (message) => message.role === "workflow_progress",
+    );
+    expect(summary?.workflow_delivery?.status).toBe("delivered");
+  });
+
+  it("keeps server elapsed and run-start anchor monotonic across stage refreshes", () => {
+    const sid = "workflow-v5-elapsed";
+    const store = useSessionsStore.getState();
+    store.reduce_workflow_event(
+      sid,
+      deepResearchV5Stage(10, "elapsed-run", { elapsed_seconds: 69 }),
+    );
+    let summary = useSessionsStore.getState().sessions[sid].messages.find(
+      (message) => message.role === "workflow_progress",
+    );
+    const startedAt = summary?.workflow_started_at;
+    expect(summary?.workflow_elapsed_ms).toBe(69_000);
+
+    store.reduce_workflow_event(
+      sid,
+      deepResearchV5Stage(11, "elapsed-run", { elapsed_seconds: 0, stage_id: "rerank" }),
+    );
+    summary = useSessionsStore.getState().sessions[sid].messages.find(
+      (message) => message.role === "workflow_progress",
+    );
+    expect(summary?.workflow_elapsed_ms).toBe(69_000);
+    expect(summary?.workflow_started_at).toBe(startedAt);
+  });
+
+  it("accepts only safe v5 projections and applies terminal action matrices", () => {
+    const sid = "workflow-v5";
+    const store = useSessionsStore.getState();
+    store.reduce_workflow_event(sid, deepResearchV5Stage(2));
+    let summary = useSessionsStore.getState().sessions[sid].messages.find(
+      (message) => message.role === "workflow_progress",
+    );
+    expect(summary?.workflow_v5).toMatchObject({
+      source_counts: { valid: 7, first_party: 2 },
+      control_action: "generate_now",
+      control_status: "open",
+    });
+    store.reduce_workflow_event(sid, workflowEvent(3, "workflow.final", {
+      kind: "final", status: "completed", workflow_version: "v5",
+      delivery_status: "partial",
+      action_matrix: [{ action_id: "continue_research", enabled: true }],
+    }, "research-v5-run"));
+    summary = useSessionsStore.getState().sessions[sid].messages.find(
+      (message) => message.role === "workflow_progress",
+    );
+    expect(summary?.workflow_v5?.control_action).toBe("continue_research");
+    expect(summary?.workflow_v5?.predicted_delivery).toBe("partial");
+
+    const marker = "raw-sensitive-query";
+    store.reduce_workflow_event(sid, deepResearchV5Stage(4, "unsafe-v5", { query: marker }));
+    expect(JSON.stringify(useSessionsStore.getState().sessions[sid].messages)).not.toContain(marker);
+  });
+
+  it("keeps an open v5 control across the immediately following hidden stage start", () => {
+    const sid = "workflow-v5-control-handoff";
+    const runId = "control-handoff-run";
+    const store = useSessionsStore.getState();
+    store.reduce_workflow_event(sid, deepResearchV5Stage(20, runId, {
+      stage_id: "rerank",
+      public_stage_id: "rerank",
+      control_action: "generate_now",
+      control_status: "open",
+    }));
+    store.reduce_workflow_event(sid, deepResearchV5Stage(21, runId, {
+      kind: "progress",
+      status: "started",
+      visibility: "hidden",
+      stage_id: "synth",
+      public_stage_id: "synth",
+      action: "synthesize_report",
+      result: "started",
+      next_step: "audit_quality",
+      control_action: "none",
+      control_status: "none",
+    }));
+
+    const summary = useSessionsStore.getState().sessions[sid].messages.find(
+      (message) => message.role === "workflow_progress",
+    );
+    expect(summary?.workflow_v5).toMatchObject({
+      action: "synthesize_report",
+      control_action: "generate_now",
+      control_status: "open",
+    });
+  });
+
   it("updates one card by run and keeps loop percentage monotonic", () => {
     let messages: SessionState["messages"] = [];
     const apply = (event: WorkflowEventEnvelope) => {
@@ -424,9 +618,166 @@ describe("workflow progress reducer (AC-23)", () => {
       workflow_metrics: { providers: 3, candidates: 18, kept: 11 },
       workflow_duration_ms: 1240,
       workflow_next_stage: "direct",
+      workflow_action: "搜索可用资料来源",
+      workflow_result: "尝试 3 个来源，找到 18 条候选，保留 11 条",
+      workflow_result_code: "stage_ok",
     });
     expect(JSON.stringify(messages)).not.toContain("must-not-cross-the-boundary");
     expect(JSON.stringify(messages)).not.toContain("secret");
+  });
+
+  it("accepts v3 children by deep-research schema and stage allowlist", () => {
+    const sid = "research-v3-stage";
+    const store = useSessionsStore.getState();
+    store.ensure(sid);
+    store.reduce_workflow_event(sid, deepResearchStage(4, "cite", "research-v3-run", {
+      workflow_version: "v3",
+      stage: "核验论断与引用",
+      action: "核验论断与引用",
+      result: "发布 9 条，丢弃 3 条，修复 2 条，支持率 75%",
+      result_code: "stage_degraded",
+      diagnostic_codes: ["claim_pruned", "provider_degraded", "secret_query"],
+      published: 9,
+      discarded: 3,
+      repaired: 2,
+      degraded: true,
+      metrics: {
+        published: 9,
+        discarded: 3,
+        repaired: 2,
+        support_rate: 0.75,
+        prompt: "must-not-cross-the-boundary",
+      },
+    }));
+
+    const child = useSessionsStore.getState().sessions[sid].messages.find(
+      (message) => message.role === "workflow_stage",
+    );
+    expect(child).toMatchObject({
+      workflow_version: "v3",
+      workflow_stage_id: "cite",
+      workflow_result_code: "stage_degraded",
+      workflow_diagnostic_codes: ["claim_pruned", "provider_degraded"],
+      workflow_published: 9,
+      workflow_discarded: 3,
+      workflow_repaired: 2,
+      workflow_metrics: { published: 9, discarded: 3, repaired: 2, support_rate: 0.75 },
+    });
+    expect(JSON.stringify(child)).not.toContain("secret_query");
+    expect(JSON.stringify(child)).not.toContain("must-not-cross-the-boundary");
+  });
+
+  it("keeps production v3 branch and publish-gate diagnostics while dropping unknown codes", () => {
+    const sid = "research-v3-diagnostics";
+    const store = useSessionsStore.getState();
+    store.ensure(sid);
+    store.reduce_workflow_event(sid, deepResearchStage(8, "cite", "research-v3-diag-run", {
+      workflow_version: "v3",
+      result_code: "insufficient_evidence",
+      diagnostic_codes: [...PRODUCTION_V3_DIAGNOSTICS, "secret_query"],
+      degraded: true,
+    }));
+
+    const child = useSessionsStore.getState().sessions[sid].messages.find(
+      (message) => message.role === "workflow_stage",
+    );
+    expect(child?.workflow_diagnostic_codes).toEqual([...PRODUCTION_V3_DIAGNOSTICS].sort());
+    expect(JSON.stringify(child)).not.toContain("secret_query");
+  });
+
+  it("projects v3 started summary fields for the current timeline row", () => {
+    const sid = "research-v3-current";
+    const store = useSessionsStore.getState();
+    store.ensure(sid);
+    store.reduce_workflow_event(sid, workflowEvent(3, "workflow.progress", {
+      schema_version: 2,
+      kind: "progress",
+      workflow_name: "deep_research",
+      workflow_version: "v3",
+      workflow_label: "深度调研",
+      stage_id: "fetch",
+      stage: "抓取正文",
+      ordinal: 6,
+      total: 13,
+      status: "started",
+      action: "抓取并提取来源正文",
+      result: "深度调研进度：抓取正文（6/13）",
+      result_code: "started",
+    }, "research-v3-current-run"));
+
+    expect(useSessionsStore.getState().sessions[sid].messages.find(
+      (message) => message.role === "workflow_progress",
+    )).toMatchObject({
+      workflow_version: "v3",
+      workflow_stage_id: "fetch",
+      workflow_action: "抓取并提取来源正文",
+      workflow_result_code: "started",
+    });
+  });
+
+  it("projects only allowlisted v4 terminal coverage, skipped stages, and retry action", () => {
+    const sid = "research-v4-failed";
+    const store = useSessionsStore.getState();
+    store.ensure(sid);
+    store.reduce_workflow_event(sid, workflowEvent(9, "workflow.final", {
+      workflow_name: "deep_research",
+      workflow_version: "v4",
+      status: "failed",
+      terminal_error: { code: "insufficient_evidence", message: "coverage too low" },
+      metrics: {
+        actual_requests: 7,
+        hits: 2,
+        empty: 3,
+        timeouts: 1,
+        cooldown_skips: 4,
+        probes: 2,
+        prompt: "must-not-cross-the-boundary",
+      },
+      skipped_stage_ids: ["fetch", "score", "score", "unknown", 9],
+      retry_action_id: "retry_from_start",
+    }, "research-v4-failed-run"));
+
+    const summary = useSessionsStore.getState().sessions[sid].messages.find(
+      (message) => message.role === "workflow_progress",
+    );
+    expect(summary).toMatchObject({
+      workflow_version: "v4",
+      workflow_status: "failed",
+      workflow_error: "coverage too low",
+      workflow_metrics: {
+        actual_requests: 7,
+        hits: 2,
+        empty: 3,
+        timeouts: 1,
+        cooldown_skips: 4,
+        probes: 2,
+      },
+      workflow_skipped_stage_ids: ["fetch", "score"],
+      workflow_retry_action_id: "retry_from_start",
+    });
+    expect(JSON.stringify(summary)).not.toContain("must-not-cross-the-boundary");
+    expect(JSON.stringify(summary)).not.toContain("unknown");
+  });
+
+  it("never promotes legacy recovery text or an unknown action into a retry action", () => {
+    const store = useSessionsStore.getState();
+    for (const [sid, version, retryAction] of [
+      ["research-v3-recovery", "v3", "retry_from_start"],
+      ["research-v4-unknown-retry", "v4", "retry_with_query"],
+    ] as const) {
+      store.ensure(sid);
+      store.reduce_workflow_event(sid, workflowEvent(2, "workflow.final", {
+        workflow_name: "deep_research",
+        workflow_version: version,
+        status: "failed",
+        recovery_action: "retry_from_start",
+        retry_action_id: retryAction,
+      }, `${sid}-run`));
+      const summary = useSessionsStore.getState().sessions[sid].messages.find(
+        (message) => message.role === "workflow_progress",
+      );
+      expect(summary?.workflow_retry_action_id).toBeUndefined();
+    }
   });
 
   it("keeps a late stage child after terminal summary and dedupes by event id or seq", () => {

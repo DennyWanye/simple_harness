@@ -5,18 +5,23 @@ from __future__ import annotations
 import asyncio
 import inspect
 import time
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import Any
 
 from .contracts import JsonValue, TERMINAL_RUN_STATUSES, WorkflowContext
 from .progress import WorkflowProgressReporter
 from .runner import WorkflowRunResult
+from .runtime_adapters import (
+    ContextFactory,
+    DEEP_RESEARCH_EXTENSION,
+    DeepResearchRuntimeExtension,
+    StateFactory,
+    WorkflowRuntimeAdapter,
+    WorkflowRuntimeAdapterError,
+    WorkflowRuntimeAdapterRegistry,
+)
 from .service import WorkflowService
-
-
-StateFactory = Callable[..., object]
-ContextFactory = Callable[..., WorkflowContext | Awaitable[WorkflowContext]]
 
 _DELIVERY_PAGE_SIZE = 100
 _RUN_SCAN_LIMIT = 10_000
@@ -31,12 +36,93 @@ class WorkflowLauncher:
         self._tasks: set[asyncio.Task[Any]] = set()
         self._scheduled_run_ids: set[str] = set()
         self._run_tasks: dict[str, asyncio.Task[Any]] = {}
-        self._adapters: dict[tuple[str, str], tuple[StateFactory, ContextFactory]] = {}
+        self._continuation_launch_locks: dict[str, asyncio.Lock] = {}
+        runtime_adapters = getattr(service, "runtime_adapters", None)
+        if not isinstance(runtime_adapters, WorkflowRuntimeAdapterRegistry):
+            runtime_adapters = WorkflowRuntimeAdapterRegistry()
+            try:
+                setattr(service, "runtime_adapters", runtime_adapters)
+            except Exception:  # pragma: no cover - very small protocol fakes
+                pass
+        self.runtime_adapters = runtime_adapters
         self._dispatcher_task: asyncio.Task[None] | None = None
         self._dispatcher_interval = _DISPATCHER_SAFETY_INTERVAL
         self._dispatcher_wakeup = asyncio.Event()
         self._delivery_dispatch_lock = asyncio.Lock()
         self._next_deadline: float | None = None
+
+    async def retry_from_start_locked(
+        self,
+        source: Mapping[str, Any],
+        *,
+        retry_key: str,
+        session_lock: asyncio.Lock,
+    ) -> dict[str, Any]:
+        """Launch a versioned research retry from an immutable start reference."""
+
+        if not session_lock.locked():
+            raise RuntimeError("retry_from_start_locked requires the session lock")
+        source_run_id = str(source.get("run_id") or "")
+        identity_value = source.get("identity")
+        start_payload = source.get("start_payload")
+        capabilities = source.get("original_capabilities")
+        if not source_run_id or not isinstance(identity_value, Mapping):
+            raise RuntimeError("workflow retry start reference is invalid")
+        if not isinstance(start_payload, Mapping) or not isinstance(capabilities, Mapping):
+            raise RuntimeError("workflow retry payload or capabilities are invalid")
+        key = (str(source.get("workflow_name") or ""), str(source.get("workflow_version") or ""))
+        adapter = self.runtime_adapters.get(*key)
+        extension = adapter.deep_research if adapter is not None else None
+        if key[0] != "deep_research" or extension is None or not extension.retry_from_start:
+            raise RuntimeError("workflow research retry adapter is unavailable")
+        state_factory, context_factory = adapter.state_factory, adapter.context_factory
+        identity = dict(identity_value)
+        request_id = f"retry:{retry_key}"
+        logical_slot = f"retry:{source_run_id}:{retry_key}"
+        targets = (
+            ("session_message", str(identity["delivery_session_id"])),
+            ("websocket", str(identity["delivery_session_id"])),
+        )
+        accepted = await self.service.start_workflow(
+            venue=str(identity["venue"]),
+            base_session_id=str(identity["base_session_id"]),
+            code_session_id=str(identity.get("code_session_id") or "") or None,
+            delivery_session_id=str(identity["delivery_session_id"]),
+            request_id=request_id,
+            turn_id=str(identity["turn_id"]),
+            workflow_name="deep_research",
+            workflow_version=key[1],
+            capability_snapshot=dict(capabilities),
+            start_payload=dict(start_payload),
+            base_epoch=int(identity["base_epoch"]),
+            code_epoch=int(identity["code_epoch"]),
+            logical_slot=logical_slot,
+            delivery_targets=(*targets, ("receipt", str(identity["delivery_session_id"]))),
+        )
+        async with self._delivery_dispatch_lock:
+            await self.service.deliver_event_once(accepted["accepted_event_id"])
+        self.notify_dispatcher()
+        if accepted["created"]:
+            task = asyncio.create_task(
+                self._drive(
+                    run_id=str(accepted["run_id"]),
+                    start_payload=dict(start_payload),
+                    state_factory=state_factory,
+                    context_factory=context_factory,
+                    targets=targets,
+                ),
+                name=f"workflow:retry:deep_research:{accepted['run_id']}",
+            )
+            self._track_run_task(str(accepted["run_id"]), task)
+        return {
+            "run_id": str(accepted["run_id"]),
+            "source_run_id": source_run_id,
+            "created": bool(accepted["created"]),
+            "accepted": True,
+            "completion_semantics": "accepted_async",
+            "action_id": "retry_from_start",
+            "retry_key": retry_key,
+        }
 
     def register_adapter(
         self,
@@ -45,8 +131,148 @@ class WorkflowLauncher:
         *,
         state_factory: StateFactory,
         context_factory: ContextFactory,
+        extensions: Mapping[str, object] | None = None,
     ) -> None:
-        self._adapters[(workflow_name, workflow_version)] = (state_factory, context_factory)
+        selected_extensions = dict(extensions or {})
+        if workflow_name == "deep_research" and DEEP_RESEARCH_EXTENSION not in selected_extensions:
+            selected_extensions[DEEP_RESEARCH_EXTENSION] = self._legacy_deep_extension(
+                workflow_version
+            )
+        self.runtime_adapters.register(
+            WorkflowRuntimeAdapter(
+                workflow_name=workflow_name,
+                workflow_version=workflow_version,
+                state_factory=state_factory,
+                context_factory=context_factory,
+                extensions=selected_extensions,
+            )
+        )
+
+    @staticmethod
+    def _legacy_deep_extension(workflow_version: str) -> DeepResearchRuntimeExtension:
+        version = str(workflow_version)
+        if version == "v5":
+            return DeepResearchRuntimeExtension(
+                new_runs_enabled=True,
+                retry_from_start=True,
+                action_ids=(
+                    "cancel_settle",
+                    "continue_research",
+                    "generate_now",
+                    "retry_from_start",
+                ),
+            )
+        if version == "v4":
+            return DeepResearchRuntimeExtension(
+                new_runs_enabled=True,
+                retry_from_start=True,
+                action_ids=("retry_from_start",),
+            )
+        if version == "v6":
+            return DeepResearchRuntimeExtension(new_runs_enabled=False)
+        return DeepResearchRuntimeExtension(new_runs_enabled=True)
+
+    def _resolve_launch_adapter(
+        self,
+        workflow_name: str,
+        workflow_version: str,
+        *,
+        state_factory: StateFactory,
+        context_factory: ContextFactory,
+    ) -> WorkflowRuntimeAdapter:
+        adapter = self.runtime_adapters.get(workflow_name, workflow_version)
+        if adapter is None:
+            if self.runtime_adapters.sealed:
+                raise WorkflowRuntimeAdapterError(
+                    "runtime_adapter_unavailable",
+                    "workflow runtime adapter was not registered before activation",
+                )
+            self.register_adapter(
+                workflow_name,
+                workflow_version,
+                state_factory=state_factory,
+                context_factory=context_factory,
+            )
+            adapter = self.runtime_adapters.require(workflow_name, workflow_version)
+        return adapter
+
+    def _require_runtime_active(self) -> None:
+        ensure = getattr(self.service, "ensure_runtime_active", None)
+        if callable(ensure):
+            ensure()
+
+    async def wake_run_control(self, run_id: str) -> dict[str, Any]:
+        """Wake the local driver after a durable v5 control CAS.
+
+        A live driver polls the durable command before/after each atomic effect,
+        so it only needs a dispatcher wakeup.  A created/retryable run that lost
+        its local task is safely reconstructed from its checkpoint.
+        """
+
+        task = self._run_tasks.get(str(run_id))
+        if task is not None and not task.done():
+            self.notify_dispatcher()
+            return {"run_id": str(run_id), "active": True, "recovered": False}
+        row = await self.service.run_store.get_run(str(run_id))
+        if row is None:
+            raise RuntimeError("workflow control run was not found")
+        if str(row.get("status")) in {"created", "retryable"}:
+            recovered = await self.recover_pending(only_run_ids={str(run_id)})
+            self.notify_dispatcher()
+            return {
+                "run_id": str(run_id),
+                "active": str(run_id) in self._run_tasks,
+                "recovered": str(run_id) in recovered,
+            }
+        # A running run retains its lease-owning driver.  Starting another local
+        # task here would race that owner; durable recovery takes over only after
+        # the lease expires.
+        self.notify_dispatcher()
+        return {"run_id": str(run_id), "active": False, "recovered": False}
+
+    async def launch_existing_run(
+        self,
+        run_id: str,
+        *,
+        start_payload: Mapping[str, JsonValue],
+    ) -> dict[str, Any]:
+        """Schedule an atomically-created continuation run exactly once."""
+
+        run_id = str(run_id)
+        lock = self._continuation_launch_locks.setdefault(run_id, asyncio.Lock())
+        async with lock:
+            row = await self.service.run_store.get_run(run_id)
+            if row is None:
+                raise RuntimeError("continuation run was not found")
+            key = (str(row["workflow_name"]), str(row["workflow_version"]))
+            adapter = self.runtime_adapters.get(*key)
+            extension = adapter.deep_research if adapter is not None else None
+            if key[0] != "deep_research" or extension is None:
+                raise RuntimeError("deep_research continuation adapter is unavailable")
+            if key[1] != "v5" and extension.continuation is None:
+                raise RuntimeError("deep_research continuation codec is unavailable")
+            existing = self._run_tasks.get(run_id)
+            if existing is not None and not existing.done():
+                return {"run_id": run_id, "created": False, "accepted": True}
+            if str(row.get("status") or "") not in {"created", "retryable"}:
+                return {"run_id": run_id, "created": False, "accepted": True}
+            targets = await self._persisted_delivery_targets(run_id)
+            if not targets:
+                raise RuntimeError("continuation delivery session is unavailable")
+            state_factory, context_factory = adapter.state_factory, adapter.context_factory
+            task = asyncio.create_task(
+                self._drive(
+                    run_id=run_id,
+                    start_payload=dict(start_payload),
+                    state_factory=state_factory,
+                    context_factory=context_factory,
+                    targets=targets,
+                ),
+                name=f"workflow:continue:deep_research:{run_id}",
+            )
+            self._track_run_task(run_id, task)
+            self.notify_dispatcher()
+            return {"run_id": run_id, "created": True, "accepted": True}
 
     async def launch(
         self,
@@ -67,13 +293,31 @@ class WorkflowLauncher:
         code_epoch: int = 0,
         logical_slot: str = "accepted_async:0",
         delivery_targets: Sequence[tuple[str, str]] | None = None,
+        authorize_disabled_deep_research_v6_new_root: bool = False,
     ) -> dict[str, Any]:
-        self.register_adapter(
+        adapter = self._resolve_launch_adapter(
             workflow_name,
             workflow_version,
             state_factory=state_factory,
             context_factory=context_factory,
         )
+        if workflow_name == "deep_research":
+            extension = adapter.deep_research
+            if extension is None:
+                raise WorkflowRuntimeAdapterError(
+                    "deep_research_extension_unavailable",
+                    "deep_research new roots require a registered runtime extension",
+                )
+            v6_override = bool(
+                authorize_disabled_deep_research_v6_new_root
+                and workflow_version == "v6"
+            )
+            if not extension.new_runs_enabled and not v6_override:
+                raise WorkflowRuntimeAdapterError(
+                    "deep_research_new_runs_disabled",
+                    f"deep_research new runs are disabled for {workflow_version!r}",
+                )
+        self._require_runtime_active()
         resolved_delivery_session_id = delivery_session_id or session_id
         targets = tuple(
             delivery_targets
@@ -104,12 +348,25 @@ class WorkflowLauncher:
             await self.service.deliver_event_once(accepted["accepted_event_id"])
         self.notify_dispatcher()
         if accepted["created"]:
+            # DeepResearch has one sealed version-owned runtime adapter.  The
+            # explicit launch factories remain in the public API for callers
+            # and for Code's request-scoped tool context, but they are not the
+            # semantic owner of a DeepResearch version.
+            drive_state_factory = (
+                adapter.state_factory if workflow_name == "deep_research" else state_factory
+            )
+            drive_context_factory = (
+                adapter.context_factory if workflow_name == "deep_research" else context_factory
+            )
             task = asyncio.create_task(
                 self._drive(
                     run_id=accepted["run_id"],
                     start_payload=dict(start_payload),
-                    state_factory=state_factory,
-                    context_factory=context_factory,
+                    # The accepted request may carry a more specific live
+                    # context (notably Code tool exposure).  Durable recovery
+                    # always returns to the sealed registry adapter.
+                    state_factory=drive_state_factory,
+                    context_factory=drive_context_factory,
                     targets=targets,
                 ),
                 name=f"workflow:{workflow_name}:{accepted['run_id']}",
@@ -130,6 +387,7 @@ class WorkflowLauncher:
     async def recover_pending(self, *, only_run_ids: set[str] | None = None) -> list[str]:
         """Recreate background drivers from persisted start snapshots."""
 
+        self._require_runtime_active()
         recovered: list[str] = []
         for row in await self.service.run_store.list_runs(limit=_RUN_SCAN_LIMIT):
             run_id = str(row["run_id"])
@@ -140,7 +398,7 @@ class WorkflowLauncher:
             if str(row["status"]) not in {"created", "retryable"}:
                 continue
             key = (str(row["workflow_name"]), str(row["workflow_version"]))
-            adapter = self._adapters.get(key)
+            adapter = self.runtime_adapters.get(*key)
             if adapter is None:
                 continue
             snapshot = await self.service.run_store.get_capability_snapshot(str(row["run_id"]))
@@ -148,7 +406,7 @@ class WorkflowLauncher:
             start_payload = metadata.get("start_payload", {}) if isinstance(metadata, Mapping) else {}
             if not isinstance(start_payload, Mapping):
                 continue
-            state_factory, context_factory = adapter
+            state_factory, context_factory = adapter.state_factory, adapter.context_factory
             targets = await self._persisted_delivery_targets(run_id)
             if not targets:
                 continue
@@ -236,11 +494,22 @@ class WorkflowLauncher:
                     limit=_DELIVERY_PAGE_SIZE,
                 )
                 for delivery in page.get("items", ()):
-                    await self.service.outbox.retry_delivery(
-                        str(delivery["delivery_id"]),
-                        expected_version=int(delivery["version"]),
-                        reason="startup_recover_orphaned_claim",
-                    )
+                    if delivery.get("manifest_ref") is not None:
+                        claim_expires_at = delivery.get("claim_expires_at")
+                        if claim_expires_at is None or float(claim_expires_at) > current_time:
+                            continue
+                        await self.service.outbox.mutate_delivery(
+                            str(delivery["delivery_id"]),
+                            action="failed",
+                            expected_version=int(delivery["version"]),
+                            reason="claim_expired",
+                        )
+                    else:
+                        await self.service.outbox.retry_delivery(
+                            str(delivery["delivery_id"]),
+                            expected_version=int(delivery["version"]),
+                            reason="startup_recover_orphaned_claim",
+                        )
                 cursor = page.get("next_cursor")
                 if not cursor:
                     break
@@ -258,6 +527,12 @@ class WorkflowLauncher:
                 )
                 for delivery in page.get("items", ()):
                     due_at = delivery.get("next_attempt_at")
+                    if (
+                        delivery.get("manifest_ref") is not None
+                        and status == "failed"
+                        and (due_at is None or int(delivery["attempts"]) >= 5)
+                    ):
+                        continue
                     if status == "failed" and due_at is not None and float(due_at) > current_time:
                         deadline = float(due_at)
                         next_deadline = (
@@ -431,8 +706,9 @@ class WorkflowLauncher:
         row = await self.service.run_store.get_run(run_id)
         if row is None:
             raise KeyError(run_id)
-        adapter = self._adapters.get(
-            (str(row["workflow_name"]), str(row["workflow_version"]))
+        self._require_runtime_active()
+        adapter = self.runtime_adapters.get(
+            str(row["workflow_name"]), str(row["workflow_version"])
         )
         if adapter is None:
             raise RuntimeError("workflow adapter is unavailable for resume")
@@ -441,7 +717,7 @@ class WorkflowLauncher:
         start_payload = metadata.get("start_payload", {}) if isinstance(metadata, Mapping) else {}
         if not isinstance(start_payload, Mapping):
             raise RuntimeError("workflow start payload is unavailable for resume")
-        _, context_factory = adapter
+        context_factory = adapter.context_factory
         targets = await self._persisted_delivery_targets(run_id)
         if not targets:
             raise RuntimeError("workflow delivery session is unavailable for resume")
@@ -449,6 +725,12 @@ class WorkflowLauncher:
         context = self._with_progress(context, targets)
         result = await self.service.runner.resume(run_id, dict(responses), context)
         if result.status in TERMINAL_RUN_STATUSES or result.status.value == "waiting":
+            if result.status.value == "completed":
+                persist_snapshot = getattr(
+                    self.service, "persist_v6_continuation_snapshot", None
+                )
+                if callable(persist_snapshot):
+                    await persist_snapshot(run_id)
             await self.recover_due_deliveries(run_id=run_id)
             self.notify_dispatcher()
         return result
@@ -509,12 +791,20 @@ class WorkflowLauncher:
             row = await self.service.run_store.get_run(run_id)
             if row is None:
                 return
-            state = None if resume_from_checkpoint else state_factory(
-                run_id=run_id,
-                thread_id=str(row["thread_id"]),
-                session_id=str(row["session_id"]),
-                **start_payload,
-            )
+            state = None
+            if not resume_from_checkpoint:
+                state = state_factory(
+                    run_id=run_id,
+                    thread_id=str(row["thread_id"]),
+                    session_id=str(row["session_id"]),
+                    **start_payload,
+                )
+                # A continuation's canonical start payload intentionally carries
+                # only the parent id and semantic snapshot hash.  Its versioned
+                # state factory may therefore hydrate the server-owned snapshot
+                # asynchronously before the first checkpoint.
+                if inspect.isawaitable(state):
+                    state = await state
             context = await self._build_context(context_factory, row, start_payload)
             context = self._with_progress(context, targets)
             responses = (
@@ -528,6 +818,12 @@ class WorkflowLauncher:
                 else await self.service.runner.run(run_id, state, context)
             )
             if result.status in TERMINAL_RUN_STATUSES or result.status.value == "waiting":
+                if result.status.value == "completed":
+                    persist_snapshot = getattr(
+                        self.service, "persist_v6_continuation_snapshot", None
+                    )
+                    if callable(persist_snapshot):
+                        await persist_snapshot(run_id)
                 await self.recover_due_deliveries(run_id=run_id)
                 self.notify_dispatcher()
         except asyncio.CancelledError:

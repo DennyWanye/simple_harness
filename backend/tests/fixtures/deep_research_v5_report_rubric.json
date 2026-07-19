@@ -1,0 +1,16 @@
+{
+  "schema": "ReportQualityRubricV1",
+  "rubric_hash": "258171b1827c0cece6e0f7bffb9e55480ffd651be1bccfc636c264b5643d1abf",
+  "component_maxima": {
+    "relevance": 25,
+    "coverage": 25,
+    "source_quality": 20,
+    "synthesis_reasoning": 15,
+    "timeliness_uncertainty": 10,
+    "readability": 5
+  },
+  "thresholds": {"completed": 80, "partial": 60},
+  "rounding": "ROUND_HALF_UP_0.1",
+  "empty_denominator": 0,
+  "uncertainty_empty_denominator": 1
+}

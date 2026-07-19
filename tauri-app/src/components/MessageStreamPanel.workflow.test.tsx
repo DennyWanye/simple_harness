@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -56,7 +56,14 @@ function stageMessage(
   return { role: "workflow_stage", message, ts: message.ts };
 }
 
-function panel(messages: ChatStreamMessage[]) {
+function panel(
+  messages: ChatStreamMessage[],
+  onWorkflowRetry?: (
+    runId: string,
+    actionId: "generate_now" | "continue_research" | "retry_from_start" | "cancel_settle",
+    retryKey: string,
+  ) => Promise<{ run_id: string; accepted?: boolean }>,
+) {
   return (
     <MessageStreamPanel
       embedded
@@ -69,6 +76,7 @@ function panel(messages: ChatStreamMessage[]) {
       onDismissAll={() => undefined}
       onJumpToSession={() => undefined}
       onChoice={() => undefined}
+      onWorkflowRetry={onWorkflowRetry}
     />
   );
 }
@@ -176,5 +184,49 @@ describe("WorkflowProgressRow (AC-23)", () => {
       stageMessage("late-run", 2, "search"),
     ]));
     expect(list.scrollTop).toBe(100);
+  });
+
+  it("forwards a v4 retry action from the grouped failure card", () => {
+    const failed = progress("failed");
+    failed.message.workflow_version = "v4";
+    failed.message.workflow_retry_action_id = "retry_from_start";
+    failed.message.workflow_error = "coverage too low";
+    const onWorkflowRetry = vi.fn<(
+      runId: string,
+      actionId: "generate_now" | "continue_research" | "retry_from_start" | "cancel_settle",
+      retryKey: string,
+    ) => Promise<{ run_id: string; accepted?: boolean }>>(async () => ({ run_id: "new-run" }));
+    render(panel([failed], onWorkflowRetry));
+
+    const retryButton = screen.getByRole("alert").querySelector("button");
+    expect(retryButton).toBeTruthy();
+    fireEvent.click(retryButton!);
+    expect(onWorkflowRetry).toHaveBeenCalledTimes(1);
+    expect(onWorkflowRetry.mock.calls[0][0]).toBe("run-ui");
+    expect(onWorkflowRetry.mock.calls[0][1]).toBe("retry_from_start");
+  });
+
+  it("forwards one generate-now control for rapid clicks on a running v6 deep-research group", () => {
+    const running = progress("running");
+    running.message.workflow_name = "deep_research";
+    running.message.workflow_version = "v6";
+    const pending = new Promise<{ run_id: string }>(() => undefined);
+    const onWorkflowRetry = vi.fn(() => pending);
+    const rendered = render(panel([running], onWorkflowRetry));
+    const button = screen.getByRole("button", { name: "立即用现有证据生成" });
+
+    act(() => {
+      button.click();
+      button.click();
+    });
+
+    expect(onWorkflowRetry).toHaveBeenCalledTimes(1);
+    expect(onWorkflowRetry).toHaveBeenCalledWith("run-ui", "generate_now", expect.any(String));
+
+    const completed = progress("completed");
+    completed.message.workflow_name = "deep_research";
+    completed.message.workflow_version = "v6";
+    rendered.rerender(panel([completed], onWorkflowRetry));
+    expect(screen.queryByRole("button", { name: "立即用现有证据生成" })).toBeNull();
   });
 });

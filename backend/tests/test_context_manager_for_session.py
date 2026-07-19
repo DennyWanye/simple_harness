@@ -32,6 +32,16 @@ def test_for_session_resolves_builtin_window(isolated_user_data):
     assert ctx.config.model_info.source == "builtin"
 
 
+def test_for_session_resolves_relay_glm_52_at_one_million(isolated_user_data):
+    """Relay alias must not fall through to the conservative 32K default."""
+    ctx = ContextManager.for_session(model="sf-glm-5.2", project_root=None)
+    assert ctx.config.model_info is not None
+    assert ctx.config.model_info.context_window == 1_000_000
+    assert ctx.config.effective_window_tokens == 950_000
+    assert ctx.config.compact_at_tokens == 750_000
+    assert ctx.config.model_info.source == "builtin"
+
+
 def test_for_session_unknown_model_falls_back_default(isolated_user_data):
     ctx = ContextManager.for_session(model="some-local-7b", project_root=None)
     assert ctx.config.model_info.context_window == 32_000

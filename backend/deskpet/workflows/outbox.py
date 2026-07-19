@@ -124,6 +124,10 @@ def _delivery_dict(row: Mapping[str, Any]) -> dict[str, Any]:
         "created_at": float(row["created_at"]),
         "updated_at": float(row["updated_at"]),
         "delivered_at": row["delivered_at"],
+        "intent_id": row["intent_id"],
+        "manifest_ref": row["manifest_ref"],
+        "required_durable": bool(row["required_durable"]),
+        "claim_expires_at": row["claim_expires_at"],
     }
 
 
@@ -414,6 +418,98 @@ class WorkflowOutbox:
         finally:
             await db.close()
 
+    async def delivery_aggregate(
+        self, run_id: str, *, manifest_ref: str | None = None
+    ) -> dict[str, Any] | None:
+        """Derive the v6 public delivery view solely from required durable rows."""
+
+        db = await self._connect()
+        try:
+            if manifest_ref is None:
+                refs = await (
+                    await db.execute(
+                        """SELECT DISTINCT manifest_ref FROM workflow_deliveries
+                        WHERE run_id=? AND manifest_ref IS NOT NULL""",
+                        (run_id,),
+                    )
+                ).fetchall()
+                if not refs:
+                    return None
+                if len(refs) != 1:
+                    raise OutboxError(
+                        "delivery_manifest_ambiguous",
+                        "A v6 run must have exactly one delivery manifest",
+                    )
+                manifest_ref = str(refs[0]["manifest_ref"])
+            rows = await (
+                await db.execute(
+                    """SELECT * FROM workflow_deliveries
+                    WHERE run_id=? AND manifest_ref=? AND required_durable=1
+                    ORDER BY delivery_id""",
+                    (run_id, manifest_ref),
+                )
+            ).fetchall()
+        finally:
+            await db.close()
+
+        if not rows:
+            raise OutboxError(
+                "delivery_required_missing",
+                "A v6 manifest must contain at least one required durable delivery",
+            )
+        counts = {
+            "pending": 0,
+            "delivering": 0,
+            "delivered": 0,
+            "retrying": 0,
+            "fenced": 0,
+            "failed": 0,
+        }
+        for row in rows:
+            status = str(row["status"])
+            attempts = int(row["attempts"])
+            next_attempt_at = row["next_attempt_at"]
+            if status == "pending":
+                counts["pending"] += 1
+            elif status == "delivering":
+                counts["delivering"] += 1
+            elif status == "delivered":
+                counts["delivered"] += 1
+            elif status == "failed" and next_attempt_at is not None and attempts < 5:
+                counts["retrying"] += 1
+            elif status == "failed":
+                counts["failed"] += 1
+            elif status == "discarded" and str(row["last_error"] or "").startswith("fenced:"):
+                counts["fenced"] += 1
+            else:
+                raise OutboxError(
+                    "delivery_status_invalid",
+                    "Required v6 delivery has a non-canonical status",
+                )
+        if counts["failed"]:
+            aggregate_status = "failed"
+        elif counts["fenced"]:
+            aggregate_status = "fenced"
+        elif counts["retrying"]:
+            aggregate_status = "retrying"
+        elif counts["delivering"]:
+            aggregate_status = "delivering"
+        elif counts["pending"]:
+            aggregate_status = "queued"
+        elif counts["delivered"] == len(rows):
+            aggregate_status = "delivered"
+        else:  # defensive: counts above must cover every required row
+            raise OutboxError("delivery_aggregate_invalid", "Delivery aggregate is incomplete")
+        return {
+            "schema_version": 1,
+            "run_id": run_id,
+            "manifest_ref": manifest_ref,
+            "status": aggregate_status,
+            "required_total": len(rows),
+            **counts,
+            "updated_at": max(float(row["updated_at"]) for row in rows),
+        }
+
     async def list_deliveries(
         self,
         *,
@@ -515,7 +611,15 @@ class WorkflowOutbox:
                     current_version=current_version,
                 )
             current_status = str(row["status"])
+            is_v6 = row["manifest_ref"] is not None
+            attempts = int(row["attempts"])
             if normalized_action == "retry":
+                if is_v6:
+                    raise OutboxError(
+                        "delivery_retry_forbidden",
+                        "V6 delivery retries are controlled only by the frozen outbox policy",
+                        current_version=current_version,
+                    )
                 if current_status == "delivered":
                     raise OutboxError(
                         "delivery_already_delivered",
@@ -524,6 +628,15 @@ class WorkflowOutbox:
                     )
                 values = ("pending", now, None, None, None, 0)
             elif normalized_action == "discard":
+                if is_v6 and (
+                    current_status != "delivering"
+                    or not str(reason or "").startswith("fenced:")
+                ):
+                    raise OutboxError(
+                        "delivery_fence_invalid",
+                        "V6 delivery can be fenced only from an active typed attempt",
+                        current_version=current_version,
+                    )
                 if current_status == "delivered":
                     raise OutboxError(
                         "delivery_already_delivered",
@@ -532,28 +645,72 @@ class WorkflowOutbox:
                     )
                 values = ("discarded", None, reason, None, None, 0)
             elif normalized_action == "delivered":
+                if is_v6 and current_status != "delivering":
+                    raise OutboxError(
+                        "delivery_not_active",
+                        "V6 delivery success requires an active claimed attempt",
+                        current_version=current_version,
+                    )
                 values = ("delivered", None, None, now, None, 0)
             elif normalized_action == "failed":
-                values = ("failed", now, reason or "delivery_failed", None, None, 0)
+                if is_v6:
+                    if current_status != "delivering" or not (1 <= attempts <= 5):
+                        raise OutboxError(
+                            "delivery_not_active",
+                            "V6 delivery failure requires an active claimed attempt",
+                            current_version=current_version,
+                        )
+                    backoffs = (1.0, 2.0, 4.0, 8.0)
+                    next_attempt = now + backoffs[attempts - 1] if 1 <= attempts < 5 else None
+                    values = (
+                        "failed",
+                        next_attempt,
+                        reason or "handler_contract_error",
+                        None,
+                        None,
+                        0,
+                    )
+                else:
+                    values = ("failed", now, reason or "delivery_failed", None, None, 0)
             else:
-                if current_status not in {"pending", "failed"}:
+                v6_claimable = (
+                    (current_status == "pending" and attempts == 0)
+                    or (
+                        current_status == "failed"
+                        and attempts < 5
+                        and row["next_attempt_at"] is not None
+                        and float(row["next_attempt_at"]) <= now
+                    )
+                )
+                if (is_v6 and not v6_claimable) or (
+                    not is_v6 and current_status not in {"pending", "failed"}
+                ):
                     raise OutboxError(
                         "delivery_not_claimable",
                         f"Delivery cannot begin from status {current_status}",
                         current_version=current_version,
                     )
-                values = ("delivering", None, None, None, None, 1)
+                values = (
+                    "delivering",
+                    None,
+                    None,
+                    None,
+                    now + 30.0 if is_v6 else None,
+                    1,
+                )
 
             status, next_attempt_at, last_error, delivered_at, _, attempts_delta = values
             cursor = await db.execute(
                 """UPDATE workflow_deliveries SET status=?,next_attempt_at=?,last_error=?,
-                delivered_at=?,attempts=attempts+?,delivery_version=delivery_version+1,updated_at=?
+                delivered_at=?,claim_expires_at=?,attempts=attempts+?,
+                delivery_version=delivery_version+1,updated_at=?
                 WHERE delivery_id=? AND delivery_version=?""",
                 (
                     status,
                     next_attempt_at,
                     last_error,
                     delivered_at,
+                    _,
                     attempts_delta,
                     now,
                     delivery_id,

@@ -374,6 +374,10 @@ def test_v2_completed_intent_is_pure_safe_and_stable():
     assert first is not None
     assert first["payload"]["text"] == first["payload"]["summary"]
     assert first["payload"]["workflow_name"] == "deep_research"
+    assert first["payload"]["action"] == "搜索可用资料来源"
+    assert first["payload"]["result"] == "尝试 2 个来源，找到 8 条候选，保留 5 条"
+    assert first["payload"]["result_code"] == "stage_ok"
+    assert first["payload"]["diagnostic_codes"] == []
     assert first["event_key"].endswith(":task-1:completed")
     assert projection["metrics"] == {"providers": 2, "candidates": 8, "kept": 5}
 
@@ -420,4 +424,156 @@ async def test_v2_started_progress_uses_thirteen_stage_projection_for_join_nodes
     assert payload["stage_id"] == "search"
     assert payload["ordinal"] == 4
     assert payload["total"] == 13
+    assert validated_v2_stage_text(payload) == payload["text"]
+
+
+def test_v3_completed_intent_uses_same_safe_stage_contract_and_filters_diagnostics():
+    reporter = WorkflowProgressReporter(object(), ())
+    identity = NodeExecutionIdentity(
+        "deep_research", "v3", "thread", "run-v3", "checkpoint", "",
+        "task-cite", "cite", 1,
+    )
+    projection = {
+        "stage_id": "cite",
+        "metrics": {
+            "factual_claims_pre_repair": 12,
+            "supported_factual": 9,
+            "published": 9,
+            "discarded": 3,
+            "repaired": 2,
+            "support_rate": 0.75,
+            "citations": 9,
+            "domains": 5,
+            "body_bytes": 1800,
+        },
+        "result_code": "stage_degraded",
+        "diagnostic_codes": ["claim_pruned", "provider_degraded", "secret_query"],
+        "completed_count": 11,
+        "degraded": True,
+        "next_stage": "persist",
+    }
+
+    intent = reporter.build_completion_intent(identity, projection)
+
+    assert intent is not None
+    payload = intent["payload"]
+    assert payload["workflow_version"] == "v3"
+    assert payload["result"] == "发布 9 条，丢弃 3 条，修复 2 条，支持率 75%"
+    assert payload["diagnostic_codes"] == ["claim_pruned", "provider_degraded"]
+    assert payload["published"] == 9
+    assert payload["discarded"] == 3
+    assert payload["repaired"] == 2
+    assert "secret_query" not in str(payload)
+    assert validated_v2_stage_text(payload) == payload["text"]
+
+
+def test_v3_completed_intent_allows_production_branch_and_quality_diagnostics():
+    reporter = WorkflowProgressReporter(object(), ())
+    identity = NodeExecutionIdentity(
+        "deep_research", "v3", "thread", "run-v3", "checkpoint", "",
+        "task-cite", "cite", 1,
+    )
+    production_codes = {
+        "deadline_exhausted", "search_port_unavailable", "provider_failure",
+        "direct_failure", "fetch_failure", "blob_unavailable", "low_quality_source",
+        "low_quality_content", "search_degraded", "support_rate_below_threshold",
+        "published_factual_below_threshold", "citation_count_below_threshold",
+        "domain_count_below_threshold", "body_bytes_below_threshold",
+    }
+    projection = {
+        "stage_id": "cite",
+        "metrics": {"published": 3, "discarded": 5, "support_rate": 0.375},
+        "result_code": "insufficient_evidence",
+        "diagnostic_codes": [*production_codes, "secret_query"],
+        "completed_count": 11,
+        "degraded": True,
+        "next_stage": "persist",
+    }
+
+    intent = reporter.build_completion_intent(identity, projection)
+
+    assert intent is not None
+    assert set(intent["payload"]["diagnostic_codes"]) == production_codes
+    assert "secret_query" not in str(intent["payload"])
+
+
+@pytest.mark.asyncio
+async def test_v3_started_progress_uses_schema_two_public_projection():
+    service = _Service()
+    reporter = WorkflowProgressReporter(service, (("websocket", "session-1"),))
+    identity = NodeExecutionIdentity(
+        "deep_research", "v3", "thread", "run-v3", "checkpoint", "",
+        "task-fetch", "fetch_join", 1,
+    )
+
+    event_id = await reporter.report(identity, "started")
+
+    assert event_id is not None
+    payload = list(service.outbox.events.values())[-1]["payload"]
+    assert payload["schema_version"] == 2
+    assert payload["workflow_version"] == "v3"
+    assert payload["stage_id"] == "fetch"
+    assert payload["action"] == "抓取并提取来源正文"
+    assert payload["result_code"] == "started"
+    assert validated_v2_stage_text(payload) == payload["text"]
+
+
+def test_v4_search_completion_uses_unambiguous_gateway_counts():
+    reporter = WorkflowProgressReporter(object(), ())
+    identity = NodeExecutionIdentity(
+        "deep_research", "v4", "thread", "run-v4", "checkpoint", "",
+        "task-search", "search_join", 1,
+    )
+    projection = {
+        "stage_id": "search",
+        "metrics": {
+            "actual_requests": 8,
+            "hits": 2,
+            "empty": 3,
+            "timeouts": 3,
+            "cooldown_skips": 4,
+            "busy_skips": 1,
+            "queue_timeouts": 2,
+            "probes": 1,
+            "rescue_considered_count": 1,
+            "rescue_executed_count": 1,
+            "candidates": 7,
+            "providers_hit": 2,
+        },
+        "result_code": "stage_degraded",
+        "diagnostic_codes": ["queue_timeout", "half_open_busy", "secret_query"],
+        "completed_count": 4,
+        "degraded": True,
+        "next_stage": "direct",
+    }
+
+    intent = reporter.build_completion_intent(identity, projection)
+
+    assert intent is not None
+    payload = intent["payload"]
+    assert payload["workflow_version"] == "v4"
+    assert payload["result"] == (
+        "真实请求 8 / 命中 2 / 空结果 3 / 超时 3 / cooldown 跳过 4 / "
+        "busy 跳过 1 / 排队超时 2 / probe 1，候选 7"
+    )
+    assert payload["diagnostic_codes"] == ["half_open_busy", "queue_timeout"]
+    assert "secret_query" not in str(payload)
+
+
+@pytest.mark.asyncio
+async def test_v4_started_progress_uses_existing_durable_stage_contract():
+    service = _Service()
+    reporter = WorkflowProgressReporter(service, (("websocket", "session-1"),))
+    identity = NodeExecutionIdentity(
+        "deep_research", "v4", "thread", "run-v4", "checkpoint", "",
+        "task-direct", "direct_join", 1,
+    )
+
+    event_id = await reporter.report(identity, "started")
+
+    assert event_id is not None
+    payload = list(service.outbox.events.values())[-1]["payload"]
+    assert payload["schema_version"] == 2
+    assert payload["workflow_version"] == "v4"
+    assert payload["stage_id"] == "direct"
     assert validated_v2_stage_text(payload) == payload["text"]

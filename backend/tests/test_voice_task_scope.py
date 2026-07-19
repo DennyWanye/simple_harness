@@ -283,10 +283,83 @@ async def test_voice_new_scope_uses_one_effective_sid_and_loop_user_request(monk
             SID1,
         )
     ]
-    assert [msg["payload"]["session_id"] for _, msg in bc.calls] == [
-        SID1,
-        SID1,
+    tool_frames = [
+        frame for frame in control.json_frames
+        if frame.get("type") in {"tool_call", "tool_result"}
     ]
+    assert tool_frames == [
+        {
+            "type": "tool_call",
+            "payload": {
+                "name": "deepresearch",
+                "arguments": {
+                    "topic": "drifted",
+                    "user_request": "research rust tokio",
+                },
+            },
+        },
+        {
+            "type": "tool_result",
+            "payload": {
+                "tool": "deepresearch",
+                "ok": True,
+                "result": '{"ok": true, "result": "tool ok", "error": null}',
+            },
+        },
+    ]
+    assert [msg["type"] for _, msg in bc.calls] == [
+        "chat_v2_user_echo",
+        "tool_call",
+        "tool_result",
+        "chat_v2_final",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_voice_tool_activity_broadcasts_when_control_snapshot_is_missing(
+    monkeypatch,
+):
+    from deskpet.session.task_scope import TaskSessionManager
+
+    monkeypatch.setattr(
+        voice_pipeline,
+        "task_session_manager",
+        TaskSessionManager(id_factory=lambda: SID1),
+    )
+    sdb = _SessionDB()
+    tools = _ToolRegistry()
+    bc = _RecordingBroadcast()
+    pipe = VoicePipeline(
+        vad=_FakeVAD(),
+        asr=_FakeASR(),
+        agent=_FakeAgent(),
+        tts=_FakeTTS(),
+        control_ws=None,
+        session_id="default",
+        service_context=_ServiceContext({
+            "session_db": sdb,
+            "context_assembler": _Assembler(),
+            "tool_router": tools,
+        }),
+        tool_registry_v2=tools,
+        permission_gate_v2=object(),
+        local_llm=_LocalLLM(),
+        broadcast=bc,
+    )
+
+    response = await pipe._process_utterance(b"fake-pcm", _FakeWS())
+
+    assert response == "final answer"
+    activity = [
+        (origin, message)
+        for origin, message in bc.calls
+        if message["type"] in {"tool_call", "tool_result"}
+    ]
+    assert [message["type"] for _, message in activity] == [
+        "tool_call",
+        "tool_result",
+    ]
+    assert all(origin is None for origin, _ in activity)
 
 
 @pytest.mark.asyncio

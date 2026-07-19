@@ -1,0 +1,107 @@
+{
+  "captured_at": "2026-07-16T19:15:07+08:00",
+  "gate": "Task 0 / Gate A / Win11-only",
+  "status": "PASS",
+  "scope_boundary": "Task 0 frozen feasibility only; Task 6 production packaging and Task 15 installer E2E remain pending",
+  "host": {
+    "caption": "Microsoft Windows 11 Pro",
+    "version": "10.0.22621",
+    "build": "22621",
+    "architecture": "AMD64",
+    "hyper_v_used": false,
+    "restart_used": false
+  },
+  "toolchain": {
+    "python": "3.11.9",
+    "pyinstaller": "6.21.0",
+    "playwright": "1.61.0",
+    "chromium_revision": "1228",
+    "chromium_browser_version": "149.0.7827.55",
+    "browsers_json_sha256": "EE39BC924BC3D1BD895626C2910F1292D109BBFEEB5ABD113ACB45E1951CC942"
+  },
+  "official_archive": {
+    "path": "C:\\Users\\Administrator\\AppData\\Local\\DeskPetBuildCache\\playwright-1.61.0-r1228\\downloads\\chrome-headless-shell-win64-149.0.7827.55.zip",
+    "size_bytes": 119099822,
+    "md5": "1BC51B5A9F308F4B7F47AC15A1BE049D",
+    "sha256": "5CFDA0C763AA6A867CE2EFAD0C467E3220E9C5C01C4CBA02FD57AFE49EDE5457",
+    "zip_entries": 290,
+    "valid": true
+  },
+  "published_registry": {
+    "root": "C:\\Users\\Administrator\\AppData\\Local\\DeskPetBuildCache\\playwright-1.61.0-r1228\\chromium_headless_shell-1228",
+    "layout": "chromium_headless_shell-1228/chrome-headless-shell-win64/chrome-headless-shell.exe",
+    "atomic_same_volume_publish": true,
+    "installation_complete_marker": true,
+    "file_count": 291,
+    "size_bytes": 282539741,
+    "executable_size_bytes": 203034112,
+    "executable_sha256": "28016DF6864D302434C9231E1F9F1A8A7ECC512CB2FE3FAABB2A36130B96BCF1"
+  },
+  "development_probe": {
+    "success": true,
+    "driver_start_seconds": 0.298,
+    "browser_launch_seconds": 1.487,
+    "first_page_seconds": 1.694,
+    "peak_process_tree_rss_bytes": 361529344,
+    "cleanup_seconds": 0.424,
+    "rendered_text_sha256": "9C755CDF608FF70ADF305C797C716B4C895A1CBA52CFABE163635B3EA86FD94F",
+    "orphan_processes": []
+  },
+  "frozen_build": {
+    "artifact": "C:\\Users\\Administrator\\AppData\\Local\\DPW-T0\\b2\\d\\deskpet-playwright-bundle-spike",
+    "size_bytes": 513058675,
+    "file_count": 546,
+    "manifest_sha256": "4E38521C9D3BCE6348F6E40A6DD287DA4541EE7A5AA73B3C44C04E34006C579D",
+    "exe_size_bytes": 3434924,
+    "exe_sha256": "18A7B076A76D11B8A721B299DA5292A64E6A29ED2ABE3CA32AB2AC21DBB7ACA0",
+    "bundled_browser_sha256": "28016DF6864D302434C9231E1F9F1A8A7ECC512CB2FE3FAABB2A36130B96BCF1",
+    "installation_complete_marker": true,
+    "first_collect_failure": "WinError 3 from legacy Windows path length under the long disposable cache/build prefix",
+    "successful_workaround": "new isolated short LOCALAPPDATA work/dist root; browser registry layout unchanged"
+  },
+  "frozen_probe": {
+    "success": true,
+    "driver_start_seconds": 1.847,
+    "browser_launch_seconds": 1.347,
+    "first_page_seconds": 1.607,
+    "peak_process_tree_rss_bytes": 367017984,
+    "cleanup_seconds": 0.386,
+    "rendered_text_sha256": "9C755CDF608FF70ADF305C797C716B4C895A1CBA52CFABE163635B3EA86FD94F",
+    "orphan_processes": []
+  },
+  "fresh_process_probe": {
+    "success": true,
+    "wall_seconds": 3.362,
+    "driver_start_seconds": 0.290,
+    "browser_launch_seconds": 0.384,
+    "first_page_seconds": 1.612,
+    "peak_process_tree_rss_bytes": 358408192,
+    "cleanup_seconds": 0.392,
+    "orphan_processes": []
+  },
+  "isolated_offline_probe": {
+    "success": true,
+    "profile": "C:\\Users\\Administrator\\AppData\\Local\\DPW-T0\\profiles\\frozen-offline",
+    "browser_root_source": "frozen_onedir_internal",
+    "network_mode": "loopback_deny_proxy",
+    "firewall_profiles_enabled": false,
+    "blocked_external_request_count": 0,
+    "global_cache_created": false,
+    "isolated_cache_created": false,
+    "driver_start_seconds": 0.289,
+    "browser_launch_seconds": 0.385,
+    "first_page_seconds": 1.623,
+    "peak_process_tree_rss_bytes": 357482496,
+    "cleanup_seconds": 0.427,
+    "rendered_text_sha256": "9C755CDF608FF70ADF305C797C716B4C895A1CBA52CFABE163635B3EA86FD94F",
+    "orphan_processes": []
+  },
+  "live_deskpet": {
+    "pid": 90580,
+    "path": "F:\\projects\\deskpet\\tauri-app\\src-tauri\\target\\debug\\deskpet.exe",
+    "alive_after_all_probes": true,
+    "untouched": true
+  },
+  "product_files_changed": false,
+  "shared_build_outputs_changed": false
+}

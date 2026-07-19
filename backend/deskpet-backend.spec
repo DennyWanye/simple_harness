@@ -17,10 +17,19 @@
 import glob
 import importlib.util as _ilu
 import os
+import sys
 import sysconfig
+from pathlib import Path
 
 import PyInstaller.building.build_main as _pyi_build_main
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
+# Playwright driver + the exact product-owned browser are collected through one
+# shared helper.  It validates the package/browser pins and fails the build
+# before Analysis if an ambient/global browser cache is passed accidentally.
+_repo_root = Path(SPECPATH).resolve().parent
+sys.path.insert(0, str(_repo_root / "scripts"))
+from playwright_bundle_spec_support import collect_playwright_bundle
 
 
 _orig_find_binary_dependencies = _pyi_build_main.find_binary_dependencies
@@ -115,6 +124,7 @@ hiddenimports += collect_submodules("agent_reach")
 # Do NOT add collect_submodules("datasets") — it does nothing useful here.
 hiddenimports += ["sqlite_vec"]                    # P4-S20: L3 vector recall
 hiddenimports += [
+    "deskpet.playwright_bundle",  # product browser resolver / diagnostics
     "tzdata",                   # zoneinfo needs this on Windows
     # config.py additive feature-flag backfill writes via tomlkit. It's a
     # static import inside _merge_missing_feature_flags (lazy, try-guarded),
@@ -145,6 +155,9 @@ hiddenimports += _mypyc_modules
 # (source, dest-inside-bundle) tuples. Use collect_data_files() for
 # installed packages; hardcode relative paths for our own repo files.
 datas: list[tuple[str, str]] = []
+_playwright_datas, _playwright_hiddenimports = collect_playwright_bundle(_repo_root)
+datas += _playwright_datas
+hiddenimports += _playwright_hiddenimports
 datas += collect_data_files("silero_vad")          # silero_vad/data/*.jit
 datas += collect_data_files("faster_whisper")      # tokenizer.json
 datas += collect_data_files("tzdata")              # IANA tz db
@@ -177,6 +190,10 @@ datas += [
     # frozen builds with no <exe_dir>/config.toml returned None and the migration
     # path was a no-op.
     ("../config.toml", "."),
+    # compile_workflow() fingerprints the exact dependency lock as part of
+    # every durable manifest. In frozen mode definition.py resolves this to
+    # _MEIPASS/uv.lock, so omitting it disables workflow startup.
+    ("uv.lock", "."),
     ("../resources/diagnostic-redaction.json", "resources"),
 ]
 
@@ -280,6 +297,12 @@ a = Analysis(
         "datasets",
     ],
     noarchive=False,
+    # WorkflowDefinition hashes callable source text. PyInstaller normally
+    # stores modules only in PYZ bytecode, so inspect.getsource() fails in the
+    # installed backend and disables the entire durable workflow service.
+    # Keep definition modules as external source alongside the frozen app;
+    # source-mode builds and frozen builds then compute identical manifests.
+    module_collection_mode={"deskpet.workflows.definitions": "py"},
 )
 
 # --- 3b. Defensive torch CUDA DLL strip ---------------------------------

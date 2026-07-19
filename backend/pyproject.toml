@@ -17,11 +17,15 @@ dependencies = [
     "structlog>=24.0",
     "httpx>=0.27.0",
     "ollama>=0.4.0",
-    # 2026-05-18 code-mode E2E capability ([code_e2e] flag-gated; chromium
-    # downloads lazily on first real run, not at install):
+    # 2026-05-18 code-mode E2E capability ([code_e2e] flag-gated):
     #  - browser-use: autonomous LLM browser task tool (run_browser_task)
     #  - mss + pyautogui: OS-level computer-use (screen_capture/click/type)
     "browser-use>=0.1.40",
+    # DeepResearch v5 retrieval renderer. Exact pin is coupled to Chromium
+    # Headless Shell revision 1228 / browser 149.0.7827.55; the build
+    # acquisition gate verifies the locked archive and executable hashes and
+    # bundles the browser, so production never downloads it on first run.
+    "playwright==1.61.0",
     "mss>=9.0",
     "pyautogui>=0.9.54",
     "aiosqlite>=0.22.1",

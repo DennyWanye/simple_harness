@@ -4,30 +4,55 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import copy
 import hashlib
 import inspect
 import json
+import re
+import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, is_dataclass
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from .contracts import JsonValue, WorkflowContext, canonical_json, validate_json_value
+from .contracts import (
+    TERMINAL_RUN_STATUSES,
+    JsonValue,
+    WorkflowContext,
+    canonical_json,
+    validate_json_value,
+)
 from .evaluation.models import (
     EvaluationOutcome,
     HumanEvaluationRecord,
     PairwiseEvaluationRecord,
 )
 from .evaluation.store import EvaluationStore
+from .delivery import DeliveryDisposition, normalize_v6_delivery_result
 from .human import HumanDecision, HumanDecisionStore
 from .outbox import MAX_PAGE_SIZE, WorkflowOutbox, hydrate_event
 from .runner import WorkflowRunner
+from .runtime_adapters import (
+    RuntimeIdentity,
+    WorkflowRuntimeAdapterRegistry,
+)
 from .store.run_store import WorkflowRunStore
+from .store.checkpointer import NativeCheckpointStore
+from .store.research_repository import ResearchRepositoryError, ResearchWorkflowRepository
+from .terminal_projection import VersionedActionMatrix, WorkflowActionContext
+from .definitions.deep_research_v5_contracts import (
+    ResearchControlCommand,
+    ResearchEvidenceSnapshot,
+)
 from .trace.store import TraceStore
 
 
 START_SNAPSHOT_KEY = "_workflow_start"
+_UUID_V4_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+)
 
 
 class WorkflowServiceError(RuntimeError):
@@ -68,6 +93,113 @@ class WorkflowStartIdentity:
     @property
     def identity_key(self) -> str:
         return _hash_json(self.to_dict())
+
+
+class DurableResearchControlPort:
+    """Project the single durable v5 control fence into the graph contract."""
+
+    def __init__(self, repository: object) -> None:
+        self.repository = repository
+
+    @staticmethod
+    def _timestamp(value: object, *, fallback: float) -> str:
+        seconds = float(value) if isinstance(value, (int, float)) else fallback
+        return datetime.fromtimestamp(seconds, tz=timezone.utc).isoformat()
+
+    async def poll(
+        self,
+        *,
+        run_id: str,
+        checkpoint_id: str | None,
+    ) -> ResearchControlCommand | None:
+        row = await self.repository.active_control(str(run_id))
+        if row is None or str(row.get("status")) not in {"accepted", "observed"}:
+            return None
+        payload = copy.deepcopy(dict(row.get("payload") or {}))
+        meta = payload.get("_repository")
+        meta = meta if isinstance(meta, Mapping) else {}
+        status = str(row["status"])
+        if status == "accepted" and checkpoint_id:
+            row = await self.repository.transition_control(
+                str(row["command_id"]),
+                expected_status="accepted",
+                new_status="observed",
+                checkpoint_ns=str(row.get("head_checkpoint_ns") or ""),
+                checkpoint_id=str(checkpoint_id),
+            )
+            payload = copy.deepcopy(dict(row.get("payload") or {}))
+            meta = payload.get("_repository")
+            meta = meta if isinstance(meta, Mapping) else {}
+            status = str(row["status"])
+        cancel_marker = payload.get("_cancel_settle")
+        action = "cancel_settle" if isinstance(cancel_marker, Mapping) else str(row["action"])
+        idempotency_key = (
+            str(cancel_marker.get("idempotency_key"))
+            if isinstance(cancel_marker, Mapping)
+            else str(row["idempotency_key"])
+        )
+        now = datetime.now(tz=timezone.utc).timestamp()
+        observed_checkpoint = (
+            str(row.get("head_checkpoint_id") or checkpoint_id or "") or None
+            if status in {"observed", "settled", "consumed"}
+            else None
+        )
+        expires = row.get("settle_deadline") or (float(row.get("created_at") or now) + 30.0)
+        result = payload.get("_result")
+        return ResearchControlCommand(
+            command_id=str(row["command_id"]),
+            run_id=str(row["run_id"]),
+            action=action,  # type: ignore[arg-type]
+            idempotency_key=idempotency_key,
+            status=status,  # type: ignore[arg-type]
+            expected_run_version=int(meta.get("expected_run_version", 0)),
+            observed_checkpoint_id=observed_checkpoint,
+            payload=payload,
+            result=copy.deepcopy(dict(result)) if isinstance(result, Mapping) else {},
+            expires_at=self._timestamp(expires, fallback=now + 30.0),
+            created_at=self._timestamp(row.get("created_at"), fallback=now),
+            updated_at=self._timestamp(row.get("updated_at"), fallback=now),
+        )
+
+    async def settle(
+        self,
+        *,
+        command_id: str,
+        checkpoint_ns: str,
+        checkpoint_id: str,
+        result: Mapping[str, JsonValue] | None = None,
+    ) -> dict[str, Any]:
+        """CAS observed -> settled against the latest durable run head."""
+
+        return _plain(
+            await self.repository.transition_control(
+                str(command_id),
+                expected_status="observed",
+                new_status="settled",
+                checkpoint_ns=str(checkpoint_ns),
+                checkpoint_id=str(checkpoint_id),
+                result=dict(result or {}),
+            )
+        )
+
+    async def consume(
+        self,
+        *,
+        command_id: str,
+        checkpoint_ns: str,
+        checkpoint_id: str,
+    ) -> dict[str, Any]:
+        """CAS settled -> consumed against the latest durable terminal head."""
+
+        return _plain(
+            await self.repository.transition_control(
+                str(command_id),
+                expected_status="settled",
+                new_status="consumed",
+                checkpoint_ns=str(checkpoint_ns),
+                checkpoint_id=str(checkpoint_id),
+            )
+        )
 
 
 def _hash_json(value: JsonValue) -> str:
@@ -141,6 +273,15 @@ class WorkflowService:
         decision_store: HumanDecisionStore | object | None = None,
         forker: Callable[..., Any | Awaitable[Any]] | None = None,
         delivery_handlers: Mapping[str, Callable[..., Any | Awaitable[Any]]] | None = None,
+        session_delivery_state_reader: Callable[[str], Awaitable[Mapping[str, Any]]] | None = None,
+        research_repository: object | None = None,
+        research_snapshot_loader: Callable[
+            [str], Awaitable[bytes | Mapping[str, JsonValue]]
+        ] | None = None,
+        action_matrix: VersionedActionMatrix | None = None,
+        runtime_adapters: WorkflowRuntimeAdapterRegistry | None = None,
+        runtime_activation_required: bool = False,
+        runtime_activation_hooks: Sequence[Callable[[], Awaitable[None]]] = (),
     ) -> None:
         selected = run_store if run_store is not None else store
         if selected is None and runner is not None:
@@ -155,12 +296,182 @@ class WorkflowService:
         self.outbox = outbox or WorkflowOutbox(self.run_store)
         self._forker = forker
         self._delivery_handlers = dict(delivery_handlers or {})
+        self._session_delivery_state_reader = session_delivery_state_reader
+        self.research_repository = research_repository or ResearchWorkflowRepository(
+            self.run_store.path
+        )
+        self._research_snapshot_loader = research_snapshot_loader
+        self.action_matrix = action_matrix or VersionedActionMatrix()
+        self.runtime_adapters = runtime_adapters or WorkflowRuntimeAdapterRegistry()
+        self._runtime_activation_required = bool(runtime_activation_required)
+        self._runtime_activation_hooks = tuple(runtime_activation_hooks)
         self._start_locks: dict[str, asyncio.Lock] = {}
         self._delivery_locks: dict[str, asyncio.Lock] = {}
         self._session_locks: dict[str, asyncio.Lock] = {}
 
+    @property
+    def deep_research_versions(self):
+        """Typed view retained as a compatibility name without a second map."""
+
+        return self.runtime_adapters.deep_research
+
+    def ensure_runtime_active(self) -> None:
+        if self._runtime_activation_required:
+            self.runtime_adapters.require_active()
+
+    async def activate_runtime(
+        self,
+        *,
+        required_runtime_identities: Sequence[RuntimeIdentity] = (),
+    ) -> None:
+        """Seal registered adapters, validate durable recovery, then activate.
+
+        Production bootstrap calls this only after Main has registered every
+        DeepResearch, Code, and PPT runtime closure.  Existing direct service
+        tests are not forced through the product bootstrap gate.
+        """
+
+        persisted: set[RuntimeIdentity] = set()
+        terminal = {str(status.value) for status in TERMINAL_RUN_STATUSES}
+        for row in await self.run_store.list_runs(limit=10_000):
+            if str(row.get("status") or "") in terminal:
+                continue
+            persisted.add(
+                (str(row.get("workflow_name") or ""), str(row.get("workflow_version") or ""))
+            )
+        required = tuple(sorted(set(required_runtime_identities) | persisted))
+        self.runtime_adapters.seal(required)
+        self.runtime_adapters.activate()
+        for hook in self._runtime_activation_hooks:
+            await hook()
+
     def session_lock(self, session_id: str) -> asyncio.Lock:
         return self._session_locks.setdefault(str(session_id), asyncio.Lock())
+
+    async def persist_v6_continuation_snapshot(self, run_id: str) -> bool:
+        """Pin the terminal v6 snapshot from the canonical manifest event.
+
+        This runs only after the native runner has committed the terminal run,
+        and before delivery dispatch.  Replays derive the expiry from the
+        persisted terminal timestamp so they cannot move the retention window.
+        """
+
+        row = await self.run_store.get_run(str(run_id))
+        if row is None or (
+            str(row.get("workflow_name")) != "deep_research"
+            or str(row.get("workflow_version")) != "v6"
+            or str(row.get("status")) != "completed"
+        ):
+            return False
+        manifest_ref: str | None = None
+        answer_status: str | None = None
+        for event in reversed(await self.run_store.events_after(str(run_id), 0)):
+            if str(event.get("event_type")) != "workflow.final":
+                continue
+            payload = event.get("payload")
+            if isinstance(payload, Mapping) and payload.get("manifest_ref"):
+                manifest_ref = str(payload["manifest_ref"])
+                answer_status = str(
+                    payload.get("answer_status") or payload.get("delivery_status") or ""
+                )
+                break
+        if manifest_ref is None:
+            raise WorkflowServiceError(
+                "v6_terminal_manifest_missing",
+                "completed v6 run has no canonical terminal manifest event",
+            )
+        if answer_status not in {"partial", "insufficient_evidence"}:
+            return False
+        terminal_at = row.get("ended_at") or row.get("updated_at")
+        if not isinstance(terminal_at, (int, float)):
+            raise WorkflowServiceError(
+                "v6_terminal_timestamp_missing",
+                "completed v6 run has no terminal timestamp",
+            )
+        continue_until = float(terminal_at) + 30.0 * 24.0 * 60.0 * 60.0
+        persist = getattr(self.research_repository, "persist_v6_continuation_snapshot", None)
+        if not callable(persist):
+            raise WorkflowServiceError(
+                "workflow_action_unavailable",
+                "v6 continuation snapshot persistence is unavailable",
+            )
+        await persist(
+            run_id=str(run_id),
+            operation_id=f"research:{run_id}",
+            terminal_manifest_ref=manifest_ref,
+            continue_until=continue_until,
+        )
+        return True
+
+    async def recover_v6_continuation_snapshots(self) -> list[str]:
+        """Recover a terminal-commit -> snapshot-pin crash window."""
+
+        recovered: list[str] = []
+        for row in await self.run_store.list_runs(limit=10_000):
+            if (
+                str(row.get("workflow_name")) == "deep_research"
+                and str(row.get("workflow_version")) == "v6"
+                and str(row.get("status")) == "completed"
+            ):
+                terminal_at = row.get("ended_at") or row.get("updated_at")
+                if isinstance(terminal_at, (int, float)) and (
+                    float(terminal_at) + 30.0 * 24.0 * 60.0 * 60.0 > datetime.now(
+                        tz=timezone.utc
+                    ).timestamp()
+                ):
+                    if await self.persist_v6_continuation_snapshot(str(row["run_id"])):
+                        recovered.append(str(row["run_id"]))
+        return recovered
+
+    async def _load_research_snapshot_manifest(
+        self, *, manifest_ref: str, expected_hash: str
+    ) -> dict[str, JsonValue]:
+        loader = self._research_snapshot_loader
+        if loader is None:
+            raise WorkflowServiceError(
+                "workflow_action_unavailable",
+                "continuation snapshot loader is unavailable",
+            )
+        loaded = await loader(str(manifest_ref))
+        try:
+            if isinstance(loaded, (bytes, bytearray)):
+                raw = json.loads(bytes(loaded).decode("utf-8"))
+            elif isinstance(loaded, Mapping):
+                raw = copy.deepcopy(dict(loaded))
+            else:
+                raise TypeError("snapshot loader returned an unsupported value")
+            if not isinstance(raw, Mapping):
+                raise TypeError("snapshot manifest must be an object")
+            snapshot_payload = copy.deepcopy(dict(raw))
+            # The content-addressed blob intentionally omits its own digest;
+            # reattach the repository-selected address before strict validation.
+            snapshot_payload.setdefault("snapshot_hash", str(expected_hash))
+            manifest = ResearchEvidenceSnapshot.from_json(snapshot_payload).to_json()
+        except (TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise WorkflowServiceError(
+                "snapshot_manifest_invalid", "continuation snapshot manifest is invalid"
+            ) from exc
+        if str(manifest["snapshot_hash"]) != str(expected_hash):
+            raise WorkflowServiceError(
+                "snapshot_hash_mismatch", "continuation snapshot hash changed"
+            )
+        return manifest
+
+    async def _parent_report_ref(self, run_id: str) -> str | None:
+        """Read the private terminal decision from the durable native head."""
+
+        saver = getattr(self.runner, "saver", None)
+        load_head = getattr(saver, "load_head", None)
+        if not callable(load_head):
+            return None
+        head = await load_head(str(run_id))
+        if not isinstance(head, Mapping):
+            return None
+        state = head.get("state")
+        values = state.get("values") if isinstance(state, Mapping) else None
+        decision = values.get("delivery_decision") if isinstance(values, Mapping) else None
+        report_ref = decision.get("report_ref") if isinstance(decision, Mapping) else None
+        return str(report_ref) if report_ref is not None else None
 
     async def _connect(self):
         await self.run_store.initialize()
@@ -248,6 +559,7 @@ class WorkflowService:
         thread_id: str | None = None,
         checkpoint_ns: str = "",
     ) -> dict[str, Any]:
+        self.ensure_runtime_active()
         if self.runner is None or not callable(getattr(self.runner, "start", None)):
             raise WorkflowServiceError(
                 "workflow_start_unavailable", "The workflow runner cannot start workflows"
@@ -660,6 +972,468 @@ class WorkflowService:
 
     cancel = cancel_run
 
+    async def execute_run_action(
+        self,
+        run_id: str,
+        *,
+        action_id: str,
+        idempotency_key: str,
+        expected_version: int,
+        payload: Mapping[str, JsonValue] | None = None,
+    ) -> dict[str, Any]:
+        """Execute one action through the immutable workflow-version matrix."""
+
+        run_id = self._required(run_id, "run_id")
+        action_id = self._required(action_id, "action_id")
+        idempotency_key = self._required(idempotency_key, "idempotency_key")
+        if (
+            isinstance(expected_version, bool)
+            or not isinstance(expected_version, int)
+            or expected_version < 0
+        ):
+            raise WorkflowServiceError("invalid_run_version", "expected_version must be non-negative")
+        action_payload = copy.deepcopy(dict(payload or {}))
+        validate_json_value(action_payload, path="$.action_payload")
+        row = await self.run_store.get_run(run_id)
+        if row is None:
+            raise WorkflowServiceError("not_found", "workflow run was not found")
+        if int(row.get("run_version", -1)) != expected_version:
+            raise WorkflowServiceError(
+                "stale_run_version",
+                "workflow run version changed",
+                current_version=int(row.get("run_version", -1)),
+            )
+        workflow_name = str(row.get("workflow_name") or "")
+        workflow_version = str(row.get("workflow_version") or "")
+        engine_status = str(row.get("status") or "")
+
+        if (workflow_name, workflow_version, action_id) == (
+            "deep_research", "v4", "retry_from_start"
+        ):
+            if not self.action_matrix.allows(
+                workflow_name,
+                workflow_version,
+                action_id,
+                WorkflowActionContext(engine_status=engine_status),
+            ):
+                raise WorkflowServiceError("workflow_action_not_allowed", "workflow action is not allowed")
+            return await self.retry_run_from_start(
+                run_id, action_id=action_id, retry_key=idempotency_key
+            )
+
+        if workflow_name != "deep_research" or workflow_version not in {"v5", "v6"}:
+            raise WorkflowServiceError(
+                "workflow_action_not_supported",
+                "workflow version does not support this action",
+            )
+        repository = self.research_repository
+        try:
+            if workflow_version == "v6" and action_id == "continue_research":
+                if action_payload:
+                    raise WorkflowServiceError(
+                        "invalid_action_payload",
+                        "v6 continue_research accepts an empty action payload only; "
+                        "a new scope requires a new root run",
+                    )
+                create_or_get = getattr(repository, "create_or_get_continuation_v6", None)
+                if not callable(create_or_get):
+                    raise WorkflowServiceError(
+                        "workflow_action_unavailable",
+                        "v6 continuation repository support is unavailable",
+                    )
+                # The repository is the sole manifest/snapshot/lineage owner.  Do
+                # not resolve any parent material here: doing so would create a
+                # check/use window before the continuation-head transaction.
+                result = _plain(await create_or_get(run_id, idempotency_key))
+                if not isinstance(result, Mapping):
+                    raise WorkflowServiceError(
+                        "invalid_continuation_result",
+                        "v6 continuation repository returned an invalid result",
+                    )
+                expected_result_keys = {
+                    "schema_version", "parent_run_id", "child_run_id",
+                    "child_operation_id", "created", "start_payload",
+                    "start_request_hash", "audit_operation_id",
+                }
+                if set(result) != expected_result_keys or result.get("schema_version") != 1:
+                    raise WorkflowServiceError(
+                        "invalid_continuation_result",
+                        "v6 continuation repository result keys differ",
+                    )
+                child_run_id = self._required(str(result["child_run_id"]), "child_run_id")
+                start_payload = result["start_payload"]
+                if not isinstance(start_payload, Mapping) or set(start_payload) != {
+                    "schema_version", "parent_run_id", "source_snapshot_hash"
+                }:
+                    raise WorkflowServiceError(
+                        "invalid_continuation_result",
+                        "v6 continuation persisted start payload differs",
+                    )
+                launcher = getattr(self, "launcher", None)
+                launch = getattr(launcher, "launch_existing_run", None)
+                if not callable(launch):
+                    raise WorkflowServiceError(
+                        "workflow_action_unavailable", "continuation launcher is unavailable"
+                    )
+                # Notify/launch for both the first and replay audit result.  A
+                # commit-before-notify crash is recovered by the launcher's
+                # generic created-run scan using this same persisted payload.
+                await launch(child_run_id, start_payload=dict(start_payload))
+                return {
+                    "run_id": child_run_id,
+                    "parent_run_id": run_id,
+                    "action_id": action_id,
+                    "accepted": True,
+                    "created": bool(result["created"]),
+                    "child_operation_id": str(result["child_operation_id"]),
+                    "audit_operation_id": str(result["audit_operation_id"]),
+                    "start_request_hash": str(result["start_request_hash"]),
+                }
+
+            if action_id == "retry_from_start":
+                if action_payload:
+                    raise WorkflowServiceError(
+                        "invalid_action_payload", "retry_from_start does not accept action payload"
+                    )
+                if not self.action_matrix.allows(
+                    workflow_name,
+                    workflow_version,
+                    action_id,
+                    WorkflowActionContext(engine_status=engine_status),
+                ):
+                    raise WorkflowServiceError("workflow_action_not_allowed", "retry_from_start is not allowed")
+                return await self.retry_run_from_start(
+                    run_id, action_id=action_id, retry_key=idempotency_key
+                )
+            if action_id == "generate_now":
+                if workflow_version == "v6" and action_payload:
+                    raise WorkflowServiceError(
+                        "invalid_action_payload", "v6 generate_now does not accept action payload"
+                    )
+                if workflow_version == "v6":
+                    brief_ns = str(row.get("head_checkpoint_ns") or "")
+                    brief_id = self._required(
+                        str(row.get("head_checkpoint_id") or ""), "head_checkpoint_id"
+                    )
+                elif not action_payload:
+                    # The public v5 projection deliberately does not expose internal
+                    # checkpoint identities. Resolve the exact current head on the
+                    # server and verify that it contains the committed modeling
+                    # contract before using it as the brief CAS ancestor.
+                    brief_ns = str(row.get("head_checkpoint_ns") or "")
+                    brief_id = self._required(
+                        str(row.get("head_checkpoint_id") or ""), "head_checkpoint_id"
+                    )
+                    checkpoint = await NativeCheckpointStore(self.run_store.path).get_checkpoint(
+                        run_id,
+                        brief_id,
+                        checkpoint_ns=brief_ns,
+                    )
+                    state = checkpoint.get("state") if isinstance(checkpoint, Mapping) else None
+                    values = state.get("values") if isinstance(state, Mapping) else None
+                    if not (
+                        isinstance(values, Mapping)
+                        and isinstance(values.get("research_brief"), Mapping)
+                        and isinstance(values.get("dimension_coverages"), list)
+                    ):
+                        raise WorkflowServiceError(
+                            "workflow_action_not_allowed",
+                            "generate_now requires a committed research brief",
+                        )
+                elif set(action_payload) == {"brief_checkpoint_ns", "brief_checkpoint_id"}:
+                    brief_ns = str(action_payload["brief_checkpoint_ns"])
+                    brief_id = self._required(
+                        str(action_payload["brief_checkpoint_id"]), "brief_checkpoint_id"
+                    )
+                else:
+                    raise WorkflowServiceError(
+                        "invalid_action_payload",
+                        "generate_now accepts no payload or exactly brief_checkpoint_ns/brief_checkpoint_id",
+                    )
+                if not self.action_matrix.allows(
+                    workflow_name,
+                    workflow_version,
+                    action_id,
+                    WorkflowActionContext(
+                        engine_status=engine_status,
+                        brief_committed=True,
+                    ),
+                ):
+                    raise WorkflowServiceError("workflow_action_not_allowed", "generate_now is not allowed")
+                opened, created = await repository.open_control(
+                    run_id=run_id,
+                    idempotency_key=idempotency_key,
+                    action=action_id,
+                    expected_run_version=expected_version,
+                    expected_head_checkpoint_ns=str(row.get("head_checkpoint_ns") or ""),
+                    expected_head_checkpoint_id=(
+                        str(row["head_checkpoint_id"])
+                        if row.get("head_checkpoint_id") is not None
+                        else None
+                    ),
+                    payload={},
+                )
+                command = await repository.accept_generate_now(
+                    str(opened["command_id"]),
+                    brief_checkpoint_ns=brief_ns,
+                    brief_checkpoint_id=brief_id,
+                )
+                if str(command.get("status")) != "accepted":
+                    raise WorkflowServiceError(
+                        "workflow_action_rejected",
+                        "generate_now lost the run/head/brief compare-and-swap",
+                    )
+                launcher = getattr(self, "launcher", None)
+                wake = getattr(launcher, "wake_run_control", None)
+                if callable(wake):
+                    await wake(run_id)
+                return {
+                    "run_id": run_id,
+                    "action_id": action_id,
+                    "accepted": True,
+                    "created": bool(created),
+                    "command": _plain(command),
+                }
+
+            active = await repository.active_control(run_id)
+            if action_id == "cancel_settle":
+                if not self.action_matrix.allows(
+                    workflow_name,
+                    workflow_version,
+                    action_id,
+                    WorkflowActionContext(
+                        engine_status=engine_status,
+                        active_control_status=(str(active.get("status")) if active else None),
+                    ),
+                ):
+                    raise WorkflowServiceError("workflow_action_not_allowed", "cancel_settle is not allowed")
+                request_cancel = getattr(repository, "request_cancel_settle", None)
+                if not callable(request_cancel):
+                    raise WorkflowServiceError(
+                        "workflow_action_unavailable", "cancel_settle repository support is unavailable"
+                    )
+                existing_marker = (
+                    active.get("payload", {}).get("_cancel_settle")
+                    if active and isinstance(active.get("payload"), Mapping)
+                    else None
+                )
+                command = await request_cancel(
+                    run_id,
+                    idempotency_key=idempotency_key,
+                    expected_run_version=expected_version,
+                )
+                launcher = getattr(self, "launcher", None)
+                wake = getattr(launcher, "wake_run_control", None)
+                if callable(wake):
+                    await wake(run_id)
+                return {
+                    "run_id": run_id,
+                    "action_id": action_id,
+                    "accepted": True,
+                    "created": bool(
+                        command.get("created", not isinstance(existing_marker, Mapping))
+                    ),
+                    "command": _plain(command),
+                }
+
+            if workflow_version == "v5" and action_id == "continue_research":
+                if action_payload:
+                    raise WorkflowServiceError(
+                        "invalid_action_payload",
+                        "continue_research does not accept client snapshot or lineage identity",
+                    )
+                resolve_source = getattr(repository, "resolve_continuation_source", None)
+                if not callable(resolve_source):
+                    raise WorkflowServiceError(
+                        "workflow_action_unavailable",
+                        "continuation repository resolver is unavailable",
+                    )
+                source = await resolve_source(run_id)
+                final_payload: Mapping[str, Any] | None = None
+                for event in reversed(await self.run_store.events_after(run_id, 0)):
+                    if str(event.get("event_type")) == "workflow.final" and isinstance(
+                        event.get("payload"), Mapping
+                    ):
+                        final_payload = event["payload"]
+                        break
+                delivery_status = (
+                    str(final_payload.get("delivery_status")) if final_payload is not None else None
+                )
+                if not self.action_matrix.allows(
+                    workflow_name,
+                    workflow_version,
+                    action_id,
+                    WorkflowActionContext(
+                        engine_status=engine_status,
+                        delivery_status=delivery_status,
+                        # The repository is the authoritative snapshot/pin/expiry
+                        # validator; this is only a coarse matrix precondition.
+                        snapshot_available=True,
+                    ),
+                ):
+                    raise WorkflowServiceError("workflow_action_not_allowed", "continue_research is not allowed")
+                stable = uuid.uuid5(uuid.NAMESPACE_URL, f"deskpet:{run_id}:{idempotency_key}")
+                child_run_id = str(stable)
+                child_operation_id = f"research:{child_run_id}"
+                snapshot_hash = self._required(str(source["snapshot_hash"]), "snapshot_hash")
+                parent_operation_id = self._required(
+                    str(source["parent_operation_id"]), "parent_operation_id"
+                )
+                manifest = await self._load_research_snapshot_manifest(
+                    manifest_ref=self._required(str(source["manifest_ref"]), "manifest_ref"),
+                    expected_hash=snapshot_hash,
+                )
+                start = await self.run_store.get_start_snapshot(run_id)
+                start_payload = start.get("start_payload") if isinstance(start, Mapping) else None
+                if not isinstance(start_payload, Mapping):
+                    raise WorkflowServiceError(
+                        "invalid_start_snapshot", "parent workflow start payload is invalid"
+                    )
+                topic = self._required(str(start_payload.get("topic") or ""), "topic")
+                parent_report_ref = (
+                    str(source["parent_report_ref"])
+                    if source.get("parent_report_ref") is not None
+                    else await self._parent_report_ref(run_id)
+                )
+                if delivery_status == "partial" and not parent_report_ref:
+                    raise WorkflowServiceError(
+                        "parent_report_missing",
+                        "partial continuation parent has no durable report reference",
+                    )
+                child_payload: dict[str, JsonValue] = {
+                    "topic": topic,
+                    "mode": str(start_payload.get("mode") or "standard"),
+                    "research_config": copy.deepcopy(
+                        dict(start_payload.get("research_config") or {})
+                    ),
+                    "blob_root": str(start_payload.get("blob_root") or ""),
+                    "snapshot_hash": snapshot_hash,
+                    "parent_operation_id": parent_operation_id,
+                    "operation_id": child_operation_id,
+                    "continuation": True,
+                    "only_gaps": True,
+                    "continuation_snapshot": manifest,
+                }
+                launcher = getattr(self, "launcher", None)
+                launch = getattr(launcher, "launch_existing_run", None)
+                if not callable(launch):
+                    raise WorkflowServiceError(
+                        "workflow_action_unavailable", "continuation launcher is unavailable"
+                    )
+                lineage, created = await repository.create_child_from_snapshot(
+                    parent_run_id=run_id,
+                    parent_operation_id=parent_operation_id,
+                    snapshot_hash=snapshot_hash,
+                    child_run_id=child_run_id,
+                    child_operation_id=child_operation_id,
+                    child_trace_id=uuid.uuid5(stable, "trace").hex,
+                    child_thread_id=uuid.uuid5(stable, "thread").hex,
+                    child_request_key=f"continue:{run_id}:{idempotency_key}",
+                    child_request_id=f"continue:{idempotency_key}",
+                    child_turn_id=uuid.uuid5(stable, "turn").hex,
+                    budget_lease_id=uuid.uuid5(stable, "budget").hex,
+                    start_payload=child_payload,
+                    parent_report_ref=parent_report_ref,
+                )
+                if created:
+                    await launch(child_run_id, start_payload=child_payload)
+                return {
+                    "run_id": child_run_id,
+                    "parent_run_id": run_id,
+                    "action_id": action_id,
+                    "accepted": True,
+                    "created": bool(created),
+                    "lineage": _plain(lineage),
+                }
+        except WorkflowServiceError:
+            raise
+        except ResearchRepositoryError as exc:
+            raise WorkflowServiceError(exc.code, str(exc)) from exc
+        raise WorkflowServiceError(
+            "workflow_action_not_supported", "workflow version does not support this action"
+        )
+
+    async def retry_run_from_start(
+        self,
+        run_id: str,
+        *,
+        action_id: str,
+        retry_key: str,
+    ) -> dict[str, Any]:
+        """Create one idempotent versioned research retry under the session lock."""
+
+        source_run_id = self._required(run_id, "run_id")
+        if action_id != "retry_from_start":
+            raise WorkflowServiceError("invalid_retry_action", "retry action is not supported")
+        if not _UUID_V4_RE.fullmatch(str(retry_key)):
+            raise WorkflowServiceError("invalid_retry_key", "retry_key must be a lowercase UUID v4")
+        initial = await self.run_store.get_start_snapshot(source_run_id)
+        if initial is None:
+            raise WorkflowServiceError("not_found", "workflow run was not found")
+        initial_identity = initial.get("identity")
+        if not isinstance(initial_identity, Mapping):
+            raise WorkflowServiceError("invalid_start_snapshot", "workflow start identity is invalid")
+        delivery_session_id = self._required(
+            str(initial_identity.get("delivery_session_id") or ""), "delivery_session_id"
+        )
+        lock = self.session_lock(delivery_session_id)
+        async with lock:
+            source = await self.run_store.get_start_snapshot(source_run_id)
+            if source is None:
+                raise WorkflowServiceError("not_found", "workflow run was not found")
+            identity_value = source.get("identity")
+            if not isinstance(identity_value, Mapping):
+                raise WorkflowServiceError("invalid_start_snapshot", "workflow start identity is invalid")
+            try:
+                identity = WorkflowStartIdentity(**dict(identity_value))
+            except (TypeError, ValueError) as exc:
+                raise WorkflowServiceError(
+                    "invalid_start_snapshot", "workflow start identity is invalid"
+                ) from exc
+            if identity.delivery_session_id != delivery_session_id:
+                raise WorkflowServiceError("retry_session_changed", "workflow delivery session changed")
+            if (
+                str(source.get("status") or "") != "failed"
+                or str(source.get("workflow_name") or "") != "deep_research"
+                or str(source.get("workflow_version") or "") not in {"v4", "v5"}
+                or identity.workflow_name != "deep_research"
+            ):
+                raise WorkflowServiceError(
+                    "workflow_retry_not_allowed",
+                    "only failed supported deep_research runs can be retried from start",
+                )
+            delivery_ref = await self.run_store.get_session_ref(source_run_id, "delivery")
+            if (
+                delivery_ref is None
+                or delivery_ref.get("deleted_at") is not None
+                or str(delivery_ref.get("session_id") or "") != delivery_session_id
+            ):
+                raise WorkflowServiceError("session_deleted", "workflow delivery session is deleted")
+            if self._session_delivery_state_reader is None:
+                raise WorkflowServiceError(
+                    "session_state_unavailable", "session delivery state reader is unavailable"
+                )
+            delivery_state = await self._session_delivery_state_reader(delivery_session_id)
+            if delivery_state.get("deleted_at") is not None:
+                raise WorkflowServiceError("session_deleted", "workflow delivery session is deleted")
+            if int(delivery_state.get("epoch", -1)) != int(delivery_ref.get("session_epoch", -2)):
+                raise WorkflowServiceError(
+                    "session_epoch_mismatch", "workflow delivery session epoch changed"
+                )
+            launcher = getattr(self, "launcher", None)
+            method = getattr(launcher, "retry_from_start_locked", None)
+            if not callable(method):
+                raise WorkflowServiceError(
+                    "workflow_retry_unavailable", "workflow retry launcher is unavailable"
+                )
+            return _plain(
+                await method(
+                    source,
+                    retry_key=retry_key,
+                    session_lock=lock,
+                )
+            )
+
     async def cancel_runs_for_session(
         self,
         session_id: str,
@@ -761,7 +1535,11 @@ class WorkflowService:
         finally:
             await db.close()
         by_id = {str(row["event_id"]): dict(row) for row in rows}
+        aggregate = await self.outbox.delivery_aggregate(run_id)
         events = [hydrate_event(by_id[event_id], run=run) for event_id in event_ids if event_id in by_id]
+        if aggregate is not None:
+            for event in events:
+                event["delivery_aggregate"] = aggregate
         missing = [event_id for event_id in event_ids if event_id not in by_id]
         return {
             "run_id": run_id,
@@ -874,7 +1652,11 @@ class WorkflowService:
             ):
                 fenced.append(event_id)
                 continue
-            events.append(hydrate_event(row, run=run))
+            hydrated = hydrate_event(row, run=run)
+            aggregate = await self.outbox.delivery_aggregate(run_id)
+            if aggregate is not None:
+                hydrated["delivery_aggregate"] = aggregate
+            events.append(hydrated)
 
         return {
             "session_id": target,
@@ -926,6 +1708,14 @@ class WorkflowService:
             if delivery["status"] in {"delivered", "discarded", "delivering"}:
                 results.append(delivery)
                 continue
+            is_v6 = delivery.get("manifest_ref") is not None
+            if is_v6 and delivery["status"] == "failed" and (
+                delivery.get("next_attempt_at") is None
+                or int(delivery["attempts"]) >= 5
+                or float(delivery["next_attempt_at"]) > self.outbox._clock()
+            ):
+                results.append(delivery)
+                continue
             handler = self._delivery_handlers.get(delivery["channel"])
             if handler is None:
                 results.append(delivery)
@@ -936,28 +1726,91 @@ class WorkflowService:
                     delivery["delivery_id"], action="begin", expected_version=delivery["version"]
                 )
                 current = claimed["delivery"]
+                handler_event = event
+                if is_v6:
+                    handler_event = {
+                        **event,
+                        "delivery_aggregate": await self.outbox.delivery_aggregate(
+                            str(event["run_id"])
+                        ),
+                    }
                 try:
-                    outcome = handler(event, current)
+                    outcome = handler(handler_event, current)
                     if inspect.isawaitable(outcome):
-                        await outcome
+                        outcome = await outcome
                 except asyncio.CancelledError:
+                    if is_v6:
+                        try:
+                            await self.outbox.mutate_delivery(
+                                current["delivery_id"],
+                                action="failed",
+                                expected_version=current["version"],
+                                reason="handler_cancelled",
+                            )
+                        except Exception:
+                            pass
                     raise
                 except Exception as exc:
                     failed = await self.outbox.mutate_delivery(
                         current["delivery_id"],
                         action="failed",
                         expected_version=current["version"],
-                        reason=str(exc),
+                        reason="handler_exception" if is_v6 else str(exc),
                     )
                     results.append(failed["delivery"])
                 else:
-                    delivered = await self.outbox.mutate_delivery(
-                        current["delivery_id"],
-                        action="delivered",
-                        expected_version=current["version"],
-                    )
-                    results.append(delivered["delivery"])
-        return {"event_id": event_id, "deliveries": results}
+                    if not is_v6:
+                        delivered = await self.outbox.mutate_delivery(
+                            current["delivery_id"],
+                            action="delivered",
+                            expected_version=current["version"],
+                        )
+                        results.append(delivered["delivery"])
+                        continue
+                    try:
+                        typed = normalize_v6_delivery_result(outcome)
+                    except (TypeError, ValueError):
+                        typed = None
+                    if typed is None:
+                        settled = await self.outbox.mutate_delivery(
+                            current["delivery_id"],
+                            action="failed",
+                            expected_version=current["version"],
+                            reason="handler_contract_error",
+                        )
+                    elif typed.disposition is DeliveryDisposition.DELIVERED:
+                        settled = await self.outbox.mutate_delivery(
+                            current["delivery_id"],
+                            action="delivered",
+                            expected_version=current["version"],
+                        )
+                    elif typed.disposition is DeliveryDisposition.DISCARDED_FENCED:
+                        settled = await self.outbox.mutate_delivery(
+                            current["delivery_id"],
+                            action="discard",
+                            expected_version=current["version"],
+                            reason=f"fenced:{typed.reason_code}",
+                        )
+                    else:
+                        settled = await self.outbox.mutate_delivery(
+                            current["delivery_id"],
+                            action="failed",
+                            expected_version=current["version"],
+                            reason=typed.reason_code,
+                        )
+                    results.append(settled["delivery"])
+        aggregate = await self.outbox.delivery_aggregate(str(event["run_id"]))
+        return {
+            "event_id": event_id,
+            "deliveries": results,
+            "delivery_aggregate": aggregate,
+        }
+
+    async def delivery_aggregate(
+        self, run_id: str, *, manifest_ref: str | None = None
+    ) -> dict[str, Any] | None:
+        await self._require_run(run_id)
+        return await self.outbox.delivery_aggregate(run_id, manifest_ref=manifest_ref)
 
     @staticmethod
     def _evaluation_dict(record: object) -> dict[str, Any]:
@@ -1067,6 +1920,7 @@ class WorkflowService:
             for item in await self.human_store.list_open_decisions(run_id=run_id)
         ]
         deliveries = await self.list_deliveries(run_id=run_id)
+        delivery_aggregate = await self.outbox.delivery_aggregate(run_id)
         return {
             "run_id": run_id,
             "run": self._run_summary(run),
@@ -1077,6 +1931,7 @@ class WorkflowService:
             "evaluations": evaluations,
             "decisions": decisions,
             "deliveries": deliveries["items"],
+            "delivery_aggregate": delivery_aggregate,
         }
 
     get_run_detail = run_detail

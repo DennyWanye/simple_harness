@@ -56,6 +56,14 @@ _CANONICAL_ROUTES = {
     "workflow_run_cancel": _Route(
         "workflow_run_cancel", "workflow_run_cancel_response", "_run_cancel"
     ),
+    "workflow_run_retry_from_start": _Route(
+        "workflow_run_retry_from_start",
+        "workflow_run_retry_from_start_response",
+        "_run_retry_from_start",
+    ),
+    "workflow_run_action": _Route(
+        "workflow_run_action", "workflow_run_action_response", "_run_action"
+    ),
     "workflow_events_after_seq": _Route(
         "workflow_events_after_seq", "workflow_events_after_seq_response", "_events_after"
     ),
@@ -100,6 +108,8 @@ _ALIASES = {
     "workflow.run.resume": "workflow_run_resume",
     "run.cancel": "workflow_run_cancel",
     "workflow.run.cancel": "workflow_run_cancel",
+    "workflow.run.retry_from_start": "workflow_run_retry_from_start",
+    "workflow.run.action": "workflow_run_action",
     "events.after": "workflow_events_after_seq",
     "workflow.events.after": "workflow_events_after_seq",
     "history.hydrate": "workflow_history_hydrate",
@@ -322,6 +332,35 @@ class WorkflowIPCDispatcher:
         return await self.service.cancel_run(
             _string(payload, "run_id"),
             reason=_string(payload, "reason", required=False) or "user",
+        )
+
+    async def _run_retry_from_start(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        if set(payload) != {"run_id", "action_id", "retry_key"}:
+            raise IPCValidationError(
+                "invalid_payload", "retry payload must contain exactly run_id/action_id/retry_key"
+            )
+        return await self.service.retry_run_from_start(
+            _string(payload, "run_id"),
+            action_id=_string(payload, "action_id"),
+            retry_key=_string(payload, "retry_key"),
+        )
+
+    async def _run_action(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        allowed = {
+            "run_id", "action_id", "idempotency_key", "expected_version", "action_payload"
+        }
+        required = {"run_id", "action_id", "idempotency_key", "expected_version"}
+        if not required.issubset(payload) or set(payload) - allowed:
+            raise IPCValidationError(
+                "invalid_payload",
+                "run action requires run_id/action_id/idempotency_key/expected_version",
+            )
+        return await self.service.execute_run_action(
+            _string(payload, "run_id"),
+            action_id=_string(payload, "action_id"),
+            idempotency_key=_string(payload, "idempotency_key"),
+            expected_version=_integer(payload, "expected_version"),
+            payload=_mapping(payload, "action_payload", required=False),
         )
 
     async def _events_after(self, payload: Mapping[str, Any]) -> dict[str, Any]:

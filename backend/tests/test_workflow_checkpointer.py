@@ -8,6 +8,7 @@ from deskpet.workflows.contracts import NodeExecutionIdentity
 from deskpet.workflows.progress import WorkflowProgressReporter
 from deskpet.workflows.store import (
     NATIVE_ENGINE_KIND,
+    WORKFLOW_SCHEMA_VERSION,
     LegacyCheckpointStore as FencedAsyncSqliteSaver,
     NativeCheckpointError,
     NativeCheckpointStore,
@@ -108,7 +109,7 @@ async def test_v1_schema_migrates_native_columns_without_decoding_legacy_blob(tm
     await initialize_workflow_db(path)
 
     db = sqlite3.connect(path)
-    assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert db.execute("PRAGMA user_version").fetchone()[0] == WORKFLOW_SCHEMA_VERSION
     checkpoint = db.execute(
         "SELECT checkpoint_blob,engine_kind,snapshot_version FROM workflow_checkpoints"
     ).fetchone()
@@ -218,6 +219,86 @@ async def test_native_checkpoint_transaction_and_operation_replay(tmp_path):
             operation_id="operation-frontier",
         )
     assert conflict.value.code == "operation_identity_conflict"
+
+
+@pytest.mark.asyncio
+async def test_v6_delivery_specs_materialize_against_bound_session(tmp_path):
+    path, store, run_id, fence, _ = await _run_and_config(tmp_path)
+    await store.bind_session_refs(run_id, [("delivery", "original-session", 7)])
+    saver = NativeCheckpointStore(path)
+    task = {"task_id": "terminal-task", "activation_id": "terminal", "node_id": "terminal"}
+    state = {
+        "schema_version": 4,
+        "workflow_name": "deep_research",
+        "workflow_version": "v6",
+        "thread_id": run_id,
+        "run_id": run_id,
+        "session_id": "original-session",
+        "values": {},
+    }
+    genesis = await saver.ensure_genesis(
+        fence, run_id, state, [task], operation_id="v6-delivery-genesis"
+    )
+    await saver.commit_task_result(
+        fence,
+        genesis["checkpoint_id"],
+        task,
+        1,
+        {"values": {"terminal": True}},
+        operation_id="v6-delivery-task",
+    )
+    manifest_ref = "sha256:" + "a" * 64
+    await saver.commit_frontier(
+        fence,
+        genesis["checkpoint_id"],
+        state={**state, "values": {"terminal": True}},
+        frontier=[],
+        step=1,
+        operation_id="v6-delivery-frontier",
+        intents=[
+            {
+                "intent_id": "v6-final-assistant",
+                "event_key": "answer:final",
+                "event_type": "workflow.final_assistant",
+                "content_ref": "sha256:" + "b" * 64,
+                "payload": {
+                    "schema_version": 1,
+                    "manifest_ref": manifest_ref,
+                    "content_ref": "sha256:" + "b" * 64,
+                },
+                "delivery_specs": [
+                    {
+                        "delivery_spec_id": "session-spec",
+                        "channel": "session_message",
+                        "target_role": "original_session",
+                        "required_durable": True,
+                    },
+                    {
+                        "delivery_spec_id": "ws-spec",
+                        "channel": "websocket",
+                        "target_role": "current_epoch",
+                        "required_durable": False,
+                    },
+                ],
+            }
+        ],
+    )
+
+    db = sqlite3.connect(path)
+    rows = db.execute(
+        "SELECT channel,target_id,intent_id,manifest_ref,required_durable "
+        "FROM workflow_deliveries ORDER BY channel"
+    ).fetchall()
+    event_payload = db.execute(
+        "SELECT payload_json FROM workflow_events WHERE event_key='answer:final'"
+    ).fetchone()[0]
+    db.close()
+    assert rows == [
+        ("session_message", "original-session", "v6-final-assistant", manifest_ref, 1),
+        ("websocket", "original-session", "v6-final-assistant", manifest_ref, 0),
+    ]
+    assert "140828" not in event_payload
+    assert "content_ref" in event_payload
 
 
 @pytest.mark.asyncio

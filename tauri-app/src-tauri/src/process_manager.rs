@@ -145,6 +145,21 @@ fn check_port_free(port: u16) -> Result<(), String> {
     }
 }
 
+/// Select the credential injected into the backend process.
+///
+/// Relay login owns the rotating `tsk_*` device-key slot.  The legacy
+/// cloud slot may contain an older key that was valid before the most recent
+/// rotation, so it is fallback-only.  Keeping this selection pure makes the
+/// precedence independently testable without touching the real keychain.
+fn select_backend_api_key(
+    relay_device_key: Option<String>,
+    legacy_cloud_key: Option<String>,
+) -> Option<String> {
+    relay_device_key
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| legacy_cloud_key.filter(|value| !value.trim().is_empty()))
+}
+
 fn spawn_once(launch: &BackendLaunch) -> Result<(Child, String), String> {
     // P3-S8: port precheck. Have to do it here (not only in start_backend)
     // because the supervisor respawn path also goes through spawn_once —
@@ -204,21 +219,30 @@ fn spawn_once(launch: &BackendLaunch) -> Result<(Child, String), String> {
         cmd.creation_flags(0x08000000);
     }
 
-    // Read key from keychain. Errors are logged to stderr but don't
-    // block startup — if the keychain itself is busted, local-only is
-    // still useful.
-    match crate::secrets::get_cloud_api_key() {
-        Ok(Some(key)) if !key.is_empty() => {
-            cmd.env("DESKPET_CLOUD_API_KEY", key);
+    // Relay device keys rotate. Prefer that authoritative slot so every
+    // long-lived Python component is constructed with the current key at
+    // startup; the legacy cloud slot remains a fallback for manual installs.
+    // Never log either credential value.
+    let relay_key = match crate::secrets::get_relay_device_key() {
+        Ok(value) => value,
+        Err(e) => {
+            eprintln!(
+                "[process_manager] warning: could not read relay device key from keychain: {e}"
+            );
+            None
         }
-        Ok(_) => {
-            // Not configured — backend will skip cloud provider init.
-        }
+    };
+    let legacy_key = match crate::secrets::get_cloud_api_key() {
+        Ok(value) => value,
         Err(e) => {
             eprintln!(
                 "[process_manager] warning: could not read cloud API key from keychain: {e}"
             );
+            None
         }
+    };
+    if let Some(key) = select_backend_api_key(relay_key, legacy_key) {
+        cmd.env("DESKPET_CLOUD_API_KEY", key);
     }
 
     let mut child = cmd
@@ -574,5 +598,22 @@ mod tests {
         assert_eq!(bp.startup_error.lock().unwrap().as_deref(), Some("boom"));
         bp.set_startup_error(None);
         assert!(bp.startup_error.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn backend_api_key_prefers_relay_device_slot() {
+        assert_eq!(
+            select_backend_api_key(Some("relay-current".into()), Some("legacy-stale".into())),
+            Some("relay-current".into())
+        );
+    }
+
+    #[test]
+    fn backend_api_key_falls_back_to_nonempty_legacy_slot() {
+        assert_eq!(
+            select_backend_api_key(Some("  ".into()), Some("legacy-current".into())),
+            Some("legacy-current".into())
+        );
+        assert_eq!(select_backend_api_key(None, None), None);
     }
 }

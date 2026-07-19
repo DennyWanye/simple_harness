@@ -1,0 +1,24 @@
+DeskPet Playwright / Chromium Headless Shell Third-Party Notice
+================================================================
+
+This product includes Microsoft Playwright for Python 1.61.0.
+Copyright Microsoft Corporation. Licensed under the Apache License 2.0.
+The complete upstream license is included with the packaged
+playwright-1.61.0 distribution metadata.
+
+This product also redistributes Chromium Headless Shell
+149.0.7827.55 (Playwright revision 1228). Chromium is licensed under
+the BSD 3-Clause license and includes third-party components under their
+respective licenses. The complete LICENSE.headless_shell and ABOUT files
+distributed by the pinned Chromium archive are retained verbatim inside:
+
+  playwright-browsers/chromium_headless_shell-1228/
+    chrome-headless-shell-win64/
+
+Upstream sources and license information:
+  https://playwright.dev/
+  https://chromium.googlesource.com/chromium/src/
+  https://www.chromium.org/Home/chromium-security/ossfuzz/
+
+DeskPet's build accepts only the exact archive and executable digests recorded
+in backend/deskpet/playwright_bundle.py. No browser is downloaded at runtime.

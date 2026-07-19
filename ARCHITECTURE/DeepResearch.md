@@ -1,9 +1,64 @@
 # DeepResearch 模块架构与状态
 
-> **最后更新**: 2026-06-21
-> **用途**: deep research（深度调研）模块的现状、能力清单、已知问题、调查盲区、演进建议。
+> **最后更新**：2026-07-19
+
+## 2026-07-18 当前生产事实（v6）
+
+- 新建调研默认进入 immutable `deep_research/v6`；v1-v5 仅用于历史读取、在途恢复和兼容 continuation，不再依赖开发环境覆盖切换版本。
+- Q1 官方精确事实链路已经端到端可执行：语义规格 -> 国家统计局年度公报通用归档发现
+  -> 同权威页面抓取 -> ref-only 证据账本 -> 标量事实提取 -> 完整性硬门 -> canonical
+  terminal commit -> session/websocket/artifact exactly-once 投递。
+- 实测问题“2024年中国总人口和出生人口分别是多少？优先国家统计局”返回年末人口
+  `140828万人`、全年出生人口 `954万人`，引用可访问的
+  `https://www.stats.gov.cn/sj/zxfb/202502/t20250228_1958817.html`。
+- 适配器不硬编码答案或文章 URL：只配置官方年度公报归档入口，根据冻结语义时间范围
+  选择带年份的同权威链接；归档发现与目标抓取共享同一有界 fetch 预算。
+- 各阶段耗时同时写入 `metrics.jsonl` 和 trace child spans。最终 r9 总耗时 5.08s：
+  归档发现 2.78s、目标页抓取约 1.10s、事实提取 153ms、评估/渲染 354ms；现有
+  120s parent / 20s page 上限没有被接近，本 slice 不支持继续缩短。
+- 重启语义已真机验证：一条用户消息、一条 `final_assistant`、一个 ArtifactCard、一个
+  completed run，启动恢复没有重投递；历史恢复不再显示原始 artifact JSON。引用展示
+  使用已成功抓取的 canonical/requested URL，最终地址的权威校验仍保留。
+- 证据位于 `plans/2026-07-17-deepresearch-answer-contract-stability/evidence/`；门禁为
+  v6/official/fetch 91 passed、v5/recovery/delivery 281 passed、前端消息/artifact
+  30 passed，TypeScript/Vite relay build 通过。
+- 完整 production graph 已覆盖 official exact fact、comparison、Top-N、policy 与 open research；所有 lane 统一写 fact-batch，主 graph 唯一负责准入、评估和三态终态（`completed` / `partial` / `insufficient_evidence`）。
+- continuation head、snapshot closure、control journal、terminal manifest 和 canonical delivery 均进入 durable store；`generate_now` 双击只创建一个 command，并完整经历 accepted → observed → settled → consumed。
+- 真实 UI 三次 2024 exact 均返回本地化的 `140828 万人` / `954 万人`；2019 双指标只准入出生人口 `1465 万人`，以 `partial` 和 `continue_research` 诚实交付。completed、partial、insufficient/generate-now 和重启/history 均已通过。
+- 健康网络三次端到端 p50 `17.099s`、p95 `18.942s`、max `19.147s`；单页 p50 `10.977s`、p95 `11.405s`、max `11.453s`，0 timeout/cancel/预算违规。
+- 用户指定的 `zai-org/GLM-5.2` 在 Relay 动态目录中的实际别名为 `sf-glm-5.2`；基础模型与 problem-pipeline 预分析模型均已按该可调用 ID 切换，后端默认值、已有 userdata 与前端首选值保持一致。Relay 当前未把上下文元数据接入运行时 resolver，因此 `model_info.BUILTIN` 暂时同时钉住 alias/canonical 为名义 1M、有效 95%、750K compaction、384K recall sweet spot；provider-advertised effective limit 仍是后续正确事实源。模型/上下文回归 `58 passed`；源码 Tauri 重启和真实 SC-STATS-2 run `81090268…` 均解析为 1M，Context usage 显示 950K/750K/384K，GLM 请求全 HTTP 200，durable final/artifact/delivery 一次完成。配置/桥接此前回归 `27 passed`、problem-pipeline 配置回归 `6 passed`，证据见 `evidence/glm52-live-20260719/`。
+- 最终 release identity `manifest=8e4a7ea4… / implementation=32f65877…` 已分别完成真实 UI 三态：completed `e58b0281…`、partial `2ed15e00…`、重启后 generate-now insufficient `eeab90ba…`；同 userdata 重启恢复历史且 `recovered_deliveries=0`。
+- 最终门禁：后端 `815 passed`；前端 `822/822 tests passed`；TypeScript、Vite production build、Rust 73 tests 和 cargo check 通过。证据见 [`execution-results.md`](../plans/2026-07-17-deepresearch-answer-contract-stability/execution-results.md)。
+- 发布收尾边界：功能与验收已通过；release identity fixture 已纳入受控 Git 提交，巨大 dirty worktree 中的无关变更未混入。
+
+## 历史生产事实（v5，2026-07-17）
+
+- 新调研默认进入 immutable `deep_research/v5`；v1-v4 只用于历史读取和兼容恢复。
+- v5 以版本化 `ResearchBrief`、维度覆盖、证据准入、readiness、报告质量审计和三态交付（完整、部分、证据不足）为事实源。建模 LLM 输出不合约时会记录降级并使用确定性 brief，不会让整个调研失败。
+- Search Gateway 搜索与抓取预算按研究维度确定性轮询，避免结果列表前部维度挤占固定 passage 预算；CAPTCHA、登录墙、无正文和低相关页面不能进入 admitted evidence。
+- 查询生成只使用聚焦目标和维度词并有 240 字符硬上限；中文国家统计局约束可进入 official-statistics 路径。产品比较先做双主体广域发现，再执行有界第一方补证，避免组合 `site:` 查询只命中一侧。
+- 报告链在生成式 synthesis/repair 不可用时可从已接纳 passage 生成确定性抽取式交付；`partial` 只在存在实际可用证据时发布，非终态修复异常不会抹掉已有结果。
+- `continue_research` 会创建带 parent/checkpoint lineage 的新 run，只补未覆盖维度；重启后历史 run、终态与继续补研动作从 durable store 恢复。
+- `generate_now` 的 UI active control 不会再被无 control 字段的中间事件覆盖；服务端可从空 action payload 解析当前 head checkpoint。长 Search/Fetch effect 每 0.5 秒观察 durable control，到 30 秒 settle fence 后以业务 `cancelled` stage result 收敛，不把用户控制性取消误投影为节点永久失败。
+- Win11 x64 已完成安装版真实 UI 验证：教育政策问题走完 v5 搜索、抓取、评分、缺口评估与诚实 `insufficient_evidence` 交付，继续补研与重启历史恢复通过。该次真实 run 没有足够 admitted evidence，因此不宣称生成了合格完整报告。
+- 修复前五类 Win11 矩阵曾出现 101 documents / 0 admitted passage，并暴露 AI profile、弱调研路由、raw URL 投影和 elapsed 翻倍问题。修复后真实 UI 复验：AI Top 10 `9670a357...` 为质量 75 的 `partial`（5 个有效来源）；国家统计局人口题 `51781063...` 为质量 80 的 `completed`（11 个有效、5 个第一方来源、4/4 核心覆盖）；产品比较 `2b79cd88...` 为质量 60 的诚实 `partial`（9 个有效、1 个第一方来源）。三条 DB/UI elapsed 误差均小于 2 秒，默认卡未显示 raw query/URL。
+- 立即生成真实 UI run `6ea6a3a4...` 在点击后约 0.227 秒 observed，settle/consume 后形成唯一 `insufficient_evidence` 终态；全部节点 succeeded、硬失败 0。单次控制主链 PASS，重复点击/重连/强杀恢复分支仍 PENDING。
+- 当前结论是“核心检索/建模/交付修复与单次立即生成主链已通过代表性真实 UI 复验”；Gate F 总体仍为 PARTIAL，updater、卸载、立即生成恢复分支和完整固定场景审计尚未全部完成。
+- Playwright 1.61.0 / Chromium Headless Shell r1228 随冻结后端离线封装；本次 scope 不包含 Win10、Hyper-V、虚拟机或 Windows Sandbox。
+- v5 每个 durable workflow 节点现在统一记录 `started_at`、`ended_at`、`duration_ms`、`attempt` 与终态；`workflow.db` 的 `workflow_node_attempts` / `trace_spans` 是可跨重启查询的耗时事实源，`deepresearch_stage_timing` 同步镜像到结构化日志和 `metrics.jsonl`。成功、等待、取消、可重试失败和永久失败均覆盖，旧的 v5 `deepresearch_v2_stage.duration_ms=0` 误导性镜像已停止生成。
+- fetch 节点进一步记录 `deepresearch_fetch_attempt_timing`，覆盖 robots、Scrapling、HTTPX、正文抽取、Playwright、Edge CDP 与 Jina 的实际耗时、状态和错误码。事件按 `run_id` 关联，不保存 query、URL、正文、标题或 prompt。当前这些 fetch 子阶段只进入可轮转的 `metrics.jsonl`，尚不是 30 天 durable trace child spans；30 天精确事实源目前只覆盖 workflow 节点级 timing。
+
+> **用途**: deep research（深度调研）模块的历史实现盘点；当前生产事实只在本页保留摘要。
 > 全局项目状态见 [`PROJECT_STATUS.md`](./PROJECT_STATUS.md)；本文件是 deep research 这一模块的深入架构档。
-> **诚实声明**：本档结论基于**静态读码核实**，除特别标注外**未经运行时实测**（见 §6 盲区）。
+> **历史说明**：下方 v5、v4 与 2026-06-21 legacy pipeline 内容只保留演进记录，不应用于判断当前状态；当前事实以本页顶部 v6 摘要和 [`SEARCH_GATEWAY_DEEPRESEARCH.md`](./SEARCH_GATEWAY_DEEPRESEARCH.md) 为准。
+
+## 历史生产摘要（v4，2026-07-15）
+
+- 新调研默认进入 immutable `deep_research/v4`；旧版本仅用于历史读取和在途恢复。
+- 宽主题技术情报按稳定 taxonomy 搜索和去重，不再接受泛化实体或页面元数据拼盘。
+- 报告只发布 3～8 个过门发现，不为凑数放入弱候选；固定提供一页式执行摘要、组合建议、分主题 Top 技术、逐项成熟度/风险/日期/引用和方法局限。
+- Session 默认只显示一张聚合进度卡；展开后 13 个阶段逐步呈现“做了什么、得到什么、为何降级/跳过”，失败时不伪造报告并提供幂等重试。
+- 最终同进程连续真机 run `43e851a0...` 与 `59975eb1...` 均通过工作流与当前 17 项专业报告质量门；旧 run `66720bcf...` 及建议口径不一致的早期改进样本已明确保留为失败基线。
 
 ---
 

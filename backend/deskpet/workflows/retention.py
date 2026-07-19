@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-import time
+import hashlib
+import inspect
+import json
 import math
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, Sequence
+from typing import Any, Awaitable, Callable, Protocol, Sequence
 
 import aiosqlite
 
@@ -19,6 +22,11 @@ CHECKPOINT_STAGE = "checkpoint_reachability"
 BLOB_REF_STAGE = "blob_refs"
 ORPHAN_STAGE = "orphan_grace"
 RESERVATION_STAGE = "expired_target_reservations"
+CONTROL_STAGE = "expired_research_controls"
+REACHABILITY_STAGE = "research_lineage_reachability"
+LINEAGE_STAGE = "research_lineage_and_pins"
+SNAPSHOT_STAGE = "research_snapshot_refs"
+RUN_STAGE = "unreachable_research_runs"
 CLEANUP_STAGE_ORDER = (
     DELIVERY_STAGE,
     TOMBSTONE_STAGE,
@@ -49,6 +57,22 @@ class ClockPort(Protocol):
     """Wall-clock port used for every retention boundary."""
 
     def now(self) -> float: ...
+
+
+class ResearchReachabilityView(Protocol):
+    protected_run_ids: frozenset[str]
+    protected_snapshot_hashes: frozenset[str]
+    protected_pin_ids: frozenset[str]
+
+
+class ResearchRetentionRepository(Protocol):
+    async def expired_control_candidates(
+        self, *, now: float | None = None
+    ) -> dict[str, tuple[str, ...]]: ...
+
+    async def lineage_reachability(
+        self, *, now: float | None = None
+    ) -> ResearchReachabilityView: ...
 
 
 class SystemClock:
@@ -170,6 +194,15 @@ class _CleanupPlan:
     dangling_ref_owners: tuple[tuple[str, str], ...]
 
 
+@dataclass(frozen=True, slots=True)
+class _ResearchCleanupPlan:
+    lineage_operation_ids: tuple[str, ...]
+    pin_ids: tuple[str, ...]
+    snapshot_hashes: tuple[str, ...]
+    snapshot_blob_refs: tuple[tuple[str, str], ...]
+    run_ids: tuple[str, ...]
+
+
 def _placeholders(values: Sequence[object]) -> str:
     return ",".join("?" for _ in values)
 
@@ -193,11 +226,28 @@ class WorkflowRetentionManager:
         *,
         policy: RetentionPolicy,
         clock: ClockPort,
+        research_repository: ResearchRetentionRepository | None = None,
+        fault_injector: Callable[[str], None | Awaitable[None]] | None = None,
     ) -> None:
         self.db_path = Path(db_path)
         self.blob_root = Path(blob_root)
         self.policy = policy
         self.clock = clock
+        if research_repository is None:
+            # Imported lazily so legacy workflow users do not acquire a new
+            # module-level dependency or initialization side effect.
+            from .store.research_repository import ResearchWorkflowRepository
+
+            research_repository = ResearchWorkflowRepository(self.db_path, clock=clock.now)
+        self.research_repository = research_repository
+        self._fault_injector = fault_injector
+
+    async def _fault(self, stage: str) -> None:
+        if self._fault_injector is None:
+            return
+        result = self._fault_injector(stage)
+        if inspect.isawaitable(result):
+            await result
 
     async def _connect(self) -> aiosqlite.Connection:
         db = await aiosqlite.connect(self.db_path)
@@ -213,15 +263,809 @@ class WorkflowRetentionManager:
         return await self._cleanup_at(now, dry_run=dry_run)
 
     async def _cleanup_at(self, now: float, *, dry_run: bool) -> RetentionReport:
-        plan = await self._build_plan(now)
+        if not await self._has_research_records():
+            plan = await self._build_plan(now)
+            stages = (
+                await self._cleanup_deliveries(plan, dry_run=dry_run),
+                await self._retain_tombstones(plan, dry_run=dry_run),
+                await self._cleanup_checkpoints(plan, dry_run=dry_run),
+                await self._cleanup_blob_refs(plan, dry_run=dry_run),
+                await self._cleanup_orphans(now, plan=plan, dry_run=dry_run),
+            )
+            return RetentionReport(dry_run=dry_run, observed_at=now, stages=stages)
+
+        # v6 continuation identity is a single-head connected component.  It
+        # must be collected as one unit; the legacy staged collector below is
+        # intentionally retained for v1-v5 historical recovery.
+        v6_components = await self._cleanup_v6_components(now, dry_run=dry_run)
+        control_candidates = await self.research_repository.expired_control_candidates(now=now)
+        control = await self._cleanup_research_controls(
+            control_candidates, dry_run=dry_run
+        )
+        reachability = await self.research_repository.lineage_reachability(now=now)
+        plan = await self._build_research_aware_plan(now, reachability)
+        research_plan = await self._build_research_cleanup_plan(now, plan, reachability)
+        reachability_stage = RetentionStageResult(
+            name=REACHABILITY_STAGE,
+            protected=tuple(
+                [
+                    *(f"run:{item}" for item in sorted(reachability.protected_run_ids)),
+                    *(f"snapshot:{item}" for item in sorted(reachability.protected_snapshot_hashes)),
+                    *(f"pin:{item}" for item in sorted(reachability.protected_pin_ids)),
+                ]
+            ),
+        )
         stages = (
+            control,
+            reachability_stage,
             await self._cleanup_deliveries(plan, dry_run=dry_run),
             await self._retain_tombstones(plan, dry_run=dry_run),
             await self._cleanup_checkpoints(plan, dry_run=dry_run),
-            await self._cleanup_blob_refs(plan, dry_run=dry_run),
-            await self._cleanup_orphans(now, plan=plan, dry_run=dry_run),
+            await self._cleanup_blob_refs(plan, dry_run=dry_run, delete_runs=False),
+            await self._cleanup_research_lineage(research_plan, dry_run=dry_run),
+            await self._cleanup_research_snapshots(research_plan, dry_run=dry_run),
+            self._merge_stage(
+                await self._cleanup_research_runs(research_plan, dry_run=dry_run),
+                v6_components,
+            ),
+            await self._cleanup_orphans(
+                now,
+                plan=plan,
+                dry_run=dry_run,
+                extra_removed_owners=tuple(
+                    ("research_snapshot", snapshot_hash)
+                    for snapshot_hash in research_plan.snapshot_hashes
+                ),
+            ),
         )
         return RetentionReport(dry_run=dry_run, observed_at=now, stages=stages)
+
+    @staticmethod
+    def _merge_stage(
+        legacy: RetentionStageResult, component: RetentionStageResult
+    ) -> RetentionStageResult:
+        return RetentionStageResult(
+            name=legacy.name,
+            candidates=tuple(sorted({*legacy.candidates, *component.candidates})),
+            applied=legacy.applied + component.applied,
+            protected=tuple(sorted({*legacy.protected, *component.protected})),
+            warnings=tuple(sorted({*legacy.warnings, *component.warnings})),
+        )
+
+    async def _cleanup_v6_components(
+        self, now: float, *, dry_run: bool
+    ) -> RetentionStageResult:
+        """Collect dead v6 continuation components in one SQLite transaction.
+
+        The single-head row is the durable edge.  Reachability is deliberately
+        undirected here: retaining either endpoint retains the complete chain.
+        Legacy v1-v5 lineage remains on the historical staged collector.
+        """
+
+        db = await self._connect()
+        deleted: list[str] = []
+        protected: list[str] = []
+        files: list[Path] = []
+        try:
+            if not dry_run:
+                await db.execute("BEGIN IMMEDIATE")
+            components = await self._v6_continuation_components(db)
+            for run_ids in components:
+                reasons = await self._v6_component_root_reasons(db, run_ids, now)
+                label = "+".join(sorted(reasons))
+                if reasons:
+                    protected.extend(f"{run_id}:{label}" for run_id in run_ids)
+                    continue
+                deleted.extend(run_ids)
+                if not dry_run:
+                    files.extend(await self._delete_v6_component(db, run_ids))
+            if not dry_run:
+                await db.commit()
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+        warnings: list[str] = []
+        if not dry_run:
+            for path in sorted(set(files)):
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError as exc:
+                    warnings.append(
+                        f"unlink-failed:{self._diagnostic_path(path)}:{type(exc).__name__}"
+                    )
+        return RetentionStageResult(
+            name=RUN_STAGE,
+            candidates=tuple(f"run:{item}" for item in sorted(deleted)),
+            applied=len(deleted) if not dry_run else 0,
+            protected=tuple(sorted(protected)),
+            warnings=tuple(warnings),
+        )
+
+    @staticmethod
+    async def _v6_continuation_components(
+        db: aiosqlite.Connection,
+    ) -> tuple[tuple[str, ...], ...]:
+        rows = await (
+            await db.execute(
+                """SELECT parent_run_id,child_run_id
+                FROM workflow_research_continuation_heads
+                ORDER BY parent_run_id,child_run_id"""
+            )
+        ).fetchall()
+        adjacency: dict[str, set[str]] = {}
+        for row in rows:
+            parent = str(row["parent_run_id"])
+            child = str(row["child_run_id"])
+            adjacency.setdefault(parent, set()).add(child)
+            adjacency.setdefault(child, set()).add(parent)
+        result: list[tuple[str, ...]] = []
+        unseen = set(adjacency)
+        while unseen:
+            start = min(unseen)
+            stack = [start]
+            component: set[str] = set()
+            while stack:
+                current = stack.pop()
+                if current in component:
+                    continue
+                component.add(current)
+                stack.extend(adjacency.get(current, ()))
+            unseen.difference_update(component)
+            result.append(tuple(sorted(component)))
+        return tuple(result)
+
+    async def _v6_component_root_reasons(
+        self,
+        db: aiosqlite.Connection,
+        run_ids: tuple[str, ...],
+        now: float,
+    ) -> set[str]:
+        """Return live or fail-closed reasons which protect a component."""
+
+        reasons: set[str] = set()
+        placeholders = _placeholders(run_ids)
+        runs = await (
+            await db.execute(
+                f"""SELECT run_id,workflow_name,workflow_version,status,ended_at
+                FROM workflow_runs WHERE run_id IN ({placeholders})""",
+                run_ids,
+            )
+        ).fetchall()
+        if len(runs) != len(run_ids):
+            return {"corrupt_component"}
+        terminal_cutoff = now - self.policy.terminal_seconds
+        for row in runs:
+            if (
+                str(row["workflow_name"]) != "deep_research"
+                or str(row["workflow_version"]) != "v6"
+            ):
+                reasons.add("identity_mismatch")
+            status = str(row["status"])
+            if status not in {item.value for item in TERMINAL_RUN_STATUSES}:
+                reasons.add("nonterminal")
+            elif row["ended_at"] is None:
+                reasons.add("corrupt_terminal")
+            elif float(row["ended_at"]) > terminal_cutoff:
+                reasons.add("terminal_window")
+
+        active_control = await (
+            await db.execute(
+                f"""SELECT 1 FROM workflow_run_control_commands
+                WHERE run_id IN ({placeholders})
+                  AND status IN ('open','accepted','observed','settled') LIMIT 1""",
+                run_ids,
+            )
+        ).fetchone()
+        if active_control is not None:
+            reasons.add("open_control")
+
+        active_delivery = await (
+            await db.execute(
+                f"""SELECT 1 FROM workflow_deliveries
+                WHERE run_id IN ({placeholders}) AND required_durable=1
+                  AND status NOT IN ('delivered','discarded')
+                  AND NOT(status='failed' AND next_attempt_at IS NULL AND attempts>=5)
+                LIMIT 1""",
+                run_ids,
+            )
+        ).fetchone()
+        if active_delivery is not None:
+            reasons.add("required_delivery")
+
+        active_pin = await (
+            await db.execute(
+                f"""SELECT 1 FROM workflow_research_snapshot_pins
+                WHERE run_id IN ({placeholders})
+                  AND (expires_at IS NULL OR expires_at>?) LIMIT 1""",
+                (*run_ids, now),
+            )
+        ).fetchone()
+        if active_pin is not None:
+            reasons.add("snapshot_pin")
+
+        if not await self._v6_component_closure_is_valid(db, run_ids):
+            reasons.add("closure_invalid")
+        if await self._v6_component_has_external_owner(db, run_ids):
+            reasons.add("external_blob_owner")
+        return reasons
+
+    async def _v6_component_closure_is_valid(
+        self, db: aiosqlite.Connection, run_ids: tuple[str, ...]
+    ) -> bool:
+        placeholders = _placeholders(run_ids)
+        heads = await (
+            await db.execute(
+                f"""SELECT * FROM workflow_research_continuation_heads
+                WHERE parent_run_id IN ({placeholders}) OR child_run_id IN ({placeholders})
+                ORDER BY parent_run_id""",
+                (*run_ids, *run_ids),
+            )
+        ).fetchall()
+        for head in heads:
+            if (
+                str(head["parent_run_id"]) not in run_ids
+                or str(head["child_run_id"]) not in run_ids
+            ):
+                return False
+            spec = await (
+                await db.execute(
+                    "SELECT sha256,relative_path FROM workflow_blobs WHERE sha256=?",
+                    (head["spec_blob_digest"],),
+                )
+            ).fetchone()
+            if spec is None:
+                return False
+            spec_path = self._safe_blob_path(str(spec["relative_path"]))
+            if spec_path is None or not spec_path.is_file():
+                return False
+            try:
+                if hashlib.sha256(spec_path.read_bytes()).hexdigest() != str(spec["sha256"]):
+                    return False
+            except OSError:
+                return False
+            lineage = await (
+                await db.execute(
+                    """SELECT parent_run_id,parent_operation_id,snapshot_hash
+                    FROM workflow_research_lineage
+                    WHERE operation_id=? AND run_id=?""",
+                    (head["child_operation_id"], head["child_run_id"]),
+                )
+            ).fetchone()
+            if (
+                lineage is None
+                or str(lineage["parent_run_id"]) != str(head["parent_run_id"])
+                or str(lineage["parent_operation_id"]) != str(head["parent_operation_id"])
+                or str(lineage["snapshot_hash"]) != str(head["source_snapshot_hash"])
+            ):
+                return False
+            snapshot = await (
+                await db.execute(
+                    """SELECT run_id,manifest_ref FROM workflow_research_snapshots
+                    WHERE snapshot_hash=?""",
+                    (head["source_snapshot_hash"],),
+                )
+            ).fetchone()
+            if snapshot is None or str(snapshot["run_id"]) != str(head["parent_run_id"]):
+                return False
+            refs = await (
+                await db.execute(
+                    """SELECT b.sha256,b.relative_path FROM workflow_blob_refs r
+                    JOIN workflow_blobs b ON b.sha256=r.sha256
+                    WHERE r.owner_kind='research_snapshot' AND r.owner_id=?
+                    ORDER BY b.sha256""",
+                    (head["source_snapshot_hash"],),
+                )
+            ).fetchall()
+            if not refs:
+                return False
+            manifest_ref = str(snapshot["manifest_ref"])
+            manifest_digest = (
+                manifest_ref[7:] if manifest_ref.startswith("sha256:") else manifest_ref
+            )
+            if manifest_digest not in {str(row["sha256"]) for row in refs}:
+                return False
+            manifest_row = next(
+                (row for row in refs if str(row["sha256"]) == manifest_digest), None
+            )
+            if manifest_row is None:
+                return False
+            try:
+                snapshot_value = json.loads(
+                    self._safe_blob_path(str(manifest_row["relative_path"])).read_text(
+                        encoding="utf-8"
+                    )
+                )
+                from .store.research_repository import ResearchWorkflowRepository
+
+                ResearchWorkflowRepository._validate_v6_snapshot(
+                    snapshot_value, parent_run_id=str(head["parent_run_id"])
+                )
+                if snapshot_value.get("snapshot_hash") != str(head["source_snapshot_hash"]):
+                    return False
+                declared_closure = {
+                    str(ref)[7:] for ref in snapshot_value.get("closure_refs", ())
+                }
+                if not declared_closure <= {str(row["sha256"]) for row in refs}:
+                    return False
+            except Exception:
+                return False
+            for row in refs:
+                path = self._safe_blob_path(str(row["relative_path"]))
+                if path is None or not path.is_file():
+                    return False
+                try:
+                    if hashlib.sha256(path.read_bytes()).hexdigest() != str(row["sha256"]):
+                        return False
+                except OSError:
+                    return False
+
+        # Every component checkpoint must remain dereferenceable while it is
+        # retained.  Missing owner/checkpoint edges are treated as corruption.
+        missing_checkpoint = await (
+            await db.execute(
+                f"""SELECT 1 FROM workflow_checkpoint_owners owner
+                LEFT JOIN workflow_checkpoints checkpoint
+                  ON checkpoint.thread_id=owner.thread_id
+                 AND checkpoint.checkpoint_ns=owner.checkpoint_ns
+                 AND checkpoint.checkpoint_id=owner.checkpoint_id
+                WHERE owner.run_id IN ({placeholders})
+                  AND checkpoint.checkpoint_id IS NULL LIMIT 1""",
+                run_ids,
+            )
+        ).fetchone()
+        return missing_checkpoint is None
+
+    async def _v6_component_owner_pairs(
+        self, db: aiosqlite.Connection, run_ids: tuple[str, ...]
+    ) -> set[tuple[str, str]]:
+        placeholders = _placeholders(run_ids)
+        pairs: set[tuple[str, str]] = set()
+        for kind in ("run", "workflow_run", "run_staging"):
+            pairs.update((kind, run_id) for run_id in run_ids)
+        table_kinds = (
+            ("workflow_events", "event_id", ("event", "workflow_event")),
+            ("workflow_deliveries", "delivery_id", ("delivery", "workflow_delivery")),
+            ("workflow_nodes", "node_execution_id", ("node", "workflow_node")),
+            ("workflow_effects", "effect_id", ("effect", "workflow_effect")),
+            ("trace_runs", "trace_id", ("trace", "trace_run")),
+            ("evaluations", "evaluation_id", ("evaluation",)),
+        )
+        for table, column, kinds in table_kinds:
+            values = await _column_values(
+                db,
+                f"SELECT {column} FROM {table} WHERE run_id IN ({placeholders})",
+                run_ids,
+            )
+            for kind in kinds:
+                pairs.update((kind, value) for value in values)
+        trace_ids = tuple(owner_id for kind, owner_id in pairs if kind == "trace")
+        if trace_ids:
+            span_ids = await _column_values(
+                db,
+                f"SELECT span_id FROM trace_spans WHERE trace_id IN ({_placeholders(trace_ids)})",
+                trace_ids,
+            )
+            for kind in ("span", "trace_span"):
+                pairs.update((kind, value) for value in span_ids)
+        checkpoints = await (
+            await db.execute(
+                f"""SELECT thread_id,checkpoint_ns,checkpoint_id
+                FROM workflow_checkpoint_owners WHERE run_id IN ({placeholders})""",
+                run_ids,
+            )
+        ).fetchall()
+        for row in checkpoints:
+            checkpoint_id = str(row["checkpoint_id"])
+            diagnostic = f"{row['thread_id']}:{row['checkpoint_ns']}:{checkpoint_id}"
+            pairs.update(
+                {
+                    ("checkpoint", checkpoint_id),
+                    ("workflow_checkpoint", checkpoint_id),
+                    ("checkpoint", diagnostic),
+                    ("workflow_checkpoint", diagnostic),
+                }
+            )
+        snapshots = await _column_values(
+            db,
+            f"SELECT snapshot_hash FROM workflow_research_snapshots WHERE run_id IN ({placeholders})",
+            run_ids,
+        )
+        pairs.update(("research_snapshot", item) for item in snapshots)
+        pending = await (
+            await db.execute(
+                "SELECT owner_id FROM workflow_blob_refs WHERE owner_kind='pending_task'"
+            )
+        ).fetchall()
+        pairs.update(
+            ("pending_task", str(row["owner_id"]))
+            for row in pending
+            if str(row["owner_id"]).split(":", 1)[0] in run_ids
+        )
+        return pairs
+
+    async def _v6_component_has_external_owner(
+        self, db: aiosqlite.Connection, run_ids: tuple[str, ...]
+    ) -> bool:
+        owner_pairs = await self._v6_component_owner_pairs(db, run_ids)
+        if not owner_pairs:
+            return False
+        owned_digests: set[str] = set()
+        for kind, owner_id in owner_pairs:
+            if kind not in {
+                "checkpoint",
+                "workflow_checkpoint",
+                "delivery",
+                "workflow_delivery",
+            }:
+                continue
+            rows = await (
+                await db.execute(
+                    "SELECT sha256 FROM workflow_blob_refs WHERE owner_kind=? AND owner_id=?",
+                    (kind, owner_id),
+                )
+            ).fetchall()
+            owned_digests.update(str(row[0]) for row in rows)
+        for digest in owned_digests:
+            rows = await (
+                await db.execute(
+                    "SELECT owner_kind,owner_id FROM workflow_blob_refs WHERE sha256=?",
+                    (digest,),
+                )
+            ).fetchall()
+            if any((str(row[0]), str(row[1])) not in owner_pairs for row in rows):
+                return True
+
+        # A checkpoint itself may be shared even when its payload has no
+        # registered blob-ref row.
+        placeholders = _placeholders(run_ids)
+        shared_checkpoint = await (
+            await db.execute(
+                f"""SELECT 1 FROM workflow_checkpoint_owners own
+                JOIN workflow_checkpoint_owners external
+                  ON external.thread_id=own.thread_id
+                 AND external.checkpoint_ns=own.checkpoint_ns
+                 AND external.checkpoint_id=own.checkpoint_id
+                WHERE own.run_id IN ({placeholders})
+                  AND external.run_id NOT IN ({placeholders}) LIMIT 1""",
+                (*run_ids, *run_ids),
+            )
+        ).fetchone()
+        return shared_checkpoint is not None
+
+    async def _delete_v6_component(
+        self, db: aiosqlite.Connection, run_ids: tuple[str, ...]
+    ) -> tuple[Path, ...]:
+        """Delete one already-revalidated component in the contractual order."""
+
+        placeholders = _placeholders(run_ids)
+        checkpoint_rows = await (
+            await db.execute(
+                f"""SELECT thread_id,checkpoint_ns,checkpoint_id
+                FROM workflow_checkpoint_owners WHERE run_id IN ({placeholders})""",
+                run_ids,
+            )
+        ).fetchall()
+        effect_ids = await _column_values(
+            db,
+            f"SELECT effect_id FROM workflow_effects WHERE run_id IN ({placeholders})",
+            run_ids,
+        )
+        node_ids = await _column_values(
+            db,
+            f"SELECT node_execution_id FROM workflow_nodes WHERE run_id IN ({placeholders})",
+            run_ids,
+        )
+        event_ids = await _column_values(
+            db,
+            f"SELECT event_id FROM workflow_events WHERE run_id IN ({placeholders})",
+            run_ids,
+        )
+        delivery_ids = await _column_values(
+            db,
+            f"SELECT delivery_id FROM workflow_deliveries WHERE run_id IN ({placeholders})",
+            run_ids,
+        )
+        trace_ids = await _column_values(
+            db,
+            f"SELECT trace_id FROM trace_runs WHERE run_id IN ({placeholders})",
+            run_ids,
+        )
+        evaluation_ids = await _column_values(
+            db,
+            f"SELECT evaluation_id FROM evaluations WHERE run_id IN ({placeholders})",
+            run_ids,
+        )
+        snapshots = await _column_values(
+            db,
+            f"SELECT snapshot_hash FROM workflow_research_snapshots WHERE run_id IN ({placeholders})",
+            run_ids,
+        )
+        owner_pairs = await self._v6_component_owner_pairs(db, run_ids)
+        candidate_digests: set[str] = set()
+        for kind, owner_id in owner_pairs:
+            rows = await (
+                await db.execute(
+                    "SELECT sha256 FROM workflow_blob_refs WHERE owner_kind=? AND owner_id=?",
+                    (kind, owner_id),
+                )
+            ).fetchall()
+            candidate_digests.update(str(row[0]) for row in rows)
+        head_rows = await (
+            await db.execute(
+                f"""SELECT spec_blob_digest FROM workflow_research_continuation_heads
+                WHERE parent_run_id IN ({placeholders}) OR child_run_id IN ({placeholders})""",
+                (*run_ids, *run_ids),
+            )
+        ).fetchall()
+        candidate_digests.update(str(row[0]) for row in head_rows)
+
+        # checkpoint/effect/pending/owner refs -> checkpoint/effect records
+        for row in checkpoint_rows:
+            params = (row["thread_id"], row["checkpoint_ns"], row["checkpoint_id"])
+            await db.execute(
+                """DELETE FROM workflow_checkpoint_effects
+                WHERE thread_id=? AND checkpoint_ns=? AND checkpoint_id=?""",
+                params,
+            )
+            await db.execute(
+                """DELETE FROM workflow_pending_writes
+                WHERE thread_id=? AND checkpoint_ns=? AND base_checkpoint_id=?""",
+                params,
+            )
+        await db.execute(
+            f"DELETE FROM workflow_checkpoint_owners WHERE run_id IN ({placeholders})",
+            run_ids,
+        )
+        for kind, owner_id in owner_pairs:
+            if kind in {"research_snapshot", "run_staging"}:
+                continue
+            await db.execute(
+                "DELETE FROM workflow_blob_refs WHERE owner_kind=? AND owner_id=?",
+                (kind, owner_id),
+            )
+        for row in checkpoint_rows:
+            params = (row["thread_id"], row["checkpoint_ns"], row["checkpoint_id"])
+            await db.execute(
+                """DELETE FROM workflow_checkpoints
+                WHERE thread_id=? AND checkpoint_ns=? AND checkpoint_id=?
+                  AND NOT EXISTS(
+                    SELECT 1 FROM workflow_checkpoint_owners owner
+                    WHERE owner.thread_id=workflow_checkpoints.thread_id
+                      AND owner.checkpoint_ns=workflow_checkpoints.checkpoint_ns
+                      AND owner.checkpoint_id=workflow_checkpoints.checkpoint_id
+                  )""",
+                params,
+            )
+        if effect_ids:
+            effect_placeholders = _placeholders(effect_ids)
+            await db.execute(
+                f"DELETE FROM workflow_checkpoint_effects WHERE effect_id IN ({effect_placeholders})",
+                effect_ids,
+            )
+            await db.execute(
+                f"DELETE FROM workflow_effect_attempt_heads WHERE canonical_effect_id IN ({effect_placeholders}) OR run_id IN ({placeholders})",
+                (*effect_ids, *run_ids),
+            )
+            await db.execute(
+                f"DELETE FROM workflow_effect_targets WHERE effect_id IN ({effect_placeholders})",
+                effect_ids,
+            )
+            await db.execute(
+                f"DELETE FROM workflow_research_resource_reservations WHERE effect_id IN ({effect_placeholders})",
+                effect_ids,
+            )
+            await db.execute(
+                f"DELETE FROM workflow_effect_budget_reservations WHERE effect_id IN ({effect_placeholders})",
+                effect_ids,
+            )
+        if node_ids:
+            await db.execute(
+                f"DELETE FROM workflow_node_effects WHERE node_execution_id IN ({_placeholders(node_ids)})",
+                node_ids,
+            )
+        await db.execute(
+            f"DELETE FROM workflow_effects WHERE run_id IN ({placeholders})", run_ids
+        )
+        await db.execute(
+            f"DELETE FROM workflow_nodes WHERE run_id IN ({placeholders})", run_ids
+        )
+        await self._fault("retention.v6.after_checkpoint_data")
+
+        # head -> pins -> descendant-to-root lineage
+        await db.execute(
+            f"""DELETE FROM workflow_research_continuation_heads
+            WHERE parent_run_id IN ({placeholders}) OR child_run_id IN ({placeholders})""",
+            (*run_ids, *run_ids),
+        )
+        await db.execute(
+            f"""DELETE FROM workflow_blob_refs
+            WHERE owner_kind='run_staging' AND owner_id IN ({placeholders})""",
+            run_ids,
+        )
+        await self._fault("retention.v6.after_heads")
+        await db.execute(
+            f"DELETE FROM workflow_research_snapshot_pins WHERE run_id IN ({placeholders})",
+            run_ids,
+        )
+        await self._fault("retention.v6.after_pins")
+        lineage_rows = await (
+            await db.execute(
+                f"""SELECT operation_id,parent_operation_id FROM workflow_research_lineage
+                WHERE run_id IN ({placeholders})""",
+                run_ids,
+            )
+        ).fetchall()
+        by_operation = {str(row["operation_id"]): row for row in lineage_rows}
+
+        def depth(operation_id: str) -> int:
+            current = operation_id
+            seen: set[str] = set()
+            value = 0
+            while current in by_operation and current not in seen:
+                seen.add(current)
+                parent = by_operation[current]["parent_operation_id"]
+                if parent is None:
+                    break
+                current = str(parent)
+                value += 1
+            return value
+
+        for operation_id in sorted(by_operation, key=lambda item: (-depth(item), item)):
+            await db.execute(
+                "DELETE FROM workflow_research_lineage WHERE operation_id=?",
+                (operation_id,),
+            )
+        await self._fault("retention.v6.after_lineage")
+
+        # component-wide start/audit operations, requests, and session refs
+        await db.execute(
+            f"DELETE FROM workflow_operations WHERE run_id IN ({placeholders})", run_ids
+        )
+        await self._fault("retention.v6.after_operations")
+        await db.execute(
+            f"DELETE FROM workflow_start_requests WHERE run_id IN ({placeholders})",
+            run_ids,
+        )
+        await self._fault("retention.v6.after_start_requests")
+        await db.execute(
+            f"DELETE FROM workflow_session_refs WHERE run_id IN ({placeholders})", run_ids
+        )
+        await self._fault("retention.v6.after_session_refs")
+
+        # Snapshots own the inherited closure.  Release it only after lineage.
+        if snapshots:
+            snapshot_placeholders = _placeholders(snapshots)
+            await db.execute(
+                f"""DELETE FROM workflow_blob_refs
+                WHERE owner_kind='research_snapshot'
+                  AND owner_id IN ({snapshot_placeholders})""",
+                snapshots,
+            )
+            await db.execute(
+                f"DELETE FROM workflow_research_snapshots WHERE snapshot_hash IN ({snapshot_placeholders})",
+                snapshots,
+            )
+        await self._fault("retention.v6.after_snapshots")
+
+        # Remove every remaining component-owned non-FK row before run rows.
+        if delivery_ids:
+            await db.execute(
+                f"DELETE FROM workflow_deliveries WHERE delivery_id IN ({_placeholders(delivery_ids)})",
+                delivery_ids,
+            )
+        if event_ids:
+            await db.execute(
+                f"DELETE FROM workflow_events WHERE event_id IN ({_placeholders(event_ids)})",
+                event_ids,
+            )
+        await db.execute(
+            f"DELETE FROM workflow_target_reservations WHERE run_id IN ({placeholders})",
+            run_ids,
+        )
+        await db.execute(
+            f"DELETE FROM workflow_receipt_ledger WHERE run_id IN ({placeholders})",
+            run_ids,
+        )
+        await db.execute(
+            f"DELETE FROM workflow_fork_requests WHERE source_run_id IN ({placeholders}) OR child_run_id IN ({placeholders})",
+            (*run_ids, *run_ids),
+        )
+        if evaluation_ids:
+            evaluation_placeholders = _placeholders(evaluation_ids)
+            await db.execute(
+                f"DELETE FROM eval_results WHERE evaluation_id IN ({evaluation_placeholders}) OR run_id IN ({placeholders})",
+                (*evaluation_ids, *run_ids),
+            )
+            await db.execute(
+                f"DELETE FROM evaluations WHERE evaluation_id IN ({evaluation_placeholders})",
+                evaluation_ids,
+            )
+        else:
+            await db.execute(
+                f"DELETE FROM eval_results WHERE run_id IN ({placeholders})", run_ids
+            )
+        if trace_ids:
+            await db.execute(
+                f"DELETE FROM trace_runs WHERE trace_id IN ({_placeholders(trace_ids)})",
+                trace_ids,
+            )
+        await db.execute(
+            f"DELETE FROM workflow_decisions WHERE run_id IN ({placeholders})", run_ids
+        )
+        await db.execute(
+            f"DELETE FROM workflow_run_control_commands WHERE run_id IN ({placeholders})",
+            run_ids,
+        )
+        await db.execute(
+            f"DELETE FROM workflow_research_deadlines WHERE run_id IN ({placeholders})",
+            run_ids,
+        )
+        await db.execute(
+            f"DELETE FROM workflow_research_resource_budgets WHERE run_id IN ({placeholders})",
+            run_ids,
+        )
+
+        paths: list[Path] = []
+        for digest in sorted(candidate_digests):
+            row = await (
+                await db.execute(
+                    "SELECT relative_path FROM workflow_blobs WHERE sha256=?",
+                    (digest,),
+                )
+            ).fetchone()
+            if row is None:
+                continue
+            cursor = await db.execute(
+                """DELETE FROM workflow_blobs WHERE sha256=?
+                  AND NOT EXISTS(SELECT 1 FROM workflow_blob_refs WHERE sha256=?)
+                  AND NOT EXISTS(
+                    SELECT 1 FROM workflow_research_continuation_heads
+                    WHERE spec_blob_digest=?
+                  )""",
+                (digest, digest, digest),
+            )
+            if cursor.rowcount:
+                path = self._safe_blob_path(str(row["relative_path"]))
+                if path is not None:
+                    paths.append(path)
+        await self._fault("retention.v6.after_blobs")
+
+        # Run rows are last, descendants before the root.
+        parent_rows = await (
+            await db.execute(
+                f"SELECT run_id,parent_run_id FROM workflow_runs WHERE run_id IN ({placeholders})",
+                run_ids,
+            )
+        ).fetchall()
+        parent_map = {
+            str(row["run_id"]): (
+                None if row["parent_run_id"] is None else str(row["parent_run_id"])
+            )
+            for row in parent_rows
+        }
+
+        def run_depth(run_id: str) -> int:
+            current = run_id
+            seen: set[str] = set()
+            value = 0
+            while parent_map.get(current) in parent_map and current not in seen:
+                seen.add(current)
+                current = str(parent_map[current])
+                value += 1
+            return value
+
+        ordered = sorted(run_ids, key=lambda item: (-run_depth(item), item))
+        for run_id in ordered[:-1]:
+            await db.execute("DELETE FROM workflow_runs WHERE run_id=?", (run_id,))
+        await self._fault("retention.v6.after_children")
+        if ordered:
+            await db.execute("DELETE FROM workflow_runs WHERE run_id=?", (ordered[-1],))
+        await self._fault("retention.v6.after_root")
+        return tuple(paths)
 
     async def reconcile_startup(self, *, dry_run: bool = False) -> RetentionReport:
         """Reconcile expired leases, then execute the normal ordered cleanup."""
@@ -235,7 +1079,9 @@ class WorkflowRetentionManager:
             stages=(reservation, *cleanup.stages),
         )
 
-    async def _build_plan(self, now: float) -> _CleanupPlan:
+    async def _build_plan(
+        self, now: float, *, extra_protected_run_ids: frozenset[str] = frozenset()
+    ) -> _CleanupPlan:
         terminal_cutoff = now - self.policy.terminal_seconds
         tombstone_cutoff = now - self.policy.evaluation_tombstone_seconds
         terminal_values = tuple(status.value for status in TERMINAL_RUN_STATUSES)
@@ -256,6 +1102,8 @@ class WorkflowRetentionManager:
             for row in rows:
                 run_id = str(row["run_id"])
                 reasons: list[str] = []
+                if run_id in extra_protected_run_ids:
+                    reasons.append("research_lineage")
                 active_decision = await (
                     await db.execute(
                         """SELECT 1 FROM workflow_decisions
@@ -345,6 +1193,189 @@ class WorkflowRetentionManager:
             )
         finally:
             await db.close()
+
+    async def _has_research_records(self) -> bool:
+        db = await self._connect()
+        try:
+            row = await (
+                await db.execute(
+                    """SELECT 1 FROM workflow_run_control_commands
+                    UNION SELECT 1 FROM workflow_research_snapshots
+                    UNION SELECT 1 FROM workflow_research_snapshot_pins
+                    UNION SELECT 1 FROM workflow_research_lineage LIMIT 1"""
+                )
+            ).fetchone()
+            return row is not None
+        finally:
+            await db.close()
+
+    async def _build_research_aware_plan(
+        self, now: float, reachability: ResearchReachabilityView
+    ) -> _CleanupPlan:
+        """Protect retained children and every ancestor before deleting run-owned data."""
+
+        protected = set(reachability.protected_run_ids)
+        provisional = await self._build_plan(
+            now, extra_protected_run_ids=frozenset(protected)
+        )
+        final = set(provisional.final_run_ids)
+        db = await self._connect()
+        try:
+            lineage_rows = await (
+                await db.execute(
+                    """SELECT run_id,parent_run_id FROM workflow_research_lineage
+                    ORDER BY operation_id"""
+                )
+            ).fetchall()
+            snapshot_rows = await (
+                await db.execute(
+                    """SELECT run_id,snapshot_hash FROM workflow_research_snapshots
+                    ORDER BY snapshot_hash"""
+                )
+            ).fetchall()
+            v6_head_rows = await (
+                await db.execute(
+                    """SELECT parent_run_id,child_run_id
+                    FROM workflow_research_continuation_heads"""
+                )
+            ).fetchall()
+        finally:
+            await db.close()
+
+        # Remaining v6 heads were either live or failed closed in the atomic
+        # component pass.  Never allow the legacy per-stage collector to split
+        # such a component.
+        protected.update(str(row["parent_run_id"]) for row in v6_head_rows)
+        protected.update(str(row["child_run_id"]) for row in v6_head_rows)
+
+        # A recent terminal child is still a retention root even though the
+        # repository's live-control reachability correctly treats it terminal.
+        protected.update(
+            str(row["run_id"])
+            for row in lineage_rows
+            if str(row["run_id"]) not in final
+        )
+        protected.update(
+            str(row["run_id"])
+            for row in snapshot_rows
+            if str(row["snapshot_hash"]) in reachability.protected_snapshot_hashes
+        )
+        changed = True
+        while changed:
+            changed = False
+            for row in lineage_rows:
+                if str(row["run_id"]) not in protected or row["parent_run_id"] is None:
+                    continue
+                parent = str(row["parent_run_id"])
+                if parent not in protected:
+                    protected.add(parent)
+                    changed = True
+        return await self._build_plan(
+            now, extra_protected_run_ids=frozenset(protected)
+        )
+
+    async def _build_research_cleanup_plan(
+        self,
+        now: float,
+        plan: _CleanupPlan,
+        reachability: ResearchReachabilityView,
+    ) -> _ResearchCleanupPlan:
+        final = set(plan.final_run_ids)
+        db = await self._connect()
+        try:
+            lineage_rows = await (
+                await db.execute(
+                    """SELECT operation_id,run_id,parent_operation_id,snapshot_hash
+                    FROM workflow_research_lineage ORDER BY operation_id"""
+                )
+            ).fetchall()
+            pin_rows = await (
+                await db.execute(
+                    """SELECT pin_id,snapshot_hash,run_id,expires_at
+                    FROM workflow_research_snapshot_pins ORDER BY pin_id"""
+                )
+            ).fetchall()
+            snapshot_rows = await (
+                await db.execute(
+                    """SELECT snapshot_hash,run_id,manifest_ref,expires_at
+                    FROM workflow_research_snapshots ORDER BY snapshot_hash"""
+                )
+            ).fetchall()
+            ref_rows = await (
+                await db.execute(
+                    """SELECT owner_id,sha256 FROM workflow_blob_refs
+                    WHERE owner_kind='research_snapshot' ORDER BY owner_id,sha256"""
+                )
+            ).fetchall()
+        finally:
+            await db.close()
+
+        lineage_candidates = {
+            str(row["operation_id"])
+            for row in lineage_rows
+            if str(row["run_id"]) in final
+        }
+        by_operation = {str(row["operation_id"]): row for row in lineage_rows}
+
+        def depth(operation_id: str) -> int:
+            seen: set[str] = set()
+            current = operation_id
+            result = 0
+            while current in by_operation and current not in seen:
+                seen.add(current)
+                parent = by_operation[current]["parent_operation_id"]
+                if parent is None:
+                    break
+                result += 1
+                current = str(parent)
+            return result
+
+        lineage_order = tuple(
+            sorted(lineage_candidates, key=lambda item: (-depth(item), item))
+        )
+        pin_candidates = {
+            str(row["pin_id"])
+            for row in pin_rows
+            if str(row["pin_id"]) not in reachability.protected_pin_ids
+            and (
+                str(row["run_id"]) in final
+                or (row["expires_at"] is not None and float(row["expires_at"]) <= now)
+            )
+        }
+        retained_pin_snapshots = {
+            str(row["snapshot_hash"])
+            for row in pin_rows
+            if str(row["pin_id"]) not in pin_candidates
+        }
+        retained_lineage_snapshots = {
+            str(row["snapshot_hash"])
+            for row in lineage_rows
+            if row["snapshot_hash"] is not None
+            and str(row["operation_id"]) not in lineage_candidates
+        }
+        snapshot_candidates = {
+            str(row["snapshot_hash"])
+            for row in snapshot_rows
+            if str(row["snapshot_hash"]) not in reachability.protected_snapshot_hashes
+            and str(row["snapshot_hash"]) not in retained_pin_snapshots
+            and str(row["snapshot_hash"]) not in retained_lineage_snapshots
+            and (
+                str(row["run_id"]) in final
+                or (row["expires_at"] is not None and float(row["expires_at"]) <= now)
+            )
+        }
+        refs = tuple(
+            (str(row["owner_id"]), str(row["sha256"]))
+            for row in ref_rows
+            if str(row["owner_id"]) in snapshot_candidates
+        )
+        return _ResearchCleanupPlan(
+            lineage_operation_ids=lineage_order,
+            pin_ids=tuple(sorted(pin_candidates)),
+            snapshot_hashes=tuple(sorted(snapshot_candidates)),
+            snapshot_blob_refs=refs,
+            run_ids=tuple(sorted(final)),
+        )
 
     @staticmethod
     async def _ids_for_runs(
@@ -555,7 +1586,7 @@ class WorkflowRetentionManager:
         return RetentionStageResult(name=CHECKPOINT_STAGE, candidates=items, applied=applied)
 
     async def _cleanup_blob_refs(
-        self, plan: _CleanupPlan, *, dry_run: bool
+        self, plan: _CleanupPlan, *, dry_run: bool, delete_runs: bool = True
     ) -> RetentionStageResult:
         owner_groups = self._owner_groups(plan)
         ref_items = await self._matching_ref_items(owner_groups)
@@ -565,7 +1596,7 @@ class WorkflowRetentionManager:
                 *(f"trace:{item}" for item in plan.trace_ids),
                 *(f"node:{item}" for item in plan.node_ids),
                 *(f"effect:{item}" for item in plan.effect_ids),
-                *(f"run:{item}" for item in plan.final_run_ids),
+                *(f"run:{item}" for item in plan.final_run_ids if delete_runs),
             ]
         )
         applied = 0
@@ -606,7 +1637,7 @@ class WorkflowRetentionManager:
                             plan.full_run_ids,
                         )
                         applied += cursor.rowcount
-                if plan.final_run_ids:
+                if plan.final_run_ids and delete_runs:
                     placeholders = _placeholders(plan.final_run_ids)
                     for query in (
                         f"DELETE FROM workflow_start_requests WHERE run_id IN ({placeholders})",
@@ -627,6 +1658,145 @@ class WorkflowRetentionManager:
             finally:
                 await db.close()
         return RetentionStageResult(name=BLOB_REF_STAGE, candidates=items, applied=applied)
+
+    async def _cleanup_research_controls(
+        self,
+        candidates: dict[str, tuple[str, ...]],
+        *,
+        dry_run: bool,
+    ) -> RetentionStageResult:
+        cleanup_ids = tuple(sorted(candidates.get("cleanup_eligible", ())))
+        overdue = tuple(sorted(candidates.get("settle_deadline_exceeded", ())))
+        applied = 0
+        if cleanup_ids and not dry_run:
+            db = await self._connect()
+            try:
+                await db.execute("BEGIN IMMEDIATE")
+                cursor = await db.execute(
+                    f"""DELETE FROM workflow_run_control_commands
+                    WHERE command_id IN ({_placeholders(cleanup_ids)})
+                      AND status IN ('consumed','rejected','expired')""",
+                    cleanup_ids,
+                )
+                applied = cursor.rowcount
+                await db.commit()
+            except BaseException:
+                if db.in_transaction:
+                    await db.rollback()
+                raise
+            finally:
+                await db.close()
+        return RetentionStageResult(
+            name=CONTROL_STAGE,
+            candidates=tuple(f"command:{item}" for item in cleanup_ids),
+            applied=applied,
+            protected=tuple(f"settle-overdue:{item}" for item in overdue),
+        )
+
+    async def _cleanup_research_lineage(
+        self, plan: _ResearchCleanupPlan, *, dry_run: bool
+    ) -> RetentionStageResult:
+        items = tuple(
+            [
+                *(f"lineage:{item}" for item in plan.lineage_operation_ids),
+                *(f"pin:{item}" for item in plan.pin_ids),
+            ]
+        )
+        applied = 0
+        if items and not dry_run:
+            db = await self._connect()
+            try:
+                await db.execute("BEGIN IMMEDIATE")
+                for operation_id in plan.lineage_operation_ids:
+                    cursor = await db.execute(
+                        "DELETE FROM workflow_research_lineage WHERE operation_id=?",
+                        (operation_id,),
+                    )
+                    applied += cursor.rowcount
+                if plan.pin_ids:
+                    cursor = await db.execute(
+                        f"""DELETE FROM workflow_research_snapshot_pins
+                        WHERE pin_id IN ({_placeholders(plan.pin_ids)})""",
+                        plan.pin_ids,
+                    )
+                    applied += cursor.rowcount
+                await db.commit()
+            except BaseException:
+                if db.in_transaction:
+                    await db.rollback()
+                raise
+            finally:
+                await db.close()
+        return RetentionStageResult(name=LINEAGE_STAGE, candidates=items, applied=applied)
+
+    async def _cleanup_research_snapshots(
+        self, plan: _ResearchCleanupPlan, *, dry_run: bool
+    ) -> RetentionStageResult:
+        items = tuple(
+            [
+                *(
+                    f"snapshot-ref:{snapshot_hash}:{blob_ref}"
+                    for snapshot_hash, blob_ref in plan.snapshot_blob_refs
+                ),
+                *(f"snapshot:{item}" for item in plan.snapshot_hashes),
+            ]
+        )
+        applied = 0
+        if plan.snapshot_hashes and not dry_run:
+            db = await self._connect()
+            try:
+                await db.execute("BEGIN IMMEDIATE")
+                cursor = await db.execute(
+                    f"""DELETE FROM workflow_blob_refs
+                    WHERE owner_kind='research_snapshot'
+                      AND owner_id IN ({_placeholders(plan.snapshot_hashes)})""",
+                    plan.snapshot_hashes,
+                )
+                applied += cursor.rowcount
+                cursor = await db.execute(
+                    f"""DELETE FROM workflow_research_snapshots
+                    WHERE snapshot_hash IN ({_placeholders(plan.snapshot_hashes)})""",
+                    plan.snapshot_hashes,
+                )
+                applied += cursor.rowcount
+                await db.commit()
+            except BaseException:
+                if db.in_transaction:
+                    await db.rollback()
+                raise
+            finally:
+                await db.close()
+        return RetentionStageResult(name=SNAPSHOT_STAGE, candidates=items, applied=applied)
+
+    async def _cleanup_research_runs(
+        self, plan: _ResearchCleanupPlan, *, dry_run: bool
+    ) -> RetentionStageResult:
+        items = tuple(f"run:{item}" for item in plan.run_ids)
+        applied = 0
+        if plan.run_ids and not dry_run:
+            db = await self._connect()
+            try:
+                await db.execute("BEGIN IMMEDIATE")
+                placeholders = _placeholders(plan.run_ids)
+                for query in (
+                    f"DELETE FROM workflow_start_requests WHERE run_id IN ({placeholders})",
+                    f"DELETE FROM workflow_target_reservations WHERE run_id IN ({placeholders})",
+                ):
+                    cursor = await db.execute(query, plan.run_ids)
+                    applied += cursor.rowcount
+                cursor = await db.execute(
+                    f"DELETE FROM workflow_runs WHERE run_id IN ({placeholders})",
+                    plan.run_ids,
+                )
+                applied += cursor.rowcount
+                await db.commit()
+            except BaseException:
+                if db.in_transaction:
+                    await db.rollback()
+                raise
+            finally:
+                await db.close()
+        return RetentionStageResult(name=RUN_STAGE, candidates=items, applied=applied)
 
     @staticmethod
     def _owner_groups(plan: _CleanupPlan) -> dict[str, tuple[str, ...]]:
@@ -683,7 +1853,12 @@ class WorkflowRetentionManager:
             await db.close()
 
     async def _cleanup_orphans(
-        self, now: float, *, plan: _CleanupPlan, dry_run: bool
+        self,
+        now: float,
+        *,
+        plan: _CleanupPlan,
+        dry_run: bool,
+        extra_removed_owners: tuple[tuple[str, str], ...] = (),
     ) -> RetentionStageResult:
         cutoff = now - self.policy.orphan_grace_seconds
         db = await self._connect()
@@ -698,6 +1873,14 @@ class WorkflowRetentionManager:
             registered = await (
                 await db.execute("SELECT sha256,relative_path FROM workflow_blobs")
             ).fetchall()
+            continuation_spec_digests = {
+                str(row[0])
+                for row in await (
+                    await db.execute(
+                        "SELECT spec_blob_digest FROM workflow_research_continuation_heads"
+                    )
+                ).fetchall()
+            }
         finally:
             await db.close()
 
@@ -718,6 +1901,7 @@ class WorkflowRetentionManager:
             for owner_kind, owner_ids in self._owner_groups(plan).items()
             for owner_id in owner_ids
         }
+        removed_owners.update(extra_removed_owners)
         grouped: dict[str, dict[str, Any]] = {}
         for row in rows:
             item = grouped.setdefault(
@@ -731,6 +1915,8 @@ class WorkflowRetentionManager:
             if row["owner_kind"] is not None:
                 item["owners"].append((str(row["owner_kind"]), str(row["owner_id"])))
         for digest, item in grouped.items():
+            if digest in continuation_spec_digests:
+                continue
             if item["created_at"] > cutoff:
                 continue
             owners = item["owners"]
@@ -782,6 +1968,9 @@ class WorkflowRetentionManager:
                         AND NOT EXISTS(
                             SELECT 1 FROM workflow_blob_refs r
                             WHERE r.sha256=workflow_blobs.sha256
+                        ) AND NOT EXISTS(
+                            SELECT 1 FROM workflow_research_continuation_heads h
+                            WHERE h.spec_blob_digest=workflow_blobs.sha256
                         )""",
                         digests,
                     )
@@ -874,13 +2063,18 @@ __all__ = [
     "BLOB_REF_STAGE",
     "CHECKPOINT_STAGE",
     "CLEANUP_STAGE_ORDER",
+    "CONTROL_STAGE",
     "ClockPort",
     "DELIVERY_STAGE",
     "ORPHAN_STAGE",
+    "LINEAGE_STAGE",
+    "REACHABILITY_STAGE",
     "RESERVATION_STAGE",
     "RetentionPolicy",
     "RetentionReport",
     "RetentionStageResult",
+    "RUN_STAGE",
+    "SNAPSHOT_STAGE",
     "SystemClock",
     "TOMBSTONE_STAGE",
     "WorkflowRetentionManager",

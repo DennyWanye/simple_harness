@@ -52,10 +52,13 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 DEFAULT_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 # v9 是 P4 的起手目标版本。spec "Schema Migration v8 → v9" 定义。
-TARGET_SCHEMA_VERSION = 18  # Context OS snapshots + coverage segments
+TARGET_SCHEMA_VERSION = 19  # Message projection/context visibility
 _V17_MIGRATION = "009_memory_v2_v17.sql"
 _V17_SCHEMA_VERSION = 17
 _V18_MIGRATION = "010_context_os_v18.sql"
+_V18_SCHEMA_VERSION = 18
+_V19_MIGRATION = "011_message_projection_visibility_v19.sql"
+_V19_SCHEMA_VERSION = 19
 
 
 async def _execute_transactional_script(
@@ -273,7 +276,31 @@ async def run_migrations(
                         "VALUES (?, ?)",
                         (version, time.time()),
                     )
-                    await db.execute(f"PRAGMA user_version={TARGET_SCHEMA_VERSION}")
+                    await db.execute(f"PRAGMA user_version={_V18_SCHEMA_VERSION}")
+                    await db.commit()
+                except Exception as exc:  # noqa: BLE001
+                    await db.rollback()
+                    log.error(
+                        "migration %s failed: %s (db=%s)",
+                        version,
+                        exc,
+                        db_path,
+                    )
+                    raise MigrationError(
+                        f"migration {version} failed: {exc}"
+                    ) from exc
+                applied_now.append(version)
+                continue
+            if version == _V19_MIGRATION:
+                try:
+                    await db.execute("BEGIN IMMEDIATE")
+                    await _execute_transactional_script(db, sql)
+                    await db.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) "
+                        "VALUES (?, ?)",
+                        (version, time.time()),
+                    )
+                    await db.execute(f"PRAGMA user_version={_V19_SCHEMA_VERSION}")
                     await db.commit()
                 except Exception as exc:  # noqa: BLE001
                     await db.rollback()
@@ -315,7 +342,9 @@ async def run_migrations(
         # before the V18 DDL transaction commits.
         durable_markers = already | set(applied_now)
         durable_version = (
-            TARGET_SCHEMA_VERSION
+            _V19_SCHEMA_VERSION
+            if _V19_MIGRATION in durable_markers
+            else _V18_SCHEMA_VERSION
             if _V18_MIGRATION in durable_markers
             else _V17_SCHEMA_VERSION
             if _V17_MIGRATION in durable_markers

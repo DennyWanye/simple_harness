@@ -1,6 +1,31 @@
 # DeskPet — 全局项目状态与架构完成度
 
-> **最后更新**: 2026-07-15
+> **最后更新**：2026-07-19
+
+## 2026-07-18 里程碑：DeepResearch v6 默认发布与答案契约稳定性完成
+
+- 模块状态：**新 run 默认 `deep_research/v6`，完整 T11/T12/T13、发布验收与 release identity fixture 受控提交均 PASS**。
+- 真实 source-Tauri 场景在 5.08s 内完成，并从国家统计局返回 `140828万人` / `954万人`。
+  通用官方归档发现、有界抓取、ref-only 证据、完整性门禁、terminal commit、session
+  投影、artifact 渲染和同目录重启均经过真实链路。
+- 重启后仍只有一条最终回答和一个 artifact，启动恢复投递数为 0；历史恢复不再展示
+  artifact 原始 JSON，引用已使用可访问的 `www.stats.gov.cn` 地址。
+- 门禁：后端 v6/official/fetch 91 passed；v5/recovery/delivery 281 passed；前端
+  30 passed；TypeScript/Vite relay build 通过。证据和 scope 见
+  `plans/2026-07-17-deepresearch-answer-contract-stability/execution-results.md`。
+- 真实 UI 已覆盖 completed、partial、insufficient/generate-now 双击和重启/history；用户指定的 `zai-org/GLM-5.2` 在 Relay 中以 `sf-glm-5.2` 提供，基础模型与预分析模型均已切换。重启后的最终真实账户验收为 GLM 出站 5/5 HTTP 200、DeepSeek 出站 0、HTTP 402 为 0，UI 返回“GLM 最终验证通过”；2026-07-19 又暂时将 alias/canonical 上下文画像钉为 1M，源码 Tauri/Context usage 实证有效 950K、compaction 750K，并通过真实 SC-STATS-2 run `81090268…` 的 final/artifact/delivery 闭环。模型/上下文回归 `58 passed`；此前前端配置回归 `27 passed`、后端配置 `6 passed`。
+- 最终 release identity 已重跑 completed、partial、generate-now insufficient 与同 userdata 历史恢复；最终门禁为后端 `815 passed`、前端 `822/822 tests passed`、Rust 73 tests，TypeScript/Vite/cargo check 全部通过。
+
+## 2026-07-17 里程碑：DeepResearch v5 Win11-only 交付
+
+- v5 已成为新 run 默认版本；建模、query、dimension analysis、证据准入/readiness、缺口补研、报告审计/修复、三态终态与 continuation lineage 已接入生产 durable workflow。
+- 自动化验证：本轮 v5 核心 `254 passed`；DeepResearch/Search Gateway/Playwright 联合回归 `559 passed`，2 个 Chromium 启动/空闲回收时序失败隔离复跑 `2 passed`；前端 77 files / 816 tests、TypeScript、Vite production build、Rust check 通过。此前后端宽回归 1274 passed / 1 skipped；全后端套件的既知 vector embedder worker hang 仍未伪报为全量通过。
+- Win11 安装版真机：教育现状与国家计划问题完成 v5 主链并诚实交付 `insufficient_evidence`；继续补研生成 child run，重启后两条历史与动作恢复。真实样本未达到完整报告准入门，因此报告人工质量门不适用。
+- **质量故障修复与真实 UI 复验**：修复前五类矩阵的 101 documents / 0 admitted passage 作为失败基线保留。修复后 AI Top 10 `9670a357...`（5 来源、质量 75、`partial`）、国家统计局人口指标 `51781063...`（11/5 有效/第一方、4/4 核心、质量 80、`completed`）、产品比较 `2b79cd88...`（9/1 来源、质量 60、`partial`）均由真实 DeskPet UI 完成；DB/UI elapsed 误差 <2s，默认投影无 raw query/URL。TC-UI-NOW run `6ea6a3a4...` 的单次真实点击在约 0.227 秒内 observed，deadline 后唯一业务终态完成且硬失败 0。核心检索/建模/交付故障与立即生成主链已关闭，Gate F 总体为 **PARTIAL**；updater、卸载、立即生成恢复分支与完整固定场景审计仍待完成。
+- 最终 NSIS：`DeskPet_0.6.0-beta.9_x64-setup.exe`，529,333,947 bytes，SHA-256 `1495E432F4314A9B83991724FDB411B1088FF13DFF1673B02FB6F56014F26A38`。内含 Playwright 1.61.0 / Chromium r1228，浏览器 exe SHA-256 `28016DF6864D302434C9231E1F9F1A8A7ECC512CB2FE3FAABB2A36130B96BCF1`。
+- 验证范围仅 Win11 x64；未启用、安装或依赖 Hyper-V/VM/ISO/Windows Sandbox，也未触发系统重启。Win10 兼容性保留为后续独立计划。
+- **DeepResearch 节点级耗时遥测**：v5 每个 durable 节点的起止时间、耗时、attempt 与成功/等待/取消/失败终态已保存到 workflow DB/trace，并同步安全镜像到 structlog 与 `metrics.jsonl`；fetch 内部的 robots、Scrapling、HTTPX、抽取和浏览器/Jina fallback 有可轮转 metrics 分段，但尚未形成 durable child spans。修复了 v5 legacy stage metric 恒为 0 的观测错误。定向测试 `43 passed`、workflow 回归 `76 passed`、v5/effect 回归 `68 passed`；本次只增加观测，不调整现有超时与降级行为。
+
 > **维护方式**: 本文件是项目完成度、里程碑、worktree 与已知问题的唯一事实源；模块生产链路由同目录专项架构文档维护。
 > **用途**: 一页看清整个项目（所有并行工作流）的当前状态。新 session / 子代理
 > 先读 [`index.md`](./index.md)，再由索引进入本文件或对应模块架构。
@@ -41,12 +66,13 @@
 
 | 模块 | 状态 | 关键文档 |
 |---|---|---|
+| **DeepResearch v6 / bundled Playwright** | ✅ **本计划 DoD PASS** — 新 run 默认 v6；五类 intent、三态交付、durable continuation/control/retention、exactly-once delivery、generate-now 双击与重启/history 闭环；release identity fixture 已纳入受控提交。此前 Gate F 的 updater/卸载等仓库级独立事项不在本计划范围。 | [架构](./DeepResearch.md) · [plan](../plans/2026-07-17-deepresearch-answer-contract-stability/plan.md) · [results](../plans/2026-07-17-deepresearch-answer-contract-stability/execution-results.md) |
 | **语音管线** (Realtime/VAD/ASR/LLM/TTS) | 🟡 **relay-only 迁移被 VR-0 阻塞** — 当前实现仍会加载本地 Silero VAD 与 faster-whisper，不符合新产品契约；正式路径不得回退本地模型。实测中转站 `/v1/models` 无语音 alias，Realtime client secret、audio speech/transcriptions endpoint 均为 404。待 relay 提供 WebRTC/Realtime 契约后实现自然对话、打断、恢复与 soak E2E。 | [Context OS V1 plan §12](../plans/2026-07-13-context-os-v1/plan.md) · [E2E-CTX-12](../plans/2026-07-13-context-os-v1/testcase.md) |
 | **桌宠 supervisor** (P5-S1) | ✅ 生产可用 | `README.md` §桌宠 supervisor |
 | **长期记忆 + 自动总结** (P4-S20-D / memory-v2) | ✅ Stage 1/2 ship；F1-F5 全修；严测 4 Phase（33 用例）；**2026-06-02 审计修复 #1-#4**：FATAL-A 自动 backfill 兜底 + FATAL-B 静默降级告警 + MemEval 字面vs改写召回（改写 Recall@5=1.0 证 dense 真工作）+ **出厂点亮 facts_extract/enhanced_retriever/cross_key_merge 语义事实记忆栈**（真机 E2E 待跑）| `README.md` §长期记忆 + [memory-system-status](../plans/2026-05-23-memory-system-status.md) + [严测 spec](../plans/2026-06-01-memory-system-rigorous-test-spec.md) + [审计+最佳实践](../plans/2026-06-02-memory-system-audit-and-best-practices.md) |
 | **工具层** (registry + 权限 + 熔断 + last-mile + v3) | ✅ 生产可用 — 2026-07-09 优化 `file_glob` 默认递归扫描：剪枝 `node_modules` / `__pycache__` / `.uv-cache` / `backend/assets` 等重型生成目录，返回 `skipped_dirs/skipped_count` 诊断元数据；显式 root 指向被跳过目录仍可访问，避免兼容性倒退；pytest `test_deskpet_tools_file.py` 33 passed。2026-07-08 补修 ArtifactCard 文件按钮：DeepResearch 报告目录加入 Tauri artifact 白名单，前端按钮增加 pending/success/error 状态反馈；真机点击 `打开` / `复制路径` / `在文件夹中显示` PASS。 | [tool-layer-optimization-v3](../plans/2026-05-24-tool-layer-optimization-v3/) · [file-glob 优化](../plans/2026-07-09-file-tool-scan-optimization/plan.md) |
-| **Search Gateway + FetchExtractService（WI-1～4）** | ✅ 2026-07-14 后端检索底座完成 — 默认 ON 的进程内异步 Gateway 统一百度/DDG/Google CDP/Bing CDP 与可选 SearXNG，提供 request-local typed diagnostics、稳定分批/去重/排序、LRU/TTL、冷却、取消与 hydrate；`web_search` 和 DeepResearch 通用检索均走 Gateway。Scrapling raw transport → 共享 FetchExtractService → web/research async adapters 三层收口，全部 `_fetch_one` 生产调用迁移，保留 v1 ResearchSearchPort/list contract。聚焦与相邻回归 `214 passed`。 | [Search Gateway plan](../plans/2026-07-14-search-gateway-deepresearch/plan.md) |
-| **DeepResearch v2 + 聊天阶段进度（WI-5～10）** | ✅ **2026-07-15 完成** — 新 run 默认进入 immutable `deep_research/v2`；固定 6-slot 有界并发、确定性 join、两轮补证、统一证据评分/语义与多样性重排、claim support、13 阶段 durable completed outbox 全部接线。消息流总体卡始终可见，阶段 child 默认折叠，支持键盘展开、历史/乱序/重复/终态后迟到 child、实时 elapsed 与双 run 隔离；运行中重启同一 run 恢复，Markdown Artifact 历史操作与实时广播 PASS。`final_assistant` 独立投递且旧 receipt 收敛，outbox 非 delivered=0。固定三类真实 benchmark 2/3 completed、P95 270.548s，政策样本 support 0.75；WebGPU cooldown 失败诚实保留。前端 `77 files / 800 tests`、tsc/build PASS；后端全量 `4440 passed / 10` 个既有范围外失败（较基线少 2，无新增）。Windows W01～W05 真机 PASS。 | [plan](../plans/2026-07-14-search-gateway-deepresearch/plan.md) · [results](../plans/2026-07-14-search-gateway-deepresearch/results.md) |
+| **Search Gateway + FetchExtractService** | ✅ **2026-07-15 cooldown 隔离完成** — 默认 ON 的进程内 Gateway 统一百度/DDG/Google CDP/Bing CDP 与可选 SearXNG；provider 共享健康状态已升级为按失败类型配置的 closed/open/half-open circuit，generation/token CAS 保证每个 open generation 仅一个 probe，所有 provider open 时按最早 eligible + 配置序号做受控救援。request budget/diagnostics 保持隔离；429 尊重有界 `Retry-After`，403 与 429 分流，probe cancel/失败/旧 token、cache hit 与安全 metrics 均有回归。连续真实政策→WebGPU run 仍产生 22 attempts / 2 probes 并完成，跨主题 cooldown 连坐已消除。 | [架构](./SEARCH_GATEWAY_DEEPRESEARCH.md) · [results](../plans/2026-07-15-search-quality-cooldown-support/results.md) |
+| **DeepResearch v4 技术情报 + 可审计聊天进度** | ✅ **2026-07-15 完成并默认 ON** — 新 run 默认进入 immutable `deep_research/v4`，v1/v2/v3 保留历史与在途恢复；provider limiter/permit 复验/empty-aware rescue 消除宽 fan-out cooldown 连坐。宽主题使用稳定 taxonomy、实体去重和页面噪声过滤；报告采用质量优先的 3～8 项发布门，固定提供一页式执行摘要、组合建议、分主题核心变化/价值/成熟度/风险/日期/逐项引用与方法局限；证据质量不足时摘要和正文都只能“先补证据再决定 PoC”。`zero_candidates`/`insufficient_evidence` 不生成假报告或 Artifact；Session 13 阶段显示每一步“动作 + 结果 + 降级原因”并提供幂等 retry。Xiaomi 同进程最终连续 run `43e851a0...` 与 `59975eb1...` 均为 5 项/5 引用并通过当前 17 项专业报告门；旧 `66720bcf...` 及建议口径不一致的早期样本均降级。报告聚焦 `114 passed`；后端最后代码全量 `4643 passed / 10 known failures` 无新增；前端 `811 passed`、tsc/build PASS。 | [架构](./SEARCH_GATEWAY_DEEPRESEARCH.md#16-宽主题技术情报-v4-与专业报告2026-07-15) · [results](../plans/2026-07-15-deepresearch-wide-topic-reliability/results.md) · [testcase](../testcase/2026-07-15-deepresearch-wide-topic-reliability/deepresearch-wide-topic-manual-test.md) |
 | **fake-completion VerifyGate** | ✅ 接电；**出厂默认 strict**（`config.py:293` `verify_gate_mode="strict"`，2026-06-23 `7fd79c83` shadow→strict）（+9 claim patterns 含 code 场景）;strict 真机不误杀 + 单测 31/31;**2026-06-22 修 shipped bug：ephemeral 救援子代理从不读 `[tools.verifier].ephemeral_subagent_model`→恒复用主 LLM**（`build_agent` 注入处直接 `local_llm or cloud_llm`）→新增 `_resolve_ephemeral_provider`（`backend/main.py`）按配置克隆专用 model provider（缺省/失败回退主 LLM）+ 15 单测全绿 + 真机 boot-log 实证 `model='sonnet' base='gpt-5.5'`（`772c4291`） | [v3 §WI-T2.1](../plans/2026-05-24-tool-layer-optimization-v3/00-PRD.md) + [verify strict 报告](../plans/2026-06-02-superpowers-code-workflow/evidence/E2E-report-verify-strict.md) + [ephemeral 真机验证](../plans/manual-results-2026-06-22-ephemeral-model/RESULTS.md) |
 | **Code 模式工作流纪律** (superpowers 全套) | ✅ Layer 1A persona 3/3 E2E + plan 硬门 2/2 E2E + Layer 1B 偏好记忆 cosine 0.936 + verify strict;✅ **过夜并行(spec 3 轮 opus 评估锁定 → 子代理并行实现 → 完成度审计 11/11 ALL-COMPLETE)**：A1 意图记忆 + A2 /prefs(修 slash 结果静默丢 bug) + A4 plan 持久化三层 + A5 文档 + C2 边角 24 测 + B1 flaky closed + B3 merge companion-code-v2;单测 16 新文件全绿 + 全套 **2331 passed**;**真机 windows-mcp 待跑** | [05-LOCKED-spec](../plans/2026-06-02-superpowers-code-workflow/05-LOCKED-spec.md) |
 | **技能系统** (SkillLoader + 14 builtin + 自动披露 + 自创闭环 + marketplace) | ✅ 生产可用 — SKILL.md 热重载 + `skill_invoke`/slash 调用 + SkillMatcher 语义+触发词混合自动披露(flag) + **WI-4.3 技能自创 codifier**(完成任务→检测→LLM 提候选→用户确认门→落 SKILL.md,**仅声明式不执行代码**,flag off 字节 BC) + marketplace GitHub 安装(manifest safety 校验 + `skill_install` 权限门)。⚠️ 现状缺口：自创/用户技能**只产 Markdown body(prompt 注入),不产可执行 function call**(`requires_script` 永 false) | `docs/SKILLS.md` · 自创见 §4 (06-06/06-11) |
@@ -87,7 +113,11 @@
 
 | 日期 | 里程碑 |
 |---|---|
+| 2026-07-18 | **DeepResearch v6 默认发布与答案契约稳定性完成 ✅** — 五类 intent、durable continuation/control/retention、三态终态与 exactly-once delivery 完成；最终 release identity 下真实 UI 覆盖 completed、partial、generate-now 双击和重启历史；后端 815、前端 822、Rust 73、tsc/build/check 全绿，基础模型为 `deepseek-v4-pro` 1M；release identity fixture 已纳入受控提交。 |
+| 2026-07-17 | **DeepResearch v5 generate-now 单次真实控制主链 PASS** — Computer Use 真点击 run `6ea6a3a4...` 的“立即用现有证据生成”，command 约 0.227 秒 observed，30 秒 settle fence 后 settled/consumed；长 fetch 控制性取消被归类为业务降级结果，run completed、全部节点 succeeded、硬失败 0，唯一终态 `insufficient_evidence`。自动化控制/adapter `50 passed`，v5/control/terminal `226 passed`；重复点击/重连/强杀恢复仍 PENDING。 |
+| 2026-07-15 | **DeepResearch v4 宽主题可靠性与专业报告完成 ✅** — 针对 Session `16bbb4ce...` 和旧质量门误判，新增 provider limiter/permit 复验/empty-aware rescue、稳定技术 taxonomy、实体去重、页面噪声过滤、质量优先 3～8 项报告契约、跨段采用建议一致性、成文质量门、诚实失败与幂等 retry。Xiaomi 同进程最新原题 runs `43e851a0...` 和 `59975eb1...` 均通过当前 17 项报告门；旧 `66720bcf...` 与早期不一致样本降级。最后代码后端全量 `4643 passed / 10 known failures`，无新增回归。 |
 | 2026-07-15 | **项目事实源统一到 ARCHITECTURE ✅** — 原 `STATUS/status.md` 的 worktree、模块完成度、里程碑和已知问题迁入 `ARCHITECTURE/PROJECT_STATUS.md`；AgentLoop、DeepResearch、PPT 专项档同步归档到架构目录。`AGENTS.md`/`CLAUDE.md` HARD 纪律改为完成后更新模块架构 + PROJECT_STATUS，README、plans 与 acceptance 入口同步；`STATUS/` 仅保留历史链接兼容，禁止双写。 |
+| 2026-07-15 | **Search Gateway cooldown 隔离 + DeepResearch v3 引用质量与逐步结果 UI 完成 ✅** — single-flight provider circuit 消除跨主题连坐；结构化 passage/atomic claim 与 fail-closed publish gate 将固定三类连续真测提升到 3/3 completed、mean support 1.0、P95 66.409s。Session 折叠态直接显示每一步动作、结果和诊断，展开态显示指标与下一步；Xiaomi 屏幕真机、Artifact delivery、后端/前端全量和 production build 全 PASS。 |
 | 2026-07-15 | **Search Gateway + DeepResearch v2 + durable progress 完整真机 DoD ✅** — 默认 ON 的内置 Gateway、共享 Fetch、六分支 v2、13 阶段默认折叠气泡、重启恢复、双 run 隔离、历史/实时 Artifact 与 `final_assistant` 投递全部闭环。真实固定三类 benchmark 2/3 completed（失败样本保留）、P95 270.548s；Windows W01～W05 PASS。前端 800 tests + tsc/build；后端 4440 passed / 10 个既有范围外失败，较旧基线少 2 且无新增。 |
 | 2026-07-14 | **Search Gateway / shared fetch backend WI-1～4 完成 ✅** — 无 Docker/API key/SearXNG 依赖的默认异步快搜主路已接通；可选外部 SearXNG、provider 降级、request-local 诊断、确定性聚合、缓存/冷却/取消/hydrate 与共享 FetchExtractService 均有自动化闭环，旧 DeepResearch v1 搜索列表契约保持兼容。 |
 | 2026-07-14 | **Context OS V1 核心 E2E-01～11 真机通过，语音 E2E-12 等待 relay VR-0** — Windows Computer Use 已完成真实输入、ContextTrace、Code mode 与 Default→OFF→ON 回退；OFF 八类工具与 revision 51 golden 精确相等，截图/日志停机后哈希可复核。整体不标 complete：正式语音必须 relay-only，而当前中转站尚无 Realtime/ASR/TTS endpoint 或语音模型 alias。 |
@@ -224,6 +254,10 @@
   换算（详 [16-sendinput-webview2-final-diagnosis](../plans/2026-05-25-companion-code-skill-upgrade/16-sendinput-webview2-final-diagnosis.md)）。
 - **✅ ~~P1 — relay 登录与 backend cloud-llm key 账号脱节~~（2026-06-25 发现 → 2026-06-26 已修复）**：脱节根因是 relay 走旁路（`update_cloud_config` 改单例 `local_llm`，key 不落 registry），backend spawn 期固定的 `DESKPET_CLOUD_API_KEY` env / `deskpet-cloud-llm` slot 与登录账号脱节。**修复**：relay 登录后收编进 `LLMProviderRegistry`（`relay-cloud`/`source=relay`/`account_ref`），聊天经 registry chain **每请求按需读 key**（绕开固定 env，换账号无需重启）；多账号靠 `account_ref` 防串号、登出删 key。真机端到端验证 PASS（`p5s2_chain_resolved` + `chinzy.com 200 OK`）。详 [plans/2026-06-25-relay-local-apikey-provider/00-PLAN.md](../plans/2026-06-25-relay-local-apikey-provider/00-PLAN.md)（v7，A-E 全实现）+ 根因 [followup](../plans/2026-06-25-relay-cloud-key-sync-followup.md)。⚠️ device key 复用三态的**完整**真测待中转站 PR-6 开 `DEVICE_KEY_REUSE_ENABLED` flag（当前过渡态：每登录轮换一把 key，靠中转站 5-key 上限兜底）。
 - 其它已知问题见 `README.md` §已知问题（Known Issues）+ `docs/beta/已知问题.md`。
+
+### Follow-up backlog（待排期）
+
+- 🟡 **DeskPet 性能优化建议** — 来源：[会话记录](chatgpt-conversation://6a53c976-1254-83ec-8095-75d5656ee907)。本轮仅登记为后续修复入口；待单独评审建议、核对当前性能基线、拆分实施计划并完成自动化与真机验收后，再更新对应模块架构状态。
 
 ---
 

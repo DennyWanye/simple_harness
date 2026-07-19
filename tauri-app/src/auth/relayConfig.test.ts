@@ -24,6 +24,6 @@ describe("relayConfig constants", () => {
   });
 
   it("PREFERRED_MODEL is the beta default model", () => {
-    expect(PREFERRED_MODEL).toBe("deepseek-v4-pro");
+    expect(PREFERRED_MODEL).toBe("sf-glm-5.2");
   });
 });

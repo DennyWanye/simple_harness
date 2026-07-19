@@ -9,6 +9,7 @@ from deskpet.workflows.contracts import WorkflowContext, WorkflowRunStatus
 from deskpet.workflows.launcher import WorkflowLauncher
 from deskpet.workflows.progress import WorkflowProgressReporter
 from deskpet.workflows.runner import WorkflowRunResult
+from deskpet.workflows.runtime_adapters import WorkflowRuntimeAdapterError
 
 
 class _Runner:
@@ -182,6 +183,96 @@ async def test_launcher_recovers_retryable_run_from_persisted_start_payload():
         ("session_message", "delivery-session"),
         ("websocket", "delivery-session"),
     )
+
+
+@pytest.mark.asyncio
+async def test_deep_research_v6_new_root_is_disabled_but_recovery_is_allowed():
+    service = _Service()
+    launcher = WorkflowLauncher(service)  # type: ignore[arg-type]
+    recovered = []
+
+    async def hydrate_v6_state(**kwargs):
+        await asyncio.sleep(0)
+        recovered.append(kwargs)
+        return kwargs
+
+    launcher.register_adapter(
+        "deep_research",
+        "v6",
+        state_factory=hydrate_v6_state,
+        context_factory=WorkflowContext,
+    )
+
+    with pytest.raises(WorkflowRuntimeAdapterError) as exc:
+        await launcher.launch(
+            workflow_name="deep_research",
+            workflow_version="v6",
+            session_id="session",
+            request_id="request-v6-disabled",
+            turn_id="turn-v6-disabled",
+            start_payload={"topic": "new"},
+            capability_snapshot={},
+            state_factory=lambda **kwargs: kwargs,
+            context_factory=WorkflowContext,
+        )
+    assert exc.value.code == "deep_research_new_runs_disabled"
+    assert service.delivered == []
+
+    service.recovery_rows = [{
+        "run_id": "run-v6-persisted",
+        "workflow_name": "deep_research",
+        "workflow_version": "v6",
+        "status": "retryable",
+        "session_id": "session",
+    }]
+    assert await launcher.recover_pending() == ["run-v6-persisted"]
+    await asyncio.gather(*tuple(launcher._tasks))
+    assert recovered[0]["topic"] == "recovered"
+
+
+@pytest.mark.asyncio
+async def test_server_authorized_v6_new_root_and_default_v5_remain_available():
+    service = _Service()
+    launcher = WorkflowLauncher(service)  # type: ignore[arg-type]
+    v6_state_factory = lambda **kwargs: kwargs
+    launcher.register_adapter(
+        "deep_research", "v6",
+        state_factory=v6_state_factory, context_factory=WorkflowContext,
+    )
+    accepted = await launcher.launch(
+        workflow_name="deep_research",
+        workflow_version="v6",
+        session_id="session",
+        request_id="request-v6-dev",
+        turn_id="turn-v6-dev",
+        start_payload={"topic": "isolated"},
+        capability_snapshot={},
+        state_factory=lambda **kwargs: pytest.fail("launch factory bypassed registry"),
+        context_factory=WorkflowContext,
+        authorize_disabled_deep_research_v6_new_root=True,
+    )
+    assert accepted["workflow_version"] == "v6"
+    await asyncio.gather(*tuple(launcher._tasks))
+
+    service = _Service()
+    launcher = WorkflowLauncher(service)  # type: ignore[arg-type]
+    launcher.register_adapter(
+        "deep_research", "v5",
+        state_factory=lambda **kwargs: kwargs, context_factory=WorkflowContext,
+    )
+    accepted = await launcher.launch(
+        workflow_name="deep_research",
+        workflow_version="v5",
+        session_id="session",
+        request_id="request-v5",
+        turn_id="turn-v5",
+        start_payload={"topic": "stable"},
+        capability_snapshot={},
+        state_factory=lambda **kwargs: kwargs,
+        context_factory=WorkflowContext,
+    )
+    assert accepted["workflow_version"] == "v5"
+    await asyncio.gather(*tuple(launcher._tasks))
 
 
 @pytest.mark.asyncio

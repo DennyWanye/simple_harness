@@ -7,7 +7,7 @@ from pathlib import Path
 
 import aiosqlite
 
-WORKFLOW_SCHEMA_VERSION = 2
+WORKFLOW_SCHEMA_VERSION = 4
 
 _SCHEMA_V2 = r"""
 BEGIN IMMEDIATE;
@@ -230,9 +230,26 @@ async def initialize_workflow_db(path: str | Path) -> Path:
             )
         try:
             if current == 0:
+                # Fresh databases intentionally use the exact v2 base and then
+                # traverse the same migration path as existing installations.
                 await db.executescript(_SCHEMA_V2)
-            elif current == 1:
-                await _migrate_v1_to_v2(db)
+                current = 2
+            while current < WORKFLOW_SCHEMA_VERSION:
+                if current == 1:
+                    await _migrate_v1_to_v2(db)
+                elif current == 2:
+                    await _migrate_v2_to_v3(db)
+                elif current == 3:
+                    await _migrate_v3_to_v4(db)
+                else:  # pragma: no cover - guarded by the version constant
+                    raise RuntimeError(f"no workflow.db migration from schema {current}")
+                row = await (await db.execute("PRAGMA user_version")).fetchone()
+                migrated = int(row[0]) if row else current
+                if migrated <= current:
+                    raise RuntimeError(
+                        f"workflow.db migration from schema {current} did not advance"
+                    )
+                current = migrated
         except BaseException:
             if db.in_transaction:
                 await db.rollback()
@@ -243,6 +260,13 @@ async def initialize_workflow_db(path: str | Path) -> Path:
 async def _columns(db: aiosqlite.Connection, table: str) -> set[str]:
     rows = await (await db.execute(f"PRAGMA table_info({table})")).fetchall()
     return {str(row[1]) for row in rows}
+
+
+async def _tables(db: aiosqlite.Connection) -> set[str]:
+    rows = await (
+        await db.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    ).fetchall()
+    return {str(row[0]) for row in rows}
 
 
 async def _add_column_if_missing(
@@ -286,4 +310,314 @@ async def _migrate_v1_to_v2(db: aiosqlite.Connection) -> None:
         (time.time(),),
     )
     await db.execute("PRAGMA user_version=2")
+    await db.commit()
+
+
+async def _migrate_v2_to_v3(db: aiosqlite.Connection) -> None:
+    """Create the complete v3 control, budget, snapshot and lineage skeleton."""
+
+    await db.executescript(
+        """
+        BEGIN IMMEDIATE;
+        CREATE TABLE IF NOT EXISTS workflow_effect_budget_reservations (
+            effect_id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            ledger_kind TEXT NOT NULL,
+            input_reserved INTEGER NOT NULL CHECK(input_reserved >= 0),
+            output_reserved INTEGER NOT NULL CHECK(output_reserved >= 0),
+            cost_reserved_micros INTEGER NOT NULL CHECK(cost_reserved_micros >= 0),
+            input_actual INTEGER CHECK(input_actual IS NULL OR input_actual >= 0),
+            output_actual INTEGER CHECK(output_actual IS NULL OR output_actual >= 0),
+            cost_actual_micros INTEGER CHECK(cost_actual_micros IS NULL OR cost_actual_micros >= 0),
+            status TEXT NOT NULL CHECK(status IN ('reserved','committed','released','held_uncertain')),
+            dispatch_state TEXT NOT NULL CHECK(dispatch_state IN ('not_started','started')),
+            upstream_started_at REAL,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            FOREIGN KEY(effect_id) REFERENCES workflow_effects(effect_id) ON DELETE CASCADE,
+            FOREIGN KEY(run_id) REFERENCES workflow_runs(run_id) ON DELETE CASCADE,
+            CHECK(
+                (dispatch_state='not_started' AND upstream_started_at IS NULL) OR
+                (dispatch_state='started' AND upstream_started_at IS NOT NULL)
+            )
+        );
+        CREATE INDEX IF NOT EXISTS idx_workflow_effect_budget_run_status
+            ON workflow_effect_budget_reservations(run_id, ledger_kind, status);
+        CREATE INDEX IF NOT EXISTS idx_workflow_effect_budget_dispatch
+            ON workflow_effect_budget_reservations(run_id, dispatch_state, status);
+
+        CREATE TABLE IF NOT EXISTS workflow_run_control_commands (
+            command_id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            action TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN (
+                'open','accepted','observed','settled','consumed','rejected','expired'
+            )),
+            head_checkpoint_ns TEXT NOT NULL DEFAULT '',
+            head_checkpoint_id TEXT,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            accepted_at REAL,
+            observed_at REAL,
+            settled_at REAL,
+            consumed_at REAL,
+            settle_deadline REAL,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            UNIQUE(run_id, idempotency_key),
+            FOREIGN KEY(run_id) REFERENCES workflow_runs(run_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_workflow_run_control_status
+            ON workflow_run_control_commands(run_id, status, created_at);
+        CREATE INDEX IF NOT EXISTS idx_workflow_run_control_deadline
+            ON workflow_run_control_commands(status, settle_deadline);
+
+        CREATE TABLE IF NOT EXISTS workflow_research_snapshots (
+            snapshot_hash TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            operation_id TEXT NOT NULL,
+            schema_version INTEGER NOT NULL CHECK(schema_version > 0),
+            manifest_ref TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            expires_at REAL,
+            FOREIGN KEY(run_id) REFERENCES workflow_runs(run_id) ON DELETE RESTRICT
+        );
+        CREATE INDEX IF NOT EXISTS idx_workflow_research_snapshots_run
+            ON workflow_research_snapshots(run_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_workflow_research_snapshots_expiry
+            ON workflow_research_snapshots(expires_at);
+
+        CREATE TABLE IF NOT EXISTS workflow_research_snapshot_pins (
+            pin_id TEXT PRIMARY KEY,
+            snapshot_hash TEXT NOT NULL,
+            run_id TEXT NOT NULL,
+            pin_kind TEXT NOT NULL,
+            expires_at REAL,
+            created_at REAL NOT NULL,
+            UNIQUE(snapshot_hash, run_id, pin_kind),
+            FOREIGN KEY(snapshot_hash) REFERENCES workflow_research_snapshots(snapshot_hash) ON DELETE CASCADE,
+            FOREIGN KEY(run_id) REFERENCES workflow_runs(run_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_workflow_research_snapshot_pins_run
+            ON workflow_research_snapshot_pins(run_id, expires_at);
+        CREATE INDEX IF NOT EXISTS idx_workflow_research_snapshot_pins_snapshot
+            ON workflow_research_snapshot_pins(snapshot_hash, expires_at);
+
+        CREATE TABLE IF NOT EXISTS workflow_research_lineage (
+            operation_id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL UNIQUE,
+            parent_run_id TEXT,
+            parent_operation_id TEXT,
+            snapshot_hash TEXT,
+            parent_report_ref TEXT,
+            budget_lease_id TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            FOREIGN KEY(run_id) REFERENCES workflow_runs(run_id) ON DELETE CASCADE,
+            FOREIGN KEY(parent_run_id) REFERENCES workflow_runs(run_id) ON DELETE RESTRICT,
+            FOREIGN KEY(parent_operation_id) REFERENCES workflow_research_lineage(operation_id) ON DELETE RESTRICT,
+            FOREIGN KEY(snapshot_hash) REFERENCES workflow_research_snapshots(snapshot_hash) ON DELETE RESTRICT,
+            CHECK(parent_run_id IS NULL OR parent_run_id <> run_id),
+            CHECK(
+                (parent_run_id IS NULL AND parent_operation_id IS NULL AND snapshot_hash IS NULL) OR
+                (parent_run_id IS NOT NULL AND parent_operation_id IS NOT NULL AND snapshot_hash IS NOT NULL)
+            )
+        );
+        CREATE INDEX IF NOT EXISTS idx_workflow_research_lineage_parent
+            ON workflow_research_lineage(parent_run_id, parent_operation_id);
+        CREATE INDEX IF NOT EXISTS idx_workflow_research_lineage_snapshot
+            ON workflow_research_lineage(snapshot_hash);
+        """
+    )
+    await db.execute(
+        "INSERT OR IGNORE INTO workflow_schema_migrations(version, applied_at) VALUES(3, ?)",
+        (time.time(),),
+    )
+    await db.execute("PRAGMA user_version=3")
+    await db.commit()
+
+
+async def _migrate_v3_to_v4(db: aiosqlite.Connection) -> None:
+    """Install v6 durable attempt, deadline, delivery, and lineage owners."""
+
+    await db.execute("BEGIN IMMEDIATE")
+    tables = await _tables(db)
+    run_columns = await _columns(db, "workflow_runs")
+    pre_v4_v6_continuation = None
+    if {
+        "workflow_name",
+        "workflow_version",
+    } <= run_columns and "workflow_research_lineage" in tables:
+        pre_v4_v6_continuation = await (
+            await db.execute(
+                """SELECT 1
+                FROM workflow_research_lineage AS lineage
+                JOIN workflow_runs AS run ON run.run_id=lineage.run_id
+                WHERE lineage.parent_run_id IS NOT NULL
+                  AND run.workflow_name='deep_research'
+                  AND run.workflow_version='v6'
+                LIMIT 1"""
+            )
+        ).fetchone()
+    if pre_v4_v6_continuation is not None:
+        raise RuntimeError(
+            "workflow.db contains a pre-v4 deep_research/v6 continuation"
+        )
+
+    if "workflow_effects" in tables:
+        await _add_column_if_missing(db, "workflow_effects", "logical_effect_id", "TEXT")
+        await _add_column_if_missing(
+            db,
+            "workflow_effects",
+            "attempt_no",
+            "INTEGER CHECK(attempt_no IS NULL OR attempt_no >= 1)",
+        )
+        await _add_column_if_missing(
+            db,
+            "workflow_effects",
+            "supersedes_effect_id",
+            "TEXT REFERENCES workflow_effects(effect_id) ON DELETE RESTRICT",
+        )
+    if "workflow_deliveries" in tables:
+        await _add_column_if_missing(db, "workflow_deliveries", "intent_id", "TEXT")
+        await _add_column_if_missing(db, "workflow_deliveries", "manifest_ref", "TEXT")
+        await _add_column_if_missing(
+            db,
+            "workflow_deliveries",
+            "required_durable",
+            "INTEGER NOT NULL DEFAULT 0 CHECK(required_durable IN (0,1))",
+        )
+        await _add_column_if_missing(
+            db,
+            "workflow_deliveries",
+            "claim_expires_at",
+            "REAL CHECK(claim_expires_at IS NULL OR claim_expires_at >= 0)",
+        )
+
+    statements = [
+        """CREATE TABLE workflow_research_deadlines (
+            deadline_id TEXT PRIMARY KEY,
+            schema_version INTEGER NOT NULL CHECK(schema_version=1),
+            run_id TEXT NOT NULL,
+            parent_deadline_id TEXT,
+            logical_scope TEXT NOT NULL,
+            policy_hash TEXT NOT NULL,
+            budget_ms INTEGER NOT NULL CHECK(budget_ms > 0),
+            remaining_ms INTEGER NOT NULL CHECK(remaining_ms >= 0),
+            created_at REAL NOT NULL,
+            last_observed_at REAL NOT NULL,
+            wall_not_after REAL NOT NULL,
+            offline_policy TEXT NOT NULL CHECK(offline_policy='count'),
+            rollback_tolerance_ms INTEGER NOT NULL CHECK(rollback_tolerance_ms >= 0),
+            revision INTEGER NOT NULL DEFAULT 0 CHECK(revision >= 0),
+            status TEXT NOT NULL CHECK(status IN ('open','expired','completed')),
+            terminal_reason TEXT,
+            terminal_at REAL,
+            FOREIGN KEY(run_id) REFERENCES workflow_runs(run_id) ON DELETE CASCADE,
+            FOREIGN KEY(parent_deadline_id)
+                REFERENCES workflow_research_deadlines(deadline_id) ON DELETE CASCADE
+        )""",
+        """CREATE INDEX idx_workflow_research_deadlines_run_status
+            ON workflow_research_deadlines(run_id,status)""",
+        """CREATE TABLE workflow_research_resource_budgets (
+            budget_id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            policy_hash TEXT NOT NULL,
+            resource_kind TEXT NOT NULL
+                CHECK(resource_kind IN ('query','fetch','browser','llm','lane')),
+            hard_limit INTEGER NOT NULL CHECK(hard_limit >= 0),
+            reserved INTEGER NOT NULL DEFAULT 0 CHECK(reserved >= 0),
+            consumed INTEGER NOT NULL DEFAULT 0 CHECK(consumed >= 0),
+            revision INTEGER NOT NULL DEFAULT 0 CHECK(revision >= 0),
+            UNIQUE(run_id,resource_kind),
+            FOREIGN KEY(run_id) REFERENCES workflow_runs(run_id) ON DELETE CASCADE
+        )""",
+        """CREATE TABLE workflow_research_resource_reservations (
+            reservation_id TEXT PRIMARY KEY,
+            budget_id TEXT NOT NULL,
+            deadline_id TEXT NOT NULL,
+            effect_id TEXT NOT NULL,
+            amount_reserved INTEGER NOT NULL CHECK(amount_reserved > 0),
+            amount_actual INTEGER CHECK(
+                amount_actual IS NULL OR
+                (amount_actual >= 0 AND amount_actual <= amount_reserved)
+            ),
+            status TEXT NOT NULL CHECK(status IN ('reserved','committed','released')),
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            UNIQUE(effect_id,budget_id),
+            FOREIGN KEY(budget_id)
+                REFERENCES workflow_research_resource_budgets(budget_id) ON DELETE CASCADE,
+            FOREIGN KEY(deadline_id)
+                REFERENCES workflow_research_deadlines(deadline_id) ON DELETE CASCADE,
+            FOREIGN KEY(effect_id) REFERENCES workflow_effects(effect_id) ON DELETE CASCADE
+        )""",
+        """CREATE TABLE workflow_effect_attempt_heads (
+            logical_effect_id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            latest_attempt_no INTEGER NOT NULL CHECK(latest_attempt_no >= 1),
+            canonical_effect_id TEXT,
+            policy_id TEXT NOT NULL,
+            updated_at REAL NOT NULL,
+            FOREIGN KEY(run_id) REFERENCES workflow_runs(run_id) ON DELETE CASCADE,
+            FOREIGN KEY(canonical_effect_id) REFERENCES workflow_effects(effect_id)
+        )""",
+        """CREATE TABLE workflow_research_continuation_heads (
+            parent_run_id TEXT PRIMARY KEY,
+            child_run_id TEXT NOT NULL UNIQUE,
+            parent_operation_id TEXT NOT NULL,
+            child_operation_id TEXT NOT NULL UNIQUE,
+            source_snapshot_hash TEXT NOT NULL,
+            spec_hash TEXT NOT NULL,
+            spec_blob_digest TEXT NOT NULL,
+            evidence_head_hash TEXT NOT NULL,
+            policy_version INTEGER NOT NULL CHECK(policy_version=1),
+            claimed_at REAL NOT NULL,
+            CHECK(parent_run_id <> child_run_id),
+            CHECK(length(spec_hash)=64 AND spec_hash NOT GLOB '*[^0-9a-f]*'),
+            CHECK(
+                length(spec_blob_digest)=64 AND
+                spec_blob_digest NOT GLOB '*[^0-9a-f]*'
+            ),
+            FOREIGN KEY(parent_run_id) REFERENCES workflow_runs(run_id) ON DELETE RESTRICT,
+            FOREIGN KEY(child_run_id) REFERENCES workflow_runs(run_id) ON DELETE RESTRICT,
+            FOREIGN KEY(parent_operation_id)
+                REFERENCES workflow_research_lineage(operation_id) ON DELETE RESTRICT,
+            FOREIGN KEY(child_operation_id)
+                REFERENCES workflow_research_lineage(operation_id) ON DELETE RESTRICT,
+            FOREIGN KEY(source_snapshot_hash)
+                REFERENCES workflow_research_snapshots(snapshot_hash) ON DELETE RESTRICT,
+            FOREIGN KEY(spec_blob_digest) REFERENCES workflow_blobs(sha256) ON DELETE RESTRICT
+        )""",
+        """CREATE INDEX idx_workflow_research_continuation_heads_snapshot
+            ON workflow_research_continuation_heads(source_snapshot_hash,parent_run_id)""",
+    ]
+    if "workflow_effects" in tables:
+        statements.extend(
+            (
+                """CREATE UNIQUE INDEX uq_workflow_effect_logical_attempt
+                    ON workflow_effects(run_id,logical_effect_id,attempt_no)
+                    WHERE logical_effect_id IS NOT NULL""",
+                """CREATE INDEX idx_workflow_effect_attempt_heads_run
+                    ON workflow_effect_attempt_heads(run_id,updated_at)""",
+            )
+        )
+    if "workflow_deliveries" in tables:
+        statements.extend(
+            (
+                """CREATE UNIQUE INDEX uq_workflow_deliveries_manifest_spec
+                    ON workflow_deliveries(run_id,manifest_ref,intent_id,channel,target_id)
+                    WHERE manifest_ref IS NOT NULL""",
+                """CREATE INDEX idx_workflow_deliveries_manifest_required_status
+                    ON workflow_deliveries(
+                        run_id,manifest_ref,required_durable,status,next_attempt_at
+                    )""",
+            )
+        )
+    for statement in statements:
+        await db.execute(statement)
+    await db.execute(
+        "INSERT INTO workflow_schema_migrations(version, applied_at) VALUES(4, ?)",
+        (time.time(),),
+    )
+    await db.execute("PRAGMA user_version=4")
     await db.commit()

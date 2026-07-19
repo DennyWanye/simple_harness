@@ -195,6 +195,13 @@ class NodeExecutionIdentity:
     node_id: str
     attempt: int
     first_attempt_time: float | None = None
+    # Native durable tasks carry both identities.  They are optional here so
+    # historical v1-v4 fixtures and third-party executables that still build
+    # the legacy positional shape remain readable.  New contracts that need
+    # loop/work-item identity (notably DeepResearch v5 progress/effects) must
+    # reject a missing value at their own boundary.
+    activation_id: str | None = None
+    invocation_key: str | None = None
 
     @classmethod
     def from_execution_info(
@@ -237,6 +244,16 @@ class NodeExecutionIdentity:
             node_id=node_id,
             attempt=attempt,
             first_attempt_time=getattr(execution_info, "node_first_attempt_time", None),
+            activation_id=(
+                str(value)
+                if (value := getattr(execution_info, "activation_id", None))
+                else None
+            ),
+            invocation_key=(
+                str(value)
+                if (value := getattr(execution_info, "invocation_key", None))
+                else None
+            ),
         )
 
 
@@ -253,10 +270,18 @@ WORKFLOW_PORT_NAMES = frozenset(
         "notifier",
         "evaluator",
         "clock",
+        "control",
         "observer",
         "progress",
         "native_execution_policy",
         "blob",
+        "snapshot",
+        "retrieval",
+        "semantic",
+        "llm_extract",
+        "llm_inference",
+        "llm_repair",
+        "deadline",
     }
 )
 

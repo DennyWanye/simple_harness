@@ -410,8 +410,10 @@ async def test_wikipedia_search_contract_from_fixture(monkeypatch):
 @pytest.mark.asyncio
 async def test_arxiv_search_contract_from_fixture():
     xml = (_FIXTURES / "arxiv_sample.xml").read_text(encoding="utf-8")
+    captured_query: dict[str, str] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        captured_query.update(dict(request.url.params))
         return httpx.Response(200, text=xml, headers={"content-type": "application/atom+xml"})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
@@ -420,6 +422,11 @@ async def test_arxiv_search_contract_from_fixture():
     assert len(out) == 1
     _assert_direct_contract(out[0], "arxiv")
     assert "arxiv.org" in out[0]["url"]
+    assert captured_query["search_query"] == (
+        'all:"sodium" AND all:"ion" AND all:"battery"'
+    )
+    assert captured_query["sortBy"] == "submittedDate"
+    assert captured_query["sortOrder"] == "descending"
 
 
 @pytest.mark.asyncio

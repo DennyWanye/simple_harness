@@ -1731,8 +1731,65 @@ class NativeCheckpointStore:
                 "outbox_intent_conflict", "intent_id is bound to different event content"
             )
 
+        delivery_specs = list(intent.get("delivery_specs") or [])
         raw_deliveries = list(intent.get("deliveries") or [])
-        if not raw_deliveries:
+        manifest_ref: str | None = None
+        if delivery_specs:
+            # v6 terminal projections describe physical delivery without
+            # embedding a session id in the immutable manifest.  Resolve both
+            # roles against the run's original delivery binding; the
+            # SessionDB/websocket handlers still enforce the captured epoch at
+            # dispatch time, so a deleted or recreated session is never
+            # revived by a late delivery.
+            ref = await (
+                await db.execute(
+                    """SELECT session_id,session_epoch FROM workflow_session_refs
+                    WHERE run_id=? AND session_kind='delivery' AND deleted_at IS NULL""",
+                    (run["run_id"],),
+                )
+            ).fetchone()
+            if ref is None:
+                raise NativeCheckpointError(
+                    "delivery_session_not_bound",
+                    "delivery_specs require an active delivery session binding",
+                )
+            manifest_ref = str(payload.get("manifest_ref") or "").strip()
+            if not manifest_ref:
+                raise NativeCheckpointError(
+                    "invalid_delivery_intent",
+                    "delivery_specs require payload.manifest_ref",
+                )
+            target_id = str(ref["session_id"])
+            for spec in delivery_specs:
+                if not isinstance(spec, Mapping):
+                    raise NativeCheckpointError(
+                        "invalid_delivery_intent", "delivery_specs must contain objects"
+                    )
+                target_role = str(spec.get("target_role") or "").strip().lower()
+                if target_role not in {"original_session", "current_epoch"}:
+                    raise NativeCheckpointError(
+                        "invalid_delivery_intent",
+                        f"unsupported delivery target_role: {target_role!r}",
+                    )
+                channel = str(spec.get("channel") or "").strip().lower()
+                if not channel:
+                    raise NativeCheckpointError(
+                        "invalid_delivery_intent", "delivery spec channel is required"
+                    )
+                required_durable = spec.get("required_durable")
+                if not isinstance(required_durable, bool):
+                    raise NativeCheckpointError(
+                        "invalid_delivery_intent",
+                        "delivery spec required_durable must be boolean",
+                    )
+                raw_deliveries.append(
+                    {
+                        "channel": channel,
+                        "target_id": target_id,
+                        "required_durable": required_durable,
+                    }
+                )
+        elif not raw_deliveries:
             ref = await (
                 await db.execute(
                     """SELECT session_id FROM workflow_session_refs
@@ -1761,10 +1818,22 @@ class NativeCheckpointStore:
             delivery_id = stable_delivery_id(event_id, channel, target_id)
             await db.execute(
                 """INSERT INTO workflow_deliveries(
-                    delivery_id,event_id,run_id,channel,target_id,status,created_at,updated_at
-                ) VALUES(?,?,?,?,?,'pending',?,?)
+                    delivery_id,event_id,run_id,channel,target_id,status,created_at,updated_at,
+                    intent_id,manifest_ref,required_durable
+                ) VALUES(?,?,?,?,?,'pending',?,?,?,?,?)
                 ON CONFLICT(event_id,channel,target_id) DO NOTHING""",
-                (delivery_id, event_id, run["run_id"], channel, target_id, now, now),
+                (
+                    delivery_id,
+                    event_id,
+                    run["run_id"],
+                    channel,
+                    target_id,
+                    now,
+                    now,
+                    intent_id if delivery_specs else None,
+                    manifest_ref,
+                    1 if delivery.get("required_durable") is True else 0,
+                ),
             )
         return event_id
 

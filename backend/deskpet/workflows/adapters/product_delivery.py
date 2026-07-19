@@ -16,6 +16,7 @@ import hashlib
 import json
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,7 @@ DeliveryHandler = Callable[
     [Mapping[str, Any], Mapping[str, Any]], Awaitable[dict[str, Any]]
 ]
 ArtifactPublisher = Callable[[dict[str, Any]], Awaitable[None]]
+ContentResolver = Callable[[str], Awaitable[bytes | str]]
 
 _ARTIFACT_CHANNELS = frozenset({"artifact", "artifact_message"})
 _RECEIPT_CHANNELS = frozenset({"receipt", "receipt_jsonl"})
@@ -43,6 +45,47 @@ _SUCCESS_OUTCOMES = frozenset({"completed", "ok", "success", "succeeded"})
 _FAILED_OUTCOMES = frozenset({"blocked", "error", "failed", "failure"})
 _CANCELLED_OUTCOMES = frozenset({"cancelled", "canceled"})
 _PENDING_OUTCOMES = frozenset({"accepted", "pending", "running"})
+
+
+@dataclass(frozen=True)
+class WorkflowMessageProjection:
+    role: str
+    projection_kind: str
+    context_visibility: str
+    skip_embed: bool
+
+
+_WORKFLOW_MESSAGE_PROJECTIONS = {
+    "workflow.final_assistant": WorkflowMessageProjection(
+        "assistant", "final_assistant", "conversation", False
+    ),
+    "workflow.progress": WorkflowMessageProjection(
+        "assistant", "workflow_progress", "exclude", True
+    ),
+    "workflow.accepted": WorkflowMessageProjection(
+        "assistant", "workflow_accepted", "exclude", True
+    ),
+    "workflow.decision": WorkflowMessageProjection(
+        "assistant", "workflow_decision", "exclude", True
+    ),
+    "workflow.final": WorkflowMessageProjection(
+        "assistant", "workflow_final_status", "exclude", True
+    ),
+    "workflow.artifact_card": WorkflowMessageProjection(
+        "assistant", "artifact_card", "exclude", True
+    ),
+}
+
+
+def workflow_message_projection(event_type: str) -> WorkflowMessageProjection:
+    """Return the only valid SessionDB classification for a workflow event."""
+    normalized = str(event_type or "").strip().lower()
+    try:
+        return _WORKFLOW_MESSAGE_PROJECTIONS[normalized]
+    except KeyError as exc:
+        raise ProductDeliveryError(
+            f"unsupported workflow message event type: {normalized!r}"
+        ) from exc
 
 
 class ProductDeliveryError(RuntimeError):
@@ -53,6 +96,43 @@ def _required_text(value: object, field_name: str) -> str:
     text = str(value or "").strip()
     if not text:
         raise ProductDeliveryError(f"workflow delivery requires {field_name}")
+    return text
+
+
+def _content_ref(payload: Mapping[str, Any]) -> str | None:
+    value = str(payload.get("content_ref") or "").strip()
+    if not value:
+        return None
+    if not value.startswith("sha256:"):
+        raise ProductDeliveryError("workflow content_ref must use sha256:<digest>")
+    digest = value[7:]
+    if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+        raise ProductDeliveryError("workflow content_ref has an invalid SHA-256 digest")
+    return value
+
+
+async def resolve_workflow_content_text(
+    payload: Mapping[str, Any], resolver: ContentResolver | None
+) -> str | None:
+    """Resolve a terminal content pointer without mutating durable payloads."""
+
+    ref = _content_ref(payload)
+    if ref is None:
+        return None
+    if resolver is None:
+        raise ProductDeliveryError("workflow content_ref has no configured resolver")
+    value = await resolver(ref)
+    if isinstance(value, bytes):
+        try:
+            text = value.decode("utf-8", errors="strict")
+        except UnicodeDecodeError as exc:
+            raise ProductDeliveryError("workflow content_ref is not strict UTF-8") from exc
+    elif isinstance(value, str):
+        text = value
+    else:
+        raise ProductDeliveryError("workflow content resolver returned an unsupported value")
+    if not text.strip():
+        raise ProductDeliveryError("workflow content_ref resolved to empty text")
     return text
 
 
@@ -157,9 +237,14 @@ def _artifact_list(
                     or "Research report"
                 ),
                 preview=preview,
-                sha256=hashlib.sha256(
-                    canonical_json(report).encode("utf-8")
-                ).hexdigest(),
+                sha256=(
+                    str(payload.get("sha256"))
+                    if isinstance(payload.get("sha256"), str)
+                    and len(str(payload.get("sha256"))) == 64
+                    else hashlib.sha256(
+                        canonical_json(report).encode("utf-8")
+                    ).hexdigest()
+                ),
             )
         ]
     raise ProductDeliveryError("artifact intent does not contain a valid artifact")
@@ -247,19 +332,46 @@ class ProductDeliveryAdapter:
         receipt_store: ReceiptStore,
         workflow_store: WorkflowRunStore | None = None,
         artifact_publisher: ArtifactPublisher | None = None,
+        content_resolver: ContentResolver | None = None,
     ) -> None:
         self.session_db = session_db
         self.receipt_store = receipt_store
         self.workflow_store = workflow_store
         self.artifact_publisher = artifact_publisher
+        self.content_resolver = content_resolver
 
     def handlers(self) -> dict[str, DeliveryHandler]:
         return {
-            "artifact": self.deliver_artifact,
-            "artifact_message": self.deliver_artifact,
-            "receipt": self.deliver_receipt,
-            "receipt_jsonl": self.deliver_receipt,
+            "artifact": self._deliver_artifact_handler,
+            "artifact_message": self._deliver_artifact_handler,
+            "receipt": self._deliver_receipt_handler,
+            "receipt_jsonl": self._deliver_receipt_handler,
         }
+
+    async def _deliver_artifact_handler(
+        self, event: Mapping[str, Any], delivery: Mapping[str, Any]
+    ) -> object:
+        result = await self.deliver_artifact(event, delivery)
+        if delivery.get("manifest_ref") is None:
+            return result
+        from ..delivery import DeliveryAttemptResultV1
+
+        if result.get("discarded") is True:
+            return DeliveryAttemptResultV1.discarded_fenced("session_epoch_mismatch")
+        return DeliveryAttemptResultV1.delivered(
+            "artifact_projection_persisted",
+            artifact_projection=result.get("artifact_projection"),
+        )
+
+    async def _deliver_receipt_handler(
+        self, event: Mapping[str, Any], delivery: Mapping[str, Any]
+    ) -> object:
+        result = await self.deliver_receipt(event, delivery)
+        if delivery.get("manifest_ref") is None:
+            return result
+        from ..delivery import DeliveryAttemptResultV1
+
+        return DeliveryAttemptResultV1.delivered("receipt_persisted")
 
     async def dispatch(
         self, event: Mapping[str, Any], delivery: Mapping[str, Any]
@@ -283,6 +395,19 @@ class ProductDeliveryAdapter:
         if status in _FAILED_OUTCOMES | _CANCELLED_OUTCOMES:
             raise ProductDeliveryError("failed workflows cannot publish completion artifacts")
 
+        resolved_text = await resolve_workflow_content_text(payload, self.content_resolver)
+        if resolved_text is not None:
+            # v6 report artifacts carry only a content-addressed Markdown
+            # pointer in the durable event.  Convert it to the existing text
+            # artifact envelope at the physical-delivery boundary.
+            payload = {
+                **payload,
+                "artifact_type": str(payload.get("artifact_type") or "research_report"),
+                "report": resolved_text,
+                "preview": str(payload.get("preview") or resolved_text),
+                "text": str(payload.get("text") or resolved_text),
+                "sha256": str(payload.get("content_ref"))[7:],
+            }
         artifacts = _artifact_list(event, payload)
         await _materialize_file_evidence(artifacts)
         tool_name = _tool_name(event, payload, "artifact_create")
@@ -300,6 +425,7 @@ class ProductDeliveryAdapter:
             },
         }
         content = json.dumps(envelope, ensure_ascii=False, separators=(",", ":"))
+        projection = workflow_message_projection("workflow.artifact_card")
         if self.workflow_store is not None:
             run_id = str(event.get("run_id") or payload.get("run_id") or "")
             ref = await self.workflow_store.get_session_ref(run_id, "delivery")
@@ -307,21 +433,27 @@ class ProductDeliveryAdapter:
                 return {"channel": str(delivery.get("channel")), "event_id": event_id, "discarded": True}
             message_id = await self.session_db.append_message_if_epoch(
                 target_id,
-                "tool",
+                projection.role,
                 content,
                 expected_epoch=int(ref["session_epoch"]),
                 workflow_event_id=event_id,
                 tool_call_id="",
+                projection_kind=projection.projection_kind,
+                context_visibility=projection.context_visibility,
+                skip_embed=projection.skip_embed,
             )
             if message_id is None:
                 return {"channel": str(delivery.get("channel")), "event_id": event_id, "discarded": True}
         else:
             message_id = await self.session_db.append_message(
                 session_id=target_id,
-                role="tool",
+                role=projection.role,
                 content=content,
                 tool_call_id="",
                 workflow_event_id=event_id,
+                projection_kind=projection.projection_kind,
+                context_visibility=projection.context_visibility,
+                skip_embed=projection.skip_embed,
             )
         if self.artifact_publisher is not None:
             await self.artifact_publisher(
@@ -462,9 +594,11 @@ def build_product_delivery_handlers(
 
 
 __all__ = [
+    "ContentResolver",
     "DeliveryHandler",
     "ProductDeliveryAdapter",
     "ProductDeliveryError",
     "build_product_delivery_handlers",
+    "resolve_workflow_content_text",
     "stable_workflow_receipt_id",
 ]

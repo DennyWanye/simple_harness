@@ -219,6 +219,30 @@ def test_context_compaction_model_reads_typed_nested_config() -> None:
     assert main._configured_context_compaction_model(cfg) == "gpt-5-mini"
 
 
+@pytest.mark.asyncio
+async def test_live_research_v5_llm_adapter_preserves_provider_usage() -> None:
+    import main
+
+    class Provider:
+        model = "gpt-test"
+
+        async def chat_with_tools_at_most_once(self, **kwargs):
+            assert kwargs["max_tokens"] == 321
+            return {
+                "content": '{"route":"persist"}',
+                "model": self.model,
+                "usage": {"prompt_tokens": 12, "completion_tokens": 7},
+                "request_id": "request-v5",
+            }
+
+    call = main._make_research_llm_call_v2(Provider())
+    result = await call("prompt", max_output_tokens=321, stable_call_id="stable-v5")
+    assert result.content == '{"route":"persist"}'
+    assert result.input_tokens == 12
+    assert result.output_tokens == 7
+    assert result.usage_source == "provider"
+
+
 def test_live_context_compaction_model_reloads_next_value(
     monkeypatch, tmp_path
 ) -> None:
@@ -315,6 +339,53 @@ async def test_main_attaches_only_epoch_fenced_workflow_history():
     )
 
     assert messages[0]["workflow_event"]["run_id"] == "run-1"
+
+
+@pytest.mark.asyncio
+async def test_main_hydrates_large_workflow_history_in_bounded_pages():
+    import main
+
+    event_ids = [f"event-{index}" for index in range(205)]
+    calls = []
+
+    class SessionDB:
+        async def get_session_delivery_state(self, session_id):
+            return {"epoch": 7, "deleted_at": None}
+
+    class WorkflowService:
+        human_store = None
+
+        async def hydrate_session_history_event_ids(
+            self, session_id, page, *, current_session_epoch, session_deleted
+        ):
+            assert len(page) <= 100
+            calls.append(list(page))
+            return {
+                "events": [
+                    {
+                        "event_id": event_id,
+                        "run_id": "run-1",
+                        "event_type": "workflow.progress",
+                        "payload": {"ordinal": index + 1, "total": 205},
+                    }
+                    for index, event_id in enumerate(page)
+                ]
+            }
+
+    messages = [
+        {"id": event_id, "role": "assistant", "text": "progress"}
+        for event_id in event_ids
+    ]
+    await main._attach_workflow_history_events(
+        rows=[{"workflow_event_id": event_id} for event_id in event_ids],
+        messages=messages,
+        session_id="session-1",
+        session_db=SessionDB(),
+        workflow_service=WorkflowService(),
+    )
+
+    assert [len(page) for page in calls] == [100, 100, 5]
+    assert all("workflow_event" in message for message in messages)
 
 
 @pytest.mark.asyncio

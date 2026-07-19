@@ -97,11 +97,12 @@ VALID_EVENTS = frozenset({
     # detail: ratio(节省比) / model(摘要模型) / count(省下 token = in-out)。脱敏:
     # 全是数字/枚举,无用户文本。
     "context_compacted",
-    # SearchGateway / DeepResearch v2 fixed-schema observability. These
+    # SearchGateway / DeepResearch v2/v3 fixed-schema observability. These
     # events deliberately carry only operational dimensions; queries, URLs,
     # snippets and generated report text are never accepted by the sink.
     "search_gateway_request",
     "search_gateway_attempt",
+    "search_gateway_cancelled_wait",
     "search_gateway_cache",
     "search_gateway_cooldown",
     "search_gateway_dedupe",
@@ -110,6 +111,8 @@ VALID_EVENTS = frozenset({
     "fetch_extract_quality",
     "deepresearch_v2_branch",
     "deepresearch_v2_stage",
+    "deepresearch_stage_timing",
+    "deepresearch_fetch_attempt_timing",
     "deepresearch_claim_support",
 })
 
@@ -153,13 +156,14 @@ _ALLOWED_DETAIL_KEYS = frozenset({
     # 子代理并发驱动 (WI-1.5) — subagent_scheduled / subagent_progress 额外维度
     # （脱敏：run_id 是 sid 派生短 id、kind 是枚举，均无用户文本）.
     "run_id",          # subagent_scheduled: <parent_sid>.par-<task_id>
+    "workflow_version", # durable workflow manifest version, e.g. v5
     "kind",            # subagent_scheduled: research/code/doc/web/fileops/general
     # WI-G1 Companion+Code v2 Multi-Agent Team — team_task_* detail keys.
     "team_id",         # team_task_*: caller-supplied short id (uuid hex)
     "teammate_id",     # team_task_claimed/done: who did the work
     # R-T3 §15.4 LLM 降级矩阵 detail keys.
     "degradation_type",  # which LLM dependency point degraded
-    # SearchGateway / DeepResearch v2 dimensions. Values are enums,
+    # SearchGateway / DeepResearch v2/v3 dimensions. Values are enums,
     # counters, durations, ratios or booleans -- never free-form content.
     "error_code",
     "cache_hit",
@@ -191,6 +195,14 @@ _ALLOWED_DETAIL_KEYS = frozenset({
     "citations",
     "artifact_count",
     "report_bytes",
+    "request_id",          # random request correlation id, never query text
+    "permit",              # closed / half_open / half_open_busy / open
+    "circuit_generation",  # monotonically increasing provider generation
+    "probe_outcome",       # hit / empty / failure / cancel / not_probe
+    "failure_class",       # timeout / blocked / captcha / rate_limit / ...
+    "transition",          # closed/open/half_open transition enum
+    "upstream_called",     # true only when a provider transport call happened
+    "is_rescue",           # whether the attempt belongs to empty-aware rescue
 })
 
 # Max length of any *surviving* string value — defence-in-depth second

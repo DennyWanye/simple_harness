@@ -103,6 +103,27 @@ BUILTIN: dict[str, ModelContextInfo] = {
         recall_sweet_tokens=384_000,
         supported_windows=(128_000, 400_000, 1_000_000),
     ),
+    # 2026-07-19 temporary capability pin: the relay currently exposes
+    # zai-org/GLM-5.2 as ``sf-glm-5.2`` but does not propagate a usable
+    # context_window into the runtime resolver.  Keep both ids aligned at
+    # the model's published 1M window until provider metadata becomes the
+    # authoritative source.
+    "sf-glm-5.2": ModelContextInfo(
+        model="sf-glm-5.2",
+        context_window=1_000_000,
+        effective_pct=0.95,
+        compact_at_pct=0.75,
+        recall_sweet_tokens=384_000,
+        supported_windows=(128_000, 400_000, 1_000_000),
+    ),
+    "zai-org/GLM-5.2": ModelContextInfo(
+        model="zai-org/GLM-5.2",
+        context_window=1_000_000,
+        effective_pct=0.95,
+        compact_at_pct=0.75,
+        recall_sweet_tokens=384_000,
+        supported_windows=(128_000, 400_000, 1_000_000),
+    ),
     "claude-sonnet-4-5": ModelContextInfo(
         model="claude-sonnet-4-5",
         context_window=200_000,

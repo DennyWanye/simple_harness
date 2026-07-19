@@ -86,7 +86,7 @@ async def test_fresh_v17_has_canonical_lazy_and_ownership_schema(tmp_path: Path)
     await run_migrations(db_path)
 
     with sqlite3.connect(db_path) as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 18
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 19
         tables = {
             row[0]
             for row in conn.execute(
@@ -129,9 +129,13 @@ async def test_realistic_v16_lazy_fixture_upgrades_without_data_loss(tmp_path: P
     await _build_v16_fixture(db_path, tmp_path / "v16-migrations")
 
     applied = await run_migrations(db_path)
-    assert applied == ["009_memory_v2_v17.sql", "010_context_os_v18.sql"]
+    assert applied == [
+        "009_memory_v2_v17.sql",
+        "010_context_os_v18.sql",
+        "011_message_projection_visibility_v19.sql",
+    ]
     with sqlite3.connect(db_path) as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 18
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 19
         assert conn.execute(
             "SELECT content FROM code_todos WHERE workflow_run_id IS NULL"
         ).fetchone() == ("Legacy todo",)

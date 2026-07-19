@@ -49,6 +49,136 @@ async def test_fallback_order_is_raw_scrapling_then_async_httpx():
 
 
 @pytest.mark.asyncio
+async def test_httpx_preferred_skips_scrapling_transport():
+    transport = _Transport({"ok": True, "status": 200, "html": "should not run"})
+
+    async def handler(request):
+        return httpx.Response(
+            200,
+            text="<title>A</title><body>official article</body>",
+            headers={"content-type": "text/html"},
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    service = FetchExtractService(
+        transport=transport,
+        client=client,
+        respect_robots=False,
+        request_interval_ms=0,
+    )
+    try:
+        raw = await service.fetch_raw(
+            FetchRequest("https://example.test/a", prefer_httpx=True)
+        )
+    finally:
+        await service.close()
+        await client.aclose()
+
+    assert transport.calls == []
+    assert raw["fetcher"] == "httpx"
+
+
+@pytest.mark.asyncio
+async def test_deepresearch_fetch_substages_emit_run_scoped_safe_timings(monkeypatch):
+    events = []
+    monkeypatch.setattr(
+        "deskpet.retrieval.fetch_extract._metric",
+        lambda event, detail: events.append((event, detail)),
+    )
+    transport = _Transport({"ok": False, "error": "scrapling_failed"})
+
+    async def handler(request):
+        return httpx.Response(
+            200,
+            text="<title>A</title><body>article</body>",
+            headers={"content-type": "text/html"},
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    service = FetchExtractService(
+        transport=transport,
+        client=client,
+        respect_robots=False,
+        request_interval_ms=0,
+    )
+    try:
+        await service.fetch(
+            FetchRequest(
+                "https://example.test/a",
+                run_id="run-fetch-timing",
+                render_policy="never",
+            )
+        )
+    finally:
+        await service.close()
+        await client.aclose()
+
+    timings = [
+        detail
+        for event, detail in events
+        if event == "deepresearch_fetch_attempt_timing"
+    ]
+    assert [row["stage"] for row in timings] == [
+        "robots", "scrapling", "httpx", "extract"
+    ]
+    assert [row["status"] for row in timings] == [
+        "succeeded", "failed", "succeeded", "succeeded"
+    ]
+    assert all(row["run_id"] == "run-fetch-timing" for row in timings)
+    assert all(row["duration_ms"] >= 0 for row in timings)
+    assert all("url" not in row and "query" not in row for row in timings)
+
+
+@pytest.mark.asyncio
+async def test_httpx_transport_error_never_hidden_retries(monkeypatch):
+    events = []
+    monkeypatch.setattr(
+        "deskpet.retrieval.fetch_extract._metric",
+        lambda event, detail: events.append((event, detail)),
+    )
+    transport = _Transport({"ok": False, "error": "scrapling_failed"})
+    service = FetchExtractService(
+        transport=transport,
+        respect_robots=False,
+        request_interval_ms=0,
+    )
+    calls = 0
+
+    async def flaky_get(url, *, timeout, headers=None, client=None):
+        nonlocal calls
+        calls += 1
+        raise httpx.RemoteProtocolError("stale pooled connection")
+
+    monkeypatch.setattr(service, "_bounded_httpx_get", flaky_get)
+    try:
+        with pytest.raises(FetchExtractError, match="http_error"):
+            await service.fetch(
+                FetchRequest(
+                    "https://example.test/a",
+                    timeout=5,
+                    render_policy="never",
+                    run_id="run-httpx-no-hidden-retry",
+                )
+            )
+    finally:
+        await service.close()
+
+    assert calls == 1
+    timings = [
+        detail
+        for event, detail in events
+        if event == "deepresearch_fetch_attempt_timing"
+    ]
+    assert any(
+        row["stage"] == "httpx"
+        and row["status"] == "failed"
+        and row["error_code"] == "RemoteProtocolError"
+        for row in timings
+    )
+    assert all(row["stage"] != "httpx_retry" for row in timings)
+
+
+@pytest.mark.asyncio
 async def test_robots_policy_blocks_page_before_transport():
     transport = _Transport({"ok": True, "status": 200, "html": "leaked"})
     async def handler(request):

@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "queries": [
+    {
+      "category": "official_technical_docs",
+      "query": "Python 3.14 free-threaded mode versus Python 3.13"
+    },
+    {
+      "category": "cn_policy_latest",
+      "query": "Current regulatory requirements of China's Interim Measures for Generative AI Services"
+    },
+    {
+      "category": "web_standard_dynamic",
+      "query": "Official browser support status for WebGPU"
+    }
+  ]
+}
