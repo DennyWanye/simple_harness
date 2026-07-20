@@ -11,13 +11,15 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, replace
 from typing import Any, AsyncIterator, Mapping, Protocol
 
 from deskpet.harness.continuations import (
     ReactCommandBoundary,
     ReactCommandBoundaryStore,
 )
+from deskpet.execution.ledger import ExecutionLedger
 from deskpet.harness.ports import (
     CancelAcknowledgedCandidate,
     ChildAcceptedCandidate,
@@ -34,6 +36,7 @@ from deskpet.harness.ports import (
     OpenDecision,
     ProviderFallbackCandidate,
     TokenCandidate,
+    ToolGrantRef,
     ToolOutcomesSignal,
 )
 from deskpet.harness.tool_executor import (
@@ -118,6 +121,14 @@ class ReActCollaborator(Protocol):
 
 class DurableBoundaryPromoter(Protocol):
     async def promote_for_boundary(self, run_id: str) -> None: ...
+
+
+class LedgerBoundaryPromoter:
+    def __init__(self, ledger: ExecutionLedger) -> None:
+        self._ledger = ledger
+
+    async def promote_for_boundary(self, run_id: str) -> None:
+        await self._ledger.promote_active(run_id)
 
 
 class EffectOutcomeReader(Protocol):
@@ -312,7 +323,60 @@ class ReActDriver:
 
     @staticmethod
     def _requires_boundary(batch: ReactToolBatch) -> bool:
-        return any(call.recoverable_effect for call in batch.calls)
+        return any(
+            call.recoverable_effect or call.requires_authorization
+            for call in batch.calls
+        )
+
+    @staticmethod
+    def _permission_decision(
+        boundary: ReactCommandBoundary,
+        index: int,
+    ) -> OpenDecision:
+        call = boundary.pending_calls[index]
+        identity = hashlib.sha256(
+            f"permission|{boundary.run_id}|{call.effect_id}".encode("utf-8")
+        ).hexdigest()
+        nonce = hashlib.sha256(f"nonce|{identity}".encode("utf-8")).hexdigest()
+        return OpenDecision(
+            run_id=boundary.run_id,
+            command_id=boundary.command_id,
+            decision_id=identity,
+            nonce=nonce,
+            kind="permission",
+            prompt={
+                "tool_name": call.tool_name,
+                "call_id": call.call_id,
+                "reason": "tool_requires_authorization",
+            },
+            expires_at=time.time() + 300.0,
+            call_id=call.call_id,
+            effect_id=call.effect_id,
+            tool_name=call.tool_name,
+            args_hash=call.args_hash,
+            capability_hash=call.capability_hash,
+            scope_hash=call.scope_hash,
+        )
+
+    @staticmethod
+    def _grant_state(boundary: ReactCommandBoundary) -> dict[str, Mapping[str, Any]]:
+        raw = boundary.completion_state.get("authorization_refs", {})
+        return {
+            str(call_id): dict(value)
+            for call_id, value in dict(raw).items()
+            if isinstance(value, Mapping)
+        }
+
+    @classmethod
+    def _next_permission_index(
+        cls, boundary: ReactCommandBoundary
+    ) -> int | None:
+        grants = cls._grant_state(boundary)
+        for index in boundary.pending_indexes:
+            call = boundary.pending_calls[index]
+            if call.requires_authorization and call.call_id not in grants:
+                return index
+        return None
 
     @staticmethod
     def _boundary_for_batch(request: DriverStart, batch: ReactToolBatch) -> ReactCommandBoundary:
@@ -379,6 +443,13 @@ class ReActDriver:
                 boundary = self._boundary_for_batch(request, emission)
                 if self._requires_boundary(emission):
                     await self._promoter.promote_for_boundary(request.run_id)
+                    permission_index = self._next_permission_index(boundary)
+                    if permission_index is not None:
+                        decision = self._permission_decision(boundary, permission_index)
+                        boundary = replace(boundary, pending_decision=decision)
+                        await self._boundaries.put(boundary, open_decision=decision)
+                        yield decision
+                        return
                     await self._boundaries.put(boundary)
                 else:
                     self._volatile[request.run_id] = boundary
@@ -447,12 +518,30 @@ class ReActDriver:
     @staticmethod
     def _execute_command(boundary: ReactCommandBoundary) -> ExecuteTools:
         indexes = boundary.pending_indexes
+        grants = ReActDriver._grant_state(boundary)
+        grant_refs = []
+        for index in indexes:
+            call = boundary.pending_calls[index]
+            value = grants.get(call.call_id)
+            grant_refs.append(
+                None
+                if value is None
+                else ToolGrantRef(
+                    grant_id=str(value["grant_id"]),
+                    decision_id=str(value["decision_id"]),
+                    decision_nonce=str(value["decision_nonce"]),
+                    version=int(value.get("version", 0)),
+                )
+            )
         return ExecuteTools(
             run_id=boundary.run_id,
             command_id=boundary.command_id,
             calls=tuple(boundary.pending_calls[index] for index in indexes),
             contexts=tuple(boundary.tool_contexts[index] for index in indexes),
             original_indexes=indexes,
+            grant_refs=(
+                tuple(grant_refs) if any(item is not None for item in grant_refs) else ()
+            ),
         )
 
     def start(self, request: DriverStart) -> AsyncIterator[DriverCandidate]:
@@ -543,11 +632,61 @@ class ReActDriver:
                 return
             if isinstance(signal, DecisionSignal):
                 boundary = await self._load_boundary(signal.run_id)
-                boundary = await self._boundaries.resolve_decision(
+                await self._boundaries.confirm_resolved_decision(
                     boundary,
                     decision_id=signal.decision_id,
-                    response=signal.response,
                 )
+                pending = boundary.pending_decision
+                assert pending is not None
+                if boundary.pending_calls and pending.call_id is not None:
+                    indexes = {
+                        call.call_id: index
+                        for index, call in enumerate(boundary.pending_calls)
+                    }
+                    index = indexes[pending.call_id]
+                    if bool(signal.response.get("allow", signal.response.get("approved", True))):
+                        grant_id = str(signal.response.get("grant_id") or "").strip()
+                        if not grant_id:
+                            raise ValueError("allowed permission response is missing grant_id")
+                        state = copy.deepcopy(dict(boundary.completion_state))
+                        refs = dict(state.get("authorization_refs") or {})
+                        refs[pending.call_id] = {
+                            "grant_id": grant_id,
+                            "decision_id": pending.decision_id,
+                            "decision_nonce": pending.nonce,
+                            "version": int(signal.response.get("grant_version") or 0),
+                        }
+                        state["authorization_refs"] = refs
+                        boundary = replace(
+                            boundary,
+                            completion_state=state,
+                            pending_decision=None,
+                            version=boundary.version + 1,
+                        )
+                    else:
+                        boundary = boundary.with_outcomes(
+                            {
+                                index: ToolOutcome.failed(
+                                    boundary.pending_calls[index],
+                                    "authorization_denied",
+                                )
+                            }
+                        )
+                        boundary = replace(boundary, pending_decision=None)
+                    next_index = self._next_permission_index(boundary)
+                    if next_index is not None:
+                        decision = self._permission_decision(boundary, next_index)
+                        boundary = replace(boundary, pending_decision=decision)
+                        await self._boundaries.put(boundary, open_decision=decision)
+                        yield decision
+                        return
+                    await self._boundaries.put(boundary)
+                    if boundary.pending_indexes:
+                        yield self._execute_command(boundary)
+                    else:
+                        async for candidate in self._resume_completed(boundary):
+                            yield candidate
+                    return
                 messages = tuple(boundary.canonical_messages) + (
                     {
                         "role": "system",
@@ -561,7 +700,15 @@ class ReActDriver:
                         ),
                     },
                 )
-                boundary = boundary.with_backfilled_messages(messages)
+                state = copy.deepcopy(dict(boundary.completion_state))
+                state["model_backfilled"] = True
+                boundary = replace(
+                    boundary,
+                    canonical_messages=messages,
+                    completion_state=state,
+                    pending_decision=None,
+                    version=boundary.version + 1,
+                )
                 await self._boundaries.put(boundary)
                 request = self._request_from_boundary(boundary)
                 self._requests[signal.run_id] = request
@@ -679,6 +826,7 @@ __all__ = [
     "EffectReconciler",
     "EffectContinuationCommitter",
     "LegacyAgentLoopCollaborator",
+    "LedgerBoundaryPromoter",
     "LegacyAgentLoopToolInterceptionError",
     "ReActCollaborator",
     "ReActDriver",

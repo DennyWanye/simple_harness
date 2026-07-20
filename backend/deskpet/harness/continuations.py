@@ -248,13 +248,12 @@ class ReactCommandBoundaryStore(Protocol):
         open_decision: OpenDecision | None = None,
     ) -> None: ...
 
-    async def resolve_decision(
+    async def confirm_resolved_decision(
         self,
         boundary: ReactCommandBoundary,
         *,
         decision_id: str,
-        response: Mapping[str, Any],
-    ) -> ReactCommandBoundary: ...
+    ) -> None: ...
 
     async def load(self, run_id: str) -> ReactCommandBoundary | None: ...
     async def delete(self, run_id: str) -> None: ...
@@ -408,46 +407,28 @@ class SqliteReactCommandBoundaryStore:
         finally:
             await db.close()
 
-    async def resolve_decision(
+    async def confirm_resolved_decision(
         self,
         boundary: ReactCommandBoundary,
         *,
         decision_id: str,
-        response: Mapping[str, Any],
-    ) -> ReactCommandBoundary:
+    ) -> None:
         if (
             boundary.pending_decision is None
             or boundary.pending_decision.decision_id != decision_id
         ):
             raise ValueError("decision does not match pending boundary")
-        resolved = replace(
-            boundary,
-            pending_decision=None,
-            version=boundary.version + 1,
-        )
-        status = "allowed" if bool(response.get("allow", True)) else "denied"
-        now = float(self._clock())
         db = await self._connect()
         try:
-            await db.execute("BEGIN IMMEDIATE")
-            cursor = await db.execute(
-                """
-                UPDATE execution_decisions
-                SET status=?,response_schema_version=1,response_json=?,
-                    decision_version=decision_version+1,resolved_at=?
-                WHERE decision_id=? AND run_id=? AND status='open'
-                """,
-                (status, _json(dict(response)), now, decision_id, boundary.run_id),
-            )
-            if cursor.rowcount != 1:
-                raise RuntimeError("decision_already_resolved_or_missing")
-            await self._upsert(db, resolved)
-            await db.commit()
-            return resolved
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
+            row = await (
+                await db.execute(
+                    """SELECT status FROM execution_decisions
+                    WHERE decision_id=? AND run_id=?""",
+                    (decision_id, boundary.run_id),
+                )
+            ).fetchone()
+            if row is None or str(row["status"]) not in {"allowed", "denied"}:
+                raise RuntimeError("decision_not_resolved_by_authoritative_store")
         finally:
             await db.close()
 
@@ -485,7 +466,7 @@ class SqliteReactCommandBoundaryStore:
                         (decision_id,),
                     )
                 ).fetchone()
-                if drow is not None and str(drow["status"]) == "open":
+                if drow is not None:
                     decision = OpenDecision(
                         run_id=str(drow["run_id"]),
                         command_id=str(payload["command_id"]),

@@ -82,16 +82,27 @@ class ProviderFallbackCandidate:
 
 
 @dataclass(frozen=True)
+class ToolGrantRef:
+    grant_id: str
+    decision_id: str
+    decision_nonce: str
+    version: int = 0
+
+
+@dataclass(frozen=True)
 class ExecuteTools:
     run_id: str
     command_id: str
     calls: tuple[PreparedExecutionCall, ...]
     contexts: tuple[ToolExecutionContext, ...]
     original_indexes: tuple[int, ...]
+    grant_refs: tuple[ToolGrantRef | None, ...] = ()
 
     def __post_init__(self) -> None:
         if len(self.calls) != len(self.contexts) or len(self.calls) != len(self.original_indexes):
             raise ValueError("calls, contexts and original_indexes must align")
+        if self.grant_refs and len(self.grant_refs) != len(self.calls):
+            raise ValueError("grant refs and calls must align")
 
 
 @dataclass(frozen=True)
@@ -259,5 +270,6 @@ __all__ = [
     "PersistedEventCandidate",
     "ProviderFallbackCandidate",
     "TokenCandidate",
+    "ToolGrantRef",
     "ToolOutcomesSignal",
 ]

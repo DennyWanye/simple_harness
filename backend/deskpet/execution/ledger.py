@@ -169,6 +169,22 @@ class ExecutionLedger:
             self._events_by_run.pop(active_id, None)
             return result
 
+    async def promote_active(self, run_id: str) -> CreateRunResult:
+        """Promote the exact active intent without reconstructing it in a Driver."""
+
+        async with self._lock:
+            active = self._active_by_id.get(run_id)
+            if active is None:
+                raise PersistenceRequired(
+                    "active_run_not_found", "only an active ephemeral run can be promoted"
+                )
+            spec = replace(
+                active.spec,
+                persistence_level=PersistenceLevel.DURABLE,
+            )
+            expected_version = active.version
+        return await self.promote(spec, expected_version=expected_version)
+
     @staticmethod
     def _terminal_outcome(status: RunStatus) -> OutcomeStatus:
         return {

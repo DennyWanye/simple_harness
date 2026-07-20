@@ -295,6 +295,15 @@ async def test_decision_boundary_survives_new_driver_and_keeps_session(tmp_path)
         DurablePromoter(path),
         EffectReader(),
     )
+    async with aiosqlite.connect(path) as db:
+        await db.execute(
+            """UPDATE execution_decisions
+            SET status='allowed',response_schema_version=1,response_json=?,
+                decision_version=decision_version+1,resolved_at=1.0
+            WHERE decision_id='decision-1'""",
+            (json.dumps({"answer": "F:/workspace"}),),
+        )
+        await db.commit()
     candidates = await _collect(
         second.signal(
             DecisionSignal("run-react", "decision-1", {"answer": "F:/workspace"})
@@ -316,6 +325,55 @@ async def test_decision_boundary_survives_new_driver_and_keeps_session(tmp_path)
             )
         ).fetchone()
     assert row == ("allowed",)
+
+
+@pytest.mark.asyncio
+async def test_permission_batch_waits_for_durable_grant_before_execution(tmp_path):
+    call = _call(0, durable=True)
+    call = PreparedExecutionCall(
+        tool_name=call.tool_name,
+        model_args=call.model_args,
+        call_id=call.call_id,
+        effect_id=call.effect_id,
+        capability_hash=call.capability_hash,
+        scope_hash=call.scope_hash,
+        requires_authorization=True,
+        recoverable_effect=True,
+    )
+    batch = ReactToolBatch("batch-permission", (call,), (_context(call),))
+    driver, store, _, path = _driver(tmp_path, ScriptedCollaborator([batch]))
+
+    first = await _collect(driver.start(_request()))
+    assert len(first) == 1
+    decision = first[0]
+    assert isinstance(decision, OpenDecision)
+    async with aiosqlite.connect(path) as db:
+        await db.execute(
+            """UPDATE execution_decisions
+            SET status='allowed',response_schema_version=1,response_json='{"allow":true}',
+                decision_version=decision_version+1,resolved_at=1.0
+            WHERE decision_id=?""",
+            (decision.decision_id,),
+        )
+        await db.commit()
+
+    resumed = await _collect(
+        driver.signal(
+            DecisionSignal(
+                "run-react",
+                decision.decision_id,
+                {"allow": True, "grant_id": "grant-1", "grant_version": 0},
+                nonce=decision.nonce,
+                version=0,
+            )
+        )
+    )
+
+    assert len(resumed) == 1
+    command = resumed[0]
+    assert isinstance(command, ExecuteTools)
+    assert command.grant_refs[0].grant_id == "grant-1"
+    assert command.grant_refs[0].decision_nonce == decision.nonce
 
 
 @pytest.mark.asyncio

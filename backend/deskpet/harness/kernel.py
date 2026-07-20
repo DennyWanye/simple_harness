@@ -12,6 +12,7 @@ from types import MappingProxyType
 from deskpet.execution.contracts import (
     ActorContext,
     AttachmentPolicy,
+    GrantConsume,
     JsonValue,
     LiveCursor,
     OutcomeStatus,
@@ -362,6 +363,7 @@ class RunKernel:
             response["decision_status"] = resolved.status.value
             if authorization is not None:
                 response["grant_id"] = authorization.grant_id
+                response["grant_version"] = authorization.version
             driver_signal = DriverDecisionSignal(
                 run_id=signal.run_id,
                 decision_id=signal.decision_id,
@@ -637,9 +639,45 @@ class RunKernel:
             await self._emit_live(record, event)
             if self._tool_executor is None:
                 raise RuntimeError("tool executor is unavailable")
+            authorizations = []
+            refs = candidate.grant_refs or (None,) * len(candidate.calls)
+            actor = ActorContext(
+                principal_id=record.context.principal_id,
+                session_id=record.context.session_id,
+                auth_epoch=record.context.auth_epoch,
+                root_run_id=record.context.root_run_id,
+            )
+            for call, context, grant_ref in zip(
+                candidate.calls, candidate.contexts, refs
+            ):
+                if grant_ref is None:
+                    authorizations.append(None)
+                    continue
+                if self._decisions is None:
+                    raise RuntimeError("decision store is unavailable for an authorized tool")
+                authorizations.append(
+                    await self._decisions.consume(
+                        GrantConsume(
+                            grant_id=grant_ref.grant_id,
+                            decision_id=grant_ref.decision_id,
+                            decision_nonce=grant_ref.decision_nonce,
+                            run_id=record.run_id,
+                            expected_session_id=record.context.session_id,
+                            call_id=call.call_id,
+                            effect_id=call.effect_id,
+                            tool_name=call.tool_name,
+                            args_hash=call.args_hash,
+                            capability_hash=context.capability_hash,
+                            scope_hash=context.scope_hash,
+                            expected_version=grant_ref.version,
+                        ),
+                        actor,
+                    )
+                )
             outcomes = await self._tool_executor.execute_batch(
                 candidate.calls,
                 candidate.contexts,
+                authorizations=authorizations,
             )
             return await self._consume(
                 registration,

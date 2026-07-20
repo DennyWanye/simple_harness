@@ -20,6 +20,14 @@ from deskpet.execution.contracts import (
 )
 from deskpet.execution.ledger import ExecutionLedger
 from deskpet.harness.decisions import DecisionStore, DecisionWakeupCache
+from deskpet.harness.continuations import SqliteReactCommandBoundaryStore
+from deskpet.harness.context import HostContextFactory
+from deskpet.harness.drivers.react import (
+    LedgerBoundaryPromoter,
+    ReActDriver,
+    ReactFinal,
+    ReactToolBatch,
+)
 from deskpet.harness.child_runs import ChildRunCoordinator
 from deskpet.harness.kernel import (
     HostContext,
@@ -254,6 +262,67 @@ class PreparedRegistry:
             call.effect_id,
             ToolOutcomeStatus.SUCCEEDED,
             value={"seen": call.args_copy()["value"]},
+        )
+
+
+class PermissionCollaborator:
+    def __init__(self) -> None:
+        self.tool_executions = 0
+
+    async def start(self, request):
+        assert request.run_context is not None
+        context_factory = HostContextFactory()
+        scope_hash = str(request.run_context.workspace["scope_hash"])
+        call = PreparedExecutionCall(
+            tool_name="write_probe",
+            model_args={"value": 9},
+            call_id="call-permission",
+            effect_id="e" * 64,
+            capability_hash=request.run_context.capability_hash,
+            scope_hash=scope_hash,
+            requires_authorization=True,
+            recoverable_effect=True,
+        )
+        context = context_factory.create_tool_context(
+            request.run_context,
+            run_id=request.run_id,
+            call_id=call.call_id,
+            effect_id=call.effect_id,
+        )
+        yield ReactToolBatch("permission-batch", (call,), (context,))
+
+    async def resume(self, boundary, response):
+        self.tool_executions += 1
+        yield ReactFinal("authorized write complete")
+
+    async def cancel(self, run_id, reason):
+        return None
+
+    async def close(self):
+        return None
+
+
+class NoEffects:
+    async def get_outcome(self, effect_id):
+        return None
+
+
+class AuthorizedRegistry:
+    def __init__(self) -> None:
+        self.authorizations = []
+
+    def is_concurrency_safe(self, tool_name):
+        return False
+
+    async def execute_call(self, call, context, *, authorization=None, **kwargs):
+        assert authorization is not None
+        assert authorization.binding_error(call, context) is None
+        self.authorizations.append(authorization)
+        return ToolOutcome(
+            call.call_id,
+            call.effect_id,
+            ToolOutcomeStatus.SUCCEEDED,
+            value={"written": 1},
         )
 
 
@@ -590,6 +659,63 @@ async def test_kernel_executes_tool_command_and_resumes_same_driver(tmp_path) ->
     assert record.status is RunStatus.COMPLETED
     assert driver.signals == 1
     assert driver.outcomes[0].value == {"seen": 7}
+
+
+@pytest.mark.asyncio
+async def test_kernel_permission_grant_is_consumed_once_before_effect(tmp_path) -> None:
+    path = tmp_path / "workflow.db"
+    uow = SqliteExecutionUnitOfWork(path)
+    ledger = ExecutionLedger(uow)
+    await ledger.initialize()
+    decision_store = DecisionStore(uow, DecisionWakeupCache())
+    collaborator = PermissionCollaborator()
+    driver = ReActDriver(
+        collaborator,
+        SqliteReactCommandBoundaryStore(path),
+        LedgerBoundaryPromoter(ledger),
+        NoEffects(),
+    )
+    registry = AuthorizedRegistry()
+    value = RunKernel(
+        ledger=ledger,
+        router=RegisteredRouter(
+            StaticClassifier("react.default"),
+            [RouteProfile("react.default", "react")],
+        ),
+        drivers=[RegisteredDriver("react", driver)],
+        decision_store=decision_store,
+        tool_executor=UnifiedToolExecutor(registry),
+    )
+    handle = await value.start(
+        RunRequest("write", "request-permission", "turn-permission"),
+        host(),
+    )
+    actor = host().actor(root_run_id=handle.root_run_id)
+    stream = value.observe(handle.ref, actor)
+    decision_event = await anext(stream)
+    assert decision_event.kind == "decision"
+    decision_id = str(decision_event.candidate.correlation["decision_id"])
+    decision = await decision_store.get(decision_id, ref=handle.ref, actor=actor)
+
+    receipt = await value.signal(
+        handle.ref,
+        actor,
+        DecisionSignal(
+            handle.ref.run_id,
+            decision_id,
+            {"allow": True},
+            nonce=decision.request.nonce,
+            version=decision.decision_version,
+        ),
+    )
+    remaining = [event async for event in stream]
+    record = await ledger.query(handle.ref, actor)
+
+    assert receipt.accepted is True
+    assert record.status is RunStatus.COMPLETED
+    assert remaining[-1].kind == "final"
+    assert len(registry.authorizations) == 1
+    assert collaborator.tool_executions == 1
 
 
 def test_kernel_surface_is_six_operations_and_has_no_product_branches() -> None:
