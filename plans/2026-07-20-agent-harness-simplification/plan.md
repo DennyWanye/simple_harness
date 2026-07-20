@@ -776,7 +776,7 @@ backend\.venv\Scripts\python.exe -m pytest $harnessTests -q
 $workflowTests = @(rg --files backend/tests | Where-Object { $_ -match 'test_workflow_.*\.py$' })
 backend\.venv\Scripts\python.exe -m pytest $workflowTests -q
 backend\.venv\Scripts\python.exe scripts/acceptance/harness_owner_audit.py --json
-backend\.venv\Scripts\python.exe scripts/bench/harness_baseline.py --compare plans/2026-07-20-agent-harness-simplification/baseline.json
+backend\.venv\Scripts\python.exe scripts/bench/harness_baseline.py --compare plans/2026-07-20-agent-harness-simplification/r0-benchmark.json
 backend\.venv\Scripts\python.exe scripts/acceptance/last_mile_smoke.py
 Set-Location tauri-app
 npm run test -- --run
