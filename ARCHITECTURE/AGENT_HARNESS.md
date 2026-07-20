@@ -110,6 +110,18 @@ verification is `26 passed`; the integrated harness is `235 passed, 9 xfailed`
 and adjusted LOC is `32,809 <= 33,228`. Production ownership remains
 `legacy/0`; Kernel recovery is not activated yet.
 
+R3 also splits the in-process driver runtime without creating another durable
+owner. `RunKernel` is 647 physical lines and keeps only the six public
+operations, routing, lifecycle choice, recovery lease coordination, and
+terminal authority. Product-neutral contracts, the single `BoundedLiveIndex`,
+and stateless `DriverRuntime` are separate modules; none imports SQLite or
+creates persistence. Per-run live history is bounded at 256 events and each
+subscriber queue at 128 items; stale cursors and slow subscribers fail closed
+with `LiveStreamOverflow`. Durable observe hydrates UoW events in a fresh
+Kernel process, while terminal/close remove subscriber, task, and run refs.
+Verification: focused `18 passed`, full harness `237 passed, 9 xfailed`, and
+adjusted LOC `32,935 <= 33,228` with zero unknown classifications.
+
 ## Request Lifecycle
 
 The outer text-chat order is `ws_ingress -> ProductTurnPreparer.prepare_context
