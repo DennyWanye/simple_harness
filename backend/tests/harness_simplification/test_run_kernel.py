@@ -35,11 +35,19 @@ from deskpet.harness.ports import (
     ChildAcceptedSignal,
     ChildTerminalSignal,
     DriverTerminalCandidate,
+    ExecuteTools,
     JoinPolicy,
     PersistedEventCandidate,
     TokenCandidate,
 )
 from deskpet.harness.router import ClassifiedRoute, RegisteredRouter, RouteProfile
+from deskpet.harness.tool_executor import (
+    PreparedExecutionCall,
+    ToolOutcome,
+    ToolOutcomeStatus,
+    UnifiedToolExecutor,
+)
+from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
 
 
@@ -198,6 +206,54 @@ class TerminalRaceDriver(FakeDriver):
             "completed",
             "child-final",
             correlation={"child_run_id": signal.child_run_id},
+        )
+
+
+class ToolLoopDriver(FakeDriver):
+    def __init__(self) -> None:
+        super().__init__()
+        self.outcomes = ()
+
+    async def start(self, request):
+        call = PreparedExecutionCall(
+            tool_name="read_probe",
+            model_args={"value": 7},
+            call_id="call-1",
+            effect_id="effect-1",
+            capability_hash="c" * 64,
+            scope_hash="scope-1",
+        )
+        context = ToolExecutionContext(
+            scope_id="scope-1",
+            session_id=request.session_id,
+            request_id="request-1",
+            root_run_id=request.run_id,
+            run_id=request.run_id,
+            call_id=call.call_id,
+            effect_id=call.effect_id,
+            capability_hash=call.capability_hash,
+            scope_hash=call.scope_hash,
+        )
+        yield ExecuteTools(request.run_id, "tools-1", (call,), (context,), (0,))
+
+    async def signal(self, signal):
+        self.signals += 1
+        self.outcomes = signal.outcomes
+        yield DriverTerminalCandidate(signal.run_id, "completed", "tool complete")
+
+
+class PreparedRegistry:
+    def is_concurrency_safe(self, tool_name):
+        return True
+
+    async def execute_call(self, call, context, **kwargs):
+        assert context.call_id == call.call_id
+        assert context.effect_id == call.effect_id
+        return ToolOutcome(
+            call.call_id,
+            call.effect_id,
+            ToolOutcomeStatus.SUCCEEDED,
+            value={"seen": call.args_copy()["value"]},
         )
 
 
@@ -507,6 +563,31 @@ async def test_root_and_child_terminal_race_has_one_winner(tmp_path) -> None:
     terminal = [event for event in events if event.kind == "final"]
     assert record.status is RunStatus.COMPLETED
     assert len(terminal) == 1
+
+
+@pytest.mark.asyncio
+async def test_kernel_executes_tool_command_and_resumes_same_driver(tmp_path) -> None:
+    uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
+    ledger = ExecutionLedger(uow)
+    await ledger.initialize()
+    driver = ToolLoopDriver()
+    value = RunKernel(
+        ledger=ledger,
+        router=RegisteredRouter(
+            StaticClassifier("react.default"),
+            [RouteProfile("react.default", "react")],
+        ),
+        drivers=[RegisteredDriver("react", driver)],
+        tool_executor=UnifiedToolExecutor(PreparedRegistry()),
+    )
+
+    handle = await value.start(RunRequest("tool", "req-tool", "turn-1"), host())
+    await asyncio.sleep(0.02)
+    record = await ledger.query(handle.ref, host().actor(root_run_id=handle.root_run_id))
+
+    assert record.status is RunStatus.COMPLETED
+    assert driver.signals == 1
+    assert driver.outcomes[0].value == {"seen": 7}
 
 
 def test_kernel_surface_is_six_operations_and_has_no_product_branches() -> None:

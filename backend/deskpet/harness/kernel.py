@@ -49,8 +49,10 @@ from .ports import (
     PersistedEventCandidate,
     ProviderFallbackCandidate,
     TokenCandidate,
+    ToolOutcomesSignal,
 )
 from .router import RegisteredRouter, RouteRequest as RoutingRequest
+from .tool_executor import UnifiedToolExecutor
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,6 +148,7 @@ class RunKernel:
         decision_store: DecisionStore | None = None,
         child_runs: ChildRunCoordinator | None = None,
         child_launcher: ChildLauncher | None = None,
+        tool_executor: UnifiedToolExecutor | None = None,
         child_scheduler_owner: str = "run-kernel",
     ) -> None:
         catalog: dict[str, RegisteredDriver] = {}
@@ -162,6 +165,7 @@ class RunKernel:
         self._decisions = decision_store
         self._child_runs = child_runs
         self._child_launcher = child_launcher
+        self._tool_executor = tool_executor
         self._child_scheduler_owner = child_scheduler_owner
         self._active: dict[str, _ActiveRun] = {}
         self._lock = asyncio.Lock()
@@ -610,6 +614,27 @@ class RunKernel:
         if isinstance(candidate, DriverTerminalCandidate):
             await self._commit_terminal(record, registration.kind, candidate)
             return False
+        if isinstance(candidate, ExecuteTools):
+            event = self._event_candidate(registration.kind, candidate)
+            assert event is not None
+            await self._emit_live(record, event)
+            if self._tool_executor is None:
+                raise RuntimeError("tool executor is unavailable")
+            outcomes = await self._tool_executor.execute_batch(
+                candidate.calls,
+                candidate.contexts,
+            )
+            return await self._consume(
+                registration,
+                record,
+                registration.driver.signal(
+                    ToolOutcomesSignal(
+                        candidate.run_id,
+                        candidate.command_id,
+                        tuple(outcomes),
+                    )
+                ),
+            )
         if isinstance(candidate, DelegateRun) and self._child_runs is not None:
             await self._child_runs.submit(record, candidate)
             if self._child_launcher is not None:
