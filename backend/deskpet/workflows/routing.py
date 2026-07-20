@@ -43,6 +43,13 @@ _READ_ONLY = re.compile(
     r"\b(?:review|explain|describe|summarize|analy[sz]e|inspect|read|search|find|grep|locate|what|why|how|where)\b)",
     re.I,
 )
+_NEGATED_ACTION = re.compile(
+    r"(?:(?:不要|不需要|无需|不用|禁止|别|只需|只要).{0,24}"
+    r"(?:修改|改动|写入|创建|删除|执行|运行|修复|实现)|"
+    r"\b(?:do\s+not|don't|without|only)\b.{0,24}"
+    r"\b(?:write|edit|modify|create|delete|execute|run|fix|implement)\b)",
+    re.I,
+)
 
 
 def route_task(
@@ -73,7 +80,12 @@ def route_task(
     action = bool(_CODE_ACTION.search(normalized))
     workspace = workspace_context or bool(_WORKSPACE.search(normalized))
     ask = bool(_READ_ONLY.search(normalized)) or normalized.endswith(("?", "？"))
-    read_only = ask and not action and not has_write_tool
+    # Negative instructions are authority, not weak lexical hints.  A phrase
+    # such as “不要修改，只解释” contains the token “修改” but must not be
+    # promoted to a writable Code workflow, even if an earlier planner
+    # proposed a write-capable tool.
+    negated_action = bool(_NEGATED_ACTION.search(normalized))
+    read_only = ask and (negated_action or (not action and not has_write_tool))
 
     if mode.casefold() == "chat" or read_only:
         return RouteDecision(WorkflowRoute.REACT, "read_only_or_chat", 0.98)

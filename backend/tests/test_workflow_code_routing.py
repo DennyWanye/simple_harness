@@ -22,6 +22,16 @@ def test_pure_workspace_questions_and_read_only_requests_stay_react(prompt: str)
     assert route_task(prompt, workspace_context=True).route is WorkflowRoute.REACT
 
 
+def test_explicit_negative_write_instruction_overrides_write_tokens_and_tools() -> None:
+    decision = route_task(
+        "不要修改任何文件，只解释这个测试为什么失败",
+        workspace_context=True,
+        proposed_tools=["write_file"],
+    )
+    assert decision.route is WorkflowRoute.REACT
+    assert decision.reason == "read_only_or_chat"
+
+
 @pytest.mark.parametrize(
     "prompt",
     [
