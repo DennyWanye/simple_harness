@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import TYPE_CHECKING
+from collections.abc import AsyncIterator, Mapping
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
 import structlog
@@ -28,6 +30,93 @@ if TYPE_CHECKING:
     from providers.edge_tts_provider import EdgeTTSProvider
 
 logger = structlog.get_logger()
+
+
+class RunHandle(Protocol):
+    """Structural handle returned by the shared Run API."""
+
+    run_id: str
+    events: AsyncIterator[object]
+
+
+class RunClient(Protocol):
+    """Narrow structural view of the six-operation Run API used by Voice."""
+
+    async def start(
+        self,
+        request: Mapping[str, object],
+        host: Mapping[str, object],
+    ) -> RunHandle: ...
+
+    async def signal(
+        self,
+        ref: Mapping[str, object],
+        actor: Mapping[str, object],
+        signal: Mapping[str, object],
+    ) -> object: ...
+
+    async def cancel(
+        self,
+        ref: Mapping[str, object],
+        actor: Mapping[str, object],
+        reason: str,
+    ) -> object: ...
+
+
+_TRANSCRIPT_EVENT_KINDS = {"transcript", "assistant_transcript", "assistant_delta", "token"}
+_FINAL_EVENT_KINDS = frozenset(
+    {
+        "final",
+        "assistant_final",
+        "run_final",
+        "terminal",
+        "completed",
+        "run_completed",
+        "failed",
+        "failure",
+        "run_failed",
+        "cancelled",
+        "run_cancelled",
+    }
+)
+_SUCCESS_STATUSES = {"succeeded", "completed"}
+_FAILURE_STATUSES = {"failed", "cancelled", "unknown"}
+
+
+def _event_view(event: Any) -> dict[str, object]:
+    """Serialize the immutable execution RunEvent without inferring outcome."""
+
+    candidate = event.candidate
+    status = getattr(candidate.status, "value", candidate.status)
+    view: dict[str, object] = {
+        "event_id": event.event_id,
+        "run_id": event.run_id,
+        "root_run_id": event.root_run_id,
+        "session_id": event.session_id,
+        "kind": candidate.kind,
+        "status": str(status),
+        "driver_kind": candidate.driver_kind,
+        "correlation": dict(candidate.correlation),
+        "payload": dict(candidate.payload),
+        "error": dict(candidate.error) if candidate.error is not None else None,
+        "artifact_refs": list(candidate.artifact_refs),
+    }
+    if event.durable_seq is not None:
+        view["durable_seq"] = event.durable_seq
+    if event.live_cursor is not None:
+        view["live_cursor"] = event.live_cursor.to_dict()
+    return view
+
+
+def _event_text(event: Mapping[str, object]) -> str:
+    payload = event.get("payload")
+    if not isinstance(payload, Mapping):
+        return ""
+    for key in ("text", "delta", "content", "message"):
+        value = payload.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
 
 
 class VoicePipeline:
@@ -68,6 +157,10 @@ class VoicePipeline:
         # FP-5 缺口 5k (2026-06-06 子代理复评第9处)：语音 venue 接 build_agent
         # 工厂需要 AppConfig（构造 verify_gate / codify 等），与文字 venue 对齐。
         app_config: object | None = None,
+        # WI-11 readiness seam.  Production deliberately leaves this unset
+        # until the atomic WI-12 owner cutover; an injected client makes Voice
+        # a transport-only adapter over the shared Run API in isolated tests.
+        run_client: RunClient | None = None,
     ):
         self.vad = vad
         self.asr = asr
@@ -88,6 +181,11 @@ class VoicePipeline:
         self._permission_gate_v2 = permission_gate_v2
         self._local_llm = local_llm
         self._app_config = app_config
+        self._run_client = run_client
+        # A VoicePipeline owns at most one active utterance.  These fields are
+        # a transport cursor, not a second run registry or lifecycle authority.
+        self._current_run_id: str | None = None
+        self._current_run_session_id: str | None = None
         # FP-5 缺口 5k：codify fire-and-forget 任务的强引用集（防被 GC 提前回收，
         # 仿 goal_store B-10 _fanout_tasks 修复）。done 后自动 discard。
         self._codify_tasks: set = set()
@@ -113,6 +211,54 @@ class VoicePipeline:
         task = self._current_task
         if task and not task.done():
             task.cancel()
+
+    async def signal_current_run(
+        self,
+        *,
+        decision_id: str,
+        response: object,
+        nonce: str | None = None,
+        version: int | None = None,
+    ) -> object:
+        """Forward a Voice approval/clarification response to the active Run.
+
+        The RunClient owns authorization and durable decision state.  Voice
+        supplies only its authenticated connection/session view and never
+        rewrites ``PermissionGate.current_source``.
+        """
+
+        client = self._run_client
+        run_id = self._current_run_id
+        session_id = self._current_run_session_id
+        if client is None or run_id is None or session_id is None:
+            raise RuntimeError("voice run is not active")
+        decision = str(decision_id).strip()
+        if not decision:
+            raise ValueError("decision_id must be non-empty")
+        signal: dict[str, object] = {
+            "decision_id": decision,
+            "response": response,
+        }
+        if nonce is not None:
+            signal["nonce"] = nonce
+        if version is not None:
+            signal["version"] = version
+        return await client.signal(
+            self._run_ref(run_id, session_id),
+            self._voice_actor(session_id),
+            MappingProxyType(signal),
+        )
+
+    @staticmethod
+    def _run_ref(run_id: str, session_id: str) -> Mapping[str, object]:
+        return MappingProxyType({
+            "run_id": run_id,
+            "expected_session_id": session_id,
+        })
+
+    @staticmethod
+    def _voice_actor(session_id: str) -> Mapping[str, object]:
+        return MappingProxyType({"session_id": session_id, "venue": "voice"})
 
     async def _maybe_codify_voice(self) -> None:
         """FP-5 缺口 5k：语音 venue 的技能自创 codify hook（对齐文字 venue）。
@@ -338,16 +484,21 @@ class VoicePipeline:
                 session_id=effective_sid,
             )
 
-            # Step 2: Agent — two paths.
+            # Step 2: execution — injected Run API readiness path, otherwise
+            # the sole production legacy owner.
             #
-            # If the tool-use stack is wired in (set via ctor in main.py),
-            # run AgentLoop so voice input can actually invoke tools (write
-            # files, run shell, fetch URLs — anything in ToolRegistryV2).
-            # Otherwise fall back to the legacy streaming chat path that
-            # ships text straight to TTS without giving the LLM any
-            # tool-calling capability.
+            # WI-11 does not register RunClient in main.py.  The first branch
+            # is therefore reachable only from explicit test/bootstrap wiring;
+            # existing production still exclusively uses AgentLoop or the
+            # older chat_stream fallback until WI-12 atomically cuts ownership.
             response_text = ""
-            if (
+            if self._run_client is not None:
+                response_text = await self._run_with_client(
+                    text,
+                    audio_ws,
+                    session_id=effective_sid,
+                )
+            elif (
                 self._tool_registry_v2 is not None
                 and self._permission_gate_v2 is not None
                 and self._local_llm is not None
@@ -473,6 +624,168 @@ class VoicePipeline:
             except AttributeError:
                 pass
             self._processing = False
+
+
+    async def _run_with_client(
+        self,
+        text: str,
+        audio_ws: WebSocket,
+        *,
+        session_id: str,
+    ) -> str:
+        """Execute a transcribed utterance through the shared Run API.
+
+        This adapter consumes typed Run events without reinterpreting tool
+        envelopes.  Non-terminal accepted/progress/waiting/tool outcomes are
+        forwarded to Voice WebSockets, while only a successful terminal event
+        releases assistant text to the existing transcript/TTS transport.
+        """
+
+        client = self._run_client
+        if client is None:  # defensive; caller guards this branch
+            raise RuntimeError("RunClient is not configured")
+
+        # Trusted host fields remain outside the model-authored request.  The
+        # concrete client/HostContextFactory validates and enriches this view.
+        request = MappingProxyType({"text": text})
+        host = MappingProxyType({"session_id": session_id, "venue": "voice"})
+        handle = await client.start(request, host)
+        run_id = str(handle.run_id).strip()
+        if not run_id:
+            raise RuntimeError("RunClient.start returned a handle without run_id")
+
+        self._current_run_id = run_id
+        self._current_run_session_id = session_id
+        transcript_parts: list[str] = []
+        terminal_seen = False
+        final_text = ""
+        try:
+            async for raw_event in handle.events:
+                event = _event_view(raw_event)
+                event_run_id = str(event.get("run_id") or "")
+                event_session_id = str(event.get("session_id") or "")
+                if event_run_id and event_run_id != run_id:
+                    raise RuntimeError(
+                        f"voice run event mismatch: expected {run_id}, got {event_run_id}"
+                    )
+                if event_session_id and event_session_id != session_id:
+                    raise RuntimeError(
+                        "voice run event crossed session boundary: "
+                        f"expected {session_id}, got {event_session_id}"
+                    )
+                event["run_id"] = run_id
+                event["session_id"] = session_id
+                await self._emit_run_event(event, audio_ws)
+
+                kind = str(event.get("kind") or "").lower()
+                status = str(event.get("status") or "").lower()
+                if kind in _TRANSCRIPT_EVENT_KINDS:
+                    chunk = _event_text(event)
+                    if chunk:
+                        transcript_parts.append(chunk)
+
+                # accepted/waiting/cancel_requested are explicitly
+                # non-terminal even if a producer uses a surprising kind.
+                if status in {"accepted", "waiting", "cancel_requested"}:
+                    continue
+                if kind not in _FINAL_EVENT_KINDS:
+                    # A failed tool outcome is public failure evidence, not a
+                    # failed root Run; keep consuming until the terminal event.
+                    continue
+
+                terminal_seen = True
+                if status in _SUCCESS_STATUSES:
+                    final_text = _event_text(event) or "".join(transcript_parts)
+                elif status in _FAILURE_STATUSES:
+                    await self._emit_terminal_run_error(event, audio_ws)
+                else:
+                    await self._emit_terminal_run_error(
+                        {
+                            **event,
+                            "error": {
+                                "message": (
+                                    "terminal Run event has unsupported status "
+                                    f"{status or '<empty>'}"
+                                )
+                            },
+                        },
+                        audio_ws,
+                    )
+                break
+
+            if not terminal_seen:
+                await self._emit_terminal_run_error(
+                    {
+                        "run_id": run_id,
+                        "session_id": session_id,
+                        "error": {
+                            "message": "Run event stream ended without a terminal event"
+                        },
+                    },
+                    audio_ws,
+                )
+                return ""
+            return final_text
+        except asyncio.CancelledError:
+            reason = "voice_barge_in" if self._interrupted else "voice_superseded"
+            try:
+                await client.cancel(
+                    self._run_ref(run_id, session_id),
+                    self._voice_actor(session_id),
+                    reason,
+                )
+            except Exception as exc:  # noqa: BLE001 - cancellation remains local-safe
+                logger.warning(
+                    "voice_run_cancel_failed",
+                    run_id=run_id,
+                    session_id=session_id,
+                    error=str(exc),
+                )
+            raise
+        finally:
+            if self._current_run_id == run_id:
+                self._current_run_id = None
+                self._current_run_session_id = None
+
+    async def _emit_run_event(
+        self,
+        event: Mapping[str, object],
+        audio_ws: WebSocket,
+    ) -> None:
+        """Project one typed Run event to the active Voice transports."""
+
+        frame = {"type": "run_event", "payload": dict(event)}
+        await audio_ws.send_json(frame)
+        if self.control_ws is not None:
+            try:
+                await self.control_ws.send_json(frame)
+            except Exception:
+                pass
+        if self._broadcast is not None:
+            try:
+                await self._broadcast(self.control_ws, frame)
+            except Exception as exc:  # noqa: BLE001 - best-effort peer sink
+                logger.warning("voice_run_event_broadcast_failed", error=str(exc))
+
+    @staticmethod
+    async def _emit_terminal_run_error(
+        event: Mapping[str, object],
+        audio_ws: WebSocket,
+    ) -> None:
+        error = event.get("error")
+        message = "Run failed"
+        if isinstance(error, Mapping):
+            candidate = error.get("message") or error.get("code")
+            if candidate:
+                message = str(candidate)
+        await audio_ws.send_json({
+            "type": "error",
+            "payload": {
+                "message": message,
+                "run_id": str(event.get("run_id") or ""),
+                "status": str(event.get("status") or "failed"),
+            },
+        })
 
 
     async def _run_legacy_chat_stream(self, text: str) -> str:
