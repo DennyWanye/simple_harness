@@ -8,6 +8,7 @@ import pytest
 import pytest_asyncio
 
 from deskpet.execution.ledger import ExecutionLedger
+from deskpet.execution.contracts import RunStatus
 from deskpet.harness.kernel import (
     HostContext,
     RegisteredDriver,
@@ -61,6 +62,12 @@ class FakeDriver:
 
     async def close(self):
         return None
+
+
+class FailingDriver(FakeDriver):
+    async def start(self, request):
+        raise RuntimeError("isolated boom")
+        yield TokenCandidate(request.run_id, "unreachable")
 
 
 @pytest_asyncio.fixture
@@ -129,8 +136,28 @@ async def test_signal_cancel_recover_and_close_use_explicit_run_scope(kernel) ->
     await value.recover(handle.ref, actor)
     cancelled = await value.cancel(handle.ref, actor, "user_stop")
     assert cancelled.acknowledged is True
+    assert cancelled.status is RunStatus.CANCELLED
     assert driver.cancelled == ["user_stop"]
     await value.close(handle.ref, actor)
+
+
+@pytest.mark.asyncio
+async def test_driver_failure_isolated_as_run_terminal(tmp_path) -> None:
+    uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
+    ledger = ExecutionLedger(uow)
+    await ledger.initialize()
+    value = RunKernel(
+        ledger=ledger,
+        router=RegisteredRouter(
+            StaticClassifier("react.default"),
+            [RouteProfile("react.default", "react")],
+        ),
+        drivers=[RegisteredDriver("react", FailingDriver())],
+    )
+    handle = await value.start(RunRequest("hello", "req-fail", "turn-1"), host())
+    await asyncio.sleep(0.01)
+    record = await ledger.query(handle.ref, host().actor(root_run_id=handle.root_run_id))
+    assert record.status is RunStatus.FAILED
 
 
 def test_kernel_surface_is_six_operations_and_has_no_product_branches() -> None:

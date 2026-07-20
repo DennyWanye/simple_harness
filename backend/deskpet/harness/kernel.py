@@ -212,7 +212,7 @@ class RunKernel:
             active = self._active.setdefault(run_id, _ActiveRun(actor=actor))
             if result.created and (active.task is None or active.task.done()):
                 active.task = asyncio.create_task(
-                    self._consume(
+                    self._drive(
                         registration,
                         result.record,
                         registration.driver.start(
@@ -299,6 +299,19 @@ class RunKernel:
             updated,
             registration.driver.cancel(updated.run_id, reason),
         )
+        if acknowledged:
+            await self._commit_terminal(
+                updated,
+                registration.kind,
+                DriverTerminalCandidate(
+                    run_id=updated.run_id,
+                    status="cancelled",
+                    error=reason,
+                ),
+            )
+            current = await self._ledger.query(ref, actor)
+            if isinstance(current, RunRecord):
+                updated = current
         return CancelReceipt(ref.run_id, updated.status, acknowledged)
 
     async def recover(
@@ -314,7 +327,7 @@ class RunKernel:
             active = self._active.setdefault(ref.run_id, _ActiveRun(actor=actor))
             if active.task is None or active.task.done():
                 active.task = asyncio.create_task(
-                    self._consume(
+                    self._drive(
                         registration,
                         record,
                         registration.driver.recover(record.run_id),
@@ -361,7 +374,8 @@ class RunKernel:
             active = self._active.get(event.run_id)
             if active is None:
                 return
-            active.events.append(event)
+            if not any(item.event_id == event.event_id for item in active.events):
+                active.events.append(event)
             subscribers = tuple(active.subscribers)
         for queue in subscribers:
             queue.put_nowait(event)
@@ -384,8 +398,7 @@ class RunKernel:
                 ),
             )
             live_seq = len(active.events) + 1
-        await self._emit(
-            RunEvent(
+            event = RunEvent(
                 event_id=f"live:{record.run_id}:{live_seq}",
                 run_id=record.run_id,
                 root_run_id=record.context.root_run_id,
@@ -395,7 +408,31 @@ class RunKernel:
                 candidate=candidate,
                 created_at=time.time(),
             )
-        )
+            active.events.append(event)
+            subscribers = tuple(active.subscribers)
+        for queue in subscribers:
+            queue.put_nowait(event)
+
+    async def _drive(
+        self,
+        registration: RegisteredDriver,
+        record: RunRecord,
+        candidates: AsyncIterator[DriverCandidate],
+    ) -> None:
+        try:
+            await self._consume(registration, record, candidates)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            await self._commit_terminal(
+                record,
+                registration.kind,
+                DriverTerminalCandidate(
+                    run_id=record.run_id,
+                    status="failed",
+                    error=f"{type(exc).__name__}: {exc}",
+                ),
+            )
 
     async def _consume(
         self,
