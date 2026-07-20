@@ -119,6 +119,7 @@ class _ActiveRun:
     events: list[RunEvent] = field(default_factory=list)
     subscribers: list[asyncio.Queue[RunEvent | None]] = field(default_factory=list)
     task: asyncio.Task[None] | None = None
+    start_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 class RunKernel:
@@ -151,82 +152,84 @@ class RunKernel:
         run_id = uuid.uuid5(uuid.NAMESPACE_URL, f"deskpet:{key}").hex
         ref = RunRef(run_id, host.session_id)
         actor = host.actor(root_run_id=run_id)
-        try:
-            existing = await self._ledger.query(ref, actor)
-        except RunNotFound:
-            existing = None
-        if isinstance(existing, RunRecord):
-            return RunHandle(
-                ref=ref,
-                root_run_id=existing.context.root_run_id,
-                driver_kind=existing.spec.driver_kind,
-                profile_key=existing.spec.profile_key,
+        async with self._lock:
+            active = self._active.setdefault(run_id, _ActiveRun(actor=actor))
+        async with active.start_lock:
+            try:
+                existing = await self._ledger.query(ref, actor)
+            except RunNotFound:
+                existing = None
+            if isinstance(existing, RunRecord):
+                return RunHandle(
+                    ref=ref,
+                    root_run_id=existing.context.root_run_id,
+                    driver_kind=existing.spec.driver_kind,
+                    profile_key=existing.spec.profile_key,
+                )
+            routing = self._router.route(
+                RoutingRequest(
+                    text=request.text,
+                    request_id=request.request_id,
+                    turn_id=request.turn_id,
+                    venue=request.venue,
+                    mode=request.mode,
+                    workspace_context=request.workspace_context,
+                    proposed_tools=request.proposed_tools,
+                ),
+                available_capabilities=host.available_capabilities,
             )
-        routing = self._router.route(
-            RoutingRequest(
-                text=request.text,
+            registration = self._drivers.get(routing.driver_kind)
+            if registration is None:
+                raise RuntimeError(f"driver is not registered: {routing.driver_kind}")
+            context = self._context_factory.create_run_context(
+                session_id=host.session_id,
+                root_run_id=run_id,
                 request_id=request.request_id,
                 turn_id=request.turn_id,
                 venue=request.venue,
-                mode=request.mode,
-                workspace_context=request.workspace_context,
-                proposed_tools=request.proposed_tools,
-            ),
-            available_capabilities=host.available_capabilities,
-        )
-        registration = self._drivers.get(routing.driver_kind)
-        if registration is None:
-            raise RuntimeError(f"driver is not registered: {routing.driver_kind}")
-        context = self._context_factory.create_run_context(
-            session_id=host.session_id,
-            root_run_id=run_id,
-            request_id=request.request_id,
-            turn_id=request.turn_id,
-            venue=request.venue,
-            capability_hash=host.capability_hash,
-            provider_plan=host.provider_plan,
-            trace_id=host.trace_id,
-            principal_id=host.principal_id,
-            auth_epoch=host.auth_epoch,
-            workspace=host.workspace,
-            write_scope_root=host.write_scope_root,
-        )
-        payload = {"text": request.text, "payload": dict(request.payload)}
-        spec = RunCreate(
-            run_id=run_id,
-            idempotency_key=key,
-            context=context,
-            payload_fingerprint=fingerprint_json(payload),
-            capability_fingerprint=host.capability_hash,
-            driver_kind=registration.kind,
-            profile_key=routing.profile_key,
-            persistence_level=(
-                PersistenceLevel.DURABLE
-                if registration.durable_from_start
-                else PersistenceLevel.EPHEMERAL
-            ),
-            status=RunStatus.CREATED,
-        )
-        result = await self._ledger.create(spec)
-        async with self._lock:
-            active = self._active.setdefault(run_id, _ActiveRun(actor=actor))
-            if result.created and (active.task is None or active.task.done()):
-                active.task = asyncio.create_task(
-                    self._drive(
-                        registration,
-                        result.record,
-                        registration.driver.start(
-                            self._driver_start(result.record, request)
+                capability_hash=host.capability_hash,
+                provider_plan=host.provider_plan,
+                trace_id=host.trace_id,
+                principal_id=host.principal_id,
+                auth_epoch=host.auth_epoch,
+                workspace=host.workspace,
+                write_scope_root=host.write_scope_root,
+            )
+            payload = {"text": request.text, "payload": dict(request.payload)}
+            spec = RunCreate(
+                run_id=run_id,
+                idempotency_key=key,
+                context=context,
+                payload_fingerprint=fingerprint_json(payload),
+                capability_fingerprint=host.capability_hash,
+                driver_kind=registration.kind,
+                profile_key=routing.profile_key,
+                persistence_level=(
+                    PersistenceLevel.DURABLE
+                    if registration.durable_from_start
+                    else PersistenceLevel.EPHEMERAL
+                ),
+                status=RunStatus.CREATED,
+            )
+            result = await self._ledger.create(spec)
+            async with self._lock:
+                if result.created and (active.task is None or active.task.done()):
+                    active.task = asyncio.create_task(
+                        self._drive(
+                            registration,
+                            result.record,
+                            registration.driver.start(
+                                self._driver_start(result.record, request)
+                            ),
                         ),
-                    ),
-                    name=f"deskpet-run:{run_id}",
-                )
-        return RunHandle(
-            ref=ref,
-            root_run_id=result.record.context.root_run_id,
-            driver_kind=registration.kind,
-            profile_key=result.record.spec.profile_key,
-        )
+                        name=f"deskpet-run:{run_id}",
+                    )
+            return RunHandle(
+                ref=ref,
+                root_run_id=result.record.context.root_run_id,
+                driver_kind=registration.kind,
+                profile_key=result.record.spec.profile_key,
+            )
 
     async def observe(
         self,

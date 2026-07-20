@@ -110,6 +110,20 @@ async def test_start_routes_once_and_idempotent_retry_does_not_start_twice(kerne
 
 
 @pytest.mark.asyncio
+async def test_concurrent_same_intent_routes_and_starts_once(kernel) -> None:
+    value, classifier, driver = kernel
+    request = RunRequest("hello", "req-concurrent", "turn-1")
+    first, second = await asyncio.gather(
+        value.start(request, host()),
+        value.start(request, host()),
+    )
+    await asyncio.sleep(0)
+    assert first.ref == second.ref
+    assert classifier.calls == 1
+    assert driver.starts == 1
+
+
+@pytest.mark.asyncio
 async def test_observe_preserves_first_live_event_and_foreign_actor_is_rejected(kernel) -> None:
     value, _, _ = kernel
     handle = await value.start(RunRequest("hello", "req-2", "turn-1"), host())
