@@ -133,6 +133,15 @@ compatibility behavior. Focused verification is `17 passed`; full harness is
 unknown classifications. This is still test-path preparation under
 production `legacy/0`, not an owner cutover.
 
+R3 driver ports now use exactly two tagged value types: `DriverEvent` and
+`DriverSignal`. The former 13 candidate/signal classes and `DriverCandidate`
+union are deleted; their semantic names survive only as constructors returning
+the tagged values. Kernel, DriverRuntime, ReAct, Workflow, and ChildRun consume
+`kind` directly, and AST tests prevent the old taxonomy from returning. The
+ports module is 147 physical lines. Verification: focused consumers `52
+passed`, full harness `240 passed, 9 xfailed`, and adjusted LOC `32,817 <=
+33,228` with zero unknown classifications. Production remains `legacy/0`.
+
 ## Request Lifecycle
 
 The outer text-chat order is `ws_ingress -> ProductTurnPreparer.prepare_context
