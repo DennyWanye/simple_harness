@@ -43,7 +43,6 @@ db files mean it's free):
 """
 from __future__ import annotations
 
-import hashlib
 import logging
 import time
 import uuid
@@ -53,6 +52,12 @@ from typing import Any, Callable, Optional
 
 import aiosqlite
 
+from deskpet.execution.contracts import (
+    ChildCommandIntent,
+    canonical_json,
+    team_idempotency_key,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -61,6 +66,8 @@ FAULT_HOOKS = frozenset(
         "team_claim_before_commit",
         "team_saga_after_task_claim",
         "team_saga_after_command_enqueue",
+        "team_saga_before_domain_ack",
+        "team_saga_before_terminal_update",
     }
 )
 
@@ -83,6 +90,9 @@ class TeamTask:
     result: Optional[str] = None
     claimed_at: Optional[float] = None
     done_at: Optional[float] = None
+    claim_epoch: int = 0
+    claimed_pending_run: Optional[str] = None
+    lease_expires_at: Optional[float] = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -95,6 +105,9 @@ class TeamTask:
             "created_at": self.created_at,
             "claimed_at": self.claimed_at,
             "done_at": self.done_at,
+            "claim_epoch": self.claim_epoch,
+            "claimed_pending_run": self.claimed_pending_run,
+            "lease_expires_at": self.lease_expires_at,
         }
 
 
@@ -157,6 +170,16 @@ class TeamChildRunCommand:
     attempts: int
     created_at: float
     acked_at: float | None = None
+    intent_payload_json: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TeamChildTerminalInbox:
+    operation_id: str
+    terminal_event_id: str
+    child_status: str
+    result: str | None
+    applied_at: float
 
 
 # Valid status transitions; ``update_task`` rejects illegal jumps
@@ -175,7 +198,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     result       TEXT,
     created_at   REAL NOT NULL,
     claimed_at   REAL,
-    done_at      REAL
+    done_at      REAL,
+    claim_epoch INTEGER NOT NULL DEFAULT 0,
+    claimed_pending_run TEXT,
+    lease_expires_at REAL
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_status_created
     ON tasks(status, created_at);
@@ -210,7 +236,8 @@ CREATE TABLE IF NOT EXISTS team_store_schema (
     singleton_id INTEGER PRIMARY KEY CHECK(singleton_id=1),
     version INTEGER NOT NULL CHECK(version>=1)
 );
-INSERT OR IGNORE INTO team_store_schema(singleton_id,version) VALUES(1,1);
+INSERT OR IGNORE INTO team_store_schema(singleton_id,version) VALUES(1,2);
+UPDATE team_store_schema SET version=2 WHERE singleton_id=1 AND version<2;
 
 CREATE TABLE IF NOT EXISTS team_childrun_commands (
     operation_id TEXT PRIMARY KEY,
@@ -222,12 +249,23 @@ CREATE TABLE IF NOT EXISTS team_childrun_commands (
     attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts>=0),
     created_at REAL NOT NULL,
     acked_at REAL,
+    intent_payload_json TEXT NOT NULL,
     UNIQUE(task_id,claim_epoch),
     CHECK((status='acked' AND acked_at IS NOT NULL) OR status='pending'),
     FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_team_childrun_commands_pending
     ON team_childrun_commands(status,created_at,operation_id);
+
+CREATE TABLE IF NOT EXISTS team_childrun_inbox (
+    operation_id TEXT PRIMARY KEY,
+    terminal_event_id TEXT NOT NULL UNIQUE,
+    child_status TEXT NOT NULL CHECK(child_status IN ('completed','failed','cancelled')),
+    result TEXT,
+    applied_at REAL NOT NULL,
+    FOREIGN KEY(operation_id) REFERENCES team_childrun_commands(operation_id)
+        ON DELETE CASCADE
+);
 """
 
 
@@ -335,6 +373,16 @@ class TeamStore:
                 await db.execute("ALTER TABLE tasks ADD COLUMN claimed_pending_run TEXT")
             if "lease_expires_at" not in columns:
                 await db.execute("ALTER TABLE tasks ADD COLUMN lease_expires_at REAL")
+            command_columns = {
+                str(row[1])
+                for row in await (
+                    await db.execute("PRAGMA table_info(team_childrun_commands)")
+                ).fetchall()
+            }
+            if "intent_payload_json" not in command_columns:
+                await db.execute(
+                    "ALTER TABLE team_childrun_commands ADD COLUMN intent_payload_json TEXT"
+                )
             await db.commit()
         self._initialised.add(team_id)
 
@@ -350,6 +398,9 @@ class TeamStore:
             created_at=float(row[6]),
             claimed_at=float(row[7]) if row[7] is not None else None,
             done_at=float(row[8]) if row[8] is not None else None,
+            claim_epoch=int(row[9]),
+            claimed_pending_run=str(row[10]) if row[10] is not None else None,
+            lease_expires_at=float(row[11]) if row[11] is not None else None,
         )
 
     # ------------------------------------------------------------------
@@ -397,7 +448,8 @@ class TeamStore:
                     "    ORDER BY created_at LIMIT 1"
                     " ) AND status='pending'"
                     " RETURNING task_id, team_id, description, status,"
-                    " claimed_by, result, created_at, claimed_at, done_at",
+                    " claimed_by, result, created_at, claimed_at, done_at,"
+                    " claim_epoch, claimed_pending_run, lease_expires_at",
                     (teammate_id, now, team_id),
                 )
                 row = await cur.fetchone()
@@ -411,19 +463,14 @@ class TeamStore:
             return None
         return self._row_to_task(row)
 
-    @staticmethod
-    def _team_operation_id(team_id: str, task_id: str, claim_epoch: int) -> str:
-        payload = f"team:{team_id}:{task_id}:{claim_epoch}"
-        return "team:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
     async def claim_task_with_child_command(
         self,
         team_id: str,
         teammate_id: str,
         *,
-        child_run_id: str,
+        intent_factory: Callable[[str, TeamTask], ChildCommandIntent],
     ) -> tuple[TeamTask, TeamChildRunCommand] | None:
-        """Atomically claim one task and enqueue its cross-DB child intent."""
+        """Atomically claim one task and freeze its complete generic child intent."""
 
         await self._ensure_schema(team_id)
         now = time.time()
@@ -434,40 +481,63 @@ class TeamStore:
                 row = await (
                     await db.execute(
                         """UPDATE tasks SET status='claimed',claimed_by=?,claimed_at=?,
-                        claim_epoch=claim_epoch+1,claimed_pending_run=?
+                        claim_epoch=claim_epoch+1
                         WHERE task_id=(SELECT task_id FROM tasks
                           WHERE team_id=? AND status='pending'
                           ORDER BY created_at,task_id LIMIT 1)
                         AND status='pending'
                         RETURNING task_id,team_id,description,status,claimed_by,result,
-                        created_at,claimed_at,done_at,claim_epoch""",
-                        (teammate_id, now, child_run_id, team_id),
+                        created_at,claimed_at,done_at,claim_epoch,
+                        claimed_pending_run,lease_expires_at""",
+                        (teammate_id, now, team_id),
                     )
                 ).fetchone()
                 if row is None:
                     await db.commit()
                     return None
                 self._fault("team_saga_after_task_claim")
-                task_id = str(row[0])
-                claim_epoch = int(row[9])
-                operation_id = self._team_operation_id(team_id, task_id, claim_epoch)
+                task = self._row_to_task(row)
+                operation_id = team_idempotency_key(
+                    team_id, task.task_id, task.claim_epoch
+                )
+                intent = intent_factory(operation_id, task)
+                if intent.operation_id != operation_id:
+                    raise ValueError("team child intent operation_id is not canonical")
+                if intent.command_id != operation_id:
+                    raise ValueError("team child intent command_id must equal operation_id")
+                child_run_id = intent.child_run_id
+                cursor = await db.execute(
+                    """UPDATE tasks SET claimed_pending_run=?
+                    WHERE task_id=? AND team_id=? AND claim_epoch=?
+                      AND status='claimed' AND claimed_pending_run IS NULL""",
+                    (child_run_id, task.task_id, team_id, task.claim_epoch),
+                )
+                if cursor.rowcount != 1:
+                    raise RuntimeError("team claim lost before child intent freeze")
+                task.claimed_pending_run = child_run_id
+                intent_payload_json = canonical_json(intent.to_dict())
                 await db.execute(
                     """INSERT INTO team_childrun_commands(
-                    operation_id,team_id,task_id,claim_epoch,child_run_id,status,created_at
-                    ) VALUES(?,?,?,?,?,'pending',?)""",
-                    (operation_id, team_id, task_id, claim_epoch, child_run_id, now),
+                    operation_id,team_id,task_id,claim_epoch,child_run_id,status,
+                    created_at,intent_payload_json
+                    ) VALUES(?,?,?,?,?,'pending',?,?)""",
+                    (
+                        operation_id, team_id, task.task_id, task.claim_epoch,
+                        child_run_id, now, intent_payload_json,
+                    ),
                 )
                 self._fault("team_saga_after_command_enqueue")
                 await db.commit()
-                return self._row_to_task(row), TeamChildRunCommand(
+                return task, TeamChildRunCommand(
                     operation_id=operation_id,
                     team_id=team_id,
-                    task_id=task_id,
-                    claim_epoch=claim_epoch,
+                    task_id=task.task_id,
+                    claim_epoch=task.claim_epoch,
                     child_run_id=child_run_id,
                     status="pending",
                     attempts=0,
                     created_at=now,
+                    intent_payload_json=intent_payload_json,
                 )
             except BaseException:
                 if db.in_transaction:
@@ -485,7 +555,7 @@ class TeamStore:
             rows = await (
                 await db.execute(
                     """SELECT operation_id,team_id,task_id,claim_epoch,child_run_id,
-                    status,attempts,created_at,acked_at
+                    status,attempts,created_at,acked_at,intent_payload_json
                     FROM team_childrun_commands WHERE status='pending'
                     ORDER BY created_at,operation_id LIMIT ?""",
                     (limit,),
@@ -500,7 +570,7 @@ class TeamStore:
                 rows = await (
                     await db.execute(
                         """SELECT operation_id,team_id,task_id,claim_epoch,child_run_id,
-                        status,attempts,created_at,acked_at
+                        status,attempts,created_at,acked_at,intent_payload_json
                         FROM team_childrun_commands WHERE status='pending'
                         ORDER BY created_at,operation_id LIMIT ?""",
                         (limit,),
@@ -518,19 +588,137 @@ class TeamStore:
             await db.execute("BEGIN IMMEDIATE")
             await db.execute(
                 """UPDATE team_childrun_commands SET status='acked',acked_at=?
-                WHERE operation_id=? AND status='pending'""",
-                (now, operation_id),
+                WHERE operation_id=? AND team_id=? AND status='pending'""",
+                (now, operation_id, team_id),
             )
+            self._fault("team_saga_before_domain_ack")
             row = await (
                 await db.execute(
                     """SELECT operation_id,team_id,task_id,claim_epoch,child_run_id,
-                    status,attempts,created_at,acked_at
-                    FROM team_childrun_commands WHERE operation_id=?""",
-                    (operation_id,),
+                    status,attempts,created_at,acked_at,intent_payload_json
+                    FROM team_childrun_commands WHERE operation_id=? AND team_id=?""",
+                    (operation_id, team_id),
                 )
             ).fetchone()
             await db.commit()
         return TeamChildRunCommand(*row) if row is not None else None
+
+    async def child_commands_for_terminal(
+        self, team_id: str, *, limit: int = 100
+    ) -> tuple[tuple[TeamTask, TeamChildRunCommand], ...]:
+        """Return acked commands whose claimed task still awaits child terminal."""
+
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        await self._ensure_schema(team_id)
+        async with aiosqlite.connect(self._db_path(team_id)) as db:
+            rows = await (
+                await db.execute(
+                    """SELECT
+                    t.task_id,t.team_id,t.description,t.status,t.claimed_by,t.result,
+                    t.created_at,t.claimed_at,t.done_at,t.claim_epoch,
+                    t.claimed_pending_run,t.lease_expires_at,
+                    c.operation_id,c.team_id,c.task_id,c.claim_epoch,c.child_run_id,
+                    c.status,c.attempts,c.created_at,c.acked_at,c.intent_payload_json
+                    FROM tasks t JOIN team_childrun_commands c
+                      ON c.task_id=t.task_id AND c.claim_epoch=t.claim_epoch
+                    LEFT JOIN team_childrun_inbox i ON i.operation_id=c.operation_id
+                    WHERE t.team_id=? AND c.status='acked'
+                      AND t.status IN ('claimed','in_progress')
+                      AND t.claimed_pending_run=c.child_run_id
+                      AND i.operation_id IS NULL
+                    ORDER BY c.created_at,c.operation_id LIMIT ?""",
+                    (team_id, limit),
+                )
+            ).fetchall()
+        return tuple(
+            (self._row_to_task(row[:12]), TeamChildRunCommand(*row[12:]))
+            for row in rows
+        )
+
+    async def apply_child_terminal(
+        self,
+        team_id: str,
+        operation_id: str,
+        *,
+        terminal_event_id: str,
+        child_status: str,
+        result: str | None,
+    ) -> TeamTask:
+        """Atomically record one terminal inbox item and finalize its TeamTask."""
+
+        if child_status not in {"completed", "failed", "cancelled"}:
+            raise ValueError("child_status must be terminal")
+        await self._ensure_schema(team_id)
+        now = time.time()
+        async with aiosqlite.connect(self._db_path(team_id)) as db:
+            await db.execute("PRAGMA foreign_keys=ON")
+            try:
+                await db.execute("BEGIN IMMEDIATE")
+                command = await (
+                    await db.execute(
+                        """SELECT task_id,claim_epoch,child_run_id
+                        FROM team_childrun_commands
+                        WHERE operation_id=? AND team_id=?""",
+                        (operation_id, team_id),
+                    )
+                ).fetchone()
+                if command is None:
+                    raise ValueError("team child command does not exist")
+                existing = await (
+                    await db.execute(
+                        """SELECT terminal_event_id,child_status,result
+                        FROM team_childrun_inbox WHERE operation_id=?""",
+                        (operation_id,),
+                    )
+                ).fetchone()
+                expected = (terminal_event_id, child_status, result)
+                if existing is not None and tuple(existing) != expected:
+                    raise ValueError("team child terminal conflicts with applied inbox")
+                task_status = "done" if child_status == "completed" else "failed"
+                if existing is None:
+                    cursor = await db.execute(
+                        """UPDATE tasks SET status=?,result=?,done_at=?,
+                        claimed_pending_run=NULL,lease_expires_at=NULL
+                        WHERE task_id=? AND team_id=? AND claim_epoch=?
+                          AND claimed_pending_run=?
+                          AND status IN ('claimed','in_progress')""",
+                        (
+                            task_status, result, now, str(command[0]), team_id,
+                            int(command[1]), str(command[2]),
+                        ),
+                    )
+                    if cursor.rowcount != 1:
+                        raise ValueError("team task no longer owns this child claim")
+                    await db.execute(
+                        """UPDATE team_childrun_commands
+                        SET status='acked',acked_at=COALESCE(acked_at,?)
+                        WHERE operation_id=?""",
+                        (now, operation_id),
+                    )
+                    await db.execute(
+                        """INSERT INTO team_childrun_inbox(
+                        operation_id,terminal_event_id,child_status,result,applied_at
+                        ) VALUES(?,?,?,?,?)""",
+                        (operation_id, terminal_event_id, child_status, result, now),
+                    )
+                self._fault("team_saga_before_terminal_update")
+                row = await (
+                    await db.execute(
+                        """SELECT task_id,team_id,description,status,claimed_by,result,
+                        created_at,claimed_at,done_at,claim_epoch,
+                        claimed_pending_run,lease_expires_at
+                        FROM tasks WHERE task_id=? AND team_id=?""",
+                        (str(command[0]), team_id),
+                    )
+                ).fetchone()
+                assert row is not None
+                await db.commit()
+                return self._row_to_task(row)
+            except BaseException:
+                if db.in_transaction:
+                    await db.rollback()
+                raise
 
     async def update_task(
         self,
@@ -551,8 +739,9 @@ class TeamStore:
             async with aiosqlite.connect(self._db_path(team_id)) as db:
                 cur = await db.execute(
                     "UPDATE tasks SET status=?, result=COALESCE(?, result),"
-                    " done_at=COALESCE(?, done_at) WHERE task_id=? AND team_id=?",
-                    (status, result, done_at, task_id, team_id),
+                    " done_at=COALESCE(?, done_at) WHERE task_id=? AND team_id=?"
+                    " AND (? NOT IN ('done','failed') OR claimed_pending_run IS NULL)",
+                    (status, result, done_at, task_id, team_id, status),
                 )
                 changed = cur.rowcount
                 await cur.close()
@@ -572,14 +761,16 @@ class TeamStore:
                 if status is None or status == "all":
                     cur = await db.execute(
                         "SELECT task_id, team_id, description, status,"
-                        " claimed_by, result, created_at, claimed_at, done_at"
+                        " claimed_by, result, created_at, claimed_at, done_at,"
+                        " claim_epoch, claimed_pending_run, lease_expires_at"
                         " FROM tasks WHERE team_id=? ORDER BY created_at",
                         (team_id,),
                     )
                 else:
                     cur = await db.execute(
                         "SELECT task_id, team_id, description, status,"
-                        " claimed_by, result, created_at, claimed_at, done_at"
+                        " claimed_by, result, created_at, claimed_at, done_at,"
+                        " claim_epoch, claimed_pending_run, lease_expires_at"
                         " FROM tasks WHERE team_id=? AND status=?"
                         " ORDER BY created_at",
                         (team_id, status),
@@ -598,7 +789,8 @@ class TeamStore:
             async with aiosqlite.connect(self._db_path(team_id)) as db:
                 cur = await db.execute(
                     "SELECT task_id, team_id, description, status,"
-                    " claimed_by, result, created_at, claimed_at, done_at"
+                    " claimed_by, result, created_at, claimed_at, done_at,"
+                    " claim_epoch, claimed_pending_run, lease_expires_at"
                     " FROM tasks WHERE task_id=? AND team_id=?",
                     (task_id, team_id),
                 )

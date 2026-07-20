@@ -123,7 +123,7 @@
     "durable_after": "the same Team task is claimed once",
     "restart_actor": "team-child-reconciler",
     "idempotency_key": "team:fault-team:task-1:1",
-    "expected_counts": {"run": 0, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0, "team_task": 1}
+    "expected_counts": {"run": 0, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0, "team_task": 1, "team_command": 0, "team_terminal_inbox": 0}
   },
   {
     "window_id": "uow-decision-boundary-after-cas",
@@ -159,7 +159,7 @@
     "durable_after": "claimed task and stable child command outbox commit together",
     "restart_actor": "team-child-reconciler",
     "idempotency_key": "team:fault-team:task-1:1",
-    "expected_counts": {"run": 0, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0, "team_task": 1, "team_command": 1}
+    "expected_counts": {"run": 0, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0, "team_task": 1, "team_command": 1, "team_terminal_inbox": 0}
   },
   {
     "window_id": "team-saga-after-command-enqueue",
@@ -168,7 +168,25 @@
     "durable_after": "claimed task and stable child command outbox commit together",
     "restart_actor": "team-child-reconciler",
     "idempotency_key": "team:fault-team:task-1:1",
-    "expected_counts": {"run": 0, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0, "team_task": 1, "team_command": 1}
+    "expected_counts": {"run": 0, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0, "team_task": 1, "team_command": 1, "team_terminal_inbox": 0}
+  },
+  {
+    "window_id": "team-saga-before-domain-ack",
+    "injection_hook": "team_saga_before_domain_ack",
+    "durable_before": "generic child command exists while Team outbox remains pending",
+    "durable_after": "idempotent generic replay and Team domain ack converge",
+    "restart_actor": "team-child-reconciler",
+    "idempotency_key": "team:fault-team:task-1:1",
+    "expected_counts": {"run": 2, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 1, "link": 1, "inbox": 1, "event": 0, "delivery": 0, "external_write": 0, "team_task": 1, "team_command": 1, "team_terminal_inbox": 0}
+  },
+  {
+    "window_id": "team-saga-before-terminal-update",
+    "injection_hook": "team_saga_before_terminal_update",
+    "durable_before": "generic child terminal exists while Team task remains claimed",
+    "durable_after": "terminal operation inbox and Team task terminal update commit together",
+    "restart_actor": "team-child-reconciler",
+    "idempotency_key": "team:fault-team:task-1:1",
+    "expected_counts": {"run": 2, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 1, "link": 1, "inbox": 2, "event": 1, "delivery": 0, "external_write": 0, "team_task": 1, "team_command": 1, "team_terminal_inbox": 1}
   },
   {
     "window_id": "uow-effect-claim-after-grant",

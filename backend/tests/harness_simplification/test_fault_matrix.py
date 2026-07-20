@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import aiosqlite
@@ -23,6 +24,8 @@ from deskpet.execution import (
     RunContext,
     RunCreate,
     RunEventCandidate,
+    RunRef,
+    RunStatus,
     fingerprint_json,
     stable_decision_grant_id,
 )
@@ -30,6 +33,7 @@ from deskpet.workflows.store.execution_uow import ATOMIC_OPERATIONS
 from deskpet.workflows.store.execution_uow import FAULT_HOOKS as UOW_FAULT_HOOKS
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
 from deskpet.harness.ports import ToolOutcomesSignal
+from deskpet.harness.adapters.team import TeamChildRunReconciler
 from deskpet.workflows.effects import NormalizedToolOutcome
 
 
@@ -48,6 +52,7 @@ COUNT_KEYS = {
     "delivery",
     "external_write",
 }
+TEAM_COUNT_KEYS = {"team_task", "team_command", "team_terminal_inbox"}
 CAPABILITY_HASH = fingerprint_json({"tools": ["read", "write", "delegate"]})
 ARGS_HASH = fingerprint_json({"path": "report.md"})
 SCOPE_HASH = fingerprint_json({"root": "F:/workspace"})
@@ -83,6 +88,25 @@ def _spec(run_id: str, *, parent_run_id: str | None = None) -> RunCreate:
 
 def _actor(root_run_id: str | None = None) -> ActorContext:
     return ActorContext(principal_id="principal", session_id="session", auth_epoch=7, root_run_id=root_run_id)
+
+
+def _team_intent(operation_id, task) -> ChildCommandIntent:
+    child_request = {"task": task.description, "driver_kind": "react"}
+    spec = replace(
+        _spec("child-run", parent_run_id="team-parent"),
+        idempotency_key=operation_id,
+        payload_fingerprint=fingerprint_json(child_request),
+    )
+    return ChildCommandIntent(
+        operation_id=operation_id,
+        parent_run_id="team-parent",
+        command_id=operation_id,
+        child_spec=spec,
+        child_request=child_request,
+        capability_subset=("read",),
+        attachment_policy=AttachmentPolicy.DETACHED,
+        capability_snapshot_ref=CAPABILITY_HASH,
+    )
 
 
 def _decision(run_id: str, *, permission: bool = False) -> DecisionOpen:
@@ -577,6 +601,12 @@ async def _exercise_child_finalize(path: Path, hook: str) -> None:
 
 
 async def _exercise_team(path: Path, hook: str) -> None:
+    uow = await _store(path)
+    if hook in {
+        "team_saga_before_domain_ack",
+        "team_saga_before_terminal_update",
+    }:
+        await uow.create(_spec("team-parent"))
     healthy = TeamStore(path.parent / "teams")
     await healthy.create_task("fault-team", "delegate")
 
@@ -585,12 +615,89 @@ async def _exercise_team(path: Path, hook: str) -> None:
             raise RuntimeError(f"crash:{point}")
 
     crashing = TeamStore(path.parent / "teams", fault_injector=fail)
+    if hook == "team_saga_before_domain_ack":
+        claimed = await healthy.claim_task_with_child_command(
+            "fault-team", "worker-a", intent_factory=_team_intent
+        )
+        assert claimed is not None
+        failed = TeamChildRunReconciler(crashing, uow)
+        await failed.reconcile_commands_once("fault-team")
+        assert any(f"crash:{hook}" in item for item in failed.last_errors)
+        assert await uow.get_child_command(claimed[1].operation_id) is not None
+        pending = await healthy.pending_child_commands("fault-team")
+        assert len(pending) == 1
+        leased = await uow.lease_child_commands(
+            owner="team-fault-scheduler", limit=1, lease_seconds=30
+        )
+        scheduled = await uow.schedule_child_command(
+            claimed[1].operation_id,
+            lease_owner="team-fault-scheduler",
+            lease_epoch=leased[0].schedule_lease_epoch,
+        )
+        await uow.acknowledge_child_command(
+            claimed[1].operation_id,
+            lease_owner="team-fault-scheduler",
+            lease_epoch=scheduled.schedule_lease_epoch,
+        )
+        restarted = TeamChildRunReconciler(TeamStore(path.parent / "teams"), uow)
+        await restarted.reconcile_commands_once("fault-team")
+        assert restarted.last_errors == ()
+        return
+    if hook == "team_saga_before_terminal_update":
+        claimed = await healthy.claim_task_with_child_command(
+            "fault-team", "worker-a", intent_factory=_team_intent
+        )
+        assert claimed is not None
+        reconciler = TeamChildRunReconciler(healthy, uow)
+        await reconciler.reconcile_commands_once("fault-team")
+        leased = await uow.lease_child_commands(
+            owner="team-fault-scheduler", limit=1, lease_seconds=30
+        )
+        assert len(leased) == 1
+        scheduled = await uow.schedule_child_command(
+            claimed[1].operation_id,
+            lease_owner="team-fault-scheduler",
+            lease_epoch=leased[0].schedule_lease_epoch,
+        )
+        await uow.acknowledge_child_command(
+            claimed[1].operation_id,
+            lease_owner="team-fault-scheduler",
+            lease_epoch=scheduled.schedule_lease_epoch,
+        )
+        context = scheduled.intent.child_spec.context
+        child = await uow.query(
+            RunRef(scheduled.child_run_id, context.session_id),
+            _actor(root_run_id=context.root_run_id),
+        )
+        await uow.finalize_child_and_enqueue_parent_signal(
+            claimed[1].operation_id,
+            expected_version=child.version,
+            terminal_status=RunStatus.COMPLETED,
+            event=RunEventCandidate(
+                event_key="team-terminal",
+                kind="final",
+                status=OutcomeStatus.SUCCEEDED,
+                driver_kind="react",
+                payload={"text": "done"},
+            ),
+            value={"text": "done"},
+        )
+        failed = TeamChildRunReconciler(crashing, uow)
+        await failed.reconcile_terminals_once("fault-team")
+        assert any(f"crash:{hook}" in item for item in failed.last_errors)
+        task = await healthy.get_task("fault-team", claimed[0].task_id)
+        assert task is not None and task.status == "claimed"
+        restarted = TeamChildRunReconciler(TeamStore(path.parent / "teams"), uow)
+        await restarted.reconcile_terminals_once("fault-team")
+        applied = await healthy.get_task("fault-team", claimed[0].task_id)
+        assert applied is not None and applied.status == "done" and applied.result == "done"
+        return
     with pytest.raises(RuntimeError, match=f"crash:{hook}"):
         if hook == "team_claim_before_commit":
             await crashing.claim_task("fault-team", "worker-a")
         else:
             await crashing.claim_task_with_child_command(
-                "fault-team", "worker-a", child_run_id="child-run"
+                "fault-team", "worker-a", intent_factory=_team_intent
             )
     pending = await healthy.list_tasks("fault-team", status="pending")
     assert len(pending) == 1
@@ -600,11 +707,24 @@ async def _exercise_team(path: Path, hook: str) -> None:
         assert claimed is not None and claimed.status == "claimed"
     else:
         result = await restarted.claim_task_with_child_command(
-            "fault-team", "worker-a", child_run_id="child-run"
+            "fault-team", "worker-a", intent_factory=_team_intent
         )
         assert result is not None and result[0].status == "claimed"
         commands = await restarted.pending_child_commands("fault-team")
         assert len(commands) == 1 and commands[0].child_run_id == "child-run"
+
+
+async def _team_counts(path: Path) -> dict[str, int]:
+    counts = await _counts(path)
+    async with aiosqlite.connect(path.parent / "teams" / "fault-team.db") as db:
+        for key, table in (
+            ("team_task", "tasks"),
+            ("team_command", "team_childrun_commands"),
+            ("team_terminal_inbox", "team_childrun_inbox"),
+        ):
+            row = await (await db.execute(f"SELECT COUNT(*) FROM {table}")).fetchone()
+            counts[key] = int(row[0])
+    return counts
 
 
 def test_fault_matrix_schema_and_exported_hooks_are_exact() -> None:
@@ -624,6 +744,11 @@ def test_fault_matrix_schema_and_exported_hooks_are_exact() -> None:
     exported = set(UOW_FAULT_HOOKS) | set(TEAM_FAULT_HOOKS)
     assert tested == exported
     assert all(COUNT_KEYS <= set(row["expected_counts"]) for row in MATRIX)
+    assert all(
+        TEAM_COUNT_KEYS <= set(row["expected_counts"])
+        for row in MATRIX
+        if row["injection_hook"] in TEAM_FAULT_HOOKS
+    )
     assert all(row["restart_actor"] and row["idempotency_key"] for row in MATRIX)
     assert len(ATOMIC_OPERATIONS) == 8
     assert len({name for name, _ in ATOMIC_OPERATIONS}) == 8
@@ -671,9 +796,11 @@ async def test_every_fault_window_rolls_back_then_restart_converges(tmp_path, ro
     else:  # pragma: no cover - equality gate above makes this fail closed
         raise AssertionError(f"unexercised fault hook: {hook}")
 
-    if hook in TEAM_FAULT_HOOKS:
-        return
-    counts = await _counts(path)
+    counts = (
+        await _team_counts(path)
+        if hook in TEAM_FAULT_HOOKS
+        else await _counts(path)
+    )
     counts["external_write"] = external_writes
     assert counts == row["expected_counts"]
 
