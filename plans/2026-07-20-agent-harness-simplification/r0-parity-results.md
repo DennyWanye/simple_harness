@@ -40,6 +40,12 @@ Counts by kind:
 `test_product_turn_parity.py` runs old production components instead of using
 source-string assertions for behavior.  It directly observes:
 
+- Text `ContextAssembler` stitching and exact canonical message order/content;
+- `ContextRequestPlanner` + `ToolCapabilityResolver` producing the actual
+  provider-visible read-only toolset while denying write and omitting unrelated
+  Research capabilities;
+- production `route_task` decisions for read-only ReAct, Code, DeepResearch and
+  PPT requests, including reason and confidence;
 - Voice user/final peer broadcast with effective session remap;
 - emotion/action tag projection and streaming tag removal from spoken text;
 - Voice codify scheduling without blocking the foreground turn;
@@ -49,6 +55,9 @@ source-string assertions for behavior.  It directly observes:
 
 The census AST remains a coverage gate for the nested Text `_run_chat` owner;
 it is not presented as behavioral equivalence evidence.
+
+Automated result: `16 passed` in the focused parity module.  The full harness
+regression remains the phase gate and is recorded with the commit handoff.
 
 ## Frozen TurnInput surface
 

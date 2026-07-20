@@ -14,10 +14,22 @@ import pytest
 from agent.auto_resume import AutoResumeOrchestrator
 from agent.session_activity import SessionActivityStore
 from agent.supervisor import SupervisorAction
+from deskpet.agent.assembler.assembler import ContextAssembler
+from deskpet.agent.assembler.budget import BudgetAllocator
+from deskpet.agent.assembler.bundle import AssemblyPolicy, ContextBundle, Slice
+from deskpet.agent.assembler.registry import ComponentRegistry
+from deskpet.agent.context_request_planner import ContextRequestPlanner
 from deskpet.memory.session_db import SessionDB
 from deskpet.permissions.gate import PermissionGate
 from deskpet.tools.receipt_store import ReceiptStore
+from deskpet.tools.capabilities import (
+    ToolCapabilityResolver,
+    ToolEligibilityContext,
+    ToolExposureIntent,
+)
+from deskpet.tools.registry import ToolRegistry
 from deskpet.workflows.adapters.product_delivery import ProductDeliveryAdapter
+from deskpet.workflows.routing import route_task
 from pipeline.tag_parser import StreamingTagParser, TagEvent
 from pipeline.voice_pipeline import VoicePipeline
 
@@ -105,6 +117,156 @@ def test_census_freezes_turn_input_fields() -> None:
         "capability_ref",
         "workspace_ref",
     ]
+
+
+class _StaticComponent:
+    def __init__(self, name: str, value: Slice) -> None:
+        self.name = name
+        self._value = value
+
+    async def provide(self, _context: object) -> Slice:
+        return self._value
+
+
+@pytest.mark.asyncio
+async def test_text_context_assembler_builds_canonical_messages() -> None:
+    registry = ComponentRegistry(
+        [
+            _StaticComponent(
+                "memory",
+                Slice(
+                    component_name="memory",
+                    text_content="MEMORY BLOCK",
+                    tokens=2,
+                    priority=100,
+                    bucket="dynamic",
+                    meta={
+                        "l2_history": [
+                            {"role": "assistant", "content": "prior answer"}
+                        ]
+                    },
+                ),
+            ),
+            _StaticComponent(
+                "persona",
+                Slice(
+                    component_name="persona",
+                    text_content="PERSONA",
+                    tokens=1,
+                    priority=90,
+                    bucket="frozen",
+                ),
+            ),
+            _StaticComponent(
+                "skill",
+                Slice(
+                    component_name="skill",
+                    text_content="SKILL PRELUDE",
+                    tokens=1,
+                    priority=70,
+                    bucket="skill",
+                ),
+            ),
+        ]
+    )
+    assembler = ContextAssembler(
+        component_registry=registry,
+        policies={
+            "chat": AssemblyPolicy(
+                task_type="chat",
+                must=["memory"],
+                prefer=["persona", "skill"],
+            )
+        },
+        # task_type_override below is the real production bypass for classifier.
+        classifier=object(),
+        budget_allocator=BudgetAllocator(context_window=8_000, budget_ratio=0.8),
+    )
+    bundle = await assembler.assemble(
+        "current request",
+        session_id="session-r0",
+        task_type_override="chat",
+    )
+    messages = bundle.build_messages(
+        "BASE SYSTEM",
+        history=bundle.history,
+        user_message="current request",
+    )
+    assert messages == _fixture(BEHAVIOR_PATH)["canonical_messages"]
+    assert bundle.decisions.classifier_path == "override"
+
+
+def _tool_schema(name: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "description": f"R0 fixture {name}",
+        "parameters": {"type": "object", "properties": {}},
+    }
+
+
+@pytest.mark.asyncio
+async def test_context_planner_observes_filtered_production_toolset() -> None:
+    registry = ToolRegistry()
+    for name, toolset in (
+        ("read_file", "read"),
+        ("write_file", "write"),
+        ("deepresearch", "research"),
+    ):
+        registry.register(name, toolset, _tool_schema(name), lambda _args, _task: "ok")
+
+    bundle = ContextBundle(task_type="chat")
+    bundle.tool_exposure_intent = ToolExposureIntent(
+        direct_selectors=("read_file", "write_file"),
+        deny_selectors=("write_file",),
+    )
+    result = await ContextRequestPlanner(ToolCapabilityResolver(registry)).prepare_initial(
+        bundle,
+        base_system="system",
+        history=[],
+        user_message="inspect safely",
+        eligibility=ToolEligibilityContext(
+            session_id="session-r0",
+            request_id="request-r0",
+            task_type="chat",
+            mode="companion",
+        ),
+        context_window=8_000,
+        effective_pct=0.95,
+        generation_reserve=1_024,
+        conditional_direct_names=(),
+    )
+    prepared = result.prepared_context.tool_set
+    observed = {
+        "direct": [item.ref.name for item in prepared.direct],
+        "denied": list(prepared.denied_names),
+        "schemas": [item["function"]["name"] for item in prepared.logical_schemas()],
+        "decisions": [
+            {
+                "name": item.name,
+                "disposition": item.disposition,
+                "reason": item.reason,
+            }
+            for item in prepared.decisions
+        ],
+    }
+    assert observed == _fixture(BEHAVIOR_PATH)["toolset"]
+    assert prepared.has_direct("read_file") is True
+    assert prepared.has_direct("write_file") is False
+    assert prepared.has_direct("deepresearch") is False
+
+
+@pytest.mark.parametrize("case", _fixture(BEHAVIOR_PATH)["route_decisions"], ids=lambda row: row["id"])
+def test_production_route_decisions_are_observed(case: dict[str, Any]) -> None:
+    decision = route_task(case["text"], mode="code", workspace_context=True)
+    assert {
+        "route": decision.route.value,
+        "reason": decision.reason,
+        "confidence": decision.confidence,
+    } == {
+        "route": case["route"],
+        "reason": case["reason"],
+        "confidence": case["confidence"],
+    }
 
 
 class _RecordingWS:
