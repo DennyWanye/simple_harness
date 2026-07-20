@@ -55,8 +55,8 @@ drops its ephemeral record and reads the UoW-owned version. The execution port
 surface is one `ExecutionUnitOfWork` protocol, and the duplicate execution
 `ToolOutcome` contract and unused codecs are gone. Production remains fenced at
 `legacy/0`; this slice does not activate the Kernel owner. Verification:
-owner-collapse harness `184 passed, 9 xfailed`; R1 LOC gate
-`31,939 <= 33,228`, with zero unknown classifications.
+integrated harness `199 passed, 9 xfailed`; R1 LOC gate
+`31,977 <= 33,228`, with zero unknown classifications.
 
 ## Request Lifecycle
 
