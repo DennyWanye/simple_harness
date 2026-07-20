@@ -586,6 +586,89 @@ async def test_legacy_collaborator_fails_closed_before_legacy_tool_dispatch_can_
         await _collect(collaborator.start(_request()))
 
 
+@pytest.mark.asyncio
+async def test_external_agent_loop_emits_prepared_batch_before_any_dispatch():
+    from agent.agent_loop import AgentLoop
+    from llm.types import ChatResponse, ChatUsage, ToolCall
+
+    class LLM:
+        async def chat_with_fallback(self, messages, tools=None, **kwargs):
+            return ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(id="call-1", name="probe", arguments={"value": 7})
+                ],
+                stop_reason="tool_use",
+                usage=ChatUsage(input_tokens=1, output_tokens=1),
+                model="fixture",
+            )
+
+    class Tools:
+        def __init__(self):
+            self.executed = 0
+
+        def schemas(self, enabled_toolsets=None):
+            return [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "probe",
+                        "description": "probe",
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                }
+            ]
+
+        async def execute_tool(self, *args, **kwargs):
+            self.executed += 1
+            return {"ok": True}
+
+        def prepare_execution_call(
+            self, tool_name, raw_args, *, call_id, effect_id, context
+        ):
+            return PreparedExecutionCall(
+                tool_name=tool_name,
+                model_args=raw_args,
+                call_id=call_id,
+                effect_id=effect_id,
+                capability_hash=context.capability_hash,
+                scope_hash=context.scope_hash,
+            )
+
+    tools = Tools()
+    loop = AgentLoop(LLM(), tools, external_tool_dispatch=True)
+    collaborator = LegacyAgentLoopCollaborator(loop, call_factory=tools)
+    context = RunContext(
+        session_id="session-react",
+        root_run_id="run-react",
+        parent_run_id=None,
+        request_id="request-react",
+        turn_id="turn-react",
+        venue="text",
+        workspace={"scope_hash": SCOPE_HASH},
+        capability_hash=CAPABILITY_HASH,
+        provider_plan={},
+        trace_id="trace-react",
+        principal_id="principal-react",
+    )
+    request = DriverStart(
+        run_id="run-react",
+        session_id="session-react",
+        canonical_messages=({"role": "user", "content": "use probe"},),
+        run_context=context,
+        profile_key="react.default",
+    )
+
+    emissions = await _collect(collaborator.start(request))
+
+    assert tools.executed == 0
+    assert len(emissions) == 1
+    batch = emissions[0]
+    assert isinstance(batch, ReactToolBatch)
+    assert [call.tool_name for call in batch.calls] == ["probe"]
+    assert batch.canonical_messages[-1]["role"] == "assistant"
+
+
 def test_react_driver_module_has_no_product_tool_or_workflow_dependencies():
     from pathlib import Path
 

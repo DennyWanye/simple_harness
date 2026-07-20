@@ -28,6 +28,7 @@ back as a `role=tool` message and the loop iterates.
 from __future__ import annotations
 
 import asyncio
+import copy
 import inspect
 import json
 import logging
@@ -746,6 +747,18 @@ class ToolCallEvent(AgentEvent):
 
 
 @dataclass
+class ToolBatchEvent(AgentEvent):
+    """Pause point for an external harness-owned tool executor."""
+
+    tool_calls: tuple[ToolCall, ...] = ()
+    canonical_messages: tuple[Mapping[str, Any], ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.type:
+            self.type = "tool_batch"
+
+
+@dataclass
 class ToolResultEvent(AgentEvent):
     tool_call_id: str = ""
     tool_name: str = ""
@@ -1026,6 +1039,7 @@ class AgentLoop:
         pipeline_problem_type: Optional[str] = None,   # Step1 产出的 problem_type（喂 Step6 选档）
         pipeline_needs_investigation: bool = False,    # IntentCard.needs_investigation（喂 Step2）
         pipeline_observability: bool = False,          # 发 chat_v2_evidence_gate / _selfcheck / _convergence 事件
+        external_tool_dispatch: bool = False,
     ) -> None:
         self.llm = llm_registry
         self.tools = tool_registry
@@ -1043,6 +1057,7 @@ class AgentLoop:
         # through it so user-permission popups work end-to-end. Legacy
         # registries (only `dispatch`) keep working unchanged.
         self._supports_execute_tool = callable(getattr(tool_registry, "execute_tool", None))
+        self.external_tool_dispatch = bool(external_tool_dispatch)
         # P5-S2 Hook A: completion guard. If supplied, ``completion_probe``
         # is called when the LLM tries to finalize (stop_reason ≠ tool_use)
         # to check whether session-level work (todos) is actually done.
@@ -4445,6 +4460,17 @@ class AgentLoop:
                     )
                 continue
 
+            if self.external_tool_dispatch:
+                yield ToolBatchEvent(
+                    task_id=tid,
+                    iteration=iteration,
+                    tool_calls=tuple(response.tool_calls),
+                    canonical_messages=tuple(
+                        copy.deepcopy(dict(message)) for message in working_messages
+                    ),
+                )
+                return
+
             # WI-1B-3: 累计本 run 工具调用数(供自适应触发线判 agentic;
             # adaptive_compact_pct OFF 时无人读 → 字节级 BC)。
             _run_tool_calls += len(response.tool_calls)
@@ -5627,6 +5653,7 @@ class AgentLoop:
 AgentEventUnion = Union[
     AssistantMessageEvent,
     ToolCallEvent,
+    ToolBatchEvent,
     ToolResultEvent,
     AsyncHandoffEvent,
     FinalEvent,

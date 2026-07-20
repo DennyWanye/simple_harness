@@ -1886,6 +1886,53 @@ class ToolRegistry:
         # one bogus name from serializing unrelated valid calls.
         return bool(spec.concurrency_safe) if spec is not None else True
 
+    def prepare_execution_call(
+        self,
+        tool_name: str,
+        raw_args: Mapping[str, Any],
+        *,
+        call_id: str,
+        effect_id: str,
+        context: ToolExecutionContext,
+    ) -> PreparedExecutionCall:
+        """Freeze a model call without merging any session-owned fields."""
+
+        from deskpet.harness.tool_executor import (
+            PreparedExecutionCall,
+            reject_reserved_model_fields,
+        )
+
+        args = dict(raw_args)
+        reject_reserved_model_fields(args)
+        with self._lock:
+            spec = self._tools.get(tool_name)
+        if spec is None:
+            raise KeyError(f"unknown tool: {tool_name}")
+        effect_kind = str(
+            getattr(getattr(spec.effect_policy, "kind", None), "value", "")
+        )
+        permission_required = bool(
+            spec.dangerous
+            or spec.permission_category in _WRITE_PERMISSION_CATEGORIES
+        )
+        recoverable = bool(
+            spec.permission_category in _WRITE_PERMISSION_CATEGORIES
+            or effect_kind in {"staged_file", "opaque_manual"}
+        )
+        return PreparedExecutionCall(
+            tool_name=tool_name,
+            model_args=args,
+            call_id=call_id,
+            effect_id=effect_id,
+            capability_hash=context.capability_hash,
+            scope_hash=context.scope_hash,
+            requires_authorization=permission_required,
+            recoverable_effect=recoverable,
+            tool_spec_version=spec.spec_version,
+            schema_hash=spec.schema_hash,
+            permission_policy_version=spec.permission_policy_version,
+        )
+
     async def execute_call(
         self,
         call: PreparedExecutionCall,

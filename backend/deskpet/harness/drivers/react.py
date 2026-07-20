@@ -9,6 +9,7 @@ command boundary before any recoverable effect.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Mapping, Protocol
@@ -61,6 +62,8 @@ class ReactToolBatch:
     command_id: str
     calls: tuple[PreparedExecutionCall, ...]
     contexts: tuple[ToolExecutionContext, ...]
+    canonical_messages: tuple[Mapping[str, Any], ...] = ()
+    iteration: int = 0
 
     def __post_init__(self) -> None:
         if not self.command_id:
@@ -158,11 +161,21 @@ class LegacyAgentLoopCollaborator:
     ``ReactToolBatch`` before execution.
     """
 
-    def __init__(self, loop: Any) -> None:
+    def __init__(
+        self,
+        loop: Any,
+        *,
+        call_factory: Any | None = None,
+    ) -> None:
         self._loop = loop
+        self._call_factory = call_factory
         self._active: dict[str, AsyncIterator[Any]] = {}
 
-    async def _map(self, run_id: str, iterator: AsyncIterator[Any]) -> AsyncIterator[ReactEmission]:
+    async def _map(
+        self,
+        request: DriverStart,
+        iterator: AsyncIterator[Any],
+    ) -> AsyncIterator[ReactEmission]:
         from agent.agent_loop import (
             AssistantDeltaEvent,
             AsyncHandoffEvent,
@@ -170,9 +183,11 @@ class LegacyAgentLoopCollaborator:
             FinalEvent,
             ProviderChainFallbackEvent,
             ToolCallEvent,
+            ToolBatchEvent,
             ToolResultEvent,
         )
 
+        run_id = request.run_id
         self._active[run_id] = iterator
         try:
             async for event in iterator:
@@ -184,6 +199,50 @@ class LegacyAgentLoopCollaborator:
                     yield ReactFinal(event.content)
                 elif isinstance(event, ErrorEvent):
                     yield ReactFailure(event.detail or event.reason)
+                elif isinstance(event, ToolBatchEvent):
+                    if self._call_factory is None or request.run_context is None:
+                        raise LegacyAgentLoopToolInterceptionError(
+                            "external tool batch requires a prepared-call factory and run context"
+                        )
+                    from deskpet.harness.context import HostContextFactory
+
+                    context_factory = HostContextFactory()
+                    calls = []
+                    contexts = []
+                    for tool_call in event.tool_calls:
+                        effect_id = hashlib.sha256(
+                            f"effect|{run_id}|{tool_call.id}".encode("utf-8")
+                        ).hexdigest()
+                        context = context_factory.create_tool_context(
+                            request.run_context,
+                            run_id=run_id,
+                            call_id=tool_call.id,
+                            effect_id=effect_id,
+                        )
+                        calls.append(
+                            self._call_factory.prepare_execution_call(
+                                tool_call.name,
+                                tool_call.arguments,
+                                call_id=tool_call.id,
+                                effect_id=effect_id,
+                                context=context,
+                            )
+                        )
+                        contexts.append(context)
+                    command_id = hashlib.sha256(
+                        (
+                            f"tool-batch|{run_id}|{event.iteration}|"
+                            + "|".join(call.call_id for call in calls)
+                        ).encode("utf-8")
+                    ).hexdigest()
+                    yield ReactToolBatch(
+                        command_id,
+                        tuple(calls),
+                        tuple(contexts),
+                        tuple(event.canonical_messages),
+                        int(event.iteration),
+                    )
+                    return
                 elif isinstance(event, (ToolCallEvent, ToolResultEvent, AsyncHandoffEvent)):
                     raise LegacyAgentLoopToolInterceptionError(
                         "legacy AgentLoop tool dispatch is unavailable in ReActDriver test wiring"
@@ -198,7 +257,7 @@ class LegacyAgentLoopCollaborator:
             session_id=request.session_id,
             stream=True,
         )
-        async for emission in self._map(request.run_id, iterator):
+        async for emission in self._map(request, iterator):
             yield emission
 
     async def resume(
@@ -262,7 +321,7 @@ class ReActDriver:
             session_id=request.session_id,
             command_id=batch.command_id,
             command_kind="execute_tools",
-            canonical_messages=request.canonical_messages,
+            canonical_messages=batch.canonical_messages or request.canonical_messages,
             session_projection_cursor=request.session_projection_cursor,
             prepared_context_ref=request.prepared_context_ref,
             tool_set_snapshot_ref=request.tool_set_snapshot_ref,
@@ -270,7 +329,7 @@ class ReActDriver:
             tool_contexts=batch.contexts,
             outcomes=(None,) * len(batch.calls),
             provider_state=request.provider_state,
-            iteration=request.iteration,
+            iteration=max(request.iteration, batch.iteration),
             completion_state=request.completion_state,
         )
 
