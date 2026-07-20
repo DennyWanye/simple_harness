@@ -17,7 +17,7 @@ from typing import Any, Mapping, Protocol
 
 import aiosqlite
 
-from deskpet.harness.ports import OpenDecision
+from deskpet.harness.ports import AttachmentPolicy, DelegateRun, JoinPolicy, OpenDecision
 from deskpet.harness.tool_executor import (
     PreparedExecutionCall,
     ToolOutcome,
@@ -164,6 +164,7 @@ class ReactCommandBoundary:
     iteration: int
     completion_state: Mapping[str, Any]
     pending_decision: OpenDecision | None = None
+    pending_delegate: DelegateRun | None = None
     version: int = 0
 
     def __post_init__(self) -> None:
@@ -173,6 +174,8 @@ class ReactCommandBoundary:
             raise ValueError("pending calls and contexts must align")
         if len(self.pending_calls) != len(self.outcomes):
             raise ValueError("pending calls and outcomes must align")
+        if self.pending_decision is not None and self.pending_delegate is not None:
+            raise ValueError("a boundary cannot wait on a decision and child simultaneously")
         if self.version < 0 or self.iteration < 0 or self.session_projection_cursor < 0:
             raise ValueError("boundary counters must be non-negative")
         for call, context in zip(self.pending_calls, self.tool_contexts):
@@ -274,6 +277,7 @@ class SqliteReactCommandBoundaryStore:
 
     @staticmethod
     def _payload(boundary: ReactCommandBoundary) -> dict[str, Any]:
+        delegate = boundary.pending_delegate
         return {
             "session_id": boundary.session_id,
             "command_id": boundary.command_id,
@@ -285,6 +289,19 @@ class SqliteReactCommandBoundaryStore:
                 for outcome in boundary.outcomes
             ],
             "completion_state": copy.deepcopy(dict(boundary.completion_state)),
+            "delegate": (
+                None
+                if delegate is None
+                else {
+                    "run_id": delegate.run_id,
+                    "command_id": delegate.command_id,
+                    "child_request": dict(delegate.child_request),
+                    "route_hint": delegate.route_hint,
+                    "capability_subset": list(delegate.capability_subset),
+                    "attachment_policy": delegate.attachment_policy.value,
+                    "join_policy": delegate.join_policy.value,
+                }
+            ),
         }
 
     @staticmethod
@@ -446,6 +463,20 @@ class SqliteReactCommandBoundaryStore:
                 return None
             payload = json.loads(str(row["pending_prepared_call_json"]))
             decision = None
+            delegate = None
+            delegate_payload = payload.get("delegate")
+            if isinstance(delegate_payload, Mapping):
+                delegate = DelegateRun(
+                    run_id=str(delegate_payload["run_id"]),
+                    command_id=str(delegate_payload["command_id"]),
+                    child_request=dict(delegate_payload["child_request"]),
+                    route_hint=str(delegate_payload["route_hint"]),
+                    capability_subset=tuple(delegate_payload["capability_subset"]),
+                    attachment_policy=AttachmentPolicy(
+                        str(delegate_payload["attachment_policy"])
+                    ),
+                    join_policy=JoinPolicy(str(delegate_payload["join_policy"])),
+                )
             decision_id = row["pending_decision_id"]
             if decision_id is not None:
                 drow = await (
@@ -492,6 +523,7 @@ class SqliteReactCommandBoundaryStore:
                 iteration=int(row["iteration"]),
                 completion_state=dict(payload.get("completion_state") or {}),
                 pending_decision=decision,
+                pending_delegate=delegate,
                 version=int(row["continuation_version"]),
             )
         finally:

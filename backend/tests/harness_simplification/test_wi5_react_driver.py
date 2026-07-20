@@ -418,6 +418,37 @@ async def test_unknown_effect_is_reconciled_before_driver_resumes(tmp_path):
     assert collaborator.resume_inputs[0][0].outcomes == (reconciled,)
 
 
+@pytest.mark.asyncio
+async def test_delegate_boundary_survives_restart_and_accept_signal(tmp_path):
+    command = _delegate(JoinPolicy.DETACHED)
+    first, store, promoter, path = _driver(
+        tmp_path,
+        ScriptedCollaborator([ReactDelegateRequest(command)]),
+    )
+    assert await _collect(first.start(_request())) == [command]
+    assert promoter.calls == ["run-react"]
+    persisted = await store.load("run-react")
+    assert persisted is not None and persisted.pending_delegate == command
+
+    resumed = ScriptedCollaborator(resumes=[[ReactFinal("detached accepted")]])
+    second = ReActDriver(
+        resumed,
+        store,
+        DurablePromoter(path),
+        EffectReader(),
+    )
+    assert await _collect(second.recover("run-react")) == [command]
+    candidates = await _collect(
+        second.signal(ChildAcceptedSignal("run-react", command.command_id, "child-1"))
+    )
+    assert candidates == [
+        ChildAcceptedCandidate(
+            "run-react", command.command_id, "child-1", JoinPolicy.DETACHED
+        ),
+        DriverTerminalCandidate("run-react", "completed", "detached accepted"),
+    ]
+
+
 def _delegate(join_policy: JoinPolicy) -> DelegateRun:
     attachment = {
         JoinPolicy.JOIN_BEFORE_FINAL: AttachmentPolicy.ATTACHED,

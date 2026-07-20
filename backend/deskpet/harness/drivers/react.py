@@ -250,7 +250,6 @@ class ReActDriver:
         self._outcome_committer = outcome_committer
         self._requests: dict[str, DriverStart] = {}
         self._volatile: dict[str, ReactCommandBoundary] = {}
-        self._delegates: dict[tuple[str, str], DelegateRun] = {}
 
     @staticmethod
     def _requires_boundary(batch: ReactToolBatch) -> bool:
@@ -355,7 +354,26 @@ class ReActDriver:
                 command = emission.command
                 if command.run_id != request.run_id:
                     raise ValueError("delegate run binding mismatch")
-                self._delegates[(request.run_id, command.command_id)] = command
+                await self._promoter.promote_for_boundary(request.run_id)
+                await self._boundaries.put(
+                    ReactCommandBoundary(
+                        run_id=request.run_id,
+                        session_id=request.session_id,
+                        command_id=command.command_id,
+                        command_kind="delegate",
+                        canonical_messages=request.canonical_messages,
+                        session_projection_cursor=request.session_projection_cursor,
+                        prepared_context_ref=request.prepared_context_ref,
+                        tool_set_snapshot_ref=request.tool_set_snapshot_ref,
+                        pending_calls=(),
+                        tool_contexts=(),
+                        outcomes=(),
+                        provider_state=request.provider_state,
+                        iteration=request.iteration,
+                        completion_state=request.completion_state,
+                        pending_delegate=command,
+                    )
+                )
                 yield command
                 return
             elif isinstance(emission, ReactFinal):
@@ -498,8 +516,9 @@ class ReActDriver:
                     yield candidate
                 return
             if isinstance(signal, ChildAcceptedSignal):
-                command = self._delegates.get((signal.run_id, signal.command_id))
-                if command is None:
+                boundary = await self._load_boundary(signal.run_id)
+                command = boundary.pending_delegate
+                if command is None or command.command_id != signal.command_id:
                     raise ValueError("delegate command not found")
                 yield ChildAcceptedCandidate(
                     signal.run_id,
@@ -508,35 +527,20 @@ class ReActDriver:
                     command.join_policy,
                 )
                 if command.join_policy is JoinPolicy.DETACHED:
-                    request = self._requests[signal.run_id]
-                    empty = ReactCommandBoundary(
-                        run_id=signal.run_id,
-                        session_id=request.session_id,
-                        command_id=signal.command_id,
-                        command_kind="delegate",
-                        canonical_messages=request.canonical_messages,
-                        session_projection_cursor=request.session_projection_cursor,
-                        prepared_context_ref=request.prepared_context_ref,
-                        tool_set_snapshot_ref=request.tool_set_snapshot_ref,
-                        pending_calls=(),
-                        tool_contexts=(),
-                        outcomes=(),
-                        provider_state=request.provider_state,
-                        iteration=request.iteration,
-                        completion_state=request.completion_state,
-                    )
+                    request = self._request_from_boundary(boundary)
                     async for candidate in self._emit(
                         request,
                         self._collaborator.resume(
-                            empty,
+                            boundary,
                             {"type": "child_accepted", "child_run_id": signal.child_run_id},
                         ),
                     ):
                         yield candidate
                 return
             if isinstance(signal, ChildTerminalSignal):
-                command = self._delegates.get((signal.run_id, signal.command_id))
-                if command is None:
+                boundary = await self._load_boundary(signal.run_id)
+                command = boundary.pending_delegate
+                if command is None or command.command_id != signal.command_id:
                     raise ValueError("delegate command not found")
                 if command.join_policy is JoinPolicy.ROOT_TERMINAL_CHILD:
                     yield DriverTerminalCandidate(
@@ -552,27 +556,11 @@ class ReActDriver:
                     )
                     return
                 if command.join_policy is JoinPolicy.JOIN_BEFORE_FINAL:
-                    request = self._requests[signal.run_id]
-                    empty = ReactCommandBoundary(
-                        run_id=signal.run_id,
-                        session_id=request.session_id,
-                        command_id=signal.command_id,
-                        command_kind="delegate",
-                        canonical_messages=request.canonical_messages,
-                        session_projection_cursor=request.session_projection_cursor,
-                        prepared_context_ref=request.prepared_context_ref,
-                        tool_set_snapshot_ref=request.tool_set_snapshot_ref,
-                        pending_calls=(),
-                        tool_contexts=(),
-                        outcomes=(),
-                        provider_state=request.provider_state,
-                        iteration=request.iteration,
-                        completion_state=request.completion_state,
-                    )
+                    request = self._request_from_boundary(boundary)
                     async for candidate in self._emit(
                         request,
                         self._collaborator.resume(
-                            empty,
+                            boundary,
                             {
                                 "type": "child_terminal",
                                 "child_run_id": signal.child_run_id,
@@ -590,6 +578,9 @@ class ReActDriver:
             boundary = await self._load_boundary(run_id)
             if boundary.pending_decision is not None:
                 yield boundary.pending_decision
+                return
+            if boundary.pending_delegate is not None:
+                yield boundary.pending_delegate
                 return
             updates: dict[int, ToolOutcome] = {}
             for index in boundary.pending_indexes:
