@@ -17,6 +17,7 @@ from .checkpointer import (
 from .run_store import ForkPreparationError, RunFence, StaleRunFence, WorkflowRunStore
 from .schema import WORKFLOW_SCHEMA_VERSION, initialize_workflow_db
 from .execution_uow import (
+    ContinuationRecord,
     ExecutionRuntimeState,
     LegacyDrainRef,
     RuntimeActivationError,
@@ -45,6 +46,7 @@ __all__ = [
     "RunFence",
     "ForkPreparationError",
     "StaleRunFence",
+    "ContinuationRecord",
     "ExecutionRuntimeState",
     "LegacyDrainRef",
     "RuntimeActivationError",

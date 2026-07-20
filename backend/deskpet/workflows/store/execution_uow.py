@@ -117,6 +117,18 @@ class RuntimeActivationError(RuntimeError):
         super().__init__(message)
 
 
+@dataclass(frozen=True, slots=True)
+class ContinuationRecord:
+    """Product-neutral JSON continuation owned by the execution UoW."""
+
+    run_id: str
+    payload: Mapping[str, Any]
+    version: int
+    pending_decision_id: str | None
+    created_at: float
+    updated_at: float
+
+
 class SqliteExecutionUnitOfWork:
     """CAS-based execution ledger backed by the workflow SQLite database."""
 
@@ -1510,6 +1522,254 @@ class SqliteExecutionUnitOfWork:
                 )
             ).fetchone()
             return int(remaining[0]) == 0
+        finally:
+            await db.close()
+
+    @staticmethod
+    def _row_to_continuation(row: Mapping[str, Any]) -> ContinuationRecord:
+        payload = json.loads(str(row["pending_prepared_call_json"]))
+        if not isinstance(payload, dict):
+            raise RuntimeActivationError(
+                "continuation_payload_corrupt",
+                "persisted continuation payload must be a JSON object",
+            )
+        return ContinuationRecord(
+            run_id=str(row["run_id"]),
+            payload=payload,
+            version=int(row["continuation_version"]),
+            pending_decision_id=(
+                str(row["pending_decision_id"])
+                if row["pending_decision_id"] is not None
+                else None
+            ),
+            created_at=float(row["created_at"]),
+            updated_at=float(row["updated_at"]),
+        )
+
+    async def _continuation_run_tx(
+        self, db: aiosqlite.Connection, run_id: str
+    ) -> aiosqlite.Row:
+        row = await (
+            await db.execute("SELECT * FROM execution_runs WHERE run_id=?", (run_id,))
+        ).fetchone()
+        if row is None:
+            raise RunNotFound("run_not_found", f"execution run does not exist: {run_id}")
+        self._assert_run_owner(row, await self._required_start_owner_tx(db))
+        if str(row["persistence_level"]) != PersistenceLevel.DURABLE.value:
+            raise PersistenceRequired(
+                "continuation_requires_durable_run",
+                "continuations require a durable execution run",
+            )
+        return row
+
+    async def _insert_continuation_decision_tx(
+        self,
+        db: aiosqlite.Connection,
+        decision: DecisionOpen,
+        *,
+        run: Mapping[str, Any],
+        now: float,
+    ) -> None:
+        if decision.run_id != str(run["run_id"]):
+            raise DecisionConflict(
+                "decision_run_mismatch",
+                "continuation and pending decision must belong to the same run",
+            )
+        existing_row = await (
+            await db.execute(
+                """SELECT * FROM execution_decisions
+                WHERE decision_id=? OR (run_id=? AND nonce=?)
+                ORDER BY CASE WHEN decision_id=? THEN 0 ELSE 1 END LIMIT 1""",
+                (
+                    decision.decision_id,
+                    decision.run_id,
+                    decision.nonce,
+                    decision.decision_id,
+                ),
+            )
+        ).fetchone()
+        if existing_row is not None:
+            self._assert_decision_intent(self._row_to_decision(existing_row), decision)
+            return
+        if str(run["status"]) in {
+            status.value for status in TERMINAL_RUN_STATUSES
+        } or str(run["status"]) == RunStatus.CANCEL_REQUESTED.value:
+            raise DecisionConflict(
+                "run_not_signalable",
+                "cancelled or terminal runs cannot open decisions",
+            )
+        if decision.expires_at is not None and decision.expires_at <= now:
+            raise DecisionConflict(
+                "decision_expired", "cannot open an already expired decision"
+            )
+        if (
+            decision.capability_hash is not None
+            and decision.capability_hash != str(run["capability_hash"])
+        ):
+            raise DecisionConflict(
+                "decision_binding_mismatch",
+                "decision capability does not match the durable run context",
+            )
+        await db.execute(
+            """INSERT INTO execution_decisions(
+            decision_id,schema_version,run_id,nonce,kind,status,
+            prompt_schema_version,prompt_json,response_schema_version,response_json,
+            domain_kind,domain_id,call_id,effect_id,tool_name,args_hash,
+            capability_hash,scope_hash,decision_version,expires_at,created_at,resolved_at
+            ) VALUES(?,?,?,?,?,'open',?,?,NULL,NULL,?,?,?,?,?,?,?,?,0,?,?,NULL)""",
+            (
+                decision.decision_id,
+                decision.schema_version,
+                decision.run_id,
+                decision.nonce,
+                decision.kind.value,
+                decision.prompt_schema_version,
+                canonical_json(thaw_json(decision.prompt)),
+                decision.domain_kind,
+                decision.domain_id,
+                decision.call_id,
+                decision.effect_id,
+                decision.tool_name,
+                decision.args_hash,
+                decision.capability_hash,
+                decision.scope_hash,
+                decision.expires_at,
+                now,
+            ),
+        )
+
+    async def save_continuation(
+        self,
+        run_id: str,
+        expected_version: int,
+        payload: Mapping[str, Any],
+        decision: DecisionOpen | None = None,
+    ) -> ContinuationRecord:
+        """CAS a complete JSON continuation and optional decision in one commit."""
+
+        if (
+            not isinstance(expected_version, int)
+            or isinstance(expected_version, bool)
+            or expected_version < 0
+        ):
+            raise ValueError("expected_version must be non-negative")
+        normalized = thaw_json(payload)
+        if not isinstance(normalized, dict):
+            raise ValueError("continuation payload must be a JSON object")
+        payload_json = canonical_json(normalized)
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            run = await self._continuation_run_tx(db, run_id)
+            existing = await (
+                await db.execute(
+                    "SELECT * FROM execution_continuations WHERE run_id=?", (run_id,)
+                )
+            ).fetchone()
+            if existing is None:
+                if expected_version != 0:
+                    raise VersionConflict(
+                        "stale_continuation_version",
+                        "new continuation must start from expected version zero",
+                    )
+            elif int(existing["continuation_version"]) != expected_version:
+                raise VersionConflict(
+                    "stale_continuation_version",
+                    "continuation changed before the save CAS",
+                )
+            now = float(self._clock())
+            if decision is not None:
+                await self._insert_continuation_decision_tx(
+                    db, decision, run=run, now=now
+                )
+            self._fault("continuation_after_decision")
+            next_version = expected_version + 1
+            decision_id = decision.decision_id if decision is not None else None
+            if existing is None:
+                await db.execute(
+                    """INSERT INTO execution_continuations(
+                    run_id,schema_version,command_schema_version,canonical_messages_json,
+                    session_projection_cursor,prepared_context_ref,tool_set_snapshot_ref,
+                    pending_prepared_call_json,pending_decision_id,iteration,
+                    provider_state_json,continuation_version,created_at,updated_at
+                    ) VALUES(?,1,1,'[]',0,NULL,NULL,?,?,0,'{}',?,?,?)""",
+                    (run_id, payload_json, decision_id, next_version, now, now),
+                )
+            else:
+                cursor = await db.execute(
+                    """UPDATE execution_continuations
+                    SET pending_prepared_call_json=?,pending_decision_id=?,
+                        continuation_version=?,updated_at=?
+                    WHERE run_id=? AND continuation_version=?""",
+                    (
+                        payload_json,
+                        decision_id,
+                        next_version,
+                        now,
+                        run_id,
+                        expected_version,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    raise VersionConflict(
+                        "stale_continuation_version",
+                        "continuation changed before the save CAS",
+                    )
+            self._fault("continuation_before_commit")
+            row = await (
+                await db.execute(
+                    "SELECT * FROM execution_continuations WHERE run_id=?", (run_id,)
+                )
+            ).fetchone()
+            assert row is not None
+            await db.commit()
+            return self._row_to_continuation(row)
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def load_continuation(self, run_id: str) -> ContinuationRecord | None:
+        db = await self._connect()
+        try:
+            row = await (
+                await db.execute(
+                    "SELECT * FROM execution_continuations WHERE run_id=?", (run_id,)
+                )
+            ).fetchone()
+            return self._row_to_continuation(row) if row is not None else None
+        finally:
+            await db.close()
+
+    async def delete_continuation(self, run_id: str, expected_version: int) -> None:
+        if (
+            not isinstance(expected_version, int)
+            or isinstance(expected_version, bool)
+            or expected_version < 1
+        ):
+            raise ValueError("expected_version must be positive")
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            await self._continuation_run_tx(db, run_id)
+            cursor = await db.execute(
+                """DELETE FROM execution_continuations
+                WHERE run_id=? AND continuation_version=?""",
+                (run_id, expected_version),
+            )
+            if cursor.rowcount != 1:
+                raise VersionConflict(
+                    "stale_continuation_version",
+                    "continuation changed before the delete CAS",
+                )
+            self._fault("continuation_delete_before_commit")
+            await db.commit()
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
         finally:
             await db.close()
 
@@ -3410,6 +3670,7 @@ class SqliteExecutionUnitOfWork:
 
 
 __all__ = [
+    "ContinuationRecord",
     "ExecutionRuntimeState",
     "LegacyDrainRef",
     "RuntimeActivationError",
