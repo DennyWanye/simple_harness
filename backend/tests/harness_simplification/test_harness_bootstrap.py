@@ -4,7 +4,13 @@ import asyncio
 
 import pytest
 
-from deskpet.execution.contracts import ActorContext
+from deskpet.execution.contracts import (
+    ActorContext,
+    PersistenceLevel,
+    RunContext,
+    RunCreate,
+    RunStatus,
+)
 from deskpet.execution.ledger import ExecutionLedger
 from deskpet.harness.bootstrap import build_harness_runtime
 from deskpet.harness.kernel import HostContext, RegisteredDriver
@@ -20,6 +26,9 @@ class Classifier:
 
 
 class Driver:
+    def __init__(self) -> None:
+        self.recovered: list[str] = []
+
     async def start(self, request):
         yield DriverTerminalCandidate(request.run_id, "completed", "ok")
 
@@ -32,6 +41,7 @@ class Driver:
             yield DriverTerminalCandidate(run_id, "cancelled", "")
 
     async def recover(self, run_id):
+        self.recovered.append(run_id)
         if False:
             yield DriverTerminalCandidate(run_id, "completed", "")
 
@@ -108,3 +118,50 @@ async def test_bootstrap_fails_closed_for_unavailable_profile_driver(tmp_path) -
             drivers=[RegisteredDriver("react", Driver())],
             resolver=Resolver(),
         )
+
+
+@pytest.mark.asyncio
+async def test_recovery_enumerates_only_execution_owned_runs(tmp_path) -> None:
+    ledger = ExecutionLedger(SqliteExecutionUnitOfWork(tmp_path / "workflow.db"))
+    await ledger.initialize()
+    context = RunContext(
+        session_id="session-1",
+        root_run_id="run-recover",
+        parent_run_id=None,
+        request_id="request-recover",
+        turn_id="turn-recover",
+        venue="text",
+        workspace={},
+        capability_hash="c" * 64,
+        provider_plan={},
+        trace_id="trace-recover",
+        principal_id="principal-session-1",
+        auth_epoch=1,
+    )
+    await ledger.create(
+        RunCreate(
+            run_id="run-recover",
+            idempotency_key="root:recover-key",
+            context=context,
+            payload_fingerprint="a" * 64,
+            capability_fingerprint="c" * 64,
+            driver_kind="react",
+            profile_key="react.default",
+            persistence_level=PersistenceLevel.DURABLE,
+            status=RunStatus.RUNNING,
+        )
+    )
+    driver = Driver()
+    runtime = await build_harness_runtime(
+        ledger=ledger,
+        classifier=Classifier(),
+        profiles=[RouteProfile("react.default", "react")],
+        drivers=[RegisteredDriver("react", driver)],
+        resolver=Resolver(),
+    )
+
+    batch = await runtime.recovery.recover_pending()
+    await asyncio.sleep(0)
+
+    assert batch.count == 1
+    assert driver.recovered == ["run-recover"]

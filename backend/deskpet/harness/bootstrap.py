@@ -11,6 +11,7 @@ from deskpet.harness.child_runs import ChildLauncher, ChildRunCoordinator
 from deskpet.harness.decisions import DecisionStore
 from deskpet.harness.kernel import RegisteredDriver, RunKernel, kernel_public_operations
 from deskpet.harness.router import RegisteredRouter, RouteClassifier, RouteProfile
+from deskpet.harness.recovery import HarnessRecoveryCoordinator
 from deskpet.harness.tool_executor import UnifiedToolExecutor
 from deskpet.workflows.store.schema import WORKFLOW_SCHEMA_VERSION
 
@@ -64,6 +65,7 @@ class HarnessRuntime:
     run_client: KernelRunClient
     manifest: HarnessManifest
     health: HarnessHealth
+    recovery: HarnessRecoveryCoordinator
 
 
 async def build_harness_runtime(
@@ -134,6 +136,7 @@ async def build_harness_runtime(
         run_client=KernelRunClient(kernel, resolver),
         manifest=manifest,
         health=health,
+        recovery=HarnessRecoveryCoordinator(ledger, kernel),
     )
 
 

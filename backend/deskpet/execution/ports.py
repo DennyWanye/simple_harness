@@ -96,6 +96,8 @@ class ExecutionLedger(Protocol):
         actor: ActorContext,
     ) -> tuple[RunLinkSpec, ...]: ...
 
+    async def list_recoverable(self, *, limit: int = 10_000) -> tuple[RunRecord, ...]: ...
+
 
 @runtime_checkable
 class ExecutionEventStore(Protocol):

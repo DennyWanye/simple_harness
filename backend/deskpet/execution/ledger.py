@@ -437,5 +437,10 @@ class ExecutionLedger:
                 return ()
         return await self._durable.list_child_links(ref, actor)
 
+    async def list_recoverable(self, *, limit: int = 10_000) -> tuple[RunRecord, ...]:
+        """Enumerate durable non-terminal runs; ephemeral state cannot survive restart."""
+
+        return await self._durable.list_recoverable(limit=limit)
+
 
 __all__ = ["ExecutionLedger"]

@@ -14,6 +14,7 @@ from .kernel import (
     RunRequest,
     SignalReceipt,
 )
+from .recovery import HarnessRecoveryCoordinator, RecoveryBatch
 from .ports import DriverTerminalCandidate
 from .projector import (
     DeliveryWorker,
@@ -57,6 +58,7 @@ __all__ = [
     "ExecutionProjector",
     "HostContext",
     "HostContextFactory",
+    "HarnessRecoveryCoordinator",
     "HarnessHealth",
     "HarnessManifest",
     "HarnessRuntime",
@@ -74,6 +76,7 @@ __all__ = [
     "RunHandle",
     "RunKernel",
     "RunRequest",
+    "RecoveryBatch",
     "SessionDBProjectionSink",
     "SignalReceipt",
     "SinkRegistration",

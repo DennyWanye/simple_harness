@@ -2740,6 +2740,24 @@ class SqliteExecutionUnitOfWork:
         finally:
             await db.close()
 
+    async def list_recoverable(self, *, limit: int = 10_000) -> tuple[RunRecord, ...]:
+        if isinstance(limit, bool) or limit < 1:
+            raise ValueError("recoverable run limit must be positive")
+        db = await self._connect()
+        try:
+            rows = await (
+                await db.execute(
+                    """SELECT * FROM execution_runs
+                    WHERE terminal_event_id IS NULL
+                    AND status IN ('created','queued','running','waiting','cancel_requested')
+                    ORDER BY created_at,run_id LIMIT ?""",
+                    (int(limit),),
+                )
+            ).fetchall()
+            return tuple(self._row_to_record(row) for row in rows)
+        finally:
+            await db.close()
+
     async def _insert_workflow_tx(
         self,
         db: aiosqlite.Connection,
