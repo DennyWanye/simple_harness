@@ -1211,6 +1211,31 @@ async def _migrate_v6_to_v7(db: aiosqlite.Connection) -> None:
                 manifest_generation,status,lease_expires_at,updated_at
             );
 
+        CREATE TRIGGER execution_runs_owner_insert_guard
+        BEFORE INSERT ON execution_runs
+        BEGIN
+            SELECT CASE WHEN NOT EXISTS(
+                SELECT 1 FROM execution_runtime_state
+                WHERE singleton_id=1 AND (
+                    (phase='legacy' AND generation=0
+                        AND NEW.owner_kind='legacy'
+                        AND NEW.owner_generation=0)
+                    OR
+                    (phase='open' AND generation>0
+                        AND NEW.owner_kind='kernel'
+                        AND NEW.owner_generation=generation)
+                )
+            ) THEN RAISE(ABORT,'execution_owner_not_active') END;
+        END;
+
+        CREATE TRIGGER execution_runs_owner_immutable
+        BEFORE UPDATE OF owner_kind,owner_generation ON execution_runs
+        WHEN NEW.owner_kind<>OLD.owner_kind
+            OR NEW.owner_generation<>OLD.owner_generation
+        BEGIN
+            SELECT RAISE(ABORT,'execution_owner_immutable');
+        END;
+
         INSERT INTO workflow_schema_migrations(version,applied_at)
         VALUES(7,CAST(strftime('%s','now') AS REAL));
         PRAGMA user_version=7;

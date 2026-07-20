@@ -139,17 +139,12 @@ async def test_fresh_v7_has_dormant_legacy_runtime_state_and_owner_constraints(t
                 "UPDATE execution_runs SET owner_kind='kernel' WHERE run_id=?",
                 ("legacy-default",),
             )
-        await db.execute(
-            """UPDATE execution_runs
-            SET owner_kind='kernel',owner_generation=1 WHERE run_id=?""",
-            ("legacy-default",),
-        )
-        kernel_owner = await (
+        with pytest.raises(aiosqlite.IntegrityError, match="execution_owner_immutable"):
             await db.execute(
-                "SELECT owner_kind,owner_generation FROM execution_runs WHERE run_id=?",
+                """UPDATE execution_runs
+                SET owner_kind='kernel',owner_generation=1 WHERE run_id=?""",
                 ("legacy-default",),
             )
-        ).fetchone()
         with pytest.raises(aiosqlite.IntegrityError):
             await db.execute(
                 """INSERT INTO execution_runtime_state(
@@ -161,7 +156,6 @@ async def test_fresh_v7_has_dormant_legacy_runtime_state_and_owner_constraints(t
     assert columns["owner_kind"] == (1, "'legacy'")
     assert columns["owner_generation"] == (1, "0")
     assert owner == ("legacy", 0)
-    assert kernel_owner == ("kernel", 1)
     assert {"execution_runtime_state", "execution_legacy_drain_items"} <= tables
 
 

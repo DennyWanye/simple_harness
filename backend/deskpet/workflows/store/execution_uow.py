@@ -12,6 +12,7 @@ import hashlib
 import json
 import math
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
@@ -82,6 +83,40 @@ from .schema import initialize_workflow_db
 _FaultInjector = Callable[[str], None]
 
 
+@dataclass(frozen=True, slots=True)
+class ExecutionRuntimeState:
+    """Durable deployment fence for execution-row ownership."""
+
+    generation: int
+    phase: str
+    drain_manifest_hash: str | None
+    drain_count: int
+    created_at: float
+    activated_at: float | None
+    updated_at: float
+
+
+@dataclass(frozen=True, order=True, slots=True)
+class LegacyDrainRef:
+    """Stable identity for one legacy durable run that must be drained."""
+
+    source_kind: str
+    source_run_id: str
+
+    @property
+    def drain_item_id(self) -> str:
+        payload = f"{self.source_kind}\0{self.source_run_id}".encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()
+
+
+class RuntimeActivationError(RuntimeError):
+    """Fail-closed activation or execution-owner invariant violation."""
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = str(code)
+        super().__init__(message)
+
+
 class SqliteExecutionUnitOfWork:
     """CAS-based execution ledger backed by the workflow SQLite database."""
 
@@ -120,6 +155,306 @@ class SqliteExecutionUnitOfWork:
     def _fault(self, point: str) -> None:
         if self._fault_injector is not None:
             self._fault_injector(point)
+
+    @staticmethod
+    def _row_to_runtime_state(row: Mapping[str, Any]) -> ExecutionRuntimeState:
+        return ExecutionRuntimeState(
+            generation=int(row["generation"]),
+            phase=str(row["phase"]),
+            drain_manifest_hash=(
+                str(row["drain_manifest_hash"])
+                if row["drain_manifest_hash"] is not None
+                else None
+            ),
+            drain_count=int(row["drain_count"]),
+            created_at=float(row["created_at"]),
+            activated_at=(
+                float(row["activated_at"])
+                if row["activated_at"] is not None
+                else None
+            ),
+            updated_at=float(row["updated_at"]),
+        )
+
+    async def _runtime_state_tx(
+        self, db: aiosqlite.Connection
+    ) -> ExecutionRuntimeState:
+        row = await (
+            await db.execute(
+                "SELECT * FROM execution_runtime_state WHERE singleton_id=1"
+            )
+        ).fetchone()
+        if row is None:
+            raise RuntimeActivationError(
+                "runtime_state_missing", "execution runtime state is not initialized"
+            )
+        return self._row_to_runtime_state(row)
+
+    async def get_runtime_state(self) -> ExecutionRuntimeState:
+        db = await self._connect()
+        try:
+            return await self._runtime_state_tx(db)
+        finally:
+            await db.close()
+
+    @staticmethod
+    def _manifest_hash(items: Sequence[LegacyDrainRef]) -> str:
+        payload = [
+            {"source_kind": item.source_kind, "source_run_id": item.source_run_id}
+            for item in sorted(items)
+        ]
+        return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+
+    async def _scan_legacy_drain_tx(
+        self, db: aiosqlite.Connection
+    ) -> tuple[LegacyDrainRef, ...]:
+        execution_rows = await (
+            await db.execute(
+                """SELECT run_id FROM execution_runs
+                WHERE owner_kind='legacy' AND owner_generation=0
+                AND terminal_event_id IS NULL
+                ORDER BY run_id"""
+            )
+        ).fetchall()
+        workflow_rows = await (
+            await db.execute(
+                """SELECT workflow_runs.run_id FROM workflow_runs
+                LEFT JOIN execution_runs
+                    ON execution_runs.run_id=workflow_runs.run_id
+                WHERE execution_runs.run_id IS NULL
+                AND workflow_runs.ended_at IS NULL
+                AND lower(workflow_runs.status) NOT IN (
+                    'completed','failed','cancelled','canceled'
+                )
+                ORDER BY workflow_runs.run_id"""
+            )
+        ).fetchall()
+        return tuple(
+            sorted(
+                (
+                    LegacyDrainRef("execution_run", str(row["run_id"]))
+                    for row in execution_rows
+                ),
+            )
+        ) + tuple(
+            sorted(
+                LegacyDrainRef("workflow_run", str(row["run_id"]))
+                for row in workflow_rows
+            )
+        )
+
+    async def scan_legacy_drain_manifest(self) -> tuple[LegacyDrainRef, ...]:
+        """Read the current set of active durable rows owned by legacy."""
+
+        db = await self._connect()
+        try:
+            return await self._scan_legacy_drain_tx(db)
+        finally:
+            await db.close()
+
+    async def _assert_persisted_manifest_tx(
+        self,
+        db: aiosqlite.Connection,
+        state: ExecutionRuntimeState,
+    ) -> tuple[LegacyDrainRef, ...]:
+        rows = await (
+            await db.execute(
+                """SELECT drain_item_id,manifest_generation,source_kind,source_run_id
+                FROM execution_legacy_drain_items
+                ORDER BY source_kind,source_run_id"""
+            )
+        ).fetchall()
+        refs = tuple(
+            LegacyDrainRef(str(row["source_kind"]), str(row["source_run_id"]))
+            for row in rows
+        )
+        expected_generation = state.generation if state.generation > 0 else 1
+        if any(int(row["manifest_generation"]) != expected_generation for row in rows):
+            raise RuntimeActivationError(
+                "drain_manifest_generation_mismatch",
+                "legacy drain manifest contains another activation generation",
+            )
+        if any(str(row["drain_item_id"]) != ref.drain_item_id for row, ref in zip(rows, refs)):
+            raise RuntimeActivationError(
+                "drain_manifest_identity_mismatch",
+                "legacy drain manifest contains an invalid stable identity",
+            )
+        if len(refs) != state.drain_count or self._manifest_hash(refs) != state.drain_manifest_hash:
+            raise RuntimeActivationError(
+                "drain_manifest_mismatch",
+                "legacy drain manifest no longer matches the durable runtime fence",
+            )
+        return refs
+
+    async def begin_runtime_activation(self) -> ExecutionRuntimeState:
+        """Atomically register the legacy drain manifest and close new starts."""
+
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            state = await self._runtime_state_tx(db)
+            if state.phase != "legacy":
+                if state.phase in {"draining", "activated", "open"}:
+                    await self._assert_persisted_manifest_tx(db, state)
+                    await db.commit()
+                    return state
+                raise RuntimeActivationError(
+                    "invalid_runtime_phase", f"unsupported runtime phase: {state.phase}"
+                )
+            items = await self._scan_legacy_drain_tx(db)
+            manifest_hash = self._manifest_hash(items)
+            now = float(self._clock())
+            target_generation = 1
+            for item in items:
+                await db.execute(
+                    """INSERT INTO execution_legacy_drain_items(
+                    drain_item_id,manifest_generation,source_kind,source_run_id,status,
+                    created_at,updated_at
+                    ) VALUES(?,?,?,?, 'pending',?,?)""",
+                    (
+                        item.drain_item_id,
+                        target_generation,
+                        item.source_kind,
+                        item.source_run_id,
+                        now,
+                        now,
+                    ),
+                )
+            self._fault("activation_after_manifest")
+            cursor = await db.execute(
+                """UPDATE execution_runtime_state
+                SET phase='draining',drain_manifest_hash=?,drain_count=?,updated_at=?
+                WHERE singleton_id=1 AND phase='legacy' AND generation=0""",
+                (manifest_hash, len(items), now),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeActivationError(
+                    "activation_cas_conflict", "legacy runtime activation CAS lost"
+                )
+            self._fault("activation_after_draining")
+            state = await self._runtime_state_tx(db)
+            await db.commit()
+            return state
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def activate_drained_runtime(self) -> ExecutionRuntimeState:
+        """CAS a fully drained manifest to the first kernel generation."""
+
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            state = await self._runtime_state_tx(db)
+            if state.phase in {"activated", "open"}:
+                await self._assert_persisted_manifest_tx(db, state)
+                await db.commit()
+                return state
+            if state.phase != "draining":
+                raise RuntimeActivationError(
+                    "runtime_not_draining",
+                    "runtime must register a drain manifest before activation",
+                )
+            await self._assert_persisted_manifest_tx(db, state)
+            pending = await (
+                await db.execute(
+                    """SELECT COUNT(*) FROM execution_legacy_drain_items
+                    WHERE status<>'drained'"""
+                )
+            ).fetchone()
+            if pending is None or int(pending[0]) != 0:
+                raise RuntimeActivationError(
+                    "legacy_drain_incomplete",
+                    "all registered legacy durable rows must drain before activation",
+                )
+            now = float(self._clock())
+            cursor = await db.execute(
+                """UPDATE execution_runtime_state
+                SET phase='activated',generation=1,activated_at=?,updated_at=?
+                WHERE singleton_id=1 AND phase='draining' AND generation=0""",
+                (now, now),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeActivationError(
+                    "activation_cas_conflict", "draining runtime activation CAS lost"
+                )
+            self._fault("activation_after_activated")
+            state = await self._runtime_state_tx(db)
+            await db.commit()
+            return state
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def open_runtime(self) -> ExecutionRuntimeState:
+        """Open ingress only after kernel-owner bootstrap has been activated."""
+
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            state = await self._runtime_state_tx(db)
+            if state.phase == "open":
+                await self._assert_persisted_manifest_tx(db, state)
+                await db.commit()
+                return state
+            if state.phase != "activated" or state.generation <= 0:
+                raise RuntimeActivationError(
+                    "runtime_not_activated",
+                    "runtime must be activated before ingress can open",
+                )
+            now = float(self._clock())
+            cursor = await db.execute(
+                """UPDATE execution_runtime_state SET phase='open',updated_at=?
+                WHERE singleton_id=1 AND phase='activated' AND generation=?""",
+                (now, state.generation),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeActivationError(
+                    "activation_cas_conflict", "activated runtime open CAS lost"
+                )
+            self._fault("activation_after_open")
+            state = await self._runtime_state_tx(db)
+            await db.commit()
+            return state
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def activate_empty_runtime(self) -> ExecutionRuntimeState:
+        """Production-shaped R1-R5 activation for an isolated empty v7 DB."""
+
+        state = await self.begin_runtime_activation()
+        if state.drain_count != 0:
+            raise RuntimeActivationError(
+                "legacy_drain_required",
+                "empty-runtime activation cannot bypass registered legacy durable rows",
+            )
+        state = await self.activate_drained_runtime()
+        if state.phase == "open":
+            return state
+        return await self.open_runtime()
+
+    async def _required_start_owner_tx(
+        self, db: aiosqlite.Connection
+    ) -> tuple[str, int]:
+        state = await self._runtime_state_tx(db)
+        if state.phase == "legacy" and state.generation == 0:
+            return "legacy", 0
+        if state.phase == "open" and state.generation > 0:
+            return "kernel", state.generation
+        raise RuntimeActivationError(
+            "runtime_ingress_closed",
+            f"execution starts are closed while runtime phase is {state.phase}",
+        )
 
     @staticmethod
     def _workspace_json(spec: RunCreate) -> str:
@@ -414,8 +749,22 @@ class SqliteExecutionUnitOfWork:
             )
         return None
 
+    @staticmethod
+    def _assert_run_owner(
+        row: Mapping[str, Any], expected_owner: tuple[str, int]
+    ) -> None:
+        stored_owner = (str(row["owner_kind"]), int(row["owner_generation"]))
+        if stored_owner != expected_owner:
+            raise RuntimeActivationError(
+                "run_owner_conflict",
+                "execution row belongs to another runtime owner generation",
+            )
+
     async def _validate_parent_tx(
-        self, db: aiosqlite.Connection, spec: RunCreate
+        self,
+        db: aiosqlite.Connection,
+        spec: RunCreate,
+        expected_owner: tuple[str, int],
     ) -> None:
         parent_id = spec.context.parent_run_id
         if parent_id is None:
@@ -425,6 +774,7 @@ class SqliteExecutionUnitOfWork:
         ).fetchone()
         if parent is None:
             raise RunNotFound("parent_not_found", f"parent run does not exist: {parent_id}")
+        self._assert_run_owner(parent, expected_owner)
         expected = {
             "root_run_id": spec.context.root_run_id,
             "session_id": spec.context.session_id,
@@ -447,10 +797,13 @@ class SqliteExecutionUnitOfWork:
         *,
         version: int,
     ) -> tuple[aiosqlite.Row, bool]:
+        owner_kind, owner_generation = await self._required_start_owner_tx(db)
+        expected_owner = (owner_kind, owner_generation)
         existing = await self._existing_for_spec(db, spec)
         if existing is not None:
+            self._assert_run_owner(existing, expected_owner)
             return existing, False
-        await self._validate_parent_tx(db, spec)
+        await self._validate_parent_tx(db, spec, expected_owner)
         now = float(self._clock())
         await db.execute(
             """INSERT INTO execution_runs(
@@ -458,8 +811,8 @@ class SqliteExecutionUnitOfWork:
             request_id,turn_id,venue,workspace_json,capability_hash,provider_plan_json,
             trace_id,principal_id,auth_epoch,payload_fingerprint,capability_fingerprint,
             driver_kind,profile_key,persistence_level,status,version,durable_seq,
-            created_at,started_at,updated_at
-            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?)""",
+            owner_kind,owner_generation,created_at,started_at,updated_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?)""",
             (
                 spec.run_id,
                 spec.schema_version,
@@ -483,6 +836,8 @@ class SqliteExecutionUnitOfWork:
                 spec.persistence_level.value,
                 spec.status.value,
                 version,
+                owner_kind,
+                owner_generation,
                 now,
                 self._initial_started_at(spec, now),
                 now,
@@ -529,8 +884,10 @@ class SqliteExecutionUnitOfWork:
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
+            expected_owner = await self._required_start_owner_tx(db)
             existing = await self._existing_for_spec(db, spec)
             if existing is not None:
+                self._assert_run_owner(existing, expected_owner)
                 if str(existing["persistence_level"]) != PersistenceLevel.DURABLE.value:
                     raise PersistenceRequired(
                         "promotion_not_durable", "persisted promotion is not durable"
@@ -2846,13 +3203,15 @@ class SqliteExecutionUnitOfWork:
             raise ValueError("recoverable run limit must be positive")
         db = await self._connect()
         try:
+            owner_kind, owner_generation = await self._required_start_owner_tx(db)
             rows = await (
                 await db.execute(
                     """SELECT * FROM execution_runs
                     WHERE terminal_event_id IS NULL
                     AND status IN ('created','queued','running','waiting','cancel_requested')
+                    AND owner_kind=? AND owner_generation=?
                     ORDER BY created_at,run_id LIMIT ?""",
-                    (int(limit),),
+                    (owner_kind, owner_generation, int(limit)),
                 )
             ).fetchall()
             return tuple(self._row_to_record(row) for row in rows)
@@ -3050,4 +3409,9 @@ class SqliteExecutionUnitOfWork:
             await db.close()
 
 
-__all__ = ["SqliteExecutionUnitOfWork"]
+__all__ = [
+    "ExecutionRuntimeState",
+    "LegacyDrainRef",
+    "RuntimeActivationError",
+    "SqliteExecutionUnitOfWork",
+]

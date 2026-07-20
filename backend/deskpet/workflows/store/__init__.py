@@ -16,7 +16,12 @@ from .checkpointer import (
 )
 from .run_store import ForkPreparationError, RunFence, StaleRunFence, WorkflowRunStore
 from .schema import WORKFLOW_SCHEMA_VERSION, initialize_workflow_db
-from .execution_uow import SqliteExecutionUnitOfWork
+from .execution_uow import (
+    ExecutionRuntimeState,
+    LegacyDrainRef,
+    RuntimeActivationError,
+    SqliteExecutionUnitOfWork,
+)
 from .checkpoint_execution import (
     CheckpointExecutionError,
     SqliteCheckpointExecutionAdapter,
@@ -40,6 +45,9 @@ __all__ = [
     "RunFence",
     "ForkPreparationError",
     "StaleRunFence",
+    "ExecutionRuntimeState",
+    "LegacyDrainRef",
+    "RuntimeActivationError",
     "SqliteExecutionUnitOfWork",
     "SqliteCheckpointExecutionAdapter",
     "WorkflowRunStore",
