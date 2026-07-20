@@ -23,6 +23,8 @@ from deskpet.execution.contracts import (
     RunRecord,
     RunRef,
     RunStatus,
+    TERMINAL_RUN_STATUSES,
+    TerminalConflict,
     fingerprint_json,
     root_idempotency_key,
     DecisionSignal as DurableDecisionSignal,
@@ -359,11 +361,17 @@ class RunKernel:
                 nonce=signal.nonce,
                 version=signal.version,
             )
-        await self._consume(
-            registration,
-            record,
-            registration.driver.signal(driver_signal),
-        )
+        try:
+            await self._consume(
+                registration,
+                record,
+                registration.driver.signal(driver_signal),
+            )
+        except TerminalConflict:
+            current = await self._ledger.query(ref, actor)
+            if isinstance(current, RunRecord) and current.status in TERMINAL_RUN_STATUSES:
+                return SignalReceipt(True, duplicate=True, reason="terminal_already_settled")
+            raise
         return SignalReceipt(True)
 
     async def cancel(
@@ -549,15 +557,30 @@ class RunKernel:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            await self._commit_terminal(
-                record,
-                registration.kind,
-                DriverTerminalCandidate(
-                    run_id=record.run_id,
-                    status="failed",
-                    error=f"{type(exc).__name__}: {exc}",
+            current = await self._ledger.query(
+                RunRef(record.run_id, record.context.session_id),
+                ActorContext(
+                    principal_id=record.context.principal_id,
+                    session_id=record.context.session_id,
+                    auth_epoch=record.context.auth_epoch,
+                    root_run_id=record.context.root_run_id,
                 ),
             )
+            if isinstance(current, RunRecord) and current.status in TERMINAL_RUN_STATUSES:
+                return
+            try:
+                await self._commit_terminal(
+                    record,
+                    registration.kind,
+                    DriverTerminalCandidate(
+                        run_id=record.run_id,
+                        status="failed",
+                        error=f"{type(exc).__name__}: {exc}",
+                    ),
+                )
+            except TerminalConflict:
+                # Another driver/child terminal candidate won the same CAS.
+                return
 
     async def _consume(
         self,

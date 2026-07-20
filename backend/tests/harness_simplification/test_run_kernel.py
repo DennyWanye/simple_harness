@@ -33,6 +33,8 @@ from deskpet.harness.ports import (
     DecisionSignal,
     DelegateRun,
     ChildAcceptedSignal,
+    ChildTerminalSignal,
+    DriverTerminalCandidate,
     JoinPolicy,
     PersistedEventCandidate,
     TokenCandidate,
@@ -179,6 +181,24 @@ class ChildCoordinator:
 class AcceptChild:
     async def accept(self, command):
         return None
+
+
+class TerminalRaceDriver(FakeDriver):
+    def __init__(self) -> None:
+        super().__init__()
+        self.release = asyncio.Event()
+
+    async def start(self, request):
+        await self.release.wait()
+        yield DriverTerminalCandidate(request.run_id, "completed", "model-final")
+
+    async def signal(self, signal):
+        yield DriverTerminalCandidate(
+            signal.run_id,
+            "completed",
+            "child-final",
+            correlation={"child_run_id": signal.child_run_id},
+        )
 
 
 @pytest_asyncio.fixture
@@ -452,6 +472,41 @@ async def test_cancel_cascades_only_by_attachment_policy(
         actor,
     )
     assert (child.status is RunStatus.CANCELLED) is child_cancelled
+
+
+@pytest.mark.asyncio
+async def test_root_and_child_terminal_race_has_one_winner(tmp_path) -> None:
+    uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
+    ledger = ExecutionLedger(uow)
+    await ledger.initialize()
+    driver = TerminalRaceDriver()
+    value = RunKernel(
+        ledger=ledger,
+        router=RegisteredRouter(
+            StaticClassifier("react.default"),
+            [RouteProfile("react.default", "react")],
+        ),
+        drivers=[RegisteredDriver("react", driver, durable_from_start=True)],
+    )
+    handle = await value.start(RunRequest("race", "req-race", "turn-1"), host())
+    actor = host().actor(root_run_id=handle.root_run_id)
+    child_signal = ChildTerminalSignal(
+        handle.ref.run_id,
+        "delegate-1",
+        "child-1",
+        "completed",
+        "child result",
+    )
+    signal_task = asyncio.create_task(value.signal(handle.ref, actor, child_signal))
+    driver.release.set()
+    await signal_task
+    await asyncio.sleep(0.02)
+
+    record = await ledger.query(handle.ref, actor)
+    events = await uow.list_events(handle.ref.run_id)
+    terminal = [event for event in events if event.kind == "final"]
+    assert record.status is RunStatus.COMPLETED
+    assert len(terminal) == 1
 
 
 def test_kernel_surface_is_six_operations_and_has_no_product_branches() -> None:
