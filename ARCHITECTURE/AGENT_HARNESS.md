@@ -17,7 +17,9 @@ R0 of the approved simplification plan is complete, but **production ownership i
 - The canonical schema-2 benchmark completed 10,000 real `RunKernel.start → UoW.finalize → RunKernel.close` lifecycles with 10,000 terminal rows/events, zero completed-run strong references and about 1.40 MiB RSS growth.
 - Integrated verification: `176 passed, 9 xfailed`; parity census `141/141` mapped; current LOC `33,228` with zero unknown classifications.
 
-The approved target is documented in [`plans/2026-07-20-agent-harness-simplification/target-architecture.md`](../plans/2026-07-20-agent-harness-simplification/target-architecture.md). R1 begins with an additive v7 schema while production remains `legacy/0`; no production owner changes before the R6 activation gate.
+The approved target is documented in [`plans/2026-07-20-agent-harness-simplification/target-architecture.md`](../plans/2026-07-20-agent-harness-simplification/target-architecture.md). R1.1 has installed the additive `workflow.db` v7 schema while production remains `legacy/0`; no production owner changes before the R6 activation gate. Existing `execution_runs` are backfilled as `owner_kind='legacy', owner_generation=0`. The dormant `execution_runtime_state` singleton starts at `phase='legacy', generation=0`, and `execution_legacy_drain_items` provides durable manifest identity, state, and per-item lease fencing for the later cutover. This slice does not expose an activation API or runtime flag.
+
+R1.1 schema verification covers fresh creation, v6→v7 migration, repeated initialization, injected interruption with full rollback and retry, historical execution-owner backfill, unchanged checkpoint/metadata hashes, and drain identity/state/fence constraints. Focused harness/workflow regression: `215 passed, 9 xfailed`.
 
 ## Request Lifecycle
 

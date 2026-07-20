@@ -7,7 +7,7 @@ from pathlib import Path
 
 import aiosqlite
 
-WORKFLOW_SCHEMA_VERSION = 6
+WORKFLOW_SCHEMA_VERSION = 7
 
 _SCHEMA_V2 = r"""
 BEGIN IMMEDIATE;
@@ -245,6 +245,8 @@ async def initialize_workflow_db(path: str | Path) -> Path:
                     await _migrate_v4_to_v5(db)
                 elif current == 5:
                     await _migrate_v5_to_v6(db)
+                elif current == 6:
+                    await _migrate_v6_to_v7(db)
                 else:  # pragma: no cover - guarded by the version constant
                     raise RuntimeError(f"no workflow.db migration from schema {current}")
                 row = await (await db.execute("PRAGMA user_version")).fetchone()
@@ -1106,6 +1108,112 @@ async def _migrate_v5_to_v6(db: aiosqlite.Connection) -> None:
         INSERT INTO workflow_schema_migrations(version,applied_at)
         VALUES(6,CAST(strftime('%s','now') AS REAL));
         PRAGMA user_version=6;
+        COMMIT;
+        """
+    )
+
+
+async def _migrate_v6_to_v7(db: aiosqlite.Connection) -> None:
+    """Add the dormant runtime-owner and durable legacy-drain control plane.
+
+    Version 7 is deliberately additive.  Existing execution rows remain owned
+    by the legacy runtime at generation zero, and the singleton runtime state
+    starts in the same mode.  Activation is a later deployment operation; this
+    migration only installs the durable facts it will need.
+    """
+
+    await db.executescript(
+        """
+        BEGIN IMMEDIATE;
+
+        ALTER TABLE execution_runs ADD COLUMN owner_kind TEXT NOT NULL
+            DEFAULT 'legacy' CHECK(owner_kind IN ('legacy','kernel'));
+        ALTER TABLE execution_runs ADD COLUMN owner_generation INTEGER NOT NULL
+            DEFAULT 0 CHECK(
+                (owner_kind='legacy' AND owner_generation=0)
+                OR (owner_kind='kernel' AND owner_generation>0)
+            );
+
+        CREATE TABLE execution_runtime_state (
+            singleton_id INTEGER PRIMARY KEY CHECK(singleton_id=1),
+            generation INTEGER NOT NULL CHECK(generation>=0),
+            phase TEXT NOT NULL CHECK(phase IN (
+                'legacy','draining','activated','open'
+            )),
+            drain_manifest_hash TEXT,
+            drain_count INTEGER NOT NULL DEFAULT 0 CHECK(drain_count>=0),
+            created_at REAL NOT NULL,
+            activated_at REAL,
+            updated_at REAL NOT NULL,
+            CHECK(
+                drain_manifest_hash IS NULL
+                OR (
+                    length(drain_manifest_hash)=64
+                    AND drain_manifest_hash NOT GLOB '*[^0-9a-f]*'
+                )
+            ),
+            CHECK(
+                (phase='legacy' AND generation=0
+                    AND drain_manifest_hash IS NULL AND drain_count=0
+                    AND activated_at IS NULL)
+                OR
+                (phase='draining' AND generation=0
+                    AND drain_manifest_hash IS NOT NULL
+                    AND activated_at IS NULL)
+                OR
+                (phase IN ('activated','open') AND generation>0
+                    AND drain_manifest_hash IS NOT NULL
+                    AND activated_at IS NOT NULL)
+            )
+        );
+
+        INSERT INTO execution_runtime_state(
+            singleton_id,generation,phase,drain_manifest_hash,drain_count,
+            created_at,activated_at,updated_at
+        ) VALUES(
+            1,0,'legacy',NULL,0,
+            CAST(strftime('%s','now') AS REAL),NULL,
+            CAST(strftime('%s','now') AS REAL)
+        );
+
+        CREATE TABLE execution_legacy_drain_items (
+            drain_item_id TEXT PRIMARY KEY,
+            manifest_generation INTEGER NOT NULL CHECK(manifest_generation>0),
+            source_kind TEXT NOT NULL CHECK(source_kind IN (
+                'workflow_run','execution_run'
+            )),
+            source_run_id TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN (
+                'pending','leased','drained','failed'
+            )),
+            lease_owner TEXT,
+            lease_epoch INTEGER NOT NULL DEFAULT 0 CHECK(lease_epoch>=0),
+            lease_expires_at REAL,
+            last_error TEXT,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            drained_at REAL,
+            UNIQUE(manifest_generation,source_kind,source_run_id),
+            CHECK(
+                (status='leased' AND lease_owner IS NOT NULL
+                    AND lease_epoch>0 AND lease_expires_at IS NOT NULL)
+                OR
+                (status<>'leased' AND lease_owner IS NULL
+                    AND lease_expires_at IS NULL)
+            ),
+            CHECK(
+                (status='drained' AND drained_at IS NOT NULL)
+                OR (status<>'drained' AND drained_at IS NULL)
+            )
+        );
+        CREATE INDEX idx_execution_legacy_drain_items_status
+            ON execution_legacy_drain_items(
+                manifest_generation,status,lease_expires_at,updated_at
+            );
+
+        INSERT INTO workflow_schema_migrations(version,applied_at)
+        VALUES(7,CAST(strftime('%s','now') AS REAL));
+        PRAGMA user_version=7;
         COMMIT;
         """
     )
