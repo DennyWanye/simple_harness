@@ -50,8 +50,10 @@ class Driver:
     def __init__(self):
         self.signals = []
         self.cancels = []
+        self.starts = []
 
     async def start(self, request):
+        self.starts.append(request)
         yield TokenCandidate(request.run_id, "hello")
         yield DriverTerminalCandidate(request.run_id, "completed", "hello")
 
@@ -136,3 +138,29 @@ async def test_signal_and_cancel_are_run_scoped(tmp_path):
             {"session_id": "session", "venue": "text"},
             "user_stop",
         )
+
+
+@pytest.mark.asyncio
+async def test_start_preserves_route_and_product_payload(tmp_path):
+    client, driver = await make_client(tmp_path)
+    await client.start(
+        {
+            "text": "research",
+            "request_id": "r-profile",
+            "turn_id": "t-profile",
+            "mode": "code",
+            "workspace_context": True,
+            "proposed_tools": ["read_file", "deepresearch"],
+            "payload": {"topic": "harness", "pages": 8},
+        },
+        {"session_id": "session", "venue": "text"},
+    )
+    await asyncio.sleep(0)
+
+    start = driver.starts[0]
+    assert start.request_payload == {
+        "text": "research",
+        "topic": "harness",
+        "pages": 8,
+    }
+    assert start.canonical_messages[-1] == {"role": "user", "content": "research"}

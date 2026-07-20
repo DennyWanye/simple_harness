@@ -54,12 +54,27 @@ class KernelRunClient:
             raise ValueError("run request text is required")
         request_id = str(request.get("request_id") or uuid.uuid4().hex)
         turn_id = str(request.get("turn_id") or uuid.uuid4().hex)
+        raw_payload = request.get("payload", {})
+        if not isinstance(raw_payload, Mapping):
+            raise ValueError("run request payload must be a mapping")
+        raw_tools = request.get("proposed_tools", ())
+        if isinstance(raw_tools, str) or not isinstance(raw_tools, (list, tuple)):
+            raise ValueError("proposed_tools must be a sequence of names")
         handle = await self._kernel.start(
             RunRequest(
                 text=text,
                 request_id=request_id,
                 turn_id=turn_id,
                 venue=str(host.get("venue") or "text"),
+                mode=str(request.get("mode") or host.get("mode") or "auto"),
+                workspace_context=bool(
+                    request.get(
+                        "workspace_context",
+                        host.get("workspace_context", False),
+                    )
+                ),
+                proposed_tools=tuple(str(name) for name in raw_tools),
+                payload=dict(raw_payload),
             ),
             trusted,
         )
