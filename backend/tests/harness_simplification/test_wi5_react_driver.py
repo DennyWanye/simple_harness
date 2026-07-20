@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator, Iterable, Mapping
 from dataclasses import dataclass, replace
+from types import SimpleNamespace
 from typing import Any
 
 import aiosqlite
@@ -598,6 +599,90 @@ async def test_legacy_agent_loop_is_only_a_read_only_token_fallback_final_collab
         "session_id": "session-react",
         "stream": True,
     }
+
+
+@pytest.mark.asyncio
+async def test_capability_snapshot_filters_agent_loop_schema_and_prepare() -> None:
+    from agent.agent_loop import AgentLoop
+    from llm.types import ChatResponse, ChatUsage, ToolCall
+
+    class LLM:
+        seen_tools = None
+
+        async def chat_with_fallback(self, messages, tools=None, **kwargs):
+            self.seen_tools = tools
+            return ChatResponse(
+                content="",
+                tool_calls=[ToolCall(id="denied-1", name="denied", arguments={})],
+                stop_reason="tool_use",
+                usage=ChatUsage(input_tokens=1, output_tokens=1),
+                model="fixture",
+            )
+
+    class Tools:
+        prepared = 0
+
+        def schemas(self, enabled_toolsets=None):
+            return [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "description": name,
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                }
+                for name in ("allowed", "denied")
+            ]
+
+        def prepare_execution_call(self, *args, **kwargs):
+            self.prepared += 1
+            raise AssertionError("denied tool must not reach prepare")
+
+    llm = LLM()
+    tools = Tools()
+    collaborator = LegacyAgentLoopCollaborator(
+        AgentLoop(llm, tools, external_tool_dispatch=True), call_factory=tools
+    )
+    request = replace(
+        _request(), capability_snapshot={"tools": ["allowed"]}
+    )
+
+    with pytest.raises(
+        LegacyAgentLoopToolInterceptionError,
+        match="outside capability snapshot",
+    ):
+        await _collect(collaborator.start(request))
+
+    assert [item["function"]["name"] for item in llm.seen_tools] == ["allowed"]
+    assert tools.prepared == 0
+
+
+def test_react_boundary_roundtrip_retains_capability_snapshot() -> None:
+    boundary = ReactCommandBoundary(
+        run_id="run-react",
+        session_id="session-react",
+        command_id="command-1",
+        command_kind="execute_tools",
+        canonical_messages=({"role": "user", "content": "do it"},),
+        session_projection_cursor=0,
+        prepared_context_ref=None,
+        tool_set_snapshot_ref=None,
+        pending_calls=(),
+        tool_contexts=(),
+        outcomes=(),
+        provider_state={},
+        iteration=0,
+        completion_state={},
+        capability_snapshot={"tools": ["read_file"]},
+    )
+    restored = ReactCommandBoundary.from_record(
+        SimpleNamespace(run_id="run-react", payload=boundary.to_payload(), version=3)
+    )
+
+    assert dict(restored.capability_snapshot) == {"tools": ["read_file"]}
+    resumed = ReActDriver._request_from_boundary(restored)
+    assert dict(resumed.capability_snapshot) == {"tools": ["read_file"]}
 
 
 @pytest.mark.asyncio
