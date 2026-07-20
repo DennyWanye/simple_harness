@@ -17,10 +17,15 @@ from .checkpointer import (
 from .run_store import ForkPreparationError, RunFence, StaleRunFence, WorkflowRunStore
 from .schema import WORKFLOW_SCHEMA_VERSION, initialize_workflow_db
 from .execution_uow import SqliteExecutionUnitOfWork
+from .checkpoint_execution import (
+    CheckpointExecutionError,
+    SqliteCheckpointExecutionAdapter,
+)
 
 __all__ = [
     "BlobRef",
     "BlobStore",
+    "CheckpointExecutionError",
     "RegisteredBlobStore",
     "AsyncOnlyWorkflowError",
     "FencedAsyncSqliteSaver",
@@ -36,6 +41,7 @@ __all__ = [
     "ForkPreparationError",
     "StaleRunFence",
     "SqliteExecutionUnitOfWork",
+    "SqliteCheckpointExecutionAdapter",
     "WorkflowRunStore",
     "WORKFLOW_SCHEMA_VERSION",
     "initialize_workflow_db",

@@ -22,6 +22,7 @@ from .runtime_adapters import (
     WorkflowRuntimeAdapterRegistry,
 )
 from .service import WorkflowService
+from .execution_ports import WorkflowExecutionPorts
 
 _DELIVERY_PAGE_SIZE = 100
 _RUN_SCAN_LIMIT = 10_000
@@ -31,8 +32,22 @@ _DISPATCHER_SAFETY_INTERVAL = 30.0
 class WorkflowLauncher:
     """Create one run, retain its background task, and close its outbox once."""
 
-    def __init__(self, service: WorkflowService) -> None:
+    def __init__(
+        self,
+        service: WorkflowService,
+        *,
+        execution_ports: WorkflowExecutionPorts | None = None,
+    ) -> None:
         self.service = service
+        self.execution_ports = execution_ports or getattr(service, "execution_ports", None)
+        if self.execution_ports is not None:
+            if getattr(service, "execution_ports", None) is None:
+                service.execution_ports = self.execution_ports
+            runner = getattr(service, "runner", None)
+            configure = getattr(runner, "configure_execution_ports", None)
+            if not callable(configure):
+                raise ValueError("precreated launcher requires an execution-aware runner")
+            configure(self.execution_ports)
         self._tasks: set[asyncio.Task[Any]] = set()
         self._scheduled_run_ids: set[str] = set()
         self._run_tasks: dict[str, asyncio.Task[Any]] = {}
@@ -384,6 +399,103 @@ class WorkflowLauncher:
             "accepted_event_id": accepted["accepted_event_id"],
         }
 
+    async def launch_precreated(
+        self,
+        *,
+        workflow_name: str,
+        workflow_version: str,
+        session_id: str,
+        request_id: str,
+        turn_id: str,
+        start_payload: Mapping[str, JsonValue],
+        capability_snapshot: Mapping[str, JsonValue],
+        state_factory: StateFactory,
+        context_factory: ContextFactory,
+        venue: str = "chat",
+        code_session_id: str | None = None,
+        delivery_session_id: str | None = None,
+        base_epoch: int = 0,
+        code_epoch: int = 0,
+        logical_slot: str = "accepted_async:0",
+        delivery_targets: Sequence[tuple[str, str]] | None = None,
+        principal_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Exercise generic ownership without changing the production launch path."""
+
+        if self.execution_ports is None:
+            raise RuntimeError("launch_precreated requires explicit WorkflowExecutionPorts")
+        adapter = self._resolve_launch_adapter(
+            workflow_name,
+            workflow_version,
+            state_factory=state_factory,
+            context_factory=context_factory,
+        )
+        resolved_delivery_session_id = delivery_session_id or session_id
+        targets = tuple(
+            delivery_targets
+            or (
+                ("session_message", resolved_delivery_session_id),
+                ("websocket", resolved_delivery_session_id),
+            )
+        )
+        prepared = self.service.prepare_start(
+            venue=venue,
+            base_session_id=session_id,
+            code_session_id=code_session_id,
+            delivery_session_id=resolved_delivery_session_id,
+            request_id=request_id,
+            turn_id=turn_id,
+            workflow_name=workflow_name,
+            workflow_version=workflow_version,
+            capability_snapshot=capability_snapshot,
+            start_payload=start_payload,
+            base_epoch=base_epoch,
+            code_epoch=code_epoch,
+            logical_slot=logical_slot,
+            delivery_targets=(*targets, ("receipt", resolved_delivery_session_id)),
+        )
+        spec = self.service.execution_spec(prepared, principal_id=principal_id)
+        accepted = await self.service.start_prepared(
+            prepared, spec, execution_ports=self.execution_ports
+        )
+        if accepted["created"]:
+            drive_state_factory = (
+                adapter.state_factory if workflow_name == "deep_research" else state_factory
+            )
+            drive_context_factory = (
+                adapter.context_factory if workflow_name == "deep_research" else context_factory
+            )
+            task = asyncio.create_task(
+                self._drive(
+                    run_id=str(accepted["run_id"]),
+                    start_payload=dict(start_payload),
+                    state_factory=drive_state_factory,
+                    context_factory=drive_context_factory,
+                    targets=targets,
+                    precreated=True,
+                ),
+                name=f"workflow:precreated:{workflow_name}:{accepted['run_id']}",
+            )
+            self._track_run_task(str(accepted["run_id"]), task)
+        return {
+            "ok": True,
+            "accepted": True,
+            "completion_semantics": "accepted_async",
+            "run_id": accepted["run_id"],
+            "request_id": request_id,
+            "turn_id": turn_id,
+            "workflow_name": workflow_name,
+            "workflow_version": workflow_version,
+            "accepted_event_id": accepted["accepted_event_id"],
+        }
+
+    async def cancel_precreated(self, run_id: str, reason: str = "user") -> dict[str, Any]:
+        if self.execution_ports is None:
+            raise RuntimeError("cancel_precreated requires explicit WorkflowExecutionPorts")
+        row = await self.service.cancel_precreated(str(run_id), reason)
+        self.notify_dispatcher()
+        return row
+
     async def recover_pending(self, *, only_run_ids: set[str] | None = None) -> list[str]:
         """Recreate background drivers from persisted start snapshots."""
 
@@ -418,6 +530,7 @@ class WorkflowLauncher:
                     context_factory=context_factory,
                     targets=targets,
                     resume_from_checkpoint=bool(row.get("head_checkpoint_id")),
+                    precreated=await self._is_precreated(run_id),
                 ),
                 name=f"workflow:recover:{run_id}",
             )
@@ -777,6 +890,21 @@ class WorkflowLauncher:
             },
         )
 
+    async def _is_precreated(self, run_id: str) -> bool:
+        if self.execution_ports is None:
+            return False
+        await self.service.run_store.initialize()
+        db = await self.service.run_store._connect()
+        try:
+            row = await (
+                await db.execute(
+                    "SELECT 1 FROM execution_runs WHERE run_id=?", (str(run_id),)
+                )
+            ).fetchone()
+            return row is not None
+        finally:
+            await db.close()
+
     async def _drive(
         self,
         *,
@@ -786,6 +914,7 @@ class WorkflowLauncher:
         context_factory: ContextFactory,
         targets: Sequence[tuple[str, str]],
         resume_from_checkpoint: bool = False,
+        precreated: bool = False,
     ) -> None:
         try:
             row = await self.service.run_store.get_run(run_id)
@@ -812,11 +941,18 @@ class WorkflowLauncher:
                 if resume_from_checkpoint and hasattr(self.service, "human_store")
                 else {}
             )
-            result = (
-                await self.service.runner.resume(run_id, responses, context)
-                if responses
-                else await self.service.runner.run(run_id, state, context)
-            )
+            if precreated:
+                result = (
+                    await self.service.resume_precreated(run_id, responses, context)
+                    if responses
+                    else await self.service.run_precreated(run_id, state, context)
+                )
+            else:
+                result = (
+                    await self.service.runner.resume(run_id, responses, context)
+                    if responses
+                    else await self.service.runner.run(run_id, state, context)
+                )
             if result.status in TERMINAL_RUN_STATUSES or result.status.value == "waiting":
                 if result.status.value == "completed":
                     persist_snapshot = getattr(
@@ -829,21 +965,26 @@ class WorkflowLauncher:
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 - terminal event is mandatory
-            await self._publish_error(run_id, type(exc).__name__, targets)
+            await self._publish_error(
+                run_id, type(exc).__name__, targets, precreated=precreated
+            )
 
     async def _publish_error(
         self,
         run_id: str,
         error_type: str,
         targets: Sequence[tuple[str, str]],
+        *,
+        precreated: bool = False,
     ) -> None:
         result = await self.service.runner.saver.commit_launch_failure(
             run_id,
             error={"code": "launcher_error", "type": error_type},
             recovery_action="inspect_or_cancel",
         )
-        for event_id in result["event_ids"]:
-            await self.service.deliver_event_once(str(event_id))
+        if not precreated:
+            for event_id in result["event_ids"]:
+                await self.service.deliver_event_once(str(event_id))
 
     async def shutdown(self) -> None:
         if self._dispatcher_task is not None:

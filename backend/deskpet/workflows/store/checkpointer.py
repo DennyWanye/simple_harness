@@ -16,6 +16,8 @@ from typing import Any
 
 import aiosqlite
 
+from ..execution_ports import CheckpointExecutionAdapter
+
 # Local type shims keep the removed protocol class importable for old database
 # diagnostics. Production construction is aliased to NativeCheckpointStore at
 # the end of this module, so these shims never execute workflow code.
@@ -861,10 +863,19 @@ class NativeCheckpointStore:
         *,
         clock: Callable[[], float] = time.time,
         fault_injector: Callable[[str], None | Awaitable[None]] | None = None,
+        execution_adapter: CheckpointExecutionAdapter | None = None,
     ) -> None:
         self.path = Path(path)
         self._clock = clock
         self._fault_injector = fault_injector
+        self._execution_adapter = execution_adapter
+
+    def configure_execution_adapter(self, adapter: CheckpointExecutionAdapter) -> None:
+        """Bind the opt-in generic adapter before a test-only execution starts."""
+
+        if self._execution_adapter is not None and self._execution_adapter is not adapter:
+            raise ValueError("native checkpoint store already has another execution adapter")
+        self._execution_adapter = adapter
 
     async def setup(self) -> None:
         await initialize_workflow_db(self.path)
@@ -884,6 +895,23 @@ class NativeCheckpointStore:
         result = self._fault_injector(stage)
         if inspect.isawaitable(result):
             await result
+
+    async def _execution_adapter_for(
+        self, db: aiosqlite.Connection, run_id: str
+    ) -> CheckpointExecutionAdapter | None:
+        """Select by durable row presence; a new run may never fall back to legacy."""
+
+        exists = await (
+            await db.execute("SELECT 1 FROM execution_runs WHERE run_id=?", (run_id,))
+        ).fetchone()
+        if exists is None:
+            return None
+        if self._execution_adapter is None:
+            raise NativeCheckpointError(
+                "execution_adapter_required",
+                "generic execution run cannot use legacy checkpoint ownership",
+            )
+        return self._execution_adapter
 
     @staticmethod
     def _stable_id(*parts: object) -> str:
@@ -1851,6 +1879,7 @@ class NativeCheckpointStore:
         decision_ids: Sequence[str | Mapping[str, Any]] = (),
         consumed_interrupt_ids: Sequence[str] = (),
         intents: Sequence[Mapping[str, Any]] = (),
+        effect_links: Sequence[Mapping[str, Any]] = (),
         blob_refs: Sequence[str] = (),
         metadata: Mapping[str, JsonValue] | None = None,
         terminal_status: str | None = None,
@@ -1893,6 +1922,7 @@ class NativeCheckpointStore:
                     item if isinstance(item, str) else dict(item) for item in resolved_decisions
                 ],
                 "intents": [dict(item) for item in intents],
+                "effect_links": [dict(item) for item in effect_links],
                 "blob_refs": list(blob_refs),
                 "metadata": dict(metadata or {}),
                 "terminal_status": terminal_status,
@@ -1922,6 +1952,7 @@ class NativeCheckpointStore:
                     )
                 return existing
             run = await self._run_row(db, fence.run_id)
+            execution_adapter = await self._execution_adapter_for(db, fence.run_id)
             self._assert_fence_row(run, fence)
             self._assert_head(run, expected_head)
             pending_rows = await (
@@ -1988,9 +2019,22 @@ class NativeCheckpointStore:
                 metadata={**dict(metadata or {}), "operation_id": op_id, "operation_kind": "frontier"},
             )
             await self._insert_checkpoint(db, run=run, snapshot=snapshot, now=now)
-            consumed = await self._consume_decisions(
-                db, run_id=fence.run_id, decisions=resolved_decisions,
-                checkpoint_id=checkpoint_id, now=now,
+            consumed = await (
+                execution_adapter.consume_decisions(
+                    db,
+                    run_id=fence.run_id,
+                    decisions=resolved_decisions,
+                    checkpoint_id=checkpoint_id,
+                    now=now,
+                )
+                if execution_adapter is not None
+                else self._consume_decisions(
+                    db,
+                    run_id=fence.run_id,
+                    decisions=resolved_decisions,
+                    checkpoint_id=checkpoint_id,
+                    now=now,
+                )
             )
             execution_ids = [
                 str(row["node_execution_id"]) for row in pending_rows
@@ -2007,12 +2051,22 @@ class NativeCheckpointStore:
                     "WHERE node_execution_id=? AND status='succeeded_pending'",
                     (execution_id,),
                 )
-                await db.execute(
-                    """INSERT OR IGNORE INTO workflow_checkpoint_effects(
-                        thread_id,checkpoint_ns,checkpoint_id,effect_id,node_execution_id
-                    ) SELECT ?,?,?,effect_id,node_execution_id FROM workflow_node_effects
-                    WHERE node_execution_id=?""",
-                    (run["thread_id"], run["checkpoint_ns"], checkpoint_id, execution_id),
+                if execution_adapter is None:
+                    await db.execute(
+                        """INSERT OR IGNORE INTO workflow_checkpoint_effects(
+                            thread_id,checkpoint_ns,checkpoint_id,effect_id,node_execution_id
+                        ) SELECT ?,?,?,effect_id,node_execution_id FROM workflow_node_effects
+                        WHERE node_execution_id=?""",
+                        (run["thread_id"], run["checkpoint_ns"], checkpoint_id, execution_id),
+                    )
+            if execution_adapter is not None:
+                await execution_adapter.link_effects(
+                    db,
+                    run_id=fence.run_id,
+                    checkpoint_ns=str(run["checkpoint_ns"]),
+                    checkpoint_id=checkpoint_id,
+                    links=effect_links,
+                    now=now,
                 )
             for sha256 in blob_refs:
                 exists = await (
@@ -2036,7 +2090,13 @@ class NativeCheckpointStore:
                     pending_owner_ids,
                 )
             event_ids = [
-                await self._materialize_intent(db, run=run, intent=intent, now=now)
+                await (
+                    execution_adapter.materialize_intent(
+                        db, run=run, intent=intent, now=now
+                    )
+                    if execution_adapter is not None
+                    else self._materialize_intent(db, run=run, intent=intent, now=now)
+                )
                 for intent in intents
             ]
             if terminal_status is None:
@@ -2070,6 +2130,18 @@ class NativeCheckpointStore:
                 )
             if cursor.rowcount != 1:
                 raise StaleRunFence(f"native frontier head changed: {fence.run_id}")
+            if execution_adapter is not None and terminal_status is not None:
+                terminal_event_id = await execution_adapter.finalize_run(
+                    db,
+                    run=run,
+                    terminal_status=terminal_status,
+                    terminal_error=terminal_error,
+                    recovery_action=recovery_action,
+                    event_ids=event_ids,
+                    now=now,
+                )
+                if terminal_event_id not in event_ids:
+                    event_ids.append(terminal_event_id)
             await db.execute(
                 """DELETE FROM workflow_pending_writes WHERE thread_id=? AND checkpoint_ns=?
                 AND base_checkpoint_id=? AND write_kind IS NOT NULL""",
@@ -2297,6 +2369,7 @@ class NativeCheckpointStore:
                 await db.commit()
                 return None if protocol_call else existing
             run = await self._run_row(db, fence.run_id)
+            execution_adapter = await self._execution_adapter_for(db, fence.run_id)
             self._assert_fence_row(run, fence)
             self._assert_head(run, expected_head)
             snapshot = self._snapshot_payload(
@@ -2314,33 +2387,82 @@ class NativeCheckpointStore:
                 task_id=task_id or f"interrupt:{interrupt_id}", write_index=-1,
                 write_kind="interrupt", payload=interrupt_data, node_execution_id=None,
             )
-            decision = await HumanDecisionStore.open_graph_interrupt_in_transaction(
-                db, fence=fence, interrupt_id=interrupt_id, prompt=prompt,
-                checkpoint_id=checkpoint_id, checkpoint_ns=str(run["checkpoint_ns"]),
-                task_id=task_id or None, kind=kind, expires_at=expires_at, now=now,
-            )
-            decision_event_id = await self._materialize_intent(
-                db,
-                run=run,
-                intent={
-                    "intent_id": f"decision:{decision.decision_id}:open:v{decision.version}:projection:v2",
-                    "event_key": f"decision:{decision.decision_id}:open:v{decision.version}:projection:v2",
-                    "event_type": "workflow.decision",
-                    "payload": {
-                        "kind": "decision",
-                        "status": "open",
-                        "decision_id": decision.decision_id,
-                        "decision_kind": decision.kind,
-                        "nonce": decision.nonce,
-                        "version": decision.version,
-                        "prompt": copy.deepcopy(prompt),
-                    },
+            if execution_adapter is not None:
+                decision_data = await execution_adapter.open_decision(
+                    db,
+                    run=run,
+                    interrupt_id=interrupt_id,
+                    checkpoint_id=checkpoint_id,
+                    task_id=task_id or None,
+                    kind=kind,
+                    prompt=prompt,
+                    expires_at=expires_at,
+                    now=now,
+                )
+            else:
+                decision = await HumanDecisionStore.open_graph_interrupt_in_transaction(
+                    db, fence=fence, interrupt_id=interrupt_id, prompt=prompt,
+                    checkpoint_id=checkpoint_id, checkpoint_ns=str(run["checkpoint_ns"]),
+                    task_id=task_id or None, kind=kind, expires_at=expires_at, now=now,
+                )
+                decision_data = {
+                    "decision_id": decision.decision_id,
+                    "kind": decision.kind,
+                    "nonce": decision.nonce,
+                    "version": decision.version,
+                }
+            decision_event_intent = {
+                "intent_id": (
+                    f"decision:{decision_data['decision_id']}:open:"
+                    f"v{decision_data['version']}:projection:v2"
+                ),
+                "event_key": (
+                    f"decision:{decision_data['decision_id']}:open:"
+                    f"v{decision_data['version']}:projection:v2"
+                ),
+                "event_type": "workflow.decision",
+                "payload": {
+                    "kind": "decision",
+                    "status": "open",
+                    "decision_id": decision_data["decision_id"],
+                    "decision_kind": decision_data["kind"],
+                    "nonce": decision_data["nonce"],
+                    "version": decision_data["version"],
+                    "prompt": copy.deepcopy(prompt),
                 },
-                now=now,
+            }
+            decision_event_id = await (
+                execution_adapter.materialize_intent(
+                    db, run=run, intent=decision_event_intent, now=now
+                )
+                if execution_adapter is not None
+                else self._materialize_intent(
+                    db, run=run, intent=decision_event_intent, now=now
+                )
             )
+            if execution_adapter is not None:
+                waiting = await db.execute(
+                    """UPDATE workflow_runs SET status='waiting',lease_owner=NULL,
+                    lease_expires_at=NULL,heartbeat_at=NULL,run_version=run_version+1,
+                    recovery_action='resume',updated_at=? WHERE run_id=? AND status='running'
+                    AND head_checkpoint_id=? AND lease_owner=? AND lease_epoch=?
+                    AND run_version=?""",
+                    (
+                        now,
+                        fence.run_id,
+                        expected_head,
+                        fence.owner,
+                        fence.lease_epoch,
+                        fence.run_version,
+                    ),
+                )
+                if waiting.rowcount != 1:
+                    raise StaleRunFence(
+                        f"stale interrupt writer: {fence.run_id}"
+                    )
             result: dict[str, JsonValue] = {
                 "run_id": fence.run_id, "checkpoint_id": checkpoint_id,
-                "decision_id": decision.decision_id, "interrupt_id": interrupt_id,
+                "decision_id": str(decision_data["decision_id"]), "interrupt_id": interrupt_id,
                 "operation_id": op_id, "snapshot": snapshot,
                 "event_ids": [decision_event_id],
             }
@@ -2390,6 +2512,7 @@ class NativeCheckpointStore:
                 await db.commit()
                 return existing
             run = await self._run_row(db, fence.run_id)
+            execution_adapter = await self._execution_adapter_for(db, fence.run_id)
             self._assert_fence_row(run, fence)
             self._assert_head(run, expected_head)
             execution_ids: list[str] = []
@@ -2417,7 +2540,17 @@ class NativeCheckpointStore:
                 )
             event_ids: list[str] = []
             if intent is not None:
-                event_ids.append(await self._materialize_intent(db, run=run, intent=intent, now=now))
+                event_ids.append(
+                    await (
+                        execution_adapter.materialize_intent(
+                            db, run=run, intent=intent, now=now
+                        )
+                        if execution_adapter is not None
+                        else self._materialize_intent(
+                            db, run=run, intent=intent, now=now
+                        )
+                    )
+                )
             updated = await (
                 await db.execute(
                     """UPDATE workflow_runs SET status='failed',error_json=?,recovery_action=NULL,
@@ -2433,6 +2566,18 @@ class NativeCheckpointStore:
             ).fetchone()
             if updated is None:
                 raise StaleRunFence(f"stale failure writer: {fence.run_id}")
+            if execution_adapter is not None:
+                terminal_event_id = await execution_adapter.finalize_run(
+                    db,
+                    run=run,
+                    terminal_status="failed",
+                    terminal_error=error,
+                    recovery_action=None,
+                    event_ids=event_ids,
+                    now=now,
+                )
+                if terminal_event_id not in event_ids:
+                    event_ids.append(terminal_event_id)
             result: dict[str, JsonValue] = {
                 "run_id": fence.run_id, "checkpoint_id": expected_head,
                 "status": "failed", "run_version": int(updated["run_version"]),
@@ -2483,15 +2628,13 @@ class NativeCheckpointStore:
                 await db.commit()
                 return existing
             run = await self._run_row(db, run_id)
+            execution_adapter = await self._execution_adapter_for(db, run_id)
             if str(run["status"]) != "created":
                 raise NativeCheckpointError(
                     "launch_failure_not_applicable",
                     "launch failure can only finalize an unclaimed created run",
                 )
-            event_id = await self._materialize_intent(
-                db,
-                run=run,
-                intent={
+            final_intent = {
                     "intent_id": f"{run_id}:run-final",
                     "event_key": "run:terminal",
                     "event_type": "workflow.final",
@@ -2508,8 +2651,15 @@ class NativeCheckpointStore:
                             "recovery_action": recovery_action,
                         },
                     },
-                },
-                now=now,
+                }
+            event_id = await (
+                execution_adapter.materialize_intent(
+                    db, run=run, intent=final_intent, now=now
+                )
+                if execution_adapter is not None
+                else self._materialize_intent(
+                    db, run=run, intent=final_intent, now=now
+                )
             )
             updated = await (
                 await db.execute(
@@ -2522,6 +2672,18 @@ class NativeCheckpointStore:
             ).fetchone()
             if updated is None:
                 raise StaleRunFence(f"launch failure raced with a runner claim: {run_id}")
+            if execution_adapter is not None:
+                terminal_event_id = await execution_adapter.finalize_run(
+                    db,
+                    run=run,
+                    terminal_status="failed",
+                    terminal_error=error_data,
+                    recovery_action=recovery_action,
+                    event_ids=(event_id,),
+                    now=now,
+                )
+                if terminal_event_id != event_id:
+                    event_id = terminal_event_id
             result: dict[str, JsonValue] = {
                 "run_id": run_id,
                 "status": "failed",

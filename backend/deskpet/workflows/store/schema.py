@@ -748,6 +748,8 @@ async def _migrate_v4_to_v5(db: aiosqlite.Connection) -> None:
             expires_at REAL,
             created_at REAL NOT NULL,
             resolved_at REAL,
+            consumed_at REAL,
+            consumed_checkpoint_id TEXT,
             UNIQUE(run_id,nonce),
             CHECK(
                 kind<>'permission' OR (
@@ -763,6 +765,10 @@ async def _migrate_v4_to_v5(db: aiosqlite.Connection) -> None:
                     AND response_schema_version IS NOT NULL AND resolved_at IS NOT NULL)
                 OR
                 (status='expired' AND resolved_at IS NOT NULL)
+            ),
+            CHECK(
+                (consumed_at IS NULL AND consumed_checkpoint_id IS NULL)
+                OR (consumed_at IS NOT NULL AND consumed_checkpoint_id IS NOT NULL)
             ),
             FOREIGN KEY(run_id) REFERENCES execution_runs(run_id) ON DELETE CASCADE
         );

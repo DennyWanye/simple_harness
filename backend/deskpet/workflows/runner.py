@@ -11,6 +11,13 @@ import uuid
 from dataclasses import asdict, dataclass, is_dataclass, replace
 from typing import Any, Mapping
 
+from deskpet.execution.contracts import (
+    DeliveryPolicy,
+    DeliverySpec,
+    OutcomeStatus,
+    RunEventCandidate,
+)
+
 from .contracts import JsonValue, TERMINAL_RUN_STATUSES, WorkflowContext, WorkflowRunStatus
 from .definition import CompiledWorkflow, WorkflowManifest
 from .errors import WorkflowDependencyUnavailable, WorkflowErrorCode, WorkflowNodeError
@@ -28,6 +35,7 @@ from .store import NativeCheckpointStore, StaleRunFence, WorkflowRunStore
 from .trace.observer import WorkflowExecutionObserver
 from .trace.ports import instrument_ports
 from .trace.store import TraceStore
+from .execution_ports import WorkflowExecutionPorts
 
 
 logger = logging.getLogger(__name__)
@@ -211,6 +219,7 @@ class WorkflowRunner:
         clock=time.time,
         sleep=asyncio.sleep,
         trace_store: TraceStore | None = None,
+        execution_ports: WorkflowExecutionPorts | None = None,
     ) -> None:
         if store.path != saver.path:
             raise ValueError("workflow runner store and saver must use the same SQLite database")
@@ -229,6 +238,18 @@ class WorkflowRunner:
         self._run_locks: dict[str, asyncio.Lock] = {}
         self._replay = WorkflowReplay(store, saver, registry)
         self.trace_store = trace_store or TraceStore(store.path)
+        self.execution_ports: WorkflowExecutionPorts | None = None
+        if execution_ports is not None:
+            self.configure_execution_ports(execution_ports)
+
+    def configure_execution_ports(self, ports: WorkflowExecutionPorts) -> None:
+        if self.execution_ports is not None and self.execution_ports is not ports:
+            raise ValueError("workflow runner already has another execution port bundle")
+        configure = getattr(self.saver, "configure_execution_adapter", None)
+        if not callable(configure):
+            raise ValueError("workflow saver cannot accept checkpoint execution ports")
+        configure(ports.checkpoint)
+        self.execution_ports = ports
 
     async def start(
         self,
@@ -281,6 +302,23 @@ class WorkflowRunner:
     ) -> WorkflowRunResult:
         return await self._execute(run_id, state=state, responses=None, context=context)
 
+    async def run_precreated(
+        self,
+        run_id: str,
+        state: object,
+        context: WorkflowContext | None = None,
+    ) -> WorkflowRunResult:
+        """Drive an already-atomic generic/workflow start without creating an id."""
+
+        await self._require_precreated(run_id)
+        return await self._execute(
+            run_id,
+            state=state,
+            responses=None,
+            context=context,
+            precreated=True,
+        )
+
     async def resume(
         self,
         run_id: str,
@@ -303,6 +341,89 @@ class WorkflowRunner:
                     clock=self._clock,
                 )
         return await self._execute(run_id, state=None, responses=dict(responses), context=context)
+
+    async def resume_precreated(
+        self,
+        run_id: str,
+        responses: Mapping[str, JsonValue],
+        context: WorkflowContext | None = None,
+    ) -> WorkflowRunResult:
+        if not responses:
+            raise ValueError("workflow resume requires at least one response")
+        await self._require_precreated(run_id)
+        lock = self._run_locks.setdefault(run_id, asyncio.Lock())
+        async with lock:
+            row = await self._require_run(run_id)
+            if row["status"] == WorkflowRunStatus.WAITING.value:
+                await transition_run(
+                    self.store,
+                    run_id,
+                    WorkflowRunStatus.RETRYABLE,
+                    expected_version=int(row["run_version"]),
+                    allowed_statuses=(WorkflowRunStatus.WAITING,),
+                    recovery_action="resume",
+                    clock=self._clock,
+                )
+        return await self._execute(
+            run_id,
+            state=None,
+            responses=dict(responses),
+            context=context,
+            precreated=True,
+        )
+
+    async def request_cancel_precreated(
+        self, run_id: str, reason: str = "user"
+    ) -> dict[str, Any]:
+        """Request cancel through the generic UoW; settlement remains checkpoint-owned."""
+
+        execution = await self._require_precreated(run_id)
+        assert self.execution_ports is not None
+        event = RunEventCandidate(
+            event_key="run:cancel_requested",
+            kind="workflow.cancel_requested",
+            status=OutcomeStatus.CANCEL_REQUESTED,
+            driver_kind="workflow",
+            correlation={"run_id": run_id},
+            payload={"reason": str(reason)},
+        )
+        db = await self.store._connect()
+        try:
+            ref = await (
+                await db.execute(
+                    """SELECT session_id FROM workflow_session_refs WHERE run_id=?
+                    AND session_kind='delivery' AND deleted_at IS NULL""",
+                    (run_id,),
+                )
+            ).fetchone()
+        finally:
+            await db.close()
+        deliveries = (
+            (
+                DeliverySpec(
+                    sink_kind="session_message",
+                    sink_instance="workflow",
+                    target_id=str(ref["session_id"]),
+                    policy=DeliveryPolicy.DURABLE_REQUIRED,
+                ),
+                DeliverySpec(
+                    sink_kind="websocket",
+                    sink_instance="workflow",
+                    target_id=str(ref["session_id"]),
+                    policy=DeliveryPolicy.RETRY_WHILE_BOUND,
+                ),
+            )
+            if ref is not None
+            else ()
+        )
+        await self.execution_ports.unit_of_work.request_cancel(
+            run_id,
+            expected_version=int(execution["version"]),
+            reason=str(reason),
+            event=event,
+            deliveries=deliveries,
+        )
+        return await self._require_run(run_id)
 
     async def request_cancel(self, run_id: str, reason: str = "user") -> dict[str, Any]:
         # Cancellation must be able to invalidate a fence while a local graph
@@ -447,6 +568,7 @@ class WorkflowRunner:
         state: object,
         responses: Mapping[str, JsonValue] | None,
         context: WorkflowContext | None,
+        precreated: bool = False,
     ) -> WorkflowRunResult:
         lock = self._run_locks.setdefault(run_id, asyncio.Lock())
         async with lock:
@@ -469,9 +591,15 @@ class WorkflowRunner:
                 WorkflowRunStatus.CANCEL_REQUESTED,
                 WorkflowRunStatus.CANCELLING,
             }:
-                if status in {WorkflowRunStatus.CANCEL_REQUESTED, WorkflowRunStatus.CANCELLING}:
+                if (
+                    not precreated
+                    and status
+                    in {WorkflowRunStatus.CANCEL_REQUESTED, WorkflowRunStatus.CANCELLING}
+                ):
                     row = await self._converge_cancel(run_id)
                     status = WorkflowRunStatus(row["status"])
+                if precreated and status in TERMINAL_RUN_STATUSES:
+                    await self._assert_precreated_terminal(run_id, status)
                 return self._result_from_row(row)
             try:
                 registration = self._registration_for_row(row)
@@ -531,6 +659,10 @@ class WorkflowRunner:
                 result_error: dict[str, object] | None = None
                 result_recovery: str | None = None
                 if current["status"] == WorkflowRunStatus.RUNNING.value:
+                    if precreated:
+                        raise RuntimeError(
+                            "precreated workflow returned without a checkpoint-owned terminal commit"
+                        )
                     target_status, result_error, result_recovery = (
                         _domain_terminal_from_output(output)
                     )
@@ -555,6 +687,10 @@ class WorkflowRunner:
                         if current.get("recovery_action")
                         else None
                     )
+                if precreated and WorkflowRunStatus(current["status"]) in TERMINAL_RUN_STATUSES:
+                    await self._assert_precreated_terminal(
+                        run_id, WorkflowRunStatus(current["status"])
+                    )
                 await self.trace_store.finish_run(str(row["trace_id"]), str(current["status"]))
                 return WorkflowRunResult(
                     run_id,
@@ -566,6 +702,17 @@ class WorkflowRunner:
             except asyncio.CancelledError:
                 raise
             except BaseException as exc:
+                if precreated:
+                    current = await self._require_run(run_id)
+                    current_status = WorkflowRunStatus(current["status"])
+                    if current_status in {
+                        WorkflowRunStatus.WAITING,
+                        WorkflowRunStatus.RETRYABLE,
+                        WorkflowRunStatus.CANCEL_REQUESTED,
+                        WorkflowRunStatus.CANCELLING,
+                    }:
+                        return self._result_from_row(current)
+                    raise
                 current = await self._require_run(run_id)
                 current_status = WorkflowRunStatus(current["status"])
                 if current_status in {WorkflowRunStatus.CANCEL_REQUESTED, WorkflowRunStatus.CANCELLING}:
@@ -592,6 +739,49 @@ class WorkflowRunner:
                         error=current.get("error_json"),
                     )
                 return self._result_from_row(current)
+
+    async def _require_precreated(self, run_id: str) -> dict[str, Any]:
+        if self.execution_ports is None:
+            raise RuntimeError("run_precreated requires explicit WorkflowExecutionPorts")
+        await self.store.initialize()
+        db = await self.store._connect()
+        try:
+            row = await (
+                await db.execute(
+                    """SELECT execution.*,workflow.workflow_name,workflow.workflow_version,
+                    workflow.trace_id AS workflow_trace_id
+                    FROM execution_runs AS execution
+                    JOIN workflow_runs AS workflow ON workflow.run_id=execution.run_id
+                    WHERE execution.run_id=?""",
+                    (run_id,),
+                )
+            ).fetchone()
+            if row is None:
+                raise RuntimeError(
+                    "precreated workflow requires execution_runs and workflow_runs with one id"
+                )
+            result = dict(row)
+        finally:
+            await db.close()
+        if str(result["driver_kind"]) != "workflow":
+            raise RuntimeError("precreated execution is not owned by the workflow driver")
+        expected_profile = f"{result['workflow_name']}/{result['workflow_version']}"
+        if str(result["profile_key"]) != expected_profile:
+            raise RuntimeError("precreated workflow profile differs from its durable manifest")
+        if str(result["trace_id"]) != str(result["workflow_trace_id"]):
+            raise RuntimeError("precreated execution and workflow trace ids differ")
+        return result
+
+    async def _assert_precreated_terminal(
+        self, run_id: str, workflow_status: WorkflowRunStatus
+    ) -> None:
+        execution = await self._require_precreated(run_id)
+        if str(execution["status"]) != workflow_status.value:
+            raise RuntimeError(
+                "workflow terminal commit did not atomically finalize the generic execution"
+            )
+        if not execution.get("terminal_event_id"):
+            raise RuntimeError("generic terminal execution has no terminal event")
 
     def _registration_for_row(self, row: Mapping[str, Any]) -> RegisteredWorkflow:
         return self.registry.require(

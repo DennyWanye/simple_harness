@@ -45,10 +45,12 @@ from .errors import (
     WorkflowErrorCode,
     WorkflowNodeError,
 )
+from .execution_ports import CheckpointExecutionAdapter, WorkflowExecutionPorts
 
 __all__ = [
     "AsyncOnlyWorkflowError",
     "ChannelSpec",
+    "CheckpointExecutionAdapter",
     "CompiledWorkflow",
     "ConditionalEdge",
     "DurabilityMode",
@@ -78,6 +80,7 @@ __all__ = [
     "WorkflowDependencyUnavailable",
     "WorkflowErrorCode",
     "WorkflowExecutable",
+    "WorkflowExecutionPorts",
     "WorkflowManifest",
     "WorkflowNodeError",
     "WorkflowRunStatus",
