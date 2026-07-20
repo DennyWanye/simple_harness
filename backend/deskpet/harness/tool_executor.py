@@ -19,66 +19,13 @@ from typing import Any, Awaitable, Callable, Mapping, Optional, Protocol, Sequen
 
 from deskpet.execution.contracts import DecisionAuthorization
 from deskpet.tools.capabilities import ToolExecutionContext, canonical_hash
-
-logger = logging.getLogger(__name__)
-
-
-# Canonical host controls and their historical underscore aliases.  A model
-# may not supply either spelling; doing so is an attempted trust-boundary
-# override, not an ordinary schema validation error.
-RESERVED_MODEL_FIELDS: frozenset[str] = frozenset(
-    {
-        "session_id",
-        "run_id",
-        "root_run_id",
-        "parent_run_id",
-        "request_id",
-        "turn_id",
-        "venue",
-        "workspace",
-        "write_scope_root",
-        "capability_hash",
-        "scope_hash",
-        "provider_plan",
-        "call_id",
-        "effect_id",
-        "trace_id",
-        "authorization",
-        "_session_id",
-        "_run_id",
-        "_root_run_id",
-        "_parent_run_id",
-        "_request_id",
-        "_turn_id",
-        "_venue",
-        "_workspace",
-        "_project_root",
-        "_write_scope_root",
-        "_capability_hash",
-        "_scope_hash",
-        "_provider_plan",
-        "_call_id",
-        "_effect_id",
-        "_trace_id",
-        "_image_worker",
-    }
+from deskpet.tools.context_adapter import (
+    RESERVED_MODEL_FIELDS,
+    ReservedModelFieldError,
+    reject_reserved_model_fields,
 )
 
-
-class ReservedModelFieldError(ValueError):
-    def __init__(self, fields: Sequence[str]) -> None:
-        self.fields = tuple(sorted(set(fields)))
-        super().__init__(f"model arguments contain reserved host fields: {', '.join(self.fields)}")
-
-
-def reject_reserved_model_fields(args: Mapping[str, Any]) -> None:
-    invalid = [str(key) for key in args if str(key) in RESERVED_MODEL_FIELDS]
-    if invalid:
-        logger.warning(
-            "reserved_model_field_rejected fields=%s",
-            ",".join(sorted(set(invalid))),
-        )
-        raise ReservedModelFieldError(invalid)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -274,13 +221,88 @@ class UnifiedToolExecutor:
         *,
         authorization: Optional[DecisionAuthorization] = None,
     ) -> ToolOutcome:
-        return await self._registry.execute_call(
-            call,
-            context,
-            authorization=authorization,
-            journal=self._journal,
-            late_supervisor=self._late_supervisor,
+        execute_call = getattr(self._registry, "execute_call", None)
+        if callable(execute_call):
+            return await execute_call(
+                call,
+                context,
+                authorization=authorization,
+                journal=self._journal,
+                late_supervisor=self._late_supervisor,
+            )
+
+        # Transitional bridge only: ToolRegistry V2 owns preparation and
+        # execution.  The old harness envelope remains until the Driver/UoW
+        # owner-collapse slice deletes it; registry.py never imports it back.
+        prepare_call = getattr(self._registry, "prepare_call", None)
+        execute_prepared = getattr(self._registry, "execute_prepared", None)
+        if not callable(prepare_call) or not callable(execute_prepared):
+            raise TypeError("registry does not expose a prepared execution kernel")
+        prepared = prepare_call(
+            call.tool_name,
+            call.args_copy(),
+            context.session_id,
+            call.call_id,
+            execution_context=context,
         )
+        canonical_authorization: object | None = authorization
+        if isinstance(authorization, DecisionAuthorization):
+            # Compatibility for the pre-cutover decision schema: the durable
+            # prepared hash includes tool identity while the old grant stored
+            # only model-args hash. The grant's immutable run/call/effect and
+            # capability bindings are retained and revalidated by V2.
+            canonical_authorization = {
+                "grant_id": authorization.grant_id,
+                "decision_id": authorization.decision_id,
+                "run_id": authorization.run_id,
+                "session_id": context.session_id,
+                "call_id": authorization.call_id,
+                "effect_id": authorization.effect_id,
+                "tool_name": authorization.tool_name,
+                "args_hash": prepared.args_hash,
+                "capability_hash": authorization.capability_hash,
+                "scope_hash": authorization.scope_hash,
+                "permission_policy_version": prepared.permission_policy_version,
+                "expires_at": authorization.expires_at,
+            }
+        effectful = call.recoverable_effect and self._journal is not None
+        if effectful:
+            replayed = await self._journal.prepare_effect(
+                call, context, authorization
+            )
+            if replayed is not None:
+                return replayed
+        normalized = await execute_prepared(
+            prepared,
+            effect_id=context.effect_id,
+            authorization=canonical_authorization,
+            execution_context=context,
+        )
+        state = str(getattr(getattr(normalized, "state", None), "value", ""))
+        payload = normalized.to_dict()
+        if state == "success":
+            spec = getattr(self._registry, "get", lambda _name: None)(call.tool_name)
+            status = (
+                ToolOutcomeStatus.ACCEPTED
+                if getattr(spec, "completion_semantics", "") == "accepted_async"
+                else ToolOutcomeStatus.SUCCEEDED
+            )
+            outcome = ToolOutcome(
+                call.call_id,
+                call.effect_id,
+                status,
+                value=payload.get("value"),
+            )
+        else:
+            error = payload.get("error") or {}
+            outcome = ToolOutcome.failed(
+                call, str(error.get("code") or error.get("message") or "tool_failed")
+            )
+        if effectful:
+            await self._journal.finalize_effect(
+                call, context, outcome, late=False
+            )
+        return outcome
 
     async def execute_batch(
         self,

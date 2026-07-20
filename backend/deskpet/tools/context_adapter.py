@@ -9,11 +9,73 @@ bridge is deleted with the legacy merge in WI-12.
 from __future__ import annotations
 
 import inspect
+import logging
 from dataclasses import replace
 from functools import wraps
 from typing import Any, Callable, Mapping, Optional
 
 from .capabilities import ToolExecutionContext, current_tool_execution_context
+
+logger = logging.getLogger(__name__)
+
+
+# Model-supplied JSON must never override host-owned execution identity.  This
+# belongs beside the trusted-context adapter, not in a harness/driver module.
+RESERVED_MODEL_FIELDS: frozenset[str] = frozenset(
+    {
+        "session_id",
+        "run_id",
+        "root_run_id",
+        "parent_run_id",
+        "request_id",
+        "turn_id",
+        "venue",
+        "workspace",
+        "write_scope_root",
+        "capability_hash",
+        "scope_hash",
+        "provider_plan",
+        "call_id",
+        "effect_id",
+        "trace_id",
+        "authorization",
+        "_session_id",
+        "_run_id",
+        "_root_run_id",
+        "_parent_run_id",
+        "_request_id",
+        "_turn_id",
+        "_venue",
+        "_workspace",
+        "_project_root",
+        "_write_scope_root",
+        "_capability_hash",
+        "_scope_hash",
+        "_provider_plan",
+        "_call_id",
+        "_effect_id",
+        "_trace_id",
+        "_image_worker",
+    }
+)
+
+
+class ReservedModelFieldError(ValueError):
+    def __init__(self, fields: list[str]) -> None:
+        self.fields = tuple(sorted(set(fields)))
+        super().__init__(
+            f"model arguments contain reserved host fields: {', '.join(self.fields)}"
+        )
+
+
+def reject_reserved_model_fields(args: Mapping[str, Any]) -> None:
+    invalid = [str(key) for key in args if str(key) in RESERVED_MODEL_FIELDS]
+    if invalid:
+        logger.warning(
+            "reserved_model_field_rejected fields=%s",
+            ",".join(sorted(set(invalid))),
+        )
+        raise ReservedModelFieldError(invalid)
 
 
 def legacy_execution_context(
@@ -86,7 +148,10 @@ def bind_context_handler(handler: Callable[..., Any]) -> Callable[..., Any]:
 
 
 __all__ = [
+    "RESERVED_MODEL_FIELDS",
+    "ReservedModelFieldError",
     "bind_context_handler",
     "legacy_execution_context",
     "legacy_host_service",
+    "reject_reserved_model_fields",
 ]

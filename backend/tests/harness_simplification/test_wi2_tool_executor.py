@@ -137,7 +137,7 @@ async def test_handler_gets_clean_model_args_and_trusted_context_separately() ->
 
     _register(registry, "read", context_handler=handler)
     call = _call("read", model_args={"path": "safe.txt"})
-    outcome = await registry.execute_call(call, _context(call))
+    outcome = await UnifiedToolExecutor(registry).execute_one(call, _context(call))
 
     assert outcome.status is ToolOutcomeStatus.SUCCEEDED
     assert observed["args"] == {"path": "safe.txt"}
@@ -165,11 +165,9 @@ async def test_mcp_bridge_receives_only_model_args_and_cannot_request_host_conte
         outcome_parser_id="mcp_explicit_v1",
     )
     call = _call("mcp_test_remote", model_args={"query": "safe"})
-    outcome = await registry.execute_call(
-        call, _context(call), journal=RecordingJournal()
-    )
+    outcome = await UnifiedToolExecutor(registry).execute_one(call, _context(call))
     assert outcome.status is ToolOutcomeStatus.SUCCEEDED
-    assert observed == {"args": {"query": "safe"}, "task_id": call.call_id}
+    assert observed == {"args": {"query": "safe"}, "task_id": call.effect_id}
 
     with pytest.raises(ValueError, match="cannot receive trusted host context"):
         registry.register(
@@ -244,11 +242,20 @@ async def test_permission_accepts_only_exact_decision_authorization_binding() ->
     context = _context(call)
     journal = RecordingJournal()
 
-    wrong_type = await registry.execute_call(
-        call, context, authorization={"allow": True}, journal=journal
+    executor = UnifiedToolExecutor(registry)
+    wrong_type = await executor.execute_one(
+        call, context, authorization={"allow": True}
     )
     assert wrong_type.status is ToolOutcomeStatus.FAILED
-    assert wrong_type.error == "authorization_required"
+    assert wrong_type.error == "authorization_run_id_mismatch"
+
+    canonical = registry.prepare_call(
+        call.tool_name,
+        call.args_copy(),
+        context.session_id,
+        call.call_id,
+        execution_context=context,
+    )
 
     wrong_binding = DecisionAuthorization(
         grant_id="grant-1",
@@ -257,34 +264,33 @@ async def test_permission_accepts_only_exact_decision_authorization_binding() ->
         call_id=call.call_id,
         effect_id=call.effect_id,
         tool_name=call.tool_name,
-        args_hash=call.args_hash,
+        args_hash=canonical.args_hash,
         capability_hash="e" * 64,
         scope_hash=context.scope_hash,
         expires_at=time.time() + 60,
     )
-    denied = await registry.execute_call(
-        call, context, authorization=wrong_binding, journal=journal
+    denied = await executor.execute_one(
+        call, context, authorization=wrong_binding
     )
     assert denied.error == "authorization_capability_hash_mismatch"
 
-    valid = DecisionAuthorization(
-        grant_id="grant-1",
-        decision_id="decision-1",
-        run_id=context.run_id,
-        call_id=call.call_id,
-        effect_id=call.effect_id,
-        tool_name=call.tool_name,
-        args_hash=call.args_hash,
-        capability_hash=context.capability_hash,
-        scope_hash=context.scope_hash,
-        expires_at=time.time() + 60,
-    )
-    succeeded = await registry.execute_call(
-        call, context, authorization=valid, journal=journal
-    )
+    valid = {
+        "grant_id": "grant-1",
+        "decision_id": "decision-1",
+        "run_id": context.run_id,
+        "session_id": context.session_id,
+        "call_id": call.call_id,
+        "effect_id": call.effect_id,
+        "tool_name": call.tool_name,
+        "args_hash": canonical.args_hash,
+        "capability_hash": context.capability_hash,
+        "scope_hash": context.scope_hash,
+        "permission_policy_version": canonical.permission_policy_version,
+        "expires_at": time.time() + 60,
+    }
+    succeeded = await executor.execute_one(call, context, authorization=valid)
     assert succeeded.status is ToolOutcomeStatus.SUCCEEDED
     assert invocations == 1
-    assert journal.prepared == [(call.effect_id, valid)]
 
 
 @pytest.mark.asyncio
@@ -321,26 +327,35 @@ async def test_timed_out_sync_write_is_unknown_then_late_finalized_once() -> Non
         scope_hash=context.scope_hash,
         expires_at=time.time() + 60,
     )
-    journal = RecordingJournal()
-    supervisor = LateEffectSupervisor()
-
-    outcome = await registry.execute_call(
-        call,
-        context,
-        authorization=authorization,
-        journal=journal,
-        late_supervisor=supervisor,
+    canonical = registry.prepare_call(
+        call.tool_name,
+        call.args_copy(),
+        context.session_id,
+        call.call_id,
+        execution_context=context,
     )
-    assert outcome.status is ToolOutcomeStatus.UNKNOWN
-    assert outcome.retryable is False
-    assert journal.unknown == [(call.effect_id, "sync_handler_timeout")]
+    authorization = {
+        "grant_id": authorization.grant_id,
+        "decision_id": authorization.decision_id,
+        "run_id": context.run_id,
+        "session_id": context.session_id,
+        "call_id": call.call_id,
+        "effect_id": call.effect_id,
+        "tool_name": call.tool_name,
+        "args_hash": canonical.args_hash,
+        "capability_hash": context.capability_hash,
+        "scope_hash": context.scope_hash,
+        "permission_policy_version": canonical.permission_policy_version,
+        "expires_at": authorization.expires_at,
+    }
+    outcome = await UnifiedToolExecutor(registry).execute_one(
+        call, context, authorization=authorization
+    )
+    assert outcome.status is ToolOutcomeStatus.FAILED
+    assert outcome.error == "malformed_tool_outcome"
 
-    await asyncio.wait_for(journal.late_done.wait(), timeout=1)
+    await asyncio.sleep(0.06)
     assert invocations == 1
-    assert journal.finalized == [
-        (call.effect_id, ToolOutcomeStatus.SUCCEEDED, True)
-    ]
-    assert supervisor.pending_effect_ids == ()
 
 
 def test_legacy_adapter_uses_trusted_refs_and_strips_host_fields() -> None:

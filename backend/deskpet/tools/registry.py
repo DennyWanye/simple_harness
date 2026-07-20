@@ -52,7 +52,7 @@ import threading
 import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Mapping, Optional, Sequence
+from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
 from .capabilities import (
     ToolCapabilityScopeStore,
@@ -65,15 +65,8 @@ from .capabilities import (
 )
 
 from .error_classifier import classify as _classify_retriable
-
-if TYPE_CHECKING:
-    from deskpet.harness.tool_executor import (
-        DecisionAuthorization,
-        EffectJournal,
-        LateEffectSupervisor,
-        PreparedExecutionCall,
-        ToolOutcome,
-    )
+from .context_adapter import reject_reserved_model_fields
+from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall
 
 logger = logging.getLogger(__name__)
 
@@ -173,8 +166,6 @@ def _failure_message(payload: Mapping[str, Any]) -> str:
 
 def _normalize_with_parser(parser_id: str, raw: Any) -> Any:
     """Parse a handler result into the durable workflow outcome contract."""
-
-    from deskpet.workflows.effects import NormalizedToolOutcome
 
     payload = _result_payload(raw)
     if parser_id == "opaque_manual_v1":
@@ -1728,7 +1719,9 @@ class ToolRegistry:
         raw_params: Mapping[str, Any],
         session_id: str,
         stable_call_id: str,
-    ) -> Any:
+        *,
+        execution_context: ToolExecutionContext | None = None,
+    ) -> PreparedToolCall:
         """Freeze one tool call after context/default/path resolution.
 
         The legacy handler contract remains ``handler(dict, task_id)``. This
@@ -1736,17 +1729,24 @@ class ToolRegistry:
         a durable workflow will later recheck before dispatch.
         """
 
-        from deskpet.workflows.effects import PreparedToolCall
-
         if not stable_call_id:
             raise ValueError("stable_call_id is required")
+        if execution_context is not None:
+            if not isinstance(execution_context, ToolExecutionContext):
+                raise TypeError("execution_context must be ToolExecutionContext")
+            if execution_context.session_id != session_id:
+                raise ValueError("trusted context session does not match preparation session")
+            if execution_context.call_id != stable_call_id:
+                raise ValueError("trusted context call does not match stable_call_id")
+            reject_reserved_model_fields(raw_params)
         with self._lock:
             spec = self._tools.get(tool_name)
         if spec is None:
             raise KeyError(f"unknown tool: {tool_name}")
 
         params: dict[str, Any] = {}
-        params.update(self._session_context.get(session_id, {}))
+        if execution_context is None:
+            params.update(self._session_context.get(session_id, {}))
         params.update(dict(raw_params or {}))
         params = _schema_defaults(spec.schema, params)
         input_blob_hashes = tuple(
@@ -1794,9 +1794,7 @@ class ToolRegistry:
         )
         return prepared
 
-    def _normalize_result(self, spec: ToolSpec, raw: Any) -> Any:
-        from deskpet.workflows.effects import NormalizedToolOutcome
-
+    def _normalize_result(self, spec: ToolSpec, raw: Any) -> NormalizedToolOutcome:
         try:
             outcome = (
                 spec.outcome_parser(raw)
@@ -1823,8 +1821,6 @@ class ToolRegistry:
         execution_context: Optional[ToolExecutionContext] = None,
     ) -> Any:
         """Compatibility adapter returning a three-state durable outcome."""
-
-        from deskpet.workflows.effects import NormalizedToolOutcome
 
         with self._lock:
             spec = self._tools.get(name)
@@ -1882,315 +1878,59 @@ class ToolRegistry:
 
         with self._lock:
             spec = self._tools.get(tool_name)
-        # Unknown calls fail inside execute_call.  Treating them as safe keeps
+        # Unknown calls fail inside execute_prepared. Treating them as safe keeps
         # one bogus name from serializing unrelated valid calls.
         return bool(spec.concurrency_safe) if spec is not None else True
 
-    def prepare_execution_call(
+    async def execute_prepared(
         self,
-        tool_name: str,
-        raw_args: Mapping[str, Any],
+        prepared: PreparedToolCall,
         *,
-        call_id: str,
         effect_id: str,
-        context: ToolExecutionContext,
-    ) -> PreparedExecutionCall:
-        """Freeze a model call without merging any session-owned fields."""
+        authorization: object | None = None,
+        execution_context: ToolExecutionContext | None = None,
+    ) -> NormalizedToolOutcome:
+        """Execute exact prepared params after fail-closed capability recheck.
 
-        from deskpet.harness.tool_executor import (
-            PreparedExecutionCall,
-            reject_reserved_model_fields,
-        )
-
-        args = dict(raw_args)
-        reject_reserved_model_fields(args)
-        with self._lock:
-            spec = self._tools.get(tool_name)
-        if spec is None:
-            raise KeyError(f"unknown tool: {tool_name}")
-        effect_kind = str(
-            getattr(getattr(spec.effect_policy, "kind", None), "value", "")
-        )
-        permission_required = bool(
-            spec.dangerous
-            or spec.permission_category in _WRITE_PERMISSION_CATEGORIES
-        )
-        recoverable = bool(
-            spec.permission_category in _WRITE_PERMISSION_CATEGORIES
-            or effect_kind in {"staged_file", "opaque_manual"}
-        )
-        return PreparedExecutionCall(
-            tool_name=tool_name,
-            model_args=args,
-            call_id=call_id,
-            effect_id=effect_id,
-            capability_hash=context.capability_hash,
-            scope_hash=context.scope_hash,
-            requires_authorization=permission_required,
-            recoverable_effect=recoverable,
-            tool_spec_version=spec.spec_version,
-            schema_hash=spec.schema_hash,
-            permission_policy_version=spec.permission_policy_version,
-        )
-
-    async def execute_call(
-        self,
-        call: PreparedExecutionCall,
-        context: ToolExecutionContext,
-        *,
-        authorization: DecisionAuthorization | None = None,
-        journal: EffectJournal | None = None,
-        late_supervisor: LateEffectSupervisor | None = None,
-    ) -> ToolOutcome:
-        """Execute an immutable prepared call with a separate trusted context.
-
-        This differently named entry point is test-only wiring until WI-12.
-        It intentionally does not call ``execute_tool`` or merge
-        ``_session_context``.  Legacy production dispatch therefore remains
-        behaviorally unchanged while new drivers get a strict trust boundary.
+        New drivers pass host identity separately via ``execution_context``.
+        Omitting it preserves the legacy workflow adapter until cutover.
         """
 
         import inspect as _inspect
 
-        from deskpet.harness.tool_executor import (
-            DecisionAuthorization,
-            LateEffectSupervisor,
-            PreparedExecutionCall,
-            ToolOutcome,
-            ToolOutcomeStatus,
-            ReservedModelFieldError,
-            reject_reserved_model_fields,
-        )
+        if not isinstance(prepared, PreparedToolCall):
+            raise TypeError("execute_prepared accepts PreparedToolCall only")
 
-        if not isinstance(call, PreparedExecutionCall):
-            raise TypeError("execute_call accepts PreparedExecutionCall only")
-        if not isinstance(context, ToolExecutionContext):
-            raise TypeError("execute_call accepts ToolExecutionContext only")
-        try:
-            reject_reserved_model_fields(call.model_args)
-        except ReservedModelFieldError:
-            logger.warning(
-                "reserved_model_field_rejected tool=%s run=%s call=%s",
-                call.tool_name,
-                context.run_id,
-                call.call_id,
+        if execution_context is not None:
+            if not isinstance(execution_context, ToolExecutionContext):
+                raise TypeError("execution_context must be ToolExecutionContext")
+            required_context = {
+                "session_id": execution_context.session_id,
+                "run_id": execution_context.run_id,
+                "root_run_id": execution_context.root_run_id,
+                "request_id": execution_context.request_id,
+                "turn_id": execution_context.turn_id,
+                "capability_hash": execution_context.capability_hash,
+                "scope_hash": execution_context.scope_hash,
+                "trace_id": execution_context.trace_id,
+            }
+            missing = sorted(
+                key for key, value in required_context.items() if not str(value or "")
             )
-            raise
-
-        required_context = {
-            "session_id": context.session_id,
-            "run_id": context.run_id,
-            "root_run_id": context.root_run_id,
-            "request_id": context.request_id,
-            "turn_id": context.turn_id,
-            "capability_hash": context.capability_hash,
-            "scope_hash": context.scope_hash,
-            "trace_id": context.trace_id,
-        }
-        missing = [key for key, value in required_context.items() if not str(value or "")]
-        if missing:
-            return ToolOutcome.failed(
-                call, f"trusted_context_missing:{','.join(sorted(missing))}"
-            )
-        if context.call_id != call.call_id or context.effect_id != call.effect_id:
-            return ToolOutcome.failed(call, "trusted_context_call_binding_mismatch")
-        if (
-            context.capability_hash != call.capability_hash
-            or context.scope_hash != call.scope_hash
-        ):
-            return ToolOutcome.failed(call, "trusted_context_scope_binding_mismatch")
-
-        with self._lock:
-            spec = self._tools.get(call.tool_name)
-        if spec is None:
-            return ToolOutcome.failed(call, "unknown_tool")
-
-        snapshots = {
-            "tool_spec_version": (call.tool_spec_version, spec.spec_version),
-            "schema_hash": (call.schema_hash, spec.schema_hash),
-            "permission_policy_version": (
-                call.permission_policy_version,
-                spec.permission_policy_version,
-            ),
-        }
-        for field_name, (prepared_value, current_value) in snapshots.items():
-            if prepared_value and prepared_value != current_value:
-                return ToolOutcome.failed(call, f"prepared_call_stale:{field_name}")
-        if not spec.env_satisfied():
-            return ToolOutcome.failed(call, "tool_disabled:required_environment")
-        if spec.check_fn is not None:
-            try:
-                if not bool(spec.check_fn()):
-                    return ToolOutcome.failed(call, "tool_not_ready")
-            except Exception as exc:  # noqa: BLE001
-                return ToolOutcome.failed(call, f"tool_not_ready:{type(exc).__name__}")
-        if (
-            context.session_id in self._plan_read_only_sessions
-            and spec.permission_category in _WRITE_PERMISSION_CATEGORIES
-        ):
-            return ToolOutcome.failed(call, "plan_read_only")
-
-        permission_required = bool(
-            call.requires_authorization
-            or spec.dangerous
-            or spec.permission_category in _WRITE_PERMISSION_CATEGORIES
-        )
-        typed_authorization: DecisionAuthorization | None = None
-        if permission_required:
-            if not isinstance(authorization, DecisionAuthorization):
-                return ToolOutcome.failed(call, "authorization_required")
-            binding_error = authorization.binding_error(call, context)
-            if binding_error is not None:
-                return ToolOutcome.failed(call, binding_error)
-            typed_authorization = authorization
-        elif authorization is not None:
-            if not isinstance(authorization, DecisionAuthorization):
-                return ToolOutcome.failed(call, "authorization_type_invalid")
-            binding_error = authorization.binding_error(call, context)
-            if binding_error is not None:
-                return ToolOutcome.failed(call, binding_error)
-            typed_authorization = authorization
-
-        effect_kind = str(
-            getattr(getattr(spec.effect_policy, "kind", None), "value", "")
-        )
-        effectful = bool(
-            call.recoverable_effect
-            or spec.permission_category in _WRITE_PERMISSION_CATEGORIES
-            or effect_kind in {"staged_file", "opaque_manual"}
-        )
-        if effectful and journal is None:
-            return ToolOutcome.failed(call, "effect_journal_required")
-        if effectful:
-            # A durable implementation consumes the one-shot grant and starts
-            # the attempt in this single operation/UoW.
-            try:
-                replayed_outcome = await journal.prepare_effect(
-                    call, context, typed_authorization
+            if missing:
+                return NormalizedToolOutcome.failure(
+                    "trusted_context_missing", ",".join(missing)
                 )
-            except Exception as exc:  # noqa: BLE001
-                return ToolOutcome.failed(
-                    call, f"effect_prepare_failed:{type(exc).__name__}"
+            if execution_context.call_id != prepared.stable_call_id:
+                return NormalizedToolOutcome.failure(
+                    "trusted_context_call_binding_mismatch",
+                    "prepared call does not match trusted context",
                 )
-            if replayed_outcome is not None:
-                return replayed_outcome
-
-        clean_args = call.args_copy()
-
-        def normalize(raw: Any) -> ToolOutcome:
-            normalized = self._normalize_result(spec, raw)
-            state = str(getattr(getattr(normalized, "state", None), "value", ""))
-            if state == "success":
-                status = (
-                    ToolOutcomeStatus.ACCEPTED
-                    if spec.completion_semantics == "accepted_async"
-                    else ToolOutcomeStatus.SUCCEEDED
+            if execution_context.effect_id != effect_id:
+                return NormalizedToolOutcome.failure(
+                    "trusted_context_effect_binding_mismatch",
+                    "effect id does not match trusted context",
                 )
-                return ToolOutcome(
-                    call.call_id,
-                    call.effect_id,
-                    status,
-                    value=normalized.to_dict().get("value"),
-                )
-            error = normalized.to_dict().get("error") or {}
-            message = str(error.get("message") or error.get("code") or "tool_failed")
-            return ToolOutcome.failed(call, message)
-
-        async def invoke_async() -> ToolOutcome:
-            token = set_tool_execution_context(context)
-            try:
-                handler = spec.context_handler or spec.handler
-                if spec.context_handler is not None:
-                    value = handler(clean_args, context)
-                else:
-                    # Compatibility for handlers that need no host data.  No
-                    # reserved field is synthesized for them.
-                    value = handler(clean_args, call.call_id)
-                raw = await value if _inspect.isawaitable(value) else value
-                return normalize(raw)
-            except Exception as exc:  # noqa: BLE001
-                return ToolOutcome.failed(
-                    call, f"tool_handler_error:{type(exc).__name__}: {exc}"
-                )
-            finally:
-                reset_tool_execution_context(token)
-
-        handler = spec.context_handler or spec.handler
-        is_async_handler = _inspect.iscoroutinefunction(handler)
-
-        def invoke_sync() -> Any:
-            token = set_tool_execution_context(context)
-            try:
-                if spec.context_handler is not None:
-                    return spec.context_handler(clean_args, context)
-                return spec.handler(clean_args, call.call_id)
-            finally:
-                reset_tool_execution_context(token)
-
-        if not is_async_handler and effectful:
-            supervisor = late_supervisor or LateEffectSupervisor()
-            outcome = await supervisor.run_sync(
-                invoke_sync,
-                timeout_seconds=spec.timeout_seconds,
-                call=call,
-                context=context,
-                journal=journal,
-                normalize=normalize,
-            )
-        elif not is_async_handler:
-            try:
-                loop = asyncio.get_running_loop()
-                copied = contextvars.copy_context()
-                raw = await asyncio.wait_for(
-                    loop.run_in_executor(None, copied.run, invoke_sync),
-                    timeout=spec.timeout_seconds,
-                )
-                # A compatibility wrapper may be a sync function returning an
-                # awaitable.  Await it without moving ordinary sync work back
-                # onto the event-loop thread.
-                if _inspect.isawaitable(raw):
-                    raw = await asyncio.wait_for(raw, timeout=spec.timeout_seconds)
-                outcome = normalize(raw)
-            except asyncio.TimeoutError:
-                outcome = ToolOutcome.failed(call, "tool_timeout")
-            except Exception as exc:  # noqa: BLE001
-                outcome = ToolOutcome.failed(
-                    call, f"tool_handler_error:{type(exc).__name__}: {exc}"
-                )
-        else:
-            try:
-                outcome = await asyncio.wait_for(
-                    invoke_async(), timeout=spec.timeout_seconds
-                )
-            except asyncio.TimeoutError:
-                if effectful:
-                    await journal.mark_unknown(call, context, "async_handler_timeout")
-                    outcome = ToolOutcome.unknown(call, "tool_timeout")
-                else:
-                    outcome = ToolOutcome.failed(call, "tool_timeout")
-
-        if effectful and outcome.status is not ToolOutcomeStatus.UNKNOWN:
-            try:
-                await journal.finalize_effect(call, context, outcome, late=False)
-            except Exception as exc:  # noqa: BLE001
-                await journal.mark_unknown(
-                    call, context, f"effect_finalize_failed:{type(exc).__name__}"
-                )
-                return ToolOutcome.unknown(call, "effect_finalize_failed")
-        return outcome
-
-    async def execute_prepared(
-        self,
-        prepared: Any,
-        *,
-        effect_id: str,
-        authorization: object | None = None,
-    ) -> Any:
-        """Execute exact prepared params after fail-closed capability recheck."""
-
-        import inspect as _inspect
-
-        from deskpet.workflows.effects import NormalizedToolOutcome
 
         with self._lock:
             spec = self._tools.get(prepared.tool_name)
@@ -2229,7 +1969,9 @@ class ToolRegistry:
             else None
         )
         session_id = str(
-            grant_session_id or self._prepared_session_ids.get(cache_key, "")
+            execution_context.session_id
+            if execution_context is not None
+            else grant_session_id or self._prepared_session_ids.get(cache_key, "")
         )
         if self._tools_config_provider is not None:
             try:
@@ -2255,12 +1997,34 @@ class ToolRegistry:
         if self._breaker is not None and not await self._breaker.can_call(session_id, prepared.tool_name):
             return NormalizedToolOutcome.failure("circuit_open", "tool circuit breaker is open")
         if authorization is not None:
+            if execution_context is not None:
+                context_bindings = {
+                    "run_id": execution_context.run_id,
+                    "call_id": prepared.stable_call_id,
+                    "effect_id": effect_id,
+                    "tool_name": prepared.tool_name,
+                    "args_hash": prepared.args_hash,
+                    "capability_hash": execution_context.capability_hash,
+                    "scope_hash": execution_context.scope_hash,
+                }
+                for field_name, expected in context_bindings.items():
+                    if self._grant_value(authorization, field_name) != expected:
+                        return NormalizedToolOutcome.failure(
+                            f"authorization_{field_name}_mismatch",
+                            "authorization grant is not bound to trusted context",
+                        )
             grant_error = self._validate_authorization(
                 authorization, prepared=prepared, effect_id=effect_id
             )
             if grant_error is not None:
                 return NormalizedToolOutcome.failure(grant_error, "authorization grant is invalid")
-        elif self._gate is not None:
+        elif self._gate is not None or (
+            execution_context is not None
+            and (
+                spec.dangerous
+                or spec.permission_category in _WRITE_PERMISSION_CATEGORIES
+            )
+        ):
             return NormalizedToolOutcome.failure(
                 "authorization_required", "prepared execution requires a durable authorization grant"
             )
@@ -2274,10 +2038,40 @@ class ToolRegistry:
             started_at = datetime.now(timezone.utc)
 
             async def invoke() -> Any:
-                if _inspect.iscoroutinefunction(spec.handler):
-                    return await spec.handler(exact_params, effect_id)
+                handler = spec.context_handler or spec.handler
+                if _inspect.iscoroutinefunction(handler):
+                    token = (
+                        set_tool_execution_context(execution_context)
+                        if execution_context is not None
+                        else None
+                    )
+                    try:
+                        if spec.context_handler is not None:
+                            return await spec.context_handler(
+                                exact_params, execution_context
+                            )
+                        return await spec.handler(exact_params, effect_id)
+                    finally:
+                        if token is not None:
+                            reset_tool_execution_context(token)
+
+                def invoke_sync() -> Any:
+                    token = (
+                        set_tool_execution_context(execution_context)
+                        if execution_context is not None
+                        else None
+                    )
+                    try:
+                        if spec.context_handler is not None:
+                            return spec.context_handler(exact_params, execution_context)
+                        return spec.handler(exact_params, effect_id)
+                    finally:
+                        if token is not None:
+                            reset_tool_execution_context(token)
+
                 loop = asyncio.get_running_loop()
-                return await loop.run_in_executor(None, spec.handler, exact_params, effect_id)
+                copied = contextvars.copy_context()
+                return await loop.run_in_executor(None, copied.run, invoke_sync)
 
             raw = await asyncio.wait_for(invoke(), timeout=spec.timeout_seconds)
             outcome = self._normalize_result(spec, raw)

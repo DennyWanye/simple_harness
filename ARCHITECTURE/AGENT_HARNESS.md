@@ -21,6 +21,19 @@ The approved target is documented in [`plans/2026-07-20-agent-harness-simplifica
 
 The same UoW now owns product-neutral continuation JSON through strict `save/load/delete` continuation-version CAS; an optional `DecisionOpen` and its continuation commit in one SQLite transaction. Activation verification covers concurrent/repeated CAS, illegal owner writes, non-empty drain refusal, four crash/restart windows, and restart recovery. Continuation verification covers complete JSON recovery, stale save/delete rejection, wrong-run decision rejection, and decision/continuation rollback. Focused harness/workflow schema regression: `225 passed, 9 xfailed`.
 
+R1.2 removes the reverse dependency from `ToolRegistry` to the test-only
+`harness.tool_executor`: the registry no longer exposes
+`prepare_execution_call`/`execute_call` and depends directly on the existing
+`PreparedToolCall`/`NormalizedToolOutcome` workflow primitives. The canonical
+`prepare_call`/`execute_prepared` path now accepts a separate trusted
+`ToolExecutionContext`, rejects model-owned host fields, avoids the legacy
+session-context merge, revalidates call/effect/grant bindings, and invokes
+`context_handler` without putting host identity into model JSON. A temporary
+harness-side bridge preserves dormant pre-cutover tests; it is not a new
+production owner and is deleted by the Driver/UoW owner-collapse slice.
+Verification: full harness `199 passed, 9 xfailed`; adjacent workflow effect
+and production wiring `33 passed`; canonical registry-focused tests `45 passed`.
+
 ## Request Lifecycle
 
 The outer text-chat order is `ws_ingress -> context_assembly ->
