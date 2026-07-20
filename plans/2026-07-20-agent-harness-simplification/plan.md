@@ -298,14 +298,17 @@ WS/Voice Adapter
 #### R1 — 合并为一个契约集与一个 UoW 〔AC-4～AC-10, AC-13, AC-14, AC-16〕
 
 - 先做纯 additive v6→v7 migration：增加 `execution_runtime_state`、run `owner_kind/owner_generation`、`execution_legacy_drain_items` 与必要 fence 约束；默认 singleton 为 `phase='legacy', generation=0`，因此不改变任何生产 owner。R1～R5 的全部测试都运行在 v7 production-shaped schema 上。
+- R1～R5 的 test-only 新路径使用独立临时数据库，并调用与生产完全相同的 drain/activate CAS（空 legacy manifest）进入 `activated/open, generation=1` 后才能创建 `owner_kind='kernel'` row；legacy compatibility fixture 保持 `legacy/0`。禁止 `test_mode`、绕过 flag 或在 `legacy` phase 偷写 kernel owner row。
 - `backend/deskpet/execution/contracts.py`：只保留 Run/Decision/Event/Child identity 与 host-trusted context；删除重复 ToolOutcome、无生产消费者 codec、细碎 store-specific record。
 - `backend/deskpet/execution/ports.py`：合并为一个窄 `ExecutionUnitOfWork` protocol，禁止 Event/Delivery/Decision 多个切片协议制造伪 owner。
+- 依赖方向固定为：`execution` 只含中立 identity/event/signal/UoW contract，永不 import `workflows`；Driver 与 ToolRegistry 可直接使用既有 `workflows.effects.PreparedToolCall/NormalizedToolOutcome`，UoW 方法只接最小 call/effect identity 与 JSON payload，不把 workflow 类型塞回 execution contract。删除当前 `tools.registry → harness.tool_executor` 反向依赖，禁止用 `TYPE_CHECKING` 掩盖循环。
 - 删除 `execution/ledger.py`；ephemeral identity/live subscription 由 Kernel 的有界 active index 管理，跨 durable boundary 后一切 authority 在 UoW。
 - 删除独立 `harness/decisions.py`、`effects.py`、`continuations.py` 的 SQLite owner；把 §4.9 八个原子操作作为同连接事务写入 `backend/deskpet/workflows/store/execution_uow.py`。
 - 工具契约直接使用 `backend/deskpet/workflows/effects.py` 的 `PreparedToolCall`/`NormalizedToolOutcome` 和 late-reconcile 算法；把 effect/outbox 中自开连接的逻辑拆成 UoW 可调用的 `*_tx(connection, ...)`，`ToolRegistry` 只增加可信 `ToolExecutionContext` adapter，不增加第二套执行器。
 - 新 run 明确只写 §4.9 所列 `execution_*` 表；legacy run 继续使用旧 workflow store facade。测试扫描生产新路径，出现 EffectJournal/Outbox `_connect()` 或独立 `commit()` 即失败。
 - 故障注入覆盖 promotion→batch boundary→first claim、decision CAS→boundary、grant consume→effect claim/start、effect settle→continuation、child create/link→schedule lease、child terminal→parent inbox→apply/ack、TeamStore→Child command saga、terminal→delivery 每个写点；事务内中断整体回滚，跨库 Team saga 用 stable operation id/outbox 对账，外部执行窗口只能落 `unknown/reconcile`，不能宣称回滚或盲重试。
 - `backend/tests/harness_simplification/fault_matrix.json` 每行固定 `window_id/injection_hook/durable_before/durable_after/restart_actor/idempotency_key/expected_counts`；八个 UoW 方法和 Team saga 在代码中导出稳定 `FAULT_HOOKS`，测试对每个 hook 执行 kill/restart，并核对 run/boundary/decision/effect/attempt/child/link/inbox/event/delivery/external-write 计数。门禁断言 `tested_window_ids == required_window_ids == exported_fault_hooks`，多一个或少一个都 FAIL。
+- R1 只要求 LOC 自动快照单调下降且不新增等价 owner；combined core/UoW ≤2,800 的硬门在 R2～R4 完成 Preparer/Presenter、ToolExecutor/Projector 迁移和 Kernel/Driver 收敛后，于 R5 进入 R6 前执行。禁止为了让 R1 当场达 2,800 而提前切生产 owner或删除尚未 parity 的产品行为。
 - `start()` 接受仅由宿主构造的 `precreated_run_ref`/start source；Child scheduler 仍调用公开 start 语义，不保留 `_accept_child` 隐藏第七入口。模型 payload 不能设置该字段。
 
 #### R2 — 无行为抽取 ProductTurnPreparer 与 RunPresenter 〔AC-1, AC-9～AC-12, AC-15, AC-18〕

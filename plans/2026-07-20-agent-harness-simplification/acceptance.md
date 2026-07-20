@@ -51,6 +51,8 @@
 - 单 authority 约束：现有 `SqliteExecutionUnitOfWork` 是新 durable Run 的唯一事务 authority；effect/outbox 只能暴露同 connection 的 `*_tx` 原语；不得再并存独立 Ledger、Decision SQLite、Effect SQLite、Continuation SQLite 或第二套 durable delivery worker。
 - Durable promotion：ephemeral ReAct 首次等待 Decision、写 Effect 或 ChildRun 时，durable run、continuation boundary、pending command 与 waiting event 必须同事务创建；故障注入下不能留下“有 run 无 boundary”或“有 decision 无 continuation”。
 - 跨进程恢复：durable recover/reconciler 必须持有数据库 lease 与递增 fence epoch；进程内 active map 不能替代锁，过期 worker 的写入必须 CAS 失败。
+- 测试态不走后门：R1～R5 的新路径测试必须在隔离 v7 DB 上调用真实 activation CAS 到 generation 1；生产 DB 保持 `legacy/0`。禁止 test-only bypass flag 或 legacy phase 下创建 kernel-owned row。
+- 依赖方向：`deskpet.execution` 不得 import `deskpet.workflows`；PreparedToolCall/NormalizedToolOutcome 由 Driver/ToolRegistry 直接复用 workflow primitive，UoW 只接受中立 identity/JSON，不保留 `tools.registry → harness.tool_executor` 反向依赖。
 - 原子切换：v7 additive schema 在 R1 以 `legacy` 默认态先落地并完成全套预演；R6 关入口、等待 ephemeral legacy=0、同事务持久化 durable drain manifest 并进入 `draining`，排空后再写 activation generation、切 start/recovery/delivery owner 并开入口。新 execution row 写入 `owner_kind/owner_generation`，首条新 row 产生后只允许 fail-closed/roll-forward。
 - 计数反规避：ProductTurnPreparer、RunPresenter、venue adapter、Team reconciler 等迁移后的 orchestration 文件全部计入 LOC，不能通过移动出 `main.py` 或 `harness/` 逃避 20% 门槛。
 - LOC 机械口径：锁定 phase-0=21,563 与 rollback=33,228 两份逐文件 manifest；本计划新增/修改的 production `backend/**/*.py` 默认计入，未知分类或基准 hash/总数不符直接 FAIL，只有测试、生成代码和 vendored 固定 path rule 可排除。
