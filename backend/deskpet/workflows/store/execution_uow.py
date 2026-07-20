@@ -1638,6 +1638,107 @@ class SqliteExecutionUnitOfWork:
             ),
         )
 
+    @staticmethod
+    def _continuation_payload_json(payload: Mapping[str, Any]) -> str:
+        normalized = thaw_json(payload)
+        if not isinstance(normalized, dict):
+            raise ValueError("continuation payload must be a JSON object")
+        return canonical_json(normalized)
+
+    @staticmethod
+    def _validate_continuation_version(expected_version: int) -> None:
+        if (
+            not isinstance(expected_version, int)
+            or isinstance(expected_version, bool)
+            or expected_version < 0
+        ):
+            raise ValueError("expected_version must be non-negative")
+
+    async def _save_continuation_tx(
+        self,
+        db: aiosqlite.Connection,
+        *,
+        run: Mapping[str, Any],
+        expected_version: int,
+        payload_json: str,
+        decision: DecisionOpen | None,
+        now: float,
+    ) -> tuple[ContinuationRecord, bool]:
+        run_id = str(run["run_id"])
+        existing = await (
+            await db.execute(
+                "SELECT * FROM execution_continuations WHERE run_id=?", (run_id,)
+            )
+        ).fetchone()
+        decision_id = decision.decision_id if decision is not None else None
+        if existing is None:
+            if expected_version != 0:
+                raise VersionConflict(
+                    "stale_continuation_version",
+                    "new continuation must start from expected version zero",
+                )
+        elif int(existing["continuation_version"]) == expected_version + 1:
+            replay = self._row_to_continuation(existing)
+            if (
+                canonical_json(thaw_json(replay.payload)) == payload_json
+                and replay.pending_decision_id == decision_id
+            ):
+                if decision is not None:
+                    await self._insert_continuation_decision_tx(
+                        db, decision, run=run, now=now
+                    )
+                return replay, True
+            raise VersionConflict(
+                "continuation_replay_conflict",
+                "continuation retry supplied different payload or decision intent",
+            )
+        elif int(existing["continuation_version"]) != expected_version:
+            raise VersionConflict(
+                "stale_continuation_version",
+                "continuation changed before the save CAS",
+            )
+        if decision is not None:
+            await self._insert_continuation_decision_tx(db, decision, run=run, now=now)
+        self._fault("continuation_after_decision")
+        next_version = expected_version + 1
+        if existing is None:
+            await db.execute(
+                """INSERT INTO execution_continuations(
+                run_id,schema_version,command_schema_version,canonical_messages_json,
+                session_projection_cursor,prepared_context_ref,tool_set_snapshot_ref,
+                pending_prepared_call_json,pending_decision_id,iteration,
+                provider_state_json,continuation_version,created_at,updated_at
+                ) VALUES(?,1,1,'[]',0,NULL,NULL,?,?,0,'{}',?,?,?)""",
+                (run_id, payload_json, decision_id, next_version, now, now),
+            )
+        else:
+            cursor = await db.execute(
+                """UPDATE execution_continuations
+                SET pending_prepared_call_json=?,pending_decision_id=?,
+                    continuation_version=?,updated_at=?
+                WHERE run_id=? AND continuation_version=?""",
+                (
+                    payload_json,
+                    decision_id,
+                    next_version,
+                    now,
+                    run_id,
+                    expected_version,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise VersionConflict(
+                    "stale_continuation_version",
+                    "continuation changed before the save CAS",
+                )
+        row = await (
+            await db.execute(
+                "SELECT * FROM execution_continuations WHERE run_id=?", (run_id,)
+            )
+        ).fetchone()
+        assert row is not None
+        return self._row_to_continuation(row), False
+
     async def save_continuation(
         self,
         run_id: str,
@@ -1647,83 +1748,136 @@ class SqliteExecutionUnitOfWork:
     ) -> ContinuationRecord:
         """CAS a complete JSON continuation and optional decision in one commit."""
 
-        if (
-            not isinstance(expected_version, int)
-            or isinstance(expected_version, bool)
-            or expected_version < 0
-        ):
-            raise ValueError("expected_version must be non-negative")
-        normalized = thaw_json(payload)
-        if not isinstance(normalized, dict):
-            raise ValueError("continuation payload must be a JSON object")
-        payload_json = canonical_json(normalized)
+        self._validate_continuation_version(expected_version)
+        payload_json = self._continuation_payload_json(payload)
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
             run = await self._continuation_run_tx(db, run_id)
-            existing = await (
-                await db.execute(
-                    "SELECT * FROM execution_continuations WHERE run_id=?", (run_id,)
-                )
-            ).fetchone()
-            if existing is None:
-                if expected_version != 0:
-                    raise VersionConflict(
-                        "stale_continuation_version",
-                        "new continuation must start from expected version zero",
-                    )
-            elif int(existing["continuation_version"]) != expected_version:
-                raise VersionConflict(
-                    "stale_continuation_version",
-                    "continuation changed before the save CAS",
-                )
             now = float(self._clock())
-            if decision is not None:
-                await self._insert_continuation_decision_tx(
-                    db, decision, run=run, now=now
+            record, _ = await self._save_continuation_tx(
+                db,
+                run=run,
+                expected_version=expected_version,
+                payload_json=payload_json,
+                decision=decision,
+                now=now,
+            )
+            self._fault("continuation_before_commit")
+            await db.commit()
+            return record
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def promote_and_persist_batch_boundary(
+        self,
+        spec: RunCreate,
+        *,
+        expected_run_version: int,
+        expected_continuation_version: int,
+        payload: Mapping[str, Any],
+        decision: DecisionOpen | None = None,
+        waiting_event: RunEventCandidate | None = None,
+        deliveries: Sequence[DeliverySpec] = (),
+    ) -> tuple[CreateRunResult, ContinuationRecord]:
+        """Atomically promote a run and persist its complete suspend boundary.
+
+        A new durable row advances the bounded ephemeral version by one.  A
+        newly appended waiting event advances it once more; the returned run
+        record is always the authoritative post-commit version.  An already
+        durable row is not promoted again.
+        """
+
+        if spec.persistence_level is not PersistenceLevel.DURABLE:
+            raise PersistenceRequired(
+                "promotion_target_not_durable",
+                "batch-boundary promotion target must be durable",
+            )
+        if (
+            not isinstance(expected_run_version, int)
+            or isinstance(expected_run_version, bool)
+            or expected_run_version < 0
+        ):
+            raise ValueError("expected_run_version must be non-negative")
+        self._validate_continuation_version(expected_continuation_version)
+        if waiting_event is None and deliveries:
+            raise IdempotencyConflict(
+                "delivery_without_event",
+                "batch-boundary deliveries require a waiting event",
+            )
+        if waiting_event is not None and waiting_event.status is not OutcomeStatus.WAITING:
+            raise IdempotencyConflict(
+                "invalid_waiting_event",
+                "batch-boundary event must carry waiting status",
+            )
+        payload_json = self._continuation_payload_json(payload)
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            row, created = await self._insert_run_tx(
+                db, spec, version=expected_run_version + 1
+            )
+            if str(row["persistence_level"]) != PersistenceLevel.DURABLE.value:
+                raise PersistenceRequired(
+                    "promotion_not_durable", "persisted promotion is not durable"
                 )
-            self._fault("continuation_after_decision")
-            next_version = expected_version + 1
-            decision_id = decision.decision_id if decision is not None else None
-            if existing is None:
-                await db.execute(
-                    """INSERT INTO execution_continuations(
-                    run_id,schema_version,command_schema_version,canonical_messages_json,
-                    session_projection_cursor,prepared_context_ref,tool_set_snapshot_ref,
-                    pending_prepared_call_json,pending_decision_id,iteration,
-                    provider_state_json,continuation_version,created_at,updated_at
-                    ) VALUES(?,1,1,'[]',0,NULL,NULL,?,?,0,'{}',?,?,?)""",
-                    (run_id, payload_json, decision_id, next_version, now, now),
+            self._fault("batch_boundary_after_promotion")
+            now = float(self._clock())
+            continuation, replayed = await self._save_continuation_tx(
+                db,
+                run=row,
+                expected_version=expected_continuation_version,
+                payload_json=payload_json,
+                decision=decision,
+                now=now,
+            )
+            if (
+                not created
+                and not replayed
+                and int(row["version"]) != expected_run_version
+            ):
+                raise VersionConflict(
+                    "stale_run_version",
+                    f"expected run version {expected_run_version}, found {row['version']}",
                 )
-            else:
+            self._fault("batch_boundary_after_continuation")
+            if decision is not None or waiting_event is not None:
                 cursor = await db.execute(
-                    """UPDATE execution_continuations
-                    SET pending_prepared_call_json=?,pending_decision_id=?,
-                        continuation_version=?,updated_at=?
-                    WHERE run_id=? AND continuation_version=?""",
-                    (
-                        payload_json,
-                        decision_id,
-                        next_version,
-                        now,
-                        run_id,
-                        expected_version,
-                    ),
+                    """UPDATE execution_runs SET status='waiting',updated_at=?
+                    WHERE run_id=? AND terminal_event_id IS NULL
+                    AND status IN ('created','queued','running','waiting')""",
+                    (now, spec.run_id),
                 )
                 if cursor.rowcount != 1:
-                    raise VersionConflict(
-                        "stale_continuation_version",
-                        "continuation changed before the save CAS",
+                    raise DecisionConflict(
+                        "run_not_signalable",
+                        "cancelled or terminal runs cannot persist a waiting boundary",
                     )
-            self._fault("continuation_before_commit")
-            row = await (
-                await db.execute(
-                    "SELECT * FROM execution_continuations WHERE run_id=?", (run_id,)
+            if waiting_event is not None:
+                _, row, _ = await self._append_event_tx(
+                    db,
+                    row,
+                    expected_version=int(row["version"]),
+                    event=waiting_event,
+                    deliveries=deliveries,
                 )
-            ).fetchone()
-            assert row is not None
+            else:
+                refreshed = await (
+                    await db.execute(
+                        "SELECT * FROM execution_runs WHERE run_id=?", (spec.run_id,)
+                    )
+                ).fetchone()
+                assert refreshed is not None
+                row = refreshed
+            self._fault("batch_boundary_after_waiting_event")
+            result = CreateRunResult(self._row_to_record(row), created)
+            self._fault("batch_boundary_before_commit")
             await db.commit()
-            return self._row_to_continuation(row)
+            return result, continuation
         except BaseException:
             if db.in_transaction:
                 await db.rollback()
