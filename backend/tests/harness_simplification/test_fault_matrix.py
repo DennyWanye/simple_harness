@@ -26,6 +26,7 @@ from deskpet.execution import (
     fingerprint_json,
     stable_decision_grant_id,
 )
+from deskpet.workflows.store.execution_uow import ATOMIC_OPERATIONS
 from deskpet.workflows.store.execution_uow import FAULT_HOOKS as UOW_FAULT_HOOKS
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
 
@@ -168,6 +169,15 @@ def _delivery() -> DeliverySpec:
     )
 
 
+def _goal_delivery() -> DeliverySpec:
+    return DeliverySpec(
+        sink_kind="goal_projection",
+        sink_instance="domain",
+        target_id="goal:fault-final",
+        policy=DeliveryPolicy.DURABLE_REQUIRED,
+    )
+
+
 def _child_intent() -> ChildCommandIntent:
     child_spec = _spec("child", parent_run_id="parent")
     child_request = {"run_id": "child"}
@@ -203,7 +213,6 @@ async def _counts(path: Path) -> dict[str, int]:
         "effect": "execution_effects",
         "attempt": "execution_effect_attempts",
         "child": "execution_child_commands",
-        "link": "execution_run_links",
         "inbox": "execution_child_signal_inbox",
         "event": "execution_events",
         "delivery": "execution_deliveries",
@@ -213,6 +222,13 @@ async def _counts(path: Path) -> dict[str, int]:
         for key, table in tables.items():
             row = await (await db.execute(f"SELECT COUNT(*) FROM {table}")).fetchone()
             values[key] = int(row[0])
+        run_links = await (
+            await db.execute("SELECT COUNT(*) FROM execution_run_links")
+        ).fetchone()
+        effect_links = await (
+            await db.execute("SELECT COUNT(*) FROM execution_effect_links")
+        ).fetchone()
+        values["link"] = int(run_links[0]) + int(effect_links[0])
     values["external_write"] = 0
     return values
 
@@ -254,6 +270,49 @@ async def _exercise_decision(path: Path, hook: str) -> None:
     assert resolved.status.value == "allowed"
 
 
+async def _exercise_decision_boundary(path: Path, hook: str) -> None:
+    healthy = await _store(path)
+    await healthy.create(_spec("decision-boundary"))
+    permission = hook == "decision_resolve_after_grant"
+    request = _decision("decision-boundary", permission=permission)
+    await healthy.save_continuation(
+        "decision-boundary", 0, {"state": "waiting"}, request
+    )
+    kwargs = dict(
+        expected_continuation_version=1,
+        continuation_payload={"state": "resumed"},
+        resumed_event=RunEventCandidate(
+            event_key="decision-resumed",
+            kind="run.resumed",
+            status=OutcomeStatus.ACCEPTED,
+            driver_kind="react",
+        ),
+        deliveries=(_delivery(),),
+    )
+    crashing = SqliteExecutionUnitOfWork(
+        path,
+        clock=lambda: 100.0,
+        fault_injector=lambda point: (_ for _ in ()).throw(RuntimeError(f"crash:{point}"))
+        if point == hook
+        else None,
+    )
+    with pytest.raises(RuntimeError, match=f"crash:{hook}"):
+        await crashing.resolve_decision_and_advance_boundary(
+            _signal(request), _actor(), **kwargs
+        )
+    unchanged = await healthy.load_continuation("decision-boundary")
+    assert unchanged is not None and unchanged.payload["state"] == "waiting"
+    restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
+    decision, _, continuation, event = (
+        await restarted.resolve_decision_and_advance_boundary(
+            _signal(request), _actor(), **kwargs
+        )
+    )
+    assert decision.status.value == "allowed"
+    assert continuation.payload["state"] == "resumed"
+    assert event.status is OutcomeStatus.ACCEPTED
+
+
 async def _exercise_grant(path: Path, hook: str) -> None:
     healthy = await _store(path)
     await healthy.create(_spec("grant"))
@@ -274,6 +333,97 @@ async def _exercise_grant(path: Path, hook: str) -> None:
     assert consumed.version == 1
 
 
+def _effect_claim_kwargs() -> dict:
+    return {
+        "effect_type": "write",
+        "policy": {"reconcile": True},
+        "prepared": {"target": "F:/workspace/report.md"},
+        "worker_owner": "effect-worker",
+        "worker_epoch": 1,
+    }
+
+
+async def _permission_ready(path: Path) -> tuple[SqliteExecutionUnitOfWork, DecisionOpen]:
+    healthy = await _store(path)
+    await healthy.create(_spec("grant"))
+    request = _decision("grant", permission=True)
+    await healthy.open_decision(request, _actor(), expected_run_version=0)
+    await healthy.resolve_decision(_signal(request), _actor())
+    return healthy, request
+
+
+async def _exercise_effect_claim(path: Path, hook: str) -> None:
+    _, request = await _permission_ready(path)
+    crashing = SqliteExecutionUnitOfWork(
+        path,
+        clock=lambda: 100.0,
+        fault_injector=lambda point: (_ for _ in ()).throw(RuntimeError(f"crash:{point}"))
+        if point == hook
+        else None,
+    )
+    with pytest.raises(RuntimeError, match=f"crash:{hook}"):
+        await crashing.consume_grant_and_claim_effect(
+            _grant(request), _actor(), **_effect_claim_kwargs()
+        )
+    before = await _counts(path)
+    assert before["effect"] == before["attempt"] == 0
+    restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
+    claim = await restarted.consume_grant_and_claim_effect(
+        _grant(request), _actor(), **_effect_claim_kwargs()
+    )
+    replay = await restarted.consume_grant_and_claim_effect(
+        _grant(request), _actor(), **_effect_claim_kwargs()
+    )
+    assert claim == replay and claim.status == "running"
+
+
+async def _exercise_effect_settle(path: Path, hook: str) -> int:
+    healthy, request = await _permission_ready(path)
+    await healthy.consume_grant_and_claim_effect(
+        _grant(request), _actor(), **_effect_claim_kwargs()
+    )
+    await healthy.save_continuation("grant", 0, {"state": "running-effect"})
+    kwargs = dict(
+        expected_effect_version=0,
+        attempt_no=1,
+        worker_owner="effect-worker",
+        worker_epoch=1,
+        status="succeeded",
+        outcome={"ok": True},
+        receipt_ref="receipt:effect-1",
+        artifact_refs=("artifact:report",),
+        node_execution_id="node-1",
+        checkpoint_ns="graph",
+        checkpoint_id="checkpoint-1",
+        expected_continuation_version=1,
+        continuation_payload={"state": "effect-settled"},
+        event=RunEventCandidate(
+            event_key="effect-settled",
+            kind="tool.result",
+            status=OutcomeStatus.SUCCEEDED,
+            driver_kind="react",
+        ),
+        deliveries=(_delivery(),),
+    )
+    external_writes = 1
+    crashing = SqliteExecutionUnitOfWork(
+        path,
+        clock=lambda: 100.0,
+        fault_injector=lambda point: (_ for _ in ()).throw(RuntimeError(f"crash:{point}"))
+        if point == hook
+        else None,
+    )
+    with pytest.raises(RuntimeError, match=f"crash:{hook}"):
+        await crashing.settle_effect_and_advance_boundary("effect-1", **kwargs)
+    before = await _counts(path)
+    assert before["link"] == before["event"] == before["delivery"] == 0
+    restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
+    settled = await restarted.settle_effect_and_advance_boundary("effect-1", **kwargs)
+    replay = await restarted.settle_effect_and_advance_boundary("effect-1", **kwargs)
+    assert replay == settled and settled.status == "succeeded"
+    return external_writes
+
+
 async def _exercise_finalize(path: Path, hook: str) -> None:
     healthy = await _store(path)
     await healthy.create(_spec("final"))
@@ -288,14 +438,14 @@ async def _exercise_finalize(path: Path, hook: str) -> None:
         expected_version=0,
         terminal_status="completed",
         event=_terminal_event("final"),
-        deliveries=(_delivery(),),
+        deliveries=(_goal_delivery(),),
     )
     with pytest.raises(RuntimeError, match=f"crash:{hook}"):
-        await crashing.finalize("final", **kwargs)
+        await crashing.finalize_and_enqueue_delivery("final", **kwargs)
     before = await _counts(path)
     assert before["event"] == before["delivery"] == 0
     restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
-    await restarted.finalize("final", **kwargs)
+    await restarted.finalize_and_enqueue_delivery("final", **kwargs)
 
 
 async def _prepare_child(path: Path) -> tuple[SqliteExecutionUnitOfWork, ChildCommandIntent]:
@@ -401,6 +551,70 @@ async def _exercise_child_ack(path: Path, hook: str) -> None:
     assert acknowledged.delivered_at is not None
 
 
+async def _exercise_child_apply(path: Path, hook: str) -> None:
+    healthy, _ = await _scheduled_child(path)
+    signal = (await healthy.list_pending_child_signals("parent"))[0]
+    await healthy.save_continuation("parent", 0, {"state": "waiting-child"})
+    kwargs = dict(
+        expected_continuation_version=1,
+        continuation_payload={"state": "child-accepted"},
+        event=RunEventCandidate(
+            event_key="child-accepted",
+            kind="child.accepted",
+            status=OutcomeStatus.ACCEPTED,
+            driver_kind="react",
+        ),
+        deliveries=(_delivery(),),
+    )
+    crashing = SqliteExecutionUnitOfWork(
+        path,
+        clock=lambda: 100.0,
+        fault_injector=lambda point: (_ for _ in ()).throw(RuntimeError(f"crash:{point}"))
+        if point == hook
+        else None,
+    )
+    with pytest.raises(RuntimeError, match=f"crash:{hook}"):
+        await crashing.apply_child_signal_and_ack(signal.signal_id, **kwargs)
+    unchanged = await healthy.load_continuation("parent")
+    assert unchanged is not None and unchanged.payload["state"] == "waiting-child"
+    assert (await healthy.list_pending_child_signals("parent"))[0].signal_id == signal.signal_id
+    restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
+    applied = await restarted.apply_child_signal_and_ack(signal.signal_id, **kwargs)
+    replay = await restarted.apply_child_signal_and_ack(signal.signal_id, **kwargs)
+    assert replay == applied and applied[0].delivered_at is not None
+
+
+async def _exercise_child_finalize(path: Path, hook: str) -> None:
+    _, intent = await _scheduled_child(path)
+    kwargs = dict(
+        expected_version=1,
+        terminal_status="completed",
+        event=_terminal_event("child"),
+        value={"result": "ok"},
+    )
+    crashing = SqliteExecutionUnitOfWork(
+        path,
+        clock=lambda: 100.0,
+        fault_injector=lambda point: (_ for _ in ()).throw(RuntimeError(f"crash:{point}"))
+        if point == hook
+        else None,
+    )
+    with pytest.raises(RuntimeError, match=f"crash:{hook}"):
+        await crashing.finalize_child_and_enqueue_parent_signal(
+            intent.operation_id, **kwargs
+        )
+    before = await _counts(path)
+    assert before["event"] == 0 and before["inbox"] == 1
+    restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
+    result = await restarted.finalize_child_and_enqueue_parent_signal(
+        intent.operation_id, **kwargs
+    )
+    replay = await restarted.finalize_child_and_enqueue_parent_signal(
+        intent.operation_id, **kwargs
+    )
+    assert result.idempotent is False and replay.idempotent is True
+
+
 async def _exercise_team(path: Path, hook: str) -> None:
     healthy = TeamStore(path.parent / "teams")
     await healthy.create_task("fault-team", "delegate")
@@ -411,12 +625,25 @@ async def _exercise_team(path: Path, hook: str) -> None:
 
     crashing = TeamStore(path.parent / "teams", fault_injector=fail)
     with pytest.raises(RuntimeError, match=f"crash:{hook}"):
-        await crashing.claim_task("fault-team", "worker-a")
+        if hook == "team_claim_before_commit":
+            await crashing.claim_task("fault-team", "worker-a")
+        else:
+            await crashing.claim_task_with_child_command(
+                "fault-team", "worker-a", child_run_id="child-run"
+            )
     pending = await healthy.list_tasks("fault-team", status="pending")
     assert len(pending) == 1
     restarted = TeamStore(path.parent / "teams")
-    claimed = await restarted.claim_task("fault-team", "worker-a")
-    assert claimed is not None and claimed.status == "claimed"
+    if hook == "team_claim_before_commit":
+        claimed = await restarted.claim_task("fault-team", "worker-a")
+        assert claimed is not None and claimed.status == "claimed"
+    else:
+        result = await restarted.claim_task_with_child_command(
+            "fault-team", "worker-a", child_run_id="child-run"
+        )
+        assert result is not None and result[0].status == "claimed"
+        commands = await restarted.pending_child_commands("fault-team")
+        assert len(commands) == 1 and commands[0].child_run_id == "child-run"
 
 
 def test_fault_matrix_schema_and_exported_hooks_are_exact() -> None:
@@ -437,6 +664,13 @@ def test_fault_matrix_schema_and_exported_hooks_are_exact() -> None:
     assert tested == exported
     assert all(COUNT_KEYS <= set(row["expected_counts"]) for row in MATRIX)
     assert all(row["restart_actor"] and row["idempotency_key"] for row in MATRIX)
+    assert len(ATOMIC_OPERATIONS) == 8
+    assert len({name for name, _ in ATOMIC_OPERATIONS}) == 8
+    assert all(
+        callable(getattr(SqliteExecutionUnitOfWork, method_name, None))
+        for _, method_names in ATOMIC_OPERATIONS
+        for method_name in method_names
+    )
 
 
 @pytest.mark.asyncio
@@ -444,12 +678,19 @@ def test_fault_matrix_schema_and_exported_hooks_are_exact() -> None:
 async def test_every_fault_window_rolls_back_then_restart_converges(tmp_path, row) -> None:
     hook = row["injection_hook"]
     path = tmp_path / f"{row['window_id']}.db"
+    external_writes = 0
     if hook.startswith("batch_boundary_"):
         await _exercise_promotion(path, hook)
     elif hook == "decision_resolve_before_commit":
         await _exercise_decision(path, hook)
+    elif hook.startswith("decision_resolve_after_"):
+        await _exercise_decision_boundary(path, hook)
     elif hook == "grant_consume_before_commit":
         await _exercise_grant(path, hook)
+    elif hook.startswith("effect_claim_"):
+        await _exercise_effect_claim(path, hook)
+    elif hook.startswith("effect_settle_"):
+        external_writes = await _exercise_effect_settle(path, hook)
     elif hook.startswith("finalize_"):
         await _exercise_finalize(path, hook)
     elif hook == "child_command_before_commit":
@@ -460,11 +701,17 @@ async def test_every_fault_window_rolls_back_then_restart_converges(tmp_path, ro
         await _exercise_child_terminal(path, hook)
     elif hook == "child_signal_ack_before_commit":
         await _exercise_child_ack(path, hook)
-    elif hook == "team_claim_before_commit":
+    elif hook.startswith("child_apply_"):
+        await _exercise_child_apply(path, hook)
+    elif hook.startswith("child_finalize_"):
+        await _exercise_child_finalize(path, hook)
+    elif hook in TEAM_FAULT_HOOKS:
         await _exercise_team(path, hook)
     else:  # pragma: no cover - equality gate above makes this fail closed
         raise AssertionError(f"unexercised fault hook: {hook}")
 
-    if hook == "team_claim_before_commit":
+    if hook in TEAM_FAULT_HOOKS:
         return
-    assert await _counts(path) == row["expected_counts"]
+    counts = await _counts(path)
+    counts["external_write"] = external_writes
+    assert counts == row["expected_counts"]

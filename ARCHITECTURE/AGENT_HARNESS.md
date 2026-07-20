@@ -34,17 +34,6 @@ production owner and is deleted by the Driver/UoW owner-collapse slice.
 Verification: full harness `199 passed, 9 xfailed`; adjacent workflow effect
 and production wiring `33 passed`; canonical registry-focused tests `45 passed`.
 
-R1 fault-matrix foundation now exports a stable set of 13 execution-UoW and
-one TeamStore crash hooks. A machine-readable matrix records each window's
-durable before/after state, restart actor, idempotency key, and per-table
-count oracle; every window is killed before commit and replayed through a
-fresh store. Focused verification is `15 passed`, with the adjacent UoW,
-decision, child, ledger, and Team suites at `101 passed`. This is an
-**in-progress R1 boundary**, not completion of all eight §4.9 combinations:
-decision→boundary, grant→effect claim, effect settle→boundary,
-child-terminal→parent-inbox, parent apply→ack, and the cross-DB Team command
-outbox still require their transaction-aware implementations.
-
 R1 owner-collapse now has one durable state owner: `SqliteExecutionUnitOfWork`.
 The former `ExecutionLedger`, decision store, effect store, and continuation
 store modules have been deleted instead of retained as facades. Short ReAct
@@ -54,9 +43,39 @@ persists its complete continuation through the UoW. After promotion Kernel
 drops its ephemeral record and reads the UoW-owned version. The execution port
 surface is one `ExecutionUnitOfWork` protocol, and the duplicate execution
 `ToolOutcome` contract and unused codecs are gone. Production remains fenced at
-`legacy/0`; this slice does not activate the Kernel owner. Verification:
-integrated harness `199 passed, 9 xfailed`; R1 LOC gate
-`31,977 <= 33,228`, with zero unknown classifications.
+`legacy/0`; this slice does not activate the Kernel owner.
+
+R1 now exports eight stable atomic-operation contracts and 33 enumerated crash
+windows. The existing UoW bodies were split into same-connection primitives;
+there is no second ledger or nested connection. Decision resolution advances
+its continuation/event with any one-shot grant; grant consumption claims a
+fenced execution effect/attempt; settlement commits attempt, effect link,
+continuation, event and delivery; child apply advances the parent and acks the
+inbox; child finalization commits the terminal event and parent signal. The
+durable-command-first child saga intentionally commits the immutable command
+intent before scheduling atomically creates child+link and marks it scheduled.
+TeamStore now atomically claims a task with a stable cross-DB child-command
+outbox, which a reconciler can replay and acknowledge. Goal projection remains
+a separate domain store and is therefore represented as a durable finalization
+delivery, not a fake cross-database SQL link.
+
+The machine-readable matrix fixes each window's durable before/after state,
+restart actor, idempotency key and run/boundary/decision/effect/attempt/child/
+link/inbox/event/delivery/external-write counts. Every hook is killed before
+commit, reopened through a fresh store, replayed, and compared under
+`required == tested == exported`; focused matrix verification is `33 passed`,
+adjacent UoW/Decision/Child/Ledger/Team regression is `148 passed`, and the
+integrated harness-simplification suite is `217 passed, 9 xfailed`. Production
+ownership remains `legacy/0` until the R6 activation commit.
+
+This atomicity slice grows `execution_uow.py` from 3,854 to 4,467 physical
+lines (`+613` net after extracting the old decision/grant/child-signal bodies)
+and TeamStore by `+176` net lines. It is therefore correct for crash safety but
+is **not** the final simplification shape: R2～R4 must split product-neutral
+records/SQL primitives from orchestration and delete compatibility surfaces so
+the R5 combined core/UoW gate reaches `≤2,800` lines. On the integrated
+owner-collapse head, the R1 adjusted-total gate is `32,766 <= 33,228`, with
+zero unknown classifications.
 
 ## Request Lifecycle
 

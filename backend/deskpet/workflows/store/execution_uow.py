@@ -92,7 +92,18 @@ FAULT_HOOKS = frozenset(
         "batch_boundary_after_continuation",
         "batch_boundary_after_waiting_event",
         "batch_boundary_before_commit",
+        "decision_resolve_after_cas",
+        "decision_resolve_after_grant",
+        "decision_resolve_after_boundary",
         "decision_resolve_before_commit",
+        "effect_claim_after_grant",
+        "effect_claim_after_effect",
+        "effect_claim_before_commit",
+        "effect_settle_after_attempt",
+        "effect_settle_after_effect",
+        "effect_settle_after_link",
+        "effect_settle_after_boundary",
+        "effect_settle_before_commit",
         "grant_consume_before_commit",
         "finalize_after_outbox",
         "finalize_before_commit",
@@ -101,7 +112,23 @@ FAULT_HOOKS = frozenset(
         "child_schedule_before_commit",
         "child_terminal_before_commit",
         "child_signal_ack_before_commit",
+        "child_apply_after_boundary",
+        "child_apply_after_event",
+        "child_apply_before_commit",
+        "child_finalize_after_terminal",
+        "child_finalize_after_parent_signal",
     }
+)
+
+ATOMIC_OPERATIONS = (
+    ("decision_boundary", ("resolve_decision_and_advance_boundary",)),
+    ("effect_settle_boundary", ("settle_effect_and_advance_boundary",)),
+    ("terminal_delivery", ("finalize_and_enqueue_delivery",)),
+    ("child_apply_ack", ("apply_child_signal_and_ack",)),
+    ("grant_effect_claim", ("consume_grant_and_claim_effect",)),
+    ("durable_promotion", ("promote_and_persist_batch_boundary",)),
+    ("durable_child_schedule", ("commit_child_command", "schedule_child_command")),
+    ("child_terminal_signal", ("finalize_child_and_enqueue_parent_signal",)),
 )
 
 
@@ -149,6 +176,26 @@ class ContinuationRecord:
     pending_decision_id: str | None
     created_at: float
     updated_at: float
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionEffectClaim:
+    effect_id: str
+    run_id: str
+    attempt_no: int
+    status: str
+    worker_owner: str
+    worker_epoch: int
+    effect_version: int
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionEffectSettlement:
+    effect_id: str
+    status: str
+    effect_version: int
+    continuation: ContinuationRecord
+    event: RunEvent
 
 
 class SqliteExecutionUnitOfWork:
@@ -2170,126 +2217,208 @@ class SqliteExecutionUnitOfWork:
                 f"found {decision.decision_version}",
             )
 
-    async def resolve_decision(
+    async def _resolve_decision_tx(
         self,
+        db: aiosqlite.Connection,
         signal: DecisionSignal,
         actor: ActorContext,
-    ) -> tuple[DecisionRecord, DecisionAuthorization | None]:
-        now = float(self._clock())
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
-            row = await (
-                await db.execute(
-                    "SELECT * FROM execution_decisions WHERE decision_id=?",
-                    (signal.decision_id,),
-                )
-            ).fetchone()
-            if row is None:
-                raise DecisionNotFound(
-                    "decision_not_found",
-                    f"execution decision does not exist: {signal.decision_id}",
-                )
-            decision = self._row_to_decision(row)
-            run_row = await (
-                await db.execute(
-                    "SELECT * FROM execution_runs WHERE run_id=?", (decision.run_id,)
-                )
-            ).fetchone()
-            assert run_row is not None
-            run = self._authorize_run_row(
-                run_row,
-                expected_session_id=signal.expected_session_id,
-                actor=actor,
+        *,
+        now: float,
+    ) -> tuple[
+        DecisionRecord,
+        DecisionAuthorization | None,
+        DecisionConflict | None,
+    ]:
+        row = await (
+            await db.execute(
+                "SELECT * FROM execution_decisions WHERE decision_id=?",
+                (signal.decision_id,),
             )
-            self._assert_signal_binding(decision, signal)
-            if run.status is RunStatus.CANCEL_REQUESTED or run.status in TERMINAL_RUN_STATUSES:
-                raise DecisionConflict(
-                    "run_not_signalable", "cancelled or terminal run rejects decision signals"
-                )
-            if decision.status is not DecisionStatus.OPEN:
-                raise DecisionConflict(
-                    "decision_already_resolved",
-                    "duplicate or late decision signal was rejected",
-                )
-            if decision.request.expires_at is not None and decision.request.expires_at <= now:
-                cursor = await db.execute(
-                    """UPDATE execution_decisions SET status='expired',
-                    decision_version=decision_version+1,resolved_at=?
-                    WHERE decision_id=? AND decision_version=? AND status='open'""",
-                    (now, decision.decision_id, signal.expected_version),
-                )
-                if cursor.rowcount != 1:
-                    raise DecisionConflict(
-                        "stale_decision_version", "decision changed before expiry CAS"
-                    )
-                await db.commit()
-                raise DecisionConflict(
-                    "decision_expired", "expired decision signal was rejected"
-                )
-            resolved_status = (
-                DecisionStatus.ALLOWED if signal.allow else DecisionStatus.DENIED
+        ).fetchone()
+        if row is None:
+            raise DecisionNotFound(
+                "decision_not_found",
+                f"execution decision does not exist: {signal.decision_id}",
             )
+        decision = self._row_to_decision(row)
+        run_row = await (
+            await db.execute(
+                "SELECT * FROM execution_runs WHERE run_id=?", (decision.run_id,)
+            )
+        ).fetchone()
+        assert run_row is not None
+        run = self._authorize_run_row(
+            run_row,
+            expected_session_id=signal.expected_session_id,
+            actor=actor,
+        )
+        self._assert_signal_binding(decision, signal)
+        if run.status is RunStatus.CANCEL_REQUESTED or run.status in TERMINAL_RUN_STATUSES:
+            raise DecisionConflict(
+                "run_not_signalable", "cancelled or terminal run rejects decision signals"
+            )
+        if decision.status is not DecisionStatus.OPEN:
+            raise DecisionConflict(
+                "decision_already_resolved",
+                "duplicate or late decision signal was rejected",
+            )
+        if decision.request.expires_at is not None and decision.request.expires_at <= now:
             cursor = await db.execute(
-                """UPDATE execution_decisions SET status=?,response_schema_version=?,
-                response_json=?,decision_version=decision_version+1,resolved_at=?
+                """UPDATE execution_decisions SET status='expired',
+                decision_version=decision_version+1,resolved_at=?
                 WHERE decision_id=? AND decision_version=? AND status='open'""",
-                (
-                    resolved_status.value,
-                    signal.response_schema_version,
-                    canonical_json(thaw_json(signal.response)),
-                    now,
-                    decision.decision_id,
-                    signal.expected_version,
-                ),
+                (now, decision.decision_id, signal.expected_version),
             )
             if cursor.rowcount != 1:
                 raise DecisionConflict(
-                    "stale_decision_version", "decision changed before resolve CAS"
+                    "stale_decision_version", "decision changed before expiry CAS"
                 )
-            authorization: DecisionAuthorization | None = None
-            if decision.request.kind is DecisionKind.PERMISSION and signal.allow:
-                expires_at = decision.request.expires_at
-                assert expires_at is not None
-                grant_id = stable_decision_grant_id(decision.decision_id)
-                await db.execute(
-                    """INSERT INTO execution_grants(
-                    grant_id,schema_version,decision_id,run_id,call_id,effect_id,
-                    tool_name,args_hash,capability_hash,scope_hash,status,
-                    grant_version,expires_at,created_at,consumed_at
-                    ) VALUES(?,?,?,?,?,?,?,?,?,?,'issued',0,?,?,NULL)""",
-                    (
-                        grant_id,
-                        decision.request.schema_version,
-                        decision.decision_id,
-                        decision.run_id,
-                        decision.request.call_id,
-                        decision.request.effect_id,
-                        decision.request.tool_name,
-                        decision.request.args_hash,
-                        decision.request.capability_hash,
-                        decision.request.scope_hash,
-                        expires_at,
-                        now,
-                    ),
-                )
-                grant_row = await (
-                    await db.execute(
-                        "SELECT * FROM execution_grants WHERE grant_id=?", (grant_id,)
-                    )
-                ).fetchone()
-                assert grant_row is not None
-                authorization = self._row_to_authorization(grant_row)
-            self._fault("decision_resolve_before_commit")
-            resolved_row = await (
+            expired = await (
                 await db.execute(
                     "SELECT * FROM execution_decisions WHERE decision_id=?",
                     (decision.decision_id,),
                 )
             ).fetchone()
-            assert resolved_row is not None
+            assert expired is not None
+            return (
+                self._row_to_decision(expired),
+                None,
+                DecisionConflict("decision_expired", "expired decision signal was rejected"),
+            )
+        resolved_status = DecisionStatus.ALLOWED if signal.allow else DecisionStatus.DENIED
+        cursor = await db.execute(
+            """UPDATE execution_decisions SET status=?,response_schema_version=?,
+            response_json=?,decision_version=decision_version+1,resolved_at=?
+            WHERE decision_id=? AND decision_version=? AND status='open'""",
+            (
+                resolved_status.value,
+                signal.response_schema_version,
+                canonical_json(thaw_json(signal.response)),
+                now,
+                decision.decision_id,
+                signal.expected_version,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise DecisionConflict(
+                "stale_decision_version", "decision changed before resolve CAS"
+            )
+        self._fault("decision_resolve_after_cas")
+        authorization: DecisionAuthorization | None = None
+        if decision.request.kind is DecisionKind.PERMISSION and signal.allow:
+            expires_at = decision.request.expires_at
+            assert expires_at is not None
+            grant_id = stable_decision_grant_id(decision.decision_id)
+            await db.execute(
+                """INSERT INTO execution_grants(
+                grant_id,schema_version,decision_id,run_id,call_id,effect_id,
+                tool_name,args_hash,capability_hash,scope_hash,status,
+                grant_version,expires_at,created_at,consumed_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,'issued',0,?,?,NULL)""",
+                (
+                    grant_id,
+                    decision.request.schema_version,
+                    decision.decision_id,
+                    decision.run_id,
+                    decision.request.call_id,
+                    decision.request.effect_id,
+                    decision.request.tool_name,
+                    decision.request.args_hash,
+                    decision.request.capability_hash,
+                    decision.request.scope_hash,
+                    expires_at,
+                    now,
+                ),
+            )
+            grant_row = await (
+                await db.execute(
+                    "SELECT * FROM execution_grants WHERE grant_id=?", (grant_id,)
+                )
+            ).fetchone()
+            assert grant_row is not None
+            authorization = self._row_to_authorization(grant_row)
+            self._fault("decision_resolve_after_grant")
+        resolved_row = await (
+            await db.execute(
+                "SELECT * FROM execution_decisions WHERE decision_id=?",
+                (decision.decision_id,),
+            )
+        ).fetchone()
+        assert resolved_row is not None
+        return self._row_to_decision(resolved_row), authorization, None
+
+    async def resolve_decision(
+        self,
+        signal: DecisionSignal,
+        actor: ActorContext,
+    ) -> tuple[DecisionRecord, DecisionAuthorization | None]:
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            decision, authorization, expired = await self._resolve_decision_tx(
+                db, signal, actor, now=float(self._clock())
+            )
+            self._fault("decision_resolve_before_commit")
             await db.commit()
-            return self._row_to_decision(resolved_row), authorization
+            if expired is not None:
+                raise expired
+            return decision, authorization
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def resolve_decision_and_advance_boundary(
+        self,
+        signal: DecisionSignal,
+        actor: ActorContext,
+        *,
+        expected_continuation_version: int,
+        continuation_payload: Mapping[str, Any],
+        resumed_event: RunEventCandidate,
+        deliveries: Sequence[DeliverySpec] = (),
+    ) -> tuple[
+        DecisionRecord,
+        DecisionAuthorization | None,
+        ContinuationRecord,
+        RunEvent,
+    ]:
+        """Resolve a decision and persist its resumed boundary in one commit."""
+
+        self._validate_continuation_version(expected_continuation_version)
+        payload_json = self._continuation_payload_json(continuation_payload)
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            now = float(self._clock())
+            decision, authorization, expired = await self._resolve_decision_tx(
+                db, signal, actor, now=now
+            )
+            if expired is not None:
+                await db.commit()
+                raise expired
+            run = await self._continuation_run_tx(db, signal.run_id)
+            continuation, _ = await self._save_continuation_tx(
+                db,
+                run=run,
+                expected_version=expected_continuation_version,
+                payload_json=payload_json,
+                decision=None,
+                now=now,
+            )
+            self._fault("decision_resolve_after_boundary")
+            event, _, _ = await self._append_event_tx(
+                db,
+                run,
+                expected_version=int(run["version"]),
+                event=resumed_event,
+                deliveries=deliveries,
+            )
+            self._fault("decision_resolve_before_commit")
+            await db.commit()
+            return decision, authorization, continuation, event
         except BaseException:
             if db.in_transaction:
                 await db.rollback()
@@ -2467,50 +2596,401 @@ class SqliteExecutionUnitOfWork:
             )
         return grant_row
 
+    async def _consume_authorization_tx(
+        self,
+        db: aiosqlite.Connection,
+        request: GrantConsume,
+        actor: ActorContext,
+        *,
+        now: float,
+    ) -> tuple[DecisionAuthorization, GrantConsumeConflict | None]:
+        grant_row = await self._inspect_authorization_tx(db, request, actor)
+        if float(grant_row["expires_at"]) <= now:
+            cursor = await db.execute(
+                """UPDATE execution_grants SET status='expired',
+                grant_version=grant_version+1 WHERE grant_id=?
+                AND grant_version=? AND status='issued'""",
+                (request.grant_id, request.expected_version),
+            )
+            if cursor.rowcount != 1:
+                raise GrantConsumeConflict(
+                    "stale_grant_version", "grant changed before expiry CAS"
+                )
+            expired = await (
+                await db.execute(
+                    "SELECT * FROM execution_grants WHERE grant_id=?", (request.grant_id,)
+                )
+            ).fetchone()
+            assert expired is not None
+            return (
+                self._row_to_authorization(expired),
+                GrantConsumeConflict("grant_expired", "expired authorization was rejected"),
+            )
+        cursor = await db.execute(
+            """UPDATE execution_grants SET status='consumed',
+            grant_version=grant_version+1,consumed_at=? WHERE grant_id=?
+            AND grant_version=? AND status='issued'""",
+            (now, request.grant_id, request.expected_version),
+        )
+        if cursor.rowcount != 1:
+            raise GrantConsumeConflict(
+                "grant_consume_conflict", "grant changed before consume CAS"
+            )
+        consumed = await (
+            await db.execute(
+                "SELECT * FROM execution_grants WHERE grant_id=?", (request.grant_id,)
+            )
+        ).fetchone()
+        assert consumed is not None
+        return self._row_to_authorization(consumed), None
+
     async def consume_authorization(
         self,
         request: GrantConsume,
         actor: ActorContext,
     ) -> DecisionAuthorization:
-        now = float(self._clock())
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
-            grant_row = await self._inspect_authorization_tx(db, request, actor)
-            if float(grant_row["expires_at"]) <= now:
-                cursor = await db.execute(
-                    """UPDATE execution_grants SET status='expired',
-                    grant_version=grant_version+1 WHERE grant_id=?
-                    AND grant_version=? AND status='issued'""",
-                    (request.grant_id, request.expected_version),
-                )
-                if cursor.rowcount != 1:
-                    raise GrantConsumeConflict(
-                        "stale_grant_version", "grant changed before expiry CAS"
-                    )
-                await db.commit()
-                raise GrantConsumeConflict(
-                    "grant_expired", "expired authorization was rejected"
-                )
-            cursor = await db.execute(
-                """UPDATE execution_grants SET status='consumed',
-                grant_version=grant_version+1,consumed_at=? WHERE grant_id=?
-                AND grant_version=? AND status='issued'""",
-                (now, request.grant_id, request.expected_version),
+            authorization, expired = await self._consume_authorization_tx(
+                db, request, actor, now=float(self._clock())
             )
-            if cursor.rowcount != 1:
-                raise GrantConsumeConflict(
-                    "grant_consume_conflict", "grant changed before consume CAS"
-                )
             self._fault("grant_consume_before_commit")
-            consumed = await (
+            await db.commit()
+            if expired is not None:
+                raise expired
+            return authorization
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def consume_grant_and_claim_effect(
+        self,
+        request: GrantConsume,
+        actor: ActorContext,
+        *,
+        effect_type: str,
+        policy: Mapping[str, Any],
+        prepared: Mapping[str, Any],
+        worker_owner: str,
+        worker_epoch: int,
+    ) -> ExecutionEffectClaim:
+        """Consume a one-shot grant and start its first fenced effect attempt."""
+
+        if not effect_type or not worker_owner or worker_epoch < 1:
+            raise ValueError("effect type, worker owner and positive epoch are required")
+        policy_json = canonical_json(thaw_json(policy))
+        prepared_json = canonical_json(thaw_json(prepared))
+        effect_fingerprint = fingerprint_json(
+            {
+                "run_id": request.run_id,
+                "call_id": request.call_id,
+                "effect_id": request.effect_id,
+                "tool_name": request.tool_name,
+                "args_hash": request.args_hash,
+                "capability_hash": request.capability_hash,
+                "scope_hash": request.scope_hash,
+                "effect_type": effect_type,
+            }
+        )
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            existing = await (
                 await db.execute(
-                    "SELECT * FROM execution_grants WHERE grant_id=?", (request.grant_id,)
+                    "SELECT * FROM execution_effects WHERE effect_id=?",
+                    (request.effect_id,),
                 )
             ).fetchone()
-            assert consumed is not None
+            if existing is not None:
+                expected = (
+                    request.run_id,
+                    effect_fingerprint,
+                    request.call_id,
+                    request.tool_name,
+                    request.args_hash,
+                    request.capability_hash,
+                    request.scope_hash,
+                    effect_type,
+                    policy_json,
+                    prepared_json,
+                )
+                actual = tuple(
+                    str(existing[name] or "")
+                    for name in (
+                        "run_id",
+                        "effect_fingerprint",
+                        "call_id",
+                        "tool_name",
+                        "args_hash",
+                        "capability_hash",
+                        "scope_hash",
+                        "effect_type",
+                        "policy_json",
+                        "prepared_json",
+                    )
+                )
+                if actual != expected:
+                    raise IdempotencyConflict(
+                        "effect_claim_conflict", "effect id already names another intent"
+                    )
+                attempt = await (
+                    await db.execute(
+                        """SELECT * FROM execution_effect_attempts
+                        WHERE effect_id=? AND attempt_no=1""",
+                        (request.effect_id,),
+                    )
+                ).fetchone()
+                assert attempt is not None
+                await db.commit()
+                return ExecutionEffectClaim(
+                    request.effect_id,
+                    request.run_id,
+                    1,
+                    str(attempt["status"]),
+                    str(attempt["worker_owner"]),
+                    int(attempt["worker_epoch"]),
+                    int(existing["effect_version"]),
+                )
+            _, expired = await self._consume_authorization_tx(
+                db, request, actor, now=float(self._clock())
+            )
+            if expired is not None:
+                await db.commit()
+                raise expired
+            self._fault("effect_claim_after_grant")
+            now = float(self._clock())
+            await db.execute(
+                """INSERT INTO execution_effects(
+                effect_id,schema_version,run_id,effect_fingerprint,call_id,tool_name,
+                args_hash,capability_hash,scope_hash,effect_type,status,policy_json,
+                prepared_json,effect_version,created_at,updated_at
+                ) VALUES(?,1,?,?,?,?,?,?,?,?, 'running',?,?,0,?,?)""",
+                (
+                    request.effect_id,
+                    request.run_id,
+                    effect_fingerprint,
+                    request.call_id,
+                    request.tool_name,
+                    request.args_hash,
+                    request.capability_hash,
+                    request.scope_hash,
+                    effect_type,
+                    policy_json,
+                    prepared_json,
+                    now,
+                    now,
+                ),
+            )
+            self._fault("effect_claim_after_effect")
+            await db.execute(
+                """INSERT INTO execution_effect_attempts(
+                effect_id,attempt_no,status,worker_owner,worker_epoch,started_at,updated_at
+                ) VALUES(?,1,'running',?,?,?,?)""",
+                (request.effect_id, worker_owner, worker_epoch, now, now),
+            )
+            self._fault("effect_claim_before_commit")
             await db.commit()
-            return self._row_to_authorization(consumed)
+            return ExecutionEffectClaim(
+                request.effect_id,
+                request.run_id,
+                1,
+                "running",
+                worker_owner,
+                worker_epoch,
+                0,
+            )
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def settle_effect_and_advance_boundary(
+        self,
+        effect_id: str,
+        *,
+        expected_effect_version: int,
+        attempt_no: int,
+        worker_owner: str,
+        worker_epoch: int,
+        status: str,
+        outcome: Mapping[str, Any],
+        receipt_ref: str | None,
+        artifact_refs: Sequence[str],
+        node_execution_id: str,
+        checkpoint_ns: str,
+        checkpoint_id: str,
+        expected_continuation_version: int,
+        continuation_payload: Mapping[str, Any],
+        event: RunEventCandidate,
+        deliveries: Sequence[DeliverySpec] = (),
+    ) -> ExecutionEffectSettlement:
+        """Settle one fenced attempt and persist the recoverable next boundary."""
+
+        allowed = {"succeeded", "failed", "unknown", "cancelled", "late_reconciled"}
+        if status not in allowed or attempt_no < 1 or worker_epoch < 1 or not worker_owner:
+            raise ValueError("invalid effect settlement fence or status")
+        self._validate_continuation_version(expected_continuation_version)
+        outcome_json = canonical_json(thaw_json(outcome))
+        artifacts_json = canonical_json([str(item) for item in artifact_refs])
+        payload_json = self._continuation_payload_json(continuation_payload)
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            effect = await (
+                await db.execute(
+                    "SELECT * FROM execution_effects WHERE effect_id=?", (effect_id,)
+                )
+            ).fetchone()
+            if effect is None:
+                raise RunNotFound("effect_not_found", "execution effect does not exist")
+            if str(effect["status"]) != "running":
+                replay_event = await (
+                    await db.execute(
+                        """SELECT event.*,run.root_run_id,run.session_id
+                        FROM execution_events AS event JOIN execution_runs AS run
+                        ON run.run_id=event.run_id
+                        WHERE event.run_id=? AND event.event_key=?""",
+                        (effect["run_id"], event.event_key),
+                    )
+                ).fetchone()
+                replay_continuation = await (
+                    await db.execute(
+                        "SELECT * FROM execution_continuations WHERE run_id=?",
+                        (effect["run_id"],),
+                    )
+                ).fetchone()
+                if (
+                    int(effect["effect_version"]) == expected_effect_version + 1
+                    and str(effect["status"]) == status
+                    and str(effect["outcome_json"] or "") == outcome_json
+                    and str(effect["receipt_ref"] or "") == str(receipt_ref or "")
+                    and str(effect["artifact_refs_json"]) == artifacts_json
+                    and replay_event is not None
+                    and replay_continuation is not None
+                    and int(replay_continuation["continuation_version"])
+                    == expected_continuation_version + 1
+                    and str(replay_continuation["pending_prepared_call_json"])
+                    == payload_json
+                ):
+                    await db.commit()
+                    return ExecutionEffectSettlement(
+                        effect_id,
+                        status,
+                        expected_effect_version + 1,
+                        self._row_to_continuation(replay_continuation),
+                        self._row_to_event(replay_event),
+                    )
+                raise IdempotencyConflict(
+                    "effect_already_settled", "effect is no longer running"
+                )
+            if int(effect["effect_version"]) != expected_effect_version:
+                raise VersionConflict(
+                    "stale_effect_version", "effect changed before settlement CAS"
+                )
+            attempt = await (
+                await db.execute(
+                    """SELECT * FROM execution_effect_attempts
+                    WHERE effect_id=? AND attempt_no=?""",
+                    (effect_id, attempt_no),
+                )
+            ).fetchone()
+            if (
+                attempt is None
+                or str(attempt["status"]) != "running"
+                or str(attempt["worker_owner"]) != worker_owner
+                or int(attempt["worker_epoch"]) != worker_epoch
+            ):
+                raise VersionConflict(
+                    "stale_effect_attempt", "effect attempt owner or epoch changed"
+                )
+            now = float(self._clock())
+            cursor = await db.execute(
+                """UPDATE execution_effect_attempts SET status=?,outcome_json=?,
+                updated_at=?,ended_at=? WHERE effect_id=? AND attempt_no=?
+                AND status='running' AND worker_owner=? AND worker_epoch=?""",
+                (
+                    status,
+                    outcome_json,
+                    now,
+                    now,
+                    effect_id,
+                    attempt_no,
+                    worker_owner,
+                    worker_epoch,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise VersionConflict(
+                    "stale_effect_attempt", "effect attempt changed before settlement"
+                )
+            self._fault("effect_settle_after_attempt")
+            cursor = await db.execute(
+                """UPDATE execution_effects SET status=?,outcome_json=?,receipt_ref=?,
+                artifact_refs_json=?,effect_version=effect_version+1,updated_at=?,ended_at=?
+                WHERE effect_id=? AND effect_version=? AND status='running'""",
+                (
+                    status,
+                    outcome_json,
+                    receipt_ref,
+                    artifacts_json,
+                    now,
+                    now,
+                    effect_id,
+                    expected_effect_version,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise VersionConflict(
+                    "stale_effect_version", "effect changed before settlement CAS"
+                )
+            self._fault("effect_settle_after_effect")
+            run_id = str(effect["run_id"])
+            await db.execute(
+                """INSERT INTO execution_effect_links(
+                run_id,node_execution_id,effect_id,checkpoint_ns,checkpoint_id,created_at
+                ) VALUES(?,?,?,?,?,?) ON CONFLICT DO NOTHING""",
+                (
+                    run_id,
+                    node_execution_id,
+                    effect_id,
+                    checkpoint_ns,
+                    checkpoint_id,
+                    now,
+                ),
+            )
+            self._fault("effect_settle_after_link")
+            run = await self._continuation_run_tx(db, run_id)
+            continuation, _ = await self._save_continuation_tx(
+                db,
+                run=run,
+                expected_version=expected_continuation_version,
+                payload_json=payload_json,
+                decision=None,
+                now=now,
+            )
+            self._fault("effect_settle_after_boundary")
+            stored_event, _, _ = await self._append_event_tx(
+                db,
+                run,
+                expected_version=int(run["version"]),
+                event=event,
+                deliveries=deliveries,
+            )
+            self._fault("effect_settle_before_commit")
+            await db.commit()
+            return ExecutionEffectSettlement(
+                effect_id,
+                status,
+                expected_effect_version + 1,
+                continuation,
+                stored_event,
+            )
         except BaseException:
             if db.in_transaction:
                 await db.rollback()
@@ -2526,7 +3006,7 @@ class SqliteExecutionUnitOfWork:
             RunStatus.CANCELLED: OutcomeStatus.CANCELLED,
         }[status]
 
-    async def finalize(
+    async def finalize_and_enqueue_delivery(
         self,
         run_id: str,
         *,
@@ -2534,6 +3014,8 @@ class SqliteExecutionUnitOfWork:
         terminal_status: RunStatus,
         event: RunEventCandidate,
         deliveries: Sequence[DeliverySpec] = (),
+        parent_signal_operation_id: str | None = None,
+        parent_signal_value: Any = None,
     ) -> FinalizeRunResult:
         terminal_status = RunStatus(terminal_status)
         if terminal_status not in TERMINAL_RUN_STATUSES:
@@ -2585,6 +3067,13 @@ class SqliteExecutionUnitOfWork:
                 hydrated = dict(existing)
                 hydrated["root_run_id"] = run["root_run_id"]
                 hydrated["session_id"] = run["session_id"]
+                if parent_signal_operation_id is not None:
+                    await self._enqueue_child_terminal_signal_tx(
+                        db,
+                        parent_signal_operation_id,
+                        terminal_status=terminal_status.value,
+                        value=parent_signal_value,
+                    )
                 await db.commit()
                 return FinalizeRunResult(
                     record=self._row_to_record(run),
@@ -2661,6 +3150,15 @@ class SqliteExecutionUnitOfWork:
                     updated_at=?,ended_at=COALESCE(ended_at,?) WHERE run_id=?""",
                     (terminal_status.value, now, now, run_id),
                 )
+            if parent_signal_operation_id is not None:
+                self._fault("child_finalize_after_terminal")
+                await self._enqueue_child_terminal_signal_tx(
+                    db,
+                    parent_signal_operation_id,
+                    terminal_status=terminal_status.value,
+                    value=parent_signal_value,
+                )
+                self._fault("child_finalize_after_parent_signal")
             self._fault("finalize_before_commit")
             updated = await (
                 await db.execute(
@@ -2688,6 +3186,50 @@ class SqliteExecutionUnitOfWork:
             raise
         finally:
             await db.close()
+
+    async def finalize(
+        self,
+        run_id: str,
+        *,
+        expected_version: int,
+        terminal_status: RunStatus,
+        event: RunEventCandidate,
+        deliveries: Sequence[DeliverySpec] = (),
+    ) -> FinalizeRunResult:
+        """Compatibility facade for the canonical finalization transaction."""
+
+        return await self.finalize_and_enqueue_delivery(
+            run_id,
+            expected_version=expected_version,
+            terminal_status=terminal_status,
+            event=event,
+            deliveries=deliveries,
+        )
+
+    async def finalize_child_and_enqueue_parent_signal(
+        self,
+        operation_id: str,
+        *,
+        expected_version: int,
+        terminal_status: RunStatus,
+        event: RunEventCandidate,
+        value: Any = None,
+        deliveries: Sequence[DeliverySpec] = (),
+    ) -> FinalizeRunResult:
+        """Finalize the acknowledged child and enqueue its parent signal atomically."""
+
+        command = await self.get_child_command(operation_id)
+        if command is None:
+            raise RunNotFound("child_command_not_found", "child command does not exist")
+        return await self.finalize_and_enqueue_delivery(
+            command.child_run_id,
+            expected_version=expected_version,
+            terminal_status=terminal_status,
+            event=event,
+            deliveries=deliveries,
+            parent_signal_operation_id=operation_id,
+            parent_signal_value=value,
+        )
 
     async def request_cancel(
         self,
@@ -3141,8 +3683,9 @@ class SqliteExecutionUnitOfWork:
         finally:
             await db.close()
 
-    async def record_child_terminal(
+    async def _enqueue_child_terminal_signal_tx(
         self,
+        db: aiosqlite.Connection,
         operation_id: str,
         *,
         terminal_status: str,
@@ -3150,77 +3693,86 @@ class SqliteExecutionUnitOfWork:
     ) -> ChildSignalRecord:
         if terminal_status not in {"completed", "failed", "cancelled"}:
             raise ValueError("child terminal status is invalid")
+        command = await (
+            await db.execute(
+                "SELECT * FROM execution_child_commands WHERE operation_id=?",
+                (operation_id,),
+            )
+        ).fetchone()
+        if command is None or str(command["status"]) != ChildCommandStatus.ACKED.value:
+            raise RunNotFound(
+                "acked_child_command_not_found",
+                "terminal signal requires an acknowledged child command",
+            )
+        child = await (
+            await db.execute(
+                "SELECT status FROM execution_runs WHERE run_id=?",
+                (str(command["child_run_id"]),),
+            )
+        ).fetchone()
+        if child is None or str(child["status"]) != terminal_status:
+            raise RunIdentityConflict(
+                "child_not_terminal",
+                "terminal inbox status must match the authoritative child run",
+            )
+        signal_id = self._stable_child_signal_id(operation_id, "terminal")
+        payload_json = canonical_json({"status": terminal_status, "value": value})
+        existing = await (
+            await db.execute(
+                """SELECT * FROM execution_child_signal_inbox
+                WHERE operation_id=? AND kind='terminal'""",
+                (operation_id,),
+            )
+        ).fetchone()
+        if existing is not None:
+            if str(existing["payload_json"]) != payload_json:
+                raise IdempotencyConflict(
+                    "child_terminal_conflict",
+                    "terminal signal replay differs from the first outcome",
+                )
+            return self._row_to_child_signal(existing)
+        now = float(self._clock())
+        await db.execute(
+            """INSERT INTO execution_child_signal_inbox(
+            signal_id,schema_version,operation_id,parent_run_id,command_id,
+            child_run_id,kind,payload_json,created_at,updated_at
+            ) VALUES(?,1,?,?,?,?, 'terminal',?,?,?)""",
+            (
+                signal_id,
+                operation_id,
+                str(command["parent_run_id"]),
+                str(command["command_id"]),
+                str(command["child_run_id"]),
+                payload_json,
+                now,
+                now,
+            ),
+        )
+        row = await (
+            await db.execute(
+                "SELECT * FROM execution_child_signal_inbox WHERE signal_id=?",
+                (signal_id,),
+            )
+        ).fetchone()
+        assert row is not None
+        return self._row_to_child_signal(row)
+
+    async def record_child_terminal(
+        self,
+        operation_id: str,
+        *,
+        terminal_status: str,
+        value: Any = None,
+    ) -> ChildSignalRecord:
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
-            command = await (
-                await db.execute(
-                    "SELECT * FROM execution_child_commands WHERE operation_id=?",
-                    (operation_id,),
-                )
-            ).fetchone()
-            if command is None or str(command["status"]) != ChildCommandStatus.ACKED.value:
-                raise RunNotFound(
-                    "acked_child_command_not_found",
-                    "terminal signal requires an acknowledged child command",
-                )
-            child = await (
-                await db.execute(
-                    "SELECT status FROM execution_runs WHERE run_id=?",
-                    (str(command["child_run_id"]),),
-                )
-            ).fetchone()
-            if child is None or str(child["status"]) != terminal_status:
-                raise RunIdentityConflict(
-                    "child_not_terminal",
-                    "terminal inbox status must match the authoritative child run",
-                )
-            signal_id = self._stable_child_signal_id(operation_id, "terminal")
-            payload_json = canonical_json(
-                {"status": terminal_status, "value": value}
-            )
-            existing = await (
-                await db.execute(
-                    """SELECT * FROM execution_child_signal_inbox
-                    WHERE operation_id=? AND kind='terminal'""",
-                    (operation_id,),
-                )
-            ).fetchone()
-            if existing is not None:
-                if str(existing["payload_json"]) != payload_json:
-                    raise IdempotencyConflict(
-                        "child_terminal_conflict",
-                        "terminal signal replay differs from the first outcome",
-                    )
-                await db.commit()
-                return self._row_to_child_signal(existing)
-            now = float(self._clock())
-            await db.execute(
-                """INSERT INTO execution_child_signal_inbox(
-                signal_id,schema_version,operation_id,parent_run_id,command_id,
-                child_run_id,kind,payload_json,created_at,updated_at
-                ) VALUES(?,1,?,?,?,?, 'terminal',?,?,?)""",
-                (
-                    signal_id,
-                    operation_id,
-                    str(command["parent_run_id"]),
-                    str(command["command_id"]),
-                    str(command["child_run_id"]),
-                    payload_json,
-                    now,
-                    now,
-                ),
+            record = await self._enqueue_child_terminal_signal_tx(
+                db, operation_id, terminal_status=terminal_status, value=value
             )
             self._fault("child_terminal_before_commit")
-            row = await (
-                await db.execute(
-                    "SELECT * FROM execution_child_signal_inbox WHERE signal_id=?",
-                    (signal_id,),
-                )
-            ).fetchone()
-            assert row is not None
             await db.commit()
-            return self._row_to_child_signal(row)
+            return record
         except BaseException:
             if db.in_transaction:
                 await db.rollback()
@@ -3258,36 +3810,97 @@ class SqliteExecutionUnitOfWork:
         finally:
             await db.close()
 
-    async def acknowledge_child_signal(self, signal_id: str) -> ChildSignalRecord:
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+    async def _acknowledge_child_signal_tx(
+        self, db: aiosqlite.Connection, signal_id: str, *, now: float
+    ) -> ChildSignalRecord:
+        row = await (
+            await db.execute(
+                "SELECT * FROM execution_child_signal_inbox WHERE signal_id=?",
+                (signal_id,),
+            )
+        ).fetchone()
+        if row is None:
+            raise RunNotFound("child_signal_not_found", "child signal does not exist")
+        if row["delivered_at"] is None:
+            await db.execute(
+                """UPDATE execution_child_signal_inbox
+                SET delivered_at=?,updated_at=? WHERE signal_id=?
+                AND delivered_at IS NULL""",
+                (now, now, signal_id),
+            )
             row = await (
                 await db.execute(
                     "SELECT * FROM execution_child_signal_inbox WHERE signal_id=?",
                     (signal_id,),
                 )
             ).fetchone()
-            if row is None:
-                raise RunNotFound("child_signal_not_found", "child signal does not exist")
-            if row["delivered_at"] is None:
-                now = float(self._clock())
-                await db.execute(
-                    """UPDATE execution_child_signal_inbox
-                    SET delivered_at=?,updated_at=? WHERE signal_id=?
-                    AND delivered_at IS NULL""",
-                    (now, now, signal_id),
-                )
-                self._fault("child_signal_ack_before_commit")
-                row = await (
-                    await db.execute(
-                        "SELECT * FROM execution_child_signal_inbox WHERE signal_id=?",
-                        (signal_id,),
-                    )
-                ).fetchone()
-                assert row is not None
+            assert row is not None
+        return self._row_to_child_signal(row)
+
+    async def acknowledge_child_signal(self, signal_id: str) -> ChildSignalRecord:
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            record = await self._acknowledge_child_signal_tx(
+                db, signal_id, now=float(self._clock())
+            )
+            self._fault("child_signal_ack_before_commit")
             await db.commit()
-            return self._row_to_child_signal(row)
+            return record
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def apply_child_signal_and_ack(
+        self,
+        signal_id: str,
+        *,
+        expected_continuation_version: int,
+        continuation_payload: Mapping[str, Any],
+        event: RunEventCandidate,
+        deliveries: Sequence[DeliverySpec] = (),
+    ) -> tuple[ChildSignalRecord, ContinuationRecord, RunEvent]:
+        """Apply a child signal to its parent boundary and ack it atomically."""
+
+        self._validate_continuation_version(expected_continuation_version)
+        payload_json = self._continuation_payload_json(continuation_payload)
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            inbox = await (
+                await db.execute(
+                    "SELECT * FROM execution_child_signal_inbox WHERE signal_id=?",
+                    (signal_id,),
+                )
+            ).fetchone()
+            if inbox is None:
+                raise RunNotFound("child_signal_not_found", "child signal does not exist")
+            run = await self._continuation_run_tx(db, str(inbox["parent_run_id"]))
+            now = float(self._clock())
+            continuation, _ = await self._save_continuation_tx(
+                db,
+                run=run,
+                expected_version=expected_continuation_version,
+                payload_json=payload_json,
+                decision=None,
+                now=now,
+            )
+            self._fault("child_apply_after_boundary")
+            stored_event, _, _ = await self._append_event_tx(
+                db,
+                run,
+                expected_version=int(run["version"]),
+                event=event,
+                deliveries=deliveries,
+            )
+            self._fault("child_apply_after_event")
+            record = await self._acknowledge_child_signal_tx(db, signal_id, now=now)
+            self._fault("child_apply_before_commit")
+            await db.commit()
+            return record, continuation, stored_event
         except BaseException:
             if db.in_transaction:
                 await db.rollback()
