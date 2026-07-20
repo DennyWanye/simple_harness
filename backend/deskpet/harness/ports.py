@@ -183,9 +183,13 @@ class DecisionSignal:
     run_id: str
     decision_id: str
     response: Mapping[str, Any]
+    nonce: str | None = None
+    version: int | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "response", MappingProxyType(copy.deepcopy(dict(self.response))))
+        if self.version is not None and self.version < 0:
+            raise ValueError("decision signal version must be non-negative")
 
 
 @dataclass(frozen=True)
