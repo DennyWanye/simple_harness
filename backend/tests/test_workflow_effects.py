@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import ast
+import inspect
+import textwrap
 import threading
 from pathlib import Path
 
@@ -506,3 +509,179 @@ async def test_timeout_late_result_under_stale_fence_becomes_orphan(tmp_path):
         outcome=NormalizedToolOutcome.failure("late_failure", "too late"),
     )
     assert unchanged.status is EffectStatus.COMMITTED
+
+
+async def _open_effect_transaction(path: Path) -> aiosqlite.Connection:
+    db = await aiosqlite.connect(path)
+    db.row_factory = aiosqlite.Row
+    await db.execute("PRAGMA foreign_keys=ON")
+    await db.execute("BEGIN IMMEDIATE")
+    return db
+
+
+@pytest.mark.asyncio
+async def test_connection_aware_effect_primitives_share_caller_transaction(tmp_path):
+    path = tmp_path / "workflow.db"
+    store = WorkflowRunStore(path)
+    _, fence = await _new_run(store, "caller-transaction")
+    journal = EffectJournal(path)
+    prepared = _prepared("call", {"query": "atomic"})
+
+    db = await _open_effect_transaction(path)
+    try:
+        begun = await journal.begin_tx(
+            db,
+            fence,
+            node_execution_id="node-exec",
+            workflow_name="workflow",
+            workflow_version="1",
+            node_id="node",
+            logical_effect_key="logical",
+            prepared=prepared,
+            policy=_policy(),
+        )
+        assert begun.action is EffectAction.EXECUTE
+        await db.rollback()
+    finally:
+        await db.close()
+
+    assert await journal.get(begun.effect.effect_id) is None
+
+    begun = await _begin(journal, fence, prepared, "node-exec")
+    db = await _open_effect_transaction(path)
+    try:
+        settled = await journal.commit_tx(
+            db,
+            fence,
+            begun.effect.effect_id,
+            NormalizedToolOutcome.success({"ok": True}),
+        )
+        assert settled.status is EffectStatus.COMMITTED
+        await db.rollback()
+    finally:
+        await db.close()
+
+    assert (await journal.get(begun.effect.effect_id)).status is EffectStatus.RUNNING
+    uncertain = await journal.mark_uncertain(fence, begun.effect.effect_id, "transport timeout")
+    assert uncertain.status is EffectStatus.UNCERTAIN
+
+    db = await _open_effect_transaction(path)
+    try:
+        reconciled = await journal.reconcile_tx(
+            db,
+            fence,
+            begun.effect.effect_id,
+            NormalizedToolOutcome.success({"ok": True}),
+            evidence_verified=True,
+        )
+        assert reconciled.status is EffectStatus.COMMITTED
+        await db.rollback()
+    finally:
+        await db.close()
+
+    assert (await journal.get(begun.effect.effect_id)).status is EffectStatus.UNCERTAIN
+
+
+@pytest.mark.asyncio
+async def test_legacy_effect_facades_delegate_to_connection_aware_primitives(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "workflow.db"
+    store = WorkflowRunStore(path)
+    _, fence = await _new_run(store, "legacy-parity")
+    journal = EffectJournal(path)
+    calls = {"begin": 0, "commit": 0, "reconcile": 0}
+
+    original_begin = EffectJournal.begin_tx
+    original_commit = EffectJournal.commit_tx
+    original_reconcile = EffectJournal.reconcile_tx
+
+    async def observed_begin(self, *args, **kwargs):
+        calls["begin"] += 1
+        return await original_begin(self, *args, **kwargs)
+
+    async def observed_commit(self, *args, **kwargs):
+        calls["commit"] += 1
+        return await original_commit(self, *args, **kwargs)
+
+    async def observed_reconcile(self, *args, **kwargs):
+        calls["reconcile"] += 1
+        return await original_reconcile(self, *args, **kwargs)
+
+    monkeypatch.setattr(EffectJournal, "begin_tx", observed_begin)
+    monkeypatch.setattr(EffectJournal, "commit_tx", observed_commit)
+    monkeypatch.setattr(EffectJournal, "reconcile_tx", observed_reconcile)
+
+    first = await _begin(journal, fence, _prepared("call-a", {"query": "a"}), "node-a")
+    committed = await journal.commit(
+        fence,
+        first.effect.effect_id,
+        NormalizedToolOutcome.success({"value": "a"}),
+    )
+    second = await _begin(journal, fence, _prepared("call-b", {"query": "b"}), "node-b")
+    await journal.mark_uncertain(fence, second.effect.effect_id, "unknown")
+    reconciled = await journal.reconcile(
+        fence,
+        second.effect.effect_id,
+        NormalizedToolOutcome.failure("not_applied", "verified absent"),
+    )
+
+    assert calls == {"begin": 2, "commit": 1, "reconcile": 1}
+    assert committed.status is EffectStatus.COMMITTED
+    assert reconciled.status is EffectStatus.FAILED
+    assert (await journal.get(first.effect.effect_id)).outcome == committed.outcome
+    assert (await journal.get(second.effect.effect_id)).outcome == reconciled.outcome
+
+
+def test_effect_tx_primitives_never_manage_connection_or_transaction_boundaries():
+    tree = ast.parse(textwrap.dedent(inspect.getsource(EffectJournal)))
+    methods = {
+        node.name: node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    tx_methods = {name: method for name, method in methods.items() if name.endswith("_tx")}
+    assert {
+        "reserve_targets_tx",
+        "begin_tx",
+        "commit_tx",
+        "reconcile_tx",
+        "finalize_late_tx",
+        "_reconcile_write_tx",
+    } <= tx_methods.keys()
+
+    forbidden_calls: list[str] = []
+    forbidden_sql: list[str] = []
+    for method_name, method in tx_methods.items():
+        for node in ast.walk(method):
+            if isinstance(node, ast.Call):
+                function = node.func
+                if isinstance(function, ast.Attribute) and function.attr in {
+                    "_connect",
+                    "commit",
+                    "rollback",
+                    "close",
+                }:
+                    forbidden_calls.append(f"{method_name}:{function.attr}")
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                if node.value.lstrip().upper().startswith("BEGIN"):
+                    forbidden_sql.append(method_name)
+
+    assert forbidden_calls == []
+    assert forbidden_sql == []
+
+    expected_delegations = {
+        "reserve_targets": "reserve_targets_tx",
+        "_begin": "begin_tx",
+        "commit": "commit_tx",
+        "reconcile": "reconcile_tx",
+        "finalize_late": "finalize_late_tx",
+        "_reconcile_write": "_reconcile_write_tx",
+    }
+    for facade_name, primitive_name in expected_delegations.items():
+        called_attributes = {
+            node.func.attr
+            for node in ast.walk(methods[facade_name])
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        }
+        assert primitive_name in called_attributes

@@ -768,8 +768,12 @@ class EffectJournal:
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
-            await self._assert_fence(db, fence)
-            await self._reserve_targets(db, fence, prepared, "prepared", ttl_seconds)
+            await self.reserve_targets_tx(
+                db,
+                fence,
+                prepared,
+                ttl_seconds=ttl_seconds,
+            )
             await db.commit()
         except BaseException:
             if db.in_transaction:
@@ -777,6 +781,19 @@ class EffectJournal:
             raise
         finally:
             await db.close()
+
+    async def reserve_targets_tx(
+        self,
+        db: aiosqlite.Connection,
+        fence: RunFence,
+        prepared: PreparedToolCall,
+        *,
+        ttl_seconds: float = 90.0,
+    ) -> None:
+        """Reserve prepared targets on the caller-owned transaction."""
+
+        await self._assert_fence(db, fence)
+        await self._reserve_targets(db, fence, prepared, "prepared", ttl_seconds)
 
     async def begin(
         self,
@@ -1696,6 +1713,60 @@ class EffectJournal:
         denial_artifact_refs: Sequence[str] = (),
         resource_budget_kind: str | None = None,
     ) -> BeginEffectResult:
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            result = await self.begin_tx(
+                db,
+                fence,
+                node_execution_id=node_execution_id,
+                workflow_name=workflow_name,
+                workflow_version=workflow_version,
+                node_id=node_id,
+                logical_effect_key=logical_effect_key,
+                prepared=prepared,
+                policy=policy,
+                reuse_checkpoint=reuse_checkpoint,
+                reservation_ttl_seconds=reservation_ttl_seconds,
+                budget_reservation=budget_reservation,
+                record_budget_denial=record_budget_denial,
+                denial_artifact_refs=denial_artifact_refs,
+                resource_budget_kind=resource_budget_kind,
+            )
+            await db.commit()
+            return result
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def begin_tx(
+        self,
+        db: aiosqlite.Connection,
+        fence: RunFence,
+        *,
+        node_execution_id: str,
+        workflow_name: str,
+        workflow_version: str,
+        node_id: str,
+        logical_effect_key: str,
+        prepared: PreparedToolCall,
+        policy: EffectPolicy,
+        reuse_checkpoint: CheckpointEffectLink | None = None,
+        reservation_ttl_seconds: float = 90.0,
+        budget_reservation: tuple[str, int, int, int, str] | None = None,
+        record_budget_denial: bool = False,
+        denial_artifact_refs: Sequence[str] = (),
+        resource_budget_kind: str | None = None,
+    ) -> BeginEffectResult:
+        """Claim or reuse an effect on the caller-owned transaction.
+
+        The caller owns transaction boundaries and connection lifetime.  This
+        primitive deliberately performs no BEGIN, commit, rollback, or close.
+        """
+
         fingerprint = effect_fingerprint(
             workflow_name=workflow_name,
             workflow_version=workflow_version,
@@ -1705,10 +1776,8 @@ class EffectJournal:
             args_hash=prepared.args_hash,
             policy_version=policy.version,
         )
-        db = await self._connect()
+        await self._assert_fence(db, fence)
         try:
-            await db.execute("BEGIN IMMEDIATE")
-            await self._assert_fence(db, fence)
             existing = await (
                 await db.execute(
                     "SELECT * FROM workflow_effects WHERE run_id=? AND effect_fingerprint=?",
@@ -1784,7 +1853,6 @@ class EffectJournal:
                     "INSERT OR IGNORE INTO workflow_node_effects(node_execution_id,effect_id) VALUES(?,?)",
                     (node_execution_id, existing["effect_id"]),
                 )
-                await db.commit()
                 record = self._record(existing)
                 return BeginEffectResult(self._existing_action(record.status), record)
 
@@ -1802,7 +1870,6 @@ class EffectJournal:
                     "INSERT OR IGNORE INTO workflow_node_effects(node_execution_id,effect_id) VALUES(?,?)",
                     (node_execution_id, reusable["effect_id"]),
                 )
-                await db.commit()
                 return BeginEffectResult(EffectAction.REUSE, self._record(reusable))
 
             effect_id = hashlib.sha256(
@@ -1931,7 +1998,6 @@ class EffectJournal:
                                 (effect_id,),
                             )
                         ).fetchone()
-                        await db.commit()
                         assert row is not None
                         return BeginEffectResult(EffectAction.FAILED, self._record(row))
                     raise BudgetReservationExceeded(
@@ -2000,15 +2066,10 @@ class EffectJournal:
             row = await (
                 await db.execute("SELECT * FROM workflow_effects WHERE effect_id=?", (effect_id,))
             ).fetchone()
-            await db.commit()
             assert row is not None
             return BeginEffectResult(EffectAction.EXECUTE, self._record(row))
         except BaseException:
-            if db.in_transaction:
-                await db.rollback()
             raise
-        finally:
-            await db.close()
 
     async def commit(
         self,
@@ -2022,47 +2083,74 @@ class EffectJournal:
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
-            await self._assert_fence(db, fence)
-            row = await self._effect_for_update(db, fence.run_id, effect_id)
-            if int(row["lease_epoch"]) != fence.lease_epoch:
-                raise StaleRunFence(f"effect belongs to stale epoch: {effect_id}")
-            if row["status"] == EffectStatus.COMMITTED:
-                await db.commit()
-                return self._record(row)
-            if row["status"] not in {EffectStatus.RUNNING, EffectStatus.UNCERTAIN}:
-                raise EffectStateConflict(f"cannot commit effect in state {row['status']}")
-            target_status = EffectStatus.COMMITTED if outcome.state is ToolOutcomeState.SUCCESS else EffectStatus.FAILED
-            if target_status is EffectStatus.COMMITTED:
-                await self._assert_staged_targets_committed(db, row)
-            now = self._clock()
-            await db.execute(
-                """UPDATE workflow_effects SET status=?,outcome_json=?,receipt_ref=?,
-                artifact_refs_json=?,updated_at=?,ended_at=? WHERE effect_id=?""",
-                (
-                    target_status.value,
-                    canonical_json(outcome.to_dict()),
-                    receipt_ref,
-                    canonical_json(list(artifact_refs)),
-                    now,
-                    now,
-                    effect_id,
-                ),
+            result = await self.commit_tx(
+                db,
+                fence,
+                effect_id,
+                outcome,
+                receipt_ref=receipt_ref,
+                artifact_refs=artifact_refs,
             )
-            reservation_status = "committed" if target_status is EffectStatus.COMMITTED else "released"
-            await db.execute(
-                """UPDATE workflow_target_reservations SET status=?,lease_expires_at=NULL,updated_at=?
-                WHERE reservation_key IN (SELECT reservation_key FROM workflow_effect_targets WHERE effect_id=?)""",
-                (reservation_status, now, effect_id),
-            )
-            result = await self._effect_for_update(db, fence.run_id, effect_id)
             await db.commit()
-            return self._record(result)
+            return result
         except BaseException:
             if db.in_transaction:
                 await db.rollback()
             raise
         finally:
             await db.close()
+
+    async def commit_tx(
+        self,
+        db: aiosqlite.Connection,
+        fence: RunFence,
+        effect_id: str,
+        outcome: NormalizedToolOutcome,
+        *,
+        receipt_ref: str | None = None,
+        artifact_refs: Sequence[str] = (),
+    ) -> EffectRecord:
+        """Settle an effect on the caller-owned transaction."""
+
+        await self._assert_fence(db, fence)
+        row = await self._effect_for_update(db, fence.run_id, effect_id)
+        if int(row["lease_epoch"]) != fence.lease_epoch:
+            raise StaleRunFence(f"effect belongs to stale epoch: {effect_id}")
+        if row["status"] == EffectStatus.COMMITTED:
+            return self._record(row)
+        if row["status"] not in {EffectStatus.RUNNING, EffectStatus.UNCERTAIN}:
+            raise EffectStateConflict(f"cannot commit effect in state {row['status']}")
+        target_status = (
+            EffectStatus.COMMITTED
+            if outcome.state is ToolOutcomeState.SUCCESS
+            else EffectStatus.FAILED
+        )
+        if target_status is EffectStatus.COMMITTED:
+            await self._assert_staged_targets_committed(db, row)
+        now = self._clock()
+        await db.execute(
+            """UPDATE workflow_effects SET status=?,outcome_json=?,receipt_ref=?,
+            artifact_refs_json=?,updated_at=?,ended_at=? WHERE effect_id=?""",
+            (
+                target_status.value,
+                canonical_json(outcome.to_dict()),
+                receipt_ref,
+                canonical_json(list(artifact_refs)),
+                now,
+                now,
+                effect_id,
+            ),
+        )
+        reservation_status = (
+            "committed" if target_status is EffectStatus.COMMITTED else "released"
+        )
+        await db.execute(
+            """UPDATE workflow_target_reservations SET status=?,lease_expires_at=NULL,updated_at=?
+            WHERE reservation_key IN (SELECT reservation_key FROM workflow_effect_targets WHERE effect_id=?)""",
+            (reservation_status, now, effect_id),
+        )
+        result = await self._effect_for_update(db, fence.run_id, effect_id)
+        return self._record(result)
 
     async def mark_upstream_started(
         self, fence: RunFence, effect_id: str
@@ -2290,6 +2378,36 @@ class EffectJournal:
         *,
         evidence_verified: bool = False,
     ) -> EffectRecord:
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            result = await self.reconcile_tx(
+                db,
+                fence,
+                effect_id,
+                outcome,
+                evidence_verified=evidence_verified,
+            )
+            await db.commit()
+            return result
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def reconcile_tx(
+        self,
+        db: aiosqlite.Connection,
+        fence: RunFence,
+        effect_id: str,
+        outcome: NormalizedToolOutcome | None,
+        *,
+        evidence_verified: bool = False,
+    ) -> EffectRecord:
+        """Reconcile an uncertain effect on the caller-owned transaction."""
+
         if outcome is None or outcome.state is ToolOutcomeState.MALFORMED:
             status = EffectStatus.UNCERTAIN
             normalized = outcome or NormalizedToolOutcome.malformed("reconciliation produced no outcome")
@@ -2302,7 +2420,7 @@ class EffectJournal:
         else:
             status = EffectStatus.UNCERTAIN
             normalized = NormalizedToolOutcome.malformed("success lacks verified reconciliation evidence")
-        return await self._reconcile_write(fence, effect_id, status, normalized)
+        return await self._reconcile_write_tx(db, fence, effect_id, status, normalized)
 
     async def finalize_late(
         self,
@@ -2318,48 +2436,69 @@ class EffectJournal:
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
-            row = await self._effect_for_update(db, fence.run_id, effect_id)
-            if row["args_hash"] != args_hash or int(row["lease_epoch"]) != lease_epoch:
-                raise EffectStateConflict("late result identity does not match the prepared effect")
-            current = await (
-                await db.execute(
-                    """SELECT 1 FROM workflow_runs WHERE run_id=? AND lease_owner=? AND lease_epoch=?
-                    AND run_version=? AND status='running'""",
-                    (fence.run_id, fence.owner, fence.lease_epoch, fence.run_version),
-                )
-            ).fetchone()
-            now = self._clock()
-            if row["status"] in {EffectStatus.COMMITTED, EffectStatus.FAILED}:
-                await db.commit()
-                return self._record(row)
-            if current is None:
-                status = EffectStatus.LATE_ORPHAN
-            elif outcome.state is ToolOutcomeState.SUCCESS:
-                status = EffectStatus.COMMITTED
-                await self._assert_staged_targets_committed(db, row)
-            else:
-                status = EffectStatus.FAILED
-            await db.execute(
-                """UPDATE workflow_effects SET status=?,outcome_json=?,updated_at=?,ended_at=?
-                WHERE effect_id=?""",
-                (status.value, canonical_json(outcome.to_dict()), now, now, effect_id),
+            result = await self.finalize_late_tx(
+                db,
+                fence,
+                effect_id=effect_id,
+                args_hash=args_hash,
+                lease_epoch=lease_epoch,
+                outcome=outcome,
             )
-            if status in {EffectStatus.COMMITTED, EffectStatus.FAILED}:
-                reservation_status = "committed" if status is EffectStatus.COMMITTED else "released"
-                await db.execute(
-                    """UPDATE workflow_target_reservations SET status=?,lease_expires_at=NULL,updated_at=?
-                    WHERE reservation_key IN (SELECT reservation_key FROM workflow_effect_targets WHERE effect_id=?)""",
-                    (reservation_status, now, effect_id),
-                )
-            result = await self._effect_for_update(db, fence.run_id, effect_id)
             await db.commit()
-            return self._record(result)
+            return result
         except BaseException:
             if db.in_transaction:
                 await db.rollback()
             raise
         finally:
             await db.close()
+
+    async def finalize_late_tx(
+        self,
+        db: aiosqlite.Connection,
+        fence: RunFence,
+        *,
+        effect_id: str,
+        args_hash: str,
+        lease_epoch: int,
+        outcome: NormalizedToolOutcome,
+    ) -> EffectRecord:
+        """Finalize a late result on the caller-owned transaction."""
+
+        row = await self._effect_for_update(db, fence.run_id, effect_id)
+        if row["args_hash"] != args_hash or int(row["lease_epoch"]) != lease_epoch:
+            raise EffectStateConflict("late result identity does not match the prepared effect")
+        current = await (
+            await db.execute(
+                """SELECT 1 FROM workflow_runs WHERE run_id=? AND lease_owner=? AND lease_epoch=?
+                AND run_version=? AND status='running'""",
+                (fence.run_id, fence.owner, fence.lease_epoch, fence.run_version),
+            )
+        ).fetchone()
+        now = self._clock()
+        if row["status"] in {EffectStatus.COMMITTED, EffectStatus.FAILED}:
+            return self._record(row)
+        if current is None:
+            status = EffectStatus.LATE_ORPHAN
+        elif outcome.state is ToolOutcomeState.SUCCESS:
+            status = EffectStatus.COMMITTED
+            await self._assert_staged_targets_committed(db, row)
+        else:
+            status = EffectStatus.FAILED
+        await db.execute(
+            """UPDATE workflow_effects SET status=?,outcome_json=?,updated_at=?,ended_at=?
+            WHERE effect_id=?""",
+            (status.value, canonical_json(outcome.to_dict()), now, now, effect_id),
+        )
+        if status in {EffectStatus.COMMITTED, EffectStatus.FAILED}:
+            reservation_status = "committed" if status is EffectStatus.COMMITTED else "released"
+            await db.execute(
+                """UPDATE workflow_target_reservations SET status=?,lease_expires_at=NULL,updated_at=?
+                WHERE reservation_key IN (SELECT reservation_key FROM workflow_effect_targets WHERE effect_id=?)""",
+                (reservation_status, now, effect_id),
+            )
+        result = await self._effect_for_update(db, fence.run_id, effect_id)
+        return self._record(result)
 
     async def record_target_state(
         self,
@@ -2490,40 +2629,56 @@ class EffectJournal:
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
-            await self._assert_fence(db, fence)
-            row = await self._effect_for_update(db, fence.run_id, effect_id)
-            if row["status"] in {EffectStatus.COMMITTED, EffectStatus.FAILED}:
-                if row["status"] == status:
-                    await db.commit()
-                    return self._record(row)
-                raise EffectStateConflict(
-                    f"terminal effect {effect_id} cannot transition from {row['status']} to {status.value}"
-                )
-            if status is EffectStatus.COMMITTED:
-                await self._assert_staged_targets_committed(db, row)
-            now = self._clock()
-            ended_at = now if status in {EffectStatus.COMMITTED, EffectStatus.FAILED} else None
-            await db.execute(
-                """UPDATE workflow_effects SET status=?,outcome_json=?,updated_at=?,ended_at=?
-                WHERE effect_id=?""",
-                (status.value, canonical_json(outcome.to_dict()), now, ended_at, effect_id),
+            result = await self._reconcile_write_tx(
+                db,
+                fence,
+                effect_id,
+                status,
+                outcome,
             )
-            if status in {EffectStatus.COMMITTED, EffectStatus.FAILED}:
-                reservation_status = "committed" if status is EffectStatus.COMMITTED else "released"
-                await db.execute(
-                    """UPDATE workflow_target_reservations SET status=?,lease_expires_at=NULL,updated_at=?
-                    WHERE reservation_key IN (SELECT reservation_key FROM workflow_effect_targets WHERE effect_id=?)""",
-                    (reservation_status, now, effect_id),
-                )
-            result = await self._effect_for_update(db, fence.run_id, effect_id)
             await db.commit()
-            return self._record(result)
+            return result
         except BaseException:
             if db.in_transaction:
                 await db.rollback()
             raise
         finally:
             await db.close()
+
+    async def _reconcile_write_tx(
+        self,
+        db: aiosqlite.Connection,
+        fence: RunFence,
+        effect_id: str,
+        status: EffectStatus,
+        outcome: NormalizedToolOutcome,
+    ) -> EffectRecord:
+        await self._assert_fence(db, fence)
+        row = await self._effect_for_update(db, fence.run_id, effect_id)
+        if row["status"] in {EffectStatus.COMMITTED, EffectStatus.FAILED}:
+            if row["status"] == status:
+                return self._record(row)
+            raise EffectStateConflict(
+                f"terminal effect {effect_id} cannot transition from {row['status']} to {status.value}"
+            )
+        if status is EffectStatus.COMMITTED:
+            await self._assert_staged_targets_committed(db, row)
+        now = self._clock()
+        ended_at = now if status in {EffectStatus.COMMITTED, EffectStatus.FAILED} else None
+        await db.execute(
+            """UPDATE workflow_effects SET status=?,outcome_json=?,updated_at=?,ended_at=?
+            WHERE effect_id=?""",
+            (status.value, canonical_json(outcome.to_dict()), now, ended_at, effect_id),
+        )
+        if status in {EffectStatus.COMMITTED, EffectStatus.FAILED}:
+            reservation_status = "committed" if status is EffectStatus.COMMITTED else "released"
+            await db.execute(
+                """UPDATE workflow_target_reservations SET status=?,lease_expires_at=NULL,updated_at=?
+                WHERE reservation_key IN (SELECT reservation_key FROM workflow_effect_targets WHERE effect_id=?)""",
+                (reservation_status, now, effect_id),
+            )
+        result = await self._effect_for_update(db, fence.run_id, effect_id)
+        return self._record(result)
 
     async def _reserve_targets(
         self,
