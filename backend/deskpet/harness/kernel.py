@@ -656,7 +656,7 @@ class RunKernel:
                 if self._decisions is None:
                     raise RuntimeError("decision store is unavailable for an authorized tool")
                 authorizations.append(
-                    await self._decisions.consume(
+                    await self._decisions.inspect(
                         GrantConsume(
                             grant_id=grant_ref.grant_id,
                             decision_id=grant_ref.decision_id,

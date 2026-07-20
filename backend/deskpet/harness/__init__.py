@@ -5,6 +5,7 @@ from .bootstrap import HarnessHealth, HarnessManifest, HarnessRuntime, build_har
 from .context import HostContextFactory, RunContext
 from .child_runs import ChildRunCoordinator
 from .decisions import DecisionStore, DecisionWakeupCache
+from .effects import SqliteExecutionEffectJournal
 from .kernel import (
     CancelReceipt,
     HostContext,
@@ -78,6 +79,7 @@ __all__ = [
     "RunRequest",
     "RecoveryBatch",
     "SessionDBProjectionSink",
+    "SqliteExecutionEffectJournal",
     "SignalReceipt",
     "SinkRegistration",
     "TTSProjectionSink",

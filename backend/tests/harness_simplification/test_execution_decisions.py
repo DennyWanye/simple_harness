@@ -29,6 +29,13 @@ from deskpet.execution import (
     stable_decision_grant_id,
 )
 from deskpet.harness import DecisionStore, DecisionWakeupCache
+from deskpet.harness.effects import SqliteExecutionEffectJournal
+from deskpet.harness.tool_executor import (
+    PreparedExecutionCall,
+    ToolOutcome,
+    ToolOutcomeStatus,
+)
+from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.workflows.store import SqliteExecutionUnitOfWork
 
 
@@ -176,6 +183,113 @@ async def test_permission_survives_restart_and_grant_is_consumed_once(tmp_path):
         ).fetchone()
     assert row[0:2] == ("consumed", 1)
     assert row[2] is not None
+
+
+@pytest.mark.asyncio
+async def test_effect_prepare_rolls_back_grant_and_attempt_together(tmp_path):
+    path = tmp_path / "workflow.db"
+    clock = [100.0]
+    uow = SqliteExecutionUnitOfWork(path, clock=lambda: clock[0])
+    await uow.create(_run())
+    store = DecisionStore(uow, DecisionWakeupCache())
+    request = _permission()
+    await store.open(request, _actor(), expected_run_version=0)
+    _, authorization = await store.resolve(_signal(request), _actor())
+    assert authorization is not None
+
+    call = PreparedExecutionCall(
+        tool_name="file_write",
+        model_args={"path": "report.md", "content": "ready"},
+        call_id="call-1",
+        effect_id="effect-1",
+        capability_hash=CAPABILITY_HASH,
+        scope_hash=SCOPE_HASH,
+        requires_authorization=True,
+        recoverable_effect=True,
+    )
+    assert call.args_hash == ARGS_HASH
+    context = ToolExecutionContext(
+        scope_id="scope-a",
+        session_id="session-a",
+        request_id="request-run-decision",
+        root_run_id="run-decision",
+        turn_id="turn-run-decision",
+        capability_hash=CAPABILITY_HASH,
+        scope_hash=SCOPE_HASH,
+        run_id="run-decision",
+        call_id="call-1",
+        effect_id="effect-1",
+        trace_id="trace-run-decision",
+    )
+
+    def crash(point: str) -> None:
+        if point == "effect_prepare_before_commit":
+            raise RuntimeError("simulated process loss")
+
+    failing = SqliteExecutionEffectJournal(
+        path,
+        clock=lambda: clock[0],
+        fault_injector=crash,
+    )
+    with pytest.raises(RuntimeError, match="simulated process loss"):
+        await failing.prepare_effect(call, context, authorization)
+
+    async with aiosqlite.connect(path) as db:
+        grant = await (
+            await db.execute(
+                "SELECT status,grant_version FROM execution_grants WHERE grant_id=?",
+                (authorization.grant_id,),
+            )
+        ).fetchone()
+        effect_count = await (
+            await db.execute(
+                "SELECT COUNT(*) FROM execution_effects WHERE effect_id=?",
+                (call.effect_id,),
+            )
+        ).fetchone()
+    assert grant == ("issued", 0)
+    assert effect_count == (0,)
+
+    healthy = SqliteExecutionEffectJournal(path, clock=lambda: clock[0])
+    await healthy.prepare_effect(call, context, authorization)
+    in_flight = await healthy.get_outcome(call.effect_id)
+    assert in_flight is not None
+    assert in_flight.status is ToolOutcomeStatus.UNKNOWN
+    assert in_flight.reconciliation == "required"
+    replayed_in_flight = await healthy.prepare_effect(call, context, authorization)
+    assert replayed_in_flight == in_flight
+    async with aiosqlite.connect(path) as db:
+        grant = await (
+            await db.execute(
+                "SELECT status,grant_version FROM execution_grants WHERE grant_id=?",
+                (authorization.grant_id,),
+            )
+        ).fetchone()
+        effect = await (
+            await db.execute(
+                "SELECT status FROM execution_effects WHERE effect_id=?",
+                (call.effect_id,),
+            )
+        ).fetchone()
+        attempt_count = await (
+            await db.execute(
+                "SELECT COUNT(*) FROM execution_effect_attempts WHERE effect_id=?",
+                (call.effect_id,),
+            )
+        ).fetchone()
+    assert grant == ("consumed", 1)
+    assert effect == ("running",)
+    assert attempt_count == (1,)
+
+    succeeded = ToolOutcome(
+        call.call_id,
+        call.effect_id,
+        ToolOutcomeStatus.SUCCEEDED,
+        value={"written": True},
+    )
+    await healthy.finalize_effect(call, context, succeeded, late=False)
+    replayed_success = await healthy.prepare_effect(call, context, authorization)
+    assert replayed_success == succeeded
 
 
 @pytest.mark.asyncio

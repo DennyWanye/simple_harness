@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import ast
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import aiosqlite
 import pytest
 import pytest_asyncio
 
@@ -28,6 +30,7 @@ from deskpet.harness.drivers.react import (
     ReactFinal,
     ReactToolBatch,
 )
+from deskpet.harness.effects import SqliteExecutionEffectJournal
 from deskpet.harness.child_runs import ChildRunCoordinator
 from deskpet.harness.kernel import (
     HostContext,
@@ -56,6 +59,7 @@ from deskpet.harness.tool_executor import (
     UnifiedToolExecutor,
 )
 from deskpet.tools.capabilities import ToolExecutionContext
+from deskpet.tools.registry import ToolRegistry
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
 
 
@@ -305,25 +309,6 @@ class PermissionCollaborator:
 class NoEffects:
     async def get_outcome(self, effect_id):
         return None
-
-
-class AuthorizedRegistry:
-    def __init__(self) -> None:
-        self.authorizations = []
-
-    def is_concurrency_safe(self, tool_name):
-        return False
-
-    async def execute_call(self, call, context, *, authorization=None, **kwargs):
-        assert authorization is not None
-        assert authorization.binding_error(call, context) is None
-        self.authorizations.append(authorization)
-        return ToolOutcome(
-            call.call_id,
-            call.effect_id,
-            ToolOutcomeStatus.SUCCEEDED,
-            value={"written": 1},
-        )
 
 
 @pytest_asyncio.fixture
@@ -668,14 +653,35 @@ async def test_kernel_permission_grant_is_consumed_once_before_effect(tmp_path) 
     ledger = ExecutionLedger(uow)
     await ledger.initialize()
     decision_store = DecisionStore(uow, DecisionWakeupCache())
+    journal = SqliteExecutionEffectJournal(path)
     collaborator = PermissionCollaborator()
     driver = ReActDriver(
         collaborator,
         SqliteReactCommandBoundaryStore(path),
         LedgerBoundaryPromoter(ledger),
-        NoEffects(),
+        journal,
     )
-    registry = AuthorizedRegistry()
+    invocations = []
+
+    def write_handler(args, context):
+        invocations.append((dict(args), context.run_id))
+        return json.dumps({"ok": True, "value": {"written": 1}})
+
+    registry = ToolRegistry()
+    registry.register(
+        "write_probe",
+        "test",
+        {
+            "name": "write_probe",
+            "description": "write fixture",
+            "parameters": {"type": "object", "properties": {}},
+        },
+        lambda args, task_id: {"written": 1},
+        context_handler=write_handler,
+        permission_category="write_file",
+        concurrency_safe=False,
+        outcome_parser_id="json_error_envelope_v1",
+    )
     value = RunKernel(
         ledger=ledger,
         router=RegisteredRouter(
@@ -684,7 +690,7 @@ async def test_kernel_permission_grant_is_consumed_once_before_effect(tmp_path) 
         ),
         drivers=[RegisteredDriver("react", driver)],
         decision_store=decision_store,
-        tool_executor=UnifiedToolExecutor(registry),
+        tool_executor=UnifiedToolExecutor(registry, journal=journal),
     )
     handle = await value.start(
         RunRequest("write", "request-permission", "turn-permission"),
@@ -714,8 +720,19 @@ async def test_kernel_permission_grant_is_consumed_once_before_effect(tmp_path) 
     assert receipt.accepted is True
     assert record.status is RunStatus.COMPLETED
     assert remaining[-1].kind == "final"
-    assert len(registry.authorizations) == 1
+    assert len(invocations) == 1
     assert collaborator.tool_executions == 1
+    async with aiosqlite.connect(path) as db:
+        grant_status = await (
+            await db.execute("SELECT status FROM execution_grants")
+        ).fetchone()
+        effect_status = await (
+            await db.execute(
+                "SELECT status FROM execution_effects WHERE effect_id=?", ("e" * 64,)
+            )
+        ).fetchone()
+    assert grant_status == ("consumed",)
+    assert effect_status == ("succeeded",)
 
 
 def test_kernel_surface_is_six_operations_and_has_no_product_branches() -> None:

@@ -150,5 +150,12 @@ class DecisionStore:
     ) -> DecisionAuthorization:
         return await self._durable.consume_authorization(request, actor)
 
+    async def inspect(
+        self,
+        request: GrantConsume,
+        actor: ActorContext,
+    ) -> DecisionAuthorization:
+        return await self._durable.inspect_authorization(request, actor)
+
 
 __all__ = ["DecisionStore", "DecisionWakeupCache"]

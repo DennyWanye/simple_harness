@@ -1517,6 +1517,90 @@ class SqliteExecutionUnitOfWork:
         finally:
             await db.close()
 
+    async def _inspect_authorization_tx(
+        self,
+        db: aiosqlite.Connection,
+        request: GrantConsume,
+        actor: ActorContext,
+    ) -> aiosqlite.Row:
+        grant_row = await (
+            await db.execute(
+                "SELECT * FROM execution_grants WHERE grant_id=?", (request.grant_id,)
+            )
+        ).fetchone()
+        if grant_row is None:
+            raise GrantNotFound(
+                "grant_not_found", f"execution grant does not exist: {request.grant_id}"
+            )
+        decision_row = await (
+            await db.execute(
+                "SELECT * FROM execution_decisions WHERE decision_id=?",
+                (grant_row["decision_id"],),
+            )
+        ).fetchone()
+        assert decision_row is not None
+        decision = self._row_to_decision(decision_row)
+        run_row = await (
+            await db.execute(
+                "SELECT * FROM execution_runs WHERE run_id=?", (decision.run_id,)
+            )
+        ).fetchone()
+        assert run_row is not None
+        run = self._authorize_run_row(
+            run_row,
+            expected_session_id=request.expected_session_id,
+            actor=actor,
+        )
+        expected = (
+            request.grant_id,
+            request.decision_id,
+            request.run_id,
+            request.call_id,
+            request.effect_id,
+            request.tool_name,
+            request.args_hash,
+            request.capability_hash,
+            request.scope_hash,
+            request.decision_nonce,
+        )
+        actual = (
+            str(grant_row["grant_id"]),
+            str(grant_row["decision_id"]),
+            str(grant_row["run_id"]),
+            str(grant_row["call_id"]),
+            str(grant_row["effect_id"]),
+            str(grant_row["tool_name"]),
+            str(grant_row["args_hash"]),
+            str(grant_row["capability_hash"]),
+            str(grant_row["scope_hash"]),
+            decision.request.nonce,
+        )
+        if expected != actual or request.capability_hash != run.context.capability_hash:
+            raise GrantConsumeConflict(
+                "grant_binding_mismatch",
+                "grant nonce/run/effect/capability/scope fence differs",
+            )
+        if int(grant_row["grant_version"]) != request.expected_version:
+            raise GrantConsumeConflict(
+                "stale_grant_version",
+                f"expected grant version {request.expected_version}, "
+                f"found {grant_row['grant_version']}",
+            )
+        if run.status is RunStatus.CANCEL_REQUESTED or run.status in TERMINAL_RUN_STATUSES:
+            raise GrantConsumeConflict(
+                "run_not_executable", "cancelled or terminal run rejects authorization"
+            )
+        if decision.status is not DecisionStatus.ALLOWED:
+            raise GrantConsumeConflict(
+                "grant_not_authorized", "grant decision is not allowed"
+            )
+        if str(grant_row["status"]) != "issued":
+            raise GrantConsumeConflict(
+                "grant_already_consumed",
+                "duplicate, expired, or revoked authorization was rejected",
+            )
+        return grant_row
+
     async def consume_authorization(
         self,
         request: GrantConsume,
@@ -1526,82 +1610,7 @@ class SqliteExecutionUnitOfWork:
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
-            grant_row = await (
-                await db.execute(
-                    "SELECT * FROM execution_grants WHERE grant_id=?", (request.grant_id,)
-                )
-            ).fetchone()
-            if grant_row is None:
-                raise GrantNotFound(
-                    "grant_not_found", f"execution grant does not exist: {request.grant_id}"
-                )
-            decision_row = await (
-                await db.execute(
-                    "SELECT * FROM execution_decisions WHERE decision_id=?",
-                    (grant_row["decision_id"],),
-                )
-            ).fetchone()
-            assert decision_row is not None
-            decision = self._row_to_decision(decision_row)
-            run_row = await (
-                await db.execute(
-                    "SELECT * FROM execution_runs WHERE run_id=?", (decision.run_id,)
-                )
-            ).fetchone()
-            assert run_row is not None
-            run = self._authorize_run_row(
-                run_row,
-                expected_session_id=request.expected_session_id,
-                actor=actor,
-            )
-            expected = (
-                request.grant_id,
-                request.decision_id,
-                request.run_id,
-                request.call_id,
-                request.effect_id,
-                request.tool_name,
-                request.args_hash,
-                request.capability_hash,
-                request.scope_hash,
-                request.decision_nonce,
-            )
-            actual = (
-                str(grant_row["grant_id"]),
-                str(grant_row["decision_id"]),
-                str(grant_row["run_id"]),
-                str(grant_row["call_id"]),
-                str(grant_row["effect_id"]),
-                str(grant_row["tool_name"]),
-                str(grant_row["args_hash"]),
-                str(grant_row["capability_hash"]),
-                str(grant_row["scope_hash"]),
-                decision.request.nonce,
-            )
-            if expected != actual or request.capability_hash != run.context.capability_hash:
-                raise GrantConsumeConflict(
-                    "grant_binding_mismatch",
-                    "grant nonce/run/effect/capability/scope fence differs",
-                )
-            if int(grant_row["grant_version"]) != request.expected_version:
-                raise GrantConsumeConflict(
-                    "stale_grant_version",
-                    f"expected grant version {request.expected_version}, "
-                    f"found {grant_row['grant_version']}",
-                )
-            if run.status is RunStatus.CANCEL_REQUESTED or run.status in TERMINAL_RUN_STATUSES:
-                raise GrantConsumeConflict(
-                    "run_not_executable", "cancelled or terminal run rejects authorization"
-                )
-            if decision.status is not DecisionStatus.ALLOWED:
-                raise GrantConsumeConflict(
-                    "grant_not_authorized", "grant decision is not allowed"
-                )
-            if str(grant_row["status"]) != "issued":
-                raise GrantConsumeConflict(
-                    "grant_already_consumed",
-                    "duplicate, expired, or revoked authorization was rejected",
-                )
+            grant_row = await self._inspect_authorization_tx(db, request, actor)
             if float(grant_row["expires_at"]) <= now:
                 cursor = await db.execute(
                     """UPDATE execution_grants SET status='expired',
@@ -2695,6 +2704,25 @@ class SqliteExecutionUnitOfWork:
                     RunRef(child.run_id, ref.expected_session_id), actor, child
                 )
             return children
+        finally:
+            await db.close()
+
+    async def inspect_authorization(
+        self,
+        request: GrantConsume,
+        actor: ActorContext,
+    ) -> DecisionAuthorization:
+        """Validate an issued grant without consuming it before Effect UoW."""
+
+        now = float(self._clock())
+        db = await self._connect()
+        try:
+            grant_row = await self._inspect_authorization_tx(db, request, actor)
+            if float(grant_row["expires_at"]) <= now:
+                raise GrantConsumeConflict(
+                    "grant_not_authorized", "authorization is denied or expired"
+                )
+            return self._row_to_authorization(grant_row)
         finally:
             await db.close()
 

@@ -2065,11 +2065,15 @@ class ToolRegistry:
             # A durable implementation consumes the one-shot grant and starts
             # the attempt in this single operation/UoW.
             try:
-                await journal.prepare_effect(call, context, typed_authorization)
+                replayed_outcome = await journal.prepare_effect(
+                    call, context, typed_authorization
+                )
             except Exception as exc:  # noqa: BLE001
                 return ToolOutcome.failed(
                     call, f"effect_prepare_failed:{type(exc).__name__}"
                 )
+            if replayed_outcome is not None:
+                return replayed_outcome
 
         clean_args = call.args_copy()
 

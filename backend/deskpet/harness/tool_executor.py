@@ -153,7 +153,7 @@ class EffectJournal(Protocol):
         call: PreparedExecutionCall,
         context: ToolExecutionContext,
         authorization: Optional[DecisionAuthorization],
-    ) -> None: ...
+    ) -> Optional[ToolOutcome]: ...
 
     async def mark_unknown(
         self,

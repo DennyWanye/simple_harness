@@ -182,6 +182,12 @@ class ExecutionDecisionStore(Protocol):
         actor: ActorContext,
     ) -> DecisionAuthorization: ...
 
+    async def inspect_authorization(
+        self,
+        request: GrantConsume,
+        actor: ActorContext,
+    ) -> DecisionAuthorization: ...
+
 
 @runtime_checkable
 class ExecutionUnitOfWork(
