@@ -20,9 +20,22 @@ from .router import (
     RouteRequest,
     RouteUnavailable,
 )
+from .kernel import (
+    CancelReceipt,
+    DriverTerminalCandidate,
+    HostContext,
+    RunHandle,
+    RunKernel,
+    RunRequest,
+    RunSignal,
+    SignalReceipt,
+)
 
 __all__ = [
     "DecisionAuthorization",
+    "CancelReceipt",
+    "DriverTerminalCandidate",
+    "HostContext",
     "HostContextFactory",
     "LegacyPreparedCallAdapter",
     "PreparedExecutionCall",
@@ -31,7 +44,12 @@ __all__ = [
     "RouteProfile",
     "RouteRequest",
     "RouteUnavailable",
+    "RunHandle",
+    "RunKernel",
+    "RunRequest",
+    "RunSignal",
     "RunContext",
+    "SignalReceipt",
     "ToolOutcome",
     "ToolOutcomeStatus",
     "UnifiedToolExecutor",
