@@ -6,16 +6,13 @@ import asyncio
 import time
 import uuid
 from collections.abc import AsyncIterator, Mapping, Sequence
-from dataclasses import dataclass, field, replace
-from types import MappingProxyType
+from dataclasses import replace
 
 from deskpet.execution.contracts import (
-    ActiveRunCapacityExceeded,
     ActorContext,
     AuthorizationError,
     AttachmentPolicy,
     GrantConsume,
-    JsonValue,
     LiveCursor,
     OutcomeStatus,
     PersistenceLevel,
@@ -35,9 +32,12 @@ from deskpet.execution.contracts import (
     DecisionSignal as DurableDecisionSignal,
 )
 from deskpet.execution.ports import ExecutionUnitOfWork
+from deskpet.workflows.store import RecoveryLease
 
 from .context import HostContextFactory
 from .child_runs import ChildLauncher, ChildRunCoordinator
+from .contracts import CancelReceipt, HostContext, RegisteredDriver, RunHandle, RunRequest, SignalReceipt, driver_catalog
+from .live_index import BoundedLiveIndex, LiveRun, LiveStreamOverflow
 from .ports import (
     CancelAcknowledgedCandidate,
     ChildAcceptedCandidate,
@@ -56,88 +56,8 @@ from .ports import (
     ToolOutcomesSignal,
 )
 from .router import RegisteredRouter, RouteRequest as RoutingRequest
+from .runtime import DriverRuntime
 from .tool_executor import UnifiedToolExecutor
-
-
-@dataclass(frozen=True, slots=True)
-class RunRequest:
-    text: str
-    request_id: str
-    turn_id: str
-    venue: str = "text"
-    mode: str = "auto"
-    workspace_context: bool = False
-    proposed_tools: tuple[str, ...] = ()
-    payload: Mapping[str, JsonValue] = field(default_factory=dict)
-
-
-@dataclass(frozen=True, slots=True)
-class HostContext:
-    session_id: str
-    principal_id: str
-    auth_epoch: int
-    capability_hash: str
-    available_capabilities: frozenset[str]
-    provider_plan: tuple[str, ...]
-    trace_id: str
-    workspace: str | None = None
-    write_scope_root: str | None = None
-
-    def actor(self, *, root_run_id: str | None = None) -> ActorContext:
-        return ActorContext(
-            principal_id=self.principal_id,
-            session_id=self.session_id,
-            auth_epoch=self.auth_epoch,
-            root_run_id=root_run_id,
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class RunHandle:
-    ref: RunRef
-    root_run_id: str
-    driver_kind: str
-    profile_key: str
-
-
-@dataclass(frozen=True, slots=True)
-class SignalReceipt:
-    accepted: bool
-    duplicate: bool = False
-    reason: str = ""
-
-
-@dataclass(frozen=True, slots=True)
-class CancelReceipt:
-    run_id: str
-    status: RunStatus
-    acknowledged: bool
-
-
-@dataclass(frozen=True, slots=True)
-class RegisteredDriver:
-    """Immutable registration metadata around the one canonical Driver port."""
-
-    kind: str
-    driver: Driver
-    durable_from_start: bool = False
-    atomic_start: bool = False
-
-    def __post_init__(self) -> None:
-        if not self.kind.strip():
-            raise ValueError("driver kind is required")
-        if self.atomic_start and not self.durable_from_start:
-            raise ValueError("atomic-start drivers must be durable from start")
-
-
-@dataclass(slots=True)
-class _ActiveRun:
-    actor: ActorContext
-    record: RunRecord | None = None
-    events: list[RunEvent] = field(default_factory=list)
-    subscribers: list[asyncio.Queue[RunEvent | None]] = field(default_factory=list)
-    task: asyncio.Task[None] | None = None
-    start_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 class RunKernel:
@@ -156,43 +76,27 @@ class RunKernel:
         child_scheduler_owner: str = "run-kernel",
         max_live_runs: int = 4096,
     ) -> None:
-        catalog: dict[str, RegisteredDriver] = {}
-        for registration in drivers:
-            if registration.kind in catalog:
-                raise ValueError(f"duplicate driver kind: {registration.kind}")
-            catalog[registration.kind] = registration
-        if not catalog:
-            raise ValueError("at least one driver is required")
-        if max_live_runs < 1:
-            raise ValueError("max_live_runs must be positive")
         self._uow = uow
         self._router = router
-        self._drivers = MappingProxyType(catalog)
+        self._drivers = driver_catalog(tuple(drivers))
         self._context_factory = context_factory or HostContextFactory()
         self._child_runs = child_runs
         self._child_launcher = child_launcher
         self._tool_executor = tool_executor
         self._child_scheduler_owner = child_scheduler_owner
-        self._max_live_runs = max_live_runs
-        self._active: dict[str, _ActiveRun] = {}
-        self._lock = asyncio.Lock()
-
-    def _evict_terminal_live_run(self) -> bool:
-        for run_id, active in tuple(self._active.items()):
-            if active.subscribers or (active.task is not None and not active.task.done()):
-                continue
-            if active.record is None or active.record.status not in TERMINAL_RUN_STATUSES:
-                continue
-            self._active.pop(run_id, None)
-            return True
-        return False
-
-    def _ensure_live_capacity(self) -> None:
-        if len(self._active) < self._max_live_runs or self._evict_terminal_live_run():
-            return
-        raise ActiveRunCapacityExceeded(
-            "active_run_capacity_exceeded",
-            "Kernel live index is full; close or finish a live run before starting another",
+        self._live = BoundedLiveIndex(max_runs=max_live_runs)
+        self._active = self._live._runs
+        self._lock = self._live.lock
+        self._recovery_owner = f"kernel:{uuid.uuid4().hex}"
+        self._runtime = DriverRuntime(
+            uow=uow,
+            live=self._live,
+            query=self._query,
+            finalize=self._finalize,
+            child_runs=child_runs,
+            child_launcher=child_launcher,
+            tool_executor=tool_executor,
+            child_scheduler_owner=child_scheduler_owner,
         )
 
     @staticmethod
@@ -281,6 +185,7 @@ class RunKernel:
         expected_version: int,
         status: RunStatus,
         event: RunEventCandidate,
+        recovery_lease: RecoveryLease | None = None,
     ) -> RunEvent:
         if record.persistence_level is PersistenceLevel.DURABLE:
             return (
@@ -289,6 +194,7 @@ class RunKernel:
                     expected_version=expected_version,
                     terminal_status=status,
                     event=event,
+                    recovery_lease=recovery_lease,
                 )
             ).event
         async with self._lock:
@@ -338,8 +244,8 @@ class RunKernel:
         async with self._lock:
             active = self._active.get(run_id)
             if active is None:
-                self._ensure_live_capacity()
-                active = _ActiveRun(actor=actor)
+                self._live.ensure_capacity()
+                active = LiveRun(actor=actor)
                 self._active[run_id] = active
         async with active.start_lock:
             async with self._lock:
@@ -416,10 +322,10 @@ class RunKernel:
                     raise RuntimeError(
                         "atomic-start driver did not commit a durable execution run"
                     )
-                await self._consume_candidate(registration, durable, first)
+                await self._runtime.consume_candidate(registration, durable, first)
                 async with self._lock:
                     active.task = asyncio.create_task(
-                        self._drive(registration, durable, iterator),
+                            self._runtime.drive(registration, durable, iterator),
                         name=f"deskpet-run:{run_id}",
                     )
                 result_record = durable
@@ -440,7 +346,7 @@ class RunKernel:
                 async with self._lock:
                     if created and (active.task is None or active.task.done()):
                         active.task = asyncio.create_task(
-                            self._drive(
+                            self._runtime.drive(
                                 registration,
                                 result_record,
                                 registration.driver.start(
@@ -467,15 +373,29 @@ class RunKernel:
         actor: ActorContext,
         cursor: int | None = None,
     ) -> AsyncIterator[RunEvent]:
-        await self._query(ref, actor)
-        queue: asyncio.Queue[RunEvent | None] = asyncio.Queue()
+        record = await self._query(ref, actor)
+        start = max(0, int(cursor or 0))
+        durable_history: tuple[RunEvent, ...] = ()
+        if isinstance(record, RunRecord) and record.persistence_level is PersistenceLevel.DURABLE:
+            durable_history = await self._uow.list_events(
+                ref.run_id, after_durable_seq=start
+            )
+        queue: asyncio.Queue[RunEvent | None]
         async with self._lock:
-            active = self._active.setdefault(ref.run_id, _ActiveRun(actor=actor))
-            start = max(0, int(cursor or 0))
-            history = tuple(active.events[start:])
-            terminal_in_history = any(self._is_terminal_event(event) for event in history)
+            active = self._active.get(ref.run_id) or self._live.add(ref.run_id, actor)
+            live_history = self._live.history(active, after_live_seq=start)
+            seen = {event.event_id for event in durable_history}
+            history = durable_history + tuple(
+                event for event in live_history if event.event_id not in seen
+            )
+            terminal_in_history = any(
+                self._runtime.is_terminal_event(event) for event in history
+            )
+            queue = self._live.subscribe(active)
             if not terminal_in_history:
-                active.subscribers.append(queue)
+                pass
+            else:
+                active.subscribers.discard(queue)
         try:
             for event in history:
                 yield event
@@ -485,12 +405,14 @@ class RunKernel:
                 event = await queue.get()
                 if event is None:
                     break
+                if isinstance(event, LiveStreamOverflow):
+                    raise event
                 yield event
         finally:
             async with self._lock:
                 current = self._active.get(ref.run_id)
                 if current is not None and queue in current.subscribers:
-                    current.subscribers.remove(queue)
+                    current.subscribers.discard(queue)
 
     async def signal(
         self,
@@ -549,7 +471,7 @@ class RunKernel:
                 version=signal.version,
             )
         try:
-            await self._consume(
+            await self._runtime.consume(
                 registration,
                 record,
                 registration.driver.signal(driver_signal),
@@ -557,7 +479,9 @@ class RunKernel:
         except TerminalConflict:
             current = await self._query(ref, actor)
             if isinstance(current, RunRecord) and current.status in TERMINAL_RUN_STATUSES:
-                return SignalReceipt(True, duplicate=True, reason="terminal_already_settled")
+                return SignalReceipt(
+                    True, duplicate=True, reason="terminal_already_settled"
+                )
             raise
         return SignalReceipt(True)
 
@@ -605,13 +529,13 @@ class RunKernel:
             }:
                 await self.cancel(child_ref, actor, f"parent_cancel:{ref.run_id}")
         registration = self._driver(updated)
-        acknowledged = await self._consume(
+        acknowledged = await self._runtime.consume(
             registration,
             updated,
             registration.driver.cancel(updated.run_id, reason),
         )
         if acknowledged:
-            await self._commit_terminal(
+            await self._runtime.commit_terminal(
                 updated,
                 registration.kind,
                 DriverTerminalCandidate(
@@ -635,13 +559,23 @@ class RunKernel:
             raise RuntimeError("legacy runs require the compatibility recovery adapter")
         registration = self._driver(record)
         async with self._lock:
-            active = self._active.setdefault(ref.run_id, _ActiveRun(actor=actor))
+            current = self._active.get(ref.run_id)
+            if current is not None and current.task is not None and not current.task.done():
+                return RunHandle(
+                    ref, record.context.root_run_id, registration.kind, record.spec.profile_key
+                )
+        lease = await self._uow.claim_recovery(
+            record.run_id, owner=self._recovery_owner
+        )
+        async with self._lock:
+            active = self._active.get(ref.run_id) or self._live.add(ref.run_id, actor)
             if active.task is None or active.task.done():
                 active.task = asyncio.create_task(
-                    self._drive(
+                    self._runtime.drive_recovery(
                         registration,
                         record,
                         registration.driver.recover(record.run_id),
+                        lease,
                     ),
                     name=f"deskpet-recover:{ref.run_id}",
                 )
@@ -655,8 +589,7 @@ class RunKernel:
             active = self._active.get(ref.run_id)
             if active is None:
                 return
-            for subscriber in tuple(active.subscribers):
-                subscriber.put_nowait(None)
+            self._live.finish(active)
             active.subscribers.clear()
             if isinstance(record, RunRecord) and record.status in {
                 RunStatus.COMPLETED,
@@ -692,354 +625,6 @@ class RunKernel:
                 "capability_hash": host.capability_hash,
             },
         )
-
-    @staticmethod
-    def _is_terminal_event(event: RunEvent) -> bool:
-        return event.kind == "final" and event.status in {
-            OutcomeStatus.SUCCEEDED,
-            OutcomeStatus.FAILED,
-            OutcomeStatus.CANCELLED,
-        }
-
-    async def _emit(self, event: RunEvent) -> None:
-        terminal = self._is_terminal_event(event)
-        async with self._lock:
-            active = self._active.get(event.run_id)
-            if active is None:
-                return
-            if not any(item.event_id == event.event_id for item in active.events):
-                active.events.append(event)
-            subscribers = tuple(active.subscribers)
-            if terminal:
-                active.subscribers.clear()
-        for queue in subscribers:
-            queue.put_nowait(event)
-            if terminal:
-                queue.put_nowait(None)
-
-    async def _emit_live(
-        self,
-        record: RunRecord,
-        candidate: RunEventCandidate,
-    ) -> None:
-        async with self._lock:
-            active = self._active.setdefault(
-                record.run_id,
-                _ActiveRun(
-                    actor=ActorContext(
-                        principal_id=record.context.principal_id,
-                        session_id=record.context.session_id,
-                        auth_epoch=record.context.auth_epoch,
-                        root_run_id=record.context.root_run_id,
-                    )
-                ),
-            )
-            live_seq = len(active.events) + 1
-            event = RunEvent(
-                event_id=f"live:{record.run_id}:{live_seq}",
-                run_id=record.run_id,
-                root_run_id=record.context.root_run_id,
-                session_id=record.context.session_id,
-                durable_seq=None,
-                live_cursor=LiveCursor(f"kernel:{record.run_id}", live_seq),
-                candidate=candidate,
-                created_at=time.time(),
-            )
-            active.events.append(event)
-            subscribers = tuple(active.subscribers)
-        for queue in subscribers:
-            queue.put_nowait(event)
-
-    async def _drive(
-        self,
-        registration: RegisteredDriver,
-        record: RunRecord,
-        candidates: AsyncIterator[DriverCandidate],
-    ) -> None:
-        try:
-            await self._consume(registration, record, candidates)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            current = await self._query(
-                RunRef(record.run_id, record.context.session_id),
-                ActorContext(
-                    principal_id=record.context.principal_id,
-                    session_id=record.context.session_id,
-                    auth_epoch=record.context.auth_epoch,
-                    root_run_id=record.context.root_run_id,
-                ),
-            )
-            if isinstance(current, RunRecord) and current.status in TERMINAL_RUN_STATUSES:
-                return
-            try:
-                await self._commit_terminal(
-                    record,
-                    registration.kind,
-                    DriverTerminalCandidate(
-                        run_id=record.run_id,
-                        status="failed",
-                        error=f"{type(exc).__name__}: {exc}",
-                    ),
-                )
-            except TerminalConflict:
-                # Another driver/child terminal candidate won the same CAS.
-                return
-
-    async def _consume(
-        self,
-        registration: RegisteredDriver,
-        record: RunRecord,
-        candidates: AsyncIterator[DriverCandidate],
-    ) -> bool:
-        acknowledged = False
-        async for candidate in candidates:
-            acknowledged = (
-                await self._consume_candidate(registration, record, candidate)
-                or acknowledged
-            )
-        return acknowledged
-
-    async def _consume_candidate(
-        self,
-        registration: RegisteredDriver,
-        record: RunRecord,
-        candidate: DriverCandidate,
-    ) -> bool:
-        if candidate.run_id != record.run_id:
-            raise ValueError("driver candidate run binding mismatch")
-        if isinstance(candidate, (ExecuteTools, OpenDecision, DelegateRun)):
-            if record.persistence_level is PersistenceLevel.EPHEMERAL:
-                actor = ActorContext(
-                    principal_id=record.context.principal_id,
-                    session_id=record.context.session_id,
-                    auth_epoch=record.context.auth_epoch,
-                    root_run_id=record.context.root_run_id,
-                )
-                durable = await self._uow.query(
-                    RunRef(record.run_id, record.context.session_id), actor
-                )
-                if not isinstance(durable, RunRecord):
-                    raise RuntimeError("durable boundary did not promote its execution run")
-                async with self._lock:
-                    active = self._active.get(record.run_id)
-                    if active is not None:
-                        active.record = None
-                record = durable
-        if isinstance(candidate, PersistedEventCandidate):
-            await self._emit(candidate.event)
-            return False
-        if isinstance(candidate, DriverTerminalCandidate):
-            await self._commit_terminal(record, registration.kind, candidate)
-            return False
-        if isinstance(candidate, ExecuteTools):
-            event = self._event_candidate(registration.kind, candidate)
-            assert event is not None
-            await self._emit_live(record, event)
-            if self._tool_executor is None:
-                raise RuntimeError("tool executor is unavailable")
-            authorizations = []
-            refs = candidate.grant_refs or (None,) * len(candidate.calls)
-            actor = ActorContext(
-                principal_id=record.context.principal_id,
-                session_id=record.context.session_id,
-                auth_epoch=record.context.auth_epoch,
-                root_run_id=record.context.root_run_id,
-            )
-            for call, context, grant_ref in zip(
-                candidate.calls, candidate.contexts, refs
-            ):
-                if grant_ref is None:
-                    authorizations.append(None)
-                    continue
-                authorizations.append(
-                    await self._uow.inspect_authorization(
-                        GrantConsume(
-                            grant_id=grant_ref.grant_id,
-                            decision_id=grant_ref.decision_id,
-                            decision_nonce=grant_ref.decision_nonce,
-                            run_id=record.run_id,
-                            expected_session_id=record.context.session_id,
-                            call_id=call.call_id,
-                            effect_id=call.effect_id,
-                            tool_name=call.tool_name,
-                            args_hash=call.args_hash,
-                            capability_hash=context.capability_hash,
-                            scope_hash=context.scope_hash,
-                            expected_version=grant_ref.version,
-                        ),
-                        actor,
-                    )
-                )
-            outcomes = await self._tool_executor.execute_batch(
-                candidate.calls,
-                candidate.contexts,
-                authorizations=authorizations,
-            )
-            return await self._consume(
-                registration,
-                record,
-                registration.driver.signal(
-                    ToolOutcomesSignal(
-                        candidate.run_id,
-                        candidate.command_id,
-                        tuple(outcomes),
-                    )
-                ),
-            )
-        if isinstance(candidate, DelegateRun) and self._child_runs is not None:
-            await self._child_runs.submit(record, candidate)
-            if self._child_launcher is not None:
-                await self._child_runs.run_scheduler_once(
-                    self._child_launcher,
-                    owner=self._child_scheduler_owner,
-                )
-            await self._drain_child_signals(registration, record)
-        acknowledged = isinstance(candidate, CancelAcknowledgedCandidate)
-        event = self._event_candidate(registration.kind, candidate)
-        if event is not None:
-            await self._emit_live(record, event)
-        return acknowledged
-
-    async def _drain_child_signals(
-        self,
-        registration: RegisteredDriver,
-        record: RunRecord,
-    ) -> None:
-        if self._child_runs is None:
-            return
-        for delivery in await self._child_runs.pending_signals(record.run_id):
-            await self._consume(
-                registration,
-                record,
-                registration.driver.signal(delivery.signal),
-            )
-            await self._child_runs.acknowledge_signal(delivery.record.signal_id)
-
-    @staticmethod
-    def _event_candidate(
-        driver_kind: str,
-        candidate: DriverCandidate,
-    ) -> RunEventCandidate | None:
-        if isinstance(candidate, TokenCandidate):
-            return RunEventCandidate(
-                event_key=f"token:{uuid.uuid4().hex}",
-                kind="transcript",
-                status=OutcomeStatus.SUCCEEDED,
-                driver_kind=driver_kind,
-                payload={"text": candidate.content, "token_kind": candidate.kind},
-            )
-        if isinstance(candidate, ProviderFallbackCandidate):
-            return RunEventCandidate(
-                event_key=f"fallback:{candidate.from_provider}:{candidate.to_provider}",
-                kind="provider_fallback",
-                status=OutcomeStatus.ACCEPTED,
-                driver_kind=driver_kind,
-                payload={
-                    "from_provider": candidate.from_provider,
-                    "to_provider": candidate.to_provider,
-                    "reason": candidate.reason,
-                },
-            )
-        if isinstance(candidate, ExecuteTools):
-            return RunEventCandidate(
-                event_key=f"tools:{candidate.command_id}",
-                kind="tool_requested",
-                status=OutcomeStatus.WAITING,
-                driver_kind=driver_kind,
-                correlation={"command_id": candidate.command_id},
-                payload={"tools": [call.tool_name for call in candidate.calls]},
-            )
-        if isinstance(candidate, OpenDecision):
-            return RunEventCandidate(
-                event_key=f"decision:{candidate.decision_id}",
-                kind="decision",
-                status=OutcomeStatus.WAITING,
-                driver_kind=driver_kind,
-                correlation={
-                    "command_id": candidate.command_id,
-                    "decision_id": candidate.decision_id,
-                },
-                payload={"kind": candidate.kind, "prompt": dict(candidate.prompt)},
-            )
-        if isinstance(candidate, DelegateRun):
-            return RunEventCandidate(
-                event_key=f"delegate:{candidate.command_id}",
-                kind="delegate_requested",
-                status=OutcomeStatus.WAITING,
-                driver_kind=driver_kind,
-                correlation={"command_id": candidate.command_id},
-                payload={
-                    "route_hint": candidate.route_hint,
-                    "join_policy": candidate.join_policy.value,
-                    "attachment_policy": candidate.attachment_policy.value,
-                },
-            )
-        if isinstance(candidate, ChildAcceptedCandidate):
-            return RunEventCandidate(
-                event_key=f"child:{candidate.command_id}:{candidate.child_run_id}",
-                kind="child_accepted",
-                status=OutcomeStatus.ACCEPTED,
-                driver_kind=driver_kind,
-                correlation={
-                    "command_id": candidate.command_id,
-                    "child_run_id": candidate.child_run_id,
-                },
-                payload={"join_policy": candidate.join_policy.value},
-            )
-        if isinstance(candidate, CancelAcknowledgedCandidate):
-            return RunEventCandidate(
-                event_key=f"cancel-ack:{candidate.run_id}",
-                kind="cancel_acknowledged",
-                status=OutcomeStatus.CANCELLED,
-                driver_kind=driver_kind,
-                payload={"reason": candidate.reason},
-            )
-        return None
-
-    async def _commit_terminal(
-        self,
-        record: RunRecord,
-        driver_kind: str,
-        terminal: DriverTerminalCandidate,
-    ) -> None:
-        current = await self._query(
-            RunRef(record.run_id, record.context.session_id),
-            ActorContext(
-                principal_id=record.context.principal_id,
-                session_id=record.context.session_id,
-                auth_epoch=record.context.auth_epoch,
-                root_run_id=record.context.root_run_id,
-            ),
-        )
-        if not isinstance(current, RunRecord):
-            raise RuntimeError("legacy run cannot be finalized by the new driver")
-        status = RunStatus(terminal.status)
-        outcome = {
-            RunStatus.COMPLETED: OutcomeStatus.SUCCEEDED,
-            RunStatus.FAILED: OutcomeStatus.FAILED,
-            RunStatus.CANCELLED: OutcomeStatus.CANCELLED,
-        }[status]
-        event = await self._finalize(
-            current,
-            expected_version=current.version,
-            status=status,
-            event=RunEventCandidate(
-                event_key=f"terminal:{record.run_id}",
-                kind="final",
-                status=outcome,
-                driver_kind=driver_kind,
-                correlation=dict(terminal.correlation),
-                payload={"text": terminal.content},
-                error=(
-                    None
-                    if terminal.error is None
-                    else {"code": "driver_failed", "message": terminal.error}
-                ),
-            ),
-        )
-        await self._emit(event)
-
 
 def kernel_public_operations() -> tuple[str, ...]:
     return ("start", "observe", "signal", "cancel", "recover", "close")

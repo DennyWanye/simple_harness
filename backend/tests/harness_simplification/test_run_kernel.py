@@ -506,6 +506,13 @@ async def test_driver_failure_isolated_as_run_terminal(tmp_path) -> None:
     )
     terminal = [event async for event in stream][-1]
     assert terminal.status is OutcomeStatus.FAILED
+    active = value._active[handle.ref.run_id]
+    assert active.task is None
+    assert active.subscribers == set()
+    await value.close(
+        handle.ref, host().actor(root_run_id=handle.root_run_id)
+    )
+    assert handle.ref.run_id not in value._active
 
 
 @pytest.mark.asyncio
@@ -599,6 +606,28 @@ async def test_atomic_driver_commits_before_kernel_returns_handle(tmp_path) -> N
     assert accepted.kind == "workflow.accepted"
     assert accepted.durable_seq == 1
     assert driver.starts == 1
+
+    restarted = RunKernel(
+        uow=SqliteExecutionUnitOfWork(tmp_path / "workflow.db"),
+        router=RegisteredRouter(
+            StaticClassifier("durable.default"),
+            [RouteProfile("durable.default", "workflow")],
+        ),
+        drivers=[
+            RegisteredDriver(
+                "workflow",
+                AtomicStartDriver(uow),
+                durable_from_start=True,
+                atomic_start=True,
+            )
+        ],
+    )
+    assert handle.ref.run_id not in restarted._active
+    hydrated = restarted.observe(handle.ref, actor)
+    replayed = await anext(hydrated)
+    await hydrated.aclose()
+    assert replayed.event_id == accepted.event_id
+    assert replayed.durable_seq == 1
 
 
 @pytest.mark.asyncio

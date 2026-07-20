@@ -3033,6 +3033,7 @@ class SqliteExecutionUnitOfWork:
         deliveries: Sequence[DeliverySpec] = (),
         parent_signal_operation_id: str | None = None,
         parent_signal_value: Any = None,
+        recovery_lease: RecoveryLease | None = None,
     ) -> FinalizeRunResult:
         terminal_status = RunStatus(terminal_status)
         if terminal_status not in TERMINAL_RUN_STATUSES:
@@ -3051,6 +3052,8 @@ class SqliteExecutionUnitOfWork:
             ).fetchone()
             if run is None:
                 raise RunNotFound("run_not_found", f"execution run does not exist: {run_id}")
+            if recovery_lease is not None:
+                await self._assert_recovery_fence_tx(db, recovery_lease, run_id=run_id)
             if event.driver_kind != str(run["driver_kind"]):
                 raise RunIdentityConflict(
                     "driver_event_conflict", "terminal event driver differs from run owner"
@@ -3212,6 +3215,7 @@ class SqliteExecutionUnitOfWork:
         terminal_status: RunStatus,
         event: RunEventCandidate,
         deliveries: Sequence[DeliverySpec] = (),
+        recovery_lease: RecoveryLease | None = None,
     ) -> FinalizeRunResult:
         """Compatibility facade for the canonical finalization transaction."""
 
@@ -3221,6 +3225,7 @@ class SqliteExecutionUnitOfWork:
             terminal_status=terminal_status,
             event=event,
             deliveries=deliveries,
+            recovery_lease=recovery_lease,
         )
 
     async def finalize_child_and_enqueue_parent_signal(

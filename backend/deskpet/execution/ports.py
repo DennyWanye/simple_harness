@@ -15,7 +15,7 @@ class ExecutionUnitOfWork(Protocol):
     async def promote(self, spec: RunCreate, *, expected_version: int) -> CreateRunResult:
         ...
 
-    async def finalize(self, run_id: str, *, expected_version: int, terminal_status: RunStatus, event: RunEventCandidate, deliveries: Sequence[DeliverySpec]=()) -> FinalizeRunResult:
+    async def finalize(self, run_id: str, *, expected_version: int, terminal_status: RunStatus, event: RunEventCandidate, deliveries: Sequence[DeliverySpec]=(), recovery_lease: Any | None=None) -> FinalizeRunResult:
         ...
 
     async def request_cancel(self, run_id: str, *, expected_version: int, reason: str, event: RunEventCandidate, deliveries: Sequence[DeliverySpec]=()) -> RunRecord:
