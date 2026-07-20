@@ -48,11 +48,14 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import aiosqlite
 
 log = logging.getLogger(__name__)
+
+
+FAULT_HOOKS = frozenset({"team_claim_before_commit"})
 
 
 # ---------------------------------------------------------------------
@@ -195,12 +198,22 @@ class TeamStore:
         first ``ensure_schema``.
     """
 
-    def __init__(self, base_dir: Path | str) -> None:
+    def __init__(
+        self,
+        base_dir: Path | str,
+        *,
+        fault_injector: Callable[[str], None] | None = None,
+    ) -> None:
         self._base = Path(base_dir)
+        self._fault_injector = fault_injector
         # In-process cache of which team-id db files we've already
         # initialised, so we don't run CREATE-IF-NOT-EXISTS on every
         # method call (cheap but avoidable).
         self._initialised: set[str] = set()
+
+    def _fault(self, point: str) -> None:
+        if self._fault_injector is not None:
+            self._fault_injector(point)
 
     def cleanup_old(self, *, max_age_days: float = 7.0, max_files: int = 200) -> int:
         """删过期/超量 team ``.db`` 文件（boot 时调，防 ``<user_data>/teams/``
@@ -334,6 +347,7 @@ class TeamStore:
                 )
                 row = await cur.fetchone()
                 await cur.close()
+                self._fault("team_claim_before_commit")
                 await db.commit()
         except aiosqlite.Error as exc:
             log.warning("team_store: claim_task failed: %s", exc)

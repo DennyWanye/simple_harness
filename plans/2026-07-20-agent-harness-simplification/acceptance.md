@@ -49,7 +49,7 @@
 - 回炉约束：首次 WI-12 已证明“删除旧 `_run_chat` 再补功能”不可接受。生产切换前必须对历史/Persona/Memory/Skill/MCP、附件、Problem Pipeline、Plan/Preference、Supervisor/summary、reasoning/context/pipeline UI 事件、billing/SessionActivity、Skill Codify 建立逐项 parity 证据；任一缺失即 AC-18 FAIL。
 - 机械防漏：从旧生产 span/event/WS/SessionDB/vector/file/waiter/cancel/codify/permission 调用点自动生成 census，逐项映射新 owner 与 golden testcase；`unmapped_count` 必须为 0，不能仅依赖人工清单。
 - 单 authority 约束：现有 `SqliteExecutionUnitOfWork` 是新 durable Run 的唯一事务 authority；effect/outbox 只能暴露同 connection 的 `*_tx` 原语；不得再并存独立 Ledger、Decision SQLite、Effect SQLite、Continuation SQLite 或第二套 durable delivery worker。
-- Durable promotion：ephemeral ReAct 首次等待 Decision、写 Effect 或 ChildRun 时，durable run、continuation boundary、pending command 与 waiting event 必须同事务创建；故障注入下不能留下“有 run 无 boundary”或“有 decision 无 continuation”。
+- Durable promotion：ephemeral ReAct 首次等待 Decision、写 Effect 或 ChildRun 时，durable run、continuation boundary、首个 durable command intent 与 waiting event 必须形成可恢复边界；Decision/Effect batch 同事务创建，Child saga 则先提交完整 command intent，再由 schedule 同事务创建 child+link 并 CAS scheduled。故障注入下不能留下“有 run 无 boundary”“有 decision 无 continuation”或“有 child 无 command”。
 - 跨进程恢复：durable recover/reconciler 必须持有数据库 lease 与递增 fence epoch；进程内 active map 不能替代锁，过期 worker 的写入必须 CAS 失败。
 - 测试态不走后门：R1～R5 的新路径测试必须在隔离 v7 DB 上调用真实 activation CAS 到 generation 1；生产 DB 保持 `legacy/0`。禁止 test-only bypass flag 或 legacy phase 下创建 kernel-owned row。
 - 依赖方向：`deskpet.execution` 不得 import `deskpet.workflows`；PreparedToolCall/NormalizedToolOutcome 由 Driver/ToolRegistry 直接复用 workflow primitive，UoW 只接受中立 identity/JSON，不保留 `tools.registry → harness.tool_executor` 反向依赖。

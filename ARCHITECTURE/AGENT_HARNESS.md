@@ -34,6 +34,18 @@ production owner and is deleted by the Driver/UoW owner-collapse slice.
 Verification: full harness `199 passed, 9 xfailed`; adjacent workflow effect
 and production wiring `33 passed`; canonical registry-focused tests `45 passed`.
 
+R1 fault-matrix foundation now exports a stable set of 13 execution-UoW and
+one TeamStore crash hooks. A machine-readable matrix records each window's
+durable before/after state, restart actor, idempotency key, and per-table
+count oracle; every window is killed before commit and replayed through a
+fresh store. Focused verification is `15 passed`, with the adjacent UoW,
+decision, child, ledger, and Team suites at `101 passed`. This is an
+**in-progress R1 boundary**, not completion of all eight §4.9 combinations:
+decision→boundary, grant→effect claim, effect settle→boundary,
+child-terminal→parent-inbox, parent apply→ack, and the cross-DB Team command
+outbox still require their transaction-aware implementations. Production
+ownership remains `legacy/0`.
+
 ## Request Lifecycle
 
 The outer text-chat order is `ws_ingress -> context_assembly ->

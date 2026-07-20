@@ -83,6 +83,28 @@ from .schema import initialize_workflow_db
 _FaultInjector = Callable[[str], None]
 
 
+# Stable crash windows exercised by the R1 restart matrix.  This is kept
+# separate from migration/compatibility fault points: changing this set is a
+# durable-protocol change and therefore requires updating fault_matrix.json.
+FAULT_HOOKS = frozenset(
+    {
+        "batch_boundary_after_promotion",
+        "batch_boundary_after_continuation",
+        "batch_boundary_after_waiting_event",
+        "batch_boundary_before_commit",
+        "decision_resolve_before_commit",
+        "grant_consume_before_commit",
+        "finalize_after_outbox",
+        "finalize_before_commit",
+        "child_command_before_commit",
+        "child_schedule_after_run",
+        "child_schedule_before_commit",
+        "child_terminal_before_commit",
+        "child_signal_ack_before_commit",
+    }
+)
+
+
 @dataclass(frozen=True, slots=True)
 class ExecutionRuntimeState:
     """Durable deployment fence for execution-row ownership."""
