@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import ast
 import hashlib
+from contextlib import suppress
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -61,6 +62,7 @@ from deskpet.harness.router import ClassifiedRoute, RegisteredRouter, RouteProfi
 from deskpet.harness.tool_executor import UnifiedToolExecutor
 from deskpet.harness.runtime import DriverRuntime
 from deskpet.harness.live_index import BoundedLiveIndex
+from deskpet.harness.recovery import HarnessRecoveryCoordinator
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.tools.registry import ToolRegistry
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
@@ -335,6 +337,7 @@ class MixedLateRegistry:
     def __init__(self) -> None:
         self.outcomes = {}
         self.metadata = {}
+        self.contexts = {}
 
     def prepared_execution_policy(self, call):
         return False, True
@@ -349,6 +352,7 @@ class MixedLateRegistry:
         return OutcomeStatus.UNKNOWN if outcome.state.value == "malformed" else OutcomeStatus.SUCCEEDED
 
     async def execute_prepared(self, call, *, effect_id, **kwargs):
+        self.contexts[effect_id] = kwargs.get("execution_context")
         if call.tool_name == "late-write":
             self.metadata[effect_id] = {"late_pending": True}
             return NormalizedToolOutcome.malformed("physical call still running")
@@ -367,6 +371,12 @@ class MixedLateRegistry:
     async def observe_late_prepared(self, effect_id):
         outcome = self.outcomes.get(effect_id)
         return ("complete", outcome) if outcome is not None else ("pending", None)
+
+    def ready_late_prepared_run_ids(self):
+        return frozenset(
+            self.contexts[effect_id].run_id for effect_id in self.outcomes
+            if effect_id == "effect-2"
+        )
 
     def complete_late(self) -> None:
         self.outcomes["effect-2"] = NormalizedToolOutcome.success({"written": 2})
@@ -397,6 +407,9 @@ class PreparedRegistry:
 
     async def observe_late_prepared(self, effect_id):
         return "missing", None
+
+    def ready_late_prepared_run_ids(self):
+        return frozenset()
 
     async def execute_prepared(self, call, **kwargs):
         return NormalizedToolOutcome.success({"seen": call.final_params["value"]})
@@ -1216,6 +1229,7 @@ async def test_runtime_keeps_mixed_batch_pending_when_one_physical_call_is_late(
     await uow.initialize()
     registry, collaborator = MixedLateRegistry(), MixedLateCollaborator()
     driver = ReActDriver(collaborator, uow, registry)
+    executor = UnifiedToolExecutor(registry)
     value = RunKernel(
         uow=uow,
         router=RegisteredRouter(
@@ -1223,8 +1237,10 @@ async def test_runtime_keeps_mixed_batch_pending_when_one_physical_call_is_late(
             [RouteProfile("react.default", "react")],
         ),
         drivers=[RegisteredDriver("react", driver)],
-        tool_executor=UnifiedToolExecutor(registry),
+        tool_executor=executor,
     )
+    recovery = HarnessRecoveryCoordinator(uow, value, executor)
+    await recovery.start(interval=0.005)
     handle = await value.start(RunRequest("mixed", "req-mixed", "turn-1"), host())
     for _ in range(100):
         async with aiosqlite.connect(tmp_path / "workflow.db") as db:
@@ -1244,10 +1260,16 @@ async def test_runtime_keeps_mixed_batch_pending_when_one_physical_call_is_late(
                 "SELECT effect_id,status,receipt_ref FROM execution_effects ORDER BY effect_id"
             )
         ).fetchall()
+        late_attempt = await (
+            await db.execute(
+                "SELECT status FROM execution_effect_attempts WHERE effect_id='effect-2'"
+            )
+        ).fetchone()
     assert rows == [
         ("effect-1", "succeeded", "receipt-ready"),
-        ("effect-2", "running", None),
+        ("effect-2", "unknown", None),
     ]
+    assert late_attempt == ("unknown",)
     continuation = await uow.load_continuation(handle.ref.run_id)
     assert continuation is not None
     payload = dict(continuation.payload)
@@ -1263,7 +1285,6 @@ async def test_runtime_keeps_mixed_batch_pending_when_one_physical_call_is_late(
         await asyncio.sleep(0.01)
     assert (await registry.observe_late_prepared("effect-1"))[0] == "pending"
     registry.complete_late()
-    await value.recover(handle.ref, host().actor(root_run_id=handle.root_run_id))
     for _ in range(100):
         async with aiosqlite.connect(tmp_path / "workflow.db") as db:
             late = await (
@@ -1282,6 +1303,73 @@ async def test_runtime_keeps_mixed_batch_pending_when_one_physical_call_is_late(
     assert len(collaborator.resumes) == 1
     recovered_boundary = collaborator.resumes[0][0]
     assert [item.value["written"] for item in recovered_boundary.outcomes] == [1, 2]
+    for _ in range(100):
+        if value._active[handle.ref.run_id].task.done():
+            break
+        await asyncio.sleep(0.01)
+    assert value._active[handle.ref.run_id].task.done()
+    await recovery.close()
+
+
+@pytest.mark.asyncio
+async def test_restart_without_late_evidence_keeps_effect_unknown_fail_closed(tmp_path) -> None:
+    path = tmp_path / "workflow.db"
+    uow = SqliteExecutionUnitOfWork(path)
+    await uow.initialize()
+    registry, first_collaborator = MixedLateRegistry(), MixedLateCollaborator()
+    first_driver = ReActDriver(first_collaborator, uow, registry)
+    first = RunKernel(
+        uow=uow,
+        router=RegisteredRouter(StaticClassifier("react.default"),
+                                [RouteProfile("react.default", "react")]),
+        drivers=[RegisteredDriver("react", first_driver)],
+        tool_executor=UnifiedToolExecutor(registry),
+    )
+    handle = await first.start(RunRequest("mixed", "req-restart", "turn-1"), host())
+    for _ in range(100):
+        async with aiosqlite.connect(path) as db:
+            row = await (await db.execute(
+                "SELECT status FROM execution_effects WHERE effect_id='effect-2'"
+            )).fetchone()
+        if row == ("unknown",):
+            break
+        await asyncio.sleep(0.01)
+    assert row == ("unknown",)
+    first._active[handle.ref.run_id].task.cancel()
+    with suppress(asyncio.CancelledError):
+        await first._active[handle.ref.run_id].task
+
+    restarted_uow = SqliteExecutionUnitOfWork(path)
+    await restarted_uow.initialize()
+    restarted_collaborator = MixedLateCollaborator()
+    missing = PreparedRegistry()
+    restarted = RunKernel(
+        uow=restarted_uow,
+        router=RegisteredRouter(StaticClassifier("react.default"),
+                                [RouteProfile("react.default", "react")]),
+        drivers=[RegisteredDriver(
+            "react", ReActDriver(restarted_collaborator, restarted_uow, missing)
+        )],
+        tool_executor=UnifiedToolExecutor(missing),
+    )
+    await HarnessRecoveryCoordinator(restarted_uow, restarted).recover_pending()
+    for _ in range(300):
+        if restarted_collaborator.resumes:
+            break
+        await asyncio.sleep(0.01)
+    assert restarted_collaborator.resumes[0][0].outcome_statuses[1] is OutcomeStatus.UNKNOWN
+    async with aiosqlite.connect(path) as db:
+        stored = await (await db.execute(
+            "SELECT status,outcome_json FROM execution_effects WHERE effect_id='effect-2'"
+        )).fetchone()
+    assert stored[0] == "unknown"
+    assert "reconciliation_pending" not in stored[1]
+    for _ in range(300):
+        if restarted._active[handle.ref.run_id].task.done():
+            break
+        await asyncio.sleep(0.01)
+    assert restarted._active[handle.ref.run_id].task.done()
+    await asyncio.sleep(0.05)  # let aiosqlite worker threads publish their final close
 
 
 @pytest.mark.asyncio

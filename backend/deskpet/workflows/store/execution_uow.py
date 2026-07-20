@@ -13,7 +13,7 @@ import json
 import math
 import time
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Mapping, Sequence
 
@@ -2740,9 +2740,12 @@ class SqliteExecutionUnitOfWork:
                     int(attempt["worker_epoch"]),
                     int(existing["effect_version"]),
                     (
-                        "reuse"
+                        "reconcile"
+                        if recovery_lease is not None
+                        and str(existing["status"]) in {"running", "unknown"}
+                        else "reuse"
                         if str(existing["status"]) != "running"
-                        else "reconcile" if recovery_lease is not None else "in_flight"
+                        else "in_flight"
                     ),
                     authorization,
                 )
@@ -2798,6 +2801,74 @@ class SqliteExecutionUnitOfWork:
                 "execute",
                 authorization,
             )
+
+    async def mark_effect_unknown(
+        self,
+        effect_id: str,
+        *,
+        expected_effect_version: int,
+        attempt_no: int,
+        worker_owner: str,
+        worker_epoch: int,
+        outcome: Mapping[str, Any],
+        recovery_lease: RecoveryLease | None = None,
+    ) -> None:
+        """Durably fence an indeterminate physical write without advancing its boundary."""
+
+        if attempt_no < 1 or worker_epoch < 1 or not worker_owner:
+            raise ValueError("invalid effect attempt fence")
+        outcome_json = canonical_json(thaw_json(outcome))
+        async with self._write_transaction() as db:
+            effect = await (
+                await db.execute(
+                    "SELECT * FROM execution_effects WHERE effect_id=?", (effect_id,)
+                )
+            ).fetchone()
+            if effect is None:
+                raise RunNotFound("effect_not_found", "execution effect does not exist")
+            await self._assert_optional_recovery_fence_tx(
+                db, recovery_lease, str(effect["run_id"])
+            )
+            if str(effect["status"]) == "unknown":
+                if (
+                    int(effect["effect_version"]) == expected_effect_version + 1
+                    and str(effect["outcome_json"] or "") == outcome_json
+                ):
+                    await db.commit()
+                    return
+                raise IdempotencyConflict(
+                    "effect_unknown_conflict", "effect has another unknown intent"
+                )
+            if (
+                str(effect["status"]) != "running"
+                or int(effect["effect_version"]) != expected_effect_version
+            ):
+                raise VersionConflict(
+                    "stale_effect_version", "effect changed before unknown marking"
+                )
+            now = float(self._clock())
+            attempt = await db.execute(
+                """UPDATE execution_effect_attempts SET status='unknown',outcome_json=?,
+                updated_at=?,ended_at=? WHERE effect_id=? AND attempt_no=?
+                AND status='running' AND worker_owner=? AND worker_epoch=?""",
+                (outcome_json, now, now, effect_id, attempt_no, worker_owner, worker_epoch),
+            )
+            if attempt.rowcount != 1:
+                raise VersionConflict(
+                    "stale_effect_attempt", "effect attempt owner or epoch changed"
+                )
+            updated = await db.execute(
+                """UPDATE execution_effects SET status='unknown',outcome_json=?,
+                effect_version=effect_version+1,updated_at=?,ended_at=?
+                WHERE effect_id=? AND effect_version=? AND status='running'""",
+                (outcome_json, now, now, effect_id, expected_effect_version),
+            )
+            if updated.rowcount != 1:
+                raise VersionConflict(
+                    "stale_effect_version", "effect changed before unknown marking"
+                )
+            self._fault("effect_unknown_before_commit")
+            await db.commit()
 
     async def settle_effect_and_advance_boundary(
         self,
@@ -3925,6 +3996,17 @@ class SqliteExecutionUnitOfWork:
 
         self._validate_continuation_version(expected_continuation_version)
         payload_json = self._continuation_payload_json(continuation_payload)
+        applied_event = replace(
+            event,
+            payload=thaw_json(event.payload),
+            error=None if event.error is None else thaw_json(event.error),
+            correlation={
+                **thaw_json(event.correlation),
+                "child_signal_id": signal_id,
+                "continuation_version": expected_continuation_version + 1,
+                "continuation_payload_hash": fingerprint_json(continuation_payload),
+            },
+        )
         async with self._write_transaction() as db:
             inbox = await (
                 await db.execute(
@@ -3934,8 +4016,34 @@ class SqliteExecutionUnitOfWork:
             ).fetchone()
             if inbox is None:
                 raise RunNotFound("child_signal_not_found", "child signal does not exist")
-            await self._assert_optional_recovery_fence_tx(db, recovery_lease, str(inbox["parent_run_id"]))
-            run = await self._continuation_run_tx(db, str(inbox["parent_run_id"]))
+            parent_run_id = str(inbox["parent_run_id"])
+            await self._assert_optional_recovery_fence_tx(db, recovery_lease, parent_run_id)
+            run = await self._continuation_run_tx(db, parent_run_id)
+            if inbox["delivered_at"] is not None:
+                continuation_row = await (await db.execute(
+                    "SELECT created_at FROM execution_continuations WHERE run_id=?",
+                    (parent_run_id,),
+                )).fetchone()
+                if continuation_row is None:
+                    raise IdempotencyConflict(
+                        "child_signal_replay_conflict",
+                        "duplicate child signal lost its parent continuation",
+                    )
+                stored_event, _, _ = await self._append_event_tx(
+                    db,
+                    run,
+                    expected_version=int(run["version"]),
+                    event=applied_event,
+                    deliveries=deliveries,
+                )
+                await db.commit()
+                continuation = ContinuationRecord(
+                    run_id=parent_run_id, payload=dict(continuation_payload),
+                    version=expected_continuation_version + 1, pending_decision_id=None,
+                    created_at=float(continuation_row["created_at"]),
+                    updated_at=float(inbox["delivered_at"]),
+                )
+                return self._row_to_child_signal(inbox), continuation, stored_event
             now = float(self._clock())
             continuation, _ = await self._save_continuation_tx(
                 db,
@@ -3950,7 +4058,7 @@ class SqliteExecutionUnitOfWork:
                 db,
                 run,
                 expected_version=int(run["version"]),
-                event=event,
+                event=applied_event,
                 deliveries=deliveries,
             )
             self._fault("child_apply_after_event")

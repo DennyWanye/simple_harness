@@ -1973,6 +1973,13 @@ class ToolRegistry:
         )
         return "complete", outcome
 
+    def ready_late_prepared_run_ids(self) -> frozenset[str]:
+        return frozenset(
+            context.run_id
+            for future, _, _, context, _ in self._late_prepared_calls.values()
+            if future.done() and context is not None
+        )
+
     async def execute_prepared(
         self,
         prepared: PreparedToolCall,

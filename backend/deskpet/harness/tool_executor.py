@@ -25,6 +25,7 @@ class PreparedCallRegistry(Protocol):
     def take_prepared_execution_metadata(self, effect_id: str) -> dict[str, object]: ...
     def acknowledge_prepared_effect(self, effect_id: str) -> None: ...
     async def observe_late_prepared(self, effect_id: str) -> tuple[str, NormalizedToolOutcome | None]: ...
+    def ready_late_prepared_run_ids(self) -> frozenset[str]: ...
     async def execute_prepared(
         self,
         prepared: PreparedToolCall,
@@ -88,6 +89,9 @@ class UnifiedToolExecutor:
         self, effect_id: str
     ) -> tuple[str, NormalizedToolOutcome | None]:
         return await self._registry.observe_late_prepared(effect_id)
+
+    def ready_late_run_ids(self) -> frozenset[str]:
+        return self._registry.ready_late_prepared_run_ids()
 
     def acknowledge_effect(self, effect_id: str) -> None:
         self._registry.acknowledge_prepared_effect(effect_id)

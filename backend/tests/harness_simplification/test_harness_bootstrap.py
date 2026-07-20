@@ -190,8 +190,7 @@ async def test_recovery_enumerates_only_execution_owned_runs(tmp_path) -> None:
         resolver=Resolver(),
     )
 
-    batch = await runtime.recovery.recover_pending()
     await runtime.kernel._active["run-recover"].task
 
-    assert batch.count == 1
     assert driver.recovered == ["run-recover"]
+    await runtime.close()

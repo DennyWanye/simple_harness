@@ -69,6 +69,7 @@ class HarnessRuntime:
     child_scheduler: ChildRunScheduler | None
 
     async def close(self) -> None:
+        await self.recovery.close()
         if self.child_scheduler is not None:
             await self.child_scheduler.close()
 
@@ -140,7 +141,7 @@ async def build_harness_runtime(
         compatibility_reader="enabled" if compatibility_reader else "disabled",
         degraded_reasons=degraded_reasons,
     )
-    recovery = HarnessRecoveryCoordinator(uow, kernel)
+    recovery = HarnessRecoveryCoordinator(uow, kernel, tool_executor)
     runtime = HarnessRuntime(
         kernel=kernel,
         run_client=KernelRunClient(kernel, resolver),
@@ -151,7 +152,9 @@ async def build_harness_runtime(
     )
     if child_scheduler is not None:
         await child_scheduler.reconcile_commands_once()
-        await recovery.recover_pending()
+    await recovery.recover_pending()
+    if child_scheduler is not None:
         await child_scheduler.reconcile_signals_once()
         await child_scheduler.start()
+    await recovery.start()
     return runtime

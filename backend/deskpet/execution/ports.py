@@ -100,6 +100,9 @@ class ExecutionUnitOfWork(Protocol):
     async def settle_effect_and_advance_boundary(self, effect_id: str, **kwargs: Any) -> Any:
         ...
 
+    async def mark_effect_unknown(self, effect_id: str, **kwargs: Any) -> None:
+        ...
+
     async def read_effect_outcome(self, *, run_id: str, call_id: str, effect_id: str, args_hash: str, capability_hash: str, scope_hash: str) -> tuple[str, Mapping[str, Any], str | None, tuple[str, ...]] | None:
         ...
 

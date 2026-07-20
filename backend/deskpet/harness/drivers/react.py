@@ -611,6 +611,8 @@ class ReActDriver:
                 if effect is None:
                     continue
                 status, payload, receipt_ref, artifact_refs = effect
+                if status == 'unknown' and payload.get('reconciliation_pending'):
+                    continue
                 updates[index] = NormalizedToolOutcome.from_dict(payload)
                 statuses[index] = OutcomeStatus(status)
                 metadata[index] = {

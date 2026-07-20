@@ -503,7 +503,7 @@ async def test_accepted_and_terminal_inbox_redeliver_after_restart_until_ack(tmp
     assert accepted_once[0].record.signal_id == accepted_twice[0].record.signal_id
     uow = SqliteExecutionUnitOfWork(path, clock=clock)
     await uow.save_continuation("parent-run", 0, {"state": "waiting"})
-    await uow.apply_child_signal_and_ack(
+    applied = await uow.apply_child_signal_and_ack(
         accepted_once[0].record.signal_id,
         expected_continuation_version=1,
         continuation_payload={"state": "accepted"},
@@ -513,6 +513,28 @@ async def test_accepted_and_terminal_inbox_redeliver_after_restart_until_ack(tmp
         ),
     )
     assert await _pending(restarted, "parent-run") == ()
+    advanced = await uow.save_continuation("parent-run", 2, {"state": "advanced"})
+    assert advanced.version == 3
+    replayed = await SqliteExecutionUnitOfWork(path, clock=clock).apply_child_signal_and_ack(
+        accepted_once[0].record.signal_id,
+        expected_continuation_version=1,
+        continuation_payload={"state": "accepted"},
+        event=RunEventCandidate(
+            event_key="accepted-applied", kind="child.accepted",
+            status=OutcomeStatus.ACCEPTED, driver_kind="react",
+        ),
+    )
+    assert replayed == applied
+    with pytest.raises(IdempotencyConflict):
+        await uow.apply_child_signal_and_ack(
+            accepted_once[0].record.signal_id,
+            expected_continuation_version=1,
+            continuation_payload={"state": "foreign"},
+            event=RunEventCandidate(
+                event_key="accepted-applied", kind="child.accepted",
+                status=OutcomeStatus.ACCEPTED, driver_kind="react",
+            ),
+        )
 
     await uow.finalize_child_and_enqueue_parent_signal(
         committed.operation_id,

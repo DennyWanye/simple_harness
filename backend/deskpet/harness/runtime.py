@@ -70,6 +70,16 @@ class DriverRuntime:
     def _lease_kwargs(lease: RecoveryLease | None) -> dict[str, RecoveryLease]:
         return {} if lease is None else {"recovery_lease": lease}
 
+    @staticmethod
+    def _actor(record: RunRecord) -> ActorContext:
+        context = record.context
+        return ActorContext(
+            principal_id=context.principal_id,
+            session_id=context.session_id,
+            auth_epoch=context.auth_epoch,
+            root_run_id=context.root_run_id,
+        )
+
     async def emit(self, event: RunEvent) -> None:
         terminal = self.is_terminal_event(event)
         async with self._live.lock:
@@ -89,13 +99,7 @@ class DriverRuntime:
     async def emit_live(self, record: RunRecord, candidate: RunEventCandidate) -> None:
         async with self._live.lock:
             active = self._live.get(record.run_id) or self._live.add(
-                record.run_id,
-                ActorContext(
-                    principal_id=record.context.principal_id,
-                    session_id=record.context.session_id,
-                    auth_epoch=record.context.auth_epoch,
-                    root_run_id=record.context.root_run_id,
-                ),
+                record.run_id, self._actor(record),
             )
             live_seq = active.next_live_seq
             active.next_live_seq += 1
@@ -216,14 +220,8 @@ class DriverRuntime:
             await self._uow.assert_recovery_fence(recovery_lease)
         if candidate.kind in {"execute_tools", "open_decision", "delegate_run"}:
             if record.persistence_level is PersistenceLevel.EPHEMERAL:
-                actor = ActorContext(
-                    principal_id=record.context.principal_id,
-                    session_id=record.context.session_id,
-                    auth_epoch=record.context.auth_epoch,
-                    root_run_id=record.context.root_run_id,
-                )
                 durable = await self._uow.query(
-                    RunRef(record.run_id, record.context.session_id), actor
+                    RunRef(record.run_id, record.context.session_id), self._actor(record)
                 )
                 if not isinstance(durable, RunRecord):
                     raise RuntimeError("durable boundary did not promote its execution run")
@@ -254,12 +252,7 @@ class DriverRuntime:
             precomputed = []
             authoritative_statuses: list[OutcomeStatus | None] = []
             refs = candidate.grant_refs or (None,) * len(candidate.calls)
-            actor = ActorContext(
-                principal_id=record.context.principal_id,
-                session_id=record.context.session_id,
-                auth_epoch=record.context.auth_epoch,
-                root_run_id=record.context.root_run_id,
-            )
+            actor = self._actor(record)
             for call, context, grant_ref, declared_effectful in zip(
                 candidate.calls, candidate.contexts, refs, candidate.effectful
             ):
@@ -389,6 +382,21 @@ class DriverRuntime:
             )
             for context, metadata in zip(candidate.contexts, outcome_metadata):
                 metadata.update(self._tool_executor.take_metadata(context.effect_id))
+            for index, metadata in enumerate(outcome_metadata):
+                if not metadata.get("late_pending") or metadata.get("effect_action") != "execute":
+                    continue
+                claim, context = dict(metadata["effect_claim"]), candidate.contexts[index]
+                pending = outcomes[index].to_dict()
+                pending["reconciliation_pending"] = True
+                await self._uow.mark_effect_unknown(
+                    context.effect_id,
+                    expected_effect_version=int(claim["effect_version"]),
+                    attempt_no=int(claim["attempt_no"]),
+                    worker_owner=str(claim["worker_owner"]),
+                    worker_epoch=int(claim["worker_epoch"]),
+                    outcome=pending,
+                    recovery_lease=recovery_lease,
+                )
             statuses = tuple(
                 authoritative or self._tool_executor.outcome_status(call, outcome)
                 for call, outcome, authoritative in zip(
@@ -530,12 +538,7 @@ class DriverRuntime:
     ) -> None:
         current = await self._query(
             RunRef(record.run_id, record.context.session_id),
-            ActorContext(
-                principal_id=record.context.principal_id,
-                session_id=record.context.session_id,
-                auth_epoch=record.context.auth_epoch,
-                root_run_id=record.context.root_run_id,
-            ),
+            self._actor(record),
         )
         if not isinstance(current, RunRecord):
             raise RuntimeError("legacy run cannot be finalized by the new driver")
@@ -565,14 +568,8 @@ class DriverRuntime:
             recovery_lease=recovery_lease,
         )
         if current.context.parent_run_id is not None:
-            actor = ActorContext(
-                principal_id=current.context.principal_id,
-                session_id=current.context.session_id,
-                auth_epoch=current.context.auth_epoch,
-                root_run_id=current.context.root_run_id,
-            )
             authoritative = await self._uow.query(
-                RunRef(current.run_id, current.context.session_id), actor
+                RunRef(current.run_id, current.context.session_id), self._actor(current)
             )
             if (
                 not isinstance(authoritative, RunRecord)
