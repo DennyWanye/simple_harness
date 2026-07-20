@@ -142,6 +142,17 @@ ports module is 147 physical lines. Verification: focused consumers `52
 passed`, full harness `240 passed, 9 xfailed`, and adjusted LOC `32,817 <=
 33,228` with zero unknown classifications. Production remains `legacy/0`.
 
+R3 completion verification now accepts an explicit `EvidenceContext` scoped by
+run, turn, call, effect, target, and artifact. The only resolver is the existing
+`SqliteExecutionUnitOfWork`, which joins canonical run/effect rows and returns
+matched or unknown; callers cannot provide an alternate receipt collection.
+Run/turn/call/effect/artifact must match exactly. Because the current schema
+does not store a distinct target digest, any request containing one returns
+unknown rather than reinterpreting the effect fingerprint. Legacy session-wide
+verification remains only when no scoped context is supplied and is retained
+until R6. Verification: focused `57 passed`, full harness `249 passed, 9
+xfailed`, adjusted LOC `32,986 <= 33,228`, unknown classifications zero.
+
 ## Request Lifecycle
 
 The outer text-chat order is `ws_ingress -> ProductTurnPreparer.prepare_context
