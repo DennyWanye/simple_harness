@@ -7,8 +7,9 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 
+from deskpet.execution.contracts import DecisionOpen, RunStatus
 from deskpet.execution.ledger import ExecutionLedger
-from deskpet.execution.contracts import RunStatus
+from deskpet.harness.decisions import DecisionStore, DecisionWakeupCache
 from deskpet.harness.kernel import (
     HostContext,
     RegisteredDriver,
@@ -172,6 +173,67 @@ async def test_driver_failure_isolated_as_run_terminal(tmp_path) -> None:
     await asyncio.sleep(0.01)
     record = await ledger.query(handle.ref, host().actor(root_run_id=handle.root_run_id))
     assert record.status is RunStatus.FAILED
+
+
+@pytest.mark.asyncio
+async def test_decision_signal_is_durably_fenced_before_driver_resume(tmp_path) -> None:
+    uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
+    ledger = ExecutionLedger(uow)
+    await ledger.initialize()
+    driver = FakeDriver()
+    decisions = DecisionStore(uow, DecisionWakeupCache())
+    value = RunKernel(
+        ledger=ledger,
+        router=RegisteredRouter(
+            StaticClassifier("react.default"),
+            [RouteProfile("react.default", "react")],
+        ),
+        drivers=[RegisteredDriver("react", driver, durable_from_start=True)],
+        decision_store=decisions,
+    )
+    handle = await value.start(RunRequest("hello", "req-decision", "turn-1"), host())
+    actor = host().actor(root_run_id=handle.root_run_id)
+    record = await ledger.query(handle.ref, actor)
+    await decisions.open(
+        DecisionOpen(
+            decision_id="decision-1",
+            run_id=handle.ref.run_id,
+            nonce="nonce-1",
+            kind="clarification",
+            prompt_schema_version=1,
+            prompt={"question": "continue?"},
+            expires_at=None,
+        ),
+        actor,
+        expected_run_version=record.version,
+    )
+
+    receipt = await value.signal(
+        handle.ref,
+        actor,
+        DecisionSignal(
+            handle.ref.run_id,
+            "decision-1",
+            {"answer": "yes"},
+            "nonce-1",
+            0,
+        ),
+    )
+    assert receipt.accepted is True
+    assert driver.signals == 1
+
+    with pytest.raises(Exception):
+        await value.signal(
+            handle.ref,
+            actor,
+            DecisionSignal(
+                handle.ref.run_id,
+                "decision-1",
+                {"answer": "again"},
+                "wrong-nonce",
+                0,
+            ),
+        )
 
 
 def test_kernel_surface_is_six_operations_and_has_no_product_branches() -> None:

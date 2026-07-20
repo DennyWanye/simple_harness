@@ -24,14 +24,17 @@ from deskpet.execution.contracts import (
     RunStatus,
     fingerprint_json,
     root_idempotency_key,
+    DecisionSignal as DurableDecisionSignal,
 )
 from deskpet.execution.ports import ExecutionLedgerPort
 
 from .context import HostContextFactory
+from .decisions import DecisionStore
 from .ports import (
     CancelAcknowledgedCandidate,
     ChildAcceptedCandidate,
     DelegateRun,
+    DecisionSignal as DriverDecisionSignal,
     Driver,
     DriverCandidate,
     DriverSignal,
@@ -132,6 +135,7 @@ class RunKernel:
         router: RegisteredRouter,
         drivers: Sequence[RegisteredDriver],
         context_factory: HostContextFactory | None = None,
+        decision_store: DecisionStore | None = None,
     ) -> None:
         catalog: dict[str, RegisteredDriver] = {}
         for registration in drivers:
@@ -144,6 +148,7 @@ class RunKernel:
         self._router = router
         self._drivers = MappingProxyType(catalog)
         self._context_factory = context_factory or HostContextFactory()
+        self._decisions = decision_store
         self._active: dict[str, _ActiveRun] = {}
         self._lock = asyncio.Lock()
 
@@ -270,7 +275,54 @@ class RunKernel:
         if signal.run_id != ref.run_id:
             return SignalReceipt(False, reason="signal_run_binding_mismatch")
         registration = self._driver(record)
-        await self._consume(registration, record, registration.driver.signal(signal))
+        driver_signal = signal
+        if isinstance(signal, DriverDecisionSignal) and self._decisions is not None:
+            if signal.nonce is None or signal.version is None:
+                return SignalReceipt(False, reason="decision_fence_required")
+            current = await self._decisions.get(
+                signal.decision_id,
+                ref=ref,
+                actor=actor,
+            )
+            request = current.request
+            response = dict(signal.response)
+            allow = bool(response.get("allow", response.get("approved", True)))
+            resolved, authorization = await self._decisions.resolve(
+                DurableDecisionSignal(
+                    decision_id=request.decision_id,
+                    run_id=request.run_id,
+                    expected_session_id=ref.expected_session_id,
+                    nonce=signal.nonce,
+                    expected_version=signal.version,
+                    allow=allow,
+                    response_schema_version=1,
+                    response=response,
+                    domain_kind=request.domain_kind,
+                    domain_id=request.domain_id,
+                    call_id=request.call_id,
+                    effect_id=request.effect_id,
+                    tool_name=request.tool_name,
+                    args_hash=request.args_hash,
+                    capability_hash=request.capability_hash,
+                    scope_hash=request.scope_hash,
+                ),
+                actor,
+            )
+            response["decision_status"] = resolved.status.value
+            if authorization is not None:
+                response["grant_id"] = authorization.grant_id
+            driver_signal = DriverDecisionSignal(
+                run_id=signal.run_id,
+                decision_id=signal.decision_id,
+                response=response,
+                nonce=signal.nonce,
+                version=signal.version,
+            )
+        await self._consume(
+            registration,
+            record,
+            registration.driver.signal(driver_signal),
+        )
         return SignalReceipt(True)
 
     async def cancel(
@@ -296,6 +348,12 @@ class RunKernel:
             reason=reason,
             event=event,
         )
+        if self._decisions is not None:
+            await self._decisions.cancel_waiting(
+                ref,
+                actor,
+                expected_run_version=updated.version,
+            )
         registration = self._driver(updated)
         acknowledged = await self._consume(
             registration,
