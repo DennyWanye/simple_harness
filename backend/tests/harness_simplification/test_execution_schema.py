@@ -11,6 +11,7 @@ from deskpet.workflows.store import initialize_workflow_db
 
 EXECUTION_TABLES = (
     "execution_child_commands",
+    "execution_child_signal_inbox",
     "execution_continuations",
     "execution_deliveries",
     "execution_events",
@@ -30,7 +31,7 @@ async def _downgrade_to_v4(path) -> None:
         await db.execute("PRAGMA foreign_keys=OFF")
         for table in EXECUTION_TABLES:
             await db.execute(f"DROP TABLE IF EXISTS {table}")
-        await db.execute("DELETE FROM workflow_schema_migrations WHERE version=5")
+        await db.execute("DELETE FROM workflow_schema_migrations WHERE version>=5")
         await db.execute("PRAGMA user_version=4")
         await db.commit()
 
@@ -60,11 +61,11 @@ async def test_fresh_and_v4_migration_produce_the_same_execution_schema(tmp_path
         version = await (await db.execute("PRAGMA user_version")).fetchone()
         migration = await (
             await db.execute(
-                "SELECT COUNT(*) FROM workflow_schema_migrations WHERE version=5"
+                "SELECT COUNT(*) FROM workflow_schema_migrations WHERE version IN (5,6)"
             )
         ).fetchone()
-    assert version == (5,)
-    assert migration == (1,)
+    assert version == (6,)
+    assert migration == (2,)
 
 
 @pytest.mark.asyncio

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import aiosqlite
 
-WORKFLOW_SCHEMA_VERSION = 5
+WORKFLOW_SCHEMA_VERSION = 6
 
 _SCHEMA_V2 = r"""
 BEGIN IMMEDIATE;
@@ -243,6 +243,8 @@ async def initialize_workflow_db(path: str | Path) -> Path:
                     await _migrate_v3_to_v4(db)
                 elif current == 4:
                     await _migrate_v4_to_v5(db)
+                elif current == 5:
+                    await _migrate_v5_to_v6(db)
                 else:  # pragma: no cover - guarded by the version constant
                     raise RuntimeError(f"no workflow.db migration from schema {current}")
                 row = await (await db.execute("PRAGMA user_version")).fetchone()
@@ -998,6 +1000,112 @@ async def _migrate_v4_to_v5(db: aiosqlite.Connection) -> None:
         INSERT INTO workflow_schema_migrations(version,applied_at)
         VALUES(5,CAST(strftime('%s','now') AS REAL));
         PRAGMA user_version=5;
+        COMMIT;
+        """
+    )
+
+
+async def _migrate_v5_to_v6(db: aiosqlite.Connection) -> None:
+    """Make delegated-child commands durable before child creation.
+
+    The v5 child_run_id foreign key required the child row to exist before the
+    command could commit, which inverted the durable scheduler boundary.  The
+    v6 command reserves a deterministic child id and freezes its complete
+    launch request first.  The structural link becomes the child-existence
+    authority once scheduling succeeds.
+    """
+
+    existing = await (
+        await db.execute("SELECT COUNT(*) FROM execution_child_commands")
+    ).fetchone()
+    if existing is not None and int(existing[0]) != 0:
+        raise RuntimeError(
+            "workflow.db v5 contains test-only child commands without a frozen "
+            "launch request; clear or explicitly migrate them before schema v6"
+        )
+
+    await db.executescript(
+        """
+        BEGIN IMMEDIATE;
+
+        ALTER TABLE execution_child_commands
+            RENAME TO execution_child_commands_v5;
+
+        CREATE TABLE execution_child_commands (
+            operation_id TEXT PRIMARY KEY,
+            schema_version INTEGER NOT NULL CHECK(schema_version=1),
+            parent_run_id TEXT NOT NULL,
+            command_id TEXT NOT NULL,
+            child_run_id TEXT NOT NULL UNIQUE,
+            profile_key TEXT NOT NULL,
+            join_policy TEXT NOT NULL CHECK(join_policy IN (
+                'attached','detached','root_terminal_child'
+            )),
+            capability_snapshot_ref TEXT NOT NULL,
+            capability_subset_json TEXT NOT NULL,
+            child_request_json TEXT NOT NULL,
+            child_spec_json TEXT NOT NULL,
+            intent_fingerprint TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN (
+                'pending','leased','scheduled','acked','failed','cancelled'
+            )),
+            schedule_lease_owner TEXT,
+            schedule_lease_epoch INTEGER NOT NULL DEFAULT 0 CHECK(schedule_lease_epoch>=0),
+            schedule_lease_expires_at REAL,
+            attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts>=0),
+            next_attempt_at REAL,
+            last_error TEXT,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            ack_at REAL,
+            CHECK(parent_run_id<>child_run_id),
+            CHECK(length(intent_fingerprint)=64
+                AND intent_fingerprint NOT GLOB '*[^0-9a-f]*'),
+            CHECK(
+                status NOT IN ('leased','scheduled')
+                OR (
+                    schedule_lease_owner IS NOT NULL
+                    AND schedule_lease_epoch>0
+                    AND schedule_lease_expires_at IS NOT NULL
+                )
+            ),
+            CHECK((status='acked' AND ack_at IS NOT NULL) OR status<>'acked'),
+            UNIQUE(parent_run_id,command_id),
+            FOREIGN KEY(parent_run_id) REFERENCES execution_runs(run_id) ON DELETE RESTRICT
+        );
+
+        DROP TABLE execution_child_commands_v5;
+
+        CREATE INDEX idx_execution_child_commands_schedule
+            ON execution_child_commands(status,next_attempt_at,schedule_lease_expires_at);
+        CREATE INDEX idx_execution_child_commands_parent
+            ON execution_child_commands(parent_run_id,status,created_at);
+
+        CREATE TABLE execution_child_signal_inbox (
+            signal_id TEXT PRIMARY KEY,
+            schema_version INTEGER NOT NULL CHECK(schema_version=1),
+            operation_id TEXT NOT NULL,
+            parent_run_id TEXT NOT NULL,
+            command_id TEXT NOT NULL,
+            child_run_id TEXT NOT NULL,
+            kind TEXT NOT NULL CHECK(kind IN ('accepted','terminal')),
+            payload_json TEXT NOT NULL,
+            attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts>=0),
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            delivered_at REAL,
+            UNIQUE(operation_id,kind),
+            FOREIGN KEY(operation_id)
+                REFERENCES execution_child_commands(operation_id) ON DELETE CASCADE,
+            FOREIGN KEY(parent_run_id) REFERENCES execution_runs(run_id) ON DELETE CASCADE,
+            FOREIGN KEY(child_run_id) REFERENCES execution_runs(run_id) ON DELETE CASCADE
+        );
+        CREATE INDEX idx_execution_child_signal_pending
+            ON execution_child_signal_inbox(parent_run_id,delivered_at,created_at,signal_id);
+
+        INSERT INTO workflow_schema_migrations(version,applied_at)
+        VALUES(6,CAST(strftime('%s','now') AS REAL));
+        PRAGMA user_version=6;
         COMMIT;
         """
     )

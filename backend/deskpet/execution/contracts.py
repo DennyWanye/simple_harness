@@ -599,6 +599,20 @@ class RunCreate:
                 "invalid_root", "a root run must name itself as root_run_id"
             )
 
+    def to_dict(self) -> dict[str, JsonValue]:
+        return {
+            "schema_version": self.schema_version,
+            "run_id": self.run_id,
+            "idempotency_key": self.idempotency_key,
+            "context": self.context.to_dict(),
+            "payload_fingerprint": self.payload_fingerprint,
+            "capability_fingerprint": self.capability_fingerprint,
+            "driver_kind": self.driver_kind,
+            "profile_key": self.profile_key,
+            "persistence_level": self.persistence_level.value,
+            "status": self.status.value,
+        }
+
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "RunCreate":
         data = _strict_mapping(
@@ -681,6 +695,168 @@ class RunRecord:
 class CreateRunResult:
     record: RunRecord
     created: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ChildCommandIntent:
+    """Durable, product-neutral intent reserved before a child exists."""
+
+    operation_id: str
+    parent_run_id: str
+    command_id: str
+    child_spec: RunCreate
+    child_request: Mapping[str, JsonValue]
+    capability_subset: tuple[str, ...]
+    attachment_policy: AttachmentPolicy | str
+    capability_snapshot_ref: str
+    intent_fingerprint: str = field(init=False)
+    schema_version: int = CONTRACT_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _schema_version(self.schema_version, name="ChildCommandIntent")
+        for field_name in ("operation_id", "parent_run_id", "command_id"):
+            object.__setattr__(
+                self, field_name, _required_text(getattr(self, field_name), field_name)
+            )
+        object.__setattr__(
+            self, "attachment_policy", AttachmentPolicy(self.attachment_policy)
+        )
+        object.__setattr__(
+            self,
+            "child_request",
+            _json_object(self.child_request, name="ChildCommandIntent.child_request"),
+        )
+        subset = tuple(
+            sorted({_required_text(item, "capability_subset") for item in self.capability_subset})
+        )
+        object.__setattr__(self, "capability_subset", subset)
+        object.__setattr__(
+            self,
+            "capability_snapshot_ref",
+            _fingerprint(self.capability_snapshot_ref, "capability_snapshot_ref"),
+        )
+        if self.child_spec.context.parent_run_id != self.parent_run_id:
+            raise ContractValidationError(
+                "child_parent_mismatch", "child spec names another parent run"
+            )
+        if self.child_spec.persistence_level is not PersistenceLevel.DURABLE:
+            raise ContractValidationError(
+                "child_not_durable", "delegated child runs must be durable"
+            )
+        if self.child_spec.capability_fingerprint != self.capability_snapshot_ref:
+            raise ContractValidationError(
+                "child_capability_mismatch",
+                "child capability differs from the committed snapshot",
+            )
+        if self.child_spec.payload_fingerprint != fingerprint_json(
+            thaw_json(self.child_request)
+        ):
+            raise ContractValidationError(
+                "child_payload_mismatch",
+                "child request differs from the committed payload fingerprint",
+            )
+        fingerprint = fingerprint_json(
+            {
+                "operation_id": self.operation_id,
+                "parent_run_id": self.parent_run_id,
+                "command_id": self.command_id,
+                "child_spec": self.child_spec.to_dict(),
+                "child_request": thaw_json(self.child_request),
+                "capability_subset": list(self.capability_subset),
+                "attachment_policy": self.attachment_policy.value,
+                "capability_snapshot_ref": self.capability_snapshot_ref,
+            }
+        )
+        object.__setattr__(self, "intent_fingerprint", fingerprint)
+
+    @property
+    def child_run_id(self) -> str:
+        return self.child_spec.run_id
+
+
+@dataclass(frozen=True, slots=True)
+class ChildCommandRecord:
+    intent: ChildCommandIntent
+    status: ChildCommandStatus | str
+    schedule_lease_owner: str | None
+    schedule_lease_epoch: int
+    schedule_lease_expires_at: float | None
+    attempts: int
+    next_attempt_at: float | None
+    last_error: str | None
+    created_at: float
+    updated_at: float
+    ack_at: float | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "status", ChildCommandStatus(self.status))
+        object.__setattr__(
+            self,
+            "schedule_lease_owner",
+            _optional_text(self.schedule_lease_owner, "schedule_lease_owner"),
+        )
+        object.__setattr__(
+            self, "last_error", _optional_text(self.last_error, "last_error")
+        )
+        if self.schedule_lease_epoch < 0 or self.attempts < 0:
+            raise ContractValidationError(
+                "invalid_counter", "child command counters must be non-negative"
+            )
+        if self.status in {ChildCommandStatus.LEASED, ChildCommandStatus.SCHEDULED}:
+            if self.schedule_lease_owner is None or self.schedule_lease_expires_at is None:
+                raise ContractValidationError(
+                    "missing_child_lease", "active child command requires a lease"
+                )
+        if self.status is ChildCommandStatus.ACKED and self.ack_at is None:
+            raise ContractValidationError(
+                "missing_child_ack", "acked child command requires ack_at"
+            )
+
+    @property
+    def operation_id(self) -> str:
+        return self.intent.operation_id
+
+    @property
+    def child_run_id(self) -> str:
+        return self.intent.child_run_id
+
+
+@dataclass(frozen=True, slots=True)
+class ChildSignalRecord:
+    signal_id: str
+    operation_id: str
+    parent_run_id: str
+    command_id: str
+    child_run_id: str
+    kind: str
+    payload: Mapping[str, JsonValue]
+    attempts: int
+    created_at: float
+    updated_at: float
+    delivered_at: float | None = None
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "signal_id",
+            "operation_id",
+            "parent_run_id",
+            "command_id",
+            "child_run_id",
+        ):
+            object.__setattr__(
+                self, field_name, _required_text(getattr(self, field_name), field_name)
+            )
+        if self.kind not in {"accepted", "terminal"}:
+            raise ContractValidationError(
+                "invalid_child_signal", "child signal kind must be accepted or terminal"
+            )
+        if self.attempts < 0:
+            raise ContractValidationError(
+                "invalid_counter", "child signal attempts must be non-negative"
+            )
+        object.__setattr__(
+            self, "payload", _json_object(self.payload, name="ChildSignalRecord.payload")
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1391,7 +1567,10 @@ __all__ = [
     "ActorContext",
     "AttachmentPolicy",
     "AuthorizationError",
+    "ChildCommandIntent",
+    "ChildCommandRecord",
     "ChildCommandStatus",
+    "ChildSignalRecord",
     "CONTRACT_SCHEMA_VERSION",
     "ContractValidationError",
     "CreateRunResult",

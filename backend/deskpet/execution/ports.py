@@ -7,6 +7,9 @@ from typing import Protocol, Sequence, TypeAlias, runtime_checkable
 from .contracts import (
     ActorAction,
     ActorContext,
+    ChildCommandIntent,
+    ChildCommandRecord,
+    ChildSignalRecord,
     CreateRunResult,
     DeliveryRecord,
     DeliverySpec,
@@ -156,6 +159,52 @@ class ExecutionUnitOfWork(
         accepted_event: RunEventCandidate | None = None,
         deliveries: Sequence[DeliverySpec] = (),
     ) -> CreateRunResult: ...
+
+    async def commit_child_command(
+        self, intent: ChildCommandIntent
+    ) -> ChildCommandRecord: ...
+
+    async def get_child_command(
+        self, operation_id: str
+    ) -> ChildCommandRecord | None: ...
+
+    async def lease_child_commands(
+        self,
+        *,
+        owner: str,
+        limit: int,
+        lease_seconds: float,
+    ) -> tuple[ChildCommandRecord, ...]: ...
+
+    async def schedule_child_command(
+        self,
+        operation_id: str,
+        *,
+        lease_owner: str,
+        lease_epoch: int,
+    ) -> ChildCommandRecord: ...
+
+    async def acknowledge_child_command(
+        self,
+        operation_id: str,
+        *,
+        lease_owner: str,
+        lease_epoch: int,
+    ) -> ChildCommandRecord: ...
+
+    async def record_child_terminal(
+        self,
+        operation_id: str,
+        *,
+        terminal_status: str,
+        value: object = None,
+    ) -> ChildSignalRecord: ...
+
+    async def list_pending_child_signals(
+        self, parent_run_id: str
+    ) -> tuple[ChildSignalRecord, ...]: ...
+
+    async def acknowledge_child_signal(self, signal_id: str) -> ChildSignalRecord: ...
 
 
 ExecutionLedgerPort = ExecutionLedger

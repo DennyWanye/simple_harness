@@ -1,6 +1,7 @@
 """Product-neutral execution harness contracts and adapters."""
 
 from .context import HostContextFactory, RunContext
+from .child_runs import ChildRunCoordinator
 from .kernel import (
     CancelReceipt,
     HostContext,
@@ -43,6 +44,7 @@ from .tool_executor import (
 
 __all__ = [
     "CancelReceipt",
+    "ChildRunCoordinator",
     "DecisionAuthorization",
     "DeliveryWorker",
     "DriverTerminalCandidate",

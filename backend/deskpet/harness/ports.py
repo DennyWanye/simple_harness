@@ -8,18 +8,13 @@ from enum import Enum
 from types import MappingProxyType
 from typing import Any, AsyncIterator, Mapping, Protocol
 
+from deskpet.execution import AttachmentPolicy
 from deskpet.harness.tool_executor import PreparedExecutionCall, ToolOutcome
 from deskpet.tools.capabilities import ToolExecutionContext
 
 
 class JoinPolicy(str, Enum):
     JOIN_BEFORE_FINAL = "join_before_final"
-    ROOT_TERMINAL_CHILD = "root_terminal_child"
-    DETACHED = "detached"
-
-
-class AttachmentPolicy(str, Enum):
-    ATTACHED = "attached"
     ROOT_TERMINAL_CHILD = "root_terminal_child"
     DETACHED = "detached"
 

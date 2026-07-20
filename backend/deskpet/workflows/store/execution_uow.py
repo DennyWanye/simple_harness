@@ -22,6 +22,10 @@ from deskpet.execution.contracts import (
     ActorContext,
     AttachmentPolicy,
     AuthorizationError,
+    ChildCommandIntent,
+    ChildCommandRecord,
+    ChildCommandStatus,
+    ChildSignalRecord,
     CreateRunResult,
     DeliveryClaimConflict,
     DeliveryNotFound,
@@ -228,6 +232,73 @@ class SqliteExecutionUnitOfWork:
                 else None
             ),
             schema_version=int(row["schema_version"]),
+        )
+
+    @staticmethod
+    def _row_to_child_command(row: Mapping[str, Any]) -> ChildCommandRecord:
+        child_spec = RunCreate.from_dict(json.loads(str(row["child_spec_json"])))
+        intent = ChildCommandIntent(
+            operation_id=str(row["operation_id"]),
+            parent_run_id=str(row["parent_run_id"]),
+            command_id=str(row["command_id"]),
+            child_spec=child_spec,
+            child_request=json.loads(str(row["child_request_json"])),
+            capability_subset=tuple(
+                str(item)
+                for item in json.loads(str(row["capability_subset_json"]))
+            ),
+            attachment_policy=str(row["join_policy"]),
+            capability_snapshot_ref=str(row["capability_snapshot_ref"]),
+            schema_version=int(row["schema_version"]),
+        )
+        if intent.intent_fingerprint != str(row["intent_fingerprint"]):
+            raise IdempotencyConflict(
+                "child_intent_corrupt", "persisted child command fingerprint differs"
+            )
+        return ChildCommandRecord(
+            intent=intent,
+            status=str(row["status"]),
+            schedule_lease_owner=(
+                str(row["schedule_lease_owner"])
+                if row["schedule_lease_owner"] is not None
+                else None
+            ),
+            schedule_lease_epoch=int(row["schedule_lease_epoch"]),
+            schedule_lease_expires_at=(
+                float(row["schedule_lease_expires_at"])
+                if row["schedule_lease_expires_at"] is not None
+                else None
+            ),
+            attempts=int(row["attempts"]),
+            next_attempt_at=(
+                float(row["next_attempt_at"])
+                if row["next_attempt_at"] is not None
+                else None
+            ),
+            last_error=(str(row["last_error"]) if row["last_error"] else None),
+            created_at=float(row["created_at"]),
+            updated_at=float(row["updated_at"]),
+            ack_at=float(row["ack_at"]) if row["ack_at"] is not None else None,
+        )
+
+    @staticmethod
+    def _row_to_child_signal(row: Mapping[str, Any]) -> ChildSignalRecord:
+        return ChildSignalRecord(
+            signal_id=str(row["signal_id"]),
+            operation_id=str(row["operation_id"]),
+            parent_run_id=str(row["parent_run_id"]),
+            command_id=str(row["command_id"]),
+            child_run_id=str(row["child_run_id"]),
+            kind=str(row["kind"]),
+            payload=json.loads(str(row["payload_json"])),
+            attempts=int(row["attempts"]),
+            created_at=float(row["created_at"]),
+            updated_at=float(row["updated_at"]),
+            delivered_at=(
+                float(row["delivered_at"])
+                if row["delivered_at"] is not None
+                else None
+            ),
         )
 
     @staticmethod
@@ -1175,6 +1246,517 @@ class SqliteExecutionUnitOfWork:
             assert result is not None
             await db.commit()
             return self._row_to_record(result)
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def commit_child_command(
+        self, intent: ChildCommandIntent
+    ) -> ChildCommandRecord:
+        """Commit the complete delegate intent before a child row can exist."""
+
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            parent = await (
+                await db.execute(
+                    "SELECT * FROM execution_runs WHERE run_id=?",
+                    (intent.parent_run_id,),
+                )
+            ).fetchone()
+            if parent is None:
+                raise RunNotFound(
+                    "parent_not_found", "delegate parent must already be durable"
+                )
+            existing = await (
+                await db.execute(
+                    """SELECT * FROM execution_child_commands
+                    WHERE operation_id=? OR (parent_run_id=? AND command_id=?)
+                    OR child_run_id=? ORDER BY operation_id=? DESC LIMIT 1""",
+                    (
+                        intent.operation_id,
+                        intent.parent_run_id,
+                        intent.command_id,
+                        intent.child_run_id,
+                        intent.operation_id,
+                    ),
+                )
+            ).fetchone()
+            if existing is not None:
+                if (
+                    str(existing["operation_id"]) != intent.operation_id
+                    or str(existing["intent_fingerprint"]) != intent.intent_fingerprint
+                ):
+                    raise IdempotencyConflict(
+                        "child_operation_conflict",
+                        "operation, parent command, or child id names another intent",
+                    )
+                await db.commit()
+                return self._row_to_child_command(existing)
+            now = float(self._clock())
+            await db.execute(
+                """INSERT INTO execution_child_commands(
+                operation_id,schema_version,parent_run_id,command_id,child_run_id,
+                profile_key,join_policy,capability_snapshot_ref,
+                capability_subset_json,child_request_json,child_spec_json,
+                intent_fingerprint,status,created_at,updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?, 'pending',?,?)""",
+                (
+                    intent.operation_id,
+                    intent.schema_version,
+                    intent.parent_run_id,
+                    intent.command_id,
+                    intent.child_run_id,
+                    intent.child_spec.profile_key,
+                    intent.attachment_policy.value,
+                    intent.capability_snapshot_ref,
+                    canonical_json(list(intent.capability_subset)),
+                    canonical_json(thaw_json(intent.child_request)),
+                    canonical_json(intent.child_spec.to_dict()),
+                    intent.intent_fingerprint,
+                    now,
+                    now,
+                ),
+            )
+            self._fault("child_command_before_commit")
+            row = await (
+                await db.execute(
+                    "SELECT * FROM execution_child_commands WHERE operation_id=?",
+                    (intent.operation_id,),
+                )
+            ).fetchone()
+            assert row is not None
+            await db.commit()
+            return self._row_to_child_command(row)
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def get_child_command(self, operation_id: str) -> ChildCommandRecord | None:
+        db = await self._connect()
+        try:
+            row = await (
+                await db.execute(
+                    "SELECT * FROM execution_child_commands WHERE operation_id=?",
+                    (operation_id,),
+                )
+            ).fetchone()
+            return self._row_to_child_command(row) if row is not None else None
+        finally:
+            await db.close()
+
+    async def lease_child_commands(
+        self,
+        *,
+        owner: str,
+        limit: int,
+        lease_seconds: float,
+    ) -> tuple[ChildCommandRecord, ...]:
+        if not owner or limit <= 0 or lease_seconds <= 0:
+            raise ValueError("owner, positive limit and positive lease_seconds are required")
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            now = float(self._clock())
+            rows = await (
+                await db.execute(
+                    """SELECT operation_id FROM execution_child_commands
+                    WHERE (
+                        status='pending'
+                        OR (
+                            status IN ('leased','scheduled')
+                            AND schedule_lease_expires_at<=?
+                        )
+                    ) AND (next_attempt_at IS NULL OR next_attempt_at<=?)
+                    ORDER BY created_at,operation_id LIMIT ?""",
+                    (now, now, limit),
+                )
+            ).fetchall()
+            leased: list[ChildCommandRecord] = []
+            for selected in rows:
+                operation_id = str(selected["operation_id"])
+                cursor = await db.execute(
+                    """UPDATE execution_child_commands
+                    SET status='leased',schedule_lease_owner=?,
+                        schedule_lease_epoch=schedule_lease_epoch+1,
+                        schedule_lease_expires_at=?,attempts=attempts+1,updated_at=?
+                    WHERE operation_id=? AND (
+                        status='pending'
+                        OR (status IN ('leased','scheduled') AND schedule_lease_expires_at<=?)
+                    )""",
+                    (owner, now + lease_seconds, now, operation_id, now),
+                )
+                if cursor.rowcount != 1:
+                    continue
+                row = await (
+                    await db.execute(
+                        "SELECT * FROM execution_child_commands WHERE operation_id=?",
+                        (operation_id,),
+                    )
+                ).fetchone()
+                assert row is not None
+                leased.append(self._row_to_child_command(row))
+            self._fault("child_lease_before_commit")
+            await db.commit()
+            return tuple(leased)
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    @staticmethod
+    def _stable_child_link_id(operation_id: str) -> str:
+        return hashlib.sha256(
+            f"execution-child-link|{operation_id}".encode("utf-8")
+        ).hexdigest()
+
+    @staticmethod
+    def _stable_child_signal_id(operation_id: str, kind: str) -> str:
+        return hashlib.sha256(
+            f"execution-child-signal|{operation_id}|{kind}".encode("utf-8")
+        ).hexdigest()
+
+    async def schedule_child_command(
+        self,
+        operation_id: str,
+        *,
+        lease_owner: str,
+        lease_epoch: int,
+    ) -> ChildCommandRecord:
+        """Atomically create/link the child and mark its command scheduled."""
+
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            command = await (
+                await db.execute(
+                    "SELECT * FROM execution_child_commands WHERE operation_id=?",
+                    (operation_id,),
+                )
+            ).fetchone()
+            if command is None:
+                raise RunNotFound("child_command_not_found", "child command does not exist")
+            if (
+                str(command["status"]) not in {"leased", "scheduled"}
+                or str(command["schedule_lease_owner"] or "") != lease_owner
+                or int(command["schedule_lease_epoch"]) != lease_epoch
+            ):
+                raise VersionConflict(
+                    "stale_child_lease", "child command lease owner or epoch changed"
+                )
+            intent = self._row_to_child_command(command).intent
+            child, _ = await self._insert_run_tx(db, intent.child_spec, version=0)
+            self._fault("child_schedule_after_run")
+            link_id = self._stable_child_link_id(operation_id)
+            existing_link = await (
+                await db.execute(
+                    "SELECT * FROM execution_run_links WHERE link_id=?", (link_id,)
+                )
+            ).fetchone()
+            expected_link = {
+                "root_run_id": intent.child_spec.context.root_run_id,
+                "parent_run_id": intent.parent_run_id,
+                "child_run_id": intent.child_run_id,
+                "attachment_policy": intent.attachment_policy.value,
+                "link_kind": LinkKind.STRUCTURAL.value,
+                "domain_kind": "",
+                "domain_id": "",
+            }
+            if existing_link is None:
+                await db.execute(
+                    """INSERT INTO execution_run_links(
+                    link_id,schema_version,root_run_id,parent_run_id,child_run_id,
+                    attachment_policy,link_kind,domain_kind,domain_id,created_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        link_id,
+                        1,
+                        expected_link["root_run_id"],
+                        expected_link["parent_run_id"],
+                        expected_link["child_run_id"],
+                        expected_link["attachment_policy"],
+                        expected_link["link_kind"],
+                        "",
+                        "",
+                        self._clock(),
+                    ),
+                )
+                cursor = await db.execute(
+                    """UPDATE execution_runs SET version=version+1,updated_at=?
+                    WHERE run_id=? AND version=? AND terminal_event_id IS NULL""",
+                    (self._clock(), intent.child_run_id, int(child["version"])),
+                )
+                if cursor.rowcount != 1:
+                    raise VersionConflict(
+                        "stale_run_version", "child changed before schedule link commit"
+                    )
+            elif any(
+                str(existing_link[field_name]) != value
+                for field_name, value in expected_link.items()
+            ):
+                raise IdempotencyConflict(
+                    "child_link_conflict", "child link differs from committed command"
+                )
+            now = float(self._clock())
+            cursor = await db.execute(
+                """UPDATE execution_child_commands SET status='scheduled',updated_at=?
+                WHERE operation_id=? AND schedule_lease_owner=?
+                AND schedule_lease_epoch=? AND status IN ('leased','scheduled')""",
+                (now, operation_id, lease_owner, lease_epoch),
+            )
+            if cursor.rowcount != 1:
+                raise VersionConflict(
+                    "stale_child_lease", "child command changed before schedule commit"
+                )
+            self._fault("child_schedule_before_commit")
+            row = await (
+                await db.execute(
+                    "SELECT * FROM execution_child_commands WHERE operation_id=?",
+                    (operation_id,),
+                )
+            ).fetchone()
+            assert row is not None
+            await db.commit()
+            return self._row_to_child_command(row)
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def acknowledge_child_command(
+        self,
+        operation_id: str,
+        *,
+        lease_owner: str,
+        lease_epoch: int,
+    ) -> ChildCommandRecord:
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            command = await (
+                await db.execute(
+                    "SELECT * FROM execution_child_commands WHERE operation_id=?",
+                    (operation_id,),
+                )
+            ).fetchone()
+            if command is None:
+                raise RunNotFound("child_command_not_found", "child command does not exist")
+            if str(command["status"]) == ChildCommandStatus.ACKED.value:
+                await db.commit()
+                return self._row_to_child_command(command)
+            if (
+                str(command["status"]) != ChildCommandStatus.SCHEDULED.value
+                or str(command["schedule_lease_owner"] or "") != lease_owner
+                or int(command["schedule_lease_epoch"]) != lease_epoch
+            ):
+                raise VersionConflict(
+                    "stale_child_lease", "only the scheduling lease may ack the child"
+                )
+            now = float(self._clock())
+            signal_id = self._stable_child_signal_id(operation_id, "accepted")
+            await db.execute(
+                """INSERT INTO execution_child_signal_inbox(
+                signal_id,schema_version,operation_id,parent_run_id,command_id,
+                child_run_id,kind,payload_json,created_at,updated_at
+                ) VALUES(?,1,?,?,?,?, 'accepted',?, ?,?)
+                ON CONFLICT(operation_id,kind) DO NOTHING""",
+                (
+                    signal_id,
+                    operation_id,
+                    str(command["parent_run_id"]),
+                    str(command["command_id"]),
+                    str(command["child_run_id"]),
+                    canonical_json({"accepted": True}),
+                    now,
+                    now,
+                ),
+            )
+            cursor = await db.execute(
+                """UPDATE execution_child_commands
+                SET status='acked',schedule_lease_owner=NULL,
+                    schedule_lease_expires_at=NULL,ack_at=?,updated_at=?
+                WHERE operation_id=? AND status='scheduled'
+                AND schedule_lease_owner=? AND schedule_lease_epoch=?""",
+                (now, now, operation_id, lease_owner, lease_epoch),
+            )
+            if cursor.rowcount != 1:
+                raise VersionConflict(
+                    "stale_child_lease", "child command changed before ack commit"
+                )
+            self._fault("child_ack_before_commit")
+            row = await (
+                await db.execute(
+                    "SELECT * FROM execution_child_commands WHERE operation_id=?",
+                    (operation_id,),
+                )
+            ).fetchone()
+            assert row is not None
+            await db.commit()
+            return self._row_to_child_command(row)
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def record_child_terminal(
+        self,
+        operation_id: str,
+        *,
+        terminal_status: str,
+        value: Any = None,
+    ) -> ChildSignalRecord:
+        if terminal_status not in {"completed", "failed", "cancelled"}:
+            raise ValueError("child terminal status is invalid")
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            command = await (
+                await db.execute(
+                    "SELECT * FROM execution_child_commands WHERE operation_id=?",
+                    (operation_id,),
+                )
+            ).fetchone()
+            if command is None or str(command["status"]) != ChildCommandStatus.ACKED.value:
+                raise RunNotFound(
+                    "acked_child_command_not_found",
+                    "terminal signal requires an acknowledged child command",
+                )
+            child = await (
+                await db.execute(
+                    "SELECT status FROM execution_runs WHERE run_id=?",
+                    (str(command["child_run_id"]),),
+                )
+            ).fetchone()
+            if child is None or str(child["status"]) != terminal_status:
+                raise RunIdentityConflict(
+                    "child_not_terminal",
+                    "terminal inbox status must match the authoritative child run",
+                )
+            signal_id = self._stable_child_signal_id(operation_id, "terminal")
+            payload_json = canonical_json(
+                {"status": terminal_status, "value": value}
+            )
+            existing = await (
+                await db.execute(
+                    """SELECT * FROM execution_child_signal_inbox
+                    WHERE operation_id=? AND kind='terminal'""",
+                    (operation_id,),
+                )
+            ).fetchone()
+            if existing is not None:
+                if str(existing["payload_json"]) != payload_json:
+                    raise IdempotencyConflict(
+                        "child_terminal_conflict",
+                        "terminal signal replay differs from the first outcome",
+                    )
+                await db.commit()
+                return self._row_to_child_signal(existing)
+            now = float(self._clock())
+            await db.execute(
+                """INSERT INTO execution_child_signal_inbox(
+                signal_id,schema_version,operation_id,parent_run_id,command_id,
+                child_run_id,kind,payload_json,created_at,updated_at
+                ) VALUES(?,1,?,?,?,?, 'terminal',?,?,?)""",
+                (
+                    signal_id,
+                    operation_id,
+                    str(command["parent_run_id"]),
+                    str(command["command_id"]),
+                    str(command["child_run_id"]),
+                    payload_json,
+                    now,
+                    now,
+                ),
+            )
+            self._fault("child_terminal_before_commit")
+            row = await (
+                await db.execute(
+                    "SELECT * FROM execution_child_signal_inbox WHERE signal_id=?",
+                    (signal_id,),
+                )
+            ).fetchone()
+            assert row is not None
+            await db.commit()
+            return self._row_to_child_signal(row)
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def list_pending_child_signals(
+        self, parent_run_id: str
+    ) -> tuple[ChildSignalRecord, ...]:
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            now = float(self._clock())
+            await db.execute(
+                """UPDATE execution_child_signal_inbox
+                SET attempts=attempts+1,updated_at=?
+                WHERE parent_run_id=? AND delivered_at IS NULL""",
+                (now, parent_run_id),
+            )
+            rows = await (
+                await db.execute(
+                    """SELECT * FROM execution_child_signal_inbox
+                    WHERE parent_run_id=? AND delivered_at IS NULL
+                    ORDER BY created_at,signal_id""",
+                    (parent_run_id,),
+                )
+            ).fetchall()
+            await db.commit()
+            return tuple(self._row_to_child_signal(row) for row in rows)
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def acknowledge_child_signal(self, signal_id: str) -> ChildSignalRecord:
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            row = await (
+                await db.execute(
+                    "SELECT * FROM execution_child_signal_inbox WHERE signal_id=?",
+                    (signal_id,),
+                )
+            ).fetchone()
+            if row is None:
+                raise RunNotFound("child_signal_not_found", "child signal does not exist")
+            if row["delivered_at"] is None:
+                now = float(self._clock())
+                await db.execute(
+                    """UPDATE execution_child_signal_inbox
+                    SET delivered_at=?,updated_at=? WHERE signal_id=?
+                    AND delivered_at IS NULL""",
+                    (now, now, signal_id),
+                )
+                self._fault("child_signal_ack_before_commit")
+                row = await (
+                    await db.execute(
+                        "SELECT * FROM execution_child_signal_inbox WHERE signal_id=?",
+                        (signal_id,),
+                    )
+                ).fetchone()
+                assert row is not None
+            await db.commit()
+            return self._row_to_child_signal(row)
         except BaseException:
             if db.in_transaction:
                 await db.rollback()

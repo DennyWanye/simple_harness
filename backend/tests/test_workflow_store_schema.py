@@ -61,11 +61,13 @@ async def test_workflow_schema_is_complete_and_idempotent(tmp_path):
         "execution_deliveries",
         "execution_continuations",
         "execution_child_commands",
+        "execution_child_signal_inbox",
     } <= names
 
 
 async def _drop_v5_execution_schema(db) -> None:
     for table in (
+        "execution_child_signal_inbox",
         "execution_child_commands",
         "execution_continuations",
         "execution_deliveries",
@@ -79,7 +81,7 @@ async def _drop_v5_execution_schema(db) -> None:
         "execution_runs",
     ):
         await db.execute(f"DROP TABLE IF EXISTS {table}")
-    await db.execute("DELETE FROM workflow_schema_migrations WHERE version=5")
+    await db.execute("DELETE FROM workflow_schema_migrations WHERE version>=5")
 
 
 async def _downgrade_v3_fixture(path, version: int) -> None:
@@ -205,8 +207,8 @@ async def test_v1_and_v2_follow_the_migration_loop_to_v5(tmp_path, starting_vers
         tables = await (
             await db.execute("SELECT name FROM sqlite_master WHERE type='table'")
         ).fetchall()
-    assert version == (5,)
-    assert {row[0] for row in migrations} >= {2, 3, 4, 5}
+    assert version == (6,)
+    assert {row[0] for row in migrations} >= {2, 3, 4, 5, 6}
     assert "workflow_effect_budget_reservations" in {row[0] for row in tables}
 
 
@@ -289,7 +291,7 @@ async def test_v1_to_v5_historical_lineage_migrates_without_reinterpretation(
             await db.execute("SELECT 1 FROM workflow_research_continuation_heads")
         ).fetchall()
     expected_children = 2 if workflow_version == "v5" else 1
-    assert version == (5,)
+    assert version == (6,)
     assert len(lineage) == expected_children + 1
     assert sum(row[1] == "historical-root" for row in lineage) == expected_children
     assert heads == []
