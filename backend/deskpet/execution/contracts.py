@@ -11,6 +11,7 @@ import copy
 import hashlib
 import json
 import math
+import time
 from dataclasses import dataclass, field
 from enum import StrEnum
 from types import MappingProxyType
@@ -1638,6 +1639,29 @@ class DecisionAuthorization:
             object.__setattr__(self, field_name, _fingerprint(getattr(self, field_name), field_name))
         if self.version < 0:
             raise ContractValidationError("invalid_version", "grant version must be non-negative")
+
+    def binding_error(
+        self,
+        call: object,
+        context: object,
+        *,
+        now: float | None = None,
+    ) -> str | None:
+        expected = {
+            "run_id": getattr(context, "run_id", None),
+            "call_id": getattr(call, "call_id", None),
+            "effect_id": getattr(call, "effect_id", None),
+            "tool_name": getattr(call, "tool_name", None),
+            "args_hash": getattr(call, "args_hash", None),
+            "capability_hash": getattr(call, "capability_hash", None),
+            "scope_hash": getattr(call, "scope_hash", None),
+        }
+        for field_name, expected_value in expected.items():
+            if getattr(self, field_name) != expected_value:
+                return f"authorization_{field_name}_mismatch"
+        if self.expires_at <= (time.time() if now is None else float(now)):
+            return "authorization_expired"
+        return None
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "DecisionAuthorization":

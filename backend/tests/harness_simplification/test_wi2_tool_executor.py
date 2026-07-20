@@ -30,6 +30,7 @@ SCHEMA = {
 
 
 CAPABILITY_HASH = "c" * 64
+SCOPE_HASH = "d" * 64
 
 
 def _call(name: str, index: int = 1, **kwargs: Any) -> PreparedExecutionCall:
@@ -39,7 +40,7 @@ def _call(name: str, index: int = 1, **kwargs: Any) -> PreparedExecutionCall:
         call_id=f"call-{index}",
         effect_id=f"effect-{index}",
         capability_hash=CAPABILITY_HASH,
-        scope_hash="scope-host",
+        scope_hash=SCOPE_HASH,
         **kwargs,
     )
 
@@ -55,7 +56,7 @@ def _context(call: PreparedExecutionCall):
         workspace=".",
         write_scope_root=".",
         capability_hash=CAPABILITY_HASH,
-        scope_hash="scope-host",
+        scope_hash=SCOPE_HASH,
         provider_plan=("primary", "fallback"),
         trace_id="trace-host",
         principal_id="principal-host",
@@ -257,7 +258,7 @@ async def test_permission_accepts_only_exact_decision_authorization_binding() ->
         effect_id=call.effect_id,
         tool_name=call.tool_name,
         args_hash=call.args_hash,
-        capability_hash="attacker-capability",
+        capability_hash="e" * 64,
         scope_hash=context.scope_hash,
         expires_at=time.time() + 60,
     )
@@ -355,7 +356,7 @@ def test_legacy_adapter_uses_trusted_refs_and_strips_host_fields() -> None:
         trusted_call_id="trusted-call",
         trusted_effect_id="trusted-effect",
         trusted_capability_hash="cap-host",
-        trusted_scope_hash="scope-host",
+        trusted_scope_hash=SCOPE_HASH,
     )
     assert call.call_id == "trusted-call"
     assert call.effect_id == "trusted-effect"

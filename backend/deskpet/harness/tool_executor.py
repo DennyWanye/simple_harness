@@ -11,13 +11,13 @@ import contextvars
 import copy
 import inspect
 import logging
-import math
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
 from typing import Any, Awaitable, Callable, Mapping, Optional, Protocol, Sequence
 
+from deskpet.execution.contracts import DecisionAuthorization
 from deskpet.tools.capabilities import ToolExecutionContext, canonical_hash
 
 logger = logging.getLogger(__name__)
@@ -79,51 +79,6 @@ def reject_reserved_model_fields(args: Mapping[str, Any]) -> None:
             ",".join(sorted(set(invalid))),
         )
         raise ReservedModelFieldError(invalid)
-
-
-@dataclass(frozen=True)
-class DecisionAuthorization:
-    grant_id: str
-    decision_id: str
-    run_id: str
-    call_id: str
-    effect_id: str
-    tool_name: str
-    args_hash: str
-    capability_hash: str
-    scope_hash: str
-    expires_at: float
-
-    def binding_error(
-        self,
-        call: "PreparedExecutionCall",
-        context: ToolExecutionContext,
-        *,
-        now: Optional[float] = None,
-    ) -> Optional[str]:
-        expected = {
-            "run_id": context.run_id,
-            "call_id": call.call_id,
-            "effect_id": call.effect_id,
-            "tool_name": call.tool_name,
-            "args_hash": call.args_hash,
-            "capability_hash": call.capability_hash,
-            "scope_hash": call.scope_hash,
-        }
-        for field_name, expected_value in expected.items():
-            if getattr(self, field_name) != expected_value:
-                return f"authorization_{field_name}_mismatch"
-        if not self.grant_id or not self.decision_id:
-            return "authorization_identity_missing"
-        try:
-            expiry = float(self.expires_at)
-        except (TypeError, ValueError):
-            return "authorization_expiry_invalid"
-        if not math.isfinite(expiry):
-            return "authorization_expiry_invalid"
-        if expiry <= (time.time() if now is None else now):
-            return "authorization_expired"
-        return None
 
 
 @dataclass(frozen=True)
