@@ -1,25 +1,6 @@
-"""Product-neutral execution harness contracts.
-
-The package is add-only until the WI-12 atomic production cut-over.  Current
-production entry points intentionally remain owned by their legacy adapters.
-"""
+"""Product-neutral execution harness contracts and adapters."""
 
 from .context import HostContextFactory, RunContext
-from .tool_executor import (
-    DecisionAuthorization,
-    LegacyPreparedCallAdapter,
-    PreparedExecutionCall,
-    ToolOutcome,
-    ToolOutcomeStatus,
-    UnifiedToolExecutor,
-)
-from .router import (
-    RegisteredRouter,
-    RouteDecision,
-    RouteProfile,
-    RouteRequest,
-    RouteUnavailable,
-)
 from .kernel import (
     CancelReceipt,
     HostContext,
@@ -30,27 +11,68 @@ from .kernel import (
     SignalReceipt,
 )
 from .ports import DriverTerminalCandidate
+from .projector import (
+    DeliveryWorker,
+    EventMergeCursor,
+    ExecutionProjector,
+    ProjectionContractError,
+    ProjectionSink,
+    SessionDBProjectionSink,
+    SinkRegistration,
+    TTSProjectionSink,
+    WebSocketProjectionSink,
+    run_event_envelope,
+    standard_delivery_specs,
+    tool_outcome_payload,
+)
+from .router import (
+    RegisteredRouter,
+    RouteDecision,
+    RouteProfile,
+    RouteRequest,
+    RouteUnavailable,
+)
+from .tool_executor import (
+    DecisionAuthorization,
+    LegacyPreparedCallAdapter,
+    PreparedExecutionCall,
+    ToolOutcome,
+    ToolOutcomeStatus,
+    UnifiedToolExecutor,
+)
 
 __all__ = [
-    "DecisionAuthorization",
     "CancelReceipt",
+    "DecisionAuthorization",
+    "DeliveryWorker",
     "DriverTerminalCandidate",
+    "EventMergeCursor",
+    "ExecutionProjector",
     "HostContext",
     "HostContextFactory",
     "LegacyPreparedCallAdapter",
     "PreparedExecutionCall",
+    "ProjectionContractError",
+    "ProjectionSink",
+    "RegisteredDriver",
     "RegisteredRouter",
     "RouteDecision",
     "RouteProfile",
     "RouteRequest",
     "RouteUnavailable",
+    "RunContext",
     "RunHandle",
     "RunKernel",
     "RunRequest",
-    "RegisteredDriver",
-    "RunContext",
+    "SessionDBProjectionSink",
     "SignalReceipt",
+    "SinkRegistration",
+    "TTSProjectionSink",
     "ToolOutcome",
     "ToolOutcomeStatus",
     "UnifiedToolExecutor",
+    "WebSocketProjectionSink",
+    "run_event_envelope",
+    "standard_delivery_specs",
+    "tool_outcome_payload",
 ]

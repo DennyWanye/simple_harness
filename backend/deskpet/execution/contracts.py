@@ -59,6 +59,18 @@ class RunNotFound(ExecutionError):
     pass
 
 
+class EventNotFound(ExecutionError):
+    pass
+
+
+class DeliveryNotFound(ExecutionError):
+    pass
+
+
+class DeliveryClaimConflict(ExecutionError):
+    pass
+
+
 class ParentCycleError(ExecutionError):
     pass
 
@@ -759,6 +771,66 @@ class DeliverySpec:
 
 
 @dataclass(frozen=True, slots=True)
+class DeliveryRecord:
+    """Persisted, independently fenced projection intent for one sink."""
+
+    delivery_id: str
+    event_id: str
+    run_id: str
+    sink_kind: str
+    sink_instance: str
+    target_id: str
+    policy: DeliveryPolicy | str
+    status: DeliveryStatus | str
+    attempts: int
+    delivery_version: int
+    next_attempt_at: float | None
+    last_error: str | None
+    created_at: float
+    updated_at: float
+    delivered_at: float | None
+    schema_version: int = CONTRACT_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _schema_version(self.schema_version, name="DeliveryRecord")
+        for field_name in (
+            "delivery_id",
+            "event_id",
+            "run_id",
+            "sink_kind",
+            "sink_instance",
+            "target_id",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _required_text(getattr(self, field_name), field_name),
+            )
+        object.__setattr__(self, "policy", DeliveryPolicy(self.policy))
+        object.__setattr__(self, "status", DeliveryStatus(self.status))
+        for field_name in ("attempts", "delivery_version"):
+            value = getattr(self, field_name)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ContractValidationError(
+                    "invalid_delivery_counter",
+                    f"{field_name} must be a non-negative integer",
+                )
+        object.__setattr__(
+            self, "last_error", _optional_text(self.last_error, "last_error")
+        )
+        if self.status is DeliveryStatus.DELIVERED and self.delivered_at is None:
+            raise ContractValidationError(
+                "invalid_delivery_terminal",
+                "delivered rows require delivered_at",
+            )
+        if self.status is not DeliveryStatus.DELIVERED and self.delivered_at is not None:
+            raise ContractValidationError(
+                "invalid_delivery_terminal",
+                "only delivered rows may carry delivered_at",
+            )
+
+
+@dataclass(frozen=True, slots=True)
 class RunEventCandidate:
     event_key: str
     kind: str
@@ -1326,10 +1398,14 @@ __all__ = [
     "DecisionAuthorization",
     "DecisionKind",
     "DecisionStatus",
+    "DeliveryClaimConflict",
+    "DeliveryNotFound",
     "DeliveryPolicy",
+    "DeliveryRecord",
     "DeliverySpec",
     "DeliveryStatus",
     "EffectStatus",
+    "EventNotFound",
     "ExecutionError",
     "FinalizeRunResult",
     "GrantStatus",

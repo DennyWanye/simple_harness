@@ -9,8 +9,13 @@ from .contracts import (
     ContractValidationError,
     CreateRunResult,
     DecisionAuthorization,
+    DeliveryClaimConflict,
+    DeliveryNotFound,
     DeliveryPolicy,
+    DeliveryRecord,
     DeliverySpec,
+    DeliveryStatus,
+    EventNotFound,
     FinalizeRunResult,
     IdempotencyConflict,
     LegacyRunProjection,
@@ -42,7 +47,14 @@ from .contracts import (
     workflow_idempotency_key,
 )
 from .ledger import ExecutionLedger
-from .ports import ExecutionLedgerPort, ExecutionUnitOfWork, RunView
+from .ports import (
+    ExecutionDeliveryStore,
+    ExecutionEventStore,
+    ExecutionLedgerPort,
+    ExecutionUnitOfWork,
+    RunView,
+    SinkKey,
+)
 
 __all__ = [
     "ActiveRunCapacityExceeded",
@@ -53,8 +65,15 @@ __all__ = [
     "ContractValidationError",
     "CreateRunResult",
     "DecisionAuthorization",
+    "DeliveryClaimConflict",
+    "DeliveryNotFound",
     "DeliveryPolicy",
+    "DeliveryRecord",
     "DeliverySpec",
+    "DeliveryStatus",
+    "EventNotFound",
+    "ExecutionDeliveryStore",
+    "ExecutionEventStore",
     "ExecutionLedger",
     "ExecutionLedgerPort",
     "ExecutionUnitOfWork",
@@ -78,6 +97,7 @@ __all__ = [
     "RunRef",
     "RunStatus",
     "RunView",
+    "SinkKey",
     "TerminalConflict",
     "ToolOutcome",
     "VersionConflict",

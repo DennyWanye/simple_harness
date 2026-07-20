@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import time
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
@@ -22,7 +23,12 @@ from deskpet.execution.contracts import (
     AttachmentPolicy,
     AuthorizationError,
     CreateRunResult,
+    DeliveryClaimConflict,
+    DeliveryNotFound,
+    DeliveryRecord,
     DeliverySpec,
+    DeliveryStatus,
+    EventNotFound,
     FinalizeRunResult,
     IdempotencyConflict,
     LegacyRunProjection,
@@ -190,6 +196,37 @@ class SqliteExecutionUnitOfWork:
             durable_seq=int(row["durable_seq"]),
             candidate=candidate,
             created_at=float(row["created_at"]),
+            schema_version=int(row["schema_version"]),
+        )
+
+    @staticmethod
+    def _row_to_delivery(row: Mapping[str, Any]) -> DeliveryRecord:
+        return DeliveryRecord(
+            delivery_id=str(row["delivery_id"]),
+            event_id=str(row["event_id"]),
+            run_id=str(row["run_id"]),
+            sink_kind=str(row["sink_kind"]),
+            sink_instance=str(row["sink_instance"]),
+            target_id=str(row["target_id"]),
+            policy=str(row["policy"]),
+            status=str(row["status"]),
+            attempts=int(row["attempts"]),
+            delivery_version=int(row["delivery_version"]),
+            next_attempt_at=(
+                float(row["next_attempt_at"])
+                if row["next_attempt_at"] is not None
+                else None
+            ),
+            last_error=(
+                str(row["last_error"]) if row["last_error"] is not None else None
+            ),
+            created_at=float(row["created_at"]),
+            updated_at=float(row["updated_at"]),
+            delivered_at=(
+                float(row["delivered_at"])
+                if row["delivered_at"] is not None
+                else None
+            ),
             schema_version=int(row["schema_version"]),
         )
 
@@ -574,6 +611,317 @@ class SqliteExecutionUnitOfWork:
             if db.in_transaction:
                 await db.rollback()
             raise
+        finally:
+            await db.close()
+
+    async def get_event(self, event_id: str) -> RunEvent:
+        event_key = str(event_id).strip()
+        if not event_key:
+            raise EventNotFound("event_not_found", "event_id must be non-empty")
+        db = await self._connect()
+        try:
+            row = await (
+                await db.execute(
+                    """SELECT execution_events.*,execution_runs.root_run_id,
+                    execution_runs.session_id FROM execution_events
+                    JOIN execution_runs USING(run_id)
+                    WHERE execution_events.event_id=?""",
+                    (event_key,),
+                )
+            ).fetchone()
+            if row is None:
+                raise EventNotFound(
+                    "event_not_found", f"execution event does not exist: {event_key}"
+                )
+            return self._row_to_event(row)
+        finally:
+            await db.close()
+
+    async def list_events(
+        self,
+        run_id: str,
+        *,
+        after_durable_seq: int = 0,
+    ) -> tuple[RunEvent, ...]:
+        if (
+            not isinstance(after_durable_seq, int)
+            or isinstance(after_durable_seq, bool)
+            or after_durable_seq < 0
+        ):
+            raise ValueError("after_durable_seq must be a non-negative integer")
+        db = await self._connect()
+        try:
+            run = await (
+                await db.execute(
+                    "SELECT root_run_id,session_id FROM execution_runs WHERE run_id=?",
+                    (run_id,),
+                )
+            ).fetchone()
+            if run is None:
+                raise RunNotFound(
+                    "run_not_found", f"execution run does not exist: {run_id}"
+                )
+            rows = await (
+                await db.execute(
+                    """SELECT execution_events.*,? AS root_run_id,? AS session_id
+                    FROM execution_events WHERE run_id=? AND durable_seq>?
+                    ORDER BY durable_seq,event_id""",
+                    (run["root_run_id"], run["session_id"], run_id, after_durable_seq),
+                )
+            ).fetchall()
+            return tuple(self._row_to_event(row) for row in rows)
+        finally:
+            await db.close()
+
+    async def list_event_deliveries(
+        self, event_id: str
+    ) -> tuple[DeliveryRecord, ...]:
+        db = await self._connect()
+        try:
+            rows = await (
+                await db.execute(
+                    """SELECT * FROM execution_deliveries WHERE event_id=?
+                    ORDER BY sink_kind,sink_instance,target_id""",
+                    (event_id,),
+                )
+            ).fetchall()
+            return tuple(self._row_to_delivery(row) for row in rows)
+        finally:
+            await db.close()
+
+    async def claim_delivery(
+        self,
+        *,
+        sink_keys: Sequence[tuple[str, str]] = (),
+        claim_ttl_seconds: float = 30.0,
+    ) -> DeliveryRecord | None:
+        ttl = float(claim_ttl_seconds)
+        if not math.isfinite(ttl) or ttl <= 0:
+            raise ValueError("claim_ttl_seconds must be finite and positive")
+        normalized_keys = tuple(
+            (str(kind).strip(), str(instance).strip())
+            for kind, instance in sink_keys
+        )
+        if any(not kind or not instance for kind, instance in normalized_keys):
+            raise ValueError("sink keys require non-empty kind and instance")
+        if len(dict.fromkeys(normalized_keys)) != len(normalized_keys):
+            raise ValueError("sink keys must be unique")
+
+        now = float(self._clock())
+        eligible = """(
+            status='pending'
+            OR (status='failed' AND COALESCE(next_attempt_at,0)<=?)
+            OR (status='delivering' AND next_attempt_at IS NOT NULL
+                AND next_attempt_at<=? AND policy!='best_effort')
+        )"""
+        sink_clause = ""
+        sink_params: list[object] = []
+        if normalized_keys:
+            sink_clause = " AND (" + " OR ".join(
+                "(sink_kind=? AND sink_instance=?)" for _ in normalized_keys
+            ) + ")"
+            for kind, instance in normalized_keys:
+                sink_params.extend((kind, instance))
+
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            # BEST_EFFORT is at-most-one physical attempt.  If its worker
+            # vanished after claim, persistently discard the expired claim;
+            # replaying TTS after restart is worse than dropping the cue.
+            await db.execute(
+                """UPDATE execution_deliveries SET status='discarded',
+                delivery_version=delivery_version+1,next_attempt_at=NULL,
+                last_error='best-effort claim expired',updated_at=?
+                WHERE status='delivering' AND policy='best_effort'
+                AND next_attempt_at IS NOT NULL AND next_attempt_at<=?""",
+                (now, now),
+            )
+            row = await (
+                await db.execute(
+                    f"""SELECT * FROM execution_deliveries
+                    WHERE {eligible}{sink_clause}
+                    ORDER BY CASE policy
+                        WHEN 'durable_required' THEN 0
+                        WHEN 'retry_while_bound' THEN 1 ELSE 2 END,
+                        created_at,delivery_id LIMIT 1""",
+                    (now, now, *sink_params),
+                )
+            ).fetchone()
+            if row is None:
+                await db.commit()
+                return None
+            lease_expires_at = now + ttl
+            cursor = await db.execute(
+                f"""UPDATE execution_deliveries SET status='delivering',
+                attempts=attempts+1,delivery_version=delivery_version+1,
+                next_attempt_at=?,updated_at=?
+                WHERE delivery_id=? AND delivery_version=? AND {eligible}""",
+                (
+                    lease_expires_at,
+                    now,
+                    row["delivery_id"],
+                    row["delivery_version"],
+                    now,
+                    now,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise DeliveryClaimConflict(
+                    "delivery_claim_conflict", "delivery changed before claim CAS"
+                )
+            claimed = await (
+                await db.execute(
+                    "SELECT * FROM execution_deliveries WHERE delivery_id=?",
+                    (row["delivery_id"],),
+                )
+            ).fetchone()
+            assert claimed is not None
+            await db.commit()
+            return self._row_to_delivery(claimed)
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def complete_delivery(
+        self,
+        delivery_id: str,
+        *,
+        expected_version: int,
+    ) -> DeliveryRecord:
+        now = float(self._clock())
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            cursor = await db.execute(
+                """UPDATE execution_deliveries SET status='delivered',
+                delivery_version=delivery_version+1,next_attempt_at=NULL,last_error=NULL,
+                updated_at=?,delivered_at=? WHERE delivery_id=?
+                AND delivery_version=? AND status='delivering'""",
+                (now, now, delivery_id, expected_version),
+            )
+            if cursor.rowcount != 1:
+                existing = await (
+                    await db.execute(
+                        "SELECT delivery_id FROM execution_deliveries WHERE delivery_id=?",
+                        (delivery_id,),
+                    )
+                ).fetchone()
+                if existing is None:
+                    raise DeliveryNotFound(
+                        "delivery_not_found",
+                        f"execution delivery does not exist: {delivery_id}",
+                    )
+                raise DeliveryClaimConflict(
+                    "delivery_claim_conflict", "delivery completion lost its claim fence"
+                )
+            row = await (
+                await db.execute(
+                    "SELECT * FROM execution_deliveries WHERE delivery_id=?",
+                    (delivery_id,),
+                )
+            ).fetchone()
+            assert row is not None
+            await db.commit()
+            return self._row_to_delivery(row)
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def release_delivery(
+        self,
+        delivery_id: str,
+        *,
+        expected_version: int,
+        error: str,
+        retry_at: float | None,
+        discard: bool,
+    ) -> DeliveryRecord:
+        message = str(error).strip()
+        if not message:
+            raise ValueError("delivery error must be non-empty")
+        if not discard and retry_at is None:
+            raise ValueError("retryable delivery release requires retry_at")
+        if retry_at is not None and not math.isfinite(float(retry_at)):
+            raise ValueError("retry_at must be finite")
+        status = DeliveryStatus.DISCARDED if discard else DeliveryStatus.FAILED
+        now = float(self._clock())
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            cursor = await db.execute(
+                """UPDATE execution_deliveries SET status=?,
+                delivery_version=delivery_version+1,next_attempt_at=?,last_error=?,
+                updated_at=?,delivered_at=NULL WHERE delivery_id=?
+                AND delivery_version=? AND status='delivering'""",
+                (
+                    status.value,
+                    None if discard else float(retry_at),
+                    message,
+                    now,
+                    delivery_id,
+                    expected_version,
+                ),
+            )
+            if cursor.rowcount != 1:
+                existing = await (
+                    await db.execute(
+                        "SELECT delivery_id FROM execution_deliveries WHERE delivery_id=?",
+                        (delivery_id,),
+                    )
+                ).fetchone()
+                if existing is None:
+                    raise DeliveryNotFound(
+                        "delivery_not_found",
+                        f"execution delivery does not exist: {delivery_id}",
+                    )
+                raise DeliveryClaimConflict(
+                    "delivery_claim_conflict", "delivery release lost its claim fence"
+                )
+            row = await (
+                await db.execute(
+                    "SELECT * FROM execution_deliveries WHERE delivery_id=?",
+                    (delivery_id,),
+                )
+            ).fetchone()
+            assert row is not None
+            await db.commit()
+            return self._row_to_delivery(row)
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def required_deliveries_complete(self, event_id: str) -> bool:
+        db = await self._connect()
+        try:
+            event = await (
+                await db.execute(
+                    "SELECT event_id FROM execution_events WHERE event_id=?",
+                    (event_id,),
+                )
+            ).fetchone()
+            if event is None:
+                raise EventNotFound(
+                    "event_not_found", f"execution event does not exist: {event_id}"
+                )
+            remaining = await (
+                await db.execute(
+                    """SELECT COUNT(*) FROM execution_deliveries
+                    WHERE event_id=? AND policy='durable_required'
+                    AND status!='delivered'""",
+                    (event_id,),
+                )
+            ).fetchone()
+            return int(remaining[0]) == 0
         finally:
             await db.close()
 

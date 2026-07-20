@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Protocol, Sequence, runtime_checkable
+from typing import Protocol, Sequence, TypeAlias, runtime_checkable
 
 from .contracts import (
     ActorAction,
     ActorContext,
     CreateRunResult,
+    DeliveryRecord,
     DeliverySpec,
     FinalizeRunResult,
     LegacyRunProjection,
@@ -23,6 +24,7 @@ from .contracts import (
 
 
 RunView = RunRecord | LegacyRunProjection
+SinkKey: TypeAlias = tuple[str, str]
 
 
 @runtime_checkable
@@ -82,7 +84,57 @@ class ExecutionLedger(Protocol):
 
 
 @runtime_checkable
-class ExecutionUnitOfWork(ExecutionLedger, Protocol):
+class ExecutionEventStore(Protocol):
+    async def get_event(self, event_id: str) -> RunEvent: ...
+
+    async def list_events(
+        self,
+        run_id: str,
+        *,
+        after_durable_seq: int = 0,
+    ) -> tuple[RunEvent, ...]: ...
+
+
+@runtime_checkable
+class ExecutionDeliveryStore(Protocol):
+    async def list_event_deliveries(
+        self, event_id: str
+    ) -> tuple[DeliveryRecord, ...]: ...
+
+    async def claim_delivery(
+        self,
+        *,
+        sink_keys: Sequence[SinkKey] = (),
+        claim_ttl_seconds: float = 30.0,
+    ) -> DeliveryRecord | None: ...
+
+    async def complete_delivery(
+        self,
+        delivery_id: str,
+        *,
+        expected_version: int,
+    ) -> DeliveryRecord: ...
+
+    async def release_delivery(
+        self,
+        delivery_id: str,
+        *,
+        expected_version: int,
+        error: str,
+        retry_at: float | None,
+        discard: bool,
+    ) -> DeliveryRecord: ...
+
+    async def required_deliveries_complete(self, event_id: str) -> bool: ...
+
+
+@runtime_checkable
+class ExecutionUnitOfWork(
+    ExecutionLedger,
+    ExecutionEventStore,
+    ExecutionDeliveryStore,
+    Protocol,
+):
     """One-connection durable operations shared by execution and drivers."""
 
     async def initialize(self) -> None: ...
@@ -112,6 +164,9 @@ ExecutionLedgerPort = ExecutionLedger
 __all__ = [
     "ExecutionLedger",
     "ExecutionLedgerPort",
+    "ExecutionDeliveryStore",
+    "ExecutionEventStore",
     "ExecutionUnitOfWork",
     "RunView",
+    "SinkKey",
 ]
