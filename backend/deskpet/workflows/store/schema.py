@@ -7,7 +7,7 @@ from pathlib import Path
 
 import aiosqlite
 
-WORKFLOW_SCHEMA_VERSION = 4
+WORKFLOW_SCHEMA_VERSION = 5
 
 _SCHEMA_V2 = r"""
 BEGIN IMMEDIATE;
@@ -241,6 +241,8 @@ async def initialize_workflow_db(path: str | Path) -> Path:
                     await _migrate_v2_to_v3(db)
                 elif current == 3:
                     await _migrate_v3_to_v4(db)
+                elif current == 4:
+                    await _migrate_v4_to_v5(db)
                 else:  # pragma: no cover - guarded by the version constant
                     raise RuntimeError(f"no workflow.db migration from schema {current}")
                 row = await (await db.execute("PRAGMA user_version")).fetchone()
@@ -621,3 +623,375 @@ async def _migrate_v3_to_v4(db: aiosqlite.Connection) -> None:
     )
     await db.execute("PRAGMA user_version=4")
     await db.commit()
+
+
+async def _migrate_v4_to_v5(db: aiosqlite.Connection) -> None:
+    """Install the generic execution ledger without rewriting legacy rows."""
+
+    await db.executescript(
+        """
+        BEGIN IMMEDIATE;
+
+        CREATE TABLE execution_runs (
+            run_id TEXT PRIMARY KEY,
+            schema_version INTEGER NOT NULL CHECK(schema_version=1),
+            idempotency_key TEXT NOT NULL UNIQUE,
+            session_id TEXT NOT NULL,
+            root_run_id TEXT NOT NULL,
+            parent_run_id TEXT,
+            request_id TEXT NOT NULL,
+            turn_id TEXT NOT NULL,
+            venue TEXT NOT NULL,
+            workspace_json TEXT NOT NULL,
+            capability_hash TEXT NOT NULL,
+            provider_plan_json TEXT NOT NULL,
+            trace_id TEXT NOT NULL,
+            principal_id TEXT NOT NULL,
+            auth_epoch INTEGER NOT NULL DEFAULT 0 CHECK(auth_epoch>=0),
+            payload_fingerprint TEXT NOT NULL,
+            capability_fingerprint TEXT NOT NULL,
+            driver_kind TEXT NOT NULL,
+            profile_key TEXT NOT NULL,
+            persistence_level TEXT NOT NULL
+                CHECK(persistence_level IN ('ephemeral','durable')),
+            status TEXT NOT NULL CHECK(status IN (
+                'created','queued','running','waiting','cancel_requested',
+                'completed','failed','cancelled'
+            )),
+            version INTEGER NOT NULL DEFAULT 0 CHECK(version>=0),
+            durable_seq INTEGER NOT NULL DEFAULT 0 CHECK(durable_seq>=0),
+            terminal_event_id TEXT,
+            cancel_reason TEXT,
+            created_at REAL NOT NULL,
+            started_at REAL,
+            updated_at REAL NOT NULL,
+            ended_at REAL,
+            CHECK(parent_run_id IS NULL OR parent_run_id<>run_id),
+            CHECK(length(payload_fingerprint)=64
+                AND payload_fingerprint NOT GLOB '*[^0-9a-f]*'),
+            CHECK(length(capability_fingerprint)=64
+                AND capability_fingerprint NOT GLOB '*[^0-9a-f]*'),
+            CHECK(length(capability_hash)=64
+                AND capability_hash NOT GLOB '*[^0-9a-f]*'),
+            CHECK(capability_hash=capability_fingerprint),
+            CHECK(
+                (status IN ('completed','failed','cancelled')
+                    AND ended_at IS NOT NULL AND terminal_event_id IS NOT NULL)
+                OR
+                (status NOT IN ('completed','failed','cancelled')
+                    AND ended_at IS NULL AND terminal_event_id IS NULL)
+            ),
+            FOREIGN KEY(root_run_id) REFERENCES execution_runs(run_id) ON DELETE RESTRICT,
+            FOREIGN KEY(parent_run_id) REFERENCES execution_runs(run_id) ON DELETE RESTRICT
+        );
+        CREATE INDEX idx_execution_runs_session_created
+            ON execution_runs(session_id,created_at DESC,run_id);
+        CREATE INDEX idx_execution_runs_root_status
+            ON execution_runs(root_run_id,status,created_at,run_id);
+        CREATE INDEX idx_execution_runs_parent_status
+            ON execution_runs(parent_run_id,status,created_at,run_id);
+
+        CREATE TABLE execution_run_links (
+            link_id TEXT PRIMARY KEY,
+            schema_version INTEGER NOT NULL CHECK(schema_version=1),
+            root_run_id TEXT NOT NULL,
+            parent_run_id TEXT NOT NULL,
+            child_run_id TEXT NOT NULL,
+            attachment_policy TEXT NOT NULL CHECK(attachment_policy IN (
+                'attached','detached','root_terminal_child'
+            )),
+            link_kind TEXT NOT NULL CHECK(link_kind IN ('structural','domain')),
+            domain_kind TEXT NOT NULL DEFAULT '',
+            domain_id TEXT NOT NULL DEFAULT '',
+            created_at REAL NOT NULL,
+            CHECK(parent_run_id<>child_run_id),
+            CHECK(
+                (link_kind='structural' AND domain_kind='' AND domain_id='')
+                OR
+                (link_kind='domain' AND domain_kind<>'' AND domain_id<>'')
+            ),
+            UNIQUE(parent_run_id,child_run_id,link_kind,domain_kind,domain_id),
+            FOREIGN KEY(root_run_id) REFERENCES execution_runs(run_id) ON DELETE RESTRICT,
+            FOREIGN KEY(parent_run_id) REFERENCES execution_runs(run_id) ON DELETE RESTRICT,
+            FOREIGN KEY(child_run_id) REFERENCES execution_runs(run_id) ON DELETE CASCADE
+        );
+        CREATE UNIQUE INDEX uq_execution_run_links_structural_child
+            ON execution_run_links(child_run_id) WHERE link_kind='structural';
+        CREATE INDEX idx_execution_run_links_root_parent
+            ON execution_run_links(root_run_id,parent_run_id,child_run_id);
+        CREATE INDEX idx_execution_run_links_domain
+            ON execution_run_links(domain_kind,domain_id,root_run_id);
+
+        CREATE TABLE execution_decisions (
+            decision_id TEXT PRIMARY KEY,
+            schema_version INTEGER NOT NULL CHECK(schema_version=1),
+            run_id TEXT NOT NULL,
+            nonce TEXT NOT NULL,
+            kind TEXT NOT NULL CHECK(kind IN (
+                'permission','plan','clarification','ppt_outline',
+                'skill_candidate','workflow_hitl'
+            )),
+            status TEXT NOT NULL CHECK(status IN ('open','allowed','denied','expired')),
+            prompt_schema_version INTEGER NOT NULL CHECK(prompt_schema_version>0),
+            prompt_json TEXT NOT NULL,
+            response_schema_version INTEGER CHECK(response_schema_version IS NULL OR response_schema_version>0),
+            response_json TEXT,
+            domain_kind TEXT,
+            domain_id TEXT,
+            call_id TEXT,
+            effect_id TEXT,
+            tool_name TEXT,
+            args_hash TEXT,
+            capability_hash TEXT,
+            scope_hash TEXT,
+            decision_version INTEGER NOT NULL DEFAULT 0 CHECK(decision_version>=0),
+            expires_at REAL,
+            created_at REAL NOT NULL,
+            resolved_at REAL,
+            UNIQUE(run_id,nonce),
+            CHECK(
+                kind<>'permission' OR (
+                    call_id IS NOT NULL AND effect_id IS NOT NULL AND tool_name IS NOT NULL
+                    AND args_hash IS NOT NULL AND capability_hash IS NOT NULL
+                    AND scope_hash IS NOT NULL
+                )
+            ),
+            CHECK(
+                (status='open' AND response_json IS NULL AND resolved_at IS NULL)
+                OR
+                (status IN ('allowed','denied') AND response_json IS NOT NULL
+                    AND response_schema_version IS NOT NULL AND resolved_at IS NOT NULL)
+                OR
+                (status='expired' AND resolved_at IS NOT NULL)
+            ),
+            FOREIGN KEY(run_id) REFERENCES execution_runs(run_id) ON DELETE CASCADE
+        );
+        CREATE INDEX idx_execution_decisions_run_status_expiry
+            ON execution_decisions(run_id,status,expires_at,created_at);
+
+        CREATE TABLE execution_grants (
+            grant_id TEXT PRIMARY KEY,
+            schema_version INTEGER NOT NULL CHECK(schema_version=1),
+            decision_id TEXT NOT NULL UNIQUE,
+            run_id TEXT NOT NULL,
+            call_id TEXT NOT NULL,
+            effect_id TEXT NOT NULL,
+            tool_name TEXT NOT NULL,
+            args_hash TEXT NOT NULL,
+            capability_hash TEXT NOT NULL,
+            scope_hash TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('issued','consumed','expired','revoked')),
+            grant_version INTEGER NOT NULL DEFAULT 0 CHECK(grant_version>=0),
+            expires_at REAL NOT NULL,
+            created_at REAL NOT NULL,
+            consumed_at REAL,
+            CHECK(
+                (status='consumed' AND consumed_at IS NOT NULL)
+                OR (status<>'consumed' AND consumed_at IS NULL)
+            ),
+            FOREIGN KEY(decision_id) REFERENCES execution_decisions(decision_id) ON DELETE CASCADE,
+            FOREIGN KEY(run_id) REFERENCES execution_runs(run_id) ON DELETE CASCADE
+        );
+        CREATE INDEX idx_execution_grants_run_status_expiry
+            ON execution_grants(run_id,status,expires_at);
+        CREATE TRIGGER execution_grant_permission_guard
+        BEFORE INSERT ON execution_grants
+        BEGIN
+            SELECT CASE WHEN NOT EXISTS (
+                SELECT 1 FROM execution_decisions AS decision
+                WHERE decision.decision_id=NEW.decision_id
+                  AND decision.run_id=NEW.run_id
+                  AND decision.kind='permission'
+                  AND decision.status='allowed'
+                  AND decision.call_id=NEW.call_id
+                  AND decision.effect_id=NEW.effect_id
+                  AND decision.tool_name=NEW.tool_name
+                  AND decision.args_hash=NEW.args_hash
+                  AND decision.capability_hash=NEW.capability_hash
+                  AND decision.scope_hash=NEW.scope_hash
+            ) THEN RAISE(ABORT,'invalid_execution_grant_decision') END;
+        END;
+
+        CREATE TABLE execution_effects (
+            effect_id TEXT PRIMARY KEY,
+            schema_version INTEGER NOT NULL CHECK(schema_version=1),
+            run_id TEXT NOT NULL,
+            effect_fingerprint TEXT NOT NULL,
+            call_id TEXT NOT NULL,
+            tool_name TEXT NOT NULL,
+            args_hash TEXT NOT NULL,
+            capability_hash TEXT NOT NULL,
+            scope_hash TEXT,
+            effect_type TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN (
+                'prepared','running','succeeded','failed','unknown','cancelled','late_reconciled'
+            )),
+            policy_json TEXT NOT NULL,
+            prepared_json TEXT NOT NULL,
+            outcome_json TEXT,
+            receipt_ref TEXT,
+            artifact_refs_json TEXT NOT NULL DEFAULT '[]',
+            effect_version INTEGER NOT NULL DEFAULT 0 CHECK(effect_version>=0),
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            ended_at REAL,
+            UNIQUE(run_id,effect_fingerprint),
+            FOREIGN KEY(run_id) REFERENCES execution_runs(run_id) ON DELETE CASCADE
+        );
+        CREATE INDEX idx_execution_effects_run_status
+            ON execution_effects(run_id,status,updated_at);
+
+        CREATE TABLE execution_effect_attempts (
+            effect_id TEXT NOT NULL,
+            attempt_no INTEGER NOT NULL CHECK(attempt_no>=1),
+            status TEXT NOT NULL CHECK(status IN (
+                'running','succeeded','failed','unknown','cancelled','late_reconciled'
+            )),
+            worker_owner TEXT,
+            worker_epoch INTEGER NOT NULL DEFAULT 0 CHECK(worker_epoch>=0),
+            started_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            ended_at REAL,
+            error_json TEXT,
+            outcome_json TEXT,
+            PRIMARY KEY(effect_id,attempt_no),
+            FOREIGN KEY(effect_id) REFERENCES execution_effects(effect_id) ON DELETE CASCADE
+        );
+        CREATE INDEX idx_execution_effect_attempts_status
+            ON execution_effect_attempts(status,updated_at);
+
+        CREATE TABLE execution_effect_links (
+            run_id TEXT NOT NULL,
+            node_execution_id TEXT NOT NULL DEFAULT '',
+            effect_id TEXT NOT NULL,
+            checkpoint_ns TEXT NOT NULL DEFAULT '',
+            checkpoint_id TEXT NOT NULL DEFAULT '',
+            created_at REAL NOT NULL,
+            PRIMARY KEY(run_id,node_execution_id,effect_id,checkpoint_ns,checkpoint_id),
+            FOREIGN KEY(run_id) REFERENCES execution_runs(run_id) ON DELETE CASCADE,
+            FOREIGN KEY(effect_id) REFERENCES execution_effects(effect_id) ON DELETE CASCADE
+        );
+        CREATE INDEX idx_execution_effect_links_checkpoint
+            ON execution_effect_links(run_id,checkpoint_ns,checkpoint_id,node_execution_id);
+
+        CREATE TABLE execution_events (
+            event_id TEXT PRIMARY KEY,
+            schema_version INTEGER NOT NULL CHECK(schema_version=1),
+            event_key TEXT NOT NULL,
+            run_id TEXT NOT NULL,
+            durable_seq INTEGER NOT NULL CHECK(durable_seq>=1),
+            kind TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN (
+                'succeeded','failed','accepted','waiting',
+                'cancel_requested','cancelled','unknown'
+            )),
+            driver_kind TEXT NOT NULL,
+            correlation_json TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            error_json TEXT,
+            artifact_refs_json TEXT NOT NULL DEFAULT '[]',
+            created_at REAL NOT NULL,
+            UNIQUE(run_id,durable_seq),
+            UNIQUE(run_id,event_key),
+            FOREIGN KEY(run_id) REFERENCES execution_runs(run_id) ON DELETE CASCADE
+        );
+        CREATE INDEX idx_execution_events_run_created
+            ON execution_events(run_id,durable_seq,event_id);
+
+        CREATE TABLE execution_deliveries (
+            delivery_id TEXT PRIMARY KEY,
+            schema_version INTEGER NOT NULL CHECK(schema_version=1),
+            event_id TEXT NOT NULL,
+            run_id TEXT NOT NULL,
+            sink_kind TEXT NOT NULL,
+            sink_instance TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            policy TEXT NOT NULL CHECK(policy IN (
+                'durable_required','retry_while_bound','best_effort'
+            )),
+            status TEXT NOT NULL CHECK(status IN (
+                'pending','delivering','delivered','failed','discarded'
+            )),
+            attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts>=0),
+            delivery_version INTEGER NOT NULL DEFAULT 0 CHECK(delivery_version>=0),
+            next_attempt_at REAL,
+            last_error TEXT,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            delivered_at REAL,
+            UNIQUE(event_id,sink_kind,sink_instance,target_id),
+            FOREIGN KEY(event_id) REFERENCES execution_events(event_id) ON DELETE CASCADE,
+            FOREIGN KEY(run_id) REFERENCES execution_runs(run_id) ON DELETE CASCADE
+        );
+        CREATE INDEX idx_execution_deliveries_retry
+            ON execution_deliveries(status,next_attempt_at,created_at);
+        CREATE INDEX idx_execution_deliveries_run
+            ON execution_deliveries(run_id,status,created_at);
+
+        CREATE TABLE execution_continuations (
+            run_id TEXT PRIMARY KEY,
+            schema_version INTEGER NOT NULL CHECK(schema_version=1),
+            command_schema_version INTEGER NOT NULL CHECK(command_schema_version>0),
+            canonical_messages_json TEXT NOT NULL,
+            session_projection_cursor INTEGER NOT NULL DEFAULT 0
+                CHECK(session_projection_cursor>=0),
+            prepared_context_ref TEXT,
+            tool_set_snapshot_ref TEXT,
+            pending_prepared_call_json TEXT,
+            pending_decision_id TEXT,
+            iteration INTEGER NOT NULL DEFAULT 0 CHECK(iteration>=0),
+            provider_state_json TEXT NOT NULL DEFAULT '{}',
+            continuation_version INTEGER NOT NULL DEFAULT 0 CHECK(continuation_version>=0),
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            FOREIGN KEY(run_id) REFERENCES execution_runs(run_id) ON DELETE CASCADE,
+            FOREIGN KEY(pending_decision_id)
+                REFERENCES execution_decisions(decision_id) ON DELETE RESTRICT
+        );
+
+        CREATE TABLE execution_child_commands (
+            operation_id TEXT PRIMARY KEY,
+            schema_version INTEGER NOT NULL CHECK(schema_version=1),
+            parent_run_id TEXT NOT NULL,
+            child_run_id TEXT NOT NULL UNIQUE,
+            profile_key TEXT NOT NULL,
+            join_policy TEXT NOT NULL CHECK(join_policy IN (
+                'attached','detached','root_terminal_child'
+            )),
+            capability_snapshot_ref TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN (
+                'pending','leased','scheduled','acked','failed','cancelled'
+            )),
+            schedule_lease_owner TEXT,
+            schedule_lease_epoch INTEGER NOT NULL DEFAULT 0 CHECK(schedule_lease_epoch>=0),
+            schedule_lease_expires_at REAL,
+            attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts>=0),
+            next_attempt_at REAL,
+            last_error TEXT,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            ack_at REAL,
+            CHECK(parent_run_id<>child_run_id),
+            CHECK(
+                status NOT IN ('leased','scheduled')
+                OR (
+                    schedule_lease_owner IS NOT NULL
+                    AND schedule_lease_epoch>0
+                    AND schedule_lease_expires_at IS NOT NULL
+                )
+            ),
+            CHECK((status='acked' AND ack_at IS NOT NULL) OR status<>'acked'),
+            FOREIGN KEY(parent_run_id) REFERENCES execution_runs(run_id) ON DELETE RESTRICT,
+            FOREIGN KEY(child_run_id) REFERENCES execution_runs(run_id) ON DELETE CASCADE
+        );
+        CREATE INDEX idx_execution_child_commands_schedule
+            ON execution_child_commands(status,next_attempt_at,schedule_lease_expires_at);
+        CREATE INDEX idx_execution_child_commands_parent
+            ON execution_child_commands(parent_run_id,status,created_at);
+
+        INSERT INTO workflow_schema_migrations(version,applied_at)
+        VALUES(5,CAST(strftime('%s','now') AS REAL));
+        PRAGMA user_version=5;
+        COMMIT;
+        """
+    )

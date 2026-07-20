@@ -50,13 +50,43 @@ async def test_workflow_schema_is_complete_and_idempotent(tmp_path):
         "workflow_research_resource_reservations",
         "workflow_effect_attempt_heads",
         "workflow_research_continuation_heads",
+        "execution_runs",
+        "execution_run_links",
+        "execution_decisions",
+        "execution_grants",
+        "execution_effects",
+        "execution_effect_attempts",
+        "execution_effect_links",
+        "execution_events",
+        "execution_deliveries",
+        "execution_continuations",
+        "execution_child_commands",
     } <= names
+
+
+async def _drop_v5_execution_schema(db) -> None:
+    for table in (
+        "execution_child_commands",
+        "execution_continuations",
+        "execution_deliveries",
+        "execution_events",
+        "execution_effect_links",
+        "execution_effect_attempts",
+        "execution_effects",
+        "execution_grants",
+        "execution_decisions",
+        "execution_run_links",
+        "execution_runs",
+    ):
+        await db.execute(f"DROP TABLE IF EXISTS {table}")
+    await db.execute("DELETE FROM workflow_schema_migrations WHERE version=5")
 
 
 async def _downgrade_v3_fixture(path, version: int) -> None:
     await initialize_workflow_db(path)
     async with aiosqlite.connect(path) as db:
         await db.execute("PRAGMA foreign_keys=OFF")
+        await _drop_v5_execution_schema(db)
         for index in (
             "uq_workflow_effect_logical_attempt",
             "idx_workflow_effect_attempt_heads_run",
@@ -89,6 +119,7 @@ async def _as_v3_with_historical_lineage(path, workflow_version: str, *, sibling
     await initialize_workflow_db(path)
     async with aiosqlite.connect(path) as db:
         await db.execute("PRAGMA foreign_keys=OFF")
+        await _drop_v5_execution_schema(db)
         for index in (
             "uq_workflow_effect_logical_attempt",
             "idx_workflow_effect_attempt_heads_run",
@@ -160,7 +191,7 @@ async def _as_v3_with_historical_lineage(path, workflow_version: str, *, sibling
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("starting_version", (1, 2))
-async def test_v1_and_v2_follow_the_migration_loop_to_v4(tmp_path, starting_version):
+async def test_v1_and_v2_follow_the_migration_loop_to_v5(tmp_path, starting_version):
     path = tmp_path / f"workflow-v{starting_version}.db"
     await _downgrade_v3_fixture(path, starting_version)
 
@@ -174,8 +205,8 @@ async def test_v1_and_v2_follow_the_migration_loop_to_v4(tmp_path, starting_vers
         tables = await (
             await db.execute("SELECT name FROM sqlite_master WHERE type='table'")
         ).fetchall()
-    assert version == (4,)
-    assert {row[0] for row in migrations} >= {2, 3, 4}
+    assert version == (5,)
+    assert {row[0] for row in migrations} >= {2, 3, 4, 5}
     assert "workflow_effect_budget_reservations" in {row[0] for row in tables}
 
 
@@ -258,7 +289,7 @@ async def test_v1_to_v5_historical_lineage_migrates_without_reinterpretation(
             await db.execute("SELECT 1 FROM workflow_research_continuation_heads")
         ).fetchall()
     expected_children = 2 if workflow_version == "v5" else 1
-    assert version == (4,)
+    assert version == (5,)
     assert len(lineage) == expected_children + 1
     assert sum(row[1] == "historical-root" for row in lineage) == expected_children
     assert heads == []
