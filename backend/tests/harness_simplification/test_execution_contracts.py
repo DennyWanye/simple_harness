@@ -14,7 +14,6 @@ from deskpet.execution import (
     RunContext,
     RunEvent,
     RunEventCandidate,
-    ToolOutcome,
     delegate_idempotency_key,
     fingerprint_json,
     root_idempotency_key,
@@ -113,15 +112,6 @@ def test_run_event_order_domains_are_explicit_and_mutually_exclusive() -> None:
             candidate=candidate,
             created_at=1.0,
         )
-
-
-@pytest.mark.parametrize(
-    "status",
-    (OutcomeStatus.ACCEPTED, OutcomeStatus.UNKNOWN, OutcomeStatus.FAILED),
-)
-def test_non_success_tool_outcomes_never_report_success(status: OutcomeStatus) -> None:
-    outcome = ToolOutcome(call_id="call", effect_id=None, status=status)
-    assert outcome.succeeded is False
 
 
 def test_execution_package_has_no_workflow_dependency() -> None:

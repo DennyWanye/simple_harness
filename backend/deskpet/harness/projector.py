@@ -20,14 +20,10 @@ from deskpet.execution.contracts import (
     ExecutionError,
     JsonValue,
     RunEvent,
-    ToolOutcome,
     thaw_json,
 )
-from deskpet.execution.ports import (
-    ExecutionDeliveryStore,
-    ExecutionEventStore,
-    SinkKey,
-)
+from deskpet.execution.ports import ExecutionUnitOfWork, SinkKey
+from deskpet.harness.tool_executor import ToolOutcome
 
 
 class ProjectionContractError(ExecutionError):
@@ -281,7 +277,7 @@ class ExecutionProjector:
 
     def __init__(
         self,
-        event_store: ExecutionEventStore,
+        event_store: ExecutionUnitOfWork,
         registrations: Sequence[SinkRegistration],
     ) -> None:
         self._event_store = event_store
@@ -357,7 +353,7 @@ class DeliveryWorker:
 
     def __init__(
         self,
-        store: ExecutionDeliveryStore,
+        store: ExecutionUnitOfWork,
         projector: ExecutionProjector,
         *,
         clock: Callable[[], float] = time.time,

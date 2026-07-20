@@ -22,7 +22,6 @@ from deskpet.execution import (
     RunEvent,
     RunEventCandidate,
     RunStatus,
-    ToolOutcome,
     fingerprint_json,
 )
 from deskpet.harness.projector import (
@@ -36,6 +35,7 @@ from deskpet.harness.projector import (
     tool_outcome_payload,
 )
 from deskpet.memory.session_db import SessionDB
+from deskpet.harness.tool_executor import ToolOutcome, ToolOutcomeStatus
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
 
 
@@ -592,9 +592,9 @@ def test_typed_failure_is_not_reinterpreted_as_success() -> None:
     outcome = ToolOutcome(
         call_id="call-1",
         effect_id="effect-1",
-        status=OutcomeStatus.FAILED,
+        status=ToolOutcomeStatus.FAILED,
         value={"ok": False},
-        error={"code": "tool_failed"},
+        error="tool_failed",
     )
     assert tool_outcome_payload(outcome)["status"] == "failed"
     event = RunEvent(

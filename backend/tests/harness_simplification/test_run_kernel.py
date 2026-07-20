@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
+import aiosqlite
 
 from deskpet.execution.contracts import (
     DecisionOpen,
@@ -20,6 +21,8 @@ from deskpet.execution.contracts import (
 )
 from deskpet.harness.context import HostContextFactory
 from deskpet.harness.drivers.react import (
+    ReActDriver,
+    ReactDecisionRequest,
     ReactFinal,
     ReactToolBatch,
 )
@@ -40,6 +43,7 @@ from deskpet.harness.ports import (
     DriverTerminalCandidate,
     ExecuteTools,
     JoinPolicy,
+    OpenDecision,
     PersistedEventCandidate,
     TokenCandidate,
 )
@@ -310,6 +314,29 @@ class NoEffects:
         return None
 
 
+class ClarificationCollaborator:
+    async def start(self, request):
+        yield ReactDecisionRequest(
+            OpenDecision(
+                run_id=request.run_id,
+                command_id="clarify-command",
+                decision_id="clarify-1",
+                nonce="clarify-nonce",
+                kind="clarification",
+                prompt={"question": "continue?"},
+            )
+        )
+
+    async def resume(self, boundary, response):
+        yield ReactFinal("continued")
+
+    async def cancel(self, run_id, reason):
+        return None
+
+    async def close(self):
+        return None
+
+
 @pytest_asyncio.fixture
 async def kernel(tmp_path):
     uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
@@ -372,6 +399,47 @@ async def test_short_react_run_stays_in_bounded_kernel_index_without_sqlite_writ
     assert rows == 0
     await value.close(handle.ref, actor)
     assert handle.ref.run_id not in value._active
+
+
+@pytest.mark.asyncio
+async def test_first_decision_atomically_promotes_boundary_and_kernel_adopts_uow(
+    tmp_path,
+) -> None:
+    uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
+    await uow.activate_empty_runtime()
+    driver = ReActDriver(ClarificationCollaborator(), uow, NoEffects())
+    value = RunKernel(
+        uow=uow,
+        router=RegisteredRouter(
+            StaticClassifier("react.default"),
+            [RouteProfile("react.default", "react")],
+        ),
+        drivers=[RegisteredDriver("react", driver)],
+    )
+    handle = await value.start(RunRequest("clarify", "req-boundary", "turn-boundary"), host())
+    actor = host().actor(root_run_id=handle.root_run_id)
+    stream = value.observe(handle.ref, actor)
+    decision_event = await anext(stream)
+    assert decision_event.kind == "decision"
+    durable = await uow.query(handle.ref, actor)
+    continuation = await uow.load_continuation(handle.ref.run_id)
+    assert durable.persistence_level is PersistenceLevel.DURABLE
+    assert continuation is not None and continuation.pending_decision_id == "clarify-1"
+    assert value._active[handle.ref.run_id].record is None
+
+    receipt = await value.signal(
+        handle.ref,
+        actor,
+        DecisionSignal(
+            handle.ref.run_id,
+            "clarify-1",
+            {"answer": "yes"},
+            nonce="clarify-nonce",
+            version=0,
+        ),
+    )
+    assert receipt.accepted is True
+    assert [event async for event in stream][-1].kind == "final"
 
 
 @pytest.mark.asyncio

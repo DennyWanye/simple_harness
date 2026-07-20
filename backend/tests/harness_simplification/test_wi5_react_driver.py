@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import aiosqlite
@@ -15,11 +15,11 @@ from deskpet.execution import (
     fingerprint_json,
     root_idempotency_key,
 )
-from deskpet.harness.continuations import SqliteReactCommandBoundaryStore
 from deskpet.harness.drivers.react import (
     LegacyAgentLoopCollaborator,
     LegacyAgentLoopToolInterceptionError,
     ReActDriver,
+    ReactCommandBoundary,
     ReactDecisionRequest,
     ReactDelegateRequest,
     ReactEmission,
@@ -63,6 +63,7 @@ async def _collect(iterator: AsyncIterator[Any]) -> list[Any]:
 
 
 def _request(run_id: str = "run-react") -> DriverStart:
+    spec = replace(_run_spec(run_id), persistence_level=PersistenceLevel.EPHEMERAL)
     return DriverStart(
         run_id=run_id,
         session_id="session-react",
@@ -73,6 +74,8 @@ def _request(run_id: str = "run-react") -> DriverStart:
         provider_state={"provider": "primary"},
         iteration=2,
         completion_state={"stop_reason": None},
+        run_context=spec.context,
+        run_spec=spec,
     )
 
 
@@ -101,16 +104,6 @@ def _run_spec(run_id: str) -> RunCreate:
         profile_key="test-only",
         persistence_level=PersistenceLevel.DURABLE,
     )
-
-
-class DurablePromoter:
-    def __init__(self, path) -> None:
-        self.uow = SqliteExecutionUnitOfWork(path)
-        self.calls: list[str] = []
-
-    async def promote_for_boundary(self, run_id: str) -> None:
-        self.calls.append(run_id)
-        await self.uow.create(_run_spec(run_id))
 
 
 class ScriptedCollaborator:
@@ -164,18 +157,6 @@ class Reconciler:
         return self.outcomes[call.effect_id]
 
 
-class RecordingOutcomeCommitter:
-    def __init__(self, store) -> None:
-        self.store = store
-        self.calls: list[tuple[str, tuple[int, ...]]] = []
-
-    async def commit_outcomes(self, boundary, updates):
-        self.calls.append((boundary.command_id, tuple(updates)))
-        updated = boundary.with_outcomes(updates)
-        await self.store.put(updated)
-        return updated
-
-
 def _call(index: int, *, durable: bool) -> PreparedExecutionCall:
     return PreparedExecutionCall(
         tool_name=f"tool_{index}",
@@ -227,20 +208,18 @@ def _outcome(
     )
 
 
-def _driver(tmp_path, collaborator, *, reader=None, reconciler=None):
+async def _driver(tmp_path, collaborator, *, reader=None, reconciler=None):
     path = tmp_path / "workflow.db"
-    promoter = DurablePromoter(path)
-    store = SqliteReactCommandBoundaryStore(path)
+    store = SqliteExecutionUnitOfWork(path)
+    await store.activate_empty_runtime()
     return (
         ReActDriver(
             collaborator,
             store,
-            promoter,
             reader or EffectReader(),
             reconciler=reconciler,
         ),
         store,
-        promoter,
         path,
     )
 
@@ -255,7 +234,7 @@ async def test_driver_preserves_first_token_fallback_and_only_emits_terminal_can
             ReactFinal("done"),
         ]
     )
-    driver, _, promoter, _ = _driver(tmp_path, collaborator)
+    driver, store, _ = await _driver(tmp_path, collaborator)
 
     candidates = await _collect(driver.start(_request()))
 
@@ -265,7 +244,7 @@ async def test_driver_preserves_first_token_fallback_and_only_emits_terminal_can
         TokenCandidate("run-react", "second"),
         DriverTerminalCandidate("run-react", "completed", "done"),
     ]
-    assert promoter.calls == []
+    assert await store.load_continuation("run-react") is None
 
 
 @pytest.mark.asyncio
@@ -278,21 +257,20 @@ async def test_decision_boundary_survives_new_driver_and_keeps_session(tmp_path)
         kind="clarification",
         prompt={"question": "which folder?"},
     )
-    first, store, promoter, path = _driver(
+    first, store, path = await _driver(
         tmp_path, ScriptedCollaborator([ReactDecisionRequest(decision)])
     )
     assert await _collect(first.start(_request())) == [decision]
-    persisted = await store.load("run-react")
+    record = await store.load_continuation("run-react")
+    persisted = ReactCommandBoundary.from_record(record) if record else None
     assert persisted is not None
     assert persisted.session_id == "session-react"
     assert persisted.pending_decision == decision
-    assert promoter.calls == ["run-react"]
 
     resumed = ScriptedCollaborator(resumes=[[ReactFinal("answered")]])
     second = ReActDriver(
         resumed,
         store,
-        DurablePromoter(path),
         EffectReader(),
     )
     async with aiosqlite.connect(path) as db:
@@ -341,7 +319,7 @@ async def test_permission_batch_waits_for_durable_grant_before_execution(tmp_pat
         recoverable_effect=True,
     )
     batch = ReactToolBatch("batch-permission", (call,), (_context(call),))
-    driver, store, _, path = _driver(tmp_path, ScriptedCollaborator([batch]))
+    driver, store, path = await _driver(tmp_path, ScriptedCollaborator([batch]))
 
     first = await _collect(driver.start(_request()))
     assert len(first) == 1
@@ -380,20 +358,17 @@ async def test_permission_batch_waits_for_durable_grant_before_execution(tmp_pat
 async def test_recovery_backfills_successful_effect_without_regenerating_or_reexecuting(tmp_path):
     call = _call(0, durable=True)
     batch = ReactToolBatch("batch-1", (call,), (_context(call),))
-    first, store, _, path = _driver(tmp_path, ScriptedCollaborator([batch]))
+    first, store, path = await _driver(tmp_path, ScriptedCollaborator([batch]))
     assert (await _collect(first.start(_request())))[0].calls == (call,)
 
     # The external executor committed the write, then the process crashed
     # before ToolOutcomesSignal could backfill the model transcript.
     committed = _outcome(call)
     collaborator = ScriptedCollaborator(resumes=[[ReactFinal("recovered")]])
-    outcome_committer = RecordingOutcomeCommitter(store)
     second = ReActDriver(
         collaborator,
         store,
-        DurablePromoter(path),
         EffectReader({call.effect_id: committed}),
-        outcome_committer=outcome_committer,
     )
     candidates = await _collect(second.recover("run-react"))
 
@@ -404,21 +379,21 @@ async def test_recovery_backfills_successful_effect_without_regenerating_or_reex
     tool_message = boundary.canonical_messages[-1]
     assert tool_message["tool_call_id"] == call.call_id
     assert json.loads(tool_message["content"])["effect_id"] == call.effect_id
-    persisted = await store.load("run-react")
+    record = await store.load_continuation("run-react")
+    persisted = ReactCommandBoundary.from_record(record) if record else None
     assert persisted is not None
     assert persisted.completion_state["model_backfilled"] is True
-    assert outcome_committer.calls == [("batch-1", (0,))]
 
 
 @pytest.mark.asyncio
 async def test_mixed_batch_freezes_full_order_and_recovers_only_missing_calls(tmp_path):
     calls = (_call(0, durable=False), _call(1, durable=True), _call(2, durable=False))
     batch = ReactToolBatch("mixed", calls, tuple(_context(call) for call in calls))
-    first, store, promoter, path = _driver(tmp_path, ScriptedCollaborator([batch]))
+    first, store, path = await _driver(tmp_path, ScriptedCollaborator([batch]))
     initial = await _collect(first.start(_request()))
     assert initial == [ExecuteTools("run-react", "mixed", calls, batch.contexts, (0, 1, 2))]
-    assert promoter.calls == ["run-react"]
-    persisted = await store.load("run-react")
+    record = await store.load_continuation("run-react")
+    persisted = ReactCommandBoundary.from_record(record) if record else None
     assert persisted is not None
     assert persisted.pending_calls == calls
 
@@ -432,7 +407,6 @@ async def test_mixed_batch_freezes_full_order_and_recovers_only_missing_calls(tm
     second = ReActDriver(
         collaborator,
         store,
-        DurablePromoter(path),
         EffectReader({calls[1].effect_id: _outcome(calls[1])}),
     )
     recovered = await _collect(second.recover("run-react"))
@@ -455,7 +429,7 @@ async def test_mixed_batch_freezes_full_order_and_recovers_only_missing_calls(tm
 async def test_unknown_effect_is_reconciled_before_driver_resumes(tmp_path):
     call = _call(0, durable=True)
     batch = ReactToolBatch("batch-unknown", (call,), (_context(call),))
-    first, store, _, path = _driver(tmp_path, ScriptedCollaborator([batch]))
+    first, store, path = await _driver(tmp_path, ScriptedCollaborator([batch]))
     await _collect(first.start(_request()))
     unknown = ToolOutcome.unknown(call, "process_exit")
     reconciled = _outcome(call)
@@ -464,7 +438,6 @@ async def test_unknown_effect_is_reconciled_before_driver_resumes(tmp_path):
     second = ReActDriver(
         collaborator,
         store,
-        DurablePromoter(path),
         EffectReader({call.effect_id: unknown}),
         reconciler=reconciler,
     )
@@ -479,20 +452,19 @@ async def test_unknown_effect_is_reconciled_before_driver_resumes(tmp_path):
 @pytest.mark.asyncio
 async def test_delegate_boundary_survives_restart_and_accept_signal(tmp_path):
     command = _delegate(JoinPolicy.DETACHED)
-    first, store, promoter, path = _driver(
+    first, store, path = await _driver(
         tmp_path,
         ScriptedCollaborator([ReactDelegateRequest(command)]),
     )
     assert await _collect(first.start(_request())) == [command]
-    assert promoter.calls == ["run-react"]
-    persisted = await store.load("run-react")
+    record = await store.load_continuation("run-react")
+    persisted = ReactCommandBoundary.from_record(record) if record else None
     assert persisted is not None and persisted.pending_delegate == command
 
     resumed = ScriptedCollaborator(resumes=[[ReactFinal("detached accepted")]])
     second = ReActDriver(
         resumed,
         store,
-        DurablePromoter(path),
         EffectReader(),
     )
     assert await _collect(second.recover("run-react")) == [command]
@@ -532,7 +504,7 @@ async def test_delegate_join_policy_contracts(join_policy, tmp_path):
         [ReactDelegateRequest(command)],
         resumes=[[ReactFinal(f"resumed-{join_policy.value}")]],
     )
-    driver, _, _, _ = _driver(tmp_path, collaborator)
+    driver, _, _ = await _driver(tmp_path, collaborator)
     assert await _collect(driver.start(_request())) == [command]
 
     accepted = await _collect(
@@ -577,7 +549,7 @@ async def test_delegate_join_policy_contracts(join_policy, tmp_path):
 @pytest.mark.asyncio
 async def test_cancel_waits_for_collaborator_acknowledgement(tmp_path):
     collaborator = ScriptedCollaborator()
-    driver, _, _, _ = _driver(tmp_path, collaborator)
+    driver, _, _ = await _driver(tmp_path, collaborator)
 
     candidates = await _collect(driver.cancel("run-react", "user_requested"))
 

@@ -9,7 +9,7 @@ from types import MappingProxyType
 from typing import Any, AsyncIterator, Mapping, Protocol
 
 from deskpet.execution import AttachmentPolicy
-from deskpet.execution.contracts import RunContext, RunEvent
+from deskpet.execution.contracts import RunContext, RunCreate, RunEvent
 from deskpet.harness.tool_executor import PreparedExecutionCall, ToolOutcome
 from deskpet.tools.capabilities import ToolExecutionContext
 
@@ -32,6 +32,7 @@ class DriverStart:
     iteration: int = 0
     completion_state: Mapping[str, Any] = field(default_factory=dict)
     run_context: RunContext | None = None
+    run_spec: RunCreate | None = None
     profile_key: str = ""
     request_payload: Mapping[str, Any] = field(default_factory=dict)
     capability_snapshot: Mapping[str, Any] = field(default_factory=dict)

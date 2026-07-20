@@ -43,8 +43,20 @@ decision, child, ledger, and Team suites at `101 passed`. This is an
 **in-progress R1 boundary**, not completion of all eight §4.9 combinations:
 decision→boundary, grant→effect claim, effect settle→boundary,
 child-terminal→parent-inbox, parent apply→ack, and the cross-DB Team command
-outbox still require their transaction-aware implementations. Production
-ownership remains `legacy/0`.
+outbox still require their transaction-aware implementations.
+
+R1 owner-collapse now has one durable state owner: `SqliteExecutionUnitOfWork`.
+The former `ExecutionLedger`, decision store, effect store, and continuation
+store modules have been deleted instead of retained as facades. Short ReAct
+runs stay only in Kernel's bounded live index and create zero execution rows;
+the first tool, decision, or delegate boundary atomically promotes the run and
+persists its complete continuation through the UoW. After promotion Kernel
+drops its ephemeral record and reads the UoW-owned version. The execution port
+surface is one `ExecutionUnitOfWork` protocol, and the duplicate execution
+`ToolOutcome` contract and unused codecs are gone. Production remains fenced at
+`legacy/0`; this slice does not activate the Kernel owner. Verification:
+owner-collapse harness `184 passed, 9 xfailed`; R1 LOC gate
+`31,939 <= 33,228`, with zero unknown classifications.
 
 ## Request Lifecycle
 

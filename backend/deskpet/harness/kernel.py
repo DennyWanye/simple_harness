@@ -684,6 +684,7 @@ class RunKernel:
             canonical_messages=({"role": "user", "content": request.text},),
             provider_state=dict(spec.context.provider_plan),
             run_context=spec.context,
+            run_spec=spec,
             profile_key=profile_key,
             request_payload={"text": request.text, **dict(request.payload)},
             capability_snapshot={
@@ -807,6 +808,24 @@ class RunKernel:
     ) -> bool:
         if candidate.run_id != record.run_id:
             raise ValueError("driver candidate run binding mismatch")
+        if isinstance(candidate, (ExecuteTools, OpenDecision, DelegateRun)):
+            if record.persistence_level is PersistenceLevel.EPHEMERAL:
+                actor = ActorContext(
+                    principal_id=record.context.principal_id,
+                    session_id=record.context.session_id,
+                    auth_epoch=record.context.auth_epoch,
+                    root_run_id=record.context.root_run_id,
+                )
+                durable = await self._uow.query(
+                    RunRef(record.run_id, record.context.session_id), actor
+                )
+                if not isinstance(durable, RunRecord):
+                    raise RuntimeError("durable boundary did not promote its execution run")
+                async with self._lock:
+                    active = self._active.get(record.run_id)
+                    if active is not None:
+                        active.record = None
+                record = durable
         if isinstance(candidate, PersistedEventCandidate):
             await self._emit(candidate.event)
             return False
