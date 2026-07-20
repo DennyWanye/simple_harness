@@ -42,6 +42,7 @@ from .ports import (
     DriverTerminalCandidate,
     ExecuteTools,
     OpenDecision,
+    PersistedEventCandidate,
     ProviderFallbackCandidate,
     TokenCandidate,
 )
@@ -110,10 +111,13 @@ class RegisteredDriver:
     kind: str
     driver: Driver
     durable_from_start: bool = False
+    atomic_start: bool = False
 
     def __post_init__(self) -> None:
         if not self.kind.strip():
             raise ValueError("driver kind is required")
+        if self.atomic_start and not self.durable_from_start:
+            raise ValueError("atomic-start drivers must be durable from start")
 
 
 @dataclass(slots=True)
@@ -216,24 +220,53 @@ class RunKernel:
                 ),
                 status=RunStatus.CREATED,
             )
-            result = await self._ledger.create(spec)
-            async with self._lock:
-                if result.created and (active.task is None or active.task.done()):
+            if registration.atomic_start:
+                iterator = registration.driver.start(
+                    self._driver_start(spec, request, routing.profile_key, host)
+                )
+                try:
+                    first = await anext(iterator)
+                except StopAsyncIteration as exc:
+                    raise RuntimeError(
+                        "atomic-start driver ended before durable acceptance"
+                    ) from exc
+                durable = await self._ledger.query(ref, actor)
+                if not isinstance(durable, RunRecord):
+                    raise RuntimeError(
+                        "atomic-start driver did not commit a durable execution run"
+                    )
+                await self._consume_candidate(registration, durable, first)
+                async with self._lock:
                     active.task = asyncio.create_task(
-                        self._drive(
-                            registration,
-                            result.record,
-                            registration.driver.start(
-                                self._driver_start(result.record, request)
-                            ),
-                        ),
+                        self._drive(registration, durable, iterator),
                         name=f"deskpet-run:{run_id}",
                     )
+                result_record = durable
+            else:
+                result = await self._ledger.create(spec)
+                async with self._lock:
+                    if result.created and (active.task is None or active.task.done()):
+                        active.task = asyncio.create_task(
+                            self._drive(
+                                registration,
+                                result.record,
+                                registration.driver.start(
+                                    self._driver_start(
+                                        result.record.spec,
+                                        request,
+                                        routing.profile_key,
+                                        host,
+                                    )
+                                ),
+                            ),
+                            name=f"deskpet-run:{run_id}",
+                        )
+                result_record = result.record
             return RunHandle(
                 ref=ref,
-                root_run_id=result.record.context.root_run_id,
+                root_run_id=result_record.context.root_run_id,
                 driver_kind=registration.kind,
-                profile_key=result.record.spec.profile_key,
+                profile_key=result_record.spec.profile_key,
             )
 
     async def observe(
@@ -422,12 +455,24 @@ class RunKernel:
         return registration
 
     @staticmethod
-    def _driver_start(record: RunRecord, request: RunRequest) -> DriverStart:
+    def _driver_start(
+        spec: RunCreate,
+        request: RunRequest,
+        profile_key: str,
+        host: HostContext,
+    ) -> DriverStart:
         return DriverStart(
-            run_id=record.run_id,
-            session_id=record.context.session_id,
+            run_id=spec.run_id,
+            session_id=spec.context.session_id,
             canonical_messages=({"role": "user", "content": request.text},),
-            provider_state=dict(record.context.provider_plan),
+            provider_state=dict(spec.context.provider_plan),
+            run_context=spec.context,
+            profile_key=profile_key,
+            request_payload={"text": request.text, **dict(request.payload)},
+            capability_snapshot={
+                "capabilities": sorted(host.available_capabilities),
+                "capability_hash": host.capability_hash,
+            },
         )
 
     async def _emit(self, event: RunEvent) -> None:
@@ -503,16 +548,30 @@ class RunKernel:
     ) -> bool:
         acknowledged = False
         async for candidate in candidates:
-            if candidate.run_id != record.run_id:
-                raise ValueError("driver candidate run binding mismatch")
-            if isinstance(candidate, DriverTerminalCandidate):
-                await self._commit_terminal(record, registration.kind, candidate)
-                continue
-            if isinstance(candidate, CancelAcknowledgedCandidate):
-                acknowledged = True
-            event = self._event_candidate(registration.kind, candidate)
-            if event is not None:
-                await self._emit_live(record, event)
+            acknowledged = (
+                await self._consume_candidate(registration, record, candidate)
+                or acknowledged
+            )
+        return acknowledged
+
+    async def _consume_candidate(
+        self,
+        registration: RegisteredDriver,
+        record: RunRecord,
+        candidate: DriverCandidate,
+    ) -> bool:
+        if candidate.run_id != record.run_id:
+            raise ValueError("driver candidate run binding mismatch")
+        if isinstance(candidate, PersistedEventCandidate):
+            await self._emit(candidate.event)
+            return False
+        if isinstance(candidate, DriverTerminalCandidate):
+            await self._commit_terminal(record, registration.kind, candidate)
+            return False
+        acknowledged = isinstance(candidate, CancelAcknowledgedCandidate)
+        event = self._event_candidate(registration.kind, candidate)
+        if event is not None:
+            await self._emit_live(record, event)
         return acknowledged
 
     @staticmethod

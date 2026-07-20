@@ -419,6 +419,8 @@ class WorkflowLauncher:
         logical_slot: str = "accepted_async:0",
         delivery_targets: Sequence[tuple[str, str]] | None = None,
         principal_id: str | None = None,
+        run_id: str | None = None,
+        trace_id: str | None = None,
     ) -> dict[str, Any]:
         """Exercise generic ownership without changing the production launch path."""
 
@@ -453,6 +455,8 @@ class WorkflowLauncher:
             code_epoch=code_epoch,
             logical_slot=logical_slot,
             delivery_targets=(*targets, ("receipt", resolved_delivery_session_id)),
+            run_id=run_id,
+            trace_id=trace_id,
         )
         spec = self.service.execution_spec(prepared, principal_id=principal_id)
         accepted = await self.service.start_prepared(

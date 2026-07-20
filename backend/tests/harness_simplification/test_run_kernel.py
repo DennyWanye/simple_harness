@@ -7,7 +7,15 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 
-from deskpet.execution.contracts import DecisionOpen, RunStatus
+from deskpet.execution.contracts import (
+    DecisionOpen,
+    OutcomeStatus,
+    PersistenceLevel,
+    RunCreate,
+    RunEventCandidate,
+    RunStatus,
+    fingerprint_json,
+)
 from deskpet.execution.ledger import ExecutionLedger
 from deskpet.harness.decisions import DecisionStore, DecisionWakeupCache
 from deskpet.harness.kernel import (
@@ -20,6 +28,7 @@ from deskpet.harness.kernel import (
 from deskpet.harness.ports import (
     CancelAcknowledgedCandidate,
     DecisionSignal,
+    PersistedEventCandidate,
     TokenCandidate,
 )
 from deskpet.harness.router import ClassifiedRoute, RegisteredRouter, RouteProfile
@@ -69,6 +78,39 @@ class FailingDriver(FakeDriver):
     async def start(self, request):
         raise RuntimeError("isolated boom")
         yield TokenCandidate(request.run_id, "unreachable")
+
+
+class AtomicStartDriver(FakeDriver):
+    def __init__(self, uow) -> None:
+        super().__init__()
+        self.uow = uow
+
+    async def start(self, request):
+        self.starts += 1
+        assert request.run_context is not None
+        created = await self.uow.create(
+            RunCreate(
+                run_id=request.run_id,
+                idempotency_key=f"workflow:{request.run_id}",
+                context=request.run_context,
+                payload_fingerprint=fingerprint_json(dict(request.request_payload)),
+                capability_fingerprint=request.run_context.capability_hash,
+                driver_kind="workflow",
+                profile_key=request.profile_key,
+                persistence_level=PersistenceLevel.DURABLE,
+            )
+        )
+        accepted = await self.uow.append_event(
+            request.run_id,
+            expected_version=created.record.version,
+            event=RunEventCandidate(
+                event_key="accepted",
+                kind="workflow.accepted",
+                status=OutcomeStatus.ACCEPTED,
+                driver_kind="workflow",
+            ),
+        )
+        yield PersistedEventCandidate(accepted)
 
 
 @pytest_asyncio.fixture
@@ -234,6 +276,42 @@ async def test_decision_signal_is_durably_fenced_before_driver_resume(tmp_path) 
                 0,
             ),
         )
+
+
+@pytest.mark.asyncio
+async def test_atomic_driver_commits_before_kernel_returns_handle(tmp_path) -> None:
+    uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
+    ledger = ExecutionLedger(uow)
+    await ledger.initialize()
+    driver = AtomicStartDriver(uow)
+    value = RunKernel(
+        ledger=ledger,
+        router=RegisteredRouter(
+            StaticClassifier("durable.default"),
+            [RouteProfile("durable.default", "workflow")],
+        ),
+        drivers=[
+            RegisteredDriver(
+                "workflow",
+                driver,
+                durable_from_start=True,
+                atomic_start=True,
+            )
+        ],
+    )
+    handle = await value.start(
+        RunRequest("long task", "req-atomic", "turn-1"),
+        host(),
+    )
+    actor = host().actor(root_run_id=handle.root_run_id)
+    record = await ledger.query(handle.ref, actor)
+    assert record.spec.profile_key == "durable.default"
+    stream = value.observe(handle.ref, actor)
+    accepted = await anext(stream)
+    await stream.aclose()
+    assert accepted.kind == "workflow.accepted"
+    assert accepted.durable_seq == 1
+    assert driver.starts == 1
 
 
 def test_kernel_surface_is_six_operations_and_has_no_product_branches() -> None:

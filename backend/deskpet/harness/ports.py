@@ -9,6 +9,7 @@ from types import MappingProxyType
 from typing import Any, AsyncIterator, Mapping, Protocol
 
 from deskpet.execution import AttachmentPolicy
+from deskpet.execution.contracts import RunContext, RunEvent
 from deskpet.harness.tool_executor import PreparedExecutionCall, ToolOutcome
 from deskpet.tools.capabilities import ToolExecutionContext
 
@@ -30,6 +31,10 @@ class DriverStart:
     provider_state: Mapping[str, Any] = field(default_factory=dict)
     iteration: int = 0
     completion_state: Mapping[str, Any] = field(default_factory=dict)
+    run_context: RunContext | None = None
+    profile_key: str = ""
+    request_payload: Mapping[str, Any] = field(default_factory=dict)
+    capability_snapshot: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.run_id or not self.session_id:
@@ -48,6 +53,16 @@ class DriverStart:
             self,
             "completion_state",
             MappingProxyType(copy.deepcopy(dict(self.completion_state))),
+        )
+        object.__setattr__(
+            self,
+            "request_payload",
+            MappingProxyType(copy.deepcopy(dict(self.request_payload))),
+        )
+        object.__setattr__(
+            self,
+            "capability_snapshot",
+            MappingProxyType(copy.deepcopy(dict(self.capability_snapshot))),
         )
 
 
@@ -153,6 +168,15 @@ class CancelAcknowledgedCandidate:
     reason: str
 
 
+@dataclass(frozen=True)
+class PersistedEventCandidate:
+    event: RunEvent
+
+    @property
+    def run_id(self) -> str:
+        return self.event.run_id
+
+
 DriverCandidate = (
     TokenCandidate
     | ProviderFallbackCandidate
@@ -162,6 +186,7 @@ DriverCandidate = (
     | DriverTerminalCandidate
     | ChildAcceptedCandidate
     | CancelAcknowledgedCandidate
+    | PersistedEventCandidate
 )
 DriverCommand = ExecuteTools | OpenDecision | DelegateRun | DriverTerminalCandidate
 
@@ -231,6 +256,7 @@ __all__ = [
     "ExecuteTools",
     "JoinPolicy",
     "OpenDecision",
+    "PersistedEventCandidate",
     "ProviderFallbackCandidate",
     "TokenCandidate",
     "ToolOutcomesSignal",
