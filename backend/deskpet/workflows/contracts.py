@@ -282,6 +282,7 @@ WORKFLOW_PORT_NAMES = frozenset(
         "llm_inference",
         "llm_repair",
         "deadline",
+        "subagent_scheduler",
     }
 )
 

@@ -33,7 +33,7 @@ def test_search_gateway_factory_defaults_on_without_external_service(tmp_path):
     assert cfg.search_gateway.provider_queue_max_wait_s == 8.0
     assert cfg.search_gateway.empty_rescue_enabled is True
     assert cfg.search_gateway.empty_rescue_max_per_request == 1
-    assert cfg.workflows.deep_research_version == "v6"
+    assert cfg.workflows.deep_research_version == "v7"
     assert cfg.search_gateway.playwright_renderer_enabled is True
 
 

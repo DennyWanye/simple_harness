@@ -201,6 +201,17 @@ def _artifact_list(
         if artifacts:
             return artifacts
 
+    nested = payload.get("artifact")
+    if isinstance(nested, Mapping):
+        encoded = json.dumps(
+            {"ok": True, "artifacts": [dict(nested)]}, ensure_ascii=False
+        )
+        artifacts = extract_artifacts_from_result(
+            tool_name=tool_name, result_json=encoded
+        )
+        if artifacts:
+            return artifacts
+
     path = payload.get("path")
     url = payload.get("url")
     if isinstance(path, str) and path.strip():

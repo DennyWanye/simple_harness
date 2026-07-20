@@ -15,3 +15,5 @@ async def test_bootstrap_initializes_db_and_registers_all_recoverable_graphs(tmp
     assert ("deep_research", "v3") in service.runner.registry.versions()
     assert ("deep_research", "v4") in service.runner.registry.versions()
     assert ("deep_research", "v5") in service.runner.registry.versions()
+    assert ("deep_research", "v6") in service.runner.registry.versions()
+    assert ("deep_research", "v7") in service.runner.registry.versions()

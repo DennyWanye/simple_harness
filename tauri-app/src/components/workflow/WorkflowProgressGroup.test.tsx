@@ -77,6 +77,33 @@ function v5Projection(
 }
 
 describe("WorkflowProgressGroup", () => {
+  it("renders v7 business directions instead of scheduler attempt rows", () => {
+    render(
+      <WorkflowProgressGroup
+        runId="run-v7"
+        summary={summary({
+          workflow_run_id: "run-v7",
+          workflow_version: "v7",
+          workflow_stage: "子代理调研与补救",
+          workflow_total: 6,
+          workflow_v7_children: [
+            { child_id: "dr-0", question: "运行时架构是什么？", status: "valid", attempt: 1, max_attempts: 2, n_sources: 2 },
+            { child_id: "dr-1", question: "核心组件有哪些？", status: "valid", attempt: 1, max_attempts: 2, n_sources: 1 },
+            { child_id: "dr-2", question: "适用场景是什么？", status: "insufficient", attempt: 2, max_attempts: 2, n_sources: 0 },
+            { child_id: "dr-3", question: "常见陷阱有哪些？", status: "running", attempt: 1, max_attempts: 2, n_sources: 0 },
+          ],
+        })}
+        stages={[]}
+      />,
+    );
+
+    const panel = screen.getByTestId("workflow-v7-children");
+    expect(panel.textContent).toContain("主 Agent 拆出的 4 个子方向");
+    expect(screen.getAllByTestId(/workflow-v7-child-dr-/)).toHaveLength(4);
+    expect(screen.getByTestId("workflow-v7-child-dr-2").textContent).toContain("尝试 2/2");
+    expect(screen.getByTestId("workflow-v7-child-dr-2").textContent).toContain("证据不足");
+  });
+
   it("renders the receipt-derived delivery status independently from engine completion", () => {
     render(
       <WorkflowProgressGroup

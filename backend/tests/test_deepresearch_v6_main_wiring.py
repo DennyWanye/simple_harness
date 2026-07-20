@@ -92,19 +92,23 @@ def test_v6_dev_ingress_requires_resolved_non_default_user_data(tmp_path: Path) 
     ) == ("v5", "isolated_user_data_required")
 
 
-def test_v6_release_config_is_a_normal_new_root_ingress() -> None:
-    assert WorkflowsConfig().deep_research_version == "v6"
-    assert WorkflowsConfig().deep_research_default_revision == 6
+def test_v7_release_config_is_a_normal_new_root_ingress() -> None:
+    assert WorkflowsConfig().deep_research_version == "v7"
+    assert WorkflowsConfig().deep_research_default_revision == 7
+    assert resolve_deep_research_workflow_version("v7", environment={}) == (
+        "v7",
+        "configured",
+    )
     assert resolve_deep_research_workflow_version("v6", environment={}) == (
         "v6",
         "configured",
     )
 
 
-@pytest.mark.parametrize("configured", ["", "v7", "garbage", "v4"])
-def test_invalid_or_recovery_only_config_falls_back_to_factory_v6(configured: str) -> None:
+@pytest.mark.parametrize("configured", ["", "v8", "garbage", "v4"])
+def test_invalid_or_recovery_only_config_falls_back_to_factory_v7(configured: str) -> None:
     assert resolve_deep_research_workflow_version(configured, environment={}) == (
-        "v6",
+        "v7",
         "configured_invalid_factory_default",
     )
 
@@ -116,16 +120,18 @@ def test_explicit_v5_pin_remains_supported_for_new_roots() -> None:
     )
 
 
-def test_main_enables_released_v6_roots_with_durable_budgets() -> None:
+def test_main_keeps_v6_and_defaults_new_roots_to_simplified_v7() -> None:
     source = (Path(__file__).parents[1] / "main.py").read_text(encoding="utf-8")
     registration = source.index('"deep_research",\n            "v6",')
     registration_end = source.index("from agent.tool_use_shim", registration)
     assert "new_runs_enabled=True" in source[registration:registration_end]
+    assert '"v7",\n            state_factory=_deep_v7_state_factory' in source[registration:registration_end]
+    assert "context_factory=_deep_v7_context_factory" in source[registration:registration_end]
 
     ingress = source.index("async def _start_deepresearch_graph")
     ingress_end = source.index("set_deepresearch_workflow_starter", ingress)
     section = source[ingress:ingress_end]
-    assert 'deep_research_version or "v6"' in section
+    assert 'deep_research_version or "v7"' in section
     assert 'workflow_version in {"v5", "v6"}' in section
     assert '"research_llm_budget"' in section
     assert '"research_io_budget"' in section

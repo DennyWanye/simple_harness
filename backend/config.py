@@ -28,16 +28,16 @@ def resolve_deep_research_workflow_version(
 ) -> tuple[str, str]:
     """Resolve the new-run version while preserving the guarded dev override.
 
-    The released factory default is v6.  v5 remains the sole supported explicit
-    pin for newly-created roots; v1-v4 stay registered only for persisted-run
+    The released factory default is v7.  v5 and v6 remain supported explicit
+    pins for newly-created roots; v1-v4 stay registered only for persisted-run
     recovery.  Invalid configured values fail back to the released factory
     version instead of routing new work onto a recovery-only graph.
     """
 
     env = environment if environment is not None else os.environ
     configured = str(configured_version or "").strip().lower()
-    configured_valid = configured in {"v5", "v6"}
-    selected = configured if configured_valid else "v6"
+    configured_valid = configured in {"v5", "v6", "v7"}
+    selected = configured if configured_valid else "v7"
     configured_reason = (
         "configured" if configured_valid else "configured_invalid_factory_default"
     )
@@ -598,13 +598,13 @@ class WorkflowsConfig:
     terminal_retention_days: int = 30
     evaluation_retention_days: int = 180
     orphan_grace_hours: int = 24
-    # New DeepResearch runs use frozen release v6. v1-v5 stay registered for
-    # checkpoint/history recovery; v5 is the sole supported explicit new-root pin.
-    deep_research_version: str = "v6"
+    # New DeepResearch runs use the simplified manager/child v7 workflow.
+    # v1-v6 stay registered for checkpoint/history recovery and explicit pins.
+    deep_research_version: str = "v7"
     # One-time factory-default migration marker. Only exact inherited
-    # v5/revision5 installations are promoted to v6/revision6; a current-revision
-    # v5 value is an explicit pin and remains respected.
-    deep_research_default_revision: int = 6
+    # Exact inherited factory defaults are promoted one revision at a time;
+    # explicit pins remain respected.
+    deep_research_default_revision: int = 7
     deep_research_max_parallel_tasks: int = 4
 
 
@@ -1062,9 +1062,8 @@ def _merge_missing_feature_flags(user_target: Path, bundle_source: Path) -> bool
     added: list[str] = []
 
     # ``deep_research_version`` is a factory revision, not a normal preference.
-    # The v6 release has one deliberately narrow migration: only the exact
-    # inherited v5/revision5 pair moves to v6/revision6. Any other pair is an
-    # explicit or unrecognised value and must remain byte-for-byte selected.
+    # Promote only release transitions that shipped an explicit migration.
+    # Historical v4/v5 pairs remain ambiguous and are never inferred.
     user_workflows = _dig_table(user_doc, ("workflows",))
     bundle_workflows = _dig_table(bundle_doc, ("workflows",))
     if _is_toml_table(user_workflows) and _is_toml_table(bundle_workflows):
@@ -1072,16 +1071,20 @@ def _merge_missing_feature_flags(user_target: Path, bundle_source: Path) -> bool
         version_key = "deep_research_version"
         bundle_revision = bundle_workflows.get(revision_key)  # type: ignore[union-attr]
         user_revision = user_workflows.get(revision_key)  # type: ignore[union-attr]
-        inherited_v5_factory_default = (
-            bundle_revision == 6
-            and bundle_workflows.get(version_key) == "v6"  # type: ignore[union-attr]
-            and user_revision == 5
-            and user_workflows.get(version_key) == "v5"  # type: ignore[union-attr]
+        transition = (
+            bundle_revision,
+            bundle_workflows.get(version_key),  # type: ignore[union-attr]
+            user_revision,
+            user_workflows.get(version_key),  # type: ignore[union-attr]
         )
+        inherited_previous_factory_default = transition in {
+            (6, "v6", 5, "v5"),
+            (7, "v7", 6, "v6"),
+        }
         if (
-            inherited_v5_factory_default
+            inherited_previous_factory_default
         ):
-            user_workflows[version_key] = "v6"  # type: ignore[index]
+            user_workflows[version_key] = f"v{bundle_revision}"  # type: ignore[index]
             user_workflows[revision_key] = bundle_revision  # type: ignore[index]
             added.extend(
                 [

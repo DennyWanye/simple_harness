@@ -282,6 +282,140 @@ describe("ws.dispatch chat final dedupe", () => {
     expect(messages.some((message) => message.role === "assistant")).toBe(false);
   });
 
+  it("rebuilds one legacy text artifact from its nested workflow file without duplicating it", () => {
+    __test_dispatch({
+      type: "session_messages_response",
+      payload: {
+        session_id: "default",
+        messages: [
+          {
+            id: "legacy-file-artifact",
+            role: "assistant",
+            text: JSON.stringify({
+              tool: "artifact_create",
+              ok: true,
+              result: "legacy report preview",
+              artifacts: [{ kind: "text", title: "research_report", preview: "legacy report preview" }],
+            }),
+            ts: 2000,
+            workflow_event: {
+              event_id: "legacy-file-artifact",
+              event_type: "workflow.artifact_card",
+              payload: {
+                payload: {
+                  artifact: {
+                    kind: "file",
+                    path: "C:\\DeepResearch\\report.md",
+                    title: "report.md",
+                    mime: "text/markdown",
+                    size_bytes: 123,
+                    sha256: "abc123",
+                  },
+                },
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    const messages = useSessionsStore.getState().sessions.default.messages;
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      id: "workflow-artifact:legacy-file-artifact",
+      role: "tool_result",
+      tool_name: "artifact_create",
+      workflow_event_id: "legacy-file-artifact",
+    });
+    expect(JSON.parse(messages[0].tool_result || "{}")).toMatchObject({
+      tool: "artifact_create",
+      artifacts: [
+        {
+          kind: "file",
+          path: "C:\\DeepResearch\\report.md",
+          title: "report.md",
+          mime: "text/markdown",
+          size_bytes: 123,
+          sha256: "abc123",
+        },
+      ],
+    });
+  });
+
+  it("accepts the one-level legacy workflow artifact shape", () => {
+    __test_dispatch({
+      type: "session_messages_response",
+      payload: {
+        session_id: "default",
+        messages: [
+          {
+            id: "one-level-file-artifact",
+            role: "assistant",
+            text: JSON.stringify({
+              tool: "artifact_create",
+              ok: true,
+              artifacts: [{ kind: "text", title: "research_report", preview: "legacy" }],
+            }),
+            workflow_event: {
+              event_type: "workflow.artifact_card",
+              payload: {
+                artifact: {
+                  kind: "file",
+                  path: "C:\\DeepResearch\\one-level.md",
+                  title: "one-level.md",
+                },
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    const messages = useSessionsStore.getState().sessions.default.messages;
+    expect(messages).toHaveLength(1);
+    expect(JSON.parse(messages[0].tool_result || "{}").artifacts).toEqual([
+      expect.objectContaining({
+        kind: "file",
+        path: "C:\\DeepResearch\\one-level.md",
+        title: "one-level.md",
+      }),
+    ]);
+  });
+
+  it("keeps the legacy text artifact when the workflow file path is invalid", () => {
+    __test_dispatch({
+      type: "session_messages_response",
+      payload: {
+        session_id: "default",
+        messages: [
+          {
+            id: "invalid-file-artifact",
+            role: "assistant",
+            text: JSON.stringify({
+              tool: "artifact_create",
+              ok: true,
+              artifacts: [{ kind: "text", title: "research_report", preview: "keep me" }],
+            }),
+            workflow_event: {
+              event_type: "workflow.artifact_card",
+              payload: {
+                payload: {
+                  artifact: { kind: "file", path: "   ", title: "missing.md" },
+                },
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    const messages = useSessionsStore.getState().sessions.default.messages;
+    expect(messages).toHaveLength(1);
+    expect(JSON.parse(messages[0].tool_result || "{}").artifacts).toEqual([
+      { kind: "text", title: "research_report", preview: "keep me" },
+    ]);
+  });
+
   it("renders a live workflow artifact once even if delivery is retried", () => {
     const event = {
       type: "tool_result",

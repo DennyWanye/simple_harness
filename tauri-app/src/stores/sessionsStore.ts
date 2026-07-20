@@ -104,6 +104,23 @@ export interface WorkflowV5ProgressProjection {
   rejection_reasons: Array<{ reason_code: string; count: number }>;
 }
 
+export type WorkflowV7ChildStatus =
+  | "queued"
+  | "running"
+  | "retrying"
+  | "valid"
+  | "insufficient";
+
+export interface WorkflowV7ChildProgress {
+  child_id: string;
+  question: string;
+  status: WorkflowV7ChildStatus;
+  attempt: number;
+  max_attempts: number;
+  n_sources: number;
+  reason_code?: string;
+}
+
 export interface WorkflowEventEnvelope {
   event_id?: string;
   run_id?: string;
@@ -193,6 +210,8 @@ export interface Message {
   workflow_capability?: "deep_research_progress_v5";
   workflow_visibility?: "hidden" | "visible";
   workflow_v5?: WorkflowV5ProgressProjection;
+  workflow_v7_children?: WorkflowV7ChildProgress[];
+  workflow_v7_children_seq?: number;
   workflow_delivery?: WorkflowDeliveryAggregate;
   // Bookkeeping
   ts: number;
@@ -734,6 +753,55 @@ function isDeepResearchCompletedStage(payload: Record<string, unknown>): boolean
     String(payload.status || payload.transition || "") === "completed";
 }
 
+const V7_CHILD_STATUSES = new Set<WorkflowV7ChildStatus>([
+  "queued", "running", "retrying", "valid", "insufficient",
+]);
+
+function parseV7Children(
+  payload: Record<string, unknown>,
+): WorkflowV7ChildProgress[] | undefined {
+  if (
+    payload.schema_version !== 7 ||
+    payload.kind !== "research_children" ||
+    payload.workflow_version !== "v7" ||
+    !Array.isArray(payload.children) ||
+    payload.children.length < 2 ||
+    payload.children.length > 6
+  ) return undefined;
+  const seen = new Set<string>();
+  const result: WorkflowV7ChildProgress[] = [];
+  for (const raw of payload.children) {
+    if (!raw || typeof raw !== "object") return undefined;
+    const item = raw as Record<string, unknown>;
+    const childId = String(item.child_id || "").trim();
+    const question = String(item.question || "").trim();
+    const status = String(item.status || "") as WorkflowV7ChildStatus;
+    const attempt = Number(item.attempt);
+    const maxAttempts = Number(item.max_attempts);
+    const nSources = Number(item.n_sources);
+    if (
+      !/^dr-\d+$/.test(childId) || seen.has(childId) ||
+      !question || question.length > 600 || !V7_CHILD_STATUSES.has(status) ||
+      !Number.isInteger(attempt) || !Number.isInteger(maxAttempts) ||
+      attempt < 0 || maxAttempts < 1 || maxAttempts > 3 || attempt > maxAttempts ||
+      !Number.isInteger(nSources) || nSources < 0 || nSources > 10_000
+    ) return undefined;
+    result.push({
+      child_id: childId,
+      question,
+      status,
+      attempt,
+      max_attempts: maxAttempts,
+      n_sources: nSources,
+      reason_code: typeof item.reason_code === "string"
+        ? item.reason_code.slice(0, 128)
+        : undefined,
+    });
+    seen.add(childId);
+  }
+  return result;
+}
+
 function appendWorkflowStage(
   messages: Message[],
   event: WorkflowEventEnvelope,
@@ -886,12 +954,26 @@ export function applyWorkflowEvent(
   const incomingDelivery = parseWorkflowDeliveryAggregate(event.delivery_aggregate);
   const v5Projection = parseV5Progress(payload);
   const cardId = `workflow-run:${runId}`;
-  const messagesWithStage = appendWorkflowStage(messages, event, payload, runId, seq);
+  let messagesWithStage = appendWorkflowStage(messages, event, payload, runId, seq);
   const index = messagesWithStage.findIndex(
     (message) =>
       message.role === "workflow_progress" && message.workflow_run_id === runId,
   );
-  const previous = index >= 0 ? messagesWithStage[index] : undefined;
+  let previous = index >= 0 ? messagesWithStage[index] : undefined;
+  const incomingV7Children = parseV7Children(payload);
+  if (
+    previous && incomingV7Children &&
+    seq > (previous.workflow_v7_children_seq ?? -1)
+  ) {
+    const updatedPrevious: Message = {
+      ...previous,
+      workflow_v7_children: incomingV7Children,
+      workflow_v7_children_seq: seq,
+    };
+    messagesWithStage = [...messagesWithStage];
+    messagesWithStage[index] = updatedPrevious;
+    previous = updatedPrevious;
+  }
   if (
     previous?.workflow_terminal ||
     (typeof previous?.workflow_seq === "number" && seq <= previous.workflow_seq)
@@ -1074,6 +1156,10 @@ export function applyWorkflowEvent(
       ? payload.visibility
       : previous?.workflow_visibility,
     workflow_v5: mergedV5,
+    workflow_v7_children: incomingV7Children ?? previous?.workflow_v7_children,
+    workflow_v7_children_seq: incomingV7Children
+      ? seq
+      : previous?.workflow_v7_children_seq,
     workflow_delivery: incomingDelivery ?? previous?.workflow_delivery,
   };
 

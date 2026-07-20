@@ -241,6 +241,28 @@ def test_exact_inherited_v5_factory_pair_is_promoted_to_v6(fake_dirs):
     assert data["deep_research_default_revision"] == 6
 
 
+def test_exact_inherited_v6_factory_pair_is_promoted_to_v7(fake_dirs):
+    user_dir, bundle_src = fake_dirs
+    user_target = user_dir / "config.toml"
+    user_target.write_text(
+        OLD_USER_TOML
+        + '\n[workflows]\ndeep_research_version = "v6"\n'
+        + "deep_research_default_revision = 6\n",
+        encoding="utf-8",
+    )
+    bundle_src.write_text(
+        BUNDLE_TOML
+        + '\n[workflows]\ndeep_research_version = "v7"\n'
+        + "deep_research_default_revision = 7\n",
+        encoding="utf-8",
+    )
+
+    assert cfg._merge_missing_feature_flags(user_target, bundle_src) is True
+    data = _load(user_target)["workflows"]
+    assert data["deep_research_version"] == "v7"
+    assert data["deep_research_default_revision"] == 7
+
+
 def test_current_revision_explicit_v5_pin_is_preserved(fake_dirs):
     user_dir, bundle_src = fake_dirs
     user_target = user_dir / "config.toml"

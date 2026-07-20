@@ -138,6 +138,51 @@ async def test_artifact_handler_persists_toolartifact_once_by_event_id(
 
 
 @pytest.mark.asyncio
+async def test_nested_file_artifact_wins_over_report_and_persists_once(
+    stores, tmp_path: Path
+) -> None:
+    session_db, receipt_store = stores
+    adapter = ProductDeliveryAdapter(session_db=session_db, receipt_store=receipt_store)
+    report = tmp_path / "nested-report.md"
+    report.write_text("# Nested report\n", encoding="utf-8")
+    report_sha = hashlib.sha256(report.read_bytes()).hexdigest()
+    event = _event(
+        "artifact-event-nested-file",
+        run_id="research-nested",
+        kind="artifact_card",
+        payload={
+            "artifact_type": "research_report",
+            "report": {"summary": "This must not become a text artifact."},
+            "artifact": {
+                "kind": "file",
+                "path": str(report),
+                "mime": "text/markdown",
+                "title": report.name,
+                "sha256": report_sha,
+            },
+        },
+    )
+    delivery = _delivery(event["event_id"], "artifact")
+
+    first = await adapter.deliver_artifact(event, delivery)
+    second = await adapter.deliver_artifact(event, delivery)
+
+    assert first["artifact_count"] == 1
+    assert second["message_id"] == first["message_id"]
+    messages = await session_db.get_messages("session-1")
+    assert len(messages) == 1
+    envelope = json.loads(messages[0]["content"])
+    assert len(envelope["artifacts"]) == 1
+    artifact = envelope["artifacts"][0]
+    assert artifact["kind"] == "file"
+    assert artifact["path"] == str(report)
+    assert artifact["mime"] == "text/markdown"
+    assert artifact["title"] == report.name
+    assert artifact["sha256"] == report_sha
+    assert artifact["size_bytes"] == report.stat().st_size
+
+
+@pytest.mark.asyncio
 async def test_artifact_handler_publishes_persisted_tool_result_live(
     stores, tmp_path: Path
 ) -> None:

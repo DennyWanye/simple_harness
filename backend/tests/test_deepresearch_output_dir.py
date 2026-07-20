@@ -61,6 +61,17 @@ def test_deepresearch_dir_env_override_has_highest_priority(monkeypatch, tmp_pat
     assert override.is_dir()
 
 
+def test_deepresearch_dir_relative_override_resolves_to_absolute(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DESKPET_DEEPRESEARCH_DIR", "relative-reports")
+
+    target = paths.deepresearch_dir()
+
+    assert target == (tmp_path / "relative-reports").resolve()
+    assert target.is_absolute()
+
+
+
 def test_deepresearch_dir_frozen_uses_install_root(monkeypatch, tmp_path):
     exe = tmp_path / "DeskPet" / "backend" / "deskpet-backend.exe"
     exe.parent.mkdir(parents=True)
@@ -246,4 +257,22 @@ def test_save_workflow_report_is_idempotent_and_returns_verified_file(monkeypatc
     assert second["kind"] == "file"
     assert second["mime"] == "text/markdown"
     assert second["size_bytes"] == len("# 第二版".encode("utf-8"))
+    assert not list(path.parent.glob("*.tmp"))
+
+
+def test_save_workflow_report_returns_absolute_path_for_relative_override(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DESKPET_DEEPRESEARCH_DIR", "DeepResearch")
+
+    artifact = r.save_workflow_report(
+        topic="相对目录测试",
+        report_md="# 报告",
+        report_hash="hash-relative",
+        run_id="run-relative",
+    )
+
+    path = Path(str(artifact["path"]))
+    assert path.is_absolute()
+    assert path.parent == (tmp_path / "DeepResearch").resolve()
+    assert path.exists()
     assert not list(path.parent.glob("*.tmp"))

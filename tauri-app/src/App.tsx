@@ -95,6 +95,10 @@ import { RelayAuthAdapter } from "./auth/RelayAuthAdapter";
 import { RelayEdition } from "./auth/RelayEdition";
 import { relayProviderRegistration } from "./auth/relayProviderRegistration";
 import { friendlyChatErrorMessage } from "./auth/relayErrorText";
+import {
+  isWorkflowLifecycleOnlyMessage,
+  workflowFinalAssistant,
+} from "./workflowFinalAssistant";
 
 const DEFAULT_SESSION_ID = "default";
 
@@ -305,6 +309,7 @@ function App() {
   const [messages, setMessages] = useState<
     { role: "user" | "assistant"; text: string }[]
   >([]);
+  const workflowFinalEventIdsRef = useRef(new Set<string>());
   const [mouthOpenY, setMouthOpenY] = useState(0);
   const [vadStatus, setVadStatus] = useState<
     "idle" | "listening" | "speaking" | "thinking"
@@ -871,6 +876,34 @@ function App() {
         }
         break;
       }
+      case "workflow_event": {
+        if (!isActivePayload) break;
+        const finalAssistant = workflowFinalAssistant(lastMessage);
+        if (!finalAssistant) break;
+        if (
+          finalAssistant.eventId &&
+          workflowFinalEventIdsRef.current.has(finalAssistant.eventId)
+        ) break;
+        if (finalAssistant.eventId) {
+          workflowFinalEventIdsRef.current.add(finalAssistant.eventId);
+        }
+        thinkingObsRef.current.notifyEnd(performance.now());
+        setWorking(false);
+        setMessages((prev) => {
+          const withoutCompletionPlaceholder = prev.filter(
+            (message, index) => !(
+              index === prev.length - 1 &&
+              message.role === "assistant" &&
+              message.text === "(完成)"
+            ),
+          );
+          return [
+            ...withoutCompletionPlaceholder,
+            { role: "assistant", text: finalAssistant.text },
+          ];
+        });
+        break;
+      }
       case "chat_v2_final": {
         if (!isActivePayload) break;
         // v2 B2: defensive close in case first_chunk path was missed.
@@ -930,7 +963,11 @@ function App() {
         if (targetSid && targetSid !== activeSidRef.current) break;
         const rows: any[] = Array.isArray(p.messages) ? p.messages : [];
         const hist = rows
-          .filter((r) => r && (r.role === "user" || r.role === "assistant"))
+          .filter((r) =>
+            r &&
+            (r.role === "user" || r.role === "assistant") &&
+            !isWorkflowLifecycleOnlyMessage(r)
+          )
           .map((r) => ({
             role: r.role as "user" | "assistant",
             text: String(r.text ?? ""),

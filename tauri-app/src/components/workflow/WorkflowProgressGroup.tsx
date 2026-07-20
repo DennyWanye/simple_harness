@@ -31,6 +31,14 @@ const STATUS_TONES: Record<WorkflowProgressStatus, {
   cancelled: { label: "已取消", accent: "#94a3b8", soft: "rgba(148,163,184,0.14)" },
 };
 
+const V7_CHILD_LABELS = {
+  queued: "排队中",
+  running: "调研中",
+  retrying: "补救中",
+  valid: "已验收",
+  insufficient: "证据不足",
+} as const;
+
 const DELIVERY_LABELS = {
   queued: "交付排队中",
   delivering: "正在交付",
@@ -197,8 +205,9 @@ export function WorkflowProgressGroup({
   const fallback = orderedStages.at(-1);
   const status = summary?.workflow_status ?? (fallback?.workflow_stage_id === "finalize" ? "completed" : "running");
   const tone = STATUS_TONES[status];
-  const isDeepResearch = orderedStages.length > 0 || ["v2", "v3", "v4", "v5", "v6"].includes(summary?.workflow_version || "");
+  const isDeepResearch = orderedStages.length > 0 || ["v2", "v3", "v4", "v5", "v6", "v7"].includes(summary?.workflow_version || "");
   const v5 = summary?.workflow_v5;
+  const v7Children = summary?.workflow_v7_children || [];
 
   useEffect(() => () => {
     if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
@@ -278,6 +287,7 @@ export function WorkflowProgressGroup({
   const settleRemaining = v5 && ["accepted", "observed"].includes(v5.control_status)
     ? Math.max(0, 30 - Math.floor(Math.max(0, now - (summary?.workflow_updated_at ?? now)) / 1000))
     : null;
+  const hasDetails = timelineRows.length > 0 || v7Children.length > 0;
 
   useEffect(() => {
     retryKeyRef.current = null;
@@ -338,10 +348,10 @@ export function WorkflowProgressGroup({
       aria-label={`${name}总体进度`}
       style={{
         alignSelf: "stretch", flexShrink: 0,
-        height: timelineRows.length === 0 ? 104 : undefined,
+        height: hasDetails ? undefined : 104,
         minHeight: 104,
-        maxHeight: timelineRows.length === 0 ? 104 : undefined,
-        boxSizing: "border-box", overflow: timelineRows.length === 0 ? "hidden" : "visible",
+        maxHeight: hasDetails ? undefined : 104,
+        boxSizing: "border-box", overflow: hasDetails ? "visible" : "hidden",
         borderRadius: 8, border: `1px solid ${tone.accent}55`, background: "rgba(18, 24, 35, 0.92)",
       }}
     >
@@ -409,6 +419,35 @@ export function WorkflowProgressGroup({
                   .join("、")}
               </span>
             ) : null}
+          </div>
+        ) : null}
+        {v7Children.length > 0 ? (
+          <div
+            data-testid="workflow-v7-children"
+            aria-label={`调研子方向，共 ${v7Children.length} 个`}
+            style={{ display: "grid", gap: 6, marginTop: 4 }}
+          >
+            <strong style={{ color: "#dbeafe", fontSize: 12 }}>
+              主 Agent 拆出的 {v7Children.length} 个子方向
+            </strong>
+            {v7Children.map((child) => (
+              <div
+                key={child.child_id}
+                data-testid={`workflow-v7-child-${child.child_id}`}
+                data-status={child.status}
+                style={{
+                  display: "grid", gap: 2, padding: "6px 8px", borderRadius: 6,
+                  background: "rgba(30,41,59,0.72)", border: "1px solid rgba(148,163,184,0.18)",
+                }}
+              >
+                <span title={child.question} style={{ color: "#e2e8f0", fontSize: 12 }}>
+                  {child.question}
+                </span>
+                <span style={{ color: child.status === "insufficient" ? "#fbbf24" : "#94a3b8", fontSize: 11 }}>
+                  {V7_CHILD_LABELS[child.status]} · 尝试 {child.attempt}/{child.max_attempts} · 来源 {child.n_sources}
+                </span>
+              </div>
+            ))}
           </div>
         ) : null}
         {retryAvailable && status !== "failed" ? (

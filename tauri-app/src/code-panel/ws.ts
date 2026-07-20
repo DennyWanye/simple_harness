@@ -28,6 +28,33 @@ import { dispatchProviderEvent } from "../components/SettingsProviders";
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 15000;
 
+function persistedWorkflowFileArtifact(workflowEvent: unknown): Record<string, unknown> | null {
+  if (!workflowEvent || typeof workflowEvent !== "object" || Array.isArray(workflowEvent)) {
+    return null;
+  }
+  const payload = (workflowEvent as Record<string, unknown>).payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const payloadRecord = payload as Record<string, unknown>;
+  const nestedPayload = payloadRecord.payload;
+  const nestedPayloadRecord =
+    nestedPayload && typeof nestedPayload === "object" && !Array.isArray(nestedPayload)
+      ? nestedPayload as Record<string, unknown>
+      : null;
+
+  // Older workflow rows wrapped the intent payload once more than newer rows.
+  // Accept both persisted shapes, but never recursively scan arbitrary payloads.
+  const candidates = [nestedPayloadRecord?.artifact, payloadRecord.artifact];
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
+    const artifact = candidate as Record<string, unknown>;
+    if (artifact.kind !== "file") continue;
+    const path = typeof artifact.path === "string" ? artifact.path.trim() : "";
+    if (!path) continue;
+    return { ...artifact, kind: "file", path };
+  }
+  return null;
+}
+
 // P4-S23 fix: stash the live socket on globalThis so vite HMR (which
 // may swap this module while the old WebSocket is still mid-handshake)
 // can find and close the previous instance instead of stacking
@@ -749,7 +776,13 @@ function dispatch(msg: any) {
               Array.isArray(parsed.artifacts) &&
               parsed.artifacts.length > 0
             ) {
-              artifactEnvelope = parsed;
+              const legacyFileArtifact =
+                parsed.artifacts.length === 1 && parsed.artifacts[0]?.kind === "text"
+                  ? persistedWorkflowFileArtifact(workflowEvent)
+                  : null;
+              artifactEnvelope = legacyFileArtifact
+                ? { ...parsed, artifacts: [legacyFileArtifact] }
+                : parsed;
             }
           } catch {
             artifactEnvelope = null;

@@ -18,6 +18,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useSubagentStore, type SubagentRunView } from "./subagentStore";
+import { isInternalDeepResearchAttempt } from "./subagentProgress";
 
 const KIND_LABEL: Record<string, string> = {
   research: "调研",
@@ -115,7 +116,9 @@ export function SubagentProgressPanel({
   const clearTerminal = useSubagentStore((s) => s.clearTerminal);
   const theme = THEMES[variant];
 
-  const list = Object.values(runs).sort((a, b) => a.ts - b.ts);
+  const list = Object.values(runs)
+    .filter((run) => !isInternalDeepResearchAttempt(run))
+    .sort((a, b) => a.ts - b.ts);
   const active = list.filter((r) => isActive(phaseOf(r))).length;
 
   // 折叠态：用户可手动切；全部跑完(active 由正→0)时自动收起减少干扰。

@@ -133,6 +133,35 @@ function deepResearchV5Stage(
   }, runId);
 }
 
+function deepResearchV7Children(
+  seq: number,
+  statuses: Array<"queued" | "running" | "retrying" | "valid" | "insufficient">,
+  runId = "research-v7-run",
+): WorkflowEventEnvelope {
+  return workflowEvent(seq, "workflow.progress", {
+    schema_version: 7,
+    kind: "research_children",
+    workflow_name: "deep_research",
+    workflow_version: "v7",
+    workflow_label: "深度调研",
+    stage_id: "search",
+    stage: "子代理调研与补救",
+    ordinal: 3,
+    total: 6,
+    status: "started",
+    text: `主 Agent 已拆分 ${statuses.length} 个调研子方向`,
+    children: statuses.map((status, index) => ({
+      child_id: `dr-${index}`,
+      question: `子方向 ${index + 1} 是什么？`,
+      status,
+      attempt: status === "queued" ? 0 : status === "retrying" ? 2 : 1,
+      max_attempts: 2,
+      n_sources: status === "valid" ? 2 : 0,
+      reason_code: status === "insufficient" ? "no_citations" : "",
+    })),
+  }, runId);
+}
+
 function mk(over: Partial<SessionState>): SessionState {
   return {
     base_session_id: "sid",
@@ -848,6 +877,57 @@ describe("workflow progress reducer (AC-23)", () => {
     const messages = useSessionsStore.getState().sessions[sid].messages;
     expect(messages.filter((message) => message.role === "workflow_progress")).toHaveLength(1);
     expect(messages.some((message) => message.role === "workflow_stage")).toBe(false);
+  });
+
+  it("keeps v7 directions independent from out-of-order stage and final events", () => {
+    const sid = "research-v7-out-of-order";
+    const runId = "research-v7-out-of-order-run";
+    const store = useSessionsStore.getState();
+    store.ensure(sid);
+    store.reduce_workflow_event(sid, deepResearchV7Children(10, ["running", "running"], runId));
+    store.reduce_workflow_event(sid, workflowEvent(12, "workflow.progress", {
+      schema_version: 7,
+      kind: "progress",
+      workflow_name: "deep_research",
+      workflow_version: "v7",
+      workflow_label: "深度调研",
+      stage_id: "synth",
+      stage: "综合调研结果",
+      ordinal: 4,
+      total: 6,
+      status: "started",
+      text: "正在综合",
+    }, runId));
+    store.reduce_workflow_event(sid, deepResearchV7Children(11, ["valid", "valid"], runId));
+
+    let summary = useSessionsStore.getState().sessions[sid].messages.find(
+      (message) => message.role === "workflow_progress",
+    );
+    expect(summary).toMatchObject({
+      workflow_seq: 12,
+      workflow_v7_children_seq: 11,
+      workflow_terminal: false,
+    });
+    expect(summary?.workflow_v7_children?.map((item) => item.status)).toEqual(["valid", "valid"]);
+
+    store.reduce_workflow_event(sid, workflowEvent(20, "workflow.final", {
+      workflow_name: "deep_research",
+      workflow_version: "v7",
+      status: "completed",
+    }, runId));
+    store.reduce_workflow_event(sid, deepResearchV7Children(19, ["valid", "insufficient"], runId));
+    store.reduce_workflow_event(sid, deepResearchV7Children(9, ["running", "running"], runId));
+
+    summary = useSessionsStore.getState().sessions[sid].messages.find(
+      (message) => message.role === "workflow_progress",
+    );
+    expect(summary).toMatchObject({
+      workflow_seq: 20,
+      workflow_v7_children_seq: 19,
+      workflow_status: "completed",
+      workflow_terminal: true,
+    });
+    expect(summary?.workflow_v7_children?.map((item) => item.status)).toEqual(["valid", "insufficient"]);
   });
 
   it("rehydrates durable stage children from history idempotently", () => {

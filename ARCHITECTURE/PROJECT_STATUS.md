@@ -1,6 +1,26 @@
 # DeskPet — 全局项目状态与架构完成度
 
-> **最后更新**：2026-07-19
+> **最后更新**：2026-07-20
+
+## 2026-07-20 里程碑：DeepResearch v7 简化编排、过程可见与文件交付
+
+- 模块状态：**新 run 默认 `deep_research/v7`；核心 Tokio 真实 UI Spike PASS，完整多类别发布矩阵 PENDING。**
+- v7 主图缩为六节点，manager 拆题后为每个子方向启动独立 research child，逐项做质量分类、
+  有界诊断续跑和统一综合；v1-v6 保留恢复兼容。
+- 真实 run `aa61dcc...` 为 engine completed / business partial：4 child 中 3 valid、1 insufficient；
+  `dr-2` attempt 2 成功，最终报告 5 来源/3 域并唯一投递报告、Artifact、final_assistant。
+- Spike 连续定位并修复三类生产缺陷：Search Gateway 全空时缺少可验证 URL 兜底、
+  FetchDocument/legacy extract 契约漂移、workflow final 正文被宠物气泡 `(完成)` 覆盖。
+- 门禁：后端相关 `76 passed, 2 deselected`；前端 `24 passed` + TypeScript；Computer Use 真输入、
+  真发送和最终报告气泡已验证。证据见
+  `plans/2026-07-19-deepresearch-simplification/spike/result.md`。
+- AC-9～AC-11 增量真测：run `9c42a6a...` 在单张卡显示 4 个真实方向与逐项状态，attempt 2
+  原位更新且通用子代理面板无重复行；最终标准文件卡四个操作均经真实点击。原报告继续位于既有
+  `DeepResearch` 目录，另存副本与原文件 SHA-256 相同；同 userdata 重启后仍恢复 4 个方向和唯一文件卡。
+- 最终增量门禁：后端 focused `81 passed`、默认配置/注册/恢复相邻套件 `142 passed`、前端 focused
+  `80 passed`、TypeScript、Vite production build、目标 lint 与 Computer Use TC-3 PASS。应用当前仍以源码 backend 运行，供继续体验。
+- 已知边界：本次只完成一个语义类别的正向技术调研 spike；来源权威性和政策/市场/无证据/恢复矩阵
+  留待后续正式发布验收，不能用同题重跑冒充 distinct 场景。
 
 ## 2026-07-18 里程碑：DeepResearch v6 默认发布与答案契约稳定性完成
 
@@ -66,7 +86,7 @@
 
 | 模块 | 状态 | 关键文档 |
 |---|---|---|
-| **DeepResearch v6 / bundled Playwright** | ✅ **本计划 DoD PASS** — 新 run 默认 v6；五类 intent、三态交付、durable continuation/control/retention、exactly-once delivery、generate-now 双击与重启/history 闭环；release identity fixture 已纳入受控提交。此前 Gate F 的 updater/卸载等仓库级独立事项不在本计划范围。 | [架构](./DeepResearch.md) · [plan](../plans/2026-07-17-deepresearch-answer-contract-stability/plan.md) · [results](../plans/2026-07-17-deepresearch-answer-contract-stability/execution-results.md) |
+| **DeepResearch v7 简化编排 / bundled Playwright** | ✅ **本轮 required 范围 PASS** — 新 run 默认 v7；六节点 manager graph 拆 2～6 个方向，每方向独立 child，弱结果诊断后最多续跑一次，再统一综合。单卡显示真实方向/状态/attempt/来源数，内部 attempt 不重复；标准文件卡四个动作、既有 `DeepResearch` 目录保存及同 userdata 重启恢复均经真机验证。完整多类别语义矩阵保留为后续候选。 | [架构](./DeepResearch.md) · [plan](../plans/2026-07-19-deepresearch-simplification/plan.md) · [results](../plans/2026-07-19-deepresearch-simplification/spike/result.md) |
 | **语音管线** (Realtime/VAD/ASR/LLM/TTS) | 🟡 **relay-only 迁移被 VR-0 阻塞** — 当前实现仍会加载本地 Silero VAD 与 faster-whisper，不符合新产品契约；正式路径不得回退本地模型。实测中转站 `/v1/models` 无语音 alias，Realtime client secret、audio speech/transcriptions endpoint 均为 404。待 relay 提供 WebRTC/Realtime 契约后实现自然对话、打断、恢复与 soak E2E。 | [Context OS V1 plan §12](../plans/2026-07-13-context-os-v1/plan.md) · [E2E-CTX-12](../plans/2026-07-13-context-os-v1/testcase.md) |
 | **桌宠 supervisor** (P5-S1) | ✅ 生产可用 | `README.md` §桌宠 supervisor |
 | **长期记忆 + 自动总结** (P4-S20-D / memory-v2) | ✅ Stage 1/2 ship；F1-F5 全修；严测 4 Phase（33 用例）；**2026-06-02 审计修复 #1-#4**：FATAL-A 自动 backfill 兜底 + FATAL-B 静默降级告警 + MemEval 字面vs改写召回（改写 Recall@5=1.0 证 dense 真工作）+ **出厂点亮 facts_extract/enhanced_retriever/cross_key_merge 语义事实记忆栈**（真机 E2E 待跑）| `README.md` §长期记忆 + [memory-system-status](../plans/2026-05-23-memory-system-status.md) + [严测 spec](../plans/2026-06-01-memory-system-rigorous-test-spec.md) + [审计+最佳实践](../plans/2026-06-02-memory-system-audit-and-best-practices.md) |

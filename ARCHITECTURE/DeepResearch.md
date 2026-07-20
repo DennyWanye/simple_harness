@@ -1,8 +1,52 @@
 # DeepResearch 模块架构与状态
 
-> **最后更新**：2026-07-19
+> **最后更新**：2026-07-20
 
-## 2026-07-18 当前生产事实（v6）
+## 2026-07-19 当前生产事实（v7）
+
+- 新建调研默认进入 immutable `deep_research/v7`；v1-v6 继续注册，历史 run 不迁移、不重写 checkpoint。
+- 主图缩为 `normalize -> plan -> search(children manager) -> synth -> persist -> finalize` 六个节点；
+  普通调研不再强制穿过 v6 十一个专题证据节点。
+- `plan` 生成 2–6 个子方向；`search` 为每个方向经 `SubagentScheduler` 启动独立 research child，
+  用 `gather(return_exceptions=True)` 隔离 sibling，并记录稳定 child id、attempt、status、reason、
+  source/domain count 与 duration。
+- 每个 focused child 同时收到原始用户主题与自己的子方向；检索聚焦子方向，来源规划与 synthesis
+  仍以原始主题约束任务边界，manager continuation 只补救同一方向。
+- manager 将 child 结果分类为 valid/retryable/insufficient；retryable 会生成短诊断和 continuation，
+  同一方向最多 2 次。只有 valid 子报告进入统一 synth，耗尽项写入“调研局限”。
+- v7 focused child 只执行一次来源发现、并发抓取/过滤和一次 synthesis，不再递归运行完整
+  DeepResearch pipeline。Search Gateway 无结果时可让 child 给出少量候选 URL，但 URL 必须经真实抓取和
+  passage 门禁才能形成 citation。
+- Fetch 边界同时兼容 legacy `{ok,text}` 与 `FetchDocument.to_dict()` 的 `{text,fetched_at ISO}`；
+  显式失败仍 fail-closed。该契约修复避免 HTTP 200 正文被静默丢弃。
+- 终态继续使用通用 durable outbox，唯一投递 report、Artifact 和 final_assistant；前端会显示
+  `workflow.final_assistant` 正文并过滤 lifecycle `(完成)` 占位。
+- 真实 Tokio UI spike `aa61dcc...`：4 个子方向，3 valid / 1 insufficient；一个 child 在 attempt 2
+  补救成功；业务 `partial`，5 来源/3 域，engine `completed`，总耗时 412.49s。报告质量达到本次
+  技术调研 spike 的最低门，但第一方来源比例偏低，完整多类别发布矩阵仍未执行。
+- 回归证据：最终 parent-topic 契约修复后后端相关 `72 passed`；focused `23 passed`；前端 workflow/WS/UI
+  `24 passed`，TypeScript PASS。详细记录见
+  [`spike/result.md`](../plans/2026-07-19-deepresearch-simplification/spike/result.md)。
+
+## 2026-07-20 UI 与文件交付生产事实
+
+- v7 `plan/search` 通过 durable `workflow.progress` 发布完整 children snapshot；前端用独立 children seq
+  合并，并以 `(parent_run_id, child_id)` 为稳定身份渲染真实问题、状态、attempt 上限和来源数。重试只
+  原位更新同一方向，内部 `.dr-N.aN` scheduler attempts 不再进入通用子代理面板。
+- v7 finalize 输出 canonical `artifacts[]` file envelope；交付适配器仍兼容旧 nested artifact。
+  历史 hydration 能把旧 text research artifact 与 workflow event 中的文件元数据合并回标准 file card，
+  不重放 outbox，也不复制报告。
+- 文件卡复用通用 `FileArtifactCard`，提供“打开 / 另存为 / 在文件夹中显示 / 复制路径”；报告继续保存到
+  既有 `DeepResearch` 目录，路径为绝对 canonical path。
+- 真实 run `9c42a6a...` 显示 4 个唯一方向，其中 1 个原位推进到 attempt 2 后 insufficient；最终只有
+  1 张 Markdown 文件卡。四个文件动作均经真实 UI 点击；另存副本与原文件均为 8065 bytes，SHA-256
+  相同。使用相同 userdata 完整重启后仍恢复 4 个方向、1 张 terminal 主卡和 1 张文件卡。
+- 最终门禁：后端 focused `81 passed`、含默认配置/注册/恢复相邻面的 10 文件套件 `142 passed`，
+  前端 focused `80 passed`，TypeScript、Vite production build、目标 lint 与 Computer Use 真机 TC-3 PASS。证据见
+  [`spike/result.md`](../plans/2026-07-19-deepresearch-simplification/spike/result.md) 与
+  [`testcase`](../testcase/2026-07-19-deepresearch-simplification/README.md)。
+
+## 历史生产事实（v6，2026-07-18）
 
 - 新建调研默认进入 immutable `deep_research/v6`；v1-v5 仅用于历史读取、在途恢复和兼容 continuation，不再依赖开发环境覆盖切换版本。
 - Q1 官方精确事实链路已经端到端可执行：语义规格 -> 国家统计局年度公报通用归档发现
@@ -50,7 +94,7 @@
 
 > **用途**: deep research（深度调研）模块的历史实现盘点；当前生产事实只在本页保留摘要。
 > 全局项目状态见 [`PROJECT_STATUS.md`](./PROJECT_STATUS.md)；本文件是 deep research 这一模块的深入架构档。
-> **历史说明**：下方 v5、v4 与 2026-06-21 legacy pipeline 内容只保留演进记录，不应用于判断当前状态；当前事实以本页顶部 v6 摘要和 [`SEARCH_GATEWAY_DEEPRESEARCH.md`](./SEARCH_GATEWAY_DEEPRESEARCH.md) 为准。
+> **历史说明**：下方 v6、v5、v4 与 2026-06-21 legacy pipeline 内容只保留演进记录，不应用于判断当前状态；当前事实以本页顶部 v7 摘要和 [`SEARCH_GATEWAY_DEEPRESEARCH.md`](./SEARCH_GATEWAY_DEEPRESEARCH.md) 为准。
 
 ## 历史生产摘要（v4，2026-07-15）
 

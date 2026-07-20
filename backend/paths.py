@@ -171,7 +171,7 @@ def deepresearch_dir() -> Path:
     """
     override = os.environ.get("DESKPET_DEEPRESEARCH_DIR")
     if override:
-        target = Path(override)
+        target = Path(override).expanduser().resolve()
         target.mkdir(parents=True, exist_ok=True)
         return target
 

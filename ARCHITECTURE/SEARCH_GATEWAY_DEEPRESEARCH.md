@@ -1,14 +1,15 @@
 # DeskPet Search Gateway 与 DeepResearch 进度架构基线
 
-> 校准日期：2026-07-19
+> 校准日期：2026-07-20
 
-## 2026-07-19 当前生产事实
+## 2026-07-20 当前生产事实
 
-- 新建调研默认由 `resolve_deep_research_workflow_version()` 选择 immutable `deep_research/v6`；v1-v5 只保留历史读取、在途恢复与 continuation 兼容，不再代表新 run 的默认链路。
-- 当前链路为 `deepresearch` tool -> workflow starter -> `WorkflowLauncher.launch(deep_research/v6)` -> v6 production nodes/runtime adapters -> Search Gateway 与 evidence ledger -> exact/report compiler -> durable terminal projection、artifact 和 assistant delivery。
+- 新建调研默认由 `resolve_deep_research_workflow_version()` 选择 immutable `deep_research/v7`；v1-v6 只保留历史读取、在途恢复与 continuation 兼容，不再代表新 run 的默认链路。
+- 当前链路为 `deepresearch` tool -> workflow starter -> `WorkflowLauncher.launch(deep_research/v7)` -> 六节点 manager graph -> 每方向独立 focused research child -> 逐项诊断/有界续跑 -> 统一综合 -> durable terminal projection、file artifact 和 assistant delivery。
 - Search Gateway 使用请求级预算、provider limiter/cooldown、官方来源策略、质量排序和 static fetch -> bundled Playwright -> installed Edge 的有界抓取链；URL、query、正文与模型中间推理不会进入默认公共进度投影。
 - Relay 对用户指定的 `zai-org/GLM-5.2` 暴露可调用别名 `sf-glm-5.2`。基础模型和 problem-pipeline 预分析默认均使用该别名；在 provider 元数据尚未成为运行时事实源前，alias/canonical 暂时按 1M 名义上下文解析。
-- v6 的完整当前契约、边界和验证证据以 [`DeepResearch.md`](./DeepResearch.md) 为主事实源；下文 v5 与 v1 章节是 2026-07-17 的演进快照，不得再解读为当前默认生产链路。
+- v7 将 2～6 个稳定子方向和逐项状态投影到同一 DeepResearch 卡；重试原位更新，不进入通用子代理面板。报告继续保存到既有 `DeepResearch` 目录并以标准 file Artifact 交付，历史 nested artifact 仍可恢复。
+- v7 的完整当前契约、边界和验证证据以 [`DeepResearch.md`](./DeepResearch.md) 为主事实源；下文 v5 与 v1 章节是 2026-07-17 的演进快照，不得再解读为当前默认生产链路。
 
 ## 2026-07-17 v5 历史增量事实
 

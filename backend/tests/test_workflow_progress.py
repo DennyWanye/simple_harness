@@ -222,6 +222,71 @@ async def test_progress_failure_does_not_escape_reporter():
 
 
 @pytest.mark.asyncio
+async def test_v7_children_snapshot_is_safe_complete_and_idempotent():
+    service = _Service()
+    reporter = WorkflowProgressReporter(service, (("websocket", "session-secret"),))
+    identity = NodeExecutionIdentity(
+        "deep_research", "v7", "thread-secret", "run-v7", "checkpoint-secret", "",
+        "task-plan", "plan", 1,
+    )
+    children = [
+        {
+            "child_id": f"dr-{index}",
+            "question": question,
+            "status": "queued",
+            "attempt": 0,
+            "max_attempts": 2,
+            "n_sources": 0,
+            "reason_code": "",
+        }
+        for index, question in enumerate(("架构是什么？", "核心组件是什么？", "常见陷阱是什么？"))
+    ]
+
+    first = await reporter.report_deep_research_v7_children(identity, children)
+    duplicate = await reporter.report_deep_research_v7_children(identity, children)
+    changed = [dict(item) for item in children]
+    changed[0].update(status="valid", attempt=1, n_sources=2, reason_code="ok")
+    second = await reporter.report_deep_research_v7_children(identity, changed)
+
+    assert first == duplicate == "event-1"
+    assert second == "event-2"
+    assert len(service.outbox.events) == 2
+    payload = list(service.outbox.events.values())[-1]["payload"]
+    assert payload["schema_version"] == 7
+    assert payload["kind"] == "research_children"
+    assert payload["workflow_version"] == "v7"
+    assert payload["children"][0] == changed[0]
+    assert "session-secret" not in repr(payload)
+
+
+@pytest.mark.asyncio
+async def test_v7_progress_uses_six_user_visible_stages():
+    service = _Service()
+    reporter = WorkflowProgressReporter(service, (("websocket", "session-1"),))
+    identity = NodeExecutionIdentity(
+        "deep_research", "v7", "thread", "run-v7", "checkpoint", "",
+        "task-search", "search", 1,
+    )
+
+    await reporter.report(identity, "started")
+
+    payload = list(service.outbox.events.values())[-1]["payload"]
+    assert payload == {
+        "schema_version": 7,
+        "kind": "progress",
+        "workflow_name": "deep_research",
+        "workflow_version": "v7",
+        "workflow_label": "深度调研",
+        "stage_id": "search",
+        "stage": "子代理调研与补救",
+        "ordinal": 3,
+        "total": 6,
+        "status": "started",
+        "text": "深度调研进度：子代理调研与补救（3/6）",
+    }
+
+
+@pytest.mark.asyncio
 async def test_compiled_workflow_progress_persists_once_to_original_session(
     tmp_path,
 ) -> None:

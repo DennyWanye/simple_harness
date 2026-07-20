@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from types import SimpleNamespace
@@ -231,6 +232,86 @@ async def test_tg2_fanout_runs_subreports_depth_one_and_merges(monkeypatch) -> N
 
 
 @pytest.mark.asyncio
+async def test_v7_focused_child_builds_cited_report_without_recursive_pipeline() -> None:
+    parent_topic = "Evaluate Tokio for a production Rust service"
+
+    async def search(query: str, *, max_results: int = 5):
+        assert "Tokio" in query
+        assert max_results == 2
+        return [{"url": "https://docs.rs/tokio/latest/tokio/runtime/"}]
+
+    async def extract(url: str):
+        return {
+            "url": url,
+            "title": "Tokio runtime",
+            "text": ("Tokio runtime architecture scheduler reactor timer IO driver. " * 40),
+            "fetched_at": "2026-07-19T13:55:01.159668+00:00",
+        }
+
+    async def llm(prompt: str) -> str:
+        assert "Tokio runtime" in prompt
+        assert parent_topic in prompt
+        return "# Tokio\n\n## TL;DR\n\nTokio coordinates runtime services.[^1]\n"
+
+    report = await r._research_subdirection(
+        "Tokio runtime architecture",
+        request_topic="Tokio runtime architecture",
+        parent_topic=parent_topic,
+        llm_call=llm,
+        search=search,
+        extract=extract,
+        max_urls=2,
+        max_passages=8,
+    )
+
+    assert report.coverage["pipeline"] == "focused_child_v7"
+    assert report.coverage["n_sources"] == 1
+    assert report.coverage["cite_check_ok"] is True
+    assert report.citations[0].url.startswith("https://docs.rs/tokio/")
+    assert "[^1]" in report.report_md
+
+
+@pytest.mark.asyncio
+async def test_v7_focused_child_verifies_llm_urls_when_search_is_degraded() -> None:
+    calls: list[str] = []
+
+    async def search(query: str, *, max_results: int = 5):
+        return []
+
+    async def extract(url: str):
+        return {
+            "ok": True,
+            "url": url,
+            "title": "Tokio runtime",
+            "text": ("Tokio runtime architecture scheduler reactor timer IO driver. " * 40),
+            "fetched_at": 1.0,
+        }
+
+    async def llm(prompt: str) -> str:
+        calls.append(prompt)
+        if "Return URLs only" in prompt:
+            return "https://docs.rs/tokio/latest/tokio/runtime/\n"
+        return "# Tokio\n\n## TL;DR\n\nTokio coordinates runtime services.[^1]\n"
+
+    report = await r._research_subdirection(
+        "Tokio runtime architecture",
+        request_topic="Tokio runtime architecture",
+        llm_call=llm,
+        search=search,
+        extract=extract,
+        max_urls=2,
+        max_passages=8,
+    )
+
+    assert len(calls) == 2
+    assert report.coverage["source_discovery"] == "llm_verified_urls"
+    assert report.coverage["n_sources"] == 1
+    assert report.coverage["cite_check_ok"] is True
+    assert report.citations[0].url == "https://docs.rs/tokio/latest/tokio/runtime/"
+    assert "no search results" in report.errors
+
+
+@pytest.mark.asyncio
 async def test_fanout_stably_merges_agent_reach_observations(monkeypatch) -> None:
     calls: list[str] = []
     async def _inner(topic: str, **kwargs):
@@ -292,10 +373,16 @@ async def test_fanout_stably_merges_agent_reach_observations(monkeypatch) -> Non
 
 @pytest.mark.asyncio
 async def test_tg2_fanout_isolates_one_failed_subagent(monkeypatch) -> None:
+    seen: list[tuple[str, str, int]] = []
+
     async def _inner(topic: str, **kwargs):
-        if topic == "q2?":
+        seen.append((topic, kwargs["user_request"], kwargs["max_urls_per_query"]))
+        question = kwargs["user_request"].split("\n\nMANAGER CONTINUATION", 1)[0]
+        q2_attempts = sum(value.startswith("q2?") for _, value, _ in seen)
+        if question == "q2?" and q2_attempts == 1:
             raise RuntimeError("boom")
-        return _sub_report(topic, 1 if topic == "q1?" else 3)
+        index = {"q1?": 1, "q2?": 2, "q3?": 3}[question]
+        return _sub_report(topic, index)
 
     monkeypatch.setattr(r, "deepresearch", _inner)
     monkeypatch.setattr(r, "_fanout_concurrency", lambda: 2)
@@ -316,10 +403,95 @@ async def test_tg2_fanout_isolates_one_failed_subagent(monkeypatch) -> None:
     )
 
     obs = report.coverage["subagent_fanout"]
-    assert obs["n_completed"] == 2
-    assert obs["n_failed"] == 1
-    assert len(report.citations) == 2
+    assert obs["n_completed"] == 3
+    assert obs["n_failed"] == 0
+    assert len(report.citations) == 3
+    retried = next(item for item in obs["per_subquestion"] if item["question"] == "q2?")
+    assert retried["attempt"] == 2
+    assert retried["attempts"][0]["status"] == "retryable"
+    assert retried["attempts"][1]["status"] == "valid"
+    assert retried["diagnosis"]
+    assert retried["reason_code"] == "ok"
+    retry_request = next(value for _, value, _ in seen if value.startswith("q2?\n\n"))
+    assert "MANAGER CONTINUATION INSTRUCTION" in retry_request
+    assert [cap for _, value, cap in seen if value.startswith("q2?")] == [2, 4]
     assert any("q2?" in e and "boom" in e for e in report.errors)
+
+
+@pytest.mark.asyncio
+async def test_v7_child_progress_keeps_retry_on_the_same_direction(monkeypatch) -> None:
+    attempts: dict[str, int] = {}
+
+    async def _inner(topic: str, **kwargs):
+        question = kwargs["user_request"].split("\n\nMANAGER CONTINUATION", 1)[0]
+        attempts[question] = attempts.get(question, 0) + 1
+        if question == "q2?" and attempts[question] == 1:
+            raise RuntimeError("needs retry")
+        return _sub_report(topic, {"q1?": 1, "q2?": 2, "q3?": 3}[question])
+
+    snapshots: list[list[dict]] = []
+
+    async def progress(children: list[dict]) -> None:
+        snapshots.append([dict(item) for item in children])
+
+    monkeypatch.setattr(r, "deepresearch", _inner)
+    monkeypatch.setattr(r, "_fanout_concurrency", lambda: 2)
+    collection = await r.collect_subagent_research(
+        topic="outer topic",
+        sub_questions=["q1?", "q2?", "q3?"],
+        llm_call=RefAwareSynthLLM(),
+        search=_make_search({}),
+        extract=_make_extract({}),
+        scheduler=DirectScheduler(),
+        parent_sid="sid-progress",
+        mode="standard",
+        route={},
+        progress_callback=progress,
+    )
+
+    assert all(len(snapshot) == 3 for snapshot in snapshots)
+    q2_states = [
+        next(item for item in snapshot if item["child_id"] == "dr-1")
+        for snapshot in snapshots
+    ]
+    assert any(item["status"] == "retrying" for item in q2_states)
+    assert q2_states[-1]["status"] == "valid"
+    assert q2_states[-1]["attempt"] == 2
+    assert len({item["child_id"] for item in snapshots[-1]}) == 3
+    assert [record["child_id"] for record in collection.child_records] == ["dr-0", "dr-1", "dr-2"]
+
+
+@pytest.mark.asyncio
+async def test_v7_hanging_progress_callback_does_not_block_research(monkeypatch) -> None:
+    async def _inner(topic: str, **kwargs):
+        question = kwargs["user_request"]
+        return _sub_report(topic, 1 if question == "q1?" else 2)
+
+    never = asyncio.Event()
+
+    async def hanging(_children: list[dict]) -> None:
+        await never.wait()
+
+    monkeypatch.setattr(r, "deepresearch", _inner)
+    monkeypatch.setattr(r, "_fanout_concurrency", lambda: 2)
+    monkeypatch.setattr(r, "_CHILD_PROGRESS_TIMEOUT", 0.01)
+    collection = await asyncio.wait_for(
+        r.collect_subagent_research(
+            topic="outer topic",
+            sub_questions=["q1?", "q2?"],
+            llm_call=RefAwareSynthLLM(),
+            search=_make_search({}),
+            extract=_make_extract({}),
+            scheduler=DirectScheduler(),
+            parent_sid="sid-hanging-progress",
+            mode="standard",
+            route={},
+            progress_callback=hanging,
+        ),
+        timeout=1.0,
+    )
+
+    assert [record["status"] for record in collection.child_records] == ["valid", "valid"]
 
 
 @pytest.mark.asyncio

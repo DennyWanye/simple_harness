@@ -32,6 +32,7 @@ side calls the orchestrator via the ToolRegistry façade.
 from __future__ import annotations
 
 import asyncio
+import copy
 import contextvars
 import hashlib
 import json
@@ -53,6 +54,7 @@ if TYPE_CHECKING:
     from ..workflows.definitions.deep_research_v5_contracts import ResearchLLMResult
 
 log = logging.getLogger(__name__)
+_CHILD_PROGRESS_TIMEOUT = 5.0
 
 
 # Optional BGE-M3 semantic relevance hook. ``main.py`` may inject a
@@ -833,6 +835,33 @@ class ResearchReport:
         }
 
 
+@dataclass
+class FanoutCollection:
+    """Manager-owned result of child research before final synthesis."""
+
+    topic: str
+    sub_questions: list[str]
+    sub_reports: list[tuple[str, ResearchReport]]
+    child_records: list[dict[str, Any]]
+    errors: list[str]
+    route: dict[str, Any]
+    waves: int
+    per_subrun_timeout_s: float
+
+    @property
+    def observation(self) -> dict[str, Any]:
+        failed = sum(record["status"] != "valid" for record in self.child_records)
+        return {
+            "enabled": True,
+            "n_subagents": len(self.child_records),
+            "n_completed": len(self.sub_reports),
+            "n_failed": failed,
+            "waves": self.waves,
+            "per_subrun_timeout_s": self.per_subrun_timeout_s,
+            "per_subquestion": [dict(record) for record in self.child_records],
+        }
+
+
 # ----------------------------------------------------------------------
 # Protocols / type aliases
 # ----------------------------------------------------------------------
@@ -1337,99 +1366,72 @@ async def _fanout_synthesize(
     return report_md, merged
 
 
-async def _run_subagent_fanout(
-    *,
-    topic: str,
-    sub_questions: list[str],
+_SUBREPORT_MONITOR_PROMPT = """\
+You are the manager of a DeepResearch child agent. The child result is not
+acceptable yet. Diagnose the smallest useful continuation for the SAME
+sub-direction. Do not broaden the topic and do not invent sources.
+
+SUB-DIRECTION: {question}
+REASON CODE: {reason_code}
+CHILD ERRORS: {errors}
+COVERAGE: {coverage}
+
+Return ONLY JSON: {{"diagnosis":"short reason","continuation":"specific next research instruction"}}
+"""
+
+
+def _subreport_quality(report: object) -> tuple[str, str]:
+    if not isinstance(report, ResearchReport):
+        return "retryable", "invalid_result"
+    if not report.report_md.strip():
+        return "retryable", "empty_report"
+    if not report.citations:
+        return "retryable", "no_citations"
+    check = cite_check(report.report_md, report.citations)
+    if not check.get("ok", False):
+        return "retryable", "citation_check_failed"
+    return "valid", "ok"
+
+
+async def _diagnose_subreport_retry(
     llm_call: _LLMCall,
-    search: _Searcher,
-    extract: _Extractor,
-    scheduler,
-    parent_sid: str,
-    mode: str,
-    user_request: str,
-    errors: list[str],
-    route: dict[str, Any],
-) -> ResearchReport:
-    conc = _fanout_concurrency()
-    max_waves = int((_DEEPRESEARCH_TOOL_TIMEOUT - _FANOUT_OUTER_RESERVE) // _MIN_SUBRUN)
-    cap = min(_fanout_max_subquestions(), conc * max_waves)
-    eff_subq = sub_questions[:cap]
-    if len(eff_subq) < len(sub_questions):
-        errors.append(
-            f"fanout_dropped_subquestions:{len(sub_questions) - len(eff_subq)}"
-        )
-    submode = _fanout_subrun_mode(mode)
-    _, d_urls, d_pass, d_rounds = _DEPTH_PRESETS[submode]
-    waves = max(1, (len(eff_subq) + conc - 1) // conc)
-    timeout = min(150.0, (_DEEPRESEARCH_TOOL_TIMEOUT - _FANOUT_OUTER_RESERVE) / waves)
-
-    async def _run_one(i: int, q: str):
-        async def _coro():
-            return await asyncio.wait_for(
-                deepresearch(
-                    q,
-                    llm_call=llm_call,
-                    search=search,
-                    extract=extract,
-                    max_sub_questions=1,
-                    max_urls_per_query=d_urls,
-                    max_total_passages=d_pass,
-                    max_rounds=d_rounds,
-                    mode=submode,
-                    user_request=q,
-                    scheduler=None,
-                    _depth=1,
-                    skip_plan=True,
-                ),
-                timeout=timeout,
-            )
-
-        return await scheduler.run(
-            kind="research",
-            run_id=f"{parent_sid}.dr-{i}",
-            task_id=f"dr-{i}",
-            parent_sid=parent_sid,
-            coro_factory=_coro,
-        )
-
-    results = await asyncio.gather(
-        *[_run_one(i, q) for i, q in enumerate(eff_subq)],
-        return_exceptions=True,
+    *,
+    question: str,
+    reason_code: str,
+    report: object,
+    error: BaseException | None,
+) -> tuple[str, str]:
+    coverage = dict(report.coverage) if isinstance(report, ResearchReport) else {}
+    child_errors = list(report.errors or []) if isinstance(report, ResearchReport) else []
+    if error is not None:
+        child_errors.append(type(error).__name__)
+    fallback = (
+        f"子方向返回 {reason_code}；需要补充可访问、可引用的独立来源。",
+        "重新规划更具体的检索词，优先官方/一手来源；至少取得一个可引用来源后再成文。",
     )
+    try:
+        raw = await llm_call(
+            _SUBREPORT_MONITOR_PROMPT.format(
+                question=question,
+                reason_code=reason_code,
+                errors=json.dumps(child_errors[:6], ensure_ascii=False),
+                coverage=json.dumps(coverage, ensure_ascii=False, sort_keys=True)[:1200],
+            )
+        )
+        lb, rb = raw.find("{"), raw.rfind("}")
+        payload = json.loads(raw[lb:rb + 1]) if 0 <= lb < rb else {}
+        diagnosis = str(payload.get("diagnosis") or "").strip()
+        continuation = str(payload.get("continuation") or "").strip()
+        if diagnosis and continuation:
+            return diagnosis[:400], continuation[:800]
+    except Exception as exc:  # noqa: BLE001 - deterministic fallback is required
+        log.debug("deepresearch child diagnosis fallback: %s", exc)
+    return fallback
 
-    sub_reports: list[tuple[str, ResearchReport]] = []
-    per_subquestion: list[dict[str, Any]] = []
-    n_failed = 0
-    for q, result in zip(eff_subq, results):
-        if isinstance(result, BaseException):
-            n_failed += 1
-            errors.append(f"fanout:{q!r}: {result}")
-            per_subquestion.append({"question": q, "status": "failed", "error": str(result)})
-            continue
-        if not isinstance(result, ResearchReport):
-            n_failed += 1
-            errors.append(f"fanout:{q!r}: invalid result {type(result).__name__}")
-            per_subquestion.append({"question": q, "status": "failed", "error": "invalid_result"})
-            continue
-        sub_reports.append((q, result))
-        errors.extend(result.errors or [])
-        per_subquestion.append({
-            "question": q,
-            "status": "completed",
-            "n_sources": int((result.coverage or {}).get("n_sources", 0)),
-            "n_domains": int((result.coverage or {}).get("n_domains", 0)),
-        })
 
-    fanout_obs = {
-        "enabled": True,
-        "n_subagents": len(eff_subq),
-        "n_completed": len(sub_reports),
-        "n_failed": n_failed,
-        "waves": waves,
-        "per_subrun_timeout_s": timeout,
-        "per_subquestion": per_subquestion,
-    }
+def _aggregate_fanout_route(
+    route: dict[str, Any], sub_reports: list[tuple[str, ResearchReport]]
+) -> dict[str, Any]:
     aggregate_route = dict(route)
     channel_routes = [
         dict(report.coverage.get("route", {}))
@@ -1468,12 +1470,498 @@ async def _run_subagent_fanout(
         "hits": hits,
         "degraded": degraded,
     }
+    return aggregate_route
+
+
+async def collect_subagent_research(
+    *,
+    topic: str,
+    sub_questions: list[str],
+    llm_call: _LLMCall,
+    search: _Searcher,
+    extract: _Extractor,
+    scheduler,
+    parent_sid: str,
+    mode: str,
+    route: dict[str, Any],
+    max_attempts: int = 2,
+    subrun_mode: str | None = None,
+    simple_children: bool = False,
+    progress_callback: Callable[[list[dict[str, Any]]], Awaitable[None]] | None = None,
+) -> FanoutCollection:
+    """Run, inspect, and selectively continue independent research children."""
+
+    if scheduler is None:
+        raise RuntimeError("subagent_scheduler_unavailable")
+    conc = _fanout_concurrency()
+    max_waves = int((_DEEPRESEARCH_TOOL_TIMEOUT - _FANOUT_OUTER_RESERVE) // _MIN_SUBRUN)
+    cap = min(_fanout_max_subquestions(), conc * max_waves)
+    eff_subq = sub_questions[:cap]
+    collected_errors: list[str] = []
+    if len(eff_subq) < len(sub_questions):
+        collected_errors.append(
+            f"fanout_dropped_subquestions:{len(sub_questions) - len(eff_subq)}"
+        )
+    requested_submode = str(subrun_mode or "").strip().lower()
+    submode = (
+        requested_submode
+        if requested_submode in _DEPTH_PRESETS
+        else _fanout_subrun_mode(mode)
+    )
+    waves = max(1, (len(eff_subq) + conc - 1) // conc)
+    timeout = min(150.0, (_DEEPRESEARCH_TOOL_TIMEOUT - _FANOUT_OUTER_RESERVE) / waves)
+    attempt_cap = max(1, min(3, int(max_attempts)))
+    snapshot_lock = asyncio.Lock()
+    snapshot_by_child: dict[str, dict[str, Any]] = {
+        f"dr-{i}": {
+            "child_id": f"dr-{i}",
+            "question": question,
+            "status": "queued",
+            "attempt": 0,
+            "max_attempts": attempt_cap,
+            "n_sources": 0,
+            "reason_code": "",
+        }
+        for i, question in enumerate(eff_subq)
+    }
+
+    async def _publish_snapshot(
+        i: int | None = None,
+        *,
+        status: str | None = None,
+        attempt: int | None = None,
+        n_sources: int | None = None,
+        reason_code: str | None = None,
+    ) -> None:
+        if progress_callback is None:
+            return
+        async with snapshot_lock:
+            if i is not None:
+                child_id = f"dr-{i}"
+                current = snapshot_by_child[child_id]
+                if status is not None:
+                    current["status"] = status
+                if attempt is not None:
+                    current["attempt"] = attempt
+                if n_sources is not None:
+                    current["n_sources"] = max(0, n_sources)
+                if reason_code is not None:
+                    current["reason_code"] = reason_code
+            snapshot = [copy.deepcopy(snapshot_by_child[key]) for key in snapshot_by_child]
+            try:
+                await asyncio.wait_for(
+                    progress_callback(snapshot), timeout=_CHILD_PROGRESS_TIMEOUT
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # progress must never change research results
+                log.warning(
+                    "deepresearch_child_progress_emit_failed parent=%s error=%s",
+                    parent_sid,
+                    type(exc).__name__,
+                )
+
+    await _publish_snapshot()
+
+    async def _run_one(i: int, question: str):
+        diagnosis = ""
+        continuation = ""
+        attempts: list[dict[str, Any]] = []
+        accepted: ResearchReport | None = None
+        local_errors: list[str] = []
+        last_reason_code = "not_started"
+        last_coverage: dict[str, Any] = {}
+        last_child_errors: list[str] = []
+        started = time.perf_counter()
+        for attempt in range(1, attempt_cap + 1):
+            await _publish_snapshot(
+                i,
+                status="running" if attempt == 1 else "retrying",
+                attempt=attempt,
+                reason_code="",
+            )
+            attempt_mode = (
+                "standard" if attempt > 1 and submode == "light" else submode
+            )
+            _, d_urls, d_pass, d_rounds = _DEPTH_PRESETS[attempt_mode]
+            research_topic = (
+                question
+                if attempt == 1
+                else f"{question}\n\nMANAGER CONTINUATION INSTRUCTION:\n{continuation}"
+            )
+
+            async def _coro():
+                if simple_children:
+                    return await asyncio.wait_for(
+                        _research_subdirection(
+                            research_topic,
+                            request_topic=question,
+                            parent_topic=topic,
+                            llm_call=llm_call,
+                            search=search,
+                            extract=extract,
+                            max_urls=d_urls,
+                            max_passages=d_pass,
+                        ),
+                        timeout=timeout,
+                    )
+                return await asyncio.wait_for(
+                    deepresearch(
+                        research_topic,
+                        llm_call=llm_call,
+                        search=search,
+                        extract=extract,
+                        max_sub_questions=1,
+                        max_urls_per_query=d_urls,
+                        max_total_passages=d_pass,
+                        max_rounds=d_rounds,
+                        mode=submode,
+                        # A manager continuation must be authoritative for the
+                        # retry.  Passing the original question here silently
+                        # caused the planner to ignore the continuation.
+                        user_request=research_topic,
+                        scheduler=None,
+                        _depth=1,
+                        skip_plan=(attempt == 1),
+                    ),
+                    timeout=timeout,
+                )
+
+            result: object = None
+            failure: BaseException | None = None
+            try:
+                result = await scheduler.run(
+                    kind="research",
+                    run_id=f"{parent_sid}.dr-{i}.a{attempt}",
+                    task_id=f"dr-{i}-a{attempt}",
+                    parent_sid=parent_sid,
+                    coro_factory=_coro,
+                )
+            except BaseException as exc:  # isolate sibling failures; cancellation still re-raised
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
+                failure = exc
+            status, reason_code = _subreport_quality(result)
+            last_reason_code = reason_code
+            if isinstance(result, ResearchReport):
+                coverage = result.coverage or {}
+                last_coverage = {
+                    key: copy.deepcopy(coverage[key])
+                    for key in (
+                        "n_sources", "n_domains", "rounds", "n_dropped_by_reason",
+                        "source_discovery",
+                    )
+                    if key in coverage
+                }
+                last_child_errors = [str(value) for value in (result.errors or [])[-8:]]
+            if failure is not None:
+                status, reason_code = "retryable", type(failure).__name__
+                last_reason_code = reason_code
+                last_child_errors = [type(failure).__name__]
+                local_errors.append(f"fanout:{question!r}: {failure}")
+            attempts.append({
+                "attempt": attempt,
+                "status": status,
+                "reason_code": reason_code,
+                "n_sources": len(result.citations) if isinstance(result, ResearchReport) else 0,
+            })
+            if status == "valid" and isinstance(result, ResearchReport):
+                accepted = result
+                local_errors.extend(result.errors or [])
+                break
+            if attempt < attempt_cap:
+                await _publish_snapshot(
+                    i,
+                    status="retrying",
+                    attempt=attempt,
+                    n_sources=len(result.citations) if isinstance(result, ResearchReport) else 0,
+                    reason_code=reason_code,
+                )
+                diagnosis, continuation = await _diagnose_subreport_retry(
+                    llm_call,
+                    question=question,
+                    reason_code=reason_code,
+                    report=result,
+                    error=failure,
+                )
+
+        final_status = "valid" if accepted is not None else "insufficient"
+        record = {
+            "child_id": f"dr-{i}",
+            "question": question,
+            "status": final_status,
+            "attempt": len(attempts),
+            "attempts": attempts,
+            "diagnosis": diagnosis,
+            "reason_code": "ok" if accepted is not None else last_reason_code,
+            "last_coverage": last_coverage,
+            "last_errors": last_child_errors,
+            "n_sources": len(accepted.citations) if accepted is not None else 0,
+            "n_domains": int((accepted.coverage or {}).get("n_domains", 0)) if accepted else 0,
+            "duration_ms": int((time.perf_counter() - started) * 1000),
+        }
+        log.info(
+            "deepresearch_child_result parent=%s child=%s status=%s attempt=%s sources=%s reason=%s",
+            parent_sid,
+            record["child_id"],
+            final_status,
+            record["attempt"],
+            record["n_sources"],
+            record["reason_code"],
+        )
+        await _publish_snapshot(
+            i,
+            status=final_status,
+            attempt=record["attempt"],
+            n_sources=record["n_sources"],
+            reason_code=record["reason_code"],
+        )
+        return question, accepted, record, local_errors
+
+    raw_results = await asyncio.gather(
+        *[_run_one(i, question) for i, question in enumerate(eff_subq)],
+        return_exceptions=True,
+    )
+    sub_reports: list[tuple[str, ResearchReport]] = []
+    child_records: list[dict[str, Any]] = []
+    for i, (question, raw) in enumerate(zip(eff_subq, raw_results)):
+        if isinstance(raw, BaseException):
+            if isinstance(raw, asyncio.CancelledError):
+                raise raw
+            collected_errors.append(f"fanout:{question!r}: {raw}")
+            child_records.append({
+                "child_id": f"dr-{i}", "question": question, "status": "insufficient",
+                "attempt": 0, "attempts": [], "diagnosis": "",
+                "reason_code": type(raw).__name__, "last_coverage": {},
+                "last_errors": [type(raw).__name__],
+                "failure_class": "fatal",
+                "n_sources": 0, "n_domains": 0, "duration_ms": 0,
+            })
+            await _publish_snapshot(
+                i,
+                status="insufficient",
+                attempt=0,
+                n_sources=0,
+                reason_code=type(raw).__name__,
+            )
+            continue
+        _, accepted, record, local_errors = raw
+        child_records.append(record)
+        collected_errors.extend(local_errors)
+        if accepted is not None:
+            sub_reports.append((question, accepted))
+
+    return FanoutCollection(
+        topic=topic,
+        sub_questions=eff_subq,
+        sub_reports=sub_reports,
+        child_records=child_records,
+        errors=collected_errors,
+        route=_aggregate_fanout_route(route, sub_reports),
+        waves=waves,
+        per_subrun_timeout_s=timeout,
+    )
+
+
+async def _research_subdirection(
+    query: str,
+    *,
+    request_topic: str,
+    parent_topic: str | None = None,
+    llm_call: _LLMCall,
+    search: _Searcher,
+    extract: _Extractor,
+    max_urls: int,
+    max_passages: int,
+) -> ResearchReport:
+    """Focused v7 child: search once, fetch, filter, and synthesize once."""
+
+    from ..workflows.definitions import research_core
+
+    original_request = (parent_topic or request_topic).strip()
+    errors: list[str] = []
+    try:
+        hits = await search(query, max_results=max(1, int(max_urls)))
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"search:{type(exc).__name__}: {exc}")
+        hits = []
+    urls: list[str] = []
+    for hit in hits or []:
+        if not isinstance(hit, dict):
+            continue
+        url = str(hit.get("url") or "").strip()
+        if url and url not in urls:
+            urls.append(url)
+        if len(urls) >= max(1, int(max_urls)):
+            break
+    source_discovery = "search"
+    if not urls:
+        # The local search gateway can legitimately degrade when public SERPs
+        # present CAPTCHAs or the browser-backed providers time out.  Keep the
+        # child small, but let it nominate a bounded set of direct URLs; every
+        # URL still has to survive the real fetch and passage gates below.
+        errors.append("no search results")
+        source_discovery = "llm_verified_urls"
+        try:
+            raw_urls = await llm_call(
+                "You are the research subagent responsible for one focused direction.\n"
+                f"Research direction: {query}\n"
+                f"Parent topic: {original_request}\n\n"
+                f"Return at most {max(1, int(max_urls))} likely direct source URLs. "
+                "Prefer official documentation, primary sources, standards, or "
+                "well-established technical publications. Return URLs only, one "
+                "per line. Do not explain and do not invent tracking parameters."
+            )
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"source_plan:{type(exc).__name__}: {exc}")
+            raw_urls = ""
+        for match in re.findall(r"https?://[^\s<>\"'\]\)]+", raw_urls or ""):
+            url = match.rstrip(".,;:!?`})")
+            parsed = urllib.parse.urlparse(url)
+            if parsed.scheme in {"http", "https"} and parsed.netloc and url not in urls:
+                urls.append(url)
+            if len(urls) >= max(1, int(max_urls)):
+                break
+    if not urls:
+        return ResearchReport(
+            topic=request_topic,
+            summary="",
+            report_md=_no_results_template(request_topic, [request_topic]),
+            citations=[],
+            sub_questions=[request_topic],
+            coverage={
+                "n_sources": 0,
+                "n_domains": 0,
+                "pipeline": "focused_child_v7",
+                "source_discovery": source_discovery,
+            },
+            errors=errors,
+        )
+
+    payloads = await _gather_safe([extract(url) for url in urls], label="focused_extract")
+    state = research_core.ResearchCoreState(
+        request_topic=request_topic,
+        llm_topic=query,
+        mode="focused_child_v7",
+        route={},
+    )
+    state.sub_questions = [request_topic]
+    state.velocity = research_scoring.infer_topic_velocity(request_topic)
+    config = research_core.ResearchCoreConfig.from_legacy(
+        max_sub_questions=1,
+        max_urls_per_query=max(1, int(max_urls)),
+        max_total_passages=max(1, int(max_passages)),
+        min_passage_chars=250,
+        max_rounds=1,
+    )
+    passages: list[Passage] = []
+    for url, payload in zip(urls, payloads):
+        passage = research_core._passage_from_extract(state, config, url, payload)
+        if passage is not None and research_core._passes_topic_anchor_gate(state, passage):
+            passages.append(passage)
+    errors.extend(state.errors)
+    passages.sort(key=lambda passage: passage.score, reverse=True)
+    passages = passages[: max(1, int(max_passages))]
+    numbered: list[Passage] = []
+    for index, passage in enumerate(passages, start=1):
+        citation = Citation(
+            n=index,
+            url=passage.citation.url,
+            title=passage.citation.title,
+            snippet=passage.citation.snippet,
+            fetched_at=passage.citation.fetched_at,
+            authority=passage.citation.authority,
+        )
+        numbered.append(Passage(
+            citation=citation,
+            text=passage.text,
+            score=passage.score,
+            dims=dict(passage.dims or {}),
+        ))
+    if not numbered:
+        errors.append("no usable passages")
+        return ResearchReport(
+            topic=request_topic,
+            summary="",
+            report_md=_no_results_template(request_topic, [request_topic]),
+            citations=[],
+            sub_questions=[request_topic],
+            coverage={
+                "n_sources": 0,
+                "n_domains": 0,
+                "pipeline": "focused_child_v7",
+                "source_discovery": source_discovery,
+                "n_dropped_by_reason": dict(state.dropped_by_reason),
+            },
+            errors=errors,
+        )
+
+    citations = [passage.citation for passage in numbered]
+    try:
+        report_md = await llm_call(_SYNTH_PROMPT.format(
+            user_request=original_request,
+            request_topic=request_topic,
+            n_passages=len(numbered),
+            passages=_format_passages_for_llm(numbered),
+        ))
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"focused_synth:{type(exc).__name__}: {exc}")
+        report_md = _passages_only_fallback(request_topic, numbered)
+    report_md = (report_md or "").strip() or _passages_only_fallback(request_topic, numbered)
+    report_md, citations, cite_result = _finalize_report_md(report_md, citations, errors)
+    domains = {_host(citation.url) for citation in citations if _host(citation.url)}
+    return ResearchReport(
+        topic=request_topic,
+        summary=_extract_summary(report_md),
+        report_md=report_md,
+        citations=citations,
+        sub_questions=[request_topic],
+        coverage={
+            "n_sources": len(citations),
+            "n_domains": len(domains),
+            "pipeline": "focused_child_v7",
+            "source_discovery": source_discovery,
+            "cite_check_ok": bool(cite_result.get("ok", False)),
+            "n_dropped_by_reason": dict(state.dropped_by_reason),
+        },
+        errors=errors,
+    )
+
+
+async def _run_subagent_fanout(
+    *,
+    topic: str,
+    sub_questions: list[str],
+    llm_call: _LLMCall,
+    search: _Searcher,
+    extract: _Extractor,
+    scheduler,
+    parent_sid: str,
+    mode: str,
+    user_request: str,
+    errors: list[str],
+    route: dict[str, Any],
+) -> ResearchReport:
+    collection = await collect_subagent_research(
+        topic=topic,
+        sub_questions=sub_questions,
+        llm_call=llm_call,
+        search=search,
+        extract=extract,
+        scheduler=scheduler,
+        parent_sid=parent_sid,
+        mode=mode,
+        route=route,
+    )
+    errors.extend(collection.errors)
+    sub_reports = collection.sub_reports
+    fanout_obs = collection.observation
 
     base_cov = {
         "n_sub_questions": len(sub_questions),
         "mode": "fanout",
         "subagent_fanout": fanout_obs,
-        "route": aggregate_route,
+        "route": collection.route,
     }
 
     if not sub_reports:

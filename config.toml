@@ -666,8 +666,8 @@ eval_local_only = true
 terminal_retention_days = 30
 evaluation_retention_days = 180
 orphan_grace_hours = 24
-deep_research_version = "v6"
-deep_research_default_revision = 6
+deep_research_version = "v7"
+deep_research_default_revision = 7
 deep_research_max_parallel_tasks = 4
 
 [research_v5]

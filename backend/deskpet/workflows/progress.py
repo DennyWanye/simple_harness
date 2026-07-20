@@ -8,7 +8,9 @@ from __future__ import annotations
 import asyncio
 import copy
 import hashlib
+import json
 import logging
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -117,6 +119,20 @@ _V2_STAGE_VALUES = (
 )
 DEEP_RESEARCH_V2_STAGES = _stages(13, _V2_STAGE_VALUES)
 DEEP_RESEARCH_STAGE_VERSIONS = frozenset({"v2", "v3", "v4"})
+DEEP_RESEARCH_V7_STAGES = _stages(
+    6,
+    (
+        ("normalize", 1, "理解调研方向"),
+        ("plan", 2, "拆分子方向"),
+        ("search", 3, "子代理调研与补救"),
+        ("synth", 4, "综合调研结果"),
+        ("persist", 5, "保存研究报告"),
+        ("finalize", 6, "准备交付"),
+    ),
+)
+DEEP_RESEARCH_V7_CHILD_STATUSES = frozenset(
+    {"queued", "running", "retrying", "valid", "insufficient"}
+)
 DEEP_RESEARCH_V5_STAGES = _stages(
     len(DEEP_RESEARCH_V5_PUBLIC_STAGE_IDS),
     tuple(
@@ -213,6 +229,10 @@ def _is_deep_research_stage_contract(workflow_name: str, workflow_version: str |
 
 def _is_deep_research_v5(workflow_name: str, workflow_version: str | None) -> bool:
     return workflow_name == "deep_research" and workflow_version == "v5"
+
+
+def _is_deep_research_v7(workflow_name: str, workflow_version: str | None) -> bool:
+    return workflow_name == "deep_research" and workflow_version == "v7"
 
 
 def _number(metrics: Mapping[str, JsonValue], key: str) -> int | float | None:
@@ -540,6 +560,8 @@ def public_stage_for(
     if _is_deep_research_stage_contract(workflow_name, workflow_version):
         stage_id = node_id[:-5] if node_id.endswith("_join") else node_id
         return DEEP_RESEARCH_V2_STAGES.get(stage_id)
+    if _is_deep_research_v7(workflow_name, workflow_version):
+        return DEEP_RESEARCH_V7_STAGES.get(node_id)
     stages = PUBLIC_WORKFLOW_STAGES.get(workflow_name)
     return stages.get(node_id) if stages is not None else None
 
@@ -795,6 +817,20 @@ class WorkflowProgressReporter:
                 "result_code": normalized_transition,
                 "diagnostic_codes": [],
             }
+        elif _is_deep_research_v7(identity.workflow_name, identity.workflow_version):
+            payload = {
+                "schema_version": 7,
+                "kind": "progress",
+                "workflow_name": "deep_research",
+                "workflow_version": "v7",
+                "workflow_label": workflow_label,
+                "stage_id": stage.node_id,
+                "stage": stage.label,
+                "ordinal": stage.ordinal,
+                "total": stage.total,
+                "status": normalized_transition,
+                "text": _progress_text(workflow_label, stage, normalized_transition),
+            }
         else:
             payload = {
                 "kind": "progress",
@@ -840,11 +876,94 @@ class WorkflowProgressReporter:
             )
             return None
 
+    async def report_deep_research_v7_children(
+        self,
+        identity: NodeExecutionIdentity,
+        children: Sequence[Mapping[str, Any]],
+    ) -> str | None:
+        """Persist one complete, user-safe v7 research-direction snapshot."""
+
+        if not _is_deep_research_v7(identity.workflow_name, identity.workflow_version):
+            return None
+        if identity.node_id not in {"plan", "search"} or not 2 <= len(children) <= 6:
+            return None
+        normalized: list[dict[str, JsonValue]] = []
+        seen: set[str] = set()
+        for raw in children:
+            child_id = str(raw.get("child_id") or "").strip()
+            question = str(raw.get("question") or "").strip()
+            status = str(raw.get("status") or "").strip()
+            if (
+                not re.fullmatch(r"dr-\d+", child_id)
+                or child_id in seen
+                or not question
+                or len(question) > 600
+                or status not in DEEP_RESEARCH_V7_CHILD_STATUSES
+            ):
+                return None
+            max_attempts = int(raw.get("max_attempts") or 2)
+            attempt = int(raw.get("attempt") or 0)
+            n_sources = int(raw.get("n_sources") or 0)
+            if not 1 <= max_attempts <= 3 or not 0 <= attempt <= max_attempts:
+                return None
+            if not 0 <= n_sources <= 10_000:
+                return None
+            reason_code = str(raw.get("reason_code") or "").strip()[:128]
+            normalized.append({
+                "child_id": child_id,
+                "question": question,
+                "status": status,
+                "attempt": attempt,
+                "max_attempts": max_attempts,
+                "n_sources": n_sources,
+                "reason_code": reason_code,
+            })
+            seen.add(child_id)
+        normalized.sort(key=lambda item: int(str(item["child_id"]).split("-", 1)[1]))
+        snapshot_json = json.dumps(
+            normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+        snapshot_hash = hashlib.sha256(snapshot_json.encode("utf-8")).hexdigest()
+        payload: dict[str, JsonValue] = {
+            "schema_version": 7,
+            "kind": "research_children",
+            "workflow_name": "deep_research",
+            "workflow_version": "v7",
+            "workflow_label": "深度调研",
+            "stage_id": "search",
+            "stage": "子代理调研与补救",
+            "ordinal": 3,
+            "total": 6,
+            "status": "started",
+            "text": f"主 Agent 已拆分 {len(normalized)} 个调研子方向",
+            "children": normalized,
+        }
+        try:
+            event = await self._service.outbox.ensure_event(
+                run_id=identity.run_id,
+                event_key=f"progress:v7:research_children:{snapshot_hash}",
+                event_type="workflow.progress",
+                payload=payload,
+                deliveries=self._targets,
+            )
+            event_id = str(event["event_id"])
+            await self._service.deliver_event_once(event_id)
+            return event_id
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning(
+                "workflow_v7_children_progress_emit_failed",
+                extra={"run_id": identity.run_id, "node_id": identity.node_id},
+            )
+            return None
+
 
 __all__ = [
     "PUBLIC_WORKFLOW_STAGES",
     "DEEP_RESEARCH_V2_STAGES",
     "DEEP_RESEARCH_V5_STAGES",
+    "DEEP_RESEARCH_V7_STAGES",
     "DEEP_RESEARCH_PROGRESS_V5_CAPABILITY",
     "DEEP_RESEARCH_STAGE_VERSIONS",
     "DEEP_RESEARCH_DIAGNOSTIC_CODES",

@@ -12,6 +12,7 @@ from .definitions.v3 import register_v3_workflows
 from .definitions.v4 import register_v4_workflows
 from .definitions.v5 import register_v5_workflows
 from .definitions.v6 import register_v6_workflows
+from .definitions.v7 import register_v7_workflows
 from .retention import ClockPort, RetentionPolicy, SystemClock, WorkflowRetentionManager
 from .runner import WorkflowRegistry, WorkflowRunner
 from .runtime_adapters import RuntimeIdentity, WorkflowRuntimeAdapterRegistry
@@ -46,6 +47,7 @@ async def build_workflow_service(
     register_v4_workflows(registry)
     register_v5_workflows(registry)
     register_v6_workflows(registry)
+    register_v7_workflows(registry)
     runner = WorkflowRunner(store, saver, registry)
     selected_blob_root = Path(workflow_blob_root or root / "workflows" / "blobs")
     research_blobs = RegisteredBlobStore(

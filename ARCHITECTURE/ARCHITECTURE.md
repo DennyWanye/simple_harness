@@ -1,9 +1,9 @@
-<!-- last-calibrated: 0117ad764f593d018392332541d475a1d52a07ac -->
+<!-- last-calibrated: 2e71e9a1 -->
 # DeskPet Long-Running Agent Architecture Baseline
 
-> Last verified: 2026-07-17. DeepResearch new-run default is immutable v5. It owns typed research modeling, dimension-fair retrieval, admitted-evidence readiness, bounded gap/repair loops, versioned terminal controls, safe progress projection, and full/partial/insufficient delivery. Historical v1-v4 runs remain readable and recoverable. A v6 answer-semantics/delivery architecture is under plan-test review but is not registered, defaulted, or represented as completed production code. Win11 packaging includes the pinned offline Playwright browser; Win10 and Hyper-V based validation are outside the current verified scope.
+> Last verified: 2026-07-20. DeepResearch new-run default is immutable v7. It uses a six-node manager graph that decomposes the topic, runs one bounded research child per direction, diagnoses/retries weak child results, joins all terminal children, and synthesizes one cited report. Historical v1-v6 runs remain registered for recovery and compatibility reads. The UI now projects stable per-direction business progress, suppresses internal attempt rows, restores historical file artifacts, and exposes the standard open/save-as/reveal/copy-path actions. Reports continue to use the legacy `DeepResearch` directory.
 
-> Current observability fact: workflow-node `started_at`/`ended_at`/status/attempt are durable in `workflow_node_attempts`, node `duration_ms` is durable in `trace_spans`, and `deepresearch_stage_timing` is a diagnostic mirror. Fetch transport/extractor timings currently emit only privacy-safe `deepresearch_fetch_attempt_timing` rows into rotating `metrics.jsonl`; they are not durable child spans yet. These additions do not alter v5 timeout, route, evidence, or terminal semantics.
+> Current observability fact: workflow-node `started_at`/`ended_at`/status/attempt are durable in `workflow_node_attempts`, node `duration_ms` is durable in `trace_spans`, and `deepresearch_stage_timing` is a diagnostic mirror. V7 additionally logs privacy-safe child id/attempt/status/reason/source count/duration; page content and full prompts are excluded.
 
 > Calibration map: §3 is explicitly retained as the pre-durable persistence baseline; §4.2/§4.3 and §5-§10 retain historical problem/design context. The header, §4.1, §11 and §13-§15 are current-calibrated production facts. DeepResearch detail lives in [`SEARCH_GATEWAY_DEEPRESEARCH.md`](SEARCH_GATEWAY_DEEPRESEARCH.md).
 
@@ -68,7 +68,7 @@ This section's original inventory predates the native workflow runtime and is re
 | Fetch transport/extractor | `deepresearch_fetch_attempt_timing` in rotating `metrics.jsonl` | `run_id`, stage/status/duration/fetcher/extractor/error/count | best-effort only; throttle/URL-lock/total fetch are not fully separated; millisecond rounding can produce `0` for sub-ms work |
 | Diagnostic export | `<user_data>/metrics.jsonl` | max 2 MB; rotation keeps roughly the latest 2000 rows; included in support diagnostics | support bundle does not export rich workflow trace rows, so metrics is not 30-day exact history |
 
-V6 must preserve the metrics privacy wall while adding durable, correlated child timing where AC-OBS requires later latency analysis. Telemetry failure must remain non-fatal to workflow execution.
+Current v7 must preserve the metrics privacy wall while adding durable, correlated child timing where AC-OBS requires later latency analysis. Telemetry failure must remain non-fatal to workflow execution. The earlier v6 requirement is retained only as historical implementation context in its module plan.
 
 ### 3.2 Pre-durable inventory (historical context)
 
@@ -99,22 +99,39 @@ The persistence layer currently has a version-contract defect that must be resol
 
 ### 4.1 DeepResearch
 
-New research runs are accepted as durable `deep_research/v5`; `backend/deskpet/tools/research_tools.py` remains a compatibility/tool ingress rather than the production orchestration owner. The current production chain is:
+New research runs are accepted as durable `deep_research/v7`; `backend/deskpet/tools/research_tools.py` provides the focused child/manager collection core while the v7 graph owns production orchestration. The current production chain is:
 
 ```text
-deterministic ingress -> durable v5 launch
-  -> normalize/model/plan/expand
-  -> dimension-fair search/direct/fetch/score
-  -> bounded gap + rerank loops
-  -> synthesis/quality/repair
-  -> persist/finalize or insufficient_finalize
-  -> atomic checkpoint + terminal outbox
+deterministic ingress -> durable v7 launch
+  -> normalize -> plan (2-6 subdirections)
+  -> manager schedules one focused research child per direction
+  -> classify -> diagnose/continue (max two attempts) -> join
+  -> synthesize valid reports + explicit limitations
+  -> persist -> generic terminal outbox
   -> SessionDB durable projection + best-effort WebSocket
 ```
 
-V5 is immutable after release: v1-v4 remain registered for historical reads and recovery, and a future v6 cannot coerce or silently upgrade their checkpoints. V5 owns typed research briefs, dimension coverage, evidence admission/readiness, bounded loop controls, three-state answer delivery and continuation lineage. Search and fetch share the process-wide Search Gateway and FetchExtractService; workflow/node/effect state and traces are durable in `workflow.db`, while low-cardinality diagnostic mirrors remain in `metrics.jsonl`.
+Current UI/delivery boundary:
 
-Provider health is shared per provider through a closed/open/half-open circuit; generation-scoped single-flight probes bound probe storms, provider slots bound normal fan-out concurrency, and permits are revalidated only after a slot is acquired. Request-local empty-aware rescue can still probe an eligible productive provider when closed providers have already returned validated empty. V5 can honestly converge to `insufficient_evidence`, but current run evidence also shows that engine completion does not by itself guarantee a durable final assistant in the original Session; reliable answer semantics and terminal delivery are the explicit v6 planning boundary. Current implementation and real acceptance are documented in [`SEARCH_GATEWAY_DEEPRESEARCH.md`](SEARCH_GATEWAY_DEEPRESEARCH.md) and [`../plans/2026-07-17-deepresearch-answer-contract-stability/architecture-baseline.md`](../plans/2026-07-17-deepresearch-answer-contract-stability/architecture-baseline.md).
+```text
+plan/search -> durable v7 children snapshots keyed by stable child_id
+  -> DeepResearch progress card (direction/status/attempt/source count)
+  -> internal dr-i.aN scheduler rows filtered from the generic panel
+
+persist -> canonical artifacts[] file envelope
+  -> ProductDeliveryAdapter -> one FileArtifactCard
+  -> open / save-as / reveal in folder / copy path
+history -> old nested file metadata normalized to the same file card
+```
+
+The parent-run projection is keyed by stable `child_id`, with retries updating the same direction row. A separate
+children sequence lets late child terminal snapshots converge without rolling the parent card back from synth/final.
+Canonical file envelopes use the existing `FileArtifactCard`; old nested envelopes remain readable during history
+hydration without generating new delivery side effects.
+
+V7 is immutable after release: v1-v6 remain registered for historical reads and recovery and are never coerced into a newer checkpoint schema. V7 owns manager-style decomposition, child monitoring/continuation, three-state business delivery and a single final report; v6 remains the compatibility path for its existing exact-evidence runs. Search and fetch share the process-wide Search Gateway and FetchExtractService; workflow/node state and traces are durable in `workflow.db`, while low-cardinality diagnostic mirrors remain in `metrics.jsonl`.
+
+Provider health is shared per provider through a closed/open/half-open circuit. V7 can converge honestly to `completed`, `partial`, or `insufficient_evidence`; engine completion is recorded separately from business status. When public SERPs are unavailable, a child may nominate bounded direct URLs, but fetched text must pass the same evidence gates. Current implementation and spike evidence are documented in [`DeepResearch.md`](DeepResearch.md), [`SEARCH_GATEWAY_DEEPRESEARCH.md`](SEARCH_GATEWAY_DEEPRESEARCH.md) and [`../plans/2026-07-19-deepresearch-simplification/spike/result.md`](../plans/2026-07-19-deepresearch-simplification/spike/result.md).
 
 ### 4.2 PPT Pro
 
@@ -267,7 +284,7 @@ The current Harness remains responsible for product policy. Workflow adapters mu
 | VerifyGate / ExternalEvaluator | Strict / enabled | Runtime completion gates are active; outcomes are not a unified eval record. |
 | Context decisions trace | `[context.assembler].trace_enabled=true` | In-memory Context Trace view. |
 | Agent iteration trace | No configured `[agent].iteration_trace_enabled` | Effectively off by default. |
-| DeepResearch v5 durable workflow | `[workflows].deep_research_version="v5"` | New runs use v5 typed modeling, dimension-fair retrieval, evidence readiness, bounded gap/repair loops and three-state delivery; v1-v4 remain compatibility/recovery definitions. Planned v6 is not yet registered or default. |
+| DeepResearch v7 durable workflow | `[workflows].deep_research_version="v7"` | New runs use the six-node manager/children graph; v1-v6 remain compatibility/recovery definitions. |
 | Search Gateway | `[search_gateway].enabled=true` | Shared provider/cache/circuit resources with request-local budget and diagnostics. |
 | PPT preview/outline history | Code defaults enabled | Preview files and outline rows exist; active background task/Future remains process-local. |
 

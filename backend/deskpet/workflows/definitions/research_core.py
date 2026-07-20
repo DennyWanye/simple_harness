@@ -642,11 +642,18 @@ def _passage_from_extract(
     if isinstance(payload, BaseException):
         state.errors.append(f"extract:{url}: {payload}")
         return None
-    if not isinstance(payload, dict) or not payload.get("ok"):
+    if not isinstance(payload, dict):
+        state.errors.append(f"extract:{url}: unknown")
+        return None
+    # Legacy extractors return ``ok`` explicitly, while FetchDocument.to_dict()
+    # uses the presence of non-empty ``text`` as its success contract.  The
+    # production v2+ fetch adapter returns the latter shape, so requiring the
+    # legacy flag silently discarded successfully fetched documents.
+    explicit_ok = payload.get("ok")
+    extract_ok = bool(explicit_ok) if explicit_ok is not None else bool(payload.get("text"))
+    if not extract_ok:
         error = (
-            (payload or {}).get("error", "extract failed")
-            if isinstance(payload, dict)
-            else "unknown"
+            payload.get("error", "extract failed")
         )
         state.errors.append(f"extract:{url}: {error}")
         return None
@@ -681,13 +688,19 @@ def _passage_from_extract(
         depth=depth,
         topic_velocity=state.velocity,
     )
+    try:
+        fetched_at = float(payload.get("fetched_at", time.time()))
+    except (TypeError, ValueError):
+        # FetchDocument emits ISO-8601 timestamps. Citation freshness is
+        # informational here; recency scoring above uses the document date.
+        fetched_at = time.time()
     return legacy.Passage(
         citation=legacy.Citation(
             n=0,
             url=url,
             title=(payload.get("title") or url)[:200],
             snippet=text[: config.min_passage_chars].replace("\n", " ").strip(),
-            fetched_at=float(payload.get("fetched_at", time.time())),
+            fetched_at=fetched_at,
             authority=authority,
         ),
         text=text,

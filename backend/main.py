@@ -3502,6 +3502,9 @@ async def lifespan(app: FastAPI):
             decode_continuation_snapshot as decode_deep_research_v6_continuation_snapshot,
             deep_research_initial_state as deep_research_v6_initial_state,
         )
+        from deskpet.workflows.definitions.v7 import (
+            deep_research_initial_state as deep_research_v7_initial_state,
+        )
         from deskpet.workflows.launcher import WorkflowLauncher
         from deskpet.workflows.native import NativeExecutionPolicy
         from deskpet.workflows.runtime_adapters import (
@@ -3649,6 +3652,17 @@ async def lifespan(app: FastAPI):
                 },
                 request_id=str(row.get("request_id") or ""),
                 turn_id=str(row.get("turn_id") or ""),
+            )
+
+        async def _deep_v7_context_factory(row, start_payload) -> WorkflowContext:
+            base = await _deep_v2_context_factory(row, start_payload)
+            scheduler = service_context.get("subagent_scheduler")
+            if scheduler is None:
+                raise RuntimeError("subagent_scheduler_unavailable")
+            return WorkflowContext(
+                ports={**base.ports, "subagent_scheduler": scheduler},
+                request_id=base.request_id,
+                turn_id=base.turn_id,
             )
 
         async def _deep_v5_context_factory(row, start_payload) -> WorkflowContext:
@@ -4179,6 +4193,17 @@ async def lifespan(app: FastAPI):
                 continuation_snapshot=continuation_snapshot,
             )
 
+        def _deep_v7_state_factory(**values):
+            return deep_research_v7_initial_state(
+                topic=str(values["topic"]),
+                run_id=str(values["run_id"]),
+                thread_id=str(values["thread_id"]),
+                session_id=str(values["session_id"]),
+                mode=str(values.get("mode") or "standard"),
+                research_config=dict(values.get("research_config") or {}),
+                blob_root=str(values.get("blob_root") or ""),
+            )
+
         _workflow_launcher.register_adapter(
             "deep_research",
             "v1",
@@ -4225,6 +4250,12 @@ async def lifespan(app: FastAPI):
                     terminal_commit_capability=TERMINAL_COMMIT_CAPABILITY,
                 )
             },
+        )
+        _workflow_launcher.register_adapter(
+            "deep_research",
+            "v7",
+            state_factory=_deep_v7_state_factory,
+            context_factory=_deep_v7_context_factory,
         )
 
         from agent.tool_use_shim import OpenAICompatibleAgentLLM as _RecoveryShim
@@ -4320,7 +4351,7 @@ async def lifespan(app: FastAPI):
                 if delivery_state.get("deleted_at") is not None:
                     raise RuntimeError("workflow delivery session was deleted")
                 workflow_version, version_reason = resolve_deep_research_workflow_version(
-                    str(config.workflows.deep_research_version or "v6"),
+                    str(config.workflows.deep_research_version or "v7"),
                     environment=os.environ,
                 )
                 logger.info(
