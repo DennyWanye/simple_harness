@@ -13,6 +13,8 @@ from fastapi.testclient import TestClient
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 MAIN_PATH = BACKEND_ROOT / "main.py"
+TURN_PREPARER_PATH = BACKEND_ROOT / "deskpet" / "agent" / "turn_preparer.py"
+RUN_PRESENTER_PATH = BACKEND_ROOT / "deskpet" / "agent" / "run_presenter.py"
 
 
 def _main_tree() -> ast.Module:
@@ -68,14 +70,25 @@ def _production_build_agent_call() -> ast.Call:
 
 
 def test_context_assembler_uses_agent_loop_v2_tool_registry() -> None:
+    preparer_tree = ast.parse(
+        TURN_PREPARER_PATH.read_text(encoding="utf-8"),
+        filename=str(TURN_PREPARER_PATH),
+    )
     calls = [
         call
-        for call in _attribute_calls(_main_tree(), "assemble")
+        for call in _attribute_calls(preparer_tree, "assemble")
         if "tool_registry" in _kw_names(call)
         and "current_message_id" in _kw_names(call)
     ]
     assert len(calls) == 1
-    assert _unparse(_kw(calls[0], "tool_registry")) == "deskpet_tool_registry_v2"
+    assert _unparse(_kw(calls[0], "tool_registry")) == "tool_registry"
+    production = [
+        call
+        for call in _attribute_calls(_main_tree(), "prepare_context")
+        if "tool_registry" in _kw_names(call)
+    ]
+    assert len(production) == 1
+    assert _unparse(_kw(production[0], "tool_registry")) == "deskpet_tool_registry_v2"
 
 
 def test_chat_path_build_agent_call_passes_all_harness_kwargs() -> None:
@@ -171,12 +184,12 @@ def test_chat_path_agent_run_receives_runtime_context_kwargs() -> None:
 
 
 def test_chat_path_closes_originating_turn_after_async_workflow_handoff() -> None:
-    source = MAIN_PATH.read_text(encoding="utf-8")
+    source = RUN_PRESENTER_PATH.read_text(encoding="utf-8")
 
-    assert "AsyncHandoffEvent as _AsyncHandoffEv" in source
-    assert "isinstance(ev, _AsyncHandoffEv)" in source
+    assert 'presenter.register("domain", AsyncHandoffEvent, _present_handoff)' in source
+    assert "isinstance(event, AsyncHandoffEvent)" in source
     assert '"type": "chat_v2_final"' in source
-    assert '"handoff_run_id": ev.run_id' in source
+    assert '"handoff_run_id": event.run_id' in source
 
 
 @pytest.mark.parametrize("msg_type", ["chat", "chat_v2"])

@@ -15,6 +15,8 @@ import argparse
 import ast
 import hashlib
 import json
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -29,6 +31,7 @@ DEFAULT_OUTPUT = (
     / "fixtures"
     / "product_turn_parity_census.json"
 )
+DEFAULT_MAPPING_OUTPUT = DEFAULT_OUTPUT.with_name("product_turn_migration_mapping.json")
 
 TURN_INPUT_FIELDS = [
     "text",
@@ -65,6 +68,25 @@ SCOPES = (
         "backend/deskpet/workflows/adapters/product_delivery.py",
         "ProductDeliveryAdapter",
     ),
+)
+
+CURRENT_SCOPES = SCOPES + (
+    Scope("backend/deskpet/agent/turn_preparer.py", "ProductTurnPreparer"),
+    Scope("backend/deskpet/agent/run_presenter.py", "RunPresenter"),
+    Scope("backend/deskpet/agent/run_presenter.py", "_domain_pipeline"),
+    Scope("backend/deskpet/agent/run_presenter.py", "_domain_clarification"),
+    Scope("backend/deskpet/agent/run_presenter.py", "_domain_plan_proposed"),
+    Scope("backend/deskpet/agent/run_presenter.py", "_domain_plan_confirmation"),
+    Scope("backend/deskpet/agent/run_presenter.py", "_present_delta"),
+    Scope("backend/deskpet/agent/run_presenter.py", "_present_assistant"),
+    Scope("backend/deskpet/agent/run_presenter.py", "_present_tool_call"),
+    Scope("backend/deskpet/agent/run_presenter.py", "_present_tool_result"),
+    Scope("backend/deskpet/agent/run_presenter.py", "_present_handoff"),
+    Scope("backend/deskpet/agent/run_presenter.py", "_present_final"),
+    Scope("backend/deskpet/agent/run_presenter.py", "_present_error"),
+    Scope("backend/deskpet/agent/run_presenter.py", "_present_compacted"),
+    Scope("backend/deskpet/agent/run_presenter.py", "_present_pipeline"),
+    Scope("backend/deskpet/agent/product_domain_sink.py", "LegacyProductDomainSink"),
 )
 
 
@@ -365,7 +387,9 @@ def _capability_for(*, event_types: set[str], call: str, symbol: str) -> str | N
 
 def _kind_for_call(call: str, rendered: str) -> str | None:
     tail = call.rsplit(".", 1)[-1]
-    if tail in {"send_json", "_broadcast", "_broadcast_default_chat_peers"}:
+    if tail in {"send_json", "_broadcast", "_broadcast_default_chat_peers", "_send_both"}:
+        return "ws_send"
+    if tail == "emit" and rendered.startswith("sink.emit("):
         return "ws_send"
     if tail in {"append_message", "append_message_if_epoch", "append_supervisor_hint"}:
         return "session_sink"
@@ -416,12 +440,64 @@ def _item(
     }
 
 
-def build_census(root: Path = ROOT) -> dict[str, object]:
+def _git_source(root: Path, path: str, commit: str) -> str:
+    git = shutil.which("git") or str(
+        Path.home()
+        / ".cache/codex-runtimes/codex-primary-runtime/dependencies/native/git/cmd/git.exe"
+    )
+    return subprocess.check_output(
+        [git, "-C", str(root), "show", f"{commit}:{path}"]
+    ).decode("utf-8")
+
+
+def validate_dual_send_helper(source: str) -> None:
+    tree = ast.parse(source)
+    owners = _functions(tree, "LegacyProductDomainSink")
+    emit = _functions(owners[0], "emit") if len(owners) == 1 else []
+    calls = [
+        _call_name(node)
+        for node in (ast.walk(emit[0]) if len(emit) == 1 else ())
+        if isinstance(node, ast.Call)
+    ]
+    if sum(call.endswith("send_json") for call in calls) != 1 or sum(
+        call.endswith("_broadcast") for call in calls
+    ) != 1:
+        raise RuntimeError(
+            "LegacyProductDomainSink.emit must call send_json and peer broadcast once"
+        )
+
+
+def validate_presenter_dual_send_helper(source: str) -> None:
+    helpers = _functions(ast.parse(source), "_send_both")
+    calls = [
+        _call_name(node)
+        for node in (ast.walk(helpers[0]) if len(helpers) == 1 else ())
+        if isinstance(node, ast.Call)
+    ]
+    if sum(call.endswith("send_json") for call in calls) != 1 or sum(
+        call.endswith("broadcast") for call in calls
+    ) != 1:
+        raise RuntimeError("_send_both must call send_json and peer broadcast once")
+
+
+def build_census(
+    root: Path = ROOT,
+    *,
+    scopes: tuple[Scope, ...] = SCOPES,
+    base_commit: str | None = "4d38979e",
+) -> dict[str, object]:
     parsed: dict[str, tuple[str, ast.Module]] = {}
-    for spec in SCOPES:
+    for spec in scopes:
         if spec.path not in parsed:
-            source = (root / spec.path).read_text(encoding="utf-8")
+            source = (
+                _git_source(root, spec.path, base_commit)
+                if base_commit
+                else (root / spec.path).read_text(encoding="utf-8")
+            )
             parsed[spec.path] = (source, ast.parse(source, filename=spec.path))
+    if base_commit is None:
+        validate_dual_send_helper(parsed["backend/deskpet/agent/product_domain_sink.py"][0])
+        validate_presenter_dual_send_helper(parsed["backend/deskpet/agent/run_presenter.py"][0])
 
     auto_roots = _functions(parsed["backend/agent/auto_resume.py"][1], "AutoResumeOrchestrator")
     voice_roots = _functions(parsed["backend/pipeline/voice_pipeline.py"][1], "VoicePipeline")
@@ -440,7 +516,7 @@ def build_census(root: Path = ROOT) -> dict[str, object]:
     sources: list[dict[str, object]] = []
     seen: set[tuple[str, int, str, str]] = set()
     unresolved: list[str] = []
-    for spec in SCOPES:
+    for spec in scopes:
         source, tree = parsed[spec.path]
         matches = _functions(tree, spec.symbol)
         if len(matches) != 1:
@@ -494,6 +570,8 @@ def build_census(root: Path = ROOT) -> dict[str, object]:
                     continue
                 call = _call_name(node)
                 rendered = ast.unparse(node)
+                if analysis_symbol == "LegacyProductDomainSink.emit" and call.rsplit(".", 1)[-1] in {"send_json", "_broadcast"}:
+                    continue
                 kind = _kind_for_call(call, rendered)
                 if kind is None:
                     continue
@@ -503,6 +581,8 @@ def build_census(root: Path = ROOT) -> dict[str, object]:
                         unresolved.append(f"{spec.path}:{node.lineno}: WS send has no payload")
                         continue
                     event_types = _dict_event_types(node.args[-1], env)
+                    if not event_types and analysis_symbol == "_domain_pipeline":
+                        event_types = {"$PipelineEvent.event_type"}
                     if not event_types:
                         unresolved.append(
                             f"{spec.path}:{node.lineno}: dynamic WS payload is unclassified: {rendered}"
@@ -512,8 +592,7 @@ def build_census(root: Path = ROOT) -> dict[str, object]:
                 if key in seen:
                     continue
                 seen.add(key)
-                items.append(
-                    _item(
+                item = _item(
                         path=spec.path,
                         symbol=analysis_symbol,
                         node=node,
@@ -521,7 +600,11 @@ def build_census(root: Path = ROOT) -> dict[str, object]:
                         event_types=event_types,
                         call=call,
                     )
-                )
+                items.append(item)
+                if call.rsplit(".", 1)[-1] in {"emit", "_send_both"}:
+                    peer_item = dict(item)
+                    peer_item["id"] = _digest(f"{item['id']}:peer_broadcast")[:20]
+                    items.append(peer_item)
 
     # Permission auto-mode restoration is startup wiring outside the selected
     # owner functions; it is intentionally selected by semantic call name.
@@ -597,11 +680,50 @@ def _json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 
 
+def build_migration_mapping(root: Path = ROOT) -> dict[str, object]:
+    legacy = build_census(root)
+    current = build_census(root, scopes=CURRENT_SCOPES, base_commit=None)
+    for field in ("item_count", "counts_by_kind", "counts_by_capability"):
+        if current[field] != legacy[field]:
+            raise RuntimeError(f"current parity distribution differs: {field}")
+    grouped: dict[tuple[str, str], list[dict[str, object]]] = {}
+    for item in current["items"]:
+        grouped.setdefault((str(item["capability"]), str(item["kind"])), []).append(item)
+    mappings = []
+    for legacy_item in legacy["items"]:
+        key = (str(legacy_item["capability"]), str(legacy_item["kind"]))
+        current_item = grouped[key].pop(0)
+        mappings.append(
+            {
+                "legacy_id": legacy_item["id"],
+                "legacy_callsite": legacy_item["callsite"],
+                "legacy_source_hash": legacy_item["source_hash"],
+                "capability": legacy_item["capability"],
+                "kind": legacy_item["kind"],
+                "new_owner": CAPABILITIES[key[0]]["new_owner"],
+                "current_id": current_item["id"],
+                "current_callsite": current_item["callsite"],
+                "current_source_hash": current_item["source_hash"],
+            }
+        )
+    if any(grouped.values()):
+        raise RuntimeError("current parity mapping left unmatched callsites")
+    return {
+        "schema_version": 1,
+        "base_commit": legacy["base_commit"],
+        "mapping_count": len(mappings),
+        "mappings": mappings,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--mapping-output", type=Path, default=DEFAULT_MAPPING_OUTPUT)
     parser.add_argument("--write", action="store_true")
     parser.add_argument("--check", action="store_true")
+    parser.add_argument("--write-mapping", action="store_true")
+    parser.add_argument("--check-mapping", action="store_true")
     args = parser.parse_args()
     if args.write and args.check:
         parser.error("--write and --check are mutually exclusive")
@@ -618,6 +740,14 @@ def main() -> int:
             raise SystemExit("census fixture is stale; run with --write")
     else:
         print(rendered, end="")
+    if args.write_mapping or args.check_mapping:
+        mapping = _json(build_migration_mapping())
+        mapping_output = args.mapping_output.resolve()
+        if args.write_mapping:
+            mapping_output.parent.mkdir(parents=True, exist_ok=True)
+            mapping_output.write_text(mapping, encoding="utf-8")
+        elif not mapping_output.is_file() or mapping_output.read_text(encoding="utf-8") != mapping:
+            raise SystemExit("migration mapping fixture is stale; run with --write-mapping")
     print(
         f"HARNESS_PARITY_CENSUS: PASS items={census['item_count']} "
         f"unmapped={census['unmapped_count']}",

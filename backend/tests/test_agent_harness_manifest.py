@@ -68,8 +68,8 @@ def test_stateful_boundary_documents_current_durable_gap() -> None:
 
 def test_manifest_matches_main_context_then_problem_pipeline_order() -> None:
     source = (REPO_ROOT / "backend" / "main.py").read_text(encoding="utf-8")
-    context_pos = source.index("_bundle = await _assembler.assemble(")
-    pipeline_pos = source.index("_pre = await _pipeline.run_pre_loop(")
+    context_pos = source.index("_turn_preparer.prepare_context(")
+    pipeline_pos = source.index("_turn_preparer.route_intent(")
     assert lifecycle_stage_ids().index("context_assembly") < lifecycle_stage_ids().index(
         "pre_loop_problem_pipeline"
     )

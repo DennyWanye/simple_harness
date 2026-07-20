@@ -86,6 +86,13 @@ from config import (
 import paths as _paths
 from paths import resolve_model_dir  # P3-S1
 from context import ServiceContext
+from deskpet.agent.product_domain_sink import LegacyProductDomainSink
+from deskpet.agent.run_presenter import (
+    PresentationState,
+    RunPresentationContext,
+    build_legacy_run_presenter,
+)
+from deskpet.agent.turn_preparer import ProductTurnPreparer, TurnInput
 import p4_ipc  # P4-S11 MemoryPanel + ContextTrace IPC handlers
 from observability.crash_reports import install_crash_reporter
 from observability.metrics import render as render_metrics
@@ -8910,273 +8917,50 @@ async def control_channel(ws: WebSocket):
                                 "capability_gate_skipped error=%s", _cap_exc
                             )
 
-                    # ContextAssembler — 把长期记忆 / 技能 / MCP 工具描述
-                    # 装入 message stack（继承自原 chat 路径，丢失就降级
-                    # 到只发用户原话，永远不让 chat 因 assembler 异常炸）。
-                    _bundle = None
-                    _assembler = service_context.get("context_assembler")
-                    if _assembler is not None and getattr(_assembler, "enabled", True):
-                        try:
-                            import time as _ti
-                            # P4-S20-LLM-Unified: 把当前 LLM 的 model + base_url
-                            # 传给 ContextAssembler，PersonaComponent 用它告诉
-                            # 用户底层模型 — 不再有"我看不到模型"的尴尬回复。
-                            # P4-S22: pass code_mode state into assembler
-                            # so PersonaComponent picks the engineering
-                            # assistant template + project root.
-                            _cmm_for_assembler = service_context.get("code_mode")
-                            _code_cfg = {"enabled": False, "project_root": ""}
-                            # code-session-model-params: the persona's
-                            # "你跑在底层模型 X 上" must reflect the model
-                            # this code session will ACTUALLY call (binding
-                            # preferred_model → [agent].code_model → legacy),
-                            # not the static [llm] config model — otherwise a
-                            # gpt-5.5-bound session truthfully reads its prompt
-                            # and (wrongly) tells the user "deepseek-v4-pro".
-                            _persona_model = getattr(local_llm, "model", "unknown")
-                            _persona_base = getattr(local_llm, "base_url", "")
-                            if _cmm_for_assembler and _cmm_for_assembler.is_enabled(_sid):
-                                _state = _cmm_for_assembler.get(_sid)
-                                if _state and _state.project_root:
-                                    _code_cfg = {
-                                        "enabled": True,
-                                        "project_root": str(_state.project_root),
-                                    }
-                                try:
-                                    _sdb_p = service_context.get("session_db")
-                                    _bind_p = (
-                                        await _sdb_p.get_code_session_provider_binding(_sid)
-                                        if _sdb_p is not None else {}
-                                    ) or {}
-                                    _pm = _bind_p.get("preferred_model")
-                                    if _pm:
-                                        _persona_model = _pm
-                                    else:
-                                        _acfg = (
-                                            config.raw.get("agent")
-                                            if hasattr(config, "raw") else None
-                                        ) or {}
-                                        _cdm = (
-                                            str(_acfg.get("code_model") or "").strip()
-                                            or None
-                                        )
-                                        if _cdm:
-                                            _persona_model = _cdm
-                                except Exception as _pm_exc:  # noqa: BLE001
-                                    logger.debug(
-                                        "persona_model_resolve_skipped sid=%s err=%s",
-                                        _sid, _pm_exc,
-                                    )
-                            # FP-5 缺口 5d (2026-06-06 真机抓 bug)：assemble() 传的
-                            # config dict 原先只带 llm/code_mode，**漏带 skills**→
-                            # SkillComponent._read_auto_disclosure_config 读不到
-                            # auto_disclosure → auto_enabled 恒 False → 自动披露
-                            # （WI-4.1/4.2）生产运行时永不发生（matcher/loader 注入了也白搭）。
-                            # 同 [skills.codify] 漏解析一类的跨层契约漂移。补回 skills 段。
-                            _ad_cfg_dict: dict = {}
-                            try:
-                                _ad = config.skills.auto_disclosure
-                                _ad_cfg_dict = {
-                                    "auto_disclosure": {
-                                        "enabled": bool(_ad.enabled),
-                                        "strong_threshold": float(_ad.strong_threshold),
-                                        "budget_tokens": int(_ad.budget_tokens),
-                                        "per_skill_max_tokens": int(_ad.per_skill_max_tokens),
-                                    }
-                                }
-                            except Exception:  # noqa: BLE001
-                                _ad_cfg_dict = {}
-                            # FP-5 缺口 5f (2026-06-06 真机)：code 会话应确定性走
-                            # `code` policy（含 skill → 自动披露生效），而非靠用户
-                            # 文本分类（"整理会议纪要生成PPT" 会落到 chat → 无 skill）。
-                            # code_mode 开 → task_type_override="code"，让 SkillComponent
-                            # 在 code 会话稳定 fan-out（codify 在 code 造技能，disclosure
-                            # 也必须在 code 召回，闭环一致）。
-                            _tt_override = (
-                                "code" if _code_cfg.get("enabled") else None
-                            )
-                            _bundle = await _assembler.assemble(
-                                user_message=_text,
-                                memory_manager=service_context.get("memory_manager"),
-                                # Use the same schema-aware registry that the
-                                # AgentLoop dispatches against.  The legacy
-                                # tool_router only contains three bootstrap
-                                # tools, which made the assembler silently
-                                # remove web_search from an otherwise-correct
-                                # web_search policy.
-                                tool_registry=deskpet_tool_registry_v2,
-                                skill_registry=service_context.get("skill_loader"),
-                                mcp_manager=service_context.get("mcp_manager"),
-                                session_id=_sid,
-                                current_message_id=_user_msg_id,
-                                task_type_override=_tt_override,
-                                memory_policy_override=_memory_policy_override,
-                                config={
-                                    "llm": {
-                                        "model": _persona_model,
-                                        "base_url": _persona_base,
-                                    },
-                                    "code_mode": _code_cfg,
-                                    "skills": _ad_cfg_dict,
-                                    "features": {
-                                        "context_os_v1": bool(
-                                            getattr(
-                                                getattr(config, "features", None),
-                                                "context_os_v1",
-                                                False,
-                                            )
-                                        )
-                                    },
-                                },
-                            )
-                            if _bundle is not None and _bundle.decisions is not None:
-                                _bundle.decisions.timestamp = _ti.time()
-                                _bundle.decisions.session_id = _sid
-                        except Exception as exc:  # noqa: BLE001
-                            logger.warning(
-                                "p4_assembler_failed", error=str(exc),
-                                error_type=type(exc).__name__,
-                            )
-                            _bundle = None
+                    _turn_preparer = ProductTurnPreparer()
+                    _code_mode_for_turn = service_context.get("code_mode")
+                    _turn_in_code_mode = bool(
+                        _code_mode_for_turn
+                        and _code_mode_for_turn.is_enabled(_sid)
+                    )
+                    _turn_workspace_ref = None
+                    if _turn_in_code_mode:
+                        _turn_state = _code_mode_for_turn.get(_sid)
+                        if _turn_state and _turn_state.project_root:
+                            _turn_workspace_ref = str(_turn_state.project_root)
+                    import uuid as _uuid_turn
 
-                    if _bundle is not None:
-                        # P4-S21 #16 fix: pass real conversation history.
-                        # Without this the LLM gets only the current user
-                        # turn, even though SessionDB has all prior messages
-                        # — that produced the "we just talked about VPN,
-                        # why does it ask 'what do you want to do?'" bug.
-                        # `bundle.history` is populated by MemoryComponent
-                        # from raw L2 rows.
-                        _msgs = _bundle.build_messages(
-                            user_message=_text,
-                            history=_bundle.history,
-                            late_system_nudge=_bundle.late_system_nudge,
-                        )
-                    else:
-                        _msgs = [{"role": "user", "content": _text}]
-
-                    if _user_attachment_blocks:
-                        from deskpet.agent.attachment_budget import (
-                            append_user_attachment_blocks as _append_attachment_blocks,
-                        )
-                        _msgs = _append_attachment_blocks(
-                            _msgs, _user_attachment_blocks
-                        )
-
-                    # 2026-05-16 bugfix（实测：companion 让生成 Excel，做到
-                    # 一半 max_iter=8 触发 auto_resume，LLM 收到字面
-                    # ``<<auto_resume>>`` 当用户消息 → "用户在测试系统" →
-                    # 重新自我介绍 + 反问"要我做什么"，丢掉原任务）。
-                    # sentinel 永远不该作为 LLM 的 user turn 出现；把最后一
-                    # 条 user 消息的字面 sentinel 换成明确的续跑指令。具体
-                    # "缺什么" 由紧随其后的 [Supervisor] system hint 补充；
-                    # bundle.history 已带原任务上下文。
-                    if _is_sentinel:
-                        _resume_directive = (
-                            "（系统自动续跑：你上一轮还没把用户请求的任务做完"
-                            "就达到了迭代上限。**不要重新自我介绍、不要反问用户"
-                            "想做什么**——回顾上面的对话历史与工具结果，找出用户"
-                            "最初请求的那个任务还差哪些步骤，直接继续把它做完。）"
-                        )
-                        for _i in range(len(_msgs) - 1, -1, -1):
-                            if _msgs[_i].get("role") == "user":
-                                _msgs[_i] = {
-                                    **_msgs[_i],
-                                    "content": _resume_directive,
-                                }
-                                break
-                        else:
-                            _msgs.append(
-                                {"role": "user", "content": _resume_directive}
-                            )
-
-                    # P5-S4: pop any queued supervisor hints for this sid
-                    # and inject them at the top of the system stack as a
-                    # single ``[Supervisor]`` system message. This is the
-                    # consume-on-use point — by the time the agent loop
-                    # starts running, hints are already gone from the queue.
-                    try:
-                        _nq_for_inject = service_context.get("nudge_queue")
-                        if _nq_for_inject is not None:
-                            _hints = await _nq_for_inject.pop_all(_sid)
-                            if _hints:
-                                from agent.nudge_queue import format_hints_for_injection as _fmt_hints
-                                _hint_text = _fmt_hints(_hints)
-                                if _hint_text:
-                                    _hint_msg = {
-                                        "role": "system",
-                                        "content": _hint_text,
-                                        "_is_supervisor_hint": True,
-                                    }
-                                    _insert_at = 0
-                                    while _insert_at < len(_msgs) and _msgs[_insert_at].get("role") == "system":
-                                        _insert_at += 1
-                                    _msgs.insert(_insert_at, _hint_msg)
-                                    # Mark each hint dispatched in audit trail
-                                    _sdb_for_audit = service_context.get("session_db")
-                                    if _sdb_for_audit is not None:
-                                        for _h in _hints:
-                                            try:
-                                                await _sdb_for_audit.append_supervisor_hint(
-                                                    session_id=_sid,
-                                                    alert_id=_h.alert_id or "",
-                                                    hint_text=_h.text,
-                                                    action="dispatched",
-                                                    severity=_h.severity,
-                                                )
-                                            except Exception as _ex2:
-                                                logger.debug(
-                                                    "supervisor_dispatched_audit_failed",
-                                                    error=str(_ex2),
-                                                )
-                                    logger.info(
-                                        "supervisor_hints_injected sid=%s count=%d",
-                                        _sid,
-                                        len(_hints),
-                                    )
-                    except Exception as _hint_exc:  # noqa: BLE001
-                        logger.debug("supervisor_hint_inject_failed error=%s", _hint_exc)
-
-                    # ─── WI-1B-4 摘要质量回路（flag OFF 默认 → 整段 short-circuit，
-                    # 字节级 BC）。ON 时: 用户用"困惑措辞"问起被压掉的上下文
-                    # (刚才|之前说的|你忘了|我们在弄|上一个) + 本 session 确实发生过
-                    # 压缩(L1 有 [任务态快照] 条目) → 从 L1 重新注入一条任务态 system
-                    # 提示(不立刻重摘,只补回任务连续性)。检测/补救全在闭包内。
-                    try:
-                        _sql_on = bool(
-                            getattr(
-                                getattr(config, "features", None),
-                                "summary_quality_loop",
-                                False,
-                            )
-                        )
-                    except Exception:  # noqa: BLE001
-                        _sql_on = False
-                    if _sql_on and not _is_sentinel and _sql_user_is_confused(_text or ""):
-                        try:
-                            _fm = service_context.get("file_memory")
-                            if _fm is not None:
-                                _entries = await _fm.list_entries("memory")
-                                _latest = _sql_latest_task_snapshot(_entries)
-                                if _latest:
-                                    _reinject = _sql_build_reinject_msg(_latest)
-                                    _ins_at = 0
-                                    while (
-                                        _ins_at < len(_msgs)
-                                        and _msgs[_ins_at].get("role") == "system"
-                                    ):
-                                        _ins_at += 1
-                                    _msgs.insert(_ins_at, _reinject)
-                                    logger.info(
-                                        "wi1b4_summary_reinject sid=%s chars=%d",
-                                        _sid, len(_latest),
-                                    )
-                        except Exception as _sql_exc:  # noqa: BLE001
-                            logger.debug(
-                                "wi1b4_summary_loop_skipped sid=%s err=%s",
-                                _sid, _sql_exc,
-                            )
-
+                    _turn_request_id = _uuid_turn.uuid4().hex
+                    _turn_input = TurnInput(
+                        text=_text,
+                        session_id=_sid,
+                        request_id=_turn_request_id,
+                        turn_id=(str(_user_msg_id) if _user_msg_id is not None else None),
+                        venue=("code" if _turn_in_code_mode else "text"),
+                        mode=("code" if _turn_in_code_mode else "companion"),
+                        memory_policy=_memory_policy_override,
+                        explicit_new=bool(_task_scope_explicit_new),
+                        attachment_blocks=tuple(_user_attachment_blocks),
+                        provider_ref=str(getattr(local_llm, "model", "") or "") or None,
+                        capability_ref=(
+                            f"catalog:{deskpet_tool_registry_v2.catalog_snapshot().revision}"
+                        ),
+                        workspace_ref=_turn_workspace_ref,
+                    )
+                    _prepared_turn = await _turn_preparer.prepare_context(
+                        _turn_input,
+                        services=service_context,
+                        config=config,
+                        local_llm=local_llm,
+                        tool_registry=deskpet_tool_registry_v2,
+                        current_message_id=_user_msg_id,
+                        summary_user_is_confused=_sql_user_is_confused,
+                        summary_latest_task_snapshot=_sql_latest_task_snapshot,
+                        summary_build_reinject_msg=_sql_build_reinject_msg,
+                    )
+                    _bundle = _prepared_turn.bundle
+                    _assembler = _prepared_turn.assembler
+                    _msgs = _prepared_turn.messages
                     final_text = ""
                     # P4-S24: capture the LAST assistant turn's
                     # reasoning_content so we persist it alongside
@@ -9187,18 +8971,7 @@ async def control_channel(ws: WebSocket):
                     # in working_messages by the time agent_loop ends.
                     final_reasoning = ""
                     try:
-                        from agent.agent_loop import (
-                            AgentLoop as _AgentLoop,
-                            AssistantMessageEvent as _AsstEv,
-                            AssistantDeltaEvent as _AsstDelta,
-                            ToolCallEvent as _TCEv,
-                            ToolResultEvent as _TREv,
-                            AsyncHandoffEvent as _AsyncHandoffEv,
-                            FinalEvent as _FinEv,
-                            ErrorEvent as _ErrEv,
-                            ContextCompactedEvent as _CtxCompactedEv,
-                            PipelineEvent as _PipeEv,
-                        )
+                        from agent.agent_loop import AgentLoop as _AgentLoop
                         from agent.tool_use_shim import OpenAICompatibleAgentLLM as _Shim
                         # P4-S20-LLM-Unified: 单一 endpoint。local_llm 来自
                         # 统一 [llm] 段（base_url + api_key + model）；不管你
@@ -9980,263 +9753,47 @@ async def control_channel(ws: WebSocket):
                                     _sid, _ws_exc,
                                 )
 
-                        # ─── 七步流水线 PRE-LOOP（决策4：Step1 意图 + Step3 主要矛盾合并 1 次 analyze）。
-                        # plans/2026-06-24-... §M3 改动 3a。flag off → pipeline.enabled=False →
-                        # run_pre_loop 返回空 → 不改任何行为（BC）。此处 _in_code_mode/_msgs/_bundle 均已就绪。
-                        _pipeline = service_context.get("problem_pipeline")
-                        _pre = None
-                        _pipe_attack_order = None
-                        _pipe_contra_descs = None
-                        _pipe_problem_type = None
-                        if (
-                            _pipeline is not None and getattr(_pipeline, "enabled", False)
-                            and not _is_sentinel
-                        ):
-                            try:
-                                _prior_tt = getattr(_bundle, "task_type", None) if _bundle else None
-                                _pre = await _pipeline.run_pre_loop(_text, prior_task_type=_prior_tt)
-                                for _pev in _pre.events:
-                                    _pev_full = {"type": _pev["type"],
-                                                 "payload": {"session_id": _sid, **_pev["payload"]}}
-                                    await _ws.send_json(_pev_full)
-                                    await _broadcast_default_chat_peers(_ws, _pev_full)
-                                if _pre.short_circuit:
-                                    logger.info("pipeline_short_circuit sid=%s", _sid)
-                                elif _pre.needs_clarification and _pre.intent:
-                                    # 独立 chat_v2_final 澄清出口（裸 return 会跳过 _run_chat 收尾 → 显式补收尾）。
-                                    _clar_text = "\n".join(_pre.intent.clarifying_questions)
-                                    _clar_evt = {"type": "chat_v2_final",
-                                                 "payload": {"session_id": _sid, "text": _clar_text}}
-                                    await _ws.send_json(_clar_evt)
-                                    await _broadcast_default_chat_peers(_ws, _clar_evt)
-                                    try:
-                                        _sa_clar = service_context.get("session_activity")
-                                        if _sa_clar is not None:
-                                            await _sa_clar.set_status(_sid, "idle")
-                                    except Exception as _se:  # noqa: BLE001
-                                        logger.debug("clarify_set_idle_failed sid=%s err=%s",
-                                                     _sid, str(_se)[:120])
-                                    # 持久化澄清回复为 assistant 行（对齐 FinalEvent 持久化，防多轮澄清断裂）。
-                                    if _sdb is not None:
-                                        try:
-                                            await _sdb.append_message(
-                                                session_id=_sid, role="assistant",
-                                                content=_clar_text or "",
-                                            )
-                                        except Exception as _pe2:  # noqa: BLE001
-                                            logger.warning("clarify_persist_assistant_failed sid=%s err=%s",
-                                                           _sid, str(_pe2)[:160])
-                                    logger.info("pipeline_clarification_pause sid=%s", _sid)
-                                    return
-                                else:
-                                    # 注入 <意图>/<主要矛盾> system 消息（插在 system 栈尾）。
-                                    for _inj in _pre.system_injections:
-                                        _ins_at = 0
-                                        while _ins_at < len(_msgs) and _msgs[_ins_at].get("role") == "system":
-                                            _ins_at += 1
-                                        _msgs.insert(_ins_at, {"role": "system", "content": _inj})
-                                    _pipe_problem_type = _pre.intent.problem_type if _pre.intent else None
-                                    if _pre.contradiction is not None:
-                                        _pipe_attack_order = _pre.contradiction.attack_order
-                                        _pipe_contra_descs = {
-                                            c.id: c.desc for c in _pre.contradiction.contradictions
-                                        }
-                            except Exception as _pe:  # noqa: BLE001 — safe-fail：pipeline 异常退回裸链路
-                                logger.warning("pipeline_pre_loop_failed sid=%s err=%s", _sid, str(_pe)[:200])
-                                _pre = None
-
-                        # P4-S25 A2: Plan/Replan — for non-trivial code-mode
-                        # requests, do a structured-output plan call BEFORE
-                        # the ReAct loop. The plan is sent to the frontend
-                        # for visibility and injected into the message stack
-                        # so the LLM stays anchored.
-                        #
-                        # superpowers Layer 1A/1B 决策2 — plan-confirm 硬门:
-                        # features.plan_confirm_gate ON 时,出 plan 后 emit
-                        # awaiting_confirm + await 用户点 [执行]/[取消] 再跑 ReAct。
-                        # OFF（默认）= 旧 auto-confirm 行为（停止 按钮是逃生口）。
-                        _gate_on = bool(
-                            getattr(config.features, "plan_confirm_gate", False)
-                        ) and _in_code_mode
-                        _awaiting_confirm = False
-                        _auto_confirmed = False
-                        try:
-                            from agent.plan import (
-                                maybe_extract_plan as _maybe_plan,
-                                plan_to_system_message as _plan_to_sys,
-                            )
-                            _companion_plan_on = bool(
-                                getattr(getattr(config, "features", None), "problem_pipeline", None)
-                                and config.features.problem_pipeline.plan_companion_enabled
-                            )
-                            _plan = await _maybe_plan(
-                                _provider,
-                                _text,
-                                str(_cmm.project_root(_sid)) if _in_code_mode and _cmm else None,
-                                in_code_mode=_in_code_mode,
-                                companion_enabled=_companion_plan_on,
-                                problem_type=_pipe_problem_type,
-                                attack_order=_pipe_attack_order,
-                                contradiction_descs=_pipe_contra_descs,
-                            )
-                            if _plan is not None:
-                                # Layer 1B 计划记忆: 语义相似且以往批准过 → 自动确认,
-                                # 跳过等待(决策2 "记下来后续直接做")。
-                                if _gate_on:
-                                    _pref = service_context.get("preference_memory")
-                                    if _pref is not None:
-                                        try:
-                                            _pm_hit = await _pref.match(_text, "plan")
-                                            if _pm_hit is not None:
-                                                _auto_confirmed = True
-                                                logger.info(
-                                                    "plan_confirm_auto_approved sid=%s score=%.3f",
-                                                    _sid, float(_pm_hit.get("score", 0.0)),
-                                                )
-                                        except Exception as _pm_e:  # noqa: BLE001
-                                            logger.debug("pref_match_failed error=%s", _pm_e)
-                                _plan_evt = {
-                                    "type": "chat_v2_plan",
-                                    "payload": {
-                                        "session_id": _sid,
-                                        "rationale": _plan.rationale,
-                                        "steps": [
-                                            {"title": s.title, "detail": s.detail}
-                                            for s in _plan.steps
-                                        ],
-                                        # 决策2: 硬门开且未自动确认时前端渲染 [执行]/[取消]
-                                        "awaiting_confirm": _gate_on and not _auto_confirmed,
-                                        "auto_confirmed": _auto_confirmed,
-                                    },
-                                }
-                                await _ws.send_json(_plan_evt)
-                                await _broadcast_default_chat_peers(_ws, _plan_evt)
-                                # Insert plan as a system message right after
-                                # the existing system stack (or at index 0
-                                # if there's nothing).
-                                _plan_msg = {"role": "system", "content": _plan_to_sys(_plan)}
-                                _insert_at = 0
-                                while _insert_at < len(_msgs) and _msgs[_insert_at].get("role") == "system":
-                                    _insert_at += 1
-                                _msgs.insert(_insert_at, _plan_msg)
-                                _awaiting_confirm = _gate_on and not _auto_confirmed
-                                # FEAT-A4: awaiting plan 持久化到 session_plans
-                                # sidecar，使 F5/HMR rehydration 后 [执行]/[取消]
-                                # 栏能恢复。try/except 只 log 不阻断 plan 门。
-                                if _awaiting_confirm:
-                                    _sdb_plan = service_context.get("session_db")
-                                    if _sdb_plan is not None:
-                                        try:
-                                            await _sdb_plan.upsert_session_plan(
-                                                _sid,
-                                                _plan.rationale,
-                                                [
-                                                    {"title": s.title,
-                                                     "detail": s.detail}
-                                                    for s in _plan.steps
-                                                ],
-                                                True,
-                                            )
-                                        except Exception as _sp_e:  # noqa: BLE001
-                                            logger.warning(
-                                                "session_plan_upsert_failed sid=%s err=%s",
-                                                _sid, str(_sp_e)[:200],
-                                            )
-                        except Exception as _exc:  # noqa: BLE001
-                            logger.debug("p4s25_plan_skipped error=%s", _exc)
-
-                        # 决策2 plan-confirm 硬门：在 plan 展示后挂起，等前端确认。
-                        # _run_chat 是后台 task → 此 await 不阻塞 WS recv loop，
-                        # plan_confirm handler 会 set_result 唤醒本协程。
-                        if _awaiting_confirm:
-                            _confirm_fut: "asyncio.Future[str]" = (
-                                asyncio.get_event_loop().create_future()
-                            )
-                            # 存 {fut, text}: plan_confirm handler 用 text 记 Layer 1B
-                            # 计划记忆（用户点[执行]→record approved）。
-                            _PLAN_CONFIRM_WAITERS[_sid] = {
-                                "fut": _confirm_fut, "text": _text,
-                            }
-                            # WI-CC-2: features.plan_read_only ON 时，规划期
-                            # （plan 挂起、等用户点[执行]）置该 session 物理只读 ——
-                            # registry.execute_tool 拦下所有写/执行类工具。go/
-                            # cancel/timeout 后在 finally 解禁。OFF（默认）= 不置位
-                            # = 字节级 BC。
-                            _plan_ro_on = bool(
-                                getattr(config.features, "plan_read_only", False)
-                            )
-                            if _plan_ro_on:
-                                try:
-                                    deskpet_tool_registry_v2.set_plan_read_only(
-                                        _sid, True
-                                    )
-                                    logger.info(
-                                        "plan_read_only_enter sid=%s", _sid
-                                    )
-                                except Exception as _ro_e:  # noqa: BLE001
-                                    logger.warning(
-                                        "plan_read_only_enter_failed sid=%s err=%s",
-                                        _sid, _ro_e,
-                                    )
-                            logger.info("plan_confirm_gate_awaiting sid=%s", _sid)
-                            try:
-                                _decision = await asyncio.wait_for(
-                                    _confirm_fut, timeout=900
-                                )
-                            except asyncio.TimeoutError:
-                                _decision = "cancel"
-                                logger.info("plan_confirm_gate_timeout sid=%s", _sid)
-                            finally:
-                                _PLAN_CONFIRM_WAITERS.pop(_sid, None)
-                                # WI-CC-2: 不论 go / cancel / timeout，解禁规划期
-                                # 只读（幂等；未置位时 discard 无害）。
-                                if _plan_ro_on:
-                                    try:
-                                        deskpet_tool_registry_v2.set_plan_read_only(
-                                            _sid, False
-                                        )
-                                        logger.info(
-                                            "plan_read_only_exit sid=%s", _sid
-                                        )
-                                    except Exception as _ro_e2:  # noqa: BLE001
-                                        logger.debug(
-                                            "plan_read_only_exit_failed sid=%s err=%s",
-                                            _sid, _ro_e2,
-                                        )
-                                # FEAT-A4: 不论 go / cancel / timeout，plan 都不再
-                                # awaiting → 清 sidecar 标记（幂等，重复无害）。
-                                # 统一收口在 finally，确保三条出路都覆盖。
-                                _sdb_clr = service_context.get("session_db")
-                                if _sdb_clr is not None:
-                                    try:
-                                        await _sdb_clr.clear_session_plan_awaiting(_sid)
-                                    except Exception as _clr_e:  # noqa: BLE001
-                                        logger.debug(
-                                            "session_plan_clear_failed sid=%s err=%s",
-                                            _sid, _clr_e,
-                                        )
-                            if _decision != "go":
-                                _cancel_evt = {
-                                    "type": "chat_v2_plan_cancelled",
-                                    "payload": {"session_id": _sid},
-                                }
-                                await _ws.send_json(_cancel_evt)
-                                await _broadcast_default_chat_peers(_ws, _cancel_evt)
-                                _sa_cancel = (
-                                    service_context.get("session_activity")
-                                    if _in_code_mode else None
-                                )
-                                if _sa_cancel is not None:
-                                    try:
-                                        await _sa_cancel.set_status(_sid, "idle")
-                                    except Exception:  # noqa: BLE001
-                                        pass
-                                logger.info(
-                                    "plan_confirm_gate_cancelled sid=%s", _sid
-                                )
+                        # Provider/context preflight may replace the message list after
+                        # prepare-context; route/plan always continue from that exact list.
+                        _prepared_turn.messages = _msgs
+                        _run_presenter = build_legacy_run_presenter()
+                        _product_domain_sink = LegacyProductDomainSink(
+                            websocket=_ws,
+                            services=service_context,
+                            session_db=_sdb,
+                            broadcast=_broadcast_default_chat_peers,
+                            plan_waiters=_PLAN_CONFIRM_WAITERS,
+                            tool_registry=deskpet_tool_registry_v2,
+                        )
+                        _routed_turn = await _turn_preparer.route_intent(
+                            _prepared_turn,
+                            services=service_context,
+                        )
+                        for _command in _routed_turn.commands:
+                            if not await _run_presenter.present_domain(
+                                _command, _product_domain_sink
+                            ):
                                 return
-                            logger.info("plan_confirm_gate_go sid=%s", _sid)
+                        _pre = _routed_turn.pre_loop
+                        _pipe_attack_order = _routed_turn.attack_order
+                        _pipe_contra_descs = _routed_turn.contradiction_descs
+                        _pipe_problem_type = _routed_turn.problem_type
+                        if not _routed_turn.continue_turn:
+                            return
 
+                        _planned_turn = await _turn_preparer.plan_decision(
+                            _routed_turn,
+                            services=service_context,
+                            config=config,
+                            provider=_provider,
+                            code_mode=_cmm,
+                            in_code_mode=_in_code_mode,
+                        )
+                        for _command in _planned_turn.commands:
+                            if not await _run_presenter.present_domain(
+                                _command, _product_domain_sink
+                            ):
+                                return
                         # P5-S2 Hook A: completion guard probe.
                         #
                         # Maps base_session_id → code_session_id (via
@@ -10396,9 +9953,7 @@ async def control_channel(ws: WebSocket):
                             from deskpet.tools.capabilities import (
                                 ToolEligibilityContext as _ToolEligibilityContext,
                             )
-                            import uuid as _uuid_context_os
-
-                            _context_request_id = _uuid_context_os.uuid4().hex
+                            _context_request_id = _turn_input.request_id
                             _eligibility = _ToolEligibilityContext(
                                 session_id=_sid,
                                 request_id=_context_request_id,
@@ -10473,12 +10028,44 @@ async def control_channel(ws: WebSocket):
                             else None
                         )
                         from deskpet.agent.assembler.components.tool import (
-                            has_image_completion_claim as _has_image_completion_claim,
                             is_short_contextual_followup as _is_short_contextual_followup,
                         )
                         _buffer_short_followup_stream = (
                             _is_short_contextual_followup(_text)
                             and "generate_image" not in (_bundle_tool_names or [])
+                        )
+                        _presentation_state = PresentationState(
+                            final_text=final_text,
+                            final_reasoning=final_reasoning,
+                            had_tool_call=_had_tool_call,
+                        )
+                        _presentation_context = RunPresentationContext(
+                            session_id=_sid,
+                            text=_text,
+                            websocket=_ws,
+                            services=service_context,
+                            config=config,
+                            messages=_msgs,
+                            session_db=_sdb,
+                            vector_worker=_vw,
+                            activity_store=_sa_store,
+                            provider_chain=_provider_chain,
+                            fallback_provider=local_llm,
+                            request_id=_context_request_id,
+                            max_iterations=_max_iter,
+                            in_code_mode=_in_code_mode,
+                            is_sentinel=_is_sentinel,
+                            buffer_short_followup_stream=_buffer_short_followup_stream,
+                            skill_candidate_waiters=_SKILL_CANDIDATE_WAITERS,
+                            broadcast=_broadcast_default_chat_peers,
+                            send_final=_send_chat_final,
+                            emit_context_usage=_emit_context_usage,
+                            codify_skill=_maybe_codify_skill,
+                            intent_label_from_turn=_intent_label_from_turn,
+                            assembler=_assembler,
+                            bundle=_bundle,
+                            billing_ledger=billing_ledger,
+                            provider=_provider,
                         )
                         async for ev in _agent.run(
                             _msgs,
@@ -10493,460 +10080,15 @@ async def control_channel(ws: WebSocket):
                             prepared_context=_prepared_context,
                             context_request_id=_context_request_id,
                         ):
-                            # WI-A1: track tool usage for intent memory.
-                            if isinstance(ev, _TCEv) and getattr(ev, "tool_call", None):
-                                _had_tool_call = True
-                            # P5-S1: bump activity BEFORE forwarding so the
-                            # watchdog sees the latest event even if the
-                            # WS send fails. Best-effort — never let a
-                            # bump failure abort the agent loop.
-                            if _sa_store is not None:
-                                try:
-                                    if isinstance(ev, _TCEv) and ev.tool_call:
-                                        await _sa_store.bump(
-                                            _sid,
-                                            event_type="tool_call",
-                                            name=ev.tool_call.name,
-                                            args=ev.tool_call.arguments,
-                                            iteration=ev.iteration,
-                                            max_iterations=_max_iter,
-                                        )
-                                    elif isinstance(ev, _TREv):
-                                        await _sa_store.bump(
-                                            _sid,
-                                            event_type="tool_result",
-                                            name=ev.tool_name,
-                                            ok=True,
-                                            snippet=(ev.result or "")[:80],
-                                            iteration=ev.iteration,
-                                            max_iterations=_max_iter,
-                                        )
-                                    elif isinstance(ev, _AsyncHandoffEv):
-                                        await _sa_store.bump(
-                                            _sid,
-                                            event_type="async_handoff",
-                                            name=ev.tool_name,
-                                            iteration=ev.iteration,
-                                            max_iterations=_max_iter,
-                                        )
-                                        await _sa_store.set_status(_sid, "idle")
-                                    elif isinstance(ev, _AsstEv):
-                                        await _sa_store.bump(
-                                            _sid,
-                                            event_type="assistant_message",
-                                            iteration=ev.iteration,
-                                            max_iterations=_max_iter,
-                                        )
-                                    elif isinstance(ev, _FinEv):
-                                        await _sa_store.bump(
-                                            _sid,
-                                            event_type="final",
-                                            iteration=ev.iteration,
-                                            max_iterations=_max_iter,
-                                        )
-                                        await _sa_store.set_status(_sid, "idle")
-                                    elif isinstance(ev, _ErrEv):
-                                        await _sa_store.bump(
-                                            _sid,
-                                            event_type="error",
-                                            snippet=(ev.detail or ev.reason or "")[:80],
-                                            iteration=ev.iteration,
-                                            max_iterations=_max_iter,
-                                        )
-                                        await _sa_store.mark_error_pending(_sid)
-                                except Exception as _bump_exc:  # noqa: BLE001
-                                    logger.debug("session_activity_bump_failed", error=str(_bump_exc))
-                            if isinstance(ev, _AsstDelta):
-                                # Short elliptical follow-ups rely on L2 for
-                                # their meaning. Buffer their deltas until the
-                                # terminal evidence guards have run; otherwise
-                                # an unsupported "image generated" claim could
-                                # reach the UI before VerifyGate can rebound it.
-                                if _buffer_short_followup_stream:
-                                    continue
-                                _delta_msg = {
-                                    "type": "chat_v2_delta",
-                                    "payload": {
-                                        "session_id": _sid,
-                                        "kind": ev.kind,
-                                        "content": ev.content,
-                                        "iteration": ev.iteration,
-                                    },
-                                }
-                                await _ws.send_json(_delta_msg)
-                                await _broadcast_default_chat_peers(_ws, _delta_msg)
-                            elif isinstance(ev, _AsstEv):
-                                # P4-S20-LLM-Unified-fix: AgentLoop 在每次
-                                # LLM turn 后 emit AsstEv，最终轮还会 emit
-                                # FinalEvent —— 两者带相同 content。前端
-                                # 两条都渲染会造成重复。规则：只在中间
-                                # 步骤（带 tool_calls）emit chat_response
-                                # 作为"思考中"提示；最终回复让 FinalEvent
-                                # 唯一负责。
-                                # P4-S23: stamp session_id on every event
-                                # so the frontend can route it to the right
-                                # tile / chat slot when multiple sessions
-                                # are running.
-                                if ev.content and ev.tool_calls:
-                                    await _ws.send_json({
-                                        "type": "chat_response",
-                                        "payload": {"text": ev.content, "provider": "v2", "session_id": _sid},
-                                    })
-                            elif isinstance(ev, _TCEv) and ev.tool_call:
-                                # Emit BOTH the legacy tool_use_event (kept
-                                # for the pet's permission popup wiring)
-                                # AND a code-panel-friendly `tool_call`
-                                # event so the new MessageStream renders
-                                # ToolCallCard inline.
-                                # 2026-06-12: 工具事件也要广播给 default 会话
-                                # 的 peer 窗口(消息面板) —— 之前只发起方窗口
-                                # 能看到工具执行过程,面板里"后台在干活但
-                                # 什么都不显示",用户体验差。与 chat_v2_delta
-                                # 同模式 fan-out。
-                                _public_tool_arguments = project_public_tool_arguments(
-                                    ev.tool_call.name,
-                                    ev.tool_call.arguments,
-                                )
-                                _tue_msg = {
-                                    "type": "tool_use_event",
-                                    "payload": {
-                                        "kind": "request",
-                                        "tool_name": ev.tool_call.name,
-                                        "params": _public_tool_arguments,
-                                        "turn": ev.iteration,
-                                        "session_id": _sid,
-                                    },
-                                }
-                                await _ws.send_json(_tue_msg)
-                                await _broadcast_default_chat_peers(_ws, _tue_msg)
-                                _tc_msg = {
-                                    "type": "tool_call",
-                                    "payload": {
-                                        "name": ev.tool_call.name,
-                                        "arguments": _public_tool_arguments,
-                                        "turn": ev.iteration,
-                                        "session_id": _sid,
-                                    },
-                                }
-                                await _ws.send_json(_tc_msg)
-                                await _broadcast_default_chat_peers(_ws, _tc_msg)
-                                # P6 bugfix 2026-05-14 (history persistence):
-                                # tool_call 也要入 SessionDB，否则重启或 F5 后
-                                # UI 只能看到 user 气泡，看不到 agent 调用过
-                                # 什么工具。schema 早就支持 (role='assistant'
-                                # + tool_calls JSON 列)，main.py 之前没用。
-                                if _sdb is not None:
-                                    try:
-                                        import json as _persist_json
-                                        await _sdb.append_message(
-                                            session_id=_sid,
-                                            role="assistant",
-                                            content="",
-                                            tool_calls=[{
-                                                "id": ev.tool_call.id,
-                                                "type": "function",
-                                                "function": {
-                                                    "name": ev.tool_call.name,
-                                                    "arguments": _persist_json.dumps(
-                                                        ev.tool_call.arguments,
-                                                        ensure_ascii=False,
-                                                    ),
-                                                },
-                                            }],
-                                        )
-                                    except Exception as exc:  # noqa: BLE001
-                                        logger.warning(
-                                            "chat_persist_tool_call_failed",
-                                            error=str(exc),
-                                        )
-                            elif isinstance(ev, _TREv):
-                                try:
-                                    _parsed = json.loads(ev.result)
-                                except Exception:
-                                    _parsed = ev.result
-                                # 2026-06-12: 同 tool_call —— 结果事件也广播
-                                # 给消息面板 peer,工具执行全过程两窗一致。
-                                _public_tool_result = project_public_tool_result(
-                                    ev.tool_name,
-                                    _parsed,
-                                )
-                                _public_tool_result_text = (
-                                    _public_tool_result
-                                    if isinstance(_public_tool_result, str)
-                                    else json.dumps(_public_tool_result, ensure_ascii=False)
-                                )
-                                _tur_msg = {
-                                    "type": "tool_use_event",
-                                    "payload": {
-                                        "kind": "result",
-                                        "tool_name": ev.tool_name,
-                                        "result": _public_tool_result_text,
-                                        "turn": ev.iteration,
-                                        "session_id": _sid,
-                                    },
-                                }
-                                await _ws.send_json(_tur_msg)
-                                await _broadcast_default_chat_peers(_ws, _tur_msg)
-                                _tr_msg = {
-                                    "type": "tool_result",
-                                    "payload": {
-                                        "tool": ev.tool_name,
-                                        "ok": True,  # _TREv only fires on success; failures arrive as _ErrEv
-                                        "result": _public_tool_result_text,
-                                        "turn": ev.iteration,
-                                        "session_id": _sid,
-                                    },
-                                }
-                                await _ws.send_json(_tr_msg)
-                                await _broadcast_default_chat_peers(_ws, _tr_msg)
-                                # P6 bugfix 2026-05-14 (history persistence):
-                                # tool_result 也要入 SessionDB (role='tool'
-                                # + tool_call_id 回指 assistant 的调用)。
-                                if _sdb is not None:
-                                    try:
-                                        import json as _persist_json
-                                        _result_content = (
-                                            ev.result if isinstance(ev.result, str)
-                                            else _persist_json.dumps(ev.result, ensure_ascii=False)
-                                        )
-                                        await _sdb.append_message(
-                                            session_id=_sid,
-                                            role="tool",
-                                            content=_result_content,
-                                            tool_call_id=getattr(ev, "tool_call_id", "") or "",
-                                        )
-                                    except Exception as exc:  # noqa: BLE001
-                                        logger.warning(
-                                            "chat_persist_tool_result_failed",
-                                            error=str(exc),
-                                        )
-                            elif isinstance(ev, _AsyncHandoffEv):
-                                # The durable workflow owns all subsequent UI
-                                # progress and final delivery. End only the
-                                # originating chat turn so the composer does
-                                # not remain stuck on "Stop" while the graph
-                                # continues in the background.
-                                _handoff_final_msg = {
-                                    "type": "chat_v2_final",
-                                    "payload": {
-                                        "text": "",
-                                        "iterations": ev.iteration,
-                                        "session_id": _sid,
-                                        "handoff_run_id": ev.run_id,
-                                    },
-                                }
-                                await _ws.send_json(_handoff_final_msg)
-                                await _broadcast_default_chat_peers(
-                                    _ws, _handoff_final_msg
-                                )
-                            elif isinstance(ev, _FinEv):
-                                final_text = ev.content
-                                final_reasoning = ev.reasoning_content
-                                if (
-                                    _buffer_short_followup_stream
-                                    and _has_image_completion_claim(final_text)
-                                ):
-                                    logger.warning(
-                                        "unsupported_image_completion_claim_blocked "
-                                        "sid=%s text=%s",
-                                        _sid,
-                                        (final_text or "")[:160],
-                                    )
-                                    final_text = (
-                                        "我刚才没有调用图片生成工具，也没有生成图片。"
-                                        "这是一条依赖上文的补充说明；"
-                                        "我会回到前文语境继续回答，而不是把它当作生图请求。"
-                                    )
-                                # P4-S24: persist the assistant row IN-LINE
-                                # so a same-sid cancellation (next user
-                                # message arriving before this task's
-                                # post-loop tail finishes) can't strand
-                                # it. Without this, the next turn's
-                                # history rebuild misses the prior
-                                # assistant entirely. asyncio.shield
-                                # would do too but inlining is simpler
-                                # and the persist cost is sub-ms anyway.
-                                # P6 bugfix 2026-05-14: 即使 final_text 空也
-                                # 持久化（保留 turn 边界）。空文本仍写一条
-                                # role='assistant' 行表示"agent 在此 end_turn
-                                # 了"，让 history 上下文连贯——之前 if
-                                # final_text 的 guard 导致 tool_use loop 后
-                                # 的 end_turn 完全没记录。
-                                if _sdb is not None:
-                                    try:
-                                        _asst_id_inline = await _sdb.append_message(
-                                            session_id=_sid,
-                                            role="assistant",
-                                            content=final_text or "",
-                                            reasoning_content=(final_reasoning or None),
-                                        )
-                                        if (
-                                            _vw is not None
-                                            and _asst_id_inline is not None
-                                            and final_text
-                                        ):
-                                            await _vw.enqueue(_asst_id_inline, final_text)
-                                    except Exception as exc:  # noqa: BLE001
-                                        logger.warning(
-                                            "chat_persist_assistant_failed",
-                                            error=str(exc),
-                                        )
-                                _final_msg = {
-                                    "type": "chat_v2_final",
-                                    "payload": {"text": final_text, "iterations": ev.iteration, "session_id": _sid},
-                                }
-                                await _send_chat_final(
-                                    _ws,
-                                    _final_msg,
-                                    session_id=_sid,
-                                    request_id=_context_request_id,
-                                )
-                                # WI-A1: 记意图记忆 — 本轮真调过工具→"task"，纯回答
-                                # →"ask"。仅 code 模式 + pref_mem + 非 sentinel。
-                                # fire-and-forget，不阻塞 final。record 内部去重。
-                                if _in_code_mode and not _is_sentinel:
-                                    _pref_rec = service_context.get("preference_memory")
-                                    if _pref_rec is not None and _text:
-                                        asyncio.create_task(_pref_rec.record(
-                                            _text,
-                                            _intent_label_from_turn(_had_tool_call),
-                                            "intent",
-                                        ))
-                                # 2026-05-28 context-usage ring: snapshot
-                                # actual LLM prompt_tokens + model window
-                                # and push to all peers.
-                                await _emit_context_usage(
-                                    _ws,
-                                    _sid,
-                                    provider_chain=_provider_chain,
-                                    fallback_provider=local_llm,
-                                )
-                                # P5-S2 Phase 4: if this final came from
-                                # an auto-resume cycle (attempts > 0),
-                                # emit ``auto_resume_succeeded`` so the
-                                # frontend banner can switch to a
-                                # success state. We don't reset the
-                                # counter here — only a fresh USER
-                                # message resets (per spec: the user's
-                                # implicit grant of a new budget).
-                                try:
-                                    _sa_for_check = service_context.get("session_activity")
-                                    if _sa_for_check is not None:
-                                        _sa_obj = await _sa_for_check.get(_sid)
-                                        if _sa_obj is not None and _sa_obj.auto_resume_attempts > 0:
-                                            await _ws.send_json({
-                                                "type": "auto_resume_succeeded",
-                                                "payload": {
-                                                    "session_id": _sid,
-                                                    "attempts": _sa_obj.auto_resume_attempts,
-                                                },
-                                            })
-                                            logger.info(
-                                                "auto_resume_succeeded sid=%s attempts=%d",
-                                                _sid, _sa_obj.auto_resume_attempts,
-                                            )
-                                except Exception as _ex:  # noqa: BLE001
-                                    logger.debug("auto_resume_success_emit_failed sid=%s err=%s", _sid, _ex)
-
-                                # WI-4.3 技能自创闭环（方案 B：codify 抽 helper，FinalEvent +
-                                # ErrorEvent 两处调 → turn 任意路径结束都触发技能自创）。
-                                await _maybe_codify_skill(
-                                    service_context, config, _sid, _ws, _SKILL_CANDIDATE_WAITERS,
-                                )
-
-                            elif isinstance(ev, _ErrEv):
-                                # P5-S2 Phase 4: try AutoResumeOrchestrator
-                                # FIRST for recoverable error reasons. If
-                                # the orchestrator decides to spawn a fresh
-                                # task, we suppress the chat_v2_error to
-                                # the user (the auto_resume_started ws
-                                # event already shows them a banner). If
-                                # it decides ask_user / exhausted, fall
-                                # through to the legacy error emit so the
-                                # user sees the popup as before.
-                                _ar_handled = False
-                                try:
-                                    from agent.auto_resume import is_auto_resume_trigger as _is_ar
-                                    if _is_ar(ev.reason or ""):
-                                        _orch_inst = service_context.get("auto_resume")
-                                        if _orch_inst is not None:
-                                            _snap_for_orch = {
-                                                "session_id": _sid,
-                                                "reason": ev.reason,
-                                                "detail": ev.detail,
-                                                "iteration": ev.iteration,
-                                            }
-                                            _ar_result = await _orch_inst.handle_failure(
-                                                _sid, ev.reason or "", _snap_for_orch, _msgs,
-                                            )
-                                            if _ar_result.action == "spawned":
-                                                # Orchestrator owns the user-facing event now.
-                                                _ar_handled = True
-                                                logger.info(
-                                                    "auto_resume_engaged sid=%s reason=%s attempt=%d",
-                                                    _sid, ev.reason, _ar_result.attempt,
-                                                )
-                                            elif _ar_result.action == "exhausted":
-                                                # auto_resume_exhausted ws event already
-                                                # emitted by orchestrator; suppress legacy
-                                                # error so frontend doesn't double-popup.
-                                                _ar_handled = True
-                                except Exception as _ex:  # noqa: BLE001
-                                    logger.debug("auto_resume_handle_failed sid=%s err=%s", _sid, _ex)
-
-                                if not _ar_handled:
-                                    # P4-S25 (2026-05-09): cross-endpoint
-                                    # fallback removed. LLM errors now
-                                    # surface to the user directly.
-                                    await _ws.send_json({
-                                        "type": "chat_v2_error",
-                                        "payload": {
-                                            "reason": ev.reason,
-                                            "detail": ev.detail,
-                                            "session_id": _sid,
-                                            # WI-R5: relay error code for
-                                            # the frontend friendly message.
-                                            "error_class": getattr(ev, "error_class", "") or "",
-                                        },
-                                    })
-
-                                # WI-4.3 方案 B：turn 经 ErrorEvent（relay ReadError /
-                                # 中止 / 迭代上限）结束时也触发 codify —— 若本 run 已跑
-                                # ≥5 工具，仍能弹技能自创卡（不依赖 turn 干净到 FinalEvent）。
-                                await _maybe_codify_skill(
-                                    service_context, config, _sid, _ws, _SKILL_CANDIDATE_WAITERS,
-                                )
-
-                            # WI-1B-2 压缩可观测: flag ON 时 agent_loop 在压缩命中
-                            # 后 yield 此事件。转一条 ws → 前端在圈圈 gauge 附近浮
-                            # toast「已压缩,省 N token」。flag OFF 时后端根本不 yield,
-                            # 此分支不触发(BC,前端无需额外门控)。
-                            elif isinstance(ev, _CtxCompactedEv):
-                                _cc_msg = {
-                                    "type": "context_compacted",
-                                    "payload": {
-                                        "reduction": getattr(ev, "reduction", 0.0),
-                                        "tokens_in": getattr(ev, "tokens_in", 0),
-                                        "tokens_out": getattr(ev, "tokens_out", 0),
-                                        "model": getattr(ev, "model", "") or "",
-                                        "session_id": _sid,
-                                    },
-                                }
-                                try:
-                                    await _ws.send_json(_cc_msg)
-                                except Exception as exc:  # noqa: BLE001
-                                    logger.debug("context_compacted_ws_failed sid=%s err=%s", _sid, exc)
-
-                            elif isinstance(ev, _PipeEv):
-                                # 七步流水线观测事件（plans/2026-06-24-...）：直接转 ws + 广播 peer。
-                                _p_evt = {"type": ev.type,
-                                          "payload": {"session_id": _sid, **ev.payload}}
-                                try:
-                                    await _ws.send_json(_p_evt)
-                                    await _broadcast_default_chat_peers(_ws, _p_evt)
-                                except Exception as exc:  # noqa: BLE001
-                                    logger.debug("pipeline_event_ws_failed sid=%s err=%s", _sid, exc)
-
+                            await _run_presenter.present(
+                                ev, _presentation_context, _presentation_state
+                            )
+                        final_text = _presentation_state.final_text
+                        final_reasoning = _presentation_state.final_reasoning
+                        _had_tool_call = _presentation_state.had_tool_call
+                        await _run_presenter.finish_turn(
+                            _presentation_context, _presentation_state
+                        )
                         # P4-S24: assistant persistence moved INTO the
                         # FinalEvent handler above so a same-sid task
                         # cancellation (race when user fires the next
@@ -10954,35 +10096,6 @@ async def control_channel(ws: WebSocket):
                         # finish) doesn't strand the assistant row.
                         # The `final_text and _sdb` guard there already
                         # mirrors what this block used to do.
-
-                        # ContextAssembler feedback — 写入这一轮最终
-                        # 响应到决策表，让 ContextTracePanel 能看到时长。
-                        if _bundle is not None and _assembler is not None:
-                            try:
-                                _assembler.feedback(_bundle, final_response=final_text)
-                            except Exception as exc:  # noqa: BLE001
-                                logger.warning("p4_assembler_feedback_failed", error=str(exc))
-
-                        # BillingLedger — 取 provider 的 last_usage 计费。
-                        # 单 endpoint 时统一调 _provider；URL 是 localhost
-                        # 就不会被计费（ledger.record_if_billable 自动判断）。
-                        usage = getattr(_provider, "last_usage", None)
-                        if usage:
-                            try:
-                                _is_local = "localhost" in (
-                                    getattr(_provider, "base_url", "") or ""
-                                ) or "127.0.0.1" in (
-                                    getattr(_provider, "base_url", "") or ""
-                                )
-                                await billing_ledger.record(
-                                    provider="local" if _is_local else "cloud",
-                                    model=getattr(_provider, "model", "unknown"),
-                                    prompt_tokens=int(usage.get("prompt_tokens", 0)),
-                                    completion_tokens=int(usage.get("completion_tokens", 0)),
-                                )
-                            except Exception as exc:  # noqa: BLE001
-                                logger.warning("billing_record_failed", error=str(exc))
-                            _provider.last_usage = None
 
                     except Exception as exc:  # noqa: BLE001
                         # P6 bugfix 2026-05-14 (live-test): ASGI ws-close

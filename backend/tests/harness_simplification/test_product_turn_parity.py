@@ -37,6 +37,7 @@ from pipeline.voice_pipeline import VoicePipeline
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURES = Path(__file__).parent / "fixtures"
 CENSUS_PATH = FIXTURES / "product_turn_parity_census.json"
+MAPPING_PATH = FIXTURES / "product_turn_migration_mapping.json"
 BEHAVIOR_PATH = FIXTURES / "product_turn_behavior_cases.json"
 KEY = b"r0-parity-census-key-32-bytes!!"
 
@@ -62,6 +63,44 @@ def test_generated_census_fixture_is_current() -> None:
     module = _load_census_module()
     generated = module.build_census(ROOT)
     assert generated == _fixture(CENSUS_PATH)
+
+
+def test_migration_mapping_is_complete_and_current() -> None:
+    module = _load_census_module()
+    mapping = module.build_migration_mapping(ROOT)
+    frozen = _fixture(CENSUS_PATH)
+    assert mapping == _fixture(MAPPING_PATH)
+    assert mapping["mapping_count"] == frozen["item_count"] == 141
+    assert [row["legacy_id"] for row in mapping["mappings"]] == [
+        row["id"] for row in frozen["items"]
+    ]
+    assert all(row["legacy_source_hash"] for row in mapping["mappings"])
+    assert all(row["current_source_hash"] for row in mapping["mappings"])
+
+
+@pytest.mark.parametrize(
+    ("path", "validator", "removed"),
+    [
+        (
+            "backend/deskpet/agent/run_presenter.py",
+            "validate_presenter_dual_send_helper",
+            "    await context.broadcast(context.websocket, frame)\n",
+        ),
+        (
+            "backend/deskpet/agent/product_domain_sink.py",
+            "validate_dual_send_helper",
+            "        await self._broadcast(self._ws, projected)\n",
+        ),
+    ],
+)
+def test_dual_send_helpers_fail_closed_when_peer_broadcast_is_deleted(
+    path: str, validator: str, removed: str
+) -> None:
+    module = _load_census_module()
+    source = (ROOT / path).read_text(encoding="utf-8")
+    assert removed in source
+    with pytest.raises(RuntimeError, match="peer broadcast"):
+        getattr(module, validator)(source.replace(removed, "", 1))
 
 
 def test_census_covers_required_product_capabilities() -> None:

@@ -226,7 +226,10 @@ def _inline_tool_result_ok_nodes(path: Path) -> list[ast.expr]:
 )
 @pytest.mark.parametrize(
     "relative_path",
-    [Path("backend/main.py"), Path("backend/pipeline/voice_pipeline.py")],
+    [
+        Path("backend/deskpet/agent/run_presenter.py"),
+        Path("backend/pipeline/voice_pipeline.py"),
+    ],
     ids=["main-text-projection", "voice-projection"],
 )
 def test_expected_red_failed_tool_outcome_is_not_projected_as_success(
