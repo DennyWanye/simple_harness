@@ -12,7 +12,6 @@ import pytest
 from deskpet.harness.context import HostContextFactory
 from deskpet.harness.tool_executor import (
     DecisionAuthorization,
-    LateEffectSupervisor,
     LegacyPreparedCallAdapter,
     PreparedExecutionCall,
     ReservedModelFieldError,
@@ -67,25 +66,6 @@ def _context(call: PreparedExecutionCall):
         call_id=call.call_id,
         effect_id=call.effect_id,
     )
-
-
-class RecordingJournal:
-    def __init__(self) -> None:
-        self.prepared: list[tuple[str, DecisionAuthorization | None]] = []
-        self.unknown: list[tuple[str, str]] = []
-        self.finalized: list[tuple[str, ToolOutcomeStatus, bool]] = []
-        self.late_done = asyncio.Event()
-
-    async def prepare_effect(self, call, context, authorization):
-        self.prepared.append((call.effect_id, authorization))
-
-    async def mark_unknown(self, call, context, reason):
-        self.unknown.append((call.effect_id, reason))
-
-    async def finalize_effect(self, call, context, outcome, *, late):
-        self.finalized.append((call.effect_id, outcome.status, late))
-        if late:
-            self.late_done.set()
 
 
 def _register(
@@ -240,8 +220,6 @@ async def test_permission_accepts_only_exact_decision_authorization_binding() ->
     )
     call = _call("write", requires_authorization=True, recoverable_effect=True)
     context = _context(call)
-    journal = RecordingJournal()
-
     executor = UnifiedToolExecutor(registry)
     wrong_type = await executor.execute_one(
         call, context, authorization={"allow": True}
@@ -294,7 +272,7 @@ async def test_permission_accepts_only_exact_decision_authorization_binding() ->
 
 
 @pytest.mark.asyncio
-async def test_timed_out_sync_write_is_unknown_then_late_finalized_once() -> None:
+async def test_canonical_write_timeout_is_malformed_and_not_reinvoked() -> None:
     registry = ToolRegistry()
     invocations = 0
 
