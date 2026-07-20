@@ -1142,18 +1142,18 @@ async def test_cancel_cascades_only_by_attachment_policy(
         ChildRunCoordinator(uow), AcceptChild(), owner="test-child"
     ).reconcile_once()
     actor = host().actor(root_run_id=handle.root_run_id)
-    children = ()
+    child_links = ()
     for _ in range(100):
-        children = await uow.list_children(handle.ref, actor)
-        if children:
+        child_links = await uow.list_child_links(handle.ref, actor)
+        if child_links:
             break
         await asyncio.sleep(0.01)
-    assert len(children) == 1
+    assert len(child_links) == 1
 
     await value.cancel(handle.ref, actor, "user_stop")
 
     child = await uow.query(
-        type(handle.ref)(children[0].run_id, handle.ref.expected_session_id),
+        type(handle.ref)(child_links[0].child_run_id, handle.ref.expected_session_id),
         actor,
     )
     assert (child.status is RunStatus.CANCELLED) is child_cancelled

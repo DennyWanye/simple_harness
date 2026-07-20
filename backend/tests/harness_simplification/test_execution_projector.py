@@ -310,7 +310,6 @@ async def test_every_partial_failure_subset_isolated_per_sink(
     assert settled["session_db"].attempts == 1 + int(session_fails)
     assert settled["ws"].attempts == 1 + int(ws_fails)
     assert settled["tts"].attempts == 1
-    assert await store.required_deliveries_complete(final.event.event_id) is True
 
 
 @pytest.mark.asyncio
@@ -415,9 +414,6 @@ async def test_expired_claim_is_recovered_and_stale_worker_cannot_ack(tmp_path: 
         owner_generation=1,
     )
     assert delivered.status is DeliveryStatus.DELIVERED
-    assert await restarted_store.required_deliveries_complete(
-        final.event.event_id
-    ) is True
 
 
 @pytest.mark.asyncio
@@ -530,9 +526,6 @@ async def test_terminal_session_message_is_visible_once_after_crash_restart(
     assert len(rows) == 1
     assert rows[0].status is DeliveryStatus.DELIVERED
     assert rows[0].attempts == 2
-    assert await restarted_store.required_deliveries_complete(
-        final.event.event_id
-    ) is True
 
 
 @pytest.mark.asyncio

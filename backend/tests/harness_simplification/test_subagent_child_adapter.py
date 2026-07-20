@@ -215,7 +215,7 @@ async def test_batch_child_restart_runs_parallel_and_reaches_parent_inbox(tmp_pa
 
     foreign = _host("session-b").actor(root_run_id=handle.root_run_id)
     with pytest.raises(AuthorizationError):
-        await fresh_uow.list_children(handle.ref, foreign)
+        await fresh_uow.list_child_links(handle.ref, foreign)
     with pytest.raises(AuthorizationError):
         await fresh_kernel.cancel(child_ref, foreign, "cross-session")
 

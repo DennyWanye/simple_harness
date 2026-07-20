@@ -956,36 +956,6 @@ class SqliteExecutionUnitOfWork:
             await db.commit()
             return CreateRunResult(self._row_to_record(row), created)
 
-    async def promote(
-        self,
-        spec: RunCreate,
-        *,
-        expected_version: int,
-    ) -> CreateRunResult:
-        if spec.persistence_level is not PersistenceLevel.DURABLE:
-            raise PersistenceRequired(
-                "invalid_promotion", "promotion target must be durable"
-            )
-        if expected_version < 0:
-            raise VersionConflict("invalid_version", "expected_version must be non-negative")
-        async with self._write_transaction() as db:
-            expected_owner = await self._required_start_owner_tx(db)
-            existing = await self._existing_for_spec(db, spec)
-            if existing is not None:
-                self._assert_run_owner(existing, expected_owner)
-                if str(existing["persistence_level"]) != PersistenceLevel.DURABLE.value:
-                    raise PersistenceRequired(
-                        "promotion_not_durable", "persisted promotion is not durable"
-                    )
-                await db.commit()
-                return CreateRunResult(self._row_to_record(existing), False)
-            row, created = await self._insert_run_tx(
-                db, spec, version=expected_version + 1
-            )
-            self._fault("promote_after_run")
-            await db.commit()
-            return CreateRunResult(self._row_to_record(row), created)
-
     @staticmethod
     def _event_json(candidate: RunEventCandidate) -> dict[str, str | None]:
         return {
@@ -1579,28 +1549,6 @@ class SqliteExecutionUnitOfWork:
             await db.commit()
             return released
 
-    async def required_deliveries_complete(self, event_id: str) -> bool:
-        async with self._read_connection() as db:
-            event = await (
-                await db.execute(
-                    "SELECT event_id FROM execution_events WHERE event_id=?",
-                    (event_id,),
-                )
-            ).fetchone()
-            if event is None:
-                raise EventNotFound(
-                    "event_not_found", f"execution event does not exist: {event_id}"
-                )
-            remaining = await (
-                await db.execute(
-                    """SELECT COUNT(*) FROM execution_deliveries
-                    WHERE event_id=? AND policy='durable_required'
-                    AND status!='delivered'""",
-                    (event_id,),
-                )
-            ).fetchone()
-            return int(remaining[0]) == 0
-
     @staticmethod
     def _row_to_continuation(row: Mapping[str, Any]) -> ContinuationRecord:
         payload = json.loads(str(row["pending_prepared_call_json"]))
@@ -1956,31 +1904,6 @@ class SqliteExecutionUnitOfWork:
                 )
             ).fetchone()
             return self._row_to_continuation(row) if row is not None else None
-
-    async def delete_continuation(
-        self, run_id: str, expected_version: int, *, recovery_lease: RecoveryLease | None = None
-    ) -> None:
-        if (
-            not isinstance(expected_version, int)
-            or isinstance(expected_version, bool)
-            or expected_version < 1
-        ):
-            raise ValueError("expected_version must be positive")
-        async with self._write_transaction() as db:
-            await self._assert_optional_recovery_fence_tx(db, recovery_lease, run_id)
-            await self._continuation_run_tx(db, run_id)
-            cursor = await db.execute(
-                """DELETE FROM execution_continuations
-                WHERE run_id=? AND continuation_version=?""",
-                (run_id, expected_version),
-            )
-            if cursor.rowcount != 1:
-                raise VersionConflict(
-                    "stale_continuation_version",
-                    "continuation changed before the delete CAS",
-                )
-            self._fault("continuation_delete_before_commit")
-            await db.commit()
 
     @staticmethod
     def _assert_decision_intent(
@@ -4068,122 +3991,6 @@ class SqliteExecutionUnitOfWork:
             await db.commit()
             return record, continuation, stored_event
 
-    async def link(
-        self,
-        link: RunLinkSpec,
-        *,
-        expected_child_version: int,
-    ) -> RunRecord:
-        async with self._write_transaction() as db:
-            parent = await (
-                await db.execute(
-                    "SELECT * FROM execution_runs WHERE run_id=?", (link.parent_run_id,)
-                )
-            ).fetchone()
-            child = await (
-                await db.execute(
-                    "SELECT * FROM execution_runs WHERE run_id=?", (link.child_run_id,)
-                )
-            ).fetchone()
-            if parent is None or child is None:
-                raise RunNotFound(
-                    "run_not_found", "both parent and child must exist before linking"
-                )
-            if (
-                str(parent["session_id"]) != str(child["session_id"])
-                or str(parent["root_run_id"]) != link.root_run_id
-                or str(child["root_run_id"]) != link.root_run_id
-            ):
-                raise RunIdentityConflict(
-                    "link_scope_conflict", "run link crosses a session or root boundary"
-                )
-            if link.link_kind is LinkKind.STRUCTURAL:
-                cycle = await (
-                    await db.execute(
-                        """WITH RECURSIVE descendants(run_id) AS (
-                            SELECT child_run_id FROM execution_run_links
-                            WHERE parent_run_id=? AND link_kind='structural'
-                            UNION
-                            SELECT link.child_run_id FROM execution_run_links AS link
-                            JOIN descendants ON link.parent_run_id=descendants.run_id
-                            WHERE link.link_kind='structural'
-                        ) SELECT 1 FROM descendants WHERE run_id=? LIMIT 1""",
-                        (link.child_run_id, link.parent_run_id),
-                    )
-                ).fetchone()
-                if cycle is not None:
-                    raise ParentCycleError(
-                        "parent_cycle", "run link would create a parent cycle"
-                    )
-                if str(child["parent_run_id"] or "") != link.parent_run_id:
-                    raise RunIdentityConflict(
-                        "parent_link_conflict",
-                        "child RunContext names a different parent",
-                    )
-            existing = await (
-                await db.execute(
-                    "SELECT * FROM execution_run_links WHERE link_id=?", (link.link_id,)
-                )
-            ).fetchone()
-            expected_link = {
-                "root_run_id": link.root_run_id,
-                "parent_run_id": link.parent_run_id,
-                "child_run_id": link.child_run_id,
-                "attachment_policy": link.attachment_policy.value,
-                "link_kind": link.link_kind.value,
-                "domain_kind": link.domain_kind or "",
-                "domain_id": link.domain_id or "",
-            }
-            if existing is not None:
-                if any(str(existing[key]) != value for key, value in expected_link.items()):
-                    raise IdempotencyConflict(
-                        "link_intent_conflict", "link_id already names another relation"
-                    )
-                await db.commit()
-                return self._row_to_record(child)
-            if int(child["version"]) != expected_child_version:
-                raise VersionConflict(
-                    "stale_run_version",
-                    f"expected child version {expected_child_version}, found {child['version']}",
-                )
-            await db.execute(
-                """INSERT INTO execution_run_links(
-                link_id,schema_version,root_run_id,parent_run_id,child_run_id,
-                attachment_policy,link_kind,domain_kind,domain_id,created_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                (
-                    link.link_id,
-                    link.schema_version,
-                    link.root_run_id,
-                    link.parent_run_id,
-                    link.child_run_id,
-                    link.attachment_policy.value,
-                    link.link_kind.value,
-                    link.domain_kind or "",
-                    link.domain_id or "",
-                    self._clock(),
-                ),
-            )
-            cursor = await db.execute(
-                """UPDATE execution_runs SET version=version+1,updated_at=?
-                WHERE run_id=? AND version=? AND terminal_event_id IS NULL""",
-                (self._clock(), link.child_run_id, expected_child_version),
-            )
-            if cursor.rowcount != 1:
-                raise VersionConflict(
-                    "stale_run_version", "child changed before link commit"
-                )
-            self._fault("link_before_commit")
-            updated = await (
-                await db.execute(
-                    "SELECT * FROM execution_runs WHERE run_id=?",
-                    (link.child_run_id,),
-                )
-            ).fetchone()
-            assert updated is not None
-            await db.commit()
-            return self._row_to_record(updated)
-
     @staticmethod
     def _legacy_status(value: str) -> RunStatus:
         return {
@@ -4311,47 +4118,6 @@ class SqliteExecutionUnitOfWork:
 
     async def query(self, ref: RunRef, actor: ActorContext) -> RunView:
         return await self.authorize(ref, actor, ActorAction.OBSERVE)
-
-    async def list_children(
-        self,
-        ref: RunRef,
-        actor: ActorContext,
-    ) -> tuple[RunRecord, ...]:
-        parent = await self.authorize(ref, actor, ActorAction.OBSERVE)
-        if isinstance(parent, LegacyRunProjection):
-            return ()
-        async with self._read_connection() as db:
-            rows = await (
-                await db.execute(
-                    """SELECT run.* FROM execution_run_links AS link
-                    JOIN execution_runs AS run ON run.run_id=link.child_run_id
-                    WHERE link.parent_run_id=? AND link.link_kind='structural'
-                    ORDER BY run.created_at,run.run_id""",
-                    (ref.run_id,),
-                )
-            ).fetchall()
-            children = tuple(self._row_to_record(row) for row in rows)
-            for child in children:
-                self._authorize_view(
-                    RunRef(child.run_id, ref.expected_session_id), actor, child
-                )
-            return children
-
-    async def inspect_authorization(
-        self,
-        request: GrantConsume,
-        actor: ActorContext,
-    ) -> DecisionAuthorization:
-        """Validate an issued grant without consuming it before Effect UoW."""
-
-        now = float(self._clock())
-        async with self._read_connection() as db:
-            grant_row = await self._inspect_authorization_tx(db, request, actor)
-            if float(grant_row["expires_at"]) <= now:
-                raise GrantConsumeConflict(
-                    "grant_not_authorized", "authorization is denied or expired"
-                )
-            return self._row_to_authorization(grant_row)
 
     async def list_child_links(
         self,

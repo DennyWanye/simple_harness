@@ -88,7 +88,7 @@ async def test_save_and_load_continuation_survives_restart_with_full_json(tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_continuation_save_and_delete_use_strict_cas(tmp_path):
+async def test_continuation_save_uses_strict_cas(tmp_path):
     path = tmp_path / "cas.db"
     store = await _open_store(path)
     await store.create(_spec("run-1"))
@@ -101,13 +101,6 @@ async def test_continuation_save_and_delete_use_strict_cas(tmp_path):
         await store.save_continuation("run-1", first.version, {"step": 99})
     assert stale_save.value.code == "continuation_replay_conflict"
     assert (await store.load_continuation("run-1")) == second
-
-    with pytest.raises(VersionConflict) as stale_delete:
-        await store.delete_continuation("run-1", first.version)
-    assert stale_delete.value.code == "stale_continuation_version"
-    await store.delete_continuation("run-1", second.version)
-    assert await store.load_continuation("run-1") is None
-
 
 @pytest.mark.asyncio
 async def test_continuation_and_pending_decision_commit_atomically(tmp_path):
