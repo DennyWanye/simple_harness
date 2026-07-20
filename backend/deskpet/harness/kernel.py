@@ -295,10 +295,14 @@ class RunKernel:
             active = self._active.setdefault(ref.run_id, _ActiveRun(actor=actor))
             start = max(0, int(cursor or 0))
             history = tuple(active.events[start:])
-            active.subscribers.append(queue)
+            terminal_in_history = any(self._is_terminal_event(event) for event in history)
+            if not terminal_in_history:
+                active.subscribers.append(queue)
         try:
             for event in history:
                 yield event
+            if terminal_in_history:
+                return
             while True:
                 event = await queue.get()
                 if event is None:
@@ -506,12 +510,16 @@ class RunKernel:
             },
         )
 
-    async def _emit(self, event: RunEvent) -> None:
-        terminal = event.kind == "final" and event.status in {
+    @staticmethod
+    def _is_terminal_event(event: RunEvent) -> bool:
+        return event.kind == "final" and event.status in {
             OutcomeStatus.SUCCEEDED,
             OutcomeStatus.FAILED,
             OutcomeStatus.CANCELLED,
         }
+
+    async def _emit(self, event: RunEvent) -> None:
+        terminal = self._is_terminal_event(event)
         async with self._lock:
             active = self._active.get(event.run_id)
             if active is None:

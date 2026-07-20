@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from deskpet.execution.contracts import ActorContext
@@ -86,6 +88,14 @@ async def test_bootstrap_exports_manifest_from_actual_registrations(tmp_path) ->
     )
     events = [event async for event in handle.events]
     assert events[-1].candidate.payload["text"] == "ok"
+
+    second = await runtime.run_client.start(
+        {"text": "late", "request_id": "request-2", "turn_id": "turn-2"},
+        {"session_id": "session-1", "venue": "text"},
+    )
+    await asyncio.sleep(0.02)
+    late_events = [event async for event in second.events]
+    assert late_events[-1].kind == "final"
 
 
 @pytest.mark.asyncio
