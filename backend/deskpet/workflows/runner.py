@@ -303,6 +303,8 @@ class WorkflowRunner:
         state: object,
         context: WorkflowContext | None = None,
     ) -> WorkflowRunResult:
+        if await self._owner_uow.get_execution_owner(run_id) is not None:
+            raise RuntimeError("legacy workflow run rejects an execution-owned run")
         return await self._execute(run_id, state=state, responses=None, context=context)
 
     async def run_precreated(
@@ -332,6 +334,8 @@ class WorkflowRunner:
     ) -> WorkflowRunResult:
         if not responses:
             raise ValueError("workflow resume requires at least one response")
+        if await self._owner_uow.get_execution_owner(run_id) is not None:
+            raise RuntimeError("legacy workflow resume rejects an execution-owned run")
         lock = self._run_locks.setdefault(run_id, asyncio.Lock())
         async with lock:
             row = await self._require_run(run_id)

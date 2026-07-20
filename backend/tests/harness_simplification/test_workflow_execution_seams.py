@@ -11,6 +11,7 @@ from deskpet.workflows.definition import WorkflowManifest
 from deskpet.workflows.execution_ports import WorkflowExecutionPorts
 from deskpet.workflows.lease import transition_run
 from deskpet.workflows.launcher import WorkflowLauncher
+from deskpet.workflows.ipc import WorkflowIPCDispatcher
 from deskpet.workflows.runner import WorkflowRegistry, WorkflowRunResult, WorkflowRunner
 from deskpet.workflows.service import WorkflowService, WorkflowServiceError
 from deskpet.workflows.store import NativeCheckpointStore, RunFence, WorkflowRunStore
@@ -743,6 +744,66 @@ async def test_legacy_delivery_scan_skips_execution_row_and_continues_batch(tmp_
                 owned_event["deliveries"][0]["delivery_id"], expected_version=0
             )
         assert delivery_exc.value.code == "execution_owner"
+
+
+@pytest.mark.asyncio
+async def test_ipc_cancel_routes_execution_owner_to_canonical_cancel(tmp_path):
+    path = tmp_path / "ipc-cancel-owner.db"
+    service, _, _, _, ports = _stack(path)
+    prepared = _prepared(service, "code", "v1", suffix="ipc-cancel")
+    await service.start_prepared(
+        prepared, service.execution_spec(prepared), execution_ports=ports
+    )
+
+    response = await WorkflowIPCDispatcher(service).dispatch({
+        "type": "workflow_run_cancel", "request_id": "cancel-1",
+        "payload": {"run_id": prepared.run_id, "reason": "ipc-user"},
+    })
+    assert response["ok"] is True
+    assert response["payload"]["status"] == "cancel_requested"
+    db = sqlite3.connect(path)
+    try:
+        assert db.execute(
+            "SELECT status,cancel_reason FROM execution_runs WHERE run_id=?",
+            (prepared.run_id,),
+        ).fetchone() == ("cancel_requested", "ipc-user")
+        assert db.execute(
+            "SELECT status FROM workflow_runs WHERE run_id=?", (prepared.run_id,)
+        ).fetchone()[0] == "cancel_requested"
+    finally:
+        db.close()
+
+
+@pytest.mark.asyncio
+async def test_execution_owner_rejects_service_and_runner_legacy_resume_bypasses(tmp_path):
+    path = tmp_path / "resume-owner-bypasses.db"
+    service, runner, _, _, ports = _stack(path)
+    prepared = _prepared(service, "code", "v1", suffix="resume-bypass")
+    await service.start_prepared(
+        prepared, service.execution_spec(prepared), execution_ports=ports
+    )
+    state = {"run_id": prepared.run_id, "values": {}}
+
+    with pytest.raises(WorkflowServiceError) as service_error:
+        await service.resume_run(prepared.run_id, {"interrupt": "approved"}, trusted=True)
+    assert service_error.value.code == "execution_owner"
+    with pytest.raises(RuntimeError, match="execution-owned"):
+        await runner.run(prepared.run_id, state, WorkflowContext())
+    with pytest.raises(RuntimeError, match="execution-owned"):
+        await runner.resume(
+            prepared.run_id, {"interrupt": "approved"}, WorkflowContext()
+        )
+    db = sqlite3.connect(path)
+    try:
+        assert db.execute(
+            "SELECT status FROM execution_runs WHERE run_id=?", (prepared.run_id,)
+        ).fetchone()[0] == "created"
+        assert db.execute(
+            "SELECT status,head_checkpoint_id FROM workflow_runs WHERE run_id=?",
+            (prepared.run_id,),
+        ).fetchone() == ("created", None)
+    finally:
+        db.close()
 
 
 @pytest.mark.asyncio

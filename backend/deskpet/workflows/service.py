@@ -1347,6 +1347,7 @@ class WorkflowService:
         uses_launcher = callable(method)
         if not callable(method):
             method = getattr(self.runner, "resume", None)
+            await self.require_legacy_owner(run_id, "resume")
         if not callable(method):
             raise WorkflowServiceError(
                 "workflow_resume_unavailable", "The workflow runner cannot resume runs"
@@ -1358,6 +1359,8 @@ class WorkflowService:
     resume = resume_run
 
     async def cancel_run(self, run_id: str, *, reason: str = "user") -> dict[str, Any]:
+        if await self.execution_owner(run_id) is not None:
+            return _plain(await self.cancel_precreated(run_id, reason))
         method = getattr(self.runner, "request_cancel", None)
         if not callable(method):
             raise WorkflowServiceError(
