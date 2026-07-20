@@ -192,6 +192,333 @@ def hydrate_event(
     }
 
 
+def _normalize_deliveries(
+    deliveries: Iterable[tuple[str, str] | Mapping[str, str]],
+) -> list[tuple[str, str]]:
+    result: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in deliveries:
+        if isinstance(item, Mapping):
+            channel = str(item.get("channel", ""))
+            target_id = str(item.get("target_id", ""))
+        else:
+            channel, target_id = item
+        normalized = (str(channel).strip().lower(), _normalized_target(target_id))
+        if not normalized[0]:
+            raise ValueError("delivery channel must not be empty")
+        if normalized not in seen:
+            seen.add(normalized)
+            result.append(normalized)
+    return result
+
+
+async def enqueue_event_tx(
+    connection: aiosqlite.Connection,
+    *,
+    run_id: str,
+    event_key: str,
+    event_type: str,
+    payload: Mapping[str, JsonValue],
+    deliveries: Iterable[tuple[str, str] | Mapping[str, str]] = (),
+    now: float,
+) -> dict[str, Any]:
+    """Enqueue one event using the caller-owned transaction and connection."""
+
+    validate_json_value(dict(payload), path="$.payload")
+    payload_json = canonical_json(dict(payload))
+    normalized_deliveries = _normalize_deliveries(deliveries)
+    event_id = stable_event_id(run_id, event_key)
+    event = await (
+        await connection.execute(
+            "SELECT * FROM workflow_events WHERE run_id=? AND event_key=?",
+            (run_id, event_key),
+        )
+    ).fetchone()
+    if event is None:
+        seq_row = await (
+            await connection.execute(
+                """UPDATE workflow_runs SET event_seq=event_seq+1,updated_at=?
+                WHERE run_id=? RETURNING event_seq""",
+                (now, run_id),
+            )
+        ).fetchone()
+        if seq_row is None:
+            raise OutboxError("run_not_found", f"Workflow run does not exist: {run_id}")
+        await connection.execute(
+            """INSERT INTO workflow_events(
+                event_id,event_key,run_id,seq,event_type,payload_json,created_at
+            ) VALUES(?,?,?,?,?,?,?)""",
+            (
+                event_id,
+                event_key,
+                run_id,
+                int(seq_row["event_seq"]),
+                event_type,
+                payload_json,
+                now,
+            ),
+        )
+        event = await (
+            await connection.execute(
+                "SELECT * FROM workflow_events WHERE event_id=?", (event_id,)
+            )
+        ).fetchone()
+    elif (
+        str(event["event_id"]) != event_id
+        or str(event["event_type"]) != event_type
+        or canonical_json(json.loads(str(event["payload_json"]))) != payload_json
+    ):
+        raise OutboxError(
+            "outbox_intent_conflict",
+            "The logical workflow event already exists with different content",
+        )
+
+    for channel, target_id in normalized_deliveries:
+        delivery_id = stable_delivery_id(event_id, channel, target_id)
+        existing = await (
+            await connection.execute(
+                """SELECT * FROM workflow_deliveries
+                WHERE event_id=? AND channel=? AND target_id=?""",
+                (event_id, channel, target_id),
+            )
+        ).fetchone()
+        if existing is None:
+            await connection.execute(
+                """INSERT INTO workflow_deliveries(
+                    delivery_id,event_id,run_id,channel,target_id,status,
+                    created_at,updated_at
+                ) VALUES(?,?,?,?,?,'pending',?,?)""",
+                (delivery_id, event_id, run_id, channel, target_id, now, now),
+            )
+        elif str(existing["delivery_id"]) != delivery_id:
+            raise OutboxError(
+                "delivery_identity_conflict",
+                "The workflow delivery identity does not match its logical target",
+            )
+
+    assert event is not None
+    delivery_rows = await (
+        await connection.execute(
+            """SELECT * FROM workflow_deliveries
+            WHERE event_id=? ORDER BY created_at,delivery_id""",
+            (event_id,),
+        )
+    ).fetchall()
+    result = hydrate_event(dict(event))
+    result["deliveries"] = [_delivery_dict(row) for row in delivery_rows]
+    return result
+
+
+async def mutate_delivery_tx(
+    connection: aiosqlite.Connection,
+    delivery_id: str,
+    *,
+    action: str,
+    expected_version: int,
+    now: float,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    """CAS one delivery using the caller-owned transaction and connection."""
+
+    if (
+        isinstance(expected_version, bool)
+        or not isinstance(expected_version, int)
+        or expected_version < 0
+    ):
+        raise ValueError("expected_version must be a non-negative integer")
+    normalized_action = str(action).strip().lower()
+    if normalized_action not in {"retry", "discard", "delivered", "failed", "begin"}:
+        raise ValueError(f"unsupported delivery action: {action}")
+    audit_key = f"delivery:{delivery_id}:{normalized_action}:v{expected_version}"
+    row = await (
+        await connection.execute(
+            "SELECT * FROM workflow_deliveries WHERE delivery_id=?",
+            (delivery_id,),
+        )
+    ).fetchone()
+    if row is None:
+        raise OutboxError("delivery_not_found", f"Workflow delivery does not exist: {delivery_id}")
+    prior_audit = await (
+        await connection.execute(
+            "SELECT * FROM workflow_events WHERE run_id=? AND event_key=?",
+            (row["run_id"], audit_key),
+        )
+    ).fetchone()
+    if prior_audit is not None:
+        current = await (
+            await connection.execute(
+                "SELECT * FROM workflow_deliveries WHERE delivery_id=?",
+                (delivery_id,),
+            )
+        ).fetchone()
+        assert current is not None
+        return {
+            "delivery": _delivery_dict(current),
+            "audit_event": hydrate_event(dict(prior_audit)),
+            "idempotent": True,
+        }
+
+    current_version = int(row["delivery_version"])
+    if current_version != expected_version:
+        raise OutboxError(
+            "stale_delivery_version",
+            "Workflow delivery changed before this mutation",
+            current_version=current_version,
+        )
+    current_status = str(row["status"])
+    is_v6 = row["manifest_ref"] is not None
+    attempts = int(row["attempts"])
+    if normalized_action == "retry":
+        if is_v6:
+            raise OutboxError(
+                "delivery_retry_forbidden",
+                "V6 delivery retries are controlled only by the frozen outbox policy",
+                current_version=current_version,
+            )
+        if current_status == "delivered":
+            raise OutboxError(
+                "delivery_already_delivered",
+                "A delivered workflow event cannot be retried",
+                current_version=current_version,
+            )
+        values = ("pending", now, None, None, None, 0)
+    elif normalized_action == "discard":
+        if is_v6 and (
+            current_status != "delivering" or not str(reason or "").startswith("fenced:")
+        ):
+            raise OutboxError(
+                "delivery_fence_invalid",
+                "V6 delivery can be fenced only from an active typed attempt",
+                current_version=current_version,
+            )
+        if current_status == "delivered":
+            raise OutboxError(
+                "delivery_already_delivered",
+                "A delivered workflow event cannot be discarded",
+                current_version=current_version,
+            )
+        values = ("discarded", None, reason, None, None, 0)
+    elif normalized_action == "delivered":
+        if is_v6 and current_status != "delivering":
+            raise OutboxError(
+                "delivery_not_active",
+                "V6 delivery success requires an active claimed attempt",
+                current_version=current_version,
+            )
+        values = ("delivered", None, None, now, None, 0)
+    elif normalized_action == "failed":
+        if is_v6:
+            if current_status != "delivering" or not (1 <= attempts <= 5):
+                raise OutboxError(
+                    "delivery_not_active",
+                    "V6 delivery failure requires an active claimed attempt",
+                    current_version=current_version,
+                )
+            backoffs = (1.0, 2.0, 4.0, 8.0)
+            next_attempt = now + backoffs[attempts - 1] if 1 <= attempts < 5 else None
+            values = (
+                "failed",
+                next_attempt,
+                reason or "handler_contract_error",
+                None,
+                None,
+                0,
+            )
+        else:
+            values = ("failed", now, reason or "delivery_failed", None, None, 0)
+    else:
+        v6_claimable = (
+            (current_status == "pending" and attempts == 0)
+            or (
+                current_status == "failed"
+                and attempts < 5
+                and row["next_attempt_at"] is not None
+                and float(row["next_attempt_at"]) <= now
+            )
+        )
+        if (is_v6 and not v6_claimable) or (
+            not is_v6 and current_status not in {"pending", "failed"}
+        ):
+            raise OutboxError(
+                "delivery_not_claimable",
+                f"Delivery cannot begin from status {current_status}",
+                current_version=current_version,
+            )
+        values = ("delivering", None, None, None, now + 30.0 if is_v6 else None, 1)
+
+    status, next_attempt_at, last_error, delivered_at, claim_expires_at, attempts_delta = values
+    cursor = await connection.execute(
+        """UPDATE workflow_deliveries SET status=?,next_attempt_at=?,last_error=?,
+        delivered_at=?,claim_expires_at=?,attempts=attempts+?,
+        delivery_version=delivery_version+1,updated_at=?
+        WHERE delivery_id=? AND delivery_version=?""",
+        (
+            status,
+            next_attempt_at,
+            last_error,
+            delivered_at,
+            claim_expires_at,
+            attempts_delta,
+            now,
+            delivery_id,
+            expected_version,
+        ),
+    )
+    if cursor.rowcount != 1:
+        raise OutboxError(
+            "stale_delivery_version",
+            "Workflow delivery changed before this mutation",
+            current_version=current_version,
+        )
+    updated = await (
+        await connection.execute(
+            "SELECT * FROM workflow_deliveries WHERE delivery_id=?", (delivery_id,)
+        )
+    ).fetchone()
+    assert updated is not None
+    delivery = _delivery_dict(updated)
+    audit_payload: dict[str, JsonValue] = {
+        "action": normalized_action,
+        "reason": reason,
+        "delivery": delivery,
+    }
+    seq = await (
+        await connection.execute(
+            """UPDATE workflow_runs SET event_seq=event_seq+1,updated_at=?
+            WHERE run_id=? RETURNING event_seq""",
+            (now, row["run_id"]),
+        )
+    ).fetchone()
+    if seq is None:
+        raise OutboxError("run_not_found", "Workflow delivery has no owning run")
+    audit_id = stable_event_id(str(row["run_id"]), audit_key)
+    await connection.execute(
+        """INSERT INTO workflow_events(
+            event_id,event_key,run_id,seq,event_type,payload_json,created_at
+        ) VALUES(?,?,?,?,?,?,?)""",
+        (
+            audit_id,
+            audit_key,
+            row["run_id"],
+            int(seq["event_seq"]),
+            "delivery.audit",
+            canonical_json(audit_payload),
+            now,
+        ),
+    )
+    audit = await (
+        await connection.execute(
+            "SELECT * FROM workflow_events WHERE event_id=?", (audit_id,)
+        )
+    ).fetchone()
+    assert audit is not None
+    return {
+        "delivery": delivery,
+        "audit_event": hydrate_event(dict(audit)),
+        "idempotent": False,
+    }
+
+
 class WorkflowOutbox:
     """Persistence facade for workflow events and per-channel deliveries."""
 
@@ -209,26 +536,6 @@ class WorkflowOutbox:
         await self.store.initialize()
         return await self.store._connect()
 
-    @staticmethod
-    def _normalize_deliveries(
-        deliveries: Iterable[tuple[str, str] | Mapping[str, str]],
-    ) -> list[tuple[str, str]]:
-        result: list[tuple[str, str]] = []
-        seen: set[tuple[str, str]] = set()
-        for item in deliveries:
-            if isinstance(item, Mapping):
-                channel = str(item.get("channel", ""))
-                target_id = str(item.get("target_id", ""))
-            else:
-                channel, target_id = item
-            normalized = (str(channel).strip().lower(), _normalized_target(target_id))
-            if not normalized[0]:
-                raise ValueError("delivery channel must not be empty")
-            if normalized not in seen:
-                seen.add(normalized)
-                result.append(normalized)
-        return result
-
     async def ensure_event(
         self,
         *,
@@ -240,93 +547,27 @@ class WorkflowOutbox:
     ) -> dict[str, Any]:
         """Create one logical event and its delivery rows idempotently."""
 
-        validate_json_value(dict(payload), path="$.payload")
-        payload_json = canonical_json(dict(payload))
-        normalized_deliveries = self._normalize_deliveries(deliveries)
-        event_id = stable_event_id(run_id, event_key)
         now = self._clock()
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
-            event = await (
-                await db.execute(
-                    "SELECT * FROM workflow_events WHERE run_id=? AND event_key=?",
-                    (run_id, event_key),
-                )
-            ).fetchone()
-            if event is None:
-                seq_row = await (
-                    await db.execute(
-                        """UPDATE workflow_runs SET event_seq=event_seq+1,updated_at=?
-                        WHERE run_id=? RETURNING event_seq""",
-                        (now, run_id),
-                    )
-                ).fetchone()
-                if seq_row is None:
-                    raise OutboxError("run_not_found", f"Workflow run does not exist: {run_id}")
-                await db.execute(
-                    """INSERT INTO workflow_events(
-                        event_id,event_key,run_id,seq,event_type,payload_json,created_at
-                    ) VALUES(?,?,?,?,?,?,?)""",
-                    (
-                        event_id,
-                        event_key,
-                        run_id,
-                        int(seq_row["event_seq"]),
-                        event_type,
-                        payload_json,
-                        now,
-                    ),
-                )
-                event = await (
-                    await db.execute("SELECT * FROM workflow_events WHERE event_id=?", (event_id,))
-                ).fetchone()
-            elif (
-                str(event["event_id"]) != event_id
-                or str(event["event_type"]) != event_type
-                or canonical_json(json.loads(str(event["payload_json"]))) != payload_json
-            ):
-                raise OutboxError(
-                    "outbox_intent_conflict",
-                    "The logical workflow event already exists with different content",
-                )
-
-            for channel, target_id in normalized_deliveries:
-                delivery_id = stable_delivery_id(event_id, channel, target_id)
-                existing = await (
-                    await db.execute(
-                        """SELECT * FROM workflow_deliveries
-                        WHERE event_id=? AND channel=? AND target_id=?""",
-                        (event_id, channel, target_id),
-                    )
-                ).fetchone()
-                if existing is None:
-                    await db.execute(
-                        """INSERT INTO workflow_deliveries(
-                            delivery_id,event_id,run_id,channel,target_id,status,
-                            created_at,updated_at
-                        ) VALUES(?,?,?,?,?,'pending',?,?)""",
-                        (delivery_id, event_id, run_id, channel, target_id, now, now),
-                    )
-                elif str(existing["delivery_id"]) != delivery_id:
-                    raise OutboxError(
-                        "delivery_identity_conflict",
-                        "The workflow delivery identity does not match its logical target",
-                    )
-
+            result = await enqueue_event_tx(
+                db,
+                run_id=run_id,
+                event_key=event_key,
+                event_type=event_type,
+                payload=payload,
+                deliveries=deliveries,
+                now=now,
+            )
             await db.commit()
-            assert event is not None
-            event_row = dict(event)
+            return result
         except BaseException:
             if db.in_transaction:
                 await db.rollback()
             raise
         finally:
             await db.close()
-
-        result = hydrate_event(event_row)
-        result["deliveries"] = await self.list_event_deliveries(event_id)
-        return result
 
     async def get_event(self, event_id: str) -> dict[str, Any] | None:
         db = await self._connect()
@@ -563,212 +804,20 @@ class WorkflowOutbox:
     ) -> dict[str, Any]:
         """CAS a delivery and append its durable audit event atomically."""
 
-        if (
-            isinstance(expected_version, bool)
-            or not isinstance(expected_version, int)
-            or expected_version < 0
-        ):
-            raise ValueError("expected_version must be a non-negative integer")
-        normalized_action = str(action).strip().lower()
-        if normalized_action not in {"retry", "discard", "delivered", "failed", "begin"}:
-            raise ValueError(f"unsupported delivery action: {action}")
         now = self._clock()
-        audit_key = f"delivery:{delivery_id}:{normalized_action}:v{expected_version}"
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
-            row = await (
-                await db.execute(
-                    "SELECT * FROM workflow_deliveries WHERE delivery_id=?",
-                    (delivery_id,),
-                )
-            ).fetchone()
-            if row is None:
-                raise OutboxError(
-                    "delivery_not_found", f"Workflow delivery does not exist: {delivery_id}"
-                )
-            prior_audit = await (
-                await db.execute(
-                    "SELECT * FROM workflow_events WHERE run_id=? AND event_key=?",
-                    (row["run_id"], audit_key),
-                )
-            ).fetchone()
-            if prior_audit is not None:
-                await db.commit()
-                current = await self.get_delivery(delivery_id)
-                assert current is not None
-                return {
-                    "delivery": current,
-                    "audit_event": hydrate_event(dict(prior_audit)),
-                    "idempotent": True,
-                }
-
-            current_version = int(row["delivery_version"])
-            if current_version != expected_version:
-                raise OutboxError(
-                    "stale_delivery_version",
-                    "Workflow delivery changed before this mutation",
-                    current_version=current_version,
-                )
-            current_status = str(row["status"])
-            is_v6 = row["manifest_ref"] is not None
-            attempts = int(row["attempts"])
-            if normalized_action == "retry":
-                if is_v6:
-                    raise OutboxError(
-                        "delivery_retry_forbidden",
-                        "V6 delivery retries are controlled only by the frozen outbox policy",
-                        current_version=current_version,
-                    )
-                if current_status == "delivered":
-                    raise OutboxError(
-                        "delivery_already_delivered",
-                        "A delivered workflow event cannot be retried",
-                        current_version=current_version,
-                    )
-                values = ("pending", now, None, None, None, 0)
-            elif normalized_action == "discard":
-                if is_v6 and (
-                    current_status != "delivering"
-                    or not str(reason or "").startswith("fenced:")
-                ):
-                    raise OutboxError(
-                        "delivery_fence_invalid",
-                        "V6 delivery can be fenced only from an active typed attempt",
-                        current_version=current_version,
-                    )
-                if current_status == "delivered":
-                    raise OutboxError(
-                        "delivery_already_delivered",
-                        "A delivered workflow event cannot be discarded",
-                        current_version=current_version,
-                    )
-                values = ("discarded", None, reason, None, None, 0)
-            elif normalized_action == "delivered":
-                if is_v6 and current_status != "delivering":
-                    raise OutboxError(
-                        "delivery_not_active",
-                        "V6 delivery success requires an active claimed attempt",
-                        current_version=current_version,
-                    )
-                values = ("delivered", None, None, now, None, 0)
-            elif normalized_action == "failed":
-                if is_v6:
-                    if current_status != "delivering" or not (1 <= attempts <= 5):
-                        raise OutboxError(
-                            "delivery_not_active",
-                            "V6 delivery failure requires an active claimed attempt",
-                            current_version=current_version,
-                        )
-                    backoffs = (1.0, 2.0, 4.0, 8.0)
-                    next_attempt = now + backoffs[attempts - 1] if 1 <= attempts < 5 else None
-                    values = (
-                        "failed",
-                        next_attempt,
-                        reason or "handler_contract_error",
-                        None,
-                        None,
-                        0,
-                    )
-                else:
-                    values = ("failed", now, reason or "delivery_failed", None, None, 0)
-            else:
-                v6_claimable = (
-                    (current_status == "pending" and attempts == 0)
-                    or (
-                        current_status == "failed"
-                        and attempts < 5
-                        and row["next_attempt_at"] is not None
-                        and float(row["next_attempt_at"]) <= now
-                    )
-                )
-                if (is_v6 and not v6_claimable) or (
-                    not is_v6 and current_status not in {"pending", "failed"}
-                ):
-                    raise OutboxError(
-                        "delivery_not_claimable",
-                        f"Delivery cannot begin from status {current_status}",
-                        current_version=current_version,
-                    )
-                values = (
-                    "delivering",
-                    None,
-                    None,
-                    None,
-                    now + 30.0 if is_v6 else None,
-                    1,
-                )
-
-            status, next_attempt_at, last_error, delivered_at, _, attempts_delta = values
-            cursor = await db.execute(
-                """UPDATE workflow_deliveries SET status=?,next_attempt_at=?,last_error=?,
-                delivered_at=?,claim_expires_at=?,attempts=attempts+?,
-                delivery_version=delivery_version+1,updated_at=?
-                WHERE delivery_id=? AND delivery_version=?""",
-                (
-                    status,
-                    next_attempt_at,
-                    last_error,
-                    delivered_at,
-                    _,
-                    attempts_delta,
-                    now,
-                    delivery_id,
-                    expected_version,
-                ),
+            result = await mutate_delivery_tx(
+                db,
+                delivery_id,
+                action=action,
+                expected_version=expected_version,
+                now=now,
+                reason=reason,
             )
-            if cursor.rowcount != 1:
-                raise OutboxError(
-                    "stale_delivery_version",
-                    "Workflow delivery changed before this mutation",
-                    current_version=current_version,
-                )
-            updated = await (
-                await db.execute(
-                    "SELECT * FROM workflow_deliveries WHERE delivery_id=?", (delivery_id,)
-                )
-            ).fetchone()
-            assert updated is not None
-            delivery = _delivery_dict(updated)
-            audit_payload: dict[str, JsonValue] = {
-                "action": normalized_action,
-                "reason": reason,
-                "delivery": delivery,
-            }
-            seq = await (
-                await db.execute(
-                    """UPDATE workflow_runs SET event_seq=event_seq+1,updated_at=?
-                    WHERE run_id=? RETURNING event_seq""",
-                    (now, row["run_id"]),
-                )
-            ).fetchone()
-            if seq is None:
-                raise OutboxError("run_not_found", "Workflow delivery has no owning run")
-            audit_id = stable_event_id(str(row["run_id"]), audit_key)
-            await db.execute(
-                """INSERT INTO workflow_events(
-                    event_id,event_key,run_id,seq,event_type,payload_json,created_at
-                ) VALUES(?,?,?,?,?,?,?)""",
-                (
-                    audit_id,
-                    audit_key,
-                    row["run_id"],
-                    int(seq["event_seq"]),
-                    "delivery.audit",
-                    canonical_json(audit_payload),
-                    now,
-                ),
-            )
-            audit = await (
-                await db.execute("SELECT * FROM workflow_events WHERE event_id=?", (audit_id,))
-            ).fetchone()
             await db.commit()
-            assert audit is not None
-            return {
-                "delivery": delivery,
-                "audit_event": hydrate_event(dict(audit)),
-                "idempotent": False,
-            }
+            return result
         except BaseException:
             if db.in_transaction:
                 await db.rollback()
@@ -806,7 +855,9 @@ __all__ = [
     "OutboxError",
     "OutboxStore",
     "WorkflowOutbox",
+    "enqueue_event_tx",
     "hydrate_event",
+    "mutate_delivery_tx",
     "stable_delivery_id",
     "stable_event_id",
 ]

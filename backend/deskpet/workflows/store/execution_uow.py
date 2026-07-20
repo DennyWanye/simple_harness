@@ -847,12 +847,16 @@ class SqliteExecutionUnitOfWork:
         finally:
             await db.close()
 
-    async def claim_delivery(
+    async def claim_delivery_tx(
         self,
+        connection: aiosqlite.Connection,
         *,
         sink_keys: Sequence[tuple[str, str]] = (),
         claim_ttl_seconds: float = 30.0,
+        now: float,
     ) -> DeliveryRecord | None:
+        """Claim one execution delivery inside the caller-owned transaction."""
+
         ttl = float(claim_ttl_seconds)
         if not math.isfinite(ttl) or ttl <= 0:
             raise ValueError("claim_ttl_seconds must be finite and positive")
@@ -865,7 +869,9 @@ class SqliteExecutionUnitOfWork:
         if len(dict.fromkeys(normalized_keys)) != len(normalized_keys):
             raise ValueError("sink keys must be unique")
 
-        now = float(self._clock())
+        now = float(now)
+        if not math.isfinite(now):
+            raise ValueError("delivery claim time must be finite")
         eligible = """(
             status='pending'
             OR (status='failed' AND COALESCE(next_attempt_at,0)<=?)
@@ -881,68 +887,131 @@ class SqliteExecutionUnitOfWork:
             for kind, instance in normalized_keys:
                 sink_params.extend((kind, instance))
 
+        # BEST_EFFORT is at-most-one physical attempt.  If its worker
+        # vanished after claim, persistently discard the expired claim;
+        # replaying TTS after restart is worse than dropping the cue.
+        await connection.execute(
+            """UPDATE execution_deliveries SET status='discarded',
+            delivery_version=delivery_version+1,next_attempt_at=NULL,
+            last_error='best-effort claim expired',updated_at=?
+            WHERE status='delivering' AND policy='best_effort'
+            AND next_attempt_at IS NOT NULL AND next_attempt_at<=?""",
+            (now, now),
+        )
+        row = await (
+            await connection.execute(
+                f"""SELECT * FROM execution_deliveries
+                WHERE {eligible}{sink_clause}
+                ORDER BY CASE policy
+                    WHEN 'durable_required' THEN 0
+                    WHEN 'retry_while_bound' THEN 1 ELSE 2 END,
+                    created_at,delivery_id LIMIT 1""",
+                (now, now, *sink_params),
+            )
+        ).fetchone()
+        if row is None:
+            return None
+        lease_expires_at = now + ttl
+        cursor = await connection.execute(
+            f"""UPDATE execution_deliveries SET status='delivering',
+            attempts=attempts+1,delivery_version=delivery_version+1,
+            next_attempt_at=?,updated_at=?
+            WHERE delivery_id=? AND delivery_version=? AND {eligible}""",
+            (
+                lease_expires_at,
+                now,
+                row["delivery_id"],
+                row["delivery_version"],
+                now,
+                now,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise DeliveryClaimConflict(
+                "delivery_claim_conflict", "delivery changed before claim CAS"
+            )
+        claimed = await (
+            await connection.execute(
+                "SELECT * FROM execution_deliveries WHERE delivery_id=?",
+                (row["delivery_id"],),
+            )
+        ).fetchone()
+        assert claimed is not None
+        return self._row_to_delivery(claimed)
+
+    async def claim_delivery(
+        self,
+        *,
+        sink_keys: Sequence[tuple[str, str]] = (),
+        claim_ttl_seconds: float = 30.0,
+    ) -> DeliveryRecord | None:
+        now = float(self._clock())
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
-            # BEST_EFFORT is at-most-one physical attempt.  If its worker
-            # vanished after claim, persistently discard the expired claim;
-            # replaying TTS after restart is worse than dropping the cue.
-            await db.execute(
-                """UPDATE execution_deliveries SET status='discarded',
-                delivery_version=delivery_version+1,next_attempt_at=NULL,
-                last_error='best-effort claim expired',updated_at=?
-                WHERE status='delivering' AND policy='best_effort'
-                AND next_attempt_at IS NOT NULL AND next_attempt_at<=?""",
-                (now, now),
+            claimed = await self.claim_delivery_tx(
+                db,
+                sink_keys=sink_keys,
+                claim_ttl_seconds=claim_ttl_seconds,
+                now=now,
             )
-            row = await (
-                await db.execute(
-                    f"""SELECT * FROM execution_deliveries
-                    WHERE {eligible}{sink_clause}
-                    ORDER BY CASE policy
-                        WHEN 'durable_required' THEN 0
-                        WHEN 'retry_while_bound' THEN 1 ELSE 2 END,
-                        created_at,delivery_id LIMIT 1""",
-                    (now, now, *sink_params),
-                )
-            ).fetchone()
-            if row is None:
-                await db.commit()
-                return None
-            lease_expires_at = now + ttl
-            cursor = await db.execute(
-                f"""UPDATE execution_deliveries SET status='delivering',
-                attempts=attempts+1,delivery_version=delivery_version+1,
-                next_attempt_at=?,updated_at=?
-                WHERE delivery_id=? AND delivery_version=? AND {eligible}""",
-                (
-                    lease_expires_at,
-                    now,
-                    row["delivery_id"],
-                    row["delivery_version"],
-                    now,
-                    now,
-                ),
-            )
-            if cursor.rowcount != 1:
-                raise DeliveryClaimConflict(
-                    "delivery_claim_conflict", "delivery changed before claim CAS"
-                )
-            claimed = await (
-                await db.execute(
-                    "SELECT * FROM execution_deliveries WHERE delivery_id=?",
-                    (row["delivery_id"],),
-                )
-            ).fetchone()
-            assert claimed is not None
             await db.commit()
-            return self._row_to_delivery(claimed)
+            return claimed
         except BaseException:
             if db.in_transaction:
                 await db.rollback()
             raise
         finally:
             await db.close()
+
+    async def complete_delivery_tx(
+        self,
+        connection: aiosqlite.Connection,
+        delivery_id: str,
+        *,
+        expected_version: int,
+        now: float,
+    ) -> DeliveryRecord:
+        """Complete one claimed execution delivery in the caller transaction."""
+
+        now = float(now)
+        if not math.isfinite(now):
+            raise ValueError("delivery completion time must be finite")
+        cursor = await connection.execute(
+            """UPDATE execution_deliveries SET status='delivered',
+            delivery_version=delivery_version+1,next_attempt_at=NULL,last_error=NULL,
+            updated_at=?,delivered_at=? WHERE delivery_id=?
+            AND delivery_version=? AND status='delivering'""",
+            (now, now, delivery_id, expected_version),
+        )
+        if cursor.rowcount != 1:
+            existing = await (
+                await connection.execute(
+                    "SELECT * FROM execution_deliveries WHERE delivery_id=?",
+                    (delivery_id,),
+                )
+            ).fetchone()
+            if existing is None:
+                raise DeliveryNotFound(
+                    "delivery_not_found",
+                    f"execution delivery does not exist: {delivery_id}",
+                )
+            if (
+                str(existing["status"]) == DeliveryStatus.DELIVERED.value
+                and int(existing["delivery_version"]) == expected_version + 1
+            ):
+                return self._row_to_delivery(existing)
+            raise DeliveryClaimConflict(
+                "delivery_claim_conflict", "delivery completion lost its claim fence"
+            )
+        row = await (
+            await connection.execute(
+                "SELECT * FROM execution_deliveries WHERE delivery_id=?",
+                (delivery_id,),
+            )
+        ).fetchone()
+        assert row is not None
+        return self._row_to_delivery(row)
 
     async def complete_delivery(
         self,
@@ -954,43 +1023,82 @@ class SqliteExecutionUnitOfWork:
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
-            cursor = await db.execute(
-                """UPDATE execution_deliveries SET status='delivered',
-                delivery_version=delivery_version+1,next_attempt_at=NULL,last_error=NULL,
-                updated_at=?,delivered_at=? WHERE delivery_id=?
-                AND delivery_version=? AND status='delivering'""",
-                (now, now, delivery_id, expected_version),
+            completed = await self.complete_delivery_tx(
+                db,
+                delivery_id,
+                expected_version=expected_version,
+                now=now,
             )
-            if cursor.rowcount != 1:
-                existing = await (
-                    await db.execute(
-                        "SELECT delivery_id FROM execution_deliveries WHERE delivery_id=?",
-                        (delivery_id,),
-                    )
-                ).fetchone()
-                if existing is None:
-                    raise DeliveryNotFound(
-                        "delivery_not_found",
-                        f"execution delivery does not exist: {delivery_id}",
-                    )
-                raise DeliveryClaimConflict(
-                    "delivery_claim_conflict", "delivery completion lost its claim fence"
-                )
-            row = await (
-                await db.execute(
-                    "SELECT * FROM execution_deliveries WHERE delivery_id=?",
-                    (delivery_id,),
-                )
-            ).fetchone()
-            assert row is not None
             await db.commit()
-            return self._row_to_delivery(row)
+            return completed
         except BaseException:
             if db.in_transaction:
                 await db.rollback()
             raise
         finally:
             await db.close()
+
+    async def release_delivery_tx(
+        self,
+        connection: aiosqlite.Connection,
+        delivery_id: str,
+        *,
+        expected_version: int,
+        error: str,
+        retry_at: float | None,
+        discard: bool,
+        now: float,
+    ) -> DeliveryRecord:
+        """Release one claimed execution delivery in the caller transaction."""
+
+        message = str(error).strip()
+        if not message:
+            raise ValueError("delivery error must be non-empty")
+        if not discard and retry_at is None:
+            raise ValueError("retryable delivery release requires retry_at")
+        if retry_at is not None and not math.isfinite(float(retry_at)):
+            raise ValueError("retry_at must be finite")
+        status = DeliveryStatus.DISCARDED if discard else DeliveryStatus.FAILED
+        now = float(now)
+        if not math.isfinite(now):
+            raise ValueError("delivery release time must be finite")
+        cursor = await connection.execute(
+            """UPDATE execution_deliveries SET status=?,
+            delivery_version=delivery_version+1,next_attempt_at=?,last_error=?,
+            updated_at=?,delivered_at=NULL WHERE delivery_id=?
+            AND delivery_version=? AND status='delivering'""",
+            (
+                status.value,
+                None if discard else float(retry_at),
+                message,
+                now,
+                delivery_id,
+                expected_version,
+            ),
+        )
+        if cursor.rowcount != 1:
+            existing = await (
+                await connection.execute(
+                    "SELECT delivery_id FROM execution_deliveries WHERE delivery_id=?",
+                    (delivery_id,),
+                )
+            ).fetchone()
+            if existing is None:
+                raise DeliveryNotFound(
+                    "delivery_not_found",
+                    f"execution delivery does not exist: {delivery_id}",
+                )
+            raise DeliveryClaimConflict(
+                "delivery_claim_conflict", "delivery release lost its claim fence"
+            )
+        row = await (
+            await connection.execute(
+                "SELECT * FROM execution_deliveries WHERE delivery_id=?",
+                (delivery_id,),
+            )
+        ).fetchone()
+        assert row is not None
+        return self._row_to_delivery(row)
 
     async def release_delivery(
         self,
@@ -1001,56 +1109,21 @@ class SqliteExecutionUnitOfWork:
         retry_at: float | None,
         discard: bool,
     ) -> DeliveryRecord:
-        message = str(error).strip()
-        if not message:
-            raise ValueError("delivery error must be non-empty")
-        if not discard and retry_at is None:
-            raise ValueError("retryable delivery release requires retry_at")
-        if retry_at is not None and not math.isfinite(float(retry_at)):
-            raise ValueError("retry_at must be finite")
-        status = DeliveryStatus.DISCARDED if discard else DeliveryStatus.FAILED
         now = float(self._clock())
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
-            cursor = await db.execute(
-                """UPDATE execution_deliveries SET status=?,
-                delivery_version=delivery_version+1,next_attempt_at=?,last_error=?,
-                updated_at=?,delivered_at=NULL WHERE delivery_id=?
-                AND delivery_version=? AND status='delivering'""",
-                (
-                    status.value,
-                    None if discard else float(retry_at),
-                    message,
-                    now,
-                    delivery_id,
-                    expected_version,
-                ),
+            released = await self.release_delivery_tx(
+                db,
+                delivery_id,
+                expected_version=expected_version,
+                error=error,
+                retry_at=retry_at,
+                discard=discard,
+                now=now,
             )
-            if cursor.rowcount != 1:
-                existing = await (
-                    await db.execute(
-                        "SELECT delivery_id FROM execution_deliveries WHERE delivery_id=?",
-                        (delivery_id,),
-                    )
-                ).fetchone()
-                if existing is None:
-                    raise DeliveryNotFound(
-                        "delivery_not_found",
-                        f"execution delivery does not exist: {delivery_id}",
-                    )
-                raise DeliveryClaimConflict(
-                    "delivery_claim_conflict", "delivery release lost its claim fence"
-                )
-            row = await (
-                await db.execute(
-                    "SELECT * FROM execution_deliveries WHERE delivery_id=?",
-                    (delivery_id,),
-                )
-            ).fetchone()
-            assert row is not None
             await db.commit()
-            return self._row_to_delivery(row)
+            return released
         except BaseException:
             if db.in_transaction:
                 await db.rollback()
