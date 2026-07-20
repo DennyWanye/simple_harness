@@ -12,9 +12,10 @@ import hashlib
 import json
 import math
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, AsyncIterator, Callable, Mapping, Sequence
 
 import aiosqlite
 
@@ -244,6 +245,28 @@ class SqliteExecutionUnitOfWork:
         await db.execute("PRAGMA busy_timeout=5000")
         return db
 
+    @asynccontextmanager
+    async def _read_connection(self) -> AsyncIterator[aiosqlite.Connection]:
+        db = await self._connect()
+        try:
+            yield db
+        finally:
+            await db.close()
+
+    @asynccontextmanager
+    async def _write_transaction(self) -> AsyncIterator[aiosqlite.Connection]:
+        async with self._read_connection() as db:
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                yield db
+            except BaseException:
+                if db.in_transaction:
+                    await db.rollback()
+                raise
+            else:
+                if db.in_transaction:
+                    await db.commit()
+
     def _fault(self, point: str) -> None:
         if self._fault_injector is not None:
             self._fault_injector(point)
@@ -283,24 +306,18 @@ class SqliteExecutionUnitOfWork:
         return self._row_to_runtime_state(row)
 
     async def get_runtime_state(self) -> ExecutionRuntimeState:
-        db = await self._connect()
-        try:
+        async with self._read_connection() as db:
             return await self._runtime_state_tx(db)
-        finally:
-            await db.close()
 
     async def get_execution_owner(self, run_id: str) -> tuple[str, int] | None:
         """Return the authoritative owner only when an execution row exists."""
 
-        db = await self._connect()
-        try:
+        async with self._read_connection() as db:
             row = await (await db.execute(
                 "SELECT owner_kind,owner_generation FROM execution_runs WHERE run_id=?",
                 (run_id,),
             )).fetchone()
             return None if row is None else (str(row["owner_kind"]), int(row["owner_generation"]))
-        finally:
-            await db.close()
 
     @staticmethod
     def _manifest_hash(items: Sequence[LegacyDrainRef]) -> str:
@@ -351,11 +368,8 @@ class SqliteExecutionUnitOfWork:
     async def scan_legacy_drain_manifest(self) -> tuple[LegacyDrainRef, ...]:
         """Read the current set of active durable rows owned by legacy."""
 
-        db = await self._connect()
-        try:
+        async with self._read_connection() as db:
             return await self._scan_legacy_drain_tx(db)
-        finally:
-            await db.close()
 
     async def _assert_persisted_manifest_tx(
         self,
@@ -394,9 +408,7 @@ class SqliteExecutionUnitOfWork:
     async def begin_runtime_activation(self) -> ExecutionRuntimeState:
         """Atomically register the legacy drain manifest and close new starts."""
 
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             state = await self._runtime_state_tx(db)
             if state.phase != "legacy":
                 if state.phase in {"draining", "activated", "open"}:
@@ -440,19 +452,11 @@ class SqliteExecutionUnitOfWork:
             state = await self._runtime_state_tx(db)
             await db.commit()
             return state
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def activate_drained_runtime(self) -> ExecutionRuntimeState:
         """CAS a fully drained manifest to the first kernel generation."""
 
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             state = await self._runtime_state_tx(db)
             if state.phase in {"activated", "open"}:
                 await self._assert_persisted_manifest_tx(db, state)
@@ -490,19 +494,11 @@ class SqliteExecutionUnitOfWork:
             state = await self._runtime_state_tx(db)
             await db.commit()
             return state
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def open_runtime(self) -> ExecutionRuntimeState:
         """Open ingress only after kernel-owner bootstrap has been activated."""
 
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             state = await self._runtime_state_tx(db)
             if state.phase == "open":
                 await self._assert_persisted_manifest_tx(db, state)
@@ -527,12 +523,6 @@ class SqliteExecutionUnitOfWork:
             state = await self._runtime_state_tx(db)
             await db.commit()
             return state
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def activate_empty_runtime(self) -> ExecutionRuntimeState:
         """Production-shaped R1-R5 activation for an isolated empty v7 DB."""
@@ -960,19 +950,11 @@ class SqliteExecutionUnitOfWork:
                 "durable_create_required",
                 "SQLite create is reserved for runs that have crossed a durable boundary",
             )
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             row, created = await self._insert_run_tx(db, spec, version=0)
             self._fault("create_after_run")
             await db.commit()
             return CreateRunResult(self._row_to_record(row), created)
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def promote(
         self,
@@ -986,9 +968,7 @@ class SqliteExecutionUnitOfWork:
             )
         if expected_version < 0:
             raise VersionConflict("invalid_version", "expected_version must be non-negative")
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             expected_owner = await self._required_start_owner_tx(db)
             existing = await self._existing_for_spec(db, spec)
             if existing is not None:
@@ -1005,12 +985,6 @@ class SqliteExecutionUnitOfWork:
             self._fault("promote_after_run")
             await db.commit()
             return CreateRunResult(self._row_to_record(row), created)
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     @staticmethod
     def _event_json(candidate: RunEventCandidate) -> dict[str, str | None]:
@@ -1210,9 +1184,7 @@ class SqliteExecutionUnitOfWork:
         deliveries: Sequence[DeliverySpec] = (),
         recovery_lease: RecoveryLease | None = None,
     ) -> RunEvent:
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             run = await (
                 await db.execute("SELECT * FROM execution_runs WHERE run_id=?", (run_id,))
             ).fetchone()
@@ -1229,19 +1201,12 @@ class SqliteExecutionUnitOfWork:
             self._fault("append_event_before_commit")
             await db.commit()
             return stored
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def get_event(self, event_id: str) -> RunEvent:
         event_key = str(event_id).strip()
         if not event_key:
             raise EventNotFound("event_not_found", "event_id must be non-empty")
-        db = await self._connect()
-        try:
+        async with self._read_connection() as db:
             row = await (
                 await db.execute(
                     """SELECT execution_events.*,execution_runs.root_run_id,
@@ -1256,8 +1221,6 @@ class SqliteExecutionUnitOfWork:
                     "event_not_found", f"execution event does not exist: {event_key}"
                 )
             return self._row_to_event(row)
-        finally:
-            await db.close()
 
     async def list_events(
         self,
@@ -1271,8 +1234,7 @@ class SqliteExecutionUnitOfWork:
             or after_durable_seq < 0
         ):
             raise ValueError("after_durable_seq must be a non-negative integer")
-        db = await self._connect()
-        try:
+        async with self._read_connection() as db:
             run = await (
                 await db.execute(
                     "SELECT root_run_id,session_id FROM execution_runs WHERE run_id=?",
@@ -1292,14 +1254,11 @@ class SqliteExecutionUnitOfWork:
                 )
             ).fetchall()
             return tuple(self._row_to_event(row) for row in rows)
-        finally:
-            await db.close()
 
     async def list_event_deliveries(
         self, event_id: str
     ) -> tuple[DeliveryRecord, ...]:
-        db = await self._connect()
-        try:
+        async with self._read_connection() as db:
             rows = await (
                 await db.execute(
                     """SELECT * FROM execution_deliveries WHERE event_id=?
@@ -1308,8 +1267,6 @@ class SqliteExecutionUnitOfWork:
                 )
             ).fetchall()
             return tuple(self._row_to_delivery(row) for row in rows)
-        finally:
-            await db.close()
 
     async def claim_delivery_tx(
         self,
@@ -1450,9 +1407,7 @@ class SqliteExecutionUnitOfWork:
         claim_ttl_seconds: float = 30.0,
     ) -> DeliveryRecord | None:
         now = float(self._clock())
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             claimed = await self.claim_delivery_tx(
                 db,
                 owner_generation=owner_generation,
@@ -1462,12 +1417,6 @@ class SqliteExecutionUnitOfWork:
             )
             await db.commit()
             return claimed
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def complete_delivery_tx(
         self,
@@ -1529,9 +1478,7 @@ class SqliteExecutionUnitOfWork:
         owner_generation: int,
     ) -> DeliveryRecord:
         now = float(self._clock())
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             completed = await self.complete_delivery_tx(
                 db,
                 delivery_id,
@@ -1541,12 +1488,6 @@ class SqliteExecutionUnitOfWork:
             )
             await db.commit()
             return completed
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def release_delivery_tx(
         self,
@@ -1624,9 +1565,7 @@ class SqliteExecutionUnitOfWork:
         discard: bool,
     ) -> DeliveryRecord:
         now = float(self._clock())
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             released = await self.release_delivery_tx(
                 db,
                 delivery_id,
@@ -1639,16 +1578,9 @@ class SqliteExecutionUnitOfWork:
             )
             await db.commit()
             return released
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def required_deliveries_complete(self, event_id: str) -> bool:
-        db = await self._connect()
-        try:
+        async with self._read_connection() as db:
             event = await (
                 await db.execute(
                     "SELECT event_id FROM execution_events WHERE event_id=?",
@@ -1668,8 +1600,6 @@ class SqliteExecutionUnitOfWork:
                 )
             ).fetchone()
             return int(remaining[0]) == 0
-        finally:
-            await db.close()
 
     @staticmethod
     def _row_to_continuation(row: Mapping[str, Any]) -> ContinuationRecord:
@@ -1897,9 +1827,7 @@ class SqliteExecutionUnitOfWork:
 
         self._validate_continuation_version(expected_version)
         payload_json = self._continuation_payload_json(payload)
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             if recovery_lease is not None:
                 await self._assert_recovery_fence_tx(db, recovery_lease, run_id=run_id)
             run = await self._continuation_run_tx(db, run_id)
@@ -1915,12 +1843,6 @@ class SqliteExecutionUnitOfWork:
             self._fault("continuation_before_commit")
             await db.commit()
             return record
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def promote_and_persist_batch_boundary(
         self,
@@ -1964,9 +1886,7 @@ class SqliteExecutionUnitOfWork:
                 "batch-boundary event must carry waiting status",
             )
         payload_json = self._continuation_payload_json(payload)
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             row, created = await self._insert_run_tx(
                 db, spec, version=expected_run_version + 1
             )
@@ -2027,24 +1947,15 @@ class SqliteExecutionUnitOfWork:
             self._fault("batch_boundary_before_commit")
             await db.commit()
             return result, continuation
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def load_continuation(self, run_id: str) -> ContinuationRecord | None:
-        db = await self._connect()
-        try:
+        async with self._read_connection() as db:
             row = await (
                 await db.execute(
                     "SELECT * FROM execution_continuations WHERE run_id=?", (run_id,)
                 )
             ).fetchone()
             return self._row_to_continuation(row) if row is not None else None
-        finally:
-            await db.close()
 
     async def delete_continuation(
         self, run_id: str, expected_version: int, *, recovery_lease: RecoveryLease | None = None
@@ -2055,9 +1966,7 @@ class SqliteExecutionUnitOfWork:
             or expected_version < 1
         ):
             raise ValueError("expected_version must be positive")
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             await self._assert_optional_recovery_fence_tx(db, recovery_lease, run_id)
             await self._continuation_run_tx(db, run_id)
             cursor = await db.execute(
@@ -2072,12 +1981,6 @@ class SqliteExecutionUnitOfWork:
                 )
             self._fault("continuation_delete_before_commit")
             await db.commit()
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     @staticmethod
     def _assert_decision_intent(
@@ -2116,9 +2019,7 @@ class SqliteExecutionUnitOfWork:
         ):
             raise ValueError("expected_run_version must be non-negative")
         now = float(self._clock())
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             run_row = await (
                 await db.execute(
                     "SELECT * FROM execution_runs WHERE run_id=?", (request.run_id,)
@@ -2224,12 +2125,6 @@ class SqliteExecutionUnitOfWork:
             assert row is not None
             await db.commit()
             return self._row_to_decision(row)
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def get_decision(
         self,
@@ -2238,8 +2133,7 @@ class SqliteExecutionUnitOfWork:
         ref: RunRef,
         actor: ActorContext,
     ) -> DecisionRecord:
-        db = await self._connect()
-        try:
+        async with self._read_connection() as db:
             decision_row = await (
                 await db.execute(
                     "SELECT * FROM execution_decisions WHERE decision_id=?",
@@ -2267,8 +2161,6 @@ class SqliteExecutionUnitOfWork:
                 actor=actor,
             )
             return decision
-        finally:
-            await db.close()
 
     @staticmethod
     def _assert_signal_binding(
@@ -2435,9 +2327,7 @@ class SqliteExecutionUnitOfWork:
         signal: DecisionSignal,
         actor: ActorContext,
     ) -> tuple[DecisionRecord, DecisionAuthorization | None]:
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             decision, authorization, expired = await self._resolve_decision_tx(
                 db, signal, actor, now=float(self._clock())
             )
@@ -2446,12 +2336,6 @@ class SqliteExecutionUnitOfWork:
             if expired is not None:
                 raise expired
             return decision, authorization
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def resolve_decision_and_advance_boundary(
         self,
@@ -2472,9 +2356,7 @@ class SqliteExecutionUnitOfWork:
 
         self._validate_continuation_version(expected_continuation_version)
         payload_json = self._continuation_payload_json(continuation_payload)
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             now = float(self._clock())
             decision, authorization, expired = await self._resolve_decision_tx(
                 db, signal, actor, now=now
@@ -2502,12 +2384,6 @@ class SqliteExecutionUnitOfWork:
             self._fault("decision_resolve_before_commit")
             await db.commit()
             return decision, authorization, continuation, event
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def cancel_open_decisions(
         self,
@@ -2523,9 +2399,7 @@ class SqliteExecutionUnitOfWork:
         ):
             raise ValueError("expected_run_version must be non-negative")
         now = float(self._clock())
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             run_row = await (
                 await db.execute(
                     "SELECT * FROM execution_runs WHERE run_id=?", (ref.run_id,)
@@ -2588,12 +2462,6 @@ class SqliteExecutionUnitOfWork:
                 for item in cancelled_rows
                 if str(item["decision_id"]) in cancelled_ids
             )
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def _inspect_authorization_tx(
         self,
@@ -2736,9 +2604,7 @@ class SqliteExecutionUnitOfWork:
         request: GrantConsume,
         actor: ActorContext,
     ) -> DecisionAuthorization:
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             authorization, expired = await self._consume_authorization_tx(
                 db, request, actor, now=float(self._clock())
             )
@@ -2747,12 +2613,6 @@ class SqliteExecutionUnitOfWork:
             if expired is not None:
                 raise expired
             return authorization
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def consume_grant_and_claim_effect(
         self,
@@ -2806,9 +2666,7 @@ class SqliteExecutionUnitOfWork:
                 "effect_type": effect_type,
             }
         )
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             await self._assert_optional_recovery_fence_tx(db, recovery_lease, str(run_id))
             run = await (
                 await db.execute(
@@ -2940,12 +2798,6 @@ class SqliteExecutionUnitOfWork:
                 "execute",
                 authorization,
             )
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def settle_effect_and_advance_boundary(
         self,
@@ -2989,9 +2841,7 @@ class SqliteExecutionUnitOfWork:
         outcome_json = canonical_json(thaw_json(outcome))
         artifacts_json = canonical_json([str(item) for item in artifact_refs])
         payload_json = self._continuation_payload_json(continuation_payload)
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             effect = await (
                 await db.execute(
                     "SELECT * FROM execution_effects WHERE effect_id=?", (effect_id,)
@@ -3121,12 +2971,6 @@ class SqliteExecutionUnitOfWork:
                 continuation,
                 stored_event,
             )
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     @staticmethod
     def _terminal_outcome(status: RunStatus) -> OutcomeStatus:
@@ -3157,9 +3001,7 @@ class SqliteExecutionUnitOfWork:
             raise TerminalConflict(
                 "terminal_outcome_mismatch", "terminal event outcome differs from run status"
             )
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             run = await (
                 await db.execute("SELECT * FROM execution_runs WHERE run_id=?", (run_id,))
             ).fetchone()
@@ -3327,12 +3169,6 @@ class SqliteExecutionUnitOfWork:
                 event=self._row_to_event(hydrated),
                 idempotent=False,
             )
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def finalize_child_and_enqueue_parent_signal(
         self,
@@ -3375,9 +3211,7 @@ class SqliteExecutionUnitOfWork:
             raise TerminalConflict(
                 "invalid_cancel_request", "cancel requires a reason and cancel_requested event"
             )
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             run = await (
                 await db.execute("SELECT * FROM execution_runs WHERE run_id=?", (run_id,))
             ).fetchone()
@@ -3449,21 +3283,13 @@ class SqliteExecutionUnitOfWork:
             assert result is not None
             await db.commit()
             return self._row_to_record(result)
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def commit_child_command(
         self, intent: ChildCommandIntent, *, recovery_lease: RecoveryLease | None = None
     ) -> ChildCommandRecord:
         """Commit the complete delegate intent before a child row can exist."""
 
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             await self._assert_optional_recovery_fence_tx(db, recovery_lease, intent.parent_run_id)
             parent = await (
                 await db.execute(
@@ -3535,16 +3361,9 @@ class SqliteExecutionUnitOfWork:
             assert row is not None
             await db.commit()
             return self._row_to_child_command(row)
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def get_child_command(self, operation_id: str) -> ChildCommandRecord | None:
-        db = await self._connect()
-        try:
+        async with self._read_connection() as db:
             row = await (
                 await db.execute(
                     "SELECT * FROM execution_child_commands WHERE operation_id=?",
@@ -3552,14 +3371,11 @@ class SqliteExecutionUnitOfWork:
                 )
             ).fetchone()
             return self._row_to_child_command(row) if row is not None else None
-        finally:
-            await db.close()
 
     async def get_child_command_for_run(
         self, child_run_id: str
     ) -> ChildCommandRecord | None:
-        db = await self._connect()
-        try:
+        async with self._read_connection() as db:
             row = await (
                 await db.execute(
                     "SELECT * FROM execution_child_commands WHERE child_run_id=?",
@@ -3567,8 +3383,6 @@ class SqliteExecutionUnitOfWork:
                 )
             ).fetchone()
             return self._row_to_child_command(row) if row is not None else None
-        finally:
-            await db.close()
 
     async def lease_child_commands(
         self,
@@ -3581,9 +3395,7 @@ class SqliteExecutionUnitOfWork:
     ) -> tuple[ChildCommandRecord, ...]:
         if not owner or limit <= 0 or lease_seconds <= 0:
             raise ValueError("owner, positive limit and positive lease_seconds are required")
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             if recovery_lease is not None:
                 if parent_run_id != recovery_lease.run_id:
                     raise StaleRecoveryLease(
@@ -3633,12 +3445,6 @@ class SqliteExecutionUnitOfWork:
             self._fault("child_lease_before_commit")
             await db.commit()
             return tuple(leased)
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     @staticmethod
     def _stable_child_link_id(operation_id: str) -> str:
@@ -3662,9 +3468,7 @@ class SqliteExecutionUnitOfWork:
     ) -> ChildCommandRecord:
         """Atomically create/link the child and mark its command scheduled."""
 
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             command = await (
                 await db.execute(
                     "SELECT * FROM execution_child_commands WHERE operation_id=?",
@@ -3756,12 +3560,6 @@ class SqliteExecutionUnitOfWork:
             assert row is not None
             await db.commit()
             return self._row_to_child_command(row)
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def _enqueue_child_accepted_signal_tx(
         self, db: aiosqlite.Connection, command: Mapping[str, Any], *, now: float
@@ -3789,9 +3587,7 @@ class SqliteExecutionUnitOfWork:
         lease_epoch: int,
         recovery_lease: RecoveryLease | None = None,
     ) -> ChildCommandRecord:
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             command = await (
                 await db.execute(
                     "SELECT * FROM execution_child_commands WHERE operation_id=?",
@@ -3836,12 +3632,6 @@ class SqliteExecutionUnitOfWork:
             assert row is not None
             await db.commit()
             return self._row_to_child_command(row)
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def _enqueue_child_terminal_signal_tx(
         self,
@@ -3926,9 +3716,7 @@ class SqliteExecutionUnitOfWork:
     async def list_pending_child_signals(
         self, parent_run_id: str, *, recovery_lease: RecoveryLease | None = None
     ) -> tuple[ChildSignalRecord, ...]:
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             await self._assert_optional_recovery_fence_tx(db, recovery_lease, parent_run_id)
             now = float(self._clock())
             await db.execute(
@@ -3948,20 +3736,13 @@ class SqliteExecutionUnitOfWork:
             ).fetchall()
             await db.commit()
             return tuple(self._row_to_child_signal(row) for row in rows)
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def list_pending_child_signal_parents(
         self, *, limit: int = 10_000
     ) -> tuple[RunRecord, ...]:
         if isinstance(limit, bool) or limit < 1:
             raise ValueError("pending child parent limit must be positive")
-        db = await self._connect()
-        try:
+        async with self._read_connection() as db:
             rows = await (
                 await db.execute(
                     """SELECT run.* FROM execution_runs AS run
@@ -3974,8 +3755,6 @@ class SqliteExecutionUnitOfWork:
                 )
             ).fetchall()
             return tuple(self._row_to_record(row) for row in rows)
-        finally:
-            await db.close()
 
     async def _acknowledge_child_signal_tx(
         self, db: aiosqlite.Connection, signal_id: str, *, now: float
@@ -4007,9 +3786,7 @@ class SqliteExecutionUnitOfWork:
     async def discard_terminal_detached_child_signal(
         self, signal_id: str
     ) -> ChildSignalRecord:
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             row = await (
                 await db.execute(
                     """SELECT signal.delivered_at,parent.status AS parent_status,
@@ -4043,21 +3820,13 @@ class SqliteExecutionUnitOfWork:
             )
             await db.commit()
             return record
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def prepare_workflow_child_resume(
         self, signal_id: str, *, recovery_lease: RecoveryLease
     ) -> DecisionRecord:
         """Bind a pending child signal to the Native interrupt that will consume it."""
 
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             signal = await (
                 await db.execute(
                     """SELECT signal.*,parent.driver_kind
@@ -4137,12 +3906,6 @@ class SqliteExecutionUnitOfWork:
             assert resolved is not None
             await db.commit()
             return self._row_to_decision(resolved)
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def apply_child_signal_and_ack(
         self,
@@ -4158,9 +3921,7 @@ class SqliteExecutionUnitOfWork:
 
         self._validate_continuation_version(expected_continuation_version)
         payload_json = self._continuation_payload_json(continuation_payload)
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             inbox = await (
                 await db.execute(
                     "SELECT * FROM execution_child_signal_inbox WHERE signal_id=?",
@@ -4194,12 +3955,6 @@ class SqliteExecutionUnitOfWork:
             self._fault("child_apply_before_commit")
             await db.commit()
             return record, continuation, stored_event
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def link(
         self,
@@ -4207,9 +3962,7 @@ class SqliteExecutionUnitOfWork:
         *,
         expected_child_version: int,
     ) -> RunRecord:
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             parent = await (
                 await db.execute(
                     "SELECT * FROM execution_runs WHERE run_id=?", (link.parent_run_id,)
@@ -4318,12 +4071,6 @@ class SqliteExecutionUnitOfWork:
             assert updated is not None
             await db.commit()
             return self._row_to_record(updated)
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     @staticmethod
     def _legacy_status(value: str) -> RunStatus:
@@ -4434,8 +4181,7 @@ class SqliteExecutionUnitOfWork:
         action: ActorAction | str,
     ) -> RunView:
         ActorAction(action)
-        db = await self._connect()
-        try:
+        async with self._read_connection() as db:
             row = await (
                 await db.execute(
                     "SELECT * FROM execution_runs WHERE run_id=?", (ref.run_id,)
@@ -4450,8 +4196,6 @@ class SqliteExecutionUnitOfWork:
                 raise RunNotFound("run_not_found", "execution run does not exist")
             self._authorize_view(ref, actor, view)
             return view
-        finally:
-            await db.close()
 
     async def query(self, ref: RunRef, actor: ActorContext) -> RunView:
         return await self.authorize(ref, actor, ActorAction.OBSERVE)
@@ -4464,8 +4208,7 @@ class SqliteExecutionUnitOfWork:
         parent = await self.authorize(ref, actor, ActorAction.OBSERVE)
         if isinstance(parent, LegacyRunProjection):
             return ()
-        db = await self._connect()
-        try:
+        async with self._read_connection() as db:
             rows = await (
                 await db.execute(
                     """SELECT run.* FROM execution_run_links AS link
@@ -4481,8 +4224,6 @@ class SqliteExecutionUnitOfWork:
                     RunRef(child.run_id, ref.expected_session_id), actor, child
                 )
             return children
-        finally:
-            await db.close()
 
     async def inspect_authorization(
         self,
@@ -4492,16 +4233,13 @@ class SqliteExecutionUnitOfWork:
         """Validate an issued grant without consuming it before Effect UoW."""
 
         now = float(self._clock())
-        db = await self._connect()
-        try:
+        async with self._read_connection() as db:
             grant_row = await self._inspect_authorization_tx(db, request, actor)
             if float(grant_row["expires_at"]) <= now:
                 raise GrantConsumeConflict(
                     "grant_not_authorized", "authorization is denied or expired"
                 )
             return self._row_to_authorization(grant_row)
-        finally:
-            await db.close()
 
     async def list_child_links(
         self,
@@ -4511,8 +4249,7 @@ class SqliteExecutionUnitOfWork:
         parent = await self.authorize(ref, actor, ActorAction.OBSERVE)
         if isinstance(parent, LegacyRunProjection):
             return ()
-        db = await self._connect()
-        try:
+        async with self._read_connection() as db:
             rows = await (
                 await db.execute(
                     """SELECT * FROM execution_run_links
@@ -4542,14 +4279,11 @@ class SqliteExecutionUnitOfWork:
                 )
                 for row in rows
             )
-        finally:
-            await db.close()
 
     async def list_recoverable(self, *, limit: int = 10_000) -> tuple[RunRecord, ...]:
         if isinstance(limit, bool) or limit < 1:
             raise ValueError("recoverable run limit must be positive")
-        db = await self._connect()
-        try:
+        async with self._read_connection() as db:
             owner_kind, owner_generation = await self._required_start_owner_tx(db)
             rows = await (
                 await db.execute(
@@ -4562,8 +4296,6 @@ class SqliteExecutionUnitOfWork:
                 )
             ).fetchall()
             return tuple(self._row_to_record(row) for row in rows)
-        finally:
-            await db.close()
 
     async def lookup_completion_evidence(
         self,
@@ -4575,8 +4307,7 @@ class SqliteExecutionUnitOfWork:
         # An effect fingerprint is a different identity and must not substitute.
         if context.target_digest is not None:
             return UNKNOWN_EVIDENCE
-        db = await self._connect()
-        try:
+        async with self._read_connection() as db:
             row = await (
                 await db.execute(
                     """SELECT effect.run_id,effect.call_id,effect.effect_id,
@@ -4588,8 +4319,6 @@ class SqliteExecutionUnitOfWork:
                     (context.effect_id,),
                 )
             ).fetchone()
-        finally:
-            await db.close()
         if row is None:
             return UNKNOWN_EVIDENCE
         expected = (context.run_id, context.turn_id, context.call_id, context.effect_id)
@@ -4621,8 +4350,7 @@ class SqliteExecutionUnitOfWork:
         capability_hash: str, scope_hash: str,
     ) -> tuple[str, Mapping[str, Any], str | None, tuple[str, ...]] | None:
         """Read the authoritative execution-effect settlement; never reconciles."""
-        db = await self._connect()
-        try:
+        async with self._read_connection() as db:
             row = await (
                 await db.execute(
                     """SELECT run_id,call_id,args_hash,capability_hash,scope_hash,
@@ -4631,8 +4359,6 @@ class SqliteExecutionUnitOfWork:
                     (effect_id,),
                 )
             ).fetchone()
-        finally:
-            await db.close()
 
         if row is None or row["outcome_json"] is None:
             return None
@@ -4659,9 +4385,7 @@ class SqliteExecutionUnitOfWork:
     ) -> RecoveryLease:
         if not owner.strip() or lease_seconds <= 0:
             raise ValueError("recovery owner and positive lease_seconds are required")
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             now = float(self._clock())
             row = await (
                 await db.execute("SELECT * FROM execution_runs WHERE run_id=?", (run_id,))
@@ -4707,12 +4431,6 @@ class SqliteExecutionUnitOfWork:
                 raise StaleRecoveryLease("recovery lease changed while being claimed")
             await db.commit()
             return RecoveryLease(run_id, owner, epoch, new_expiry)
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def claim_workflow_recovery_handoff(
         self, recovery_lease: RecoveryLease, *, workflow_owner: str,
@@ -4721,9 +4439,7 @@ class SqliteExecutionUnitOfWork:
 
         if not workflow_owner.strip() or ttl_seconds <= 0:
             raise ValueError("workflow owner and positive ttl_seconds are required")
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             run_id = recovery_lease.run_id
             await self._assert_recovery_fence_tx(db, recovery_lease, run_id=run_id)
             now = float(self._clock())
@@ -4751,21 +4467,13 @@ class SqliteExecutionUnitOfWork:
             return RunFence(
                 run_id, workflow_owner, int(row["lease_epoch"]), int(row["run_version"])
             )
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def renew_recovery(
         self, lease: RecoveryLease, *, lease_seconds: float = 30.0
     ) -> RecoveryLease:
         if lease_seconds <= 0:
             raise ValueError("lease_seconds must be positive")
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             now = float(self._clock())
             new_expiry = now + float(lease_seconds)
             cursor = await db.execute(
@@ -4778,19 +4486,10 @@ class SqliteExecutionUnitOfWork:
                 raise StaleRecoveryLease("recovery lease is stale or expired")
             await db.commit()
             return RecoveryLease(lease.run_id, lease.owner, lease.epoch, new_expiry)
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def assert_recovery_fence(self, lease: RecoveryLease) -> None:
-        db = await self._connect()
-        try:
+        async with self._read_connection() as db:
             await self._assert_recovery_fence_tx(db, lease, run_id=lease.run_id)
-        finally:
-            await db.close()
 
     async def _assert_optional_recovery_fence_tx(
         self, db: aiosqlite.Connection, lease: RecoveryLease | None, run_id: str) -> None:
@@ -4819,9 +4518,7 @@ class SqliteExecutionUnitOfWork:
             raise StaleRecoveryLease("recovery writer lost its lease fence")
 
     async def release_recovery(self, lease: RecoveryLease) -> bool:
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             cursor = await db.execute(
                 """UPDATE execution_runs SET recovery_owner=NULL,
                 recovery_expires_at=NULL,recovery_heartbeat_at=NULL
@@ -4830,12 +4527,6 @@ class SqliteExecutionUnitOfWork:
             )
             await db.commit()
             return cursor.rowcount == 1
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
     async def _insert_workflow_tx(
         self,
@@ -5000,9 +4691,7 @@ class SqliteExecutionUnitOfWork:
             raise IdempotencyConflict(
                 "invalid_accepted_event", "workflow start event must be accepted"
             )
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
+        async with self._write_transaction() as db:
             row, created = await self._insert_run_tx(db, spec, version=0)
             record = self._row_to_record(row)
             self._fault("start_workflow_after_execution")
@@ -5020,12 +4709,6 @@ class SqliteExecutionUnitOfWork:
             self._fault("start_workflow_before_commit")
             await db.commit()
             return CreateRunResult(record=record, created=created)
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
 
 
 __all__ = [
