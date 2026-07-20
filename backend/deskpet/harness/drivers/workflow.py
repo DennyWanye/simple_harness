@@ -75,6 +75,7 @@ class WorkflowProfile:
     workflow_version: str
     state_factory: Callable[..., Any]
     context_factory: Callable[..., Any]
+    start_payload_factory: Callable[[DriverStart], Mapping[str, Any]] | None = None
     logical_slot: str = "kernel:0"
 
     def __post_init__(self) -> None:
@@ -152,7 +153,11 @@ class WorkflowDriver:
                 session_id=context.session_id,
                 request_id=context.request_id,
                 turn_id=context.turn_id,
-                start_payload=dict(request.request_payload),
+                start_payload=(
+                    dict(profile.start_payload_factory(request))
+                    if profile.start_payload_factory is not None
+                    else dict(request.request_payload)
+                ),
                 capability_snapshot=dict(request.capability_snapshot),
                 state_factory=profile.state_factory,
                 context_factory=profile.context_factory,
