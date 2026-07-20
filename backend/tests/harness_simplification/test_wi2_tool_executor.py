@@ -29,34 +29,43 @@ SCHEMA = {
 }
 
 
+CAPABILITY_HASH = "c" * 64
+
+
 def _call(name: str, index: int = 1, **kwargs: Any) -> PreparedExecutionCall:
     return PreparedExecutionCall(
         tool_name=name,
         model_args=kwargs.pop("model_args", {"value": index}),
         call_id=f"call-{index}",
         effect_id=f"effect-{index}",
-        capability_hash="cap-host",
+        capability_hash=CAPABILITY_HASH,
         scope_hash="scope-host",
         **kwargs,
     )
 
 
 def _context(call: PreparedExecutionCall):
-    run = HostContextFactory().create_run_context(
+    factory = HostContextFactory()
+    run = factory.create_run_context(
         session_id="session-host",
-        run_id="run-1",
         root_run_id="run-1",
         request_id="request-host",
         turn_id="turn-host",
         venue="text",
         workspace=".",
         write_scope_root=".",
-        capability_hash="cap-host",
+        capability_hash=CAPABILITY_HASH,
         scope_hash="scope-host",
         provider_plan=("primary", "fallback"),
         trace_id="trace-host",
+        principal_id="principal-host",
     )
-    return run.for_tool_call(call_id=call.call_id, effect_id=call.effect_id)
+    return factory.create_tool_context(
+        run,
+        run_id="run-1",
+        call_id=call.call_id,
+        effect_id=call.effect_id,
+    )
 
 
 class RecordingJournal:

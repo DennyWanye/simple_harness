@@ -1,68 +1,16 @@
-"""Trusted run-context construction.
-
-Only venue adapters may hold a :class:`HostContextFactory`.  A model-facing
-request is intentionally not accepted by this module, which makes it
-impossible to smuggle host control fields through tool arguments.
-"""
+"""Trusted host construction for the single generic ``RunContext``."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable
 
+from deskpet.execution.contracts import RunContext
 from deskpet.tools.capabilities import ToolExecutionContext, canonical_hash
 
 
-@dataclass(frozen=True)
-class RunContext:
-    session_id: str
-    run_id: str
-    root_run_id: str
-    parent_run_id: Optional[str]
-    request_id: str
-    turn_id: str
-    venue: str
-    workspace: Optional[str]
-    write_scope_root: Optional[str]
-    capability_hash: str
-    scope_hash: str
-    provider_plan: tuple[str, ...]
-    trace_id: str
-
-    def for_tool_call(
-        self,
-        *,
-        call_id: str,
-        effect_id: str,
-        scope_id: str = "",
-        origin: str = "agent",
-    ) -> ToolExecutionContext:
-        if not call_id:
-            raise ValueError("call_id is required")
-        return ToolExecutionContext(
-            scope_id=scope_id or self.scope_hash,
-            session_id=self.session_id,
-            request_id=self.request_id,
-            origin=origin,
-            root_run_id=self.root_run_id,
-            parent_run_id=self.parent_run_id,
-            turn_id=self.turn_id,
-            venue=self.venue,
-            workspace=self.workspace,
-            write_scope_root=self.write_scope_root,
-            capability_hash=self.capability_hash,
-            scope_hash=self.scope_hash,
-            provider_plan=self.provider_plan,
-            run_id=self.run_id,
-            call_id=call_id,
-            effect_id=effect_id,
-            trace_id=self.trace_id,
-        )
-
-
 class HostContextFactory:
-    """Create immutable context only from authenticated host arguments."""
+    """Create immutable execution/tool context only from authenticated host data."""
 
     _VENUES = frozenset({"text", "code", "voice", "background", "workflow"})
 
@@ -70,7 +18,6 @@ class HostContextFactory:
         self,
         *,
         session_id: str,
-        run_id: str,
         root_run_id: str,
         request_id: str,
         turn_id: str,
@@ -78,30 +25,17 @@ class HostContextFactory:
         capability_hash: str,
         provider_plan: Iterable[str],
         trace_id: str,
-        parent_run_id: Optional[str] = None,
+        principal_id: str,
+        auth_epoch: int = 0,
+        parent_run_id: str | None = None,
         workspace: str | Path | None = None,
         write_scope_root: str | Path | None = None,
         scope_hash: str = "",
     ) -> RunContext:
-        required = {
-            "session_id": session_id,
-            "run_id": run_id,
-            "root_run_id": root_run_id,
-            "request_id": request_id,
-            "turn_id": turn_id,
-            "venue": venue,
-            "capability_hash": capability_hash,
-            "trace_id": trace_id,
-        }
-        missing = [name for name, value in required.items() if not str(value or "").strip()]
-        if missing:
-            raise ValueError(f"trusted host context missing: {', '.join(missing)}")
         if venue not in self._VENUES:
             raise ValueError(f"unsupported execution venue: {venue}")
         resolved_workspace = str(Path(workspace).resolve()) if workspace else None
-        resolved_write_root = (
-            str(Path(write_scope_root).resolve()) if write_scope_root else None
-        )
+        resolved_write_root = str(Path(write_scope_root).resolve()) if write_scope_root else None
         resolved_scope_hash = scope_hash or canonical_hash(
             {
                 "session_id": session_id,
@@ -112,18 +46,58 @@ class HostContextFactory:
         )
         return RunContext(
             session_id=session_id,
-            run_id=run_id,
             root_run_id=root_run_id,
             parent_run_id=parent_run_id,
             request_id=request_id,
             turn_id=turn_id,
             venue=venue,
-            workspace=resolved_workspace,
-            write_scope_root=resolved_write_root,
+            workspace={
+                "root": resolved_workspace,
+                "write_scope_root": resolved_write_root,
+                "scope_hash": resolved_scope_hash,
+            },
             capability_hash=capability_hash,
-            scope_hash=resolved_scope_hash,
-            provider_plan=tuple(provider_plan),
+            provider_plan={"providers": list(provider_plan)},
             trace_id=trace_id,
+            principal_id=principal_id,
+            auth_epoch=auth_epoch,
+        )
+
+    def create_tool_context(
+        self,
+        run_context: RunContext,
+        *,
+        run_id: str,
+        call_id: str,
+        effect_id: str,
+        scope_id: str = "",
+        origin: str = "agent",
+    ) -> ToolExecutionContext:
+        if not run_id or not call_id or not effect_id:
+            raise ValueError("run_id, call_id, and effect_id are required")
+        workspace = run_context.workspace
+        root = workspace.get("root")
+        write_root = workspace.get("write_scope_root")
+        scope_hash = str(workspace.get("scope_hash") or "")
+        providers = run_context.provider_plan.get("providers", ())
+        return ToolExecutionContext(
+            scope_id=scope_id or scope_hash,
+            session_id=run_context.session_id,
+            request_id=run_context.request_id,
+            origin=origin,
+            root_run_id=run_context.root_run_id,
+            parent_run_id=run_context.parent_run_id,
+            turn_id=run_context.turn_id,
+            venue=run_context.venue,
+            workspace=str(root) if root is not None else None,
+            write_scope_root=str(write_root) if write_root is not None else None,
+            capability_hash=run_context.capability_hash,
+            scope_hash=scope_hash,
+            provider_plan=tuple(str(item) for item in providers),
+            run_id=run_id,
+            call_id=call_id,
+            effect_id=effect_id,
+            trace_id=run_context.trace_id,
         )
 
 
