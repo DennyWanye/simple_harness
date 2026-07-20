@@ -33,6 +33,7 @@ from .recovery import (
 )
 from .replay import WorkflowReplay
 from .store import NativeCheckpointStore, StaleRunFence, WorkflowRunStore
+from .store.execution_uow import SqliteExecutionUnitOfWork
 from .trace.observer import WorkflowExecutionObserver
 from .trace.ports import instrument_ports
 from .trace.store import TraceStore
@@ -240,6 +241,7 @@ class WorkflowRunner:
         self._replay = WorkflowReplay(store, saver, registry)
         self.trace_store = trace_store or TraceStore(store.path)
         self.execution_ports: WorkflowExecutionPorts | None = None
+        self._owner_uow = SqliteExecutionUnitOfWork(store.path)
         if execution_ports is not None:
             self.configure_execution_ports(execution_ports)
 
@@ -380,15 +382,11 @@ class WorkflowRunner:
     async def claim_execution_recovery(self, run_id: str, recovery_lease: RecoveryLease) -> ActiveLease:
         if self.execution_ports is None:
             raise RuntimeError("execution recovery requires configured execution ports")
-        uow = self.execution_ports.unit_of_work
-        handoff = await uow.claim_workflow_recovery_handoff(
-            recovery_lease, workflow_owner=self.owner, ttl_seconds=self._leases.ttl_seconds
-        )
+        handoff = await self.execution_ports.unit_of_work.claim_workflow_recovery_handoff(
+            recovery_lease, workflow_owner=self.owner, ttl_seconds=self._leases.ttl_seconds)
         if handoff.run_id != run_id:
             raise StaleRunFence(f"execution handoff names another run: {run_id}")
-        return ActiveLease(
-            handoff, self._leases.heartbeat_interval, self._leases.ttl_seconds
-        )
+        return ActiveLease(handoff, self._leases.heartbeat_interval, self._leases.ttl_seconds)
 
     async def request_cancel_precreated(
         self, run_id: str, reason: str = "user"
@@ -463,6 +461,8 @@ class WorkflowRunner:
         records: list[RecoveryRecord] = []
         rows = await self.store.list_runs(limit=100_000)
         for stale in rows:
+            if await self._owner_uow.get_execution_owner(str(stale["run_id"])) is not None:
+                continue
             status = WorkflowRunStatus(stale["status"])
             if status in TERMINAL_RUN_STATUSES:
                 continue

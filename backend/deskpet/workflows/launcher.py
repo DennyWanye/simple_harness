@@ -511,7 +511,7 @@ class WorkflowLauncher:
 
         if self.execution_ports is None:
             raise RuntimeError("resume_precreated requires explicit WorkflowExecutionPorts")
-        if not await self._is_precreated(run_id):
+        if await self._execution_owner(run_id) is None:
             raise RuntimeError("resume_precreated rejects a legacy workflow run")
         row = await self.service.run_store.get_run(str(run_id))
         if row is None:
@@ -547,6 +547,9 @@ class WorkflowLauncher:
             run_id = str(row["run_id"])
             if only_run_ids is not None and run_id not in only_run_ids:
                 continue
+            owner = await self._execution_owner(run_id)
+            if owner is not None and self.execution_ports is None:
+                continue
             if run_id in self._scheduled_run_ids:
                 continue
             if str(row["status"]) not in {"created", "retryable"}:
@@ -564,11 +567,7 @@ class WorkflowLauncher:
             targets = await self._persisted_delivery_targets(run_id)
             if not targets:
                 continue
-            active_lease = None
-            if recovery_lease is not None:
-                active_lease = await self.service.runner.claim_execution_recovery(
-                    run_id, recovery_lease
-                )
+            active_lease = await self.service.runner.claim_execution_recovery(run_id, recovery_lease) if recovery_lease is not None else None
             task = asyncio.create_task(
                 self._drive(
                     run_id=run_id,
@@ -577,7 +576,7 @@ class WorkflowLauncher:
                     context_factory=context_factory,
                     targets=targets,
                     resume_from_checkpoint=bool(row.get("head_checkpoint_id")),
-                    precreated=await self._is_precreated(run_id),
+                    precreated=owner is not None,
                     active_lease=active_lease,
                 ),
                 name=f"workflow:recover:{run_id}",
@@ -655,6 +654,8 @@ class WorkflowLauncher:
                     limit=_DELIVERY_PAGE_SIZE,
                 )
                 for delivery in page.get("items", ()):
+                    if await self._execution_owner(str(delivery["run_id"])) is not None:
+                        continue
                     if delivery.get("manifest_ref") is not None:
                         claim_expires_at = delivery.get("claim_expires_at")
                         if claim_expires_at is None or float(claim_expires_at) > current_time:
@@ -687,6 +688,8 @@ class WorkflowLauncher:
                     limit=_DELIVERY_PAGE_SIZE,
                 )
                 for delivery in page.get("items", ()):
+                    if await self._execution_owner(str(delivery["run_id"])) is not None:
+                        continue
                     due_at = delivery.get("next_attempt_at")
                     if (
                         delivery.get("manifest_ref") is not None
@@ -723,6 +726,8 @@ class WorkflowLauncher:
         next_run_deadline: float | None = None
         for row in await self.service.run_store.list_runs(limit=_RUN_SCAN_LIMIT):
             run_id = str(row["run_id"])
+            if await self._execution_owner(run_id) is not None and self.execution_ports is None:
+                continue
             status = str(row["status"])
             if status == "created":
                 due_run_ids.add(run_id)
@@ -864,6 +869,9 @@ class WorkflowLauncher:
     ) -> WorkflowRunResult:
         """Resume a persisted interrupt with the production adapter context."""
 
+        if await self._execution_owner(run_id) is not None:
+            return await self.resume_precreated(run_id, responses)
+
         row = await self.service.run_store.get_run(run_id)
         if row is None:
             raise KeyError(run_id)
@@ -938,20 +946,9 @@ class WorkflowLauncher:
             },
         )
 
-    async def _is_precreated(self, run_id: str) -> bool:
-        if self.execution_ports is None:
-            return False
-        await self.service.run_store.initialize()
-        db = await self.service.run_store._connect()
-        try:
-            row = await (
-                await db.execute(
-                    "SELECT 1 FROM execution_runs WHERE run_id=?", (str(run_id),)
-                )
-            ).fetchone()
-            return row is not None
-        finally:
-            await db.close()
+    async def _execution_owner(self, run_id: str) -> tuple[str, int] | None:
+        select = getattr(self.service, "execution_owner", None)
+        return await select(str(run_id)) if callable(select) else None
 
     async def _drive(
         self,
@@ -992,11 +989,9 @@ class WorkflowLauncher:
             )
             if precreated:
                 result = (
-                    await self.service.resume_precreated(
-                        run_id, responses, context, active_lease=active_lease)
+                    await self.service.resume_precreated(run_id, responses, context, active_lease=active_lease)
                     if responses
-                    else await self.service.run_precreated(
-                        run_id, state, context, active_lease=active_lease)
+                    else await self.service.run_precreated(run_id, state, context, active_lease=active_lease)
                 )
             else:
                 result = (

@@ -55,6 +55,7 @@ from .runtime_adapters import (
     WorkflowRuntimeAdapterRegistry,
 )
 from .store.run_store import WorkflowRunStore
+from .store.execution_uow import SqliteExecutionUnitOfWork
 from .store.checkpointer import NativeCheckpointStore
 from .store.research_repository import ResearchRepositoryError, ResearchWorkflowRepository
 from .terminal_projection import VersionedActionMatrix, WorkflowActionContext
@@ -346,6 +347,7 @@ class WorkflowService:
         self.action_matrix = action_matrix or VersionedActionMatrix()
         self.runtime_adapters = runtime_adapters or WorkflowRuntimeAdapterRegistry()
         self.execution_ports = execution_ports
+        self._owner_uow = execution_ports.unit_of_work if execution_ports else SqliteExecutionUnitOfWork(self.run_store.path)
         if execution_ports is not None and runner is not None:
             configure_execution = getattr(runner, "configure_execution_ports", None)
             if not callable(configure_execution):
@@ -891,8 +893,7 @@ class WorkflowService:
                 "workflow_execution_ports_required",
                 "workflow runner cannot drive a precreated execution",
             )
-        kwargs = {} if active_lease is None else {"active_lease": active_lease}
-        return await call(str(run_id), state, context, **kwargs)
+        return await call(str(run_id), state, context, **({} if active_lease is None else {"active_lease": active_lease}))
 
     async def resume_precreated(
         self,
@@ -908,8 +909,7 @@ class WorkflowService:
                 "workflow_execution_ports_required",
                 "workflow runner cannot resume a precreated execution",
             )
-        kwargs = {} if active_lease is None else {"active_lease": active_lease}
-        return await call(str(run_id), responses, context, **kwargs)
+        return await call(str(run_id), responses, context, **({} if active_lease is None else {"active_lease": active_lease}))
 
     async def cancel_precreated(
         self, run_id: str, reason: str = "user"
@@ -1020,6 +1020,7 @@ class WorkflowService:
                 thread_id=thread_id,
                 checkpoint_ns=checkpoint_ns,
             )
+            await self.require_legacy_owner(str(resolved_run_id), "start")
             persisted = await self._start_record(identity.identity_key)
             self._assert_same_start(persisted, request_hash)
             await self.run_store.bind_session_refs(
@@ -1102,6 +1103,14 @@ class WorkflowService:
         if row is None:
             raise WorkflowServiceError("run_not_found", f"Workflow run not found: {run_id}")
         return row
+
+    async def execution_owner(self, run_id: str) -> tuple[str, int] | None:
+        return await self._owner_uow.get_execution_owner(str(run_id))
+
+    async def require_legacy_owner(self, run_id: str, operation: str) -> None:
+        owner = await self.execution_owner(run_id)
+        if owner is not None:
+            raise WorkflowServiceError("execution_owner", f"legacy {operation} is forbidden for execution-owned run: {owner[0]}/{owner[1]}")
 
     async def list_runs(
         self,
@@ -2068,6 +2077,8 @@ class WorkflowService:
     async def retry_delivery(
         self, delivery_id: str, *, expected_version: int, reason: str | None = None
     ) -> dict[str, Any]:
+        if (delivery := await self.outbox.get_delivery(delivery_id)) is not None:
+            await self.require_legacy_owner(str(delivery["run_id"]), "delivery retry")
         lock = self._delivery_locks.setdefault(delivery_id, asyncio.Lock())
         async with lock:
             return await self.outbox.retry_delivery(
@@ -2077,6 +2088,8 @@ class WorkflowService:
     async def discard_delivery(
         self, delivery_id: str, *, expected_version: int, reason: str | None = None
     ) -> dict[str, Any]:
+        if (delivery := await self.outbox.get_delivery(delivery_id)) is not None:
+            await self.require_legacy_owner(str(delivery["run_id"]), "delivery discard")
         lock = self._delivery_locks.setdefault(delivery_id, asyncio.Lock())
         async with lock:
             return await self.outbox.discard_delivery(
@@ -2089,15 +2102,7 @@ class WorkflowService:
         event = await self.outbox.get_event(event_id)
         if event is None:
             raise WorkflowServiceError("event_not_found", f"Workflow event not found: {event_id}")
-        if self.execution_ports is not None:
-            owner = await self.execution_ports.unit_of_work.get_execution_owner(
-                str(event["run_id"])
-            )
-            if owner is not None:
-                raise WorkflowServiceError(
-                    "execution_delivery_owner",
-                    f"legacy delivery is forbidden for execution-owned run: {owner[0]}/{owner[1]}",
-                )
+        await self.require_legacy_owner(str(event["run_id"]), "delivery")
         results: list[dict[str, Any]] = []
         for delivery in await self.outbox.list_event_deliveries(event_id):
             if delivery["status"] in {"delivered", "discarded", "delivering"}:

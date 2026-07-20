@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 from dataclasses import dataclass
 
@@ -9,8 +10,9 @@ from deskpet.workflows.contracts import WorkflowContext, WorkflowRunStatus
 from deskpet.workflows.definition import WorkflowManifest
 from deskpet.workflows.execution_ports import WorkflowExecutionPorts
 from deskpet.workflows.lease import transition_run
-from deskpet.workflows.runner import WorkflowRegistry, WorkflowRunner
-from deskpet.workflows.service import WorkflowService
+from deskpet.workflows.launcher import WorkflowLauncher
+from deskpet.workflows.runner import WorkflowRegistry, WorkflowRunResult, WorkflowRunner
+from deskpet.workflows.service import WorkflowService, WorkflowServiceError
 from deskpet.workflows.store import NativeCheckpointStore, RunFence, WorkflowRunStore
 from deskpet.workflows.store.checkpoint_execution import (
     SqliteCheckpointExecutionAdapter,
@@ -109,9 +111,8 @@ def _stack(path, *, adapter=None):
     store = WorkflowRunStore(path)
     registry = WorkflowRegistry()
     for name, version in (
-        ("deep_research", "v7"),
-        ("ppt", "v1"),
-        ("code", "v1"),
+        *(("deep_research", f"v{number}") for number in range(1, 8)),
+        ("ppt", "v1"), ("code", "v1"),
     ):
         manifest = _manifest(name, version)
         registry.register(_Workflow(manifest), executable=_Executable(manifest))
@@ -564,6 +565,184 @@ async def test_execution_row_without_adapter_fails_closed_instead_of_legacy_fall
         assert db.execute("SELECT COUNT(*) FROM execution_events").fetchone()[0] == 1
     finally:
         db.close()
+
+
+@pytest.mark.asyncio
+async def test_historical_v1_v7_without_execution_rows_remain_recoverable(tmp_path):
+    path = tmp_path / "legacy-v1-v7.db"
+    service, runner, store, _, _ = _stack(path)
+    launcher = WorkflowLauncher(service)
+    calls: list[str] = []
+
+    async def legacy_run(run_id, state, context):
+        calls.append(run_id)
+        return WorkflowRunResult(run_id, WorkflowRunStatus.COMPLETED, state)
+
+    runner.run = legacy_run
+    expected: list[str] = []
+    for number in range(1, 8):
+        version = f"v{number}"
+        prepared = _prepared(service, "deep_research", version, suffix=version)
+        run_id = await runner.start(
+            session_id=prepared.identity.base_session_id,
+            request_id=prepared.identity.request_id,
+            turn_id=prepared.identity.turn_id,
+            workflow_name="deep_research",
+            workflow_version=version,
+            capability_snapshot=prepared.capability_snapshot,
+            request_key=prepared.identity.identity_key,
+            run_id=prepared.run_id,
+        )
+        await store.bind_session_refs(run_id, service._session_refs(prepared.identity))
+        launcher.register_adapter(
+            "deep_research", version,
+            state_factory=lambda **kwargs: kwargs,
+            context_factory=WorkflowContext,
+        )
+        expected.append(run_id)
+
+    recovered = await launcher.recover_pending()
+    assert set(recovered) == set(expected)
+    await asyncio.gather(*tuple(launcher._tasks))
+    assert set(calls) == set(recovered)
+    db = sqlite3.connect(path)
+    try:
+        assert db.execute("SELECT COUNT(*) FROM execution_runs").fetchone()[0] == 0
+    finally:
+        db.close()
+
+
+@pytest.mark.asyncio
+async def test_execution_owned_accepted_run_recovers_only_through_generic_path(tmp_path):
+    path = tmp_path / "accepted-before-checkpoint.db"
+    service, runner, _, _, ports = _stack(path)
+    prepared = _prepared(service, "code", "v1", suffix="accepted")
+    await service.start_prepared(
+        prepared, service.execution_spec(prepared), execution_ports=ports
+    )
+    launcher = WorkflowLauncher(service)
+    launcher.register_adapter(
+        "code", "v1", state_factory=lambda **kwargs: kwargs,
+        context_factory=WorkflowContext,
+    )
+    generic: list[str] = []
+
+    async def reject_legacy(*args, **kwargs):
+        pytest.fail("execution-owned accepted run downgraded to legacy run")
+
+    async def generic_run(run_id, state, context, **kwargs):
+        generic.append(run_id)
+        return WorkflowRunResult(run_id, WorkflowRunStatus.COMPLETED, state)
+
+    runner.run = reject_legacy
+    runner.run_precreated = generic_run
+    assert await launcher.dispatch_due_work() == [prepared.run_id]
+    await asyncio.gather(*tuple(launcher._tasks))
+    assert generic == [prepared.run_id]
+    db = sqlite3.connect(path)
+    try:
+        assert db.execute(
+            "SELECT status,head_checkpoint_id FROM workflow_runs WHERE run_id=?",
+            (prepared.run_id,),
+        ).fetchone() == ("created", None)
+    finally:
+        db.close()
+
+
+@pytest.mark.asyncio
+async def test_execution_owned_run_without_generic_ports_fails_closed(tmp_path):
+    path = tmp_path / "accepted-fail-closed.db"
+    service, runner, _, _, ports = _stack(path)
+    prepared = _prepared(service, "code", "v1", suffix="closed")
+    await service.start_prepared(
+        prepared, service.execution_spec(prepared), execution_ports=ports
+    )
+    service.execution_ports = None
+    launcher = WorkflowLauncher(service)
+    runner.run = lambda *args, **kwargs: pytest.fail("legacy recovery was invoked")
+
+    assert await launcher.dispatch_due_work() == []
+    db = sqlite3.connect(path)
+    try:
+        assert db.execute(
+            "SELECT status,head_checkpoint_id FROM workflow_runs WHERE run_id=?",
+            (prepared.run_id,),
+        ).fetchone() == ("created", None)
+    finally:
+        db.close()
+
+
+@pytest.mark.asyncio
+async def test_legacy_delivery_scan_skips_execution_row_and_continues_batch(tmp_path):
+    path = tmp_path / "mixed-delivery.db"
+    service, _, store, _, ports = _stack(path)
+    owned = _prepared(service, "code", "v1", suffix="owned-delivery")
+    await service.start_prepared(owned, service.execution_spec(owned), execution_ports=ports)
+    legacy_id = await service.runner.start(
+        session_id="legacy-session", request_id="legacy-request", turn_id="legacy-turn",
+        workflow_name="code", workflow_version="v1",
+        capability_snapshot={"_workflow_start": {"start_payload": {}}},
+        request_key="legacy-delivery", run_id="legacy-delivery-run",
+    )
+    owned_event = await service.outbox.ensure_event(
+        run_id=owned.run_id, event_key="legacy-shadow", event_type="workflow.progress",
+        payload={"kind": "progress"}, deliveries=(("websocket", "owned"),),
+    )
+    owned_claimed = await service.outbox.ensure_event(
+        run_id=owned.run_id, event_key="legacy-shadow-claimed", event_type="workflow.progress",
+        payload={"kind": "progress"}, deliveries=(("websocket", "owned-claimed"),),
+    )
+    claimed_delivery = owned_claimed["deliveries"][0]
+    await service.outbox.mutate_delivery(
+        claimed_delivery["delivery_id"], action="begin",
+        expected_version=claimed_delivery["version"],
+    )
+    owned_failed = await service.outbox.ensure_event(
+        run_id=owned.run_id, event_key="legacy-shadow-failed", event_type="workflow.progress",
+        payload={"kind": "progress"}, deliveries=(("websocket", "owned-failed"),),
+    )
+    failed_delivery = owned_failed["deliveries"][0]
+    begun = await service.outbox.mutate_delivery(
+        failed_delivery["delivery_id"], action="begin",
+        expected_version=failed_delivery["version"],
+    )
+    await service.outbox.mutate_delivery(
+        failed_delivery["delivery_id"], action="failed",
+        expected_version=begun["delivery"]["version"], reason="fixture",
+    )
+    legacy_event = await service.outbox.ensure_event(
+        run_id=legacy_id, event_key="legacy-real", event_type="workflow.progress",
+        payload={"kind": "progress"}, deliveries=(("websocket", "legacy"),),
+    )
+    delivered: list[str] = []
+
+    async def handler(event, delivery):
+        delivered.append(str(event["event_id"]))
+
+    service._delivery_handlers["websocket"] = handler
+    launcher = WorkflowLauncher(service)
+    assert await launcher.recover_due_deliveries(
+        recover_claimed=True
+    ) == [legacy_event["event_id"]]
+    assert delivered == [legacy_event["event_id"]]
+    assert (await service.outbox.get_delivery(
+        owned_event["deliveries"][0]["delivery_id"]
+    ))["status"] == "pending"
+    assert (await service.outbox.get_delivery(
+        claimed_delivery["delivery_id"]
+    ))["status"] == "delivering"
+    assert (await service.outbox.get_delivery(
+        failed_delivery["delivery_id"]
+    ))["status"] == "failed"
+    with pytest.raises(WorkflowServiceError) as exc:
+        await service.deliver_event_once(owned_event["event_id"])
+    assert exc.value.code == "execution_owner"
+    for operation in (service.retry_delivery, service.discard_delivery):
+        with pytest.raises(WorkflowServiceError) as delivery_exc:
+            await operation(
+                owned_event["deliveries"][0]["delivery_id"], expected_version=0
+            )
+        assert delivery_exc.value.code == "execution_owner"
 
 
 @pytest.mark.asyncio
