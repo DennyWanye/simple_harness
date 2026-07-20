@@ -1696,7 +1696,16 @@ class SqliteExecutionUnitOfWork:
                     raise TerminalConflict(
                         "terminal_conflict", "another terminal intent already won"
                     )
-                self._assert_event_matches(existing, run, event)
+                try:
+                    self._assert_event_matches(existing, run, event)
+                except IdempotencyConflict as exc:
+                    # A terminal event key is deliberately stable per run.  If
+                    # two terminal candidates race, the second candidate must
+                    # observe the already-settled winner instead of looking
+                    # like a retry that changed its payload.
+                    raise TerminalConflict(
+                        "terminal_conflict", "another terminal intent already won"
+                    ) from exc
                 await self._assert_delivery_set_tx(db, event_id, deliveries)
                 hydrated = dict(existing)
                 hydrated["root_run_id"] = run["root_run_id"]
