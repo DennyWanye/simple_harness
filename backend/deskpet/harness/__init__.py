@@ -22,14 +22,14 @@ from .router import (
 )
 from .kernel import (
     CancelReceipt,
-    DriverTerminalCandidate,
     HostContext,
+    RegisteredDriver,
     RunHandle,
     RunKernel,
     RunRequest,
-    RunSignal,
     SignalReceipt,
 )
+from .ports import DriverTerminalCandidate
 
 __all__ = [
     "DecisionAuthorization",
@@ -47,7 +47,7 @@ __all__ = [
     "RunHandle",
     "RunKernel",
     "RunRequest",
-    "RunSignal",
+    "RegisteredDriver",
     "RunContext",
     "SignalReceipt",
     "ToolOutcome",

@@ -7,22 +7,18 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 
-from deskpet.execution.contracts import (
-    LiveCursor,
-    OutcomeStatus,
-    RunEvent,
-    RunEventCandidate,
-    RunStatus,
-)
 from deskpet.execution.ledger import ExecutionLedger
 from deskpet.harness.kernel import (
-    DriverTerminalCandidate,
     HostContext,
+    RegisteredDriver,
     RunKernel,
     RunRequest,
-    RunSignal,
-    SignalReceipt,
     kernel_public_operations,
+)
+from deskpet.harness.ports import (
+    CancelAcknowledgedCandidate,
+    DecisionSignal,
+    TokenCandidate,
 )
 from deskpet.harness.router import ClassifiedRoute, RegisteredRouter, RouteProfile
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
@@ -39,45 +35,32 @@ class StaticClassifier:
 
 
 class FakeDriver:
-    kind = "react"
-    durable_from_start = False
-
     def __init__(self) -> None:
         self.starts = 0
         self.recovers = 0
         self.signals = 0
         self.cancelled: list[str] = []
 
-    async def start(self, record, request, emit):
+    async def start(self, request):
         self.starts += 1
-        await emit(
-            RunEvent(
-                event_id=f"live:{record.run_id}:1",
-                run_id=record.run_id,
-                root_run_id=record.context.root_run_id,
-                session_id=record.context.session_id,
-                durable_seq=None,
-                live_cursor=LiveCursor("epoch-1", 1),
-                candidate=RunEventCandidate(
-                    "token-1", "assistant_delta", OutcomeStatus.SUCCEEDED, self.kind,
-                    payload={"text": "ok"},
-                ),
-                created_at=1.0,
-            )
-        )
-        return None
+        yield TokenCandidate(request.run_id, "ok")
 
-    async def recover(self, record, emit):
+    async def recover(self, run_id):
         self.recovers += 1
-        return None
+        if False:
+            yield TokenCandidate(run_id, "")
 
-    async def signal(self, record, signal):
+    async def signal(self, signal):
         self.signals += 1
-        return SignalReceipt(True)
+        if False:
+            yield TokenCandidate(signal.run_id, "")
 
-    async def cancel(self, record, reason):
+    async def cancel(self, run_id, reason):
         self.cancelled.append(reason)
-        return True
+        yield CancelAcknowledgedCandidate(run_id, reason)
+
+    async def close(self):
+        return None
 
 
 @pytest_asyncio.fixture
@@ -90,7 +73,7 @@ async def kernel(tmp_path):
     value = RunKernel(
         ledger=ledger,
         router=RegisteredRouter(classifier, [RouteProfile("react.default", "react")]),
-        drivers=[driver],
+        drivers=[RegisteredDriver("react", driver)],
     )
     return value, classifier, driver
 
@@ -137,7 +120,11 @@ async def test_signal_cancel_recover_and_close_use_explicit_run_scope(kernel) ->
     value, _, driver = kernel
     handle = await value.start(RunRequest("hello", "req-3", "turn-1"), host())
     actor = host().actor(root_run_id=handle.root_run_id)
-    receipt = await value.signal(handle.ref, actor, RunSignal("permission", "d1", "n1", 0))
+    receipt = await value.signal(
+        handle.ref,
+        actor,
+        DecisionSignal(handle.ref.run_id, "d1", {"allow": True}),
+    )
     assert receipt.accepted is True
     await value.recover(handle.ref, actor)
     cancelled = await value.cancel(handle.ref, actor, "user_stop")
