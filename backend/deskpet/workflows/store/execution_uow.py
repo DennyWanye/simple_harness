@@ -198,6 +198,20 @@ class ExecutionEffectSettlement:
     event: RunEvent
 
 
+@dataclass(frozen=True, slots=True)
+class RecoveryLease:
+    """Short-lived, per-run recovery fence; unrelated to owner_generation."""
+
+    run_id: str
+    owner: str
+    epoch: int
+    expires_at: float
+
+
+class StaleRecoveryLease(RuntimeError):
+    """Raised when a recovered writer no longer owns the current lease epoch."""
+
+
 class SqliteExecutionUnitOfWork:
     """CAS-based execution ledger backed by the workflow SQLite database."""
 
@@ -1184,6 +1198,7 @@ class SqliteExecutionUnitOfWork:
         expected_version: int,
         event: RunEventCandidate,
         deliveries: Sequence[DeliverySpec] = (),
+        recovery_lease: RecoveryLease | None = None,
     ) -> RunEvent:
         db = await self._connect()
         try:
@@ -1193,6 +1208,8 @@ class SqliteExecutionUnitOfWork:
             ).fetchone()
             if run is None:
                 raise RunNotFound("run_not_found", f"execution run does not exist: {run_id}")
+            if recovery_lease is not None:
+                await self._assert_recovery_fence_tx(db, recovery_lease, run_id=run_id)
             stored, _, _ = await self._append_event_tx(
                 db,
                 run,
@@ -4264,6 +4281,124 @@ class SqliteExecutionUnitOfWork:
                 )
             ).fetchall()
             return tuple(self._row_to_record(row) for row in rows)
+        finally:
+            await db.close()
+
+    async def claim_recovery(
+        self, run_id: str, *, owner: str, lease_seconds: float = 30.0
+    ) -> RecoveryLease:
+        if not owner.strip() or lease_seconds <= 0:
+            raise ValueError("recovery owner and positive lease_seconds are required")
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            now = float(self._clock())
+            row = await (
+                await db.execute("SELECT * FROM execution_runs WHERE run_id=?", (run_id,))
+            ).fetchone()
+            if row is None:
+                raise RunNotFound("run_not_found", "execution run does not exist")
+            if RunStatus(str(row["status"])) in TERMINAL_RUN_STATUSES:
+                raise StaleRecoveryLease("terminal runs cannot be claimed for recovery")
+            active_owner = row["recovery_owner"]
+            expires_at = row["recovery_expires_at"]
+            if (
+                active_owner is not None
+                and str(active_owner) != owner
+                and expires_at is not None
+                and float(expires_at) > now
+            ):
+                raise StaleRecoveryLease("run recovery lease is held by another owner")
+            epoch = int(row["recovery_epoch"]) + 1
+            new_expiry = now + float(lease_seconds)
+            cursor = await db.execute(
+                """UPDATE execution_runs SET recovery_owner=?,recovery_epoch=?,
+                recovery_expires_at=?,recovery_heartbeat_at=?
+                WHERE run_id=? AND recovery_epoch=?""",
+                (owner, epoch, new_expiry, now, run_id, int(row["recovery_epoch"])),
+            )
+            if cursor.rowcount != 1:
+                raise StaleRecoveryLease("recovery lease changed while being claimed")
+            await db.commit()
+            return RecoveryLease(run_id, owner, epoch, new_expiry)
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def renew_recovery(
+        self, lease: RecoveryLease, *, lease_seconds: float = 30.0
+    ) -> RecoveryLease:
+        if lease_seconds <= 0:
+            raise ValueError("lease_seconds must be positive")
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            now = float(self._clock())
+            new_expiry = now + float(lease_seconds)
+            cursor = await db.execute(
+                """UPDATE execution_runs SET recovery_expires_at=?,recovery_heartbeat_at=?
+                WHERE run_id=? AND recovery_owner=? AND recovery_epoch=?
+                AND recovery_expires_at>? AND terminal_event_id IS NULL""",
+                (new_expiry, now, lease.run_id, lease.owner, lease.epoch, now),
+            )
+            if cursor.rowcount != 1:
+                raise StaleRecoveryLease("recovery lease is stale or expired")
+            await db.commit()
+            return RecoveryLease(lease.run_id, lease.owner, lease.epoch, new_expiry)
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def assert_recovery_fence(self, lease: RecoveryLease) -> None:
+        db = await self._connect()
+        try:
+            await self._assert_recovery_fence_tx(db, lease, run_id=lease.run_id)
+        finally:
+            await db.close()
+
+    async def _assert_recovery_fence_tx(
+        self,
+        db: aiosqlite.Connection,
+        lease: RecoveryLease,
+        *,
+        run_id: str,
+    ) -> None:
+        if lease.run_id != run_id:
+            raise StaleRecoveryLease("recovery lease is bound to another run")
+        now = float(self._clock())
+        row = await (
+            await db.execute(
+                """SELECT 1 FROM execution_runs WHERE run_id=?
+                AND recovery_owner=? AND recovery_epoch=?
+                AND recovery_expires_at>? AND terminal_event_id IS NULL""",
+                (run_id, lease.owner, lease.epoch, now),
+            )
+        ).fetchone()
+        if row is None:
+            raise StaleRecoveryLease("recovery writer lost its lease fence")
+
+    async def release_recovery(self, lease: RecoveryLease) -> bool:
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            cursor = await db.execute(
+                """UPDATE execution_runs SET recovery_owner=NULL,
+                recovery_expires_at=NULL,recovery_heartbeat_at=NULL
+                WHERE run_id=? AND recovery_owner=? AND recovery_epoch=?""",
+                (lease.run_id, lease.owner, lease.epoch),
+            )
+            await db.commit()
+            return cursor.rowcount == 1
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
         finally:
             await db.close()
 

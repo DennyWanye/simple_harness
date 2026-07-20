@@ -98,11 +98,11 @@ async def test_fresh_and_v4_migration_produce_the_same_execution_schema(tmp_path
         version = await (await db.execute("PRAGMA user_version")).fetchone()
         migration = await (
             await db.execute(
-                "SELECT COUNT(*) FROM workflow_schema_migrations WHERE version IN (5,6,7)"
+                "SELECT COUNT(*) FROM workflow_schema_migrations WHERE version IN (5,6,7,8)"
             )
         ).fetchone()
-    assert version == (7,)
-    assert migration == (3,)
+    assert version == (8,)
+    assert migration == (4,)
 
 
 @pytest.mark.asyncio
@@ -205,7 +205,7 @@ async def test_v6_to_v7_backfills_historical_execution_owner_without_rewriting_b
             )
         ).fetchone()
 
-    assert version == (7,)
+    assert version == (8,)
     assert owner == ("legacy", 0)
     assert hashlib.sha256(bytes(blobs[0]) + bytes(blobs[1])).hexdigest() == before
 
@@ -296,6 +296,57 @@ async def test_v7_migration_interrupt_rolls_back_and_retries(tmp_path, monkeypat
     monkeypatch.setattr(workflow_schema, "_migrate_v6_to_v7", original)
     await initialize_workflow_db(path)
     await initialize_workflow_db(path)
+
+
+@pytest.mark.asyncio
+async def test_v7_to_v8_adds_recovery_fence_without_rewriting_existing_run(tmp_path):
+    path = tmp_path / "historical-v7.db"
+    original = workflow_schema.WORKFLOW_SCHEMA_VERSION
+    workflow_schema.WORKFLOW_SCHEMA_VERSION = 7
+    try:
+        await initialize_workflow_db(path)
+    finally:
+        workflow_schema.WORKFLOW_SCHEMA_VERSION = original
+
+    async with aiosqlite.connect(path) as db:
+        await _insert_execution_run(db, "historical-v7")
+        await db.commit()
+        before = await (
+            await db.execute(
+                """SELECT run_id,idempotency_key,session_id,root_run_id,request_id,
+                turn_id,status,owner_kind,owner_generation,version,durable_seq
+                FROM execution_runs WHERE run_id='historical-v7'"""
+            )
+        ).fetchone()
+
+    await initialize_workflow_db(path)
+
+    async with aiosqlite.connect(path) as db:
+        version = await (await db.execute("PRAGMA user_version")).fetchone()
+        after = await (
+            await db.execute(
+                """SELECT run_id,idempotency_key,session_id,root_run_id,request_id,
+                turn_id,status,owner_kind,owner_generation,version,durable_seq
+                FROM execution_runs WHERE run_id='historical-v7'"""
+            )
+        ).fetchone()
+        lease = await (
+            await db.execute(
+                """SELECT recovery_owner,recovery_epoch,recovery_expires_at,
+                recovery_heartbeat_at FROM execution_runs
+                WHERE run_id='historical-v7'"""
+            )
+        ).fetchone()
+        migration = await (
+            await db.execute(
+                "SELECT COUNT(*) FROM workflow_schema_migrations WHERE version=8"
+            )
+        ).fetchone()
+
+    assert version == (8,)
+    assert after == before
+    assert lease == (None, 0, None, None)
+    assert migration == (1,)
 
 
 @pytest.mark.asyncio

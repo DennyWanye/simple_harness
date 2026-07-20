@@ -20,7 +20,9 @@ from .execution_uow import (
     ContinuationRecord,
     ExecutionRuntimeState,
     LegacyDrainRef,
+    RecoveryLease,
     RuntimeActivationError,
+    StaleRecoveryLease,
     SqliteExecutionUnitOfWork,
 )
 from .checkpoint_execution import (
@@ -49,7 +51,9 @@ __all__ = [
     "ContinuationRecord",
     "ExecutionRuntimeState",
     "LegacyDrainRef",
+    "RecoveryLease",
     "RuntimeActivationError",
+    "StaleRecoveryLease",
     "SqliteExecutionUnitOfWork",
     "SqliteCheckpointExecutionAdapter",
     "WorkflowRunStore",

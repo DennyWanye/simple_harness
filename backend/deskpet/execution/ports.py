@@ -39,6 +39,18 @@ class ExecutionUnitOfWork(Protocol):
     async def list_recoverable(self, *, limit: int=10000) -> tuple[RunRecord, ...]:
         ...
 
+    async def claim_recovery(self, run_id: str, *, owner: str, lease_seconds: float=30.0) -> Any:
+        ...
+
+    async def renew_recovery(self, lease: Any, *, lease_seconds: float=30.0) -> Any:
+        ...
+
+    async def assert_recovery_fence(self, lease: Any) -> None:
+        ...
+
+    async def release_recovery(self, lease: Any) -> bool:
+        ...
+
     async def get_event(self, event_id: str) -> RunEvent:
         ...
 
@@ -93,7 +105,7 @@ class ExecutionUnitOfWork(Protocol):
     async def promote_and_persist_batch_boundary(self, spec: RunCreate, *, expected_run_version: int, expected_continuation_version: int, payload: Mapping[str, Any], decision: DecisionOpen | None=None, waiting_event: RunEventCandidate | None=None, deliveries: Sequence[DeliverySpec]=()) -> tuple[CreateRunResult, Any]:
         ...
 
-    async def append_event(self, run_id: str, *, expected_version: int, event: RunEventCandidate, deliveries: Sequence[DeliverySpec]=()) -> RunEvent:
+    async def append_event(self, run_id: str, *, expected_version: int, event: RunEventCandidate, deliveries: Sequence[DeliverySpec]=(), recovery_lease: Any | None=None) -> RunEvent:
         ...
 
     async def start_workflow(self, spec: RunCreate, workflow: WorkflowRunSeed, *, accepted_event: RunEventCandidate | None=None, deliveries: Sequence[DeliverySpec]=()) -> CreateRunResult:

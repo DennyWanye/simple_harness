@@ -7,7 +7,7 @@ from pathlib import Path
 
 import aiosqlite
 
-WORKFLOW_SCHEMA_VERSION = 7
+WORKFLOW_SCHEMA_VERSION = 8
 
 _SCHEMA_V2 = r"""
 BEGIN IMMEDIATE;
@@ -247,6 +247,8 @@ async def initialize_workflow_db(path: str | Path) -> Path:
                     await _migrate_v5_to_v6(db)
                 elif current == 6:
                     await _migrate_v6_to_v7(db)
+                elif current == 7:
+                    await _migrate_v7_to_v8(db)
                 else:  # pragma: no cover - guarded by the version constant
                     raise RuntimeError(f"no workflow.db migration from schema {current}")
                 row = await (await db.execute("PRAGMA user_version")).fetchone()
@@ -1239,6 +1241,46 @@ async def _migrate_v6_to_v7(db: aiosqlite.Connection) -> None:
         INSERT INTO workflow_schema_migrations(version,applied_at)
         VALUES(7,CAST(strftime('%s','now') AS REAL));
         PRAGMA user_version=7;
+        COMMIT;
+        """
+    )
+
+
+async def _migrate_v7_to_v8(db: aiosqlite.Connection) -> None:
+    """Add a per-run recovery lease, independent of deployment ownership."""
+
+    await db.executescript(
+        """
+        BEGIN IMMEDIATE;
+        ALTER TABLE execution_runs ADD COLUMN recovery_owner TEXT;
+        ALTER TABLE execution_runs ADD COLUMN recovery_epoch INTEGER NOT NULL
+            DEFAULT 0 CHECK(recovery_epoch>=0);
+        ALTER TABLE execution_runs ADD COLUMN recovery_expires_at REAL;
+        ALTER TABLE execution_runs ADD COLUMN recovery_heartbeat_at REAL;
+        CREATE INDEX idx_execution_runs_recovery_lease
+            ON execution_runs(status,recovery_expires_at,run_id);
+        CREATE TRIGGER execution_runs_recovery_lease_guard_insert
+        BEFORE INSERT ON execution_runs
+        WHEN NOT (
+            (NEW.recovery_owner IS NULL AND NEW.recovery_expires_at IS NULL)
+            OR
+            (NEW.recovery_owner IS NOT NULL AND NEW.recovery_epoch>0
+                AND NEW.recovery_expires_at IS NOT NULL)
+        )
+        BEGIN SELECT RAISE(ABORT,'invalid_recovery_lease'); END;
+        CREATE TRIGGER execution_runs_recovery_lease_guard_update
+        BEFORE UPDATE OF recovery_owner,recovery_epoch,recovery_expires_at
+            ON execution_runs
+        WHEN NOT (
+            (NEW.recovery_owner IS NULL AND NEW.recovery_expires_at IS NULL)
+            OR
+            (NEW.recovery_owner IS NOT NULL AND NEW.recovery_epoch>0
+                AND NEW.recovery_expires_at IS NOT NULL)
+        )
+        BEGIN SELECT RAISE(ABORT,'invalid_recovery_lease'); END;
+        INSERT INTO workflow_schema_migrations(version,applied_at)
+        VALUES(8,CAST(strftime('%s','now') AS REAL));
+        PRAGMA user_version=8;
         COMMIT;
         """
     )
