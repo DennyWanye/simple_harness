@@ -93,9 +93,11 @@ The frozen R0 census remains byte-for-byte unchanged at 141 callsites. A new
 141-entry old-to-current mapping records both source hashes and callsites; the
 current scan has the same capability/kind distribution, including 57 WS sends.
 Both dual-send helpers are AST-validated, so deleting either origin send or
-peer broadcast fails closed. Verification: harness `214 passed, 9 xfailed`,
-adjacent agent/context/problem/main suites `335 passed`, and the three R2
-production modules total 611 physical lines (below the 1,000-line budget).
+peer broadcast fails closed. Integrated verification: harness `232 passed,
+9 xfailed`, census `141/141` with zero unmapped items, adjusted LOC
+`32,490 <= 33,228` with zero unknown classifications; adjacent R2 branch
+agent/context/problem/main suites are `335 passed`, and the three R2 production
+modules total 611 physical lines (below the 1,000-line budget).
 
 ## Request Lifecycle
 
