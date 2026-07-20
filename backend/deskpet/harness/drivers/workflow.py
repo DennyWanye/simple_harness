@@ -35,6 +35,36 @@ class WorkflowSignalResumer(Protocol):
     async def resume(self, signal: DriverSignal) -> None: ...
 
 
+class WorkflowResumeLauncher(Protocol):
+    async def resume_run(
+        self,
+        run_id: str,
+        responses: Mapping[str, Any],
+    ) -> Any: ...
+
+
+class LauncherWorkflowSignalResumer:
+    """Resume a Native interrupt after Kernel resolved its durable decision.
+
+    ``RunKernel.signal`` performs the authenticated decision CAS first.  The
+    workflow engine therefore receives only the already-authorized response,
+    keyed by the immutable interrupt nonce captured when the checkpoint opened
+    the decision.  It never re-resolves a legacy HumanStore decision.
+    """
+
+    def __init__(self, launcher: WorkflowResumeLauncher) -> None:
+        self._launcher = launcher
+
+    async def resume(self, signal: DriverSignal) -> None:
+        nonce = str(getattr(signal, "nonce", "") or "").strip()
+        if not nonce:
+            raise ValueError("workflow decision signal requires its interrupt nonce")
+        response = getattr(signal, "response", None)
+        if not isinstance(response, Mapping):
+            raise ValueError("workflow decision signal requires a response mapping")
+        await self._launcher.resume_run(signal.run_id, {nonce: dict(response)})
+
+
 @dataclass(frozen=True, slots=True)
 class WorkflowProfile:
     profile_key: str
@@ -179,6 +209,7 @@ class WorkflowDriver:
 
 
 __all__ = [
+    "LauncherWorkflowSignalResumer",
     "WorkflowDriver",
     "WorkflowEventReader",
     "WorkflowLauncherPort",

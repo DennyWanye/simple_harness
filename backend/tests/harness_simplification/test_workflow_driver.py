@@ -10,9 +10,14 @@ from deskpet.execution.contracts import (
     RunEvent,
     RunEventCandidate,
 )
-from deskpet.harness.drivers.workflow import WorkflowDriver, WorkflowProfile
+from deskpet.harness.drivers.workflow import (
+    LauncherWorkflowSignalResumer,
+    WorkflowDriver,
+    WorkflowProfile,
+)
 from deskpet.harness.ports import (
     CancelAcknowledgedCandidate,
+    DecisionSignal,
     DriverStart,
     PersistedEventCandidate,
 )
@@ -57,6 +62,7 @@ class Launcher:
         self.launches: list[Mapping[str, object]] = []
         self.cancels: list[tuple[str, str]] = []
         self.recovers: list[set[str] | None] = []
+        self.resumes: list[tuple[str, Mapping[str, object]]] = []
 
     async def launch_precreated(self, **kwargs):
         self.launches.append(kwargs)
@@ -69,6 +75,10 @@ class Launcher:
     async def cancel_precreated(self, run_id, reason="user"):
         self.cancels.append((run_id, reason))
         return {"status": "cancel_requested"}
+
+    async def resume_run(self, run_id, responses):
+        self.resumes.append((run_id, responses))
+        return {"status": "accepted"}
 
 
 def request(run_id: str = "workflow-run") -> DriverStart:
@@ -153,3 +163,62 @@ async def test_workflow_driver_cancel_is_explicit_run_ack() -> None:
         CancelAcknowledgedCandidate("workflow-run", "user_stop")
     ]
     assert launcher.cancels == [("workflow-run", "user_stop")]
+
+
+@pytest.mark.asyncio
+async def test_workflow_signal_resumer_uses_resolved_interrupt_nonce() -> None:
+    accepted = event("workflow-run", 1, "workflow.accepted", OutcomeStatus.ACCEPTED)
+    final = event("workflow-run", 2, "workflow.final", OutcomeStatus.SUCCEEDED)
+    launcher = Launcher(accepted)
+    driver = WorkflowDriver(
+        launcher,
+        Events(accepted, final),
+        [
+            WorkflowProfile(
+                "durable.default",
+                "fixture_workflow",
+                "v1",
+                lambda **kwargs: kwargs,
+                lambda **kwargs: kwargs,
+            )
+        ],
+        signal_resumer=LauncherWorkflowSignalResumer(launcher),
+    )
+
+    candidates = await collect(
+        driver.signal(
+            DecisionSignal(
+                "workflow-run",
+                "decision-1",
+                {"approved": True, "decision_status": "allowed"},
+                nonce="interrupt-1",
+                version=1,
+            )
+        )
+    )
+
+    assert candidates == []
+    assert launcher.resumes == [
+        (
+            "workflow-run",
+            {
+                "interrupt-1": {
+                    "approved": True,
+                    "decision_status": "allowed",
+                }
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_workflow_signal_resumer_fails_closed_without_nonce() -> None:
+    accepted = event("workflow-run", 1, "workflow.accepted", OutcomeStatus.ACCEPTED)
+    final = event("workflow-run", 2, "workflow.final", OutcomeStatus.SUCCEEDED)
+    launcher = Launcher(accepted)
+    resumer = LauncherWorkflowSignalResumer(launcher)
+
+    with pytest.raises(ValueError, match="interrupt nonce"):
+        await resumer.resume(
+            DecisionSignal("workflow-run", "decision-1", {"approved": True})
+        )
