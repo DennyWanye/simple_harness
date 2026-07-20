@@ -3,12 +3,14 @@ from __future__ import annotations
 import asyncio
 import ast
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
 
 from deskpet.execution.contracts import (
     DecisionOpen,
+    AttachmentPolicy,
     OutcomeStatus,
     PersistenceLevel,
     RunCreate,
@@ -18,6 +20,7 @@ from deskpet.execution.contracts import (
 )
 from deskpet.execution.ledger import ExecutionLedger
 from deskpet.harness.decisions import DecisionStore, DecisionWakeupCache
+from deskpet.harness.child_runs import ChildRunCoordinator
 from deskpet.harness.kernel import (
     HostContext,
     RegisteredDriver,
@@ -28,6 +31,9 @@ from deskpet.harness.kernel import (
 from deskpet.harness.ports import (
     CancelAcknowledgedCandidate,
     DecisionSignal,
+    DelegateRun,
+    ChildAcceptedSignal,
+    JoinPolicy,
     PersistedEventCandidate,
     TokenCandidate,
 )
@@ -111,6 +117,68 @@ class AtomicStartDriver(FakeDriver):
             ),
         )
         yield PersistedEventCandidate(accepted)
+
+
+class DelegateDriver(FakeDriver):
+    def __init__(self, join_policy=JoinPolicy.DETACHED) -> None:
+        super().__init__()
+        self.join_policy = JoinPolicy(join_policy)
+
+    async def start(self, request):
+        self.starts += 1
+        attachment = {
+            JoinPolicy.JOIN_BEFORE_FINAL: AttachmentPolicy.ATTACHED,
+            JoinPolicy.ROOT_TERMINAL_CHILD: AttachmentPolicy.ROOT_TERMINAL_CHILD,
+            JoinPolicy.DETACHED: AttachmentPolicy.DETACHED,
+        }[self.join_policy]
+        yield DelegateRun(
+            run_id=request.run_id,
+            command_id="delegate-1",
+            child_request={"task": "child"},
+            route_hint="child.default",
+            capability_subset=("read_file",),
+            attachment_policy=attachment,
+            join_policy=self.join_policy,
+        )
+
+    async def signal(self, signal):
+        self.signals += 1
+        self.last_signal = signal
+        if False:
+            yield TokenCandidate(signal.run_id, "")
+
+
+class ChildCoordinator:
+    def __init__(self) -> None:
+        self.submitted = []
+        self.scheduler_runs = 0
+        self.acked = []
+        self.delivery = None
+
+    async def submit(self, parent, command):
+        self.submitted.append((parent.run_id, command.command_id))
+        self.delivery = SimpleNamespace(
+            record=SimpleNamespace(signal_id="signal-1"),
+            signal=ChildAcceptedSignal(parent.run_id, command.command_id, "child-1"),
+        )
+        return SimpleNamespace()
+
+    async def run_scheduler_once(self, launcher, *, owner):
+        self.scheduler_runs += 1
+        return ()
+
+    async def pending_signals(self, parent_run_id):
+        return (self.delivery,) if self.delivery is not None else ()
+
+    async def acknowledge_signal(self, signal_id):
+        self.acked.append(signal_id)
+        self.delivery = None
+        return SimpleNamespace()
+
+
+class AcceptChild:
+    async def accept(self, command):
+        return None
 
 
 @pytest_asyncio.fixture
@@ -312,6 +380,78 @@ async def test_atomic_driver_commits_before_kernel_returns_handle(tmp_path) -> N
     assert accepted.kind == "workflow.accepted"
     assert accepted.durable_seq == 1
     assert driver.starts == 1
+
+
+@pytest.mark.asyncio
+async def test_delegate_is_durable_before_child_signal_reaches_driver(tmp_path) -> None:
+    uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
+    ledger = ExecutionLedger(uow)
+    await ledger.initialize()
+    driver = DelegateDriver()
+    children = ChildCoordinator()
+    value = RunKernel(
+        ledger=ledger,
+        router=RegisteredRouter(
+            StaticClassifier("react.default"),
+            [RouteProfile("react.default", "react")],
+        ),
+        drivers=[RegisteredDriver("react", driver, durable_from_start=True)],
+        child_runs=children,
+        child_launcher=SimpleNamespace(),
+    )
+    handle = await value.start(RunRequest("delegate", "req-child", "turn-1"), host())
+    await asyncio.sleep(0.01)
+    assert children.submitted == [(handle.ref.run_id, "delegate-1")]
+    assert children.scheduler_runs == 1
+    assert children.acked == ["signal-1"]
+    assert driver.last_signal == ChildAcceptedSignal(
+        handle.ref.run_id, "delegate-1", "child-1"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("join_policy", "child_cancelled"),
+    [
+        (JoinPolicy.JOIN_BEFORE_FINAL, True),
+        (JoinPolicy.ROOT_TERMINAL_CHILD, True),
+        (JoinPolicy.DETACHED, False),
+    ],
+)
+async def test_cancel_cascades_only_by_attachment_policy(
+    tmp_path, join_policy, child_cancelled
+) -> None:
+    uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
+    ledger = ExecutionLedger(uow)
+    await ledger.initialize()
+    driver = DelegateDriver(join_policy)
+    value = RunKernel(
+        ledger=ledger,
+        router=RegisteredRouter(
+            StaticClassifier("react.default"),
+            [RouteProfile("react.default", "react")],
+        ),
+        drivers=[RegisteredDriver("react", driver, durable_from_start=True)],
+        child_runs=ChildRunCoordinator(uow),
+        child_launcher=AcceptChild(),
+    )
+    handle = await value.start(RunRequest("delegate", "req-tree", "turn-1"), host())
+    actor = host().actor(root_run_id=handle.root_run_id)
+    children = ()
+    for _ in range(100):
+        children = await ledger.list_children(handle.ref, actor)
+        if children:
+            break
+        await asyncio.sleep(0.01)
+    assert len(children) == 1
+
+    await value.cancel(handle.ref, actor, "user_stop")
+
+    child = await ledger.query(
+        type(handle.ref)(children[0].run_id, handle.ref.expected_session_id),
+        actor,
+    )
+    assert (child.status is RunStatus.CANCELLED) is child_cancelled
 
 
 def test_kernel_surface_is_six_operations_and_has_no_product_branches() -> None:

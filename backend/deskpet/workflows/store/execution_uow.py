@@ -2689,6 +2689,48 @@ class SqliteExecutionUnitOfWork:
         finally:
             await db.close()
 
+    async def list_child_links(
+        self,
+        ref: RunRef,
+        actor: ActorContext,
+    ) -> tuple[RunLinkSpec, ...]:
+        parent = await self.authorize(ref, actor, ActorAction.OBSERVE)
+        if isinstance(parent, LegacyRunProjection):
+            return ()
+        db = await self._connect()
+        try:
+            rows = await (
+                await db.execute(
+                    """SELECT * FROM execution_run_links
+                    WHERE parent_run_id=? AND link_kind='structural'
+                    ORDER BY created_at,link_id""",
+                    (ref.run_id,),
+                )
+            ).fetchall()
+            return tuple(
+                RunLinkSpec(
+                    link_id=str(row["link_id"]),
+                    root_run_id=str(row["root_run_id"]),
+                    parent_run_id=str(row["parent_run_id"]),
+                    child_run_id=str(row["child_run_id"]),
+                    attachment_policy=str(row["attachment_policy"]),
+                    link_kind=str(row["link_kind"]),
+                    domain_kind=(
+                        str(row["domain_kind"])
+                        if row["domain_kind"] not in (None, "")
+                        else None
+                    ),
+                    domain_id=(
+                        str(row["domain_id"])
+                        if row["domain_id"] not in (None, "")
+                        else None
+                    ),
+                )
+                for row in rows
+            )
+        finally:
+            await db.close()
+
     async def _insert_workflow_tx(
         self,
         db: aiosqlite.Connection,

@@ -11,6 +11,7 @@ from types import MappingProxyType
 
 from deskpet.execution.contracts import (
     ActorContext,
+    AttachmentPolicy,
     JsonValue,
     LiveCursor,
     OutcomeStatus,
@@ -29,6 +30,7 @@ from deskpet.execution.contracts import (
 from deskpet.execution.ports import ExecutionLedgerPort
 
 from .context import HostContextFactory
+from .child_runs import ChildLauncher, ChildRunCoordinator
 from .decisions import DecisionStore
 from .ports import (
     CancelAcknowledgedCandidate,
@@ -140,6 +142,9 @@ class RunKernel:
         drivers: Sequence[RegisteredDriver],
         context_factory: HostContextFactory | None = None,
         decision_store: DecisionStore | None = None,
+        child_runs: ChildRunCoordinator | None = None,
+        child_launcher: ChildLauncher | None = None,
+        child_scheduler_owner: str = "run-kernel",
     ) -> None:
         catalog: dict[str, RegisteredDriver] = {}
         for registration in drivers:
@@ -153,6 +158,9 @@ class RunKernel:
         self._drivers = MappingProxyType(catalog)
         self._context_factory = context_factory or HostContextFactory()
         self._decisions = decision_store
+        self._child_runs = child_runs
+        self._child_launcher = child_launcher
+        self._child_scheduler_owner = child_scheduler_owner
         self._active: dict[str, _ActiveRun] = {}
         self._lock = asyncio.Lock()
 
@@ -387,6 +395,17 @@ class RunKernel:
                 actor,
                 expected_run_version=updated.version,
             )
+        for link in await self._ledger.list_child_links(ref, actor):
+            if link.attachment_policy is AttachmentPolicy.DETACHED:
+                continue
+            child_ref = RunRef(link.child_run_id, ref.expected_session_id)
+            child = await self._ledger.query(child_ref, actor)
+            if isinstance(child, RunRecord) and child.status not in {
+                RunStatus.COMPLETED,
+                RunStatus.FAILED,
+                RunStatus.CANCELLED,
+            }:
+                await self.cancel(child_ref, actor, f"parent_cancel:{ref.run_id}")
         registration = self._driver(updated)
         acknowledged = await self._consume(
             registration,
@@ -568,11 +587,34 @@ class RunKernel:
         if isinstance(candidate, DriverTerminalCandidate):
             await self._commit_terminal(record, registration.kind, candidate)
             return False
+        if isinstance(candidate, DelegateRun) and self._child_runs is not None:
+            await self._child_runs.submit(record, candidate)
+            if self._child_launcher is not None:
+                await self._child_runs.run_scheduler_once(
+                    self._child_launcher,
+                    owner=self._child_scheduler_owner,
+                )
+            await self._drain_child_signals(registration, record)
         acknowledged = isinstance(candidate, CancelAcknowledgedCandidate)
         event = self._event_candidate(registration.kind, candidate)
         if event is not None:
             await self._emit_live(record, event)
         return acknowledged
+
+    async def _drain_child_signals(
+        self,
+        registration: RegisteredDriver,
+        record: RunRecord,
+    ) -> None:
+        if self._child_runs is None:
+            return
+        for delivery in await self._child_runs.pending_signals(record.run_id):
+            await self._consume(
+                registration,
+                record,
+                registration.driver.signal(delivery.signal),
+            )
+            await self._child_runs.acknowledge_signal(delivery.record.signal_id)
 
     @staticmethod
     def _event_candidate(

@@ -90,6 +90,12 @@ class ExecutionLedger(Protocol):
         actor: ActorContext,
     ) -> tuple[RunRecord, ...]: ...
 
+    async def list_child_links(
+        self,
+        ref: RunRef,
+        actor: ActorContext,
+    ) -> tuple[RunLinkSpec, ...]: ...
+
 
 @runtime_checkable
 class ExecutionEventStore(Protocol):

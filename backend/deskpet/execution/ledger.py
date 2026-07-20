@@ -425,5 +425,17 @@ class ExecutionLedger:
                 return ()
         return await self._durable.list_children(ref, actor)
 
+    async def list_child_links(
+        self,
+        ref: RunRef,
+        actor: ActorContext,
+    ) -> tuple[RunLinkSpec, ...]:
+        async with self._lock:
+            record = self._active_by_id.get(ref.run_id)
+            if record is not None:
+                self._authorize_active(ref, actor, record)
+                return ()
+        return await self._durable.list_child_links(ref, actor)
+
 
 __all__ = ["ExecutionLedger"]
