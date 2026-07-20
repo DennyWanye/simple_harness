@@ -8,13 +8,10 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from deskpet.execution.contracts import (
-    DeliveryPolicy,
-    DeliveryRecord,
-    ExecutionError,
-    RunEvent,
-)
+from deskpet.execution.contracts import DeliveryPolicy, DeliveryRecord, ExecutionError, RunEvent
 from deskpet.execution.ports import ExecutionUnitOfWork
+
+_BOUND_POLICIES = frozenset({DeliveryPolicy.RETRY_WHILE_BOUND, DeliveryPolicy.BEST_EFFORT})
 
 
 class DeliverySink(Protocol):
@@ -53,11 +50,9 @@ class ExecutionDeliveryDispatcher:
         if isinstance(owner_generation, bool) or owner_generation < 1:
             raise ValueError("owner_generation must be a positive kernel generation")
         self._store = store
-        self._registrations = tuple(registrations)
-        keys = tuple(
-            (item.sink_kind, item.sink_instance) for item in self._registrations
-        )
-        if len(dict.fromkeys(keys)) != len(keys):
+        items = tuple(registrations)
+        self._sinks = {(item.sink_kind, item.sink_instance): item.sink for item in items}
+        if len(self._sinks) != len(items):
             raise ValueError("delivery sink registrations must be unique")
         self._owner_generation = owner_generation
         self._clock = clock
@@ -65,40 +60,31 @@ class ExecutionDeliveryDispatcher:
         self._retry_base_seconds = float(retry_base_seconds)
         self._retry_max_seconds = float(retry_max_seconds)
 
-    def _registration(self, delivery: DeliveryRecord) -> SinkRegistration:
+    def _sink(self, delivery: DeliveryRecord) -> DeliverySink:
         key = delivery.sink_kind, delivery.sink_instance
-        for item in self._registrations:
-            if (item.sink_kind, item.sink_instance) == key:
-                return item
-        raise ExecutionError(
-            "sink_not_registered", f"delivery sink is not registered: {key!r}"
-        )
+        try:
+            return self._sinks[key]
+        except KeyError as exc:
+            raise ExecutionError("sink_not_registered",
+                                 f"delivery sink is not registered: {key!r}") from exc
 
     async def dispatch(self, delivery: DeliveryRecord) -> bool:
-        registration = self._registration(delivery)
-        if delivery.policy in {
-            DeliveryPolicy.RETRY_WHILE_BOUND,
-            DeliveryPolicy.BEST_EFFORT,
-        } and not await registration.sink.is_bound(delivery.target_id):
+        sink = self._sink(delivery)
+        if delivery.policy in _BOUND_POLICIES and not await sink.is_bound(delivery.target_id):
             return False
         event = await self._store.get_event(delivery.event_id)
-        await registration.sink.deliver(event, delivery.target_id)
+        await sink.deliver(event, delivery.target_id)
         return True
 
     def _retry_at(self, attempts: int) -> float:
-        delay = min(
-            self._retry_max_seconds,
-            self._retry_base_seconds * (2 ** min(30, max(0, attempts - 1))),
-        )
+        delay = min(self._retry_max_seconds,
+                    self._retry_base_seconds * (2 ** min(30, max(0, attempts - 1))))
         return float(self._clock()) + delay
 
     async def run_once(self) -> bool:
         claim = await self._store.claim_delivery(
             owner_generation=self._owner_generation,
-            sink_keys=tuple(
-                (item.sink_kind, item.sink_instance)
-                for item in self._registrations
-            ),
+            sink_keys=tuple(self._sinks),
             claim_ttl_seconds=self._claim_ttl_seconds,
         )
         if claim is None:

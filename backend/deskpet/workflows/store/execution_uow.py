@@ -3007,6 +3007,10 @@ class SqliteExecutionUnitOfWork:
             ).fetchone()
             if run is None:
                 raise RunNotFound("run_not_found", f"execution run does not exist: {run_id}")
+            if run["parent_run_id"] is not None and any(item.sink_kind in {
+                "goal_projection", "session_projection"} for item in deliveries):
+                raise RunIdentityConflict("child_terminal_projection",
+                                          "child runs cannot project the root terminal")
             child_command = await (
                 await db.execute(
                     "SELECT operation_id FROM execution_child_commands WHERE child_run_id=?",

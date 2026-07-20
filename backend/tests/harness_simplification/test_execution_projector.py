@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from itertools import permutations, product
 from pathlib import Path
 from typing import Any
@@ -19,7 +20,9 @@ from deskpet.execution import (
     RunCreate,
     RunEvent,
     RunEventCandidate,
+    RunIdentityConflict,
     RunStatus,
+    TerminalConflict,
     fingerprint_json,
 )
 from deskpet.harness.projector import (
@@ -90,6 +93,33 @@ def _spec(run_id: str = "run-1") -> RunCreate:
     )
 
 
+def _child_spec(root_run_id: str, child_run_id: str) -> RunCreate:
+    parent = _spec(root_run_id)
+    context = RunContext(
+        session_id=parent.context.session_id,
+        root_run_id=root_run_id,
+        parent_run_id=root_run_id,
+        request_id=f"request-{child_run_id}",
+        turn_id=f"turn-{child_run_id}",
+        venue="text",
+        workspace={},
+        capability_hash=CAPABILITY_HASH,
+        provider_plan={},
+        trace_id=f"trace-{child_run_id}",
+        principal_id=parent.context.principal_id,
+    )
+    return RunCreate(
+        run_id=child_run_id,
+        idempotency_key=f"delegate:{root_run_id}:command-1:react_short",
+        context=context,
+        payload_fingerprint=fingerprint_json({"text": child_run_id}),
+        capability_fingerprint=CAPABILITY_HASH,
+        driver_kind="react",
+        profile_key="react_short",
+        persistence_level="durable",
+    )
+
+
 def _terminal_candidate(*, payload: dict[str, Any] | None = None) -> RunEventCandidate:
     return RunEventCandidate(
         event_key="terminal",
@@ -149,6 +179,57 @@ class _SessionDBSink:
             context_visibility=message.get("context_visibility"),
             skip_embed=bool(message.get("skip_embed", False)),
         )
+
+
+class _SqliteGoalProjectionSink:
+    """A separate-domain Goal sink with terminal-event idempotency."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    async def seed(self, goal_id: str) -> None:
+        async with aiosqlite.connect(self.path) as db:
+            await db.executescript(
+                "CREATE TABLE IF NOT EXISTS goals(goal_id TEXT PRIMARY KEY,status TEXT NOT NULL);"
+                "CREATE TABLE IF NOT EXISTS goal_terminal_events("
+                "event_id TEXT PRIMARY KEY,goal_id TEXT UNIQUE NOT NULL,status TEXT NOT NULL);"
+            )
+            await db.execute("INSERT INTO goals VALUES(?, 'active')", (goal_id,))
+            await db.commit()
+
+    async def is_bound(self, target_id: str) -> bool:
+        return bool(target_id)
+
+    async def deliver(self, event: RunEvent, target_id: str) -> None:
+        status = "done" if event.candidate.status is OutcomeStatus.SUCCEEDED else "abandoned"
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            existing = await (await db.execute(
+                "SELECT goal_id,status FROM goal_terminal_events WHERE event_id=?",
+                (event.event_id,),
+            )).fetchone()
+            if existing is None:
+                await db.execute(
+                    "INSERT INTO goal_terminal_events VALUES(?,?,?)",
+                    (event.event_id, target_id, status),
+                )
+                changed = await db.execute(
+                    "UPDATE goals SET status=? WHERE goal_id=? AND status='active'",
+                    (status, target_id),
+                )
+                if changed.rowcount != 1:
+                    raise RuntimeError("goal terminal conflict")
+            elif existing != (target_id, status):
+                raise RuntimeError("terminal event projection conflict")
+            await db.commit()
+
+    async def rows(self) -> tuple[list[tuple[str, str]], list[tuple[str, str, str]]]:
+        async with aiosqlite.connect(self.path) as db:
+            goals = await (await db.execute("SELECT goal_id,status FROM goals")).fetchall()
+            events = await (await db.execute(
+                "SELECT event_id,goal_id,status FROM goal_terminal_events"
+            )).fetchall()
+        return list(goals), list(events)
 
 
 FAILURE_MASKS = tuple(product((False, True), repeat=3))
@@ -455,6 +536,142 @@ async def test_terminal_session_message_is_visible_once_after_crash_restart(
 
 
 @pytest.mark.asyncio
+async def test_root_terminal_goal_projection_is_once_across_child_race_and_restart(
+    tmp_path: Path,
+) -> None:
+    clock = _Clock()
+    execution_path = tmp_path / "workflow.db"
+    goal_path = tmp_path / "goals.db"
+    store = SqliteExecutionUnitOfWork(execution_path, clock=clock)
+    await store.activate_empty_runtime()
+    await store.create(_spec("root-run"))
+    await store.create(_child_spec("root-run", "child-run"))
+    goal = _SqliteGoalProjectionSink(goal_path)
+    await goal.seed("goal-1")
+    projection = DeliverySpec(
+        sink_kind="goal_projection",
+        sink_instance="session-goals",
+        target_id="goal-1",
+        policy=DeliveryPolicy.DURABLE_REQUIRED,
+    )
+
+    with pytest.raises(RunIdentityConflict, match="child runs cannot project"):
+        await store.finalize_and_enqueue_delivery(
+            "child-run",
+            expected_version=0,
+            terminal_status=RunStatus.COMPLETED,
+            event=_terminal_candidate(payload={"text": "child"}),
+            deliveries=(projection,),
+        )
+    async with aiosqlite.connect(execution_path) as db:
+        child_status = await (await db.execute(
+            "SELECT status FROM execution_runs WHERE run_id='child-run'"
+        )).fetchone()
+    assert child_status == ("created",)
+
+    completed = store.finalize_and_enqueue_delivery(
+        "root-run",
+        expected_version=0,
+        terminal_status=RunStatus.COMPLETED,
+        event=_terminal_candidate(payload={"text": "winner-completed"}),
+        deliveries=(projection,),
+    )
+    failed = store.finalize_and_enqueue_delivery(
+        "root-run",
+        expected_version=0,
+        terminal_status=RunStatus.FAILED,
+        event=RunEventCandidate(
+            event_key="terminal",
+            kind="run.final",
+            status=OutcomeStatus.FAILED,
+            driver_kind="react",
+            payload={"text": "winner-failed"},
+        ),
+        deliveries=(projection,),
+    )
+    results = await asyncio.gather(completed, failed, return_exceptions=True)
+    winner = next(item for item in results if not isinstance(item, Exception))
+    assert sum(isinstance(item, TerminalConflict) for item in results) == 1
+    assert len(await store.list_event_deliveries(winner.event.event_id)) == 1
+
+    first = await store.claim_delivery(owner_generation=1, claim_ttl_seconds=5.0)
+    assert first is not None
+    dispatcher = ExecutionDeliveryDispatcher(
+        store,
+        (SinkRegistration("goal_projection", "session-goals", goal),),
+        owner_generation=1,
+        clock=clock,
+        claim_ttl_seconds=5.0,
+    )
+    assert await dispatcher.dispatch(first) is True
+    clock.advance(6.0)  # crash after Goal commit, before delivery completion
+    restarted = SqliteExecutionUnitOfWork(execution_path, clock=clock)
+    replay = ExecutionDeliveryDispatcher(
+        restarted,
+        (SinkRegistration("goal_projection", "session-goals", goal),),
+        owner_generation=1,
+        clock=clock,
+        claim_ttl_seconds=5.0,
+    )
+    assert await replay.run_once() is True
+    assert await replay.run_once() is False
+    goals, events = await goal.rows()
+    expected_status = "done" if winner.record.status is RunStatus.COMPLETED else "abandoned"
+    assert goals == [("goal-1", expected_status)]
+    assert events == [(winner.event.event_id, "goal-1", expected_status)]
+    rows = await restarted.list_event_deliveries(winner.event.event_id)
+    assert rows[0].status is DeliveryStatus.DELIVERED
+    assert rows[0].attempts == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault_point", ("finalize_after_outbox", "finalize_before_commit"))
+async def test_terminal_goal_outbox_is_atomic_across_fault_and_restart(
+    tmp_path: Path, fault_point: str,
+) -> None:
+    path = tmp_path / "workflow.db"
+    clock = _Clock()
+
+    def crash(point: str) -> None:
+        if point == fault_point:
+            raise RuntimeError(f"crash:{point}")
+
+    crashing = SqliteExecutionUnitOfWork(path, clock=clock, fault_injector=crash)
+    await crashing.activate_empty_runtime()
+    await crashing.create(_spec())
+    delivery = DeliverySpec(
+        "goal_projection", "session-goals", "goal-1",
+        DeliveryPolicy.DURABLE_REQUIRED,
+    )
+    with pytest.raises(RuntimeError, match=fault_point):
+        await crashing.finalize_and_enqueue_delivery(
+            "run-1", expected_version=0, terminal_status=RunStatus.COMPLETED,
+            event=_terminal_candidate(), deliveries=(delivery,),
+        )
+
+    async with aiosqlite.connect(path) as db:
+        event_count = await (await db.execute(
+            "SELECT COUNT(*) FROM execution_events"
+        )).fetchone()
+        delivery_count = await (await db.execute(
+            "SELECT COUNT(*) FROM execution_deliveries"
+        )).fetchone()
+        status = await (await db.execute(
+            "SELECT status,terminal_event_id FROM execution_runs WHERE run_id='run-1'"
+        )).fetchone()
+    assert event_count == delivery_count == (0,)
+    assert status == ("created", None)
+
+    restarted = SqliteExecutionUnitOfWork(path, clock=clock)
+    final = await restarted.finalize_and_enqueue_delivery(
+        "run-1", expected_version=0, terminal_status=RunStatus.COMPLETED,
+        event=_terminal_candidate(), deliveries=(delivery,),
+    )
+    assert final.idempotent is False
+    assert len(await restarted.list_event_deliveries(final.event.event_id)) == 1
+
+
+@pytest.mark.asyncio
 async def test_retry_while_bound_discards_after_peer_disconnect(tmp_path: Path) -> None:
     clock = _Clock()
     store = SqliteExecutionUnitOfWork(tmp_path / "workflow.db", clock=clock)
@@ -536,3 +753,10 @@ def test_projector_is_not_registered_in_production_bootstrap() -> None:
     )
     assert "ExecutionProjector(" not in source
     assert "ExecutionDeliveryDispatcher(" not in source
+
+
+def test_run_presenter_is_only_a_sink_and_cannot_create_delivery_rows() -> None:
+    source = (Path(__file__).resolve().parents[3] / "backend" / "deskpet" / "agent" / "run_presenter.py").read_text(encoding="utf-8")
+    assert "DeliverySpec" not in source
+    assert "finalize_and_enqueue_delivery" not in source
+    assert "execution_deliveries" not in source
