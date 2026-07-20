@@ -39,21 +39,11 @@ from .child_runs import ChildLauncher, ChildRunCoordinator
 from .contracts import CancelReceipt, HostContext, RegisteredDriver, RunHandle, RunRequest, SignalReceipt, driver_catalog
 from .live_index import BoundedLiveIndex, LiveRun, LiveStreamOverflow
 from .ports import (
-    CancelAcknowledgedCandidate,
-    ChildAcceptedCandidate,
-    DelegateRun,
     DecisionSignal as DriverDecisionSignal,
     Driver,
-    DriverCandidate,
     DriverSignal,
     DriverStart,
     DriverTerminalCandidate,
-    ExecuteTools,
-    OpenDecision,
-    PersistedEventCandidate,
-    ProviderFallbackCandidate,
-    TokenCandidate,
-    ToolOutcomesSignal,
 )
 from .router import RegisteredRouter, RouteRequest as RoutingRequest
 from .runtime import DriverRuntime
@@ -427,7 +417,7 @@ class RunKernel:
             return SignalReceipt(False, reason="signal_run_binding_mismatch")
         registration = self._driver(record)
         driver_signal = signal
-        if isinstance(signal, DriverDecisionSignal):
+        if signal.kind == "decision":
             if signal.nonce is None or signal.version is None:
                 return SignalReceipt(False, reason="decision_fence_required")
             current = await self._uow.get_decision(

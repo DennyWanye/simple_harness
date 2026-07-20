@@ -29,16 +29,8 @@ from .child_runs import ChildLauncher, ChildRunCoordinator
 from .contracts import RegisteredDriver
 from .live_index import BoundedLiveIndex
 from .ports import (
-    CancelAcknowledgedCandidate,
-    ChildAcceptedCandidate,
-    DelegateRun,
-    DriverCandidate,
+    DriverEvent,
     DriverTerminalCandidate,
-    ExecuteTools,
-    OpenDecision,
-    PersistedEventCandidate,
-    ProviderFallbackCandidate,
-    TokenCandidate,
     ToolOutcomesSignal,
 )
 from .tool_executor import UnifiedToolExecutor
@@ -117,7 +109,7 @@ class DriverRuntime:
         self,
         registration: RegisteredDriver,
         record: RunRecord,
-        candidates: AsyncIterator[DriverCandidate],
+        candidates: AsyncIterator[DriverEvent],
     ) -> None:
         try:
             async for candidate in candidates:
@@ -142,7 +134,7 @@ class DriverRuntime:
         self,
         registration: RegisteredDriver,
         record: RunRecord,
-        candidates: AsyncIterator[DriverCandidate],
+        candidates: AsyncIterator[DriverEvent],
         lease: RecoveryLease,
     ) -> None:
         try:
@@ -158,7 +150,7 @@ class DriverRuntime:
         self,
         registration: RegisteredDriver,
         record: RunRecord,
-        candidates: AsyncIterator[DriverCandidate],
+        candidates: AsyncIterator[DriverEvent],
         *,
         recovery_lease: RecoveryLease | None = None,
     ) -> bool:
@@ -176,7 +168,7 @@ class DriverRuntime:
         self,
         registration: RegisteredDriver,
         record: RunRecord,
-        candidate: DriverCandidate,
+        candidate: DriverEvent,
         *,
         recovery_lease: RecoveryLease | None = None,
     ) -> bool:
@@ -184,7 +176,7 @@ class DriverRuntime:
             raise ValueError("driver candidate run binding mismatch")
         if recovery_lease is not None:
             await self._uow.assert_recovery_fence(recovery_lease)
-        if isinstance(candidate, (ExecuteTools, OpenDecision, DelegateRun)):
+        if candidate.kind in {"execute_tools", "open_decision", "delegate_run"}:
             if record.persistence_level is PersistenceLevel.EPHEMERAL:
                 actor = ActorContext(
                     principal_id=record.context.principal_id,
@@ -202,10 +194,10 @@ class DriverRuntime:
                     if active is not None:
                         active.record = None
                 record = durable
-        if isinstance(candidate, PersistedEventCandidate):
+        if candidate.kind == "persisted_event":
             await self.emit(candidate.event)
             return False
-        if isinstance(candidate, DriverTerminalCandidate):
+        if candidate.kind == "terminal":
             await self.commit_terminal(
                 record,
                 registration.kind,
@@ -213,7 +205,7 @@ class DriverRuntime:
                 recovery_lease=recovery_lease,
             )
             return False
-        if isinstance(candidate, ExecuteTools):
+        if candidate.kind == "execute_tools":
             event = self.event_candidate(registration.kind, candidate)
             assert event is not None
             await self.emit_live(record, event)
@@ -269,7 +261,7 @@ class DriverRuntime:
                 ),
                 recovery_lease=recovery_lease,
             )
-        if isinstance(candidate, DelegateRun) and self._child_runs is not None:
+        if candidate.kind == "delegate_run" and self._child_runs is not None:
             await self._child_runs.submit(record, candidate)
             if self._child_launcher is not None:
                 await self._child_runs.run_scheduler_once(
@@ -279,7 +271,7 @@ class DriverRuntime:
             await self._drain_child_signals(
                 registration, record, recovery_lease=recovery_lease
             )
-        acknowledged = isinstance(candidate, CancelAcknowledgedCandidate)
+        acknowledged = candidate.kind == "cancel_acknowledged"
         event = self.event_candidate(registration.kind, candidate)
         if event is not None:
             await self.emit_live(record, event)
@@ -305,17 +297,17 @@ class DriverRuntime:
 
     @staticmethod
     def event_candidate(
-        driver_kind: str, candidate: DriverCandidate
+        driver_kind: str, candidate: DriverEvent
     ) -> RunEventCandidate | None:
-        if isinstance(candidate, TokenCandidate):
+        if candidate.kind == "token":
             return RunEventCandidate(
                 event_key=f"token:{uuid.uuid4().hex}",
                 kind="transcript",
                 status=OutcomeStatus.SUCCEEDED,
                 driver_kind=driver_kind,
-                payload={"text": candidate.content, "token_kind": candidate.kind},
+                payload={"text": candidate.content, "token_kind": candidate.token_kind},
             )
-        if isinstance(candidate, ProviderFallbackCandidate):
+        if candidate.kind == "provider_fallback":
             return RunEventCandidate(
                 event_key=f"fallback:{candidate.from_provider}:{candidate.to_provider}",
                 kind="provider_fallback",
@@ -327,7 +319,7 @@ class DriverRuntime:
                     "reason": candidate.reason,
                 },
             )
-        if isinstance(candidate, ExecuteTools):
+        if candidate.kind == "execute_tools":
             return RunEventCandidate(
                 event_key=f"tools:{candidate.command_id}",
                 kind="tool_requested",
@@ -336,7 +328,7 @@ class DriverRuntime:
                 correlation={"command_id": candidate.command_id},
                 payload={"tools": [call.tool_name for call in candidate.calls]},
             )
-        if isinstance(candidate, OpenDecision):
+        if candidate.kind == "open_decision":
             return RunEventCandidate(
                 event_key=f"decision:{candidate.decision_id}",
                 kind="decision",
@@ -346,9 +338,9 @@ class DriverRuntime:
                     "command_id": candidate.command_id,
                     "decision_id": candidate.decision_id,
                 },
-                payload={"kind": candidate.kind, "prompt": dict(candidate.prompt)},
+                payload={"kind": candidate.decision_kind, "prompt": dict(candidate.prompt)},
             )
-        if isinstance(candidate, DelegateRun):
+        if candidate.kind == "delegate_run":
             return RunEventCandidate(
                 event_key=f"delegate:{candidate.command_id}",
                 kind="delegate_requested",
@@ -361,7 +353,7 @@ class DriverRuntime:
                     "attachment_policy": candidate.attachment_policy.value,
                 },
             )
-        if isinstance(candidate, ChildAcceptedCandidate):
+        if candidate.kind == "child_accepted":
             return RunEventCandidate(
                 event_key=f"child:{candidate.command_id}:{candidate.child_run_id}",
                 kind="child_accepted",
@@ -373,7 +365,7 @@ class DriverRuntime:
                 },
                 payload={"join_policy": candidate.join_policy.value},
             )
-        if isinstance(candidate, CancelAcknowledgedCandidate):
+        if candidate.kind == "cancel_acknowledged":
             return RunEventCandidate(
                 event_key=f"cancel-ack:{candidate.run_id}",
                 kind="cancel_acknowledged",
@@ -387,7 +379,7 @@ class DriverRuntime:
         self,
         record: RunRecord,
         driver_kind: str,
-        terminal: DriverTerminalCandidate,
+        terminal: DriverEvent,
         *,
         recovery_lease: RecoveryLease | None = None,
     ) -> None:

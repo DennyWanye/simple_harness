@@ -96,7 +96,7 @@ def _delegate(
     join_policy: JoinPolicy = JoinPolicy.JOIN_BEFORE_FINAL,
     *,
     task: str | None = None,
-) -> DelegateRun:
+):
     attachment = {
         JoinPolicy.JOIN_BEFORE_FINAL: DriverAttachmentPolicy.ATTACHED,
         JoinPolicy.ROOT_TERMINAL_CHILD: DriverAttachmentPolicy.ROOT_TERMINAL_CHILD,
@@ -357,7 +357,7 @@ async def test_accepted_and_terminal_inbox_redeliver_after_restart_until_ack(tmp
     accepted_once = await restarted.pending_signals("parent-run")
     accepted_twice = await restarted.pending_signals("parent-run")
     assert len(accepted_once) == len(accepted_twice) == 1
-    assert isinstance(accepted_once[0].signal, ChildAcceptedSignal)
+    assert accepted_once[0].signal.kind == "child_accepted"
     assert accepted_once[0].record.signal_id == accepted_twice[0].record.signal_id
     await restarted.acknowledge_signal(accepted_once[0].record.signal_id)
     assert await restarted.pending_signals("parent-run") == ()

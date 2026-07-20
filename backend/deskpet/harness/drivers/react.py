@@ -15,7 +15,7 @@ from types import MappingProxyType
 from typing import Any, AsyncIterator, Mapping, Protocol
 from deskpet.execution.contracts import DecisionOpen as DurableDecisionOpen, OutcomeStatus, PersistenceLevel, RunEventCandidate
 from deskpet.execution.ports import ExecutionUnitOfWork
-from deskpet.harness.ports import AttachmentPolicy, CancelAcknowledgedCandidate, ChildAcceptedCandidate, ChildAcceptedSignal, ChildTerminalSignal, DecisionSignal, DelegateRun, DriverCandidate, DriverSignal, DriverStart, DriverTerminalCandidate, ExecuteTools, JoinPolicy, OpenDecision, ProviderFallbackCandidate, TokenCandidate, ToolGrantRef, ToolOutcomesSignal
+from deskpet.harness.ports import AttachmentPolicy, CancelAcknowledgedCandidate, ChildAcceptedCandidate, ChildAcceptedSignal, ChildTerminalSignal, DecisionSignal, DelegateRun, DriverEvent, DriverSignal, DriverStart, DriverTerminalCandidate, ExecuteTools, JoinPolicy, OpenDecision, ProviderFallbackCandidate, TokenCandidate, ToolGrantRef, ToolOutcomesSignal
 from deskpet.harness.tool_executor import PreparedExecutionCall, ToolOutcome, ToolOutcomeStatus
 from deskpet.tools.capabilities import ToolExecutionContext
 
@@ -59,8 +59,8 @@ class ReactCommandBoundary:
     iteration: int
     completion_state: Mapping[str, Any]
     capability_snapshot: Mapping[str, Any] = field(default_factory=dict)
-    pending_decision: OpenDecision | None = None
-    pending_delegate: DelegateRun | None = None
+    pending_decision: DriverEvent | None = None
+    pending_delegate: DriverEvent | None = None
     version: int = 0
 
     def __post_init__(self) -> None:
@@ -93,7 +93,7 @@ class ReactCommandBoundary:
     def to_payload(self) -> dict[str, Any]:
         delegate = self.pending_delegate
         decision = self.pending_decision
-        return {'session_id': self.session_id, 'command_id': self.command_id, 'command_kind': self.command_kind, 'canonical_messages': [dict(item) for item in self.canonical_messages], 'session_projection_cursor': self.session_projection_cursor, 'prepared_context_ref': self.prepared_context_ref, 'tool_set_snapshot_ref': self.tool_set_snapshot_ref, 'calls': [_call_payload(call) for call in self.pending_calls], 'contexts': [_context_payload(context) for context in self.tool_contexts], 'outcomes': [_outcome_payload(outcome) if outcome is not None else None for outcome in self.outcomes], 'provider_state': dict(self.provider_state), 'iteration': self.iteration, 'completion_state': dict(self.completion_state), 'capability_snapshot': dict(self.capability_snapshot), 'decision': None if decision is None else {'run_id': decision.run_id, 'command_id': decision.command_id, 'decision_id': decision.decision_id, 'nonce': decision.nonce, 'kind': decision.kind, 'prompt': dict(decision.prompt), 'prompt_schema_version': decision.prompt_schema_version, 'expires_at': decision.expires_at, 'call_id': decision.call_id, 'effect_id': decision.effect_id, 'tool_name': decision.tool_name, 'args_hash': decision.args_hash, 'capability_hash': decision.capability_hash, 'scope_hash': decision.scope_hash}, 'delegate': None if delegate is None else {'run_id': delegate.run_id, 'command_id': delegate.command_id, 'child_request': dict(delegate.child_request), 'route_hint': delegate.route_hint, 'capability_subset': list(delegate.capability_subset), 'attachment_policy': delegate.attachment_policy.value, 'join_policy': delegate.join_policy.value}}
+        return {'session_id': self.session_id, 'command_id': self.command_id, 'command_kind': self.command_kind, 'canonical_messages': [dict(item) for item in self.canonical_messages], 'session_projection_cursor': self.session_projection_cursor, 'prepared_context_ref': self.prepared_context_ref, 'tool_set_snapshot_ref': self.tool_set_snapshot_ref, 'calls': [_call_payload(call) for call in self.pending_calls], 'contexts': [_context_payload(context) for context in self.tool_contexts], 'outcomes': [_outcome_payload(outcome) if outcome is not None else None for outcome in self.outcomes], 'provider_state': dict(self.provider_state), 'iteration': self.iteration, 'completion_state': dict(self.completion_state), 'capability_snapshot': dict(self.capability_snapshot), 'decision': None if decision is None else {'run_id': decision.run_id, 'command_id': decision.command_id, 'decision_id': decision.decision_id, 'nonce': decision.nonce, 'kind': decision.decision_kind, 'prompt': dict(decision.prompt), 'prompt_schema_version': decision.prompt_schema_version, 'expires_at': decision.expires_at, 'call_id': decision.call_id, 'effect_id': decision.effect_id, 'tool_name': decision.tool_name, 'args_hash': decision.args_hash, 'capability_hash': decision.capability_hash, 'scope_hash': decision.scope_hash}, 'delegate': None if delegate is None else {'run_id': delegate.run_id, 'command_id': delegate.command_id, 'child_request': dict(delegate.child_request), 'route_hint': delegate.route_hint, 'capability_subset': list(delegate.capability_subset), 'attachment_policy': delegate.attachment_policy.value, 'join_policy': delegate.join_policy.value}}
 
     @classmethod
     def from_record(cls, record: Any) -> 'ReactCommandBoundary':
@@ -129,11 +129,11 @@ class ReactToolBatch:
 
 @dataclass(frozen=True)
 class ReactDecisionRequest:
-    decision: OpenDecision
+    decision: DriverEvent
 
 @dataclass(frozen=True)
 class ReactDelegateRequest:
-    command: DelegateRun
+    command: DriverEvent
 
 @dataclass(frozen=True)
 class ReactFinal:
@@ -278,12 +278,12 @@ class ReActDriver:
         self._volatile: dict[str, ReactCommandBoundary] = {}
 
     @staticmethod
-    def _durable_decision(decision: OpenDecision | None) -> DurableDecisionOpen | None:
+    def _durable_decision(decision: DriverEvent | None) -> DurableDecisionOpen | None:
         if decision is None:
             return None
-        return DurableDecisionOpen(decision_id=decision.decision_id, run_id=decision.run_id, nonce=decision.nonce, kind=decision.kind, prompt_schema_version=decision.prompt_schema_version, prompt=dict(decision.prompt), expires_at=decision.expires_at, call_id=decision.call_id, effect_id=decision.effect_id, tool_name=decision.tool_name, args_hash=decision.args_hash, capability_hash=decision.capability_hash, scope_hash=decision.scope_hash)
+        return DurableDecisionOpen(decision_id=decision.decision_id, run_id=decision.run_id, nonce=decision.nonce, kind=decision.decision_kind, prompt_schema_version=decision.prompt_schema_version, prompt=dict(decision.prompt), expires_at=decision.expires_at, call_id=decision.call_id, effect_id=decision.effect_id, tool_name=decision.tool_name, args_hash=decision.args_hash, capability_hash=decision.capability_hash, scope_hash=decision.scope_hash)
 
-    async def _persist_initial_boundary(self, request: DriverStart, boundary: ReactCommandBoundary, *, decision: OpenDecision | None=None) -> ReactCommandBoundary:
+    async def _persist_initial_boundary(self, request: DriverStart, boundary: ReactCommandBoundary, *, decision: DriverEvent | None=None) -> ReactCommandBoundary:
         spec = request.run_spec
         if spec is None:
             raise RuntimeError('durable ReAct boundary requires its immutable RunCreate')
@@ -292,7 +292,7 @@ class ReActDriver:
         _, saved = await self._uow.promote_and_persist_batch_boundary(durable_spec, expected_run_version=0, expected_continuation_version=0, payload=boundary.to_payload(), decision=self._durable_decision(decision), waiting_event=waiting)
         return replace(boundary, version=int(saved.version))
 
-    async def _save_durable_boundary(self, boundary: ReactCommandBoundary, *, decision: OpenDecision | None=None) -> ReactCommandBoundary:
+    async def _save_durable_boundary(self, boundary: ReactCommandBoundary, *, decision: DriverEvent | None=None) -> ReactCommandBoundary:
         expected = max(0, boundary.version - 1)
         saved = await self._uow.save_continuation(boundary.run_id, expected, boundary.to_payload(), self._durable_decision(decision))
         return replace(boundary, version=int(saved.version))
@@ -302,7 +302,7 @@ class ReActDriver:
         return any((call.recoverable_effect or call.requires_authorization for call in batch.calls))
 
     @staticmethod
-    def _permission_decision(boundary: ReactCommandBoundary, index: int) -> OpenDecision:
+    def _permission_decision(boundary: ReactCommandBoundary, index: int) -> DriverEvent:
         call = boundary.pending_calls[index]
         identity = hashlib.sha256(f'permission|{boundary.run_id}|{call.effect_id}'.encode('utf-8')).hexdigest()
         nonce = hashlib.sha256(f'nonce|{identity}'.encode('utf-8')).hexdigest()
@@ -334,7 +334,7 @@ class ReActDriver:
             messages.append({'role': 'tool', 'tool_call_id': call.call_id, 'name': call.tool_name, 'content': json.dumps({'status': outcome.status.value, 'value': outcome.value, 'error': outcome.error, 'effect_id': outcome.effect_id, 'receipt_ref': outcome.receipt_ref, 'artifact_refs': list(outcome.artifact_refs)}, ensure_ascii=False, sort_keys=True, default=str)})
         return tuple(messages)
 
-    async def _emit(self, request: DriverStart, emissions: AsyncIterator[ReactEmission]) -> AsyncIterator[DriverCandidate]:
+    async def _emit(self, request: DriverStart, emissions: AsyncIterator[ReactEmission]) -> AsyncIterator[DriverEvent]:
         async for emission in emissions:
             if isinstance(emission, ReactToken):
                 yield TokenCandidate(request.run_id, emission.content, emission.kind)
@@ -378,7 +378,7 @@ class ReActDriver:
                 return
 
     @staticmethod
-    def _execute_command(boundary: ReactCommandBoundary) -> ExecuteTools:
+    def _execute_command(boundary: ReactCommandBoundary) -> DriverEvent:
         indexes = boundary.pending_indexes
         grants = ReActDriver._grant_state(boundary)
         grant_refs = []
@@ -388,9 +388,9 @@ class ReActDriver:
             grant_refs.append(None if value is None else ToolGrantRef(grant_id=str(value['grant_id']), decision_id=str(value['decision_id']), decision_nonce=str(value['decision_nonce']), version=int(value.get('version', 0))))
         return ExecuteTools(run_id=boundary.run_id, command_id=boundary.command_id, calls=tuple((boundary.pending_calls[index] for index in indexes)), contexts=tuple((boundary.tool_contexts[index] for index in indexes)), original_indexes=indexes, grant_refs=tuple(grant_refs) if any((item is not None for item in grant_refs)) else ())
 
-    def start(self, request: DriverStart) -> AsyncIterator[DriverCandidate]:
+    def start(self, request: DriverStart) -> AsyncIterator[DriverEvent]:
 
-        async def iterator() -> AsyncIterator[DriverCandidate]:
+        async def iterator() -> AsyncIterator[DriverEvent]:
             self._requests[request.run_id] = request
             async for candidate in self._emit(request, self._collaborator.start(request)):
                 yield candidate
@@ -420,7 +420,7 @@ class ReActDriver:
     def _request_from_boundary(boundary: ReactCommandBoundary) -> DriverStart:
         return DriverStart(run_id=boundary.run_id, session_id=boundary.session_id, canonical_messages=boundary.canonical_messages, session_projection_cursor=boundary.session_projection_cursor, prepared_context_ref=boundary.prepared_context_ref, tool_set_snapshot_ref=boundary.tool_set_snapshot_ref, provider_state=boundary.provider_state, iteration=boundary.iteration, completion_state=boundary.completion_state, capability_snapshot=boundary.capability_snapshot)
 
-    async def _resume_completed(self, boundary: ReactCommandBoundary) -> AsyncIterator[DriverCandidate]:
+    async def _resume_completed(self, boundary: ReactCommandBoundary) -> AsyncIterator[DriverEvent]:
         if not bool(boundary.completion_state.get('model_backfilled')):
             boundary = boundary.with_backfilled_messages(self._tool_messages(boundary))
             await self._save_progress(boundary)
@@ -429,10 +429,10 @@ class ReActDriver:
         async for candidate in self._emit(request, self._collaborator.resume(boundary, {'type': 'tool_outcomes', 'command_id': boundary.command_id})):
             yield candidate
 
-    def signal(self, signal: DriverSignal) -> AsyncIterator[DriverCandidate]:
+    def signal(self, signal: DriverSignal) -> AsyncIterator[DriverEvent]:
 
-        async def iterator() -> AsyncIterator[DriverCandidate]:
-            if isinstance(signal, ToolOutcomesSignal):
+        async def iterator() -> AsyncIterator[DriverEvent]:
+            if signal.kind == "tool_outcomes":
                 boundary = await self._load_boundary(signal.run_id)
                 if boundary.command_id != signal.command_id:
                     raise ValueError('tool outcome command binding mismatch')
@@ -449,7 +449,7 @@ class ReActDriver:
                 async for candidate in self._resume_completed(boundary):
                     yield candidate
                 return
-            if isinstance(signal, DecisionSignal):
+            if signal.kind == "decision":
                 boundary = await self._load_boundary(signal.run_id)
                 if boundary.pending_decision is None or boundary.pending_decision.decision_id != signal.decision_id:
                     raise ValueError('decision does not match pending boundary')
@@ -494,7 +494,7 @@ class ReActDriver:
                 async for candidate in self._emit(request, self._collaborator.resume(boundary, {'type': 'decision', 'response': dict(signal.response)})):
                     yield candidate
                 return
-            if isinstance(signal, ChildAcceptedSignal):
+            if signal.kind == "child_accepted":
                 boundary = await self._load_boundary(signal.run_id)
                 command = boundary.pending_delegate
                 if command is None or command.command_id != signal.command_id:
@@ -505,7 +505,7 @@ class ReActDriver:
                     async for candidate in self._emit(request, self._collaborator.resume(boundary, {'type': 'child_accepted', 'child_run_id': signal.child_run_id})):
                         yield candidate
                 return
-            if isinstance(signal, ChildTerminalSignal):
+            if signal.kind == "child_terminal":
                 boundary = await self._load_boundary(signal.run_id)
                 command = boundary.pending_delegate
                 if command is None or command.command_id != signal.command_id:
@@ -519,9 +519,9 @@ class ReActDriver:
                         yield candidate
         return iterator()
 
-    def recover(self, run_id: str) -> AsyncIterator[DriverCandidate]:
+    def recover(self, run_id: str) -> AsyncIterator[DriverEvent]:
 
-        async def iterator() -> AsyncIterator[DriverCandidate]:
+        async def iterator() -> AsyncIterator[DriverEvent]:
             boundary = await self._load_boundary(run_id)
             if boundary.pending_decision is not None:
                 yield boundary.pending_decision
@@ -547,9 +547,9 @@ class ReActDriver:
                 yield candidate
         return iterator()
 
-    def cancel(self, run_id: str, reason: str) -> AsyncIterator[DriverCandidate]:
+    def cancel(self, run_id: str, reason: str) -> AsyncIterator[DriverEvent]:
 
-        async def iterator() -> AsyncIterator[DriverCandidate]:
+        async def iterator() -> AsyncIterator[DriverEvent]:
             await self._collaborator.cancel(run_id, reason)
             yield CancelAcknowledgedCandidate(run_id, reason)
         return iterator()

@@ -11,8 +11,7 @@ from typing import Any, Protocol
 from deskpet.execution.contracts import OutcomeStatus, RunEvent
 from deskpet.harness.ports import (
     CancelAcknowledgedCandidate,
-    DecisionSignal,
-    DriverCandidate,
+    DriverEvent,
     DriverSignal,
     DriverStart,
     PersistedEventCandidate,
@@ -57,7 +56,7 @@ class LauncherWorkflowSignalResumer:
         self._launcher = launcher
 
     async def resume(self, signal: DriverSignal) -> None:
-        if not isinstance(signal, DecisionSignal):
+        if signal.kind != "decision":
             raise TypeError("workflow driver only resumes from a decision signal")
         nonce = str(getattr(signal, "nonce", "") or "").strip()
         if not nonce:
@@ -126,7 +125,7 @@ class WorkflowDriver:
         run_id: str,
         *,
         after: int,
-    ) -> AsyncIterator[DriverCandidate]:
+    ) -> AsyncIterator[DriverEvent]:
         cursor = after
         while True:
             events = await self._events.list_events(
@@ -139,8 +138,8 @@ class WorkflowDriver:
                     return
             await asyncio.sleep(self._poll_interval)
 
-    def start(self, request: DriverStart) -> AsyncIterator[DriverCandidate]:
-        async def iterator() -> AsyncIterator[DriverCandidate]:
+    def start(self, request: DriverStart) -> AsyncIterator[DriverEvent]:
+        async def iterator() -> AsyncIterator[DriverEvent]:
             context = request.run_context
             if context is None:
                 raise ValueError("workflow driver requires a trusted run context")
@@ -180,8 +179,8 @@ class WorkflowDriver:
 
         return iterator()
 
-    def signal(self, signal: DriverSignal) -> AsyncIterator[DriverCandidate]:
-        async def iterator() -> AsyncIterator[DriverCandidate]:
+    def signal(self, signal: DriverSignal) -> AsyncIterator[DriverEvent]:
+        async def iterator() -> AsyncIterator[DriverEvent]:
             if self._signal_resumer is None:
                 raise RuntimeError("workflow signal resumer is not configured")
             await self._signal_resumer.resume(signal)
@@ -190,15 +189,15 @@ class WorkflowDriver:
 
         return iterator()
 
-    def cancel(self, run_id: str, reason: str) -> AsyncIterator[DriverCandidate]:
-        async def iterator() -> AsyncIterator[DriverCandidate]:
+    def cancel(self, run_id: str, reason: str) -> AsyncIterator[DriverEvent]:
+        async def iterator() -> AsyncIterator[DriverEvent]:
             await self._launcher.cancel_precreated(run_id, reason)
             yield CancelAcknowledgedCandidate(run_id, reason)
 
         return iterator()
 
-    def recover(self, run_id: str) -> AsyncIterator[DriverCandidate]:
-        async def iterator() -> AsyncIterator[DriverCandidate]:
+    def recover(self, run_id: str) -> AsyncIterator[DriverEvent]:
+        async def iterator() -> AsyncIterator[DriverEvent]:
             existing = await self._events.list_events(run_id, after_durable_seq=0)
             cursor = 0
             for event in existing:

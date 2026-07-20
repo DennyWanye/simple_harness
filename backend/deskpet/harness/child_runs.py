@@ -29,7 +29,7 @@ from deskpet.execution.contracts import thaw_json
 from deskpet.harness.ports import (
     ChildAcceptedSignal,
     ChildTerminalSignal,
-    DelegateRun,
+    DriverEvent,
     DriverSignal,
     JoinPolicy,
 )
@@ -87,7 +87,7 @@ class ChildRunCoordinator:
         self._store = store
 
     @staticmethod
-    def _intent(parent: RunRecord, command: DelegateRun) -> ChildCommandIntent:
+    def _intent(parent: RunRecord, command: DriverEvent) -> ChildCommandIntent:
         if parent.run_id != command.run_id:
             raise ValueError("delegate command names another parent run")
         if parent.persistence_level is not PersistenceLevel.DURABLE:
@@ -141,7 +141,7 @@ class ChildRunCoordinator:
         )
 
     async def submit(
-        self, parent: RunRecord, command: DelegateRun
+        self, parent: RunRecord, command: DriverEvent
     ) -> ChildCommandRecord:
         return await self._store.commit_child_command(self._intent(parent, command))
 

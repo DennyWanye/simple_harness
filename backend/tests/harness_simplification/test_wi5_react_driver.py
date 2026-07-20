@@ -325,7 +325,7 @@ async def test_permission_batch_waits_for_durable_grant_before_execution(tmp_pat
     first = await _collect(driver.start(_request()))
     assert len(first) == 1
     decision = first[0]
-    assert isinstance(decision, OpenDecision)
+    assert decision.kind == "open_decision"
     async with aiosqlite.connect(path) as db:
         await db.execute(
             """UPDATE execution_decisions
@@ -350,7 +350,7 @@ async def test_permission_batch_waits_for_durable_grant_before_execution(tmp_pat
 
     assert len(resumed) == 1
     command = resumed[0]
-    assert isinstance(command, ExecuteTools)
+    assert command.kind == "execute_tools"
     assert command.grant_refs[0].grant_id == "grant-1"
     assert command.grant_refs[0].decision_nonce == decision.nonce
 
@@ -480,7 +480,7 @@ async def test_delegate_boundary_survives_restart_and_accept_signal(tmp_path):
     ]
 
 
-def _delegate(join_policy: JoinPolicy) -> DelegateRun:
+def _delegate(join_policy: JoinPolicy):
     attachment = {
         JoinPolicy.JOIN_BEFORE_FINAL: AttachmentPolicy.ATTACHED,
         JoinPolicy.ROOT_TERMINAL_CHILD: AttachmentPolicy.ROOT_TERMINAL_CHILD,

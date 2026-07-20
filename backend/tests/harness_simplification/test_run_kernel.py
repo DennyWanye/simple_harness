@@ -40,6 +40,8 @@ from deskpet.harness.ports import (
     DelegateRun,
     ChildAcceptedSignal,
     ChildTerminalSignal,
+    DriverEvent,
+    DriverSignal,
     DriverTerminalCandidate,
     ExecuteTools,
     JoinPolicy,
@@ -781,3 +783,20 @@ def test_kernel_surface_is_six_operations_and_has_no_product_branches() -> None:
     text = source.read_text(encoding="utf-8").casefold()
     for product in ("deepresearch", "deep_research", "ppt", "code_complex", "voice"):
         assert product not in text
+
+
+def test_driver_port_has_one_tagged_event_and_one_tagged_signal() -> None:
+    source = Path("backend/deskpet/harness/ports.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    legacy_types = {
+        "TokenCandidate", "ProviderFallbackCandidate", "ExecuteTools",
+        "OpenDecision", "DelegateRun", "DriverTerminalCandidate",
+        "ChildAcceptedCandidate", "CancelAcknowledgedCandidate",
+        "PersistedEventCandidate", "ToolOutcomesSignal", "DecisionSignal",
+        "ChildAcceptedSignal", "ChildTerminalSignal", "DriverCandidate",
+    }
+    classes = {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
+    assert classes.isdisjoint(legacy_types)
+    assert {"DriverEvent", "DriverSignal"} <= classes
+    assert isinstance(TokenCandidate("run", "ok"), DriverEvent)
+    assert isinstance(ChildAcceptedSignal("run", "command", "child"), DriverSignal)
