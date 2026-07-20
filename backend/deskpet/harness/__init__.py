@@ -2,6 +2,7 @@
 
 from .context import HostContextFactory, RunContext
 from .child_runs import ChildRunCoordinator
+from .decisions import DecisionStore, DecisionWakeupCache
 from .kernel import (
     CancelReceipt,
     HostContext,
@@ -46,6 +47,8 @@ __all__ = [
     "CancelReceipt",
     "ChildRunCoordinator",
     "DecisionAuthorization",
+    "DecisionStore",
+    "DecisionWakeupCache",
     "DeliveryWorker",
     "DriverTerminalCandidate",
     "EventMergeCursor",

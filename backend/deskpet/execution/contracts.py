@@ -71,6 +71,22 @@ class DeliveryClaimConflict(ExecutionError):
     pass
 
 
+class DecisionNotFound(ExecutionError):
+    pass
+
+
+class DecisionConflict(ExecutionError):
+    pass
+
+
+class GrantNotFound(ExecutionError):
+    pass
+
+
+class GrantConsumeConflict(ExecutionError):
+    pass
+
+
 class ParentCycleError(ExecutionError):
     pass
 
@@ -359,6 +375,13 @@ def workflow_idempotency_key(
             _required_text(logical_slot, "logical_slot"),
         )
     )
+
+
+def stable_decision_grant_id(decision_id: str) -> str:
+    """Return the replay-stable authorization id for one permission decision."""
+
+    value = _required_text(decision_id, "decision_id")
+    return hashlib.sha256(f"execution-grant:{value}".encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -689,6 +712,268 @@ class RunRecord:
     @property
     def context(self) -> RunContext:
         return self.spec.context
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionOpen:
+    """Immutable intent persisted before a driver suspends for input."""
+
+    decision_id: str
+    run_id: str
+    nonce: str
+    kind: DecisionKind | str
+    prompt_schema_version: int
+    prompt: Mapping[str, JsonValue]
+    expires_at: float | None
+    domain_kind: str | None = None
+    domain_id: str | None = None
+    call_id: str | None = None
+    effect_id: str | None = None
+    tool_name: str | None = None
+    args_hash: str | None = None
+    capability_hash: str | None = None
+    scope_hash: str | None = None
+    schema_version: int = CONTRACT_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _schema_version(self.schema_version, name="DecisionOpen")
+        for field_name in ("decision_id", "run_id", "nonce"):
+            object.__setattr__(
+                self, field_name, _required_text(getattr(self, field_name), field_name)
+            )
+        object.__setattr__(self, "kind", DecisionKind(self.kind))
+        if (
+            not isinstance(self.prompt_schema_version, int)
+            or isinstance(self.prompt_schema_version, bool)
+            or self.prompt_schema_version < 1
+        ):
+            raise ContractValidationError(
+                "invalid_schema_version", "prompt_schema_version must be positive"
+            )
+        object.__setattr__(
+            self, "prompt", _json_object(self.prompt, name="DecisionOpen.prompt")
+        )
+        for field_name in (
+            "domain_kind",
+            "domain_id",
+            "call_id",
+            "effect_id",
+            "tool_name",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _optional_text(getattr(self, field_name), field_name),
+            )
+        if (self.domain_kind is None) != (self.domain_id is None):
+            raise ContractValidationError(
+                "invalid_domain_ref", "domain_kind and domain_id must be supplied together"
+            )
+        for field_name in ("args_hash", "capability_hash", "scope_hash"):
+            value = getattr(self, field_name)
+            if value is not None:
+                object.__setattr__(self, field_name, _fingerprint(value, field_name))
+        if self.expires_at is not None and not math.isfinite(float(self.expires_at)):
+            raise ContractValidationError(
+                "invalid_expiry", "decision expiry must be finite"
+            )
+        if self.kind is DecisionKind.PERMISSION:
+            required = (
+                self.call_id,
+                self.effect_id,
+                self.tool_name,
+                self.args_hash,
+                self.capability_hash,
+                self.scope_hash,
+                self.expires_at,
+            )
+            if any(value is None for value in required):
+                raise ContractValidationError(
+                    "incomplete_permission_binding",
+                    "permission decisions require call/effect/tool/hash bindings and expiry",
+                )
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionRecord:
+    request: DecisionOpen
+    status: DecisionStatus | str
+    response_schema_version: int | None
+    response: Mapping[str, JsonValue] | None
+    decision_version: int
+    created_at: float
+    resolved_at: float | None
+    schema_version: int = CONTRACT_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _schema_version(self.schema_version, name="DecisionRecord")
+        object.__setattr__(self, "status", DecisionStatus(self.status))
+        if (
+            not isinstance(self.decision_version, int)
+            or isinstance(self.decision_version, bool)
+            or self.decision_version < 0
+        ):
+            raise ContractValidationError(
+                "invalid_version", "decision_version must be non-negative"
+            )
+        if self.status is DecisionStatus.OPEN:
+            if self.response_schema_version is not None or self.response is not None:
+                raise ContractValidationError(
+                    "invalid_open_decision", "open decisions cannot carry a response"
+                )
+            if self.resolved_at is not None:
+                raise ContractValidationError(
+                    "invalid_open_decision", "open decisions cannot be resolved"
+                )
+        elif self.status in (DecisionStatus.ALLOWED, DecisionStatus.DENIED):
+            if (
+                self.response_schema_version is None
+                or self.response_schema_version < 1
+                or self.response is None
+                or self.resolved_at is None
+            ):
+                raise ContractValidationError(
+                    "invalid_resolved_decision",
+                    "resolved decisions require versioned response and timestamp",
+                )
+        elif self.status is DecisionStatus.EXPIRED and self.resolved_at is None:
+            raise ContractValidationError(
+                "invalid_expired_decision", "expired decisions require resolved_at"
+            )
+        if self.response is not None:
+            object.__setattr__(
+                self,
+                "response",
+                _json_object(self.response, name="DecisionRecord.response"),
+            )
+
+    @property
+    def decision_id(self) -> str:
+        return self.request.decision_id
+
+    @property
+    def run_id(self) -> str:
+        return self.request.run_id
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionSignal:
+    """Trusted signal request with the complete decision fence."""
+
+    decision_id: str
+    run_id: str
+    expected_session_id: str
+    nonce: str
+    expected_version: int
+    allow: bool
+    response_schema_version: int
+    response: Mapping[str, JsonValue]
+    domain_kind: str | None = None
+    domain_id: str | None = None
+    call_id: str | None = None
+    effect_id: str | None = None
+    tool_name: str | None = None
+    args_hash: str | None = None
+    capability_hash: str | None = None
+    scope_hash: str | None = None
+    schema_version: int = CONTRACT_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _schema_version(self.schema_version, name="DecisionSignal")
+        for field_name in ("decision_id", "run_id", "expected_session_id", "nonce"):
+            object.__setattr__(
+                self, field_name, _required_text(getattr(self, field_name), field_name)
+            )
+        if (
+            not isinstance(self.expected_version, int)
+            or isinstance(self.expected_version, bool)
+            or self.expected_version < 0
+        ):
+            raise ContractValidationError(
+                "invalid_version", "expected_version must be non-negative"
+            )
+        if not isinstance(self.allow, bool):
+            raise ContractValidationError("invalid_signal", "allow must be a boolean")
+        if (
+            not isinstance(self.response_schema_version, int)
+            or isinstance(self.response_schema_version, bool)
+            or self.response_schema_version < 1
+        ):
+            raise ContractValidationError(
+                "invalid_schema_version", "response_schema_version must be positive"
+            )
+        object.__setattr__(
+            self,
+            "response",
+            _json_object(self.response, name="DecisionSignal.response"),
+        )
+        for field_name in (
+            "domain_kind",
+            "domain_id",
+            "call_id",
+            "effect_id",
+            "tool_name",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _optional_text(getattr(self, field_name), field_name),
+            )
+        if (self.domain_kind is None) != (self.domain_id is None):
+            raise ContractValidationError(
+                "invalid_domain_ref", "domain_kind and domain_id must be supplied together"
+            )
+        for field_name in ("args_hash", "capability_hash", "scope_hash"):
+            value = getattr(self, field_name)
+            if value is not None:
+                object.__setattr__(self, field_name, _fingerprint(value, field_name))
+
+
+@dataclass(frozen=True, slots=True)
+class GrantConsume:
+    """Complete one-shot fence presented immediately before an Effect starts."""
+
+    grant_id: str
+    decision_id: str
+    decision_nonce: str
+    run_id: str
+    expected_session_id: str
+    call_id: str
+    effect_id: str
+    tool_name: str
+    args_hash: str
+    capability_hash: str
+    scope_hash: str
+    expected_version: int = 0
+    schema_version: int = CONTRACT_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _schema_version(self.schema_version, name="GrantConsume")
+        for field_name in (
+            "grant_id",
+            "decision_id",
+            "decision_nonce",
+            "run_id",
+            "expected_session_id",
+            "call_id",
+            "effect_id",
+            "tool_name",
+        ):
+            object.__setattr__(
+                self, field_name, _required_text(getattr(self, field_name), field_name)
+            )
+        for field_name in ("args_hash", "capability_hash", "scope_hash"):
+            object.__setattr__(
+                self, field_name, _fingerprint(getattr(self, field_name), field_name)
+            )
+        if (
+            not isinstance(self.expected_version, int)
+            or isinstance(self.expected_version, bool)
+            or self.expected_version < 0
+        ):
+            raise ContractValidationError(
+                "invalid_version", "expected_version must be non-negative"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1575,7 +1860,12 @@ __all__ = [
     "ContractValidationError",
     "CreateRunResult",
     "DecisionAuthorization",
+    "DecisionConflict",
     "DecisionKind",
+    "DecisionNotFound",
+    "DecisionOpen",
+    "DecisionRecord",
+    "DecisionSignal",
     "DecisionStatus",
     "DeliveryClaimConflict",
     "DeliveryNotFound",
@@ -1587,6 +1877,9 @@ __all__ = [
     "EventNotFound",
     "ExecutionError",
     "FinalizeRunResult",
+    "GrantConsume",
+    "GrantConsumeConflict",
+    "GrantNotFound",
     "GrantStatus",
     "IdempotencyConflict",
     "JsonPrimitive",
@@ -1620,6 +1913,7 @@ __all__ = [
     "fingerprint_json",
     "root_idempotency_key",
     "stable_delivery_id",
+    "stable_decision_grant_id",
     "stable_event_id",
     "team_idempotency_key",
     "thaw_json",

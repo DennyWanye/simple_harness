@@ -27,6 +27,14 @@ from deskpet.execution.contracts import (
     ChildCommandStatus,
     ChildSignalRecord,
     CreateRunResult,
+    DecisionAuthorization,
+    DecisionConflict,
+    DecisionKind,
+    DecisionNotFound,
+    DecisionOpen,
+    DecisionRecord,
+    DecisionSignal,
+    DecisionStatus,
     DeliveryClaimConflict,
     DeliveryNotFound,
     DeliveryRecord,
@@ -34,6 +42,9 @@ from deskpet.execution.contracts import (
     DeliveryStatus,
     EventNotFound,
     FinalizeRunResult,
+    GrantConsume,
+    GrantConsumeConflict,
+    GrantNotFound,
     IdempotencyConflict,
     LegacyRunProjection,
     LinkKind,
@@ -59,6 +70,7 @@ from deskpet.execution.contracts import (
     canonical_json,
     fingerprint_json,
     stable_delivery_id,
+    stable_decision_grant_id,
     stable_event_id,
     thaw_json,
 )
@@ -299,6 +311,81 @@ class SqliteExecutionUnitOfWork:
                 if row["delivered_at"] is not None
                 else None
             ),
+        )
+
+    @staticmethod
+    def _row_to_decision(row: Mapping[str, Any]) -> DecisionRecord:
+        request = DecisionOpen(
+            decision_id=str(row["decision_id"]),
+            run_id=str(row["run_id"]),
+            nonce=str(row["nonce"]),
+            kind=str(row["kind"]),
+            prompt_schema_version=int(row["prompt_schema_version"]),
+            prompt=json.loads(str(row["prompt_json"])),
+            expires_at=(
+                float(row["expires_at"]) if row["expires_at"] is not None else None
+            ),
+            domain_kind=(
+                str(row["domain_kind"]) if row["domain_kind"] is not None else None
+            ),
+            domain_id=(str(row["domain_id"]) if row["domain_id"] is not None else None),
+            call_id=(str(row["call_id"]) if row["call_id"] is not None else None),
+            effect_id=(
+                str(row["effect_id"]) if row["effect_id"] is not None else None
+            ),
+            tool_name=(
+                str(row["tool_name"]) if row["tool_name"] is not None else None
+            ),
+            args_hash=(
+                str(row["args_hash"]) if row["args_hash"] is not None else None
+            ),
+            capability_hash=(
+                str(row["capability_hash"])
+                if row["capability_hash"] is not None
+                else None
+            ),
+            scope_hash=(
+                str(row["scope_hash"]) if row["scope_hash"] is not None else None
+            ),
+            schema_version=int(row["schema_version"]),
+        )
+        response = (
+            json.loads(str(row["response_json"]))
+            if row["response_json"] is not None
+            else None
+        )
+        return DecisionRecord(
+            request=request,
+            status=str(row["status"]),
+            response_schema_version=(
+                int(row["response_schema_version"])
+                if row["response_schema_version"] is not None
+                else None
+            ),
+            response=response,
+            decision_version=int(row["decision_version"]),
+            created_at=float(row["created_at"]),
+            resolved_at=(
+                float(row["resolved_at"]) if row["resolved_at"] is not None else None
+            ),
+            schema_version=int(row["schema_version"]),
+        )
+
+    @staticmethod
+    def _row_to_authorization(row: Mapping[str, Any]) -> DecisionAuthorization:
+        return DecisionAuthorization(
+            grant_id=str(row["grant_id"]),
+            decision_id=str(row["decision_id"]),
+            run_id=str(row["run_id"]),
+            call_id=str(row["call_id"]),
+            effect_id=str(row["effect_id"]),
+            tool_name=str(row["tool_name"]),
+            args_hash=str(row["args_hash"]),
+            capability_hash=str(row["capability_hash"]),
+            scope_hash=str(row["scope_hash"]),
+            expires_at=float(row["expires_at"]),
+            version=int(row["grant_version"]),
+            schema_version=int(row["schema_version"]),
         )
 
     @staticmethod
@@ -993,6 +1080,566 @@ class SqliteExecutionUnitOfWork:
                 )
             ).fetchone()
             return int(remaining[0]) == 0
+        finally:
+            await db.close()
+
+    @staticmethod
+    def _assert_decision_intent(
+        existing: DecisionRecord, requested: DecisionOpen
+    ) -> None:
+        if existing.request != requested:
+            raise DecisionConflict(
+                "decision_identity_conflict",
+                "decision id or run nonce is already bound to another intent",
+            )
+
+    def _authorize_run_row(
+        self,
+        row: Mapping[str, Any],
+        *,
+        expected_session_id: str,
+        actor: ActorContext,
+    ) -> RunRecord:
+        record = self._row_to_record(row)
+        self._authorize_view(
+            RunRef(record.run_id, expected_session_id), actor, record
+        )
+        return record
+
+    async def open_decision(
+        self,
+        request: DecisionOpen,
+        actor: ActorContext,
+        *,
+        expected_run_version: int,
+    ) -> DecisionRecord:
+        if (
+            not isinstance(expected_run_version, int)
+            or isinstance(expected_run_version, bool)
+            or expected_run_version < 0
+        ):
+            raise ValueError("expected_run_version must be non-negative")
+        now = float(self._clock())
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            run_row = await (
+                await db.execute(
+                    "SELECT * FROM execution_runs WHERE run_id=?", (request.run_id,)
+                )
+            ).fetchone()
+            if run_row is None:
+                raise RunNotFound(
+                    "run_not_found", f"execution run does not exist: {request.run_id}"
+                )
+            run = self._authorize_run_row(
+                run_row,
+                expected_session_id=actor.session_id,
+                actor=actor,
+            )
+            existing_row = await (
+                await db.execute(
+                    """SELECT * FROM execution_decisions
+                    WHERE decision_id=? OR (run_id=? AND nonce=?)
+                    ORDER BY CASE WHEN decision_id=? THEN 0 ELSE 1 END LIMIT 1""",
+                    (
+                        request.decision_id,
+                        request.run_id,
+                        request.nonce,
+                        request.decision_id,
+                    ),
+                )
+            ).fetchone()
+            if existing_row is not None:
+                existing = self._row_to_decision(existing_row)
+                self._assert_decision_intent(existing, request)
+                await db.commit()
+                return existing
+            if run.persistence_level is not PersistenceLevel.DURABLE:
+                raise PersistenceRequired(
+                    "decision_requires_durable_run",
+                    "a run must be durable before opening a decision",
+                )
+            if run.version != expected_run_version:
+                raise VersionConflict(
+                    "stale_run_version",
+                    f"expected run version {expected_run_version}, found {run.version}",
+                )
+            if run.status in TERMINAL_RUN_STATUSES or run.status is RunStatus.CANCEL_REQUESTED:
+                raise DecisionConflict(
+                    "run_not_signalable", "cancelled or terminal runs cannot open decisions"
+                )
+            if request.expires_at is not None and request.expires_at <= now:
+                raise DecisionConflict(
+                    "decision_expired", "cannot open an already expired decision"
+                )
+            if (
+                request.capability_hash is not None
+                and request.capability_hash != run.context.capability_hash
+            ):
+                raise DecisionConflict(
+                    "decision_binding_mismatch",
+                    "decision capability does not match the durable run context",
+                )
+            cursor = await db.execute(
+                """UPDATE execution_runs SET status='waiting',version=version+1,updated_at=?
+                WHERE run_id=? AND version=? AND terminal_event_id IS NULL
+                AND status IN ('created','queued','running','waiting')""",
+                (now, request.run_id, expected_run_version),
+            )
+            if cursor.rowcount != 1:
+                raise VersionConflict(
+                    "stale_run_version", "run changed before decision open CAS"
+                )
+            await db.execute(
+                """INSERT INTO execution_decisions(
+                decision_id,schema_version,run_id,nonce,kind,status,
+                prompt_schema_version,prompt_json,response_schema_version,response_json,
+                domain_kind,domain_id,call_id,effect_id,tool_name,args_hash,
+                capability_hash,scope_hash,decision_version,expires_at,created_at,resolved_at
+                ) VALUES(?,?,?,?,?,'open',?,?,NULL,NULL,?,?,?,?,?,?,?,?,0,?,?,NULL)""",
+                (
+                    request.decision_id,
+                    request.schema_version,
+                    request.run_id,
+                    request.nonce,
+                    request.kind.value,
+                    request.prompt_schema_version,
+                    canonical_json(thaw_json(request.prompt)),
+                    request.domain_kind,
+                    request.domain_id,
+                    request.call_id,
+                    request.effect_id,
+                    request.tool_name,
+                    request.args_hash,
+                    request.capability_hash,
+                    request.scope_hash,
+                    request.expires_at,
+                    now,
+                ),
+            )
+            self._fault("decision_open_before_commit")
+            row = await (
+                await db.execute(
+                    "SELECT * FROM execution_decisions WHERE decision_id=?",
+                    (request.decision_id,),
+                )
+            ).fetchone()
+            assert row is not None
+            await db.commit()
+            return self._row_to_decision(row)
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def get_decision(
+        self,
+        decision_id: str,
+        *,
+        ref: RunRef,
+        actor: ActorContext,
+    ) -> DecisionRecord:
+        db = await self._connect()
+        try:
+            decision_row = await (
+                await db.execute(
+                    "SELECT * FROM execution_decisions WHERE decision_id=?",
+                    (decision_id,),
+                )
+            ).fetchone()
+            if decision_row is None:
+                raise DecisionNotFound(
+                    "decision_not_found", f"execution decision does not exist: {decision_id}"
+                )
+            decision = self._row_to_decision(decision_row)
+            if decision.run_id != ref.run_id:
+                raise DecisionConflict(
+                    "decision_binding_mismatch", "decision is not bound to the supplied run"
+                )
+            run_row = await (
+                await db.execute(
+                    "SELECT * FROM execution_runs WHERE run_id=?", (decision.run_id,)
+                )
+            ).fetchone()
+            assert run_row is not None
+            self._authorize_run_row(
+                run_row,
+                expected_session_id=ref.expected_session_id,
+                actor=actor,
+            )
+            return decision
+        finally:
+            await db.close()
+
+    @staticmethod
+    def _assert_signal_binding(
+        decision: DecisionRecord, signal: DecisionSignal
+    ) -> None:
+        request = decision.request
+        scalar_pairs = (
+            (signal.decision_id, request.decision_id),
+            (signal.run_id, request.run_id),
+            (signal.nonce, request.nonce),
+            (signal.domain_kind, request.domain_kind),
+            (signal.domain_id, request.domain_id),
+            (signal.call_id, request.call_id),
+            (signal.effect_id, request.effect_id),
+            (signal.tool_name, request.tool_name),
+            (signal.args_hash, request.args_hash),
+            (signal.capability_hash, request.capability_hash),
+            (signal.scope_hash, request.scope_hash),
+        )
+        if any(actual != expected for actual, expected in scalar_pairs):
+            raise DecisionConflict(
+                "decision_binding_mismatch",
+                "signal nonce/run/domain/effect/capability/scope fence differs",
+            )
+        if signal.expected_version != decision.decision_version:
+            raise DecisionConflict(
+                "stale_decision_version",
+                f"expected decision version {signal.expected_version}, "
+                f"found {decision.decision_version}",
+            )
+
+    async def resolve_decision(
+        self,
+        signal: DecisionSignal,
+        actor: ActorContext,
+    ) -> tuple[DecisionRecord, DecisionAuthorization | None]:
+        now = float(self._clock())
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            row = await (
+                await db.execute(
+                    "SELECT * FROM execution_decisions WHERE decision_id=?",
+                    (signal.decision_id,),
+                )
+            ).fetchone()
+            if row is None:
+                raise DecisionNotFound(
+                    "decision_not_found",
+                    f"execution decision does not exist: {signal.decision_id}",
+                )
+            decision = self._row_to_decision(row)
+            run_row = await (
+                await db.execute(
+                    "SELECT * FROM execution_runs WHERE run_id=?", (decision.run_id,)
+                )
+            ).fetchone()
+            assert run_row is not None
+            run = self._authorize_run_row(
+                run_row,
+                expected_session_id=signal.expected_session_id,
+                actor=actor,
+            )
+            self._assert_signal_binding(decision, signal)
+            if run.status is RunStatus.CANCEL_REQUESTED or run.status in TERMINAL_RUN_STATUSES:
+                raise DecisionConflict(
+                    "run_not_signalable", "cancelled or terminal run rejects decision signals"
+                )
+            if decision.status is not DecisionStatus.OPEN:
+                raise DecisionConflict(
+                    "decision_already_resolved",
+                    "duplicate or late decision signal was rejected",
+                )
+            if decision.request.expires_at is not None and decision.request.expires_at <= now:
+                cursor = await db.execute(
+                    """UPDATE execution_decisions SET status='expired',
+                    decision_version=decision_version+1,resolved_at=?
+                    WHERE decision_id=? AND decision_version=? AND status='open'""",
+                    (now, decision.decision_id, signal.expected_version),
+                )
+                if cursor.rowcount != 1:
+                    raise DecisionConflict(
+                        "stale_decision_version", "decision changed before expiry CAS"
+                    )
+                await db.commit()
+                raise DecisionConflict(
+                    "decision_expired", "expired decision signal was rejected"
+                )
+            resolved_status = (
+                DecisionStatus.ALLOWED if signal.allow else DecisionStatus.DENIED
+            )
+            cursor = await db.execute(
+                """UPDATE execution_decisions SET status=?,response_schema_version=?,
+                response_json=?,decision_version=decision_version+1,resolved_at=?
+                WHERE decision_id=? AND decision_version=? AND status='open'""",
+                (
+                    resolved_status.value,
+                    signal.response_schema_version,
+                    canonical_json(thaw_json(signal.response)),
+                    now,
+                    decision.decision_id,
+                    signal.expected_version,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise DecisionConflict(
+                    "stale_decision_version", "decision changed before resolve CAS"
+                )
+            authorization: DecisionAuthorization | None = None
+            if decision.request.kind is DecisionKind.PERMISSION and signal.allow:
+                expires_at = decision.request.expires_at
+                assert expires_at is not None
+                grant_id = stable_decision_grant_id(decision.decision_id)
+                await db.execute(
+                    """INSERT INTO execution_grants(
+                    grant_id,schema_version,decision_id,run_id,call_id,effect_id,
+                    tool_name,args_hash,capability_hash,scope_hash,status,
+                    grant_version,expires_at,created_at,consumed_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,'issued',0,?,?,NULL)""",
+                    (
+                        grant_id,
+                        decision.request.schema_version,
+                        decision.decision_id,
+                        decision.run_id,
+                        decision.request.call_id,
+                        decision.request.effect_id,
+                        decision.request.tool_name,
+                        decision.request.args_hash,
+                        decision.request.capability_hash,
+                        decision.request.scope_hash,
+                        expires_at,
+                        now,
+                    ),
+                )
+                grant_row = await (
+                    await db.execute(
+                        "SELECT * FROM execution_grants WHERE grant_id=?", (grant_id,)
+                    )
+                ).fetchone()
+                assert grant_row is not None
+                authorization = self._row_to_authorization(grant_row)
+            self._fault("decision_resolve_before_commit")
+            resolved_row = await (
+                await db.execute(
+                    "SELECT * FROM execution_decisions WHERE decision_id=?",
+                    (decision.decision_id,),
+                )
+            ).fetchone()
+            assert resolved_row is not None
+            await db.commit()
+            return self._row_to_decision(resolved_row), authorization
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def cancel_open_decisions(
+        self,
+        ref: RunRef,
+        actor: ActorContext,
+        *,
+        expected_run_version: int,
+    ) -> tuple[DecisionRecord, ...]:
+        if (
+            not isinstance(expected_run_version, int)
+            or isinstance(expected_run_version, bool)
+            or expected_run_version < 0
+        ):
+            raise ValueError("expected_run_version must be non-negative")
+        now = float(self._clock())
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            run_row = await (
+                await db.execute(
+                    "SELECT * FROM execution_runs WHERE run_id=?", (ref.run_id,)
+                )
+            ).fetchone()
+            if run_row is None:
+                raise RunNotFound(
+                    "run_not_found", f"execution run does not exist: {ref.run_id}"
+                )
+            run = self._authorize_run_row(
+                run_row,
+                expected_session_id=ref.expected_session_id,
+                actor=actor,
+            )
+            if run.version != expected_run_version:
+                raise VersionConflict(
+                    "stale_run_version",
+                    f"expected run version {expected_run_version}, found {run.version}",
+                )
+            if run.status not in (RunStatus.CANCEL_REQUESTED, RunStatus.CANCELLED):
+                raise DecisionConflict(
+                    "run_not_cancelling",
+                    "decision cleanup requires an already persisted run cancellation",
+                )
+            open_rows = await (
+                await db.execute(
+                    """SELECT * FROM execution_decisions
+                    WHERE run_id=? AND status='open' ORDER BY created_at,decision_id""",
+                    (ref.run_id,),
+                )
+            ).fetchall()
+            cancelled_ids = {str(row["decision_id"]) for row in open_rows}
+            if open_rows:
+                cursor = await db.execute(
+                    """UPDATE execution_decisions SET status='expired',
+                    decision_version=decision_version+1,resolved_at=?
+                    WHERE run_id=? AND status='open'""",
+                    (now, ref.run_id),
+                )
+                if cursor.rowcount != len(open_rows):
+                    raise DecisionConflict(
+                        "decision_cancel_conflict", "open decision set changed during cancel CAS"
+                    )
+            await db.execute(
+                """UPDATE execution_grants SET status='revoked',
+                grant_version=grant_version+1 WHERE run_id=? AND status='issued'""",
+                (ref.run_id,),
+            )
+            self._fault("decision_cancel_before_commit")
+            cancelled_rows = await (
+                await db.execute(
+                    """SELECT * FROM execution_decisions WHERE run_id=? AND status='expired'
+                    ORDER BY created_at,decision_id""",
+                    (ref.run_id,),
+                )
+            ).fetchall()
+            await db.commit()
+            return tuple(
+                self._row_to_decision(item)
+                for item in cancelled_rows
+                if str(item["decision_id"]) in cancelled_ids
+            )
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def consume_authorization(
+        self,
+        request: GrantConsume,
+        actor: ActorContext,
+    ) -> DecisionAuthorization:
+        now = float(self._clock())
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            grant_row = await (
+                await db.execute(
+                    "SELECT * FROM execution_grants WHERE grant_id=?", (request.grant_id,)
+                )
+            ).fetchone()
+            if grant_row is None:
+                raise GrantNotFound(
+                    "grant_not_found", f"execution grant does not exist: {request.grant_id}"
+                )
+            decision_row = await (
+                await db.execute(
+                    "SELECT * FROM execution_decisions WHERE decision_id=?",
+                    (grant_row["decision_id"],),
+                )
+            ).fetchone()
+            assert decision_row is not None
+            decision = self._row_to_decision(decision_row)
+            run_row = await (
+                await db.execute(
+                    "SELECT * FROM execution_runs WHERE run_id=?", (decision.run_id,)
+                )
+            ).fetchone()
+            assert run_row is not None
+            run = self._authorize_run_row(
+                run_row,
+                expected_session_id=request.expected_session_id,
+                actor=actor,
+            )
+            expected = (
+                request.grant_id,
+                request.decision_id,
+                request.run_id,
+                request.call_id,
+                request.effect_id,
+                request.tool_name,
+                request.args_hash,
+                request.capability_hash,
+                request.scope_hash,
+                request.decision_nonce,
+            )
+            actual = (
+                str(grant_row["grant_id"]),
+                str(grant_row["decision_id"]),
+                str(grant_row["run_id"]),
+                str(grant_row["call_id"]),
+                str(grant_row["effect_id"]),
+                str(grant_row["tool_name"]),
+                str(grant_row["args_hash"]),
+                str(grant_row["capability_hash"]),
+                str(grant_row["scope_hash"]),
+                decision.request.nonce,
+            )
+            if expected != actual or request.capability_hash != run.context.capability_hash:
+                raise GrantConsumeConflict(
+                    "grant_binding_mismatch",
+                    "grant nonce/run/effect/capability/scope fence differs",
+                )
+            if int(grant_row["grant_version"]) != request.expected_version:
+                raise GrantConsumeConflict(
+                    "stale_grant_version",
+                    f"expected grant version {request.expected_version}, "
+                    f"found {grant_row['grant_version']}",
+                )
+            if run.status is RunStatus.CANCEL_REQUESTED or run.status in TERMINAL_RUN_STATUSES:
+                raise GrantConsumeConflict(
+                    "run_not_executable", "cancelled or terminal run rejects authorization"
+                )
+            if decision.status is not DecisionStatus.ALLOWED:
+                raise GrantConsumeConflict(
+                    "grant_not_authorized", "grant decision is not allowed"
+                )
+            if str(grant_row["status"]) != "issued":
+                raise GrantConsumeConflict(
+                    "grant_already_consumed",
+                    "duplicate, expired, or revoked authorization was rejected",
+                )
+            if float(grant_row["expires_at"]) <= now:
+                cursor = await db.execute(
+                    """UPDATE execution_grants SET status='expired',
+                    grant_version=grant_version+1 WHERE grant_id=?
+                    AND grant_version=? AND status='issued'""",
+                    (request.grant_id, request.expected_version),
+                )
+                if cursor.rowcount != 1:
+                    raise GrantConsumeConflict(
+                        "stale_grant_version", "grant changed before expiry CAS"
+                    )
+                await db.commit()
+                raise GrantConsumeConflict(
+                    "grant_expired", "expired authorization was rejected"
+                )
+            cursor = await db.execute(
+                """UPDATE execution_grants SET status='consumed',
+                grant_version=grant_version+1,consumed_at=? WHERE grant_id=?
+                AND grant_version=? AND status='issued'""",
+                (now, request.grant_id, request.expected_version),
+            )
+            if cursor.rowcount != 1:
+                raise GrantConsumeConflict(
+                    "grant_consume_conflict", "grant changed before consume CAS"
+                )
+            self._fault("grant_consume_before_commit")
+            consumed = await (
+                await db.execute(
+                    "SELECT * FROM execution_grants WHERE grant_id=?", (request.grant_id,)
+                )
+            ).fetchone()
+            assert consumed is not None
+            await db.commit()
+            return self._row_to_authorization(consumed)
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
         finally:
             await db.close()
 

@@ -11,9 +11,14 @@ from .contracts import (
     ChildCommandRecord,
     ChildSignalRecord,
     CreateRunResult,
+    DecisionAuthorization,
+    DecisionOpen,
+    DecisionRecord,
+    DecisionSignal,
     DeliveryRecord,
     DeliverySpec,
     FinalizeRunResult,
+    GrantConsume,
     LegacyRunProjection,
     RunCreate,
     RunEvent,
@@ -132,10 +137,50 @@ class ExecutionDeliveryStore(Protocol):
 
 
 @runtime_checkable
+class ExecutionDecisionStore(Protocol):
+    async def open_decision(
+        self,
+        request: DecisionOpen,
+        actor: ActorContext,
+        *,
+        expected_run_version: int,
+    ) -> DecisionRecord: ...
+
+    async def get_decision(
+        self,
+        decision_id: str,
+        *,
+        ref: RunRef,
+        actor: ActorContext,
+    ) -> DecisionRecord: ...
+
+    async def resolve_decision(
+        self,
+        signal: DecisionSignal,
+        actor: ActorContext,
+    ) -> tuple[DecisionRecord, DecisionAuthorization | None]: ...
+
+    async def cancel_open_decisions(
+        self,
+        ref: RunRef,
+        actor: ActorContext,
+        *,
+        expected_run_version: int,
+    ) -> tuple[DecisionRecord, ...]: ...
+
+    async def consume_authorization(
+        self,
+        request: GrantConsume,
+        actor: ActorContext,
+    ) -> DecisionAuthorization: ...
+
+
+@runtime_checkable
 class ExecutionUnitOfWork(
     ExecutionLedger,
     ExecutionEventStore,
     ExecutionDeliveryStore,
+    ExecutionDecisionStore,
     Protocol,
 ):
     """One-connection durable operations shared by execution and drivers."""
@@ -213,6 +258,7 @@ ExecutionLedgerPort = ExecutionLedger
 __all__ = [
     "ExecutionLedger",
     "ExecutionLedgerPort",
+    "ExecutionDecisionStore",
     "ExecutionDeliveryStore",
     "ExecutionEventStore",
     "ExecutionUnitOfWork",
