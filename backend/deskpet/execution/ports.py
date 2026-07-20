@@ -2,6 +2,7 @@
 from __future__ import annotations
 from typing import Any, Mapping, Protocol, Sequence, TypeAlias, runtime_checkable
 from .contracts import ActorAction, ActorContext, ChildCommandIntent, ChildCommandRecord, ChildSignalRecord, CreateRunResult, DecisionAuthorization, DecisionOpen, DecisionRecord, DecisionSignal, DeliveryRecord, DeliverySpec, FinalizeRunResult, GrantConsume, LegacyRunProjection, RunCreate, RunEvent, RunEventCandidate, RunLinkSpec, RunRecord, RunRef, RunStatus, WorkflowRunSeed
+from .evidence import EvidenceContext, EvidenceSelection
 RunView = RunRecord | LegacyRunProjection
 SinkKey: TypeAlias = tuple[str, str]
 
@@ -97,6 +98,9 @@ class ExecutionUnitOfWork(Protocol):
         ...
 
     async def load_continuation(self, run_id: str) -> Any | None:
+        ...
+
+    async def lookup_completion_evidence(self, context: EvidenceContext) -> EvidenceSelection:
         ...
 
     async def delete_continuation(self, run_id: str, expected_version: int) -> None:

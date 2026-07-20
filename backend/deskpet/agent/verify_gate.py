@@ -26,6 +26,7 @@ from typing import Any, Awaitable, Callable, Literal, Optional, Protocol
 import yaml
 
 from deskpet.tools.receipt import ToolReceipt
+from deskpet.execution.evidence import EvidenceContext, EvidenceSelection
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,7 @@ class VerifyOutcome:
     extractor_used: str = "regex"
     failure_count: int = 0
     goal_alignment: Optional[GoalAlignment] = None  # WI-2.3: None when goal_text not provided (BC)
+    evidence_status: Literal["legacy", "matched", "unknown"] = "legacy"
 
 
 @dataclass
@@ -302,16 +304,34 @@ class VerifyGate:
         assistant_text: str,
         ledger: list[ToolReceipt],
         goal_text: Optional[str] = None,  # WI-2.3: BC default None → behavior identical to pre-WI-2.3
+        evidence_context: EvidenceContext | None = None,
+        scoped_evidence: EvidenceSelection | None = None,
     ) -> VerifyOutcome:
         # off mode：总 pass（兼容 BC 路径）; goal_text irrelevant in off mode
         if self.mode == "off":
-            return VerifyOutcome(passed=True)
+            return VerifyOutcome(
+                passed=True,
+                evidence_status="unknown" if evidence_context is not None else "legacy",
+            )
+
+        evidence_status: Literal["legacy", "matched", "unknown"] = "legacy"
+        effective_ledger: list[Any] = list(ledger)
+        if evidence_context is not None:
+            selection = scoped_evidence
+            if selection is None or any(
+                record.context != evidence_context for record in selection.records
+            ):
+                effective_ledger = []
+                evidence_status = "unknown"
+            else:
+                effective_ledger = list(selection.records)
+                evidence_status = selection.status
 
         claims = self.extractor.extract(
             assistant_text,
-            hints={"ledger_size": len(ledger)},
+            hints={"ledger_size": len(effective_ledger)},
         )
-        unmatched = self._match_claims_against_ledger(claims, ledger)
+        unmatched = self._match_claims_against_ledger(claims, effective_ledger)
 
         outcome = VerifyOutcome(
             passed=(not unmatched),
@@ -319,6 +339,7 @@ class VerifyGate:
             unmatched_claims=unmatched,
             extractor_used="regex" if isinstance(self.extractor, RegexExtractor)
                           else "regex+llm_fallback",
+            evidence_status=evidence_status,
         )
 
         # shadow 模式：不阻断，仅 warn
@@ -336,7 +357,7 @@ class VerifyGate:
                 goal_text=goal_text,
                 claims=claims,
                 unmatched=unmatched,
-                ledger=ledger,
+                ledger=effective_ledger,
             )
 
         return outcome

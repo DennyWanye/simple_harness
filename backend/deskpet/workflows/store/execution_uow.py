@@ -76,6 +76,12 @@ from deskpet.execution.contracts import (
     thaw_json,
 )
 from deskpet.execution.ports import RunView
+from deskpet.execution.evidence import (
+    CompletionEvidence,
+    EvidenceContext,
+    EvidenceSelection,
+    UNKNOWN_EVIDENCE,
+)
 
 from .schema import initialize_workflow_db
 
@@ -4288,6 +4294,57 @@ class SqliteExecutionUnitOfWork:
             return tuple(self._row_to_record(row) for row in rows)
         finally:
             await db.close()
+
+    async def lookup_completion_evidence(
+        self,
+        context: EvidenceContext,
+    ) -> EvidenceSelection:
+        """Project an exact successful effect without creating another ledger."""
+
+        # execution_effects currently has no explicit target/resource digest.
+        # An effect fingerprint is a different identity and must not substitute.
+        if context.target_digest is not None:
+            return UNKNOWN_EVIDENCE
+        db = await self._connect()
+        try:
+            row = await (
+                await db.execute(
+                    """SELECT effect.run_id,effect.call_id,effect.effect_id,
+                    effect.tool_name,effect.status,effect.receipt_ref,
+                    effect.artifact_refs_json,run.turn_id
+                    FROM execution_effects AS effect
+                    JOIN execution_runs AS run ON run.run_id=effect.run_id
+                    WHERE effect.effect_id=?""",
+                    (context.effect_id,),
+                )
+            ).fetchone()
+        finally:
+            await db.close()
+        if row is None:
+            return UNKNOWN_EVIDENCE
+        expected = (context.run_id, context.turn_id, context.call_id, context.effect_id)
+        actual = (
+            str(row["run_id"]),
+            str(row["turn_id"]),
+            str(row["call_id"]),
+            str(row["effect_id"]),
+        )
+        artifacts = tuple(str(item) for item in json.loads(str(row["artifact_refs_json"])))
+        receipt_ref = str(row["receipt_ref"] or "")
+        if (
+            actual != expected
+            or str(row["status"]) != "succeeded"
+            or not receipt_ref
+            or (context.artifact_ref is not None and context.artifact_ref not in artifacts)
+        ):
+            return UNKNOWN_EVIDENCE
+        record = CompletionEvidence(
+            context=context,
+            tool_name=str(row["tool_name"]),
+            receipt_ref=receipt_ref,
+            artifact_refs=artifacts,
+        )
+        return EvidenceSelection(status="matched", records=(record,))
 
     async def claim_recovery(
         self, run_id: str, *, owner: str, lease_seconds: float = 30.0

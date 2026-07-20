@@ -61,6 +61,7 @@ from .contracts import (
     workflow_idempotency_key,
 )
 from .ports import ExecutionUnitOfWork, RunView, SinkKey
+from .evidence import CompletionEvidence, EvidenceContext, EvidenceResolver, EvidenceSelection
 
 __all__ = [
     "ActiveRunCapacityExceeded",
@@ -90,6 +91,10 @@ __all__ = [
     "DeliveryStatus",
     "EventNotFound",
     "ExecutionUnitOfWork",
+    "CompletionEvidence",
+    "EvidenceContext",
+    "EvidenceResolver",
+    "EvidenceSelection",
     "FinalizeRunResult",
     "GrantConsume",
     "GrantConsumeConflict",

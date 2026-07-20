@@ -4,6 +4,12 @@ from .bootstrap import HarnessHealth, HarnessManifest, HarnessRuntime, build_har
 
 from .context import HostContextFactory, RunContext
 from .child_runs import ChildRunCoordinator
+from deskpet.execution.evidence import (
+    CompletionEvidence,
+    EvidenceContext,
+    EvidenceResolver,
+    EvidenceSelection,
+)
 from .kernel import (
     CancelReceipt,
     HostContext,
@@ -53,6 +59,10 @@ __all__ = [
     "DriverTerminalCandidate",
     "EventMergeCursor",
     "ExecutionProjector",
+    "EvidenceContext",
+    "EvidenceResolver",
+    "CompletionEvidence",
+    "EvidenceSelection",
     "HostContext",
     "HostContextFactory",
     "HarnessRecoveryCoordinator",
