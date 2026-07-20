@@ -122,6 +122,17 @@ Kernel process, while terminal/close remove subscriber, task, and run refs.
 Verification: focused `18 passed`, full harness `237 passed, 9 xfailed`, and
 adjusted LOC `32,935 <= 33,228` with zero unknown classifications.
 
+R3 ReAct boundaries now persist and restore the full capability snapshot.
+Initial and resumed legacy AgentLoop calls receive the snapshot as the real
+`tool_names_filter`, so the provider sees only allowed schemas. A second
+fail-closed allow-list check rejects a provider-forged out-of-snapshot tool
+call before `prepare_call`; an explicit empty snapshot therefore means
+deny-all, while historical boundaries without the field keep their documented
+compatibility behavior. Focused verification is `17 passed`; full harness is
+`239 passed, 9 xfailed`, and adjusted LOC is `32,965 <= 33,228` with zero
+unknown classifications. This is still test-path preparation under
+production `legacy/0`, not an owner cutover.
+
 ## Request Lifecycle
 
 The outer text-chat order is `ws_ingress -> ProductTurnPreparer.prepare_context
