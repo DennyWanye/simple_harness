@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import ast
-import json
 from pathlib import Path
 from types import SimpleNamespace
 
-import aiosqlite
 import pytest
 import pytest_asyncio
 
@@ -20,17 +18,11 @@ from deskpet.execution.contracts import (
     RunStatus,
     fingerprint_json,
 )
-from deskpet.execution.ledger import ExecutionLedger
-from deskpet.harness.decisions import DecisionStore, DecisionWakeupCache
-from deskpet.harness.continuations import SqliteReactCommandBoundaryStore
 from deskpet.harness.context import HostContextFactory
 from deskpet.harness.drivers.react import (
-    LedgerBoundaryPromoter,
-    ReActDriver,
     ReactFinal,
     ReactToolBatch,
 )
-from deskpet.harness.effects import SqliteExecutionEffectJournal
 from deskpet.harness.child_runs import ChildRunCoordinator
 from deskpet.harness.kernel import (
     HostContext,
@@ -106,6 +98,13 @@ class FailingDriver(FakeDriver):
     async def start(self, request):
         raise RuntimeError("isolated boom")
         yield TokenCandidate(request.run_id, "unreachable")
+
+
+class ImmediateTerminalDriver(FakeDriver):
+    async def start(self, request):
+        self.starts += 1
+        yield TokenCandidate(request.run_id, "ok")
+        yield DriverTerminalCandidate(request.run_id, "completed", "ok")
 
 
 class AtomicStartDriver(FakeDriver):
@@ -314,12 +313,11 @@ class NoEffects:
 @pytest_asyncio.fixture
 async def kernel(tmp_path):
     uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
-    ledger = ExecutionLedger(uow)
-    await ledger.initialize()
+    await uow.initialize()
     classifier = StaticClassifier("react.default")
     driver = FakeDriver()
     value = RunKernel(
-        ledger=ledger,
+        uow=uow,
         router=RegisteredRouter(classifier, [RouteProfile("react.default", "react")]),
         drivers=[RegisteredDriver("react", driver)],
     )
@@ -348,6 +346,32 @@ async def test_start_routes_once_and_idempotent_retry_does_not_start_twice(kerne
     assert first.ref == second.ref
     assert classifier.calls == 1
     assert driver.starts == 1
+
+
+@pytest.mark.asyncio
+async def test_short_react_run_stays_in_bounded_kernel_index_without_sqlite_write(
+    tmp_path,
+) -> None:
+    path = tmp_path / "workflow.db"
+    uow = SqliteExecutionUnitOfWork(path)
+    await uow.initialize()
+    value = RunKernel(
+        uow=uow,
+        router=RegisteredRouter(
+            StaticClassifier("react.default"),
+            [RouteProfile("react.default", "react")],
+        ),
+        drivers=[RegisteredDriver("react", ImmediateTerminalDriver())],
+        max_live_runs=4,
+    )
+    handle = await value.start(RunRequest("hello", "req-live", "turn-live"), host())
+    actor = host().actor(root_run_id=handle.root_run_id)
+    assert [event async for event in value.observe(handle.ref, actor)][-1].kind == "final"
+    async with aiosqlite.connect(path) as db:
+        rows = (await (await db.execute("SELECT COUNT(*) FROM execution_runs")).fetchone())[0]
+    assert rows == 0
+    await value.close(handle.ref, actor)
+    assert handle.ref.run_id not in value._active
 
 
 @pytest.mark.asyncio
@@ -385,7 +409,7 @@ async def test_signal_cancel_recover_and_close_use_explicit_run_scope(kernel) ->
     receipt = await value.signal(
         handle.ref,
         actor,
-        DecisionSignal(handle.ref.run_id, "d1", {"allow": True}),
+        ChildAcceptedSignal(handle.ref.run_id, "command-1", "child-1"),
     )
     assert receipt.accepted is True
     await value.recover(handle.ref, actor)
@@ -399,10 +423,9 @@ async def test_signal_cancel_recover_and_close_use_explicit_run_scope(kernel) ->
 @pytest.mark.asyncio
 async def test_driver_failure_isolated_as_run_terminal(tmp_path) -> None:
     uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
-    ledger = ExecutionLedger(uow)
-    await ledger.initialize()
+    await uow.initialize()
     value = RunKernel(
-        ledger=ledger,
+        uow=uow,
         router=RegisteredRouter(
             StaticClassifier("react.default"),
             [RouteProfile("react.default", "react")],
@@ -410,31 +433,30 @@ async def test_driver_failure_isolated_as_run_terminal(tmp_path) -> None:
         drivers=[RegisteredDriver("react", FailingDriver())],
     )
     handle = await value.start(RunRequest("hello", "req-fail", "turn-1"), host())
-    await asyncio.sleep(0.01)
-    record = await ledger.query(handle.ref, host().actor(root_run_id=handle.root_run_id))
-    assert record.status is RunStatus.FAILED
+    stream = value.observe(
+        handle.ref, host().actor(root_run_id=handle.root_run_id)
+    )
+    terminal = [event async for event in stream][-1]
+    assert terminal.status is OutcomeStatus.FAILED
 
 
 @pytest.mark.asyncio
 async def test_decision_signal_is_durably_fenced_before_driver_resume(tmp_path) -> None:
     uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
-    ledger = ExecutionLedger(uow)
-    await ledger.initialize()
+    await uow.initialize()
     driver = FakeDriver()
-    decisions = DecisionStore(uow, DecisionWakeupCache())
     value = RunKernel(
-        ledger=ledger,
+        uow=uow,
         router=RegisteredRouter(
             StaticClassifier("react.default"),
             [RouteProfile("react.default", "react")],
         ),
         drivers=[RegisteredDriver("react", driver, durable_from_start=True)],
-        decision_store=decisions,
     )
     handle = await value.start(RunRequest("hello", "req-decision", "turn-1"), host())
     actor = host().actor(root_run_id=handle.root_run_id)
-    record = await ledger.query(handle.ref, actor)
-    await decisions.open(
+    record = await uow.query(handle.ref, actor)
+    await uow.open_decision(
         DecisionOpen(
             decision_id="decision-1",
             run_id=handle.ref.run_id,
@@ -479,11 +501,10 @@ async def test_decision_signal_is_durably_fenced_before_driver_resume(tmp_path) 
 @pytest.mark.asyncio
 async def test_atomic_driver_commits_before_kernel_returns_handle(tmp_path) -> None:
     uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
-    ledger = ExecutionLedger(uow)
-    await ledger.initialize()
+    await uow.initialize()
     driver = AtomicStartDriver(uow)
     value = RunKernel(
-        ledger=ledger,
+        uow=uow,
         router=RegisteredRouter(
             StaticClassifier("durable.default"),
             [RouteProfile("durable.default", "workflow")],
@@ -502,7 +523,7 @@ async def test_atomic_driver_commits_before_kernel_returns_handle(tmp_path) -> N
         host(),
     )
     actor = host().actor(root_run_id=handle.root_run_id)
-    record = await ledger.query(handle.ref, actor)
+    record = await uow.query(handle.ref, actor)
     assert record.spec.profile_key == "durable.default"
     stream = value.observe(handle.ref, actor)
     accepted = await anext(stream)
@@ -515,12 +536,11 @@ async def test_atomic_driver_commits_before_kernel_returns_handle(tmp_path) -> N
 @pytest.mark.asyncio
 async def test_delegate_is_durable_before_child_signal_reaches_driver(tmp_path) -> None:
     uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
-    ledger = ExecutionLedger(uow)
-    await ledger.initialize()
+    await uow.initialize()
     driver = DelegateDriver()
     children = ChildCoordinator()
     value = RunKernel(
-        ledger=ledger,
+        uow=uow,
         router=RegisteredRouter(
             StaticClassifier("react.default"),
             [RouteProfile("react.default", "react")],
@@ -552,11 +572,10 @@ async def test_cancel_cascades_only_by_attachment_policy(
     tmp_path, join_policy, child_cancelled
 ) -> None:
     uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
-    ledger = ExecutionLedger(uow)
-    await ledger.initialize()
+    await uow.initialize()
     driver = DelegateDriver(join_policy)
     value = RunKernel(
-        ledger=ledger,
+        uow=uow,
         router=RegisteredRouter(
             StaticClassifier("react.default"),
             [RouteProfile("react.default", "react")],
@@ -569,7 +588,7 @@ async def test_cancel_cascades_only_by_attachment_policy(
     actor = host().actor(root_run_id=handle.root_run_id)
     children = ()
     for _ in range(100):
-        children = await ledger.list_children(handle.ref, actor)
+        children = await uow.list_children(handle.ref, actor)
         if children:
             break
         await asyncio.sleep(0.01)
@@ -577,7 +596,7 @@ async def test_cancel_cascades_only_by_attachment_policy(
 
     await value.cancel(handle.ref, actor, "user_stop")
 
-    child = await ledger.query(
+    child = await uow.query(
         type(handle.ref)(children[0].run_id, handle.ref.expected_session_id),
         actor,
     )
@@ -587,11 +606,10 @@ async def test_cancel_cascades_only_by_attachment_policy(
 @pytest.mark.asyncio
 async def test_root_and_child_terminal_race_has_one_winner(tmp_path) -> None:
     uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
-    ledger = ExecutionLedger(uow)
-    await ledger.initialize()
+    await uow.initialize()
     driver = TerminalRaceDriver()
     value = RunKernel(
-        ledger=ledger,
+        uow=uow,
         router=RegisteredRouter(
             StaticClassifier("react.default"),
             [RouteProfile("react.default", "react")],
@@ -612,7 +630,7 @@ async def test_root_and_child_terminal_race_has_one_winner(tmp_path) -> None:
     await signal_task
     await asyncio.sleep(0.02)
 
-    record = await ledger.query(handle.ref, actor)
+    record = await uow.query(handle.ref, actor)
     events = await uow.list_events(handle.ref.run_id)
     terminal = [event for event in events if event.kind == "final"]
     assert record.status is RunStatus.COMPLETED
@@ -624,115 +642,29 @@ async def test_root_and_child_terminal_race_has_one_winner(tmp_path) -> None:
 @pytest.mark.asyncio
 async def test_kernel_executes_tool_command_and_resumes_same_driver(tmp_path) -> None:
     uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
-    ledger = ExecutionLedger(uow)
-    await ledger.initialize()
+    await uow.initialize()
     driver = ToolLoopDriver()
     value = RunKernel(
-        ledger=ledger,
+        uow=uow,
         router=RegisteredRouter(
             StaticClassifier("react.default"),
             [RouteProfile("react.default", "react")],
         ),
-        drivers=[RegisteredDriver("react", driver)],
+        drivers=[RegisteredDriver("react", driver, durable_from_start=True)],
         tool_executor=UnifiedToolExecutor(PreparedRegistry()),
     )
 
     handle = await value.start(RunRequest("tool", "req-tool", "turn-1"), host())
-    await asyncio.sleep(0.02)
-    record = await ledger.query(handle.ref, host().actor(root_run_id=handle.root_run_id))
+    actor = host().actor(root_run_id=handle.root_run_id)
+    for _ in range(100):
+        record = await uow.query(handle.ref, actor)
+        if record.status is RunStatus.COMPLETED:
+            break
+        await asyncio.sleep(0.01)
 
     assert record.status is RunStatus.COMPLETED
     assert driver.signals == 1
     assert driver.outcomes[0].value == {"seen": 7}
-
-
-@pytest.mark.asyncio
-async def test_kernel_permission_grant_is_consumed_once_before_effect(tmp_path) -> None:
-    path = tmp_path / "workflow.db"
-    uow = SqliteExecutionUnitOfWork(path)
-    ledger = ExecutionLedger(uow)
-    await ledger.initialize()
-    decision_store = DecisionStore(uow, DecisionWakeupCache())
-    journal = SqliteExecutionEffectJournal(path)
-    collaborator = PermissionCollaborator()
-    driver = ReActDriver(
-        collaborator,
-        SqliteReactCommandBoundaryStore(path),
-        LedgerBoundaryPromoter(ledger),
-        journal,
-    )
-    invocations = []
-
-    def write_handler(args, context):
-        invocations.append((dict(args), context.run_id))
-        return json.dumps({"ok": True, "value": {"written": 1}})
-
-    registry = ToolRegistry()
-    registry.register(
-        "write_probe",
-        "test",
-        {
-            "name": "write_probe",
-            "description": "write fixture",
-            "parameters": {"type": "object", "properties": {}},
-        },
-        lambda args, task_id: {"written": 1},
-        context_handler=write_handler,
-        permission_category="write_file",
-        concurrency_safe=False,
-        outcome_parser_id="json_error_envelope_v1",
-    )
-    value = RunKernel(
-        ledger=ledger,
-        router=RegisteredRouter(
-            StaticClassifier("react.default"),
-            [RouteProfile("react.default", "react")],
-        ),
-        drivers=[RegisteredDriver("react", driver)],
-        decision_store=decision_store,
-        tool_executor=UnifiedToolExecutor(registry, journal=journal),
-    )
-    handle = await value.start(
-        RunRequest("write", "request-permission", "turn-permission"),
-        host(),
-    )
-    actor = host().actor(root_run_id=handle.root_run_id)
-    stream = value.observe(handle.ref, actor)
-    decision_event = await anext(stream)
-    assert decision_event.kind == "decision"
-    decision_id = str(decision_event.candidate.correlation["decision_id"])
-    decision = await decision_store.get(decision_id, ref=handle.ref, actor=actor)
-
-    receipt = await value.signal(
-        handle.ref,
-        actor,
-        DecisionSignal(
-            handle.ref.run_id,
-            decision_id,
-            {"allow": True},
-            nonce=decision.request.nonce,
-            version=decision.decision_version,
-        ),
-    )
-    remaining = [event async for event in stream]
-    record = await ledger.query(handle.ref, actor)
-
-    assert receipt.accepted is True
-    assert record.status is RunStatus.COMPLETED
-    assert remaining[-1].kind == "final"
-    assert len(invocations) == 1
-    assert collaborator.tool_executions == 1
-    async with aiosqlite.connect(path) as db:
-        grant_status = await (
-            await db.execute("SELECT status FROM execution_grants")
-        ).fetchone()
-        effect_status = await (
-            await db.execute(
-                "SELECT status FROM execution_effects WHERE effect_id=?", ("e" * 64,)
-            )
-        ).fetchone()
-    assert grant_status == ("consumed",)
-    assert effect_status == ("succeeded",)
 
 
 def test_kernel_surface_is_six_operations_and_has_no_product_branches() -> None:

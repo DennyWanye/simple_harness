@@ -5,10 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from deskpet.execution.ledger import ExecutionLedger
+from deskpet.execution.ports import ExecutionUnitOfWork
 from deskpet.harness.adapters.venues import KernelRunClient, VenueContextResolver
 from deskpet.harness.child_runs import ChildLauncher, ChildRunCoordinator
-from deskpet.harness.decisions import DecisionStore
 from deskpet.harness.kernel import RegisteredDriver, RunKernel, kernel_public_operations
 from deskpet.harness.router import RegisteredRouter, RouteClassifier, RouteProfile
 from deskpet.harness.recovery import HarnessRecoveryCoordinator
@@ -70,12 +69,11 @@ class HarnessRuntime:
 
 async def build_harness_runtime(
     *,
-    ledger: ExecutionLedger,
+    uow: ExecutionUnitOfWork,
     classifier: RouteClassifier,
     profiles: Sequence[RouteProfile],
     drivers: Sequence[RegisteredDriver],
     resolver: VenueContextResolver,
-    decision_store: DecisionStore | None = None,
     child_runs: ChildRunCoordinator | None = None,
     child_launcher: ChildLauncher | None = None,
     tool_executor: UnifiedToolExecutor | None = None,
@@ -83,7 +81,7 @@ async def build_harness_runtime(
 ) -> HarnessRuntime:
     """Initialize one Kernel or fail startup without a legacy fallback."""
 
-    await ledger.initialize()
+    await uow.initialize()
     driver_catalog = {registration.kind: registration for registration in drivers}
     if len(driver_catalog) != len(drivers):
         raise ValueError("duplicate harness driver registration")
@@ -95,10 +93,9 @@ async def build_harness_runtime(
 
     router = RegisteredRouter(classifier, profiles)
     kernel = RunKernel(
-        ledger=ledger,
+        uow=uow,
         router=router,
         drivers=drivers,
-        decision_store=decision_store,
         child_runs=child_runs,
         child_launcher=child_launcher,
         tool_executor=tool_executor,
@@ -107,7 +104,6 @@ async def build_harness_runtime(
         reason
         for available, reason in (
             (tool_executor is not None, "tool_executor_unavailable"),
-            (decision_store is not None, "decision_store_unavailable"),
             (
                 child_runs is not None and child_launcher is not None,
                 "child_run_coordinator_unavailable",
@@ -125,7 +121,7 @@ async def build_harness_runtime(
     )
     health = HarnessHealth(
         status="ready" if not degraded_reasons else "degraded",
-        active_owner="execution_ledger",
+        active_owner="sqlite_execution_uow",
         ledger_schema_version=WORKFLOW_SCHEMA_VERSION,
         drivers={kind: "ready" for kind in manifest.drivers},
         compatibility_reader="enabled" if compatibility_reader else "disabled",
@@ -136,7 +132,7 @@ async def build_harness_runtime(
         run_client=KernelRunClient(kernel, resolver),
         manifest=manifest,
         health=health,
-        recovery=HarnessRecoveryCoordinator(ledger, kernel),
+        recovery=HarnessRecoveryCoordinator(uow, kernel),
     )
 
 

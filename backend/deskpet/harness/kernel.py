@@ -6,11 +6,13 @@ import asyncio
 import time
 import uuid
 from collections.abc import AsyncIterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 
 from deskpet.execution.contracts import (
+    ActiveRunCapacityExceeded,
     ActorContext,
+    AuthorizationError,
     AttachmentPolicy,
     GrantConsume,
     JsonValue,
@@ -26,15 +28,16 @@ from deskpet.execution.contracts import (
     RunStatus,
     TERMINAL_RUN_STATUSES,
     TerminalConflict,
+    VersionConflict,
     fingerprint_json,
     root_idempotency_key,
+    stable_event_id,
     DecisionSignal as DurableDecisionSignal,
 )
-from deskpet.execution.ports import ExecutionLedgerPort
+from deskpet.execution.ports import ExecutionUnitOfWork
 
 from .context import HostContextFactory
 from .child_runs import ChildLauncher, ChildRunCoordinator
-from .decisions import DecisionStore
 from .ports import (
     CancelAcknowledgedCandidate,
     ChildAcceptedCandidate,
@@ -130,6 +133,7 @@ class RegisteredDriver:
 @dataclass(slots=True)
 class _ActiveRun:
     actor: ActorContext
+    record: RunRecord | None = None
     events: list[RunEvent] = field(default_factory=list)
     subscribers: list[asyncio.Queue[RunEvent | None]] = field(default_factory=list)
     task: asyncio.Task[None] | None = None
@@ -142,15 +146,15 @@ class RunKernel:
     def __init__(
         self,
         *,
-        ledger: ExecutionLedgerPort,
+        uow: ExecutionUnitOfWork,
         router: RegisteredRouter,
         drivers: Sequence[RegisteredDriver],
         context_factory: HostContextFactory | None = None,
-        decision_store: DecisionStore | None = None,
         child_runs: ChildRunCoordinator | None = None,
         child_launcher: ChildLauncher | None = None,
         tool_executor: UnifiedToolExecutor | None = None,
         child_scheduler_owner: str = "run-kernel",
+        max_live_runs: int = 4096,
     ) -> None:
         catalog: dict[str, RegisteredDriver] = {}
         for registration in drivers:
@@ -159,17 +163,172 @@ class RunKernel:
             catalog[registration.kind] = registration
         if not catalog:
             raise ValueError("at least one driver is required")
-        self._ledger = ledger
+        if max_live_runs < 1:
+            raise ValueError("max_live_runs must be positive")
+        self._uow = uow
         self._router = router
         self._drivers = MappingProxyType(catalog)
         self._context_factory = context_factory or HostContextFactory()
-        self._decisions = decision_store
         self._child_runs = child_runs
         self._child_launcher = child_launcher
         self._tool_executor = tool_executor
         self._child_scheduler_owner = child_scheduler_owner
+        self._max_live_runs = max_live_runs
         self._active: dict[str, _ActiveRun] = {}
         self._lock = asyncio.Lock()
+
+    def _evict_terminal_live_run(self) -> bool:
+        for run_id, active in tuple(self._active.items()):
+            if active.subscribers or (active.task is not None and not active.task.done()):
+                continue
+            if active.record is None or active.record.status not in TERMINAL_RUN_STATUSES:
+                continue
+            self._active.pop(run_id, None)
+            return True
+        return False
+
+    def _ensure_live_capacity(self) -> None:
+        if len(self._active) < self._max_live_runs or self._evict_terminal_live_run():
+            return
+        raise ActiveRunCapacityExceeded(
+            "active_run_capacity_exceeded",
+            "Kernel live index is full; close or finish a live run before starting another",
+        )
+
+    @staticmethod
+    def _ephemeral_record(spec: RunCreate) -> RunRecord:
+        now = time.time()
+        return RunRecord(
+            spec=spec,
+            status=spec.status,
+            persistence_level=PersistenceLevel.EPHEMERAL,
+            version=0,
+            durable_seq=0,
+            terminal_event_id=None,
+            created_at=now,
+            updated_at=now,
+            started_at=now if spec.status is RunStatus.RUNNING else None,
+        )
+
+    @staticmethod
+    def _authorize_live(ref: RunRef, actor: ActorContext, record: RunRecord) -> None:
+        context = record.context
+        if ref.expected_session_id != context.session_id or actor.session_id != context.session_id:
+            raise AuthorizationError("actor_not_authorized", "actor does not own the run session")
+        if actor.internal:
+            if (
+                actor.root_run_id != context.root_run_id
+                or actor.capability_hash != context.capability_hash
+                or actor.expires_at is None
+                or actor.expires_at <= time.time()
+            ):
+                raise AuthorizationError("actor_not_authorized", "internal authority is stale")
+            return
+        if actor.principal_id != context.principal_id or actor.auth_epoch != context.auth_epoch:
+            raise AuthorizationError(
+                "actor_not_authorized", "actor principal or authentication epoch differs"
+            )
+
+    async def _query(self, ref: RunRef, actor: ActorContext) -> RunRecord | object:
+        async with self._lock:
+            active = self._active.get(ref.run_id)
+            if active is not None and active.record is not None:
+                self._authorize_live(ref, actor, active.record)
+                return active.record
+        return await self._uow.query(ref, actor)
+
+    async def _request_cancel(
+        self,
+        record: RunRecord,
+        *,
+        expected_version: int,
+        reason: str,
+        event: RunEventCandidate,
+    ) -> RunRecord:
+        if record.persistence_level is PersistenceLevel.DURABLE:
+            return await self._uow.request_cancel(
+                record.run_id,
+                expected_version=expected_version,
+                reason=reason,
+                event=event,
+            )
+        async with self._lock:
+            active = self._active.get(record.run_id)
+            current = active.record if active is not None else None
+            if current is None:
+                raise RunNotFound("run_not_found", f"live run does not exist: {record.run_id}")
+            if current.version != expected_version:
+                raise VersionConflict(
+                    "stale_run_version",
+                    f"expected run version {expected_version}, found {current.version}",
+                )
+            if current.status in TERMINAL_RUN_STATUSES:
+                raise TerminalConflict("run_already_terminal", "a terminal run cannot be cancelled")
+            updated = replace(
+                current,
+                status=RunStatus.CANCEL_REQUESTED,
+                version=current.version + 1,
+                cancel_reason=reason,
+                updated_at=time.time(),
+            )
+            active.record = updated
+            return updated
+
+    async def _finalize(
+        self,
+        record: RunRecord,
+        *,
+        expected_version: int,
+        status: RunStatus,
+        event: RunEventCandidate,
+    ) -> RunEvent:
+        if record.persistence_level is PersistenceLevel.DURABLE:
+            return (
+                await self._uow.finalize(
+                    record.run_id,
+                    expected_version=expected_version,
+                    terminal_status=status,
+                    event=event,
+                )
+            ).event
+        async with self._lock:
+            active = self._active.get(record.run_id)
+            current = active.record if active is not None else None
+            if current is None:
+                raise RunNotFound("run_not_found", f"live run does not exist: {record.run_id}")
+            if current.status in TERMINAL_RUN_STATUSES:
+                existing = next(
+                    (item for item in active.events if item.event_id == current.terminal_event_id),
+                    None,
+                )
+                if current.status is status and existing is not None and existing.candidate == event:
+                    return existing
+                raise TerminalConflict("terminal_conflict", "another terminal intent already won")
+            if current.version != expected_version:
+                raise VersionConflict(
+                    "stale_run_version",
+                    f"expected run version {expected_version}, found {current.version}",
+                )
+            now = time.time()
+            terminal = RunEvent(
+                event_id=stable_event_id(record.run_id, event.event_key),
+                run_id=record.run_id,
+                root_run_id=record.context.root_run_id,
+                session_id=record.context.session_id,
+                durable_seq=None,
+                live_cursor=LiveCursor(f"kernel:{record.run_id}", len(active.events) + 1),
+                candidate=event,
+                created_at=now,
+            )
+            active.record = replace(
+                current,
+                status=status,
+                version=current.version + 1,
+                terminal_event_id=terminal.event_id,
+                updated_at=now,
+                ended_at=now,
+            )
+            return terminal
 
     async def start(self, request: RunRequest, host: HostContext) -> RunHandle:
         key = root_idempotency_key(host.session_id, request.request_id, request.turn_id)
@@ -177,12 +336,19 @@ class RunKernel:
         ref = RunRef(run_id, host.session_id)
         actor = host.actor(root_run_id=run_id)
         async with self._lock:
-            active = self._active.setdefault(run_id, _ActiveRun(actor=actor))
+            active = self._active.get(run_id)
+            if active is None:
+                self._ensure_live_capacity()
+                active = _ActiveRun(actor=actor)
+                self._active[run_id] = active
         async with active.start_lock:
-            try:
-                existing = await self._ledger.query(ref, actor)
-            except RunNotFound:
-                existing = None
+            async with self._lock:
+                existing = active.record
+            if existing is None:
+                try:
+                    existing = await self._uow.query(ref, actor)
+                except RunNotFound:
+                    existing = None
             if isinstance(existing, RunRecord):
                 return RunHandle(
                     ref=ref,
@@ -245,7 +411,7 @@ class RunKernel:
                     raise RuntimeError(
                         "atomic-start driver ended before durable acceptance"
                     ) from exc
-                durable = await self._ledger.query(ref, actor)
+                durable = await self._uow.query(ref, actor)
                 if not isinstance(durable, RunRecord):
                     raise RuntimeError(
                         "atomic-start driver did not commit a durable execution run"
@@ -258,16 +424,28 @@ class RunKernel:
                     )
                 result_record = durable
             else:
-                result = await self._ledger.create(spec)
+                if spec.persistence_level is PersistenceLevel.DURABLE:
+                    result = await self._uow.create(spec)
+                    result_record = result.record
+                    created = result.created
+                else:
+                    result_record = self._ephemeral_record(spec)
+                    async with self._lock:
+                        if active.record is None:
+                            active.record = result_record
+                            created = True
+                        else:
+                            result_record = active.record
+                            created = False
                 async with self._lock:
-                    if result.created and (active.task is None or active.task.done()):
+                    if created and (active.task is None or active.task.done()):
                         active.task = asyncio.create_task(
                             self._drive(
                                 registration,
-                                result.record,
+                                result_record,
                                 registration.driver.start(
                                     self._driver_start(
-                                        result.record.spec,
+                                        result_record.spec,
                                         request,
                                         routing.profile_key,
                                         host,
@@ -276,7 +454,6 @@ class RunKernel:
                             ),
                             name=f"deskpet-run:{run_id}",
                         )
-                result_record = result.record
             return RunHandle(
                 ref=ref,
                 root_run_id=result_record.context.root_run_id,
@@ -290,7 +467,7 @@ class RunKernel:
         actor: ActorContext,
         cursor: int | None = None,
     ) -> AsyncIterator[RunEvent]:
-        await self._ledger.authorize(ref, actor, "observe")
+        await self._query(ref, actor)
         queue: asyncio.Queue[RunEvent | None] = asyncio.Queue()
         async with self._lock:
             active = self._active.setdefault(ref.run_id, _ActiveRun(actor=actor))
@@ -321,17 +498,17 @@ class RunKernel:
         actor: ActorContext,
         signal: DriverSignal,
     ) -> SignalReceipt:
-        record = await self._ledger.authorize(ref, actor, "signal")
+        record = await self._query(ref, actor)
         if not isinstance(record, RunRecord):
             raise RuntimeError("legacy runs require the compatibility signal adapter")
         if signal.run_id != ref.run_id:
             return SignalReceipt(False, reason="signal_run_binding_mismatch")
         registration = self._driver(record)
         driver_signal = signal
-        if isinstance(signal, DriverDecisionSignal) and self._decisions is not None:
+        if isinstance(signal, DriverDecisionSignal):
             if signal.nonce is None or signal.version is None:
                 return SignalReceipt(False, reason="decision_fence_required")
-            current = await self._decisions.get(
+            current = await self._uow.get_decision(
                 signal.decision_id,
                 ref=ref,
                 actor=actor,
@@ -339,7 +516,7 @@ class RunKernel:
             request = current.request
             response = dict(signal.response)
             allow = bool(response.get("allow", response.get("approved", True)))
-            resolved, authorization = await self._decisions.resolve(
+            resolved, authorization = await self._uow.resolve_decision(
                 DurableDecisionSignal(
                     decision_id=request.decision_id,
                     run_id=request.run_id,
@@ -378,7 +555,7 @@ class RunKernel:
                 registration.driver.signal(driver_signal),
             )
         except TerminalConflict:
-            current = await self._ledger.query(ref, actor)
+            current = await self._query(ref, actor)
             if isinstance(current, RunRecord) and current.status in TERMINAL_RUN_STATUSES:
                 return SignalReceipt(True, duplicate=True, reason="terminal_already_settled")
             raise
@@ -390,7 +567,7 @@ class RunKernel:
         actor: ActorContext,
         reason: str,
     ) -> CancelReceipt:
-        record = await self._ledger.authorize(ref, actor, "cancel")
+        record = await self._query(ref, actor)
         if not isinstance(record, RunRecord):
             raise RuntimeError("legacy runs require the compatibility cancel adapter")
         event = RunEventCandidate(
@@ -401,23 +578,26 @@ class RunKernel:
             correlation={"request_id": record.context.request_id},
             payload={"reason": reason},
         )
-        updated = await self._ledger.request_cancel(
-            ref.run_id,
+        updated = await self._request_cancel(
+            record,
             expected_version=record.version,
             reason=reason,
             event=event,
         )
-        if self._decisions is not None:
-            await self._decisions.cancel_waiting(
+        if updated.persistence_level is PersistenceLevel.DURABLE:
+            await self._uow.cancel_open_decisions(
                 ref,
                 actor,
                 expected_run_version=updated.version,
             )
-        for link in await self._ledger.list_child_links(ref, actor):
+            links = await self._uow.list_child_links(ref, actor)
+        else:
+            links = ()
+        for link in links:
             if link.attachment_policy is AttachmentPolicy.DETACHED:
                 continue
             child_ref = RunRef(link.child_run_id, ref.expected_session_id)
-            child = await self._ledger.query(child_ref, actor)
+            child = await self._uow.query(child_ref, actor)
             if isinstance(child, RunRecord) and child.status not in {
                 RunStatus.COMPLETED,
                 RunStatus.FAILED,
@@ -440,7 +620,7 @@ class RunKernel:
                     error=reason,
                 ),
             )
-            current = await self._ledger.query(ref, actor)
+            current = await self._query(ref, actor)
             if isinstance(current, RunRecord):
                 updated = current
         return CancelReceipt(ref.run_id, updated.status, acknowledged)
@@ -450,7 +630,7 @@ class RunKernel:
         ref: RunRef,
         actor: ActorContext,
     ) -> RunHandle:
-        record = await self._ledger.authorize(ref, actor, "recover")
+        record = await self._query(ref, actor)
         if not isinstance(record, RunRecord):
             raise RuntimeError("legacy runs require the compatibility recovery adapter")
         registration = self._driver(record)
@@ -470,7 +650,7 @@ class RunKernel:
         )
 
     async def close(self, ref: RunRef, actor: ActorContext) -> None:
-        record = await self._ledger.authorize(ref, actor, "observe")
+        record = await self._query(ref, actor)
         async with self._lock:
             active = self._active.get(ref.run_id)
             if active is None:
@@ -580,7 +760,7 @@ class RunKernel:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            current = await self._ledger.query(
+            current = await self._query(
                 RunRef(record.run_id, record.context.session_id),
                 ActorContext(
                     principal_id=record.context.principal_id,
@@ -653,10 +833,8 @@ class RunKernel:
                 if grant_ref is None:
                     authorizations.append(None)
                     continue
-                if self._decisions is None:
-                    raise RuntimeError("decision store is unavailable for an authorized tool")
                 authorizations.append(
-                    await self._decisions.inspect(
+                    await self._uow.inspect_authorization(
                         GrantConsume(
                             grant_id=grant_ref.grant_id,
                             decision_id=grant_ref.decision_id,
@@ -806,7 +984,7 @@ class RunKernel:
         driver_kind: str,
         terminal: DriverTerminalCandidate,
     ) -> None:
-        current = await self._ledger.query(
+        current = await self._query(
             RunRef(record.run_id, record.context.session_id),
             ActorContext(
                 principal_id=record.context.principal_id,
@@ -823,10 +1001,10 @@ class RunKernel:
             RunStatus.FAILED: OutcomeStatus.FAILED,
             RunStatus.CANCELLED: OutcomeStatus.CANCELLED,
         }[status]
-        result = await self._ledger.finalize(
-            record.run_id,
+        event = await self._finalize(
+            current,
             expected_version=current.version,
-            terminal_status=status,
+            status=status,
             event=RunEventCandidate(
                 event_key=f"terminal:{record.run_id}",
                 kind="final",
@@ -841,7 +1019,7 @@ class RunKernel:
                 ),
             ),
         )
-        await self._emit(result.event)
+        await self._emit(event)
 
 
 def kernel_public_operations() -> tuple[str, ...]:
