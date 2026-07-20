@@ -623,6 +623,29 @@ class ChildCommandIntent:
     def child_run_id(self) -> str:
         return self.child_spec.run_id
 
+    def to_dict(self) -> dict[str, JsonValue]:
+        return {
+            'schema_version': self.schema_version, 'operation_id': self.operation_id,
+            'parent_run_id': self.parent_run_id, 'command_id': self.command_id,
+            'child_spec': self.child_spec.to_dict(),
+            'child_request': thaw_json(self.child_request),
+            'capability_subset': list(self.capability_subset),
+            'attachment_policy': self.attachment_policy.value,
+            'capability_snapshot_ref': self.capability_snapshot_ref,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> 'ChildCommandIntent':
+        data = _strict_mapping(value, required={
+            'schema_version', 'operation_id', 'parent_run_id', 'command_id',
+            'child_spec', 'child_request', 'capability_subset',
+            'attachment_policy', 'capability_snapshot_ref',
+        }, name='ChildCommandIntent')
+        child_spec = data.pop('child_spec')
+        if not isinstance(child_spec, Mapping):
+            raise ContractValidationError('invalid_payload', 'child_spec must be an object')
+        return cls(child_spec=RunCreate.from_dict(child_spec), **data)
+
 @dataclass(frozen=True, slots=True)
 class ChildCommandRecord:
     intent: ChildCommandIntent

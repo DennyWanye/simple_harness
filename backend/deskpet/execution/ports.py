@@ -16,7 +16,7 @@ class ExecutionUnitOfWork(Protocol):
     async def promote(self, spec: RunCreate, *, expected_version: int) -> CreateRunResult:
         ...
 
-    async def finalize(self, run_id: str, *, expected_version: int, terminal_status: RunStatus, event: RunEventCandidate, deliveries: Sequence[DeliverySpec]=(), recovery_lease: Any | None=None) -> FinalizeRunResult:
+    async def finalize_and_enqueue_delivery(self, run_id: str, *, expected_version: int, terminal_status: RunStatus, event: RunEventCandidate, deliveries: Sequence[DeliverySpec]=(), recovery_lease: Any | None=None) -> FinalizeRunResult:
         ...
 
     async def request_cancel(self, run_id: str, *, expected_version: int, reason: str, event: RunEventCandidate, deliveries: Sequence[DeliverySpec]=()) -> RunRecord:
@@ -64,13 +64,13 @@ class ExecutionUnitOfWork(Protocol):
     async def list_event_deliveries(self, event_id: str) -> tuple[DeliveryRecord, ...]:
         ...
 
-    async def claim_delivery(self, *, sink_keys: Sequence[SinkKey]=(), claim_ttl_seconds: float=30.0) -> DeliveryRecord | None:
+    async def claim_delivery(self, *, owner_generation: int, sink_keys: Sequence[SinkKey]=(), claim_ttl_seconds: float=30.0) -> DeliveryRecord | None:
         ...
 
-    async def complete_delivery(self, delivery_id: str, *, expected_version: int) -> DeliveryRecord:
+    async def complete_delivery(self, delivery_id: str, *, expected_version: int, owner_generation: int) -> DeliveryRecord:
         ...
 
-    async def release_delivery(self, delivery_id: str, *, expected_version: int, error: str, retry_at: float | None, discard: bool) -> DeliveryRecord:
+    async def release_delivery(self, delivery_id: str, *, expected_version: int, owner_generation: int, error: str, retry_at: float | None, discard: bool) -> DeliveryRecord:
         ...
 
     async def required_deliveries_complete(self, event_id: str) -> bool:
@@ -94,7 +94,19 @@ class ExecutionUnitOfWork(Protocol):
     async def inspect_authorization(self, request: GrantConsume, actor: ActorContext) -> DecisionAuthorization:
         ...
 
+    async def consume_grant_and_claim_effect(self, request: GrantConsume, actor: ActorContext, *, effect_type: str, policy: Mapping[str, Any], prepared: Mapping[str, Any], worker_owner: str, worker_epoch: int, recovery_lease: Any | None=None) -> Any:
+        ...
+
+    async def settle_effect_and_advance_boundary(self, effect_id: str, **kwargs: Any) -> Any:
+        ...
+
+    async def read_effect_outcome(self, *, run_id: str, call_id: str, effect_id: str, args_hash: str, capability_hash: str, scope_hash: str) -> tuple[str, Mapping[str, Any], str | None, tuple[str, ...]] | None:
+        ...
+
     async def initialize(self) -> None:
+        ...
+
+    async def get_execution_owner(self, run_id: str) -> tuple[str, int] | None:
         ...
 
     async def save_continuation(self, run_id: str, expected_version: int, payload: Mapping[str, Any], decision: DecisionOpen | None=None, *, recovery_lease: Any | None=None) -> Any:
@@ -124,6 +136,9 @@ class ExecutionUnitOfWork(Protocol):
     async def get_child_command(self, operation_id: str) -> ChildCommandRecord | None:
         ...
 
+    async def get_child_command_for_run(self, child_run_id: str) -> ChildCommandRecord | None:
+        ...
+
     async def lease_child_commands(self, *, owner: str, limit: int, lease_seconds: float, parent_run_id: str | None=None, recovery_lease: Any | None=None) -> tuple[ChildCommandRecord, ...]:
         ...
 
@@ -133,13 +148,19 @@ class ExecutionUnitOfWork(Protocol):
     async def acknowledge_child_command(self, operation_id: str, *, lease_owner: str, lease_epoch: int, recovery_lease: Any | None=None) -> ChildCommandRecord:
         ...
 
-    async def record_child_terminal(self, operation_id: str, *, terminal_status: str, value: object=None, recovery_lease: Any | None=None) -> ChildSignalRecord:
+    async def finalize_child_and_enqueue_parent_signal(self, operation_id: str, *, expected_version: int, terminal_status: RunStatus, event: RunEventCandidate, value: object=None, deliveries: Sequence[DeliverySpec]=(), recovery_lease: Any | None=None) -> FinalizeRunResult:
         ...
 
     async def list_pending_child_signals(self, parent_run_id: str, *, recovery_lease: Any | None=None) -> tuple[ChildSignalRecord, ...]:
         ...
 
-    async def acknowledge_child_signal(self, signal_id: str, *, recovery_lease: Any | None=None) -> ChildSignalRecord:
+    async def list_pending_child_signal_parents(self, *, limit: int=10000) -> tuple[RunRecord, ...]:
+        ...
+
+    async def discard_terminal_detached_child_signal(self, signal_id: str) -> ChildSignalRecord:
+        ...
+
+    async def prepare_workflow_child_resume(self, signal_id: str, *, recovery_lease: Any) -> DecisionRecord:
         ...
 
     async def apply_child_signal_and_ack(self, signal_id: str, *, expected_continuation_version: int, continuation_payload: Mapping[str, Any], event: RunEventCandidate, deliveries: Sequence[DeliverySpec]=(), recovery_lease: Any | None=None) -> tuple[ChildSignalRecord, Any, RunEvent]:

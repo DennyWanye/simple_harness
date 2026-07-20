@@ -25,8 +25,9 @@ from deskpet.execution.contracts import (
     TerminalConflict,
 )
 from deskpet.execution.ports import ExecutionUnitOfWork
+from deskpet.workflows.effects import NormalizedToolOutcome
 
-from .child_runs import ChildLauncher, ChildRunCoordinator
+from .child_runs import ChildRunCoordinator
 from .contracts import RegisteredDriver
 from .live_index import BoundedLiveIndex
 from .ports import (
@@ -48,18 +49,14 @@ class DriverRuntime:
         query: Callable[[RunRef, ActorContext], Awaitable[RunRecord | object]],
         finalize: Callable[..., Awaitable[RunEvent]],
         child_runs: ChildRunCoordinator | None = None,
-        child_launcher: ChildLauncher | None = None,
         tool_executor: UnifiedToolExecutor | None = None,
-        child_scheduler_owner: str = "run-kernel",
     ) -> None:
         self._uow = uow
         self._live = live
         self._query = query
         self._finalize = finalize
         self._child_runs = child_runs
-        self._child_launcher = child_launcher
         self._tool_executor = tool_executor
-        self._child_scheduler_owner = child_scheduler_owner
 
     @staticmethod
     def is_terminal_event(event: RunEvent) -> bool:
@@ -82,7 +79,11 @@ class DriverRuntime:
             if not any(item.event_id == event.event_id for item in active.events):
                 self._live.publish(active, event)
             if terminal:
-                self._live.finish(active)
+                release_child = (
+                    active.record is not None
+                    and active.record.context.parent_run_id is not None
+                )
+                self._live.finish(event.run_id, active, release=release_child)
                 active.subscribers.clear()
 
     async def emit_live(self, record: RunRecord, candidate: RunEventCandidate) -> None:
@@ -249,6 +250,9 @@ class DriverRuntime:
             if self._tool_executor is None:
                 raise RuntimeError("tool executor is unavailable")
             authorizations = []
+            outcome_metadata: list[dict[str, object]] = []
+            precomputed = []
+            authoritative_statuses: list[OutcomeStatus | None] = []
             refs = candidate.grant_refs or (None,) * len(candidate.calls)
             actor = ActorContext(
                 principal_id=record.context.principal_id,
@@ -256,90 +260,185 @@ class DriverRuntime:
                 auth_epoch=record.context.auth_epoch,
                 root_run_id=record.context.root_run_id,
             )
-            for call, context, grant_ref in zip(
-                candidate.calls, candidate.contexts, refs
+            for call, context, grant_ref, declared_effectful in zip(
+                candidate.calls, candidate.contexts, refs, candidate.effectful
             ):
                 if grant_ref is None:
-                    authorizations.append(None)
-                    continue
-                authorizations.append(
-                    await self._uow.inspect_authorization(
-                        GrantConsume(
-                            grant_id=grant_ref.grant_id,
-                            decision_id=grant_ref.decision_id,
-                            decision_nonce=grant_ref.decision_nonce,
-                            run_id=record.run_id,
-                            expected_session_id=record.context.session_id,
-                            call_id=call.call_id,
-                            effect_id=call.effect_id,
-                            tool_name=call.tool_name,
-                            args_hash=call.args_hash,
+                    consume = None
+                else:
+                    consume = GrantConsume(
+                        grant_id=grant_ref.grant_id,
+                        decision_id=grant_ref.decision_id,
+                        decision_nonce=grant_ref.decision_nonce,
+                        run_id=record.run_id,
+                        expected_session_id=record.context.session_id,
+                        call_id=call.stable_call_id,
+                        effect_id=context.effect_id,
+                        tool_name=call.tool_name,
+                        args_hash=call.args_hash,
+                        capability_hash=context.capability_hash,
+                        scope_hash=context.scope_hash,
+                        expected_version=grant_ref.version,
+                    )
+                if declared_effectful:
+                    owner = recovery_lease.owner if recovery_lease is not None else "kernel"
+                    epoch = recovery_lease.epoch if recovery_lease is not None else 1
+                    claim = await self._uow.consume_grant_and_claim_effect(
+                        consume,
+                        actor,
+                        run_id=record.run_id,
+                        expected_session_id=record.context.session_id,
+                        call_id=call.stable_call_id,
+                        effect_id=context.effect_id,
+                        tool_name=call.tool_name,
+                        args_hash=call.args_hash,
+                        capability_hash=context.capability_hash,
+                        scope_hash=context.scope_hash,
+                        effect_type=call.effect_type,
+                        policy={"kind": call.effect_type, "version": call.effect_policy_version},
+                        prepared=call.to_dict(),
+                        worker_owner=owner,
+                        worker_epoch=epoch,
+                        recovery_lease=recovery_lease,
+                    )
+                    authorizations.append(claim.authorization)
+                    metadata: dict[str, object] = {"effect_action": claim.action}
+                    if claim.action in {"execute", "reconcile"}:
+                        metadata["effect_claim"] = {
+                            "effect_id": claim.effect_id,
+                            "attempt_no": claim.attempt_no,
+                            "worker_owner": claim.worker_owner,
+                            "worker_epoch": claim.worker_epoch,
+                            "effect_version": claim.effect_version,
+                        }
+                    known = None
+                    if claim.action == "reuse":
+                        known = await self._uow.read_effect_outcome(
+                            run_id=record.run_id, call_id=call.stable_call_id,
+                            effect_id=context.effect_id, args_hash=call.args_hash,
                             capability_hash=context.capability_hash,
                             scope_hash=context.scope_hash,
-                            expected_version=grant_ref.version,
-                        ),
-                        actor,
+                        )
+                    if known is not None:
+                        known_status, payload, receipt_ref, artifact_refs = known
+                        precomputed.append(NormalizedToolOutcome.from_dict(payload))
+                        authoritative_statuses.append(OutcomeStatus(known_status))
+                        metadata.update({"receipt_ref": receipt_ref, "artifact_refs": list(artifact_refs)})
+                    elif claim.action == "reconcile":
+                        late_state, late_outcome = await self._tool_executor.observe_late(
+                            context.effect_id
+                        )
+                        if late_state == "pending":
+                            metadata["late_pending"] = True
+                            precomputed.append(NormalizedToolOutcome.malformed(
+                                "effect is still running under its original physical call"
+                            ))
+                        else:
+                            precomputed.append(late_outcome or NormalizedToolOutcome.malformed(
+                                "late effect evidence unavailable after process recovery"
+                            ))
+                            metadata.update(self._tool_executor.take_metadata(context.effect_id))
+                            metadata["reconciliation"] = True
+                        authoritative_statuses.append(
+                            OutcomeStatus(str(metadata.get("outcome_status") or "unknown"))
+                        )
+                    elif claim.action == "in_flight":
+                        metadata["late_pending"] = True
+                        precomputed.append(NormalizedToolOutcome.malformed(
+                            "effect is still owned by its original attempt"
+                        ))
+                        authoritative_statuses.append(OutcomeStatus.UNKNOWN)
+                    elif claim.action != "execute":
+                        precomputed.append(NormalizedToolOutcome.malformed(
+                            f"effect_{claim.action}; canonical reconciliation required"
+                        ))
+                        authoritative_statuses.append(None)
+                    else:
+                        precomputed.append(None)
+                        authoritative_statuses.append(None)
+                    outcome_metadata.append(metadata)
+                else:
+                    requires_authorization, effectful = self._tool_executor.prepared_policy(call)
+                    if effectful:
+                        raise ValueError("driver tool policy does not match registry authority")
+                    if requires_authorization and consume is None:
+                        raise ValueError("authorized tool is missing a grant")
+                    authorizations.append(
+                        None if consume is None
+                        else await self._uow.consume_authorization(consume, actor)
                     )
-                )
+                    outcome_metadata.append({})
+                    precomputed.append(None)
+                    authoritative_statuses.append(None)
+            for index, (call, declared_effectful) in enumerate(
+                zip(candidate.calls, candidate.effectful)
+            ):
+                action = outcome_metadata[index].get("effect_action")
+                if declared_effectful and action == "execute":
+                    requires_authorization, effectful = self._tool_executor.prepared_policy(call)
+                    if not effectful:
+                        raise ValueError("driver tool policy does not match registry authority")
+                    if requires_authorization and authorizations[index] is None:
+                        raise ValueError("authorized tool is missing a grant")
             outcomes = await self._tool_executor.execute_batch(
                 candidate.calls,
                 candidate.contexts,
                 authorizations=authorizations,
+                precomputed=precomputed,
                 **self._lease_kwargs(recovery_lease),
             )
+            for context, metadata in zip(candidate.contexts, outcome_metadata):
+                metadata.update(self._tool_executor.take_metadata(context.effect_id))
+            statuses = tuple(
+                authoritative or self._tool_executor.outcome_status(call, outcome)
+                for call, outcome, authoritative in zip(
+                    candidate.calls, outcomes, authoritative_statuses
+                )
+            )
+            ready = tuple(
+                index for index, item in enumerate(outcome_metadata)
+                if not bool(item.get("late_pending"))
+            )
+            if not ready:
+                return False
             signal_iterator = registration.driver.signal(
-                ToolOutcomesSignal(candidate.run_id, candidate.command_id, tuple(outcomes)),
+                ToolOutcomesSignal(
+                    candidate.run_id,
+                    candidate.command_id,
+                    tuple(outcomes[index] for index in ready),
+                    tuple(statuses[index] for index in ready),
+                    tuple(candidate.original_indexes[index] for index in ready),
+                    tuple(outcome_metadata[index] for index in ready),
+                ),
                 **self._lease_kwargs(recovery_lease),
             )
-            return await self.consume(
+            consumed = await self.consume(
                 registration,
                 record,
                 signal_iterator,
                 recovery_lease=recovery_lease,
             )
+            for index in ready:
+                if candidate.effectful[index]:
+                    call, context = candidate.calls[index], candidate.contexts[index]
+                    settled = await self._uow.read_effect_outcome(
+                        run_id=record.run_id, call_id=call.stable_call_id,
+                        effect_id=context.effect_id, args_hash=call.args_hash,
+                        capability_hash=context.capability_hash,
+                        scope_hash=context.scope_hash,
+                    )
+                    if settled is not None:
+                        self._tool_executor.acknowledge_effect(context.effect_id)
+            return consumed
         if candidate.kind == "delegate_run" and self._child_runs is not None:
             await self._child_runs.submit(
                 record, candidate, **self._lease_kwargs(recovery_lease)
-            )
-            if self._child_launcher is not None:
-                await self._child_runs.run_scheduler_once(
-                    self._child_launcher,
-                    owner=self._child_scheduler_owner,
-                    **self._lease_kwargs(recovery_lease),
-                )
-            await self._drain_child_signals(
-                registration, record, recovery_lease=recovery_lease
             )
         acknowledged = candidate.kind == "cancel_acknowledged"
         event = self.event_candidate(registration.kind, candidate)
         if event is not None:
             await self.emit_live(record, event)
         return acknowledged
-
-    async def _drain_child_signals(
-        self,
-        registration: RegisteredDriver,
-        record: RunRecord,
-        *,
-        recovery_lease: RecoveryLease | None = None,
-    ) -> None:
-        if self._child_runs is None:
-            return
-        deliveries = await self._child_runs.pending_signals(
-            record.run_id, **self._lease_kwargs(recovery_lease)
-        )
-        for delivery in deliveries:
-            signal_iterator = registration.driver.signal(
-                delivery.signal, **self._lease_kwargs(recovery_lease)
-            )
-            await self.consume(
-                registration,
-                record,
-                signal_iterator,
-                recovery_lease=recovery_lease,
-            )
-            if getattr(delivery.signal, "signal_id", None) is None:
-                await self._child_runs.acknowledge_signal(delivery.record.signal_id)
 
     @staticmethod
     def event_candidate(
@@ -465,6 +564,29 @@ class DriverRuntime:
             ),
             recovery_lease=recovery_lease,
         )
+        if current.context.parent_run_id is not None:
+            actor = ActorContext(
+                principal_id=current.context.principal_id,
+                session_id=current.context.session_id,
+                auth_epoch=current.context.auth_epoch,
+                root_run_id=current.context.root_run_id,
+            )
+            authoritative = await self._uow.query(
+                RunRef(current.run_id, current.context.session_id), actor
+            )
+            if (
+                not isinstance(authoritative, RunRecord)
+                or authoritative.status not in {
+                    RunStatus.COMPLETED,
+                    RunStatus.FAILED,
+                    RunStatus.CANCELLED,
+                }
+            ):
+                raise RuntimeError("terminal child did not commit authoritative durable state")
+            async with self._live.lock:
+                active = self._live.get(current.run_id)
+                if active is not None:
+                    active.record = authoritative
         await self.emit(event)
 
 

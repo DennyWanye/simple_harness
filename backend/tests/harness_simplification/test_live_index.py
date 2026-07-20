@@ -60,6 +60,17 @@ async def test_slow_subscriber_is_bounded_and_terminal_releases_task_reference()
     assert queue.maxsize == 1
     assert queue not in active.subscribers
 
-    index.finish(active)
+    index.finish("run", active)
     assert active.task is None
     assert queue.empty()
+
+
+def test_ten_thousand_terminal_children_leave_no_live_index_strong_references() -> None:
+    index = BoundedLiveIndex(max_runs=1)
+
+    for number in range(10_000):
+        run_id = f"detached-child-{number}"
+        active = index.add(run_id, ACTOR)
+        index.finish(run_id, active, release=True)
+
+    assert index.values() == ()

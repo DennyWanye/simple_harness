@@ -154,7 +154,7 @@ async def test_stale_recovery_cannot_write_continuation_or_terminal(tmp_path):
             "run-stale-writes", 0, {"step": 1}, recovery_lease=stale
         )
     with pytest.raises(StaleRecoveryLease, match="lost its lease"):
-        await store.finalize(
+        await store.finalize_and_enqueue_delivery(
             "run-stale-writes",
             expected_version=created.record.version,
             terminal_status=RunStatus.COMPLETED,

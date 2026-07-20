@@ -167,6 +167,7 @@ class NativeExecution:
     pending_results: Mapping[str, StatePatch] = field(default_factory=dict)
     first_attempt_times: Mapping[str, float] = field(default_factory=dict)
     route_selections: Mapping[str, Mapping[str, JsonValue]] = field(default_factory=dict)
+    pending_consumed_interrupt_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,7 +180,7 @@ class NativeCommitResult:
 class NativeCheckpointStore(Protocol):
     async def ensure_genesis(self, *, operation_id: str, snapshot: NativeSnapshotEnvelope, configurable: Mapping[str, JsonValue]) -> NativeSnapshotEnvelope: ...
     async def load_execution(self, *, run_id: str, thread_id: str, checkpoint_ns: str) -> NativeExecution: ...
-    async def commit_task_result(self, *, operation_id: str, expected_head: str, task: NativeTask, execution_info: NativeExecutionInfo, patch: StatePatch, blob_refs: Sequence[str], configurable: Mapping[str, JsonValue]) -> None: ...
+    async def commit_task_result(self, *, operation_id: str, expected_head: str, task: NativeTask, execution_info: NativeExecutionInfo, patch: StatePatch, blob_refs: Sequence[str], consumed_interrupt_ids: Sequence[str], configurable: Mapping[str, JsonValue]) -> None: ...
     async def commit_route_selection(self, *, operation_id: str, expected_head: str, source: str, selected_route: str, next_frontier_payload_hash: str, task_id: str, configurable: Mapping[str, JsonValue]) -> Mapping[str, JsonValue]: ...
     async def commit_frontier(self, *, operation_id: str, expected_head: str, state: WorkflowState, frontier: Sequence[NativeTask], completed_activations: Mapping[str, tuple[str, ...]], join_firings: Sequence[str], consumed_interrupt_ids: Sequence[str], intents: Sequence[Mapping[str, JsonValue]], blob_refs: Sequence[str], terminal_status: str | None, terminal_error: Mapping[str, JsonValue] | None, recovery_action: str | None, configurable: Mapping[str, JsonValue]) -> NativeCommitResult: ...
     async def commit_retry(self, *, operation_id: str, expected_head: str, task: NativeTask, error: WorkflowNodeError, next_attempt_at: float, configurable: Mapping[str, JsonValue]) -> None: ...
@@ -860,7 +861,7 @@ class NativeWorkflowExecutable:
                 patch, first_attempt_time=float(info.node_first_attempt_time or time.time()), finished_at=time.time()
             )
             try:
-                await self.store.commit_task_result(operation_id=_hash(snapshot.run_id, snapshot.checkpoint_id, "task", task.task_id), expected_head=snapshot.checkpoint_id, task=task, execution_info=info, patch=patch, blob_refs=self._patch_blob_refs(patch), configurable=config)
+                await self.store.commit_task_result(operation_id=_hash(snapshot.run_id, snapshot.checkpoint_id, "task", task.task_id), expected_head=snapshot.checkpoint_id, task=task, execution_info=info, patch=patch, blob_refs=self._patch_blob_refs(patch), consumed_interrupt_ids=tuple(control.consumed_interrupt_ids), configurable=config)
             except asyncio.CancelledError as exc:
                 # Cancellation can arrive after the checkpointer transaction has
                 # committed (for example at its post-commit fault boundary).  Do
@@ -1018,7 +1019,7 @@ class NativeWorkflowExecutable:
                 await _report(context.ports.get("progress"), selected.identity, "failed")
             raise error
 
-        consumed: list[str] = []
+        consumed = list(execution.pending_consumed_interrupt_ids)
         for outcome in outcomes:
             assert outcome.patch is not None
             patches[outcome.task.task_id] = outcome.patch

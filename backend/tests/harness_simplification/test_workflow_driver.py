@@ -6,6 +6,7 @@ import pytest
 
 from deskpet.execution.contracts import (
     OutcomeStatus,
+    RecoveryLease,
     RunContext,
     RunEvent,
     RunEventCandidate,
@@ -13,10 +14,12 @@ from deskpet.execution.contracts import (
 from deskpet.harness.drivers.workflow import (
     LauncherWorkflowSignalResumer,
     WorkflowDriver,
-    WorkflowProfile,
 )
+from deskpet.harness.profiles import ProfileRegistry, ProfileSpec
 from deskpet.harness.ports import (
     CancelAcknowledgedCandidate,
+    ChildAcceptedSignal,
+    ChildTerminalSignal,
     DecisionSignal,
     DriverStart,
     PersistedEventCandidate,
@@ -63,6 +66,7 @@ class Launcher:
         self.cancels: list[tuple[str, str]] = []
         self.recovers: list[set[str] | None] = []
         self.resumes: list[tuple[str, Mapping[str, object]]] = []
+        self.checkpointed_signals: set[tuple[str, str]] = set()
 
     async def launch_precreated(self, **kwargs):
         self.launches.append(kwargs)
@@ -78,6 +82,46 @@ class Launcher:
 
     async def resume_precreated(self, run_id, responses):
         self.resumes.append((run_id, responses))
+        self.checkpointed_signals.update(
+            (run_id, str(value["signal_id"]))
+            for value in responses.values()
+            if isinstance(value, Mapping) and value.get("signal_id")
+        )
+        return {"status": "accepted"}
+
+
+class WorkflowResumeUow:
+    def __init__(self, payload, *, run_id="workflow-run") -> None:
+        self.payload = payload
+        self.run_id = run_id
+        self.prepared: list[tuple[str, object]] = []
+        self.delivered: set[str] = set()
+
+    async def prepare_workflow_child_resume(self, signal_id, *, recovery_lease):
+        self.prepared.append((signal_id, recovery_lease))
+        return type("Prepared", (), {
+            "request": type(
+                "Request", (), {"nonce": "interrupt-1", "run_id": self.run_id}
+            )(),
+            "response": {"child_signal": self.payload},
+        })()
+
+
+class CrashSafeLauncher(Launcher):
+    def __init__(self, accepted, uow, fail):
+        super().__init__(accepted)
+        self.uow = uow
+        self.fail = fail
+
+    async def resume_precreated(self, run_id, responses):
+        self.resumes.append((run_id, responses))
+        payload = next(iter(responses.values()))
+        if self.fail == "before":
+            raise RuntimeError("crash before checkpoint commit")
+        self.checkpointed_signals.add((run_id, payload["signal_id"]))
+        self.uow.delivered.add(payload["signal_id"])
+        if self.fail == "after":
+            raise RuntimeError("crash after checkpoint commit")
         return {"status": "accepted"}
 
 
@@ -111,6 +155,15 @@ async def collect(iterator):
     return [item async for item in iterator]
 
 
+def profiles() -> ProfileRegistry:
+    return ProfileRegistry((ProfileSpec(
+        "durable.default", "fixture", "workflow",
+        workflow_key="fixture.v1", workflow_name="fixture_workflow",
+        workflow_version="v1", state_factory=lambda **kwargs: kwargs,
+        context_factory=lambda **kwargs: kwargs,
+    ),))
+
+
 @pytest.mark.asyncio
 async def test_workflow_driver_commits_accepted_before_following_terminal() -> None:
     accepted = event("workflow-run", 1, "workflow.accepted", OutcomeStatus.ACCEPTED)
@@ -119,15 +172,7 @@ async def test_workflow_driver_commits_accepted_before_following_terminal() -> N
     driver = WorkflowDriver(
         launcher,
         Events(accepted, final),
-        [
-            WorkflowProfile(
-                "durable.default",
-                "fixture_workflow",
-                "v1",
-                lambda **kwargs: kwargs,
-                lambda **kwargs: kwargs,
-            )
-        ],
+        profiles(),
         poll_interval=0.001,
     )
 
@@ -149,15 +194,7 @@ async def test_workflow_driver_cancel_is_explicit_run_ack() -> None:
     driver = WorkflowDriver(
         launcher,
         Events(accepted, final),
-        [
-            WorkflowProfile(
-                "durable.default",
-                "fixture_workflow",
-                "v1",
-                lambda **kwargs: kwargs,
-                lambda **kwargs: kwargs,
-            )
-        ],
+        profiles(),
     )
     assert await collect(driver.cancel("workflow-run", "user_stop")) == [
         CancelAcknowledgedCandidate("workflow-run", "user_stop")
@@ -173,15 +210,7 @@ async def test_workflow_signal_resumer_uses_resolved_interrupt_nonce() -> None:
     driver = WorkflowDriver(
         launcher,
         Events(accepted, final),
-        [
-            WorkflowProfile(
-                "durable.default",
-                "fixture_workflow",
-                "v1",
-                lambda **kwargs: kwargs,
-                lambda **kwargs: kwargs,
-            )
-        ],
+        profiles(),
         signal_resumer=LauncherWorkflowSignalResumer(launcher),
     )
 
@@ -222,3 +251,98 @@ async def test_workflow_signal_resumer_fails_closed_without_nonce() -> None:
         await resumer.resume(
             DecisionSignal("workflow-run", "decision-1", {"approved": True})
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("signal", "expected"),
+    [
+        (
+            ChildAcceptedSignal("workflow-run", "command-1", "child-1", "signal-1"),
+            {
+                "kind": "child_accepted", "signal_id": "signal-1",
+                "command_id": "command-1", "child_run_id": "child-1",
+            },
+        ),
+        (
+            ChildTerminalSignal(
+                "workflow-run", "command-1", "child-1", "completed",
+                {"answer": 42}, "signal-1",
+            ),
+            {
+                "kind": "child_terminal", "signal_id": "signal-1",
+                "command_id": "command-1", "child_run_id": "child-1",
+                "status": "completed", "value": {"answer": 42},
+            },
+        ),
+    ],
+)
+async def test_workflow_child_signal_checkpoints_stable_response_then_acks(
+    signal, expected
+) -> None:
+    accepted = event("workflow-run", 1, "workflow.accepted", OutcomeStatus.ACCEPTED)
+    final = event("workflow-run", 2, "workflow.final", OutcomeStatus.SUCCEEDED)
+    launcher = Launcher(accepted)
+    uow = WorkflowResumeUow(expected)
+    lease = RecoveryLease("workflow-run", "scheduler", 1, 100.0)
+    driver = WorkflowDriver(
+        launcher, Events(accepted, final), profiles(),
+        signal_resumer=LauncherWorkflowSignalResumer(launcher, unit_of_work=uow),
+    )
+
+    assert await collect(driver.signal(signal, recovery_lease=lease)) == []
+
+    assert launcher.resumes == [("workflow-run", {"interrupt-1": expected})]
+    assert uow.prepared == [("signal-1", lease)]
+
+
+@pytest.mark.asyncio
+async def test_workflow_child_signal_rejects_cross_run_decision_before_launcher() -> None:
+    accepted = event("workflow-run", 1, "workflow.accepted", OutcomeStatus.ACCEPTED)
+    payload = {
+        "kind": "child_accepted", "signal_id": "signal-a",
+        "command_id": "command-1", "child_run_id": "child-1",
+    }
+    launcher = Launcher(accepted)
+    uow = WorkflowResumeUow(payload, run_id="workflow-run-a")
+    resumer = LauncherWorkflowSignalResumer(launcher, unit_of_work=uow)
+
+    with pytest.raises(ValueError, match="run binding mismatch"):
+        await resumer.resume(
+            ChildAcceptedSignal(
+                "workflow-run-b", "command-1", "child-1", "signal-a"
+            ),
+            RecoveryLease("workflow-run-b", "scheduler", 1, 100.0),
+        )
+
+    assert launcher.resumes == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("crash_point", ["before", "after"])
+async def test_workflow_child_resume_replay_is_stable_across_checkpoint_crash(
+    crash_point
+) -> None:
+    accepted = event("workflow-run", 1, "workflow.accepted", OutcomeStatus.ACCEPTED)
+    payload = {
+        "kind": "child_accepted", "signal_id": "stable-signal",
+        "command_id": "command-1", "child_run_id": "child-1",
+    }
+    uow = WorkflowResumeUow(payload)
+    launcher = CrashSafeLauncher(accepted, uow, crash_point)
+    resumer = LauncherWorkflowSignalResumer(launcher, unit_of_work=uow)
+    signal = ChildAcceptedSignal(
+        "workflow-run", "command-1", "child-1", "stable-signal"
+    )
+    lease = RecoveryLease("workflow-run", "scheduler", 1, 100.0)
+
+    with pytest.raises(RuntimeError, match=f"crash {crash_point} checkpoint"):
+        await resumer.resume(signal, lease)
+    launcher.fail = None
+    await resumer.resume(signal, lease)
+
+    assert launcher.checkpointed_signals == {("workflow-run", "stable-signal")}
+    assert [next(iter(responses)) for _, responses in launcher.resumes] == [
+        "interrupt-1", "interrupt-1",
+    ]
+    assert uow.delivered == {"stable-signal"}

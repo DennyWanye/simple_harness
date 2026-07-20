@@ -79,8 +79,9 @@ async def _execution_store_with_delivery(
     path: Path, *, run_id: str
 ) -> tuple[SqliteExecutionUnitOfWork, str]:
     store = SqliteExecutionUnitOfWork(path, clock=lambda: 100.0)
+    await store.activate_empty_runtime()
     await store.create(_execution_spec(run_id))
-    final = await store.finalize(
+    final = await store.finalize_and_enqueue_delivery(
         run_id,
         expected_version=0,
         terminal_status=RunStatus.COMPLETED,
@@ -253,15 +254,16 @@ async def test_execution_claim_and_complete_tx_obey_caller_rollback(tmp_path: Pa
     db = await store._connect()
     try:
         await db.execute("BEGIN IMMEDIATE")
-        claimed = await store.claim_delivery_tx(db, now=101.0)
+        claimed = await store.claim_delivery_tx(db, owner_generation=1, now=101.0)
         assert claimed is not None
         assert claimed.delivery_id == delivery_id
-        duplicate_claim = await store.claim_delivery_tx(db, now=101.0)
+        duplicate_claim = await store.claim_delivery_tx(db, owner_generation=1, now=101.0)
         assert duplicate_claim is None
         completed = await store.complete_delivery_tx(
             db,
             delivery_id,
             expected_version=claimed.delivery_version,
+            owner_generation=1,
             now=102.0,
         )
         assert completed.status.value == "delivered"
@@ -269,6 +271,7 @@ async def test_execution_claim_and_complete_tx_obey_caller_rollback(tmp_path: Pa
             db,
             delivery_id,
             expected_version=claimed.delivery_version,
+            owner_generation=1,
             now=103.0,
         )
         assert duplicate_complete == completed
@@ -297,12 +300,13 @@ async def test_execution_facade_matches_direct_tx_primitives(tmp_path: Path) -> 
     db = await direct._connect()
     try:
         await db.execute("BEGIN IMMEDIATE")
-        direct_claim = await direct.claim_delivery_tx(db, now=100.0)
+        direct_claim = await direct.claim_delivery_tx(db, owner_generation=1, now=100.0)
         assert direct_claim is not None
         direct_release = await direct.release_delivery_tx(
             db,
             direct_id,
             expected_version=direct_claim.delivery_version,
+            owner_generation=1,
             error="temporary",
             retry_at=105.0,
             discard=False,
@@ -312,11 +316,12 @@ async def test_execution_facade_matches_direct_tx_primitives(tmp_path: Path) -> 
     finally:
         await db.close()
 
-    facade_claim = await facade.claim_delivery()
+    facade_claim = await facade.claim_delivery(owner_generation=1)
     assert facade_claim is not None
     facade_release = await facade.release_delivery(
         facade_id,
         expected_version=facade_claim.delivery_version,
+        owner_generation=1,
         error="temporary",
         retry_at=105.0,
         discard=False,

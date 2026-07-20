@@ -6,12 +6,14 @@ import asyncio
 import time
 import uuid
 from collections.abc import AsyncIterator, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import replace
 
 from deskpet.execution.contracts import (
     ActorContext,
     AuthorizationError,
     AttachmentPolicy,
+    ChildCommandRecord,
     GrantConsume,
     LiveCursor,
     OutcomeStatus,
@@ -31,11 +33,12 @@ from deskpet.execution.contracts import (
     root_idempotency_key,
     stable_event_id,
     DecisionSignal as DurableDecisionSignal,
+    thaw_json,
 )
 from deskpet.execution.ports import ExecutionUnitOfWork
 
 from .context import HostContextFactory
-from .child_runs import ChildLauncher, ChildRunCoordinator
+from .child_runs import ChildRunCoordinator
 from .contracts import CancelReceipt, HostContext, RegisteredDriver, RunHandle, RunRequest, SignalReceipt, driver_catalog
 from .live_index import BoundedLiveIndex, LiveRun, LiveStreamOverflow
 from .ports import (
@@ -61,19 +64,19 @@ class RunKernel:
         drivers: Sequence[RegisteredDriver],
         context_factory: HostContextFactory | None = None,
         child_runs: ChildRunCoordinator | None = None,
-        child_launcher: ChildLauncher | None = None,
         tool_executor: UnifiedToolExecutor | None = None,
-        child_scheduler_owner: str = "run-kernel",
         max_live_runs: int = 4096,
+        child_signal_heartbeat_interval: float = 10.0,
     ) -> None:
         self._uow = uow
         self._router = router
         self._drivers = driver_catalog(tuple(drivers))
         self._context_factory = context_factory or HostContextFactory()
         self._child_runs = child_runs
-        self._child_launcher = child_launcher
         self._tool_executor = tool_executor
-        self._child_scheduler_owner = child_scheduler_owner
+        self._child_signal_heartbeat_interval = max(
+            0.001, float(child_signal_heartbeat_interval)
+        )
         self._live = BoundedLiveIndex(max_runs=max_live_runs)
         self._active = self._live._runs
         self._lock = self._live.lock
@@ -84,9 +87,7 @@ class RunKernel:
             query=self._query,
             finalize=self._finalize,
             child_runs=child_runs,
-            child_launcher=child_launcher,
             tool_executor=tool_executor,
-            child_scheduler_owner=child_scheduler_owner,
         )
 
     @staticmethod
@@ -118,9 +119,17 @@ class RunKernel:
             ):
                 raise AuthorizationError("actor_not_authorized", "internal authority is stale")
             return
-        if actor.principal_id != context.principal_id or actor.auth_epoch != context.auth_epoch:
+        if (
+            actor.principal_id != context.principal_id
+            or actor.auth_epoch != context.auth_epoch
+            or (
+                actor.root_run_id is not None
+                and actor.root_run_id != context.root_run_id
+            )
+        ):
             raise AuthorizationError(
-                "actor_not_authorized", "actor principal or authentication epoch differs"
+                "actor_not_authorized",
+                "actor principal, authentication epoch, or run root differs",
             )
 
     async def _query(self, ref: RunRef, actor: ActorContext) -> RunRecord | object:
@@ -178,13 +187,21 @@ class RunKernel:
         recovery_lease: RecoveryLease | None = None,
     ) -> RunEvent:
         if record.persistence_level is PersistenceLevel.DURABLE:
+            command = await self._uow.get_child_command_for_run(record.run_id)
+            finalize = (
+                self._uow.finalize_child_and_enqueue_parent_signal
+                if command is not None else self._uow.finalize_and_enqueue_delivery
+            )
+            kwargs = dict(
+                expected_version=expected_version,
+                terminal_status=status,
+                event=event,
+                recovery_lease=recovery_lease,
+            )
             return (
-                await self._uow.finalize(
-                    record.run_id,
-                    expected_version=expected_version,
-                    terminal_status=status,
-                    event=event,
-                    recovery_lease=recovery_lease,
+                await (
+                    finalize(command.operation_id, **kwargs)
+                    if command is not None else finalize(record.run_id, **kwargs)
                 )
             ).event
         async with self._lock:
@@ -578,7 +595,7 @@ class RunKernel:
             active = self._active.get(ref.run_id)
             if active is None:
                 return
-            self._live.finish(active)
+            self._live.finish(ref.run_id, active)
             active.subscribers.clear()
             if isinstance(record, RunRecord) and record.status in {
                 RunStatus.COMPLETED,
@@ -592,6 +609,91 @@ class RunKernel:
         if registration is None:
             raise RuntimeError(f"driver is not registered: {record.spec.driver_kind}")
         return registration
+
+    async def _accept_precreated_child(self, command: ChildCommandRecord) -> None:
+        spec = command.intent.child_spec
+        context = spec.context
+        actor = ActorContext(
+            principal_id=context.principal_id,
+            session_id=context.session_id,
+            auth_epoch=context.auth_epoch,
+            root_run_id=context.root_run_id,
+        )
+        record = await self._uow.query(RunRef(spec.run_id, context.session_id), actor)
+        if not isinstance(record, RunRecord):
+            return
+        if record.status in TERMINAL_RUN_STATUSES:
+            async with self._lock:
+                self._active.pop(record.run_id, None)
+            return
+        async with self._lock:
+            active = self._live.get(record.run_id) or self._live.add(record.run_id, actor)
+            active.record = record
+        async with active.start_lock:
+            if active.task is not None and not active.task.done():
+                return
+            if await self._uow.load_continuation(record.run_id) is not None:
+                await self.recover(RunRef(record.run_id, context.session_id), actor)
+                return
+            registration = self._driver(record)
+            payload = thaw_json(command.intent.child_request)
+            assert isinstance(payload, dict)
+            text = str(payload.get("text") or payload.get("task") or payload.get("request") or "")
+            start = DriverStart(
+                run_id=record.run_id,
+                session_id=context.session_id,
+                canonical_messages=({"role": "user", "content": text},),
+                provider_state=thaw_json(context.provider_plan),
+                run_context=context,
+                run_spec=spec,
+                profile_key=spec.profile_key,
+                request_payload={"text": text, **payload},
+                capability_snapshot={
+                    "capabilities": list(command.intent.capability_subset),
+                    "capability_hash": spec.capability_fingerprint,
+                },
+            )
+            active.task = asyncio.create_task(
+                self._runtime.drive(registration, record, registration.driver.start(start)),
+                name=f"deskpet-child:{command.operation_id}",
+            )
+            await asyncio.sleep(0)
+
+    async def _deliver_child_signal(
+        self,
+        parent: RunRecord,
+        signal: DriverSignal,
+        recovery_lease: RecoveryLease,
+    ) -> None:
+        registration = self._driver(parent)
+        errors: list[BaseException] = []
+
+        async def heartbeat() -> None:
+            while True:
+                await asyncio.sleep(self._child_signal_heartbeat_interval)
+                try:
+                    await self._uow.renew_recovery(recovery_lease)
+                except BaseException as exc:
+                    errors.append(exc)
+                    return
+
+        heartbeat_task = asyncio.create_task(
+            heartbeat(), name=f"child-signal-heartbeat:{parent.run_id}"
+        )
+        try:
+            await self._runtime.consume(
+                registration, parent,
+                registration.driver.signal(
+                    signal, recovery_lease=recovery_lease
+                ),
+                recovery_lease=recovery_lease,
+            )
+            if errors:
+                raise errors[0]
+        finally:
+            heartbeat_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await heartbeat_task
 
     @staticmethod
     def _driver_start(
@@ -619,13 +721,19 @@ def kernel_public_operations() -> tuple[str, ...]:
     return ("start", "observe", "signal", "cancel", "recover", "close")
 
 
-__all__ = [
-    "CancelReceipt",
-    "HostContext",
-    "RegisteredDriver",
-    "RunHandle",
-    "RunKernel",
-    "RunRequest",
-    "SignalReceipt",
-    "kernel_public_operations",
-]
+class KernelChildLauncher:
+    """Narrow adapter from durable child commands into the existing Kernel runtime."""
+
+    def __init__(self, kernel: RunKernel) -> None:
+        self._kernel = kernel
+
+    async def accept(self, command: ChildCommandRecord) -> None:
+        await self._kernel._accept_precreated_child(command)
+
+    async def deliver(
+        self,
+        parent: RunRecord,
+        signal: DriverSignal,
+        recovery_lease: RecoveryLease,
+    ) -> None:
+        await self._kernel._deliver_child_signal(parent, signal, recovery_lease)

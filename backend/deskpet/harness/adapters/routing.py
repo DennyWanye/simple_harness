@@ -3,18 +3,14 @@
 from __future__ import annotations
 
 from ...workflows.routing import WorkflowRoute, route_task
-from ..router import ClassifiedRoute, RouteProfile, RouteRequest
-
-
-_PROFILE_BY_ROUTE = {
-    WorkflowRoute.REACT: "react.default",
-    WorkflowRoute.DEEP_RESEARCH: "workflow.deep_research",
-    WorkflowRoute.PPT_PRO: "workflow.ppt_pro",
-    WorkflowRoute.CODE_COMPLEX: "workflow.code_complex",
-}
+from ..profiles import ProfileRegistry
+from ..router import ClassifiedRoute, RouteRequest
 
 
 class DeskPetRouteClassifier:
+    def __init__(self, profiles: ProfileRegistry) -> None:
+        self._profiles = profiles
+
     def classify(self, request: RouteRequest) -> ClassifiedRoute:
         current = route_task(
             request.text,
@@ -23,31 +19,8 @@ class DeskPetRouteClassifier:
             workspace_context=request.workspace_context,
         )
         return ClassifiedRoute(
-            profile_key=_PROFILE_BY_ROUTE[current.route],
+            profile_key=self._profiles.profile_for_route(current.route.value).profile_key,
             reason=current.reason,
             confidence=current.confidence,
         )
-
-
-def deskpet_route_profiles() -> tuple[RouteProfile, ...]:
-    return (
-        RouteProfile("react.default", "react"),
-        RouteProfile(
-            "workflow.deep_research",
-            "workflow",
-            frozenset({"workflow", "deep_research"}),
-        ),
-        RouteProfile(
-            "workflow.ppt_pro",
-            "workflow",
-            frozenset({"workflow", "ppt_pro"}),
-        ),
-        RouteProfile(
-            "workflow.code_complex",
-            "workflow",
-            frozenset({"workflow", "code_complex"}),
-        ),
-    )
-
-
-__all__ = ["DeskPetRouteClassifier", "deskpet_route_profiles"]
+__all__ = ["DeskPetRouteClassifier"]

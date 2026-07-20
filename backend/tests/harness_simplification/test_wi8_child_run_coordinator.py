@@ -1,27 +1,31 @@
 from __future__ import annotations
 
+import asyncio
+import hashlib
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 
 import aiosqlite
 import pytest
 
 from deskpet.execution import (
+    ActorContext,
     AttachmentPolicy,
+    AuthorizationError,
     IdempotencyConflict,
     OutcomeStatus,
     PersistenceLevel,
     RunContext,
     RunCreate,
     RunEventCandidate,
+    RunRef,
+    RunStatus,
     fingerprint_json,
     root_idempotency_key,
 )
 from deskpet.harness.child_runs import (
     ChildRunCoordinator,
-    attachment_for_join_policy,
-    join_policy_for_attachment,
-    stable_child_operation_id,
-    stable_child_run_id,
+    ChildRunScheduler as _ChildRunScheduler,
 )
 from deskpet.harness.ports import (
     AttachmentPolicy as DriverAttachmentPolicy,
@@ -34,6 +38,43 @@ from deskpet.workflows.store import SqliteExecutionUnitOfWork, StaleRecoveryLeas
 
 
 PARENT_CAPABILITY = fingerprint_json({"tools": ["read", "write", "delegate"]})
+
+
+class ChildRunScheduler(_ChildRunScheduler):
+    """Test helper for exercising both canonical scheduler passes."""
+
+    async def reconcile_once(self, **kwargs) -> None:
+        await self.reconcile_commands_once(**kwargs)
+        command_errors = self.last_errors
+        await self.reconcile_signals_once(
+            recovery_lease=kwargs.get("recovery_lease")
+        )
+        self.last_errors = command_errors + self.last_errors
+
+    @staticmethod
+    def _signal(record):
+        if record.kind == "accepted":
+            return ChildAcceptedSignal(
+                record.parent_run_id, record.command_id, record.child_run_id,
+                record.signal_id,
+            )
+        return ChildTerminalSignal(
+            record.parent_run_id, record.command_id, record.child_run_id,
+            str(record.payload["status"]), record.payload.get("value"),
+            record.signal_id,
+        )
+
+
+def _operation_id(parent_run_id: str, command_id: str) -> str:
+    return hashlib.sha256(
+        f"execution-child-operation|{parent_run_id}|{command_id}".encode()
+    ).hexdigest()
+
+
+def _child_run_id(parent_run_id: str, command_id: str) -> str:
+    return "child-" + hashlib.sha256(
+        f"execution-child-run|{parent_run_id}|{command_id}".encode()
+    ).hexdigest()[:32]
 
 
 @dataclass
@@ -51,12 +92,28 @@ class Clock:
 class Launcher:
     fail_once: set[str] = field(default_factory=set)
     calls: list[tuple[str, str]] = field(default_factory=list)
+    deliveries: list[str] = field(default_factory=list)
 
     async def accept(self, command) -> None:
         self.calls.append((command.operation_id, command.child_run_id))
         if command.intent.command_id in self.fail_once:
             self.fail_once.remove(command.intent.command_id)
             raise RuntimeError("injected launcher failure")
+
+    async def deliver(self, parent, signal, recovery_lease) -> None:
+        self.deliveries.append(signal.signal_id)
+
+
+def _scheduler(coordinator, launcher, owner):
+    return ChildRunScheduler(coordinator, launcher, owner=owner)
+
+
+async def _pending(coordinator, parent_run_id):
+    records = await coordinator._store.list_pending_child_signals(parent_run_id)
+    return tuple(
+        SimpleNamespace(record=record, signal=ChildRunScheduler._signal(record))
+        for record in records
+    )
 
 
 def _parent_spec(run_id: str = "parent-run") -> RunCreate:
@@ -89,6 +146,65 @@ def _parent_spec(run_id: str = "parent-run") -> RunCreate:
 async def _parent(path, clock: Clock, run_id: str = "parent-run"):
     uow = SqliteExecutionUnitOfWork(path, clock=clock)
     return (await uow.create(_parent_spec(run_id))).record
+
+
+@pytest.mark.asyncio
+async def test_durable_child_query_rejects_external_actor_from_other_root(tmp_path) -> None:
+    clock = Clock()
+    uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db", clock=clock)
+    parent = (await uow.create(_parent_spec())).record
+    coordinator = ChildRunCoordinator(uow)
+    command = await coordinator.submit(parent, _delegate("cross-root"))
+    await _scheduler(coordinator, Launcher(), "scheduler").reconcile_once()
+    assert (await uow.get_child_command(command.operation_id)).status.value == "acked"
+
+    wrong_root = ActorContext(
+        principal_id=parent.context.principal_id,
+        session_id=parent.context.session_id,
+        auth_epoch=parent.context.auth_epoch,
+        root_run_id="other-root",
+    )
+    with pytest.raises(AuthorizationError) as rejected:
+        await uow.query(
+            RunRef(command.child_run_id, parent.context.session_id), wrong_root
+        )
+    assert rejected.value.code == "actor_not_authorized"
+
+
+@pytest.mark.asyncio
+async def test_generic_finalize_cannot_bypass_child_parent_signal_owner(tmp_path) -> None:
+    clock = Clock()
+    uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db", clock=clock)
+    parent = (await uow.create(_parent_spec())).record
+    coordinator = ChildRunCoordinator(uow)
+    command = await coordinator.submit(parent, _delegate("terminal-owner"))
+    await _scheduler(coordinator, Launcher(), "scheduler").reconcile_once()
+    actor = ActorContext(
+        parent.context.principal_id, parent.context.session_id,
+        parent.context.auth_epoch, parent.context.root_run_id,
+    )
+    child = await uow.query(
+        RunRef(command.child_run_id, parent.context.session_id), actor
+    )
+
+    with pytest.raises(Exception) as rejected:
+        await uow.finalize_and_enqueue_delivery(
+            command.child_run_id,
+            expected_version=child.version,
+            terminal_status=RunStatus.COMPLETED,
+            event=RunEventCandidate(
+                event_key=f"terminal:{command.child_run_id}", kind="final",
+                status=OutcomeStatus.SUCCEEDED, driver_kind="react",
+            ),
+        )
+    assert getattr(rejected.value, "code", None) == "child_terminal_requires_parent_signal"
+    assert (await uow.query(
+        RunRef(command.child_run_id, parent.context.session_id), actor
+    )).status not in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED}
+    assert all(
+        signal.kind != "terminal"
+        for signal in await uow.list_pending_child_signals(parent.run_id)
+    )
 
 
 def _delegate(
@@ -125,8 +241,8 @@ async def test_delegate_intent_commits_before_child_exists_and_replays_by_operat
     replay = await coordinator.submit(parent, command)
 
     assert first == replay
-    assert first.operation_id == stable_child_operation_id("parent-run", "command-a")
-    assert first.child_run_id == stable_child_run_id("parent-run", "command-a")
+    assert first.operation_id == _operation_id("parent-run", "command-a")
+    assert first.child_run_id == _child_run_id("parent-run", "command-a")
     assert first.status.value == "pending"
     assert first.intent.attachment_policy is AttachmentPolicy.ATTACHED
     async with aiosqlite.connect(path) as db:
@@ -168,15 +284,12 @@ async def test_three_join_policies_map_to_existing_attachment_enum_and_link(
     command = _delegate(f"command-{join_policy.value}", join_policy)
     committed = await coordinator.submit(parent, command)
 
-    attempts = await coordinator.run_scheduler_once(
-        Launcher(), owner="scheduler-a", lease_seconds=30
+    await _scheduler(coordinator, Launcher(), "scheduler-a").reconcile_once(
+        lease_seconds=30
     )
 
-    assert len(attempts) == 1
-    assert attempts[0].accepted is True
-    assert attempts[0].command.status.value == "acked"
-    assert attachment_for_join_policy(join_policy) is attachment
-    assert join_policy_for_attachment(attachment) is join_policy
+    assert (await uow.get_child_command(committed.operation_id)).status.value == "acked"
+    assert committed.intent.attachment_policy is attachment
     async with aiosqlite.connect(path) as db:
         link = await (
             await db.execute(
@@ -261,10 +374,9 @@ async def test_schedule_crash_rolls_back_child_and_link_then_expired_lease_recov
     crashing = ChildRunCoordinator(
         SqliteExecutionUnitOfWork(path, clock=clock, fault_injector=fault)
     )
-    with pytest.raises(RuntimeError, match="child insert"):
-        await crashing.run_scheduler_once(
-            Launcher(), owner="scheduler-crash", lease_seconds=10
-        )
+    failed = _scheduler(crashing, Launcher(), "scheduler-crash")
+    await failed.reconcile_once(lease_seconds=10)
+    assert any("child insert" in error for error in failed.last_errors)
 
     async with aiosqlite.connect(path) as db:
         child = await (
@@ -284,10 +396,9 @@ async def test_schedule_crash_rolls_back_child_and_link_then_expired_lease_recov
 
     clock.advance(11)
     launcher = Launcher()
-    recovered = await healthy.run_scheduler_once(
-        launcher, owner="scheduler-recovery", lease_seconds=10
+    await _scheduler(healthy, launcher, "scheduler-recovery").reconcile_once(
+        lease_seconds=10
     )
-    assert recovered[0].accepted is True
     assert launcher.calls == [(committed.operation_id, committed.child_run_id)]
 
 
@@ -307,22 +418,20 @@ async def test_ack_crash_reuses_same_child_and_operation_without_duplicate_rows(
     crashing = ChildRunCoordinator(
         SqliteExecutionUnitOfWork(path, clock=clock, fault_injector=fault)
     )
-    with pytest.raises(RuntimeError, match="accepted inbox"):
-        await crashing.run_scheduler_once(
-            launcher, owner="scheduler-crash", lease_seconds=10
-        )
+    failed = _scheduler(crashing, launcher, "scheduler-crash")
+    await failed.reconcile_once(lease_seconds=10)
+    assert any("accepted inbox" in error for error in failed.last_errors)
 
     stored = await SqliteExecutionUnitOfWork(path, clock=clock).get_child_command(
         committed.operation_id
     )
     assert stored is not None and stored.status.value == "scheduled"
-    assert await healthy.pending_signals("parent-run") == ()
+    assert await _pending(healthy, "parent-run") == ()
 
     clock.advance(11)
-    recovered = await healthy.run_scheduler_once(
-        launcher, owner="scheduler-recovery", lease_seconds=10
+    await _scheduler(healthy, launcher, "scheduler-recovery").reconcile_once(
+        lease_seconds=10
     )
-    assert recovered[0].accepted is True
     assert launcher.calls == [
         (committed.operation_id, committed.child_run_id),
         (committed.operation_id, committed.child_run_id),
@@ -345,26 +454,68 @@ async def test_ack_crash_reuses_same_child_and_operation_without_duplicate_rows(
 
 
 @pytest.mark.asyncio
+async def test_one_command_ack_failure_does_not_block_sibling_schedule(tmp_path):
+    path = tmp_path / "workflow.db"
+    clock = Clock()
+    parent = await _parent(path, clock)
+    healthy = ChildRunCoordinator(SqliteExecutionUnitOfWork(path, clock=clock))
+    first = await healthy.submit(parent, _delegate("first"))
+    second = await healthy.submit(parent, _delegate("second"))
+    fail_next_ack = True
+
+    def fault(point: str) -> None:
+        nonlocal fail_next_ack
+        if point == "child_ack_before_commit" and fail_next_ack:
+            fail_next_ack = False
+            raise RuntimeError("first ack failed")
+
+    coordinator = ChildRunCoordinator(
+        SqliteExecutionUnitOfWork(path, clock=clock, fault_injector=fault)
+    )
+    scheduler = _scheduler(coordinator, Launcher(), "scheduler-isolated")
+    await scheduler.reconcile_commands_once(limit=2, lease_seconds=10)
+
+    assert any("first ack failed" in error for error in scheduler.last_errors)
+    stored = [
+        await SqliteExecutionUnitOfWork(path, clock=clock).get_child_command(operation_id)
+        for operation_id in (first.operation_id, second.operation_id)
+    ]
+    assert sorted(item.status.value for item in stored) == ["acked", "scheduled"]
+    acked = next(item for item in stored if item.status.value == "acked")
+    signals = await _pending(healthy, parent.run_id)
+    assert [item.record.operation_id for item in signals] == [acked.operation_id]
+
+
+@pytest.mark.asyncio
 async def test_accepted_and_terminal_inbox_redeliver_after_restart_until_ack(tmp_path):
     path = tmp_path / "workflow.db"
     clock = Clock()
     parent = await _parent(path, clock)
     first = ChildRunCoordinator(SqliteExecutionUnitOfWork(path, clock=clock))
     committed = await first.submit(parent, _delegate("signals"))
-    await first.run_scheduler_once(Launcher(), owner="scheduler-a")
+    await _scheduler(first, Launcher(), "scheduler-a").reconcile_once()
 
     restarted = ChildRunCoordinator(SqliteExecutionUnitOfWork(path, clock=clock))
-    accepted_once = await restarted.pending_signals("parent-run")
-    accepted_twice = await restarted.pending_signals("parent-run")
+    accepted_once = await _pending(restarted, "parent-run")
+    accepted_twice = await _pending(restarted, "parent-run")
     assert len(accepted_once) == len(accepted_twice) == 1
     assert accepted_once[0].signal.kind == "child_accepted"
     assert accepted_once[0].record.signal_id == accepted_twice[0].record.signal_id
-    await restarted.acknowledge_signal(accepted_once[0].record.signal_id)
-    assert await restarted.pending_signals("parent-run") == ()
-
     uow = SqliteExecutionUnitOfWork(path, clock=clock)
-    await uow.finalize(
-        committed.child_run_id,
+    await uow.save_continuation("parent-run", 0, {"state": "waiting"})
+    await uow.apply_child_signal_and_ack(
+        accepted_once[0].record.signal_id,
+        expected_continuation_version=1,
+        continuation_payload={"state": "accepted"},
+        event=RunEventCandidate(
+            event_key="accepted-applied", kind="child.accepted",
+            status=OutcomeStatus.ACCEPTED, driver_kind="react",
+        ),
+    )
+    assert await _pending(restarted, "parent-run") == ()
+
+    await uow.finalize_child_and_enqueue_parent_signal(
+        committed.operation_id,
         expected_version=1,
         terminal_status="completed",
         event=RunEventCandidate(
@@ -374,14 +525,12 @@ async def test_accepted_and_terminal_inbox_redeliver_after_restart_until_ack(tmp
             driver_kind="react",
             payload={"result": "ok"},
         ),
-    )
-    await restarted.record_terminal(
-        committed.operation_id, status="completed", value={"result": "ok"}
+        value={"result": "ok"},
     )
     after_terminal_restart = ChildRunCoordinator(
         SqliteExecutionUnitOfWork(path, clock=clock)
     )
-    terminal = await after_terminal_restart.pending_signals("parent-run")
+    terminal = await _pending(after_terminal_restart, "parent-run")
     assert len(terminal) == 1
     assert terminal[0].signal == ChildTerminalSignal(
         "parent-run", "signals", committed.child_run_id, "completed", {"result": "ok"}
@@ -396,21 +545,32 @@ async def test_signal_ack_crash_keeps_inbox_pending_for_recovery(tmp_path):
     parent = await _parent(path, clock)
     healthy = ChildRunCoordinator(SqliteExecutionUnitOfWork(path, clock=clock))
     await healthy.submit(parent, _delegate("signal-ack-crash"))
-    await healthy.run_scheduler_once(Launcher(), owner="scheduler-a")
-    delivery = (await healthy.pending_signals("parent-run"))[0]
+    await _scheduler(healthy, Launcher(), "scheduler-a").reconcile_once()
+    delivery = (await _pending(healthy, "parent-run"))[0]
 
     def fault(point: str) -> None:
         if point == "child_signal_ack_before_commit":
             raise RuntimeError("crash before signal ack")
 
-    crashing = ChildRunCoordinator(
-        SqliteExecutionUnitOfWork(path, clock=clock, fault_injector=fault)
+    uow = SqliteExecutionUnitOfWork(path, clock=clock)
+    await uow.save_continuation("parent-run", 0, {"state": "waiting"})
+    kwargs = dict(
+        expected_continuation_version=1,
+        continuation_payload={"state": "accepted"},
+        event=RunEventCandidate(
+            event_key="accepted-after-crash", kind="child.accepted",
+            status=OutcomeStatus.ACCEPTED, driver_kind="react",
+        ),
+    )
+    crashing = SqliteExecutionUnitOfWork(
+        path, clock=clock, fault_injector=fault
     )
     with pytest.raises(RuntimeError, match="signal ack"):
-        await crashing.acknowledge_signal(delivery.record.signal_id)
+        await crashing.apply_child_signal_and_ack(delivery.record.signal_id, **kwargs)
 
-    redelivered = await healthy.pending_signals("parent-run")
+    redelivered = await _pending(healthy, "parent-run")
     assert [item.record.signal_id for item in redelivered] == [delivery.record.signal_id]
+    await uow.apply_child_signal_and_ack(delivery.record.signal_id, **kwargs)
 
 
 @pytest.mark.asyncio
@@ -421,8 +581,8 @@ async def test_stale_recovery_cannot_apply_child_boundary_event_or_ack(tmp_path)
     uow = SqliteExecutionUnitOfWork(path, clock=clock)
     coordinator = ChildRunCoordinator(uow)
     await coordinator.submit(parent, _delegate("stale-signal"))
-    await coordinator.run_scheduler_once(Launcher(), owner="scheduler-a")
-    delivery = (await coordinator.pending_signals("parent-run"))[0]
+    await _scheduler(coordinator, Launcher(), "scheduler-a").reconcile_once()
+    delivery = (await _pending(coordinator, "parent-run"))[0]
     stale = await uow.claim_recovery("parent-run", owner="worker-a", lease_seconds=5)
     clock.advance(6)
     await uow.claim_recovery("parent-run", owner="worker-b", lease_seconds=10)
@@ -447,7 +607,7 @@ async def test_stale_recovery_cannot_apply_child_boundary_event_or_ack(tmp_path)
 
     assert await uow.load_continuation("parent-run") is None
     assert await uow.list_events("parent-run") == ()
-    assert [item.record.signal_id for item in await coordinator.pending_signals("parent-run")] == [
+    assert [item.record.signal_id for item in await _pending(coordinator, "parent-run")] == [
         delivery.record.signal_id
     ]
 
@@ -462,28 +622,26 @@ async def test_launcher_failure_isolated_between_siblings_and_retry_is_idempoten
     second = await coordinator.submit(parent, _delegate("sibling-b"))
     launcher = Launcher(fail_once={"sibling-a"})
 
-    attempts = await coordinator.run_scheduler_once(
-        launcher, owner="scheduler-a", limit=10, lease_seconds=10
+    scheduler = _scheduler(coordinator, launcher, "scheduler-a")
+    await scheduler.reconcile_once(
+        limit=10, lease_seconds=10
     )
 
-    assert [(item.command.intent.command_id, item.accepted) for item in attempts] == [
-        ("sibling-a", False),
-        ("sibling-b", True),
-    ]
-    assert (await coordinator.pending_signals("parent-run"))[0].signal == (
+    assert any("injected launcher failure" in error for error in scheduler.last_errors)
+    assert (await coordinator._store.get_child_command(first.operation_id)).status.value == "scheduled"
+    assert (await coordinator._store.get_child_command(second.operation_id)).status.value == "acked"
+    assert (await _pending(coordinator, "parent-run"))[0].signal == (
         ChildAcceptedSignal(
             "parent-run", "sibling-b", second.child_run_id,
-            (await coordinator.pending_signals("parent-run"))[0].record.signal_id,
+            (await _pending(coordinator, "parent-run"))[0].record.signal_id,
         )
     )
 
     clock.advance(11)
-    retry = await coordinator.run_scheduler_once(
-        launcher, owner="scheduler-b", limit=10, lease_seconds=10
+    await _scheduler(coordinator, launcher, "scheduler-b").reconcile_once(
+        limit=10, lease_seconds=10
     )
-    assert [(item.command.intent.command_id, item.accepted) for item in retry] == [
-        ("sibling-a", True)
-    ]
+    assert (await coordinator._store.get_child_command(first.operation_id)).status.value == "acked"
     assert launcher.calls.count((first.operation_id, first.child_run_id)) == 2
     async with aiosqlite.connect(path) as db:
         children = await (
@@ -495,11 +653,110 @@ async def test_launcher_failure_isolated_between_siblings_and_retry_is_idempoten
     assert children == ("parent-run", 2)
 
 
+@pytest.mark.asyncio
+async def test_detached_parent_terminal_discards_replayed_child_signals(tmp_path):
+    path = tmp_path / "workflow.db"
+    clock = Clock()
+    parent = await _parent(path, clock)
+    uow = SqliteExecutionUnitOfWork(path, clock=clock)
+    coordinator = ChildRunCoordinator(uow)
+    command = await coordinator.submit(
+        parent, _delegate("detached-terminal", JoinPolicy.DETACHED)
+    )
+    launcher = Launcher()
+    scheduler = ChildRunScheduler(coordinator, launcher, owner="scheduler-a")
+    await scheduler.reconcile_once()
+    first_deliveries = tuple(launcher.deliveries)
+
+    await uow.finalize_and_enqueue_delivery(
+        parent.run_id,
+        expected_version=parent.version,
+        terminal_status=RunStatus.COMPLETED,
+        event=RunEventCandidate(
+            event_key="parent-first",
+            kind="final",
+            status=OutcomeStatus.SUCCEEDED,
+            driver_kind="react",
+        ),
+    )
+    await uow.finalize_child_and_enqueue_parent_signal(
+        command.operation_id,
+        expected_version=1,
+        terminal_status=RunStatus.COMPLETED,
+        event=RunEventCandidate(
+            event_key="child-late",
+            kind="final",
+            status=OutcomeStatus.SUCCEEDED,
+            driver_kind="react",
+        ),
+        value={"result": "late"},
+    )
+
+    await scheduler.reconcile_once()
+
+    assert tuple(launcher.deliveries) == first_deliveries
+    assert await _pending(coordinator, parent.run_id) == ()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "join_policy", [JoinPolicy.JOIN_BEFORE_FINAL, JoinPolicy.ROOT_TERMINAL_CHILD]
+)
+async def test_terminal_parent_preserves_attached_signal_as_invariant(join_policy, tmp_path):
+    path = tmp_path / "workflow.db"
+    clock = Clock()
+    parent = await _parent(path, clock)
+    uow = SqliteExecutionUnitOfWork(path, clock=clock)
+    coordinator = ChildRunCoordinator(uow)
+    await coordinator.submit(parent, _delegate("attached-terminal", join_policy))
+    scheduler = ChildRunScheduler(coordinator, Launcher(), owner="scheduler-a")
+    await scheduler.reconcile_once()
+    await uow.finalize_and_enqueue_delivery(
+        parent.run_id, expected_version=parent.version,
+        terminal_status=RunStatus.COMPLETED,
+        event=RunEventCandidate(
+            event_key="parent-race", kind="final",
+            status=OutcomeStatus.SUCCEEDED, driver_kind="react",
+        ),
+    )
+
+    await scheduler.reconcile_signals_once()
+
+    assert await _pending(coordinator, parent.run_id)
+    assert any("attached_child_signal_after_parent_terminal" in item
+               for item in scheduler.last_errors)
+
+
+@pytest.mark.asyncio
+async def test_scheduler_lifecycle_wakes_for_new_command_and_closes(tmp_path):
+    path = tmp_path / "workflow.db"
+    clock = Clock()
+    parent = await _parent(path, clock)
+    uow = SqliteExecutionUnitOfWork(path, clock=clock)
+    coordinator = ChildRunCoordinator(uow)
+    launcher = Launcher()
+    scheduler = ChildRunScheduler(coordinator, launcher, owner="runtime-owner")
+    await scheduler.start(interval=60)
+
+    command = await coordinator.submit(parent, _delegate("wake-command"))
+    for _ in range(100):
+        current = await uow.get_child_command(command.operation_id)
+        if current is not None and current.status.value == "acked":
+            break
+        await asyncio.sleep(0.01)
+
+    assert current is not None and current.status.value == "acked"
+    assert scheduler._task is not None and not scheduler._task.done()
+    await scheduler.close()
+    assert scheduler._task is None
+
+
 def test_owner_audit_uses_run_driver_and_structural_link_without_owner_map():
     from pathlib import Path
 
     source = Path("backend/deskpet/harness/child_runs.py").read_text(encoding="utf-8")
     assert "owner_map" not in source
     assert "_owners" not in source
-    assert "execution_runs.driver_kind" in source
-    assert "structural links" in source
+    assert 'driver_kind=str(child_request.get("driver_kind") or "react")' in source
+    assert "commit_child_command" in source
+    assert "attachment_policy=attachment" in source

@@ -17,17 +17,14 @@ from deskpet.execution.contracts import DecisionOpen as DurableDecisionOpen, Out
 from deskpet.execution.evidence import EvidenceContext, EvidenceSelection, UNKNOWN_EVIDENCE
 from deskpet.execution.ports import ExecutionUnitOfWork
 from deskpet.harness.ports import AttachmentPolicy, CancelAcknowledgedCandidate, ChildAcceptedCandidate, ChildAcceptedSignal, ChildTerminalSignal, DecisionSignal, DelegateRun, DriverEvent, DriverSignal, DriverStart, DriverTerminalCandidate, ExecuteTools, JoinPolicy, OpenDecision, PersistedEventCandidate, ProviderFallbackCandidate, TokenCandidate, ToolGrantRef, ToolOutcomesSignal
-from deskpet.harness.tool_executor import PreparedExecutionCall, ToolOutcome, ToolOutcomeStatus
+from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall, ToolOutcomeState
 from deskpet.tools.capabilities import ToolExecutionContext
 
-def _call_payload(call: PreparedExecutionCall) -> dict[str, Any]:
-    return {'tool_name': call.tool_name, 'model_args': call.args_copy(), 'call_id': call.call_id, 'effect_id': call.effect_id, 'capability_hash': call.capability_hash, 'scope_hash': call.scope_hash, 'requires_authorization': call.requires_authorization, 'recoverable_effect': call.recoverable_effect, 'tool_spec_version': call.tool_spec_version, 'schema_hash': call.schema_hash, 'permission_policy_version': call.permission_policy_version, 'args_hash': call.args_hash}
+def _call_payload(call: PreparedToolCall) -> dict[str, Any]:
+    return call.to_dict()
 
-def _load_call(value: Mapping[str, Any]) -> PreparedExecutionCall:
-    call = PreparedExecutionCall(tool_name=str(value['tool_name']), model_args=dict(value['model_args']), call_id=str(value['call_id']), effect_id=str(value['effect_id']), capability_hash=str(value['capability_hash']), scope_hash=str(value['scope_hash']), requires_authorization=bool(value.get('requires_authorization', False)), recoverable_effect=bool(value.get('recoverable_effect', False)), tool_spec_version=str(value.get('tool_spec_version', '')), schema_hash=str(value.get('schema_hash', '')), permission_policy_version=str(value.get('permission_policy_version', '')))
-    if value.get('args_hash') != call.args_hash:
-        raise ValueError('persisted prepared call args hash mismatch')
-    return call
+def _load_call(value: Mapping[str, Any]) -> PreparedToolCall:
+    return PreparedToolCall.from_dict(value)
 
 def _context_payload(context: ToolExecutionContext) -> dict[str, Any]:
     return {'scope_id': context.scope_id, 'session_id': context.session_id, 'request_id': context.request_id, 'origin': context.origin, 'root_run_id': context.root_run_id, 'parent_run_id': context.parent_run_id, 'turn_id': context.turn_id, 'venue': context.venue, 'workspace': context.workspace, 'write_scope_root': context.write_scope_root, 'capability_hash': context.capability_hash, 'scope_hash': context.scope_hash, 'provider_plan': list(context.provider_plan), 'run_id': context.run_id, 'call_id': context.call_id, 'effect_id': context.effect_id, 'trace_id': context.trace_id}
@@ -37,11 +34,11 @@ def _load_context(value: Mapping[str, Any]) -> ToolExecutionContext:
     data['provider_plan'] = tuple((str(item) for item in data.get('provider_plan', ())))
     return ToolExecutionContext(**data)
 
-def _outcome_payload(outcome: ToolOutcome) -> dict[str, Any]:
-    return {'call_id': outcome.call_id, 'effect_id': outcome.effect_id, 'status': outcome.status.value, 'value': copy.deepcopy(outcome.value), 'error': outcome.error, 'receipt_ref': outcome.receipt_ref, 'artifact_refs': list(outcome.artifact_refs), 'retryable': outcome.retryable, 'reconciliation': outcome.reconciliation}
+def _outcome_payload(outcome: NormalizedToolOutcome) -> dict[str, Any]:
+    return outcome.to_dict()
 
-def _load_outcome(value: Mapping[str, Any]) -> ToolOutcome:
-    return ToolOutcome(call_id=str(value['call_id']), effect_id=str(value['effect_id']), status=ToolOutcomeStatus(str(value['status'])), value=copy.deepcopy(value.get('value')), error=value.get('error'), receipt_ref=value.get('receipt_ref'), artifact_refs=tuple((str(item) for item in value.get('artifact_refs', ()))), retryable=bool(value.get('retryable', False)), reconciliation=value.get('reconciliation'))
+def _load_outcome(value: Mapping[str, Any]) -> NormalizedToolOutcome:
+    return NormalizedToolOutcome.from_dict(value)
 
 @dataclass(frozen=True)
 class ReactCommandBoundary:
@@ -53,9 +50,9 @@ class ReactCommandBoundary:
     session_projection_cursor: int
     prepared_context_ref: str | None
     tool_set_snapshot_ref: str | None
-    pending_calls: tuple[PreparedExecutionCall, ...]
+    pending_calls: tuple[PreparedToolCall, ...]
     tool_contexts: tuple[ToolExecutionContext, ...]
-    outcomes: tuple[ToolOutcome | None, ...]
+    outcomes: tuple[NormalizedToolOutcome | None, ...]
     provider_state: Mapping[str, Any]
     iteration: int
     completion_state: Mapping[str, Any]
@@ -65,9 +62,17 @@ class ReactCommandBoundary:
     pending_decision: DriverEvent | None = None
     pending_delegate: DriverEvent | None = None
     version: int = 0
+    outcome_statuses: tuple[OutcomeStatus | None, ...] = ()
+    outcome_metadata: tuple[Mapping[str, Any], ...] = ()
+    authorization_indexes: tuple[int, ...] = ()
+    durable_indexes: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
-        if len(self.pending_calls) != len(self.tool_contexts) or len(self.pending_calls) != len(self.outcomes):
+        if not self.outcome_statuses:
+            object.__setattr__(self, 'outcome_statuses', (None,) * len(self.outcomes))
+        if not self.outcome_metadata:
+            object.__setattr__(self, 'outcome_metadata', tuple(MappingProxyType({}) for _ in self.outcomes))
+        if not (len(self.pending_calls) == len(self.tool_contexts) == len(self.outcomes) == len(self.outcome_statuses) == len(self.outcome_metadata)):
             raise ValueError('pending calls, contexts and outcomes must align')
         object.__setattr__(self, 'canonical_messages', tuple((MappingProxyType(copy.deepcopy(dict(item))) for item in self.canonical_messages)))
         for name in ('provider_state', 'completion_state', 'capability_snapshot'):
@@ -77,16 +82,18 @@ class ReactCommandBoundary:
     def pending_indexes(self) -> tuple[int, ...]:
         return tuple((index for index, outcome in enumerate(self.outcomes) if outcome is None))
 
-    def with_outcomes(self, updates: Mapping[int, ToolOutcome]) -> 'ReactCommandBoundary':
+    def with_outcomes(self, updates: Mapping[int, NormalizedToolOutcome], statuses: Mapping[int, OutcomeStatus], metadata: Mapping[int, Mapping[str, Any]] | None=None) -> 'ReactCommandBoundary':
         outcomes = list(self.outcomes)
+        outcome_statuses = list(self.outcome_statuses)
+        outcome_metadata = list(self.outcome_metadata)
         for index, outcome in updates.items():
-            call = self.pending_calls[index]
-            if (outcome.call_id, outcome.effect_id) != (call.call_id, call.effect_id):
-                raise ValueError('outcome binding mismatch')
             if outcomes[index] is not None and outcomes[index] != outcome:
                 raise ValueError('outcome already recorded with different value')
             outcomes[index] = outcome
-        return replace(self, outcomes=tuple(outcomes), version=self.version + 1)
+            outcome_statuses[index] = OutcomeStatus(statuses[index])
+            if metadata and index in metadata:
+                outcome_metadata[index] = MappingProxyType(copy.deepcopy(dict(metadata[index])))
+        return replace(self, outcomes=tuple(outcomes), outcome_statuses=tuple(outcome_statuses), outcome_metadata=tuple(outcome_metadata), version=self.version + 1)
 
     def to_start(self, scoped_evidence: EvidenceSelection | None=UNKNOWN_EVIDENCE) -> DriverStart:
         return DriverStart(run_id=self.run_id, session_id=self.session_id, canonical_messages=self.canonical_messages, session_projection_cursor=self.session_projection_cursor, prepared_context_ref=self.prepared_context_ref, tool_set_snapshot_ref=self.tool_set_snapshot_ref, provider_state=self.provider_state, iteration=self.iteration, completion_state=self.completion_state, run_context=self.run_context, run_spec=self.run_spec, capability_snapshot=self.capability_snapshot, scoped_evidence=scoped_evidence)
@@ -94,14 +101,14 @@ class ReactCommandBoundary:
     def to_payload(self) -> dict[str, Any]:
         delegate = self.pending_delegate
         decision = self.pending_decision
-        return {'session_id': self.session_id, 'command_id': self.command_id, 'command_kind': self.command_kind, 'canonical_messages': [dict(item) for item in self.canonical_messages], 'session_projection_cursor': self.session_projection_cursor, 'prepared_context_ref': self.prepared_context_ref, 'tool_set_snapshot_ref': self.tool_set_snapshot_ref, 'calls': [_call_payload(call) for call in self.pending_calls], 'contexts': [_context_payload(context) for context in self.tool_contexts], 'outcomes': [_outcome_payload(outcome) if outcome is not None else None for outcome in self.outcomes], 'provider_state': dict(self.provider_state), 'iteration': self.iteration, 'completion_state': dict(self.completion_state), 'capability_snapshot': dict(self.capability_snapshot), 'run_context': None if self.run_context is None else self.run_context.to_dict(), 'run_spec': None if self.run_spec is None else self.run_spec.to_dict(), 'decision': None if decision is None else {'run_id': decision.run_id, 'command_id': decision.command_id, 'decision_id': decision.decision_id, 'nonce': decision.nonce, 'kind': decision.decision_kind, 'prompt': dict(decision.prompt), 'prompt_schema_version': decision.prompt_schema_version, 'expires_at': decision.expires_at, 'call_id': decision.call_id, 'effect_id': decision.effect_id, 'tool_name': decision.tool_name, 'args_hash': decision.args_hash, 'capability_hash': decision.capability_hash, 'scope_hash': decision.scope_hash}, 'delegate': None if delegate is None else {'run_id': delegate.run_id, 'command_id': delegate.command_id, 'child_request': dict(delegate.child_request), 'route_hint': delegate.route_hint, 'capability_subset': list(delegate.capability_subset), 'attachment_policy': delegate.attachment_policy.value, 'join_policy': delegate.join_policy.value}}
+        return {'session_id': self.session_id, 'command_id': self.command_id, 'command_kind': self.command_kind, 'canonical_messages': [dict(item) for item in self.canonical_messages], 'session_projection_cursor': self.session_projection_cursor, 'prepared_context_ref': self.prepared_context_ref, 'tool_set_snapshot_ref': self.tool_set_snapshot_ref, 'calls': [_call_payload(call) for call in self.pending_calls], 'contexts': [_context_payload(context) for context in self.tool_contexts], 'outcomes': [_outcome_payload(outcome) if outcome is not None else None for outcome in self.outcomes], 'outcome_statuses': [status.value if status is not None else None for status in self.outcome_statuses], 'outcome_metadata': [dict(item) for item in self.outcome_metadata], 'authorization_indexes': list(self.authorization_indexes), 'durable_indexes': list(self.durable_indexes), 'provider_state': dict(self.provider_state), 'iteration': self.iteration, 'completion_state': dict(self.completion_state), 'capability_snapshot': dict(self.capability_snapshot), 'run_context': None if self.run_context is None else self.run_context.to_dict(), 'run_spec': None if self.run_spec is None else self.run_spec.to_dict(), 'decision': None if decision is None else {'run_id': decision.run_id, 'command_id': decision.command_id, 'decision_id': decision.decision_id, 'nonce': decision.nonce, 'kind': decision.decision_kind, 'prompt': dict(decision.prompt), 'prompt_schema_version': decision.prompt_schema_version, 'expires_at': decision.expires_at, 'call_id': decision.call_id, 'effect_id': decision.effect_id, 'tool_name': decision.tool_name, 'args_hash': decision.args_hash, 'capability_hash': decision.capability_hash, 'scope_hash': decision.scope_hash}, 'delegate': None if delegate is None else {'run_id': delegate.run_id, 'command_id': delegate.command_id, 'child_request': dict(delegate.child_request), 'route_hint': delegate.route_hint, 'capability_subset': list(delegate.capability_subset), 'attachment_policy': delegate.attachment_policy.value, 'join_policy': delegate.join_policy.value}}
 
     @classmethod
     def from_record(cls, record: Any) -> 'ReactCommandBoundary':
         value = dict(record.payload)
         decision = value.get('decision')
         delegate = value.get('delegate')
-        return cls(run_id=record.run_id, session_id=str(value['session_id']), command_id=str(value['command_id']), command_kind=str(value['command_kind']), canonical_messages=tuple(value['canonical_messages']), session_projection_cursor=int(value['session_projection_cursor']), prepared_context_ref=value.get('prepared_context_ref'), tool_set_snapshot_ref=value.get('tool_set_snapshot_ref'), pending_calls=tuple((_load_call(item) for item in value['calls'])), tool_contexts=tuple((_load_context(item) for item in value['contexts'])), outcomes=tuple((_load_outcome(item) if item is not None else None for item in value['outcomes'])), provider_state=dict(value['provider_state']), iteration=int(value['iteration']), completion_state=dict(value['completion_state']), capability_snapshot=dict(value.get('capability_snapshot') or {}), run_context=RunContext.from_dict(value['run_context']) if value.get('run_context') is not None else None, run_spec=RunCreate.from_dict(value['run_spec']) if value.get('run_spec') is not None else None, pending_decision=OpenDecision(**decision) if decision is not None else None, pending_delegate=DelegateRun(run_id=str(delegate['run_id']), command_id=str(delegate['command_id']), child_request=dict(delegate['child_request']), route_hint=str(delegate['route_hint']), capability_subset=tuple(delegate['capability_subset']), attachment_policy=AttachmentPolicy(str(delegate['attachment_policy'])), join_policy=JoinPolicy(str(delegate['join_policy']))) if delegate is not None else None, version=int(record.version))
+        return cls(run_id=record.run_id, session_id=str(value['session_id']), command_id=str(value['command_id']), command_kind=str(value['command_kind']), canonical_messages=tuple(value['canonical_messages']), session_projection_cursor=int(value['session_projection_cursor']), prepared_context_ref=value.get('prepared_context_ref'), tool_set_snapshot_ref=value.get('tool_set_snapshot_ref'), pending_calls=tuple((_load_call(item) for item in value['calls'])), tool_contexts=tuple((_load_context(item) for item in value['contexts'])), outcomes=tuple((_load_outcome(item) if item is not None else None for item in value['outcomes'])), provider_state=dict(value['provider_state']), iteration=int(value['iteration']), completion_state=dict(value['completion_state']), capability_snapshot=dict(value.get('capability_snapshot') or {}), run_context=RunContext.from_dict(value['run_context']) if value.get('run_context') is not None else None, run_spec=RunCreate.from_dict(value['run_spec']) if value.get('run_spec') is not None else None, pending_decision=OpenDecision(**decision) if decision is not None else None, pending_delegate=DelegateRun(run_id=str(delegate['run_id']), command_id=str(delegate['command_id']), child_request=dict(delegate['child_request']), route_hint=str(delegate['route_hint']), capability_subset=tuple(delegate['capability_subset']), attachment_policy=AttachmentPolicy(str(delegate['attachment_policy'])), join_policy=JoinPolicy(str(delegate['join_policy']))) if delegate is not None else None, version=int(record.version), outcome_statuses=tuple(OutcomeStatus(item) if item is not None else None for item in value.get('outcome_statuses', ())), outcome_metadata=tuple(dict(item) for item in value.get('outcome_metadata', ())), authorization_indexes=tuple(int(item) for item in value.get('authorization_indexes', ())), durable_indexes=tuple(int(item) for item in value.get('durable_indexes', ())))
 
 @dataclass(frozen=True)
 class ReactToken:
@@ -117,7 +124,7 @@ class ReactFallback:
 @dataclass(frozen=True)
 class ReactToolBatch:
     command_id: str
-    calls: tuple[PreparedExecutionCall, ...]
+    calls: tuple[PreparedToolCall, ...]
     contexts: tuple[ToolExecutionContext, ...]
     canonical_messages: tuple[Mapping[str, Any], ...] = ()
     iteration: int = 0
@@ -151,15 +158,8 @@ class ReActCollaborator(Protocol):
     async def close(self) -> None:
         ...
 
-class EffectOutcomeReader(Protocol):
-
-    async def get_outcome(self, effect_id: str) -> ToolOutcome | None:
-        ...
-
-class EffectReconciler(Protocol):
-
-    async def reconcile(self, call: PreparedExecutionCall, context: ToolExecutionContext, outcome: ToolOutcome) -> ToolOutcome:
-        ...
+class PreparedPolicyReader(Protocol):
+    def prepared_execution_policy(self, call: PreparedToolCall) -> tuple[bool, bool]: ...
 
 class LegacyAgentLoopToolInterceptionError(RuntimeError):
     pass
@@ -221,7 +221,7 @@ class LegacyAgentLoopCollaborator:
                         context = context_factory.create_tool_context(request.run_context, run_id=run_id, call_id=tool_call.id, effect_id=effect_id)
                         calls.append(self._call_factory.prepare_execution_call(tool_call.name, tool_call.arguments, call_id=tool_call.id, effect_id=effect_id, context=context))
                         contexts.append(context)
-                    command_id = hashlib.sha256((f'tool-batch|{run_id}|{event.iteration}|' + '|'.join((call.call_id for call in calls))).encode('utf-8')).hexdigest()
+                    command_id = hashlib.sha256((f'tool-batch|{run_id}|{event.iteration}|' + '|'.join((call.stable_call_id for call in calls))).encode('utf-8')).hexdigest()
                     yield ReactToolBatch(command_id, tuple(calls), tuple(contexts), tuple(event.canonical_messages), int(event.iteration))
                     return
                 elif isinstance(event, (ToolCallEvent, ToolResultEvent, AsyncHandoffEvent)):
@@ -262,11 +262,10 @@ class LegacyAgentLoopCollaborator:
 
 class ReActDriver:
 
-    def __init__(self, collaborator: ReActCollaborator, uow: ExecutionUnitOfWork, effect_reader: EffectOutcomeReader, *, reconciler: EffectReconciler | None=None) -> None:
+    def __init__(self, collaborator: ReActCollaborator, uow: ExecutionUnitOfWork, tool_registry: PreparedPolicyReader) -> None:
         self._collaborator = collaborator
         self._uow = uow
-        self._effects = effect_reader
-        self._reconciler = reconciler
+        self._tool_registry = tool_registry
         self._volatile: dict[str, ReactCommandBoundary] = {}
 
     @staticmethod
@@ -292,15 +291,12 @@ class ReActDriver:
         return replace(boundary, version=int(saved.version))
 
     @staticmethod
-    def _requires_boundary(batch: ReactToolBatch) -> bool:
-        return any((call.recoverable_effect or call.requires_authorization for call in batch.calls))
-
-    @staticmethod
     def _permission_decision(boundary: ReactCommandBoundary, index: int) -> DriverEvent:
         call = boundary.pending_calls[index]
-        identity = hashlib.sha256(f'permission|{boundary.run_id}|{call.effect_id}'.encode('utf-8')).hexdigest()
+        context = boundary.tool_contexts[index]
+        identity = hashlib.sha256(f'permission|{boundary.run_id}|{context.effect_id}'.encode('utf-8')).hexdigest()
         nonce = hashlib.sha256(f'nonce|{identity}'.encode('utf-8')).hexdigest()
-        return OpenDecision(run_id=boundary.run_id, command_id=boundary.command_id, decision_id=identity, nonce=nonce, kind='permission', prompt={'tool_name': call.tool_name, 'call_id': call.call_id, 'reason': 'tool_requires_authorization'}, expires_at=time.time() + 300.0, call_id=call.call_id, effect_id=call.effect_id, tool_name=call.tool_name, args_hash=call.args_hash, capability_hash=call.capability_hash, scope_hash=call.scope_hash)
+        return OpenDecision(run_id=boundary.run_id, command_id=boundary.command_id, decision_id=identity, nonce=nonce, kind='permission', prompt={'tool_name': call.tool_name, 'call_id': call.stable_call_id, 'reason': 'tool_requires_authorization'}, expires_at=time.time() + 300.0, call_id=call.stable_call_id, effect_id=context.effect_id, tool_name=call.tool_name, args_hash=call.args_hash, capability_hash=context.capability_hash, scope_hash=context.scope_hash)
 
     @staticmethod
     def _grant_state(boundary: ReactCommandBoundary) -> dict[str, Mapping[str, Any]]:
@@ -312,20 +308,24 @@ class ReActDriver:
         grants = cls._grant_state(boundary)
         for index in boundary.pending_indexes:
             call = boundary.pending_calls[index]
-            if call.requires_authorization and call.call_id not in grants:
+            if index in boundary.authorization_indexes and call.stable_call_id not in grants:
                 return index
         return None
 
-    @staticmethod
-    def _boundary_for_batch(request: DriverStart, batch: ReactToolBatch, version: int=0) -> ReactCommandBoundary:
-        return ReactCommandBoundary(run_id=request.run_id, session_id=request.session_id, command_id=batch.command_id, command_kind='execute_tools', canonical_messages=batch.canonical_messages or request.canonical_messages, session_projection_cursor=request.session_projection_cursor, prepared_context_ref=request.prepared_context_ref, tool_set_snapshot_ref=request.tool_set_snapshot_ref, pending_calls=batch.calls, tool_contexts=batch.contexts, outcomes=(None,) * len(batch.calls), provider_state=request.provider_state, iteration=max(request.iteration, batch.iteration), completion_state=request.completion_state, capability_snapshot=request.capability_snapshot, run_context=request.run_context, run_spec=request.run_spec, version=version)
+    def _boundary_for_batch(self, request: DriverStart, batch: ReactToolBatch, version: int=0) -> ReactCommandBoundary:
+        policies = tuple(self._tool_registry.prepared_execution_policy(call) for call in batch.calls)
+        authorization = tuple(index for index, policy in enumerate(policies) if policy[0])
+        durable = tuple(index for index, policy in enumerate(policies) if policy[1])
+        return ReactCommandBoundary(run_id=request.run_id, session_id=request.session_id, command_id=batch.command_id, command_kind='execute_tools', canonical_messages=batch.canonical_messages or request.canonical_messages, session_projection_cursor=request.session_projection_cursor, prepared_context_ref=request.prepared_context_ref, tool_set_snapshot_ref=request.tool_set_snapshot_ref, pending_calls=batch.calls, tool_contexts=batch.contexts, outcomes=(None,) * len(batch.calls), provider_state=request.provider_state, iteration=max(request.iteration, batch.iteration), completion_state=request.completion_state, capability_snapshot=request.capability_snapshot, run_context=request.run_context, run_spec=request.run_spec, version=version, authorization_indexes=authorization, durable_indexes=durable)
 
     @staticmethod
     def _tool_messages(boundary: ReactCommandBoundary) -> tuple[Mapping[str, Any], ...]:
         messages = [copy.deepcopy(dict(item)) for item in boundary.canonical_messages]
-        for call, outcome in zip(boundary.pending_calls, boundary.outcomes):
+        for index, (call, outcome) in enumerate(zip(boundary.pending_calls, boundary.outcomes)):
             assert outcome is not None
-            messages.append({'role': 'tool', 'tool_call_id': call.call_id, 'name': call.tool_name, 'content': json.dumps({'status': outcome.status.value, 'value': outcome.value, 'error': outcome.error, 'effect_id': outcome.effect_id, 'receipt_ref': outcome.receipt_ref, 'artifact_refs': list(outcome.artifact_refs)}, ensure_ascii=False, sort_keys=True, default=str)})
+            context, metadata = boundary.tool_contexts[index], boundary.outcome_metadata[index]
+            status = boundary.outcome_statuses[index]
+            messages.append({'role': 'tool', 'tool_call_id': call.stable_call_id, 'name': call.tool_name, 'content': json.dumps({'status': status.value if status is not None else OutcomeStatus.UNKNOWN.value, 'outcome': outcome.to_dict(), 'effect_id': context.effect_id, **dict(metadata)}, ensure_ascii=False, sort_keys=True, default=str)})
         return tuple(messages)
 
     async def _emit(self, request: DriverStart, emissions: AsyncIterator[ReactEmission], *, continuation_version: int=0, recovery_lease: RecoveryLease | None=None) -> AsyncIterator[DriverEvent]:
@@ -336,7 +336,7 @@ class ReActDriver:
                 yield ProviderFallbackCandidate(request.run_id, emission.from_provider, emission.to_provider, emission.reason)
             elif isinstance(emission, ReactToolBatch):
                 boundary = self._boundary_for_batch(request, emission, continuation_version)
-                if continuation_version and request.run_id not in self._volatile or self._requires_boundary(emission):
+                if continuation_version and request.run_id not in self._volatile or boundary.durable_indexes or boundary.authorization_indexes:
                     permission_index = self._next_permission_index(boundary)
                     if permission_index is not None:
                         decision = self._permission_decision(boundary, permission_index)
@@ -378,9 +378,9 @@ class ReActDriver:
         grant_refs = []
         for index in indexes:
             call = boundary.pending_calls[index]
-            value = grants.get(call.call_id)
+            value = grants.get(call.stable_call_id)
             grant_refs.append(None if value is None else ToolGrantRef(grant_id=str(value['grant_id']), decision_id=str(value['decision_id']), decision_nonce=str(value['decision_nonce']), version=int(value.get('version', 0))))
-        return ExecuteTools(run_id=boundary.run_id, command_id=boundary.command_id, calls=tuple((boundary.pending_calls[index] for index in indexes)), contexts=tuple((boundary.tool_contexts[index] for index in indexes)), original_indexes=indexes, grant_refs=tuple(grant_refs) if any((item is not None for item in grant_refs)) else ())
+        return ExecuteTools(run_id=boundary.run_id, command_id=boundary.command_id, calls=tuple((boundary.pending_calls[index] for index in indexes)), contexts=tuple((boundary.tool_contexts[index] for index in indexes)), original_indexes=indexes, grant_refs=tuple(grant_refs) if any((item is not None for item in grant_refs)) else (), effectful=tuple(index in boundary.durable_indexes for index in indexes))
 
     def start(self, request: DriverStart) -> AsyncIterator[DriverEvent]:
 
@@ -405,10 +405,11 @@ class ReActDriver:
             await self._save_durable_boundary(boundary, recovery_lease=recovery_lease)
 
     async def _completion_evidence(self, boundary: ReactCommandBoundary) -> EvidenceSelection:
-        if len(boundary.outcomes) != 1 or boundary.outcomes[0] is None or boundary.outcomes[0].status is not ToolOutcomeStatus.SUCCEEDED:
+        if len(boundary.outcomes) != 1 or boundary.outcomes[0] is None or boundary.outcome_statuses[0] is not OutcomeStatus.SUCCEEDED:
             return UNKNOWN_EVIDENCE
         call, context, outcome = boundary.pending_calls[0], boundary.tool_contexts[0], boundary.outcomes[0]
-        identity = EvidenceContext(run_id=boundary.run_id, turn_id=context.turn_id, call_id=call.call_id, effect_id=call.effect_id, artifact_ref=outcome.artifact_refs[0] if outcome.artifact_refs else None)
+        artifacts = tuple(str(item) for item in boundary.outcome_metadata[0].get('artifact_refs', ()))
+        identity = EvidenceContext(run_id=boundary.run_id, turn_id=context.turn_id, call_id=call.stable_call_id, effect_id=context.effect_id, artifact_ref=artifacts[0] if artifacts else None)
         return await self._uow.lookup_completion_evidence(identity)
 
     async def _resume_completed(self, boundary: ReactCommandBoundary, *, recovery_lease: RecoveryLease | None=None) -> AsyncIterator[DriverEvent]:
@@ -442,14 +443,63 @@ class ReActDriver:
                 boundary = await self._load_boundary(signal.run_id)
                 if boundary.command_id != signal.command_id:
                     raise ValueError('tool outcome command binding mismatch')
-                indexes = {call.call_id: index for index, call in enumerate(boundary.pending_calls)}
-                updates: dict[int, ToolOutcome] = {}
-                for outcome in signal.outcomes:
-                    if outcome.call_id not in indexes:
-                        raise ValueError('tool outcome call not present in boundary')
-                    updates[indexes[outcome.call_id]] = outcome
-                boundary = boundary.with_outcomes(updates)
-                await self._save_progress(boundary, recovery_lease=recovery_lease)
+                updates = dict(zip(signal.original_indexes, signal.outcomes))
+                statuses = dict(zip(signal.original_indexes, signal.statuses))
+                metadata = dict(zip(signal.original_indexes, signal.metadata or ({},) * len(signal.outcomes)))
+                if any(index not in boundary.pending_indexes for index in updates):
+                    raise ValueError('tool outcome index not pending in boundary')
+                dirty = False
+                persisted_version = boundary.version
+                for index in signal.original_indexes:
+                    boundary = boundary.with_outcomes(
+                        {index: updates[index]}, {index: statuses[index]},
+                        {index: metadata[index]},
+                    )
+                    boundary = replace(boundary, version=persisted_version + 1)
+                    claim = dict(metadata[index].get('effect_claim') or {})
+                    if not claim:
+                        dirty = True
+                        continue
+                    context = boundary.tool_contexts[index]
+                    status = statuses[index]
+                    effect_status = {
+                        OutcomeStatus.FAILED: 'failed',
+                        OutcomeStatus.UNKNOWN: 'unknown',
+                        OutcomeStatus.CANCELLED: 'cancelled',
+                        OutcomeStatus.ACCEPTED: 'accepted',
+                    }.get(status, 'succeeded')
+                    event = RunEventCandidate(
+                        event_key=f'effect:{context.effect_id}:settled',
+                        kind='tool.outcome', status=status, driver_kind='react',
+                        correlation={'command_id': boundary.command_id, 'call_id': context.call_id, 'effect_id': context.effect_id},
+                        payload={'outcome': updates[index].to_dict()},
+                        error=updates[index].error,
+                        artifact_refs=tuple(str(item) for item in metadata[index].get('artifact_refs', ())),
+                    )
+                    settlement = await self._uow.settle_effect_and_advance_boundary(
+                        context.effect_id,
+                        expected_effect_version=int(claim['effect_version']),
+                        attempt_no=int(claim['attempt_no']),
+                        worker_owner=str(claim['worker_owner']),
+                        worker_epoch=int(claim['worker_epoch']),
+                        status=effect_status,
+                        outcome=updates[index].to_dict(),
+                        receipt_ref=metadata[index].get('receipt_ref'),
+                        artifact_refs=event.artifact_refs,
+                        node_execution_id=f'react:{boundary.command_id}:{index}',
+                        checkpoint_ns='react', checkpoint_id=boundary.command_id,
+                        expected_continuation_version=persisted_version,
+                        continuation_payload=boundary.to_payload(), event=event,
+                        recovery_lease=recovery_lease,
+                        reconciliation=bool(metadata[index].get('reconciliation')),
+                        evidence_verified=bool(metadata[index].get('evidence_verified')),
+                    )
+                    boundary = replace(boundary, version=int(settlement.continuation.version))
+                    persisted_version = boundary.version
+                    dirty = False
+                    yield PersistedEventCandidate(settlement.event)
+                if dirty:
+                    await self._save_progress(boundary, recovery_lease=recovery_lease)
                 if boundary.pending_indexes:
                     yield self._execute_command(boundary)
                     return
@@ -463,7 +513,7 @@ class ReActDriver:
                 pending = boundary.pending_decision
                 assert pending is not None
                 if boundary.pending_calls and pending.call_id is not None:
-                    indexes = {call.call_id: index for index, call in enumerate(boundary.pending_calls)}
+                    indexes = {call.stable_call_id: index for index, call in enumerate(boundary.pending_calls)}
                     index = indexes[pending.call_id]
                     if bool(signal.response.get('allow', signal.response.get('approved', True))):
                         grant_id = str(signal.response.get('grant_id') or '').strip()
@@ -475,7 +525,7 @@ class ReActDriver:
                         state['authorization_refs'] = refs
                         boundary = replace(boundary, completion_state=state, pending_decision=None, version=boundary.version + 1)
                     else:
-                        boundary = boundary.with_outcomes({index: ToolOutcome.failed(boundary.pending_calls[index], 'authorization_denied')})
+                        boundary = boundary.with_outcomes({index: NormalizedToolOutcome.failure('authorization_denied', 'authorization denied')}, {index: OutcomeStatus.FAILED})
                         boundary = replace(boundary, pending_decision=None)
                     next_index = self._next_permission_index(boundary)
                     if next_index is not None:
@@ -545,17 +595,30 @@ class ReActDriver:
             if boundary.pending_delegate is not None:
                 yield boundary.pending_delegate
                 return
-            updates: dict[int, ToolOutcome] = {}
+            updates: dict[int, NormalizedToolOutcome] = {}
+            statuses: dict[int, OutcomeStatus] = {}
+            metadata: dict[int, Mapping[str, Any]] = {}
             for index in boundary.pending_indexes:
-                call = boundary.pending_calls[index]
-                outcome = await self._effects.get_outcome(call.effect_id)
-                if outcome is None:
+                call, context = boundary.pending_calls[index], boundary.tool_contexts[index]
+                effect = await self._uow.read_effect_outcome(
+                    run_id=boundary.run_id,
+                    call_id=call.stable_call_id,
+                    effect_id=context.effect_id,
+                    args_hash=call.args_hash,
+                    capability_hash=context.capability_hash,
+                    scope_hash=context.scope_hash,
+                )
+                if effect is None:
                     continue
-                if outcome.status is ToolOutcomeStatus.UNKNOWN and self._reconciler is not None:
-                    outcome = await self._reconciler.reconcile(call, boundary.tool_contexts[index], outcome)
-                updates[index] = outcome
+                status, payload, receipt_ref, artifact_refs = effect
+                updates[index] = NormalizedToolOutcome.from_dict(payload)
+                statuses[index] = OutcomeStatus(status)
+                metadata[index] = {
+                    'receipt_ref': receipt_ref,
+                    'artifact_refs': list(artifact_refs),
+                }
             if updates:
-                boundary = boundary.with_outcomes(updates)
+                boundary = boundary.with_outcomes(updates, statuses, metadata)
                 await self._save_progress(boundary, recovery_lease=recovery_lease)
             if boundary.pending_indexes:
                 yield self._execute_command(boundary)
@@ -573,4 +636,4 @@ class ReActDriver:
 
     async def close(self) -> None:
         await self._collaborator.close()
-__all__ = ['EffectOutcomeReader', 'EffectReconciler', 'LegacyAgentLoopCollaborator', 'LegacyAgentLoopToolInterceptionError', 'ReActCollaborator', 'ReActDriver', 'ReactEmission', 'ReactFailure', 'ReactFallback', 'ReactFinal', 'ReactToken', 'ReactToolBatch']
+__all__ = ['LegacyAgentLoopCollaborator', 'LegacyAgentLoopToolInterceptionError', 'ReActCollaborator', 'ReActDriver', 'ReactEmission', 'ReactFailure', 'ReactFallback', 'ReactFinal', 'ReactToken', 'ReactToolBatch']

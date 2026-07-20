@@ -66,7 +66,8 @@ from .capabilities import (
 
 from .error_classifier import classify as _classify_retriable
 from .context_adapter import reject_reserved_model_fields
-from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall
+from deskpet.execution.contracts import OutcomeStatus
+from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall, ToolOutcomeState
 
 logger = logging.getLogger(__name__)
 
@@ -628,7 +629,9 @@ class ToolRegistry:
         # These caches retain same-process session/effect-policy context; a
         # resumed workflow supplies the same facts through its durable grant.
         self._prepared_session_ids: dict[tuple[str, str, str], str] = {}
-        self._prepared_effect_policy_versions: dict[tuple[str, str, str], str] = {}
+        self._prepared_execution_metadata: dict[str, dict[str, Any]] = {}
+        self._prepared_execution_outcomes: dict[str, NormalizedToolOutcome] = {}
+        self._late_prepared_calls: dict[str, tuple[asyncio.Future[Any], ToolSpec, PreparedToolCall, ToolExecutionContext | None, str]] = {}
 
     def set_permission_gate(self, gate) -> None:  # type: ignore[no-untyped-def]
         """Wire a PermissionGate. Called once at backend startup."""
@@ -1616,72 +1619,41 @@ class ToolRegistry:
                         receipt_args = {
                             str(k): str(v) for k, v in receipt_args.items()
                         }
-                    # Bug#3 子问题修 (2026-06-11)：envelope 有 artifacts 时把
-                    # 产物 sha256 抄进 receipt（原从不传 → receipt.artifacts
-                    # 恒 []，verify gate 无法对账「声称产物 vs 真产物」）。
-                    # 仅 file 产物且文件可读才算；失败静默跳过不破 dispatch。
                     _artifact_shas: Optional[list[str]] = None
                     _env_arts = envelope.get("artifacts")
                     if not (isinstance(_env_arts, list) and _env_arts) and envelope_ok:
-                        # Receipt authority is not controlled by the public
-                        # artifact-envelope compatibility flag.  Infer the
-                        # same paths privately so Context OS can preserve a
-                        # real artifact identity even when response bytes must
-                        # retain the legacy {ok,result,error} shape.
                         from deskpet.tools.artifact import extract_artifacts_from_result
-
                         _env_arts = [
                             artifact.to_dict()
                             for artifact in extract_artifacts_from_result(
-                                tool_name=name,
-                                result_json=result,
+                                tool_name=name, result_json=result,
                             )
                         ]
                     if isinstance(_env_arts, list) and _env_arts:
-                        import hashlib as _hashlib
-                        from pathlib import Path as _Path
-
+                        from deskpet.tools.artifact import sha256_file_async
                         _shas: list[str] = []
                         _workspace = (
                             merged_params.get("_project_root")
                             or merged_params.get("_write_scope_root")
                         )
-                        _workspace_root = None
-                        if _workspace:
-                            try:
-                                _workspace_root = _Path(str(_workspace)).resolve()
-                            except OSError:
-                                _workspace_root = None
+                        _workspace_root = Path(str(_workspace)).resolve() if _workspace else None
                         for _a in _env_arts:
                             _p = _a.get("path") if isinstance(_a, dict) else None
                             if not _p:
                                 continue
                             try:
-                                _artifact_path = _Path(str(_p))
+                                _artifact_path = Path(str(_p))
                                 if not _artifact_path.is_absolute():
-                                    # Relative paths are meaningful only
-                                    # against the session's explicit workspace;
-                                    # never fall back to the process CWD.
                                     if _workspace_root is None:
                                         continue
                                     _artifact_path = _workspace_root / _artifact_path
                                 _artifact_path = _artifact_path.resolve(strict=True)
                                 if _workspace_root is not None:
-                                    try:
-                                        _artifact_path.relative_to(_workspace_root)
-                                    except ValueError:
-                                        # Reject traversal and symlink escapes.
-                                        continue
-                                _h = _hashlib.sha256()
-                                with _artifact_path.open("rb") as _f:
-                                    for _chunk in iter(
-                                        lambda: _f.read(65536), b""
-                                    ):
-                                        _h.update(_chunk)
-                                _digest = _h.hexdigest()
-                                if _digest not in _shas:
+                                    _artifact_path.relative_to(_workspace_root)
+                                _digest = await sha256_file_async(_artifact_path)
+                                if _digest and _digest not in _shas:
                                     _shas.append(_digest)
-                            except OSError:
+                            except (OSError, ValueError):
                                 continue
                         _artifact_shas = _shas or None
                     emit_receipt(
@@ -1759,11 +1731,12 @@ class ToolRegistry:
                 prepared = prepared_result
                 if prepared.tool_name != tool_name or prepared.stable_call_id != stable_call_id:
                     raise ValueError("custom prepare returned a mismatched call identity")
+                prepared = replace(
+                    prepared,
+                    effect_policy_version=str(getattr(spec.effect_policy, "version", "")),
+                )
                 cache_key = (tool_name, stable_call_id, prepared.args_hash)
                 self._prepared_session_ids[cache_key] = session_id
-                self._prepared_effect_policy_versions[cache_key] = str(
-                    getattr(spec.effect_policy, "version", "")
-                )
                 return prepared
             final_params, targets = prepared_result
             params = dict(final_params)
@@ -1785,13 +1758,11 @@ class ToolRegistry:
             schema_hash=spec.schema_hash,
             permission_policy_version=spec.permission_policy_version,
             effect_type=effect_type,
+            effect_policy_version=str(getattr(spec.effect_policy, "version", "")),
             input_blob_hashes=input_blob_hashes,
         )
         cache_key = (tool_name, stable_call_id, prepared.args_hash)
         self._prepared_session_ids[cache_key] = session_id
-        self._prepared_effect_policy_versions[cache_key] = str(
-            getattr(spec.effect_policy, "version", "")
-        )
         return prepared
 
     def _normalize_result(self, spec: ToolSpec, raw: Any) -> NormalizedToolOutcome:
@@ -1810,36 +1781,6 @@ class ToolRegistry:
                 f"outcome parser {spec.outcome_parser_id} returned an unsupported value"
             )
         return outcome
-
-    async def execute_tool_outcome(
-        self,
-        name: str,
-        params: dict[str, Any],
-        session_id: str,
-        task_id: str = "",
-        *,
-        execution_context: Optional[ToolExecutionContext] = None,
-    ) -> Any:
-        """Compatibility adapter returning a three-state durable outcome."""
-
-        with self._lock:
-            spec = self._tools.get(name)
-        envelope = await self.execute_tool(
-            name,
-            params,
-            session_id,
-            task_id,
-            execution_context=execution_context,
-        )
-        if spec is None:
-            return NormalizedToolOutcome.failure(
-                "unknown_tool", str(envelope.get("error") or f"unknown tool: {name}")
-            )
-        if envelope.get("ok") is not True:
-            return NormalizedToolOutcome.failure(
-                "transport_failed", str(envelope.get("error") or "tool dispatch failed")
-            )
-        return self._normalize_result(spec, envelope.get("result"))
 
     @staticmethod
     def _grant_value(grant: object, key: str) -> Any:
@@ -1881,6 +1822,156 @@ class ToolRegistry:
         # Unknown calls fail inside execute_prepared. Treating them as safe keeps
         # one bogus name from serializing unrelated valid calls.
         return bool(spec.concurrency_safe) if spec is not None else True
+
+    def prepared_execution_policy(
+        self, prepared: PreparedToolCall
+    ) -> tuple[bool, bool]:
+        """Return trusted (authorization, durable-effect) policy for a snapshot."""
+        if not isinstance(prepared, PreparedToolCall):
+            raise TypeError("prepared execution policy requires PreparedToolCall")
+        with self._lock:
+            spec = self._tools.get(prepared.tool_name)
+        if spec is None:
+            raise ValueError("prepared tool is no longer registered")
+        effect_type = str(
+            getattr(getattr(spec.effect_policy, "kind", None), "value", None)
+            or "opaque_manual"
+        )
+        expected = (
+            spec.spec_version,
+            spec.schema_hash,
+            spec.permission_policy_version,
+            effect_type,
+            str(getattr(spec.effect_policy, "version", "")),
+        )
+        actual = (
+            prepared.tool_spec_version,
+            prepared.schema_hash,
+            prepared.permission_policy_version,
+            prepared.effect_type,
+            prepared.effect_policy_version,
+        )
+        if actual != expected:
+            raise ValueError("prepared call policy snapshot is stale")
+        authorization = bool(
+            spec.dangerous or spec.permission_category in _WRITE_PERMISSION_CATEGORIES
+        )
+        return authorization, effect_type in {"staged_file", "opaque_manual"}
+
+    def prepared_outcome_status(
+        self, prepared: PreparedToolCall, outcome: NormalizedToolOutcome
+    ) -> OutcomeStatus:
+        """Classify a normalized result using the same frozen tool policy."""
+        self.prepared_execution_policy(prepared)
+        with self._lock:
+            spec = self._tools[prepared.tool_name]
+        return self._outcome_status(spec, prepared, outcome)
+
+    @staticmethod
+    def _outcome_status(
+        spec: ToolSpec, prepared: PreparedToolCall, outcome: NormalizedToolOutcome
+    ) -> OutcomeStatus:
+        durable = prepared.effect_type in {"staged_file", "opaque_manual"}
+        if outcome.state is ToolOutcomeState.MALFORMED:
+            return OutcomeStatus.UNKNOWN if durable else OutcomeStatus.FAILED
+        if outcome.state is ToolOutcomeState.FAILURE:
+            return OutcomeStatus.FAILED
+        value = outcome.value
+        queued_image = (
+            prepared.tool_name == "generate_image"
+            and isinstance(value, Mapping)
+            and value.get("status") == "generating"
+        )
+        return (
+            OutcomeStatus.ACCEPTED
+            if spec.completion_semantics == "accepted_async" or queued_image
+            else OutcomeStatus.SUCCEEDED
+        )
+
+    async def _record_prepared_receipt(
+        self, spec: ToolSpec, prepared: PreparedToolCall, outcome: NormalizedToolOutcome, *,
+        effect_id: str, session_id: str, started_at: Any,
+        execution_context: ToolExecutionContext | None,
+    ) -> None:
+        status = self._outcome_status(spec, prepared, outcome)
+        self._prepared_execution_metadata[effect_id] = {
+            "outcome_status": status.value
+        }
+        if self._receipt_store_provider is None or started_at is None:
+            return
+        try:
+            from datetime import datetime, timezone
+            from deskpet.tools.artifact import extract_artifacts_from_result, sha256_file_async
+            from deskpet.tools.receipt_store import emit_receipt
+
+            encoded = json.dumps(outcome.to_dict()["value"], ensure_ascii=False, default=str)
+            artifacts = extract_artifacts_from_result(tool_name=prepared.tool_name, result_json=encoded)
+            refs: list[str] = []
+            for artifact in artifacts:
+                digest = artifact.sha256
+                if not digest and artifact.path:
+                    digest = await sha256_file_async(Path(artifact.path))
+                if not digest:
+                    digest = hashlib.sha256(
+                        json.dumps(artifact.to_dict(), sort_keys=True, default=str).encode("utf-8")
+                    ).hexdigest()
+                refs.append(digest)
+            store = self._receipt_store_provider()
+            if store is None:
+                return
+            accepted = status is OutcomeStatus.ACCEPTED
+            receipt = emit_receipt(
+                store, tool_name=prepared.tool_name,
+                args={k: v for k, v in prepared.final_params.items() if not str(k).startswith("_")},
+                started_at=started_at, ended_at=datetime.now(timezone.utc),
+                ok=status is OutcomeStatus.SUCCEEDED, session_id=session_id,
+                artifact_shas=refs or None, phase="accepted" if accepted else "executed",
+                outcome="pending" if accepted else "success" if status is OutcomeStatus.SUCCEEDED else "failed",
+                run_id=execution_context.run_id if execution_context is not None else None,
+                node_execution_id=prepared.stable_call_id, effect_id=effect_id,
+            )
+            self._prepared_execution_metadata[effect_id].update({
+                "receipt_ref": receipt.receipt_id, "artifact_refs": refs,
+                "evidence_verified": bool(receipt.receipt_id),
+            })
+        except Exception as exc:  # noqa: BLE001 - observability cannot break dispatch
+            logger.warning("prepared receipt emission failed for %r: %s", prepared.tool_name, exc)
+
+    def take_prepared_execution_metadata(self, effect_id: str) -> dict[str, Any]:
+        return dict(self._prepared_execution_metadata.get(effect_id, {}))
+
+    def acknowledge_prepared_effect(self, effect_id: str) -> None:
+        """Forget same-process observations only after fenced durable settlement."""
+        self._late_prepared_calls.pop(effect_id, None)
+        self._prepared_execution_outcomes.pop(effect_id, None)
+        self._prepared_execution_metadata.pop(effect_id, None)
+
+    async def observe_late_prepared(
+        self, effect_id: str
+    ) -> tuple[str, NormalizedToolOutcome | None]:
+        pending = self._late_prepared_calls.get(effect_id)
+        if pending is None:
+            outcome = self._prepared_execution_outcomes.get(effect_id)
+            return ("complete", outcome) if outcome is not None else ("missing", None)
+        future, spec, prepared, context, session_id = pending
+        if not future.done():
+            return "pending", None
+        self._late_prepared_calls.pop(effect_id, None)
+        self._prepared_execution_metadata[effect_id] = {}
+        try:
+            raw = future.result()
+            outcome = self._normalize_result(spec, raw)
+        except Exception as exc:  # noqa: BLE001
+            outcome = NormalizedToolOutcome.failure(
+                "tool_handler_error", f"{type(exc).__name__}: {exc}"
+            )
+        self._prepared_execution_outcomes[effect_id] = outcome
+        from datetime import datetime, timezone
+        await self._record_prepared_receipt(
+            spec, prepared, outcome, effect_id=effect_id, session_id=session_id,
+            started_at=datetime.now(timezone.utc), execution_context=context,
+        )
+        return "complete", outcome
 
     async def execute_prepared(
         self,
@@ -1950,19 +2041,16 @@ class ToolRegistry:
                 spec.permission_policy_version,
             ),
             "effect_type": (prepared.effect_type, current_effect_type),
+            "effect_policy_version": (
+                prepared.effect_policy_version,
+                str(getattr(spec.effect_policy, "version", "")),
+            ),
         }
         for field_name, (old, current) in snapshots.items():
             if old != current:
                 return NormalizedToolOutcome.failure(
                     "prepared_call_stale", f"{field_name} changed; re-prepare and re-authorize"
                 )
-        cached_policy_version = self._prepared_effect_policy_versions.get(cache_key)
-        current_policy_version = str(getattr(spec.effect_policy, "version", ""))
-        if cached_policy_version is not None and cached_policy_version != current_policy_version:
-            return NormalizedToolOutcome.failure(
-                "prepared_call_stale", "effect policy changed; re-prepare and re-authorize"
-            )
-
         grant_session_id = (
             self._grant_value(authorization, "session_id")
             if authorization is not None
@@ -2032,6 +2120,7 @@ class ToolRegistry:
         exact_params = dict(prepared.to_dict()["final_params"])
         started_at = None
         raw: Any = None
+        late_pending = False
         try:
             from datetime import datetime, timezone
 
@@ -2071,11 +2160,23 @@ class ToolRegistry:
 
                 loop = asyncio.get_running_loop()
                 copied = contextvars.copy_context()
-                return await loop.run_in_executor(None, copied.run, invoke_sync)
+                future = loop.run_in_executor(None, copied.run, invoke_sync)
+                try:
+                    return await asyncio.wait_for(
+                        asyncio.shield(future), timeout=spec.timeout_seconds
+                    )
+                except asyncio.TimeoutError:
+                    self._late_prepared_calls[effect_id] = (
+                        future, spec, prepared, execution_context, session_id
+                    )
+                    raise
 
-            raw = await asyncio.wait_for(invoke(), timeout=spec.timeout_seconds)
+            raw = await invoke() if not _inspect.iscoroutinefunction(spec.context_handler or spec.handler) else await asyncio.wait_for(invoke(), timeout=spec.timeout_seconds)
             outcome = self._normalize_result(spec, raw)
         except asyncio.TimeoutError:
+            late_pending = effect_id in self._late_prepared_calls
+            if late_pending:
+                self._prepared_execution_metadata[effect_id] = {"late_pending": True}
             if current_effect_type in {"staged_file", "opaque_manual"}:
                 outcome = NormalizedToolOutcome.malformed(
                     "opaque or write tool timed out; manual reconciliation is required"
@@ -2089,48 +2190,17 @@ class ToolRegistry:
                 "tool_handler_error", f"{type(exc).__name__}: {exc}"
             )
 
-        if self._receipt_store_provider is not None and started_at is not None:
-            try:
-                from datetime import datetime, timezone
-                from deskpet.tools.receipt_store import emit_receipt
-
-                store = self._receipt_store_provider()
-                if store is not None:
-                    success = outcome.state.value == "success"
-                    accepted = spec.completion_semantics == "accepted_async" and success
-                    # generate_image can return immediately with a queued job
-                    # even though its registry semantics remain sync-compatible
-                    # for the worker-unavailable fallback. A queued acknowledgement
-                    # is not evidence that an image artifact already exists.
-                    if success and prepared.tool_name == "generate_image":
-                        try:
-                            queued_payload = (
-                                json.loads(raw) if isinstance(raw, str) else raw
-                            )
-                            accepted = bool(
-                                isinstance(queued_payload, dict)
-                                and queued_payload.get("status") == "generating"
-                            )
-                        except (TypeError, ValueError, json.JSONDecodeError):
-                            accepted = False
-                    emit_receipt(
-                        store,
-                        tool_name=prepared.tool_name,
-                        args={k: v for k, v in exact_params.items() if not str(k).startswith("_")},
-                        started_at=started_at,
-                        ended_at=datetime.now(timezone.utc),
-                        ok=success and not accepted,
-                        session_id=session_id,
-                        phase="accepted" if accepted else "executed",
-                        outcome="pending" if accepted else ("success" if success else "failed"),
-                        effect_id=effect_id,
-                    )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("prepared receipt emission failed for %r: %s", prepared.tool_name, exc)
+        if not late_pending:
+            await self._record_prepared_receipt(
+                spec, prepared, outcome, effect_id=effect_id, session_id=session_id,
+                started_at=started_at, execution_context=execution_context,
+            )
         if self._breaker is not None:
             await self._breaker.record_call(
                 session_id, prepared.tool_name, ok=outcome.state.value == "success"
             )
+        if current_effect_type in {"staged_file", "opaque_manual"} and not late_pending:
+            self._prepared_execution_outcomes[effect_id] = outcome
         return outcome
 
     def tool_inventory(self, names: Optional[Sequence[str]] = None) -> list[Any]:
@@ -2181,115 +2251,49 @@ class ToolRegistry:
         )
         return self.tool_inventory(names)
 
-    # ------------------------------------------------------------------
-    # G3 (companion-code-v2): partition_dispatch — safe 并发 / unsafe 串行
-    # ------------------------------------------------------------------
-    def _is_concurrency_safe(self, name: str) -> bool:
-        """Read ``ToolSpec.concurrency_safe`` thread-safely.
-
-        Returns True for unknown tools — they'll fail loudly in
-        ``execute_tool`` anyway (``unknown tool: ...``), and treating
-        them as safe means a single bogus name doesn't drag the whole
-        batch into serial mode.
-        """
-        with self._lock:
-            spec = self._tools.get(name)
-        return bool(spec.concurrency_safe) if spec is not None else True
-
     async def partition_dispatch(
         self,
         calls: list[Any],
         session_id: str,
     ) -> list[dict[str, Any]]:
-        """Dispatch a batch of tool calls split by ``concurrency_safe``.
-
-        Args:
-            calls: list of objects exposing ``.name`` (str), ``.args``
-                (dict | None), and optional ``.task_id`` (str). A
-                3-tuple ``(name, args, task_id)`` is also accepted for
-                convenience; dicts ``{"name": ..., "args": ..., "task_id": ...}``
-                work too. The point is duck-typed access — callers can
-                pass their own ToolCall namedtuple.
-            session_id: forwarded to ``execute_tool`` for breaker /
-                permission gate / per-session context lookup.
-
-        Returns:
-            ``list[envelope]`` in **input order** (so caller can pair
-            results back to ``calls[i]`` without bookkeeping). Each
-            envelope is whatever ``execute_tool`` returned —
-            ``{"ok": bool, "result": str | None, "error": str | None}``.
-
-        Strategy:
-            * All ``concurrency_safe=True`` calls run concurrently via
-              ``asyncio.gather`` (one big batch).
-            * All ``concurrency_safe=False`` calls run **serially** in
-              their relative input order (e.g. write_file → bash_run
-              executes write before bash to preserve causality).
-            * Empty ``calls`` → returns ``[]`` immediately.
-
-        Why not just run everything concurrently? Two writes to the
-        same path racing in different threads can corrupt files /
-        produce non-deterministic results. The partition is the cheapest
-        correctness guarantee — pay 10% latency for full safety.
-        """
+        """Legacy raw-call shape; durable prepared calls use UnifiedToolExecutor."""
         if not calls:
             return []
 
         def _extract(c: Any) -> tuple[str, dict[str, Any], str]:
-            # Tuple / list: (name, args, task_id?)
             if isinstance(c, (tuple, list)):
                 name = c[0]
                 args = c[1] if len(c) > 1 else {}
                 task_id = c[2] if len(c) > 2 else ""
                 return str(name), dict(args or {}), str(task_id or "")
-            # Dict: {"name": ..., "args": ..., "task_id": ...}
             if isinstance(c, dict):
                 return (
                     str(c.get("name", "")),
                     dict(c.get("args") or {}),
                     str(c.get("task_id") or ""),
                 )
-            # Object with attributes (namedtuple / dataclass)
-            name = getattr(c, "name", "")
-            args = getattr(c, "args", None) or {}
-            task_id = getattr(c, "task_id", "") or ""
-            return str(name), dict(args), str(task_id)
+            return (
+                str(getattr(c, "name", "")),
+                dict(getattr(c, "args", None) or {}),
+                str(getattr(c, "task_id", "") or ""),
+            )
 
-        # Index so we can restore input order after merging.
-        indexed: list[tuple[int, str, dict[str, Any], str]] = []
-        for i, c in enumerate(calls):
-            name, args, task_id = _extract(c)
-            indexed.append((i, name, args, task_id))
-
-        safe_batch = [
-            (i, n, a, t) for (i, n, a, t) in indexed
-            if self._is_concurrency_safe(n)
-        ]
-        unsafe_batch = [
-            (i, n, a, t) for (i, n, a, t) in indexed
-            if not self._is_concurrency_safe(n)
-        ]
+        indexed = [(index, *_extract(call)) for index, call in enumerate(calls)]
+        safe_batch = [item for item in indexed if self.is_concurrency_safe(item[1])]
+        unsafe_batch = [item for item in indexed if not self.is_concurrency_safe(item[1])]
 
         out: list[Optional[dict[str, Any]]] = [None] * len(calls)
 
-        # Concurrent — safe partition.
         if safe_batch:
-            safe_results = await asyncio.gather(*[
+            safe_results = await asyncio.gather(*(
                 self.execute_tool(n, a, session_id, t)
                 for (_, n, a, t) in safe_batch
-            ])
+            ))
             for (orig_i, _, _, _), res in zip(safe_batch, safe_results):
                 out[orig_i] = res
 
-        # Serial — unsafe partition (preserves input order within batch).
         for orig_i, n, a, t in unsafe_batch:
             out[orig_i] = await self.execute_tool(n, a, session_id, t)
-
-        # Sanity: every slot filled.
-        assert all(o is not None for o in out), (
-            "partition_dispatch left a hole in the result list — bug in "
-            "safe/unsafe routing logic"
-        )
         return [o for o in out if o is not None]  # type: ignore[misc]
 
     async def _build_circuit_open_envelope(

@@ -196,6 +196,8 @@ class ExecutionEffectClaim:
     worker_owner: str
     worker_epoch: int
     effect_version: int
+    action: str = "execute"
+    authorization: DecisionAuthorization | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -284,6 +286,19 @@ class SqliteExecutionUnitOfWork:
         db = await self._connect()
         try:
             return await self._runtime_state_tx(db)
+        finally:
+            await db.close()
+
+    async def get_execution_owner(self, run_id: str) -> tuple[str, int] | None:
+        """Return the authoritative owner only when an execution row exists."""
+
+        db = await self._connect()
+        try:
+            row = await (await db.execute(
+                "SELECT owner_kind,owner_generation FROM execution_runs WHERE run_id=?",
+                (run_id,),
+            )).fetchone()
+            return None if row is None else (str(row["owner_kind"]), int(row["owner_generation"]))
         finally:
             await db.close()
 
@@ -1300,12 +1315,15 @@ class SqliteExecutionUnitOfWork:
         self,
         connection: aiosqlite.Connection,
         *,
+        owner_generation: int,
         sink_keys: Sequence[tuple[str, str]] = (),
         claim_ttl_seconds: float = 30.0,
         now: float,
     ) -> DeliveryRecord | None:
         """Claim one execution delivery inside the caller-owned transaction."""
 
+        if isinstance(owner_generation, bool) or not isinstance(owner_generation, int) or owner_generation < 1:
+            raise ValueError("owner_generation must be a positive kernel generation")
         ttl = float(claim_ttl_seconds)
         if not math.isfinite(ttl) or ttl <= 0:
             raise ValueError("claim_ttl_seconds must be finite and positive")
@@ -1327,11 +1345,17 @@ class SqliteExecutionUnitOfWork:
             OR (status='delivering' AND next_attempt_at IS NOT NULL
                 AND next_attempt_at<=? AND policy!='best_effort')
         )"""
+        select_eligible = """(
+            d.status='pending'
+            OR (d.status='failed' AND COALESCE(d.next_attempt_at,0)<=?)
+            OR (d.status='delivering' AND d.next_attempt_at IS NOT NULL
+                AND d.next_attempt_at<=? AND d.policy!='best_effort')
+        )"""
         sink_clause = ""
         sink_params: list[object] = []
         if normalized_keys:
             sink_clause = " AND (" + " OR ".join(
-                "(sink_kind=? AND sink_instance=?)" for _ in normalized_keys
+                "(d.sink_kind=? AND d.sink_instance=?)" for _ in normalized_keys
             ) + ")"
             for kind, instance in normalized_keys:
                 sink_params.extend((kind, instance))
@@ -1344,18 +1368,27 @@ class SqliteExecutionUnitOfWork:
             delivery_version=delivery_version+1,next_attempt_at=NULL,
             last_error='best-effort claim expired',updated_at=?
             WHERE status='delivering' AND policy='best_effort'
-            AND next_attempt_at IS NOT NULL AND next_attempt_at<=?""",
-            (now, now),
+            AND next_attempt_at IS NOT NULL AND next_attempt_at<=?
+            AND EXISTS(SELECT 1 FROM execution_runs r
+                JOIN execution_runtime_state s ON s.singleton_id=1
+                WHERE r.run_id=execution_deliveries.run_id
+                AND r.owner_kind='kernel' AND r.owner_generation=?
+                AND s.generation=? AND s.phase IN ('activated','open'))""",
+            (now, now, owner_generation, owner_generation),
         )
         row = await (
             await connection.execute(
-                f"""SELECT * FROM execution_deliveries
-                WHERE {eligible}{sink_clause}
-                ORDER BY CASE policy
+                f"""SELECT d.* FROM execution_deliveries d
+                JOIN execution_runs r ON r.run_id=d.run_id
+                JOIN execution_runtime_state s ON s.singleton_id=1
+                WHERE r.owner_kind='kernel' AND r.owner_generation=?
+                AND s.generation=? AND s.phase IN ('activated','open')
+                AND {select_eligible}{sink_clause}
+                ORDER BY CASE d.policy
                     WHEN 'durable_required' THEN 0
                     WHEN 'retry_while_bound' THEN 1 ELSE 2 END,
-                    created_at,delivery_id LIMIT 1""",
-                (now, now, *sink_params),
+                    d.created_at,d.delivery_id LIMIT 1""",
+                (owner_generation, owner_generation, now, now, *sink_params),
             )
         ).fetchone()
         if row is None:
@@ -1388,9 +1421,31 @@ class SqliteExecutionUnitOfWork:
         assert claimed is not None
         return self._row_to_delivery(claimed)
 
+    async def _assert_delivery_owner_tx(
+        self, connection: aiosqlite.Connection, delivery_id: str, owner_generation: int
+    ) -> None:
+        row = await (await connection.execute(
+            """SELECT r.owner_kind,r.owner_generation,s.generation,s.phase
+            FROM execution_deliveries d JOIN execution_runs r ON r.run_id=d.run_id
+            JOIN execution_runtime_state s ON s.singleton_id=1 WHERE d.delivery_id=?""",
+            (delivery_id,),
+        )).fetchone()
+        if row is None:
+            raise DeliveryNotFound("delivery_not_found", f"execution delivery does not exist: {delivery_id}")
+        if (
+            str(row["owner_kind"]) != "kernel"
+            or int(row["owner_generation"]) != owner_generation
+            or int(row["generation"]) != owner_generation
+            or str(row["phase"]) not in {"activated", "open"}
+        ):
+            raise DeliveryClaimConflict(
+                "delivery_owner_fence", "delivery owner generation is stale or inactive"
+            )
+
     async def claim_delivery(
         self,
         *,
+        owner_generation: int,
         sink_keys: Sequence[tuple[str, str]] = (),
         claim_ttl_seconds: float = 30.0,
     ) -> DeliveryRecord | None:
@@ -1400,6 +1455,7 @@ class SqliteExecutionUnitOfWork:
             await db.execute("BEGIN IMMEDIATE")
             claimed = await self.claim_delivery_tx(
                 db,
+                owner_generation=owner_generation,
                 sink_keys=sink_keys,
                 claim_ttl_seconds=claim_ttl_seconds,
                 now=now,
@@ -1419,10 +1475,12 @@ class SqliteExecutionUnitOfWork:
         delivery_id: str,
         *,
         expected_version: int,
+        owner_generation: int,
         now: float,
     ) -> DeliveryRecord:
         """Complete one claimed execution delivery in the caller transaction."""
 
+        await self._assert_delivery_owner_tx(connection, delivery_id, owner_generation)
         now = float(now)
         if not math.isfinite(now):
             raise ValueError("delivery completion time must be finite")
@@ -1430,7 +1488,8 @@ class SqliteExecutionUnitOfWork:
             """UPDATE execution_deliveries SET status='delivered',
             delivery_version=delivery_version+1,next_attempt_at=NULL,last_error=NULL,
             updated_at=?,delivered_at=? WHERE delivery_id=?
-            AND delivery_version=? AND status='delivering'""",
+            AND delivery_version=? AND status='delivering'
+            """,
             (now, now, delivery_id, expected_version),
         )
         if cursor.rowcount != 1:
@@ -1467,6 +1526,7 @@ class SqliteExecutionUnitOfWork:
         delivery_id: str,
         *,
         expected_version: int,
+        owner_generation: int,
     ) -> DeliveryRecord:
         now = float(self._clock())
         db = await self._connect()
@@ -1476,6 +1536,7 @@ class SqliteExecutionUnitOfWork:
                 db,
                 delivery_id,
                 expected_version=expected_version,
+                owner_generation=owner_generation,
                 now=now,
             )
             await db.commit()
@@ -1493,6 +1554,7 @@ class SqliteExecutionUnitOfWork:
         delivery_id: str,
         *,
         expected_version: int,
+        owner_generation: int,
         error: str,
         retry_at: float | None,
         discard: bool,
@@ -1500,6 +1562,7 @@ class SqliteExecutionUnitOfWork:
     ) -> DeliveryRecord:
         """Release one claimed execution delivery in the caller transaction."""
 
+        await self._assert_delivery_owner_tx(connection, delivery_id, owner_generation)
         message = str(error).strip()
         if not message:
             raise ValueError("delivery error must be non-empty")
@@ -1515,7 +1578,8 @@ class SqliteExecutionUnitOfWork:
             """UPDATE execution_deliveries SET status=?,
             delivery_version=delivery_version+1,next_attempt_at=?,last_error=?,
             updated_at=?,delivered_at=NULL WHERE delivery_id=?
-            AND delivery_version=? AND status='delivering'""",
+            AND delivery_version=? AND status='delivering'
+            """,
             (
                 status.value,
                 None if discard else float(retry_at),
@@ -1554,6 +1618,7 @@ class SqliteExecutionUnitOfWork:
         delivery_id: str,
         *,
         expected_version: int,
+        owner_generation: int,
         error: str,
         retry_at: float | None,
         discard: bool,
@@ -1566,6 +1631,7 @@ class SqliteExecutionUnitOfWork:
                 db,
                 delivery_id,
                 expected_version=expected_version,
+                owner_generation=owner_generation,
                 error=error,
                 retry_at=retry_at,
                 discard=discard,
@@ -2534,6 +2600,8 @@ class SqliteExecutionUnitOfWork:
         db: aiosqlite.Connection,
         request: GrantConsume,
         actor: ActorContext,
+        *,
+        allow_consumed: bool = False,
     ) -> aiosqlite.Row:
         grant_row = await (
             await db.execute(
@@ -2592,10 +2660,11 @@ class SqliteExecutionUnitOfWork:
                 "grant_binding_mismatch",
                 "grant nonce/run/effect/capability/scope fence differs",
             )
-        if int(grant_row["grant_version"]) != request.expected_version:
+        expected_version = request.expected_version + (1 if allow_consumed else 0)
+        if int(grant_row["grant_version"]) != expected_version:
             raise GrantConsumeConflict(
                 "stale_grant_version",
-                f"expected grant version {request.expected_version}, "
+                f"expected grant version {expected_version}, "
                 f"found {grant_row['grant_version']}",
             )
         if run.status is RunStatus.CANCEL_REQUESTED or run.status in TERMINAL_RUN_STATUSES:
@@ -2606,7 +2675,8 @@ class SqliteExecutionUnitOfWork:
             raise GrantConsumeConflict(
                 "grant_not_authorized", "grant decision is not allowed"
             )
-        if str(grant_row["status"]) != "issued":
+        expected_status = "consumed" if allow_consumed else "issued"
+        if str(grant_row["status"]) != expected_status:
             raise GrantConsumeConflict(
                 "grant_already_consumed",
                 "duplicate, expired, or revoked authorization was rejected",
@@ -2686,9 +2756,17 @@ class SqliteExecutionUnitOfWork:
 
     async def consume_grant_and_claim_effect(
         self,
-        request: GrantConsume,
+        request: GrantConsume | None,
         actor: ActorContext,
         *,
+        run_id: str | None = None,
+        expected_session_id: str | None = None,
+        call_id: str | None = None,
+        effect_id: str | None = None,
+        tool_name: str | None = None,
+        args_hash: str | None = None,
+        capability_hash: str | None = None,
+        scope_hash: str | None = None,
         effect_type: str,
         policy: Mapping[str, Any],
         prepared: Mapping[str, Any],
@@ -2700,39 +2778,63 @@ class SqliteExecutionUnitOfWork:
 
         if not effect_type or not worker_owner or worker_epoch < 1:
             raise ValueError("effect type, worker owner and positive epoch are required")
+        if request is not None:
+            run_id, expected_session_id, call_id, effect_id, tool_name = (
+                request.run_id, request.expected_session_id, request.call_id,
+                request.effect_id, request.tool_name,
+            )
+            args_hash, capability_hash, scope_hash = (
+                request.args_hash, request.capability_hash, request.scope_hash,
+            )
+        identity = (run_id, expected_session_id, call_id, effect_id, tool_name,
+                    args_hash, capability_hash, scope_hash)
+        if any(not str(value or "").strip() for value in identity):
+            raise ValueError("complete effect identity is required")
+        if actor.session_id != expected_session_id:
+            raise AuthorizationError("effect_actor_mismatch", "effect actor does not own the session")
         policy_json = canonical_json(thaw_json(policy))
         prepared_json = canonical_json(thaw_json(prepared))
         effect_fingerprint = fingerprint_json(
             {
-                "run_id": request.run_id,
-                "call_id": request.call_id,
-                "effect_id": request.effect_id,
-                "tool_name": request.tool_name,
-                "args_hash": request.args_hash,
-                "capability_hash": request.capability_hash,
-                "scope_hash": request.scope_hash,
+                "run_id": run_id,
+                "call_id": call_id,
+                "effect_id": effect_id,
+                "tool_name": tool_name,
+                "args_hash": args_hash,
+                "capability_hash": capability_hash,
+                "scope_hash": scope_hash,
                 "effect_type": effect_type,
             }
         )
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
-            await self._assert_optional_recovery_fence_tx(db, recovery_lease, request.run_id)
+            await self._assert_optional_recovery_fence_tx(db, recovery_lease, str(run_id))
+            run = await (
+                await db.execute(
+                    "SELECT session_id,root_run_id FROM execution_runs WHERE run_id=?",
+                    (run_id,),
+                )
+            ).fetchone()
+            if run is None or (str(run["session_id"]), str(run["root_run_id"])) != (
+                actor.session_id, actor.root_run_id,
+            ):
+                raise AuthorizationError("effect_actor_mismatch", "effect actor does not own the run tree")
             existing = await (
                 await db.execute(
                     "SELECT * FROM execution_effects WHERE effect_id=?",
-                    (request.effect_id,),
+                    (effect_id,),
                 )
             ).fetchone()
             if existing is not None:
                 expected = (
-                    request.run_id,
+                    run_id,
                     effect_fingerprint,
-                    request.call_id,
-                    request.tool_name,
-                    request.args_hash,
-                    request.capability_hash,
-                    request.scope_hash,
+                    call_id,
+                    tool_name,
+                    args_hash,
+                    capability_hash,
+                    scope_hash,
                     effect_type,
                     policy_json,
                     prepared_json,
@@ -2760,26 +2862,40 @@ class SqliteExecutionUnitOfWork:
                     await db.execute(
                         """SELECT * FROM execution_effect_attempts
                         WHERE effect_id=? AND attempt_no=1""",
-                        (request.effect_id,),
+                        (effect_id,),
                     )
                 ).fetchone()
                 assert attempt is not None
+                authorization = None
+                if request is not None:
+                    consumed = await self._inspect_authorization_tx(
+                        db, request, actor, allow_consumed=True
+                    )
+                    authorization = self._row_to_authorization(consumed)
                 await db.commit()
                 return ExecutionEffectClaim(
-                    request.effect_id,
-                    request.run_id,
+                    str(effect_id),
+                    str(run_id),
                     1,
-                    str(attempt["status"]),
+                    str(existing["status"]),
                     str(attempt["worker_owner"]),
                     int(attempt["worker_epoch"]),
                     int(existing["effect_version"]),
+                    (
+                        "reuse"
+                        if str(existing["status"]) != "running"
+                        else "reconcile" if recovery_lease is not None else "in_flight"
+                    ),
+                    authorization,
                 )
-            _, expired = await self._consume_authorization_tx(
-                db, request, actor, now=float(self._clock())
-            )
-            if expired is not None:
-                await db.commit()
-                raise expired
+            authorization = None
+            if request is not None:
+                authorization, expired = await self._consume_authorization_tx(
+                    db, request, actor, now=float(self._clock())
+                )
+                if expired is not None:
+                    await db.commit()
+                    raise expired
             self._fault("effect_claim_after_grant")
             now = float(self._clock())
             await db.execute(
@@ -2789,14 +2905,14 @@ class SqliteExecutionUnitOfWork:
                 prepared_json,effect_version,created_at,updated_at
                 ) VALUES(?,1,?,?,?,?,?,?,?,?, 'running',?,?,0,?,?)""",
                 (
-                    request.effect_id,
-                    request.run_id,
+                    effect_id,
+                    run_id,
                     effect_fingerprint,
-                    request.call_id,
-                    request.tool_name,
-                    request.args_hash,
-                    request.capability_hash,
-                    request.scope_hash,
+                    call_id,
+                    tool_name,
+                    args_hash,
+                    capability_hash,
+                    scope_hash,
                     effect_type,
                     policy_json,
                     prepared_json,
@@ -2809,18 +2925,20 @@ class SqliteExecutionUnitOfWork:
                 """INSERT INTO execution_effect_attempts(
                 effect_id,attempt_no,status,worker_owner,worker_epoch,started_at,updated_at
                 ) VALUES(?,1,'running',?,?,?,?)""",
-                (request.effect_id, worker_owner, worker_epoch, now, now),
+                (effect_id, worker_owner, worker_epoch, now, now),
             )
             self._fault("effect_claim_before_commit")
             await db.commit()
             return ExecutionEffectClaim(
-                request.effect_id,
-                request.run_id,
+                str(effect_id),
+                str(run_id),
                 1,
                 "running",
                 worker_owner,
                 worker_epoch,
                 0,
+                "execute",
+                authorization,
             )
         except BaseException:
             if db.in_transaction:
@@ -2849,12 +2967,24 @@ class SqliteExecutionUnitOfWork:
         event: RunEventCandidate,
         deliveries: Sequence[DeliverySpec] = (),
         recovery_lease: RecoveryLease | None = None,
+        reconciliation: bool = False,
+        evidence_verified: bool = False,
     ) -> ExecutionEffectSettlement:
         """Settle one fenced attempt and persist the recoverable next boundary."""
 
-        allowed = {"succeeded", "failed", "unknown", "cancelled", "late_reconciled"}
+        allowed = {"succeeded", "failed", "accepted", "unknown", "cancelled"}
         if status not in allowed or attempt_no < 1 or worker_epoch < 1 or not worker_owner:
             raise ValueError("invalid effect settlement fence or status")
+        if reconciliation:
+            if recovery_lease is None:
+                raise StaleRecoveryLease("effect reconciliation requires a recovery lease")
+            state = str(outcome.get("state") or "")
+            status = (
+                "accepted" if status == "accepted"
+                else "failed" if state == "failure"
+                else "succeeded" if state == "success" and evidence_verified
+                else "unknown"
+            )
         self._validate_continuation_version(expected_continuation_version)
         outcome_json = canonical_json(thaw_json(outcome))
         artifacts_json = canonical_json([str(item) for item in artifact_refs])
@@ -2870,7 +3000,8 @@ class SqliteExecutionUnitOfWork:
             if effect is None:
                 raise RunNotFound("effect_not_found", "execution effect does not exist")
             await self._assert_optional_recovery_fence_tx(db, recovery_lease, str(effect["run_id"]))
-            if str(effect["status"]) != "running":
+            source_status = str(effect["status"])
+            if source_status != "running" and not (reconciliation and source_status == "unknown"):
                 replay_event = await (
                     await db.execute(
                         """SELECT event.*,run.root_run_id,run.session_id
@@ -2914,47 +3045,24 @@ class SqliteExecutionUnitOfWork:
                 raise VersionConflict(
                     "stale_effect_version", "effect changed before settlement CAS"
                 )
-            attempt = await (
-                await db.execute(
-                    """SELECT * FROM execution_effect_attempts
-                    WHERE effect_id=? AND attempt_no=?""",
-                    (effect_id, attempt_no),
-                )
-            ).fetchone()
-            if (
-                attempt is None
-                or str(attempt["status"]) != "running"
-                or str(attempt["worker_owner"]) != worker_owner
-                or int(attempt["worker_epoch"]) != worker_epoch
-            ):
-                raise VersionConflict(
-                    "stale_effect_attempt", "effect attempt owner or epoch changed"
-                )
             now = float(self._clock())
-            cursor = await db.execute(
-                """UPDATE execution_effect_attempts SET status=?,outcome_json=?,
-                updated_at=?,ended_at=? WHERE effect_id=? AND attempt_no=?
-                AND status='running' AND worker_owner=? AND worker_epoch=?""",
-                (
-                    status,
-                    outcome_json,
-                    now,
-                    now,
-                    effect_id,
-                    attempt_no,
-                    worker_owner,
-                    worker_epoch,
-                ),
-            )
-            if cursor.rowcount != 1:
-                raise VersionConflict(
-                    "stale_effect_attempt", "effect attempt changed before settlement"
+            if not reconciliation:
+                cursor = await db.execute(
+                    """UPDATE execution_effect_attempts SET status=?,outcome_json=?,
+                    updated_at=?,ended_at=? WHERE effect_id=? AND attempt_no=?
+                    AND status='running' AND worker_owner=? AND worker_epoch=?""",
+                    (status, outcome_json, now, now, effect_id, attempt_no,
+                     worker_owner, worker_epoch),
                 )
+                if cursor.rowcount != 1:
+                    raise VersionConflict(
+                        "stale_effect_attempt", "effect attempt owner or epoch changed"
+                    )
             self._fault("effect_settle_after_attempt")
             cursor = await db.execute(
                 """UPDATE execution_effects SET status=?,outcome_json=?,receipt_ref=?,
                 artifact_refs_json=?,effect_version=effect_version+1,updated_at=?,ended_at=?
-                WHERE effect_id=? AND effect_version=? AND status='running'""",
+                WHERE effect_id=? AND effect_version=? AND status=?""",
                 (
                     status,
                     outcome_json,
@@ -2964,6 +3072,7 @@ class SqliteExecutionUnitOfWork:
                     now,
                     effect_id,
                     expected_effect_version,
+                    source_status,
                 ),
             )
             if cursor.rowcount != 1:
@@ -3056,6 +3165,19 @@ class SqliteExecutionUnitOfWork:
             ).fetchone()
             if run is None:
                 raise RunNotFound("run_not_found", f"execution run does not exist: {run_id}")
+            child_command = await (
+                await db.execute(
+                    "SELECT operation_id FROM execution_child_commands WHERE child_run_id=?",
+                    (run_id,),
+                )
+            ).fetchone()
+            if child_command is not None:
+                operation_id = str(child_command["operation_id"])
+                if parent_signal_operation_id != operation_id:
+                    raise RunIdentityConflict(
+                        "child_terminal_requires_parent_signal",
+                        "child runs must use atomic terminal-to-parent signal finalization",
+                    )
             if recovery_lease is not None:
                 await self._assert_recovery_fence_tx(db, recovery_lease, run_id=run_id)
             if event.driver_kind != str(run["driver_kind"]):
@@ -3183,6 +3305,7 @@ class SqliteExecutionUnitOfWork:
                     value=parent_signal_value,
                 )
                 self._fault("child_finalize_after_parent_signal")
+                self._fault("child_terminal_before_commit")
             self._fault("finalize_before_commit")
             updated = await (
                 await db.execute(
@@ -3210,27 +3333,6 @@ class SqliteExecutionUnitOfWork:
             raise
         finally:
             await db.close()
-
-    async def finalize(
-        self,
-        run_id: str,
-        *,
-        expected_version: int,
-        terminal_status: RunStatus,
-        event: RunEventCandidate,
-        deliveries: Sequence[DeliverySpec] = (),
-        recovery_lease: RecoveryLease | None = None,
-    ) -> FinalizeRunResult:
-        """Compatibility facade for the canonical finalization transaction."""
-
-        return await self.finalize_and_enqueue_delivery(
-            run_id,
-            expected_version=expected_version,
-            terminal_status=terminal_status,
-            event=event,
-            deliveries=deliveries,
-            recovery_lease=recovery_lease,
-        )
 
     async def finalize_child_and_enqueue_parent_signal(
         self,
@@ -3453,6 +3555,21 @@ class SqliteExecutionUnitOfWork:
         finally:
             await db.close()
 
+    async def get_child_command_for_run(
+        self, child_run_id: str
+    ) -> ChildCommandRecord | None:
+        db = await self._connect()
+        try:
+            row = await (
+                await db.execute(
+                    "SELECT * FROM execution_child_commands WHERE child_run_id=?",
+                    (child_run_id,),
+                )
+            ).fetchone()
+            return self._row_to_child_command(row) if row is not None else None
+        finally:
+            await db.close()
+
     async def lease_child_commands(
         self,
         *,
@@ -3646,6 +3763,24 @@ class SqliteExecutionUnitOfWork:
         finally:
             await db.close()
 
+    async def _enqueue_child_accepted_signal_tx(
+        self, db: aiosqlite.Connection, command: Mapping[str, Any], *, now: float
+    ) -> None:
+        operation_id = str(command["operation_id"])
+        await db.execute(
+            """INSERT INTO execution_child_signal_inbox(
+            signal_id,schema_version,operation_id,parent_run_id,command_id,
+            child_run_id,kind,payload_json,created_at,updated_at
+            ) VALUES(?,1,?,?,?,?, 'accepted',?, ?,?)
+            ON CONFLICT(operation_id,kind) DO NOTHING""",
+            (
+                self._stable_child_signal_id(operation_id, "accepted"), operation_id,
+                str(command["parent_run_id"]), str(command["command_id"]),
+                str(command["child_run_id"]), canonical_json({"accepted": True}),
+                now, now,
+            ),
+        )
+
     async def acknowledge_child_command(
         self,
         operation_id: str,
@@ -3678,24 +3813,7 @@ class SqliteExecutionUnitOfWork:
                     "stale_child_lease", "only the scheduling lease may ack the child"
                 )
             now = float(self._clock())
-            signal_id = self._stable_child_signal_id(operation_id, "accepted")
-            await db.execute(
-                """INSERT INTO execution_child_signal_inbox(
-                signal_id,schema_version,operation_id,parent_run_id,command_id,
-                child_run_id,kind,payload_json,created_at,updated_at
-                ) VALUES(?,1,?,?,?,?, 'accepted',?, ?,?)
-                ON CONFLICT(operation_id,kind) DO NOTHING""",
-                (
-                    signal_id,
-                    operation_id,
-                    str(command["parent_run_id"]),
-                    str(command["command_id"]),
-                    str(command["child_run_id"]),
-                    canonical_json({"accepted": True}),
-                    now,
-                    now,
-                ),
-            )
+            await self._enqueue_child_accepted_signal_tx(db, command, now=now)
             cursor = await db.execute(
                 """UPDATE execution_child_commands
                 SET status='acked',schedule_lease_owner=NULL,
@@ -3741,10 +3859,13 @@ class SqliteExecutionUnitOfWork:
                 (operation_id,),
             )
         ).fetchone()
-        if command is None or str(command["status"]) != ChildCommandStatus.ACKED.value:
+        if command is None or str(command["status"]) not in {
+            ChildCommandStatus.SCHEDULED.value,
+            ChildCommandStatus.ACKED.value,
+        }:
             raise RunNotFound(
-                "acked_child_command_not_found",
-                "terminal signal requires an acknowledged child command",
+                "scheduled_child_command_not_found",
+                "terminal signal requires a scheduled child command",
             )
         child = await (
             await db.execute(
@@ -3757,6 +3878,9 @@ class SqliteExecutionUnitOfWork:
                 "child_not_terminal",
                 "terminal inbox status must match the authoritative child run",
             )
+        await self._enqueue_child_accepted_signal_tx(
+            db, command, now=float(self._clock())
+        )
         signal_id = self._stable_child_signal_id(operation_id, "terminal")
         payload_json = canonical_json({"status": terminal_status, "value": value})
         existing = await (
@@ -3799,44 +3923,6 @@ class SqliteExecutionUnitOfWork:
         assert row is not None
         return self._row_to_child_signal(row)
 
-    async def record_child_terminal(
-        self,
-        operation_id: str,
-        *,
-        terminal_status: str,
-        value: Any = None,
-        recovery_lease: RecoveryLease | None = None,
-    ) -> ChildSignalRecord:
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
-            if recovery_lease is not None:
-                command = await (
-                    await db.execute(
-                        "SELECT child_run_id FROM execution_child_commands WHERE operation_id=?",
-                        (operation_id,),
-                    )
-                ).fetchone()
-                if command is None:
-                    raise RunNotFound(
-                        "child_command_not_found", "child command does not exist"
-                    )
-                await self._assert_recovery_fence_tx(
-                    db, recovery_lease, run_id=str(command["child_run_id"])
-                )
-            record = await self._enqueue_child_terminal_signal_tx(
-                db, operation_id, terminal_status=terminal_status, value=value
-            )
-            self._fault("child_terminal_before_commit")
-            await db.commit()
-            return record
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
-
     async def list_pending_child_signals(
         self, parent_run_id: str, *, recovery_lease: RecoveryLease | None = None
     ) -> tuple[ChildSignalRecord, ...]:
@@ -3855,7 +3941,8 @@ class SqliteExecutionUnitOfWork:
                 await db.execute(
                     """SELECT * FROM execution_child_signal_inbox
                     WHERE parent_run_id=? AND delivered_at IS NULL
-                    ORDER BY created_at,signal_id""",
+                    ORDER BY created_at,
+                    CASE kind WHEN 'accepted' THEN 0 ELSE 1 END,signal_id""",
                     (parent_run_id,),
                 )
             ).fetchall()
@@ -3865,6 +3952,28 @@ class SqliteExecutionUnitOfWork:
             if db.in_transaction:
                 await db.rollback()
             raise
+        finally:
+            await db.close()
+
+    async def list_pending_child_signal_parents(
+        self, *, limit: int = 10_000
+    ) -> tuple[RunRecord, ...]:
+        if isinstance(limit, bool) or limit < 1:
+            raise ValueError("pending child parent limit must be positive")
+        db = await self._connect()
+        try:
+            rows = await (
+                await db.execute(
+                    """SELECT run.* FROM execution_runs AS run
+                    WHERE EXISTS(
+                      SELECT 1 FROM execution_child_signal_inbox AS signal
+                      WHERE signal.parent_run_id=run.run_id
+                      AND signal.delivered_at IS NULL
+                    ) ORDER BY run.created_at,run.run_id LIMIT ?""",
+                    (limit,),
+                )
+            ).fetchall()
+            return tuple(self._row_to_record(row) for row in rows)
         finally:
             await db.close()
 
@@ -3895,32 +4004,139 @@ class SqliteExecutionUnitOfWork:
             assert row is not None
         return self._row_to_child_signal(row)
 
-    async def acknowledge_child_signal(
-        self, signal_id: str, *, recovery_lease: RecoveryLease | None = None
+    async def discard_terminal_detached_child_signal(
+        self, signal_id: str
     ) -> ChildSignalRecord:
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
-            if recovery_lease is not None:
-                inbox = await (
-                    await db.execute(
-                        "SELECT parent_run_id FROM execution_child_signal_inbox WHERE signal_id=?",
-                        (signal_id,),
-                    )
-                ).fetchone()
-                if inbox is None:
-                    raise RunNotFound(
-                        "child_signal_not_found", "child signal does not exist"
-                    )
-                await self._assert_recovery_fence_tx(
-                    db, recovery_lease, run_id=str(inbox["parent_run_id"])
+            row = await (
+                await db.execute(
+                    """SELECT signal.delivered_at,parent.status AS parent_status,
+                    parent.owner_kind,parent.owner_generation,command.join_policy
+                    FROM execution_child_signal_inbox AS signal
+                    JOIN execution_child_commands AS command
+                      ON command.operation_id=signal.operation_id
+                    JOIN execution_runs AS parent ON parent.run_id=signal.parent_run_id
+                    WHERE signal.signal_id=?""",
+                    (signal_id,),
+                )
+            ).fetchone()
+            if row is None:
+                raise RunNotFound("child_signal_not_found", "child signal does not exist")
+            owner = await self._required_start_owner_tx(db)
+            if (str(row["owner_kind"]), int(row["owner_generation"])) != owner:
+                raise RuntimeActivationError(
+                    "child_signal_owner_fenced", "parent belongs to another runtime owner"
+                )
+            if RunStatus(str(row["parent_status"])) not in TERMINAL_RUN_STATUSES:
+                raise RunIdentityConflict(
+                    "parent_not_terminal", "only a terminal parent may discard a child signal"
+                )
+            if str(row["join_policy"]) != AttachmentPolicy.DETACHED.value:
+                raise RunIdentityConflict(
+                    "attached_child_signal_after_parent_terminal",
+                    "attached child signal cannot be discarded after parent terminal",
                 )
             record = await self._acknowledge_child_signal_tx(
                 db, signal_id, now=float(self._clock())
             )
-            self._fault("child_signal_ack_before_commit")
             await db.commit()
             return record
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def prepare_workflow_child_resume(
+        self, signal_id: str, *, recovery_lease: RecoveryLease
+    ) -> DecisionRecord:
+        """Bind a pending child signal to the Native interrupt that will consume it."""
+
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            signal = await (
+                await db.execute(
+                    """SELECT signal.*,parent.driver_kind
+                    FROM execution_child_signal_inbox AS signal
+                    JOIN execution_runs AS parent ON parent.run_id=signal.parent_run_id
+                    WHERE signal.signal_id=?""",
+                    (signal_id,),
+                )
+            ).fetchone()
+            if signal is None:
+                raise RunNotFound("child_signal_not_found", "child signal does not exist")
+            parent_run_id = str(signal["parent_run_id"])
+            await self._assert_recovery_fence_tx(
+                db, recovery_lease, run_id=parent_run_id
+            )
+            if str(signal["driver_kind"]) != "workflow":
+                raise RunIdentityConflict(
+                    "workflow_child_signal_owner_required",
+                    "only a workflow parent may prepare a Native child resume",
+                )
+            decisions = await (
+                await db.execute(
+                    """SELECT * FROM execution_decisions WHERE run_id=?
+                    AND kind='workflow_hitl' AND consumed_at IS NULL
+                    AND status IN ('open','allowed') ORDER BY created_at,decision_id""",
+                    (parent_run_id,),
+                )
+            ).fetchall()
+            matching = []
+            for row in decisions:
+                envelope = json.loads(str(row["prompt_json"]))
+                prompt = envelope.get("prompt", envelope)
+                if (
+                    isinstance(prompt, Mapping)
+                    and prompt.get("kind") == "child_run"
+                    and str(prompt.get("command_id") or "") == str(signal["command_id"])
+                ):
+                    matching.append(row)
+            if len(matching) != 1:
+                raise DecisionConflict(
+                    "workflow_child_interrupt_not_found",
+                    "child signal requires exactly one matching Native child interrupt",
+                )
+            row = matching[0]
+            payload = {
+                "kind": f"child_{signal['kind']}",
+                "signal_id": signal_id,
+                "command_id": str(signal["command_id"]),
+                "child_run_id": str(signal["child_run_id"]),
+            }
+            if str(signal["kind"]) == "terminal":
+                payload.update(json.loads(str(signal["payload_json"])))
+            response_json = canonical_json({"child_signal": payload})
+            if str(row["status"]) == "open":
+                cursor = await db.execute(
+                    """UPDATE execution_decisions SET status='allowed',
+                    response_schema_version=1,response_json=?,
+                    decision_version=decision_version+1,resolved_at=?
+                    WHERE decision_id=? AND status='open' AND consumed_at IS NULL""",
+                    (response_json, float(self._clock()), str(row["decision_id"])),
+                )
+                if cursor.rowcount != 1:
+                    raise DecisionConflict(
+                        "stale_decision_version", "workflow child interrupt changed"
+                    )
+            elif str(row["response_json"] or "") != response_json:
+                raise DecisionConflict(
+                    "workflow_child_signal_conflict",
+                    "workflow child interrupt is bound to another response",
+                )
+            resolved = await (
+                await db.execute(
+                    "SELECT * FROM execution_decisions WHERE decision_id=?",
+                    (str(row["decision_id"]),),
+                )
+            ).fetchone()
+            assert resolved is not None
+            await db.commit()
+            return self._row_to_decision(resolved)
         except BaseException:
             if db.in_transaction:
                 await db.rollback()
@@ -3974,6 +4190,7 @@ class SqliteExecutionUnitOfWork:
             )
             self._fault("child_apply_after_event")
             record = await self._acknowledge_child_signal_tx(db, signal_id, now=now)
+            self._fault("child_signal_ack_before_commit")
             self._fault("child_apply_before_commit")
             await db.commit()
             return record, continuation, stored_event
@@ -4200,9 +4417,14 @@ class SqliteExecutionUnitOfWork:
         if (
             actor.principal_id != view.context.principal_id
             or actor.auth_epoch != view.context.auth_epoch
+            or (
+                actor.root_run_id is not None
+                and actor.root_run_id != root_run_id
+            )
         ):
             raise AuthorizationError(
-                "actor_not_authorized", "actor principal or authentication epoch differs"
+                "actor_not_authorized",
+                "actor principal, authentication epoch, or run root differs",
             )
 
     async def authorize(
@@ -4393,6 +4615,44 @@ class SqliteExecutionUnitOfWork:
             artifact_refs=artifacts,
         )
         return EvidenceSelection(status="matched", records=(record,))
+
+    async def read_effect_outcome(
+        self, *, run_id: str, call_id: str, effect_id: str, args_hash: str,
+        capability_hash: str, scope_hash: str,
+    ) -> tuple[str, Mapping[str, Any], str | None, tuple[str, ...]] | None:
+        """Read the authoritative execution-effect settlement; never reconciles."""
+        db = await self._connect()
+        try:
+            row = await (
+                await db.execute(
+                    """SELECT run_id,call_id,args_hash,capability_hash,scope_hash,
+                    status,outcome_json,receipt_ref,artifact_refs_json
+                    FROM execution_effects WHERE effect_id=? AND status!='running'""",
+                    (effect_id,),
+                )
+            ).fetchone()
+        finally:
+            await db.close()
+
+        if row is None or row["outcome_json"] is None:
+            return None
+        expected = (run_id, call_id, args_hash, capability_hash, scope_hash)
+        actual = tuple(str(row[name]) for name in (
+            "run_id", "call_id", "args_hash", "capability_hash", "scope_hash"
+        ))
+        if actual != expected:
+            raise IdempotencyConflict(
+                "effect_read_binding_mismatch", "effect outcome belongs to another intent"
+            )
+        status = str(row["status"])
+        if status == "late_reconciled":
+            status = "unknown"  # legacy rows had no durable evidence-verification bit
+        return (
+            status,
+            thaw_json(json.loads(str(row["outcome_json"]))),
+            str(row["receipt_ref"]) if row["receipt_ref"] else None,
+            tuple(str(item) for item in json.loads(str(row["artifact_refs_json"]))),
+        )
 
     async def claim_recovery(
         self, run_id: str, *, owner: str, lease_seconds: float = 30.0

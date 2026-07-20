@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from itertools import permutations, product
 from pathlib import Path
 from typing import Any
@@ -15,7 +14,6 @@ from deskpet.execution import (
     DeliveryPolicy,
     DeliverySpec,
     DeliveryStatus,
-    LiveCursor,
     OutcomeStatus,
     RunContext,
     RunCreate,
@@ -25,17 +23,10 @@ from deskpet.execution import (
     fingerprint_json,
 )
 from deskpet.harness.projector import (
-    DeliveryWorker,
-    EventMergeCursor,
-    ExecutionProjector,
-    SessionDBProjectionSink,
+    ExecutionDeliveryDispatcher,
     SinkRegistration,
-    run_event_envelope,
-    standard_delivery_specs,
-    tool_outcome_payload,
 )
 from deskpet.memory.session_db import SessionDB
-from deskpet.harness.tool_executor import ToolOutcome, ToolOutcomeStatus
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
 
 
@@ -64,7 +55,7 @@ class _ScriptedSink:
         del target_id
         return self.bound
 
-    async def project(self, event: RunEvent, target_id: str) -> None:
+    async def deliver(self, event: RunEvent, target_id: str) -> None:
         del target_id
         self.calls.append(event.event_id)
         if self.failures:
@@ -109,20 +100,55 @@ def _terminal_candidate(*, payload: dict[str, Any] | None = None) -> RunEventCan
     )
 
 
-def _projector(
-    store: SqliteExecutionUnitOfWork,
+def _registrations(
     session_sink: object,
     ws_sink: object,
     tts_sink: object,
-) -> ExecutionProjector:
-    return ExecutionProjector(
-        store,
-        (
-            SinkRegistration("session_db", "local", session_sink),
-            SinkRegistration("ws", "peer", ws_sink),
-            SinkRegistration("tts", "voice", tts_sink),
-        ),
+) -> tuple[SinkRegistration, ...]:
+    return (
+        SinkRegistration("session_db", "local", session_sink),
+        SinkRegistration("ws", "peer", ws_sink),
+        SinkRegistration("tts", "voice", tts_sink),
     )
+
+
+async def _drain(worker: ExecutionDeliveryDispatcher, limit: int) -> int:
+    processed = 0
+    while processed < limit and await worker.run_once():
+        processed += 1
+    return processed
+
+
+def _delivery_specs(
+    *, session_id: str, session_sink_instance: str, ws_sink_instance: str,
+    ws_target_id: str, tts_sink_instance: str, tts_target_id: str,
+) -> tuple[DeliverySpec, ...]:
+    return (
+        DeliverySpec("session_db", session_sink_instance, session_id,
+                     DeliveryPolicy.DURABLE_REQUIRED),
+        DeliverySpec("ws", ws_sink_instance, ws_target_id,
+                     DeliveryPolicy.RETRY_WHILE_BOUND),
+        DeliverySpec("tts", tts_sink_instance, tts_target_id,
+                     DeliveryPolicy.BEST_EFFORT),
+    )
+
+
+class _SessionDBSink:
+    def __init__(self, session_db: SessionDB) -> None:
+        self._session_db = session_db
+
+    async def is_bound(self, target_id: str) -> bool:
+        return bool(target_id)
+
+    async def deliver(self, event: RunEvent, target_id: str) -> None:
+        message = event.candidate.payload["session_message"]
+        await self._session_db.append_message(
+            target_id, str(message["role"]), str(message["content"]),
+            workflow_event_id=event.event_id,
+            projection_kind=message.get("projection_kind"),
+            context_visibility=message.get("context_visibility"),
+            skip_embed=bool(message.get("skip_embed", False)),
+        )
 
 
 FAILURE_MASKS = tuple(product((False, True), repeat=3))
@@ -143,8 +169,9 @@ async def test_every_partial_failure_subset_isolated_per_sink(
 ) -> None:
     clock = _Clock()
     store = SqliteExecutionUnitOfWork(tmp_path / "workflow.db", clock=clock)
+    await store.activate_empty_runtime()
     await store.create(_spec())
-    deliveries = standard_delivery_specs(
+    deliveries = _delivery_specs(
         session_id="session-1",
         session_sink_instance="local",
         ws_sink_instance="peer",
@@ -152,7 +179,7 @@ async def test_every_partial_failure_subset_isolated_per_sink(
         tts_sink_instance="voice",
         tts_target_id="voice-connection-1",
     )
-    final = await store.finalize(
+    final = await store.finalize_and_enqueue_delivery(
         "run-1",
         expected_version=0,
         terminal_status=RunStatus.COMPLETED,
@@ -162,14 +189,15 @@ async def test_every_partial_failure_subset_isolated_per_sink(
     session_sink = _ScriptedSink(failures=int(session_fails))
     ws_sink = _ScriptedSink(failures=int(ws_fails))
     tts_sink = _ScriptedSink(failures=int(tts_fails))
-    worker = DeliveryWorker(
+    worker = ExecutionDeliveryDispatcher(
         store,
-        _projector(store, session_sink, ws_sink, tts_sink),
+        _registrations(session_sink, ws_sink, tts_sink),
         clock=clock,
         retry_base_seconds=1.0,
+        owner_generation=1,
     )
 
-    assert await worker.drain(max_deliveries=3) == 3
+    assert await _drain(worker, 3) == 3
     first = {
         row.sink_kind: row
         for row in await store.list_event_deliveries(final.event.event_id)
@@ -188,7 +216,7 @@ async def test_every_partial_failure_subset_isolated_per_sink(
     assert first["tts"].policy is DeliveryPolicy.BEST_EFFORT
 
     clock.advance(2.0)
-    assert await worker.drain(max_deliveries=3) == int(session_fails) + int(ws_fails)
+    assert await _drain(worker, 3) == int(session_fails) + int(ws_fails)
     settled = {
         row.sink_kind: row
         for row in await store.list_event_deliveries(final.event.event_id)
@@ -212,13 +240,14 @@ async def test_partial_failure_is_order_independent(
 ) -> None:
     clock = _Clock()
     store = SqliteExecutionUnitOfWork(tmp_path / "workflow.db", clock=clock)
+    await store.activate_empty_runtime()
     await store.create(_spec())
-    final = await store.finalize(
+    final = await store.finalize_and_enqueue_delivery(
         "run-1",
         expected_version=0,
         terminal_status=RunStatus.COMPLETED,
         event=_terminal_candidate(),
-        deliveries=standard_delivery_specs(
+        deliveries=_delivery_specs(
             session_id="session-1",
             session_sink_instance="local",
             ws_sink_instance="peer",
@@ -236,15 +265,12 @@ async def test_partial_failure_is_order_independent(
         kind: _ScriptedSink(failures=int(index == 1))
         for index, kind in enumerate(sink_order)
     }
-    workers: dict[str, DeliveryWorker] = {}
+    workers: dict[str, ExecutionDeliveryDispatcher] = {}
     for kind in sink_order:
         sink_kind, sink_instance = keys[kind]
-        projector = ExecutionProjector(
-            store,
-            (SinkRegistration(sink_kind, sink_instance, sinks[kind]),),
-        )
-        workers[kind] = DeliveryWorker(
-            store, projector, clock=clock, retry_base_seconds=1.0
+        workers[kind] = ExecutionDeliveryDispatcher(
+            store, (SinkRegistration(sink_kind, sink_instance, sinks[kind]),),
+            clock=clock, retry_base_seconds=1.0, owner_generation=1
         )
         assert await workers[kind].run_once() is True
 
@@ -270,6 +296,7 @@ async def test_expired_claim_is_recovered_and_stale_worker_cannot_ack(tmp_path: 
     clock = _Clock()
     path = tmp_path / "workflow.db"
     first_store = SqliteExecutionUnitOfWork(path, clock=clock)
+    await first_store.activate_empty_runtime()
     await first_store.create(_spec())
     delivery = DeliverySpec(
         sink_kind="session_db",
@@ -277,19 +304,19 @@ async def test_expired_claim_is_recovered_and_stale_worker_cannot_ack(tmp_path: 
         target_id="session-1",
         policy=DeliveryPolicy.DURABLE_REQUIRED,
     )
-    final = await first_store.finalize(
+    final = await first_store.finalize_and_enqueue_delivery(
         "run-1",
         expected_version=0,
         terminal_status=RunStatus.COMPLETED,
         event=_terminal_candidate(),
         deliveries=(delivery,),
     )
-    stale = await first_store.claim_delivery(claim_ttl_seconds=5.0)
+    stale = await first_store.claim_delivery(owner_generation=1, claim_ttl_seconds=5.0)
     assert stale is not None and stale.delivery_version == 1
 
     clock.advance(6.0)
     restarted_store = SqliteExecutionUnitOfWork(path, clock=clock)
-    recovered = await restarted_store.claim_delivery(claim_ttl_seconds=5.0)
+    recovered = await restarted_store.claim_delivery(owner_generation=1, claim_ttl_seconds=5.0)
     assert recovered is not None
     assert recovered.delivery_id == stale.delivery_id
     assert recovered.attempts == 2
@@ -299,15 +326,43 @@ async def test_expired_claim_is_recovered_and_stale_worker_cannot_ack(tmp_path: 
         await first_store.complete_delivery(
             stale.delivery_id,
             expected_version=stale.delivery_version,
+            owner_generation=1,
         )
     delivered = await restarted_store.complete_delivery(
         recovered.delivery_id,
         expected_version=recovered.delivery_version,
+        owner_generation=1,
     )
     assert delivered.status is DeliveryStatus.DELIVERED
     assert await restarted_store.required_deliveries_complete(
         final.event.event_id
     ) is True
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_generation_fence_rejects_stale_claim_and_completion(tmp_path: Path) -> None:
+    clock = _Clock()
+    store = SqliteExecutionUnitOfWork(tmp_path / "workflow.db", clock=clock)
+    await store.activate_empty_runtime()
+    await store.create(_spec())
+    final = await store.finalize_and_enqueue_delivery(
+        "run-1", expected_version=0, terminal_status=RunStatus.COMPLETED,
+        event=_terminal_candidate(), deliveries=(DeliverySpec(
+            sink_kind="session_db", sink_instance="local", target_id="session-1",
+            policy=DeliveryPolicy.DURABLE_REQUIRED,
+        ),),
+    )
+    assert await store.claim_delivery(owner_generation=2) is None
+    claimed = await store.claim_delivery(owner_generation=1)
+    assert claimed is not None
+    with pytest.raises(DeliveryClaimConflict):
+        await store.complete_delivery(
+            claimed.delivery_id,
+            expected_version=claimed.delivery_version,
+            owner_generation=2,
+        )
+    row = (await store.list_event_deliveries(final.event.event_id))[0]
+    assert row.status is DeliveryStatus.DELIVERING
 
 
 @pytest.mark.asyncio
@@ -318,6 +373,7 @@ async def test_terminal_session_message_is_visible_once_after_crash_restart(
     workflow_path = tmp_path / "workflow.db"
     state_path = tmp_path / "state.db"
     first_store = SqliteExecutionUnitOfWork(workflow_path, clock=clock)
+    await first_store.activate_empty_runtime()
     await first_store.create(_spec())
     session_delivery = DeliverySpec(
         sink_kind="session_db",
@@ -335,7 +391,7 @@ async def test_terminal_session_message_is_visible_once_after_crash_restart(
             }
         }
     )
-    final = await first_store.finalize(
+    final = await first_store.finalize_and_enqueue_delivery(
         "run-1",
         expected_version=0,
         terminal_status=RunStatus.COMPLETED,
@@ -343,42 +399,36 @@ async def test_terminal_session_message_is_visible_once_after_crash_restart(
         deliveries=(session_delivery,),
     )
     first_session_db = SessionDB(state_path)
-    first_projector = ExecutionProjector(
+    first_dispatcher = ExecutionDeliveryDispatcher(
         first_store,
         (
             SinkRegistration(
-                "session_db", "local", SessionDBProjectionSink(first_session_db)
+                "session_db", "local", _SessionDBSink(first_session_db)
             ),
         ),
+        owner_generation=1,
     )
-    claimed = await first_store.claim_delivery(claim_ttl_seconds=5.0)
+    claimed = await first_store.claim_delivery(owner_generation=1, claim_ttl_seconds=5.0)
     assert claimed is not None
-    assert await first_projector.dispatch(claimed) is True
+    assert await first_dispatcher.dispatch(claimed) is True
     # Crash gap: the sink committed, but execution_deliveries was not acked.
 
     clock.advance(6.0)
     restarted_store = SqliteExecutionUnitOfWork(workflow_path, clock=clock)
     restarted_session_db = SessionDB(state_path)
-    restarted_projector = ExecutionProjector(
+    worker = ExecutionDeliveryDispatcher(
         restarted_store,
-        (
-            SinkRegistration(
-                "session_db",
-                "local",
-                SessionDBProjectionSink(restarted_session_db),
-            ),
-        ),
-    )
-    worker = DeliveryWorker(
-        restarted_store,
-        restarted_projector,
+        (SinkRegistration(
+            "session_db", "local", _SessionDBSink(restarted_session_db)
+        ),),
         clock=clock,
         claim_ttl_seconds=5.0,
+        owner_generation=1,
     )
     assert await worker.run_once() is True
     assert await worker.run_once() is False
 
-    replay = await restarted_store.finalize(
+    replay = await restarted_store.finalize_and_enqueue_delivery(
         "run-1",
         expected_version=0,
         terminal_status=RunStatus.COMPLETED,
@@ -408,6 +458,7 @@ async def test_terminal_session_message_is_visible_once_after_crash_restart(
 async def test_retry_while_bound_discards_after_peer_disconnect(tmp_path: Path) -> None:
     clock = _Clock()
     store = SqliteExecutionUnitOfWork(tmp_path / "workflow.db", clock=clock)
+    await store.activate_empty_runtime()
     await store.create(_spec())
     ws_delivery = DeliverySpec(
         sink_kind="ws",
@@ -415,7 +466,7 @@ async def test_retry_while_bound_discards_after_peer_disconnect(tmp_path: Path) 
         target_id="peer-1",
         policy=DeliveryPolicy.RETRY_WHILE_BOUND,
     )
-    final = await store.finalize(
+    final = await store.finalize_and_enqueue_delivery(
         "run-1",
         expected_version=0,
         terminal_status=RunStatus.COMPLETED,
@@ -423,10 +474,10 @@ async def test_retry_while_bound_discards_after_peer_disconnect(tmp_path: Path) 
         deliveries=(ws_delivery,),
     )
     sink = _ScriptedSink(failures=1)
-    projector = ExecutionProjector(
-        store, (SinkRegistration("ws", "peer", sink),)
+    worker = ExecutionDeliveryDispatcher(
+        store, (SinkRegistration("ws", "peer", sink),), clock=clock,
+        retry_base_seconds=1.0, owner_generation=1,
     )
-    worker = DeliveryWorker(store, projector, clock=clock, retry_base_seconds=1.0)
     assert await worker.run_once() is True
     sink.bound = False
     clock.advance(2.0)
@@ -443,6 +494,7 @@ async def test_expired_best_effort_claim_is_discarded_without_restart_replay(
     clock = _Clock()
     path = tmp_path / "workflow.db"
     first_store = SqliteExecutionUnitOfWork(path, clock=clock)
+    await first_store.activate_empty_runtime()
     await first_store.create(_spec())
     tts_delivery = DeliverySpec(
         sink_kind="tts",
@@ -450,27 +502,26 @@ async def test_expired_best_effort_claim_is_discarded_without_restart_replay(
         target_id="old-voice-connection",
         policy=DeliveryPolicy.BEST_EFFORT,
     )
-    final = await first_store.finalize(
+    final = await first_store.finalize_and_enqueue_delivery(
         "run-1",
         expected_version=0,
         terminal_status=RunStatus.COMPLETED,
         event=_terminal_candidate(),
         deliveries=(tts_delivery,),
     )
-    claimed = await first_store.claim_delivery(claim_ttl_seconds=5.0)
+    claimed = await first_store.claim_delivery(owner_generation=1, claim_ttl_seconds=5.0)
     assert claimed is not None
     # Process dies after claim.  Even a mistakenly rebound target must not
     # replay the already-attempted best-effort cue after lease expiry.
     clock.advance(6.0)
     sink = _ScriptedSink(bound=True)
     restarted = SqliteExecutionUnitOfWork(path, clock=clock)
-    worker = DeliveryWorker(
+    worker = ExecutionDeliveryDispatcher(
         restarted,
-        ExecutionProjector(
-            restarted, (SinkRegistration("tts", "voice", sink),)
-        ),
+        (SinkRegistration("tts", "voice", sink),),
         clock=clock,
         claim_ttl_seconds=5.0,
+        owner_generation=1,
     )
     assert await worker.run_once() is False
     row = (await restarted.list_event_deliveries(final.event.event_id))[0]
@@ -479,148 +530,9 @@ async def test_expired_best_effort_claim_is_discarded_without_restart_replay(
     assert sink.calls == []
 
 
-@pytest.mark.asyncio
-async def test_hydrate_and_live_epochs_use_independent_order_domains(tmp_path: Path) -> None:
-    store = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
-    await store.create(_spec())
-    first = await store.append_event(
-        "run-1",
-        expected_version=0,
-        event=RunEventCandidate(
-            event_key="accepted",
-            kind="run.accepted",
-            status=OutcomeStatus.ACCEPTED,
-            driver_kind="react",
-        ),
-    )
-    second = await store.append_event(
-        "run-1",
-        expected_version=1,
-        event=RunEventCandidate(
-            event_key="progress",
-            kind="run.progress",
-            status=OutcomeStatus.ACCEPTED,
-            driver_kind="react",
-        ),
-    )
-    live_sink = _ScriptedSink()
-    projector = ExecutionProjector(
-        store, (SinkRegistration("ws", "live", live_sink),)
-    )
-    cursor, hydrated = await projector.hydrate(EventMergeCursor("run-1"))
-    assert hydrated == (first, second)
-    assert cursor.durable_seq == 2
-
-    cursor = cursor.activate_live_epoch("epoch-a")
-    live_a1 = _live_event("live-a1", "epoch-a", 1)
-    cursor, visible = await projector.project_live(
-        live_a1,
-        cursor=cursor,
-        sink_kind="ws",
-        sink_instance="live",
-        target_id="peer-1",
-    )
-    assert visible is True and cursor.live_seq == 1
-    cursor = cursor.activate_live_epoch("epoch-b")
-    late_a2 = _live_event("live-a2", "epoch-a", 2)
-    same_cursor, visible = await projector.project_live(
-        late_a2,
-        cursor=cursor,
-        sink_kind="ws",
-        sink_instance="live",
-        target_id="peer-1",
-    )
-    assert visible is False and same_cursor == cursor
-    live_b1 = _live_event("live-b1", "epoch-b", 1)
-    cursor, visible = await projector.project_live(
-        live_b1,
-        cursor=cursor,
-        sink_kind="ws",
-        sink_instance="live",
-        target_id="peer-1",
-    )
-    assert visible is True
-    duplicate_cursor, visible = await projector.project_live(
-        live_b1,
-        cursor=cursor,
-        sink_kind="ws",
-        sink_instance="live",
-        target_id="peer-1",
-    )
-    assert visible is False and duplicate_cursor == cursor
-    assert live_sink.visible == ["live-a1", "live-b1"]
-
-    third = await store.append_event(
-        "run-1",
-        expected_version=2,
-        event=RunEventCandidate(
-            event_key="waiting",
-            kind="run.waiting",
-            status=OutcomeStatus.WAITING,
-            driver_kind="react",
-        ),
-    )
-    cursor, hydrated = await projector.hydrate(cursor)
-    assert hydrated == (third,)
-    assert cursor.durable_seq == 3
-    assert cursor.live_epoch == "epoch-b" and cursor.live_seq == 1
-    async with aiosqlite.connect(store.path) as db:
-        count = await (await db.execute("SELECT COUNT(*) FROM execution_events")).fetchone()
-    assert count == (3,), "live token projection must not write SQLite"
-
-
-def _live_event(event_id: str, epoch: str, sequence: int) -> RunEvent:
-    return RunEvent(
-        event_id=event_id,
-        run_id="run-1",
-        root_run_id="run-1",
-        session_id="session-1",
-        durable_seq=None,
-        live_cursor=LiveCursor(stream_epoch=epoch, live_seq=sequence),
-        candidate=RunEventCandidate(
-            event_key=event_id,
-            kind="assistant.token",
-            status=OutcomeStatus.SUCCEEDED,
-            driver_kind="react",
-            payload={"text": event_id},
-        ),
-        created_at=float(sequence),
-    )
-
-
-def test_typed_failure_is_not_reinterpreted_as_success() -> None:
-    outcome = ToolOutcome(
-        call_id="call-1",
-        effect_id="effect-1",
-        status=ToolOutcomeStatus.FAILED,
-        value={"ok": False},
-        error="tool_failed",
-    )
-    assert tool_outcome_payload(outcome)["status"] == "failed"
-    event = RunEvent(
-        event_id="event-failed",
-        run_id="run-1",
-        root_run_id="run-1",
-        session_id="session-1",
-        durable_seq=1,
-        candidate=RunEventCandidate(
-            event_key="tool-failed",
-            kind="tool.outcome",
-            status=OutcomeStatus.FAILED,
-            driver_kind="react",
-            payload={"tool_outcome": tool_outcome_payload(outcome)},
-            error={"code": "tool_failed"},
-        ),
-        created_at=1.0,
-    )
-    envelope = run_event_envelope(event)
-    assert envelope["status"] == "failed"
-    assert envelope["payload"]["tool_outcome"]["value"] == {"ok": False}
-
-
 def test_projector_is_not_registered_in_production_bootstrap() -> None:
     source = (Path(__file__).resolve().parents[3] / "backend" / "main.py").read_text(
         encoding="utf-8"
     )
     assert "ExecutionProjector(" not in source
-    assert "DeliveryWorker(" not in source
+    assert "ExecutionDeliveryDispatcher(" not in source

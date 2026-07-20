@@ -2089,6 +2089,15 @@ class WorkflowService:
         event = await self.outbox.get_event(event_id)
         if event is None:
             raise WorkflowServiceError("event_not_found", f"Workflow event not found: {event_id}")
+        if self.execution_ports is not None:
+            owner = await self.execution_ports.unit_of_work.get_execution_owner(
+                str(event["run_id"])
+            )
+            if owner is not None:
+                raise WorkflowServiceError(
+                    "execution_delivery_owner",
+                    f"legacy delivery is forbidden for execution-owned run: {owner[0]}/{owner[1]}",
+                )
         results: list[dict[str, Any]] = []
         for delivery in await self.outbox.list_event_deliveries(event_id):
             if delivery["status"] in {"delivered", "discarded", "delivering"}:

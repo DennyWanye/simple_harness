@@ -54,6 +54,7 @@ class MemoryNativeStore:
     def __init__(self, calls: list[str] | None = None) -> None:
         self.snapshot = None
         self.pending = {}
+        self.pending_consumed = set()
         self.calls = calls if calls is not None else []
         self.interrupt = None
         self.fail_after_task_commit = False
@@ -68,12 +69,16 @@ class MemoryNativeStore:
         return self.snapshot
 
     async def load_execution(self, *, run_id, thread_id, checkpoint_ns):
-        return NativeExecution(self.snapshot, dict(self.pending), {}, copy.deepcopy(self.route_selections))
+        return NativeExecution(
+            self.snapshot, dict(self.pending), {}, copy.deepcopy(self.route_selections),
+            tuple(sorted(self.pending_consumed)),
+        )
 
-    async def commit_task_result(self, *, operation_id, expected_head, task, execution_info, patch, configurable, blob_refs=()):
+    async def commit_task_result(self, *, operation_id, expected_head, task, execution_info, patch, configurable, blob_refs=(), consumed_interrupt_ids=()):
         del blob_refs
         self.calls.append(f"commit_task:{task.node_id}")
         self.pending.setdefault(task.task_id, patch)
+        self.pending_consumed.update(consumed_interrupt_ids)
         if self.fail_after_task_commit:
             self.fail_after_task_commit = False
             raise RuntimeError("after_db_commit_before_return")
@@ -112,6 +117,7 @@ class MemoryNativeStore:
             metadata={"engine_kind": "deskpet-native"},
         )
         self.pending.clear()
+        self.pending_consumed.clear()
         self.route_selections.clear()
         return NativeCommitResult(self.snapshot)
 

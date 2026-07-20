@@ -11,6 +11,7 @@ import pytest
 
 from deskpet.execution import (
     ActorContext,
+    OutcomeStatus,
     PersistenceLevel,
     RunContext,
     RunCreate,
@@ -20,7 +21,10 @@ from deskpet.execution import (
     root_idempotency_key,
 )
 from deskpet.execution.evidence import EvidenceContext, UNKNOWN_EVIDENCE
-from deskpet.harness.child_runs import ChildRunCoordinator
+from deskpet.harness.child_runs import (
+    ChildRunCoordinator,
+    ChildRunScheduler as _ChildRunScheduler,
+)
 from deskpet.harness.drivers.react import (
     LegacyAgentLoopCollaborator,
     LegacyAgentLoopToolInterceptionError,
@@ -47,14 +51,10 @@ from deskpet.harness.ports import (
     OpenDecision,
     ProviderFallbackCandidate,
     TokenCandidate,
-    ToolOutcomesSignal,
-)
-from deskpet.harness.tool_executor import (
-    PreparedExecutionCall,
-    ToolOutcome,
-    ToolOutcomeStatus,
+    ToolOutcomesSignal as CanonicalToolOutcomesSignal,
 )
 from deskpet.tools.capabilities import ToolExecutionContext
+from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall
 from deskpet.workflows.store import SqliteExecutionUnitOfWork, StaleRecoveryLease
 
 
@@ -62,8 +62,36 @@ CAPABILITY_HASH = fingerprint_json({"tools": ["read", "write"]})
 SCOPE_HASH = fingerprint_json({"workspace": "F:/workspace"})
 
 
+class ChildRunScheduler(_ChildRunScheduler):
+    async def reconcile_once(self, **kwargs) -> None:
+        await self.reconcile_commands_once(**kwargs)
+        command_errors = self.last_errors
+        await self.reconcile_signals_once(
+            recovery_lease=kwargs.get("recovery_lease")
+        )
+        self.last_errors = command_errors + self.last_errors
+
+    @staticmethod
+    def _signal(record):
+        if record.kind == "accepted":
+            return ChildAcceptedSignal(
+                record.parent_run_id, record.command_id, record.child_run_id,
+                record.signal_id,
+            )
+        return ChildTerminalSignal(
+            record.parent_run_id, record.command_id, record.child_run_id,
+            str(record.payload["status"]), record.payload.get("value"),
+            record.signal_id,
+        )
+
+
 async def _collect(iterator: AsyncIterator[Any]) -> list[Any]:
     return [item async for item in iterator]
+
+
+async def _pending(coordinator, parent_run_id):
+    records = await coordinator._store.list_pending_child_signals(parent_run_id)
+    return tuple(ChildRunScheduler._signal(record) for record in records)
 
 
 def _request(run_id: str = "run-react") -> DriverStart:
@@ -141,28 +169,34 @@ class ScriptedCollaborator:
         self.closed = True
 
 
-class EffectReader:
-    def __init__(self, outcomes: Mapping[str, ToolOutcome] | None = None) -> None:
-        self.outcomes = dict(outcomes or {})
-        self.reads: list[str] = []
-
-    async def get_outcome(self, effect_id: str) -> ToolOutcome | None:
-        self.reads.append(effect_id)
-        return self.outcomes.get(effect_id)
+class PolicyRegistry:
+    def prepared_execution_policy(self, call: PreparedToolCall) -> tuple[bool, bool]:
+        return call.effect_type == "staged_file", call.effect_type != "idempotent_read"
 
 
-class Reconciler:
-    def __init__(self, outcomes: Mapping[str, ToolOutcome]) -> None:
-        self.outcomes = dict(outcomes)
-        self.calls: list[str] = []
-
-    async def reconcile(self, call, context, outcome) -> ToolOutcome:
-        self.calls.append(call.effect_id)
-        return self.outcomes[call.effect_id]
+_EFFECTS: dict[str, str] = {}
+_OUTCOME_INDEXES: dict[int, int] = {}
+_OUTCOME_STATUSES: dict[int, OutcomeStatus] = {}
+_OUTCOME_METADATA: dict[int, Mapping[str, Any]] = {}
 
 
-def _call(index: int, *, durable: bool) -> PreparedExecutionCall:
-    return PreparedExecutionCall(
+def prepared_call(*, tool_name: str, model_args: Mapping[str, Any], call_id: str,
+                  effect_id: str, capability_hash: str, scope_hash: str,
+                  requires_authorization: bool=False, recoverable_effect: bool=False,
+                  tool_spec_version: str="1", schema_hash: str="schema",
+                  permission_policy_version: str="1") -> PreparedToolCall:
+    del capability_hash, scope_hash
+    _EFFECTS[call_id] = effect_id
+    return PreparedToolCall.prepare(
+        tool_name=tool_name, stable_call_id=call_id, final_params=model_args,
+        tool_spec_version=tool_spec_version or "1", schema_hash=schema_hash or "schema",
+        permission_policy_version=permission_policy_version or "1",
+        effect_type="staged_file" if requires_authorization else "opaque_manual" if recoverable_effect else "idempotent_read",
+    )
+
+
+def _call(index: int, *, durable: bool) -> PreparedToolCall:
+    return prepared_call(
         tool_name=f"tool_{index}",
         model_args={"index": index},
         call_id=f"call-{index}",
@@ -176,7 +210,7 @@ def _call(index: int, *, durable: bool) -> PreparedExecutionCall:
     )
 
 
-def _context(call: PreparedExecutionCall) -> ToolExecutionContext:
+def _context(call: PreparedToolCall) -> ToolExecutionContext:
     return ToolExecutionContext(
         scope_id="scope-react",
         session_id="session-react",
@@ -192,24 +226,34 @@ def _context(call: PreparedExecutionCall) -> ToolExecutionContext:
         scope_hash=SCOPE_HASH,
         provider_plan=("fixture",),
         run_id="run-react",
-        call_id=call.call_id,
-        effect_id=call.effect_id,
+        call_id=call.stable_call_id,
+        effect_id=_EFFECTS[call.stable_call_id],
         trace_id="trace-run-react",
     )
 
 
 def _outcome(
-    call: PreparedExecutionCall,
+    call: PreparedToolCall,
     *,
-    status: ToolOutcomeStatus = ToolOutcomeStatus.SUCCEEDED,
-) -> ToolOutcome:
-    return ToolOutcome(
-        call_id=call.call_id,
-        effect_id=call.effect_id,
-        status=status,
-        value={"completed": call.call_id},
-        receipt_ref=f"receipt:{call.effect_id}",
-    )
+    status: OutcomeStatus = OutcomeStatus.SUCCEEDED,
+    artifact_refs: tuple[str, ...] = (),
+) -> NormalizedToolOutcome:
+    outcome = (NormalizedToolOutcome.success({"completed": call.stable_call_id})
+               if status in {OutcomeStatus.SUCCEEDED, OutcomeStatus.ACCEPTED}
+               else NormalizedToolOutcome.malformed("unknown") if status is OutcomeStatus.UNKNOWN
+               else NormalizedToolOutcome.failure("tool_failed", "tool failed"))
+    suffix = call.stable_call_id.rsplit('-', 1)[-1]
+    _OUTCOME_INDEXES[id(outcome)] = int(suffix) if suffix.isdigit() else 0
+    _OUTCOME_STATUSES[id(outcome)] = status
+    _OUTCOME_METADATA[id(outcome)] = {"receipt_ref": f"receipt:{_EFFECTS[call.stable_call_id]}", "artifact_refs": list(artifact_refs)}
+    return outcome
+
+
+def ToolOutcomesSignal(run_id: str, command_id: str, outcomes: tuple[NormalizedToolOutcome, ...]):
+    indexes = tuple(_OUTCOME_INDEXES[id(outcome)] for outcome in outcomes)
+    statuses = tuple(_OUTCOME_STATUSES[id(outcome)] for outcome in outcomes)
+    metadata = tuple(_OUTCOME_METADATA[id(outcome)] for outcome in outcomes)
+    return CanonicalToolOutcomesSignal(run_id, command_id, outcomes, statuses, indexes, metadata)
 
 
 async def _driver(tmp_path, collaborator, *, reader=None, reconciler=None):
@@ -220,8 +264,7 @@ async def _driver(tmp_path, collaborator, *, reader=None, reconciler=None):
         ReActDriver(
             collaborator,
             store,
-            reader or EffectReader(),
-            reconciler=reconciler,
+            PolicyRegistry(),
         ),
         store,
         path,
@@ -232,8 +275,24 @@ async def _recovery_lease(store):
     return await store.claim_recovery("run-react", owner="react-test-recovery")
 
 
+async def _record_effect(path, call: PreparedToolCall, outcome: NormalizedToolOutcome, status: str) -> None:
+    async with aiosqlite.connect(path) as db:
+        await db.execute("""INSERT INTO execution_effects(
+            effect_id,schema_version,run_id,effect_fingerprint,call_id,tool_name,
+            args_hash,capability_hash,scope_hash,effect_type,status,policy_json,
+            prepared_json,outcome_json,artifact_refs_json,effect_version,created_at,updated_at,ended_at)
+            VALUES(?,1,?,?,?,?,?,?,?,?,?,'{}',?,?,'[]',1,1,1,1)""",
+            (_EFFECTS[call.stable_call_id], "run-react", "fp", call.stable_call_id,
+             call.tool_name, call.args_hash, CAPABILITY_HASH, SCOPE_HASH, call.effect_type,
+             status, json.dumps(call.to_dict()), json.dumps(outcome.to_dict())))
+        await db.commit()
+
+
 class _ChildLauncher:
     async def accept(self, command) -> None:
+        return None
+
+    async def deliver(self, parent, delivery, recovery_lease) -> None:
         return None
 
 
@@ -257,8 +316,10 @@ async def _schedule_child(store, command):
     )
     coordinator = ChildRunCoordinator(store)
     committed = await coordinator.submit(parent, command)
-    await coordinator.run_scheduler_once(_ChildLauncher(), owner="child-scheduler")
-    accepted = (await coordinator.pending_signals("run-react"))[0].signal
+    await ChildRunScheduler(
+        coordinator, _ChildLauncher(), owner="child-scheduler"
+    ).reconcile_once()
+    accepted = (await _pending(coordinator, "run-react"))[0]
     return coordinator, committed, accepted
 
 
@@ -309,7 +370,7 @@ async def test_decision_boundary_survives_new_driver_and_keeps_session(tmp_path)
     second = ReActDriver(
         resumed,
         store,
-        EffectReader(),
+        PolicyRegistry(),
     )
     async with aiosqlite.connect(path) as db:
         await db.execute(
@@ -346,13 +407,13 @@ async def test_decision_boundary_survives_new_driver_and_keeps_session(tmp_path)
 @pytest.mark.asyncio
 async def test_permission_batch_waits_for_durable_grant_before_execution(tmp_path):
     call = _call(0, durable=True)
-    call = PreparedExecutionCall(
+    call = prepared_call(
         tool_name=call.tool_name,
-        model_args=call.model_args,
-        call_id=call.call_id,
-        effect_id=call.effect_id,
-        capability_hash=call.capability_hash,
-        scope_hash=call.scope_hash,
+        model_args=dict(call.final_params),
+        call_id=call.stable_call_id,
+        effect_id=_EFFECTS[call.stable_call_id],
+        capability_hash=CAPABILITY_HASH,
+        scope_hash=SCOPE_HASH,
         requires_authorization=True,
         recoverable_effect=True,
     )
@@ -402,11 +463,12 @@ async def test_recovery_backfills_successful_effect_without_regenerating_or_reex
     # The external executor committed the write, then the process crashed
     # before ToolOutcomesSignal could backfill the model transcript.
     committed = _outcome(call)
+    await _record_effect(path, call, committed, "succeeded")
     collaborator = ScriptedCollaborator(resumes=[[ReactFinal("recovered")]])
     second = ReActDriver(
         collaborator,
         store,
-        EffectReader({call.effect_id: committed}),
+        PolicyRegistry(),
     )
     candidates = await _collect(second.recover("run-react", await _recovery_lease(store)))
 
@@ -419,8 +481,8 @@ async def test_recovery_backfills_successful_effect_without_regenerating_or_reex
         "scoped_evidence": UNKNOWN_EVIDENCE,
     }
     tool_message = boundary.canonical_messages[-1]
-    assert tool_message["tool_call_id"] == call.call_id
-    assert json.loads(tool_message["content"])["effect_id"] == call.effect_id
+    assert tool_message["tool_call_id"] == call.stable_call_id
+    assert json.loads(tool_message["content"])["effect_id"] == _EFFECTS[call.stable_call_id]
     record = await store.load_continuation("run-react")
     persisted = ReactCommandBoundary.from_record(record) if record else None
     assert persisted is not None
@@ -434,7 +496,7 @@ async def test_completed_tool_uses_exact_effect_scope_for_agent_resume(tmp_path)
     collaborator = ScriptedCollaborator([batch], resumes=[[ReactFinal("scoped")]])
     driver, _, path = await _driver(tmp_path, collaborator)
     await _collect(driver.start(_request()))
-    outcome = replace(_outcome(call), artifact_refs=("artifact://result/1",))
+    outcome = _outcome(call, artifact_refs=("artifact://result/1",))
     async with aiosqlite.connect(path) as db:
         await db.execute(
             """INSERT INTO execution_effects(
@@ -443,10 +505,10 @@ async def test_completed_tool_uses_exact_effect_scope_for_agent_resume(tmp_path)
             prepared_json,outcome_json,receipt_ref,artifact_refs_json,
             effect_version,created_at,updated_at,ended_at
             ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (call.effect_id, 1, "run-react", "effect-fingerprint", call.call_id,
+            (_EFFECTS[call.stable_call_id], 1, "run-react", "effect-fingerprint", call.stable_call_id,
              call.tool_name, call.args_hash, CAPABILITY_HASH, SCOPE_HASH, "write",
-             "succeeded", "{}", "{}", "{}", outcome.receipt_ref,
-             json.dumps(list(outcome.artifact_refs)), 1, 1.0, 1.0, 1.0),
+             "succeeded", "{}", "{}", json.dumps(outcome.to_dict()), _OUTCOME_METADATA[id(outcome)]["receipt_ref"],
+             json.dumps(_OUTCOME_METADATA[id(outcome)]["artifact_refs"]), 1, 1.0, 1.0, 1.0),
         )
         await db.commit()
 
@@ -455,13 +517,13 @@ async def test_completed_tool_uses_exact_effect_scope_for_agent_resume(tmp_path)
     selection = collaborator.resume_inputs[0][1]["scoped_evidence"]
     assert selection.status == "matched"
     assert selection.records[0].context == EvidenceContext(
-        run_id="run-react", turn_id="turn-run-react", call_id=call.call_id,
-        effect_id=call.effect_id, artifact_ref="artifact://result/1",
+        run_id="run-react", turn_id="turn-run-react", call_id=call.stable_call_id,
+        effect_id=_EFFECTS[call.stable_call_id], artifact_ref="artifact://result/1",
     )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status", [ToolOutcomeStatus.FAILED, ToolOutcomeStatus.ACCEPTED])
+@pytest.mark.parametrize("status", [OutcomeStatus.FAILED, OutcomeStatus.ACCEPTED])
 async def test_non_successful_tool_outcome_fails_closed_without_evidence_lookup(tmp_path, status):
     call = _call(0, durable=True)
     batch = ReactToolBatch("batch-non-success", (call,), (_context(call),))
@@ -483,10 +545,10 @@ async def test_mixed_multi_tool_batch_fails_closed_without_partial_evidence(tmp_
     calls = (_call(0, durable=True), _call(1, durable=True))
     batch = ReactToolBatch("mixed-evidence", calls, tuple(_context(call) for call in calls))
     driver, store, _ = await _driver(tmp_path, ScriptedCollaborator())
-    boundary = ReActDriver._boundary_for_batch(_request(), batch).with_outcomes({
+    boundary = driver._boundary_for_batch(_request(), batch).with_outcomes({
         0: _outcome(calls[0]),
-        1: _outcome(calls[1], status=ToolOutcomeStatus.FAILED),
-    })
+        1: _outcome(calls[1], status=OutcomeStatus.FAILED),
+    }, {0: OutcomeStatus.SUCCEEDED, 1: OutcomeStatus.FAILED})
 
     async def forbidden_lookup(context):
         raise AssertionError("mixed batch must fail closed before partial lookup")
@@ -501,7 +563,7 @@ async def test_mixed_batch_freezes_full_order_and_recovers_only_missing_calls(tm
     batch = ReactToolBatch("mixed", calls, tuple(_context(call) for call in calls))
     first, store, path = await _driver(tmp_path, ScriptedCollaborator([batch]))
     initial = await _collect(first.start(_request()))
-    assert initial == [ExecuteTools("run-react", "mixed", calls, batch.contexts, (0, 1, 2))]
+    assert initial == [ExecuteTools("run-react", "mixed", calls, batch.contexts, (0, 1, 2), effectful=(False, True, False))]
     record = await store.load_continuation("run-react")
     persisted = ReactCommandBoundary.from_record(record) if record else None
     assert persisted is not None
@@ -512,12 +574,13 @@ async def test_mixed_batch_freezes_full_order_and_recovers_only_missing_calls(tm
     )
     assert after_first[0].calls == calls[1:]
     assert after_first[0].original_indexes == (1, 2)
+    await _record_effect(path, calls[1], _outcome(calls[1]), "succeeded")
 
     collaborator = ScriptedCollaborator(resumes=[[ReactFinal("all done")]])
     second = ReActDriver(
         collaborator,
         store,
-        EffectReader({calls[1].effect_id: _outcome(calls[1])}),
+        PolicyRegistry(),
     )
     recovered = await _collect(second.recover("run-react", await _recovery_lease(store)))
     assert recovered[0].calls == (calls[2],)
@@ -536,27 +599,20 @@ async def test_mixed_batch_freezes_full_order_and_recovers_only_missing_calls(tm
 
 
 @pytest.mark.asyncio
-async def test_unknown_effect_is_reconciled_before_driver_resumes(tmp_path):
+async def test_unknown_effect_is_observed_without_driver_side_reconcile(tmp_path):
     call = _call(0, durable=True)
     batch = ReactToolBatch("batch-unknown", (call,), (_context(call),))
     first, store, path = await _driver(tmp_path, ScriptedCollaborator([batch]))
     await _collect(first.start(_request()))
-    unknown = ToolOutcome.unknown(call, "process_exit")
-    reconciled = _outcome(call)
-    reconciler = Reconciler({call.effect_id: reconciled})
-    collaborator = ScriptedCollaborator(resumes=[[ReactFinal("reconciled")]])
-    second = ReActDriver(
-        collaborator,
-        store,
-        EffectReader({call.effect_id: unknown}),
-        reconciler=reconciler,
-    )
+    unknown = _outcome(call, status=OutcomeStatus.UNKNOWN)
+    await _record_effect(path, call, unknown, "unknown")
+    collaborator = ScriptedCollaborator(resumes=[[ReactFinal("uncertain")]])
+    second = ReActDriver(collaborator, store, PolicyRegistry())
 
     candidates = await _collect(second.recover("run-react", await _recovery_lease(store)))
 
-    assert candidates == [DriverTerminalCandidate("run-react", "completed", "reconciled")]
-    assert reconciler.calls == [call.effect_id]
-    assert collaborator.resume_inputs[0][0].outcomes == (reconciled,)
+    assert candidates == [DriverTerminalCandidate("run-react", "completed", "uncertain")]
+    assert collaborator.resume_inputs[0][0].outcome_statuses == (OutcomeStatus.UNKNOWN,)
 
 
 @pytest.mark.asyncio
@@ -575,7 +631,7 @@ async def test_delegate_boundary_survives_restart_and_accept_signal(tmp_path):
     second = ReActDriver(
         resumed,
         store,
-        EffectReader(),
+        PolicyRegistry(),
     )
     assert await _collect(second.recover("run-react", await _recovery_lease(store))) == [command]
     candidates = await _collect(
@@ -664,7 +720,7 @@ async def test_detached_child_accepted_is_in_real_model_input_once(tmp_path):
     _, _, accepted = await _schedule_child(store, command)
     loop = _CaptureLoop()
 
-    await _collect(ReActDriver(LegacyAgentLoopCollaborator(loop), store, EffectReader()).signal(accepted))
+    await _collect(ReActDriver(LegacyAgentLoopCollaborator(loop), store, PolicyRegistry()).signal(accepted))
 
     payloads = [json.loads(message["content"]) for message in loop.messages[0] if message["role"] == "system"]
     assert [item["signal"] for item in payloads if item.get("type") == "host_child_response"] == ["child_accepted"]
@@ -678,17 +734,17 @@ async def test_joined_child_terminal_is_in_real_model_input_once(tmp_path):
     await _collect(first.start(_request()))
     coordinator, committed, accepted = await _schedule_child(store, command)
     await _collect(first.signal(accepted))
-    await store.finalize(
-        committed.child_run_id,
+    await store.finalize_child_and_enqueue_parent_signal(
+        committed.operation_id,
         expected_version=1,
         terminal_status="completed",
         event=RunEventCandidate(event_key="child-done", kind="run.completed", status="succeeded", driver_kind="react"),
+        value={"answer": 7},
     )
-    await coordinator.record_terminal(committed.operation_id, status="completed", value={"answer": 7})
-    terminal = (await coordinator.pending_signals("run-react"))[0].signal
+    terminal = (await _pending(coordinator, "run-react"))[0]
     loop = _CaptureLoop()
 
-    await _collect(ReActDriver(LegacyAgentLoopCollaborator(loop), store, EffectReader()).signal(terminal))
+    await _collect(ReActDriver(LegacyAgentLoopCollaborator(loop), store, PolicyRegistry()).signal(terminal))
 
     payloads = [json.loads(message["content"]) for message in loop.messages[0] if message["role"] == "system"]
     assert [item["signal"] for item in payloads if item.get("type") == "host_child_response"] == ["child_accepted", "child_terminal"]
@@ -702,14 +758,14 @@ async def test_child_terminal_persisted_before_resume_recovers_into_model_once(t
     await _collect(first.start(_request()))
     coordinator, committed, accepted = await _schedule_child(store, command)
     await _collect(first.signal(accepted))
-    await store.finalize(
-        committed.child_run_id,
+    await store.finalize_child_and_enqueue_parent_signal(
+        committed.operation_id,
         expected_version=1,
         terminal_status="completed",
         event=RunEventCandidate(event_key="child-recovery-done", kind="run.completed", status="succeeded", driver_kind="react"),
+        value="durable child",
     )
-    await coordinator.record_terminal(committed.operation_id, status="completed", value="durable child")
-    terminal = (await coordinator.pending_signals("run-react"))[0].signal
+    terminal = (await _pending(coordinator, "run-react"))[0]
 
     class CrashOnResume(ScriptedCollaborator):
         async def resume(self, boundary, response):
@@ -717,9 +773,9 @@ async def test_child_terminal_persisted_before_resume_recovers_into_model_once(t
             yield
 
     with pytest.raises(RuntimeError, match="after child commit"):
-        await _collect(ReActDriver(CrashOnResume(), store, EffectReader()).signal(terminal))
+        await _collect(ReActDriver(CrashOnResume(), store, PolicyRegistry()).signal(terminal))
     loop = _CaptureLoop()
-    restarted = ReActDriver(LegacyAgentLoopCollaborator(loop), store, EffectReader())
+    restarted = ReActDriver(LegacyAgentLoopCollaborator(loop), store, PolicyRegistry())
     await _collect(restarted.recover("run-react", await _recovery_lease(store)))
 
     payloads = [json.loads(message["content"]) for message in loop.messages[0] if message["role"] == "system"]
@@ -735,14 +791,14 @@ async def test_root_terminal_child_recovers_after_atomic_ack_before_terminal_mat
     await _collect(first.start(_request()))
     coordinator, committed, accepted = await _schedule_child(store, command)
     await _collect(first.signal(accepted))
-    await store.finalize(
-        committed.child_run_id,
+    await store.finalize_child_and_enqueue_parent_signal(
+        committed.operation_id,
         expected_version=1,
         terminal_status="completed",
         event=RunEventCandidate(event_key="root-child-done", kind="run.completed", status="succeeded", driver_kind="react"),
+        value="root child result",
     )
-    await coordinator.record_terminal(committed.operation_id, status="completed", value="root child result")
-    terminal = (await coordinator.pending_signals("run-react"))[0].signal
+    terminal = (await _pending(coordinator, "run-react"))[0]
     original_apply = first._apply_child_inbox
 
     async def crash_after_apply(boundary, signal, *, recovery_lease):
@@ -752,7 +808,7 @@ async def test_root_terminal_child_recovers_after_atomic_ack_before_terminal_mat
     first._apply_child_inbox = crash_after_apply
     with pytest.raises(RuntimeError, match="before root terminal"):
         await _collect(first.signal(terminal))
-    restarted = ReActDriver(ScriptedCollaborator(), store, EffectReader())
+    restarted = ReActDriver(ScriptedCollaborator(), store, PolicyRegistry())
 
     assert await _collect(restarted.recover("run-react", await _recovery_lease(store))) == [
         DriverTerminalCandidate(
@@ -974,7 +1030,7 @@ async def test_external_agent_loop_emits_prepared_batch_before_any_dispatch():
         def prepare_execution_call(
             self, tool_name, raw_args, *, call_id, effect_id, context
         ):
-            return PreparedExecutionCall(
+            return prepared_call(
                 tool_name=tool_name,
                 model_args=raw_args,
                 call_id=call_id,
@@ -1038,7 +1094,7 @@ async def test_durable_tool_resume_can_prepare_and_persist_a_second_tool(tmp_pat
             return [{"type": "function", "function": {"name": name, "description": name, "parameters": {"type": "object", "properties": {}}}} for name in ("tool-a", "tool-b")]
 
         def prepare_execution_call(self, tool_name, raw_args, *, call_id, effect_id, context):
-            return PreparedExecutionCall(tool_name=tool_name, model_args=raw_args, call_id=call_id, effect_id=effect_id, capability_hash=context.capability_hash, scope_hash=context.scope_hash, recoverable_effect=True)
+            return prepared_call(tool_name=tool_name, model_args=raw_args, call_id=call_id, effect_id=effect_id, capability_hash=context.capability_hash, scope_hash=context.scope_hash, recoverable_effect=True)
 
     tools = Tools()
     collaborator = LegacyAgentLoopCollaborator(AgentLoop(LLM(), tools, external_tool_dispatch=True), call_factory=tools)
@@ -1065,8 +1121,9 @@ async def test_recovery_second_batch_is_fenced_by_current_lease(tmp_path):
     second_call = _call(1, durable=False)
     first_batch = ReactToolBatch("first-batch", (first_call,), (_context(first_call),))
     second_batch = ReactToolBatch("second-batch", (second_call,), (_context(second_call),))
-    first, store, _ = await _driver(tmp_path, ScriptedCollaborator([first_batch]))
+    first, store, path = await _driver(tmp_path, ScriptedCollaborator([first_batch]))
     await _collect(first.start(_request()))
+    await _record_effect(path, first_call, _outcome(first_call), "succeeded")
     old_lease = await _recovery_lease(store)
 
     class TakeoverCollaborator(ScriptedCollaborator):
@@ -1076,12 +1133,12 @@ async def test_recovery_second_batch_is_fenced_by_current_lease(tmp_path):
             yield second_batch
 
     takeover = TakeoverCollaborator()
-    stale = ReActDriver(takeover, store, EffectReader({first_call.effect_id: _outcome(first_call)}))
+    stale = ReActDriver(takeover, store, PolicyRegistry())
     with pytest.raises(StaleRecoveryLease):
         await _collect(stale.recover("run-react", old_lease))
     assert ReactCommandBoundary.from_record(await store.load_continuation("run-react")).command_id == "first-batch"
 
-    current = ReActDriver(ScriptedCollaborator(resumes=[[second_batch]]), store, EffectReader())
+    current = ReActDriver(ScriptedCollaborator(resumes=[[second_batch]]), store, PolicyRegistry())
     candidates = await _collect(current.recover("run-react", takeover.current_lease))
     assert candidates[0].command_id == "second-batch"
     assert ReactCommandBoundary.from_record(await store.load_continuation("run-react")).command_id == "second-batch"

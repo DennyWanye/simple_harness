@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Protocol
 
-from deskpet.harness.drivers.workflow import WorkflowProfile
+from deskpet.harness.profiles import ProfileRegistry, ProfileSpec
 from deskpet.harness.ports import DriverStart
 
 
@@ -89,34 +89,38 @@ def _code_payload(request: DriverStart) -> Mapping[str, Any]:
     }
 
 
-def build_product_workflow_profiles(
+def build_product_profile_registry(
     registry: RuntimeAdapterRegistry,
     *,
     blob_root: str | Path,
-) -> tuple[WorkflowProfile, ...]:
+) -> ProfileRegistry:
     specs = (
-        ("research.deep.v7", "deep_research", "v7", _research_payload(str(blob_root))),
-        ("ppt.create.v1", "ppt_pro", "v1", _ppt_payload(str(blob_root))),
-        ("code.execute.v1", "code_complex", "v1", _code_payload),
+        ("workflow.deep_research", "deep_research", "research.deep.v7", "deep_research", "v7", _research_payload(str(blob_root))),
+        ("workflow.ppt_pro", "ppt_pro", "ppt.create.v1", "ppt_pro", "v1", _ppt_payload(str(blob_root))),
+        ("workflow.code_complex", "code_complex", "code.execute.v1", "code_complex", "v1", _code_payload),
     )
-    profiles: list[WorkflowProfile] = []
-    for profile_key, workflow_name, version, payload_factory in specs:
+    profiles = [ProfileSpec("react.default", "react", "react")]
+    for profile_key, route_tag, workflow_key, workflow_name, version, payload_factory in specs:
         adapter = registry.get(workflow_name, version)
         if adapter is None:
             raise RuntimeError(
                 f"required workflow adapter is unavailable: {workflow_name}@{version}"
             )
         profiles.append(
-            WorkflowProfile(
-                profile_key,
-                workflow_name,
-                version,
-                adapter.state_factory,
-                adapter.context_factory,
-                payload_factory,
+            ProfileSpec(
+                profile_key=profile_key,
+                route_tag=route_tag,
+                driver_kind="workflow",
+                capabilities=frozenset({"workflow", route_tag}),
+                workflow_key=workflow_key,
+                workflow_name=workflow_name,
+                workflow_version=version,
+                state_factory=adapter.state_factory,
+                context_factory=adapter.context_factory,
+                request_factory=payload_factory,
             )
         )
-    return tuple(profiles)
+    return ProfileRegistry(tuple(profiles))
 
 
-__all__ = ["build_product_workflow_profiles"]
+__all__ = ["build_product_profile_registry"]

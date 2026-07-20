@@ -1301,6 +1301,11 @@ class NativeCheckpointStore:
             for item in pending
             if item["write_kind"] == "state_patch"
         }
+        pending_consumed_interrupt_ids = tuple(sorted({
+            str(interrupt_id)
+            for item in pending if item["write_kind"] == "state_patch"
+            for interrupt_id in item["payload"].get("consumed_interrupt_ids", ())
+        }))
         route_selections = {
             str(item["task_id"]): copy.deepcopy(dict(item["payload"]))
             for item in pending
@@ -1345,6 +1350,7 @@ class NativeCheckpointStore:
         return NativeExecution(
             snapshot=self._snapshot_object(projected_snapshot),
             pending_results=pending_results,
+            pending_consumed_interrupt_ids=pending_consumed_interrupt_ids,
             first_attempt_times=first_attempt_times,
             route_selections=route_selections,
         )
@@ -1458,6 +1464,7 @@ class NativeCheckpointStore:
         operation_id: str | None = None,
         execution_info: object | None = None,
         blob_refs: Sequence[str] = (),
+        consumed_interrupt_ids: Sequence[str] = (),
         configurable: Mapping[str, JsonValue] | None = None,
     ) -> dict[str, Any] | None:
         protocol_call = configurable is not None
@@ -1489,6 +1496,7 @@ class NativeCheckpointStore:
             "attempt": attempt,
             "patch": patch_data,
             "blob_refs": sorted({str(value) for value in blob_refs}),
+            "consumed_interrupt_ids": sorted({str(value) for value in consumed_interrupt_ids}),
         }
         request_hash = self._request_hash(payload)
         now = self._clock()

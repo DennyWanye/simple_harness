@@ -4,22 +4,22 @@ import asyncio
 import ast
 import json
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from deskpet.execution import RecoveryLease, StaleRecoveryLease
+from deskpet.execution import OutcomeStatus, RecoveryLease, StaleRecoveryLease
 from deskpet.harness.context import HostContextFactory
-from deskpet.harness.tool_executor import (
-    DecisionAuthorization,
-    LegacyPreparedCallAdapter,
-    PreparedExecutionCall,
-    ReservedModelFieldError,
-    ToolOutcomeStatus,
-    UnifiedToolExecutor,
-)
+from deskpet.harness.ports import ToolOutcomesSignal
+from deskpet.execution import DecisionAuthorization
+from deskpet.harness.tool_executor import UnifiedToolExecutor
+from deskpet.tools.context_adapter import ReservedModelFieldError, reject_reserved_model_fields
 from deskpet.tools.registry import ToolRegistry
+from deskpet.tools.receipt_store import ReceiptStore
+from deskpet.workflows.contracts import EffectKind, EffectPolicy
+from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall, ToolOutcomeState
 
 
 SCHEMA = {
@@ -33,19 +33,13 @@ CAPABILITY_HASH = "c" * 64
 SCOPE_HASH = "d" * 64
 
 
-def _call(name: str, index: int = 1, **kwargs: Any) -> PreparedExecutionCall:
-    return PreparedExecutionCall(
-        tool_name=name,
-        model_args=kwargs.pop("model_args", {"value": index}),
-        call_id=f"call-{index}",
-        effect_id=f"effect-{index}",
-        capability_hash=CAPABILITY_HASH,
-        scope_hash=SCOPE_HASH,
-        **kwargs,
+def _call(registry: ToolRegistry, name: str, index: int = 1, **kwargs: Any) -> PreparedToolCall:
+    return registry.prepare_call(
+        name, kwargs.pop("model_args", {"value": index}), "session-host", f"call-{index}"
     )
 
 
-def _context(call: PreparedExecutionCall):
+def _context(call: PreparedToolCall):
     factory = HostContextFactory()
     run = factory.create_run_context(
         session_id="session-host",
@@ -64,8 +58,8 @@ def _context(call: PreparedExecutionCall):
     return factory.create_tool_context(
         run,
         run_id="run-1",
-        call_id=call.call_id,
-        effect_id=call.effect_id,
+        call_id=call.stable_call_id,
+        effect_id=f"effect-{call.stable_call_id.removeprefix('call-')}",
     )
 
 
@@ -77,6 +71,7 @@ def _register(
     concurrency_safe: bool = True,
     permission_category: str = "read_file",
     timeout_seconds: float = 1.0,
+    effect_policy=None,
 ) -> None:
     registry.register(
         name,
@@ -87,54 +82,16 @@ def _register(
         concurrency_safe=concurrency_safe,
         permission_category=permission_category,
         timeout_seconds=timeout_seconds,
+        effect_policy=effect_policy,
         outcome_parser_id="json_error_envelope_v1",
     )
 
 
-@pytest.mark.asyncio
-async def test_takeover_during_external_tool_call_denies_old_settlement() -> None:
-    registry = ToolRegistry()
-    journal_state = {"claimed": False, "taken_over": False, "settled": False}
-
-    class TakeoverJournal:
-        async def prepare_effect(self, call, context, authorization, *, recovery_lease=None):
-            assert recovery_lease is lease
-            journal_state["claimed"] = True
-
-        async def finalize_effect(self, call, context, outcome, *, late, recovery_lease=None):
-            assert journal_state["taken_over"]
-            raise StaleRecoveryLease("old owner lost its lease during tool execution")
-
-        async def mark_unknown(self, call, context, reason, *, recovery_lease=None):
-            journal_state["settled"] = True
-
-    async def handler(args, context):
-        assert journal_state["claimed"]
-        journal_state["taken_over"] = True
-        return json.dumps({"ok": True})
-
-    _register(registry, "write", context_handler=handler)
-    call = _call("write", recoverable_effect=True)
-    lease = RecoveryLease("run-1", "worker-a", 1, time.time() + 30)
-    executor = UnifiedToolExecutor(registry, journal=TakeoverJournal())
-
-    with pytest.raises(StaleRecoveryLease, match="lost its lease"):
-        await executor.execute_batch(
-            [call], [_context(call)], recovery_lease=lease
-        )
-    assert journal_state == {"claimed": True, "taken_over": True, "settled": False}
-
-
 def test_model_cannot_override_reserved_host_fields() -> None:
+    registry = ToolRegistry()
+    _register(registry, "read", context_handler=lambda args, context: "{}")
     with pytest.raises(ReservedModelFieldError) as caught:
-        _call(
-            "read",
-            model_args={
-                "path": "safe.txt",
-                "session_id": "attacker",
-                "_write_scope_root": "C:/outside",
-            },
-        )
+        reject_reserved_model_fields({"path": "safe.txt", "session_id": "attacker", "_write_scope_root": "C:/outside"})
     assert caught.value.fields == ("_write_scope_root", "session_id")
 
 
@@ -151,10 +108,10 @@ async def test_handler_gets_clean_model_args_and_trusted_context_separately() ->
         return json.dumps({"ok": True, "value": "done"})
 
     _register(registry, "read", context_handler=handler)
-    call = _call("read", model_args={"path": "safe.txt"})
+    call = _call(registry, "read", model_args={"path": "safe.txt"})
     outcome = await UnifiedToolExecutor(registry).execute_one(call, _context(call))
 
-    assert outcome.status is ToolOutcomeStatus.SUCCEEDED
+    assert outcome.state is ToolOutcomeState.SUCCESS
     assert observed["args"] == {"path": "safe.txt"}
     assert observed["session_id"] == "session-host"
     assert observed["workspace"]
@@ -179,10 +136,10 @@ async def test_mcp_bridge_receives_only_model_args_and_cannot_request_host_conte
         source="mcp:test",
         outcome_parser_id="mcp_explicit_v1",
     )
-    call = _call("mcp_test_remote", model_args={"query": "safe"})
+    call = _call(registry, "mcp_test_remote", model_args={"query": "safe"})
     outcome = await UnifiedToolExecutor(registry).execute_one(call, _context(call))
-    assert outcome.status is ToolOutcomeStatus.SUCCEEDED
-    assert observed == {"args": {"query": "safe"}, "task_id": call.effect_id}
+    assert outcome.state is ToolOutcomeState.SUCCESS
+    assert observed == {"args": {"query": "safe"}, "task_id": _context(call).effect_id}
 
     with pytest.raises(ValueError, match="cannot receive trusted host context"):
         registry.register(
@@ -223,12 +180,12 @@ async def test_batch_uses_contiguous_safe_segments_and_unsafe_barriers() -> None
             context_handler=make_handler(name, delay),
             concurrency_safe=safe,
         )
-    calls = [_call(name, index) for index, (name, _, _) in enumerate(definitions, 1)]
+    calls = [_call(registry, name, index) for index, (name, _, _) in enumerate(definitions, 1)]
     outcomes = await UnifiedToolExecutor(registry).execute_batch(
         calls, [_context(call) for call in calls]
     )
 
-    assert [outcome.call_id for outcome in outcomes] == [call.call_id for call in calls]
+    assert all(outcome.state is ToolOutcomeState.SUCCESS for outcome in outcomes)
     assert abs(timeline["safe-a"]["start"] - timeline["safe-b"]["start"]) < 0.02
     assert timeline["unsafe-a"]["start"] >= max(
         timeline["safe-a"]["end"], timeline["safe-b"]["end"]
@@ -253,20 +210,20 @@ async def test_permission_accepts_only_exact_decision_authorization_binding() ->
         context_handler=handler,
         permission_category="write_file",
     )
-    call = _call("write", requires_authorization=True, recoverable_effect=True)
+    call = _call(registry, "write")
     context = _context(call)
     executor = UnifiedToolExecutor(registry)
     wrong_type = await executor.execute_one(
         call, context, authorization={"allow": True}
     )
-    assert wrong_type.status is ToolOutcomeStatus.FAILED
-    assert wrong_type.error == "authorization_run_id_mismatch"
+    assert wrong_type.state is ToolOutcomeState.FAILURE
+    assert wrong_type.error["code"] == "authorization_run_id_mismatch"
 
     canonical = registry.prepare_call(
         call.tool_name,
-        call.args_copy(),
+        dict(call.final_params),
         context.session_id,
-        call.call_id,
+        call.stable_call_id,
         execution_context=context,
     )
 
@@ -274,8 +231,8 @@ async def test_permission_accepts_only_exact_decision_authorization_binding() ->
         grant_id="grant-1",
         decision_id="decision-1",
         run_id=context.run_id,
-        call_id=call.call_id,
-        effect_id=call.effect_id,
+        call_id=call.stable_call_id,
+        effect_id=context.effect_id,
         tool_name=call.tool_name,
         args_hash=canonical.args_hash,
         capability_hash="e" * 64,
@@ -285,15 +242,15 @@ async def test_permission_accepts_only_exact_decision_authorization_binding() ->
     denied = await executor.execute_one(
         call, context, authorization=wrong_binding
     )
-    assert denied.error == "authorization_capability_hash_mismatch"
+    assert denied.error["code"] == "authorization_capability_hash_mismatch"
 
     valid = {
         "grant_id": "grant-1",
         "decision_id": "decision-1",
         "run_id": context.run_id,
         "session_id": context.session_id,
-        "call_id": call.call_id,
-        "effect_id": call.effect_id,
+        "call_id": call.stable_call_id,
+        "effect_id": context.effect_id,
         "tool_name": call.tool_name,
         "args_hash": canonical.args_hash,
         "capability_hash": context.capability_hash,
@@ -302,7 +259,7 @@ async def test_permission_accepts_only_exact_decision_authorization_binding() ->
         "expires_at": time.time() + 60,
     }
     succeeded = await executor.execute_one(call, context, authorization=valid)
-    assert succeeded.status is ToolOutcomeStatus.SUCCEEDED
+    assert succeeded.state is ToolOutcomeState.SUCCESS
     assert invocations == 1
 
 
@@ -324,16 +281,14 @@ async def test_canonical_write_timeout_is_malformed_and_not_reinvoked() -> None:
         permission_category="write_file",
         timeout_seconds=0.01,
     )
-    call = _call(
-        "slow-write", requires_authorization=True, recoverable_effect=True
-    )
+    call = _call(registry, "slow-write")
     context = _context(call)
     authorization = DecisionAuthorization(
         grant_id="grant-1",
         decision_id="decision-1",
         run_id=context.run_id,
-        call_id=call.call_id,
-        effect_id=call.effect_id,
+        call_id=call.stable_call_id,
+        effect_id=context.effect_id,
         tool_name=call.tool_name,
         args_hash=call.args_hash,
         capability_hash=context.capability_hash,
@@ -342,9 +297,9 @@ async def test_canonical_write_timeout_is_malformed_and_not_reinvoked() -> None:
     )
     canonical = registry.prepare_call(
         call.tool_name,
-        call.args_copy(),
+        dict(call.final_params),
         context.session_id,
-        call.call_id,
+        call.stable_call_id,
         execution_context=context,
     )
     authorization = {
@@ -352,8 +307,8 @@ async def test_canonical_write_timeout_is_malformed_and_not_reinvoked() -> None:
         "decision_id": authorization.decision_id,
         "run_id": context.run_id,
         "session_id": context.session_id,
-        "call_id": call.call_id,
-        "effect_id": call.effect_id,
+        "call_id": call.stable_call_id,
+        "effect_id": context.effect_id,
         "tool_name": call.tool_name,
         "args_hash": canonical.args_hash,
         "capability_hash": context.capability_hash,
@@ -364,31 +319,110 @@ async def test_canonical_write_timeout_is_malformed_and_not_reinvoked() -> None:
     outcome = await UnifiedToolExecutor(registry).execute_one(
         call, context, authorization=authorization
     )
-    assert outcome.status is ToolOutcomeStatus.FAILED
-    assert outcome.error == "malformed_tool_outcome"
+    assert outcome.state is ToolOutcomeState.MALFORMED
+    assert outcome.error["code"] == "malformed_tool_outcome"
+    assert registry.take_prepared_execution_metadata(context.effect_id) == {
+        "late_pending": True
+    }
+    assert registry.unregister(call.tool_name) is True
 
     await asyncio.sleep(0.06)
+    state, late = await registry.observe_late_prepared(context.effect_id)
+    assert state == "complete"
+    assert late is not None and late.state is ToolOutcomeState.SUCCESS
+    assert await registry.observe_late_prepared(context.effect_id) == (state, late)
+    assert registry.take_prepared_execution_metadata(context.effect_id) == {
+        "outcome_status": "succeeded"
+    }
+    registry.acknowledge_prepared_effect(context.effect_id)
+    assert await registry.observe_late_prepared(context.effect_id) == ("missing", None)
     assert invocations == 1
 
 
-def test_legacy_adapter_uses_trusted_refs_and_strips_host_fields() -> None:
-    call = LegacyPreparedCallAdapter.from_persisted(
-        {
-            "tool_name": "read",
-            "final_params": {
-                "path": "safe.txt",
-                "_session_id": "attacker",
-                "effect_id": "attacker-effect",
-            },
-        },
-        trusted_call_id="trusted-call",
-        trusted_effect_id="trusted-effect",
-        trusted_capability_hash="cap-host",
-        trusted_scope_hash=SCOPE_HASH,
+@pytest.mark.asyncio
+async def test_prepared_receipt_and_artifact_refs_are_exposed_for_atomic_settlement(tmp_path) -> None:
+    output = tmp_path / "result.txt"
+    output.write_text("durable result", encoding="utf-8")
+    registry = ToolRegistry()
+    registry.set_receipt_store_provider(
+        lambda: ReceiptStore(tmp_path / "receipts", key=b"r" * 32)
     )
-    assert call.call_id == "trusted-call"
-    assert call.effect_id == "trusted-effect"
-    assert call.args_copy() == {"path": "safe.txt"}
+    _register(
+        registry, "artifact-write",
+        context_handler=lambda args, context: json.dumps({"ok": True, "path": str(output)}),
+        effect_policy=EffectPolicy("test:artifact", "v7", EffectKind.OPAQUE_MANUAL),
+    )
+    call = _call(registry, "artifact-write")
+    outcome = await UnifiedToolExecutor(registry).execute_one(call, _context(call))
+    metadata = registry.take_prepared_execution_metadata("effect-1")
+
+    assert outcome.state is ToolOutcomeState.SUCCESS
+    assert call.effect_policy_version == "v7"
+    assert metadata["receipt_ref"]
+    assert len(metadata["artifact_refs"]) == 1
+    assert len(metadata["artifact_refs"][0]) == 64
+    assert metadata["evidence_verified"] is True
+
+
+def test_effect_policy_version_is_durable_and_rechecked() -> None:
+    registry = ToolRegistry()
+    _register(
+        registry, "policy-write", context_handler=lambda args, context: "{}",
+        effect_policy=EffectPolicy("test:policy", "v1", EffectKind.OPAQUE_MANUAL),
+    )
+    call = _call(registry, "policy-write")
+    restored = PreparedToolCall.from_dict(call.to_dict())
+    assert restored.effect_policy_version == "v1"
+    registry.register(
+        "policy-write", "test", {**SCHEMA, "name": "policy-write"},
+        lambda args, task_id: "{}", context_handler=lambda args, context: "{}",
+        effect_policy=EffectPolicy("test:policy", "v2", EffectKind.OPAQUE_MANUAL),
+        outcome_parser_id="json_error_envelope_v1", replace_allowed=True,
+    )
+    with pytest.raises(ValueError, match="stale"):
+        registry.prepared_execution_policy(restored)
+
+
+@pytest.mark.asyncio
+async def test_generate_image_generating_result_is_accepted_not_succeeded() -> None:
+    registry = ToolRegistry()
+    _register(
+        registry, "generate_image",
+        context_handler=lambda args, context: json.dumps({"ok": True, "status": "generating"}),
+    )
+    call = _call(registry, "generate_image")
+    executor = UnifiedToolExecutor(registry)
+    outcome = await executor.execute_one(call, _context(call))
+    assert executor.outcome_status(call, outcome) is OutcomeStatus.ACCEPTED
+
+
+@pytest.mark.parametrize(
+    ("outcome", "status"),
+    [
+        (NormalizedToolOutcome.success({}), OutcomeStatus.FAILED),
+        (NormalizedToolOutcome.failure("failed", "failed"), OutcomeStatus.SUCCEEDED),
+        (NormalizedToolOutcome.malformed("unknown"), OutcomeStatus.ACCEPTED),
+        (NormalizedToolOutcome.success({}), OutcomeStatus.WAITING),
+        (NormalizedToolOutcome.success({}), OutcomeStatus.CANCEL_REQUESTED),
+    ],
+)
+def test_tool_outcome_signal_rejects_incompatible_state_status(outcome, status) -> None:
+    with pytest.raises(ValueError, match="incompatible"):
+        ToolOutcomesSignal("run", "command", (outcome,), (status,), (0,))
+
+
+@pytest.mark.asyncio
+async def test_persisted_canonical_snapshot_is_rechecked_against_context() -> None:
+    registry = ToolRegistry()
+    _register(registry, "read", context_handler=lambda args, context: "{}")
+    prepared = _call(registry, "read", model_args={"path": "safe.txt"})
+    context = _context(prepared)
+    call = PreparedToolCall.from_dict(prepared.to_dict())
+    assert call == prepared
+    wrong = replace(context, call_id="other")
+    outcome = await UnifiedToolExecutor(registry).execute_one(call, wrong)
+    assert outcome.state is ToolOutcomeState.FAILURE
+    assert outcome.error["code"] == "trusted_context_call_binding_mismatch"
 
 
 def test_migrated_handlers_do_not_read_reserved_fields_from_model_args() -> None:

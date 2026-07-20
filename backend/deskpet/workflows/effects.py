@@ -251,6 +251,7 @@ class PreparedToolCall:
     schema_hash: str
     permission_policy_version: str
     effect_type: str
+    effect_policy_version: str = ""
     input_blob_hashes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -290,6 +291,7 @@ class PreparedToolCall:
         schema_hash: str,
         permission_policy_version: str,
         effect_type: str,
+        effect_policy_version: str = "",
         input_blob_hashes: Sequence[str] = (),
     ) -> "PreparedToolCall":
         return cls(
@@ -302,6 +304,7 @@ class PreparedToolCall:
             schema_hash=schema_hash,
             permission_policy_version=permission_policy_version,
             effect_type=effect_type,
+            effect_policy_version=effect_policy_version,
             input_blob_hashes=tuple(input_blob_hashes),
         )
 
@@ -316,6 +319,7 @@ class PreparedToolCall:
             "schema_hash": self.schema_hash,
             "permission_policy_version": self.permission_policy_version,
             "effect_type": self.effect_type,
+            "effect_policy_version": self.effect_policy_version,
             "input_blob_hashes": list(self.input_blob_hashes),
         }
 
@@ -325,6 +329,7 @@ class PreparedToolCall:
         data["prepared_targets"] = tuple(
             PreparedTarget.from_dict(item) for item in data.get("prepared_targets", ())
         )
+        data.setdefault("effect_policy_version", "")
         data["input_blob_hashes"] = tuple(data.get("input_blob_hashes", ()))
         return cls(**data)
 

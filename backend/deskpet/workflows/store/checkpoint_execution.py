@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import inspect
+import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
@@ -142,6 +143,43 @@ class SqliteCheckpointExecutionAdapter:
             if cursor.rowcount != 1:
                 raise CheckpointExecutionError(
                     "stale_decision", "generic decision changed while consumed"
+                )
+            response = (
+                json.loads(str(row["response_json"]))
+                if row["response_json"] is not None else {}
+            )
+            child = response.get("child_signal") if isinstance(response, Mapping) else None
+            if isinstance(child, Mapping):
+                signal_id = str(child.get("signal_id") or "")
+                signal = await (
+                    await db.execute(
+                        """SELECT * FROM execution_child_signal_inbox
+                        WHERE signal_id=? AND parent_run_id=?""",
+                        (signal_id, run_id),
+                    )
+                ).fetchone()
+                if signal is None or any(
+                    str(signal[key]) != str(child.get(field) or "")
+                    for key, field in (
+                        ("command_id", "command_id"),
+                        ("child_run_id", "child_run_id"),
+                    )
+                ) or f"child_{signal['kind']}" != str(child.get("kind") or ""):
+                    raise CheckpointExecutionError(
+                        "workflow_child_signal_conflict",
+                        "Native checkpoint child response differs from its durable inbox",
+                    )
+                if str(signal["kind"]) == "terminal":
+                    terminal = json.loads(str(signal["payload_json"]))
+                    if terminal.get("status") != child.get("status") or terminal.get("value") != child.get("value"):
+                        raise CheckpointExecutionError(
+                            "workflow_child_signal_conflict",
+                            "Native checkpoint child terminal payload differs from its inbox",
+                        )
+                await db.execute(
+                    """UPDATE execution_child_signal_inbox SET delivered_at=?,updated_at=?
+                    WHERE signal_id=? AND delivered_at IS NULL""",
+                    (now, now, signal_id),
                 )
             consumed.append(decision_id)
         await self._fault("generic_decisions.after_write")

@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Mapping, Sequence
-from dataclasses import dataclass
-from types import MappingProxyType
+from collections.abc import AsyncIterator, Mapping
 from typing import Any, Protocol
 
 from deskpet.execution.contracts import OutcomeStatus, RecoveryLease, RunEvent
+from deskpet.execution.ports import ExecutionUnitOfWork
 from deskpet.harness.ports import (
     CancelAcknowledgedCandidate,
     DriverEvent,
@@ -16,6 +15,7 @@ from deskpet.harness.ports import (
     DriverStart,
     PersistedEventCandidate,
 )
+from deskpet.harness.profiles import ProfileRegistry
 
 
 class WorkflowLauncherPort(Protocol):
@@ -32,7 +32,9 @@ class WorkflowEventReader(Protocol):
 
 
 class WorkflowSignalResumer(Protocol):
-    async def resume(self, signal: DriverSignal) -> None: ...
+    async def resume(
+        self, signal: DriverSignal, recovery_lease: RecoveryLease | None = None
+    ) -> None: ...
 
 
 class WorkflowResumeLauncher(Protocol):
@@ -52,12 +54,36 @@ class LauncherWorkflowSignalResumer:
     the decision.  It never re-resolves a legacy HumanStore decision.
     """
 
-    def __init__(self, launcher: WorkflowResumeLauncher) -> None:
+    def __init__(
+        self,
+        launcher: WorkflowResumeLauncher,
+        *,
+        unit_of_work: ExecutionUnitOfWork | None = None,
+    ) -> None:
         self._launcher = launcher
+        self._unit_of_work = unit_of_work
 
-    async def resume(self, signal: DriverSignal) -> None:
+    async def resume(
+        self, signal: DriverSignal, recovery_lease: RecoveryLease | None = None
+    ) -> None:
+        if signal.kind in {"child_accepted", "child_terminal"}:
+            if self._unit_of_work is None or recovery_lease is None:
+                raise RuntimeError("workflow child resume requires its fenced unit of work")
+            signal_id = str(getattr(signal, "signal_id", "") or "").strip()
+            if not signal_id:
+                raise ValueError("workflow child signal requires its stable signal id")
+            decision = await self._unit_of_work.prepare_workflow_child_resume(
+                signal_id, recovery_lease=recovery_lease
+            )
+            if decision.request.run_id != signal.run_id:
+                raise ValueError("workflow child decision run binding mismatch")
+            payload = dict((decision.response or {})["child_signal"])
+            await self._launcher.resume_precreated(
+                signal.run_id, {decision.request.nonce: payload}
+            )
+            return
         if signal.kind != "decision":
-            raise TypeError("workflow driver only resumes from a decision signal")
+            raise TypeError("unsupported workflow signal")
         nonce = str(getattr(signal, "nonce", "") or "").strip()
         if not nonce:
             raise ValueError("workflow decision signal requires its interrupt nonce")
@@ -67,22 +93,6 @@ class LauncherWorkflowSignalResumer:
         await self._launcher.resume_precreated(signal.run_id, {nonce: dict(response)})
 
 
-@dataclass(frozen=True, slots=True)
-class WorkflowProfile:
-    profile_key: str
-    workflow_name: str
-    workflow_version: str
-    state_factory: Callable[..., Any]
-    context_factory: Callable[..., Any]
-    start_payload_factory: Callable[[DriverStart], Mapping[str, Any]] | None = None
-    logical_slot: str = "kernel:0"
-
-    def __post_init__(self) -> None:
-        for name in ("profile_key", "workflow_name", "workflow_version", "logical_slot"):
-            if not str(getattr(self, name)).strip():
-                raise ValueError(f"{name} is required")
-
-
 class WorkflowDriver:
     """Map registered profiles to Native workflow definitions without product branches."""
 
@@ -90,23 +100,22 @@ class WorkflowDriver:
         self,
         launcher: WorkflowLauncherPort,
         events: WorkflowEventReader,
-        profiles: Sequence[WorkflowProfile],
+        profiles: ProfileRegistry,
         *,
         signal_resumer: WorkflowSignalResumer | None = None,
         poll_interval: float = 0.05,
     ) -> None:
-        catalog: dict[str, WorkflowProfile] = {}
-        for profile in profiles:
-            if profile.profile_key in catalog:
-                raise ValueError(f"duplicate workflow profile: {profile.profile_key}")
-            catalog[profile.profile_key] = profile
-        if not catalog:
+        if not profiles.workflow_specs:
             raise ValueError("at least one workflow profile is required")
         self._launcher = launcher
         self._events = events
-        self._profiles = MappingProxyType(catalog)
+        self._profiles = profiles.workflow_specs
         self._signal_resumer = signal_resumer
         self._poll_interval = max(0.001, float(poll_interval))
+
+    @property
+    def profile_keys(self) -> frozenset[str]:
+        return frozenset(self._profiles)
 
     @staticmethod
     def _terminal(event: RunEvent) -> bool:
@@ -147,14 +156,14 @@ class WorkflowDriver:
             if profile is None:
                 raise ValueError(f"workflow profile is not registered: {request.profile_key}")
             accepted = await self._launcher.launch_precreated(
-                workflow_name=profile.workflow_name,
-                workflow_version=profile.workflow_version,
+                workflow_name=str(profile.workflow_name),
+                workflow_version=str(profile.workflow_version),
                 session_id=context.session_id,
                 request_id=context.request_id,
                 turn_id=context.turn_id,
                 start_payload=(
-                    dict(profile.start_payload_factory(request))
-                    if profile.start_payload_factory is not None
+                    dict(profile.request_factory(request))
+                    if profile.request_factory is not None
                     else dict(request.request_payload)
                 ),
                 capability_snapshot=dict(request.capability_snapshot),
@@ -183,7 +192,7 @@ class WorkflowDriver:
         async def iterator() -> AsyncIterator[DriverEvent]:
             if self._signal_resumer is None:
                 raise RuntimeError("workflow signal resumer is not configured")
-            await self._signal_resumer.resume(signal)
+            await self._signal_resumer.resume(signal, recovery_lease)
             if False:
                 yield CancelAcknowledgedCandidate(signal.run_id, "unreachable")
 
@@ -215,13 +224,3 @@ class WorkflowDriver:
 
     async def close(self) -> None:
         return None
-
-
-__all__ = [
-    "LauncherWorkflowSignalResumer",
-    "WorkflowDriver",
-    "WorkflowEventReader",
-    "WorkflowLauncherPort",
-    "WorkflowProfile",
-    "WorkflowSignalResumer",
-]

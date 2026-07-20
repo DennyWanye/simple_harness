@@ -16,6 +16,16 @@ from deskpet.workflows.store.checkpoint_execution import (
     SqliteCheckpointExecutionAdapter,
 )
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
+from deskpet.execution import (
+    ActorContext,
+    AttachmentPolicy,
+    OutcomeStatus,
+    RunEventCandidate,
+    RunRef,
+    RunStatus,
+)
+from deskpet.harness.child_runs import ChildRunCoordinator
+from deskpet.harness.ports import DelegateRun, JoinPolicy
 
 
 def _manifest(name: str, version: str) -> WorkflowManifest:
@@ -554,3 +564,201 @@ async def test_execution_row_without_adapter_fails_closed_instead_of_legacy_fall
         assert db.execute("SELECT COUNT(*) FROM execution_events").fetchone()[0] == 1
     finally:
         db.close()
+
+
+@pytest.mark.asyncio
+async def test_child_signal_ack_is_atomic_with_native_checkpoint_and_restart_replay(tmp_path):
+    path = tmp_path / "workflow-child-atomic.db"
+    fail_inside_commit = True
+
+    def checkpoint_fault(stage: str) -> None:
+        nonlocal fail_inside_commit
+        if stage == "generic_decisions.after_write" and fail_inside_commit:
+            raise RuntimeError("fault inside child checkpoint commit")
+
+    adapter = SqliteCheckpointExecutionAdapter(fault_injector=checkpoint_fault)
+    service, _, store, saver, ports = _stack(path, adapter=adapter)
+    prepared = _prepared(service, "code", "v1", suffix="child-atomic")
+    spec = service.execution_spec(prepared, principal_id="principal")
+    await service.start_prepared(prepared, spec, execution_ports=ports)
+    uow = ports.unit_of_work
+    actor = ActorContext(
+        principal_id=spec.context.principal_id,
+        session_id=spec.context.session_id,
+        auth_epoch=spec.context.auth_epoch,
+        root_run_id=spec.context.root_run_id,
+    )
+    parent = await uow.query(RunRef(prepared.run_id, spec.context.session_id), actor)
+    coordinator = ChildRunCoordinator(uow)
+    command = await coordinator.submit(parent, DelegateRun(
+        run_id=prepared.run_id, command_id="command-1",
+        child_request={"task": "child", "driver_kind": "react"},
+        route_hint="react.default", capability_subset=(),
+        attachment_policy=AttachmentPolicy.ATTACHED,
+        join_policy=JoinPolicy.JOIN_BEFORE_FINAL,
+    ))
+    leased = (await uow.lease_child_commands(
+        owner="child-owner", limit=1, lease_seconds=30
+    ))[0]
+    scheduled = await uow.schedule_child_command(
+        command.operation_id, lease_owner="child-owner",
+        lease_epoch=leased.schedule_lease_epoch,
+    )
+    await uow.acknowledge_child_command(
+        command.operation_id, lease_owner="child-owner",
+        lease_epoch=scheduled.schedule_lease_epoch,
+    )
+    accepted_signal = (await uow.list_pending_child_signals(prepared.run_id))[0]
+
+    state = {
+        "schema_version": 1, "workflow_name": "code", "workflow_version": "v1",
+        "thread_id": prepared.thread_id, "run_id": prepared.run_id,
+        "session_id": prepared.identity.base_session_id, "values": {},
+    }
+    task_a = {
+        "task_id": "task-a", "activation_id": "a", "node_id": "wait-child",
+        "invocation_key": "wait-child:a",
+    }
+    fence = await store.claim(prepared.run_id, "generic-workflow-test")
+    genesis = await saver.ensure_genesis(
+        fence, prepared.run_id, state, [task_a], operation_id="child-genesis"
+    )
+    accepted_interrupt = await saver.commit_interrupt(
+        fence, genesis["checkpoint_id"], task_a, state=state, frontier=[task_a],
+        step=0, interrupt_id="accepted-interrupt", kind="workflow_hitl",
+        prompt={"kind": "child_run", "command_id": "command-1"},
+        operation_id="accepted-interrupt-op",
+    )
+    lease = await uow.claim_recovery(prepared.run_id, owner="signal-owner")
+    with sqlite3.connect(path) as db:
+        db.execute(
+            "UPDATE execution_decisions SET prompt_json=? WHERE decision_id=?",
+            ('{"kind":"child_run","command_id":"wrong-command"}',
+             accepted_interrupt["decision_id"]),
+        )
+        db.commit()
+    with pytest.raises(Exception) as wrong_command:
+        await uow.prepare_workflow_child_resume(
+            accepted_signal.signal_id, recovery_lease=lease
+        )
+    assert getattr(wrong_command.value, "code", None) == "workflow_child_interrupt_not_found"
+    assert (await uow.list_pending_child_signals(prepared.run_id))[0].delivered_at is None
+    with sqlite3.connect(path) as db:
+        db.execute(
+            "UPDATE execution_decisions SET prompt_json=? WHERE decision_id=?",
+            ('{"kind":"child_run","command_id":"command-1"}',
+             accepted_interrupt["decision_id"]),
+        )
+        db.commit()
+    accepted_decision = await uow.prepare_workflow_child_resume(
+        accepted_signal.signal_id, recovery_lease=lease
+    )
+    assert accepted_decision.request.nonce == "accepted-interrupt"
+    waiting = await store.get_run(prepared.run_id)
+    await transition_run(
+        store, prepared.run_id, WorkflowRunStatus.RETRYABLE,
+        expected_version=int(waiting["run_version"]),
+        allowed_statuses=(WorkflowRunStatus.WAITING,), recovery_action="resume",
+    )
+    fence = await store.claim(prepared.run_id, "generic-workflow-test")
+    task_crash_saver = NativeCheckpointStore(
+        path, execution_adapter=adapter,
+        fault_injector=lambda stage: (
+            (_ for _ in ()).throw(RuntimeError("crash after task result commit"))
+            if stage == "task_result.after_db_commit_before_return" else None
+        ),
+    )
+    with pytest.raises(RuntimeError, match="after task result commit"):
+        await task_crash_saver.commit_task_result(
+            fence, genesis["checkpoint_id"], task_a, 1,
+            {"values": {"accepted": True}}, operation_id="accepted-result",
+            consumed_interrupt_ids=(accepted_decision.request.nonce,),
+        )
+    restarted_execution = await saver.load_execution(
+        run_id=prepared.run_id, thread_id=prepared.thread_id, checkpoint_ns=""
+    )
+    assert restarted_execution.pending_consumed_interrupt_ids == ("accepted-interrupt",)
+    task_b = {
+        "task_id": "task-b", "activation_id": "b", "node_id": "wait-terminal",
+        "invocation_key": "wait-terminal:b",
+    }
+    with pytest.raises(RuntimeError, match="inside child checkpoint"):
+        await saver.commit_frontier(
+            fence, genesis["checkpoint_id"], state={**state, "values": {"accepted": True}},
+            frontier=[task_b], step=1, operation_id="accepted-frontier",
+            consumed_interrupt_ids=restarted_execution.pending_consumed_interrupt_ids,
+        )
+    assert (await uow.list_pending_child_signals(prepared.run_id))[0].delivered_at is None
+    with sqlite3.connect(path) as db:
+        assert db.execute(
+            "SELECT consumed_checkpoint_id FROM execution_decisions WHERE decision_id=?",
+            (accepted_interrupt["decision_id"],),
+        ).fetchone() == (None,)
+    fail_inside_commit = False
+    accepted_commit = await saver.commit_frontier(
+        fence, genesis["checkpoint_id"], state={**state, "values": {"accepted": True}},
+        frontier=[task_b], step=1, operation_id="accepted-frontier",
+        consumed_interrupt_ids=restarted_execution.pending_consumed_interrupt_ids,
+    )
+    assert await uow.list_pending_child_signals(prepared.run_id) == ()
+
+    terminal_interrupt = await saver.commit_interrupt(
+        fence, accepted_commit["checkpoint_id"], task_b,
+        state={**state, "values": {"accepted": True}}, frontier=[task_b], step=1,
+        interrupt_id="terminal-interrupt", kind="workflow_hitl",
+        prompt={"kind": "child_run", "command_id": "command-1"},
+        operation_id="terminal-interrupt-op",
+    )
+    child = await uow.query(RunRef(command.child_run_id, spec.context.session_id), actor)
+    await uow.finalize_child_and_enqueue_parent_signal(
+        command.operation_id, expected_version=child.version,
+        terminal_status=RunStatus.COMPLETED,
+        event=RunEventCandidate(
+            event_key="child-final", kind="run.final",
+            status=OutcomeStatus.SUCCEEDED, driver_kind="react",
+        ), value={"answer": 42},
+    )
+    terminal_signal = (await uow.list_pending_child_signals(prepared.run_id))[0]
+    terminal_decision = await uow.prepare_workflow_child_resume(
+        terminal_signal.signal_id, recovery_lease=lease
+    )
+    assert terminal_signal.signal_id != accepted_signal.signal_id
+    assert terminal_decision.request.nonce == "terminal-interrupt"
+    assert terminal_decision.request.nonce != accepted_decision.request.nonce
+    waiting = await store.get_run(prepared.run_id)
+    await transition_run(
+        store, prepared.run_id, WorkflowRunStatus.RETRYABLE,
+        expected_version=int(waiting["run_version"]),
+        allowed_statuses=(WorkflowRunStatus.WAITING,), recovery_action="resume",
+    )
+    fence = await store.claim(prepared.run_id, "generic-workflow-test")
+    await saver.commit_task_result(
+        fence, accepted_commit["checkpoint_id"], task_b, 1,
+        {"values": {"done": True}}, operation_id="terminal-result",
+        consumed_interrupt_ids=(terminal_decision.request.nonce,),
+    )
+    restarted_terminal = await saver.load_execution(
+        run_id=prepared.run_id, thread_id=prepared.thread_id, checkpoint_ns=""
+    )
+    after_commit_saver = NativeCheckpointStore(
+        path, execution_adapter=adapter,
+        fault_injector=lambda stage: (
+            (_ for _ in ()).throw(RuntimeError("crash after checkpoint commit"))
+            if stage == "frontier.after_db_commit_before_return" else None
+        ),
+    )
+    with pytest.raises(RuntimeError, match="after checkpoint commit"):
+        await after_commit_saver.commit_frontier(
+            fence, accepted_commit["checkpoint_id"],
+            state={**state, "values": {"done": True}}, frontier=[], step=2,
+            operation_id="terminal-frontier", terminal_status="completed",
+            consumed_interrupt_ids=restarted_terminal.pending_consumed_interrupt_ids,
+        )
+    replay = await saver.commit_frontier(
+        fence, accepted_commit["checkpoint_id"],
+        state={**state, "values": {"done": True}}, frontier=[], step=2,
+        operation_id="terminal-frontier", terminal_status="completed",
+        consumed_interrupt_ids=restarted_terminal.pending_consumed_interrupt_ids,
+    )
+    assert replay["consumed_decision_ids"] == [terminal_interrupt["decision_id"]]
+    assert await uow.list_pending_child_signals(prepared.run_id) == ()

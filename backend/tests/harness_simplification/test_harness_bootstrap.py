@@ -12,9 +12,11 @@ from deskpet.execution.contracts import (
     RunStatus,
 )
 from deskpet.harness.bootstrap import build_harness_runtime
+from deskpet.harness.child_runs import ChildRunCoordinator
 from deskpet.harness.kernel import HostContext, RegisteredDriver
 from deskpet.harness.ports import DriverTerminalCandidate
-from deskpet.harness.router import ClassifiedRoute, RouteProfile
+from deskpet.harness.profiles import ProfileRegistry, ProfileSpec
+from deskpet.harness.router import ClassifiedRoute
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
 from deskpet.workflows.store.schema import WORKFLOW_SCHEMA_VERSION
 
@@ -71,12 +73,18 @@ class Resolver:
         )
 
 
+def profiles(*specs: ProfileSpec) -> ProfileRegistry:
+    return ProfileRegistry(
+        tuple(specs) or (ProfileSpec("react.default", "react", "react"),)
+    )
+
+
 @pytest.mark.asyncio
 async def test_bootstrap_exports_manifest_from_actual_registrations(tmp_path) -> None:
     runtime = await build_harness_runtime(
         uow=SqliteExecutionUnitOfWork(tmp_path / "workflow.db"),
         classifier=Classifier(),
-        profiles=[RouteProfile("react.default", "react")],
+        profiles=profiles(),
         drivers=[RegisteredDriver("react", Driver())],
         resolver=Resolver(),
     )
@@ -108,12 +116,35 @@ async def test_bootstrap_exports_manifest_from_actual_registrations(tmp_path) ->
 
 
 @pytest.mark.asyncio
+async def test_bootstrap_starts_and_closes_single_child_runtime_owner(tmp_path) -> None:
+    uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
+    runtime = await build_harness_runtime(
+        uow=uow,
+        classifier=Classifier(),
+        profiles=profiles(),
+        drivers=[RegisteredDriver("react", Driver())],
+        resolver=Resolver(),
+        child_runs=ChildRunCoordinator(uow),
+    )
+
+    assert runtime.child_scheduler is not None
+    assert runtime.child_scheduler._task is not None
+    await runtime.close()
+    assert runtime.child_scheduler._task is None
+
+
+@pytest.mark.asyncio
 async def test_bootstrap_fails_closed_for_unavailable_profile_driver(tmp_path) -> None:
     with pytest.raises(ValueError, match="unavailable drivers: workflow"):
         await build_harness_runtime(
             uow=SqliteExecutionUnitOfWork(tmp_path / "workflow.db"),
             classifier=Classifier(),
-            profiles=[RouteProfile("durable.default", "workflow")],
+            profiles=profiles(ProfileSpec(
+                "durable.default", "durable", "workflow",
+                workflow_key="fixture.v1", workflow_name="fixture",
+                workflow_version="v1", state_factory=lambda: {},
+                context_factory=lambda: {},
+            )),
             drivers=[RegisteredDriver("react", Driver())],
             resolver=Resolver(),
         )
@@ -154,7 +185,7 @@ async def test_recovery_enumerates_only_execution_owned_runs(tmp_path) -> None:
     runtime = await build_harness_runtime(
         uow=uow,
         classifier=Classifier(),
-        profiles=[RouteProfile("react.default", "react")],
+        profiles=profiles(),
         drivers=[RegisteredDriver("react", driver)],
         resolver=Resolver(),
     )

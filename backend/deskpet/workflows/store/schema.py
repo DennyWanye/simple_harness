@@ -836,7 +836,7 @@ async def _migrate_v4_to_v5(db: aiosqlite.Connection) -> None:
             scope_hash TEXT,
             effect_type TEXT NOT NULL,
             status TEXT NOT NULL CHECK(status IN (
-                'prepared','running','succeeded','failed','unknown','cancelled','late_reconciled'
+                'prepared','running','succeeded','failed','accepted','unknown','cancelled','late_reconciled'
             )),
             policy_json TEXT NOT NULL,
             prepared_json TEXT NOT NULL,
@@ -857,7 +857,7 @@ async def _migrate_v4_to_v5(db: aiosqlite.Connection) -> None:
             effect_id TEXT NOT NULL,
             attempt_no INTEGER NOT NULL CHECK(attempt_no>=1),
             status TEXT NOT NULL CHECK(status IN (
-                'running','succeeded','failed','unknown','cancelled','late_reconciled'
+                'running','succeeded','failed','accepted','unknown','cancelled','late_reconciled'
             )),
             worker_owner TEXT,
             worker_epoch INTEGER NOT NULL DEFAULT 0 CHECK(worker_epoch>=0),

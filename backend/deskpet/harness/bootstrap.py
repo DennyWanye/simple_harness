@@ -7,9 +7,10 @@ from dataclasses import dataclass
 
 from deskpet.execution.ports import ExecutionUnitOfWork
 from deskpet.harness.adapters.venues import KernelRunClient, VenueContextResolver
-from deskpet.harness.child_runs import ChildLauncher, ChildRunCoordinator
-from deskpet.harness.kernel import RegisteredDriver, RunKernel, kernel_public_operations
-from deskpet.harness.router import RegisteredRouter, RouteClassifier, RouteProfile
+from deskpet.harness.child_runs import ChildRunCoordinator, ChildRunScheduler
+from deskpet.harness.kernel import KernelChildLauncher, RegisteredDriver, RunKernel, kernel_public_operations
+from deskpet.harness.profiles import ProfileRegistry
+from deskpet.harness.router import RegisteredRouter, RouteClassifier
 from deskpet.harness.recovery import HarnessRecoveryCoordinator
 from deskpet.harness.tool_executor import UnifiedToolExecutor
 from deskpet.workflows.store.schema import WORKFLOW_SCHEMA_VERSION
@@ -65,17 +66,21 @@ class HarnessRuntime:
     manifest: HarnessManifest
     health: HarnessHealth
     recovery: HarnessRecoveryCoordinator
+    child_scheduler: ChildRunScheduler | None
+
+    async def close(self) -> None:
+        if self.child_scheduler is not None:
+            await self.child_scheduler.close()
 
 
 async def build_harness_runtime(
     *,
     uow: ExecutionUnitOfWork,
     classifier: RouteClassifier,
-    profiles: Sequence[RouteProfile],
+    profiles: ProfileRegistry,
     drivers: Sequence[RegisteredDriver],
     resolver: VenueContextResolver,
     child_runs: ChildRunCoordinator | None = None,
-    child_launcher: ChildLauncher | None = None,
     tool_executor: UnifiedToolExecutor | None = None,
     compatibility_reader: bool = True,
 ) -> HarnessRuntime:
@@ -85,27 +90,35 @@ async def build_harness_runtime(
     driver_catalog = {registration.kind: registration for registration in drivers}
     if len(driver_catalog) != len(drivers):
         raise ValueError("duplicate harness driver registration")
-    if not profiles:
-        raise ValueError("at least one harness route profile is required")
-    missing = sorted({profile.driver_kind for profile in profiles} - set(driver_catalog))
+    route_profiles = profiles.route_profiles()
+    missing = sorted({profile.driver_kind for profile in route_profiles} - set(driver_catalog))
     if missing:
         raise ValueError(f"profiles reference unavailable drivers: {','.join(missing)}")
 
-    router = RegisteredRouter(classifier, profiles)
+    workflow_registration = driver_catalog.get("workflow")
+    if workflow_registration is not None:
+        actual = frozenset(getattr(workflow_registration.driver, "profile_keys", ()))
+        expected = frozenset(profiles.workflow_specs)
+        if actual != expected:
+            raise ValueError("router workflow keys and WorkflowDriver catalog differ")
+    router = RegisteredRouter(classifier, route_profiles)
     kernel = RunKernel(
         uow=uow,
         router=router,
         drivers=drivers,
         child_runs=child_runs,
-        child_launcher=child_launcher,
         tool_executor=tool_executor,
+    )
+    child_scheduler = (
+        ChildRunScheduler(child_runs, KernelChildLauncher(kernel), owner="harness-child")
+        if child_runs is not None else None
     )
     degraded_reasons = tuple(
         reason
         for available, reason in (
             (tool_executor is not None, "tool_executor_unavailable"),
             (
-                child_runs is not None and child_launcher is not None,
+                child_scheduler is not None,
                 "child_run_coordinator_unavailable",
             ),
         )
@@ -127,18 +140,18 @@ async def build_harness_runtime(
         compatibility_reader="enabled" if compatibility_reader else "disabled",
         degraded_reasons=degraded_reasons,
     )
-    return HarnessRuntime(
+    recovery = HarnessRecoveryCoordinator(uow, kernel)
+    runtime = HarnessRuntime(
         kernel=kernel,
         run_client=KernelRunClient(kernel, resolver),
         manifest=manifest,
         health=health,
-        recovery=HarnessRecoveryCoordinator(uow, kernel),
+        recovery=recovery,
+        child_scheduler=child_scheduler,
     )
-
-
-__all__ = [
-    "HarnessHealth",
-    "HarnessManifest",
-    "HarnessRuntime",
-    "build_harness_runtime",
-]
+    if child_scheduler is not None:
+        await child_scheduler.reconcile_commands_once()
+        await recovery.recover_pending()
+        await child_scheduler.reconcile_signals_once()
+        await child_scheduler.start()
+    return runtime

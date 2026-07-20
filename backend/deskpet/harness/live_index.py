@@ -114,13 +114,14 @@ class BoundedLiveIndex:
             else:
                 queue.put_nowait(event)
 
-    @staticmethod
-    def finish(active: LiveRun) -> None:
+    def finish(self, run_id: str, active: LiveRun, *, release: bool = False) -> None:
         for queue in tuple(active.subscribers):
             while queue.full():
                 queue.get_nowait()
             queue.put_nowait(None)
         active.task = None
+        if release and self._runs.get(run_id) is active:
+            self._runs.pop(run_id, None)
 
 
 __all__ = ["BoundedLiveIndex", "LiveRun", "LiveStreamOverflow"]

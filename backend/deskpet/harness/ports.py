@@ -6,10 +6,10 @@ from enum import Enum
 from types import MappingProxyType
 from typing import Any, AsyncIterator, Mapping, Protocol
 from deskpet.execution import AttachmentPolicy
-from deskpet.execution.contracts import RecoveryLease, RunContext, RunCreate, RunEvent
+from deskpet.execution.contracts import OutcomeStatus, RecoveryLease, RunContext, RunCreate, RunEvent
 from deskpet.execution.evidence import EvidenceSelection, UNKNOWN_EVIDENCE
-from deskpet.harness.tool_executor import PreparedExecutionCall, ToolOutcome
 from deskpet.tools.capabilities import ToolExecutionContext
+from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall, ToolOutcomeState
 
 class JoinPolicy(str, Enum):
     JOIN_BEFORE_FINAL = "join_before_final"
@@ -76,12 +76,14 @@ def TokenCandidate(run_id: str, content: str, kind: str = "content") -> DriverEv
 def ProviderFallbackCandidate(run_id: str, from_provider: str, to_provider: str, reason: str) -> DriverEvent:
     return DriverEvent(run_id, "provider_fallback", {"from_provider": from_provider, "to_provider": to_provider, "reason": reason})
 
-def ExecuteTools(run_id: str, command_id: str, calls: tuple[PreparedExecutionCall, ...], contexts: tuple[ToolExecutionContext, ...], original_indexes: tuple[int, ...], grant_refs: tuple[ToolGrantRef | None, ...] = ()) -> DriverEvent:
+def ExecuteTools(run_id: str, command_id: str, calls: tuple[PreparedToolCall, ...], contexts: tuple[ToolExecutionContext, ...], original_indexes: tuple[int, ...], grant_refs: tuple[ToolGrantRef | None, ...] = (), effectful: tuple[bool, ...] = ()) -> DriverEvent:
     if len(calls) != len(contexts) or len(calls) != len(original_indexes):
         raise ValueError("calls, contexts and original_indexes must align")
     if grant_refs and len(grant_refs) != len(calls):
         raise ValueError("grant refs and calls must align")
-    return DriverEvent(run_id, "execute_tools", {"command_id": command_id, "calls": tuple(calls), "contexts": tuple(contexts), "original_indexes": tuple(original_indexes), "grant_refs": tuple(grant_refs)})
+    if effectful and len(effectful) != len(calls):
+        raise ValueError("effect flags and calls must align")
+    return DriverEvent(run_id, "execute_tools", {"command_id": command_id, "calls": tuple(calls), "contexts": tuple(contexts), "original_indexes": tuple(original_indexes), "grant_refs": tuple(grant_refs), "effectful": tuple(effectful or (False,) * len(calls))})
 
 def OpenDecision(run_id: str, command_id: str, decision_id: str, nonce: str, kind: str, prompt: Mapping[str, Any], prompt_schema_version: int = 1, expires_at: float | None = None, call_id: str | None = None, effect_id: str | None = None, tool_name: str | None = None, args_hash: str | None = None, capability_hash: str | None = None, scope_hash: str | None = None) -> DriverEvent:
     return DriverEvent(run_id, "open_decision", {"command_id": command_id, "decision_id": decision_id, "nonce": nonce, "decision_kind": kind, "prompt": MappingProxyType(copy.deepcopy(dict(prompt))), "prompt_schema_version": prompt_schema_version, "expires_at": expires_at, "call_id": call_id, "effect_id": effect_id, "tool_name": tool_name, "args_hash": args_hash, "capability_hash": capability_hash, "scope_hash": scope_hash})
@@ -127,8 +129,22 @@ class DriverSignal:
             return data[name]
         raise AttributeError(name)
 
-def ToolOutcomesSignal(run_id: str, command_id: str, outcomes: tuple[ToolOutcome, ...]) -> DriverSignal:
-    return DriverSignal(run_id, "tool_outcomes", {"command_id": command_id, "outcomes": tuple(outcomes)})
+def ToolOutcomesSignal(run_id: str, command_id: str, outcomes: tuple[NormalizedToolOutcome, ...], statuses: tuple[OutcomeStatus, ...], original_indexes: tuple[int, ...], metadata: tuple[Mapping[str, Any], ...] = ()) -> DriverSignal:
+    if not (len(outcomes) == len(statuses) == len(original_indexes)):
+        raise ValueError("tool outcomes, statuses and indexes must align")
+    if metadata and len(metadata) != len(outcomes):
+        raise ValueError("tool outcome metadata must align")
+    if len(set(original_indexes)) != len(original_indexes) or any(index < 0 for index in original_indexes):
+        raise ValueError("tool outcome indexes must be unique and non-negative")
+    canonical_statuses = tuple(OutcomeStatus(item) for item in statuses)
+    allowed = {
+        ToolOutcomeState.SUCCESS: {OutcomeStatus.SUCCEEDED, OutcomeStatus.ACCEPTED},
+        ToolOutcomeState.FAILURE: {OutcomeStatus.FAILED, OutcomeStatus.CANCELLED},
+        ToolOutcomeState.MALFORMED: {OutcomeStatus.FAILED, OutcomeStatus.UNKNOWN},
+    }
+    if any(status not in allowed[outcome.state] for outcome, status in zip(outcomes, canonical_statuses)):
+        raise ValueError("tool outcome state and status are incompatible")
+    return DriverSignal(run_id, "tool_outcomes", {"command_id": command_id, "outcomes": tuple(outcomes), "statuses": canonical_statuses, "original_indexes": tuple(original_indexes), "metadata": tuple(MappingProxyType(copy.deepcopy(dict(item))) for item in metadata)})
 
 def DecisionSignal(run_id: str, decision_id: str, response: Mapping[str, Any], nonce: str | None = None, version: int | None = None) -> DriverSignal:
     return DriverSignal(run_id, "decision", {"decision_id": decision_id, "response": MappingProxyType(copy.deepcopy(dict(response))), "nonce": nonce, "version": version})

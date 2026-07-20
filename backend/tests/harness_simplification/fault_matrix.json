@@ -110,11 +110,11 @@
   {
     "window_id": "uow-parent-ack-before-commit",
     "injection_hook": "child_signal_ack_before_commit",
-    "durable_before": "accepted parent inbox signal is pending",
-    "durable_after": "accepted parent inbox signal is acknowledged once",
+    "durable_before": "accepted signal and parent continuation are unchanged",
+    "durable_after": "parent boundary, event and signal ack commit together",
     "restart_actor": "parent-recoverer",
     "idempotency_key": "parent-ack:fault-child",
-    "expected_counts": {"run": 2, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 1, "link": 1, "inbox": 1, "event": 0, "delivery": 0, "external_write": 0}
+    "expected_counts": {"run": 2, "boundary": 1, "decision": 0, "effect": 0, "attempt": 0, "child": 1, "link": 1, "inbox": 1, "event": 1, "delivery": 1, "external_write": 0}
   },
   {
     "window_id": "team-claim-before-commit",
