@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import difflib
+from collections import Counter
 import gc
 import hashlib
 import inspect
@@ -78,6 +80,14 @@ _VENDORED_PREFIXES = (
     "backend/vendors/",
     "backend/third_party/",
     "backend/_vendor/",
+)
+_BULK_LOCAL_PREFIXES = (
+    "backend/.venv/",
+    "backend/venv/",
+    "backend/.uv-cache/",
+    "backend/.uv-python/",
+    "backend/dist/",
+    "backend/dist-portable/",
 )
 
 
@@ -160,8 +170,21 @@ def _commit_content(commit: str, path: str, *, repo: Path = ROOT) -> bytes:
 
 
 def _commit_paths(commit: str, prefix: str, *, repo: Path = ROOT) -> list[str]:
-    output = _git("ls-tree", "-r", "--name-only", commit, prefix, repo=repo)
-    return [line for line in str(output).splitlines() if line.endswith(".py")]
+    output = _git(
+        "ls-tree",
+        "-r",
+        "--name-only",
+        "-z",
+        commit,
+        prefix,
+        repo=repo,
+        text=False,
+    )
+    return [
+        field.decode("utf-8", "surrogateescape")
+        for field in output.split(b"\0")  # type: ignore[union-attr]
+        if field.endswith(b".py")
+    ]
 
 
 def _manifest_paths(commit: str, *, rollback: bool, repo: Path = ROOT) -> dict[str, str]:
@@ -337,6 +360,8 @@ def _parse_name_status_z(output: bytes) -> list[tuple[str, str, str | None]]:
 
 
 def _fixed_exclusion(path: str) -> str | None:
+    if path.startswith(_BULK_LOCAL_PREFIXES) or "/__pycache__/" in path:
+        return "fixed_exclusion:local_python_environment_or_cache"
     if path.startswith(
         (
             "backend/tests/",
@@ -364,6 +389,54 @@ def _current_git_blob(path: str, *, repo: Path) -> str | None:
     return str(
         _git("hash-object", "--path", path, path, repo=repo)
     ).strip()
+
+
+def _normalized_source(content: bytes) -> bytes:
+    return (
+        content.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+    ).encode("utf-8")
+
+
+def _positive_added_lines(base_content: bytes, current_content: bytes | None, path: str) -> int:
+    """Count BASE-to-worktree additions without trusting index/ignore state."""
+
+    if current_content is None:
+        return 0
+    with tempfile.TemporaryDirectory(prefix="deskpet-loc-diff-") as temp_dir:
+        base_path = Path(temp_dir) / "base.py"
+        current_path = Path(temp_dir) / "current.py"
+        base_path.write_bytes(_normalized_source(base_content))
+        current_path.write_bytes(_normalized_source(current_content))
+        result = subprocess.run(
+            [
+                _git_executable(),
+                "diff",
+                "--no-index",
+                "--numstat",
+                "--no-renames",
+                "--",
+                str(base_path),
+                str(current_path),
+            ],
+            check=False,
+            capture_output=True,
+        )
+    if result.returncode not in {0, 1}:
+        raise BenchmarkInvariantError(
+            f"shared-foundation diff failed for {path}: "
+            f"{result.stderr.decode('utf-8', 'replace').strip()}"
+        )
+    if not result.stdout:
+        return 0
+    fields = result.stdout.splitlines()[0].split(b"\t", 2)
+    if len(fields) != 3 or fields[0] == b"-":
+        raise BenchmarkInvariantError(f"non-text shared-foundation diff for {path}")
+    try:
+        return int(fields[0])
+    except ValueError as exc:
+        raise BenchmarkInvariantError(
+            f"invalid shared-foundation numstat for {path}"
+        ) from exc
 
 
 def build_current_loc_inventory(
@@ -423,8 +496,91 @@ def build_current_loc_inventory(
         for field in untracked_output.split(b"\0")  # type: ignore[union-attr]
         if field
     ]
-    changes = committed + dirty + untracked
+    ignored_output = _git(
+        "ls-files",
+        "-z",
+        "--others",
+        "--ignored",
+        "--exclude-standard",
+        "--",
+        "backend",
+        repo=repo,
+        text=False,
+    )
+    raw_ignored = [
+        ("!", field.decode("utf-8", "surrogateescape"), None)
+        for field in ignored_output.split(b"\0")  # type: ignore[union-attr]
+        if field.endswith(b".py")
+    ]
     baseline = {str(item["path"]): dict(item) for item in rollback_manifest["files"]}
+    base_backend_python = set(_commit_paths(base_commit, "backend", repo=repo))
+    index_flag_output = _git(
+        "ls-files", "-v", "-z", "--", "backend", repo=repo, text=False
+    )
+    hidden_index_paths: list[str] = []
+    for record in index_flag_output.split(b"\0"):  # type: ignore[union-attr]
+        if len(record) < 3 or record[1:2] != b" ":
+            continue
+        tag = chr(record[0])
+        path = record[2:].decode("utf-8", "surrogateescape")
+        if (
+            (tag.islower() or tag == "S")
+            and path.endswith(".py")
+            and _fixed_exclusion(path) is None
+        ):
+            hidden_index_paths.append(path)
+    if hidden_index_paths:
+        raise BenchmarkInvariantError(
+            "hidden Git index flags on production Python: "
+            + ", ".join(sorted(hidden_index_paths))
+        )
+    source_lines = {
+        source_path: _normalized_source(
+            _commit_content(base_commit, source_path, repo=repo)
+        ).decode("utf-8").splitlines()
+        for source_path in baseline
+    }
+    source_line_counts = {
+        source: Counter(lines)
+        for source, lines in source_lines.items()
+    }
+
+    def ignored_may_derive_from_manifest(path: str) -> bool:
+        # Installed interpreters, package caches and frozen build outputs are a
+        # hard non-source boundary. They can contain tens of thousands of
+        # third-party Python files and are never imported as DeskPet product
+        # modules from the source tree. Unlike tests/vendor paths, they are not
+        # candidates for orchestration ownership matching.
+        if path.startswith(_BULK_LOCAL_PREFIXES) or "/__pycache__/" in path:
+            return False
+        if _fixed_exclusion(path) is None:
+            return True
+        content = _current_content(path, repo=repo)
+        if content is None:
+            return False
+        try:
+            target_lines = _normalized_source(content).decode("utf-8").splitlines()
+        except UnicodeDecodeError:
+            return False
+        target_counts = Counter(target_lines)
+        return any(
+            locked
+            and sum(
+                min(count, target_counts.get(line, 0))
+                for line, count in locked.items()
+            )
+            / sum(locked.values())
+            >= 0.80
+            for locked in source_line_counts.values()
+        )
+
+    # Ordinary ignored backend Python is production and remains visible. Large
+    # local environments/build caches use a cheap inverted-line prefilter, so
+    # only plausible copies enter the heavier ownership matcher and JSON rows.
+    ignored = [
+        record for record in raw_ignored if ignored_may_derive_from_manifest(record[1])
+    ]
+    changes = committed + dirty + untracked + ignored
     touched: set[str] = set(baseline)
     rename_sources: dict[str, str] = {}
     change_status: dict[str, str] = {}
@@ -459,6 +615,21 @@ def build_current_loc_inventory(
         blob = _current_git_blob(path, repo=repo)
         if blob is not None:
             matches.update(sources_by_blob.get(blob, ()))
+        # Fixed exclusions are not an escape hatch. Git cannot report an
+        # ignored target as a copy, so compare its content with every locked
+        # source before honoring the exclusion. Coverage is source-relative:
+        # wrappers and small edits around moved harness code still inherit it.
+        if not matches and _fixed_exclusion(path) is not None:
+            target_lines = _normalized_source(content).decode("utf-8").splitlines()
+            for source, locked_lines in source_lines.items():
+                if not locked_lines:
+                    continue
+                matcher = difflib.SequenceMatcher(
+                    None, locked_lines, target_lines, autojunk=False
+                )
+                covered = sum(block.size for block in matcher.get_matching_blocks())
+                if covered / len(locked_lines) >= 0.80:
+                    matches.add(source)
         if not matches:
             return None
         groups = {str(baseline[source]["group"]) for source in matches}
@@ -469,7 +640,7 @@ def build_current_loc_inventory(
         return sorted(matches)[0]
 
     for path in tuple(touched):
-        if path in baseline:
+        if path in baseline or not path.endswith(".py"):
             continue
         source = bind_source(path)
         if source is not None:
@@ -493,10 +664,14 @@ def build_current_loc_inventory(
             counted = True
             group = str(inherited["group"])
             reason = f"rename_or_copy_of:{renamed_from}"
+        elif is_backend_python and exclusion is None and path in base_backend_python:
+            counted = True
+            group = "shared_foundation_additions"
+            reason = "positive_added_lines_from_locked_base"
         elif is_backend_python and exclusion is None:
             counted = True
             group = "plan_backend_production"
-            reason = "changed_or_untracked_backend_production"
+            reason = "new_backend_production"
         elif is_python and exclusion is not None:
             counted = False
             group = "excluded"
@@ -510,6 +685,16 @@ def build_current_loc_inventory(
             continue
 
         content = _current_content(path, repo=repo)
+        shared_base_content = (
+            _commit_content(base_commit, path, repo=repo)
+            if group == "shared_foundation_additions"
+            else None
+        )
+        shared_base_loc = (
+            _line_count_bytes(shared_base_content)
+            if shared_base_content is not None
+            else 0
+        )
         current_loc = _line_count_bytes(content) if content is not None else 0
         current_hash = _sha256(content) if content is not None else None
         current_blob = _current_git_blob(path, repo=repo)
@@ -517,22 +702,45 @@ def build_current_loc_inventory(
             status = "deleted"
         elif renamed_from:
             status = "renamed_or_copied"
+        elif group == "shared_foundation_additions":
+            status = (
+                "unchanged"
+                if shared_base_content is not None
+                and current_hash == _sha256(shared_base_content)
+                else "modified"
+            )
         elif baseline_item is None:
             status = "added"
         elif current_hash == baseline_item["sha256"]:
             status = "unchanged"
         else:
             status = "modified"
+        if group == "shared_foundation_additions":
+            assert shared_base_content is not None
+            effective_loc = _positive_added_lines(shared_base_content, content, path)
+        else:
+            effective_loc = current_loc
         rows.append(
             {
                 "path": path,
-                "baseline_loc": int(baseline_item["loc"]) if baseline_item else 0,
+                "baseline_loc": (
+                    int(baseline_item["loc"]) if baseline_item else shared_base_loc
+                ),
                 "current_loc": current_loc,
+                "effective_loc": effective_loc,
                 "group": group,
                 "reason": reason,
                 "status": status,
                 "counted": counted,
-                "baseline_sha256": baseline_item.get("sha256") if baseline_item else None,
+                "baseline_sha256": (
+                    baseline_item.get("sha256")
+                    if baseline_item
+                    else (
+                        _sha256(shared_base_content)
+                        if shared_base_content is not None
+                        else None
+                    )
+                ),
                 "current_sha256": current_hash,
                 "current_git_blob": current_blob,
                 "git_change": change_status.get(path),
@@ -541,7 +749,7 @@ def build_current_loc_inventory(
         )
     if unknown:
         raise BenchmarkInvariantError(f"unknown LOC classifications: {', '.join(unknown)}")
-    current_total = sum(row["current_loc"] for row in rows if row["counted"])
+    current_total = sum(row["effective_loc"] for row in rows if row["counted"])
     return {
         "base_commit": base_commit,
         "head_commit": head,
@@ -964,6 +1172,16 @@ def compare(current: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any]
     return {"checks": checks, "passed": all(checks.values())}
 
 
+def validate_r1_loc_gate(orchestration_loc: Mapping[str, Any]) -> dict[str, Any]:
+    current_total = int(orchestration_loc["current_total"])
+    return {
+        "gate": "r1_loc_non_regression",
+        "limit": ROLLBACK_EXPECTED_LOC,
+        "current_total": current_total,
+        "passed": current_total <= ROLLBACK_EXPECTED_LOC,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--compare", nargs="?", const=DEFAULT_BASELINE, type=Path)
@@ -971,6 +1189,7 @@ def main() -> int:
     parser.add_argument("--iterations", type=int, default=40)
     parser.add_argument("--completed-runs", type=int, default=10_000)
     parser.add_argument("--loc-only", action="store_true")
+    parser.add_argument("--r1-gate", action="store_true")
     parser.add_argument("--write-loc-manifests", action="store_true")
     args = parser.parse_args()
     if args.iterations < 20:
@@ -981,6 +1200,8 @@ def main() -> int:
         parser.error("--compare requires the canonical --completed-runs 10000 probe")
     if args.compare and args.loc_only:
         parser.error("--compare requires the complete benchmark, not --loc-only")
+    if args.r1_gate and not args.loc_only:
+        parser.error("--r1-gate requires --loc-only")
     if args.write_loc_manifests:
         write_locked_manifests()
     if args.loc_only:
@@ -995,6 +1216,8 @@ def main() -> int:
         result["comparison"] = compare(
             result, json.loads(args.compare.read_text(encoding="utf-8"))
         )
+    if args.r1_gate:
+        result["r1_gate"] = validate_r1_loc_gate(result["orchestration_loc"])
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(
@@ -1002,7 +1225,10 @@ def main() -> int:
             encoding="utf-8",
         )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-    return 0 if result.get("comparison", {}).get("passed", True) else 1
+    passed = result.get("comparison", {}).get("passed", True) and result.get(
+        "r1_gate", {}
+    ).get("passed", True)
+    return 0 if passed else 1
 
 
 if __name__ == "__main__":

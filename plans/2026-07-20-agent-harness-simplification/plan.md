@@ -292,7 +292,7 @@ WS/Voice Adapter
 - 把旧 `_run_chat` 的输入参数全部列入 typed `TurnInput`：text、session/request/turn、venue/mode、memory policy、explicit-new、attachment blocks、provider/capability/workspace refs；测试禁止 adapter 接收后静默丢弃字段。
 - 为 `AssistantMessageEvent`、reasoning、`ContextCompactedEvent`、`PipelineEvent`、tool result、accepted/progress/final 建立完整 presenter golden。
 - 修正 benchmark：10k completed run 必须真实 start/final/close Kernel/UoW，不能用“创建 list 后 clear”代替。R0 固化 `loc-phase0-manifest.json` 与 `loc-rollback-manifest.json` 两份逐文件 path/LOC/hash/group 清单，先分别断言总数 21,563 与 33,228；不一致立即 FAIL。runner 再验证执行 worktree 的 `4d38979e` 是 BASE 且可达，使用 rename-aware `BASE..HEAD` diff，并 union baseline manifest、当前 tracked、dirty 与 untracked Python 文件。
-- 计数机器规则：baseline manifest 文件永远计入；本计划 commit 中新增或修改的 `backend/**/*.py` 默认计入，只有 `backend/tests/**`、生成的 `*_pb2.py` 和 vendored 目录可按固定 path rule 排除；未知分类直接 FAIL。输出逐文件 `path/baseline_loc/current_loc/group/reason/status` JSON；改名/搬家用 blob/hash 追踪，任何排除项必须命中固定规则，禁止人工 `reason` 放行。
+- 计数机器规则：baseline manifest 文件永远计入；本计划 commit 中新增或修改的 `backend/**/*.py` 默认计入。`backend/tests/**`、生成的 `*_pb2.py` 和 vendored 目录只有命中固定 path rule 且未被 manifest 相似度归属时才排除；`.venv/.uv-cache/.uv-python/dist*` 固定为本地解释器、包缓存与冻结构建产物的硬非源码边界。未知分类直接 FAIL。输出逐文件 `path/baseline_loc/current_loc/effective_loc/group/reason/status` JSON；改名/搬家用 blob/hash/相似度追踪，任何排除项必须命中固定规则，禁止人工 `reason` 放行。
 - 证据：回退点 `4d38979e` worktree clean；harness suite 150 passed/9 xfailed；诚实中间 LOC 33,228（原 30,248 漏算 `execution_uow.py` 2,980 行）。该数字只是基础 seam 基线，最终门槛仍是 phase-0 的 17,250。
 
 #### R1 — 合并为一个契约集与一个 UoW 〔AC-4～AC-10, AC-13, AC-14, AC-16〕
@@ -308,7 +308,7 @@ WS/Voice Adapter
 - 新 run 明确只写 §4.9 所列 `execution_*` 表；legacy run 继续使用旧 workflow store facade。测试扫描生产新路径，出现 EffectJournal/Outbox `_connect()` 或独立 `commit()` 即失败。
 - 故障注入覆盖 promotion→batch boundary→first claim、decision CAS→boundary、grant consume→effect claim/start、effect settle→continuation、child create/link→schedule lease、child terminal→parent inbox→apply/ack、TeamStore→Child command saga、terminal→delivery 每个写点；事务内中断整体回滚，跨库 Team saga 用 stable operation id/outbox 对账，外部执行窗口只能落 `unknown/reconcile`，不能宣称回滚或盲重试。
 - `backend/tests/harness_simplification/fault_matrix.json` 每行固定 `window_id/injection_hook/durable_before/durable_after/restart_actor/idempotency_key/expected_counts`；八个 UoW 方法和 Team saga 在代码中导出稳定 `FAULT_HOOKS`，测试对每个 hook 执行 kill/restart，并核对 run/boundary/decision/effect/attempt/child/link/inbox/event/delivery/external-write 计数。门禁断言 `tested_window_ids == required_window_ids == exported_fault_hooks`，多一个或少一个都 FAIL。
-- R1 只要求 LOC 自动快照单调下降且不新增等价 owner；combined core/UoW ≤2,800 的硬门在 R2～R4 完成 Preparer/Presenter、ToolExecutor/Projector 迁移和 Kernel/Driver 收敛后，于 R5 进入 R6 前执行。禁止为了让 R1 当场达 2,800 而提前切生产 owner或删除尚未 parity 的产品行为。
+- R1 每个 slice 都记录 LOC，但只在 R1 全部 slice 合并后运行 `harness_baseline.py --loc-only --r1-gate` 判断整体趋势：adjusted total 不得高于 rollback 33,228，超限必须非零退出，且不得新增等价 owner。manifest 内文件与新 production 文件计全文；BASE 已存在、manifest 外的共享底座只计相对锁定 BASE path/hash 的 Git 正向 added-lines，删除行永不抵扣 harness LOC。这样既不会把原有共享实现冒充本计划新增，也不能靠删除无关共享代码或同文件等量替换买低指标。combined core/UoW ≤2,800 的硬门在 R2～R4 完成 Preparer/Presenter、ToolExecutor/Projector 迁移和 Kernel/Driver 收敛后，于 R5 进入 R6 前执行。禁止为了让 R1 当场达 2,800 而提前切生产 owner或删除尚未 parity 的产品行为。
 - `start()` 接受仅由宿主构造的 `precreated_run_ref`/start source；Child scheduler 仍调用公开 start 语义，不保留 `_accept_child` 隐藏第七入口。模型 payload 不能设置该字段。
 
 #### R2 — 无行为抽取 ProductTurnPreparer 与 RunPresenter 〔AC-1, AC-9～AC-12, AC-15, AC-18〕

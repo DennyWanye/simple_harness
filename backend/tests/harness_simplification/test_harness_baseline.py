@@ -231,10 +231,369 @@ def test_loc_inventory_preserves_unicode_paths_in_all_git_states(tmp_path: Path)
         manifest, repo=repo, base_commit=base
     )
     rows = {row["path"]: row for row in result["files"]}
+    # Existing shared-foundation files contribute positive added lines; the
+    # removed BASE line does not offset the two replacement lines.
     assert result["current_total"] == 8
     assert rows["backend/已提交.py"]["current_loc"] == 2
     assert rows["backend/待修改.py"]["current_loc"] == 2
     assert rows["backend/新模块.py"]["current_loc"] == 3
+
+
+def test_loc_inventory_charges_only_positive_growth_for_existing_shared_foundation(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "bench@example.invalid")
+    _git(repo, "config", "user.name", "Harness Benchmark")
+    harness = repo / "backend/harness.py"
+    shared = repo / "backend/shared.py"
+    harness.parent.mkdir(parents=True)
+    harness.write_text("harness\n", encoding="utf-8")
+    shared.write_text("one\ntwo\nthree\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "base")
+    base = _git(repo, "rev-parse", "HEAD")
+    harness_content = harness.read_bytes()
+    manifest = {
+        "expected_total_loc": 1,
+        "files": [
+            {
+                "path": "backend/harness.py",
+                "loc": 1,
+                "sha256": harness_baseline._sha256(harness_content),
+                "git_blob": _git(repo, "rev-parse", f"{base}:backend/harness.py"),
+                "group": "legacy_agent_loop",
+            }
+        ],
+    }
+
+    shared.write_text("one\ntwo\nthree\nfour\nfive\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "grow shared foundation")
+    result = harness_baseline.build_current_loc_inventory(
+        manifest, repo=repo, base_commit=base
+    )
+    row = next(item for item in result["files"] if item["path"] == "backend/shared.py")
+    assert row["group"] == "shared_foundation_additions"
+    assert row["baseline_loc"] == 3
+    assert row["current_loc"] == 5
+    assert row["effective_loc"] == 2
+    assert row["baseline_sha256"] == harness_baseline._sha256(b"one\ntwo\nthree\n")
+    assert result["current_total"] == 3
+
+    # Deleting unrelated shared-foundation lines cannot buy down harness LOC.
+    shared.write_text("one\n", encoding="utf-8")
+    result = harness_baseline.build_current_loc_inventory(
+        manifest, repo=repo, base_commit=base
+    )
+    row = next(item for item in result["files"] if item["path"] == "backend/shared.py")
+    assert row["effective_loc"] == 0
+    assert result["current_total"] == 1
+
+
+def test_loc_inventory_charges_partial_manifest_transplant_into_shared_file(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "bench@example.invalid")
+    _git(repo, "config", "user.name", "Harness Benchmark")
+    harness = repo / "backend/harness.py"
+    shared = repo / "backend/shared.py"
+    harness.parent.mkdir(parents=True)
+    harness.write_text("moved-one\nmoved-two\nmoved-three\n", encoding="utf-8")
+    shared.write_text("old-one\nold-two\nold-three\nkeep-a\nkeep-b\nkeep-c\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "base")
+    base = _git(repo, "rev-parse", "HEAD")
+    content = harness.read_bytes()
+    manifest = {
+        "expected_total_loc": 3,
+        "files": [
+            {
+                "path": "backend/harness.py",
+                "loc": 3,
+                "sha256": harness_baseline._sha256(content),
+                "git_blob": _git(repo, "rev-parse", f"{base}:backend/harness.py"),
+                "group": "legacy_agent_loop",
+            }
+        ],
+    }
+
+    harness.unlink()
+    shared.write_text(
+        "moved-one\nmoved-two\nmoved-three\nkeep-a\nkeep-b\nkeep-c\n",
+        encoding="utf-8",
+    )
+    result = harness_baseline.build_current_loc_inventory(
+        manifest, repo=repo, base_commit=base
+    )
+    row = next(item for item in result["files"] if item["path"] == "backend/shared.py")
+    assert row["baseline_loc"] == 6
+    assert row["current_loc"] == 6
+    assert row["effective_loc"] == 3
+    assert result["current_total"] == 3
+
+
+def test_r1_loc_gate_fails_above_rollback_baseline(monkeypatch) -> None:
+    failed = harness_baseline.validate_r1_loc_gate(
+        {"current_total": harness_baseline.ROLLBACK_EXPECTED_LOC + 1}
+    )
+    assert failed["passed"] is False
+
+    monkeypatch.setattr(
+        harness_baseline,
+        "_orchestration_loc",
+        lambda: {"current_total": harness_baseline.ROLLBACK_EXPECTED_LOC + 1},
+    )
+    monkeypatch.setattr(harness_baseline, "_git_commit", lambda: "test-head")
+    monkeypatch.setattr(
+        "sys.argv", ["harness_baseline.py", "--loc-only", "--r1-gate"]
+    )
+    assert harness_baseline.main() == 1
+
+
+def test_loc_inventory_counts_ignored_new_backend_production(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "bench@example.invalid")
+    _git(repo, "config", "user.name", "Harness Benchmark")
+    harness = repo / "backend/harness.py"
+    harness.parent.mkdir(parents=True)
+    harness.write_text("harness\n", encoding="utf-8")
+    (repo / ".gitignore").write_text("backend/hidden.py\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "base")
+    base = _git(repo, "rev-parse", "HEAD")
+    content = harness.read_bytes()
+    manifest = {
+        "expected_total_loc": 1,
+        "files": [
+            {
+                "path": "backend/harness.py",
+                "loc": 1,
+                "sha256": harness_baseline._sha256(content),
+                "git_blob": _git(repo, "rev-parse", f"{base}:backend/harness.py"),
+                "group": "legacy_agent_loop",
+            }
+        ],
+    }
+    hidden = repo / "backend/hidden.py"
+    hidden.write_text("hidden\nproduction\nlogic\n", encoding="utf-8")
+
+    result = harness_baseline.build_current_loc_inventory(
+        manifest, repo=repo, base_commit=base
+    )
+    row = next(item for item in result["files"] if item["path"] == "backend/hidden.py")
+    assert row["git_change"] == "!"
+    assert row["reason"] == "new_backend_production"
+    assert row["effective_loc"] == 3
+    assert result["current_total"] == 4
+
+
+def test_loc_inventory_counts_manifest_copy_to_ignored_path(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "bench@example.invalid")
+    _git(repo, "config", "user.name", "Harness Benchmark")
+    harness = repo / "backend/harness.py"
+    harness.parent.mkdir(parents=True)
+    harness.write_text("one\ntwo\nthree\n", encoding="utf-8")
+    (repo / ".gitignore").write_text("backend/vendor/\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "base")
+    base = _git(repo, "rev-parse", "HEAD")
+    content = harness.read_bytes()
+    manifest = {
+        "expected_total_loc": 3,
+        "files": [
+            {
+                "path": "backend/harness.py",
+                "loc": 3,
+                "sha256": harness_baseline._sha256(content),
+                "git_blob": _git(repo, "rev-parse", f"{base}:backend/harness.py"),
+                "group": "legacy_agent_loop",
+            }
+        ],
+    }
+    harness.unlink()
+    copied = repo / "backend/vendor/runtime.py"
+    copied.parent.mkdir(parents=True)
+    copied.write_bytes(b"# wrapper\n" + content)
+
+    result = harness_baseline.build_current_loc_inventory(
+        manifest, repo=repo, base_commit=base
+    )
+    row = next(
+        item for item in result["files"] if item["path"] == "backend/vendor/runtime.py"
+    )
+    assert row["git_change"] == "!"
+    assert row["renamed_from"] == "backend/harness.py"
+    assert row["effective_loc"] == 4
+    assert result["current_total"] == 4
+
+
+def test_bulk_local_environment_is_an_explicit_non_source_boundary(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "bench@example.invalid")
+    _git(repo, "config", "user.name", "Harness Benchmark")
+    harness = repo / "backend/harness.py"
+    harness.parent.mkdir(parents=True)
+    harness.write_text("harness\n", encoding="utf-8")
+    (repo / ".gitignore").write_text("backend/.venv/\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "base")
+    base = _git(repo, "rev-parse", "HEAD")
+    content = harness.read_bytes()
+    manifest = {
+        "expected_total_loc": 1,
+        "files": [
+            {
+                "path": "backend/harness.py",
+                "loc": 1,
+                "sha256": harness_baseline._sha256(content),
+                "git_blob": _git(repo, "rev-parse", f"{base}:backend/harness.py"),
+                "group": "legacy_agent_loop",
+            }
+        ],
+    }
+    package = repo / "backend/.venv/Lib/site-packages/dependency.py"
+    package.parent.mkdir(parents=True)
+    package.write_text("third\nparty\npackage\n", encoding="utf-8")
+
+    result = harness_baseline.build_current_loc_inventory(
+        manifest, repo=repo, base_commit=base
+    )
+    assert all(".venv" not in item["path"] for item in result["files"])
+    assert result["current_total"] == 1
+
+
+def test_ignored_vendor_copy_prefilter_preserves_repeated_line_coverage(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "bench@example.invalid")
+    _git(repo, "config", "user.name", "Harness Benchmark")
+    harness = repo / "backend/harness.py"
+    harness.parent.mkdir(parents=True)
+    source_text = "repeat\n" * 8 + "unique-one\nunique-two\n"
+    harness.write_text(source_text, encoding="utf-8")
+    (repo / ".gitignore").write_text("backend/vendor/\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "base")
+    base = _git(repo, "rev-parse", "HEAD")
+    content = harness.read_bytes()
+    manifest = {
+        "expected_total_loc": 10,
+        "files": [
+            {
+                "path": "backend/harness.py",
+                "loc": 10,
+                "sha256": harness_baseline._sha256(content),
+                "git_blob": _git(repo, "rev-parse", f"{base}:backend/harness.py"),
+                "group": "legacy_agent_loop",
+            }
+        ],
+    }
+    harness.unlink()
+    copied = repo / "backend/vendor/runtime.py"
+    copied.parent.mkdir(parents=True)
+    copied.write_text("wrapper\n" + "repeat\n" * 8, encoding="utf-8")
+
+    result = harness_baseline.build_current_loc_inventory(
+        manifest, repo=repo, base_commit=base
+    )
+    row = next(item for item in result["files"] if item["path"] == "backend/vendor/runtime.py")
+    assert row["renamed_from"] == "backend/harness.py"
+    assert row["effective_loc"] == 9
+    assert result["current_total"] == 9
+
+
+def test_shared_additions_survive_rm_cached_and_ignore(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "bench@example.invalid")
+    _git(repo, "config", "user.name", "Harness Benchmark")
+    harness = repo / "backend/harness.py"
+    shared = repo / "backend/shared.py"
+    harness.parent.mkdir(parents=True)
+    harness.write_text("harness\n", encoding="utf-8")
+    shared.write_text("base\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "base")
+    base = _git(repo, "rev-parse", "HEAD")
+    content = harness.read_bytes()
+    manifest = {
+        "expected_total_loc": 1,
+        "files": [
+            {
+                "path": "backend/harness.py",
+                "loc": 1,
+                "sha256": harness_baseline._sha256(content),
+                "git_blob": _git(repo, "rev-parse", f"{base}:backend/harness.py"),
+                "group": "legacy_agent_loop",
+            }
+        ],
+    }
+    _git(repo, "rm", "--cached", "backend/shared.py")
+    (repo / ".gitignore").write_text("backend/shared.py\n", encoding="utf-8")
+    shared.write_text("base\nadded-one\nadded-two\n", encoding="utf-8")
+
+    result = harness_baseline.build_current_loc_inventory(
+        manifest, repo=repo, base_commit=base
+    )
+    row = next(item for item in result["files"] if item["path"] == "backend/shared.py")
+    assert row["effective_loc"] == 2
+    assert result["current_total"] == 3
+
+
+def test_loc_inventory_fails_closed_on_assume_unchanged_index_flag(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "bench@example.invalid")
+    _git(repo, "config", "user.name", "Harness Benchmark")
+    harness = repo / "backend/harness.py"
+    shared = repo / "backend/shared.py"
+    harness.parent.mkdir(parents=True)
+    harness.write_text("harness\n", encoding="utf-8")
+    shared.write_text("base\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "base")
+    base = _git(repo, "rev-parse", "HEAD")
+    content = harness.read_bytes()
+    manifest = {
+        "expected_total_loc": 1,
+        "files": [
+            {
+                "path": "backend/harness.py",
+                "loc": 1,
+                "sha256": harness_baseline._sha256(content),
+                "git_blob": _git(repo, "rev-parse", f"{base}:backend/harness.py"),
+                "group": "legacy_agent_loop",
+            }
+        ],
+    }
+    _git(repo, "update-index", "--assume-unchanged", "backend/shared.py")
+    shared.write_text("base\nadded-one\nadded-two\n", encoding="utf-8")
+
+    with pytest.raises(
+        harness_baseline.BenchmarkInvariantError,
+        match="hidden Git index flags on production Python: backend/shared.py",
+    ):
+        harness_baseline.build_current_loc_inventory(
+            manifest, repo=repo, base_commit=base
+        )
 
 
 def test_loc_inventory_fails_closed_for_rewritten_move_outside_backend(

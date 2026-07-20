@@ -55,7 +55,7 @@
 - 依赖方向：`deskpet.execution` 不得 import `deskpet.workflows`；PreparedToolCall/NormalizedToolOutcome 由 Driver/ToolRegistry 直接复用 workflow primitive，UoW 只接受中立 identity/JSON，不保留 `tools.registry → harness.tool_executor` 反向依赖。
 - 原子切换：v7 additive schema 在 R1 以 `legacy` 默认态先落地并完成全套预演；R6 关入口、等待 ephemeral legacy=0、同事务持久化 durable drain manifest 并进入 `draining`，排空后再写 activation generation、切 start/recovery/delivery owner 并开入口。新 execution row 写入 `owner_kind/owner_generation`，首条新 row 产生后只允许 fail-closed/roll-forward。
 - 计数反规避：ProductTurnPreparer、RunPresenter、venue adapter、Team reconciler 等迁移后的 orchestration 文件全部计入 LOC，不能通过移动出 `main.py` 或 `harness/` 逃避 20% 门槛。
-- LOC 机械口径：锁定 phase-0=21,563 与 rollback=33,228 两份逐文件 manifest；本计划新增/修改的 production `backend/**/*.py` 默认计入，未知分类或基准 hash/总数不符直接 FAIL，只有测试、生成代码和 vendored 固定 path rule 可排除。
+- LOC 机械口径：锁定 phase-0=21,563 与 rollback=33,228 两份逐文件 manifest。manifest 内的 harness/orchestration 文件始终按当前全文计；BASE 时不存在的新 production `backend/**/*.py` 按全文计；BASE 已存在但不属于 manifest 的共享底座文件（例如 schema/effect/outbox）只计相对锁定 BASE path/hash 的 Git 正向 added-lines，删除行永不抵扣 harness LOC。迁移/复制的 manifest 内容仍按全文计，未知分类或基准 hash/总数不符直接 FAIL。只有 tests、生成代码、vendored 固定 path rule 可排除且先做 manifest 相似度归属；`.venv/.uv-cache/.uv-python/dist*` 明确是本地解释器/包缓存/冻结构建产物的硬非源码边界，不进入生产 LOC。R1 合并门必须运行 `harness_baseline.py --loc-only --r1-gate`，超过 33,228 非零退出。
 - 单一所有权：route、cancel、effect commit、retry、terminal delivery 各有一个明确 authority；架构测试禁止 Kernel 与 Driver 同时拥有同一权能。
 - 性能：普通 chat 的 Kernel 本地增量开销 p95 ≤10ms，端到端 TTFT p95 回归 ≤5%；每个 token delta 产生 0 次 SQLite 写；20 并发 session 下 event-loop lag p99 ≤20ms、吞吐回归 ≤10%。
 - Durable 成本：每个 workflow node 的事务数和序列化字节数不高于 phase-0 基线 10%；accepted 与 terminal durable delivery 各恰好一次。
