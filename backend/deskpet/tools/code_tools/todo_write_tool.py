@@ -18,6 +18,8 @@ import json
 import logging
 from typing import Any, Awaitable, Callable
 
+from ..capabilities import ToolExecutionContext
+
 log = logging.getLogger(__name__)
 
 
@@ -77,7 +79,12 @@ def build_todo_write_tool(
         },
     }
 
-    def _handler(args: dict[str, Any], task_id: str = "") -> str:
+    def _handler(
+        args: dict[str, Any],
+        task_id: str = "",
+        *,
+        execution_context: ToolExecutionContext | None = None,
+    ) -> str:
         items = args.get("items")
         if not isinstance(items, list):
             return json.dumps({"error": "items (list) is required"})
@@ -102,7 +109,11 @@ def build_todo_write_tool(
                 {"content": content, "activeForm": active_form, "status": status}
             )
 
-        sid = code_session_id_resolver()
+        sid = (
+            execution_context.session_id
+            if execution_context is not None
+            else code_session_id_resolver()
+        )
         if not sid:
             return json.dumps(
                 {"error": "code mode is not active for this session"}

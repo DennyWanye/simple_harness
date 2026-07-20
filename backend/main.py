@@ -3199,6 +3199,11 @@ try:
                     toolset="code",
                     schema=_clarify_schema,
                     handler=_clarify_handler,
+                    context_handler=lambda args, context: _clarify_handler(
+                        args,
+                        context.call_id,
+                        execution_context=context,
+                    ),
                     permission_category="read_file",
                     source="builtin",
                     timeout_seconds=130.0,

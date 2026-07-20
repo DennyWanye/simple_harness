@@ -46,6 +46,9 @@ import time
 from pathlib import Path
 from typing import Any
 
+from ..capabilities import ToolExecutionContext
+from ..context_adapter import legacy_execution_context
+
 logger = logging.getLogger(__name__)
 
 
@@ -197,7 +200,12 @@ def _pick_shell() -> tuple[str, tuple[str, ...]]:
     return picked
 
 
-def run_shell(args: dict[str, Any], task_id: str = "") -> str:
+def run_shell(
+    args: dict[str, Any],
+    task_id: str = "",
+    *,
+    execution_context: ToolExecutionContext | None = None,
+) -> str:
     command = args.get("command", "")
     cwd = args.get("cwd")
     timeout = int(args.get("timeout", 30) or 30)
@@ -215,7 +223,8 @@ def run_shell(args: dict[str, Any], task_id: str = "") -> str:
     # mkdir/touch/cp/重定向 等写盘类操作越界 workspace → 拒绝整条命令
     # （读类命令 ls/cat/grep 不受影响 — 不是沙箱）。code session /
     # write_scope_enforced=false 不注入该键 → scope_root=None → 不拦。
-    _scope_root = args.get("_write_scope_root")
+    context = legacy_execution_context(args, task_id, execution_context)
+    _scope_root = context.write_scope_root
     if _scope_root:
         from agent.write_scope import shell_write_scope_check as _shell_ws_check
 

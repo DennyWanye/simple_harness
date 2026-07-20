@@ -8,6 +8,9 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+
+from ..capabilities import ToolExecutionContext
+from ..context_adapter import legacy_execution_context
 from collections.abc import Callable
 from typing import Any
 
@@ -94,8 +97,15 @@ def build_clarification_ask(
 def build_ask_clarification_tool(ask_fn):
     """Build the ask_clarification tool handler and schema."""
 
-    async def _handler(args, task_id="", session_id="default"):
-        sid = str(args.get("_session_id") or args.get("session_id") or session_id)
+    async def _handler(
+        args,
+        task_id="",
+        session_id="default",
+        *,
+        execution_context: ToolExecutionContext | None = None,
+    ):
+        context = legacy_execution_context(args, task_id, execution_context)
+        sid = context.session_id or session_id
         answer = await ask_fn(
             args.get("question", ""),
             args.get("options", []),

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..context_adapter import bind_context_handler
 from .glob_tool import glob_tool
 from .grep_tool import grep_tool
 from .web_search_tool import web_search
@@ -86,6 +87,7 @@ def register_code_tools(
             ["pattern"],
         ),
         handler=glob_tool,
+        context_handler=bind_context_handler(glob_tool),
         permission_category="read_file",
         replace_allowed=True,
     )
@@ -118,6 +120,7 @@ def register_code_tools(
             ["pattern"],
         ),
         handler=grep_tool,
+        context_handler=bind_context_handler(grep_tool),
         permission_category="read_file",
         replace_allowed=True,
     )
@@ -170,6 +173,7 @@ def register_code_tools(
             toolset="code",
             schema=todo_write_schema,
             handler=todo_write_handler,
+            context_handler=bind_context_handler(todo_write_handler),
             permission_category="read_file",
             replace_allowed=True,
         )
@@ -180,6 +184,7 @@ def register_code_tools(
             toolset="code",
             schema=agent_schema,
             handler=agent_handler,
+            context_handler=bind_context_handler(agent_handler),
             permission_category="read_file",
             replace_allowed=True,
         )
@@ -195,6 +200,7 @@ def register_code_tools(
             toolset="control",
             schema=agent_parallel_schema,
             handler=agent_parallel_handler,
+            context_handler=bind_context_handler(agent_parallel_handler),
             # bug fix: "execute_command" 不在合法 PermissionCategory 集（同
             # skill_tools.py P0 bug fix #8 的漏网者）→ gate.check 在 auto-mode
             # 短路前 raise ValueError → agent_parallel 被 except 吞、100% 不执行。
@@ -215,6 +221,7 @@ def register_code_tools(
             toolset="control",
             schema=spawn_team_schema,
             handler=spawn_team_handler,
+            context_handler=bind_context_handler(spawn_team_handler),
             permission_category="read_file",
             source="builtin",
             timeout_seconds=600.0,
@@ -229,6 +236,7 @@ def register_code_tools(
             toolset="control",
             schema=spawn_subagents_schema,
             handler=spawn_subagents_handler,
+            context_handler=bind_context_handler(spawn_subagents_handler),
             permission_category="read_file",
             source="builtin",
             timeout_seconds=60.0,  # spawn 立即返回，无需长 timeout
@@ -240,6 +248,7 @@ def register_code_tools(
             toolset="control",
             schema=await_subagents_schema,
             handler=await_subagents_handler,
+            context_handler=bind_context_handler(await_subagents_handler),
             permission_category="read_file",
             source="builtin",
             timeout_seconds=600.0,  # 等子代理跑完，给足

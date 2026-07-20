@@ -25,6 +25,8 @@ import time
 import uuid
 from typing import Any, Callable, Optional
 
+from ..capabilities import ToolExecutionContext
+
 log = logging.getLogger(__name__)
 
 _MIN_TEAMMATES = 1
@@ -98,7 +100,12 @@ def build_spawn_team_tool(
             log.debug("spawn_team goal resolver failed: %s", exc)
             return None
 
-    async def _handle(args: dict[str, Any], task_id: str = "") -> str:
+    async def _handle(
+        args: dict[str, Any],
+        task_id: str = "",
+        *,
+        execution_context: ToolExecutionContext | None = None,
+    ) -> str:
         from deskpet.agent.team.spawn_team import spawn_team
 
         descs = args.get("task_descriptions")
@@ -127,7 +134,11 @@ def build_spawn_team_tool(
             store=team_store,
             parent_tool_registry=parent_tool_registry,
             llm_shim=llm_shim,
-            parent_session_id=parent_session_id_resolver() or "default",
+            parent_session_id=(
+                execution_context.session_id
+                if execution_context is not None
+                else (parent_session_id_resolver() or "default")
+            ),
             timeout_seconds=timeout,
             parent_goal_text=_safe(goal_text_resolver),
             parent_goal_id=_safe(goal_id_resolver),

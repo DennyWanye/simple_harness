@@ -18,6 +18,9 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from ..capabilities import ToolExecutionContext
+from ..context_adapter import legacy_execution_context
+
 logger = logging.getLogger(__name__)
 
 
@@ -67,15 +70,21 @@ def _err(error: str, hint: str, **extra: Any) -> str:
     return json.dumps(body, ensure_ascii=False)
 
 
-def write_file(args: dict[str, Any], task_id: str = "") -> str:
+def write_file(
+    args: dict[str, Any],
+    task_id: str = "",
+    *,
+    execution_context: ToolExecutionContext | None = None,
+) -> str:
     path = args.get("path", "")
     overwrite = bool(args.get("overwrite", False))
+    context = legacy_execution_context(args, task_id, execution_context)
 
     # OpenSpec §D3 — companion session write-scope。chat handler 给陪伴
     # session 经 ToolRegistry.set_session_context 注入 ``_write_scope_root``；
     # 越界写直接拒绝（不是沙箱，是 session 类型语义）。code session /
     # write_scope_enforced=false 时不会注入该键 → scope_root=None → 不拦。
-    _scope_root = args.get("_write_scope_root")
+    _scope_root = context.write_scope_root
     if isinstance(path, str) and path and _scope_root:
         from agent.write_scope import write_scope_check as _ws_check
 
@@ -167,11 +176,8 @@ def write_file(args: dict[str, Any], task_id: str = "") -> str:
         )
 
     # Stage 2 round 2 fix：通知 workspace_store
-    _session_id = (
-        args.get("_session_id") or args.get("session_id") or "default"
-    )
     _notify_workspace(
-        session_id=str(_session_id), path=path, content=content,
+        session_id=context.session_id, path=path, content=content,
     )
     return json.dumps(
         {"path": str(p.resolve()), "bytes_written": len(data)},

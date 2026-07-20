@@ -49,6 +49,8 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Iterable, Optional, 
 import httpx
 
 from . import research_scoring
+from .capabilities import ToolExecutionContext
+from .context_adapter import bind_context_handler, legacy_execution_context
 
 if TYPE_CHECKING:
     from ..workflows.definitions.deep_research_v5_contracts import ResearchLLMResult
@@ -2367,7 +2369,12 @@ _DEPTH_PRESETS = {
 }
 
 
-async def _handle_deepresearch(args: dict, task_id: str) -> str:
+async def _handle_deepresearch(
+    args: dict,
+    task_id: str,
+    *,
+    execution_context: ToolExecutionContext | None = None,
+) -> str:
     """Async handler. Bridges the registry's ``args`` dict to the
     orchestrator. The LLM call is resolved from the global provider
     chain inside ``main.py`` — for unit tests we go directly through
@@ -2379,7 +2386,8 @@ async def _handle_deepresearch(args: dict, task_id: str) -> str:
             {"ok": False, "error": "topic is required"}, ensure_ascii=False
         )
     user_request = str(args.get("user_request") or "").strip() or None
-    sid = str(args.get("_session_id") or "default")
+    context = legacy_execution_context(args, task_id, execution_context)
+    sid = context.session_id
     if _WORKFLOW_STARTER is not None:
         accepted = await _WORKFLOW_STARTER(dict(args), task_id)
         return json.dumps(accepted, ensure_ascii=False)
@@ -2684,6 +2692,7 @@ def _register_deepresearch_tool() -> None:
             "web",
             _RESEARCH_SCHEMA,
             _handle_deepresearch,
+            context_handler=bind_context_handler(_handle_deepresearch),
             permission_category="read_file",
             # deep 档要跑 多引擎降级搜索 + 二级抓取 + 反思补证轮 + LLM 精排,
             # 慢网区(代理/必应跳转 cn.bing)单轮就逼近 180s。提到 300s(对齐

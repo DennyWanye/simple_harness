@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..context_adapter import bind_context_handler
 from .desktop_create_file import desktop_create_file
 from .edit_file import edit_file
 from .list_directory import list_directory
@@ -52,6 +53,7 @@ def register_os_tools(registry) -> None:  # type: ignore[no-untyped-def]
             ["path"],
         ),
         handler=read_file,
+        context_handler=bind_context_handler(read_file),
         permission_category="read_file",
     )
 
@@ -77,6 +79,7 @@ def register_os_tools(registry) -> None:  # type: ignore[no-untyped-def]
             ["path", "content"],
         ),
         handler=write_file,
+        context_handler=bind_context_handler(write_file),
         permission_category="write_file",
         concurrency_safe=False,  # G3: filesystem write — must serialize
     )
@@ -100,6 +103,7 @@ def register_os_tools(registry) -> None:  # type: ignore[no-untyped-def]
             ["path", "old_string", "new_string"],
         ),
         handler=edit_file,
+        context_handler=bind_context_handler(edit_file),
         permission_category="write_file",
         concurrency_safe=False,  # G3: in-place file mutation — must serialize
     )
@@ -141,6 +145,7 @@ def register_os_tools(registry) -> None:  # type: ignore[no-untyped-def]
             ["command"],
         ),
         handler=run_shell,
+        context_handler=bind_context_handler(run_shell),
         permission_category="shell",
         dangerous=True,
         # P5-S1: shell commands can legitimately take a while (pip install,
@@ -169,6 +174,7 @@ def register_os_tools(registry) -> None:  # type: ignore[no-untyped-def]
             toolset=existing.toolset,
             schema=existing.schema,
             handler=existing.handler,
+            context_handler=existing.context_handler,
             check_fn=existing.check_fn,
             requires_env=list(existing.requires_env),
             permission_category="network",

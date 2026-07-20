@@ -247,11 +247,32 @@ class PreparedToolPayload:
 
 @dataclass(frozen=True)
 class ToolExecutionContext:
+    """Trusted host values passed beside, never inside, model arguments.
+
+    The first five fields retain the Context OS v1 constructor contract.  The
+    remaining fields are populated by the harness ``HostContextFactory`` for
+    the prepared-only execution path.  They deliberately contain identifiers
+    and immutable plans only -- never live services or credentials.
+    """
+
     scope_id: str
     session_id: str
     request_id: str
     origin: str = "agent"
     policy_snapshot: Optional[ToolPolicySnapshot] = None
+    root_run_id: str = ""
+    parent_run_id: Optional[str] = None
+    turn_id: str = ""
+    venue: str = "text"
+    workspace: Optional[str] = None
+    write_scope_root: Optional[str] = None
+    capability_hash: str = ""
+    scope_hash: str = ""
+    provider_plan: tuple[str, ...] = ()
+    run_id: str = ""
+    call_id: str = ""
+    effect_id: str = ""
+    trace_id: str = ""
 
 
 @dataclass(frozen=True)

@@ -59,6 +59,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Iterable, Literal, Optional, Sequence
 
+from .capabilities import ToolExecutionContext
+from .context_adapter import (
+    bind_context_handler,
+    legacy_execution_context,
+    legacy_host_service,
+)
+
 from deskpet.tools import ppt_outline_store
 from deskpet.tools.image_tools import generate_images, probe_image_reachable
 
@@ -4951,7 +4958,12 @@ def _count_image_prompt_pages(outline: Any) -> int:
         return 0
 
 
-def _handle_ppt_create(args: dict, task_id: str) -> str:
+def _handle_ppt_create(
+    args: dict,
+    task_id: str,
+    *,
+    execution_context: ToolExecutionContext | None = None,
+) -> str:
     """Sync handler wired into the tool registry.
 
     纯文本/模板填充是同步快路径。但带 image_prompt 的 deck 要串行调
@@ -4969,8 +4981,13 @@ def _handle_ppt_create(args: dict, task_id: str) -> str:
     )
     outline = args.get("outline")
 
-    worker = args.get("_image_worker")
-    sid = str(args.get("_session_id") or "default")
+    context = legacy_execution_context(args, task_id, execution_context)
+    worker = (
+        legacy_host_service(args, "_image_worker")
+        if execution_context is None
+        else None
+    )
+    sid = context.session_id
     n_imgs = _count_image_prompt_pages(outline)
     can_async = (
         n_imgs >= 1
@@ -5097,13 +5114,14 @@ async def _start_ppt_pro_graph(
     args: dict[str, Any],
     session_id: str,
     task_id: str,
+    execution_context: ToolExecutionContext,
 ) -> dict[str, Any]:
     payload = {
         **_coerce_ppt_pro_args(args),
         "session_id": session_id,
-        "request_id": str(args.get("_request_id") or task_id or "ppt-pro"),
-        "turn_id": str(args.get("_turn_id") or task_id or "ppt-pro"),
-        "call_id": str(task_id or args.get("_call_id") or ""),
+        "request_id": execution_context.request_id or task_id or "ppt-pro",
+        "turn_id": execution_context.turn_id or task_id or "ppt-pro",
+        "call_id": execution_context.call_id or task_id,
         "workflow_name": "ppt_pro",
         "workflow_version": "v1",
     }
@@ -5321,8 +5339,14 @@ def _coerce_ppt_pro_args(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def _handle_ppt_pro(args: dict, task_id: str = "") -> dict[str, Any]:
-    sid = str(args.get("_session_id") or "default")
+async def _handle_ppt_pro(
+    args: dict,
+    task_id: str = "",
+    *,
+    execution_context: ToolExecutionContext | None = None,
+) -> dict[str, Any]:
+    context = legacy_execution_context(args, task_id, execution_context)
+    sid = context.session_id
     workflow_starter = _PPT_PRO_CTX.get("workflow_starter")
     if _ppt_pro_graph_enabled() and workflow_starter is not None:
         try:
@@ -5331,6 +5355,7 @@ async def _handle_ppt_pro(args: dict, task_id: str = "") -> dict[str, Any]:
                 args=dict(args or {}),
                 session_id=sid,
                 task_id=task_id,
+                execution_context=context,
             )
         except Exception as exc:  # noqa: BLE001
             log.exception("ppt_pro graph start failed")
@@ -5338,7 +5363,7 @@ async def _handle_ppt_pro(args: dict, task_id: str = "") -> dict[str, Any]:
                 "ok": False,
                 "status": "graph_start_failed",
                 "error": f"{type(exc).__name__}: {exc}",
-                "call_id": str(task_id or args.get("_call_id") or ""),
+                "call_id": context.call_id or task_id,
             }
 
     outline_propose = _PPT_PRO_CTX.get("outline_propose")
@@ -5462,6 +5487,7 @@ def _register_ppt_tool() -> None:
             "ppt",
             _build_ppt_schema(),
             _handle_ppt_create,
+            context_handler=bind_context_handler(_handle_ppt_create),
             permission_category="write_file",
             # 纯文本/模板填充约 1~3s;但带 image_prompt 的整页生图(B-2)会
             # 在 _autofill_image_prompts 里串行调 AI 出图(每张 70~190s,
@@ -5485,6 +5511,7 @@ def _register_ppt_pro_tool() -> None:
             "ppt",
             _PPT_PRO_SCHEMA,
             _handle_ppt_pro,
+            context_handler=bind_context_handler(_handle_ppt_pro),
             permission_category="write_file",
             timeout_seconds=60.0,
             concurrency_safe=False,

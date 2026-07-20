@@ -28,6 +28,9 @@ import os
 from pathlib import Path
 from typing import Any
 
+from ..capabilities import ToolExecutionContext
+from ..context_adapter import legacy_execution_context
+
 logger = logging.getLogger(__name__)
 
 
@@ -92,15 +95,17 @@ def _notify_workspace(*, session_id: str, path: str, content: str | None) -> Non
         logger.debug("os_tools.read_file workspace notify failed: %s", exc)
 
 
-def read_file(args: dict[str, Any], task_id: str = "") -> str:
+def read_file(
+    args: dict[str, Any],
+    task_id: str = "",
+    *,
+    execution_context: ToolExecutionContext | None = None,
+) -> str:
     path = args.get("path", "")
     offset = int(args.get("offset", 0) or 0)
     limit = int(args.get("limit", 2000) or 2000)
-    session_id = (
-        args.get("_session_id")
-        or args.get("session_id")
-        or "default"
-    )
+    context = legacy_execution_context(args, task_id, execution_context)
+    session_id = context.session_id
 
     if not isinstance(path, str) or not path:
         return _err(

@@ -22,6 +22,8 @@ import logging
 import uuid
 from typing import Any, Callable, Optional
 
+from ..capabilities import ToolExecutionContext
+
 from .agent_parallel_tool import (
     _build_sprint_contract,
     _filter_subagent_tools,
@@ -122,7 +124,12 @@ def build_spawn_subagents_tools(
         shim_resolver=shim_resolver,
     )
 
-    async def _spawn(args: dict[str, Any], task_id: str = "") -> str:
+    async def _spawn(
+        args: dict[str, Any],
+        task_id: str = "",
+        *,
+        execution_context: ToolExecutionContext | None = None,
+    ) -> str:
         subs = args.get("subagents")
         if not isinstance(subs, list) or not subs:
             return json.dumps(
@@ -138,7 +145,11 @@ def build_spawn_subagents_tools(
                 {"ok": False, "error": str(exc), "forbidden": "spawn_depth"},
                 ensure_ascii=False,
             )
-        parent_sid = parent_session_id_resolver() or "default"
+        parent_sid = (
+            execution_context.session_id
+            if execution_context is not None
+            else (parent_session_id_resolver() or "default")
+        )
         run_ids: list[str] = []
         for idx, sa in enumerate(subs[:_MAX]):
             if not isinstance(sa, dict) or not sa.get("prompt"):
@@ -202,7 +213,12 @@ def build_spawn_subagents_tools(
             ensure_ascii=False,
         )
 
-    async def _await(args: dict[str, Any], task_id: str = "") -> str:
+    async def _await(
+        args: dict[str, Any],
+        task_id: str = "",
+        *,
+        execution_context: ToolExecutionContext | None = None,
+    ) -> str:
         run_ids = args.get("run_ids")
         if run_ids and isinstance(run_ids, list):
             runs = [registry.get(r) for r in run_ids]

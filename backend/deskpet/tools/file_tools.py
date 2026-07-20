@@ -37,6 +37,8 @@ from typing import Any
 
 import platformdirs
 
+from .capabilities import ToolExecutionContext
+from .context_adapter import bind_context_handler, legacy_execution_context
 from .registry import registry
 
 logger = logging.getLogger(__name__)
@@ -160,8 +162,8 @@ def _workspace_root(override: str | Path | None = None) -> Path:
     return root
 
 
-def _context_workspace_root(args: dict[str, Any]) -> Path:
-    override = args.get("_project_root") or args.get("_write_scope_root")
+def _context_workspace_root(context: ToolExecutionContext) -> Path:
+    override = context.workspace or context.write_scope_root
     return _workspace_root(str(override) if override else None)
 
 
@@ -308,10 +310,16 @@ _SCHEMA_READ: dict[str, Any] = {
 }
 
 
-async def _handle_file_read(args: dict[str, Any], task_id: str) -> str:
+async def _handle_file_read(
+    args: dict[str, Any],
+    task_id: str,
+    *,
+    execution_context: ToolExecutionContext | None = None,
+) -> str:
     # WI-M1.6: handler 改 async —— 成功读后直接 await record_action 记
     # 工作记忆（registry dispatch 对 async handler 直接 await）。
-    workspace = _context_workspace_root(args)
+    context = legacy_execution_context(args, task_id, execution_context)
+    workspace = _context_workspace_root(context)
     target = _resolve_within_workspace(str(args.get("path", "")), workspace)
     if target is None:
         return _err("path outside workspace", retriable=False)
@@ -337,7 +345,7 @@ async def _handle_file_read(args: dict[str, Any], task_id: str) -> str:
     rel_path = str(target.relative_to(workspace)).replace("\\", "/")
     content = "".join(lines)
     await _record_workspace_action(
-        session_id=task_id, path=rel_path, action="read", content=content,
+        session_id=context.session_id, path=rel_path, action="read", content=content,
     )
     return json.dumps(
         {
@@ -381,9 +389,15 @@ _SCHEMA_WRITE: dict[str, Any] = {
 }
 
 
-async def _handle_file_write(args: dict[str, Any], task_id: str) -> str:
+async def _handle_file_write(
+    args: dict[str, Any],
+    task_id: str,
+    *,
+    execution_context: ToolExecutionContext | None = None,
+) -> str:
     # WI-M1.6: handler 改 async —— 成功写后 await record_action 记工作记忆。
-    workspace = _context_workspace_root(args)
+    context = legacy_execution_context(args, task_id, execution_context)
+    workspace = _context_workspace_root(context)
     target = _resolve_within_workspace(str(args.get("path", "")), workspace)
     if target is None:
         return _err("path outside workspace", retriable=False)
@@ -402,7 +416,7 @@ async def _handle_file_write(args: dict[str, Any], task_id: str) -> str:
         return _err(f"write failed: {exc}", retriable=True)
     rel_path = str(target.relative_to(workspace)).replace("\\", "/")
     await _record_workspace_action(
-        session_id=task_id, path=rel_path, action="write", content=content,
+        session_id=context.session_id, path=rel_path, action="write", content=content,
     )
     return json.dumps(
         {
@@ -443,12 +457,18 @@ _SCHEMA_GLOB: dict[str, Any] = {
 }
 
 
-def _handle_file_glob(args: dict[str, Any], task_id: str) -> str:
+def _handle_file_glob(
+    args: dict[str, Any],
+    task_id: str,
+    *,
+    execution_context: ToolExecutionContext | None = None,
+) -> str:
     pattern = str(args.get("pattern", "") or "")
     if not pattern:
         return _err("pattern is required", retriable=False)
     root_rel = str(args.get("root", ".") or ".")
-    workspace = _context_workspace_root(args)
+    context = legacy_execution_context(args, task_id, execution_context)
+    workspace = _context_workspace_root(context)
     root = _resolve_within_workspace(root_rel, workspace)
     if root is None:
         return _err("path outside workspace", retriable=False)
@@ -513,11 +533,17 @@ _SCHEMA_GREP: dict[str, Any] = {
 }
 
 
-def _handle_file_grep(args: dict[str, Any], task_id: str) -> str:
+def _handle_file_grep(
+    args: dict[str, Any],
+    task_id: str,
+    *,
+    execution_context: ToolExecutionContext | None = None,
+) -> str:
     pattern = str(args.get("pattern", "") or "")
     if not pattern:
         return _err("pattern is required", retriable=False)
-    workspace = _context_workspace_root(args)
+    context = legacy_execution_context(args, task_id, execution_context)
+    workspace = _context_workspace_root(context)
     target = _resolve_within_workspace(str(args.get("path", "")), workspace)
     if target is None:
         return _err("path outside workspace", retriable=False)
@@ -574,7 +600,12 @@ _SCHEMA_WORKSPACE_RECALL: dict[str, Any] = {
 }
 
 
-async def _handle_workspace_recall(args: dict[str, Any], task_id: str) -> str:
+async def _handle_workspace_recall(
+    args: dict[str, Any],
+    task_id: str,
+    *,
+    execution_context: ToolExecutionContext | None = None,
+) -> str:
     """WI-M1.6: 查回本 task 改过/读过的文件。store 未注入（flag 关）→
     返回 reason=workspace_memory_disabled。"""
     store = _workspace_store
@@ -610,14 +641,25 @@ async def _handle_workspace_recall(args: dict[str, Any], task_id: str) -> str:
 # ---------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------
-registry.register("file_read", "file", _SCHEMA_READ, _handle_file_read)
+registry.register(
+    "file_read", "file", _SCHEMA_READ, _handle_file_read,
+    context_handler=bind_context_handler(_handle_file_read),
+)
 registry.register(
     "file_write", "file", _SCHEMA_WRITE, _handle_file_write,
+    context_handler=bind_context_handler(_handle_file_write),
     concurrency_safe=False,  # G3: filesystem write — must serialize
 )
-registry.register("file_glob", "file", _SCHEMA_GLOB, _handle_file_glob)
-registry.register("file_grep", "file", _SCHEMA_GREP, _handle_file_grep)
+registry.register(
+    "file_glob", "file", _SCHEMA_GLOB, _handle_file_glob,
+    context_handler=bind_context_handler(_handle_file_glob),
+)
+registry.register(
+    "file_grep", "file", _SCHEMA_GREP, _handle_file_grep,
+    context_handler=bind_context_handler(_handle_file_grep),
+)
 registry.register(
     "workspace_recall", "file",
     _SCHEMA_WORKSPACE_RECALL, _handle_workspace_recall,
+    context_handler=bind_context_handler(_handle_workspace_recall),
 )

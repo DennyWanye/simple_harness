@@ -33,6 +33,12 @@ from typing import Any, Callable
 
 import httpx
 
+from .capabilities import ToolExecutionContext
+from .context_adapter import (
+    bind_context_handler,
+    legacy_execution_context,
+    legacy_host_service,
+)
 from .registry import registry
 
 log = logging.getLogger(__name__)
@@ -666,7 +672,12 @@ def _async_enabled() -> bool:
         return True
 
 
-def _handle_generate_image(args: dict[str, Any], task_id: str = "") -> str:
+def _handle_generate_image(
+    args: dict[str, Any],
+    task_id: str = "",
+    *,
+    execution_context: ToolExecutionContext | None = None,
+) -> str:
     """Dispatch: async (default) → submit to ImageGenerationWorker and
     return immediately so the agent turn doesn't block 60–240s; the
     worker pushes the result back to the pet when done. sync (rollback)
@@ -687,8 +698,16 @@ def _handle_generate_image(args: dict[str, Any], task_id: str = "") -> str:
     # session_id + worker 由 chat handler 经 set_session_context 注入
     # （同 _write_scope_root 机制，registry 把它们 merge 进 args）。
     # 这样工具不用 import main 的 ServiceContext 单例（会循环/重量）。
-    session_id = str(args.get("_session_id") or "default")
-    worker = args.get("_image_worker")
+    context = legacy_execution_context(args, task_id, execution_context)
+    session_id = context.session_id
+    # Live services do not belong in the immutable trusted context.  New
+    # harness calls use the supported synchronous fallback until a typed image
+    # service port exists; only the historical merge can supply the worker.
+    worker = (
+        legacy_host_service(args, "_image_worker")
+        if execution_context is None
+        else None
+    )
     if worker is None:
         # worker 不可用（未注册/构造失败）→ 不静默失败，回退同步，
         # 用户至少能拿到图（慢但可用）。
@@ -739,6 +758,7 @@ registry.register(
     "image",
     _SCHEMA,
     _handle_generate_image,
+    context_handler=bind_context_handler(_handle_generate_image),
     permission_category="network",
     timeout_seconds=_TOOL_TIMEOUT_S,
 )

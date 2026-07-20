@@ -23,20 +23,28 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
+from ..capabilities import ToolExecutionContext
+from ..context_adapter import legacy_execution_context
+
 log = logging.getLogger(__name__)
 
 _MAX_RESULTS = 200
 
 
-def _resolve_root(args: dict[str, Any]) -> Path:
+def _resolve_root(args: dict[str, Any], context: ToolExecutionContext) -> Path:
     """Pick the search root — caller-supplied path > injected project_root."""
-    p = args.get("path") or args.get("_project_root")
+    p = args.get("path") or context.workspace
     if not p:
         raise ValueError("glob: no path provided and no project_root injected")
     return Path(p).expanduser().resolve()
 
 
-def glob_tool(args: dict[str, Any], task_id: str = "") -> str:
+def glob_tool(
+    args: dict[str, Any],
+    task_id: str = "",
+    *,
+    execution_context: ToolExecutionContext | None = None,
+) -> str:
     """Tool handler. ``args["pattern"]`` is required; ``args["path"]``
     optional — defaults to the injected project root.
 
@@ -49,7 +57,8 @@ def glob_tool(args: dict[str, Any], task_id: str = "") -> str:
         return json.dumps({"error": "pattern (string) is required"})
 
     try:
-        root = _resolve_root(args)
+        context = legacy_execution_context(args, task_id, execution_context)
+        root = _resolve_root(args, context)
     except ValueError as e:
         return json.dumps({"error": str(e)})
 

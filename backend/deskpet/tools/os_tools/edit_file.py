@@ -16,6 +16,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+from ..capabilities import ToolExecutionContext
+from ..context_adapter import legacy_execution_context
+
 
 _EXAMPLES = [
     {"path": "main.py", "old_string": "old text", "new_string": "new text"},
@@ -120,7 +123,12 @@ def _did_you_mean_error(path: str, old: str, file_lines: list[str]) -> str:
     )
 
 
-def edit_file(args: dict[str, Any], task_id: str = "") -> str:
+def edit_file(
+    args: dict[str, Any],
+    task_id: str = "",
+    *,
+    execution_context: ToolExecutionContext | None = None,
+) -> str:
     path = args.get("path", "")
     old = args.get("old_string", "")
     new = args.get("new_string", "")
@@ -128,7 +136,8 @@ def edit_file(args: dict[str, Any], task_id: str = "") -> str:
     fuzzy = bool(args.get("fuzzy", True))
 
     # OpenSpec §D3 — companion session write-scope（见 write_file 注释）。
-    _scope_root = args.get("_write_scope_root")
+    context = legacy_execution_context(args, task_id, execution_context)
+    _scope_root = context.write_scope_root
     if isinstance(path, str) and path and _scope_root:
         from agent.write_scope import write_scope_check as _ws_check
 

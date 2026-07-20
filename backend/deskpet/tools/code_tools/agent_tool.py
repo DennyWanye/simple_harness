@@ -29,6 +29,8 @@ import logging
 import os
 from typing import Any, Awaitable, Callable
 
+from ..capabilities import ToolExecutionContext
+
 from deskpet.agent.task_kinds import _FORBIDDEN_IN_KIND
 
 log = logging.getLogger(__name__)
@@ -104,7 +106,12 @@ def build_agent_tool(
         },
     }
 
-    def _handler(args: dict[str, Any], task_id: str = "") -> str:
+    def _handler(
+        args: dict[str, Any],
+        task_id: str = "",
+        *,
+        execution_context: ToolExecutionContext | None = None,
+    ) -> str:
         # WI-OC-1：显式 depth 上界（flag OFF=默认 → no-op，仍靠 strip 守门 = BC）。
         from deskpet.agent.task_kinds import SpawnDepthExceeded, check_spawn_depth
         from .agent_parallel_tool import _read_raw_agent_cfg
@@ -179,7 +186,11 @@ def build_agent_tool(
                 log.warning("subagent termination_gate factory failed: %s", _gexc)
         sub_loop = _AgentLoop(**_loop_kwargs)
 
-        parent_sid = parent_session_id_resolver() or "default"
+        parent_sid = (
+            execution_context.session_id
+            if execution_context is not None
+            else (parent_session_id_resolver() or "default")
+        )
         sub_sid = f"{parent_sid}.sub"
 
         async def _run():

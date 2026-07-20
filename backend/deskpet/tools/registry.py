@@ -52,7 +52,7 @@ import threading
 import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Mapping, Optional, Sequence
 
 from .capabilities import (
     ToolCapabilityScopeStore,
@@ -66,6 +66,15 @@ from .capabilities import (
 
 from .error_classifier import classify as _classify_retriable
 
+if TYPE_CHECKING:
+    from deskpet.harness.tool_executor import (
+        DecisionAuthorization,
+        EffectJournal,
+        LateEffectSupervisor,
+        PreparedExecutionCall,
+        ToolOutcome,
+    )
+
 logger = logging.getLogger(__name__)
 
 
@@ -73,6 +82,7 @@ logger = logging.getLogger(__name__)
 # ``task_id`` (used for tracing / observability; "" when the caller
 # doesn't have one handy) and MUST return a JSON-encodable string.
 ToolHandler = Callable[[dict[str, Any], str], str]
+ContextToolHandler = Callable[[dict[str, Any], ToolExecutionContext], Any]
 CheckFn = Callable[[], bool]
 # Dynamic visibility predicate. Returns True iff the tool should be exposed
 # to the LLM *this turn*. Unlike ``requires_env`` (static env check) this is
@@ -442,6 +452,9 @@ class ToolSpec:
     toolset: str
     schema: dict[str, Any]
     handler: ToolHandler
+    # WI-2 add-only path: trusted host context is a separate argument.  The
+    # legacy handler remains required until the WI-12 atomic cut-over.
+    context_handler: Optional[ContextToolHandler] = None
     check_fn: Optional[CheckFn] = None
     requires_env: list[str] = field(default_factory=list)
     permission_category: str = "read_file"
@@ -759,6 +772,7 @@ class ToolRegistry:
         schema: dict[str, Any],
         handler: ToolHandler,
         *,
+        context_handler: Optional[ContextToolHandler] = None,
         check_fn: Optional[CheckFn] = None,
         requires_env: Optional[list[str]] = None,
         permission_category: str = "read_file",
@@ -816,6 +830,12 @@ class ToolRegistry:
             raise TypeError(f"schema must be dict, got {type(schema).__name__}")
         if not callable(handler):
             raise TypeError("handler must be callable")
+        if context_handler is not None and not callable(context_handler):
+            raise TypeError("context_handler must be callable")
+        if context_handler is not None and source.startswith(("plugin:", "mcp:")):
+            raise ValueError(
+                "plugin and MCP handlers cannot receive trusted host context"
+            )
         if not spec_version or not permission_policy_version:
             raise ValueError("tool spec and permission policy versions are required")
         if visibility_scope not in {"global", "session"}:
@@ -876,6 +896,7 @@ class ToolRegistry:
             toolset=toolset,
             schema=schema,
             handler=handler,
+            context_handler=context_handler,
             check_fn=check_fn,
             requires_env=list(requires_env or []),
             permission_category=permission_category,
@@ -1495,12 +1516,8 @@ class ToolRegistry:
             async def _run_handler() -> Any:
                 host_context = execution_context
                 if host_context is not None and active_policy is not None:
-                    host_context = ToolExecutionContext(
-                        scope_id=host_context.scope_id,
-                        session_id=host_context.session_id,
-                        request_id=host_context.request_id,
-                        origin=host_context.origin,
-                        policy_snapshot=active_policy,
+                    host_context = replace(
+                        host_context, policy_snapshot=active_policy
                     )
                 token = (
                     set_tool_execution_context(host_context)
@@ -1859,6 +1876,257 @@ class ToolRegistry:
         except (TypeError, ValueError):
             return "authorization_expiry_invalid"
         return None
+
+    def is_concurrency_safe(self, tool_name: str) -> bool:
+        """Public immutable-catalog query used by ``UnifiedToolExecutor``."""
+
+        with self._lock:
+            spec = self._tools.get(tool_name)
+        # Unknown calls fail inside execute_call.  Treating them as safe keeps
+        # one bogus name from serializing unrelated valid calls.
+        return bool(spec.concurrency_safe) if spec is not None else True
+
+    async def execute_call(
+        self,
+        call: PreparedExecutionCall,
+        context: ToolExecutionContext,
+        *,
+        authorization: DecisionAuthorization | None = None,
+        journal: EffectJournal | None = None,
+        late_supervisor: LateEffectSupervisor | None = None,
+    ) -> ToolOutcome:
+        """Execute an immutable prepared call with a separate trusted context.
+
+        This differently named entry point is test-only wiring until WI-12.
+        It intentionally does not call ``execute_tool`` or merge
+        ``_session_context``.  Legacy production dispatch therefore remains
+        behaviorally unchanged while new drivers get a strict trust boundary.
+        """
+
+        import inspect as _inspect
+
+        from deskpet.harness.tool_executor import (
+            DecisionAuthorization,
+            LateEffectSupervisor,
+            PreparedExecutionCall,
+            ToolOutcome,
+            ToolOutcomeStatus,
+            ReservedModelFieldError,
+            reject_reserved_model_fields,
+        )
+
+        if not isinstance(call, PreparedExecutionCall):
+            raise TypeError("execute_call accepts PreparedExecutionCall only")
+        if not isinstance(context, ToolExecutionContext):
+            raise TypeError("execute_call accepts ToolExecutionContext only")
+        try:
+            reject_reserved_model_fields(call.model_args)
+        except ReservedModelFieldError:
+            logger.warning(
+                "reserved_model_field_rejected tool=%s run=%s call=%s",
+                call.tool_name,
+                context.run_id,
+                call.call_id,
+            )
+            raise
+
+        required_context = {
+            "session_id": context.session_id,
+            "run_id": context.run_id,
+            "root_run_id": context.root_run_id,
+            "request_id": context.request_id,
+            "turn_id": context.turn_id,
+            "capability_hash": context.capability_hash,
+            "scope_hash": context.scope_hash,
+            "trace_id": context.trace_id,
+        }
+        missing = [key for key, value in required_context.items() if not str(value or "")]
+        if missing:
+            return ToolOutcome.failed(
+                call, f"trusted_context_missing:{','.join(sorted(missing))}"
+            )
+        if context.call_id != call.call_id or context.effect_id != call.effect_id:
+            return ToolOutcome.failed(call, "trusted_context_call_binding_mismatch")
+        if (
+            context.capability_hash != call.capability_hash
+            or context.scope_hash != call.scope_hash
+        ):
+            return ToolOutcome.failed(call, "trusted_context_scope_binding_mismatch")
+
+        with self._lock:
+            spec = self._tools.get(call.tool_name)
+        if spec is None:
+            return ToolOutcome.failed(call, "unknown_tool")
+
+        snapshots = {
+            "tool_spec_version": (call.tool_spec_version, spec.spec_version),
+            "schema_hash": (call.schema_hash, spec.schema_hash),
+            "permission_policy_version": (
+                call.permission_policy_version,
+                spec.permission_policy_version,
+            ),
+        }
+        for field_name, (prepared_value, current_value) in snapshots.items():
+            if prepared_value and prepared_value != current_value:
+                return ToolOutcome.failed(call, f"prepared_call_stale:{field_name}")
+        if not spec.env_satisfied():
+            return ToolOutcome.failed(call, "tool_disabled:required_environment")
+        if spec.check_fn is not None:
+            try:
+                if not bool(spec.check_fn()):
+                    return ToolOutcome.failed(call, "tool_not_ready")
+            except Exception as exc:  # noqa: BLE001
+                return ToolOutcome.failed(call, f"tool_not_ready:{type(exc).__name__}")
+        if (
+            context.session_id in self._plan_read_only_sessions
+            and spec.permission_category in _WRITE_PERMISSION_CATEGORIES
+        ):
+            return ToolOutcome.failed(call, "plan_read_only")
+
+        permission_required = bool(
+            call.requires_authorization
+            or spec.dangerous
+            or spec.permission_category in _WRITE_PERMISSION_CATEGORIES
+        )
+        typed_authorization: DecisionAuthorization | None = None
+        if permission_required:
+            if not isinstance(authorization, DecisionAuthorization):
+                return ToolOutcome.failed(call, "authorization_required")
+            binding_error = authorization.binding_error(call, context)
+            if binding_error is not None:
+                return ToolOutcome.failed(call, binding_error)
+            typed_authorization = authorization
+        elif authorization is not None:
+            if not isinstance(authorization, DecisionAuthorization):
+                return ToolOutcome.failed(call, "authorization_type_invalid")
+            binding_error = authorization.binding_error(call, context)
+            if binding_error is not None:
+                return ToolOutcome.failed(call, binding_error)
+            typed_authorization = authorization
+
+        effect_kind = str(
+            getattr(getattr(spec.effect_policy, "kind", None), "value", "")
+        )
+        effectful = bool(
+            call.recoverable_effect
+            or spec.permission_category in _WRITE_PERMISSION_CATEGORIES
+            or effect_kind in {"staged_file", "opaque_manual"}
+        )
+        if effectful and journal is None:
+            return ToolOutcome.failed(call, "effect_journal_required")
+        if effectful:
+            # A durable implementation consumes the one-shot grant and starts
+            # the attempt in this single operation/UoW.
+            try:
+                await journal.prepare_effect(call, context, typed_authorization)
+            except Exception as exc:  # noqa: BLE001
+                return ToolOutcome.failed(
+                    call, f"effect_prepare_failed:{type(exc).__name__}"
+                )
+
+        clean_args = call.args_copy()
+
+        def normalize(raw: Any) -> ToolOutcome:
+            normalized = self._normalize_result(spec, raw)
+            state = str(getattr(getattr(normalized, "state", None), "value", ""))
+            if state == "success":
+                status = (
+                    ToolOutcomeStatus.ACCEPTED
+                    if spec.completion_semantics == "accepted_async"
+                    else ToolOutcomeStatus.SUCCEEDED
+                )
+                return ToolOutcome(
+                    call.call_id,
+                    call.effect_id,
+                    status,
+                    value=normalized.to_dict().get("value"),
+                )
+            error = normalized.to_dict().get("error") or {}
+            message = str(error.get("message") or error.get("code") or "tool_failed")
+            return ToolOutcome.failed(call, message)
+
+        async def invoke_async() -> ToolOutcome:
+            token = set_tool_execution_context(context)
+            try:
+                handler = spec.context_handler or spec.handler
+                if spec.context_handler is not None:
+                    value = handler(clean_args, context)
+                else:
+                    # Compatibility for handlers that need no host data.  No
+                    # reserved field is synthesized for them.
+                    value = handler(clean_args, call.call_id)
+                raw = await value if _inspect.isawaitable(value) else value
+                return normalize(raw)
+            except Exception as exc:  # noqa: BLE001
+                return ToolOutcome.failed(
+                    call, f"tool_handler_error:{type(exc).__name__}: {exc}"
+                )
+            finally:
+                reset_tool_execution_context(token)
+
+        handler = spec.context_handler or spec.handler
+        is_async_handler = _inspect.iscoroutinefunction(handler)
+
+        def invoke_sync() -> Any:
+            token = set_tool_execution_context(context)
+            try:
+                if spec.context_handler is not None:
+                    return spec.context_handler(clean_args, context)
+                return spec.handler(clean_args, call.call_id)
+            finally:
+                reset_tool_execution_context(token)
+
+        if not is_async_handler and effectful:
+            supervisor = late_supervisor or LateEffectSupervisor()
+            outcome = await supervisor.run_sync(
+                invoke_sync,
+                timeout_seconds=spec.timeout_seconds,
+                call=call,
+                context=context,
+                journal=journal,
+                normalize=normalize,
+            )
+        elif not is_async_handler:
+            try:
+                loop = asyncio.get_running_loop()
+                copied = contextvars.copy_context()
+                raw = await asyncio.wait_for(
+                    loop.run_in_executor(None, copied.run, invoke_sync),
+                    timeout=spec.timeout_seconds,
+                )
+                # A compatibility wrapper may be a sync function returning an
+                # awaitable.  Await it without moving ordinary sync work back
+                # onto the event-loop thread.
+                if _inspect.isawaitable(raw):
+                    raw = await asyncio.wait_for(raw, timeout=spec.timeout_seconds)
+                outcome = normalize(raw)
+            except asyncio.TimeoutError:
+                outcome = ToolOutcome.failed(call, "tool_timeout")
+            except Exception as exc:  # noqa: BLE001
+                outcome = ToolOutcome.failed(
+                    call, f"tool_handler_error:{type(exc).__name__}: {exc}"
+                )
+        else:
+            try:
+                outcome = await asyncio.wait_for(
+                    invoke_async(), timeout=spec.timeout_seconds
+                )
+            except asyncio.TimeoutError:
+                if effectful:
+                    await journal.mark_unknown(call, context, "async_handler_timeout")
+                    outcome = ToolOutcome.unknown(call, "tool_timeout")
+                else:
+                    outcome = ToolOutcome.failed(call, "tool_timeout")
+
+        if effectful and outcome.status is not ToolOutcomeStatus.UNKNOWN:
+            try:
+                await journal.finalize_effect(call, context, outcome, late=False)
+            except Exception as exc:  # noqa: BLE001
+                await journal.mark_unknown(
+                    call, context, f"effect_finalize_failed:{type(exc).__name__}"
+                )
+                return ToolOutcome.unknown(call, "effect_finalize_failed")
+        return outcome
 
     async def execute_prepared(
         self,

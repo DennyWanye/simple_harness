@@ -30,6 +30,9 @@ import re
 from pathlib import Path
 from typing import Any
 
+from ..capabilities import ToolExecutionContext
+from ..context_adapter import legacy_execution_context
+
 log = logging.getLogger(__name__)
 
 _MAX_FILES = 100
@@ -71,12 +74,18 @@ def _safe_read(p: Path) -> str | None:
         return None
 
 
-def grep_tool(args: dict[str, Any], task_id: str = "") -> str:
+def grep_tool(
+    args: dict[str, Any],
+    task_id: str = "",
+    *,
+    execution_context: ToolExecutionContext | None = None,
+) -> str:
     pattern = args.get("pattern")
     if not pattern or not isinstance(pattern, str):
         return json.dumps({"error": "pattern (regex) is required"})
 
-    path = args.get("path") or args.get("_project_root")
+    context = legacy_execution_context(args, task_id, execution_context)
+    path = args.get("path") or context.workspace
     if not path:
         return json.dumps({"error": "no path provided and no project_root injected"})
     root = Path(path).expanduser().resolve()

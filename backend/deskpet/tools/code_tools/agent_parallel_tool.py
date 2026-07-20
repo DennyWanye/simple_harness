@@ -45,6 +45,8 @@ import os
 import time
 from typing import Any, Awaitable, Callable, Optional
 
+from ..capabilities import ToolExecutionContext
+
 from deskpet.agent.task_kinds import _FORBIDDEN_IN_KIND
 
 log = logging.getLogger(__name__)
@@ -356,7 +358,12 @@ def build_agent_parallel_tool(
         parent_system_prompt_resolver or (lambda: "")
     )
 
-    async def _handle(args: dict[str, Any], task_id: str = "") -> str:
+    async def _handle(
+        args: dict[str, Any],
+        task_id: str = "",
+        *,
+        execution_context: ToolExecutionContext | None = None,
+    ) -> str:
         # WI-OC-1：显式 depth 上界（flag OFF=默认 → no-op，仍靠 strip 守门 = BC）。
         # flag ON 且本代理深度已达上界 → 拒绝整批（与剥 spawn 工具同风格拒绝）。
         try:
@@ -366,6 +373,11 @@ def build_agent_parallel_tool(
                 {"ok": False, "error": str(exc), "forbidden": "spawn_depth"},
                 ensure_ascii=False,
             )
+        parent_sid = (
+            execution_context.session_id
+            if execution_context is not None
+            else (parent_session_id_resolver() or "default")
+        )
         subagents = args.get("subagents")
         # G4: batch-level cache_mode default (each subagent may override)
         batch_cache_mode_raw = args.get("cache_mode", _DEFAULT_CACHE_MODE)
@@ -457,7 +469,6 @@ def build_agent_parallel_tool(
                 "cache_mode": sa_cache_mode,
                 "parent_system_prompt_hash": sa_system_prompt_hash,
             }
-            parent_sid = parent_session_id_resolver() or "default"
             run_id = f"{parent_sid}.par-{sa_task_id}"
             _emit_progress(sa_task_id, "starting")
 
