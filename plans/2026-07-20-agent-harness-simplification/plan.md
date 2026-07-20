@@ -2,7 +2,7 @@
 
 > plan-status: finalized (phase-2 rework approved 2026-07-20)
 >
-> 状态：WI-1～WI-11 的安全底座已落到 `codex/harness-integration@4d38979e`；首次 WI-12 原子切换因 AC-18 功能不等价且新增层达到 8,597 LOC 而整体回退。回炉方案已完成 5 轮 challenger（最终 PASS）并获用户 review 通过；R0～R2 已完成，当前执行 R3 薄 Kernel/ReAct Driver 与 recovery fence，生产 owner 仍保持 `legacy/0`。
+> 状态：WI-1～WI-11 的安全底座已落到 `codex/harness-integration@4d38979e`；首次 WI-12 原子切换因 AC-18 功能不等价且新增层达到 8,597 LOC 而整体回退。回炉方案已完成 5 轮 challenger（最终 PASS）并获用户 review 通过；R0～R3 已完成，当前执行 R4 Workflow/Child/Delivery adapters 收敛，生产 owner 仍保持 `legacy/0`。
 >
 > 关联文档：[`acceptance.md`](./acceptance.md) · [`architecture-baseline.md`](./architecture-baseline.md) · [`target-architecture.md`](./target-architecture.md)
 
