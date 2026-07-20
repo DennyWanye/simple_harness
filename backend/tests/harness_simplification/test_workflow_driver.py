@@ -76,7 +76,7 @@ class Launcher:
         self.cancels.append((run_id, reason))
         return {"status": "cancel_requested"}
 
-    async def resume_run(self, run_id, responses):
+    async def resume_precreated(self, run_id, responses):
         self.resumes.append((run_id, responses))
         return {"status": "accepted"}
 

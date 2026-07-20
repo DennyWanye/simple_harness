@@ -500,6 +500,42 @@ class WorkflowLauncher:
         self.notify_dispatcher()
         return row
 
+    async def resume_precreated(
+        self,
+        run_id: str,
+        responses: Mapping[str, JsonValue],
+    ) -> Any:
+        """Resume only a generic execution-owned workflow interrupt."""
+
+        if self.execution_ports is None:
+            raise RuntimeError("resume_precreated requires explicit WorkflowExecutionPorts")
+        if not await self._is_precreated(run_id):
+            raise RuntimeError("resume_precreated rejects a legacy workflow run")
+        row = await self.service.run_store.get_run(str(run_id))
+        if row is None:
+            raise KeyError(run_id)
+        adapter = self.runtime_adapters.get(
+            str(row["workflow_name"]), str(row["workflow_version"])
+        )
+        if adapter is None:
+            raise RuntimeError("workflow adapter is unavailable for generic resume")
+        snapshot = await self.service.run_store.get_capability_snapshot(str(run_id))
+        metadata = snapshot.get("_workflow_start", {}) if isinstance(snapshot, Mapping) else {}
+        start_payload = metadata.get("start_payload", {}) if isinstance(metadata, Mapping) else {}
+        if not isinstance(start_payload, Mapping):
+            raise RuntimeError("workflow start payload is unavailable for generic resume")
+        targets = await self._persisted_delivery_targets(str(run_id))
+        if not targets:
+            raise RuntimeError("workflow delivery session is unavailable for generic resume")
+        context = await self._build_context(adapter.context_factory, row, dict(start_payload))
+        result = await self.service.resume_precreated(
+            str(run_id),
+            dict(responses),
+            self._with_progress(context, targets),
+        )
+        await self.recover_due_deliveries(run_id=str(run_id))
+        return result
+
     async def recover_pending(self, *, only_run_ids: set[str] | None = None) -> list[str]:
         """Recreate background drivers from persisted start snapshots."""
 

@@ -11,6 +11,7 @@ from typing import Any, Protocol
 from deskpet.execution.contracts import OutcomeStatus, RunEvent
 from deskpet.harness.ports import (
     CancelAcknowledgedCandidate,
+    DecisionSignal,
     DriverCandidate,
     DriverSignal,
     DriverStart,
@@ -36,7 +37,7 @@ class WorkflowSignalResumer(Protocol):
 
 
 class WorkflowResumeLauncher(Protocol):
-    async def resume_run(
+    async def resume_precreated(
         self,
         run_id: str,
         responses: Mapping[str, Any],
@@ -56,13 +57,15 @@ class LauncherWorkflowSignalResumer:
         self._launcher = launcher
 
     async def resume(self, signal: DriverSignal) -> None:
+        if not isinstance(signal, DecisionSignal):
+            raise TypeError("workflow driver only resumes from a decision signal")
         nonce = str(getattr(signal, "nonce", "") or "").strip()
         if not nonce:
             raise ValueError("workflow decision signal requires its interrupt nonce")
         response = getattr(signal, "response", None)
         if not isinstance(response, Mapping):
             raise ValueError("workflow decision signal requires a response mapping")
-        await self._launcher.resume_run(signal.run_id, {nonce: dict(response)})
+        await self._launcher.resume_precreated(signal.run_id, {nonce: dict(response)})
 
 
 @dataclass(frozen=True, slots=True)
