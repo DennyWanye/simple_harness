@@ -1,6 +1,6 @@
 # DeskPet Agent Harness Architecture
 
-> Last updated: 2026-07-20. Scope: request lifecycle, harness state, service wiring, subagent sidecars, and harness simplification evidence.
+> Last updated: 2026-07-21. Scope: request lifecycle, harness state, service wiring, subagent sidecars, and harness simplification evidence.
 
 ## Summary
 
@@ -9,6 +9,26 @@ DeskPet uses a product-specific agent harness rather than a generic agent framew
 The importable contract lives in `backend/deskpet/agent/harness_manifest.py`. Tests should use that module when they need stable names for lifecycle stages, service wiring, or known harness weaknesses.
 
 ## Harness simplification program status
+
+The R3 recovery-fence hardening slice is complete. `RunKernel` claims one
+short-lived execution recovery lease and `DriverRuntime` renews it before
+constructing the recovery iterator, again before its first `anext`, and by
+heartbeat during long work. The lease is passed explicitly through ReAct,
+tool, child, event, continuation, and terminal writes; every persisted write
+validates owner, epoch, expiry, and run id inside its own `BEGIN IMMEDIATE`
+transaction. Child boundary/event/inbox acknowledgement is one transaction.
+Workflow recovery atomically validates the execution lease and claims the
+existing native `RunFence`; a preclaimed `ActiveLease` prevents a second
+native claim. Effect claim happens before external execution, while an owner
+takeover makes the old settlement fail rather than advance the run.
+
+Recovery fault verification covers first-yield ordering, same-owner concurrent
+claims, stale continuation/effect/child/event/terminal writes, workflow
+handoff rollback/idempotency, and takeover during an external tool call. Final
+gates: harness `261 passed, 9 xfailed`, AgentLoop adjacency `84 passed`, Kernel
+`631` physical lines, adjusted LOC `33,216 <= 33,228`, zero unknown LOC
+classifications. Production ownership remains `legacy/0`; this slice does not
+perform the R6 cutover. Evidence: [`r3-recovery-results.md`](../plans/2026-07-20-agent-harness-simplification/r3-recovery-results.md).
 
 R2 of the approved simplification plan is complete, but **execution ownership is unchanged**: text still enters through `main.py::_run_chat`, Voice keeps its legacy adapter, AgentLoop remains the short-task driver, and durable workflows keep their current owners.
 

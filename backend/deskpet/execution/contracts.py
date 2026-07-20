@@ -76,6 +76,20 @@ class PersistenceRequired(ExecutionError):
 class ActiveRunCapacityExceeded(ExecutionError):
     pass
 
+
+@dataclass(frozen=True, slots=True)
+class RecoveryLease:
+    """Opaque per-run recovery ownership token shared across execution ports."""
+
+    run_id: str
+    owner: str
+    epoch: int
+    expires_at: float
+
+
+class StaleRecoveryLease(RuntimeError):
+    """Raised when a recovered writer no longer owns the current lease epoch."""
+
 def validate_json_value(value: object, *, path: str='$') -> None:
     """Reject values that cannot have one stable canonical JSON spelling."""
     if value is None or isinstance(value, (str, bool, int)):

@@ -43,6 +43,9 @@ class ExecutionUnitOfWork(Protocol):
     async def claim_recovery(self, run_id: str, *, owner: str, lease_seconds: float=30.0) -> Any:
         ...
 
+    async def claim_workflow_recovery_handoff(self, recovery_lease: Any, *, workflow_owner: str, ttl_seconds: float=90.0) -> Any:
+        ...
+
     async def renew_recovery(self, lease: Any, *, lease_seconds: float=30.0) -> Any:
         ...
 
@@ -94,7 +97,7 @@ class ExecutionUnitOfWork(Protocol):
     async def initialize(self) -> None:
         ...
 
-    async def save_continuation(self, run_id: str, expected_version: int, payload: Mapping[str, Any], decision: DecisionOpen | None=None) -> Any:
+    async def save_continuation(self, run_id: str, expected_version: int, payload: Mapping[str, Any], decision: DecisionOpen | None=None, *, recovery_lease: Any | None=None) -> Any:
         ...
 
     async def load_continuation(self, run_id: str) -> Any | None:
@@ -103,7 +106,7 @@ class ExecutionUnitOfWork(Protocol):
     async def lookup_completion_evidence(self, context: EvidenceContext) -> EvidenceSelection:
         ...
 
-    async def delete_continuation(self, run_id: str, expected_version: int) -> None:
+    async def delete_continuation(self, run_id: str, expected_version: int, *, recovery_lease: Any | None=None) -> None:
         ...
 
     async def promote_and_persist_batch_boundary(self, spec: RunCreate, *, expected_run_version: int, expected_continuation_version: int, payload: Mapping[str, Any], decision: DecisionOpen | None=None, waiting_event: RunEventCandidate | None=None, deliveries: Sequence[DeliverySpec]=()) -> tuple[CreateRunResult, Any]:
@@ -115,27 +118,30 @@ class ExecutionUnitOfWork(Protocol):
     async def start_workflow(self, spec: RunCreate, workflow: WorkflowRunSeed, *, accepted_event: RunEventCandidate | None=None, deliveries: Sequence[DeliverySpec]=()) -> CreateRunResult:
         ...
 
-    async def commit_child_command(self, intent: ChildCommandIntent) -> ChildCommandRecord:
+    async def commit_child_command(self, intent: ChildCommandIntent, *, recovery_lease: Any | None=None) -> ChildCommandRecord:
         ...
 
     async def get_child_command(self, operation_id: str) -> ChildCommandRecord | None:
         ...
 
-    async def lease_child_commands(self, *, owner: str, limit: int, lease_seconds: float) -> tuple[ChildCommandRecord, ...]:
+    async def lease_child_commands(self, *, owner: str, limit: int, lease_seconds: float, parent_run_id: str | None=None, recovery_lease: Any | None=None) -> tuple[ChildCommandRecord, ...]:
         ...
 
-    async def schedule_child_command(self, operation_id: str, *, lease_owner: str, lease_epoch: int) -> ChildCommandRecord:
+    async def schedule_child_command(self, operation_id: str, *, lease_owner: str, lease_epoch: int, recovery_lease: Any | None=None) -> ChildCommandRecord:
         ...
 
-    async def acknowledge_child_command(self, operation_id: str, *, lease_owner: str, lease_epoch: int) -> ChildCommandRecord:
+    async def acknowledge_child_command(self, operation_id: str, *, lease_owner: str, lease_epoch: int, recovery_lease: Any | None=None) -> ChildCommandRecord:
         ...
 
-    async def record_child_terminal(self, operation_id: str, *, terminal_status: str, value: object=None) -> ChildSignalRecord:
+    async def record_child_terminal(self, operation_id: str, *, terminal_status: str, value: object=None, recovery_lease: Any | None=None) -> ChildSignalRecord:
         ...
 
-    async def list_pending_child_signals(self, parent_run_id: str) -> tuple[ChildSignalRecord, ...]:
+    async def list_pending_child_signals(self, parent_run_id: str, *, recovery_lease: Any | None=None) -> tuple[ChildSignalRecord, ...]:
         ...
 
-    async def acknowledge_child_signal(self, signal_id: str) -> ChildSignalRecord:
+    async def acknowledge_child_signal(self, signal_id: str, *, recovery_lease: Any | None=None) -> ChildSignalRecord:
+        ...
+
+    async def apply_child_signal_and_ack(self, signal_id: str, *, expected_continuation_version: int, continuation_payload: Mapping[str, Any], event: RunEventCandidate, deliveries: Sequence[DeliverySpec]=(), recovery_lease: Any | None=None) -> tuple[ChildSignalRecord, Any, RunEvent]:
         ...
 __all__ = ['ExecutionUnitOfWork', 'RunView', 'SinkKey']

@@ -16,6 +16,7 @@ from deskpet.execution.contracts import (
     LiveCursor,
     OutcomeStatus,
     PersistenceLevel,
+    RecoveryLease,
     RunCreate,
     RunEvent,
     RunEventCandidate,
@@ -32,7 +33,6 @@ from deskpet.execution.contracts import (
     DecisionSignal as DurableDecisionSignal,
 )
 from deskpet.execution.ports import ExecutionUnitOfWork
-from deskpet.workflows.store import RecoveryLease
 
 from .context import HostContextFactory
 from .child_runs import ChildLauncher, ChildRunCoordinator
@@ -564,7 +564,6 @@ class RunKernel:
                     self._runtime.drive_recovery(
                         registration,
                         record,
-                        registration.driver.recover(record.run_id),
                         lease,
                     ),
                     name=f"deskpet-recover:{ref.run_id}",

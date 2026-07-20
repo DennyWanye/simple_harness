@@ -39,7 +39,7 @@ class Driver:
         if False:
             yield DriverTerminalCandidate(run_id, "cancelled", "")
 
-    async def recover(self, run_id):
+    async def recover(self, run_id, recovery_lease):
         self.recovered.append(run_id)
         if False:
             yield DriverTerminalCandidate(run_id, "completed", "")
@@ -160,7 +160,7 @@ async def test_recovery_enumerates_only_execution_owned_runs(tmp_path) -> None:
     )
 
     batch = await runtime.recovery.recover_pending()
-    await asyncio.sleep(0)
+    await runtime.kernel._active["run-recover"].task
 
     assert batch.count == 1
     assert driver.recovered == ["run-recover"]

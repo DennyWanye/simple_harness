@@ -9,6 +9,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import Any
 
+from deskpet.execution import RecoveryLease
+
 from .contracts import JsonValue, TERMINAL_RUN_STATUSES, WorkflowContext
 from .progress import WorkflowProgressReporter
 from .runner import WorkflowRunResult
@@ -536,7 +538,7 @@ class WorkflowLauncher:
         await self.recover_due_deliveries(run_id=str(run_id))
         return result
 
-    async def recover_pending(self, *, only_run_ids: set[str] | None = None) -> list[str]:
+    async def recover_pending(self, *, only_run_ids: set[str] | None = None, recovery_lease: RecoveryLease | None = None) -> list[str]:
         """Recreate background drivers from persisted start snapshots."""
 
         self._require_runtime_active()
@@ -562,6 +564,11 @@ class WorkflowLauncher:
             targets = await self._persisted_delivery_targets(run_id)
             if not targets:
                 continue
+            active_lease = None
+            if recovery_lease is not None:
+                active_lease = await self.service.runner.claim_execution_recovery(
+                    run_id, recovery_lease
+                )
             task = asyncio.create_task(
                 self._drive(
                     run_id=run_id,
@@ -571,6 +578,7 @@ class WorkflowLauncher:
                     targets=targets,
                     resume_from_checkpoint=bool(row.get("head_checkpoint_id")),
                     precreated=await self._is_precreated(run_id),
+                    active_lease=active_lease,
                 ),
                 name=f"workflow:recover:{run_id}",
             )
@@ -955,6 +963,7 @@ class WorkflowLauncher:
         targets: Sequence[tuple[str, str]],
         resume_from_checkpoint: bool = False,
         precreated: bool = False,
+        active_lease: Any | None = None,
     ) -> None:
         try:
             row = await self.service.run_store.get_run(run_id)
@@ -983,9 +992,11 @@ class WorkflowLauncher:
             )
             if precreated:
                 result = (
-                    await self.service.resume_precreated(run_id, responses, context)
+                    await self.service.resume_precreated(
+                        run_id, responses, context, active_lease=active_lease)
                     if responses
-                    else await self.service.run_precreated(run_id, state, context)
+                    else await self.service.run_precreated(
+                        run_id, state, context, active_lease=active_lease)
                 )
             else:
                 result = (

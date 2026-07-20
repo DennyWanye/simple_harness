@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from deskpet.execution import RecoveryLease, StaleRecoveryLease
 from deskpet.harness.context import HostContextFactory
 from deskpet.harness.tool_executor import (
     DecisionAuthorization,
@@ -88,6 +89,40 @@ def _register(
         timeout_seconds=timeout_seconds,
         outcome_parser_id="json_error_envelope_v1",
     )
+
+
+@pytest.mark.asyncio
+async def test_takeover_during_external_tool_call_denies_old_settlement() -> None:
+    registry = ToolRegistry()
+    journal_state = {"claimed": False, "taken_over": False, "settled": False}
+
+    class TakeoverJournal:
+        async def prepare_effect(self, call, context, authorization, *, recovery_lease=None):
+            assert recovery_lease is lease
+            journal_state["claimed"] = True
+
+        async def finalize_effect(self, call, context, outcome, *, late, recovery_lease=None):
+            assert journal_state["taken_over"]
+            raise StaleRecoveryLease("old owner lost its lease during tool execution")
+
+        async def mark_unknown(self, call, context, reason, *, recovery_lease=None):
+            journal_state["settled"] = True
+
+    async def handler(args, context):
+        assert journal_state["claimed"]
+        journal_state["taken_over"] = True
+        return json.dumps({"ok": True})
+
+    _register(registry, "write", context_handler=handler)
+    call = _call("write", recoverable_effect=True)
+    lease = RecoveryLease("run-1", "worker-a", 1, time.time() + 30)
+    executor = UnifiedToolExecutor(registry, journal=TakeoverJournal())
+
+    with pytest.raises(StaleRecoveryLease, match="lost its lease"):
+        await executor.execute_batch(
+            [call], [_context(call)], recovery_lease=lease
+        )
+    assert journal_state == {"claimed": True, "taken_over": True, "settled": False}
 
 
 def test_model_cannot_override_reserved_host_fields() -> None:

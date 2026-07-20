@@ -15,13 +15,14 @@ from deskpet.execution.contracts import (
     DeliveryPolicy,
     DeliverySpec,
     OutcomeStatus,
+    RecoveryLease,
     RunEventCandidate,
 )
 
 from .contracts import JsonValue, TERMINAL_RUN_STATUSES, WorkflowContext, WorkflowRunStatus
 from .definition import CompiledWorkflow, WorkflowManifest
 from .errors import WorkflowDependencyUnavailable, WorkflowErrorCode, WorkflowNodeError
-from .lease import HEARTBEAT_INTERVAL_SECONDS, LEASE_TTL_SECONDS, LeaseManager, transition_run
+from .lease import ActiveLease, HEARTBEAT_INTERVAL_SECONDS, LEASE_TTL_SECONDS, LeaseManager, transition_run
 from .recovery import (
     FailureMapping,
     RecoveryRecord,
@@ -307,6 +308,7 @@ class WorkflowRunner:
         run_id: str,
         state: object,
         context: WorkflowContext | None = None,
+        *, active_lease: ActiveLease | None = None,
     ) -> WorkflowRunResult:
         """Drive an already-atomic generic/workflow start without creating an id."""
 
@@ -317,6 +319,7 @@ class WorkflowRunner:
             responses=None,
             context=context,
             precreated=True,
+            active_lease=active_lease,
         )
 
     async def resume(
@@ -347,6 +350,7 @@ class WorkflowRunner:
         run_id: str,
         responses: Mapping[str, JsonValue],
         context: WorkflowContext | None = None,
+        *, active_lease: ActiveLease | None = None,
     ) -> WorkflowRunResult:
         if not responses:
             raise ValueError("workflow resume requires at least one response")
@@ -370,6 +374,20 @@ class WorkflowRunner:
             responses=dict(responses),
             context=context,
             precreated=True,
+            active_lease=active_lease,
+        )
+
+    async def claim_execution_recovery(self, run_id: str, recovery_lease: RecoveryLease) -> ActiveLease:
+        if self.execution_ports is None:
+            raise RuntimeError("execution recovery requires configured execution ports")
+        uow = self.execution_ports.unit_of_work
+        handoff = await uow.claim_workflow_recovery_handoff(
+            recovery_lease, workflow_owner=self.owner, ttl_seconds=self._leases.ttl_seconds
+        )
+        if handoff.run_id != run_id:
+            raise StaleRunFence(f"execution handoff names another run: {run_id}")
+        return ActiveLease(
+            handoff, self._leases.heartbeat_interval, self._leases.ttl_seconds
         )
 
     async def request_cancel_precreated(
@@ -569,6 +587,7 @@ class WorkflowRunner:
         responses: Mapping[str, JsonValue] | None,
         context: WorkflowContext | None,
         precreated: bool = False,
+        active_lease: ActiveLease | None = None,
     ) -> WorkflowRunResult:
         lock = self._run_locks.setdefault(run_id, asyncio.Lock())
         async with lock:
@@ -607,7 +626,9 @@ class WorkflowRunner:
                 updated = await self._block_run(row, map_workflow_failure(exc))
                 return self._result_from_row(updated)
 
-            lease = await self._leases.claim(run_id)
+            lease = active_lease or await self._leases.claim(run_id)
+            if lease.fence.run_id != run_id or lease.fence.owner != self.owner:
+                raise StaleRunFence(f"preclaimed lease is not owned by this runner: {run_id}")
             executable = registration.materialize(self.saver)
             logger.info(
                 "workflow_native_execute engine_kind=deskpet-native run_id=%s workflow=%s@%s",

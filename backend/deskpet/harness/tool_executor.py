@@ -18,6 +18,7 @@ from types import MappingProxyType
 from typing import Any, Awaitable, Callable, Mapping, Optional, Protocol, Sequence
 
 from deskpet.execution.contracts import DecisionAuthorization
+from deskpet.execution.contracts import RecoveryLease, StaleRecoveryLease
 from deskpet.tools.capabilities import ToolExecutionContext, canonical_hash
 from deskpet.tools.context_adapter import (
     RESERVED_MODEL_FIELDS,
@@ -100,6 +101,8 @@ class EffectJournal(Protocol):
         call: PreparedExecutionCall,
         context: ToolExecutionContext,
         authorization: Optional[DecisionAuthorization],
+        *,
+        recovery_lease: RecoveryLease | None = None,
     ) -> Optional[ToolOutcome]: ...
 
     async def mark_unknown(
@@ -107,6 +110,8 @@ class EffectJournal(Protocol):
         call: PreparedExecutionCall,
         context: ToolExecutionContext,
         reason: str,
+        *,
+        recovery_lease: RecoveryLease | None = None,
     ) -> None: ...
 
     async def finalize_effect(
@@ -116,6 +121,7 @@ class EffectJournal(Protocol):
         outcome: ToolOutcome,
         *,
         late: bool,
+        recovery_lease: RecoveryLease | None = None,
     ) -> None: ...
 
 
@@ -130,6 +136,7 @@ class PreparedCallRegistry(Protocol):
         authorization: Optional[DecisionAuthorization] = None,
         journal: Optional[EffectJournal] = None,
         late_supervisor: Optional["LateEffectSupervisor"] = None,
+        recovery_lease: RecoveryLease | None = None,
     ) -> ToolOutcome: ...
 
 
@@ -220,15 +227,13 @@ class UnifiedToolExecutor:
         context: ToolExecutionContext,
         *,
         authorization: Optional[DecisionAuthorization] = None,
+        recovery_lease: RecoveryLease | None = None,
     ) -> ToolOutcome:
         execute_call = getattr(self._registry, "execute_call", None)
         if callable(execute_call):
             return await execute_call(
-                call,
-                context,
-                authorization=authorization,
-                journal=self._journal,
-                late_supervisor=self._late_supervisor,
+                call, context, authorization=authorization, journal=self._journal,
+                late_supervisor=self._late_supervisor, recovery_lease=recovery_lease,
             )
 
         # Transitional bridge only: ToolRegistry V2 owns preparation and
@@ -268,7 +273,7 @@ class UnifiedToolExecutor:
         effectful = call.recoverable_effect and self._journal is not None
         if effectful:
             replayed = await self._journal.prepare_effect(
-                call, context, authorization
+                call, context, authorization, recovery_lease=recovery_lease
             )
             if replayed is not None:
                 return replayed
@@ -300,7 +305,7 @@ class UnifiedToolExecutor:
             )
         if effectful:
             await self._journal.finalize_effect(
-                call, context, outcome, late=False
+                call, context, outcome, late=False, recovery_lease=recovery_lease
             )
         return outcome
 
@@ -310,6 +315,7 @@ class UnifiedToolExecutor:
         contexts: Sequence[ToolExecutionContext],
         *,
         authorizations: Optional[Sequence[Optional[DecisionAuthorization]]] = None,
+        recovery_lease: RecoveryLease | None = None,
     ) -> list[ToolOutcome]:
         if len(calls) != len(contexts):
             raise ValueError("calls and contexts must have the same length")
@@ -321,8 +327,11 @@ class UnifiedToolExecutor:
         async def execute_at(index: int) -> None:
             try:
                 results[index] = await self.execute_one(
-                    calls[index], contexts[index], authorization=grants[index]
+                    calls[index], contexts[index], authorization=grants[index],
+                    recovery_lease=recovery_lease,
                 )
+            except StaleRecoveryLease:
+                raise
             except Exception as exc:  # sibling calls must not be cancelled
                 results[index] = ToolOutcome.failed(
                     calls[index], f"executor_error:{type(exc).__name__}: {exc}"

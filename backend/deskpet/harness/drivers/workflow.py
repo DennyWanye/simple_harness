@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Protocol
 
-from deskpet.execution.contracts import OutcomeStatus, RunEvent
+from deskpet.execution.contracts import OutcomeStatus, RecoveryLease, RunEvent
 from deskpet.harness.ports import (
     CancelAcknowledgedCandidate,
     DriverEvent,
@@ -20,7 +20,7 @@ from deskpet.harness.ports import (
 
 class WorkflowLauncherPort(Protocol):
     async def launch_precreated(self, **kwargs: Any) -> Mapping[str, Any]: ...
-    async def recover_pending(self, *, only_run_ids: set[str] | None = None) -> list[str]: ...
+    async def recover_pending(self, *, only_run_ids: set[str] | None = None, recovery_lease: RecoveryLease | None = None) -> list[str]: ...
     async def cancel_precreated(self, run_id: str, reason: str = "user") -> Mapping[str, Any]: ...
 
 
@@ -179,7 +179,7 @@ class WorkflowDriver:
 
         return iterator()
 
-    def signal(self, signal: DriverSignal) -> AsyncIterator[DriverEvent]:
+    def signal(self, signal: DriverSignal, recovery_lease: RecoveryLease | None = None) -> AsyncIterator[DriverEvent]:
         async def iterator() -> AsyncIterator[DriverEvent]:
             if self._signal_resumer is None:
                 raise RuntimeError("workflow signal resumer is not configured")
@@ -196,7 +196,7 @@ class WorkflowDriver:
 
         return iterator()
 
-    def recover(self, run_id: str) -> AsyncIterator[DriverEvent]:
+    def recover(self, run_id: str, recovery_lease: RecoveryLease) -> AsyncIterator[DriverEvent]:
         async def iterator() -> AsyncIterator[DriverEvent]:
             existing = await self._events.list_events(run_id, after_durable_seq=0)
             cursor = 0
@@ -205,7 +205,9 @@ class WorkflowDriver:
                 yield PersistedEventCandidate(event)
                 if self._terminal(event):
                     return
-            await self._launcher.recover_pending(only_run_ids={run_id})
+            await self._launcher.recover_pending(
+                only_run_ids={run_id}, recovery_lease=recovery_lease
+            )
             async for candidate in self._follow(run_id, after=cursor):
                 yield candidate
 

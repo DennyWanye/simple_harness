@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -15,6 +16,7 @@ from deskpet.execution.contracts import (
     LiveCursor,
     OutcomeStatus,
     PersistenceLevel,
+    RecoveryLease,
     RunEvent,
     RunEventCandidate,
     RunRecord,
@@ -23,7 +25,6 @@ from deskpet.execution.contracts import (
     TerminalConflict,
 )
 from deskpet.execution.ports import ExecutionUnitOfWork
-from deskpet.workflows.store import RecoveryLease
 
 from .child_runs import ChildLauncher, ChildRunCoordinator
 from .contracts import RegisteredDriver
@@ -67,6 +68,10 @@ class DriverRuntime:
             OutcomeStatus.FAILED,
             OutcomeStatus.CANCELLED,
         }
+
+    @staticmethod
+    def _lease_kwargs(lease: RecoveryLease | None) -> dict[str, RecoveryLease]:
+        return {} if lease is None else {"recovery_lease": lease}
 
     async def emit(self, event: RunEvent) -> None:
         terminal = self.is_terminal_event(event)
@@ -134,17 +139,49 @@ class DriverRuntime:
         self,
         registration: RegisteredDriver,
         record: RunRecord,
-        candidates: AsyncIterator[DriverEvent],
         lease: RecoveryLease,
     ) -> None:
+        current = [lease]
+        heartbeat_error: list[BaseException] = []
+
+        async def heartbeat() -> None:
+            while True:
+                await asyncio.sleep(10.0)
+                try:
+                    current[0] = await self._uow.renew_recovery(current[0])
+                except BaseException as exc:
+                    heartbeat_error.append(exc)
+                    return
+
+        candidates: AsyncIterator[DriverEvent] | None = None
+        heartbeat_task: asyncio.Task[None] | None = None
         try:
-            async for candidate in candidates:
-                lease = await self._uow.renew_recovery(lease)
+            current[0] = await self._uow.renew_recovery(current[0])
+            candidates = registration.driver.recover(record.run_id, current[0])
+            heartbeat_task = asyncio.create_task(
+                heartbeat(), name=f"deskpet-recovery-heartbeat:{record.run_id}"
+            )
+            while True:
+                current[0] = await self._uow.renew_recovery(current[0])
+                if heartbeat_error:
+                    raise heartbeat_error[0]
+                try:
+                    candidate = await anext(candidates)
+                except StopAsyncIteration:
+                    break
                 await self.consume_candidate(
-                    registration, record, candidate, recovery_lease=lease
+                    registration, record, candidate, recovery_lease=current[0]
                 )
+                if heartbeat_error:
+                    raise heartbeat_error[0]
         finally:
-            await self._uow.release_recovery(lease)
+            if heartbeat_task is not None:
+                heartbeat_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await heartbeat_task
+            if candidates is not None:
+                await candidates.aclose()
+            await self._uow.release_recovery(current[0])
 
     async def consume(
         self,
@@ -248,25 +285,27 @@ class DriverRuntime:
                 candidate.calls,
                 candidate.contexts,
                 authorizations=authorizations,
+                **self._lease_kwargs(recovery_lease),
+            )
+            signal_iterator = registration.driver.signal(
+                ToolOutcomesSignal(candidate.run_id, candidate.command_id, tuple(outcomes)),
+                **self._lease_kwargs(recovery_lease),
             )
             return await self.consume(
                 registration,
                 record,
-                registration.driver.signal(
-                    ToolOutcomesSignal(
-                        candidate.run_id,
-                        candidate.command_id,
-                        tuple(outcomes),
-                    )
-                ),
+                signal_iterator,
                 recovery_lease=recovery_lease,
             )
         if candidate.kind == "delegate_run" and self._child_runs is not None:
-            await self._child_runs.submit(record, candidate)
+            await self._child_runs.submit(
+                record, candidate, **self._lease_kwargs(recovery_lease)
+            )
             if self._child_launcher is not None:
                 await self._child_runs.run_scheduler_once(
                     self._child_launcher,
                     owner=self._child_scheduler_owner,
+                    **self._lease_kwargs(recovery_lease),
                 )
             await self._drain_child_signals(
                 registration, record, recovery_lease=recovery_lease
@@ -286,14 +325,21 @@ class DriverRuntime:
     ) -> None:
         if self._child_runs is None:
             return
-        for delivery in await self._child_runs.pending_signals(record.run_id):
+        deliveries = await self._child_runs.pending_signals(
+            record.run_id, **self._lease_kwargs(recovery_lease)
+        )
+        for delivery in deliveries:
+            signal_iterator = registration.driver.signal(
+                delivery.signal, **self._lease_kwargs(recovery_lease)
+            )
             await self.consume(
                 registration,
                 record,
-                registration.driver.signal(delivery.signal),
+                signal_iterator,
                 recovery_lease=recovery_lease,
             )
-            await self._child_runs.acknowledge_signal(delivery.record.signal_id)
+            if getattr(delivery.signal, "signal_id", None) is None:
+                await self._child_runs.acknowledge_signal(delivery.record.signal_id)
 
     @staticmethod
     def event_candidate(

@@ -882,6 +882,7 @@ class WorkflowService:
         run_id: str,
         state: object,
         context: WorkflowContext | None = None,
+        *, active_lease: Any | None = None,
     ) -> Any:
         runner = self.runner
         call = getattr(runner, "run_precreated", None)
@@ -890,13 +891,15 @@ class WorkflowService:
                 "workflow_execution_ports_required",
                 "workflow runner cannot drive a precreated execution",
             )
-        return await call(str(run_id), state, context)
+        kwargs = {} if active_lease is None else {"active_lease": active_lease}
+        return await call(str(run_id), state, context, **kwargs)
 
     async def resume_precreated(
         self,
         run_id: str,
         responses: Mapping[str, JsonValue],
         context: WorkflowContext | None = None,
+        *, active_lease: Any | None = None,
     ) -> Any:
         runner = self.runner
         call = getattr(runner, "resume_precreated", None)
@@ -905,7 +908,8 @@ class WorkflowService:
                 "workflow_execution_ports_required",
                 "workflow runner cannot resume a precreated execution",
             )
-        return await call(str(run_id), responses, context)
+        kwargs = {} if active_lease is None else {"active_lease": active_lease}
+        return await call(str(run_id), responses, context, **kwargs)
 
     async def cancel_precreated(
         self, run_id: str, reason: str = "user"

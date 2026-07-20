@@ -20,11 +20,10 @@ from .execution_uow import (
     ContinuationRecord,
     ExecutionRuntimeState,
     LegacyDrainRef,
-    RecoveryLease,
     RuntimeActivationError,
-    StaleRecoveryLease,
     SqliteExecutionUnitOfWork,
 )
+from deskpet.execution import RecoveryLease, StaleRecoveryLease
 from .checkpoint_execution import (
     CheckpointExecutionError,
     SqliteCheckpointExecutionAdapter,

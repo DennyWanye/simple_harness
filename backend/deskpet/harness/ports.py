@@ -6,7 +6,7 @@ from enum import Enum
 from types import MappingProxyType
 from typing import Any, AsyncIterator, Mapping, Protocol
 from deskpet.execution import AttachmentPolicy
-from deskpet.execution.contracts import RunContext, RunCreate, RunEvent
+from deskpet.execution.contracts import RecoveryLease, RunContext, RunCreate, RunEvent
 from deskpet.harness.tool_executor import PreparedExecutionCall, ToolOutcome
 from deskpet.tools.capabilities import ToolExecutionContext
 
@@ -131,17 +131,17 @@ def ToolOutcomesSignal(run_id: str, command_id: str, outcomes: tuple[ToolOutcome
 def DecisionSignal(run_id: str, decision_id: str, response: Mapping[str, Any], nonce: str | None = None, version: int | None = None) -> DriverSignal:
     return DriverSignal(run_id, "decision", {"decision_id": decision_id, "response": MappingProxyType(copy.deepcopy(dict(response))), "nonce": nonce, "version": version})
 
-def ChildAcceptedSignal(run_id: str, command_id: str, child_run_id: str) -> DriverSignal:
-    return DriverSignal(run_id, "child_accepted", {"command_id": command_id, "child_run_id": child_run_id})
+def ChildAcceptedSignal(run_id: str, command_id: str, child_run_id: str, signal_id: str | None = None) -> DriverSignal:
+    return DriverSignal(run_id, "child_accepted", {"command_id": command_id, "child_run_id": child_run_id, "signal_id": signal_id})
 
-def ChildTerminalSignal(run_id: str, command_id: str, child_run_id: str, status: str, value: Any = None) -> DriverSignal:
-    return DriverSignal(run_id, "child_terminal", {"command_id": command_id, "child_run_id": child_run_id, "status": status, "value": value})
+def ChildTerminalSignal(run_id: str, command_id: str, child_run_id: str, status: str, value: Any = None, signal_id: str | None = None) -> DriverSignal:
+    return DriverSignal(run_id, "child_terminal", {"command_id": command_id, "child_run_id": child_run_id, "status": status, "value": value, "signal_id": signal_id})
 
 class Driver(Protocol):
     def start(self, request: DriverStart) -> AsyncIterator[DriverEvent]: ...
-    def signal(self, signal: DriverSignal) -> AsyncIterator[DriverEvent]: ...
+    def signal(self, signal: DriverSignal, recovery_lease: RecoveryLease | None = None) -> AsyncIterator[DriverEvent]: ...
     def cancel(self, run_id: str, reason: str) -> AsyncIterator[DriverEvent]: ...
-    def recover(self, run_id: str) -> AsyncIterator[DriverEvent]: ...
+    def recover(self, run_id: str, recovery_lease: RecoveryLease) -> AsyncIterator[DriverEvent]: ...
     async def close(self) -> None: ...
 
 __all__ = ["AttachmentPolicy", "CancelAcknowledgedCandidate", "ChildAcceptedCandidate", "ChildAcceptedSignal", "ChildTerminalSignal", "DecisionSignal", "DelegateRun", "Driver", "DriverCommand", "DriverEvent", "DriverSignal", "DriverStart", "DriverTerminalCandidate", "ExecuteTools", "JoinPolicy", "OpenDecision", "PersistedEventCandidate", "ProviderFallbackCandidate", "TokenCandidate", "ToolGrantRef", "ToolOutcomesSignal"]

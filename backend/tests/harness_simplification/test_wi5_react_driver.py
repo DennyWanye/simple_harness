@@ -225,6 +225,10 @@ async def _driver(tmp_path, collaborator, *, reader=None, reconciler=None):
     )
 
 
+async def _recovery_lease(store):
+    return await store.claim_recovery("run-react", owner="react-test-recovery")
+
+
 @pytest.mark.asyncio
 async def test_driver_preserves_first_token_fallback_and_only_emits_terminal_candidate(tmp_path):
     collaborator = ScriptedCollaborator(
@@ -371,7 +375,7 @@ async def test_recovery_backfills_successful_effect_without_regenerating_or_reex
         store,
         EffectReader({call.effect_id: committed}),
     )
-    candidates = await _collect(second.recover("run-react"))
+    candidates = await _collect(second.recover("run-react", await _recovery_lease(store)))
 
     assert candidates == [DriverTerminalCandidate("run-react", "completed", "recovered")]
     boundary, response = collaborator.resume_inputs[0]
@@ -410,7 +414,7 @@ async def test_mixed_batch_freezes_full_order_and_recovers_only_missing_calls(tm
         store,
         EffectReader({calls[1].effect_id: _outcome(calls[1])}),
     )
-    recovered = await _collect(second.recover("run-react"))
+    recovered = await _collect(second.recover("run-react", await _recovery_lease(store)))
     assert recovered[0].calls == (calls[2],)
     assert recovered[0].original_indexes == (2,)
 
@@ -443,7 +447,7 @@ async def test_unknown_effect_is_reconciled_before_driver_resumes(tmp_path):
         reconciler=reconciler,
     )
 
-    candidates = await _collect(second.recover("run-react"))
+    candidates = await _collect(second.recover("run-react", await _recovery_lease(store)))
 
     assert candidates == [DriverTerminalCandidate("run-react", "completed", "reconciled")]
     assert reconciler.calls == [call.effect_id]
@@ -468,7 +472,7 @@ async def test_delegate_boundary_survives_restart_and_accept_signal(tmp_path):
         store,
         EffectReader(),
     )
-    assert await _collect(second.recover("run-react")) == [command]
+    assert await _collect(second.recover("run-react", await _recovery_lease(store))) == [command]
     candidates = await _collect(
         second.signal(ChildAcceptedSignal("run-react", command.command_id, "child-1"))
     )

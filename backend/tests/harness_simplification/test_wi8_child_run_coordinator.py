@@ -30,7 +30,7 @@ from deskpet.harness.ports import (
     DelegateRun,
     JoinPolicy,
 )
-from deskpet.workflows.store import SqliteExecutionUnitOfWork
+from deskpet.workflows.store import SqliteExecutionUnitOfWork, StaleRecoveryLease
 
 
 PARENT_CAPABILITY = fingerprint_json({"tools": ["read", "write", "delegate"]})
@@ -385,6 +385,7 @@ async def test_accepted_and_terminal_inbox_redeliver_after_restart_until_ack(tmp
     assert len(terminal) == 1
     assert terminal[0].signal == ChildTerminalSignal(
         "parent-run", "signals", committed.child_run_id, "completed", {"result": "ok"}
+        , terminal[0].record.signal_id
     )
 
 
@@ -413,6 +414,45 @@ async def test_signal_ack_crash_keeps_inbox_pending_for_recovery(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_stale_recovery_cannot_apply_child_boundary_event_or_ack(tmp_path):
+    path = tmp_path / "workflow.db"
+    clock = Clock()
+    parent = await _parent(path, clock)
+    uow = SqliteExecutionUnitOfWork(path, clock=clock)
+    coordinator = ChildRunCoordinator(uow)
+    await coordinator.submit(parent, _delegate("stale-signal"))
+    await coordinator.run_scheduler_once(Launcher(), owner="scheduler-a")
+    delivery = (await coordinator.pending_signals("parent-run"))[0]
+    stale = await uow.claim_recovery("parent-run", owner="worker-a", lease_seconds=5)
+    clock.advance(6)
+    await uow.claim_recovery("parent-run", owner="worker-b", lease_seconds=10)
+
+    with pytest.raises(StaleRecoveryLease, match="lost its lease"):
+        await uow.list_pending_child_signals(
+            "parent-run", recovery_lease=stale
+        )
+    with pytest.raises(StaleRecoveryLease, match="lost its lease"):
+        await uow.apply_child_signal_and_ack(
+            delivery.record.signal_id,
+            expected_continuation_version=0,
+            continuation_payload={"children": [delivery.record.child_run_id]},
+            event=RunEventCandidate(
+                event_key="child-applied",
+                kind="child.accepted",
+                status=OutcomeStatus.ACCEPTED,
+                driver_kind="react",
+            ),
+            recovery_lease=stale,
+        )
+
+    assert await uow.load_continuation("parent-run") is None
+    assert await uow.list_events("parent-run") == ()
+    assert [item.record.signal_id for item in await coordinator.pending_signals("parent-run")] == [
+        delivery.record.signal_id
+    ]
+
+
+@pytest.mark.asyncio
 async def test_launcher_failure_isolated_between_siblings_and_retry_is_idempotent(tmp_path):
     path = tmp_path / "workflow.db"
     clock = Clock()
@@ -431,7 +471,10 @@ async def test_launcher_failure_isolated_between_siblings_and_retry_is_idempoten
         ("sibling-b", True),
     ]
     assert (await coordinator.pending_signals("parent-run"))[0].signal == (
-        ChildAcceptedSignal("parent-run", "sibling-b", second.child_run_id)
+        ChildAcceptedSignal(
+            "parent-run", "sibling-b", second.child_run_id,
+            (await coordinator.pending_signals("parent-run"))[0].record.signal_id,
+        )
     )
 
     clock.advance(11)

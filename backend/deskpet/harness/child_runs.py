@@ -18,6 +18,7 @@ from deskpet.execution import (
     ChildSignalRecord,
     ExecutionUnitOfWork,
     PersistenceLevel,
+    RecoveryLease,
     RunContext,
     RunCreate,
     RunRecord,
@@ -141,9 +142,11 @@ class ChildRunCoordinator:
         )
 
     async def submit(
-        self, parent: RunRecord, command: DriverEvent
+        self, parent: RunRecord, command: DriverEvent, *, recovery_lease: RecoveryLease | None = None
     ) -> ChildCommandRecord:
-        return await self._store.commit_child_command(self._intent(parent, command))
+        return await self._store.commit_child_command(
+            self._intent(parent, command), recovery_lease=recovery_lease
+        )
 
     async def run_scheduler_once(
         self,
@@ -152,9 +155,12 @@ class ChildRunCoordinator:
         owner: str,
         limit: int = 16,
         lease_seconds: float = 30.0,
+        recovery_lease: RecoveryLease | None = None,
     ) -> tuple[ChildScheduleAttempt, ...]:
         leased = await self._store.lease_child_commands(
-            owner=owner, limit=limit, lease_seconds=lease_seconds
+            owner=owner, limit=limit, lease_seconds=lease_seconds,
+            parent_run_id=(recovery_lease.run_id if recovery_lease is not None else None),
+            recovery_lease=recovery_lease,
         )
         attempts: list[ChildScheduleAttempt] = []
         for command in leased:
@@ -162,6 +168,7 @@ class ChildRunCoordinator:
                 command.operation_id,
                 lease_owner=owner,
                 lease_epoch=command.schedule_lease_epoch,
+                recovery_lease=recovery_lease,
             )
             try:
                 await launcher.accept(scheduled)
@@ -178,25 +185,23 @@ class ChildRunCoordinator:
                 scheduled.operation_id,
                 lease_owner=owner,
                 lease_epoch=scheduled.schedule_lease_epoch,
+                recovery_lease=recovery_lease,
             )
             attempts.append(ChildScheduleAttempt(acknowledged, True))
         return tuple(attempts)
 
-    async def record_terminal(
-        self,
-        operation_id: str,
-        *,
-        status: str,
-        value: Any = None,
-    ) -> ChildSignalRecord:
+    async def record_terminal(self, operation_id: str, *, status: str,
+                              value: Any = None, recovery_lease: RecoveryLease | None = None) -> ChildSignalRecord:
         return await self._store.record_child_terminal(
-            operation_id, terminal_status=status, value=value
+            operation_id, terminal_status=status, value=value,
+            recovery_lease=recovery_lease,
         )
 
-    async def pending_signals(
-        self, parent_run_id: str
-    ) -> tuple[ChildSignalDelivery, ...]:
-        records = await self._store.list_pending_child_signals(parent_run_id)
+    async def pending_signals(self, parent_run_id: str, *,
+                              recovery_lease: RecoveryLease | None = None) -> tuple[ChildSignalDelivery, ...]:
+        records = await self._store.list_pending_child_signals(
+            parent_run_id, recovery_lease=recovery_lease
+        )
         deliveries: list[ChildSignalDelivery] = []
         for record in records:
             if record.kind == "accepted":
@@ -204,6 +209,7 @@ class ChildRunCoordinator:
                     record.parent_run_id,
                     record.command_id,
                     record.child_run_id,
+                    record.signal_id,
                 )
             else:
                 signal = ChildTerminalSignal(
@@ -212,12 +218,15 @@ class ChildRunCoordinator:
                     record.child_run_id,
                     str(record.payload["status"]),
                     record.payload.get("value"),
+                    record.signal_id,
                 )
             deliveries.append(ChildSignalDelivery(record, signal))
         return tuple(deliveries)
 
-    async def acknowledge_signal(self, signal_id: str) -> ChildSignalRecord:
-        return await self._store.acknowledge_child_signal(signal_id)
+    async def acknowledge_signal(self, signal_id: str, *, recovery_lease: RecoveryLease | None = None) -> ChildSignalRecord:
+        return await self._store.acknowledge_child_signal(
+            signal_id, recovery_lease=recovery_lease
+        )
 
 
 __all__ = [

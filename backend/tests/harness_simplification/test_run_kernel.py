@@ -16,6 +16,7 @@ from deskpet.execution.contracts import (
     PersistenceLevel,
     RunCreate,
     RunEventCandidate,
+    RunRef,
     RunStatus,
     fingerprint_json,
 )
@@ -82,7 +83,7 @@ class FakeDriver:
         self.starts += 1
         yield TokenCandidate(request.run_id, "ok")
 
-    async def recover(self, run_id):
+    async def recover(self, run_id, recovery_lease):
         self.recovers += 1
         if False:
             yield TokenCandidate(run_id, "")
@@ -104,6 +105,22 @@ class FailingDriver(FakeDriver):
     async def start(self, request):
         raise RuntimeError("isolated boom")
         yield TokenCandidate(request.run_id, "unreachable")
+
+
+class RecoveryOrderDriver(FakeDriver):
+    def __init__(self, timeline) -> None:
+        super().__init__()
+        self.timeline = timeline
+
+    def recover(self, run_id, recovery_lease):
+        self.timeline.append("recover")
+
+        async def candidates():
+            self.timeline.append("anext")
+            if False:
+                yield TokenCandidate(run_id, "")
+
+        return candidates()
 
 
 class ImmediateTerminalDriver(FakeDriver):
@@ -515,6 +532,55 @@ async def test_driver_failure_isolated_as_run_terminal(tmp_path) -> None:
         handle.ref, host().actor(root_run_id=handle.root_run_id)
     )
     assert handle.ref.run_id not in value._active
+
+
+@pytest.mark.asyncio
+async def test_recovery_renews_before_driver_and_first_anext(tmp_path) -> None:
+    timeline: list[str] = []
+
+    class TrackingUow(SqliteExecutionUnitOfWork):
+        async def renew_recovery(self, lease, *, lease_seconds=30.0):
+            timeline.append("renew")
+            return await super().renew_recovery(lease, lease_seconds=lease_seconds)
+
+    uow = TrackingUow(tmp_path / "workflow.db")
+    context = HostContextFactory().create_run_context(
+        session_id="s1",
+        root_run_id="run-recovery-order",
+        request_id="request-recovery-order",
+        turn_id="turn-recovery-order",
+        venue="text",
+        capability_hash="c" * 64,
+        provider_plan=("primary",),
+        trace_id="trace-order",
+        principal_id="principal-s1",
+        auth_epoch=1,
+    )
+    await uow.create(
+        RunCreate(
+            run_id="run-recovery-order",
+            idempotency_key="root:s1:request-recovery-order",
+            context=context,
+            payload_fingerprint=fingerprint_json({"text": "recover"}),
+            capability_fingerprint="c" * 64,
+            driver_kind="react",
+            profile_key="react.default",
+            persistence_level=PersistenceLevel.DURABLE,
+        )
+    )
+    value = RunKernel(
+        uow=uow,
+        router=RegisteredRouter(
+            StaticClassifier("react.default"),
+            [RouteProfile("react.default", "react")],
+        ),
+        drivers=[RegisteredDriver("react", RecoveryOrderDriver(timeline))],
+    )
+    actor = host().actor(root_run_id="run-recovery-order")
+    await value.recover(RunRef("run-recovery-order", "s1"), actor)
+    await value._active["run-recovery-order"].task
+
+    assert timeline == ["renew", "recover", "renew", "anext"]
 
 
 @pytest.mark.asyncio

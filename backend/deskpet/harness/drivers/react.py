@@ -13,9 +13,9 @@ import time
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, AsyncIterator, Mapping, Protocol
-from deskpet.execution.contracts import DecisionOpen as DurableDecisionOpen, OutcomeStatus, PersistenceLevel, RunEventCandidate
+from deskpet.execution.contracts import DecisionOpen as DurableDecisionOpen, OutcomeStatus, PersistenceLevel, RecoveryLease, RunEventCandidate
 from deskpet.execution.ports import ExecutionUnitOfWork
-from deskpet.harness.ports import AttachmentPolicy, CancelAcknowledgedCandidate, ChildAcceptedCandidate, ChildAcceptedSignal, ChildTerminalSignal, DecisionSignal, DelegateRun, DriverEvent, DriverSignal, DriverStart, DriverTerminalCandidate, ExecuteTools, JoinPolicy, OpenDecision, ProviderFallbackCandidate, TokenCandidate, ToolGrantRef, ToolOutcomesSignal
+from deskpet.harness.ports import AttachmentPolicy, CancelAcknowledgedCandidate, ChildAcceptedCandidate, ChildAcceptedSignal, ChildTerminalSignal, DecisionSignal, DelegateRun, DriverEvent, DriverSignal, DriverStart, DriverTerminalCandidate, ExecuteTools, JoinPolicy, OpenDecision, PersistedEventCandidate, ProviderFallbackCandidate, TokenCandidate, ToolGrantRef, ToolOutcomesSignal
 from deskpet.harness.tool_executor import PreparedExecutionCall, ToolOutcome, ToolOutcomeStatus
 from deskpet.tools.capabilities import ToolExecutionContext
 
@@ -292,9 +292,9 @@ class ReActDriver:
         _, saved = await self._uow.promote_and_persist_batch_boundary(durable_spec, expected_run_version=0, expected_continuation_version=0, payload=boundary.to_payload(), decision=self._durable_decision(decision), waiting_event=waiting)
         return replace(boundary, version=int(saved.version))
 
-    async def _save_durable_boundary(self, boundary: ReactCommandBoundary, *, decision: DriverEvent | None=None) -> ReactCommandBoundary:
+    async def _save_durable_boundary(self, boundary: ReactCommandBoundary, *, decision: DriverEvent | None=None, recovery_lease: RecoveryLease | None=None) -> ReactCommandBoundary:
         expected = max(0, boundary.version - 1)
-        saved = await self._uow.save_continuation(boundary.run_id, expected, boundary.to_payload(), self._durable_decision(decision))
+        saved = await self._uow.save_continuation(boundary.run_id, expected, boundary.to_payload(), self._durable_decision(decision), recovery_lease=recovery_lease)
         return replace(boundary, version=int(saved.version))
 
     @staticmethod
@@ -405,31 +405,41 @@ class ReActDriver:
             raise ValueError('react command boundary not found')
         return boundary
 
-    async def _save_progress(self, boundary: ReactCommandBoundary) -> None:
+    async def _save_progress(self, boundary: ReactCommandBoundary, *, recovery_lease: RecoveryLease | None=None) -> None:
         if boundary.run_id in self._volatile:
             self._volatile[boundary.run_id] = boundary
         else:
-            await self._save_durable_boundary(boundary)
+            await self._save_durable_boundary(boundary, recovery_lease=recovery_lease)
 
-    async def _record_outcomes(self, boundary: ReactCommandBoundary, updates: Mapping[int, ToolOutcome]) -> ReactCommandBoundary:
+    async def _record_outcomes(self, boundary: ReactCommandBoundary, updates: Mapping[int, ToolOutcome], *, recovery_lease: RecoveryLease | None=None) -> ReactCommandBoundary:
         boundary = boundary.with_outcomes(updates)
-        await self._save_progress(boundary)
+        await self._save_progress(boundary, recovery_lease=recovery_lease)
         return boundary
 
     @staticmethod
     def _request_from_boundary(boundary: ReactCommandBoundary) -> DriverStart:
         return DriverStart(run_id=boundary.run_id, session_id=boundary.session_id, canonical_messages=boundary.canonical_messages, session_projection_cursor=boundary.session_projection_cursor, prepared_context_ref=boundary.prepared_context_ref, tool_set_snapshot_ref=boundary.tool_set_snapshot_ref, provider_state=boundary.provider_state, iteration=boundary.iteration, completion_state=boundary.completion_state, capability_snapshot=boundary.capability_snapshot)
 
-    async def _resume_completed(self, boundary: ReactCommandBoundary) -> AsyncIterator[DriverEvent]:
+    async def _resume_completed(self, boundary: ReactCommandBoundary, *, recovery_lease: RecoveryLease | None=None) -> AsyncIterator[DriverEvent]:
         if not bool(boundary.completion_state.get('model_backfilled')):
             boundary = boundary.with_backfilled_messages(self._tool_messages(boundary))
-            await self._save_progress(boundary)
+            await self._save_progress(boundary, recovery_lease=recovery_lease)
         request = self._request_from_boundary(boundary)
         self._requests[boundary.run_id] = request
         async for candidate in self._emit(request, self._collaborator.resume(boundary, {'type': 'tool_outcomes', 'command_id': boundary.command_id})):
             yield candidate
 
-    def signal(self, signal: DriverSignal) -> AsyncIterator[DriverEvent]:
+    async def _apply_child_inbox(self, boundary: ReactCommandBoundary, signal: DriverSignal, *, recovery_lease: RecoveryLease | None) -> tuple[ReactCommandBoundary, DriverEvent | None]:
+        signal_id = str(getattr(signal, 'signal_id', '') or '').strip()
+        if not signal_id:
+            return boundary, None
+        clear_delegate = signal.kind == 'child_terminal' or boundary.pending_delegate is not None and boundary.pending_delegate.join_policy is JoinPolicy.DETACHED
+        updated = replace(boundary, pending_delegate=None if clear_delegate else boundary.pending_delegate, version=boundary.version + 1)
+        event = RunEventCandidate(event_key=f'child-signal:{signal_id}', kind=signal.kind, status=OutcomeStatus.SUCCEEDED if signal.kind == 'child_terminal' and signal.status == 'completed' else OutcomeStatus.ACCEPTED, driver_kind='react', correlation={'command_id': signal.command_id, 'child_run_id': signal.child_run_id, 'signal_id': signal_id}, payload={'status': getattr(signal, 'status', 'accepted'), 'value': getattr(signal, 'value', None)})
+        _, saved, stored_event = await self._uow.apply_child_signal_and_ack(signal_id, expected_continuation_version=boundary.version, continuation_payload=updated.to_payload(), event=event, recovery_lease=recovery_lease)
+        return replace(updated, version=int(saved.version)), PersistedEventCandidate(stored_event)
+
+    def signal(self, signal: DriverSignal, recovery_lease: RecoveryLease | None = None) -> AsyncIterator[DriverEvent]:
 
         async def iterator() -> AsyncIterator[DriverEvent]:
             if signal.kind == "tool_outcomes":
@@ -442,11 +452,11 @@ class ReActDriver:
                     if outcome.call_id not in indexes:
                         raise ValueError('tool outcome call not present in boundary')
                     updates[indexes[outcome.call_id]] = outcome
-                boundary = await self._record_outcomes(boundary, updates)
+                boundary = await self._record_outcomes(boundary, updates, recovery_lease=recovery_lease)
                 if boundary.pending_indexes:
                     yield self._execute_command(boundary)
                     return
-                async for candidate in self._resume_completed(boundary):
+                async for candidate in self._resume_completed(boundary, recovery_lease=recovery_lease):
                     yield candidate
                 return
             if signal.kind == "decision":
@@ -474,21 +484,21 @@ class ReActDriver:
                     if next_index is not None:
                         decision = self._permission_decision(boundary, next_index)
                         boundary = replace(boundary, pending_decision=decision)
-                        boundary = await self._save_durable_boundary(boundary, decision=decision)
+                        boundary = await self._save_durable_boundary(boundary, decision=decision, recovery_lease=recovery_lease)
                         yield decision
                         return
-                    boundary = await self._save_durable_boundary(boundary)
+                    boundary = await self._save_durable_boundary(boundary, recovery_lease=recovery_lease)
                     if boundary.pending_indexes:
                         yield self._execute_command(boundary)
                     else:
-                        async for candidate in self._resume_completed(boundary):
+                        async for candidate in self._resume_completed(boundary, recovery_lease=recovery_lease):
                             yield candidate
                     return
                 messages = tuple(boundary.canonical_messages) + ({'role': 'system', 'content': json.dumps({'decision_id': signal.decision_id, 'response': dict(signal.response)}, ensure_ascii=False, sort_keys=True)},)
                 state = copy.deepcopy(dict(boundary.completion_state))
                 state['model_backfilled'] = True
                 boundary = replace(boundary, canonical_messages=messages, completion_state=state, pending_decision=None, version=boundary.version + 1)
-                boundary = await self._save_durable_boundary(boundary)
+                boundary = await self._save_durable_boundary(boundary, recovery_lease=recovery_lease)
                 request = self._request_from_boundary(boundary)
                 self._requests[signal.run_id] = request
                 async for candidate in self._emit(request, self._collaborator.resume(boundary, {'type': 'decision', 'response': dict(signal.response)})):
@@ -499,7 +509,11 @@ class ReActDriver:
                 command = boundary.pending_delegate
                 if command is None or command.command_id != signal.command_id:
                     raise ValueError('delegate command not found')
-                yield ChildAcceptedCandidate(signal.run_id, signal.command_id, signal.child_run_id, command.join_policy)
+                boundary, persisted = await self._apply_child_inbox(boundary, signal, recovery_lease=recovery_lease)
+                if persisted is not None:
+                    yield persisted
+                else:
+                    yield ChildAcceptedCandidate(signal.run_id, signal.command_id, signal.child_run_id, command.join_policy)
                 if command.join_policy is JoinPolicy.DETACHED:
                     request = self._request_from_boundary(boundary)
                     async for candidate in self._emit(request, self._collaborator.resume(boundary, {'type': 'child_accepted', 'child_run_id': signal.child_run_id})):
@@ -510,6 +524,9 @@ class ReActDriver:
                 command = boundary.pending_delegate
                 if command is None or command.command_id != signal.command_id:
                     raise ValueError('delegate command not found')
+                boundary, persisted = await self._apply_child_inbox(boundary, signal, recovery_lease=recovery_lease)
+                if persisted is not None:
+                    yield persisted
                 if command.join_policy is JoinPolicy.ROOT_TERMINAL_CHILD:
                     yield DriverTerminalCandidate(signal.run_id, 'completed' if signal.status == 'completed' else 'failed', content=str(signal.value or ''), error=None if signal.status == 'completed' else str(signal.value or signal.status), correlation={'child_run_id': signal.child_run_id})
                     return
@@ -519,7 +536,7 @@ class ReActDriver:
                         yield candidate
         return iterator()
 
-    def recover(self, run_id: str) -> AsyncIterator[DriverEvent]:
+    def recover(self, run_id: str, recovery_lease: RecoveryLease) -> AsyncIterator[DriverEvent]:
 
         async def iterator() -> AsyncIterator[DriverEvent]:
             boundary = await self._load_boundary(run_id)
@@ -539,11 +556,11 @@ class ReActDriver:
                     outcome = await self._reconciler.reconcile(call, boundary.tool_contexts[index], outcome)
                 updates[index] = outcome
             if updates:
-                boundary = await self._record_outcomes(boundary, updates)
+                boundary = await self._record_outcomes(boundary, updates, recovery_lease=recovery_lease)
             if boundary.pending_indexes:
                 yield self._execute_command(boundary)
                 return
-            async for candidate in self._resume_completed(boundary):
+            async for candidate in self._resume_completed(boundary, recovery_lease=recovery_lease):
                 yield candidate
         return iterator()
 

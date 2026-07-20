@@ -53,6 +53,7 @@ from deskpet.execution.contracts import (
     ParentCycleError,
     PersistenceLevel,
     PersistenceRequired,
+    RecoveryLease,
     RunContext,
     RunCreate,
     RunEvent,
@@ -63,6 +64,7 @@ from deskpet.execution.contracts import (
     RunRecord,
     RunRef,
     RunStatus,
+    StaleRecoveryLease,
     TERMINAL_RUN_STATUSES,
     TerminalConflict,
     VersionConflict,
@@ -84,6 +86,7 @@ from deskpet.execution.evidence import (
 )
 
 from .schema import initialize_workflow_db
+from .run_store import RunFence
 
 
 _FaultInjector = Callable[[str], None]
@@ -202,20 +205,6 @@ class ExecutionEffectSettlement:
     effect_version: int
     continuation: ContinuationRecord
     event: RunEvent
-
-
-@dataclass(frozen=True, slots=True)
-class RecoveryLease:
-    """Short-lived, per-run recovery fence; unrelated to owner_generation."""
-
-    run_id: str
-    owner: str
-    epoch: int
-    expires_at: float
-
-
-class StaleRecoveryLease(RuntimeError):
-    """Raised when a recovered writer no longer owns the current lease epoch."""
 
 
 class SqliteExecutionUnitOfWork:
@@ -1214,8 +1203,7 @@ class SqliteExecutionUnitOfWork:
             ).fetchone()
             if run is None:
                 raise RunNotFound("run_not_found", f"execution run does not exist: {run_id}")
-            if recovery_lease is not None:
-                await self._assert_recovery_fence_tx(db, recovery_lease, run_id=run_id)
+            await self._assert_optional_recovery_fence_tx(db, recovery_lease, run_id)
             stored, _, _ = await self._append_event_tx(
                 db,
                 run,
@@ -1837,6 +1825,7 @@ class SqliteExecutionUnitOfWork:
         expected_version: int,
         payload: Mapping[str, Any],
         decision: DecisionOpen | None = None,
+        *, recovery_lease: RecoveryLease | None = None,
     ) -> ContinuationRecord:
         """CAS a complete JSON continuation and optional decision in one commit."""
 
@@ -1845,6 +1834,8 @@ class SqliteExecutionUnitOfWork:
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
+            if recovery_lease is not None:
+                await self._assert_recovery_fence_tx(db, recovery_lease, run_id=run_id)
             run = await self._continuation_run_tx(db, run_id)
             now = float(self._clock())
             record, _ = await self._save_continuation_tx(
@@ -1989,7 +1980,9 @@ class SqliteExecutionUnitOfWork:
         finally:
             await db.close()
 
-    async def delete_continuation(self, run_id: str, expected_version: int) -> None:
+    async def delete_continuation(
+        self, run_id: str, expected_version: int, *, recovery_lease: RecoveryLease | None = None
+    ) -> None:
         if (
             not isinstance(expected_version, int)
             or isinstance(expected_version, bool)
@@ -1999,6 +1992,7 @@ class SqliteExecutionUnitOfWork:
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
+            await self._assert_optional_recovery_fence_tx(db, recovery_lease, run_id)
             await self._continuation_run_tx(db, run_id)
             cursor = await db.execute(
                 """DELETE FROM execution_continuations
@@ -2700,6 +2694,7 @@ class SqliteExecutionUnitOfWork:
         prepared: Mapping[str, Any],
         worker_owner: str,
         worker_epoch: int,
+        recovery_lease: RecoveryLease | None = None,
     ) -> ExecutionEffectClaim:
         """Consume a one-shot grant and start its first fenced effect attempt."""
 
@@ -2722,6 +2717,7 @@ class SqliteExecutionUnitOfWork:
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
+            await self._assert_optional_recovery_fence_tx(db, recovery_lease, request.run_id)
             existing = await (
                 await db.execute(
                     "SELECT * FROM execution_effects WHERE effect_id=?",
@@ -2852,6 +2848,7 @@ class SqliteExecutionUnitOfWork:
         continuation_payload: Mapping[str, Any],
         event: RunEventCandidate,
         deliveries: Sequence[DeliverySpec] = (),
+        recovery_lease: RecoveryLease | None = None,
     ) -> ExecutionEffectSettlement:
         """Settle one fenced attempt and persist the recoverable next boundary."""
 
@@ -2872,6 +2869,7 @@ class SqliteExecutionUnitOfWork:
             ).fetchone()
             if effect is None:
                 raise RunNotFound("effect_not_found", "execution effect does not exist")
+            await self._assert_optional_recovery_fence_tx(db, recovery_lease, str(effect["run_id"]))
             if str(effect["status"]) != "running":
                 replay_event = await (
                     await db.execute(
@@ -3243,6 +3241,7 @@ class SqliteExecutionUnitOfWork:
         event: RunEventCandidate,
         value: Any = None,
         deliveries: Sequence[DeliverySpec] = (),
+        recovery_lease: RecoveryLease | None = None,
     ) -> FinalizeRunResult:
         """Finalize the acknowledged child and enqueue its parent signal atomically."""
 
@@ -3257,6 +3256,7 @@ class SqliteExecutionUnitOfWork:
             deliveries=deliveries,
             parent_signal_operation_id=operation_id,
             parent_signal_value=value,
+            recovery_lease=recovery_lease,
         )
 
     async def request_cancel(
@@ -3355,13 +3355,14 @@ class SqliteExecutionUnitOfWork:
             await db.close()
 
     async def commit_child_command(
-        self, intent: ChildCommandIntent
+        self, intent: ChildCommandIntent, *, recovery_lease: RecoveryLease | None = None
     ) -> ChildCommandRecord:
         """Commit the complete delegate intent before a child row can exist."""
 
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
+            await self._assert_optional_recovery_fence_tx(db, recovery_lease, intent.parent_run_id)
             parent = await (
                 await db.execute(
                     "SELECT * FROM execution_runs WHERE run_id=?",
@@ -3458,12 +3459,20 @@ class SqliteExecutionUnitOfWork:
         owner: str,
         limit: int,
         lease_seconds: float,
+        parent_run_id: str | None = None,
+        recovery_lease: RecoveryLease | None = None,
     ) -> tuple[ChildCommandRecord, ...]:
         if not owner or limit <= 0 or lease_seconds <= 0:
             raise ValueError("owner, positive limit and positive lease_seconds are required")
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
+            if recovery_lease is not None:
+                if parent_run_id != recovery_lease.run_id:
+                    raise StaleRecoveryLease(
+                        "recovery child scan must be scoped to its parent run"
+                    )
+                await self._assert_recovery_fence_tx(db, recovery_lease, run_id=parent_run_id)
             now = float(self._clock())
             rows = await (
                 await db.execute(
@@ -3475,8 +3484,9 @@ class SqliteExecutionUnitOfWork:
                             AND schedule_lease_expires_at<=?
                         )
                     ) AND (next_attempt_at IS NULL OR next_attempt_at<=?)
+                    AND (? IS NULL OR parent_run_id=?)
                     ORDER BY created_at,operation_id LIMIT ?""",
-                    (now, now, limit),
+                    (now, now, parent_run_id, parent_run_id, limit),
                 )
             ).fetchall()
             leased: list[ChildCommandRecord] = []
@@ -3531,6 +3541,7 @@ class SqliteExecutionUnitOfWork:
         *,
         lease_owner: str,
         lease_epoch: int,
+        recovery_lease: RecoveryLease | None = None,
     ) -> ChildCommandRecord:
         """Atomically create/link the child and mark its command scheduled."""
 
@@ -3545,6 +3556,7 @@ class SqliteExecutionUnitOfWork:
             ).fetchone()
             if command is None:
                 raise RunNotFound("child_command_not_found", "child command does not exist")
+            await self._assert_optional_recovery_fence_tx(db, recovery_lease, str(command["parent_run_id"]))
             if (
                 str(command["status"]) not in {"leased", "scheduled"}
                 or str(command["schedule_lease_owner"] or "") != lease_owner
@@ -3640,6 +3652,7 @@ class SqliteExecutionUnitOfWork:
         *,
         lease_owner: str,
         lease_epoch: int,
+        recovery_lease: RecoveryLease | None = None,
     ) -> ChildCommandRecord:
         db = await self._connect()
         try:
@@ -3652,6 +3665,7 @@ class SqliteExecutionUnitOfWork:
             ).fetchone()
             if command is None:
                 raise RunNotFound("child_command_not_found", "child command does not exist")
+            await self._assert_optional_recovery_fence_tx(db, recovery_lease, str(command["parent_run_id"]))
             if str(command["status"]) == ChildCommandStatus.ACKED.value:
                 await db.commit()
                 return self._row_to_child_command(command)
@@ -3791,10 +3805,25 @@ class SqliteExecutionUnitOfWork:
         *,
         terminal_status: str,
         value: Any = None,
+        recovery_lease: RecoveryLease | None = None,
     ) -> ChildSignalRecord:
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
+            if recovery_lease is not None:
+                command = await (
+                    await db.execute(
+                        "SELECT child_run_id FROM execution_child_commands WHERE operation_id=?",
+                        (operation_id,),
+                    )
+                ).fetchone()
+                if command is None:
+                    raise RunNotFound(
+                        "child_command_not_found", "child command does not exist"
+                    )
+                await self._assert_recovery_fence_tx(
+                    db, recovery_lease, run_id=str(command["child_run_id"])
+                )
             record = await self._enqueue_child_terminal_signal_tx(
                 db, operation_id, terminal_status=terminal_status, value=value
             )
@@ -3809,11 +3838,12 @@ class SqliteExecutionUnitOfWork:
             await db.close()
 
     async def list_pending_child_signals(
-        self, parent_run_id: str
+        self, parent_run_id: str, *, recovery_lease: RecoveryLease | None = None
     ) -> tuple[ChildSignalRecord, ...]:
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
+            await self._assert_optional_recovery_fence_tx(db, recovery_lease, parent_run_id)
             now = float(self._clock())
             await db.execute(
                 """UPDATE execution_child_signal_inbox
@@ -3865,10 +3895,26 @@ class SqliteExecutionUnitOfWork:
             assert row is not None
         return self._row_to_child_signal(row)
 
-    async def acknowledge_child_signal(self, signal_id: str) -> ChildSignalRecord:
+    async def acknowledge_child_signal(
+        self, signal_id: str, *, recovery_lease: RecoveryLease | None = None
+    ) -> ChildSignalRecord:
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
+            if recovery_lease is not None:
+                inbox = await (
+                    await db.execute(
+                        "SELECT parent_run_id FROM execution_child_signal_inbox WHERE signal_id=?",
+                        (signal_id,),
+                    )
+                ).fetchone()
+                if inbox is None:
+                    raise RunNotFound(
+                        "child_signal_not_found", "child signal does not exist"
+                    )
+                await self._assert_recovery_fence_tx(
+                    db, recovery_lease, run_id=str(inbox["parent_run_id"])
+                )
             record = await self._acknowledge_child_signal_tx(
                 db, signal_id, now=float(self._clock())
             )
@@ -3890,6 +3936,7 @@ class SqliteExecutionUnitOfWork:
         continuation_payload: Mapping[str, Any],
         event: RunEventCandidate,
         deliveries: Sequence[DeliverySpec] = (),
+        recovery_lease: RecoveryLease | None = None,
     ) -> tuple[ChildSignalRecord, ContinuationRecord, RunEvent]:
         """Apply a child signal to its parent boundary and ack it atomically."""
 
@@ -3906,6 +3953,7 @@ class SqliteExecutionUnitOfWork:
             ).fetchone()
             if inbox is None:
                 raise RunNotFound("child_signal_not_found", "child signal does not exist")
+            await self._assert_optional_recovery_fence_tx(db, recovery_lease, str(inbox["parent_run_id"]))
             run = await self._continuation_run_tx(db, str(inbox["parent_run_id"]))
             now = float(self._clock())
             continuation, _ = await self._save_continuation_tx(
@@ -4366,6 +4414,22 @@ class SqliteExecutionUnitOfWork:
             expires_at = row["recovery_expires_at"]
             if (
                 active_owner is not None
+                and str(active_owner) == owner
+                and expires_at is not None
+                and float(expires_at) > now
+            ):
+                new_expiry = now + float(lease_seconds)
+                epoch = int(row["recovery_epoch"])
+                await db.execute(
+                    """UPDATE execution_runs SET recovery_expires_at=?,
+                    recovery_heartbeat_at=? WHERE run_id=? AND recovery_owner=?
+                    AND recovery_epoch=? AND recovery_expires_at>?""",
+                    (new_expiry, now, run_id, owner, epoch, now),
+                )
+                await db.commit()
+                return RecoveryLease(run_id, owner, epoch, new_expiry)
+            if (
+                active_owner is not None
                 and str(active_owner) != owner
                 and expires_at is not None
                 and float(expires_at) > now
@@ -4383,6 +4447,50 @@ class SqliteExecutionUnitOfWork:
                 raise StaleRecoveryLease("recovery lease changed while being claimed")
             await db.commit()
             return RecoveryLease(run_id, owner, epoch, new_expiry)
+        except BaseException:
+            if db.in_transaction:
+                await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+    async def claim_workflow_recovery_handoff(
+        self, recovery_lease: RecoveryLease, *, workflow_owner: str,
+        ttl_seconds: float = 90.0) -> RunFence:
+        """Atomically validate execution ownership and claim the Native run lease."""
+
+        if not workflow_owner.strip() or ttl_seconds <= 0:
+            raise ValueError("workflow owner and positive ttl_seconds are required")
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            run_id = recovery_lease.run_id
+            await self._assert_recovery_fence_tx(db, recovery_lease, run_id=run_id)
+            now = float(self._clock())
+            expires_at = now + ttl_seconds
+            row = await (
+                await db.execute(
+                    """UPDATE workflow_runs SET lease_owner=:owner,
+                    lease_epoch=lease_epoch+CASE WHEN lease_owner=:owner
+                        AND lease_expires_at>:now THEN 0 ELSE 1 END,
+                    run_version=run_version+CASE WHEN lease_owner=:owner
+                        AND lease_expires_at>:now THEN 0 ELSE 1 END,
+                    lease_expires_at=:expiry,heartbeat_at=:now,status='running',
+                    started_at=COALESCE(started_at,:now),updated_at=:now
+                    WHERE run_id=:run_id AND status IN ('created','retryable','running')
+                    AND (lease_owner IS NULL OR lease_owner=:owner OR lease_expires_at<=:now)
+                    RETURNING lease_epoch,run_version""",
+                    {"owner": workflow_owner, "expiry": expires_at, "now": now, "run_id": run_id},
+                )
+            ).fetchone()
+            if row is None:
+                raise StaleRecoveryLease(
+                    "native workflow lease cannot be claimed by this recovery owner"
+                )
+            await db.commit()
+            return RunFence(
+                run_id, workflow_owner, int(row["lease_epoch"]), int(row["run_version"])
+            )
         except BaseException:
             if db.in_transaction:
                 await db.rollback()
@@ -4423,6 +4531,11 @@ class SqliteExecutionUnitOfWork:
             await self._assert_recovery_fence_tx(db, lease, run_id=lease.run_id)
         finally:
             await db.close()
+
+    async def _assert_optional_recovery_fence_tx(
+        self, db: aiosqlite.Connection, lease: RecoveryLease | None, run_id: str) -> None:
+        if lease is not None:
+            await self._assert_recovery_fence_tx(db, lease, run_id=run_id)
 
     async def _assert_recovery_fence_tx(
         self,
