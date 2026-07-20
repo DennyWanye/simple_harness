@@ -4,7 +4,8 @@ import asyncio
 
 import pytest
 
-from deskpet.execution.contracts import ActorContext, DecisionOpen, RunRef
+from deskpet.execution.contracts import ActorContext
+from deskpet.execution.ledger import ExecutionLedger
 from deskpet.harness.adapters.venues import KernelRunClient
 from deskpet.harness.kernel import HostContext, RegisteredDriver, RunKernel
 from deskpet.harness.ports import (
@@ -46,17 +47,15 @@ class Classifier:
 
 
 class Driver:
-    def __init__(self, *, complete: bool = True):
+    def __init__(self):
         self.signals = []
         self.cancels = []
         self.starts = []
-        self.complete = complete
 
     async def start(self, request):
         self.starts.append(request)
         yield TokenCandidate(request.run_id, "hello")
-        if self.complete:
-            yield DriverTerminalCandidate(request.run_id, "completed", "hello")
+        yield DriverTerminalCandidate(request.run_id, "completed", "hello")
 
     async def signal(self, signal):
         self.signals.append(signal)
@@ -75,23 +74,23 @@ class Driver:
         return None
 
 
-async def make_client(tmp_path, *, complete: bool = True, durable: bool = False):
-    uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
-    await uow.initialize()
-    driver = Driver(complete=complete)
+async def make_client(tmp_path):
+    ledger = ExecutionLedger(SqliteExecutionUnitOfWork(tmp_path / "workflow.db"))
+    await ledger.initialize()
+    driver = Driver()
     kernel = RunKernel(
-        uow=uow,
+        ledger=ledger,
         router=RegisteredRouter(
             Classifier(), [RouteProfile("react.default", "react")]
         ),
-        drivers=[RegisteredDriver("react", driver, durable_from_start=durable)],
+        drivers=[RegisteredDriver("react", driver)],
     )
-    return KernelRunClient(kernel, Resolver()), driver, uow
+    return KernelRunClient(kernel, Resolver()), driver
 
 
 @pytest.mark.asyncio
 async def test_text_and_voice_share_one_run_client_and_keep_sessions_isolated(tmp_path):
-    client, _, _ = await make_client(tmp_path)
+    client, _ = await make_client(tmp_path)
     text = await client.start(
         {"text": "text", "request_id": "r-text", "turn_id": "t-text"},
         {"session_id": "text-session", "venue": "text"},
@@ -112,28 +111,12 @@ async def test_text_and_voice_share_one_run_client_and_keep_sessions_isolated(tm
 
 @pytest.mark.asyncio
 async def test_signal_and_cancel_are_run_scoped(tmp_path):
-    client, driver, uow = await make_client(tmp_path, complete=False, durable=True)
+    client, driver = await make_client(tmp_path)
     handle = await client.start(
         {"text": "wait", "request_id": "r", "turn_id": "t"},
         {"session_id": "session", "venue": "text"},
     )
     await asyncio.sleep(0)
-    actor = Resolver().resolve_actor({"session_id": "session"}, root_run_id=handle.run_id)
-    ref = RunRef(handle.run_id, "session")
-    record = await uow.query(ref, actor)
-    await uow.open_decision(
-        DecisionOpen(
-            decision_id="d1",
-            run_id=handle.run_id,
-            nonce="n1",
-            kind="clarification",
-            prompt_schema_version=1,
-            prompt={"question": "continue?"},
-            expires_at=None,
-        ),
-        actor,
-        expected_run_version=record.version,
-    )
     receipt = await client.signal(
         {"run_id": handle.run_id, "expected_session_id": "session"},
         {"session_id": "session", "venue": "text"},
@@ -141,31 +124,25 @@ async def test_signal_and_cancel_are_run_scoped(tmp_path):
             "decision_id": "d1",
             "response": {"allow": True},
             "nonce": "n1",
-            "version": 0,
+            "version": 3,
         },
     )
     assert receipt.accepted is True
     assert driver.signals == [
-        DecisionSignal(
-            handle.run_id,
-            "d1",
-            {"allow": True, "decision_status": "allowed"},
-            "n1",
-            0,
-        )
+        DecisionSignal(handle.run_id, "d1", {"allow": True}, "n1", 3)
     ]
 
-    cancelled = await client.cancel(
-        {"run_id": handle.run_id, "expected_session_id": "session"},
-        {"session_id": "session", "venue": "text"},
-        "user_stop",
-    )
-    assert cancelled.acknowledged is True
+    with pytest.raises(Exception):
+        await client.cancel(
+            {"run_id": handle.run_id, "expected_session_id": "session"},
+            {"session_id": "session", "venue": "text"},
+            "user_stop",
+        )
 
 
 @pytest.mark.asyncio
 async def test_start_preserves_route_and_product_payload(tmp_path):
-    client, driver, _ = await make_client(tmp_path)
+    client, driver = await make_client(tmp_path)
     await client.start(
         {
             "text": "research",

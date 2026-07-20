@@ -31,6 +31,7 @@ for entry in (str(ROOT), str(BACKEND)):
         sys.path.insert(0, entry)
 
 from agent.agent_loop import AgentLoop, AssistantMessageEvent  # noqa: E402
+from deskpet.execution.ledger import ExecutionLedger  # noqa: E402
 from deskpet.harness.kernel import (  # noqa: E402
     HostContext,
     RegisteredDriver,
@@ -988,10 +989,11 @@ async def _completed_run_memory_probe(run_count: int = 10_000) -> dict[str, Any]
     with tempfile.TemporaryDirectory(prefix="deskpet-kernel-memory-") as temp:
         database = Path(temp) / "execution.db"
         uow = SqliteExecutionUnitOfWork(database)
-        await uow.initialize()
+        ledger = ExecutionLedger(uow)
+        await ledger.initialize()
         driver = _BenchmarkTerminalDriver()
         kernel = RunKernel(
-            uow=uow,
+            ledger=ledger,
             router=RegisteredRouter(
                 _BenchmarkClassifier(), [RouteProfile("bench.react", "react")]
             ),

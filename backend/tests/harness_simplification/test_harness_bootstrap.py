@@ -11,6 +11,7 @@ from deskpet.execution.contracts import (
     RunCreate,
     RunStatus,
 )
+from deskpet.execution.ledger import ExecutionLedger
 from deskpet.harness.bootstrap import build_harness_runtime
 from deskpet.harness.kernel import HostContext, RegisteredDriver
 from deskpet.harness.ports import DriverTerminalCandidate
@@ -74,7 +75,7 @@ class Resolver:
 @pytest.mark.asyncio
 async def test_bootstrap_exports_manifest_from_actual_registrations(tmp_path) -> None:
     runtime = await build_harness_runtime(
-        uow=SqliteExecutionUnitOfWork(tmp_path / "workflow.db"),
+        ledger=ExecutionLedger(SqliteExecutionUnitOfWork(tmp_path / "workflow.db")),
         classifier=Classifier(),
         profiles=[RouteProfile("react.default", "react")],
         drivers=[RegisteredDriver("react", Driver())],
@@ -89,7 +90,7 @@ async def test_bootstrap_exports_manifest_from_actual_registrations(tmp_path) ->
         "event_contract": "execution.run-event.v1",
         "tool_stage": "prepared-call.v1",
     }
-    assert runtime.health.to_dict()["active_owner"] == "sqlite_execution_uow"
+    assert runtime.health.to_dict()["active_owner"] == "execution_ledger"
 
     handle = await runtime.run_client.start(
         {"text": "hello", "request_id": "request-1", "turn_id": "turn-1"},
@@ -111,7 +112,7 @@ async def test_bootstrap_exports_manifest_from_actual_registrations(tmp_path) ->
 async def test_bootstrap_fails_closed_for_unavailable_profile_driver(tmp_path) -> None:
     with pytest.raises(ValueError, match="unavailable drivers: workflow"):
         await build_harness_runtime(
-            uow=SqliteExecutionUnitOfWork(tmp_path / "workflow.db"),
+            ledger=ExecutionLedger(SqliteExecutionUnitOfWork(tmp_path / "workflow.db")),
             classifier=Classifier(),
             profiles=[RouteProfile("durable.default", "workflow")],
             drivers=[RegisteredDriver("react", Driver())],
@@ -121,8 +122,8 @@ async def test_bootstrap_fails_closed_for_unavailable_profile_driver(tmp_path) -
 
 @pytest.mark.asyncio
 async def test_recovery_enumerates_only_execution_owned_runs(tmp_path) -> None:
-    uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
-    await uow.initialize()
+    ledger = ExecutionLedger(SqliteExecutionUnitOfWork(tmp_path / "workflow.db"))
+    await ledger.initialize()
     context = RunContext(
         session_id="session-1",
         root_run_id="run-recover",
@@ -137,7 +138,7 @@ async def test_recovery_enumerates_only_execution_owned_runs(tmp_path) -> None:
         principal_id="principal-session-1",
         auth_epoch=1,
     )
-    await uow.create(
+    await ledger.create(
         RunCreate(
             run_id="run-recover",
             idempotency_key="root:recover-key",
@@ -152,7 +153,7 @@ async def test_recovery_enumerates_only_execution_owned_runs(tmp_path) -> None:
     )
     driver = Driver()
     runtime = await build_harness_runtime(
-        uow=uow,
+        ledger=ledger,
         classifier=Classifier(),
         profiles=[RouteProfile("react.default", "react")],
         drivers=[RegisteredDriver("react", driver)],

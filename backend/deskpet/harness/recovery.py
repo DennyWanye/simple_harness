@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from deskpet.execution.contracts import ActorContext, RunRef
-from deskpet.execution.ports import ExecutionUnitOfWork
+from deskpet.execution.ledger import ExecutionLedger
 from deskpet.harness.kernel import RunHandle, RunKernel
 
 
@@ -19,13 +19,13 @@ class RecoveryBatch:
 
 
 class HarnessRecoveryCoordinator:
-    def __init__(self, uow: ExecutionUnitOfWork, kernel: RunKernel) -> None:
-        self._uow = uow
+    def __init__(self, ledger: ExecutionLedger, kernel: RunKernel) -> None:
+        self._ledger = ledger
         self._kernel = kernel
 
     async def recover_pending(self, *, limit: int = 10_000) -> RecoveryBatch:
         handles: list[RunHandle] = []
-        for record in await self._uow.list_recoverable(limit=limit):
+        for record in await self._ledger.list_recoverable(limit=limit):
             context = record.context
             actor = ActorContext(
                 principal_id=context.principal_id,

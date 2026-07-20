@@ -19,6 +19,7 @@ from deskpet.harness.continuations import (
     ReactCommandBoundary,
     ReactCommandBoundaryStore,
 )
+from deskpet.execution.ledger import ExecutionLedger
 from deskpet.harness.ports import (
     CancelAcknowledgedCandidate,
     ChildAcceptedCandidate,
@@ -116,6 +117,18 @@ class ReActCollaborator(Protocol):
 
     async def cancel(self, run_id: str, reason: str) -> None: ...
     async def close(self) -> None: ...
+
+
+class DurableBoundaryPromoter(Protocol):
+    async def promote_for_boundary(self, run_id: str) -> None: ...
+
+
+class LedgerBoundaryPromoter:
+    def __init__(self, ledger: ExecutionLedger) -> None:
+        self._ledger = ledger
+
+    async def promote_for_boundary(self, run_id: str) -> None:
+        await self._ledger.promote_active(run_id)
 
 
 class EffectOutcomeReader(Protocol):
@@ -293,6 +306,7 @@ class ReActDriver:
         self,
         collaborator: ReActCollaborator,
         boundary_store: ReactCommandBoundaryStore,
+        promoter: DurableBoundaryPromoter,
         effect_reader: EffectOutcomeReader,
         *,
         reconciler: EffectReconciler | None = None,
@@ -300,6 +314,7 @@ class ReActDriver:
     ) -> None:
         self._collaborator = collaborator
         self._boundaries = boundary_store
+        self._promoter = promoter
         self._effects = effect_reader
         self._reconciler = reconciler
         self._outcome_committer = outcome_committer
@@ -427,6 +442,7 @@ class ReActDriver:
             elif isinstance(emission, ReactToolBatch):
                 boundary = self._boundary_for_batch(request, emission)
                 if self._requires_boundary(emission):
+                    await self._promoter.promote_for_boundary(request.run_id)
                     permission_index = self._next_permission_index(boundary)
                     if permission_index is not None:
                         decision = self._permission_decision(boundary, permission_index)
@@ -443,6 +459,7 @@ class ReActDriver:
                 decision = emission.decision
                 if decision.run_id != request.run_id:
                     raise ValueError("decision run binding mismatch")
+                await self._promoter.promote_for_boundary(request.run_id)
                 boundary = ReactCommandBoundary(
                     run_id=request.run_id,
                     session_id=request.session_id,
@@ -467,6 +484,7 @@ class ReActDriver:
                 command = emission.command
                 if command.run_id != request.run_id:
                     raise ValueError("delegate run binding mismatch")
+                await self._promoter.promote_for_boundary(request.run_id)
                 await self._boundaries.put(
                     ReactCommandBoundary(
                         run_id=request.run_id,
@@ -803,10 +821,12 @@ class ReActDriver:
 
 
 __all__ = [
+    "DurableBoundaryPromoter",
     "EffectOutcomeReader",
     "EffectReconciler",
     "EffectContinuationCommitter",
     "LegacyAgentLoopCollaborator",
+    "LedgerBoundaryPromoter",
     "LegacyAgentLoopToolInterceptionError",
     "ReActCollaborator",
     "ReActDriver",

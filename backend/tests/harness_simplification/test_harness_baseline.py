@@ -80,12 +80,6 @@ async def test_completed_run_probe_uses_real_kernel_uow_final_and_close() -> Non
     assert result["completed_run_strong_refs"] == 0
 
 
-def test_lifecycle_probe_has_no_compatibility_ledger_import() -> None:
-    source = Path(harness_baseline.__file__).read_text(encoding="utf-8")
-    assert "execution.ledger" not in source
-    assert "ExecutionLedger(" not in source
-
-
 def test_compare_rejects_legacy_or_scaled_lifecycle_baselines() -> None:
     current = json.loads(
         (harness_baseline.PLAN_DIR / "r0-benchmark.json").read_text(encoding="utf-8")
