@@ -563,6 +563,8 @@ async def test_root_and_child_terminal_race_has_one_winner(tmp_path) -> None:
     terminal = [event for event in events if event.kind == "final"]
     assert record.status is RunStatus.COMPLETED
     assert len(terminal) == 1
+    await asyncio.sleep(0.05)
+    await value.close(handle.ref, actor)
 
 
 @pytest.mark.asyncio

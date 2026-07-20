@@ -1,5 +1,7 @@
 """Product-neutral execution harness contracts and adapters."""
 
+from .bootstrap import HarnessHealth, HarnessManifest, HarnessRuntime, build_harness_runtime
+
 from .context import HostContextFactory, RunContext
 from .child_runs import ChildRunCoordinator
 from .decisions import DecisionStore, DecisionWakeupCache
@@ -55,6 +57,9 @@ __all__ = [
     "ExecutionProjector",
     "HostContext",
     "HostContextFactory",
+    "HarnessHealth",
+    "HarnessManifest",
+    "HarnessRuntime",
     "LegacyPreparedCallAdapter",
     "PreparedExecutionCall",
     "ProjectionContractError",
@@ -80,4 +85,5 @@ __all__ = [
     "run_event_envelope",
     "standard_delivery_specs",
     "tool_outcome_payload",
+    "build_harness_runtime",
 ]

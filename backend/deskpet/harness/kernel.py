@@ -507,6 +507,11 @@ class RunKernel:
         )
 
     async def _emit(self, event: RunEvent) -> None:
+        terminal = event.kind == "final" and event.status in {
+            OutcomeStatus.SUCCEEDED,
+            OutcomeStatus.FAILED,
+            OutcomeStatus.CANCELLED,
+        }
         async with self._lock:
             active = self._active.get(event.run_id)
             if active is None:
@@ -514,8 +519,12 @@ class RunKernel:
             if not any(item.event_id == event.event_id for item in active.events):
                 active.events.append(event)
             subscribers = tuple(active.subscribers)
+            if terminal:
+                active.subscribers.clear()
         for queue in subscribers:
             queue.put_nowait(event)
+            if terminal:
+                queue.put_nowait(None)
 
     async def _emit_live(
         self,
