@@ -47,3 +47,10 @@
 - `python -m pytest -q backend/tests/harness_simplification`: **PASS — 150 passed, 9 xfailed** in 15.20s; one `aiosqlite` event-loop-close warning remains to be fixed before final gates.
 - Current post-foundation orchestration LOC: **33,228** (`fixed_total=22,266`, `execution/harness=7,982`, previously omitted `workflows/store/execution_uow.py=2,980`). This is an intermediate seam baseline, not an accepted simplification result; the final gate remains the original **≤17,250**. R0 must replace the manual file set with fixed-SHA automatic discovery so moves and new orchestration files cannot escape counting.
 - First WI-12 attempt reached 25,954 LOC but silently lost ContextAssembler/history/persona/memory, attachments, problem-pipeline state, Skill Codify and several UI events. It was therefore rejected under AC-18 even though owner count had fallen.
+
+## R0 mechanical baseline — complete
+
+- Locked manifests reproduce phase-0 `21,563` LOC at `961c7d340334927acfa07cfaffe071510f56cff3` and rollback/current `33,228` LOC at `4d38979ec9d965afdef32243fe6492e1627eb8ec`; current unknown classifications: `0`.
+- The schema-2 canonical benchmark ran 10,000 real `RunKernel.start → SqliteExecutionUnitOfWork.finalize → RunKernel.close` lifecycles in 685.9s: starts/terminal rows/final events/closes all `10,000`, completed-run strong refs `0`, RSS delta `1,470,464` bytes.
+- Product census: `141` legacy callsites, `unmapped_count=0`; direct behavior tests cover canonical messages, real tool capability filtering, read-only/Code/DeepResearch/PPT routing, Voice, AutoResume, permission restore, SessionDB/workflow delivery and codify.
+- Integrated gate after both R0 slices: `176 passed, 9 xfailed`; census check PASS; LOC check PASS. R0 changes scripts/tests/manifests/docs only and do not change production ownership.

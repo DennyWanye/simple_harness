@@ -1,12 +1,23 @@
 # DeskPet Agent Harness Architecture
 
-> Last updated: 2026-07-10. Scope: request lifecycle, harness state, service wiring, subagent sidecars, and framework comparison.
+> Last updated: 2026-07-20. Scope: request lifecycle, harness state, service wiring, subagent sidecars, and harness simplification evidence.
 
 ## Summary
 
 DeskPet uses a product-specific agent harness rather than a generic agent framework. The main runtime is a single parent ReAct loop with strong local-product affordances: Tauri/WebSocket event bridging, permission popups, artifact cards, receipt-backed verification, session memory, and optional subagent/team sidecars.
 
 The importable contract lives in `backend/deskpet/agent/harness_manifest.py`. Tests should use that module when they need stable names for lifecycle stages, service wiring, or known harness weaknesses.
+
+## Harness simplification program status
+
+R0 of the approved simplification plan is complete, but **production ownership is unchanged**: text and Voice still use the legacy paths described below, while the retained WI-1～WI-11 execution/harness code remains test-only foundation.
+
+- The production parity census freezes 141 legacy event/sink/control callsites with `unmapped_count=0`, plus direct behavior fixtures for canonical messages, capability-filtered toolsets, read-only/Code/DeepResearch/PPT routing, Voice tags/TTS-facing text, SessionDB delivery, AutoResume, permission restoration and codify.
+- Locked Git-object LOC manifests reproduce phase-0 `21,563` and rollback `33,228` lines. Rename/copy, dirty/untracked, Unicode paths, excluded-directory moves and rewritten moves outside `backend/` are fail-closed.
+- The canonical schema-2 benchmark completed 10,000 real `RunKernel.start → UoW.finalize → RunKernel.close` lifecycles with 10,000 terminal rows/events, zero completed-run strong references and about 1.40 MiB RSS growth.
+- Integrated verification: `176 passed, 9 xfailed`; parity census `141/141` mapped; current LOC `33,228` with zero unknown classifications.
+
+The approved target is documented in [`plans/2026-07-20-agent-harness-simplification/target-architecture.md`](../plans/2026-07-20-agent-harness-simplification/target-architecture.md). R1 begins with an additive v7 schema while production remains `legacy/0`; no production owner changes before the R6 activation gate.
 
 ## Request Lifecycle
 
