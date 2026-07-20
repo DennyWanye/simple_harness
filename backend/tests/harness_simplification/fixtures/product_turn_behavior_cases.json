@@ -1,0 +1,52 @@
+{
+  "auto_resume": {
+    "audit_action": "auto_resumed",
+    "event_type": "auto_resume_started",
+    "hint_marker": "_is_supervisor_hint",
+    "message_role": "system"
+  },
+  "permission_restore": {
+    "enabled": true
+  },
+  "streaming_tags": {
+    "action": "wave",
+    "emotion": "happy",
+    "spoken_text": "Hello world"
+  },
+  "voice_broadcast": [
+    {
+      "payload": {
+        "session_id": "peer-session",
+        "text": "hello"
+      },
+      "type": "chat_v2_user_echo"
+    },
+    {
+      "payload": {
+        "session_id": "peer-session",
+        "text": "world"
+      },
+      "type": "chat_v2_final"
+    }
+  ],
+  "voice_tags": [
+    {
+      "payload": {
+        "value": "happy"
+      },
+      "type": "emotion_change"
+    },
+    {
+      "payload": {
+        "value": "wave"
+      },
+      "type": "action_trigger"
+    }
+  ],
+  "workflow_delivery": {
+    "artifact_count": 1,
+    "projection_kind": "artifact_card",
+    "role": "assistant",
+    "visible_during_publish": true
+  }
+}
