@@ -429,9 +429,16 @@ class ReActDriver:
         root_terminal = signal.kind == 'child_terminal' and boundary.pending_delegate is not None and boundary.pending_delegate.join_policy is JoinPolicy.ROOT_TERMINAL_CHILD
         clear_delegate = not root_terminal and (signal.kind == 'child_terminal' or boundary.pending_delegate is not None and boundary.pending_delegate.join_policy is JoinPolicy.DETACHED)
         value = thaw_json(getattr(signal, 'value', None))
+        state = copy.deepcopy(dict(boundary.completion_state))
+        detached = dict(state.get('detached_children') or {})
+        if signal.kind == 'child_accepted' and boundary.pending_delegate is not None and boundary.pending_delegate.join_policy is JoinPolicy.DETACHED:
+            detached[signal.command_id] = signal.child_run_id
+        elif signal.kind == 'child_terminal':
+            detached.pop(signal.command_id, None)
+        state['detached_children'] = detached
         child_response = {'type': 'host_child_response', 'signal': signal.kind, 'signal_id': signal_id, 'child_run_id': signal.child_run_id, 'status': getattr(signal, 'status', 'accepted'), 'value': value}
         messages = boundary.canonical_messages + ({'role': 'system', 'content': json.dumps(child_response, ensure_ascii=False, sort_keys=True, default=str)},)
-        updated = replace(boundary, canonical_messages=messages, pending_delegate=None if clear_delegate else boundary.pending_delegate, version=boundary.version + 1)
+        updated = replace(boundary, canonical_messages=messages, completion_state=state, pending_delegate=None if clear_delegate else boundary.pending_delegate, version=boundary.version + 1)
         event = RunEventCandidate(event_key=f'child-signal:{signal_id}', kind=signal.kind, status=OutcomeStatus.SUCCEEDED if signal.kind == 'child_terminal' and signal.status == 'completed' else OutcomeStatus.ACCEPTED, driver_kind='react', correlation={'command_id': signal.command_id, 'child_run_id': signal.child_run_id, 'signal_id': signal_id}, payload={'status': getattr(signal, 'status', 'accepted'), 'value': value})
         _, saved, stored_event = await self._uow.apply_child_signal_and_ack(signal_id, expected_continuation_version=boundary.version, continuation_payload=updated.to_payload(), event=event, recovery_lease=recovery_lease)
         return replace(updated, version=int(saved.version)), PersistedEventCandidate(stored_event)
@@ -566,6 +573,12 @@ class ReActDriver:
             if signal.kind == "child_terminal":
                 boundary = await self._load_boundary(signal.run_id)
                 command = boundary.pending_delegate
+                detached = dict(boundary.completion_state.get('detached_children') or {})
+                if command is None and detached.get(signal.command_id) == signal.child_run_id:
+                    boundary, persisted = await self._apply_child_inbox(boundary, signal, recovery_lease=recovery_lease)
+                    if persisted is not None:
+                        yield persisted
+                    return
                 if command is None or command.command_id != signal.command_id:
                     raise ValueError('delegate command not found')
                 boundary, persisted = await self._apply_child_inbox(boundary, signal, recovery_lease=recovery_lease)

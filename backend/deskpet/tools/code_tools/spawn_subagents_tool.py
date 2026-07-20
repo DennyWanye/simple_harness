@@ -17,6 +17,7 @@ plan: plans/2026-06-21-subagent-concurrency-driver/ WI-3.2
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import uuid
@@ -92,6 +93,63 @@ _AWAIT_SCHEMA: dict[str, Any] = {
 }
 
 
+def build_subagent_batch_delegate(
+    request: Any,
+    args: dict[str, Any],
+    execution_context: ToolExecutionContext,
+    allowed_capabilities: set[str] | frozenset[str],
+):
+    """Translate one public spawn batch into one durable detached ChildRun."""
+    from deskpet.execution import AuthorizationError
+    from deskpet.harness.ports import AttachmentPolicy, DelegateRun, JoinPolicy
+
+    context = request.run_context
+    supplied = (
+        execution_context.run_id,
+        execution_context.session_id,
+        execution_context.root_run_id,
+        execution_context.capability_hash,
+    )
+    expected = (
+        request.run_id,
+        context.session_id,
+        context.root_run_id,
+        context.capability_hash,
+    ) if context is not None else ()
+    if supplied != expected:
+        raise AuthorizationError("actor_not_authorized", "subagent scope differs from parent")
+    raw = args.get("subagents")
+    if not isinstance(raw, list) or not 1 <= len(raw) <= _MAX:
+        raise ValueError("subagents must contain one to eight tasks")
+    tasks = []
+    for index, item in enumerate(raw):
+        if not isinstance(item, dict) or not str(item.get("prompt") or "").strip():
+            raise ValueError("each subagent requires a prompt")
+        task = dict(item)
+        requested = _filter_subagent_tools(task.get("tools")) or sorted(allowed_capabilities)
+        if not set(requested) <= allowed_capabilities:
+            raise AuthorizationError("actor_not_authorized", "subagent requested unavailable tools")
+        task.update(task_id=str(task.get("task_id") or f"sub_{index}"), tools=requested)
+        identity = json.dumps({"parent": request.run_id, "index": index, "task": task}, sort_keys=True)
+        task["run_id"] = "sub-" + hashlib.sha256(identity.encode()).hexdigest()[:24]
+        tasks.append(task)
+    frozen = json.dumps(tasks, sort_keys=True, separators=(",", ":"))
+    capabilities = tuple(sorted({tool for task in tasks for tool in task["tools"]}))
+    return DelegateRun(
+        request.run_id,
+        "spawn-subagents:" + hashlib.sha256(frozen.encode()).hexdigest()[:24],
+        {
+            "driver_kind": "react",
+            "text": "Execute these subagent tasks as blocking parallel spans; return results keyed by run_id.",
+            "subagent_runs": tasks,
+        },
+        "subagent.batch",
+        capabilities,
+        AttachmentPolicy.DETACHED,
+        JoinPolicy.DETACHED,
+    )
+
+
 def build_spawn_subagents_tools(
     *,
     llm_shim: Any,
@@ -102,6 +160,8 @@ def build_spawn_subagents_tools(
     kind_overrides: Optional[dict[str, Any]] = None,
     termination_gate_factory: Optional[Callable[[], Any]] = None,
     shim_resolver: Optional[Callable[[str], Any]] = None,
+    spawn_delegate: Optional[Callable[..., Any]] = None,
+    await_delegate: Optional[Callable[..., Any]] = None,
 ):
     """构造 ``spawn_subagents`` + ``await_subagents`` 两个工具。
 
@@ -130,6 +190,8 @@ def build_spawn_subagents_tools(
         *,
         execution_context: ToolExecutionContext | None = None,
     ) -> str:
+        if spawn_delegate is not None:
+            return await spawn_delegate(args, task_id, execution_context=execution_context)
         subs = args.get("subagents")
         if not isinstance(subs, list) or not subs:
             return json.dumps(
@@ -219,6 +281,8 @@ def build_spawn_subagents_tools(
         *,
         execution_context: ToolExecutionContext | None = None,
     ) -> str:
+        if await_delegate is not None:
+            return await await_delegate(args, task_id, execution_context=execution_context)
         run_ids = args.get("run_ids")
         if run_ids and isinstance(run_ids, list):
             runs = [registry.get(r) for r in run_ids]
@@ -244,4 +308,4 @@ def build_spawn_subagents_tools(
     return (_spawn, _SPAWN_SCHEMA), (_await, _AWAIT_SCHEMA)
 
 
-__all__ = ["build_spawn_subagents_tools", "_SPAWN_SCHEMA", "_AWAIT_SCHEMA"]
+__all__ = ["build_spawn_subagents_tools", "build_subagent_batch_delegate", "_SPAWN_SCHEMA", "_AWAIT_SCHEMA"]

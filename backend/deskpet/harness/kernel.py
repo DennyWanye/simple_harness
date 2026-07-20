@@ -198,6 +198,8 @@ class RunKernel:
                 event=event,
                 recovery_lease=recovery_lease,
             )
+            if command is not None:
+                kwargs["value"] = thaw_json(event.payload)
             return (
                 await (
                     finalize(command.operation_id, **kwargs)
