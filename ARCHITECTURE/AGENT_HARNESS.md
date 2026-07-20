@@ -22,11 +22,27 @@ existing native `RunFence`; a preclaimed `ActiveLease` prevents a second
 native claim. Effect claim happens before external execution, while an owner
 takeover makes the old settlement fail rather than advance the run.
 
+Resume now rebuilds `DriverStart` from one canonical boundary conversion, so
+the frozen capability snapshot and tool allow-list survive recovery. Durable
+child accepted/terminal responses are host system messages committed with the
+child boundary, event, and inbox acknowledgement; `signal_id` is their
+exactly-once identity, and root-terminal intent remains recoverable after ack
+until the parent terminal is materialized. Durable resume retains the trusted
+run context/spec, continuation version, and current recovery lease, allowing a
+second prepared tool batch while rejecting a stale owner. New ReAct starts
+carry scoped `UNKNOWN` completion
+evidence, and successful tool completion is resolved from exact
+run/turn/call/effect/artifact identity through the UoW before either legacy
+VerifyGate or pipeline SelfCheck can release a completion claim; multi-tool
+batches conservatively remain `UNKNOWN` as a whole. Legacy
+AgentLoop callers that supply no scoped evidence keep their prior behavior.
+
 Recovery fault verification covers first-yield ordering, same-owner concurrent
 claims, stale continuation/effect/child/event/terminal writes, workflow
 handoff rollback/idempotency, and takeover during an external tool call. Final
-gates: harness `261 passed, 9 xfailed`, AgentLoop adjacency `84 passed`, Kernel
-`631` physical lines, adjusted LOC `33,216 <= 33,228`, zero unknown LOC
+gates: harness `275 passed, 9 xfailed`, expanded AgentLoop verification
+adjacency `59 passed`, Kernel `631` physical lines, adjusted LOC
+`33,223 <= 33,228`, zero unknown LOC
 classifications. Production ownership remains `legacy/0`; this slice does not
 perform the R6 cutover. Evidence: [`r3-recovery-results.md`](../plans/2026-07-20-agent-harness-simplification/r3-recovery-results.md).
 

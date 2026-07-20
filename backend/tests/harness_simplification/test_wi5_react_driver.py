@@ -10,19 +10,22 @@ import aiosqlite
 import pytest
 
 from deskpet.execution import (
+    ActorContext,
     PersistenceLevel,
     RunContext,
     RunCreate,
+    RunEventCandidate,
+    RunRef,
     fingerprint_json,
     root_idempotency_key,
 )
+from deskpet.execution.evidence import EvidenceContext, UNKNOWN_EVIDENCE
+from deskpet.harness.child_runs import ChildRunCoordinator
 from deskpet.harness.drivers.react import (
     LegacyAgentLoopCollaborator,
     LegacyAgentLoopToolInterceptionError,
     ReActDriver,
     ReactCommandBoundary,
-    ReactDecisionRequest,
-    ReactDelegateRequest,
     ReactEmission,
     ReactFallback,
     ReactFinal,
@@ -52,7 +55,7 @@ from deskpet.harness.tool_executor import (
     ToolOutcomeStatus,
 )
 from deskpet.tools.capabilities import ToolExecutionContext
-from deskpet.workflows.store import SqliteExecutionUnitOfWork
+from deskpet.workflows.store import SqliteExecutionUnitOfWork, StaleRecoveryLease
 
 
 CAPABILITY_HASH = fingerprint_json({"tools": ["read", "write"]})
@@ -229,6 +232,36 @@ async def _recovery_lease(store):
     return await store.claim_recovery("run-react", owner="react-test-recovery")
 
 
+class _ChildLauncher:
+    async def accept(self, command) -> None:
+        return None
+
+
+class _CaptureLoop:
+    def __init__(self) -> None:
+        self.messages: list[list[dict[str, Any]]] = []
+
+    async def _events(self):
+        from agent.agent_loop import FinalEvent
+        yield FinalEvent(content="continued")
+
+    def run(self, messages, **kwargs):
+        self.messages.append(messages)
+        return self._events()
+
+
+async def _schedule_child(store, command):
+    parent = await store.query(
+        RunRef("run-react", "session-react"),
+        ActorContext("principal-react", "session-react", 0),
+    )
+    coordinator = ChildRunCoordinator(store)
+    committed = await coordinator.submit(parent, command)
+    await coordinator.run_scheduler_once(_ChildLauncher(), owner="child-scheduler")
+    accepted = (await coordinator.pending_signals("run-react"))[0].signal
+    return coordinator, committed, accepted
+
+
 @pytest.mark.asyncio
 async def test_driver_preserves_first_token_fallback_and_only_emits_terminal_candidate(tmp_path):
     collaborator = ScriptedCollaborator(
@@ -263,7 +296,7 @@ async def test_decision_boundary_survives_new_driver_and_keeps_session(tmp_path)
         prompt={"question": "which folder?"},
     )
     first, store, path = await _driver(
-        tmp_path, ScriptedCollaborator([ReactDecisionRequest(decision)])
+        tmp_path, ScriptedCollaborator([decision])
     )
     assert await _collect(first.start(_request())) == [decision]
     record = await store.load_continuation("run-react")
@@ -380,7 +413,11 @@ async def test_recovery_backfills_successful_effect_without_regenerating_or_reex
     assert candidates == [DriverTerminalCandidate("run-react", "completed", "recovered")]
     boundary, response = collaborator.resume_inputs[0]
     assert boundary.outcomes == (committed,)
-    assert response == {"type": "tool_outcomes", "command_id": "batch-1"}
+    assert response == {
+        "type": "tool_outcomes",
+        "command_id": "batch-1",
+        "scoped_evidence": UNKNOWN_EVIDENCE,
+    }
     tool_message = boundary.canonical_messages[-1]
     assert tool_message["tool_call_id"] == call.call_id
     assert json.loads(tool_message["content"])["effect_id"] == call.effect_id
@@ -388,6 +425,74 @@ async def test_recovery_backfills_successful_effect_without_regenerating_or_reex
     persisted = ReactCommandBoundary.from_record(record) if record else None
     assert persisted is not None
     assert persisted.completion_state["model_backfilled"] is True
+
+
+@pytest.mark.asyncio
+async def test_completed_tool_uses_exact_effect_scope_for_agent_resume(tmp_path):
+    call = _call(0, durable=True)
+    batch = ReactToolBatch("batch-evidence", (call,), (_context(call),))
+    collaborator = ScriptedCollaborator([batch], resumes=[[ReactFinal("scoped")]])
+    driver, _, path = await _driver(tmp_path, collaborator)
+    await _collect(driver.start(_request()))
+    outcome = replace(_outcome(call), artifact_refs=("artifact://result/1",))
+    async with aiosqlite.connect(path) as db:
+        await db.execute(
+            """INSERT INTO execution_effects(
+            effect_id,schema_version,run_id,effect_fingerprint,call_id,tool_name,
+            args_hash,capability_hash,scope_hash,effect_type,status,policy_json,
+            prepared_json,outcome_json,receipt_ref,artifact_refs_json,
+            effect_version,created_at,updated_at,ended_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (call.effect_id, 1, "run-react", "effect-fingerprint", call.call_id,
+             call.tool_name, call.args_hash, CAPABILITY_HASH, SCOPE_HASH, "write",
+             "succeeded", "{}", "{}", "{}", outcome.receipt_ref,
+             json.dumps(list(outcome.artifact_refs)), 1, 1.0, 1.0, 1.0),
+        )
+        await db.commit()
+
+    await _collect(driver.signal(ToolOutcomesSignal("run-react", batch.command_id, (outcome,))))
+
+    selection = collaborator.resume_inputs[0][1]["scoped_evidence"]
+    assert selection.status == "matched"
+    assert selection.records[0].context == EvidenceContext(
+        run_id="run-react", turn_id="turn-run-react", call_id=call.call_id,
+        effect_id=call.effect_id, artifact_ref="artifact://result/1",
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [ToolOutcomeStatus.FAILED, ToolOutcomeStatus.ACCEPTED])
+async def test_non_successful_tool_outcome_fails_closed_without_evidence_lookup(tmp_path, status):
+    call = _call(0, durable=True)
+    batch = ReactToolBatch("batch-non-success", (call,), (_context(call),))
+    collaborator = ScriptedCollaborator([batch], resumes=[[ReactFinal("honest")]])
+    driver, store, _ = await _driver(tmp_path, collaborator)
+    await _collect(driver.start(_request()))
+
+    async def forbidden_lookup(context):
+        raise AssertionError("non-successful outcomes must not query completion evidence")
+
+    store.lookup_completion_evidence = forbidden_lookup
+    outcome = _outcome(call, status=status)
+    await _collect(driver.signal(ToolOutcomesSignal("run-react", batch.command_id, (outcome,))))
+    assert collaborator.resume_inputs[0][1]["scoped_evidence"] is UNKNOWN_EVIDENCE
+
+
+@pytest.mark.asyncio
+async def test_mixed_multi_tool_batch_fails_closed_without_partial_evidence(tmp_path):
+    calls = (_call(0, durable=True), _call(1, durable=True))
+    batch = ReactToolBatch("mixed-evidence", calls, tuple(_context(call) for call in calls))
+    driver, store, _ = await _driver(tmp_path, ScriptedCollaborator())
+    boundary = ReActDriver._boundary_for_batch(_request(), batch).with_outcomes({
+        0: _outcome(calls[0]),
+        1: _outcome(calls[1], status=ToolOutcomeStatus.FAILED),
+    })
+
+    async def forbidden_lookup(context):
+        raise AssertionError("mixed batch must fail closed before partial lookup")
+
+    store.lookup_completion_evidence = forbidden_lookup
+    assert await driver._completion_evidence(boundary) is UNKNOWN_EVIDENCE
 
 
 @pytest.mark.asyncio
@@ -459,7 +564,7 @@ async def test_delegate_boundary_survives_restart_and_accept_signal(tmp_path):
     command = _delegate(JoinPolicy.DETACHED)
     first, store, path = await _driver(
         tmp_path,
-        ScriptedCollaborator([ReactDelegateRequest(command)]),
+        ScriptedCollaborator([command]),
     )
     assert await _collect(first.start(_request())) == [command]
     record = await store.load_continuation("run-react")
@@ -506,7 +611,7 @@ def _delegate(join_policy: JoinPolicy):
 async def test_delegate_join_policy_contracts(join_policy, tmp_path):
     command = _delegate(join_policy)
     collaborator = ScriptedCollaborator(
-        [ReactDelegateRequest(command)],
+        [command],
         resumes=[[ReactFinal(f"resumed-{join_policy.value}")]],
     )
     driver, _, _ = await _driver(tmp_path, collaborator)
@@ -549,6 +654,112 @@ async def test_delegate_join_policy_contracts(join_policy, tmp_path):
                 "run-react", "completed", "resumed-join_before_final"
             )
         ]
+
+
+@pytest.mark.asyncio
+async def test_detached_child_accepted_is_in_real_model_input_once(tmp_path):
+    command = _delegate(JoinPolicy.DETACHED)
+    first, store, _ = await _driver(tmp_path, ScriptedCollaborator([command]))
+    await _collect(first.start(_request()))
+    _, _, accepted = await _schedule_child(store, command)
+    loop = _CaptureLoop()
+
+    await _collect(ReActDriver(LegacyAgentLoopCollaborator(loop), store, EffectReader()).signal(accepted))
+
+    payloads = [json.loads(message["content"]) for message in loop.messages[0] if message["role"] == "system"]
+    assert [item["signal"] for item in payloads if item.get("type") == "host_child_response"] == ["child_accepted"]
+    assert payloads[-1]["signal_id"] == accepted.signal_id
+
+
+@pytest.mark.asyncio
+async def test_joined_child_terminal_is_in_real_model_input_once(tmp_path):
+    command = _delegate(JoinPolicy.JOIN_BEFORE_FINAL)
+    first, store, _ = await _driver(tmp_path, ScriptedCollaborator([command]))
+    await _collect(first.start(_request()))
+    coordinator, committed, accepted = await _schedule_child(store, command)
+    await _collect(first.signal(accepted))
+    await store.finalize(
+        committed.child_run_id,
+        expected_version=1,
+        terminal_status="completed",
+        event=RunEventCandidate(event_key="child-done", kind="run.completed", status="succeeded", driver_kind="react"),
+    )
+    await coordinator.record_terminal(committed.operation_id, status="completed", value={"answer": 7})
+    terminal = (await coordinator.pending_signals("run-react"))[0].signal
+    loop = _CaptureLoop()
+
+    await _collect(ReActDriver(LegacyAgentLoopCollaborator(loop), store, EffectReader()).signal(terminal))
+
+    payloads = [json.loads(message["content"]) for message in loop.messages[0] if message["role"] == "system"]
+    assert [item["signal"] for item in payloads if item.get("type") == "host_child_response"] == ["child_accepted", "child_terminal"]
+    assert payloads[-1]["value"] == {"answer": 7}
+
+
+@pytest.mark.asyncio
+async def test_child_terminal_persisted_before_resume_recovers_into_model_once(tmp_path):
+    command = _delegate(JoinPolicy.JOIN_BEFORE_FINAL)
+    first, store, _ = await _driver(tmp_path, ScriptedCollaborator([command]))
+    await _collect(first.start(_request()))
+    coordinator, committed, accepted = await _schedule_child(store, command)
+    await _collect(first.signal(accepted))
+    await store.finalize(
+        committed.child_run_id,
+        expected_version=1,
+        terminal_status="completed",
+        event=RunEventCandidate(event_key="child-recovery-done", kind="run.completed", status="succeeded", driver_kind="react"),
+    )
+    await coordinator.record_terminal(committed.operation_id, status="completed", value="durable child")
+    terminal = (await coordinator.pending_signals("run-react"))[0].signal
+
+    class CrashOnResume(ScriptedCollaborator):
+        async def resume(self, boundary, response):
+            raise RuntimeError("crash after child commit")
+            yield
+
+    with pytest.raises(RuntimeError, match="after child commit"):
+        await _collect(ReActDriver(CrashOnResume(), store, EffectReader()).signal(terminal))
+    loop = _CaptureLoop()
+    restarted = ReActDriver(LegacyAgentLoopCollaborator(loop), store, EffectReader())
+    await _collect(restarted.recover("run-react", await _recovery_lease(store)))
+
+    payloads = [json.loads(message["content"]) for message in loop.messages[0] if message["role"] == "system"]
+    terminal_payloads = [item for item in payloads if item.get("signal") == "child_terminal"]
+    assert len(terminal_payloads) == 1
+    assert terminal_payloads[0]["signal_id"] == terminal.signal_id
+
+
+@pytest.mark.asyncio
+async def test_root_terminal_child_recovers_after_atomic_ack_before_terminal_materializes(tmp_path):
+    command = _delegate(JoinPolicy.ROOT_TERMINAL_CHILD)
+    first, store, _ = await _driver(tmp_path, ScriptedCollaborator([command]))
+    await _collect(first.start(_request()))
+    coordinator, committed, accepted = await _schedule_child(store, command)
+    await _collect(first.signal(accepted))
+    await store.finalize(
+        committed.child_run_id,
+        expected_version=1,
+        terminal_status="completed",
+        event=RunEventCandidate(event_key="root-child-done", kind="run.completed", status="succeeded", driver_kind="react"),
+    )
+    await coordinator.record_terminal(committed.operation_id, status="completed", value="root child result")
+    terminal = (await coordinator.pending_signals("run-react"))[0].signal
+    original_apply = first._apply_child_inbox
+
+    async def crash_after_apply(boundary, signal, *, recovery_lease):
+        await original_apply(boundary, signal, recovery_lease=recovery_lease)
+        raise RuntimeError("crash before root terminal materializes")
+
+    first._apply_child_inbox = crash_after_apply
+    with pytest.raises(RuntimeError, match="before root terminal"):
+        await _collect(first.signal(terminal))
+    restarted = ReActDriver(ScriptedCollaborator(), store, EffectReader())
+
+    assert await _collect(restarted.recover("run-react", await _recovery_lease(store))) == [
+        DriverTerminalCandidate(
+            "run-react", "completed", "root child result",
+            correlation={"child_run_id": terminal.child_run_id},
+        )
+    ]
 
 
 @pytest.mark.asyncio
@@ -602,6 +813,7 @@ async def test_legacy_agent_loop_is_only_a_read_only_token_fallback_final_collab
         "task_id": "run-react",
         "session_id": "session-react",
         "stream": True,
+        "_scoped_evidence": UNKNOWN_EVIDENCE,
     }
 
 
@@ -662,7 +874,8 @@ async def test_capability_snapshot_filters_agent_loop_schema_and_prepare() -> No
     assert tools.prepared == 0
 
 
-def test_react_boundary_roundtrip_retains_capability_snapshot() -> None:
+@pytest.mark.asyncio
+async def test_react_boundary_roundtrip_and_real_resume_retain_capability_snapshot() -> None:
     boundary = ReactCommandBoundary(
         run_id="run-react",
         session_id="session-react",
@@ -685,8 +898,24 @@ def test_react_boundary_roundtrip_retains_capability_snapshot() -> None:
     )
 
     assert dict(restored.capability_snapshot) == {"tools": ["read_file"]}
-    resumed = ReActDriver._request_from_boundary(restored)
+    resumed = restored.to_start()
     assert dict(resumed.capability_snapshot) == {"tools": ["read_file"]}
+
+    class Loop:
+        def __init__(self):
+            self.kwargs = None
+
+        async def _events(self):
+            from agent.agent_loop import FinalEvent
+            yield FinalEvent(content="done")
+
+        def run(self, messages, **kwargs):
+            self.kwargs = kwargs
+            return self._events()
+
+    loop = Loop()
+    await _collect(LegacyAgentLoopCollaborator(loop).resume(restored, {}))
+    assert loop.kwargs["tool_names_filter"] == ["read_file"]
 
 
 @pytest.mark.asyncio
@@ -786,6 +1015,76 @@ async def test_external_agent_loop_emits_prepared_batch_before_any_dispatch():
     assert isinstance(batch, ReactToolBatch)
     assert [call.tool_name for call in batch.calls] == ["probe"]
     assert batch.canonical_messages[-1]["role"] == "assistant"
+
+
+@pytest.mark.asyncio
+async def test_durable_tool_resume_can_prepare_and_persist_a_second_tool(tmp_path):
+    from agent.agent_loop import AgentLoop
+    from llm.types import ChatResponse, ChatUsage, ToolCall
+
+    class LLM:
+        def __init__(self):
+            self.calls = iter(("tool-a", "tool-b"))
+
+        async def chat_with_fallback(self, messages, tools=None, **kwargs):
+            name = next(self.calls)
+            return ChatResponse(
+                content="", tool_calls=[ToolCall(id=f"call-{name}", name=name, arguments={})],
+                stop_reason="tool_use", usage=ChatUsage(input_tokens=1, output_tokens=1), model="fixture",
+            )
+
+    class Tools:
+        def schemas(self, enabled_toolsets=None):
+            return [{"type": "function", "function": {"name": name, "description": name, "parameters": {"type": "object", "properties": {}}}} for name in ("tool-a", "tool-b")]
+
+        def prepare_execution_call(self, tool_name, raw_args, *, call_id, effect_id, context):
+            return PreparedExecutionCall(tool_name=tool_name, model_args=raw_args, call_id=call_id, effect_id=effect_id, capability_hash=context.capability_hash, scope_hash=context.scope_hash, recoverable_effect=True)
+
+    tools = Tools()
+    collaborator = LegacyAgentLoopCollaborator(AgentLoop(LLM(), tools, external_tool_dispatch=True), call_factory=tools)
+    driver, store, _ = await _driver(tmp_path, collaborator)
+    request = _request()
+    context = replace(request.run_context, workspace={"scope_hash": SCOPE_HASH})
+    request = replace(request, run_context=context, run_spec=replace(request.run_spec, context=context), capability_snapshot={"tools": ["tool-a", "tool-b"]})
+    first = (await _collect(driver.start(request)))[0]
+    assert first.calls[0].tool_name == "tool-a"
+
+    second = (await _collect(driver.signal(ToolOutcomesSignal("run-react", first.command_id, (_outcome(first.calls[0]),)))))[0]
+
+    assert second.calls[0].tool_name == "tool-b"
+    record = await store.load_continuation("run-react")
+    persisted = ReactCommandBoundary.from_record(record)
+    assert persisted.pending_calls[0].tool_name == "tool-b"
+    assert persisted.run_context == request.run_context
+    assert persisted.run_spec == request.run_spec
+
+
+@pytest.mark.asyncio
+async def test_recovery_second_batch_is_fenced_by_current_lease(tmp_path):
+    first_call = _call(0, durable=True)
+    second_call = _call(1, durable=False)
+    first_batch = ReactToolBatch("first-batch", (first_call,), (_context(first_call),))
+    second_batch = ReactToolBatch("second-batch", (second_call,), (_context(second_call),))
+    first, store, _ = await _driver(tmp_path, ScriptedCollaborator([first_batch]))
+    await _collect(first.start(_request()))
+    old_lease = await _recovery_lease(store)
+
+    class TakeoverCollaborator(ScriptedCollaborator):
+        async def resume(self, boundary, response):
+            await store.release_recovery(old_lease)
+            self.current_lease = await store.claim_recovery("run-react", owner="takeover")
+            yield second_batch
+
+    takeover = TakeoverCollaborator()
+    stale = ReActDriver(takeover, store, EffectReader({first_call.effect_id: _outcome(first_call)}))
+    with pytest.raises(StaleRecoveryLease):
+        await _collect(stale.recover("run-react", old_lease))
+    assert ReactCommandBoundary.from_record(await store.load_continuation("run-react")).command_id == "first-batch"
+
+    current = ReActDriver(ScriptedCollaborator(resumes=[[second_batch]]), store, EffectReader())
+    candidates = await _collect(current.recover("run-react", takeover.current_lease))
+    assert candidates[0].command_id == "second-batch"
+    assert ReactCommandBoundary.from_record(await store.load_continuation("run-react")).command_id == "second-batch"
 
 
 def test_react_driver_module_has_no_product_tool_or_workflow_dependencies():

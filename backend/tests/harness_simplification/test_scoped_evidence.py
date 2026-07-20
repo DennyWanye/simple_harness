@@ -7,9 +7,11 @@ from datetime import datetime, timezone
 import aiosqlite
 import pytest
 
+from agent.agent_loop import AgentLoop, ErrorEvent, FinalEvent
+from deskpet.agent.self_check_gate import SelfCheckGate
 from deskpet.agent.verify_gate import ClaimPattern, RegexExtractor, VerifyGate
 from deskpet.execution import PersistenceLevel, RunContext, RunCreate, fingerprint_json
-from deskpet.execution.evidence import EvidenceContext, EvidenceResolver
+from deskpet.execution.evidence import EvidenceContext, EvidenceResolver, UNKNOWN_EVIDENCE
 from deskpet.tools.receipt import make_receipt
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
 
@@ -154,6 +156,67 @@ def test_raw_legacy_session_receipt_cannot_satisfy_scoped_query():
     assert outcome.evidence_status == "unknown"
 
 
+def test_unknown_scope_without_context_clears_legacy_session_receipts():
+    outcome = _gate().check(
+        assistant_text="created deck.pptx",
+        ledger=[_receipt()],
+        scoped_evidence=UNKNOWN_EVIDENCE,
+    )
+    assert outcome.passed is False
+    assert outcome.evidence_status == "unknown"
+
+
 def test_missing_required_identity_is_rejected_before_lookup():
     with pytest.raises(ValueError, match="call_id is required"):
         replace(_context(), call_id="")
+
+
+class _FinalLLM:
+    async def chat_with_fallback(self, messages, tools=None, **kwargs):
+        from llm.types import ChatResponse, ChatUsage
+        return ChatResponse(
+            content="created deck.pptx", tool_calls=[], stop_reason="end_turn",
+            usage=ChatUsage(input_tokens=1, output_tokens=1), model="fixture",
+        )
+
+
+class _NoTools:
+    def schemas(self, enabled_toolsets=None):
+        return []
+
+
+class _OldReceiptStore:
+    def load_session(self, session_id):
+        return [_receipt()]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pipeline", [False, True])
+async def test_new_react_unknown_scope_blocks_old_session_receipt_in_both_gates(pipeline):
+    gate = _gate()
+    loop = AgentLoop(
+        _FinalLLM(), _NoTools(), verify_gate=gate,
+        self_check_gate=SelfCheckGate(verify_gate=gate) if pipeline else None,
+        pipeline_problem_type="creation" if pipeline else None,
+        receipt_store=_OldReceiptStore(), max_verify_nudges=1,
+        force_finish_via_tool_choice=False,
+    )
+    events = [event async for event in loop.run(
+        [{"role": "user", "content": "make it"}], session_id="old-session",
+        _scoped_evidence=UNKNOWN_EVIDENCE,
+    )]
+    assert any(isinstance(event, ErrorEvent) and event.reason == "verify_exhausted" for event in events)
+    assert not any(isinstance(event, FinalEvent) for event in events)
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_without_scoped_argument_keeps_legacy_receipt_compatibility():
+    loop = AgentLoop(
+        _FinalLLM(), _NoTools(), verify_gate=_gate(),
+        receipt_store=_OldReceiptStore(), max_verify_nudges=1,
+        force_finish_via_tool_choice=False,
+    )
+    events = [event async for event in loop.run(
+        [{"role": "user", "content": "make it"}], session_id="old-session",
+    )]
+    assert any(isinstance(event, FinalEvent) for event in events)

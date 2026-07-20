@@ -1756,6 +1756,7 @@ class AgentLoop:
         iteration. False (default) preserves the original non-streaming
         behaviour for callers that don't need partial output.
         """
+        scoped_evidence = llm_kwargs.pop("_scoped_evidence", None)
         tid = task_id or new_task_id()
         self._current_tid = tid  # 供 _pipeline_event 构造观测事件用（plans/2026-06-24-...）
         working_messages: list[dict[str, Any]] = list(messages)
@@ -3426,6 +3427,8 @@ class AgentLoop:
                         self.receipt_store.load_session(session_id)
                         if self.receipt_store is not None else []
                     )
+                    if scoped_evidence is not None:
+                        _ledger = list(scoped_evidence.records)
                     _sc = await traced_call(
                         name="self_check_gate.check",
                         kind=SpanKind.GATE,
@@ -3588,6 +3591,7 @@ class AgentLoop:
                                 assistant_text=response.content,
                                 ledger=ledger,
                                 goal_text=_vg_goal_text,
+                                **({"scoped_evidence": scoped_evidence} if scoped_evidence is not None else {}),
                             ),
                         )
                     except Exception as exc:  # noqa: BLE001

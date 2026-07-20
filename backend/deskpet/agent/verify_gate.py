@@ -311,14 +311,14 @@ class VerifyGate:
         if self.mode == "off":
             return VerifyOutcome(
                 passed=True,
-                evidence_status="unknown" if evidence_context is not None else "legacy",
+                evidence_status="unknown" if evidence_context is not None or scoped_evidence is not None else "legacy",
             )
 
         evidence_status: Literal["legacy", "matched", "unknown"] = "legacy"
         effective_ledger: list[Any] = list(ledger)
-        if evidence_context is not None:
+        if evidence_context is not None or scoped_evidence is not None:
             selection = scoped_evidence
-            if selection is None or any(
+            if selection is None or evidence_context is not None and any(
                 record.context != evidence_context for record in selection.records
             ):
                 effective_ledger = []

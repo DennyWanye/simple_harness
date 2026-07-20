@@ -7,6 +7,7 @@ from types import MappingProxyType
 from typing import Any, AsyncIterator, Mapping, Protocol
 from deskpet.execution import AttachmentPolicy
 from deskpet.execution.contracts import RecoveryLease, RunContext, RunCreate, RunEvent
+from deskpet.execution.evidence import EvidenceSelection, UNKNOWN_EVIDENCE
 from deskpet.harness.tool_executor import PreparedExecutionCall, ToolOutcome
 from deskpet.tools.capabilities import ToolExecutionContext
 
@@ -31,6 +32,7 @@ class DriverStart:
     profile_key: str = ""
     request_payload: Mapping[str, Any] = field(default_factory=dict)
     capability_snapshot: Mapping[str, Any] = field(default_factory=dict)
+    scoped_evidence: EvidenceSelection | None = UNKNOWN_EVIDENCE
 
     def __post_init__(self) -> None:
         if not self.run_id or not self.session_id:

@@ -23,7 +23,6 @@ from deskpet.execution.contracts import (
 from deskpet.harness.context import HostContextFactory
 from deskpet.harness.drivers.react import (
     ReActDriver,
-    ReactDecisionRequest,
     ReactFinal,
     ReactToolBatch,
 )
@@ -335,8 +334,7 @@ class NoEffects:
 
 class ClarificationCollaborator:
     async def start(self, request):
-        yield ReactDecisionRequest(
-            OpenDecision(
+        yield OpenDecision(
                 run_id=request.run_id,
                 command_id="clarify-command",
                 decision_id="clarify-1",
@@ -344,7 +342,6 @@ class ClarificationCollaborator:
                 kind="clarification",
                 prompt={"question": "continue?"},
             )
-        )
 
     async def resume(self, boundary, response):
         yield ReactFinal("continued")

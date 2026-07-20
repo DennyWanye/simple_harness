@@ -13,7 +13,8 @@ import time
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, AsyncIterator, Mapping, Protocol
-from deskpet.execution.contracts import DecisionOpen as DurableDecisionOpen, OutcomeStatus, PersistenceLevel, RecoveryLease, RunEventCandidate
+from deskpet.execution.contracts import DecisionOpen as DurableDecisionOpen, OutcomeStatus, PersistenceLevel, RecoveryLease, RunContext, RunCreate, RunEventCandidate, thaw_json
+from deskpet.execution.evidence import EvidenceContext, EvidenceSelection, UNKNOWN_EVIDENCE
 from deskpet.execution.ports import ExecutionUnitOfWork
 from deskpet.harness.ports import AttachmentPolicy, CancelAcknowledgedCandidate, ChildAcceptedCandidate, ChildAcceptedSignal, ChildTerminalSignal, DecisionSignal, DelegateRun, DriverEvent, DriverSignal, DriverStart, DriverTerminalCandidate, ExecuteTools, JoinPolicy, OpenDecision, PersistedEventCandidate, ProviderFallbackCandidate, TokenCandidate, ToolGrantRef, ToolOutcomesSignal
 from deskpet.harness.tool_executor import PreparedExecutionCall, ToolOutcome, ToolOutcomeStatus
@@ -59,6 +60,8 @@ class ReactCommandBoundary:
     iteration: int
     completion_state: Mapping[str, Any]
     capability_snapshot: Mapping[str, Any] = field(default_factory=dict)
+    run_context: RunContext | None = None
+    run_spec: RunCreate | None = None
     pending_decision: DriverEvent | None = None
     pending_delegate: DriverEvent | None = None
     version: int = 0
@@ -85,22 +88,20 @@ class ReactCommandBoundary:
             outcomes[index] = outcome
         return replace(self, outcomes=tuple(outcomes), version=self.version + 1)
 
-    def with_backfilled_messages(self, messages: tuple[Mapping[str, Any], ...]) -> 'ReactCommandBoundary':
-        state = copy.deepcopy(dict(self.completion_state))
-        state['model_backfilled'] = True
-        return replace(self, canonical_messages=tuple((copy.deepcopy(dict(item)) for item in messages)), completion_state=state, version=self.version + 1)
+    def to_start(self, scoped_evidence: EvidenceSelection | None=UNKNOWN_EVIDENCE) -> DriverStart:
+        return DriverStart(run_id=self.run_id, session_id=self.session_id, canonical_messages=self.canonical_messages, session_projection_cursor=self.session_projection_cursor, prepared_context_ref=self.prepared_context_ref, tool_set_snapshot_ref=self.tool_set_snapshot_ref, provider_state=self.provider_state, iteration=self.iteration, completion_state=self.completion_state, run_context=self.run_context, run_spec=self.run_spec, capability_snapshot=self.capability_snapshot, scoped_evidence=scoped_evidence)
 
     def to_payload(self) -> dict[str, Any]:
         delegate = self.pending_delegate
         decision = self.pending_decision
-        return {'session_id': self.session_id, 'command_id': self.command_id, 'command_kind': self.command_kind, 'canonical_messages': [dict(item) for item in self.canonical_messages], 'session_projection_cursor': self.session_projection_cursor, 'prepared_context_ref': self.prepared_context_ref, 'tool_set_snapshot_ref': self.tool_set_snapshot_ref, 'calls': [_call_payload(call) for call in self.pending_calls], 'contexts': [_context_payload(context) for context in self.tool_contexts], 'outcomes': [_outcome_payload(outcome) if outcome is not None else None for outcome in self.outcomes], 'provider_state': dict(self.provider_state), 'iteration': self.iteration, 'completion_state': dict(self.completion_state), 'capability_snapshot': dict(self.capability_snapshot), 'decision': None if decision is None else {'run_id': decision.run_id, 'command_id': decision.command_id, 'decision_id': decision.decision_id, 'nonce': decision.nonce, 'kind': decision.decision_kind, 'prompt': dict(decision.prompt), 'prompt_schema_version': decision.prompt_schema_version, 'expires_at': decision.expires_at, 'call_id': decision.call_id, 'effect_id': decision.effect_id, 'tool_name': decision.tool_name, 'args_hash': decision.args_hash, 'capability_hash': decision.capability_hash, 'scope_hash': decision.scope_hash}, 'delegate': None if delegate is None else {'run_id': delegate.run_id, 'command_id': delegate.command_id, 'child_request': dict(delegate.child_request), 'route_hint': delegate.route_hint, 'capability_subset': list(delegate.capability_subset), 'attachment_policy': delegate.attachment_policy.value, 'join_policy': delegate.join_policy.value}}
+        return {'session_id': self.session_id, 'command_id': self.command_id, 'command_kind': self.command_kind, 'canonical_messages': [dict(item) for item in self.canonical_messages], 'session_projection_cursor': self.session_projection_cursor, 'prepared_context_ref': self.prepared_context_ref, 'tool_set_snapshot_ref': self.tool_set_snapshot_ref, 'calls': [_call_payload(call) for call in self.pending_calls], 'contexts': [_context_payload(context) for context in self.tool_contexts], 'outcomes': [_outcome_payload(outcome) if outcome is not None else None for outcome in self.outcomes], 'provider_state': dict(self.provider_state), 'iteration': self.iteration, 'completion_state': dict(self.completion_state), 'capability_snapshot': dict(self.capability_snapshot), 'run_context': None if self.run_context is None else self.run_context.to_dict(), 'run_spec': None if self.run_spec is None else self.run_spec.to_dict(), 'decision': None if decision is None else {'run_id': decision.run_id, 'command_id': decision.command_id, 'decision_id': decision.decision_id, 'nonce': decision.nonce, 'kind': decision.decision_kind, 'prompt': dict(decision.prompt), 'prompt_schema_version': decision.prompt_schema_version, 'expires_at': decision.expires_at, 'call_id': decision.call_id, 'effect_id': decision.effect_id, 'tool_name': decision.tool_name, 'args_hash': decision.args_hash, 'capability_hash': decision.capability_hash, 'scope_hash': decision.scope_hash}, 'delegate': None if delegate is None else {'run_id': delegate.run_id, 'command_id': delegate.command_id, 'child_request': dict(delegate.child_request), 'route_hint': delegate.route_hint, 'capability_subset': list(delegate.capability_subset), 'attachment_policy': delegate.attachment_policy.value, 'join_policy': delegate.join_policy.value}}
 
     @classmethod
     def from_record(cls, record: Any) -> 'ReactCommandBoundary':
         value = dict(record.payload)
         decision = value.get('decision')
         delegate = value.get('delegate')
-        return cls(run_id=record.run_id, session_id=str(value['session_id']), command_id=str(value['command_id']), command_kind=str(value['command_kind']), canonical_messages=tuple(value['canonical_messages']), session_projection_cursor=int(value['session_projection_cursor']), prepared_context_ref=value.get('prepared_context_ref'), tool_set_snapshot_ref=value.get('tool_set_snapshot_ref'), pending_calls=tuple((_load_call(item) for item in value['calls'])), tool_contexts=tuple((_load_context(item) for item in value['contexts'])), outcomes=tuple((_load_outcome(item) if item is not None else None for item in value['outcomes'])), provider_state=dict(value['provider_state']), iteration=int(value['iteration']), completion_state=dict(value['completion_state']), capability_snapshot=dict(value.get('capability_snapshot') or {}), pending_decision=OpenDecision(**decision) if decision is not None else None, pending_delegate=DelegateRun(run_id=str(delegate['run_id']), command_id=str(delegate['command_id']), child_request=dict(delegate['child_request']), route_hint=str(delegate['route_hint']), capability_subset=tuple(delegate['capability_subset']), attachment_policy=AttachmentPolicy(str(delegate['attachment_policy'])), join_policy=JoinPolicy(str(delegate['join_policy']))) if delegate is not None else None, version=int(record.version))
+        return cls(run_id=record.run_id, session_id=str(value['session_id']), command_id=str(value['command_id']), command_kind=str(value['command_kind']), canonical_messages=tuple(value['canonical_messages']), session_projection_cursor=int(value['session_projection_cursor']), prepared_context_ref=value.get('prepared_context_ref'), tool_set_snapshot_ref=value.get('tool_set_snapshot_ref'), pending_calls=tuple((_load_call(item) for item in value['calls'])), tool_contexts=tuple((_load_context(item) for item in value['contexts'])), outcomes=tuple((_load_outcome(item) if item is not None else None for item in value['outcomes'])), provider_state=dict(value['provider_state']), iteration=int(value['iteration']), completion_state=dict(value['completion_state']), capability_snapshot=dict(value.get('capability_snapshot') or {}), run_context=RunContext.from_dict(value['run_context']) if value.get('run_context') is not None else None, run_spec=RunCreate.from_dict(value['run_spec']) if value.get('run_spec') is not None else None, pending_decision=OpenDecision(**decision) if decision is not None else None, pending_delegate=DelegateRun(run_id=str(delegate['run_id']), command_id=str(delegate['command_id']), child_request=dict(delegate['child_request']), route_hint=str(delegate['route_hint']), capability_subset=tuple(delegate['capability_subset']), attachment_policy=AttachmentPolicy(str(delegate['attachment_policy'])), join_policy=JoinPolicy(str(delegate['join_policy']))) if delegate is not None else None, version=int(record.version))
 
 @dataclass(frozen=True)
 class ReactToken:
@@ -128,21 +129,13 @@ class ReactToolBatch:
             raise ValueError('tool batch calls and contexts must be non-empty and align')
 
 @dataclass(frozen=True)
-class ReactDecisionRequest:
-    decision: DriverEvent
-
-@dataclass(frozen=True)
-class ReactDelegateRequest:
-    command: DriverEvent
-
-@dataclass(frozen=True)
 class ReactFinal:
     content: str
 
 @dataclass(frozen=True)
 class ReactFailure:
     error: str
-ReactEmission = ReactToken | ReactFallback | ReactToolBatch | ReactDecisionRequest | ReactDelegateRequest | ReactFinal | ReactFailure
+ReactEmission = ReactToken | ReactFallback | ReactToolBatch | DriverEvent | ReactFinal | ReactFailure
 
 class ReActCollaborator(Protocol):
 
@@ -245,6 +238,7 @@ class LegacyAgentLoopCollaborator:
         allowed_tools = self._allowed_tool_names(request)
         if allowed_tools is not None:
             kwargs['tool_names_filter'] = list(allowed_tools)
+        kwargs['_scoped_evidence'] = request.scoped_evidence
         iterator = self._loop.run(
             [copy.deepcopy(dict(item)) for item in request.canonical_messages],
             **kwargs,
@@ -253,8 +247,7 @@ class LegacyAgentLoopCollaborator:
             yield emission
 
     async def resume(self, boundary: ReactCommandBoundary, response: Mapping[str, Any]) -> AsyncIterator[ReactEmission]:
-        request = DriverStart(run_id=boundary.run_id, session_id=boundary.session_id, canonical_messages=boundary.canonical_messages, session_projection_cursor=boundary.session_projection_cursor, prepared_context_ref=boundary.prepared_context_ref, tool_set_snapshot_ref=boundary.tool_set_snapshot_ref, provider_state=boundary.provider_state, iteration=boundary.iteration, completion_state=boundary.completion_state)
-        async for emission in self.start(request):
+        async for emission in self.start(boundary.to_start(response.get('scoped_evidence', UNKNOWN_EVIDENCE))):
             yield emission
 
     async def cancel(self, run_id: str, reason: str) -> None:
@@ -274,7 +267,6 @@ class ReActDriver:
         self._uow = uow
         self._effects = effect_reader
         self._reconciler = reconciler
-        self._requests: dict[str, DriverStart] = {}
         self._volatile: dict[str, ReactCommandBoundary] = {}
 
     @staticmethod
@@ -283,18 +275,20 @@ class ReActDriver:
             return None
         return DurableDecisionOpen(decision_id=decision.decision_id, run_id=decision.run_id, nonce=decision.nonce, kind=decision.decision_kind, prompt_schema_version=decision.prompt_schema_version, prompt=dict(decision.prompt), expires_at=decision.expires_at, call_id=decision.call_id, effect_id=decision.effect_id, tool_name=decision.tool_name, args_hash=decision.args_hash, capability_hash=decision.capability_hash, scope_hash=decision.scope_hash)
 
-    async def _persist_initial_boundary(self, request: DriverStart, boundary: ReactCommandBoundary, *, decision: DriverEvent | None=None) -> ReactCommandBoundary:
-        spec = request.run_spec
-        if spec is None:
-            raise RuntimeError('durable ReAct boundary requires its immutable RunCreate')
-        durable_spec = replace(spec, persistence_level=PersistenceLevel.DURABLE)
-        waiting = RunEventCandidate(event_key=f'boundary:{boundary.command_id}', kind='run.waiting', status=OutcomeStatus.WAITING, driver_kind=spec.driver_kind, correlation={'command_id': boundary.command_id})
-        _, saved = await self._uow.promote_and_persist_batch_boundary(durable_spec, expected_run_version=0, expected_continuation_version=0, payload=boundary.to_payload(), decision=self._durable_decision(decision), waiting_event=waiting)
-        return replace(boundary, version=int(saved.version))
-
     async def _save_durable_boundary(self, boundary: ReactCommandBoundary, *, decision: DriverEvent | None=None, recovery_lease: RecoveryLease | None=None) -> ReactCommandBoundary:
         expected = max(0, boundary.version - 1)
         saved = await self._uow.save_continuation(boundary.run_id, expected, boundary.to_payload(), self._durable_decision(decision), recovery_lease=recovery_lease)
+        return replace(boundary, version=int(saved.version))
+
+    async def _persist_boundary(self, request: DriverStart, boundary: ReactCommandBoundary, *, continuation_version: int=0, decision: DriverEvent | None=None, recovery_lease: RecoveryLease | None=None) -> ReactCommandBoundary:
+        if continuation_version and request.run_id not in self._volatile:
+            return await self._save_durable_boundary(replace(boundary, version=continuation_version + 1), decision=decision, recovery_lease=recovery_lease)
+        spec = request.run_spec
+        if spec is None:
+            raise RuntimeError('durable ReAct boundary requires its immutable RunCreate')
+        waiting = RunEventCandidate(event_key=f'boundary:{boundary.command_id}', kind='run.waiting', status=OutcomeStatus.WAITING, driver_kind=spec.driver_kind, correlation={'command_id': boundary.command_id})
+        _, saved = await self._uow.promote_and_persist_batch_boundary(replace(spec, persistence_level=PersistenceLevel.DURABLE), expected_run_version=0, expected_continuation_version=0, payload=boundary.to_payload(), decision=self._durable_decision(decision), waiting_event=waiting)
+        self._volatile.pop(request.run_id, None)
         return replace(boundary, version=int(saved.version))
 
     @staticmethod
@@ -323,8 +317,8 @@ class ReActDriver:
         return None
 
     @staticmethod
-    def _boundary_for_batch(request: DriverStart, batch: ReactToolBatch) -> ReactCommandBoundary:
-        return ReactCommandBoundary(run_id=request.run_id, session_id=request.session_id, command_id=batch.command_id, command_kind='execute_tools', canonical_messages=batch.canonical_messages or request.canonical_messages, session_projection_cursor=request.session_projection_cursor, prepared_context_ref=request.prepared_context_ref, tool_set_snapshot_ref=request.tool_set_snapshot_ref, pending_calls=batch.calls, tool_contexts=batch.contexts, outcomes=(None,) * len(batch.calls), provider_state=request.provider_state, iteration=max(request.iteration, batch.iteration), completion_state=request.completion_state, capability_snapshot=request.capability_snapshot)
+    def _boundary_for_batch(request: DriverStart, batch: ReactToolBatch, version: int=0) -> ReactCommandBoundary:
+        return ReactCommandBoundary(run_id=request.run_id, session_id=request.session_id, command_id=batch.command_id, command_kind='execute_tools', canonical_messages=batch.canonical_messages or request.canonical_messages, session_projection_cursor=request.session_projection_cursor, prepared_context_ref=request.prepared_context_ref, tool_set_snapshot_ref=request.tool_set_snapshot_ref, pending_calls=batch.calls, tool_contexts=batch.contexts, outcomes=(None,) * len(batch.calls), provider_state=request.provider_state, iteration=max(request.iteration, batch.iteration), completion_state=request.completion_state, capability_snapshot=request.capability_snapshot, run_context=request.run_context, run_spec=request.run_spec, version=version)
 
     @staticmethod
     def _tool_messages(boundary: ReactCommandBoundary) -> tuple[Mapping[str, Any], ...]:
@@ -334,40 +328,40 @@ class ReActDriver:
             messages.append({'role': 'tool', 'tool_call_id': call.call_id, 'name': call.tool_name, 'content': json.dumps({'status': outcome.status.value, 'value': outcome.value, 'error': outcome.error, 'effect_id': outcome.effect_id, 'receipt_ref': outcome.receipt_ref, 'artifact_refs': list(outcome.artifact_refs)}, ensure_ascii=False, sort_keys=True, default=str)})
         return tuple(messages)
 
-    async def _emit(self, request: DriverStart, emissions: AsyncIterator[ReactEmission]) -> AsyncIterator[DriverEvent]:
+    async def _emit(self, request: DriverStart, emissions: AsyncIterator[ReactEmission], *, continuation_version: int=0, recovery_lease: RecoveryLease | None=None) -> AsyncIterator[DriverEvent]:
         async for emission in emissions:
             if isinstance(emission, ReactToken):
                 yield TokenCandidate(request.run_id, emission.content, emission.kind)
             elif isinstance(emission, ReactFallback):
                 yield ProviderFallbackCandidate(request.run_id, emission.from_provider, emission.to_provider, emission.reason)
             elif isinstance(emission, ReactToolBatch):
-                boundary = self._boundary_for_batch(request, emission)
-                if self._requires_boundary(emission):
+                boundary = self._boundary_for_batch(request, emission, continuation_version)
+                if continuation_version and request.run_id not in self._volatile or self._requires_boundary(emission):
                     permission_index = self._next_permission_index(boundary)
                     if permission_index is not None:
                         decision = self._permission_decision(boundary, permission_index)
                         boundary = replace(boundary, pending_decision=decision)
-                        boundary = await self._persist_initial_boundary(request, boundary, decision=decision)
+                        boundary = await self._persist_boundary(request, boundary, continuation_version=continuation_version, decision=decision, recovery_lease=recovery_lease)
                         yield decision
                         return
-                    boundary = await self._persist_initial_boundary(request, boundary)
+                    boundary = await self._persist_boundary(request, boundary, continuation_version=continuation_version, recovery_lease=recovery_lease)
                 else:
                     self._volatile[request.run_id] = boundary
                 yield self._execute_command(boundary)
                 return
-            elif isinstance(emission, ReactDecisionRequest):
-                decision = emission.decision
+            elif isinstance(emission, DriverEvent) and emission.kind == 'open_decision':
+                decision = emission
                 if decision.run_id != request.run_id:
                     raise ValueError('decision run binding mismatch')
-                boundary = ReactCommandBoundary(run_id=request.run_id, session_id=request.session_id, command_id=decision.command_id, command_kind='open_decision', canonical_messages=request.canonical_messages, session_projection_cursor=request.session_projection_cursor, prepared_context_ref=request.prepared_context_ref, tool_set_snapshot_ref=request.tool_set_snapshot_ref, pending_calls=(), tool_contexts=(), outcomes=(), provider_state=request.provider_state, iteration=request.iteration, completion_state=request.completion_state, capability_snapshot=request.capability_snapshot, pending_decision=decision)
-                boundary = await self._persist_initial_boundary(request, boundary, decision=decision)
+                boundary = ReactCommandBoundary(run_id=request.run_id, session_id=request.session_id, command_id=decision.command_id, command_kind='open_decision', canonical_messages=request.canonical_messages, session_projection_cursor=request.session_projection_cursor, prepared_context_ref=request.prepared_context_ref, tool_set_snapshot_ref=request.tool_set_snapshot_ref, pending_calls=(), tool_contexts=(), outcomes=(), provider_state=request.provider_state, iteration=request.iteration, completion_state=request.completion_state, capability_snapshot=request.capability_snapshot, run_context=request.run_context, run_spec=request.run_spec, pending_decision=decision, version=continuation_version)
+                boundary = await self._persist_boundary(request, boundary, continuation_version=continuation_version, decision=decision, recovery_lease=recovery_lease)
                 yield decision
                 return
-            elif isinstance(emission, ReactDelegateRequest):
-                command = emission.command
+            elif isinstance(emission, DriverEvent) and emission.kind == 'delegate_run':
+                command = emission
                 if command.run_id != request.run_id:
                     raise ValueError('delegate run binding mismatch')
-                boundary = await self._persist_initial_boundary(request, ReactCommandBoundary(run_id=request.run_id, session_id=request.session_id, command_id=command.command_id, command_kind='delegate', canonical_messages=request.canonical_messages, session_projection_cursor=request.session_projection_cursor, prepared_context_ref=request.prepared_context_ref, tool_set_snapshot_ref=request.tool_set_snapshot_ref, pending_calls=(), tool_contexts=(), outcomes=(), provider_state=request.provider_state, iteration=request.iteration, completion_state=request.completion_state, capability_snapshot=request.capability_snapshot, pending_delegate=command))
+                boundary = await self._persist_boundary(request, ReactCommandBoundary(run_id=request.run_id, session_id=request.session_id, command_id=command.command_id, command_kind='delegate', canonical_messages=request.canonical_messages, session_projection_cursor=request.session_projection_cursor, prepared_context_ref=request.prepared_context_ref, tool_set_snapshot_ref=request.tool_set_snapshot_ref, pending_calls=(), tool_contexts=(), outcomes=(), provider_state=request.provider_state, iteration=request.iteration, completion_state=request.completion_state, capability_snapshot=request.capability_snapshot, run_context=request.run_context, run_spec=request.run_spec, pending_delegate=command, version=continuation_version), continuation_version=continuation_version, recovery_lease=recovery_lease)
                 yield command
                 return
             elif isinstance(emission, ReactFinal):
@@ -391,7 +385,6 @@ class ReActDriver:
     def start(self, request: DriverStart) -> AsyncIterator[DriverEvent]:
 
         async def iterator() -> AsyncIterator[DriverEvent]:
-            self._requests[request.run_id] = request
             async for candidate in self._emit(request, self._collaborator.start(request)):
                 yield candidate
         return iterator()
@@ -411,31 +404,34 @@ class ReActDriver:
         else:
             await self._save_durable_boundary(boundary, recovery_lease=recovery_lease)
 
-    async def _record_outcomes(self, boundary: ReactCommandBoundary, updates: Mapping[int, ToolOutcome], *, recovery_lease: RecoveryLease | None=None) -> ReactCommandBoundary:
-        boundary = boundary.with_outcomes(updates)
-        await self._save_progress(boundary, recovery_lease=recovery_lease)
-        return boundary
-
-    @staticmethod
-    def _request_from_boundary(boundary: ReactCommandBoundary) -> DriverStart:
-        return DriverStart(run_id=boundary.run_id, session_id=boundary.session_id, canonical_messages=boundary.canonical_messages, session_projection_cursor=boundary.session_projection_cursor, prepared_context_ref=boundary.prepared_context_ref, tool_set_snapshot_ref=boundary.tool_set_snapshot_ref, provider_state=boundary.provider_state, iteration=boundary.iteration, completion_state=boundary.completion_state, capability_snapshot=boundary.capability_snapshot)
+    async def _completion_evidence(self, boundary: ReactCommandBoundary) -> EvidenceSelection:
+        if len(boundary.outcomes) != 1 or boundary.outcomes[0] is None or boundary.outcomes[0].status is not ToolOutcomeStatus.SUCCEEDED:
+            return UNKNOWN_EVIDENCE
+        call, context, outcome = boundary.pending_calls[0], boundary.tool_contexts[0], boundary.outcomes[0]
+        identity = EvidenceContext(run_id=boundary.run_id, turn_id=context.turn_id, call_id=call.call_id, effect_id=call.effect_id, artifact_ref=outcome.artifact_refs[0] if outcome.artifact_refs else None)
+        return await self._uow.lookup_completion_evidence(identity)
 
     async def _resume_completed(self, boundary: ReactCommandBoundary, *, recovery_lease: RecoveryLease | None=None) -> AsyncIterator[DriverEvent]:
         if not bool(boundary.completion_state.get('model_backfilled')):
-            boundary = boundary.with_backfilled_messages(self._tool_messages(boundary))
+            state = copy.deepcopy(dict(boundary.completion_state))
+            state['model_backfilled'] = True
+            boundary = replace(boundary, canonical_messages=self._tool_messages(boundary), completion_state=state, version=boundary.version + 1)
             await self._save_progress(boundary, recovery_lease=recovery_lease)
-        request = self._request_from_boundary(boundary)
-        self._requests[boundary.run_id] = request
-        async for candidate in self._emit(request, self._collaborator.resume(boundary, {'type': 'tool_outcomes', 'command_id': boundary.command_id})):
+        evidence = await self._completion_evidence(boundary)
+        async for candidate in self._emit(boundary.to_start(), self._collaborator.resume(boundary, {'type': 'tool_outcomes', 'command_id': boundary.command_id, 'scoped_evidence': evidence}), continuation_version=boundary.version, recovery_lease=recovery_lease):
             yield candidate
 
     async def _apply_child_inbox(self, boundary: ReactCommandBoundary, signal: DriverSignal, *, recovery_lease: RecoveryLease | None) -> tuple[ReactCommandBoundary, DriverEvent | None]:
         signal_id = str(getattr(signal, 'signal_id', '') or '').strip()
         if not signal_id:
             return boundary, None
-        clear_delegate = signal.kind == 'child_terminal' or boundary.pending_delegate is not None and boundary.pending_delegate.join_policy is JoinPolicy.DETACHED
-        updated = replace(boundary, pending_delegate=None if clear_delegate else boundary.pending_delegate, version=boundary.version + 1)
-        event = RunEventCandidate(event_key=f'child-signal:{signal_id}', kind=signal.kind, status=OutcomeStatus.SUCCEEDED if signal.kind == 'child_terminal' and signal.status == 'completed' else OutcomeStatus.ACCEPTED, driver_kind='react', correlation={'command_id': signal.command_id, 'child_run_id': signal.child_run_id, 'signal_id': signal_id}, payload={'status': getattr(signal, 'status', 'accepted'), 'value': getattr(signal, 'value', None)})
+        root_terminal = signal.kind == 'child_terminal' and boundary.pending_delegate is not None and boundary.pending_delegate.join_policy is JoinPolicy.ROOT_TERMINAL_CHILD
+        clear_delegate = not root_terminal and (signal.kind == 'child_terminal' or boundary.pending_delegate is not None and boundary.pending_delegate.join_policy is JoinPolicy.DETACHED)
+        value = thaw_json(getattr(signal, 'value', None))
+        child_response = {'type': 'host_child_response', 'signal': signal.kind, 'signal_id': signal_id, 'child_run_id': signal.child_run_id, 'status': getattr(signal, 'status', 'accepted'), 'value': value}
+        messages = boundary.canonical_messages + ({'role': 'system', 'content': json.dumps(child_response, ensure_ascii=False, sort_keys=True, default=str)},)
+        updated = replace(boundary, canonical_messages=messages, pending_delegate=None if clear_delegate else boundary.pending_delegate, version=boundary.version + 1)
+        event = RunEventCandidate(event_key=f'child-signal:{signal_id}', kind=signal.kind, status=OutcomeStatus.SUCCEEDED if signal.kind == 'child_terminal' and signal.status == 'completed' else OutcomeStatus.ACCEPTED, driver_kind='react', correlation={'command_id': signal.command_id, 'child_run_id': signal.child_run_id, 'signal_id': signal_id}, payload={'status': getattr(signal, 'status', 'accepted'), 'value': value})
         _, saved, stored_event = await self._uow.apply_child_signal_and_ack(signal_id, expected_continuation_version=boundary.version, continuation_payload=updated.to_payload(), event=event, recovery_lease=recovery_lease)
         return replace(updated, version=int(saved.version)), PersistedEventCandidate(stored_event)
 
@@ -452,7 +448,8 @@ class ReActDriver:
                     if outcome.call_id not in indexes:
                         raise ValueError('tool outcome call not present in boundary')
                     updates[indexes[outcome.call_id]] = outcome
-                boundary = await self._record_outcomes(boundary, updates, recovery_lease=recovery_lease)
+                boundary = boundary.with_outcomes(updates)
+                await self._save_progress(boundary, recovery_lease=recovery_lease)
                 if boundary.pending_indexes:
                     yield self._execute_command(boundary)
                     return
@@ -499,9 +496,7 @@ class ReActDriver:
                 state['model_backfilled'] = True
                 boundary = replace(boundary, canonical_messages=messages, completion_state=state, pending_decision=None, version=boundary.version + 1)
                 boundary = await self._save_durable_boundary(boundary, recovery_lease=recovery_lease)
-                request = self._request_from_boundary(boundary)
-                self._requests[signal.run_id] = request
-                async for candidate in self._emit(request, self._collaborator.resume(boundary, {'type': 'decision', 'response': dict(signal.response)})):
+                async for candidate in self._emit(boundary.to_start(), self._collaborator.resume(boundary, {'type': 'decision', 'response': dict(signal.response)}), continuation_version=boundary.version, recovery_lease=recovery_lease):
                     yield candidate
                 return
             if signal.kind == "child_accepted":
@@ -515,8 +510,7 @@ class ReActDriver:
                 else:
                     yield ChildAcceptedCandidate(signal.run_id, signal.command_id, signal.child_run_id, command.join_policy)
                 if command.join_policy is JoinPolicy.DETACHED:
-                    request = self._request_from_boundary(boundary)
-                    async for candidate in self._emit(request, self._collaborator.resume(boundary, {'type': 'child_accepted', 'child_run_id': signal.child_run_id})):
+                    async for candidate in self._emit(boundary.to_start(), self._collaborator.resume(boundary, {'type': 'child_accepted', 'child_run_id': signal.child_run_id}), continuation_version=boundary.version, recovery_lease=recovery_lease):
                         yield candidate
                 return
             if signal.kind == "child_terminal":
@@ -531,8 +525,7 @@ class ReActDriver:
                     yield DriverTerminalCandidate(signal.run_id, 'completed' if signal.status == 'completed' else 'failed', content=str(signal.value or ''), error=None if signal.status == 'completed' else str(signal.value or signal.status), correlation={'child_run_id': signal.child_run_id})
                     return
                 if command.join_policy is JoinPolicy.JOIN_BEFORE_FINAL:
-                    request = self._request_from_boundary(boundary)
-                    async for candidate in self._emit(request, self._collaborator.resume(boundary, {'type': 'child_terminal', 'child_run_id': signal.child_run_id, 'status': signal.status, 'value': signal.value})):
+                    async for candidate in self._emit(boundary.to_start(), self._collaborator.resume(boundary, {'type': 'child_terminal', 'child_run_id': signal.child_run_id, 'status': signal.status, 'value': signal.value}), continuation_version=boundary.version, recovery_lease=recovery_lease):
                         yield candidate
         return iterator()
 
@@ -540,6 +533,12 @@ class ReActDriver:
 
         async def iterator() -> AsyncIterator[DriverEvent]:
             boundary = await self._load_boundary(run_id)
+            last_message = boundary.canonical_messages[-1] if boundary.canonical_messages else {}
+            root_terminal = json.loads(str(last_message.get('content', '{}'))) if boundary.pending_delegate is not None and boundary.pending_delegate.join_policy is JoinPolicy.ROOT_TERMINAL_CHILD and last_message.get('role') == 'system' else {}
+            if root_terminal.get('signal') == 'child_terminal':
+                status, value = str(root_terminal.get('status')), thaw_json(root_terminal.get('value'))
+                yield DriverTerminalCandidate(run_id, 'completed' if status == 'completed' else 'failed', content=str(value or ''), error=None if status == 'completed' else str(value or status), correlation={'child_run_id': str(root_terminal.get('child_run_id'))})
+                return
             if boundary.pending_decision is not None:
                 yield boundary.pending_decision
                 return
@@ -556,7 +555,8 @@ class ReActDriver:
                     outcome = await self._reconciler.reconcile(call, boundary.tool_contexts[index], outcome)
                 updates[index] = outcome
             if updates:
-                boundary = await self._record_outcomes(boundary, updates, recovery_lease=recovery_lease)
+                boundary = boundary.with_outcomes(updates)
+                await self._save_progress(boundary, recovery_lease=recovery_lease)
             if boundary.pending_indexes:
                 yield self._execute_command(boundary)
                 return
@@ -573,4 +573,4 @@ class ReActDriver:
 
     async def close(self) -> None:
         await self._collaborator.close()
-__all__ = ['EffectOutcomeReader', 'EffectReconciler', 'LegacyAgentLoopCollaborator', 'LegacyAgentLoopToolInterceptionError', 'ReActCollaborator', 'ReActDriver', 'ReactDecisionRequest', 'ReactDelegateRequest', 'ReactEmission', 'ReactFailure', 'ReactFallback', 'ReactFinal', 'ReactToken', 'ReactToolBatch']
+__all__ = ['EffectOutcomeReader', 'EffectReconciler', 'LegacyAgentLoopCollaborator', 'LegacyAgentLoopToolInterceptionError', 'ReActCollaborator', 'ReActDriver', 'ReactEmission', 'ReactFailure', 'ReactFallback', 'ReactFinal', 'ReactToken', 'ReactToolBatch']
