@@ -99,6 +99,17 @@ peer broadcast fails closed. Integrated verification: harness `232 passed,
 agent/context/problem/main suites are `335 passed`, and the three R2 production
 modules total 611 physical lines (below the 1,000-line budget).
 
+R3 recovery fencing foundation is now on schema v8. Each durable run has a
+short-lived recovery owner/epoch/expiry separate from the deployment-level
+`owner_generation`. `claim_recovery`, `renew_recovery`, and `release_recovery`
+support exclusive claims and expired takeover; stale epochs fail closed. A
+recovery-fenced `append_event` validates the lease and writes the event in the
+same `BEGIN IMMEDIATE` transaction, closing the check-then-write race. Existing
+v7 rows migrate with unchanged product fields and an unclaimed lease. Focused
+verification is `26 passed`; the integrated harness is `235 passed, 9 xfailed`
+and adjusted LOC is `32,809 <= 33,228`. Production ownership remains
+`legacy/0`; Kernel recovery is not activated yet.
+
 ## Request Lifecycle
 
 The outer text-chat order is `ws_ingress -> ProductTurnPreparer.prepare_context

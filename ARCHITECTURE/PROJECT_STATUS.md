@@ -134,6 +134,7 @@
 
 | 日期 | 里程碑 |
 |---|---|
+| 2026-07-21 | **Agent Harness R3 recovery lease/fence 地基完成 ✅** — workflow schema 升至 v8，为 durable run 增加独立于部署 `owner_generation` 的 recovery owner/epoch/expiry；claim/renew/release、未过期互斥、过期接管与 stale epoch 拒写全覆盖。recovery-fenced event append 在同一 `BEGIN IMMEDIATE` 中校验 lease 并写入，关闭 assert→write 的 TOCTOU 窗口；v7 历史字段迁移保持不变。focused `26 passed`，集成 harness `235 passed, 9 xfailed`，LOC `32,809 ≤ 33,228`。生产仍为 `legacy/0`，尚未启用 Kernel recovery。 |
 | 2026-07-20 | **Agent Harness 简化 R2 Preparer/Presenter 完成 ✅** — `_run_chat` 保持生产入口与 execution owner，只把产品准备策略提炼为 typed 三阶段，把 legacy AgentEvent 投影提炼为 live/durable/domain registry；窄 `LegacyProductDomainSink` 隔离 WebSocket/peer/DB/plan waiter I/O，无 shadow 或双写。冻结 R0 census 内容不变；current mapping 141/141、57 个 WS sink 完整，删除 dual-send 任一 peer broadcast 会 fail-closed。集成验证：harness `232 passed, 9 xfailed`；LOC `32,490 ≤ 33,228`；相邻 R2 分支 `335 passed`；三生产模块 611 行。 |
 | 2026-07-20 | **Agent Harness 简化 R0 机械基线完成 ✅** — 首次 WI-12 功能缩水方案已回退；新版计划经 5 轮挑战通过。R0 冻结 141 个旧产品 callsite、16 个直接 parity 行为与两份不可规避 LOC manifest；10,000 次真实 Kernel/UoW 生命周期 start/final/close 全量一致、强引用 0。组合回归 `176 passed, 9 xfailed`，生产路径未切换。 |
 | 2026-07-18 | **DeepResearch v6 默认发布与答案契约稳定性完成 ✅** — 五类 intent、durable continuation/control/retention、三态终态与 exactly-once delivery 完成；最终 release identity 下真实 UI 覆盖 completed、partial、generate-now 双击和重启历史；后端 815、前端 822、Rust 73、tsc/build/check 全绿，基础模型为 `deepseek-v4-pro` 1M；release identity fixture 已纳入受控提交。 |
