@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -47,7 +48,9 @@ OWNER_WORDS = (
     "pending", "waiter", "inflight", "running", "task", "run", "queue",
     "pipeline", "redispatch", "decision", "completion", "active", "effect",
     "subscription", "handle", "wakeup", "supervisor", "grant", "delivery",
+    "execution",
 )
+OWNER_TYPE_WORDS = ("future", "task", "queue", "run", "boundary", "effect", "outcome", "decision")
 MUTABLE_CALLS = {
     "dict", "set", "list", "deque", "defaultdict", "Queue", "PriorityQueue",
     "LifoQueue", "WeakSet", "WeakValueDictionary",
@@ -72,6 +75,12 @@ def _call_tail(node: ast.AST) -> str:
     return ""
 
 
+def _semantic_tokens(text: str) -> set[str]:
+    separated = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", text)
+    tokens = set(re.findall(r"[a-z0-9]+", separated.casefold()))
+    return tokens | {token[:-1] for token in tokens if token.endswith("s")}
+
+
 def _kind(value: ast.AST | None) -> str | None:
     if isinstance(value, (ast.Dict, ast.DictComp)):
         return "dict"
@@ -93,7 +102,7 @@ class _Assignments(ast.NodeVisitor):
         self.path = path
         self.class_name: str | None = None
         self.function_name: str | None = None
-        self.items: list[tuple[str, str, ast.AST | None, int]] = []
+        self.items: list[tuple[str, str, ast.AST | None, ast.AST | None, int]] = []
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         previous = self.class_name
@@ -126,13 +135,13 @@ class _Assignments(ast.NodeVisitor):
         for target in node.targets:
             found = self._target(target)
             if found:
-                self.items.append((*found, node.value, node.lineno))
+                self.items.append((*found, node.value, None, node.lineno))
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         found = self._target(node.target)
         if found:
-            self.items.append((*found, node.value, node.lineno))
+            self.items.append((*found, node.value, node.annotation, node.lineno))
         self.generic_visit(node)
 
 
@@ -144,7 +153,7 @@ def _python_files() -> list[Path]:
     ]
 
 
-def _assignments(path: Path) -> list[tuple[str, str, ast.AST | None, int]]:
+def _assignments(path: Path) -> list[tuple[str, str, ast.AST | None, ast.AST | None, int]]:
     relative = path.relative_to(ROOT).as_posix()
     visitor = _Assignments(relative)
     visitor.visit(ast.parse(path.read_text(encoding="utf-8-sig"), filename=relative))
@@ -155,10 +164,14 @@ def scan_owner_candidates() -> list[Candidate]:
     result: dict[str, Candidate] = {}
     for path in _python_files():
         relative = path.relative_to(ROOT).as_posix()
-        for scope, symbol, value, line in _assignments(path):
+        for scope, symbol, value, annotation, line in _assignments(path):
             kind = _kind(value)
-            lowered = symbol.casefold()
-            if kind is None or not any(word in lowered for word in OWNER_WORDS):
+            symbol_tokens = _semantic_tokens(symbol)
+            type_tokens = _semantic_tokens(ast.unparse(annotation)) if annotation is not None else set()
+            if kind is None or not (
+                symbol_tokens.intersection(OWNER_WORDS)
+                or type_tokens.intersection(OWNER_TYPE_WORDS)
+            ):
                 continue
             key = f"{relative}::{scope}.{symbol}"
             result.setdefault(key, Candidate(key, relative, scope, symbol, kind, line))
@@ -172,7 +185,7 @@ def _definition_index() -> dict[tuple[str, str, str], int]:
         path = ROOT / relative
         if not path.is_file():
             continue
-        for scope, symbol, _value, line in _assignments(path):
+        for scope, symbol, _value, _annotation, line in _assignments(path):
             found.setdefault((relative, scope, symbol), line)
     return found
 

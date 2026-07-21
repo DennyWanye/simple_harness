@@ -651,4 +651,5 @@ class ReActDriver:
 
     async def close(self) -> None:
         await self._collaborator.close()
+        self._volatile.clear()
 __all__ = ['LegacyAgentLoopCollaborator', 'LegacyAgentLoopToolInterceptionError', 'ReActCollaborator', 'ReActDriver', 'ReactEmission', 'ReactFailure', 'ReactFallback', 'ReactFinal', 'ReactToken', 'ReactToolBatch']

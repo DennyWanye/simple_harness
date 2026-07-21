@@ -29,6 +29,7 @@ class Classifier:
 class Driver:
     def __init__(self) -> None:
         self.recovered: list[str] = []
+        self.closed = False
 
     async def start(self, request):
         yield DriverTerminalCandidate(request.run_id, "completed", "ok")
@@ -47,7 +48,7 @@ class Driver:
             yield DriverTerminalCandidate(run_id, "completed", "")
 
     async def close(self):
-        return None
+        self.closed = True
 
 
 class Resolver:
@@ -118,11 +119,12 @@ async def test_bootstrap_exports_manifest_from_actual_registrations(tmp_path) ->
 @pytest.mark.asyncio
 async def test_bootstrap_starts_and_closes_single_child_runtime_owner(tmp_path) -> None:
     uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
+    driver = Driver()
     runtime = await build_harness_runtime(
         uow=uow,
         classifier=Classifier(),
         profiles=profiles(),
-        drivers=[RegisteredDriver("react", Driver())],
+        drivers=[RegisteredDriver("react", driver)],
         resolver=Resolver(),
         child_runs=ChildRunCoordinator(uow),
     )
@@ -131,6 +133,7 @@ async def test_bootstrap_starts_and_closes_single_child_runtime_owner(tmp_path) 
     assert runtime.child_scheduler._task is not None
     await runtime.close()
     assert runtime.child_scheduler._task is None
+    assert driver.closed is True
 
 
 @pytest.mark.asyncio

@@ -1980,6 +1980,13 @@ class ToolRegistry:
             if future.done() and context is not None
         )
 
+    async def close_prepared_executions(self, timeout: float) -> None:
+        """Bound shutdown wait without discarding still-running effect evidence."""
+        pending = tuple(future for future, *_ in self._late_prepared_calls.values()
+                        if not future.done())
+        if pending:
+            await asyncio.wait(pending, timeout=max(0.0, timeout))
+
     async def execute_prepared(
         self,
         prepared: PreparedToolCall,

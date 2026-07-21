@@ -275,6 +275,18 @@ async def _recovery_lease(store):
     return await store.claim_recovery("run-react", owner="react-test-recovery")
 
 
+@pytest.mark.asyncio
+async def test_close_releases_collaborator_and_volatile_boundaries(tmp_path) -> None:
+    collaborator = ScriptedCollaborator()
+    driver, _, _ = await _driver(tmp_path, collaborator)
+    driver._volatile["run-react"] = object()
+
+    await driver.close()
+
+    assert collaborator.closed is True
+    assert driver._volatile == {}
+
+
 async def _record_effect(path, call: PreparedToolCall, outcome: NormalizedToolOutcome, status: str) -> None:
     async with aiosqlite.connect(path) as db:
         await db.execute("""INSERT INTO execution_effects(

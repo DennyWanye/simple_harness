@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
@@ -67,11 +68,19 @@ class HarnessRuntime:
     health: HarnessHealth
     recovery: HarnessRecoveryCoordinator
     child_scheduler: ChildRunScheduler | None
+    drivers: tuple[RegisteredDriver, ...]
+    tool_executor: UnifiedToolExecutor | None
 
-    async def close(self) -> None:
-        await self.recovery.close()
+    async def close(self, *, timeout: float = 1.0) -> None:
         if self.child_scheduler is not None:
             await self.child_scheduler.close()
+        await asyncio.gather(*(item.driver.close() for item in self.drivers))
+        if (effects := self.tool_executor) is not None:
+            await effects.close(timeout / 2)
+            if (run_ids := effects.ready_late_run_ids()):
+                await self.recovery.recover_pending(only_run_ids=run_ids)
+                await asyncio.sleep(timeout / 2)
+        await self.recovery.close()
 
 
 async def build_harness_runtime(
@@ -149,6 +158,8 @@ async def build_harness_runtime(
         health=health,
         recovery=recovery,
         child_scheduler=child_scheduler,
+        drivers=tuple(drivers),
+        tool_executor=tool_executor,
     )
     if child_scheduler is not None:
         await child_scheduler.reconcile_commands_once()

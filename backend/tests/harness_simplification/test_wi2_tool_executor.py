@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import ast
 import json
+import threading
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -337,6 +338,54 @@ async def test_canonical_write_timeout_is_malformed_and_not_reinvoked() -> None:
     registry.acknowledge_prepared_effect(context.effect_id)
     assert await registry.observe_late_prepared(context.effect_id) == ("missing", None)
     assert invocations == 1
+
+
+@pytest.mark.asyncio
+async def test_registry_close_waits_for_late_effect_without_discarding_evidence() -> None:
+    registry, release = ToolRegistry(), threading.Event()
+    _register(
+        registry, "closing-write",
+        context_handler=lambda args, context: (release.wait(1), '{"ok":true}')[1],
+        timeout_seconds=0.005,
+        effect_policy=EffectPolicy("test:closing", "v1", EffectKind.OPAQUE_MANUAL),
+    )
+    call = _call(registry, "closing-write")
+    executor = UnifiedToolExecutor(registry)
+    outcome = await executor.execute_one(call, _context(call))
+    asyncio.get_running_loop().call_later(0.01, release.set)
+
+    await executor.close(0.1)
+
+    assert outcome.state is ToolOutcomeState.MALFORMED
+    assert executor.ready_late_run_ids() == frozenset({"run-1"})
+    state, settled = await executor.observe_late("effect-1")
+    assert state == "complete"
+    assert settled is not None and settled.state is ToolOutcomeState.SUCCESS
+
+
+@pytest.mark.asyncio
+async def test_registry_close_bound_retains_still_running_late_effect() -> None:
+    registry, release = ToolRegistry(), threading.Event()
+    _register(
+        registry, "bounded-write",
+        context_handler=lambda args, context: (release.wait(1), '{"ok":true}')[1],
+        timeout_seconds=0.005,
+        effect_policy=EffectPolicy("test:bounded", "v1", EffectKind.OPAQUE_MANUAL),
+    )
+    call = _call(registry, "bounded-write")
+    executor = UnifiedToolExecutor(registry)
+    await executor.execute_one(call, _context(call))
+
+    await executor.close(0.005)
+
+    assert await executor.observe_late("effect-1") == ("pending", None)
+    assert registry.take_prepared_execution_metadata("effect-1") == {"late_pending": True}
+    release.set()
+    for _ in range(100):
+        if executor.ready_late_run_ids():
+            break
+        await asyncio.sleep(0.005)
+    assert executor.ready_late_run_ids() == frozenset({"run-1"})
 
 
 @pytest.mark.asyncio

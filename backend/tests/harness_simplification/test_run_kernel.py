@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import ast
 import hashlib
-from contextlib import suppress
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -26,6 +25,7 @@ from deskpet.execution.contracts import (
     fingerprint_json,
 )
 from deskpet.harness.context import HostContextFactory
+from deskpet.harness.bootstrap import HarnessRuntime
 from deskpet.harness.drivers.react import (
     ReActDriver,
     ReactFinal,
@@ -377,6 +377,11 @@ class MixedLateRegistry:
             self.contexts[effect_id].run_id for effect_id in self.outcomes
             if effect_id == "effect-2"
         )
+
+    async def close_prepared_executions(self, timeout):
+        deadline = asyncio.get_running_loop().time() + timeout
+        while "effect-2" not in self.outcomes and asyncio.get_running_loop().time() < deadline:
+            await asyncio.sleep(0.001)
 
     def complete_late(self) -> None:
         self.outcomes["effect-2"] = NormalizedToolOutcome.success({"written": 2})
@@ -1284,17 +1289,17 @@ async def test_runtime_keeps_mixed_batch_pending_when_one_physical_call_is_late(
             break
         await asyncio.sleep(0.01)
     assert (await registry.observe_late_prepared("effect-1"))[0] == "pending"
-    registry.complete_late()
-    for _ in range(100):
-        async with aiosqlite.connect(tmp_path / "workflow.db") as db:
-            late = await (
-                await db.execute(
-                    "SELECT status,receipt_ref FROM execution_effects WHERE effect_id='effect-2'"
-                )
-            ).fetchone()
-        if late == ("succeeded", "receipt-late"):
-            break
-        await asyncio.sleep(0.01)
+    asyncio.get_running_loop().call_later(0.01, registry.complete_late)
+    await HarnessRuntime(
+        value, None, None, None, recovery, None,
+        (RegisteredDriver("react", driver),), executor,
+    ).close(timeout=0.2)
+    async with aiosqlite.connect(tmp_path / "workflow.db") as db:
+        late = await (
+            await db.execute(
+                "SELECT status,receipt_ref FROM execution_effects WHERE effect_id='effect-2'"
+            )
+        ).fetchone()
     assert late == ("succeeded", "receipt-late")
     for _ in range(100):
         if collaborator.resumes:
@@ -1308,22 +1313,22 @@ async def test_runtime_keeps_mixed_batch_pending_when_one_physical_call_is_late(
             break
         await asyncio.sleep(0.01)
     assert value._active[handle.ref.run_id].task.done()
-    await recovery.close()
 
 
 @pytest.mark.asyncio
-async def test_restart_without_late_evidence_keeps_effect_unknown_fail_closed(tmp_path) -> None:
+async def test_restart_after_close_bound_keeps_missing_late_evidence_unknown(tmp_path) -> None:
     path = tmp_path / "workflow.db"
     uow = SqliteExecutionUnitOfWork(path)
     await uow.initialize()
     registry, first_collaborator = MixedLateRegistry(), MixedLateCollaborator()
     first_driver = ReActDriver(first_collaborator, uow, registry)
+    first_executor = UnifiedToolExecutor(registry)
     first = RunKernel(
         uow=uow,
         router=RegisteredRouter(StaticClassifier("react.default"),
                                 [RouteProfile("react.default", "react")]),
         drivers=[RegisteredDriver("react", first_driver)],
-        tool_executor=UnifiedToolExecutor(registry),
+        tool_executor=first_executor,
     )
     handle = await first.start(RunRequest("mixed", "req-restart", "turn-1"), host())
     for _ in range(100):
@@ -1335,9 +1340,11 @@ async def test_restart_without_late_evidence_keeps_effect_unknown_fail_closed(tm
             break
         await asyncio.sleep(0.01)
     assert row == ("unknown",)
-    first._active[handle.ref.run_id].task.cancel()
-    with suppress(asyncio.CancelledError):
-        await first._active[handle.ref.run_id].task
+    first_recovery = HarnessRecoveryCoordinator(uow, first, first_executor)
+    await HarnessRuntime(
+        first, None, None, None, first_recovery, None,
+        (RegisteredDriver("react", first_driver),), first_executor,
+    ).close(timeout=0.01)
 
     restarted_uow = SqliteExecutionUnitOfWork(path)
     await restarted_uow.initialize()
