@@ -1,6 +1,6 @@
 # DeskPet Agent Harness 目标架构
 
-> 状态：2026-07-20 用户已批准，R0～R3 已完成并通过单一 UoW/owner、33 窗故障矩阵、薄 Kernel/ReAct recovery、141/141 parity mapping 与 LOC 门禁。首次生产切换因功能不等价整体回退；本图是 R4～R7 的已定稿目标，当前生产事实仍是 legacy owner，尚未执行 R6 切换。
+> 状态：2026-07-20 用户已批准；截至 2026-07-21，R0～R4 已完成并通过单一 UoW/owner、33 窗故障矩阵、薄 Kernel/ReAct recovery、Workflow/Child/Delivery adapters、141/141 parity mapping 与 LOC 门禁。当前执行 R5；本图仍是 R5～R7 的已定稿目标，当前生产事实保持 `legacy/0`，尚未执行 R6 切换。
 >
 > 本文记录本次计划的目标结构，不代表当前生产事实；当前事实仍以
 > [`ARCHITECTURE/index.md`](../../ARCHITECTURE/index.md) 为准。实施并完成验收后，

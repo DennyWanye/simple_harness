@@ -1,7 +1,7 @@
 <!-- last-calibrated: 2e71e9a1 -->
 # DeskPet Long-Running Agent Architecture Baseline
 
-> Last verified: 2026-07-20. DeepResearch new-run default is immutable v7. It uses a six-node manager graph that decomposes the topic, runs one bounded research child per direction, diagnoses/retries weak child results, joins all terminal children, and synthesizes one cited report. Historical v1-v6 runs remain registered for recovery and compatibility reads. The UI now projects stable per-direction business progress, suppresses internal attempt rows, restores historical file artifacts, and exposes the standard open/save-as/reveal/copy-path actions. Reports continue to use the legacy `DeepResearch` directory.
+> Last verified: 2026-07-21. DeepResearch new-run default is immutable v7. It uses a six-node manager graph that decomposes the topic, runs one bounded research child per direction, diagnoses/retries weak child results, joins all terminal children, and synthesizes one cited report. Historical v1-v6 runs remain registered for recovery and compatibility reads. The UI now projects stable per-direction business progress, suppresses internal attempt rows, restores historical file artifacts, and exposes the standard open/save-as/reveal/copy-path actions. Reports continue to use the legacy `DeepResearch` directory.
 
 > Current observability fact: workflow-node `started_at`/`ended_at`/status/attempt are durable in `workflow_node_attempts`, node `duration_ms` is durable in `trace_spans`, and `deepresearch_stage_timing` is a diagnostic mirror. V7 additionally logs privacy-safe child id/attempt/status/reason/source count/duration; page content and full prompts are excluded.
 
@@ -22,7 +22,7 @@ Product capabilities and local persistence
         | Office / research / files / permissions / artifacts / state.db
 ```
 
-The product Harness is valuable and remains the main agent execution boundary. The durable workflow upgrade must compose with it rather than replace it. The canonical text-chat stages and their current persistence/recovery boundaries are defined in [`AGENT_HARNESS.md`](AGENT_HARNESS.md) and `backend/deskpet/agent/harness_manifest.py`.
+The product Harness is valuable and remains the main agent execution boundary. The durable workflow upgrade must compose with it rather than replace it. The canonical text-chat stages and their current persistence/recovery boundaries are defined in [`AGENT_HARNESS.md`](AGENT_HARNESS.md); the isolated new runtime exports its executable manifest from `backend/deskpet/harness/bootstrap.py::HarnessManifest`.
 
 ## 2. Current Request Lifecycle
 

@@ -2,7 +2,8 @@
 
 This document is the developer-facing companion to
 `ARCHITECTURE/AGENT_HARNESS.md` and
-`backend/deskpet/agent/harness_manifest.py`.
+the generated runtime contract in
+`backend/deskpet/harness/bootstrap.py::HarnessManifest`.
 
 ## Lifecycle
 
@@ -20,19 +21,17 @@ ws_ingress
        -> ws_egress (for each emitted event)
 ```
 
-The tuple order in `REQUEST_LIFECYCLE` is canonical vocabulary order, not a
-claim that nested entries run once or strictly after `agent_loop`.
-
-Use the ids from `REQUEST_LIFECYCLE` when adding trace, metrics, docs, or
-tests. Do not invent a parallel vocabulary in logs.
+The order above is the current production vocabulary, not a claim that nested
+entries run once or strictly after `agent_loop`. Until R6, production remains
+on `legacy/0`; the isolated Kernel path must not be described as activated.
 
 ## Service Registration
 
-`ServiceContext.register()` and `ServiceContext.get()` are the only supported
-service container APIs. Harness-sensitive service names are declared in
-`HARNESS_SERVICES`. Tests verify that every declared service is whitelisted by
-`context._VALID_SERVICES`, so adding a new harness service means updating the
-manifest and the whitelist together.
+`ServiceContext.register()` and `ServiceContext.get()` remain the supported
+legacy production service container APIs. The old hand-maintained harness
+service manifest was deleted in R4. New runtime tests inspect the real
+bootstrap registrations; legacy service wiring tests inspect the actual
+`ServiceContext` call sites and whitelist directly.
 
 ## Agent Factory
 
