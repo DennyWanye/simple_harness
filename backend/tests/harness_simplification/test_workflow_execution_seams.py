@@ -821,6 +821,72 @@ async def test_execution_owned_continue_research_cannot_create_legacy_child(tmp_
 
 
 @pytest.mark.asyncio
+async def test_execution_owned_retry_and_checkpoint_fork_fail_before_legacy_child(tmp_path):
+    path = tmp_path / "owned-derived-runs.db"
+    service, _, _, _, ports = _stack(path)
+    prepared = _prepared(service, "deep_research", "v5", suffix="owned-derived")
+    await service.start_prepared(
+        prepared, service.execution_spec(prepared), execution_ports=ports
+    )
+
+    with pytest.raises(WorkflowServiceError) as retry_error:
+        await service.retry_run_from_start(
+            prepared.run_id,
+            action_id="retry_from_start",
+            retry_key="00000000-0000-4000-8000-000000000001",
+        )
+    assert retry_error.value.code == "execution_owner"
+    with pytest.raises(WorkflowServiceError) as fork_error:
+        await service.fork_checkpoint(
+            run_id=prepared.run_id,
+            checkpoint_id="checkpoint-1",
+            expected_version=0,
+        )
+    assert fork_error.value.code == "execution_owner"
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT COUNT(*) FROM workflow_runs").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM execution_runs").fetchone()[0] == 1
+        assert db.execute(
+            "SELECT COUNT(*) FROM workflow_runs WHERE parent_run_id IS NOT NULL"
+        ).fetchone()[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_execution_owned_retry_and_fork_ipc_fail_closed(tmp_path):
+    path = tmp_path / "owned-derived-ipc.db"
+    service, _, _, _, ports = _stack(path)
+    prepared = _prepared(service, "deep_research", "v5", suffix="owned-derived-ipc")
+    await service.start_prepared(
+        prepared, service.execution_spec(prepared), execution_ports=ports
+    )
+    dispatcher = WorkflowIPCDispatcher(service)
+
+    retry = await dispatcher.dispatch({
+        "type": "workflow_run_retry_from_start",
+        "request_id": "retry-owned",
+        "payload": {
+            "run_id": prepared.run_id,
+            "action_id": "retry_from_start",
+            "retry_key": "00000000-0000-4000-8000-000000000001",
+        },
+    })
+    fork = await dispatcher.dispatch({
+        "type": "workflow_checkpoint_fork",
+        "request_id": "fork-owned",
+        "payload": {
+            "run_id": prepared.run_id,
+            "checkpoint_id": "checkpoint-1",
+            "expected_version": 0,
+        },
+    })
+    assert retry["error"]["code"] == "execution_owner"
+    assert fork["error"]["code"] == "execution_owner"
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT COUNT(*) FROM workflow_runs").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM execution_runs").fetchone()[0] == 1
+
+
+@pytest.mark.asyncio
 async def test_ipc_cancel_without_actor_remains_compatible_for_legacy_run(tmp_path):
     path = tmp_path / "legacy-ipc-cancel.db"
     service, _, store, _, _ = _stack(path)

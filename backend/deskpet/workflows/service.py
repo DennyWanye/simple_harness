@@ -1784,6 +1784,7 @@ class WorkflowService:
             raise WorkflowServiceError("invalid_retry_action", "retry action is not supported")
         if not _UUID_V4_RE.fullmatch(str(retry_key)):
             raise WorkflowServiceError("invalid_retry_key", "retry_key must be a lowercase UUID v4")
+        await self.require_legacy_owner(source_run_id, "retry")
         initial = await self.run_store.get_start_snapshot(source_run_id)
         if initial is None:
             raise WorkflowServiceError("not_found", "workflow run was not found")
@@ -1879,6 +1880,8 @@ class WorkflowService:
         fork_key: str | None = None,
         confirm_dangerous_effects: bool = False,
     ) -> dict[str, Any]:
+        run_id = self._required(run_id, "run_id")
+        await self.require_legacy_owner(run_id, "fork")
         method = self._forker
         if method is None:
             method = getattr(self.runner, "fork_checkpoint", None) or getattr(self.runner, "fork", None)
