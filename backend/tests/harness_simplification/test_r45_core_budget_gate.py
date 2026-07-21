@@ -38,6 +38,9 @@ def test_r45_fixture_locks_ten_source_backed_deletion_budgets() -> None:
         for item in budgets
         for source in item["sources"]
     )
+    assert {
+        item["path"] for item in fixture["non_core_root_exceptions"]
+    } >= {"backend/deskpet/workflows/store/execution_uow.py"}
 
 
 def test_r45_fixture_source_hash_drift_fails_closed(tmp_path: Path) -> None:

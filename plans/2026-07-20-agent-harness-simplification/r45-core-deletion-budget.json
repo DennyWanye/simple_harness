@@ -27,6 +27,11 @@
       "path": "backend/deskpet/harness/adapters/team.py",
       "source_hash": "dc11451f0ade973522306ecfbd8a7e4298426713d7bcc7e2c07af7bcaa91a6ca",
       "reason": "team adapter is counted by total LOC but is outside the frozen R4.5 audited core"
+    },
+    {
+      "path": "backend/deskpet/workflows/store/execution_uow.py",
+      "source_hash": "9c6153067d4664f0f6e05d5d7b7f812cf0f0d534153d2a42546d7ff7dc03ce71",
+      "reason": "the shared execution persistence engine is counted by total LOC but is outside harness and execution core"
     }
   ],
   "deletion_budgets": [

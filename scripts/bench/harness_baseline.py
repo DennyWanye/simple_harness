@@ -1063,6 +1063,8 @@ def build_r45_core_audit(
     for path in sorted(changed_paths):
         if _path_under_any(path, core_roots) or _fixed_exclusion(path) is not None:
             continue
+        if path in exceptions:
+            continue
         row = next((item for item in rows if item["path"] == path), None)
         if row is None or not row.get("counted") or row.get("group") in core_groups:
             continue
