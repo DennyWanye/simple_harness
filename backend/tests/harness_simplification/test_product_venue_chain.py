@@ -413,7 +413,7 @@ async def test_open_returns_pre_kernel_result_without_an_extra_wrapper(tmp_path)
         "",
     )
     assert driver.starts == []
-    assert kernel._active == {}
+    assert kernel._live.values() == ()
 
 
 @pytest.mark.asyncio
