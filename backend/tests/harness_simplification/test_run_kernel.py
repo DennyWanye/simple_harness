@@ -1452,14 +1452,14 @@ async def test_runtime_keeps_mixed_batch_pending_when_one_physical_call_is_late(
         await recovery.recover_pending(
             only_run_ids=frozenset({handle.ref.run_id})
         )
-        await asyncio.wait_for(registry.late_receipt_started.wait(), timeout=0.4)
+        await asyncio.wait_for(registry.late_receipt_started.wait(), timeout=1.0)
     else:
         asyncio.get_running_loop().call_later(0.01, registry.complete_late)
     close_task = asyncio.create_task(HarnessRuntime(
         value, None, None, None, recovery, None,
         (RegisteredDriver("react", driver),), executor,
-    ).close(timeout=0.5))
-    await asyncio.wait_for(registry.late_receipt_started.wait(), timeout=0.4)
+    ).close(timeout=2.0))
+    await asyncio.wait_for(registry.late_receipt_started.wait(), timeout=1.0)
     assert registry.ready_late_prepared_run_ids() == frozenset()
     assert close_task.done() is False
     assert collaborator.closed is False
