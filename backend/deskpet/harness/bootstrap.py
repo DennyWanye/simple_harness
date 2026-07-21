@@ -76,14 +76,22 @@ class HarnessRuntime:
     delivery_dispatcher: ExecutionDeliveryDispatcher | None = None
 
     async def close(self, *, timeout: float = 1.0) -> None:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + max(0.0, timeout)
         if self.child_scheduler is not None:
             await self.child_scheduler.close()
-        await asyncio.gather(*(item.driver.close() for item in self.drivers))
-        if (effects := self.tool_executor) is not None:
-            await effects.close(timeout / 2)
-            if (run_ids := effects.ready_late_run_ids()):
-                await self.recovery.reconcile_ready(run_ids, timeout=timeout / 2)
         await self.recovery.close()
+        try:
+            await self.kernel._drain_active(min(0.05, max(0.0, timeout) / 4))
+            if (effects := self.tool_executor) is not None:
+                await effects.close(max(0.0, timeout) / 2)
+                if (run_ids := effects.ready_late_run_ids()):
+                    await self.recovery.reconcile_ready(
+                        run_ids, timeout=max(0.0, deadline - loop.time())
+                    )
+            await self.kernel._drain_active(max(0.0, deadline - loop.time()))
+        finally:
+            await asyncio.gather(*(item.driver.close() for item in self.drivers))
 
 
 async def build_harness_runtime(

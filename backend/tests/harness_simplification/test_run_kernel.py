@@ -299,6 +299,7 @@ class ToolLoopDriver(FakeDriver):
 class MixedLateCollaborator:
     def __init__(self) -> None:
         self.resumes = []
+        self.closed = False
 
     async def start(self, request):
         calls = tuple(
@@ -323,6 +324,8 @@ class MixedLateCollaborator:
         yield ReactToolBatch("tools-mixed", calls, contexts)
 
     async def resume(self, boundary, response):
+        if self.closed:
+            raise RuntimeError("resume after collaborator close")
         self.resumes.append((boundary, response))
         if False:
             yield ReactFinal("unreachable")
@@ -331,7 +334,7 @@ class MixedLateCollaborator:
         return None
 
     async def close(self):
-        return None
+        self.closed = True
 
 
 class MixedLateRegistry:
@@ -339,6 +342,10 @@ class MixedLateRegistry:
         self.outcomes = {}
         self.metadata = {}
         self.contexts = {}
+        self.ready_effects = set()
+        self.block_late_receipt = False
+        self.late_receipt_started = asyncio.Event()
+        self.release_late_receipt = asyncio.Event()
 
     def prepared_execution_policy(self, call):
         return False, True
@@ -371,12 +378,16 @@ class MixedLateRegistry:
 
     async def observe_late_prepared(self, effect_id):
         outcome = self.outcomes.get(effect_id)
+        if effect_id in self.ready_effects:
+            self.ready_effects.remove(effect_id)
+            self.late_receipt_started.set()
+            if self.block_late_receipt:
+                await self.release_late_receipt.wait()
         return ("complete", outcome) if outcome is not None else ("pending", None)
 
     def ready_late_prepared_run_ids(self):
         return frozenset(
-            self.contexts[effect_id].run_id for effect_id in self.outcomes
-            if effect_id == "effect-2"
+            self.contexts[effect_id].run_id for effect_id in self.ready_effects
         )
 
     async def close_prepared_executions(self, timeout):
@@ -386,6 +397,7 @@ class MixedLateRegistry:
 
     def complete_late(self) -> None:
         self.outcomes["effect-2"] = NormalizedToolOutcome.success({"written": 2})
+        self.ready_effects.add("effect-2")
         self.metadata["effect-2"] = {
             "receipt_ref": "receipt-late", "evidence_verified": True,
             "outcome_status": "succeeded",
@@ -1388,7 +1400,7 @@ async def test_runtime_keeps_mixed_batch_pending_when_one_physical_call_is_late(
     recovery = HarnessRecoveryCoordinator(uow, value, executor)
     await recovery.start(interval=0.005)
     handle = await value.start(RunRequest("mixed", "req-mixed", "turn-1"), host())
-    for _ in range(100):
+    for _ in range(300):
         async with aiosqlite.connect(tmp_path / "workflow.db") as db:
             settled = await (
                 await db.execute(
@@ -1430,11 +1442,19 @@ async def test_runtime_keeps_mixed_batch_pending_when_one_physical_call_is_late(
             break
         await asyncio.sleep(0.01)
     assert (await registry.observe_late_prepared("effect-1"))[0] == "pending"
+    registry.block_late_receipt = True
     asyncio.get_running_loop().call_later(0.01, registry.complete_late)
-    await HarnessRuntime(
+    close_task = asyncio.create_task(HarnessRuntime(
         value, None, None, None, recovery, None,
         (RegisteredDriver("react", driver),), executor,
-    ).close(timeout=0.2)
+    ).close(timeout=0.2))
+    await asyncio.wait_for(registry.late_receipt_started.wait(), timeout=0.1)
+    assert registry.ready_late_prepared_run_ids() == frozenset()
+    assert close_task.done() is False
+    assert collaborator.closed is False
+    registry.release_late_receipt.set()
+    await close_task
+    assert collaborator.closed is True
     async with aiosqlite.connect(tmp_path / "workflow.db") as db:
         late = await (
             await db.execute(
