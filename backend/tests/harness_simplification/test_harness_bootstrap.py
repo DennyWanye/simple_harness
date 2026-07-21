@@ -98,7 +98,17 @@ async def test_bootstrap_exports_manifest_from_actual_registrations(tmp_path) ->
         "event_contract": "execution.run-event.v1",
         "tool_stage": "prepared-call.v1",
     }
-    assert runtime.health.to_dict()["active_owner"] == "sqlite_execution_uow"
+    assert runtime.health.to_dict() == {
+        "status": "degraded",
+        "active_owner": "sqlite_execution_uow",
+        "ledger_schema_version": WORKFLOW_SCHEMA_VERSION,
+        "drivers": {"react": "ready"},
+        "compatibility_reader": "enabled",
+        "degraded_reasons": [
+            "tool_executor_unavailable",
+            "child_run_coordinator_unavailable",
+        ],
+    }
 
     handle = await runtime.run_client.start(
         {"text": "hello", "request_id": "request-1", "turn_id": "turn-1"},

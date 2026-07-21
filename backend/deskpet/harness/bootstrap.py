@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass
 
 from deskpet.execution.ports import ExecutionUnitOfWork
@@ -22,54 +23,21 @@ from deskpet.workflows.store.schema import WORKFLOW_SCHEMA_VERSION
 
 
 @dataclass(frozen=True, slots=True)
-class HarnessManifest:
-    schema_version: int
-    operations: tuple[str, ...]
-    drivers: tuple[str, ...]
-    profiles: tuple[tuple[str, str], ...]
-    event_contract: str = "execution.run-event.v1"
-    tool_stage: str = "prepared-call.v1"
+class HarnessDiagnostics:
+    """One serializable DTO for the runtime's manifest and health snapshots."""
+
+    values: Mapping[str, object]
 
     def to_dict(self) -> dict[str, object]:
-        return {
-            "schema_version": self.schema_version,
-            "operations": list(self.operations),
-            "drivers": list(self.drivers),
-            "profiles": [
-                {"key": key, "driver_kind": driver_kind}
-                for key, driver_kind in self.profiles
-            ],
-            "event_contract": self.event_contract,
-            "tool_stage": self.tool_stage,
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class HarnessHealth:
-    status: str
-    active_owner: str
-    ledger_schema_version: int
-    drivers: Mapping[str, str]
-    compatibility_reader: str
-    degraded_reasons: tuple[str, ...] = ()
-
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "status": self.status,
-            "active_owner": self.active_owner,
-            "ledger_schema_version": self.ledger_schema_version,
-            "drivers": dict(self.drivers),
-            "compatibility_reader": self.compatibility_reader,
-            "degraded_reasons": list(self.degraded_reasons),
-        }
+        return deepcopy(dict(self.values))
 
 
 @dataclass(frozen=True, slots=True)
 class HarnessRuntime:
     kernel: RunKernel
     run_client: KernelRunClient
-    manifest: HarnessManifest
-    health: HarnessHealth
+    manifest: HarnessDiagnostics
+    health: HarnessDiagnostics
     recovery: HarnessRecoveryCoordinator
     child_scheduler: ChildRunScheduler | None
     drivers: tuple[RegisteredDriver, ...]
@@ -155,25 +123,26 @@ async def build_harness_runtime(
         )
         if not available
     )
-    manifest = HarnessManifest(
-        schema_version=WORKFLOW_SCHEMA_VERSION,
-        operations=kernel_public_operations(),
-        drivers=tuple(sorted(registered_drivers)),
-        profiles=tuple(
-            sorted(
-                (profile.profile_key, profile.driver_kind)
-                for profile in router.profiles.values()
-            )
-        ),
-    )
-    health = HarnessHealth(
-        status="ready" if not degraded_reasons else "degraded",
-        active_owner="sqlite_execution_uow",
-        ledger_schema_version=WORKFLOW_SCHEMA_VERSION,
-        drivers={kind: "ready" for kind in manifest.drivers},
-        compatibility_reader="enabled" if compatibility_reader else "disabled",
-        degraded_reasons=degraded_reasons,
-    )
+    driver_kinds = sorted(registered_drivers)
+    manifest = HarnessDiagnostics({
+        "schema_version": WORKFLOW_SCHEMA_VERSION,
+        "operations": list(kernel_public_operations()),
+        "drivers": driver_kinds,
+        "profiles": [
+            {"key": profile.profile_key, "driver_kind": profile.driver_kind}
+            for profile in sorted(router.profiles.values(), key=lambda item: item.profile_key)
+        ],
+        "event_contract": "execution.run-event.v1",
+        "tool_stage": "prepared-call.v1",
+    })
+    health = HarnessDiagnostics({
+        "status": "ready" if not degraded_reasons else "degraded",
+        "active_owner": "sqlite_execution_uow",
+        "ledger_schema_version": WORKFLOW_SCHEMA_VERSION,
+        "drivers": {kind: "ready" for kind in driver_kinds},
+        "compatibility_reader": "enabled" if compatibility_reader else "disabled",
+        "degraded_reasons": list(degraded_reasons),
+    })
     recovery = HarnessRecoveryCoordinator(uow, kernel, tool_executor)
     runtime = HarnessRuntime(
         kernel=kernel,
