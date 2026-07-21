@@ -4228,24 +4228,31 @@ class SqliteExecutionUnitOfWork:
         return self._row_to_child_signal(row)
 
     async def list_pending_child_signals(
-        self, parent_run_id: str, *, recovery_lease: RecoveryLease | None = None
+        self, parent_run_id: str, *, limit: int = 16,
+        recovery_lease: RecoveryLease | None = None,
     ) -> tuple[ChildSignalRecord, ...]:
+        if isinstance(limit, bool) or limit < 1:
+            raise ValueError("pending child signal limit must be positive")
         async with self._write_transaction() as db:
             await self._assert_optional_recovery_fence_tx(db, recovery_lease, parent_run_id)
             now = float(self._clock())
             await db.execute(
                 """UPDATE execution_child_signal_inbox
-                SET attempts=attempts+1,updated_at=?
-                WHERE parent_run_id=? AND delivered_at IS NULL""",
-                (now, parent_run_id),
+                SET attempts=attempts+1,updated_at=? WHERE signal_id IN (
+                  SELECT signal_id FROM execution_child_signal_inbox
+                  WHERE parent_run_id=? AND delivered_at IS NULL
+                  ORDER BY created_at,
+                  CASE kind WHEN 'accepted' THEN 0 ELSE 1 END,signal_id LIMIT ?
+                )""",
+                (now, parent_run_id, limit),
             )
             rows = await (
                 await db.execute(
                     """SELECT * FROM execution_child_signal_inbox
                     WHERE parent_run_id=? AND delivered_at IS NULL
                     ORDER BY created_at,
-                    CASE kind WHEN 'accepted' THEN 0 ELSE 1 END,signal_id""",
-                    (parent_run_id,),
+                    CASE kind WHEN 'accepted' THEN 0 ELSE 1 END,signal_id LIMIT ?""",
+                    (parent_run_id, limit),
                 )
             ).fetchall()
             await db.commit()
@@ -4675,19 +4682,24 @@ class SqliteExecutionUnitOfWork:
                 for row in rows
             )
 
-    async def list_recoverable(self, *, limit: int = 10_000) -> tuple[RunRecord, ...]:
+    async def list_recoverable(
+        self, *, limit: int = 10_000, run_ids: Sequence[str] = (),
+    ) -> tuple[RunRecord, ...]:
         if isinstance(limit, bool) or limit < 1:
             raise ValueError("recoverable run limit must be positive")
+        selected = tuple(dict.fromkeys(run_ids))
+        run_filter = "" if not selected else f"AND run_id IN ({','.join('?' for _ in selected)})"
         async with self._read_connection() as db:
             owner_kind, owner_generation = await self._required_start_owner_tx(db)
             rows = await (
                 await db.execute(
-                    """SELECT * FROM execution_runs
+                    f"""SELECT * FROM execution_runs
                     WHERE terminal_event_id IS NULL
                     AND status IN ('created','queued','running','waiting','cancel_requested')
                     AND owner_kind=? AND owner_generation=?
+                    {run_filter}
                     ORDER BY created_at,run_id LIMIT ?""",
-                    (owner_kind, owner_generation, int(limit)),
+                    (owner_kind, owner_generation, *selected, int(limit)),
                 )
             ).fetchall()
             return tuple(self._row_to_record(row) for row in rows)

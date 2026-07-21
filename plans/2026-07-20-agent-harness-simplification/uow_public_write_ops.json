@@ -7,8 +7,8 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/child_runs.py:ChildRunScheduler.reconcile_signals_once:181",
-        "backend/deskpet/harness/drivers/react.py:ReActDriver._apply_child_inbox:499"
+        "backend/deskpet/harness/drivers/react.py:ReActDriver._apply_child_inbox:499",
+        "backend/deskpet/harness/supervisor.py:HarnessSupervisor.reconcile_signals_once:88"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -31,7 +31,7 @@
       "authority": "sqlite_execution_uow",
       "callsites": [
         "backend/deskpet/harness/adapters/team.py:TeamChildRunReconciler.reconcile_commands_once:50",
-        "backend/deskpet/harness/child_runs.py:ChildRunScheduler.reconcile_commands_once:155"
+        "backend/deskpet/harness/supervisor.py:HarnessSupervisor.reconcile_commands_once:60"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -149,7 +149,7 @@
       "authority": "sqlite_execution_uow",
       "callsites": [
         "backend/deskpet/harness/adapters/team.py:TeamChildRunReconciler.reconcile_commands_once:49",
-        "backend/deskpet/harness/child_runs.py:ChildRunCoordinator.submit:117"
+        "backend/deskpet/harness/child_runs.py:ChildRunCoordinator.submit:112"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -272,7 +272,7 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/child_runs.py:ChildRunScheduler.reconcile_commands_once:142"
+        "backend/deskpet/harness/supervisor.py:HarnessSupervisor.reconcile_commands_once:48"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -288,14 +288,14 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/child_runs.py:ChildRunScheduler.reconcile_signals_once:178",
-        "backend/deskpet/harness/child_runs.py:ChildRunScheduler.reconcile_signals_once:198"
+        "backend/deskpet/harness/supervisor.py:HarnessSupervisor.reconcile_signals_once:100",
+        "backend/deskpet/harness/supervisor.py:HarnessSupervisor.reconcile_signals_once:84"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
       "path": "backend/deskpet/workflows/store/execution_uow.py",
       "public": true,
-      "source_hash": "a028e813dc5fb367e05d58d49ee520c6fec26947043bb35ab4b60fc4655a58c3",
+      "source_hash": "8653c7fb5dc30d2438e670e4bb48888e3ca469f4ff02e3cda9993dc11a3423c6",
       "symbol": "SqliteExecutionUnitOfWork.list_pending_child_signals",
       "tables": [
         "execution_child_signal_inbox",
@@ -343,14 +343,14 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/child_runs.py:ChildRunScheduler.reconcile_signals_once:191",
-        "backend/deskpet/harness/child_runs.py:ChildRunScheduler.reconcile_signals_once:219",
         "backend/deskpet/harness/kernel.py:RunKernel._deliver_child_signal.heartbeat:742",
         "backend/deskpet/harness/kernel.py:RunKernel.recover:641",
         "backend/deskpet/harness/runtime.py:DriverRuntime.drive_recovery.heartbeat:156",
         "backend/deskpet/harness/runtime.py:DriverRuntime.drive_recovery:164",
         "backend/deskpet/harness/runtime.py:DriverRuntime.drive_recovery:170",
-        "backend/deskpet/harness/runtime.py:DriverRuntime.drive_recovery:191"
+        "backend/deskpet/harness/runtime.py:DriverRuntime.drive_recovery:191",
+        "backend/deskpet/harness/supervisor.py:HarnessSupervisor.reconcile_signals_once:118",
+        "backend/deskpet/harness/supervisor.py:HarnessSupervisor.reconcile_signals_once:94"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -365,7 +365,7 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/child_runs.py:ChildRunScheduler.reconcile_commands_once:149"
+        "backend/deskpet/harness/supervisor.py:HarnessSupervisor.reconcile_commands_once:55"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",

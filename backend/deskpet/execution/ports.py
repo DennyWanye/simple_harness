@@ -25,7 +25,7 @@ class ExecutionUnitOfWork(Protocol):
     async def list_child_links(self, ref: RunRef, actor: ActorContext) -> tuple[RunLinkSpec, ...]:
         ...
 
-    async def list_recoverable(self, *, limit: int=10000) -> tuple[RunRecord, ...]:
+    async def list_recoverable(self, *, limit: int=10000, run_ids: Sequence[str]=()) -> tuple[RunRecord, ...]:
         ...
 
     async def recovery_scope(self, subject: str | Any, *, owner: str | None=None, lease_seconds: float | None=30.0) -> Any:
@@ -112,7 +112,7 @@ class ExecutionUnitOfWork(Protocol):
     async def finalize_child_and_enqueue_parent_signal(self, operation_id: str, *, expected_version: int, terminal_status: RunStatus, event: RunEventCandidate, value: object=None, deliveries: Sequence[DeliverySpec]=(), recovery_lease: Any | None=None) -> FinalizeRunResult:
         ...
 
-    async def list_pending_child_signals(self, parent_run_id: str, *, recovery_lease: Any | None=None) -> tuple[ChildSignalRecord, ...]:
+    async def list_pending_child_signals(self, parent_run_id: str, *, limit: int=16, recovery_lease: Any | None=None) -> tuple[ChildSignalRecord, ...]:
         ...
 
     async def list_pending_child_signal_parents(self, *, limit: int=10000) -> tuple[RunRecord, ...]:

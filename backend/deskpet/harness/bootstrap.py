@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from deskpet.execution.ports import ExecutionUnitOfWork
 from deskpet.harness.adapters.venues import KernelRunClient, VenueContextResolver
-from deskpet.harness.child_runs import ChildRunCoordinator, ChildRunScheduler
+from deskpet.harness.child_runs import ChildRunCoordinator
 from deskpet.harness.contracts import driver_catalog
 from deskpet.harness.kernel import KernelChildLauncher, RegisteredDriver, RunKernel, kernel_public_operations
 from deskpet.harness.profiles import ProfileRegistry
@@ -17,7 +17,7 @@ from deskpet.harness.projector import (
     ExecutionDeliveryDispatcher, GoalTerminalProjection, SinkRegistration,
 )
 from deskpet.harness.router import RegisteredRouter, RouteClassifier
-from deskpet.harness.recovery import HarnessRecoveryCoordinator
+from deskpet.harness.supervisor import HarnessSupervisor
 from deskpet.harness.tool_executor import UnifiedToolExecutor
 from deskpet.workflows.store.schema import WORKFLOW_SCHEMA_VERSION
 
@@ -38,28 +38,28 @@ class HarnessRuntime:
     run_client: KernelRunClient
     manifest: HarnessDiagnostics
     health: HarnessDiagnostics
-    recovery: HarnessRecoveryCoordinator
-    child_scheduler: ChildRunScheduler | None
+    supervisor: HarnessSupervisor
     drivers: tuple[RegisteredDriver, ...]
     tool_executor: UnifiedToolExecutor | None
-    delivery_dispatcher: ExecutionDeliveryDispatcher | None = None
 
     async def close(self, *, timeout: float = 1.0) -> None:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + max(0.0, timeout)
-        if self.child_scheduler is not None:
-            await self.child_scheduler.close()
-        await self.recovery.close()
+        await self.supervisor.close()
         try:
             if (effects := self.tool_executor) is not None:
                 await effects.close(max(0.0, timeout) / 2)
                 if (run_ids := effects.ready_late_run_ids()):
-                    await self.recovery.reconcile_ready(
+                    await self.supervisor.reconcile_ready(
                         run_ids, timeout=max(0.0, deadline - loop.time())
                     )
             await self.kernel._drain_active(max(0.0, deadline - loop.time()))
         finally:
-            await asyncio.gather(*(item.driver.close() for item in self.drivers))
+            try:
+                await asyncio.gather(*(item.driver.close() for item in self.drivers))
+            finally:
+                async with self.kernel._lock:
+                    self.kernel._live.finish_all()
 
 
 async def build_harness_runtime(
@@ -108,16 +108,12 @@ async def build_harness_runtime(
         (SinkRegistration("goal_projection", "session-goals", goal_projection),),
         owner_generation=owner_generation or 0,
     )
-    child_scheduler = (
-        ChildRunScheduler(child_runs, KernelChildLauncher(kernel), owner="harness-child")
-        if child_runs is not None else None
-    )
     degraded_reasons = tuple(
         reason
         for available, reason in (
             (tool_executor is not None, "tool_executor_unavailable"),
             (
-                child_scheduler is not None,
+                child_runs is not None,
                 "child_run_coordinator_unavailable",
             ),
         )
@@ -143,23 +139,26 @@ async def build_harness_runtime(
         "compatibility_reader": "enabled" if compatibility_reader else "disabled",
         "degraded_reasons": list(degraded_reasons),
     })
-    recovery = HarnessRecoveryCoordinator(uow, kernel, tool_executor)
+    supervisor = HarnessSupervisor(
+        uow, kernel, tool_executor,
+        coordinator=child_runs,
+        launcher=KernelChildLauncher(kernel) if child_runs is not None else None,
+        delivery=delivery_dispatcher,
+        owner="harness-child",
+    )
     runtime = HarnessRuntime(
         kernel=kernel,
         run_client=KernelRunClient(kernel, resolver),
         manifest=manifest,
         health=health,
-        recovery=recovery,
-        child_scheduler=child_scheduler,
+        supervisor=supervisor,
         drivers=tuple(drivers),
         tool_executor=tool_executor,
-        delivery_dispatcher=delivery_dispatcher,
     )
-    if child_scheduler is not None:
-        await child_scheduler.reconcile_commands_once()
-    await recovery.recover_pending()
-    if child_scheduler is not None:
-        await child_scheduler.reconcile_signals_once()
-        await child_scheduler.start()
-    await recovery.start()
+    await supervisor.reconcile_commands_once(limit=16)
+    await supervisor.recover_pending(limit=16)
+    await supervisor.reconcile_signals_once(parent_limit=16, signal_limit=16)
+    if delivery_dispatcher is not None:
+        await delivery_dispatcher.run_once()
+    await supervisor.start()
     return runtime

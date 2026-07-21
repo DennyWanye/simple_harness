@@ -3,7 +3,7 @@
     "legacy_survivor_count": 15,
     "presenter_converter_authority_count": 1,
     "run_map_authority_count": 1,
-    "supervisor_task_authority_count": 2
+    "supervisor_task_authority_count": 1
   },
   "baseline_commit": "796905b9888c2659af78cec21de1ee96b46a2c51",
   "items": [
@@ -174,15 +174,6 @@
       "tables": []
     },
     {
-      "authority": "supervisor_task",
-      "callsites": [],
-      "kind": "task",
-      "path": "backend/deskpet/harness/child_runs.py",
-      "source_hash": "3d2b20cba5ee80c1aaeeb1ee265bec1c2c98a1f61500309245c518a4eeab0416",
-      "symbol": "ChildRunScheduler._task",
-      "tables": []
-    },
-    {
       "authority": "run_task",
       "callsites": [],
       "kind": "task",
@@ -195,9 +186,9 @@
       "authority": "supervisor_task",
       "callsites": [],
       "kind": "task",
-      "path": "backend/deskpet/harness/recovery.py",
+      "path": "backend/deskpet/harness/supervisor.py",
       "source_hash": "3d2b20cba5ee80c1aaeeb1ee265bec1c2c98a1f61500309245c518a4eeab0416",
-      "symbol": "HarnessRecoveryCoordinator._task",
+      "symbol": "HarnessSupervisor._task",
       "tables": []
     }
   ],

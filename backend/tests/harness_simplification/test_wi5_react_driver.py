@@ -24,8 +24,8 @@ from deskpet.execution.contracts import (
 from deskpet.execution.evidence import EvidenceContext, UNKNOWN_EVIDENCE
 from deskpet.harness.child_runs import (
     ChildRunCoordinator,
-    ChildRunScheduler as _ChildRunScheduler,
 )
+from deskpet.harness.supervisor import HarnessSupervisor as _HarnessSupervisor
 from deskpet.harness.drivers.react import (
     LegacyAgentLoopCollaborator,
     LegacyAgentLoopToolInterceptionError,
@@ -95,7 +95,11 @@ def _durable_signal(decision, response: Mapping[str, Any]) -> DurableDecisionSig
     )
 
 
-class ChildRunScheduler(_ChildRunScheduler):
+class ChildSupervisor(_HarnessSupervisor):
+    def __init__(self, coordinator, launcher, *, owner):
+        super().__init__(coordinator._store, None, coordinator=coordinator,
+                         launcher=launcher, owner=owner)
+
     async def reconcile_once(self, **kwargs) -> None:
         await self.reconcile_commands_once(**kwargs)
         command_errors = self.last_errors
@@ -124,7 +128,7 @@ async def _collect(iterator: AsyncIterator[Any]) -> list[Any]:
 
 async def _pending(coordinator, parent_run_id):
     records = await coordinator._store.list_pending_child_signals(parent_run_id)
-    return tuple(ChildRunScheduler._signal(record) for record in records)
+    return tuple(ChildSupervisor._signal(record) for record in records)
 
 
 def _request(run_id: str = "run-react") -> DriverStart:
@@ -385,7 +389,7 @@ async def _schedule_child(store, command):
     )
     coordinator = ChildRunCoordinator(store)
     committed = await coordinator.submit(parent, command)
-    await ChildRunScheduler(
+    await ChildSupervisor(
         coordinator, _ChildLauncher(), owner="child-scheduler"
     ).reconcile_once()
     accepted = (await _pending(coordinator, "run-react"))[0]

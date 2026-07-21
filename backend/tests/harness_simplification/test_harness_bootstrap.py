@@ -17,6 +17,7 @@ from deskpet.harness.kernel import HostContext, RegisteredDriver
 from deskpet.harness.ports import DriverTerminalCandidate
 from deskpet.harness.profiles import ProfileRegistry, ProfileSpec
 from deskpet.harness.router import ClassifiedRoute
+from deskpet.harness.supervisor import HarnessSupervisor
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
 from deskpet.workflows.store.schema import WORKFLOW_SCHEMA_VERSION
 
@@ -124,6 +125,7 @@ async def test_bootstrap_exports_manifest_from_actual_registrations(tmp_path) ->
     await asyncio.sleep(0.02)
     late_events = [event async for event in second.events]
     assert late_events[-1].kind == "final"
+    await runtime.close()
 
 
 @pytest.mark.asyncio
@@ -139,11 +141,104 @@ async def test_bootstrap_starts_and_closes_single_child_runtime_owner(tmp_path) 
         child_runs=ChildRunCoordinator(uow),
     )
 
-    assert runtime.child_scheduler is not None
-    assert runtime.child_scheduler._task is not None
+    assert runtime.supervisor._launcher is not None
+    task = runtime.supervisor._task
+    await runtime.supervisor.start()
+    assert runtime.supervisor._task is task
     await runtime.close()
-    assert runtime.child_scheduler._task is None
+    await runtime.supervisor.close()
+    assert runtime.supervisor._task is None
     assert driver.closed is True
+
+
+@pytest.mark.asyncio
+async def test_supervisor_single_task_advances_every_bounded_lane() -> None:
+    wakeup = asyncio.Event()
+
+    class Uow:
+        calls: list[tuple[str, int]] = []
+        recovery_run_ids: list[tuple[str, ...]] = []
+
+        async def lease_child_commands(self, *, limit: int, **kwargs):
+            self.calls.append(("commands", limit))
+            return ()
+
+        async def list_pending_child_signal_parents(self, *, limit: int):
+            self.calls.append(("signals", limit))
+            return ()
+
+        async def list_recoverable(self, *, limit: int, run_ids=()):
+            self.calls.append(("recovery", limit))
+            self.recovery_run_ids.append(tuple(run_ids))
+            return ()
+
+    class Effects:
+        def ready_late_run_ids(self) -> frozenset[str]:
+            return frozenset({"late-run"})
+
+    class Delivery:
+        calls = 0
+
+        async def run_once(self) -> bool:
+            self.calls += 1
+            return False
+
+    coordinator = type("Coordinator", (), {"_wakeup": wakeup})()
+    uow, delivery = Uow(), Delivery()
+    supervisor = HarnessSupervisor(
+        uow, object(), Effects(), coordinator=coordinator,
+        launcher=object(), delivery=delivery, interval=0.01,
+        item_timeout=0.05, batch_limit=16,
+    )
+    await supervisor.start()
+    task = supervisor._task
+    await supervisor.start()
+    for _ in range(100):
+        if len(uow.calls) >= 4 and delivery.calls:
+            break
+        await asyncio.sleep(0.005)
+    await supervisor.close()
+    await supervisor.close()
+
+    assert task is not None
+    assert uow.calls[:4] == [
+        ("commands", 16), ("signals", 16),
+        ("recovery", 16), ("recovery", 16),
+    ]
+    assert uow.recovery_run_ids[:2] == [(), ("late-run",)]
+    assert delivery.calls >= 1
+    assert supervisor._task is None
+
+
+@pytest.mark.asyncio
+async def test_supervisor_timeout_records_error_and_yields_to_later_lanes() -> None:
+    class Uow:
+        signals = 0
+        recovery = 0
+
+        async def lease_child_commands(self, **kwargs):
+            await asyncio.Event().wait()
+
+        async def list_pending_child_signal_parents(self, **kwargs):
+            self.signals += 1
+            return ()
+
+        async def list_recoverable(self, **kwargs):
+            self.recovery += 1
+            return ()
+
+    uow = Uow()
+    coordinator = type("Coordinator", (), {"_wakeup": asyncio.Event()})()
+    supervisor = HarnessSupervisor(
+        uow, object(), coordinator=coordinator, launcher=object(),
+        interval=0.01, item_timeout=0.005,
+    )
+    await supervisor.run_once()
+
+    assert uow.signals == 1
+    assert uow.recovery == 1
+    assert supervisor.last_errors
+    assert supervisor.last_errors[0].startswith("child_commands:TimeoutError:")
 
 
 @pytest.mark.asyncio

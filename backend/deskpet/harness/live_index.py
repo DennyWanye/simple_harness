@@ -128,4 +128,8 @@ class BoundedLiveIndex:
         if release and self._runs.get(run_id) is active:
             self._runs.pop(run_id, None)
 
+    def finish_all(self) -> None:
+        for run_id, active in tuple(self._runs.items()):
+            self.finish(run_id, active, release=True)
+
 __all__ = ["BoundedLiveIndex", "LiveRun", "LiveStreamOverflow"]

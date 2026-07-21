@@ -25,8 +25,8 @@ from deskpet.execution.contracts import (
 )
 from deskpet.harness.child_runs import (
     ChildRunCoordinator,
-    ChildRunScheduler as _ChildRunScheduler,
 )
+from deskpet.harness.supervisor import HarnessSupervisor as _HarnessSupervisor
 from deskpet.harness.ports import (
     AttachmentPolicy as DriverAttachmentPolicy,
     ChildAcceptedSignal,
@@ -40,8 +40,12 @@ from deskpet.workflows.store import SqliteExecutionUnitOfWork, StaleRecoveryLeas
 PARENT_CAPABILITY = fingerprint_json({"tools": ["read", "write", "delegate"]})
 
 
-class ChildRunScheduler(_ChildRunScheduler):
+class ChildSupervisor(_HarnessSupervisor):
     """Test helper for exercising both canonical scheduler passes."""
+
+    def __init__(self, coordinator, launcher, *, owner):
+        super().__init__(coordinator._store, None, coordinator=coordinator,
+                         launcher=launcher, owner=owner)
 
     async def reconcile_once(self, **kwargs) -> None:
         await self.reconcile_commands_once(**kwargs)
@@ -105,13 +109,13 @@ class Launcher:
 
 
 def _scheduler(coordinator, launcher, owner):
-    return ChildRunScheduler(coordinator, launcher, owner=owner)
+    return ChildSupervisor(coordinator, launcher, owner=owner)
 
 
 async def _pending(coordinator, parent_run_id):
     records = await coordinator._store.list_pending_child_signals(parent_run_id)
     return tuple(
-        SimpleNamespace(record=record, signal=ChildRunScheduler._signal(record))
+        SimpleNamespace(record=record, signal=ChildSupervisor._signal(record))
         for record in records
     )
 
@@ -686,7 +690,7 @@ async def test_detached_parent_terminal_discards_replayed_child_signals(tmp_path
         parent, _delegate("detached-terminal", JoinPolicy.DETACHED)
     )
     launcher = Launcher()
-    scheduler = ChildRunScheduler(coordinator, launcher, owner="scheduler-a")
+    scheduler = ChildSupervisor(coordinator, launcher, owner="scheduler-a")
     await scheduler.reconcile_once()
     first_deliveries = tuple(launcher.deliveries)
 
@@ -731,7 +735,7 @@ async def test_terminal_parent_preserves_attached_signal_as_invariant(join_polic
     uow = SqliteExecutionUnitOfWork(path, clock=clock)
     coordinator = ChildRunCoordinator(uow)
     await coordinator.submit(parent, _delegate("attached-terminal", join_policy))
-    scheduler = ChildRunScheduler(coordinator, Launcher(), owner="scheduler-a")
+    scheduler = ChildSupervisor(coordinator, Launcher(), owner="scheduler-a")
     await scheduler.reconcile_once()
     await uow.commit_run_outcome(
         parent.run_id, expected_version=parent.version,
@@ -750,26 +754,20 @@ async def test_terminal_parent_preserves_attached_signal_as_invariant(join_polic
 
 
 @pytest.mark.asyncio
-async def test_scheduler_lifecycle_wakes_for_new_command_and_closes(tmp_path):
+async def test_scheduler_primitives_have_no_background_task_owner(tmp_path):
     path = tmp_path / "workflow.db"
     clock = Clock()
     parent = await _parent(path, clock)
     uow = SqliteExecutionUnitOfWork(path, clock=clock)
     coordinator = ChildRunCoordinator(uow)
     launcher = Launcher()
-    scheduler = ChildRunScheduler(coordinator, launcher, owner="runtime-owner")
-    await scheduler.start(interval=60)
+    scheduler = ChildSupervisor(coordinator, launcher, owner="runtime-owner")
 
     command = await coordinator.submit(parent, _delegate("wake-command"))
-    for _ in range(100):
-        current = await uow.get_child_command(command.operation_id)
-        if current is not None and current.status.value == "acked":
-            break
-        await asyncio.sleep(0.01)
+    await scheduler.reconcile_commands_once()
+    current = await uow.get_child_command(command.operation_id)
 
     assert current is not None and current.status.value == "acked"
-    assert scheduler._task is not None and not scheduler._task.done()
-    await scheduler.close()
     assert scheduler._task is None
 
 

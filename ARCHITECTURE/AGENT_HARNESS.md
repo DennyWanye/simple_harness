@@ -37,7 +37,7 @@ flowchart LR
     UoW --> Delivery["ExecutionDeliveryDispatcher"]
     Team["TeamStore outbox"] --> Reconciler["TeamChildRunReconciler"]
     Reconciler --> UoW
-    Supervisor["目标：唯一 HarnessSupervisor"] --> UoW
+    Supervisor["唯一 HarnessSupervisor<br/>child · recovery · late-ready · delivery"] --> UoW
 ```
 
 `ProfileRegistry` now generates both Router profiles and the WorkflowDriver
@@ -76,8 +76,9 @@ The R4.5 approved baseline is counted orchestration `33,618`, audited core
 `5,725`, Kernel `820`, public transaction starters `33`, execution-table DML
 authorities `2`, and existing fault windows `34` (`UoW=29 + Team=5`). The
 single-DML, first core deletion, typed-transaction-surface, venue-wrapper, and
-single-LiveRun slices are now integrated: current raw total is `34,020`,
-migration-cohort-adjusted total is `33,511`, core is `5,599`, Kernel `811`, execution DML
+single-LiveRun, venue-deletion, and single-Supervisor slices are now integrated:
+current raw total is `34,013`, migration-cohort-adjusted total is `33,504`,
+core is `5,580`, Kernel `811`, execution DML
 authority `1`, public transaction starters `21`, and the fault matrix has all
 `39` windows. The former split starters are replaced by nine typed composite
 boundaries: `activate_runtime`, `settle_delivery`, `persist_react_boundary`,
@@ -102,10 +103,17 @@ its physical delta. The cohort moved from physical/raw-effective
 and the adjusted total is `33,511`; no target was raised. Additions, copies,
 moves to new production files, tracked deletion, fixture drift, and physical
 line compression are fail-closed tests. The typed-starter, DML, fault-window,
-Kernel, adjusted-total, and single-LiveRun gates are green. The run-map
-authority is now `1`; the exit gates still pending are core `<=5,500` and one
-HarnessSupervisor authority (currently `2`), while Presenter-conversion
-authority is already one. The spike's `+14` LiveRun estimate omitted the
+Kernel, adjusted-total, single-LiveRun, and single-Supervisor gates are green.
+The run-map, HarnessSupervisor, and Presenter-conversion authorities are each
+`1`; only the final core `<=5,500` gate remains pending. `HarnessSupervisor`
+is the sole resident reconciliation task and owns bounded child-command,
+child-signal, recovery, late-ready, and delivery lanes. Each lane has an
+explicit batch/time budget; the loop uses a monotonic deadline plus child
+wakeup and records timeouts without starving later lanes. Startup performs
+one ordered initial pass before starting that task; shutdown stops it before
+bounded effect close/final ready reconcile/Kernel drain/Driver close/LiveRun
+sweep. Expanded focused verification is `97 passed`; full harness verification
+is `404 passed, 8 xfailed`. The spike's `+14` LiveRun estimate omitted the
 production-only single-index injection, separate iterator lifecycle,
 identity-safe cleanup, and fail-closed binding; the formal slice is `+67` and
 the final core target remains unchanged. The old combined

@@ -117,6 +117,7 @@ async def _runtime(tmp_path, kind: str, *, race: bool = False):
 @pytest.mark.parametrize("kind", ("react", "workflow"))
 async def test_kernel_root_terminal_projects_exact_associated_goal(tmp_path, kind) -> None:
     runtime, uow, goals, goal, _ = await _runtime(tmp_path, kind)
+    await runtime.supervisor.close()
     handle = await runtime.run_client.start(
         {"text": "finish", "request_id": f"request-{kind}", "turn_id": "turn-1"},
         {"session_id": "session-1", "venue": "text"},
@@ -125,16 +126,16 @@ async def test_kernel_root_terminal_projects_exact_associated_goal(tmp_path, kin
     events = await uow.list_events(handle.run_id)
     assert [event.candidate.payload["target_id"] for event in events
             if event.kind == "goal_associated"] == [goal.goal_id]
-    assert runtime.delivery_dispatcher is not None
-    assert await runtime.delivery_dispatcher.run_once() is True
+    await runtime.supervisor.run_once()
     assert goals.get("session-1").status == "done"
-    assert await runtime.delivery_dispatcher.run_once() is False
+    await runtime.supervisor.run_once()
     await runtime.close()
 
 
 @pytest.mark.asyncio
 async def test_child_and_root_terminal_race_keeps_one_goal_delivery(tmp_path) -> None:
     runtime, uow, goals, _, driver = await _runtime(tmp_path, "react", race=True)
+    await runtime.supervisor.close()
     handle = await runtime.run_client.start(
         {"text": "race", "request_id": "request-race", "turn_id": "turn-1"},
         {"session_id": "session-1", "venue": "text"},
@@ -154,7 +155,7 @@ async def test_child_and_root_terminal_race_keeps_one_goal_delivery(tmp_path) ->
     assert len([event for event in events if event.kind == "final"]) == 1
     deliveries = await uow.list_event_deliveries(record.terminal_event_id)
     assert len(deliveries) == 1
-    assert await runtime.delivery_dispatcher.run_once() is True
+    await runtime.supervisor.run_once()
     assert goals.get("session-1").status == "done"
     await runtime.close()
 
@@ -162,6 +163,7 @@ async def test_child_and_root_terminal_race_keeps_one_goal_delivery(tmp_path) ->
 @pytest.mark.asyncio
 async def test_goal_sink_projects_frozen_target_after_current_goal_changes(tmp_path) -> None:
     runtime, uow, goals, _, _ = await _runtime(tmp_path, "react")
+    await runtime.supervisor.close()
     handle = await runtime.run_client.start(
         {"text": "finish", "request_id": "request-mismatch", "turn_id": "turn-1"},
         {"session_id": "session-1", "venue": "text"},
@@ -169,7 +171,7 @@ async def test_goal_sink_projects_frozen_target_after_current_goal_changes(tmp_p
     _ = [event async for event in handle.events]
     replacement = goals.set("session-1", "replacement")
     await goals.persist(replacement)
-    assert await runtime.delivery_dispatcher.run_once() is True
+    await runtime.supervisor.run_once()
     rows = await uow.list_event_deliveries((await uow.query(
         RunRef(handle.run_id, "session-1"), _Resolver().resolve_actor(
             {"session_id": "session-1"}, root_run_id=handle.run_id,
@@ -191,6 +193,7 @@ async def test_goal_storage_failure_retries_after_dispatcher_restart(
     tmp_path, monkeypatch,
 ) -> None:
     runtime, uow, goals, goal, _ = await _runtime(tmp_path, "react")
+    await runtime.supervisor.close()
     handle = await runtime.run_client.start(
         {"text": "finish", "request_id": "request-retry", "turn_id": "turn-1"},
         {"session_id": "session-1", "venue": "text"},
@@ -203,7 +206,7 @@ async def test_goal_storage_failure_retries_after_dispatcher_restart(
         raise OSError("disk-full")
 
     monkeypatch.setattr(state, "project_goal_terminal", fail_projection)
-    assert await runtime.delivery_dispatcher.run_once() is True
+    await runtime.supervisor.run_once()
     record = await uow.query(
         RunRef(handle.run_id, "session-1"),
         _Resolver().resolve_actor({"session_id": "session-1"}, root_run_id=handle.run_id),

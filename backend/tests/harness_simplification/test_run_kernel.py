@@ -35,8 +35,8 @@ from deskpet.harness.drivers.react import (
 )
 from deskpet.harness.child_runs import (
     ChildRunCoordinator,
-    ChildRunScheduler as _ChildRunScheduler,
 )
+from deskpet.harness.supervisor import HarnessSupervisor as _HarnessSupervisor
 from deskpet.harness.kernel import (
     HostContext,
     KernelChildLauncher,
@@ -65,14 +65,18 @@ from deskpet.harness.router import ClassifiedRoute, RegisteredRouter
 from deskpet.harness.tool_executor import UnifiedToolExecutor
 from deskpet.harness.runtime import DriverRuntime
 from deskpet.harness.live_index import BoundedLiveIndex
-from deskpet.harness.recovery import HarnessRecoveryCoordinator
+from deskpet.harness.supervisor import HarnessSupervisor
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.tools.registry import ToolRegistry
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
 from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall
 
 
-class ChildRunScheduler(_ChildRunScheduler):
+class ChildSupervisor(_HarnessSupervisor):
+    def __init__(self, coordinator, launcher, *, owner):
+        super().__init__(coordinator._store, None, coordinator=coordinator,
+                         launcher=launcher, owner=owner)
+
     async def reconcile_once(self, **kwargs) -> None:
         await self.reconcile_commands_once(**kwargs)
         command_errors = self.last_errors
@@ -1113,7 +1117,7 @@ async def test_scheduled_child_replay_uses_authoritative_terminal_row(tmp_path) 
         attachment_policy=AttachmentPolicy.DETACHED,
         join_policy=JoinPolicy.DETACHED,
     ))
-    failed = ChildRunScheduler(
+    failed = ChildSupervisor(
         coordinator, KernelChildLauncher(kernel), owner="crashing-scheduler"
     )
     await failed.reconcile_once(lease_seconds=0.001)
@@ -1140,7 +1144,7 @@ async def test_scheduled_child_replay_uses_authoritative_terminal_row(tmp_path) 
         stale.record = child
     assert kernel._live.get(command.child_run_id) is not None
     fresh = SqliteExecutionUnitOfWork(path)
-    await ChildRunScheduler(
+    await ChildSupervisor(
         ChildRunCoordinator(fresh), KernelChildLauncher(kernel), owner="restarted-scheduler"
     ).reconcile_once(lease_seconds=1)
 
@@ -1284,7 +1288,7 @@ async def test_slow_child_signal_renews_parent_lease_before_fenced_write(tmp_pat
         child_signal_heartbeat_interval=0.005,
     )
 
-    scheduler = ChildRunScheduler(
+    scheduler = ChildSupervisor(
         coordinator, KernelChildLauncher(kernel), owner="slow-scheduler"
     )
     await scheduler.reconcile_signals_once()
@@ -1327,7 +1331,7 @@ async def test_cancel_cascades_only_by_attachment_policy(
         if await uow.get_child_command(operation_id) is not None:
             break
         await asyncio.sleep(0.01)
-    await ChildRunScheduler(
+    await ChildSupervisor(
         ChildRunCoordinator(uow), AcceptChild(), owner="test-child"
     ).reconcile_once()
     actor = host().actor(root_run_id=handle.root_run_id)
@@ -1431,8 +1435,10 @@ async def test_runtime_keeps_mixed_batch_pending_when_one_physical_call_is_late(
         drivers=driver_catalog((RegisteredDriver("react", driver),)),
         tool_executor=executor,
     )
-    recovery = HarnessRecoveryCoordinator(uow, value, executor)
-    await recovery.start(interval=0.005)
+    supervisor = HarnessSupervisor(
+        uow, value, executor, interval=0.005, item_timeout=0.05
+    )
+    await supervisor.start()
     handle = await value.start(RunRequest("mixed", "req-mixed", "turn-1"), host())
     for _ in range(300):
         async with aiosqlite.connect(tmp_path / "workflow.db") as db:
@@ -1477,17 +1483,17 @@ async def test_runtime_keeps_mixed_batch_pending_when_one_physical_call_is_late(
         await asyncio.sleep(0.01)
     assert (await registry.observe_late_prepared("effect-1"))[0] == "pending"
     registry.block_late_receipt = True
-    await recovery.close()
+    await supervisor.close()
     if recovery_before_close:
         registry.complete_late()
-        await recovery.recover_pending(
+        await supervisor.recover_pending(
             only_run_ids=frozenset({handle.ref.run_id})
         )
         await asyncio.wait_for(registry.late_receipt_started.wait(), timeout=1.0)
     else:
         asyncio.get_running_loop().call_later(0.01, registry.complete_late)
     close_task = asyncio.create_task(HarnessRuntime(
-        value, None, None, None, recovery, None,
+        value, None, None, None, supervisor,
         (RegisteredDriver("react", driver),), executor,
     ).close(timeout=2.0))
     await asyncio.wait_for(registry.late_receipt_started.wait(), timeout=1.0)
@@ -1511,11 +1517,7 @@ async def test_runtime_keeps_mixed_batch_pending_when_one_physical_call_is_late(
     assert len(collaborator.resumes) == 1
     recovered_boundary = collaborator.resumes[0][0]
     assert [item.value["written"] for item in recovered_boundary.outcomes] == [1, 2]
-    for _ in range(100):
-        if _live_run(value, handle.ref.run_id).task.done():
-            break
-        await asyncio.sleep(0.01)
-    assert _live_run(value, handle.ref.run_id).task.done()
+    assert value._live.get(handle.ref.run_id) is None
 
 
 @pytest.mark.asyncio
@@ -1543,9 +1545,9 @@ async def test_restart_after_close_bound_keeps_missing_late_evidence_unknown(tmp
             break
         await asyncio.sleep(0.01)
     assert row == ("unknown",)
-    first_recovery = HarnessRecoveryCoordinator(uow, first, first_executor)
+    first_recovery = HarnessSupervisor(uow, first, first_executor)
     await HarnessRuntime(
-        first, None, None, None, first_recovery, None,
+        first, None, None, None, first_recovery,
         (RegisteredDriver("react", first_driver),), first_executor,
     ).close(timeout=0.01)
 
@@ -1562,7 +1564,7 @@ async def test_restart_after_close_bound_keeps_missing_late_evidence_unknown(tmp
         ),)),
         tool_executor=UnifiedToolExecutor(missing),
     )
-    await HarnessRecoveryCoordinator(restarted_uow, restarted).recover_pending()
+    await HarnessSupervisor(restarted_uow, restarted).recover_pending()
     for _ in range(300):
         if restarted_collaborator.resumes:
             break
