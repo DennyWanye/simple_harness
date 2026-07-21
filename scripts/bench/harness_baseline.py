@@ -1675,11 +1675,13 @@ async def _completed_run_memory_probe(run_count: int = 10_000) -> dict[str, Any]
             await kernel.close(handle.ref, actor)
             close_calls += 1
         await asyncio.sleep(0)
-        active_index = getattr(kernel, "_active", None)
-        if not isinstance(active_index, dict):
+        live_index = getattr(kernel, "_live", None)
+        live_values = getattr(live_index, "values", None)
+        if not callable(live_values):
             raise BenchmarkInvariantError(
-                "RunKernel active index is not inspectable; strong-ref benchmark cannot be proved"
+                "RunKernel live index is not inspectable; strong-ref benchmark cannot be proved"
             )
+        active_runs = live_values()
         async with aiosqlite.connect(database) as db:
             terminal_rows = int(
                 (
@@ -1699,7 +1701,7 @@ async def _completed_run_memory_probe(run_count: int = 10_000) -> dict[str, Any]
                     ).fetchone()
                 )[0]
             )
-        completed_refs = len(active_index)
+        completed_refs = len(active_runs)
         if (driver.starts, terminal_rows, final_events, close_calls, completed_refs) != (
             run_count,
             run_count,
