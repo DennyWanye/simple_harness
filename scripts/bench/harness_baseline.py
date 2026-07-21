@@ -74,6 +74,10 @@ R55_CONSTRUCTION_RAW_LOC = 34_800
 R55_CONSTRUCTION_TOTAL_LOC = 34_250
 R55_CONSTRUCTION_CORE_LOC = 5_950
 R55_CONSTRUCTION_KERNEL_LOC = 925
+R6_FINAL_RAW_LOC = 33_925
+R6_FINAL_TOTAL_LOC = 33_416
+R6_FINAL_CORE_LOC = 5_950
+R6_FINAL_KERNEL_LOC = 900
 R45_PUBLIC_OPERATIONS = ("start", "observe", "signal", "cancel", "recover", "close")
 R45_CORE_BUDGET_FIXTURE = PLAN_DIR / "r45-core-deletion-budget.json"
 R45_MIGRATION_COHORT_FIXTURE = PLAN_DIR / "r45-migration-cohorts.json"
@@ -1899,6 +1903,64 @@ def validate_r55_construction_gate(core_audit: Mapping[str, Any]) -> dict[str, A
     }
 
 
+def load_r55_admission_budget(path: Path, *, repo: Path = ROOT) -> dict[str, Any]:
+    """Verify that an R5.5 budget is a source-locked green A-commit result."""
+
+    if not path.is_file():
+        raise BenchmarkInvariantError(f"R5.5 admission budget is missing: {path}")
+    budget = json.loads(path.read_text(encoding="utf-8"))
+    commit = str(budget.get("environment", {}).get("commit", ""))
+    full_commit = str(_git("rev-parse", f"{commit}^{{commit}}", repo=repo)).strip()
+    inventory = budget.get("orchestration_loc", {})
+    audit = budget.get("r45_core_audit", {})
+    if (
+        budget.get("schema_version") != 2
+        or commit != full_commit
+        or inventory.get("head_commit") != commit
+        or budget.get("r55_gate", {}).get("passed") is not True
+        or validate_r55_construction_gate(audit).get("passed") is not True
+    ):
+        raise BenchmarkInvariantError("R5.5 admission budget identity is not a green A commit")
+    rows = inventory.get("files")
+    if not isinstance(rows, list) or not rows:
+        raise BenchmarkInvariantError("R5.5 admission budget has no source inventory")
+    locked = 0
+    for row in rows:
+        source_path = str(row.get("path", ""))
+        source_hash = row.get("current_sha256")
+        source_blob = row.get("current_git_blob")
+        if not source_path.endswith(".py") or source_hash is None:
+            continue
+        content = _commit_content(commit, source_path, repo=repo)
+        actual_blob = str(_git("rev-parse", f"{commit}:{source_path}", repo=repo)).strip()
+        if source_hash != _sha256(content) or source_blob != actual_blob:
+            raise BenchmarkInvariantError(
+                f"R5.5 admission budget source drift: {source_path}"
+            )
+        locked += 1
+    if locked < 1:
+        raise BenchmarkInvariantError("R5.5 admission budget locked no production sources")
+    return budget
+
+
+def validate_r6_final_gate(
+    core_audit: Mapping[str, Any], r55_budget: Mapping[str, Any]
+) -> dict[str, Any]:
+    r55_core = int(r55_budget["r45_core_audit"]["core_loc"])
+    checks = {
+        "raw_total_loc_lt_33925": int(core_audit["raw_total_loc"]) < R6_FINAL_RAW_LOC,
+        "adjusted_total_loc_lt_33416": int(core_audit["total_loc"]) < R6_FINAL_TOTAL_LOC,
+        "core_loc_lte_5950": int(core_audit["core_loc"]) <= R6_FINAL_CORE_LOC,
+        "core_loc_lte_r55_a": int(core_audit["core_loc"]) <= r55_core,
+        "kernel_loc_lte_900": int(core_audit["kernel_loc"]) <= R6_FINAL_KERNEL_LOC,
+        "public_operations_eq_six": tuple(core_audit["public_operations"])
+        == R45_PUBLIC_OPERATIONS,
+        "unknown_classifications_eq_zero": not core_audit["unknown_classifications"],
+        "deletion_budget_loc_eq_255": int(core_audit["deletion_budget_loc"]) == 255,
+    }
+    return {"gate": "r6_final", "checks": checks, "passed": all(checks.values())}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--compare", nargs="?", const=DEFAULT_BASELINE, type=Path)
@@ -1911,6 +1973,8 @@ def main() -> int:
     parser.add_argument("--r45-transition-gate", action="store_true")
     parser.add_argument("--r45-final-gate", action="store_true")
     parser.add_argument("--r55-construction-gate", action="store_true")
+    parser.add_argument("--r6-final-gate", action="store_true")
+    parser.add_argument("--r55-budget", type=Path)
     parser.add_argument("--write-loc-manifests", action="store_true")
     args = parser.parse_args()
     if args.iterations < 20:
@@ -1926,11 +1990,13 @@ def main() -> int:
     r45_gate_count = sum(
         (args.r45_baseline, args.r45_transition_gate, args.r45_final_gate)
     )
-    loc_gate_count = r45_gate_count + int(args.r55_construction_gate)
+    loc_gate_count = r45_gate_count + int(args.r55_construction_gate) + int(args.r6_final_gate)
     if loc_gate_count and not args.loc_only:
         parser.error("LOC gates require --loc-only")
     if loc_gate_count > 1:
         parser.error("LOC gate modes are mutually exclusive")
+    if args.r6_final_gate != (args.r55_budget is not None):
+        parser.error("--r6-final-gate and --r55-budget must be supplied together")
     if args.write_loc_manifests:
         write_locked_manifests()
     if args.loc_only:
@@ -1957,9 +2023,14 @@ def main() -> int:
             )
         elif args.r45_final_gate:
             result["r45_gate"] = validate_r45_final_gate(result["r45_core_audit"])
-        else:
+        elif args.r55_construction_gate:
             result["r55_gate"] = validate_r55_construction_gate(
                 result["r45_core_audit"]
+            )
+        else:
+            budget = load_r55_admission_budget(args.r55_budget.resolve())
+            result["r6_gate"] = validate_r6_final_gate(
+                result["r45_core_audit"], budget
             )
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -1973,6 +2044,7 @@ def main() -> int:
         and result.get("r1_gate", {}).get("passed", True)
         and result.get("r45_gate", {}).get("passed", True)
         and result.get("r55_gate", {}).get("passed", True)
+        and result.get("r6_gate", {}).get("passed", True)
     )
     return 0 if passed else 1
 

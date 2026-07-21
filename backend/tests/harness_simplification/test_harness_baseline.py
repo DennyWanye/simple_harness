@@ -395,6 +395,67 @@ def test_r55_construction_gate_checks_raw_adjusted_core_and_kernel() -> None:
         assert harness_baseline.validate_r55_construction_gate(values)["passed"] is False
 
 
+def test_r6_final_gate_uses_locked_r55_core_as_dynamic_ceiling() -> None:
+    current = {
+        "raw_total_loc": 33_924,
+        "total_loc": 33_415,
+        "core_loc": 5_800,
+        "kernel_loc": 900,
+        "public_operations": harness_baseline.R45_PUBLIC_OPERATIONS,
+        "unknown_classifications": [],
+        "deletion_budget_loc": 255,
+    }
+    budget = {"r45_core_audit": {"core_loc": 5_800}}
+    assert harness_baseline.validate_r6_final_gate(current, budget)["passed"] is True
+    current["core_loc"] = 5_801
+    result = harness_baseline.validate_r6_final_gate(current, budget)
+    assert result["checks"]["core_loc_lte_r55_a"] is False
+    assert result["passed"] is False
+
+
+def test_r55_budget_loader_verifies_commit_source_hashes(tmp_path, monkeypatch) -> None:
+    commit = "a" * 40
+    content = b"source\n"
+    audit = {
+        "raw_total_loc": 34_000,
+        "total_loc": 33_500,
+        "core_loc": 5_700,
+        "kernel_loc": 800,
+        "public_operations": harness_baseline.R45_PUBLIC_OPERATIONS,
+        "unknown_classifications": [],
+        "deletion_budget_loc": 255,
+    }
+    budget = {
+        "schema_version": 2,
+        "environment": {"commit": commit},
+        "orchestration_loc": {
+            "head_commit": commit,
+            "files": [
+                {
+                    "path": "backend/example.py",
+                    "current_sha256": harness_baseline._sha256(content),
+                    "current_git_blob": "blob-a",
+                }
+            ],
+        },
+        "r45_core_audit": audit,
+        "r55_gate": {"passed": True},
+    }
+    path = tmp_path / "budget.json"
+    path.write_text(json.dumps(budget), encoding="utf-8")
+    monkeypatch.setattr(harness_baseline, "_commit_content", lambda *_a, **_k: content)
+    monkeypatch.setattr(
+        harness_baseline,
+        "_git",
+        lambda *args, **_kwargs: commit if "^{commit}" in args[-1] else "blob-a",
+    )
+    assert harness_baseline.load_r55_admission_budget(path)["environment"]["commit"] == commit
+    budget["orchestration_loc"]["files"][0]["current_sha256"] = "bad"
+    path.write_text(json.dumps(budget), encoding="utf-8")
+    with pytest.raises(harness_baseline.BenchmarkInvariantError, match="source drift"):
+        harness_baseline.load_r55_admission_budget(path)
+
+
 def test_loc_inventory_counts_ignored_new_backend_production(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()

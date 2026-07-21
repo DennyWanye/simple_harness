@@ -72,6 +72,23 @@ session and Text's `execute()` consumes the same union. The redundant
 retained because it carries explicit pre-Kernel short-circuit/cancel status and
 the post-run `run_id/status/final_text` contract.
 
+The R5.5 cutover-readiness slice now provides two named dormant composition
+roots: `build_product_harness_composition()` composes the existing preparer,
+venue adapter, shared runtime, and presenter; `build_harness_subagent_registry()`
+binds the existing batch delegate to typed durable submit/await callbacks and
+rejects missing, ephemeral, or wrong-session parents before delegation. Static
+import reachability proves neither factory is imported or reachable from
+`backend/main.py`; the schema still seeds runtime ownership as `legacy/0`.
+`legacy_cutover_audit.py` generates a source-commit-locked span manifest only
+when complete dynamic-stack evidence is supplied, audits the exact 15 legacy
+owners plus static/dynamic coverage in readiness mode, and provides the R6
+exact/similarity/reference/reachability/live-stack cutover gate. The final
+`legacy_cutover_spans.json` is intentionally generated only after all R5.5
+source slices form the single A commit, then committed with tests/docs as B.
+Focused readiness/LOC tests are `28 passed`; the isolated slice construction
+gate is raw/adjusted/core/Kernel `34,045/33,536/5,618/767`, unknown `0`. This is
+pre-activation evidence, not an R5.5 or production-activation completion claim.
+
 The R4.5 approved baseline is counted orchestration `33,618`, audited core
 `5,725`, Kernel `820`, public transaction starters `33`, execution-table DML
 authorities `2`, and existing fault windows `34` (`UoW=29 + Team=5`). The
