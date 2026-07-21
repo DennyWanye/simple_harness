@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import json
-from typing import AsyncIterator
+from typing import TYPE_CHECKING, AsyncIterator
+
+if TYPE_CHECKING:
+    from deskpet.execution.contracts import ProviderLaunchSnapshot
 
 import httpx
 import structlog
@@ -91,6 +94,9 @@ class OpenAICompatibleProvider:
     Implements the `LLMProvider` Protocol in providers/base.py.
     """
 
+    adapter_id = "openai-compatible"
+    adapter_version = "v1"
+
     def __init__(
         self,
         base_url: str,
@@ -160,6 +166,37 @@ class OpenAICompatibleProvider:
         # Production code MUST leave this None; otherwise every request goes
         # through the mock and never reaches the real endpoint.
         self._test_transport: httpx.BaseTransport | None = None
+
+    def _launch_request_parts(
+        self,
+        launch_operation_id: str | None,
+        snapshot: ProviderLaunchSnapshot | None,
+    ) -> tuple[dict[str, str], str]:
+        if (launch_operation_id is None) != (snapshot is None):
+            raise ValueError("launch operation id and snapshot must be paired")
+        if snapshot is None:
+            return {}, "resilient"
+        provider_id = str(
+            getattr(self, "provider_id", "")
+            or getattr(self, "id", "")
+            or type(self).__name__
+        )
+        if (provider_id, self.adapter_id, self.adapter_version) != (
+            snapshot.provider_id, snapshot.adapter_id, snapshot.adapter_version
+        ):
+            raise ValueError("provider launch identity mismatch")
+        if not snapshot.supports_idempotent_launch:
+            return {}, "at_most_once"
+        prefix, separator, field_name = (snapshot.token_field or "").partition(":")
+        if (
+            not separator
+            or prefix != "header"
+            or not field_name
+            or field_name.lower() in {"authorization", "content-type"}
+            or any(ch in field_name for ch in "\r\n\t ")
+        ):
+            raise ValueError("OpenAI-compatible launch token must use a safe header:<name>")
+        return {field_name: launch_operation_id or ""}, "resilient"
 
     def _relay_error_class(
         self,
@@ -369,6 +406,8 @@ class OpenAICompatibleProvider:
         temperature: float | None = None,
         response_format: dict | None = None,
         tool_choice: str | None = None,
+        launch_operation_id: str | None = None,
+        provider_launch_snapshot: ProviderLaunchSnapshot | None = None,
     ) -> dict:
         return await auto_context_attempt_call(
             provider=self,
@@ -384,6 +423,8 @@ class OpenAICompatibleProvider:
                 temperature=temperature,
                 response_format=response_format,
                 tool_choice=tool_choice,
+                launch_operation_id=launch_operation_id,
+                provider_launch_snapshot=provider_launch_snapshot,
             ),
         )
 
@@ -433,6 +474,8 @@ class OpenAICompatibleProvider:
         response_format: dict | None = None,
         tool_choice: str | None = None,
         retry_mode: str = "resilient",
+        launch_operation_id: str | None = None,
+        provider_launch_snapshot: ProviderLaunchSnapshot | None = None,
     ) -> dict:
         """P4-S25 fix: HTTP-stream-as-transport, response-as-aggregate.
 
@@ -463,6 +506,8 @@ class OpenAICompatibleProvider:
             response_format=response_format,
             tool_choice=tool_choice,
             retry_mode=retry_mode,
+            launch_operation_id=launch_operation_id,
+            provider_launch_snapshot=provider_launch_snapshot,
         ):
             if ev.get("type") == "final":
                 final_dict = ev
@@ -910,6 +955,8 @@ class OpenAICompatibleProvider:
         response_format: dict | None = None,
         tool_choice: str | None = None,
         retry_mode: str = "resilient",
+        launch_operation_id: str | None = None,
+        provider_launch_snapshot: ProviderLaunchSnapshot | None = None,
     ):
         if retry_mode not in {"resilient", "at_most_once"}:
             raise ValueError(f"unsupported retry_mode: {retry_mode}")
@@ -928,6 +975,8 @@ class OpenAICompatibleProvider:
                 response_format=response_format,
                 tool_choice=tool_choice,
                 retry_mode=retry_mode,
+                launch_operation_id=launch_operation_id,
+                provider_launch_snapshot=provider_launch_snapshot,
             ),
         ):
             yield event
@@ -942,6 +991,8 @@ class OpenAICompatibleProvider:
         response_format: dict | None = None,
         tool_choice: str | None = None,
         retry_mode: str = "resilient",
+        launch_operation_id: str | None = None,
+        provider_launch_snapshot: ProviderLaunchSnapshot | None = None,
     ):
         """P4-S25 A1: streaming version of chat_with_tools.
 
@@ -968,6 +1019,12 @@ class OpenAICompatibleProvider:
         blank screen until the whole response lands.
         """
         import asyncio as _asyncio
+        launch_headers, launch_retry_mode = self._launch_request_parts(
+            launch_operation_id,
+            provider_launch_snapshot,
+        )
+        if launch_retry_mode == "at_most_once":
+            retry_mode = "at_most_once"
         temp = temperature if temperature is not None else self.temperature
         self.last_usage = None
         # Phase 1.3 (D4): 前缀稳定纪律。在装 payload 之前先抹平历史里
@@ -1018,6 +1075,7 @@ class OpenAICompatibleProvider:
             async for event in self._stream_one_attempt(
                 payload,
                 transport_retries=0,
+                request_headers=launch_headers,
             ):
                 yield event
             return
@@ -1055,7 +1113,10 @@ class OpenAICompatibleProvider:
             try:
                 if attempt > 0:
                     mark_current_attempt_transport_retry()
-                async for ev in self._stream_one_attempt(used_payload):
+                async for ev in self._stream_one_attempt(
+                    used_payload,
+                    request_headers=launch_headers,
+                ):
                     yield ev
                 return
             except httpx.HTTPStatusError as exc:
@@ -1175,7 +1236,7 @@ class OpenAICompatibleProvider:
         # recovers without ever touching another provider.
         # Skip fallback only for `pre-handshake` (base_url wrong → non-stream
         # would fail identically) and HTTP-4xx (already raised above).
-        if _phase in ("mid-stream-drop", "read-timeout", "transient-other"):
+        if not launch_headers and _phase in ("mid-stream-drop", "read-timeout", "transient-other"):
             try:
                 logger.warning(
                     "p5s2_stream_fallback_to_nonstream phase=%s base_url=%s",
@@ -1246,6 +1307,7 @@ class OpenAICompatibleProvider:
         payload: dict,
         *,
         transport_retries: int = 1,
+        request_headers: dict[str, str] | None = None,
     ):
         """Single-attempt SSE consumer. Used by chat_stream_with_tools."""
         # Context OS send boundary: this is the first synchronous statement
@@ -1275,6 +1337,7 @@ class OpenAICompatibleProvider:
                 "POST",
                 f"{self.base_url}/chat/completions",
                 json=payload,
+                headers=request_headers,
             ) as response:
                 # Unlike MockTransport, a real streamed error response is not
                 # buffered.  Read it while the response context is still

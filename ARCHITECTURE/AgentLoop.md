@@ -3,7 +3,7 @@
 > 本档回答一个问题：**桌宠收到一句话后，agent 是怎么把一个任务跑完的？**
 > 聚焦后端 ReAct 执行引擎（P6 重构后现状）。细节散在各 `plans/` 与 `openspec/`，本档只做一页式骨架 + 关键代码引用。
 >
-> 最后更新：2026-06-21 ｜ 调研基线：读码核实（master）｜ 主入口 [`backend/agent/agent_loop.py`](../backend/agent/agent_loop.py)
+> 最后更新：2026-07-21 ｜ 调研基线：读码核实（master）｜ 主入口 [`backend/agent/agent_loop.py`](../backend/agent/agent_loop.py)
 >
 > 配套实施记录见 [`plans/2026-06-20-agent-loop-optimization/00-PLAN.md`](../plans/2026-06-20-agent-loop-optimization/00-PLAN.md)（缺陷审计、落地路线与验证结果）。
 
@@ -207,6 +207,10 @@ WS handler `/ws/control`（main.py:3976），`chat` / `chat_v2` 消息走统一 
 ---
 
 ## 8. 关键文件速查
+
+### R5.5 dormant provider launch seam
+
+R5.5 的测试态 ReAct 路径可把 admission 的 stable `launch_operation_id` 与首次 route 冻结的 provider snapshot，经 `LegacyAgentLoopCollaborator → AgentLoop → OpenAICompatibleAgentLLM → OpenAICompatibleProvider` 显式送到真实 HTTP request。支持幂等的 adapter 只接受显式 `header:<name>` capability；不支持幂等时三层自动重试与跨 provider fallback 均 fail closed。该接线尚未由 `main.py` 激活，生产继续 `legacy/0`。验证：provider spy 与兼容回归 `22 passed`；R5.5 construction gate `34,070 / 33,561 / 5,508 / 767` PASS。
 
 | 关注点 | 文件 |
 |---|---|

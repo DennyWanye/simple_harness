@@ -24,11 +24,25 @@ Production wiring:
 """
 from __future__ import annotations
 
-from typing import Any, AsyncIterator, Sequence
+from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence
+
+if TYPE_CHECKING:
+    from deskpet.execution.contracts import ProviderLaunchSnapshot
 
 from llm.errors import LLMProviderError
 
 from llm.types import ChatResponse, ChatUsage, ToolCall
+
+
+def _launch_kwargs(
+    operation_id: str | None, snapshot: ProviderLaunchSnapshot | None
+) -> dict[str, Any]:
+    if (operation_id is None) != (snapshot is None):
+        raise ValueError("launch operation id and snapshot must be provided together")
+    return {} if operation_id is None else {
+        "launch_operation_id": operation_id,
+        "provider_launch_snapshot": snapshot,
+    }
 
 
 class OpenAICompatibleAgentLLM:
@@ -42,6 +56,8 @@ class OpenAICompatibleAgentLLM:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         model: str | None = None,
+        launch_operation_id: str | None = None,
+        provider_launch_snapshot: ProviderLaunchSnapshot | None = None,
         **kwargs: Any,
     ) -> ChatResponse:
         # ``model`` is ignored — provider already locked to a model at
@@ -54,11 +70,9 @@ class OpenAICompatibleAgentLLM:
         # callers like the plan-mode phase can demand JSON schema.
         response_format = kwargs.get("response_format")
         raw = await self._provider.chat_with_tools(
-            messages,
-            tools=tools,
-            max_tokens=max_tokens,
-            temperature=temperature,
+            messages, tools=tools, max_tokens=max_tokens, temperature=temperature,
             response_format=response_format,
+            **_launch_kwargs(launch_operation_id, provider_launch_snapshot),
         )
         return _raw_to_response(raw)
 
@@ -67,6 +81,8 @@ class OpenAICompatibleAgentLLM:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         model: str | None = None,
+        launch_operation_id: str | None = None,
+        provider_launch_snapshot: ProviderLaunchSnapshot | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[dict]:
         """Stream one provider, retrying only before the first event."""
@@ -75,17 +91,22 @@ class OpenAICompatibleAgentLLM:
         max_tokens = int(kwargs.get("max_tokens", 2048))
         temperature = kwargs.get("temperature")
         response_format = kwargs.get("response_format")
-        max_retries = 3
+        launch = _launch_kwargs(launch_operation_id, provider_launch_snapshot)
+        max_retries = (
+            3
+            if provider_launch_snapshot is None
+            or provider_launch_snapshot.supports_idempotent_launch
+            else 1
+        )
         for attempt in range(1, max_retries + 1):
             yielded_any = False
             try:
-                async for event in self._provider.chat_stream_with_tools(
-                    messages,
-                    tools=tools,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    response_format=response_format,
-                ):
+                iterator = self._provider.chat_stream_with_tools(
+                    messages, tools=tools, max_tokens=max_tokens,
+                    temperature=temperature, response_format=response_format,
+                    **launch,
+                )
+                async for event in iterator:
                     yielded_any = True
                     yield event
                 return
@@ -150,12 +171,11 @@ class OpenAICompatibleAgentLLMChain:
         for provider in self._providers:
             try:
                 response = await OpenAICompatibleAgentLLM(provider).chat_with_fallback(
-                    messages,
-                    tools=tools,
-                    model=model,
-                    **kwargs,
+                    messages, tools=tools, model=model, **kwargs,
                 )
             except LLMProviderError as exc:
+                if kwargs.get("launch_operation_id") is not None:
+                    raise
                 errors.append(
                     f"{getattr(provider, 'provider_id', '') or getattr(provider, 'name', 'openai_compatible')}: {exc}"
                 )
@@ -175,57 +195,10 @@ class OpenAICompatibleAgentLLMChain:
         model: str | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[dict]:
-        """P4-S25 A1: streaming variant — yields delta + final events.
-
-        Events forwarded straight from
-        :meth:`OpenAICompatibleProvider.chat_stream_with_tools`. The
-        agent loop converts them into AssistantDeltaEvent and an
-        AssistantMessageEvent at end. The shape:
-
-            {"type": "delta", "content": str}
-            {"type": "delta_reasoning", "content": str}
-            {"type": "final", "content", "reasoning_content",
-                              "tool_calls", "stop_reason", "model", "usage"}
-        """
-        max_tokens = int(kwargs.get("max_tokens", 2048))
-        temperature = kwargs.get("temperature")
-        response_format = kwargs.get("response_format")
-        # 2026-06-06 真机：中转 relay 经代理（Clash Verge 等）间歇掉**流式连接**，
-        # httpx 抛 ReadError/ConnectError → 整个 agent turn 立即崩（这是真机 TC-5.3
-        # 等多工具任务跑不到 ≥5 工具的根因）。加重试：流在**产出任何事件前**掉链
-        # （典型代理在连接建立/首字节阶段掉链）→ 干净重试整个流（带 backoff）。
-        # 已 yield 过事件则不重试（避免前端 MessageStream delta 重复），抛给上层
-        # ErrorEvent + 方案 B codify 处理。
-        import asyncio as _aio
-        _max_retries = 3
-        for _attempt in range(1, _max_retries + 1):
-            _yielded_any = False
-            try:
-                async for ev in self._provider.chat_stream_with_tools(
-                    messages,
-                    tools=tools,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    response_format=response_format,
-                ):
-                    _yielded_any = True
-                    yield ev
-                return  # 流正常完成
-            except Exception as exc:  # noqa: BLE001
-                _name = type(exc).__name__
-                _transient = (
-                    "Timeout" in _name
-                    or _name in (
-                        "ReadError", "ConnectError", "RemoteProtocolError",
-                        "ProtocolError", "ConnectionError", "APIConnectionError",
-                        "APITimeoutError", "WriteError", "PoolTimeout",
-                    )
-                    or isinstance(exc, (TimeoutError, ConnectionError))
-                )
-                if _yielded_any or not _transient or _attempt >= _max_retries:
-                    raise
-                await _aio.sleep(0.5 * (2 ** (_attempt - 1)))
-                # 重入循环重新 stream
+        async for event in OpenAICompatibleAgentLLM(
+            self._provider
+        ).chat_with_fallback_stream(messages, tools=tools, model=model, **kwargs):
+            yield event
 
 
 def _raw_to_response(raw: dict) -> ChatResponse:

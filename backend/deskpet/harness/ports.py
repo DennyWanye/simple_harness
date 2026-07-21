@@ -4,7 +4,10 @@ import copy
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
-from typing import Any, AsyncIterator, Mapping, Protocol
+from typing import TYPE_CHECKING, Any, AsyncIterator, Mapping, Protocol
+
+if TYPE_CHECKING:
+    from deskpet.execution.contracts import ProviderLaunchSnapshot
 from deskpet.execution.contracts import AttachmentPolicy
 from deskpet.execution.contracts import OutcomeStatus, RecoveryLease, RunContext, RunCreate, RunEvent, RunEventCandidate
 from deskpet.execution.evidence import EvidenceSelection, UNKNOWN_EVIDENCE
@@ -34,12 +37,16 @@ class DriverStart:
     request_payload: Mapping[str, Any] = field(default_factory=dict)
     capability_snapshot: Mapping[str, Any] = field(default_factory=dict)
     scoped_evidence: EvidenceSelection | None = UNKNOWN_EVIDENCE
+    launch_operation_id: str | None = None
+    provider_launch_snapshot: ProviderLaunchSnapshot | None = None
 
     def __post_init__(self) -> None:
         if not self.run_id or not self.session_id:
             raise ValueError("run_id and session_id are required")
         if self.session_projection_cursor < 0 or self.iteration < 0:
             raise ValueError("cursor and iteration must be non-negative")
+        if (self.launch_operation_id is None) != (self.provider_launch_snapshot is None):
+            raise ValueError("launch operation id and provider snapshot must be paired")
         object.__setattr__(self, "canonical_messages", tuple(MappingProxyType(copy.deepcopy(dict(item))) for item in self.canonical_messages))
         for name in ("provider_state", "completion_state", "request_payload", "capability_snapshot"):
             object.__setattr__(self, name, MappingProxyType(copy.deepcopy(dict(getattr(self, name)))))

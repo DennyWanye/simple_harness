@@ -265,6 +265,9 @@ class LegacyAgentLoopCollaborator:
         if allowed_tools is not None:
             kwargs['tool_names_filter'] = list(allowed_tools)
         kwargs['_scoped_evidence'] = request.scoped_evidence
+        if request.launch_operation_id is not None:
+            kwargs['launch_operation_id'] = request.launch_operation_id
+            kwargs['provider_launch_snapshot'] = request.provider_launch_snapshot
         iterator = self._loop.run(
             [copy.deepcopy(dict(item)) for item in request.canonical_messages],
             **kwargs,

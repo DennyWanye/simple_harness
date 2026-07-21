@@ -44,8 +44,12 @@ from typing import (
     Mapping,
     Optional,
     Protocol,
+    TYPE_CHECKING,
     Union,
 )
+
+if TYPE_CHECKING:
+    from deskpet.execution.contracts import ProviderLaunchSnapshot
 
 from agent import errors as agent_errors
 from agent.context_messages import (
@@ -1633,6 +1637,8 @@ class AgentLoop:
         trace_turn_id: Optional[str] = None,
         prepared_context: Optional[Any] = None,
         context_request_id: Optional[str] = None,
+        launch_operation_id: Optional[str] = None,
+        provider_launch_snapshot: Optional[ProviderLaunchSnapshot] = None,
         **llm_kwargs: Any,
     ) -> AsyncIterator[AgentEvent]:
         """Run the harness, optionally recording one closed structured trace tree."""
@@ -1652,6 +1658,8 @@ class AgentLoop:
                 is_sentinel_run=is_sentinel_run,
                 prepared_context=prepared_context,
                 context_request_id=context_request_id,
+                launch_operation_id=launch_operation_id,
+                provider_launch_snapshot=provider_launch_snapshot,
                 **llm_kwargs,
             ):
                 yield event
@@ -1690,6 +1698,8 @@ class AgentLoop:
             is_sentinel_run=is_sentinel_run,
             prepared_context=prepared_context,
             context_request_id=context_request_id,
+            launch_operation_id=launch_operation_id,
+            provider_launch_snapshot=provider_launch_snapshot,
             **llm_kwargs,
         )
         terminal_status: str = SpanStatus.OK
@@ -1750,6 +1760,8 @@ class AgentLoop:
         is_sentinel_run: bool = False,
         prepared_context: Optional[Any] = None,
         context_request_id: Optional[str] = None,
+        launch_operation_id: Optional[str] = None,
+        provider_launch_snapshot: Optional[ProviderLaunchSnapshot] = None,
         **llm_kwargs: Any,
     ) -> AsyncIterator[AgentEvent]:
         """Drive the ReAct loop. See module docstring for event contract.
@@ -1761,6 +1773,12 @@ class AgentLoop:
         iteration. False (default) preserves the original non-streaming
         behaviour for callers that don't need partial output.
         """
+        if (launch_operation_id is None) != (provider_launch_snapshot is None):
+            raise ValueError("launch operation id and snapshot must be paired")
+        launch_call_kwargs = {} if launch_operation_id is None else dict(
+            launch_operation_id=launch_operation_id,
+            provider_launch_snapshot=provider_launch_snapshot,
+        )
         scoped_evidence = llm_kwargs.pop("_scoped_evidence", None)
         tid = task_id or new_task_id()
         self._current_tid = tid  # 供 _pipeline_event 构造观测事件用（plans/2026-06-24-...）
@@ -2844,6 +2862,7 @@ class AgentLoop:
                                         temperature=llm_kwargs.get("temperature"),
                                         response_format=llm_kwargs.get("response_format"),
                                         tool_choice=("none" if _force_finish_next else None),
+                                        **launch_call_kwargs,
                                     ),
                                 ),
                             )
@@ -2867,6 +2886,8 @@ class AgentLoop:
                                     error_class=_authority_error,
                                 )
                                 return
+                            if launch_call_kwargs:
+                                raise
                             last_exc = exc
                             prov_id = getattr(prov, "id", f"provider_{idx}")
                             next_idx = idx + 1
@@ -2949,6 +2970,7 @@ class AgentLoop:
                         {**llm_kwargs, "tool_choice": "none"}
                         if _force_finish_next else llm_kwargs
                     )
+                    call_llm_kwargs = {**launch_call_kwargs, **call_llm_kwargs}
                     _attempt_tools = (
                         None if _force_finish_next else (tool_schemas or None)
                     )
@@ -3036,6 +3058,10 @@ class AgentLoop:
                             and not final_dict.get("tool_calls")
                         )
                     )
+                    if launch_call_kwargs and not provider_launch_snapshot.supports_idempotent_launch:
+                        needs_nonstream_fallback = False
+                        if stream_failed_with is not None:
+                            raise stream_failed_with
                     if needs_nonstream_fallback:
                         if stream_failed_with is None:
                             # Empty-stream case (the relay didn't actually stream).
@@ -3085,6 +3111,7 @@ class AgentLoop:
                         {**llm_kwargs, "tool_choice": "none"}
                         if _force_finish_next else llm_kwargs
                     )
+                    call_llm_kwargs = {**launch_call_kwargs, **call_llm_kwargs}
                     _attempt_tools = (
                         None if _force_finish_next else (tool_schemas or None)
                     )
@@ -3164,6 +3191,7 @@ class AgentLoop:
                 )
                 return
 
+            launch_call_kwargs = {}
             totals["input"] += response.usage.input_tokens
             totals["output"] += response.usage.output_tokens
             totals["cache_read"] += response.usage.cache_read_tokens
