@@ -138,12 +138,12 @@ FAULT_HOOKS = frozenset(
 )
 
 ATOMIC_OPERATIONS = (
-    ("decision_boundary", ("resolve_decision_and_advance_boundary",)),
-    ("effect_settle_boundary", ("settle_effect_and_advance_boundary",)),
-    ("terminal_delivery", ("finalize_and_enqueue_delivery",)),
-    ("child_apply_ack", ("apply_child_signal_and_ack",)),
-    ("grant_effect_claim", ("consume_grant_and_claim_effect",)),
-    ("durable_promotion", ("promote_and_persist_batch_boundary",)),
+    ("decision_boundary", ("commit_decision",)),
+    ("effect_settle_boundary", ("settle_effect",)),
+    ("terminal_delivery", ("commit_run_outcome",)),
+    ("child_apply_ack", ("ack_child_signal",)),
+    ("grant_effect_claim", ("claim_tool_call",)),
+    ("durable_promotion", ("persist_react_boundary",)),
     ("durable_child_schedule", ("commit_child_command", "schedule_child_command")),
     ("child_terminal_signal", ("finalize_child_and_enqueue_parent_signal",)),
 )
@@ -1076,19 +1076,12 @@ class SqliteExecutionUnitOfWork:
             )
         return refs
 
-    async def begin_runtime_activation(self) -> ExecutionRuntimeState:
-        """Atomically register the legacy drain manifest and close new starts."""
+    async def _advance_runtime_activation_tx(
+        self, db: aiosqlite.Connection, state: ExecutionRuntimeState
+    ) -> ExecutionRuntimeState:
+        """Advance exactly one durable activation phase in the open transaction."""
 
-        async with self._write_transaction() as db:
-            state = await self._runtime_state_tx(db)
-            if state.phase != "legacy":
-                if state.phase in {"draining", "activated", "open"}:
-                    await self._assert_persisted_manifest_tx(db, state)
-                    await db.commit()
-                    return state
-                raise RuntimeActivationError(
-                    "invalid_runtime_phase", f"unsupported runtime phase: {state.phase}"
-                )
+        if state.phase == "legacy":
             items = await self._scan_legacy_drain_tx(db)
             manifest_hash = self._manifest_hash(items)
             now = float(self._clock())
@@ -1120,24 +1113,8 @@ class SqliteExecutionUnitOfWork:
                     "activation_cas_conflict", "legacy runtime activation CAS lost"
                 )
             self._fault("activation_after_draining")
-            state = await self._runtime_state_tx(db)
-            await db.commit()
-            return state
-
-    async def activate_drained_runtime(self) -> ExecutionRuntimeState:
-        """CAS a fully drained manifest to the first kernel generation."""
-
-        async with self._write_transaction() as db:
-            state = await self._runtime_state_tx(db)
-            if state.phase in {"activated", "open"}:
-                await self._assert_persisted_manifest_tx(db, state)
-                await db.commit()
-                return state
-            if state.phase != "draining":
-                raise RuntimeActivationError(
-                    "runtime_not_draining",
-                    "runtime must register a drain manifest before activation",
-                )
+            return await self._runtime_state_tx(db)
+        if state.phase == "draining":
             await self._assert_persisted_manifest_tx(db, state)
             pending = await (
                 await db.execute(
@@ -1162,24 +1139,9 @@ class SqliteExecutionUnitOfWork:
                     "activation_cas_conflict", "draining runtime activation CAS lost"
                 )
             self._fault("activation_after_activated")
-            state = await self._runtime_state_tx(db)
-            await db.commit()
-            return state
-
-    async def open_runtime(self) -> ExecutionRuntimeState:
-        """Open ingress only after kernel-owner bootstrap has been activated."""
-
-        async with self._write_transaction() as db:
-            state = await self._runtime_state_tx(db)
-            if state.phase == "open":
-                await self._assert_persisted_manifest_tx(db, state)
-                await db.commit()
-                return state
-            if state.phase != "activated" or state.generation <= 0:
-                raise RuntimeActivationError(
-                    "runtime_not_activated",
-                    "runtime must be activated before ingress can open",
-                )
+            return await self._runtime_state_tx(db)
+        if state.phase == "activated" and state.generation > 0:
+            await self._assert_persisted_manifest_tx(db, state)
             now = float(self._clock())
             cursor = await db.execute(
                 """UPDATE execution_runtime_state SET phase='open',updated_at=?
@@ -1191,23 +1153,36 @@ class SqliteExecutionUnitOfWork:
                     "activation_cas_conflict", "activated runtime open CAS lost"
                 )
             self._fault("activation_after_open")
-            state = await self._runtime_state_tx(db)
-            await db.commit()
-            return state
-
-    async def activate_empty_runtime(self) -> ExecutionRuntimeState:
-        """Production-shaped R1-R5 activation for an isolated empty v7 DB."""
-
-        state = await self.begin_runtime_activation()
-        if state.drain_count != 0:
-            raise RuntimeActivationError(
-                "legacy_drain_required",
-                "empty-runtime activation cannot bypass registered legacy durable rows",
-            )
-        state = await self.activate_drained_runtime()
+            return await self._runtime_state_tx(db)
         if state.phase == "open":
+            await self._assert_persisted_manifest_tx(db, state)
             return state
-        return await self.open_runtime()
+        raise RuntimeActivationError(
+            "invalid_runtime_phase", f"unsupported runtime phase: {state.phase}"
+        )
+
+    async def activate_runtime(
+        self, *, require_empty: bool = True
+    ) -> ExecutionRuntimeState:
+        """Roll the durable runtime fence forward through its typed phases."""
+
+        for _ in range(3):
+            async with self._write_transaction() as db:
+                state = await self._runtime_state_tx(db)
+                if state.phase == "open":
+                    await self._assert_persisted_manifest_tx(db, state)
+                    await db.commit()
+                    return state
+                state = await self._advance_runtime_activation_tx(db, state)
+                await db.commit()
+            if state.phase == "draining" and state.drain_count:
+                if require_empty:
+                    raise RuntimeActivationError(
+                        "legacy_drain_required",
+                        "empty-runtime activation cannot bypass registered legacy durable rows",
+                    )
+                return state
+        return state
 
     async def _required_start_owner_tx(
         self, db: aiosqlite.Connection
@@ -2118,22 +2093,29 @@ class SqliteExecutionUnitOfWork:
         assert row is not None
         return self._row_to_delivery(row)
 
-    async def complete_delivery(
+    async def settle_delivery(
         self,
         delivery_id: str,
         *,
         expected_version: int,
         owner_generation: int,
+        error: str | None = None,
+        retry_at: float | None = None,
+        discard: bool = False,
     ) -> DeliveryRecord:
         now = float(self._clock())
         async with self._write_transaction() as db:
-            completed = await self.complete_delivery_tx(
-                db,
-                delivery_id,
-                expected_version=expected_version,
-                owner_generation=owner_generation,
-                now=now,
-            )
+            if error is None:
+                completed = await self.complete_delivery_tx(
+                    db, delivery_id, expected_version=expected_version,
+                    owner_generation=owner_generation, now=now,
+                )
+            else:
+                completed = await self.release_delivery_tx(
+                    db, delivery_id, expected_version=expected_version,
+                    owner_generation=owner_generation, error=error,
+                    retry_at=retry_at, discard=discard, now=now,
+                )
             await db.commit()
             return completed
 
@@ -2201,31 +2183,6 @@ class SqliteExecutionUnitOfWork:
         ).fetchone()
         assert row is not None
         return self._row_to_delivery(row)
-
-    async def release_delivery(
-        self,
-        delivery_id: str,
-        *,
-        expected_version: int,
-        owner_generation: int,
-        error: str,
-        retry_at: float | None,
-        discard: bool,
-    ) -> DeliveryRecord:
-        now = float(self._clock())
-        async with self._write_transaction() as db:
-            released = await self.release_delivery_tx(
-                db,
-                delivery_id,
-                expected_version=expected_version,
-                owner_generation=owner_generation,
-                error=error,
-                retry_at=retry_at,
-                discard=discard,
-                now=now,
-            )
-            await db.commit()
-            return released
 
     @staticmethod
     def _row_to_continuation(row: Mapping[str, Any]) -> ContinuationRecord:
@@ -2441,27 +2398,98 @@ class SqliteExecutionUnitOfWork:
         assert row is not None
         return self._row_to_continuation(row), False
 
-    async def save_continuation(
+    async def persist_react_boundary(
         self,
-        run_id: str,
-        expected_version: int,
+        run: str | RunCreate,
+        expected_continuation_version: int,
         payload: Mapping[str, Any],
         decision: DecisionOpen | None = None,
-        *, recovery_lease: RecoveryLease | None = None,
-    ) -> ContinuationRecord:
-        """CAS a complete JSON continuation and optional decision in one commit."""
+        *,
+        expected_run_version: int | None = None,
+        waiting_event: RunEventCandidate | None = None,
+        deliveries: Sequence[DeliverySpec] = (),
+        recovery_lease: RecoveryLease | None = None,
+    ) -> ContinuationRecord | tuple[CreateRunResult, ContinuationRecord]:
+        """Persist either an existing or newly promoted ReAct boundary."""
 
-        self._validate_continuation_version(expected_version)
+        self._validate_continuation_version(expected_continuation_version)
         payload_json = self._continuation_payload_json(payload)
         async with self._write_transaction() as db:
+            if isinstance(run, RunCreate):
+                if run.persistence_level is not PersistenceLevel.DURABLE:
+                    raise PersistenceRequired(
+                        "promotion_target_not_durable",
+                        "batch-boundary promotion target must be durable",
+                    )
+                if expected_run_version is None or expected_run_version < 0:
+                    raise ValueError("expected_run_version must be non-negative")
+                if waiting_event is None and deliveries:
+                    raise IdempotencyConflict(
+                        "delivery_without_event",
+                        "batch-boundary deliveries require a waiting event",
+                    )
+                if waiting_event is not None and waiting_event.status is not OutcomeStatus.WAITING:
+                    raise IdempotencyConflict(
+                        "invalid_waiting_event",
+                        "batch-boundary event must carry waiting status",
+                    )
+                row, created = await self._insert_run_tx(
+                    db, run, version=expected_run_version + 1
+                )
+                if str(row["persistence_level"]) != PersistenceLevel.DURABLE.value:
+                    raise PersistenceRequired(
+                        "promotion_not_durable", "persisted promotion is not durable"
+                    )
+                self._fault("batch_boundary_after_promotion")
+                now = float(self._clock())
+                record, replayed = await self._save_continuation_tx(
+                    db, run=row, expected_version=expected_continuation_version,
+                    payload_json=payload_json, decision=decision, now=now,
+                )
+                if not created and not replayed and int(row["version"]) != expected_run_version:
+                    raise VersionConflict(
+                        "stale_run_version",
+                        f"expected run version {expected_run_version}, found {row['version']}",
+                    )
+                self._fault("batch_boundary_after_continuation")
+                if decision is not None or waiting_event is not None:
+                    cursor = await db.execute(
+                        """UPDATE execution_runs SET status='waiting',updated_at=?
+                        WHERE run_id=? AND terminal_event_id IS NULL
+                        AND status IN ('created','queued','running','waiting')""",
+                        (now, run.run_id),
+                    )
+                    if cursor.rowcount != 1:
+                        raise DecisionConflict(
+                            "run_not_signalable",
+                            "cancelled or terminal runs cannot persist a waiting boundary",
+                        )
+                if waiting_event is not None:
+                    _, row, _ = await self._append_event_tx(
+                        db, row, expected_version=int(row["version"]),
+                        event=waiting_event, deliveries=deliveries,
+                    )
+                else:
+                    row = await (
+                        await db.execute(
+                            "SELECT * FROM execution_runs WHERE run_id=?", (run.run_id,)
+                        )
+                    ).fetchone()
+                    assert row is not None
+                self._fault("batch_boundary_after_waiting_event")
+                result = CreateRunResult(self._row_to_record(row), created)
+                self._fault("batch_boundary_before_commit")
+                await db.commit()
+                return result, record
+            run_id = run
             if recovery_lease is not None:
                 await self._assert_recovery_fence_tx(db, recovery_lease, run_id=run_id)
-            run = await self._continuation_run_tx(db, run_id)
+            run_row = await self._continuation_run_tx(db, run_id)
             now = float(self._clock())
             record, _ = await self._save_continuation_tx(
                 db,
-                run=run,
-                expected_version=expected_version,
+                run=run_row,
+                expected_version=expected_continuation_version,
                 payload_json=payload_json,
                 decision=decision,
                 now=now,
@@ -2469,110 +2497,6 @@ class SqliteExecutionUnitOfWork:
             self._fault("continuation_before_commit")
             await db.commit()
             return record
-
-    async def promote_and_persist_batch_boundary(
-        self,
-        spec: RunCreate,
-        *,
-        expected_run_version: int,
-        expected_continuation_version: int,
-        payload: Mapping[str, Any],
-        decision: DecisionOpen | None = None,
-        waiting_event: RunEventCandidate | None = None,
-        deliveries: Sequence[DeliverySpec] = (),
-    ) -> tuple[CreateRunResult, ContinuationRecord]:
-        """Atomically promote a run and persist its complete suspend boundary.
-
-        A new durable row advances the bounded ephemeral version by one.  A
-        newly appended waiting event advances it once more; the returned run
-        record is always the authoritative post-commit version.  An already
-        durable row is not promoted again.
-        """
-
-        if spec.persistence_level is not PersistenceLevel.DURABLE:
-            raise PersistenceRequired(
-                "promotion_target_not_durable",
-                "batch-boundary promotion target must be durable",
-            )
-        if (
-            not isinstance(expected_run_version, int)
-            or isinstance(expected_run_version, bool)
-            or expected_run_version < 0
-        ):
-            raise ValueError("expected_run_version must be non-negative")
-        self._validate_continuation_version(expected_continuation_version)
-        if waiting_event is None and deliveries:
-            raise IdempotencyConflict(
-                "delivery_without_event",
-                "batch-boundary deliveries require a waiting event",
-            )
-        if waiting_event is not None and waiting_event.status is not OutcomeStatus.WAITING:
-            raise IdempotencyConflict(
-                "invalid_waiting_event",
-                "batch-boundary event must carry waiting status",
-            )
-        payload_json = self._continuation_payload_json(payload)
-        async with self._write_transaction() as db:
-            row, created = await self._insert_run_tx(
-                db, spec, version=expected_run_version + 1
-            )
-            if str(row["persistence_level"]) != PersistenceLevel.DURABLE.value:
-                raise PersistenceRequired(
-                    "promotion_not_durable", "persisted promotion is not durable"
-                )
-            self._fault("batch_boundary_after_promotion")
-            now = float(self._clock())
-            continuation, replayed = await self._save_continuation_tx(
-                db,
-                run=row,
-                expected_version=expected_continuation_version,
-                payload_json=payload_json,
-                decision=decision,
-                now=now,
-            )
-            if (
-                not created
-                and not replayed
-                and int(row["version"]) != expected_run_version
-            ):
-                raise VersionConflict(
-                    "stale_run_version",
-                    f"expected run version {expected_run_version}, found {row['version']}",
-                )
-            self._fault("batch_boundary_after_continuation")
-            if decision is not None or waiting_event is not None:
-                cursor = await db.execute(
-                    """UPDATE execution_runs SET status='waiting',updated_at=?
-                    WHERE run_id=? AND terminal_event_id IS NULL
-                    AND status IN ('created','queued','running','waiting')""",
-                    (now, spec.run_id),
-                )
-                if cursor.rowcount != 1:
-                    raise DecisionConflict(
-                        "run_not_signalable",
-                        "cancelled or terminal runs cannot persist a waiting boundary",
-                    )
-            if waiting_event is not None:
-                _, row, _ = await self._append_event_tx(
-                    db,
-                    row,
-                    expected_version=int(row["version"]),
-                    event=waiting_event,
-                    deliveries=deliveries,
-                )
-            else:
-                refreshed = await (
-                    await db.execute(
-                        "SELECT * FROM execution_runs WHERE run_id=?", (spec.run_id,)
-                    )
-                ).fetchone()
-                assert refreshed is not None
-                row = refreshed
-            self._fault("batch_boundary_after_waiting_event")
-            result = CreateRunResult(self._row_to_record(row), created)
-            self._fault("batch_boundary_before_commit")
-            await db.commit()
-            return result, continuation
 
     async def load_continuation(self, run_id: str) -> ContinuationRecord | None:
         async with self._read_connection() as db:
@@ -2605,127 +2529,6 @@ class SqliteExecutionUnitOfWork:
             RunRef(record.run_id, expected_session_id), actor, record
         )
         return record
-
-    async def open_decision(
-        self,
-        request: DecisionOpen,
-        actor: ActorContext,
-        *,
-        expected_run_version: int,
-    ) -> DecisionRecord:
-        if (
-            not isinstance(expected_run_version, int)
-            or isinstance(expected_run_version, bool)
-            or expected_run_version < 0
-        ):
-            raise ValueError("expected_run_version must be non-negative")
-        now = float(self._clock())
-        async with self._write_transaction() as db:
-            run_row = await (
-                await db.execute(
-                    "SELECT * FROM execution_runs WHERE run_id=?", (request.run_id,)
-                )
-            ).fetchone()
-            if run_row is None:
-                raise RunNotFound(
-                    "run_not_found", f"execution run does not exist: {request.run_id}"
-                )
-            run = self._authorize_run_row(
-                run_row,
-                expected_session_id=actor.session_id,
-                actor=actor,
-            )
-            existing_row = await (
-                await db.execute(
-                    """SELECT * FROM execution_decisions
-                    WHERE decision_id=? OR (run_id=? AND nonce=?)
-                    ORDER BY CASE WHEN decision_id=? THEN 0 ELSE 1 END LIMIT 1""",
-                    (
-                        request.decision_id,
-                        request.run_id,
-                        request.nonce,
-                        request.decision_id,
-                    ),
-                )
-            ).fetchone()
-            if existing_row is not None:
-                existing = self._row_to_decision(existing_row)
-                self._assert_decision_intent(existing, request)
-                await db.commit()
-                return existing
-            if run.persistence_level is not PersistenceLevel.DURABLE:
-                raise PersistenceRequired(
-                    "decision_requires_durable_run",
-                    "a run must be durable before opening a decision",
-                )
-            if run.version != expected_run_version:
-                raise VersionConflict(
-                    "stale_run_version",
-                    f"expected run version {expected_run_version}, found {run.version}",
-                )
-            if run.status in TERMINAL_RUN_STATUSES or run.status is RunStatus.CANCEL_REQUESTED:
-                raise DecisionConflict(
-                    "run_not_signalable", "cancelled or terminal runs cannot open decisions"
-                )
-            if request.expires_at is not None and request.expires_at <= now:
-                raise DecisionConflict(
-                    "decision_expired", "cannot open an already expired decision"
-                )
-            if (
-                request.capability_hash is not None
-                and request.capability_hash != run.context.capability_hash
-            ):
-                raise DecisionConflict(
-                    "decision_binding_mismatch",
-                    "decision capability does not match the durable run context",
-                )
-            cursor = await db.execute(
-                """UPDATE execution_runs SET status='waiting',version=version+1,updated_at=?
-                WHERE run_id=? AND version=? AND terminal_event_id IS NULL
-                AND status IN ('created','queued','running','waiting')""",
-                (now, request.run_id, expected_run_version),
-            )
-            if cursor.rowcount != 1:
-                raise VersionConflict(
-                    "stale_run_version", "run changed before decision open CAS"
-                )
-            await db.execute(
-                """INSERT INTO execution_decisions(
-                decision_id,schema_version,run_id,nonce,kind,status,
-                prompt_schema_version,prompt_json,response_schema_version,response_json,
-                domain_kind,domain_id,call_id,effect_id,tool_name,args_hash,
-                capability_hash,scope_hash,decision_version,expires_at,created_at,resolved_at
-                ) VALUES(?,?,?,?,?,'open',?,?,NULL,NULL,?,?,?,?,?,?,?,?,0,?,?,NULL)""",
-                (
-                    request.decision_id,
-                    request.schema_version,
-                    request.run_id,
-                    request.nonce,
-                    request.kind.value,
-                    request.prompt_schema_version,
-                    canonical_json(thaw_json(request.prompt)),
-                    request.domain_kind,
-                    request.domain_id,
-                    request.call_id,
-                    request.effect_id,
-                    request.tool_name,
-                    request.args_hash,
-                    request.capability_hash,
-                    request.scope_hash,
-                    request.expires_at,
-                    now,
-                ),
-            )
-            self._fault("decision_open_before_commit")
-            row = await (
-                await db.execute(
-                    "SELECT * FROM execution_decisions WHERE decision_id=?",
-                    (request.decision_id,),
-                )
-            ).fetchone()
-            assert row is not None
-            await db.commit()
-            return self._row_to_decision(row)
 
     async def get_decision(
         self,
@@ -2923,41 +2726,86 @@ class SqliteExecutionUnitOfWork:
         assert resolved_row is not None
         return self._row_to_decision(resolved_row), authorization, None
 
-    async def resolve_decision(
+    async def commit_decision(
         self,
-        signal: DecisionSignal,
-        actor: ActorContext,
-    ) -> tuple[DecisionRecord, DecisionAuthorization | None]:
-        async with self._write_transaction() as db:
-            decision, authorization, expired = await self._resolve_decision_tx(
-                db, signal, actor, now=float(self._clock())
-            )
-            self._fault("decision_resolve_before_commit")
-            await db.commit()
-            if expired is not None:
-                raise expired
-            return decision, authorization
-
-    async def resolve_decision_and_advance_boundary(
-        self,
-        signal: DecisionSignal,
+        signal: DecisionOpen | DecisionSignal,
         actor: ActorContext,
         *,
-        expected_continuation_version: int,
-        continuation_payload: Mapping[str, Any],
-        resumed_event: RunEventCandidate,
+        expected_run_version: int | None = None,
+        expected_continuation_version: int | None = None,
+        continuation_payload: Mapping[str, Any] | None = None,
+        resumed_event: RunEventCandidate | None = None,
         next_decision: DecisionOpen | None = None,
         deliveries: Sequence[DeliverySpec] = (),
-    ) -> tuple[
-        DecisionRecord,
-        DecisionAuthorization | None,
-        ContinuationRecord,
-        RunEvent,
+    ) -> tuple[DecisionRecord, DecisionAuthorization | None] | tuple[
+        DecisionRecord, DecisionAuthorization | None, ContinuationRecord, RunEvent
     ]:
-        """Resolve a decision and persist its resumed boundary in one commit."""
+        """Open or resolve a decision, optionally with its resumed boundary."""
 
-        self._validate_continuation_version(expected_continuation_version)
-        payload_json = self._continuation_payload_json(continuation_payload)
+        advances_boundary = continuation_payload is not None or resumed_event is not None
+        if isinstance(signal, DecisionOpen):
+            if advances_boundary or expected_run_version is None or expected_run_version < 0:
+                raise ValueError("decision open requires a non-negative run version")
+            async with self._write_transaction() as db:
+                now = float(self._clock())
+                run_row = await (await db.execute(
+                    "SELECT * FROM execution_runs WHERE run_id=?", (signal.run_id,)
+                )).fetchone()
+                if run_row is None:
+                    raise RunNotFound(
+                        "run_not_found", f"execution run does not exist: {signal.run_id}"
+                    )
+                run = self._authorize_run_row(
+                    run_row, expected_session_id=actor.session_id, actor=actor
+                )
+                existing = await (await db.execute(
+                    """SELECT * FROM execution_decisions
+                    WHERE decision_id=? OR (run_id=? AND nonce=?)
+                    ORDER BY CASE WHEN decision_id=? THEN 0 ELSE 1 END LIMIT 1""",
+                    (signal.decision_id, signal.run_id, signal.nonce, signal.decision_id),
+                )).fetchone()
+                if existing is not None:
+                    record = self._row_to_decision(existing)
+                    self._assert_decision_intent(record, signal)
+                    await db.commit()
+                    return record, None
+                if run.persistence_level is not PersistenceLevel.DURABLE:
+                    raise PersistenceRequired(
+                        "decision_requires_durable_run",
+                        "a run must be durable before opening a decision",
+                    )
+                if run.version != expected_run_version:
+                    raise VersionConflict(
+                        "stale_run_version",
+                        f"expected run version {expected_run_version}, found {run.version}",
+                    )
+                cursor = await db.execute(
+                    """UPDATE execution_runs SET status='waiting',version=version+1,updated_at=?
+                    WHERE run_id=? AND version=? AND terminal_event_id IS NULL
+                    AND status IN ('created','queued','running','waiting')""",
+                    (now, signal.run_id, expected_run_version),
+                )
+                if cursor.rowcount != 1:
+                    raise DecisionConflict(
+                        "run_not_signalable",
+                        "cancelled or terminal runs cannot open decisions",
+                    )
+                await self._insert_continuation_decision_tx(
+                    db, signal, run=run_row, now=now
+                )
+                self._fault("decision_open_before_commit")
+                row = await (await db.execute(
+                    "SELECT * FROM execution_decisions WHERE decision_id=?",
+                    (signal.decision_id,),
+                )).fetchone()
+                assert row is not None
+                await db.commit()
+                return self._row_to_decision(row), None
+        if advances_boundary:
+            if expected_continuation_version is None or resumed_event is None or continuation_payload is None:
+                raise ValueError("decision boundary requires version, payload and resumed event")
+            self._validate_continuation_version(expected_continuation_version)
+            payload_json = self._continuation_payload_json(continuation_payload)
         async with self._write_transaction() as db:
             now = float(self._clock())
             decision, authorization, expired = await self._resolve_decision_tx(
@@ -2966,11 +2814,15 @@ class SqliteExecutionUnitOfWork:
             if expired is not None:
                 await db.commit()
                 raise expired
+            if not advances_boundary:
+                self._fault("decision_resolve_before_commit")
+                await db.commit()
+                return decision, authorization
             run = await self._continuation_run_tx(db, signal.run_id)
             continuation, _ = await self._save_continuation_tx(
                 db,
                 run=run,
-                expected_version=expected_continuation_version,
+                expected_version=int(expected_continuation_version),
                 payload_json=payload_json,
                 decision=next_decision,
                 now=now,
@@ -3201,22 +3053,7 @@ class SqliteExecutionUnitOfWork:
         assert consumed is not None
         return self._row_to_authorization(consumed), None
 
-    async def consume_authorization(
-        self,
-        request: GrantConsume,
-        actor: ActorContext,
-    ) -> DecisionAuthorization:
-        async with self._write_transaction() as db:
-            authorization, expired = await self._consume_authorization_tx(
-                db, request, actor, now=float(self._clock())
-            )
-            self._fault("grant_consume_before_commit")
-            await db.commit()
-            if expired is not None:
-                raise expired
-            return authorization
-
-    async def consume_grant_and_claim_effect(
+    async def claim_tool_call(
         self,
         request: GrantConsume | None,
         actor: ActorContext,
@@ -3229,17 +3066,32 @@ class SqliteExecutionUnitOfWork:
         args_hash: str | None = None,
         capability_hash: str | None = None,
         scope_hash: str | None = None,
-        effect_type: str,
-        policy: Mapping[str, Any],
-        prepared: Mapping[str, Any],
-        worker_owner: str,
-        worker_epoch: int,
+        effect_type: str | None = None,
+        policy: Mapping[str, Any] | None = None,
+        prepared: Mapping[str, Any] | None = None,
+        worker_owner: str = "",
+        worker_epoch: int = 0,
         recovery_lease: RecoveryLease | None = None,
-    ) -> ExecutionEffectClaim:
-        """Consume a one-shot grant and start its first fenced effect attempt."""
+    ) -> DecisionAuthorization | ExecutionEffectClaim:
+        """Consume authorization, optionally claiming its fenced tool effect."""
+
+        if effect_type is None:
+            if request is None:
+                raise ValueError("authorization consumption requires a grant")
+            async with self._write_transaction() as db:
+                authorization, expired = await self._consume_authorization_tx(
+                    db, request, actor, now=float(self._clock())
+                )
+                self._fault("grant_consume_before_commit")
+                await db.commit()
+                if expired is not None:
+                    raise expired
+                return authorization
 
         if not effect_type or not worker_owner or worker_epoch < 1:
             raise ValueError("effect type, worker owner and positive epoch are required")
+        if policy is None or prepared is None:
+            raise ValueError("effect claim requires policy and prepared payload")
         if request is not None:
             run_id, expected_session_id, call_id, effect_id, tool_name = (
                 request.run_id, request.expected_session_id, request.call_id,
@@ -3404,75 +3256,62 @@ class SqliteExecutionUnitOfWork:
                 authorization,
             )
 
-    async def mark_effect_unknown(
+    async def _mark_effect_unknown_tx(
         self,
+        db: aiosqlite.Connection,
         effect_id: str,
         *,
         expected_effect_version: int,
         attempt_no: int,
         worker_owner: str,
         worker_epoch: int,
-        outcome: Mapping[str, Any],
+        outcome_json: str,
         recovery_lease: RecoveryLease | None = None,
     ) -> None:
-        """Durably fence an indeterminate physical write without advancing its boundary."""
+        effect = await (await db.execute(
+            "SELECT * FROM execution_effects WHERE effect_id=?", (effect_id,)
+        )).fetchone()
+        if effect is None:
+            raise RunNotFound("effect_not_found", "execution effect does not exist")
+        await self._assert_optional_recovery_fence_tx(
+            db, recovery_lease, str(effect["run_id"])
+        )
+        if str(effect["status"]) == "unknown":
+            if (int(effect["effect_version"]) == expected_effect_version + 1
+                    and str(effect["outcome_json"] or "") == outcome_json):
+                return
+            raise IdempotencyConflict(
+                "effect_unknown_conflict", "effect has another unknown intent"
+            )
+        if (str(effect["status"]) != "running"
+                or int(effect["effect_version"]) != expected_effect_version):
+            raise VersionConflict(
+                "stale_effect_version", "effect changed before unknown marking"
+            )
+        now = float(self._clock())
+        attempt = await db.execute(
+            """UPDATE execution_effect_attempts SET status='unknown',outcome_json=?,
+            updated_at=?,ended_at=? WHERE effect_id=? AND attempt_no=?
+            AND status='running' AND worker_owner=? AND worker_epoch=?""",
+            (outcome_json, now, now, effect_id, attempt_no, worker_owner, worker_epoch),
+        )
+        if attempt.rowcount != 1:
+            raise VersionConflict(
+                "stale_effect_attempt", "effect attempt owner or epoch changed"
+            )
+        updated = await db.execute(
+            """UPDATE execution_effects SET status='unknown',outcome_json=?,
+            effect_version=effect_version+1,updated_at=?,ended_at=?
+            WHERE effect_id=? AND effect_version=? AND status='running'""",
+            (outcome_json, now, now, effect_id, expected_effect_version),
+        )
+        if updated.rowcount != 1:
+            raise VersionConflict(
+                "stale_effect_version", "effect changed before unknown marking"
+            )
+        self._fault("effect_unknown_before_commit")
 
-        if attempt_no < 1 or worker_epoch < 1 or not worker_owner:
-            raise ValueError("invalid effect attempt fence")
-        outcome_json = canonical_json(thaw_json(outcome))
-        async with self._write_transaction() as db:
-            effect = await (
-                await db.execute(
-                    "SELECT * FROM execution_effects WHERE effect_id=?", (effect_id,)
-                )
-            ).fetchone()
-            if effect is None:
-                raise RunNotFound("effect_not_found", "execution effect does not exist")
-            await self._assert_optional_recovery_fence_tx(
-                db, recovery_lease, str(effect["run_id"])
-            )
-            if str(effect["status"]) == "unknown":
-                if (
-                    int(effect["effect_version"]) == expected_effect_version + 1
-                    and str(effect["outcome_json"] or "") == outcome_json
-                ):
-                    await db.commit()
-                    return
-                raise IdempotencyConflict(
-                    "effect_unknown_conflict", "effect has another unknown intent"
-                )
-            if (
-                str(effect["status"]) != "running"
-                or int(effect["effect_version"]) != expected_effect_version
-            ):
-                raise VersionConflict(
-                    "stale_effect_version", "effect changed before unknown marking"
-                )
-            now = float(self._clock())
-            attempt = await db.execute(
-                """UPDATE execution_effect_attempts SET status='unknown',outcome_json=?,
-                updated_at=?,ended_at=? WHERE effect_id=? AND attempt_no=?
-                AND status='running' AND worker_owner=? AND worker_epoch=?""",
-                (outcome_json, now, now, effect_id, attempt_no, worker_owner, worker_epoch),
-            )
-            if attempt.rowcount != 1:
-                raise VersionConflict(
-                    "stale_effect_attempt", "effect attempt owner or epoch changed"
-                )
-            updated = await db.execute(
-                """UPDATE execution_effects SET status='unknown',outcome_json=?,
-                effect_version=effect_version+1,updated_at=?,ended_at=?
-                WHERE effect_id=? AND effect_version=? AND status='running'""",
-                (outcome_json, now, now, effect_id, expected_effect_version),
-            )
-            if updated.rowcount != 1:
-                raise VersionConflict(
-                    "stale_effect_version", "effect changed before unknown marking"
-                )
-            self._fault("effect_unknown_before_commit")
-            await db.commit()
-
-    async def settle_effect_and_advance_boundary(
+    async def settle_effect(
         self,
         effect_id: str,
         *,
@@ -3480,26 +3319,42 @@ class SqliteExecutionUnitOfWork:
         attempt_no: int,
         worker_owner: str,
         worker_epoch: int,
-        status: str,
+        status: str = "unknown",
         outcome: Mapping[str, Any],
-        receipt_ref: str | None,
-        artifact_refs: Sequence[str],
-        node_execution_id: str,
-        checkpoint_ns: str,
-        checkpoint_id: str,
-        expected_continuation_version: int,
-        continuation_payload: Mapping[str, Any],
-        event: RunEventCandidate,
+        receipt_ref: str | None = None,
+        artifact_refs: Sequence[str] = (),
+        node_execution_id: str | None = None,
+        checkpoint_ns: str | None = None,
+        checkpoint_id: str | None = None,
+        expected_continuation_version: int | None = None,
+        continuation_payload: Mapping[str, Any] | None = None,
+        event: RunEventCandidate | None = None,
         deliveries: Sequence[DeliverySpec] = (),
         recovery_lease: RecoveryLease | None = None,
         reconciliation: bool = False,
         evidence_verified: bool = False,
-    ) -> ExecutionEffectSettlement:
-        """Settle one fenced attempt and persist the recoverable next boundary."""
+    ) -> ExecutionEffectSettlement | None:
+        """Fence an unknown effect or settle it with the next durable boundary."""
 
+        advances_boundary = continuation_payload is not None or event is not None
         allowed = {"succeeded", "failed", "accepted", "unknown", "cancelled"}
         if status not in allowed or attempt_no < 1 or worker_epoch < 1 or not worker_owner:
             raise ValueError("invalid effect settlement fence or status")
+        outcome_json = canonical_json(thaw_json(outcome))
+        if not advances_boundary:
+            async with self._write_transaction() as db:
+                await self._mark_effect_unknown_tx(
+                    db, effect_id, expected_effect_version=expected_effect_version,
+                    attempt_no=attempt_no, worker_owner=worker_owner,
+                    worker_epoch=worker_epoch, outcome_json=outcome_json,
+                    recovery_lease=recovery_lease,
+                )
+                await db.commit()
+                return None
+        if (expected_continuation_version is None or continuation_payload is None
+                or event is None or node_execution_id is None
+                or checkpoint_ns is None or checkpoint_id is None):
+            raise ValueError("effect boundary requires continuation, event and checkpoint identity")
         if reconciliation:
             if recovery_lease is None:
                 raise StaleRecoveryLease("effect reconciliation requires a recovery lease")
@@ -3511,7 +3366,6 @@ class SqliteExecutionUnitOfWork:
                 else "unknown"
             )
         self._validate_continuation_version(expected_continuation_version)
-        outcome_json = canonical_json(thaw_json(outcome))
         artifacts_json = canonical_json([str(item) for item in artifact_refs])
         payload_json = self._continuation_payload_json(continuation_payload)
         async with self._write_transaction() as db:
@@ -3622,7 +3476,7 @@ class SqliteExecutionUnitOfWork:
             continuation, _ = await self._save_continuation_tx(
                 db,
                 run=run,
-                expected_version=expected_continuation_version,
+                expected_version=int(expected_continuation_version),
                 payload_json=payload_json,
                 decision=None,
                 now=now,
@@ -3653,18 +3507,86 @@ class SqliteExecutionUnitOfWork:
             RunStatus.CANCELLED: OutcomeStatus.CANCELLED,
         }[status]
 
-    async def finalize_and_enqueue_delivery(
+    async def commit_run_outcome(
         self,
         run_id: str,
         *,
         expected_version: int,
-        terminal_status: RunStatus,
+        terminal_status: RunStatus | None = None,
         event: RunEventCandidate,
         deliveries: Sequence[DeliverySpec] = (),
         parent_signal_operation_id: str | None = None,
         parent_signal_value: Any = None,
         recovery_lease: RecoveryLease | None = None,
-    ) -> FinalizeRunResult:
+        cancel_reason: str | None = None,
+    ) -> FinalizeRunResult | RunRecord:
+        if terminal_status is None:
+            reason = str(cancel_reason or "").strip()
+            if not reason or event.status != OutcomeStatus.CANCEL_REQUESTED:
+                raise TerminalConflict(
+                    "invalid_cancel_request",
+                    "cancel requires a reason and cancel_requested event",
+                )
+            async with self._write_transaction() as db:
+                run = await (await db.execute(
+                    "SELECT * FROM execution_runs WHERE run_id=?", (run_id,)
+                )).fetchone()
+                if run is None:
+                    raise RunNotFound(
+                        "run_not_found", f"execution run does not exist: {run_id}"
+                    )
+                if str(run["status"]) == RunStatus.CANCEL_REQUESTED.value:
+                    existing = await (await db.execute(
+                        "SELECT * FROM execution_events WHERE run_id=? AND event_key=?",
+                        (run_id, event.event_key),
+                    )).fetchone()
+                    if existing is None or str(run["cancel_reason"] or "") != reason:
+                        raise IdempotencyConflict(
+                            "cancel_intent_conflict",
+                            "another cancel intent already owns the run",
+                        )
+                    self._assert_event_matches(existing, run, event)
+                    await self._assert_delivery_set_tx(
+                        db, str(existing["event_id"]), deliveries
+                    )
+                    await db.commit()
+                    return self._row_to_record(run)
+                _, updated, idempotent = await self._append_event_tx(
+                    db, run, expected_version=expected_version,
+                    event=event, deliveries=deliveries,
+                )
+                if idempotent:
+                    if (str(updated["status"]) != RunStatus.CANCEL_REQUESTED.value
+                            or str(updated["cancel_reason"] or "") != reason):
+                        raise IdempotencyConflict(
+                            "cancel_intent_conflict",
+                            "cancel event exists without the same coarse cancel intent",
+                        )
+                else:
+                    cursor = await db.execute(
+                        """UPDATE execution_runs SET status='cancel_requested',cancel_reason=?,
+                        updated_at=? WHERE run_id=? AND version=?
+                        AND terminal_event_id IS NULL""",
+                        (reason, self._clock(), run_id, int(updated["version"])),
+                    )
+                    if cursor.rowcount != 1:
+                        raise VersionConflict(
+                            "stale_run_version", "run changed before cancel commit"
+                        )
+                    await db.execute(
+                        """UPDATE workflow_runs SET status='cancel_requested',cancel_reason=?,
+                        lease_owner=NULL,lease_expires_at=NULL,heartbeat_at=NULL,
+                        lease_epoch=lease_epoch+1,run_version=run_version+1,updated_at=?
+                        WHERE run_id=? AND status NOT IN ('completed','failed','cancelled')""",
+                        (reason, self._clock(), run_id),
+                    )
+                self._fault("cancel_before_commit")
+                result = await (await db.execute(
+                    "SELECT * FROM execution_runs WHERE run_id=?", (run_id,)
+                )).fetchone()
+                assert result is not None
+                await db.commit()
+                return self._row_to_record(result)
         terminal_status = RunStatus(terminal_status)
         if terminal_status not in TERMINAL_RUN_STATUSES:
             raise TerminalConflict(
@@ -3863,7 +3785,7 @@ class SqliteExecutionUnitOfWork:
         command = await self.get_child_command(operation_id)
         if command is None:
             raise RunNotFound("child_command_not_found", "child command does not exist")
-        return await self.finalize_and_enqueue_delivery(
+        result = await self.commit_run_outcome(
             command.child_run_id,
             expected_version=expected_version,
             terminal_status=terminal_status,
@@ -3873,93 +3795,8 @@ class SqliteExecutionUnitOfWork:
             parent_signal_value=value,
             recovery_lease=recovery_lease,
         )
-
-    async def request_cancel(
-        self,
-        run_id: str,
-        *,
-        expected_version: int,
-        reason: str,
-        event: RunEventCandidate,
-        deliveries: Sequence[DeliverySpec] = (),
-    ) -> RunRecord:
-        reason = str(reason).strip()
-        if not reason or event.status != OutcomeStatus.CANCEL_REQUESTED:
-            raise TerminalConflict(
-                "invalid_cancel_request", "cancel requires a reason and cancel_requested event"
-            )
-        async with self._write_transaction() as db:
-            run = await (
-                await db.execute("SELECT * FROM execution_runs WHERE run_id=?", (run_id,))
-            ).fetchone()
-            if run is None:
-                raise RunNotFound("run_not_found", f"execution run does not exist: {run_id}")
-            if str(run["status"]) == RunStatus.CANCEL_REQUESTED.value:
-                existing = await (
-                    await db.execute(
-                        """SELECT * FROM execution_events
-                        WHERE run_id=? AND event_key=?""",
-                        (run_id, event.event_key),
-                    )
-                ).fetchone()
-                if (
-                    existing is None
-                    or str(run["cancel_reason"] or "") != reason
-                ):
-                    raise IdempotencyConflict(
-                        "cancel_intent_conflict",
-                        "another cancel intent already owns the run",
-                    )
-                self._assert_event_matches(existing, run, event)
-                await self._assert_delivery_set_tx(
-                    db, str(existing["event_id"]), deliveries
-                )
-                await db.commit()
-                return self._row_to_record(run)
-            stored, updated, idempotent = await self._append_event_tx(
-                db,
-                run,
-                expected_version=expected_version,
-                event=event,
-                deliveries=deliveries,
-            )
-            del stored
-            if idempotent:
-                if (
-                    str(updated["status"]) != RunStatus.CANCEL_REQUESTED.value
-                    or str(updated["cancel_reason"] or "") != reason
-                ):
-                    raise IdempotencyConflict(
-                        "cancel_intent_conflict",
-                        "cancel event exists without the same coarse cancel intent",
-                    )
-            else:
-                cursor = await db.execute(
-                    """UPDATE execution_runs SET status='cancel_requested',cancel_reason=?,
-                    updated_at=? WHERE run_id=? AND version=?
-                    AND terminal_event_id IS NULL""",
-                    (reason, self._clock(), run_id, int(updated["version"])),
-                )
-                if cursor.rowcount != 1:
-                    raise VersionConflict(
-                        "stale_run_version", "run changed before cancel commit"
-                    )
-                await db.execute(
-                    """UPDATE workflow_runs SET status='cancel_requested',cancel_reason=?,
-                    lease_owner=NULL,lease_expires_at=NULL,heartbeat_at=NULL,
-                    lease_epoch=lease_epoch+1,run_version=run_version+1,updated_at=?
-                    WHERE run_id=? AND status NOT IN ('completed','failed','cancelled')""",
-                    (reason, self._clock(), run_id),
-                )
-            self._fault("cancel_before_commit")
-            result = await (
-                await db.execute(
-                    "SELECT * FROM execution_runs WHERE run_id=?", (run_id,)
-                )
-            ).fetchone()
-            assert result is not None
-            await db.commit()
-            return self._row_to_record(result)
+        assert isinstance(result, FinalizeRunResult)
+        return result
 
     async def commit_child_command(
         self, intent: ChildCommandIntent, *, recovery_lease: RecoveryLease | None = None
@@ -4460,44 +4297,6 @@ class SqliteExecutionUnitOfWork:
             assert row is not None
         return self._row_to_child_signal(row)
 
-    async def discard_terminal_detached_child_signal(
-        self, signal_id: str
-    ) -> ChildSignalRecord:
-        async with self._write_transaction() as db:
-            row = await (
-                await db.execute(
-                    """SELECT signal.delivered_at,parent.status AS parent_status,
-                    parent.owner_kind,parent.owner_generation,command.join_policy
-                    FROM execution_child_signal_inbox AS signal
-                    JOIN execution_child_commands AS command
-                      ON command.operation_id=signal.operation_id
-                    JOIN execution_runs AS parent ON parent.run_id=signal.parent_run_id
-                    WHERE signal.signal_id=?""",
-                    (signal_id,),
-                )
-            ).fetchone()
-            if row is None:
-                raise RunNotFound("child_signal_not_found", "child signal does not exist")
-            owner = await self._required_start_owner_tx(db)
-            if (str(row["owner_kind"]), int(row["owner_generation"])) != owner:
-                raise RuntimeActivationError(
-                    "child_signal_owner_fenced", "parent belongs to another runtime owner"
-                )
-            if RunStatus(str(row["parent_status"])) not in TERMINAL_RUN_STATUSES:
-                raise RunIdentityConflict(
-                    "parent_not_terminal", "only a terminal parent may discard a child signal"
-                )
-            if str(row["join_policy"]) != AttachmentPolicy.DETACHED.value:
-                raise RunIdentityConflict(
-                    "attached_child_signal_after_parent_terminal",
-                    "attached child signal cannot be discarded after parent terminal",
-                )
-            record = await self._acknowledge_child_signal_tx(
-                db, signal_id, now=float(self._clock())
-            )
-            await db.commit()
-            return record
-
     async def prepare_workflow_child_resume(
         self, signal_id: str, *, recovery_lease: RecoveryLease
     ) -> DecisionRecord:
@@ -4584,18 +4383,57 @@ class SqliteExecutionUnitOfWork:
             await db.commit()
             return self._row_to_decision(resolved)
 
-    async def apply_child_signal_and_ack(
+    async def ack_child_signal(
         self,
         signal_id: str,
         *,
-        expected_continuation_version: int,
-        continuation_payload: Mapping[str, Any],
-        event: RunEventCandidate,
+        expected_continuation_version: int | None = None,
+        continuation_payload: Mapping[str, Any] | None = None,
+        event: RunEventCandidate | None = None,
         deliveries: Sequence[DeliverySpec] = (),
         recovery_lease: RecoveryLease | None = None,
-    ) -> tuple[ChildSignalRecord, ContinuationRecord, RunEvent]:
-        """Apply a child signal to its parent boundary and ack it atomically."""
+    ) -> ChildSignalRecord | tuple[ChildSignalRecord, ContinuationRecord, RunEvent]:
+        """Discard a detached terminal signal or apply and ack a live boundary."""
 
+        applies_boundary = continuation_payload is not None or event is not None
+        if not applies_boundary:
+            async with self._write_transaction() as db:
+                row = await (await db.execute(
+                    """SELECT parent.status AS parent_status,parent.owner_kind,
+                    parent.owner_generation,command.join_policy
+                    FROM execution_child_signal_inbox AS signal
+                    JOIN execution_child_commands AS command
+                      ON command.operation_id=signal.operation_id
+                    JOIN execution_runs AS parent ON parent.run_id=signal.parent_run_id
+                    WHERE signal.signal_id=?""", (signal_id,)
+                )).fetchone()
+                if row is None:
+                    raise RunNotFound(
+                        "child_signal_not_found", "child signal does not exist"
+                    )
+                owner = await self._required_start_owner_tx(db)
+                if (str(row["owner_kind"]), int(row["owner_generation"])) != owner:
+                    raise RuntimeActivationError(
+                        "child_signal_owner_fenced",
+                        "parent belongs to another runtime owner",
+                    )
+                if RunStatus(str(row["parent_status"])) not in TERMINAL_RUN_STATUSES:
+                    raise RunIdentityConflict(
+                        "parent_not_terminal",
+                        "only a terminal parent may discard a child signal",
+                    )
+                if str(row["join_policy"]) != AttachmentPolicy.DETACHED.value:
+                    raise RunIdentityConflict(
+                        "attached_child_signal_after_parent_terminal",
+                        "attached child signal cannot be discarded after parent terminal",
+                    )
+                record = await self._acknowledge_child_signal_tx(
+                    db, signal_id, now=float(self._clock())
+                )
+                await db.commit()
+                return record
+        if expected_continuation_version is None or continuation_payload is None or event is None:
+            raise ValueError("child boundary requires version, payload and event")
         self._validate_continuation_version(expected_continuation_version)
         payload_json = self._continuation_payload_json(continuation_payload)
         applied_event = replace(
@@ -4937,9 +4775,45 @@ class SqliteExecutionUnitOfWork:
             tuple(str(item) for item in json.loads(str(row["artifact_refs_json"]))),
         )
 
-    async def claim_recovery(
-        self, run_id: str, *, owner: str, lease_seconds: float = 30.0
-    ) -> RecoveryLease:
+    async def recovery_scope(
+        self,
+        subject: str | RecoveryLease,
+        *,
+        owner: str | None = None,
+        lease_seconds: float | None = 30.0,
+    ) -> RecoveryLease | bool:
+        """Claim, renew, or release one typed recovery lease."""
+
+        if isinstance(subject, RecoveryLease):
+            async with self._write_transaction() as db:
+                if lease_seconds is None:
+                    cursor = await db.execute(
+                        """UPDATE execution_runs SET recovery_owner=NULL,
+                        recovery_expires_at=NULL,recovery_heartbeat_at=NULL
+                        WHERE run_id=? AND recovery_owner=? AND recovery_epoch=?""",
+                        (subject.run_id, subject.owner, subject.epoch),
+                    )
+                    await db.commit()
+                    return cursor.rowcount == 1
+                if lease_seconds <= 0:
+                    raise ValueError("lease_seconds must be positive")
+                now = float(self._clock())
+                new_expiry = now + float(lease_seconds)
+                cursor = await db.execute(
+                    """UPDATE execution_runs SET recovery_expires_at=?,recovery_heartbeat_at=?
+                    WHERE run_id=? AND recovery_owner=? AND recovery_epoch=?
+                    AND recovery_expires_at>? AND terminal_event_id IS NULL""",
+                    (new_expiry, now, subject.run_id, subject.owner, subject.epoch, now),
+                )
+                if cursor.rowcount != 1:
+                    raise StaleRecoveryLease("recovery lease is stale or expired")
+                await db.commit()
+                return RecoveryLease(
+                    subject.run_id, subject.owner, subject.epoch, new_expiry
+                )
+        run_id = subject
+        owner = str(owner or "")
+        lease_seconds = 30.0 if lease_seconds is None else lease_seconds
         if not owner.strip() or lease_seconds <= 0:
             raise ValueError("recovery owner and positive lease_seconds are required")
         async with self._write_transaction() as db:
@@ -5025,25 +4899,6 @@ class SqliteExecutionUnitOfWork:
                 run_id, workflow_owner, int(row["lease_epoch"]), int(row["run_version"])
             )
 
-    async def renew_recovery(
-        self, lease: RecoveryLease, *, lease_seconds: float = 30.0
-    ) -> RecoveryLease:
-        if lease_seconds <= 0:
-            raise ValueError("lease_seconds must be positive")
-        async with self._write_transaction() as db:
-            now = float(self._clock())
-            new_expiry = now + float(lease_seconds)
-            cursor = await db.execute(
-                """UPDATE execution_runs SET recovery_expires_at=?,recovery_heartbeat_at=?
-                WHERE run_id=? AND recovery_owner=? AND recovery_epoch=?
-                AND recovery_expires_at>? AND terminal_event_id IS NULL""",
-                (new_expiry, now, lease.run_id, lease.owner, lease.epoch, now),
-            )
-            if cursor.rowcount != 1:
-                raise StaleRecoveryLease("recovery lease is stale or expired")
-            await db.commit()
-            return RecoveryLease(lease.run_id, lease.owner, lease.epoch, new_expiry)
-
     async def assert_recovery_fence(self, lease: RecoveryLease) -> None:
         async with self._read_connection() as db:
             await self._assert_recovery_fence_tx(db, lease, run_id=lease.run_id)
@@ -5073,17 +4928,6 @@ class SqliteExecutionUnitOfWork:
         ).fetchone()
         if row is None:
             raise StaleRecoveryLease("recovery writer lost its lease fence")
-
-    async def release_recovery(self, lease: RecoveryLease) -> bool:
-        async with self._write_transaction() as db:
-            cursor = await db.execute(
-                """UPDATE execution_runs SET recovery_owner=NULL,
-                recovery_expires_at=NULL,recovery_heartbeat_at=NULL
-                WHERE run_id=? AND recovery_owner=? AND recovery_epoch=?""",
-                (lease.run_id, lease.owner, lease.epoch),
-            )
-            await db.commit()
-            return cursor.rowcount == 1
 
     async def _insert_workflow_tx(
         self,

@@ -178,7 +178,7 @@ class ChildRunScheduler:
                 records = await self._store.list_pending_child_signals(parent.run_id)
                 for record in records:
                     try:
-                        await self._store.discard_terminal_detached_child_signal(
+                        await self._store.ack_child_signal(
                             record.signal_id
                         )
                     except Exception as exc:
@@ -188,7 +188,7 @@ class ChildRunScheduler:
                         )
                 continue
             try:
-                lease = recovery_lease or await self._store.claim_recovery(
+                lease = recovery_lease or await self._store.recovery_scope(
                     parent.run_id, owner=f"{self._owner}:signal"
                 )
             except Exception as exc:
@@ -216,7 +216,7 @@ class ChildRunScheduler:
                         errors.append(f"{record.signal_id}:{type(exc).__name__}:{exc}")
             finally:
                 if recovery_lease is None:
-                    await self._store.release_recovery(lease)
+                    await self._store.recovery_scope(lease, lease_seconds=None)
         self.last_errors = tuple(errors)
 
     async def start(self, *, interval: float = 0.25) -> None:

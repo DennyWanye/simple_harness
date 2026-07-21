@@ -225,7 +225,7 @@ async def _stack(tmp_path, *, fail: bool = False):
     order: list[str] = []
     uow = SqliteExecutionUnitOfWork(tmp_path / "execution.db")
     await uow.initialize()
-    activation = await uow.activate_empty_runtime()
+    activation = await uow.activate_runtime()
     assert (activation.phase, activation.generation) == ("open", 1)
     driver = _Driver(fail=fail, order=order)
     kernel = RunKernel(

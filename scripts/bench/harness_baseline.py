@@ -1315,7 +1315,7 @@ def validate_run_lifecycle_api(
 ) -> None:
     required = {
         kernel_type: ("start", "observe", "close"),
-        uow_type: ("create", "finalize_and_enqueue_delivery"),
+        uow_type: ("create", "commit_run_outcome"),
     }
     missing = [
         f"{owner.__name__}.{name}"

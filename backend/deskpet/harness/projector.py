@@ -128,7 +128,7 @@ class ExecutionDeliveryDispatcher:
                 await sink.deliver(await self._store.get_event(claim.event_id), claim.target_id)
         except Exception as exc:
             discard = claim.policy is DeliveryPolicy.BEST_EFFORT
-            await self._store.release_delivery(
+            await self._store.settle_delivery(
                 claim.delivery_id,
                 expected_version=claim.delivery_version,
                 owner_generation=self._owner_generation,
@@ -138,13 +138,13 @@ class ExecutionDeliveryDispatcher:
             )
         else:
             if delivered:
-                await self._store.complete_delivery(
+                await self._store.settle_delivery(
                     claim.delivery_id,
                     expected_version=claim.delivery_version,
                     owner_generation=self._owner_generation,
                 )
             else:
-                await self._store.release_delivery(
+                await self._store.settle_delivery(
                     claim.delivery_id,
                     expected_version=claim.delivery_version,
                     owner_generation=self._owner_generation,

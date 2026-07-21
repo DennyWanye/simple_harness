@@ -276,7 +276,7 @@ class ReActDriver:
 
     async def _save_durable_boundary(self, boundary: ReactCommandBoundary, *, decision: DriverEvent | None=None, recovery_lease: RecoveryLease | None=None) -> ReactCommandBoundary:
         expected = max(0, boundary.version - 1)
-        saved = await self._uow.save_continuation(boundary.run_id, expected, boundary.to_payload(), self._durable_decision(decision), recovery_lease=recovery_lease)
+        saved = await self._uow.persist_react_boundary(boundary.run_id, expected, boundary.to_payload(), self._durable_decision(decision), recovery_lease=recovery_lease)
         return replace(boundary, version=int(saved.version))
 
     async def _persist_boundary(self, request: DriverStart, boundary: ReactCommandBoundary, *, continuation_version: int=0, decision: DriverEvent | None=None, recovery_lease: RecoveryLease | None=None) -> ReactCommandBoundary:
@@ -286,7 +286,7 @@ class ReActDriver:
         if spec is None:
             raise RuntimeError('durable ReAct boundary requires its immutable RunCreate')
         waiting = RunEventCandidate(event_key=f'boundary:{boundary.command_id}', kind='run.waiting', status=OutcomeStatus.WAITING, driver_kind=spec.driver_kind, correlation={'command_id': boundary.command_id})
-        _, saved = await self._uow.promote_and_persist_batch_boundary(replace(spec, persistence_level=PersistenceLevel.DURABLE), expected_run_version=0, expected_continuation_version=0, payload=boundary.to_payload(), decision=self._durable_decision(decision), waiting_event=waiting)
+        _, saved = await self._uow.persist_react_boundary(replace(spec, persistence_level=PersistenceLevel.DURABLE), expected_run_version=0, expected_continuation_version=0, payload=boundary.to_payload(), decision=self._durable_decision(decision), waiting_event=waiting)
         self._volatile.pop(request.run_id, None)
         return replace(boundary, version=int(saved.version))
 
@@ -440,7 +440,7 @@ class ReActDriver:
         messages = boundary.canonical_messages + ({'role': 'system', 'content': json.dumps(child_response, ensure_ascii=False, sort_keys=True, default=str)},)
         updated = replace(boundary, canonical_messages=messages, completion_state=state, pending_delegate=None if clear_delegate else boundary.pending_delegate, version=boundary.version + 1)
         event = RunEventCandidate(event_key=f'child-signal:{signal_id}', kind=signal.kind, status=OutcomeStatus.SUCCEEDED if signal.kind == 'child_terminal' and signal.status == 'completed' else OutcomeStatus.ACCEPTED, driver_kind='react', correlation={'command_id': signal.command_id, 'child_run_id': signal.child_run_id, 'signal_id': signal_id}, payload={'status': getattr(signal, 'status', 'accepted'), 'value': value})
-        _, saved, stored_event = await self._uow.apply_child_signal_and_ack(signal_id, expected_continuation_version=boundary.version, continuation_payload=updated.to_payload(), event=event, recovery_lease=recovery_lease)
+        _, saved, stored_event = await self._uow.ack_child_signal(signal_id, expected_continuation_version=boundary.version, continuation_payload=updated.to_payload(), event=event, recovery_lease=recovery_lease)
         return replace(updated, version=int(saved.version)), PersistedEventCandidate(stored_event)
 
     def signal(self, signal: DriverSignal, recovery_lease: RecoveryLease | None = None) -> AsyncIterator[DriverEvent]:
@@ -486,7 +486,7 @@ class ReActDriver:
                         error=updates[index].error,
                         artifact_refs=tuple(str(item) for item in metadata[index].get('artifact_refs', ())),
                     )
-                    settlement = await self._uow.settle_effect_and_advance_boundary(
+                    settlement = await self._uow.settle_effect(
                         context.effect_id,
                         expected_effect_version=int(claim['effect_version']),
                         attempt_no=int(claim['attempt_no']),
@@ -601,7 +601,7 @@ class ReActDriver:
                 correlation={'decision_id': signal.decision_id},
                 payload={'decision_status': response['decision_status']},
             )
-            _, authorization, saved, event = await self._uow.resolve_decision_and_advance_boundary(
+            _, authorization, saved, event = await self._uow.commit_decision(
                 durable_signal, actor,
                 expected_continuation_version=boundary.version - 1,
                 continuation_payload=boundary.to_payload(),

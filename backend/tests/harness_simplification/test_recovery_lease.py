@@ -73,23 +73,23 @@ async def test_recovery_lease_claim_renew_release_and_expired_takeover(tmp_path)
     store = SqliteExecutionUnitOfWork(tmp_path / "workflow.db", clock=lambda: now[0])
     await store.create(_spec("run-lease"))
 
-    first = await store.claim_recovery("run-lease", owner="worker-a", lease_seconds=10)
+    first = await store.recovery_scope("run-lease", owner="worker-a", lease_seconds=10)
     assert (first.owner, first.epoch, first.expires_at) == ("worker-a", 1, 110.0)
     with pytest.raises(StaleRecoveryLease, match="another owner"):
-        await store.claim_recovery("run-lease", owner="worker-b", lease_seconds=10)
+        await store.recovery_scope("run-lease", owner="worker-b", lease_seconds=10)
 
     now[0] = 105.0
-    renewed = await store.renew_recovery(first, lease_seconds=20)
+    renewed = await store.recovery_scope(first, lease_seconds=20)
     assert (renewed.epoch, renewed.expires_at) == (1, 125.0)
     await store.assert_recovery_fence(renewed)
 
     now[0] = 126.0
-    second = await store.claim_recovery("run-lease", owner="worker-b", lease_seconds=10)
+    second = await store.recovery_scope("run-lease", owner="worker-b", lease_seconds=10)
     assert (second.owner, second.epoch, second.expires_at) == ("worker-b", 2, 136.0)
     with pytest.raises(StaleRecoveryLease, match="lost its lease"):
         await store.assert_recovery_fence(renewed)
-    assert await store.release_recovery(renewed) is False
-    assert await store.release_recovery(second) is True
+    assert await store.recovery_scope(renewed, lease_seconds=None) is False
+    assert await store.recovery_scope(second, lease_seconds=None) is True
 
 
 @pytest.mark.asyncio
@@ -97,11 +97,11 @@ async def test_stale_recovery_epoch_cannot_append_event(tmp_path):
     now = [100.0]
     store = SqliteExecutionUnitOfWork(tmp_path / "workflow.db", clock=lambda: now[0])
     created = await store.create(_spec("run-write-fence"))
-    stale = await store.claim_recovery(
+    stale = await store.recovery_scope(
         "run-write-fence", owner="worker-a", lease_seconds=5
     )
     now[0] = 106.0
-    current = await store.claim_recovery(
+    current = await store.recovery_scope(
         "run-write-fence", owner="worker-b", lease_seconds=10
     )
 
@@ -134,7 +134,7 @@ async def test_same_owner_concurrent_claim_reuses_one_epoch(tmp_path):
     await store.create(_spec("run-same-owner"))
 
     leases = await asyncio.gather(
-        *(store.claim_recovery("run-same-owner", owner="worker-a") for _ in range(12))
+        *(store.recovery_scope("run-same-owner", owner="worker-a") for _ in range(12))
     )
 
     assert {(lease.owner, lease.epoch) for lease in leases} == {("worker-a", 1)}
@@ -145,16 +145,16 @@ async def test_stale_recovery_cannot_write_continuation_or_terminal(tmp_path):
     now = [100.0]
     store = SqliteExecutionUnitOfWork(tmp_path / "workflow.db", clock=lambda: now[0])
     created = await store.create(_spec("run-stale-writes"))
-    stale = await store.claim_recovery("run-stale-writes", owner="worker-a", lease_seconds=5)
+    stale = await store.recovery_scope("run-stale-writes", owner="worker-a", lease_seconds=5)
     now[0] = 106.0
-    await store.claim_recovery("run-stale-writes", owner="worker-b", lease_seconds=10)
+    await store.recovery_scope("run-stale-writes", owner="worker-b", lease_seconds=10)
 
     with pytest.raises(StaleRecoveryLease, match="lost its lease"):
-        await store.save_continuation(
+        await store.persist_react_boundary(
             "run-stale-writes", 0, {"step": 1}, recovery_lease=stale
         )
     with pytest.raises(StaleRecoveryLease, match="lost its lease"):
-        await store.finalize_and_enqueue_delivery(
+        await store.commit_run_outcome(
             "run-stale-writes",
             expected_version=created.record.version,
             terminal_status=RunStatus.COMPLETED,
@@ -179,7 +179,7 @@ async def test_workflow_handoff_is_atomic_and_same_owner_idempotent(tmp_path):
     workflows = WorkflowRunStore(path, clock=lambda: now[0])
     await store.create(_spec("run-workflow"))
     await _create_workflow(workflows, "run-workflow")
-    stale = await store.claim_recovery("run-workflow", owner="worker-a", lease_seconds=5)
+    stale = await store.recovery_scope("run-workflow", owner="worker-a", lease_seconds=5)
 
     first = await store.claim_workflow_recovery_handoff(
         stale, workflow_owner="workflow-worker"
@@ -193,7 +193,7 @@ async def test_workflow_handoff_is_atomic_and_same_owner_idempotent(tmp_path):
     )
 
     now[0] = 106.0
-    await store.claim_recovery("run-workflow", owner="worker-b", lease_seconds=10)
+    await store.recovery_scope("run-workflow", owner="worker-b", lease_seconds=10)
     before = await workflows.get_run("run-workflow")
     with pytest.raises(StaleRecoveryLease, match="lost its lease"):
         await store.claim_workflow_recovery_handoff(
@@ -209,9 +209,9 @@ async def test_stale_recovery_cannot_claim_effect_before_external_execution(tmp_
     path = tmp_path / "workflow.db"
     store = SqliteExecutionUnitOfWork(path, clock=lambda: now[0])
     await store.create(_spec("run-stale-effect"))
-    stale = await store.claim_recovery("run-stale-effect", owner="worker-a", lease_seconds=5)
+    stale = await store.recovery_scope("run-stale-effect", owner="worker-a", lease_seconds=5)
     now[0] = 106.0
-    await store.claim_recovery("run-stale-effect", owner="worker-b", lease_seconds=10)
+    await store.recovery_scope("run-stale-effect", owner="worker-b", lease_seconds=10)
     request = GrantConsume(
         grant_id="grant", decision_id="decision", decision_nonce="nonce",
         run_id="run-stale-effect", expected_session_id="session", call_id="call",
@@ -221,7 +221,7 @@ async def test_stale_recovery_cannot_claim_effect_before_external_execution(tmp_
     actor = ActorContext("user", "session", 0)
 
     with pytest.raises(StaleRecoveryLease, match="lost its lease"):
-        await store.consume_grant_and_claim_effect(
+        await store.claim_tool_call(
             request, actor, effect_type="tool", policy={}, prepared={},
             worker_owner="worker-a", worker_epoch=1, recovery_lease=stale,
         )

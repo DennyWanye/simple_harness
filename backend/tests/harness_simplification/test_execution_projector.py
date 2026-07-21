@@ -250,7 +250,7 @@ async def test_every_partial_failure_subset_isolated_per_sink(
 ) -> None:
     clock = _Clock()
     store = SqliteExecutionUnitOfWork(tmp_path / "workflow.db", clock=clock)
-    await store.activate_empty_runtime()
+    await store.activate_runtime()
     await store.create(_spec())
     deliveries = _delivery_specs(
         session_id="session-1",
@@ -260,7 +260,7 @@ async def test_every_partial_failure_subset_isolated_per_sink(
         tts_sink_instance="voice",
         tts_target_id="voice-connection-1",
     )
-    final = await store.finalize_and_enqueue_delivery(
+    final = await store.commit_run_outcome(
         "run-1",
         expected_version=0,
         terminal_status=RunStatus.COMPLETED,
@@ -320,9 +320,9 @@ async def test_partial_failure_is_order_independent(
 ) -> None:
     clock = _Clock()
     store = SqliteExecutionUnitOfWork(tmp_path / "workflow.db", clock=clock)
-    await store.activate_empty_runtime()
+    await store.activate_runtime()
     await store.create(_spec())
-    final = await store.finalize_and_enqueue_delivery(
+    final = await store.commit_run_outcome(
         "run-1",
         expected_version=0,
         terminal_status=RunStatus.COMPLETED,
@@ -376,7 +376,7 @@ async def test_expired_claim_is_recovered_and_stale_worker_cannot_ack(tmp_path: 
     clock = _Clock()
     path = tmp_path / "workflow.db"
     first_store = SqliteExecutionUnitOfWork(path, clock=clock)
-    await first_store.activate_empty_runtime()
+    await first_store.activate_runtime()
     await first_store.create(_spec())
     delivery = DeliverySpec(
         sink_kind="session_db",
@@ -384,7 +384,7 @@ async def test_expired_claim_is_recovered_and_stale_worker_cannot_ack(tmp_path: 
         target_id="session-1",
         policy=DeliveryPolicy.DURABLE_REQUIRED,
     )
-    final = await first_store.finalize_and_enqueue_delivery(
+    final = await first_store.commit_run_outcome(
         "run-1",
         expected_version=0,
         terminal_status=RunStatus.COMPLETED,
@@ -403,12 +403,12 @@ async def test_expired_claim_is_recovered_and_stale_worker_cannot_ack(tmp_path: 
     assert recovered.delivery_version == 2
 
     with pytest.raises(DeliveryClaimConflict):
-        await first_store.complete_delivery(
+        await first_store.settle_delivery(
             stale.delivery_id,
             expected_version=stale.delivery_version,
             owner_generation=1,
         )
-    delivered = await restarted_store.complete_delivery(
+    delivered = await restarted_store.settle_delivery(
         recovered.delivery_id,
         expected_version=recovered.delivery_version,
         owner_generation=1,
@@ -420,9 +420,9 @@ async def test_expired_claim_is_recovered_and_stale_worker_cannot_ack(tmp_path: 
 async def test_dispatcher_generation_fence_rejects_stale_claim_and_completion(tmp_path: Path) -> None:
     clock = _Clock()
     store = SqliteExecutionUnitOfWork(tmp_path / "workflow.db", clock=clock)
-    await store.activate_empty_runtime()
+    await store.activate_runtime()
     await store.create(_spec())
-    final = await store.finalize_and_enqueue_delivery(
+    final = await store.commit_run_outcome(
         "run-1", expected_version=0, terminal_status=RunStatus.COMPLETED,
         event=_terminal_candidate(), deliveries=(DeliverySpec(
             sink_kind="session_db", sink_instance="local", target_id="session-1",
@@ -433,7 +433,7 @@ async def test_dispatcher_generation_fence_rejects_stale_claim_and_completion(tm
     claimed = await store.claim_delivery(owner_generation=1)
     assert claimed is not None
     with pytest.raises(DeliveryClaimConflict):
-        await store.complete_delivery(
+        await store.settle_delivery(
             claimed.delivery_id,
             expected_version=claimed.delivery_version,
             owner_generation=2,
@@ -450,7 +450,7 @@ async def test_terminal_session_message_is_visible_once_after_crash_restart(
     workflow_path = tmp_path / "workflow.db"
     state_path = tmp_path / "state.db"
     first_store = SqliteExecutionUnitOfWork(workflow_path, clock=clock)
-    await first_store.activate_empty_runtime()
+    await first_store.activate_runtime()
     await first_store.create(_spec())
     session_delivery = DeliverySpec(
         sink_kind="session_db",
@@ -468,7 +468,7 @@ async def test_terminal_session_message_is_visible_once_after_crash_restart(
             }
         }
     )
-    final = await first_store.finalize_and_enqueue_delivery(
+    final = await first_store.commit_run_outcome(
         "run-1",
         expected_version=0,
         terminal_status=RunStatus.COMPLETED,
@@ -506,7 +506,7 @@ async def test_terminal_session_message_is_visible_once_after_crash_restart(
     assert await worker.run_once() is True
     assert await worker.run_once() is False
 
-    replay = await restarted_store.finalize_and_enqueue_delivery(
+    replay = await restarted_store.commit_run_outcome(
         "run-1",
         expected_version=0,
         terminal_status=RunStatus.COMPLETED,
@@ -537,7 +537,7 @@ async def test_root_terminal_goal_projection_is_once_across_child_race_and_resta
     execution_path = tmp_path / "workflow.db"
     goal_path = tmp_path / "goals.db"
     store = SqliteExecutionUnitOfWork(execution_path, clock=clock)
-    await store.activate_empty_runtime()
+    await store.activate_runtime()
     await store.create(_spec("root-run"))
     await store.create(_child_spec("root-run", "child-run"))
     goal = _SqliteGoalProjectionSink(goal_path)
@@ -550,7 +550,7 @@ async def test_root_terminal_goal_projection_is_once_across_child_race_and_resta
     )
 
     with pytest.raises(RunIdentityConflict, match="child runs cannot project"):
-        await store.finalize_and_enqueue_delivery(
+        await store.commit_run_outcome(
             "child-run",
             expected_version=0,
             terminal_status=RunStatus.COMPLETED,
@@ -563,14 +563,14 @@ async def test_root_terminal_goal_projection_is_once_across_child_race_and_resta
         )).fetchone()
     assert child_status == ("created",)
 
-    completed = store.finalize_and_enqueue_delivery(
+    completed = store.commit_run_outcome(
         "root-run",
         expected_version=0,
         terminal_status=RunStatus.COMPLETED,
         event=_terminal_candidate(payload={"text": "winner-completed"}),
         deliveries=(projection,),
     )
-    failed = store.finalize_and_enqueue_delivery(
+    failed = store.commit_run_outcome(
         "root-run",
         expected_version=0,
         terminal_status=RunStatus.FAILED,
@@ -624,14 +624,14 @@ async def test_terminal_goal_outbox_is_atomic_across_fault_and_restart(
             raise RuntimeError(f"crash:{point}")
 
     crashing = SqliteExecutionUnitOfWork(path, clock=clock, fault_injector=crash)
-    await crashing.activate_empty_runtime()
+    await crashing.activate_runtime()
     await crashing.create(_spec())
     delivery = DeliverySpec(
         "goal_projection", "session-goals", "goal-1",
         DeliveryPolicy.DURABLE_REQUIRED,
     )
     with pytest.raises(RuntimeError, match=fault_point):
-        await crashing.finalize_and_enqueue_delivery(
+        await crashing.commit_run_outcome(
             "run-1", expected_version=0, terminal_status=RunStatus.COMPLETED,
             event=_terminal_candidate(), deliveries=(delivery,),
         )
@@ -650,7 +650,7 @@ async def test_terminal_goal_outbox_is_atomic_across_fault_and_restart(
     assert status == ("created", None)
 
     restarted = SqliteExecutionUnitOfWork(path, clock=clock)
-    final = await restarted.finalize_and_enqueue_delivery(
+    final = await restarted.commit_run_outcome(
         "run-1", expected_version=0, terminal_status=RunStatus.COMPLETED,
         event=_terminal_candidate(), deliveries=(delivery,),
     )
@@ -662,7 +662,7 @@ async def test_terminal_goal_outbox_is_atomic_across_fault_and_restart(
 async def test_retry_while_bound_discards_after_peer_disconnect(tmp_path: Path) -> None:
     clock = _Clock()
     store = SqliteExecutionUnitOfWork(tmp_path / "workflow.db", clock=clock)
-    await store.activate_empty_runtime()
+    await store.activate_runtime()
     await store.create(_spec())
     ws_delivery = DeliverySpec(
         sink_kind="ws",
@@ -670,7 +670,7 @@ async def test_retry_while_bound_discards_after_peer_disconnect(tmp_path: Path) 
         target_id="peer-1",
         policy=DeliveryPolicy.RETRY_WHILE_BOUND,
     )
-    final = await store.finalize_and_enqueue_delivery(
+    final = await store.commit_run_outcome(
         "run-1",
         expected_version=0,
         terminal_status=RunStatus.COMPLETED,
@@ -698,7 +698,7 @@ async def test_expired_best_effort_claim_is_discarded_without_restart_replay(
     clock = _Clock()
     path = tmp_path / "workflow.db"
     first_store = SqliteExecutionUnitOfWork(path, clock=clock)
-    await first_store.activate_empty_runtime()
+    await first_store.activate_runtime()
     await first_store.create(_spec())
     tts_delivery = DeliverySpec(
         sink_kind="tts",
@@ -706,7 +706,7 @@ async def test_expired_best_effort_claim_is_discarded_without_restart_replay(
         target_id="old-voice-connection",
         policy=DeliveryPolicy.BEST_EFFORT,
     )
-    final = await first_store.finalize_and_enqueue_delivery(
+    final = await first_store.commit_run_outcome(
         "run-1",
         expected_version=0,
         terminal_status=RunStatus.COMPLETED,

@@ -62,7 +62,7 @@ async def _open_store(path, *, fault_injector=None) -> SqliteExecutionUnitOfWork
     store = SqliteExecutionUnitOfWork(
         path, clock=lambda: 100.0, fault_injector=fault_injector
     )
-    await store.activate_empty_runtime()
+    await store.activate_runtime()
     return store
 
 
@@ -78,7 +78,7 @@ async def test_save_and_load_continuation_survives_restart_with_full_json(tmp_pa
         "provider": {"model": "fixture", "iteration": 3},
     }
 
-    saved = await store.save_continuation("run-1", 0, payload)
+    saved = await store.persist_react_boundary("run-1", 0, payload)
     restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
     loaded = await restarted.load_continuation("run-1")
 
@@ -92,13 +92,13 @@ async def test_continuation_save_uses_strict_cas(tmp_path):
     path = tmp_path / "cas.db"
     store = await _open_store(path)
     await store.create(_spec("run-1"))
-    first = await store.save_continuation("run-1", 0, {"step": 1})
-    second = await store.save_continuation(
+    first = await store.persist_react_boundary("run-1", 0, {"step": 1})
+    second = await store.persist_react_boundary(
         "run-1", first.version, {"step": 2, "outcome": {"ok": True}}
     )
 
     with pytest.raises(VersionConflict) as stale_save:
-        await store.save_continuation("run-1", first.version, {"step": 99})
+        await store.persist_react_boundary("run-1", first.version, {"step": 99})
     assert stale_save.value.code == "continuation_replay_conflict"
     assert (await store.load_continuation("run-1")) == second
 
@@ -108,7 +108,7 @@ async def test_continuation_and_pending_decision_commit_atomically(tmp_path):
     store = await _open_store(path)
     await store.create(_spec("run-1"))
 
-    saved = await store.save_continuation(
+    saved = await store.persist_react_boundary(
         "run-1", 0, {"command_id": "command-1"}, _decision("run-1")
     )
 
@@ -139,7 +139,7 @@ async def test_decision_fault_rolls_back_decision_and_continuation_then_restart_
     store = await _open_store(path, fault_injector=fail_once)
     await store.create(_spec("run-1"))
     with pytest.raises(RuntimeError, match="crash:continuation_after_decision"):
-        await store.save_continuation(
+        await store.persist_react_boundary(
             "run-1", 0, {"command_id": "command-1"}, _decision("run-1")
         )
 
@@ -154,7 +154,7 @@ async def test_decision_fault_rolls_back_decision_and_continuation_then_restart_
     assert counts == (0, 0)
 
     restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
-    recovered = await restarted.save_continuation(
+    recovered = await restarted.persist_react_boundary(
         "run-1", 0, {"command_id": "command-1"}, _decision("run-1")
     )
     assert recovered.version == 1
@@ -167,7 +167,7 @@ async def test_pending_decision_for_another_run_is_rejected_without_partial_writ
     await store.create(_spec("run-1"))
 
     with pytest.raises(DecisionConflict) as error:
-        await store.save_continuation(
+        await store.persist_react_boundary(
             "run-1", 0, {"command_id": "command-1"}, _decision("run-2")
         )
     assert error.value.code == "decision_run_mismatch"
@@ -202,7 +202,7 @@ async def test_ephemeral_promotion_boundary_decision_event_and_delivery_are_atom
     spec = _spec("promoted-run")
     payload = {"command_id": "command-1", "calls": [{"call_id": "call-1"}]}
 
-    created, continuation = await store.promote_and_persist_batch_boundary(
+    created, continuation = await store.persist_react_boundary(
         spec,
         expected_run_version=4,
         expected_continuation_version=0,
@@ -211,7 +211,7 @@ async def test_ephemeral_promotion_boundary_decision_event_and_delivery_are_atom
         waiting_event=_waiting_event(),
         deliveries=(_delivery(),),
     )
-    replay, replayed_continuation = await store.promote_and_persist_batch_boundary(
+    replay, replayed_continuation = await store.persist_react_boundary(
         spec,
         expected_run_version=4,
         expected_continuation_version=0,
@@ -256,7 +256,7 @@ async def test_existing_durable_run_persists_boundary_without_second_promotion(t
     spec = _spec("durable-run")
     await store.create(spec)
 
-    result, continuation = await store.promote_and_persist_batch_boundary(
+    result, continuation = await store.persist_react_boundary(
         spec,
         expected_run_version=0,
         expected_continuation_version=0,
@@ -301,7 +301,7 @@ async def test_promote_boundary_fault_rolls_back_every_table_and_restart_recover
         deliveries=(_delivery(),),
     )
     with pytest.raises(RuntimeError, match=f"crash:{fault_point}"):
-        await store.promote_and_persist_batch_boundary(spec, **kwargs)
+        await store.persist_react_boundary(spec, **kwargs)
 
     async with aiosqlite.connect(path) as db:
         counts = await (
@@ -317,7 +317,7 @@ async def test_promote_boundary_fault_rolls_back_every_table_and_restart_recover
     assert counts == (0, 0, 0, 0, 0)
 
     restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
-    recovered, continuation = await restarted.promote_and_persist_batch_boundary(
+    recovered, continuation = await restarted.persist_react_boundary(
         spec, **kwargs
     )
     assert recovered.created is True

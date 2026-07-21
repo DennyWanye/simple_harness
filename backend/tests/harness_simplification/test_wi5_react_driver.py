@@ -277,7 +277,7 @@ def ToolOutcomesSignal(run_id: str, command_id: str, outcomes: tuple[NormalizedT
 async def _driver(tmp_path, collaborator, *, reader=None, reconciler=None):
     path = tmp_path / "workflow.db"
     store = SqliteExecutionUnitOfWork(path)
-    await store.activate_empty_runtime()
+    await store.activate_runtime()
     return (
         ReActDriver(
             collaborator,
@@ -290,7 +290,7 @@ async def _driver(tmp_path, collaborator, *, reader=None, reconciler=None):
 
 
 async def _recovery_lease(store):
-    return await store.claim_recovery("run-react", owner="react-test-recovery")
+    return await store.recovery_scope("run-react", owner="react-test-recovery")
 
 
 @pytest.mark.asyncio
@@ -1180,8 +1180,8 @@ async def test_recovery_second_batch_is_fenced_by_current_lease(tmp_path):
 
     class TakeoverCollaborator(ScriptedCollaborator):
         async def resume(self, boundary, response):
-            await store.release_recovery(old_lease)
-            self.current_lease = await store.claim_recovery("run-react", owner="takeover")
+            await store.recovery_scope(old_lease, lease_seconds=None)
+            self.current_lease = await store.recovery_scope("run-react", owner="takeover")
             yield second_batch
 
     takeover = TakeoverCollaborator()

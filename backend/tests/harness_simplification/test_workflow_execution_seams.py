@@ -1017,7 +1017,7 @@ async def test_child_signal_ack_is_atomic_with_native_checkpoint_and_restart_rep
         prompt={"kind": "child_run", "command_id": "command-1"},
         operation_id="accepted-interrupt-op",
     )
-    lease = await uow.claim_recovery(prepared.run_id, owner="signal-owner")
+    lease = await uow.recovery_scope(prepared.run_id, owner="signal-owner")
     with sqlite3.connect(path) as db:
         db.execute(
             "UPDATE execution_decisions SET prompt_json=? WHERE decision_id=?",

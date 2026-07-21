@@ -79,9 +79,9 @@ async def _execution_store_with_delivery(
     path: Path, *, run_id: str
 ) -> tuple[SqliteExecutionUnitOfWork, str]:
     store = SqliteExecutionUnitOfWork(path, clock=lambda: 100.0)
-    await store.activate_empty_runtime()
+    await store.activate_runtime()
     await store.create(_execution_spec(run_id))
-    final = await store.finalize_and_enqueue_delivery(
+    final = await store.commit_run_outcome(
         run_id,
         expected_version=0,
         terminal_status=RunStatus.COMPLETED,
@@ -318,7 +318,7 @@ async def test_execution_facade_matches_direct_tx_primitives(tmp_path: Path) -> 
 
     facade_claim = await facade.claim_delivery(owner_generation=1)
     assert facade_claim is not None
-    facade_release = await facade.release_delivery(
+    facade_release = await facade.settle_delivery(
         facade_id,
         expected_version=facade_claim.delivery_version,
         owner_generation=1,
@@ -367,9 +367,6 @@ def test_tx_primitives_never_own_connection_or_transaction_lifecycle() -> None:
     assert "claim_delivery_tx" in inspect.getsource(
         SqliteExecutionUnitOfWork.claim_delivery
     )
-    assert "complete_delivery_tx" in inspect.getsource(
-        SqliteExecutionUnitOfWork.complete_delivery
-    )
-    assert "release_delivery_tx" in inspect.getsource(
-        SqliteExecutionUnitOfWork.release_delivery
-    )
+    settlement_source = inspect.getsource(SqliteExecutionUnitOfWork.settle_delivery)
+    assert "complete_delivery_tx" in settlement_source
+    assert "release_delivery_tx" in settlement_source

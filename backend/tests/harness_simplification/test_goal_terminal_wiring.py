@@ -87,7 +87,7 @@ class _TerminalDriver:
 
 async def _runtime(tmp_path, kind: str, *, race: bool = False):
     uow = SqliteExecutionUnitOfWork(tmp_path / f"{kind}.db")
-    await uow.activate_empty_runtime()
+    await uow.activate_runtime()
     goals = SessionGoalStore()
     state = SessionDB(tmp_path / f"{kind}-state.db")
     goals.bind_persistence(state)
@@ -242,7 +242,7 @@ async def test_create_and_goal_association_are_one_restart_safe_commit(tmp_path)
             raise RuntimeError("crash:create_after_run")
 
     uow = SqliteExecutionUnitOfWork(path, fault_injector=crash)
-    await uow.activate_empty_runtime()
+    await uow.activate_runtime()
     goals = SessionGoalStore()
     goal = goals.set("session-1", "atomic goal")
     runtime = await build_harness_runtime(

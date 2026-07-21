@@ -436,10 +436,10 @@ class WorkflowRunner:
             if ref is not None
             else ()
         )
-        await self.execution_ports.unit_of_work.request_cancel(
+        await self.execution_ports.unit_of_work.commit_run_outcome(
             run_id,
             expected_version=int(execution["version"]),
-            reason=str(reason),
+            cancel_reason=str(reason),
             event=event,
             deliveries=deliveries,
         )

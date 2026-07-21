@@ -30,7 +30,7 @@ CAPABILITY_REF = fingerprint_json({"tools": ["read"]})
 
 async def _execution(path: Path):
     uow = SqliteExecutionUnitOfWork(path)
-    await uow.activate_empty_runtime()
+    await uow.activate_runtime()
     parent = (
         await uow.create(
             RunCreate(

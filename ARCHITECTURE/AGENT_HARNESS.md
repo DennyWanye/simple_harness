@@ -69,13 +69,21 @@ legacy owner, so this is `R5_READY` evidence rather than final production PASS.
 The R4.5 approved baseline is counted orchestration `33,618`, audited core
 `5,725`, Kernel `820`, public transaction starters `33`, execution-table DML
 authorities `2`, and existing fault windows `34` (`UoW=29 + Team=5`). The
-single-DML slice and first core deletion slices are now integrated: current
-total is `34,157`, core `5,582`, Kernel `812`, execution DML authority `1`, and
-the fault matrix has all `39` windows. A machine-checked construction ceiling
-of total `<=34,300` and core `<=5,725` bounds the temporary migration peak;
-the exit gates remain total `<=33,618`, core `<=5,500`, Kernel `<=850` with six
-operations, transaction starters `<=23`, and exactly one LiveRun,
-HarnessSupervisor, and Presenter-conversion authority. The old combined
+single-DML, first core deletion, and typed-transaction-surface slices are now
+integrated: current total is `33,973`, core `5,552`, Kernel `812`, execution DML
+authority `1`, public transaction starters `21`, and the fault matrix has all
+`39` windows. The former split starters are replaced by nine typed composite
+boundaries: `activate_runtime`, `settle_delivery`, `persist_react_boundary`,
+`commit_decision`, `claim_tool_call`, `settle_effect`, `commit_run_outcome`,
+`ack_child_signal`, and `recovery_scope`. Their production callers are migrated
+and the old entrypoints are deleted; this is a real API reduction rather than
+an audit exclusion. Full harness verification is `389 passed, 8 xfailed`.
+
+A machine-checked construction ceiling of total `<=34,300` and core `<=5,725`
+bounds the temporary migration peak; it is green. The typed-starter, DML,
+fault-window, and Kernel gates are also green. The exit gates still pending are
+total `<=33,618`, core `<=5,500`, and exactly one LiveRun, HarnessSupervisor,
+and Presenter-conversion authority. The old combined
 core/UoW `<=2,800` target was disproved by two disposable code spikes and is no
 longer a production acceptance metric. Evidence and approved target:
 [`baseline.md`](../plans/2026-07-20-agent-harness-simplification/baseline.md) and

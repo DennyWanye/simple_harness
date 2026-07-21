@@ -171,10 +171,10 @@ class RunKernel:
         event: RunEventCandidate,
     ) -> RunRecord:
         if record.persistence_level is PersistenceLevel.DURABLE:
-            return await self._uow.request_cancel(
+            return await self._uow.commit_run_outcome(
                 record.run_id,
                 expected_version=expected_version,
-                reason=reason,
+                cancel_reason=reason,
                 event=event,
             )
         async with self._lock:
@@ -212,7 +212,7 @@ class RunKernel:
             command = await self._uow.get_child_command_for_run(record.run_id)
             finalize = (
                 self._uow.finalize_child_and_enqueue_parent_signal
-                if command is not None else self._uow.finalize_and_enqueue_delivery
+                if command is not None else self._uow.commit_run_outcome
             )
             kwargs = dict(
                 expected_version=expected_version,
@@ -528,7 +528,7 @@ class RunKernel:
             if callable(atomic_signal):
                 candidates = atomic_signal(driver_signal, durable_signal, actor)
             else:
-                resolved, authorization = await self._uow.resolve_decision(
+                resolved, authorization = await self._uow.commit_decision(
                     durable_signal, actor,
                 )
                 response["decision_status"] = resolved.status.value
@@ -639,7 +639,7 @@ class RunKernel:
                 return RunHandle(
                     ref, record.context.root_run_id, registration.kind, record.spec.profile_key
                 )
-        lease = await self._uow.claim_recovery(
+        lease = await self._uow.recovery_scope(
             record.run_id, owner=self._recovery_owner
         )
         async with self._lock:
@@ -740,7 +740,7 @@ class RunKernel:
             while True:
                 await asyncio.sleep(self._child_signal_heartbeat_interval)
                 try:
-                    await self._uow.renew_recovery(recovery_lease)
+                    await self._uow.recovery_scope(recovery_lease)
                 except BaseException as exc:
                     errors.append(exc)
                     return

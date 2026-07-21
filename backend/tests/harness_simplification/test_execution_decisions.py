@@ -83,14 +83,14 @@ async def test_single_uow_decision_survives_restart_and_is_fenced(tmp_path) -> N
     run = await first.create(_spec())
     actor = _actor()
     ref = RunRef("run-decisions", "session-decisions")
-    opened = await first.open_decision(
+    opened, _ = await first.commit_decision(
         _decision(), actor, expected_run_version=run.record.version
     )
     assert opened.status is DecisionStatus.OPEN
 
     restarted = SqliteExecutionUnitOfWork(path)
     observed = await restarted.get_decision("decision-1", ref=ref, actor=actor)
-    resolved, grant = await restarted.resolve_decision(
+    resolved, grant = await restarted.commit_decision(
         DecisionSignal(
             decision_id="decision-1",
             run_id="run-decisions",
@@ -107,7 +107,7 @@ async def test_single_uow_decision_survives_restart_and_is_fenced(tmp_path) -> N
     assert grant is None
 
     with pytest.raises(Exception):
-        await restarted.resolve_decision(
+        await restarted.commit_decision(
             DecisionSignal(
                 decision_id="decision-1",
                 run_id="run-decisions",
@@ -129,16 +129,15 @@ async def test_cancel_open_decisions_uses_same_uow_owner(tmp_path) -> None:
     created = await uow.create(_spec())
     actor = _actor()
     ref = RunRef("run-decisions", "session-decisions")
-    await uow.open_decision(
-        _decision("decision-cancel"),
-        actor,
+    await uow.commit_decision(
+        _decision("decision-cancel"), actor,
         expected_run_version=created.record.version,
     )
     current = await uow.query(ref, actor)
-    cancelling = await uow.request_cancel(
+    cancelling = await uow.commit_run_outcome(
         ref.run_id,
         expected_version=current.version,
-        reason="user_stop",
+        cancel_reason="user_stop",
         event=RunEventCandidate(
             event_key="cancel:decision-test",
             kind="cancel_requested",

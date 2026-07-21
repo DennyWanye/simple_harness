@@ -188,7 +188,7 @@ async def test_generic_finalize_cannot_bypass_child_parent_signal_owner(tmp_path
     )
 
     with pytest.raises(Exception) as rejected:
-        await uow.finalize_and_enqueue_delivery(
+        await uow.commit_run_outcome(
             command.child_run_id,
             expected_version=child.version,
             terminal_status=RunStatus.COMPLETED,
@@ -502,8 +502,8 @@ async def test_accepted_and_terminal_inbox_redeliver_after_restart_until_ack(tmp
     assert accepted_once[0].signal.kind == "child_accepted"
     assert accepted_once[0].record.signal_id == accepted_twice[0].record.signal_id
     uow = SqliteExecutionUnitOfWork(path, clock=clock)
-    await uow.save_continuation("parent-run", 0, {"state": "waiting"})
-    applied = await uow.apply_child_signal_and_ack(
+    await uow.persist_react_boundary("parent-run", 0, {"state": "waiting"})
+    applied = await uow.ack_child_signal(
         accepted_once[0].record.signal_id,
         expected_continuation_version=1,
         continuation_payload={"state": "accepted"},
@@ -513,9 +513,9 @@ async def test_accepted_and_terminal_inbox_redeliver_after_restart_until_ack(tmp
         ),
     )
     assert await _pending(restarted, "parent-run") == ()
-    advanced = await uow.save_continuation("parent-run", 2, {"state": "advanced"})
+    advanced = await uow.persist_react_boundary("parent-run", 2, {"state": "advanced"})
     assert advanced.version == 3
-    replayed = await SqliteExecutionUnitOfWork(path, clock=clock).apply_child_signal_and_ack(
+    replayed = await SqliteExecutionUnitOfWork(path, clock=clock).ack_child_signal(
         accepted_once[0].record.signal_id,
         expected_continuation_version=1,
         continuation_payload={"state": "accepted"},
@@ -526,7 +526,7 @@ async def test_accepted_and_terminal_inbox_redeliver_after_restart_until_ack(tmp
     )
     assert replayed == applied
     with pytest.raises(IdempotencyConflict):
-        await uow.apply_child_signal_and_ack(
+        await uow.ack_child_signal(
             accepted_once[0].record.signal_id,
             expected_continuation_version=1,
             continuation_payload={"state": "foreign"},
@@ -575,7 +575,7 @@ async def test_signal_ack_crash_keeps_inbox_pending_for_recovery(tmp_path):
             raise RuntimeError("crash before signal ack")
 
     uow = SqliteExecutionUnitOfWork(path, clock=clock)
-    await uow.save_continuation("parent-run", 0, {"state": "waiting"})
+    await uow.persist_react_boundary("parent-run", 0, {"state": "waiting"})
     kwargs = dict(
         expected_continuation_version=1,
         continuation_payload={"state": "accepted"},
@@ -588,11 +588,11 @@ async def test_signal_ack_crash_keeps_inbox_pending_for_recovery(tmp_path):
         path, clock=clock, fault_injector=fault
     )
     with pytest.raises(RuntimeError, match="signal ack"):
-        await crashing.apply_child_signal_and_ack(delivery.record.signal_id, **kwargs)
+        await crashing.ack_child_signal(delivery.record.signal_id, **kwargs)
 
     redelivered = await _pending(healthy, "parent-run")
     assert [item.record.signal_id for item in redelivered] == [delivery.record.signal_id]
-    await uow.apply_child_signal_and_ack(delivery.record.signal_id, **kwargs)
+    await uow.ack_child_signal(delivery.record.signal_id, **kwargs)
 
 
 @pytest.mark.asyncio
@@ -605,16 +605,16 @@ async def test_stale_recovery_cannot_apply_child_boundary_event_or_ack(tmp_path)
     await coordinator.submit(parent, _delegate("stale-signal"))
     await _scheduler(coordinator, Launcher(), "scheduler-a").reconcile_once()
     delivery = (await _pending(coordinator, "parent-run"))[0]
-    stale = await uow.claim_recovery("parent-run", owner="worker-a", lease_seconds=5)
+    stale = await uow.recovery_scope("parent-run", owner="worker-a", lease_seconds=5)
     clock.advance(6)
-    await uow.claim_recovery("parent-run", owner="worker-b", lease_seconds=10)
+    await uow.recovery_scope("parent-run", owner="worker-b", lease_seconds=10)
 
     with pytest.raises(StaleRecoveryLease, match="lost its lease"):
         await uow.list_pending_child_signals(
             "parent-run", recovery_lease=stale
         )
     with pytest.raises(StaleRecoveryLease, match="lost its lease"):
-        await uow.apply_child_signal_and_ack(
+        await uow.ack_child_signal(
             delivery.record.signal_id,
             expected_continuation_version=0,
             continuation_payload={"children": [delivery.record.child_run_id]},
@@ -690,7 +690,7 @@ async def test_detached_parent_terminal_discards_replayed_child_signals(tmp_path
     await scheduler.reconcile_once()
     first_deliveries = tuple(launcher.deliveries)
 
-    await uow.finalize_and_enqueue_delivery(
+    await uow.commit_run_outcome(
         parent.run_id,
         expected_version=parent.version,
         terminal_status=RunStatus.COMPLETED,
@@ -733,7 +733,7 @@ async def test_terminal_parent_preserves_attached_signal_as_invariant(join_polic
     await coordinator.submit(parent, _delegate("attached-terminal", join_policy))
     scheduler = ChildRunScheduler(coordinator, Launcher(), owner="scheduler-a")
     await scheduler.reconcile_once()
-    await uow.finalize_and_enqueue_delivery(
+    await uow.commit_run_outcome(
         parent.run_id, expected_version=parent.version,
         terminal_status=RunStatus.COMPLETED,
         event=RunEventCandidate(

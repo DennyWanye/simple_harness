@@ -153,7 +153,7 @@ class DriverRuntime:
             while True:
                 await asyncio.sleep(10.0)
                 try:
-                    current[0] = await self._uow.renew_recovery(current[0])
+                    current[0] = await self._uow.recovery_scope(current[0])
                 except BaseException as exc:
                     heartbeat_error.append(exc)
                     return
@@ -161,13 +161,13 @@ class DriverRuntime:
         candidates: AsyncIterator[DriverEvent] | None = None
         heartbeat_task: asyncio.Task[None] | None = None
         try:
-            current[0] = await self._uow.renew_recovery(current[0])
+            current[0] = await self._uow.recovery_scope(current[0])
             candidates = registration.driver.recover(record.run_id, current[0])
             heartbeat_task = asyncio.create_task(
                 heartbeat(), name=f"deskpet-recovery-heartbeat:{record.run_id}"
             )
             while True:
-                current[0] = await self._uow.renew_recovery(current[0])
+                current[0] = await self._uow.recovery_scope(current[0])
                 if heartbeat_error:
                     raise heartbeat_error[0]
                 try:
@@ -188,7 +188,7 @@ class DriverRuntime:
                     await heartbeat_task
             if candidates is not None:
                 await candidates.aclose()
-            await self._uow.release_recovery(current[0])
+            await self._uow.recovery_scope(current[0], lease_seconds=None)
 
     async def consume(
         self,
@@ -278,7 +278,7 @@ class DriverRuntime:
                 if declared_effectful:
                     owner = recovery_lease.owner if recovery_lease is not None else "kernel"
                     epoch = recovery_lease.epoch if recovery_lease is not None else 1
-                    claim = await self._uow.consume_grant_and_claim_effect(
+                    claim = await self._uow.claim_tool_call(
                         consume,
                         actor,
                         run_id=record.run_id,
@@ -360,7 +360,7 @@ class DriverRuntime:
                         raise ValueError("authorized tool is missing a grant")
                     authorizations.append(
                         None if consume is None
-                        else await self._uow.consume_authorization(consume, actor)
+                        else await self._uow.claim_tool_call(consume, actor)
                     )
                     outcome_metadata.append({})
                     precomputed.append(None)
@@ -390,7 +390,7 @@ class DriverRuntime:
                 claim, context = dict(metadata["effect_claim"]), candidate.contexts[index]
                 pending = outcomes[index].to_dict()
                 pending["reconciliation_pending"] = True
-                await self._uow.mark_effect_unknown(
+                await self._uow.settle_effect(
                     context.effect_id,
                     expected_effect_version=int(claim["effect_version"]),
                     attempt_no=int(claim["attempt_no"]),

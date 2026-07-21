@@ -84,7 +84,7 @@ class Driver:
 async def make_client(tmp_path, *, complete: bool = True, durable: bool = False):
     uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
     await uow.initialize()
-    state = await uow.activate_empty_runtime()
+    state = await uow.activate_runtime()
     assert (state.phase, state.generation) == ("open", 1)
     driver = Driver(complete=complete)
     kernel = RunKernel(
@@ -137,7 +137,7 @@ async def test_signal_and_cancel_are_run_scoped(tmp_path):
     actor = Resolver().resolve_actor({"session_id": "session"}, root_run_id=handle.run_id)
     ref = RunRef(handle.run_id, "session")
     record = await uow.query(ref, actor)
-    await uow.open_decision(
+    await uow.commit_decision(
         DecisionOpen(
             decision_id="d1",
             run_id=handle.run_id,
@@ -146,9 +146,7 @@ async def test_signal_and_cancel_are_run_scoped(tmp_path):
             prompt_schema_version=1,
             prompt={"question": "continue?"},
             expires_at=None,
-        ),
-        actor,
-        expected_run_version=record.version,
+        ), actor, expected_run_version=record.version,
     )
     receipt = await client.signal(
         {"run_id": handle.run_id, "expected_session_id": "session"},

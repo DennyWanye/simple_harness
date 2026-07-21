@@ -92,7 +92,7 @@ async def test_empty_manifest_activation_opens_generation_one_for_kernel_rows(tm
     store = SqliteExecutionUnitOfWork(path, clock=lambda: 100.0)
 
     assert await store.scan_legacy_drain_manifest() == ()
-    state = await store.activate_empty_runtime()
+    state = await store.activate_runtime()
     created = await store.create(_spec("kernel-run"))
 
     assert state.phase == "open"
@@ -119,13 +119,31 @@ async def test_starts_fail_closed_while_runtime_is_draining_or_activated(tmp_pat
     path = tmp_path / "closed.db"
     store = SqliteExecutionUnitOfWork(path, clock=lambda: 100.0)
 
-    draining = await store.begin_runtime_activation()
+    def fail_after_activated(point: str) -> None:
+        if point == "activation_after_activated":
+            raise RuntimeError(point)
+
+    crashing = SqliteExecutionUnitOfWork(
+        path, clock=lambda: 100.0, fault_injector=fail_after_activated
+    )
+    with pytest.raises(RuntimeError, match="activation_after_activated"):
+        await crashing.activate_runtime()
+    draining = await store.get_runtime_state()
     assert draining.phase == "draining"
     with pytest.raises(RuntimeActivationError) as draining_error:
         await store.create(_spec("during-drain"))
     assert draining_error.value.code == "runtime_ingress_closed"
 
-    activated = await store.activate_drained_runtime()
+    def fail_after_open(point: str) -> None:
+        if point == "activation_after_open":
+            raise RuntimeError(point)
+
+    crashing = SqliteExecutionUnitOfWork(
+        path, clock=lambda: 100.0, fault_injector=fail_after_open
+    )
+    with pytest.raises(RuntimeError, match="activation_after_open"):
+        await crashing.activate_runtime()
+    activated = await store.get_runtime_state()
     assert activated.phase == "activated"
     with pytest.raises(RuntimeActivationError) as activated_error:
         await store.create(_spec("before-open"))
@@ -137,8 +155,8 @@ async def test_activation_is_idempotent_and_does_not_increment_generation(tmp_pa
     path = tmp_path / "repeat.db"
     store = SqliteExecutionUnitOfWork(path, clock=lambda: 100.0)
 
-    first = await store.activate_empty_runtime()
-    second = await store.activate_empty_runtime()
+    first = await store.activate_runtime()
+    second = await store.activate_runtime()
 
     assert second == first
     async with aiosqlite.connect(path) as db:
@@ -157,7 +175,7 @@ async def test_concurrent_activation_uses_one_generation_and_one_cas_result(tmp_
     await second.initialize()
 
     states = await asyncio.gather(
-        first.activate_empty_runtime(), second.activate_empty_runtime()
+        first.activate_runtime(), second.activate_runtime()
     )
 
     assert {(state.phase, state.generation) for state in states} == {("open", 1)}
@@ -190,11 +208,11 @@ async def test_activation_crash_recovers_by_rolling_forward(
         path, clock=lambda: 100.0, fault_injector=fail_once
     )
     with pytest.raises(RuntimeError, match=f"crash:{fault_point}"):
-        await crashing.activate_empty_runtime()
+        await crashing.activate_runtime()
 
     restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
     assert (await restarted.get_runtime_state()).phase == phase_after_crash
-    state = await restarted.activate_empty_runtime()
+    state = await restarted.activate_runtime()
     assert (state.phase, state.generation) == ("open", 1)
 
 
@@ -205,17 +223,17 @@ async def test_nonempty_manifest_is_durable_and_cannot_use_empty_activation(tmp_
     await store.create(_spec("legacy-active"))
 
     refs = await store.scan_legacy_drain_manifest()
-    state = await store.begin_runtime_activation()
+    with pytest.raises(RuntimeActivationError) as error:
+        await store.activate_runtime()
+    state = await store.get_runtime_state()
 
     assert [(item.source_kind, item.source_run_id) for item in refs] == [
         ("execution_run", "legacy-active")
     ]
     assert (state.phase, state.generation, state.drain_count) == ("draining", 0, 1)
-    with pytest.raises(RuntimeActivationError) as error:
-        await store.activate_empty_runtime()
     assert error.value.code == "legacy_drain_required"
     with pytest.raises(RuntimeActivationError) as incomplete:
-        await store.activate_drained_runtime()
+        await store.activate_runtime(require_empty=False)
     assert incomplete.value.code == "legacy_drain_incomplete"
 
 
@@ -234,7 +252,7 @@ async def test_schema_rejects_owner_that_does_not_match_runtime_fence(tmp_path):
 
     open_path = tmp_path / "illegal-open.db"
     opened = SqliteExecutionUnitOfWork(open_path)
-    await opened.activate_empty_runtime()
+    await opened.activate_runtime()
     with pytest.raises(aiosqlite.IntegrityError, match="execution_owner_not_active"):
         await _insert_direct_owner_row(
             open_path,

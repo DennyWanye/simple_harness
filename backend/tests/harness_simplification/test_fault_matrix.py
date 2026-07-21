@@ -227,7 +227,7 @@ async def _store(path: Path, *, hook: str | None = None) -> SqliteExecutionUnitO
     store = SqliteExecutionUnitOfWork(
         path, clock=lambda: 100.0, fault_injector=fail if hook else None
     )
-    await store.activate_empty_runtime()
+    await store.activate_runtime()
     return store
 
 
@@ -271,17 +271,17 @@ async def _exercise_promotion(path: Path, hook: str) -> None:
     )
     crashing = await _store(path, hook=hook)
     with pytest.raises(RuntimeError, match=f"crash:{hook}"):
-        await crashing.promote_and_persist_batch_boundary(spec, **kwargs)
+        await crashing.persist_react_boundary(spec, **kwargs)
     assert (await _counts(path))["run"] == 0
     restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
-    await restarted.promote_and_persist_batch_boundary(spec, **kwargs)
+    await restarted.persist_react_boundary(spec, **kwargs)
 
 
 async def _exercise_decision(path: Path, hook: str) -> None:
     healthy = await _store(path)
     await healthy.create(_spec("decision"))
     request = _decision("decision")
-    await healthy.open_decision(request, _actor(), expected_run_version=0)
+    await healthy.commit_decision(request, _actor(), expected_run_version=0)
     crashing = SqliteExecutionUnitOfWork(
         path,
         clock=lambda: 100.0,
@@ -290,9 +290,9 @@ async def _exercise_decision(path: Path, hook: str) -> None:
         else None,
     )
     with pytest.raises(RuntimeError, match=f"crash:{hook}"):
-        await crashing.resolve_decision(_signal(request), _actor())
+        await crashing.commit_decision(_signal(request), _actor())
     restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
-    resolved, _ = await restarted.resolve_decision(_signal(request), _actor())
+    resolved, _ = await restarted.commit_decision(_signal(request), _actor())
     assert resolved.status.value == "allowed"
 
 
@@ -301,7 +301,7 @@ async def _exercise_decision_boundary(path: Path, hook: str) -> None:
     await healthy.create(_spec("decision-boundary"))
     permission = hook == "decision_resolve_after_grant"
     request = _decision("decision-boundary", permission=permission)
-    await healthy.save_continuation(
+    await healthy.persist_react_boundary(
         "decision-boundary", 0, {"state": "waiting"}, request
     )
     kwargs = dict(
@@ -323,14 +323,14 @@ async def _exercise_decision_boundary(path: Path, hook: str) -> None:
         else None,
     )
     with pytest.raises(RuntimeError, match=f"crash:{hook}"):
-        await crashing.resolve_decision_and_advance_boundary(
+        await crashing.commit_decision(
             _signal(request), _actor(), **kwargs
         )
     unchanged = await healthy.load_continuation("decision-boundary")
     assert unchanged is not None and unchanged.payload["state"] == "waiting"
     restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
     decision, _, continuation, event = (
-        await restarted.resolve_decision_and_advance_boundary(
+        await restarted.commit_decision(
             _signal(request), _actor(), **kwargs
         )
     )
@@ -343,8 +343,8 @@ async def _exercise_grant(path: Path, hook: str) -> None:
     healthy = await _store(path)
     await healthy.create(_spec("grant"))
     request = _decision("grant", permission=True)
-    await healthy.open_decision(request, _actor(), expected_run_version=0)
-    await healthy.resolve_decision(_signal(request), _actor())
+    await healthy.commit_decision(request, _actor(), expected_run_version=0)
+    await healthy.commit_decision(_signal(request), _actor())
     crashing = SqliteExecutionUnitOfWork(
         path,
         clock=lambda: 100.0,
@@ -353,9 +353,9 @@ async def _exercise_grant(path: Path, hook: str) -> None:
         else None,
     )
     with pytest.raises(RuntimeError, match=f"crash:{hook}"):
-        await crashing.consume_authorization(_grant(request), _actor())
+        await crashing.claim_tool_call(_grant(request), _actor())
     restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
-    consumed = await restarted.consume_authorization(_grant(request), _actor())
+    consumed = await restarted.claim_tool_call(_grant(request), _actor())
     assert consumed.version == 1
 
 
@@ -373,8 +373,8 @@ async def _permission_ready(path: Path) -> tuple[SqliteExecutionUnitOfWork, Deci
     healthy = await _store(path)
     await healthy.create(_spec("grant"))
     request = _decision("grant", permission=True)
-    await healthy.open_decision(request, _actor(), expected_run_version=0)
-    await healthy.resolve_decision(_signal(request), _actor())
+    await healthy.commit_decision(request, _actor(), expected_run_version=0)
+    await healthy.commit_decision(_signal(request), _actor())
     return healthy, request
 
 
@@ -388,16 +388,16 @@ async def _exercise_effect_claim(path: Path, hook: str) -> None:
         else None,
     )
     with pytest.raises(RuntimeError, match=f"crash:{hook}"):
-        await crashing.consume_grant_and_claim_effect(
+        await crashing.claim_tool_call(
             _grant(request), _actor(request.run_id), **_effect_claim_kwargs()
         )
     before = await _counts(path)
     assert before["effect"] == before["attempt"] == 0
     restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
-    claim = await restarted.consume_grant_and_claim_effect(
+    claim = await restarted.claim_tool_call(
         _grant(request), _actor(request.run_id), **_effect_claim_kwargs()
     )
-    replay = await restarted.consume_grant_and_claim_effect(
+    replay = await restarted.claim_tool_call(
         _grant(request), _actor(request.run_id), **_effect_claim_kwargs()
     )
     assert claim.status == replay.status == "running"
@@ -408,10 +408,10 @@ async def _exercise_effect_claim(path: Path, hook: str) -> None:
 
 async def _exercise_effect_settle(path: Path, hook: str) -> int:
     healthy, request = await _permission_ready(path)
-    await healthy.consume_grant_and_claim_effect(
+    await healthy.claim_tool_call(
         _grant(request), _actor(request.run_id), **_effect_claim_kwargs()
     )
-    await healthy.save_continuation("grant", 0, {"state": "running-effect"})
+    await healthy.persist_react_boundary("grant", 0, {"state": "running-effect"})
     kwargs = dict(
         expected_effect_version=0,
         attempt_no=1,
@@ -443,12 +443,12 @@ async def _exercise_effect_settle(path: Path, hook: str) -> int:
         else None,
     )
     with pytest.raises(RuntimeError, match=f"crash:{hook}"):
-        await crashing.settle_effect_and_advance_boundary("effect-1", **kwargs)
+        await crashing.settle_effect("effect-1", **kwargs)
     before = await _counts(path)
     assert before["link"] == before["event"] == before["delivery"] == 0
     restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
-    settled = await restarted.settle_effect_and_advance_boundary("effect-1", **kwargs)
-    replay = await restarted.settle_effect_and_advance_boundary("effect-1", **kwargs)
+    settled = await restarted.settle_effect("effect-1", **kwargs)
+    replay = await restarted.settle_effect("effect-1", **kwargs)
     assert replay == settled and settled.status == "succeeded"
     return external_writes
 
@@ -470,11 +470,11 @@ async def _exercise_finalize(path: Path, hook: str) -> None:
         deliveries=(_goal_delivery(),),
     )
     with pytest.raises(RuntimeError, match=f"crash:{hook}"):
-        await crashing.finalize_and_enqueue_delivery("final", **kwargs)
+        await crashing.commit_run_outcome("final", **kwargs)
     before = await _counts(path)
     assert before["event"] == before["delivery"] == 0
     restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
-    await restarted.finalize_and_enqueue_delivery("final", **kwargs)
+    await restarted.commit_run_outcome("final", **kwargs)
 
 
 async def _prepare_child(path: Path) -> tuple[SqliteExecutionUnitOfWork, ChildCommandIntent]:
@@ -539,7 +539,7 @@ async def _scheduled_child(path: Path) -> tuple[SqliteExecutionUnitOfWork, Child
 async def _exercise_child_apply(path: Path, hook: str) -> None:
     healthy, _ = await _scheduled_child(path)
     signal = (await healthy.list_pending_child_signals("parent"))[0]
-    await healthy.save_continuation("parent", 0, {"state": "waiting-child"})
+    await healthy.persist_react_boundary("parent", 0, {"state": "waiting-child"})
     kwargs = dict(
         expected_continuation_version=1,
         continuation_payload={"state": "child-accepted"},
@@ -559,13 +559,13 @@ async def _exercise_child_apply(path: Path, hook: str) -> None:
         else None,
     )
     with pytest.raises(RuntimeError, match=f"crash:{hook}"):
-        await crashing.apply_child_signal_and_ack(signal.signal_id, **kwargs)
+        await crashing.ack_child_signal(signal.signal_id, **kwargs)
     unchanged = await healthy.load_continuation("parent")
     assert unchanged is not None and unchanged.payload["state"] == "waiting-child"
     assert (await healthy.list_pending_child_signals("parent"))[0].signal_id == signal.signal_id
     restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
-    applied = await restarted.apply_child_signal_and_ack(signal.signal_id, **kwargs)
-    replay = await restarted.apply_child_signal_and_ack(signal.signal_id, **kwargs)
+    applied = await restarted.ack_child_signal(signal.signal_id, **kwargs)
+    replay = await restarted.ack_child_signal(signal.signal_id, **kwargs)
     assert replay == applied and applied[0].delivered_at is not None
 
 
@@ -732,7 +732,7 @@ async def _exercise_checkpoint_execution_tx(path: Path, hook: str) -> None:
 
     if hook == "checkpoint_consume_decisions_after_write":
         request = replace(_decision(run_id), decision_id=f"decision:{run_id}")
-        await healthy.open_decision(request, _actor(run_id), expected_run_version=0)
+        await healthy.commit_decision(request, _actor(run_id), expected_run_version=0)
         async with aiosqlite.connect(path) as db:
             await db.execute(
                 """UPDATE execution_decisions SET status='allowed',response_schema_version=1,
@@ -1009,10 +1009,10 @@ async def test_unapproved_effect_claim_is_durable_and_replay_never_executes(tmp_
         effect_id="effect-no-approval", tool_name="local-write", args_hash=ARGS_HASH,
         capability_hash=CAPABILITY_HASH, scope_hash=SCOPE_HASH,
     )
-    first = await store.consume_grant_and_claim_effect(
+    first = await store.claim_tool_call(
         None, _actor("no-approval"), **identity, **_effect_claim_kwargs()
     )
-    replay = await store.consume_grant_and_claim_effect(
+    replay = await store.claim_tool_call(
         None, _actor("no-approval"), **identity, **_effect_claim_kwargs()
     )
     assert (first.action, replay.action) == ("execute", "in_flight")
@@ -1024,7 +1024,7 @@ async def test_child_effect_actor_binds_to_root_tree_not_child_id(tmp_path) -> N
     store = await _store(tmp_path / "child-effect.db")
     await store.create(_spec("parent"))
     await store.create(_spec("child-effect", parent_run_id="parent"))
-    claim = await store.consume_grant_and_claim_effect(
+    claim = await store.claim_tool_call(
         None, _actor("parent"), run_id="child-effect", expected_session_id="session",
         call_id="call-child", effect_id="effect-child", tool_name="child-write",
         args_hash=ARGS_HASH, capability_hash=CAPABILITY_HASH, scope_hash=SCOPE_HASH,
@@ -1042,12 +1042,12 @@ async def test_accepted_effect_status_survives_authoritative_reuse(tmp_path) -> 
         effect_id="effect-accepted", tool_name="async-write", args_hash=ARGS_HASH,
         capability_hash=CAPABILITY_HASH, scope_hash=SCOPE_HASH,
     )
-    claim = await store.consume_grant_and_claim_effect(
+    claim = await store.claim_tool_call(
         None, _actor("accepted"), **identity, **_effect_claim_kwargs()
     )
-    await store.save_continuation("accepted", 0, {"outcomes": [None]})
+    await store.persist_react_boundary("accepted", 0, {"outcomes": [None]})
     outcome = NormalizedToolOutcome.success({"status": "queued"})
-    await store.settle_effect_and_advance_boundary(
+    await store.settle_effect(
         "effect-accepted", expected_effect_version=claim.effect_version,
         attempt_no=claim.attempt_no, worker_owner=claim.worker_owner,
         worker_epoch=claim.worker_epoch, status="accepted", outcome=outcome.to_dict(),

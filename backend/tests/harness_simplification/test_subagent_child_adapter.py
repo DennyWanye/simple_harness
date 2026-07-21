@@ -159,7 +159,7 @@ def _kernel(uow, coordinator, collaborator):
 async def test_batch_child_restart_runs_parallel_and_reaches_parent_inbox(tmp_path) -> None:
     path = tmp_path / "execution.db"
     first_uow = SqliteExecutionUnitOfWork(path)
-    await first_uow.activate_empty_runtime()
+    await first_uow.activate_runtime()
     first_coordinator = ChildRunCoordinator(first_uow)
     first_collaborator = _BatchCollaborator(_command)
     first_kernel = _kernel(first_uow, first_coordinator, first_collaborator)

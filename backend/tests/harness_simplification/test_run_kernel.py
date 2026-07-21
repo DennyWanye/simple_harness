@@ -606,7 +606,7 @@ async def test_first_decision_atomically_promotes_boundary_and_kernel_adopts_uow
     tmp_path,
 ) -> None:
     uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
-    await uow.activate_empty_runtime()
+    await uow.activate_runtime()
     driver = ReActDriver(ClarificationCollaborator(), uow, NoEffects())
     value = RunKernel(
         uow=uow,
@@ -656,7 +656,7 @@ async def test_kernel_decision_boundary_rolls_back_and_retries_after_restart(
         fault_injector=lambda point: (_ for _ in ()).throw(RuntimeError(f"crash:{point}"))
         if point == crash_point else None,
     )
-    await crashing_uow.activate_empty_runtime()
+    await crashing_uow.activate_runtime()
     first = RunKernel(
         uow=crashing_uow,
         router=RegisteredRouter(StaticClassifier("react.default"), _profiles("react.default", "react")),
@@ -701,7 +701,7 @@ async def test_kernel_decision_boundary_rolls_back_and_retries_after_restart(
 @pytest.mark.asyncio
 async def test_kernel_decision_rejects_wrong_stale_and_duplicate_without_advancing(tmp_path) -> None:
     uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
-    await uow.activate_empty_runtime()
+    await uow.activate_runtime()
     kernel = RunKernel(
         uow=uow,
         router=RegisteredRouter(StaticClassifier("react.default"), _profiles("react.default", "react")),
@@ -744,7 +744,7 @@ async def test_kernel_decision_rejects_wrong_stale_and_duplicate_without_advanci
 async def test_recovery_resumes_committed_decision_marker_after_process_crash(tmp_path) -> None:
     path = tmp_path / "workflow.db"
     uow = SqliteExecutionUnitOfWork(path)
-    await uow.activate_empty_runtime()
+    await uow.activate_runtime()
     first = RunKernel(
         uow=uow,
         router=RegisteredRouter(StaticClassifier("react.default"), _profiles("react.default", "react")),
@@ -871,9 +871,12 @@ async def test_recovery_renews_before_driver_and_first_anext(tmp_path) -> None:
     timeline: list[str] = []
 
     class TrackingUow(SqliteExecutionUnitOfWork):
-        async def renew_recovery(self, lease, *, lease_seconds=30.0):
-            timeline.append("renew")
-            return await super().renew_recovery(lease, lease_seconds=lease_seconds)
+        async def recovery_scope(self, subject, *, owner=None, lease_seconds=30.0):
+            if not isinstance(subject, str) and lease_seconds is not None:
+                timeline.append("renew")
+            return await super().recovery_scope(
+                subject, owner=owner, lease_seconds=lease_seconds
+            )
 
     uow = TrackingUow(tmp_path / "workflow.db")
     context = HostContextFactory().create_run_context(
@@ -931,7 +934,7 @@ async def test_decision_signal_is_durably_fenced_before_driver_resume(tmp_path) 
     handle = await value.start(RunRequest("hello", "req-decision", "turn-1"), host())
     actor = host().actor(root_run_id=handle.root_run_id)
     record = await uow.query(handle.ref, actor)
-    await uow.open_decision(
+    await uow.commit_decision(
         DecisionOpen(
             decision_id="decision-1",
             run_id=handle.ref.run_id,
@@ -940,9 +943,7 @@ async def test_decision_signal_is_durably_fenced_before_driver_resume(tmp_path) 
             prompt_schema_version=1,
             prompt={"question": "continue?"},
             expires_at=None,
-        ),
-        actor,
-        expected_run_version=record.version,
+        ), actor, expected_run_version=record.version,
     )
 
     receipt = await value.signal(
@@ -1171,7 +1172,7 @@ async def test_precreated_child_with_continuation_recovers_instead_of_restarting
         leased.operation_id, lease_owner="setup",
         lease_epoch=leased.schedule_lease_epoch,
     )
-    await uow.save_continuation(
+    await uow.persist_react_boundary(
         command.child_run_id, 0, {"checkpoint": "already-started"}
     )
 
@@ -1205,9 +1206,12 @@ async def test_slow_child_signal_renews_parent_lease_before_fenced_write(tmp_pat
     class TrackingUow(SqliteExecutionUnitOfWork):
         renewals = 0
 
-        async def renew_recovery(self, lease, *, lease_seconds=30.0):
-            self.renewals += 1
-            return await super().renew_recovery(lease, lease_seconds=lease_seconds)
+        async def recovery_scope(self, subject, *, owner=None, lease_seconds=30.0):
+            if not isinstance(subject, str) and lease_seconds is not None:
+                self.renewals += 1
+            return await super().recovery_scope(
+                subject, owner=owner, lease_seconds=lease_seconds
+            )
 
     class SlowSignalDriver(FakeDriver):
         async def signal(self, signal, recovery_lease=None):
@@ -1219,7 +1223,7 @@ async def test_slow_child_signal_renews_parent_lease_before_fenced_write(tmp_pat
                         break
                     await asyncio.sleep(0.005)
                 assert uow.renewals > prior
-            await uow.save_continuation(
+            await uow.persist_react_boundary(
                 signal.run_id, 0, {"slow_signal_applied": True},
                 recovery_lease=recovery_lease,
             )
@@ -1598,7 +1602,7 @@ async def test_runtime_reuses_settled_effect_without_live_registry_policy(tmp_pa
         effect_id="effect-reuse", capability_hash=context.capability_hash,
         scope_hash="scope",
     )
-    claim = await uow.consume_grant_and_claim_effect(
+    claim = await uow.claim_tool_call(
         None, host().actor(root_run_id=run_id), run_id=run_id,
         expected_session_id="s1", call_id=call.stable_call_id,
         effect_id=tool_context.effect_id, tool_name=call.tool_name,
@@ -1607,9 +1611,9 @@ async def test_runtime_reuses_settled_effect_without_live_registry_policy(tmp_pa
         policy={"kind": call.effect_type, "version": call.effect_policy_version},
         prepared=call.to_dict(), worker_owner="kernel", worker_epoch=1,
     )
-    await uow.save_continuation(run_id, 0, {"pending": True})
+    await uow.persist_react_boundary(run_id, 0, {"pending": True})
     outcome = NormalizedToolOutcome.success({"reused": True})
-    await uow.settle_effect_and_advance_boundary(
+    await uow.settle_effect(
         tool_context.effect_id, expected_effect_version=claim.effect_version,
         attempt_no=claim.attempt_no, worker_owner=claim.worker_owner,
         worker_epoch=claim.worker_epoch, status="succeeded", outcome=outcome.to_dict(),
@@ -1673,7 +1677,7 @@ async def test_in_flight_effect_does_not_starve_new_effect_in_same_batch(tmp_pat
         )
         for index, call in enumerate(calls, 1)
     )
-    await uow.consume_grant_and_claim_effect(
+    await uow.claim_tool_call(
         None, host().actor(root_run_id=run_id), run_id=run_id,
         expected_session_id="s1", call_id=calls[0].stable_call_id,
         effect_id=contexts[0].effect_id, tool_name=calls[0].tool_name,
