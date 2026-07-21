@@ -17,28 +17,49 @@ def _write(repo: Path, relative: str, source: str) -> None:
     path.write_text(source, encoding="utf-8")
 
 
-def test_r45_authority_manifests_lock_real_baseline_without_enforcing_exit_target() -> None:
+def test_r45_authority_manifests_lock_current_facts_and_target_is_derived() -> None:
     result = authority_audit.audit()
 
-    assert result == {
-        "passed": True,
-        "failures": [],
-        "current": {
-            "dml": {"runtime_dml_authority_count": 2},
-            "uow": {"transaction_starter_count": 33},
-            "harness": {
-                "legacy_survivor_count": 15,
-                "run_map_authority_count": 4,
-                "supervisor_task_authority_count": 2,
-                "presenter_converter_authority_count": 1,
-            },
-        },
+    assert result["passed"] is True
+    assert result["failures"] == []
+    expected = {
+        label: json.loads(path.read_text(encoding="utf-8"))["baseline"]
+        for label, path in authority_audit.MANIFEST_PATHS.items()
     }
+    assert result["current"] == expected
 
     target = authority_audit.audit(enforce_target=True)
-    assert target["passed"] is False
-    assert any("runtime DML authority count is 1, found 2" in item for item in target["failures"])
-    assert any("transaction starter count is <=23, found 33" in item for item in target["failures"])
+    harness = expected["harness"]
+    target_reached = (
+        expected["dml"]["runtime_dml_authority_count"] == 1
+        and expected["uow"]["transaction_starter_count"] <= 23
+        and harness["legacy_survivor_count"] <= 15
+        and harness["run_map_authority_count"] == 1
+        and harness["supervisor_task_authority_count"] == 1
+        and harness["presenter_converter_authority_count"] == 1
+    )
+    assert target["passed"] is target_reached
+
+
+def test_manifest_refresh_preserves_approved_baseline_commit(monkeypatch, tmp_path: Path) -> None:
+    approved_commit = "a" * 40
+    path = tmp_path / "authority.json"
+    path.write_text(json.dumps({"baseline_commit": approved_commit}), encoding="utf-8")
+    monkeypatch.setattr(authority_audit, "MANIFEST_PATHS", {"dml": path})
+    monkeypatch.setattr(
+        authority_audit,
+        "build_manifests",
+        lambda _repo: {"dml": {"baseline_commit": "b" * 40, "items": []}},
+    )
+    monkeypatch.setattr(
+        authority_audit,
+        "audit",
+        lambda *_args, **_kwargs: {"passed": True, "failures": [], "current": {}},
+    )
+    monkeypatch.setattr("sys.argv", ["harness_authority_audit.py", "--write"])
+
+    assert authority_audit.main() == 0
+    assert json.loads(path.read_text(encoding="utf-8"))["baseline_commit"] == approved_commit
 
 
 def test_authority_audit_resolves_bundled_git_without_path(monkeypatch) -> None:

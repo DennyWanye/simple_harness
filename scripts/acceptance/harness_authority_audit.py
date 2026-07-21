@@ -763,7 +763,13 @@ def main() -> int:
     if args.write:
         manifests = build_manifests(ROOT)
         for label, payload in manifests.items():
-            MANIFEST_PATHS[label].write_text(
+            path = MANIFEST_PATHS[label]
+            if path.is_file():
+                approved = json.loads(path.read_text(encoding="utf-8"))
+                payload["baseline_commit"] = approved.get(
+                    "baseline_commit", payload["baseline_commit"]
+                )
+            path.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
