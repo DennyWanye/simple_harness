@@ -1,8 +1,8 @@
 # Plan：DeskPet Agent Harness 提炼与简化
 
-> plan-status: finalized (R4.5 phase-2 rework approved 2026-07-21)
+> plan-status: finalized (R5.5 A2 LOC-gate amendment approved 2026-07-21)
 >
-> 状态：R0～R5 与 R4.5 已完成；R4.5 final gate 为 raw/adjusted/core/Kernel `33,925/33,416/5,498/767`，完整 harness `424 passed, 8 xfailed`，生产 owner 仍保持 `legacy/0`。下一阶段是 R6 原子 activation。
+> 状态：R0～R5 与 R4.5 已完成；R4.5 final gate 为 raw/adjusted/core/Kernel `33,925/33,416/5,498/767`，完整 harness `424 passed, 8 xfailed`，生产 owner 仍保持 `legacy/0`。2026-07-21 用户批准 A2 及真代码 spike 推导的新 LOC 门：先执行 R5.5 通用 durable admission boundary 与 cutover-readiness，再进入 R6 原子 activation。
 >
 > 关联文档：[`acceptance.md`](./acceptance.md) · [`architecture-baseline.md`](./architecture-baseline.md) · [`target-architecture.md`](./target-architecture.md)
 
@@ -29,6 +29,16 @@
 | 4 | FAIL | owner≤7 阶段错误、DML/API/删除预算未锁定 |
 | 5 | FAIL | fault window 总数与 LOC 余量机械数字不一致 |
 | 6 | **PASS** | `39` 窗、core `5,725→≤5,500`、UoW `33→≤23`、R4.5/R6 阶段边界全部闭合 |
+
+### R5.5 A2 Admission 返工挑战记录
+
+| 轮次 | 结果 | 收敛内容 |
+|---|---|---|
+| 1 | FAIL | pre-Kernel scope、duplicate-start、atomic launch、production `legacy/0` 边界 |
+| 2 | FAIL | phase、provider unknown、Workflow created 语义、cutover A/B manifest |
+| 3 | FAIL | 三个 launch owner、39-hook operation cases、可信 provider snapshot、具名 dormant factories |
+| 4 | FAIL | 上述契约已闭合；disposable spike 证伪旧 LOC 门，要求用户批准 R5.5 construction 与 R6 permanent 新门 |
+| 5 | **PASS** | spike 门获批；A/B 提交、construction/permanent gate、真实 gate 命令与进程清理纪律全部闭合 |
 
 ## 1. 主要矛盾
 
@@ -375,15 +385,34 @@ R4.5 保留 `8dd5aa1d` 的 Text/Voice 共用链，不改 schema、不切 product
 - R5 只允许标记 `R5_READY`，表示 pre-activation 自动证据就绪；AC-1/12/16/18 的 production activation 与 manual E2E 必须保持 `R6_REQUIRED/R7_REQUIRED`，不得在 R5 假报最终 PASS。
 - R4.5 全部门禁绿后重跑 §2.4 parity inventory、kill/restart/cross-session/fault injection；任何自动证据 PARTIAL 都不允许进入 R6。
 
+#### R5.5 — A2：通用 durable Admission Boundary 与 cutover-readiness〔AC-1, AC-3, AC-6, AC-11, AC-13, AC-16, AC-17〕
+
+> A2 原因：真代码审计证明 `ProductVenueRunAdapter.open()` 在 `Kernel.start()` 前通过 `LegacyProductDomainSink.await_plan()` 等待 `_PLAN_CONFIRM_WAITERS`。直接执行原 R6 会被迫在“保留第二 decision owner”和“删除 Plan gate、破坏 AC-13”之间二选一。2026-07-21 用户批准先补结构边界，不允许在 R6 内打补丁绕过。
+
+- **范围只含现有 pre-Kernel `plan_confirmation`**：Product Turn Preparer 仍生成 typed `ProductDomainCommand`；Venue adapter 把唯一 blocking plan command 转成 `AdmissionSpec`，普通 `plan_proposed` 仍作为展示数据并入 durable waiting event。Problem Pipeline 的 `clarification` 继续终止当前 turn；tool permission/`_clarify_pending` 继续由 ReAct durable decision 处理，PPT outline 继续由 Workflow HITL 处理，SkillCandidate 继续走 candidate/child-run 设计。遇到多个或未知 blocking command 必须 fail closed。
+- **中立 contracts**：在 `execution/contracts.py` 定义带 schema 的 `AdmissionSpec`、`AdmissionPhase`、`AdmissionBoundary`、`AdmissionResolution`、`AdmissionLaunchClaim`、`AdmissionLaunchUnknownFence` 与 `WorkflowStartResult`。`AdmissionPhase` 精确为 `pending → accepted_start_pending → launch_claimed → launched`，以及互斥终态 `rejected/cancelled/expired/launch_unknown`；终态 boundary 均标记 consumed。`AdmissionSpec` 固定 kind、prompt/response schema、prompt/presentation payload、expiry 与 intent fingerprint；首次 open 时生成并持久化 stable decision id、nonce、boundary version 和 stable `launch_operation_id`。`AdmissionBoundary` 固定 immutable driver/profile route、完整 JSON-safe `DriverStart` snapshot（canonical messages、request payload、provider/capability snapshots、cursor/refs、association/projection refs）和 continuation version。禁止 `Any` round-trip；`RunRequest` 增加 `admission: AdmissionSpec | None`。
+- **duplicate start 先查后 route**：root run id 仍由 idempotency key 决定；`RunKernel.start()` 必须先查询既有 Run/Admission，存在则直接 hydrate，不再执行 Product Turn Preparer 或 Router。首次请求只 route 一次，再调用 `start_admission(...)`，同一事务写 `execution_run + execution_continuation(admission discriminator) + execution_decision + waiting event`，包括 plan rationale/steps 与完整 decision fence；提交前不得先发 UI plan card，也不得启动 Driver。
+- **事务面固定为 23 个 starter，并明确每次状态转换的 owner**：先删除当前 manifest 中 `callsites=[]` 的 public `append_event(...)`，它不得保留 private/forwarding 替身；再增加三个 typed starter：`start_admission(spec, admission, start_snapshot, waiting_event, deliveries) -> AdmissionBoundary` 只做首次 `∅→pending`，`resolve_admission(ref, actor, signal, expected_boundary_version) -> AdmissionResolution` 只做 `pending→accepted_start_pending|rejected|cancelled|expired`，`claim_admission_launch(recovery_lease, expected_boundary_version) -> AdmissionLaunchClaim` 只做 `accepted_start_pending→launch_claimed`。计数因此严格为 `21-1+3=23`。`signal-vs-cancel` 只允许一个赢家；duplicate resolve 返回同一 durable resolution，不隐式 claim launch。现有 `start_workflow(...)`、`persist_react_boundary(...)`、`commit_run_outcome(...)` 只增加 typed admission fence 参数，不新增 starter；禁止 generic opcode、private-only 或 forwarding facade。
+- **ReAct 外部调用歧义必须诚实**：route 时由 composition 注入的 `ProviderLaunchPolicyRegistry` 按精确 `provider_id + adapter_id + adapter_version` 读取显式 adapter capability，冻结 `ProviderLaunchSnapshot(supports_idempotent_launch, token_field)` 到 `DriverStart`；不得按 provider 名称或恢复时当前配置推断。`claim_admission_launch(...)` 必须在真实 provider 调用前提交；`ReActCollaborator → AgentLoop.run(launch_operation_id=...) → _run_impl → provider adapter request` 全链显式透传同一 token，并由最底层 provider spy 断言。拿到首个 provider emission 后、向 UI yield 前，`persist_react_boundary(..., admission_launch=...)` 原子写 provider-launch continuation 并把 `launch_claimed→launched`。恢复看到 `launch_claimed/launched` 且没有 terminal/可继续 footprint 时，仅当冻结 snapshot 声明支持同 token 幂等才重试；否则调用 `commit_run_outcome(..., admission_failure=AdmissionLaunchUnknownFence(...))`，同一事务把 run 置 `RunStatus.FAILED`、admission 置 consumed `launch_unknown`，写唯一 `run.final`/`OutcomeStatus.FAILED` event 与标准 terminal deliveries；payload 固定 `error_code=launch_outcome_unknown`、`retry_safe=false`、`launch_operation_id`，不得静默重复模型调用或伪造 `OutcomeStatus.UNKNOWN`。单时刻最多一个持 lease 启动者，不承诺 provider exactly-once。
+- **Kernel 六操作语义**：`signal()` 先按 continuation discriminator 处理 admission，校验 actor/session/decision id/nonce/version/expiry；duplicate allow 仍检查是否需要启动。`cancel()` 对 pending admission 不调用尚未启动的 Driver，而是原子 cancel decision+boundary+terminal。`recover()` 对 pending 只恢复 waiting，对 accepted 获取 lease 后启动，对 launch-unknown 按上条收敛，对 terminal 不启动；`observe()` 只投影 durable waiting/resumed/terminal event。Kernel 不 import plan/clarification/PPT 产品类型。
+- **Workflow 复用 precreated execution row**：`execution_uow.py::_insert_workflow_tx()`/`start_workflow()` 精确返回 `WorkflowStartResult(record, execution_created, workflow_created, admission_consumed, start_claimed)`。同一事务要求 current generation、相同 RunCreate/driver/profile、admission=`accepted_start_pending`、正确 boundary version/lease、无 terminal，然后创建或验证 `workflow_runs + start request + workflow.accepted execution event`，并 CAS admission 为 `launched/consumed`。首次从 precreated execution 创建 workflow 返回 `False/True/True/True`；首次同时创建 execution+workflow 返回 `True/True/True/True`；相同 request replay 返回 `False/False/False/False`；字段不一致 fail closed。`WorkflowService.start_prepared()` 原样透传，`WorkflowLauncher.launch_precreated()` 仅在 `start_claimed=True` 时调度一次 `_drive`，不得再以 execution row 的 `created` 判断。
+- **fault matrix 不增不减仍为 39**：导出集合保持当前 `UoW 34 + Team 5` 原样；不把未导出的 `continuation_after_decision` 或 `start_workflow_*` 三个内部 fault point 冒充稳定 hook。matrix 每个既有 `window_id/injection_hook` 增加 `operation_cases`，允许同一稳定 hook 跑多个事务 case，但唯一 hook id 仍为 39：`start_admission` 复用 `batch_boundary_after_promotion/continuation/waiting_event/before_commit`；`resolve_admission` 复用 `decision_resolve_after_cas/after_boundary/before_commit`；`claim_admission_launch` 复用 `effect_claim_after_grant/after_effect/before_commit`；Workflow admission consume 复用四个 `batch_boundary_*`；provider-unknown finalization 复用 `finalize_after_outbox/before_commit`。测试断言 `tested_hook_ids == required_hook_ids == exported_hook_ids`、每个声明的 `operation_case` 均实际注入、每个 case restart oracle 全绿；不得新增 hook id，duplicate signal 与真实 provider 调用间隙另以 durable phase/调用计数 oracle 验证。
+- **Venue/UI dormant final composition**：点名新增 `backend/deskpet/harness/adapters/product_composition.py::build_product_harness_composition()`，它组合 `ProductTurnPreparer + ProductVenueRunAdapter + build_harness_runtime`；`ProductVenueRunAdapter.open()` 不再调用 `_domain_plan_confirmation()/sink.await_plan()`，durable waiting event 经 `CanonicalRunEventPresentationAdapter` 投影并携带 `run_id/decision_id/nonce/version/expires_at`，`ProductVenueRunSession.signal()` 使用完整 fence。R5.5 只在临时 v7 `open/generation=1` 的该 dormant factory 与测试 handler 中验证；静态 AST/import-trace 测试必须证明 `backend/main.py` 未 import、未调用且任何生产 root 不可达该 factory。真实 sid-only legacy handler 和 `_PLAN_CONFIRM_WAITERS` 仍保持生产独占，直到 R6 同 commit 删除，禁止提前双路由或 fallback。
+- **Subagent 也只做 dormant readiness**：点名新增 `backend/deskpet/harness/adapters/subagent_registry.py::build_harness_subagent_registry()`，注入现有 `build_subagent_batch_delegate()` 和 typed `await_delegate`；仅当父级已经是 Harness durable Run 时创建 command/link，wrong-session await 拒绝。静态测试同样证明 `backend/main.py` 未 import/未调用且 production roots 不可达；legacy/0 main 不注入、不构造假 parent。R6 才切真实 production registration 并删除 Registry/completion queue。
+- **cutover manifest 两步消除 SHA 自引用**：A 提交为 R5.5 绿色 source commit；B 提交只含 `legacy_cutover_spans.json`、tests/docs，manifest 锁 A 的 commit/path/qualname/line/source hash/normalized AST/statement count/direct callees/root。roots 至少含 `_run_chat/_run_chat_with_timeout`、AutoResume redispatch、AgentLoop internal dispatch/legacy bridge、Voice bridge、SubagentRegistry/completion queue、Plan/Skill/PPT waiters 与 PPT background owners。`--readiness` 验证当前 production blob 与 A 相同、15 owners 和动态 legacy stacks 100% 被 manifest 覆盖；`--cutover` 只在 R6 要求 exact/similarity/reference/reachability/live-stack 全部不命中。动态解析不完整即 FAIL。
+- **LOC/authority 与文档门（2026-07-21 用户批准 spike 修订）**：在 disposable worktree 基于 `c9694e5e` 跑真代码 spike；随后用 `F:\projects\deskpet\backend\.venv\Scripts\python.exe scripts/bench/harness_baseline.py --loc-only --r55-construction-gate --output plans/2026-07-20-agent-harness-simplification/r55-admission-budget.json` 生成机器产物。产物必须记录 base/head commit、raw/adjusted/core/Kernel、逐文件 current SHA-256/git blob/LOC、可归因真删除与 unknown；独立测试重算 source hash，hash 漂移即 FAIL。不得搬家、压行或用测试/测量目录抵扣生产 LOC。R5.5 construction cap 固定为 raw `<=34,800`、migration-cohort-adjusted `<=34,250`、core `<=5,950`、Kernel `<=925`；公开操作恰6、starters精确23、DML1、fault39、run-map/Supervisor/Presenter 各1、unknown0。A source commit 包含已测试实现与强制 ARCHITECTURE 更新；B manifest/tests/docs commit 再锁定 A 的 commit、source hashes 与四个实测值，作为 R6 core 不增基线，消除 SHA 自引用。每次 spike/benchmark/pytest 结束或中断后必须按精确 command line/worktree 清理相关进程树并复查无残留，禁止遗留 Tauri/Vite/Cargo/Python/embedder/WebView 子进程。
+- **自动测试落点**：`test_execution_continuations_uow.py` 覆盖 typed 四表原子 open/resolve/expiry/reject/cancel；`test_run_kernel.py` 覆盖 route-once、duplicate signal、pending/accepted/launch-unknown/terminal recover、跨进程 lease；`test_workflow_execution_seams.py` 与 workflow driver/launcher 测 `execution_created=False + workflow_created=True`；`test_product_venue_chain.py` 禁止 `await_plan` 并验证 decision fence/signal；`test_subagent_child_adapter.py` 测 dormant registration 与 session scope；fault/authority/LOC/cutover readiness 全绿。R5.5 完成前生产始终 `legacy/0`，只有这些门全部 PASS 才允许重新进入 R6。
+
 #### R6 — 全 venue + recovery 原子 owner 切换 〔AC-1～AC-18〕
 
 - R1 已经 additive 建好 `execution_runtime_state(generation, phase, drain_manifest_hash, drain_count, activated_at, updated_at)` 与 `execution_legacy_drain_items`；R6 不再首次迁移 schema。deployment state machine 固定为：`stop ingress → 等待 ephemeral legacy active=0 → 单事务登记全部 durable legacy active run + manifest hash/count，并 CAS legacy→draining → 重扫验证无未知 legacy owner → 排空持久 manifest → CAS draining→activated 并递增 generation → 切 bootstrap/recovery/delivery owner → CAS activated→open → open ingress`。如果在登记事务前崩溃，phase 仍是 legacy；事务后崩溃，完整 manifest 可恢复。任一步失败保持 ingress 关闭并报告 degraded，不能两套 owner 同时接单。
 - `activation generation` 是部署级永久 fence，写入每个 run；`lease_epoch` 是单 run/command 的短期接管 fence，两者禁止复用字段。start/recover/delivery 同时校验 runtime generation 与 row generation，reconciler 再校验自身 lease epoch。
 - 启动恢复协议：读到 `legacy` 才允许旧 runtime；读到 `draining` 就保持入口关闭并继续排空/由运维重试 activation；读到 `activated/open` 必须只启动新 owner，其中 `activated` 先完成 bootstrap/recovery 后再 CAS `open`。只要该 generation 已有 `execution_runs` row，就禁止退回 `legacy`。
 - 一个 activation commit 同时切 Text/Code/DeepResearch/PPT/Voice start、decision、cancel、recovery、terminal delivery；默认 ON，不保留 runtime flag、shadow 或语义较弱 fallback。每个新 `execution_runs` row 持久化 `owner_kind='kernel'` 与单调递增 `owner_generation`，后续 start/recover/deliver 都按 row 校验。
-- R5 最后绿色 SHA 自动生成 `legacy_cutover_spans.json`：由 legacy roots、15 个 survivor 与静态可达 symbols 构成，锁定 `commit/path/qualname/line/source_hash/normalized_ast_hash/statement_count/direct_callees/root`；动态调用无法解析时 fail closed。
+- R5.5 的 A 绿色 source commit（B 仅生成 manifest/tests/docs）自动生成 `legacy_cutover_spans.json`：由 legacy roots、15 个 survivor 与静态可达 symbols 构成，锁定 `commit/path/qualname/line/source_hash/normalized_ast_hash/statement_count/direct_callees/root`；动态调用无法解析时 fail closed。
 - 同 commit 删除 `_run_chat` 旧编排体、AutoResume redispatch、旧 waiter/task maps、全局 Subagent queue、Voice AgentLoop bridge、AgentLoop internal dispatch、Registry legacy 新请求入口和旧 PPT background owner。切换后 exact AST、相似 fingerprint（覆盖 0.70/连续 0.60）、新 roots 不可达、动态 stack 不命中、旧 symbol 引用扫描全部通过；compatibility 只允许 typed `LegacyRecoveryContext`，且新 start 反向不可达。
 - owner≤7、unclassified=0；全部冻结 legacy spans 100% 删除/不可达/未复制；total counted 必须严格低于 R4.5。取消未经验证的 `≤17,250/净减20%` 承诺，不能以“总 LOC 下降一行”替代 legacy span 门禁。
+- R6 永久 LOC 门固定为 raw `<33,925`、migration-cohort-adjusted `<33,416`、core `<=5,950` 且 `<=R5.5-A` 实测 core、Kernel `<=900`；也就是总编排必须严格低于 A2 前真实基线，新增 durable boundary 本身不得在 cutover 时继续膨胀。R5.5-B 同时给 `harness_baseline.py` 增加 `--r6-final-gate --r55-budget <r55-admission-budget.json>`：校验 budget 锁定 A commit/source hashes，并机械应用上述严格不等式与动态 core 上限；fixture/hash 漂移即 FAIL。R4.5 的 `core<=5,500` 不再伪装成新 scope 的可达门，但六操作、产品 import=0、starters=23、DML1、fault39、authority 各1、owner≤7、legacy spans=0、unknown=0 均不放松。
 - promotion→boundary、accepted→checkpoint、decision CAS→boundary、grant→effect claim、effect external commit→outcome、child create→schedule/ack、child terminal→parent signal/ack、terminal→delivery 等全部 crash window 在 production wiring 下逐一 kill/restart。
 - activation 的 `legacy→draining`、drain record、`draining→activated`、owner bootstrap、`activated→open` 每个写点都用副本库 kill/restart；断言入口要么关闭，要么只有一个 generation 的 owner 可写。
 - activation 之前任一 gate 失败可整体回退到 R5。一旦生产已创建首条 `execution_runs` row，旧 runtime 不具备该 row 的安全恢复能力，禁止代码回退；此后只能 fail-closed 并 roll-forward 修复。切换前必须用副本数据库演练升级与恢复，启动 health 明确显示 irreversible activation 状态。
@@ -398,10 +427,10 @@ R4.5 保留 `8dd5aa1d` 的 Text/Voice 共用链，不改 schema、不切 product
 
 | 计数组 | R4.5 基线 | R4.5 硬门 / R6 要求 |
 |---|---:|---:|
-| 审计口径 `execution_core + harness_core` | 5,725 | R4.5 `≤5,500` |
-| `harness/kernel.py` 物理 LOC | 820 | R4.5 `≤850` 且 public ops=6 |
+| 审计口径 `execution_core + harness_core` | R4.5 实测 5,498 | R5.5 `≤5,950`；R6 `≤R5.5-A实测值` |
+| `harness/kernel.py` 物理 LOC | R4.5 实测 767 | R5.5 `≤925`；R6 `≤900` 且 public ops=6 |
 | `execution_uow.py` | 4,613 | 不设拍脑袋 LOC；transaction starters `33→≤23`、DML owner `2→1` |
-| 全部 counted orchestration | 33,618 | R4.5 `≤33,618`；R6 严格下降 |
+| 全部 counted orchestration | R4.5 raw/adjusted `33,925/33,416` | R5.5 `≤34,800/34,250`；R6 `<33,925/<33,416` |
 | 冻结 legacy production spans | R5 绿色 SHA 生成 | R6 100% 删除/不可达/未复制 |
 
 R4.5 的 core 预算以 source-hash 锁定 255 行真删除。LiveRun spike 的 `+14` 只证明单 owner 可行，不是完整生产估算；正式实现净增 `+67`，因为补齐了唯一 index 注入、iterator 独立生命周期、identity-safe clear 与 fail-closed binding。该计划偏差不改变 `core≤5,500` 硬门，由余下真删除 slice 补足。LOC 是防膨胀护栏；真正简化还必须同时满足 DML/live/supervisor/presenter authority 与 typed transaction surface 门。
@@ -602,7 +631,7 @@ R4.5 的 core 预算以 source-hash 锁定 255 行真删除。LiveRun spike 的 
 | G1 Safety | R1/R3 的 trusted context、unsafe barrier、grant→effect claim、unknown/late effect 故障注入全绿 |
 | G2 Semantics | typed outcome 在 Registry/Drivers/RunPresenter/前端/Voice 一致；accepted/failed/unknown 契约全绿 |
 | G3 Drivers | ReAct 与 Workflow driver contract 各自恢复/取消/终态测试全绿，Native 历史 fixtures 不变 |
-| G4 Kernel/Core | 六个公开操作、单 route、父子/cancel/final CAS、产品 import=0、Kernel≤850、core≤5,500、total≤33,618 |
+| G4 Kernel/Core | 六个公开操作、单 route、父子/cancel/final CAS、产品 import=0；R5.5 construction `raw/adjusted/core/Kernel≤34,800/34,250/5,950/925`；R6 final `<33,925/<33,416/≤R5.5-A core/≤900` |
 | G4.1 Storage authority | `execution_*` DML authority=1、public transaction starters≤23、fault matrix精确39、无 generic opcode/搬家规避 |
 | G4.5 Product parity | §2.4 每个能力族的 canonical input、事件、持久副作用和 UI 行为均 100% 等价；adapter 输入字段无静默丢弃 |
 | G5 Cutover | Text/Code/DR/PPT/Voice/start/recovery/decision/delivery 在 R6 一次性全走 Kernel；旧 owner 同 commit 删除 |
@@ -821,7 +850,7 @@ npm run typecheck
 ## 13. 完成定义
 
 - G1～G7 全部通过；AC-1～AC-18 无 PENDING/PARTIAL。
-- 新请求只进入 RunKernel；Kernel 产品 import/分支=0、公开操作=6、Kernel≤850 LOC，审计 core≤5,500。
+- 新请求只进入 RunKernel；Kernel 产品 import/分支=0、公开操作=6；R6 final Kernel≤900，审计 core≤R5.5-A 实测值且≤5,950。
 - UoW public transaction starters≤23、execution DML authority=1、fault matrix=39；run map/Supervisor/Presenter authority 各为1。
 - R6 owner 基线 15→≤7、unclassified=0；冻结 legacy spans 100% 删除/不可达/未复制；total counted 严格低于 R4.5。
 - unsafe write 无并发、reserved context 无覆盖、unknown late effect 无重复提交、跨 session child 泄漏=0、根 terminal delivery=1。

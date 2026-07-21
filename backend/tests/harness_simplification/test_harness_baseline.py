@@ -362,6 +362,39 @@ def test_r1_loc_gate_fails_above_rollback_baseline(monkeypatch) -> None:
     assert harness_baseline.main() == 1
 
 
+def test_r55_construction_gate_checks_raw_adjusted_core_and_kernel() -> None:
+    passing = harness_baseline.validate_r55_construction_gate(
+        {
+            "raw_total_loc": 34_800,
+            "total_loc": 34_250,
+            "core_loc": 5_950,
+            "kernel_loc": 925,
+            "public_operations": harness_baseline.R45_PUBLIC_OPERATIONS,
+            "unknown_classifications": [],
+            "deletion_budget_loc": 255,
+        }
+    )
+    assert passing["passed"] is True
+
+    for field, limit in (
+        ("raw_total_loc", 34_800),
+        ("total_loc", 34_250),
+        ("core_loc", 5_950),
+        ("kernel_loc", 925),
+    ):
+        values = {
+            "raw_total_loc": 34_800,
+            "total_loc": 34_250,
+            "core_loc": 5_950,
+            "kernel_loc": 925,
+            "public_operations": harness_baseline.R45_PUBLIC_OPERATIONS,
+            "unknown_classifications": [],
+            "deletion_budget_loc": 255,
+        }
+        values[field] = limit + 1
+        assert harness_baseline.validate_r55_construction_gate(values)["passed"] is False
+
+
 def test_loc_inventory_counts_ignored_new_backend_production(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()

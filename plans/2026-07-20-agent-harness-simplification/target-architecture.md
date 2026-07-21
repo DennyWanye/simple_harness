@@ -1,6 +1,6 @@
 # DeskPet Agent Harness 目标架构
 
-> 状态：2026-07-21 用户批准 R4.5 方案 A。R0～R4 与 R5 Text/Voice 共用 test-only 产品链已完成；当前执行 R4.5 边界纠正，生产事实仍保持 `legacy/0`，尚未执行 R6 切换。原 `Kernel≤450/core+UoW≤2,800` 指标已被真代码 spike 证伪并废止。
+> 状态：2026-07-21 用户批准 R4.5 方案 A、A2 durable admission 与 spike 推导的新 LOC 门。R0～R5、R4.5 已完成；当前先执行 R5.5 Admission Boundary 与 cutover-readiness，生产事实仍保持 `legacy/0`，尚未执行 R6 切换。原 `Kernel≤450/core+UoW≤2,800` 及把新 scope 强压回 `core≤5,500` 的指标均被真代码 spike 证伪。
 >
 > 本文记录本次计划的目标结构，不代表当前生产事实；当前事实仍以
 > [`ARCHITECTURE/index.md`](../../ARCHITECTURE/index.md) 为准。实施并完成验收后，
@@ -23,14 +23,24 @@ flowchart TD
     U["用户提出请求"] --> A["入口适配器<br/>文字 / 语音 / Tauri"]
 
     A --> P["Product Turn Preparer<br/>历史 · Persona · Memory · Skill · 附件 · Plan"]
-    P --> K["Run Kernel<br/>六个公开操作 · 路由 · 取消"]
+    P --> K["Run Kernel<br/>六个公开操作 · 一次路由 · 取消"]
+
+    K --> AD{"存在前置确认？"}
+    AD -->|"是"| DW["Durable Admission Boundary<br/>Run + Decision + Continuation + Waiting 原子提交"]
+    DW --> UI["UI 确认 / 拒绝"]
+    UI -->|"Kernel.signal"| DA["UoW 原子推进 admission<br/>pending → accepted_start_pending"]
+    DA -->|"接受"| LC["RecoveryLease + launch claim<br/>外部调用前持久化 launch_operation_id"]
+    LC --> Q
+    DA -->|"拒绝"| E
+    AD -->|"否"| Q
 
     K --> L["唯一 LiveRun<br/>task · subscriber · driver state"]
-
-    K --> Q{"需要长时间运行<br/>并支持重启恢复吗？"}
+    Q{"需要长时间运行<br/>并支持重启恢复吗？"}
 
     Q -->|"否"| R["ReAct Driver<br/>普通对话 / 短任务"]
     Q -->|"是"| W["Workflow Driver<br/>DeepResearch / PPT / Code"]
+    R -. "provider 结果不确定且不可幂等重放" .-> LU["唯一失败终态<br/>launch_outcome_unknown"]
+    LU --> E
 
     R --> B["唯一 EffectBatchExecutor<br/>claim → execute → settle"]
     W --> B
@@ -67,6 +77,7 @@ flowchart TD
 |---|---|---|
 | Venue Adapter | WS/文字解码、ASR、TTS、VAD、barge-in、Tauri control payload | 创建 AgentLoop、选择工作流、解释工具成功失败 |
 | Product Turn Preparer | 复用并保存现有 ContextAssembler、历史、Persona、Memory、Skill/MCP、附件、Problem Pipeline、Plan/Preference、Supervisor hint 的产品语义 | Run identity、Driver 调度、Effect 执行、WS transport |
+| Durable Admission Boundary | 在 Driver 启动前，用产品无关 `AdmissionSpec` 原子持久化 Run、Decision、Continuation、waiting event 与 stable `launch_operation_id`；接受后持 recovery lease 先 claim，再按已持久 route 启动原 Driver；拒绝或不可安全重放时统一终态 | 产品名称分支、进程内 Future owner、第二次路由、特殊 preflight Driver、按 provider 名称猜幂等能力、无法判定时静默重放模型 |
 | Run Kernel | Run 身份、可信上下文、唯一路由入口、粗生命周期、父子关系、signal/cancel、统一事件协议 | LLM 循环、graph node 调度、产品名称特判、token 持久化 |
 | LiveRun | 当前进程内唯一的 task、subscriber、driver state 与 volatile boundary owner；terminal/close 清空强引用 | durable truth、第二份 run map |
 | ReAct Driver | 动态 LLM 循环、provider fallback、token streaming、短任务工具循环、driver 内完成判断 | WS/SessionDB 投影、durable checkpoint、全局子代理状态 |
@@ -94,8 +105,11 @@ flowchart TD
 12. ReAct 首次变成 durable 时，Run promotion、continuation boundary 和 waiting decision/effect/child command 必须同事务创建。
 13. R1 先以默认 `legacy` 的 additive v7 schema 建立 `execution_runtime_state` 与持久 drain manifest；R6 只切 phase/wiring。新 run 固定 owner generation，重启不能靠内存 flag 退回旧 owner。
 14. 新 run 的 durable delivery 只由 `ExecutionDeliveryDispatcher` claim/retry；RunPresenter 是 sink adapter，不是第二个队列 owner。
-15. R4.5 硬门：core≤5,500、Kernel≤850、public transaction starters≤23、execution DML authority=1、fault matrix=39、run map/Supervisor/Presenter authority各1；全程保持生产 `legacy/0`。
+15. R5.5 construction 门为 raw/adjusted/core/Kernel `≤34,800/34,250/5,950/925`，生产保持 `legacy/0`；R6 final 必须 `<33,925/<33,416/≤R5.5-A实测core/≤900`。public transaction starters=23、execution DML authority=1、fault matrix=39、run map/Supervisor/Presenter authority各1，均不可放松。
 16. R6 必须按冻结 span 清单删除旧 production owner，并同时通过 exact/similar/unreachable/live-stack 审计；不能把旧逻辑改名搬到 compatibility 目录。
+17. 当前唯一会阻塞 Driver 启动的 `plan_confirmation` 必须先成为同一 Run 的 durable admission；不得在 `Kernel.start()` 前 await 进程内 Future，也不得让 ReAct/Workflow 各自复制 preflight owner。Problem Pipeline clarification、ReAct permission/clarification、Workflow HITL 与 SkillCandidate 保持各自已经定义的非 preflight 语义。
+18. Admission phase 固定为 `pending → accepted_start_pending → launch_claimed → launched` 或互斥终态；provider 幂等能力从首次 route 的显式 adapter capability 冻结并随真实调用透传同一 token。不可安全重放时提交 `RunStatus.FAILED + OutcomeStatus.FAILED + error_code=launch_outcome_unknown`，不能伪造 `OutcomeStatus.UNKNOWN`。
+19. R5.5 的 final-composition 与 subagent registry factory 只允许 dormant test wiring 可达；生产 `main.py` 在 R6 前不得 import/call，生产 owner 始终为 `legacy/0`。
 
 ## 目标态删除或退出新请求路径的机制
 

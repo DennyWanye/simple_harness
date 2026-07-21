@@ -45,7 +45,7 @@
 
 ## 非功能 / 边界
 
-- 简化度（2026-07-21 方案 A）：审计口径 `execution_core + harness_core` 从 5,725 降到 `≤5,500`；Kernel `≤850` 且公开控制操作恰为 6；全部 counted orchestration 在 R4.5 `≤33,618`、R6 删除旧路径后严格下降。`execution_uow.py` 作为共享持久化引擎继续计入全局 manifest，但改由 public transaction starters `33→≤23`、execution DML authority `2→1`、fault matrix 精确 39 约束，不再与 core 绑定到已被 spike 证伪的 2,800 LOC。
+- 简化度（2026-07-21 方案 A+A2，用户批准 spike 修订）：R4.5 已达 raw/adjusted/core/Kernel `33,925/33,416/5,498/767`。新增 durable admission 的 R5.5 construction cap 为 `≤34,800/34,250/5,950/925`；R6 删除全部 legacy production spans 后必须达到 raw `<33,925`、adjusted `<33,416`、core `≤5,950` 且不高于 R5.5-A 实测值、Kernel `≤900`。Kernel 公开控制操作恰为6；`execution_uow.py` 继续由 starters=23、DML authority=1、fault matrix=39 约束。禁止搬家、压行或删契约来伪造简化。
 - authority 简化：activated test harness 的 run-keyed live map、HarnessSupervisor task owner、Presenter conversion owner 各为 1；R4.5 旧 production survivors 保持 15 且不得增加，R6 activation 同 commit 删除旧 owner并达到总 owner≤7、unclassified new owner=0。
 - 回炉约束：首次 WI-12 已证明“删除旧 `_run_chat` 再补功能”不可接受。生产切换前必须对历史/Persona/Memory/Skill/MCP、附件、Problem Pipeline、Plan/Preference、Supervisor/summary、reasoning/context/pipeline UI 事件、billing/SessionActivity、Skill Codify 建立逐项 parity 证据；任一缺失即 AC-18 FAIL。
 - 机械防漏：从旧生产 span/event/WS/SessionDB/vector/file/waiter/cancel/codify/permission 调用点自动生成 census，逐项映射新 owner 与 golden testcase；`unmapped_count` 必须为 0，不能仅依赖人工清单。
@@ -68,6 +68,8 @@
 - Crash 完整性：UoW/Team saga 导出的全部 fault hook 必须与参数化 fault matrix 一一相等；每个窗口都要有 restart actor、idempotency key 和逐表/外部写计数 oracle，不能只以 prose 声称覆盖。
 - Delivery/Reconcile owner：新 run 只有一个 `ExecutionDeliveryDispatcher` 经 UoW claim/complete 并校验 owner generation；legacy dispatcher 只处理无 execution row 的历史 run。unknown effect 只有 Workflow/effect service reconciler，Kernel/Driver 不另起 supervisor。
 - 默认启用：R4.5/R5_READY 全部门禁通过后，由 R6 一个 activation commit 让新 Run Kernel 与 Driver 路径成为默认生产路径，不做 shadow、分批或默认关闭。
+- A2 durable admission：R6 前必须先由产品无关的 Admission Boundary 取代 pre-Kernel `_PLAN_CONFIRM_WAITERS` owner；同一 Run 的 waiting decision、continuation 与 waiting event 原子持久化，接受后按已持久 route 与 stable `launch_operation_id` 启动原 Driver，重启不重新准备或路由。phase 固定为 `pending → accepted_start_pending → launch_claimed → launched` 或互斥终态；21 个 starter 删除无 caller 的 `append_event` 后增加 `start_admission/resolve_admission/claim_admission_launch`，精确收敛到 23。ReAct/Workflow 共用该边界，Kernel 仍只有六个公开操作；provider 幂等能力必须来自首次 route 冻结的 adapter capability 且真实调用携带同一 token。无法判断调用结果且不支持幂等时，必须以唯一 `run.final`/`OutcomeStatus.FAILED`、`error_code=launch_outcome_unknown` 终结并原子消费 admission，不得静默重复模型调用。
+- A2 结构门：R5.5 保持生产 `legacy/0`，`build_product_harness_composition()` 与 `build_harness_subagent_registry()` 只在 dormant 测试 wiring 可达，`main.py` 不得 import/call。fault hook 唯一集合仍为 `UoW 34 + Team 5 = 39`，一个 hook 可有多个 `operation_cases`，但不得把未导出的内部 fault point 加入稳定集合。R5.5 完成时 raw/adjusted/core/Kernel 分别 `≤34,800/34,250/5,950/925`，并由 `r55-admission-budget.json` 锁定逐文件 source hash 与 LOC；R6 再按上条永久门回落。
 
 ## 测试场景矩阵
 

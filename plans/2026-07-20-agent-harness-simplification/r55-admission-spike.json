@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "disposition": "disposable_not_for_merge",
+  "base_commit": "c9694e5e5432ec540d211b23c6aa1d4fe7c74cfe",
+  "command": "F:\\projects\\deskpet\\backend\\.venv\\Scripts\\python.exe scripts/bench/harness_baseline.py --loc-only --r45-final-gate --output plans/2026-07-20-agent-harness-simplification/r55-admission-budget.spike.json",
+  "scope_status": "incomplete_vertical_slice",
+  "missing_from_spike": [
+    "provider_launch_fence",
+    "provider_idempotency_snapshot_and_real_call_propagation",
+    "dormant_product_composition_factory",
+    "dormant_subagent_registry_factory",
+    "full_fault_operation_cases",
+    "legacy_cutover_manifest"
+  ],
+  "baseline": {
+    "raw_total": 33925,
+    "adjusted_total": 33416,
+    "core": 5498,
+    "kernel": 767,
+    "public_transaction_starters": 21
+  },
+  "spike": {
+    "raw_total": 34210,
+    "adjusted_total": 33701,
+    "core": 5685,
+    "kernel": 857,
+    "public_transaction_starters": 23,
+    "behavior_tests": "3 passed",
+    "production_diff": {
+      "added": 298,
+      "deleted": 14,
+      "net": 284
+    }
+  },
+  "delta": {
+    "raw_total": 285,
+    "adjusted_total": 285,
+    "core": 187,
+    "kernel": 90
+  },
+  "source_hash_evidence": [
+    {
+      "symbol": "SqliteExecutionUnitOfWork.start_admission",
+      "loc": 37,
+      "sha256": "d4c2602892d914b3d2136397210ae5fddfd2896f2b9655ead1c4d50b14e7144b"
+    },
+    {
+      "symbol": "SqliteExecutionUnitOfWork.resolve_admission",
+      "loc": 50,
+      "sha256": "09fc3e689d6de39a3ca42aad86cbb0de85a51fd4a701bf8407274b185712691e"
+    },
+    {
+      "symbol": "SqliteExecutionUnitOfWork.persist_react_boundary",
+      "loc": 99,
+      "sha256": "3e3672858bd621078d042e4ba1cbbd93e392cedf3c246e5afacc910381c0c28e"
+    },
+    {
+      "symbol": "SqliteExecutionUnitOfWork.commit_decision",
+      "loc": 112,
+      "sha256": "865a80e3130582a69ed4ccb3f1e678de2ceb7a5e6d87095cdbbc4dcbb65c57f5"
+    },
+    {
+      "symbol": "RunKernel._driver_start",
+      "loc": 26,
+      "sha256": "c0280781643cc1ffbcf9e28686139174a1a537075e5d6f97c236257774dacde5"
+    },
+    {
+      "symbol": "RunKernel._admission_driver_start",
+      "loc": 9,
+      "sha256": "5215838a0f0d7613797d219579739bfa454e2ce1b6ce9a034ba90c861f086daa"
+    }
+  ],
+  "audited_real_deletion_opportunity": {
+    "uow_adjusted_loc": "44-60",
+    "shared_snapshot_core_loc": "18-25",
+    "kernel_loc": "4-7"
+  },
+  "conclusion": "The inherited R4.5 exit caps cannot be met honestly by additive R5.5 admission work. A separately approved R5.5 transition cap is required; moving code, line packing, or unrelated deletion is forbidden."
+}

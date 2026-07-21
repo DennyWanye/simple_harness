@@ -70,6 +70,10 @@ R45_EXPECTED_CORE_LOC = 5_725
 R45_EXPECTED_KERNEL_LOC = 820
 R45_FINAL_CORE_LOC = 5_500
 R45_FINAL_KERNEL_LOC = 850
+R55_CONSTRUCTION_RAW_LOC = 34_800
+R55_CONSTRUCTION_TOTAL_LOC = 34_250
+R55_CONSTRUCTION_CORE_LOC = 5_950
+R55_CONSTRUCTION_KERNEL_LOC = 925
 R45_PUBLIC_OPERATIONS = ("start", "observe", "signal", "cancel", "recover", "close")
 R45_CORE_BUDGET_FIXTURE = PLAN_DIR / "r45-core-deletion-budget.json"
 R45_MIGRATION_COHORT_FIXTURE = PLAN_DIR / "r45-migration-cohorts.json"
@@ -1873,6 +1877,28 @@ def validate_r45_final_gate(core_audit: Mapping[str, Any]) -> dict[str, Any]:
     return {"gate": "r45_final", "checks": checks, "passed": all(checks.values())}
 
 
+def validate_r55_construction_gate(core_audit: Mapping[str, Any]) -> dict[str, Any]:
+    checks = {
+        "raw_total_loc_lte_34800": int(core_audit["raw_total_loc"])
+        <= R55_CONSTRUCTION_RAW_LOC,
+        "adjusted_total_loc_lte_34250": int(core_audit["total_loc"])
+        <= R55_CONSTRUCTION_TOTAL_LOC,
+        "core_loc_lte_5950": int(core_audit["core_loc"])
+        <= R55_CONSTRUCTION_CORE_LOC,
+        "kernel_loc_lte_925": int(core_audit["kernel_loc"])
+        <= R55_CONSTRUCTION_KERNEL_LOC,
+        "public_operations_eq_six": tuple(core_audit["public_operations"])
+        == R45_PUBLIC_OPERATIONS,
+        "unknown_classifications_eq_zero": not core_audit["unknown_classifications"],
+        "deletion_budget_loc_eq_255": int(core_audit["deletion_budget_loc"]) == 255,
+    }
+    return {
+        "gate": "r55_construction",
+        "checks": checks,
+        "passed": all(checks.values()),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--compare", nargs="?", const=DEFAULT_BASELINE, type=Path)
@@ -1884,6 +1910,7 @@ def main() -> int:
     parser.add_argument("--r45-baseline", action="store_true")
     parser.add_argument("--r45-transition-gate", action="store_true")
     parser.add_argument("--r45-final-gate", action="store_true")
+    parser.add_argument("--r55-construction-gate", action="store_true")
     parser.add_argument("--write-loc-manifests", action="store_true")
     args = parser.parse_args()
     if args.iterations < 20:
@@ -1899,10 +1926,11 @@ def main() -> int:
     r45_gate_count = sum(
         (args.r45_baseline, args.r45_transition_gate, args.r45_final_gate)
     )
-    if r45_gate_count and not args.loc_only:
-        parser.error("R4.5 gates require --loc-only")
-    if r45_gate_count > 1:
-        parser.error("R4.5 gate modes are mutually exclusive")
+    loc_gate_count = r45_gate_count + int(args.r55_construction_gate)
+    if loc_gate_count and not args.loc_only:
+        parser.error("LOC gates require --loc-only")
+    if loc_gate_count > 1:
+        parser.error("LOC gate modes are mutually exclusive")
     if args.write_loc_manifests:
         write_locked_manifests()
     if args.loc_only:
@@ -1919,7 +1947,7 @@ def main() -> int:
         )
     if args.r1_gate:
         result["r1_gate"] = validate_r1_loc_gate(result["orchestration_loc"])
-    if r45_gate_count:
+    if loc_gate_count:
         result["r45_core_audit"] = build_r45_core_audit(result["orchestration_loc"])
         if args.r45_baseline:
             result["r45_gate"] = validate_r45_baseline_gate(result["r45_core_audit"])
@@ -1927,8 +1955,12 @@ def main() -> int:
             result["r45_gate"] = validate_r45_transition_gate(
                 result["r45_core_audit"]
             )
-        else:
+        elif args.r45_final_gate:
             result["r45_gate"] = validate_r45_final_gate(result["r45_core_audit"])
+        else:
+            result["r55_gate"] = validate_r55_construction_gate(
+                result["r45_core_audit"]
+            )
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(
@@ -1940,6 +1972,7 @@ def main() -> int:
         result.get("comparison", {}).get("passed", True)
         and result.get("r1_gate", {}).get("passed", True)
         and result.get("r45_gate", {}).get("passed", True)
+        and result.get("r55_gate", {}).get("passed", True)
     )
     return 0 if passed else 1
 
