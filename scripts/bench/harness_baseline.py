@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import asyncio
 import difflib
 from collections import Counter
@@ -61,6 +62,14 @@ LEGACY_PHASE0_BENCHMARK = PLAN_DIR / "baseline.json"
 DEFAULT_BASELINE = PLAN_DIR / "r0-benchmark.json"
 PHASE0_MANIFEST = PLAN_DIR / "loc-phase0-manifest.json"
 ROLLBACK_MANIFEST = PLAN_DIR / "loc-rollback-manifest.json"
+R45_BASE_COMMIT = "796905b9888c2659af78cec21de1ee96b46a2c51"
+R45_EXPECTED_TOTAL_LOC = 33_618
+R45_EXPECTED_CORE_LOC = 5_725
+R45_EXPECTED_KERNEL_LOC = 820
+R45_FINAL_CORE_LOC = 5_500
+R45_FINAL_KERNEL_LOC = 850
+R45_PUBLIC_OPERATIONS = ("start", "observe", "signal", "cancel", "recover", "close")
+R45_CORE_BUDGET_FIXTURE = PLAN_DIR / "r45-core-deletion-budget.json"
 
 FIXED_ORCHESTRATION_GROUPS: Mapping[str, str] = {
     "backend/main.py": "transport_bootstrap",
@@ -771,6 +780,355 @@ def _orchestration_loc() -> dict[str, Any]:
     }
 
 
+def _ast_symbol_records(content: bytes) -> dict[str, dict[str, Any]]:
+    """Return stable, source-backed AST ownership records for a Python file."""
+
+    normalized = _normalized_source(content).decode("utf-8")
+    lines = normalized.splitlines()
+    tree = ast.parse(normalized)
+    records: dict[str, dict[str, Any]] = {
+        "<module>": {
+            "source_hash": _sha256(content),
+            "source_loc": len(lines),
+            "source": normalized,
+        }
+    }
+
+    def visit(body: list[ast.stmt], prefix: str = "") -> None:
+        for node in body:
+            if not isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            name = f"{prefix}.{node.name}" if prefix else node.name
+            end_lineno = getattr(node, "end_lineno", None)
+            if end_lineno is None:
+                raise BenchmarkInvariantError(f"AST symbol has no end line: {name}")
+            source = "\n".join(lines[node.lineno - 1 : end_lineno])
+            records[name] = {
+                "source_hash": _sha256(source.encode("utf-8")),
+                "source_loc": end_lineno - node.lineno + 1,
+                "source": source,
+            }
+            if isinstance(node, ast.ClassDef):
+                visit(node.body, name)
+
+    visit(tree.body)
+    return records
+
+
+def load_r45_core_budget_fixture(
+    path: Path = R45_CORE_BUDGET_FIXTURE,
+    *,
+    repo: Path = ROOT,
+) -> dict[str, Any]:
+    """Validate the immutable R4.5 baseline and its ten deletion scopes."""
+
+    if not path.is_file():
+        raise BenchmarkInvariantError(f"R4.5 core budget fixture is missing: {path}")
+    fixture = json.loads(path.read_text(encoding="utf-8"))
+    if fixture.get("schema_version") != 1:
+        raise BenchmarkInvariantError("unsupported R4.5 core budget schema")
+    expected_identity = {
+        "base_commit": R45_BASE_COMMIT,
+        "baseline_total_loc": R45_EXPECTED_TOTAL_LOC,
+        "baseline_core_loc": R45_EXPECTED_CORE_LOC,
+        "baseline_kernel_loc": R45_EXPECTED_KERNEL_LOC,
+        "final_core_limit": R45_FINAL_CORE_LOC,
+        "final_kernel_limit": R45_FINAL_KERNEL_LOC,
+        "public_operations": list(R45_PUBLIC_OPERATIONS),
+    }
+    for key, expected in expected_identity.items():
+        if fixture.get(key) != expected:
+            raise BenchmarkInvariantError(
+                f"R4.5 core budget identity drift for {key}: "
+                f"expected {expected!r}, got {fixture.get(key)!r}"
+            )
+    full_commit = str(
+        _git("rev-parse", f"{fixture['base_commit']}^{{commit}}", repo=repo)
+    ).strip()
+    if full_commit != R45_BASE_COMMIT:
+        raise BenchmarkInvariantError("R4.5 base commit is not immutable/full")
+
+    expected_budgets = {
+        "execution_re_exports": 65,
+        "route_profile_duplicate_contracts": 38,
+        "child_pass_through": 20,
+        "tool_pass_through": 20,
+        "actor_construction": 18,
+        "kernel_launch_duplicate": 38,
+        "single_supervisor": 18,
+        "recovery_heartbeat": 12,
+        "venue_result_wrapper": 14,
+        "diagnostics_duplicate_dto": 12,
+    }
+    budgets = fixture.get("deletion_budgets")
+    if not isinstance(budgets, list):
+        raise BenchmarkInvariantError("R4.5 deletion_budgets must be a list")
+    actual_budgets: dict[str, int] = {}
+    seen_sources: set[tuple[str, str, str]] = set()
+    for entry in budgets:
+        budget_id = str(entry.get("id", ""))
+        target = int(entry.get("deletion_loc", -1))
+        if budget_id in actual_budgets:
+            raise BenchmarkInvariantError(f"duplicate R4.5 deletion budget: {budget_id}")
+        actual_budgets[budget_id] = target
+        sources = entry.get("sources")
+        if not isinstance(sources, list) or not sources:
+            raise BenchmarkInvariantError(f"R4.5 budget has no sources: {budget_id}")
+        source_capacity = 0
+        for source in sources:
+            source_path = str(source.get("path", ""))
+            symbol = str(source.get("symbol", ""))
+            content = _commit_content(R45_BASE_COMMIT, source_path, repo=repo)
+            record = _ast_symbol_records(content).get(symbol)
+            if record is None:
+                raise BenchmarkInvariantError(
+                    f"R4.5 budget source symbol missing: {source_path}::{symbol}"
+                )
+            identity = (budget_id, source_path, symbol)
+            if identity in seen_sources:
+                raise BenchmarkInvariantError(
+                    f"duplicate R4.5 budget source: {source_path}::{symbol}"
+                )
+            seen_sources.add(identity)
+            if (
+                source.get("source_hash") != record["source_hash"]
+                or int(source.get("source_loc", -1)) != record["source_loc"]
+            ):
+                raise BenchmarkInvariantError(
+                    f"R4.5 budget source drift: {source_path}::{symbol}"
+                )
+            source_capacity += int(record["source_loc"])
+        if source_capacity < target:
+            raise BenchmarkInvariantError(
+                f"R4.5 deletion budget exceeds locked sources: {budget_id}"
+            )
+    if actual_budgets != expected_budgets or sum(actual_budgets.values()) != 255:
+        raise BenchmarkInvariantError(
+            f"R4.5 deletion budget drift: {actual_budgets!r}"
+        )
+
+    exceptions = fixture.get("non_core_root_exceptions")
+    if not isinstance(exceptions, list):
+        raise BenchmarkInvariantError("R4.5 non-core root exceptions must be a list")
+    for item in exceptions:
+        source_path = str(item.get("path", ""))
+        content = _commit_content(R45_BASE_COMMIT, source_path, repo=repo)
+        if item.get("source_hash") != _sha256(content):
+            raise BenchmarkInvariantError(
+                f"R4.5 non-core root exception drift: {source_path}"
+            )
+    return fixture
+
+
+def _r45_changed_python_paths(*, repo: Path, base_commit: str) -> set[str]:
+    changed = _git(
+        "diff", "--name-only", "-z", base_commit, "--", "backend", repo=repo, text=False
+    )
+    untracked = _git(
+        "ls-files", "-z", "--others", "--exclude-standard", "--", "backend",
+        repo=repo, text=False,
+    )
+    return {
+        field.decode("utf-8", "surrogateescape")
+        for output in (changed, untracked)
+        for field in output.split(b"\0")  # type: ignore[union-attr]
+        if field.endswith(b".py")
+    }
+
+
+def _path_under_any(path: str, roots: tuple[str, ...]) -> bool:
+    return any(path == root.rstrip("/") or path.startswith(root) for root in roots)
+
+
+def _r45_account_root_rows(
+    rows: list[dict[str, Any]],
+    *,
+    repo: Path,
+    base_commit: str,
+    core_groups: tuple[str, ...],
+    core_roots: tuple[str, ...],
+    exceptions: Mapping[str, Any],
+) -> tuple[int, list[dict[str, Any]], list[str]]:
+    """Account frozen owners plus additions under the core source roots."""
+
+    current_core = 0
+    attributions: list[dict[str, Any]] = []
+    for row in rows:
+        if row.get("counted") and row.get("group") in core_groups:
+            loc = int(row["effective_loc"])
+            current_core += loc
+            attributions.append(
+                {"path": row["path"], "loc": loc, "reason": f"loc_group:{row['group']}"}
+            )
+
+    source_unknown: list[str] = []
+    attributed_paths = {str(item["path"]) for item in attributions}
+    for row in rows:
+        path = str(row["path"])
+        if (
+            not row.get("counted")
+            or path in attributed_paths
+            or not _path_under_any(path, core_roots)
+        ):
+            continue
+        content = _current_content(path, repo=repo)
+        if content is None:
+            continue
+        if path in exceptions:
+            base_content = _commit_content(base_commit, path, repo=repo)
+            loc = _positive_added_lines(base_content, content, path)
+            if loc:
+                current_core += loc
+                attributions.append(
+                    {"path": path, "loc": loc, "reason": "non_core_baseline_positive_additions"}
+                )
+            continue
+        exists_at_base = subprocess.run(
+            [_git_executable(), "cat-file", "-e", f"{base_commit}:{path}"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+        ).returncode == 0
+        if not exists_at_base:
+            loc = int(row["current_loc"])
+            current_core += loc
+            attributions.append({"path": path, "loc": loc, "reason": "new_core_path"})
+        else:
+            source_unknown.append(path)
+    return current_core, attributions, source_unknown
+
+
+def build_r45_core_audit(
+    orchestration_loc: Mapping[str, Any],
+    *,
+    repo: Path = ROOT,
+    fixture_path: Path = R45_CORE_BUDGET_FIXTURE,
+) -> dict[str, Any]:
+    """Measure R4.5 core ownership without allowing path moves to buy LOC."""
+
+    fixture = load_r45_core_budget_fixture(fixture_path, repo=repo)
+    head = str(_git("rev-parse", "HEAD", repo=repo)).strip()
+    ancestor = subprocess.run(
+        [_git_executable(), "merge-base", "--is-ancestor", R45_BASE_COMMIT, head],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+    )
+    if ancestor.returncode:
+        raise BenchmarkInvariantError(
+            f"R4.5 BASE {R45_BASE_COMMIT} is not reachable from HEAD {head}"
+        )
+    loc_unknown = list(orchestration_loc.get("unknown_classifications", ()))
+    if loc_unknown:
+        raise BenchmarkInvariantError(
+            "R4.5 cannot audit unknown LOC classifications: " + ", ".join(loc_unknown)
+        )
+
+    core_groups = tuple(str(value) for value in fixture["core_groups"])
+    core_roots = tuple(str(value) for value in fixture["core_roots"])
+    rows = [dict(item) for item in orchestration_loc["files"]]
+    exceptions = {
+        str(item["path"]): item for item in fixture["non_core_root_exceptions"]
+    }
+    current_core, attributions, source_unknown = _r45_account_root_rows(
+        rows,
+        repo=repo,
+        base_commit=R45_BASE_COMMIT,
+        core_groups=core_groups,
+        core_roots=core_roots,
+        exceptions=exceptions,
+    )
+
+    # Moving a complete AST owner into an existing/shared module is still core.
+    # A same-named but edited owner is intentionally fail-closed: the fixture
+    # must classify it before the refactor can pass.
+    base_symbol_hashes: dict[str, tuple[str, str, int]] = {}
+    base_symbols_by_name: dict[str, set[str]] = {}
+    for row in rows:
+        path = str(row["path"])
+        if row.get("group") not in core_groups:
+            continue
+        try:
+            content = _commit_content(R45_BASE_COMMIT, path, repo=repo)
+        except BenchmarkInvariantError:
+            continue
+        for symbol, record in _ast_symbol_records(content).items():
+            if symbol == "<module>" or int(record["source_loc"]) < 4:
+                continue
+            digest = str(record["source_hash"])
+            base_symbol_hashes[digest] = (path, symbol, int(record["source_loc"]))
+            base_symbols_by_name.setdefault(symbol.rsplit(".", 1)[-1], set()).add(digest)
+
+    changed_paths = _r45_changed_python_paths(repo=repo, base_commit=R45_BASE_COMMIT)
+    for path in sorted(changed_paths):
+        if _path_under_any(path, core_roots) or _fixed_exclusion(path) is not None:
+            continue
+        row = next((item for item in rows if item["path"] == path), None)
+        if row is None or not row.get("counted") or row.get("group") in core_groups:
+            continue
+        content = _current_content(path, repo=repo)
+        if content is None:
+            continue
+        for symbol, record in _ast_symbol_records(content).items():
+            if symbol == "<module>" or int(record["source_loc"]) < 4:
+                continue
+            digest = str(record["source_hash"])
+            source = base_symbol_hashes.get(digest)
+            if source is not None:
+                loc = int(record["source_loc"])
+                current_core += loc
+                attributions.append(
+                    {
+                        "path": path,
+                        "symbol": symbol,
+                        "loc": loc,
+                        "reason": f"migrated_core_symbol:{source[0]}::{source[1]}",
+                    }
+                )
+            elif symbol.rsplit(".", 1)[-1] in base_symbols_by_name:
+                source_unknown.append(f"{path}::{symbol}")
+    if source_unknown:
+        raise BenchmarkInvariantError(
+            "unclassified R4.5 core source attribution: "
+            + ", ".join(sorted(set(source_unknown)))
+        )
+
+    kernel_path = "backend/deskpet/harness/kernel.py"
+    kernel_content = _current_content(kernel_path, repo=repo)
+    if kernel_content is None:
+        raise BenchmarkInvariantError("R4.5 Kernel source is missing")
+    kernel_symbols = _ast_symbol_records(kernel_content)
+    run_kernel = kernel_symbols.get("RunKernel")
+    if run_kernel is None:
+        raise BenchmarkInvariantError("R4.5 RunKernel symbol is missing")
+    tree = ast.parse(_normalized_source(kernel_content).decode("utf-8"))
+    run_kernel_node = next(
+        (node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "RunKernel"),
+        None,
+    )
+    if run_kernel_node is None:
+        raise BenchmarkInvariantError("R4.5 RunKernel AST owner is missing")
+    public_operations = tuple(
+        node.name
+        for node in run_kernel_node.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and not node.name.startswith("_")
+    )
+    return {
+        "base_commit": R45_BASE_COMMIT,
+        "head_commit": head,
+        "total_loc": int(orchestration_loc["current_total"]),
+        "core_loc": current_core,
+        "kernel_loc": _line_count_bytes(kernel_content),
+        "public_operations": list(public_operations),
+        "unknown_classifications": [],
+        "core_attributions": attributions,
+        "deletion_budget_loc": sum(
+            int(item["deletion_loc"]) for item in fixture["deletion_budgets"]
+        ),
+    }
+
+
 class _TimedProvider:
     def __init__(self, delay_s: float) -> None:
         self.delay_s = delay_s
@@ -1180,6 +1538,32 @@ def validate_r1_loc_gate(orchestration_loc: Mapping[str, Any]) -> dict[str, Any]
     }
 
 
+def validate_r45_baseline_gate(core_audit: Mapping[str, Any]) -> dict[str, Any]:
+    checks = {
+        "total_loc_eq_33618": int(core_audit["total_loc"]) == R45_EXPECTED_TOTAL_LOC,
+        "core_loc_eq_5725": int(core_audit["core_loc"]) == R45_EXPECTED_CORE_LOC,
+        "kernel_loc_eq_820": int(core_audit["kernel_loc"]) == R45_EXPECTED_KERNEL_LOC,
+        "public_operations_eq_six": tuple(core_audit["public_operations"])
+        == R45_PUBLIC_OPERATIONS,
+        "unknown_classifications_eq_zero": not core_audit["unknown_classifications"],
+        "deletion_budget_loc_eq_255": int(core_audit["deletion_budget_loc"]) == 255,
+    }
+    return {"gate": "r45_locked_baseline", "checks": checks, "passed": all(checks.values())}
+
+
+def validate_r45_final_gate(core_audit: Mapping[str, Any]) -> dict[str, Any]:
+    checks = {
+        "total_loc_lte_33618": int(core_audit["total_loc"]) <= R45_EXPECTED_TOTAL_LOC,
+        "core_loc_lte_5500": int(core_audit["core_loc"]) <= R45_FINAL_CORE_LOC,
+        "kernel_loc_lte_850": int(core_audit["kernel_loc"]) <= R45_FINAL_KERNEL_LOC,
+        "public_operations_eq_six": tuple(core_audit["public_operations"])
+        == R45_PUBLIC_OPERATIONS,
+        "unknown_classifications_eq_zero": not core_audit["unknown_classifications"],
+        "deletion_budget_loc_eq_255": int(core_audit["deletion_budget_loc"]) == 255,
+    }
+    return {"gate": "r45_final", "checks": checks, "passed": all(checks.values())}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--compare", nargs="?", const=DEFAULT_BASELINE, type=Path)
@@ -1188,6 +1572,8 @@ def main() -> int:
     parser.add_argument("--completed-runs", type=int, default=10_000)
     parser.add_argument("--loc-only", action="store_true")
     parser.add_argument("--r1-gate", action="store_true")
+    parser.add_argument("--r45-baseline", action="store_true")
+    parser.add_argument("--r45-final-gate", action="store_true")
     parser.add_argument("--write-loc-manifests", action="store_true")
     args = parser.parse_args()
     if args.iterations < 20:
@@ -1200,6 +1586,10 @@ def main() -> int:
         parser.error("--compare requires the complete benchmark, not --loc-only")
     if args.r1_gate and not args.loc_only:
         parser.error("--r1-gate requires --loc-only")
+    if (args.r45_baseline or args.r45_final_gate) and not args.loc_only:
+        parser.error("R4.5 gates require --loc-only")
+    if args.r45_baseline and args.r45_final_gate:
+        parser.error("--r45-baseline and --r45-final-gate are mutually exclusive")
     if args.write_loc_manifests:
         write_locked_manifests()
     if args.loc_only:
@@ -1216,6 +1606,13 @@ def main() -> int:
         )
     if args.r1_gate:
         result["r1_gate"] = validate_r1_loc_gate(result["orchestration_loc"])
+    if args.r45_baseline or args.r45_final_gate:
+        result["r45_core_audit"] = build_r45_core_audit(result["orchestration_loc"])
+        result["r45_gate"] = (
+            validate_r45_baseline_gate(result["r45_core_audit"])
+            if args.r45_baseline
+            else validate_r45_final_gate(result["r45_core_audit"])
+        )
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(
@@ -1223,9 +1620,11 @@ def main() -> int:
             encoding="utf-8",
         )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-    passed = result.get("comparison", {}).get("passed", True) and result.get(
-        "r1_gate", {}
-    ).get("passed", True)
+    passed = (
+        result.get("comparison", {}).get("passed", True)
+        and result.get("r1_gate", {}).get("passed", True)
+        and result.get("r45_gate", {}).get("passed", True)
+    )
     return 0 if passed else 1
 
 

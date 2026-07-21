@@ -1,0 +1,208 @@
+{
+  "schema_version": 1,
+  "base_commit": "796905b9888c2659af78cec21de1ee96b46a2c51",
+  "baseline_total_loc": 33618,
+  "baseline_core_loc": 5725,
+  "baseline_kernel_loc": 820,
+  "final_core_limit": 5500,
+  "final_kernel_limit": 850,
+  "public_operations": [
+    "start",
+    "observe",
+    "signal",
+    "cancel",
+    "recover",
+    "close"
+  ],
+  "core_groups": [
+    "execution_core",
+    "harness_core"
+  ],
+  "core_roots": [
+    "backend/deskpet/execution/",
+    "backend/deskpet/harness/"
+  ],
+  "non_core_root_exceptions": [
+    {
+      "path": "backend/deskpet/harness/adapters/team.py",
+      "source_hash": "dc11451f0ade973522306ecfbd8a7e4298426713d7bcc7e2c07af7bcaa91a6ca",
+      "reason": "team adapter is counted by total LOC but is outside the frozen R4.5 audited core"
+    }
+  ],
+  "deletion_budgets": [
+    {
+      "id": "execution_re_exports",
+      "deletion_loc": 65,
+      "sources": [
+        {
+          "path": "backend/deskpet/execution/__init__.py",
+          "symbol": "<module>",
+          "source_loc": 66,
+          "source_hash": "1c6657cc2641bbdc9c33f51de4c0e0339ef0906c5824926e15e1c92fccdb8d4d"
+        }
+      ]
+    },
+    {
+      "id": "route_profile_duplicate_contracts",
+      "deletion_loc": 38,
+      "sources": [
+        {
+          "path": "backend/deskpet/harness/router.py",
+          "symbol": "RouteProfile",
+          "source_loc": 8,
+          "source_hash": "2c586a55788a95f112f235bcf091633e4aa66caaf5f69f99d69b5b3ae6bb8ef3"
+        },
+        {
+          "path": "backend/deskpet/harness/router.py",
+          "symbol": "ClassifiedRoute",
+          "source_loc": 10,
+          "source_hash": "fb4b007de5014318fed28bd477384afba17cffddf35b3f13625bf31a22ef7e22"
+        },
+        {
+          "path": "backend/deskpet/harness/router.py",
+          "symbol": "RouteDecision",
+          "source_loc": 7,
+          "source_hash": "e7dba2f149378fe862da72ac40c8e7530c89bc50c65159066f76ebe4ce8d5140"
+        },
+        {
+          "path": "backend/deskpet/harness/profiles.py",
+          "symbol": "ProfileSpec",
+          "source_loc": 28,
+          "source_hash": "75d51662ac697e044cc576064fd5960421e1fae90c7b516abc43ea562a2fd101"
+        }
+      ]
+    },
+    {
+      "id": "child_pass_through",
+      "deletion_loc": 20,
+      "sources": [
+        {
+          "path": "backend/deskpet/harness/kernel.py",
+          "symbol": "KernelChildLauncher",
+          "source_loc": 16,
+          "source_hash": "812ed9faf6d4daeaf9a4a409b52d97e10456da4721e7640d649b5711656bac32"
+        },
+        {
+          "path": "backend/deskpet/harness/child_runs.py",
+          "symbol": "ChildLauncher",
+          "source_loc": 9,
+          "source_hash": "ece811ed22c77a8509da1081e3887fe15576c62eef16dcdf0b7a38fb613f6cf0"
+        }
+      ]
+    },
+    {
+      "id": "tool_pass_through",
+      "deletion_loc": 20,
+      "sources": [
+        {
+          "path": "backend/deskpet/harness/tool_executor.py",
+          "symbol": "PreparedCallRegistry",
+          "source_loc": 17,
+          "source_hash": "9d0d27e8e2078168df8e5c404299af3b4a2beca22ef380f571b701e70ecd021f"
+        },
+        {
+          "path": "backend/deskpet/harness/tool_executor.py",
+          "symbol": "UnifiedToolExecutor",
+          "source_loc": 115,
+          "source_hash": "8ac4f8dd856bf472e85ef64f2ea0249e339eda85a7fba9befa4024d1f5274c24"
+        }
+      ]
+    },
+    {
+      "id": "actor_construction",
+      "deletion_loc": 18,
+      "sources": [
+        {
+          "path": "backend/deskpet/harness/context.py",
+          "symbol": "HostContextFactory",
+          "source_loc": 90,
+          "source_hash": "da64837b2658cf8301e46a592718a9a951755d24680565baeb04bfc34906bbb2"
+        },
+        {
+          "path": "backend/deskpet/execution/contracts.py",
+          "symbol": "ActorContext",
+          "source_loc": 29,
+          "source_hash": "b945d5f82191a7d4591d112f66215342ea74530a464b06df2c5e1830ae08cf2f"
+        }
+      ]
+    },
+    {
+      "id": "kernel_launch_duplicate",
+      "deletion_loc": 38,
+      "sources": [
+        {
+          "path": "backend/deskpet/harness/kernel.py",
+          "symbol": "RunKernel._accept_precreated_child",
+          "source_loc": 48,
+          "source_hash": "3df508202ff0fcf9c399c6c134e415e84cb0d6b56fbd0e06bac81cb983163a54"
+        }
+      ]
+    },
+    {
+      "id": "single_supervisor",
+      "deletion_loc": 18,
+      "sources": [
+        {
+          "path": "backend/deskpet/harness/bootstrap.py",
+          "symbol": "HarnessRuntime",
+          "source_loc": 27,
+          "source_hash": "f491d8eedaa7a88b35fe5e58598ca662bfb8af2b61eb5bac9fda2272176465e8"
+        },
+        {
+          "path": "backend/deskpet/harness/recovery.py",
+          "symbol": "HarnessRecoveryCoordinator",
+          "source_loc": 71,
+          "source_hash": "95ff12e1044938d96e616ff27b8be1c10e2173f53eb790336ab32e89835a7d40"
+        }
+      ]
+    },
+    {
+      "id": "recovery_heartbeat",
+      "deletion_loc": 12,
+      "sources": [
+        {
+          "path": "backend/deskpet/harness/kernel.py",
+          "symbol": "RunKernel._deliver_child_signal",
+          "source_loc": 35,
+          "source_hash": "79b4cf0e81cb3303562f9bedab916eb20f56b39a5614aab902f0710b1a3e8641"
+        }
+      ]
+    },
+    {
+      "id": "venue_result_wrapper",
+      "deletion_loc": 14,
+      "sources": [
+        {
+          "path": "backend/deskpet/harness/adapters/venues.py",
+          "symbol": "ProductVenueRunResult",
+          "source_loc": 6,
+          "source_hash": "011a64986485f1d90632d52dd7225a61562e1327280324992e3c8b11b2cde42f"
+        },
+        {
+          "path": "backend/deskpet/harness/adapters/venues.py",
+          "symbol": "ProductVenueOpenResult",
+          "source_loc": 9,
+          "source_hash": "10bbe40ea580c58da89abdba4a90a51d739bda3042a95f45bdbd2f4e6d2381ff"
+        }
+      ]
+    },
+    {
+      "id": "diagnostics_duplicate_dto",
+      "deletion_loc": 12,
+      "sources": [
+        {
+          "path": "backend/deskpet/harness/bootstrap.py",
+          "symbol": "HarnessManifest",
+          "source_loc": 20,
+          "source_hash": "a4831ebe54d6ba0eb12d286bea4178491e601d85ba87825552f527d5dc65a52e"
+        },
+        {
+          "path": "backend/deskpet/harness/bootstrap.py",
+          "symbol": "HarnessHealth",
+          "source_loc": 17,
+          "source_hash": "ebfaf671f2dfae163acc7b6f914ea288d4e3e12c459d4ac6a6f88e19349da05b"
+        }
+      ]
+    }
+  ]
+}
