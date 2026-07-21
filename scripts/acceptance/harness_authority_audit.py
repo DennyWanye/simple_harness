@@ -12,7 +12,9 @@ import argparse
 import ast
 import hashlib
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -73,9 +75,29 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _git_executable() -> str:
+    configured = os.environ.get("DESKPET_GIT")
+    if configured:
+        path = Path(configured)
+        if path.is_file():
+            return str(path)
+        raise AuthorityInvariantError(f"DESKPET_GIT does not exist: {path}")
+    discovered = shutil.which("git")
+    if discovered:
+        return discovered
+    bundled = (
+        Path.home()
+        / ".cache/codex-runtimes/codex-primary-runtime"
+        / "dependencies/native/git/cmd/git.exe"
+    )
+    if bundled.is_file():
+        return str(bundled)
+    raise AuthorityInvariantError("git executable is required for the authority audit")
+
+
 def _git_commit(repo: Path) -> str:
     return subprocess.run(
-        ["git", "rev-parse", "HEAD"],
+        [_git_executable(), "rev-parse", "HEAD"],
         cwd=repo,
         check=True,
         capture_output=True,

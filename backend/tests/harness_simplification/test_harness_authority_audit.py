@@ -41,6 +41,16 @@ def test_r45_authority_manifests_lock_real_baseline_without_enforcing_exit_targe
     assert any("transaction starter count is <=23, found 33" in item for item in target["failures"])
 
 
+def test_authority_audit_resolves_bundled_git_without_path(monkeypatch) -> None:
+    monkeypatch.delenv("DESKPET_GIT", raising=False)
+    monkeypatch.setenv("PATH", "")
+
+    executable = Path(authority_audit._git_executable())
+
+    assert executable.is_file()
+    assert executable.name == "git.exe"
+
+
 @pytest.mark.parametrize(
     "name",
     (
