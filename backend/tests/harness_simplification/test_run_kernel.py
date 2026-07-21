@@ -14,6 +14,7 @@ from deskpet.execution.contracts import (
     ActorContext,
     AuthorizationError,
     DecisionOpen,
+    DecisionStatus,
     AttachmentPolicy,
     OutcomeStatus,
     PersistenceLevel,
@@ -501,6 +502,12 @@ class ClarificationCollaborator:
         return None
 
 
+class CrashOnDecisionResume(ClarificationCollaborator):
+    async def resume(self, boundary, response):
+        raise RuntimeError("crash after atomic decision commit")
+        yield ReactFinal("unreachable")
+
+
 @pytest_asyncio.fixture
 async def kernel(tmp_path):
     uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
@@ -604,6 +611,140 @@ async def test_first_decision_atomically_promotes_boundary_and_kernel_adopts_uow
     )
     assert receipt.accepted is True
     assert [event async for event in stream][-1].kind == "final"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "crash_point",
+    ["decision_resolve_after_cas", "decision_resolve_after_boundary", "decision_resolve_before_commit"],
+)
+async def test_kernel_decision_boundary_rolls_back_and_retries_after_restart(
+    tmp_path, crash_point,
+) -> None:
+    path = tmp_path / "workflow.db"
+    crashing_uow = SqliteExecutionUnitOfWork(
+        path,
+        fault_injector=lambda point: (_ for _ in ()).throw(RuntimeError(f"crash:{point}"))
+        if point == crash_point else None,
+    )
+    await crashing_uow.activate_empty_runtime()
+    first = RunKernel(
+        uow=crashing_uow,
+        router=RegisteredRouter(StaticClassifier("react.default"), [RouteProfile("react.default", "react")]),
+        drivers=[RegisteredDriver("react", ReActDriver(ClarificationCollaborator(), crashing_uow, NoEffects()))],
+    )
+    handle = await first.start(RunRequest("clarify", f"req-{crash_point}", "turn-atomic"), host())
+    actor = host().actor(root_run_id=handle.root_run_id)
+    stream = first.observe(handle.ref, actor)
+    assert (await anext(stream)).kind == "decision"
+    before = await crashing_uow.load_continuation(handle.ref.run_id)
+
+    with pytest.raises(RuntimeError, match=f"crash:{crash_point}"):
+        await first.signal(
+            handle.ref, actor,
+            DecisionSignal(handle.ref.run_id, "clarify-1", {"answer": "yes"}, "clarify-nonce", 0),
+        )
+
+    unchanged = await crashing_uow.load_continuation(handle.ref.run_id)
+    decision = await crashing_uow.get_decision("clarify-1", ref=handle.ref, actor=actor)
+    assert unchanged is not None and before is not None
+    assert unchanged.version == before.version
+    assert unchanged.pending_decision_id == "clarify-1"
+    assert decision.status is DecisionStatus.OPEN
+    assert not any(event.kind == "run.resumed" for event in await crashing_uow.list_events(handle.ref.run_id))
+
+    restarted_uow = SqliteExecutionUnitOfWork(path)
+    await restarted_uow.initialize()
+    restarted = RunKernel(
+        uow=restarted_uow,
+        router=RegisteredRouter(StaticClassifier("react.default"), [RouteProfile("react.default", "react")]),
+        drivers=[RegisteredDriver("react", ReActDriver(ClarificationCollaborator(), restarted_uow, NoEffects()))],
+    )
+    assert (await restarted.signal(
+        handle.ref, actor,
+        DecisionSignal(handle.ref.run_id, "clarify-1", {"answer": "yes"}, "clarify-nonce", 0),
+    )).accepted
+    assert (await restarted_uow.query(handle.ref, actor)).status is RunStatus.COMPLETED
+    events = await restarted_uow.list_events(handle.ref.run_id)
+    assert sum(event.kind == "run.resumed" for event in events) == 1
+
+
+@pytest.mark.asyncio
+async def test_kernel_decision_rejects_wrong_stale_and_duplicate_without_advancing(tmp_path) -> None:
+    uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
+    await uow.activate_empty_runtime()
+    kernel = RunKernel(
+        uow=uow,
+        router=RegisteredRouter(StaticClassifier("react.default"), [RouteProfile("react.default", "react")]),
+        drivers=[RegisteredDriver("react", ReActDriver(ClarificationCollaborator(), uow, NoEffects()))],
+    )
+    handle = await kernel.start(RunRequest("clarify", "req-fences", "turn-fences"), host())
+    actor = host().actor(root_run_id=handle.root_run_id)
+    stream = kernel.observe(handle.ref, actor)
+    await anext(stream)
+    waiting = await uow.load_continuation(handle.ref.run_id)
+    for nonce, version in (("wrong", 0), ("clarify-nonce", 7)):
+        with pytest.raises(Exception):
+            await kernel.signal(
+                handle.ref, actor,
+                DecisionSignal(handle.ref.run_id, "clarify-1", {"answer": "yes"}, nonce, version),
+            )
+        current = await uow.load_continuation(handle.ref.run_id)
+        assert current is not None and waiting is not None and current.version == waiting.version
+        assert (await uow.get_decision("clarify-1", ref=handle.ref, actor=actor)).status is DecisionStatus.OPEN
+    assert (await kernel.signal(
+        handle.ref, actor,
+        DecisionSignal(handle.ref.run_id, "clarify-1", {"answer": "yes"}, "clarify-nonce", 0),
+    )).accepted
+    settled = await uow.load_continuation(handle.ref.run_id)
+    replay = await kernel.signal(
+        handle.ref, actor,
+        DecisionSignal(handle.ref.run_id, "clarify-1", {"answer": "yes"}, "clarify-nonce", 0),
+    )
+    assert replay.accepted and replay.duplicate
+    with pytest.raises(Exception):
+        await kernel.signal(
+            handle.ref, actor,
+            DecisionSignal(handle.ref.run_id, "clarify-1", {"answer": "different"}, "clarify-nonce", 0),
+        )
+    duplicate = await uow.load_continuation(handle.ref.run_id)
+    assert duplicate is not None and settled is not None and duplicate.version == settled.version
+
+
+@pytest.mark.asyncio
+async def test_recovery_resumes_committed_decision_marker_after_process_crash(tmp_path) -> None:
+    path = tmp_path / "workflow.db"
+    uow = SqliteExecutionUnitOfWork(path)
+    await uow.activate_empty_runtime()
+    first = RunKernel(
+        uow=uow,
+        router=RegisteredRouter(StaticClassifier("react.default"), [RouteProfile("react.default", "react")]),
+        drivers=[RegisteredDriver("react", ReActDriver(CrashOnDecisionResume(), uow, NoEffects()))],
+    )
+    handle = await first.start(RunRequest("clarify", "req-after-commit", "turn-after-commit"), host())
+    actor = host().actor(root_run_id=handle.root_run_id)
+    stream = first.observe(handle.ref, actor)
+    await anext(stream)
+    with pytest.raises(RuntimeError, match="after atomic decision commit"):
+        await first.signal(
+            handle.ref, actor,
+            DecisionSignal(handle.ref.run_id, "clarify-1", {"answer": "yes"}, "clarify-nonce", 0),
+        )
+    committed = await uow.load_continuation(handle.ref.run_id)
+    assert committed is not None and committed.pending_decision_id is None
+    assert "pending_resume_signal" in committed.payload["completion_state"]
+
+    restarted_uow = SqliteExecutionUnitOfWork(path)
+    await restarted_uow.initialize()
+    restarted = RunKernel(
+        uow=restarted_uow,
+        router=RegisteredRouter(StaticClassifier("react.default"), [RouteProfile("react.default", "react")]),
+        drivers=[RegisteredDriver("react", ReActDriver(ClarificationCollaborator(), restarted_uow, NoEffects()))],
+    )
+    await restarted.recover(handle.ref, actor)
+    await restarted._active[handle.ref.run_id].task
+    assert (await restarted_uow.query(handle.ref, actor)).status is RunStatus.COMPLETED
+    assert sum(event.kind == "run.resumed" for event in await restarted_uow.list_events(handle.ref.run_id)) == 1
 
 
 @pytest.mark.asyncio

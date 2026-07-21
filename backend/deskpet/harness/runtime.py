@@ -177,6 +177,8 @@ class DriverRuntime:
                 await self.consume_candidate(
                     registration, record, candidate, recovery_lease=current[0]
                 )
+                if candidate.kind == "terminal":
+                    break
                 if heartbeat_error:
                     raise heartbeat_error[0]
         finally:

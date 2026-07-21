@@ -14,6 +14,8 @@ from deskpet.execution.contracts import (
     AuthorizationError,
     AttachmentPolicy,
     ChildCommandRecord,
+    DecisionConflict,
+    DecisionStatus,
     GrantConsume,
     LiveCursor,
     OutcomeStatus,
@@ -468,43 +470,64 @@ class RunKernel:
             request = current.request
             response = dict(signal.response)
             allow = bool(response.get("allow", response.get("approved", True)))
-            resolved, authorization = await self._uow.resolve_decision(
-                DurableDecisionSignal(
-                    decision_id=request.decision_id,
-                    run_id=request.run_id,
-                    expected_session_id=ref.expected_session_id,
-                    nonce=signal.nonce,
-                    expected_version=signal.version,
-                    allow=allow,
-                    response_schema_version=1,
-                    response=response,
-                    domain_kind=request.domain_kind,
-                    domain_id=request.domain_id,
-                    call_id=request.call_id,
-                    effect_id=request.effect_id,
-                    tool_name=request.tool_name,
-                    args_hash=request.args_hash,
-                    capability_hash=request.capability_hash,
-                    scope_hash=request.scope_hash,
-                ),
-                actor,
-            )
-            response["decision_status"] = resolved.status.value
-            if authorization is not None:
-                response["grant_id"] = authorization.grant_id
-                response["grant_version"] = authorization.version
-            driver_signal = DriverDecisionSignal(
-                run_id=signal.run_id,
-                decision_id=signal.decision_id,
-                response=response,
+            if current.status is not DecisionStatus.OPEN:
+                expected_status = DecisionStatus.ALLOWED if allow else DecisionStatus.DENIED
+                if (
+                    current.status is expected_status
+                    and current.response_schema_version == 1
+                    and dict(current.response or {}) == response
+                    and current.decision_version == signal.version + 1
+                    and request.nonce == signal.nonce
+                ):
+                    return SignalReceipt(True, duplicate=True, reason="decision_already_applied")
+                raise DecisionConflict(
+                    "decision_replay_conflict",
+                    "resolved decision replay differs from the authoritative response",
+                )
+            durable_signal = DurableDecisionSignal(
+                decision_id=request.decision_id,
+                run_id=request.run_id,
+                expected_session_id=ref.expected_session_id,
                 nonce=signal.nonce,
-                version=signal.version,
+                expected_version=signal.version,
+                allow=allow,
+                response_schema_version=1,
+                response=response,
+                domain_kind=request.domain_kind,
+                domain_id=request.domain_id,
+                call_id=request.call_id,
+                effect_id=request.effect_id,
+                tool_name=request.tool_name,
+                args_hash=request.args_hash,
+                capability_hash=request.capability_hash,
+                scope_hash=request.scope_hash,
             )
+            atomic_signal = getattr(registration.driver, "signal_decision_atomically", None)
+            if callable(atomic_signal):
+                candidates = atomic_signal(driver_signal, durable_signal, actor)
+            else:
+                resolved, authorization = await self._uow.resolve_decision(
+                    durable_signal, actor,
+                )
+                response["decision_status"] = resolved.status.value
+                if authorization is not None:
+                    response["grant_id"] = authorization.grant_id
+                    response["grant_version"] = authorization.version
+                driver_signal = DriverDecisionSignal(
+                    run_id=signal.run_id,
+                    decision_id=signal.decision_id,
+                    response=response,
+                    nonce=signal.nonce,
+                    version=signal.version,
+                )
+                candidates = registration.driver.signal(driver_signal)
+        else:
+            candidates = registration.driver.signal(driver_signal)
         try:
             await self._runtime.consume(
                 registration,
                 record,
-                registration.driver.signal(driver_signal),
+                candidates,
             )
         except TerminalConflict:
             current = await self._query(ref, actor)

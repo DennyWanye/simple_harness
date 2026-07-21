@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, AsyncIterator, Mapping, Protocol
-from deskpet.execution.contracts import DecisionOpen as DurableDecisionOpen, OutcomeStatus, PersistenceLevel, RecoveryLease, RunContext, RunCreate, RunEventCandidate, thaw_json
+from deskpet.execution.contracts import ActorContext, DecisionOpen as DurableDecisionOpen, DecisionSignal as DurableDecisionSignal, OutcomeStatus, PersistenceLevel, RecoveryLease, RunContext, RunCreate, RunEventCandidate, stable_decision_grant_id, thaw_json
 from deskpet.execution.evidence import EvidenceContext, EvidenceSelection, UNKNOWN_EVIDENCE
 from deskpet.execution.ports import ExecutionUnitOfWork
 from deskpet.harness.ports import AttachmentPolicy, CancelAcknowledgedCandidate, ChildAcceptedCandidate, ChildAcceptedSignal, ChildTerminalSignal, DecisionSignal, DelegateRun, DriverEvent, DriverSignal, DriverStart, DriverTerminalCandidate, ExecuteTools, JoinPolicy, OpenDecision, PersistedEventCandidate, ProviderFallbackCandidate, TokenCandidate, ToolGrantRef, ToolOutcomesSignal
@@ -514,48 +514,7 @@ class ReActDriver:
                     yield candidate
                 return
             if signal.kind == "decision":
-                boundary = await self._load_boundary(signal.run_id)
-                if boundary.pending_decision is None or boundary.pending_decision.decision_id != signal.decision_id:
-                    raise ValueError('decision does not match pending boundary')
-                pending = boundary.pending_decision
-                assert pending is not None
-                if boundary.pending_calls and pending.call_id is not None:
-                    indexes = {call.stable_call_id: index for index, call in enumerate(boundary.pending_calls)}
-                    index = indexes[pending.call_id]
-                    if bool(signal.response.get('allow', signal.response.get('approved', True))):
-                        grant_id = str(signal.response.get('grant_id') or '').strip()
-                        if not grant_id:
-                            raise ValueError('allowed permission response is missing grant_id')
-                        state = copy.deepcopy(dict(boundary.completion_state))
-                        refs = dict(state.get('authorization_refs') or {})
-                        refs[pending.call_id] = {'grant_id': grant_id, 'decision_id': pending.decision_id, 'decision_nonce': pending.nonce, 'version': int(signal.response.get('grant_version') or 0)}
-                        state['authorization_refs'] = refs
-                        boundary = replace(boundary, completion_state=state, pending_decision=None, version=boundary.version + 1)
-                    else:
-                        boundary = boundary.with_outcomes({index: NormalizedToolOutcome.failure('authorization_denied', 'authorization denied')}, {index: OutcomeStatus.FAILED})
-                        boundary = replace(boundary, pending_decision=None)
-                    next_index = self._next_permission_index(boundary)
-                    if next_index is not None:
-                        decision = self._permission_decision(boundary, next_index)
-                        boundary = replace(boundary, pending_decision=decision)
-                        boundary = await self._save_durable_boundary(boundary, decision=decision, recovery_lease=recovery_lease)
-                        yield decision
-                        return
-                    boundary = await self._save_durable_boundary(boundary, recovery_lease=recovery_lease)
-                    if boundary.pending_indexes:
-                        yield self._execute_command(boundary)
-                    else:
-                        async for candidate in self._resume_completed(boundary, recovery_lease=recovery_lease):
-                            yield candidate
-                    return
-                messages = tuple(boundary.canonical_messages) + ({'role': 'system', 'content': json.dumps({'decision_id': signal.decision_id, 'response': dict(signal.response)}, ensure_ascii=False, sort_keys=True)},)
-                state = copy.deepcopy(dict(boundary.completion_state))
-                state['model_backfilled'] = True
-                boundary = replace(boundary, canonical_messages=messages, completion_state=state, pending_decision=None, version=boundary.version + 1)
-                boundary = await self._save_durable_boundary(boundary, recovery_lease=recovery_lease)
-                async for candidate in self._emit(boundary.to_start(), self._collaborator.resume(boundary, {'type': 'decision', 'response': dict(signal.response)}), continuation_version=boundary.version, recovery_lease=recovery_lease):
-                    yield candidate
-                return
+                raise RuntimeError('decision signals require the atomic Kernel path')
             if signal.kind == "child_accepted":
                 boundary = await self._load_boundary(signal.run_id)
                 command = boundary.pending_delegate
@@ -592,6 +551,78 @@ class ReActDriver:
                         yield candidate
         return iterator()
 
+    def signal_decision_atomically(
+        self,
+        signal: DriverSignal,
+        durable_signal: DurableDecisionSignal,
+        actor: ActorContext,
+    ) -> AsyncIterator[DriverEvent]:
+        async def iterator() -> AsyncIterator[DriverEvent]:
+            boundary = await self._load_boundary(signal.run_id)
+            if boundary.pending_decision is None or boundary.pending_decision.decision_id != signal.decision_id:
+                raise ValueError('decision does not match pending boundary')
+            pending = boundary.pending_decision
+            response = dict(signal.response)
+            response['decision_status'] = 'allowed' if durable_signal.allow else 'denied'
+            next_decision: DriverEvent | None = None
+            resume_signal: Mapping[str, Any] | None = None
+            if boundary.pending_calls and pending.call_id is not None:
+                indexes = {call.stable_call_id: index for index, call in enumerate(boundary.pending_calls)}
+                index = indexes[pending.call_id]
+                if durable_signal.allow:
+                    grant_id = stable_decision_grant_id(pending.decision_id)
+                    response['grant_id'] = grant_id
+                    response['grant_version'] = 0
+                    state = copy.deepcopy(dict(boundary.completion_state))
+                    refs = dict(state.get('authorization_refs') or {})
+                    refs[pending.call_id] = {'grant_id': grant_id, 'decision_id': pending.decision_id, 'decision_nonce': pending.nonce, 'version': 0}
+                    state['authorization_refs'] = refs
+                    boundary = replace(boundary, completion_state=state, pending_decision=None, version=boundary.version + 1)
+                else:
+                    boundary = boundary.with_outcomes({index: NormalizedToolOutcome.failure('authorization_denied', 'authorization denied')}, {index: OutcomeStatus.FAILED})
+                    boundary = replace(boundary, pending_decision=None)
+                next_index = self._next_permission_index(boundary)
+                if next_index is not None:
+                    next_decision = self._permission_decision(boundary, next_index)
+                    boundary = replace(boundary, pending_decision=next_decision)
+            else:
+                messages = tuple(boundary.canonical_messages) + ({'role': 'system', 'content': json.dumps({'decision_id': signal.decision_id, 'response': response}, ensure_ascii=False, sort_keys=True)},)
+                state = copy.deepcopy(dict(boundary.completion_state))
+                state['model_backfilled'] = True
+                resume_signal = {'type': 'decision', 'response': response}
+                state['pending_resume_signal'] = resume_signal
+                boundary = replace(boundary, canonical_messages=messages, completion_state=state, pending_decision=None, version=boundary.version + 1)
+            resumed_event = RunEventCandidate(
+                event_key=f'decision:{signal.decision_id}:resumed',
+                kind='run.resumed', status=OutcomeStatus.ACCEPTED, driver_kind='react',
+                correlation={'decision_id': signal.decision_id},
+                payload={'decision_status': response['decision_status']},
+            )
+            _, authorization, saved, event = await self._uow.resolve_decision_and_advance_boundary(
+                durable_signal, actor,
+                expected_continuation_version=boundary.version - 1,
+                continuation_payload=boundary.to_payload(),
+                resumed_event=resumed_event,
+                next_decision=self._durable_decision(next_decision),
+            )
+            if authorization is not None and authorization.grant_id != response.get('grant_id'):
+                raise RuntimeError('atomic decision grant identity mismatch')
+            boundary = replace(boundary, version=int(saved.version))
+            yield PersistedEventCandidate(event)
+            if next_decision is not None:
+                yield next_decision
+                return
+            if boundary.pending_indexes:
+                yield self._execute_command(boundary)
+                return
+            if resume_signal is not None:
+                clean_state = copy.deepcopy(dict(boundary.completion_state))
+                clean_state.pop('pending_resume_signal', None)
+                resumed_boundary = replace(boundary, completion_state=clean_state)
+                async for candidate in self._emit(resumed_boundary.to_start(), self._collaborator.resume(resumed_boundary, resume_signal), continuation_version=boundary.version):
+                    yield candidate
+        return iterator()
+
     def recover(self, run_id: str, recovery_lease: RecoveryLease) -> AsyncIterator[DriverEvent]:
 
         async def iterator() -> AsyncIterator[DriverEvent]:
@@ -607,6 +638,14 @@ class ReActDriver:
                 return
             if boundary.pending_delegate is not None:
                 yield boundary.pending_delegate
+                return
+            pending_resume = boundary.completion_state.get('pending_resume_signal')
+            if isinstance(pending_resume, Mapping):
+                state = copy.deepcopy(dict(boundary.completion_state))
+                state.pop('pending_resume_signal', None)
+                resumed_boundary = replace(boundary, completion_state=state)
+                async for candidate in self._emit(resumed_boundary.to_start(), self._collaborator.resume(resumed_boundary, dict(pending_resume)), continuation_version=boundary.version, recovery_lease=recovery_lease):
+                    yield candidate
                 return
             updates: dict[int, NormalizedToolOutcome] = {}
             statuses: dict[int, OutcomeStatus] = {}

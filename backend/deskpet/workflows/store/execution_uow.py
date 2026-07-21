@@ -2275,6 +2275,7 @@ class SqliteExecutionUnitOfWork:
         expected_continuation_version: int,
         continuation_payload: Mapping[str, Any],
         resumed_event: RunEventCandidate,
+        next_decision: DecisionOpen | None = None,
         deliveries: Sequence[DeliverySpec] = (),
     ) -> tuple[
         DecisionRecord,
@@ -2300,7 +2301,7 @@ class SqliteExecutionUnitOfWork:
                 run=run,
                 expected_version=expected_continuation_version,
                 payload_json=payload_json,
-                decision=None,
+                decision=next_decision,
                 now=now,
             )
             self._fault("decision_resolve_after_boundary")

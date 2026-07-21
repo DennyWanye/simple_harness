@@ -73,6 +73,9 @@ class ExecutionUnitOfWork(Protocol):
     async def resolve_decision(self, signal: DecisionSignal, actor: ActorContext) -> tuple[DecisionRecord, DecisionAuthorization | None]:
         ...
 
+    async def resolve_decision_and_advance_boundary(self, signal: DecisionSignal, actor: ActorContext, *, expected_continuation_version: int, continuation_payload: Mapping[str, Any], resumed_event: RunEventCandidate, next_decision: DecisionOpen | None=None, deliveries: Sequence[DeliverySpec]=()) -> tuple[DecisionRecord, DecisionAuthorization | None, Any, RunEvent]:
+        ...
+
     async def cancel_open_decisions(self, ref: RunRef, actor: ActorContext, *, expected_run_version: int) -> tuple[DecisionRecord, ...]:
         ...
 

@@ -11,6 +11,7 @@ import pytest
 
 from deskpet.execution import (
     ActorContext,
+    DecisionSignal as DurableDecisionSignal,
     OutcomeStatus,
     PersistenceLevel,
     RunContext,
@@ -60,6 +61,23 @@ from deskpet.workflows.store import SqliteExecutionUnitOfWork, StaleRecoveryLeas
 
 CAPABILITY_HASH = fingerprint_json({"tools": ["read", "write"]})
 SCOPE_HASH = fingerprint_json({"workspace": "F:/workspace"})
+
+
+def _actor(run_id: str = "run-react") -> ActorContext:
+    return ActorContext("principal-react", "session-react", 0, run_id)
+
+
+def _durable_signal(decision, response: Mapping[str, Any]) -> DurableDecisionSignal:
+    return DurableDecisionSignal(
+        decision_id=decision.decision_id, run_id=decision.run_id,
+        expected_session_id="session-react", nonce=decision.nonce,
+        expected_version=0,
+        allow=bool(response.get("allow", response.get("approved", True))),
+        response_schema_version=1, response=dict(response),
+        call_id=decision.call_id, effect_id=decision.effect_id,
+        tool_name=decision.tool_name, args_hash=decision.args_hash,
+        capability_hash=decision.capability_hash, scope_hash=decision.scope_hash,
+    )
 
 
 class ChildRunScheduler(_ChildRunScheduler):
@@ -384,22 +402,18 @@ async def test_decision_boundary_survives_new_driver_and_keeps_session(tmp_path)
         store,
         PolicyRegistry(),
     )
-    async with aiosqlite.connect(path) as db:
-        await db.execute(
-            """UPDATE execution_decisions
-            SET status='allowed',response_schema_version=1,response_json=?,
-                decision_version=decision_version+1,resolved_at=1.0
-            WHERE decision_id='decision-1'""",
-            (json.dumps({"answer": "F:/workspace"}),),
-        )
-        await db.commit()
+    response = {"answer": "F:/workspace"}
+    signal = DecisionSignal(
+        "run-react", "decision-1", response, nonce="nonce-1", version=0,
+    )
     candidates = await _collect(
-        second.signal(
-            DecisionSignal("run-react", "decision-1", {"answer": "F:/workspace"})
+        second.signal_decision_atomically(
+            signal, _durable_signal(decision, response), _actor(),
         )
     )
 
-    assert candidates == [DriverTerminalCandidate("run-react", "completed", "answered")]
+    assert candidates[-1] == DriverTerminalCandidate("run-react", "completed", "answered")
+    assert candidates[0].kind == "persisted_event"
     boundary, response = resumed.resume_inputs[0]
     assert boundary.session_id == "session-react"
     assert response["type"] == "decision"
@@ -436,33 +450,59 @@ async def test_permission_batch_waits_for_durable_grant_before_execution(tmp_pat
     assert len(first) == 1
     decision = first[0]
     assert decision.kind == "open_decision"
-    async with aiosqlite.connect(path) as db:
-        await db.execute(
-            """UPDATE execution_decisions
-            SET status='allowed',response_schema_version=1,response_json='{"allow":true}',
-                decision_version=decision_version+1,resolved_at=1.0
-            WHERE decision_id=?""",
-            (decision.decision_id,),
-        )
-        await db.commit()
-
+    response = {"allow": True}
+    signal = DecisionSignal(
+        "run-react", decision.decision_id, response,
+        nonce=decision.nonce, version=0,
+    )
     resumed = await _collect(
-        driver.signal(
-            DecisionSignal(
-                "run-react",
-                decision.decision_id,
-                {"allow": True, "grant_id": "grant-1", "grant_version": 0},
-                nonce=decision.nonce,
-                version=0,
-            )
+        driver.signal_decision_atomically(
+            signal, _durable_signal(decision, response), _actor(),
         )
     )
 
-    assert len(resumed) == 1
-    command = resumed[0]
+    assert len(resumed) == 2
+    assert resumed[0].kind == "persisted_event"
+    command = resumed[1]
     assert command.kind == "execute_tools"
-    assert command.grant_refs[0].grant_id == "grant-1"
+    assert command.grant_refs[0].grant_id
     assert command.grant_refs[0].decision_nonce == decision.nonce
+
+
+@pytest.mark.asyncio
+async def test_first_permission_resolution_atomically_opens_next_permission(tmp_path):
+    calls = []
+    for index in range(2):
+        base = _call(index, durable=True)
+        calls.append(prepared_call(
+            tool_name=base.tool_name, model_args=dict(base.final_params),
+            call_id=base.stable_call_id, effect_id=_EFFECTS[base.stable_call_id],
+            capability_hash=CAPABILITY_HASH, scope_hash=SCOPE_HASH,
+            requires_authorization=True, recoverable_effect=True,
+        ))
+    batch = ReactToolBatch(
+        "batch-two-permissions", tuple(calls),
+        tuple(_context(call) for call in calls),
+    )
+    driver, store, _ = await _driver(tmp_path, ScriptedCollaborator([batch]))
+    first = (await _collect(driver.start(_request())))[0]
+    response = {"allow": True}
+    signal = DecisionSignal(
+        "run-react", first.decision_id, response,
+        nonce=first.nonce, version=0,
+    )
+
+    resumed = await _collect(driver.signal_decision_atomically(
+        signal, _durable_signal(first, response), _actor(),
+    ))
+
+    assert [item.kind for item in resumed] == ["persisted_event", "open_decision"]
+    second = resumed[1]
+    assert second.decision_id != first.decision_id
+    boundary = await store.load_continuation("run-react")
+    assert boundary is not None and boundary.pending_decision_id == second.decision_id
+    assert (await store.get_decision(first.decision_id, ref=RunRef("run-react", "session-react"), actor=_actor())).status.value == "allowed"
+    assert (await store.get_decision(second.decision_id, ref=RunRef("run-react", "session-react"), actor=_actor())).status.value == "open"
 
 
 @pytest.mark.asyncio
