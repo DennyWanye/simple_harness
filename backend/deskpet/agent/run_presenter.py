@@ -333,7 +333,9 @@ async def _present_tool_result(event: AgentEvent, context: RunPresentationContex
     public_text = public_result if isinstance(public_result, str) else json.dumps(public_result, ensure_ascii=False)
     await _send_both(context, {'type': 'tool_use_event', 'payload': {'kind': 'result', 'tool_name': event.tool_name, 'result': public_text, 'turn': event.iteration, 'session_id': context.session_id}})
     ok = event.outcome_status == 'succeeded'
-    result_frame = {'type': 'tool_result', 'payload': {'tool': event.tool_name, 'ok': ok, 'status': event.outcome_status, 'result': public_text, 'turn': event.iteration, 'session_id': context.session_id}}
+    result_frame = {'type': 'tool_result', 'payload': {'tool': event.tool_name, 'ok': ok, 'result': public_text, 'turn': event.iteration, 'session_id': context.session_id}}
+    if not ok:
+        result_frame['payload']['status'] = event.outcome_status
     if event.outcome_error is not None:
         result_frame['payload']['error'] = event.outcome_error
     await _send_both(context, result_frame)
