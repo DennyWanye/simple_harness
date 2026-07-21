@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Mapping
 from contextlib import suppress
 from dataclasses import replace
 
@@ -41,7 +41,7 @@ from deskpet.execution.ports import ExecutionUnitOfWork
 
 from .context import HostContextFactory
 from .child_runs import ChildRunCoordinator
-from .contracts import CancelReceipt, HostContext, RegisteredDriver, RunHandle, RunRequest, SignalReceipt, TerminalProjection, driver_catalog
+from .contracts import CancelReceipt, HostContext, RegisteredDriver, RunHandle, RunRequest, SignalReceipt, TerminalProjection
 from .live_index import BoundedLiveIndex, LiveRun, LiveStreamOverflow
 from .ports import (
     DecisionSignal as DriverDecisionSignal,
@@ -50,7 +50,7 @@ from .ports import (
     DriverStart,
     DriverTerminalCandidate,
 )
-from .router import RegisteredRouter, RouteRequest as RoutingRequest
+from .router import RegisteredRouter
 from .runtime import DriverRuntime
 from .tool_executor import UnifiedToolExecutor
 
@@ -63,7 +63,7 @@ class RunKernel:
         *,
         uow: ExecutionUnitOfWork,
         router: RegisteredRouter,
-        drivers: Sequence[RegisteredDriver],
+        drivers: Mapping[str, RegisteredDriver],
         context_factory: HostContextFactory | None = None,
         child_runs: ChildRunCoordinator | None = None,
         tool_executor: UnifiedToolExecutor | None = None,
@@ -73,7 +73,7 @@ class RunKernel:
     ) -> None:
         self._uow = uow
         self._router = router
-        self._drivers = driver_catalog(tuple(drivers))
+        self._drivers = drivers
         self._context_factory = context_factory or HostContextFactory()
         self._child_runs = child_runs
         self._tool_executor = tool_executor
@@ -302,15 +302,7 @@ class RunKernel:
                 if self._terminal_projection is not None else None
             )
             routing = self._router.route(
-                RoutingRequest(
-                    text=request.text,
-                    request_id=request.request_id,
-                    turn_id=request.turn_id,
-                    venue=request.venue,
-                    mode=request.mode,
-                    workspace_context=request.workspace_context,
-                    proposed_tools=request.proposed_tools,
-                ),
+                request,
                 available_capabilities=host.available_capabilities,
             )
             registration = self._drivers.get(routing.driver_kind)

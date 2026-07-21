@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from deskpet.execution.ports import ExecutionUnitOfWork
 from deskpet.harness.adapters.venues import KernelRunClient, VenueContextResolver
 from deskpet.harness.child_runs import ChildRunCoordinator, ChildRunScheduler
+from deskpet.harness.contracts import driver_catalog
 from deskpet.harness.kernel import KernelChildLauncher, RegisteredDriver, RunKernel, kernel_public_operations
 from deskpet.harness.profiles import ProfileRegistry
 from deskpet.harness.projector import (
@@ -109,26 +110,25 @@ async def build_harness_runtime(
     """Initialize one Kernel or fail startup without a legacy fallback."""
 
     await uow.initialize()
-    driver_catalog = {registration.kind: registration for registration in drivers}
-    if len(driver_catalog) != len(drivers):
-        raise ValueError("duplicate harness driver registration")
-    route_profiles = profiles.route_profiles()
-    missing = sorted({profile.driver_kind for profile in route_profiles} - set(driver_catalog))
+    registered_drivers = driver_catalog(tuple(drivers))
+    missing = sorted(
+        {profile.driver_kind for profile in profiles.specs.values()} - set(registered_drivers)
+    )
     if missing:
         raise ValueError(f"profiles reference unavailable drivers: {','.join(missing)}")
 
-    workflow_registration = driver_catalog.get("workflow")
+    workflow_registration = registered_drivers.get("workflow")
     if workflow_registration is not None:
         actual = frozenset(getattr(workflow_registration.driver, "profile_keys", ()))
         expected = frozenset(profiles.workflow_specs)
         if actual != expected:
             raise ValueError("router workflow keys and WorkflowDriver catalog differ")
-    router = RegisteredRouter(classifier, route_profiles)
+    router = RegisteredRouter(classifier, profiles)
     goal_projection = GoalTerminalProjection(goal_store) if goal_store is not None else None
     kernel = RunKernel(
         uow=uow,
         router=router,
-        drivers=drivers,
+        drivers=registered_drivers,
         child_runs=child_runs,
         tool_executor=tool_executor,
         terminal_projection=goal_projection,
@@ -158,9 +158,12 @@ async def build_harness_runtime(
     manifest = HarnessManifest(
         schema_version=WORKFLOW_SCHEMA_VERSION,
         operations=kernel_public_operations(),
-        drivers=tuple(sorted(driver_catalog)),
+        drivers=tuple(sorted(registered_drivers)),
         profiles=tuple(
-            sorted((profile.key, profile.driver_kind) for profile in router.profiles.values())
+            sorted(
+                (profile.profile_key, profile.driver_kind)
+                for profile in router.profiles.values()
+            )
         ),
     )
     health = HarnessHealth(

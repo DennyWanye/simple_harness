@@ -7,8 +7,8 @@ import pytest
 from deskpet.execution.contracts import RunContext
 from deskpet.harness.adapters.product_profiles import build_product_profile_registry
 from deskpet.harness.adapters.routing import DeskPetRouteClassifier
+from deskpet.harness.contracts import RunRequest
 from deskpet.harness.ports import DriverStart
-from deskpet.harness.router import RouteRequest
 
 
 class Registry:
@@ -97,6 +97,6 @@ def test_router_and_workflow_driver_share_exact_immutable_catalog(tmp_path, monk
         lambda *args, **kwargs: RouteDecision(WorkflowRoute.DEEP_RESEARCH, "fixture", 1.0),
     )
     classified = DeskPetRouteClassifier(profiles).classify(
-        RouteRequest("research", "request-1", "turn-1")
+        RunRequest("research", "request-1", "turn-1")
     )
     assert classified.profile_key == "workflow.deep_research"

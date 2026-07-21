@@ -12,9 +12,11 @@ import pytest
 
 from deskpet.execution.contracts import AuthorizationError, RunRef, RunStatus
 from deskpet.harness.child_runs import ChildRunCoordinator, ChildRunScheduler
+from deskpet.harness.contracts import driver_catalog
 from deskpet.harness.drivers.react import ReActDriver, ReactFinal
 from deskpet.harness.kernel import HostContext, KernelChildLauncher, RegisteredDriver, RunKernel, RunRequest
-from deskpet.harness.router import RegisteredRouter, RouteProfile
+from deskpet.harness.profiles import ProfileRegistry, ProfileSpec
+from deskpet.harness.router import RegisteredRouter
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.tools.code_tools.spawn_subagents_tool import (
     build_spawn_subagents_tools,
@@ -34,6 +36,10 @@ SUBAGENTS = {
 class _Classifier:
     def classify(self, request):
         return SimpleNamespace(profile_key="react.default", reason="test", confidence=1.0)
+
+
+def _profiles(profile_key: str, driver_kind: str) -> ProfileRegistry:
+    return ProfileRegistry((ProfileSpec(profile_key, profile_key, driver_kind),))
 
 
 class _Policy:
@@ -141,9 +147,9 @@ def _kernel(uow, coordinator, collaborator):
         uow=uow,
         router=RegisteredRouter(
             _Classifier(),
-            [RouteProfile("react.default", "react")],
+            _profiles("react.default", "react"),
         ),
-        drivers=[RegisteredDriver("react", driver)],
+        drivers=driver_catalog((RegisteredDriver("react", driver),)),
         child_runs=coordinator,
         child_signal_heartbeat_interval=0.01,
     )

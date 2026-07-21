@@ -6,6 +6,7 @@ import pytest
 
 from deskpet.execution.contracts import ActorContext, DecisionOpen, RunRef
 from deskpet.harness.adapters.venues import KernelRunClient
+from deskpet.harness.contracts import driver_catalog
 from deskpet.harness.kernel import HostContext, RegisteredDriver, RunKernel
 from deskpet.harness.ports import (
     CancelAcknowledgedCandidate,
@@ -13,7 +14,8 @@ from deskpet.harness.ports import (
     DriverTerminalCandidate,
     TokenCandidate,
 )
-from deskpet.harness.router import ClassifiedRoute, RegisteredRouter, RouteProfile
+from deskpet.harness.profiles import ProfileRegistry, ProfileSpec
+from deskpet.harness.router import ClassifiedRoute, RegisteredRouter
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
 
 
@@ -43,6 +45,10 @@ class Resolver:
 class Classifier:
     def classify(self, request):
         return ClassifiedRoute("react.default", "fixture", 1.0)
+
+
+def _profiles(profile_key: str, driver_kind: str) -> ProfileRegistry:
+    return ProfileRegistry((ProfileSpec(profile_key, profile_key, driver_kind),))
 
 
 class Driver:
@@ -84,9 +90,9 @@ async def make_client(tmp_path, *, complete: bool = True, durable: bool = False)
     kernel = RunKernel(
         uow=uow,
         router=RegisteredRouter(
-            Classifier(), [RouteProfile("react.default", "react")]
+            Classifier(), _profiles("react.default", "react")
         ),
-        drivers=[RegisteredDriver("react", driver, durable_from_start=durable)],
+        drivers=driver_catalog((RegisteredDriver("react", driver, durable_from_start=durable),)),
     )
     return KernelRunClient(kernel, Resolver()), driver, uow
 

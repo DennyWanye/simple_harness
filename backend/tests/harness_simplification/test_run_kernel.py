@@ -27,6 +27,7 @@ from deskpet.execution.contracts import (
 )
 from deskpet.harness.context import HostContextFactory
 from deskpet.harness.bootstrap import HarnessRuntime
+from deskpet.harness.contracts import driver_catalog
 from deskpet.harness.drivers.react import (
     ReActDriver,
     ReactFinal,
@@ -59,7 +60,8 @@ from deskpet.harness.ports import (
     PersistedEventCandidate,
     TokenCandidate,
 )
-from deskpet.harness.router import ClassifiedRoute, RegisteredRouter, RouteProfile
+from deskpet.harness.profiles import ProfileRegistry, ProfileSpec
+from deskpet.harness.router import ClassifiedRoute, RegisteredRouter
 from deskpet.harness.tool_executor import UnifiedToolExecutor
 from deskpet.harness.runtime import DriverRuntime
 from deskpet.harness.live_index import BoundedLiveIndex
@@ -94,6 +96,21 @@ class StaticClassifier:
     def classify(self, request):
         self.calls += 1
         return ClassifiedRoute(self.profile, "test", 1.0)
+
+
+def _profiles(profile_key: str, driver_kind: str) -> ProfileRegistry:
+    workflow = (
+        {
+            "workflow_key": profile_key,
+            "workflow_name": "fixture",
+            "workflow_version": "v1",
+            "state_factory": dict,
+            "context_factory": dict,
+        }
+        if driver_kind == "workflow"
+        else {}
+    )
+    return ProfileRegistry((ProfileSpec(profile_key, profile_key, driver_kind, **workflow),))
 
 
 class FakeDriver:
@@ -528,8 +545,8 @@ async def kernel(tmp_path):
     driver = FakeDriver()
     value = RunKernel(
         uow=uow,
-        router=RegisteredRouter(classifier, [RouteProfile("react.default", "react")]),
-        drivers=[RegisteredDriver("react", driver)],
+        router=RegisteredRouter(classifier, _profiles("react.default", "react")),
+        drivers=driver_catalog((RegisteredDriver("react", driver),)),
     )
     return value, classifier, driver
 
@@ -569,9 +586,9 @@ async def test_short_react_run_stays_in_bounded_kernel_index_without_sqlite_writ
         uow=uow,
         router=RegisteredRouter(
             StaticClassifier("react.default"),
-            [RouteProfile("react.default", "react")],
+            _profiles("react.default", "react"),
         ),
-        drivers=[RegisteredDriver("react", ImmediateTerminalDriver())],
+        drivers=driver_catalog((RegisteredDriver("react", ImmediateTerminalDriver()),)),
         max_live_runs=4,
     )
     handle = await value.start(RunRequest("hello", "req-live", "turn-live"), host())
@@ -595,9 +612,9 @@ async def test_first_decision_atomically_promotes_boundary_and_kernel_adopts_uow
         uow=uow,
         router=RegisteredRouter(
             StaticClassifier("react.default"),
-            [RouteProfile("react.default", "react")],
+            _profiles("react.default", "react"),
         ),
-        drivers=[RegisteredDriver("react", driver)],
+        drivers=driver_catalog((RegisteredDriver("react", driver),)),
     )
     handle = await value.start(RunRequest("clarify", "req-boundary", "turn-boundary"), host())
     actor = host().actor(root_run_id=handle.root_run_id)
@@ -642,8 +659,8 @@ async def test_kernel_decision_boundary_rolls_back_and_retries_after_restart(
     await crashing_uow.activate_empty_runtime()
     first = RunKernel(
         uow=crashing_uow,
-        router=RegisteredRouter(StaticClassifier("react.default"), [RouteProfile("react.default", "react")]),
-        drivers=[RegisteredDriver("react", ReActDriver(ClarificationCollaborator(), crashing_uow, NoEffects()))],
+        router=RegisteredRouter(StaticClassifier("react.default"), _profiles("react.default", "react")),
+        drivers=driver_catalog((RegisteredDriver("react", ReActDriver(ClarificationCollaborator(), crashing_uow, NoEffects())),)),
     )
     handle = await first.start(RunRequest("clarify", f"req-{crash_point}", "turn-atomic"), host())
     actor = host().actor(root_run_id=handle.root_run_id)
@@ -669,8 +686,8 @@ async def test_kernel_decision_boundary_rolls_back_and_retries_after_restart(
     await restarted_uow.initialize()
     restarted = RunKernel(
         uow=restarted_uow,
-        router=RegisteredRouter(StaticClassifier("react.default"), [RouteProfile("react.default", "react")]),
-        drivers=[RegisteredDriver("react", ReActDriver(ClarificationCollaborator(), restarted_uow, NoEffects()))],
+        router=RegisteredRouter(StaticClassifier("react.default"), _profiles("react.default", "react")),
+        drivers=driver_catalog((RegisteredDriver("react", ReActDriver(ClarificationCollaborator(), restarted_uow, NoEffects())),)),
     )
     assert (await restarted.signal(
         handle.ref, actor,
@@ -687,8 +704,8 @@ async def test_kernel_decision_rejects_wrong_stale_and_duplicate_without_advanci
     await uow.activate_empty_runtime()
     kernel = RunKernel(
         uow=uow,
-        router=RegisteredRouter(StaticClassifier("react.default"), [RouteProfile("react.default", "react")]),
-        drivers=[RegisteredDriver("react", ReActDriver(ClarificationCollaborator(), uow, NoEffects()))],
+        router=RegisteredRouter(StaticClassifier("react.default"), _profiles("react.default", "react")),
+        drivers=driver_catalog((RegisteredDriver("react", ReActDriver(ClarificationCollaborator(), uow, NoEffects())),)),
     )
     handle = await kernel.start(RunRequest("clarify", "req-fences", "turn-fences"), host())
     actor = host().actor(root_run_id=handle.root_run_id)
@@ -730,8 +747,8 @@ async def test_recovery_resumes_committed_decision_marker_after_process_crash(tm
     await uow.activate_empty_runtime()
     first = RunKernel(
         uow=uow,
-        router=RegisteredRouter(StaticClassifier("react.default"), [RouteProfile("react.default", "react")]),
-        drivers=[RegisteredDriver("react", ReActDriver(CrashOnDecisionResume(), uow, NoEffects()))],
+        router=RegisteredRouter(StaticClassifier("react.default"), _profiles("react.default", "react")),
+        drivers=driver_catalog((RegisteredDriver("react", ReActDriver(CrashOnDecisionResume(), uow, NoEffects())),)),
     )
     handle = await first.start(RunRequest("clarify", "req-after-commit", "turn-after-commit"), host())
     actor = host().actor(root_run_id=handle.root_run_id)
@@ -750,8 +767,8 @@ async def test_recovery_resumes_committed_decision_marker_after_process_crash(tm
     await restarted_uow.initialize()
     restarted = RunKernel(
         uow=restarted_uow,
-        router=RegisteredRouter(StaticClassifier("react.default"), [RouteProfile("react.default", "react")]),
-        drivers=[RegisteredDriver("react", ReActDriver(ClarificationCollaborator(), restarted_uow, NoEffects()))],
+        router=RegisteredRouter(StaticClassifier("react.default"), _profiles("react.default", "react")),
+        drivers=driver_catalog((RegisteredDriver("react", ReActDriver(ClarificationCollaborator(), restarted_uow, NoEffects())),)),
     )
     await restarted.recover(handle.ref, actor)
     await restarted._active[handle.ref.run_id].task
@@ -830,9 +847,9 @@ async def test_driver_failure_isolated_as_run_terminal(tmp_path) -> None:
         uow=uow,
         router=RegisteredRouter(
             StaticClassifier("react.default"),
-            [RouteProfile("react.default", "react")],
+            _profiles("react.default", "react"),
         ),
-        drivers=[RegisteredDriver("react", FailingDriver())],
+        drivers=driver_catalog((RegisteredDriver("react", FailingDriver()),)),
     )
     handle = await value.start(RunRequest("hello", "req-fail", "turn-1"), host())
     stream = value.observe(
@@ -887,9 +904,9 @@ async def test_recovery_renews_before_driver_and_first_anext(tmp_path) -> None:
         uow=uow,
         router=RegisteredRouter(
             StaticClassifier("react.default"),
-            [RouteProfile("react.default", "react")],
+            _profiles("react.default", "react"),
         ),
-        drivers=[RegisteredDriver("react", RecoveryOrderDriver(timeline))],
+        drivers=driver_catalog((RegisteredDriver("react", RecoveryOrderDriver(timeline)),)),
     )
     actor = host().actor(root_run_id="run-recovery-order")
     await value.recover(RunRef("run-recovery-order", "s1"), actor)
@@ -907,9 +924,9 @@ async def test_decision_signal_is_durably_fenced_before_driver_resume(tmp_path) 
         uow=uow,
         router=RegisteredRouter(
             StaticClassifier("react.default"),
-            [RouteProfile("react.default", "react")],
+            _profiles("react.default", "react"),
         ),
-        drivers=[RegisteredDriver("react", driver, durable_from_start=True)],
+        drivers=driver_catalog((RegisteredDriver("react", driver, durable_from_start=True),)),
     )
     handle = await value.start(RunRequest("hello", "req-decision", "turn-1"), host())
     actor = host().actor(root_run_id=handle.root_run_id)
@@ -965,16 +982,16 @@ async def test_atomic_driver_commits_before_kernel_returns_handle(tmp_path) -> N
         uow=uow,
         router=RegisteredRouter(
             StaticClassifier("durable.default"),
-            [RouteProfile("durable.default", "workflow")],
+            _profiles("durable.default", "workflow"),
         ),
-        drivers=[
+        drivers=driver_catalog((
             RegisteredDriver(
                 "workflow",
                 driver,
                 durable_from_start=True,
                 atomic_start=True,
-            )
-        ],
+            ),
+        )),
     )
     handle = await value.start(
         RunRequest("long task", "req-atomic", "turn-1"),
@@ -994,16 +1011,16 @@ async def test_atomic_driver_commits_before_kernel_returns_handle(tmp_path) -> N
         uow=SqliteExecutionUnitOfWork(tmp_path / "workflow.db"),
         router=RegisteredRouter(
             StaticClassifier("durable.default"),
-            [RouteProfile("durable.default", "workflow")],
+            _profiles("durable.default", "workflow"),
         ),
-        drivers=[
+        drivers=driver_catalog((
             RegisteredDriver(
                 "workflow",
                 AtomicStartDriver(uow),
                 durable_from_start=True,
                 atomic_start=True,
-            )
-        ],
+            ),
+        )),
     )
     assert handle.ref.run_id not in restarted._active
     hydrated = restarted.observe(handle.ref, actor)
@@ -1023,9 +1040,9 @@ async def test_delegate_only_commits_command_without_inline_scheduler(tmp_path) 
         uow=uow,
         router=RegisteredRouter(
             StaticClassifier("react.default"),
-            [RouteProfile("react.default", "react")],
+            _profiles("react.default", "react"),
         ),
-        drivers=[RegisteredDriver("react", driver, durable_from_start=True)],
+        drivers=driver_catalog((RegisteredDriver("react", driver, durable_from_start=True),)),
         child_runs=children,
     )
     handle = await value.start(RunRequest("delegate", "req-child", "turn-1"), host())
@@ -1073,9 +1090,9 @@ async def test_scheduled_child_replay_uses_authoritative_terminal_row(tmp_path) 
         uow=uow,
         router=RegisteredRouter(
             StaticClassifier("react.default"),
-            [RouteProfile("react.default", "react")],
+            _profiles("react.default", "react"),
         ),
-        drivers=[RegisteredDriver("react", driver, durable_from_start=True)],
+        drivers=driver_catalog((RegisteredDriver("react", driver, durable_from_start=True),)),
     )
     coordinator = ChildRunCoordinator(uow)
     command = await coordinator.submit(parent, DelegateRun(
@@ -1163,9 +1180,9 @@ async def test_precreated_child_with_continuation_recovers_instead_of_restarting
         uow=uow,
         router=RegisteredRouter(
             StaticClassifier("react.default"),
-            [RouteProfile("react.default", "react")],
+            _profiles("react.default", "react"),
         ),
-        drivers=[RegisteredDriver("react", driver, durable_from_start=True)],
+        drivers=driver_catalog((RegisteredDriver("react", driver, durable_from_start=True),)),
     )
     await KernelChildLauncher(kernel).accept(scheduled)
     await kernel._active[command.child_run_id].task
@@ -1247,9 +1264,9 @@ async def test_slow_child_signal_renews_parent_lease_before_fenced_write(tmp_pat
         uow=uow,
         router=RegisteredRouter(
             StaticClassifier("react.default"),
-            [RouteProfile("react.default", "react")],
+            _profiles("react.default", "react"),
         ),
-        drivers=[RegisteredDriver("react", SlowSignalDriver(), durable_from_start=True)],
+        drivers=driver_catalog((RegisteredDriver("react", SlowSignalDriver(), durable_from_start=True),)),
         child_signal_heartbeat_interval=0.005,
     )
 
@@ -1285,9 +1302,9 @@ async def test_cancel_cascades_only_by_attachment_policy(
         uow=uow,
         router=RegisteredRouter(
             StaticClassifier("react.default"),
-            [RouteProfile("react.default", "react")],
+            _profiles("react.default", "react"),
         ),
-        drivers=[RegisteredDriver("react", driver, durable_from_start=True)],
+        drivers=driver_catalog((RegisteredDriver("react", driver, durable_from_start=True),)),
         child_runs=ChildRunCoordinator(uow),
     )
     handle = await value.start(RunRequest("delegate", "req-tree", "turn-1"), host())
@@ -1326,9 +1343,9 @@ async def test_root_and_child_terminal_race_has_one_winner(tmp_path) -> None:
         uow=uow,
         router=RegisteredRouter(
             StaticClassifier("react.default"),
-            [RouteProfile("react.default", "react")],
+            _profiles("react.default", "react"),
         ),
-        drivers=[RegisteredDriver("react", driver, durable_from_start=True)],
+        drivers=driver_catalog((RegisteredDriver("react", driver, durable_from_start=True),)),
     )
     handle = await value.start(RunRequest("race", "req-race", "turn-1"), host())
     actor = host().actor(root_run_id=handle.root_run_id)
@@ -1362,9 +1379,9 @@ async def test_kernel_executes_tool_command_and_resumes_same_driver(tmp_path) ->
         uow=uow,
         router=RegisteredRouter(
             StaticClassifier("react.default"),
-            [RouteProfile("react.default", "react")],
+            _profiles("react.default", "react"),
         ),
-        drivers=[RegisteredDriver("react", driver, durable_from_start=True)],
+        drivers=driver_catalog((RegisteredDriver("react", driver, durable_from_start=True),)),
         tool_executor=UnifiedToolExecutor(PreparedRegistry()),
     )
 
@@ -1395,9 +1412,9 @@ async def test_runtime_keeps_mixed_batch_pending_when_one_physical_call_is_late(
         uow=uow,
         router=RegisteredRouter(
             StaticClassifier("react.default"),
-            [RouteProfile("react.default", "react")],
+            _profiles("react.default", "react"),
         ),
-        drivers=[RegisteredDriver("react", driver)],
+        drivers=driver_catalog((RegisteredDriver("react", driver),)),
         tool_executor=executor,
     )
     recovery = HarnessRecoveryCoordinator(uow, value, executor)
@@ -1498,8 +1515,8 @@ async def test_restart_after_close_bound_keeps_missing_late_evidence_unknown(tmp
     first = RunKernel(
         uow=uow,
         router=RegisteredRouter(StaticClassifier("react.default"),
-                                [RouteProfile("react.default", "react")]),
-        drivers=[RegisteredDriver("react", first_driver)],
+                                _profiles("react.default", "react")),
+        drivers=driver_catalog((RegisteredDriver("react", first_driver),)),
         tool_executor=first_executor,
     )
     handle = await first.start(RunRequest("mixed", "req-restart", "turn-1"), host())
@@ -1525,10 +1542,10 @@ async def test_restart_after_close_bound_keeps_missing_late_evidence_unknown(tmp
     restarted = RunKernel(
         uow=restarted_uow,
         router=RegisteredRouter(StaticClassifier("react.default"),
-                                [RouteProfile("react.default", "react")]),
-        drivers=[RegisteredDriver(
+                                _profiles("react.default", "react")),
+        drivers=driver_catalog((RegisteredDriver(
             "react", ReActDriver(restarted_collaborator, restarted_uow, missing)
-        )],
+        ),)),
         tool_executor=UnifiedToolExecutor(missing),
     )
     await HarnessRecoveryCoordinator(restarted_uow, restarted).recover_pending()

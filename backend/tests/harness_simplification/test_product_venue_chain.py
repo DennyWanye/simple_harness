@@ -26,9 +26,11 @@ from deskpet.execution.contracts import (
     RunRef,
 )
 from deskpet.harness.adapters.venues import KernelRunClient, ProductVenueRunAdapter
+from deskpet.harness.contracts import driver_catalog
 from deskpet.harness.kernel import HostContext, RegisteredDriver, RunKernel
 from deskpet.harness.ports import DriverTerminalCandidate, TokenCandidate
-from deskpet.harness.router import ClassifiedRoute, RegisteredRouter, RouteProfile
+from deskpet.harness.profiles import ProfileRegistry, ProfileSpec
+from deskpet.harness.router import ClassifiedRoute, RegisteredRouter
 from deskpet.memory.session_db import SessionDB
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
 from pipeline.voice_pipeline import VoicePipeline
@@ -60,6 +62,10 @@ class _Resolver:
 class _Classifier:
     def classify(self, _request):
         return ClassifiedRoute("react.default", "fixture", 1.0)
+
+
+def _profiles(profile_key: str, driver_kind: str) -> ProfileRegistry:
+    return ProfileRegistry((ProfileSpec(profile_key, profile_key, driver_kind),))
 
 
 class _Driver:
@@ -225,9 +231,9 @@ async def _stack(tmp_path, *, fail: bool = False):
     kernel = RunKernel(
         uow=uow,
         router=RegisteredRouter(
-            _Classifier(), [RouteProfile("react.default", "react")]
+            _Classifier(), _profiles("react.default", "react")
         ),
-        drivers=[RegisteredDriver("react", driver, durable_from_start=True)],
+        drivers=driver_catalog((RegisteredDriver("react", driver, durable_from_start=True),)),
     )
     run_client = KernelRunClient(kernel, _Resolver())
     presenter = build_legacy_run_presenter()

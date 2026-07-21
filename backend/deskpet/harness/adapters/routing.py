@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 from ...workflows.routing import WorkflowRoute, route_task
+from ..contracts import RunRequest
 from ..profiles import ProfileRegistry
-from ..router import ClassifiedRoute, RouteRequest
+from ..router import ClassifiedRoute
 
 
 class DeskPetRouteClassifier:
     def __init__(self, profiles: ProfileRegistry) -> None:
         self._profiles = profiles
 
-    def classify(self, request: RouteRequest) -> ClassifiedRoute:
+    def classify(self, request: RunRequest) -> ClassifiedRoute:
         current = route_task(
             request.text,
             mode=request.mode,

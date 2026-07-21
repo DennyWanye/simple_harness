@@ -8,9 +8,6 @@ from types import MappingProxyType
 from typing import Any
 
 from .ports import DriverStart
-from .router import RouteProfile
-
-
 @dataclass(frozen=True, slots=True)
 class ProfileSpec:
     profile_key: str
@@ -77,12 +74,5 @@ class ProfileRegistry:
             return self._by_route[route_tag]
         except KeyError as exc:
             raise ValueError(f"route tag is not registered: {route_tag}") from exc
-
-    def route_profiles(self) -> tuple[RouteProfile, ...]:
-        return tuple(
-            RouteProfile(spec.profile_key, spec.driver_kind, spec.capabilities)
-            for spec in self._by_key.values()
-        )
-
 
 __all__ = ["ProfileRegistry", "ProfileSpec"]

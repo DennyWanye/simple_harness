@@ -4,39 +4,14 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from types import MappingProxyType
-from typing import Iterable, Mapping, Protocol
+from typing import Mapping, Protocol
+
+from .contracts import RunRequest
+from .profiles import ProfileRegistry, ProfileSpec
 
 
 class RouteUnavailable(RuntimeError):
     """Raised when a selected profile cannot run without semantic downgrade."""
-
-
-@dataclass(frozen=True, slots=True)
-class RouteRequest:
-    text: str
-    request_id: str
-    turn_id: str
-    venue: str = "text"
-    mode: str = "auto"
-    workspace_context: bool = False
-    proposed_tools: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        for name in ("text", "request_id", "turn_id", "venue"):
-            if not str(getattr(self, name)).strip():
-                raise ValueError(f"{name} is required")
-
-
-@dataclass(frozen=True, slots=True)
-class RouteProfile:
-    key: str
-    driver_kind: str
-    required_capabilities: frozenset[str] = frozenset()
-
-    def __post_init__(self) -> None:
-        if not self.key.strip() or not self.driver_kind.strip():
-            raise ValueError("route profile key and driver_kind are required")
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,30 +38,23 @@ class RouteDecision:
 
 
 class RouteClassifier(Protocol):
-    def classify(self, request: RouteRequest) -> ClassifiedRoute: ...
+    def classify(self, request: RunRequest) -> ClassifiedRoute: ...
 
 
 class RegisteredRouter:
     """Resolve exactly one classifier result against an immutable catalog."""
 
-    def __init__(self, classifier: RouteClassifier, profiles: Iterable[RouteProfile]) -> None:
-        catalog: dict[str, RouteProfile] = {}
-        for profile in profiles:
-            if profile.key in catalog:
-                raise ValueError(f"duplicate route profile: {profile.key}")
-            catalog[profile.key] = profile
-        if not catalog:
-            raise ValueError("at least one route profile is required")
+    def __init__(self, classifier: RouteClassifier, profiles: ProfileRegistry) -> None:
         self._classifier = classifier
-        self._profiles: Mapping[str, RouteProfile] = MappingProxyType(catalog)
+        self._profiles = profiles.specs
 
     @property
-    def profiles(self) -> Mapping[str, RouteProfile]:
+    def profiles(self) -> Mapping[str, ProfileSpec]:
         return self._profiles
 
     def route(
         self,
-        request: RouteRequest,
+        request: RunRequest,
         *,
         available_capabilities: frozenset[str],
     ) -> RouteDecision:
@@ -94,18 +62,18 @@ class RegisteredRouter:
         profile = self._profiles.get(classified.profile_key)
         if profile is None:
             raise RouteUnavailable(f"route profile is not registered: {classified.profile_key}")
-        missing = profile.required_capabilities - available_capabilities
+        missing = profile.capabilities - available_capabilities
         if missing:
             names = ",".join(sorted(missing))
-            raise RouteUnavailable(f"route profile {profile.key} is unavailable: {names}")
+            raise RouteUnavailable(f"route profile {profile.profile_key} is unavailable: {names}")
         digest = hashlib.sha256(
-            f"{request.request_id}\0{request.turn_id}\0{profile.key}".encode("utf-8")
+            f"{request.request_id}\0{request.turn_id}\0{profile.profile_key}".encode("utf-8")
         ).hexdigest()
         return RouteDecision(
             decision_key=f"route:{digest}",
-            profile_key=profile.key,
+            profile_key=profile.profile_key,
             driver_kind=profile.driver_kind,
             reason=classified.reason,
             confidence=classified.confidence,
-            required_capabilities=profile.required_capabilities,
+            required_capabilities=profile.capabilities,
         )
