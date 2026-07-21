@@ -4,14 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from typing import Protocol
 
 from deskpet.execution.contracts import (
     AttachmentPolicy,
     ChildCommandIntent,
-    ChildCommandRecord,
     PersistenceLevel,
-    RecoveryLease,
     RunContext,
     RunCreate,
     RunRecord,
@@ -21,22 +18,7 @@ from deskpet.execution.contracts import (
 )
 from deskpet.execution.contracts import thaw_json
 from deskpet.execution.ports import ExecutionUnitOfWork
-from deskpet.harness.ports import (
-    DriverEvent,
-    DriverSignal,
-    JoinPolicy,
-)
-
-
-class ChildLauncher(Protocol):
-    async def accept(self, command: ChildCommandRecord) -> None: ...
-
-    async def deliver(
-        self,
-        parent: RunRecord,
-        signal: DriverSignal,
-        recovery_lease: RecoveryLease,
-    ) -> None: ...
+from deskpet.harness.ports import DriverEvent, JoinPolicy
 
 
 class ChildRunCoordinator:

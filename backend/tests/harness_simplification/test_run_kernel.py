@@ -5,6 +5,7 @@ import ast
 import hashlib
 from pathlib import Path
 from types import SimpleNamespace
+from typing import get_type_hints
 
 import pytest
 import pytest_asyncio
@@ -18,11 +19,13 @@ from deskpet.execution.contracts import (
     AttachmentPolicy,
     OutcomeStatus,
     PersistenceLevel,
+    RecoveryLease,
     RunContext,
     RunCreate,
     RunEventCandidate,
     RunRef,
     RunStatus,
+    StaleRecoveryLease,
     fingerprint_json,
 )
 from deskpet.harness.context import HostContextFactory
@@ -39,7 +42,6 @@ from deskpet.harness.child_runs import (
 from deskpet.harness.supervisor import HarnessSupervisor as _HarnessSupervisor
 from deskpet.harness.kernel import (
     HostContext,
-    KernelChildLauncher,
     RegisteredDriver,
     RunKernel,
     RunRequest,
@@ -73,9 +75,8 @@ from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall
 
 
 class ChildSupervisor(_HarnessSupervisor):
-    def __init__(self, coordinator, launcher, *, owner):
-        super().__init__(coordinator._store, None, coordinator=coordinator,
-                         launcher=launcher, owner=owner)
+    def __init__(self, coordinator, kernel, *, owner):
+        super().__init__(coordinator._store, kernel, coordinator=coordinator, owner=owner)
 
     async def reconcile_once(self, **kwargs) -> None:
         await self.reconcile_commands_once(**kwargs)
@@ -926,6 +927,8 @@ async def test_recovery_renews_before_driver_and_first_anext(tmp_path) -> None:
 
     class TrackingUow(SqliteExecutionUnitOfWork):
         async def recovery_scope(self, subject, *, owner=None, lease_seconds=30.0):
+            if lease_seconds is None:
+                timeline.append("release")
             if not isinstance(subject, str) and lease_seconds is not None:
                 timeline.append("renew")
             return await super().recovery_scope(
@@ -969,7 +972,177 @@ async def test_recovery_renews_before_driver_and_first_anext(tmp_path) -> None:
     await value.recover(RunRef("run-recovery-order", "s1"), actor)
     await _live_run(value, "run-recovery-order").task
 
-    assert timeline == ["renew", "recover", "renew", "anext"]
+    assert timeline == ["renew", "recover", "renew", "anext", "release"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure_type", [RuntimeError, StaleRecoveryLease])
+async def test_recovery_heartbeat_failure_closes_stream_and_release_does_not_mask(
+    failure_type,
+) -> None:
+    class Uow:
+        renewals = 0
+        releases = 0
+
+        async def recovery_scope(self, subject, *, owner=None, lease_seconds=30.0):
+            if lease_seconds is None:
+                self.releases += 1
+                raise RuntimeError("release cleanup failed")
+            self.renewals += 1
+            if self.renewals == 3:
+                raise failure_type("heartbeat lost authority")
+            return subject
+
+    class Driver(FakeDriver):
+        closed = False
+
+        async def recover(self, run_id, recovery_lease):
+            try:
+                await asyncio.Event().wait()
+                yield TokenCandidate(run_id, "unreachable")
+            finally:
+                self.closed = True
+
+    uow, driver = Uow(), Driver()
+    runtime = DriverRuntime(
+        uow=uow, live=BoundedLiveIndex(max_runs=1),
+        query=lambda *args: None, finalize=lambda *args, **kwargs: None,
+    )
+    registration = RegisteredDriver("react", driver)
+    record = SimpleNamespace(run_id="recovery-heartbeat")
+    with pytest.raises(failure_type, match="heartbeat lost authority"):
+        await runtime.consume_fenced(
+            registration, record,
+            lambda lease: driver.recover(record.run_id, lease),
+            RecoveryLease(record.run_id, "owner", 1, 9999),
+            heartbeat_interval=0.001, release=True,
+        )
+    assert driver.closed and uow.releases == 1
+
+
+@pytest.mark.asyncio
+async def test_recovery_cancel_closes_stream_and_releases_lease() -> None:
+    class Uow:
+        releases = 0
+
+        async def recovery_scope(self, subject, *, owner=None, lease_seconds=30.0):
+            if lease_seconds is None:
+                self.releases += 1
+            return subject
+
+    class Driver(FakeDriver):
+        closed = False
+
+        async def recover(self, run_id, recovery_lease):
+            try:
+                await asyncio.Event().wait()
+                yield TokenCandidate(run_id, "unreachable")
+            finally:
+                self.closed = True
+
+    uow, driver = Uow(), Driver()
+    runtime = DriverRuntime(
+        uow=uow, live=BoundedLiveIndex(max_runs=1),
+        query=lambda *args: None, finalize=lambda *args, **kwargs: None,
+    )
+    record = SimpleNamespace(run_id="cancelled-recovery")
+    task = asyncio.create_task(runtime.consume_fenced(
+        RegisteredDriver("react", driver), record,
+        lambda lease: driver.recover(record.run_id, lease),
+        RecoveryLease(record.run_id, "owner", 1, 9999),
+        heartbeat_interval=0.001, release=True,
+    ))
+    await asyncio.sleep(0.005)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert driver.closed and uow.releases == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stale_after_first", [False, True])
+async def test_fenced_consumer_renews_between_cumulatively_long_short_candidates(
+    stale_after_first,
+) -> None:
+    class Uow:
+        renewals = 0
+
+        async def recovery_scope(self, subject, **kwargs):
+            self.renewals += 1
+            if stale_after_first and self.renewals == 3:
+                raise StaleRecoveryLease("lost between short candidates")
+            return subject
+
+    closed, consumed, elapsed = False, [], 0.0
+
+    async def stream(_lease):
+        nonlocal closed
+        try:
+            for index in range(3):
+                yield SimpleNamespace(kind="token", index=index)
+        finally:
+            closed = True
+
+    async def consume(_registration, _record, candidate, **kwargs):
+        nonlocal elapsed
+        elapsed += 0.004
+        await asyncio.sleep(0)
+        consumed.append(candidate.index)
+
+    uow = Uow()
+    runtime = DriverRuntime(
+        uow=uow, live=BoundedLiveIndex(max_runs=1),
+        query=lambda *args: None, finalize=lambda *args, **kwargs: None,
+    )
+    runtime.consume_candidate = consume
+    operation = runtime.consume_fenced(
+        RegisteredDriver("react", FakeDriver()), SimpleNamespace(run_id="short"),
+        stream, RecoveryLease("short", "owner", 1, 9999),
+        heartbeat_interval=0.01,
+    )
+    if stale_after_first:
+        with pytest.raises(StaleRecoveryLease, match="between short candidates"):
+            await operation
+        assert consumed == [0]
+    else:
+        await operation
+        assert consumed == [0, 1, 2]
+        assert elapsed > 0.01 and uow.renewals >= 5
+    assert closed
+
+
+@pytest.mark.asyncio
+async def test_terminal_consume_stops_heartbeat_after_terminal_clears_lease() -> None:
+    class Uow:
+        cleared = False
+
+        async def recovery_scope(self, subject, *, owner=None, lease_seconds=30.0):
+            if self.cleared and lease_seconds is not None:
+                raise StaleRecoveryLease("terminal already released lease")
+            return subject
+
+    uow = Uow()
+    runtime = DriverRuntime(
+        uow=uow, live=BoundedLiveIndex(max_runs=1),
+        query=lambda *args: None, finalize=lambda *args, **kwargs: None,
+    )
+
+    async def consume_candidate(*args, **kwargs):
+        uow.cleared = True
+        await asyncio.sleep(0.01)
+        return False
+
+    runtime.consume_candidate = consume_candidate
+    record = SimpleNamespace(run_id="terminal-recovery")
+
+    async def terminal_stream(lease):
+        yield DriverTerminalCandidate(record.run_id, "completed", "done")
+
+    await runtime.consume_fenced(
+        RegisteredDriver("react", FakeDriver()), record, terminal_stream,
+        RecoveryLease(record.run_id, "owner", 1, 9999),
+        heartbeat_interval=0.001,
+    )
 
 
 @pytest.mark.asyncio
@@ -1158,7 +1331,7 @@ async def test_scheduled_child_replay_uses_authoritative_terminal_row(tmp_path) 
         join_policy=JoinPolicy.DETACHED,
     ))
     failed = ChildSupervisor(
-        coordinator, KernelChildLauncher(kernel), owner="crashing-scheduler"
+        coordinator, kernel, owner="crashing-scheduler"
     )
     await failed.reconcile_once(lease_seconds=0.001)
     assert any("command ack" in error for error in failed.last_errors)
@@ -1185,7 +1358,7 @@ async def test_scheduled_child_replay_uses_authoritative_terminal_row(tmp_path) 
     assert kernel._live.get(command.child_run_id) is not None
     fresh = SqliteExecutionUnitOfWork(path)
     await ChildSupervisor(
-        ChildRunCoordinator(fresh), KernelChildLauncher(kernel), owner="restarted-scheduler"
+        ChildRunCoordinator(fresh), kernel, owner="restarted-scheduler"
     ).reconcile_once(lease_seconds=1)
 
     assert (await fresh.get_child_command(command.operation_id)).status.value == "acked"
@@ -1239,7 +1412,7 @@ async def test_precreated_child_with_continuation_recovers_instead_of_restarting
         ),
         drivers=driver_catalog((RegisteredDriver("react", driver, durable_from_start=True),)),
     )
-    await KernelChildLauncher(kernel).accept(scheduled)
+    await kernel._accept_precreated_child(scheduled)
     await _live_run(kernel, command.child_run_id).task
 
     assert driver.starts == 0
@@ -1247,7 +1420,217 @@ async def test_precreated_child_with_continuation_recovers_instead_of_restarting
 
 
 @pytest.mark.asyncio
-async def test_slow_child_signal_renews_parent_lease_before_fenced_write(tmp_path) -> None:
+async def test_atomic_precreated_child_consumes_acceptance_and_starts_once(tmp_path) -> None:
+    uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
+    await uow.initialize()
+    context = RunContext(
+        session_id="s1", root_run_id="atomic-parent", parent_run_id=None,
+        request_id="atomic-request", turn_id="atomic-turn", venue="text",
+        workspace={}, capability_hash="c" * 64, provider_plan={},
+        trace_id="atomic-trace", principal_id="p1", auth_epoch=0,
+    )
+    parent = (await uow.create(RunCreate(
+        run_id="atomic-parent", idempotency_key="root:atomic-parent", context=context,
+        payload_fingerprint="a" * 64, capability_fingerprint="c" * 64,
+        driver_kind="workflow", profile_key="workflow.default",
+        persistence_level=PersistenceLevel.DURABLE, status=RunStatus.RUNNING,
+    ))).record
+    coordinator = ChildRunCoordinator(uow)
+    command = await coordinator.submit(parent, DelegateRun(
+        run_id=parent.run_id, command_id="atomic-child",
+        child_request={"task": "atomic", "driver_kind": "workflow"},
+        route_hint="workflow.default", capability_subset=(),
+        attachment_policy=AttachmentPolicy.DETACHED, join_policy=JoinPolicy.DETACHED,
+    ))
+    leased = (await uow.lease_child_commands(owner="setup", limit=1, lease_seconds=30))[0]
+    scheduled = await uow.schedule_child_command(
+        command.operation_id, lease_owner="setup", lease_epoch=leased.schedule_lease_epoch,
+    )
+    continue_stream = asyncio.Event()
+
+    class AtomicChildDriver(FakeDriver):
+        async def start(self, request):
+            self.starts += 1
+            authoritative = await uow.query(
+                RunRef(request.run_id, request.session_id), request.run_context.actor()
+            )
+            accepted = await uow.append_event(
+                request.run_id, expected_version=authoritative.version,
+                event=RunEventCandidate(
+                    event_key="atomic-accepted", kind="workflow.accepted",
+                    status=OutcomeStatus.ACCEPTED, driver_kind="workflow",
+                ),
+            )
+            yield PersistedEventCandidate(accepted)
+            await continue_stream.wait()
+
+    driver = AtomicChildDriver()
+    kernel = RunKernel(
+        uow=uow,
+        router=RegisteredRouter(
+            StaticClassifier("workflow.default"),
+            _profiles("workflow.default", "workflow"),
+        ),
+        drivers=driver_catalog((RegisteredDriver(
+            "workflow", driver, durable_from_start=True, atomic_start=True,
+        ),)),
+    )
+    await asyncio.gather(
+        kernel._accept_precreated_child(scheduled),
+        kernel._accept_precreated_child(scheduled),
+    )
+    active = _live_run(kernel, command.child_run_id)
+    assert driver.starts == 1
+    assert [event.kind for event in active.events] == ["workflow.accepted"]
+    continue_stream.set()
+    await active.task
+
+
+def test_launcher_forwarding_facades_are_deleted() -> None:
+    sources = "\n".join(
+        (Path(__file__).parents[3] / path).read_text(encoding="utf-8")
+        for path in (
+            "backend/deskpet/harness/kernel.py",
+            "backend/deskpet/harness/child_runs.py",
+            "backend/deskpet/harness/supervisor.py",
+        )
+    )
+    assert "KernelChildLauncher" not in sources
+    assert "class ChildLauncher" not in sources
+
+
+def test_runtime_type_hints_and_trusted_actor_mapping_are_resolvable() -> None:
+    assert get_type_hints(DriverRuntime.__init__)["query"]
+    context = RunContext(
+        session_id="session", root_run_id="root", parent_run_id="parent",
+        request_id="request", turn_id="turn", venue="text", workspace={},
+        capability_hash="c" * 64, provider_plan={}, trace_id="trace",
+        principal_id="principal", auth_epoch=7,
+    )
+    actor = context.actor()
+    assert (
+        actor.principal_id, actor.session_id, actor.auth_epoch, actor.root_run_id,
+        actor.internal, actor.capability_hash, actor.expires_at,
+    ) == ("principal", "session", 7, "root", False, None, None)
+
+
+@pytest.mark.asyncio
+async def test_borrowed_signal_failure_and_release_failure_are_both_recorded() -> None:
+    parent = SimpleNamespace(run_id="parent", status=RunStatus.RUNNING)
+    signal = SimpleNamespace(
+        signal_id="signal", parent_run_id="parent", command_id="command",
+        child_run_id="child", kind="accepted", payload={}, delivered_at=None,
+    )
+
+    class Uow:
+        releases = 0
+        acknowledgements = 0
+
+        async def list_pending_child_signal_parents(self, **kwargs):
+            return (parent,)
+
+        async def list_pending_child_signals(self, *args, **kwargs):
+            return (signal,)
+
+        async def recovery_scope(self, subject, *, owner=None, lease_seconds=30.0):
+            if isinstance(subject, str):
+                return RecoveryLease(subject, owner, 1, 9999)
+            if lease_seconds is None:
+                self.releases += 1
+                raise RuntimeError("release failed")
+            return subject
+
+        async def ack_child_signal(self, *args, **kwargs):
+            self.acknowledgements += 1
+
+    async def deliver(*args):
+        raise ValueError("signal failed")
+
+    uow = Uow()
+    supervisor = HarnessSupervisor(
+        uow, SimpleNamespace(_deliver_child_signal=deliver),
+        coordinator=SimpleNamespace(_wakeup=asyncio.Event()),
+    )
+    await supervisor.reconcile_signals_once()
+
+    assert supervisor.last_errors == (
+        "signal:ValueError:signal failed",
+        "parent:release:RuntimeError:release failed",
+    )
+    assert uow.releases == 1 and uow.acknowledgements == 0
+    assert signal.delivered_at is None
+
+
+@pytest.mark.asyncio
+async def test_borrowed_signal_cancel_closes_stream_and_release_cannot_mask_cancel() -> None:
+    parent = SimpleNamespace(run_id="parent", status=RunStatus.RUNNING)
+    signal = SimpleNamespace(
+        signal_id="signal", parent_run_id="parent", command_id="command",
+        child_run_id="child", kind="accepted", payload={}, delivered_at=None,
+    )
+
+    class Uow:
+        releases = 0
+        acknowledgements = 0
+
+        async def list_pending_child_signal_parents(self, **kwargs):
+            return (parent,)
+
+        async def list_pending_child_signals(self, *args, **kwargs):
+            return (signal,)
+
+        async def recovery_scope(self, subject, *, owner=None, lease_seconds=30.0):
+            if isinstance(subject, str):
+                return RecoveryLease(subject, owner, 1, 9999)
+            if lease_seconds is None:
+                self.releases += 1
+                raise RuntimeError("release failed")
+            return subject
+
+        async def ack_child_signal(self, *args, **kwargs):
+            self.acknowledgements += 1
+
+    started, closed = asyncio.Event(), asyncio.Event()
+
+    async def stream(_lease):
+        try:
+            started.set()
+            await asyncio.Event().wait()
+            yield TokenCandidate("parent", "unreachable")
+        finally:
+            closed.set()
+
+    uow = Uow()
+    runtime = DriverRuntime(
+        uow=uow, live=BoundedLiveIndex(max_runs=1),
+        query=lambda *args: None, finalize=lambda *args, **kwargs: None,
+    )
+    registration = RegisteredDriver("react", FakeDriver())
+
+    async def deliver(_parent, _signal, lease):
+        await runtime.consume_fenced(
+            registration, parent, stream, lease, heartbeat_interval=1.0,
+        )
+
+    supervisor = HarnessSupervisor(
+        uow, SimpleNamespace(_deliver_child_signal=deliver),
+        coordinator=SimpleNamespace(_wakeup=asyncio.Event()),
+    )
+    task = asyncio.create_task(supervisor.reconcile_signals_once())
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert closed.is_set() and uow.releases == 1
+    assert uow.acknowledgements == 0 and signal.delivered_at is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("renew_failure", [None, RuntimeError, StaleRecoveryLease])
+async def test_slow_child_signal_renews_parent_lease_before_fenced_write(
+    tmp_path, renew_failure
+) -> None:
     class Clock:
         now = 1000.0
 
@@ -1263,26 +1646,33 @@ async def test_slow_child_signal_renews_parent_lease_before_fenced_write(tmp_pat
         async def recovery_scope(self, subject, *, owner=None, lease_seconds=30.0):
             if not isinstance(subject, str) and lease_seconds is not None:
                 self.renewals += 1
+                if renew_failure is not None and self.renewals == 3:
+                    raise renew_failure("injected heartbeat failure")
             return await super().recovery_scope(
                 subject, owner=owner, lease_seconds=lease_seconds
             )
 
     class SlowSignalDriver(FakeDriver):
+        closed = False
+
         async def signal(self, signal, recovery_lease=None):
-            for _ in range(4):
-                prior = uow.renewals
-                clock.advance(8)
-                for _ in range(100):
-                    if uow.renewals > prior:
-                        break
-                    await asyncio.sleep(0.005)
-                assert uow.renewals > prior
-            await uow.persist_react_boundary(
-                signal.run_id, 0, {"slow_signal_applied": True},
-                recovery_lease=recovery_lease,
-            )
-            if False:
-                yield TokenCandidate(signal.run_id, "")
+            try:
+                for _ in range(4):
+                    prior = uow.renewals
+                    clock.advance(8)
+                    for _ in range(100):
+                        if uow.renewals > prior:
+                            break
+                        await asyncio.sleep(0.005)
+                    assert uow.renewals > prior
+                await uow.persist_react_boundary(
+                    signal.run_id, 0, {"slow_signal_applied": True},
+                    recovery_lease=recovery_lease,
+                )
+                if False:
+                    yield TokenCandidate(signal.run_id, "")
+            finally:
+                self.closed = True
 
     clock = Clock()
     uow = TrackingUow(tmp_path / "workflow.db", clock=clock)
@@ -1318,27 +1708,32 @@ async def test_slow_child_signal_renews_parent_lease_before_fenced_write(tmp_pat
         command.operation_id, lease_owner="setup",
         lease_epoch=scheduled.schedule_lease_epoch,
     )
+    driver = SlowSignalDriver()
     kernel = RunKernel(
         uow=uow,
         router=RegisteredRouter(
             StaticClassifier("react.default"),
             _profiles("react.default", "react"),
         ),
-        drivers=driver_catalog((RegisteredDriver("react", SlowSignalDriver(), durable_from_start=True),)),
+        drivers=driver_catalog((RegisteredDriver("react", driver, durable_from_start=True),)),
         child_signal_heartbeat_interval=0.005,
     )
 
     scheduler = ChildSupervisor(
-        coordinator, KernelChildLauncher(kernel), owner="slow-scheduler"
+        coordinator, kernel, owner="slow-scheduler"
     )
     await scheduler.reconcile_signals_once()
 
-    assert scheduler.last_errors == ()
     continuation = await uow.load_continuation(parent.run_id)
-    assert continuation is not None
-    assert dict(continuation.payload) == {"slow_signal_applied": True}
-    assert uow.renewals >= 4
-    assert clock.now > 1030
+    if renew_failure is None:
+        assert scheduler.last_errors == ()
+        assert continuation is not None
+        assert dict(continuation.payload) == {"slow_signal_applied": True}
+        assert uow.renewals >= 4 and clock.now > 1030
+    else:
+        assert "injected heartbeat failure" in scheduler.last_errors[0]
+        assert continuation is None and driver.closed
+        assert (await uow.list_pending_child_signals(parent.run_id))[0].delivered_at is None
 
 
 @pytest.mark.asyncio

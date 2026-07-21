@@ -43,9 +43,8 @@ PARENT_CAPABILITY = fingerprint_json({"tools": ["read", "write", "delegate"]})
 class ChildSupervisor(_HarnessSupervisor):
     """Test helper for exercising both canonical scheduler passes."""
 
-    def __init__(self, coordinator, launcher, *, owner):
-        super().__init__(coordinator._store, None, coordinator=coordinator,
-                         launcher=launcher, owner=owner)
+    def __init__(self, coordinator, kernel, *, owner):
+        super().__init__(coordinator._store, kernel, coordinator=coordinator, owner=owner)
 
     async def reconcile_once(self, **kwargs) -> None:
         await self.reconcile_commands_once(**kwargs)
@@ -98,13 +97,13 @@ class Launcher:
     calls: list[tuple[str, str]] = field(default_factory=list)
     deliveries: list[str] = field(default_factory=list)
 
-    async def accept(self, command) -> None:
+    async def _accept_precreated_child(self, command) -> None:
         self.calls.append((command.operation_id, command.child_run_id))
         if command.intent.command_id in self.fail_once:
             self.fail_once.remove(command.intent.command_id)
             raise RuntimeError("injected launcher failure")
 
-    async def deliver(self, parent, signal, recovery_lease) -> None:
+    async def _deliver_child_signal(self, parent, signal, recovery_lease) -> None:
         self.deliveries.append(signal.signal_id)
 
 

@@ -76,9 +76,9 @@ The R4.5 approved baseline is counted orchestration `33,618`, audited core
 `5,725`, Kernel `820`, public transaction starters `33`, execution-table DML
 authorities `2`, and existing fault windows `34` (`UoW=29 + Team=5`). The
 single-DML, first core deletion, typed-transaction-surface, venue-wrapper, and
-single-LiveRun, venue-deletion, single-Supervisor, and EffectBatchExecutor slices are now integrated:
-current raw total is `33,975`, migration-cohort-adjusted total is `33,466`,
-core is `5,542`, Kernel `811`, execution DML
+single-LiveRun, venue-deletion, single-Supervisor, EffectBatchExecutor, and final
+Kernel/child slices are now integrated: current raw total is `33,925`,
+migration-cohort-adjusted total is `33,416`, core is `5,498`, Kernel `767`, execution DML
 authority `1`, public transaction starters `21`, and the fault matrix has all
 `39` windows. The former split starters are replaced by nine typed composite
 boundaries: `activate_runtime`, `settle_delivery`, `persist_react_boundary`,
@@ -105,7 +105,8 @@ moves to new production files, tracked deletion, fixture drift, and physical
 line compression are fail-closed tests. The typed-starter, DML, fault-window,
 Kernel, adjusted-total, single-LiveRun, and single-Supervisor gates are green.
 The run-map, HarnessSupervisor, and Presenter-conversion authorities are each
-`1`; only the final core `<=5,500` gate remains pending. `HarnessSupervisor`
+`1`; the final core `<=5,500`, Kernel `<=850`, adjusted-total, six-public-op,
+and unknown-classification gates are green. `HarnessSupervisor`
 is the sole resident reconciliation task and owns bounded child-command,
 child-signal, recovery, late-ready, and delivery lanes. Each lane has an
 explicit batch/time budget; the loop uses a monotonic deadline plus child
@@ -120,8 +121,19 @@ the registry's late evidence. All-late batches do not emit an empty signal,
 mixed ready/late results preserve their original indexes, and shutdown drains
 the registry before final recovery while Drivers remain open. The Effect slice
 deletes the forwarding `UnifiedToolExecutor` boundary and 38 counted core LOC.
-Expanded focused verification is `63 passed`; full harness verification is
-`412 passed, 8 xfailed`. The spike's `+14` LiveRun estimate omitted the
+The final slice deletes `KernelChildLauncher` and `ChildLauncher`; the sole
+Supervisor invokes Kernel's trusted child boundary directly. Public root
+start, atomic precreated child start, and continuation recovery share one
+live-launch primitive. Recovery and child-signal streams share one fenced
+consumer with renewal during long `anext` and candidate processing, prompt
+heartbeat failure propagation, iterator close, and owned/borrowed lease
+cleanup that cannot mask the primary error. `RunContext.actor()` is the one
+persisted-context mapping while `HostContextFactory` and `ActorContext` remain
+the trusted host types. Final verification is `424 passed, 8 xfailed`; parity
+and main-callsite contracts add `12 passed`, and the authority audit reports
+DML `1`, starters `21`, run map/Supervisor/Presenter `1/1/1`, legacy survivors
+`15`, and no unclassified owner. Production remains `legacy/0` until R6. The
+spike's `+14` LiveRun estimate omitted the
 production-only single-index injection, separate iterator lifecycle,
 identity-safe cleanup, and fail-closed binding; the formal slice is `+67` and
 the final core target remains unchanged. The old combined

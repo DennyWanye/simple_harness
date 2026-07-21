@@ -5,8 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from collections.abc import AsyncIterator, Mapping
-from contextlib import suppress
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import replace
 
 from deskpet.execution.contracts import (
@@ -16,8 +15,8 @@ from deskpet.execution.contracts import (
     ChildCommandRecord,
     DecisionConflict,
     DecisionStatus,
-    GrantConsume,
     LiveCursor,
+    JsonValue,
     OutcomeStatus,
     PersistenceLevel,
     RecoveryLease,
@@ -45,7 +44,6 @@ from .contracts import CancelReceipt, HostContext, RegisteredDriver, RunHandle, 
 from .live_index import BoundedLiveIndex, LiveStreamOverflow
 from .ports import (
     DecisionSignal as DriverDecisionSignal,
-    Driver,
     DriverSignal,
     DriverStart,
     DriverTerminalCandidate,
@@ -129,6 +127,48 @@ class RunKernel:
             updated_at=now,
             started_at=now if spec.status is RunStatus.RUNNING else None,
         )
+
+    async def _launch_live(
+        self, active, registration: RegisteredDriver, record: RunRecord | None, *,
+        start: DriverStart | None = None,
+        name: str,
+    ) -> RunRecord:
+        if active.task is not None and not active.task.done():
+            assert record is not None
+            return record
+        candidates = None
+        if start is not None:
+            candidates = registration.driver.start(start)
+            if registration.atomic_start:
+                try:
+                    first = await anext(candidates)
+                except StopAsyncIteration as exc:
+                    raise RuntimeError(
+                        "atomic-start driver ended before durable acceptance"
+                    ) from exc
+                durable = await self._uow.query(
+                    RunRef(start.run_id, start.session_id),
+                    start.run_context.actor(),
+                )
+                if not isinstance(durable, RunRecord):
+                    raise RuntimeError(
+                        "atomic-start driver did not commit a durable execution run"
+                    )
+                await self._runtime.consume_candidate(registration, durable, first)
+                record = durable
+                if first.kind == "terminal":
+                    return record
+        assert record is not None
+        if candidates is not None:
+            operation = self._runtime.drive(registration, record, candidates)
+        else:
+            lease = await self._uow.recovery_scope(
+                record.run_id, owner=self._recovery_owner
+            )
+            operation = self._runtime.drive_recovery(registration, record, lease)
+        async with self._lock:
+            active.task = asyncio.create_task(operation, name=name)
+        return record
 
     @staticmethod
     def _authorize_live(ref: RunRef, actor: ActorContext, record: RunRecord) -> None:
@@ -343,29 +383,18 @@ class RunKernel:
                 else None
             )
             if registration.atomic_start:
-                iterator = registration.driver.start(
-                    self._driver_start(
-                        spec, request, routing.profile_key, host, association_event
-                    )
+                result_record = await self._launch_live(
+                    active, registration, None,
+                    start=self._driver_start(
+                        spec,
+                        text=request.text,
+                        payload=request.payload,
+                        canonical_messages=request.canonical_messages,
+                        capabilities=host.available_capabilities,
+                        association_event=association_event,
+                    ),
+                    name=f"deskpet-run:{run_id}",
                 )
-                try:
-                    first = await anext(iterator)
-                except StopAsyncIteration as exc:
-                    raise RuntimeError(
-                        "atomic-start driver ended before durable acceptance"
-                    ) from exc
-                durable = await self._uow.query(ref, actor)
-                if not isinstance(durable, RunRecord):
-                    raise RuntimeError(
-                        "atomic-start driver did not commit a durable execution run"
-                    )
-                await self._runtime.consume_candidate(registration, durable, first)
-                async with self._lock:
-                    active.task = asyncio.create_task(
-                            self._runtime.drive(registration, durable, iterator),
-                        name=f"deskpet-run:{run_id}",
-                    )
-                result_record = durable
             else:
                 if spec.persistence_level is PersistenceLevel.DURABLE:
                     result = await (
@@ -383,24 +412,19 @@ class RunKernel:
                         else:
                             result_record = active.record
                             created = False
-                async with self._lock:
-                    if created and (active.task is None or active.task.done()):
-                        active.task = asyncio.create_task(
-                            self._runtime.drive(
-                                registration,
-                                result_record,
-                                registration.driver.start(
-                                    self._driver_start(
-                                        result_record.spec,
-                                        request,
-                                        routing.profile_key,
-                                        host,
-                                        association_event,
-                                    )
-                                ),
-                            ),
-                            name=f"deskpet-run:{run_id}",
-                        )
+                if created:
+                    await self._launch_live(
+                        active, registration, result_record,
+                        start=self._driver_start(
+                            result_record.spec,
+                            text=request.text,
+                            payload=request.payload,
+                            canonical_messages=request.canonical_messages,
+                            capabilities=host.available_capabilities,
+                            association_event=association_event,
+                        ),
+                        name=f"deskpet-run:{run_id}",
+                    )
             return RunHandle(
                 ref=ref,
                 root_run_id=result_record.context.root_run_id,
@@ -633,25 +657,11 @@ class RunKernel:
             raise RuntimeError("legacy runs require the compatibility recovery adapter")
         registration = self._driver(record)
         async with self._lock:
-            current = self._live.get(ref.run_id)
-            if current is not None and current.task is not None and not current.task.done():
-                return RunHandle(
-                    ref, record.context.root_run_id, registration.kind, record.spec.profile_key
-                )
-        lease = await self._uow.recovery_scope(
-            record.run_id, owner=self._recovery_owner
-        )
-        async with self._lock:
             active = self._live.get(ref.run_id) or self._live.add(ref.run_id, actor)
-            if active.task is None or active.task.done():
-                active.task = asyncio.create_task(
-                    self._runtime.drive_recovery(
-                        registration,
-                        record,
-                        lease,
-                    ),
-                    name=f"deskpet-recover:{ref.run_id}",
-                )
+        async with active.start_lock:
+            await self._launch_live(
+                active, registration, record, name=f"deskpet-recover:{ref.run_id}"
+            )
         return RunHandle(
             ref, record.context.root_run_id, registration.kind, record.spec.profile_key
         )
@@ -679,14 +689,8 @@ class RunKernel:
 
     async def _accept_precreated_child(self, command: ChildCommandRecord) -> None:
         spec = command.intent.child_spec
-        context = spec.context
-        actor = ActorContext(
-            principal_id=context.principal_id,
-            session_id=context.session_id,
-            auth_epoch=context.auth_epoch,
-            root_run_id=context.root_run_id,
-        )
-        record = await self._uow.query(RunRef(spec.run_id, context.session_id), actor)
+        actor = spec.context.actor()
+        record = await self._uow.query(RunRef(spec.run_id, actor.session_id), actor)
         if not isinstance(record, RunRecord):
             return
         if record.status in TERMINAL_RUN_STATUSES:
@@ -697,31 +701,22 @@ class RunKernel:
             active = self._live.get(record.run_id) or self._live.add(record.run_id, actor)
             active.record = record
         async with active.start_lock:
-            if active.task is not None and not active.task.done():
-                return
             if await self._uow.load_continuation(record.run_id) is not None:
-                await self.recover(RunRef(record.run_id, context.session_id), actor)
+                record = await self._launch_live(
+                    active, self._driver(record), record,
+                    name=f"deskpet-recover:{record.run_id}",
+                )
                 return
             registration = self._driver(record)
             payload = thaw_json(command.intent.child_request)
             assert isinstance(payload, dict)
             text = str(payload.get("text") or payload.get("task") or payload.get("request") or "")
-            start = DriverStart(
-                run_id=record.run_id,
-                session_id=context.session_id,
-                canonical_messages=({"role": "user", "content": text},),
-                provider_state=thaw_json(context.provider_plan),
-                run_context=context,
-                run_spec=spec,
-                profile_key=spec.profile_key,
-                request_payload={"text": text, **payload},
-                capability_snapshot={
-                    "capabilities": list(command.intent.capability_subset),
-                    "capability_hash": spec.capability_fingerprint,
-                },
-            )
-            active.task = asyncio.create_task(
-                self._runtime.drive(registration, record, registration.driver.start(start)),
+            record = await self._launch_live(
+                active, registration, record,
+                start=self._driver_start(
+                    spec, text=text, payload=payload,
+                    capabilities=command.intent.capability_subset,
+                ),
                 name=f"deskpet-child:{command.operation_id}",
             )
             await asyncio.sleep(0)
@@ -733,79 +728,40 @@ class RunKernel:
         recovery_lease: RecoveryLease,
     ) -> None:
         registration = self._driver(parent)
-        errors: list[BaseException] = []
-
-        async def heartbeat() -> None:
-            while True:
-                await asyncio.sleep(self._child_signal_heartbeat_interval)
-                try:
-                    await self._uow.recovery_scope(recovery_lease)
-                except BaseException as exc:
-                    errors.append(exc)
-                    return
-
-        heartbeat_task = asyncio.create_task(
-            heartbeat(), name=f"child-signal-heartbeat:{parent.run_id}"
+        await self._runtime.consume_fenced(
+            registration, parent,
+            lambda lease: registration.driver.signal(signal, recovery_lease=lease),
+            recovery_lease,
+            heartbeat_interval=self._child_signal_heartbeat_interval,
         )
-        try:
-            await self._runtime.consume(
-                registration, parent,
-                registration.driver.signal(
-                    signal, recovery_lease=recovery_lease
-                ),
-                recovery_lease=recovery_lease,
-            )
-            if errors:
-                raise errors[0]
-        finally:
-            heartbeat_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await heartbeat_task
 
     @staticmethod
     def _driver_start(
         spec: RunCreate,
-        request: RunRequest,
-        profile_key: str,
-        host: HostContext,
+        *,
+        text: str,
+        payload: Mapping[str, JsonValue],
+        canonical_messages: tuple[Mapping[str, JsonValue], ...] = (),
+        capabilities: Sequence[str] = (),
         association_event: RunEventCandidate | None = None,
     ) -> DriverStart:
         return DriverStart(
             run_id=spec.run_id,
             session_id=spec.context.session_id,
             canonical_messages=(
-                request.canonical_messages
-                or ({"role": "user", "content": request.text},)
+                canonical_messages or ({"role": "user", "content": text},)
             ),
             provider_state=dict(spec.context.provider_plan),
             run_context=spec.context,
             run_spec=spec,
             association_event=association_event,
-            profile_key=profile_key,
-            request_payload={"text": request.text, **dict(request.payload)},
+            profile_key=spec.profile_key,
+            request_payload={"text": text, **dict(payload)},
             capability_snapshot={
-                "capabilities": sorted(host.available_capabilities),
-                "capability_hash": host.capability_hash,
+                "capabilities": sorted(capabilities),
+                "capability_hash": spec.capability_fingerprint,
             },
         )
 
 def kernel_public_operations() -> tuple[str, ...]:
     return ("start", "observe", "signal", "cancel", "recover", "close")
-
-
-class KernelChildLauncher:
-    """Narrow adapter from durable child commands into the existing Kernel runtime."""
-
-    def __init__(self, kernel: RunKernel) -> None:
-        self._kernel = kernel
-
-    async def accept(self, command: ChildCommandRecord) -> None:
-        await self._kernel._accept_precreated_child(command)
-
-    async def deliver(
-        self,
-        parent: RunRecord,
-        signal: DriverSignal,
-        recovery_lease: RecoveryLease,
-    ) -> None:
-        await self._kernel._deliver_child_signal(parent, signal, recovery_lease)

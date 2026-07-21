@@ -73,12 +73,7 @@ class TeamChildRunReconciler:
                 if durable_command.intent.intent_fingerprint != intent.intent_fingerprint:
                     raise ValueError("generic child command differs from frozen Team intent")
                 context = intent.child_spec.context
-                actor = ActorContext(
-                    principal_id=context.principal_id,
-                    session_id=context.session_id,
-                    auth_epoch=context.auth_epoch,
-                    root_run_id=context.root_run_id,
-                )
+                actor = context.actor()
                 child = await self._uow.query(
                     RunRef(intent.child_run_id, context.session_id), actor
                 )

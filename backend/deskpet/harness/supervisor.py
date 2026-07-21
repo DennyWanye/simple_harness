@@ -6,11 +6,11 @@ from collections.abc import Awaitable
 from contextlib import suppress
 
 from deskpet.execution.contracts import (
-    ActorContext, RecoveryLease, RunRef,
+    RecoveryLease, RunRef,
     TERMINAL_RUN_STATUSES,
 )
 from deskpet.execution.ports import ExecutionUnitOfWork
-from deskpet.harness.child_runs import ChildLauncher, ChildRunCoordinator
+from deskpet.harness.child_runs import ChildRunCoordinator
 from deskpet.harness.kernel import RunHandle, RunKernel
 from deskpet.harness.ports import ChildAcceptedSignal, ChildTerminalSignal, DriverSignal
 from deskpet.harness.projector import ExecutionDeliveryDispatcher
@@ -23,16 +23,16 @@ class HarnessSupervisor:
     def __init__(self, uow: ExecutionUnitOfWork, kernel: RunKernel | None,
                  effects: EffectBatchExecutor | None = None, *,
                  coordinator: ChildRunCoordinator | None = None,
-                 launcher: ChildLauncher | None = None,
                  delivery: ExecutionDeliveryDispatcher | None = None,
                  owner: str = "harness", interval: float = 0.05,
                  item_timeout: float = 5.0, batch_limit: int = 16) -> None:
         if min(interval, item_timeout, batch_limit) <= 0:
             raise ValueError("supervisor budgets must be positive")
-        if (coordinator is None) != (launcher is None):
-            raise ValueError("child coordinator and launcher must be configured together")
+        if coordinator is not None and kernel is None:
+            raise ValueError("child coordinator requires the Kernel child boundary")
         self._uow, self._kernel, self._effects = uow, kernel, effects
-        self._launcher, self._delivery, self._owner = launcher, delivery, owner
+        self._child_enabled = coordinator is not None
+        self._delivery, self._owner = delivery, owner
         self._interval, self._item_timeout, self._batch_limit = interval, item_timeout, batch_limit
         self._wakeup = coordinator._wakeup if coordinator is not None else asyncio.Event()
         self._task: asyncio.Task[None] | None = None
@@ -42,7 +42,7 @@ class HarnessSupervisor:
         self, *, limit: int = 16, lease_seconds: float = 30.0,
         recovery_lease: RecoveryLease | None = None,
     ) -> None:
-        if self._launcher is None:
+        if not self._child_enabled:
             return
         parent_run_id = recovery_lease.run_id if recovery_lease is not None else None
         leased = await self._uow.lease_child_commands(
@@ -56,7 +56,7 @@ class HarnessSupervisor:
                     command.operation_id, lease_owner=self._owner,
                     lease_epoch=command.schedule_lease_epoch, recovery_lease=recovery_lease,
                 )
-                await self._launcher.accept(scheduled)
+                await self._kernel._accept_precreated_child(scheduled)
                 await self._uow.acknowledge_child_command(
                     scheduled.operation_id, lease_owner=self._owner,
                     lease_epoch=scheduled.schedule_lease_epoch, recovery_lease=recovery_lease,
@@ -69,7 +69,7 @@ class HarnessSupervisor:
         self, *, parent_limit: int = 16, signal_limit: int = 16,
         recovery_lease: RecoveryLease | None = None,
     ) -> None:
-        if self._launcher is None:
+        if not self._child_enabled:
             return
         errors: list[str] = []
         parent_run_id = recovery_lease.run_id if recovery_lease is not None else None
@@ -110,12 +110,15 @@ class HarnessSupervisor:
                             str(record.payload["status"]), record.payload.get("value"),
                             record.signal_id,
                         )
-                        await self._launcher.deliver(parent, signal, lease)
+                        await self._kernel._deliver_child_signal(parent, signal, lease)
                     except Exception as exc:
                         errors.append(f"{record.signal_id}:{type(exc).__name__}:{exc}")
             finally:
                 if recovery_lease is None:
-                    await self._uow.recovery_scope(lease, lease_seconds=None)
+                    try:
+                        await self._uow.recovery_scope(lease, lease_seconds=None)
+                    except Exception as exc:
+                        errors.append(f"{parent.run_id}:release:{type(exc).__name__}:{exc}")
             remaining -= len(records)
         self.last_errors = tuple(errors)
 
@@ -129,9 +132,8 @@ class HarnessSupervisor:
         for record in await self._uow.list_recoverable(
             limit=limit, run_ids=tuple(only_run_ids or ()),
         ):
-            context = record.context
-            actor = ActorContext(context.principal_id, context.session_id, context.auth_epoch, context.root_run_id)
-            handles.append(await self._kernel.recover(RunRef(record.run_id, context.session_id), actor))
+            actor = record.context.actor()
+            handles.append(await self._kernel.recover(RunRef(record.run_id, actor.session_id), actor))
         return tuple(handles)
 
     async def run_once(self) -> None:

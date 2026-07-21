@@ -141,7 +141,7 @@ async def test_bootstrap_starts_and_closes_single_child_runtime_owner(tmp_path) 
         child_runs=ChildRunCoordinator(uow),
     )
 
-    assert runtime.supervisor._launcher is not None
+    assert runtime.supervisor._kernel is runtime.kernel
     task = runtime.supervisor._task
     await runtime.supervisor.start()
     assert runtime.supervisor._task is task
@@ -240,7 +240,7 @@ async def test_supervisor_single_task_advances_every_bounded_lane() -> None:
     uow, delivery = Uow(), Delivery()
     supervisor = HarnessSupervisor(
         uow, object(), Effects(), coordinator=coordinator,
-        launcher=object(), delivery=delivery, interval=0.01,
+        delivery=delivery, interval=0.01,
         item_timeout=0.05, batch_limit=16,
     )
     await supervisor.start()
@@ -283,7 +283,7 @@ async def test_supervisor_timeout_records_error_and_yields_to_later_lanes() -> N
     uow = Uow()
     coordinator = type("Coordinator", (), {"_wakeup": asyncio.Event()})()
     supervisor = HarnessSupervisor(
-        uow, object(), coordinator=coordinator, launcher=object(),
+        uow, object(), coordinator=coordinator,
         interval=0.01, item_timeout=0.005,
     )
     await supervisor.run_once()
@@ -292,6 +292,26 @@ async def test_supervisor_timeout_records_error_and_yields_to_later_lanes() -> N
     assert uow.recovery == 1
     assert supervisor.last_errors
     assert supervisor.last_errors[0].startswith("child_commands:TimeoutError:")
+
+
+@pytest.mark.asyncio
+async def test_supervisor_does_not_touch_child_inboxes_without_coordinator() -> None:
+    class Uow:
+        calls = 0
+
+        async def lease_child_commands(self, **kwargs):
+            self.calls += 1
+            return ()
+
+        async def list_pending_child_signal_parents(self, **kwargs):
+            self.calls += 1
+            return ()
+
+    uow = Uow()
+    supervisor = HarnessSupervisor(uow, object())
+    await supervisor.reconcile_commands_once()
+    await supervisor.reconcile_signals_once()
+    assert uow.calls == 0
 
 
 @pytest.mark.asyncio

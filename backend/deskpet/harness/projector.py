@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from deskpet.execution.contracts import (
-    DeliveryPolicy, DeliveryRecord, DeliverySpec, ExecutionError,
+    DeliveryPolicy, DeliverySpec, ExecutionError,
     OutcomeStatus, RunEvent, RunEventCandidate, RunRecord,
 )
 from deskpet.execution.ports import ExecutionUnitOfWork

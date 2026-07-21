@@ -15,7 +15,7 @@ from deskpet.harness.child_runs import ChildRunCoordinator
 from deskpet.harness.supervisor import HarnessSupervisor
 from deskpet.harness.contracts import driver_catalog
 from deskpet.harness.drivers.react import ReActDriver, ReactFinal
-from deskpet.harness.kernel import HostContext, KernelChildLauncher, RegisteredDriver, RunKernel, RunRequest
+from deskpet.harness.kernel import HostContext, RegisteredDriver, RunKernel, RunRequest
 from deskpet.harness.profiles import ProfileRegistry, ProfileSpec
 from deskpet.harness.router import RegisteredRouter
 from deskpet.tools.capabilities import ToolExecutionContext
@@ -188,9 +188,8 @@ async def test_batch_child_restart_runs_parallel_and_reaches_parent_inbox(tmp_pa
     fresh_collaborator = _BatchCollaborator()
     fresh_kernel = _kernel(fresh_uow, fresh_coordinator, fresh_collaborator)
     scheduler = HarnessSupervisor(
-        fresh_uow, None,
+        fresh_uow, fresh_kernel,
         coordinator=fresh_coordinator,
-        launcher=KernelChildLauncher(fresh_kernel),
         owner="restarted-subagent-scheduler",
     )
     await scheduler.reconcile_commands_once()

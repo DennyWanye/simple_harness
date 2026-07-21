@@ -300,6 +300,9 @@ class RunContext:
     def to_dict(self) -> dict[str, JsonValue]:
         return {'schema_version': self.schema_version, 'session_id': self.session_id, 'root_run_id': self.root_run_id, 'parent_run_id': self.parent_run_id, 'request_id': self.request_id, 'turn_id': self.turn_id, 'venue': self.venue, 'workspace': thaw_json(self.workspace), 'capability_hash': self.capability_hash, 'provider_plan': thaw_json(self.provider_plan), 'trace_id': self.trace_id, 'principal_id': self.principal_id, 'auth_epoch': self.auth_epoch}
 
+    def actor(self) -> 'ActorContext':
+        return ActorContext(self.principal_id, self.session_id, self.auth_epoch, self.root_run_id)
+
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> 'RunContext':
         data = _strict_mapping(value, required={'schema_version', 'session_id', 'root_run_id', 'parent_run_id', 'request_id', 'turn_id', 'venue', 'workspace', 'capability_hash', 'provider_plan', 'trace_id', 'principal_id', 'auth_epoch'}, name='RunContext')

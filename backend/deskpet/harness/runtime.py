@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import suppress
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import Any
 
 from deskpet.execution.contracts import (
     ActorContext,
-    AttachmentPolicy,
     LiveCursor,
     OutcomeStatus,
     PersistenceLevel,
@@ -30,7 +27,6 @@ from .live_index import BoundedLiveIndex
 from .ports import (
     DriverEvent,
     DriverTerminalCandidate,
-    ToolOutcomesSignal,
 )
 from .tool_executor import EffectBatchExecutor
 
@@ -67,16 +63,6 @@ class DriverRuntime:
     def _lease_kwargs(lease: RecoveryLease | None) -> dict[str, RecoveryLease]:
         return {} if lease is None else {"recovery_lease": lease}
 
-    @staticmethod
-    def _actor(record: RunRecord) -> ActorContext:
-        context = record.context
-        return ActorContext(
-            principal_id=context.principal_id,
-            session_id=context.session_id,
-            auth_epoch=context.auth_epoch,
-            root_run_id=context.root_run_id,
-        )
-
     async def emit(self, event: RunEvent) -> None:
         terminal = self.is_terminal_event(event)
         async with self._live.lock:
@@ -96,7 +82,7 @@ class DriverRuntime:
     async def emit_live(self, record: RunRecord, candidate: RunEventCandidate) -> None:
         async with self._live.lock:
             active = self._live.get(record.run_id) or self._live.add(
-                record.run_id, self._actor(record),
+                record.run_id, record.context.actor(),
             )
             live_seq = active.next_live_seq
             active.next_live_seq += 1
@@ -143,49 +129,74 @@ class DriverRuntime:
         record: RunRecord,
         lease: RecoveryLease,
     ) -> None:
-        current = [lease]
-        heartbeat_error: list[BaseException] = []
+        await self.consume_fenced(
+            registration, record,
+            lambda current: registration.driver.recover(record.run_id, current),
+            lease,
+            release=True,
+        )
 
-        async def heartbeat() -> None:
-            while True:
-                await asyncio.sleep(10.0)
-                try:
-                    current[0] = await self._uow.recovery_scope(current[0])
-                except BaseException as exc:
-                    heartbeat_error.append(exc)
-                    return
+    async def consume_fenced(
+        self,
+        registration: RegisteredDriver,
+        record: RunRecord,
+        stream: Callable[[RecoveryLease], AsyncIterator[DriverEvent]],
+        lease: RecoveryLease,
+        *,
+        heartbeat_interval: float = 10.0,
+        release: bool = False,
+    ) -> None:
+        current, candidates, pending, failure = lease, None, None, None
 
-        candidates: AsyncIterator[DriverEvent] | None = None
-        heartbeat_task: asyncio.Task[None] | None = None
+        async def await_with_renewal(operation):
+            nonlocal current, pending
+            pending = asyncio.create_task(operation)
+            while not pending.done():
+                done, _ = await asyncio.wait(
+                    (pending,), timeout=max(0.001, heartbeat_interval)
+                )
+                if not done:
+                    current = await self._uow.recovery_scope(current)
+            result = pending.result()
+            pending = None
+            return result
+
         try:
-            current[0] = await self._uow.recovery_scope(current[0])
-            candidates = registration.driver.recover(record.run_id, current[0])
-            heartbeat_task = asyncio.create_task(
-                heartbeat(), name=f"deskpet-recovery-heartbeat:{record.run_id}"
-            )
+            current = await self._uow.recovery_scope(current)
+            candidates = stream(current)
             while True:
-                current[0] = await self._uow.recovery_scope(current[0])
-                if heartbeat_error:
-                    raise heartbeat_error[0]
+                current = await self._uow.recovery_scope(current)
                 try:
-                    candidate = await anext(candidates)
+                    candidate = await await_with_renewal(anext(candidates))
                 except StopAsyncIteration:
-                    break
-                await self.consume_candidate(
-                    registration, record, candidate, recovery_lease=current[0]
+                    return
+                consume = self.consume_candidate(
+                    registration, record, candidate, recovery_lease=current
                 )
                 if candidate.kind == "terminal":
-                    break
-                if heartbeat_error:
-                    raise heartbeat_error[0]
+                    await consume
+                    return
+                await await_with_renewal(consume)
+        except BaseException as exc:
+            failure = exc
+            raise
         finally:
-            if heartbeat_task is not None:
-                heartbeat_task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await heartbeat_task
+            if pending is not None and not pending.done():
+                pending.cancel()
+                await asyncio.gather(pending, return_exceptions=True)
+            cleanup_error = None
             if candidates is not None:
-                await candidates.aclose()
-            await self._uow.recovery_scope(current[0], lease_seconds=None)
+                try:
+                    await candidates.aclose()
+                except BaseException as exc:
+                    cleanup_error = exc
+            if release:
+                try:
+                    await self._uow.recovery_scope(current, lease_seconds=None)
+                except BaseException as exc:
+                    cleanup_error = cleanup_error or exc
+            if failure is None and cleanup_error is not None:
+                raise cleanup_error
 
     async def consume(
         self,
@@ -220,7 +231,8 @@ class DriverRuntime:
         if candidate.kind in {"execute_tools", "open_decision", "delegate_run"}:
             if record.persistence_level is PersistenceLevel.EPHEMERAL:
                 durable = await self._uow.query(
-                    RunRef(record.run_id, record.context.session_id), self._actor(record)
+                    RunRef(record.run_id, record.context.session_id),
+                    record.context.actor(),
                 )
                 if not isinstance(durable, RunRecord):
                     raise RuntimeError("durable boundary did not promote its execution run")
@@ -247,7 +259,7 @@ class DriverRuntime:
             if self._tool_executor is None:
                 raise RuntimeError("tool executor is unavailable")
             batch = await self._tool_executor.execute(
-                record, self._actor(record), candidate,
+                record, record.context.actor(), candidate,
                 **self._lease_kwargs(recovery_lease),
             )
             if batch is None:
@@ -374,7 +386,7 @@ class DriverRuntime:
     ) -> None:
         current = await self._query(
             RunRef(record.run_id, record.context.session_id),
-            self._actor(record),
+            record.context.actor(),
         )
         if not isinstance(current, RunRecord):
             raise RuntimeError("legacy run cannot be finalized by the new driver")
@@ -405,7 +417,8 @@ class DriverRuntime:
         )
         if current.context.parent_run_id is not None:
             authoritative = await self._uow.query(
-                RunRef(current.run_id, current.context.session_id), self._actor(current)
+                RunRef(current.run_id, current.context.session_id),
+                current.context.actor(),
             )
             if (
                 not isinstance(authoritative, RunRecord)

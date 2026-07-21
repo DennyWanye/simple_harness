@@ -96,9 +96,8 @@ def _durable_signal(decision, response: Mapping[str, Any]) -> DurableDecisionSig
 
 
 class ChildSupervisor(_HarnessSupervisor):
-    def __init__(self, coordinator, launcher, *, owner):
-        super().__init__(coordinator._store, None, coordinator=coordinator,
-                         launcher=launcher, owner=owner)
+    def __init__(self, coordinator, kernel, *, owner):
+        super().__init__(coordinator._store, kernel, coordinator=coordinator, owner=owner)
 
     async def reconcile_once(self, **kwargs) -> None:
         await self.reconcile_commands_once(**kwargs)
@@ -362,10 +361,10 @@ async def _record_effect(path, call: PreparedToolCall, outcome: NormalizedToolOu
 
 
 class _ChildLauncher:
-    async def accept(self, command) -> None:
+    async def _accept_precreated_child(self, command) -> None:
         return None
 
-    async def deliver(self, parent, delivery, recovery_lease) -> None:
+    async def _deliver_child_signal(self, parent, delivery, recovery_lease) -> None:
         return None
 
 

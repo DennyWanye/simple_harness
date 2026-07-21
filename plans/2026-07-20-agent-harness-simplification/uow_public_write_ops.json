@@ -80,7 +80,7 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/kernel.py:RunKernel.cancel:586"
+        "backend/deskpet/harness/kernel.py:RunKernel.cancel:610"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -149,7 +149,7 @@
       "authority": "sqlite_execution_uow",
       "callsites": [
         "backend/deskpet/harness/adapters/team.py:TeamChildRunReconciler.reconcile_commands_once:49",
-        "backend/deskpet/harness/child_runs.py:ChildRunCoordinator.submit:112"
+        "backend/deskpet/harness/child_runs.py:ChildRunCoordinator.submit:94"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -166,7 +166,7 @@
       "authority": "sqlite_execution_uow",
       "callsites": [
         "backend/deskpet/harness/drivers/react.py:ReActDriver.signal_decision_atomically.iterator:660",
-        "backend/deskpet/harness/kernel.py:RunKernel.signal:530"
+        "backend/deskpet/harness/kernel.py:RunKernel.signal:554"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -187,7 +187,7 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/kernel.py:RunKernel._request_cancel:177",
+        "backend/deskpet/harness/kernel.py:RunKernel._request_cancel:217",
         "backend/deskpet/workflows/runner.py:WorkflowRunner.request_cancel_precreated:439",
         "backend/deskpet/workflows/store/execution_uow.py:SqliteExecutionUnitOfWork.finalize_child_and_enqueue_parent_signal:3788"
       ],
@@ -208,8 +208,8 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/kernel.py:RunKernel.start:372",
-        "backend/deskpet/harness/kernel.py:RunKernel.start:373",
+        "backend/deskpet/harness/kernel.py:RunKernel.start:401",
+        "backend/deskpet/harness/kernel.py:RunKernel.start:402",
         "backend/deskpet/tools/capabilities.py:PreparedToolSet.activate:222",
         "backend/deskpet/tools/capabilities.py:ResolvedToolDraft.finalize:147",
         "backend/deskpet/tools/task_graph_tools.py:_do_create:227",
@@ -343,13 +343,12 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/kernel.py:RunKernel._deliver_child_signal.heartbeat:742",
-        "backend/deskpet/harness/kernel.py:RunKernel.recover:641",
-        "backend/deskpet/harness/runtime.py:DriverRuntime.drive_recovery.heartbeat:153",
-        "backend/deskpet/harness/runtime.py:DriverRuntime.drive_recovery:161",
-        "backend/deskpet/harness/runtime.py:DriverRuntime.drive_recovery:167",
-        "backend/deskpet/harness/runtime.py:DriverRuntime.drive_recovery:188",
-        "backend/deskpet/harness/supervisor.py:HarnessSupervisor.reconcile_signals_once:118",
+        "backend/deskpet/harness/kernel.py:RunKernel._launch_live:165",
+        "backend/deskpet/harness/runtime.py:DriverRuntime.consume_fenced.await_with_renewal:159",
+        "backend/deskpet/harness/runtime.py:DriverRuntime.consume_fenced:165",
+        "backend/deskpet/harness/runtime.py:DriverRuntime.consume_fenced:168",
+        "backend/deskpet/harness/runtime.py:DriverRuntime.consume_fenced:195",
+        "backend/deskpet/harness/supervisor.py:HarnessSupervisor.reconcile_signals_once:119",
         "backend/deskpet/harness/supervisor.py:HarnessSupervisor.reconcile_signals_once:94"
       ],
       "generic_opcode": false,

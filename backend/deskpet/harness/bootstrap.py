@@ -11,7 +11,7 @@ from deskpet.execution.ports import ExecutionUnitOfWork
 from deskpet.harness.adapters.venues import KernelRunClient, VenueContextResolver
 from deskpet.harness.child_runs import ChildRunCoordinator
 from deskpet.harness.contracts import driver_catalog
-from deskpet.harness.kernel import KernelChildLauncher, RegisteredDriver, RunKernel, kernel_public_operations
+from deskpet.harness.kernel import RegisteredDriver, RunKernel, kernel_public_operations
 from deskpet.harness.profiles import ProfileRegistry
 from deskpet.harness.projector import (
     ExecutionDeliveryDispatcher, GoalTerminalProjection, SinkRegistration,
@@ -141,7 +141,6 @@ async def build_harness_runtime(
     supervisor = HarnessSupervisor(
         uow, kernel, tool_executor,
         coordinator=child_runs,
-        launcher=KernelChildLauncher(kernel) if child_runs is not None else None,
         delivery=delivery_dispatcher,
         owner="harness-child",
     )
