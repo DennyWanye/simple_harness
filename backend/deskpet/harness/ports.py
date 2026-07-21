@@ -6,7 +6,7 @@ from enum import Enum
 from types import MappingProxyType
 from typing import Any, AsyncIterator, Mapping, Protocol
 from deskpet.execution import AttachmentPolicy
-from deskpet.execution.contracts import OutcomeStatus, RecoveryLease, RunContext, RunCreate, RunEvent
+from deskpet.execution.contracts import OutcomeStatus, RecoveryLease, RunContext, RunCreate, RunEvent, RunEventCandidate
 from deskpet.execution.evidence import EvidenceSelection, UNKNOWN_EVIDENCE
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall, ToolOutcomeState
@@ -29,6 +29,7 @@ class DriverStart:
     completion_state: Mapping[str, Any] = field(default_factory=dict)
     run_context: RunContext | None = None
     run_spec: RunCreate | None = None
+    association_event: RunEventCandidate | None = None
     profile_key: str = ""
     request_payload: Mapping[str, Any] = field(default_factory=dict)
     capability_snapshot: Mapping[str, Any] = field(default_factory=dict)

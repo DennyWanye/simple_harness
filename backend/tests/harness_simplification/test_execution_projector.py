@@ -476,18 +476,19 @@ async def test_terminal_session_message_is_visible_once_after_crash_restart(
         deliveries=(session_delivery,),
     )
     first_session_db = SessionDB(state_path)
+    first_sink = _SessionDBSink(first_session_db)
     first_dispatcher = ExecutionDeliveryDispatcher(
         first_store,
         (
             SinkRegistration(
-                "session_db", "local", _SessionDBSink(first_session_db)
+                "session_db", "local", first_sink
             ),
         ),
         owner_generation=1,
     )
     claimed = await first_store.claim_delivery(owner_generation=1, claim_ttl_seconds=5.0)
     assert claimed is not None
-    assert await first_dispatcher.dispatch(claimed) is True
+    await first_sink.deliver(await first_store.get_event(claimed.event_id), claimed.target_id)
     # Crash gap: the sink committed, but execution_deliveries was not acked.
 
     clock.advance(6.0)
@@ -589,14 +590,7 @@ async def test_root_terminal_goal_projection_is_once_across_child_race_and_resta
 
     first = await store.claim_delivery(owner_generation=1, claim_ttl_seconds=5.0)
     assert first is not None
-    dispatcher = ExecutionDeliveryDispatcher(
-        store,
-        (SinkRegistration("goal_projection", "session-goals", goal),),
-        owner_generation=1,
-        clock=clock,
-        claim_ttl_seconds=5.0,
-    )
-    assert await dispatcher.dispatch(first) is True
+    await goal.deliver(await store.get_event(first.event_id), first.target_id)
     clock.advance(6.0)  # crash after Goal commit, before delivery completion
     restarted = SqliteExecutionUnitOfWork(execution_path, clock=clock)
     replay = ExecutionDeliveryDispatcher(

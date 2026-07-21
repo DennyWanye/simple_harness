@@ -10,7 +10,7 @@ SinkKey: TypeAlias = tuple[str, str]
 class ExecutionUnitOfWork(Protocol):
     """The single durable boundary for run, decision, event and child state."""
 
-    async def create(self, spec: RunCreate) -> CreateRunResult:
+    async def create(self, spec: RunCreate, *, initial_event: RunEventCandidate | None=None) -> CreateRunResult:
         ...
 
     async def finalize_and_enqueue_delivery(self, run_id: str, *, expected_version: int, terminal_status: RunStatus, event: RunEventCandidate, deliveries: Sequence[DeliverySpec]=(), recovery_lease: Any | None=None) -> FinalizeRunResult:
@@ -112,7 +112,7 @@ class ExecutionUnitOfWork(Protocol):
     async def append_event(self, run_id: str, *, expected_version: int, event: RunEventCandidate, deliveries: Sequence[DeliverySpec]=(), recovery_lease: Any | None=None) -> RunEvent:
         ...
 
-    async def start_workflow(self, spec: RunCreate, workflow: WorkflowRunSeed, *, accepted_event: RunEventCandidate | None=None, deliveries: Sequence[DeliverySpec]=()) -> CreateRunResult:
+    async def start_workflow(self, spec: RunCreate, workflow: WorkflowRunSeed, *, association_event: RunEventCandidate | None=None, accepted_event: RunEventCandidate | None=None, deliveries: Sequence[DeliverySpec]=()) -> CreateRunResult:
         ...
 
     async def commit_child_command(self, intent: ChildCommandIntent, *, recovery_lease: Any | None=None) -> ChildCommandRecord:

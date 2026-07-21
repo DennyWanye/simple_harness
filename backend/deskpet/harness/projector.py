@@ -8,7 +8,10 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from deskpet.execution.contracts import DeliveryPolicy, DeliveryRecord, ExecutionError, RunEvent
+from deskpet.execution.contracts import (
+    DeliveryPolicy, DeliveryRecord, DeliverySpec, ExecutionError,
+    OutcomeStatus, RunEvent, RunEventCandidate, RunRecord,
+)
 from deskpet.execution.ports import ExecutionUnitOfWork
 
 _BOUND_POLICIES = frozenset({DeliveryPolicy.RETRY_WHILE_BOUND, DeliveryPolicy.BEST_EFFORT})
@@ -29,6 +32,50 @@ class SinkRegistration:
     def __post_init__(self) -> None:
         if not self.sink_kind.strip() or not self.sink_instance.strip():
             raise ValueError("sink registration requires kind and instance")
+
+
+class GoalTerminalProjection:
+    """Strict-session Goal association plus its durable terminal sink."""
+
+    def __init__(self, goal_store: object) -> None:
+        self._goals = goal_store
+
+    def resolve(self, session_id: str) -> str | None:
+        context = self._goals.get_active_goal_context_for_session(session_id)
+        return context[0] if context is not None and context[1] == session_id else None
+
+    def association_event(self, spec: RunCreate, target_id: str) -> RunEventCandidate:
+        return RunEventCandidate(
+            event_key=f"goal:{target_id}", kind="goal_associated",
+            status=OutcomeStatus.ACCEPTED, driver_kind=spec.driver_kind,
+            payload={"target_id": target_id},
+        )
+
+    def deliveries(self, record: RunRecord, events: Sequence[RunEvent]) -> Sequence[DeliverySpec]:
+        target = next((str(event.candidate.payload["target_id"]) for event in events
+                       if event.kind == "goal_associated"), None)
+        return () if target is None else (DeliverySpec(
+            "goal_projection", "session-goals", target,
+            DeliveryPolicy.DURABLE_REQUIRED,
+        ),)
+
+    async def is_bound(self, target_id: str) -> bool:
+        return bool(target_id)
+
+    async def deliver(self, event: RunEvent, target_id: str) -> None:
+        if event.run_id != event.root_run_id or event.kind != "final":
+            raise ExecutionError("invalid_goal_projection", "only root terminal events project Goals")
+        goal = self._goals.get(event.session_id)
+        if goal is None:
+            return
+        if goal.goal_id != target_id:
+            raise ExecutionError("goal_projection_conflict", "Goal target is absent or changed")
+        if event.status is OutcomeStatus.SUCCEEDED:
+            self._goals.mark_done(event.session_id)
+            await self._goals.persist_done(event.session_id)
+        else:
+            self._goals.clear(event.session_id)
+            await self._goals.persist_abandon(event.session_id)
 
 class ExecutionDeliveryDispatcher:
     """The sole execution-row delivery owner, fenced by activation generation."""
@@ -60,22 +107,6 @@ class ExecutionDeliveryDispatcher:
         self._retry_base_seconds = float(retry_base_seconds)
         self._retry_max_seconds = float(retry_max_seconds)
 
-    def _sink(self, delivery: DeliveryRecord) -> DeliverySink:
-        key = delivery.sink_kind, delivery.sink_instance
-        try:
-            return self._sinks[key]
-        except KeyError as exc:
-            raise ExecutionError("sink_not_registered",
-                                 f"delivery sink is not registered: {key!r}") from exc
-
-    async def dispatch(self, delivery: DeliveryRecord) -> bool:
-        sink = self._sink(delivery)
-        if delivery.policy in _BOUND_POLICIES and not await sink.is_bound(delivery.target_id):
-            return False
-        event = await self._store.get_event(delivery.event_id)
-        await sink.deliver(event, delivery.target_id)
-        return True
-
     def _retry_at(self, attempts: int) -> float:
         delay = min(self._retry_max_seconds,
                     self._retry_base_seconds * (2 ** min(30, max(0, attempts - 1))))
@@ -90,7 +121,17 @@ class ExecutionDeliveryDispatcher:
         if claim is None:
             return False
         try:
-            delivered = await self.dispatch(claim)
+            key = claim.sink_kind, claim.sink_instance
+            sink = self._sinks.get(key)
+            if sink is None:
+                raise ExecutionError("sink_not_registered",
+                                     f"delivery sink is not registered: {key!r}")
+            delivered = not (
+                claim.policy in _BOUND_POLICIES
+                and not await sink.is_bound(claim.target_id)
+            )
+            if delivered:
+                await sink.deliver(await self._store.get_event(claim.event_id), claim.target_id)
         except Exception as exc:
             discard = claim.policy is DeliveryPolicy.BEST_EFFORT
             await self._store.release_delivery(

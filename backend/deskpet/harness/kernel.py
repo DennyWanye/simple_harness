@@ -39,7 +39,7 @@ from deskpet.execution.ports import ExecutionUnitOfWork
 
 from .context import HostContextFactory
 from .child_runs import ChildRunCoordinator
-from .contracts import CancelReceipt, HostContext, RegisteredDriver, RunHandle, RunRequest, SignalReceipt, driver_catalog
+from .contracts import CancelReceipt, HostContext, RegisteredDriver, RunHandle, RunRequest, SignalReceipt, TerminalProjection, driver_catalog
 from .live_index import BoundedLiveIndex, LiveRun, LiveStreamOverflow
 from .ports import (
     DecisionSignal as DriverDecisionSignal,
@@ -65,6 +65,7 @@ class RunKernel:
         context_factory: HostContextFactory | None = None,
         child_runs: ChildRunCoordinator | None = None,
         tool_executor: UnifiedToolExecutor | None = None,
+        terminal_projection: TerminalProjection | None = None,
         max_live_runs: int = 4096,
         child_signal_heartbeat_interval: float = 10.0,
     ) -> None:
@@ -74,6 +75,7 @@ class RunKernel:
         self._context_factory = context_factory or HostContextFactory()
         self._child_runs = child_runs
         self._tool_executor = tool_executor
+        self._terminal_projection = terminal_projection
         self._child_signal_heartbeat_interval = max(
             0.001, float(child_signal_heartbeat_interval)
         )
@@ -198,6 +200,10 @@ class RunKernel:
                 event=event,
                 recovery_lease=recovery_lease,
             )
+            if command is None and self._terminal_projection is not None:
+                kwargs["deliveries"] = self._terminal_projection.deliveries(
+                    record, await self._uow.list_events(record.run_id)
+                )
             if command is not None:
                 kwargs["value"] = thaw_json(event.payload)
             return (
@@ -271,6 +277,10 @@ class RunKernel:
                     driver_kind=existing.spec.driver_kind,
                     profile_key=existing.spec.profile_key,
                 )
+            projection_target = (
+                self._terminal_projection.resolve(host.session_id)
+                if self._terminal_projection is not None else None
+            )
             routing = self._router.route(
                 RoutingRequest(
                     text=request.text,
@@ -311,14 +321,21 @@ class RunKernel:
                 profile_key=routing.profile_key,
                 persistence_level=(
                     PersistenceLevel.DURABLE
-                    if registration.durable_from_start
+                    if registration.durable_from_start or projection_target is not None
                     else PersistenceLevel.EPHEMERAL
                 ),
                 status=RunStatus.CREATED,
             )
+            association_event = (
+                self._terminal_projection.association_event(spec, projection_target)
+                if self._terminal_projection is not None and projection_target is not None
+                else None
+            )
             if registration.atomic_start:
                 iterator = registration.driver.start(
-                    self._driver_start(spec, request, routing.profile_key, host)
+                    self._driver_start(
+                        spec, request, routing.profile_key, host, association_event
+                    )
                 )
                 try:
                     first = await anext(iterator)
@@ -340,7 +357,10 @@ class RunKernel:
                 result_record = durable
             else:
                 if spec.persistence_level is PersistenceLevel.DURABLE:
-                    result = await self._uow.create(spec)
+                    result = await (
+                        self._uow.create(spec, initial_event=association_event)
+                        if association_event is not None else self._uow.create(spec)
+                    )
                     result_record = result.record
                     created = result.created
                 else:
@@ -364,6 +384,7 @@ class RunKernel:
                                         request,
                                         routing.profile_key,
                                         host,
+                                        association_event,
                                     )
                                 ),
                             ),
@@ -703,6 +724,7 @@ class RunKernel:
         request: RunRequest,
         profile_key: str,
         host: HostContext,
+        association_event: RunEventCandidate | None = None,
     ) -> DriverStart:
         return DriverStart(
             run_id=spec.run_id,
@@ -711,6 +733,7 @@ class RunKernel:
             provider_state=dict(spec.context.provider_plan),
             run_context=spec.context,
             run_spec=spec,
+            association_event=association_event,
             profile_key=profile_key,
             request_payload={"text": request.text, **dict(request.payload)},
             capability_snapshot={

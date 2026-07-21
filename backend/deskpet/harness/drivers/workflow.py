@@ -175,6 +175,7 @@ class WorkflowDriver:
                 principal_id=context.principal_id,
                 run_id=request.run_id,
                 trace_id=context.trace_id,
+                association_event=request.association_event,
             )
             accepted_event = await self._events.get_event(
                 str(accepted["accepted_event_id"])

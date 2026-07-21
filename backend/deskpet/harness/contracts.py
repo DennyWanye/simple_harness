@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
+from typing import Protocol
 
-from deskpet.execution.contracts import ActorContext, JsonValue, RunRef, RunStatus
+from deskpet.execution.contracts import (
+    ActorContext, DeliverySpec, JsonValue, RunCreate, RunEvent,
+    RunEventCandidate, RunRecord, RunRef, RunStatus,
+)
 from .ports import Driver
 
 
@@ -20,6 +24,12 @@ class RunRequest:
     workspace_context: bool = False
     proposed_tools: tuple[str, ...] = ()
     payload: Mapping[str, JsonValue] = field(default_factory=dict)
+
+
+class TerminalProjection(Protocol):
+    def resolve(self, session_id: str) -> str | None: ...
+    def association_event(self, spec: RunCreate, target_id: str) -> RunEventCandidate: ...
+    def deliveries(self, record: RunRecord, events: Sequence[RunEvent]) -> Sequence[DeliverySpec]: ...
 
 
 @dataclass(frozen=True, slots=True)

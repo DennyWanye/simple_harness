@@ -944,7 +944,9 @@ class SqliteExecutionUnitOfWork:
         assert row is not None
         return row, True
 
-    async def create(self, spec: RunCreate) -> CreateRunResult:
+    async def create(
+        self, spec: RunCreate, *, initial_event: RunEventCandidate | None = None,
+    ) -> CreateRunResult:
         if spec.persistence_level is not PersistenceLevel.DURABLE:
             raise PersistenceRequired(
                 "durable_create_required",
@@ -953,6 +955,11 @@ class SqliteExecutionUnitOfWork:
         async with self._write_transaction() as db:
             row, created = await self._insert_run_tx(db, spec, version=0)
             self._fault("create_after_run")
+            if initial_event is not None:
+                _, row, _ = await self._append_event_tx(
+                    db, row, expected_version=int(row["version"]),
+                    event=initial_event, deliveries=(),
+                )
             await db.commit()
             return CreateRunResult(self._row_to_record(row), created)
 
@@ -4554,6 +4561,7 @@ class SqliteExecutionUnitOfWork:
         spec: RunCreate,
         workflow: WorkflowRunSeed,
         *,
+        association_event: RunEventCandidate | None = None,
         accepted_event: RunEventCandidate | None = None,
         deliveries: Sequence[DeliverySpec] = (),
     ) -> CreateRunResult:
@@ -4575,6 +4583,12 @@ class SqliteExecutionUnitOfWork:
             self._fault("start_workflow_after_execution")
             await self._insert_workflow_tx(db, run=record, workflow=workflow)
             self._fault("start_workflow_after_workflow")
+            if association_event is not None:
+                _, row, _ = await self._append_event_tx(
+                    db, row, expected_version=record.version,
+                    event=association_event, deliveries=(),
+                )
+                record = self._row_to_record(row)
             if accepted_event is not None:
                 _, updated, _ = await self._append_event_tx(
                     db,

@@ -769,6 +769,7 @@ class WorkflowService:
         spec: RunCreate,
         *,
         execution_ports: WorkflowExecutionPorts | None = None,
+        association_event: RunEventCandidate | None = None,
     ) -> dict[str, Any]:
         """Atomically create generic + workflow + accepted facts (opt-in only)."""
 
@@ -869,6 +870,7 @@ class WorkflowService:
         result = await ports.unit_of_work.start_workflow(
             spec,
             seed,
+            association_event=association_event,
             accepted_event=accepted_event,
             deliveries=deliveries,
         )

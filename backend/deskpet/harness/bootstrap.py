@@ -11,6 +11,9 @@ from deskpet.harness.adapters.venues import KernelRunClient, VenueContextResolve
 from deskpet.harness.child_runs import ChildRunCoordinator, ChildRunScheduler
 from deskpet.harness.kernel import KernelChildLauncher, RegisteredDriver, RunKernel, kernel_public_operations
 from deskpet.harness.profiles import ProfileRegistry
+from deskpet.harness.projector import (
+    ExecutionDeliveryDispatcher, GoalTerminalProjection, SinkRegistration,
+)
 from deskpet.harness.router import RegisteredRouter, RouteClassifier
 from deskpet.harness.recovery import HarnessRecoveryCoordinator
 from deskpet.harness.tool_executor import UnifiedToolExecutor
@@ -70,6 +73,7 @@ class HarnessRuntime:
     child_scheduler: ChildRunScheduler | None
     drivers: tuple[RegisteredDriver, ...]
     tool_executor: UnifiedToolExecutor | None
+    delivery_dispatcher: ExecutionDeliveryDispatcher | None
 
     async def close(self, *, timeout: float = 1.0) -> None:
         if self.child_scheduler is not None:
@@ -92,6 +96,8 @@ async def build_harness_runtime(
     resolver: VenueContextResolver,
     child_runs: ChildRunCoordinator | None = None,
     tool_executor: UnifiedToolExecutor | None = None,
+    goal_store: object | None = None,
+    owner_generation: int | None = None,
     compatibility_reader: bool = True,
 ) -> HarnessRuntime:
     """Initialize one Kernel or fail startup without a legacy fallback."""
@@ -112,12 +118,21 @@ async def build_harness_runtime(
         if actual != expected:
             raise ValueError("router workflow keys and WorkflowDriver catalog differ")
     router = RegisteredRouter(classifier, route_profiles)
+    goal_projection = GoalTerminalProjection(goal_store) if goal_store is not None else None
     kernel = RunKernel(
         uow=uow,
         router=router,
         drivers=drivers,
         child_runs=child_runs,
         tool_executor=tool_executor,
+        terminal_projection=goal_projection,
+    )
+    if goal_projection is not None and owner_generation is None:
+        raise ValueError("Goal projection requires the activated owner generation")
+    delivery_dispatcher = None if goal_projection is None else ExecutionDeliveryDispatcher(
+        uow,
+        (SinkRegistration("goal_projection", "session-goals", goal_projection),),
+        owner_generation=owner_generation or 0,
     )
     child_scheduler = (
         ChildRunScheduler(child_runs, KernelChildLauncher(kernel), owner="harness-child")
@@ -160,6 +175,7 @@ async def build_harness_runtime(
         child_scheduler=child_scheduler,
         drivers=tuple(drivers),
         tool_executor=tool_executor,
+        delivery_dispatcher=delivery_dispatcher,
     )
     if child_scheduler is not None:
         await child_scheduler.reconcile_commands_once()
