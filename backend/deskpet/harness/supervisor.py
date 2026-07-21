@@ -14,14 +14,14 @@ from deskpet.harness.child_runs import ChildLauncher, ChildRunCoordinator
 from deskpet.harness.kernel import RunHandle, RunKernel
 from deskpet.harness.ports import ChildAcceptedSignal, ChildTerminalSignal, DriverSignal
 from deskpet.harness.projector import ExecutionDeliveryDispatcher
-from deskpet.harness.tool_executor import UnifiedToolExecutor
+from deskpet.harness.tool_executor import EffectBatchExecutor
 
 
 class HarnessSupervisor:
     """The sole task owner for every bounded background reconciliation lane."""
 
     def __init__(self, uow: ExecutionUnitOfWork, kernel: RunKernel | None,
-                 effects: UnifiedToolExecutor | None = None, *,
+                 effects: EffectBatchExecutor | None = None, *,
                  coordinator: ChildRunCoordinator | None = None,
                  launcher: ChildLauncher | None = None,
                  delivery: ExecutionDeliveryDispatcher | None = None,
@@ -152,7 +152,7 @@ class HarnessSupervisor:
             parent_limit=self._batch_limit, signal_limit=self._batch_limit))
         errors.extend(self.last_errors)
         await step("recovery", self.recover_pending(limit=self._batch_limit))
-        if self._effects is not None and (ready := self._effects.ready_late_run_ids()):
+        if self._effects is not None and (ready := self._effects.ready_run_ids()):
             run_ids = frozenset(sorted(ready)[:self._batch_limit])
             await step("effect_ready", self.recover_pending(
                 limit=self._batch_limit, only_run_ids=run_ids))
@@ -183,7 +183,7 @@ class HarnessSupervisor:
         if self._effects is None:
             return True
         deadline = asyncio.get_running_loop().time() + max(0.0, timeout)
-        while run_ids & self._effects.ready_late_run_ids():
+        while run_ids & self._effects.ready_run_ids():
             remaining = deadline - asyncio.get_running_loop().time()
             if remaining <= 0:
                 return False

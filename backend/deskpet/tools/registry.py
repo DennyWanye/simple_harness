@@ -1815,7 +1815,7 @@ class ToolRegistry:
         return None
 
     def is_concurrency_safe(self, tool_name: str) -> bool:
-        """Public immutable-catalog query used by ``UnifiedToolExecutor``."""
+        """Public immutable-catalog query used by ``EffectBatchExecutor``."""
 
         with self._lock:
             spec = self._tools.get(tool_name)
@@ -2270,7 +2270,7 @@ class ToolRegistry:
         calls: list[Any],
         session_id: str,
     ) -> list[dict[str, Any]]:
-        """Legacy raw-call shape; durable prepared calls use UnifiedToolExecutor."""
+        """Legacy raw-call shape; durable prepared calls use EffectBatchExecutor."""
         if not calls:
             return []
 

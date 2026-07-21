@@ -62,7 +62,7 @@ from deskpet.harness.ports import (
 )
 from deskpet.harness.profiles import ProfileRegistry, ProfileSpec
 from deskpet.harness.router import ClassifiedRoute, RegisteredRouter
-from deskpet.harness.tool_executor import UnifiedToolExecutor
+from deskpet.harness.tool_executor import EffectBatchExecutor
 from deskpet.harness.runtime import DriverRuntime
 from deskpet.harness.live_index import BoundedLiveIndex
 from deskpet.harness.supervisor import HarnessSupervisor
@@ -507,6 +507,46 @@ class RecordingSignalDriver(FakeDriver):
         self.last_signal = signal
         if False:
             yield TokenCandidate(signal.run_id, "")
+
+
+async def _single_effect_fixture(tmp_path, registry, driver):
+    uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
+    await uow.initialize()
+    run_id = "effect-runtime-run"
+    context = RunContext(
+        session_id="s1", root_run_id=run_id, parent_run_id=None,
+        request_id="request-effect", turn_id="turn-effect", venue="text",
+        workspace={}, capability_hash="c" * 64, provider_plan={},
+        trace_id="trace-effect", principal_id="principal-s1", auth_epoch=1,
+    )
+    record = (await uow.create(RunCreate(
+        run_id=run_id, idempotency_key="root:s1:request-effect:turn-effect",
+        context=context, payload_fingerprint=fingerprint_json({"effect": True}),
+        capability_fingerprint=context.capability_hash, driver_kind="react",
+        profile_key="react.default", persistence_level=PersistenceLevel.DURABLE,
+    ))).record
+    call = PreparedToolCall.prepare(
+        tool_name="write-ready", stable_call_id="call-effect",
+        final_params={"value": 1}, tool_spec_version="v1", schema_hash="schema",
+        permission_policy_version="v1", effect_type="opaque_manual",
+        effect_policy_version="v1",
+    )
+    tool_context = ToolExecutionContext(
+        scope_id="scope", session_id="s1", request_id=context.request_id,
+        root_run_id=run_id, run_id=run_id, call_id=call.stable_call_id,
+        effect_id="effect-ready", capability_hash=context.capability_hash,
+        scope_hash="scope",
+    )
+    runtime = DriverRuntime(
+        uow=uow, live=BoundedLiveIndex(max_runs=4),
+        query=lambda ref, actor: uow.query(ref, actor),
+        finalize=lambda *args, **kwargs: None,
+        tool_executor=EffectBatchExecutor(uow, registry),
+    )
+    command = ExecuteTools(
+        run_id, "command-effect", (call,), (tool_context,), (5,), effectful=(True,)
+    )
+    return uow, record, runtime, RegisteredDriver("react", driver, durable_from_start=True), command
 
 
 class NoEffects:
@@ -1400,7 +1440,7 @@ async def test_kernel_executes_tool_command_and_resumes_same_driver(tmp_path) ->
             _profiles("react.default", "react"),
         ),
         drivers=driver_catalog((RegisteredDriver("react", driver, durable_from_start=True),)),
-        tool_executor=UnifiedToolExecutor(PreparedRegistry()),
+        tool_executor=EffectBatchExecutor(uow, PreparedRegistry()),
     )
 
     handle = await value.start(RunRequest("tool", "req-tool", "turn-1"), host())
@@ -1425,7 +1465,7 @@ async def test_runtime_keeps_mixed_batch_pending_when_one_physical_call_is_late(
     await uow.initialize()
     registry, collaborator = MixedLateRegistry(), MixedLateCollaborator()
     driver = ReActDriver(collaborator, uow, registry)
-    executor = UnifiedToolExecutor(registry)
+    executor = EffectBatchExecutor(uow, registry)
     value = RunKernel(
         uow=uow,
         router=RegisteredRouter(
@@ -1527,7 +1567,7 @@ async def test_restart_after_close_bound_keeps_missing_late_evidence_unknown(tmp
     await uow.initialize()
     registry, first_collaborator = MixedLateRegistry(), MixedLateCollaborator()
     first_driver = ReActDriver(first_collaborator, uow, registry)
-    first_executor = UnifiedToolExecutor(registry)
+    first_executor = EffectBatchExecutor(uow, registry)
     first = RunKernel(
         uow=uow,
         router=RegisteredRouter(StaticClassifier("react.default"),
@@ -1562,7 +1602,7 @@ async def test_restart_after_close_bound_keeps_missing_late_evidence_unknown(tmp
         drivers=driver_catalog((RegisteredDriver(
             "react", ReActDriver(restarted_collaborator, restarted_uow, missing)
         ),)),
-        tool_executor=UnifiedToolExecutor(missing),
+        tool_executor=EffectBatchExecutor(restarted_uow, missing),
     )
     await HarnessSupervisor(restarted_uow, restarted).recover_pending()
     for _ in range(300):
@@ -1641,7 +1681,7 @@ async def test_runtime_reuses_settled_effect_without_live_registry_policy(tmp_pa
     runtime = DriverRuntime(
         uow=uow, live=BoundedLiveIndex(max_runs=4), query=lambda ref, actor: uow.query(ref, actor),
         finalize=lambda *args, **kwargs: None,
-        tool_executor=UnifiedToolExecutor(ReuseOnlyRegistry()),
+        tool_executor=EffectBatchExecutor(uow, ReuseOnlyRegistry()),
     )
     await runtime.consume_candidate(
         RegisteredDriver("react", driver, durable_from_start=True), record,
@@ -1703,7 +1743,7 @@ async def test_in_flight_effect_does_not_starve_new_effect_in_same_batch(tmp_pat
         uow=uow, live=BoundedLiveIndex(max_runs=4),
         query=lambda ref, actor: uow.query(ref, actor),
         finalize=lambda *args, **kwargs: None,
-        tool_executor=UnifiedToolExecutor(registry),
+        tool_executor=EffectBatchExecutor(uow, registry),
     )
     await runtime.consume_candidate(
         RegisteredDriver("react", driver, durable_from_start=True), record,
@@ -1716,6 +1756,154 @@ async def test_in_flight_effect_does_not_starve_new_effect_in_same_batch(tmp_pat
     assert registry.acknowledged == []
     assert driver.last_signal.original_indexes == (7,)
     assert driver.last_signal.outcomes[0].value["call_id"] == "call-new"
+
+
+@pytest.mark.asyncio
+async def test_all_late_batch_does_not_signal_driver(tmp_path) -> None:
+    class AllLateRegistry(InterleavingRegistry):
+        async def execute_prepared(self, call, **kwargs):
+            self.physical_calls.append(call.stable_call_id)
+            return NormalizedToolOutcome.malformed("still running")
+
+        def take_prepared_execution_metadata(self, effect_id):
+            return {"late_pending": True}
+
+    registry, driver = AllLateRegistry(), RecordingSignalDriver()
+    _, record, runtime, registration, command = await _single_effect_fixture(
+        tmp_path, registry, driver
+    )
+
+    consumed = await runtime.consume_candidate(registration, record, command)
+
+    assert consumed is False
+    assert driver.last_signal is None
+    assert registry.acknowledged == []
+
+
+@pytest.mark.asyncio
+async def test_ready_late_ready_batch_preserves_original_ready_order(tmp_path) -> None:
+    registry, driver = InterleavingRegistry(), RecordingSignalDriver()
+    uow, record, runtime, registration, _ = await _single_effect_fixture(
+        tmp_path, registry, driver
+    )
+    calls = tuple(
+        PreparedToolCall.prepare(
+            tool_name=f"write-{index}", stable_call_id=f"call-{index}",
+            final_params={"value": index}, tool_spec_version="v1",
+            schema_hash="schema", permission_policy_version="v1",
+            effect_type="opaque_manual", effect_policy_version="v1",
+        )
+        for index in range(3)
+    )
+    contexts = tuple(
+        ToolExecutionContext(
+            scope_id="scope", session_id="s1", request_id=record.context.request_id,
+            root_run_id=record.run_id, run_id=record.run_id,
+            call_id=call.stable_call_id, effect_id=f"effect-{index}",
+            capability_hash=record.context.capability_hash, scope_hash="scope",
+        )
+        for index, call in enumerate(calls)
+    )
+    middle, middle_context = calls[1], contexts[1]
+    await uow.claim_tool_call(
+        None, host().actor(root_run_id=record.run_id), run_id=record.run_id,
+        expected_session_id="s1", call_id=middle.stable_call_id,
+        effect_id=middle_context.effect_id, tool_name=middle.tool_name,
+        args_hash=middle.args_hash, capability_hash=middle_context.capability_hash,
+        scope_hash=middle_context.scope_hash, effect_type=middle.effect_type,
+        policy={"kind": middle.effect_type, "version": middle.effect_policy_version},
+        prepared=middle.to_dict(), worker_owner="kernel", worker_epoch=1,
+    )
+
+    await runtime.consume_candidate(
+        registration, record,
+        ExecuteTools(
+            record.run_id, "command-three", calls, contexts, (9, 2, 4),
+            effectful=(True, True, True),
+        ),
+    )
+
+    assert driver.last_signal.original_indexes == (9, 4)
+    assert registry.physical_calls == ["call-0", "call-2"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["signal", "settle"])
+async def test_signal_or_atomic_settle_failure_never_acknowledges_registry(
+    tmp_path, failure: str,
+) -> None:
+    registry = InterleavingRegistry()
+
+    class FailingSettlementDriver(RecordingSignalDriver):
+        def __init__(self) -> None:
+            super().__init__()
+            self.uow = None
+
+        async def signal(self, signal):
+            self.last_signal = signal
+            if failure == "signal":
+                raise RuntimeError("signal failed before settlement")
+            claim = dict(signal.metadata[0]["effect_claim"])
+            await self.uow.settle_effect(
+                "effect-ready",
+                expected_effect_version=int(claim["effect_version"]) + 1,
+                attempt_no=int(claim["attempt_no"]),
+                worker_owner=str(claim["worker_owner"]),
+                worker_epoch=int(claim["worker_epoch"]),
+                status="succeeded", outcome=signal.outcomes[0].to_dict(),
+            )
+            if False:
+                yield TokenCandidate(signal.run_id, "")
+
+    driver = FailingSettlementDriver()
+    uow, record, runtime, registration, command = await _single_effect_fixture(
+        tmp_path, registry, driver
+    )
+    driver.uow = uow
+
+    with pytest.raises(Exception):
+        await runtime.consume_candidate(registration, record, command)
+
+    assert registry.acknowledged == []
+
+
+@pytest.mark.asyncio
+async def test_registry_is_acknowledged_once_after_durable_settlement(tmp_path) -> None:
+    registry = InterleavingRegistry()
+
+    class SettlingDriver(RecordingSignalDriver):
+        def __init__(self) -> None:
+            super().__init__()
+            self.uow = None
+
+        async def signal(self, signal):
+            self.last_signal = signal
+            claim = dict(signal.metadata[0]["effect_claim"])
+            await self.uow.settle_effect(
+                "effect-ready", expected_effect_version=int(claim["effect_version"]),
+                attempt_no=int(claim["attempt_no"]),
+                worker_owner=str(claim["worker_owner"]),
+                worker_epoch=int(claim["worker_epoch"]), status="succeeded",
+                outcome=signal.outcomes[0].to_dict(),
+            )
+            if False:
+                yield TokenCandidate(signal.run_id, "")
+
+    driver = SettlingDriver()
+    uow, record, runtime, registration, command = await _single_effect_fixture(
+        tmp_path, registry, driver
+    )
+    driver.uow = uow
+
+    await runtime.consume_candidate(registration, record, command)
+
+    assert registry.acknowledged == ["effect-ready"]
+    assert await uow.read_effect_outcome(
+        run_id=record.run_id, call_id="call-effect", effect_id="effect-ready",
+        args_hash=command.calls[0].args_hash,
+        capability_hash=command.contexts[0].capability_hash,
+        scope_hash=command.contexts[0].scope_hash,
+    ) is not None
 
 
 def test_kernel_surface_is_six_operations_and_has_no_product_branches() -> None:

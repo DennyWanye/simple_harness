@@ -18,7 +18,7 @@ from deskpet.harness.projector import (
 )
 from deskpet.harness.router import RegisteredRouter, RouteClassifier
 from deskpet.harness.supervisor import HarnessSupervisor
-from deskpet.harness.tool_executor import UnifiedToolExecutor
+from deskpet.harness.tool_executor import EffectBatchExecutor
 from deskpet.workflows.store.schema import WORKFLOW_SCHEMA_VERSION
 
 
@@ -40,7 +40,7 @@ class HarnessRuntime:
     health: HarnessDiagnostics
     supervisor: HarnessSupervisor
     drivers: tuple[RegisteredDriver, ...]
-    tool_executor: UnifiedToolExecutor | None
+    tool_executor: EffectBatchExecutor | None
 
     async def close(self, *, timeout: float = 1.0) -> None:
         loop = asyncio.get_running_loop()
@@ -48,8 +48,7 @@ class HarnessRuntime:
         await self.supervisor.close()
         try:
             if (effects := self.tool_executor) is not None:
-                await effects.close(max(0.0, timeout) / 2)
-                if (run_ids := effects.ready_late_run_ids()):
+                if (run_ids := await effects.drain(max(0.0, timeout) / 2)):
                     await self.supervisor.reconcile_ready(
                         run_ids, timeout=max(0.0, deadline - loop.time())
                     )
@@ -70,7 +69,7 @@ async def build_harness_runtime(
     drivers: Sequence[RegisteredDriver],
     resolver: VenueContextResolver,
     child_runs: ChildRunCoordinator | None = None,
-    tool_executor: UnifiedToolExecutor | None = None,
+    tool_executor: EffectBatchExecutor | None = None,
     goal_store: object | None = None,
     owner_generation: int | None = None,
     compatibility_reader: bool = True,

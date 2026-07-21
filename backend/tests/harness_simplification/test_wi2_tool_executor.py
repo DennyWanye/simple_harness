@@ -15,7 +15,7 @@ from deskpet.execution.contracts import OutcomeStatus, RecoveryLease, StaleRecov
 from deskpet.harness.context import HostContextFactory
 from deskpet.harness.ports import ToolOutcomesSignal
 from deskpet.execution.contracts import DecisionAuthorization
-from deskpet.harness.tool_executor import UnifiedToolExecutor
+from deskpet.harness.tool_executor import EffectBatchExecutor
 from deskpet.tools.context_adapter import ReservedModelFieldError, reject_reserved_model_fields
 from deskpet.tools.registry import ToolRegistry
 from deskpet.tools.receipt_store import ReceiptStore
@@ -88,6 +88,24 @@ def _register(
     )
 
 
+def _executor(registry: ToolRegistry) -> EffectBatchExecutor:
+    return EffectBatchExecutor(None, registry)  # type: ignore[arg-type]
+
+
+async def _execute_one(
+    executor: EffectBatchExecutor,
+    call: PreparedToolCall,
+    context: ToolExecutionContext,
+    authorization: object | None = None,
+) -> NormalizedToolOutcome:
+    return await executor._registry.execute_prepared(
+        call,
+        effect_id=context.effect_id,
+        authorization=executor._authorization(authorization, call, context),
+        execution_context=context,
+    )
+
+
 def test_model_cannot_override_reserved_host_fields() -> None:
     registry = ToolRegistry()
     _register(registry, "read", context_handler=lambda args, context: "{}")
@@ -110,7 +128,7 @@ async def test_handler_gets_clean_model_args_and_trusted_context_separately() ->
 
     _register(registry, "read", context_handler=handler)
     call = _call(registry, "read", model_args={"path": "safe.txt"})
-    outcome = await UnifiedToolExecutor(registry).execute_one(call, _context(call))
+    outcome = await _execute_one(_executor(registry), call, _context(call))
 
     assert outcome.state is ToolOutcomeState.SUCCESS
     assert observed["args"] == {"path": "safe.txt"}
@@ -138,7 +156,7 @@ async def test_mcp_bridge_receives_only_model_args_and_cannot_request_host_conte
         outcome_parser_id="mcp_explicit_v1",
     )
     call = _call(registry, "mcp_test_remote", model_args={"query": "safe"})
-    outcome = await UnifiedToolExecutor(registry).execute_one(call, _context(call))
+    outcome = await _execute_one(_executor(registry), call, _context(call))
     assert outcome.state is ToolOutcomeState.SUCCESS
     assert observed == {"args": {"query": "safe"}, "task_id": _context(call).effect_id}
 
@@ -182,8 +200,9 @@ async def test_batch_uses_contiguous_safe_segments_and_unsafe_barriers() -> None
             concurrency_safe=safe,
         )
     calls = [_call(registry, name, index) for index, (name, _, _) in enumerate(definitions, 1)]
-    outcomes = await UnifiedToolExecutor(registry).execute_batch(
-        calls, [_context(call) for call in calls]
+    outcomes = await _executor(registry)._execute_segmented(
+        calls, [_context(call) for call in calls], [None] * len(calls),
+        [None] * len(calls),
     )
 
     assert all(outcome.state is ToolOutcomeState.SUCCESS for outcome in outcomes)
@@ -213,9 +232,9 @@ async def test_permission_accepts_only_exact_decision_authorization_binding() ->
     )
     call = _call(registry, "write")
     context = _context(call)
-    executor = UnifiedToolExecutor(registry)
-    wrong_type = await executor.execute_one(
-        call, context, authorization={"allow": True}
+    executor = _executor(registry)
+    wrong_type = await _execute_one(
+        executor, call, context, {"allow": True}
     )
     assert wrong_type.state is ToolOutcomeState.FAILURE
     assert wrong_type.error["code"] == "authorization_run_id_mismatch"
@@ -240,8 +259,8 @@ async def test_permission_accepts_only_exact_decision_authorization_binding() ->
         scope_hash=context.scope_hash,
         expires_at=time.time() + 60,
     )
-    denied = await executor.execute_one(
-        call, context, authorization=wrong_binding
+    denied = await _execute_one(
+        executor, call, context, wrong_binding
     )
     assert denied.error["code"] == "authorization_capability_hash_mismatch"
 
@@ -259,7 +278,7 @@ async def test_permission_accepts_only_exact_decision_authorization_binding() ->
         "permission_policy_version": canonical.permission_policy_version,
         "expires_at": time.time() + 60,
     }
-    succeeded = await executor.execute_one(call, context, authorization=valid)
+    succeeded = await _execute_one(executor, call, context, valid)
     assert succeeded.state is ToolOutcomeState.SUCCESS
     assert invocations == 1
 
@@ -317,8 +336,8 @@ async def test_canonical_write_timeout_is_malformed_and_not_reinvoked() -> None:
         "permission_policy_version": canonical.permission_policy_version,
         "expires_at": authorization.expires_at,
     }
-    outcome = await UnifiedToolExecutor(registry).execute_one(
-        call, context, authorization=authorization
+    outcome = await _execute_one(
+        _executor(registry), call, context, authorization
     )
     assert outcome.state is ToolOutcomeState.MALFORMED
     assert outcome.error["code"] == "malformed_tool_outcome"
@@ -350,15 +369,15 @@ async def test_registry_close_waits_for_late_effect_without_discarding_evidence(
         effect_policy=EffectPolicy("test:closing", "v1", EffectKind.OPAQUE_MANUAL),
     )
     call = _call(registry, "closing-write")
-    executor = UnifiedToolExecutor(registry)
-    outcome = await executor.execute_one(call, _context(call))
+    executor = _executor(registry)
+    outcome = await _execute_one(executor, call, _context(call))
     asyncio.get_running_loop().call_later(0.01, release.set)
 
-    await executor.close(0.1)
+    await executor.drain(0.1)
 
     assert outcome.state is ToolOutcomeState.MALFORMED
-    assert executor.ready_late_run_ids() == frozenset({"run-1"})
-    state, settled = await executor.observe_late("effect-1")
+    assert executor.ready_run_ids() == frozenset({"run-1"})
+    state, settled = await registry.observe_late_prepared("effect-1")
     assert state == "complete"
     assert settled is not None and settled.state is ToolOutcomeState.SUCCESS
 
@@ -373,19 +392,19 @@ async def test_registry_close_bound_retains_still_running_late_effect() -> None:
         effect_policy=EffectPolicy("test:bounded", "v1", EffectKind.OPAQUE_MANUAL),
     )
     call = _call(registry, "bounded-write")
-    executor = UnifiedToolExecutor(registry)
-    await executor.execute_one(call, _context(call))
+    executor = _executor(registry)
+    await _execute_one(executor, call, _context(call))
 
-    await executor.close(0.005)
+    await executor.drain(0.005)
 
-    assert await executor.observe_late("effect-1") == ("pending", None)
+    assert await registry.observe_late_prepared("effect-1") == ("pending", None)
     assert registry.take_prepared_execution_metadata("effect-1") == {"late_pending": True}
     release.set()
     for _ in range(100):
-        if executor.ready_late_run_ids():
+        if executor.ready_run_ids():
             break
         await asyncio.sleep(0.005)
-    assert executor.ready_late_run_ids() == frozenset({"run-1"})
+    assert executor.ready_run_ids() == frozenset({"run-1"})
 
 
 @pytest.mark.asyncio
@@ -402,7 +421,7 @@ async def test_prepared_receipt_and_artifact_refs_are_exposed_for_atomic_settlem
         effect_policy=EffectPolicy("test:artifact", "v7", EffectKind.OPAQUE_MANUAL),
     )
     call = _call(registry, "artifact-write")
-    outcome = await UnifiedToolExecutor(registry).execute_one(call, _context(call))
+    outcome = await _execute_one(_executor(registry), call, _context(call))
     metadata = registry.take_prepared_execution_metadata("effect-1")
 
     assert outcome.state is ToolOutcomeState.SUCCESS
@@ -440,9 +459,8 @@ async def test_generate_image_generating_result_is_accepted_not_succeeded() -> N
         context_handler=lambda args, context: json.dumps({"ok": True, "status": "generating"}),
     )
     call = _call(registry, "generate_image")
-    executor = UnifiedToolExecutor(registry)
-    outcome = await executor.execute_one(call, _context(call))
-    assert executor.outcome_status(call, outcome) is OutcomeStatus.ACCEPTED
+    outcome = await _execute_one(_executor(registry), call, _context(call))
+    assert registry.prepared_outcome_status(call, outcome) is OutcomeStatus.ACCEPTED
 
 
 @pytest.mark.parametrize(
@@ -469,7 +487,7 @@ async def test_persisted_canonical_snapshot_is_rechecked_against_context() -> No
     call = PreparedToolCall.from_dict(prepared.to_dict())
     assert call == prepared
     wrong = replace(context, call_id="other")
-    outcome = await UnifiedToolExecutor(registry).execute_one(call, wrong)
+    outcome = await _execute_one(_executor(registry), call, wrong)
     assert outcome.state is ToolOutcomeState.FAILURE
     assert outcome.error["code"] == "trusted_context_call_binding_mismatch"
 
@@ -559,3 +577,33 @@ def test_all_inventory_handlers_expose_explicit_context_adapter_parameter() -> N
             if node is None or "execution_context" not in kwonly:
                 missing.append(f"{path.name}:{name}")
     assert missing == []
+
+
+def test_effect_batch_executor_has_one_high_level_boundary() -> None:
+    harness = Path(__file__).resolve().parents[2] / "deskpet" / "harness"
+    executor_tree = ast.parse((harness / "tool_executor.py").read_text(encoding="utf-8"))
+    classes = {
+        node.name: node for node in executor_tree.body if isinstance(node, ast.ClassDef)
+    }
+    assert "UnifiedToolExecutor" not in classes
+    public = {
+        node.name
+        for node in classes["EffectBatchExecutor"].body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and not node.name.startswith("_")
+    }
+    assert public == {"execute", "acknowledge_committed", "ready_run_ids", "drain"}
+    assert "persist_react_boundary" not in (harness / "tool_executor.py").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_runtime_tool_branch_is_only_high_level_effect_orchestration() -> None:
+    source = (
+        Path(__file__).resolve().parents[2] / "deskpet" / "harness" / "runtime.py"
+    ).read_text(encoding="utf-8")
+    for forbidden in (
+        "claim_tool_call", "settle_effect", "read_effect_outcome",
+        "prepared_execution_policy", "observe_late_prepared", "late_pending",
+    ):
+        assert forbidden not in source

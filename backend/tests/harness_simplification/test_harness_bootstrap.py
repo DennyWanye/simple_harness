@@ -11,7 +11,7 @@ from deskpet.execution.contracts import (
     RunCreate,
     RunStatus,
 )
-from deskpet.harness.bootstrap import build_harness_runtime
+from deskpet.harness.bootstrap import HarnessRuntime, build_harness_runtime
 from deskpet.harness.child_runs import ChildRunCoordinator
 from deskpet.harness.kernel import HostContext, RegisteredDriver
 from deskpet.harness.ports import DriverTerminalCandidate
@@ -152,6 +152,59 @@ async def test_bootstrap_starts_and_closes_single_child_runtime_owner(tmp_path) 
 
 
 @pytest.mark.asyncio
+async def test_runtime_close_recovers_final_ready_effects_before_driver_close() -> None:
+    timeline: list[str] = []
+
+    class Effects:
+        ready = frozenset()
+
+        async def drain(self, timeout):
+            timeline.append("drain")
+            self.ready = frozenset({"late-run"})
+            return self.ready
+
+    class Supervisor:
+        async def close(self):
+            timeline.append("supervisor-close")
+
+        async def reconcile_ready(self, run_ids, *, timeout):
+            assert run_ids == frozenset({"late-run"})
+            timeline.append("final-recover")
+            effects.ready = frozenset()
+            return True
+
+    class Live:
+        def finish_all(self):
+            timeline.append("live-finish")
+
+    class Kernel:
+        _lock = asyncio.Lock()
+        _live = Live()
+
+        async def _drain_active(self, timeout):
+            timeline.append("kernel-drain")
+            return True
+
+    class ClosingDriver(Driver):
+        async def close(self):
+            assert effects.ready == frozenset()
+            timeline.append("driver-close")
+
+    effects = Effects()
+    runtime = HarnessRuntime(
+        Kernel(), None, None, None, Supervisor(),
+        (RegisteredDriver("react", ClosingDriver()),), effects,
+    )
+
+    await runtime.close(timeout=0.1)
+
+    assert timeline == [
+        "supervisor-close", "drain", "final-recover", "kernel-drain",
+        "driver-close", "live-finish",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_supervisor_single_task_advances_every_bounded_lane() -> None:
     wakeup = asyncio.Event()
 
@@ -173,7 +226,7 @@ async def test_supervisor_single_task_advances_every_bounded_lane() -> None:
             return ()
 
     class Effects:
-        def ready_late_run_ids(self) -> frozenset[str]:
+        def ready_run_ids(self) -> frozenset[str]:
             return frozenset({"late-run"})
 
     class Delivery:

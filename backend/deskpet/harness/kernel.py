@@ -52,7 +52,7 @@ from .ports import (
 )
 from .router import RegisteredRouter
 from .runtime import DriverRuntime
-from .tool_executor import UnifiedToolExecutor
+from .tool_executor import EffectBatchExecutor
 
 
 class RunKernel:
@@ -66,7 +66,7 @@ class RunKernel:
         drivers: Mapping[str, RegisteredDriver],
         context_factory: HostContextFactory | None = None,
         child_runs: ChildRunCoordinator | None = None,
-        tool_executor: UnifiedToolExecutor | None = None,
+        tool_executor: EffectBatchExecutor | None = None,
         terminal_projection: TerminalProjection | None = None,
         max_live_runs: int = 4096,
         child_signal_heartbeat_interval: float = 10.0,

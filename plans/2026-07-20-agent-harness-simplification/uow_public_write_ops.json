@@ -114,8 +114,8 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/runtime.py:DriverRuntime.consume_candidate:281",
-        "backend/deskpet/harness/runtime.py:DriverRuntime.consume_candidate:363"
+        "backend/deskpet/harness/tool_executor.py:EffectBatchExecutor.execute:146",
+        "backend/deskpet/harness/tool_executor.py:EffectBatchExecutor.execute:155"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -345,10 +345,10 @@
       "callsites": [
         "backend/deskpet/harness/kernel.py:RunKernel._deliver_child_signal.heartbeat:742",
         "backend/deskpet/harness/kernel.py:RunKernel.recover:641",
-        "backend/deskpet/harness/runtime.py:DriverRuntime.drive_recovery.heartbeat:156",
-        "backend/deskpet/harness/runtime.py:DriverRuntime.drive_recovery:164",
-        "backend/deskpet/harness/runtime.py:DriverRuntime.drive_recovery:170",
-        "backend/deskpet/harness/runtime.py:DriverRuntime.drive_recovery:191",
+        "backend/deskpet/harness/runtime.py:DriverRuntime.drive_recovery.heartbeat:153",
+        "backend/deskpet/harness/runtime.py:DriverRuntime.drive_recovery:161",
+        "backend/deskpet/harness/runtime.py:DriverRuntime.drive_recovery:167",
+        "backend/deskpet/harness/runtime.py:DriverRuntime.drive_recovery:188",
         "backend/deskpet/harness/supervisor.py:HarnessSupervisor.reconcile_signals_once:118",
         "backend/deskpet/harness/supervisor.py:HarnessSupervisor.reconcile_signals_once:94"
       ],
@@ -402,7 +402,7 @@
       "authority": "sqlite_execution_uow",
       "callsites": [
         "backend/deskpet/harness/drivers/react.py:ReActDriver.signal.iterator:545",
-        "backend/deskpet/harness/runtime.py:DriverRuntime.consume_candidate:393"
+        "backend/deskpet/harness/tool_executor.py:EffectBatchExecutor.execute:243"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
