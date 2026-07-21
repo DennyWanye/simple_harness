@@ -94,7 +94,7 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/kernel.py:RunKernel.cancel:595"
+        "backend/deskpet/harness/kernel.py:RunKernel.cancel:587"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -129,7 +129,7 @@
       "authority": "sqlite_execution_uow",
       "callsites": [
         "backend/deskpet/harness/child_runs.py:ChildRunScheduler.reconcile_signals_once:191",
-        "backend/deskpet/harness/kernel.py:RunKernel.recover:650"
+        "backend/deskpet/harness/kernel.py:RunKernel.recover:642"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -228,8 +228,8 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/kernel.py:RunKernel.start:381",
-        "backend/deskpet/harness/kernel.py:RunKernel.start:382",
+        "backend/deskpet/harness/kernel.py:RunKernel.start:373",
+        "backend/deskpet/harness/kernel.py:RunKernel.start:374",
         "backend/deskpet/tools/capabilities.py:PreparedToolSet.activate:222",
         "backend/deskpet/tools/capabilities.py:ResolvedToolDraft.finalize:147",
         "backend/deskpet/tools/task_graph_tools.py:_do_create:227",
@@ -481,7 +481,7 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/kernel.py:RunKernel._deliver_child_signal.heartbeat:751",
+        "backend/deskpet/harness/kernel.py:RunKernel._deliver_child_signal.heartbeat:743",
         "backend/deskpet/harness/runtime.py:DriverRuntime.drive_recovery.heartbeat:156",
         "backend/deskpet/harness/runtime.py:DriverRuntime.drive_recovery:164",
         "backend/deskpet/harness/runtime.py:DriverRuntime.drive_recovery:170"
@@ -521,7 +521,7 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/kernel.py:RunKernel.signal:539",
+        "backend/deskpet/harness/kernel.py:RunKernel.signal:531",
         "backend/deskpet/workflows/ipc.py:WorkflowIPCDispatcher._decision_resolve:326",
         "backend/deskpet/workflows/service.py:WorkflowService.resolve_decision:1303"
       ],
