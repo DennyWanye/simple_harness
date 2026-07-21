@@ -10,18 +10,18 @@
     {
       "authority": "presenter_converter",
       "callsites": [
-        "backend/deskpet/agent/run_presenter.py:RunPresenter.present_run_event:209"
+        "backend/deskpet/agent/run_presenter.py:RunPresenter.present_run_event:211"
       ],
       "kind": "converter",
       "path": "backend/deskpet/agent/run_presenter.py",
-      "source_hash": "b0f2c60deadc5a0a7f086cb6644ba3fb5387e15aaf79638acc59a613031a0ade",
+      "source_hash": "309c33307f981734150c72b8f15c604a1ca6257e66cef5cfc9805f4e576240c0",
       "symbol": "CanonicalRunEventPresentationAdapter.to_presentation_events",
       "tables": []
     },
     {
       "authority": "presenter_converter_contract",
       "callsites": [
-        "backend/deskpet/agent/run_presenter.py:RunPresenter.present_run_event:209"
+        "backend/deskpet/agent/run_presenter.py:RunPresenter.present_run_event:211"
       ],
       "kind": "converter_contract",
       "path": "backend/deskpet/agent/run_presenter.py",

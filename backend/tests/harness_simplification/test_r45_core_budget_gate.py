@@ -427,12 +427,12 @@ def test_non_core_same_named_method_change_still_fails_closed() -> None:
     ]
 
 
-def test_r45_current_state_cannot_regress_and_final_status_is_derived() -> None:
+def test_r55_current_state_cannot_regress_and_r45_status_remains_derived() -> None:
     loc = harness_baseline._orchestration_loc()
     audit = harness_baseline.build_r45_core_audit(loc)
 
-    transition = harness_baseline.validate_r45_transition_gate(audit)
-    assert transition["passed"], transition["checks"]
+    construction = harness_baseline.validate_r55_construction_gate(audit)
+    assert construction["passed"], construction["checks"]
 
     final = harness_baseline.validate_r45_final_gate(audit)
     assert final["passed"] is all(final["checks"].values())

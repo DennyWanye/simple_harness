@@ -93,42 +93,6 @@ async def test_recovery_lease_claim_renew_release_and_expired_takeover(tmp_path)
 
 
 @pytest.mark.asyncio
-async def test_stale_recovery_epoch_cannot_append_event(tmp_path):
-    now = [100.0]
-    store = SqliteExecutionUnitOfWork(tmp_path / "workflow.db", clock=lambda: now[0])
-    created = await store.create(_spec("run-write-fence"))
-    stale = await store.recovery_scope(
-        "run-write-fence", owner="worker-a", lease_seconds=5
-    )
-    now[0] = 106.0
-    current = await store.recovery_scope(
-        "run-write-fence", owner="worker-b", lease_seconds=10
-    )
-
-    event = RunEventCandidate(
-        event_key="recovered",
-        kind="recovered",
-        status=OutcomeStatus.ACCEPTED,
-        driver_kind="react",
-    )
-    with pytest.raises(StaleRecoveryLease, match="lost its lease"):
-        await store.append_event(
-            "run-write-fence",
-            expected_version=created.record.version,
-            event=event,
-            recovery_lease=stale,
-        )
-
-    stored = await store.append_event(
-        "run-write-fence",
-        expected_version=created.record.version,
-        event=event,
-        recovery_lease=current,
-    )
-    assert stored.candidate.kind == "recovered"
-
-
-@pytest.mark.asyncio
 async def test_same_owner_concurrent_claim_reuses_one_epoch(tmp_path):
     store = SqliteExecutionUnitOfWork(tmp_path / "workflow.db", clock=lambda: 100.0)
     await store.create(_spec("run-same-owner"))

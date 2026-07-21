@@ -26,6 +26,7 @@ from deskpet.execution.contracts import (
     RunRef,
     RunStatus,
     StaleRecoveryLease,
+    WorkflowRunSeed,
     fingerprint_json,
 )
 from deskpet.harness.context import HostContextFactory
@@ -184,28 +185,47 @@ class AtomicStartDriver(FakeDriver):
     async def start(self, request):
         self.starts += 1
         assert request.run_context is not None
-        created = await self.uow.create(
-            RunCreate(
-                run_id=request.run_id,
-                idempotency_key=f"workflow:{request.run_id}",
-                context=request.run_context,
-                payload_fingerprint=fingerprint_json(dict(request.request_payload)),
-                capability_fingerprint=request.run_context.capability_hash,
-                driver_kind="workflow",
-                profile_key=request.profile_key,
-                persistence_level=PersistenceLevel.DURABLE,
-            )
+        spec = request.run_spec or RunCreate(
+            run_id=request.run_id,
+            idempotency_key=f"workflow:{request.run_id}",
+            context=request.run_context,
+            payload_fingerprint=fingerprint_json(dict(request.request_payload)),
+            capability_fingerprint=request.run_context.capability_hash,
+            driver_kind="workflow",
+            profile_key=request.profile_key,
+            persistence_level=PersistenceLevel.DURABLE,
         )
-        accepted = await self.uow.append_event(
-            request.run_id,
-            expected_version=created.record.version,
-            event=RunEventCandidate(
+        capability_snapshot = next(
+            candidate
+            for candidate in (
+                {},
+                {"tools": list(request.capability_snapshot.get("capabilities", ()))},
+                {"capabilities": list(request.capability_snapshot.get("capabilities", ()))},
+            )
+            if fingerprint_json(candidate) == spec.capability_fingerprint
+        )
+        await self.uow.start_workflow(
+            spec,
+            WorkflowRunSeed(
+                request_key=spec.idempotency_key,
+                workflow_name="fixture",
+                workflow_version="v1",
+                manifest_hash="m" * 64,
+                implementation_hash="i" * 64,
+                capability_hash=spec.capability_fingerprint,
+                capability_snapshot=capability_snapshot,
+                state_schema_version=1,
+                trace_id=spec.context.trace_id,
+                thread_id=request.run_id,
+            ),
+            accepted_event=RunEventCandidate(
                 event_key="accepted",
                 kind="workflow.accepted",
                 status=OutcomeStatus.ACCEPTED,
                 driver_kind="workflow",
             ),
         )
+        accepted = (await self.uow.list_events(request.run_id))[-1]
         yield PersistedEventCandidate(accepted)
 
 
@@ -596,12 +616,12 @@ async def kernel(tmp_path):
     return value, classifier, driver
 
 
-def host(session: str = "s1") -> HostContext:
+def host(session: str = "s1", *, capability_hash: str = "c" * 64) -> HostContext:
     return HostContext(
         session_id=session,
         principal_id=f"principal-{session}",
         auth_epoch=1,
-        capability_hash="c" * 64,
+        capability_hash=capability_hash,
         available_capabilities=frozenset(),
         provider_plan=("primary",),
         trace_id="trace-1",
@@ -644,15 +664,72 @@ async def test_short_react_run_stays_in_bounded_kernel_index_without_sqlite_writ
     )
     handle = await value.start(RunRequest("hello", "req-live", "turn-live"), host())
     actor = host().actor(root_run_id=handle.root_run_id)
-    assert [event async for event in value.observe(handle.ref, actor)][-1].kind == "final"
+    assert [event async for event in value.observe(handle.ref, actor)][-1].kind == "run.final"
     async with aiosqlite.connect(path) as db:
         rows = (await (await db.execute("SELECT COUNT(*) FROM execution_runs")).fetchone())[0]
     assert rows == 0
     active = _live_run(value, handle.ref.run_id)
-    assert (active.task, active.driver_state, active.driver_iterator) == (None, None, None)
+    assert active.task is None or active.task.done()
+    assert (active.driver_state, active.driver_iterator) == (None, None)
     assert not active.subscribers
     await value.close(handle.ref, actor)
     assert value._live.get(handle.ref.run_id) is None
+
+
+@pytest.mark.asyncio
+async def test_close_keeps_running_task_indexed_until_it_finishes(tmp_path) -> None:
+    class HoldingDriver(FakeDriver):
+        def __init__(self):
+            super().__init__()
+            self.started, self.release = asyncio.Event(), asyncio.Event()
+
+        async def start(self, request):
+            self.starts += 1
+            self.started.set()
+            yield TokenCandidate(request.run_id, "started")
+            await self.release.wait()
+
+    driver = HoldingDriver()
+    value = RunKernel(
+        uow=SqliteExecutionUnitOfWork(tmp_path / "workflow.db"),
+        router=RegisteredRouter(
+            StaticClassifier("react.default"), _profiles("react.default", "react")),
+        drivers=driver_catalog((RegisteredDriver("react", driver),)),
+    )
+    await value._uow.initialize()
+    handle = await value.start(RunRequest("hold", "req-close", "turn-close"), host())
+    actor = host().actor(root_run_id=handle.root_run_id)
+    await driver.started.wait()
+    task = _live_run(value, handle.ref.run_id).task
+    await value.close(handle.ref, actor)
+    assert _live_run(value, handle.ref.run_id).task is task and not task.done()
+    driver.release.set()
+    await task
+    await value.close(handle.ref, actor)
+    assert value._live.get(handle.ref.run_id) is None
+
+
+@pytest.mark.asyncio
+async def test_durable_terminal_hydrates_live_record_for_capacity_eviction(tmp_path) -> None:
+    uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
+    await uow.initialize()
+    value = RunKernel(
+        uow=uow,
+        router=RegisteredRouter(
+            StaticClassifier("react.default"), _profiles("react.default", "react")),
+        drivers=driver_catalog((RegisteredDriver(
+            "react", ImmediateTerminalDriver(), durable_from_start=True),)),
+        max_live_runs=1,
+    )
+    first = await value.start(RunRequest("one", "req-cap-1", "turn-cap-1"), host())
+    actor = host().actor(root_run_id=first.root_run_id)
+    assert [event async for event in value.observe(first.ref, actor)][-1].kind == "run.final"
+    assert _live_run(value, first.ref.run_id).record.status is RunStatus.COMPLETED
+    second = await value.start(RunRequest("two", "req-cap-2", "turn-cap-2"), host())
+    assert value._live.get(first.ref.run_id) is None
+    assert value._live.get(second.ref.run_id) is not None
+    assert [event async for event in value.observe(
+        second.ref, host().actor(root_run_id=second.root_run_id))][-1].candidate.is_terminal
 
 
 @pytest.mark.asyncio
@@ -693,7 +770,7 @@ async def test_first_decision_atomically_promotes_boundary_and_kernel_adopts_uow
         ),
     )
     assert receipt.accepted is True
-    assert [event async for event in stream][-1].kind == "final"
+    assert [event async for event in stream][-1].kind == "run.final"
 
 
 @pytest.mark.asyncio
@@ -913,7 +990,7 @@ async def test_driver_failure_isolated_as_run_terminal(tmp_path) -> None:
     terminal = [event async for event in stream][-1]
     assert terminal.status is OutcomeStatus.FAILED
     active = _live_run(value, handle.ref.run_id)
-    assert active.task is None
+    assert active.task is not None and active.task.done()
     assert active.subscribers == set()
     await value.close(
         handle.ref, host().actor(root_run_id=handle.root_run_id)
@@ -1221,11 +1298,12 @@ async def test_atomic_driver_commits_before_kernel_returns_handle(tmp_path) -> N
             ),
         )),
     )
+    capability_hash = fingerprint_json({"capabilities": []})
     handle = await value.start(
         RunRequest("long task", "req-atomic", "turn-1"),
-        host(),
+        host(capability_hash=capability_hash),
     )
-    actor = host().actor(root_run_id=handle.root_run_id)
+    actor = host(capability_hash=capability_hash).actor(root_run_id=handle.root_run_id)
     record = await uow.query(handle.ref, actor)
     assert record.spec.profile_key == "durable.default"
     stream = value.observe(handle.ref, actor)
@@ -1451,16 +1529,30 @@ async def test_atomic_precreated_child_consumes_acceptance_and_starts_once(tmp_p
     class AtomicChildDriver(FakeDriver):
         async def start(self, request):
             self.starts += 1
-            authoritative = await uow.query(
-                RunRef(request.run_id, request.session_id), request.run_context.actor()
-            )
-            accepted = await uow.append_event(
-                request.run_id, expected_version=authoritative.version,
-                event=RunEventCandidate(
+            assert request.run_spec is not None
+            capability_snapshot = {
+                "tools": list(request.capability_snapshot.get("capabilities", ()))
+            }
+            await uow.start_workflow(
+                request.run_spec,
+                WorkflowRunSeed(
+                    request_key=request.run_spec.idempotency_key,
+                    workflow_name="fixture",
+                    workflow_version="v1",
+                    manifest_hash="m" * 64,
+                    implementation_hash="i" * 64,
+                    capability_hash=request.run_spec.capability_fingerprint,
+                    capability_snapshot=capability_snapshot,
+                    state_schema_version=1,
+                    trace_id=request.run_spec.context.trace_id,
+                    thread_id=request.run_id,
+                ),
+                accepted_event=RunEventCandidate(
                     event_key="atomic-accepted", kind="workflow.accepted",
                     status=OutcomeStatus.ACCEPTED, driver_kind="workflow",
                 ),
             )
+            accepted = (await uow.list_events(request.run_id))[-1]
             yield PersistedEventCandidate(accepted)
             await continue_stream.wait()
 
@@ -1816,7 +1908,7 @@ async def test_root_and_child_terminal_race_has_one_winner(tmp_path) -> None:
 
     record = await uow.query(handle.ref, actor)
     events = await uow.list_events(handle.ref.run_id)
-    terminal = [event for event in events if event.kind == "final"]
+    terminal = [event for event in events if event.kind == "run.final"]
     assert record.status is RunStatus.COMPLETED
     assert len(terminal) == 1
     await asyncio.sleep(0.05)

@@ -83,11 +83,11 @@ import reachability proves neither factory is imported or reachable from
 when complete dynamic-stack evidence is supplied, audits the exact 15 legacy
 owners plus static/dynamic coverage in readiness mode, and provides the R6
 exact/similarity/reference/reachability/live-stack cutover gate. The final
-`legacy_cutover_spans.json` is intentionally generated only after all R5.5
-source slices form the single A commit, then committed with tests/docs as B.
-Focused readiness/LOC tests are `28 passed`; the isolated slice construction
-gate is raw/adjusted/core/Kernel `34,045/33,536/5,618/767`, unknown `0`. This is
-pre-activation evidence, not an R5.5 or production-activation completion claim.
+`legacy_cutover_spans.json`, authority manifests, parity mapping, and admission
+budget are locked to the R5.5 A-source commit `69c6980a`. Readiness covers all
+14 declared legacy roots and all 15 legacy owners; parity remains `141/141`
+with no unmapped callsite. This is complete R5.5 pre-activation evidence, not a
+production-activation claim.
 
 The R4.5 approved baseline is counted orchestration `33,618`, audited core
 `5,725`, Kernel `820`, public transaction starters `33`, execution-table DML
@@ -135,10 +135,13 @@ preparation, while `Kernel.start` remains the authoritative TOCTOU check.
 
 The public starter count is exactly `23`, execution-table DML authority remains
 `1`, fault hooks remain `39`, and Kernel still exposes exactly six operations.
-The R5.5 A-source construction gate is green at raw/adjusted/core/Kernel
-`34,756/34,247/5,950/924`; production remains `legacy/0`. Source-locked
-authority/parity/cutover manifests and the admission budget are generated only
-after the A commit and form the separate B commit.
+The final R5.5 construction gate is green at raw/adjusted/core/Kernel
+`34,756/34,247/5,950/924`; production remains `legacy/0`. The complete
+harness-simplification suite is `471 passed, 8 xfailed` (split as `218 passed,
+8 xfailed` and `253 passed` after one bounded single-run timeout). The timed-out
+workers and every subsequent test/benchmark process were cleaned by exact
+worktree command-line match, with `cleanup_remaining=0`. R6 remains the only
+slice authorized to activate the Kernel production owner.
 
 A machine-checked construction ceiling of total `<=34,300` and core `<=5,725`
 bounds the temporary migration peak; it is green. The total calculation keeps

@@ -47,7 +47,7 @@ def test_live_history_is_bounded_and_stale_cursor_fails_closed() -> None:
 
 
 @pytest.mark.asyncio
-async def test_slow_subscriber_is_bounded_and_terminal_releases_task_reference() -> None:
+async def test_slow_subscriber_is_bounded_and_terminal_retains_running_task_reference() -> None:
     index = BoundedLiveIndex(max_runs=1, subscriber_queue_size=1)
     active = index.add("run", ACTOR)
     active.task = asyncio.current_task()
@@ -61,7 +61,7 @@ async def test_slow_subscriber_is_bounded_and_terminal_releases_task_reference()
     assert queue not in active.subscribers
 
     index.finish("run", active)
-    assert active.task is None
+    assert active.task is asyncio.current_task()
     assert queue.empty()
 
 

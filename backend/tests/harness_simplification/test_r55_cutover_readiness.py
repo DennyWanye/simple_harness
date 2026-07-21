@@ -86,12 +86,12 @@ async def test_dormant_subagent_registry_uses_typed_durable_delegates() -> None:
         awaited.append((args, context))
         return json.dumps({"ok": True, "results": []})
 
-    registry = await build_harness_subagent_registry(
+    tools = await build_harness_subagent_registry(
         parent_request=resolve,
         submit_delegate=submit,
         await_delegate=await_runs,
     )
-    spawn, await_tool = registry.tools
+    spawn, await_tool = tools
     result = await spawn[0](
         {"subagents": [{"prompt": "inspect", "tools": ["read"]}]},
         execution_context=_tool_context(),
@@ -123,8 +123,9 @@ async def test_product_composition_builds_only_through_shared_runtime(monkeypatc
         drivers=(),
         resolver=object(),
     )
-    assert composition.runtime is runtime
-    assert composition.venue._run_client is runtime.run_client
+    composed_runtime, venue = composition
+    assert composed_runtime is runtime
+    assert venue._run_client is runtime.run_client
     assert len(calls) == 1
 
 

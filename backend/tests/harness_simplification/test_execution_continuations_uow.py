@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import aiosqlite
 import pytest
 
@@ -412,6 +414,10 @@ async def test_admission_launched_without_continuation_footprint_finalizes_unkno
     assert (launched.version, launched_boundary.phase, launched_boundary.consumed) == (
         4, AdmissionPhase.LAUNCHED, True,
     )
+    progressed_replay = await store.resolve_admission(
+        ref, actor, signal, expected_boundary_version=4,
+        terminal_deliveries=(_delivery(),))
+    assert progressed_replay.duplicate is True
 
     final = RunEventCandidate(
         event_key="run:final", kind="run.final", status="failed", driver_kind="react",
@@ -444,6 +450,104 @@ async def test_admission_rejection_atomically_consumes_and_terminalizes(tmp_path
     assert result.boundary.phase is AdmissionPhase.REJECTED
     assert result.boundary.consumed is True
     assert record.status is RunStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_post_accept_cancel_and_expiry_replays_are_idempotent(tmp_path):
+    actor = ActorContext("user", "session", 0)
+
+    cancel_store = await _open_store(tmp_path / "cancel-replay.db")
+    admission, boundary = _admission("cancel-replay")
+    ref = RunRef(boundary.run_id, "session")
+    await cancel_store.start_admission(
+        _spec(boundary.run_id), admission, boundary, _admission_waiting())
+    await cancel_store.resolve_admission(
+        ref, actor, _admission_signal(boundary.run_id, True),
+        expected_boundary_version=1)
+    cancel = DecisionSignal(
+        decision_id=boundary.decision_id, run_id=boundary.run_id,
+        expected_session_id="session", nonce=boundary.nonce,
+        expected_version=1, allow=False, response_schema_version=1,
+        response={"resolution": "cancelled"})
+    first = await cancel_store.resolve_admission(
+        ref, actor, cancel, expected_boundary_version=2)
+    replay = await cancel_store.resolve_admission(
+        ref, actor, cancel, expected_boundary_version=2)
+    assert first.boundary.phase is AdmissionPhase.CANCELLED
+    assert replay.duplicate is True and replay.boundary == first.boundary
+    with pytest.raises(DecisionConflict, match="another resolution already won"):
+        await cancel_store.resolve_admission(
+            ref, actor,
+            DecisionSignal(
+                decision_id=boundary.decision_id, run_id=boundary.run_id,
+                expected_session_id="session", nonce=boundary.nonce,
+                expected_version=1, allow=False, response_schema_version=1,
+                response={"resolution": "cancelled", "reason": "changed"}),
+            expected_boundary_version=2)
+
+    now = [100.0]
+    expired_store = SqliteExecutionUnitOfWork(
+        tmp_path / "expired-replay.db", clock=lambda: now[0])
+    await expired_store.activate_runtime()
+    admission, boundary = _admission("expired-replay")
+    admission = AdmissionSpec(
+        kind="plan", prompt_schema_version=1, response_schema_version=1,
+        prompt={"question": "run this plan?"}, presentation={"steps": ["one"]},
+        expires_at=101.0)
+    value = boundary.to_dict()
+    value["admission"] = admission.to_dict()
+    boundary = AdmissionBoundary.from_dict(value)
+    ref = RunRef(boundary.run_id, "session")
+    await expired_store.start_admission(
+        _spec(boundary.run_id), admission, boundary, _admission_waiting())
+    now[0] = 102.0
+    signal = _admission_signal(boundary.run_id, True)
+    first = await expired_store.resolve_admission(
+        ref, actor, signal, expected_boundary_version=1,
+        terminal_deliveries=(_delivery(),))
+    replay = await expired_store.resolve_admission(
+        ref, actor, signal, expected_boundary_version=1,
+        terminal_deliveries=(_delivery(),))
+    assert first.boundary.phase is AdmissionPhase.EXPIRED
+    assert replay.duplicate is True and replay.boundary == first.boundary
+    assert await expired_store.list_event_deliveries(first.event.event_id)
+    with pytest.raises(DecisionConflict, match="another resolution already won"):
+        await expired_store.resolve_admission(
+            ref, actor,
+            DecisionSignal(
+                decision_id=boundary.decision_id, run_id=boundary.run_id,
+                expected_session_id="session", nonce=boundary.nonce,
+                expected_version=0, allow=False, response_schema_version=1,
+                response=dict(signal.response)),
+            expected_boundary_version=1,
+            terminal_deliveries=(_delivery(),))
+
+
+@pytest.mark.asyncio
+async def test_cancel_vs_launch_claim_has_exactly_one_winner(tmp_path):
+    path, run_id = tmp_path / "claim-cancel-race.db", "claim-cancel-race"
+    store = await _open_store(path)
+    admission, boundary = _admission(run_id)
+    actor, ref = ActorContext("user", "session", 0), RunRef(run_id, "session")
+    await store.start_admission(
+        _spec(run_id), admission, boundary, _admission_waiting())
+    await store.resolve_admission(
+        ref, actor, _admission_signal(run_id, True), expected_boundary_version=1)
+    lease = await store.recovery_scope(run_id, owner="race")
+    cancel = DecisionSignal(
+        decision_id=boundary.decision_id, run_id=run_id,
+        expected_session_id="session", nonce=boundary.nonce,
+        expected_version=1, allow=False, response_schema_version=1,
+        response={"resolution": "cancelled"})
+    results = await asyncio.gather(
+        store.resolve_admission(ref, actor, cancel, expected_boundary_version=2),
+        store.claim_admission_launch(lease, expected_boundary_version=2),
+        return_exceptions=True,
+    )
+    assert sum(not isinstance(item, BaseException) for item in results) == 1
+    current = AdmissionBoundary.from_dict(
+        (await store.load_continuation(run_id)).payload["_admission"])
+    assert current.phase in {AdmissionPhase.CANCELLED, AdmissionPhase.LAUNCH_CLAIMED}
 
 
 def _fail_once(target: str):

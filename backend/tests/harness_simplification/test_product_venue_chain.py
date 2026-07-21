@@ -21,6 +21,7 @@ from deskpet.agent.turn_preparer import ProductTurnPreparer, TurnInput
 from deskpet.execution.contracts import (
     ActorContext,
     OutcomeStatus,
+    ProviderLaunchSnapshot,
     RunEvent,
     RunEventCandidate,
     RunRef,
@@ -30,6 +31,7 @@ from deskpet.harness.adapters.venues import (
     ProductVenueRunAdapter,
     ProductVenueRunResult,
     ProductVenueRunSession,
+    ProviderLaunchPolicyRegistry,
 )
 from deskpet.harness.contracts import driver_catalog
 from deskpet.harness.kernel import HostContext, RegisteredDriver, RunKernel
@@ -142,6 +144,7 @@ class _ClarificationPipeline:
 class _DomainSink(ProductDomainSink):
     def __init__(self, order: list[str]) -> None:
         self.frames: list[dict[str, Any]] = []
+        self.plans: list[dict[str, Any]] = []
         self.order = order
 
     async def emit(self, frame):
@@ -154,11 +157,11 @@ class _DomainSink(ProductDomainSink):
     async def persist_assistant(self, _session_id, _text):
         return None
 
-    async def store_plan(self, _payload):
-        return None
+    async def store_plan(self, payload):
+        self.plans.append(dict(payload))
 
     async def await_plan(self, _payload):
-        return True
+        raise AssertionError("durable admission must not call the legacy plan waiter")
 
 
 class _WS:
@@ -244,7 +247,7 @@ def _presentation_context(
     ), peers
 
 
-async def _stack(tmp_path, *, fail: bool = False):
+async def _stack(tmp_path, *, fail: bool = False, provider_policies=()):
     order: list[str] = []
     uow = SqliteExecutionUnitOfWork(tmp_path / "execution.db")
     await uow.initialize()
@@ -264,6 +267,7 @@ async def _stack(tmp_path, *, fail: bool = False):
         preparer=ProductTurnPreparer(),
         run_client=run_client,
         presenter=presenter,
+        provider_launch_policies=ProviderLaunchPolicyRegistry(provider_policies),
     )
     session_db = SessionDB(tmp_path / "state.db")
     await session_db.initialize()
@@ -413,6 +417,53 @@ async def test_open_returns_pre_kernel_result_without_an_extra_wrapper(tmp_path)
         "",
     )
     assert driver.starts == []
+    assert kernel._live.values() == ()
+
+
+@pytest.mark.asyncio
+async def test_plan_confirmation_waits_durably_before_driver_launch(tmp_path, monkeypatch) -> None:
+    policy = ProviderLaunchSnapshot("fixture", "fixture-adapter", "v1", False, None)
+    stack = await _stack(tmp_path, provider_policies=(policy,))
+    adapter, kernel, driver, _uow, _db, ws, _vector, context, _peers, sink, _order = stack
+    config = _config()
+    config.features.plan_confirm_gate = True
+    provider = SimpleNamespace(provider_id="fixture", adapter_id="fixture-adapter", adapter_version="v1")
+
+    async def extract_plan(*_args, **_kwargs):
+        return SimpleNamespace(rationale="durable gate", steps=(SimpleNamespace(title="Inspect", detail="Then run"),))
+
+    monkeypatch.setattr("deskpet.agent.turn_preparer.maybe_extract_plan", extract_plan)
+    session = await adapter.open(
+        TurnInput(context.text, context.session_id, "request-plan", "turn-plan", "text"),
+        {"session_id": context.session_id, "venue": "text"},
+        services={}, config=config, local_llm=provider, tool_registry=object(), provider=provider,
+        code_mode=SimpleNamespace(project_root=lambda _sid: tmp_path), in_code_mode=True,
+        current_message_id=None, summary_user_is_confused=lambda _text: False,
+        summary_latest_task_snapshot=lambda _entries: None,
+        summary_build_reinject_msg=lambda _value: {}, presentation_context=context, domain_sink=sink,
+    )
+    assert isinstance(session, ProductVenueRunSession)
+    assert driver.starts == []
+
+    events = session.events
+    waiting = await anext(events)
+    fence = dict(waiting.candidate.payload)
+    assert waiting.candidate.kind == "admission.waiting"
+    assert {"run_id", "decision_id", "nonce", "version", "expires_at"} <= fence.keys()
+    assert [frame["type"] for frame in ws.frames] == ["chat_v2_plan"]
+    assert len(sink.plans) == 1
+    assert (sink.plans[0]["run_id"], sink.plans[0]["rationale"]) == (session.run_id, "durable gate")
+    signal = {"decision_id": fence["decision_id"], "nonce": fence["nonce"],
+              "version": fence["version"], "response": {"decision": "go"}}
+    first = await session.signal(signal)
+    duplicate = await session.signal(signal)
+    async for _event in events:
+        pass
+    await session.close()
+
+    assert first.accepted and duplicate.accepted and duplicate.duplicate
+    assert len(driver.starts) == 1
+    assert driver.starts[0].launch_operation_id
     assert kernel._live.values() == ()
 
 

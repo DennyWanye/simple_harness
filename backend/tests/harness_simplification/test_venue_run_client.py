@@ -123,7 +123,7 @@ async def test_text_and_voice_share_one_run_client_and_keep_sessions_isolated(tm
     )
     assert {event.session_id for event in text_events} == {"text-session"}
     assert {event.session_id for event in voice_events} == {"voice-session"}
-    assert [event.kind for event in text_events] == ["transcript", "final"]
+    assert [event.kind for event in text_events] == ["transcript", "run.final"]
 
 
 @pytest.mark.asyncio

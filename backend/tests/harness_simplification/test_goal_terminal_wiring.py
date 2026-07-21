@@ -122,7 +122,7 @@ async def test_kernel_root_terminal_projects_exact_associated_goal(tmp_path, kin
         {"text": "finish", "request_id": f"request-{kind}", "turn_id": "turn-1"},
         {"session_id": "session-1", "venue": "text"},
     )
-    assert [event async for event in handle.events][-1].kind == "final"
+    assert [event async for event in handle.events][-1].kind == "run.final"
     events = await uow.list_events(handle.run_id)
     assert [event.candidate.payload["target_id"] for event in events
             if event.kind == "goal_associated"] == [goal.goal_id]
@@ -152,7 +152,7 @@ async def test_child_and_root_terminal_race_keeps_one_goal_delivery(tmp_path) ->
     record = await uow.query(ref, actor)
     events = await uow.list_events(handle.run_id)
     assert record.status is RunStatus.COMPLETED
-    assert len([event for event in events if event.kind == "final"]) == 1
+    assert len([event for event in events if event.kind == "run.final"]) == 1
     deliveries = await uow.list_event_deliveries(record.terminal_event_id)
     assert len(deliveries) == 1
     await runtime.supervisor.run_once()

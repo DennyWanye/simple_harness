@@ -1673,7 +1673,7 @@ async def _completed_run_memory_probe(run_count: int = 10_000) -> dict[str, Any]
             actor = host.actor(root_run_id=handle.root_run_id)
             terminal_seen = False
             async for event in kernel.observe(handle.ref, actor):
-                if event.kind == "final":
+                if event.candidate.is_terminal:
                     terminal_seen = True
             if not terminal_seen:
                 raise BenchmarkInvariantError(
@@ -1704,7 +1704,7 @@ async def _completed_run_memory_probe(run_count: int = 10_000) -> dict[str, Any]
                 (
                     await (
                         await db.execute(
-                            "SELECT COUNT(*) FROM execution_events WHERE kind = 'final'"
+                                "SELECT COUNT(*) FROM execution_events WHERE kind IN ('final','run.final')"
                         )
                     ).fetchone()
                 )[0]

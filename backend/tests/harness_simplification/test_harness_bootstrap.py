@@ -124,7 +124,7 @@ async def test_bootstrap_exports_manifest_from_actual_registrations(tmp_path) ->
     )
     await asyncio.sleep(0.02)
     late_events = [event async for event in second.events]
-    assert late_events[-1].kind == "final"
+    assert late_events[-1].kind == "run.final"
     await runtime.close()
 
 
