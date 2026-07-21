@@ -78,6 +78,8 @@ class Driver:
 async def make_client(tmp_path, *, complete: bool = True, durable: bool = False):
     uow = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
     await uow.initialize()
+    state = await uow.activate_empty_runtime()
+    assert (state.phase, state.generation) == ("open", 1)
     driver = Driver(complete=complete)
     kernel = RunKernel(
         uow=uow,
@@ -105,6 +107,14 @@ async def test_text_and_voice_share_one_run_client_and_keep_sessions_isolated(tm
     voice_events = [await anext(voice.events), await anext(voice.events)]
     await text.events.aclose()
     await voice.events.aclose()
+    await client.close(
+        {"run_id": text.run_id, "expected_session_id": "text-session"},
+        {"session_id": "text-session", "venue": "text"},
+    )
+    await client.close(
+        {"run_id": voice.run_id, "expected_session_id": "voice-session"},
+        {"session_id": "voice-session", "venue": "voice"},
+    )
     assert {event.session_id for event in text_events} == {"text-session"}
     assert {event.session_id for event in voice_events} == {"voice-session"}
     assert [event.kind for event in text_events] == ["transcript", "final"]
@@ -161,12 +171,17 @@ async def test_signal_and_cancel_are_run_scoped(tmp_path):
         "user_stop",
     )
     assert cancelled.acknowledged is True
+    await handle.events.aclose()
+    await client.close(
+        {"run_id": handle.run_id, "expected_session_id": "session"},
+        {"session_id": "session", "venue": "text"},
+    )
 
 
 @pytest.mark.asyncio
 async def test_start_preserves_route_and_product_payload(tmp_path):
     client, driver, _ = await make_client(tmp_path)
-    await client.start(
+    handle = await client.start(
         {
             "text": "research",
             "request_id": "r-profile",
@@ -178,7 +193,8 @@ async def test_start_preserves_route_and_product_payload(tmp_path):
         },
         {"session_id": "session", "venue": "text"},
     )
-    await asyncio.sleep(0)
+    async for _event in handle.events:
+        pass
 
     start = driver.starts[0]
     assert start.request_payload == {
@@ -187,3 +203,57 @@ async def test_start_preserves_route_and_product_payload(tmp_path):
         "pages": 8,
     }
     assert start.canonical_messages[-1] == {"role": "user", "content": "research"}
+    await client.close(
+        {"run_id": handle.run_id, "expected_session_id": "session"},
+        {"session_id": "session", "venue": "text"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_prepared_canonical_messages_reach_driver_without_kernel_rebuilding(tmp_path):
+    client, driver, _ = await make_client(tmp_path, durable=True)
+    messages = [
+        {"role": "system", "content": "prepared product context"},
+        {"role": "user", "content": "research"},
+    ]
+    handle = await client.start(
+        {
+            "text": "research",
+            "request_id": "r-prepared",
+            "turn_id": "t-prepared",
+            "canonical_messages": messages,
+        },
+        {"session_id": "session", "venue": "text"},
+    )
+    async for _event in handle.events:
+        pass
+
+    assert [dict(message) for message in driver.starts[0].canonical_messages] == messages
+    await client.close(
+        {"run_id": handle.run_id, "expected_session_id": "session"},
+        {"session_id": "session", "venue": "text"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_durable_test_run_is_owned_by_real_generation_one_activation(tmp_path):
+    client, driver, uow = await make_client(tmp_path, durable=True)
+    handle = await client.start(
+        {"text": "owned", "request_id": "r-owned", "turn_id": "t-owned"},
+        {"session_id": "session", "venue": "text"},
+    )
+    async for _event in handle.events:
+        pass
+    actor = Resolver().resolve_actor({"session_id": "session"}, root_run_id=handle.run_id)
+    record = await uow.query(RunRef(handle.run_id, "session"), actor)
+    state = await uow.get_runtime_state()
+
+    assert state.phase == "open"
+    assert state.generation == 1
+    assert record.run_id == handle.run_id
+    assert await uow.get_execution_owner(handle.run_id) == ("kernel", 1)
+    assert driver.starts
+    await client.close(
+        {"run_id": handle.run_id, "expected_session_id": "session"},
+        {"session_id": "session", "venue": "text"},
+    )

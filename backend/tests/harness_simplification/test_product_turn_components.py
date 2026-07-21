@@ -369,6 +369,7 @@ def test_presenter_registers_one_handler_per_live_durable_domain_event() -> None
         ("ErrorEvent", "durable"),
         ("ContextCompactedEvent", "domain"),
         ("PipelineEvent", "domain"),
+        ("ProviderChainFallbackEvent", "domain"),
     )
 
 
