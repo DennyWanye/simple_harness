@@ -1,26 +1,9 @@
 {
   "baseline": {
-    "runtime_dml_authority_count": 2
+    "runtime_dml_authority_count": 1
   },
   "baseline_commit": "796905b9888c2659af78cec21de1ee96b46a2c51",
   "items": [
-    {
-      "authority": "checkpoint_execution_adapter",
-      "callsites": [],
-      "counted": true,
-      "kind": "runtime_dml",
-      "path": "backend/deskpet/workflows/store/checkpoint_execution.py",
-      "source_hash": "6a72d6408ae6bb6b427b457fa152ed8cf35c80549434b5e9ec22991765d0b8e3",
-      "symbol": "SqliteCheckpointExecutionAdapter",
-      "tables": [
-        "execution_child_signal_inbox",
-        "execution_decisions",
-        "execution_deliveries",
-        "execution_effect_links",
-        "execution_events",
-        "execution_runs"
-      ]
-    },
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
@@ -30,7 +13,7 @@
       "counted": true,
       "kind": "runtime_dml",
       "path": "backend/deskpet/workflows/store/execution_uow.py",
-      "source_hash": "a6d4c31f24ca503e3118902fd11be7413b9bf6e529d0f22556a4c2ccf5e025ef",
+      "source_hash": "d95233a7b5dc18054967c964c1354187101afbcc96b71ad9df49ea9d365ab90a",
       "symbol": "SqliteExecutionUnitOfWork",
       "tables": [
         "execution_child_commands",

@@ -17,17 +17,16 @@ from .checkpointer import (
 from .run_store import ForkPreparationError, RunFence, StaleRunFence, WorkflowRunStore
 from .schema import WORKFLOW_SCHEMA_VERSION, initialize_workflow_db
 from .execution_uow import (
+    CheckpointExecutionError,
     ContinuationRecord,
+    ExecutionTx,
     ExecutionRuntimeState,
     LegacyDrainRef,
     RuntimeActivationError,
     SqliteExecutionUnitOfWork,
 )
 from deskpet.execution import RecoveryLease, StaleRecoveryLease
-from .checkpoint_execution import (
-    CheckpointExecutionError,
-    SqliteCheckpointExecutionAdapter,
-)
+from .checkpoint_execution import SqliteCheckpointExecutionAdapter
 
 __all__ = [
     "BlobRef",
@@ -48,6 +47,7 @@ __all__ = [
     "ForkPreparationError",
     "StaleRunFence",
     "ContinuationRecord",
+    "ExecutionTx",
     "ExecutionRuntimeState",
     "LegacyDrainRef",
     "RecoveryLease",

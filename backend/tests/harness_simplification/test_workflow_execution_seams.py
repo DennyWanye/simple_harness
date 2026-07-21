@@ -117,8 +117,8 @@ def _stack(path, *, adapter=None):
     ):
         manifest = _manifest(name, version)
         registry.register(_Workflow(manifest), executable=_Executable(manifest))
-    checkpoint_adapter = adapter or SqliteCheckpointExecutionAdapter()
-    uow = SqliteExecutionUnitOfWork(path)
+    uow = adapter.unit_of_work if adapter is not None else SqliteExecutionUnitOfWork(path)
+    checkpoint_adapter = adapter or SqliteCheckpointExecutionAdapter(uow)
     ports = WorkflowExecutionPorts(unit_of_work=uow, checkpoint=checkpoint_adapter)
     saver = NativeCheckpointStore(path, execution_adapter=checkpoint_adapter)
     runner = WorkflowRunner(
@@ -326,9 +326,10 @@ async def test_runner_run_precreated_requires_checkpoint_owned_terminal_and_rest
 ):
     path = tmp_path / "runner-precreated.db"
     store = WorkflowRunStore(path)
-    adapter = SqliteCheckpointExecutionAdapter()
+    uow = SqliteExecutionUnitOfWork(path)
+    adapter = SqliteCheckpointExecutionAdapter(uow)
     ports = WorkflowExecutionPorts(
-        unit_of_work=SqliteExecutionUnitOfWork(path), checkpoint=adapter
+        unit_of_work=uow, checkpoint=adapter
     )
     saver = NativeCheckpointStore(path, execution_adapter=adapter)
     manifest = _manifest("code", "v1")
@@ -461,10 +462,12 @@ async def test_generic_final_fault_rolls_back_checkpoint_workflow_and_execution(
     path = tmp_path / "checkpoint-fault.db"
 
     def fail_at_final(stage: str) -> None:
-        if stage == "generic_final.after_write":
+        if stage == "checkpoint_finalize_run_after_write":
             raise RuntimeError("injected-final-fault")
 
-    adapter = SqliteCheckpointExecutionAdapter(fault_injector=fail_at_final)
+    adapter = SqliteCheckpointExecutionAdapter(
+        SqliteExecutionUnitOfWork(path, fault_injector=fail_at_final)
+    )
     service, _, store, saver, ports = _stack(path, adapter=adapter)
     prepared = _prepared(service, "ppt", "v1", suffix="fault")
     await service.start_prepared(
@@ -956,10 +959,12 @@ async def test_child_signal_ack_is_atomic_with_native_checkpoint_and_restart_rep
 
     def checkpoint_fault(stage: str) -> None:
         nonlocal fail_inside_commit
-        if stage == "generic_decisions.after_write" and fail_inside_commit:
+        if stage == "checkpoint_consume_decisions_after_write" and fail_inside_commit:
             raise RuntimeError("fault inside child checkpoint commit")
 
-    adapter = SqliteCheckpointExecutionAdapter(fault_injector=checkpoint_fault)
+    adapter = SqliteCheckpointExecutionAdapter(
+        SqliteExecutionUnitOfWork(path, fault_injector=checkpoint_fault)
+    )
     service, _, store, saver, ports = _stack(path, adapter=adapter)
     prepared = _prepared(service, "code", "v1", suffix="child-atomic")
     spec = service.execution_spec(prepared, principal_id="principal")
