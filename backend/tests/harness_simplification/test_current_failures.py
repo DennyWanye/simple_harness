@@ -220,15 +220,17 @@ def _inline_tool_result_ok_nodes(path: Path) -> list[ast.expr]:
     return ok_nodes
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="EXPECTED-RED WI-0/AC-9: ToolResult ok must derive from the typed outcome envelope",
-)
 @pytest.mark.parametrize(
     "relative_path",
     [
         Path("backend/deskpet/agent/run_presenter.py"),
-        Path("backend/pipeline/voice_pipeline.py"),
+        pytest.param(
+            Path("backend/pipeline/voice_pipeline.py"),
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="EXPECTED-RED WI-0/AC-9: Voice ToolResult ok must derive from the typed outcome envelope",
+            ),
+        ),
     ],
     ids=["main-text-projection", "voice-projection"],
 )
