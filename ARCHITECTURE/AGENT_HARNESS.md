@@ -65,28 +65,37 @@ against a real isolated `open/generation=1` activation. Full harness verificatio
 is `363 passed, 8 xfailed`; parity census is `141/141, unmapped=0`; terminal
 close clears Kernel active references. Production Text and Voice still use the
 legacy owner, so this is `R5_READY` evidence rather than final production PASS.
+The R4.5 venue boundary now returns
+`ProductVenueRunSession | ProductVenueRunResult` directly: Voice consumes the
+session and Text's `execute()` consumes the same union. The redundant
+`ProductVenueOpenResult` two-slot wrapper is deleted, while the run result is
+retained because it carries explicit pre-Kernel short-circuit/cancel status and
+the post-run `run_id/status/final_text` contract.
 
 The R4.5 approved baseline is counted orchestration `33,618`, audited core
 `5,725`, Kernel `820`, public transaction starters `33`, execution-table DML
 authorities `2`, and existing fault windows `34` (`UoW=29 + Team=5`). The
-single-DML, first core deletion, and typed-transaction-surface slices are now
-integrated: current raw total is `33,973`, migration-cohort-adjusted total is
-`33,464`, core is `5,552`, Kernel `812`, execution DML
+single-DML, first core deletion, typed-transaction-surface, and venue-wrapper
+deletion slices are now integrated in the current slice: raw total is `33,953`,
+migration-cohort-adjusted total is `33,444`, core is `5,532`, Kernel `812`, execution DML
 authority `1`, public transaction starters `21`, and the fault matrix has all
 `39` windows. The former split starters are replaced by nine typed composite
 boundaries: `activate_runtime`, `settle_delivery`, `persist_react_boundary`,
 `commit_decision`, `claim_tool_call`, `settle_effect`, `commit_run_outcome`,
 `ack_child_signal`, and `recovery_scope`. Their production callers are migrated
 and the old entrypoints are deleted; this is a real API reduction rather than
-an audit exclusion. Full harness verification is `389 passed, 8 xfailed`.
+an audit exclusion. The venue wrapper slice alone removes 20 counted core LOC
+(`venues.py` `406 -> 386`) against its locked 14-LOC budget; focused
+Text/Voice/Presenter/venue regression is `69 passed`, and fault/schema
+regression is `51 passed`.
 
 A machine-checked construction ceiling of total `<=34,300` and core `<=5,725`
 bounds the temporary migration peak; it is green. The total calculation keeps
-the raw `33,973` observable, then replaces only the source-hash-locked
+the raw `33,953` observable, then replaces only the source-hash-locked
 `execution_uow.py + checkpoint_execution.py` cohort's raw-effective delta with
 its physical delta. The cohort moved from physical/raw-effective
 `5,236/4,651` to `5,251/5,175`, so the mechanically derived overcount is `509`
-and the adjusted total is `33,464`; no target was raised. Additions, copies,
+and the adjusted total is `33,444`; no target was raised. Additions, copies,
 moves to new production files, tracked deletion, fixture drift, and physical
 line compression are fail-closed tests. The typed-starter, DML, fault-window,
 Kernel, and adjusted-total gates are green. The exit gates still pending are

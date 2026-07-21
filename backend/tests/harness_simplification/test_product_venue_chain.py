@@ -25,7 +25,12 @@ from deskpet.execution.contracts import (
     RunEventCandidate,
     RunRef,
 )
-from deskpet.harness.adapters.venues import KernelRunClient, ProductVenueRunAdapter
+from deskpet.harness.adapters.venues import (
+    KernelRunClient,
+    ProductVenueRunAdapter,
+    ProductVenueRunResult,
+    ProductVenueRunSession,
+)
 from deskpet.harness.contracts import driver_catalog
 from deskpet.harness.kernel import HostContext, RegisteredDriver, RunKernel
 from deskpet.harness.ports import DriverTerminalCandidate, TokenCandidate
@@ -112,6 +117,24 @@ class _Pipeline:
             needs_clarification=False,
             intent=SimpleNamespace(problem_type="simple"),
             system_injections=["pipeline context"],
+            contradiction=None,
+        )
+
+
+class _ClarificationPipeline:
+    enabled = True
+
+    async def run_pre_loop(self, _text: str, *, prior_task_type=None):
+        del prior_task_type
+        return SimpleNamespace(
+            events=[],
+            short_circuit=False,
+            needs_clarification=True,
+            intent=SimpleNamespace(
+                problem_type="clarification",
+                clarifying_questions=["Which harness path?"],
+            ),
+            system_injections=[],
             contradiction=None,
         )
 
@@ -355,6 +378,45 @@ async def test_failed_terminal_never_projects_green_success(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_open_returns_pre_kernel_result_without_an_extra_wrapper(tmp_path) -> None:
+    stack = await _stack(tmp_path)
+    adapter, kernel, driver, _uow, _db, _ws, _vector, context, _peers, sink, _order = stack
+
+    outcome = await adapter.open(
+        TurnInput(
+            text=context.text,
+            session_id=context.session_id,
+            request_id="request-clarify",
+            turn_id="turn-clarify",
+            venue="text",
+        ),
+        {"session_id": context.session_id, "venue": "text"},
+        services={"problem_pipeline": _ClarificationPipeline()},
+        config=_config(),
+        local_llm=object(),
+        tool_registry=object(),
+        provider=object(),
+        code_mode=None,
+        in_code_mode=False,
+        current_message_id=None,
+        summary_user_is_confused=lambda _text: False,
+        summary_latest_task_snapshot=lambda _entries: None,
+        summary_build_reinject_msg=lambda _value: {},
+        presentation_context=context,
+        domain_sink=sink,
+    )
+
+    assert isinstance(outcome, ProductVenueRunResult)
+    assert (outcome.run_id, outcome.status, outcome.final_text) == (
+        None,
+        "short_circuited",
+        "",
+    )
+    assert driver.starts == []
+    assert kernel._active == {}
+
+
+@pytest.mark.asyncio
 async def test_voice_transport_consumes_the_activated_product_session(tmp_path) -> None:
     stack = await _stack(tmp_path)
     adapter, kernel, driver, uow, session_db, _ws, _vector, context, _peers, sink, order = stack
@@ -362,7 +424,7 @@ async def test_voice_transport_consumes_the_activated_product_session(tmp_path) 
     context.text = "explain the harness by voice"
     context.request_id = "request-voice"
 
-    opened = await adapter.open(
+    session = await adapter.open(
         TurnInput(
             text=context.text,
             session_id=context.session_id,
@@ -385,8 +447,7 @@ async def test_voice_transport_consumes_the_activated_product_session(tmp_path) 
         presentation_context=context,
         domain_sink=sink,
     )
-    session = opened.session
-    assert session is not None and opened.result is None
+    assert isinstance(session, ProductVenueRunSession)
 
     class _ASR:
         async def transcribe(self, _audio: bytes) -> str:
@@ -462,7 +523,7 @@ async def test_product_session_is_single_consumer_and_close_finishes_once(tmp_pa
     )
     context.provider = provider
     context.billing_ledger = billing
-    opened = await adapter.open(
+    session = await adapter.open(
         TurnInput(
             text=context.text,
             session_id=context.session_id,
@@ -485,8 +546,7 @@ async def test_product_session_is_single_consumer_and_close_finishes_once(tmp_pa
         presentation_context=context,
         domain_sink=sink,
     )
-    session = opened.session
-    assert session is not None
+    assert isinstance(session, ProductVenueRunSession)
     events = session.events
     with pytest.raises(RuntimeError, match="single-consumer"):
         _ = session.events

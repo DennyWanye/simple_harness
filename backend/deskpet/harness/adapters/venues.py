@@ -53,18 +53,6 @@ class ProductVenueRunResult:
     final_text: str = ""
 
 
-@dataclass(frozen=True, slots=True)
-class ProductVenueOpenResult:
-    """Either an opened session or an explicit pre-kernel product result."""
-
-    session: "ProductVenueRunSession | None" = None
-    result: ProductVenueRunResult | None = None
-
-    def __post_init__(self) -> None:
-        if (self.session is None) == (self.result is None):
-            raise ValueError("open result must contain exactly one outcome")
-
-
 class KernelRunClient:
     """Narrow structural RunClient shared by Text and Voice transports."""
 
@@ -296,7 +284,7 @@ class ProductVenueRunAdapter:
         presentation_context: RunPresentationContext,
         domain_sink: ProductDomainSink,
         proposed_tools: Sequence[str] = (),
-    ) -> ProductVenueOpenResult:
+    ) -> ProductVenueRunSession | ProductVenueRunResult:
         session_id = str(host.get("session_id") or "").strip()
         venue = str(host.get("venue") or turn.venue).strip()
         if session_id != turn.session_id:
@@ -321,13 +309,9 @@ class ProductVenueRunAdapter:
 
         routed = await self._preparer.route_intent(prepared, services=services)
         if not await self._present_commands(routed.commands, domain_sink):
-            return ProductVenueOpenResult(
-                result=ProductVenueRunResult(None, "short_circuited")
-            )
+            return ProductVenueRunResult(None, "short_circuited")
         if not routed.continue_turn:
-            return ProductVenueOpenResult(
-                result=ProductVenueRunResult(None, "short_circuited")
-            )
+            return ProductVenueRunResult(None, "short_circuited")
         planned = await self._preparer.plan_decision(
             routed,
             services=services,
@@ -337,9 +321,7 @@ class ProductVenueRunAdapter:
             in_code_mode=in_code_mode,
         )
         if not await self._present_commands(planned.commands, domain_sink):
-            return ProductVenueOpenResult(
-                result=ProductVenueRunResult(None, "cancelled")
-            )
+            return ProductVenueRunResult(None, "cancelled")
 
         handle = await self._run_client.start(
             {
@@ -357,14 +339,14 @@ class ProductVenueRunAdapter:
             },
             host,
         )
-        return ProductVenueOpenResult(session=ProductVenueRunSession(
+        return ProductVenueRunSession(
             handle=handle,
             run_client=self._run_client,
             host=host,
             presenter=self._presenter,
             event_adapter=self._event_adapter,
             presentation_context=presentation_context,
-        ))
+        )
 
     async def execute(
         self,
@@ -372,11 +354,10 @@ class ProductVenueRunAdapter:
         host: Mapping[str, object],
         **options: Any,
     ) -> ProductVenueRunResult:
-        opened = await self.open(turn, host, **options)
-        if opened.result is not None:
-            return opened.result
-        session = opened.session
-        assert session is not None
+        outcome = await self.open(turn, host, **options)
+        if isinstance(outcome, ProductVenueRunResult):
+            return outcome
+        session = outcome
         try:
             async for _event in session.events:
                 pass
@@ -397,7 +378,6 @@ class ProductVenueRunAdapter:
 
 __all__ = [
     "KernelRunClient",
-    "ProductVenueOpenResult",
     "ProductVenueRunAdapter",
     "ProductVenueRunResult",
     "ProductVenueRunSession",
