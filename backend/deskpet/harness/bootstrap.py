@@ -73,7 +73,7 @@ class HarnessRuntime:
     child_scheduler: ChildRunScheduler | None
     drivers: tuple[RegisteredDriver, ...]
     tool_executor: UnifiedToolExecutor | None
-    delivery_dispatcher: ExecutionDeliveryDispatcher | None
+    delivery_dispatcher: ExecutionDeliveryDispatcher | None = None
 
     async def close(self, *, timeout: float = 1.0) -> None:
         if self.child_scheduler is not None:
