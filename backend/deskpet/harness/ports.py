@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
 from typing import Any, AsyncIterator, Mapping, Protocol
-from deskpet.execution import AttachmentPolicy
+from deskpet.execution.contracts import AttachmentPolicy
 from deskpet.execution.contracts import OutcomeStatus, RecoveryLease, RunContext, RunCreate, RunEvent, RunEventCandidate
 from deskpet.execution.evidence import EvidenceSelection, UNKNOWN_EVIDENCE
 from deskpet.tools.capabilities import ToolExecutionContext

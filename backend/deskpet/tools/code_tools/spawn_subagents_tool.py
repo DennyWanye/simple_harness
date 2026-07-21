@@ -100,7 +100,7 @@ def build_subagent_batch_delegate(
     allowed_capabilities: set[str] | frozenset[str],
 ):
     """Translate one public spawn batch into one durable detached ChildRun."""
-    from deskpet.execution import AuthorizationError
+    from deskpet.execution.contracts import AuthorizationError
     from deskpet.harness.ports import AttachmentPolicy, DelegateRun, JoinPolicy
 
     context = request.run_context

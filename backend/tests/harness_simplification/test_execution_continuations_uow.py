@@ -3,7 +3,7 @@ from __future__ import annotations
 import aiosqlite
 import pytest
 
-from deskpet.execution import (
+from deskpet.execution.contracts import (
     DecisionConflict,
     DecisionOpen,
     DeliveryPolicy,

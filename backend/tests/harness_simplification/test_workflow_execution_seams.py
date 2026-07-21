@@ -19,7 +19,7 @@ from deskpet.workflows.store.checkpoint_execution import (
     SqliteCheckpointExecutionAdapter,
 )
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
-from deskpet.execution import (
+from deskpet.execution.contracts import (
     ActorContext,
     AttachmentPolicy,
     OutcomeStatus,

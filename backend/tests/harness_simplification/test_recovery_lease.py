@@ -5,7 +5,7 @@ import asyncio
 import aiosqlite
 import pytest
 
-from deskpet.execution import (
+from deskpet.execution.contracts import (
     ActorContext,
     GrantConsume,
     OutcomeStatus,

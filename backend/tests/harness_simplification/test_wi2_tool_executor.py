@@ -11,10 +11,10 @@ from typing import Any
 
 import pytest
 
-from deskpet.execution import OutcomeStatus, RecoveryLease, StaleRecoveryLease
+from deskpet.execution.contracts import OutcomeStatus, RecoveryLease, StaleRecoveryLease
 from deskpet.harness.context import HostContextFactory
 from deskpet.harness.ports import ToolOutcomesSignal
-from deskpet.execution import DecisionAuthorization
+from deskpet.execution.contracts import DecisionAuthorization
 from deskpet.harness.tool_executor import UnifiedToolExecutor
 from deskpet.tools.context_adapter import ReservedModelFieldError, reject_reserved_model_fields
 from deskpet.tools.registry import ToolRegistry

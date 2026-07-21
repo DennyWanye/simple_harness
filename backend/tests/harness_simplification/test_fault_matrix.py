@@ -9,7 +9,7 @@ import pytest
 
 from deskpet.agent.team.team_store import FAULT_HOOKS as TEAM_FAULT_HOOKS
 from deskpet.agent.team.team_store import TeamStore
-from deskpet.execution import (
+from deskpet.execution.contracts import (
     ActorContext,
     AttachmentPolicy,
     ChildCommandIntent,

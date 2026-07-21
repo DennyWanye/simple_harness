@@ -9,7 +9,7 @@ from typing import Any
 import aiosqlite
 import pytest
 
-from deskpet.execution import (
+from deskpet.execution.contracts import (
     ActorContext,
     DecisionSignal as DurableDecisionSignal,
     OutcomeStatus,

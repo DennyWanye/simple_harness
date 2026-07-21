@@ -8,12 +8,11 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import Protocol
 
-from deskpet.execution import (
+from deskpet.execution.contracts import (
     AttachmentPolicy,
     ChildCommandIntent,
     ChildCommandRecord,
     ChildSignalRecord,
-    ExecutionUnitOfWork,
     PersistenceLevel,
     RecoveryLease,
     RunContext,
@@ -24,6 +23,7 @@ from deskpet.execution import (
     fingerprint_json,
 )
 from deskpet.execution.contracts import TERMINAL_RUN_STATUSES, thaw_json
+from deskpet.execution.ports import ExecutionUnitOfWork
 from deskpet.harness.ports import (
     ChildAcceptedSignal,
     ChildTerminalSignal,

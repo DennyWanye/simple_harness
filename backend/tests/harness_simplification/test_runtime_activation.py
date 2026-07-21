@@ -6,7 +6,7 @@ import hashlib
 import aiosqlite
 import pytest
 
-from deskpet.execution import RunContext, RunCreate, fingerprint_json
+from deskpet.execution.contracts import RunContext, RunCreate, fingerprint_json
 from deskpet.workflows.store import (
     RuntimeActivationError,
     SqliteExecutionUnitOfWork,

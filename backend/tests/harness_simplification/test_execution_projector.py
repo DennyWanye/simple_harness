@@ -10,7 +10,7 @@ from typing import Any
 import aiosqlite
 import pytest
 
-from deskpet.execution import (
+from deskpet.execution.contracts import (
     DeliveryClaimConflict,
     DeliveryPolicy,
     DeliverySpec,

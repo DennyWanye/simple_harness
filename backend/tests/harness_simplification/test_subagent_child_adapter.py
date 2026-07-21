@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from deskpet.execution import AuthorizationError, RunRef, RunStatus
+from deskpet.execution.contracts import AuthorizationError, RunRef, RunStatus
 from deskpet.harness.child_runs import ChildRunCoordinator, ChildRunScheduler
 from deskpet.harness.drivers.react import ReActDriver, ReactFinal
 from deskpet.harness.kernel import HostContext, KernelChildLauncher, RegisteredDriver, RunKernel, RunRequest

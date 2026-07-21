@@ -9,7 +9,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import Any
 
-from deskpet.execution import RecoveryLease, RunEventCandidate
+from deskpet.execution.contracts import RecoveryLease, RunEventCandidate
 
 from .contracts import JsonValue, TERMINAL_RUN_STATUSES, WorkflowContext
 from .progress import WorkflowProgressReporter

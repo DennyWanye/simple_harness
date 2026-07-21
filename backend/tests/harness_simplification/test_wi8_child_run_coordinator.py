@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import aiosqlite
 import pytest
 
-from deskpet.execution import (
+from deskpet.execution.contracts import (
     ActorContext,
     AttachmentPolicy,
     AuthorizationError,

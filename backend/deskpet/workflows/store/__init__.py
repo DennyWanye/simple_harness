@@ -25,7 +25,7 @@ from .execution_uow import (
     RuntimeActivationError,
     SqliteExecutionUnitOfWork,
 )
-from deskpet.execution import RecoveryLease, StaleRecoveryLease
+from deskpet.execution.contracts import RecoveryLease, StaleRecoveryLease
 from .checkpoint_execution import SqliteCheckpointExecutionAdapter
 
 __all__ = [

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from deskpet.execution import (
+from deskpet.execution.contracts import (
     DeliveryPolicy,
     DeliverySpec,
     OutcomeStatus,

@@ -10,7 +10,7 @@ import pytest
 from agent.agent_loop import AgentLoop, ErrorEvent, FinalEvent
 from deskpet.agent.self_check_gate import SelfCheckGate
 from deskpet.agent.verify_gate import ClaimPattern, RegexExtractor, VerifyGate
-from deskpet.execution import PersistenceLevel, RunContext, RunCreate, fingerprint_json
+from deskpet.execution.contracts import PersistenceLevel, RunContext, RunCreate, fingerprint_json
 from deskpet.execution.evidence import EvidenceContext, EvidenceResolver, UNKNOWN_EVIDENCE
 from deskpet.tools.receipt import make_receipt
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
