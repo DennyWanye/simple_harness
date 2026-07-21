@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "base_commit": "796905b9888c2659af78cec21de1ee96b46a2c51",
+  "target_total_loc": 33618,
+  "baseline_physical_loc": 5236,
+  "baseline_raw_effective_loc": 4651,
+  "baseline_noncohort_raw_effective_loc": 28967,
+  "cohorts": [
+    {
+      "id": "checkpoint_execution_authority",
+      "reason": "Count the source-hash-locked checkpoint-to-UoW authority migration by the cohort's physical net change while retaining raw LOC observability.",
+      "baseline_physical_loc": 5236,
+      "baseline_raw_effective_loc": 4651,
+      "paths": [
+        {
+          "path": "backend/deskpet/workflows/store/execution_uow.py",
+          "group": "execution_uow",
+          "reason": "The rollback manifest counts this execution authority file by its full current physical LOC.",
+          "base_git_blob": "c254c5375100bead52239daf4dc15fdeace28200",
+          "base_sha256": "9c6153067d4664f0f6e05d5d7b7f812cf0f0d534153d2a42546d7ff7dc03ce71",
+          "base_physical_loc": 4613,
+          "base_raw_effective_loc": 4613
+        },
+        {
+          "path": "backend/deskpet/workflows/store/checkpoint_execution.py",
+          "group": "shared_foundation_additions",
+          "reason": "The rollback inventory counts only positive additions in this pre-existing shared-foundation file.",
+          "base_git_blob": "d9724cf7ee60211342a1451cbd7a75feb6c483af",
+          "base_sha256": "aae25116e62f35b8bb03ab2ae8707e9d4d9399c8bc091c97c2880a34f2b1ec8f",
+          "base_physical_loc": 623,
+          "base_raw_effective_loc": 38
+        }
+      ]
+    }
+  ]
+}

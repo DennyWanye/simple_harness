@@ -70,7 +70,8 @@ The R4.5 approved baseline is counted orchestration `33,618`, audited core
 `5,725`, Kernel `820`, public transaction starters `33`, execution-table DML
 authorities `2`, and existing fault windows `34` (`UoW=29 + Team=5`). The
 single-DML, first core deletion, and typed-transaction-surface slices are now
-integrated: current total is `33,973`, core `5,552`, Kernel `812`, execution DML
+integrated: current raw total is `33,973`, migration-cohort-adjusted total is
+`33,464`, core is `5,552`, Kernel `812`, execution DML
 authority `1`, public transaction starters `21`, and the fault matrix has all
 `39` windows. The former split starters are replaced by nine typed composite
 boundaries: `activate_runtime`, `settle_delivery`, `persist_react_boundary`,
@@ -80,10 +81,17 @@ and the old entrypoints are deleted; this is a real API reduction rather than
 an audit exclusion. Full harness verification is `389 passed, 8 xfailed`.
 
 A machine-checked construction ceiling of total `<=34,300` and core `<=5,725`
-bounds the temporary migration peak; it is green. The typed-starter, DML,
-fault-window, and Kernel gates are also green. The exit gates still pending are
-total `<=33,618`, core `<=5,500`, and exactly one LiveRun, HarnessSupervisor,
-and Presenter-conversion authority. The old combined
+bounds the temporary migration peak; it is green. The total calculation keeps
+the raw `33,973` observable, then replaces only the source-hash-locked
+`execution_uow.py + checkpoint_execution.py` cohort's raw-effective delta with
+its physical delta. The cohort moved from physical/raw-effective
+`5,236/4,651` to `5,251/5,175`, so the mechanically derived overcount is `509`
+and the adjusted total is `33,464`; no target was raised. Additions, copies,
+moves to new production files, tracked deletion, fixture drift, and physical
+line compression are fail-closed tests. The typed-starter, DML, fault-window,
+Kernel, and adjusted-total gates are green. The exit gates still pending are
+core `<=5,500` and exactly one LiveRun and HarnessSupervisor authority; the
+Presenter-conversion authority is already one. The old combined
 core/UoW `<=2,800` target was disproved by two disposable code spikes and is no
 longer a production acceptance metric. Evidence and approved target:
 [`baseline.md`](../plans/2026-07-20-agent-harness-simplification/baseline.md) and

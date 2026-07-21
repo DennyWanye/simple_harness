@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -55,6 +56,241 @@ def test_r45_fixture_source_hash_drift_fails_closed(tmp_path: Path) -> None:
         harness_baseline.BenchmarkInvariantError, match="budget source drift"
     ):
         harness_baseline.load_r45_core_budget_fixture(tampered)
+
+
+def _migration_fixture(
+    *,
+    target: int = 100,
+    physical: int = 10,
+    effective: int = 10,
+    group: str = "legacy_agent_loop",
+) -> dict[str, object]:
+    return {
+        "target_total_loc": target,
+        "baseline_noncohort_raw_effective_loc": target - effective,
+        "cohorts": [
+            {
+                "id": "test-cohort",
+                "baseline_physical_loc": physical,
+                "baseline_raw_effective_loc": effective,
+                "paths": [{"path": "backend/cohort.py", "group": group}],
+            }
+        ],
+    }
+
+
+def _migration_row(
+    *, physical: int, effective: int, group: str = "legacy_agent_loop"
+) -> dict[str, object]:
+    return {
+        "path": "backend/cohort.py",
+        "counted": True,
+        "group": group,
+        "current_loc": physical,
+        "effective_loc": effective,
+    }
+
+
+def test_r45_migration_formula_covers_base_and_independent_deltas() -> None:
+    fixture = _migration_fixture()
+    baseline = harness_baseline.calculate_r45_migration_adjustment(
+        [_migration_row(physical=10, effective=10)],
+        fixture,
+        raw_total_loc=100,
+    )
+    assert baseline["overcount_loc"] == 0
+    assert baseline["adjusted_total_loc"] == 100
+
+    cohort_growth = harness_baseline.calculate_r45_migration_adjustment(
+        [_migration_row(physical=13, effective=13)],
+        fixture,
+        raw_total_loc=103,
+    )
+    assert cohort_growth["overcount_loc"] == 0
+    assert cohort_growth["adjusted_total_loc"] == 103
+
+    noncohort_growth = harness_baseline.calculate_r45_migration_adjustment(
+        [_migration_row(physical=10, effective=10)],
+        fixture,
+        raw_total_loc=103,
+    )
+    assert noncohort_growth["overcount_loc"] == 0
+    assert noncohort_growth["adjusted_total_loc"] == 103
+
+    cohort_deletion = harness_baseline.calculate_r45_migration_adjustment(
+        [_migration_row(physical=7, effective=7)],
+        fixture,
+        raw_total_loc=97,
+    )
+    assert cohort_deletion["adjusted_total_loc"] == 97
+
+    # A shared-foundation deletion changes physical LOC but not its raw
+    # positive-additions contribution. The replacement formula still credits
+    # exactly the real physical deletion, not the unrelated shared baseline.
+    shared_fixture = _migration_fixture(physical=10, effective=2)
+    shared_deletion = harness_baseline.calculate_r45_migration_adjustment(
+        [_migration_row(physical=7, effective=2)],
+        shared_fixture,
+        raw_total_loc=100,
+    )
+    assert shared_deletion["overcount_loc"] == 3
+    assert shared_deletion["adjusted_total_loc"] == 97
+
+
+def test_r45_migration_formula_fails_on_missing_group_or_invalid_snapshot() -> None:
+    fixture = _migration_fixture()
+    with pytest.raises(
+        harness_baseline.BenchmarkInvariantError, match="path is not counted"
+    ):
+        harness_baseline.calculate_r45_migration_adjustment(
+            [], fixture, raw_total_loc=100
+        )
+    with pytest.raises(harness_baseline.BenchmarkInvariantError, match="group drift"):
+        harness_baseline.calculate_r45_migration_adjustment(
+            [_migration_row(physical=10, effective=10, group="wrong")],
+            fixture,
+            raw_total_loc=100,
+        )
+    with pytest.raises(harness_baseline.BenchmarkInvariantError, match="negative"):
+        harness_baseline.calculate_r45_migration_adjustment(
+            [_migration_row(physical=10, effective=10)],
+            fixture,
+            raw_total_loc=9,
+        )
+
+
+def test_r45_migration_fixture_locks_current_adjustment() -> None:
+    fixture = harness_baseline.load_r45_migration_cohort_fixture()
+    assert fixture["target_total_loc"] == 33_618
+    assert fixture["baseline_physical_loc"] == 5_236
+    assert fixture["baseline_raw_effective_loc"] == 4_651
+    assert fixture["baseline_noncohort_raw_effective_loc"] == 28_967
+
+    loc = harness_baseline._orchestration_loc()
+    audit = harness_baseline.build_r45_core_audit(loc)
+    assert audit["migration_overcount_loc"] == 509
+    assert audit["total_loc"] == audit["raw_total_loc"] - 509
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (
+            lambda value: value["cohorts"][0]["paths"][0].__setitem__(
+                "base_sha256", "0" * 64
+            ),
+            "source drift",
+        ),
+        (
+            lambda value: value["cohorts"][0]["paths"][0].__setitem__(
+                "base_git_blob", "0" * 40
+            ),
+            "source drift",
+        ),
+        (
+            lambda value: value["cohorts"][0]["paths"][0].__setitem__(
+                "group", "wrong"
+            ),
+            "source drift",
+        ),
+        (
+            lambda value: value["cohorts"][0].__setitem__("reason", "wrong"),
+            "reason drift",
+        ),
+        (
+            lambda value: value.__setitem__("target_total_loc", 33_619),
+            "target drift",
+        ),
+        (
+            lambda value: value.__setitem__("baseline_physical_loc", 5_237),
+            "total drift",
+        ),
+    ],
+)
+def test_r45_migration_fixture_tamper_fails_closed(
+    tmp_path: Path, mutate, message: str
+) -> None:
+    fixture = json.loads(
+        harness_baseline.R45_MIGRATION_COHORT_FIXTURE.read_text(encoding="utf-8")
+    )
+    mutate(fixture)
+    tampered = tmp_path / "tampered-cohort.json"
+    tampered.write_text(json.dumps(fixture), encoding="utf-8")
+    with pytest.raises(harness_baseline.BenchmarkInvariantError, match=message):
+        harness_baseline.load_r45_migration_cohort_fixture(tampered)
+
+
+def test_r45_migration_physical_loc_rejects_statement_compression() -> None:
+    with pytest.raises(
+        harness_baseline.BenchmarkInvariantError, match="compressed multi-statement"
+    ):
+        harness_baseline._assert_no_statement_line_compression(
+            b"first = 1; second = 2\n", "backend/cohort.py"
+        )
+    harness_baseline._assert_no_statement_line_compression(
+        b"first = 1\nsecond = 2\n", "backend/cohort.py"
+    )
+
+
+def test_r45_migration_real_move_and_copy_are_non_evadable(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    source = repo / "backend/cohort.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("one\ntwo\nthree\n", encoding="utf-8")
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "bench@example.invalid")
+    _git(repo, "config", "user.name", "Harness Benchmark")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "base")
+    base = _git(repo, "rev-parse", "HEAD")
+    content = source.read_bytes()
+    manifest = {
+        "expected_total_loc": 3,
+        "files": [
+            {
+                "path": "backend/cohort.py",
+                "loc": 3,
+                "sha256": harness_baseline._sha256(content),
+                "git_blob": _git(repo, "rev-parse", f"{base}:backend/cohort.py"),
+                "group": "legacy_agent_loop",
+            }
+        ],
+    }
+    fixture = _migration_fixture(target=3, physical=3, effective=3)
+
+    moved = repo / "backend/new_production.py"
+    source.rename(moved)
+    move_inventory = harness_baseline.build_current_loc_inventory(
+        manifest, repo=repo, base_commit=base
+    )
+    move_adjustment = harness_baseline.calculate_r45_migration_adjustment(
+        move_inventory["files"], fixture, raw_total_loc=move_inventory["current_total"]
+    )
+    assert move_inventory["current_total"] == 3
+    assert move_adjustment["adjusted_total_loc"] == 3
+
+    moved.rename(source)
+    shutil.copyfile(source, moved)
+    copy_inventory = harness_baseline.build_current_loc_inventory(
+        manifest, repo=repo, base_commit=base
+    )
+    copy_adjustment = harness_baseline.calculate_r45_migration_adjustment(
+        copy_inventory["files"], fixture, raw_total_loc=copy_inventory["current_total"]
+    )
+    assert copy_inventory["current_total"] == 6
+    assert copy_adjustment["adjusted_total_loc"] == 6
+
+    moved.unlink()
+    source.unlink()
+    deleted_inventory = harness_baseline.build_current_loc_inventory(
+        manifest, repo=repo, base_commit=base
+    )
+    deleted_adjustment = harness_baseline.calculate_r45_migration_adjustment(
+        deleted_inventory["files"],
+        fixture,
+        raw_total_loc=deleted_inventory["current_total"],
+    )
+    assert deleted_adjustment["adjusted_total_loc"] == 0
 
 
 def test_r45_root_accounting_counts_new_and_non_core_additions(tmp_path: Path) -> None:

@@ -72,6 +72,25 @@ R45_FINAL_CORE_LOC = 5_500
 R45_FINAL_KERNEL_LOC = 850
 R45_PUBLIC_OPERATIONS = ("start", "observe", "signal", "cancel", "recover", "close")
 R45_CORE_BUDGET_FIXTURE = PLAN_DIR / "r45-core-deletion-budget.json"
+R45_MIGRATION_COHORT_FIXTURE = PLAN_DIR / "r45-migration-cohorts.json"
+R45_MIGRATION_COHORT_PATHS = (
+    "backend/deskpet/workflows/store/execution_uow.py",
+    "backend/deskpet/workflows/store/checkpoint_execution.py",
+)
+R45_MIGRATION_COHORT_REASON = (
+    "Count the source-hash-locked checkpoint-to-UoW authority migration by the "
+    "cohort's physical net change while retaining raw LOC observability."
+)
+R45_MIGRATION_PATH_REASONS = {
+    R45_MIGRATION_COHORT_PATHS[0]: (
+        "The rollback manifest counts this execution authority file by its full "
+        "current physical LOC."
+    ),
+    R45_MIGRATION_COHORT_PATHS[1]: (
+        "The rollback inventory counts only positive additions in this pre-existing "
+        "shared-foundation file."
+    ),
+}
 
 FIXED_ORCHESTRATION_GROUPS: Mapping[str, str] = {
     "backend/main.py": "transport_bootstrap",
@@ -817,6 +836,23 @@ def _ast_symbol_records(content: bytes) -> dict[str, dict[str, Any]]:
     return records
 
 
+def _assert_no_statement_line_compression(content: bytes, path: str) -> None:
+    """Reject multiple Python statements packed onto one physical source line."""
+
+    tree = ast.parse(_normalized_source(content).decode("utf-8"))
+    statements_by_line: dict[int, list[str]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.stmt):
+            statements_by_line.setdefault(node.lineno, []).append(type(node).__name__)
+    collisions = {
+        line: names for line, names in statements_by_line.items() if len(names) > 1
+    }
+    if collisions:
+        raise BenchmarkInvariantError(
+            f"compressed multi-statement source in {path}: {collisions!r}"
+        )
+
+
 def load_r45_core_budget_fixture(
     path: Path = R45_CORE_BUDGET_FIXTURE,
     *,
@@ -920,6 +956,217 @@ def load_r45_core_budget_fixture(
                 f"R4.5 non-core root exception drift: {source_path}"
             )
     return fixture
+
+
+def _r45_base_raw_effective_loc(
+    path: str,
+    content: bytes,
+    rollback_manifest: Mapping[str, Any],
+    *,
+    repo: Path,
+) -> int:
+    rollback_paths = {str(item["path"]) for item in rollback_manifest["files"]}
+    if path in rollback_paths:
+        return _line_count_bytes(content)
+    rollback_content = _commit_content(ROLLBACK_COMMIT, path, repo=repo)
+    return _positive_added_lines(rollback_content, content, path)
+
+
+def load_r45_migration_cohort_fixture(
+    path: Path = R45_MIGRATION_COHORT_FIXTURE,
+    *,
+    repo: Path = ROOT,
+) -> dict[str, Any]:
+    """Validate the only migration cohort allowed to offset raw LOC overcount."""
+
+    if not path.is_file():
+        raise BenchmarkInvariantError(f"R4.5 migration cohort fixture is missing: {path}")
+    fixture = json.loads(path.read_text(encoding="utf-8"))
+    if fixture.get("schema_version") != 1:
+        raise BenchmarkInvariantError("unsupported R4.5 migration cohort schema")
+    if fixture.get("base_commit") != R45_BASE_COMMIT:
+        raise BenchmarkInvariantError("R4.5 migration cohort base commit drift")
+    if int(fixture.get("target_total_loc", -1)) != R45_EXPECTED_TOTAL_LOC:
+        raise BenchmarkInvariantError("R4.5 migration cohort target drift")
+    full_commit = str(
+        _git("rev-parse", f"{fixture['base_commit']}^{{commit}}", repo=repo)
+    ).strip()
+    if full_commit != R45_BASE_COMMIT:
+        raise BenchmarkInvariantError("R4.5 migration cohort base is not immutable/full")
+
+    cohorts = fixture.get("cohorts")
+    if not isinstance(cohorts, list) or len(cohorts) != 1:
+        raise BenchmarkInvariantError("R4.5 migration cohort set drift")
+    cohort = cohorts[0]
+    if cohort.get("id") != "checkpoint_execution_authority":
+        raise BenchmarkInvariantError("R4.5 migration cohort identity drift")
+    if cohort.get("reason") != R45_MIGRATION_COHORT_REASON:
+        raise BenchmarkInvariantError("R4.5 migration cohort reason drift")
+    entries = cohort.get("paths")
+    if not isinstance(entries, list):
+        raise BenchmarkInvariantError("R4.5 migration cohort paths must be a list")
+    actual_paths = tuple(str(item.get("path", "")) for item in entries)
+    if actual_paths != R45_MIGRATION_COHORT_PATHS:
+        raise BenchmarkInvariantError(
+            f"R4.5 migration cohort path drift: {actual_paths!r}"
+        )
+
+    rollback_manifest = load_and_verify_manifest(ROLLBACK_MANIFEST, repo=repo)
+    rollback_groups = {
+        str(item["path"]): str(item["group"])
+        for item in rollback_manifest["files"]
+    }
+    physical_total = 0
+    raw_effective_total = 0
+    for item in entries:
+        source_path = str(item["path"])
+        content = _commit_content(R45_BASE_COMMIT, source_path, repo=repo)
+        _assert_no_statement_line_compression(content, source_path)
+        physical_loc = _line_count_bytes(content)
+        raw_effective_loc = _r45_base_raw_effective_loc(
+            source_path, content, rollback_manifest, repo=repo
+        )
+        expected_group = rollback_groups.get(
+            source_path, "shared_foundation_additions"
+        )
+        if (
+            item.get("base_sha256") != _sha256(content)
+            or item.get("base_git_blob")
+            != _git("rev-parse", f"{R45_BASE_COMMIT}:{source_path}", repo=repo).strip()
+            or int(item.get("base_physical_loc", -1)) != physical_loc
+            or int(item.get("base_raw_effective_loc", -1)) != raw_effective_loc
+            or item.get("group") != expected_group
+            or item.get("reason") != R45_MIGRATION_PATH_REASONS[source_path]
+        ):
+            raise BenchmarkInvariantError(
+                f"R4.5 migration cohort source drift: {source_path}"
+            )
+        physical_total += physical_loc
+        raw_effective_total += raw_effective_loc
+
+    for owner in (cohort, fixture):
+        if (
+            int(owner.get("baseline_physical_loc", -1)) != physical_total
+            or int(owner.get("baseline_raw_effective_loc", -1))
+            != raw_effective_total
+        ):
+            raise BenchmarkInvariantError("R4.5 migration cohort total drift")
+    expected_noncohort = R45_EXPECTED_TOTAL_LOC - raw_effective_total
+    if int(fixture.get("baseline_noncohort_raw_effective_loc", -1)) != expected_noncohort:
+        raise BenchmarkInvariantError("R4.5 migration non-cohort baseline drift")
+    return fixture
+
+
+def calculate_r45_migration_adjustment(
+    rows: list[dict[str, Any]],
+    fixture: Mapping[str, Any],
+    *,
+    raw_total_loc: int,
+) -> dict[str, Any]:
+    """Replace cohort raw deltas with physical deltas in one inventory snapshot."""
+
+    rows_by_path = {str(row["path"]): row for row in rows}
+    cohort_results: list[dict[str, Any]] = []
+    total_overcount = 0
+    for cohort in fixture["cohorts"]:
+        current_physical = 0
+        current_raw_effective = 0
+        path_results: list[dict[str, Any]] = []
+        for item in cohort["paths"]:
+            source_path = str(item["path"])
+            row = rows_by_path.get(source_path)
+            if row is None or not row.get("counted"):
+                raise BenchmarkInvariantError(
+                    f"R4.5 migration cohort path is not counted: {source_path}"
+                )
+            if str(row.get("group", "")) != str(item.get("group", "")):
+                raise BenchmarkInvariantError(
+                    f"R4.5 migration cohort group drift: {source_path}"
+                )
+            physical_loc = int(row["current_loc"])
+            raw_effective_loc = int(row["effective_loc"])
+            current_physical += physical_loc
+            current_raw_effective += raw_effective_loc
+            path_results.append(
+                {
+                    "path": source_path,
+                    "physical_loc": physical_loc,
+                    "raw_effective_loc": raw_effective_loc,
+                }
+            )
+        baseline_physical = int(cohort["baseline_physical_loc"])
+        baseline_raw_effective = int(cohort["baseline_raw_effective_loc"])
+        physical_delta = current_physical - baseline_physical
+        raw_effective_delta = current_raw_effective - baseline_raw_effective
+        overcount = raw_effective_delta - physical_delta
+        total_overcount += overcount
+        cohort_results.append(
+            {
+                "id": str(cohort["id"]),
+                "baseline_physical_loc": baseline_physical,
+                "baseline_raw_effective_loc": baseline_raw_effective,
+                "current_physical_loc": current_physical,
+                "current_raw_effective_loc": current_raw_effective,
+                "physical_delta": physical_delta,
+                "raw_effective_delta": raw_effective_delta,
+                "overcount_loc": overcount,
+                "paths": path_results,
+            }
+        )
+    baseline_total = int(fixture["target_total_loc"])
+    baseline_noncohort = int(fixture["baseline_noncohort_raw_effective_loc"])
+    current_cohort_raw = sum(
+        int(item["current_raw_effective_loc"]) for item in cohort_results
+    )
+    current_noncohort = int(raw_total_loc) - current_cohort_raw
+    if current_noncohort < 0:
+        raise BenchmarkInvariantError("R4.5 migration non-cohort LOC is negative")
+    adjusted_total = (
+        baseline_total
+        + sum(int(item["physical_delta"]) for item in cohort_results)
+        + (current_noncohort - baseline_noncohort)
+    )
+    if adjusted_total != int(raw_total_loc) - total_overcount:
+        raise BenchmarkInvariantError("R4.5 migration adjustment invariant failed")
+    return {
+        "baseline_total_loc": baseline_total,
+        "baseline_noncohort_raw_effective_loc": baseline_noncohort,
+        "current_noncohort_raw_effective_loc": current_noncohort,
+        "overcount_loc": total_overcount,
+        "adjusted_total_loc": adjusted_total,
+        "cohorts": cohort_results,
+    }
+
+
+def validate_r45_migration_cohort_snapshot(
+    rows: list[dict[str, Any]],
+    fixture: Mapping[str, Any],
+    *,
+    repo: Path,
+) -> None:
+    """Tie physical accounting and anti-compression checks to inventory hashes."""
+
+    rows_by_path = {str(row["path"]): row for row in rows}
+    for cohort in fixture["cohorts"]:
+        for item in cohort["paths"]:
+            source_path = str(item["path"])
+            row = rows_by_path.get(source_path)
+            if row is None or not row.get("counted"):
+                raise BenchmarkInvariantError(
+                    f"R4.5 migration cohort path is not counted: {source_path}"
+                )
+            content = _current_content(source_path, repo=repo)
+            if content is None:
+                if row.get("current_sha256") is not None or int(row["current_loc"]) != 0:
+                    raise BenchmarkInvariantError(
+                        f"R4.5 migration cohort deleted-row drift: {source_path}"
+                    )
+                continue
+            if row.get("current_sha256") != _sha256(content):
+                raise BenchmarkInvariantError(
+                    f"R4.5 migration cohort inventory snapshot drift: {source_path}"
+                )
+            _assert_no_statement_line_compression(content, source_path)
 
 
 def _r45_changed_python_paths(*, repo: Path, base_commit: str) -> set[str]:
@@ -1042,6 +1289,7 @@ def build_r45_core_audit(
     """Measure R4.5 core ownership without allowing path moves to buy LOC."""
 
     fixture = load_r45_core_budget_fixture(fixture_path, repo=repo)
+    migration_fixture = load_r45_migration_cohort_fixture(repo=repo)
     head = str(_git("rev-parse", "HEAD", repo=repo)).strip()
     ancestor = subprocess.run(
         [_git_executable(), "merge-base", "--is-ancestor", R45_BASE_COMMIT, head],
@@ -1062,6 +1310,12 @@ def build_r45_core_audit(
     core_groups = tuple(str(value) for value in fixture["core_groups"])
     core_roots = tuple(str(value) for value in fixture["core_roots"])
     rows = [dict(item) for item in orchestration_loc["files"]]
+    raw_total_loc = int(orchestration_loc["current_total"])
+    validate_r45_migration_cohort_snapshot(rows, migration_fixture, repo=repo)
+    migration_adjustment = calculate_r45_migration_adjustment(
+        rows, migration_fixture, raw_total_loc=raw_total_loc
+    )
+    total_loc = int(migration_adjustment["adjusted_total_loc"])
     exceptions = {
         str(item["path"]): item for item in fixture["non_core_root_exceptions"]
     }
@@ -1150,7 +1404,10 @@ def build_r45_core_audit(
     return {
         "base_commit": R45_BASE_COMMIT,
         "head_commit": head,
-        "total_loc": int(orchestration_loc["current_total"]),
+        "raw_total_loc": raw_total_loc,
+        "migration_adjustment": migration_adjustment,
+        "migration_overcount_loc": int(migration_adjustment["overcount_loc"]),
+        "total_loc": total_loc,
         "core_loc": current_core,
         "kernel_loc": _line_count_bytes(kernel_content),
         "public_operations": list(public_operations),
