@@ -200,7 +200,7 @@ class ProductTurnPreparer:
                         result.auto_confirmed = await preference.match(turn.text, 'plan') is not None
                     except Exception as exc:
                         logger.debug('pref_match_failed', error=str(exc))
-            steps = tuple(({'title': step.title, 'detail': step.detail} for step in plan.steps))
+            steps = [{'title': step.title, 'detail': step.detail} for step in plan.steps]
             awaiting = gate_on and (not result.auto_confirmed)
             self._insert_after_system(routed.prepared.messages, {'role': 'system', 'content': plan_to_system_message(plan)})
             commands = [ProductDomainCommand('plan_proposed', {'session_id': turn.session_id, 'rationale': plan.rationale, 'steps': steps, 'awaiting_confirm': awaiting, 'auto_confirmed': result.auto_confirmed})]

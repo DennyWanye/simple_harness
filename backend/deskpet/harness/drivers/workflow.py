@@ -119,15 +119,7 @@ class WorkflowDriver:
 
     @staticmethod
     def _terminal(event: RunEvent) -> bool:
-        return event.status in {
-            OutcomeStatus.SUCCEEDED,
-            OutcomeStatus.FAILED,
-            OutcomeStatus.CANCELLED,
-        } and (
-            event.kind == "final"
-            or event.kind.endswith(".final")
-            or str(event.candidate.payload.get("kind") or "") == "final"
-        )
+        return event.candidate.is_terminal
 
     async def _follow(
         self,
@@ -176,6 +168,7 @@ class WorkflowDriver:
                 run_id=request.run_id,
                 trace_id=context.trace_id,
                 association_event=request.association_event,
+                admission_launch=request.admission_launch,
             )
             accepted_event = await self._events.get_event(
                 str(accepted["accepted_event_id"])

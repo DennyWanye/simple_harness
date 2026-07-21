@@ -1,5 +1,3 @@
-"""Thin product-neutral RunKernel control plane."""
-
 from __future__ import annotations
 
 import asyncio
@@ -10,6 +8,10 @@ from dataclasses import replace
 
 from deskpet.execution.contracts import (
     ActorContext,
+    AdmissionBoundary,
+    AdmissionLaunchClaim,
+    AdmissionLaunchUnknownFence,
+    AdmissionPhase,
     AuthorizationError,
     AttachmentPolicy,
     ChildCommandRecord,
@@ -53,9 +55,12 @@ from .runtime import DriverRuntime
 from .tool_executor import EffectBatchExecutor
 
 
-class RunKernel:
-    """Coordinate identity, routing, ownership and lifecycle only."""
+def root_run_identity(session_id: str, request_id: str, turn_id: str) -> tuple[str, RunRef]:
+    key = root_idempotency_key(session_id, request_id, turn_id)
+    return key, RunRef(uuid.uuid5(uuid.NAMESPACE_URL, f"deskpet:{key}").hex, session_id)
 
+
+class RunKernel:
     def __init__(
         self,
         *,
@@ -96,7 +101,6 @@ class RunKernel:
         )
 
     async def _drain_active(self, timeout: float) -> bool:
-        """Bound shutdown work before a composition root closes its drivers."""
         async with self._lock:
             tasks = tuple(
                 active.task
@@ -202,7 +206,8 @@ class RunKernel:
             active = self._live.get(ref.run_id)
             if active is not None and active.record is not None:
                 self._authorize_live(ref, actor, active.record)
-                return active.record
+                if active.record.persistence_level is PersistenceLevel.EPHEMERAL:
+                    return active.record
         return await self._uow.query(ref, actor)
 
     async def _request_cancel(
@@ -315,9 +320,8 @@ class RunKernel:
             return terminal
 
     async def start(self, request: RunRequest, host: HostContext) -> RunHandle:
-        key = root_idempotency_key(host.session_id, request.request_id, request.turn_id)
-        run_id = uuid.uuid5(uuid.NAMESPACE_URL, f"deskpet:{key}").hex
-        ref = RunRef(run_id, host.session_id)
+        key, ref = root_run_identity(host.session_id, request.request_id, request.turn_id)
+        run_id = ref.run_id
         actor = host.actor(root_run_id=run_id)
         async with self._lock:
             active = self._live.get(run_id) or self._live.add(run_id, actor)
@@ -330,12 +334,7 @@ class RunKernel:
                 except RunNotFound:
                     existing = None
             if isinstance(existing, RunRecord):
-                return RunHandle(
-                    ref=ref,
-                    root_run_id=existing.context.root_run_id,
-                    driver_kind=existing.spec.driver_kind,
-                    profile_key=existing.spec.profile_key,
-                )
+                return self._handle(ref, existing)
             projection_target = (
                 self._terminal_projection.resolve(host.session_id)
                 if self._terminal_projection is not None else None
@@ -372,7 +371,7 @@ class RunKernel:
                 profile_key=routing.profile_key,
                 persistence_level=(
                     PersistenceLevel.DURABLE
-                    if registration.durable_from_start or projection_target is not None
+                    if request.admission is not None or registration.durable_from_start or projection_target is not None
                     else PersistenceLevel.EPHEMERAL
                 ),
                 status=RunStatus.CREATED,
@@ -382,7 +381,32 @@ class RunKernel:
                 if self._terminal_projection is not None and projection_target is not None
                 else None
             )
-            if registration.atomic_start:
+            if request.admission is not None:
+                if request.provider_launch_snapshot is None:
+                    raise RuntimeError("durable admission requires a frozen provider launch policy")
+                decision_id = uuid.uuid5(uuid.NAMESPACE_URL, f"{run_id}:admission").hex
+                nonce = uuid.uuid5(uuid.NAMESPACE_URL, f"{decision_id}:nonce").hex
+                boundary = AdmissionBoundary(
+                    run_id, decision_id, nonce,
+                    uuid.uuid5(uuid.NAMESPACE_URL, f"{run_id}:launch").hex,
+                    registration.kind, routing.profile_key, request.admission,
+                    AdmissionPhase.PENDING, 1,
+                    request.canonical_messages or ({"role": "user", "content": request.text},),
+                    {"text": request.text, **dict(request.payload)},
+                    request.provider_launch_snapshot,
+                    {"capabilities": sorted(host.available_capabilities), "capability_hash": host.capability_hash},
+                    association_event=None if association_event is None else association_event.to_dict(),
+                )
+                waiting = RunEventCandidate(
+                    event_key="admission:waiting", kind="admission.waiting",
+                    status=OutcomeStatus.WAITING, driver_kind=registration.kind,
+                    correlation={"decision_id": decision_id, "launch_operation_id": boundary.launch_operation_id},
+                    payload={**thaw_json(request.admission.presentation), "run_id": run_id,
+                        "decision_id": decision_id, "nonce": nonce, "version": 0,
+                        "expires_at": request.admission.expires_at},
+                )
+                await self._uow.start_admission(spec, request.admission, boundary, waiting)
+            elif registration.atomic_start:
                 result_record = await self._launch_live(
                     active, registration, None,
                     start=self._driver_start(
@@ -425,12 +449,7 @@ class RunKernel:
                         ),
                         name=f"deskpet-run:{run_id}",
                     )
-            return RunHandle(
-                ref=ref,
-                root_run_id=result_record.context.root_run_id,
-                driver_kind=registration.kind,
-                profile_key=result_record.spec.profile_key,
-            )
+            return RunHandle(ref, context.root_run_id, registration.kind, routing.profile_key)
 
     async def observe(
         self,
@@ -450,11 +469,7 @@ class RunKernel:
             active = self._live.get(ref.run_id) or self._live.add(ref.run_id, actor)
             live_history = self._live.history(active, after_live_seq=start)
             seen = {event.event_id for event in durable_history}
-            # A subscriber may attach after a durable terminal committed while
-            # earlier token deltas still live only in the bounded in-memory
-            # history.  Concatenating durable history first would project the
-            # final before those earlier deltas.  Creation time is the shared
-            # cross-stream ordering fact; the stable id is only a tie breaker.
+            # Creation time preserves ordering between durable and live history.
             history = tuple(sorted(
                 durable_history + tuple(
                     event for event in live_history if event.event_id not in seen
@@ -465,13 +480,11 @@ class RunKernel:
                     event.event_id,
                 ),
             ))
-            terminal_in_history = any(
+            terminal_in_history = (isinstance(record, RunRecord) and record.status in TERMINAL_RUN_STATUSES) or any(
                 self._runtime.is_terminal_event(event) for event in history
             )
             queue = self._live.subscribe(active)
-            if not terminal_in_history:
-                pass
-            else:
+            if terminal_in_history:
                 active.subscribers.discard(queue)
         try:
             for event in history:
@@ -514,21 +527,8 @@ class RunKernel:
             )
             request = current.request
             response = dict(signal.response)
-            allow = bool(response.get("allow", response.get("approved", True)))
-            if current.status is not DecisionStatus.OPEN:
-                expected_status = DecisionStatus.ALLOWED if allow else DecisionStatus.DENIED
-                if (
-                    current.status is expected_status
-                    and current.response_schema_version == 1
-                    and dict(current.response or {}) == response
-                    and current.decision_version == signal.version + 1
-                    and request.nonce == signal.nonce
-                ):
-                    return SignalReceipt(True, duplicate=True, reason="decision_already_applied")
-                raise DecisionConflict(
-                    "decision_replay_conflict",
-                    "resolved decision replay differs from the authoritative response",
-                )
+            verdict = response.get("decision", response.get("resolution"))
+            allow = bool(response.get("allow", response.get("approved", verdict not in {"cancel", "cancelled", "reject", "rejected"})))
             durable_signal = DurableDecisionSignal(
                 decision_id=request.decision_id,
                 run_id=request.run_id,
@@ -547,6 +547,26 @@ class RunKernel:
                 capability_hash=request.capability_hash,
                 scope_hash=request.scope_hash,
             )
+            admission = self._admission_from(
+                await self._uow.load_continuation(record.run_id))
+            if admission is not None:
+                resolved = await self._uow.resolve_admission(
+                    ref, actor, durable_signal,
+                    expected_boundary_version=admission.boundary_version,
+                    terminal_deliveries=await self._terminal_deliveries(record),
+                )
+                await self._runtime.emit(resolved.event)
+                if not resolved.boundary.consumed:
+                    await self._start_admitted(record, registration, actor)
+                return SignalReceipt(True, duplicate=resolved.duplicate)
+            if current.status is not DecisionStatus.OPEN:
+                expected_status = DecisionStatus.ALLOWED if allow else DecisionStatus.DENIED
+                if (current.status is expected_status and current.response_schema_version == 1
+                        and dict(current.response or {}) == response
+                        and current.decision_version == signal.version + 1
+                        and request.nonce == signal.nonce):
+                    return SignalReceipt(True, duplicate=True, reason="decision_already_applied")
+                raise DecisionConflict("decision_replay_conflict", "resolved decision replay differs from the authoritative response")
             atomic_signal = getattr(registration.driver, "signal_decision_atomically", None)
             if callable(atomic_signal):
                 candidates = atomic_signal(driver_signal, durable_signal, actor)
@@ -592,20 +612,34 @@ class RunKernel:
         record = await self._query(ref, actor)
         if not isinstance(record, RunRecord):
             raise RuntimeError("legacy runs require the compatibility cancel adapter")
-        event = RunEventCandidate(
-            event_key=f"cancel-request:{ref.run_id}",
-            kind="cancel_requested",
-            status=OutcomeStatus.CANCEL_REQUESTED,
-            driver_kind=record.spec.driver_kind,
-            correlation={"request_id": record.context.request_id},
-            payload={"reason": reason},
-        )
-        updated = await self._request_cancel(
-            record,
-            expected_version=record.version,
-            reason=reason,
-            event=event,
-        )
+        async with self._lock:
+            active = self._live.get(record.run_id) or self._live.add(record.run_id, actor)
+        async with active.start_lock:
+            record = await self._query(ref, actor)
+            assert isinstance(record, RunRecord)
+            admission = self._admission_from(
+                await self._uow.load_continuation(record.run_id))
+            if admission is not None and admission.phase in {
+                AdmissionPhase.PENDING, AdmissionPhase.ACCEPTED_START_PENDING,
+            }:
+                resolved = await self._uow.resolve_admission(
+                    ref, actor,
+                    DurableDecisionSignal(admission.decision_id, record.run_id,
+                        ref.expected_session_id, admission.nonce,
+                        admission.boundary_version - 1, False, 1,
+                        {"resolution": "cancelled"}),
+                    expected_boundary_version=admission.boundary_version,
+                    terminal_deliveries=await self._terminal_deliveries(record),
+                )
+                await self._runtime.emit(resolved.event)
+                return CancelReceipt(record.run_id, RunStatus.CANCELLED, True)
+            event = RunEventCandidate(
+                event_key=f"cancel-request:{ref.run_id}", kind="cancel_requested",
+                status=OutcomeStatus.CANCEL_REQUESTED, driver_kind=record.spec.driver_kind,
+                correlation={"request_id": record.context.request_id}, payload={"reason": reason},
+            )
+            updated = await self._request_cancel(record, expected_version=record.version,
+                reason=reason, event=event)
         if updated.persistence_level is PersistenceLevel.DURABLE:
             await self._uow.cancel_open_decisions(
                 ref,
@@ -656,36 +690,46 @@ class RunKernel:
         if not isinstance(record, RunRecord):
             raise RuntimeError("legacy runs require the compatibility recovery adapter")
         registration = self._driver(record)
+        if record.persistence_level is PersistenceLevel.EPHEMERAL or record.status in TERMINAL_RUN_STATUSES:
+            return self._handle(ref, record)
+        continuation = await self._uow.load_continuation(record.run_id)
+        admission = self._admission_from(continuation)
+        if admission is not None and admission.phase is not AdmissionPhase.LAUNCHED:
+            if admission.phase is AdmissionPhase.PENDING or admission.consumed:
+                return self._handle(ref, record)
+            await self._start_admitted(record, registration, actor)
+            return self._handle(ref, record)
         async with self._lock:
             active = self._live.get(ref.run_id) or self._live.add(ref.run_id, actor)
         async with active.start_lock:
             await self._launch_live(
                 active, registration, record, name=f"deskpet-recover:{ref.run_id}"
             )
-        return RunHandle(
-            ref, record.context.root_run_id, registration.kind, record.spec.profile_key
-        )
+        return self._handle(ref, record)
 
     async def close(self, ref: RunRef, actor: ActorContext) -> None:
-        record = await self._query(ref, actor)
+        await self._query(ref, actor)
+        await asyncio.sleep(0)
         async with self._lock:
             active = self._live.get(ref.run_id)
-            if active is None:
+            if active is None or (
+                active.task is not None and not active.task.done()):
                 return
             self._live.finish(ref.run_id, active)
             active.subscribers.clear()
-            if isinstance(record, RunRecord) and record.status in {
-                RunStatus.COMPLETED,
-                RunStatus.FAILED,
-                RunStatus.CANCELLED,
-            } and (active.task is None or active.task.done()):
-                self._live.pop(ref.run_id)
+            self._live.pop(ref.run_id)
 
     def _driver(self, record: RunRecord) -> RegisteredDriver:
         registration = self._drivers.get(record.spec.driver_kind)
         if registration is None:
             raise RuntimeError(f"driver is not registered: {record.spec.driver_kind}")
         return registration
+
+    @staticmethod
+    def _handle(ref: RunRef, record: RunRecord) -> RunHandle:
+        return RunHandle(
+            ref, record.context.root_run_id, record.spec.driver_kind, record.spec.profile_key
+        )
 
     async def _accept_precreated_child(self, command: ChildCommandRecord) -> None:
         spec = command.intent.child_spec
@@ -762,6 +806,119 @@ class RunKernel:
                 "capability_hash": spec.capability_fingerprint,
             },
         )
+
+    @staticmethod
+    def _admission_from(continuation) -> AdmissionBoundary | None:
+        value = None if continuation is None else continuation.payload.get("_admission")
+        return AdmissionBoundary.from_dict(value) if isinstance(value, Mapping) else None
+
+    async def _terminal_deliveries(self, record: RunRecord):
+        return (() if self._terminal_projection is None else
+            self._terminal_projection.deliveries(
+                record, await self._uow.list_events(record.run_id)))
+
+    @staticmethod
+    def _admission_start(spec: RunCreate, boundary: AdmissionBoundary,
+                         claim: AdmissionLaunchClaim) -> DriverStart:
+        return DriverStart(
+            run_id=spec.run_id, session_id=spec.context.session_id,
+            canonical_messages=boundary.canonical_messages,
+            session_projection_cursor=boundary.session_projection_cursor,
+            prepared_context_ref=boundary.prepared_context_ref, tool_set_snapshot_ref=boundary.tool_set_snapshot_ref,
+            provider_state=dict(spec.context.provider_plan), run_context=spec.context, run_spec=spec,
+            association_event=RunEventCandidate.from_dict(boundary.association_event) if boundary.association_event else None,
+            profile_key=spec.profile_key, request_payload=boundary.request_payload,
+            capability_snapshot=boundary.capability_snapshot,
+            completion_state={"admission_boundary_version": boundary.boundary_version},
+            launch_operation_id=boundary.launch_operation_id,
+            provider_launch_snapshot=boundary.provider_snapshot, admission_launch=claim,
+        )
+
+    async def _start_admitted(self, record: RunRecord, registration: RegisteredDriver,
+                              actor: ActorContext) -> None:
+        async with self._lock:
+            active = self._live.get(record.run_id) or self._live.add(record.run_id, actor)
+        async with active.start_lock:
+            async with self._lock:
+                if active.task is not None and not active.task.done():
+                    return
+            record = await self._uow.query(
+                RunRef(record.run_id, record.context.session_id), actor)
+            assert isinstance(record, RunRecord)
+            boundary = self._admission_from(
+                await self._uow.load_continuation(record.run_id))
+            if boundary is None or boundary.consumed:
+                return
+            if record.status in TERMINAL_RUN_STATUSES or boundary.phase not in {
+                AdmissionPhase.ACCEPTED_START_PENDING, AdmissionPhase.LAUNCH_CLAIMED}:
+                return
+            if (boundary.phase is AdmissionPhase.LAUNCH_CLAIMED
+                    and not boundary.provider_snapshot.supports_idempotent_launch):
+                await self._fail_unknown_launch(record, boundary)
+                return
+            lease = await self._uow.recovery_scope(record.run_id, owner=self._recovery_owner)
+            claim = await self._uow.claim_admission_launch(
+                lease, expected_boundary_version=boundary.boundary_version - (
+                    boundary.phase is AdmissionPhase.LAUNCH_CLAIMED))
+            start = self._admission_start(record.spec, claim.boundary, claim)
+            operation = self._consume_admitted(
+                registration, record,
+                lambda current: registration.driver.start(replace(start,
+                    admission_launch=replace(claim, recovery_lease=current))), lease,
+            )
+            async with self._lock:
+                active.record = record
+                active.task = asyncio.create_task(operation, name=f"deskpet-admission:{record.run_id}")
+            await asyncio.sleep(0)
+
+    async def _consume_admitted(self, registration: RegisteredDriver, record: RunRecord,
+                                stream, lease) -> None:
+        try:
+            await self._runtime.consume_fenced(registration, record, stream, lease, release=True)
+        except asyncio.CancelledError:
+            raise
+        except BaseException as exc:
+            current = self._admission_from(
+                await self._uow.load_continuation(record.run_id))
+            if current is None or (current.consumed and current.phase is not AdmissionPhase.LAUNCHED):
+                return
+            fresh = await self._uow.query(
+                RunRef(record.run_id, record.context.session_id), record.context.actor())
+            if not isinstance(fresh, RunRecord) or current.phase is AdmissionPhase.LAUNCH_CLAIMED:
+                if not current.provider_snapshot.supports_idempotent_launch and isinstance(fresh, RunRecord):
+                    await self._fail_unknown_launch(fresh, current)
+                return
+            try:
+                terminal_lease = await self._uow.recovery_scope(
+                    record.run_id, owner=self._recovery_owner)
+                await self._runtime.commit_terminal(fresh, registration.kind,
+                    DriverTerminalCandidate(fresh.run_id, "failed", error=f"{type(exc).__name__}: {exc}"),
+                    recovery_lease=terminal_lease)
+            except TerminalConflict:
+                return
+
+    async def _fail_unknown_launch(
+        self, record: RunRecord, boundary: AdmissionBoundary) -> None:
+        lease = await self._uow.recovery_scope(record.run_id, owner=self._recovery_owner)
+        event = RunEventCandidate(
+            event_key="run:final", kind="run.final",
+            status=OutcomeStatus.FAILED, driver_kind=record.spec.driver_kind,
+            payload={"error_code": "launch_outcome_unknown", "retry_safe": False,
+                "launch_operation_id": boundary.launch_operation_id},
+            error={"code": "launch_outcome_unknown",
+                "message": "provider launch outcome is unknown"},
+        )
+        result = await self._uow.commit_run_outcome(
+            record.run_id,
+            expected_version=record.version, terminal_status=RunStatus.FAILED,
+            event=event, deliveries=await self._terminal_deliveries(record),
+            recovery_lease=lease,
+            admission_failure=AdmissionLaunchUnknownFence(
+                record.run_id, boundary.decision_id,
+                boundary.launch_operation_id, boundary.boundary_version,
+            ),
+        )
+        await self._runtime.emit(result.event)
 
 def kernel_public_operations() -> tuple[str, ...]:
     return ("start", "observe", "signal", "cancel", "recover", "close")

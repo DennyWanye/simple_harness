@@ -7,7 +7,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, AsyncIterator, Mapping, Protocol
 
 if TYPE_CHECKING:
-    from deskpet.execution.contracts import ProviderLaunchSnapshot
+    from deskpet.execution.contracts import AdmissionLaunchClaim, ProviderLaunchSnapshot
 from deskpet.execution.contracts import AttachmentPolicy
 from deskpet.execution.contracts import OutcomeStatus, RecoveryLease, RunContext, RunCreate, RunEvent, RunEventCandidate
 from deskpet.execution.evidence import EvidenceSelection, UNKNOWN_EVIDENCE
@@ -39,6 +39,7 @@ class DriverStart:
     scoped_evidence: EvidenceSelection | None = UNKNOWN_EVIDENCE
     launch_operation_id: str | None = None
     provider_launch_snapshot: ProviderLaunchSnapshot | None = None
+    admission_launch: AdmissionLaunchClaim | None = None
 
     def __post_init__(self) -> None:
         if not self.run_id or not self.session_id:

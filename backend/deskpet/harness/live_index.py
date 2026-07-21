@@ -122,7 +122,8 @@ class BoundedLiveIndex:
             while queue.full():
                 queue.get_nowait()
             queue.put_nowait(None)
-        active.task = None
+        if active.task is None or active.task.done():
+            active.task = None
         active.driver_state = None
         active.driver_iterator = None
         if release and self._runs.get(run_id) is active:

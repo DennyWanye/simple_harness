@@ -16,7 +16,7 @@ class ExecutionUnitOfWork(Protocol):
     async def start_admission(self, spec: RunCreate, admission: AdmissionSpec, start_snapshot: AdmissionBoundary, waiting_event: RunEventCandidate, *, deliveries: Sequence[DeliverySpec]=()) -> AdmissionBoundary:
         ...
 
-    async def resolve_admission(self, ref: RunRef, actor: ActorContext, signal: DecisionSignal, *, expected_boundary_version: int) -> AdmissionResolution:
+    async def resolve_admission(self, ref: RunRef, actor: ActorContext, signal: DecisionSignal, *, expected_boundary_version: int, terminal_deliveries: Sequence[DeliverySpec]=()) -> AdmissionResolution:
         ...
 
     async def claim_admission_launch(self, recovery_lease: RecoveryLease, *, expected_boundary_version: int) -> AdmissionLaunchClaim:

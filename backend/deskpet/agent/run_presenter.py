@@ -97,7 +97,9 @@ class CanonicalRunEventPresentationAdapter:
                 reason=str(payload.get('reason') or ''),
                 iteration=iteration,
             ),)
-        if candidate.kind == 'final':
+        if candidate.kind == 'admission.waiting':
+            return (PipelineEvent(type='chat_v2_plan', payload=payload),)
+        if candidate.kind in {'final', 'run.final'}:
             if candidate.status is OutcomeStatus.SUCCEEDED:
                 return (FinalEvent(
                     content=str(payload.get('text') or ''),

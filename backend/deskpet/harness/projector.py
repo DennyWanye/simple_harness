@@ -63,7 +63,7 @@ class GoalTerminalProjection:
         return bool(target_id)
 
     async def deliver(self, event: RunEvent, target_id: str) -> None:
-        if event.run_id != event.root_run_id or event.kind != "final":
+        if event.run_id != event.root_run_id or event.kind not in {"final", "run.final"}:
             raise ExecutionError("invalid_goal_projection", "only root terminal events project Goals")
         status = "done" if event.status is OutcomeStatus.SUCCEEDED else "abandoned"
         if not await self._goals.project_terminal(target_id, status):

@@ -111,21 +111,34 @@ continuation reads precede live fallback, stale finalizers clear by identity,
 and iterator `aclose()` executes outside the live lock. Expanded focused
 verification is `158 passed`; the full harness is rerun after slice integration.
 
-R5.5 now has a dormant durable admission storage boundary without changing the
+R5.5 now has the complete dormant durable admission path without changing the
 production owner (`legacy/0`). Admission is a typed `_admission` discriminator
-inside the existing continuation row, so the execution tables still have one
-DML authority and no parallel state table. Its exact durable phases are
+inside the existing continuation row, so no second state table or DML authority
+exists. Its exact durable phases are
 `pending -> accepted_start_pending -> launch_claimed -> launched`, with
 `rejected`, `cancelled`, `expired`, and `launch_unknown` terminal paths.
-`start_admission`, `resolve_admission`, and `claim_admission_launch` are typed,
-idempotent transaction starters; ReAct persistence and workflow creation consume
-the claim under the same recovery fence. Workflow start returns the exact
-five-field `WorkflowStartResult` and schedules only when `start_claimed` is true.
+Association, waiting, resolution, launch claim, provider footprint and terminal
+delivery are committed through the same UoW authority. Cancel before claim
+atomically consumes the boundary and starts no Driver; claim is the durable
+launch linearization point. Idempotent recovery reuses the same
+`launch_operation_id`; non-idempotent ambiguous recovery writes one
+`launch_outcome_unknown` final.
+
+`run.final` is the canonical generic terminal kind; historical `final` and
+native `workflow.final` remain lifecycle-compatible. Product presentation only
+maps generic `final`/`run.final`, so native Workflow delivery is not presented
+twice. Durable terminal emission hydrates the authoritative `RunRecord` before
+capacity eviction, observers terminate even when attaching after the terminal
+cursor, and a still-running task remains indexed until it actually completes.
+The dormant venue adapter performs trusted identity recovery before product
+preparation, while `Kernel.start` remains the authoritative TOCTOU check.
+
 The public starter count is exactly `23`, execution-table DML authority remains
-`1`, and the exact `39` fault hooks now declare their covered operation cases.
-Focused restart/replay/authority verification is `104 passed`; the R5.5 storage
-slice construction gate is green at raw/adjusted/core/Kernel
-`34,406/33,897/5,729/767`.
+`1`, fault hooks remain `39`, and Kernel still exposes exactly six operations.
+The R5.5 A-source construction gate is green at raw/adjusted/core/Kernel
+`34,756/34,247/5,950/924`; production remains `legacy/0`. Source-locked
+authority/parity/cutover manifests and the admission budget are generated only
+after the A commit and form the separate B commit.
 
 A machine-checked construction ceiling of total `<=34,300` and core `<=5,725`
 bounds the temporary migration peak; it is green. The total calculation keeps

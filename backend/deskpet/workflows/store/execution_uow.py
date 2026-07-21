@@ -1,9 +1,4 @@
-"""SQLite implementation of the generic execution ledger unit of work.
-
-New durable execution facts and workflow scheduler facts share one
-``workflow.db`` connection and transaction.  Legacy workflow rows are exposed
-only as read-only in-memory projections and are never backfilled.
-"""
+"""SQLite execution and workflow unit of work."""
 
 from __future__ import annotations
 
@@ -74,6 +69,7 @@ from deskpet.execution.contracts import (
     RunRef,
     RunStatus,
     StaleRecoveryLease,
+    TERMINAL_ADMISSION_PHASES,
     TERMINAL_RUN_STATUSES,
     TerminalConflict,
     VersionConflict,
@@ -2185,6 +2181,12 @@ class SqliteExecutionUnitOfWork:
             updated_at=float(row["updated_at"]),
         )
 
+    async def _load_continuation_tx(
+        self, db: aiosqlite.Connection, run_id: str,
+    ) -> ContinuationRecord | None:
+        row = await (await db.execute("SELECT * FROM execution_continuations WHERE run_id=?", (run_id,))).fetchone()
+        return None if row is None else self._row_to_continuation(row)
+
     async def _continuation_run_tx(
         self, db: aiosqlite.Connection, run_id: str
     ) -> aiosqlite.Row:
@@ -2388,39 +2390,45 @@ class SqliteExecutionUnitOfWork:
             raise RuntimeActivationError("admission_boundary_corrupt", "admission and continuation fences differ")
         return boundary
 
+    async def _admission_tx(self, db: aiosqlite.Connection, run_id: str):
+        record = await self._load_continuation_tx(db, run_id)
+        if record is None:
+            raise DecisionNotFound("admission_not_found", "run has no admission continuation")
+        return record, self._admission(record)
+
     @staticmethod
     def _with_admission(payload: Mapping[str, Any], boundary: AdmissionBoundary) -> dict[str, Any]:
-        value = dict(payload)
-        value["_admission"] = boundary.to_dict()
-        return value
+        return {**payload, "_admission": boundary.to_dict()}
 
     @staticmethod
     def _advance_admission(boundary: AdmissionBoundary, phase: AdmissionPhase,
-                           version: int, *, consumed: bool | None = None) -> AdmissionBoundary:
+                           version: int, *, consumed: bool | None = None,
+                           resolution_fingerprint: str | None = None) -> AdmissionBoundary:
+        terminal = phase in TERMINAL_ADMISSION_PHASES if consumed is None else consumed
         value = boundary.to_dict()
-        value.update(phase=phase.value, boundary_version=version,
-                     consumed=phase in {AdmissionPhase.LAUNCHED, AdmissionPhase.REJECTED,
-                     AdmissionPhase.CANCELLED, AdmissionPhase.EXPIRED,
-                     AdmissionPhase.LAUNCH_UNKNOWN} if consumed is None else consumed)
+        value.update(phase=phase.value, boundary_version=version, consumed=terminal)
+        if resolution_fingerprint is not None:
+            value["resolution_fingerprint"] = resolution_fingerprint
         return AdmissionBoundary.from_dict(value)
 
     @staticmethod
-    def _resolved_admission_event(boundary: AdmissionBoundary) -> RunEventCandidate:
-        terminal = boundary.phase in {AdmissionPhase.REJECTED, AdmissionPhase.CANCELLED, AdmissionPhase.EXPIRED}
+    def _resolved_admission_event(boundary: AdmissionBoundary,
+                                  phase: AdmissionPhase | None = None) -> RunEventCandidate:
+        phase = phase or boundary.phase
+        terminal = phase in {AdmissionPhase.REJECTED, AdmissionPhase.CANCELLED, AdmissionPhase.EXPIRED}
         return RunEventCandidate(
             event_key="run:final" if terminal else "admission:accepted",
             kind="run.final" if terminal else "admission.accepted",
             status=OutcomeStatus.CANCELLED if terminal else OutcomeStatus.ACCEPTED,
             driver_kind=boundary.driver_kind,
             correlation={"decision_id": boundary.decision_id, "launch_operation_id": boundary.launch_operation_id},
-            payload={"admission_phase": boundary.phase.value, "consumed": boundary.consumed},
+            payload={"admission_phase": phase.value, "consumed": terminal},
         )
 
     async def start_admission(
         self, spec: RunCreate, admission: AdmissionSpec, start_snapshot: AdmissionBoundary,
         waiting_event: RunEventCandidate, *, deliveries: Sequence[DeliverySpec] = (),
     ) -> AdmissionBoundary:
-        """Create run, continuation, decision and waiting event in one transaction."""
         if spec.persistence_level is not PersistenceLevel.DURABLE:
             raise PersistenceRequired("admission_must_be_durable", "admission runs are durable")
         expected = (spec.run_id, spec.driver_kind, spec.profile_key, admission, AdmissionPhase.PENDING, 1, False)
@@ -2429,22 +2437,20 @@ class SqliteExecutionUnitOfWork:
             raise DecisionConflict("invalid_admission_boundary", "admission start facts do not align")
         decision = DecisionOpen(start_snapshot.decision_id, spec.run_id, start_snapshot.nonce,
             admission.kind, admission.prompt_schema_version, admission.prompt, admission.expires_at)
+        association = (RunEventCandidate.from_dict(start_snapshot.association_event)
+            if start_snapshot.association_event is not None else None)
         async with self._write_transaction() as db:
             run, created = await self._insert_run_tx(db, spec, version=0)
-            prior = await (await db.execute(
-                "SELECT * FROM execution_continuations WHERE run_id=?", (spec.run_id,)
-            )).fetchone()
+            prior = await self._load_continuation_tx(db, spec.run_id)
             if prior is not None:
-                current = self._admission(self._row_to_continuation(prior))
+                current = self._admission(prior)
                 if self._advance_admission(current, AdmissionPhase.PENDING, 1, consumed=False) != start_snapshot:
                     raise IdempotencyConflict("admission_intent_conflict", "admission replay changed immutable facts")
-                event_id = stable_event_id(spec.run_id, waiting_event.event_key)
-                stored = await (await db.execute("SELECT * FROM execution_events WHERE event_id=?", (event_id,))).fetchone()
-                if stored is None:
-                    raise RuntimeActivationError("admission_atomicity_broken", "admission waiting event is missing")
-                self._assert_event_matches(stored, run, waiting_event)
-                await self._assert_delivery_set_tx(db, event_id, deliveries)
-                await db.commit()
+                if association is not None:
+                    await self._append_event_tx(db, run, expected_version=int(run["version"]),
+                        event=association, deliveries=())
+                await self._append_event_tx(db, run, expected_version=int(run["version"]),
+                    event=waiting_event, deliveries=deliveries)
                 return current
             if not created:
                 raise IdempotencyConflict("admission_run_conflict", "existing run has no admission")
@@ -2457,44 +2463,59 @@ class SqliteExecutionUnitOfWork:
                 (self._clock(), spec.run_id))
             run = await (await db.execute("SELECT * FROM execution_runs WHERE run_id=?", (spec.run_id,))).fetchone()
             assert run is not None
+            if association is not None:
+                _, run, _ = await self._append_event_tx(
+                    db, run, expected_version=int(run["version"]),
+                    event=association, deliveries=())
             await self._append_event_tx(db, run, expected_version=int(run["version"]), event=waiting_event, deliveries=deliveries)
             self._fault("batch_boundary_after_waiting_event")
             self._fault("batch_boundary_before_commit")
-            await db.commit()
             return start_snapshot
 
     async def resolve_admission(
-        self, ref: RunRef, actor: ActorContext, signal: DecisionSignal, *, expected_boundary_version: int,
+        self, ref: RunRef, actor: ActorContext, signal: DecisionSignal, *,
+        expected_boundary_version: int, terminal_deliveries: Sequence[DeliverySpec] = (),
     ) -> AdmissionResolution:
-        """Resolve a pre-driver wait; accepting never claims the launch."""
         async with self._write_transaction() as db:
             run = await self._continuation_run_tx(db, ref.run_id)
             self._authorize_run_row(run, expected_session_id=ref.expected_session_id, actor=actor)
-            row = await (await db.execute("SELECT * FROM execution_continuations WHERE run_id=?", (ref.run_id,))).fetchone()
-            assert row is not None
-            record, boundary = self._row_to_continuation(row), self._admission(self._row_to_continuation(row))
+            record, boundary = await self._admission_tx(db, ref.run_id)
+            resolution_fingerprint = fingerprint_json(signal.to_dict())
             decision_row = await (await db.execute("SELECT * FROM execution_decisions WHERE decision_id=?", (boundary.decision_id,))).fetchone()
             assert decision_row is not None
             decision = self._row_to_decision(decision_row)
-            if boundary.phase is not AdmissionPhase.PENDING:
-                allow_phase = AdmissionPhase.ACCEPTED_START_PENDING if signal.allow else AdmissionPhase.CANCELLED if signal.response.get("resolution") == "cancelled" else AdmissionPhase.REJECTED
-                same = signal.run_id == ref.run_id and signal.decision_id == boundary.decision_id and signal.nonce == boundary.nonce and signal.expected_version + 1 == decision.decision_version and decision.response == signal.response and boundary.phase is allow_phase
+            cancel_accepted = (
+                boundary.phase is AdmissionPhase.ACCEPTED_START_PENDING
+                and not signal.allow and signal.response.get("resolution") == "cancelled"
+            )
+            if cancel_accepted:
+                self._assert_signal_binding(decision, signal)
+            if boundary.phase is not AdmissionPhase.PENDING and not cancel_accepted:
+                same = signal.run_id == ref.run_id and boundary.resolution_fingerprint == resolution_fingerprint
                 if not same:
                     raise DecisionConflict("admission_already_resolved", "another resolution already won")
-                event = await self._admission_event_tx(db, run, boundary)
-                await db.commit()
+                event, _, _ = await self._append_event_tx(
+                    db, run, expected_version=int(run["version"]),
+                    event=self._resolved_admission_event(boundary,
+                        AdmissionPhase.ACCEPTED_START_PENDING if signal.allow and boundary.phase is not AdmissionPhase.EXPIRED else None),
+                    deliveries=terminal_deliveries if boundary.phase in {AdmissionPhase.REJECTED, AdmissionPhase.CANCELLED, AdmissionPhase.EXPIRED} else ())
                 return AdmissionResolution(boundary, decision, event, True)
             if record.version != expected_boundary_version:
                 raise VersionConflict("stale_admission_version", "admission changed before resolve")
-            decision, _, expired = await self._resolve_decision_tx(db, signal, actor, now=float(self._clock()))
+            expired = False
+            if not cancel_accepted:
+                decision, _, expired = await self._resolve_decision_tx(
+                    db, signal, actor, now=float(self._clock()))
             phase = AdmissionPhase.EXPIRED if expired else AdmissionPhase.ACCEPTED_START_PENDING if signal.allow else AdmissionPhase.CANCELLED if signal.response.get("resolution") == "cancelled" else AdmissionPhase.REJECTED
-            updated = self._advance_admission(boundary, phase, record.version + 1)
+            updated = self._advance_admission(boundary, phase, record.version + 1,
+                resolution_fingerprint=resolution_fingerprint)
             continuation, _ = await self._save_continuation_tx(db, run=run, expected_version=record.version,
                 payload_json=self._continuation_payload_json(self._with_admission(record.payload, updated)),
                 decision=None, now=float(self._clock()))
             self._fault("decision_resolve_after_boundary")
             event, changed, _ = await self._append_event_tx(db, run, expected_version=int(run["version"]),
-                event=self._resolved_admission_event(updated), deliveries=())
+                event=self._resolved_admission_event(updated),
+                deliveries=terminal_deliveries if updated.phase in {AdmissionPhase.REJECTED, AdmissionPhase.CANCELLED, AdmissionPhase.EXPIRED} else ())
             now = float(self._clock())
             if updated.consumed:
                 cursor = await db.execute("""UPDATE execution_runs SET status='cancelled',terminal_event_id=?,
@@ -2505,32 +2526,18 @@ class SqliteExecutionUnitOfWork:
             else:
                 await db.execute("UPDATE execution_runs SET status='queued',updated_at=? WHERE run_id=?", (now, ref.run_id))
             self._fault("decision_resolve_before_commit")
-            await db.commit()
             return AdmissionResolution(self._admission(continuation), decision, event)
-
-    async def _admission_event_tx(self, db: aiosqlite.Connection, run: Mapping[str, Any], boundary: AdmissionBoundary) -> RunEvent:
-        candidate = self._resolved_admission_event(boundary)
-        row = await (await db.execute("SELECT * FROM execution_events WHERE event_id=?",
-            (stable_event_id(boundary.run_id, candidate.event_key),))).fetchone()
-        if row is None:
-            raise RuntimeActivationError("admission_atomicity_broken", "resolved admission event is missing")
-        self._assert_event_matches(row, run, candidate)
-        value = dict(row)
-        value.update(root_run_id=run["root_run_id"], session_id=run["session_id"])
-        return self._row_to_event(value)
 
     async def claim_admission_launch(
         self, recovery_lease: RecoveryLease, *, expected_boundary_version: int,
     ) -> AdmissionLaunchClaim:
-        """Commit launch_claimed before the external Driver/provider call."""
         async with self._write_transaction() as db:
             await self._assert_recovery_fence_tx(db, recovery_lease, run_id=recovery_lease.run_id)
             run = await self._continuation_run_tx(db, recovery_lease.run_id)
-            row = await (await db.execute("SELECT * FROM execution_continuations WHERE run_id=?", (recovery_lease.run_id,))).fetchone()
-            assert row is not None
-            record, boundary = self._row_to_continuation(row), self._admission(self._row_to_continuation(row))
+            if RunStatus(str(run["status"])) is not RunStatus.QUEUED:
+                raise TerminalConflict("admission_launch_cancelled", "run is no longer queued for launch")
+            record, boundary = await self._admission_tx(db, recovery_lease.run_id)
             if boundary.phase is AdmissionPhase.LAUNCH_CLAIMED and record.version == expected_boundary_version + 1:
-                await db.commit()
                 return AdmissionLaunchClaim(boundary, recovery_lease, True)
             if boundary.phase is not AdmissionPhase.ACCEPTED_START_PENDING or record.version != expected_boundary_version:
                 raise VersionConflict("stale_admission_version", "admission is not launch-claimable")
@@ -2541,7 +2548,6 @@ class SqliteExecutionUnitOfWork:
             self._fault("effect_claim_after_grant")
             self._fault("effect_claim_after_effect")
             self._fault("effect_claim_before_commit")
-            await db.commit()
             return AdmissionLaunchClaim(self._admission(saved), recovery_lease)
 
     async def persist_react_boundary(
@@ -2634,13 +2640,10 @@ class SqliteExecutionUnitOfWork:
             if recovery_lease is not None:
                 await self._assert_recovery_fence_tx(db, recovery_lease, run_id=run_id)
             run_row = await self._continuation_run_tx(db, run_id)
-            existing_row = await (await db.execute(
-                "SELECT * FROM execution_continuations WHERE run_id=?", (run_id,)
-            )).fetchone()
-            if existing_row is None and admission_launch is not None:
+            existing = await self._load_continuation_tx(db, run_id)
+            if existing is None and admission_launch is not None:
                 raise DecisionNotFound("admission_not_found", "launch claim has no continuation")
-            if existing_row is not None:
-                existing = self._row_to_continuation(existing_row)
+            if existing is not None:
                 try:
                     boundary = self._admission(existing)
                 except DecisionNotFound:
@@ -2672,12 +2675,7 @@ class SqliteExecutionUnitOfWork:
 
     async def load_continuation(self, run_id: str) -> ContinuationRecord | None:
         async with self._read_connection() as db:
-            row = await (
-                await db.execute(
-                    "SELECT * FROM execution_continuations WHERE run_id=?", (run_id,)
-                )
-            ).fetchone()
-            return self._row_to_continuation(row) if row is not None else None
+            return await self._load_continuation_tx(db, run_id)
 
     @staticmethod
     def _assert_decision_intent(
@@ -3683,12 +3681,7 @@ class SqliteExecutionUnitOfWork:
         self, db: aiosqlite.Connection, fence: AdmissionLaunchUnknownFence,
     ) -> None:
         run = await self._continuation_run_tx(db, fence.run_id)
-        row = await (await db.execute(
-            "SELECT * FROM execution_continuations WHERE run_id=?", (fence.run_id,)
-        )).fetchone()
-        if row is None:
-            raise DecisionNotFound("admission_not_found", "run has no admission continuation")
-        record, boundary = self._row_to_continuation(row), self._admission(self._row_to_continuation(row))
+        record, boundary = await self._admission_tx(db, fence.run_id)
         identity = (boundary.decision_id, boundary.launch_operation_id)
         if boundary.phase is AdmissionPhase.LAUNCH_UNKNOWN and record.version == fence.expected_boundary_version + 1:
             if identity == (fence.decision_id, fence.launch_operation_id):
@@ -5325,13 +5318,7 @@ class SqliteExecutionUnitOfWork:
             admission_consumed = created
             if admission_launch is not None:
                 await self._assert_recovery_fence_tx(db, admission_launch.recovery_lease, run_id=spec.run_id)
-                continuation_row = await (await db.execute(
-                    "SELECT * FROM execution_continuations WHERE run_id=?", (spec.run_id,)
-                )).fetchone()
-                if continuation_row is None:
-                    raise DecisionNotFound("admission_not_found", "precreated workflow has no admission")
-                continuation = self._row_to_continuation(continuation_row)
-                boundary = self._admission(continuation)
+                continuation, boundary = await self._admission_tx(db, spec.run_id)
                 if workflow_created:
                     if boundary != admission_launch.boundary:
                         raise VersionConflict("stale_admission_version", "workflow launch claim differs")
@@ -5345,7 +5332,12 @@ class SqliteExecutionUnitOfWork:
                 elif boundary.phase is not AdmissionPhase.LAUNCHED:
                     raise IdempotencyConflict("workflow_start_conflict", "workflow replay has unconsumed admission")
             elif not created and workflow_created:
-                raise DecisionConflict("admission_required", "precreated execution requires an admission launch claim")
+                admitted = await (await db.execute(
+                    "SELECT 1 FROM execution_continuations WHERE run_id=? AND json_type(pending_prepared_call_json,'$._admission') IS NOT NULL",
+                    (spec.run_id,),
+                )).fetchone()
+                if admitted is not None:
+                    raise DecisionConflict("admission_required", "an admitted workflow requires its launch claim")
             if association_event is not None:
                 _, row, _ = await self._append_event_tx(
                     db, row, expected_version=record.version,

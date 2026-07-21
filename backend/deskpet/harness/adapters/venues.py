@@ -8,11 +8,12 @@ RunKernel operations while trusted identity remains owned by the resolver.
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator, Mapping, Sequence
+import time
+from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from deskpet.execution.contracts import ActorContext, RunEvent, RunRef
+from deskpet.execution.contracts import AdmissionSpec, ActorContext, DecisionKind, ProviderLaunchSnapshot, RunEvent, RunNotFound, RunRef
 from deskpet.agent.product_domain_sink import ProductDomainSink
 from deskpet.agent.run_presenter import (
     CanonicalRunEventPresentationAdapter,
@@ -21,8 +22,26 @@ from deskpet.agent.run_presenter import (
     RunPresenter,
 )
 from deskpet.agent.turn_preparer import ProductTurnPreparer, TurnInput
-from deskpet.harness.kernel import HostContext, RunKernel, RunRequest
+from deskpet.harness.kernel import HostContext, RunKernel, RunRequest, root_run_identity
 from deskpet.harness.ports import DecisionSignal
+
+
+class ProviderLaunchPolicyRegistry:
+    def __init__(self, policies: Iterable[ProviderLaunchSnapshot] = ()) -> None:
+        self._policies = {
+            (item.provider_id, item.adapter_id, item.adapter_version): item
+            for item in policies
+        }
+
+    def resolve(self, provider: object) -> ProviderLaunchSnapshot:
+        identity = tuple(str(getattr(provider, field, "") or "")
+                         for field in ("provider_id", "adapter_id", "adapter_version"))
+        if not all(identity):
+            raise RuntimeError("provider launch identity is incomplete")
+        policy = self._policies.get(identity)
+        if policy is None:
+            raise RuntimeError(f"provider launch policy is unavailable: {'/'.join(identity)}")
+        return policy
 
 
 class VenueContextResolver(Protocol):
@@ -46,16 +65,12 @@ class VenueRunHandle:
 
 @dataclass(frozen=True, slots=True)
 class ProductVenueRunResult:
-    """Observable result of the test-only product-to-kernel chain."""
-
     run_id: str | None
     status: str
     final_text: str = ""
 
 
 class KernelRunClient:
-    """Narrow structural RunClient shared by Text and Voice transports."""
-
     def __init__(self, kernel: RunKernel, resolver: VenueContextResolver) -> None:
         self._kernel = kernel
         self._resolver = resolver
@@ -80,13 +95,15 @@ class KernelRunClient:
         raw_messages = request.get("canonical_messages", ())
         if isinstance(raw_messages, (str, bytes)) or not isinstance(
             raw_messages, (list, tuple)
-        ):
+        ) or any(not isinstance(message, Mapping) for message in raw_messages):
             raise ValueError("canonical_messages must be a sequence of mappings")
-        canonical_messages: list[dict[str, Any]] = []
-        for message in raw_messages:
-            if not isinstance(message, Mapping):
-                raise ValueError("canonical_messages must contain mappings")
-            canonical_messages.append(dict(message))
+        canonical_messages = tuple(dict(message) for message in raw_messages)
+        admission = request.get("admission")
+        provider_snapshot = request.get("provider_launch_snapshot")
+        if admission is not None and not isinstance(admission, AdmissionSpec):
+            raise ValueError("admission must be a typed AdmissionSpec")
+        if provider_snapshot is not None and not isinstance(provider_snapshot, ProviderLaunchSnapshot):
+            raise ValueError("provider launch snapshot must be typed")
         handle = await self._kernel.start(
             RunRequest(
                 text=text,
@@ -101,8 +118,10 @@ class KernelRunClient:
                     )
                 ),
                 proposed_tools=tuple(str(name) for name in raw_tools),
-                canonical_messages=tuple(canonical_messages),
+                canonical_messages=canonical_messages,
                 payload=dict(raw_payload),
+                admission=admission,
+                provider_launch_snapshot=provider_snapshot,
             ),
             trusted,
         )
@@ -111,6 +130,16 @@ class KernelRunClient:
             run_id=handle.ref.run_id,
             events=self._kernel.observe(handle.ref, actor),
         )
+
+    async def resume(self, request_id: str, turn_id: str, host: Mapping[str, object]) -> VenueRunHandle | None:
+        trusted = self._resolver.resolve_host(host)
+        _, ref = root_run_identity(trusted.session_id, request_id, turn_id)
+        actor = self._resolver.resolve_actor(host, root_run_id=ref.run_id)
+        try:
+            handle = await self._kernel.recover(ref, actor)
+        except RunNotFound:
+            return None
+        return VenueRunHandle(handle.ref.run_id, self._kernel.observe(handle.ref, actor))
 
     async def signal(
         self,
@@ -175,8 +204,6 @@ class KernelRunClient:
 
 
 class ProductVenueRunSession:
-    """One-shot presenting stream over a single canonical Kernel run."""
-
     def __init__(
         self,
         *,
@@ -198,7 +225,6 @@ class ProductVenueRunSession:
         self._status = "unknown"
         self._consumed = False
         self._closed = False
-        self._finished = False
 
     @property
     def events(self) -> AsyncIterator[RunEvent]:
@@ -230,9 +256,7 @@ class ProductVenueRunSession:
             return
         self._closed = True
         try:
-            if not self._finished:
-                self._finished = True
-                await self._presenter.finish_turn(self._context, self._state)
+            await self._presenter.finish_turn(self._context, self._state)
         finally:
             await self._run_client.close(self._ref(), self._host)
 
@@ -244,13 +268,7 @@ class ProductVenueRunSession:
 
 
 class ProductVenueRunAdapter:
-    """Test-only venue-neutral product chain kept outside the production owner.
-
-    R5 uses this adapter to prove the final composition order while ``_run_chat``
-    remains the sole production ingress.  It owns no durable state: preparation
-    stays with ProductTurnPreparer, lifecycle with KernelRunClient/RunKernel and
-    product projection with RunPresenter.
-    """
+    """Dormant venue-neutral product chain kept outside the production owner."""
 
     def __init__(
         self,
@@ -259,11 +277,13 @@ class ProductVenueRunAdapter:
         run_client: KernelRunClient,
         presenter: RunPresenter,
         event_adapter: CanonicalRunEventPresentationAdapter | None = None,
+        provider_launch_policies: ProviderLaunchPolicyRegistry | None = None,
     ) -> None:
         self._preparer = preparer
         self._run_client = run_client
         self._presenter = presenter
         self._event_adapter = event_adapter or CanonicalRunEventPresentationAdapter()
+        self._provider_launch_policies = provider_launch_policies or ProviderLaunchPolicyRegistry()
 
     async def open(
         self,
@@ -291,6 +311,9 @@ class ProductVenueRunAdapter:
             raise ValueError("turn and trusted host session_id must match")
         if venue != turn.venue:
             raise ValueError("turn and trusted host venue must match")
+        resumed = await self._run_client.resume(turn.request_id, turn.turn_id, host)
+        if resumed is not None:
+            return self._session(resumed, host, presentation_context)
 
         prepared = await self._preparer.prepare_context(
             turn,
@@ -320,8 +343,20 @@ class ProductVenueRunAdapter:
             code_mode=code_mode,
             in_code_mode=in_code_mode,
         )
-        if not await self._present_commands(planned.commands, domain_sink):
-            return ProductVenueRunResult(None, "cancelled")
+        blocking = [item for item in planned.commands if item.kind == "plan_confirmation"]
+        if blocking and (len(blocking) != 1 or len(planned.commands) != 2
+                         or planned.commands[0].kind != "plan_proposed"):
+            raise RuntimeError("blocking product admission is incomplete or unknown")
+        admission = provider_snapshot = None
+        if blocking:
+            prompt = dict(blocking[0].payload)
+            presentation = dict(planned.commands[0].payload)
+            admission = AdmissionSpec(DecisionKind.PLAN, 1, 1, prompt, presentation,
+                time.time() + float(prompt.get("timeout_seconds", 900.0)))
+            provider_snapshot = self._provider_launch_policies.resolve(provider)
+        else:
+            if not await self._present_commands(planned.commands, domain_sink):
+                return ProductVenueRunResult(None, "cancelled")
 
         handle = await self._run_client.start(
             {
@@ -336,17 +371,20 @@ class ProductVenueRunAdapter:
                     "capability_ref": turn.capability_ref,
                     "workspace_ref": turn.workspace_ref,
                 },
+                "admission": admission,
+                "provider_launch_snapshot": provider_snapshot,
             },
             host,
         )
-        return ProductVenueRunSession(
-            handle=handle,
-            run_client=self._run_client,
-            host=host,
-            presenter=self._presenter,
-            event_adapter=self._event_adapter,
-            presentation_context=presentation_context,
-        )
+        if admission is not None:
+            await domain_sink.store_plan({**dict(admission.presentation), "run_id": handle.run_id})
+        return self._session(handle, host, presentation_context)
+
+    def _session(self, handle: VenueRunHandle, host: Mapping[str, object],
+                 context: RunPresentationContext) -> ProductVenueRunSession:
+        return ProductVenueRunSession(handle=handle, run_client=self._run_client,
+            host=host, presenter=self._presenter, event_adapter=self._event_adapter,
+            presentation_context=context)
 
     async def execute(
         self,
@@ -378,6 +416,7 @@ class ProductVenueRunAdapter:
 
 __all__ = [
     "KernelRunClient",
+    "ProviderLaunchPolicyRegistry",
     "ProductVenueRunAdapter",
     "ProductVenueRunResult",
     "ProductVenueRunSession",

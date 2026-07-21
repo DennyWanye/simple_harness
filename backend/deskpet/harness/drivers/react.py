@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, AsyncIterator, Mapping, Protocol
-from deskpet.execution.contracts import ActorContext, DecisionOpen as DurableDecisionOpen, DecisionSignal as DurableDecisionSignal, OutcomeStatus, PersistenceLevel, RecoveryLease, RunContext, RunCreate, RunEventCandidate, stable_decision_grant_id, thaw_json
+from deskpet.execution.contracts import ActorContext, AdmissionLaunchClaim, DecisionOpen as DurableDecisionOpen, DecisionSignal as DurableDecisionSignal, OutcomeStatus, PersistenceLevel, ProviderLaunchSnapshot, RecoveryLease, RunContext, RunCreate, RunEventCandidate, stable_decision_grant_id, thaw_json
 from deskpet.execution.evidence import EvidenceContext, EvidenceSelection, UNKNOWN_EVIDENCE
 from deskpet.execution.ports import ExecutionUnitOfWork
 from deskpet.harness.live_index import BoundedLiveIndex
@@ -97,7 +97,9 @@ class ReactCommandBoundary:
         return replace(self, outcomes=tuple(outcomes), outcome_statuses=tuple(outcome_statuses), outcome_metadata=tuple(outcome_metadata), version=self.version + 1)
 
     def to_start(self, scoped_evidence: EvidenceSelection | None=UNKNOWN_EVIDENCE) -> DriverStart:
-        return DriverStart(run_id=self.run_id, session_id=self.session_id, canonical_messages=self.canonical_messages, session_projection_cursor=self.session_projection_cursor, prepared_context_ref=self.prepared_context_ref, tool_set_snapshot_ref=self.tool_set_snapshot_ref, provider_state=self.provider_state, iteration=self.iteration, completion_state=self.completion_state, run_context=self.run_context, run_spec=self.run_spec, capability_snapshot=self.capability_snapshot, scoped_evidence=scoped_evidence)
+        launch = self.completion_state if self.command_kind == 'provider_launch' else {}
+        snapshot = launch.get('provider_launch_snapshot')
+        return DriverStart(run_id=self.run_id, session_id=self.session_id, canonical_messages=self.canonical_messages, session_projection_cursor=self.session_projection_cursor, prepared_context_ref=self.prepared_context_ref, tool_set_snapshot_ref=self.tool_set_snapshot_ref, provider_state=self.provider_state, iteration=self.iteration, completion_state=self.completion_state, run_context=self.run_context, run_spec=self.run_spec, capability_snapshot=self.capability_snapshot, scoped_evidence=scoped_evidence, launch_operation_id=str(launch['launch_operation_id']) if snapshot is not None else None, provider_launch_snapshot=ProviderLaunchSnapshot.from_dict(snapshot) if isinstance(snapshot, Mapping) else None)
 
     def to_payload(self) -> dict[str, Any]:
         delegate = self.pending_delegate
@@ -321,15 +323,15 @@ class ReActDriver:
             return None
         return DurableDecisionOpen(decision_id=decision.decision_id, run_id=decision.run_id, nonce=decision.nonce, kind=decision.decision_kind, prompt_schema_version=decision.prompt_schema_version, prompt=dict(decision.prompt), expires_at=decision.expires_at, call_id=decision.call_id, effect_id=decision.effect_id, tool_name=decision.tool_name, args_hash=decision.args_hash, capability_hash=decision.capability_hash, scope_hash=decision.scope_hash)
 
-    async def _save_durable_boundary(self, boundary: ReactCommandBoundary, *, decision: DriverEvent | None=None, recovery_lease: RecoveryLease | None=None) -> ReactCommandBoundary:
+    async def _save_durable_boundary(self, boundary: ReactCommandBoundary, *, decision: DriverEvent | None=None, recovery_lease: RecoveryLease | None=None, admission_launch: AdmissionLaunchClaim | None=None) -> ReactCommandBoundary:
         expected = max(0, boundary.version - 1)
-        saved = await self._uow.persist_react_boundary(boundary.run_id, expected, boundary.to_payload(), self._durable_decision(decision), recovery_lease=recovery_lease)
+        saved = await self._uow.persist_react_boundary(boundary.run_id, expected, boundary.to_payload(), self._durable_decision(decision), recovery_lease=recovery_lease, admission_launch=admission_launch)
         return replace(boundary, version=int(saved.version))
 
-    async def _persist_boundary(self, request: DriverStart, boundary: ReactCommandBoundary, *, continuation_version: int=0, decision: DriverEvent | None=None, recovery_lease: RecoveryLease | None=None) -> ReactCommandBoundary:
+    async def _persist_boundary(self, request: DriverStart, boundary: ReactCommandBoundary, *, continuation_version: int=0, decision: DriverEvent | None=None, recovery_lease: RecoveryLease | None=None, admission_launch: AdmissionLaunchClaim | None=None) -> ReactCommandBoundary:
         volatile = self._live_boundary(request.run_id)
         if continuation_version and volatile is None:
-            return await self._save_durable_boundary(replace(boundary, version=continuation_version + 1), decision=decision, recovery_lease=recovery_lease)
+            return await self._save_durable_boundary(replace(boundary, version=continuation_version + 1), decision=decision, recovery_lease=recovery_lease, admission_launch=admission_launch)
         spec = request.run_spec
         if spec is None:
             raise RuntimeError('durable ReAct boundary requires its immutable RunCreate')
@@ -380,7 +382,14 @@ class ReActDriver:
         return tuple(messages)
 
     async def _emit(self, request: DriverStart, emissions: AsyncIterator[ReactEmission], *, continuation_version: int=0, recovery_lease: RecoveryLease | None=None) -> AsyncIterator[DriverEvent]:
+        launch_pending = request.launch_operation_id is not None
         async for emission in emissions:
+            if launch_pending:
+                state = dict(request.completion_state)
+                state.update(launch_operation_id=request.launch_operation_id, provider_launch_snapshot=request.provider_launch_snapshot.to_dict(), admission_boundary_version=max(continuation_version, request.admission_launch.boundary.boundary_version if request.admission_launch is not None else 0))
+                launch_boundary = ReactCommandBoundary(run_id=request.run_id, session_id=request.session_id, command_id=request.launch_operation_id or '', command_kind='provider_launch', canonical_messages=request.canonical_messages, session_projection_cursor=request.session_projection_cursor, prepared_context_ref=request.prepared_context_ref, tool_set_snapshot_ref=request.tool_set_snapshot_ref, pending_calls=(), tool_contexts=(), outcomes=(), provider_state=request.provider_state, iteration=request.iteration, completion_state=state, capability_snapshot=request.capability_snapshot, run_context=request.run_context, run_spec=request.run_spec, version=continuation_version)
+                launch_boundary = await self._persist_boundary(request, launch_boundary, continuation_version=max(continuation_version, int(state['admission_boundary_version'])), recovery_lease=recovery_lease, admission_launch=request.admission_launch)
+                continuation_version, launch_pending = launch_boundary.version, False
             if isinstance(emission, ReactToken):
                 yield TokenCandidate(request.run_id, emission.content, emission.kind)
             elif isinstance(emission, ReactFallback):

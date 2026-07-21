@@ -9,7 +9,7 @@ import copy
 import hashlib
 import json
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from enum import StrEnum
 from types import MappingProxyType
 from typing import Any, Mapping, Sequence, TypeAlias
@@ -164,6 +164,30 @@ def _strict_mapping(value: Mapping[str, Any], *, required: set[str], optional: s
         raise ContractValidationError('invalid_payload', f"{name} fields differ: {'; '.join(detail)}")
     return dict(value)
 
+def _contract_dict(value: object) -> dict[str, JsonValue]:
+    result: dict[str, JsonValue] = {}
+    for item in fields(value):
+        if item.metadata.get('serialize') is False:
+            continue
+        current = getattr(value, item.name)
+        if isinstance(current, StrEnum):
+            current = current.value
+        elif hasattr(current, 'to_dict'):
+            current = current.to_dict()
+        result[item.name] = thaw_json(current)
+    return result
+
+def _contract_payload(value: Mapping[str, Any], contract: type, name: str) -> dict[str, Any]:
+    return _strict_mapping(value, required={item.name for item in fields(contract)}, name=name)
+
+class _Contract:
+    def to_dict(self) -> dict[str, JsonValue]:
+        return _contract_dict(self)
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]):
+        return cls(**_contract_payload(value, cls, cls.__name__))
+
 def _json_object(value: object, *, name: str) -> Mapping[str, JsonValue]:
     if not isinstance(value, Mapping):
         raise ContractValidationError('invalid_payload', f'{name} must be an object')
@@ -175,6 +199,10 @@ def _schema_version(value: object, *, name: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value != CONTRACT_SCHEMA_VERSION:
         raise ContractValidationError('unsupported_schema', f'{name}.schema_version must be {CONTRACT_SCHEMA_VERSION}')
     return value
+
+def _integer(value: object, minimum: int, code: str, message: str) -> None:
+    if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
+        raise ContractValidationError(code, message)
 
 class PersistenceLevel(StrEnum):
     EPHEMERAL = 'ephemeral'
@@ -235,16 +263,11 @@ class AdmissionPhase(StrEnum):
     EXPIRED = 'expired'
     LAUNCH_UNKNOWN = 'launch_unknown'
 
-TERMINAL_ADMISSION_PHASES = frozenset({
-    AdmissionPhase.LAUNCHED,
-    AdmissionPhase.REJECTED,
-    AdmissionPhase.CANCELLED,
-    AdmissionPhase.EXPIRED,
-    AdmissionPhase.LAUNCH_UNKNOWN,
-})
+TERMINAL_ADMISSION_PHASES = frozenset({AdmissionPhase.LAUNCHED, AdmissionPhase.REJECTED,
+    AdmissionPhase.CANCELLED, AdmissionPhase.EXPIRED, AdmissionPhase.LAUNCH_UNKNOWN})
 
 @dataclass(frozen=True, slots=True)
-class ProviderLaunchSnapshot:
+class ProviderLaunchSnapshot(_Contract):
     provider_id: str
     adapter_id: str
     adapter_version: str
@@ -256,29 +279,12 @@ class ProviderLaunchSnapshot:
         _schema_version(self.schema_version, name='ProviderLaunchSnapshot')
         for name in ('provider_id', 'adapter_id', 'adapter_version'):
             object.__setattr__(self, name, _required_text(getattr(self, name), name))
-        if not isinstance(self.supports_idempotent_launch, bool):
-            raise ContractValidationError('invalid_provider_launch_policy', 'supports_idempotent_launch must be boolean')
         object.__setattr__(self, 'token_field', _optional_text(self.token_field, 'token_field'))
-        if self.supports_idempotent_launch != (self.token_field is not None):
+        if self.supports_idempotent_launch is not (self.token_field is not None):
             raise ContractValidationError('invalid_provider_launch_policy', 'idempotent launch support requires exactly one token field')
 
-    def to_dict(self) -> dict[str, JsonValue]:
-        return {
-            'schema_version': self.schema_version,
-            'provider_id': self.provider_id,
-            'adapter_id': self.adapter_id,
-            'adapter_version': self.adapter_version,
-            'supports_idempotent_launch': self.supports_idempotent_launch,
-            'token_field': self.token_field,
-        }
-
-    @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> 'ProviderLaunchSnapshot':
-        data = _strict_mapping(value, required={'schema_version', 'provider_id', 'adapter_id', 'adapter_version', 'supports_idempotent_launch', 'token_field'}, name='ProviderLaunchSnapshot')
-        return cls(**data)
-
 @dataclass(frozen=True, slots=True)
-class AdmissionSpec:
+class AdmissionSpec(_Contract):
     kind: DecisionKind | str
     prompt_schema_version: int
     response_schema_version: int
@@ -292,37 +298,20 @@ class AdmissionSpec:
         _schema_version(self.schema_version, name='AdmissionSpec')
         object.__setattr__(self, 'kind', DecisionKind(self.kind))
         for name in ('prompt_schema_version', 'response_schema_version'):
-            value = getattr(self, name)
-            if not isinstance(value, int) or isinstance(value, bool) or value < 1:
-                raise ContractValidationError('invalid_admission_schema', f'{name} must be positive')
+            _integer(getattr(self, name), 1, 'invalid_admission_schema', f'{name} must be positive')
         object.__setattr__(self, 'prompt', _json_object(self.prompt, name='AdmissionSpec.prompt'))
         object.__setattr__(self, 'presentation', _json_object(self.presentation, name='AdmissionSpec.presentation'))
         if self.expires_at is not None and not math.isfinite(float(self.expires_at)):
             raise ContractValidationError('invalid_admission_expiry', 'expires_at must be finite')
-        object.__setattr__(self, 'intent_fingerprint', fingerprint_json({
-            'kind': self.kind.value,
-            'prompt_schema_version': self.prompt_schema_version,
-            'response_schema_version': self.response_schema_version,
-            'prompt': thaw_json(self.prompt),
-            'presentation': thaw_json(self.presentation),
-            'expires_at': self.expires_at,
-        }))
-
-    def to_dict(self) -> dict[str, JsonValue]:
-        return {
-            'schema_version': self.schema_version,
-            'kind': self.kind.value,
-            'prompt_schema_version': self.prompt_schema_version,
-            'response_schema_version': self.response_schema_version,
-            'prompt': thaw_json(self.prompt),
-            'presentation': thaw_json(self.presentation),
-            'expires_at': self.expires_at,
-            'intent_fingerprint': self.intent_fingerprint,
-        }
+        intent = {name: thaw_json(getattr(self, name)) for name in (
+            'prompt_schema_version', 'response_schema_version', 'prompt',
+            'presentation', 'expires_at')}
+        intent['kind'] = self.kind.value
+        object.__setattr__(self, 'intent_fingerprint', fingerprint_json(intent))
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> 'AdmissionSpec':
-        data = _strict_mapping(value, required={'schema_version', 'kind', 'prompt_schema_version', 'response_schema_version', 'prompt', 'presentation', 'expires_at', 'intent_fingerprint'}, name='AdmissionSpec')
+        data = _contract_payload(value, cls, 'AdmissionSpec')
         expected = str(data.pop('intent_fingerprint'))
         result = cls(**data)
         if result.intent_fingerprint != expected:
@@ -330,7 +319,7 @@ class AdmissionSpec:
         return result
 
 @dataclass(frozen=True, slots=True)
-class AdmissionBoundary:
+class AdmissionBoundary(_Contract):
     run_id: str
     decision_id: str
     nonce: str
@@ -349,6 +338,7 @@ class AdmissionBoundary:
     tool_set_snapshot_ref: str | None = None
     association_event: Mapping[str, JsonValue] | None = None
     projection_refs: Mapping[str, JsonValue] = field(default_factory=dict)
+    resolution_fingerprint: str | None = None
     consumed: bool = False
     schema_version: int = CONTRACT_SCHEMA_VERSION
 
@@ -357,10 +347,8 @@ class AdmissionBoundary:
         for name in ('run_id', 'decision_id', 'nonce', 'launch_operation_id', 'driver_kind', 'profile_key'):
             object.__setattr__(self, name, _required_text(getattr(self, name), name))
         object.__setattr__(self, 'phase', AdmissionPhase(self.phase))
-        if not isinstance(self.boundary_version, int) or isinstance(self.boundary_version, bool) or self.boundary_version < 1:
-            raise ContractValidationError('invalid_admission_version', 'boundary_version must be positive')
-        if not isinstance(self.session_projection_cursor, int) or isinstance(self.session_projection_cursor, bool) or self.session_projection_cursor < 0:
-            raise ContractValidationError('invalid_admission_cursor', 'session_projection_cursor must be non-negative')
+        _integer(self.boundary_version, 1, 'invalid_admission_version', 'boundary_version must be positive')
+        _integer(self.session_projection_cursor, 0, 'invalid_admission_cursor', 'session_projection_cursor must be non-negative')
         object.__setattr__(self, 'canonical_messages', tuple(_json_object(item, name='AdmissionBoundary.canonical_messages') for item in self.canonical_messages))
         object.__setattr__(self, 'request_payload', _json_object(self.request_payload, name='AdmissionBoundary.request_payload'))
         object.__setattr__(self, 'capability_snapshot', _json_object(self.capability_snapshot, name='AdmissionBoundary.capability_snapshot'))
@@ -368,36 +356,14 @@ class AdmissionBoundary:
         object.__setattr__(self, 'tool_set_snapshot_ref', _optional_text(self.tool_set_snapshot_ref, 'tool_set_snapshot_ref'))
         object.__setattr__(self, 'association_event', None if self.association_event is None else _json_object(self.association_event, name='AdmissionBoundary.association_event'))
         object.__setattr__(self, 'projection_refs', _json_object(self.projection_refs, name='AdmissionBoundary.projection_refs'))
+        if self.resolution_fingerprint is not None:
+            object.__setattr__(self, 'resolution_fingerprint', _fingerprint(self.resolution_fingerprint, 'resolution_fingerprint'))
         if not isinstance(self.consumed, bool) or self.consumed != (self.phase in TERMINAL_ADMISSION_PHASES):
             raise ContractValidationError('invalid_admission_consumed', 'consumed must exactly match a terminal admission phase')
 
-    def to_dict(self) -> dict[str, JsonValue]:
-        return {
-            'schema_version': self.schema_version,
-            'run_id': self.run_id,
-            'decision_id': self.decision_id,
-            'nonce': self.nonce,
-            'launch_operation_id': self.launch_operation_id,
-            'driver_kind': self.driver_kind,
-            'profile_key': self.profile_key,
-            'admission': self.admission.to_dict(),
-            'phase': self.phase.value,
-            'boundary_version': self.boundary_version,
-            'canonical_messages': [thaw_json(item) for item in self.canonical_messages],
-            'request_payload': thaw_json(self.request_payload),
-            'provider_snapshot': self.provider_snapshot.to_dict(),
-            'capability_snapshot': thaw_json(self.capability_snapshot),
-            'session_projection_cursor': self.session_projection_cursor,
-            'prepared_context_ref': self.prepared_context_ref,
-            'tool_set_snapshot_ref': self.tool_set_snapshot_ref,
-            'association_event': None if self.association_event is None else thaw_json(self.association_event),
-            'projection_refs': thaw_json(self.projection_refs),
-            'consumed': self.consumed,
-        }
-
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> 'AdmissionBoundary':
-        data = _strict_mapping(value, required={'schema_version', 'run_id', 'decision_id', 'nonce', 'launch_operation_id', 'driver_kind', 'profile_key', 'admission', 'phase', 'boundary_version', 'canonical_messages', 'request_payload', 'provider_snapshot', 'capability_snapshot', 'session_projection_cursor', 'prepared_context_ref', 'tool_set_snapshot_ref', 'association_event', 'projection_refs', 'consumed'}, name='AdmissionBoundary')
+        data = _contract_payload(value, cls, 'AdmissionBoundary')
         admission = data.pop('admission')
         provider = data.pop('provider_snapshot')
         if not isinstance(admission, Mapping) or not isinstance(provider, Mapping):
@@ -450,7 +416,7 @@ def stable_decision_grant_id(decision_id: str) -> str:
     return hashlib.sha256(f'execution-grant:{value}'.encode('utf-8')).hexdigest()
 
 @dataclass(frozen=True, slots=True)
-class RunContext:
+class RunContext(_Contract):
     session_id: str
     root_run_id: str
     parent_run_id: str | None
@@ -471,24 +437,15 @@ class RunContext:
             object.__setattr__(self, field_name, _required_text(getattr(self, field_name), field_name))
         object.__setattr__(self, 'parent_run_id', _optional_text(self.parent_run_id, 'parent_run_id'))
         object.__setattr__(self, 'capability_hash', _fingerprint(self.capability_hash, 'capability_hash'))
-        if not isinstance(self.auth_epoch, int) or isinstance(self.auth_epoch, bool) or self.auth_epoch < 0:
-            raise ContractValidationError('invalid_auth_epoch', 'auth_epoch must be a non-negative integer')
+        _integer(self.auth_epoch, 0, 'invalid_auth_epoch', 'auth_epoch must be a non-negative integer')
         object.__setattr__(self, 'workspace', _json_object(self.workspace, name='RunContext.workspace'))
         object.__setattr__(self, 'provider_plan', _json_object(self.provider_plan, name='RunContext.provider_plan'))
-
-    def to_dict(self) -> dict[str, JsonValue]:
-        return {'schema_version': self.schema_version, 'session_id': self.session_id, 'root_run_id': self.root_run_id, 'parent_run_id': self.parent_run_id, 'request_id': self.request_id, 'turn_id': self.turn_id, 'venue': self.venue, 'workspace': thaw_json(self.workspace), 'capability_hash': self.capability_hash, 'provider_plan': thaw_json(self.provider_plan), 'trace_id': self.trace_id, 'principal_id': self.principal_id, 'auth_epoch': self.auth_epoch}
 
     def actor(self) -> 'ActorContext':
         return ActorContext(self.principal_id, self.session_id, self.auth_epoch, self.root_run_id)
 
-    @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> 'RunContext':
-        data = _strict_mapping(value, required={'schema_version', 'session_id', 'root_run_id', 'parent_run_id', 'request_id', 'turn_id', 'venue', 'workspace', 'capability_hash', 'provider_plan', 'trace_id', 'principal_id', 'auth_epoch'}, name='RunContext')
-        return cls(**data)
-
 @dataclass(frozen=True, slots=True)
-class ActorContext:
+class ActorContext(_Contract):
     principal_id: str
     session_id: str
     auth_epoch: int
@@ -502,21 +459,12 @@ class ActorContext:
         _schema_version(self.schema_version, name='ActorContext')
         object.__setattr__(self, 'principal_id', _required_text(self.principal_id, 'principal_id'))
         object.__setattr__(self, 'session_id', _required_text(self.session_id, 'session_id'))
-        if not isinstance(self.auth_epoch, int) or isinstance(self.auth_epoch, bool) or self.auth_epoch < 0:
-            raise ContractValidationError('invalid_auth_epoch', 'auth_epoch must be a non-negative integer')
+        _integer(self.auth_epoch, 0, 'invalid_auth_epoch', 'auth_epoch must be a non-negative integer')
         object.__setattr__(self, 'root_run_id', _optional_text(self.root_run_id, 'root_run_id'))
         if self.capability_hash is not None:
             object.__setattr__(self, 'capability_hash', _fingerprint(self.capability_hash, 'capability_hash'))
         if self.internal and (self.root_run_id is None or self.capability_hash is None or self.expires_at is None):
             raise ContractValidationError('invalid_internal_authority', 'internal actors require root_run_id, capability_hash, and expires_at')
-
-    def to_dict(self) -> dict[str, JsonValue]:
-        return {'schema_version': self.schema_version, 'principal_id': self.principal_id, 'session_id': self.session_id, 'auth_epoch': self.auth_epoch, 'root_run_id': self.root_run_id, 'capability_hash': self.capability_hash, 'expires_at': self.expires_at, 'internal': self.internal}
-
-    @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> 'ActorContext':
-        data = _strict_mapping(value, required={'schema_version', 'principal_id', 'session_id', 'auth_epoch', 'root_run_id', 'capability_hash', 'expires_at', 'internal'}, name='ActorContext')
-        return cls(**data)
 
 @dataclass(frozen=True, slots=True)
 class RunRef:
@@ -530,7 +478,7 @@ class RunRef:
         object.__setattr__(self, 'expected_session_id', _required_text(self.expected_session_id, 'expected_session_id'))
 
 @dataclass(frozen=True, slots=True)
-class RunCreate:
+class RunCreate(_Contract):
     run_id: str
     idempotency_key: str
     context: RunContext
@@ -563,9 +511,6 @@ class RunCreate:
             raise ContractValidationError('self_parent', 'a run cannot be its own parent')
         if self.context.parent_run_id is None and self.context.root_run_id != self.run_id:
             raise ContractValidationError('invalid_root', 'a root run must name itself as root_run_id')
-
-    def to_dict(self) -> dict[str, JsonValue]:
-        return {'schema_version': self.schema_version, 'run_id': self.run_id, 'idempotency_key': self.idempotency_key, 'context': self.context.to_dict(), 'payload_fingerprint': self.payload_fingerprint, 'capability_fingerprint': self.capability_fingerprint, 'driver_kind': self.driver_kind, 'profile_key': self.profile_key, 'persistence_level': self.persistence_level.value, 'status': self.status.value}
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> 'RunCreate':
@@ -639,8 +584,7 @@ class DecisionOpen:
         for field_name in ('decision_id', 'run_id', 'nonce'):
             object.__setattr__(self, field_name, _required_text(getattr(self, field_name), field_name))
         object.__setattr__(self, 'kind', DecisionKind(self.kind))
-        if not isinstance(self.prompt_schema_version, int) or isinstance(self.prompt_schema_version, bool) or self.prompt_schema_version < 1:
-            raise ContractValidationError('invalid_schema_version', 'prompt_schema_version must be positive')
+        _integer(self.prompt_schema_version, 1, 'invalid_schema_version', 'prompt_schema_version must be positive')
         object.__setattr__(self, 'prompt', _json_object(self.prompt, name='DecisionOpen.prompt'))
         for field_name in ('domain_kind', 'domain_id', 'call_id', 'effect_id', 'tool_name'):
             object.__setattr__(self, field_name, _optional_text(getattr(self, field_name), field_name))
@@ -671,8 +615,7 @@ class DecisionRecord:
     def __post_init__(self) -> None:
         _schema_version(self.schema_version, name='DecisionRecord')
         object.__setattr__(self, 'status', DecisionStatus(self.status))
-        if not isinstance(self.decision_version, int) or isinstance(self.decision_version, bool) or self.decision_version < 0:
-            raise ContractValidationError('invalid_version', 'decision_version must be non-negative')
+        _integer(self.decision_version, 0, 'invalid_version', 'decision_version must be non-negative')
         if self.status is DecisionStatus.OPEN:
             if self.response_schema_version is not None or self.response is not None:
                 raise ContractValidationError('invalid_open_decision', 'open decisions cannot carry a response')
@@ -695,7 +638,7 @@ class DecisionRecord:
         return self.request.run_id
 
 @dataclass(frozen=True, slots=True)
-class DecisionSignal:
+class DecisionSignal(_Contract):
     """Trusted signal request with the complete decision fence."""
     decision_id: str
     run_id: str
@@ -719,12 +662,10 @@ class DecisionSignal:
         _schema_version(self.schema_version, name='DecisionSignal')
         for field_name in ('decision_id', 'run_id', 'expected_session_id', 'nonce'):
             object.__setattr__(self, field_name, _required_text(getattr(self, field_name), field_name))
-        if not isinstance(self.expected_version, int) or isinstance(self.expected_version, bool) or self.expected_version < 0:
-            raise ContractValidationError('invalid_version', 'expected_version must be non-negative')
+        _integer(self.expected_version, 0, 'invalid_version', 'expected_version must be non-negative')
         if not isinstance(self.allow, bool):
             raise ContractValidationError('invalid_signal', 'allow must be a boolean')
-        if not isinstance(self.response_schema_version, int) or isinstance(self.response_schema_version, bool) or self.response_schema_version < 1:
-            raise ContractValidationError('invalid_schema_version', 'response_schema_version must be positive')
+        _integer(self.response_schema_version, 1, 'invalid_schema_version', 'response_schema_version must be positive')
         object.__setattr__(self, 'response', _json_object(self.response, name='DecisionSignal.response'))
         for field_name in ('domain_kind', 'domain_id', 'call_id', 'effect_id', 'tool_name'):
             object.__setattr__(self, field_name, _optional_text(getattr(self, field_name), field_name))
@@ -758,8 +699,7 @@ class GrantConsume:
             object.__setattr__(self, field_name, _required_text(getattr(self, field_name), field_name))
         for field_name in ('args_hash', 'capability_hash', 'scope_hash'):
             object.__setattr__(self, field_name, _fingerprint(getattr(self, field_name), field_name))
-        if not isinstance(self.expected_version, int) or isinstance(self.expected_version, bool) or self.expected_version < 0:
-            raise ContractValidationError('invalid_version', 'expected_version must be non-negative')
+        _integer(self.expected_version, 0, 'invalid_version', 'expected_version must be non-negative')
 
 @dataclass(frozen=True, slots=True)
 class CreateRunResult:
@@ -791,17 +731,13 @@ class AdmissionLaunchUnknownFence:
     decision_id: str
     launch_operation_id: str
     expected_boundary_version: int
-    retry_safe: bool = False
     schema_version: int = CONTRACT_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
         _schema_version(self.schema_version, name='AdmissionLaunchUnknownFence')
         for name in ('run_id', 'decision_id', 'launch_operation_id'):
             object.__setattr__(self, name, _required_text(getattr(self, name), name))
-        if not isinstance(self.expected_boundary_version, int) or isinstance(self.expected_boundary_version, bool) or self.expected_boundary_version < 1:
-            raise ContractValidationError('invalid_admission_version', 'expected_boundary_version must be positive')
-        if self.retry_safe is not False:
-            raise ContractValidationError('invalid_launch_unknown_fence', 'launch outcome unknown is never retry-safe')
+        _integer(self.expected_boundary_version, 1, 'invalid_admission_version', 'expected_boundary_version must be positive')
 
 @dataclass(frozen=True, slots=True)
 class WorkflowStartResult:
@@ -812,7 +748,7 @@ class WorkflowStartResult:
     start_claimed: bool
 
 @dataclass(frozen=True, slots=True)
-class ChildCommandIntent:
+class ChildCommandIntent(_Contract):
     """Durable, product-neutral intent reserved before a child exists."""
     operation_id: str
     parent_run_id: str
@@ -822,7 +758,7 @@ class ChildCommandIntent:
     capability_subset: tuple[str, ...]
     attachment_policy: AttachmentPolicy | str
     capability_snapshot_ref: str
-    intent_fingerprint: str = field(init=False)
+    intent_fingerprint: str = field(init=False, metadata={'serialize': False})
     schema_version: int = CONTRACT_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -848,17 +784,6 @@ class ChildCommandIntent:
     @property
     def child_run_id(self) -> str:
         return self.child_spec.run_id
-
-    def to_dict(self) -> dict[str, JsonValue]:
-        return {
-            'schema_version': self.schema_version, 'operation_id': self.operation_id,
-            'parent_run_id': self.parent_run_id, 'command_id': self.command_id,
-            'child_spec': self.child_spec.to_dict(),
-            'child_request': thaw_json(self.child_request),
-            'capability_subset': list(self.capability_subset),
-            'attachment_policy': self.attachment_policy.value,
-            'capability_snapshot_ref': self.capability_snapshot_ref,
-        }
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> 'ChildCommandIntent':
@@ -1007,7 +932,7 @@ class DeliveryRecord:
             raise ContractValidationError('invalid_delivery_terminal', 'only delivered rows may carry delivered_at')
 
 @dataclass(frozen=True, slots=True)
-class RunEventCandidate:
+class RunEventCandidate(_Contract):
     event_key: str
     kind: str
     status: OutcomeStatus | str
@@ -1031,6 +956,11 @@ class RunEventCandidate:
             raise ContractValidationError('duplicate_artifact_ref', 'artifact_refs must be unique')
         object.__setattr__(self, 'artifact_refs', refs)
 
+    @property
+    def is_terminal(self) -> bool:
+        return self.status in {OutcomeStatus.SUCCEEDED, OutcomeStatus.FAILED, OutcomeStatus.CANCELLED} and (
+            self.kind == 'final' or self.kind.endswith('.final') or self.payload.get('kind') == 'final')
+
 @dataclass(frozen=True, slots=True)
 class LiveCursor:
     stream_epoch: str
@@ -1040,8 +970,7 @@ class LiveCursor:
     def __post_init__(self) -> None:
         _schema_version(self.schema_version, name='LiveCursor')
         object.__setattr__(self, 'stream_epoch', _required_text(self.stream_epoch, 'stream_epoch'))
-        if not isinstance(self.live_seq, int) or isinstance(self.live_seq, bool) or self.live_seq < 1:
-            raise ContractValidationError('invalid_live_seq', 'live_seq must be a positive integer')
+        _integer(self.live_seq, 1, 'invalid_live_seq', 'live_seq must be a positive integer')
 
 @dataclass(frozen=True, slots=True)
 class RunEvent:

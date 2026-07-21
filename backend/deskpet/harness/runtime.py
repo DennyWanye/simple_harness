@@ -53,11 +53,7 @@ class DriverRuntime:
 
     @staticmethod
     def is_terminal_event(event: RunEvent) -> bool:
-        return event.candidate.kind == "final" and event.candidate.status in {
-            OutcomeStatus.SUCCEEDED,
-            OutcomeStatus.FAILED,
-            OutcomeStatus.CANCELLED,
-        }
+        return event.candidate.is_terminal
 
     @staticmethod
     def _lease_kwargs(lease: RecoveryLease | None) -> dict[str, RecoveryLease]:
@@ -69,6 +65,11 @@ class DriverRuntime:
             active = self._live.get(event.run_id)
             if active is None:
                 return
+            if terminal and event.durable_seq is not None:
+                current = await self._uow.query(
+                    RunRef(event.run_id, event.session_id), active.actor)
+                if isinstance(current, RunRecord):
+                    active.record = current
             if not any(item.event_id == event.event_id for item in active.events):
                 self._live.publish(active, event)
             if terminal:
@@ -402,7 +403,7 @@ class DriverRuntime:
             status=status,
             event=RunEventCandidate(
                 event_key=f"terminal:{record.run_id}",
-                kind="final",
+                kind="run.final",
                 status=outcome,
                 driver_kind=driver_kind,
                 correlation=dict(terminal.correlation),

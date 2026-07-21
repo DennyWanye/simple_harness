@@ -698,7 +698,7 @@ class VoicePipeline:
                 # non-terminal even if a producer uses a surprising kind.
                 if status in {"accepted", "waiting", "cancel_requested"}:
                     continue
-                if kind not in _FINAL_EVENT_KINDS:
+                if kind not in _FINAL_EVENT_KINDS and not kind.endswith(".final"):
                     # A failed tool outcome is public failure evidence, not a
                     # failed root Run; keep consuming until the terminal event.
                     continue
