@@ -23,6 +23,7 @@ class RunRequest:
     mode: str = "auto"
     workspace_context: bool = False
     proposed_tools: tuple[str, ...] = ()
+    canonical_messages: tuple[Mapping[str, JsonValue], ...] = ()
     payload: Mapping[str, JsonValue] = field(default_factory=dict)
 
 

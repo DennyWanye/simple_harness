@@ -763,6 +763,11 @@ class ToolResultEvent(AgentEvent):
     tool_call_id: str = ""
     tool_name: str = ""
     result: str = ""  # JSON string
+    # Typed harness outcomes keep their non-success status through the legacy
+    # product presenter.  Legacy AgentLoop callers omit these fields and retain
+    # the historical succeeded behavior.
+    outcome_status: str = "succeeded"
+    outcome_error: Optional[dict] = None
     # 七步流水线 Step5 标签（plans/2026-06-24-...）：{"step":5,"observation_summary":"..."}。
     # pipeline off → None = BC（前端不读即无影响）。
     pipeline_label: Optional[dict] = None

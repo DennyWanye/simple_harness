@@ -435,9 +435,21 @@ class RunKernel:
             active = self._active.get(ref.run_id) or self._live.add(ref.run_id, actor)
             live_history = self._live.history(active, after_live_seq=start)
             seen = {event.event_id for event in durable_history}
-            history = durable_history + tuple(
-                event for event in live_history if event.event_id not in seen
-            )
+            # A subscriber may attach after a durable terminal committed while
+            # earlier token deltas still live only in the bounded in-memory
+            # history.  Concatenating durable history first would project the
+            # final before those earlier deltas.  Creation time is the shared
+            # cross-stream ordering fact; the stable id is only a tie breaker.
+            history = tuple(sorted(
+                durable_history + tuple(
+                    event for event in live_history if event.event_id not in seen
+                ),
+                key=lambda event: (
+                    event.created_at,
+                    self._runtime.is_terminal_event(event),
+                    event.event_id,
+                ),
+            ))
             terminal_in_history = any(
                 self._runtime.is_terminal_event(event) for event in history
             )
@@ -770,7 +782,10 @@ class RunKernel:
         return DriverStart(
             run_id=spec.run_id,
             session_id=spec.context.session_id,
-            canonical_messages=({"role": "user", "content": request.text},),
+            canonical_messages=(
+                request.canonical_messages
+                or ({"role": "user", "content": request.text},)
+            ),
             provider_state=dict(spec.context.provider_plan),
             run_context=spec.context,
             run_spec=spec,

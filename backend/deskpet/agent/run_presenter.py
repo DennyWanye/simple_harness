@@ -14,22 +14,118 @@ from collections.abc import Awaitable, Callable, Mapping, MutableMapping
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 import structlog
-from agent.agent_loop import AgentEvent, AssistantDeltaEvent, AssistantMessageEvent, AsyncHandoffEvent, ContextCompactedEvent, ErrorEvent, FinalEvent, PipelineEvent, ToolCallEvent, ToolResultEvent
+from agent.agent_loop import AgentEvent, AssistantDeltaEvent, AssistantMessageEvent, AsyncHandoffEvent, ContextCompactedEvent, ErrorEvent, FinalEvent, PipelineEvent, ProviderChainFallbackEvent, ToolCallEvent, ToolResultEvent
 from agent.auto_resume import is_auto_resume_trigger
+from deskpet.execution.contracts import OutcomeStatus, RunEvent, thaw_json
 from deskpet.agent.assembler.components.tool import has_image_completion_claim
 from deskpet.agent.product_domain_sink import ProductDomainSink
 from deskpet.agent.turn_preparer import ProductDomainCommand
 from deskpet.tools.public_projection import project_public_tool_arguments, project_public_tool_result
+from llm.types import ToolCall
 logger = structlog.get_logger(__name__)
 HandlerDomain = Literal['live', 'durable', 'domain']
 Handler = Callable[[AgentEvent, 'RunPresentationContext', 'PresentationState'], Awaitable[None]]
 DomainHandler = Callable[[ProductDomainCommand, ProductDomainSink], Awaitable[bool]]
 
 class RunEventPresentationAdapter(Protocol):
-    """Future typed RunEvent boundary; R2 still consumes legacy AgentEvent only."""
+    """One venue-neutral typed RunEvent boundary shared by Text and Voice."""
 
-    def to_presentation_command(self, event: Any) -> ProductDomainCommand:
+    def to_presentation_events(self, event: RunEvent) -> tuple[AgentEvent, ...]:
         ...
+
+
+class CanonicalRunEventPresentationAdapter:
+    """Translate canonical RunEvents without owning product side effects."""
+
+    def to_presentation_events(self, event: RunEvent) -> tuple[AgentEvent, ...]:
+        candidate = event.candidate
+        payload = thaw_json(candidate.payload)
+        correlation = thaw_json(candidate.correlation)
+        error = None if candidate.error is None else thaw_json(candidate.error)
+        assert isinstance(payload, dict)
+        assert isinstance(correlation, dict)
+        assert error is None or isinstance(error, dict)
+        iteration = int(correlation.get('iteration') or event.durable_seq or (
+            event.live_cursor.live_seq if event.live_cursor is not None else 0
+        ))
+
+        if candidate.kind == 'transcript':
+            return (AssistantDeltaEvent(
+                content=str(payload.get('text') or ''),
+                kind=str(payload.get('token_kind') or 'content'),
+                iteration=iteration,
+            ),)
+        if candidate.kind == 'tool_requested':
+            calls = payload.get('calls')
+            if not isinstance(calls, list):
+                calls = [
+                    {'id': f"{correlation.get('command_id', event.event_id)}:{index}",
+                     'name': name, 'arguments': {}}
+                    for index, name in enumerate(payload.get('tools') or ())
+                ]
+            result: list[AgentEvent] = []
+            for raw in calls:
+                if not isinstance(raw, Mapping):
+                    continue
+                arguments = raw.get('arguments')
+                result.append(ToolCallEvent(
+                    tool_call=ToolCall(
+                        id=str(raw.get('id') or event.event_id),
+                        name=str(raw.get('name') or ''),
+                        arguments=dict(arguments) if isinstance(arguments, Mapping) else {},
+                    ),
+                    iteration=iteration,
+                ))
+            return tuple(result)
+        if candidate.kind == 'tool.outcome':
+            outcome = payload.get('outcome')
+            normalized = dict(outcome) if isinstance(outcome, Mapping) else {'value': outcome}
+            tool_name = str(payload.get('tool_name') or correlation.get('tool_name') or '')
+            return (ToolResultEvent(
+                tool_call_id=str(correlation.get('call_id') or ''),
+                tool_name=tool_name,
+                result=json.dumps(normalized, ensure_ascii=False),
+                outcome_status=candidate.status.value,
+                outcome_error=error,
+                iteration=iteration,
+            ),)
+        if candidate.kind == 'provider_fallback':
+            return (ProviderChainFallbackEvent(
+                session_id=event.session_id,
+                from_=str(payload.get('from_provider') or ''),
+                to=str(payload.get('to_provider') or ''),
+                reason=str(payload.get('reason') or ''),
+                iteration=iteration,
+            ),)
+        if candidate.kind == 'final':
+            if candidate.status is OutcomeStatus.SUCCEEDED:
+                return (FinalEvent(
+                    content=str(payload.get('text') or ''),
+                    reasoning_content=str(payload.get('reasoning') or ''),
+                    iteration=iteration,
+                ),)
+            detail = str((error or {}).get('message') or payload.get('text') or candidate.status.value)
+            return (ErrorEvent(
+                reason=candidate.status.value,
+                detail=detail,
+                error_class=str((error or {}).get('code') or 'run_failed'),
+                iteration=iteration,
+            ),)
+
+        return (PipelineEvent(
+            type='run_event',
+            payload={
+                'run_id': event.run_id,
+                'kind': candidate.kind,
+                'status': candidate.status.value,
+                'driver_kind': candidate.driver_kind,
+                'correlation': correlation,
+                'payload': payload,
+                'error': error,
+                'artifact_refs': list(candidate.artifact_refs),
+            },
+            iteration=iteration,
+        ),)
 
 @dataclass(slots=True)
 class PresentationState:
@@ -103,6 +199,16 @@ class RunPresenter:
                 await handler(event, context, state)
                 return
 
+    async def present_run_event(
+        self,
+        event: RunEvent,
+        adapter: RunEventPresentationAdapter,
+        context: RunPresentationContext,
+        state: PresentationState,
+    ) -> None:
+        for presentation_event in adapter.to_presentation_events(event):
+            await self.present(presentation_event, context, state)
+
     async def finish_turn(self, context: RunPresentationContext, state: PresentationState) -> None:
         if context.bundle is not None and context.assembler is not None:
             try:
@@ -127,7 +233,7 @@ class RunPresenter:
             if isinstance(event, ToolCallEvent) and event.tool_call:
                 await store.bump(context.session_id, event_type='tool_call', name=event.tool_call.name, args=event.tool_call.arguments, **common)
             elif isinstance(event, ToolResultEvent):
-                await store.bump(context.session_id, event_type='tool_result', name=event.tool_name, ok=True, snippet=(event.result or '')[:80], **common)
+                await store.bump(context.session_id, event_type='tool_result', name=event.tool_name, ok=event.outcome_status == 'succeeded', snippet=(event.result or '')[:80], **common)
             elif isinstance(event, AsyncHandoffEvent):
                 await store.bump(context.session_id, event_type='async_handoff', name=event.tool_name, **common)
                 await store.set_status(context.session_id, 'idle')
@@ -153,6 +259,7 @@ def build_legacy_run_presenter() -> RunPresenter:
     presenter.register('durable', ErrorEvent, _present_error)
     presenter.register('domain', ContextCompactedEvent, _present_compacted)
     presenter.register('domain', PipelineEvent, _present_pipeline)
+    presenter.register('domain', ProviderChainFallbackEvent, _present_provider_fallback)
     presenter.register_domain('pipeline_event', _domain_pipeline)
     presenter.register_domain('clarification', _domain_clarification)
     presenter.register_domain('plan_proposed', _domain_plan_proposed)
@@ -225,7 +332,11 @@ async def _present_tool_result(event: AgentEvent, context: RunPresentationContex
     public_result = project_public_tool_result(event.tool_name, parsed)
     public_text = public_result if isinstance(public_result, str) else json.dumps(public_result, ensure_ascii=False)
     await _send_both(context, {'type': 'tool_use_event', 'payload': {'kind': 'result', 'tool_name': event.tool_name, 'result': public_text, 'turn': event.iteration, 'session_id': context.session_id}})
-    await _send_both(context, {'type': 'tool_result', 'payload': {'tool': event.tool_name, 'ok': True, 'result': public_text, 'turn': event.iteration, 'session_id': context.session_id}})
+    ok = event.outcome_status == 'succeeded'
+    result_frame = {'type': 'tool_result', 'payload': {'tool': event.tool_name, 'ok': ok, 'status': event.outcome_status, 'result': public_text, 'turn': event.iteration, 'session_id': context.session_id}}
+    if event.outcome_error is not None:
+        result_frame['payload']['error'] = event.outcome_error
+    await _send_both(context, result_frame)
     if context.session_db is not None:
         try:
             await context.session_db.append_message(session_id=context.session_id, role='tool', content=event.result if isinstance(event.result, str) else json.dumps(event.result, ensure_ascii=False), tool_call_id=event.tool_call_id or '')
@@ -294,4 +405,9 @@ async def _present_pipeline(event: AgentEvent, context: RunPresentationContext, 
         await _send_both(context, frame)
     except Exception as exc:
         logger.debug('pipeline_event_ws_failed', sid=context.session_id, error=str(exc))
-__all__ = ['PresentationState', 'RunEventPresentationAdapter', 'RunPresentationContext', 'RunPresenter', 'build_legacy_run_presenter']
+
+async def _present_provider_fallback(event: AgentEvent, context: RunPresentationContext, state: PresentationState) -> None:
+    assert isinstance(event, ProviderChainFallbackEvent)
+    await _send_both(context, {'type': 'provider_chain_fallback', 'payload': {'session_id': context.session_id, 'from': event.from_, 'to': event.to, 'reason': event.reason}})
+
+__all__ = ['CanonicalRunEventPresentationAdapter', 'PresentationState', 'RunEventPresentationAdapter', 'RunPresentationContext', 'RunPresenter', 'build_legacy_run_presenter']

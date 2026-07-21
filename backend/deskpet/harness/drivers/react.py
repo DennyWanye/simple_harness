@@ -479,7 +479,10 @@ class ReActDriver:
                         event_key=f'effect:{context.effect_id}:settled',
                         kind='tool.outcome', status=status, driver_kind='react',
                         correlation={'command_id': boundary.command_id, 'call_id': context.call_id, 'effect_id': context.effect_id},
-                        payload={'outcome': updates[index].to_dict()},
+                        payload={
+                            'tool_name': boundary.pending_calls[index].tool_name,
+                            'outcome': updates[index].to_dict(),
+                        },
                         error=updates[index].error,
                         artifact_refs=tuple(str(item) for item in metadata[index].get('artifact_refs', ())),
                     )

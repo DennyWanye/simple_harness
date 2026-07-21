@@ -481,7 +481,17 @@ class DriverRuntime:
                 status=OutcomeStatus.WAITING,
                 driver_kind=driver_kind,
                 correlation={"command_id": candidate.command_id},
-                payload={"tools": [call.tool_name for call in candidate.calls]},
+                payload={
+                    "tools": [call.tool_name for call in candidate.calls],
+                    "calls": [
+                        {
+                            "id": call.stable_call_id,
+                            "name": call.tool_name,
+                            "arguments": dict(call.final_params),
+                        }
+                        for call in candidate.calls
+                    ],
+                },
             )
         if candidate.kind == "open_decision":
             return RunEventCandidate(
