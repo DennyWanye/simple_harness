@@ -211,8 +211,8 @@ async def test_v1_and_v2_follow_the_migration_loop_to_v5(tmp_path, starting_vers
         tables = await (
             await db.execute("SELECT name FROM sqlite_master WHERE type='table'")
         ).fetchall()
-    assert version == (7,)
-    assert {row[0] for row in migrations} >= {2, 3, 4, 5, 6, 7}
+    assert version == (WORKFLOW_SCHEMA_VERSION,)
+    assert {row[0] for row in migrations} >= set(range(2, WORKFLOW_SCHEMA_VERSION + 1))
     assert "workflow_effect_budget_reservations" in {row[0] for row in tables}
 
 
@@ -295,7 +295,7 @@ async def test_v1_to_v5_historical_lineage_migrates_without_reinterpretation(
             await db.execute("SELECT 1 FROM workflow_research_continuation_heads")
         ).fetchall()
     expected_children = 2 if workflow_version == "v5" else 1
-    assert version == (7,)
+    assert version == (WORKFLOW_SCHEMA_VERSION,)
     assert len(lineage) == expected_children + 1
     assert sum(row[1] == "historical-root" for row in lineage) == expected_children
     assert heads == []
