@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 
@@ -110,6 +111,32 @@ class HiddenPersistenceFacade:
     assert [(item["symbol"], item["authority"], item["tables"]) for item in items] == [
         ("HiddenPersistenceFacade", "unclassified", ["execution_runs"])
     ]
+
+
+def test_checkpoint_adapter_has_no_execution_sql_and_execution_tx_has_no_lifecycle() -> None:
+    adapter_path = Path("backend/deskpet/workflows/store/checkpoint_execution.py")
+    adapter_tree = ast.parse(adapter_path.read_text(encoding="utf-8"))
+    adapter = next(
+        node
+        for node in adapter_tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "SqliteCheckpointExecutionAdapter"
+    )
+    assert authority_audit._dml_in_node(adapter) == set()
+
+    uow_path = Path("backend/deskpet/workflows/store/execution_uow.py")
+    uow_tree = ast.parse(uow_path.read_text(encoding="utf-8"))
+    execution_tx = next(
+        node
+        for node in uow_tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "ExecutionTx"
+    )
+    forbidden = {"connect", "_connect", "_write_transaction", "commit", "rollback"}
+    calls = {
+        node.func.attr
+        for node in ast.walk(execution_tx)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    assert calls.isdisjoint(forbidden)
 
 
 def test_transaction_starter_discovery_counts_private_method_and_reachable_tables(

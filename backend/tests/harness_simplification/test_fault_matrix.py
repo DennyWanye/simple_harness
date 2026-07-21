@@ -600,6 +600,196 @@ async def _exercise_child_finalize(path: Path, hook: str) -> None:
     assert result.idempotent is False and replay.idempotent is True
 
 
+CHECKPOINT_HOOKS = frozenset(
+    {
+        "checkpoint_consume_decisions_after_write",
+        "checkpoint_open_decision_after_write",
+        "checkpoint_append_event_after_write",
+        "checkpoint_link_effects_after_write",
+        "checkpoint_finalize_run_after_write",
+    }
+)
+
+
+def _workflow_spec(run_id: str) -> RunCreate:
+    return replace(
+        _spec(run_id),
+        driver_kind="workflow",
+        profile_key="deep_research/v7",
+    )
+
+
+def _workflow_run(run_id: str) -> dict[str, str]:
+    return {
+        "run_id": run_id,
+        "request_id": f"request:{run_id}",
+        "turn_id": f"turn:{run_id}",
+        "workflow_name": "deep_research",
+        "workflow_version": "v7",
+    }
+
+
+async def _insert_checkpoint_marker(
+    db: aiosqlite.Connection, *, run_id: str, checkpoint_id: str
+) -> None:
+    await db.execute(
+        """INSERT INTO workflow_checkpoints(
+        thread_id,checkpoint_ns,checkpoint_id,run_id,checkpoint_type,
+        checkpoint_blob,metadata_blob,engine_kind,created_at
+        ) VALUES(?,?,?,?,?,?,?,'native',100)""",
+        (f"thread:{run_id}", "", checkpoint_id, run_id, "snapshot", b"state", b"{}"),
+    )
+
+
+async def _checkpoint_operation(
+    uow: SqliteExecutionUnitOfWork,
+    db: aiosqlite.Connection,
+    *,
+    hook: str,
+    run_id: str,
+) -> None:
+    tx = uow.bind(db)
+    run = _workflow_run(run_id)
+    if hook == "checkpoint_consume_decisions_after_write":
+        await tx.consume_workflow_decisions(
+            run_id=run_id,
+            decisions=[{"decision_id": f"decision:{run_id}", "expected_version": 1}],
+            checkpoint_id=f"checkpoint:{run_id}",
+            now=100.0,
+        )
+    elif hook == "checkpoint_open_decision_after_write":
+        await tx.open_workflow_decision(
+            run=run,
+            interrupt_id=f"interrupt:{run_id}",
+            checkpoint_id=f"checkpoint:{run_id}",
+            task_id="task-1",
+            kind="clarification",
+            prompt={"question": "continue?"},
+            expires_at=None,
+            now=100.0,
+        )
+    elif hook == "checkpoint_append_event_after_write":
+        await tx.append_workflow_event(
+            run=run,
+            intent={
+                "intent_id": f"intent:{run_id}",
+                "event_key": "workflow:progress",
+                "event_type": "workflow.progress",
+                "payload": {"kind": "progress", "status": "running"},
+            },
+            now=100.0,
+        )
+    elif hook == "checkpoint_link_effects_after_write":
+        await tx.link_workflow_effects(
+            run_id=run_id,
+            checkpoint_ns="",
+            checkpoint_id=f"checkpoint:{run_id}",
+            links=[{"effect_id": f"effect:{run_id}", "node_execution_id": "node-1"}],
+            now=100.0,
+        )
+    elif hook == "checkpoint_finalize_run_after_write":
+        await tx.finalize_workflow_run(
+            run=run,
+            terminal_status="completed",
+            terminal_error=None,
+            recovery_action=None,
+            event_ids=(),
+            now=100.0,
+        )
+    else:  # pragma: no cover - caller is gated by CHECKPOINT_HOOKS
+        raise AssertionError(hook)
+
+
+async def _checkpoint_state(path: Path, run_id: str) -> tuple[int, str, int, int, int]:
+    async with aiosqlite.connect(path) as db:
+        checkpoint_count = int(
+            (await (await db.execute("SELECT COUNT(*) FROM workflow_checkpoints")).fetchone())[0]
+        )
+        run = await (
+            await db.execute(
+                "SELECT status,durable_seq FROM execution_runs WHERE run_id=?", (run_id,)
+            )
+        ).fetchone()
+        decision = int(
+            (
+                await (
+                    await db.execute(
+                        "SELECT COUNT(*) FROM execution_decisions WHERE consumed_at IS NOT NULL"
+                    )
+                ).fetchone()
+            )[0]
+        )
+        links = int(
+            (await (await db.execute("SELECT COUNT(*) FROM execution_effect_links")).fetchone())[0]
+        )
+        return checkpoint_count, str(run[0]), int(run[1]), decision, links
+
+
+async def _exercise_checkpoint_execution_tx(path: Path, hook: str) -> None:
+    run_id = hook.removeprefix("checkpoint_").removesuffix("_after_write")
+    healthy = await _store(path)
+    await healthy.create(_workflow_spec(run_id))
+
+    if hook == "checkpoint_consume_decisions_after_write":
+        request = replace(_decision(run_id), decision_id=f"decision:{run_id}")
+        await healthy.open_decision(request, _actor(run_id), expected_run_version=0)
+        async with aiosqlite.connect(path) as db:
+            await db.execute(
+                """UPDATE execution_decisions SET status='allowed',response_schema_version=1,
+                response_json='{"answer":"yes"}',decision_version=1,resolved_at=99
+                WHERE decision_id=?""",
+                (request.decision_id,),
+            )
+            await db.commit()
+    elif hook == "checkpoint_link_effects_after_write":
+        async with aiosqlite.connect(path) as db:
+            await db.execute(
+                """INSERT INTO execution_effects(
+                effect_id,schema_version,run_id,effect_fingerprint,call_id,tool_name,args_hash,
+                capability_hash,scope_hash,effect_type,status,policy_json,prepared_json,
+                outcome_json,artifact_refs_json,effect_version,created_at,updated_at,ended_at
+                ) VALUES(?,1,?,'checkpoint-effect','call-1','read_file',?,?,?,
+                'read','succeeded','{}','{}','{}','[]',1,90,90,90)""",
+                (f"effect:{run_id}", run_id, ARGS_HASH, CAPABILITY_HASH, SCOPE_HASH),
+            )
+            await db.commit()
+
+    before_counts = await _counts(path)
+    before_state = await _checkpoint_state(path, run_id)
+    crashing = SqliteExecutionUnitOfWork(
+        path,
+        clock=lambda: 100.0,
+        fault_injector=lambda point: (_ for _ in ()).throw(RuntimeError(f"crash:{point}"))
+        if point == hook
+        else None,
+    )
+    async with aiosqlite.connect(path) as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute("PRAGMA foreign_keys=ON")
+        await db.execute("BEGIN IMMEDIATE")
+        with pytest.raises(RuntimeError, match=f"crash:{hook}"):
+            await _insert_checkpoint_marker(
+                db, run_id=run_id, checkpoint_id=f"checkpoint:{run_id}"
+            )
+            await _checkpoint_operation(crashing, db, hook=hook, run_id=run_id)
+        await db.rollback()
+    assert await _counts(path) == before_counts
+    assert await _checkpoint_state(path, run_id) == before_state
+
+    restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
+    async with aiosqlite.connect(path) as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute("PRAGMA foreign_keys=ON")
+        await db.execute("BEGIN IMMEDIATE")
+        await _insert_checkpoint_marker(
+            db, run_id=run_id, checkpoint_id=f"checkpoint:{run_id}"
+        )
+        await _checkpoint_operation(restarted, db, hook=hook, run_id=run_id)
+        await db.commit()
+    state = await _checkpoint_state(path, run_id)
+    assert state[0] == 1
+
+
 async def _exercise_team(path: Path, hook: str) -> None:
     uow = await _store(path)
     if hook in {
@@ -743,6 +933,9 @@ def test_fault_matrix_schema_and_exported_hooks_are_exact() -> None:
     tested = {row["injection_hook"] for row in MATRIX}
     exported = set(UOW_FAULT_HOOKS) | set(TEAM_FAULT_HOOKS)
     assert tested == exported
+    assert len(MATRIX) == len(tested) == len(exported) == 39
+    assert len(UOW_FAULT_HOOKS) == 34
+    assert len(TEAM_FAULT_HOOKS) == 5
     assert all(COUNT_KEYS <= set(row["expected_counts"]) for row in MATRIX)
     assert all(
         TEAM_COUNT_KEYS <= set(row["expected_counts"])
@@ -791,6 +984,8 @@ async def test_every_fault_window_rolls_back_then_restart_converges(tmp_path, ro
         await _exercise_child_apply(path, hook)
     elif hook.startswith("child_finalize_"):
         await _exercise_child_finalize(path, hook)
+    elif hook in CHECKPOINT_HOOKS:
+        await _exercise_checkpoint_execution_tx(path, hook)
     elif hook in TEAM_FAULT_HOOKS:
         await _exercise_team(path, hook)
     else:  # pragma: no cover - equality gate above makes this fail closed

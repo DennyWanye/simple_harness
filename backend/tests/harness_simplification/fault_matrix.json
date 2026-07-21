@@ -304,5 +304,50 @@
     "restart_actor": "child-recoverer",
     "idempotency_key": "child-finalize:operation-child:terminal",
     "expected_counts": {"run": 2, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 1, "link": 1, "inbox": 2, "event": 1, "delivery": 0, "external_write": 0}
+  },
+  {
+    "window_id": "uow-checkpoint-consume-decisions",
+    "injection_hook": "checkpoint_consume_decisions_after_write",
+    "durable_before": "resolved execution decision and no native checkpoint marker",
+    "durable_after": "native checkpoint marker and decision consumption commit together",
+    "restart_actor": "workflow-checkpoint-recoverer",
+    "idempotency_key": "checkpoint:consume-decisions",
+    "expected_counts": {"run": 1, "boundary": 0, "decision": 1, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0}
+  },
+  {
+    "window_id": "uow-checkpoint-open-decision",
+    "injection_hook": "checkpoint_open_decision_after_write",
+    "durable_before": "running execution and no native checkpoint marker",
+    "durable_after": "native checkpoint marker, waiting run and open decision commit together",
+    "restart_actor": "workflow-checkpoint-recoverer",
+    "idempotency_key": "checkpoint:open-decision",
+    "expected_counts": {"run": 1, "boundary": 0, "decision": 1, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0}
+  },
+  {
+    "window_id": "uow-checkpoint-append-event",
+    "injection_hook": "checkpoint_append_event_after_write",
+    "durable_before": "running execution with no event or native checkpoint marker",
+    "durable_after": "native checkpoint marker and canonical execution event commit together",
+    "restart_actor": "workflow-checkpoint-recoverer",
+    "idempotency_key": "checkpoint:append-event",
+    "expected_counts": {"run": 1, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 1, "delivery": 0, "external_write": 0}
+  },
+  {
+    "window_id": "uow-checkpoint-link-effects",
+    "injection_hook": "checkpoint_link_effects_after_write",
+    "durable_before": "committed execution effect without checkpoint link or native marker",
+    "durable_after": "native checkpoint marker and effect link commit together",
+    "restart_actor": "workflow-checkpoint-recoverer",
+    "idempotency_key": "checkpoint:link-effects",
+    "expected_counts": {"run": 1, "boundary": 0, "decision": 0, "effect": 1, "attempt": 0, "child": 0, "link": 1, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0}
+  },
+  {
+    "window_id": "uow-checkpoint-finalize-run",
+    "injection_hook": "checkpoint_finalize_run_after_write",
+    "durable_before": "running execution without terminal event or native checkpoint marker",
+    "durable_after": "native checkpoint marker, terminal event and terminal CAS commit together",
+    "restart_actor": "workflow-checkpoint-recoverer",
+    "idempotency_key": "checkpoint:finalize-run",
+    "expected_counts": {"run": 1, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 1, "delivery": 0, "external_write": 0}
   }
 ]
