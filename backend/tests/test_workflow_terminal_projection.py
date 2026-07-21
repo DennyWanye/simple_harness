@@ -241,6 +241,9 @@ async def test_service_generate_now_uses_repository_run_head_and_brief_cas(monke
     repository = _Repository()
     service = object.__new__(WorkflowService)
     service.run_store = _RunStore()
+    service._owner_uow = SimpleNamespace(
+        get_execution_owner=lambda run_id: _async_value(None)
+    )
     service.research_repository = repository
     service.action_matrix = VersionedActionMatrix()
     service.launcher = SimpleNamespace(wake_run_control=lambda run_id: _async_value({"run_id": run_id}))

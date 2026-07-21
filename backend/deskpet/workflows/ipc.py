@@ -8,6 +8,8 @@ from collections.abc import Awaitable, Callable, Mapping, MutableSet
 from dataclasses import dataclass
 from typing import Any
 
+from deskpet.execution.contracts import ActorContext
+
 from .errors import WorkflowContractError
 from .outbox import MAX_PAGE_SIZE, OutboxError
 from .service import WorkflowService, WorkflowServiceError, _plain
@@ -191,8 +193,13 @@ def _number(payload: Mapping[str, Any], field: str) -> float | None:
 class WorkflowIPCDispatcher:
     """Validate plain mappings and return plain response mappings."""
 
-    def __init__(self, service: WorkflowService | object) -> None:
+    def __init__(
+        self,
+        service: WorkflowService | object,
+        trusted_actor: ActorContext | None = None,
+    ) -> None:
         self.service = service
+        self._trusted_actor = trusted_actor
 
     @staticmethod
     def _request(request: Mapping[str, Any]) -> tuple[str, str, dict[str, Any]]:
@@ -332,6 +339,7 @@ class WorkflowIPCDispatcher:
         return await self.service.cancel_run(
             _string(payload, "run_id"),
             reason=_string(payload, "reason", required=False) or "user",
+            actor=self._trusted_actor,
         )
 
     async def _run_retry_from_start(self, payload: Mapping[str, Any]) -> dict[str, Any]:

@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any
 
 from deskpet.execution.contracts import (
+    ActorContext,
+    AuthorizationError,
     DeliveryPolicy,
     DeliverySpec,
     OutcomeStatus,
@@ -25,6 +27,7 @@ from deskpet.execution.contracts import (
     RunContext,
     RunCreate,
     RunEventCandidate,
+    RunRef,
     RunStatus,
     WorkflowRunSeed,
     WorkflowSessionRef,
@@ -1358,8 +1361,21 @@ class WorkflowService:
 
     resume = resume_run
 
-    async def cancel_run(self, run_id: str, *, reason: str = "user") -> dict[str, Any]:
+    async def cancel_run(
+        self, run_id: str, *, reason: str = "user", actor: ActorContext | None = None
+    ) -> dict[str, Any]:
         if await self.execution_owner(run_id) is not None:
+            if actor is None or actor.root_run_id is None:
+                raise WorkflowServiceError(
+                    "actor_required",
+                    "execution-owned cancel requires trusted actor context",
+                )
+            try:
+                await self._owner_uow.authorize(
+                    RunRef(run_id, actor.session_id), actor, "cancel"
+                )
+            except AuthorizationError as exc:
+                raise WorkflowServiceError(exc.code, str(exc)) from exc
             return _plain(await self.cancel_precreated(run_id, reason))
         method = getattr(self.runner, "request_cancel", None)
         if not callable(method):
@@ -1392,6 +1408,7 @@ class WorkflowService:
             raise WorkflowServiceError("invalid_run_version", "expected_version must be non-negative")
         action_payload = copy.deepcopy(dict(payload or {}))
         validate_json_value(action_payload, path="$.action_payload")
+        await self.require_legacy_owner(run_id, "action")
         row = await self.run_store.get_run(run_id)
         if row is None:
             raise WorkflowServiceError("not_found", "workflow run was not found")

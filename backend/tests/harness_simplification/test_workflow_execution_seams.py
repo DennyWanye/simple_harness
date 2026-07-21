@@ -751,14 +751,35 @@ async def test_ipc_cancel_routes_execution_owner_to_canonical_cancel(tmp_path):
     path = tmp_path / "ipc-cancel-owner.db"
     service, _, _, _, ports = _stack(path)
     prepared = _prepared(service, "code", "v1", suffix="ipc-cancel")
-    await service.start_prepared(
-        prepared, service.execution_spec(prepared), execution_ports=ports
-    )
+    spec = service.execution_spec(prepared)
+    await service.start_prepared(prepared, spec, execution_ports=ports)
 
-    response = await WorkflowIPCDispatcher(service).dispatch({
+    request = {
         "type": "workflow_run_cancel", "request_id": "cancel-1",
         "payload": {"run_id": prepared.run_id, "reason": "ipc-user"},
-    })
+    }
+    missing = await WorkflowIPCDispatcher(service).dispatch(request)
+    assert missing["error"]["code"] == "actor_required"
+    for actor in (
+        ActorContext(spec.context.principal_id, "other-session", 0, prepared.run_id),
+        ActorContext(spec.context.principal_id, spec.context.session_id, 0, "other-root"),
+    ):
+        denied = await WorkflowIPCDispatcher(service, actor).dispatch(request)
+        assert denied["error"]["code"] == "actor_not_authorized"
+    with sqlite3.connect(path) as db:
+        assert db.execute(
+            "SELECT status FROM execution_runs WHERE run_id=?", (prepared.run_id,)
+        ).fetchone()[0] == "created"
+        assert db.execute(
+            "SELECT status FROM workflow_runs WHERE run_id=?", (prepared.run_id,)
+        ).fetchone()[0] == "created"
+    actor = ActorContext(
+        spec.context.principal_id,
+        spec.context.session_id,
+        spec.context.auth_epoch,
+        spec.context.root_run_id,
+    )
+    response = await WorkflowIPCDispatcher(service, actor).dispatch(request)
     assert response["ok"] is True
     assert response["payload"]["status"] == "cancel_requested"
     db = sqlite3.connect(path)
@@ -772,6 +793,62 @@ async def test_ipc_cancel_routes_execution_owner_to_canonical_cancel(tmp_path):
         ).fetchone()[0] == "cancel_requested"
     finally:
         db.close()
+
+
+@pytest.mark.asyncio
+async def test_execution_owned_continue_research_cannot_create_legacy_child(tmp_path):
+    path = tmp_path / "owned-action.db"
+    service, _, _, _, ports = _stack(path)
+    prepared = _prepared(service, "deep_research", "v5", suffix="owned-action")
+    await service.start_prepared(
+        prepared, service.execution_spec(prepared), execution_ports=ports
+    )
+
+    with pytest.raises(WorkflowServiceError) as exc:
+        await service.execute_run_action(
+            prepared.run_id,
+            action_id="continue_research",
+            idempotency_key="continue-owned",
+            expected_version=0,
+        )
+    assert exc.value.code == "execution_owner"
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT COUNT(*) FROM workflow_runs").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM execution_runs").fetchone()[0] == 1
+        assert db.execute(
+            "SELECT COUNT(*) FROM workflow_runs WHERE parent_run_id IS NOT NULL"
+        ).fetchone()[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_ipc_cancel_without_actor_remains_compatible_for_legacy_run(tmp_path):
+    path = tmp_path / "legacy-ipc-cancel.db"
+    service, _, store, _, _ = _stack(path)
+    run_id, _ = await store.create_run(
+        request_key="legacy-cancel",
+        session_id="legacy-session",
+        request_id="legacy-request",
+        turn_id="legacy-turn",
+        workflow_name="code",
+        workflow_version="v1",
+        manifest_hash="definition-code-v1",
+        implementation_hash="implementation-code-v1",
+        capability_hash="legacy-capabilities",
+        capability_snapshot={"tools": []},
+        state_schema_version=1,
+    )
+
+    response = await WorkflowIPCDispatcher(service).dispatch({
+        "type": "workflow_run_cancel",
+        "request_id": "legacy-cancel",
+        "payload": {"run_id": run_id, "reason": "legacy-user"},
+    })
+    assert response["ok"] is True
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT COUNT(*) FROM execution_runs").fetchone()[0] == 0
+        assert db.execute(
+            "SELECT status FROM workflow_runs WHERE run_id=?", (run_id,)
+        ).fetchone()[0] in {"cancel_requested", "cancelled"}
 
 
 @pytest.mark.asyncio

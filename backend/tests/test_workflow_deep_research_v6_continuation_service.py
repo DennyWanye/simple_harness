@@ -69,9 +69,15 @@ class _Launcher:
         return {"run_id": run_id, "accepted": True}
 
 
+class _LegacyOwner:
+    async def get_execution_owner(self, run_id: str):
+        return None
+
+
 def _service(repository: object, launcher: object) -> WorkflowService:
     service = object.__new__(WorkflowService)
     service.run_store = _RunStore()
+    service._owner_uow = _LegacyOwner()
     service.research_repository = repository
     service.action_matrix = VersionedActionMatrix()
     service.launcher = launcher
