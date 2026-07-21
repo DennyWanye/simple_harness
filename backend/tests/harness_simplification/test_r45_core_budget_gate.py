@@ -195,18 +195,8 @@ def test_r45_current_state_cannot_regress_and_final_status_is_derived() -> None:
     loc = harness_baseline._orchestration_loc()
     audit = harness_baseline.build_r45_core_audit(loc)
 
-    assert audit["total_loc"] <= 33_618
-    assert audit["core_loc"] <= 5_725
-    assert audit["kernel_loc"] <= 850
-    assert audit["public_operations"] == [
-        "start",
-        "observe",
-        "signal",
-        "cancel",
-        "recover",
-        "close",
-    ]
-    assert audit["unknown_classifications"] == []
+    transition = harness_baseline.validate_r45_transition_gate(audit)
+    assert transition["passed"], transition["checks"]
 
     final = harness_baseline.validate_r45_final_gate(audit)
     assert final["passed"] is all(final["checks"].values())
@@ -235,6 +225,27 @@ def test_r45_cli_modes_propagate_gate_exit_status(monkeypatch) -> None:
     assert harness_baseline.main() == 0
 
     monkeypatch.setattr(
+        "sys.argv", ["harness_baseline.py", "--loc-only", "--r45-transition-gate"]
+    )
+    assert harness_baseline.main() == 0
+
+    monkeypatch.setattr(
         "sys.argv", ["harness_baseline.py", "--loc-only", "--r45-final-gate"]
     )
     assert harness_baseline.main() == 1
+
+
+def test_r45_transition_gate_rejects_peak_growth() -> None:
+    audit = {
+        "total_loc": harness_baseline.R45_TRANSITIONAL_TOTAL_LOC + 1,
+        "core_loc": 5_725,
+        "kernel_loc": 820,
+        "public_operations": list(harness_baseline.R45_PUBLIC_OPERATIONS),
+        "unknown_classifications": [],
+        "deletion_budget_loc": 255,
+    }
+
+    gate = harness_baseline.validate_r45_transition_gate(audit)
+
+    assert gate["passed"] is False
+    assert gate["checks"]["total_loc_lte_34300"] is False

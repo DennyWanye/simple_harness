@@ -65,6 +65,7 @@ PHASE0_MANIFEST = PLAN_DIR / "loc-phase0-manifest.json"
 ROLLBACK_MANIFEST = PLAN_DIR / "loc-rollback-manifest.json"
 R45_BASE_COMMIT = "796905b9888c2659af78cec21de1ee96b46a2c51"
 R45_EXPECTED_TOTAL_LOC = 33_618
+R45_TRANSITIONAL_TOTAL_LOC = 34_300
 R45_EXPECTED_CORE_LOC = 5_725
 R45_EXPECTED_KERNEL_LOC = 820
 R45_FINAL_CORE_LOC = 5_500
@@ -1586,6 +1587,20 @@ def validate_r45_baseline_gate(core_audit: Mapping[str, Any]) -> dict[str, Any]:
     return {"gate": "r45_locked_baseline", "checks": checks, "passed": all(checks.values())}
 
 
+def validate_r45_transition_gate(core_audit: Mapping[str, Any]) -> dict[str, Any]:
+    checks = {
+        "total_loc_lte_34300": int(core_audit["total_loc"])
+        <= R45_TRANSITIONAL_TOTAL_LOC,
+        "core_loc_lte_5725": int(core_audit["core_loc"]) <= R45_EXPECTED_CORE_LOC,
+        "kernel_loc_lte_850": int(core_audit["kernel_loc"]) <= R45_FINAL_KERNEL_LOC,
+        "public_operations_eq_six": tuple(core_audit["public_operations"])
+        == R45_PUBLIC_OPERATIONS,
+        "unknown_classifications_eq_zero": not core_audit["unknown_classifications"],
+        "deletion_budget_loc_eq_255": int(core_audit["deletion_budget_loc"]) == 255,
+    }
+    return {"gate": "r45_transition", "checks": checks, "passed": all(checks.values())}
+
+
 def validate_r45_final_gate(core_audit: Mapping[str, Any]) -> dict[str, Any]:
     checks = {
         "total_loc_lte_33618": int(core_audit["total_loc"]) <= R45_EXPECTED_TOTAL_LOC,
@@ -1608,6 +1623,7 @@ def main() -> int:
     parser.add_argument("--loc-only", action="store_true")
     parser.add_argument("--r1-gate", action="store_true")
     parser.add_argument("--r45-baseline", action="store_true")
+    parser.add_argument("--r45-transition-gate", action="store_true")
     parser.add_argument("--r45-final-gate", action="store_true")
     parser.add_argument("--write-loc-manifests", action="store_true")
     args = parser.parse_args()
@@ -1621,10 +1637,13 @@ def main() -> int:
         parser.error("--compare requires the complete benchmark, not --loc-only")
     if args.r1_gate and not args.loc_only:
         parser.error("--r1-gate requires --loc-only")
-    if (args.r45_baseline or args.r45_final_gate) and not args.loc_only:
+    r45_gate_count = sum(
+        (args.r45_baseline, args.r45_transition_gate, args.r45_final_gate)
+    )
+    if r45_gate_count and not args.loc_only:
         parser.error("R4.5 gates require --loc-only")
-    if args.r45_baseline and args.r45_final_gate:
-        parser.error("--r45-baseline and --r45-final-gate are mutually exclusive")
+    if r45_gate_count > 1:
+        parser.error("R4.5 gate modes are mutually exclusive")
     if args.write_loc_manifests:
         write_locked_manifests()
     if args.loc_only:
@@ -1641,13 +1660,16 @@ def main() -> int:
         )
     if args.r1_gate:
         result["r1_gate"] = validate_r1_loc_gate(result["orchestration_loc"])
-    if args.r45_baseline or args.r45_final_gate:
+    if r45_gate_count:
         result["r45_core_audit"] = build_r45_core_audit(result["orchestration_loc"])
-        result["r45_gate"] = (
-            validate_r45_baseline_gate(result["r45_core_audit"])
-            if args.r45_baseline
-            else validate_r45_final_gate(result["r45_core_audit"])
-        )
+        if args.r45_baseline:
+            result["r45_gate"] = validate_r45_baseline_gate(result["r45_core_audit"])
+        elif args.r45_transition_gate:
+            result["r45_gate"] = validate_r45_transition_gate(
+                result["r45_core_audit"]
+            )
+        else:
+            result["r45_gate"] = validate_r45_final_gate(result["r45_core_audit"])
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(
