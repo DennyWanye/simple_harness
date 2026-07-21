@@ -71,6 +71,7 @@ class HarnessRecoveryCoordinator:
             remaining = deadline - loop.time()
             if remaining <= 0:
                 return False
+            await self.recover_pending(only_run_ids=run_ids)
             await asyncio.sleep(min(0.005, remaining))
         return True
 

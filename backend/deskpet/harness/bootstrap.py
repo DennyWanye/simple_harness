@@ -82,7 +82,6 @@ class HarnessRuntime:
             await self.child_scheduler.close()
         await self.recovery.close()
         try:
-            await self.kernel._drain_active(min(0.05, max(0.0, timeout) / 4))
             if (effects := self.tool_executor) is not None:
                 await effects.close(max(0.0, timeout) / 2)
                 if (run_ids := effects.ready_late_run_ids()):
