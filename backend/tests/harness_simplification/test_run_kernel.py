@@ -563,6 +563,12 @@ def host(session: str = "s1") -> HostContext:
     )
 
 
+def _live_run(kernel: RunKernel, run_id: str):
+    active = kernel._live.get(run_id)
+    assert active is not None
+    return active
+
+
 @pytest.mark.asyncio
 async def test_start_routes_once_and_idempotent_retry_does_not_start_twice(kernel) -> None:
     value, classifier, driver = kernel
@@ -597,8 +603,11 @@ async def test_short_react_run_stays_in_bounded_kernel_index_without_sqlite_writ
     async with aiosqlite.connect(path) as db:
         rows = (await (await db.execute("SELECT COUNT(*) FROM execution_runs")).fetchone())[0]
     assert rows == 0
+    active = _live_run(value, handle.ref.run_id)
+    assert (active.task, active.driver_state, active.driver_iterator) == (None, None, None)
+    assert not active.subscribers
     await value.close(handle.ref, actor)
-    assert handle.ref.run_id not in value._active
+    assert value._live.get(handle.ref.run_id) is None
 
 
 @pytest.mark.asyncio
@@ -625,7 +634,7 @@ async def test_first_decision_atomically_promotes_boundary_and_kernel_adopts_uow
     continuation = await uow.load_continuation(handle.ref.run_id)
     assert durable.persistence_level is PersistenceLevel.DURABLE
     assert continuation is not None and continuation.pending_decision_id == "clarify-1"
-    assert value._active[handle.ref.run_id].record is None
+    assert _live_run(value, handle.ref.run_id).record is None
 
     receipt = await value.signal(
         handle.ref,
@@ -770,8 +779,9 @@ async def test_recovery_resumes_committed_decision_marker_after_process_crash(tm
         router=RegisteredRouter(StaticClassifier("react.default"), _profiles("react.default", "react")),
         drivers=driver_catalog((RegisteredDriver("react", ReActDriver(ClarificationCollaborator(), restarted_uow, NoEffects())),)),
     )
+    assert restarted._live.get(handle.ref.run_id) is None
     await restarted.recover(handle.ref, actor)
-    await restarted._active[handle.ref.run_id].task
+    await _live_run(restarted, handle.ref.run_id).task
     assert (await restarted_uow.query(handle.ref, actor)).status is RunStatus.COMPLETED
     assert sum(event.kind == "run.resumed" for event in await restarted_uow.list_events(handle.ref.run_id)) == 1
 
@@ -857,13 +867,13 @@ async def test_driver_failure_isolated_as_run_terminal(tmp_path) -> None:
     )
     terminal = [event async for event in stream][-1]
     assert terminal.status is OutcomeStatus.FAILED
-    active = value._active[handle.ref.run_id]
+    active = _live_run(value, handle.ref.run_id)
     assert active.task is None
     assert active.subscribers == set()
     await value.close(
         handle.ref, host().actor(root_run_id=handle.root_run_id)
     )
-    assert handle.ref.run_id not in value._active
+    assert value._live.get(handle.ref.run_id) is None
 
 
 @pytest.mark.asyncio
@@ -913,7 +923,7 @@ async def test_recovery_renews_before_driver_and_first_anext(tmp_path) -> None:
     )
     actor = host().actor(root_run_id="run-recovery-order")
     await value.recover(RunRef("run-recovery-order", "s1"), actor)
-    await value._active["run-recovery-order"].task
+    await _live_run(value, "run-recovery-order").task
 
     assert timeline == ["renew", "recover", "renew", "anext"]
 
@@ -1023,7 +1033,7 @@ async def test_atomic_driver_commits_before_kernel_returns_handle(tmp_path) -> N
             ),
         )),
     )
-    assert handle.ref.run_id not in restarted._active
+    assert restarted._live.get(handle.ref.run_id) is None
     hydrated = restarted.observe(handle.ref, actor)
     replayed = await anext(hydrated)
     await hydrated.aclose()
@@ -1119,16 +1129,16 @@ async def test_scheduled_child_replay_uses_authoritative_terminal_row(tmp_path) 
     assert (await uow.get_child_command(command.operation_id)).status.value == "scheduled"
     assert driver.starts == 1
     for _ in range(100):
-        if command.child_run_id not in kernel._active:
+        if kernel._live.get(command.child_run_id) is None:
             break
         await asyncio.sleep(0.01)
-    assert command.child_run_id not in kernel._active
+    assert kernel._live.get(command.child_run_id) is None
 
     await asyncio.sleep(0.01)
     async with kernel._lock:
         stale = kernel._live.add(command.child_run_id, actor)
         stale.record = child
-    assert command.child_run_id in kernel._active
+    assert kernel._live.get(command.child_run_id) is not None
     fresh = SqliteExecutionUnitOfWork(path)
     await ChildRunScheduler(
         ChildRunCoordinator(fresh), KernelChildLauncher(kernel), owner="restarted-scheduler"
@@ -1136,7 +1146,7 @@ async def test_scheduled_child_replay_uses_authoritative_terminal_row(tmp_path) 
 
     assert (await fresh.get_child_command(command.operation_id)).status.value == "acked"
     assert driver.starts == 1
-    assert command.child_run_id not in kernel._active
+    assert kernel._live.get(command.child_run_id) is None
 
 
 @pytest.mark.asyncio
@@ -1186,7 +1196,7 @@ async def test_precreated_child_with_continuation_recovers_instead_of_restarting
         drivers=driver_catalog((RegisteredDriver("react", driver, durable_from_start=True),)),
     )
     await KernelChildLauncher(kernel).accept(scheduled)
-    await kernel._active[command.child_run_id].task
+    await _live_run(kernel, command.child_run_id).task
 
     assert driver.starts == 0
     assert driver.recovers == 1
@@ -1461,7 +1471,7 @@ async def test_runtime_keeps_mixed_batch_pending_when_one_physical_call_is_late(
     assert record.status is not RunStatus.COMPLETED
 
     for _ in range(100):
-        active_task = value._active[handle.ref.run_id].task
+        active_task = _live_run(value, handle.ref.run_id).task
         if active_task is not None and active_task.done():
             break
         await asyncio.sleep(0.01)
@@ -1502,10 +1512,10 @@ async def test_runtime_keeps_mixed_batch_pending_when_one_physical_call_is_late(
     recovered_boundary = collaborator.resumes[0][0]
     assert [item.value["written"] for item in recovered_boundary.outcomes] == [1, 2]
     for _ in range(100):
-        if value._active[handle.ref.run_id].task.done():
+        if _live_run(value, handle.ref.run_id).task.done():
             break
         await asyncio.sleep(0.01)
-    assert value._active[handle.ref.run_id].task.done()
+    assert _live_run(value, handle.ref.run_id).task.done()
 
 
 @pytest.mark.asyncio
@@ -1565,10 +1575,10 @@ async def test_restart_after_close_bound_keeps_missing_late_evidence_unknown(tmp
     assert stored[0] == "unknown"
     assert "reconciliation_pending" not in stored[1]
     for _ in range(300):
-        if restarted._active[handle.ref.run_id].task.done():
+        if _live_run(restarted, handle.ref.run_id).task.done():
             break
         await asyncio.sleep(0.01)
-    assert restarted._active[handle.ref.run_id].task.done()
+    assert _live_run(restarted, handle.ref.run_id).task.done()
     await asyncio.sleep(0.05)  # let aiosqlite worker threads publish their final close
 
 

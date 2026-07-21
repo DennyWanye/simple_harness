@@ -203,7 +203,9 @@ async def test_recovery_enumerates_only_execution_owned_runs(tmp_path) -> None:
         resolver=Resolver(),
     )
 
-    await runtime.kernel._active["run-recover"].task
+    active = runtime.kernel._live.get("run-recover")
+    assert active is not None
+    await active.task
 
     assert driver.recovered == ["run-recover"]
     await runtime.close()

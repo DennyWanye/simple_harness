@@ -168,7 +168,9 @@ async def test_batch_child_restart_runs_parallel_and_reaches_parent_inbox(tmp_pa
         RunRequest("delegate", "request-a", "turn-a"),
         _host(),
     )
-    await first_kernel._active[handle.ref.run_id].task
+    active = first_kernel._live.get(handle.ref.run_id)
+    assert active is not None
+    await active.task
     actor = _host().actor(root_run_id=handle.root_run_id)
     parent = await first_uow.query(handle.ref, actor)
     command = first_collaborator.command

@@ -42,7 +42,7 @@ from deskpet.execution.ports import ExecutionUnitOfWork
 from .context import HostContextFactory
 from .child_runs import ChildRunCoordinator
 from .contracts import CancelReceipt, HostContext, RegisteredDriver, RunHandle, RunRequest, SignalReceipt, TerminalProjection
-from .live_index import BoundedLiveIndex, LiveRun, LiveStreamOverflow
+from .live_index import BoundedLiveIndex, LiveStreamOverflow
 from .ports import (
     DecisionSignal as DriverDecisionSignal,
     Driver,
@@ -82,8 +82,11 @@ class RunKernel:
             0.001, float(child_signal_heartbeat_interval)
         )
         self._live = BoundedLiveIndex(max_runs=max_live_runs)
-        self._active = self._live._runs
         self._lock = self._live.lock
+        for registration in drivers.values():
+            bind_live_index = getattr(registration.driver, "bind_live_index", None)
+            if callable(bind_live_index):
+                bind_live_index(self._live)
         self._recovery_owner = f"kernel:{uuid.uuid4().hex}"
         self._runtime = DriverRuntime(
             uow=uow,
@@ -99,7 +102,7 @@ class RunKernel:
         async with self._lock:
             tasks = tuple(
                 active.task
-                for active in self._active.values()
+                for active in self._live.values()
                 if active.task is not None and not active.task.done()
             )
         if not tasks:
@@ -156,7 +159,7 @@ class RunKernel:
 
     async def _query(self, ref: RunRef, actor: ActorContext) -> RunRecord | object:
         async with self._lock:
-            active = self._active.get(ref.run_id)
+            active = self._live.get(ref.run_id)
             if active is not None and active.record is not None:
                 self._authorize_live(ref, actor, active.record)
                 return active.record
@@ -178,7 +181,7 @@ class RunKernel:
                 event=event,
             )
         async with self._lock:
-            active = self._active.get(record.run_id)
+            active = self._live.get(record.run_id)
             current = active.record if active is not None else None
             if current is None:
                 raise RunNotFound("run_not_found", f"live run does not exist: {record.run_id}")
@@ -233,7 +236,7 @@ class RunKernel:
                 )
             ).event
         async with self._lock:
-            active = self._active.get(record.run_id)
+            active = self._live.get(record.run_id)
             current = active.record if active is not None else None
             if current is None:
                 raise RunNotFound("run_not_found", f"live run does not exist: {record.run_id}")
@@ -277,11 +280,7 @@ class RunKernel:
         ref = RunRef(run_id, host.session_id)
         actor = host.actor(root_run_id=run_id)
         async with self._lock:
-            active = self._active.get(run_id)
-            if active is None:
-                self._live.ensure_capacity()
-                active = LiveRun(actor=actor)
-                self._active[run_id] = active
+            active = self._live.get(run_id) or self._live.add(run_id, actor)
         async with active.start_lock:
             async with self._lock:
                 existing = active.record
@@ -424,7 +423,7 @@ class RunKernel:
             )
         queue: asyncio.Queue[RunEvent | None]
         async with self._lock:
-            active = self._active.get(ref.run_id) or self._live.add(ref.run_id, actor)
+            active = self._live.get(ref.run_id) or self._live.add(ref.run_id, actor)
             live_history = self._live.history(active, after_live_seq=start)
             seen = {event.event_id for event in durable_history}
             # A subscriber may attach after a durable terminal committed while
@@ -464,7 +463,7 @@ class RunKernel:
                 yield event
         finally:
             async with self._lock:
-                current = self._active.get(ref.run_id)
+                current = self._live.get(ref.run_id)
                 if current is not None and queue in current.subscribers:
                     current.subscribers.discard(queue)
 
@@ -634,7 +633,7 @@ class RunKernel:
             raise RuntimeError("legacy runs require the compatibility recovery adapter")
         registration = self._driver(record)
         async with self._lock:
-            current = self._active.get(ref.run_id)
+            current = self._live.get(ref.run_id)
             if current is not None and current.task is not None and not current.task.done():
                 return RunHandle(
                     ref, record.context.root_run_id, registration.kind, record.spec.profile_key
@@ -643,7 +642,7 @@ class RunKernel:
             record.run_id, owner=self._recovery_owner
         )
         async with self._lock:
-            active = self._active.get(ref.run_id) or self._live.add(ref.run_id, actor)
+            active = self._live.get(ref.run_id) or self._live.add(ref.run_id, actor)
             if active.task is None or active.task.done():
                 active.task = asyncio.create_task(
                     self._runtime.drive_recovery(
@@ -660,7 +659,7 @@ class RunKernel:
     async def close(self, ref: RunRef, actor: ActorContext) -> None:
         record = await self._query(ref, actor)
         async with self._lock:
-            active = self._active.get(ref.run_id)
+            active = self._live.get(ref.run_id)
             if active is None:
                 return
             self._live.finish(ref.run_id, active)
@@ -670,7 +669,7 @@ class RunKernel:
                 RunStatus.FAILED,
                 RunStatus.CANCELLED,
             } and (active.task is None or active.task.done()):
-                self._active.pop(ref.run_id, None)
+                self._live.pop(ref.run_id)
 
     def _driver(self, record: RunRecord) -> RegisteredDriver:
         registration = self._drivers.get(record.spec.driver_kind)
@@ -692,7 +691,7 @@ class RunKernel:
             return
         if record.status in TERMINAL_RUN_STATUSES:
             async with self._lock:
-                self._active.pop(record.run_id, None)
+                self._live.pop(record.run_id)
             return
         async with self._lock:
             active = self._live.get(record.run_id) or self._live.add(record.run_id, actor)

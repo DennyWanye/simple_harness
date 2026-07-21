@@ -37,6 +37,7 @@ from deskpet.harness.drivers.react import (
     ReactToken,
     ReactToolBatch,
 )
+from deskpet.harness.live_index import BoundedLiveIndex
 from deskpet.harness.ports import (
     AttachmentPolicy,
     CancelAcknowledgedCandidate,
@@ -65,6 +66,20 @@ SCOPE_HASH = fingerprint_json({"workspace": "F:/workspace"})
 
 def _actor(run_id: str = "run-react") -> ActorContext:
     return ActorContext("principal-react", "session-react", 0, run_id)
+
+
+def _bind_live(driver, *run_ids: str):
+    live = BoundedLiveIndex()
+    for run_id in run_ids or ("run-react",):
+        live.add(run_id, _actor(run_id))
+    driver.bind_live_index(live)
+    return driver, live
+
+
+def _react_driver(collaborator, store, *run_ids: str):
+    return _bind_live(
+        ReActDriver(collaborator, store, PolicyRegistry()), *run_ids
+    )[0]
 
 
 def _durable_signal(decision, response: Mapping[str, Any]) -> DurableDecisionSignal:
@@ -279,11 +294,7 @@ async def _driver(tmp_path, collaborator, *, reader=None, reconciler=None):
     store = SqliteExecutionUnitOfWork(path)
     await store.activate_runtime()
     return (
-        ReActDriver(
-            collaborator,
-            store,
-            PolicyRegistry(),
-        ),
+        _react_driver(collaborator, store),
         store,
         path,
     )
@@ -297,12 +308,40 @@ async def _recovery_lease(store):
 async def test_close_releases_collaborator_and_volatile_boundaries(tmp_path) -> None:
     collaborator = ScriptedCollaborator()
     driver, _, _ = await _driver(tmp_path, collaborator)
-    driver._volatile["run-react"] = object()
+    active = driver._live.get("run-react")
+    assert active is not None
+    active.driver_state = ReactCommandBoundary(
+        "run-react", "session-react", "command", "execute_tools", (), 0,
+        None, None, (), (), (), {}, 0, {},
+    )
 
     await driver.close()
 
     assert collaborator.closed is True
-    assert driver._volatile == {}
+    assert active.driver_state is None
+
+
+@pytest.mark.asyncio
+async def test_legacy_cancel_aclos_runs_outside_live_lock() -> None:
+    live = BoundedLiveIndex()
+    active = live.add("run-react", _actor())
+    seen: list[bool] = []
+
+    class Iterator:
+        async def aclose(self) -> None:
+            seen.append(live.lock.locked())
+            active.driver_iterator = replacement
+
+    iterator = Iterator()
+    replacement = object()
+    active.driver_iterator = iterator
+    collaborator = LegacyAgentLoopCollaborator(object())
+    collaborator.bind_live_index(live)
+
+    await collaborator.cancel("run-react", "test")
+
+    assert seen == [False]
+    assert active.driver_iterator is replacement
 
 
 async def _record_effect(path, call: PreparedToolCall, outcome: NormalizedToolOutcome, status: str) -> None:
@@ -397,11 +436,7 @@ async def test_decision_boundary_survives_new_driver_and_keeps_session(tmp_path)
     assert persisted.pending_decision == decision
 
     resumed = ScriptedCollaborator(resumes=[[ReactFinal("answered")]])
-    second = ReActDriver(
-        resumed,
-        store,
-        PolicyRegistry(),
-    )
+    second = _react_driver(resumed, store)
     response = {"answer": "F:/workspace"}
     signal = DecisionSignal(
         "run-react", "decision-1", response, nonce="nonce-1", version=0,
@@ -517,11 +552,7 @@ async def test_recovery_backfills_successful_effect_without_regenerating_or_reex
     committed = _outcome(call)
     await _record_effect(path, call, committed, "succeeded")
     collaborator = ScriptedCollaborator(resumes=[[ReactFinal("recovered")]])
-    second = ReActDriver(
-        collaborator,
-        store,
-        PolicyRegistry(),
-    )
+    second = _react_driver(collaborator, store)
     candidates = await _collect(second.recover("run-react", await _recovery_lease(store)))
 
     assert candidates == [DriverTerminalCandidate("run-react", "completed", "recovered")]
@@ -629,11 +660,7 @@ async def test_mixed_batch_freezes_full_order_and_recovers_only_missing_calls(tm
     await _record_effect(path, calls[1], _outcome(calls[1]), "succeeded")
 
     collaborator = ScriptedCollaborator(resumes=[[ReactFinal("all done")]])
-    second = ReActDriver(
-        collaborator,
-        store,
-        PolicyRegistry(),
-    )
+    second = _react_driver(collaborator, store)
     recovered = await _collect(second.recover("run-react", await _recovery_lease(store)))
     assert recovered[0].calls == (calls[2],)
     assert recovered[0].original_indexes == (2,)
@@ -659,7 +686,7 @@ async def test_unknown_effect_is_observed_without_driver_side_reconcile(tmp_path
     unknown = _outcome(call, status=OutcomeStatus.UNKNOWN)
     await _record_effect(path, call, unknown, "unknown")
     collaborator = ScriptedCollaborator(resumes=[[ReactFinal("uncertain")]])
-    second = ReActDriver(collaborator, store, PolicyRegistry())
+    second = _react_driver(collaborator, store)
 
     candidates = await _collect(second.recover("run-react", await _recovery_lease(store)))
 
@@ -680,11 +707,7 @@ async def test_delegate_boundary_survives_restart_and_accept_signal(tmp_path):
     assert persisted is not None and persisted.pending_delegate == command
 
     resumed = ScriptedCollaborator(resumes=[[ReactFinal("detached accepted")]])
-    second = ReActDriver(
-        resumed,
-        store,
-        PolicyRegistry(),
-    )
+    second = _react_driver(resumed, store)
     assert await _collect(second.recover("run-react", await _recovery_lease(store))) == [command]
     candidates = await _collect(
         second.signal(ChildAcceptedSignal("run-react", command.command_id, "child-1"))
@@ -772,7 +795,7 @@ async def test_detached_child_accepted_is_in_real_model_input_once(tmp_path):
     _, _, accepted = await _schedule_child(store, command)
     loop = _CaptureLoop()
 
-    await _collect(ReActDriver(LegacyAgentLoopCollaborator(loop), store, PolicyRegistry()).signal(accepted))
+    await _collect(_react_driver(LegacyAgentLoopCollaborator(loop), store).signal(accepted))
 
     payloads = [json.loads(message["content"]) for message in loop.messages[0] if message["role"] == "system"]
     assert [item["signal"] for item in payloads if item.get("type") == "host_child_response"] == ["child_accepted"]
@@ -796,7 +819,7 @@ async def test_joined_child_terminal_is_in_real_model_input_once(tmp_path):
     terminal = (await _pending(coordinator, "run-react"))[0]
     loop = _CaptureLoop()
 
-    await _collect(ReActDriver(LegacyAgentLoopCollaborator(loop), store, PolicyRegistry()).signal(terminal))
+    await _collect(_react_driver(LegacyAgentLoopCollaborator(loop), store).signal(terminal))
 
     payloads = [json.loads(message["content"]) for message in loop.messages[0] if message["role"] == "system"]
     assert [item["signal"] for item in payloads if item.get("type") == "host_child_response"] == ["child_accepted", "child_terminal"]
@@ -825,9 +848,9 @@ async def test_child_terminal_persisted_before_resume_recovers_into_model_once(t
             yield
 
     with pytest.raises(RuntimeError, match="after child commit"):
-        await _collect(ReActDriver(CrashOnResume(), store, PolicyRegistry()).signal(terminal))
+        await _collect(_react_driver(CrashOnResume(), store).signal(terminal))
     loop = _CaptureLoop()
-    restarted = ReActDriver(LegacyAgentLoopCollaborator(loop), store, PolicyRegistry())
+    restarted = _react_driver(LegacyAgentLoopCollaborator(loop), store)
     await _collect(restarted.recover("run-react", await _recovery_lease(store)))
 
     payloads = [json.loads(message["content"]) for message in loop.messages[0] if message["role"] == "system"]
@@ -860,7 +883,7 @@ async def test_root_terminal_child_recovers_after_atomic_ack_before_terminal_mat
     first._apply_child_inbox = crash_after_apply
     with pytest.raises(RuntimeError, match="before root terminal"):
         await _collect(first.signal(terminal))
-    restarted = ReActDriver(ScriptedCollaborator(), store, PolicyRegistry())
+    restarted = _react_driver(ScriptedCollaborator(), store)
 
     assert await _collect(restarted.recover("run-react", await _recovery_lease(store))) == [
         DriverTerminalCandidate(
@@ -908,7 +931,7 @@ async def test_legacy_agent_loop_is_only_a_read_only_token_fallback_final_collab
             return self._events()
 
     loop = FakeLoop()
-    collaborator = LegacyAgentLoopCollaborator(loop)
+    collaborator = _bind_live(LegacyAgentLoopCollaborator(loop), "run-react")[0]
     emissions = await _collect(collaborator.start(_request()))
 
     assert emissions == [
@@ -968,6 +991,7 @@ async def test_capability_snapshot_filters_agent_loop_schema_and_prepare() -> No
     collaborator = LegacyAgentLoopCollaborator(
         AgentLoop(llm, tools, external_tool_dispatch=True), call_factory=tools
     )
+    _bind_live(collaborator, "run-react")
     request = replace(
         _request(), capability_snapshot={"tools": ["allowed"]}
     )
@@ -1022,7 +1046,8 @@ async def test_react_boundary_roundtrip_and_real_resume_retain_capability_snapsh
             return self._events()
 
     loop = Loop()
-    await _collect(LegacyAgentLoopCollaborator(loop).resume(restored, {}))
+    collaborator = _bind_live(LegacyAgentLoopCollaborator(loop), "run-react")[0]
+    await _collect(collaborator.resume(restored, {}))
     assert loop.kwargs["tool_names_filter"] == ["read_file"]
 
 
@@ -1037,7 +1062,7 @@ async def test_legacy_collaborator_fails_closed_before_legacy_tool_dispatch_can_
         def run(self, messages, **kwargs):
             return self._events()
 
-    collaborator = LegacyAgentLoopCollaborator(FakeLoop())
+    collaborator = _bind_live(LegacyAgentLoopCollaborator(FakeLoop()), "run-react")[0]
     with pytest.raises(LegacyAgentLoopToolInterceptionError):
         await _collect(collaborator.start(_request()))
 
@@ -1094,6 +1119,7 @@ async def test_external_agent_loop_emits_prepared_batch_before_any_dispatch():
     tools = Tools()
     loop = AgentLoop(LLM(), tools, external_tool_dispatch=True)
     collaborator = LegacyAgentLoopCollaborator(loop, call_factory=tools)
+    _bind_live(collaborator, "run-react")
     context = RunContext(
         session_id="session-react",
         root_run_id="run-react",
@@ -1185,12 +1211,12 @@ async def test_recovery_second_batch_is_fenced_by_current_lease(tmp_path):
             yield second_batch
 
     takeover = TakeoverCollaborator()
-    stale = ReActDriver(takeover, store, PolicyRegistry())
+    stale = _react_driver(takeover, store)
     with pytest.raises(StaleRecoveryLease):
         await _collect(stale.recover("run-react", old_lease))
     assert ReactCommandBoundary.from_record(await store.load_continuation("run-react")).command_id == "first-batch"
 
-    current = ReActDriver(ScriptedCollaborator(resumes=[[second_batch]]), store, PolicyRegistry())
+    current = _react_driver(ScriptedCollaborator(resumes=[[second_batch]]), store)
     candidates = await _collect(current.recover("run-react", takeover.current_lease))
     assert candidates[0].command_id == "second-batch"
     assert ReactCommandBoundary.from_record(await store.load_continuation("run-react")).command_id == "second-batch"

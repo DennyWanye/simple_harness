@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 
 from deskpet.execution.contracts import (
@@ -29,6 +30,8 @@ class LiveRun:
     events: deque[RunEvent] = field(default_factory=deque)
     subscribers: set[asyncio.Queue[LiveQueueItem]] = field(default_factory=set)
     task: asyncio.Task[None] | None = None
+    driver_state: object | None = None
+    driver_iterator: AsyncIterator[object] | None = None
     start_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     next_live_seq: int = 1
 
@@ -120,8 +123,9 @@ class BoundedLiveIndex:
                 queue.get_nowait()
             queue.put_nowait(None)
         active.task = None
+        active.driver_state = None
+        active.driver_iterator = None
         if release and self._runs.get(run_id) is active:
             self._runs.pop(run_id, None)
-
 
 __all__ = ["BoundedLiveIndex", "LiveRun", "LiveStreamOverflow"]

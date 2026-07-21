@@ -24,7 +24,7 @@ flowchart LR
     Text["Text test adapter"] --> Session["ProductVenueRunSession"]
     Voice["Voice test adapter"] --> Session
     Session --> Kernel["RunKernel<br/>六个公开操作"]
-    Kernel --> Live["目标：唯一 LiveRun owner"]
+    Kernel --> Live["唯一 LiveRun owner<br/>task · subscriber · driver state · iterator"]
     Kernel --> React["ReAct Driver"]
     Kernel --> Workflow["Workflow Driver"]
     React --> Effect["目标：唯一 EffectBatchExecutor"]
@@ -75,32 +75,40 @@ the post-run `run_id/status/final_text` contract.
 The R4.5 approved baseline is counted orchestration `33,618`, audited core
 `5,725`, Kernel `820`, public transaction starters `33`, execution-table DML
 authorities `2`, and existing fault windows `34` (`UoW=29 + Team=5`). The
-single-DML, first core deletion, typed-transaction-surface, and venue-wrapper
-deletion slices are now integrated in the current slice: raw total is `33,953`,
-migration-cohort-adjusted total is `33,444`, core is `5,532`, Kernel `812`, execution DML
+single-DML, first core deletion, typed-transaction-surface, venue-wrapper, and
+single-LiveRun slices are now integrated: current raw total is `34,020`,
+migration-cohort-adjusted total is `33,511`, core is `5,599`, Kernel `811`, execution DML
 authority `1`, public transaction starters `21`, and the fault matrix has all
 `39` windows. The former split starters are replaced by nine typed composite
 boundaries: `activate_runtime`, `settle_delivery`, `persist_react_boundary`,
 `commit_decision`, `claim_tool_call`, `settle_effect`, `commit_run_outcome`,
 `ack_child_signal`, and `recovery_scope`. Their production callers are migrated
 and the old entrypoints are deleted; this is a real API reduction rather than
-an audit exclusion. The venue wrapper slice alone removes 20 counted core LOC
-(`venues.py` `406 -> 386`) against its locked 14-LOC budget; focused
-Text/Voice/Presenter/venue regression is `69 passed`, and fault/schema
-regression is `51 passed`.
+an audit exclusion. The venue wrapper slice removes 20 counted core LOC
+(`venues.py` `406 -> 386`) against its locked 14-LOC budget. The LiveRun slice deletes `RunKernel._active`,
+`ReActDriver._volatile`, and `LegacyAgentLoopCollaborator._active`; Kernel now
+injects the sole `BoundedLiveIndex._runs` through generic `bind_live_index`
+wiring. `LiveRun` separately owns boundary and iterator references, durable
+continuation reads precede live fallback, stale finalizers clear by identity,
+and iterator `aclose()` executes outside the live lock. Expanded focused
+verification is `158 passed`; the full harness is rerun after slice integration.
 
 A machine-checked construction ceiling of total `<=34,300` and core `<=5,725`
 bounds the temporary migration peak; it is green. The total calculation keeps
-the raw `33,953` observable, then replaces only the source-hash-locked
+the raw `34,020` observable, then replaces only the source-hash-locked
 `execution_uow.py + checkpoint_execution.py` cohort's raw-effective delta with
 its physical delta. The cohort moved from physical/raw-effective
 `5,236/4,651` to `5,251/5,175`, so the mechanically derived overcount is `509`
-and the adjusted total is `33,444`; no target was raised. Additions, copies,
+and the adjusted total is `33,511`; no target was raised. Additions, copies,
 moves to new production files, tracked deletion, fixture drift, and physical
 line compression are fail-closed tests. The typed-starter, DML, fault-window,
-Kernel, and adjusted-total gates are green. The exit gates still pending are
-core `<=5,500` and exactly one LiveRun and HarnessSupervisor authority; the
-Presenter-conversion authority is already one. The old combined
+Kernel, adjusted-total, and single-LiveRun gates are green. The run-map
+authority is now `1`; the exit gates still pending are core `<=5,500` and one
+HarnessSupervisor authority (currently `2`), while Presenter-conversion
+authority is already one. The spike's `+14` LiveRun estimate omitted the
+production-only single-index injection, separate iterator lifecycle,
+identity-safe cleanup, and fail-closed binding; the formal slice is `+67` and
+the final core target remains unchanged. The old combined
 core/UoW `<=2,800` target was disproved by two disposable code spikes and is no
 longer a production acceptance metric. Evidence and approved target:
 [`baseline.md`](../plans/2026-07-20-agent-harness-simplification/baseline.md) and

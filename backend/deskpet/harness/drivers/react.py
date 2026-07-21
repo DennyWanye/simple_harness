@@ -16,6 +16,7 @@ from typing import Any, AsyncIterator, Mapping, Protocol
 from deskpet.execution.contracts import ActorContext, DecisionOpen as DurableDecisionOpen, DecisionSignal as DurableDecisionSignal, OutcomeStatus, PersistenceLevel, RecoveryLease, RunContext, RunCreate, RunEventCandidate, stable_decision_grant_id, thaw_json
 from deskpet.execution.evidence import EvidenceContext, EvidenceSelection, UNKNOWN_EVIDENCE
 from deskpet.execution.ports import ExecutionUnitOfWork
+from deskpet.harness.live_index import BoundedLiveIndex
 from deskpet.harness.ports import AttachmentPolicy, CancelAcknowledgedCandidate, ChildAcceptedCandidate, ChildAcceptedSignal, ChildTerminalSignal, DecisionSignal, DelegateRun, DriverEvent, DriverSignal, DriverStart, DriverTerminalCandidate, ExecuteTools, JoinPolicy, OpenDecision, PersistedEventCandidate, ProviderFallbackCandidate, TokenCandidate, ToolGrantRef, ToolOutcomesSignal
 from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall, ToolOutcomeState
 from deskpet.tools.capabilities import ToolExecutionContext
@@ -175,7 +176,27 @@ class LegacyAgentLoopCollaborator:
     def __init__(self, loop: Any, *, call_factory: Any | None=None) -> None:
         self._loop = loop
         self._call_factory = call_factory
-        self._active: dict[str, AsyncIterator[Any]] = {}
+        self._live: BoundedLiveIndex | None = None
+
+    def bind_live_index(self, live: BoundedLiveIndex) -> None:
+        if self._live is not None and self._live is not live:
+            raise RuntimeError('legacy collaborator is already bound to another live index')
+        self._live = live
+
+    def _bound_live(self) -> BoundedLiveIndex:
+        if self._live is None:
+            raise RuntimeError('legacy collaborator requires the Kernel live index')
+        return self._live
+
+    async def _close_iterator(self, active: Any) -> None:
+        iterator = None if active is None else active.driver_iterator
+        close = getattr(iterator, 'aclose', None)
+        try:
+            if callable(close):
+                await close()
+        finally:
+            if iterator is not None and active.driver_iterator is iterator:
+                active.driver_iterator = None
 
     @staticmethod
     def _allowed_tool_names(request: DriverStart) -> tuple[str, ...] | None:
@@ -194,7 +215,11 @@ class LegacyAgentLoopCollaborator:
         from agent.agent_loop import AssistantDeltaEvent, AsyncHandoffEvent, ErrorEvent, FinalEvent, ProviderChainFallbackEvent, ToolCallEvent, ToolBatchEvent, ToolResultEvent
         run_id = request.run_id
         allowed_tools = self._allowed_tool_names(request)
-        self._active[run_id] = iterator
+        live = self._bound_live()
+        active = live.get(run_id)
+        if active is None or active.driver_iterator is not None:
+            raise RuntimeError('legacy collaborator run is absent or already active')
+        active.driver_iterator = iterator
         try:
             async for event in iterator:
                 if isinstance(event, AssistantDeltaEvent):
@@ -227,7 +252,8 @@ class LegacyAgentLoopCollaborator:
                 elif isinstance(event, (ToolCallEvent, ToolResultEvent, AsyncHandoffEvent)):
                     raise LegacyAgentLoopToolInterceptionError('legacy AgentLoop tool dispatch is unavailable in ReActDriver test wiring')
         finally:
-            self._active.pop(run_id, None)
+            if active.driver_iterator is iterator:
+                active.driver_iterator = None
 
     async def start(self, request: DriverStart) -> AsyncIterator[ReactEmission]:
         kwargs: dict[str, Any] = {
@@ -251,14 +277,14 @@ class LegacyAgentLoopCollaborator:
             yield emission
 
     async def cancel(self, run_id: str, reason: str) -> None:
-        iterator = self._active.get(run_id)
-        close = getattr(iterator, 'aclose', None)
-        if callable(close):
-            await close()
+        await self._close_iterator(self._bound_live().get(run_id))
 
     async def close(self) -> None:
-        for run_id in tuple(self._active):
-            await self.cancel(run_id, 'driver_close')
+        if self._live is None:
+            return
+        for active in self._live.values():
+            if active.driver_iterator is not None:
+                await self._close_iterator(active)
 
 class ReActDriver:
 
@@ -266,7 +292,25 @@ class ReActDriver:
         self._collaborator = collaborator
         self._uow = uow
         self._tool_registry = tool_registry
-        self._volatile: dict[str, ReactCommandBoundary] = {}
+        self._live: BoundedLiveIndex | None = None
+
+    def bind_live_index(self, live: BoundedLiveIndex) -> None:
+        if self._live is not None and self._live is not live:
+            raise RuntimeError('ReAct driver is already bound to another live index')
+        self._live = live
+        bind_live_index = getattr(self._collaborator, 'bind_live_index', None)
+        if callable(bind_live_index):
+            bind_live_index(live)
+
+    def _bound_live(self) -> BoundedLiveIndex:
+        if self._live is None:
+            raise RuntimeError('ReAct driver requires the Kernel live index')
+        return self._live
+
+    def _live_boundary(self, run_id: str) -> ReactCommandBoundary | None:
+        active = self._bound_live().get(run_id)
+        state = None if active is None else active.driver_state
+        return state if isinstance(state, ReactCommandBoundary) else None
 
     @staticmethod
     def _durable_decision(decision: DriverEvent | None) -> DurableDecisionOpen | None:
@@ -280,14 +324,18 @@ class ReActDriver:
         return replace(boundary, version=int(saved.version))
 
     async def _persist_boundary(self, request: DriverStart, boundary: ReactCommandBoundary, *, continuation_version: int=0, decision: DriverEvent | None=None, recovery_lease: RecoveryLease | None=None) -> ReactCommandBoundary:
-        if continuation_version and request.run_id not in self._volatile:
+        volatile = self._live_boundary(request.run_id)
+        if continuation_version and volatile is None:
             return await self._save_durable_boundary(replace(boundary, version=continuation_version + 1), decision=decision, recovery_lease=recovery_lease)
         spec = request.run_spec
         if spec is None:
             raise RuntimeError('durable ReAct boundary requires its immutable RunCreate')
         waiting = RunEventCandidate(event_key=f'boundary:{boundary.command_id}', kind='run.waiting', status=OutcomeStatus.WAITING, driver_kind=spec.driver_kind, correlation={'command_id': boundary.command_id})
         _, saved = await self._uow.persist_react_boundary(replace(spec, persistence_level=PersistenceLevel.DURABLE), expected_run_version=0, expected_continuation_version=0, payload=boundary.to_payload(), decision=self._durable_decision(decision), waiting_event=waiting)
-        self._volatile.pop(request.run_id, None)
+        if volatile is not None:
+            active = self._bound_live().get(request.run_id)
+            if active is not None and active.driver_state is volatile:
+                active.driver_state = None
         return replace(boundary, version=int(saved.version))
 
     @staticmethod
@@ -336,7 +384,8 @@ class ReActDriver:
                 yield ProviderFallbackCandidate(request.run_id, emission.from_provider, emission.to_provider, emission.reason)
             elif isinstance(emission, ReactToolBatch):
                 boundary = self._boundary_for_batch(request, emission, continuation_version)
-                if continuation_version and request.run_id not in self._volatile or boundary.durable_indexes or boundary.authorization_indexes:
+                volatile = self._live_boundary(request.run_id)
+                if continuation_version and volatile is None or boundary.durable_indexes or boundary.authorization_indexes:
                     permission_index = self._next_permission_index(boundary)
                     if permission_index is not None:
                         decision = self._permission_decision(boundary, permission_index)
@@ -346,7 +395,10 @@ class ReActDriver:
                         return
                     boundary = await self._persist_boundary(request, boundary, continuation_version=continuation_version, recovery_lease=recovery_lease)
                 else:
-                    self._volatile[request.run_id] = boundary
+                    active = self._bound_live().get(request.run_id)
+                    if active is None or active.driver_state is not volatile:
+                        raise RuntimeError('ReAct run is absent or its live boundary changed')
+                    active.driver_state = boundary
                 yield self._execute_command(boundary)
                 return
             elif isinstance(emission, DriverEvent) and emission.kind == 'open_decision':
@@ -393,14 +445,18 @@ class ReActDriver:
         record = await self._uow.load_continuation(run_id)
         boundary = None if record is None else ReactCommandBoundary.from_record(record)
         if boundary is None:
-            boundary = self._volatile.get(run_id)
+            boundary = self._live_boundary(run_id)
         if boundary is None:
             raise ValueError('react command boundary not found')
         return boundary
 
     async def _save_progress(self, boundary: ReactCommandBoundary, *, recovery_lease: RecoveryLease | None=None) -> None:
-        if boundary.run_id in self._volatile:
-            self._volatile[boundary.run_id] = boundary
+        volatile = self._live_boundary(boundary.run_id)
+        if volatile is not None:
+            active = self._bound_live().get(boundary.run_id)
+            if active is None or active.driver_state is not volatile:
+                raise RuntimeError('ReAct live boundary changed while saving progress')
+            active.driver_state = boundary
         else:
             await self._save_durable_boundary(boundary, recovery_lease=recovery_lease)
 
@@ -688,10 +744,18 @@ class ReActDriver:
 
         async def iterator() -> AsyncIterator[DriverEvent]:
             await self._collaborator.cancel(run_id, reason)
+            volatile = self._live_boundary(run_id)
+            if volatile is not None:
+                active = self._bound_live().get(run_id)
+                if active is not None and active.driver_state is volatile:
+                    active.driver_state = None
             yield CancelAcknowledgedCandidate(run_id, reason)
         return iterator()
 
     async def close(self) -> None:
         await self._collaborator.close()
-        self._volatile.clear()
+        if self._live is not None:
+            for active in self._live.values():
+                if isinstance(active.driver_state, ReactCommandBoundary):
+                    active.driver_state = None
 __all__ = ['LegacyAgentLoopCollaborator', 'LegacyAgentLoopToolInterceptionError', 'ReActCollaborator', 'ReActDriver', 'ReactEmission', 'ReactFailure', 'ReactFallback', 'ReactFinal', 'ReactToken', 'ReactToolBatch']

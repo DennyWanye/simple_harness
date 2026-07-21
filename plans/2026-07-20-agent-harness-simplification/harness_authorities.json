@@ -2,7 +2,7 @@
   "baseline": {
     "legacy_survivor_count": 15,
     "presenter_converter_authority_count": 1,
-    "run_map_authority_count": 4,
+    "run_map_authority_count": 1,
     "supervisor_task_authority_count": 2
   },
   "baseline_commit": "796905b9888c2659af78cec21de1ee96b46a2c51",
@@ -162,33 +162,6 @@
       "path": "backend/main.py",
       "source_hash": "5add5107d7b6b3783c73cd1e1f99231033d70473170449afe10661568fb7efca",
       "symbol": "<module>._pipelines",
-      "tables": []
-    },
-    {
-      "authority": "live_run_map",
-      "callsites": [],
-      "kind": "run_map",
-      "path": "backend/deskpet/harness/drivers/react.py",
-      "source_hash": "4b646e8a56a70f3fe7659f454f69074249abf980b5929440639fb20b8653bcac",
-      "symbol": "LegacyAgentLoopCollaborator._active",
-      "tables": []
-    },
-    {
-      "authority": "live_run_map",
-      "callsites": [],
-      "kind": "run_map",
-      "path": "backend/deskpet/harness/drivers/react.py",
-      "source_hash": "1e15d679d44193e67feb42acb2cb5fa9dc446c036b04b83a904cb4bb93dcf07c",
-      "symbol": "ReActDriver._volatile",
-      "tables": []
-    },
-    {
-      "authority": "live_run_map",
-      "callsites": [],
-      "kind": "run_map",
-      "path": "backend/deskpet/harness/kernel.py",
-      "source_hash": "1f11b250941c6041454389ca2d4a190942952e923c1b71d4a086da281460d5bc",
-      "symbol": "RunKernel._active",
       "tables": []
     },
     {

@@ -337,7 +337,7 @@ async def test_text_product_chain_prepares_drives_presents_and_closes(tmp_path) 
     )
     record = await uow.query(RunRef(str(result.run_id), "text-session"), actor)
     assert record.status.value == "completed"
-    assert kernel._active == {}
+    assert kernel._live.values() == ()
 
 
 @pytest.mark.asyncio
@@ -374,7 +374,7 @@ async def test_failed_terminal_never_projects_green_success(tmp_path) -> None:
     assert [frame["type"] for frame in ws.frames] == ["chat_v2_delta", "chat_v2_error"]
     assert not any(frame["type"] == "chat_v2_final" for frame in ws.frames)
     assert await session_db.get_messages("text-session") == []
-    assert kernel._active == {}
+    assert kernel._live.values() == ()
 
 
 @pytest.mark.asyncio
@@ -494,7 +494,7 @@ async def test_voice_transport_consumes_the_activated_product_session(tmp_path) 
     ]
     assert await uow.get_execution_owner(session.run_id) == ("kernel", 1)
     assert (await uow.get_runtime_state()).generation == 1
-    assert kernel._active == {}
+    assert kernel._live.values() == ()
     assert voice._current_run_handle is None
     assert any(frame["type"] == "chat_v2_final" for frame in context.websocket.frames)
     assert any(frame["type"] == "transcript" for frame in audio.frames)
@@ -559,7 +559,7 @@ async def test_product_session_is_single_consumer_and_close_finishes_once(tmp_pa
     assert session.result.final_text == "hello world"
     assert len(billing.records) == 1
     assert provider.last_usage is None
-    assert kernel._active == {}
+    assert kernel._live.values() == ()
 
 
 @pytest.mark.asyncio
