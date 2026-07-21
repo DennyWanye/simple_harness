@@ -372,5 +372,19 @@ class SessionGoalStore:
             return
         await self.persist(g)
 
+    async def project_terminal(self, goal_id: str, status: str) -> bool:
+        """Persist a delivery-owned terminal without swallowing storage errors."""
+        if self._session_db is None:
+            raise RuntimeError("durable Goal projection requires SessionDB")
+        if not await self._session_db.project_goal_terminal(goal_id, status):
+            return False
+        goal = next((item for item in self._goals.values()
+                     if item.goal_id == goal_id), None)
+        if goal is not None:
+            goal.status = status
+            goal.done = status == "done"
+            goal.updated_at = time.time()
+        return True
+
 
 __all__ = ["SessionGoal", "SessionGoalStore"]

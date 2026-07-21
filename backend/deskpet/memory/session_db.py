@@ -1647,6 +1647,33 @@ class SessionDB:
 
         await self._with_retry(_do)
 
+    async def project_goal_terminal(self, goal_id: str, status: str) -> bool:
+        """Strict, idempotent CAS used by durable Goal delivery sinks."""
+        if status not in {"done", "abandoned"}:
+            raise ValueError("invalid Goal terminal status")
+        if not self._initialized:
+            await self.initialize()
+        from deskpet.memory.memory_v2_schema import ensure_session_goals_table
+        await ensure_session_goals_table(self._db_path)
+
+        async def _do() -> bool:
+            async with self._write_lock:
+                async with aiosqlite.connect(self._db_path) as db:
+                    await db.execute("PRAGMA busy_timeout=5000")
+                    await db.execute(
+                        "UPDATE session_goals SET status=?,updated_at=? "
+                        "WHERE goal_id=? AND status='active'",
+                        (status, time.time(), goal_id),
+                    )
+                    row = await (await db.execute(
+                        "SELECT status FROM session_goals WHERE goal_id=?",
+                        (goal_id,),
+                    )).fetchone()
+                    await db.commit()
+                    return row is not None and str(row[0]) == status
+
+        return await self._with_retry(_do)
+
     async def get_active_goals(self, session_id: str) -> list[dict[str, Any]]:
         """读某 session 的 active 目标，updated_at 倒序（最新在前）。"""
         if not self._initialized:

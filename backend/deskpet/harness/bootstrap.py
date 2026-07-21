@@ -82,8 +82,7 @@ class HarnessRuntime:
         if (effects := self.tool_executor) is not None:
             await effects.close(timeout / 2)
             if (run_ids := effects.ready_late_run_ids()):
-                await self.recovery.recover_pending(only_run_ids=run_ids)
-                await asyncio.sleep(timeout / 2)
+                await self.recovery.reconcile_ready(run_ids, timeout=timeout / 2)
         await self.recovery.close()
 
 

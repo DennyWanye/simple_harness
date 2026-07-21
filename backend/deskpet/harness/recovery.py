@@ -55,6 +55,25 @@ class HarnessRecoveryCoordinator:
                         only_run_ids=effects.ready_late_run_ids())
         self._task = asyncio.create_task(run(), name="harness-effect-recovery")
 
+    async def reconcile_ready(
+        self, run_ids: frozenset[str], *, timeout: float
+    ) -> bool:
+        """Start one final recovery pass and wait for its late evidence to settle."""
+        if not run_ids:
+            return True
+        await self.recover_pending(only_run_ids=run_ids)
+        effects = self._effects
+        if effects is None:
+            return True
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + max(0.0, timeout)
+        while run_ids & effects.ready_late_run_ids():
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                return False
+            await asyncio.sleep(min(0.005, remaining))
+        return True
+
     async def close(self) -> None:
         if self._task is not None:
             self._task.cancel()

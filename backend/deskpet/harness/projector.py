@@ -65,17 +65,11 @@ class GoalTerminalProjection:
     async def deliver(self, event: RunEvent, target_id: str) -> None:
         if event.run_id != event.root_run_id or event.kind != "final":
             raise ExecutionError("invalid_goal_projection", "only root terminal events project Goals")
-        goal = self._goals.get(event.session_id)
-        if goal is None:
-            return
-        if goal.goal_id != target_id:
-            raise ExecutionError("goal_projection_conflict", "Goal target is absent or changed")
-        if event.status is OutcomeStatus.SUCCEEDED:
-            self._goals.mark_done(event.session_id)
-            await self._goals.persist_done(event.session_id)
-        else:
-            self._goals.clear(event.session_id)
-            await self._goals.persist_abandon(event.session_id)
+        status = "done" if event.status is OutcomeStatus.SUCCEEDED else "abandoned"
+        if not await self._goals.project_terminal(target_id, status):
+            raise ExecutionError(
+                "goal_projection_conflict", "Goal target is absent or changed"
+            )
 
 class ExecutionDeliveryDispatcher:
     """The sole execution-row delivery owner, fenced by activation generation."""

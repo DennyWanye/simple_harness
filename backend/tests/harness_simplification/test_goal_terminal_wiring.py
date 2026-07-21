@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
+import aiosqlite
 import pytest
 
 from deskpet.agent.goal_store import SessionGoalStore
@@ -12,6 +13,9 @@ from deskpet.harness.bootstrap import build_harness_runtime
 from deskpet.harness.contracts import HostContext, RegisteredDriver
 from deskpet.harness.ports import ChildTerminalSignal, DriverTerminalCandidate
 from deskpet.harness.profiles import ProfileRegistry, ProfileSpec
+from deskpet.harness.projector import (
+    ExecutionDeliveryDispatcher, GoalTerminalProjection, SinkRegistration,
+)
 from deskpet.harness.router import ClassifiedRoute
 from deskpet.memory.session_db import SessionDB
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
@@ -156,23 +160,77 @@ async def test_child_and_root_terminal_race_keeps_one_goal_delivery(tmp_path) ->
 
 
 @pytest.mark.asyncio
-async def test_goal_sink_mismatch_retries_instead_of_losing_delivery(tmp_path) -> None:
+async def test_goal_sink_projects_frozen_target_after_current_goal_changes(tmp_path) -> None:
     runtime, uow, goals, _, _ = await _runtime(tmp_path, "react")
     handle = await runtime.run_client.start(
         {"text": "finish", "request_id": "request-mismatch", "turn_id": "turn-1"},
         {"session_id": "session-1", "venue": "text"},
     )
     _ = [event async for event in handle.events]
-    goals.set("session-1", "replacement")
+    replacement = goals.set("session-1", "replacement")
+    await goals.persist(replacement)
     assert await runtime.delivery_dispatcher.run_once() is True
     rows = await uow.list_event_deliveries((await uow.query(
         RunRef(handle.run_id, "session-1"), _Resolver().resolve_actor(
             {"session_id": "session-1"}, root_run_id=handle.run_id,
         ),
     )).terminal_event_id)
-    assert rows[0].status.value == "failed"
-    assert rows[0].last_error.startswith("ExecutionError: Goal target")
+    assert rows[0].status.value == "delivered"
+    async with aiosqlite.connect(tmp_path / "react-state.db") as db:
+        statuses = await (await db.execute(
+            "SELECT goal_id,status FROM session_goals ORDER BY goal_id"
+        )).fetchall()
+    assert sorted(status for _goal_id, status in statuses) == ["active", "done"]
+    assert goals.get("session-1").goal_id == replacement.goal_id
+    assert goals.get("session-1").status == "active"
     await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_goal_storage_failure_retries_after_dispatcher_restart(
+    tmp_path, monkeypatch,
+) -> None:
+    runtime, uow, goals, goal, _ = await _runtime(tmp_path, "react")
+    handle = await runtime.run_client.start(
+        {"text": "finish", "request_id": "request-retry", "turn_id": "turn-1"},
+        {"session_id": "session-1", "venue": "text"},
+    )
+    _ = [event async for event in handle.events]
+    state = goals._session_db
+    original = state.project_goal_terminal
+
+    async def fail_projection(goal_id, status):
+        raise OSError("disk-full")
+
+    monkeypatch.setattr(state, "project_goal_terminal", fail_projection)
+    assert await runtime.delivery_dispatcher.run_once() is True
+    record = await uow.query(
+        RunRef(handle.run_id, "session-1"),
+        _Resolver().resolve_actor({"session_id": "session-1"}, root_run_id=handle.run_id),
+    )
+    rows = await uow.list_event_deliveries(record.terminal_event_id)
+    assert rows[0].status.value == "failed"
+    assert "disk-full" in (rows[0].last_error or "")
+    assert goals.get("session-1").status == "active"
+    await runtime.close()
+
+    monkeypatch.setattr(state, "project_goal_terminal", original)
+    assert rows[0].next_attempt_at is not None
+    restarted_uow = SqliteExecutionUnitOfWork(
+        tmp_path / "react.db", clock=lambda: rows[0].next_attempt_at + 1.0,
+    )
+    await restarted_uow.initialize()
+    projection = GoalTerminalProjection(goals)
+    restarted = ExecutionDeliveryDispatcher(
+        restarted_uow,
+        (SinkRegistration("goal_projection", "session-goals", projection),),
+        owner_generation=1,
+    )
+    assert await restarted.run_once() is True
+    assert goals.get("session-1").goal_id == goal.goal_id
+    assert goals.get("session-1").status == "done"
+    final = await restarted_uow.list_event_deliveries(record.terminal_event_id)
+    assert final[0].status.value == "delivered"
 
 
 @pytest.mark.asyncio
