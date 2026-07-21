@@ -45,7 +45,7 @@
 
 ## 非功能 / 边界
 
-- 简化度（2026-07-21 方案 A）：审计口径 `execution_core + harness_core` 从 5,726 降到 `≤5,500`；Kernel `≤850` 且公开控制操作恰为 6；全部 counted orchestration 在 R4.5 `≤33,618`、R6 删除旧路径后严格下降。`execution_uow.py` 作为共享持久化引擎继续计入全局 manifest，但改由 public transaction starters `33→≤23`、execution DML authority `2→1`、fault matrix 精确 39 约束，不再与 core 绑定到已被 spike 证伪的 2,800 LOC。
+- 简化度（2026-07-21 方案 A）：审计口径 `execution_core + harness_core` 从 5,725 降到 `≤5,500`；Kernel `≤850` 且公开控制操作恰为 6；全部 counted orchestration 在 R4.5 `≤33,618`、R6 删除旧路径后严格下降。`execution_uow.py` 作为共享持久化引擎继续计入全局 manifest，但改由 public transaction starters `33→≤23`、execution DML authority `2→1`、fault matrix 精确 39 约束，不再与 core 绑定到已被 spike 证伪的 2,800 LOC。
 - authority 简化：activated test harness 的 run-keyed live map、HarnessSupervisor task owner、Presenter conversion owner 各为 1；R4.5 旧 production survivors 保持 15 且不得增加，R6 activation 同 commit 删除旧 owner并达到总 owner≤7、unclassified new owner=0。
 - 回炉约束：首次 WI-12 已证明“删除旧 `_run_chat` 再补功能”不可接受。生产切换前必须对历史/Persona/Memory/Skill/MCP、附件、Problem Pipeline、Plan/Preference、Supervisor/summary、reasoning/context/pipeline UI 事件、billing/SessionActivity、Skill Codify 建立逐项 parity 证据；任一缺失即 AC-18 FAIL。
 - 机械防漏：从旧生产 span/event/WS/SessionDB/vector/file/waiter/cancel/codify/permission 调用点自动生成 census，逐项映射新 owner 与 golden testcase；`unmapped_count` 必须为 0，不能仅依赖人工清单。

@@ -28,7 +28,7 @@
 | 3 | FAIL | 候选 `≤5,500` 仍缺真代码纵切和 typed operation 映射 |
 | 4 | FAIL | owner≤7 阶段错误、DML/API/删除预算未锁定 |
 | 5 | FAIL | fault window 总数与 LOC 余量机械数字不一致 |
-| 6 | **PASS** | `39` 窗、core `5,726→≤5,500`、UoW `33→≤23`、R4.5/R6 阶段边界全部闭合 |
+| 6 | **PASS** | `39` 窗、core `5,725→≤5,500`、UoW `33→≤23`、R4.5/R6 阶段边界全部闭合 |
 
 ## 1. 主要矛盾
 
@@ -319,7 +319,7 @@ WS/Voice Adapter
 - 新 run 明确只写 §4.9 所列 `execution_*` 表；legacy run 继续使用旧 workflow store facade。测试扫描生产新路径，出现 EffectJournal/Outbox `_connect()` 或独立 `commit()` 即失败。
 - 故障注入覆盖 promotion→batch boundary→first claim、decision CAS→boundary、grant consume→effect claim/start、effect settle→continuation、durable command intent→child create/link→scheduled CAS、child terminal→parent inbox→apply/ack、TeamStore→Child command saga、terminal→delivery 每个写点；事务内中断整体回滚，跨库 Team saga 用 stable operation id/outbox 对账，外部执行窗口只能落 `unknown/reconcile`，不能宣称回滚或盲重试。
 - `backend/tests/harness_simplification/fault_matrix.json` 每行固定 `window_id/injection_hook/durable_before/durable_after/restart_actor/idempotency_key/expected_counts`；八个 UoW 方法和 Team saga 在代码中导出稳定 `FAULT_HOOKS`，测试对每个 hook 执行 kill/restart，并核对 run/boundary/decision/effect/attempt/child/link/inbox/event/delivery/external-write 计数。门禁断言 `tested_window_ids == required_window_ids == exported_fault_hooks`，多一个或少一个都 FAIL。
-- R1 的历史 `--r1-gate` 继续验证 rollback manifest 与未知分类；R4.5-0 新增当前 HEAD manifest/gate，锁定 total `33,618`、core `5,726`、Kernel `820`、transaction starters `33`、DML authority `2`。R4.5 最终要求 total `≤33,618`、core `≤5,500`、Kernel `≤850`、transaction starters `≤23`、DML authority `1`。manifest 内文件、新 production 文件、迁移/改名/相似 helper 都自动计数，禁止移动或私有化逃门。
+- R1 的历史 `--r1-gate` 继续验证 rollback manifest 与未知分类；R4.5-0 新增当前 HEAD manifest/gate，锁定 total `33,618`、core `5,725`、Kernel `820`、transaction starters `33`、DML authority `2`。R4.5 最终要求 total `≤33,618`、core `≤5,500`、Kernel `≤850`、transaction starters `≤23`、DML authority `1`。manifest 内文件、新 production 文件、迁移/改名/相似 helper 都自动计数，禁止移动或私有化逃门。
 - `start()` 接受仅由宿主构造的 `precreated_run_ref`/start source；Child scheduler 仍调用公开 start 语义，不保留 `_accept_child` 隐藏第七入口。模型 payload 不能设置该字段。
 
 #### R2 — 无行为抽取 ProductTurnPreparer 与 RunPresenter 〔AC-1, AC-9～AC-12, AC-15, AC-18〕
@@ -354,10 +354,10 @@ WS/Voice Adapter
 
 R4.5 保留 `8dd5aa1d` 的 Text/Voice 共用链，不改 schema、不切 production owner，整个阶段生产始终为 `legacy/0`。每族独立 commit；任一族失败，revert 本族及其后续依赖，不保留半迁移 UoW。
 
-1. **R4.5-0 — 锁定可执行事实源**：生成 `execution_table_dml_authorities.json`、`uow_public_write_ops.json`、`harness_authorities.json` 与 core deletion budget fixture。每项固定 `path/symbol/authority/tables/callsites/source_hash`；AST 新发现但未分类的 writer/map/task/converter 直接 FAIL。基线：total `33,618`、core `5,726`、Kernel `820`、transaction starters `33`、DML authority `2`、旧 owner survivors `15`。
+1. **R4.5-0 — 锁定可执行事实源**：生成 `execution_table_dml_authorities.json`、`uow_public_write_ops.json`、`harness_authorities.json` 与 core deletion budget fixture。每项固定 `path/symbol/authority/tables/callsites/source_hash`；AST 新发现但未分类的 writer/map/task/converter 直接 FAIL。基线：total `33,618`、core `5,725`、Kernel `820`、transaction starters `33`、DML authority `2`、旧 owner survivors `15`。
 2. **R4.5-1 — 单一 execution DML authority**：`SqliteExecutionUnitOfWork.bind(db) -> ExecutionTx` 返回 connection-bound primitive；`ExecutionTx` 禁止自行 connect/BEGIN/commit/rollback。把 `SqliteCheckpointExecutionAdapter` 的 `consume_decisions/open_decision/materialize_intent/link_effects/finalize_run` 迁入五个 typed tx API，删除 adapter 内全部 execution SQL。新增 5 个 checkpoint fault hooks；UoW `29→34`、Team `5`，最终 `exported == required == tested == 39`。
 3. **R4.5-2 — 收窄 typed transaction surface**：按 activation、delivery、React boundary、decision、tool claim、effect settle、run outcome、child signal、recovery scope 九组 typed composite API，把 public transaction starters `33→21`（硬门 `≤23`）。禁止 generic opcode、仅改 private、搬类或转发 facade；每组 caller 全迁后才删旧 API。
-4. **R4.5-3 — core 真删除预算**：锁定 10 组 source-hash 删除：execution re-export 65、route/profile 双契约 38、child pass-through 20、tool pass-through 20、Actor 构造 18、Kernel launch 重复 38、单 supervisor 18、recovery heartbeat 12、venue result wrapper 14、diagnostics 双 DTO 12，共净删 255。LiveRun spike 的 +14 已计入，预算为 `5,726 - 255 + 14 = 5,485`，距硬门 15 行；任何额外 core 新增必须在同 commit 等额补删。
+4. **R4.5-3 — core 真删除预算**：锁定 10 组 source-hash 删除：execution re-export 65、route/profile 双契约 38、child pass-through 20、tool pass-through 20、Actor 构造 18、Kernel launch 重复 38、单 supervisor 18、recovery heartbeat 12、venue result wrapper 14、diagnostics 双 DTO 12，共净删 255。LiveRun spike 的 +14 已计入，预算为 `5,725 - 255 + 14 = 5,484`，距硬门 16 行；任何额外 core 新增必须在同 commit 等额补删。
 5. **R4.5-4 — 单 LiveRun / Effect / Supervisor owner**：唯一 `LiveRun` 聚合 task、driver state、subscriber 与 volatile boundary；唯一 `EffectBatchExecutor` 编排 UoW claim/settle，删除 `UnifiedToolExecutor` 纯转发和第二 late truth；唯一 `HarnessSupervisor` 接管 recovery、child、delivery、late-drain 的 start/close 顺序与 bounded shutdown。
 6. **R4.5-5 — 终审**：运行 39 窗 fault matrix、workflow/Kernel/Voice/Text/parity/full harness、owner/LOC/shutdown stress。硬门：core `≤5,500`、Kernel `≤850` 且公开操作恰 6、total `≤33,618`、DML authority `1`、transaction starters `≤23`、run map `1`、Supervisor task authority `1`、Presenter converter `1`、旧 survivors 不增加（仍为 15）、unclassified new owner `0`。
 
@@ -397,7 +397,7 @@ R4.5 保留 `8dd5aa1d` 的 Text/Voice 共用链，不改 schema、不切 product
 
 | 计数组 | R4.5 基线 | R4.5 硬门 / R6 要求 |
 |---|---:|---:|
-| 审计口径 `execution_core + harness_core` | 5,726 | R4.5 `≤5,500` |
+| 审计口径 `execution_core + harness_core` | 5,725 | R4.5 `≤5,500` |
 | `harness/kernel.py` 物理 LOC | 820 | R4.5 `≤850` 且 public ops=6 |
 | `execution_uow.py` | 4,613 | 不设拍脑袋 LOC；transaction starters `33→≤23`、DML owner `2→1` |
 | 全部 counted orchestration | 33,618 | R4.5 `≤33,618`；R6 严格下降 |

@@ -67,7 +67,7 @@ close clears Kernel active references. Production Text and Voice still use the
 legacy owner, so this is `R5_READY` evidence rather than final production PASS.
 
 The R4.5 approved baseline is counted orchestration `33,618`, audited core
-`5,726`, Kernel `820`, public transaction starters `33`, execution-table DML
+`5,725`, Kernel `820`, public transaction starters `33`, execution-table DML
 authorities `2`, and existing fault windows `34` (`UoW=29 + Team=5`). Exit gates
 are core `<=5,500`, Kernel `<=850` with six operations, transaction starters
 `<=23`, DML authority `1`, fault matrix `39`, and exactly one LiveRun,
