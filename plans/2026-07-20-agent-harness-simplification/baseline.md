@@ -45,7 +45,7 @@
 - Safe commit: `4d38979e` (`feat(harness): journal authorized effects atomically`)
 - Worktree after rollback: clean
 - `python -m pytest -q backend/tests/harness_simplification`: **PASS — 150 passed, 9 xfailed** in 15.20s; one `aiosqlite` event-loop-close warning remains to be fixed before final gates.
-- Current post-foundation orchestration LOC: **33,228** (`fixed_total=22,266`, `execution/harness=7,982`, previously omitted `workflows/store/execution_uow.py=2,980`). This is an intermediate seam baseline, not an accepted simplification result; the final gate remains the original **≤17,250**. R0 must replace the manual file set with fixed-SHA automatic discovery so moves and new orchestration files cannot escape counting.
+- Current post-foundation orchestration LOC: **33,228** (`fixed_total=22,266`, `execution/harness=7,982`, previously omitted `workflows/store/execution_uow.py=2,980`). At capture time the plan still used a proposed **≤17,250** final gate; the 2026-07-21 approved R4.5 rework supersedes that unverified target with the structural/current-HEAD gates recorded below.
 - First WI-12 attempt reached 25,954 LOC but silently lost ContextAssembler/history/persona/memory, attachments, problem-pipeline state, Skill Codify and several UI events. It was therefore rejected under AC-18 even though owner count had fallen.
 
 ## R0 mechanical baseline — complete
@@ -55,3 +55,16 @@
 - Product census: `141` legacy callsites, `unmapped_count=0`; direct behavior tests cover canonical messages, real tool capability filtering, read-only/Code/DeepResearch/PPT routing, Voice, AutoResume, permission restore, SessionDB/workflow delivery and codify.
 - Integrated gate after both R0 slices: `176 passed, 9 xfailed`; census check PASS; LOC check PASS. R0 changes scripts/tests/manifests/docs only and do not change production ownership.
 - R1 触及既有 Native Workflow 共享底座后，LOC 继续以 rollback SHA 为机械 BASE：manifest 内 orchestration 按全文、新 production 文件按全文、BASE 已存在且 manifest 外的 schema/effect/outbox 等文件只计 Git 正向 added-lines；删除行不允许抵扣。R1 整体以 `--loc-only --r1-gate` 强制不高于 33,228。此口径避免把本来就存在的共享底座整文件冒充 harness 新增，同时保留移动/复制 manifest 内容的全文追踪。
+
+## R4.5 approved-plan baseline — 2026-07-21
+
+> Captured after the user approved phase-2 rework option A and before any R4.5 business-code change.
+
+- Integration HEAD: `8dd5aa1da16f8f03b6d1ba4098d1a9ee8c04c240`; production runtime remains `legacy/0`.
+- Harness suite: `python -m pytest backend/tests/harness_simplification -q` → **363 passed, 8 xfailed, 1 existing warning** in 69.64s.
+- Parity census: `harness_parity_census.py --check --check-mapping` → **PASS, 141 items, unmapped=0**.
+- Owner audit: baseline survivors **15**, new equivalents **8**. R4.5 must not increase the 15 legacy survivors and must classify/remove new equivalents toward the declared LiveRun/Supervisor/Presenter authorities; the final `owner≤7` gate belongs to R6 because production is still `legacy/0`.
+- LOC manifest: current counted orchestration **33,618**, rollback manifest **33,228**, unknown classifications **0**. The old `--r1-gate` is therefore red by 390 after the completed Text/Voice product chain; this is a known input to R4.5, not a newly introduced regression.
+- R4.5 locked structural baseline: audited core **5,726**, Kernel **820**, public transaction starters **33**, execution-table DML authorities **2**, existing fault windows **34** (`UoW=29 + Team=5`).
+- R4.5 exit gates: total `≤33,618`, core `≤5,500`, Kernel `≤850` with exactly six public operations, transaction starters `≤23`, DML authority `1`, fault matrix `39`, run map/Supervisor/Presenter authority each `1`, legacy survivors `15` without growth, unclassified new owner `0`.
+- Frontend Vitest/build and Rust are unchanged by the R4.5 baseline documentation update and retain the green results recorded above. They are rerun after production wiring changes in R6/R7; changed backend slices must run focused tests plus the full harness suite at every stage gate.

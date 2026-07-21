@@ -1,6 +1,6 @@
 # DeskPet Agent Harness 目标架构
 
-> 状态：2026-07-20 用户已批准；截至 2026-07-21，R0～R4 已完成并通过单一 UoW/owner、33 窗故障矩阵、薄 Kernel/ReAct recovery、Workflow/Child/Delivery adapters、141/141 parity mapping 与 LOC 门禁。当前执行 R5；本图仍是 R5～R7 的已定稿目标，当前生产事实保持 `legacy/0`，尚未执行 R6 切换。
+> 状态：2026-07-21 用户批准 R4.5 方案 A。R0～R4 与 R5 Text/Voice 共用 test-only 产品链已完成；当前执行 R4.5 边界纠正，生产事实仍保持 `legacy/0`，尚未执行 R6 切换。原 `Kernel≤450/core+UoW≤2,800` 指标已被真代码 spike 证伪并废止。
 >
 > 本文记录本次计划的目标结构，不代表当前生产事实；当前事实仍以
 > [`ARCHITECTURE/index.md`](../../ARCHITECTURE/index.md) 为准。实施并完成验收后，
@@ -23,15 +23,18 @@ flowchart TD
     U["用户提出请求"] --> A["入口适配器<br/>文字 / 语音 / Tauri"]
 
     A --> P["Product Turn Preparer<br/>历史 · Persona · Memory · Skill · 附件 · Plan"]
-    P --> K["薄 Run Kernel<br/>编号 · 可信上下文 · 路由 · 取消"]
+    P --> K["Run Kernel<br/>六个公开操作 · 路由 · 取消"]
+
+    K --> L["唯一 LiveRun<br/>task · subscriber · driver state"]
 
     K --> Q{"需要长时间运行<br/>并支持重启恢复吗？"}
 
     Q -->|"否"| R["ReAct Driver<br/>普通对话 / 短任务"]
     Q -->|"是"| W["Workflow Driver<br/>DeepResearch / PPT / Code"]
 
-    R --> T["现有 ToolRegistry V2<br/>PreparedToolCall · 权限 · 并发 · Effect"]
-    W --> T
+    R --> B["唯一 EffectBatchExecutor<br/>claim → execute → settle"]
+    W --> B
+    B --> T["现有 ToolRegistry V2<br/>PreparedToolCall · 权限 · 并发"]
 
     R --> E["Run Presenter<br/>完整保留现有 UI / SessionDB / TTS 语义"]
     W --> E
@@ -43,11 +46,14 @@ flowchart TD
     W -. "拆分任务" .-> C
     C --> K
 
-    D["现有 SqliteExecutionUnitOfWork<br/>唯一 durable authority"] --> K
+    D["SqliteExecutionUnitOfWork<br/>唯一事务 owner"] --> TX["connection-bound ExecutionTx<br/>唯一 execution_* DML authority"]
+    TX --> K
     D --> W
     D --> C
     D --> X["Execution Delivery Dispatcher<br/>唯一 durable 投递循环"]
     X --> E
+
+    H["唯一 HarnessSupervisor<br/>recovery · child · delivery · late drain"] --> D
 
     S["用户点击停止"] --> K
     K -. "按父子关系取消" .-> R
@@ -62,12 +68,15 @@ flowchart TD
 | Venue Adapter | WS/文字解码、ASR、TTS、VAD、barge-in、Tauri control payload | 创建 AgentLoop、选择工作流、解释工具成功失败 |
 | Product Turn Preparer | 复用并保存现有 ContextAssembler、历史、Persona、Memory、Skill/MCP、附件、Problem Pipeline、Plan/Preference、Supervisor hint 的产品语义 | Run identity、Driver 调度、Effect 执行、WS transport |
 | Run Kernel | Run 身份、可信上下文、唯一路由入口、粗生命周期、父子关系、signal/cancel、统一事件协议 | LLM 循环、graph node 调度、产品名称特判、token 持久化 |
+| LiveRun | 当前进程内唯一的 task、subscriber、driver state 与 volatile boundary owner；terminal/close 清空强引用 | durable truth、第二份 run map |
 | ReAct Driver | 动态 LLM 循环、provider fallback、token streaming、短任务工具循环、driver 内完成判断 | WS/SessionDB 投影、durable checkpoint、全局子代理状态 |
 | Workflow Driver | graph、checkpoint、lease/fence、HITL、retry、effect/outbox 算法与恢复 | 普通聊天 token 热路径、重新实现 ToolRegistry、自行给新 run 开第二条事务连接 |
 | ChildRun Coordinator | Subagent/Team 的分解、认领、join policy、父子关联 | 自建全局 completion queue、自建另一套执行语义 |
 | ToolRegistry V2 | capability/permission、参数冻结、并发 barrier、effect id、receipt/artifact、late reconcile；继续使用现有 `PreparedToolCall`/outcome primitive | 新增第二套 PreparedCall、Outcome 或 late-effect supervisor |
 | Run Presenter | 把 Driver event 投影为现有 WS、SessionDB、UI 卡片或 TTS，并保留 reasoning、context usage、pipeline 与 codify 收尾 | 改写成功/失败含义、把 accepted 当 completed、新建第二套 durable outbox |
 | SqliteExecutionUnitOfWork | `execution_*` 新 run 表的唯一事务 authority；调用接收同一 connection 的 effect/outbox `*_tx` 原语 | 再由 Ledger/DecisionStore/EffectJournal/Outbox 各自打开同库连接并竞争 owner |
+| ExecutionTx | 绑定调用方已打开的 connection，提供 workflow checkpoint 同事务需要的 typed execution DML | connect、BEGIN、commit、rollback、第二事务生命周期 |
+| HarnessSupervisor | 唯一拥有 recovery/child/delivery/late-drain 后台任务的启动、关闭和 bounded shutdown 顺序 | 业务事实、第二 run map、第二 late-effect truth |
 
 ## 必须保留的边界
 
@@ -85,6 +94,8 @@ flowchart TD
 12. ReAct 首次变成 durable 时，Run promotion、continuation boundary 和 waiting decision/effect/child command 必须同事务创建。
 13. R1 先以默认 `legacy` 的 additive v7 schema 建立 `execution_runtime_state` 与持久 drain manifest；R6 只切 phase/wiring。新 run 固定 owner generation，重启不能靠内存 flag 退回旧 owner。
 14. 新 run 的 durable delivery 只由 `ExecutionDeliveryDispatcher` claim/retry；RunPresenter 是 sink adapter，不是第二个队列 owner。
+15. R4.5 硬门：core≤5,500、Kernel≤850、public transaction starters≤23、execution DML authority=1、fault matrix=39、run map/Supervisor/Presenter authority各1；全程保持生产 `legacy/0`。
+16. R6 必须按冻结 span 清单删除旧 production owner，并同时通过 exact/similar/unreachable/live-stack 审计；不能把旧逻辑改名搬到 compatibility 目录。
 
 ## 目标态删除或退出新请求路径的机制
 

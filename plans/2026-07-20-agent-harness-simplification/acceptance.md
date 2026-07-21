@@ -45,7 +45,8 @@
 
 ## 非功能 / 边界
 
-- 简化度：Kernel 目标不超过 450 LOC；Kernel 公开控制操作不超过 6 个；`execution/ + harness/ + execution_uow.py` 合计不超过 2,800 LOC；全部计数文件总 LOC 不超过 17,250 且相对 phase-0 基线净减少至少 20%；全局 registry/task-map 数量至少减少 50%；旧 owner 必须删除，不能只包一层 Facade。
+- 简化度（2026-07-21 方案 A）：审计口径 `execution_core + harness_core` 从 5,726 降到 `≤5,500`；Kernel `≤850` 且公开控制操作恰为 6；全部 counted orchestration 在 R4.5 `≤33,618`、R6 删除旧路径后严格下降。`execution_uow.py` 作为共享持久化引擎继续计入全局 manifest，但改由 public transaction starters `33→≤23`、execution DML authority `2→1`、fault matrix 精确 39 约束，不再与 core 绑定到已被 spike 证伪的 2,800 LOC。
+- authority 简化：activated test harness 的 run-keyed live map、HarnessSupervisor task owner、Presenter conversion owner 各为 1；R4.5 旧 production survivors 保持 15 且不得增加，R6 activation 同 commit 删除旧 owner并达到总 owner≤7、unclassified new owner=0。
 - 回炉约束：首次 WI-12 已证明“删除旧 `_run_chat` 再补功能”不可接受。生产切换前必须对历史/Persona/Memory/Skill/MCP、附件、Problem Pipeline、Plan/Preference、Supervisor/summary、reasoning/context/pipeline UI 事件、billing/SessionActivity、Skill Codify 建立逐项 parity 证据；任一缺失即 AC-18 FAIL。
 - 机械防漏：从旧生产 span/event/WS/SessionDB/vector/file/waiter/cancel/codify/permission 调用点自动生成 census，逐项映射新 owner 与 golden testcase；`unmapped_count` 必须为 0，不能仅依赖人工清单。
 - 单 authority 约束：现有 `SqliteExecutionUnitOfWork` 是新 durable Run 的唯一事务 authority；effect/outbox 只能暴露同 connection 的 `*_tx` 原语；不得再并存独立 Ledger、Decision SQLite、Effect SQLite、Continuation SQLite 或第二套 durable delivery worker。
@@ -54,7 +55,7 @@
 - 测试态不走后门：R1～R5 的新路径测试必须在隔离 v7 DB 上调用真实 activation CAS 到 generation 1；生产 DB 保持 `legacy/0`。禁止 test-only bypass flag 或 legacy phase 下创建 kernel-owned row。
 - 依赖方向：`deskpet.execution` 不得 import `deskpet.workflows`；PreparedToolCall/NormalizedToolOutcome 由 Driver/ToolRegistry 直接复用 workflow primitive，UoW 只接受中立 identity/JSON，不保留 `tools.registry → harness.tool_executor` 反向依赖。
 - 原子切换：v7 additive schema 在 R1 以 `legacy` 默认态先落地并完成全套预演；R6 关入口、等待 ephemeral legacy=0、同事务持久化 durable drain manifest 并进入 `draining`，排空后再写 activation generation、切 start/recovery/delivery owner 并开入口。新 execution row 写入 `owner_kind/owner_generation`，首条新 row 产生后只允许 fail-closed/roll-forward。
-- 计数反规避：ProductTurnPreparer、RunPresenter、venue adapter、Team reconciler 等迁移后的 orchestration 文件全部计入 LOC，不能通过移动出 `main.py` 或 `harness/` 逃避 20% 门槛。
+- 计数反规避：ProductTurnPreparer、RunPresenter、venue adapter、Team reconciler、`execution_*.py`、专用 SQL/codec/helper 及迁移/改名相似文件全部自动归类计数；不能通过移动、私有化、generic opcode、压行或改名逃避 core/total/authority 门。
 - LOC 机械口径：锁定 phase-0=21,563 与 rollback=33,228 两份逐文件 manifest。manifest 内的 harness/orchestration 文件始终按当前全文计；BASE 时不存在的新 production `backend/**/*.py` 按全文计；BASE 已存在但不属于 manifest 的共享底座文件（例如 schema/effect/outbox）只计相对锁定 BASE path/hash 的 Git 正向 added-lines，删除行永不抵扣 harness LOC。迁移/复制的 manifest 内容仍按全文计，未知分类或基准 hash/总数不符直接 FAIL。只有 tests、生成代码、vendored 固定 path rule 可排除且先做 manifest 相似度归属；`.venv/.uv-cache/.uv-python/dist*` 明确是本地解释器/包缓存/冻结构建产物的硬非源码边界，不进入生产 LOC。R1 合并门必须运行 `harness_baseline.py --loc-only --r1-gate`，超过 33,228 非零退出。
 - 单一所有权：route、cancel、effect commit、retry、terminal delivery 各有一个明确 authority；架构测试禁止 Kernel 与 Driver 同时拥有同一权能。
 - 性能：普通 chat 的 Kernel 本地增量开销 p95 ≤10ms，端到端 TTFT p95 回归 ≤5%；每个 token delta 产生 0 次 SQLite 写；20 并发 session 下 event-loop lag p99 ≤20ms、吞吐回归 ≤10%。
@@ -65,7 +66,7 @@
 - 数据迁移：所有 schema/event 迁移可重复执行并可从中断处继续；不删除用户历史；新写路径只能有一个 delivery owner。
 - Crash 完整性：UoW/Team saga 导出的全部 fault hook 必须与参数化 fault matrix 一一相等；每个窗口都要有 restart actor、idempotency key 和逐表/外部写计数 oracle，不能只以 prose 声称覆盖。
 - Delivery/Reconcile owner：新 run 只有一个 `ExecutionDeliveryDispatcher` 经 UoW claim/complete 并校验 owner generation；legacy dispatcher 只处理无 execution row 的历史 run。unknown effect 只有 Workflow/effect service reconciler，Kernel/Driver 不另起 supervisor。
-- 默认启用：测试通过后新 Run Kernel 与 Driver 路径立即成为默认生产路径，不做 shadow、分批或默认关闭。
+- 默认启用：R4.5/R5_READY 全部门禁通过后，由 R6 一个 activation commit 让新 Run Kernel 与 Driver 路径成为默认生产路径，不做 shadow、分批或默认关闭。
 
 ## 测试场景矩阵
 
@@ -81,7 +82,7 @@
 
 ## 完成的定义（DoD 摘要）
 
-- AC-1 至 AC-18 全部有自动化、故障注入、性能或真实 UI 证据；任何必须项 PENDING/PARTIAL 均不得完成。
+- AC-1 至 AC-18 的状态分为 `pre_activation_evidence / production_activation / manual_e2e / final_status`；R5_READY 不得把 R6/R7_REQUIRED 写成最终 PASS，任何必须项 PENDING/PARTIAL 均不得完成。
 - 先跑 2–5 个自然语言 value smoke；主要矛盾未解决时立即停止昂贵回归和打包步骤。
 - S-1 至 S-7 全部走真实生产入口；原生 UI 场景使用 computer-use 真人点击/输入，不能用协议注入或脚本回放替代。
 - unsafe 并发、跨 session ChildRun、tool failure 投影、timeout late effect、cancel/restart、历史 checkpoint 兼容均有专项自动化回归。

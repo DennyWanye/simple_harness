@@ -14,24 +14,30 @@ tests must inspect the runtime composition rather than a duplicate static list.
 
 ## Harness simplification program status
 
-R4 is complete on the isolated Kernel path; **production ownership is still
-`legacy/0` until the atomic R6 activation**. The current split is deliberately
-easy to read:
+R5 Text/Voice test-only convergence is complete; **production ownership is
+still `legacy/0` until the atomic R6 activation**. The approved R4.5 boundary
+correction now simplifies the isolated runtime before cutover:
 
 ```mermaid
 flowchart LR
     Ingress["当前生产入口"] --> Legacy["旧执行链<br/>仍是唯一生产 owner"]
-    Test["R4 隔离测试入口"] --> Kernel["RunKernel"]
+    Text["Text test adapter"] --> Session["ProductVenueRunSession"]
+    Voice["Voice test adapter"] --> Session
+    Session --> Kernel["RunKernel<br/>六个公开操作"]
+    Kernel --> Live["目标：唯一 LiveRun owner"]
     Kernel --> React["ReAct Driver"]
     Kernel --> Workflow["Workflow Driver"]
-    React --> UoW["SqliteExecutionUnitOfWork<br/>唯一 durable authority"]
-    Workflow --> UoW
+    React --> Effect["目标：唯一 EffectBatchExecutor"]
+    Workflow --> Effect
+    Effect --> UoW["SqliteExecutionUnitOfWork<br/>唯一事务 owner"]
+    UoW --> Tx["目标：connection-bound ExecutionTx<br/>唯一 execution_* DML authority"]
     UoW --> Child["Child command / signal inbox"]
     Child --> Scheduler["唯一 Child scheduler"]
     Scheduler --> Kernel
     UoW --> Delivery["ExecutionDeliveryDispatcher"]
     Team["TeamStore outbox"] --> Reconciler["TeamChildRunReconciler"]
     Reconciler --> UoW
+    Supervisor["目标：唯一 HarnessSupervisor"] --> UoW
 ```
 
 `ProfileRegistry` now generates both Router profiles and the WorkflowDriver
@@ -53,13 +59,23 @@ open, waits the actual recovery task and durable settlement, and only then
 closes Drivers. A separate short-timeout test proves unresolved evidence stays
 `unknown` and is recovered after restart rather than blindly retried.
 
-R4 verification: combined Harness and adjacent gate `405 passed, 9 xfailed`;
-shutdown ordering/restart stress `60/60`; adjusted LOC `33,184 <= 33,228` with
-zero unknown classifications. The owner audit truthfully reports 15 legacy
-survivors and 8 newly detected equivalent candidates; these are explicit R6
-deletion debt, not hidden behind an allow-list. Two independent final audits
-returned PASS. Evidence:
-[`r4-results.md`](../plans/2026-07-20-agent-harness-simplification/r4-results.md).
+R5 verification: the shared Text/Voice chain runs
+`ProductTurnPreparer -> RunKernel/Driver -> CanonicalRunEventPresentationAdapter -> RunPresenter`
+against a real isolated `open/generation=1` activation. Full harness verification
+is `363 passed, 8 xfailed`; parity census is `141/141, unmapped=0`; terminal
+close clears Kernel active references. Production Text and Voice still use the
+legacy owner, so this is `R5_READY` evidence rather than final production PASS.
+
+The R4.5 approved baseline is counted orchestration `33,618`, audited core
+`5,726`, Kernel `820`, public transaction starters `33`, execution-table DML
+authorities `2`, and existing fault windows `34` (`UoW=29 + Team=5`). Exit gates
+are core `<=5,500`, Kernel `<=850` with six operations, transaction starters
+`<=23`, DML authority `1`, fault matrix `39`, and exactly one LiveRun,
+HarnessSupervisor, and Presenter-conversion authority. The old combined
+core/UoW `<=2,800` target was disproved by two disposable code spikes and is no
+longer a production acceptance metric. Evidence and approved target:
+[`baseline.md`](../plans/2026-07-20-agent-harness-simplification/baseline.md) and
+[`target-architecture.md`](../plans/2026-07-20-agent-harness-simplification/target-architecture.md).
 
 The R3 recovery-fence hardening slice is complete. `RunKernel` claims one
 short-lived execution recovery lease and `DriverRuntime` renews it before
@@ -157,12 +173,12 @@ ownership remains `legacy/0` until the R6 activation commit.
 
 This atomicity slice grows `execution_uow.py` from 3,854 to 4,467 physical
 lines (`+613` net after extracting the old decision/grant/child-signal bodies)
-and TeamStore by `+176` net lines. It is therefore correct for crash safety but
-is **not** the final simplification shape: R2～R4 must split product-neutral
-records/SQL primitives from orchestration and delete compatibility surfaces so
-the R5 combined core/UoW gate reaches `≤2,800` lines. On the integrated
-owner-collapse head, the R1 adjusted-total gate is `32,766 <= 33,228`, with
-zero unknown classifications.
+and TeamStore by `+176` net lines. It is correct for crash safety, but the old
+plan incorrectly treated that shared persistence engine as if it were only
+harness glue. R4.5 instead keeps it in the global count while measuring its
+real complexity boundary: one execution DML writer, at most 23 typed public
+transaction starters, and a complete fault matrix. Harness/execution core has
+its own `<=5,500` structural budget.
 
 R2 turns the old text ingress into a smaller composition shell without a
 Kernel/Driver/Workflow/Voice cutover. `ProductTurnPreparer` now owns the typed

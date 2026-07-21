@@ -34,4 +34,4 @@
 
 ## 后续约束
 
-R1 为 crash-correct，但组合事务使 `execution_uow.py` 暂时增厚。R2～R4 必须继续拆除 compatibility surface 并复用 product-neutral records/SQL primitives；进入 R6 前，R5 的 combined core/UoW 机械门禁必须达到 `<= 2,800`。生产切换只允许发生在 R6 的单次 activation commit。
+R1 为 crash-correct，但组合事务使 `execution_uow.py` 暂时增厚。本记录当时要求 combined core/UoW `<=2,800`；该指标已被 2026-07-21 的 storage/LiveRun 真代码 spike 证伪并由用户批准的 R4.5 方案 A 取代。当前门禁见 `plan.md` §R4.5/§7.0.1；生产切换仍只允许发生在 R6 的单次 activation commit。

@@ -1,13 +1,13 @@
 # Plan：DeskPet Agent Harness 提炼与简化
 
-> plan-status: finalized (phase-2 rework approved 2026-07-20)
+> plan-status: finalized (R4.5 phase-2 rework approved 2026-07-21)
 >
-> 状态：WI-1～WI-11 的安全底座已落到 `codex/harness-integration@4d38979e`；首次 WI-12 原子切换因 AC-18 功能不等价且新增层达到 8,597 LOC 而整体回退。回炉方案已完成 5 轮 challenger（最终 PASS）并获用户 review 通过；R0～R4 已完成，当前执行 R5 Text/Voice test-only 全链路与 parity 门禁，生产 owner 仍保持 `legacy/0`。
+> 状态：R0～R4 已完成；R5 Text/Voice 共用 test-only 产品链已在 `codex/harness-integration@8dd5aa1d` 完成（363 passed/8 xfailed，141/141 parity mapping），生产 owner 仍保持 `legacy/0`。原 G4 的 `Kernel≤450/core+UoW≤2,800` 经两个真代码 spike 证伪；R4.5 边界纠正方案完成 6 轮 challenger（最终 PASS），并于 2026-07-21 获用户选择方案 A 批准。当前执行 R4.5。
 >
 > 关联文档：[`acceptance.md`](./acceptance.md) · [`architecture-baseline.md`](./architecture-baseline.md) · [`target-architecture.md`](./target-architecture.md)
 
 > [!IMPORTANT]
-> 2026-07-20 回炉修订是本文唯一生效的后续执行路线。原 WI-1～WI-11 作为已完成、尚未接管生产 owner 的基础保留；原 WI-12～WI-14 及其中“新增独立 Ledger/Decision/Effect/Projector owner”的描述已被本修订废止，不能据此继续实现。
+> 2026-07-21 R4.5 修订是本文唯一生效的后续执行路线。原 WI-1～WI-11 作为已完成、尚未接管生产 owner 的基础保留；原 WI-12～WI-14 及其中“新增独立 Ledger/Decision/Effect/Projector owner”的描述已被废止。`execution_uow.py` 是共享持久化引擎，不再与 harness core 绑定到一个虚假的 2,800 LOC 指标；它改由单 DML authority、typed transaction surface 与 fault-matrix 完整性约束。
 
 ### Phase-2 挑战记录
 
@@ -18,6 +18,17 @@
 | 3 | FAIL | 固定 LOC manifests、可枚举 fault matrix 与计数 oracle |
 | 4 | FAIL | v7 schema 前移、持久 drain manifest、无 crash gap activation |
 | 5 | **PASS** | 四份文档一致，未发现新的代码可执行性硬阻塞 |
+
+### R4.5 A2 返工挑战记录
+
+| 轮次 | 结果 | 收敛内容 |
+|---|---|---|
+| 1 | FAIL | R5 证据孤岛、最终 AC 与 pre-activation 状态混淆 |
+| 2 | FAIL | 证明 combined `≤2,800` 需要重写存储模型，不能靠安全重构完成 |
+| 3 | FAIL | 候选 `≤5,500` 仍缺真代码纵切和 typed operation 映射 |
+| 4 | FAIL | owner≤7 阶段错误、DML/API/删除预算未锁定 |
+| 5 | FAIL | fault window 总数与 LOC 余量机械数字不一致 |
+| 6 | **PASS** | `39` 窗、core `5,726→≤5,500`、UoW `33→≤23`、R4.5/R6 阶段边界全部闭合 |
 
 ## 1. 主要矛盾
 
@@ -282,7 +293,7 @@ WS/Voice Adapter
 
 ### 7.0 回炉执行序列（唯一生效；原 WI-12～WI-14 作废）
 
-已提交的 WI-1～WI-11 只视为可回退的研究/安全 seam，不代表目标结构。后续按 R0～R7 执行；每个 R 项一个独立 commit，R6 是唯一生产 owner activation commit。
+已提交的 WI-1～WI-11 只视为可回退的研究/安全 seam，不代表目标结构。后续按 R0～R7 执行；R4.5 按可独立回退的事务族/core slice 拆 commit，R6 是唯一生产 owner activation commit。
 
 #### R0 — 冻结产品能力 parity 与真实回退基线 〔AC-3, AC-12, AC-15, AC-18〕
 
@@ -293,7 +304,7 @@ WS/Voice Adapter
 - 为 `AssistantMessageEvent`、reasoning、`ContextCompactedEvent`、`PipelineEvent`、tool result、accepted/progress/final 建立完整 presenter golden。
 - 修正 benchmark：10k completed run 必须真实 start/final/close Kernel/UoW，不能用“创建 list 后 clear”代替。R0 固化 `loc-phase0-manifest.json` 与 `loc-rollback-manifest.json` 两份逐文件 path/LOC/hash/group 清单，先分别断言总数 21,563 与 33,228；不一致立即 FAIL。runner 再验证执行 worktree 的 `4d38979e` 是 BASE 且可达，使用 rename-aware `BASE..HEAD` diff，并 union baseline manifest、当前 tracked、dirty 与 untracked Python 文件。
 - 计数机器规则：baseline manifest 文件永远计入；本计划 commit 中新增或修改的 `backend/**/*.py` 默认计入。`backend/tests/**`、生成的 `*_pb2.py` 和 vendored 目录只有命中固定 path rule 且未被 manifest 相似度归属时才排除；`.venv/.uv-cache/.uv-python/dist*` 固定为本地解释器、包缓存与冻结构建产物的硬非源码边界。未知分类直接 FAIL。输出逐文件 `path/baseline_loc/current_loc/effective_loc/group/reason/status` JSON；改名/搬家用 blob/hash/相似度追踪，任何排除项必须命中固定规则，禁止人工 `reason` 放行。
-- 证据：回退点 `4d38979e` worktree clean；harness suite 150 passed/9 xfailed；诚实中间 LOC 33,228（原 30,248 漏算 `execution_uow.py` 2,980 行）。该数字只是基础 seam 基线，最终门槛仍是 phase-0 的 17,250。
+- 证据：回退点 `4d38979e` worktree clean；harness suite 150 passed/9 xfailed；诚实中间 LOC 33,228（原 30,248 漏算 `execution_uow.py` 2,980 行）。该数字保留为历史 rollback manifest，不再作为已加入 R5 产品链后的当前工作上限；R4.5 当前基线与门禁见 §7.0.1。
 
 #### R1 — 合并为一个契约集与一个 UoW 〔AC-4～AC-10, AC-13, AC-14, AC-16〕
 
@@ -308,7 +319,7 @@ WS/Voice Adapter
 - 新 run 明确只写 §4.9 所列 `execution_*` 表；legacy run 继续使用旧 workflow store facade。测试扫描生产新路径，出现 EffectJournal/Outbox `_connect()` 或独立 `commit()` 即失败。
 - 故障注入覆盖 promotion→batch boundary→first claim、decision CAS→boundary、grant consume→effect claim/start、effect settle→continuation、durable command intent→child create/link→scheduled CAS、child terminal→parent inbox→apply/ack、TeamStore→Child command saga、terminal→delivery 每个写点；事务内中断整体回滚，跨库 Team saga 用 stable operation id/outbox 对账，外部执行窗口只能落 `unknown/reconcile`，不能宣称回滚或盲重试。
 - `backend/tests/harness_simplification/fault_matrix.json` 每行固定 `window_id/injection_hook/durable_before/durable_after/restart_actor/idempotency_key/expected_counts`；八个 UoW 方法和 Team saga 在代码中导出稳定 `FAULT_HOOKS`，测试对每个 hook 执行 kill/restart，并核对 run/boundary/decision/effect/attempt/child/link/inbox/event/delivery/external-write 计数。门禁断言 `tested_window_ids == required_window_ids == exported_fault_hooks`，多一个或少一个都 FAIL。
-- R1 每个 slice 都记录 LOC，但只在 R1 全部 slice 合并后运行 `harness_baseline.py --loc-only --r1-gate` 判断整体趋势：adjusted total 不得高于 rollback 33,228，超限必须非零退出，且不得新增等价 owner。manifest 内文件与新 production 文件计全文；BASE 已存在、manifest 外的共享底座只计相对锁定 BASE path/hash 的 Git 正向 added-lines，删除行永不抵扣 harness LOC。这样既不会把原有共享实现冒充本计划新增，也不能靠删除无关共享代码或同文件等量替换买低指标。combined core/UoW ≤2,800 的硬门在 R2～R4 完成 Preparer/Presenter、ToolExecutor/Projector 迁移和 Kernel/Driver 收敛后，于 R5 进入 R6 前执行。禁止为了让 R1 当场达 2,800 而提前切生产 owner或删除尚未 parity 的产品行为。
+- R1 的历史 `--r1-gate` 继续验证 rollback manifest 与未知分类；R4.5-0 新增当前 HEAD manifest/gate，锁定 total `33,618`、core `5,726`、Kernel `820`、transaction starters `33`、DML authority `2`。R4.5 最终要求 total `≤33,618`、core `≤5,500`、Kernel `≤850`、transaction starters `≤23`、DML authority `1`。manifest 内文件、新 production 文件、迁移/改名/相似 helper 都自动计数，禁止移动或私有化逃门。
 - `start()` 接受仅由宿主构造的 `precreated_run_ref`/start source；Child scheduler 仍调用公开 start 语义，不保留 `_accept_child` 隐藏第七入口。模型 payload 不能设置该字段。
 
 #### R2 — 无行为抽取 ProductTurnPreparer 与 RunPresenter 〔AC-1, AC-9～AC-12, AC-15, AC-18〕
@@ -321,7 +332,7 @@ WS/Voice Adapter
 
 #### R3 — 收敛薄 Kernel 与 ReAct Driver 〔AC-1～AC-10, AC-13～AC-16〕
 
-- `harness/kernel.py` 压到 ≤450 LOC：六操作、一次 route、一个有界 live index；durable observe/recover 只查 UoW；terminal/close 删除 subscriber/task 引用。
+- `harness/kernel.py` 保持 ≤850 LOC：六操作、一次 route、一个有界 live index；durable observe/recover 只查 UoW；terminal/close 删除 subscriber/task 引用。真代码 LiveRun spike 已证明单 owner 可行，但把 820 行机械压到 450 只能搬移真实 admission/stream/decision/cancel/recovery 职责，故 450 指标作废。
 - durable `recover()` 必须先 CAS 获取数据库 lease/fence epoch；心跳续租、过期接管和所有恢复写入都校验 epoch。`_active` 只防本进程重复启动，不能当跨进程锁。
 - `harness/ports.py` 只保留一个 tagged `DriverEvent` 与一个 `DriverSignal`，删除 emission/candidate/event 三套 taxonomy。
 - `drivers/react.py` 复用 AgentLoop 的 provider/token/completion 核心；ToolBatch 携带完整 canonical messages，resume 必须消费 tool/decision/child response 并从已提交 boundary 继续，禁止重跑原 prompt。
@@ -339,6 +350,19 @@ WS/Voice Adapter
 - durable delivery 的唯一 owner 命名为 `ExecutionDeliveryDispatcher`：复用现有 outbox loop 算法，但只能经 UoW `claim_delivery/complete_delivery` 并校验 run owner generation；legacy dispatcher 只处理不存在 execution row 的历史 run。RunPresenter 只是 sink adapter。effect unknown 的唯一 reconciler 归 Workflow/effect service，Kernel 与 Driver 只提交/观察状态，不能各起 supervisor。
 - 历史 v1-v7 run 只由 compatibility reader 恢复；launcher/outbox/recovery 在同一入口先按 `execution_runs` 是否存在选 owner，一旦存在就禁止降级旧 start/recovery/delivery。
 
+#### R4.5 — 边界纠正与结构收敛 〔AC-2, AC-4～AC-10, AC-13～AC-17〕
+
+R4.5 保留 `8dd5aa1d` 的 Text/Voice 共用链，不改 schema、不切 production owner，整个阶段生产始终为 `legacy/0`。每族独立 commit；任一族失败，revert 本族及其后续依赖，不保留半迁移 UoW。
+
+1. **R4.5-0 — 锁定可执行事实源**：生成 `execution_table_dml_authorities.json`、`uow_public_write_ops.json`、`harness_authorities.json` 与 core deletion budget fixture。每项固定 `path/symbol/authority/tables/callsites/source_hash`；AST 新发现但未分类的 writer/map/task/converter 直接 FAIL。基线：total `33,618`、core `5,726`、Kernel `820`、transaction starters `33`、DML authority `2`、旧 owner survivors `15`。
+2. **R4.5-1 — 单一 execution DML authority**：`SqliteExecutionUnitOfWork.bind(db) -> ExecutionTx` 返回 connection-bound primitive；`ExecutionTx` 禁止自行 connect/BEGIN/commit/rollback。把 `SqliteCheckpointExecutionAdapter` 的 `consume_decisions/open_decision/materialize_intent/link_effects/finalize_run` 迁入五个 typed tx API，删除 adapter 内全部 execution SQL。新增 5 个 checkpoint fault hooks；UoW `29→34`、Team `5`，最终 `exported == required == tested == 39`。
+3. **R4.5-2 — 收窄 typed transaction surface**：按 activation、delivery、React boundary、decision、tool claim、effect settle、run outcome、child signal、recovery scope 九组 typed composite API，把 public transaction starters `33→21`（硬门 `≤23`）。禁止 generic opcode、仅改 private、搬类或转发 facade；每组 caller 全迁后才删旧 API。
+4. **R4.5-3 — core 真删除预算**：锁定 10 组 source-hash 删除：execution re-export 65、route/profile 双契约 38、child pass-through 20、tool pass-through 20、Actor 构造 18、Kernel launch 重复 38、单 supervisor 18、recovery heartbeat 12、venue result wrapper 14、diagnostics 双 DTO 12，共净删 255。LiveRun spike 的 +14 已计入，预算为 `5,726 - 255 + 14 = 5,485`，距硬门 15 行；任何额外 core 新增必须在同 commit 等额补删。
+5. **R4.5-4 — 单 LiveRun / Effect / Supervisor owner**：唯一 `LiveRun` 聚合 task、driver state、subscriber 与 volatile boundary；唯一 `EffectBatchExecutor` 编排 UoW claim/settle，删除 `UnifiedToolExecutor` 纯转发和第二 late truth；唯一 `HarnessSupervisor` 接管 recovery、child、delivery、late-drain 的 start/close 顺序与 bounded shutdown。
+6. **R4.5-5 — 终审**：运行 39 窗 fault matrix、workflow/Kernel/Voice/Text/parity/full harness、owner/LOC/shutdown stress。硬门：core `≤5,500`、Kernel `≤850` 且公开操作恰 6、total `≤33,618`、DML authority `1`、transaction starters `≤23`、run map `1`、Supervisor task authority `1`、Presenter converter `1`、旧 survivors 不增加（仍为 15）、unclassified new owner `0`。
+
+`execution_uow.py` 仍在全局 orchestration manifest，不能搬家逃计数；但它作为共享持久化引擎，不再与 harness/execution core 绑定到 `≤2,800`。若未来坚持 combined `≤2,800`，必须另立 Execution Store 模型重写计划并单独审批。
+
 #### R5 — Text/Voice test-only 全链路就绪与 parity 门禁 〔AC-1～AC-18〕
 
 - Text adapter 顺序固定为 `Venue decode → ProductTurnPreparer → Kernel → Driver → RunPresenter`；旧 `_run_chat` 仍是唯一生产入口。
@@ -346,8 +370,9 @@ WS/Voice Adapter
 - Voice parity 额外覆盖 `StreamingTagParser`、emotion/action→Live2D、terminal-only TTS、transcript sync、provider indicator、lip-sync；不得把原始标签直接朗读。
 - Presenter parity 必须覆盖 delta/intermediate、tool 参数/结果脱敏、SessionDB/vector、peer fanout、usage/billing/feedback/activity、workflow delivery、codify 与 error；每个生产 adapter 在 terminal/cancel/disconnect 后调用 `close` 并证明 active refs 归零。
 - Workflow durable delivery 只由既有 outbox handler 投递；RunPresenter 只消费并翻译同一 delivery，不再创建 row。故障注入断言一个 terminal event 对每个 sink 只有一次领域可见交付。
-- 运行 §2.4 parity inventory、S-1～S-7 自动化、kill/restart/cross-session/fault injection；任何功能 PARTIAL 都不允许进入 R6。
-- G1～G4 必须全绿，core+migrated adapter 实测 LOC 在切换前已经满足预算；不能指望 R6 临时大删才达标。
+- 当前证据：Text/Voice 共用 `ProductTurnPreparer → Kernel/Driver → CanonicalRunEventPresentationAdapter → RunPresenter`；真实 activation `open/generation=1`、owner `kernel/1`、terminal close active refs=0；harness suite `363 passed, 8 xfailed`，parity census `141/141, unmapped=0`。
+- R5 只允许标记 `R5_READY`，表示 pre-activation 自动证据就绪；AC-1/12/16/18 的 production activation 与 manual E2E 必须保持 `R6_REQUIRED/R7_REQUIRED`，不得在 R5 假报最终 PASS。
+- R4.5 全部门禁绿后重跑 §2.4 parity inventory、kill/restart/cross-session/fault injection；任何自动证据 PARTIAL 都不允许进入 R6。
 
 #### R6 — 全 venue + recovery 原子 owner 切换 〔AC-1～AC-18〕
 
@@ -355,8 +380,9 @@ WS/Voice Adapter
 - `activation generation` 是部署级永久 fence，写入每个 run；`lease_epoch` 是单 run/command 的短期接管 fence，两者禁止复用字段。start/recover/delivery 同时校验 runtime generation 与 row generation，reconciler 再校验自身 lease epoch。
 - 启动恢复协议：读到 `legacy` 才允许旧 runtime；读到 `draining` 就保持入口关闭并继续排空/由运维重试 activation；读到 `activated/open` 必须只启动新 owner，其中 `activated` 先完成 bootstrap/recovery 后再 CAS `open`。只要该 generation 已有 `execution_runs` row，就禁止退回 `legacy`。
 - 一个 activation commit 同时切 Text/Code/DeepResearch/PPT/Voice start、decision、cancel、recovery、terminal delivery；默认 ON，不保留 runtime flag、shadow 或语义较弱 fallback。每个新 `execution_runs` row 持久化 `owner_kind='kernel'` 与单调递增 `owner_generation`，后续 start/recover/deliver 都按 row 校验。
-- 同 commit 删除 `_run_chat` 旧编排体、AutoResume redispatch、旧 waiter/task maps、全局 Subagent queue、Voice AgentLoop bridge、AgentLoop internal dispatch、Registry legacy 新请求入口和旧 PPT background owner。
-- `main.py` 只保留 transport/bootstrap，≤6,800 LOC；Voice ≤500；Registry ≤1,900；全部计数文件总 LOC ≤17,250，owner ≤7，新增等价 owner=0。
+- R5 最后绿色 SHA 自动生成 `legacy_cutover_spans.json`：由 legacy roots、15 个 survivor 与静态可达 symbols 构成，锁定 `commit/path/qualname/line/source_hash/normalized_ast_hash/statement_count/direct_callees/root`；动态调用无法解析时 fail closed。
+- 同 commit 删除 `_run_chat` 旧编排体、AutoResume redispatch、旧 waiter/task maps、全局 Subagent queue、Voice AgentLoop bridge、AgentLoop internal dispatch、Registry legacy 新请求入口和旧 PPT background owner。切换后 exact AST、相似 fingerprint（覆盖 0.70/连续 0.60）、新 roots 不可达、动态 stack 不命中、旧 symbol 引用扫描全部通过；compatibility 只允许 typed `LegacyRecoveryContext`，且新 start 反向不可达。
+- owner≤7、unclassified=0；全部冻结 legacy spans 100% 删除/不可达/未复制；total counted 必须严格低于 R4.5。取消未经验证的 `≤17,250/净减20%` 承诺，不能以“总 LOC 下降一行”替代 legacy span 门禁。
 - promotion→boundary、accepted→checkpoint、decision CAS→boundary、grant→effect claim、effect external commit→outcome、child create→schedule/ack、child terminal→parent signal/ack、terminal→delivery 等全部 crash window 在 production wiring 下逐一 kill/restart。
 - activation 的 `legacy→draining`、drain record、`draining→activated`、owner bootstrap、`activated→open` 每个写点都用副本库 kill/restart；断言入口要么关闭，要么只有一个 generation 的 owner 可写。
 - activation 之前任一 gate 失败可整体回退到 R5。一旦生产已创建首条 `execution_runs` row，旧 runtime 不具备该 row 的安全恢复能力，禁止代码回退；此后只能 fail-closed 并 roll-forward 修复。切换前必须用副本数据库演练升级与恢复，启动 health 明确显示 irreversible activation 状态。
@@ -369,18 +395,15 @@ WS/Voice Adapter
 
 ### 7.0.1 回炉 LOC 预算
 
-| 计数组 | R0 基线 | R6 上限 |
+| 计数组 | R4.5 基线 | R4.5 硬门 / R6 要求 |
 |---|---:|---:|
-| `backend/main.py` | 11,538 | 6,800 |
-| `backend/agent/agent_loop.py` | 5,662 | 3,800 |
-| `backend/pipeline/voice_pipeline.py` | 1,215 | 500 |
-| `backend/deskpet/tools/registry.py` | 2,591 | 1,900 |
-| 旧 auto-resume/manifest/subagent/spawn/routing | 1,260 | 220（仅必要 compatibility） |
-| 精简后的 `execution/` + `harness/` core + 完整 `execution_uow.py` | 10,962 | 2,800 |
-| ProductTurnPreparer + RunPresenter + 迁移 adapters | 0 | 1,000 |
-| **总计** | **33,228** | **≤17,020**（低于硬门槛 17,250） |
+| 审计口径 `execution_core + harness_core` | 5,726 | R4.5 `≤5,500` |
+| `harness/kernel.py` 物理 LOC | 820 | R4.5 `≤850` 且 public ops=6 |
+| `execution_uow.py` | 4,613 | 不设拍脑袋 LOC；transaction starters `33→≤23`、DML owner `2→1` |
+| 全部 counted orchestration | 33,618 | R4.5 `≤33,618`；R6 严格下降 |
+| 冻结 legacy production spans | R5 绿色 SHA 生成 | R6 100% 删除/不可达/未复制 |
 
-预算以固定 SHA + 自动 diff/内容归属规则执行；新增、改名或搬迁的 orchestration 文件必须自动计入，不允许人工白名单漏计。combined core/UoW 的 2,800 行上限包含当前 2,980 行 `execution_uow.py`，因此 R1 必须真实删除重复 façade/record/method，而不是把它排除出指标。
+R4.5 的 core 预算以 source-hash 锁定 255 行真删除，并计入 LiveRun spike 的 +14 行，预期 `5,485`、硬门 `≤5,500`。LOC 是防膨胀护栏；真正简化还必须同时满足 DML/live/supervisor/presenter authority 与 typed transaction surface 门。
 
 ### WI-0 — 冻结反例与复杂度测量 〔AC-7, AC-9, AC-16, AC-17〕
 
@@ -547,7 +570,7 @@ WS/Voice Adapter
 - workflow v1-v7 manifest/checkpoint reader 移入/标注 compatibility registry；只有明确 legacy run id 的 `recover` 可调用，不允许 route/start。
 - 测试：全路由 golden、Text/Code/DR/PPT/Voice live stack、Voice 短答/TTS/permission/barge-in、accepted→首 checkpoint kill/restart、checkpoint→terminal kill/restart、历史 run absence-of-execution-row recovery、并发文字/语音隔离；随后按 S-1～S-7 做真实 UI E2E。
 - 运行 owner audit：15 个基线容器最多 7 个仍拥有执行/决策事实；新增等价 owner=0。运行 import/call graph 测试证明新请求不可达 compatibility modules。
-- orchestration 固定文件集总 LOC 净减≥20%；不能通过移出统计集规避，新增 `deskpet/harness`/`deskpet/execution` 全部计入。
+- 当时要求 orchestration 固定文件集净减≥20%；该未经 spike 验证的历史指标已由 2026-07-21 方案 A 废止，不得用于当前验收。当前仍要求所有新增/迁移 `deskpet/harness`、`deskpet/execution` 与专用 helper 自动计入，并执行 R4.5/R6 的结构门。
 - 依赖：WI-1～WI-11 全部门禁通过；不得拆成“先某个 venue/start、后 recovery”的多个生产 commit。
 
 ### WI-13 — 历史 V1 方案（已作废；由 R7 取代）
@@ -578,36 +601,37 @@ WS/Voice Adapter
 | G1 Safety | R1/R3 的 trusted context、unsafe barrier、grant→effect claim、unknown/late effect 故障注入全绿 |
 | G2 Semantics | typed outcome 在 Registry/Drivers/RunPresenter/前端/Voice 一致；accepted/failed/unknown 契约全绿 |
 | G3 Drivers | ReAct 与 Workflow driver contract 各自恢复/取消/终态测试全绿，Native 历史 fixtures 不变 |
-| G4 Kernel | 六个公开操作、单 route、父子/cancel/final CAS、产品 import=0、Kernel LOC≤450、combined core/UoW≤2,800 |
+| G4 Kernel/Core | 六个公开操作、单 route、父子/cancel/final CAS、产品 import=0、Kernel≤850、core≤5,500、total≤33,618 |
+| G4.1 Storage authority | `execution_*` DML authority=1、public transaction starters≤23、fault matrix精确39、无 generic opcode/搬家规避 |
 | G4.5 Product parity | §2.4 每个能力族的 canonical input、事件、持久副作用和 UI 行为均 100% 等价；adapter 输入字段无静默丢弃 |
 | G5 Cutover | Text/Code/DR/PPT/Voice/start/recovery/decision/delivery 在 R6 一次性全走 Kernel；旧 owner 同 commit 删除 |
-| G6 Simplification | owner≤7、等价新增 owner=0、总 orchestration LOC 净减≥20%、legacy 新请求不可达 |
+| G6 Simplification | owner≤7、unclassified=0、冻结 legacy spans 100% 删除/不可达/未复制、总 LOC 严格低于 R4.5 |
 | G7 Release | AC-1～18、S-1～7、性能/隔离/内存/兼容/真人 E2E 全部有证据，ARCHITECTURE 已更新 |
 
 ## 9. AC 追溯（唯一生效）
 
-R0 创建真实 testcase 名称后必须回写本表；R5 每行只能是 `PASS` 或阻止 R6，禁止 `PARTIAL`。下面的 production callsite 是验证目标，不是允许保留旧 owner。
+R5 只评估 `pre_activation_evidence`，不得把 production/manual/final 提前写 PASS。R4.5/R5_READY、R6、R7 分列记录；下面的 production callsite 是验证目标，不是允许保留旧 owner。
 
-| AC | R | production callsite / owner | testcase / evidence | 当前结果 |
+| AC | R | production callsite / owner | testcase / evidence | pre-activation / production / manual / final |
 |---|---|---|---|---|
-| AC-1 | R2,R3,R5,R6 | `main.py` Text/Code → Preparer/Kernel/Presenter | parity: text short/tool/code | R0 待冻结 |
-| AC-2 | R3,R4,R5 | Kernel/Driver registry（无产品分支） | AST + six-op contract | R0 待冻结 |
-| AC-3 | R0,R3,R4,R5,R6 | Router → ReAct/Workflow Driver | route/profile + durable no-fallback | R0 待冻结 |
-| AC-4 | R1,R3,R5 | trusted HostContext → UoW/ToolRegistry | reserved-field/capability tests | R0 待冻结 |
-| AC-5 | R1,R4,R5 | ChildRun command/link/lease/session scope | cross-session + duplicate scheduling | R0 待冻结 |
-| AC-6 | R1,R3,R4,R5 | Kernel cancel → Driver/Child tree/UoW | stop/barge-in/cancel restart | R0 待冻结 |
-| AC-7 | R0,R1,R3,R5 | ToolRegistry batch/permission/effect | safe barrier + grant claim | R0 待冻结 |
-| AC-8 | R1,R3,R4,R5 | Effect claim/execute/settle/reconcile | unknown late-effect fixture | R0 待冻结 |
-| AC-9 | R1,R2,R3,R5 | Tool/Run outcome → Presenter/Voice/frontend | typed outcome golden | R0 待冻结 |
-| AC-10 | R3,R5 | EvidenceContext → verifier/receipt/artifact | old-session same-name negative case | R0 待冻结 |
-| AC-11 | R0,R3,R4,R5 | single Router/ProfileRegistry | read-only/Code/DR/PPT matrix | R0 待冻结 |
-| AC-12 | R0,R2,R5,R6 | Voice transport → shared Preparer/Kernel/Presenter | tags/TTS/barge-in/handoff | R0 待冻结 |
-| AC-13 | R1,R3,R5 | Decision/Boundary UoW | restart/duplicate/wrong-session signal | R0 待冻结 |
-| AC-14 | R1,R2,R4,R5 | final UoW → Goal link/event/delivery | root/child/final race | R0 待冻结 |
-| AC-15 | R4,R6,R7 | bootstrap registry/health/degraded UI | missing-driver/profile startup | R0 待冻结 |
-| AC-16 | R0,R1,R3,R4,R6 | production owner reachability | AST owner + fixed-SHA LOC audit | R0 待冻结 |
-| AC-17 | R0,R4,R7 | generated manifest + ARCHITECTURE facts | registry export/doc evidence | R0 待冻结 |
-| AC-18 | R0,R2,R5,R6,R7 | observable product behavior end-to-end | parity ledger + S-1～S-7 | R0 待冻结 |
+| AC-1 | R2,R3,R5,R6 | `main.py` Text/Code → Preparer/Kernel/Presenter | parity: text short/tool/code | Text chain PASS / R6_REQUIRED / R7_REQUIRED / PENDING |
+| AC-2 | R3,R4,R5 | Kernel/Driver registry（无产品分支） | AST + six-op contract | R4.5复验 / R6_REQUIRED / R7_REQUIRED / PENDING |
+| AC-3 | R0,R3,R4,R5,R6 | Router → ReAct/Workflow Driver | route/profile + durable no-fallback | R4.5复验 / R6_REQUIRED / R7_REQUIRED / PENDING |
+| AC-4 | R1,R3,R5 | trusted HostContext → UoW/ToolRegistry | reserved-field/capability tests | R4.5复验 / R6_REQUIRED / R7_REQUIRED / PENDING |
+| AC-5 | R1,R4,R5 | ChildRun command/link/lease/session scope | cross-session + duplicate scheduling | R4.5复验 / R6_REQUIRED / R7_REQUIRED / PENDING |
+| AC-6 | R1,R3,R4,R5 | Kernel cancel → Driver/Child tree/UoW | stop/barge-in/cancel restart | R4.5复验 / R6_REQUIRED / R7_REQUIRED / PENDING |
+| AC-7 | R0,R1,R3,R5 | ToolRegistry batch/permission/effect | safe barrier + grant claim | R4.5复验 / R6_REQUIRED / R7_REQUIRED / PENDING |
+| AC-8 | R1,R3,R4,R5 | Effect claim/execute/settle/reconcile | unknown late-effect fixture | R4.5复验 / R6_REQUIRED / R7_REQUIRED / PENDING |
+| AC-9 | R1,R2,R3,R5 | Tool/Run outcome → Presenter/Voice/frontend | typed outcome golden | automated parity PASS / R6_REQUIRED / R7_REQUIRED / PENDING |
+| AC-10 | R3,R5 | EvidenceContext → verifier/receipt/artifact | old-session same-name negative case | R4.5复验 / R6_REQUIRED / R7_REQUIRED / PENDING |
+| AC-11 | R0,R3,R4,R5 | single Router/ProfileRegistry | read-only/Code/DR/PPT matrix | R4.5复验 / R6_REQUIRED / R7_REQUIRED / PENDING |
+| AC-12 | R0,R2,R5,R6 | Voice transport → shared Preparer/Kernel/Presenter | tags/TTS/barge-in/handoff | Voice chain PASS / R6_REQUIRED / R7_REQUIRED / PENDING |
+| AC-13 | R1,R3,R5 | Decision/Boundary UoW | restart/duplicate/wrong-session signal | R4.5复验 / R6_REQUIRED / R7_REQUIRED / PENDING |
+| AC-14 | R1,R2,R4,R5 | final UoW → Goal link/event/delivery | root/child/final race | R4.5复验 / R6_REQUIRED / R7_REQUIRED / PENDING |
+| AC-15 | R4,R6,R7 | bootstrap registry/health/degraded UI | missing-driver/profile startup | R4.5复验 / R6_REQUIRED / R7_REQUIRED / PENDING |
+| AC-16 | R0,R1,R3,R4,R6 | production owner reachability | AST owner + frozen legacy span audit | R4.5_REQUIRED / R6_REQUIRED / R7_REQUIRED / PENDING |
+| AC-17 | R0,R4,R7 | generated manifest + ARCHITECTURE facts | registry export/doc evidence | R4.5 manifests REQUIRED / R6_REQUIRED / R7_REQUIRED / PENDING |
+| AC-18 | R0,R2,R5,R6,R7 | observable product behavior end-to-end | parity ledger + S-1～S-7 | automated parity PASS / R6_REQUIRED / R7_REQUIRED / PENDING |
 
 ## 10. 关键假设 spike 证据与方案修订
 
@@ -788,7 +812,7 @@ npm run typecheck
 ## 12. 回退与兼容
 
 - 当前安全基线是 schema v6；R1 先用纯 additive v6→v7 migration 增加 runtime/drain/owner/fence 数据，默认 `legacy` 且不切生产 owner，不修改历史 checkpoint blob/manifest。migration 失败整体事务回滚；R6 只执行已在 R1～R5 演练的 phase CAS 与 wiring activation。
-- R1～R5 不改变生产 owner，可逐 commit 回退；R6 activation 前任一 gate 失败整体停在 R5。R6 在 ingress 关闭且尚未创建首条新 execution row 时可撤销 activation；首条新 row 产生后禁止代码回退，只能保持 fail-closed 并 roll-forward。
+- R1～R5 与 R4.5 不改变生产 owner，可逐族 commit 回退；R6 activation 前任一 gate 失败整体停在 R5_READY。R6 在 ingress 关闭且尚未创建首条新 execution row 时可撤销 activation；首条新 row 产生后禁止代码回退，只能保持 fail-closed 并 roll-forward。
 - 已创建的新 execution run 不允许降级到旧 ReAct/legacy workflow；恢复失败必须显式 degraded/failed 并保留诊断。
 - 历史非终态 workflow 继续由 compatibility registry 恢复；删除条件是受支持历史 retention 窗口结束且 fixtures/用户迁移政策明确批准。
 - 数据永不反向重写旧 manifest/checkpoint；Goal/Session/Artifact 只增加 typed link/projection，不删除用户历史。
@@ -796,8 +820,9 @@ npm run typecheck
 ## 13. 完成定义
 
 - G1～G7 全部通过；AC-1～AC-18 无 PENDING/PARTIAL。
-- 新请求只进入 RunKernel；Kernel 产品 import/分支=0、公开操作=6、Kernel≤450 LOC，`execution/ + harness/ + execution_uow.py`≤2,800 LOC。
-- owner 基线 15→≤7，新增等价 owner=0；固定 orchestration 集合总 LOC 净减≥20%。
+- 新请求只进入 RunKernel；Kernel 产品 import/分支=0、公开操作=6、Kernel≤850 LOC，审计 core≤5,500。
+- UoW public transaction starters≤23、execution DML authority=1、fault matrix=39；run map/Supervisor/Presenter authority 各为1。
+- R6 owner 基线 15→≤7、unclassified=0；冻结 legacy spans 100% 删除/不可达/未复制；total counted 严格低于 R4.5。
 - unsafe write 无并发、reserved context 无覆盖、unknown late effect 无重复提交、跨 session child 泄漏=0、根 terminal delivery=1。
 - S-1～S-7 真实 UI 证据完整；性能、内存、兼容、迁移指标达标。
 - `ARCHITECTURE/`、PROJECT_STATUS、testcase、results 与默认 ON 配置在同一次交付更新。

@@ -26,7 +26,7 @@
 - recovery lease：预计新增 180–260 LOC。
 - scoped evidence：预计新增 80–130 LOC。
 - ReAct 修正与 AgentLoop 抽离：总量应基本持平或下降。
-- 当前 R1 余量只有 462 LOC，每个切片都必须跑机械 LOC；R5 前 combined core/UoW 仍须达到 `<= 2,800`。
+- 本审计当时记录 R1 余量 462 LOC 并要求 combined core/UoW `<=2,800`；该数值目标已被 2026-07-21 真代码 spike 证伪，现由获批 R4.5 的 core/authority/typed-transaction 门替代，详见 `plan.md` §R4.5。
 
 ## R6 前保留的生产 owner
 
