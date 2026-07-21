@@ -941,6 +941,39 @@ def _path_under_any(path: str, roots: tuple[str, ...]) -> bool:
     return any(path == root.rstrip("/") or path.startswith(root) for root in roots)
 
 
+def _r45_classify_non_core_symbols(
+    *,
+    path: str,
+    content: bytes,
+    base_content: bytes | None,
+    base_symbol_hashes: Mapping[str, tuple[str, str, int]],
+    base_symbols_by_name: Mapping[str, set[str]],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Find migrated core owners without flagging unchanged same-path methods."""
+
+    same_path_base = _ast_symbol_records(base_content) if base_content is not None else {}
+    attributions: list[dict[str, Any]] = []
+    unknown: list[str] = []
+    for symbol, record in _ast_symbol_records(content).items():
+        if symbol == "<module>" or int(record["source_loc"]) < 4:
+            continue
+        digest = str(record["source_hash"])
+        prior = same_path_base.get(symbol)
+        if prior is not None and str(prior["source_hash"]) == digest:
+            continue
+        source = base_symbol_hashes.get(digest)
+        if source is not None:
+            attributions.append({
+                "path": path,
+                "symbol": symbol,
+                "loc": int(record["source_loc"]),
+                "reason": f"migrated_core_symbol:{source[0]}::{source[1]}",
+            })
+        elif symbol.rsplit(".", 1)[-1] in base_symbols_by_name:
+            unknown.append(f"{path}::{symbol}")
+    return attributions, unknown
+
+
 def _r45_account_root_rows(
     rows: list[dict[str, Any]],
     *,
@@ -1072,24 +1105,20 @@ def build_r45_core_audit(
         content = _current_content(path, repo=repo)
         if content is None:
             continue
-        for symbol, record in _ast_symbol_records(content).items():
-            if symbol == "<module>" or int(record["source_loc"]) < 4:
-                continue
-            digest = str(record["source_hash"])
-            source = base_symbol_hashes.get(digest)
-            if source is not None:
-                loc = int(record["source_loc"])
-                current_core += loc
-                attributions.append(
-                    {
-                        "path": path,
-                        "symbol": symbol,
-                        "loc": loc,
-                        "reason": f"migrated_core_symbol:{source[0]}::{source[1]}",
-                    }
-                )
-            elif symbol.rsplit(".", 1)[-1] in base_symbols_by_name:
-                source_unknown.append(f"{path}::{symbol}")
+        try:
+            base_content = _commit_content(R45_BASE_COMMIT, path, repo=repo)
+        except BenchmarkInvariantError:
+            base_content = None
+        moved, unknown = _r45_classify_non_core_symbols(
+            path=path,
+            content=content,
+            base_content=base_content,
+            base_symbol_hashes=base_symbol_hashes,
+            base_symbols_by_name=base_symbols_by_name,
+        )
+        current_core += sum(int(item["loc"]) for item in moved)
+        attributions.extend(moved)
+        source_unknown.extend(unknown)
     if source_unknown:
         raise BenchmarkInvariantError(
             "unclassified R4.5 core source attribution: "

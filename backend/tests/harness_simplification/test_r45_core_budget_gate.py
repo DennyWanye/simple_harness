@@ -157,6 +157,40 @@ def test_r45_root_accounting_rejects_unclassified_existing_source(tmp_path: Path
     assert unknown == ["backend/deskpet/harness/ambiguous.py"]
 
 
+def test_non_core_import_only_change_does_not_flag_unchanged_method() -> None:
+    base = b"""import old_module\n\nclass WorkflowLauncher:\n    def recover_pending(self):\n        value = 1\n        value += 1\n        return value\n"""
+    current = base.replace(b"import old_module", b"import new_module")
+
+    moved, unknown = harness_baseline._r45_classify_non_core_symbols(
+        path="backend/deskpet/workflows/launcher.py",
+        content=current,
+        base_content=base,
+        base_symbol_hashes={},
+        base_symbols_by_name={"recover_pending": {"core-hash"}},
+    )
+
+    assert moved == []
+    assert unknown == []
+
+
+def test_non_core_same_named_method_change_still_fails_closed() -> None:
+    base = b"""class WorkflowLauncher:\n    def recover_pending(self):\n        value = 1\n        value += 1\n        return value\n"""
+    current = base.replace(b"value = 1", b"value = 2")
+
+    moved, unknown = harness_baseline._r45_classify_non_core_symbols(
+        path="backend/deskpet/workflows/launcher.py",
+        content=current,
+        base_content=base,
+        base_symbol_hashes={},
+        base_symbols_by_name={"recover_pending": {"core-hash"}},
+    )
+
+    assert moved == []
+    assert unknown == [
+        "backend/deskpet/workflows/launcher.py::WorkflowLauncher.recover_pending"
+    ]
+
+
 def test_r45_current_state_cannot_regress_and_final_status_is_derived() -> None:
     loc = harness_baseline._orchestration_loc()
     audit = harness_baseline.build_r45_core_audit(loc)
