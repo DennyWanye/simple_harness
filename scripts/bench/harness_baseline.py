@@ -38,11 +38,12 @@ from deskpet.harness.kernel import (  # noqa: E402
     RunKernel,
     RunRequest,
 )
+from deskpet.harness.contracts import driver_catalog  # noqa: E402
 from deskpet.harness.ports import DriverTerminalCandidate  # noqa: E402
+from deskpet.harness.profiles import ProfileRegistry, ProfileSpec  # noqa: E402
 from deskpet.harness.router import (  # noqa: E402
     ClassifiedRoute,
     RegisteredRouter,
-    RouteProfile,
 )
 from deskpet.tools.registry import ToolRegistry  # noqa: E402
 from deskpet.workflows.store import NativeCheckpointStore, WorkflowRunStore  # noqa: E402
@@ -1353,9 +1354,12 @@ async def _completed_run_memory_probe(run_count: int = 10_000) -> dict[str, Any]
         kernel = RunKernel(
             uow=uow,
             router=RegisteredRouter(
-                _BenchmarkClassifier(), [RouteProfile("bench.react", "react")]
+                _BenchmarkClassifier(),
+                ProfileRegistry((ProfileSpec("bench.react", "react", "react"),)),
             ),
-            drivers=[RegisteredDriver("react", driver, durable_from_start=True)],
+            drivers=driver_catalog((
+                RegisteredDriver("react", driver, durable_from_start=True),
+            )),
         )
         host = HostContext(
             session_id="bench-session",
