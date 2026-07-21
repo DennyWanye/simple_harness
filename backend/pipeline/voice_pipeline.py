@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Mapping
+from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -62,6 +63,12 @@ class RunClient(Protocol):
         reason: str,
     ) -> object: ...
 
+    async def close(
+        self,
+        ref: Mapping[str, object],
+        actor: Mapping[str, object],
+    ) -> None: ...
+
 
 _TRANSCRIPT_EVENT_KINDS = {"transcript", "assistant_transcript", "assistant_delta", "token"}
 _FINAL_EVENT_KINDS = frozenset(
@@ -81,6 +88,14 @@ _FINAL_EVENT_KINDS = frozenset(
 )
 _SUCCESS_STATUSES = {"succeeded", "completed"}
 _FAILURE_STATUSES = {"failed", "cancelled", "unknown"}
+
+
+@dataclass(frozen=True, slots=True)
+class _VoiceRunResult:
+    """Successful terminal payload released to the Voice transport."""
+
+    text: str
+    provider: str | None = None
 
 
 def _event_view(event: Any) -> dict[str, object]:
@@ -117,6 +132,20 @@ def _event_text(event: Mapping[str, object]) -> str:
         if isinstance(value, str) and value:
             return value
     return ""
+
+
+def _event_provider(event: Mapping[str, object]) -> str | None:
+    """Read provider presentation metadata without inferring a route."""
+
+    for container_name in ("payload", "correlation"):
+        container = event.get(container_name)
+        if not isinstance(container, Mapping):
+            continue
+        for key in ("provider", "served_by", "provider_kind"):
+            value = container.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
 
 
 class VoicePipeline:
@@ -492,12 +521,15 @@ class VoicePipeline:
             # existing production still exclusively uses AgentLoop or the
             # older chat_stream fallback until WI-12 atomically cuts ownership.
             response_text = ""
+            served_by: str | None = None
             if self._run_client is not None:
-                response_text = await self._run_with_client(
+                run_result = await self._run_with_client(
                     text,
                     audio_ws,
                     session_id=effective_sid,
                 )
+                response_text = run_result.text
+                served_by = run_result.provider
             elif (
                 self._tool_registry_v2 is not None
                 and self._permission_gate_v2 is not None
@@ -519,28 +551,28 @@ class VoicePipeline:
             # 通道的 chat_response 分支，所以这里模仿 main.py 的做法，从
             # agent 底层 llm 的 _cloud / _local last_usage 推断本轮实际服务
             # 的路由，并把它捎在 transcript 里发给前端。
-            served_by: str | None = None
             # agent 可能是 ToolUsingAgent(base=SimpleLLMAgent(llm=...)) 的嵌套，
             # 实际 llm 在最内层；顺着 _llm / _base 走到第一个有 _cloud/_local 的
             # 对象为止。最多 8 层防环。
-            probe = self.agent
-            llm = None
-            for _ in range(8):
-                if hasattr(probe, "_cloud") or hasattr(probe, "_local"):
-                    llm = probe
-                    break
-                nxt = getattr(probe, "_llm", None) or getattr(probe, "_base", None)
-                if nxt is None or nxt is probe:
-                    break
-                probe = nxt
-            if llm is not None:
-                for route in ("cloud", "local"):
-                    provider = getattr(llm, f"_{route}", None)
-                    if provider is None:
-                        continue
-                    if getattr(provider, "last_usage", None):
-                        served_by = route
+            if served_by is None:
+                probe = self.agent
+                llm = None
+                for _ in range(8):
+                    if hasattr(probe, "_cloud") or hasattr(probe, "_local"):
+                        llm = probe
                         break
+                    nxt = getattr(probe, "_llm", None) or getattr(probe, "_base", None)
+                    if nxt is None or nxt is probe:
+                        break
+                    probe = nxt
+                if llm is not None:
+                    for route in ("cloud", "local"):
+                        provider = getattr(llm, f"_{route}", None)
+                        if provider is None:
+                            continue
+                        if getattr(provider, "last_usage", None):
+                            served_by = route
+                            break
 
             logger.info("llm_response", text=response_text[:100], served_by=served_by)
             transcript_payload: dict = {"text": response_text, "role": "assistant"}
@@ -624,6 +656,8 @@ class VoicePipeline:
             except AttributeError:
                 pass
             self._processing = False
+            if self._current_task is asyncio.current_task():
+                self._current_task = None
 
 
     async def _run_with_client(
@@ -632,7 +666,7 @@ class VoicePipeline:
         audio_ws: WebSocket,
         *,
         session_id: str,
-    ) -> str:
+    ) -> _VoiceRunResult:
         """Execute a transcribed utterance through the shared Run API.
 
         This adapter consumes typed Run events without reinterpreting tool
@@ -657,8 +691,23 @@ class VoicePipeline:
         self._current_run_id = run_id
         self._current_run_session_id = session_id
         transcript_parts: list[str] = []
+        raw_transcript_parts: list[str] = []
+        parser = StreamingTagParser()
+        emitted_tag_counts: dict[tuple[str, str], int] = {}
         terminal_seen = False
         final_text = ""
+        served_by: str | None = None
+
+        async def consume_speakable_text(chunk: str) -> None:
+            raw_transcript_parts.append(chunk)
+            for item in parser.feed(chunk):
+                if isinstance(item, TagEvent):
+                    await self._emit_tag_event(item)
+                    key = (item.kind, item.value)
+                    emitted_tag_counts[key] = emitted_tag_counts.get(key, 0) + 1
+                else:
+                    transcript_parts.append(item)
+
         try:
             async for raw_event in handle.events:
                 event = _event_view(raw_event)
@@ -679,10 +728,11 @@ class VoicePipeline:
 
                 kind = str(event.get("kind") or "").lower()
                 status = str(event.get("status") or "").lower()
+                served_by = served_by or _event_provider(event)
                 if kind in _TRANSCRIPT_EVENT_KINDS:
                     chunk = _event_text(event)
                     if chunk:
-                        transcript_parts.append(chunk)
+                        await consume_speakable_text(chunk)
 
                 # accepted/waiting/cancel_requested are explicitly
                 # non-terminal even if a producer uses a surprising kind.
@@ -695,7 +745,42 @@ class VoicePipeline:
 
                 terminal_seen = True
                 if status in _SUCCESS_STATUSES:
-                    final_text = _event_text(event) or "".join(transcript_parts)
+                    terminal_text = _event_text(event)
+                    streamed_text = "".join(raw_transcript_parts)
+                    if not streamed_text:
+                        await consume_speakable_text(terminal_text)
+                    elif terminal_text.startswith(streamed_text):
+                        await consume_speakable_text(terminal_text[len(streamed_text):])
+                    elif terminal_text and terminal_text != streamed_text:
+                        # A producer that rewrites its final answer cannot be
+                        # safely merged with prior deltas.  Parse the terminal
+                        # value as the authoritative speakable text, but do not
+                        # replay already emitted Live2D tags.
+                        terminal_parser = StreamingTagParser()
+                        terminal_parts: list[str] = []
+                        prior_tags = dict(emitted_tag_counts)
+                        for item in terminal_parser.feed(terminal_text):
+                            if isinstance(item, TagEvent):
+                                key = (item.kind, item.value)
+                                prior_count = prior_tags.get(key, 0)
+                                if prior_count:
+                                    prior_tags[key] = prior_count - 1
+                                else:
+                                    await self._emit_tag_event(item)
+                            else:
+                                terminal_parts.append(item)
+                        for item in terminal_parser.flush():
+                            if isinstance(item, TagEvent):
+                                await self._emit_tag_event(item)
+                            else:
+                                terminal_parts.append(item)
+                        transcript_parts[:] = terminal_parts
+                    for item in parser.flush():
+                        if isinstance(item, TagEvent):
+                            await self._emit_tag_event(item)
+                        else:
+                            transcript_parts.append(item)
+                    final_text = "".join(transcript_parts)
                 elif status in _FAILURE_STATUSES:
                     await self._emit_terminal_run_error(event, audio_ws)
                 else:
@@ -724,8 +809,8 @@ class VoicePipeline:
                     },
                     audio_ws,
                 )
-                return ""
-            return final_text
+                return _VoiceRunResult("", served_by)
+            return _VoiceRunResult(final_text, served_by)
         except asyncio.CancelledError:
             reason = "voice_barge_in" if self._interrupted else "voice_superseded"
             try:
@@ -742,7 +827,34 @@ class VoicePipeline:
                     error=str(exc),
                 )
             raise
+        except Exception:
+            try:
+                await client.cancel(
+                    self._run_ref(run_id, session_id),
+                    self._voice_actor(session_id),
+                    "voice_transport_error",
+                )
+            except Exception as exc:  # noqa: BLE001 - preserve root transport error
+                logger.warning(
+                    "voice_run_disconnect_cancel_failed",
+                    run_id=run_id,
+                    session_id=session_id,
+                    error=str(exc),
+                )
+            raise
         finally:
+            try:
+                await client.close(
+                    self._run_ref(run_id, session_id),
+                    self._voice_actor(session_id),
+                )
+            except Exception as exc:  # noqa: BLE001 - close is best-effort at transport edge
+                logger.warning(
+                    "voice_run_close_failed",
+                    run_id=run_id,
+                    session_id=session_id,
+                    error=str(exc),
+                )
             if self._current_run_id == run_id:
                 self._current_run_id = None
                 self._current_run_session_id = None

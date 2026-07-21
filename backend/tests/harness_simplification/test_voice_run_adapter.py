@@ -61,12 +61,14 @@ class _ForbiddenAgent:
 
 
 class _TTS:
-    def __init__(self) -> None:
+    def __init__(self, chunks: tuple[bytes, ...] = (b"\x00\x00\x00\x00",)) -> None:
         self.texts: list[str] = []
+        self.chunks = chunks
 
     async def synthesize_pcm_stream(self, text: str) -> AsyncIterator[bytes]:
         self.texts.append(text)
-        yield b"\x00\x00\x00\x00"
+        for chunk in self.chunks:
+            yield chunk
 
 
 @dataclass(frozen=True)
@@ -109,8 +111,10 @@ class _RunClient:
             tuple[dict[str, object], dict[str, object], dict[str, object]]
         ] = []
         self.cancels: list[tuple[dict[str, object], dict[str, object], str]] = []
+        self.closes: list[tuple[dict[str, object], dict[str, object]]] = []
         self.signal_received = asyncio.Event()
         self._venue_counts: dict[str, int] = {}
+        self.active_refs: set[str] = set()
 
     async def start(
         self,
@@ -122,6 +126,7 @@ class _RunClient:
         count = self._venue_counts.get(venue, 0) + 1
         self._venue_counts[venue] = count
         run_id = f"{venue}-run-{count}"
+        self.active_refs.add(run_id)
         self.starts.append((dict(request), dict(host), run_id))
         return _Handle(run_id, self.scripts[venue](run_id, session_id, self))
 
@@ -143,6 +148,14 @@ class _RunClient:
     ) -> object:
         self.cancels.append((dict(ref), dict(actor), reason))
         return {"accepted": True, "run_id": ref["run_id"]}
+
+    async def close(
+        self,
+        ref: Mapping[str, object],
+        actor: Mapping[str, object],
+    ) -> None:
+        self.closes.append((dict(ref), dict(actor)))
+        self.active_refs.discard(str(ref["run_id"]))
 
 
 def _event(
@@ -177,9 +190,11 @@ def _pipe(
     *,
     session_id: str = "voice-session",
     permission_gate: object | None = None,
+    broadcast: object | None = None,
+    tts: _TTS | None = None,
 ) -> tuple[VoicePipeline, _ForbiddenAgent, _TTS, _WS]:
     agent = _ForbiddenAgent()
-    tts = _TTS()
+    tts = tts or _TTS()
     control = _WS()
     pipe = VoicePipeline(
         vad=_VAD(),
@@ -194,6 +209,7 @@ def _pipe(
         tool_registry_v2=object(),
         permission_gate_v2=permission_gate or object(),
         local_llm=object(),
+        broadcast=broadcast,
         run_client=client,
     )
     return pipe, agent, tts, control
@@ -249,6 +265,87 @@ async def test_short_answer_uses_run_start_and_drives_transcript_and_tts() -> No
         and frame["payload"] == {"text": "short answer", "role": "assistant"}
         for frame in audio.json_frames
     )
+    assert client.closes == [
+        (
+            {"run_id": "voice-run-1", "expected_session_id": "voice-session"},
+            {"session_id": "voice-session", "venue": "voice"},
+        )
+    ]
+    assert client.active_refs == set()
+
+
+@pytest.mark.asyncio
+async def test_streaming_tags_drive_live2d_but_never_reach_transcript_or_tts() -> None:
+    raw = "Hello [emotion:happy] [action:wave]friend"
+
+    async def script(run_id: str, session_id: str, _: _RunClient) -> AsyncIterator[_Event]:
+        yield _event(
+            run_id,
+            session_id,
+            1,
+            "assistant_delta",
+            "succeeded",
+            payload={"delta": "Hello [emo", "provider": "cloud"},
+        )
+        yield _event(
+            run_id,
+            session_id,
+            2,
+            "assistant_delta",
+            "succeeded",
+            payload={"delta": "tion:happy] [action:wa"},
+        )
+        yield _event(
+            run_id,
+            session_id,
+            3,
+            "assistant_delta",
+            "succeeded",
+            payload={"delta": "ve]friend"},
+        )
+        yield _event(
+            run_id,
+            session_id,
+            4,
+            "final",
+            "succeeded",
+            payload={"text": raw},
+        )
+
+    client = _RunClient({"voice": script})
+    loud_pcm = (8000).to_bytes(2, "little", signed=True) * 2
+    pipe, _, tts, control = _pipe(client, tts=_TTS((loud_pcm,)))
+    audio = _WS()
+
+    result = await pipe._process_utterance(b"pcm", audio)
+
+    assert result == "Hello  friend"
+    assert tts.texts == ["Hello  friend"]
+    assert all("[emotion:" not in text and "[action:" not in text for text in tts.texts)
+    assistant = [
+        frame["payload"]
+        for frame in audio.json_frames
+        if frame.get("type") == "transcript"
+        and frame["payload"].get("role") == "assistant"
+    ]
+    assert assistant == [
+        {"text": "Hello  friend", "role": "assistant", "provider": "cloud"}
+    ]
+    assert {frame["type"] for frame in control.json_frames} >= {
+        "emotion_change",
+        "action_trigger",
+        "lip_sync",
+    }
+    assert next(
+        frame for frame in control.json_frames if frame["type"] == "emotion_change"
+    )["payload"] == {"value": "happy"}
+    assert next(
+        frame for frame in control.json_frames if frame["type"] == "action_trigger"
+    )["payload"] == {"value": "wave"}
+    assert next(
+        frame for frame in control.json_frames if frame["type"] == "lip_sync"
+    )["payload"]["amplitude"] == pytest.approx(1.0)
+    assert client.active_refs == set()
 
 
 @pytest.mark.asyncio
@@ -292,6 +389,8 @@ async def test_tool_failure_keeps_failed_status_and_final_reply_reaches_tts() ->
     }
     assert failed[0].get("ok") is None
     assert tts.texts == ["I could not write that file."]
+    assert len(client.closes) == 1
+    assert client.active_refs == set()
 
 
 @pytest.mark.asyncio
@@ -356,6 +455,7 @@ async def test_permission_waiting_uses_run_signal_without_global_gate_mutation()
     ]
     assert gate.current_source == "text"
     assert tts.texts == ["permission accepted"]
+    assert len(client.closes) == 1
 
 
 @pytest.mark.asyncio
@@ -423,6 +523,40 @@ async def test_durable_handoff_accepted_progress_are_not_final() -> None:
         ("final", "succeeded"),
     ]
     assert tts.texts == ["research complete"]
+    assert len(client.closes) == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_terminal_is_visible_but_never_spoken() -> None:
+    async def script(run_id: str, session_id: str, _: _RunClient) -> AsyncIterator[_Event]:
+        yield _event(
+            run_id,
+            session_id,
+            1,
+            "failed",
+            "failed",
+            payload={"text": "internal failure text must not be spoken"},
+            error={"code": "provider_failed", "message": "Provider unavailable"},
+        )
+
+    client = _RunClient({"voice": script})
+    pipe, _, tts, _ = _pipe(client)
+    audio = _WS()
+
+    result = await pipe._process_utterance(b"pcm", audio)
+
+    assert result is None
+    assert tts.texts == []
+    assert any(
+        frame.get("type") == "error"
+        and frame["payload"] == {
+            "message": "Provider unavailable",
+            "run_id": "voice-run-1",
+            "status": "failed",
+        }
+        for frame in audio.json_frames
+    )
+    assert len(client.closes) == 1
 
 
 @pytest.mark.asyncio
@@ -452,6 +586,8 @@ async def test_barge_in_cancels_only_the_explicit_current_run_id() -> None:
         )
     ]
     assert pipe._current_run_id is None
+    assert pipe._current_task is None
+    assert len(client.closes) == 1
 
 
 @pytest.mark.asyncio
@@ -513,6 +649,91 @@ async def test_voice_cancel_does_not_cancel_simultaneous_text_run() -> None:
             "voice_barge_in",
         )
     ]
+    assert len(client.closes) == 1
+
+
+@pytest.mark.asyncio
+async def test_transport_disconnect_cancels_closes_and_releases_current_ref() -> None:
+    class _DisconnectingWS(_WS):
+        async def send_json(self, frame: dict[str, Any]) -> None:
+            if frame.get("type") == "run_event":
+                raise ConnectionError("audio websocket disconnected")
+            await super().send_json(frame)
+
+    async def script(run_id: str, session_id: str, _: _RunClient) -> AsyncIterator[_Event]:
+        yield _event(run_id, session_id, 1, "accepted", "accepted")
+        await asyncio.sleep(60)
+
+    client = _RunClient({"voice": script})
+    pipe, _, tts, _ = _pipe(client)
+
+    result = await pipe._process_utterance(b"pcm", _DisconnectingWS())
+
+    assert result is None
+    assert tts.texts == []
+    assert client.cancels == [
+        (
+            {"run_id": "voice-run-1", "expected_session_id": "voice-session"},
+            {"session_id": "voice-session", "venue": "voice"},
+            "voice_transport_error",
+        )
+    ]
+    assert client.closes == [
+        (
+            {"run_id": "voice-run-1", "expected_session_id": "voice-session"},
+            {"session_id": "voice-session", "venue": "voice"},
+        )
+    ]
+    assert pipe._current_run_id is None
+    assert pipe._current_run_session_id is None
+    assert pipe._current_task is None
+    assert client.active_refs == set()
+
+
+@pytest.mark.asyncio
+async def test_transcripts_and_typed_events_are_fanned_out_to_peer_transport() -> None:
+    peer_frames: list[dict[str, Any]] = []
+
+    async def broadcast(_: object, frame: dict[str, Any]) -> None:
+        peer_frames.append(frame)
+
+    async def script(run_id: str, session_id: str, _: _RunClient) -> AsyncIterator[_Event]:
+        yield _event(
+            run_id,
+            session_id,
+            1,
+            "final",
+            "succeeded",
+            payload={"text": "shared answer", "served_by": "local"},
+        )
+
+    client = _RunClient({"voice": script})
+    pipe, _, tts, _ = _pipe(client, broadcast=broadcast)
+    audio = _WS()
+
+    await pipe._process_utterance(b"pcm", audio)
+
+    assert tts.texts == ["shared answer"]
+    assert [frame["type"] for frame in peer_frames] == [
+        "chat_v2_user_echo",
+        "run_event",
+        "chat_v2_final",
+    ]
+    assert peer_frames[0]["payload"] == {
+        "session_id": "voice-session",
+        "text": "hello from voice",
+    }
+    assert peer_frames[-1]["payload"] == {
+        "session_id": "voice-session",
+        "text": "shared answer",
+    }
+    assistant = next(
+        frame["payload"]
+        for frame in audio.json_frames
+        if frame.get("type") == "transcript"
+        and frame["payload"].get("role") == "assistant"
+    )
+    assert assistant["provider"] == "local"
 
 
 def test_run_client_is_opt_in_and_not_registered_by_production_bootstrap() -> None:
