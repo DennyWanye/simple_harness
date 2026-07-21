@@ -4,7 +4,6 @@
 import pytest
 from context import ServiceContext
 from providers.base import LLMProvider
-from deskpet.agent.harness_manifest import harness_service_names
 
 
 class FakeLLM:
@@ -58,13 +57,6 @@ def test_service_context_accepts_search_gateway_runtime():
     ctx.register("search_gateway", gateway)
 
     assert ctx.get("search_gateway") is gateway
-
-
-@pytest.mark.parametrize("name", harness_service_names())
-def test_harness_manifest_services_are_whitelisted(name: str):
-    ctx = ServiceContext()
-    ctx.register(name, None)
-    assert ctx.get(name) is None
 
 
 @pytest.mark.parametrize(

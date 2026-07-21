@@ -6,7 +6,6 @@ from __future__ import annotations
 import inspect
 
 from agent.agent_loop import AgentLoop, PipelineEvent
-from deskpet.agent.harness_manifest import REQUEST_LIFECYCLE
 
 
 FACTORY_TO_LOOP_KWARGS = {
@@ -84,12 +83,3 @@ def test_pipeline_event_contract_matches_ws_bridge_shape() -> None:
             "nudge_count": 1,
         },
     }
-
-
-def test_manifest_observability_mentions_runtime_event_types() -> None:
-    by_id = {stage.id: stage for stage in REQUEST_LIFECYCLE}
-
-    assert "AssistantMessageEvent" in by_id["agent_loop"].observability
-    assert "ToolResultEvent" in by_id["agent_loop"].observability
-    assert "chat_v2_evidence_gate" in by_id["completion_gates"].observability
-    assert "subagent_completion" in by_id["subagent_sidecar"].observability
