@@ -1,7 +1,9 @@
 # R4 结果：Workflow / Child / Delivery adapters 收敛
 
-> 状态：完成（2026-07-21）  
-> 集成 HEAD：`ec99b02e`  
+> 状态：完成（2026-07-21）
+>
+> 集成 HEAD：`ec99b02e`
+>
 > 生产 owner：仍为 `legacy/0`；本阶段没有执行 R6 activation。
 
 ## 结果概览
