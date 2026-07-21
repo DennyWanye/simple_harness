@@ -1,0 +1,238 @@
+{
+  "baseline": {
+    "legacy_survivor_count": 15,
+    "presenter_converter_authority_count": 1,
+    "run_map_authority_count": 4,
+    "supervisor_task_authority_count": 2
+  },
+  "baseline_commit": "796905b9888c2659af78cec21de1ee96b46a2c51",
+  "items": [
+    {
+      "authority": "presenter_converter",
+      "callsites": [
+        "backend/deskpet/agent/run_presenter.py:RunPresenter.present_run_event:209"
+      ],
+      "kind": "converter",
+      "path": "backend/deskpet/agent/run_presenter.py",
+      "source_hash": "b0f2c60deadc5a0a7f086cb6644ba3fb5387e15aaf79638acc59a613031a0ade",
+      "symbol": "CanonicalRunEventPresentationAdapter.to_presentation_events",
+      "tables": []
+    },
+    {
+      "authority": "presenter_converter_contract",
+      "callsites": [
+        "backend/deskpet/agent/run_presenter.py:RunPresenter.present_run_event:209"
+      ],
+      "kind": "converter_contract",
+      "path": "backend/deskpet/agent/run_presenter.py",
+      "source_hash": "d7cd459b3343cb085708b268e91bf368e221c27ba06520965ed9246882c1594c",
+      "symbol": "RunEventPresentationAdapter.to_presentation_events",
+      "tables": []
+    },
+    {
+      "authority": "legacy_survivor",
+      "callsites": [],
+      "kind": "legacy_owner",
+      "path": "backend/deskpet/agent/subagent_registry.py",
+      "source_hash": "b2aeecada251f4a463c861a1be7865fcf39fb3d56028e0a280351d215f0ad52d",
+      "symbol": "SubagentRegistry._runs",
+      "tables": []
+    },
+    {
+      "authority": "legacy_survivor",
+      "callsites": [],
+      "kind": "legacy_owner",
+      "path": "backend/deskpet/agent/subagent_registry.py",
+      "source_hash": "890dabf569ed39194cebc799a0e30ec75cec4851a5730c2c836338a800d1f1f4",
+      "symbol": "SubagentRegistry.completion_queue",
+      "tables": []
+    },
+    {
+      "authority": "legacy_survivor",
+      "callsites": [],
+      "kind": "legacy_owner",
+      "path": "backend/deskpet/permissions/gate.py",
+      "source_hash": "bb2db135a715aadcebdfd26ab9621516ef375b58cd5201f8fc664131ba146917",
+      "symbol": "PermissionGate._pending",
+      "tables": []
+    },
+    {
+      "authority": "legacy_survivor",
+      "callsites": [],
+      "kind": "legacy_owner",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "source_hash": "ae5b47ba6290455eca71c5058f1f73153df2130f9fbb8138f297e2c999ca858a",
+      "symbol": "<module>._PPT_PRO_CTX",
+      "tables": []
+    },
+    {
+      "authority": "legacy_survivor",
+      "callsites": [],
+      "kind": "legacy_owner",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "source_hash": "bbe78ef6d94c3df0bcc436db110c1fecbf5f4aaaf2f06e5f6ca90c413608cd18",
+      "symbol": "<module>._PPT_PRO_RUNNING",
+      "tables": []
+    },
+    {
+      "authority": "legacy_survivor",
+      "callsites": [],
+      "kind": "legacy_owner",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "source_hash": "6c8bf8b63779923e1f529b8fd6deb6017f1356f6184c0fadc31b19478cc33c8c",
+      "symbol": "<module>._PPT_PRO_RUNNING_TOPIC",
+      "tables": []
+    },
+    {
+      "authority": "legacy_survivor",
+      "callsites": [],
+      "kind": "legacy_owner",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "source_hash": "f3f060450f2dd31dcce74a6faf3527eee1f4b0ecfa65e015d7e04e4f0ac4bf16",
+      "symbol": "<module>._PPT_PRO_TASKS",
+      "tables": []
+    },
+    {
+      "authority": "legacy_survivor",
+      "callsites": [],
+      "kind": "legacy_owner",
+      "path": "backend/main.py",
+      "source_hash": "378dd2c8b468efde1ca1e2015d74ee04233e28a7c81d5781e10ab102afbc497a",
+      "symbol": "<module>._PLAN_CONFIRM_WAITERS",
+      "tables": []
+    },
+    {
+      "authority": "legacy_survivor",
+      "callsites": [],
+      "kind": "legacy_owner",
+      "path": "backend/main.py",
+      "source_hash": "423897fd3e255b07b5a01787674ffff2bdbc8e272f7ad9abaf81574bbbcd5c62",
+      "symbol": "<module>._PPT_OUTLINE_WAITERS",
+      "tables": []
+    },
+    {
+      "authority": "legacy_survivor",
+      "callsites": [],
+      "kind": "legacy_owner",
+      "path": "backend/main.py",
+      "source_hash": "2d267b09408e6fe0740b8e3bf3d546af015495106c7d762887a0013fc04c564a",
+      "symbol": "<module>._SKILL_CANDIDATE_WAITERS",
+      "tables": []
+    },
+    {
+      "authority": "legacy_survivor",
+      "callsites": [],
+      "kind": "legacy_owner",
+      "path": "backend/main.py",
+      "source_hash": "9cbb5497b48a4d2a5b0cb4c681e8459fa95413d2625538dbfabf4886f0dd7ce0",
+      "symbol": "<module>._auto_resume_redispatchers",
+      "tables": []
+    },
+    {
+      "authority": "legacy_survivor",
+      "callsites": [],
+      "kind": "legacy_owner",
+      "path": "backend/main.py",
+      "source_hash": "df7ff2ddb456e9cb6cca712cbff926bf89e7d841ee17a8be601d5139f0d2c8f1",
+      "symbol": "<module>._chat_inflight",
+      "tables": []
+    },
+    {
+      "authority": "legacy_survivor",
+      "callsites": [],
+      "kind": "legacy_owner",
+      "path": "backend/main.py",
+      "source_hash": "a898f6cfce1ee3089d8e14f3a8ae04ecd40f6bbb89caafad5ea6b2bb9a7b9e62",
+      "symbol": "<module>._clarify_pending",
+      "tables": []
+    },
+    {
+      "authority": "legacy_survivor",
+      "callsites": [],
+      "kind": "legacy_owner",
+      "path": "backend/main.py",
+      "source_hash": "a1e2f91c1a88ab087f8e4508e7f4125006eaa9d5f576c5463004b42adfb81815",
+      "symbol": "<module>._permission_pending",
+      "tables": []
+    },
+    {
+      "authority": "legacy_survivor",
+      "callsites": [],
+      "kind": "legacy_owner",
+      "path": "backend/main.py",
+      "source_hash": "5add5107d7b6b3783c73cd1e1f99231033d70473170449afe10661568fb7efca",
+      "symbol": "<module>._pipelines",
+      "tables": []
+    },
+    {
+      "authority": "live_run_map",
+      "callsites": [],
+      "kind": "run_map",
+      "path": "backend/deskpet/harness/drivers/react.py",
+      "source_hash": "4b646e8a56a70f3fe7659f454f69074249abf980b5929440639fb20b8653bcac",
+      "symbol": "LegacyAgentLoopCollaborator._active",
+      "tables": []
+    },
+    {
+      "authority": "live_run_map",
+      "callsites": [],
+      "kind": "run_map",
+      "path": "backend/deskpet/harness/drivers/react.py",
+      "source_hash": "1e15d679d44193e67feb42acb2cb5fa9dc446c036b04b83a904cb4bb93dcf07c",
+      "symbol": "ReActDriver._volatile",
+      "tables": []
+    },
+    {
+      "authority": "live_run_map",
+      "callsites": [],
+      "kind": "run_map",
+      "path": "backend/deskpet/harness/kernel.py",
+      "source_hash": "1f11b250941c6041454389ca2d4a190942952e923c1b71d4a086da281460d5bc",
+      "symbol": "RunKernel._active",
+      "tables": []
+    },
+    {
+      "authority": "live_run_map",
+      "callsites": [],
+      "kind": "run_map",
+      "path": "backend/deskpet/harness/live_index.py",
+      "source_hash": "16099a1f6a834ab0cc7608964c2bbed5715a4b8810c55679c14b84de34a4198f",
+      "symbol": "BoundedLiveIndex._runs",
+      "tables": []
+    },
+    {
+      "authority": "supervisor_task",
+      "callsites": [],
+      "kind": "task",
+      "path": "backend/deskpet/harness/child_runs.py",
+      "source_hash": "3d2b20cba5ee80c1aaeeb1ee265bec1c2c98a1f61500309245c518a4eeab0416",
+      "symbol": "ChildRunScheduler._task",
+      "tables": []
+    },
+    {
+      "authority": "run_task",
+      "callsites": [],
+      "kind": "task",
+      "path": "backend/deskpet/harness/live_index.py",
+      "source_hash": "c331c2334aeae84d5b3fff6ae73d3617e55c9453c11856c11e338483f0ab15f6",
+      "symbol": "LiveRun.task",
+      "tables": []
+    },
+    {
+      "authority": "supervisor_task",
+      "callsites": [],
+      "kind": "task",
+      "path": "backend/deskpet/harness/recovery.py",
+      "source_hash": "3d2b20cba5ee80c1aaeeb1ee265bec1c2c98a1f61500309245c518a4eeab0416",
+      "symbol": "HarnessRecoveryCoordinator._task",
+      "tables": []
+    }
+  ],
+  "schema_version": 1,
+  "target": {
+    "max_legacy_survivor_count": 15,
+    "presenter_converter_authority_count": 1,
+    "run_map_authority_count": 1,
+    "supervisor_task_authority_count": 1
+  }
+}
