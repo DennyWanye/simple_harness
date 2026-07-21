@@ -31,6 +31,7 @@ from deskpet.harness.ports import DriverTerminalCandidate, TokenCandidate
 from deskpet.harness.router import ClassifiedRoute, RegisteredRouter, RouteProfile
 from deskpet.memory.session_db import SessionDB
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
+from pipeline.voice_pipeline import VoicePipeline
 
 
 class _Resolver:
@@ -134,9 +135,13 @@ class _DomainSink(ProductDomainSink):
 class _WS:
     def __init__(self) -> None:
         self.frames: list[dict[str, Any]] = []
+        self.binary_frames: list[bytes] = []
 
     async def send_json(self, frame: dict[str, Any]) -> None:
         self.frames.append(frame)
+
+    async def send_bytes(self, frame: bytes) -> None:
+        self.binary_frames.append(bytes(frame))
 
 
 class _Vector:
@@ -340,6 +345,154 @@ async def test_failed_terminal_never_projects_green_success(tmp_path) -> None:
     assert [frame["type"] for frame in ws.frames] == ["chat_v2_delta", "chat_v2_error"]
     assert not any(frame["type"] == "chat_v2_final" for frame in ws.frames)
     assert await session_db.get_messages("text-session") == []
+    assert kernel._active == {}
+
+
+@pytest.mark.asyncio
+async def test_voice_transport_consumes_the_activated_product_session(tmp_path) -> None:
+    stack = await _stack(tmp_path)
+    adapter, kernel, driver, uow, session_db, _ws, _vector, context, _peers, sink, order = stack
+    context.session_id = "voice-session"
+    context.text = "explain the harness by voice"
+    context.request_id = "request-voice"
+
+    opened = await adapter.open(
+        TurnInput(
+            text=context.text,
+            session_id=context.session_id,
+            request_id=context.request_id,
+            turn_id="turn-voice",
+            venue="voice",
+        ),
+        {"session_id": context.session_id, "venue": "voice"},
+        services={"problem_pipeline": _Pipeline()},
+        config=_config(),
+        local_llm=SimpleNamespace(model="fixture", base_url="local"),
+        tool_registry=object(),
+        provider=object(),
+        code_mode=None,
+        in_code_mode=False,
+        current_message_id=None,
+        summary_user_is_confused=lambda _text: False,
+        summary_latest_task_snapshot=lambda _entries: None,
+        summary_build_reinject_msg=lambda _value: {},
+        presentation_context=context,
+        domain_sink=sink,
+    )
+    session = opened.session
+    assert session is not None and opened.result is None
+
+    class _ASR:
+        async def transcribe(self, _audio: bytes) -> str:
+            return context.text
+
+    class _VAD:
+        threshold = 0.5
+
+        def set_threshold(self, value: float) -> None:
+            self.threshold = value
+
+    class _TTS:
+        def __init__(self) -> None:
+            self.texts: list[str] = []
+
+        async def synthesize_pcm_stream(self, text: str):
+            self.texts.append(text)
+            yield b"\x00\x00\x00\x00"
+
+    class _ForbiddenAgent:
+        async def chat_stream(self, *_args: object, **_kwargs: object):
+            raise AssertionError("shared product session must own agent execution")
+            yield ""
+
+    audio, control, tts = _WS(), _WS(), _TTS()
+    voice = VoicePipeline(
+        vad=_VAD(),
+        asr=_ASR(),
+        agent=_ForbiddenAgent(),
+        tts=tts,
+        control_ws=control,
+        session_id=context.session_id,
+        run_session=session,
+    )
+
+    result = await voice._process_utterance(b"pcm", audio)
+
+    assert result == "hello world"
+    assert tts.texts == ["hello world"]
+    assert order == ["domain", "driver"]
+    assert [dict(item) for item in driver.starts[0].canonical_messages] == [
+        {"role": "system", "content": "pipeline context"},
+        {"role": "user", "content": context.text},
+    ]
+    assert await uow.get_execution_owner(session.run_id) == ("kernel", 1)
+    assert (await uow.get_runtime_state()).generation == 1
+    assert kernel._active == {}
+    assert voice._current_run_handle is None
+    assert any(frame["type"] == "chat_v2_final" for frame in context.websocket.frames)
+    assert any(frame["type"] == "transcript" for frame in audio.frames)
+    assert audio.binary_frames == [b"\x01\x00\x00\x00\x00"]
+    messages = await session_db.get_messages(context.session_id)
+    assert messages[-1]["content"] == "hello world"
+
+
+@pytest.mark.asyncio
+async def test_product_session_is_single_consumer_and_close_finishes_once(tmp_path) -> None:
+    stack = await _stack(tmp_path)
+    adapter, kernel, _driver, _uow, _db, _ws, _vector, context, _peers, sink, _order = stack
+
+    class _Billing:
+        def __init__(self) -> None:
+            self.records: list[dict[str, Any]] = []
+
+        async def record(self, **record: Any) -> None:
+            self.records.append(record)
+
+    billing = _Billing()
+    provider = SimpleNamespace(
+        model="fixture",
+        base_url="http://127.0.0.1:9999",
+        last_usage={"prompt_tokens": 2, "completion_tokens": 3},
+    )
+    context.provider = provider
+    context.billing_ledger = billing
+    opened = await adapter.open(
+        TurnInput(
+            text=context.text,
+            session_id=context.session_id,
+            request_id="request-close-once",
+            turn_id="turn-close-once",
+            venue="text",
+        ),
+        {"session_id": context.session_id, "venue": "text"},
+        services={},
+        config=_config(),
+        local_llm=provider,
+        tool_registry=object(),
+        provider=provider,
+        code_mode=None,
+        in_code_mode=False,
+        current_message_id=None,
+        summary_user_is_confused=lambda _text: False,
+        summary_latest_task_snapshot=lambda _entries: None,
+        summary_build_reinject_msg=lambda _value: {},
+        presentation_context=context,
+        domain_sink=sink,
+    )
+    session = opened.session
+    assert session is not None
+    events = session.events
+    with pytest.raises(RuntimeError, match="single-consumer"):
+        _ = session.events
+    async for _event in events:
+        pass
+
+    await session.close()
+    await session.close()
+
+    assert session.result.final_text == "hello world"
+    assert len(billing.records) == 1
+    assert provider.last_usage is None
     assert kernel._active == {}
 
 

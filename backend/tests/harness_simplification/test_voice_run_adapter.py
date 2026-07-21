@@ -98,6 +98,28 @@ class _Event:
 class _Handle:
     run_id: str
     events: AsyncIterator[_Event]
+    session_id: str
+    client: "_RunClient"
+
+    async def signal(self, signal: Mapping[str, object]) -> object:
+        return await self.client.signal(
+            {"run_id": self.run_id, "expected_session_id": self.session_id},
+            {"session_id": self.session_id, "venue": "voice"},
+            signal,
+        )
+
+    async def cancel(self, reason: str) -> object:
+        return await self.client.cancel(
+            {"run_id": self.run_id, "expected_session_id": self.session_id},
+            {"session_id": self.session_id, "venue": "voice"},
+            reason,
+        )
+
+    async def close(self) -> None:
+        await self.client.close(
+            {"run_id": self.run_id, "expected_session_id": self.session_id},
+            {"session_id": self.session_id, "venue": "voice"},
+        )
 
 
 _Script = Callable[[str, str, "_RunClient"], AsyncIterator[_Event]]
@@ -128,7 +150,12 @@ class _RunClient:
         run_id = f"{venue}-run-{count}"
         self.active_refs.add(run_id)
         self.starts.append((dict(request), dict(host), run_id))
-        return _Handle(run_id, self.scripts[venue](run_id, session_id, self))
+        return _Handle(
+            run_id,
+            self.scripts[venue](run_id, session_id, self),
+            session_id,
+            self,
+        )
 
     async def signal(
         self,
@@ -685,7 +712,7 @@ async def test_transport_disconnect_cancels_closes_and_releases_current_ref() ->
         )
     ]
     assert pipe._current_run_id is None
-    assert pipe._current_run_session_id is None
+    assert pipe._current_run_handle is None
     assert pipe._current_task is None
     assert client.active_refs == set()
 
@@ -739,6 +766,7 @@ async def test_transcripts_and_typed_events_are_fanned_out_to_peer_transport() -
 def test_run_client_is_opt_in_and_not_registered_by_production_bootstrap() -> None:
     parameter = inspect.signature(VoicePipeline).parameters["run_client"]
     assert parameter.default is None
+    assert inspect.signature(VoicePipeline).parameters["run_session"].default is None
 
     tree = ast.parse((ROOT / "backend" / "main.py").read_text(encoding="utf-8"))
     production_calls = [
@@ -749,7 +777,6 @@ def test_run_client_is_opt_in_and_not_registered_by_production_bootstrap() -> No
         and node.func.id == "VoicePipeline"
     ]
     assert production_calls
-    assert all(
-        "run_client" not in {keyword.arg for keyword in call.keywords}
-        for call in production_calls
-    )
+    for call in production_calls:
+        keywords = {keyword.arg for keyword in call.keywords}
+        assert keywords.isdisjoint({"run_client", "run_session"})

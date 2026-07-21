@@ -38,35 +38,21 @@ class RunHandle(Protocol):
     run_id: str
     events: AsyncIterator[object]
 
+    async def signal(self, signal: Mapping[str, object]) -> object: ...
+
+    async def cancel(self, reason: str) -> object: ...
+
+    async def close(self) -> None: ...
+
 
 class RunClient(Protocol):
-    """Narrow structural view of the six-operation Run API used by Voice."""
+    """Open one product-prepared Run session for the Voice transport."""
 
     async def start(
         self,
         request: Mapping[str, object],
         host: Mapping[str, object],
     ) -> RunHandle: ...
-
-    async def signal(
-        self,
-        ref: Mapping[str, object],
-        actor: Mapping[str, object],
-        signal: Mapping[str, object],
-    ) -> object: ...
-
-    async def cancel(
-        self,
-        ref: Mapping[str, object],
-        actor: Mapping[str, object],
-        reason: str,
-    ) -> object: ...
-
-    async def close(
-        self,
-        ref: Mapping[str, object],
-        actor: Mapping[str, object],
-    ) -> None: ...
 
 
 _TRANSCRIPT_EVENT_KINDS = {"transcript", "assistant_transcript", "assistant_delta", "token"}
@@ -110,7 +96,11 @@ def _event_view(event: Any) -> dict[str, object]:
     if event.durable_seq is not None:
         view["durable_seq"] = event.durable_seq
     if event.live_cursor is not None:
-        view["live_cursor"] = event.live_cursor.to_dict()
+        view["live_cursor"] = {
+            "stream_epoch": event.live_cursor.stream_epoch,
+            "live_seq": event.live_cursor.live_seq,
+            "schema_version": event.live_cursor.schema_version,
+        }
     return view
 
 
@@ -185,6 +175,7 @@ class VoicePipeline:
         # until the atomic WI-12 owner cutover; an injected client makes Voice
         # a transport-only adapter over the shared Run API in isolated tests.
         run_client: RunClient | None = None,
+        run_session: RunHandle | None = None,
     ):
         self.vad = vad
         self.asr = asr
@@ -206,10 +197,11 @@ class VoicePipeline:
         self._local_llm = local_llm
         self._app_config = app_config
         self._run_client = run_client
+        self._next_run_session = run_session
         # A VoicePipeline owns at most one active utterance.  These fields are
         # a transport cursor, not a second run registry or lifecycle authority.
         self._current_run_id: str | None = None
-        self._current_run_session_id: str | None = None
+        self._current_run_handle: RunHandle | None = None
         # FP-5 缺口 5k：codify fire-and-forget 任务的强引用集（防被 GC 提前回收，
         # 仿 goal_store B-10 _fanout_tasks 修复）。done 后自动 discard。
         self._codify_tasks: set = set()
@@ -251,10 +243,8 @@ class VoicePipeline:
         rewrites ``PermissionGate.current_source``.
         """
 
-        client = self._run_client
-        run_id = self._current_run_id
-        session_id = self._current_run_session_id
-        if client is None or run_id is None or session_id is None:
+        handle = self._current_run_handle
+        if handle is None:
             raise RuntimeError("voice run is not active")
         decision = str(decision_id).strip()
         if not decision:
@@ -267,22 +257,7 @@ class VoicePipeline:
             signal["nonce"] = nonce
         if version is not None:
             signal["version"] = version
-        return await client.signal(
-            self._run_ref(run_id, session_id),
-            self._voice_actor(session_id),
-            MappingProxyType(signal),
-        )
-
-    @staticmethod
-    def _run_ref(run_id: str, session_id: str) -> Mapping[str, object]:
-        return MappingProxyType({
-            "run_id": run_id,
-            "expected_session_id": session_id,
-        })
-
-    @staticmethod
-    def _voice_actor(session_id: str) -> Mapping[str, object]:
-        return MappingProxyType({"session_id": session_id, "venue": "voice"})
+        return await handle.signal(MappingProxyType(signal))
 
     async def _maybe_codify_voice(self) -> None:
         """FP-5 缺口 5k：语音 venue 的技能自创 codify hook（对齐文字 venue）。
@@ -528,7 +503,7 @@ class VoicePipeline:
             # older chat_stream fallback until WI-12 atomically cuts ownership.
             response_text = ""
             served_by: str | None = None
-            if self._run_client is not None:
+            if self._run_client is not None or self._next_run_session is not None:
                 response_text, served_by = await self._run_with_client(
                     text,
                     audio_ws,
@@ -654,21 +629,32 @@ class VoicePipeline:
         releases assistant text to the existing transcript/TTS transport.
         """
 
-        client = self._run_client
-        if client is None:  # defensive; caller guards this branch
-            raise RuntimeError("RunClient is not configured")
+        handle = self._next_run_session
+        self._next_run_session = None
+        if handle is None:
+            client = self._run_client
+            if client is None:
+                raise RuntimeError("RunClient is not configured")
+            request = MappingProxyType({"text": text})
+            host = MappingProxyType({"session_id": session_id, "venue": "voice"})
+            handle = await client.start(request, host)
+        return await self._consume_run_session(handle, audio_ws, session_id=session_id)
 
-        # Trusted host fields remain outside the model-authored request.  The
-        # concrete client/HostContextFactory validates and enriches this view.
-        request = MappingProxyType({"text": text})
-        host = MappingProxyType({"session_id": session_id, "venue": "voice"})
-        handle = await client.start(request, host)
+    async def _consume_run_session(
+        self,
+        handle: RunHandle,
+        audio_ws: WebSocket,
+        *,
+        session_id: str,
+    ) -> tuple[str, str | None]:
+        """Consume the shared single-presenter session into Voice transport."""
+
         run_id = str(handle.run_id).strip()
         if not run_id:
             raise RuntimeError("RunClient.start returned a handle without run_id")
 
         self._current_run_id = run_id
-        self._current_run_session_id = session_id
+        self._current_run_handle = handle
         transcript_chunks: list[str] = []
         terminal_seen = False
         final_text = ""
@@ -764,41 +750,32 @@ class VoicePipeline:
             return final_text, served_by
         except asyncio.CancelledError:
             reason = "voice_barge_in" if self._interrupted else "voice_superseded"
-            await self._cancel_shared_run(client, run_id, session_id, reason)
+            await self._cancel_shared_run(handle, run_id, reason)
             raise
         except Exception:
             await self._cancel_shared_run(
-                client,
+                handle,
                 run_id,
-                session_id,
                 "voice_transport_error",
             )
             raise
         finally:
             try:
-                await client.close(
-                    self._run_ref(run_id, session_id),
-                    self._voice_actor(session_id),
-                )
+                await handle.close()
             except Exception as exc:  # noqa: BLE001 - close is best-effort at transport edge
                 logger.warning("voice_run_close_failed", run_id=run_id, error=str(exc))
             if self._current_run_id == run_id:
                 self._current_run_id = None
-                self._current_run_session_id = None
+                self._current_run_handle = None
 
     async def _cancel_shared_run(
         self,
-        client: RunClient,
+        handle: RunHandle,
         run_id: str,
-        session_id: str,
         reason: str,
     ) -> None:
         try:
-            await client.cancel(
-                self._run_ref(run_id, session_id),
-                self._voice_actor(session_id),
-                reason,
-            )
+            await handle.cancel(reason)
         except Exception as exc:  # noqa: BLE001 - preserve root transport error
             logger.warning(
                 "voice_run_cancel_failed", run_id=run_id, reason=reason, error=str(exc)

@@ -53,6 +53,18 @@ class ProductVenueRunResult:
     final_text: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class ProductVenueOpenResult:
+    """Either an opened session or an explicit pre-kernel product result."""
+
+    session: "ProductVenueRunSession | None" = None
+    result: ProductVenueRunResult | None = None
+
+    def __post_init__(self) -> None:
+        if (self.session is None) == (self.result is None):
+            raise ValueError("open result must contain exactly one outcome")
+
+
 class KernelRunClient:
     """Narrow structural RunClient shared by Text and Voice transports."""
 
@@ -174,6 +186,75 @@ class KernelRunClient:
         return RunRef(run_id, session_id)
 
 
+class ProductVenueRunSession:
+    """One-shot presenting stream over a single canonical Kernel run."""
+
+    def __init__(
+        self,
+        *,
+        handle: VenueRunHandle,
+        run_client: KernelRunClient,
+        host: Mapping[str, object],
+        presenter: RunPresenter,
+        event_adapter: CanonicalRunEventPresentationAdapter,
+        presentation_context: RunPresentationContext,
+    ) -> None:
+        self.run_id = handle.run_id
+        self._source = handle.events
+        self._run_client = run_client
+        self._host = dict(host)
+        self._presenter = presenter
+        self._event_adapter = event_adapter
+        self._context = presentation_context
+        self._state = PresentationState()
+        self._status = "unknown"
+        self._consumed = False
+        self._closed = False
+        self._finished = False
+
+    @property
+    def events(self) -> AsyncIterator[RunEvent]:
+        if self._consumed:
+            raise RuntimeError("product venue run events are single-consumer")
+        self._consumed = True
+        return self._presenting_events()
+
+    @property
+    def result(self) -> ProductVenueRunResult:
+        return ProductVenueRunResult(self.run_id, self._status, self._state.final_text)
+
+    async def _presenting_events(self) -> AsyncIterator[RunEvent]:
+        async for event in self._source:
+            self._status = event.status.value
+            await self._presenter.present_run_event(
+                event, self._event_adapter, self._context, self._state
+            )
+            yield event
+
+    async def signal(self, signal: Mapping[str, object]) -> object:
+        return await self._run_client.signal(self._ref(), self._host, signal)
+
+    async def cancel(self, reason: str) -> object:
+        return await self._run_client.cancel(self._ref(), self._host, reason)
+
+    async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            if not self._finished:
+                self._finished = True
+                await self._presenter.finish_turn(self._context, self._state)
+        finally:
+            await self._run_client.close(self._ref(), self._host)
+
+    def _ref(self) -> dict[str, object]:
+        return {
+            "run_id": self.run_id,
+            "expected_session_id": self._context.session_id,
+        }
+
+
 class ProductVenueRunAdapter:
     """Test-only venue-neutral product chain kept outside the production owner.
 
@@ -196,7 +277,7 @@ class ProductVenueRunAdapter:
         self._presenter = presenter
         self._event_adapter = event_adapter or CanonicalRunEventPresentationAdapter()
 
-    async def execute(
+    async def open(
         self,
         turn: TurnInput,
         host: Mapping[str, object],
@@ -215,7 +296,7 @@ class ProductVenueRunAdapter:
         presentation_context: RunPresentationContext,
         domain_sink: ProductDomainSink,
         proposed_tools: Sequence[str] = (),
-    ) -> ProductVenueRunResult:
+    ) -> ProductVenueOpenResult:
         session_id = str(host.get("session_id") or "").strip()
         venue = str(host.get("venue") or turn.venue).strip()
         if session_id != turn.session_id:
@@ -240,9 +321,13 @@ class ProductVenueRunAdapter:
 
         routed = await self._preparer.route_intent(prepared, services=services)
         if not await self._present_commands(routed.commands, domain_sink):
-            return ProductVenueRunResult(None, "short_circuited")
+            return ProductVenueOpenResult(
+                result=ProductVenueRunResult(None, "short_circuited")
+            )
         if not routed.continue_turn:
-            return ProductVenueRunResult(None, "short_circuited")
+            return ProductVenueOpenResult(
+                result=ProductVenueRunResult(None, "short_circuited")
+            )
         planned = await self._preparer.plan_decision(
             routed,
             services=services,
@@ -252,7 +337,9 @@ class ProductVenueRunAdapter:
             in_code_mode=in_code_mode,
         )
         if not await self._present_commands(planned.commands, domain_sink):
-            return ProductVenueRunResult(None, "cancelled")
+            return ProductVenueOpenResult(
+                result=ProductVenueRunResult(None, "cancelled")
+            )
 
         handle = await self._run_client.start(
             {
@@ -270,24 +357,32 @@ class ProductVenueRunAdapter:
             },
             host,
         )
-        state = PresentationState()
-        status = "unknown"
+        return ProductVenueOpenResult(session=ProductVenueRunSession(
+            handle=handle,
+            run_client=self._run_client,
+            host=host,
+            presenter=self._presenter,
+            event_adapter=self._event_adapter,
+            presentation_context=presentation_context,
+        ))
+
+    async def execute(
+        self,
+        turn: TurnInput,
+        host: Mapping[str, object],
+        **options: Any,
+    ) -> ProductVenueRunResult:
+        opened = await self.open(turn, host, **options)
+        if opened.result is not None:
+            return opened.result
+        session = opened.session
+        assert session is not None
         try:
-            async for event in handle.events:
-                status = event.status.value
-                await self._presenter.present_run_event(
-                    event,
-                    self._event_adapter,
-                    presentation_context,
-                    state,
-                )
-            await self._presenter.finish_turn(presentation_context, state)
-            return ProductVenueRunResult(handle.run_id, status, state.final_text)
+            async for _event in session.events:
+                pass
         finally:
-            await self._run_client.close(
-                {"run_id": handle.run_id, "expected_session_id": session_id},
-                host,
-            )
+            await session.close()
+        return session.result
 
     async def _present_commands(
         self,
@@ -302,8 +397,10 @@ class ProductVenueRunAdapter:
 
 __all__ = [
     "KernelRunClient",
+    "ProductVenueOpenResult",
     "ProductVenueRunAdapter",
     "ProductVenueRunResult",
+    "ProductVenueRunSession",
     "VenueContextResolver",
     "VenueRunHandle",
 ]
