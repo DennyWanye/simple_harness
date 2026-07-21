@@ -111,6 +111,22 @@ continuation reads precede live fallback, stale finalizers clear by identity,
 and iterator `aclose()` executes outside the live lock. Expanded focused
 verification is `158 passed`; the full harness is rerun after slice integration.
 
+R5.5 now has a dormant durable admission storage boundary without changing the
+production owner (`legacy/0`). Admission is a typed `_admission` discriminator
+inside the existing continuation row, so the execution tables still have one
+DML authority and no parallel state table. Its exact durable phases are
+`pending -> accepted_start_pending -> launch_claimed -> launched`, with
+`rejected`, `cancelled`, `expired`, and `launch_unknown` terminal paths.
+`start_admission`, `resolve_admission`, and `claim_admission_launch` are typed,
+idempotent transaction starters; ReAct persistence and workflow creation consume
+the claim under the same recovery fence. Workflow start returns the exact
+five-field `WorkflowStartResult` and schedules only when `start_claimed` is true.
+The public starter count is exactly `23`, execution-table DML authority remains
+`1`, and the exact `39` fault hooks now declare their covered operation cases.
+Focused restart/replay/authority verification is `104 passed`; the R5.5 storage
+slice construction gate is green at raw/adjusted/core/Kernel
+`34,406/33,897/5,729/767`.
+
 A machine-checked construction ceiling of total `<=34,300` and core `<=5,725`
 bounds the temporary migration peak; it is green. The total calculation keeps
 the raw `34,020` observable, then replaces only the source-hash-locked

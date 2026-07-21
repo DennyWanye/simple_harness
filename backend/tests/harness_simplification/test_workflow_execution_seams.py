@@ -171,6 +171,14 @@ async def test_product_profiles_prepare_start_restart_and_cancel_without_legacy_
     assert first["run_id"] == prepared.run_id == restarted["run_id"]
     assert first["created"] is True
     assert restarted["created"] is False
+    assert (
+        first["execution_created"], first["workflow_created"],
+        first["admission_consumed"], first["start_claimed"],
+    ) == (True, True, True, True)
+    assert (
+        restarted["execution_created"], restarted["workflow_created"],
+        restarted["admission_consumed"], restarted["start_claimed"],
+    ) == (False, False, False, False)
 
     cancelled = await runner.request_cancel_precreated(prepared.run_id, "test-cancel")
     assert cancelled["status"] == "cancel_requested"

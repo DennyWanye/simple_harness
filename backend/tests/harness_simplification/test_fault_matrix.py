@@ -921,6 +921,7 @@ def test_fault_matrix_schema_and_exported_hooks_are_exact() -> None:
     required_fields = {
         "window_id",
         "injection_hook",
+        "operation_cases",
         "durable_before",
         "durable_after",
         "restart_actor",
@@ -943,6 +944,20 @@ def test_fault_matrix_schema_and_exported_hooks_are_exact() -> None:
         if row["injection_hook"] in TEAM_FAULT_HOOKS
     )
     assert all(row["restart_actor"] and row["idempotency_key"] for row in MATRIX)
+    assert all(row["operation_cases"] and len(row["operation_cases"]) == len(set(row["operation_cases"])) for row in MATRIX)
+    for row in MATRIX:
+        hook = row["injection_hook"]
+        expected_cases = (
+            ["react_promotion", "start_admission", "workflow_admission_consume"]
+            if hook.startswith("batch_boundary_") else
+            ["decision_boundary", "resolve_admission"]
+            if hook in {"decision_resolve_after_cas", "decision_resolve_after_boundary", "decision_resolve_before_commit"} else
+            ["effect_claim", "claim_admission_launch"]
+            if hook.startswith("effect_claim_") else
+            ["terminal_delivery", "admission_launch_unknown"]
+            if hook.startswith("finalize_") else ["existing"]
+        )
+        assert row["operation_cases"] == expected_cases
     assert len(ATOMIC_OPERATIONS) == 8
     assert len({name for name, _ in ATOMIC_OPERATIONS}) == 8
     assert all(

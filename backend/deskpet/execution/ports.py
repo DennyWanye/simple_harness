@@ -1,7 +1,7 @@
 """Storage-facing protocols for the product-neutral execution control plane."""
 from __future__ import annotations
 from typing import Any, Mapping, Protocol, Sequence, TypeAlias, runtime_checkable
-from .contracts import ActorAction, ActorContext, ChildCommandIntent, ChildCommandRecord, ChildSignalRecord, CreateRunResult, DecisionAuthorization, DecisionOpen, DecisionRecord, DecisionSignal, DeliveryRecord, DeliverySpec, FinalizeRunResult, GrantConsume, LegacyRunProjection, RunCreate, RunEvent, RunEventCandidate, RunLinkSpec, RunRecord, RunRef, RunStatus, WorkflowRunSeed
+from .contracts import ActorAction, ActorContext, AdmissionBoundary, AdmissionLaunchClaim, AdmissionLaunchUnknownFence, AdmissionResolution, AdmissionSpec, ChildCommandIntent, ChildCommandRecord, ChildSignalRecord, CreateRunResult, DecisionAuthorization, DecisionOpen, DecisionRecord, DecisionSignal, DeliveryRecord, DeliverySpec, FinalizeRunResult, GrantConsume, LegacyRunProjection, RecoveryLease, RunCreate, RunEvent, RunEventCandidate, RunLinkSpec, RunRecord, RunRef, RunStatus, WorkflowRunSeed, WorkflowStartResult
 from .evidence import EvidenceContext, EvidenceSelection
 RunView = RunRecord | LegacyRunProjection
 SinkKey: TypeAlias = tuple[str, str]
@@ -13,7 +13,16 @@ class ExecutionUnitOfWork(Protocol):
     async def create(self, spec: RunCreate, *, initial_event: RunEventCandidate | None=None) -> CreateRunResult:
         ...
 
-    async def commit_run_outcome(self, run_id: str, *, expected_version: int, terminal_status: RunStatus | None=None, event: RunEventCandidate, deliveries: Sequence[DeliverySpec]=(), recovery_lease: Any | None=None, cancel_reason: str | None=None) -> FinalizeRunResult | RunRecord:
+    async def start_admission(self, spec: RunCreate, admission: AdmissionSpec, start_snapshot: AdmissionBoundary, waiting_event: RunEventCandidate, *, deliveries: Sequence[DeliverySpec]=()) -> AdmissionBoundary:
+        ...
+
+    async def resolve_admission(self, ref: RunRef, actor: ActorContext, signal: DecisionSignal, *, expected_boundary_version: int) -> AdmissionResolution:
+        ...
+
+    async def claim_admission_launch(self, recovery_lease: RecoveryLease, *, expected_boundary_version: int) -> AdmissionLaunchClaim:
+        ...
+
+    async def commit_run_outcome(self, run_id: str, *, expected_version: int, terminal_status: RunStatus | None=None, event: RunEventCandidate, deliveries: Sequence[DeliverySpec]=(), recovery_lease: Any | None=None, cancel_reason: str | None=None, admission_failure: AdmissionLaunchUnknownFence | None=None) -> FinalizeRunResult | RunRecord:
         ...
 
     async def query(self, ref: RunRef, actor: ActorContext) -> RunView:
@@ -85,10 +94,7 @@ class ExecutionUnitOfWork(Protocol):
     async def lookup_completion_evidence(self, context: EvidenceContext) -> EvidenceSelection:
         ...
 
-    async def append_event(self, run_id: str, *, expected_version: int, event: RunEventCandidate, deliveries: Sequence[DeliverySpec]=(), recovery_lease: Any | None=None) -> RunEvent:
-        ...
-
-    async def start_workflow(self, spec: RunCreate, workflow: WorkflowRunSeed, *, association_event: RunEventCandidate | None=None, accepted_event: RunEventCandidate | None=None, deliveries: Sequence[DeliverySpec]=()) -> CreateRunResult:
+    async def start_workflow(self, spec: RunCreate, workflow: WorkflowRunSeed, *, association_event: RunEventCandidate | None=None, accepted_event: RunEventCandidate | None=None, deliveries: Sequence[DeliverySpec]=(), admission_launch: AdmissionLaunchClaim | None=None) -> WorkflowStartResult:
         ...
 
     async def commit_child_command(self, intent: ChildCommandIntent, *, recovery_lease: Any | None=None) -> ChildCommandRecord:

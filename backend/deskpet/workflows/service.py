@@ -19,6 +19,7 @@ from typing import Any
 
 from deskpet.execution.contracts import (
     ActorContext,
+    AdmissionLaunchClaim,
     AuthorizationError,
     DeliveryPolicy,
     DeliverySpec,
@@ -770,6 +771,7 @@ class WorkflowService:
         *,
         execution_ports: WorkflowExecutionPorts | None = None,
         association_event: RunEventCandidate | None = None,
+        admission_launch: AdmissionLaunchClaim | None = None,
     ) -> dict[str, Any]:
         """Atomically create generic + workflow + accepted facts (opt-in only)."""
 
@@ -873,10 +875,15 @@ class WorkflowService:
             association_event=association_event,
             accepted_event=accepted_event,
             deliveries=deliveries,
+            admission_launch=admission_launch,
         )
         return {
             "run_id": result.record.run_id,
-            "created": result.created,
+            "created": result.workflow_created,
+            "execution_created": result.execution_created,
+            "workflow_created": result.workflow_created,
+            "admission_consumed": result.admission_consumed,
+            "start_claimed": result.start_claimed,
             "identity_key": identity.identity_key,
             "request_hash": prepared.request_hash,
             "accepted_event_id": stable_execution_event_id(

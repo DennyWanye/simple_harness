@@ -8,12 +8,12 @@
       "authority": "sqlite_execution_uow",
       "callsites": [
         "backend/deskpet/workflows/runner.py:WorkflowRunner.__init__:244",
-        "backend/deskpet/workflows/service.py:WorkflowService.__init__:353"
+        "backend/deskpet/workflows/service.py:WorkflowService.__init__:354"
       ],
       "counted": true,
       "kind": "runtime_dml",
       "path": "backend/deskpet/workflows/store/execution_uow.py",
-      "source_hash": "5ba6b6aefbae5f2e63977e4c5c0fd7b4b42383200c99ec70f9178771928194ce",
+      "source_hash": "44326364c917511460f90ff667b5aaa8aa8b9cd191fb44cec33c1e059c4d372a",
       "symbol": "SqliteExecutionUnitOfWork",
       "tables": [
         "execution_child_commands",

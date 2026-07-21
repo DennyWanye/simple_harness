@@ -4,24 +4,46 @@ import aiosqlite
 import pytest
 
 from deskpet.execution.contracts import (
+    ActorContext,
+    AdmissionBoundary,
+    AdmissionLaunchUnknownFence,
+    AdmissionPhase,
+    AdmissionSpec,
     DecisionConflict,
     DecisionOpen,
     DeliveryPolicy,
     DeliverySpec,
     OutcomeStatus,
+    ProviderLaunchSnapshot,
     RunContext,
     RunCreate,
     RunEventCandidate,
+    RunRef,
+    RunStatus,
+    DecisionSignal,
     VersionConflict,
+    WorkflowRunSeed,
     fingerprint_json,
 )
 from deskpet.workflows.store import SqliteExecutionUnitOfWork
 
 
 CAPABILITY_HASH = fingerprint_json({"tools": ["read"], "scope": "workspace"})
+START_ADMISSION_HOOKS = (
+    "batch_boundary_after_promotion", "batch_boundary_after_continuation",
+    "batch_boundary_after_waiting_event", "batch_boundary_before_commit",
+)
+RESOLVE_ADMISSION_HOOKS = (
+    "decision_resolve_after_cas", "decision_resolve_after_boundary",
+    "decision_resolve_before_commit",
+)
+CLAIM_ADMISSION_HOOKS = (
+    "effect_claim_after_grant", "effect_claim_after_effect", "effect_claim_before_commit",
+)
+LAUNCH_UNKNOWN_HOOKS = ("finalize_after_outbox", "finalize_before_commit")
 
 
-def _spec(run_id: str) -> RunCreate:
+def _spec(run_id: str, driver_kind: str = "react", profile_key: str = "react_short") -> RunCreate:
     return RunCreate(
         run_id=run_id,
         idempotency_key=f"root:session:request:{run_id}",
@@ -40,8 +62,8 @@ def _spec(run_id: str) -> RunCreate:
         ),
         payload_fingerprint=fingerprint_json({"run_id": run_id}),
         capability_fingerprint=CAPABILITY_HASH,
-        driver_kind="react",
-        profile_key="react_short",
+        driver_kind=driver_kind,
+        profile_key=profile_key,
         persistence_level="durable",
     )
 
@@ -322,3 +344,261 @@ async def test_promote_boundary_fault_rolls_back_every_table_and_restart_recover
     )
     assert recovered.created is True
     assert continuation.version == 1
+
+
+def _admission(run_id: str, driver_kind: str = "react", profile_key: str = "react_short") -> tuple[AdmissionSpec, AdmissionBoundary]:
+    admission = AdmissionSpec(
+        kind="plan", prompt_schema_version=1, response_schema_version=1,
+        prompt={"question": "run this plan?"}, presentation={"steps": ["one"]},
+        expires_at=None,
+    )
+    boundary = AdmissionBoundary(
+        run_id=run_id, decision_id=f"decision:{run_id}", nonce=f"nonce:{run_id}",
+        launch_operation_id=f"launch:{run_id}", driver_kind=driver_kind,
+        profile_key=profile_key, admission=admission, phase="pending",
+        boundary_version=1, canonical_messages=({"role": "user", "content": "do it"},),
+        request_payload={"text": "do it"},
+        provider_snapshot=ProviderLaunchSnapshot("provider", "adapter", "v1", False, None),
+        capability_snapshot={"tools": ["read"]},
+    )
+    return admission, boundary
+
+
+def _admission_waiting(driver_kind: str = "react") -> RunEventCandidate:
+    return RunEventCandidate(
+        event_key="admission:waiting", kind="admission.waiting",
+        status="waiting", driver_kind=driver_kind,
+    )
+
+
+def _admission_signal(run_id: str, allow: bool, response=None) -> DecisionSignal:
+    return DecisionSignal(
+        decision_id=f"decision:{run_id}", run_id=run_id,
+        expected_session_id="session", nonce=f"nonce:{run_id}",
+        expected_version=0, allow=allow, response_schema_version=1,
+        response=response or {"resolution": "accepted" if allow else "rejected"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_admission_launched_without_continuation_footprint_finalizes_unknown(tmp_path):
+    path, run_id = tmp_path / "admission.db", "admitted-run"
+    store = await _open_store(path)
+    admission, boundary = _admission(run_id)
+    started = await store.start_admission(_spec(run_id), admission, boundary, _admission_waiting())
+    replay = await store.start_admission(_spec(run_id), admission, boundary, _admission_waiting())
+    assert started == replay == boundary
+
+    actor, ref = ActorContext("user", "session", 0), RunRef(run_id, "session")
+    signal = _admission_signal(run_id, True)
+    resolved = await store.resolve_admission(ref, actor, signal, expected_boundary_version=1)
+    duplicate = await store.resolve_admission(ref, actor, signal, expected_boundary_version=1)
+    assert resolved.boundary.phase is AdmissionPhase.ACCEPTED_START_PENDING
+    assert duplicate.duplicate is True
+    with pytest.raises(DecisionConflict, match="typed launch claim"):
+        await store.persist_react_boundary(run_id, 2, {"command_id": "unfenced"})
+
+    lease = await store.recovery_scope(run_id, owner="admission-test")
+    claimed = await store.claim_admission_launch(lease, expected_boundary_version=2)
+    duplicate_claim = await store.claim_admission_launch(lease, expected_boundary_version=2)
+    assert claimed.boundary.phase is AdmissionPhase.LAUNCH_CLAIMED
+    assert duplicate_claim.duplicate is True
+
+    launched = await store.persist_react_boundary(
+        run_id, 3, {"command_id": "provider-emission"},
+        recovery_lease=lease, admission_launch=claimed,
+    )
+    launched_boundary = AdmissionBoundary.from_dict(launched.payload["_admission"])
+    assert (launched.version, launched_boundary.phase, launched_boundary.consumed) == (
+        4, AdmissionPhase.LAUNCHED, True,
+    )
+
+    final = RunEventCandidate(
+        event_key="run:final", kind="run.final", status="failed", driver_kind="react",
+        payload={"error_code": "launch_outcome_unknown", "retry_safe": False,
+                 "launch_operation_id": boundary.launch_operation_id},
+    )
+    result = await store.commit_run_outcome(
+        run_id, expected_version=2, terminal_status=RunStatus.FAILED, event=final,
+        recovery_lease=lease,
+        admission_failure=AdmissionLaunchUnknownFence(
+            run_id, boundary.decision_id, boundary.launch_operation_id, 4,
+        ),
+    )
+    persisted = await store.load_continuation(run_id)
+    assert result.record.status is RunStatus.FAILED
+    assert AdmissionBoundary.from_dict(persisted.payload["_admission"]).phase is AdmissionPhase.LAUNCH_UNKNOWN
+
+
+@pytest.mark.asyncio
+async def test_admission_rejection_atomically_consumes_and_terminalizes(tmp_path):
+    path, run_id = tmp_path / "admission-reject.db", "rejected-run"
+    store = await _open_store(path)
+    admission, boundary = _admission(run_id)
+    await store.start_admission(_spec(run_id), admission, boundary, _admission_waiting())
+    result = await store.resolve_admission(
+        RunRef(run_id, "session"), ActorContext("user", "session", 0),
+        _admission_signal(run_id, False), expected_boundary_version=1,
+    )
+    record = await store.query(RunRef(run_id, "session"), ActorContext("user", "session", 0))
+    assert result.boundary.phase is AdmissionPhase.REJECTED
+    assert result.boundary.consumed is True
+    assert record.status is RunStatus.CANCELLED
+
+
+def _fail_once(target: str):
+    fired = False
+    def inject(point: str) -> None:
+        nonlocal fired
+        if point == target and not fired:
+            fired = True
+            raise RuntimeError(f"crash:{point}")
+    return inject
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hook", START_ADMISSION_HOOKS)
+async def test_start_admission_fault_cases_restart_atomically(tmp_path, hook):
+    path, run_id = tmp_path / f"{hook}.db", "fault-admission"
+    store = await _open_store(path, fault_injector=_fail_once(hook))
+    admission, boundary = _admission(run_id)
+    with pytest.raises(RuntimeError, match=f"crash:{hook}"):
+        await store.start_admission(_spec(run_id), admission, boundary, _admission_waiting())
+    restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
+    assert await restarted.start_admission(
+        _spec(run_id), admission, boundary, _admission_waiting()
+    ) == boundary
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hook", RESOLVE_ADMISSION_HOOKS)
+async def test_resolve_admission_fault_cases_restart_atomically(tmp_path, hook):
+    path, run_id = tmp_path / f"{hook}.db", "fault-resolve"
+    admission, boundary = _admission(run_id)
+    setup = await _open_store(path)
+    await setup.start_admission(_spec(run_id), admission, boundary, _admission_waiting())
+    signal = _admission_signal(run_id, True)
+    failing = SqliteExecutionUnitOfWork(path, clock=lambda: 100.0, fault_injector=_fail_once(hook))
+    with pytest.raises(RuntimeError, match=f"crash:{hook}"):
+        await failing.resolve_admission(
+            RunRef(run_id, "session"), ActorContext("user", "session", 0), signal,
+            expected_boundary_version=1,
+        )
+    restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
+    resolved = await restarted.resolve_admission(
+        RunRef(run_id, "session"), ActorContext("user", "session", 0), signal,
+        expected_boundary_version=1,
+    )
+    assert resolved.boundary.phase is AdmissionPhase.ACCEPTED_START_PENDING
+
+
+async def _accepted_claim(path, run_id: str, *, driver_kind="react", profile_key="react_short"):
+    store = await _open_store(path)
+    admission, boundary = _admission(run_id, driver_kind, profile_key)
+    await store.start_admission(
+        _spec(run_id, driver_kind, profile_key), admission, boundary,
+        _admission_waiting(driver_kind),
+    )
+    await store.resolve_admission(
+        RunRef(run_id, "session"), ActorContext("user", "session", 0),
+        _admission_signal(run_id, True), expected_boundary_version=1,
+    )
+    lease = await store.recovery_scope(run_id, owner="fault-worker")
+    return store, boundary, lease
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hook", CLAIM_ADMISSION_HOOKS)
+async def test_claim_admission_fault_cases_restart_atomically(tmp_path, hook):
+    path, run_id = tmp_path / f"{hook}.db", "fault-claim"
+    _, _, lease = await _accepted_claim(path, run_id)
+    failing = SqliteExecutionUnitOfWork(path, clock=lambda: 100.0, fault_injector=_fail_once(hook))
+    with pytest.raises(RuntimeError, match=f"crash:{hook}"):
+        await failing.claim_admission_launch(lease, expected_boundary_version=2)
+    restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
+    claim = await restarted.claim_admission_launch(lease, expected_boundary_version=2)
+    assert claim.boundary.phase is AdmissionPhase.LAUNCH_CLAIMED
+
+
+def _launch_unknown_event(boundary: AdmissionBoundary) -> RunEventCandidate:
+    return RunEventCandidate(
+        event_key="run:final", kind="run.final", status="failed", driver_kind="react",
+        payload={"error_code": "launch_outcome_unknown", "retry_safe": False,
+                 "launch_operation_id": boundary.launch_operation_id},
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hook", LAUNCH_UNKNOWN_HOOKS)
+async def test_launch_unknown_fault_cases_restart_atomically(tmp_path, hook):
+    path, run_id = tmp_path / f"{hook}.db", "fault-unknown"
+    store, boundary, lease = await _accepted_claim(path, run_id)
+    claim = await store.claim_admission_launch(lease, expected_boundary_version=2)
+    continuation = await store.persist_react_boundary(
+        run_id, 3, {"command_id": "provider-emission"},
+        recovery_lease=lease, admission_launch=claim,
+    )
+    launched = AdmissionBoundary.from_dict(continuation.payload["_admission"])
+    fence = AdmissionLaunchUnknownFence(
+        run_id, boundary.decision_id, boundary.launch_operation_id, launched.boundary_version,
+    )
+    failing = SqliteExecutionUnitOfWork(path, clock=lambda: 100.0, fault_injector=_fail_once(hook))
+    with pytest.raises(RuntimeError, match=f"crash:{hook}"):
+        await failing.commit_run_outcome(
+            run_id, expected_version=2, terminal_status="failed",
+            event=_launch_unknown_event(boundary), recovery_lease=lease,
+            admission_failure=fence,
+        )
+    restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
+    result = await restarted.commit_run_outcome(
+        run_id, expected_version=2, terminal_status="failed",
+        event=_launch_unknown_event(boundary), recovery_lease=lease,
+        admission_failure=fence,
+    )
+    assert result.record.status is RunStatus.FAILED
+
+
+def _workflow_seed(run_id: str) -> WorkflowRunSeed:
+    snapshot = {"tools": ["read"], "scope": "workspace"}
+    return WorkflowRunSeed(
+        request_key=f"request:{run_id}", workflow_name="code", workflow_version="v1",
+        manifest_hash="manifest", implementation_hash="implementation",
+        capability_hash=fingerprint_json(snapshot), capability_snapshot=snapshot,
+        state_schema_version=1, trace_id=f"trace:{run_id}", thread_id=f"thread:{run_id}",
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hook", START_ADMISSION_HOOKS)
+async def test_workflow_admission_consume_fault_cases_restart_atomically(tmp_path, hook):
+    path, run_id = tmp_path / f"workflow-{hook}.db", "fault-workflow"
+    _, _, lease = await _accepted_claim(
+        path, run_id, driver_kind="workflow", profile_key="code/v1",
+    )
+    base = SqliteExecutionUnitOfWork(path, clock=lambda: 100.0)
+    claim = await base.claim_admission_launch(lease, expected_boundary_version=2)
+    spec, seed = _spec(run_id, "workflow", "code/v1"), _workflow_seed(run_id)
+    accepted = RunEventCandidate(
+        event_key="workflow:accepted", kind="workflow.accepted",
+        status="accepted", driver_kind="workflow",
+    )
+    failing = SqliteExecutionUnitOfWork(path, clock=lambda: 100.0, fault_injector=_fail_once(hook))
+    with pytest.raises(RuntimeError, match=f"crash:{hook}"):
+        await failing.start_workflow(
+            spec, seed, accepted_event=accepted, admission_launch=claim,
+        )
+    restarted = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
+    result = await restarted.start_workflow(
+        spec, seed, accepted_event=accepted, admission_launch=claim,
+    )
+    replay = await restarted.start_workflow(
+        spec, seed, accepted_event=accepted, admission_launch=claim,
+    )
+    assert (
+        result.execution_created, result.workflow_created,
+        result.admission_consumed, result.start_claimed,
+    ) == (False, True, True, True)
+    assert (
+        replay.execution_created, replay.workflow_created,
+        replay.admission_consumed, replay.start_claimed,
+    ) == (False, False, False, False)

@@ -9,7 +9,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import Any
 
-from deskpet.execution.contracts import RecoveryLease, RunEventCandidate
+from deskpet.execution.contracts import AdmissionLaunchClaim, RecoveryLease, RunEventCandidate
 
 from .contracts import JsonValue, TERMINAL_RUN_STATUSES, WorkflowContext
 from .progress import WorkflowProgressReporter
@@ -424,6 +424,7 @@ class WorkflowLauncher:
         run_id: str | None = None,
         trace_id: str | None = None,
         association_event: RunEventCandidate | None = None,
+        admission_launch: AdmissionLaunchClaim | None = None,
     ) -> dict[str, Any]:
         """Exercise generic ownership without changing the production launch path."""
 
@@ -465,8 +466,9 @@ class WorkflowLauncher:
         accepted = await self.service.start_prepared(
             prepared, spec, execution_ports=self.execution_ports,
             association_event=association_event,
+            admission_launch=admission_launch,
         )
-        if accepted["created"]:
+        if accepted["start_claimed"]:
             drive_state_factory = (
                 adapter.state_factory if workflow_name == "deep_research" else state_factory
             )

@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Protocol
 
 from deskpet.execution.contracts import (
-    ActorContext, DeliverySpec, JsonValue, RunCreate, RunEvent,
+    ActorContext, AdmissionSpec, DeliverySpec, JsonValue, RunCreate, RunEvent,
     RunEventCandidate, RunRecord, RunRef, RunStatus,
 )
 from .ports import Driver
@@ -25,6 +25,7 @@ class RunRequest:
     proposed_tools: tuple[str, ...] = ()
     canonical_messages: tuple[Mapping[str, JsonValue], ...] = ()
     payload: Mapping[str, JsonValue] = field(default_factory=dict)
+    admission: AdmissionSpec | None = None
 
 
 class TerminalProjection(Protocol):

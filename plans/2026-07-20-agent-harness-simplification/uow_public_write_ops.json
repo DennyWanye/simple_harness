@@ -1,6 +1,6 @@
 {
   "baseline": {
-    "transaction_starter_count": 21
+    "transaction_starter_count": 23
   },
   "baseline_commit": "796905b9888c2659af78cec21de1ee96b46a2c51",
   "items": [
@@ -64,21 +64,6 @@
     },
     {
       "authority": "sqlite_execution_uow",
-      "callsites": [],
-      "generic_opcode": false,
-      "kind": "transaction_starter",
-      "path": "backend/deskpet/workflows/store/execution_uow.py",
-      "public": true,
-      "source_hash": "e2999498e259f683caaaa48bfc3c9b8ba66b46908d47a47690fadf4e20230914",
-      "symbol": "SqliteExecutionUnitOfWork.append_event",
-      "tables": [
-        "execution_deliveries",
-        "execution_events",
-        "execution_runs"
-      ]
-    },
-    {
-      "authority": "sqlite_execution_uow",
       "callsites": [
         "backend/deskpet/harness/kernel.py:RunKernel.cancel:610"
       ],
@@ -92,6 +77,22 @@
         "execution_decisions",
         "execution_grants",
         "execution_runs"
+      ]
+    },
+    {
+      "authority": "sqlite_execution_uow",
+      "callsites": [],
+      "generic_opcode": false,
+      "kind": "transaction_starter",
+      "path": "backend/deskpet/workflows/store/execution_uow.py",
+      "public": true,
+      "source_hash": "271a970b01d0fa928648d1c6d11a2035e8d64c90afdcc87fad3eae5a8023f884",
+      "symbol": "SqliteExecutionUnitOfWork.claim_admission_launch",
+      "tables": [
+        "execution_continuations",
+        "execution_decisions",
+        "execution_runs",
+        "execution_runtime_state"
       ]
     },
     {
@@ -189,20 +190,23 @@
       "callsites": [
         "backend/deskpet/harness/kernel.py:RunKernel._request_cancel:217",
         "backend/deskpet/workflows/runner.py:WorkflowRunner.request_cancel_precreated:439",
-        "backend/deskpet/workflows/store/execution_uow.py:SqliteExecutionUnitOfWork.finalize_child_and_enqueue_parent_signal:3788"
+        "backend/deskpet/workflows/store/execution_uow.py:SqliteExecutionUnitOfWork.finalize_child_and_enqueue_parent_signal:3995"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
       "path": "backend/deskpet/workflows/store/execution_uow.py",
       "public": true,
-      "source_hash": "ed3aa9df1e277b5459428422eca0ffd3a0b11b13f2d6e5ee113c05455caef464",
+      "source_hash": "d653bc8d197e5d3e89536934c6f7ac7bc135b22e76b2f6d6f6c0815601a6ce03",
       "symbol": "SqliteExecutionUnitOfWork.commit_run_outcome",
       "tables": [
         "execution_child_commands",
         "execution_child_signal_inbox",
+        "execution_continuations",
+        "execution_decisions",
         "execution_deliveries",
         "execution_events",
-        "execution_runs"
+        "execution_runs",
+        "execution_runtime_state"
       ]
     },
     {
@@ -312,7 +316,7 @@
       "kind": "transaction_starter",
       "path": "backend/deskpet/workflows/store/execution_uow.py",
       "public": true,
-      "source_hash": "705bd9a72481294756c36abcfeaaafb4faebe4280d0a958475e8f1bde46548f2",
+      "source_hash": "82590c733cb85006b1fb2b0b28b7aff26d98f9147477f627cfa719432943d065",
       "symbol": "SqliteExecutionUnitOfWork.persist_react_boundary",
       "tables": [
         "execution_continuations",
@@ -359,6 +363,25 @@
       "symbol": "SqliteExecutionUnitOfWork.recovery_scope",
       "tables": [
         "execution_runs"
+      ]
+    },
+    {
+      "authority": "sqlite_execution_uow",
+      "callsites": [],
+      "generic_opcode": false,
+      "kind": "transaction_starter",
+      "path": "backend/deskpet/workflows/store/execution_uow.py",
+      "public": true,
+      "source_hash": "22a9300648a7db52e93adde224d7e08268d4bb9200af790154720fe691a86cda",
+      "symbol": "SqliteExecutionUnitOfWork.resolve_admission",
+      "tables": [
+        "execution_continuations",
+        "execution_decisions",
+        "execution_deliveries",
+        "execution_events",
+        "execution_grants",
+        "execution_runs",
+        "execution_runtime_state"
       ]
     },
     {
@@ -422,18 +445,38 @@
     },
     {
       "authority": "sqlite_execution_uow",
+      "callsites": [],
+      "generic_opcode": false,
+      "kind": "transaction_starter",
+      "path": "backend/deskpet/workflows/store/execution_uow.py",
+      "public": true,
+      "source_hash": "84eab0fcb1a3f8632866dbb0cabdaefa9df02a73d78b55da30dda14edc303594",
+      "symbol": "SqliteExecutionUnitOfWork.start_admission",
+      "tables": [
+        "execution_continuations",
+        "execution_decisions",
+        "execution_deliveries",
+        "execution_events",
+        "execution_runs",
+        "execution_runtime_state"
+      ]
+    },
+    {
+      "authority": "sqlite_execution_uow",
       "callsites": [
         "backend/deskpet/workflows/launcher.py:WorkflowLauncher.launch:348",
         "backend/deskpet/workflows/launcher.py:WorkflowLauncher.retry_from_start_locked:103",
-        "backend/deskpet/workflows/service.py:WorkflowService.start_prepared:870"
+        "backend/deskpet/workflows/service.py:WorkflowService.start_prepared:872"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
       "path": "backend/deskpet/workflows/store/execution_uow.py",
       "public": true,
-      "source_hash": "cec1711ac7529cb878ffab50ffa9641c8e6da9f9ba82030b84c3f558c6c45a00",
+      "source_hash": "2bdc9da13389b12ef0362052c56132d62883147806f9caa57e4efb25c9b17344",
       "symbol": "SqliteExecutionUnitOfWork.start_workflow",
       "tables": [
+        "execution_continuations",
+        "execution_decisions",
         "execution_deliveries",
         "execution_events",
         "execution_runs",
