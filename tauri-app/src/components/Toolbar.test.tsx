@@ -14,13 +14,9 @@ describe("Toolbar primary entries", () => {
         onSkillStore={onSkillStore}
         onFeedback={vi.fn()}
         onExit={vi.fn()}
-        autostartReady
-        autostartEnabled={false}
-        onToggleAutostart={vi.fn()}
         vadStatus="idle"
         isPlaying={false}
         isRecording={false}
-        fps={30}
         connectionState="connected"
         routeKind="cloud"
       />,

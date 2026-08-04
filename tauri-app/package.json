@@ -14,10 +14,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "test:anim": "vitest run src/pet-anim",
-    "test:anim:cov": "vitest run src/pet-anim src/pet-state --coverage",
-    "test:e2e-wire": "vitest run src/pet-anim/__tests__/e2e_wire.test.ts"
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@chenglou/pretext": "^0.0.6",

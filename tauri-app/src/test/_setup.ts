@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * Per-test setup for the pet-anim suite (TDD §5.4).
+ * 全局 per-test setup（原 pet-anim/__tests__/_setup.ts，T4 桌宠删除后迁此）。
  *
  * Wipes localStorage between tests so feature-flag and motion-label
  * fixtures don't leak across cases. `try/catch` is defensive: in
