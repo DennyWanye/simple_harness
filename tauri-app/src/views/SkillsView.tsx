@@ -2,16 +2,17 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * SkillsView stub（T6 交付 props 合同；T10 填充实现，不回头改 App.tsx）。
+ * SkillsView（T10，WB-6）— 技能中心页面宿主。
  *
- * T10 实现面（按 plan）：CapabilityCenterPanel variant:"page" 宿主；
- * onOpenLegacySkillStore 的互跳**本地化**为视图内部 state
- * （center | legacy-store），不再经 App 层双浮层开关。
+ * D5 宿主模式：CapabilityCenterPanel / SkillStorePanel 以 variant:"page"
+ * 内嵌（去 backdrop/fixed，填满内容区），组件本体不重写。
+ * 互跳本地化：onOpenLegacySkillStore / onOpenCapabilityCenter 均只切换
+ * 视图内部 state（center | legacy-store），不经 App 层双浮层开关。
  */
 import React, { useState } from "react";
 
-import { tokens } from "../theme/tokens";
-import { dark } from "../theme/components";
+import { CapabilityCenterPanel } from "../components/CapabilityCenterPanel";
+import { SkillStorePanel } from "../components/SkillStorePanel";
 import type { ControlChannel } from "../ws/ControlChannel";
 
 export interface SkillsViewProps {
@@ -20,10 +21,8 @@ export interface SkillsViewProps {
 }
 
 export const SkillsView: React.FC<SkillsViewProps> = ({ channel }) => {
-  // 互跳 state 本地化（T6 合同即声明；T10 接 CapabilityCenterPanel /
-  // SkillStorePanel 的 page variant）。
-  const [mode] = useState<"center" | "legacy-store">("center");
-  void channel;
+  // 互跳 state 本地化（T6 合同声明；T10 实装）。
+  const [mode, setMode] = useState<"center" | "legacy-store">("center");
   return (
     <section
       data-testid="view-skills"
@@ -33,14 +32,25 @@ export const SkillsView: React.FC<SkillsViewProps> = ({ channel }) => {
         minWidth: 0,
         minHeight: 0,
         display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        color: dark.textMuted,
-        fontFamily: tokens.font.ui,
-        fontSize: tokens.text.base.size,
+        flexDirection: "column",
+        overflow: "hidden",
       }}
     >
-      技能中心视图（T10 实装）— {mode}
+      {mode === "center" ? (
+        <CapabilityCenterPanel
+          open
+          variant="page"
+          channel={channel}
+          onOpenLegacySkillStore={() => setMode("legacy-store")}
+        />
+      ) : (
+        <SkillStorePanel
+          open
+          variant="page"
+          channel={channel}
+          onOpenCapabilityCenter={() => setMode("center")}
+        />
+      )}
     </section>
   );
 };
