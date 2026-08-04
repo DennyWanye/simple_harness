@@ -20,7 +20,6 @@ describe("Toolbar primary entries", () => {
         vadStatus="idle"
         isPlaying={false}
         isRecording={false}
-        fps={30}
         connectionState="connected"
         routeKind="cloud"
       />,

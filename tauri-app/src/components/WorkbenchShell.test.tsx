@@ -94,6 +94,16 @@ describe("WorkbenchShell 视图切换（WB-3）", () => {
     expect(skillsBtn.getAttribute("aria-current")).toBeNull();
     expect(skillsBtn.style.color).not.toBe(ACCENT_RGB);
 
+    // 非激活项 hover 高亮/还原（不改变激活态语义）。
+    fireEvent.mouseEnter(skillsBtn);
+    expect(skillsBtn.style.color).toBe(hexToRgb(dark.text));
+    fireEvent.mouseLeave(skillsBtn);
+    expect(skillsBtn.style.color).toBe(hexToRgb(dark.textMuted));
+    // 激活项 hover 不改色。
+    fireEvent.mouseEnter(chatBtn);
+    fireEvent.mouseLeave(chatBtn);
+    expect(chatBtn.style.color).toBe(ACCENT_RGB);
+
     fireEvent.click(skillsBtn);
     expect(skillsBtn.getAttribute("aria-current")).toBe("page");
     expect(skillsBtn.style.color).toBe(ACCENT_RGB);

@@ -41,7 +41,6 @@ interface Props {
   vadStatus: "idle" | "listening" | "speaking" | "thinking";
   isPlaying: boolean;
   isRecording: boolean;
-  fps: number;
   connectionState: "disconnected" | "connecting" | "connected";
   routeKind: "cloud" | "local" | null;
   /** Push the toolbar down (px) when a top error banner is shown above
@@ -67,7 +66,6 @@ export const Toolbar: React.FC<Props> = ({
   vadStatus,
   isPlaying,
   isRecording,
-  fps,
   connectionState,
   routeKind,
   topOffset,
@@ -153,7 +151,7 @@ export const Toolbar: React.FC<Props> = ({
           录音
         </StatusBadge>
       )}
-      <StatusBadge color={fps >= 30 ? "success" : "danger"}>{fps} FPS</StatusBadge>
+      {/* T4：FPS 徽章删除（随桌宠渲染删除；acceptance 例外清单）。 */}
       <StatusBadge color={getConnColor(connectionState, routeKind)}>
         {getConnLabel(connectionState, routeKind)}
       </StatusBadge>
