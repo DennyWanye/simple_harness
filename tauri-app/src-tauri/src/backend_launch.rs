@@ -207,10 +207,15 @@ pub fn resolve_with_fs(
     Err(ResolveError::NoBackendFound { tried })
 }
 
-/// Default to `<backend_dir>/.venv/Scripts/python.exe` when
-/// `DESKPET_PYTHON` isn't set.
+/// Default venv interpreter when `DESKPET_PYTHON` isn't set:
+/// `<backend_dir>/.venv/Scripts/python.exe` on Windows,
+/// `<backend_dir>/.venv/bin/python` on macOS/Linux (uv/venv layout).
 fn default_venv_python(backend_dir: &Path) -> PathBuf {
-    backend_dir.join(".venv").join("Scripts").join("python.exe")
+    if cfg!(windows) {
+        backend_dir.join(".venv").join("Scripts").join("python.exe")
+    } else {
+        backend_dir.join(".venv").join("bin").join("python")
+    }
 }
 
 // ----------------------------------------------------------------------
@@ -297,8 +302,13 @@ mod tests {
         match out {
             BackendLaunch::Dev { python, backend_dir } => {
                 assert_eq!(backend_dir, PathBuf::from("D:/x/backend"));
-                // Default python path = backend_dir/.venv/Scripts/python.exe
-                assert_eq!(python, PathBuf::from("D:/x/backend/.venv/Scripts/python.exe"));
+                // Default python path follows the platform venv layout.
+                let expected = if cfg!(windows) {
+                    PathBuf::from("D:/x/backend/.venv/Scripts/python.exe")
+                } else {
+                    PathBuf::from("D:/x/backend/.venv/bin/python")
+                };
+                assert_eq!(python, expected);
             }
             other => panic!("expected Dev, got {other:?}"),
         }

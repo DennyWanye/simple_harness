@@ -473,8 +473,10 @@ mod tests {
 
     #[test]
     fn validate_target_path_accepts_normal_path() {
-        let ok = validate_target_path("F:\\deskpet\\data").unwrap();
-        assert_eq!(ok, PathBuf::from("F:\\deskpet\\data"));
+        // 平台各自的"正常绝对路径"写法（Unix 上 F:\… 不是绝对路径）。
+        let input = if cfg!(windows) { "F:\\deskpet\\data" } else { "/data/deskpet" };
+        let ok = validate_target_path(input).unwrap();
+        assert_eq!(ok, PathBuf::from(input));
     }
 
     #[test]

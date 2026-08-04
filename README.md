@@ -16,21 +16,26 @@
 **技术栈：** Tauri 2 + React（前端，sprite Canvas2D 渲染）· Python FastAPI +
 faster-whisper + Silero VAD + edge-tts + Ollama（后端）。
 
-## 快速开始（开发）
+## 快速开始（macOS / Linux，直接跑源码）
+
+不发安装包——像 OpenClaw 那样 clone 下来直接跑：
 
 ```bash
-# 前端 + Tauri 壳（默认 manual edition：设置面板自填 LLM key，无需登录）
-cd tauri-app
-npm install
-npm run tauri:dev
+git clone git@github.com:DennyWanye/simple_harness.git
+cd simple_harness
+./scripts/setup.sh   # 一次性：检查 node/cargo/uv，装前端依赖 + 后端 venv（首次下 torch 较久）
 ```
 
 ```bash
-# 后端（另开终端）
-cd backend
-uv sync
-uv run python main.py
+./scripts/dev.sh     # 日常启动：一条命令拉起 Rust 壳 + 前端 + Python 后端
 ```
+
+`dev.sh` 会设置 `DESKPET_BACKEND_DIR` 指向仓库的 `backend/`，Rust 壳
+自动用 `backend/.venv/bin/python` 拉起后端并在退出时回收，不需要另开终端。
+默认 manual edition：LLM key 在设置面板自填（OpenAI / Anthropic / 本地 Ollama）。
+
+前置依赖：Node ≥ 20、Rust 工具链、[uv](https://docs.astral.sh/uv/)；
+Linux 另需 Tauri 系统库（webkit2gtk 等，`setup.sh` 检测不到会给出安装命令）。
 
 > Windows 付费版（relay edition）构建仍可用 `npm run dev:relay` /
 > `npm run build:relay`，详见 `docs/legacy-deskpet-README.md`。
