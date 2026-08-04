@@ -31,12 +31,38 @@ pub struct BaseDirs {
 
 impl BaseDirs {
     /// Resolve base dirs from the real OS environment.
-    #[cfg(not(test))]
+    ///
+    /// 平台对齐 Python 侧 `backend/paths.py`（platformdirs, roaming=True）：
+    /// Windows `%AppData%` / macOS `~/Library/Application Support` /
+    /// Linux `$XDG_DATA_HOME`（缺省 `~/.local/share`）。调用方统一再
+    /// join("deskpet")，保证 Rust 与 Python 落同一个用户数据目录
+    /// （否则 onboarding 标记 / device_id 与 config/db 分家 — mac 上
+    /// 曾因只读 APPDATA 直接返回 None，onboarding 向导永远弹出）。
+    #[cfg(all(not(test), windows))]
     pub fn from_env() -> Self {
         Self {
             app_data: std::env::var("APPDATA").ok().map(PathBuf::from),
             local_app_data: std::env::var("LOCALAPPDATA").ok().map(PathBuf::from),
         }
+    }
+
+    #[cfg(all(not(test), target_os = "macos"))]
+    pub fn from_env() -> Self {
+        let base = std::env::var("HOME").ok().map(|h| {
+            PathBuf::from(h).join("Library").join("Application Support")
+        });
+        Self { app_data: base.clone(), local_app_data: base }
+    }
+
+    #[cfg(all(not(test), unix, not(target_os = "macos")))]
+    pub fn from_env() -> Self {
+        let home = std::env::var("HOME").ok().map(PathBuf::from);
+        let data = std::env::var("XDG_DATA_HOME")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| home.map(|h| h.join(".local").join("share")));
+        Self { app_data: data.clone(), local_app_data: data }
     }
 
     #[cfg(test)]
