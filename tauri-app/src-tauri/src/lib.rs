@@ -67,6 +67,8 @@ pub fn run() {
             artifact_ops::artifact_show_in_folder,
             artifact_ops::artifact_copy_path,
             artifact_ops::artifact_save_as,
+            // 2026-08-04 Workbench 改版 (WB-7): ArtifactsView 产物列表。
+            artifact_ops::list_artifacts,
             user_data::open_log_dir,
             user_data::open_app_data_dir,
             user_data::purge_user_data,

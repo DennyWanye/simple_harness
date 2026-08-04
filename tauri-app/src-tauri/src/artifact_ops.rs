@@ -270,6 +270,64 @@ fn is_under_any(target: &Path, roots: &[PathBuf]) -> bool {
     false
 }
 
+// ─── ArtifactsView 列表（2026-08-04 Workbench 改版, WB-7 前置）────────
+
+/// 一条产物列表项。`modified_at` 为 Unix epoch 毫秒（JS `new Date(ms)`
+/// 直接可用）；前端 ArtifactsView（T12）只依赖这四个字段的 shape。
+#[derive(Debug, Serialize)]
+pub struct ArtifactListEntry {
+    pub name: String,
+    pub path: String,
+    pub size: u64,
+    pub modified_at: u64,
+}
+
+/// `list_artifacts` 的可测内核：扫描指定目录的**普通文件**（跳过子目录与
+/// 点文件如 .DS_Store），按 modified_at 倒序返回。目录不存在/不可读 →
+/// 空数组（产物库为空是正常态，不是错误）。
+fn list_artifacts_in(dir: &Path) -> Vec<ArtifactListEntry> {
+    let mut out = Vec::new();
+    let Ok(read_dir) = std::fs::read_dir(dir) else {
+        return out;
+    };
+    for entry in read_dir.flatten() {
+        let Ok(md) = entry.metadata() else { continue };
+        if !md.is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') {
+            continue;
+        }
+        let modified_at = md
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        out.push(ArtifactListEntry {
+            name,
+            path: entry.path().to_string_lossy().to_string(),
+            size: md.len(),
+            modified_at,
+        });
+    }
+    out.sort_by(|a, b| b.modified_at.cmp(&a.modified_at));
+    out
+}
+
+/// ArtifactsView 数据源（D4 决策：后端 msg_type 分发链无 artifacts 列表
+/// 命令 → 走 Rust 扫 `<user_data>/artifacts`）。打开/显示文件夹复用上面的
+/// artifact_open / artifact_show_in_folder。
+#[command]
+pub fn list_artifacts() -> Result<Vec<ArtifactListEntry>, String> {
+    let Some(base) = paths::user_data_dir() else {
+        // user_data 未配置 → 没有产物目录 → 空列表（与目录缺失同语义）。
+        return Ok(Vec::new());
+    };
+    Ok(list_artifacts_in(&base.join("artifacts")))
+}
+
 // ─── 4 Commands ──────────────────────────────────────────────
 
 #[command]
@@ -484,6 +542,57 @@ mod tests {
             let p = PathBuf::from("/case/Sensitive");
             assert_eq!(normcase(&p), "/case/Sensitive");
         }
+    }
+
+    // ── list_artifacts（T5b, WB-7 前置）────────────────────────
+
+    #[test]
+    fn list_artifacts_sorts_by_modified_at_desc_and_reports_shape() {
+        let dir = std::env::temp_dir().join(format!(
+            "deskpet-list-artifacts-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // 三个文件，用 File::set_modified 钉死互异 mtime（免 sleep 抖动）。
+        let base = std::time::SystemTime::UNIX_EPOCH
+            + std::time::Duration::from_secs(1_700_000_000);
+        for (name, content, offset_secs) in [
+            ("oldest.pptx", "aa", 0_u64),
+            ("middle.md", "bbbb", 60),
+            ("newest.docx", "cccccc", 120),
+        ] {
+            let path = dir.join(name);
+            std::fs::write(&path, content).unwrap();
+            let f = std::fs::File::options().write(true).open(&path).unwrap();
+            f.set_modified(base + std::time::Duration::from_secs(offset_secs))
+                .unwrap();
+        }
+        // 子目录与点文件必须被跳过。
+        std::fs::create_dir_all(dir.join("subdir")).unwrap();
+        std::fs::write(dir.join(".DS_Store"), b"junk").unwrap();
+
+        let entries = list_artifacts_in(&dir);
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["newest.docx", "middle.md", "oldest.pptx"]);
+        assert_eq!(entries[0].size, 6);
+        assert_eq!(entries[2].size, 2);
+        assert!(entries[0].modified_at > entries[1].modified_at);
+        assert!(entries[1].modified_at > entries[2].modified_at);
+        assert!(entries[0].path.ends_with("newest.docx"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn list_artifacts_missing_dir_returns_empty() {
+        let missing = std::env::temp_dir().join(format!(
+            "deskpet-list-artifacts-missing-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&missing);
+        assert!(list_artifacts_in(&missing).is_empty());
     }
 
     #[test]
