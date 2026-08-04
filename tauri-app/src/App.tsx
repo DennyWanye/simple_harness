@@ -42,7 +42,8 @@ import { MemoryPanel } from "./components/MemoryPanel";
 import { ModelDownloadBanner } from "./components/ModelDownloadBanner";
 import { ContextBreakdownModal } from "./components/ContextBreakdownModal";
 import { ContextTracePanel } from "./components/ContextTracePanel";
-import { SettingsPanel } from "./components/SettingsPanel";
+import { WorkbenchShell, type WorkbenchView } from "./components/WorkbenchShell";
+import { dark } from "./theme/components";
 import {
   PET_MODELS,
   DEFAULT_PET_MODEL_ID,
@@ -73,8 +74,6 @@ import { PermissionPopup } from "./components/PermissionPopup";
 import { ExternalWaitDialog } from "./components/ExternalWaitDialog";
 import { ApprovalCenterPanel } from "./components/ApprovalCenterPanel";
 import { ClarificationDialog } from "./components/ClarificationDialog";
-import { SkillStorePanel } from "./components/SkillStorePanel";
-import { CapabilityCenterPanel } from "./components/CapabilityCenterPanel";
 import { Toolbar } from "./components/Toolbar";
 import { Icon } from "./components/Icon";
 // WI-01/02 (beta-100): first-run onboarding wizard + in-app feedback.
@@ -789,8 +788,9 @@ function App() {
   // P4-S11 §16.5 — ContextTrace panel (decision timeline + token budget)
   const [traceOpen, setTraceOpen] = useState(false);
 
-  // P2-1-S3 — settings panel toggle (cloud account / strategy / daily budget).
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  // T6 (workbench-ui) — 工作台视图 state（D2：App 层 useState 下传
+  // WorkbenchShell，不引路由库）。设置/技能中心由浮层改为视图页面。
+  const [view, setView] = useState<WorkbenchView>("chat");
   // 桌宠形象选择（设置面板下拉 + localStorage 记住）。改 petModelId →
   // 下方 PetCanvas 的 key 变 → 组件 remount → init 重跑加载新模型 →
   // 立即换形象（无需重启 app）。
@@ -813,14 +813,11 @@ function App() {
     };
   }, []);
   const petModel = resolvePetModel(availableModels, petModelId);
-  const handlePetModelChange = (id: string): void => {
-    setPetModelId(id);
-    try {
-      localStorage.setItem(PET_MODEL_LS_KEY, id);
-    } catch {
-      /* localStorage 不可用 — 非致命，本次会话内仍切换 */
-    }
-  };
+  // T6：handlePetModelChange（唯一消费点 = SettingsPanel 浮层挂载）随
+  // 三浮层拆除一并删除；petModelId/availableModels/petModel 派生仍供
+  // PetCanvas JSX 消费，归 T4 一并删。setter 引用一次以满足
+  // noUnusedLocals（T4 将整删本块）。
+  void setPetModelId;
 
   // WI-01 (beta-100): first-run onboarding. `onboardingNeeded` flips
   // true only when Rust reports no completion marker. Conservative on
@@ -891,10 +888,8 @@ function App() {
   const { current: clarificationCurrent, resolve: resolveClarification } =
     useClarificationRequests(permissionChannel);
 
-  // Capability Center is the default entry. The original Skill Store remains
-  // available as a compatibility view for installed/marketplace skills.
-  const [capabilityCenterOpen, setCapabilityCenterOpen] = useState(false);
-  const [skillStoreOpen, setSkillStoreOpen] = useState(false);
+  // T6：能力中心 / SkillStore 浮层 open state 已拆除 —— 二者页面化为
+  // SkillsView（T10 实装，互跳 state 本地化在视图内部）。
 
   // VN 底栏 —— 最新用户输入（驱动 UserBubble 淡出计时）+ 历史面板开关。
   const [latestUserInput, setLatestUserInput] = useState<string | null>(null);
@@ -2093,9 +2088,9 @@ function App() {
         position: "relative",
         width: "100vw",
         height: "100vh",
-        // 主桌宠窗口必须保持透明，让人物像真正站在桌面上。暗色主题只
-        // 应用于工具栏、输入框和功能面板，不能把整个桌宠窗口涂成色块。
-        background: "transparent",
+        // T6 (workbench-ui)：主窗普通化 — 不再透明/drag-region，工作台
+        // 深色底（WB-1/WB-3）。
+        background: dark.bgSolid,
         overflow: "hidden",
       }}
     >
@@ -2106,28 +2101,31 @@ function App() {
         <RelayEdition adapter={relayAdapter} openAccountRef={openAccountRef} />
       )}
 
-      {/* 2026-05-19: 消息面板已抽成**独立窗口**（message-panel），不再
-          内嵌于桌宠窗。这里不再渲染 aside —— 桌宠窗保持「仅桌宠、全
-          透明、零死区」。面板的开关 = Rust open/close_message_panel。 */}
-
-      {/* 桌宠壳：透明 + `data-tauri-drag-region`。所有现有
-          absolute 覆盖层(DialogBar / 输入条 / 气泡 / 弹窗)相对此壳
-          定位，与改造前一致 → 行为零回归。空白透明区拖动 = 移动桌宠。 */}
-      <div
-        data-tauri-drag-region
-        style={{
-          // 2026-05-19: 消息面板已是独立窗口，桌宠窗尺寸恒定（见
-          // tauri.conf.json，永不 resize）。因此桌宠壳直接**铺满整个
-          // 窗口**——不再 right:0+width:282 的「贴右固定宽」（那是旧的
-          // resize 抗抖 hack，留下 18px 死区还让工具栏溢出被裁）。所有
-          // absolute 覆盖层以本壳为定位上下文，宽度=整窗 → 工具栏/
-          // DialogBar 不再裁切，▶ tab 在真正的窗口左缘。
-          position: "absolute",
-          inset: 0,
-          backgroundColor: "transparent",
-          overflow: "hidden",
+      {/* T6 — 工作台壳：Sidebar 240px + 内容区。view state 在 App 层
+          （D2），视图 props 走显式合同（见 WorkbenchShell 文件头）。
+          petError 横幅插槽由 banner prop 承接（T4 搬迁落位）。 */}
+      <WorkbenchShell
+        view={view}
+        onViewChange={setView}
+        connectionState={state}
+        chatProps={{ activeSid, secret }}
+        skillsProps={{ channel: permissionChannel }}
+        settingsProps={{
+          getChannel: getControlChannel,
+          lastMessage,
+          secret,
+          relayAdapter,
+          onConfigChanged: () => setRouteKind(null),
+          autostart: {
+            ready: autostart.ready,
+            enabled: autostart.enabled,
+            toggle: autostart.toggle,
+          },
         }}
-      >
+      />
+
+      {/* 过渡期（T6→T4/T8 之间）：以下桌宠 absolute 覆盖层以根 div
+          为定位上下文继续挂载，T4 删除面按 plan 收走。 */}
       {/* 2026-05-19 — 错误提示条：钉在桌宠列最顶端、工具栏之上，整列
           通宽，绝不遮挡桌宠人物。用户手动 ✕ 关闭（不自动消失，避免
           没注意到就没了）。错误同时不再灌进底部 DialogBar。 */}
@@ -2263,26 +2261,8 @@ function App() {
       <PetDNDBadge visible={dndActiveUI} />
 
 
-      <CapabilityCenterPanel
-        open={capabilityCenterOpen}
-        channel={permissionChannel}
-        onClose={() => setCapabilityCenterOpen(false)}
-        onOpenLegacySkillStore={() => {
-          setCapabilityCenterOpen(false);
-          setSkillStoreOpen(true);
-        }}
-      />
-
-      {/* Legacy Skill Store remains reachable while capability packs migrate. */}
-      <SkillStorePanel
-        open={skillStoreOpen}
-        channel={permissionChannel}
-        onClose={() => setSkillStoreOpen(false)}
-        onOpenCapabilityCenter={() => {
-          setSkillStoreOpen(false);
-          setCapabilityCenterOpen(true);
-        }}
-      />
+      {/* T6：CapabilityCenterPanel / SkillStorePanel 浮层挂载已拆除 ——
+          页面化为 SkillsView（T10 实装；互跳本地化在视图内部）。 */}
 
       <DialogBar
         latestAssistant={
@@ -2564,8 +2544,8 @@ function App() {
       <Toolbar
         onMemory={() => setMemoryOpen(true)}
         onTrace={() => setTraceOpen(true)}
-        onSettings={() => setSettingsOpen(true)}
-        onSkillStore={() => setCapabilityCenterOpen(true)}
+        onSettings={() => setView("settings")}
+        onSkillStore={() => setView("skills")}
         onFeedback={() => setFeedbackOpen(true)}
         onExit={handleBootExit}
         onAccount={
@@ -2624,19 +2604,9 @@ function App() {
         getChannel={getControlChannel}
       />
 
-      {/* P2-1-S3 settings overlay (cloud / strategy / daily budget) */}
-      <SettingsPanel
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        getChannel={getControlChannel}
-        lastMessage={lastMessage}
-        secret={secret}
-        onConfigChanged={() => setRouteKind(null)}
-        relayAdapter={relayAdapter}
-        petModels={availableModels}
-        currentPetModelId={petModelId}
-        onPetModelChange={handlePetModelChange}
-      />
+      {/* T6：SettingsPanel 浮层挂载已拆除 —— 页面化为 SettingsView
+          （T11 实装 SettingsPanel variant:"page" 宿主，props 经
+          WorkbenchShell settingsProps 合同下传）。 */}
 
       {/* P2-1-S8 budget-exceeded toast */}
       {budgetToast && (
@@ -2741,7 +2711,6 @@ function App() {
           50% { opacity: 0.7; transform: scale(1.1); }
         }
       `}</style>
-      </div>
     </div>
   );
 }
