@@ -2,16 +2,21 @@
 
 > 最后更新：2026-08-04（simple_harness fork 后校准）
 
-## 0. Fork 后的渲染层现状（2026-08-04）
+## 0. Workbench 工作台架构（2026-08-05 改版落地）
 
-- Live2D 全链路已移除（pixi.js / pixi-live2d-display / cubismcore / Hiyori 资产）。
-  角色由 `components/PetCanvas.tsx` 驱动 `pet-engine`（SpritePetEngine 参数字典）+
-  `components/petCharacter.ts`（立绘 PNG / 程序化角色 Canvas2D 绘制）+
-  `components/petTransform.ts`（pet-anim 参数 → 整体变换）渲染，经 toBlob→<img>
-  管线显示（WebView2 透明窗合成限制的历史产物，mac 上同样可用）。
-- 主窗仍为无边框透明桌宠窗（默认 500×640，min 360×360），mac 依赖 tauri `macos-private-api`。
-- ⚠️ 本节描述的桌宠渲染层已被「Workbench UI 改版」验收（acceptance.md WB-1..12）
-  列为删除对象：主窗将改普通工作台窗口、桌宠渲染全链路移除。改版落地后本节删除。
+- 主窗为普通桌面窗口（系统标题栏，默认 1000×700，min 800×560，进 Dock/任务栏），
+  桌宠渲染全链路（pet-anim/pet-engine/PetCanvas/petCharacter/petTransform）与
+  message-panel 第二窗口已删除（acceptance「Workbench UI 改版」节，行为契约 B1-B13）。
+- 布局：App 层 `useState<WorkbenchView>` → `components/WorkbenchShell.tsx`
+  （Sidebar 240px + 内容区）；四视图 `views/`：ChatView（常挂载，消息面板内容区迁入，
+  含 Harness 巡检/模型切换/ContextRing/CompanionDetailModal/InputBar）、SkillsView、
+  ArtifactsView（Rust `list_artifacts` command 数据源）、SettingsView（SettingsPanel
+  page variant）。会话列表 `components/SessionList.tsx` 挂侧栏。
+- 双控制连接保留：App ControlChannel（identity_bind）+ controlWs 单例
+  （companion_action，label=main——五处硬编码已迁移：前端常量/Rust 白名单/
+  Python 白名单/ingress 标签/companion.db 迁移 007）。连接徽章双源取最差态。
+- message-panel/ 目录退役，公共件迁 `src/chat/`（sessionHydration/topicTitle/
+  messageVisibility/HarnessInspectorPanel/HarnessRunGraph/projectDirectoryState）。
 
 ## 1. 主题事实
 

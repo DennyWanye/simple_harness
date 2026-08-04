@@ -22,3 +22,11 @@
 
 phase-3/4 收口时上述四命令重跑：任何新增 FAIL/error 即回归，阻断交付；
 测试数量因删除桌宠测试而减少是预期内变化（WB-9/12），以"剩余测试全绿"为准。
+
+## 补记（2026-08-05，波次 1 后）
+
+- **backend companion 套件本机既有红（改动前即存在，组 R 逐条 md5 比对确认非本次引入）**：
+  9 failed / 641 passed / 10 skipped——test_performance durability-lane ×8、
+  candidate_draft_receipts（v19→v20）、skill_pack_adapter 库存 hash。T16 收口按
+  "不低于基线"判定：companion 回归以 9F/641P 为基线（007 净增 1 绿）。
+- pytest 需 `PYTHONPATH=<repo根>` 且 venv 已增量装 pytest 9.1.1 + pytest-asyncio 1.4.0。

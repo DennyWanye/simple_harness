@@ -20,7 +20,7 @@
                          ▼
 ┌─────────────────────────────────────────────────────────────┐
 │             Frontend (React + Vite, tauri-app/src/)         │
-│  • Sprite 渲染（自研 Canvas2D，petCharacter/pet-engine）      │
+│  • Workbench 工作台 UI（侧栏 + 会话/技能/产物/设置四视图）    │
 │  • 对话 UI / 设置面板 / Code Panel                            │
 │  • Zustand stores：sessions / providers / pet state          │
 │  • WebSocket 连后端 control channel                          │
@@ -78,16 +78,13 @@ deskpet/
 │   ├── vite.config.ts        Vite 配置（HMR 端口 / 后端代理）
 │   ├── src/                  TypeScript / React 源码
 │   │   ├── App.tsx           顶层布局
-│   │   ├── components/       UI 组件（设置、对话、PetCanvas）
+│   │   ├── components/       UI 组件（WorkbenchShell/Sidebar/SessionList/设置）
+│   │   ├── views/            四视图（Chat/Skills/Artifacts/Settings）
+│   │   ├── chat/             会话公共件（hydration/巡检面板/目录确认）
 │   │   ├── auth/             登录适配（manual / relay 两套）
-│   │   ├── code-panel/       Code Panel（多 session 代码模式）
-│   │   ├── message-panel/    宠物左侧留言板
-│   │   ├── pet-anim/         动画状态机
-│   │   ├── pet-engine/       自研 sprite 引擎（参数字典 + .dpet 格式）
-│   │   ├── pet-state/        宠物状态 store
+│   │   ├── code-panel/       Code Panel + controlWs + InputBar
 │   │   └── stores/           Zustand stores
-│   ├── public/
-│   │   └── assets/pet/       立绘 PNG（character.png，可选）
+│   ├── public/               静态资源
 │   └── src-tauri/            Rust 原生层
 │       ├── Cargo.toml        Rust 依赖
 │       ├── tauri.conf.json   Tauri 配置
@@ -195,7 +192,7 @@ OSS 用户走 `manual`；维护者带 relay 服务的用 `relay`。两套共享�
 | 加新 LLM Provider | `backend/llm/<provider>_adapter.py` |
 | 加新工具（被 LLM 调用） | `backend/deskpet/tools/<tool>.py` + 注册到 registry |
 | 加新内置 skill | `backend/deskpet/skills/builtin/<skill>/SKILL.md` |
-| 换桌宠立绘 | 放置 `tauri-app/public/assets/pet/character.png`（透明背景 PNG）|
+| 切换工作台视图 | 侧栏导航（会话/技能中心/产物库/设置）|
 | 加新 UI 面板 | `tauri-app/src/components/<Panel>.tsx` + 接 store |
 | 加新 IPC command (Tauri) | `tauri-app/src-tauri/src/<feature>.rs` + 注册到 invoke handler |
 
@@ -210,4 +207,4 @@ OSS 用户走 `manual`；维护者带 relay 服务的用 `relay`。两套共享�
 
 ---
 
-*Last updated: 2026-08-04（simple_harness fork 校准）*
+*Last updated: 2026-08-05（Workbench UI 改版落地）*

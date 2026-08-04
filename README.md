@@ -13,8 +13,11 @@
    `device`/`compute_type` 默认 `"auto"`（Windows+NVIDIA → CUDA fp16，
    Mac / 无卡机器 → CPU int8）；打包目标含 `dmg`/`app`。
 
-**技术栈：** Tauri 2 + React（前端，sprite Canvas2D 渲染）· Python FastAPI +
-faster-whisper + Silero VAD + edge-tts + Ollama（后端）。
+**技术栈：** Tauri 2 + React（工作台 UI：侧栏 + 会话/技能/产物/设置四视图）·
+Python FastAPI（后端；语音规划走中转站 Realtime）。
+
+> 2026-08-05：桌宠形态退役，改版为普通窗口工作台（见
+> `plans/2026-08-04-workbench-ui/` 与 `ARCHITECTURE/UI.md`）。
 
 ## 架构文档
 
