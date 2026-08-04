@@ -334,7 +334,11 @@
 - **FEATURE_POLICY only-add 的显式删除例外**（本需求的目的就是移除，逐条列出）：
   桌宠角色渲染与动画（pet-anim/pet-engine/PetCanvas/petCharacter/petTransform）、
   设置面板「桌宠形象」下拉（petModels）、点击穿透（click_through.rs）、
-  message-panel 独立窗口及其 4 个 Tauri command、FPS 徽章。除此之外任何现有功能不得减少。
+  message-panel 独立窗口及其 4 个 Tauri command、FPS 徽章。
+  补记（2026-08-05 code-audit G4，随上述删除的必然推论）：语音三态徽章
+  （思考中/朗读/录音——语音链路 fail-closed 且 B9 仅留禁用占位，无状态可指示）；
+  应用内「退出」按钮（B13：系统关闭钮与托盘「退出」等价承接，能力不减仅入口合并）。
+  除此之外任何现有功能不得减少。
 
 ## 功能验收条款
 

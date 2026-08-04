@@ -1,17 +1,16 @@
 # Simple Harness
 
-跨平台桌面 AI 伙伴：sprite 自研渲染桌宠 + 全本地语音交互管线（VAD → ASR → LLM → TTS）。
+跨平台桌面 AI 工作台：会话 / 技能中心 / 产物库 / 设置四视图 + 本地后端 Agent 能力（语音规划走中转站 Realtime）。
 
-由 [DeskPet](https://github.com/DennyWanye/deskpet-private) 分叉而来，两个核心变化：
+由 [DeskPet](https://github.com/DennyWanye/deskpet-private) 分叉而来，经两次改版：
 
-1. **彻底移除 Live2D** —— 渲染改为 100% 原创的 sprite 引擎（Canvas2D），零第三方版权资产。
-   内置程序化角色开箱即用；把透明背景立绘 PNG 放到
-   `tauri-app/public/assets/pet/character.png` 即自动切换为立绘渲染。
-   pet-anim 动画系统（眨眼 / 视线跟随 / 口型同步 / 拖拽反应等）完整保留，
-   通过 `pet-engine` 的参数字典驱动 sprite 变换。
-2. **macOS 支持** —— NVIDIA/NVML 前置检查仅在 Windows 生效；ASR 的
-   `device`/`compute_type` 默认 `"auto"`（Windows+NVIDIA → CUDA fp16，
-   Mac / 无卡机器 → CPU int8）；打包目标含 `dmg`/`app`。
+1. **fork（2026-08-04）**：移除 Live2D 全链路（零第三方版权资产）+ macOS 支持
+   （NVML 检查仅 Windows；ASR device/compute "auto"：Win+NVIDIA→CUDA fp16，
+   Mac→CPU int8）。
+2. **Workbench 改版（2026-08-05）**：桌宠形态退役，改为普通窗口工作台——侧栏
+   （会话列表 + 技能中心 + 产物库 + 底部设置）+ 常挂载 ChatView（消息流/Harness
+   巡检/模型切换/ContextRing）；companion 特权链路整体迁移到主窗（五处硬编码
+   同步：前端常量/Rust 白名单/Python 白名单/ingress 标签/companion.db 迁移 007）。
 
 **技术栈：** Tauri 2 + React（工作台 UI：侧栏 + 会话/技能/产物/设置四视图）·
 Python FastAPI（后端；语音规划走中转站 Realtime）。
@@ -48,19 +47,20 @@ Linux 另需 Tauri 系统库（webkit2gtk 等，`setup.sh` 检测不到会给出
 > Windows 付费版（relay edition）构建仍可用 `npm run dev:relay` /
 > `npm run build:relay`，详见 `docs/legacy-deskpet-README.md`。
 
-## 与 DeskPet 的差异清单
+## 与 DeskPet 的差异清单（Workbench 改版后现状）
 
-- 删除：`live2dcubismcore`、`pixi-live2d-display`、`pixi.js` 依赖；
-  `public/lib/live2dcubismcore.min.js`；`public/assets/live2d/`（Hiyori 等模型）；
-  `licenses/LIVE2D-*.md`。
-- `Live2DCanvas` → `PetCanvas`：渲染循环直接驱动 `pet-engine`（SpritePetEngine）+
-  `petCharacter`（立绘/程序化角色）+ `petTransform`（参数 → 整体变换）。
-- `gpu_check`（NVML）模块与 `nvml-wrapper` 依赖挂到 `cfg(windows)`。
-- `tauri.conf.json`：窗口去掉硬编码多屏坐标改为 `center`；开启
-  `macOSPrivateApi`（macOS 透明无边框窗）；updater 暂时停用（原 DeskPet
-  更新源不适用，待新发布渠道就绪后重开）。
-- 自研 `.dpet` 模型格式（`pet-engine/dpet-format.ts`）保留为未来 `mesh`
-  后端的扩展点。
+- 删除（fork 期）：Live2D 全链路——`live2dcubismcore`/`pixi-live2d-display`/`pixi.js`
+  依赖、cubismcore 运行时、`assets/live2d/` 模型、`licenses/LIVE2D-*.md`。
+- 删除（Workbench 改版）：桌宠渲染与动画全部子系统（pet-anim/pet-engine/
+  PetCanvas/petCharacter/petTransform/.dpet 格式）、message-panel 第二窗口、
+  点击穿透、FPS 徽章、桌宠形象选择。
+- 新增：工作台 UI（`WorkbenchShell`/`Sidebar`/`SessionList` + 四视图 `views/`）；
+  产物库（Rust `list_artifacts` command）；窗口几何真持久化（用户拖拽尺寸）。
+- companion 特权链路：仅主窗（`main` label）可发起——前端常量/Rust 白名单/
+  Python 白名单/ingress 标签/companion.db 迁移 007 五处一体迁移。
+- `gpu_check`（NVML）模块与 `nvml-wrapper` 依赖挂 `cfg(windows)`。
+- `tauri.conf.json`：普通窗口（decorations，1000×700，进 Dock）；`macOSPrivateApi`
+  已随透明窗退役移除；updater 暂时停用（原 DeskPet 更新源不适用）。
 
 ## 许可证
 

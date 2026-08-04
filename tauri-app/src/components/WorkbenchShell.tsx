@@ -21,7 +21,7 @@
  *                     onConfigChanged, autostart }（六项，autostart 为
  *                     第 7 轮补入，供 T11 自启开关落位）
  *
- * banner 插槽：顶部横幅区域（T4 把 petError 以 bannerStyle("danger")
+ * banner 插槽：顶部横幅区域（T4 把 petError 以 bannerStyle("error")
  * 形态搬迁进来；relay 供给分支保留）。
  */
 import React from "react";
