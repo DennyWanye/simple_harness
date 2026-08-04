@@ -28,7 +28,7 @@ import React from "react";
 
 import { tokens } from "../theme/tokens";
 import { dark } from "../theme/components";
-import { Sidebar } from "./Sidebar";
+import { Sidebar, type RouteKind, type SidebarMoreActions } from "./Sidebar";
 import type { SessionListProps } from "./SessionList";
 import { ChatView, type ChatViewProps } from "../views/ChatView";
 import { SkillsView, type SkillsViewProps } from "../views/SkillsView";
@@ -50,6 +50,10 @@ export interface WorkbenchShellProps {
   settingsProps: SettingsViewProps;
   /** T7（WB-5）：Sidebar「会话」展开区的会话列表 props。 */
   sessionProps?: SessionListProps;
+  /** T13：路由指示（cloud/local）— 侧栏连接徽章文案输入。 */
+  routeKind?: RouteKind;
+  /** T13：侧栏「更多」折叠组入口（记忆/Trace/反馈/账户）。 */
+  moreActions?: SidebarMoreActions;
 }
 
 export const WorkbenchShell: React.FC<WorkbenchShellProps> = ({
@@ -61,6 +65,8 @@ export const WorkbenchShell: React.FC<WorkbenchShellProps> = ({
   skillsProps,
   settingsProps,
   sessionProps,
+  routeKind,
+  moreActions,
 }) => {
   return (
     <div
@@ -83,6 +89,8 @@ export const WorkbenchShell: React.FC<WorkbenchShellProps> = ({
         onViewChange={onViewChange}
         connectionState={connectionState}
         sessionProps={sessionProps}
+        routeKind={routeKind}
+        moreActions={moreActions}
       />
 
       {/* 内容区 — flex:1 + min-width:0（防止子内容把布局撑破，WB-3

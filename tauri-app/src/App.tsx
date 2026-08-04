@@ -6,7 +6,6 @@ import { V2_CLIENT_VERSION } from "./ws/ControlChannel";
 void V2_CLIENT_VERSION; // silence unused import (re-exported for diagnostics later)
 import { MemoryPanel } from "./components/MemoryPanel";
 import { ModelDownloadBanner } from "./components/ModelDownloadBanner";
-import { ContextBreakdownModal } from "./components/ContextBreakdownModal";
 import { ContextTracePanel } from "./components/ContextTracePanel";
 import { WorkbenchShell, type WorkbenchView } from "./components/WorkbenchShell";
 import { dark, bannerStyle } from "./theme/components";
@@ -28,7 +27,6 @@ import { PermissionPopup } from "./components/PermissionPopup";
 import { ExternalWaitDialog } from "./components/ExternalWaitDialog";
 import { ApprovalCenterPanel } from "./components/ApprovalCenterPanel";
 import { ClarificationDialog } from "./components/ClarificationDialog";
-import { Toolbar } from "./components/Toolbar";
 // WI-01/02 (beta-100): first-run onboarding wizard + in-app feedback.
 import { OnboardingWizard } from "./components/OnboardingWizard";
 import { FeedbackPanel } from "./components/FeedbackPanel";
@@ -36,7 +34,6 @@ import { onboardingStatus, onboardingComplete } from "./bindings/onboarding";
 import { buildDiagnosticBundle } from "./bindings/diagnostics";
 import { updateCloudConfig } from "./bindings/config";
 import { useAudioChannel } from "./hooks/useAudioChannel";
-import { useAudioRecorder } from "./hooks/useAudioRecorder";
 import { useAudioPlayer } from "./hooks/useAudioPlayer";
 import { useUpdateChecker } from "./hooks/useUpdateChecker";
 import { useAutostart } from "./hooks/useAutostart";
@@ -245,11 +242,9 @@ function App() {
   const autostart = useAutostart();
   // T8：App 自建 messages 数组删除 —— 消息渲染统一由 sessionsStore →
   // ChatView(MessageStreamPanel) 承担（单一权威读模型）。
-  const [vadStatus, setVadStatus] = useState<
-    "idle" | "listening" | "speaking" | "thinking"
-  >("idle");
+  // T13：vadStatus 状态删除 —— 唯一读端（Toolbar 思考中/朗读/录音徽章）
+  // 随 Toolbar 退役；语音链路本身早已 fail-closed（VOICE_INPUT_ENABLED）。
 
-  const sessions = useSessionsStore((s) => s.sessions);
   const applySupervisorAlert = useSessionsStore((s) => s.apply_supervisor_alert);
   const ensureSession = useSessionsStore((s) => s.ensure);
   const switchActiveSid = useCallback(
@@ -508,8 +503,8 @@ function App() {
 
   // S14 — memory management panel toggle.
   const [memoryOpen, setMemoryOpen] = useState(false);
-  // 2026-05-31 restore — context-usage breakdown modal (ring drill-down).
-  const [contextModalOpen, setContextModalOpen] = useState(false);
+  // T13：contextModalOpen 删除 —— 上下文钻取模态与其环形入口都在
+  // ChatView（T8）；App 层不再有打开点。
   // P4-S11 §16.5 — ContextTrace panel (decision timeline + token budget)
   const [traceOpen, setTraceOpen] = useState(false);
 
@@ -591,16 +586,13 @@ function App() {
 
   // Audio channel (voice pipeline)。T8：state(audioState) 的唯一读端
   // （底部 mic 按钮 disabled 判定）随输入条退役，不再解构。
+  // T13：useAudioRecorder 摘除 —— T8 起已无 start/stop 调用点（录音
+  // 不可达），最后的读端（Toolbar 录音徽章）随 Toolbar 退役；语音重建
+  // 走中转站 Realtime（B9），不复用此旧管线。
   const {
     lastMessage: audioMessage,
-    sendAudio,
     getChannel,
   } = useAudioChannel(BACKEND_PORT, secret, VOICE_INPUT_ENABLED);
-
-  // Audio recorder (microphone → PCM16 → backend)。T8：start/stop 的
-  // 调用点（toggleRecording）随底部输入条退役；isRecording 仍供
-  // Toolbar 状态徽章消费（T13 一并收走）。
-  const { isRecording } = useAudioRecorder(sendAudio);
 
   // Audio player — P2-2-M2 起走 PCM16 24kHz 流式播放（jitter buffer →
   // WebAudio 时间轴调度），不再需要等 tts_end 做整段 MP3 解码。
@@ -809,15 +801,12 @@ function App() {
     switch (audioMessage.type) {
       case "vad_event":
         if (audioMessage.payload.status === "speech_start") {
-          setVadStatus("speaking");
           // 前端 VAD 在后端 BargeInFilter 之前先触发：立刻淡出在播音频
           // + 清 jitter buffer，避免给后端 TTS 打断事件到达前还在灌声。
           if (isPlaying) {
             bargeIn();
           }
           resetPlaybackBuffer();
-        } else {
-          setVadStatus("thinking");
         }
         break;
 
@@ -861,11 +850,8 @@ function App() {
         }
         break;
 
-      case "tts_end":
-        // T4：口型驱动（fadeMouthToZero/flushVisemeQueue/mouthOpenY）
-        // 随桌宠删除；音频播放状态机保留。
-        setVadStatus("listening");
-        break;
+      // T4：tts_end 的口型驱动随桌宠删除；T13：其 vadStatus 更新随
+      // Toolbar 徽章退役 —— 分支整体移除，音频播放状态机不受影响。
 
       // T4：tts_viseme / pet_milestone 分支删除 —— 均为桌宠口型/庆祝
       // 驱动（桌宠删除例外清单）。音频播放本身不受影响。
@@ -904,7 +890,6 @@ function App() {
             ?.active_run_id,
       },
     });
-    setVadStatus("idle");
   }, [stopPlayback, resetPlaybackBuffer, getControlChannel]);
 
   useEffect(() => {
@@ -1083,6 +1068,16 @@ function App() {
         }
         chatProps={{ activeSid, secret }}
         sessionProps={{ activeSid, onSwitchSid: switchActiveSid }}
+        routeKind={routeKind}
+        moreActions={{
+          onMemory: () => setMemoryOpen(true),
+          onTrace: () => setTraceOpen(true),
+          onFeedback: () => setFeedbackOpen(true),
+          onAccount:
+            relayAdapter && relayAuthed
+              ? () => openAccountRef.current?.()
+              : undefined,
+        }}
         skillsProps={{ channel: permissionChannel }}
         settingsProps={{
           getChannel: getControlChannel,
@@ -1097,9 +1092,6 @@ function App() {
           },
         }}
       />
-
-      {/* 过渡期（T8→T13 之间）：Toolbar absolute 覆盖层以根 div 为定位
-          上下文继续挂载，T13 按 plan 收走（入口移侧栏）。 */}
 
       {/* P4-S20 — 权限请求弹窗（最高 zIndex） */}
       <PermissionPopup
@@ -1139,30 +1131,11 @@ function App() {
           ChatView（B9）；打断入口保留 Esc 快捷键（handleInterrupt）。 */}
 
 
-      {/* Toolbar — P4-S20-UI revamp: token-based, grouped, hover/focus states.
-          P4-S21 #7: now includes a Quit (⏻) button so users don't need
-          Task Manager to close the pet after startup. */}
-      <Toolbar
-        onMemory={() => setMemoryOpen(true)}
-        onTrace={() => setTraceOpen(true)}
-        onSettings={() => setView("settings")}
-        onSkillStore={() => setView("skills")}
-        onFeedback={() => setFeedbackOpen(true)}
-        onExit={handleBootExit}
-        onAccount={
-          relayAdapter && relayAuthed
-            ? () => openAccountRef.current?.()
-            : undefined
-        }
-        vadStatus={vadStatus}
-        isPlaying={isPlaying}
-        isRecording={isRecording}
-        connectionState={state}
-        routeKind={routeKind}
-        topOffset={petError ? 66 : undefined}
-        contextUsage={sessions[activeSid]?.context_usage ?? null}
-        onContextRingClick={() => setContextModalOpen(true)}
-      />
+      {/* T13：Toolbar 退役（入口迁移矩阵）——记忆/Trace/反馈/账户入口
+          移侧栏「更多」折叠组；设置/能力中心入口=侧栏导航项（T6 起）；
+          连接状态徽章移侧栏底部（双源聚合）；ContextRing 在 ChatView
+          头部条（T8）；退出按钮移窗口层（系统关闭钮=完全退出 B13，
+          tray 仍有退出）；自启开关归设置页（T11）。 */}
 
       {/* S14 memory management overlay */}
       <MemoryPanel
@@ -1175,24 +1148,8 @@ function App() {
       {/* Option A: 首启模型下载进度（瘦包后台从 hf-mirror 拉模型时显示） */}
       <ModelDownloadBanner getChannel={getControlChannel} />
 
-      {/* 2026-05-31 restore — Context usage breakdown (ring drill-down) */}
-      <ContextBreakdownModal
-        open={contextModalOpen}
-        onClose={() => setContextModalOpen(false)}
-        sessionId={activeSid}
-        snapshot={sessions[activeSid]?.context_usage ?? null}
-        send={(m) => {
-          const ch = getControlChannel();
-          if (ch) {
-            try { ch.send(m); } catch (e) { console.warn("[ContextModal] send failed:", e); }
-          }
-        }}
-        onMessage={(fn) => {
-          const ch = getControlChannel();
-          if (!ch) return () => {};
-          return ch.onMessage(fn);
-        }}
-      />
+      {/* T13：App 层 ContextBreakdownModal 退役 —— 环形入口与钻取模态
+          都在 ChatView（T8，controlWS 传输），Toolbar 环随 Toolbar 收走。 */}
 
       {/* P4-S11 ContextTrace overlay */}
       <ContextTracePanel

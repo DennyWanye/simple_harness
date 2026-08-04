@@ -9,7 +9,21 @@
  */
 import { useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+// controlWS 单例 mock：Sidebar 连接徽章（useControlWsState）与 ChatView/
+// SessionList 的订阅在 jsdom 下不真正开 socket（T13 聚合断言可控源）。
+vi.mock("../code-panel/controlWs", () => ({
+  controlWS: {
+    send: vi.fn(() => true),
+    send_command: vi.fn(() => true),
+    send_companion_action: vi.fn(async () => true),
+    on_message: vi.fn(() => () => {}),
+    state: vi.fn(() => "connected"),
+  },
+}));
+
+import { controlWS } from "../code-panel/controlWs";
 
 // vitest 未开 globals — testing-library 的自动 cleanup 不生效，手动挂。
 afterEach(cleanup);
@@ -156,5 +170,81 @@ describe("WorkbenchShell 紧凑尺寸样式（WB-3 min 800×560）", () => {
     // 插槽是内容区第一个子元素（视图之上）。
     const content = screen.getByTestId("workbench-content");
     expect(content.firstElementChild).toBe(slot);
+  });
+});
+
+describe("Sidebar T13 — 「更多」入口与连接徽章聚合（WB-3）", () => {
+  function renderWithMore(overrides?: {
+    connectionState?: "disconnected" | "connecting" | "connected";
+    routeKind?: "cloud" | "local" | null;
+    onAccount?: () => void;
+  }) {
+    const actions = {
+      onMemory: vi.fn(),
+      onTrace: vi.fn(),
+      onFeedback: vi.fn(),
+      onAccount: overrides?.onAccount,
+    };
+    render(
+      <WorkbenchShell
+        view="chat"
+        onViewChange={() => undefined}
+        connectionState={overrides?.connectionState ?? "connected"}
+        routeKind={overrides?.routeKind ?? null}
+        moreActions={actions}
+        chatProps={{ activeSid: "default", secret: "" }}
+        skillsProps={{ channel: null }}
+        settingsProps={{
+          getChannel: () => null,
+          lastMessage: null,
+          secret: "",
+          relayAdapter: null,
+          autostart: { ready: false, enabled: false, toggle: () => undefined },
+        }}
+      />,
+    );
+    return actions;
+  }
+
+  it("「更多」折叠组展开后 记忆/Trace/反馈 入口逐一可达；无账户时不渲染账户", () => {
+    vi.mocked(controlWS.state).mockReturnValue("connected");
+    const actions = renderWithMore();
+    expect(screen.queryByTestId("sidebar-more-group")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("sidebar-more-toggle"));
+    expect(screen.getByTestId("sidebar-more-group")).toBeTruthy();
+    expect(screen.queryByTestId("relay-account-pill")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("memory-toggle"));
+    fireEvent.click(screen.getByTestId("trace-toggle"));
+    fireEvent.click(screen.getByTestId("feedback-toggle"));
+    expect(actions.onMemory).toHaveBeenCalledOnce();
+    expect(actions.onTrace).toHaveBeenCalledOnce();
+    expect(actions.onFeedback).toHaveBeenCalledOnce();
+  });
+
+  it("relay edition：账户入口出现在「更多」组", () => {
+    vi.mocked(controlWS.state).mockReturnValue("connected");
+    const onAccount = vi.fn();
+    renderWithMore({ onAccount });
+    fireEvent.click(screen.getByTestId("sidebar-more-toggle"));
+    fireEvent.click(screen.getByTestId("relay-account-pill"));
+    expect(onAccount).toHaveBeenCalledOnce();
+  });
+
+  it("连接徽章：双通道都连上 + routeKind=local → 本地", () => {
+    vi.mocked(controlWS.state).mockReturnValue("connected");
+    renderWithMore({ routeKind: "local" });
+    expect(screen.getByTestId("sidebar-conn-badge").textContent).toContain(
+      "本地",
+    );
+  });
+
+  it("连接徽章聚合取最差态：ControlChannel 已连但 controlWS 断开 → 未连接", () => {
+    vi.mocked(controlWS.state).mockReturnValue("disconnected");
+    renderWithMore({ connectionState: "connected", routeKind: "cloud" });
+    expect(screen.getByTestId("sidebar-conn-badge").textContent).toContain(
+      "未连接",
+    );
   });
 });
