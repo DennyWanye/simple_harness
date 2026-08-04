@@ -35,9 +35,6 @@ interface Props {
   onExit: () => void;
   /** 2026-05-26: relay edition 账户按钮。null/undefined 时不渲染（OSS 默认）。 */
   onAccount?: () => void;
-  autostartReady: boolean;
-  autostartEnabled: boolean;
-  onToggleAutostart: () => void;
   vadStatus: "idle" | "listening" | "speaking" | "thinking";
   isPlaying: boolean;
   isRecording: boolean;
@@ -60,9 +57,6 @@ export const Toolbar: React.FC<Props> = ({
   onFeedback,
   onExit,
   onAccount,
-  autostartReady,
-  autostartEnabled,
-  onToggleAutostart,
   vadStatus,
   isPlaying,
   isRecording,
@@ -125,17 +119,7 @@ export const Toolbar: React.FC<Props> = ({
         danger
       />
 
-      <Divider />
-
-      {/* Group 2 — feature toggles */}
-      {autostartReady && (
-        <ToggleChip
-          active={autostartEnabled}
-          onClick={onToggleAutostart}
-          label="开机启动"
-          title={autostartEnabled ? "已开启开机自启 — 点击关闭" : "点击开启开机自启"}
-        />
-      )}
+      {/* T11：自启开关（ToggleChip）移入设置页（B12 保留换位置）。 */}
 
       <Divider />
 
@@ -246,55 +230,8 @@ const IconButton: React.FC<{
   </button>
 );
 
-// -------------- ToggleChip --------------
-
-const ToggleChip: React.FC<{
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  title: string;
-}> = ({ active, onClick, label, title }) => {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      style={{
-        fontFamily: tokens.font.ui,
-        fontSize: 10.5,
-        fontWeight: tokens.weight.semibold,
-        height: 21,
-        padding: "0 9px",
-        borderRadius: tokens.radius.pill,
-        border: `1px solid ${
-          active ? "rgba(52,211,153,0.55)" : "rgba(255,255,255,0.12)"
-        }`,
-        background: active
-          ? "linear-gradient(180deg, rgba(52,211,153,0.32), rgba(16,185,129,0.22))"
-          : "rgba(255,255,255,0.04)",
-        color: active ? "#a7f3d0" : "rgba(148,163,184,0.92)",
-        cursor: "pointer",
-        transition: `background ${tokens.duration.fast}ms ${tokens.easing.inOut}, border-color ${tokens.duration.fast}ms ${tokens.easing.inOut}, color ${tokens.duration.fast}ms ${tokens.easing.inOut}`,
-        whiteSpace: "nowrap",
-        letterSpacing: 0.3,
-      }}
-      onMouseEnter={(e) => {
-        if (!active) {
-          e.currentTarget.style.background = "rgba(255,255,255,0.10)";
-          e.currentTarget.style.color = "#e2e8f0";
-        }
-      }}
-      onMouseLeave={(e) => {
-        if (!active) {
-          e.currentTarget.style.background = "rgba(255,255,255,0.04)";
-          e.currentTarget.style.color = "rgba(148,163,184,0.92)";
-        }
-      }}
-    >
-      {label}
-    </button>
-  );
-};
+// T11：ToggleChip 原语随自启开关移入设置页而退场（Toolbar 整体
+// 于 T13 退役；如需复用原语见 git 历史，T13 计划迁入 components/ui.ts）。
 
 // -------------- StatusBadge --------------
 

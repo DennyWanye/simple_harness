@@ -1632,9 +1632,6 @@ function App() {
             ? () => openAccountRef.current?.()
             : undefined
         }
-        autostartReady={autostart.ready}
-        autostartEnabled={autostart.enabled}
-        onToggleAutostart={autostart.toggle}
         vadStatus={vadStatus}
         isPlaying={isPlaying}
         isRecording={isRecording}

@@ -49,10 +49,18 @@ interface SettingsPanelProps {
   /** 2026-05-26: relay adapter（如果是 relay edition）— 让
    * SettingsProviders 把中转站 provider 作为只读虚拟项显示。 */
   relayAdapter?: import("../auth/RelayAuthAdapter").RelayAuthAdapter | null;
-  /** 桌宠形象切换（设置面板「桌宠形象」下拉）。 */
-  petModels: readonly import("../petModels").PetModel[];
-  currentPetModelId: string;
-  onPetModelChange: (id: string) => void;
+  /** T11 (workbench-ui, D5 宿主模式)：
+   * - "overlay"（默认）= 原浮层形态（backdrop + 居中模态）；
+   * - "page" = 工作台 SettingsView 页面宿主 —— 去 backdrop/fixed，
+   *   填满内容区，无关闭按钮（页面由侧栏导航切走）。 */
+  variant?: "overlay" | "page";
+  /** T11：自启开关从 Toolbar 移入设置页（B12 保留换位置）。
+   * ready=false（如 dev 浏览器无 Tauri runtime）时整节隐藏。 */
+  autostart?: {
+    ready: boolean;
+    enabled: boolean;
+    toggle: () => void;
+  };
 }
 
 export const CHAT_TURN_TIMEOUT_DEFAULT_MINUTES = 15;
@@ -108,25 +116,20 @@ export function SettingsPanel({
   getChannel,
   lastMessage,
   relayAdapter,
-  petModels,
-  currentPetModelId,
-  onPetModelChange,
+  variant = "overlay",
+  autostart,
 }: SettingsPanelProps) {
   // 2026-05-26: 删除"今日使用"section — 用户要求，billing 状态不再在
   // Settings 里展示（如需查看请用后端 /budget_status 命令或 metrics）。
   if (!open) return null;
 
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="设置"
-      style={overlayStyle}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div style={panelStyle} onClick={(e) => e.stopPropagation()}>
+  const isPage = variant === "page";
+
+  const panel = (
+      <div
+        style={isPage ? pagePanelStyle : panelStyle}
+        onClick={(e) => e.stopPropagation()}
+      >
         <header style={headerStyle}>
           <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span
@@ -147,14 +150,16 @@ export function SettingsPanel({
               设置
             </h2>
           </span>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="关闭设置"
-            style={closeBtnStyle}
-          >
-            <Icon name="close" size={16} />
-          </button>
+          {!isPage && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="关闭设置"
+              style={closeBtnStyle}
+            >
+              <Icon name="close" size={16} />
+            </button>
+          )}
         </header>
 
         {/* P5-S2 multi-provider-management: legacy single-provider LLM
@@ -162,34 +167,36 @@ export function SettingsPanel({
             under the "LLM Providers" section below (drag-drop reorder,
             multiple endpoints, per-card pinning). */}
 
-        {/* ================ 桌宠形象 ================ */}
-        <section style={sectionStyle}>
-          <h3 style={h3Style}>桌宠形象</h3>
-          <select
-            value={currentPetModelId}
-            onChange={(e) => onPetModelChange(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "8px 10px",
-              borderRadius: 8,
-              background: dark.card,
-              color: dark.text,
-              border: `1px solid ${dark.border}`,
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            {petModels.map((m) => (
-              <option key={m.id} value={m.id} style={{ color: dark.text, background: dark.bgSolid }}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-          <p style={{ fontSize: 11, opacity: 0.6, margin: "6px 0 0" }}>
-            选择后立即更换桌宠形象。
-          </p>
-        </section>
+        {/* T11：「桌宠形象」区块删除（形象清单模块三件套随桌宠退役，
+            acceptance only-add 显式删除例外清单）。 */}
+
+        {/* ================ 通用（T11：自启开关自 Toolbar 移入） ================ */}
+        {autostart?.ready && (
+          <section style={sectionStyle}>
+            <h3 style={h3Style}>通用</h3>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                fontSize: 12.5,
+                color: dark.text,
+                cursor: "pointer",
+              }}
+            >
+              <input
+                type="checkbox"
+                data-testid="autostart-toggle"
+                checked={autostart.enabled}
+                onChange={() => autostart.toggle()}
+              />
+              开机自动启动
+            </label>
+            <p style={hintStyle}>
+              登录系统后自动启动 Simple Harness。
+            </p>
+          </section>
+        )}
 
         {/* ================ LLM Providers (P5-S2 Phase 4) ================ */}
         <section style={sectionStyle}>
@@ -228,6 +235,23 @@ export function SettingsPanel({
         {/* SettingsProviders directly persists each change; close with the
             header button instead of a misleading global save action. */}
       </div>
+  );
+
+  // page variant（D5 宿主模式）：无 backdrop、无 fixed 定位，直接填满
+  // 工作台内容区；overlay variant 保持原浮层结构不变。
+  if (isPage) return panel;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="设置"
+      style={overlayStyle}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      {panel}
     </div>
   );
 }
@@ -1071,6 +1095,21 @@ const panelStyle: React.CSSProperties = {
   fontFamily:
     '"Inter","PingFang SC","Microsoft YaHei UI",sans-serif',
   animation: "bp-pop-in 260ms cubic-bezier(0.16,1,0.3,1)",
+};
+
+// T11 page variant：填满工作台内容区（无模态圆角/边框/阴影/弹入动画），
+// 自身滚动；宽度上限交给内容区布局。
+const pagePanelStyle: React.CSSProperties = {
+  background: dark.bgSolid,
+  padding: "0 22px 22px",
+  width: "100%",
+  height: "100%",
+  boxSizing: "border-box",
+  overflowY: "auto",
+  overflowX: "hidden",
+  color: dark.text,
+  fontFamily:
+    '"Inter","PingFang SC","Microsoft YaHei UI",sans-serif',
 };
 
 const headerStyle: React.CSSProperties = {

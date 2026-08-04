@@ -2,20 +2,20 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * SettingsView stub（T6 交付 props 合同；T11 填充实现）。
+ * SettingsView（T11 实装，WB-8）— SettingsPanel variant:"page" 宿主。
  *
- * 六项 props 合同（App :2734 现有 props 原样下传 + 第 7 轮补第六项
- * autostart —— useAutostart 状态下传，供 T11 的自启开关落位）：
+ * 六项 props 合同（T6 冻结；App :SettingsPanel 原浮层 props 原样下传 +
+ * 第 7 轮补第六项 autostart —— useAutostart 状态下传，自启开关自
+ * Toolbar 移入设置页，B12 保留换位置）：
  *   getChannel / lastMessage / secret / relayAdapter / onConfigChanged /
  *   autostart。
  *
- * T11 实现面：SettingsPanel variant:"page" 宿主 + 删桌宠形象区块 +
- * 自启开关从 Toolbar 移入。
+ * lastMessage/getChannel/secret 由 App 的 ControlChannel 继续下传
+ * （顺风车不断）；页面无关闭动作（侧栏导航切走即离开）。
  */
 import React from "react";
 
-import { tokens } from "../theme/tokens";
-import { dark } from "../theme/components";
+import { SettingsPanel } from "../components/SettingsPanel";
 import type { ControlChannel } from "../ws/ControlChannel";
 import type { IncomingMessage } from "../types/messages";
 import type { RelayAuthAdapter } from "../auth/RelayAuthAdapter";
@@ -26,7 +26,7 @@ export interface SettingsViewProps {
   secret: string;
   relayAdapter: RelayAuthAdapter | null;
   onConfigChanged?: () => void;
-  /** useAutostart 状态（App 层持有），T11 自启开关落位于设置页。 */
+  /** useAutostart 状态（App 层持有），自启开关落位设置页。 */
   autostart: {
     ready: boolean;
     enabled: boolean;
@@ -42,13 +42,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onConfigChanged,
   autostart,
 }) => {
-  // T11 之前六项 props 仅由合同占位（SettingsPanel page 宿主接入时消费）。
-  void getChannel;
-  void lastMessage;
-  void secret;
-  void relayAdapter;
-  void onConfigChanged;
-  void autostart;
   return (
     <section
       data-testid="view-settings"
@@ -58,14 +51,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         minWidth: 0,
         minHeight: 0,
         display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        color: dark.textMuted,
-        fontFamily: tokens.font.ui,
-        fontSize: tokens.text.base.size,
+        flexDirection: "column",
+        overflow: "hidden",
       }}
     >
-      设置视图（T11 实装）
+      <SettingsPanel
+        variant="page"
+        open
+        // page 模式无关闭按钮；onClose 仅满足合同（浮层遗留 API）。
+        onClose={() => undefined}
+        getChannel={getChannel}
+        lastMessage={lastMessage}
+        secret={secret}
+        relayAdapter={relayAdapter}
+        onConfigChanged={onConfigChanged}
+        autostart={autostart}
+      />
     </section>
   );
 };
