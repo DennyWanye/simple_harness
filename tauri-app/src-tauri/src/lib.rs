@@ -161,16 +161,18 @@ pub fn run() {
             }
 
             // P4-S21 #7: system tray icon with Show/Hide/Quit menu.
-            // Without this the only way to surface a hidden pet (or a
-            // pet whose toolbar is offscreen) is to kill the process.
+            // Without this the only way to surface a hidden main window
+            // is to kill the process.
+            // 2026-08-04 Workbench 改版（T14/WB-1, B10）：文案去桌宠品牌
+            // （行为不变，只改字符串；tray id "deskpet-tray" 是标识符不动）。
             let tray_result = (|| -> tauri::Result<()> {
-                let show_item = MenuItem::with_id(app, "show", "显示桌宠", true, None::<&str>)?;
-                let hide_item = MenuItem::with_id(app, "hide", "隐藏桌宠", true, None::<&str>)?;
-                let quit_item = MenuItem::with_id(app, "quit", "退出 DeskPet", true, None::<&str>)?;
+                let show_item = MenuItem::with_id(app, "show", "显示主窗", true, None::<&str>)?;
+                let hide_item = MenuItem::with_id(app, "hide", "隐藏主窗", true, None::<&str>)?;
+                let quit_item = MenuItem::with_id(app, "quit", "退出 Simple Harness", true, None::<&str>)?;
                 let tray_menu = Menu::with_items(app, &[&show_item, &hide_item, &quit_item])?;
                 TrayIconBuilder::with_id("deskpet-tray")
                     .icon(app.default_window_icon().cloned().expect("icon set in tauri.conf.json"))
-                    .tooltip("DeskPet")
+                    .tooltip("Simple Harness")
                     .menu(&tray_menu)
                     .on_menu_event(|app, event| match event.id.as_ref() {
                         "show" => {
