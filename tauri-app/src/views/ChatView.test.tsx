@@ -35,7 +35,7 @@ vi.mock("../components/MessageStreamPanel", async (importOriginal) => {
     MessageStreamPanel: () => <div data-testid="stub-message-stream" />,
   };
 });
-vi.mock("../message-panel/HarnessInspectorPanel", () => ({
+vi.mock("../chat/HarnessInspectorPanel", () => ({
   HarnessInspectorPanel: (props: { open: boolean }) =>
     props.open ? <div data-testid="stub-harness-panel" /> : null,
 }));
@@ -53,6 +53,12 @@ function emit(msg: unknown) {
 
 describe("ChatView（WB-4）", () => {
   beforeEach(() => {
+    // InputBar 挂载即 fetch /api/commands/help；真 fetch 打 localhost 会在
+    // 测试环境卸载后才 settle（unhandled rejection）。同步 stub 掉。
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: false }) as Response),
+    );
     listeners = [];
     vi.mocked(controlWS.send).mockClear();
     vi.mocked(controlWS.send).mockReturnValue(true);
@@ -67,7 +73,10 @@ describe("ChatView（WB-4）", () => {
     );
   });
 
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
 
   it("挂载即按会话发 hydration 四连发（消息/投影/上下文/provider）", () => {
     render(<ChatView activeSid="default" secret="s3cret" />);

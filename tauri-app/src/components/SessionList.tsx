@@ -32,7 +32,7 @@ import {
   MAX_TITLE_LEN,
   normalizeTopicTitle,
   topicDisplayLabel,
-} from "../message-panel/topicTitle";
+} from "../chat/topicTitle";
 
 /** 后端 default 会话（companion 主线程）。 */
 const DEFAULT_SID = "default";

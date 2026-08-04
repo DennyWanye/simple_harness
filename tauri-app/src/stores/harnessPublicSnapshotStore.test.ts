@@ -158,9 +158,11 @@ describe("HarnessPublicSnapshotStore", () => {
       "components/AgentActivityMessage.tsx",
       "components/MessageStreamPanel.tsx",
       "components/workflow/DurableTaskSteps.tsx",
-      "message-panel/HarnessInspectorPanel.tsx",
-      "message-panel/HarnessRunGraph.tsx",
-      "message-panel/MessagePanelRoot.tsx",
+      // T9（workbench-ui）：message-panel/ 退役 —— 巡检面板迁 chat/，
+      // MessagePanelRoot 由 views/ChatView 承接。
+      "chat/HarnessInspectorPanel.tsx",
+      "chat/HarnessRunGraph.tsx",
+      "views/ChatView.tsx",
     ];
     const forbidden = [
       /\.provider_invocations\b/,

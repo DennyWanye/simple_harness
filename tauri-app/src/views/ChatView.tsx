@@ -55,14 +55,14 @@ import {
 } from "../code-panel/sessionModelsStore";
 import { controlWS } from "../code-panel/controlWs";
 import { useControlWsState } from "../hooks/useControlWsState";
-import { topicDisplayLabel } from "../message-panel/topicTitle";
+import { topicDisplayLabel } from "../chat/topicTitle";
 import { VOICE_UNAVAILABLE_MESSAGE } from "../voiceAvailability";
 import {
   DEFAULT_HIDE_TOOL_TRACE,
   isMessageVisibleForSelectedRun,
   shouldHideToolTrace,
-} from "../message-panel/messageVisibility";
-import { HarnessInspectorPanel } from "../message-panel/HarnessInspectorPanel";
+} from "../chat/messageVisibility";
+import { HarnessInspectorPanel } from "../chat/HarnessInspectorPanel";
 import {
   CompanionDetailModal,
   type CompanionDetailQuery,
@@ -82,12 +82,12 @@ import {
   shouldRefreshCompanionProjection,
 } from "../components/companion/actionProjection";
 import { useCompanionProvisionalValues } from "../stores/companionSelectors";
-import { sessionHydrationCommands } from "../message-panel/sessionHydration";
+import { sessionHydrationCommands } from "../chat/sessionHydration";
 import {
   selectVisibleProjectDirectoryRequest,
   storeProjectDirectoryRequest,
   type ProjectDirectoryRequestsBySession,
-} from "../message-panel/projectDirectoryState";
+} from "../chat/projectDirectoryState";
 
 const DEFAULT_SID = "default"; // companion 主线程（历史命名）
 const EMPTY_COMPANION_EVENTS: CompanionEvent[] = [];

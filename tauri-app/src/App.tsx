@@ -589,9 +589,9 @@ function App() {
   // T6：能力中心 / SkillStore 浮层 open state 已拆除 —— 二者页面化为
   // SkillsView（T10 实装，互跳 state 本地化在视图内部）。
 
-  // Audio channel (voice pipeline)
+  // Audio channel (voice pipeline)。T8：state(audioState) 的唯一读端
+  // （底部 mic 按钮 disabled 判定）随输入条退役，不再解构。
   const {
-    state: audioState,
     lastMessage: audioMessage,
     sendAudio,
     getChannel,

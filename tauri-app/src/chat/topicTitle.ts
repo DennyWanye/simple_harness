@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * Pure helpers for the message-panel "rename topic" feature. Kept in their own
+ * Pure helpers for the session-list "rename topic" feature. Kept in their own
  * module (no React / ws / tauri imports) so vitest can exercise the rename
  * edge cases without pulling in the heavy MessagePanelRoot module graph.
  */
