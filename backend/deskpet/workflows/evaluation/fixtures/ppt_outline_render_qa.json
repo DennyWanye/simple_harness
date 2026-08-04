@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "example_id": "ppt-outline-render-qa",
+  "workflow": "ppt_pro",
+  "required": true,
+  "input": {
+    "topic": "Durable workflow recovery",
+    "pages": 3
+  },
+  "expected": {
+    "required_nodes": [
+      "normalize",
+      "research_plan",
+      "outline",
+      "wait_outline_decision",
+      "image_map",
+      "render",
+      "preview",
+      "visual_evaluate",
+      "publish",
+      "terminal"
+    ],
+    "slide_ids": [
+      "slide-001-overview",
+      "slide-002-recovery",
+      "slide-003-evidence"
+    ],
+    "deck_hash": "53382f5e0cb3dbb42401d13434593371f52bcdc7adf921ae94d8ab9b55973727",
+    "qa_min_score": 0.9
+  },
+  "output": {
+    "trace_nodes": [
+      "normalize",
+      "research_plan",
+      "research_search",
+      "research_fetch",
+      "research_synth",
+      "outline",
+      "wait_outline_decision",
+      "image_map",
+      "render",
+      "preview",
+      "visual_evaluate",
+      "publish",
+      "terminal"
+    ],
+    "outline": {
+      "status": "accepted",
+      "slide_ids": [
+        "slide-001-overview",
+        "slide-002-recovery",
+        "slide-003-evidence"
+      ]
+    },
+    "render": {
+      "ok": true,
+      "deck_hash": "53382f5e0cb3dbb42401d13434593371f52bcdc7adf921ae94d8ab9b55973727"
+    },
+    "previews": [
+      {
+        "slide_id": "slide-001-overview",
+        "path": "preview/slide-001-overview.png"
+      },
+      {
+        "slide_id": "slide-002-recovery",
+        "path": "preview/slide-002-recovery.png"
+      },
+      {
+        "slide_id": "slide-003-evidence",
+        "path": "preview/slide-003-evidence.png"
+      }
+    ],
+    "qa": {
+      "score": 0.96,
+      "issues": []
+    },
+    "latency_ms": 246.0
+  }
+}

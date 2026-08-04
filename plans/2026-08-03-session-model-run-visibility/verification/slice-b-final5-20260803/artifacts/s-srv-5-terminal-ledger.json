@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "source": "read-only workflow.db execution_runs plus real Windows UI",
+  "session_id": "05743532-aed5-4faa-8aec-cf0c40e2cc3b",
+  "cancelled_root": {
+    "run_id": "b98293fc18115b5bba98788d57d2fb18",
+    "status": "cancelled",
+    "version": 3,
+    "provider_id": "relay-cloud",
+    "model_id": "kimi-k3",
+    "evidence": "s-srv-5-cancelled-run.jpg"
+  },
+  "unaffected_completed_root": {
+    "run_id": "918670b496555290bff1b62ba491ed64",
+    "status": "completed",
+    "version": 10,
+    "provider_id": "relay-cloud",
+    "model_id": "kimi-k3"
+  },
+  "permanent_regressions": [
+    "test_cancel_after_started_dispatch_tracks_shielded_completion",
+    "test_cancel_marks_started_effect_inflight_may_complete",
+    "test_dev_tool_completion_latch_holds_only_completed_read_outcome",
+    "test_cancelled_terminal_run_quarantines_late_effect_without_driver_resume",
+    "test_real_latch_cancel_release_reconciles_without_driver_resume"
+  ],
+  "assertion": "terminal cancellation remains absorbing; late tool completion is reconciled for audit and suppressed from driver resume"
+}

@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {"id": "inline-citation", "claim": "Revenue reached $12 million in 2026 [1].", "evidence": "Revenue reached $12 million in 2026.", "expected": "supported"},
+    {"id": "numeric-conflict", "claim": "Revenue reached $12 million in 2026 [1].", "evidence": "Revenue reached $10 million in 2025.", "expected": "unsupported"},
+    {"id": "inference", "claim": "This may indicate growth [1].", "evidence": "The measured series grew year over year.", "expected": "inference"}
+  ]
+}

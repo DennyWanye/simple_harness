@@ -1,0 +1,66 @@
+# DeskPet UI 当前架构
+
+> 最后更新：2026-08-03
+
+## 1. 主题事实
+
+DeskPet 的用户界面现在以暗色为默认外观。主窗口背景、功能面板、弹窗、输入框、卡片、
+按钮、标签页和遮罩统一从 `tauri-app/src/theme/tokens.ts` 与
+`tauri-app/src/theme/components.ts` 取得语义化颜色和组件样式。
+
+简单说，页面不再各自决定“这里用白色还是黑色”，而是共同使用同一套暗色颜料。页面只需
+说明这里是“面板”“卡片”或“次要文字”，主题层负责给出实际颜色。
+
+## 2. 当前覆盖范围
+
+- 主桌宠窗口保持透明，桌面直接作为背景；人物画布固定在主窗口水平中间。
+- 消息页、Memory、ContextTrace 和 Context usage 保留原有暗色布局。
+- 独立消息窗口默认宽度为 `700px`、最小宽度为 `640px`，保证 Harness 观察区与右侧
+  聊天区同时打开时都有可读宽度。
+- 设置、Provider、新手引导、账户、能力中心、Skill Store 和反馈页已统一为暗色。
+- 授权、澄清、外部等待和审批中心等共享弹窗使用同一套暗色面板、遮罩和控件。
+- 设置页不再展示已退休的 Harness Supervisor 与自动恢复开关；恢复由当前事件驱动的
+  Harness 生产链路负责，不再给用户一个已经失效的旧入口。
+- 原“对话超时”设置改名为“Agent 有效执行预算”，并明确说明等待确认、文件夹选择和外部
+  操作时暂停；兼容读取原 `chat_turn_timeout_minutes` 持久化键。
+- 模型选择弹窗在真实 Provider 模型目录上提供即时文本筛选；输入模型 id 或展示名称的
+  任意片段即可收窄下拉选项，无匹配时明确显示空结果。模型选择仍由用户在筛选结果里确认，
+  不会因为筛选文本自动改写当前 Session 绑定。
+- 标题栏展示的当前模型来自 Session 持久化绑定。新话题继承来源 Session 的模型与参数，
+  历史会话和应用重启通过独立 hydration 请求重新加载绑定，不再短暂或永久回退到 Provider
+  默认模型。
+
+## 3. 边界
+
+- 主题层只负责视觉样式，不拥有业务状态、Harness 状态或权限决策。
+- 隐藏的 provider reasoning 不会因为 UI 改造而展示；消息页只显示用户可见的公开执行进度。
+- 语音按钮当前明确禁用，等待后续 Realtime 接入，不会偷偷启用旧语音链路。
+- 新页面应优先复用语义化 token 和共享组件样式，避免重新写独立的纯白背景。
+- 左侧运行图、消息流 Agent activity 和右侧 durable steps 现在按 `(session_id, root_run_id)`
+  订阅同一个 `HarnessPublicSnapshotStore`。默认图直接渲染后端 semantic phases，不再从 raw
+  activity record 猜阶段；每阶段可独立折叠，当前阶段默认展开。
+- 工具在所属阶段内以一行名称/动作/状态/耗时显示；输入按需展开，结果第二层展开且默认收起。
+  UI 只读取 default-deny 的 public input/result；v2 或未知 schema 只显示最小安全 fallback。
+- snapshot 使用 response-driven 1.2 秒 singleflight 轮询；切换 Session/Run 或关闭 WS 会取消旧
+  root task，完整 terminal 后停止轮询，details 使用独立 slot/cursor。晚响应按 request id 丢弃。
+- Context Usage 的 measured/compacted/binding-only 状态来自同一 durable reducer；无样本时显示
+  Session 绑定模型与“尚无用量”，不再短暂显示全局默认模型。
+
+## 4. 验证状态
+
+- 前端全量：`101 files / 906 tests passed`。
+- TypeScript：`tsc -b` PASS。
+- Relay 前端生产构建：Vite build PASS。
+- 当前源码 Windows 真机：设置页显示“Agent 有效执行预算”及暂停说明；临时设为 1 分钟后，
+  Godot 项目目录选择卡片等待超过 2 分钟仍保持“需要你确认”，验收后已恢复 15 分钟。
+- 当前源码 Windows 实机检查：主窗口背景透明、人物水平居中；独立消息页为
+  `701×602px`，Harness 与聊天输入区均正常显示，没有窄栏挤压。设置、能力中心、
+  Skill Store、反馈、账户和消息页功能面保持暗色；设置页没有 Supervisor 入口。
+- 运行链路检查：backend `/health=200`、Vite `200`，embedding worker 存活。
+- 模型筛选与恢复聚焦回归：前端 `3 files / 33 tests passed`，TypeScript PASS；Windows
+  实机输入 `kimi` 后目录只显示 Kimi 系列，选择 `kimi-k3`、新建话题并重启后，标题栏均保持
+  `kimi-k3`。
+- Session/run visibility 最终验证：跨会话 full-surface 前端 `8 files / 116 tests passed`；
+  S-SRV-1～S-SRV-5 Windows 真机矩阵全部 PASS。长上下文任务按阶段显示且工具归属正确，
+  child 失败时顶层明确显示“主 Agent 已接管并完成”，停止后的晚到结果不会恢复运行态或污染
+  另一 Session。

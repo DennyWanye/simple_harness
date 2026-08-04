@@ -1,0 +1,558 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
+"""Skill component (P4-S7 task 12.5, WI-4.1 upgrade).
+
+Emits a "skill prelude" containing:
+  1. **Desc list** (priority 85, never cut) — always present when skills exist.
+  2. **Body段** (can be cut) — auto-inlined bodies for strong-matching skills
+     when ``config.skills.auto_disclosure.enabled`` is True.
+
+When the flag is off (default), only the desc list is emitted — byte-identical
+to the pre-WI-4.1 behavior.
+
+3-tier logic (flag on):
+  - **Strong match** (cos-sim ≥ strong_threshold, default 0.70):
+    inline skill body into prelude (truncated to per_skill_max_tokens).
+  - **Weak / all others**: name + desc only.
+  - ``disable_model_invocation`` skills are never auto-loaded.
+  - Budget: fill by sim desc; overflow drops least-recently-used
+    (``meta["usage_count"]`` tie-break; no usage → pure sim order).
+
+Output goes into the ``"skill"`` bucket (``skill_prelude`` on the bundle)
+which sits between ``frozen_system`` and ``memory_block``.
+"""
+from __future__ import annotations
+
+import logging
+import inspect
+import time
+from typing import Any, Optional
+
+from deskpet.agent.assembler.bundle import ContextFragment, Slice
+from deskpet.agent.assembler.components.base import Component, ComponentContext
+from deskpet.agent.tokens import count_text_tokens
+from deskpet.companion.skills import PreparedSkillInvocationScopeV1
+
+logger = logging.getLogger(__name__)
+
+# These legacy Skill packs describe direct tools that are now owned by fixed
+# durable profiles. Auto-disclosing their old instructions would create two
+# conflicting product routes: the profile catalog says ``workflow_spawn``
+# while the Skill body says to call the compatibility tool directly.
+_PROFILE_OWNED_LEGACY_TOOL_NAMES = frozenset(
+    {"deepresearch", "ppt_create", "ppt_pro"}
+)
+
+
+# 粗略 char 截断预算用的 chars/token 比（仅用于反向算 max_chars 截断长度，
+# 不是 token 计数口径；真正的 token 计数走 tokens.count_text_tokens）。
+_CHARS_PER_TOKEN = 4
+
+# Default config values (mirror SkillsAutoDisclosureConfig defaults).
+_DEFAULT_STRONG_THRESHOLD = 0.70
+_DEFAULT_BUDGET_TOKENS = 8000
+_DEFAULT_PER_SKILL_MAX_TOKENS = 2000
+
+
+class SkillComponent:
+    """Emits a skill prelude block when skills are registered.
+
+    Parameters
+    ----------
+    skill_matcher:
+        Optional :class:`~deskpet.skills.skill_matcher.SkillMatcher`. When
+        provided and the auto-disclosure flag is on, performs embedding
+        similarity matching to decide which skills get their body inlined.
+    skill_loader:
+        Frozen Skill selection/instruction resolver. Auto-disclosure never
+        re-reads a body by live name.
+    """
+
+    name: str = "skill"
+
+    def __init__(
+        self,
+        *,
+        skill_matcher: Optional[Any] = None,
+        skill_loader: Optional[Any] = None,
+    ) -> None:
+        self._matcher = skill_matcher
+        self._loader = skill_loader
+        self._snapshot_resolver = (
+            skill_loader
+            if getattr(skill_loader, "manager_backed", False)
+            else None
+        )
+
+    def bind_snapshot_resolver(self, resolver: Any) -> None:
+        """Bind the one Manager-backed instruction authority for this process."""
+
+        if resolver is None or not getattr(resolver, "manager_backed", False):
+            raise RuntimeError("manager_skill_snapshot_resolver_required")
+        if (
+            self._snapshot_resolver is not None
+            and self._snapshot_resolver is not resolver
+        ):
+            raise RuntimeError("manager_skill_snapshot_resolver_already_bound")
+        self._snapshot_resolver = resolver
+
+    async def provide(self, ctx: ComponentContext) -> Slice:
+        start = time.monotonic()
+        registry = ctx.skill_registry
+        if registry is None:
+            return Slice(
+                component_name=self.name,
+                priority=70,
+                bucket="skill",
+                meta={"status": "no_registry"},
+            )
+
+        # Read config for auto-disclosure first — it decides the skill venue.
+        ad_cfg = _read_auto_disclosure_config(ctx.config)
+        auto_enabled = ad_cfg.get("enabled", False)
+        knowledge_enabled = _read_knowledge_enabled_config(ctx.config)
+
+        # Fetch skill list from registry.
+        #
+        # TC-5.1 真机回归 (2026-06-11)：``select(task_type)`` 按 task_types
+        # frontmatter 过滤，而 builtin claude-code-v1 skill 全是 task_types=[]
+        # → 全被滤掉（真机 total=1）。auto-disclosure 的契约是「全集进 desc
+        # list + embedding 决定强匹配」→ flag ON 用 ``all()`` 全集；flag OFF
+        # 保持 select 路径（字节级 BC：不泄露全集进 chat prelude）。
+        skills: list[Any]
+        try:
+            if auto_enabled and hasattr(registry, "all"):
+                maybe = registry.all()
+                skills = await maybe if hasattr(maybe, "__await__") else maybe
+            elif hasattr(registry, "select"):
+                maybe = registry.select(
+                    ctx.task_type, prefer=list(ctx.policy.prefer)
+                )
+                skills = await maybe if hasattr(maybe, "__await__") else maybe
+            elif hasattr(registry, "all"):
+                maybe = registry.all()
+                skills = await maybe if hasattr(maybe, "__await__") else maybe
+            else:
+                skills = []
+        except Exception as exc:
+            return Slice(
+                component_name=self.name,
+                priority=70,
+                bucket="skill",
+                meta={"error": str(exc), "error_type": type(exc).__name__},
+            )
+
+        if not skills:
+            return Slice(
+                component_name=self.name,
+                priority=70,
+                bucket="skill",
+                meta={
+                    "count": 0,
+                    "auto_loaded_count": 0,
+                    "knowledge_loaded_count": 0,
+                },
+            )
+
+        if not knowledge_enabled:
+            skills = [s for s in skills if _is_user_invocable(s)]
+            if not skills:
+                return Slice(
+                    component_name=self.name,
+                    priority=70,
+                    bucket="skill",
+                    meta={
+                        "count": 0,
+                        "auto_loaded_count": 0,
+                        "knowledge_loaded_count": 0,
+                    },
+                )
+
+        # -----------------------------------------------------------------
+        # Build desc list (always — priority 85, not cuttable).
+        # -----------------------------------------------------------------
+        desc_lines = ["## 可用技能"]
+        visible_skills = [
+            s
+            for s in skills
+            if _is_user_invocable(s)
+            and not _is_profile_owned_compat_skill(
+                str(_skill_attr(s, "name", "")),
+                skills,
+            )
+        ]
+        for s in visible_skills:
+            sname = _skill_attr(s, "name", "?")
+            summary = _skill_attr(s, "summary", "") or _skill_attr(s, "description", "")
+            if summary:
+                desc_lines.append(f"- **{sname}**: {summary}")
+            else:
+                desc_lines.append(f"- **{sname}**")
+        desc_text = "\n".join(desc_lines) if visible_skills else ""
+
+        # When flag is off → emit desc list only (byte-identical to pre-WI-4.1).
+        if not auto_enabled or self._matcher is None or self._loader is None:
+            elapsed_ms = (time.monotonic() - start) * 1000.0
+            return Slice(
+                component_name=self.name,
+                text_content=desc_text,
+                tokens=count_text_tokens(desc_text) if desc_text else 0,
+                priority=85,
+                bucket="skill",
+                meta={
+                    "count": len(visible_skills),
+                    "latency_ms": round(elapsed_ms, 2),
+                    "auto_loaded_count": 0,
+                    "knowledge_loaded_count": 0,
+                },
+            )
+
+        # -----------------------------------------------------------------
+        # Auto-disclosure: embedding match + body inlining.
+        # -----------------------------------------------------------------
+        strong_threshold = float(ad_cfg.get("strong_threshold", _DEFAULT_STRONG_THRESHOLD))
+        budget_tokens = int(ad_cfg.get("budget_tokens", _DEFAULT_BUDGET_TOKENS))
+        per_skill_max_tokens = int(
+            ad_cfg.get("per_skill_max_tokens", _DEFAULT_PER_SKILL_MAX_TOKENS)
+        )
+
+        # Build query: user message (add recent history excerpt if useful).
+        query = ctx.user_message or ""
+
+        # Get similarity scores (async — avoids blocking event loop).
+        try:
+            ranked: list[tuple[str, float]] = await self._matcher.match_async(query, skills)
+        except Exception:  # noqa: BLE001
+            ranked = []
+
+        # Filter to strong matches; skip disable_model_invocation skills.
+        strong_matches = [
+            (nm, sim)
+            for nm, sim in ranked
+            if sim >= strong_threshold
+            and not _is_disabled_for_model(nm, skills)
+            and not _is_profile_owned_compat_skill(nm, skills)
+        ]
+
+        # Budget-fill loop: sort by sim desc; tie-break by usage_count desc
+        # (higher usage = retained first; lower = dropped first).
+        strong_matches = _sort_by_sim_then_usage(strong_matches, skills)
+
+        auto_loaded_count = 0
+        knowledge_loaded_count = 0
+        activated_scopes: list[dict[str, Any]] = []
+        body_sections: list[str] = []
+        page_fragments: list[ContextFragment] = []
+        used_tokens = 0
+        context_os_on = bool((ctx.config.get("features") or {}).get("context_os_v1", False))
+
+        for nm, sim in strong_matches:
+            try:
+                resolver = self._snapshot_resolver or self._loader
+                if resolver is None or not hasattr(
+                    resolver, "resolve_instruction"
+                ):
+                    raise RuntimeError(
+                        "frozen_skill_resolver_not_injected"
+                    )
+                scope = _frozen_scope_for_match(
+                    nm,
+                    skills,
+                    legacy_resolver=resolver,
+                )
+                resolved = resolver.resolve_instruction(scope)
+                if inspect.isawaitable(resolved):
+                    resolved = await resolved
+                resolved_scope = getattr(resolved, "scope", None)
+                if resolved_scope != scope:
+                    raise RuntimeError("frozen_skill_scope_resolution_mismatch")
+                raw_body = str(getattr(resolved, "instruction"))
+            except Exception:  # noqa: BLE001
+                continue
+            authority_body = raw_body
+            is_knowledge = _is_knowledge(nm, skills)
+            # Knowledge fragments contribute trusted guidance, not executable
+            # Skill authority. A regular Skill must bind its frozen scope even
+            # when its body is deferred to Context OS page-in; otherwise the
+            # body can arrive later without its allowed-tools narrowing.
+            if (
+                hasattr(scope, "to_dict")
+                and not is_knowledge
+                and context_os_on
+            ):
+                activated_scopes.append(scope.to_dict())
+            # Per-skill truncation
+            max_chars = per_skill_max_tokens * _CHARS_PER_TOKEN
+            if len(raw_body) > max_chars:
+                raw_body = raw_body[:max_chars] + "\n…（已截断）"
+            body_tokens = count_text_tokens(raw_body)
+            overflow = used_tokens >= budget_tokens or used_tokens + body_tokens > budget_tokens
+            if context_os_on:
+                page_fragments.append(ContextFragment(
+                    fragment_id=f"skill:{nm}", source=f"skill:{nm}", role="system",
+                    content=(f"[Skill {nm} available by page-in]" if overflow else raw_body),
+                    lifetime="task", placement="prefix", priority=70,
+                    trim_policy="page_in", reason="skill_auto_disclosure",
+                    meta={"page_in_kind": "skill", "page_in_source": nm,
+                          "page_in_content": authority_body, "overflow": overflow},
+                ))
+            if overflow:
+                continue
+            if (
+                hasattr(scope, "to_dict")
+                and not is_knowledge
+                and not context_os_on
+            ):
+                activated_scopes.append(scope.to_dict())
+            heading = "知识片段（自动注入）" if is_knowledge else "技能正文（自动预载）"
+            body_sections.append(
+                f"### {nm} {heading}\n{raw_body}"
+            )
+            used_tokens += body_tokens
+            auto_loaded_count += 1
+            if is_knowledge:
+                knowledge_loaded_count += 1
+
+        # -----------------------------------------------------------------
+        # Compose final prelude text.
+        # -----------------------------------------------------------------
+        parts = [desc_text] if desc_text else []
+        if body_sections:
+            parts.append("\n---\n以下内容已按触发词预载，无需再 skill_invoke：")
+            parts.extend(body_sections)
+
+        text = "\n\n".join(parts)
+        elapsed_ms = (time.monotonic() - start) * 1000.0
+        # Observability (FP-5 WI-4.1/4.2): auto-disclosure is otherwise invisible in
+        # logs — emit which skills were strong-matched + body-inlined so real-machine
+        # acceptance (TC-5.1/5.8) has a hard evidence line.
+        # top_sim 必须打真实 ranked 最高分（不是 strong_matches[0]）——否则
+        # 「有 0.4 的相似度但没过阈值」和「embedding 全坏零向量」在 log 里
+        # 都显示 top_sim=0.000，真机诊断会被误导（TC-5.1 教训）。
+        logger.info(
+            "skill_auto_disclosed total=%d strong=%d auto_loaded=%d names=%s top_sim=%.3f",
+            len(skills),
+            len(strong_matches),
+            auto_loaded_count,
+            [nm for nm, _ in strong_matches[:5]],
+            (ranked[0][1] if ranked else 0.0),
+        )
+        if context_os_on:
+            fragments = []
+            if desc_text:
+                fragments.append(ContextFragment(
+                    fragment_id="skill:catalog", source="skill:catalog", role="system",
+                    content=desc_text, lifetime="stable", placement="prefix", priority=85,
+                    trim_policy="never", protected=True, reason="skill_catalog",
+                    cache_scope="session",
+                ))
+            fragments.extend(page_fragments)
+            return Slice(
+                component_name=self.name, fragments=fragments,
+                tokens=count_text_tokens(desc_text) + used_tokens, priority=85,
+                meta={"count": len(visible_skills), "auto_loaded_count": auto_loaded_count,
+                      "knowledge_loaded_count": knowledge_loaded_count,
+                      "page_in_count": sum(1 for f in page_fragments if f.meta.get("overflow")),
+                      "skill_invocation_scopes": activated_scopes,
+                      "active_skill_scope_ids": [
+                          str(item["scope_id"]) for item in activated_scopes
+                      ],
+                      "triggered": bool(page_fragments), "protected": knowledge_loaded_count > 0,
+                      "latency_ms": round(elapsed_ms, 2)},
+            )
+        return Slice(
+            component_name=self.name,
+            text_content=text,
+            tokens=count_text_tokens(text),
+            priority=85,  # desc list is never cut; body section can be trimmed externally
+            bucket="skill",
+            meta={
+                "count": len(visible_skills),
+                "auto_loaded_count": auto_loaded_count,
+                "knowledge_loaded_count": knowledge_loaded_count,
+                "triggered": auto_loaded_count > 0,
+                "skill_invocation_scopes": activated_scopes,
+                "active_skill_scope_ids": [
+                    str(item["scope_id"]) for item in activated_scopes
+                ],
+                "protected": knowledge_loaded_count > 0,
+                "latency_ms": round(elapsed_ms, 2),
+            },
+        )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _skill_attr(s: Any, attr: str, default: Any = None) -> Any:
+    if isinstance(s, dict):
+        return s.get(attr, default)
+    return getattr(s, attr, default)
+
+
+def _frozen_scope_for_match(
+    name: str,
+    skills: list[Any],
+    *,
+    legacy_resolver: Any,
+) -> PreparedSkillInvocationScopeV1:
+    """Use discovery only for exact identity, never for instruction bytes."""
+
+    item = next(
+        (
+            skill
+            for skill in skills
+            if str(_skill_attr(skill, "name", "")) == name
+        ),
+        None,
+    )
+    if item is None:
+        raise KeyError(name)
+    owner_key = str(_skill_attr(item, "owner_key", "") or "")
+    pack_id = str(_skill_attr(item, "pack_id", "") or "")
+    version = str(_skill_attr(item, "version", "") or "")
+    manifest_hash = str(
+        _skill_attr(item, "manifest_hash", "") or ""
+    )
+    content_hash = str(
+        _skill_attr(item, "content_hash", "") or ""
+    )
+    scope_hash = str(_skill_attr(item, "scope_hash", "") or "")
+    if all(
+        (
+            owner_key,
+            pack_id,
+            version,
+            manifest_hash,
+            content_hash,
+            scope_hash,
+        )
+    ):
+        allowed = _skill_attr(item, "allowed_tools", ()) or ()
+        return PreparedSkillInvocationScopeV1(
+            owner_key=owner_key,
+            pack_id=pack_id,
+            skill_id=name,
+            version=version,
+            manifest_hash=manifest_hash,
+            content_hash=content_hash,
+            allowed_tools=tuple(str(value) for value in allowed),
+            scope_hash=scope_hash,
+        )
+    # Compatibility is restricted to an explicitly injected no-Manager
+    # resolver (the historical SkillLoader used by unit tests).
+    if not bool(
+        getattr(legacy_resolver, "legacy_no_manager_resolver", False)
+    ):
+        raise RuntimeError("managed_skill_identity_incomplete")
+    resolve = getattr(legacy_resolver, "resolve_selection", None)
+    if not callable(resolve):
+        raise RuntimeError("legacy_skill_selection_unavailable")
+    scope = resolve(name)
+    if not isinstance(scope, PreparedSkillInvocationScopeV1):
+        raise TypeError("legacy skill selection is not frozen")
+    return scope
+
+
+def _is_disabled_for_model(name: str, skills: list[Any]) -> bool:
+    """Return True if the skill has disable_model_invocation set."""
+    for s in skills:
+        if _skill_attr(s, "name", "") == name:
+            return bool(_skill_attr(s, "disable_model_invocation", False))
+    return False
+
+
+def _is_profile_owned_compat_skill(name: str, skills: list[Any]) -> bool:
+    """Hide legacy direct-tool instructions now owned by durable profiles."""
+
+    for skill in skills:
+        if str(_skill_attr(skill, "name", "")) != name:
+            continue
+        allowed = _skill_attr(skill, "allowed_tools", ()) or ()
+        normalized = {
+            str(item).strip().casefold()
+            for item in allowed
+            if str(item).strip()
+        }
+        if normalized & _PROFILE_OWNED_LEGACY_TOOL_NAMES:
+            return True
+    return False
+
+
+def _is_user_invocable(skill: Any) -> bool:
+    return bool(_skill_attr(skill, "user_invocable", True))
+
+
+def _is_knowledge(name: str, skills: list[Any]) -> bool:
+    for s in skills:
+        if _skill_attr(s, "name", "") == name:
+            return not _is_user_invocable(s)
+    return False
+
+
+def _get_usage_count(name: str, skills: list[Any]) -> int:
+    """Return usage_count from skill meta dict, or 0."""
+    for s in skills:
+        if _skill_attr(s, "name", "") == name:
+            meta = _skill_attr(s, "meta", {}) or {}
+            if isinstance(meta, dict):
+                return int(meta.get("usage_count", 0))
+    return 0
+
+
+def _sort_by_sim_then_usage(
+    ranked: list[tuple[str, float]], skills: list[Any]
+) -> list[tuple[str, float]]:
+    """Sort strong matches: primary = sim desc; tie-break = usage_count desc."""
+    return sorted(
+        ranked,
+        key=lambda x: (x[1], _get_usage_count(x[0], skills)),
+        reverse=True,
+    )
+
+
+def _read_auto_disclosure_config(config: Any) -> dict[str, Any]:
+    """Extract auto_disclosure sub-dict from the component context config.
+
+    Accepts:
+      * ``dict`` with key ``"skills"`` → ``{"auto_disclosure": {...}}``
+      * ``AppConfig`` instance with ``.skills.auto_disclosure`` dataclass
+      * Anything else → returns empty dict (degrade to desc-only).
+    """
+    if isinstance(config, dict):
+        skills_cfg = config.get("skills")
+        if isinstance(skills_cfg, dict):
+            ad = skills_cfg.get("auto_disclosure")
+            if isinstance(ad, dict):
+                return ad
+        return {}
+    # AppConfig dataclass path
+    try:
+        skills_obj = config.skills
+        ad_obj = skills_obj.auto_disclosure
+        return {
+            "enabled": ad_obj.enabled,
+            "strong_threshold": ad_obj.strong_threshold,
+            "budget_tokens": ad_obj.budget_tokens,
+            "per_skill_max_tokens": ad_obj.per_skill_max_tokens,
+        }
+    except AttributeError:
+        return {}
+
+
+def _read_knowledge_enabled_config(config: Any) -> bool:
+    """Return [skills].knowledge_enabled, defaulting to False for BC."""
+    if isinstance(config, dict):
+        skills_cfg = config.get("skills")
+        if isinstance(skills_cfg, dict):
+            return bool(skills_cfg.get("knowledge_enabled", False))
+        return False
+    try:
+        return bool(config.skills.knowledge_enabled)
+    except AttributeError:
+        return False
+
+
+_ASSERT_PROTOCOL: Component = SkillComponent()

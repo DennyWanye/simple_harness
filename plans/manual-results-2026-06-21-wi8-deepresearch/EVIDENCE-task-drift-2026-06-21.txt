@@ -1,0 +1,31 @@
+# 任务漂移 2026-06-21 本次复现 log 摘录
+# 源: plans/manual-results-2026-06-21-wi8-deepresearch/tauri-dev.log
+
+## 我发的原话(verbatim, windows-mcp 剪贴板真输入):
+  16:12  帮我深度调研 钠离子电池 的工作原理、产业现状与代表企业，输出一份带引用的 Markdown 报告
+  16:13  帮我深度调研 固态电池 的技术路线与产业化进展，输出一份带引用的 Markdown 报告
+  16:53  帮我深度调研 2025年中国新能源汽车出口现状：主要出口市场、代表企业、政策支持与面临的挑战，输出一份带引用的 Markdown 报告
+  17:08  帮我深度调研 区块链 的基本原理、发展历程、核心技术、主要应用领域与面临的挑战，输出一份带引用的 Markdown 报告
+
+## LLM 实际研究并落盘的报告(文件名=LLM 生成的 topic slug):
+DeepResearch/区块链的基本原理、发展历程、核心技术、主要应用领域与面临的挑战：覆盖分布式账本、-1782033250.md
+DeepResearch/宁德时代2024年报核心数据：营业收入、归母净利润、扣非净利润、毛利率、现金流、-1782033022.md
+DeepResearch/固态电池的技术路线与产业化进展：硫化物、氧化物、聚合物、卤化物-复合固态电解质路-1782029909.md
+DeepResearch/Sodium-ion-batteries-work-principle-indu-1782029683.md
+DeepResearch/钠离子电池的工作原理、产业现状与代表企业：技术路线、产业化进展、应用场景、主要中-1782029545.md
+
+## 漂移对照:
+  固态电池(我发) -> Sodium-ion/钠离子(实际)  [漂移]
+  区块链(我发)   -> 宁德时代2024年报/CATL(实际) [漂移, fanout 6 子问题]
+
+## Fix B 锚点(task_drift_user_request_injected 在触发, 但漂移仍发生):
+      6 task_drift_user_request_injected tool=deepresearch req_len=60
+      2 task_drift_user_request_injected tool=deepresearch req_len=67
+
+## fan-out 把漂移主题并行研究 6 份(subagent_scheduled):
+subagent_scheduled kind=research run_id=default.dr-0
+subagent_scheduled kind=research run_id=default.dr-1
+subagent_scheduled kind=research run_id=default.dr-2
+subagent_scheduled kind=research run_id=default.dr-3
+subagent_scheduled kind=research run_id=default.dr-4
+subagent_scheduled kind=research run_id=default.dr-5

@@ -1,0 +1,3737 @@
+Reading additional input from stdin...
+OpenAI Codex v0.125.0 (research preview)
+--------
+workdir: G:\projects\deskpet
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0a7d-f39b-7f32-91af-0cfbe314e263
+--------
+user
+# 评估任务 — 核对 plan 完成度（只读，不许改文件）
+
+你是独立审查 Expert（只读）。仓库根：`G:\projects\deskpet`。**禁止修改任何文件、禁止 git 操作**，只读代码 + 输出评估。
+
+## 背景
+plan 文件：`G:\projects\deskpet\plans\2026-06-28-userdata-path-binding-fix\00-PLAN.md`。
+目标：修复装机版 config.toml 路径跨会话漂移（relay-cloud provider 写一个目录、读另一个目录 → get_chain 空 → legacy 空 key 拼出非法 `Bearer ` 崩溃）+ 把 userdata 单一事实源绑定到安装目录 + 空 key 护栏。
+
+## 你的任务
+逐条核对 plan §5 的 Phase 1~6 是否**真正落地到代码**（不是看测试绿就算数，要读实现确认语义正确）。逐 Phase 给「完成度 %」+「缺口清单」。重点核查以下"真做了没"：
+
+### Phase 1（`backend/paths.py`）
+- `_portable_userdata_dir()` 是否去掉了 `candidates_up=(1,2,0)` 的盘邻居回落，改为只认 `<install_root>/userdata`（backend 布局）/ `<exe_dir>/userdata`（standalone）？
+- 是否记忆化（模块级 cache + `reset_path_cache()`）？
+- sentinel `.deskpet-portable` 固化绑定是否实现（存在即无条件返回）？
+- 不可写时是否 `logger.error` 后回落 AppData（而非盘邻居）？
+
+### Phase 2（`tauri-app/src-tauri/src/paths.rs` + `process_manager.rs`）
+- `portable_userdata_dir` 是否改成 create-then-return（不再要求目录预先存在）？
+- `spawn_once` 是否把 Rust 解析的 userdata 注入 `DESKPET_USER_DATA_DIR` 给 backend？env 名是否与 Python `backend/paths.py` priority-1 读的**完全一致**？
+- `cargo build` 是否能过（你可只读判断语法/类型，不必真跑）？
+
+### Phase 3（`backend/config.py`）
+- `_recover_orphaned_endpoints` 是否实现并 **wire 进 `resolve_config_path`**（seed 之后调用）？
+- 触发条件是否正确（canonical 无 enabled endpoints 才迁）？候选源是否含 AppData + frozen 安装目录 + 盘邻居？是否排除 canonical 自身？
+- 是否写 `.pre-recover-bak` 备份 + 幂等 + 全程不抛（异常只 warning）？
+
+### Phase 4（空 key 护栏）★最易做错
+- **关键**：main.py 真正用的聊天 provider 是 `from providers.openai_compatible import OpenAICompatibleProvider`。护栏是否加在**这个**类的出站 client 构造点（`providers/openai_compatible.py::_client`），而不是只加在没人用的 `llm/openai_adapter.py`？
+- `_client` 是否在拼 `Authorization: Bearer {api_key}` **之前**对空/占位符 key（非本地 endpoint）抛错，阻止非法空 Bearer 头发出？
+- 本地 ollama / localhost 是否放行？真 key 是否不受影响？
+- 是否复用现有 `LLMProviderError`(error_class) 让 chat 层 surface 友好消息？
+
+### Phase 5（可观测）
+- `main.py` `config_loaded` 日志是否加了 `portable` / `env_pinned`？
+- `provider_registry.py` 构造是否加了 `provider_registry_ready`（n/enabled/ids）日志？
+
+### Phase 6（`backend/deskpet-backend.spec`）
+- 是否显式钉死 keyring + Windows 后端 hiddenimports（`keyring.backends.Windows` / `win32ctypes.*`），且对缺失依赖容错（spec 仍能加载）？
+
+## 输出格式（结构化）
+对每个 Phase：`Phase N: <完成度%> — <一句话结论>` + 若 <100% 列具体缺口（文件:行 + 缺什么）。
+最后给：`总体完成度: <%>` + `阻断性缺口（必须补）: [...]` + `非阻断建议: [...]`。
+诚实严格——做错地方（如护栏加错模块）必须扣分点名。只读，跑 `grep`/读文件即可，别改东西。 
+
+补充：实现方已按上一轮评估补齐 3 个缺口(user_data_dir 记忆化 / config 候选逐个容错+可用性校验 / agent_loop error_class 透传)。请重新核对并给最新完成度。注意：你只评估，绝对不要修改任何文件、不要跑 git。
+codex
+我会按只读方式核对 plan 和实现，不做任何文件修改，也不执行 git 命令。先读取工作流要求和相关源码，再逐 Phase 对照语义给完成度。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content -Raw 'C:\\Users\\24378\\.agents\\skills\\sp-using-superpowers\\SKILL.md'" in G:\projects\deskpet
+ succeeded in 154ms:
+---
+name: using-superpowers
+description: Use when starting any conversation - establishes how to find and use skills, requiring Skill tool invocation before ANY response including clarifying questions
+---
+
+<SUBAGENT-STOP>
+If you were dispatched as a subagent to execute a specific task, skip this skill.
+</SUBAGENT-STOP>
+
+<EXTREMELY-IMPORTANT>
+If you think there is even a 1% chance a skill might apply to what you are doing, you ABSOLUTELY MUST invoke the skill.
+
+IF A SKILL APPLIES TO YOUR TASK, YOU DO NOT HAVE A CHOICE. YOU MUST USE IT.
+
+This is not negotiable. This is not optional. You cannot rationalize your way out of this.
+</EXTREMELY-IMPORTANT>
+
+## Instruction Priority
+
+Superpowers skills override default system prompt behavior, but **user instructions always take precedence**:
+
+1. **User's explicit instructions** (AGENTS.md, GEMINI.md, AGENTS.md, direct requests) 鈥?highest priority
+2. **Superpowers skills** 鈥?override default system behavior where they conflict
+3. **Default system prompt** 鈥?lowest priority
+
+If AGENTS.md, GEMINI.md, or AGENTS.md says "don't use TDD" and a skill says "always use TDD," follow the user's instructions. The user is in control.
+
+## How to Access Skills
+
+**In Codex:** Use the `Skill` tool. When you invoke a skill, its content is loaded and presented to you鈥攆ollow it directly. Never use the Read tool on skill files.
+
+**In Copilot CLI:** Use the `skill` tool. Skills are auto-discovered from installed plugins. The `skill` tool works the same as Codex's `Skill` tool.
+
+**In Gemini CLI:** Skills activate via the `activate_skill` tool. Gemini loads skill metadata at session start and activates the full content on demand.
+
+**In other environments:** Check your platform's documentation for how skills are loaded.
+
+## Platform Adaptation
+
+Skills use Codex tool names. Non-CC platforms: see `references/copilot-tools.md` (Copilot CLI), `references/codex-tools.md` (Codex) for tool equivalents. Gemini CLI users get the tool mapping loaded automatically via GEMINI.md.
+
+# Using Skills
+
+## The Rule
+
+**Invoke relevant or requested skills BEFORE any response or action.** Even a 1% chance a skill might apply means that you should invoke the skill to check. If an invoked skill turns out to be wrong for the situation, you don't need to use it.
+
+```dot
+digraph skill_flow {
+    "User message received" [shape=doublecircle];
+    "About to EnterPlanMode?" [shape=doublecircle];
+    "Already brainstormed?" [shape=diamond];
+    "Invoke brainstorming skill" [shape=box];
+    "Might any skill apply?" [shape=diamond];
+    "Invoke Skill tool" [shape=box];
+    "Announce: 'Using [skill] to [purpose]'" [shape=box];
+    "Has checklist?" [shape=diamond];
+    "Create TodoWrite todo per item" [shape=box];
+    "Follow skill exactly" [shape=box];
+    "Respond (including clarifications)" [shape=doublecircle];
+
+    "About to EnterPlanMode?" -> "Already brainstormed?";
+    "Already brainstormed?" -> "Invoke brainstorming skill" [label="no"];
+    "Already brainstormed?" -> "Might any skill apply?" [label="yes"];
+    "Invoke brainstorming skill" -> "Might any skill apply?";
+
+    "User message received" -> "Might any skill apply?";
+    "Might any skill apply?" -> "Invoke Skill tool" [label="yes, even 1%"];
+    "Might any skill apply?" -> "Respond (including clarifications)" [label="definitely not"];
+    "Invoke Skill tool" -> "Announce: 'Using [skill] to [purpose]'";
+    "Announce: 'Using [skill] to [purpose]'" -> "Has checklist?";
+    "Has checklist?" -> "Create TodoWrite todo per item" [label="yes"];
+    "Has checklist?" -> "Follow skill exactly" [label="no"];
+    "Create TodoWrite todo per item" -> "Follow skill exactly";
+}
+```
+
+## Red Flags
+
+These thoughts mean STOP鈥攜ou're rationalizing:
+
+| Thought | Reality |
+|---------|---------|
+| "This is just a simple question" | Questions are tasks. Check for skills. |
+| "I need more context first" | Skill check comes BEFORE clarifying questions. |
+| "Let me explore the codebase first" | Skills tell you HOW to explore. Check first. |
+| "I can check git/files quickly" | Files lack conversation context. Check for skills. |
+| "Let me gather information first" | Skills tell you HOW to gather information. |
+| "This doesn't need a formal skill" | If a skill exists, use it. |
+| "I remember this skill" | Skills evolve. Read current version. |
+| "This doesn't count as a task" | Action = task. Check for skills. |
+| "The skill is overkill" | Simple things become complex. Use it. |
+| "I'll just do this one thing first" | Check BEFORE doing anything. |
+| "This feels productive" | Undisciplined action wastes time. Skills prevent this. |
+| "I know what that means" | Knowing the concept 鈮?using the skill. Invoke it. |
+
+## Skill Priority
+
+When multiple skills could apply, use this order:
+
+1. **Process skills first** (brainstorming, debugging) - these determine HOW to approach the task
+2. **Implementation skills second** (frontend-design, mcp-builder) - these guide execution
+
+"Let's build X" 鈫?brainstorming first, then implementation skills.
+"Fix this bug" 鈫?debugging first, then domain-specific skills.
+
+## Skill Types
+
+**Rigid** (TDD, debugging): Follow exactly. Don't adapt away discipline.
+
+**Flexible** (patterns): Adapt principles to context.
+
+The skill itself tells you which.
+
+## User Instructions
+
+Instructions say WHAT, not HOW. "Add X" or "Fix Y" doesn't mean skip workflows.
+
+
+codex
+Using `using-superpowers` to satisfy the session workflow check; for this turn the operative constraint is your read-only evaluation request, so I’m keeping all commands to file reads/searches.
+  → 读取 plan §5 和目标文件定位实现
+  • 逐 Phase 核对实现语义与缺口
+  • 汇总完成度、阻断缺口和建议
+codex
+我先定位 plan §5 的验收点和对应源码位置。接下来会用并行只读命令读取相关文件，避免靠测试结果推断。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content -Raw 'plans\\2026-06-28-userdata-path-binding-fix\\00-PLAN.md'" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content -Raw 'backend\\paths.py'" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content -Raw 'tauri-app\\src-tauri\\src\\paths.rs'" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content -Raw 'tauri-app\\src-tauri\\src\\process_manager.rs'" in G:\projects\deskpet
+ succeeded in 181ms:
+# Plan 鈥?userdata/config 璺緞涓庡畨瑁呯洰褰曠粦瀹氫慨澶?+ 绌?Bearer 鎶ゆ爮
+
+> 鏃ユ湡锛?026-06-28 锝?瑙﹀彂锛氳鏈虹増(F:\deskpet)鑱婂ぉ鎶?`Illegal header value b'Bearer '`
+> 鐘舵€侊細**寰呮墽琛?*锛坮oot cause 宸查攣瀹氾紝Phase 0 璇婃柇寰呯敤鎴峰湪 F:\deskpet 璺戜竴鏉＄‘璁ょ簿纭垎鏀級
+
+---
+
+## 1. 鐜拌薄
+
+瑁呮満鐗堬紙鑷畾涔夌洰褰?`F:\deskpet`锛孉dministrator锛夊璇濇姤锛?
+```
+Illegal header value b'Bearer ' 鈥?LocalProtocolError
+```
+
+backend.log 鍚屾椂鍑虹幇锛歚relay_provider_ensured key_fp=4dce0997`銆乣p5s2_provider_chain_resolve_failed sid=... err=no LLM provider configured`銆佸鏉?`Bearer` 閿欒銆傞噸鍚悗渚濇棫銆?
+---
+
+## 2. Root cause锛堝凡閿佸畾锛屼笁灞傝瘉鎹級
+
+### 2.1 涓嶆槸 keychain bug
+- `main.py:6815`锛歚_api_key = _registry.resolve_api_key(_entry.id) or "ollama"`銆傝嫢 keychain 璇讳笉鍑猴紝relay provider 浼氬彂 **`Bearer ollama`**锛?*涓嶅彲鑳?*鏄┖ `Bearer `銆?- `relay_provider_ensured key_fp=4dce0997`锛坄relay_provider_ops.py:63` 鐨?`key_fingerprint(reg.resolve_api_key(...))`锛夎瘉鏄?*鐧诲綍閭ｆ** keychain 璇诲啓閮芥甯搞€?- 鉄?绌?`Bearer ` 鍙兘鏉ヨ嚜 **legacy 鍏滃簳璺緞**锛坄get_chain()` 鎶?`NoProviderConfiguredError` 鍚?fallback锛夈€?
+### 2.2 鐪熷洜锛歳egistry 璇荤殑 config.toml 閲屾病鏈?enabled 鐨?relay-cloud endpoint
+- 绌?Bearer 鉄?`resolve_provider_for_session` 鈫?`registry.get_chain()` 鎶?`NoProviderConfiguredError`锛坄provider_registry.py:642`锛屾棤 enabled 椤癸級鉄?`main.py:6835` 鎹曡幏 鈫?log `p5s2_provider_chain_resolve_failed` 鈫?`_provider_chain=None` 鈫?閫€ legacy 绌?key銆?- relay-cloud 杩欒 endpoint **涓嶆槸鍑哄巶 bundle config.toml 鑷甫鐨?*锛屾槸**鐧诲綍鏃?* `ensure_relay_provider`鈫抈add_provider`鈫抈_persist_to_toml` 鎵嶅啓杩?`<user_data>/config.toml` 鐨勩€?
+### 2.3 璺緞浼氬湪浼氳瘽闂存紓绉伙紙"瀹夎鐩綍缁戝畾"闂锛?涓ゅ userdata 瑙ｆ瀽**鏉′欢涓嶄竴鑷?*锛屼笖 backend 鑷繁鐙珛瑙ｆ瀽锛圱auri 娌￠拤 env锛夛細
+
+| | Rust `paths.rs::portable_userdata_dir` | Python `paths.py::_portable_userdata_dir` |
+|---|---|---|
+| 閿氱偣 | `current_exe()`=`F:\deskpet\deskpet.exe` 鈫?parent `F:\deskpet` | `sys.executable`=`F:\deskpet\backend\鈥xe` 鈫?parent `F:\deskpet\backend`锛宯ame=="backend" 鏁?candidates_up=`(1,2,0)` |
+| 鍒ゅ畾 | `ud.is_dir()` 鈥斺€?**瑕佹眰鐩綍宸插瓨鍦?*锛屽惁鍒欏洖钀?`%AppData%` | **涓诲姩 `mkdir`+鎺㈤拡鍐?*锛宑andidates_up=2 鏃剁敋鑷充細钀藉埌 `F:\userdata`(鐩橀偦灞? |
+| 鍒涘缓鏃舵満 | `lib.rs:162` 鍦?`.setup()` 閲屾墠 `create_dir_all(<install>/userdata)` | 璋冪敤鍗冲缓 |
+
+- `process_manager.rs::spawn_once`锛?48-219锛夊彧娉ㄤ簡 `DESKPET_CLOUD_API_KEY`/`PYTHONIOENCODING`/`PYTHONUNBUFFERED`锛?*娌℃敞 `DESKPET_USER_DATA_DIR`** 鉄?Python 瀹屽叏鐙珛瑙ｆ瀽銆?- 鉄?鐧诲綍浼氳瘽 vs 閲嶅惎浼氳瘽锛屽洜 `userdata/` 瀛樺湪鎬ф椂搴?+ 涓ゅ鍒ゅ畾宸紓锛?*"portable vs %AppData%" 鐨勭粨璁哄彲鑳界炕杞?*锛歱rovider 鍐欒繘 A 鐩綍鐨?config.toml锛岄噸鍚粠 B 鐩綍璇?鈫?endpoint "涓㈠け"銆?- 鐢ㄦ埛纭疄鍦?`F:\deskpet\userdata\config.toml` 鎵惧埌浜?relay-cloud provider锛屼絾杩愯涓殑 backend 鏋佸彲鑳借鐨勬槸**鍙︿竴涓?* config.toml锛堟垨鍚岀洰褰曚絾璇ヨ disabled/malformed 鈥斺€?Phase 0 鍖哄垎锛夈€?
+### 2.4 娆＄敓 bug锛氱┖ key 鐩存帴鎷?Bearer 澶?鈫?宕?- `main.py:6087` `_headers["Authorization"] = f"Bearer {_api_key}"`锛宍_api_key` 绌烘椂鎷煎嚭闈炴硶澶?`Bearer ` 鈫?httpx `LocalProtocolError`锛屾妸 chat/facts/classifier 鍏ㄥ埛宕╋紝涓旀姤閿欏鐢ㄦ埛涓嶅彲璇汇€?- legacy `local_llm`锛坄main.py:281`锛塳ey 鏉ヨ嚜鍗犱綅绗?keychain锛宖rozen 涓嬮€€鍖栦负绌?鍗犱綅绗︺€?
+### 2.5 鏃佽瘉锛堥潪鏈?bug 浣嗛渶椤烘墜纭寲锛?- `deskpet-backend.spec` 鐨?hiddenimports **娌℃湁鏄惧紡鍒?`keyring` / `keyring.backends.Windows` / `win32ctypes.core`**銆俴eyring 鍚庣璧?entry-point 鍔ㄦ€佸姞杞斤紝PyInstaller 闈欐€佸垎鏋愮湅涓嶅埌 鈫?frozen 鐗?*鏈夋鐜?*鏁翠釜 keyring 澶辨晥銆傛湰鏈虹幇鍦ㄨ兘鐢紙`key_fp` 璇佹槑锛夛紝浣嗗睘瀹氭椂鐐稿脊锛屼竴骞堕拤姝汇€?
+---
+
+## 3. 淇鐩爣
+
+1. **鍗曚竴浜嬪疄婧?*锛歶serdata/config 璺緞**鍞竴鍦扮粦瀹氬埌瀹夎鐩綍**锛孯ust/Python 鍚屼竴绛旀锛岃法浼氳瘽鎭掑畾涓嶆紓绉汇€?2. **鑷剤**锛氬凡缁忔妸 config 鍐欓敊鍦版柟鐨勫瓨閲忚鏈猴紙濡傛湰鐢ㄦ埛锛夋棤闇€閲嶇櫥鍗冲彲鎭㈠銆?3. **浼橀泤澶辫触**锛氭棤鍙敤 provider / 绌?key 鏃剁粰"璇烽噸鏂扮櫥褰?鍙閿欒锛岀粷涓嶆嫾绌?`Bearer ` 宕╂簝銆?4. **鍙娴?*锛氬惎鍔ㄦ棩蹇椾竴鐪肩湅鍑鸿В鏋愬埌鍝€佸姞杞戒簡鍑犱釜 endpoint銆佸嚑涓?enabled銆?
+---
+
+## 4. Phase 0 鈥斺€?绮剧‘鍒嗘敮纭锛堢敤鎴峰湪 F:\deskpet 璺戯紝30 绉掞級
+
+鐩殑锛氬尯鍒?2.3銆岃矾寰勬紓绉汇€峷s銆屽悓鐩綍浣?disabled/malformed銆嶏紝骞朵负淇鍚庨獙璇佺暀鍩虹嚎銆?
+```powershell
+# A. 鐪?backend 瀹為檯鍔犺浇浜嗗摢涓?config锛堝姣旂櫥褰曟湡 vs 鏈€杩戜竴娆￠噸鍚湡锛?Select-String -Path "F:\deskpet\userdata\logs\backend.log" -Pattern "config_loaded" | Select-Object -Last 5
+# B. dump 閭ｄ釜 config.toml 鐨?endpoints 娈碉紙enabled?锛?Get-Content "F:\deskpet\userdata\config.toml" | Select-String -Pattern "endpoints|id =|enabled|base_url|relay" -Context 0,1
+# C. 鏈夋病鏈夌浜屼釜 config.toml 鍦?AppData锛堟紓绉婚搧璇侊級
+Get-Content "$env:APPDATA\deskpet\config.toml" -ErrorAction SilentlyContinue | Select-String "endpoints|relay|enabled"
+Test-Path "$env:APPDATA\deskpet\config.toml"
+```
+
+**鍒よ**锛?- A 鐨?`path=`/`user_data_dir=` 鑻?*涓ゆ湡涓嶅悓** 鈫?2.3 婕傜Щ鍧愬疄锛岄噸鐐?Phase 1+2銆?- A 涓ゆ湡鐩稿悓浣?B 鏄剧ず endpoint `enabled = false`/瀛楁缂哄け 鈫?閲嶇偣 Phase 3 鑷剤 + 澶嶆煡 logout 璇Е鍙戙€?- C 瀛樺湪涓旀湁 endpoints 鈫?婕傜Щ閾佽瘉锛坧rovider 钀藉湪 AppData锛岃繍琛岃 portable锛夈€?
+> 淇璁捐瀵?*鎵€鏈?*鍒嗘敮閮介瞾妫掞紝Phase 0 浠呯敤浜庣‘璁?+ 楠岃瘉锛屼笉闃诲缂栫爜銆?
+---
+
+## 5. 淇鏂规锛堝埌浠ｇ爜绾э級
+
+### Phase 1 鈥?Python 渚ц矾寰勭‘瀹氬寲 + 璁板繂鍖栵紙`backend/paths.py`锛?
+**1a. `user_data_dir()` 璁板繂鍖?+ env 姘歌繙浼樺厛**锛堥槻杩涚▼鍐呮紓绉伙級
+```python
+_USER_DATA_DIR_CACHE: Path | None = None
+
+def user_data_dir() -> Path:
+    global _USER_DATA_DIR_CACHE
+    if _USER_DATA_DIR_CACHE is not None:
+        return _USER_DATA_DIR_CACHE
+    resolved = _resolve_user_data_dir()      # 鍘熻В鏋愰€昏緫鎼繘鏉?    _USER_DATA_DIR_CACHE = resolved
+    return resolved
+```
+> 鍚屾牱缁?`_portable_userdata_dir()` 鍔犱竴娆℃€?cache锛堟垚鍔熺粨鏋滐級锛岄伩鍏嶆瘡娆?probe-write 鎶栧姩銆?
+**1b. 鍘绘帀鍗遍櫓鐨勭洏閭诲眳鍥炶惤**锛坄_portable_userdata_dir`锛?- 鐜?`candidates_up=(1,2,0)`锛宻teps_up=2 浼氳惤鍒?`F:\userdata`锛堢洏鏍归偦灞咃級锛屾槸鑴忔暟鎹簮銆?- 鏀逛负锛歯ame=="backend" 鈫?**鍙 `<install_root>/userdata`**锛? 绾т笂锛夛紱standalone 鈫?鍙 `<exe_dir>/userdata`銆備笉鍙啓鏃?**`logger.error` 澶у０鎶?* 鍐嶆樉寮忓洖钀?`%AppData%`锛堜笉鍐嶉潤鎮勬倓钀藉埌鐩橀偦灞咃級銆?```python
+def _portable_userdata_dir() -> Path | None:
+    base = _install_dir()
+    if base is None:
+        return None
+    root = base.parent if base.name.lower() == "backend" else base
+    candidate = root / "userdata"
+    try:
+        candidate.mkdir(parents=True, exist_ok=True)
+        probe = candidate / ".deskpet-write-probe"
+        probe.write_bytes(b""); probe.unlink()
+    except OSError as e:
+        logger.error("portable_userdata_unwritable dir=%s err=%s 鈥?falling back to AppData", candidate, e)
+        return None
+    return candidate
+```
+
+**1c. sentinel 鍥哄寲缁戝畾**锛氶娆℃垚鍔熻В鏋愬悗钀?`<install>/userdata/.deskpet-portable`锛涘悗缁惎鍔ㄨ嫢 sentinel 瀛樺湪鍒?*鏃犳潯浠?*缁戝畾璇ョ洰褰曪紙鐢ㄦ埛鎰忓浘锛氶拤姝诲畨瑁呯洰褰曪級锛屽嵆渚挎煇娆?probe 鎶栧姩涔熶笉婕傝蛋銆?
+### Phase 2 鈥?Rust 鍗曚竴浜嬪疄婧?+ 娉ㄥ叆 env锛坄tauri-app/src-tauri`锛夆槄鏍稿績
+
+璁?**Rust 瑙ｆ瀽涓€娆?* userdata 骞?*閫氳繃 env 浼犵粰 backend**锛孭ython 璧?priority-1 鐩存帴鐢?鈫?鍙岃В鏋愬交搴曞綊涓€銆?
+**2a. `paths.rs::portable_userdata_dir`** 鏀规垚銆?*create 鍐嶈繑鍥?*銆嶏紙涓?Python 瀵归綈锛屼笉鍐嶈姹傞鍏堝瓨鍦級锛?```rust
+fn portable_userdata_dir() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let parent = exe.parent()?;
+    let root = if parent.file_name()?.to_string_lossy().eq_ignore_ascii_case("backend") {
+        parent.parent()?.to_path_buf()
+    } else { parent.to_path_buf() };
+    let ud = root.join("userdata");
+    // 鎺㈤拡鍐欙細鍙啓鎵嶈 portable锛屽惁鍒?None鈫?AppData%
+    if std::fs::create_dir_all(&ud).is_ok() {
+        let probe = ud.join(".deskpet-write-probe");
+        if std::fs::write(&probe, b"").is_ok() { let _ = std::fs::remove_file(&probe); return Some(ud); }
+    }
+    None
+}
+```
+
+**2b. `process_manager.rs::spawn_once`** 鍦ㄦ敞 env 澶勫姞涓€琛岋紙涓?`DESKPET_CLOUD_API_KEY` 鍚屾锛夛細
+```rust
+if let Some(ud) = crate::paths::user_data_dir() {
+    cmd.env("DESKPET_USER_DATA_DIR", ud.to_string_lossy().to_string());
+}
+```
+> Python `paths.py:193` 宸?priority-1 璇?`DESKPET_USER_DATA_DIR` 鈫?backend 涓嶅啀鐙珛瑙ｆ瀽 鈫?Rust=Python=鍚屼竴鐩綍銆俤evice_id/onboarding/config/db 鍏ㄩ儴褰掍竴銆?
+**2c.** `lib.rs:160-164` 鐨勯鍒涘缓淇濈暀锛堟棤瀹筹級锛屼絾涓嶅啀鏄纭€т緷璧栥€?
+### Phase 3 鈥?瀛橀噺瑁呮満鑷剤杩佺Щ锛坄backend/config.py`锛?
+`resolve_config_path()` 鍐呫€乣seed_user_config_if_missing()` 涔嬪悗鍔犱竴姝?`_recover_orphaned_endpoints()`锛?
+- 瑙勫垯锛歝anonical `<user_data>/config.toml` 鑻?**缂?`[[llm.endpoints]]` 鎴栧叏 disabled**锛屾壂宸茬煡鍊欓€変綅锛坄%AppData%\deskpet\config.toml`銆乣<install>/userdata\config.toml`銆佺洏閭诲眳 `<drive>\userdata\config.toml`锛夈€?- 鎵惧埌**鍚?enabled endpoints** 鐨勶紝鎶婂叾 `[[llm.endpoints]]` 娈靛苟鍏?canonical锛坱omlkit锛屼粎琛?endpoints锛屼繚鐣?canonical 鍏朵綑鍐呭 + 鍐?`.pre-recover-bak`锛夛紝`logger.info("endpoints_recovered_from=%s count=%d", src, n)`銆?- keychain 鏄郴缁熺骇锛堥潪璺緞缁戝畾锛夛紝key 鏈氨鎵惧緱鍒帮紝鏃犻渶杩佺Щ銆?- 骞傜瓑锛歝anonical 宸叉湁 enabled endpoints 鍒?no-op銆?
+### Phase 4 鈥?绌?key 鎶ゆ爮 + 鍙閿欒
+
+**4a. 鐩磋繛澶?*锛坄main.py:6087` 涓€甯︼級锛氭嫾澶村墠鍒ょ┖
+```python
+if not (_api_key or "").strip():
+    raise EmptyApiKeyError(provider_id=getattr(_entry, "id", "?"))
+_headers["Authorization"] = f"Bearer {_api_key}"
+```
+锛圥hase 0 鍚庣‘璁?6087 鐨?`_api_key` 鏉ユ簮锛涜嫢璇ュ瀹為檯涓嶇┖锛屽垯閲嶅績鍦?4b legacy 璺緞銆傦級
+
+**4b. legacy 鍏滃簳涓嶅啀鍙戠┖ key**锛坄main.py:6835` fallback 娈?/ `OpenAICompatibleProvider`锛夛細
+- `get_chain()` 澶辫触鍥為€€鏃讹紝鑻?legacy `local_llm` 鐨?key 涓虹┖/鍗犱綅绗︼紙`{"", "from-keychain", "from-env", "your-key-here"}`锛夛紝**涓?*鍙戣姹傦紝鏀?emit 涓€鏉″彲鎿嶄綔 error 浜嬩欢缁欏墠绔細`reason="no_provider_or_login_required"`锛屾枃妗?鏈娴嬪埌鍙敤鐨?LLM 鎻愪緵鏂癸紝璇烽噸鏂扮櫥褰曞悗閲嶈瘯"銆?- 鏂板 `EmptyApiKeyError`锛坄llm/provider_registry.py` 鎴?`llm/keys.py`锛夛紝chat handler 鎹曡幏 鈫?鍚屼笂 error 浜嬩欢锛屼笉鎶?`LocalProtocolError`銆?
+**4c. openai_adapter**锛歚OpenAICompatibleProvider` 鍙戣姹傚墠鑻?`self._api_key` 绌?鈫?鎶?`EmptyApiKeyError`锛堢粺涓€鎷︽埅鐐癸紝闃蹭换浣曡矾寰勬紡缃戯級銆?
+### Phase 5 鈥?鍙娴嬫€?
+- `main.py:101 config_loaded` 鎵╁睍瀛楁锛歚portable=<bool>`銆乣env_pinned=<DESKPET_USER_DATA_DIR 鏄惁璁?`銆乣n_endpoints`銆乣n_enabled`锛坮egistry 鏋勯€犲悗琛ヤ竴鏉?`provider_registry_ready ids=[...] enabled=[...]`锛夈€?- `LLMProviderRegistry.__init__` 鏈熬 log 鍔犺浇鍒扮殑 ids + enabled 鏁般€?
+### Phase 6 鈥?keyring frozen 纭寲锛坄backend/deskpet-backend.spec`锛?
+hiddenimports 杩藉姞锛?```python
+hiddenimports += collect_submodules("keyring")
+hiddenimports += ["keyring.backends.Windows", "win32ctypes.core", "win32ctypes.pywin32"]
+```
+> 娑堥櫎 frozen 鐗?keyring 鍚庣闈欓粯缂哄け椋庨櫓锛堟梺璇?2.5锛夈€?
+---
+
+## 6. 娴嬭瘯
+
+### 6.1 pytest锛堜笉闇€閲嶆墦鍖咃紝绾€昏緫锛?- `test_paths.py`锛氣憼 portable 纭畾鍖栵紙mock `sys.frozen`+executable 鈫?鍞竴 `<install>/userdata`锛屼笉钀界洏閭诲眳锛夛紱鈶?璁板繂鍖栵紙鏀?env 鍚庡悓杩涚▼浠嶈繑鍥為瑙ｆ瀽锛夛紱鈶?`DESKPET_USER_DATA_DIR` env 姘歌繙浼樺厛锛涒懀 涓嶅彲鍐欐椂鍥炶惤 AppData 涓?log error銆?- `test_config_resolution.py` 澧烇細`_recover_orphaned_endpoints` 鈥斺€?canonical 鏃?endpoints + AppData 鏈?enabled 鈫?杩佺Щ鎴愬姛銆佸箓绛夈€佸浠界敓鎴愩€乧anonical 鍏朵綑鍐呭涓嶅彉銆?- 鏂?`test_empty_api_key_guard.py`锛氱┖/鍗犱綅绗?key 鈫?`EmptyApiKeyError`锛沜hat fallback emit `no_provider_or_login_required` 鑰岄潪 `LocalProtocolError`锛涢潪绌?key 涓嶅彈褰卞搷锛圔C锛夈€?- 鍏ㄩ噺鍥炲綊锛歚backend/tests` 缁裤€?
+### 6.2 Rust 鍗曟祴
+- `paths.rs`锛歚portable_userdata_dir` create-then-return锛堝彲娉ㄥ叆 exe 璺緞鐨?`*_with` 鍙樹綋锛夛紱涓嶅彲鍐?鈫?None銆?- `process_manager`锛氭娊 `build_backend_env()` 绾嚱鏁帮紝鏂█鍚?`DESKPET_USER_DATA_DIR`锛坰pawn 鏈韩闅惧崟娴嬶級銆?
+### 6.3 鐪熸満锛堟渶缁堣瘉鎹?鈥斺€?闇€閲嶆墦鍖咃級
+- `scripts/build_backend.ps1` + Tauri NSIS 閲嶆墦 installer 鈫?**鍏ㄦ柊瑁呭埌 `F:\deskpet`** 鈫?鐧诲綍 鈫?**閲嶅惎** 鈫?瀵硅瘽銆屼綘濂姐€嶆垚鍔燂紙鏃犵┖ Bearer锛夈€?- 楠岃瘉 `config_loaded` 鐧诲綍鏈?vs 閲嶅惎鏈?`path=`/`user_data_dir=` **瀹屽叏涓€鑷?*锛沗provider_registry_ready enabled>=1`銆?- 瀛橀噺鑷剤锛氫繚鐣欐棫 AppData orphan config 瑁呮柊鐗?鈫?棣栧惎 log `endpoints_recovered_from=...` 鈫?涓嶉噸鐧诲嵆鍙亰銆?- 璧伴」鐩湡娴嬬邯寰嬶紙windows-mcp 鐪熺偣鐪熻緭鍏?+ 鎴浘 + 鎶?tauri-dev/backend log锛夈€?
+> 鈿狅笍 鐪熸満楠岃瘉蹇呴』**閲嶆墦鍖?*锛堣鏈虹増璺?frozen exe锛孌ESKPET_BACKEND_DIR 瑕嗙洊鏄?dev 鎵嬫锛夈€俻ytest/Rust 鍗曟祴鍏堣鍏滀綇閫昏緫锛涢噸鎵撳寘鍓嶇敤鎴风敤 env 鍏滃簳锛坄DESKPET_CLOUD_API_KEY`锛夌户缁祴搴旂敤鍏朵綑鍔熻兘銆?
+---
+
+## 7. 鎵ц椤哄簭涓庨闄?
+1. Phase 0 璇婃柇锛堢敤鎴凤紝骞惰锛夆啋 纭鍒嗘敮銆?2. Phase 1+4+5+6锛堢函 Python/spec锛屽厛钀斤紝pytest 楠岋級銆?3. Phase 3 鑷剤锛圥ython锛宲ytest 楠岋級銆?4. Phase 2锛圧ust锛宑argo test锛夈€?5. 閲嶆墦鍖?鈫?鐪熸満楠屾敹 鈫?STATUS 鏇存柊銆?
+**椋庨櫓**锛?- Phase 2 鏀?Rust 闇€ `cargo build` + 閲嶆墦鍖咃紝杩唬閲嶃€傗啋 鏁?Python 渚э紙1/3/4锛夌嫭绔嬫垚绔嬶紝鍗充娇涓嶅姩 Rust 涔熻兘闈?璁板繂鍖?鍘荤洏閭诲眳+鑷剤+env 浼樺厛"澶у箙鏀舵暃锛汸hase 2 鏄牴娌诲弻瑙ｆ瀽鐨勬渶鍚庝竴閿ゃ€?- 鑷剤杩佺Щ璇苟鍏?*浠栦汉/杩囨湡** endpoints锛熲啋 浠呮壂鍥哄畾鍊欓€変綅 + 浠呭綋 canonical 鏃?enabled 鏃惰Е鍙?+ 鍐欏浠?+ 骞傜瓑锛屼綆椋庨櫓锛沰eychain key 瀵逛笉涓婂垯鍚庣画 4c 鍙嬪ソ鎶ラ敊鑰岄潪宕┿€?
+
+ succeeded in 175ms:
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
+"""Model / asset / user-data directory resolution.
+
+P3-S1 birthed :func:`model_root` and :func:`resolve_model_dir`.
+P3-S6 + P3-S7 extend this module to cover the full "where does each kind
+of path live" question, because model storage and user data both moved
+out of the repo tree when we started shipping a frozen bundle.
+
+P4-S22+ adds **portable mode**: when an ``<install_dir>/userdata/``
+folder exists alongside the frozen exe, ALL user-mutable state
+(config, SQLite, logs, models, skills, plugins) lives under it
+instead of `%AppData%`. This:
+  * keeps the C: drive clean (everything next to the install)
+  * survives MSI uninstall (Windows Installer only deletes files it
+    explicitly listed at install time; an empty userdata/ folder
+    sentinel created post-install is preserved)
+  * makes "move my install + data to another drive" a directory copy
+
+Detection: the bundle ships an empty ``<install_dir>/userdata/.deskpet-portable``
+sentinel. If that sentinel exists, we're portable; if not, classic
+AppData layout.
+
+Three orthogonal questions this module answers:
+
+1. **Where are model checkpoints?** (:func:`model_root` / :func:`resolve_model_dir`)
+2. **Where does the user's mutable state live?** (:func:`user_data_dir`)
+3. **Where do big, regenerable files live?** (:func:`user_cache_dir` /
+   :func:`user_models_dir`)
+
+The ``DESKPET_*`` env vars exist so CI, E2E scripts, and dev workflows
+can pin paths explicitly without touching the filesystem defaults.
+"""
+from __future__ import annotations
+
+import logging
+import os
+import sys
+from pathlib import Path
+
+import platformdirs
+
+# Constants used by platformdirs. `appauthor=False` means "don't insert
+# an AppAuthor\AppName folder stack on Windows" 鈥?we own the top-level
+# name "deskpet" directly, giving clean paths like `AppData\Roaming\deskpet\`
+# instead of `AppData\Roaming\deskpet\deskpet\`.
+_APP_NAME = "deskpet"
+_APP_AUTHOR: str | bool = False
+logger = logging.getLogger(__name__)
+_UNSET = object()
+_PORTABLE_CACHE: Path | None | object = _UNSET
+# 杩涚▼鍐呰蹇嗗寲 user_data_dir 鐨勯潪 env 瑙ｆ瀽缁撴灉锛坋nv 姣忔浠嶄紭鍏堬級锛?# 闃?portable 鎺㈤拡/瑙ｆ瀽鎶栧姩瀵艰嚧鍚岃繘绋嬪唴 config.toml / state.db 钀戒笉鍚岀洰褰曘€?_USER_DATA_DIR_CACHE: Path | object = _UNSET
+
+
+def _install_dir() -> Path | None:
+    """Return the directory containing the frozen exe, or None in dev mode."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return None
+
+
+def _portable_userdata_dir() -> Path | None:
+    """Return ``<install_root>/userdata/`` when running from a frozen install.
+
+    Layout we expect (Tauri MSI ships this)::
+
+        <install_root>/                  (e.g. G:\\tools\\deskpet\\)
+            deskpet.exe                  (Tauri main exe)
+            backend/
+                deskpet-backend.exe      鈫?sys.executable when frozen
+                _internal/
+            userdata/
+                config.toml
+                data/state.db
+                models/
+                logs/
+                skills/
+
+    The backend exe's ``Path.parent`` is `<install>/backend/`; that
+    layout binds only to `<install>/userdata/`. Standalone frozen
+    builds bind only to `<exe_dir>/userdata/`. Once the portable
+    sentinel exists, it pins the install-local directory.
+
+    The MSI installer's component manifest does NOT list any files
+    under ``userdata/``, so MSI uninstall leaves the entire userdata
+    tree (state.db, config.toml, models/, skills/) untouched. That's
+    how "uninstall doesn't lose my chat history" works.
+    """
+    global _PORTABLE_CACHE
+    if _PORTABLE_CACHE is not _UNSET:
+        return _PORTABLE_CACHE if isinstance(_PORTABLE_CACHE, Path) else None
+
+    base = _install_dir()
+    if base is None:
+        _PORTABLE_CACHE = None
+        return None
+    # Deterministic binding: backend exe -> install root, standalone exe
+    # -> exe dir. Never walk up to drive-root neighbor userdata folders.
+    root = base.parent if base.name.lower() == "backend" else base
+    candidate = root / "userdata"
+    sentinel = candidate / ".deskpet-portable"
+    if sentinel.exists():
+        _PORTABLE_CACHE = candidate
+        return candidate
+
+    try:
+        candidate.mkdir(parents=True, exist_ok=True)
+        probe = candidate / ".deskpet-write-probe"
+        probe.write_bytes(b"")
+        probe.unlink()
+    except OSError as e:
+        logger.error(
+            "portable_userdata_unwritable dir=%s err=%s 鈥?falling back to AppData",
+            candidate,
+            e,
+        )
+        _PORTABLE_CACHE = None
+        return None
+
+    try:
+        sentinel.touch(exist_ok=True)
+    except OSError:
+        pass
+    _PORTABLE_CACHE = candidate
+    return candidate
+
+
+def reset_path_cache() -> None:
+    """Tests call this to clear memoized portable + user_data_dir resolution."""
+    global _PORTABLE_CACHE, _USER_DATA_DIR_CACHE
+    _PORTABLE_CACHE = _UNSET
+    _USER_DATA_DIR_CACHE = _UNSET
+
+
+def is_portable_mode() -> bool:
+    """True when running from a frozen install with a writable userdata dir."""
+    return _portable_userdata_dir() is not None
+
+
+def _install_root_for_deepresearch() -> Path | None:
+    """Return writable ``<install_root>/DeepResearch`` for frozen installs."""
+    base = _install_dir()
+    if base is None:
+        return None
+    root = base.parent if base.name.lower() == "backend" else base
+    target = root / "DeepResearch"
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        probe = target / f".deskpet-dr-write-probe-{os.getpid()}"
+        probe.write_bytes(b"")
+        probe.unlink()
+    except OSError:
+        return None
+    return target
+
+
+def deepresearch_dir() -> Path:
+    """Runtime DeepResearch report directory.
+
+    Resolution order:
+      1. ``DESKPET_DEEPRESEARCH_DIR`` env override.
+      2. Frozen install root ``<install_root>/DeepResearch`` when writable.
+      3. Dev repo root ``DeepResearch/``.
+      4. ``~/DeskPet/DeepResearch`` fallback.
+
+    This path deliberately never falls back to :func:`user_data_dir` /
+    AppData, so research artifacts stay in a visible report directory.
+    """
+    override = os.environ.get("DESKPET_DEEPRESEARCH_DIR")
+    if override:
+        target = Path(override)
+        target.mkdir(parents=True, exist_ok=True)
+        return target
+
+    frozen_target = _install_root_for_deepresearch()
+    if frozen_target is not None:
+        frozen_target.mkdir(parents=True, exist_ok=True)
+        return frozen_target
+
+    if not getattr(sys, "frozen", False):
+        target = Path(__file__).resolve().parents[1] / "DeepResearch"
+        target.mkdir(parents=True, exist_ok=True)
+        return target
+
+    target = Path.home() / "DeskPet" / "DeepResearch"
+    target.mkdir(parents=True, exist_ok=True)
+    logger.warning(
+        "DeepResearch install directory is not writable; falling back to %s",
+        target,
+    )
+    return target
+
+
+def user_data_dir() -> Path:
+    """Roaming user data directory (config, DBs, logs).
+
+    Resolution order:
+      1. ``DESKPET_USER_DATA_DIR`` env override (tests, power users).
+      2. **Portable mode** 鈥?``<install_dir>/userdata/`` (if sentinel
+         present). All state lives next to the install, not under C:.
+      3. **Dev-from-source** 鈥?``DESKPET_DEV_MODE=1`` and not frozen 鈫?         repo-local ``backend/userdata/`` (same target as
+         ``scripts/dev-start.ps1``). Guardrail so ad-hoc dev launches that
+         forget to set ``DESKPET_USER_DATA_DIR`` still keep state on the
+         repo's disk instead of polluting ``%AppData%`` on C:.
+      4. Classic 鈥?Windows ``%AppData%\\deskpet\\``, macOS/Linux XDG.
+    """
+    # env 姘歌繙浼樺厛锛堜笉杩涚紦瀛樷€斺€攑ower-user / 娴嬭瘯鍙湪杩涚▼鍐呭垏鎹級銆?    override = os.environ.get("DESKPET_USER_DATA_DIR")
+    if override:
+        return Path(override)
+    # 闈?env 瑙ｆ瀽璁板繂鍖栵細棣栬В鏋愬悗閽夋锛岄槻鍚岃繘绋嬪唴 portable 鎺㈤拡/瑙ｆ瀽鎶栧姩
+    # 璁?config.toml / state.db 钀藉埌涓嶅悓鐩綍锛堣鏈虹増璺緞婕傜Щ鐨勮繘绋嬪唴鍙樹綋锛夈€?    global _USER_DATA_DIR_CACHE
+    if _USER_DATA_DIR_CACHE is not _UNSET:
+        return _USER_DATA_DIR_CACHE  # type: ignore[return-value]
+    portable = _portable_userdata_dir()
+    if portable is not None:
+        resolved = portable
+    elif os.environ.get("DESKPET_DEV_MODE") == "1" and not getattr(sys, "frozen", False):
+        # backend/userdata 鈥?paths.py lives in backend/, so .parent is it.
+        resolved = Path(__file__).resolve().parent / "userdata"
+    else:
+        resolved = Path(
+            platformdirs.user_data_dir(_APP_NAME, appauthor=_APP_AUTHOR, roaming=True)
+        )
+    _USER_DATA_DIR_CACHE = resolved
+    return resolved
+
+
+def output_dir(kind: str = "") -> Path:
+    """鐢ㄦ埛鐢熸垚鐗╃粺涓€杈撳嚭鐩綍: ``<user_data>/OutPut[/<kind>]``銆?
+    妗屽疇鐢熸垚鐨勬墍鏈変氦浠樼墿(PPT/鏂囨。/鍥剧墖绛?閮借惤杩欓噷,鎸夌被鍨嬪垎瀛愮洰褰?    (濡?``OutPut/PPT``),鐢ㄦ埛濂芥壘銆傜洰褰曟寜闇€鍒涘缓;鍒涘缓澶辫触杩斿洖璺緞鏈韩
+    (璋冪敤鏂瑰啓鏂囦欢鏃惰嚜鐒舵姤閿?涓嶅湪杩欓噷鎶?銆?    """
+    base = user_data_dir() / "OutPut"
+    target = base / kind if kind else base
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+    except Exception:  # noqa: BLE001 鈥?鍙鐩樼瓑;璋冪敤鏂瑰啓鏂囦欢鏃舵姤閿?        pass
+    return target
+
+
+def user_cache_dir() -> Path:
+    """Cache directory (HF scratch, temp files).
+
+    Portable: ``<install_dir>/userdata/cache``.
+    Classic:  ``%LocalAppData%\\deskpet\\Cache\\`` (Windows).
+
+    Override via ``DESKPET_USER_CACHE_DIR``.
+    """
+    override = os.environ.get("DESKPET_USER_CACHE_DIR")
+    if override:
+        return Path(override)
+    portable = _portable_userdata_dir()
+    if portable is not None:
+        return portable / "cache"
+    return Path(platformdirs.user_cache_dir(_APP_NAME, appauthor=_APP_AUTHOR))
+
+
+def user_models_dir() -> Path:
+    """Models directory.
+
+    Portable: ``<install_dir>/userdata/models``.
+    Classic:  ``%LocalAppData%\\deskpet\\models\\`` (Windows).
+
+    Override via ``DESKPET_MODEL_ROOT`` (same env var :func:`model_root`
+    uses, so a single setting covers both lookup paths).
+    """
+    override = os.environ.get("DESKPET_MODEL_ROOT")
+    if override:
+        return Path(override)
+    portable = _portable_userdata_dir()
+    if portable is not None:
+        return portable / "models"
+    # Sits under LocalAppData\deskpet\ (alongside Cache\, Logs\ if we ever
+    # want them) via platformdirs' non-roaming user_data_dir.
+    local_base = Path(platformdirs.user_data_dir(_APP_NAME, appauthor=_APP_AUTHOR, roaming=False))
+    return local_base / "models"
+
+
+def user_log_dir() -> Path:
+    """User log directory.
+
+    Portable: ``<install_dir>/userdata/logs``.
+    Classic:  ``user_data_dir() / "logs"`` (under %AppData% on Windows).
+
+    We deliberately put logs alongside the rest of the user data
+    (rather than the platformdirs ``user_log_dir`` default of a
+    separate "Logs" subtree) so support bundles capture them in one
+    place.
+
+    Override via ``DESKPET_USER_LOG_DIR``.
+    """
+    override = os.environ.get("DESKPET_USER_LOG_DIR")
+    if override:
+        return Path(override)
+    return user_data_dir() / "logs"
+
+
+def model_root() -> Path:
+    """Return the root directory containing all bundled model subfolders.
+
+    Priority (first hit wins):
+
+    1. ``DESKPET_MODEL_ROOT`` env 鈥?explicit override (CI/E2E/debug).
+    2. :func:`user_models_dir` if it exists on disk 鈥?production path
+       post-P3-S6. This is where the installer / setup script drops
+       real model weights.
+    3. ``sys._MEIPASS/models`` 鈥?PyInstaller bundle. Normally empty
+       after P3-S6 (too big to fit under P3-G2's 3.5 GB cap), but kept
+       as a fallback so tiny bundled checkpoints (or dev-only slim
+       bundles) still resolve without extra setup.
+    4. Dev fallback: ``backend/models/`` beside this file.
+
+    Note: step 2 requires the directory to **exist** 鈥?if the user
+    hasn't run ``setup_user_data.ps1`` yet we fall through to the
+    bundle / dev path rather than returning a phantom empty dir.
+    Callers use :func:`resolve_model_dir` to join a subfolder; they
+    decide whether a missing subdir is fatal.
+    """
+    override = os.environ.get("DESKPET_MODEL_ROOT")
+    if override:
+        return Path(override)
+    # P3-S6: check the production (LocalAppData) path first, but only
+    # if it has been provisioned. This lets dev mode keep resolving to
+    # backend/models/ without forcing devs to populate LocalAppData.
+    user_dir = user_models_dir()
+    if user_dir.is_dir():
+        return user_dir
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        return Path(meipass) / "models"
+    # Dev mode: backend/models/ beside this file.
+    return Path(__file__).resolve().parent / "models"
+
+
+def resolve_model_dir(subdir: str) -> Path:
+    """Return absolute path for a named model subfolder, with multi-source fallback.
+
+    ``subdir`` examples: ``"faster-whisper-large-v3-turbo"``, ``"cosyvoice2"``,
+    ``"silero_vad"``, ``"bge-m3-int8"``.
+
+    Priority (first **existing** directory wins so user-installed weights
+    override the bundle, and bundled weights override "nothing"):
+
+    1. ``DESKPET_MODEL_ROOT/<subdir>`` 鈥?explicit env override (CI/E2E).
+    2. ``user_models_dir()/<subdir>`` 鈥?user-installed (let the user swap
+       in their own quantization or fine-tune by dropping it here).
+    3. ``sys._MEIPASS/models/<subdir>`` 鈥?frozen bundle's bundled weights
+       (P4-S20+ install bundle ships BGE-M3 + faster-whisper here).
+    4. ``backend/assets/<subdir>`` 鈥?dev-mode equivalent of #3 (this is
+       what PyInstaller reads from when freezing).
+    5. ``backend/models/<subdir>`` 鈥?legacy dev-mode location (kept for
+       back-compat with pre-P4-S20 dev setups).
+
+    If none of the above exist, returns the path under
+    ``user_models_dir()/<subdir>`` so error messages point users at the
+    "right" place to drop missing weights. Callers must handle the
+    "directory still doesn't exist" case (e.g. faster-whisper falls back
+    to HuggingFace auto-download, BGE-M3 falls back to mock vectors).
+    """
+    override = os.environ.get("DESKPET_MODEL_ROOT")
+    if override:
+        return (Path(override) / subdir).resolve()
+
+    backend_dir = Path(__file__).resolve().parent
+    candidates: list[Path] = [user_models_dir() / subdir]
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass) / "models" / subdir)
+    candidates.append(backend_dir / "assets" / subdir)
+    candidates.append(backend_dir / "models" / subdir)
+
+    for c in candidates:
+        if c.is_dir():
+            return c.resolve()
+
+    # Nothing exists 鈫?return the user_models_dir path so missing-model
+    # errors point at the writable user-friendly location.
+    return (user_models_dir() / subdir).resolve()
+
+
+def ensure_user_dirs() -> None:
+    """Create the standard user directories if missing. Idempotent.
+
+    Called once at backend startup (from ``main.py``) so downstream
+    code can assume ``user_data_dir() / "data"`` etc. exist without
+    each caller racing on ``mkdir(parents=True)``.
+
+    Failures are swallowed with a warning rather than raised 鈥?the
+    backend should still come up on e.g. a read-only profile, using
+    whatever paths the user explicitly configured.
+    """
+    for d in (
+        user_data_dir(),
+        user_data_dir() / "data",
+        user_data_dir() / "workspace",  # P4-S22: MCP filesystem root
+        user_log_dir(),
+        user_cache_dir(),
+        user_models_dir(),
+    ):
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            # Non-fatal: user may have overridden to a read-only path.
+            # Downstream writes will surface the real error.
+            pass
+
+
+ succeeded in 189ms:
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
+//! P3-S8 鈥?Rust-side mirror of `backend/paths.py`.
+//!
+//! Both the Tauri supervisor and the Python backend need to agree on
+//! *where* user data lives (`%AppData%\deskpet\`) so the UI can open
+//! log / data directories without round-tripping through the backend.
+//! We intentionally re-derive the paths here instead of asking the
+//! backend: the "open log dir" button must work **even when the backend
+//! refuses to start** (that's precisely when the user most needs it).
+//!
+//! Priority (per env var):
+//!   user_data_dir  鈫?`$DESKPET_USER_DATA` || `%AppData%\deskpet`
+//!   user_log_dir   鈫?`$DESKPET_USER_LOG`  || `<user_data>\logs`
+//!   user_models_dir 鈫?`$DESKPET_MODEL_ROOT` || `%LocalAppData%\deskpet\models`
+//!
+//! The `resolve_*_with` variants accept an env-lookup closure and a
+//! pair of base-dir overrides (AppData / LocalAppData) so tests can
+//! exercise every branch without mutating real process environment.
+
+use std::path::{Path, PathBuf};
+
+pub type EnvLookup<'a> = &'a dyn Fn(&str) -> Option<String>;
+
+#[derive(Debug, Clone)]
+pub struct BaseDirs {
+    pub app_data: Option<PathBuf>,      // %AppData% (Roaming)
+    pub local_app_data: Option<PathBuf>, // %LocalAppData%
+}
+
+impl BaseDirs {
+    /// Resolve base dirs from the real OS environment.
+    #[cfg(not(test))]
+    pub fn from_env() -> Self {
+        Self {
+            app_data: std::env::var("APPDATA").ok().map(PathBuf::from),
+            local_app_data: std::env::var("LOCALAPPDATA").ok().map(PathBuf::from),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn from_env() -> Self {
+        // Under cfg(test) we never want to touch real %AppData%.
+        Self { app_data: None, local_app_data: None }
+    }
+}
+
+fn resolve_with(
+    env_key: &str,
+    env_lookup: EnvLookup<'_>,
+    fallback: Option<PathBuf>,
+) -> Option<PathBuf> {
+    if let Some(v) = env_lookup(env_key).filter(|s| !s.is_empty()) {
+        return Some(PathBuf::from(v));
+    }
+    fallback
+}
+
+/// Portable-mode userdata dir: when running from a frozen install, data
+/// lives in `<install>/userdata/` next to the exe (mirrors Python
+/// `backend/paths.py::_portable_userdata_dir`). Returns None in dev mode
+/// (current_exe isn't in the install layout) or when userdata/ is not writable.
+///
+/// Layout: `<install>/deskpet.exe` + `<install>/userdata/`; the backend
+/// exe sits at `<install>/backend/deskpet-backend.exe`, so we also check
+/// one level up when the exe's parent is named "backend".
+fn portable_userdata_dir_from_exe(exe: &Path) -> Option<PathBuf> {
+    let parent = exe.parent()?;
+    let root = if parent
+        .file_name()
+        .map(|n| n.to_string_lossy().eq_ignore_ascii_case("backend"))
+        .unwrap_or(false)
+    {
+        parent.parent()?.to_path_buf()
+    } else {
+        parent.to_path_buf()
+    };
+    let ud = root.join("userdata");
+    if std::fs::create_dir_all(&ud).is_ok() {
+        let probe = ud.join(".deskpet-write-probe");
+        if std::fs::write(&probe, b"").is_ok() {
+            let _ = std::fs::remove_file(&probe);
+            return Some(ud);
+        }
+    }
+    None
+}
+
+#[cfg(not(test))]
+fn portable_userdata_dir() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    portable_userdata_dir_from_exe(&exe)
+}
+
+#[cfg(test)]
+fn portable_userdata_dir() -> Option<PathBuf> {
+    // 娴嬭瘯涓嬩笉鎺㈡祴鐪熷疄 current_exe(閬垮厤 test runner 鏃佺宸х殑 userdata 骞叉壈
+    // 鐜版湁鍗曟祴鐨?%AppData% 鏈熸湜)銆?    None
+}
+
+pub fn user_data_dir_with(base: &BaseDirs, env_lookup: EnvLookup<'_>) -> Option<PathBuf> {
+    // 1. DESKPET_USER_DATA_DIR 鈥?涓?Python backend/paths.py 缁熶竴鐨?env 鍚?    //    (鍘嗗彶 bug: Rust 璇?DESKPET_USER_DATA銆丳ython 璇?DESKPET_USER_DATA_DIR,
+    //    鍚嶅瓧涓嶄竴鑷?鈫?device_id/onboarding 鍜?config/db 钀藉埌涓嶅悓鐩綍)銆?    if let Some(v) = env_lookup("DESKPET_USER_DATA_DIR").filter(|s| !s.is_empty()) {
+        return Some(PathBuf::from(v));
+    }
+    // 2. 鍏煎鏃?DESKPET_USER_DATA(鏃?_DIR) 鈥?鑰佺敤鎴峰彲鑳借杩?鍒牬鍧忋€?    if let Some(v) = env_lookup("DESKPET_USER_DATA").filter(|s| !s.is_empty()) {
+        return Some(PathBuf::from(v));
+    }
+    // 3. portable: frozen 瀹夎鏃?<install>/userdata(涓?Python portable 涓€鑷?銆?    if let Some(p) = portable_userdata_dir() {
+        return Some(p);
+    }
+    // 4. classic: %AppData%\deskpet銆?    base.app_data.as_ref().map(|p| p.join("deskpet"))
+}
+
+pub fn user_log_dir_with(base: &BaseDirs, env_lookup: EnvLookup<'_>) -> Option<PathBuf> {
+    if let Some(v) = env_lookup("DESKPET_USER_LOG").filter(|s| !s.is_empty()) {
+        return Some(PathBuf::from(v));
+    }
+    user_data_dir_with(base, env_lookup).map(|p| p.join("logs"))
+}
+
+pub fn user_models_dir_with(base: &BaseDirs, env_lookup: EnvLookup<'_>) -> Option<PathBuf> {
+    if let Some(v) = env_lookup("DESKPET_MODEL_ROOT").filter(|s| !s.is_empty()) {
+        return Some(PathBuf::from(v));
+    }
+    // portable: <install>/userdata/models(涓?Python paths.py 涓€鑷?銆?    if let Some(p) = portable_userdata_dir() {
+        return Some(p.join("models"));
+    }
+    base.local_app_data.as_ref().map(|p| p.join("deskpet").join("models"))
+}
+
+// ---- Public convenience wrappers reading real env ----
+// Note: BaseDirs::from_env() returns empty under cfg(test), so these
+// helpers safely no-op in unit-test binaries instead of leaking into
+// the real %AppData%.
+
+fn real_env(k: &str) -> Option<String> { std::env::var(k).ok() }
+
+pub fn user_data_dir() -> Option<PathBuf> {
+    user_data_dir_with(&BaseDirs::from_env(), &real_env)
+}
+
+pub fn user_log_dir() -> Option<PathBuf> {
+    user_log_dir_with(&BaseDirs::from_env(), &real_env)
+}
+
+pub fn user_models_dir() -> Option<PathBuf> {
+    user_models_dir_with(&BaseDirs::from_env(), &real_env)
+}
+
+/// Ensure `path` exists, creating parent dirs as needed. No-op if Some
+/// already points to an existing directory. Returns the path back for
+/// chaining in the Tauri command handlers.
+#[allow(dead_code)]
+pub fn ensure_dir(path: &Path) -> std::io::Result<()> {
+    if path.is_dir() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env_map(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {
+        move |k: &str| {
+            pairs
+                .iter()
+                .find(|(kk, _)| *kk == k)
+                .map(|(_, v)| v.to_string())
+        }
+    }
+
+    fn env_empty() -> impl Fn(&str) -> Option<String> {
+        |_: &str| None
+    }
+
+    fn base_win() -> BaseDirs {
+        BaseDirs {
+            app_data: Some(PathBuf::from("C:/Users/U/AppData/Roaming")),
+            local_app_data: Some(PathBuf::from("C:/Users/U/AppData/Local")),
+        }
+    }
+
+    #[test]
+    fn user_data_dir_defaults_to_appdata_deskpet() {
+        let env = env_empty();
+        let out = user_data_dir_with(&base_win(), &env).unwrap();
+        assert_eq!(out, PathBuf::from("C:/Users/U/AppData/Roaming/deskpet"));
+    }
+
+    #[test]
+    fn user_data_dir_env_override_wins() {
+        let env = env_map(&[("DESKPET_USER_DATA", "D:/custom/deskpet")]);
+        let out = user_data_dir_with(&base_win(), &env).unwrap();
+        assert_eq!(out, PathBuf::from("D:/custom/deskpet"));
+    }
+
+    #[test]
+    fn user_data_dir_prefers_dir_suffix_env() {
+        // 缁熶竴鍚? DESKPET_USER_DATA_DIR(涓?Python 涓€鑷?浼樺厛浜庢棫 DESKPET_USER_DATA銆?        let env = env_map(&[
+            ("DESKPET_USER_DATA_DIR", "D:/new/userdata"),
+            ("DESKPET_USER_DATA", "E:/old/deskpet"),
+        ]);
+        let out = user_data_dir_with(&base_win(), &env).unwrap();
+        assert_eq!(out, PathBuf::from("D:/new/userdata"));
+    }
+
+    #[test]
+    fn portable_userdata_dir_creates_install_userdata_for_backend_exe() {
+        let root = std::env::temp_dir().join(format!(
+            "deskpet-portable-test-{}",
+            std::process::id()
+        ));
+        let backend_dir = root.join("backend");
+        std::fs::create_dir_all(&backend_dir).unwrap();
+        let exe = backend_dir.join("deskpet-backend.exe");
+
+        let out = portable_userdata_dir_from_exe(&exe).unwrap();
+
+        assert_eq!(out, root.join("userdata"));
+        assert!(out.is_dir());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn user_data_dir_falls_back_to_legacy_env() {
+        // 鍙鏃?DESKPET_USER_DATA 鏃朵粛鍏煎(涓嶇牬鍧忚€佺敤鎴?銆?        let env = env_map(&[("DESKPET_USER_DATA", "E:/old/deskpet")]);
+        let out = user_data_dir_with(&base_win(), &env).unwrap();
+        assert_eq!(out, PathBuf::from("E:/old/deskpet"));
+    }
+
+    #[test]
+    fn user_data_dir_empty_env_treated_as_unset() {
+        let env = env_map(&[("DESKPET_USER_DATA", "")]);
+        let out = user_data_dir_with(&base_win(), &env).unwrap();
+        assert_eq!(out, PathBuf::from("C:/Users/U/AppData/Roaming/deskpet"));
+    }
+
+    #[test]
+    fn user_log_dir_nests_under_user_data() {
+        let env = env_empty();
+        let out = user_log_dir_with(&base_win(), &env).unwrap();
+        assert_eq!(out, PathBuf::from("C:/Users/U/AppData/Roaming/deskpet/logs"));
+    }
+
+    #[test]
+    fn user_log_dir_independent_env_override() {
+        let env = env_map(&[("DESKPET_USER_LOG", "E:/logs")]);
+        let out = user_log_dir_with(&base_win(), &env).unwrap();
+        assert_eq!(out, PathBuf::from("E:/logs"));
+    }
+
+    #[test]
+    fn user_models_dir_defaults_to_local_app_data() {
+        let env = env_empty();
+        let out = user_models_dir_with(&base_win(), &env).unwrap();
+        assert_eq!(out, PathBuf::from("C:/Users/U/AppData/Local/deskpet/models"));
+    }
+
+    #[test]
+    fn user_models_dir_env_override() {
+        let env = env_map(&[("DESKPET_MODEL_ROOT", "F:/models")]);
+        let out = user_models_dir_with(&base_win(), &env).unwrap();
+        assert_eq!(out, PathBuf::from("F:/models"));
+    }
+
+    #[test]
+    fn missing_app_data_returns_none() {
+        let base = BaseDirs { app_data: None, local_app_data: None };
+        let env = env_empty();
+        assert!(user_data_dir_with(&base, &env).is_none());
+        assert!(user_log_dir_with(&base, &env).is_none());
+        assert!(user_models_dir_with(&base, &env).is_none());
+    }
+}
+
+
+ succeeded in 210ms:
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
+use std::io::{BufRead, BufReader};
+use std::net::TcpListener;
+use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use tauri::{command, AppHandle, Emitter, Manager, State};
+
+use crate::backend_launch::{self, BackendLaunch};
+
+/// P3-S8: hard cap on how long we'll wait for the backend to print its
+/// SHARED_SECRET line. Cold boot on a fresh machine (torch + CUDA init +
+/// whisper load) has measured 30鈥?5 s in P3-S4 profiling, so 90 s gives
+/// generous headroom while still failing fast when the backend is
+/// actually wedged (e.g. Python import error, missing DLL).
+const SECRET_TIMEOUT_SECS: u64 = 90;
+
+/// Backend FastAPI port. Default 8100; overridable via the
+/// `DESKPET_BACKEND_PORT` env var so a second checkout / git worktree
+/// can run its own dev backend without colliding on the port. The
+/// Python side reads the SAME env var (see backend/config.py) so both
+/// halves of the handshake always agree.
+const DEFAULT_BACKEND_PORT: u16 = 8100;
+
+fn backend_port() -> u16 {
+    std::env::var("DESKPET_BACKEND_PORT")
+        .ok()
+        .and_then(|s| s.trim().parse::<u16>().ok())
+        .unwrap_or(DEFAULT_BACKEND_PORT)
+}
+
+/// How many times the supervisor will respawn a crashed backend before it
+/// gives up. Hitting this likely means a config bug, not a transient fault.
+const MAX_RESTARTS_PER_WINDOW: u32 = 5;
+
+/// Sliding window for `MAX_RESTARTS_PER_WINDOW`. If uptime between crashes
+/// exceeds this, the restart counter resets 鈥?so a daily intermittent crash
+/// doesn't eventually trigger "give up".
+const RESTART_WINDOW_SECS: u64 = 60;
+
+/// Cooldown between a crash and the next spawn attempt. Kept short so we
+/// meet the V5 搂1.1 "crash self-heal within 10s" bar even after counting
+/// the time it takes the child to actually exit.
+const RESTART_COOLDOWN_MS: u64 = 2_000;
+
+pub struct BackendProcess {
+    child: Mutex<Option<Child>>,
+    shared_secret: Mutex<Option<String>>,
+    /// P3-S3: single source of truth for *how* to spawn the backend,
+    /// replacing the old `python_path` + `backend_dir` string pair.
+    /// Populated by `start_backend` from `backend_launch::resolve(app)`;
+    /// the supervisor reads it back to respawn with identical args.
+    launch: Mutex<Option<BackendLaunch>>,
+    /// Set true by stop_backend / window-destroy. The supervisor reads
+    /// this to distinguish "user asked to stop" from "process crashed".
+    shutdown_requested: Arc<AtomicBool>,
+    /// Incremented every time the supervisor respawns. Reset when the
+    /// child has been up longer than RESTART_WINDOW_SECS.
+    restart_count: Arc<AtomicU32>,
+    /// P3-S8: last human-readable start-up error so the frontend can
+    /// render a dialog even if the Err from start_backend already got
+    /// swallowed by a React effect retry.
+    startup_error: Mutex<Option<String>>,
+}
+
+impl BackendProcess {
+    pub fn new() -> Self {
+        Self {
+            child: Mutex::new(None),
+            shared_secret: Mutex::new(None),
+            launch: Mutex::new(None),
+            shutdown_requested: Arc::new(AtomicBool::new(false)),
+            restart_count: Arc::new(AtomicU32::new(0)),
+            startup_error: Mutex::new(None),
+        }
+    }
+
+    /// P3-S8: expose latest startup failure to the frontend.
+    pub fn set_startup_error(&self, msg: Option<String>) {
+        if let Ok(mut guard) = self.startup_error.lock() {
+            *guard = msg;
+        }
+    }
+
+    /// Fire-and-forget teardown used by the window-destroyed handler.
+    /// Sets `shutdown_requested` so any in-flight supervisor bails, kills
+    /// the child if we still have a direct handle, and clears
+    /// `shared_secret` so the next `start_backend` invocation is treated
+    /// as a fresh spawn rather than a no-op idempotent return.
+    pub fn kill_child(&self) {
+        self.shutdown_requested.store(true, Ordering::SeqCst);
+        if let Ok(mut guard) = self.child.lock() {
+            if let Some(mut child) = guard.take() {
+                let _ = child.kill();
+            }
+        }
+        if let Ok(mut guard) = self.shared_secret.lock() {
+            *guard = None;
+        }
+    }
+
+    /// P4-S21 #1: read-only access for the IPC bridge command.
+    /// Returns None when backend isn't running (no SHARED_SECRET captured
+    /// yet) 鈥?the caller surfaces that as "backend not running yet".
+    pub fn shared_secret_clone(&self) -> Option<String> {
+        self.shared_secret
+            .lock()
+            .ok()
+            .and_then(|g| g.clone())
+    }
+
+    /// P4-S21 #1: backend listen port. Currently a const (8100) 鈥?pulled
+    /// out into an accessor so the IPC bridge doesn't have to re-import
+    /// the module-private constant.
+    pub fn port(&self) -> u16 { backend_port() }
+}
+
+/// Spawn the Python backend and read its SHARED_SECRET announcement.
+/// Shared logic between the initial `start_backend` command and the
+/// supervisor's respawn path.
+///
+/// P2-1-S3: before spawning we peek at the OS keychain via `secrets::`
+/// and, if a cloud LLM API key is configured, inject it as
+/// `DESKPET_CLOUD_API_KEY` so `backend/main.py::_resolve_cloud_api_key`
+/// can find it. When nothing is saved the backend logs "cloud disabled"
+/// and carries on local-only 鈥?that's the documented first-launch flow.
+/// P3-S8: quick precheck that 8100 is free. Returning Err early here
+/// swaps the generic "Backend exited without printing SHARED_SECRET"
+/// failure for the far more actionable "绔彛宸茶鍗犵敤". We bind+drop on
+/// 127.0.0.1:PORT; if another process has the port we get an OS error.
+fn check_port_free(port: u16) -> Result<(), String> {
+    match TcpListener::bind(("127.0.0.1", port)) {
+        Ok(l) => {
+            drop(l);
+            Ok(())
+        }
+        Err(e) => Err(format!(
+            "绔彛 {port} 宸茶鍏跺畠绋嬪簭鍗犵敤锛堥敊璇細{e}锛夈€俓n\
+             璇峰叧闂叾瀹?DeskPet 瀹炰緥鎴栧崰鐢ㄨ绔彛鐨勭▼搴忓悗閲嶈瘯銆?
+        )),
+    }
+}
+
+fn spawn_once(launch: &BackendLaunch) -> Result<(Child, String), String> {
+    // P3-S8: port precheck. Have to do it here (not only in start_backend)
+    // because the supervisor respawn path also goes through spawn_once 鈥?
+    // if a zombie backend survived a window close, we want the friendly
+    // message on every retry, not just the initial attempt.
+    check_port_free(backend_port())?;
+
+    let mut cmd = match launch {
+        BackendLaunch::Bundled { exe } => {
+            let mut c = Command::new(exe);
+            // cwd = exe's directory so the frozen PyInstaller onedir can
+            // find its bundled _internal/ next to it.
+            if let Some(parent) = exe.parent() {
+                c.current_dir(parent);
+            }
+            c
+        }
+        BackendLaunch::Dev { python, backend_dir } => {
+            let mut c = Command::new(python);
+            c.arg("main.py").current_dir(backend_dir);
+            c
+        }
+    };
+    cmd.stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        // Windows 涓?structlog 鍐欏叆 piped stdout 鏃跺鏋滅郴缁熼粯璁ら潪 UTF-8
+        // 锛圙BK/CP936锛変細瀵逛腑鏂囨棩蹇楁姏 OSError[Errno 22]锛宐ackend 绔嬪埢宕╁湪
+        // lifespan 鐨?"preloading models..." 琛屻€傛墜鍔ㄩ拤姝?UTF-8 + 鏃犵紦鍐诧紝
+        // 杩欐牱 SHARED_SECRET 涔熻兘琚強鏃惰鍒般€?
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("PYTHONUNBUFFERED", "1");
+
+    // 璺緞鍗曚竴浜嬪疄婧愶細鎶?Rust 瑙ｆ瀽鍑虹殑 userdata 閽夌粰 backend锛?    // 闃?Rust/Python 鍙岃В鏋愭紓绉伙紙config.toml/state.db 钀戒笉鍚岀洰褰曠殑鏍瑰洜锛夈€?    if let Some(ud) = crate::paths::user_data_dir() {
+        let _ = std::fs::create_dir_all(&ud);
+        cmd.env("DESKPET_USER_DATA_DIR", ud.to_string_lossy().to_string());
+    }
+
+    // P4-S21 #8: suppress the orphan console window on Windows.
+    //
+    // PyInstaller spec keeps `console=True` so the bundled exe is a
+    // console-subsystem program (needed because Rust still reads
+    // SHARED_SECRET from stdout and stdout/stderr are piped to us).
+    // When Windows spawns a console-subsystem child without an explicit
+    // creation flag, it allocates a brand-new console window and shows
+    // it 鈥?that's the "black cmd window next to the pet" users complain
+    // about. The window is visually distinct from a normal app window,
+    // and closing it kills the backend (very confusing UX).
+    //
+    // CREATE_NO_WINDOW (0x08000000) tells the OS "don't allocate a
+    // console; the parent already has one or doesn't need it shown."
+    // The piped stdout / stderr handles work the same way either path.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+
+    // Read key from keychain. Errors are logged to stderr but don't
+    // block startup 鈥?if the keychain itself is busted, local-only is
+    // still useful.
+    match crate::secrets::get_cloud_api_key() {
+        Ok(Some(key)) if !key.is_empty() => {
+            cmd.env("DESKPET_CLOUD_API_KEY", key);
+        }
+        Ok(_) => {
+            // Not configured 鈥?backend will skip cloud provider init.
+        }
+        Err(e) => {
+            eprintln!(
+                "[process_manager] warning: could not read cloud API key from keychain: {e}"
+            );
+        }
+    }
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn backend: {e}"))?;
+
+    // 瀛ゅ効杩涚▼淇锛氭妸鍒?spawn 鐨?backend 缁戝畾鍒板叏灞€ Job Object
+    // (KILL_ON_JOB_CLOSE)銆傝繖鏍锋棤璁?deskpet.exe 濡備綍閫€鍑猴紙姝ｅ父 / panic /
+    // 琚?taskkill锛夛紝OS 閮戒細杩炲甫缁堟杩欎釜 python 瀛愯繘绋嬶紝閬垮厤瀹冩畫鐣欏崰鐢?8100
+    // 绔彛銆俿upervisor respawn 璺緞涔熻蛋 spawn_once锛屾墍浠ユ瘡娆￠噸鍚殑鏂?backend
+    // 鍚屾牱鍙椾繚鎶ゃ€傝瑙?crate::job_object 妯″潡鏂囨。銆?
+    crate::job_object::assign_to_global(&child);
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "No stdout on spawned backend".to_string())?;
+
+    // P3-S8: wall-clock timeout on SHARED_SECRET. The previous version
+    // read_line'd on the main thread, which blocks forever if Python hangs
+    // mid-import (we've seen this with missing CUDA DLLs). Move the reader
+    // to a worker thread and recv_timeout from a channel 鈥?the worker
+    // keeps the pipe open (crucial on Windows, see the long comment below)
+    // and we flip it into "drain silently" mode after the secret arrives.
+    //
+    // Why we must NOT drop the reader: on Windows, closing the pipe read
+    // end makes Python's next stdout write (structlog "preloading
+    // models..." etc.) raise OSError[Errno 22] and crash lifespan. The
+    // worker thread therefore owns the reader for the child's full life.
+    let reader = BufReader::new(stdout);
+    let (tx, rx) = mpsc::channel::<Result<String, String>>();
+    std::thread::spawn(move || {
+        let mut reader = reader;
+        let mut line_buf = String::new();
+        let mut secret_sent = false;
+        loop {
+            line_buf.clear();
+            match reader.read_line(&mut line_buf) {
+                Ok(0) => {
+                    if !secret_sent {
+                        let _ = tx.send(Err(
+                            "Backend exited without printing SHARED_SECRET".into()
+                        ));
+                    }
+                    return;
+                }
+                Ok(_) => {
+                    let trimmed = line_buf.trim_end_matches(['\r', '\n']);
+                    if !secret_sent && trimmed.starts_with("SHARED_SECRET=") {
+                        let s = trimmed.trim_start_matches("SHARED_SECRET=").to_string();
+                        let _ = tx.send(Ok(s));
+                        secret_sent = true;
+                        // Keep draining silently from here on.
+                    }
+                }
+                Err(e) => {
+                    if !secret_sent {
+                        let _ = tx.send(Err(format!(
+                            "Failed to read backend stdout: {e}"
+                        )));
+                    }
+                    return;
+                }
+            }
+        }
+    });
+
+    let secret = match rx.recv_timeout(Duration::from_secs(SECRET_TIMEOUT_SECS)) {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => {
+            let _ = child.kill();
+            return Err(e);
+        }
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            let _ = child.kill();
+            return Err(format!(
+                "Backend 鍚姩瓒呮椂锛坽SECRET_TIMEOUT_SECS}s 鍐呮湭涓婃姤 SHARED_SECRET锛夈€俓n\
+                 甯歌鍘熷洜锛欳UDA / 妯″瀷鍔犺浇澶辫触銆傝鎵撳紑鏃ュ織鐩綍鎺掓煡銆?
+            ));
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            let _ = child.kill();
+            return Err("Backend stdout pipe disconnected before SHARED_SECRET".into());
+        }
+    };
+
+    Ok((child, secret))
+}
+
+/// Spawn backend 鈥?runs in async context so it won't block the UI thread.
+///
+/// After the child process is up, installs a supervisor task that waits
+/// on it. If the child exits without the user asking to stop, the
+/// supervisor respawns with the same args after RESTART_COOLDOWN_MS.
+/// The frontend is notified via the `backend-crashed` / `backend-restarted`
+/// / `backend-dead` events so it can refresh its shared-secret cache.
+#[command]
+pub async fn start_backend(
+    app: AppHandle,
+    state: State<'_, BackendProcess>,
+) -> Result<String, String> {
+    // P3-S3: Rust now resolves the backend path itself. Frontend no
+    // longer passes python_path / backend_dir 鈥?those hardcoded values
+    // were dev-box-only. See `backend_launch::resolve` for priority.
+    let launch = match backend_launch::resolve(&app) {
+        Ok(l) => l,
+        Err(e) => {
+            let msg = backend_launch::format_user_message(&e);
+            state.set_startup_error(Some(msg.clone()));
+            return Err(msg);
+        }
+    };
+
+    // P3-S5: log which branch resolved so e2e smoke scripts can grep
+    // the dev log to confirm Bundled vs Dev path was picked. Use stderr
+    // because tauri dev redirects both streams to the same log file.
+    match &launch {
+        BackendLaunch::Bundled { exe } => {
+            eprintln!("[backend_launch] Bundled exe={}", exe.display());
+        }
+        BackendLaunch::Dev { python, backend_dir } => {
+            eprintln!(
+                "[backend_launch] Dev python={} backend_dir={}",
+                python.display(),
+                backend_dir.display(),
+            );
+        }
+    }
+
+    // 骞傜瓑锛氫互 shared_secret 浣滀负"宸叉湁涓€涓椿鐫€鎴栨鍦ㄩ噸鍚腑鐨?backend"鐨?
+    // 鐪熷疄鍒ゆ嵁锛岃€屼笉鏄?state.child銆傚師鍥狅細install_supervisor 鍦ㄨ皟 wait()
+    // 涔嬪墠浼氭妸 Child 浠?Mutex 閲?take() 鍑烘潵鎸佹湁鍦ㄧ嚎绋嬫爤涓婏紝鎵€浠?backend
+    // 娲荤潃鐨?99.99% 鏃堕棿閲?state.child 閮芥槸 None銆傚彧鏈?shared_secret 鏄?
+    // 鍦?鍚姩 / respawn 鎴愬姛"鏃?Some锛?stop / kill_child / supervisor 鏀惧純"
+    // 鏃?None 鈥斺€?杩欎笁鏉″叧闂矾寰勯兘浼氭樉寮忔竻绌哄畠锛岃涔変竴鑷淬€?
+    //
+    // 鏁堟灉锛氬墠绔?F5 / StrictMode 閲嶆寕杞介噷鏃犺剳 invoke start_backend 涓嶄細
+    // 鍐嶆 spawn 鍑轰竴涓拰鐜颁换 backend 鎶?8100 绔彛鐨?Python銆?
+    {
+        let secret_guard = state.shared_secret.lock().map_err(|e| e.to_string())?;
+        if let Some(existing) = secret_guard.as_ref() {
+            return Ok(existing.clone());
+        }
+    }
+
+    // Clone up-front so the supervisor owns its own copy.
+    let launch_for_spawn = launch.clone();
+
+    // Initial spawn runs on a blocking thread 鈥?the BufReader loop that
+    // waits for SHARED_SECRET is blocking I/O.
+    let spawn_result = tauri::async_runtime::spawn_blocking(move || {
+        spawn_once(&launch_for_spawn)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))?;
+    let (child, secret) = match spawn_result {
+        Ok(pair) => pair,
+        Err(e) => {
+            state.set_startup_error(Some(e.clone()));
+            return Err(e);
+        }
+    };
+    // Clear any stale error from a prior failed attempt.
+    state.set_startup_error(None);
+
+    // Record launch so the supervisor can respawn.
+    *state.launch.lock().map_err(|e| e.to_string())? = Some(launch.clone());
+    *state.shared_secret.lock().map_err(|e| e.to_string())? = Some(secret.clone());
+    *state.child.lock().map_err(|e| e.to_string())? = Some(child);
+    state.shutdown_requested.store(false, Ordering::SeqCst);
+    state.restart_count.store(0, Ordering::SeqCst);
+
+    // Install the supervisor. It keeps its own Arc handles to the shared
+    // atomics and the BackendProcess state (via AppHandle::state()).
+    install_supervisor(app, launch);
+
+    Ok(secret)
+}
+
+/// Background loop: wait for the current child to exit; if the user
+/// didn't ask for a shutdown, respawn. Emits lifecycle events so the
+/// frontend can re-fetch the secret and reconnect its WebSockets.
+fn install_supervisor(app: AppHandle, launch: BackendLaunch) {
+    std::thread::spawn(move || {
+        loop {
+            // Wait for the current child to exit. We have to release the
+            // mutex while waiting so stop_backend can still seize the lock.
+            let exit_status = {
+                let state = app.state::<BackendProcess>();
+                let mut guard = match state.child.lock() {
+                    Ok(g) => g,
+                    Err(_) => return,
+                };
+                let Some(mut child) = guard.take() else {
+                    // Someone already removed the child (stop_backend or
+                    // window-destroy). Supervisor's job is done.
+                    return;
+                };
+                drop(guard);
+                child.wait()
+            };
+
+            let state = app.state::<BackendProcess>();
+            if state.shutdown_requested.load(Ordering::SeqCst) {
+                // Clean shutdown 鈥?don't respawn.
+                return;
+            }
+
+            // The child died on its own. Tell the frontend so it can
+            // drop its WS connections; the restart path will give it a
+            // new secret to reconnect with.
+            let reason = match &exit_status {
+                Ok(status) => format!("exit:{status}"),
+                Err(e) => format!("wait_err:{e}"),
+            };
+            let _ = app.emit("backend-crashed", reason);
+
+            // Restart budget: if we've crashed too many times in the
+            // sliding window, give up and let the user manually retry.
+            let count = state.restart_count.fetch_add(1, Ordering::SeqCst) + 1;
+            if count > MAX_RESTARTS_PER_WINDOW {
+                // 娓呯┖ secret 鈥斺€?涔嬪悗鍓嶇鍐?invoke start_backend 鏃?
+                // 骞傜瓑妫€鏌ヨ鑳借瀹冪湡鐨勫幓 spawn 涓€涓柊 backend锛堟墜鍔ㄨ嚜鎰堬級銆?
+                if let Ok(mut guard) = state.shared_secret.lock() {
+                    *guard = None;
+                }
+                let _ = app.emit("backend-dead", "restart budget exhausted");
+                return;
+            }
+
+            std::thread::sleep(Duration::from_millis(RESTART_COOLDOWN_MS));
+
+            // Respawn.
+            let started = Instant::now();
+            let spawn_result = spawn_once(&launch);
+            match spawn_result {
+                Ok((new_child, new_secret)) => {
+                    if let Ok(mut guard) = state.shared_secret.lock() {
+                        *guard = Some(new_secret.clone());
+                    }
+                    if let Ok(mut guard) = state.child.lock() {
+                        *guard = Some(new_child);
+                    }
+                    let _ = app.emit("backend-restarted", new_secret);
+
+                    // If the previous life lasted longer than the
+                    // restart window, zero the counter 鈥?a sporadic
+                    // crash months apart shouldn't accumulate.
+                    if started.elapsed() > Duration::from_secs(RESTART_WINDOW_SECS) {
+                        state.restart_count.store(0, Ordering::SeqCst);
+                    }
+                }
+                Err(e) => {
+                    // 鍚屾牱鐨勯亾鐞嗭細respawn 澶辫触绛変簬杩欎竴鐢熺殑 backend 鍒版
+                    // 涓烘浜嗭紝secret 寰楁竻鎺夊ソ璁╁悗缁墜鍔ㄩ噸鍚兘鐪熺殑 spawn銆?
+                    if let Ok(mut guard) = state.shared_secret.lock() {
+                        *guard = None;
+                    }
+                    let _ = app.emit("backend-dead", format!("respawn failed: {e}"));
+                    return;
+                }
+            }
+        }
+    });
+}
+
+#[command]
+pub fn stop_backend(state: State<'_, BackendProcess>) -> Result<(), String> {
+    state.shutdown_requested.store(true, Ordering::SeqCst);
+    let mut child_guard = state.child.lock().map_err(|e| e.to_string())?;
+    if let Some(mut child) = child_guard.take() {
+        child.kill().map_err(|e| e.to_string())?;
+    }
+    // 璁╁箓绛夋鏌ユ仮澶?鏃?backend"鍒ゆ柇锛屽ソ璁╀箣鍚庣殑 start_backend 鑳界湡姝?
+    // spawn锛岃€屼笉鏄繑鍥炶繖鏉″凡缁忚鏉€姝荤殑 stale secret銆?
+    *state.shared_secret.lock().map_err(|e| e.to_string())? = None;
+    Ok(())
+}
+
+#[command]
+pub fn is_backend_running(state: State<'_, BackendProcess>) -> Result<bool, String> {
+    let mut child_guard = state.child.lock().map_err(|e| e.to_string())?;
+    match child_guard.as_mut() {
+        Some(child) => match child.try_wait() {
+            Ok(Some(_)) => {
+                *child_guard = None;
+                Ok(false)
+            }
+            Ok(None) => Ok(true),
+            Err(e) => Err(e.to_string()),
+        },
+        None => Ok(false),
+    }
+}
+
+#[command]
+pub fn get_shared_secret(state: State<'_, BackendProcess>) -> Result<String, String> {
+    state
+        .shared_secret
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or("No secret available (backend not started?)".into())
+}
+
+/// P3-S8 鈥?returns the last classified startup error (human-readable
+/// Chinese) or None. Frontend polls this after start_backend rejects
+/// and also on window focus so crashes surfaced via `backend-dead` can
+/// be re-displayed.
+#[command]
+pub fn get_startup_error(state: State<'_, BackendProcess>) -> Result<Option<String>, String> {
+    Ok(state.startup_error.lock().map_err(|e| e.to_string())?.clone())
+}
+
+/// P3-S8 鈥?clear the recorded startup error once the dialog is dismissed
+/// so a successful retry doesn't re-show it.
+#[command]
+pub fn clear_startup_error(state: State<'_, BackendProcess>) -> Result<(), String> {
+    *state.startup_error.lock().map_err(|e| e.to_string())? = None;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn port_precheck_reports_bound_port() {
+        // Bind an ephemeral port, then assert check_port_free on that
+        // port fails with a user-readable Chinese message.
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let err = check_port_free(port).expect_err("expected busy port to fail");
+        assert!(err.contains(&port.to_string()), "error missing port: {err}");
+        assert!(err.contains("鍗犵敤"), "error not chinese: {err}");
+    }
+
+    #[test]
+    fn port_precheck_passes_on_free_port() {
+        // Pick a random high port, bind+drop to learn it's free, then
+        // re-check. Race-y in theory; in practice fine for unit tests.
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        assert!(check_port_free(port).is_ok());
+    }
+
+    #[test]
+    fn startup_error_round_trip() {
+        let bp = BackendProcess::new();
+        assert!(bp.startup_error.lock().unwrap().is_none());
+        bp.set_startup_error(Some("boom".into()));
+        assert_eq!(bp.startup_error.lock().unwrap().as_deref(), Some("boom"));
+        bp.set_startup_error(None);
+        assert!(bp.startup_error.lock().unwrap().is_none());
+    }
+}
+
+
+codex
+已确认 Phase 1/2 的核心路径实现位置。现在核对 config 自愈、实际聊天 provider 的空 key 护栏、日志和 spec hiddenimports。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "rg -n \"recover_orphaned|resolve_config_path|seed_user_config|pre-recover|enabled endpoints|llm\\.endpoints\" backend\\config.py" in G:\projects\deskpet
+ succeeded in 165ms:
+755:        # seed_user_config_if_missing() couldn't migrate legacy schemas
+793:# `seed_user_config_if_missing` only ever (a) seeds a full config on first
+799:# and the feature stayed dark at runtime (resolve_config_path() prefers that
+949:def seed_user_config_if_missing() -> Path | None:
+1019:def _recover_orphaned_endpoints(canonical_path: Path) -> bool:
+1137:        bak = canonical_path.with_suffix(".pre-recover-bak")
+1186:def resolve_config_path() -> Path:
+1203:    seeded = seed_user_config_if_missing()
+1206:            _recover_orphaned_endpoints(seeded)
+1263:        cfg = load_config(resolve_config_path())
+1296:        cfg = load_config(resolve_config_path())
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "rg -n \"def _client|class OpenAICompatibleProvider|Authorization|Bearer|LLMProviderError|EmptyApiKey|placeholder|localhost|ollama|api_key\" backend\\providers\\openai_compatible.py backend\\llm\\openai_adapter.py" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "rg -n \"config_loaded|portable|env_pinned|provider_registry_ready|LLMProviderRegistry|n_enabled|n_endpoints\" backend\\main.py backend\\provider_registry.py backend\\llm\\provider_registry.py" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "rg -n \"hiddenimports|collect_submodules|keyring|win32ctypes|Windows\" backend\\deskpet-backend.spec" in G:\projects\deskpet
+ succeeded in 186ms:
+backend\llm\openai_adapter.py:9:       We json.loads and raise LLMProviderError on parse failure —
+backend\llm\openai_adapter.py:29:    LLMProviderError,
+backend\llm\openai_adapter.py:33:from llm.keys import get_api_key, mask_key
+backend\llm\openai_adapter.py:39:_PLACEHOLDER_KEYS = {"", "ollama", "from-keychain", "from-env", "your-key-here"}
+backend\llm\openai_adapter.py:51:        api_key: Optional[str] = None,
+backend\llm\openai_adapter.py:61:        self._api_key = api_key or get_api_key("openai")
+backend\llm\openai_adapter.py:67:        return bool(self._api_key)
+backend\llm\openai_adapter.py:72:            "localhost" in base_url
+backend\llm\openai_adapter.py:77:    def _ensure_api_key_usable(self) -> None:
+backend\llm\openai_adapter.py:78:        if (self._api_key or "").strip().lower() in _PLACEHOLDER_KEYS:
+backend\llm\openai_adapter.py:80:                from llm.provider_registry import EmptyApiKeyError
+backend\llm\openai_adapter.py:82:                raise EmptyApiKeyError(getattr(self, "_provider_id", "local"))
+backend\llm\openai_adapter.py:87:        self._ensure_api_key_usable()
+backend\llm\openai_adapter.py:88:        if not self._api_key:
+backend\llm\openai_adapter.py:93:            raise LLMProviderError(
+backend\llm\openai_adapter.py:96:        kwargs: dict[str, Any] = {"api_key": self._api_key, "timeout": self.timeout}
+backend\llm\openai_adapter.py:102:            mask_key(self._api_key),
+backend\llm\openai_adapter.py:155:        # → 之前落 LLMProviderError(不重试同 provider) → agent turn 立即崩。这类连接级
+backend\llm\openai_adapter.py:166:        return LLMProviderError(str(exc), provider=provider, status_code=status)
+backend\llm\openai_adapter.py:193:            raise LLMProviderError(
+backend\llm\openai_adapter.py:198:            raise LLMProviderError(
+backend\llm\openai_adapter.py:234:        self._ensure_api_key_usable()
+backend\llm\openai_adapter.py:348:            # Don't re-wrap our own LLMProviderError (raised by _parse_tool_args).
+backend\llm\openai_adapter.py:349:            if isinstance(exc, LLMProviderError):
+backend\providers\openai_compatible.py:12:from llm.errors import LLMProviderError
+backend\providers\openai_compatible.py:18:# 2026-06-28: 空/占位符 api_key 会被拼成非法头 "Authorization: Bearer "
+backend\providers\openai_compatible.py:22:# 友好的 LLMProviderError(error_class=empty_api_key)，由 chat 层照常 surface 成
+backend\providers\openai_compatible.py:23:# "请重新登录/配置 provider"，而不是崩在传输层。本地 ollama（key 占位、server
+backend\providers\openai_compatible.py:30:    return "localhost" in b or "127.0.0.1" in b or "0.0.0.0" in b
+backend\providers\openai_compatible.py:69:class OpenAICompatibleProvider:
+backend\providers\openai_compatible.py:73:      - Local Ollama on /v1 (api_key "ollama", ignored server-side).
+backend\providers\openai_compatible.py:83:        api_key: str,
+backend\providers\openai_compatible.py:92:        self.api_key = api_key
+backend\providers\openai_compatible.py:168:    def _client(self, timeout: float | httpx.Timeout) -> httpx.AsyncClient:
+backend\providers\openai_compatible.py:171:        # "Authorization: Bearer " 头崩在 httpx 传输层（LocalProtocolError）。
+backend\providers\openai_compatible.py:172:        if (self.api_key or "").strip().lower() in _UNUSABLE_API_KEYS and not _is_local_base_url(self.base_url):
+backend\providers\openai_compatible.py:173:            raise LLMProviderError(
+backend\providers\openai_compatible.py:176:                error_class="empty_api_key",
+backend\providers\openai_compatible.py:179:            "Authorization": f"Bearer {self.api_key}",
+backend\providers\openai_compatible.py:342:            raise LLMProviderError("LLM 调用失败 (stream 未返回 final 事件)。")
+backend\providers\openai_compatible.py:428:        # `except LLMProviderError` catches them and emits a clean
+backend\providers\openai_compatible.py:544:                    raise LLMProviderError(
+backend\providers\openai_compatible.py:572:                    raise LLMProviderError(
+backend\providers\openai_compatible.py:585:                raise LLMProviderError(
+backend\providers\openai_compatible.py:617:            raise LLMProviderError(
+backend\providers\openai_compatible.py:623:            raise LLMProviderError(
+backend\providers\openai_compatible.py:884:                raise LLMProviderError(
+backend\providers\openai_compatible.py:1005:        raise LLMProviderError(
+backend\providers\openai_compatible.py:1624:        # tool-call-only / content 缺失或 None → 稳定 "" placeholder
+backend\providers\openai_compatible.py:1702:    Most OpenAI-compat proxies (the relay, sealos, vllm, ollama) reject
+
+2026-06-27T19:11:21.441561Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 0.2 seconds
+Output:
+backend\llm\provider_registry.py:4:"""LLMProviderRegistry — P5-S2 Phase 1 (multi-provider-management).
+backend\llm\provider_registry.py:31:    reg = LLMProviderRegistry(path_to_config_toml)
+backend\llm\provider_registry.py:140:    ``LLMProviderRegistry.resolve_api_key(provider_id)`` — never stored
+backend\llm\provider_registry.py:303:class LLMProviderRegistry:
+backend\llm\provider_registry.py:322:            "provider_registry_ready n=%d enabled=%d ids=%s",
+backend\llm\provider_registry.py:776:    "LLMProviderRegistry",
+backend\main.py:102:    "config_loaded",
+backend\main.py:108:    # 2026-06-28 路径绑定可观测：portable=是否走 <install>/userdata；
+backend\main.py:109:    # env_pinned=Tauri 是否注入了 DESKPET_USER_DATA_DIR（单一事实源生效）。
+backend\main.py:111:    portable=_paths.is_portable_mode(),
+backend\main.py:112:    env_pinned=bool(os.environ.get("DESKPET_USER_DATA_DIR")),
+backend\main.py:330:# P5-S2 multi-provider-management Phase 2: LLMProviderRegistry
+backend\main.py:336:        LLMProviderRegistry,
+backend\main.py:344:    _provider_registry = LLMProviderRegistry(_CONFIG_PATH)
+backend\main.py:1786:    _compaction_enabled = bool(
+backend\main.py:1787:        getattr(getattr(config, "features", None), "compaction_enabled", False)
+backend\main.py:1789:    if _compaction_enabled:
+backend\main.py:1844:                "wi4_0_compaction_enabled context_window=%d threshold=%.2f eff_pct=%.2f"
+backend\main.py:3055:            # 2) Else first enabled provider from LLMProviderRegistry.get_chain()
+backend\main.py:5866:                # CRUD + reorder against LLMProviderRegistry. Mutations
+backend\main.py:6787:                        # If the LLMProviderRegistry is wired up (Phase 1+2)
+backend\main.py:7050:                                and config.features.problem_pipeline.plan_companion_enabled
+backend\main.py:7057:                                companion_enabled=_companion_plan_on,
+rg: backend\provider_registry.py: 系统找不到指定的文件。 (os error 2)
+
+ exited 1 in 219ms:
+backend\llm\provider_registry.py:4:"""LLMProviderRegistry — P5-S2 Phase 1 (multi-provider-management).
+backend\llm\provider_registry.py:31:    reg = LLMProviderRegistry(path_to_config_toml)
+backend\llm\provider_registry.py:140:    ``LLMProviderRegistry.resolve_api_key(provider_id)`` — never stored
+backend\llm\provider_registry.py:303:class LLMProviderRegistry:
+backend\llm\provider_registry.py:322:            "provider_registry_ready n=%d enabled=%d ids=%s",
+backend\llm\provider_registry.py:776:    "LLMProviderRegistry",
+backend\main.py:102:    "config_loaded",
+backend\main.py:108:    # 2026-06-28 路径绑定可观测：portable=是否走 <install>/userdata；
+backend\main.py:109:    # env_pinned=Tauri 是否注入了 DESKPET_USER_DATA_DIR（单一事实源生效）。
+backend\main.py:111:    portable=_paths.is_portable_mode(),
+backend\main.py:112:    env_pinned=bool(os.environ.get("DESKPET_USER_DATA_DIR")),
+backend\main.py:330:# P5-S2 multi-provider-management Phase 2: LLMProviderRegistry
+backend\main.py:336:        LLMProviderRegistry,
+backend\main.py:344:    _provider_registry = LLMProviderRegistry(_CONFIG_PATH)
+backend\main.py:1786:    _compaction_enabled = bool(
+backend\main.py:1787:        getattr(getattr(config, "features", None), "compaction_enabled", False)
+backend\main.py:1789:    if _compaction_enabled:
+backend\main.py:1844:                "wi4_0_compaction_enabled context_window=%d threshold=%.2f eff_pct=%.2f"
+backend\main.py:3055:            # 2) Else first enabled provider from LLMProviderRegistry.get_chain()
+backend\main.py:5866:                # CRUD + reorder against LLMProviderRegistry. Mutations
+backend\main.py:6787:                        # If the LLMProviderRegistry is wired up (Phase 1+2)
+backend\main.py:7050:                                and config.features.problem_pipeline.plan_companion_enabled
+backend\main.py:7057:                                companion_enabled=_companion_plan_on,
+rg: backend\provider_registry.py: 系统找不到指定的文件。 (os error 2)
+
+ succeeded in 228ms:
+22:from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+41:hiddenimports: list[str] = []
+42:hiddenimports += collect_submodules("faster_whisper")
+43:hiddenimports += collect_submodules("ctranslate2")
+44:hiddenimports += collect_submodules("silero_vad")
+45:# 2026-06-28: keyring backends are loaded through entry-points, so
+47:# keyring + Windows credential backends and their win32ctypes shims when
+50:    hiddenimports += collect_submodules("keyring")
+52:    print("[spec] WARN: keyring not importable, skip")
+55:    "keyring.backends.Windows",
+56:    "keyring.backends.null",
+57:    "keyring.backends.fail",
+58:    "win32ctypes.core",
+59:    "win32ctypes.pywin32",
+60:    "win32ctypes.core.cffi",
+61:    "win32ctypes.core.ctypes",
+65:            hiddenimports.append(_m)
+75:hiddenimports += collect_submodules("deskpet.tools")
+76:hiddenimports += collect_submodules("deskpet.skills")
+77:hiddenimports += ["sqlite_vec"]                    # P4-S20: L3 vector recall
+78:hiddenimports += [
+79:    "tzdata",                   # zoneinfo needs this on Windows
+100:    # 连本地无头 Edge → 显式入包,使冻结正式包也能用 js_render=cdp-edge(Windows)。
+103:hiddenimports += _mypyc_modules
+138:# Ship the ~700KB busybox.exe so end users without Git for Windows still
+216:    hiddenimports=hiddenimports,
+
+codex
+搜索结果显示关键函数都存在，但还需要看上下文判断是否真正 wire 对、条件是否严谨。尤其 Phase 3 的候选迁移和 Phase 4 的 `_client` 构造点我会逐行看。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$i=0; Get-Content '"'backend\\config.py' | ForEach-Object { "'$i++; if ($i -ge 930 -and $i -le 1220) { '"'{0,5}: {1}' -f "'$i, $_ } }' in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$i=0; Get-Content '"'backend\\providers\\openai_compatible.py' | ForEach-Object { "'$i++; if ($i -ge 1 -and $i -le 210) { '"'{0,5}: {1}' -f "'$i, $_ } }' in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$i=0; Get-Content '"'backend\\main.py' | ForEach-Object { "'$i++; if (($i -ge 90 -and $i -le 120) -or ($i -ge 330 -and $i -le 350)) { '"'{0,5}: {1}' -f "'$i, $_ } }' in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$i=0; Get-Content '"'backend\\llm\\provider_registry.py' | ForEach-Object { "'$i++; if ($i -ge 303 -and $i -le 330) { '"'{0,5}: {1}' -f "'$i, $_ } }' in G:\projects\deskpet
+ succeeded in 233ms:
+  930:             added.append(".".join(path) + "." + str(key))
+  931: 
+  932:     if not added:
+  933:         return False
+  934: 
+  935:     try:
+  936:         bak = user_target.with_suffix(".pre-migrate-bak")
+  937:         shutil.copyfile(user_target, bak)
+  938:         user_target.write_text(tomlkit.dumps(user_doc), encoding="utf-8")
+  939:         logger.info(
+  940:             "feature_flag_merge_applied count=%d keys=%s backup=%s",
+  941:             len(added), added, bak,
+  942:         )
+  943:         return True
+  944:     except OSError as e:
+  945:         logger.warning("feature_flag_merge_write_failed: %s", e)
+  946:         return False
+  947: 
+  948: 
+  949: def seed_user_config_if_missing() -> Path | None:
+  950:     """First-run: copy the bundle's config.toml into user_data_dir if the
+  951:     user doesn't have one yet. Also: P4-S21 #12 鈥?if user_data_dir/config.toml
+  952:     exists but uses the legacy ``[llm.local]/[llm.cloud]`` schema, back it up
+  953:     (``.legacy-bak``) and replace with the bundle default. Returns the user
+  954:     path on success, or None if seeding/migration both failed (caller then
+  955:     falls through to bundle / AppConfig defaults).
+  956:     """
+  957:     user_target = _paths.user_data_dir() / "config.toml"
+  958: 
+  959:     # P4-S21 #12: legacy-schema migration. Runs once per upgrade 鈥?after
+  960:     # the swap, the file no longer matches the legacy detector so we
+  961:     # never touch it again. Existing llm_runtime.json (the user's actual
+  962:     # base_url/model/api_key) is intentionally NOT touched: those are
+  963:     # the runtime overrides applied on top of config.toml at load time.
+  964:     if user_target.is_file():
+  965:         try:
+  966:             with open(user_target, "rb") as f:
+  967:                 raw = tomli.load(f)
+  968:         except Exception as e:
+  969:             logger.warning("legacy_check_parse_failed: %s", e)
+  970:             return user_target
+  971:         if _is_legacy_llm_schema(raw):
+  972:             source = _bundle_default_config_path()
+  973:             if source is None:
+  974:                 logger.warning(
+  975:                     "legacy_llm_schema_detected_but_no_bundle_source",
+  976:                 )
+  977:                 return user_target
+  978:             try:
+  979:                 bak = user_target.with_suffix(".legacy-bak")
+  980:                 shutil.copyfile(user_target, bak)
+  981:                 shutil.copyfile(source, user_target)
+  982:                 logger.info(
+  983:                     "legacy_llm_schema_migrated source=%s target=%s backup=%s",
+  984:                     source, user_target, bak,
+  985:                 )
+  986:             except OSError as e:
+  987:                 logger.warning(
+  988:                     "legacy_llm_schema_migrate_failed: %s", e,
+  989:                 )
+  990:             return user_target
+  991: 
+  992:         # Non-legacy existing config 鈫?additively backfill any new factory
+  993:         # feature-flag keys the user is missing (the 2026-06-23 gap). Fully
+  994:         # self-guarded; the extra try/except is belt-and-suspenders so a
+  995:         # backfill problem can never break startup.
+  996:         source = _bundle_default_config_path()
+  997:         if source is not None and source.is_file():
+  998:             try:
+  999:                 _merge_missing_feature_flags(user_target, source)
+ 1000:             except Exception as e:  # pragma: no cover - defensive
+ 1001:                 logger.warning("feature_flag_merge_unexpected: %s", e)
+ 1002:         return user_target
+ 1003: 
+ 1004:     source = _bundle_default_config_path()
+ 1005:     if source is None:
+ 1006:         return None
+ 1007:     try:
+ 1008:         user_target.parent.mkdir(parents=True, exist_ok=True)
+ 1009:         shutil.copyfile(source, user_target)
+ 1010:         logger.info(
+ 1011:             "seeded user config.toml from bundle: %s -> %s", source, user_target,
+ 1012:         )
+ 1013:         return user_target
+ 1014:     except OSError as e:
+ 1015:         logger.warning("config seed failed (%s); falling back to bundle default", e)
+ 1016:         return None
+ 1017: 
+ 1018: 
+ 1019: def _recover_orphaned_endpoints(canonical_path: Path) -> bool:
+ 1020:     """Recover enabled provider endpoints from historical userdata locations.
+ 1021: 
+ 1022:     This is a startup self-heal for installs affected by earlier userdata path
+ 1023:     drift. It never raises: a recovery failure must not block backend startup.
+ 1024:     """
+ 1025:     try:
+ 1026:         import copy
+ 1027: 
+ 1028:         import tomlkit
+ 1029:     except Exception as e:  # pragma: no cover - import guard
+ 1030:         logger.warning("endpoints_recover_failed: %s", e)
+ 1031:         return False
+ 1032: 
+ 1033:     def _endpoints(raw: object) -> list[dict]:
+ 1034:         if not isinstance(raw, dict):
+ 1035:             return []
+ 1036:         llm = raw.get("llm") or {}
+ 1037:         if not isinstance(llm, dict):
+ 1038:             return []
+ 1039:         endpoints = llm.get("endpoints") or []
+ 1040:         if not isinstance(endpoints, list):
+ 1041:             return []
+ 1042:         return [ep for ep in endpoints if isinstance(ep, dict)]
+ 1043: 
+ 1044:     def _enabled_endpoints(raw: object) -> list[dict]:
+ 1045:         # "鍙敤" = 鏈樉寮?disabled 涓旀湁 base_url銆俶alformed/鍗婃垚鍝?endpoint
+ 1046:         # 涓嶇畻鍙敤锛屽惁鍒?canonical 閲屼竴琛屽潖 endpoint锛坋nabled 浣嗙己 base_url锛?
+ 1047:         # 浼氭尅浣忚嚜鎰堟仮澶嶏紱鍚岀悊婧愪晶涔熷彧璁ょ湡姝ｅ彲鐢ㄧ殑 endpoint銆?
+ 1048:         return [
+ 1049:             ep
+ 1050:             for ep in _endpoints(raw)
+ 1051:             if ep.get("enabled") is not False and str(ep.get("base_url") or "").strip()
+ 1052:         ]
+ 1053: 
+ 1054:     def _same_path(a: Path, b: Path) -> bool:
+ 1055:         try:
+ 1056:             return a.resolve(strict=False) == b.resolve(strict=False)
+ 1057:         except OSError:
+ 1058:             return a.absolute() == b.absolute()
+ 1059: 
+ 1060:     try:
+ 1061:         with open(canonical_path, "rb") as f:
+ 1062:             canonical_raw = tomli.load(f)
+ 1063:         if _enabled_endpoints(canonical_raw):
+ 1064:             return False
+ 1065: 
+ 1066:         candidates: list[Path] = [
+ 1067:             Path(
+ 1068:                 platformdirs.user_data_dir(
+ 1069:                     "deskpet",
+ 1070:                     appauthor=False,
+ 1071:                     roaming=True,
+ 1072:                 )
+ 1073:             )
+ 1074:             / "config.toml"
+ 1075:         ]
+ 1076: 
+ 1077:         if getattr(sys, "frozen", False):
+ 1078:             exe_parent = Path(sys.executable).parent
+ 1079:             install_root = (
+ 1080:                 exe_parent.parent
+ 1081:                 if exe_parent.name.lower() == "backend"
+ 1082:                 else exe_parent
+ 1083:             )
+ 1084:             candidates.extend(
+ 1085:                 [
+ 1086:                     install_root / "userdata" / "config.toml",
+ 1087:                     install_root / "backend" / "userdata" / "config.toml",
+ 1088:                 ]
+ 1089:             )
+ 1090:             if install_root.anchor:
+ 1091:                 candidates.append(
+ 1092:                     Path(install_root.anchor) / "userdata" / "config.toml"
+ 1093:                 )
+ 1094: 
+ 1095:         seen: set[Path] = set()
+ 1096:         sources: list[Path] = []
+ 1097:         for candidate in candidates:
+ 1098:             resolved = candidate.resolve(strict=False)
+ 1099:             if resolved in seen or _same_path(candidate, canonical_path):
+ 1100:                 continue
+ 1101:             seen.add(resolved)
+ 1102:             if candidate.is_file():
+ 1103:                 sources.append(candidate)
+ 1104: 
+ 1105:         source_path: Path | None = None
+ 1106:         enabled_count = 0
+ 1107:         for candidate in sources:
+ 1108:             try:
+ 1109:                 with open(candidate, "rb") as f:
+ 1110:                     source_raw = tomli.load(f)
+ 1111:             except Exception as e:  # noqa: BLE001 鈥?鍧?TOML/璇诲け璐ヤ笉闃绘柇鍚庣画鍊欓€?
+ 1112:                 logger.warning(
+ 1113:                     "endpoints_recover_skip_bad_source src=%s err=%s", candidate, e
+ 1114:                 )
+ 1115:                 continue
+ 1116:             enabled = _enabled_endpoints(source_raw)
+ 1117:             if enabled:
+ 1118:                 source_path = candidate
+ 1119:                 enabled_count = len(enabled)
+ 1120:                 break
+ 1121: 
+ 1122:         if source_path is None:
+ 1123:             return False
+ 1124: 
+ 1125:         user_doc = tomlkit.parse(canonical_path.read_text(encoding="utf-8"))
+ 1126:         source_doc = tomlkit.parse(source_path.read_text(encoding="utf-8"))
+ 1127:         source_llm = source_doc.get("llm")
+ 1128:         if not _is_toml_table(source_llm) or "endpoints" not in source_llm:
+ 1129:             return False
+ 1130: 
+ 1131:         user_llm = user_doc.get("llm")
+ 1132:         if not _is_toml_table(user_llm):
+ 1133:             user_llm = tomlkit.table()
+ 1134:             user_doc["llm"] = user_llm
+ 1135:         user_llm["endpoints"] = copy.deepcopy(source_llm["endpoints"])
+ 1136: 
+ 1137:         bak = canonical_path.with_suffix(".pre-recover-bak")
+ 1138:         shutil.copyfile(canonical_path, bak)
+ 1139:         canonical_path.write_text(tomlkit.dumps(user_doc), encoding="utf-8")
+ 1140:         logger.info(
+ 1141:             "endpoints_recovered_from src=%s count=%d",
+ 1142:             source_path,
+ 1143:             enabled_count,
+ 1144:         )
+ 1145:         return True
+ 1146:     except Exception as e:
+ 1147:         logger.warning("endpoints_recover_failed: %s", e)
+ 1148:         return False
+ 1149: 
+ 1150: 
+ 1151: def get_subagent_concurrency(cfg: "AppConfig") -> tuple[int, dict[str, int]]:
+ 1152:     """瀛愪唬鐞嗗苟鍙戦┍鍔細浠?``cfg.raw['agent']['concurrency']`` 璇诲叏灞€/鍚?lane cap銆?
+ 1153: 
+ 1154:     plan WI-0.3銆?*蹇呴』 getattr 鍏滃簳**锛坈fg 鍙兘鏄棤 ``.raw`` 鐨勬祴璇?stub锛夆€斺€?
+ 1155:     涓嶅鍒?2026-06-21 `b05823b` 鐨?``config.config`` 鍗曚緥涓嶅瓨鍦ㄥ鑷撮厤缃潤榛?
+ 1156:     澶辨晥鐨勫潙锛圧2锛夈€傜己鐪?鈫?鍐呯疆榛樿 ``(4, {...})``銆?
+ 1157:     """
+ 1158:     raw = (getattr(cfg, "raw", None) or {})
+ 1159:     agent_raw = raw.get("agent", {}) if isinstance(raw, dict) else {}
+ 1160:     conc = agent_raw.get("concurrency", {}) if isinstance(agent_raw, dict) else {}
+ 1161:     if not isinstance(conc, dict):
+ 1162:         conc = {}
+ 1163:     try:
+ 1164:         glob = int(conc.get("global_concurrency", 4))
+ 1165:     except (TypeError, ValueError):
+ 1166:         glob = 4
+ 1167:     lanes_raw = conc.get("lane_caps", {})
+ 1168:     default_lanes = {
+ 1169:         "research": 2,
+ 1170:         "code": 2,
+ 1171:         "fileops": 3,
+ 1172:         "doc": 1,
+ 1173:         "web": 3,
+ 1174:         "general": 2,
+ 1175:     }
+ 1176:     lanes: dict[str, int] = dict(default_lanes)
+ 1177:     if isinstance(lanes_raw, dict):
+ 1178:         for k, v in lanes_raw.items():
+ 1179:             try:
+ 1180:                 lanes[str(k)] = int(v)
+ 1181:             except (TypeError, ValueError):
+ 1182:                 continue
+ 1183:     return glob, lanes
+ 1184: 
+ 1185: 
+ 1186: def resolve_config_path() -> Path:
+ 1187:     """Return the config.toml path the backend should load, with priority:
+ 1188: 
+ 1189:     1. ``DESKPET_CONFIG`` env (E2E / tests / power users).
+ 1190:     2. ``<user_data_dir>/config.toml`` 鈥?seeded on first run from the bundle.
+ 1191:     3. Bundle default (frozen exe dir or dev repo root).
+ 1192:     4. Whatever fallback we can find, even if missing 鈥?``load_config`` will
+ 1193:        silently return ``AppConfig()`` defaults in that case.
+ 1194:     """
+ 1195:     override = os.environ.get("DESKPET_CONFIG")
+ 1196:     if override:
+ 1197:         p = Path(override)
+ 1198:         if p.is_file():
+ 1199:             return p
+ 1200:         logger.warning("DESKPET_CONFIG=%s does not exist; falling through", override)
+ 1201: 
+ 1202:     # Try (or create) the user-data copy.
+ 1203:     seeded = seed_user_config_if_missing()
+ 1204:     if seeded is not None and seeded.is_file():
+ 1205:         try:
+ 1206:             _recover_orphaned_endpoints(seeded)
+ 1207:         except Exception as e:  # noqa: BLE001 - self-heal must not block startup
+ 1208:             logger.warning("endpoints_recover_unexpected: %s", e)
+ 1209:         return seeded
+ 1210: 
+ 1211:     # Fall through: bundle default.
+ 1212:     bundle = _bundle_default_config_path()
+ 1213:     if bundle is not None:
+ 1214:         return bundle
+ 1215: 
+ 1216:     # Last resort: a path that doesn't exist. load_config() returns
+ 1217:     # AppConfig() defaults when the path is missing, which is the
+ 1218:     # correct behaviour 鈥?we just won't read anything from disk.
+ 1219:     return _paths.user_data_dir() / "config.toml"
+ 1220: 
+
+ succeeded in 246ms:
+    1: # SPDX-FileCopyrightText: 2026 DennyWanye
+    2: # SPDX-License-Identifier: BUSL-1.1
+    3: 
+    4: from __future__ import annotations
+    5: 
+    6: import json
+    7: from typing import AsyncIterator
+    8: 
+    9: import httpx
+   10: import structlog
+   11: 
+   12: from llm.errors import LLMProviderError
+   13: from llm.relay_errors import classify_relay_error
+   14: from providers._response_sanitizer import sanitize_response
+   15: 
+   16: logger = structlog.get_logger()
+   17: 
+   18: # 2026-06-28: 绌?鍗犱綅绗?api_key 浼氳鎷兼垚闈炴硶澶?"Authorization: Bearer "
+   19: # 鈫?httpx LocalProtocolError 鎶婃暣杞璇濆埛宕╋紙瑁呮満鐗?relay provider 璺緞涓㈠け
+   20: # 鍚庨€€鍒?legacy 绌?key 鏃剁殑娆＄敓宕╂簝锛岃 plans/2026-06-28-userdata-path-binding-fix锛夈€?# 鍦ㄥ敮涓€鐨?client 鏋勯€犵偣 _client() 鎷︽埅锛氶潪鏈湴 endpoint 涓?key 涓嶅彲鐢ㄦ椂鎶?# 鍙嬪ソ鐨?LLMProviderError(error_class=empty_api_key)锛岀敱 chat 灞傜収甯?surface 鎴?# "璇烽噸鏂扮櫥褰?閰嶇疆 provider"锛岃€屼笉鏄穿鍦ㄤ紶杈撳眰銆傛湰鍦?ollama锛坘ey 鍗犱綅銆乻erver
+   21: # 蹇界暐锛夋斁琛屻€?_UNUSABLE_API_KEYS = {"", "from-keychain", "from-env", "your-key-here"}
+   22: 
+   23: 
+   24: def _is_local_base_url(base_url: str) -> bool:
+   25:     b = (base_url or "").lower()
+   26:     return "localhost" in b or "127.0.0.1" in b or "0.0.0.0" in b
+   27: 
+   28: 
+   29: def _record_tool_choice_none_unsupported(provider: str, model: str) -> None:
+   30:     try:
+   31:         from observability.metrics_sink import record
+   32:         record(
+   33:             "tool_choice_none_unsupported",
+   34:             {"provider": provider, "model": model},
+   35:         )
+   36:     except Exception:  # noqa: BLE001
+   37:         pass
+   38: 
+   39: 
+   40: def _is_tool_choice_400(exc: httpx.HTTPStatusError, body: str) -> bool:
+   41:     return exc.response.status_code == 400 and "tool_choice" in (body or "")
+   42: 
+   43: 
+   44: def _merge_code_params(payload: dict, code_params: dict | None) -> dict:
+   45:     """code-session-model-params: splice the per-session request fragment.
+   46: 
+   47:     Top-level keys (e.g. ``reasoning_effort``) are set directly; an
+   48:     ``extra_body`` dict is shallow-merged. Total/pure: empty/None 鈫?    payload unchanged. Never overrides ``model``/``messages``.
+   49:     """
+   50:     if not code_params:
+   51:         return payload
+   52:     for k, v in code_params.items():
+   53:         if k in ("model", "messages"):
+   54:             continue
+   55:         if k == "extra_body" and isinstance(v, dict):
+   56:             eb = dict(payload.get("extra_body") or {})
+   57:             eb.update(v)
+   58:             payload["extra_body"] = eb
+   59:         else:
+   60:             payload[k] = v
+   61:     return payload
+   62: 
+   63: 
+   64: class OpenAICompatibleProvider:
+   65:     """LLM provider speaking OpenAI's /v1/chat/completions SSE protocol.
+   66: 
+   67:     Works against any compatible endpoint:
+   68:       - Local Ollama on /v1 (api_key "ollama", ignored server-side).
+   69:       - DashScope compatible-mode /v1 (real bearer token).
+   70:       - Any other OpenAI-compatible gateway.
+   71: 
+   72:     Implements the `LLMProvider` Protocol in providers/base.py.
+   73:     """
+   74: 
+   75:     def __init__(
+   76:         self,
+   77:         base_url: str,
+   78:         api_key: str,
+   79:         model: str,
+   80:         temperature: float = 0.7,
+   81:         timeout: float | None = None,
+   82:         sanitize_inline_cot_dsml: bool = True,
+   83:         code_params: dict | None = None,
+   84:         is_relay: bool = False,
+   85:     ) -> None:
+   86:         self.base_url = base_url.rstrip("/")
+   87:         self.api_key = api_key
+   88:         self.model = model
+   89:         self.temperature = temperature
+   90:         self._is_relay = is_relay
+   91:         # code-session-model-params: per-code-session request fragment
+   92:         # (e.g. {"reasoning_effort":"high","extra_body":{...}}) produced
+   93:         # by llm.code_params; merged into the chat payload. None/{} = no
+   94:         # change (provider defaults / non-code sessions).
+   95:         self.code_params = code_params or {}
+   96:         # 2026-05-17 deepseek-inline-cot-dsml-sanitize Strangler-Fig flag.
+   97:         # Default on; caller (provider registry) passes the config value.
+   98:         # False = byte-for-byte legacy passthrough (demo rollback).
+   99:         self.sanitize_inline_cot_dsml = sanitize_inline_cot_dsml
+  100:         # P4-S25 / P5-S2: timeout is a tuple-style budget instead of a single
+  101:         # number:
+  102:         #   * connect = 10s 鈥?TCP + TLS handshake. Bumped 5鈫?0s on 2026-05-11
+  103:         #                     after seeing real ConnectTimeout failures while
+  104:         #                     the relay itself reported no errors (their server
+  105:         #                     never saw the request 鈥?handshake failed our
+  106:         #                     side). Windows DNS cache invalidation + TLS
+  107:         #                     slow-start on cold connections legitimately
+  108:         #                     takes 6-8s. 10s gives headroom without making
+  109:         #                     real outages drag.
+  110:         #   * read    = 60s 鈥?between bytes / for a full single response.
+  111:         #                     Initial 20s based on user-reported 14.4s p-max
+  112:         #                     was too tight: 2026-05-09 logs showed frequent
+  113:         #                     `attempt=1 of=3 ReadTimeout` retries that ate
+  114:         #                     the whole budget on a string of slow turns.
+  115:         #                     60s covers thinking-mode bursts + the relay
+  116:         #                     idle-spikes; the proxy's own 100-120s idle cut
+  117:         #                     remains the outer bound.
+  118:         #   * write   = 5s  鈥?POST body is small; anything past this is dead.
+  119:         #   * pool    = 5s  鈥?connection-pool acquisition.
+  120:         # Caller can still pass a scalar/Timeout; we honour that verbatim.
+  121:         # P5-S2 F1 (2026-05-12) 鈥?bumped read 60鈫?20 and write 5鈫?0 per
+  122:         # the relay's integration guide (docs/涓浆绔欏缓璁?md). the relay's PR #27
+  123:         # ships a 15s SSE keep-alive comment that resets read timers on
+  124:         # every hop, so a 120s read budget is generous + safe and covers
+  125:         # individual reasoning tokens that can be 5KB+ on slow chunks.
+  126:         # connect stays at 10s 鈥?Windows DNS slow-start legitimately
+  127:         # takes 6-8s, the relay's suggested 5s would false-fail occasionally.
+  128:         if timeout is None:
+  129:             self.timeout: float | httpx.Timeout = httpx.Timeout(
+  130:                 connect=10.0, read=120.0, write=10.0, pool=5.0,
+  131:             )
+  132:         else:
+  133:             self.timeout = timeout
+  134:         # P2-1-S8: last completed stream's usage block from the OpenAI SSE
+  135:         # protocol (populated only when the server emits one 鈥?OpenAI/DashScope
+  136:         # always do when stream_options.include_usage=True; Ollama today does
+  137:         # NOT emit usage in its SSE stream, so this stays None after Ollama
+  138:         # calls and billing records nothing. main.py handles that case.
+  139:         self.last_usage: dict | None = None
+  140:         # Test-only injection: unit tests assign an httpx.MockTransport here.
+  141:         # Production code MUST leave this None; otherwise every request goes
+  142:         # through the mock and never reaches the real endpoint.
+  143:         self._test_transport: httpx.BaseTransport | None = None
+  144: 
+  145:     def _relay_error_class(
+  146:         self,
+  147:         status_code: int | None,
+  148:         body_text: str = "",
+  149:         response: httpx.Response | None = None,
+  150:     ) -> str | None:
+  151:         if not self._is_relay:
+  152:             return None
+  153:         body: dict | None = None
+  154:         if response is not None:
+  155:             try:
+  156:                 parsed = response.json()
+  157:                 if isinstance(parsed, dict):
+  158:                     body = parsed
+  159:             except Exception:  # noqa: BLE001
+  160:                 body = None
+  161:         return classify_relay_error(status_code, body_text, body=body)
+  162: 
+  163:     def _client(self, timeout: float | httpx.Timeout) -> httpx.AsyncClient:
+  164:         # 绌?key 鎶ゆ爮锛氬敮涓€鐨勫嚭绔?client 鏋勯€犵偣銆傞潪鏈湴 endpoint 涓?key 涓嶅彲鐢?        # 锛堢┖/鍗犱綅绗︼級鏃朵笉鏋勯€?client銆佷笉鍙戣姹傦紝鎶涘弸濂介敊璇紝閬垮厤鎷煎嚭闈炴硶鐨?        # "Authorization: Bearer " 澶村穿鍦?httpx 浼犺緭灞傦紙LocalProtocolError锛夈€?        if (self.api_key or "").strip().lower() in _UNUSABLE_API_KEYS and not _is_local_base_url(self.base_url):
+  165:             raise LLMProviderError(
+  166:                 "鏈娴嬪埌鍙敤鐨?LLM API Key锛堝彲鑳芥湭鐧诲綍鎴栫櫥褰曞凡澶辨晥锛夈€?
+  167:                 "璇烽噸鏂扮櫥褰曪紝鎴栧湪 璁剧疆 鈫?LLM Providers 閰嶇疆 API Key 鍚庨噸璇曘€?,
+  168:                 error_class="empty_api_key",
+  169:             )
+  170:         headers = {
+  171:             "Authorization": f"Bearer {self.api_key}",
+  172:             "Content-Type": "application/json",
+  173:         }
+  174:         # P5-S2 F1 (2026-05-12) 鈥?the relay integration guide root cause for
+  175:         # "succeeds then next request ConnectError" (docs/涓浆绔欏缓璁?md
+  176:         # Failure Mode 2):
+  177:         #
+  178:         # httpx's default connection pool retains the TCP socket between
+  179:         # requests for reuse. Middleboxes (NAT, corporate proxy, ISP) and
+  180:         # the server's own keepAliveTimeout=75s silently kill that idle
+  181:         # socket. When we send the NEXT request to the stale FD, the
+  182:         # first write gets ECONNRESET and httpx surfaces it as
+  183:         # ConnectError 鈥?looking exactly like "can't connect to the relay"
+  184:         # even though the relay is healthy.
+  185:         #
+  186:         # Fix per the relay guide: disable pool reuse entirely. New TCP +
+  187:         # TLS handshake every request costs ~50ms; for an LLM workload
+  188:         # where each call is 5-30s, the overhead is irrelevant and the
+  189:         # fix eliminates an entire class of intermittent failures.
+  190:         #
+  191:         # transport retries=1 adds one implicit retry on raw socket
+  192:         # errors (httpx layer, BEFORE our 3-retry application backoff).
+  193:         # Cheap belt-and-suspenders for the (rare) case where a fresh
+  194:         # connection still hits a transient SYN drop.
+  195:         limits = httpx.Limits(max_keepalive_connections=0)
+  196:         # Test path: when a MockTransport is injected we don't apply
+  197:         # AsyncHTTPTransport(retries=1) 鈥?mock transports don't honour
+  198:         # retries and the tests assert exact request counts.
+  199:         if self._test_transport is not None:
+  200:             transport = self._test_transport
+  201:         else:
+  202:             transport = httpx.AsyncHTTPTransport(retries=1)
+  203:         return httpx.AsyncClient(
+  204:             timeout=timeout,
+  205:             headers=headers,
+  206:             limits=limits,
+  207:             transport=transport,
+  208:         )
+  209: 
+  210:     async def chat_stream(
+
+ succeeded in 218ms:
+  303: class LLMProviderRegistry:
+  304:     """Owns the canonical list of LLM providers.
+  305: 
+  306:     Construct once per backend process. Pass ``config.toml`` path. The
+  307:     constructor loads existing ``[[llm.endpoints]]`` entries from disk;
+  308:     if absent, the registry starts empty.
+  309: 
+  310:     Concurrency: mutating methods (``add_provider``, ``remove_provider``,
+  311:     ``set_enabled``, ``reorder``, ``update_provider``) are async to leave
+  312:     room for a ws broadcast in Phase 2. Within a single backend process
+  313:     the ws handler serializes ``settings_providers_*`` messages, so we
+  314:     don't need an asyncio.Lock for the in-memory list mutations.
+  315:     """
+  316: 
+  317:     def __init__(self, config_path: Path | str) -> None:
+  318:         self._config_path = Path(config_path)
+  319:         self._entries: list[ProviderEntry] = []
+  320:         self._load_from_toml()
+  321:         logger.info(
+  322:             "provider_registry_ready n=%d enabled=%d ids=%s",
+  323:             len(self._entries),
+  324:             sum(1 for e in self._entries if e.enabled),
+  325:             [e.id for e in self._entries],
+  326:         )
+  327: 
+  328:     # 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ persistence 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+  329: 
+  330:     def _load_from_toml(self) -> None:
+
+ succeeded in 248ms:
+   90: install_crash_reporter()
+   91: 
+   92: logger = structlog.get_logger()
+   93: 
+   94: # P3-S7: ensure user data / cache / models directories exist before any
+   95: # subsystem tries to write into them. Also seeds <user_data>/config.toml
+   96: # from the bundle default on first run (via resolve_config_path).
+   97: _paths.ensure_user_dirs()
+   98: 
+   99: _CONFIG_PATH = resolve_config_path()
+  100: config = load_config(_CONFIG_PATH)
+  101: logger.info(
+  102:     "config_loaded",
+  103:     path=str(_CONFIG_PATH),
+  104:     exists=_CONFIG_PATH.is_file(),
+  105:     user_data_dir=str(_paths.user_data_dir()),
+  106:     user_models_dir=str(_paths.user_models_dir()),
+  107:     model_root=str(_paths.model_root()),
+  108:     # 2026-06-28 璺緞缁戝畾鍙娴嬶細portable=鏄惁璧?<install>/userdata锛?
+  109:     # env_pinned=Tauri 鏄惁娉ㄥ叆浜?DESKPET_USER_DATA_DIR锛堝崟涓€浜嬪疄婧愮敓鏁堬級銆?
+  110:     # 瑁呮満鐗堣矾寰勬紓绉昏瘖鏂氨鐪嬭繖涓や釜 + path 璺ㄤ細璇濇槸鍚︽亽瀹氥€?
+  111:     portable=_paths.is_portable_mode(),
+  112:     env_pinned=bool(os.environ.get("DESKPET_USER_DATA_DIR")),
+  113: )
+  114: PROJECT_ROOT = _CONFIG_PATH.parent
+  115: SHARED_SECRET = secrets.token_hex(16)
+  116: 
+  117: service_context = ServiceContext()
+  118: 
+  119: # P3-S5 / P4-S20: register the bundled CUDA DLL dir BEFORE any provider
+  120: # import that drags in torch (silero_vad / faster_whisper_asr both do).
+  330: # P5-S2 multi-provider-management Phase 2: LLMProviderRegistry
+  331: # 鍗曚竴 source of truth for [[llm.providers]] 鍒楄〃銆侾hase 0/1 宸插疄鐜板簳灞?
+  332: # 杩欓噷鍦ㄥ惎鍔ㄦ椂鎵ц legacy migration + 鏋勯€?registry,鏀惧埌 service_context
+  333: # 渚?ws handler (`settings_providers_*`) 璇诲啓銆?
+  334: try:
+  335:     from llm.provider_registry import (
+  336:         LLMProviderRegistry,
+  337:         _migrate_legacy_provider_config,
+  338:     )
+  339:     from llm.relay_provider_ops import ensure_relay_provider, relay_logout
+  340:     try:
+  341:         _migrate_legacy_provider_config(_CONFIG_PATH)
+  342:     except Exception as _exc:  # noqa: BLE001
+  343:         logger.warning("provider_registry_migration_failed: %s", _exc)
+  344:     _provider_registry = LLMProviderRegistry(_CONFIG_PATH)
+  345:     service_context.register("provider_registry", _provider_registry)
+  346:     logger.info(
+  347:         "provider_registry_initialized providers=%d",
+  348:         len(_provider_registry.list_providers()),
+  349:     )
+  350: except Exception as _exc:  # noqa: BLE001
+
+codex
+到目前为止，Phase 3/4/5/6 的代码位置都能对应到 plan。接下来我会补看路径模块的行号，以及空 key 错误在 chat 层是否会保留 `error_class`，避免只在 provider 抛了但前端拿不到友好分类。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$i=0; Get-Content '"'backend\\paths.py' | ForEach-Object { "'$i++; if ($i -ge 35 -and $i -le 150 -or $i -ge 185 -and $i -le 235) { '"'{0,5}: {1}' -f "'$i, $_ } }' in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "rg -n \"candidates_up|steps_up|F:\\\\userdata|userdata\" backend\\paths.py" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "rg -n \"error_class|LLMProviderError|agent_error|chat_error|empty_api_key|no_provider_or_login_required|LocalProtocolError\" backend\\main.py backend\\agent_loop.py backend\\llm\\errors.py" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$i=0; Get-Content '"'backend\\deskpet-backend.spec' | ForEach-Object { "'$i++; if ($i -ge 35 -and $i -le 70) { '"'{0,5}: {1}' -f "'$i, $_ } }' in G:\projects\deskpet
+ succeeded in 184ms:
+   35: from __future__ import annotations
+   36: 
+   37: import logging
+   38: import os
+   39: import sys
+   40: from pathlib import Path
+   41: 
+   42: import platformdirs
+   43: 
+   44: # Constants used by platformdirs. `appauthor=False` means "don't insert
+   45: # an AppAuthor\AppName folder stack on Windows" 鈥?we own the top-level
+   46: # name "deskpet" directly, giving clean paths like `AppData\Roaming\deskpet\`
+   47: # instead of `AppData\Roaming\deskpet\deskpet\`.
+   48: _APP_NAME = "deskpet"
+   49: _APP_AUTHOR: str | bool = False
+   50: logger = logging.getLogger(__name__)
+   51: _UNSET = object()
+   52: _PORTABLE_CACHE: Path | None | object = _UNSET
+   53: # 杩涚▼鍐呰蹇嗗寲 user_data_dir 鐨勯潪 env 瑙ｆ瀽缁撴灉锛坋nv 姣忔浠嶄紭鍏堬級锛?# 闃?portable 鎺㈤拡/瑙ｆ瀽鎶栧姩瀵艰嚧鍚岃繘绋嬪唴 config.toml / state.db 钀戒笉鍚岀洰褰曘€?_USER_DATA_DIR_CACHE: Path | object = _UNSET
+   54: 
+   55: 
+   56: def _install_dir() -> Path | None:
+   57:     """Return the directory containing the frozen exe, or None in dev mode."""
+   58:     if getattr(sys, "frozen", False):
+   59:         return Path(sys.executable).resolve().parent
+   60:     return None
+   61: 
+   62: 
+   63: def _portable_userdata_dir() -> Path | None:
+   64:     """Return ``<install_root>/userdata/`` when running from a frozen install.
+   65: 
+   66:     Layout we expect (Tauri MSI ships this)::
+   67: 
+   68:         <install_root>/                  (e.g. G:\\tools\\deskpet\\)
+   69:             deskpet.exe                  (Tauri main exe)
+   70:             backend/
+   71:                 deskpet-backend.exe      鈫?sys.executable when frozen
+   72:                 _internal/
+   73:             userdata/
+   74:                 config.toml
+   75:                 data/state.db
+   76:                 models/
+   77:                 logs/
+   78:                 skills/
+   79: 
+   80:     The backend exe's ``Path.parent`` is `<install>/backend/`; that
+   81:     layout binds only to `<install>/userdata/`. Standalone frozen
+   82:     builds bind only to `<exe_dir>/userdata/`. Once the portable
+   83:     sentinel exists, it pins the install-local directory.
+   84: 
+   85:     The MSI installer's component manifest does NOT list any files
+   86:     under ``userdata/``, so MSI uninstall leaves the entire userdata
+   87:     tree (state.db, config.toml, models/, skills/) untouched. That's
+   88:     how "uninstall doesn't lose my chat history" works.
+   89:     """
+   90:     global _PORTABLE_CACHE
+   91:     if _PORTABLE_CACHE is not _UNSET:
+   92:         return _PORTABLE_CACHE if isinstance(_PORTABLE_CACHE, Path) else None
+   93: 
+   94:     base = _install_dir()
+   95:     if base is None:
+   96:         _PORTABLE_CACHE = None
+   97:         return None
+   98:     # Deterministic binding: backend exe -> install root, standalone exe
+   99:     # -> exe dir. Never walk up to drive-root neighbor userdata folders.
+  100:     root = base.parent if base.name.lower() == "backend" else base
+  101:     candidate = root / "userdata"
+  102:     sentinel = candidate / ".deskpet-portable"
+  103:     if sentinel.exists():
+  104:         _PORTABLE_CACHE = candidate
+  105:         return candidate
+  106: 
+  107:     try:
+  108:         candidate.mkdir(parents=True, exist_ok=True)
+  109:         probe = candidate / ".deskpet-write-probe"
+  110:         probe.write_bytes(b"")
+  111:         probe.unlink()
+  112:     except OSError as e:
+  113:         logger.error(
+  114:             "portable_userdata_unwritable dir=%s err=%s 鈥?falling back to AppData",
+  115:             candidate,
+  116:             e,
+  117:         )
+  118:         _PORTABLE_CACHE = None
+  119:         return None
+  120: 
+  121:     try:
+  122:         sentinel.touch(exist_ok=True)
+  123:     except OSError:
+  124:         pass
+  125:     _PORTABLE_CACHE = candidate
+  126:     return candidate
+  127: 
+  128: 
+  129: def reset_path_cache() -> None:
+  130:     """Tests call this to clear memoized portable + user_data_dir resolution."""
+  131:     global _PORTABLE_CACHE, _USER_DATA_DIR_CACHE
+  132:     _PORTABLE_CACHE = _UNSET
+  133:     _USER_DATA_DIR_CACHE = _UNSET
+  134: 
+  135: 
+  136: def is_portable_mode() -> bool:
+  137:     """True when running from a frozen install with a writable userdata dir."""
+  138:     return _portable_userdata_dir() is not None
+  139: 
+  140: 
+  141: def _install_root_for_deepresearch() -> Path | None:
+  142:     """Return writable ``<install_root>/DeepResearch`` for frozen installs."""
+  143:     base = _install_dir()
+  144:     if base is None:
+  145:         return None
+  146:     root = base.parent if base.name.lower() == "backend" else base
+  147:     target = root / "DeepResearch"
+  148:     try:
+  149:         target.mkdir(parents=True, exist_ok=True)
+  150:         probe = target / f".deskpet-dr-write-probe-{os.getpid()}"
+  185: 
+  186:     target = Path.home() / "DeskPet" / "DeepResearch"
+  187:     target.mkdir(parents=True, exist_ok=True)
+  188:     logger.warning(
+  189:         "DeepResearch install directory is not writable; falling back to %s",
+  190:         target,
+  191:     )
+  192:     return target
+  193: 
+  194: 
+  195: def user_data_dir() -> Path:
+  196:     """Roaming user data directory (config, DBs, logs).
+  197: 
+  198:     Resolution order:
+  199:       1. ``DESKPET_USER_DATA_DIR`` env override (tests, power users).
+  200:       2. **Portable mode** 鈥?``<install_dir>/userdata/`` (if sentinel
+  201:          present). All state lives next to the install, not under C:.
+  202:       3. **Dev-from-source** 鈥?``DESKPET_DEV_MODE=1`` and not frozen 鈫?         repo-local ``backend/userdata/`` (same target as
+  203:          ``scripts/dev-start.ps1``). Guardrail so ad-hoc dev launches that
+  204:          forget to set ``DESKPET_USER_DATA_DIR`` still keep state on the
+  205:          repo's disk instead of polluting ``%AppData%`` on C:.
+  206:       4. Classic 鈥?Windows ``%AppData%\\deskpet\\``, macOS/Linux XDG.
+  207:     """
+  208:     # env 姘歌繙浼樺厛锛堜笉杩涚紦瀛樷€斺€攑ower-user / 娴嬭瘯鍙湪杩涚▼鍐呭垏鎹級銆?    override = os.environ.get("DESKPET_USER_DATA_DIR")
+  209:     if override:
+  210:         return Path(override)
+  211:     # 闈?env 瑙ｆ瀽璁板繂鍖栵細棣栬В鏋愬悗閽夋锛岄槻鍚岃繘绋嬪唴 portable 鎺㈤拡/瑙ｆ瀽鎶栧姩
+  212:     # 璁?config.toml / state.db 钀藉埌涓嶅悓鐩綍锛堣鏈虹増璺緞婕傜Щ鐨勮繘绋嬪唴鍙樹綋锛夈€?    global _USER_DATA_DIR_CACHE
+  213:     if _USER_DATA_DIR_CACHE is not _UNSET:
+  214:         return _USER_DATA_DIR_CACHE  # type: ignore[return-value]
+  215:     portable = _portable_userdata_dir()
+  216:     if portable is not None:
+  217:         resolved = portable
+  218:     elif os.environ.get("DESKPET_DEV_MODE") == "1" and not getattr(sys, "frozen", False):
+  219:         # backend/userdata 鈥?paths.py lives in backend/, so .parent is it.
+  220:         resolved = Path(__file__).resolve().parent / "userdata"
+  221:     else:
+  222:         resolved = Path(
+  223:             platformdirs.user_data_dir(_APP_NAME, appauthor=_APP_AUTHOR, roaming=True)
+  224:         )
+  225:     _USER_DATA_DIR_CACHE = resolved
+  226:     return resolved
+  227: 
+  228: 
+  229: def output_dir(kind: str = "") -> Path:
+  230:     """鐢ㄦ埛鐢熸垚鐗╃粺涓€杈撳嚭鐩綍: ``<user_data>/OutPut[/<kind>]``銆?
+  231:     妗屽疇鐢熸垚鐨勬墍鏈変氦浠樼墿(PPT/鏂囨。/鍥剧墖绛?閮借惤杩欓噷,鎸夌被鍨嬪垎瀛愮洰褰?    (濡?``OutPut/PPT``),鐢ㄦ埛濂芥壘銆傜洰褰曟寜闇€鍒涘缓;鍒涘缓澶辫触杩斿洖璺緞鏈韩
+  232:     (璋冪敤鏂瑰啓鏂囦欢鏃惰嚜鐒舵姤閿?涓嶅湪杩欓噷鎶?銆?    """
+  233:     base = user_data_dir() / "OutPut"
+  234:     target = base / kind if kind else base
+  235:     try:
+
+ succeeded in 199ms:
+11:P4-S22+ adds **portable mode**: when an ``<install_dir>/userdata/``
+17:    explicitly listed at install time; an empty userdata/ folder
+21:Detection: the bundle ships an empty ``<install_dir>/userdata/.deskpet-portable``
+65:def _portable_userdata_dir() -> Path | None:
+66:    """Return ``<install_root>/userdata/`` when running from a frozen install.
+75:            userdata/
+83:    layout binds only to `<install>/userdata/`. Standalone frozen
+84:    builds bind only to `<exe_dir>/userdata/`. Once the portable
+88:    under ``userdata/``, so MSI uninstall leaves the entire userdata
+101:    # -> exe dir. Never walk up to drive-root neighbor userdata folders.
+103:    candidate = root / "userdata"
+116:            "portable_userdata_unwritable dir=%s err=%s — falling back to AppData",
+139:    """True when running from a frozen install with a writable userdata dir."""
+140:    return _portable_userdata_dir() is not None
+202:      2. **Portable mode** — ``<install_dir>/userdata/`` (if sentinel
+205:         repo-local ``backend/userdata/`` (same target as
+220:    portable = _portable_userdata_dir()
+224:        # backend/userdata — paths.py lives in backend/, so .parent is it.
+225:        resolved = Path(__file__).resolve().parent / "userdata"
+253:    Portable: ``<install_dir>/userdata/cache``.
+261:    portable = _portable_userdata_dir()
+270:    Portable: ``<install_dir>/userdata/models``.
+279:    portable = _portable_userdata_dir()
+291:    Portable: ``<install_dir>/userdata/logs``.
+
+2026-06-27T19:11:38.106067Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 0.2 seconds
+Output:
+backend\llm\errors.py:11:    - LLMProviderError       → generic terminal failure
+backend\llm\errors.py:18:class LLMProviderError(Exception):
+backend\llm\errors.py:28:        error_class: Optional[str] = None,
+backend\llm\errors.py:39:        self.error_class = error_class
+backend\llm\errors.py:42:class LLMRateLimitError(LLMProviderError):
+backend\llm\errors.py:56:class LLMTimeoutError(LLMProviderError):
+backend\llm\errors.py:63:class LLMAuthError(LLMProviderError):
+backend\llm\errors.py:72:        error_class: Optional[str] = None,
+backend\llm\errors.py:79:            error_class=error_class,
+backend\llm\errors.py:83:class LLMBudgetExceededError(LLMProviderError):
+backend\main.py:3705:            error_class=None if ok else str(outcome or "failed"),
+backend\main.py:7710:                                            "error_class": getattr(ev, "error_class", "") or "",
+rg: backend\agent_loop.py: 系统找不到指定的文件。 (os error 2)
+
+ exited 1 in 209ms:
+backend\llm\errors.py:11:    - LLMProviderError       → generic terminal failure
+backend\llm\errors.py:18:class LLMProviderError(Exception):
+backend\llm\errors.py:28:        error_class: Optional[str] = None,
+backend\llm\errors.py:39:        self.error_class = error_class
+backend\llm\errors.py:42:class LLMRateLimitError(LLMProviderError):
+backend\llm\errors.py:56:class LLMTimeoutError(LLMProviderError):
+backend\llm\errors.py:63:class LLMAuthError(LLMProviderError):
+backend\llm\errors.py:72:        error_class: Optional[str] = None,
+backend\llm\errors.py:79:            error_class=error_class,
+backend\llm\errors.py:83:class LLMBudgetExceededError(LLMProviderError):
+backend\main.py:3705:            error_class=None if ok else str(outcome or "failed"),
+backend\main.py:7710:                                            "error_class": getattr(ev, "error_class", "") or "",
+rg: backend\agent_loop.py: 系统找不到指定的文件。 (os error 2)
+
+ succeeded in 221ms:
+   35: ]
+   36: 
+   37: # --- 1. Hidden imports --------------------------------------------------
+   38: # Providers that dlopen / importlib their implementations at runtime
+   39: # won't be discovered by the default import graph. List every top-level
+   40: # package that the frozen exe must be able to `import` lazily.
+   41: hiddenimports: list[str] = []
+   42: hiddenimports += collect_submodules("faster_whisper")
+   43: hiddenimports += collect_submodules("ctranslate2")
+   44: hiddenimports += collect_submodules("silero_vad")
+   45: # 2026-06-28: keyring backends are loaded through entry-points, so
+   46: # PyInstaller's static import graph may miss them in frozen builds. Pin
+   47: # keyring + Windows credential backends and their win32ctypes shims when
+   48: # available; keep spec loading tolerant on envs without those optional deps.
+   49: try:
+   50:     hiddenimports += collect_submodules("keyring")
+   51: except Exception:
+   52:     print("[spec] WARN: keyring not importable, skip")
+   53: 
+   54: for _m in [
+   55:     "keyring.backends.Windows",
+   56:     "keyring.backends.null",
+   57:     "keyring.backends.fail",
+   58:     "win32ctypes.core",
+   59:     "win32ctypes.pywin32",
+   60:     "win32ctypes.core.cffi",
+   61:     "win32ctypes.core.ctypes",
+   62: ]:
+   63:     try:
+   64:         if _ilu.find_spec(_m) is not None:
+   65:             hiddenimports.append(_m)
+   66:     except (ImportError, ValueError):
+   67:         pass
+   68: # 2026-05-30 P0 bug fix #10: deskpet/tools/__init__.py uses pkgutil
+   69: # .iter_modules to dynamically discover + import every tool module
+   70: # (excel_tools, doc_tools, ppt_tools, image_tools, etc). PyInstaller's
+
+codex
+路径和 spec 已有行号证据。最后补齐 Rust 行号、provider registry 读取/启用语义，以及 chat 事件输出的错误分类传递。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$i=0; Get-Content '"'tauri-app\\src-tauri\\src\\paths.rs' | ForEach-Object { "'$i++; if (($i -ge 55 -and $i -le 115) -or ($i -ge 120 -and $i -le 150)) { '"'{0,5}: {1}' -f "'$i, $_ } }' in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$i=0; Get-Content '"'tauri-app\\src-tauri\\src\\process_manager.rs' | ForEach-Object { "'$i++; if ($i -ge 160 -and $i -le 205) { '"'{0,5}: {1}' -f "'$i, $_ } }' in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$i=0; Get-Content '"'backend\\llm\\provider_registry.py' | ForEach-Object { "'$i++; if (($i -ge 330 -and $i -le 395) -or ($i -ge 620 -and $i -le 655)) { '"'{0,5}: {1}' -f "'$i, $_ } }' in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$i=0; Get-Content '"'backend\\main.py' | ForEach-Object { "'$i++; if ($i -ge 7670 -and $i -le 7725) { '"'{0,5}: {1}' -f "'$i, $_ } }' in G:\projects\deskpet
+ succeeded in 179ms:
+   55:         return Some(PathBuf::from(v));
+   56:     }
+   57:     fallback
+   58: }
+   59: 
+   60: /// Portable-mode userdata dir: when running from a frozen install, data
+   61: /// lives in `<install>/userdata/` next to the exe (mirrors Python
+   62: /// `backend/paths.py::_portable_userdata_dir`). Returns None in dev mode
+   63: /// (current_exe isn't in the install layout) or when userdata/ is not writable.
+   64: ///
+   65: /// Layout: `<install>/deskpet.exe` + `<install>/userdata/`; the backend
+   66: /// exe sits at `<install>/backend/deskpet-backend.exe`, so we also check
+   67: /// one level up when the exe's parent is named "backend".
+   68: fn portable_userdata_dir_from_exe(exe: &Path) -> Option<PathBuf> {
+   69:     let parent = exe.parent()?;
+   70:     let root = if parent
+   71:         .file_name()
+   72:         .map(|n| n.to_string_lossy().eq_ignore_ascii_case("backend"))
+   73:         .unwrap_or(false)
+   74:     {
+   75:         parent.parent()?.to_path_buf()
+   76:     } else {
+   77:         parent.to_path_buf()
+   78:     };
+   79:     let ud = root.join("userdata");
+   80:     if std::fs::create_dir_all(&ud).is_ok() {
+   81:         let probe = ud.join(".deskpet-write-probe");
+   82:         if std::fs::write(&probe, b"").is_ok() {
+   83:             let _ = std::fs::remove_file(&probe);
+   84:             return Some(ud);
+   85:         }
+   86:     }
+   87:     None
+   88: }
+   89: 
+   90: #[cfg(not(test))]
+   91: fn portable_userdata_dir() -> Option<PathBuf> {
+   92:     let exe = std::env::current_exe().ok()?;
+   93:     portable_userdata_dir_from_exe(&exe)
+   94: }
+   95: 
+   96: #[cfg(test)]
+   97: fn portable_userdata_dir() -> Option<PathBuf> {
+   98:     // 娴嬭瘯涓嬩笉鎺㈡祴鐪熷疄 current_exe(閬垮厤 test runner 鏃佺宸х殑 userdata 骞叉壈
+   99:     // 鐜版湁鍗曟祴鐨?%AppData% 鏈熸湜)銆?    None
+  100: }
+  101: 
+  102: pub fn user_data_dir_with(base: &BaseDirs, env_lookup: EnvLookup<'_>) -> Option<PathBuf> {
+  103:     // 1. DESKPET_USER_DATA_DIR 鈥?涓?Python backend/paths.py 缁熶竴鐨?env 鍚?    //    (鍘嗗彶 bug: Rust 璇?DESKPET_USER_DATA銆丳ython 璇?DESKPET_USER_DATA_DIR,
+  104:     //    鍚嶅瓧涓嶄竴鑷?鈫?device_id/onboarding 鍜?config/db 钀藉埌涓嶅悓鐩綍)銆?    if let Some(v) = env_lookup("DESKPET_USER_DATA_DIR").filter(|s| !s.is_empty()) {
+  105:         return Some(PathBuf::from(v));
+  106:     }
+  107:     // 2. 鍏煎鏃?DESKPET_USER_DATA(鏃?_DIR) 鈥?鑰佺敤鎴峰彲鑳借杩?鍒牬鍧忋€?    if let Some(v) = env_lookup("DESKPET_USER_DATA").filter(|s| !s.is_empty()) {
+  108:         return Some(PathBuf::from(v));
+  109:     }
+  110:     // 3. portable: frozen 瀹夎鏃?<install>/userdata(涓?Python portable 涓€鑷?銆?    if let Some(p) = portable_userdata_dir() {
+  111:         return Some(p);
+  112:     }
+  113:     // 4. classic: %AppData%\deskpet銆?    base.app_data.as_ref().map(|p| p.join("deskpet"))
+  114: }
+  115: 
+  120:     user_data_dir_with(base, env_lookup).map(|p| p.join("logs"))
+  121: }
+  122: 
+  123: pub fn user_models_dir_with(base: &BaseDirs, env_lookup: EnvLookup<'_>) -> Option<PathBuf> {
+  124:     if let Some(v) = env_lookup("DESKPET_MODEL_ROOT").filter(|s| !s.is_empty()) {
+  125:         return Some(PathBuf::from(v));
+  126:     }
+  127:     // portable: <install>/userdata/models(涓?Python paths.py 涓€鑷?銆?    if let Some(p) = portable_userdata_dir() {
+  128:         return Some(p.join("models"));
+  129:     }
+  130:     base.local_app_data.as_ref().map(|p| p.join("deskpet").join("models"))
+  131: }
+  132: 
+  133: // ---- Public convenience wrappers reading real env ----
+  134: // Note: BaseDirs::from_env() returns empty under cfg(test), so these
+  135: // helpers safely no-op in unit-test binaries instead of leaking into
+  136: // the real %AppData%.
+  137: 
+  138: fn real_env(k: &str) -> Option<String> { std::env::var(k).ok() }
+  139: 
+  140: pub fn user_data_dir() -> Option<PathBuf> {
+  141:     user_data_dir_with(&BaseDirs::from_env(), &real_env)
+  142: }
+  143: 
+  144: pub fn user_log_dir() -> Option<PathBuf> {
+  145:     user_log_dir_with(&BaseDirs::from_env(), &real_env)
+  146: }
+  147: 
+  148: pub fn user_models_dir() -> Option<PathBuf> {
+  149:     user_models_dir_with(&BaseDirs::from_env(), &real_env)
+  150: }
+
+ succeeded in 189ms:
+  160:             if let Some(parent) = exe.parent() {
+  161:                 c.current_dir(parent);
+  162:             }
+  163:             c
+  164:         }
+  165:         BackendLaunch::Dev { python, backend_dir } => {
+  166:             let mut c = Command::new(python);
+  167:             c.arg("main.py").current_dir(backend_dir);
+  168:             c
+  169:         }
+  170:     };
+  171:     cmd.stdout(Stdio::piped())
+  172:         .stderr(Stdio::inherit())
+  173:         // Windows 涓?structlog 鍐欏叆 piped stdout 鏃跺鏋滅郴缁熼粯璁ら潪 UTF-8
+  174:         // 锛圙BK/CP936锛変細瀵逛腑鏂囨棩蹇楁姏 OSError[Errno 22]锛宐ackend 绔嬪埢宕╁湪
+  175:         // lifespan 鐨?"preloading models..." 琛屻€傛墜鍔ㄩ拤姝?UTF-8 + 鏃犵紦鍐诧紝
+  176:         // 杩欐牱 SHARED_SECRET 涔熻兘琚強鏃惰鍒般€?
+  177:         .env("PYTHONIOENCODING", "utf-8")
+  178:         .env("PYTHONUNBUFFERED", "1");
+  179: 
+  180:     // 璺緞鍗曚竴浜嬪疄婧愶細鎶?Rust 瑙ｆ瀽鍑虹殑 userdata 閽夌粰 backend锛?    // 闃?Rust/Python 鍙岃В鏋愭紓绉伙紙config.toml/state.db 钀戒笉鍚岀洰褰曠殑鏍瑰洜锛夈€?    if let Some(ud) = crate::paths::user_data_dir() {
+  181:         let _ = std::fs::create_dir_all(&ud);
+  182:         cmd.env("DESKPET_USER_DATA_DIR", ud.to_string_lossy().to_string());
+  183:     }
+  184: 
+  185:     // P4-S21 #8: suppress the orphan console window on Windows.
+  186:     //
+  187:     // PyInstaller spec keeps `console=True` so the bundled exe is a
+  188:     // console-subsystem program (needed because Rust still reads
+  189:     // SHARED_SECRET from stdout and stdout/stderr are piped to us).
+  190:     // When Windows spawns a console-subsystem child without an explicit
+  191:     // creation flag, it allocates a brand-new console window and shows
+  192:     // it 鈥?that's the "black cmd window next to the pet" users complain
+  193:     // about. The window is visually distinct from a normal app window,
+  194:     // and closing it kills the backend (very confusing UX).
+  195:     //
+  196:     // CREATE_NO_WINDOW (0x08000000) tells the OS "don't allocate a
+  197:     // console; the parent already has one or doesn't need it shown."
+  198:     // The piped stdout / stderr handles work the same way either path.
+  199:     #[cfg(windows)]
+  200:     {
+  201:         use std::os::windows::process::CommandExt;
+  202:         cmd.creation_flags(0x08000000);
+  203:     }
+  204: 
+  205:     // Read key from keychain. Errors are logged to stderr but don't
+
+ succeeded in 214ms:
+  330:     def _load_from_toml(self) -> None:
+  331:         if not self._config_path.exists():
+  332:             return
+  333:         try:
+  334:             with self._config_path.open("rb") as fh:
+  335:                 data = tomli.load(fh)
+  336:         except (tomli.TOMLDecodeError, OSError) as exc:
+  337:             logger.warning("provider_registry: failed to load toml: %s", exc)
+  338:             return
+  339:         raw_list = (data.get("llm") or {}).get("endpoints") or []
+  340:         # Defensive: P4-S6 era config.toml uses `[llm.providers]` as a table
+  341:         # (dict of model-tier knobs). If user's toml predates this rename and
+  342:         # has a non-list under `[llm.endpoints]`, ignore it gracefully.
+  343:         if not isinstance(raw_list, list):
+  344:             raw_list = []
+  345:         self._entries = []
+  346:         for raw in raw_list:
+  347:             try:
+  348:                 # P5-S2 v2: prefer `models` array; fall back to legacy `model`
+  349:                 # scalar (single-model row pre-v2) and coerce.
+  350:                 raw_models = raw.get("models")
+  351:                 if isinstance(raw_models, list) and raw_models:
+  352:                     models = [str(m) for m in raw_models]
+  353:                 else:
+  354:                     legacy_single = raw.get("model")
+  355:                     models = [str(legacy_single)] if legacy_single else []
+  356:                 default_model_raw = raw.get("default_model")
+  357:                 default_model = (
+  358:                     str(default_model_raw)
+  359:                     if default_model_raw
+  360:                     else (models[0] if models else None)
+  361:                 )
+  362:                 self._entries.append(
+  363:                     ProviderEntry(
+  364:                         id=str(raw["id"]),
+  365:                         name=str(raw.get("name", raw["id"])),
+  366:                         base_url=str(raw["base_url"]),
+  367:                         models=models,
+  368:                         default_model=default_model,
+  369:                         api_key_ref=str(raw.get("api_key_ref", f"{KEYCHAIN_REF_PREFIX}{raw['id']}")),
+  370:                         priority=int(raw.get("priority", 1)),
+  371:                         enabled=bool(raw.get("enabled", True)),
+  372:                         source=str(raw.get("source", "user")),
+  373:                         account_ref=str(raw.get("account_ref", "")),
+  374:                     )
+  375:                 )
+  376:             except (KeyError, TypeError, ValueError) as exc:
+  377:                 logger.warning("provider_registry: skipping malformed entry %r: %s", raw, exc)
+  378: 
+  379:     def _persist_to_toml(self) -> None:
+  380:         """Rewrite the providers section in `config.toml` atomically.
+  381: 
+  382:         Preserves all non-`[[llm.endpoints]]` content verbatim (comments,
+  383:         other sections). The new block is appended at the end of the file
+  384:         鈥?toml's array-of-tables semantics don't care about position.
+  385:         """
+  386:         if not self._config_path.exists():
+  387:             # Brand-new file; just write the providers block + a header.
+  388:             content = "schema_version = 1\n\n" + _format_providers_section(self._entries)
+  389:             _atomic_write_text(self._config_path, content)
+  390:             return
+  391: 
+  392:         existing = self._config_path.read_text(encoding="utf-8")
+  393:         cleaned = _strip_existing_providers_block(existing)
+  394:         block = _format_providers_section(self._entries)
+  395:         if block:
+  620: 
+  621:         if idx is None:
+  622:             if self._entries:
+  623:                 fields.setdefault("priority", min(e.priority for e in self._entries) - 1)
+  624:             else:
+  625:                 fields.setdefault("priority", 1)
+  626:             entry = await self.add_provider(fields)
+  627:             self._normalize_priorities()
+  628:             return entry
+  629: 
+  630:         if not fields.get("api_key") and self.resolve_api_key(pid) is None:
+  631:             raise KeyMissingError(pid)
+  632: 
+  633:         patch = {
+  634:             k: fields[k]
+  635:             for k in (
+  636:                 "name",
+  637:                 "base_url",
+  638:                 "models",
+  639:                 "default_model",
+  640:                 "source",
+  641:                 "account_ref",
+  642:                 "api_key",
+  643:             )
+  644:             if k in fields and fields[k] is not None
+  645:         }
+  646:         return await self.update_provider(pid, **patch)
+  647: 
+  648:     def list_providers(self) -> list[dict[str, Any]]:
+  649:         """Return all providers (enabled + disabled) with api_key redacted."""
+  650:         return [e.to_public_dict() for e in self._entries]
+  651: 
+  652:     def get_chain(self) -> list[dict[str, Any]]:
+  653:         """Return enabled providers ordered by (priority asc, insertion order).
+  654: 
+  655:         Raises ``NoProviderConfiguredError`` if no enabled provider exists
+
+ succeeded in 270ms:
+ 7670:                                     from agent.auto_resume import is_auto_resume_trigger as _is_ar
+ 7671:                                     if _is_ar(ev.reason or ""):
+ 7672:                                         _orch_inst = service_context.get("auto_resume")
+ 7673:                                         if _orch_inst is not None:
+ 7674:                                             _snap_for_orch = {
+ 7675:                                                 "session_id": _sid,
+ 7676:                                                 "reason": ev.reason,
+ 7677:                                                 "detail": ev.detail,
+ 7678:                                                 "iteration": ev.iteration,
+ 7679:                                             }
+ 7680:                                             _ar_result = await _orch_inst.handle_failure(
+ 7681:                                                 _sid, ev.reason or "", _snap_for_orch, _msgs,
+ 7682:                                             )
+ 7683:                                             if _ar_result.action == "spawned":
+ 7684:                                                 # Orchestrator owns the user-facing event now.
+ 7685:                                                 _ar_handled = True
+ 7686:                                                 logger.info(
+ 7687:                                                     "auto_resume_engaged sid=%s reason=%s attempt=%d",
+ 7688:                                                     _sid, ev.reason, _ar_result.attempt,
+ 7689:                                                 )
+ 7690:                                             elif _ar_result.action == "exhausted":
+ 7691:                                                 # auto_resume_exhausted ws event already
+ 7692:                                                 # emitted by orchestrator; suppress legacy
+ 7693:                                                 # error so frontend doesn't double-popup.
+ 7694:                                                 _ar_handled = True
+ 7695:                                 except Exception as _ex:  # noqa: BLE001
+ 7696:                                     logger.debug("auto_resume_handle_failed sid=%s err=%s", _sid, _ex)
+ 7697: 
+ 7698:                                 if not _ar_handled:
+ 7699:                                     # P4-S25 (2026-05-09): cross-endpoint
+ 7700:                                     # fallback removed. LLM errors now
+ 7701:                                     # surface to the user directly.
+ 7702:                                     await _ws.send_json({
+ 7703:                                         "type": "chat_v2_error",
+ 7704:                                         "payload": {
+ 7705:                                             "reason": ev.reason,
+ 7706:                                             "detail": ev.detail,
+ 7707:                                             "session_id": _sid,
+ 7708:                                             # WI-R5: relay error code for
+ 7709:                                             # the frontend friendly message.
+ 7710:                                             "error_class": getattr(ev, "error_class", "") or "",
+ 7711:                                         },
+ 7712:                                     })
+ 7713: 
+ 7714:                                 # WI-4.3 鏂规 B锛歵urn 缁?ErrorEvent锛坮elay ReadError /
+ 7715:                                 # 涓 / 杩唬涓婇檺锛夌粨鏉熸椂涔熻Е鍙?codify 鈥斺€?鑻ユ湰 run 宸茶窇
+ 7716:                                 # 鈮? 宸ュ叿锛屼粛鑳藉脊鎶€鑳借嚜鍒涘崱锛堜笉渚濊禆 turn 骞插噣鍒?FinalEvent锛夈€?
+ 7717:                                 await _maybe_codify_skill(
+ 7718:                                     service_context, config, _sid, _ws, _SKILL_CANDIDATE_WAITERS,
+ 7719:                                 )
+ 7720: 
+ 7721:                             # WI-1B-2 鍘嬬缉鍙娴? flag ON 鏃?agent_loop 鍦ㄥ帇缂╁懡涓?
+ 7722:                             # 鍚?yield 姝や簨浠躲€傝浆涓€鏉?ws 鈫?鍓嶇鍦ㄥ湀鍦?gauge 闄勮繎娴?
+ 7723:                             # toast銆屽凡鍘嬬缉,鐪?N token銆嶃€俧lag OFF 鏃跺悗绔牴鏈笉 yield,
+ 7724:                             # 姝ゅ垎鏀笉瑙﹀彂(BC,鍓嶇鏃犻渶棰濆闂ㄦ帶)銆?
+ 7725:                             elif isinstance(ev, _CtxCompactedEv):
+
+codex
+错误分类最终 WS 里有透传点。为了判断 provider 抛出的 `LLMProviderError(error_class=empty_api_key)` 是否能到这里，我再找一下 ErrorEvent 的生成处。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "rg -n \"class ErrorEvent|ErrorEvent\\(|error_class=.*LLMProviderError|getattr\\(.*error_class|LLMProviderError\" backend\\agent backend\\llm backend\\providers backend\\main.py" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$i=0; Get-Content '"'backend\\llm\\errors.py' | ForEach-Object { "'$i++; if ($i -ge 15 -and $i -le 45) { '"'{0,5}: {1}' -f "'$i, $_ } }' in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "rg -n \"from providers\\.openai_compatible import OpenAICompatibleProvider|OpenAICompatibleProvider\\(\" backend\\main.py backend\\llm\\provider_registry.py backend\\providers -g \"*.py\"" in G:\projects\deskpet
+ succeeded in 179ms:
+backend\main.py:7710:                                            "error_class": getattr(ev, "error_class", "") or "",
+backend\llm\gemini_adapter.py:41:    LLMProviderError,
+backend\llm\gemini_adapter.py:82:            raise LLMProviderError(
+backend\llm\gemini_adapter.py:108:        return LLMProviderError(msg, provider=provider, status_code=None)
+backend\llm\anthropic_adapter.py:40:    LLMProviderError,
+backend\llm\anthropic_adapter.py:83:            raise LLMProviderError(
+backend\llm\anthropic_adapter.py:222:        return LLMProviderError(str(exc), provider=provider, status_code=status)
+backend\llm\anthropic_adapter.py:350:                            raise LLMProviderError(
+backend\llm\base.py:54:            LLMProviderError: other terminal failure (5xx after retries,
+backend\llm\errors.py:11:    - LLMProviderError       → generic terminal failure
+backend\llm\errors.py:18:class LLMProviderError(Exception):
+backend\llm\errors.py:42:class LLMRateLimitError(LLMProviderError):
+backend\llm\errors.py:56:class LLMTimeoutError(LLMProviderError):
+backend\llm\errors.py:63:class LLMAuthError(LLMProviderError):
+backend\llm\errors.py:83:class LLMBudgetExceededError(LLMProviderError):
+backend\providers\openai_compatible.py:12:from llm.errors import LLMProviderError
+backend\providers\openai_compatible.py:22:# 友好的 LLMProviderError(error_class=empty_api_key)，由 chat 层照常 surface 成
+backend\providers\openai_compatible.py:173:            raise LLMProviderError(
+backend\providers\openai_compatible.py:342:            raise LLMProviderError("LLM 调用失败 (stream 未返回 final 事件)。")
+backend\providers\openai_compatible.py:428:        # `except LLMProviderError` catches them and emits a clean
+backend\providers\openai_compatible.py:544:                    raise LLMProviderError(
+backend\providers\openai_compatible.py:572:                    raise LLMProviderError(
+backend\providers\openai_compatible.py:585:                raise LLMProviderError(
+backend\providers\openai_compatible.py:617:            raise LLMProviderError(
+backend\providers\openai_compatible.py:623:            raise LLMProviderError(
+backend\providers\openai_compatible.py:884:                raise LLMProviderError(
+backend\providers\openai_compatible.py:1005:        raise LLMProviderError(
+backend\llm\registry.py:34:    LLMProviderError,
+backend\llm\registry.py:183:            raise LLMProviderError("all providers failed: ...")
+backend\llm\registry.py:262:                except LLMProviderError as exc:
+backend\llm\registry.py:279:        raise LLMProviderError(
+backend\llm\openai_adapter.py:9:       We json.loads and raise LLMProviderError on parse failure —
+backend\llm\openai_adapter.py:29:    LLMProviderError,
+backend\llm\openai_adapter.py:93:            raise LLMProviderError(
+backend\llm\openai_adapter.py:155:        # → 之前落 LLMProviderError(不重试同 provider) → agent turn 立即崩。这类连接级
+backend\llm\openai_adapter.py:166:        return LLMProviderError(str(exc), provider=provider, status_code=status)
+backend\llm\openai_adapter.py:193:            raise LLMProviderError(
+backend\llm\openai_adapter.py:198:            raise LLMProviderError(
+backend\llm\openai_adapter.py:348:            # Don't re-wrap our own LLMProviderError (raised by _parse_tool_args).
+backend\llm\openai_adapter.py:349:            if isinstance(exc, LLMProviderError):
+backend\agent\context_manager.py:268:            yield ErrorEvent(reason="context_budget_block", detail=budget.advice)
+backend\agent\agent_loop.py:41:from llm.errors import LLMBudgetExceededError, LLMProviderError
+backend\agent\agent_loop.py:131:# ErrorEvent(error_tool_budget). Only the iteration-based selfcheck
+backend\agent\agent_loop.py:373:class ErrorEvent(AgentEvent):
+backend\agent\agent_loop.py:377:    # LLMProviderError.error_class — "insufficient_balance" /
+backend\agent\agent_loop.py:722:        # Each provider is tried in order; LLMProviderError (transient)
+backend\agent\agent_loop.py:732:            yield ErrorEvent(
+backend\agent\agent_loop.py:907:                yield ErrorEvent(
+backend\agent\agent_loop.py:959:                    yield ErrorEvent(
+backend\agent\agent_loop.py:982:                yield ErrorEvent(
+backend\agent\agent_loop.py:1138:            # break and emits ErrorEvent(error_tool_budget). The selfcheck
+backend\agent\agent_loop.py:1207:                    # On transient LLMProviderError, yield a
+backend\agent\agent_loop.py:1211:                    # ErrorEvent(reason="all_providers_failed").
+backend\agent\agent_loop.py:1236:                        except LLMProviderError as exc:
+backend\agent\agent_loop.py:1282:                        yield ErrorEvent(
+backend\agent\agent_loop.py:1294:                            error_class=getattr(last_exc, "error_class", "") or "",
+backend\agent\agent_loop.py:1336:                    except LLMProviderError as stream_exc:
+backend\agent\agent_loop.py:1391:                yield ErrorEvent(
+backend\agent\agent_loop.py:1399:            except LLMProviderError as exc:
+backend\agent\agent_loop.py:1400:                yield ErrorEvent(
+backend\agent\agent_loop.py:1408:                    error_class=getattr(exc, "error_class", "") or "",
+backend\agent\agent_loop.py:1467:                # ErrorEvent(verify_exhausted) (summary carried in detail) so the
+backend\agent\agent_loop.py:1480:                    yield ErrorEvent(
+backend\agent\agent_loop.py:1680:                        yield ErrorEvent(
+backend\agent\agent_loop.py:1864:                                yield ErrorEvent(
+backend\agent\agent_loop.py:2150:                                yield ErrorEvent(
+backend\agent\agent_loop.py:2402:                    yield ErrorEvent(
+backend\agent\agent_loop.py:2571:                yield ErrorEvent(
+backend\agent\agent_loop.py:2612:        yield ErrorEvent(
+backend\llm\types.py:43:    LLMProviderError on parse failure — silently returning empty arguments
+backend\llm\__init__.py:8:    errors.py       LLMProviderError + 429 / timeout / auth / budget subclasses
+backend\llm\__init__.py:29:    LLMProviderError,
+backend\llm\__init__.py:42:    "LLMProviderError",
+
+ succeeded in 171ms:
+   15: from typing import Optional
+   16: 
+   17: 
+   18: class LLMProviderError(Exception):
+   19:     """Terminal failure from an LLM provider. Does not retry same provider."""
+   20: 
+   21:     def __init__(
+   22:         self,
+   23:         message: str,
+   24:         *,
+   25:         provider: Optional[str] = None,
+   26:         status_code: Optional[int] = None,
+   27:         retriable: bool = False,
+   28:         error_class: Optional[str] = None,
+   29:     ) -> None:
+   30:         super().__init__(message)
+   31:         self.provider = provider
+   32:         self.status_code = status_code
+   33:         self.retriable = retriable
+   34:         # WI-R5: a structured relay error code 鈥?e.g.
+   35:         # "insufficient_balance" / "relay_key_invalid" (see
+   36:         # llm.relay_errors.classify_relay_error). None for non-relay /
+   37:         # unclassified failures. The chat layer surfaces it to the UI
+   38:         # (friendly 浣欓涓嶈冻 message / 401 retry loop).
+   39:         self.error_class = error_class
+   40: 
+   41: 
+   42: class LLMRateLimitError(LLMProviderError):
+   43:     """HTTP 429. retry_after in seconds if provider sent Retry-After header."""
+   44: 
+   45:     def __init__(
+
+ succeeded in 210ms:
+backend\main.py:139:from providers.openai_compatible import OpenAICompatibleProvider
+backend\main.py:286:local_llm = OpenAICompatibleProvider(
+backend\main.py:310:        cloud_llm = OpenAICompatibleProvider(
+backend\main.py:760:        return OpenAICompatibleProvider(
+backend\main.py:795:            _rerank_provider = OpenAICompatibleProvider(
+backend\main.py:3091:                        _sup_provider = OpenAICompatibleProvider(
+backend\main.py:4237:    new_provider = OpenAICompatibleProvider(
+backend\main.py:6821:                                        _chain.append(OpenAICompatibleProvider(
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$i=0; Get-Content '"'backend\\agent\\agent_loop.py' | ForEach-Object { "'$i++; if (($i -ge 368 -and $i -le 382) -or ($i -ge 1225 -and $i -le 1300) -or ($i -ge 1390 -and $i -le 1410)) { '"'{0,5}: {1}' -f "'$i, $_ } }' in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$i=0; Get-Content '"'backend\\main.py' | ForEach-Object { "'$i++; if (($i -ge 270 -and $i -le 315) -or ($i -ge 6780 -and $i -le 6845)) { '"'{0,5}: {1}' -f "'$i, $_ } }' in G:\projects\deskpet
+ succeeded in 194ms:
+  368:         if not self.type:
+  369:             self.type = "final"
+  370: 
+  371: 
+  372: @dataclass
+  373: class ErrorEvent(AgentEvent):
+  374:     reason: str = ""
+  375:     detail: str = ""
+  376:     # WI-R5: structured relay error code propagated from
+  377:     # LLMProviderError.error_class 鈥?"insufficient_balance" /
+  378:     # "relay_key_invalid". "" for non-relay / unclassified failures.
+  379:     # The frontend renders a friendly message + 鍏呭€?hint for it.
+  380:     error_class: str = ""
+  381: 
+  382:     def __post_init__(self) -> None:
+ 1225:                                 # output truncated mid-string 鈫?
+ 1226:                                 # "Unterminated string" JSON parse fail
+ 1227:                                 # 鈫?permanent_tool_error 鈫?circuit
+ 1228:                                 # breaker 鈫?user stuck. 8192 leaves
+ 1229:                                 # comfortable headroom (~24KB output)
+ 1230:                                 # without 鏄捐憲 cost spike on the relay.
+ 1231:                                 max_tokens=int(llm_kwargs.get("max_tokens", 8192)),
+ 1232:                                 temperature=llm_kwargs.get("temperature"),
+ 1233:                                 response_format=llm_kwargs.get("response_format"),
+ 1234:                                 tool_choice=("none" if _force_finish_next else None),
+ 1235:                             )
+ 1236:                         except LLMProviderError as exc:
+ 1237:                             last_exc = exc
+ 1238:                             prov_id = getattr(prov, "id", f"provider_{idx}")
+ 1239:                             next_idx = idx + 1
+ 1240:                             if next_idx < len(provider_chain):  # type: ignore[arg-type]
+ 1241:                                 next_prov = provider_chain[next_idx]  # type: ignore[index]
+ 1242:                                 next_id = getattr(
+ 1243:                                     next_prov, "id", f"provider_{next_idx}"
+ 1244:                                 )
+ 1245:                                 reason = str(exc) or type(exc).__name__
+ 1246:                                 logger.warning(
+ 1247:                                     "provider_chain_fallback from=%s to=%s "
+ 1248:                                     "reason=%s sid=%s tid=%s",
+ 1249:                                     prov_id, next_id, reason[:200],
+ 1250:                                     session_id, tid,
+ 1251:                                 )
+ 1252:                                 yield ProviderChainFallbackEvent(
+ 1253:                                     type="provider_chain_fallback",
+ 1254:                                     task_id=tid,
+ 1255:                                     iteration=iteration,
+ 1256:                                     session_id=session_id,
+ 1257:                                     from_=prov_id,
+ 1258:                                     to=next_id,
+ 1259:                                     reason=reason,
+ 1260:                                 )
+ 1261:                             else:
+ 1262:                                 logger.warning(
+ 1263:                                     "provider_chain_last_provider_failed "
+ 1264:                                     "id=%s reason=%s sid=%s",
+ 1265:                                     prov_id, str(exc)[:200], session_id,
+ 1266:                                 )
+ 1267:                             continue
+ 1268:                         else:
+ 1269:                             response = _raw_to_response(raw)
+ 1270:                             break
+ 1271: 
+ 1272:                     if response is None:
+ 1273:                         # All providers in the chain raised.
+ 1274:                         tried = len(provider_chain)  # type: ignore[arg-type]
+ 1275:                         last_text = str(last_exc) if last_exc else "unknown"
+ 1276:                         # P6 Phase 6 鈥?record terminal error reason on the
+ 1277:                         # gate so callers reading summary() see the real
+ 1278:                         # cause (otherwise the gate would stay "running").
+ 1279:                         self._gate.record_error(
+ 1280:                             TerminationReason.ALL_PROVIDERS_FAILED
+ 1281:                         )
+ 1282:                         yield ErrorEvent(
+ 1283:                             type="error",
+ 1284:                             task_id=tid,
+ 1285:                             iteration=iteration,
+ 1286:                             reason="all_providers_failed",
+ 1287:                             detail=(
+ 1288:                                 f"tried {tried}, last_error: {last_text}"
+ 1289:                             ),
+ 1290:                             # 鎶婃渶鍚庝竴涓?provider 鐨勭粨鏋勫寲 error_class 閫忎紶缁欏墠绔紝
+ 1291:                             # 璁?chain 鍏ㄥけ璐ヨ矾寰勪篃鑳?surface 鍙嬪ソ鍒嗙被锛堝
+ 1292:                             # empty_api_key鈫?璇烽噸鏂扮櫥褰? / relay 402鈫掑厖鍊硷級锛岃€屼笉鏄?
+ 1293:                             # 閫€鍖栨垚鏃犲垎绫荤殑閫氱敤閿欒銆?
+ 1294:                             error_class=getattr(last_exc, "error_class", "") or "",
+ 1295:                         )
+ 1296:                         return
+ 1297:                 elif stream_capable:
+ 1298:                     # Streaming path: forward delta events, accumulate
+ 1299:                     # the final dict, then build the same ChatResponse
+ 1300:                     # the non-streaming path would have produced.
+ 1390:             except LLMBudgetExceededError as exc:
+ 1391:                 yield ErrorEvent(
+ 1392:                     type="error",
+ 1393:                     task_id=tid,
+ 1394:                     iteration=iteration,
+ 1395:                     reason="budget_exceeded",
+ 1396:                     detail=str(exc),
+ 1397:                 )
+ 1398:                 return
+ 1399:             except LLMProviderError as exc:
+ 1400:                 yield ErrorEvent(
+ 1401:                     type="error",
+ 1402:                     task_id=tid,
+ 1403:                     iteration=iteration,
+ 1404:                     reason="llm_error",
+ 1405:                     detail=str(exc),
+ 1406:                     # WI-R5: carry the relay error code so the frontend
+ 1407:                     # can show 浣欓涓嶈冻 / key 澶辨晥 friendly messages.
+ 1408:                     error_class=getattr(exc, "error_class", "") or "",
+ 1409:                 )
+ 1410:                 return
+
+ succeeded in 236ms:
+  270:             return keychain_key
+  271:         # 鍗犱綅绗?+ 娌?env 鈫?淇濇寔鍗犱綅绗︼紙Ollama 浼氭帴鍙椾换浣曞€硷紱浜戠浼?401锛?
+  272:     return configured
+  273: 
+  274: 
+  275: _resolved_api_key = _resolve_llm_api_key(config.llm.local.api_key)
+  276: 
+  277: # 2026-05-17 deepseek-inline-cot-dsml-sanitize Strangler-Fig flag (default
+  278: # on). Read once; passed to every OpenAICompatibleProvider so setting
+  279: # [llm] sanitize_inline_cot_dsml = false instantly restores legacy raw
+  280: # passthrough after a restart (demo rollback).
+  281: _sanitize_cot_dsml = bool(
+  282:     (config.raw.get("llm") or {}).get("sanitize_inline_cot_dsml", True)
+  283: )
+  284: logger.info("sanitize_inline_cot_dsml_flag", enabled=_sanitize_cot_dsml)
+  285: 
+  286: local_llm = OpenAICompatibleProvider(
+  287:     base_url=config.llm.local.base_url,
+  288:     api_key=_resolved_api_key,
+  289:     model=config.llm.local.model,
+  290:     temperature=config.llm.local.temperature,
+  291:     sanitize_inline_cot_dsml=_sanitize_cot_dsml,
+  292: )
+  293: 
+  294: # P4-S25 (2026-05-09): cross-endpoint Ollama fallback removed at user
+  295: # request 鈥?they don't want auto-swap to gemma4:e4b mid-turn because
+  296: # the model-style mismatch produces ugly mixed responses. Errors from
+  297: # the configured LLM endpoint now surface directly to the user.
+  298: 
+  299: # Keep cloud_llm symbol around for legacy code paths but it's None now 鈥?
+  300: # config.llm.cloud is no longer set under the unified [llm] schema.
+  301: cloud_llm = None
+  302: _current_cloud_api_key: str | None = (
+  303:     _resolved_api_key if "localhost" not in config.llm.local.base_url else None
+  304: )
+  305: if config.llm.cloud is not None:
+  306:     # 鍏煎鏃?[llm.cloud] schema 鈥?鏂伴儴缃蹭笉浼氳蛋杩欓噷銆?
+  307:     _cloud_key = _resolve_cloud_api_key()
+  308:     if _cloud_key:
+  309:         _current_cloud_api_key = _cloud_key
+  310:         cloud_llm = OpenAICompatibleProvider(
+  311:             base_url=config.llm.cloud.base_url,
+  312:             api_key=_cloud_key,
+  313:             model=config.llm.cloud.model,
+  314:             temperature=config.llm.cloud.temperature,
+  315:             sanitize_inline_cot_dsml=_sanitize_cot_dsml,
+ 6780:                             model=_ctx_model,
+ 6781:                             project_root=_ctx_proot,
+ 6782:                             v2_enabled=_ctx_v2_enabled,
+ 6783:                             adaptive_compact_pct=_adaptive_cpct,
+ 6784:                         )
+ 6785: 
+ 6786:                         # 鈹€鈹€鈹€ P5-S2 Phase 3.15: provider_chain resolution 鈹€鈹€鈹€
+ 6787:                         # If the LLMProviderRegistry is wired up (Phase 1+2)
+ 6788:                         # and we have a SessionDB, resolve a chain for THIS
+ 6789:                         # session (code 鈫?per-session binding may pin to one
+ 6790:                         # provider; companion 鈫?always global chain). Each
+ 6791:                         # ProviderEntry becomes a fresh OpenAICompatibleProvider
+ 6792:                         # instance with its own api_key from keychain. Empty
+ 6793:                         # chain leaves _provider_chain=None so AgentLoop falls
+ 6794:                         # through to its legacy single-provider path.
+ 6795:                         _provider_chain: list[Any] | None = None
+ 6796:                         try:
+ 6797:                             _registry = service_context.get("provider_registry")
+ 6798:                             if _registry is not None and _sdb is not None:
+ 6799:                                 from llm.resolution import resolve_provider_for_session as _resolve_chain
+ 6800:                                 # code-session-model-params: code-mode
+ 6801:                                 # default model (Strangler-Fig 鈥?empty/
+ 6802:                                 # absent 鈬?None 鈬?legacy shared model;
+ 6803:                                 # pet/companion never pass this, untouched).
+ 6804:                                 _agent_cfg = (config.raw.get("agent") if hasattr(config, "raw") else None) or {}
+ 6805:                                 _code_default_model = (
+ 6806:                                     (str(_agent_cfg.get("code_model") or "").strip() or None)
+ 6807:                                     if _in_code_mode
+ 6808:                                     else None
+ 6809:                                 )
+ 6810:                                 _entries = await _resolve_chain(
+ 6811:                                     _sid,
+ 6812:                                     is_code_session=_in_code_mode,
+ 6813:                                     registry=_registry,
+ 6814:                                     session_db=_sdb,
+ 6815:                                     code_default_model=_code_default_model,
+ 6816:                                 )
+ 6817:                                 if _entries:
+ 6818:                                     _chain: list[Any] = []
+ 6819:                                     for _entry in _entries:
+ 6820:                                         _api_key = _registry.resolve_api_key(_entry.id) or "ollama"
+ 6821:                                         _chain.append(OpenAICompatibleProvider(
+ 6822:                                             base_url=_entry.base_url,
+ 6823:                                             api_key=_api_key,
+ 6824:                                             model=_entry.model,
+ 6825:                                             temperature=getattr(_entry, "temperature", 0.7),
+ 6826:                                             sanitize_inline_cot_dsml=_sanitize_cot_dsml,
+ 6827:                                             code_params=getattr(_entry, "code_params", None),
+ 6828:                                             is_relay=(_entry.source == "relay"),
+ 6829:                                         ))
+ 6830:                                     _provider_chain = _chain
+ 6831:                                 logger.info(
+ 6832:                                     "p5s2_chain_resolved sid=%s in_code_mode=%s "
+ 6833:                                     "code_default_model=%s n_entries=%d "
+ 6834:                                     "models=%s code_params=%s",
+ 6835:                                     _sid, _in_code_mode, _code_default_model,
+ 6836:                                     len(_entries or []),
+ 6837:                                     [getattr(e, "model", "?") for e in (_entries or [])],
+ 6838:                                     [getattr(e, "code_params", {}) for e in (_entries or [])],
+ 6839:                                 )
+ 6840:                         except Exception as _resolve_exc:  # noqa: BLE001
+ 6841:                             logger.warning(
+ 6842:                                 "p5s2_provider_chain_resolve_failed sid=%s err=%s 鈥?falling back to legacy single-provider path",
+ 6843:                                 _sid, str(_resolve_exc)[:200],
+ 6844:                             )
+ 6845:                             _provider_chain = None
+
+codex
+核对中发现一个值得扣分的点：实际 provider 的 `_client` 确实加了护栏，但没有把 `"ollama"` 当作非本地 endpoint 的不可用占位符，因此 registry 缺 key 时仍可能向远端发 `Bearer ollama`。我会把它作为 Phase 4 缺口列出。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$i=0; Get-Content '"'backend\\llm\\provider_registry.py' | ForEach-Object { "'$i++; if ($i -ge 1 -and $i -le 45) { '"'{0,5}: {1}' -f "'$i, $_ } }' in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$i=0; Get-Content '"'backend\\llm\\provider_registry.py' | ForEach-Object { "'$i++; if ($i -ge 652 -and $i -le 690) { '"'{0,5}: {1}' -f "'$i, $_ } }' in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$i=0; Get-Content '"'backend\\main.py' | ForEach-Object { "'$i++; if ($i -ge 130 -and $i -le 145) { '"'{0,5}: {1}' -f "'$i, $_ } }' in G:\projects\deskpet
+ succeeded in 186ms:
+    1: # SPDX-FileCopyrightText: 2026 DennyWanye
+    2: # SPDX-License-Identifier: BUSL-1.1
+    3: 
+    4: """LLMProviderRegistry 鈥?P5-S2 Phase 1 (multi-provider-management).
+    5: 
+    6: This is the single source of truth for the user's list of LLM providers.
+    7: Owns:
+    8:   - In-memory list of ProviderEntry dataclasses
+    9:   - Atomic persistence to `config.toml` `[[llm.endpoints]]` array
+   10:   - API keys stored in OS keychain under service "deskpet", account
+   11:     "provider.<provider_id>" (NEVER plaintext in toml)
+   12:   - Migration of legacy `[llm.local]` single-provider schema 鈫?new list
+   13: 
+   14: Schema in config.toml::
+   15: 
+   16:     [[llm.endpoints]]
+   17:     id = "relay-deepseek"
+   18:     name = "Relay DeepSeek"
+   19:     base_url = "https://api.your-llm-relay.example.com/v1"
+   20:     model = "deepseek-v3"
+   21:     api_key_ref = "deskpet.provider.relay-deepseek"
+   22:     priority = 1
+   23:     enabled = true
+   24: 
+   25: `api_key_ref` is the only secret-shaped field. The real key lives in the
+   26: OS keychain at `keyring.get_password("deskpet", "provider.<id>")`. The
+   27: ``api_key_ref`` string is just a UI hint; persistence is keyed by ``id``.
+   28: 
+   29: Public API::
+   30: 
+   31:     reg = LLMProviderRegistry(path_to_config_toml)
+   32:     await reg.add_provider({...})
+   33:     reg.list_providers()                # api_key redacted to "********"
+   34:     reg.get_chain()                     # enabled, ordered by priority
+   35:     await reg.remove_provider(id)
+   36:     await reg.set_enabled(id, enabled)
+   37:     await reg.reorder([id1, id2, ...])
+   38:     await reg.update_provider(id, **patch)
+   39: 
+   40: All mutating methods are async because Phase 2 will broadcast a
+   41: ``providers_changed`` ws event; for Phase 1 we just keep the signature
+   42: shape so chat-handler can await without refactor later.
+   43: 
+   44: Migration: ``_migrate_legacy_provider_config(path)`` is a free function so
+   45: ``main.py`` lifespan can call it before constructing the registry.
+
+ succeeded in 179ms:
+  652:     def get_chain(self) -> list[dict[str, Any]]:
+  653:         """Return enabled providers ordered by (priority asc, insertion order).
+  654: 
+  655:         Raises ``NoProviderConfiguredError`` if no enabled provider exists
+  656:         鈥?callers (chat handler) translate to an actionable error event.
+  657:         """
+  658:         enabled = [e for e in self._entries if e.enabled]
+  659:         if not enabled:
+  660:             raise NoProviderConfiguredError()
+  661:         # Use Python's stable sort: equal priorities preserve insertion order.
+  662:         enabled.sort(key=lambda e: e.priority)
+  663:         return [e.to_public_dict() for e in enabled]
+  664: 
+  665:     def get_entry(self, provider_id: str) -> ProviderEntry | None:
+  666:         """Internal helper for agent_loop / resolution code. Returns the
+  667:         raw dataclass (still no api_key inside) or None."""
+  668:         idx = self._find_index(provider_id)
+  669:         return self._entries[idx] if idx is not None else None
+  670: 
+  671:     # 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ internal 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+  672: 
+  673:     def get_account_ref(self, provider_id: str) -> str | None:
+  674:         entry = self.get_entry(provider_id)
+  675:         return entry.account_ref if entry else None
+  676: 
+  677:     def _normalize_priorities(self) -> None:
+  678:         for i, entry in enumerate(sorted(self._entries, key=lambda e: e.priority), start=1):
+  679:             entry.priority = i
+  680:         self._persist_to_toml()
+  681: 
+  682:     def _find_index(self, provider_id: str) -> int | None:
+  683:         for i, e in enumerate(self._entries):
+  684:             if e.id == provider_id:
+  685:                 return i
+  686:         return None
+  687: 
+  688: 
+  689: # 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ migration 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+  690: 
+
+ succeeded in 244ms:
+  130: if getattr(sys, "frozen", False):
+  131:     try:
+  132:         _ct2_dir_early = Path(sys._MEIPASS) / "ctranslate2"  # type: ignore[attr-defined]
+  133:         if _ct2_dir_early.is_dir():
+  134:             os.add_dll_directory(str(_ct2_dir_early))
+  135:     except Exception:  # pragma: no cover 鈥?silent; logged after structlog ready
+  136:         pass
+  137: 
+  138: # --- Register providers ---
+  139: from providers.openai_compatible import OpenAICompatibleProvider
+  140: from providers.silero_vad import SileroVAD
+  141: from providers.faster_whisper_asr import FasterWhisperASR
+  142: from providers.edge_tts_provider import EdgeTTSProvider
+  143: from providers.cosyvoice_tts import CosyVoice2Provider
+  144: from agent.providers.simple_llm import SimpleLLMAgent
+  145: from agent.providers.tool_using import ToolUsingAgent
+
+codex
+证据基本齐了。我会再做一个只读的最终自检，确认没有遗漏关键搜索点，然后给结构化结论。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "rg -n \"logger =|import logging|structlog\" backend\\llm\\provider_registry.py backend\\config.py backend\\paths.py backend\\providers\\openai_compatible.py" in G:\projects\deskpet
+ succeeded in 167ms:
+backend\paths.py:37:import logging
+backend\paths.py:50:logger = logging.getLogger(__name__)
+backend\providers\openai_compatible.py:10:import structlog
+backend\providers\openai_compatible.py:16:logger = structlog.get_logger()
+backend\llm\provider_registry.py:49:import logging
+backend\llm\provider_registry.py:57:logger = logging.getLogger("deskpet.llm.provider_registry")
+backend\config.py:6:import logging
+backend\config.py:19:logger = logging.getLogger(__name__)
+
+codex
+Using `verification-before-completion` for a final pass before I report completion of the review; I’m applying it as a read-only checklist, not running tests or changing files.
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-Content -Raw 'C:\\Users\\24378\\.agents\\skills\\sp-verification-before-completion\\SKILL.md'" in G:\projects\deskpet
+ succeeded in 150ms:
+---
+name: verification-before-completion
+description: Use when about to claim work is complete, fixed, or passing, before committing or creating PRs - requires running verification commands and confirming output before making any success claims; evidence before assertions always
+---
+
+# Verification Before Completion
+
+## Overview
+
+Claiming work is complete without verification is dishonesty, not efficiency.
+
+**Core principle:** Evidence before claims, always.
+
+**Violating the letter of this rule is violating the spirit of this rule.**
+
+## The Iron Law
+
+```
+NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE
+```
+
+If you haven't run the verification command in this message, you cannot claim it passes.
+
+## The Gate Function
+
+```
+BEFORE claiming any status or expressing satisfaction:
+
+1. IDENTIFY: What command proves this claim?
+2. RUN: Execute the FULL command (fresh, complete)
+3. READ: Full output, check exit code, count failures
+4. VERIFY: Does output confirm the claim?
+   - If NO: State actual status with evidence
+   - If YES: State claim WITH evidence
+5. ONLY THEN: Make the claim
+
+Skip any step = lying, not verifying
+```
+
+## Common Failures
+
+| Claim | Requires | Not Sufficient |
+|-------|----------|----------------|
+| Tests pass | Test command output: 0 failures | Previous run, "should pass" |
+| Linter clean | Linter output: 0 errors | Partial check, extrapolation |
+| Build succeeds | Build command: exit 0 | Linter passing, logs look good |
+| Bug fixed | Test original symptom: passes | Code changed, assumed fixed |
+| Regression test works | Red-green cycle verified | Test passes once |
+| Agent completed | VCS diff shows changes | Agent reports "success" |
+| Requirements met | Line-by-line checklist | Tests passing |
+
+## Red Flags - STOP
+
+- Using "should", "probably", "seems to"
+- Expressing satisfaction before verification ("Great!", "Perfect!", "Done!", etc.)
+- About to commit/push/PR without verification
+- Trusting agent success reports
+- Relying on partial verification
+- Thinking "just this once"
+- Tired and wanting work over
+- **ANY wording implying success without having run verification**
+
+## Rationalization Prevention
+
+| Excuse | Reality |
+|--------|---------|
+| "Should work now" | RUN the verification |
+| "I'm confident" | Confidence 鈮?evidence |
+| "Just this once" | No exceptions |
+| "Linter passed" | Linter 鈮?compiler |
+| "Agent said success" | Verify independently |
+| "I'm tired" | Exhaustion 鈮?excuse |
+| "Partial check is enough" | Partial proves nothing |
+| "Different words so rule doesn't apply" | Spirit over letter |
+
+## Key Patterns
+
+**Tests:**
+```
+鉁?[Run test command] [See: 34/34 pass] "All tests pass"
+鉂?"Should pass now" / "Looks correct"
+```
+
+**Regression tests (TDD Red-Green):**
+```
+鉁?Write 鈫?Run (pass) 鈫?Revert fix 鈫?Run (MUST FAIL) 鈫?Restore 鈫?Run (pass)
+鉂?"I've written a regression test" (without red-green verification)
+```
+
+**Build:**
+```
+鉁?[Run build] [See: exit 0] "Build passes"
+鉂?"Linter passed" (linter doesn't check compilation)
+```
+
+**Requirements:**
+```
+鉁?Re-read plan 鈫?Create checklist 鈫?Verify each 鈫?Report gaps or completion
+鉂?"Tests pass, phase complete"
+```
+
+**Agent delegation:**
+```
+鉁?Agent reports success 鈫?Check VCS diff 鈫?Verify changes 鈫?Report actual state
+鉂?Trust agent report
+```
+
+## Why This Matters
+
+From 24 failure memories:
+- your human partner said "I don't believe you" - trust broken
+- Undefined functions shipped - would crash
+- Missing requirements shipped - incomplete features
+- Time wasted on false completion 鈫?redirect 鈫?rework
+- Violates: "Honesty is a core value. If you lie, you'll be replaced."
+
+## When To Apply
+
+**ALWAYS before:**
+- ANY variation of success/completion claims
+- ANY expression of satisfaction
+- ANY positive statement about work state
+- Committing, PR creation, task completion
+- Moving to next task
+- Delegating to agents
+
+**Rule applies to:**
+- Exact phrases
+- Paraphrases and synonyms
+- Implications of success
+- ANY communication suggesting completion/correctness
+
+## The Bottom Line
+
+**No shortcuts for verification.**
+
+Run the command. Read the output. THEN claim the result.
+
+This is non-negotiable.
+
+
+  ✓ 读取 plan §5 和目标文件定位实现
+  ✓ 逐 Phase 核对实现语义与缺口
+  → 汇总完成度、阻断缺口和建议
+codex
+我注意到 Rust 文件里有几处中文注释和代码可能在同一物理行上，`Get-Content` 输出显示 `if let` 可能被 `//` 注释吞掉。这个会直接影响 Phase 2 的“只读判断 cargo build 能过”，我需要再用精确搜索确认。
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "rg -n \"DESKPET_USER_DATA_DIR|if let Some\\(v\\)|"'^'"\\s*return Some\\(PathBuf::from\\(v\\)\\);|"'^'"\\s*None"'$" tauri-app'"\\src-tauri\\src\\paths.rs" in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Select-String -Path 'tauri-app\\src-tauri\\src\\paths.rs' -Pattern 'DESKPET_USER_DATA_DIR','if let Some\\(v\\)','return Some\\(PathBuf::from\\(v\\)\\);','None' | ForEach-Object { \"{0}: {1}\" -f "'$_.LineNumber, $_.Line }' in G:\projects\deskpet
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$i=0; Get-Content -Encoding UTF8 '"'tauri-app\\src-tauri\\src\\paths.rs' | ForEach-Object { "'$i++; if ($i -ge 96 -and $i -le 110) { '"'{0,5}: <{1}>' -f "'$i, $_ } }' in G:\projects\deskpet
+ succeeded in 171ms:
+54:    if let Some(v) = env_lookup(env_key).filter(|s| !s.is_empty()) {
+55:        return Some(PathBuf::from(v));
+87:    None
+100:    None
+104:    // 1. DESKPET_USER_DATA_DIR — 与 Python backend/paths.py 统一的 env 名
+105:    //    (历史 bug: Rust 读 DESKPET_USER_DATA、Python 读 DESKPET_USER_DATA_DIR,
+107:    if let Some(v) = env_lookup("DESKPET_USER_DATA_DIR").filter(|s| !s.is_empty()) {
+108:        return Some(PathBuf::from(v));
+111:    if let Some(v) = env_lookup("DESKPET_USER_DATA").filter(|s| !s.is_empty()) {
+112:        return Some(PathBuf::from(v));
+123:    if let Some(v) = env_lookup("DESKPET_USER_LOG").filter(|s| !s.is_empty()) {
+124:        return Some(PathBuf::from(v));
+130:    if let Some(v) = env_lookup("DESKPET_MODEL_ROOT").filter(|s| !s.is_empty()) {
+131:        return Some(PathBuf::from(v));
+210:        // 统一后: DESKPET_USER_DATA_DIR(与 Python 一致)优先于旧 DESKPET_USER_DATA。
+212:            ("DESKPET_USER_DATA_DIR", "D:/new/userdata"),
+
+ succeeded in 172ms:
+45:         Self { app_data: None, local_app_data: None }
+54:     if let Some(v) = env_lookup(env_key).filter(|s| !s.is_empty()) {
+55:         return Some(PathBuf::from(v));
+62: /// `backend/paths.py::_portable_userdata_dir`). Returns None in dev mode
+87:     None
+100:     None
+104:     // 1. DESKPET_USER_DATA_DIR — 与 Python backend/paths.py 统一的 env 名
+105:     //    (历史 bug: Rust 读 DESKPET_USER_DATA、Python 读 DESKPET_USER_DATA_DIR,
+107:     if let Some(v) = env_lookup("DESKPET_USER_DATA_DIR").filter(|s| !s.is_empty()) {
+108:         return Some(PathBuf::from(v));
+111:     if let Some(v) = env_lookup("DESKPET_USER_DATA").filter(|s| !s.is_empty()) {
+112:         return Some(PathBuf::from(v));
+123:     if let Some(v) = env_lookup("DESKPET_USER_LOG").filter(|s| !s.is_empty()) {
+124:         return Some(PathBuf::from(v));
+130:     if let Some(v) = env_lookup("DESKPET_MODEL_ROOT").filter(|s| !s.is_empty()) {
+131:         return Some(PathBuf::from(v));
+184:         |_: &str| None
+210:         // 统一后: DESKPET_USER_DATA_DIR(与 Python 一致)优先于旧 DESKPET_USER_DATA。
+212:             ("DESKPET_USER_DATA_DIR", "D:/new/userdata"),
+281:     fn missing_app_data_returns_none() {
+282:         let base = BaseDirs { app_data: None, local_app_data: None };
+284:         assert!(user_data_dir_with(&base, &env).is_none());
+285:         assert!(user_log_dir_with(&base, &env).is_none());
+286:         assert!(user_models_dir_with(&base, &env).is_none());
+
+ succeeded in 185ms:
+   96: <#[cfg(test)]>
+   97: <fn portable_userdata_dir() -> Option<PathBuf> {>
+   98: <    // 测试下不探测真实 current_exe(避免 test runner 旁碰巧的 userdata 干扰>
+   99: <    // 现有单测的 %AppData% 期望)。>
+  100: <    None>
+  101: <}>
+  102: <>
+  103: <pub fn user_data_dir_with(base: &BaseDirs, env_lookup: EnvLookup<'_>) -> Option<PathBuf> {>
+  104: <    // 1. DESKPET_USER_DATA_DIR — 与 Python backend/paths.py 统一的 env 名>
+  105: <    //    (历史 bug: Rust 读 DESKPET_USER_DATA、Python 读 DESKPET_USER_DATA_DIR,>
+  106: <    //    名字不一致 → device_id/onboarding 和 config/db 落到不同目录)。>
+  107: <    if let Some(v) = env_lookup("DESKPET_USER_DATA_DIR").filter(|s| !s.is_empty()) {>
+  108: <        return Some(PathBuf::from(v));>
+  109: <    }>
+  110: <    // 2. 兼容旧 DESKPET_USER_DATA(无 _DIR) — 老用户可能设过,别破坏。>
+
+  ✓ 读取 plan §5 和目标文件定位实现
+  ✓ 逐 Phase 核对实现语义与缺口
+  ✓ 汇总完成度、阻断缺口和建议
+codex
+只读核对完成：未修改文件，未执行 git；未跑 pytest/cargo，只按源码语义判断。
+
+Phase 1: 100% — Python userdata 路径确定化已落地  
+`backend/paths.py` 已去掉 `candidates_up`/盘邻居回落，只绑定 backend 布局 `<install_root>/userdata` 或 standalone `<exe_dir>/userdata`；有 `_PORTABLE_CACHE`、`_USER_DATA_DIR_CACHE`、`reset_path_cache()`；sentinel 存在即返回；不可写时 `logger.error` 后返回 `None` 走 AppData。证据：[paths.py](G:/projects/deskpet/backend/paths.py:51)、[paths.py](G:/projects/deskpet/backend/paths.py:63)、[paths.py](G:/projects/deskpet/backend/paths.py:103)、[paths.py](G:/projects/deskpet/backend/paths.py:112)、[paths.py](G:/projects/deskpet/backend/paths.py:129)、[paths.py](G:/projects/deskpet/backend/paths.py:208)。
+
+Phase 2: 100% — Rust 单一事实源 + env 注入已落地  
+`portable_userdata_dir_from_exe` 是 create-then-probe-return，不要求目录预先存在；`spawn_once` 注入 `DESKPET_USER_DATA_DIR`，与 Python env 名一致。只读判断未见明显 Rust 语法/类型问题。证据：[paths.rs](G:/projects/deskpet/tauri-app/src-tauri/src/paths.rs:68)、[paths.rs](G:/projects/deskpet/tauri-app/src-tauri/src/paths.rs:80)、[paths.rs](G:/projects/deskpet/tauri-app/src-tauri/src/paths.rs:104)、[process_manager.rs](G:/projects/deskpet/tauri-app/src-tauri/src/process_manager.rs:180)。
+
+Phase 3: 100% — orphan endpoints 自愈已落地并 wire 进配置解析  
+`_recover_orphaned_endpoints` 在 `seed_user_config_if_missing()` 后调用；canonical 有 enabled+base_url endpoint 时 no-op；候选含 AppData、安装目录 userdata、backend/userdata、盘根 userdata，并排除 canonical 自身；坏源逐个 warning 跳过；写 `.pre-recover-bak`，写 endpoints 后下次幂等 no-op，全程 catch warning。证据：[config.py](G:/projects/deskpet/backend/config.py:1019)、[config.py](G:/projects/deskpet/backend/config.py:1060)、[config.py](G:/projects/deskpet/backend/config.py:1066)、[config.py](G:/projects/deskpet/backend/config.py:1097)、[config.py](G:/projects/deskpet/backend/config.py:1107)、[config.py](G:/projects/deskpet/backend/config.py:1137)、[config.py](G:/projects/deskpet/backend/config.py:1203)。
+
+Phase 4: 85% — 护栏加在实际 provider 上，但占位符覆盖不完整  
+已加在真正使用的 `providers.openai_compatible.OpenAICompatibleProvider._client`，且在拼 `Authorization` 前抛 `LLMProviderError(error_class="empty_api_key")`；localhost/127.0.0.1/0.0.0.0 放行；chat/agent error_class 有透传。  
+缺口：
+- [providers/openai_compatible.py](G:/projects/deskpet/backend/providers/openai_compatible.py:21)：`_UNUSABLE_API_KEYS` 缺 `"ollama"`。但 [main.py](G:/projects/deskpet/backend/main.py:6820) 在 registry key 缺失时会把 `None` 转成 `"ollama"`；非本地 relay/cloud endpoint 会继续发 `Authorization: Bearer ollama`，不符合“空/占位符 key（非本地 endpoint）抛错，只本地 ollama 放行”的要求。
+- [providers/openai_compatible.py](G:/projects/deskpet/backend/providers/openai_compatible.py:164)：本地判断只基于 base_url，逻辑可放行 localhost，但由于 `"ollama"` 不在不可用集合，远端也被放行。
+
+Phase 5: 100% — 可观测日志已落地  
+`config_loaded` 加了 `portable` / `env_pinned`；`LLMProviderRegistry.__init__` 加了 `provider_registry_ready n/enabled/ids`。证据：[main.py](G:/projects/deskpet/backend/main.py:101)、[main.py](G:/projects/deskpet/backend/main.py:111)、[provider_registry.py](G:/projects/deskpet/backend/llm/provider_registry.py:321)。
+
+Phase 6: 100% — frozen keyring hiddenimports 已钉死且容错  
+spec 使用 `collect_submodules("keyring")`，显式加入 `keyring.backends.Windows`、`win32ctypes.*`，并用 try/find_spec 容错缺失依赖。证据：[deskpet-backend.spec](G:/projects/deskpet/backend/deskpet-backend.spec:49)、[deskpet-backend.spec](G:/projects/deskpet/backend/deskpet-backend.spec:54)。
+
+总体完成度: 97%
+
+阻断性缺口（必须补）: [`providers/openai_compatible.py:21` 缺 `"ollama"` 远端占位符拦截；应让 `api_key == "ollama"` 仅在 localhost/ollama 本地 endpoint 放行，非本地 endpoint 抛 `LLMProviderError(error_class="empty_api_key")`。]
+
+非阻断建议: 给 Phase 4 增加单测：`base_url=https://...` + `api_key="ollama"` 必须抛 `empty_api_key`；`base_url=http://localhost:11434/v1` + `api_key="ollama"` 必须放行。实际合入前再跑 `cargo build` 和相关 backend tests。
+2026-06-27T19:13:26.402616Z ERROR codex_core::session: failed to record rollout items: thread 019f0a7d-f39b-7f32-91af-0cfbe314e263 not found
+tokens used
+93,305
+只读核对完成：未修改文件，未执行 git；未跑 pytest/cargo，只按源码语义判断。
+
+Phase 1: 100% — Python userdata 路径确定化已落地  
+`backend/paths.py` 已去掉 `candidates_up`/盘邻居回落，只绑定 backend 布局 `<install_root>/userdata` 或 standalone `<exe_dir>/userdata`；有 `_PORTABLE_CACHE`、`_USER_DATA_DIR_CACHE`、`reset_path_cache()`；sentinel 存在即返回；不可写时 `logger.error` 后返回 `None` 走 AppData。证据：[paths.py](G:/projects/deskpet/backend/paths.py:51)、[paths.py](G:/projects/deskpet/backend/paths.py:63)、[paths.py](G:/projects/deskpet/backend/paths.py:103)、[paths.py](G:/projects/deskpet/backend/paths.py:112)、[paths.py](G:/projects/deskpet/backend/paths.py:129)、[paths.py](G:/projects/deskpet/backend/paths.py:208)。
+
+Phase 2: 100% — Rust 单一事实源 + env 注入已落地  
+`portable_userdata_dir_from_exe` 是 create-then-probe-return，不要求目录预先存在；`spawn_once` 注入 `DESKPET_USER_DATA_DIR`，与 Python env 名一致。只读判断未见明显 Rust 语法/类型问题。证据：[paths.rs](G:/projects/deskpet/tauri-app/src-tauri/src/paths.rs:68)、[paths.rs](G:/projects/deskpet/tauri-app/src-tauri/src/paths.rs:80)、[paths.rs](G:/projects/deskpet/tauri-app/src-tauri/src/paths.rs:104)、[process_manager.rs](G:/projects/deskpet/tauri-app/src-tauri/src/process_manager.rs:180)。
+
+Phase 3: 100% — orphan endpoints 自愈已落地并 wire 进配置解析  
+`_recover_orphaned_endpoints` 在 `seed_user_config_if_missing()` 后调用；canonical 有 enabled+base_url endpoint 时 no-op；候选含 AppData、安装目录 userdata、backend/userdata、盘根 userdata，并排除 canonical 自身；坏源逐个 warning 跳过；写 `.pre-recover-bak`，写 endpoints 后下次幂等 no-op，全程 catch warning。证据：[config.py](G:/projects/deskpet/backend/config.py:1019)、[config.py](G:/projects/deskpet/backend/config.py:1060)、[config.py](G:/projects/deskpet/backend/config.py:1066)、[config.py](G:/projects/deskpet/backend/config.py:1097)、[config.py](G:/projects/deskpet/backend/config.py:1107)、[config.py](G:/projects/deskpet/backend/config.py:1137)、[config.py](G:/projects/deskpet/backend/config.py:1203)。
+
+Phase 4: 85% — 护栏加在实际 provider 上，但占位符覆盖不完整  
+已加在真正使用的 `providers.openai_compatible.OpenAICompatibleProvider._client`，且在拼 `Authorization` 前抛 `LLMProviderError(error_class="empty_api_key")`；localhost/127.0.0.1/0.0.0.0 放行；chat/agent error_class 有透传。  
+缺口：
+- [providers/openai_compatible.py](G:/projects/deskpet/backend/providers/openai_compatible.py:21)：`_UNUSABLE_API_KEYS` 缺 `"ollama"`。但 [main.py](G:/projects/deskpet/backend/main.py:6820) 在 registry key 缺失时会把 `None` 转成 `"ollama"`；非本地 relay/cloud endpoint 会继续发 `Authorization: Bearer ollama`，不符合“空/占位符 key（非本地 endpoint）抛错，只本地 ollama 放行”的要求。
+- [providers/openai_compatible.py](G:/projects/deskpet/backend/providers/openai_compatible.py:164)：本地判断只基于 base_url，逻辑可放行 localhost，但由于 `"ollama"` 不在不可用集合，远端也被放行。
+
+Phase 5: 100% — 可观测日志已落地  
+`config_loaded` 加了 `portable` / `env_pinned`；`LLMProviderRegistry.__init__` 加了 `provider_registry_ready n/enabled/ids`。证据：[main.py](G:/projects/deskpet/backend/main.py:101)、[main.py](G:/projects/deskpet/backend/main.py:111)、[provider_registry.py](G:/projects/deskpet/backend/llm/provider_registry.py:321)。
+
+Phase 6: 100% — frozen keyring hiddenimports 已钉死且容错  
+spec 使用 `collect_submodules("keyring")`，显式加入 `keyring.backends.Windows`、`win32ctypes.*`，并用 try/find_spec 容错缺失依赖。证据：[deskpet-backend.spec](G:/projects/deskpet/backend/deskpet-backend.spec:49)、[deskpet-backend.spec](G:/projects/deskpet/backend/deskpet-backend.spec:54)。
+
+总体完成度: 97%
+
+阻断性缺口（必须补）: [`providers/openai_compatible.py:21` 缺 `"ollama"` 远端占位符拦截；应让 `api_key == "ollama"` 仅在 localhost/ollama 本地 endpoint 放行，非本地 endpoint 抛 `LLMProviderError(error_class="empty_api_key")`。]
+
+非阻断建议: 给 Phase 4 增加单测：`base_url=https://...` + `api_key="ollama"` 必须抛 `empty_api_key`；`base_url=http://localhost:11434/v1` + `api_key="ollama"` 必须放行。实际合入前再跑 `cargo build` 和相关 backend tests。

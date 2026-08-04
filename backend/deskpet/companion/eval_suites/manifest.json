@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "manifest_id": "deskpet.companion.eval-suites.v1",
+  "suites": [
+    {
+      "suite_id": "skill_v1",
+      "kind": "skill",
+      "resource": "skill_v1.json",
+      "resource_hash": "a74ed5058de61f029dc41429bac8268b3fed1993c1d00b19754bb2802b13af94",
+      "assertions_hash": "5e45927ad9817eeaa0ec81bf92ff6610da58e1ac06954263dabb6031cb622082",
+      "required_case_ids": [
+        "skill.memory_recall.summary",
+        "skill.no_live_memory_fallback"
+      ]
+    },
+    {
+      "suite_id": "workflow_v1",
+      "kind": "workflow",
+      "resource": "workflow_v1.json",
+      "resource_hash": "5c61507a4ade75b99247a6034441af8fe772b1c50d5f24f90511a6d125da36c9",
+      "assertions_hash": "ef6493adc337bf4967c0cbc408ed1ebe8b53b05a4d3b90d45839945c4b78064a",
+      "required_case_ids": [
+        "workflow.build_drift_fail_closed",
+        "workflow.readonly_memory_step"
+      ]
+    }
+  ]
+}

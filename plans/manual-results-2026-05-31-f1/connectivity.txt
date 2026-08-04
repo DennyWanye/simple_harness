@@ -1,0 +1,4 @@
+﻿baidu=200
+chinzy=FAIL 远程服务器返回错误: (401) 未经授权。
+clash_verge_running=True
+ProxyEnable=0 ProxyServer=127.0.0.1:7897

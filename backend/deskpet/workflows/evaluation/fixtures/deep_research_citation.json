@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "example_id": "deep-research-citation",
+  "workflow": "deep_research",
+  "required": true,
+  "input": {
+    "topic": "How durable workflow checkpoints prevent duplicate side effects"
+  },
+  "expected": {
+    "required_nodes": [
+      "normalize",
+      "plan",
+      "search",
+      "fetch",
+      "score",
+      "synth",
+      "cite",
+      "persist",
+      "finalize"
+    ],
+    "citations": [
+      {
+        "claim_id": "claim-checkpoint",
+        "source_ref": "source:langgraph-durability"
+      },
+      {
+        "claim_id": "claim-idempotency",
+        "source_ref": "source:deskpet-effect-journal"
+      }
+    ],
+    "report_markers": [
+      "[^1]",
+      "[^2]"
+    ]
+  },
+  "output": {
+    "trace_nodes": [
+      "normalize",
+      "plan",
+      "expand",
+      "search",
+      "direct",
+      "fetch",
+      "score",
+      "gap",
+      "rerank",
+      "synth",
+      "cite",
+      "persist",
+      "finalize"
+    ],
+    "source_refs": [
+      "source:deskpet-effect-journal",
+      "source:langgraph-durability"
+    ],
+    "citations": [
+      {
+        "claim_id": "claim-checkpoint",
+        "source_ref": "source:langgraph-durability"
+      },
+      {
+        "claim_id": "claim-idempotency",
+        "source_ref": "source:deskpet-effect-journal"
+      }
+    ],
+    "report": "Durable checkpoints commit state before the next node [^1]. Side effects use stable fingerprints to prevent duplicate execution [^2].",
+    "latency_ms": 118.0
+  }
+}

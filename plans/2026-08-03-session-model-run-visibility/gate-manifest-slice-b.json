@@ -1,0 +1,108 @@
+{
+  "run_id": "session-run-visibility-slice-b-20260803",
+  "repo_root": "F:\\projects\\deskpet",
+  "source_request_file": "plans/2026-08-03-session-model-run-visibility/source-request.md",
+  "acceptance_file": "acceptance.md",
+  "testcase_files": [
+    "backend/tests/test_workflow_progress.py",
+    "backend/tests/harness_simplification/test_execution_projector.py",
+    "backend/tests/harness_simplification/test_run_kernel.py",
+    "backend/tests/harness_simplification/test_wi5_react_driver.py",
+    "backend/tests/harness_simplification/test_semantic_run_projection.py",
+    "backend/tests/test_harness_public_read_service.py",
+    "backend/tests/test_verify_real_harness_public_fixture.py",
+    "tauri-app/src/components/workflow/WorkflowProgressGroup.test.tsx",
+    "tauri-app/src/components/AgentActivityMessage.test.tsx",
+    "tauri-app/src/components/PermissionPopup.test.tsx",
+    "tauri-app/src/message-panel/HarnessInspectorPanel.test.tsx",
+    "tauri-app/src/hooks/usePermissionRequests.test.tsx",
+    "tauri-app/src/stores/harnessPublicSnapshotStore.test.ts",
+    "testcase/2026-08-03-session-model-run-visibility/manual-test.md"
+  ],
+  "behavior_contract": {
+    "terms": [
+      {"term": "Root Run", "meaning": "一次用户请求的最终结果 authority"},
+      {"term": "Child Run", "meaning": "Root 委派的工作流或子任务"},
+      {"term": "Public read model", "meaning": "从真实 ledger 确定性生成的用户视图，不是第二状态机"}
+    ],
+    "before_after": [
+      {"id": "BC-4", "before": "Inspector 固定 LIMIT 且前端猜阶段", "after": "完整 manifest 与后端语义阶段"},
+      {"id": "BC-5", "before": "child failed 与 root completed 并排", "after": "完整因果链显示已接管并完成"},
+      {"id": "BC-6", "before": "公共 UI 可读取 raw prepared/outcome", "after": "default-deny 有界脱敏投影"},
+      {"id": "BC-7", "before": "每个 event/tool 成为图节点", "after": "阶段内折叠步骤和工具"}
+    ],
+    "preserved": ["child 原始失败终态", "不可变 execution ledger", "隐藏 reasoning 不公开"],
+    "removed": ["公共 UI raw provider/tool payload", "前端按文案猜恢复和阶段"],
+    "approval": {
+      "user_message_sha256": "bb18ebd16443f4c0c0267a62ab5e1cf6b498d6abb3c35d9479641acd9b0d5bb3",
+      "approved_at": "2026-08-03T15:52:26.7348662+08:00",
+      "scope": "BC-1 through BC-7 and approved behavior changes in approval.md"
+    }
+  },
+  "behavior_changes": [
+    {
+      "behavior_change_id": "BC-PUBLIC-002",
+      "old_behavior": "Inspector/消息组件公共响应可包含 raw provider/tool payload",
+      "new_behavior": "公共 contract 只返回 default-deny 有界脱敏投影",
+      "approval": {
+        "user_message_sha256": "bb18ebd16443f4c0c0267a62ab5e1cf6b498d6abb3c35d9479641acd9b0d5bb3",
+        "acceptance_revision": "e3ea32764cf3fe654262487581902f49c67a47fe1b6d1b6dc7252769cb418d60",
+        "scope": "slice B Inspector and message public contract",
+        "expiry": "until a valid slice B gate receipt is produced"
+      }
+    },
+    {
+      "behavior_change_id": "BC-GRAPH-003",
+      "old_behavior": "逐 event/provider/tool 记录作为默认运行图节点",
+      "new_behavior": "默认运行图只渲染后端 semantic phases",
+      "approval": {
+        "user_message_sha256": "bb18ebd16443f4c0c0267a62ab5e1cf6b498d6abb3c35d9479641acd9b0d5bb3",
+        "acceptance_revision": "e3ea32764cf3fe654262487581902f49c67a47fe1b6d1b6dc7252769cb418d60",
+        "scope": "slice B default run graph",
+        "expiry": "until a valid slice B gate receipt is produced"
+      }
+    }
+  ],
+  "scenarios": [
+    {
+      "scenario_id": "S-SRV-2",
+      "title": "长上下文多步骤项目任务",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "expected_run_created": true,
+      "required_lanes": ["history-upgrade"],
+      "min_root_runs": 2,
+      "ac_ids": ["AC-SRV-5", "AC-SRV-6", "AC-SRV-7", "AC-SRV-8"]
+    },
+    {
+      "scenario_id": "S-SRV-3",
+      "title": "子任务失败后主 Agent 接管",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "expected_run_created": true,
+      "required_lanes": ["temporal-fault"],
+      "min_root_runs": 1,
+      "ac_ids": ["AC-SRV-5", "AC-SRV-6"]
+    },
+    {
+      "scenario_id": "S-SRV-5",
+      "title": "并发停止与晚到事件",
+      "required": true,
+      "ui": true,
+      "gate_type": "negative-safety",
+      "expected_run_created": true,
+      "required_lanes": ["temporal-fault"],
+      "min_root_runs": 2,
+      "ac_ids": ["AC-SRV-6", "AC-SRV-8"]
+    }
+  ],
+  "release_unit": {
+    "must_ac_count": 4,
+    "task_count": 5,
+    "plan_lines": 574,
+    "high_risk_subsystems": 3,
+    "concurrent_layer_kinds": 3
+  }
+}

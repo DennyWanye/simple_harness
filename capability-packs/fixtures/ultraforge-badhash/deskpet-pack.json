@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "id": "ultraforge",
+  "name": "UltraForge Test Tool",
+  "version": "1.0.0-fixture.1",
+  "source": {
+    "type": "local",
+    "uri": "capability-packs/fixtures/ultraforge-badhash",
+    "revision": "fixture-badhash-v1"
+  },
+  "compatibility": {
+    "deskpet": ">=0.6.0-beta.9",
+    "os": [
+      "windows"
+    ],
+    "architectures": [
+      "x86_64"
+    ],
+    "python": ">=3.11"
+  },
+  "entries": {
+    "skills": [],
+    "tools": [
+      {
+        "id": "check",
+        "provider_name": "ultraforge__check",
+        "runtime": "deskpet-json-tool-v1",
+        "execution_profile": "native-adapter",
+        "input_views": [],
+        "entry": "tools/ultraforge/main.py",
+        "schema": "tools/ultraforge/check.schema.json",
+        "healthcheck": "healthcheck"
+      }
+    ],
+    "mcp_servers": []
+  },
+  "permissions": [
+    "filesystem_read"
+  ],
+  "effects": [
+    "read_only"
+  ],
+  "dependencies": {
+    "python": [],
+    "commands": []
+  },
+  "files": [
+    {
+      "path": "tools/ultraforge/main.py",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "path": "tools/ultraforge/check.schema.json",
+      "sha256": "e569867ec0eb2e1e15a442aa37a88daf39c88dc327c4c6b8cc7eb3240eda95c0"
+    }
+  ],
+  "uninstall": {
+    "stop_servers": true,
+    "remove_environment_when_unreferenced": true
+  }
+}

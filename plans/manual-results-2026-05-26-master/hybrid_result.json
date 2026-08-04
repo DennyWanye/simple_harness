@@ -1,0 +1,14 @@
+[
+  {
+    "case": "Hybrid windows-mcp click → focus",
+    "status": "FAIL",
+    "detail": "click landed but focus not on chat-input: active={'isChatInput': False, 'activeTagName': 'BODY', 'activeTestId': None}",
+    "ts": "00:01:00"
+  },
+  {
+    "case": "Hybrid windows-mcp paste → input value",
+    "status": "FAIL",
+    "detail": "Ctrl+V did not inject; chat-input.value=''",
+    "ts": "00:01:01"
+  }
+]

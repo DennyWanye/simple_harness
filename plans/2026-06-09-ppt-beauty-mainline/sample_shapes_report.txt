@@ -1,0 +1,26 @@
+FILE: G:\projects\deskpet\.tmp\ppt-samples\样例A-高级感01.pptx  slides=6
+
+=== slide[0] layout='Title Slide' ===
+  ph=True(CENTER_TITLE) L0.8 T2.3 W8.5         txt='大语言模型应用实践'
+  ph=True(SUBTITLE   ) L1.5 T4.2 W7.0         txt='DeskPet 模板填充样例'
+
+=== slide[1] layout='Section Header' ===
+  ph=True(TITLE      ) L0.8 T4.8 W8.5         txt='一、技术背景'
+  ph=True(BODY       ) L0.8 T3.2 W8.5         txt='从规则到神经网络'
+
+=== slide[2] layout='Title and Content' ===
+  ph=True(TITLE      ) L0.5 T0.3 W9.0         txt='核心能力'
+  ph=True(OBJECT     ) L0.5 T1.8 W9.0         txt='自然语言理解与生成 / 多轮对话与上下文记忆 / 工具调用与代码执行 / 检索增强与长期记忆'
+
+=== slide[3] layout='Two Content' ===
+  ph=True(TITLE      ) L0.5 T0.3 W9.0         txt='本地 vs 云端'
+  ph=True(OBJECT     ) L0.5 T1.8 W4.4         txt='本地部署 / 数据不出本机 / 隐私安全 / 无网络依赖'
+  ph=True(OBJECT     ) L5.1 T1.8 W4.4         txt='云端模型 / 能力更强 / 免维护 / 按量付费'
+
+=== slide[4] layout='Title and Content' ===
+  ph=True(TITLE      ) L0.5 T0.3 W9.0         txt='落地场景'
+  ph=True(OBJECT     ) L0.5 T1.8 W9.0         txt='桌面助手 / 文档自动化 / 会议纪要 / PPT 生成'
+
+=== slide[5] layout='Section Header' ===
+  ph=True(TITLE      ) L0.8 T4.8 W8.5         txt='二、总结'
+  ph=True(BODY       ) L0.8 T3.2 W8.5         txt='可编辑 · 专业 · 一键生成'

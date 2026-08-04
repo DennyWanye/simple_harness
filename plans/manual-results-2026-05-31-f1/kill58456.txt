@@ -1,0 +1,6 @@
+﻿58456_already_gone
+58456_alive_after=False
+deskpet_count=1
+  pid=24500 start=16:56:25
+good_24500_alive=True
+backend_8500=UP

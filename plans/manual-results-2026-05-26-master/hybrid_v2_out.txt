@@ -1,0 +1,22 @@
+Connected: http://tauri.localhost/
+
+[1] windows-mcp: bring Desktop Pet window to foreground
+   foreground: hwnd=1314232
+[2] CDP: chat-input.focus()
+   focus result: {'ok': True, 'isFocused': True, 'activeTag': 'INPUT', 'activeTestId': 'chat-input'}
+[3] windows-mcp: Clipboard + Ctrl+V real keyboard input
+   paste: code=0
+   chat-input.value: {'value': '你好', 'hasContent': True}
+   ✓ '你好' successfully injected via windows-mcp SendKeys Ctrl+V
+[5] windows-mcp: SendKeys Enter
+   Enter: code=0
+[6] CDP read: check LLM reply in DOM
+
+✅ HYBRID PASS — windows-mcp real keyboard input → LLM reply detected
+   keyword '你好呀' found in body
+   body tail: 消息
+你好呀～我在呢。
+发送
+开机启动
+28 FPS
+已连接

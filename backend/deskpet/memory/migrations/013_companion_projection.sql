@@ -1,0 +1,4 @@
+-- State DB v21 Companion projection callback marker.
+-- The copy/verify/swap migration is implemented by
+-- deskpet.memory.companion_message_projection.migrate_companion_message_projection
+-- and is invoked by migrator.py inside one BEGIN IMMEDIATE transaction.

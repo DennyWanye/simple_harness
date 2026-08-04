@@ -1,0 +1,6 @@
+INFO:__main__:event='llm_api_key_from_keychain' level='info' timestamp='2026-06-22T07:13:53.885057Z'INFO:__main__:event='sanitize_inline_cot_dsml_flag' level='info' timestamp='2026-06-22T07:13:53.885057Z' enabled=True
+INFO:__main__:event='starting backend' level='info' timestamp='2026-06-22T07:13:54.027933Z' host='127.0.0.1' port=8200INFO:     Started server process [51212]
+INFO:__main__:event='startup complete' level='info' timestamp='2026-06-22T07:14:00.003706Z'INFO:     Application startup complete.
+INFO:     Application startup complete.INFO:     Uvicorn running on http://127.0.0.1:8200 (Press CTRL+C to quit)
+INFO:__main__:event='ephemeral_verifier_model' level='info' timestamp='2026-06-22T07:16:22.454039Z' model='sonnet' base='gpt-5.5'
+INFO:__main__:event='verify_gate_init mode=%s patterns=%d path=%s' level='info' timestamp='2026-06-22T07:16:22.454039Z' positional_args=('shadow', 9, WindowsPath('G:/projects/deskpet/backend/verify/claim_patterns.yaml'))

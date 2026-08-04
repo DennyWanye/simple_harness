@@ -1,0 +1,8 @@
+﻿local_tauri_bin=True
+cli_pkg=True
+tauri_version=tauri-cli 2.10.1
+script.dev=vite
+script.dev:relay=vite --mode relay
+script.tauri=tauri
+script.tauri:dev=tauri dev
+script.tauri:build=tauri build

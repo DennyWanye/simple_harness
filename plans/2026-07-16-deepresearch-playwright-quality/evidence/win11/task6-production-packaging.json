@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-07-16",
+  "scope": "Task 6 production packaging contract and minimal frozen smoke; no full backend or NSIS build",
+  "host": {
+    "platform": "Windows 11 x64",
+    "build_reported_by_pyinstaller": "10.0.22621",
+    "protected_deskpet_pid": 90580,
+    "protected_deskpet_alive_after": true
+  },
+  "product_pin": {
+    "playwright": "1.61.0",
+    "chromium_headless_shell_revision": "1228",
+    "browser_version": "149.0.7827.55",
+    "archive_length": 119099822,
+    "archive_md5": "1BC51B5A9F308F4B7F47AC15A1BE049D",
+    "archive_sha256": "5CFDA0C763AA6A867CE2EFAD0C467E3220E9C5C01C4CBA02FD57AFE49EDE5457",
+    "archive_zip_entries": 290,
+    "browsers_json_sha256": "EE39BC924BC3D1BD895626C2910F1292D109BBFEEB5ABD113ACB45E1951CC942",
+    "browser_executable_length": 203034112,
+    "browser_executable_sha256": "28016DF6864D302434C9231E1F9F1A8A7ECC512CB2FE3FAABB2A36130B96BCF1"
+  },
+  "isolated_paths": {
+    "cache_root": "C:\\DPW6\\pw",
+    "work_root": "C:\\DPW6\\w",
+    "dist_root": "C:\\DPW6\\d",
+    "global_ms_playwright_used": false,
+    "shared_backend_dist_touched": false
+  },
+  "minimal_frozen_artifact": {
+    "root": "C:\\DPW6\\d\\playwright-bundle-smoke",
+    "exe_sha256": "A224B7316FB948CA311A1305A24DE67FF63B2C0620F68FC99F43EA4EE904CFAD",
+    "bytes_before_smoke": 512849293,
+    "files_before_smoke": 545,
+    "bytes_after_smoke": 512849293,
+    "files_after_smoke": 546,
+    "browser_root_bytes_after_smoke": 282540718,
+    "browser_root_files_after_smoke": 293,
+    "playwright_driver_tree_bytes": 105160223,
+    "playwright_driver_tree_files": 110,
+    "uncompressed_versioned_browser_update_delta_bytes": 282540718,
+    "tauri_backend_resource_count": 1,
+    "tauri_browser_resource_count": 0
+  },
+  "verification": {
+    "unit_tests": "16 passed",
+    "powershell_parse": "PASS",
+    "python_compile": "PASS",
+    "acquisition_first_publish": "PASS",
+    "acquisition_idempotent_reuse": "PASS",
+    "pyinstaller_onedir": "PASS",
+    "artifact_assertion": "PASS",
+    "frozen_dynamic_render_text": "bundle-ok",
+    "runtime_source": "frozen",
+    "process_local_offline_guard": true,
+    "browser_or_driver_orphans": 0,
+    "full_nsis_run": false
+  }
+}

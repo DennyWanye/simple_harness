@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "commands": [
+    {
+      "name": "cross-session-full-surface-smoke",
+      "result": "pass",
+      "backend": "29 passed",
+      "frontend": "116 passed"
+    },
+    {
+      "name": "all-currently-changed-backend-test-files",
+      "result": "pass",
+      "files": 22,
+      "pytest": "538 passed, 0 failed, 4 pre-existing coroutine warnings"
+    },
+    {
+      "name": "all-currently-changed-frontend-test-files",
+      "result": "pass",
+      "files": 9,
+      "vitest": "118 passed"
+    },
+    {
+      "name": "frontend-production-build",
+      "result": "pass",
+      "toolchain": "tsc -b and vite build"
+    }
+  ]
+}

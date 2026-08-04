@@ -1,0 +1,45 @@
+﻿Secure MCP Filesystem Server running on stdio
+Client does not support MCP Roots, using allowed directories set from server args: [ 'G:\\projects\\deskpet-stage2-f1f2\\.dev-userdata\\workspace' ]
+INFO:deskpet.mcp.manager:event='mcp_server_connected' level='info' timestamp='2026-05-31T09:37:53.731457Z' server='filesystem' transport='stdio' tool_count=14
+INFO:deskpet.mcp.manager:event='mcp_server_disabled' level='info' timestamp='2026-05-31T09:37:53.731457Z' server='weather'
+17:37:54 [vite] (client) [console.warn] [relayProviderBridge] updateCloudConfig failed: backend POST http://127.0.0.1:8500/config/cloud failed: error sending request for url (http://127.0.0.1:8500/config/cloud)
+WARNING:deskpet.memory.embedder:BGE-M3 worker spawn attempt 1/2 failed: embedder worker died during model load (spawn ok, but FlagEmbedding/torch import or .load crashed; check parent stderr for worker traceback)
+INFO:deskpet.mcp.manager:event='mcp_server_connected' level='info' timestamp='2026-05-31T09:37:56.083877Z' server='playwright' transport='stdio' tool_count=23
+INFO:deskpet.mcp.bootstrap:event='mcp_bootstrap_started' level='info' timestamp='2026-05-31T09:37:56.083877Z' states={'filesystem': 'running', 'playwright': 'running'}
+INFO:__main__:event='p4_mcp_manager_ready' level='info' timestamp='2026-05-31T09:37:56.083877Z' states={'filesystem': 'running', 'playwright': 'running'}
+INFO:__main__:event='p5s2_circuit_breaker_wired threshold=%d cooldown=%.0fs' level='info' timestamp='2026-05-31T09:37:56.085878Z' positional_args=(3, 60.0)
+INFO:__main__:event='supervisor_provider_resolved id=legacy base_url=%s 鈥?registry empty/unavailable; consider adding a provider via Settings' level='info' timestamp='2026-05-31T09:37:56.085878Z' positional_args=('https://chinzy.com/v1',)
+INFO:deskpet.agent.watchdog:watchdog started (scan_interval=60s, stuck_threshold=900s, dedup=720s)
+INFO:__main__:event='p5_supervisor_watchdog_started' level='info' timestamp='2026-05-31T09:37:56.085878Z'
+INFO:__main__:event='p5s2_auto_resume_started enabled=%s max_attempts=%d' level='info' timestamp='2026-05-31T09:37:56.086877Z' positional_args=(True, 2)
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=32000 source=builtin
+INFO:__main__:event='startup complete' level='info' timestamp='2026-05-31T09:37:56.087878Z'
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8500 (Press CTRL+C to quit)
+INFO:     127.0.0.1:12598 - "WebSocket /ws/audio?secret=2acd8177a41e5329fb47fc77e27800d5&session_id=default" [accepted]
+INFO:providers.silero_vad:event='loading silero-vad v5' level='info' timestamp='2026-05-31T09:37:56.496190Z'
+INFO:providers.silero_vad:event='silero-vad loaded' level='info' timestamp='2026-05-31T09:37:56.531195Z'
+INFO:__main__:event='audio channel connected' level='info' timestamp='2026-05-31T09:37:56.531195Z' session_id='default'
+INFO:     connection open
+INFO:     127.0.0.1:10288 - "WebSocket /ws/control?secret=2acd8177a41e5329fb47fc77e27800d5&session_id=message-panel-main" [accepted]
+INFO:__main__:event='control channel connected' level='info' timestamp='2026-05-31T09:37:56.576426Z' session_id='message-panel-main'
+INFO:     connection open
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=32000 source=builtin
+INFO:     127.0.0.1:4420 - "WebSocket /ws/control?secret=2acd8177a41e5329fb47fc77e27800d5&session_id=code-panel-main" [accepted]
+INFO:__main__:event='control channel connected' level='info' timestamp='2026-05-31T09:37:56.589427Z' session_id='code-panel-main'
+INFO:     connection open
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=32000 source=builtin
+INFO:     127.0.0.1:9832 - "WebSocket /ws/control?secret=2acd8177a41e5329fb47fc77e27800d5" [accepted]
+INFO:__main__:event='control channel connected' level='info' timestamp='2026-05-31T09:37:56.605427Z' session_id='default'
+INFO:     connection open
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=32000 source=builtin
+INFO:__main__:event='llm_runtime_overrides_saved path=%s' level='info' timestamp='2026-05-31T09:37:57.326025Z' positional_args=(WindowsPath('G:/projects/deskpet-stage2-f1f2/.dev-userdata/llm_runtime.json'),)
+INFO:__main__:event='llm_config_updated base_url=%s model=%s' level='info' timestamp='2026-05-31T09:37:57.326025Z' positional_args=('https://chinzy.com/v1', 'gpt-5.5')
+INFO:deskpet.memory.embedder:Spawning BGE-M3 subprocess worker (path=C:\Users\24378\AppData\Local\deskpet\models\bge-m3-int8 device=cuda)
+WARNING:deskpet.memory.embedder:[embedder-worker stderr] G:\projects\deskpet\backend\.venv\Lib\site-packages\transformers\utils\hub.py:110: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+WARNING:deskpet.memory.embedder:[embedder-worker stderr]   warnings.warn(
+INFO:__main__:event='summarizer_starting age_days=30 min_messages=20 max_per_run=10' level='info' timestamp='2026-05-31T09:38:04.107525Z'
+INFO:__main__:event='summarizer_done scanned=%d summarized=%d archived=%d errors=%d' level='info' timestamp='2026-05-31T09:38:04.109524Z' positional_args=(0, 0, 0, 0)
+INFO:deskpet.memory.embedder:BGE-M3 worker ready in 1459.0ms (device=cuda)
+INFO:deskpet.memory.embedder:BGE-M3 subprocess worker ready (path=C:\Users\24378\AppData\Local\deskpet\models\bge-m3-int8, device=cuda, attempt=2)
+INFO:__main__:event='p4_embedder_ready' level='info' timestamp='2026-05-31T09:38:04.850036Z' is_mock=False

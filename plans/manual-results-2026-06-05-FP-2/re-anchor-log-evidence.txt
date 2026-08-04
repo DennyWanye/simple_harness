@@ -1,0 +1,9 @@
+=== FP-2 re-anchor 真机证据 (2026-06-05) ===
+config: features.compaction_enabled=true, verify_gate_mode=strict, goal_facts=true, persona_inject=true
+INFO:__main__:event='companion_code_v1_goal_mode_ready' level='info' timestamp='2026-06-05T12:22:48.468991Z'
+INFO:__main__:event='wi4_0_compaction_enabled context_window=32000 threshold=0.75' level='info' timestamp='2026-06-05T1
+INFO:__main__:event='goal_store_load_persisted restored=%d' level='info' timestamp='2026-06-05T12:22:49.821334Z' positi
+INFO:__main__:event='verify_gate_init mode=%s patterns=%d path=%s' level='info' timestamp='2026-06-05T12:26:51.304674Z'
+INFO:deskpet.agent.loop:wi13_goal_anchor_injected sid=code-ks4v3wdq tid=task_260605122651_70ffc687 iter=5
+grep 工具调用次数(args_dump): 0
+LLM completions 调用次数: 13 (多轮 ReAct)

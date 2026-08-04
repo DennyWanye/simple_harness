@@ -1,0 +1,91 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
+  "productName": "SimpleHarness",
+  "version": "0.1.0",
+  "identifier": "com.dennywanye.simpleharness",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "SimpleHarness",
+        "width": 500,
+        "height": 640,
+        "minWidth": 360,
+        "minHeight": 360,
+        "maxWidth": 1200,
+        "maxHeight": 1600,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": false,
+        "resizable": true,
+        "maximizable": false,
+        "skipTaskbar": true,
+        "center": true
+      },
+      {
+        "label": "message-panel",
+        "title": "SimpleHarness · 消息",
+        "width": 700,
+        "height": 600,
+        "minWidth": 640,
+        "minHeight": 360,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": false,
+        "resizable": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "url": "index.html#/message-panel"
+      }
+    ],
+    "security": {
+      "csp": null
+    },
+    "macOSPrivateApi": true
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": false,
+    "targets": [
+      "nsis",
+      "app",
+      "dmg"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      },
+      "wix": {
+        "version": "0.6.0.3"
+      }
+    },
+    "resources": {
+      "../../resources/diagnostic-redaction.json": "resources/diagnostic-redaction.json"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "active": false,
+      "endpoints": [
+        "https://defaultbucket-1300194691.cos.ap-guangzhou.myqcloud.com/deskpet/latest.json",
+        "https://github.com/DennyWanye/deskpet/releases/latest/download/latest.json"
+      ],
+      "dialog": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVFM0I2QTIxREZENEFDM0YKUldRL3JOVGZJV283WGg1YlFWZG9Lbkxldk8yc3VNUXhzMG10QlgzRmpEODk1S2JFdWd6RjVMdW8K"
+    }
+  }
+}

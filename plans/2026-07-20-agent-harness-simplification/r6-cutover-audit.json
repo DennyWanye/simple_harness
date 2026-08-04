@@ -1,0 +1,14 @@
+{
+  "checks": {
+    "exact_ast_absent": true,
+    "legacy_roots_unreachable": true,
+    "legacy_symbol_references_absent": true,
+    "live_stack_complete_and_clean": true,
+    "similar_fingerprint_absent": true
+  },
+  "exact_matches": [],
+  "mode": "cutover",
+  "passed": true,
+  "references": [],
+  "similar_matches": []
+}

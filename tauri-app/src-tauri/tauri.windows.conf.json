@@ -1,0 +1,7 @@
+{
+  "bundle": {
+    "resources": {
+      "../../backend/dist-portable/deskpet-backend": "backend"
+    }
+  }
+}

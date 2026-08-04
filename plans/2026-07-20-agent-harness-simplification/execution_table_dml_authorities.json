@@ -1,0 +1,54 @@
+{
+  "baseline": {
+    "runtime_dml_authority_count": 1
+  },
+  "baseline_commit": "796905b9888c2659af78cec21de1ee96b46a2c51",
+  "items": [
+    {
+      "authority": "sqlite_execution_uow",
+      "callsites": [
+        "backend/deskpet/workflows/bootstrap.py:build_workflow_service:45",
+        "backend/deskpet/workflows/runner.py:WorkflowRunner.__init__:244",
+        "backend/deskpet/workflows/service.py:WorkflowService.__init__:356"
+      ],
+      "counted": true,
+      "kind": "runtime_dml",
+      "path": "backend/deskpet/workflows/store/execution_uow.py",
+      "source_hash": "4fd6f1bae3b427af84864512e39a3942f3472b2c8c84337186d9dcaad2183767",
+      "symbol": "SqliteExecutionUnitOfWork",
+      "tables": [
+        "execution_child_commands",
+        "execution_child_signal_inbox",
+        "execution_continuations",
+        "execution_decisions",
+        "execution_deliveries",
+        "execution_effect_links",
+        "execution_effects",
+        "execution_events",
+        "execution_grants",
+        "execution_legacy_drain_items",
+        "execution_runs",
+        "execution_runtime_state",
+        "execution_user_continuations"
+      ]
+    },
+    {
+      "authority": "schema_migration",
+      "callsites": [
+        "backend/deskpet/workflows/store/schema.py:_initialize_workflow_db_unlocked:260"
+      ],
+      "counted": false,
+      "kind": "schema_migration",
+      "path": "backend/deskpet/workflows/store/schema.py",
+      "source_hash": "6e131362f2dac41d1ee03e8ae94bf8e37555a1e4fc6989253beecd0eb88e48a1",
+      "symbol": "_migrate_v6_to_v7",
+      "tables": [
+        "execution_runtime_state"
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "target": {
+    "runtime_dml_authority_count": 1
+  }
+}

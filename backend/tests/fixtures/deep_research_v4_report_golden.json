@@ -1,0 +1,25 @@
+{
+  "required_sections": [
+    "## 一页式执行摘要",
+    "### 关键结论与采用动作",
+    "### 组合建议",
+    "## 分主题 Top 技术",
+    "## 方法与局限",
+    "## 引用"
+  ],
+  "required_item_fields": [
+    "- 核心变化：",
+    "- 价值判断：",
+    "- 成熟度与采用建议：",
+    "- 风险与不确定性：",
+    "- 引用："
+  ],
+  "forbidden_fragments": [
+    "## Coverage",
+    "provider_attempts",
+    "published_claims",
+    "Example workflows and tasks teams can take on with ChatGPT or Codex",
+    "当前证据未形成",
+    "Debug JSON"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "source": "read-only workflow.db execution_runs plus real Windows UI",
+  "session_id": "174da013-692a-4129-98a6-31f58c36648a",
+  "root_run_id": "32f9e2fe01f5568d9ca56ef0b17b4ada",
+  "engine_status": "completed",
+  "provider_id": "relay-cloud",
+  "model_id": "kimi-k3",
+  "binding_epoch": 2,
+  "ui_model_label": "kimi-k3-32K",
+  "ui_terminal_state": "idle",
+  "provider_invocation_id": "cab3c3387139a2cece5bfde5bab7e52dbffb0bc968c0423c8ce2e130683aed8e",
+  "measured_sample_id": "d0af2ea2338af704759a751802e3a819d280a7fe991d990aaf811a3d32bcced3",
+  "evidence": [
+    "s-srv-1-binding-only-before-message.png",
+    "s-srv-1-kimi-measured-terminal.png",
+    "s-srv-1-restart-recovered.png"
+  ]
+}

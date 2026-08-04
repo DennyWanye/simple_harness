@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "source_boundary": "harness_public_read_service",
+  "workflow_db": "F:\\projects\\deskpet\\backend\\userdata\\data\\workflow.db",
+  "state_db": "F:\\projects\\deskpet\\backend\\userdata\\data\\state.db",
+  "session_id": "2e69be7e-0b16-4bfb-a774-d61e588c5ec3",
+  "root_run_id": "a3a63c99fca45b0ca91d1192d69bb378",
+  "source_root_hash": "81299a5fc9a95e0594347b794e53fe6646008e8c77fd28ad2082e859adf9f53e",
+  "committed_fixture_sha256": "4ac3e21ae650abbd8f5d09581c05eeeba6302d3b2de94abfa26dbd3c4a3cb9f9",
+  "selection_basis": "root_run_id SHA-256 matches the committed approved provenance oracle",
+  "migration_policy": "read-only SQLite snapshots; migrate only the temporary state snapshot to current schema"
+}

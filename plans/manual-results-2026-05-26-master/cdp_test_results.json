@@ -1,0 +1,53 @@
+{
+  "generated": "2026-05-30 22:51:12",
+  "results": [
+    {
+      "case": "R3-2 toolbar 已连接 + FPS",
+      "status": "PASS",
+      "detail": "无 service error",
+      "ts": "22:50:37"
+    },
+    {
+      "case": "R3-3 自然语言触发 skill",
+      "status": "PASS",
+      "detail": "LLM 真选 excel_create tool → permission gate 弹出（'查看详细参数/拒绝/允许一次'）→ 用户未授权 fallback markdown — skill routing + B4 防手滑路径双重 PASS",
+      "ts": "22:51:07"
+    },
+    {
+      "case": "R5-1 账户面板打开",
+      "status": "PASS",
+      "detail": "email=True balance=True logout=True",
+      "ts": "22:51:08"
+    },
+    {
+      "case": "TC-10 主输入栏面板互斥",
+      "status": "PASS",
+      "detail": "panel 打开后主 chat-input 已隐藏",
+      "ts": "22:51:09"
+    },
+    {
+      "case": "TC-10 关闭后恢复",
+      "status": "PASS",
+      "detail": "主 chat-input 恢复显示",
+      "ts": "22:51:10"
+    },
+    {
+      "case": "TC-08 settings/模型 modal",
+      "status": "PASS",
+      "detail": "settings=True dialog=True",
+      "ts": "22:51:11"
+    },
+    {
+      "case": "TC-09 mic 切录音态",
+      "status": "PARTIAL",
+      "detail": "click sent but no obvious state change: {'afterPressed': None, 'afterCls': ''}",
+      "ts": "22:51:12"
+    },
+    {
+      "case": "B5 ppt-generate",
+      "status": "SKIP",
+      "detail": "自然语言 LLM 路由 + 真生成 .pptx 时间长，单独跑",
+      "ts": "22:51:12"
+    }
+  ]
+}

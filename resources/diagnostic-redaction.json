@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "replacement": "[REDACTED]",
+  "sensitive_keys": [
+    "authorization",
+    "api_key",
+    "apikey",
+    "access_token",
+    "refresh_token",
+    "password",
+    "secret",
+    "cookie",
+    "device_key"
+  ],
+  "sensitive_value_patterns": [
+    "(?i)\\b(?:sk|tsk|key)[-_A-Za-z0-9]{12,}\\b",
+    "(?i)\\bBearer\\s+[-._~+/A-Za-z0-9=]{12,}\\b"
+  ]
+}

@@ -1,0 +1,24 @@
+﻿INFO:config:llm_unified_schema_loaded fields=['api_key', 'base_url', 'max_tokens', 'model', 'temperature'] base_url=https://your-llm-relay.example.com/v1 model=gpt-5.5
+INFO:__main__:event='llm_runtime_overrides_applied base_url=%s model=%s' level='info' timestamp='2026-05-31T09:37:49.668060Z' positional_args=('https://chinzy.com/v1', 'gpt-5.5')
+INFO:__main__:event='llm_api_key_from_keychain' level='info' timestamp='2026-05-31T09:37:49.668060Z'
+WARNING:deskpet.tools.registry:tool 'web_fetch' re-registered (toolset=web 鈫?web, source=builtin 鈫?builtin); previous definition replaced (replace_allowed opt-in)
+INFO:__main__:event='p4_s20_tool_registry_v2_ready' level='info' timestamp='2026-05-31T09:37:49.952479Z' os_tools=45
+INFO:deskpet.tools.skill_tools:skill_tools.bind: skill_loader=SkillLoader
+INFO:__main__:event='p4_skill_invoke_tool_bound' level='info' timestamp='2026-05-31T09:37:49.974479Z'
+WARNING:deskpet.tools.registry:tool 'glob' re-registered (toolset=code 鈫?code, source=builtin 鈫?builtin); previous definition replaced (replace_allowed opt-in)
+WARNING:deskpet.tools.registry:tool 'grep' re-registered (toolset=code 鈫?code, source=builtin 鈫?builtin); previous definition replaced (replace_allowed opt-in)
+WARNING:deskpet.tools.registry:tool 'web_search' re-registered (toolset=code 鈫?code, source=builtin 鈫?builtin); previous definition replaced (replace_allowed opt-in)
+WARNING:deskpet.tools.registry:tool 'fetch_tool_result' re-registered (toolset=code 鈫?code, source=builtin 鈫?builtin); previous definition replaced (replace_allowed opt-in)
+WARNING:deskpet.tools.registry:tool 'todo_write' re-registered (toolset=todo 鈫?code, source=builtin 鈫?builtin); previous definition replaced (replace_allowed opt-in)
+INFO:__main__:event='p4_s22_code_tools_registered' level='info' timestamp='2026-05-31T09:37:49.989983Z' count=6
+INFO:__main__:event='p4_services_registered' level='info' timestamp='2026-05-31T09:37:49.989983Z' l1_dir='G:\\projects\\deskpet-stage2-f1f2\\.dev-userdata\\data' state_db='G:\\projects\\deskpet-stage2-f1f2\\.dev-userdata\\data\\state.db' memory_manager=True skill_loader=True context_assembler=True embedder_mock_when_missing=True vector_worker=True retriever=True
+INFO:deskpet.mcp.manager:event='mcp_server_connected' level='info' timestamp='2026-05-31T09:37:53.731457Z' server='filesystem' transport='stdio' tool_count=14
+17:37:54 [vite] (client) [console.warn] [relayProviderBridge] updateCloudConfig failed: backend POST http://127.0.0.1:8500/config/cloud failed: error sending request for url (http://127.0.0.1:8500/config/cloud)
+INFO:deskpet.mcp.manager:event='mcp_server_connected' level='info' timestamp='2026-05-31T09:37:56.083877Z' server='playwright' transport='stdio' tool_count=23
+INFO:deskpet.agent.watchdog:watchdog started (scan_interval=60s, stuck_threshold=900s, dedup=720s)
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=32000 source=builtin
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=32000 source=builtin
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=32000 source=builtin
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=32000 source=builtin
+INFO:__main__:event='llm_runtime_overrides_saved path=%s' level='info' timestamp='2026-05-31T09:37:57.326025Z' positional_args=(WindowsPath('G:/projects/deskpet-stage2-f1f2/.dev-userdata/llm_runtime.json'),)
+INFO:__main__:event='llm_config_updated base_url=%s model=%s' level='info' timestamp='2026-05-31T09:37:57.326025Z' positional_args=('https://chinzy.com/v1', 'gpt-5.5')

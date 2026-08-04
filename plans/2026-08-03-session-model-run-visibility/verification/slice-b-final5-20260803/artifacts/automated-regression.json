@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "commands": [
+    {
+      "name": "real-harness-public-fixture-verifier",
+      "result": "pass",
+      "pytest": "1 passed"
+    },
+    {
+      "name": "slice-a-and-b-backend-impact-matrix-with-real-fixture-env",
+      "result": "pass",
+      "pytest": "94 passed, 0 skipped"
+    },
+    {
+      "name": "frontend-impact-matrix",
+      "result": "pass",
+      "vitest": "73 passed"
+    },
+    {
+      "name": "frontend-production-build",
+      "result": "pass",
+      "toolchain": "tsc -b and vite build"
+    }
+  ]
+}

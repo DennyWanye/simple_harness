@@ -1,0 +1,257 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-18T13:51:07.000152+00:00",
+  "automated_gate_status": "pass",
+  "fixed_clock_automation": {
+    "gate_status": "pass",
+    "clock": "injected_wall_clock",
+    "durable_node_attempts": {
+      "sample_count": 20,
+      "p50_ms": 125.0,
+      "p95_ms": 125.0,
+      "max_ms": 125.0,
+      "timeout_count": 0,
+      "cancel_count": 0
+    },
+    "trace_spans": {
+      "sample_count": 20,
+      "p50_ms": 125.0,
+      "p95_ms": 125.0,
+      "max_ms": 125.0,
+      "timeout_count": 0,
+      "cancel_count": 0
+    },
+    "metrics_mirror": {
+      "sample_count": 20,
+      "p50_ms": 125.0,
+      "p95_ms": 125.0,
+      "max_ms": 125.0,
+      "timeout_count": 0,
+      "cancel_count": 0
+    },
+    "exact_cross_source_match": true
+  },
+  "slow_stage_automation": {
+    "gate_status": "pass",
+    "injected_delay_ms": 10,
+    "stages": {
+      "robots": {
+        "sample_count": 20,
+        "p50_ms": 14.0,
+        "p95_ms": 15.0,
+        "max_ms": 22.0,
+        "timeout_count": 0,
+        "cancel_count": 0
+      },
+      "static": {
+        "sample_count": 20,
+        "p50_ms": 10.0,
+        "p95_ms": 11.0,
+        "max_ms": 11.0,
+        "timeout_count": 0,
+        "cancel_count": 0
+      },
+      "httpx": {
+        "sample_count": 20,
+        "p50_ms": 14.0,
+        "p95_ms": 15.0,
+        "max_ms": 22.0,
+        "timeout_count": 0,
+        "cancel_count": 0
+      },
+      "browser": {
+        "sample_count": 20,
+        "p50_ms": 17.0,
+        "p95_ms": 26.0,
+        "max_ms": 27.0,
+        "timeout_count": 0,
+        "cancel_count": 0
+      }
+    },
+    "transport_attempt_policy": "one real upstream attempt per transport per logical attempt"
+  },
+  "offline_official_exact_fact_production_runner": {
+    "gate_status": "pass",
+    "fixture": "real WorkflowRunner + deep_research/v6 production definition + durable read journal",
+    "network_mode": "offline_fixed_fixture",
+    "end_to_end": {
+      "sample_count": 20,
+      "p50_ms": 3760.866,
+      "p95_ms": 6414.615,
+      "max_ms": 6535.971,
+      "timeout_count": 0,
+      "cancel_count": 0
+    },
+    "workflow_nodes": {
+      "admit_facts": {
+        "sample_count": 20,
+        "p50_ms": 190.34,
+        "p95_ms": 230.977,
+        "max_ms": 249.096,
+        "timeout_count": 0,
+        "cancel_count": 0
+      },
+      "assess_answer": {
+        "sample_count": 20,
+        "p50_ms": 82.802,
+        "p95_ms": 103.743,
+        "max_ms": 108.189,
+        "timeout_count": 0,
+        "cancel_count": 0
+      },
+      "compile_spec": {
+        "sample_count": 20,
+        "p50_ms": 193.062,
+        "p95_ms": 300.758,
+        "max_ms": 1859.05,
+        "timeout_count": 0,
+        "cancel_count": 0
+      },
+      "extract_candidate_bundles": {
+        "sample_count": 20,
+        "p50_ms": 235.55,
+        "p95_ms": 1264.92,
+        "max_ms": 1905.993,
+        "timeout_count": 0,
+        "cancel_count": 0
+      },
+      "integrity": {
+        "sample_count": 20,
+        "p50_ms": 151.997,
+        "p95_ms": 2043.778,
+        "max_ms": 2479.099,
+        "timeout_count": 0,
+        "cancel_count": 0
+      },
+      "load_pages": {
+        "sample_count": 20,
+        "p50_ms": 328.206,
+        "p95_ms": 1397.572,
+        "max_ms": 1514.145,
+        "timeout_count": 0,
+        "cancel_count": 0
+      },
+      "persist_manifest": {
+        "sample_count": 20,
+        "p50_ms": 192.684,
+        "p95_ms": 225.688,
+        "max_ms": 303.464,
+        "timeout_count": 0,
+        "cancel_count": 0
+      },
+      "plan_route": {
+        "sample_count": 20,
+        "p50_ms": 168.69,
+        "p95_ms": 224.17,
+        "max_ms": 668.417,
+        "timeout_count": 0,
+        "cancel_count": 0
+      },
+      "register_inferences": {
+        "sample_count": 20,
+        "p50_ms": 77.672,
+        "p95_ms": 121.404,
+        "max_ms": 1053.411,
+        "timeout_count": 0,
+        "cancel_count": 0
+      },
+      "render_claims": {
+        "sample_count": 20,
+        "p50_ms": 139.909,
+        "p95_ms": 166.962,
+        "max_ms": 169.193,
+        "timeout_count": 0,
+        "cancel_count": 0
+      },
+      "synthesize_inferences": {
+        "sample_count": 20,
+        "p50_ms": 131.924,
+        "p95_ms": 180.767,
+        "max_ms": 2551.363,
+        "timeout_count": 0,
+        "cancel_count": 0
+      }
+    },
+    "search_effect": {
+      "sample_count": 20,
+      "p50_ms": 33.889,
+      "p95_ms": 45.543,
+      "max_ms": 52.248,
+      "timeout_count": 0,
+      "cancel_count": 0
+    },
+    "fetch_effect": {
+      "sample_count": 20,
+      "p50_ms": 110.766,
+      "p95_ms": 1142.606,
+      "max_ms": 1243.753,
+      "timeout_count": 0,
+      "cancel_count": 0
+    },
+    "per_run_limit_ms": 10000,
+    "limit_violations": 0,
+    "answer_status_counts": {
+      "completed": 20
+    }
+  },
+  "real_network_sc_stats_2": {
+    "gate_status": "passed",
+    "required_sample_count": 3,
+    "completed_sample_count": 3,
+    "runs": [
+      {
+        "run_id": "492bdf52cf714616878957a57be55241",
+        "environment_status": "healthy",
+        "environment_evidence": "official archive discovery succeeded and canonical www.stats.gov.cn target returned HTTP 200",
+        "answer_status": "completed",
+        "end_to_end_ms": 17099.262,
+        "official_archive_discovery_ms": 3276.16,
+        "max_page_fetch_ms": 10976.872,
+        "timeout_count": 0,
+        "cancel_count": 0,
+        "under_run_limit": true,
+        "under_page_limit": true
+      },
+      {
+        "run_id": "7eb29c9f22e74aecb4a614acf746795c",
+        "environment_status": "healthy",
+        "environment_evidence": "official archive discovery succeeded and canonical www.stats.gov.cn target returned HTTP 200",
+        "answer_status": "completed",
+        "end_to_end_ms": 19147.131,
+        "official_archive_discovery_ms": 4816.177,
+        "max_page_fetch_ms": 11452.746,
+        "timeout_count": 0,
+        "cancel_count": 0,
+        "under_run_limit": true,
+        "under_page_limit": true
+      },
+      {
+        "run_id": "a895f7e8f87e45d0b9997d2eff5a1751",
+        "environment_status": "healthy",
+        "environment_evidence": "pre-run low-cardinality probe HTTP 200 (1131872 bytes, 15257 ms); canonical target fetch verified",
+        "answer_status": "completed",
+        "end_to_end_ms": 9260.257,
+        "official_archive_discovery_ms": 1259.624,
+        "max_page_fetch_ms": 5128.428,
+        "timeout_count": 0,
+        "cancel_count": 0,
+        "under_run_limit": true,
+        "under_page_limit": true
+      }
+    ],
+    "aggregate": {
+      "end_to_end_p50_ms": 17099.262,
+      "end_to_end_p95_ms": 18942.344,
+      "end_to_end_max_ms": 19147.131,
+      "page_fetch_p50_ms": 10976.872,
+      "page_fetch_p95_ms": 11405.159,
+      "page_fetch_max_ms": 11452.746,
+      "timeout_count": 0,
+      "cancel_count": 0,
+      "run_limit_ms": 120000,
+      "page_limit_ms": 20000,
+      "limit_violations": 0
+    },
+    "note": "Three real Tauri UI runs against the National Bureau of Statistics completed with exact values, localized claim rendering, citations, durable terminal delivery, and no relaxed timeout."
+  }
+}

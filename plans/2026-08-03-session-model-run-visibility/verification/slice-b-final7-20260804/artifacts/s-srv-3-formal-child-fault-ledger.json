@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "scenario_id": "S-SRV-3",
+  "session_id": "05743532-aed5-4faa-8aec-cf0c40e2cc3b",
+  "model_binding": {
+    "provider_id": "relay-cloud",
+    "model_id": "kimi-k3",
+    "binding_epoch": 1,
+    "config_revision": 40
+  },
+  "root_run": {
+    "run_id": "573cf15ecffb561493b2590bcb785368",
+    "driver_kind": "react",
+    "profile_key": "agent.general",
+    "status": "completed",
+    "cancel_reason": null,
+    "created_at": 1785772616.5690455,
+    "ended_at": 1785772767.85717
+  },
+  "child_run": {
+    "run_id": "child-b5d46585b00301f30c2761e3eb23c53e",
+    "root_run_id": "573cf15ecffb561493b2590bcb785368",
+    "parent_run_id": "573cf15ecffb561493b2590bcb785368",
+    "driver_kind": "workflow",
+    "profile_key": "workflow.durable_task",
+    "workflow_name": "durable_task",
+    "workflow_version": "v1",
+    "status": "failed",
+    "error": {
+      "code": "permanent",
+      "message_ref": "workflow_node:llm_proposal:provider_failure",
+      "node_id": "llm_proposal",
+      "retryable": false
+    },
+    "created_at": 1785772653.6142356,
+    "ended_at": 1785772655.0327787
+  },
+  "fault_invocation": {
+    "invocation_id": "eb00b32a7232382d6938c940e6d5f1162444042ecdecc405022e9e43bfe23768",
+    "status": "failed",
+    "purpose": "agent_response",
+    "dispatch_started_ack_ref": null,
+    "injection_ref": "s3-child-main-formal-ref",
+    "reason": "provider_fault_injected:s3-child-main-formal-ref",
+    "error_type": "ProviderFaultInjectedError",
+    "error_message": "provider_fault_injected:child_provider_failure:s3-child-main-formal-ref",
+    "outcome_hash": "1b3aa73e29bc5d84cbeff567357b053e86bae9aa5c8dd6d9f0064a223377907b"
+  },
+  "parent_recovery": {
+    "child_terminal_event_id": "b18d6edc20f93c20166fac734b4203dea09e0b3952edf00de01388613b643978",
+    "takeover_invocation_id": "55cce6f7d83333785f5b62b5db77d94f8ec4b3448574ab12d8edb0ced9276b77",
+    "takeover_payload_hash": "1047aa193a984944eb675fce88dfb752b494463ed3b5cc93e0493a73dca6c2be",
+    "takeover_text": "子任务启动失败；按用户要求由主 Agent 直接接管。",
+    "successful_tools": [
+      "capability_search",
+      "tool_search",
+      "tool_describe",
+      "tool_activate",
+      "run_shell"
+    ],
+    "business_status": "completed_with_recovery",
+    "failure_report": {
+      "report_ref": "failure:3bf21d9b3932d66517cc467e60135766bef1afbadc8dfb6eaef8921ec3d6b7fa",
+      "source_kind": "child_terminal",
+      "error_code": "child_workflow_failed",
+      "error_class": "task_project",
+      "failed_attempt_id": "attempt:87edb237a3f7b2103c7a7b1c0c85d3062789c2cbd81a3df0bf6fd1b85ff387bb"
+    },
+    "failure_set": {
+      "failure_set_id": "failure-set:b4e81ae28858379789acecb6040015d3ba0c9489fea00657f43f30e335315689",
+      "primary_report_ref": "failure:3bf21d9b3932d66517cc467e60135766bef1afbadc8dfb6eaef8921ec3d6b7fa",
+      "backfill_state": "ready"
+    },
+    "replacement_attempts": [
+      "attempt:9f1147afdfc1ba6819a685fc9d868e590430e5a362d69dba497f8d781ccebd0c",
+      "attempt:2113772f303f7b746058d7b994f44ffd450189c6c3442f667e6eddb14440ea95",
+      "attempt:14405ab6b07913afe8f81f4b0fbc8b0a4f0a3e461979e449e1caf19ec00d3633",
+      "attempt:1d450033d355433ec767e3c47cfec8d02b7a776a407764307167a963157c5429",
+      "attempt:26c4f1d8663313904a027f8d4101d48de9fd5e5f92cce3c58bb3000983505b49"
+    ],
+    "causal_chain_complete": true
+  },
+  "screenshot": {
+    "path": "plans/2026-08-03-session-model-run-visibility/verification/slice-b-final5-20260803/artifacts/s-srv-3-child-failure-parent-recovery.jpg",
+    "sha256": "66b19de78578e4dbef3726598c79674ecf39ce732b34cc319db194916ecb8f21",
+    "size_bytes": 40273
+  }
+}

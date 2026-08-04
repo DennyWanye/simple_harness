@@ -1,0 +1,1103 @@
+# DeskPet Agent Harness 架构
+
+> 最后更新：2026-08-04
+> 范围：单主 Session、请求生命周期、模型驱动 Profile 选择、运行状态、能力执行、
+> 失败重规划、服务装配与子任务。
+
+## 一句话说明
+
+DeskPet 现在只有一个主 Session。每条普通新消息都创建一个独立顶层 Run，顶层 Profile
+固定为 `agent.general`；运行中的任务收到继续消息时，消息进入该 root 的 durable FIFO，
+不会暗中新建 root。
+
+`RunKernel` 不读取用户原文来猜领域，也不靠正则选择 Driver。通用父 Agent 在真实模型轮次中
+直接回答、调用工具，或调用 `workflow_spawn` 选择一个 child Profile。Host 校验 Profile
+Catalog 后签发一次性 durable launch ticket；child 的 Profile 和 Driver 只由这张 ticket
+绑定。所有 root/child 共用同一套运行身份、状态、工具执行、持久化、恢复、取消和结果投影。
+
+Companion 成长语义也不再拥有前置执行 authority。每条 committed 用户消息仍进入
+Companion ingress outbox；生产 Text 入口不再为了 `growth_signal_kind` 运行
+IntentTriage。当前直接路径以 `none` 结算语义优先级，后续 reflection 仍可读取原始消息，
+但不能借成长分类抢先回答、澄清、计划或阻止主 Run。
+
+旧 Voice（VAD → ASR → Harness → TTS）入口已于 2026-07-28 暂时关闭：
+`[voice].enabled=false` 是后端单一开关，默认启动不会导入、创建或加载
+Silero VAD、faster-whisper、EdgeTTS/CosyVoice；两个前端窗口都不建立
+`/ws/audio` 连接，也不申请麦克风。`/ws/audio` 对已鉴权的误连返回稳定
+`voice_temporarily_disabled`，`/health.voice` 显示 `realtime=pending`。
+后续 Realtime 必须作为新的产品入口接入 `ProductTurnPreparer`，不能重新启用
+绕过完整产品准备的旧 Voice 请求。
+
+## 用户看到的流程
+
+```mermaid
+flowchart LR
+    User["用户在主消息页发送消息"] --> Product["产品适配层<br/>同步终态并组装 Context OS"]
+    Product --> Root["顶层 Run<br/>固定 agent.general"]
+    Root --> React["ReAct Driver<br/>同一个父模型"]
+    React --> Decide{"模型本轮决定"}
+    Decide -->|"直接回答或调用工具"| Tools["统一工具执行器"]
+    Decide -->|"workflow_spawn(profile_key)"| Ticket["durable ProfileLaunchTicket"]
+    Ticket --> Child["Child Run<br/>ticket 绑定 Profile + Driver"]
+    Child --> Tools
+    Tools --> Store["统一事务与持久化"]
+    Store --> Failure{"成功？"}
+    Failure -->|"否"| Replan["FailureSet → 同一父模型<br/>新 PlanVersion / Attempt"]
+    Replan --> React
+    Failure -->|"是"| Present["统一结果投影"]
+    Present --> UI["消息、审批卡、产物卡和状态"]
+```
+
+一个主 Session 可以同时拥有多个彼此隔离的顶层 Run。任务窗口只是这些 Run 的 UI 投影；
+打开、切换或关闭窗口不改变 Driver、Profile、工具集、授权或运行状态。当前没有 Code 模式
+与普通模式之分。
+
+### 运行中继续输入
+
+消息页输入区只有一个文本框和一个动态主按钮：
+
+- 未输入文字且当前 Run 正在执行时，主按钮是“停止”。
+- 输入了文字时，主按钮是“发送”。若当前选中 Run 为 `running/waiting` 且存在可信
+  conversation boundary，该消息精确绑定 `root_run_id + task_scope_id + boundary_version`，
+  不创建新的顶层 Run。
+- 输入区会显示“发送到当前任务 · 将在安全边界读取”；新话题位于标题栏，
+  语音图标明确显示暂不可用，不与发送/停止形成多个并列主操作。
+
+模型绑定以 `state.db/code_session_provider` 为事实源。用户新建话题时，后端先在同一个
+SQLite 写事务中复制来源 Session 的 `provider_id / preferred_model / model_params`，再发布
+`session_switched` 和启动新 Run；复制失败则拒绝启动，避免界面显示 Kimi、实际 Run 却使用
+默认 GLM。历史切换和应用重启会发送 `session_provider_get`，用后端回传的完整绑定恢复前端
+状态。Provider 网络边界还统一执行模型级参数契约：`kimi-k3` 的 temperature 固定规范化为
+`1`，覆盖全局默认值，流式、非流式和工具调用路径保持一致。新建 root 的 Host Context
+同时冻结有序的 `provider_id + model_id` 精确绑定，`workflow_spawn` child 直接继承该绑定，
+不再从运行中的可变 Provider Registry 默认模型二次解析；只保存 provider id 的历史 Run
+继续走兼容解析，保证旧 checkpoint 可恢复。
+
+Session/root 模型 authority 现在覆盖主调用与全部已登记附属 LLM callsite。调用点必须提交
+`ProviderWorkloadContext(workload_class, callsite_id, purpose, session_id, root_run_id,
+request_id, detached)`；`session-auxiliary` 从冻结 Root 或 Session binding 解析，缺身份、显式绑定
+stale/disabled/model-missing 时稳定 fail closed，不再回退全局 chain。跨 Session 工作明确标为
+`system-maintenance` 并使用 `BackgroundModelPolicy`。ContextVar 只把已解析身份送到 provider
+底层，不拥有选择模型的 authority。Provider Registry entry 使用 durable incarnation/config
+revision，Session binding 使用 epoch CAS，删除后同 ID 重建不能形成 ABA；路由 migration、registry
+加载和 binding reconcile 完成前，产品入口与后台 router 都返回 initializing，不猜全局模型。
+
+附属 provider 失败使用 workload breaker 按真实失效域隔离：credential、account、model、
+provider+model+workload 或 endpoint。401/402/429/5xx 的后台结算不会改写已成功或仍可继续的根
+Run；每次 attempt 只写低敏 provider/model/workload/callsite/root provenance。仅 DEV 可加载的
+`ProviderFaultScriptV1` 支持按 Session/workload/callsite/purpose/occurrence consume-once 注入，
+生产发现注入环境变量会直接拒载。注入位于 durable provider claim 后、物理 transport 前；
+Session auxiliary 绑定 Root，child main 绑定 child-run correlation，detached maintenance 绑定
+request correlation 且 session/root 保持 NULL，audit 只保存低敏 correlation hash。
+
+运行中消息先由 execution UoW 在同一事务中预留 boundary version 并写入 durable FIFO。
+`UserContinuationCoordinator` 等当前 Driver owner 释放后按 FIFO 调用原 Driver 的
+`signal()`；绑定完成后通过只读 observer 投影
+`chat_v2_continuation_status(bound)`，消息气泡从“等待 Agent 读取…”更新为
+“Agent 已读取”。绑定失败或 Run 在绑定前取消时投影 `failed`。observer 失败只影响 UI
+确认，不改变 durable continuation 结果；continuation ingress 自身被拒绝也不会把仍在
+运行的目标 Run 误标为 failed。
+
+### Run 预留、前台选择与公开执行摘要
+
+新顶层消息的 `session_id + request_id + turn_id` 在产品入口即可确定 root Run 与
+`task_scope_id`。入口在 Provider、Host 或 Context 准备前发送 `chat_v2_run_reserved`；
+这只是客户端可见的确定性身份预留，不伪造 durable start。前端把对应本地气泡立即绑定到
+该 Run，并把 projection 标为 `starting`。如果用户在 `chat_v2_run_started` 给出可信
+conversation boundary 前继续输入，消息保留原 `request_id/turn_id` 进入本地延迟队列；
+边界到达后才作为带 `target_root_run_id + task_scope_id + boundary_version` 的 continuation
+发出。因此“首条还在准备、第二条已经发送”的窗口不会创建两个顶层 Run，也不会让第二条
+气泡消失。
+
+本地发起的预留 Run 优先成为当前选择；旧选择终止后，前端选择最新仍在执行的 Run。其他
+真正独立的 Run 继续作为后台 projection 存在。Harness Inspector 在选中 projection 仍为
+`starting` 时等待 durable row，不发送 snapshot 请求，也不把“尚未落盘”解释成
+“run does not belong to the requested session”。
+
+Workflow stage、summary progress 与 artifact 投影沿后端 SessionDB 到前端消息模型完整保留
+canonical `root_run_id`。消息区的 user、assistant 与工具记录始终按 Session 展示完整历史，
+即使它们带有来源 Run 身份；只有 workflow progress/stage 跟随当前选中 Run。旧版本中缺少
+Run 身份的 workflow progress/stage 会 fail closed，不再泄漏到后续 Run。这样切换任务不会
+让普通对话历史消失，用户停止一个父 Run 后再发送新消息时，旧 child 的“进行中”或部分进度
+也不会被误认为新任务仍在执行。
+
+初始 Context snapshot 的 fallback scope 同样使用上述确定性 `task_scope_id`。只有真的存在
+authority entity 时才改用 `authority:entity_id`；普通新 root 不再共同落到
+`session:<sid>`，从而避免同 Session 并发 root 在 Context CAS 上互相覆盖。
+
+`workflow_spawn` 创建的原生 Workflow child 在首次领取原生 lease 时，会在同一个
+`workflow.db` 事务中把通用 `execution_runs` 状态同步为 `running`，并只写一次
+`started_at`；恢复接管走同样的原子同步，重复领取不会重复推进通用 Run 版本。因此
+Harness、消息页和恢复器读取到的通用 Run 状态不会再长期停在 `queued`，而原生
+`workflow_runs` 已经实际运行。Kernel 预创建的 child 在原生 attach 后会立即唤醒
+Workflow dispatcher；周期扫描只保留为安全兜底，不再制造最长约 30 秒的 `created`
+空窗。`durable_task@v1` 同时投影“理解任务、确认需求、制定执行
+计划、等待计划确认、规划下一步、执行操作、验证结果、完成质量检查、准备交付”九个公开
+阶段；循环节点的事件 identity 包含当前 task identity 的 SHA-256 短摘要，既不会因节点名
+重复而误去重，也不会暴露原始内部 task id 或 provider reasoning。公开进度事件写入后会
+事件驱动唤醒 Harness delivery reconciler，消息页使用 `workflow_label` 展示“多步骤任务”。
+
+启动兼容边界只接受历史版本的精确 pre-runtime-authority capability fingerprint，并在
+CAS 下迁移到当前 fingerprint；未知漂移仍 fail closed。Harness 恢复扫描遇到已有
+cancel/continuation intent 拥有的 Run 时跳过该项，不再把合法的 `cancel_requested`
+当成整套产品 Harness 启动失败。
+
+模型隐藏 reasoning token 不属于产品 Context 或用户可见记录。`RunPresenter` 对原始
+reasoning delta 只发送不含文本的 activity 信号；消息页只把模型已经主动公开的 narration
+显示为普通 assistant 消息，并会移除任何 `<think>` 块。工具调用和工具结果继续使用独立的
+工具轨迹 UI，不再为每个工具阶段额外编造重复的“思考过程”卡。每条公开进度有稳定
+`reasoning-summary:<run>:<iteration>:<phase>` identity，以
+`projection_kind=workflow_progress`、`context_visibility=exclude` 写入所属 Run 的
+SessionDB。前端可在当前窗口全局隐藏；历史重载按该 identity 恢复。这里沿用
+`reasoning-summary` 线协议名称仅为兼容已有记录，它不代表隐藏思维链。旧版本已经持久化的
+“准备使用某工具”与“某工具已完成”固定模板会在显示层精确过滤，不删除 durable 历史。
+同一轮公开 narration 若先以流式普通文本到达，再以 durable 进度事件到达，前端会用后者替换
+本轮同文案的临时气泡，避免一条公开说明显示两遍。
+
+原生 Workflow child 的中间模型轮次和工具效果不会复制写入 SessionDB。消息页通过所选
+Root 的只读 Harness snapshot 读取同一 `workflow.db` 事实源：Provider
+`execution_provider_invocation_outcomes` 提供模型明确公开且伴随工具决策的 `content`，
+`workflow_effects.prepared_json/outcome_json` 提供 child 实际执行的工具输入和结果，
+child head checkpoint 提供 `todos / active_step_id / proposal_state.messages`。snapshot 只投影
+步骤标题、状态、公开 assistant 文本、稳定 tool call 关联和工具效果，不返回 checkpoint
+原文、system/tool message 或隐藏 reasoning。
+
+`workflow.durable_task` 的消息区按实际计划显示“总步骤 / 当前步骤”；每一步独立折叠，收纳
+该步的公开 Agent 说明和实际工具效果。工具压缩为单行“状态 + 工具名 + 主要目标”，继续向下
+展开才显示“输入 / 结果”。新 `workflow_spawn` 调用可携带 2～8 个简短
+`plan_steps`，每步对应一个连贯工具批次；旧 Run 若只保存了整段 objective 作为一个步骤，
+显示层会用 checkpoint 中已持久化的公开 assistant/tool call 序列恢复可读操作步骤，不虚构
+隐藏思维。未来 Provider outcome 通过 `model_dump(mode="json")` 结构化持久化；已有 `repr`
+历史只在显示层兼容读取。该投影不展示 `reasoning_content`，也不把可视化 trace 写回模型
+Context。
+
+这些摘要和工具明细不会自动进入后续模型 Context。需要排查旧 Run 时，Agent 必须显式调用
+只读 `run_details_inspect(run_id)`；工具只允许读取当前 Session，返回公开摘要、经过 public
+projection 脱敏的工具输入/结果和最终回答，不返回原始 provider reasoning。这样保留了
+Run 级可审计性，同时避免普通对话不断膨胀或把隐藏思维链重新注入模型。
+
+## 当前生产链路
+
+```mermaid
+flowchart TB
+    Ingress["主 Session 文字消息 / 恢复入口"] --> Venue["ProductVenueRunAdapter"]
+    Venue --> Terminal["Session 投影一致性门<br/>补齐 workflow.db → state.db"]
+    Terminal --> Prepare["ProductTurnPreparer<br/>历史 / 记忆 / 工具快照"]
+    Prepare --> Kernel["RunKernel"]
+
+    Kernel --> Route{"Profile authority"}
+    Route -->|"顶层固定 agent.general"| React["ReActDriver"]
+    Route -->|"child 持有效 ticket"| Workflow["ticket 绑定的 ReAct/Workflow Driver"]
+    React --> AgentLoop["AgentLoop<br/>只负责模型上下文和完成循环"]
+
+    React --> Effect["EffectBatchExecutor"]
+    Workflow --> Effect
+    Effect --> Registry["ToolRegistry V2"]
+
+    Kernel --> UoW["SqliteExecutionUnitOfWork"]
+    UoW --> Delivery["ExecutionDeliveryDispatcher"]
+    React --> Presenter["RunPresenter"]
+    Workflow --> Presenter
+    Delivery --> Presenter
+    Presenter --> Output["SessionDB / WebSocket / UI"]
+
+    Kernel --> Child["持久化 ChildRun"]
+    Child --> Kernel
+```
+
+## 各层只负责什么
+
+| 层 | 负责 | 不负责 |
+|---|---|---|
+| 产品入口 | 将主 Session 新消息、运行中续聊和恢复命令转换为可信产品请求；旧 Voice 暂停 | 按关键词选择领域 Profile 或 Driver |
+| `ProductTurnPreparer` | 先通过统一投影一致性门，再组装 Session 历史、记忆、权限、冻结工具快照、能力目录和 Profile Catalog | 吞掉投影失败后继续使用已知过期视图，或运行 IntentTriage、抢先回答/澄清、建立第二份计划、替模型选择 Profile |
+| `RunKernel` | `start / observe / signal / cancel / recover / close` 六个公开操作；按固定 root Profile 或 durable ticket 取得 Driver | 读取用户原文猜领域、改写模型选择、工具业务逻辑、UI 格式 |
+| Driver | 推进一种执行算法 | 建立第二套状态库或任务 owner |
+| `EffectBatchExecutor` | 工具 claim、执行、回填和晚到结果处理 | 绕开 UoW 直接推进任务 |
+| UoW | 唯一持久化事务和 DML authority | UI 展示 |
+| `RunPresenter` | 把统一事件转换为产品消息 | 决定任务状态 |
+| `HarnessReconciler` | 启动时清空 durable 积压；有新事件时短暂处理 child、恢复、晚到 effect 与 delivery | 常驻轮询或建立第二个 Run owner |
+
+产品入口的 `open()` 现在只是协调者，不再把所有准备工作堆在一个函数里：
+
+1. `ProductTurnIdentityResolver` 校验 Session/request/turn，固定 root Run、task scope 和 workspace。
+2. `ProductTurnPreparationService` 按固定顺序执行
+   `prepare_context → prepare_direct_run → request payload/trace`。
+3. `ProductVenueRunAdapter` 负责恢复短路、能力目录租约、启动 Kernel 和连接 Presenter。
+
+执行存储仍然只有一个 `SqliteExecutionUnitOfWork`、一个 SQLite 数据库和一个写通道。
+区别只是 Kernel、Runtime、ReAct、Workflow、工具执行、child、continuation、Reconciler 和
+admission 各自只依赖自己会调用的小接口。小接口的参数名、位置/关键字种类和默认值直接与
+真实 `SqliteExecutionUnitOfWork` 比较，不再拿历史聚合接口当事实源；58 个唯一方法的调用
+形状差异为 0。CAS 版本和 recovery lease 也保留精确类型，AST 与运行时实现签名测试会阻止
+调用面静默漂移。旧 `ExecutionUnitOfWork` 只供 Workflow 旧调用和外部迁移，不再被任何
+Harness 生产模块 import。
+
+`workflow.db` 是 Harness 终态的事实源，`state.db` 是产品消息视图。两库无法组成一个
+SQLite 事务，因此不再把“后台 dispatcher 最终会送到”当成用户读取正确性的保证。
+`SessionTerminalProjectionConsistencyGate` 在三类产品读取前统一建立屏障：
+
+- 下一轮 `ProductTurnPreparer` 组装 Context 前；
+- `session_messages_load` 返回历史前；
+- `sessions_list` 返回预览前。
+
+门禁先读取当前 Session epoch，再从 workflow UoW 的同一个读快照取出该 epoch 的全部根
+Run 失败/取消终态，使用 `workflow_event_id` 幂等写入 SessionDB，最后复核 epoch 未变化。
+它不再有旧的 8 条修复上限；同一进程内按 Session 串行，dispatcher 与门禁并发时也共用
+相同幂等 sink。删除/重建导致 epoch 变化时会重新同步；无法确认当前视图时 fail closed：
+Context 不继续组装，历史和列表不返回伪装成最新的旧数据，前端保留最后已知视图并提示重试。
+后台 `ExecutionDeliveryDispatcher` 仍负责 durable 异步交付和重启修复，但不再是产品读取
+正确性的唯一依赖。
+
+Execution 包现在只依赖自身 contracts、`deskpet.types` 的稳定持久化契约和
+`deskpet.security` 的叶子脱敏工具，不再 import Agent、Permissions、Workflows、
+Capabilities、Companion 或 Memory。具体边界为：
+
+- root/task/workspace/conversation 数据契约位于 `deskpet.types.task_work_context`；
+- TaskGrant/PreparedAuthorizationCommit 位于 `deskpet.types.task_grants`；
+- trace 与敏感文本脱敏位于 `deskpet.security`。
+
+旧 `agent.task_work_context`、`permissions.task_grants` 和
+`workflows.trace.redaction` 仅保留同一对象的兼容导出；生产代码（包括 `main.py`）
+直接使用 leaf 路径。AST 门禁会解析绝对和相对 import，禁止 Execution 或其他生产
+消费者重新走反向依赖。旧/新路径对象 identity、`__all__`、pickle、JSON/SQLite
+持久化和 malformed redaction rules 的 fail-closed 行为都有直接测试。
+
+内部退役名称统一隔离在 `deskpet.compat`：当前 Presenter builder 为
+`build_product_run_presenter`，当前产品投影门为
+`SessionTerminalProjectionConsistencyGate`；旧名称只通过 compat alias 和旧模块的
+lazy import shim 解析，不出现在当前模块的 `__all__`。compat 包只允许 import、alias 和
+`__all__`，不能包含状态、策略、分支、循环或持久化。生产 Harness 对 compat、旧
+task/grant/redaction 路径和历史 UoW 聚合的导入数均为 0；产品 turn trace 也不再输出已经
+退出生产链的 `legacy_intent_triage/legacy_plan_decision` 字段。
+
+原先 6411 行的 `drivers/react.py` 也已按变化原因拆开：
+
+- `react.py`：只保留 `ReActDriver` 的持久化、权限、工具进度、signal、恢复与取消编排。
+- `react_loop.py`：只负责把 AgentLoop/provider 事件变成 typed ReAct emission，不执行工具。
+- `react_boundary.py`：只负责 durable `ReactCommandBoundary` 与 JSON 往返。
+
+依赖方向是 `react.py → react_loop.py → react_boundary.py`，没有反向 import。生产 composition
+直接装配 `react_loop.AgentLoopCollaborator`，子代理等待工具直接读取
+`react_boundary.ReactCommandBoundary`；旧的 `drivers.react` 导出保持对象身份兼容。
+当前文件约为 `5057 / 1085 / 465` 行，并有 AST、对象身份、依赖禁区和 LOC 上限测试防止
+三种职责重新塞回一个文件。`ReActDriver` 本身仍约 5k 行，后续可继续把 provider admission
+和 capability lifecycle 提炼为公开服务，但它不再与 boundary codec、AgentLoop 适配混居。
+
+最终回答的偏好完整性由独立的 model-backed response-quality collaborator 复核；它读取
+冻结的 preference brief，返回 typed pass/revise 决定，并由 host 校验后交回原 AgentLoop。
+这不是第二个 Driver，也不持有执行状态。评测失败则把 frozen report、FailureSet、候选失效、
+reservation 释放和下一轮 reflection job 原子提交；下一次仍由同一模型吸收失败原因并生成
+新的 PlanVersion/Attempt，最多两轮，迟到评测不能复活已遗忘候选。
+
+## 核心运行契约
+
+运行时契约由真实装配生成，而不是手写一份容易漂移的静态清单：
+
+- `backend/deskpet/harness/bootstrap.py::HarnessManifest` 从 Kernel 操作、已注册 Driver 和不可变 `ProfileRegistry` 生成。
+- 旧的 `backend/deskpet/agent/harness_manifest.py` 已删除。
+- 测试读取真实运行时装配，避免“文档说支持、生产没接线”。
+
+Kernel 只有六个公开操作：
+
+1. `start`：创建并启动任务。
+2. `observe`：订阅或重新观察现有任务。
+3. `signal`：提交审批、工具结果或子任务信号。
+4. `cancel`：取消任务。
+5. `recover`：按持久状态恢复任务。
+6. `close`：有界关闭运行时。
+
+### Durable start、Provider dispatch 与 terminal projection seam
+
+2026-07-25 起，每个 durable Run 在 `execution_runs` 同一事务内创建一条
+`execution_run_start_snapshots`。`PreparedRunContextV1` 由 Host 传入，冻结工具/能力引用、
+产品 snapshot、provider launch policy 与 terminal delivery；用户 JSON 不能构造 host-only
+extension 或 callback。恢复没有 ReAct boundary 时从该快照重建 `DriverStart`，不会读取当前
+UI/profile 状态重新猜测。
+
+Kernel 在通用边界调用 `StartCommitExtensionV1`、`AfterStartCommitHandshakeV1`、
+`TerminalCommitExtensionV1` 和 `AfterTerminalCommitCleanupV1`。它只校验内容寻址和调用
+时序，不 import Companion 或 Capability 业务。
+
+Host 可以为 background venue 冻结零工具 `PreparedRunContext`，并在 terminal 后通过
+typed postprocessor 消费 canonical result；这仍是同一 RunKernel/Driver 生命周期，不是
+第二套后台 AgentLoop。postprocessor 失败只影响对应 durable job，不会把内部结果投影成
+普通聊天或递归创建新成长事件。
+
+每次真实模型 transport dispatch 由 `ProviderInvocationCoordinator` 先 durable claim。
+claim 未确定提交时物理请求数为零；handoff 后 cancel/读响应超时/断连仍落 unknown，禁止
+AgentLoop、Registry 或 SDK 盲重试。`httpx.ConnectTimeout` 是明确的“连接尚未建立”，
+因此记为 `transport_not_sent` 并只允许 coordinated dispatch 安全重试一次；第二次仍连接
+超时则把原始异常交回上层，不进入 unknown。已经收到的 `408 / 425 / 429 / 5xx` 是确定的
+Provider 临时 HTTP 响应，不属于 unknown：coordinator 把首个 invocation 结算为
+`provider_retryable_response`，等待一秒后使用递增的 `retry_ordinal` 和新的 invocation identity
+重试一次；第二次仍失败才把原始 HTTP 异常交回上层。`402`、认证错误等非临时响应不会自动重试。
+流式 delta 在 outcome commit 前都是带 invocation/epoch
+的 provisional envelope，失败、取消和重连会 retract；只有 canonical outcome 可进入最终
+消息投影。
+
+OpenAI-compatible SSE 不再使用固定的 180 秒“整次响应总时限”。当前边界是滑动的
+“模型事件间隔时限”：content、reasoning、tool call、usage 或 final 任一已解析事件都会重置
+180 秒计时，因此 `sf-glm-5.2` 等重推理模型只要持续输出有效进展，就可以运行超过 180 秒；
+Relay 的 SSE heartbeat 注释不会被当作模型进展。真实网络字节静默仍由 `httpx` 的 120 秒
+read timeout 约束，root Run 另有默认 15 分钟的“有效执行预算”收口，避免无界工作。
+
+产品层不再使用 presentation/WebSocket 外层的整轮墙钟 `asyncio.wait_for` 取消 Run。
+`workflow.db/execution_run_active_budgets` 为每个 root 持久化 `limit_seconds / consumed_seconds /
+active_since / budget_state / configured / budget_version`。Root 处于 `created/queued/running`
+时累计；进入 durable `waiting`（目录选择、授权、补充信息、外部操作或等待 child）时原子暂停，
+恢复 `running` 后从剩余预算继续。等待几小时、WebSocket 断线或应用重启都不会重新获得预算，
+也不会把用户思考时间算成 Agent 工作时间。
+
+到期由事件驱动 `HarnessReconciler` 领取可重放的 `expired` claim，再调用
+`RunKernel.cancel(reason=active_execution_budget_exhausted)`；若进程在 claim 和 cancel 之间
+退出，启动恢复会继续结算。Reconciler 只保留一个下一 deadline 的 one-shot timer，不常驻轮询。
+设置项 `chat_turn_timeout_minutes` 为兼容旧配置名，产品文案显示“Agent 有效执行预算”。Provider
+consumer 被取消或流式迭代器被关闭时，coordinator 仍把 `claimed` invocation 结算为
+`failed`（尚未进入 transport）或 `unknown`（已 handoff），不留下永久 claimed 孤儿记录。
+
+Windows 真机验收使用 1 分钟预算触发 Godot 项目目录选择：等待超过 2 分钟后 Run 仍为
+`waiting`，预算账本为 `paused`，累计有效执行 `0.084s`；重启恢复后测试 Run 按耐久取消意图
+收敛为 `cancelled`。这同时证明目录卡片等待不会被 presentation 墙钟误杀，重启也不会丢失预算状态。
+
+Provider 工具批次在进入 durable admission 前有明确协议边界：单个模型回合最多接收
+32 个工具调用。超过上限会生成可重规划的 `provider_tool_batch_too_large` 结构化失败；
+工具名为空会生成 `tool_call_name_missing` raw failure，并用
+`<missing-tool-name>` 作为审计占位符。两种异常都不会再以
+`ContractValidationError` 击穿整个 Driver。
+
+这里的 `provider_dispatch_unknown_after_handoff` 不是“provider 明确返回失败”，而是：
+本地 transport 已确认接管这次唯一物理请求，但客户端在拿到可证明的响应前断连、读取超时或被
+取消，因此云端是否已经执行无法确定。此时自动重发可能造成重复模型轮次或重复工具副作用，
+所以 Harness 选择 fail closed。进入 coordinated dispatch 后，
+`OpenAICompatibleProvider` 不再做内部重试；连接建立前的 `ConnectTimeout` 由 coordinator
+以新 invocation identity 最多重试一次；已经收到的临时 HTTP 响应按上述确定响应路径重试；
+只有连接建立后仍未拿到可证明响应的传输失败才记录 unknown 并交 durable recovery/人工审计处理。
+
+`ProviderDispatchUnknownError`、`provider_invocation_conflict` 与稳定 handoff-unknown
+文本统一归类为 `provider_dispatch_unknown`，不会被普通 RuntimeError 分支重新抛回无界
+恢复循环。恢复异常记录 run/driver 与 traceback，但正常取消不误记为 recovery failure。
+
+workflow schema 从 v17 起让所有 execution writer 共用一个 `ExecutionWriteLane`，当前
+schema 为 v28。v23 新增不可变 `execution_provider_invocation_audits`，在 failed/unknown
+结算事务中保存稳定 reason、异常类型和有界错误文本。v23 以前的 unknown 只能显示
+`legacy_unknown_reason_not_recorded`，不能事后把推测伪装成确定事实。WriteLane 复用
+`WAL + synchronous=FULL` writer connection，但不合并既有 crash boundary；commit 结果
+不确定会 poison lane 并交稳定 identity/recovery 对账。
+
+Context OS capability scope 的 300 秒 TTL 只负责清理无人持有的 orphan，不是模型思考
+时限。`AgentLoopCollaborator` 现在从 provider dispatch 前一直 pin 到该轮全部 emission
+结束；若恢复时内存 scope 已过期，则只用同一 Run 的 durable Context OS snapshot 重建，
+随后仍由 AgentLoop 校验 eligibility、registry revision 与 schema。工具真正执行期间仍由
+`EffectBatchExecutor` 持有自己的 pin，两段租约覆盖的是不同物理边界。`tool_describe`
+签发的 nonce 仍是一次性并精确绑定 scope/revision/capability，但不再另设与模型思考竞速的
+60 秒墙钟期限。
+
+运行时能力身份与当前工作目录分开管理：tool catalog 和 capability fingerprint 始终来自 Run
+启动时冻结的 snapshot，不能因用户确认项目目录而变化；`SqliteCurrentExecutionScopeAuthority`
+只从同一 `execution_runs.workspace_json` 读取可变 workspace。这样目录换根立即作用于后续工具，
+又不会把本地 Godot ToolSpec 的内容哈希改掉并触发 `tool_catalog_stale`。应用启动时若 Reconciler
+早于 Companion identity bind 扫描，仍按 `execution_scope_identity_not_ready` fail closed；bind
+成功后 Host 会显式再次触发恢复，不依赖下一次偶然事件。
+
+AgentLoop 错误进入 Driver terminal 时会同时持久化结构化
+`failure_layer/failure_code`。新事件因此能区分 AgentLoop、Driver 与 provider dispatch；
+旧事件没有该字段时，UI 明确显示“旧事件未记录子层”，不会用错误文本正则反推并冒充事实。
+
+### 单一认知入口、失败写回与精确授权（2026-07-27）
+
+Text 生产入口现在只有：
+
+```text
+Session terminal read-through
+  -> ProductTurnPreparer.prepare_context()
+  -> ProductTurnPreparer.prepare_direct_run()
+  -> RunKernel.start()
+  -> 主 ReAct Agent
+```
+
+`route_intent()` 与 `plan_decision()` 只作为隔离的历史兼容实现保留，不再被
+`ProductVenueRunAdapter` 调用。旧问题流水线因此不能再 short-circuit、单独澄清或在
+主 Agent 前生成另一份 plan；澄清和规划由拿到完整 canonical messages 的主 Agent 完成，
+写操作授权则由每次 prepared tool call 的精确资源策略完成。
+
+根 Run 的 failed/cancelled canonical terminal event 通过
+`session_terminal/session-transcript-v1` durable delivery 幂等写入所属 Session。
+投影只接受 root，绑定 Session epoch，并以 terminal `event_id` 去重。下一轮 Context、
+历史刷新和会话预览读取前都经过统一一致性门；修复前没有该 delivery 的旧 Run 仅在其
+`auth_epoch` 等于当前 Session epoch 时兼容补齐，删除/重建后的旧错误不会复活。
+
+所有需要授权的动态工具现在都必须产生非空 `resource_selectors`。`workflow_spawn` 的
+system selector 精确绑定 `root_run_id + catalog_generation + profile_key`；可用 workspace
+只能来自可信 `ToolExecutionContext`，模型参数不能扩大范围。缺少 selector 会被归一为
+可重规划的 `authorization_scope_missing` 工具失败，不再直接击穿为 `driver_failed`。
+注册表审计覆盖所有 `authorization_required=True` 的工具。Deferred capability 接受
+完整 `source:name`；裸名称仅在当前 deferred 集合唯一匹配时规范化，歧义继续 fail closed。
+`run_shell` 的授权 selector 与 subprocess 现在共用同一个 cwd resolver：模型未指定 cwd
+时使用可信 `ToolExecutionContext.workspace`，相对 cwd 也从该 workspace 解析；启用写范围
+时 cwd 不能逃逸。Shell 的 `HOME` 同步绑定 effective cwd，`~/...` 不会再在 backend
+进程目录下生成字面量 `~` 文件夹。
+
+GUI 游戏验证使用同一工具注册表中的 `window_list / window_focus / window_capture /
+window_key`。先由 `window_list` 返回 `pid + creation_time + hwnd`，后续操作必须带回这组
+精确身份，PID 复用或窗口变化时 fail closed。`window_key.hold_ms` 支持 `0..10000ms` 的
+真实按住事件；实现按顺序 `keyDown`，到时后在 `finally` 逆序 `keyUp`，即使按键过程报错
+也会尽力释放，避免方向键或修饰键卡住。`window_key.steps` 把最多 12 个按键、组合键和
+纯暂停步骤收进同一个最长 12 秒的键盘事务；整个序列只占用一次输入锁、失败即停止，旧的
+单次 `keys` 合同继续兼容。所有 screen/window 桌面工具均声明为不并发，并共享
+`desktop-input:primary` 资源 lane；`EffectBatchExecutor` 的引用计数资源协调器会跨批次、跨 Run
+按精确目标串行 control/input/write 类效果，结束后释放锁条目。因此 provider 同轮或并发 Run
+都不能再同时争抢全局桌面输入。截图只取该窗口矩形并写入当前可信 workspace。
+
+`screen_capture / window_capture` 的 ReAct 反馈不会把 base64 当普通 JSON 文本重复塞回 Context。
+Harness 校验 MIME、base64 与 10 MiB 上限后，从工具信封移除原始字段，在文本结果中只保留
+bytes/MIME/SHA-256 元数据，并追加 `image_url` 多模态块；图片按独立 attachment budget 计费。
+非截图工具即使返回类似字段也不会被隐式提升为媒体。
+
+新顶层 Run 默认继续保持 root/task 隔离，不会吞入其他任务的工具轨迹。用户明确使用
+“这个、刚才、之前、已有、继续、the game、existing”等指代表达时，Memory Component
+只打开一个 typed `TaskReference` 候选目录。每个候选必须带稳定 `root_run_id` 或旧数据的
+`task_scope_id`，并得到 `run:<id>` / `scope:<id>` 引用；无身份行、tool 行、空 assistant
+tool-call 外壳、当前 root 和非 conversation 记录都不能成为候选。
+
+解析结果只有 `resolved / ambiguous / missing / not_requested` 四态。纯“刚才那个”可以按
+时间语义选择最近的 typed Run；带名称的引用必须真实命中该候选的全 Run 关键词，未知名称
+不能因“只剩一个候选”而误选。多个候选无法唯一判定时不注入任何原始跨 Run 历史，而是给
+主 Agent 一份有界候选摘要并要求向用户确认。只有 `resolved` 才按精确 root 载入它的末
+`12 rows / 16,000 chars`；有 root 时绝不因相同 task scope 混入另一 Run，截断提示本身也
+计入字符预算。普通新任务不启用 cross-Run page-in，L3 继续保持 root 隔离。
+
+历史任务工作区不接受模型提供的任意路径。Assembler 只从当前 Host 可信 workspace 的父目录
+与历史 `task_scope_id` 推导候选，校验目录真实存在且未越界后，才把精确 Windows drive-colon
+路径和 `project.godot/package.json/pyproject.toml` 标记注入系统消息。提示明确要求“打开/继续/
+运行”优先复用已有内容，不得改写成重新创建。GUI 启动优先使用 `process_start/app_launch`；
+兼容模型在 POSIX shell 语法中使用尾随 `&` 时，`run_shell` 会把子进程 stdin/stdout/stderr
+全部脱离，超时清理也不会再被继承管道无限阻塞。
+
+新建本地多文件项目的保存位置不常驻输入框。`agent.general` 在确实准备创建游戏、应用、
+网站或仓库时，必须先调用
+`project_directory_select(project_name, folder_name, project_kind, directory_mode)`；即使用户在
+聊天中写了绝对路径，该文本也只是建议，仍要通过原生目录卡片确认。模型只提供项目语义、
+安全的子文件夹建议，以及 `create_new` / `use_existing` 模式，不能提交绝对父目录。ReAct Driver
+把该 host-intercepted tool 转成
+`project_directory_request` durable decision，暂停同一个 Attempt。消息流显示轻量位置选择
+卡片，用户用 Tauri 原生选择器选择父目录、可修改子文件夹名，并在预览最终路径后确认。
+前端按 `session_id` 分区保存 pending request；只有当前 Session、当前选中 Run 且该 Run 的
+projection 为 `waiting` 时才渲染操作卡片。切换 Session/Run，或任务恢复、完成、失败、取消后，
+卡片从消息流移除；历史只保留普通的 Agent 说明和 `project_directory_select` 工具记录。
+
+后端对两种模式使用不同且直观的路径合同：`create_new` 接受“已存在绝对父目录 + 单层安全
+子目录名”，并拒绝非空目标；`use_existing` 的原生选择器直接选择项目根目录本身，模型建议的
+`folder_name` 只作展示元数据，不再被重复拼到路径末尾。前端在 `use_existing` 模式隐藏文件夹名
+输入框，确认和重放都返回同一个已选根目录；保留名、路径穿越和非法字符全部 fail closed。
+确认后，`execution_task_work_contexts` 仅允许一次
+`task_default | existing → user_path`、`binding_version 1 → 2` 的 CAS 迁移；只要已经出现 child Run 或
+非只读 effect 就拒绝换根。迁移同时更新 Root 的 `workspace_json`，ReAct continuation 的
+`RunContext` 与后续 ToolExecutionContext，因此 `workspace_prepare`、文件工具及之后创建的
+durable child 都使用用户选择的项目目录。原 decision/Attempt 随后恢复，不创建第二个 Run，
+工具 outcome 会明确返回 `project_root`。该 `user_path` 同时成为该 Session 的当前项目上下文：
+后续新建顶层 Run 会从 `execution_task_work_contexts` 读取最近一次用户选择的目录，并注入
+`TurnInput.workspace_ref`、Host、Agent `[当前工作区]` 与工具上下文；同 Session 后来的无目录
+Run 不会把它覆盖，其他 Session 也不会继承。若用户明确要求创建另一个新项目，模型仍必须
+重新调用 `project_directory_select`，不能因为聊天里写了路径或 Session 已有项目就静默沿用。
+Host 在 `workflow.durable_task` 发 child ticket 前还会按可信的当前用户消息、objective 与
+`plan_steps` 做新项目前置检查；工作区尚非 `user_path` 时拒绝 spawn 并要求根 Agent 先展示卡片。
+`project_directory_select`、`external_action_wait` 这类需要根 ReAct durable decision 的挂起工具
+不会进入 native durable child 的 capability snapshot，避免 child 把它们当普通 handler 执行。
+
+### 主消息页 Harness 运行观察
+
+主消息页默认显示工具调用轨迹，并默认展开左侧 `Harness 运行观察`。顶部按钮只控制当前
+窗口的显隐，不改变 Run 或持久化事实。一个 Session 可包含多个顶层 Run；任务标签和面板
+选择的是 Run，不会创建第二个 Session。点击“新话题”才会立即创建并切换新的 Session。
+切换历史 Session 时，前端会把消息、durable Run projection 与 context usage 三个独立
+read model 一起恢复，避免“消息和工具卡已经显示，左栏却说没有 Run”的假空状态。
+
+观察链路只有一条：
+
+```text
+HarnessInspectorPanel
+  -> WebSocket harness_inspector_snapshot(session_id, root_run_id)
+  -> SqliteExecutionUnitOfWork.inspect_harness_run()
+  -> 现有 execution ledger 的只读投影
+```
+
+面板不维护第二套状态机。Inspector schema v2 从 start snapshot、provider outcome、effect
+和 canonical event 读取可追踪详情；详情默认折叠。Provider 输入是例外：workflow schema
+v24 的 `execution_provider_invocation_inputs` 在 durable provider claim 后保存不可变的
+脱敏投影，先经过 Trace 与 memory sensitive redactor，再按 64 KiB 上限保存完整投影或
+有界摘要。投影写入属于 observability，失败只记录 warning，不改变任务结果。它按用户能
+顺着读下去的六层展示同一份 durable ledger：
+
+1. `ProductTurnPreparer`：`prepare_context / direct_run` 的输入、输出、开始时间、
+   结束时间和耗时，以及最终 canonical messages、能力快照与启动输入；
+2. `RunKernel`：Run 身份、生命周期、等待与恢复；
+3. `Driver / Profile`：路由结果、TaskGoal、Plan/Attempt 与失败后重规划；
+4. `AgentLoop / Provider`：模型轮次、provider 输出、策略、耗时和 dispatch 结果；
+5. `Tool Executor`：准入、prepared/effect/outcome 详情、工具终态与失败证据；
+6. `Canonical 投影`：事件 payload/correlation、唯一终态、消息页可继续状态与错误归属。
+
+左侧默认入口叫“Agent 执行过程”，不再把六层审计结构直接铺给普通用户。首屏把同一
+`activityFeed` 投影成可点击运行图：真实发生的步骤按箭头串联，当前节点高亮，完成、等待、
+失败/取消使用不同状态色，工具调用向右缩进为行动分支。运行图有独立的有界滚动区并自动让
+当前节点可见；Inspector 外层不再随着账本轮询自动滚到底，因此图标题和当前状态不会被顶出
+首屏。相邻的准备事实在图上合并为一个“理解你的需求”阶段，但下方详情仍保留每条
+真实记录。步骤名称和图上状态固定翻译成“理解你的需求、选择项目保存位置、已发出、
+已确认、等待已结束”等用户语言；当后续记录已存在时，历史等待节点不再误显为当前卡住。
+默认图不显示 Run ID、Provider、Canonical、原始工具名、tool_call_id 或原始事实表名。Run 建立
+节点表示“已建立任务”，不会因后来取消而反向标成失败。
+
+Inspector schema v3 现在通过 `HarnessPublicReadService` 对 workflow.db 与 state.db 分别建立一致
+read cut，使用 keyset 分页完整读取并返回 totals、签名 cursor、projection completeness 与稳定
+diagnostics；缓存只是有 TTL/容量上限的 manifest 加速层，不是 authority。所有事实先进入纯函数
+`semantic_projection`，按稳定 DAG 和 source sequence 归约到“理解需求、准备与规划、委派、执行、
+验证与修复、等待用户、交付”中实际出现的少量阶段，同一 Root 每类最多一个。旧 Godot recovery
+Root 的 366 个完整 public facts 归约为 6 个阶段、29 个唯一逻辑工具（23 个 shell），不会把
+provider-call/effect 显示两次。
+
+Durable workflow 的 `ProposalPort` 也必须经过同一 `ProviderInvocationCoordinator`：生产适配器
+显式转交可信的 `session_id/root_run_id/parent_run_id/profile_key`，并使用规范 purpose
+`agent_response`。因此 child provider 调用不会再丢失父子身份或绕过统一故障/审计边界；正式
+S-SRV-3 的 Root `573cf15ecffb561493b2590bcb785368` 下，child
+`child-b5d46585b00301f30c2761e3eb23c53e` 在 transport 前按规则失败，原始 child 保持 failed，
+Root 随后接管并以 `completed_with_recovery` 完成。
+
+`RootOutcomeView` 保留 child 原始 failed/cancelled，只在 child terminal、FailureReport、failure
+set、replacement Attempt 与后续 root terminal 完整时显示 `completed_with_recovery`。blocked 只由
+四类结构化 `RunBlockSignalV1` 产生；provider/workspace/capability preflight 使用
+`start_blocked_root()` 原子写最小 start snapshot、failed terminal 和 block signal，不由错误文案
+猜状态。tool/provider 公共详情均 default-deny、有界、二次脱敏；raw prepared/outcome/input/output
+只留在 durable ledger，schema v3 和前端生产 consumer 均不读取。
+
+运行图下方只有一套“步骤详情”。图头显示合并后的阶段数，详情标题明确显示原始“执行记录”
+条数，避免两个数字被误解为丢步骤。点击图中节点会选中并展开对应步骤，显示 Agent 收到的输入、
+执行结果和可观察决策；每个详情项也可独立收起。工具输入优先取 Provider 已公开的
+`tool_calls.arguments`，工具结果若只有 effect/receipt 技术信封则只说明“结果已经交给
+Agent”，不会把内部引用伪装成用户结果。取消态明确提示任务不会继续执行，避免终态与用户提示
+互相矛盾。
+
+六层账本、真实生产链、ReAct 循环、完整输入输出、错误码和原始 JSON 全部保留在默认关闭的
+“技术记录”内，供排查时展开。这里的“决策”只来自已持久化的路由、策略、工具参数、错误和
+终态，不展示或伪造模型隐藏思维链。新 Provider 记录可查看脱敏后的实际 messages、模型、
+工具目录和请求策略；v24 之前的历史记录没有输入投影时明确提示“旧账本只保留 request
+hash”，不会把缺失数据伪装成完整上下文。
+
+右侧消息流不会复制这份审计时间线。即使用户收起左侧 Harness Inspector，前端仍继续
+只读轮询当前 Run。root Agent 的公开工具说明按普通助手消息显示；durable child 的公开说明、
+工具调用和结果绑定进同一个可折叠步骤列表，不再散成互不相关的消息框。RunKernel、
+Canonical、耗时、状态和原始 JSON 只留在左侧 Inspector。没有工具调用的最终模型文本继续
+走原有 assistant 消息，避免重复。历史 provider `repr` 外壳会先提取 content，
+`<think>`/reasoning 字段不会进入公开消息流。
+Workflow 进度卡若仍保存旧的 `running/waiting` 投影，会以同一 Harness
+snapshot 中匹配的 native child Run 终态覆盖显示并停止计时，避免已取消任务继续显示
+“进行中”。这条覆盖只纠正 UI read model，不改写 durable ledger；终态匹配严格限定在
+当前选中 root 的 child lineage，不会借用其他任务的终态。
+
+2026-07-28 的两种审计投影仍保留在“技术记录”中。
+“当前真实生产链路”逐段列出当前代码路径：
+`ProductVenueRunAdapter.open → ProductTurnPreparer.prepare_context →
+ProductTurnPreparer.prepare_direct_run → RunKernel(agent.general/react) →
+ReActDriver/AgentLoopCollaborator → EffectBatchExecutor/Driver.signal →
+Canonical projection`。其中 `prepare_direct_run` 是兼容直通方法：它不运行旧
+`IntentTriage`/旧 plan gate，而是把已经组装的 Context 直接交给固定 Root Profile；
+它不是独立 Harness 层，也不是模型思考步骤。UI 同时显示友好名称和原始类/方法名，避免把
+六层阅读分组误当成七个真实运行组件。
+
+“ReAct 循环视图”按 provider outcome 中的稳定 `tool_calls[].id` 与
+`execution_provider_action_calls.provider_call_id` / `execution_effects.call_id`
+精确关联每轮“判断 → 行动 → 观察 → 下一轮”。判断只展示 Provider 的真实输入投影和
+可观察输出；行动展示工具名、prepared 输入、终态与稳定 call id；观察展示工具结果是否已由
+`Driver.signal` 回灌。同一信息下方仍保留原有按时序六层账本。每条时间线还新增
+“原始事实表/事件名”和“界面解释”来源标记，明确哪些是账本事实、哪些是前端帮助理解的语义
+分组。handoff 后断连会在原始错误之外追加用户可读解释，不覆盖错误码、异常类型或消息。
+
+六层原始账本之上还有一个只读 `activity` 派生视图。UoW 根据最新 provider、effect、
+child Run、decision 和 terminal 状态生成“现在在做什么”、等待原因、最近进展、停滞秒数、
+最近错误与产物数量。超过 60 秒没有 durable 进展的非终态 Run 会明确显示
+“已 N 秒没有新进展”；这只是观测结论，不会建立第二个 owner 或擅自推进 Run。
+
+“技术记录”及其中所有层和记录默认收起；面板使用固定高度内部滚动，不随消息数量撑高页面。
+只有用户位于底部附近时才自动跟随新进展；用户向上阅读后停止抢滚动，并显示“有新的执行进展”
+返回入口。左栏任何时刻只投影一个 Run；顶部选择器对用户只显示“任务 N · 状态”，不暴露 ID。
+当前选择不存在时自动选择该 Session 最新 Run，用户也可切换任意历史任务。“全屏查看详情”
+使用同一 Inspector snapshot 打开近全屏弹层，不复制或重建执行状态；技术记录仍由用户按需
+打开。
+消息内容区原有的独立 Run/任务标签栏不再渲染，Run 选择只有 Harness 下拉框这一个入口。
+
+左栏底部固定提供 `100%～170%` 横向字体滑杆，首次默认 `125%`。同一个 CSS 缩放变量覆盖
+标题、状态、正文、错误、原始账本和完整 JSON；普通左栏与全屏 Inspector 共用设置。用户选择
+写入本机 `localStorage`，切换 Session、Run 或重新打开窗口后保持，不进入执行账本，也不影响
+右侧消息区。2026-07-28 当前源码真机验证从 `140%` 调到 `160%` 时全栏文字同步放大，再恢复
+`140%` 成功。
+
+失败终态采用“保留证据、释放当前交互”的统一语义。产品入口的 `_send_chat_error()` 会把
+`chat_v2_error` 同时投递给发起 WebSocket 和同 Session 的其他主消息 peer；消息面板发起的
+Run 因而不会只让消息窗口知道失败、却让 Live2D 主窗口永久停在“努力工作中”。主窗口还会
+消费 canonical `run_event` 的 `completed / failed / cancelled` 终态，并根据该 Session 是否
+仍有其他 inflight Run 决定是否继续显示工作气泡。输入栏把已终止的 `failed / cancelled`
+投影为当前“空闲”，历史错误、错误码和失败层仍完整保留在消息与 Harness Inspector 中，
+不会用常驻红色状态误导用户认为任务仍在执行。2026-07-28 当前源码真机验证 Run
+`dbcfdc43cc4c583a97c629892e237fc9` 已为 `failed`：Live2D 工作气泡消失，消息面板显示
+`✓ 空闲`，同时 Inspector 仍保留 `tool_context_persist_failed` 失败事实。
+
+消息页右上角沿用圆形 Context 状态入口。展开后显示当前项目名/根目录、Context 组成和
+按时间变化的 token 折线图。state.db schema v22 的
+`session_context_usage_history` 持久化 provider 实际输入 token 与 compaction 前/后 token；
+历史 Session 可重启恢复，压缩点在同一时间轴上明确区分“压缩前/压缩后”。Context 详情预览
+同样在展开后直接显示完整原文。
+
+生产压缩触发线统一限制为模型窗口的 70%：模型配置若更早则尊重更早值，若为 75%/80%
+则统一在 70% 启动。AgentLoop 与 durable workflow child 共用同一个
+`ContextCompressor`；child 把压缩后的 proposal messages 和 compaction ref 一起写入
+checkpoint，恢复时直接续用。压缩器或摘要模型失败采用 non-fatal 降级：保留原消息并继续
+执行，不以压缩失败中断 Run。Context 圆环的实时值、历史恢复值和首次占位值使用同一条
+70% 上限，避免 UI 显示线晚于真实触发线。
+
+每个 AgentLoop 都从该 Run 冻结的 `model_info` 派生压缩窗口和阈值，不能继承进程启动时默认
+模型的窗口。Provider-chain 预检若在 lossless replan 后仍超预算，普通交互 Run 会在首次出站前
+强制执行一次既有的目标保真 snapshot/compaction，再重新规划请求；无压缩器或 coverage job
+仍 fail closed。该 rescue 标记只消费一次，不会形成无界压缩重试。
+
+Context Usage 现在由 v24 durable sample/state authority 统一归约。每条 sample 带不可变 source、
+sample_id、version、session/root/provider/model/window/token/time lineage；恢复只选择一个完整权威
+sample，不再拼接不同事件字段。没有 measured/compacted sample 时读取 Session binding 生成
+`binding-only / 尚无用量`，不会用全局默认模型伪造零用量。前端圆环、详情和标题栏消费同一
+`context_usage_state`，旧 schema 缺字段时诚实显示 unknown。
+
+ReAct 生产链中的压缩事件不再停在旧 `AgentLoop` 迭代器边界：
+`ContextCompactedEvent → ContextCompactedCandidate → DriverRuntime context_compacted → canonical
+RunEvent → CanonicalRunEventPresentationAdapter` 保留同一个 `source_event_id`、before/after token、
+model 与 sample lineage，随后由产品 presenter 写入 v24 usage authority。压缩模型记录使用本次
+实际解析出的 Session 模型，而不是压缩器的可变默认模型。新 Run 在入口读取一次 Context
+authority，并把确切 measured `sample_id` 冻结进 durable request；AgentLoop 直接把该 ID 写入
+`ContextCompactedEvent.based_on_sample_id`，Presenter 只按 Session + sample ID 精确查询，不按
+时间或“最近一条”推断，因此并发 Root 无法串用 lineage。每次压缩的确定性结果 sample ID
+同时写入后续 React request payload；工具 boundary/checkpoint 会持久化它，重启后的 AgentLoop
+从最新 sample 继续，而不是退回 Run 入口样本。S-SRV-2 的真实 Kimi Session
+`30d57304-0c60-452e-8ebf-de9a3eb6a258` 已记录 sample
+`e60a98997476de277d818950b4a5ef7ea33719f0bf948270a08d4209d43bbcda`（3453 → 108 token）；
+同一 Session 后续 Root `04999765753a5342aa9f7b4619b0fd38` 选择已有 scratch 根目录后以
+5 个语义阶段、2 个工具操作完成修复，Root 与 child 全程为 `kimi-k3`。
+
+2026-07-28 最终真实 Godot E2E 使用 root
+`7e292f4a88b05ef999ec0e9de2b13c6b`。DeskPet 在同一 Root 内通过
+`tool_search("run shell command execute")` 找到并描述 `builtin:run_shell`，自行创建
+`workspace/task-1455b19de08db0a680401ec9d4928c32/GemCollector`，执行 Godot import 与
+headless runtime，根据真实输出修复项目配置、autoload 和绘制 warning，最终 durable
+状态为 `completed`。独立 GUI 验收确认 `Gem Collector (DEBUG)` 能启动、渲染玩家与
+10 个宝石、持续倒计时并进入 `TIME UP`；Computer Use 只能发送瞬时按键，未能对需要
+物理按住轮询的移动和 `R` 重开形成可见证据，因此不把这两项误记为通过。
+
+2026-07-28 同一 Session 的后续指代 E2E 使用 root
+`6959c1e036b35182a07f6f631321bf8d`，原始输入为“请你打开这个游戏，然后尝试自己去运行吃掉
+所有的黄色点”。Context 输入包含 Host 验证的既有目录
+`workspace/task-1455b19de08db0a680401ec9d4928c32/GemCollector` 与
+`project.godot` 标记；Agent 没有调用 `workflow_spawn`，直接以该精确路径启动
+`Gem Collector (DEBUG)`，随后继续执行 `screen_capture` 和 `screen_key`。真实窗口已显示
+游戏运行与 `Score: 100`；本项只将“定位并打开已有项目、启动后循环可继续”记为通过，
+不把“吃完所有黄色点”记为已完成。Provider chain 仅包含 `sf-glm-5.2`，未出现 HTTP 402、
+Ollama fallback 或 `provider_dispatch_unknown_after_handoff`。
+
+较早的 root `bb12960856bb5353a1ee1efc0654fcf6` 的 child
+`child-6e8cbb73daab69f07350d38b2018150c` 虽已自行完成另一份项目，但父 Run 在验收端误关应用后
+于 final provider handoff 记为 unknown，只作为 child durability 证据，不作为完整成功 Root。
+能力桥现以多词 OR 命中比例排序搜索结果；非法 capability id 返回结构化候选，连续两次
+`tool_describe` 失败触发 loop guard，强制模型重新短检索，不再无限猜测裸工具名。
+
+复杂只读审计真机 Run `535ada60c2f1567fbc1c81b2e2a0020b` 验证了循环投影。DeskPet 使用
+唯一 `relay-cloud/sf-glm-5.2` 连续完成四轮工具判断：
+`tool_search → tool_describe → tool_activate → run_shell`；每轮稳定 call id 都能与
+Action Call 账本对应，`run_shell` 结果成功回灌后进入第 5 轮。第 5 轮云端在完整响应前断连，
+exact exception 为 `RemoteProtocolError: Server disconnected without sending a response.`，
+最终按 `provider_dispatch_unknown_after_handoff` fail closed；这不是 HTTP 402，也没有调用
+Ollama。Inspector 真机显示 7 段生产链路、5 轮判断/行动/观察、原有 15 步时间线和用户可读
+断连解释。
+
+重启当前源码后日志确认
+`context_window=1000000 threshold=0.70 trigger_tokens=700000`。所有真实调用均为
+`relay-cloud/sf-glm-5.2`，没有调用 Ollama，也没有出现 HTTP 402/余额不足。本轮聚焦回归为
+后端 `159 passed`、Harness/Context 前端 `4 passed`、TypeScript project build PASS。
+
+2026-07-27 当前源码 Tauri 真人点击验收使用 Session
+`b558c5e5-01a7-4c01-9ab3-09f5406cf460` / Run
+`977690de63995aae93403723577516f1`：真实 Relay 回答完成后，圆环从 0% 更新到 1%，
+展开面板显示实际项目根目录、`4,985 / 950,000 tokens`、Context 组成与持久化历史点；
+ProductTurnPreparer 的 `prepare_context / direct_run` 显示实际输入/输出入口、起止时间与
+耗时，详情展开后显示完整原文。
+state.db schema 为 v22，存在该 Session 的 `provider_attempt` 样本。compaction before/after
+写入与图表契约由聚焦自动化覆盖；本轮为遵循快速交付要求，没有人为灌入超长对话强制触发
+一次真实压缩。
+
+工具的
+`admission_state=prepared` 只表示“已准入并准备好”，最终结果优先取 effect 或 continuation
+的 `outcome_status`；Attempt 同时显示原始账本行和 continuation 终态，二者不一致时明确
+标注，避免把“账本行仍 running”误读成整个 Run 仍在执行。
+
+## 唯一 owner 规则
+
+当前生产态为 `open/generation=1`，新请求不再回退到 `legacy/0`。
+
+- 活动运行索引：只有一个 `BoundedLiveIndex`。
+- 常驻协调任务：`0`。`HarnessReconciler` 只在 durable 事件到达时创建一个可合并的短任务；
+  同时最多一个，处理到当前积压为空就退出。未来到期的 delivery 重试只保留一个一次性计时器。
+- 执行表写入：只有一个 execution-table DML authority。
+- 产品结果转换：只有一个 `RunPresenter` 转换 authority。
+- 工具批次：只有一个 `EffectBatchExecutor`。
+- 子任务：统一表示为持久化 `ChildRun`，再回到 Kernel 生命周期。
+- 每个活动 Run：只有一个 `LiveRun.task` 和一个 Driver 临界区；取消会先中断并等待该
+  owner，再调用 `driver.cancel()`，恢复不能与 retiring/cancelling owner 并行换主。
+
+关闭时先停止新触发，再等待或取消唯一短任务并确认它已经退出，之后才关闭 Driver。
+这些约束由 authority gate 和结构测试锁定，不依赖人工约定。
+
+## ReAct 与 Workflow 的关系
+
+### 顶层 ReAct Driver
+
+所有新顶层 Run 都固定进入 `agent.general` 对应的 ReAct Driver。`AgentLoop` 只保留：
+
+- 模型和 Provider 调用
+- 上下文构造
+- completion 循环
+
+工具批次、任务状态、恢复、取消、子任务和最终结果都由 Harness 公共层负责。
+
+### 模型选择的 Child Profile 与 Driver
+
+`ProductTurnPreparer` 把当前可用 Profile 的职责、合法 key 和 catalog generation 放进
+父 Agent 上下文，同时暴露真实 `workflow_spawn` schema。模型若认为任务需要专门长流程，
+会在本轮发出 `workflow_spawn(profile_key, catalog_generation, ...)`：
+
+1. `ProfileRegistry` 校验 key、generation、父 run、task scope、Attempt 和模型快照；
+2. UoW 签发绑定 parent/root/task/Attempt/provider turn/call/profile/driver/generation/
+   snapshot/grant/fingerprint 的一次性 `ProfileLaunchTicket`；
+3. ticket claim、child command 和 parent-child link 在同一个 CAS 边界提交；
+4. `RunKernel` 只解引用 ticket 中已经绑定的 Driver，未知、过期或 payload 不同的 ticket
+   关闭失败并把结构化错误交还父模型重选。
+
+DeepResearch、PPT、能力构建等可恢复流程仍可使用 Workflow Driver；短 child 也可以绑定
+ReAct Driver。领域关键词、`task_type`、旧 Code persona 都不能覆盖模型的选择。
+
+## 工具与一次性副作用
+
+工具调用遵循一条统一链路：
+
+```mermaid
+flowchart LR
+    Driver["Driver 产生工具请求"] --> Claim["UoW 原子 claim"]
+    Claim --> Execute["EffectBatchExecutor 执行"]
+    Execute --> Settle["结果、continuation、事件原子提交"]
+    Settle --> Ack["确认 ToolRegistry 晚到证据"]
+    Settle --> Resume["Driver 继续执行"]
+```
+
+关键保证：
+
+- 外部副作用前先持久化 claim。
+- 安全并行和不安全串行工具保持原始顺序。
+- 带排他 access 的相同资源跨 batch/Run 串行；桌面输入额外共享全局 input lane，锁按引用计数
+  在最后一个 waiter/owner 离开后删除。
+- Driver 的 `signal()` 是 effect、continuation 和事件的唯一原子结算入口。
+- 结算失败时不确认晚到证据。
+- 已结算结果在恢复时复用，不重复执行。
+- 不确定的外部结果记为 `unknown`，由恢复流程对账，不盲目重试。
+- `StartedAck` 返回前即建立可 detach 的 completion observation；停止发生在启动回执落库窗口时，
+  执行器重读最新 durable version 后收敛为 `unknown/started_may_complete`。
+- terminal Run 的晚到结果只结算为
+  `late_reconciled/reconciled/reconciled_completed_suppressed`，绝不恢复 Driver；ready evidence 在
+  durable terminal 决策前不移除，running 窗口与 CAS loser 会再次对账。
+
+## 审批与决策
+
+审批不再保存在内存 waiter 中。Admission 使用现有 continuation 行内的 `_admission` 类型状态：
+
+```text
+pending -> accepted_start_pending -> launch_claimed -> launched
+       \-> rejected | cancelled | expired | launch_unknown
+```
+
+决策、一次性授权、continuation、恢复事件和下一决策边界在同一个 UoW 转换中提交。相同信号可幂等重放；响应内容改变、版本过期或身份不匹配时关闭失败。
+
+通用行动另外使用同一 durable decision/UoW authority 表达 TaskGrant：
+
+- Manual：首次副作用前投影简短计划、目标目录和动作类别；同 task/目录/类别只确认一次，
+  新目录、安装或新增高影响类别会创建新的 decision。
+- Auto：由 `AuthorizationPolicy` 以 `policy:auto` actor 立即处理授权，不生成等待用户的
+  DeskPet 弹窗；仍保留 decision/grant、Receipt、取消、错误和审计记录。
+- `require_user_content`、外部登录、Windows UAC 等不是可伪造的“同意”。Auto 不绕过
+  Secure Desktop 或第三方安全确认，而是把原 call/checkpoint 持久化为
+  `waiting_external`，条件满足后原地恢复。
+
+## 失败回到同一模型
+
+顶层父 Agent 的目标不是一轮 provider call。UoW 为每个 root 持久化
+`TaskGoalRecord`、不可变 `PlanVersionRecord`、`AttemptRecord`、完整
+`AttemptFailureSet` 和逐项 `TaskFailureReport`。
+
+- parse、unknown tool、preflight、prepare、authorization、executor、child launch 或
+  child terminal 失败都绑定真实 call/effect/child/evidence；
+- Workflow provider 的余额不足、Relay key 缺失/无效会落为稳定 message ref，前端翻译成可行动的
+  用户说明，原始 HTTP/异常细节只留在技术记录；只读任务中的“禁止修改 / without editing”先按
+  否定动作处理，不会被完成门禁误判成必须取得写入和测试回执。
+- 同一 action batch 的多项失败不会被最后一个错误覆盖；
+- 下一模型轮仍是同一 root、同一 `agent.general` 父模型，并看到原目标、checkpoint、
+  已完成产物、完整 failure set 和历史策略；
+- 模型生成新的 PlanVersion/Attempt，可换参数、工具、能力或 child Profile；
+- 相同动作与相同错误无变化重复会被 loop guard 拒绝；同因达到上限后诚实停止并保留
+  恢复入口；
+- 已结算 effect、已创建 child 和 canonical provider backfill 均按稳定身份复用，
+  不因重规划或重启重复。
+
+## 恢复和断线
+
+- WebSocket 断线只解除展示订阅，不取消持久任务。
+- 客户端使用相同稳定 `client_request_id/client_turn_id` 重连时，观察原 Run，不重复追加用户消息。
+- Workflow 启动前冻结 Provider、模型、会话和产品配置。
+- Context OS 持久化请求级 `PreparedToolSet` 与资格信息；恢复时重新校验策略、可见性、schema 和指纹。
+- 恢复前的 `prepare_recovery` 和恢复流内部使用同一套永久故障分类。冻结工具快照与当前
+  catalog 出现确定性 `tool_catalog_stale` 时，Kernel 释放 recovery lease、把原 Run
+  一次性结算为带原错误码的 `failed`，并失败尚未绑定的 continuation；Supervisor 后续扫描
+  不再重启该 Run。新的用户消息因此以当前 catalog 创建新 root，而不是被旧 waiting root
+  持续吞入。
+- 启动恢复完成前不开放新入口。
+- 恢复写入必须带 `run_id / owner / epoch / expires_at` 租约并在事务内校验。
+- 原 plan snapshot 如果显式保存 `trigger_failure_set_id=null`，恢复时保持这个原值；
+  只有旧 snapshot 缺少该字段时才从 boundary 的 latest failure set 兼容补齐，避免把后来
+  的失败错误归因给旧 plan。
+- running-root 继续消息先预约 conversation version，再按
+  `execution_user_continuations` durable FIFO 入队；入队 version 与稍后 React boundary
+  version 分开记录。
+- owner 在当前动作边界结束后按 FIFO 绑定消息，并把 `pending_resume_signal` 与 React
+  boundary 一起持久化；进程在 bind 后、provider 恢复前退出也能继续。
+- terminal 与入队并发时以 Run CAS 重仲裁；队列非空不能提交过期 terminal。
+- 取消持有 `start_lock` 收敛 `CANCEL_REQUESTED`，中断/等待唯一 owner 后再失败未绑定
+  FIFO；恢复看到取消请求只完成取消，绝不重新启动 provider。
+- precreated Workflow 的通用 Run 已是 `cancel_requested` 时，恢复直接幂等收敛原生
+  Workflow 到 `cancelled`，再由 Kernel 写唯一通用终态。取消中或已取消的父 Run 会确认并
+  丢弃迟到的 attached child signal，不再用该回执唤醒 Driver；正常完成/失败父 Run 的
+  attached signal 仍保留为一致性错误，不能静默吞掉。
+- durable child 每个终态事件都会立即唤醒 child signal reconciler，包括 native checkpoint
+  仍存在或 active execution 已释放的边界；attached terminal signal 投递后立即恢复父 Run。
+  终态之后迟到的公开 progress 幂等忽略，不再尝试向 terminal execution 追加事件。
+- loop guard 已为控制工具预填 `replan_required/attempt_budget_exhausted` outcome 时，Driver
+  直接把该失败回填给同一父模型，不再调用 `prepare_control` 或创建 child。兼容历史上已经
+  错误创建的 child：若 terminal signal 到达时该 call 已有不同的权威 outcome，事务保留首个
+  outcome、记录受限的 ignored-terminal 审计、清除 pending delegate 并确认 signal；启动恢复
+  不会再因 `outcome already recorded with different value` 阻止整个产品入口开放。
+- reconciler 遇到已有 live owner 的 recoverable Run（包括 effect-ready 定向恢复）时只注册
+  owner 完成后的再唤醒并跳过本轮，不再同步等待或用 5 秒 item budget 取消正在进行的 provider
+  调用；真正的 child inbox、恢复准备和持久化错误仍保持 fail-closed。
+- Session 记忆 fanout 和 `VectorWorker` 只接受 `user/assistant` 的普通文本；单条正文上限
+  32,768 字符，tool、data-URI/base64 和超长内容不会进入实时 embedding 或启动 backfill。
+  backfill 同时清理旧版本错误写入的无效向量，避免截图工具结果造成数百个 embedding chunk
+  和长时间后台占用。
+
+## 可执行能力目录
+
+父 Agent 的 PreparedToolSet 同时接入统一能力目录。模型可以：
+
+1. 搜索已注册工具或能力包，并读取精确 schema/manifest；
+2. 安装、健康检查、激活带本地 JSON 子进程工具或受管 MCP runtime 的能力包；
+3. 没有匹配能力时调用 `capability_build`，由
+   `workflow.capability_build` child 在 staging 生成 manifest、closed schema、入口、
+   依赖、权限/effect、healthcheck 和测试；
+4. happy path、错误输入、健康检查和副作用路径全部通过后，原子发布新 revision/binding；
+5. 当前 root 在 catalog refresh 边界重新冻结 PreparedToolSet，不需用户重发消息，
+   随即调用新工具继续原任务。
+
+生成代码不直接改 `backend/deskpet/tools/*.py`，也不在 backend 内动态 `exec`。失败升级
+产生带 parent revision 的派生版本，验证后原子切换；旧版本保留回滚，失败不留下
+“已安装但不可用”的半状态。Godot `1.0.2` 是首个 builtin 完整样板，通用文件、Shell、
+下载、应用和桌面原语只实现一套，不复制到每个应用包。
+
+## 已退出生产新请求路径的旧机制
+
+R6 激活后已删除或退出新请求路径：
+
+- AgentLoop 内部工具和 Subagent 执行运行时
+- 全局 Subagent registry / waiter
+- DeepResearch、PPT 的直接启动器
+- Voice 私有 AgentLoop bridge
+- AutoResume 重新分发 `_run_chat` 的旁路
+- 多套活动运行 map
+- 多个常驻 recovery / child scheduler
+- `ProductVenueOpenResult` 冗余包装层
+- `UnifiedToolExecutor` 转发外壳
+- `KernelChildLauncher` / `ChildLauncher` 转发层
+- `route_task` / `DeskPetRouteClassifier` 对新 root、child、replan 或 restart 的路由权
+- `CodeModeManager`、Code persona、code-only tool exposure 和 `task_type="code"` 的
+  生产行为
+- Code/普通模式切换；多任务只表示同一主 Session 下多个独立 root
+
+历史数据仍可通过兼容读取器访问，但不能成为新请求 owner。
+
+## 真实产品能力保持
+
+简化没有移除 DeskPet 的产品能力：
+
+- Tauri / WebSocket 实时事件
+- 权限弹窗和一次性授权
+- PPT 审批卡与 ArtifactCard
+- 基于 receipt 的完成验证
+- SessionDB 历史和记忆
+- 旧 Voice / TTS 兼容实现仍可由显式配置用于开发测试，但出厂关闭且不是生产入口
+- DeepResearch、PPT 与其他模型选择的 child Workflow
+- Subagent 和 Team-child
+- 取消、重启恢复与晚到工具结果对账
+
+产品能力映射为 `141/141`，未映射调用点为 `0`。
+
+## Prepared Tool JSON 边界
+
+`PreparedToolCall` 继续在进程内把 JSON array 冻结为 tuple、把 object 冻结为只读
+mapping，以保证 prepared 参数不可变。所有 Host 边界统一通过
+`PreparedToolCall.arguments_json()` 递归投影为全新的标准 JSON dict/list；事件、
+持久化、Code Workflow handler、subagent 请求、capability failure receipt/retry 和
+fingerprint 不再对 `final_params` 做浅拷贝。
+
+`DriverRuntime` 在发布 `tool_requested` 前完成该投影和严格 JSON 校验；发布成功后才进入
+`EffectBatchExecutor`。若投影或事件 JSON 校验异常，Runtime 在物理工具调用前生成
+`tool_argument_projection_invalid` 的失败 outcome，并通过现有 `Driver.signal` 回灌给模型
+重规划，不再把合法数组冻结产生的 tuple 泄漏解释为通用 `driver_failed`。外部直接提交
+tuple、set、非字符串 key 或非有限浮点仍由严格 validator 拒绝，修复没有放宽 JSON 契约。
+
+## 验证状态
+
+### 2026-07-29 Harness 全量门禁收口
+
+此前完整 Harness 集合暴露的 5 个失败已全部关闭：
+
+- parity census 将 `chat_v2_run_reserved` 归入文字入口能力，将
+  `chat_v2_reasoning_activity` / `chat_v2_reasoning_summary` 归入助手展示能力；
+  `_emit_reasoning_summary` 的 SessionDB 投影和双 WebSocket 发送均进入 current census，
+  141 条 legacy 映射保持冻结。
+- R4.5 历史 Companion 门禁保持不变；合法新增文件仅刷新
+  `cutover.py` / `session_terminal_delivery.py` 的当前哈希。新的 Harness boundary
+  门禁锁定 raw/adjusted/core/Kernel=`151338/150829/42375/1285`，上限分别为
+  `151500/151000/42500/1300`，unknown=0、public operations=6。
+- `AgentLoop` 的冻结 Skill scope 解析与重挂准备移入 `agent/skill_remount.py`；
+  兼容入口 identity 与 fail-closed 语义保持不变，AST 范围从 3909 降至 3761，
+  重新满足 `<=3800`。
+
+三类修复均经独立子 Agent 对抗复测 `VERDICT: PASS`。完整
+`backend/tests/harness_simplification` 在 20 分钟外层等待上限下完成：
+`711 passed, 4 xfailed, 0 failed`，耗时 6 分 15 秒；4 个 xfail 仍是明确登记的
+WI-0 预期红用例，不属于本次 5 个意外失败。
+
+### 2026-07-28 Harness 架构缺陷收口增量
+
+七个 slice 均由独立子 Agent 严格复测到 `VERDICT: PASS`。最终兼容/UoW 聚焦为
+`24 passed`，核心相邻组合为 `88 passed`，Main/启动相邻为 `48 passed, 2 skipped`；
+七个 slice 的最终合并回归为 `151 passed, 2 skipped`，authority 审计为
+`12 passed`，owner 和 execution build manifest 均通过。前端全量为
+`98 files / 879 tests`，TypeScript/Vite build 通过。
+
+源码 Tauri 使用隔离 userdata 真人点击验收：日志确认
+`[backend_launch] Dev python=... backend_dir=F:\projects\deskpet\backend`；
+语音按钮为 disabled，真实点击没有权限弹窗，日志 `/ws/audio` 命中数为 0，
+`/health.voice={enabled:false, mode:"disabled", realtime:"pending"}`。文字输入创建 Run
+`76102aa70dae5ac2a083b115854a61b4`，UI 返回“Harness文字链路正常”并回到空闲；
+provider scope pin/unpin 成对出现。隔离 E2E 进程树已精确清理，临时 userdata 已移入回收站。
+
+### 2026-07-28 Prepared Tool JSON 边界增量
+
+聚焦自动化共 `125 passed`，覆盖递归投影与副本隔离、空/非空/256 项 `argv`、嵌套数组、
+严格外部 tuple 拒绝、投影故障零物理调用、Runtime/ToolExecutor/ReAct、Code Workflow、
+workflow_spawn 与 process tools。
+
+当前源码 Tauri 在同一 `default` Session 真人输入原始复现请求，创建新顶层 Run
+`5735337ea3a254c1acd739a5aad5070d` 并以 `completed` 终结；旧失败 Run
+`88b2305bce215a13a6fbecc205b3dcf3` 保持 `failed`。Provider 真实生成
+`process_start.argv` JSON list，ledger 的 `prepared_json.final_params.argv` 仍为 list，
+进程仅启动一次。由于 `process_start` 沿用 `opaque_manual` 策略，effect 按既有语义结算为
+`unknown/malformed_tool_outcome`，随后模型通过 `process_list` 验证真实 Godot 进程并正常完成
+Run；Windows UI 显示 `Main.tscn - Gem Collector - Godot Engine`。本轮日志中
+`ContractValidationError`、`unsupported JSON value`、`tool_argument_projection_invalid`
+和 `driver_runtime_failed` 均为 0。
+
+### R7 历史基线
+
+| 门禁 | 结果 |
+|---|---:|
+| Harness 套件 | `512 passed, 4 xfailed` |
+| Workflow 套件 | `703 passed` |
+| 后端全量 | `5736 passed, 19 skipped, 9 deselected, 4 xfailed` |
+| 产品能力映射 | `141/141`, unmapped `0` |
+| 原始 / 调整后 / 核心 / Kernel LOC | `33,633 / 33,124 / 5,948 / 896` |
+| Kernel 公开操作 | `6` |
+| 未分类 LOC | `0` |
+| Last-mile | `DECISION: SHIP` |
+| 主消息页真人验收 | S-1～S-7 全部通过 |
+
+TypeScript、Vite、Vitest、Cargo 和 Rust 测试均通过。
+
+详细步骤、截图、自动化门和进程清理记录见：
+
+- [R7 主消息线程验收结果](../plans/2026-07-20-agent-harness-simplification/evidence/r7-main-thread/results.md)
+- [R7 真人测试用例](../testcase/2026-07-22-harness-main-thread-r7/manual-test.md)
+- [目标架构图](../plans/2026-07-20-agent-harness-simplification/target-architecture.md)
+
+### 2026-07-24 通用行动增量
+
+当前代码门禁：
+
+| 门禁 | 结果 |
+|---|---:|
+| 取消/恢复/续聊/Profile/能力聚焦 | `206 passed` |
+| 后端全量 | `5961 passed, 16 skipped, 9 deselected, 4 xfailed` |
+| Frontend | `85 files / 820 tests`，`tsc -b` PASS |
+| Rust | `73 passed`，build/check PASS |
+| Godot pack | `13 passed, 1 skipped`；platform smoke PASS |
+| 原始 / 调整后 / Kernel LOC | `69,600 / 69,091 / 1,050` |
+| authority | DML `1`、run map `1`、supervisor task `1`、presenter `1`、legacy `0` |
+
+严格 last-mile 首轮因验收进程没有继承 bundled Node 路径而把 Vitest 记为 `skip`；显式
+设置 `DESKPET_NODE` 后复跑为 7/7 PASS、0 fail、0 skip，`DECISION: SHIP`。
+Manual/Auto、能力中心、三 root 并行取消、Profile ticket、Godot、
+Blender、Web、损坏包、自建能力和失败重规划的 Windows Computer Use full-audit 也仍是
+必过门，证据目录为
+[`manual-results-2026-07-24`](../plans/2026-07-23-universal-action-and-capability-packs/manual-results-2026-07-24/)。
+
+### 2026-07-27 Harness 可观测性增量
+
+| 门禁 | 结果 |
+|---|---:|
+| Backend provider/inspector 聚焦 | `34 passed` |
+| 本轮 capability/provider/inspector 相邻组合 | `150 passed` |
+| Harness pre-shard | `152 passed, 4 xfailed` |
+| Frontend Harness/历史恢复聚焦 | `4 passed` |
+| Frontend 全量 | `95 files / 863 tests passed` |
+| TypeScript | `tsc --noEmit` PASS |
+| 新增/重写前端模块 scoped ESLint | PASS |
+| authority / schema manifest | PASS |
+| 主消息页真人 E2E | 历史失败审计、新 Session、新 Run、实时状态、默认工具卡、六层终态全部 PASS |
+
+历史 Session `cec00990-d308-4179-b30f-3dfaa6f83aef` / Run
+`d6f571d1df735c25be774351b3e59221` 的六层审计确认：6 次 provider invocation 全部
+completed，第 6 次耗时 422.8 秒；工具为 9 succeeded / 2 failed。最终
+`driver_failed: Context OS capability scope is missing or expired` 来自旧实现的
+provider 思考超过 300 秒 orphan TTL，不是 provider dispatch unknown，也不是 Driver
+选错。较早的 `tool_describe(run_shell)` 是模型给错 capability id 后形成的独立失败，
+Harness 已吸收该 FailureSet 并从 Plan v1 重规划到 v2。
+
+修复后的真人 E2E 使用 Session `db2369a4-a450-4285-980c-008f967bffff` / Run
+`c439af02fa015b21b5b701ee6b97901a`：真实点击“新话题”后发送
+`workspace_prepare` 请求，UI 立即从空闲进入思考中，随后自动创建并选中 Run；工具调用与
+成功结果默认可见，六层观察最终全部完成，回答为“Harness分层真人测试完成。”，状态回到
+空闲。源码日志同时出现两组精确
+`harness_provider_scope_pinned → harness_provider_scope_unpinned`，且
+`[backend_launch] Dev ... backend_dir=F:\projects\deskpet\backend`，证明运行的是当前
+源码而非 frozen backend。
+
+## 历史阶段索引
+
+| 阶段 | 目的 | 结果文档 |
+|---|---|---|
+| R0 | 冻结行为与测量基线 | [R0 parity](../plans/2026-07-20-agent-harness-simplification/r0-parity-results.md) |
+| R1 | 单一 UoW 和原子边界 | [R1 结果](../plans/2026-07-20-agent-harness-simplification/r1-results.md) |
+| R2 | 抽取产品准备与结果投影 | [R2 结果](../plans/2026-07-20-agent-harness-simplification/r2-results.md) |
+| R3 | Kernel、Driver 和恢复 fence | [R3 恢复结果](../plans/2026-07-20-agent-harness-simplification/r3-recovery-results.md) |
+| R4 / R4.5 | Workflow、Child、Delivery 与结构收敛 | [R4 结果](../plans/2026-07-20-agent-harness-simplification/r4-results.md) |
+| R5.5 | 持久 Admission 和切换准备 | [R5.5 结果](../plans/2026-07-20-agent-harness-simplification/r55-results.md) |
+| R6 | 统一生产运行时激活 | [R6 结果](../plans/2026-07-20-agent-harness-simplification/r6-results.md) |
+| R7 | 全量门禁和主消息页真人验收 | [R7 证据](../plans/2026-07-20-agent-harness-simplification/evidence/r7-main-thread/results.md) |

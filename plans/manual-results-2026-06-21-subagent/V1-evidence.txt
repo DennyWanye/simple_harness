@@ -1,0 +1,18 @@
+### V1 subagent_scheduled (3 distinct kinds) ###
+2026-06-21 10:01:31,851 INFO deskpet.agent.subagent_scheduler subagent_scheduled kind=research run_id=code-xbhyzzo0.par-sodium_ion_2025_research task_id=sodium_ion_2025_research
+2026-06-21 10:01:31,976 INFO deskpet.agent.subagent_scheduler subagent_scheduled kind=web run_id=code-xbhyzzo0.par-xiaomi_su7_latest_price task_id=xiaomi_su7_latest_price
+2026-06-21 10:01:32,098 INFO deskpet.agent.subagent_scheduler subagent_scheduled kind=general run_id=code-xbhyzzo0.par-season_review_outline task_id=season_review_outline
+
+### V1 metrics subagent_progress (run_id-based, this run) ###
+{"ts":1782007291.851,"event":"subagent_progress","detail":{"run_id":"code-xbhyzzo0.par-sodium_ion_2025_research","kind":"research","task_id":"sodium_ion_2025_research","status":"queued"}}
+{"ts":1782007291.851,"event":"subagent_progress","detail":{"run_id":"code-xbhyzzo0.par-sodium_ion_2025_research","kind":"research","task_id":"sodium_ion_2025_research","status":"running"}}
+{"ts":1782007291.975,"event":"subagent_progress","detail":{"run_id":"code-xbhyzzo0.par-xiaomi_su7_latest_price","kind":"web","task_id":"xiaomi_su7_latest_price","status":"queued"}}
+{"ts":1782007291.976,"event":"subagent_progress","detail":{"run_id":"code-xbhyzzo0.par-xiaomi_su7_latest_price","kind":"web","task_id":"xiaomi_su7_latest_price","status":"running"}}
+{"ts":1782007292.099,"event":"subagent_progress","detail":{"run_id":"code-xbhyzzo0.par-season_review_outline","kind":"general","task_id":"season_review_outline","status":"queued"}}
+{"ts":1782007292.099,"event":"subagent_progress","detail":{"run_id":"code-xbhyzzo0.par-season_review_outline","kind":"general","task_id":"season_review_outline","status":"running"}}
+{"ts":1782007334.143,"event":"subagent_progress","detail":{"run_id":"code-xbhyzzo0.par-season_review_outline","kind":"general","task_id":"season_review_outline","status":"completed","duration_ms":42044}}
+{"ts":1782007397.608,"event":"subagent_progress","detail":{"run_id":"code-xbhyzzo0.par-xiaomi_su7_latest_price","kind":"web","task_id":"xiaomi_su7_latest_price","status":"failed","duration_ms":105631}}
+{"ts":1782007421.385,"event":"subagent_progress","detail":{"run_id":"code-xbhyzzo0.par-sodium_ion_2025_research","kind":"research","task_id":"sodium_ion_2025_research","status":"completed","duration_ms":129532}}
+
+### V1 agent_parallel tool call ###
+2026-06-21 10:01:31,836 INFO providers.openai_compatible event='p5s2_tool_call_args_dump' level='info' timestamp='2026-06-21T02:01:31.836092Z' idx=0 name='agent_parallel' args_len=1026 args_preview='{"cache_mode":"fork","subagents":[{"cache_mode":"fork","forbidden_files":[],"input_files":[],"kind":' parse_ok=True

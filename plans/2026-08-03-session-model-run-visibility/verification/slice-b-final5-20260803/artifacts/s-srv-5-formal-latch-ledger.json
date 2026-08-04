@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "source": "read-only execution ledger plus real Windows UI",
+  "workspace_root": "F:\\projects\\deskpet-e2e-scratch\\session-model-run-visibility-s5",
+  "session_a": {
+    "session_id": "c1202113-4043-447c-bc89-6b98de75128a",
+    "root_run_id": "9789eee4324a57129c020b522cd9a33d",
+    "provider_id": "relay-cloud",
+    "model_id": "kimi-k3",
+    "binding_epoch": 1,
+    "status_after_stop": "cancelled",
+    "cancel_reason": "user_interrupt",
+    "workspace_source": "user_path"
+  },
+  "session_b": {
+    "session_id": "7e83841a-0eb2-48bc-9645-363dc21848cf",
+    "root_run_id": "6300620adab9532fb14d5efe5e6834e1",
+    "provider_id": "relay-cloud",
+    "model_id": "kimi-k3",
+    "binding_epoch": 1,
+    "status_while_a_was_held": "completed",
+    "workspace_source": "user_path"
+  },
+  "latched_effect": {
+    "effect_id": "e9870eb4b996efc7a1e5642f67d4043ffc87b0291489bea51da277a0578585c5",
+    "run_id": "9789eee4324a57129c020b522cd9a33d",
+    "tool_name": "file_read",
+    "before_stop": {
+      "status": "running",
+      "handoff_state": "started",
+      "completion_disposition": "normal"
+    },
+    "after_stop_before_release": {
+      "status": "unknown",
+      "handoff_state": "started_may_complete",
+      "completion_disposition": "inflight_effect_may_complete"
+    },
+    "after_release_and_restart": {
+      "status": "late_reconciled",
+      "handoff_state": "reconciled",
+      "completion_disposition": "reconciled_completed_suppressed",
+      "late_outcome_hash": "3bfc5f5a71667007b47410dab02b7bbc5cc9fb2e079a067e863f4e2c74235967",
+      "reconcile_receipt_ref": "late-effect-suppressed:9789eee4324a57129c020b522cd9a33d:e9870eb4b996efc7a1e5642f67d4043ffc87b0291489bea51da277a0578585c5",
+      "effect_version": 4
+    }
+  },
+  "ui_recovery_assertions": {
+    "session_a_status": "cancelled_and_idle",
+    "session_b_status": "completed_and_idle",
+    "late_result_visible": false,
+    "restart_verified": true,
+    "duplicate_anchor_counts": {
+      "explicit_file_read_permission": 1,
+      "provider_dispatch_unknown_after_handoff": 1,
+      "final_file_read_call": 1,
+      "final_tool_search_call": 1
+    }
+  },
+  "evidence": [
+    "s-srv-5-a-held-before-stop.png",
+    "s-srv-5-b-completes-while-a-held.png",
+    "s-srv-5-a-cancelled-before-release.png",
+    "s-srv-5-late-result-suppressed.png",
+    "s-srv-5-session-switch-deduplicated.jpg",
+    "s-srv-5-a-restart-cancelled.jpg",
+    "s-srv-5-b-restart-completed.jpg"
+  ],
+  "restart_screenshots": [
+    {
+      "session_id": "c1202113-4043-447c-bc89-6b98de75128a",
+      "root_run_id": "9789eee4324a57129c020b522cd9a33d",
+      "status": "cancelled",
+      "path": "s-srv-5-a-restart-cancelled.jpg",
+      "sha256": "64628ee8d6b59f286d467730bb6bd0f8bd05e8e19ea1ca3299206401985c9f57"
+    },
+    {
+      "session_id": "7e83841a-0eb2-48bc-9645-363dc21848cf",
+      "root_run_id": "6300620adab9532fb14d5efe5e6834e1",
+      "status": "completed",
+      "path": "s-srv-5-b-restart-completed.jpg",
+      "sha256": "17e24656ea8999a2446e01457dcf24189e14e7c6e25a42ebee0f5e4eedff2d7b"
+    }
+  ]
+}

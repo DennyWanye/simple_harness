@@ -1,0 +1,90 @@
+{
+  "run_id": "session-model-slice-a-20260803",
+  "repo_root": "F:\\projects\\deskpet",
+  "source_request_file": "plans/2026-08-03-session-model-run-visibility/source-request.md",
+  "acceptance_file": "acceptance.md",
+  "testcase_files": [
+    "backend/tests/test_agent_provider.py",
+    "backend/tests/test_agent_harness_main_callsite_contract.py",
+    "backend/tests/test_provider_fault_script.py",
+    "backend/tests/test_provider_workloads.py",
+    "backend/tests/test_context_usage_state_v2.py",
+    "tauri-app/src/code-panel/ws.chat.test.ts",
+    "testcase/2026-08-03-session-model-run-visibility/manual-test.md"
+  ],
+  "behavior_contract": {
+    "terms": [
+      {"term": "Session", "meaning": "对话与模型绑定容器"},
+      {"term": "Root Run", "meaning": "一次用户请求的最终结果 authority"},
+      {"term": "Session auxiliary", "meaning": "服务于当前 Session/Root 的附属 LLM 调用"},
+      {"term": "System maintenance", "meaning": "不代表任何单一 Session 的维护调用"}
+    ],
+    "before_after": [
+      {"id": "BC-1", "before": "部分附属调用读取全局模型", "after": "Session 主调用与附属调用统一使用冻结绑定"},
+      {"id": "BC-2", "before": "401/402 可能重复请求并扩散", "after": "按真实失效域 single-flight 熔断与隔离"},
+      {"id": "BC-3", "before": "Context Usage 可能拼接旧模型和新样本", "after": "只返回有来源版本的一致状态"}
+    ],
+    "preserved": ["未绑定 Session 继续使用全局默认链", "Root terminal fence", "历史 execution ledger"],
+    "removed": ["显式绑定失效后静默 fallback", "Session 附属调用直接读取 local_llm or cloud_llm"],
+    "approval": {
+      "user_message_sha256": "bb18ebd16443f4c0c0267a62ab5e1cf6b498d6abb3c35d9479641acd9b0d5bb3",
+      "approved_at": "2026-08-03T15:52:26.7348662+08:00",
+      "scope": "BC-1 through BC-7 and approved behavior changes in approval.md"
+    }
+  },
+  "behavior_changes": [
+    {
+      "behavior_change_id": "BC-STALE-001",
+      "old_behavior": "显式绑定 provider 删除后回退 global chain",
+      "new_behavior": "保留 binding provenance 并 fail closed，只有未绑定 Session 使用 global chain",
+      "approval": {
+        "user_message_sha256": "bb18ebd16443f4c0c0267a62ab5e1cf6b498d6abb3c35d9479641acd9b0d5bb3",
+        "acceptance_revision": "e3ea32764cf3fe654262487581902f49c67a47fe1b6d1b6dc7252769cb418d60",
+        "scope": "slice A provider resolution and session binding tests",
+        "expiry": "until a valid slice A gate receipt is produced"
+      }
+    },
+    {
+      "behavior_change_id": "BC-CONTEXT-004",
+      "old_behavior": "冷恢复可拼接历史字段或显示全局 0/window",
+      "new_behavior": "只读 materialized authority；无样本显示 binding-only/unknown",
+      "approval": {
+        "user_message_sha256": "bb18ebd16443f4c0c0267a62ab5e1cf6b498d6abb3c35d9479641acd9b0d5bb3",
+        "acceptance_revision": "e3ea32764cf3fe654262487581902f49c67a47fe1b6d1b6dc7252769cb418d60",
+        "scope": "slice A Context Usage public contract",
+        "expiry": "until a valid slice A gate receipt is produced"
+      }
+    }
+  ],
+  "scenarios": [
+    {
+      "scenario_id": "S-SRV-1",
+      "title": "Kimi 冷路径与 Context Usage",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "expected_run_created": true,
+      "required_lanes": ["fresh", "history-upgrade"],
+      "min_root_runs": 1,
+      "ac_ids": ["AC-SRV-1", "AC-SRV-3", "AC-SRV-4"]
+    },
+    {
+      "scenario_id": "S-SRV-4",
+      "title": "后台认证或额度失败隔离",
+      "required": true,
+      "ui": true,
+      "gate_type": "negative-safety",
+      "expected_run_created": true,
+      "required_lanes": ["temporal-fault"],
+      "min_root_runs": 2,
+      "ac_ids": ["AC-SRV-2", "AC-SRV-4"]
+    }
+  ],
+  "release_unit": {
+    "must_ac_count": 4,
+    "task_count": 4,
+    "plan_lines": 574,
+    "high_risk_subsystems": 3,
+    "concurrent_layer_kinds": 3
+  }
+}

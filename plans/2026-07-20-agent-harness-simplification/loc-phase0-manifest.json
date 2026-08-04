@@ -1,0 +1,78 @@
+{
+  "commit": "961c7d340334927acfa07cfaffe071510f56cff3",
+  "expected_total_loc": 21563,
+  "files": [
+    {
+      "git_blob": "10f7abd4d6f8f25a5980281469b4eceb5d700c68",
+      "group": "legacy_agent_loop",
+      "loc": 5635,
+      "path": "backend/agent/agent_loop.py",
+      "sha256": "c3916a67d5f6928cf542712ea94ba446c787deee20203b7dcf39e1e84e620b32"
+    },
+    {
+      "git_blob": "56ae1df91549dd94ab44b1e930a5e42764d710a0",
+      "group": "legacy_compatibility",
+      "loc": 349,
+      "path": "backend/agent/auto_resume.py",
+      "sha256": "05178f5c4b1966f2b9c2c4dd5918e0dd57b948d7dd97b366c07ef5f879495340"
+    },
+    {
+      "git_blob": "d267f83d98a68ea61b343b53100f7bb53c920992",
+      "group": "legacy_compatibility",
+      "loc": 296,
+      "path": "backend/deskpet/agent/harness_manifest.py",
+      "sha256": "60bccf5d3d9bf9fe883462089db786423b41ee60f6d2356ef59c4fb3d85aed8f"
+    },
+    {
+      "git_blob": "19febbb3dac4b281b2b5525aa72b98479638823b",
+      "group": "legacy_compatibility",
+      "loc": 110,
+      "path": "backend/deskpet/agent/subagent_registry.py",
+      "sha256": "5218d6b0b9777eb11e7313e9661db564893662f97d738cca6a1c5aac62725ef4"
+    },
+    {
+      "git_blob": "9f0be993a00213c708d14ca3ccd82fa037fccff5",
+      "group": "legacy_compatibility",
+      "loc": 231,
+      "path": "backend/deskpet/tools/code_tools/spawn_subagents_tool.py",
+      "sha256": "462bb9726c4bbe380cd0016cd01df6e0b0b47fa9d4419601b42d7cec670d4848"
+    },
+    {
+      "git_blob": "ad19732b55d9c9dfdcc7a800c9d134a3cb3a6cd4",
+      "group": "legacy_compatibility",
+      "loc": 146,
+      "path": "backend/deskpet/tools/code_tools/spawn_team_tool.py",
+      "sha256": "8a023799e79bb927e92c36bca9ca7b4e1d832bcd540991aef89131e4da144c02"
+    },
+    {
+      "git_blob": "f03883bf7b3f7432b7cd0580a972b8d343e4bb6c",
+      "group": "tool_registry",
+      "loc": 2272,
+      "path": "backend/deskpet/tools/registry.py",
+      "sha256": "58e8a0aef058ced499aed984b17b9afc1c0fe06bde5c015fc7482bf144bb4c59"
+    },
+    {
+      "git_blob": "60b7c828cb1eff7e06f58801364389275fb100ff",
+      "group": "legacy_compatibility",
+      "loc": 89,
+      "path": "backend/deskpet/workflows/routing.py",
+      "sha256": "0426b53ef5a8eb18bdf089cdad92b6c563104910374350b4a7a62412e0d39666"
+    },
+    {
+      "git_blob": "10df015de4984d5b3623e1fd49b762963665244c",
+      "group": "transport_bootstrap",
+      "loc": 11533,
+      "path": "backend/main.py",
+      "sha256": "05b78f8acb00a3e274a8ceaeb9b1d3beae764c4a322910e9d623371c6aa34da7"
+    },
+    {
+      "git_blob": "d84d101cd7f9c1eb68ab59b5e8720bcc50db4d59",
+      "group": "voice_transport",
+      "loc": 902,
+      "path": "backend/pipeline/voice_pipeline.py",
+      "sha256": "29ac0b9a3a9fc54d55fc7cff05a31bfc40cd4bd25a119e74d4779dac1dd06053"
+    }
+  ],
+  "name": "phase0",
+  "schema_version": 1
+}

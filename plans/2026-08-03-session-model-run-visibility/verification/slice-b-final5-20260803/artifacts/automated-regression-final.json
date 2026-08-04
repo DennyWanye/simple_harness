@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "commands": [
+    {
+      "name": "full-surface-smoke",
+      "result": "pass",
+      "backend": "29 passed",
+      "frontend": "116 passed"
+    },
+    {
+      "name": "focused-acceptance-matrix",
+      "result": "pass",
+      "pytest": "59 passed, 0 skipped"
+    },
+    {
+      "name": "all-changed-backend-test-files",
+      "result": "pass",
+      "pytest": "537 passed, 0 skipped, 4 pre-existing coroutine warnings"
+    },
+    {
+      "name": "real-harness-public-fixture-verifier",
+      "result": "pass",
+      "pytest": "2 passed, 0 skipped"
+    },
+    {
+      "name": "all-changed-frontend-test-files",
+      "result": "pass",
+      "vitest": "118 passed"
+    },
+    {
+      "name": "frontend-production-build",
+      "result": "pass",
+      "toolchain": "tsc -b and vite build"
+    }
+  ]
+}

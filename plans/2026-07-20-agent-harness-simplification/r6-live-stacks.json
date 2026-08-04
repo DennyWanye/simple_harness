@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "complete": true,
+  "captured_commit": "ed5f5686a56daf2e1797838cbe3d7374ea304a21",
+  "captured_at": "2026-07-21T23:12:44+08:00",
+  "stacks": [
+    {
+      "stack_id": "text-kernel-live",
+      "request_id": "3858e8d4cc974a0d9432867400bbbd62",
+      "activation": "open/1",
+      "source_backend": "F:/projects/deskpet-harness-r55/backend",
+      "ui_expectation": "HARNESS-R6-FINAL-OK",
+      "legacy_frames": []
+    }
+  ]
+}

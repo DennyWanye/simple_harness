@@ -1,0 +1,77 @@
+任务：给 DeskPet 的 PPT 工具加「整页生图」能力 —— LLM 每页写视觉 prompt(image_prompt)，ppt_create 自动调 B-1 的同步批量生图填充 image_path，并新增全幅铺图布局 image_full。仅改一个文件 + 加一个测试文件。
+
+== 目标文件（唯一改）==
+G:\projects\deskpet\backend\deskpet\tools\ppt_tools.py
+
+== 依赖（B-1 已完成，可直接用）==
+G:\projects\deskpet\backend\deskpet\tools\image_tools.py 已有同步批量原语：
+    def generate_images(prompts, *, size=_DEFAULT_SIZE, model=None) -> list[dict]
+    # 每项 {"prompt": str, "path": str|None, "error": str|None}；从不抛异常。
+    # _DEFAULT_SIZE = "1024x1024"
+
+== 现状（已读源码）==
+- SlideOutline 是 dataclass(line 88+)，已有字段 image_path/caption；layout 经 normalize() 校验，VALID_LAYOUTS(line 77) 含 image。
+- 渲染器映射 _RENDERERS(line 1393) 把 layout 名映到 _render_xxx_v2 函数。
+- 现有 _render_image_v2(line 1176) 是「框内图 + 右侧标题栏」，不要动它(现有测试依赖)。
+- ppt_create(line 1434) 流程：parse_outline → (dry_run 早返回) → (无 pptx 早返回) → 渲染循环。
+- 幻灯尺寸常量：_SLIDE_WIDTH=9144000(10in)、_SLIDE_HEIGHT=5143500(16:9)。
+- add_picture 已在 _render_image_v2 用法：slide.shapes.add_picture(path, left, top, width=...)。
+- 模块 docstring(line 38) 现写「purely synchronous and CPU-cheap — no LLM calls here」。
+
+== 改动 1：SlideOutline 加 image_prompt 字段 ==
+- dataclass 加：image_prompt: Optional[str] = None（放在 image_path/caption 附近，加注释：# 整页生图：有则 ppt_create 自动生图填 image_path）。
+- normalize() 里把 image_prompt 透传：image_prompt=((self.image_prompt or None))（保持与 image_path 同风格；空串归 None）。
+
+== 改动 2：新增全幅铺图布局 image_full ==
+- VALID_LAYOUTS 元组加 "image_full"。
+- 新增渲染器 _render_image_full_v2(slide, outline, theme)：
+  * 若 outline.image_path 存在且是文件：slide.shapes.add_picture(img, 0, 0, width=_SLIDE_WIDTH, height=_SLIDE_HEIGHT) 全幅铺满（强制铺满整页；生图按 1024x1024，轻微拉伸可接受）。
+    用 left=Emu(0), top=Emu(0)（Emu 已 import）。
+  * 图存在时：在底部叠加一个半透明深色标题带 + 标题/caption 浅色文字，保证文字可读。
+    - 标题带：_add_shape(slide, MSO_SHAPE.RECTANGLE, left=Emu(0), top=Emu(int(_SLIDE_HEIGHT*0.78)), width=Emu(_SLIDE_WIDTH), height=Emu(int(_SLIDE_HEIGHT*0.22)), fill=theme.dark_bg_rgb, line=None)。
+      若 _add_shape 不支持透明，就用实心 dark_bg_rgb 实色带即可（不要去碰 XML 搞 alpha，保持简单稳健）。
+    - 标题文字：_add_text(..., outline.title, 浅色=theme.dark_text_rgb, font=theme.font_heading, bold, align left)，放在标题带内。
+    - 若有 outline.caption：再加一行小字 theme.dark_muted_text_rgb。
+  * 若 image_path 缺失/非文件：优雅降级 —— 直接 _fill_slide_bg + _add_title_block + 一个居中占位文案（参考 _render_image_v2 line 1198 的 placeholder 写法），不要崩。
+  * 参考现有 v2 渲染器(如 _render_image_v2)的 import 名与 helper（_fill_slide_bg/_add_text/_add_shape/_add_title_block/_add_icon_badge/Inches/Emu/MSO_SHAPE）。
+- _RENDERERS 映射加 "image_full": _render_image_full_v2。
+
+== 改动 3：ppt_create 自动生图回填（核心）==
+- 在 ppt_create 渲染循环【之前】、且仅当【非 dry_run 且 _HAS_PPTX】时，调用新 helper：
+    _autofill_image_prompts(slides)
+- 新增 def _autofill_image_prompts(slides: list[SlideOutline]) -> None：
+  * 收集需要生图的：idx + prompt，条件 = so.image_prompt 非空 且 (not so.image_path)。
+  * 若没有 → 直接 return（保证无 image_prompt 时零网络调用、纯离线，BC 不变）。
+  * 有 → lazy import：try: from .image_tools import generate_images except Exception: log.warning(...); return（import 失败也不崩）。
+  * 调 results = generate_images([p for _,p in 待生图])（批量一次）。
+  * 按顺序把 results[k]["path"] 回填到对应 slides[idx].image_path（path 为 None 的项跳过，log.debug 该 prompt 生图失败原因）。
+  * 整个函数包一层 try/except Exception → log.warning，绝不让生图问题中断 ppt_create（出图失败就走占位降级）。
+  * 注意 SlideOutline 是 dataclass 且非 frozen（可直接赋值 so.image_path=...）。确认 normalize() 返回的对象可写（若 frozen 则用 dataclasses.replace；先确认——当前 class 未标 frozen，可直接赋值）。
+
+== 改动 4：更新模块 docstring ==
+- 把「no LLM calls here」那句改/补一句：默认纯同步离线；仅当某页带 image_prompt 时，ppt_create 会同步调用图像生成（走 image_tools.generate_images），失败优雅降级为占位。
+
+== 硬约束（不可破）==
+- 只改 ppt_tools.py 一个文件（+ 新增一个测试文件）。
+- 不改 _render_image_v2、不改现有 image 布局、不改 ppt_create 的签名/返回结构(ok/path/slide_count/theme/artifacts/markdown_fallback)。
+- image_prompt、image_full 都是【新增可选】，老 outline(无这俩) 行为 100% 不变。
+- dry_run 路径绝不调用 generate_images（早返回在前即可，确认顺序）。
+- 不加新第三方依赖。
+- generate_images 用 lazy import（函数内 import），避免模块级 import 环。
+- 中文注释风格与现有一致。
+
+== 验收（必须自测）==
+工作目录：G:\projects\deskpet\backend
+解释器：G:\projects\deskpet\backend\.venv\Scripts\python.exe
+1. BC 不破：.venv\Scripts\python.exe -m pytest -k ppt -q 全绿。
+2. 新增测试文件 tests/test_ppt_image_full_b2.py，至少 4 个用例：
+   a. test_image_prompt_autofills_path：monkeypatch deskpet.tools.image_tools.generate_images 返回 [{"prompt":..,"path":<一个真实临时PNG路径>,"error":None}]（先写一个最小合法 PNG 到 tmp_path —— 用下面给的合法 1x1 PNG 字节，别用假字节，python-pptx add_picture 需要真图头）。outline=[{"layout":"image_full","title":"封面","image_prompt":"a teal abstract cover"}]。调 ppt_create(outline)，断言 ok True、生成的 .pptx 存在、且 generate_images 被调用过一次（用计数/spy）。
+   b. test_no_image_prompt_no_network：outline 全是普通 bullet（无 image_prompt），monkeypatch generate_images 成「被调用就 raise AssertionError」，断言 ppt_create ok 且 generate_images 从未被调。
+   c. test_dry_run_skips_image_gen：带 image_prompt 的 outline + dry_run=True，monkeypatch generate_images 成被调即 fail，断言 dry_run 返回 ok 且生图未被调。
+   d. test_image_gen_failure_degrades：monkeypatch generate_images 返回 [{"prompt":..,"path":None,"error":"relay down"}]，断言 ppt_create 仍 ok True（占位降级，不崩）。
+   合法最小 PNG（base64，1x1 透明）：
+   iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
+   测试里 import base64 解码写文件即可。
+3. 跑新测试：.venv\Scripts\python.exe -m pytest tests/test_ppt_image_full_b2.py -q 全绿。
+
+完成后输出：改了哪些函数/行、4 个测试 pass 结果、image_full 渲染几何说明、确认 dry_run 与无-image_prompt 路径零网络调用。

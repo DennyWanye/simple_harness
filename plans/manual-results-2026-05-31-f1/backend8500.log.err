@@ -1,0 +1,88 @@
+INFO:observability.crash_reports:event='crash_reporter_installed' level='info' timestamp='2026-05-31T07:57:23.354799Z' directory='G:\\projects\\deskpet-stage2-f1f2\\crash_reports'
+INFO:config:seeded user config.toml from bundle: G:\projects\deskpet-stage2-f1f2\config.toml -> G:\projects\deskpet-stage2-f1f2\.dev-userdata\config.toml
+INFO:config:llm_unified_schema_loaded fields=['api_key', 'base_url', 'max_tokens', 'model', 'temperature'] base_url=https://your-llm-relay.example.com/v1 model=gpt-5.5
+INFO:__main__:event='config_loaded' level='info' timestamp='2026-05-31T07:57:23.366687Z' path='G:\\projects\\deskpet-stage2-f1f2\\.dev-userdata\\config.toml' exists=True user_data_dir='G:\\projects\\deskpet-stage2-f1f2\\.dev-userdata' user_models_dir='C:\\Users\\24378\\AppData\\Local\\deskpet\\models' model_root='C:\\Users\\24378\\AppData\\Local\\deskpet\\models'
+G:\projects\deskpet\backend\.venv\Lib\site-packages\transformers\utils\hub.py:110: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+INFO:__main__:event='sanitize_inline_cot_dsml_flag' level='info' timestamp='2026-05-31T07:57:25.921139Z' enabled=True
+INFO:__main__:event='provider_registry_initialized providers=%d' level='info' timestamp='2026-05-31T07:57:25.939505Z' positional_args=(0,)
+WARNING:deskpet.tools.registry:tool 'web_fetch' re-registered (toolset=web → web, source=builtin → builtin); previous definition replaced (replace_allowed opt-in)
+INFO:__main__:event='last_mile.default_artifact_dir resolved to %s' level='info' timestamp='2026-05-31T07:57:26.226395Z' positional_args=('G:\\projects\\deskpet-stage2-f1f2\\.dev-userdata\\artifacts',)
+INFO:__main__:event='p4_s20_plugins_discovered' level='info' timestamp='2026-05-31T07:57:26.236378Z' plugins_dir='G:\\projects\\deskpet-stage2-f1f2\\.dev-userdata\\plugins' plugins=[]
+INFO:__main__:event='p4_s20_tool_registry_v2_ready' level='info' timestamp='2026-05-31T07:57:26.236378Z' os_tools=45
+INFO:__main__:event='hardware_tier' level='info' timestamp='2026-05-31T07:57:26.250638Z' tier='flagship' recommended_llm='gemma:27b' recommended_tts='cosyvoice2' recommended_asr='large-v3-turbo'
+INFO:__main__:event='p4_fact_extractor_ready' level='info' timestamp='2026-05-31T07:57:26.256580Z' min_chars=8 cross_key_merge=False
+INFO:deskpet.tools.skill_tools:skill_tools.bind: skill_loader=SkillLoader
+INFO:__main__:event='p4_skill_invoke_tool_bound' level='info' timestamp='2026-05-31T07:57:26.262640Z'
+WARNING:deskpet.tools.registry:tool 'glob' re-registered (toolset=code → code, source=builtin → builtin); previous definition replaced (replace_allowed opt-in)
+WARNING:deskpet.tools.registry:tool 'grep' re-registered (toolset=code → code, source=builtin → builtin); previous definition replaced (replace_allowed opt-in)
+WARNING:deskpet.tools.registry:tool 'web_search' re-registered (toolset=code → code, source=builtin → builtin); previous definition replaced (replace_allowed opt-in)
+WARNING:deskpet.tools.registry:tool 'fetch_tool_result' re-registered (toolset=code → code, source=builtin → builtin); previous definition replaced (replace_allowed opt-in)
+WARNING:deskpet.tools.registry:tool 'todo_write' re-registered (toolset=todo → code, source=builtin → builtin); previous definition replaced (replace_allowed opt-in)
+INFO:__main__:event='p4_s22_code_tools_registered' level='info' timestamp='2026-05-31T07:57:26.280117Z' count=6
+INFO:__main__:event='p4_services_registered' level='info' timestamp='2026-05-31T07:57:26.280446Z' l1_dir='G:\\projects\\deskpet-stage2-f1f2\\.dev-userdata\\data' state_db='G:\\projects\\deskpet-stage2-f1f2\\.dev-userdata\\data\\state.db' memory_manager=True skill_loader=True context_assembler=True embedder_mock_when_missing=True vector_worker=True retriever=True
+WARNING:__main__:event='metrics_auth_bypassed_dev_mode' level='warning' timestamp='2026-05-31T07:57:26.280446Z' note='DESKPET_DEV_MODE=1 — /metrics and WS auth are OPEN. Set DESKPET_DEV_MODE=0 in production.'
+INFO:__main__:event='starting backend' level='info' timestamp='2026-05-31T07:57:26.297782Z' host='127.0.0.1' port=8500
+INFO:     Started server process [20744]
+INFO:     Waiting for application startup.
+INFO:__main__:event='preloading models...' level='info' timestamp='2026-05-31T07:57:26.326482Z'
+INFO:__main__:event='p4_workspace_memory_loop_rebound' level='info' timestamp='2026-05-31T07:57:26.327764Z' ok=True
+INFO:__main__:event='billing_ledger_ready' level='info' timestamp='2026-05-31T07:57:26.352256Z' db_path='G:\\projects\\deskpet-stage2-f1f2\\.dev-userdata\\data\\billing.db'
+INFO:providers.silero_vad:event='loading silero-vad v5' level='info' timestamp='2026-05-31T07:57:26.352256Z'
+INFO:providers.silero_vad:event='silero-vad loaded' level='info' timestamp='2026-05-31T07:57:26.517514Z'
+INFO:__main__:event='loaded' level='info' timestamp='2026-05-31T07:57:26.525850Z' engine='vad_engine'
+INFO:providers.faster_whisper_asr:event='loading faster-whisper' level='info' timestamp='2026-05-31T07:57:26.526372Z' model='C:\\Users\\24378\\AppData\\Local\\deskpet\\models\\faster-whisper-large-v3-turbo' device='cuda' compute_type='float16'
+INFO:providers.faster_whisper_asr:event='faster-whisper loaded' level='info' timestamp='2026-05-31T07:57:37.160803Z'
+INFO:__main__:event='loaded' level='info' timestamp='2026-05-31T07:57:37.161803Z' engine='asr_engine'
+INFO:providers.edge_tts_provider:event='edge-tts ready' level='info' timestamp='2026-05-31T07:57:37.161803Z' voice='zh-CN-XiaoyiNeural'
+INFO:__main__:event='loaded' level='info' timestamp='2026-05-31T07:57:37.161803Z' engine='tts_engine'
+INFO:deskpet.memory.migrator:state.db fresh (user_version=0), running all migrations
+INFO:deskpet.memory.schema:state.db migrations applied: ['001_p4_initial_v9.sql', '002_p4s20_summarize_archive.sql', '003_p4s22_code_todos.sql', '004_p4s24_reasoning_content.sql', '005_p4s25_code_sessions.sql', '006_p5s1_supervisor_hints.sql', '007_p5s2_code_session_provider.sql', '008_p5s2_code_session_model_params.sql']
+INFO:deskpet.memory.session_db:SessionDB ready (db=G:\projects\deskpet-stage2-f1f2\.dev-userdata\data\state.db, vec=on)
+INFO:__main__:event='p4_session_db_ready' level='info' timestamp='2026-05-31T07:57:37.490445Z' path='G:\\projects\\deskpet-stage2-f1f2\\.dev-userdata\\data\\state.db'
+INFO:__main__:event='code_sessions_restored' level='info' timestamp='2026-05-31T07:57:37.492445Z' count=0
+INFO:deskpet.memory.manager:event='memory_manager.initialized' level='info' timestamp='2026-05-31T07:57:37.493445Z' base_dir='G:\\projects\\deskpet-stage2-f1f2\\.dev-userdata\\data' retriever_available=True
+INFO:__main__:event='p4_memory_manager_ready' level='info' timestamp='2026-05-31T07:57:37.494197Z'
+INFO:deskpet.skills.loader:event='skill.reload_ok' level='info' timestamp='2026-05-31T07:57:37.499725Z' count=12
+INFO:__main__:event='p4_skill_loader_ready' level='info' timestamp='2026-05-31T07:57:37.500725Z' count=12
+INFO:__main__:event='p4_vector_worker_ready' level='info' timestamp='2026-05-31T07:57:37.500725Z' facts_extract=False
+INFO:deskpet.memory.image_worker:image_worker started (max_concurrent=2)
+INFO:__main__:event='image_worker_ready' level='info' timestamp='2026-05-31T07:57:37.500725Z'
+INFO:deskpet.memory.embedder:Spawning BGE-M3 subprocess worker (path=C:\Users\24378\AppData\Local\deskpet\models\bge-m3-int8 device=cuda)
+WARNING:deskpet.memory.embedder:[embedder-worker stderr] G:\projects\deskpet\backend\.venv\Lib\site-packages\transformers\utils\hub.py:110: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+WARNING:deskpet.memory.embedder:[embedder-worker stderr]   warnings.warn(
+Secure MCP Filesystem Server running on stdio
+Client does not support MCP Roots, using allowed directories set from server args: [ 'G:\\projects\\deskpet-stage2-f1f2\\.dev-userdata\\workspace' ]
+INFO:deskpet.mcp.manager:event='mcp_server_connected' level='info' timestamp='2026-05-31T07:57:39.866783Z' server='filesystem' transport='stdio' tool_count=14
+INFO:deskpet.mcp.manager:event='mcp_server_disabled' level='info' timestamp='2026-05-31T07:57:39.867790Z' server='weather'
+INFO:deskpet.mcp.manager:event='mcp_server_connected' level='info' timestamp='2026-05-31T07:57:41.892553Z' server='playwright' transport='stdio' tool_count=23
+INFO:deskpet.mcp.bootstrap:event='mcp_bootstrap_started' level='info' timestamp='2026-05-31T07:57:41.892553Z' states={'filesystem': 'running', 'playwright': 'running'}
+INFO:__main__:event='p4_mcp_manager_ready' level='info' timestamp='2026-05-31T07:57:41.892553Z' states={'filesystem': 'running', 'playwright': 'running'}
+INFO:__main__:event='p5s2_circuit_breaker_wired threshold=%d cooldown=%.0fs' level='info' timestamp='2026-05-31T07:57:41.896717Z' positional_args=(3, 60.0)
+INFO:__main__:event='supervisor_provider_resolved id=legacy base_url=%s — registry empty/unavailable; consider adding a provider via Settings' level='info' timestamp='2026-05-31T07:57:41.896717Z' positional_args=('https://your-llm-relay.example.com/v1',)
+INFO:deskpet.agent.watchdog:watchdog started (scan_interval=60s, stuck_threshold=900s, dedup=720s)
+INFO:__main__:event='p5_supervisor_watchdog_started' level='info' timestamp='2026-05-31T07:57:41.898734Z'
+INFO:__main__:event='p5s2_auto_resume_started enabled=%s max_attempts=%d' level='info' timestamp='2026-05-31T07:57:41.898734Z' positional_args=(True, 2)
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=32000 source=builtin
+INFO:__main__:event='startup complete' level='info' timestamp='2026-05-31T07:57:41.900987Z'
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8500 (Press CTRL+C to quit)
+INFO:deskpet.memory.embedder:BGE-M3 worker ready in 1473.2ms (device=cuda)
+INFO:deskpet.memory.embedder:BGE-M3 subprocess worker ready (path=C:\Users\24378\AppData\Local\deskpet\models\bge-m3-int8, device=cuda, attempt=1)
+INFO:__main__:event='p4_embedder_ready' level='info' timestamp='2026-05-31T07:57:44.427057Z' is_mock=False
+INFO:__main__:event='summarizer_starting age_days=30 min_messages=20 max_per_run=10' level='info' timestamp='2026-05-31T07:57:49.911644Z'
+INFO:__main__:event='summarizer_done scanned=%d summarized=%d archived=%d errors=%d' level='info' timestamp='2026-05-31T07:57:49.913644Z' positional_args=(0, 0, 0, 0)
+INFO:     127.0.0.1:13075 - "WebSocket /ws/control?secret=" [accepted]
+INFO:__main__:event='control channel connected' level='info' timestamp='2026-05-31T07:59:03.269701Z' session_id='default'
+INFO:     connection open
+INFO:     127.0.0.1:8572 - "WebSocket /ws/audio?secret=&session_id=default" [accepted]
+INFO:providers.silero_vad:event='loading silero-vad v5' level='info' timestamp='2026-05-31T07:59:03.285204Z'
+INFO:providers.silero_vad:event='silero-vad loaded' level='info' timestamp='2026-05-31T07:59:03.344911Z'
+INFO:__main__:event='audio channel connected' level='info' timestamp='2026-05-31T07:59:03.345910Z' session_id='default'
+INFO:     connection open
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=32000 source=builtin
+INFO:     127.0.0.1:8210 - "WebSocket /ws/audio?secret=&session_id=default" [accepted]
+INFO:providers.silero_vad:event='loading silero-vad v5' level='info' timestamp='2026-05-31T07:59:03.751080Z'
+INFO:providers.silero_vad:event='silero-vad loaded' level='info' timestamp='2026-05-31T07:59:03.811981Z'
+INFO:__main__:event='audio channel connected' level='info' timestamp='2026-05-31T07:59:03.811981Z' session_id='default'
+INFO:     connection open

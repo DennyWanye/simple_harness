@@ -1,0 +1,61 @@
+{
+  "fixture_schema_version": 1,
+  "line_ending_invariant_manifest": {
+    "callable_source_hash": "9c6fd3efcbbcdd44e540c5fdf1bb7597c65fbd5c741ba8105078572996efe377",
+    "definition_hash": "9b1198e7a46b928232b80572a3ddc33de81560936b10170ef7895f2f2ee8622c",
+    "durability": "sync",
+    "max_supersteps": 32,
+    "policy_hash": "86b9dad2b4d884a3f8e1d1b5e610fce60d29b2e7b53eb8ff634a59880f022a42",
+    "prompt_hash": "5382e3a4dcaa290de66031a634784fc3d726088a057523209510b189ddfbafa9",
+    "recursion_limit": 64,
+    "state_hash": "11a06daf2858bc5b87db2fda37040f6c90dbd3ca1158b20588eadbec05d28d74",
+    "state_schema_version": 1,
+    "tool_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "workflow_name": "deep_research",
+    "workflow_version": "v1"
+  },
+  "line_ending_variants": {
+    "crlf": {
+      "manifest": {
+        "callable_source_hash": "9c6fd3efcbbcdd44e540c5fdf1bb7597c65fbd5c741ba8105078572996efe377",
+        "definition_hash": "9b1198e7a46b928232b80572a3ddc33de81560936b10170ef7895f2f2ee8622c",
+        "dependency_lock_hash": "ff691f62e113477ba230f0897488fb6ec9f1d1009b003947497cbecc6ea895e5",
+        "durability": "sync",
+        "implementation_bundle_hash": "8b75b88824dda7e8d2312e0e865836275fcbddfbbf2ebe9263c50059900ac804",
+        "max_supersteps": 32,
+        "policy_hash": "86b9dad2b4d884a3f8e1d1b5e610fce60d29b2e7b53eb8ff634a59880f022a42",
+        "prompt_hash": "5382e3a4dcaa290de66031a634784fc3d726088a057523209510b189ddfbafa9",
+        "recursion_limit": 64,
+        "state_hash": "11a06daf2858bc5b87db2fda37040f6c90dbd3ca1158b20588eadbec05d28d74",
+        "state_schema_version": 1,
+        "tool_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "workflow_name": "deep_research",
+        "workflow_version": "v1"
+      },
+      "manifest_hash": "0f9fa622ab016398bcc6e4cfc7b9509d0d923502de4ecbc2a2f7258cac91d9ff"
+    },
+    "lf": {
+      "manifest": {
+        "callable_source_hash": "9c6fd3efcbbcdd44e540c5fdf1bb7597c65fbd5c741ba8105078572996efe377",
+        "definition_hash": "9b1198e7a46b928232b80572a3ddc33de81560936b10170ef7895f2f2ee8622c",
+        "dependency_lock_hash": "1013a7b449853880a44dd4219d1fe8090dff38055fd4a42d6902887693e4c8ef",
+        "durability": "sync",
+        "implementation_bundle_hash": "9290fc347e425fa16c7a1eea61b8c4772d3118a5ed2caf4e857cd33c61518497",
+        "max_supersteps": 32,
+        "policy_hash": "86b9dad2b4d884a3f8e1d1b5e610fce60d29b2e7b53eb8ff634a59880f022a42",
+        "prompt_hash": "5382e3a4dcaa290de66031a634784fc3d726088a057523209510b189ddfbafa9",
+        "recursion_limit": 64,
+        "state_hash": "11a06daf2858bc5b87db2fda37040f6c90dbd3ca1158b20588eadbec05d28d74",
+        "state_schema_version": 1,
+        "tool_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "workflow_name": "deep_research",
+        "workflow_version": "v1"
+      },
+      "manifest_hash": "975e4b2fd739638f243df014206152ade09c820810f86228e27bb8a9c50f9138"
+    }
+  },
+  "workflow": {
+    "name": "deep_research",
+    "version": "v1"
+  }
+}

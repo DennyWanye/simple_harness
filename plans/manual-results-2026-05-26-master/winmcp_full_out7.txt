@@ -1,0 +1,40 @@
+Connected: http://tauri.localhost/
+
+[setup] winmcp foreground: hwnd=1314232
+
+── R3-1 ──
+  [✗] R3-1 winmcp 真发你好                                 FAIL    — paste reached input but value mismatch after 3 retries: ''
+
+── R3-2 ──
+  [✓] R3-2 toolbar 已连接 + FPS                           PASS    — {'has_connected': True, 'has_fps': True, 'no_unknown_service': True}
+
+── R3-3 ──
+  [✗] R3-3 winmcp 真发 skill 触发                          FAIL    — paste reached input but value mismatch after 3 retries: ''
+
+── R5-1 ──
+  [~] R5-1 账户 pill (winmcp Enter)                      PARTIAL — Enter sent but no panel content detected
+
+── TC-04 ──
+  [✗] TC-04 winmcp 真发输入 + Enter                        FAIL    — paste reached input but value mismatch after 3 retries: ''
+
+── TC-08 ──
+  [~] TC-08 winmcp 真按 settings                         PARTIAL — Enter sent but no dialog
+
+── TC-09 ──
+  [~] TC-09 winmcp 真按 mic                              PARTIAL — Enter sent but no state change: before={'title': '按住录音', 'cls': ''} after={'title': '按住录音', 'cls': ''}
+
+── TC-10 ──
+  [✗] TC-10 winmcp 真按消息 → 互斥                           FAIL    — visBefore=True, visAfter=True
+
+── B1 excel_create (winmcp) ──
+  [✗] B1 excel_create (winmcp)                         FAIL    — paste reached input but value mismatch after 3 retries: ''
+
+── B2 doc_create (winmcp) ──
+  [✗] B2 doc_create (winmcp)                           FAIL    — paste reached input but value mismatch after 3 retries: ''
+
+── B5 ppt_create (winmcp) ──
+  [✗] B5 ppt_create (winmcp)                           FAIL    — paste reached input but value mismatch after 3 retries: ''
+
+=== windows-mcp Full Suite Summary ===
+PASS:1  FAIL:7  PARTIAL:3  SKIP:0
+Output: G:\projects\deskpet\plans\manual-results-2026-05-26-master\winmcp_full_results.json

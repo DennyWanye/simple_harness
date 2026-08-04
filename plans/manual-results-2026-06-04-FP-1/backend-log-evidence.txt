@@ -1,0 +1,16 @@
+===== 首次启动 (fp1-tauri-dev.log) — 设目标前 =====
+[backend_launch] Dev python=G:\projects\deskpet\backend\.venv\Scripts\python.exe backend_dir=G:\projects\deskpet\backen
+INFO:__main__:event='goal_store_bound_persistence' level='info' timestamp='2026-06-04T15:06:15.759563Z'
+INFO:__main__:event='companion_code_v1_goal_mode_ready' level='info' timestamp='2026-06-04T15:06:15.759563Z'
+INFO:deskpet.agent.goal_store:goal_store.load_persisted restored=0
+INFO:__main__:event='goal_store_load_persisted restored=%d' level='info' timestamp='2026-06-04T15:06:17.943576Z' positi
+INFO:     Uvicorn running on http://127.0.0.1:8100 (Press CTRL+C to quit)
+
+===== 重启后 (fp1-tauri-dev-3.log) — 恢复目标 =====
+[backend_launch] Dev python=G:\projects\deskpet\backend\.venv\Scripts\python.exe backend_dir=G:\projects\deskpet\backen
+INFO:__main__:event='goal_store_bound_persistence' level='info' timestamp='2026-06-04T15:23:19.178826Z'
+INFO:__main__:event='companion_code_v1_goal_mode_ready' level='info' timestamp='2026-06-04T15:23:19.178826Z'
+INFO:deskpet.agent.goal_store:goal_store.load_persisted restored=1
+INFO:__main__:event='goal_store_load_persisted restored=%d' level='info' timestamp='2026-06-04T15:23:20.500036Z' positi
+INFO:     Uvicorn running on http://127.0.0.1:8100 (Press CTRL+C to quit)
+('0518197233e44e85986b782c7db0c7cf', 'code-ks4v3wdq', '帮我整理本周三个会议纪要FP1测试', 'active', 0)

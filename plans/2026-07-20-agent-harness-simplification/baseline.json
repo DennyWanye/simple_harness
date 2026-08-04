@@ -1,0 +1,132 @@
+{
+  "chat_kernel_local_start": {
+    "kernel_present": false,
+    "max_ms": 2.6239,
+    "median_ms": 0.0924,
+    "p95_ms": 0.5468,
+    "p99_ms": 2.6239,
+    "path": "legacy_agent_loop_pre_provider",
+    "samples": 40
+  },
+  "chat_ttft": {
+    "kind": "controlled_provider",
+    "live_e2e_status": "requires external live trace capture",
+    "max_ms": 22.8485,
+    "median_ms": 15.3987,
+    "p95_ms": 16.099,
+    "p99_ms": 22.8485,
+    "provider_delay_ms": 5.0,
+    "samples": 40
+  },
+  "environment": {
+    "commit": "961c7d340334927acfa07cfaffe071510f56cff3",
+    "cpu_count": 24,
+    "platform": "Windows-10-10.0.22621-SP0",
+    "python": "3.11.9"
+  },
+  "event_loop_20_sessions": {
+    "lag": {
+      "max_ms": 14.0,
+      "median_ms": 3.0,
+      "p95_ms": 14.0,
+      "p99_ms": 14.0,
+      "samples": 12
+    },
+    "runs": 300,
+    "sessions": 20,
+    "throughput_runs_per_s": 21096.75
+  },
+  "orchestration_loc": {
+    "added_execution_harness_team": 0,
+    "files": {
+      "backend/agent/agent_loop.py": 5635,
+      "backend/agent/auto_resume.py": 349,
+      "backend/deskpet/agent/harness_manifest.py": 296,
+      "backend/deskpet/agent/subagent_registry.py": 110,
+      "backend/deskpet/tools/code_tools/spawn_subagents_tool.py": 231,
+      "backend/deskpet/tools/code_tools/spawn_team_tool.py": 146,
+      "backend/deskpet/tools/registry.py": 2272,
+      "backend/deskpet/workflows/routing.py": 89,
+      "backend/main.py": 11533,
+      "backend/pipeline/voice_pipeline.py": 902
+    },
+    "fixed_total": 21563,
+    "total": 21563
+  },
+  "owner_audit": {
+    "candidate_count": 55,
+    "candidate_keys": [
+      "backend/agent/nudge_queue.py::NudgeQueue._pending",
+      "backend/deskpet/agent/assembler/assembler.py::ContextAssembler._decisions_ring",
+      "backend/deskpet/agent/goal_store.py::SessionGoalStore._fanout_tasks",
+      "backend/deskpet/agent/intent_triage.py::<module>._TASKTYPE_TO_PROBLEM",
+      "backend/deskpet/agent/subagent_registry.py::SubagentRegistry._runs",
+      "backend/deskpet/agent/subagent_registry.py::SubagentRegistry.completion_queue",
+      "backend/deskpet/agent/tool_path.py::ToolPathRecorder._active",
+      "backend/deskpet/memory/image_worker.py::ImageGenerationWorker._active",
+      "backend/deskpet/memory/image_worker.py::ImageGenerationWorker._inflight",
+      "backend/deskpet/memory/image_worker.py::ImageGenerationWorker._queue",
+      "backend/deskpet/memory/memory_v2_schema.py::<module>._goal_tasks_ensured",
+      "backend/deskpet/memory/vector_worker.py::VectorWorker._queue",
+      "backend/deskpet/permissions/gate.py::PermissionGate._pending",
+      "backend/deskpet/retrieval/search_gateway.py::SearchGateway._run_health",
+      "backend/deskpet/retrieval/search_gateway.py::SearchGateway._tasks",
+      "backend/deskpet/session/task_scope.py::TaskSessionManager._active",
+      "backend/deskpet/skills/skill_codifier.py::SkillCandidateWaiters._waiters",
+      "backend/deskpet/tools/context_page_in_tools.py::ContextPageInStore._active",
+      "backend/deskpet/tools/ppt_tools.py::<module>._PPT_PRO_RUNNING",
+      "backend/deskpet/tools/ppt_tools.py::<module>._PPT_PRO_RUNNING_TOPIC",
+      "backend/deskpet/tools/ppt_tools.py::<module>._PPT_PRO_TASKS",
+      "backend/deskpet/tools/registry.py::ToolRegistry._prepared_effect_policy_versions",
+      "backend/deskpet/tools/research_cdp_edge.py::<module>._pending",
+      "backend/deskpet/tools/task_graph_tools.py::<module>._SCHEMA_GOAL_TASK_CREATE",
+      "backend/deskpet/tools/task_graph_tools.py::<module>._SCHEMA_GOAL_TASK_GET",
+      "backend/deskpet/tools/task_graph_tools.py::<module>._SCHEMA_GOAL_TASK_LIST",
+      "backend/deskpet/tools/task_graph_tools.py::<module>._SCHEMA_GOAL_TASK_UPDATE",
+      "backend/deskpet/workflows/definitions/deep_research_v6_compiler.py::<module>.COMPLETION_POLICY",
+      "backend/deskpet/workflows/definitions/deep_research_v6_delivery.py::<module>._DELIVERY_KEYS",
+      "backend/deskpet/workflows/definitions/v2/deep_research.py::<module>._PUBLIC_NODE_HANDLERS",
+      "backend/deskpet/workflows/definitions/v3/deep_research.py::<module>._PUBLIC_NODE_HANDLERS",
+      "backend/deskpet/workflows/definitions/v4/deep_research.py::<module>._PUBLIC_NODE_HANDLERS",
+      "backend/deskpet/workflows/definitions/v5/deep_research.py::<module>._HANDLERS",
+      "backend/deskpet/workflows/definitions/v6/deep_research.py::<module>._HANDLERS",
+      "backend/deskpet/workflows/launcher.py::WorkflowLauncher._run_tasks",
+      "backend/deskpet/workflows/launcher.py::WorkflowLauncher._scheduled_run_ids",
+      "backend/deskpet/workflows/launcher.py::WorkflowLauncher._tasks",
+      "backend/deskpet/workflows/lease.py::<module>.LEGAL_RUN_TRANSITIONS",
+      "backend/deskpet/workflows/native.py::InMemoryNativeCheckpointStore.pending",
+      "backend/deskpet/workflows/runner.py::WorkflowRunner._run_locks",
+      "backend/deskpet/workflows/service.py::WorkflowService._delivery_handlers",
+      "backend/deskpet/workflows/service.py::WorkflowService._delivery_locks",
+      "backend/deskpet/workflows/store/research_repository.py::<module>._CONTINUABLE_DELIVERY",
+      "backend/main.py::<module>._PLAN_CONFIRM_WAITERS",
+      "backend/main.py::<module>._PPT_OUTLINE_WAITERS",
+      "backend/main.py::<module>._SKILL_CANDIDATE_WAITERS",
+      "backend/main.py::<module>._auto_resume_redispatchers",
+      "backend/main.py::<module>._chat_inflight",
+      "backend/main.py::<module>._clarify_pending",
+      "backend/main.py::<module>._episodic_background_tasks",
+      "backend/main.py::<module>._nudge_queue",
+      "backend/main.py::<module>._permission_pending",
+      "backend/main.py::<module>._pipelines",
+      "backend/main.py::<module>._workflow_ipc_background_tasks",
+      "backend/pipeline/voice_pipeline.py::VoicePipeline._codify_tasks"
+    ]
+  },
+  "schema_version": 1,
+  "ten_thousand_completed_runs": {
+    "completed_run_strong_refs": 10000,
+    "rss_after_bytes": 107692032,
+    "rss_before_bytes": 104992768,
+    "rss_delta_bytes": 2699264,
+    "runs": 10000,
+    "traced_current_bytes": 2942716,
+    "traced_peak_bytes": 3016208
+  },
+  "workflow_node": {
+    "database_bytes": 544768,
+    "probe": "one native node: genesis + task result + frontier",
+    "serialized_bytes": 505,
+    "transactions": 3
+  }
+}

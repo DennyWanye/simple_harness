@@ -1,0 +1,59 @@
+任务：加固 DeskPet 图像生成工具的 relay 健壮性，并新增同步批量生图原语。仅改一个文件。
+
+== 目标文件（唯一）==
+G:\projects\deskpet\backend\deskpet\tools\image_tools.py
+
+== 背景 ==
+这是 deskpet 的文生图工具，走中转站 OpenAI 兼容 /images/generations 接口。
+现有 _generate_png(prompt,size,model) 是干净同步原语：POST → 取 b64_json 或 url → 返回 (png_bytes, None) 或 (None, error_hint)，从不抛异常。
+_save_image(png) 把 PNG 写进 user_data/workspace 返回 Path。
+中转站上游对慢/复杂出图会瞬时断连，常见错误是 SSL: UNEXPECTED_EOF_WHILE_READING。
+
+== 现有缺口（要修）==
+1. _generate_png 的 retry 只有 2 次尝试（_MAX_ATTEMPTS=2）。
+2. 裸 ssl.SSLError 会落到 line 231 附近的通用 `except Exception` 分支 → 立即 return 不重试，导致 UNEXPECTED_EOF_WHILE_READING 这类瞬时 SSL 错误漏接、不重试。
+3. 没有给 PPT 拼图用的「同步批量生图」入口（async worker 不返回路径，PPT 拿不到）。
+
+== 改动 1：加固 _generate_png ==
+- 在文件顶部 import ssl。
+- 把瞬时可重试异常集合扩展：在现有 httpx.TimeoutException / RemoteProtocolError / ConnectError / ReadError / WriteError / PoolTimeout 之外，显式增加捕获 ssl.SSLError 和 httpx.ProtocolError，归类为「瞬时」（设 last_transient 后继续重试），不要让它们落到通用 except 立即返回。
+- _MAX_ATTEMPTS 从 2 提到 4。
+- _RETRY_BACKOFF 改成指数退避 (3.0, 8.0, 20.0)（对应 attempt 2/3/4 前的等待）。注意现有代码用 _RETRY_BACKOFF[_attempt-1] 索引，要保证 attempt 最大 4 时索引不越界（4 次尝试 = 3 次退避，元组长度 3 正好）。
+- _TOOL_TIMEOUT_S 上调到覆盖最坏预算：4×100(_TIMEOUT_S) + (3+8+20) 退避 ≈ 431，设 _TOOL_TIMEOUT_S = 480.0。
+- 通用 `except Exception as exc` 分支保留（兜底真正未预期错误，立即返回不重试），但确保 SSL/Protocol 错误在它之前被瞬时分支接住。
+- 失败终态错误信息保留「连试 N 次仍失败 + 最后一次瞬时原因」格式，N 用 _MAX_ATTEMPTS 动态值。
+
+== 改动 2：新增同步批量原语 generate_images ==
+在 _save_image 之后、_validate_prompt 之前（模块级公开函数，不注册成 LLM 工具）新增：
+
+    def generate_images(prompts, *, size=_DEFAULT_SIZE, model=None):
+        """同步批量文生图，给 PPT 整页生图用（async worker 不返回路径，这里要确定性同步路径）。
+        逐 prompt 调 _generate_png + _save_image。返回 list，每项:
+        {"prompt": str, "path": str|None, "error": str|None}。
+        任一 prompt 失败不影响其它（该项 path=None,error=原因）。从不抛异常。
+        """
+
+- prompts: list[str]；空串/非 str 项 → 该项 error="empty prompt", path=None，跳过。
+- model 默认 None → 用 _image_model()。
+- size 默认 _DEFAULT_SIZE。
+- 复用 _generate_png(prompt,size,model)；成功再 _save_image，落盘失败也算该项失败（error 带原因）。
+- 不要并发（顺序同步即可，简单可靠；中转站本就不稳，别加压）。
+
+== 硬约束（不可破）==
+- 只改 image_tools.py 这一个文件。
+- 不破现有 _SCHEMA / registry.register("generate_image",...) / _handle_generate_image 异步分发 / _handle_generate_image_sync 返回结构（path/artifacts[]）。
+- 不加新第三方依赖（ssl 是标准库）。
+- 所有新函数从不抛异常（best-effort），与现有风格一致。
+- 保持中文注释风格与现有一致。
+
+== 验收（必须自测）==
+工作目录：G:\projects\deskpet\backend
+解释器：G:\projects\deskpet\backend\.venv\Scripts\python.exe
+1. 现有不破：.venv\Scripts\python.exe -m pytest tests/test_generate_image_tool.py -q  全绿。
+2. 新增测试文件 tests/test_image_reliability_b1.py，至少两个用例：
+   a. test_generate_png_retries_on_ssl_error：用 monkeypatch 让 httpx.Client.post 抛 ssl.SSLError("UNEXPECTED_EOF_WHILE_READING")，断言被重试了 _MAX_ATTEMPTS 次（用 mock 计数 / 或断言 time.sleep 被调 _MAX_ATTEMPTS-1 次），最终返回 (None, 含「瞬时」或错误类名的 hint)。注意 mock 掉 time.sleep 避免真等待。
+   a 要同时 mock _resolve_endpoint 返回 (一个假 base_url, 假 key) 以便进入请求循环。
+   b. test_generate_images_batch_returns_paths：monkeypatch _generate_png 返回 (b"\x89PNG fake", None)，调 generate_images(["a","b"])，断言返回 2 项且每项 path 非 None 且文件真存在；再加一个 prompt 为 "" 的项断言其 error 非 None、path None。
+3. 跑新测试：.venv\Scripts\python.exe -m pytest tests/test_image_reliability_b1.py -q 全绿。
+
+完成后在最后输出：改了哪些行、两个测试的 pass 结果、以及 generate_images 的最终签名。

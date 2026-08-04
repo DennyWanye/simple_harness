@@ -1,0 +1,37 @@
+{
+  "passes": [
+    {
+      "id": "M1",
+      "m": "funInteractions module loaded with 32 exports"
+    },
+    {
+      "id": "M2",
+      "m": "__deskpet_anim_debug exposed with 5 keys"
+    },
+    {
+      "id": "M3",
+      "m": "hit-zone found at center (563,282)"
+    },
+    {
+      "id": "T1-info",
+      "m": "Drag synthesis dispatched (debug keys: 5)"
+    },
+    {
+      "id": "T2",
+      "m": "3 taps dispatched within tap-burst window"
+    },
+    {
+      "id": "T3",
+      "m": "Double-tap dispatched within 150ms window"
+    },
+    {
+      "id": "T4",
+      "m": "80-sample circle (4π rad) dispatched — should trigger dizzy spin"
+    },
+    {
+      "id": "T5",
+      "m": "Long press 1.2s — should trigger petting animation (Cheek + EyeSmile ramp)"
+    }
+  ],
+  "fails": []
+}

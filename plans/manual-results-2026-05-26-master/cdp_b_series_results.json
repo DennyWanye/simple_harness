@@ -1,0 +1,23 @@
+{
+  "generated": "2026-05-30 23:33:58",
+  "results": [
+    {
+      "case": "B1 excel-generate",
+      "status": "FAIL",
+      "detail": "no artifact in 90s; approvals=[]; tail=另外我刚刚尝试调用 excel_create 工具，但工具返回：skill not found: 'excel_create'，也就是当前环境里没有这个工具，没法直接用它生成 xlsx 文件，抱歉喵。\n\n我可以先把表格内容给你，或者改用其它",
+      "ts": "23:30:25"
+    },
+    {
+      "case": "B2 doc-edit (新建)",
+      "status": "FAIL",
+      "detail": "no artifact in 90s; approvals=[]; tail=息\n现在是 23:30。\n\n另外我刚试着调用 doc_create 工具新建事假请假条，但工具返回：skill not found: 'doc_create'，也就是当前环境里没有这个工具，没法直接生成 docx，抱歉喵。\n\n我先把内容给你",
+      "ts": "23:31:57"
+    },
+    {
+      "case": "B5 ppt-generate",
+      "status": "FAIL",
+      "detail": "no artifact in 120s; approvals=[]; tail= 基础问答能力测试\n- 用户偏好与记忆调用测试\n- 文档 / PPT / 表格类生成能力测试\n- 工具异常处理测试\n- 多轮对话一致性测试\n\n第 3 页：测试结果\n- 对话响应：正常\n- 当前时间读取：正常\n- 记忆片段引用：正常\n- pp",
+      "ts": "23:33:58"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-07-15T18:46:32.724351+00:00",
+  "summary": {
+    "passed": 1,
+    "sample_size": 1,
+    "decision": "PASS"
+  },
+  "runs": [
+    {
+      "run_id": "59975eb1a85a409e97e0277dcfe4a705",
+      "topic_fingerprint": "6e255f47e47108b5",
+      "workflow_version": "v4",
+      "status": "completed",
+      "expected_outcome": "success",
+      "elapsed_ms": 141713,
+      "report_count": 1,
+      "artifact_event_count": 1,
+      "final_assistant_event_count": 1,
+      "metrics": {
+        "body_bytes": 0,
+        "citations": 0,
+        "independent_domains": 0,
+        "published_factual_claims": 0
+      },
+      "actual_request_equation": null,
+      "diagnostic_codes": [],
+      "skipped_stage_count": 0,
+      "retry_action_id": null,
+      "passed": true
+    }
+  ]
+}

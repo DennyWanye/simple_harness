@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "example_id": "complex-code-write-test-fix",
+  "workflow": "code_complex",
+  "required": true,
+  "input": {
+    "request": "Implement a retry counter and repair its failing boundary test"
+  },
+  "expected": {
+    "required_nodes": [
+      "intake",
+      "plan",
+      "wait_approval",
+      "llm_proposal",
+      "tool_execution",
+      "test",
+      "audit",
+      "finalize"
+    ],
+    "actions": [
+      "write",
+      "test",
+      "fix",
+      "test"
+    ],
+    "file_hashes": {
+      "retry.py": "87fca857a9f2f79dc1dfa97deec76a2ab8c5fa466d5e2078a9a97b4e38e6849c",
+      "test_retry.py": "637e3dfdf8747ea2fe7eb97ed4aa2025644b80f2f708b73a672e5fc49b55e8cc"
+    },
+    "tests": [
+      "test_retry_stops_at_limit",
+      "test_retry_returns_success"
+    ],
+    "todo_ids": [
+      "write-retry",
+      "test-boundary",
+      "fix-off-by-one"
+    ],
+    "max_fix_rounds": 3
+  },
+  "output": {
+    "trace_nodes": [
+      "intake",
+      "clarify",
+      "plan",
+      "wait_approval",
+      "llm_proposal",
+      "tool_execution",
+      "completion_decision",
+      "test",
+      "llm_proposal",
+      "tool_execution",
+      "completion_decision",
+      "test",
+      "audit",
+      "finalize"
+    ],
+    "actions": [
+      "write",
+      "test",
+      "fix",
+      "test"
+    ],
+    "file_hashes": {
+      "retry.py": "87fca857a9f2f79dc1dfa97deec76a2ab8c5fa466d5e2078a9a97b4e38e6849c",
+      "test_retry.py": "637e3dfdf8747ea2fe7eb97ed4aa2025644b80f2f708b73a672e5fc49b55e8cc"
+    },
+    "test_runs": [
+      {
+        "status": "failed",
+        "tests": {
+          "test_retry_stops_at_limit": "failed",
+          "test_retry_returns_success": "passed"
+        }
+      },
+      {
+        "status": "passed",
+        "tests": {
+          "test_retry_stops_at_limit": "passed",
+          "test_retry_returns_success": "passed"
+        }
+      }
+    ],
+    "todos": [
+      {
+        "id": "write-retry",
+        "status": "completed"
+      },
+      {
+        "id": "test-boundary",
+        "status": "completed"
+      },
+      {
+        "id": "fix-off-by-one",
+        "status": "completed"
+      }
+    ],
+    "audit": {
+      "passed": true,
+      "evidence_refs": [
+        "file:retry.py#sha256",
+        "pytest:2-passed"
+      ]
+    },
+    "fix_rounds": 1,
+    "latency_ms": 174.0
+  }
+}

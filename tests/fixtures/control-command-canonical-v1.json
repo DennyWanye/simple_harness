@@ -1,0 +1,69 @@
+{
+  "schema": "control-command-canonical-v1",
+  "valid": [
+    {
+      "name": "null",
+      "command_kind": "noop",
+      "request_seq": "1",
+      "binding_epoch": "1",
+      "raw_body_json": "null",
+      "tlv_hex": "00",
+      "request_hash": "1b862608aab960b03416b9938fe09170bc6fbb6fd2e16f79380977321a2cfea8"
+    },
+    {
+      "name": "unicode",
+      "command_kind": "identity_bind",
+      "request_seq": "2",
+      "binding_epoch": "7",
+      "raw_body_json": "{\"text\":\"é😀\",\"a\":true}",
+      "tlv_hex": "0600000002040000000161020400000004746578740400000006c3a9f09f9880",
+      "request_hash": "92c34ed85a576a553528d43234d18c1b594dc8fa5ac7680c70f345fc341a1247"
+    },
+    {
+      "name": "object_reorder_and_integer_boundaries",
+      "command_kind": "companion_action",
+      "request_seq": "9007199254740991",
+      "binding_epoch": "18446744073709551615",
+      "raw_body_json": "{\"z\":[-9007199254740991,null],\"a\":{\"β\":\"é\"}}",
+      "equivalent_raw_body_json": "{\"a\":{\"β\":\"é\"},\"z\":[-9007199254740991,null]}",
+      "tlv_hex": "060000000204000000016106000000010400000002ceb2040000000365cc8104000000017a050000000203ffe000000000000100",
+      "request_hash": "9c9b35f1bcf8423cb76401daea725d3f80d766ca650420c83f44ad969ab6e7f2"
+    }
+  ],
+  "reject_raw_json": [
+    {"name": "float", "raw": "1.5"},
+    {"name": "negative_zero", "raw": "-0"},
+    {"name": "duplicate_key", "raw": "{\"a\":1,\"a\":2}"},
+    {"name": "lone_surrogate", "raw": "\"\\ud800\""},
+    {"name": "unsafe_integer", "raw": "9007199254740992"}
+  ],
+  "reject_u64": [
+    "",
+    "00",
+    "01",
+    "-1",
+    "+1",
+    "18446744073709551616"
+  ],
+  "reject_utf8_hex": ["ff", "c080", "eda080"],
+  "credential_golden": {
+    "private_seed_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "public_key_hex": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+    "backend_process_instance_id": "process-123",
+    "connection_id": "connection-456",
+    "control_epoch": "9",
+    "window_label": "main",
+    "scope": "identity_bind",
+    "challenge_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "request_seq": "3",
+    "binding_epoch": "11",
+    "command_kind": "companion_profile_bind",
+    "raw_body_json": "{\"auth_snapshot\":{\"mode\":\"relay\",\"user_id\":\"user-1\"}}",
+    "canonical_request_hash": "72e328507f442e2137352bc953b00be387f05b852a69e3e6276519b5ba13bdcb",
+    "nonce": "nonce-789",
+    "issued_at": "1700000000",
+    "expires_at": "1700000030",
+    "payload_hex": "77696e646f772d636f6e74726f6c2d63726564656e7469616c2d7631000000000b70726f636573732d3132330000000e636f6e6e656374696f6e2d3435360000000000000009000000046d61696e0000000d6964656e746974795f62696e640000004066666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666000000000000000300000016636f6d70616e696f6e5f70726f66696c655f62696e6472e328507f442e2137352bc953b00be387f05b852a69e3e6276519b5ba13bdcb000000096e6f6e63652d373839000000006553f100000000006553f11e",
+    "signature_hex": "e0a55aceae7c773e5b411ae16b47b63e289d1d7e968857d96dbc59ba0b4fe176226feecc31ee03d08a26dd2a144d85481b10d31ff2dfc4fee20ab726c1356903"
+  }
+}

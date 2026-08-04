@@ -1,0 +1,23 @@
+{
+  "name": "r45-final2",
+  "command_line": "F:\\projects\\deskpet\\backend\\.venv\\Scripts\\python.exe -m pytest backend/tests/harness_simplification/test_r45_core_budget_gate.py -q",
+  "processes": [
+    {
+      "pid": 32916,
+      "create_time_utc": "2026-07-25T12:04:57.1820182Z",
+      "role": "venv launcher"
+    },
+    {
+      "pid": 33584,
+      "create_time_utc": "2026-07-25T12:04:57.2267630Z",
+      "parent_pid": 32916,
+      "role": "project Python"
+    }
+  ],
+  "observed_private_bytes": 910020608,
+  "released_private_bytes": 910020608,
+  "result": "21 passed, 4 pre-existing invalid-escape deprecation warnings",
+  "duration_seconds": 188.09,
+  "survivor_count": 0,
+  "stdout": "r45-final2.out.log"
+}

@@ -1,0 +1,372 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
+"""P3-S7: config.toml resolution + memory/billing db_path behaviour.
+
+Covers:
+  * resolve_config_path priority (DESKPET_CONFIG > user_data > bundle)
+  * seed_user_config_if_missing copies bundle default on first run,
+    leaves existing user config alone on subsequent runs
+  * load_config maps empty / relative db_path into user_data_dir
+  * load_config keeps absolute db_path verbatim
+  * billing.db_path follows memory.db_path's directory
+"""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+import pytest
+
+import config as config_module
+import paths
+
+
+@pytest.fixture
+def isolated_dirs(monkeypatch, tmp_path):
+    """Point every user-dir env var at a clean tmp path so nothing leaks
+    from the dev machine's real AppData.
+    """
+    user_data = tmp_path / "user_data"
+    user_cache = tmp_path / "user_cache"
+    user_models = tmp_path / "user_models"
+    monkeypatch.setenv("DESKPET_USER_DATA_DIR", str(user_data))
+    monkeypatch.setenv("DESKPET_USER_CACHE_DIR", str(user_cache))
+    monkeypatch.setenv("DESKPET_MODEL_ROOT", str(user_models))
+    monkeypatch.delenv("DESKPET_CONFIG", raising=False)
+    monkeypatch.delenv("DESKPET_USER_LOG_DIR", raising=False)
+    return tmp_path, user_data
+
+
+# ---- resolve_config_path --------------------------------------------
+
+def test_resolve_config_path_env_override(isolated_dirs, monkeypatch, tmp_path):
+    override = tmp_path / "custom-config.toml"
+    override.write_text("# empty\n", encoding="utf-8")
+    monkeypatch.setenv("DESKPET_CONFIG", str(override))
+    assert config_module.resolve_config_path() == override
+
+
+def test_resolve_config_path_env_missing_falls_through(isolated_dirs, monkeypatch, tmp_path):
+    """A DESKPET_CONFIG pointing at a non-existent file is ignored with a
+    warning — we don't want a stale env var to wedge the backend.
+    """
+    monkeypatch.setenv("DESKPET_CONFIG", str(tmp_path / "does-not-exist.toml"))
+    # Block bundle-default lookup by monkey-patching its return to None.
+    monkeypatch.setattr(config_module, "_bundle_default_config_path", lambda: None)
+    result = config_module.resolve_config_path()
+    # Falls through to <user_data>/config.toml (may or may not exist — that's fine).
+    _tmp, user_data = isolated_dirs
+    assert result == user_data / "config.toml"
+
+
+def test_resolve_config_path_prefers_user_data(isolated_dirs, monkeypatch):
+    _tmp, user_data = isolated_dirs
+    user_data.mkdir(parents=True, exist_ok=True)
+    user_cfg = user_data / "config.toml"
+    user_cfg.write_text("[memory]\ndb_path = \"\"\n", encoding="utf-8")
+    # Provide a bundle default too; the user copy must still win.
+    monkeypatch.setattr(config_module, "_bundle_default_config_path", lambda: Path("/some/bundle/config.toml"))
+    assert config_module.resolve_config_path() == user_cfg
+
+
+# ---- seed_user_config_if_missing ------------------------------------
+
+def test_seed_copies_bundle_when_user_missing(isolated_dirs, monkeypatch, tmp_path):
+    _tmp, user_data = isolated_dirs
+    bundle = tmp_path / "bundle_config.toml"
+    bundle.write_text("[backend]\nport = 9999\n", encoding="utf-8")
+    monkeypatch.setattr(config_module, "_bundle_default_config_path", lambda: bundle)
+
+    seeded = config_module.seed_user_config_if_missing()
+    assert seeded == user_data / "config.toml"
+    assert seeded.read_text(encoding="utf-8") == bundle.read_text(encoding="utf-8")
+
+
+def test_seed_is_idempotent(isolated_dirs, monkeypatch, tmp_path):
+    """If user config already exists, seed must not overwrite it."""
+    _tmp, user_data = isolated_dirs
+    user_data.mkdir(parents=True, exist_ok=True)
+    user_cfg = user_data / "config.toml"
+    user_cfg.write_text("USER-CUSTOMISED\n", encoding="utf-8")
+    bundle = tmp_path / "bundle_config.toml"
+    bundle.write_text("BUNDLE-DEFAULT\n", encoding="utf-8")
+    monkeypatch.setattr(config_module, "_bundle_default_config_path", lambda: bundle)
+
+    result = config_module.seed_user_config_if_missing()
+    assert result == user_cfg
+    assert user_cfg.read_text(encoding="utf-8") == "USER-CUSTOMISED\n"
+
+
+def test_seed_returns_none_when_bundle_missing(isolated_dirs, monkeypatch):
+    monkeypatch.setattr(config_module, "_bundle_default_config_path", lambda: None)
+    assert config_module.seed_user_config_if_missing() is None
+
+
+# ---- load_config db_path resolution ---------------------------------
+
+def test_load_config_empty_db_path_maps_to_user_data(isolated_dirs, tmp_path):
+    _tmp, user_data = isolated_dirs
+    cfg = tmp_path / "cfg.toml"
+    cfg.write_text('[memory]\ndb_path = ""\n', encoding="utf-8")
+    loaded = config_module.load_config(cfg)
+    assert Path(loaded.memory.db_path) == user_data / "data" / "memory.db"
+    # Billing should pin to the same directory.
+    assert loaded.billing.db_path == user_data / "data" / "billing.db"
+
+
+# ---- orphaned LLM endpoint recovery ---------------------------------
+
+def _write_config(path: Path, body: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+
+
+def test_recover_merges_enabled_endpoints_from_appdata(tmp_path, monkeypatch, caplog):
+    canonical = tmp_path / "portable" / "config.toml"
+    _write_config(
+        canonical,
+        "# keep me\n[memory]\ndb_path = \"./data/memory.db\"\n",
+    )
+    appdata = tmp_path / "appdata" / "deskpet"
+    _write_config(
+        appdata / "config.toml",
+        """
+[[llm.endpoints]]
+id = "relay-cloud"
+kind = "openai_compatible"
+base_url = "https://relay.example/v1"
+model = "gpt-5.5"
+api_key_ref = "keyring:deskpet:relay-cloud"
+enabled = true
+""".lstrip(),
+    )
+    monkeypatch.setattr(
+        config_module.platformdirs,
+        "user_data_dir",
+        lambda *args, **kwargs: str(appdata),
+    )
+
+    with caplog.at_level("INFO", logger=config_module.logger.name):
+        changed = config_module._recover_orphaned_endpoints(canonical)
+
+    assert changed is True
+    recovered = canonical.read_text(encoding="utf-8")
+    assert "[memory]\ndb_path = \"./data/memory.db\"" in recovered
+    assert 'id = "relay-cloud"' in recovered
+    assert 'enabled = true' in recovered
+    assert canonical.with_suffix(".pre-recover-bak").is_file()
+    assert "endpoints_recovered_from" in caplog.text
+
+
+def test_recover_noop_when_canonical_healthy(tmp_path, monkeypatch):
+    canonical = tmp_path / "portable" / "config.toml"
+    _write_config(
+        canonical,
+        """
+[[llm.endpoints]]
+id = "existing"
+base_url = "https://relay.example.com/v1"
+enabled = true
+""".lstrip(),
+    )
+    original = canonical.read_text(encoding="utf-8")
+    appdata = tmp_path / "appdata" / "deskpet"
+    _write_config(
+        appdata / "config.toml",
+        """
+[[llm.endpoints]]
+id = "relay-cloud"
+base_url = "https://relay.example.com/v1"
+enabled = true
+""".lstrip(),
+    )
+    monkeypatch.setattr(
+        config_module.platformdirs,
+        "user_data_dir",
+        lambda *args, **kwargs: str(appdata),
+    )
+
+    assert config_module._recover_orphaned_endpoints(canonical) is False
+    assert canonical.read_text(encoding="utf-8") == original
+    assert not canonical.with_suffix(".pre-recover-bak").exists()
+
+
+def test_recover_idempotent(tmp_path, monkeypatch):
+    canonical = tmp_path / "portable" / "config.toml"
+    _write_config(canonical, "[memory]\ndb_path = \"\"\n")
+    appdata = tmp_path / "appdata" / "deskpet"
+    _write_config(
+        appdata / "config.toml",
+        """
+[[llm.endpoints]]
+id = "relay-cloud"
+base_url = "https://relay.example.com/v1"
+enabled = true
+""".lstrip(),
+    )
+    monkeypatch.setattr(
+        config_module.platformdirs,
+        "user_data_dir",
+        lambda *args, **kwargs: str(appdata),
+    )
+
+    assert config_module._recover_orphaned_endpoints(canonical) is True
+    first = canonical.read_text(encoding="utf-8")
+    assert config_module._recover_orphaned_endpoints(canonical) is False
+    assert canonical.read_text(encoding="utf-8") == first
+
+
+def test_recover_ignores_all_disabled_source(tmp_path, monkeypatch):
+    canonical = tmp_path / "portable" / "config.toml"
+    _write_config(canonical, "[memory]\ndb_path = \"\"\n")
+    appdata = tmp_path / "appdata" / "deskpet"
+    _write_config(
+        appdata / "config.toml",
+        """
+[[llm.endpoints]]
+id = "relay-cloud"
+enabled = false
+""".lstrip(),
+    )
+    monkeypatch.setattr(
+        config_module.platformdirs,
+        "user_data_dir",
+        lambda *args, **kwargs: str(appdata),
+    )
+
+    assert config_module._recover_orphaned_endpoints(canonical) is False
+    assert not canonical.with_suffix(".pre-recover-bak").exists()
+    assert 'id = "relay-cloud"' not in canonical.read_text(encoding="utf-8")
+
+
+def test_recover_never_raises_on_garbage(tmp_path, monkeypatch):
+    canonical = tmp_path / "portable" / "config.toml"
+    _write_config(canonical, "[memory]\ndb_path = \"\"\n")
+    appdata = tmp_path / "appdata" / "deskpet"
+    _write_config(appdata / "config.toml", "[[llm.endpoints]\nnot toml")
+    monkeypatch.setattr(
+        config_module.platformdirs,
+        "user_data_dir",
+        lambda *args, **kwargs: str(appdata),
+    )
+
+    assert config_module._recover_orphaned_endpoints(canonical) is False
+
+
+def test_recover_preserves_other_sections_verbatim(tmp_path, monkeypatch):
+    canonical = tmp_path / "portable" / "config.toml"
+    memory_section = (
+        "# memory comment\n"
+        "[memory]\n"
+        "# path comment\n"
+        "db_path = \"./data/memory.db\"\n"
+    )
+    _write_config(canonical, memory_section)
+    appdata = tmp_path / "appdata" / "deskpet"
+    _write_config(
+        appdata / "config.toml",
+        """
+[[llm.endpoints]]
+id = "relay-cloud"
+base_url = "https://relay.example.com/v1"
+enabled = true
+""".lstrip(),
+    )
+    monkeypatch.setattr(
+        config_module.platformdirs,
+        "user_data_dir",
+        lambda *args, **kwargs: str(appdata),
+    )
+
+    assert config_module._recover_orphaned_endpoints(canonical) is True
+    assert memory_section in canonical.read_text(encoding="utf-8")
+
+
+def test_load_config_missing_memory_section_still_resolves(isolated_dirs, tmp_path):
+    _tmp, user_data = isolated_dirs
+    cfg = tmp_path / "cfg.toml"
+    cfg.write_text("[backend]\nport = 8100\n", encoding="utf-8")
+    loaded = config_module.load_config(cfg)
+    assert Path(loaded.memory.db_path) == user_data / "data" / "memory.db"
+
+
+def test_load_config_absent_file_resolves_defaults(isolated_dirs, tmp_path):
+    """Missing config.toml → AppConfig() defaults but db_path still resolves
+    to user_data_dir (not the old CWD-relative ./data/)."""
+    _tmp, user_data = isolated_dirs
+    loaded = config_module.load_config(tmp_path / "does-not-exist.toml")
+    assert Path(loaded.memory.db_path) == user_data / "data" / "memory.db"
+
+
+def test_load_config_absolute_db_path_preserved(isolated_dirs, tmp_path):
+    abs_db = tmp_path / "elsewhere" / "mydb.db"
+    cfg = tmp_path / "cfg.toml"
+    cfg.write_text(f'[memory]\ndb_path = "{abs_db.as_posix()}"\n', encoding="utf-8")
+    loaded = config_module.load_config(cfg)
+    assert Path(loaded.memory.db_path) == abs_db
+    # billing.db sits next to memory.db regardless.
+    assert loaded.billing.db_path == abs_db.parent / "billing.db"
+
+
+def test_load_config_legacy_relative_path_reroutes_to_user_data(isolated_dirs, tmp_path):
+    """Old configs still ship './data/memory.db' — we want the value
+    honoured but anchored under user_data_dir, not CWD."""
+    _tmp, user_data = isolated_dirs
+    cfg = tmp_path / "cfg.toml"
+    cfg.write_text('[memory]\ndb_path = "./data/memory.db"\n', encoding="utf-8")
+    loaded = config_module.load_config(cfg)
+    assert Path(loaded.memory.db_path) == user_data / "data" / "memory.db"
+
+
+def test_recover_triggers_when_canonical_has_malformed_enabled(tmp_path, monkeypatch):
+    """canonical 有 enabled 但缺 base_url 的 malformed endpoint → 不算 healthy，
+    仍从有效源恢复（可用性校验修复：enabled 还需有 base_url 才算可用）。"""
+    canonical = tmp_path / "portable" / "config.toml"
+    _write_config(
+        canonical,
+        '[[llm.endpoints]]\nid = "broken"\nenabled = true\n',  # 无 base_url → 不可用
+    )
+    appdata = tmp_path / "appdata" / "deskpet"
+    _write_config(
+        appdata / "config.toml",
+        '[[llm.endpoints]]\nid = "relay-cloud"\n'
+        'base_url = "https://relay.example.com/v1"\nenabled = true\n',
+    )
+    monkeypatch.setattr(
+        config_module.platformdirs, "user_data_dir", lambda *a, **k: str(appdata)
+    )
+    assert config_module._recover_orphaned_endpoints(canonical) is True
+    assert 'id = "relay-cloud"' in canonical.read_text(encoding="utf-8")
+
+
+def test_recover_skips_bad_source_then_recovers_from_next(tmp_path, monkeypatch):
+    """候选源里坏 TOML 不阻断后续有效源恢复（per-candidate try/catch）。
+    AppData 候选坏 TOML → 跳过 → 从 frozen 安装目录的有效源恢复。"""
+    import sys as _sys
+
+    install = tmp_path / "install"
+    (install / "backend").mkdir(parents=True)
+    fake_exe = install / "backend" / "deskpet-backend.exe"
+    fake_exe.write_bytes(b"")
+    monkeypatch.setattr(_sys, "frozen", True, raising=False)
+    monkeypatch.setattr(_sys, "executable", str(fake_exe))
+
+    # canonical = portable install/userdata（无 endpoints）
+    canonical = install / "userdata" / "config.toml"
+    _write_config(canonical, '[memory]\ndb_path = ""\n')
+    # 候选源1 = AppData：坏 TOML（应被跳过，不抛）
+    appdata = tmp_path / "appdata" / "deskpet"
+    _write_config(appdata / "config.toml", "[[llm.endpoints]\nnot toml")
+    monkeypatch.setattr(
+        config_module.platformdirs, "user_data_dir", lambda *a, **k: str(appdata)
+    )
+    # 候选源2 = install/backend/userdata：有效 endpoints
+    _write_config(
+        install / "backend" / "userdata" / "config.toml",
+        '[[llm.endpoints]]\nid = "relay-cloud"\n'
+        'base_url = "https://relay.example.com/v1"\nenabled = true\n',
+    )
+
+    assert config_module._recover_orphaned_endpoints(canonical) is True
+    assert 'id = "relay-cloud"' in canonical.read_text(encoding="utf-8")

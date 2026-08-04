@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "metrics": [
+    "web_search_success_rate",
+    "web_search_empty_rate",
+    "web_search_recall_at_5",
+    "web_search_p95_ms",
+    "citation_coverage",
+    "citation_support_rate",
+    "independent_domains",
+    "deep_research_completion_rate",
+    "deep_research_p95_ms"
+  ],
+  "queries": [
+    {"id": "zh-fact", "locale": "zh", "kind": "fact", "query": "中国空间站目前由哪些舱段组成"},
+    {"id": "en-latest", "locale": "en", "kind": "latest", "query": "latest stable Python release"},
+    {"id": "zh-official", "locale": "zh", "kind": "official_docs", "query": "个人信息保护法 官方全文"},
+    {"id": "en-academic", "locale": "en", "kind": "academic", "query": "retrieval augmented generation original paper"},
+    {"id": "zh-policy", "locale": "zh", "kind": "policy_finance", "query": "最新政府工作报告 GDP 目标"},
+    {"id": "en-js", "locale": "en", "kind": "js_page", "query": "interactive public data dashboard current value"},
+    {"id": "zh-duplicate", "locale": "zh", "kind": "syndicated_duplicate", "query": "同一新闻 多站转载 去重"},
+    {"id": "en-conflict", "locale": "en", "kind": "conflicting_sources", "query": "conflicting estimates with primary sources"}
+  ]
+}

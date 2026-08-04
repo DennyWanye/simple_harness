@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deskpet.local/schemas/capability-packs/godot/detect.schema.json",
+  "title": "Godot 4 executable detection",
+  "description": "Find a real Godot executable, query --version, and report its source and compatibility.",
+  "type": "object",
+  "properties": {
+    "preferred_executable": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional exact executable path already selected by the task."
+    }
+  },
+  "additionalProperties": false
+}

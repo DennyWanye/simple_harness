@@ -1,0 +1,14 @@
+﻿=== deskpet windows ===
+  deskpet pid=24500 title='Desktop Pet' start=16:56:25
+=== backend on 8500 ===
+  8500 pid=52516 ppid=3304 cmd="C:\Users\24378\AppData\Local\Python\pythoncore-3.11-64\python.exe" ma
+=== backend_launch line (Dev vs Bundled) ===
+  [backend_launch] Dev python=G:\projects\deskpet\backend\.venv\Scripts\python.exe backend_dir=G:\projects\deskpet-stage2-f1f2\backend
+=== vite nodes listening ===
+  node pid=39984 :5573
+=== cargo / tauri cmd wrappers ===
+  cargo pid=43496
+  cmd-wrapper pid=46476
+  cmd-wrapper pid=36732
+=== F1 backend confirmation: state.db in worktree? ===
+  worktree state.db exists=True

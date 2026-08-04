@@ -1,0 +1,23 @@
+{
+  "generated": "2026-05-30 23:58:37",
+  "results": [
+    {
+      "case": "B1 excel-generate (direct tool)",
+      "status": "PASS",
+      "detail": "artifact: deskpet-excel-1780156684.xlsx size=5259 path=C:\\Users\\24378\\AppData\\Local\\Temp\\claude\\deskpet-excel-1780156684.xlsx",
+      "ts": "23:58:06"
+    },
+    {
+      "case": "B2 doc-edit (direct tool)",
+      "status": "PASS",
+      "detail": "artifact: deskpet-doc-1780156698.docx size=36955 path=C:\\Users\\24378\\AppData\\Local\\Temp\\claude\\deskpet-doc-1780156698.docx",
+      "ts": "23:58:22"
+    },
+    {
+      "case": "B5 ppt-generate (direct tool)",
+      "status": "PASS",
+      "detail": "artifact: deskpet-ppt-1780156715.pptx size=33441 path=C:\\Users\\24378\\AppData\\Local\\Temp\\claude\\deskpet-ppt-1780156715.pptx",
+      "ts": "23:58:37"
+    }
+  ]
+}

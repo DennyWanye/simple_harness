@@ -1,0 +1,30 @@
+﻿> vite --mode relay
+  VITE v8.0.8   relay   ready in 179 ms
+17:37:46 [vite] (client) [console.warn] [Pet] viewport: 704 x 564 dpr: 2.129999876022339
+17:37:46 [vite] (client) [console.warn] [Live2D] starting PixiJS...
+17:37:46 [vite] (client) [console.warn] [Live2D] PixiJS created, loading cubism4...
+17:37:46 [vite] (client) [console.warn] [Live2D] loading model: /assets/live2d/hiyori/Hiyori.model3.json
+17:37:46 [vite] (client) [console.warn] [Live2D] model loaded: 2976 x 4175
+17:37:46 [vite] (client) [console.warn] [Live2D] render loop starting
+17:37:46 [vite] (client) [console.warn]     at Live2DModel._render (http://localhost:5173/node_modules/.vite/deps/pixi-live2d-display_cubism4.js?v=90044cf4:17997:45)
+17:37:46 [vite] (client) [console.warn] [code-panel] get_shared_secret failed: No secret available (backend not started?)
+17:37:46 [vite] (client) [console.warn] [code-panel] get_shared_secret failed: No secret available (backend not started?)
+INFO:observability.crash_reports:event='crash_reporter_installed' level='info' timestamp='2026-05-31T09:37:47.252808Z' directory='G:\\projects\\deskpet-stage2-f1f2\\crash_reports'
+INFO:config:llm_unified_schema_loaded fields=['api_key', 'base_url', 'max_tokens', 'model', 'temperature'] base_url=https://your-llm-relay.example.com/v1 model=gpt-5.5
+17:37:47 [vite] (client) [console.warn] [code-panel] get_shared_secret failed: No secret available (backend not started?)
+17:37:47 [vite] (client) [console.warn] [code-panel] get_shared_secret failed: No secret available (backend not started?)
+17:37:48 [vite] (client) [console.warn] [relayProviderBridge] updateCloudConfig failed: backend not running yet
+17:37:49 [vite] (client) [console.warn] [code-panel] get_shared_secret failed: No secret available (backend not started?)
+17:37:49 [vite] (client) [console.warn] [code-panel] get_shared_secret failed: No secret available (backend not started?)
+INFO:deskpet.memory.session_db:SessionDB ready (db=G:\projects\deskpet-stage2-f1f2\.dev-userdata\data\state.db, vec=on)
+INFO:__main__:event='p4_session_db_ready' level='info' timestamp='2026-05-31T09:37:51.528499Z' path='G:\\projects\\deskpet-stage2-f1f2\\.dev-userdata\\data\\state.db'
+INFO:__main__:event='code_sessions_restored' level='info' timestamp='2026-05-31T09:37:51.530502Z' count=0
+17:37:54 [vite] (client) [console.warn] [relayProviderBridge] updateCloudConfig failed: backend POST http://127.0.0.1:8500/config/cloud failed: error sending request for url (http://127.0.0.1:8500/config/cloud)
+INFO:deskpet.agent.watchdog:watchdog started (scan_interval=60s, stuck_threshold=900s, dedup=720s)
+INFO:     127.0.0.1:12598 - "WebSocket /ws/audio?secret=2acd8177a41e5329fb47fc77e27800d5&session_id=default" [accepted]
+INFO:__main__:event='audio channel connected' level='info' timestamp='2026-05-31T09:37:56.531195Z' session_id='default'
+INFO:     127.0.0.1:10288 - "WebSocket /ws/control?secret=2acd8177a41e5329fb47fc77e27800d5&session_id=message-panel-main" [accepted]
+INFO:__main__:event='control channel connected' level='info' timestamp='2026-05-31T09:37:56.576426Z' session_id='message-panel-main'
+INFO:     127.0.0.1:4420 - "WebSocket /ws/control?secret=2acd8177a41e5329fb47fc77e27800d5&session_id=code-panel-main" [accepted]
+INFO:__main__:event='control channel connected' level='info' timestamp='2026-05-31T09:37:56.589427Z' session_id='code-panel-main'
+INFO:__main__:event='control channel connected' level='info' timestamp='2026-05-31T09:37:56.605427Z' session_id='default'

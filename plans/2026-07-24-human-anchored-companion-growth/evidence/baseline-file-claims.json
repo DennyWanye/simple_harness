@@ -1,0 +1,2057 @@
+{
+  "active_claim_intersections": [],
+  "baseline_hash": "573de01eac6166c164d98acd4e3bb05796022a7feaec64bdf89a585d0673096e",
+  "baseline_head": "cde016ad651295e60100c3275e72bf23724b3833",
+  "claim_count": 163,
+  "claims": [
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3,
+        10,
+        13
+      ],
+      "final_integration_owner": "Task 13",
+      "path": "backend/agent/agent_loop.py",
+      "task_claims": [
+        "Task 3",
+        "Task 10",
+        "Task 13"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        13
+      ],
+      "final_integration_owner": "Task 13",
+      "path": "backend/agent/harness_feedback.py",
+      "task_claims": [
+        "Task 13"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3
+      ],
+      "final_integration_owner": "Task 3",
+      "path": "backend/agent/tool_use_shim.py",
+      "task_claims": [
+        "Task 3"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2
+      ],
+      "final_integration_owner": "Task 2",
+      "path": "backend/config.py",
+      "task_claims": [
+        "Task 2"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2,
+        13
+      ],
+      "final_integration_owner": "Task 13",
+      "path": "backend/context.py",
+      "task_claims": [
+        "Task 2",
+        "Task 13"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6,
+        7,
+        9
+      ],
+      "final_integration_owner": "Task 9",
+      "path": "backend/deskpet-backend.spec",
+      "task_claims": [
+        "Task 6",
+        "Task 7",
+        "Task 9"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        4
+      ],
+      "final_integration_owner": "Task 4",
+      "path": "backend/deskpet/agent/assembler/components/preference_profile.py",
+      "task_claims": [
+        "Task 4"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/agent/assembler/components/skill.py",
+      "task_claims": [
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        4
+      ],
+      "final_integration_owner": "Task 4",
+      "path": "backend/deskpet/agent/preference_memory.py",
+      "task_claims": [
+        "Task 4"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3,
+        13
+      ],
+      "final_integration_owner": "Task 13",
+      "path": "backend/deskpet/agent/run_presenter.py",
+      "task_claims": [
+        "Task 3",
+        "Task 13"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        13
+      ],
+      "final_integration_owner": "Task 13",
+      "path": "backend/deskpet/agent/tool_path.py",
+      "task_claims": [
+        "Task 13"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        1,
+        4,
+        6,
+        10,
+        13
+      ],
+      "final_integration_owner": "Task 13",
+      "path": "backend/deskpet/agent/turn_preparer.py",
+      "task_claims": [
+        "Task 1",
+        "Task 4",
+        "Task 6",
+        "Task 10",
+        "Task 13"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7,
+        8,
+        13
+      ],
+      "final_integration_owner": "Task 13",
+      "path": "backend/deskpet/capabilities/builder.py",
+      "task_claims": [
+        "Task 7",
+        "Task 8",
+        "Task 13"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/deskpet/capabilities/catalog_gate.py",
+      "task_claims": [
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/deskpet/capabilities/contracts.py",
+      "task_claims": [
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/deskpet/capabilities/hub.py",
+      "task_claims": [
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6,
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/deskpet/capabilities/local_runtime.py",
+      "task_claims": [
+        "Task 6",
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7,
+        8
+      ],
+      "final_integration_owner": "Task 8",
+      "path": "backend/deskpet/capabilities/manager.py",
+      "task_claims": [
+        "Task 7",
+        "Task 8"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7,
+        8
+      ],
+      "final_integration_owner": "Task 8",
+      "path": "backend/deskpet/capabilities/manifest.py",
+      "task_claims": [
+        "Task 7",
+        "Task 8"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        8
+      ],
+      "final_integration_owner": "Task 8",
+      "path": "backend/deskpet/capabilities/package_limits.py",
+      "task_claims": [
+        "Task 8"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6,
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/deskpet/capabilities/platform.py",
+      "task_claims": [
+        "Task 6",
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6,
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/deskpet/capabilities/process_job.py",
+      "task_claims": [
+        "Task 6",
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/deskpet/capabilities/publisher.py",
+      "task_claims": [
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/deskpet/capabilities/refresh.py",
+      "task_claims": [
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/deskpet/capabilities/refresh_contracts.py",
+      "task_claims": [
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/deskpet/capabilities/runtime_prepare.py",
+      "task_claims": [
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/deskpet/capabilities/schemas/deskpet-pack-v2.schema.json",
+      "task_claims": [
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/deskpet/capabilities/search.py",
+      "task_claims": [
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        8
+      ],
+      "final_integration_owner": "Task 8",
+      "path": "backend/deskpet/capabilities/source.py",
+      "task_claims": [
+        "Task 8"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/deskpet/capabilities/store.py",
+      "task_claims": [
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6
+      ],
+      "final_integration_owner": "Task 6",
+      "path": "backend/deskpet/capabilities/tool_proxy.py",
+      "task_claims": [
+        "Task 6"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/deskpet/commands/__init__.py",
+      "task_claims": [
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6
+      ],
+      "final_integration_owner": "Task 6",
+      "path": "backend/deskpet/companion/action_decisions.py",
+      "task_claims": [
+        "Task 6"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        9
+      ],
+      "final_integration_owner": "Task 9",
+      "path": "backend/deskpet/companion/activation.py",
+      "task_claims": [
+        "Task 9"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        9
+      ],
+      "final_integration_owner": "Task 9",
+      "path": "backend/deskpet/companion/activation_guard.py",
+      "task_claims": [
+        "Task 9"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        1,
+        13
+      ],
+      "final_integration_owner": "Task 13",
+      "path": "backend/deskpet/companion/authority.py",
+      "task_claims": [
+        "Task 1",
+        "Task 13"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        8
+      ],
+      "final_integration_owner": "Task 8",
+      "path": "backend/deskpet/companion/build_admission.py",
+      "task_claims": [
+        "Task 8"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        8
+      ],
+      "final_integration_owner": "Task 8",
+      "path": "backend/deskpet/companion/candidate_builder.py",
+      "task_claims": [
+        "Task 8"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        5
+      ],
+      "final_integration_owner": "Task 5",
+      "path": "backend/deskpet/companion/clock.py",
+      "task_claims": [
+        "Task 5"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        1
+      ],
+      "final_integration_owner": "Task 1",
+      "path": "backend/deskpet/companion/contracts.py",
+      "task_claims": [
+        "Task 1"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2
+      ],
+      "final_integration_owner": "Task 2",
+      "path": "backend/deskpet/companion/control_command_canonical.py",
+      "task_claims": [
+        "Task 2"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2
+      ],
+      "final_integration_owner": "Task 2",
+      "path": "backend/deskpet/companion/control_credentials.py",
+      "task_claims": [
+        "Task 2"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        12
+      ],
+      "final_integration_owner": "Task 12",
+      "path": "backend/deskpet/companion/detail_query.py",
+      "task_claims": [
+        "Task 12"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        9
+      ],
+      "final_integration_owner": "Task 9",
+      "path": "backend/deskpet/companion/eval_suites/manifest.json",
+      "task_claims": [
+        "Task 9"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        9
+      ],
+      "final_integration_owner": "Task 9",
+      "path": "backend/deskpet/companion/eval_suites/skill_v1.json",
+      "task_claims": [
+        "Task 9"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        9
+      ],
+      "final_integration_owner": "Task 9",
+      "path": "backend/deskpet/companion/eval_suites/workflow_v1.json",
+      "task_claims": [
+        "Task 9"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        9
+      ],
+      "final_integration_owner": "Task 9",
+      "path": "backend/deskpet/companion/evaluation.py",
+      "task_claims": [
+        "Task 9"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        9
+      ],
+      "final_integration_owner": "Task 9",
+      "path": "backend/deskpet/companion/evaluation_execution.py",
+      "task_claims": [
+        "Task 9"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        9
+      ],
+      "final_integration_owner": "Task 9",
+      "path": "backend/deskpet/companion/evaluation_read_tools.py",
+      "task_claims": [
+        "Task 9"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        8
+      ],
+      "final_integration_owner": "Task 8",
+      "path": "backend/deskpet/companion/growth.py",
+      "task_claims": [
+        "Task 8"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2
+      ],
+      "final_integration_owner": "Task 2",
+      "path": "backend/deskpet/companion/identity.py",
+      "task_claims": [
+        "Task 2"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2
+      ],
+      "final_integration_owner": "Task 2",
+      "path": "backend/deskpet/companion/identity_gate.py",
+      "task_claims": [
+        "Task 2"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        1
+      ],
+      "final_integration_owner": "Task 1",
+      "path": "backend/deskpet/companion/legacy_authority.py",
+      "task_claims": [
+        "Task 1"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        1
+      ],
+      "final_integration_owner": "Task 1",
+      "path": "backend/deskpet/companion/migrations/001_companion_v1.sql",
+      "task_claims": [
+        "Task 1"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        12
+      ],
+      "final_integration_owner": "Task 12",
+      "path": "backend/deskpet/companion/notifications.py",
+      "task_claims": [
+        "Task 12"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/deskpet/companion/personal_workflow.py",
+      "task_claims": [
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        4
+      ],
+      "final_integration_owner": "Task 4",
+      "path": "backend/deskpet/companion/preferences.py",
+      "task_claims": [
+        "Task 4"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        11
+      ],
+      "final_integration_owner": "Task 11",
+      "path": "backend/deskpet/companion/reminder_tools.py",
+      "task_claims": [
+        "Task 11"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        11
+      ],
+      "final_integration_owner": "Task 11",
+      "path": "backend/deskpet/companion/reminders.py",
+      "task_claims": [
+        "Task 11"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        9
+      ],
+      "final_integration_owner": "Task 9",
+      "path": "backend/deskpet/companion/risk.py",
+      "task_claims": [
+        "Task 9"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6,
+        11
+      ],
+      "final_integration_owner": "Task 11",
+      "path": "backend/deskpet/companion/run_adapter.py",
+      "task_claims": [
+        "Task 6",
+        "Task 11"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        5,
+        8
+      ],
+      "final_integration_owner": "Task 8",
+      "path": "backend/deskpet/companion/runtime.py",
+      "task_claims": [
+        "Task 5",
+        "Task 8"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        1
+      ],
+      "final_integration_owner": "Task 1",
+      "path": "backend/deskpet/companion/schema.py",
+      "task_claims": [
+        "Task 1"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3
+      ],
+      "final_integration_owner": "Task 3",
+      "path": "backend/deskpet/companion/signals.py",
+      "task_claims": [
+        "Task 3"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/deskpet/companion/skills.py",
+      "task_claims": [
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        1
+      ],
+      "final_integration_owner": "Task 1",
+      "path": "backend/deskpet/companion/store.py",
+      "task_claims": [
+        "Task 1"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/deskpet/companion/workflows.py",
+      "task_claims": [
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3,
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/execution/contracts.py",
+      "task_claims": [
+        "Task 3",
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3,
+        6,
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/execution/dispatch.py",
+      "task_claims": [
+        "Task 3",
+        "Task 6",
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6,
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/execution/ports.py",
+      "task_claims": [
+        "Task 6",
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3
+      ],
+      "final_integration_owner": "Task 3",
+      "path": "backend/deskpet/execution/provider_invocations.py",
+      "task_claims": [
+        "Task 3"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/harness/adapters/product_profiles.py",
+      "task_claims": [
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        8,
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/harness/adapters/subagent_registry.py",
+      "task_claims": [
+        "Task 8",
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3,
+        6,
+        7,
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/harness/adapters/venues.py",
+      "task_claims": [
+        "Task 3",
+        "Task 6",
+        "Task 7",
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3
+      ],
+      "final_integration_owner": "Task 3",
+      "path": "backend/deskpet/harness/bootstrap.py",
+      "task_claims": [
+        "Task 3"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        8,
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/harness/child_runs.py",
+      "task_claims": [
+        "Task 8",
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/harness/context.py",
+      "task_claims": [
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3,
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/harness/contracts.py",
+      "task_claims": [
+        "Task 3",
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3,
+        6,
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/harness/drivers/react.py",
+      "task_claims": [
+        "Task 3",
+        "Task 6",
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3,
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/harness/kernel.py",
+      "task_claims": [
+        "Task 3",
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3
+      ],
+      "final_integration_owner": "Task 3",
+      "path": "backend/deskpet/harness/runtime.py",
+      "task_claims": [
+        "Task 3"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6
+      ],
+      "final_integration_owner": "Task 6",
+      "path": "backend/deskpet/harness/tool_executor.py",
+      "task_claims": [
+        "Task 6"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6
+      ],
+      "final_integration_owner": "Task 6",
+      "path": "backend/deskpet/mcp/dispatch_transport.py",
+      "task_claims": [
+        "Task 6"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6,
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/deskpet/mcp/manager.py",
+      "task_claims": [
+        "Task 6",
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        12
+      ],
+      "final_integration_owner": "Task 12",
+      "path": "backend/deskpet/memory/chunker.py",
+      "task_claims": [
+        "Task 12"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3
+      ],
+      "final_integration_owner": "Task 3",
+      "path": "backend/deskpet/memory/companion_message_projection.py",
+      "task_claims": [
+        "Task 3"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        12
+      ],
+      "final_integration_owner": "Task 12",
+      "path": "backend/deskpet/memory/enhanced_retriever.py",
+      "task_claims": [
+        "Task 12"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        12
+      ],
+      "final_integration_owner": "Task 12",
+      "path": "backend/deskpet/memory/eval/qaset.py",
+      "task_claims": [
+        "Task 12"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        4
+      ],
+      "final_integration_owner": "Task 4",
+      "path": "backend/deskpet/memory/facts.py",
+      "task_claims": [
+        "Task 4"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3
+      ],
+      "final_integration_owner": "Task 3",
+      "path": "backend/deskpet/memory/migrations/013_companion_projection.sql",
+      "task_claims": [
+        "Task 3"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3
+      ],
+      "final_integration_owner": "Task 3",
+      "path": "backend/deskpet/memory/migrator.py",
+      "task_claims": [
+        "Task 3"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        12
+      ],
+      "final_integration_owner": "Task 12",
+      "path": "backend/deskpet/memory/reflection.py",
+      "task_claims": [
+        "Task 12"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6,
+        12
+      ],
+      "final_integration_owner": "Task 12",
+      "path": "backend/deskpet/memory/retriever.py",
+      "task_claims": [
+        "Task 6",
+        "Task 12"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3,
+        12
+      ],
+      "final_integration_owner": "Task 12",
+      "path": "backend/deskpet/memory/session_db.py",
+      "task_claims": [
+        "Task 3",
+        "Task 12"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        12
+      ],
+      "final_integration_owner": "Task 12",
+      "path": "backend/deskpet/memory/summarizer.py",
+      "task_claims": [
+        "Task 12"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        12
+      ],
+      "final_integration_owner": "Task 12",
+      "path": "backend/deskpet/memory/vector_worker.py",
+      "task_claims": [
+        "Task 12"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6
+      ],
+      "final_integration_owner": "Task 6",
+      "path": "backend/deskpet/permissions/effect_policy.py",
+      "task_claims": [
+        "Task 6"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6
+      ],
+      "final_integration_owner": "Task 6",
+      "path": "backend/deskpet/permissions/gate.py",
+      "task_claims": [
+        "Task 6"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6
+      ],
+      "final_integration_owner": "Task 6",
+      "path": "backend/deskpet/permissions/runtime.py",
+      "task_claims": [
+        "Task 6"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6
+      ],
+      "final_integration_owner": "Task 6",
+      "path": "backend/deskpet/permissions/task_grants.py",
+      "task_claims": [
+        "Task 6"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/deskpet/skills/__init__.py",
+      "task_claims": [
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/deskpet/skills/builtin/**",
+      "task_claims": [
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        13
+      ],
+      "final_integration_owner": "Task 13",
+      "path": "backend/deskpet/skills/candidate_proposal.py",
+      "task_claims": [
+        "Task 13"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7,
+        10,
+        13
+      ],
+      "final_integration_owner": "Task 13",
+      "path": "backend/deskpet/skills/loader.py",
+      "task_claims": [
+        "Task 7",
+        "Task 10",
+        "Task 13"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        13
+      ],
+      "final_integration_owner": "Task 13",
+      "path": "backend/deskpet/skills/skill_codifier.py",
+      "task_claims": [
+        "Task 13"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7,
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/skills/skill_matcher.py",
+      "task_claims": [
+        "Task 7",
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6,
+        7,
+        11,
+        13
+      ],
+      "final_integration_owner": "Task 13",
+      "path": "backend/deskpet/tools/build_identity.py",
+      "task_claims": [
+        "Task 6",
+        "Task 7",
+        "Task 11",
+        "Task 13"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6,
+        7,
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/tools/capabilities.py",
+      "task_claims": [
+        "Task 6",
+        "Task 7",
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6,
+        7,
+        11,
+        13
+      ],
+      "final_integration_owner": "Task 13",
+      "path": "backend/deskpet/tools/execution_build_manifest.json",
+      "task_claims": [
+        "Task 6",
+        "Task 7",
+        "Task 11",
+        "Task 13"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6,
+        7,
+        11,
+        13
+      ],
+      "final_integration_owner": "Task 13",
+      "path": "backend/deskpet/tools/execution_build_sources.json",
+      "task_claims": [
+        "Task 6",
+        "Task 7",
+        "Task 11",
+        "Task 13"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6
+      ],
+      "final_integration_owner": "Task 6",
+      "path": "backend/deskpet/tools/memory_recall.py",
+      "task_claims": [
+        "Task 6"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/tools/orchestration_controls.py",
+      "task_claims": [
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6,
+        7,
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/tools/prepared_snapshot.py",
+      "task_claims": [
+        "Task 6",
+        "Task 7",
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6,
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/deskpet/tools/registry.py",
+      "task_claims": [
+        "Task 6",
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7,
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/tools/skill_tools.py",
+      "task_claims": [
+        "Task 7",
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6,
+        7,
+        11,
+        13
+      ],
+      "final_integration_owner": "Task 13",
+      "path": "backend/deskpet/tools/tool_effect_policy_manifest.json",
+      "task_claims": [
+        "Task 6",
+        "Task 7",
+        "Task 11",
+        "Task 13"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3,
+        6
+      ],
+      "final_integration_owner": "Task 6",
+      "path": "backend/deskpet/workflows/adapters/__init__.py",
+      "task_claims": [
+        "Task 3",
+        "Task 6"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3,
+        6
+      ],
+      "final_integration_owner": "Task 6",
+      "path": "backend/deskpet/workflows/adapters/code_runtime.py",
+      "task_claims": [
+        "Task 3",
+        "Task 6"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3
+      ],
+      "final_integration_owner": "Task 3",
+      "path": "backend/deskpet/workflows/adapters/deep_research_v6_bootstrap.py",
+      "task_claims": [
+        "Task 3"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3
+      ],
+      "final_integration_owner": "Task 3",
+      "path": "backend/deskpet/workflows/adapters/deep_research_v6_evidence_runtime.py",
+      "task_claims": [
+        "Task 3"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3
+      ],
+      "final_integration_owner": "Task 3",
+      "path": "backend/deskpet/workflows/adapters/deep_research_v6_semantic_runtime.py",
+      "task_claims": [
+        "Task 3"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/workflows/adapters/personal_runtime.py",
+      "task_claims": [
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3
+      ],
+      "final_integration_owner": "Task 3",
+      "path": "backend/deskpet/workflows/adapters/ppt_runtime.py",
+      "task_claims": [
+        "Task 3"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3
+      ],
+      "final_integration_owner": "Task 3",
+      "path": "backend/deskpet/workflows/adapters/research_runtime.py",
+      "task_claims": [
+        "Task 3"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/workflows/definitions/personal_workflow.py",
+      "task_claims": [
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/workflows/definitions/v1/__init__.py",
+      "task_claims": [
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        9
+      ],
+      "final_integration_owner": "Task 9",
+      "path": "backend/deskpet/workflows/evaluation/runner.py",
+      "task_claims": [
+        "Task 9"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        6,
+        8,
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/workflows/store/execution_uow.py",
+      "task_claims": [
+        "Task 6",
+        "Task 8",
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3,
+        7,
+        8,
+        10
+      ],
+      "final_integration_owner": "Task 10",
+      "path": "backend/deskpet/workflows/store/schema.py",
+      "task_claims": [
+        "Task 3",
+        "Task 7",
+        "Task 8",
+        "Task 10"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3
+      ],
+      "final_integration_owner": "Task 3",
+      "path": "backend/deskpet/workflows/store/write_lane.py",
+      "task_claims": [
+        "Task 3"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3
+      ],
+      "final_integration_owner": "Task 3",
+      "path": "backend/llm/anthropic_adapter.py",
+      "task_claims": [
+        "Task 3"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3
+      ],
+      "final_integration_owner": "Task 3",
+      "path": "backend/llm/gemini_adapter.py",
+      "task_claims": [
+        "Task 3"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3
+      ],
+      "final_integration_owner": "Task 3",
+      "path": "backend/llm/openai_adapter.py",
+      "task_claims": [
+        "Task 3"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3
+      ],
+      "final_integration_owner": "Task 3",
+      "path": "backend/llm/registry.py",
+      "task_claims": [
+        "Task 3"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        10,
+        11,
+        12,
+        13
+      ],
+      "final_integration_owner": "Task 13",
+      "path": "backend/main.py",
+      "task_claims": [
+        "Task 1",
+        "Task 2",
+        "Task 3",
+        "Task 4",
+        "Task 5",
+        "Task 6",
+        "Task 7",
+        "Task 10",
+        "Task 11",
+        "Task 12",
+        "Task 13"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "backend/paths.py",
+      "task_claims": [
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        13
+      ],
+      "final_integration_owner": "Task 13",
+      "path": "backend/pipeline/voice_pipeline.py",
+      "task_claims": [
+        "Task 13"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3
+      ],
+      "final_integration_owner": "Task 3",
+      "path": "backend/providers/dispatch_transport.py",
+      "task_claims": [
+        "Task 3"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        3
+      ],
+      "final_integration_owner": "Task 3",
+      "path": "backend/providers/openai_compatible.py",
+      "task_claims": [
+        "Task 3"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2,
+        6,
+        9
+      ],
+      "final_integration_owner": "Task 9",
+      "path": "backend/pyproject.toml",
+      "task_claims": [
+        "Task 2",
+        "Task 6",
+        "Task 9"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        1,
+        11,
+        13
+      ],
+      "final_integration_owner": "Task 13",
+      "path": "backend/tools/reminder.py",
+      "task_claims": [
+        "Task 1",
+        "Task 11",
+        "Task 13"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2,
+        6
+      ],
+      "final_integration_owner": "Task 6",
+      "path": "backend/uv.lock",
+      "task_claims": [
+        "Task 2",
+        "Task 6"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        7
+      ],
+      "final_integration_owner": "Task 7",
+      "path": "capability-packs/skill-*/deskpet-pack.json",
+      "task_claims": [
+        "Task 7"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2
+      ],
+      "final_integration_owner": "Task 2",
+      "path": "tauri-app/src-tauri/Cargo.lock",
+      "task_claims": [
+        "Task 2"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2
+      ],
+      "final_integration_owner": "Task 2",
+      "path": "tauri-app/src-tauri/Cargo.toml",
+      "task_claims": [
+        "Task 2"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2
+      ],
+      "final_integration_owner": "Task 2",
+      "path": "tauri-app/src-tauri/capabilities/default.json",
+      "task_claims": [
+        "Task 2"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2
+      ],
+      "final_integration_owner": "Task 2",
+      "path": "tauri-app/src-tauri/src/control_command_canonical.rs",
+      "task_claims": [
+        "Task 2"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2
+      ],
+      "final_integration_owner": "Task 2",
+      "path": "tauri-app/src-tauri/src/lib.rs",
+      "task_claims": [
+        "Task 2"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2
+      ],
+      "final_integration_owner": "Task 2",
+      "path": "tauri-app/src-tauri/src/process_manager.rs",
+      "task_claims": [
+        "Task 2"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2
+      ],
+      "final_integration_owner": "Task 2",
+      "path": "tauri-app/src-tauri/src/webview_permissions.rs",
+      "task_claims": [
+        "Task 2"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2,
+        12
+      ],
+      "final_integration_owner": "Task 12",
+      "path": "tauri-app/src/App.tsx",
+      "task_claims": [
+        "Task 2",
+        "Task 12"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2
+      ],
+      "final_integration_owner": "Task 2",
+      "path": "tauri-app/src/auth/companionIdentityBridge.test.ts",
+      "task_claims": [
+        "Task 2"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2
+      ],
+      "final_integration_owner": "Task 2",
+      "path": "tauri-app/src/auth/companionIdentityBridge.ts",
+      "task_claims": [
+        "Task 2"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2
+      ],
+      "final_integration_owner": "Task 2",
+      "path": "tauri-app/src/auth/controlCommandCanonical.ts",
+      "task_claims": [
+        "Task 2"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2
+      ],
+      "final_integration_owner": "Task 2",
+      "path": "tauri-app/src/auth/windowControlCredential.test.ts",
+      "task_claims": [
+        "Task 2"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2
+      ],
+      "final_integration_owner": "Task 2",
+      "path": "tauri-app/src/auth/windowControlCredential.ts",
+      "task_claims": [
+        "Task 2"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2,
+        12,
+        13
+      ],
+      "final_integration_owner": "Task 13",
+      "path": "tauri-app/src/code-panel/controlWs.ts",
+      "task_claims": [
+        "Task 2",
+        "Task 12",
+        "Task 13"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        12
+      ],
+      "final_integration_owner": "Task 12",
+      "path": "tauri-app/src/components/MessageStreamPanel.tsx",
+      "task_claims": [
+        "Task 12"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        12
+      ],
+      "final_integration_owner": "Task 12",
+      "path": "tauri-app/src/components/companion/CompanionCard.tsx",
+      "task_claims": [
+        "Task 12"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        12
+      ],
+      "final_integration_owner": "Task 12",
+      "path": "tauri-app/src/components/companion/CompanionDetailModal.tsx",
+      "task_claims": [
+        "Task 12"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        2,
+        12
+      ],
+      "final_integration_owner": "Task 12",
+      "path": "tauri-app/src/message-panel/MessagePanelRoot.tsx",
+      "task_claims": [
+        "Task 2",
+        "Task 12"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        12
+      ],
+      "final_integration_owner": "Task 12",
+      "path": "tauri-app/src/stores/sessionsStore.ts",
+      "task_claims": [
+        "Task 12"
+      ]
+    },
+    {
+      "active_owner": null,
+      "dependency_waves": [
+        12
+      ],
+      "final_integration_owner": "Task 12",
+      "path": "tauri-app/src/types/messages.ts",
+      "task_claims": [
+        "Task 12"
+      ]
+    }
+  ],
+  "plan_sha256": "1bee21c05770a60c154cca3f42369959e2093c1c0d56ee32b2c5fca58680a714",
+  "schema_version": 1,
+  "validation": {
+    "active_owner_intersection_count": 0,
+    "dependency_cycle_count": 0,
+    "missing_production_claims": []
+  },
+  "wave_graph": {
+    "edges": [
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        3,
+        4
+      ],
+      [
+        4,
+        5
+      ],
+      [
+        5,
+        6
+      ],
+      [
+        6,
+        7
+      ],
+      [
+        7,
+        8
+      ],
+      [
+        8,
+        9
+      ],
+      [
+        9,
+        10
+      ],
+      [
+        10,
+        11
+      ],
+      [
+        11,
+        12
+      ],
+      [
+        12,
+        13
+      ],
+      [
+        13,
+        14
+      ],
+      [
+        14,
+        15
+      ],
+      [
+        15,
+        16
+      ]
+    ],
+    "has_cycle": false,
+    "nodes": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16
+    ]
+  }
+}

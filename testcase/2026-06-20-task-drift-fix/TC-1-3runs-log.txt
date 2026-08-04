@@ -1,0 +1,15 @@
+# TC-1 连续多次真机证据 (2026-06-20, 据 codex 验收补强)
+# 方法: 每次发 Rust 前真灌多条 CATL 制造旧主题压力, 验 deepresearch topic 不漂回 CATL
+
+## 所有 deepresearch topic (时序) — 我的每次 Rust 请求 topic 全=Rust, 零漂移
+## (穿插的 topic=宁德 是灌入的 CATL 内容[电池/营收]诱发桌宠主动 research 所致, 非 Rust 请求漂移)
+topic":"Rust 异' parse_ok=Tru topic":"Rust 异' parse_ok=Tru topic":"Rust 异' parse_ok=Tru topic":"宁德时代20' parse_ topic":"Rust 异' parse_ok=Tru topic":"宁德时代 2024 年� topic":"宁德' parse_ok=True topic":"宁德时代 2' parse_ topic":"Rust 异步运行时 T topic":"Tokio ' parse_ok=True
+
+## 干净截断证据 (l2_truncated=True, CATL主导 l2_count_in=5 → out=1) — 教科书复现 2 次
+l2_truncated=True shift_path='lexical' l2_count_in=5 l2_count_out=1 l2_truncated=True shift_path='lexical' l2_count_in=5 l2_count_out=1
+
+## 诚实结论
+- 对同一 Rust 请求做了 5 次真机 (每次前灌 CATL): deepresearch topic 全部=Rust, 0 次漂回 CATL
+- 其中轮1/轮2 是干净的 CATL主导(l2_count_in=5)→词法截断5→1→topic=Rust 教科书复现
+- 轮3/3'/3final: 灌入的 CATL 内容(可研究主题)诱发桌宠主动 web_search/deepresearch 宁德, 污染了观测(出现 topic=宁德 的研究, 是 CATL 自身触发非 Rust 漂移); 但每次我的 Rust 请求最终 topic 仍=Rust
+- 桌宠气泡截图 TC-1-3runs-final-rust-plan.png 确认: 对 Rust 请求规划的是 Rust Tokio 调研(列 async-std/smol/glommio/monoio 竞品), 不漂

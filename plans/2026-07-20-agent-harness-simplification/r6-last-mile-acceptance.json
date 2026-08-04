@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "timestamp": "2026-07-21T23:36:23Z",
+  "branch": "codex/harness-r55",
+  "source_commit": "ed5f5686a56daf2e1797838cbe3d7374ea304a21",
+  "checks": [
+    {"name": "MR-0 backend zero-regression", "status": "pass", "veto": true, "duration_ms": 1133452},
+    {"name": "MR-8 fake-completion capture", "status": "pass", "veto": true, "duration_ms": 1000},
+    {"name": "MR-13 file_exists outcome verifier", "status": "pass", "veto": true, "duration_ms": 952},
+    {"name": "MR-19 HMAC privacy", "status": "pass", "veto": true, "duration_ms": 2937},
+    {"name": "Stage-2 admission", "status": "pass", "veto": false, "duration_ms": 922}
+  ],
+  "summary": {"total": 5, "pass": 5, "fail": 0, "skip": 0, "veto_failure": false},
+  "decision": "SHIP",
+  "note": "Vitest and cargo were intentionally omitted from this rerun because they passed independently in the same final verification round."
+}

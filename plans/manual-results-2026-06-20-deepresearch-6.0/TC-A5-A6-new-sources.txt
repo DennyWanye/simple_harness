@@ -1,0 +1,9 @@
+=== TC-A5/A6: 新源真机 API 命中(dev4,已登录) ===
+百度百科:12 搜狗百科:12 wikipedia:6 arxiv:4 google-cdp:4 google_unreachable:0
+--- 样本命中行 ---
+INFO:deskpet.tools.research_cdp_edge:event='cdp_edge_render' level='info' timestamp='2026-06-20T17:4
+INFO:deskpet.tools.research_cdp_edge:event='cdp_edge_render' level='info' timestamp='2026-06-20T17:4
+INFO:deskpet.tools.research_cdp_edge:event='cdp_edge_render' level='info' timestamp='2026-06-20T17:4
+INFO:deskpet.tools.research_cdp_edge:event='cdp_edge_render' level='info' timestamp='2026-06-20T17:4
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/search?word=%E5%90%91%E9%87%8F%E6%95%B0%E6%8D%A
+INFO:httpx:HTTP Request: GET https://baike.baidu.com/search?word=%E5%90%91%E9%87%8F%E6%95%B0%E6%8D%A

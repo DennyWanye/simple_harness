@@ -1,0 +1,190 @@
+{
+  "baseline_hash": "0159ff2d5e129ce1d4da9a8b219e96193a9018e07f0511b559d5c4c83fc0d0ca",
+  "baseline_head": "cde016ad651295e60100c3275e72bf23724b3833",
+  "blocked": false,
+  "ceilings": {
+    "archive_bytes": 67108864,
+    "file_count": 1024,
+    "max_component_utf8_bytes": 200,
+    "max_path_depth": 24,
+    "max_relative_path_utf8_bytes": 1024,
+    "max_single_file_bytes": 33554432,
+    "total_uncompressed_bytes": 134217728
+  },
+  "floors": {
+    "archive_bytes": 8388608,
+    "file_count": 128,
+    "max_component_utf8_bytes": 128,
+    "max_path_depth": 12,
+    "max_relative_path_utf8_bytes": 512,
+    "max_single_file_bytes": 4194304,
+    "total_uncompressed_bytes": 16777216
+  },
+  "formula": "min(ceiling,max(floor,ceil(shipped_max*2)))",
+  "limits": {
+    "archive_bytes": 8388608,
+    "file_count": 128,
+    "manifest_bytes": 524288,
+    "max_archive_entry_compression_ratio": 20,
+    "max_component_utf8_bytes": 128,
+    "max_path_depth": 12,
+    "max_relative_path_utf8_bytes": 512,
+    "max_single_file_bytes": 4194304,
+    "total_uncompressed_bytes": 16777216
+  },
+  "path_budget": {
+    "budget": 240,
+    "checks": [
+      {
+        "canonical_length": 59,
+        "kind": "production_root",
+        "path": "C:\\Users\\Administrator\\AppData\\Roaming\\deskpet\\capabilities",
+        "within_budget": true
+      },
+      {
+        "canonical_length": 98,
+        "kind": "pack_content_root",
+        "path": "C:\\Users\\Administrator\\AppData\\Roaming\\deskpet\\capabilities\\cv2\\0123456789abcdef0123456789abcdef\\p",
+        "within_budget": true
+      },
+      {
+        "canonical_length": 98,
+        "kind": "environment_root",
+        "path": "C:\\Users\\Administrator\\AppData\\Roaming\\deskpet\\capabilities\\cv2\\0123456789abcdef0123456789abcdef\\e",
+        "within_budget": true
+      },
+      {
+        "canonical_length": 143,
+        "kind": "longest_pack_file",
+        "path": "C:\\Users\\Administrator\\AppData\\Roaming\\deskpet\\capabilities\\cv2\\0123456789abcdef0123456789abcdef\\p\\tests\\fixtures\\minimal_project\\project.godot",
+        "within_budget": true
+      },
+      {
+        "canonical_length": 118,
+        "kind": "deepest_runtime_file",
+        "path": "C:\\Users\\Administrator\\AppData\\Roaming\\deskpet\\capabilities\\cv2\\0123456789abcdef0123456789abcdef\\p\\tools\\godot\\main.py",
+        "within_budget": true
+      },
+      {
+        "canonical_length": 118,
+        "kind": "spawn_argv_entry",
+        "path": "C:\\Users\\Administrator\\AppData\\Roaming\\deskpet\\capabilities\\cv2\\0123456789abcdef0123456789abcdef\\p\\tools\\godot\\main.py",
+        "within_budget": true
+      },
+      {
+        "canonical_length": 98,
+        "kind": "spawn_workdir",
+        "path": "C:\\Users\\Administrator\\AppData\\Roaming\\deskpet\\capabilities\\cv2\\0123456789abcdef0123456789abcdef\\p",
+        "within_budget": true
+      }
+    ],
+    "content_key_fixture": "0123456789abcdef0123456789abcdef",
+    "environment_evidence": "Godot declares host command dependency only; managed-local-v1 materializes an empty environment root",
+    "environment_relative_paths": [],
+    "longest_pack_relative_path": "tests/fixtures/minimal_project/project.godot",
+    "runtime_relative_path": "tools/godot/main.py"
+  },
+  "schema_version": 1,
+  "shipped_maxima": {
+    "archive_bytes": 0,
+    "file_count": 9,
+    "max_component_utf8_bytes": 25,
+    "max_path_depth": 4,
+    "max_relative_path_utf8_bytes": 44,
+    "max_single_file_bytes": 19530,
+    "total_uncompressed_bytes": 41518
+  },
+  "shipped_packs": [
+    {
+      "archive_evidence": "repository ships a directory, not an archive",
+      "files": [
+        {
+          "bytes": 2736,
+          "depth": 1,
+          "max_component_utf8_bytes": 17,
+          "path": "deskpet-pack.json",
+          "relative_path_utf8_bytes": 17,
+          "sha256": "5b12e955739a2a74e912307eebb2bd838ad0954e5c7724304fab6fde69197542"
+        },
+        {
+          "bytes": 3254,
+          "depth": 3,
+          "max_component_utf8_bytes": 8,
+          "path": "skills/godot/SKILL.md",
+          "relative_path_utf8_bytes": 21,
+          "sha256": "16afc289866aacb76bc1eccfbe4025dae1fb9d76e3bad84a60d4abedc9932a11"
+        },
+        {
+          "bytes": 73,
+          "depth": 4,
+          "max_component_utf8_bytes": 15,
+          "path": "tests/fixtures/minimal_project/main.gd",
+          "relative_path_utf8_bytes": 38,
+          "sha256": "70d0b0632e32696cdcfabab0d04b67f6f949c46d7c1c0aba4c966682ba5d6649"
+        },
+        {
+          "bytes": 163,
+          "depth": 4,
+          "max_component_utf8_bytes": 15,
+          "path": "tests/fixtures/minimal_project/main.tscn",
+          "relative_path_utf8_bytes": 40,
+          "sha256": "f584a903683e455e3b2debe6e6cce1d725d8fab901b3d305e51a9d09bfea91fc"
+        },
+        {
+          "bytes": 383,
+          "depth": 4,
+          "max_component_utf8_bytes": 15,
+          "path": "tests/fixtures/minimal_project/project.godot",
+          "relative_path_utf8_bytes": 44,
+          "sha256": "34fbc1b413f14586fb28f8cc494593384476cd8585344c05cd033f63ef7d8ac5"
+        },
+        {
+          "bytes": 13943,
+          "depth": 2,
+          "max_component_utf8_bytes": 18,
+          "path": "tests/test_godot_pack.py",
+          "relative_path_utf8_bytes": 24,
+          "sha256": "93929ee930f7f60000adf3308dbf66eb09a24391752b5f9cf7ad22f45791b292"
+        },
+        {
+          "bytes": 541,
+          "depth": 3,
+          "max_component_utf8_bytes": 18,
+          "path": "tools/godot/detect.schema.json",
+          "relative_path_utf8_bytes": 30,
+          "sha256": "612452d911b017871b2f5e8ce8651ed0723bceb8a55af7b973e41982b115df47"
+        },
+        {
+          "bytes": 19530,
+          "depth": 3,
+          "max_component_utf8_bytes": 7,
+          "path": "tools/godot/main.py",
+          "relative_path_utf8_bytes": 19,
+          "sha256": "8ae2d274cfd65187eee097a56010b7ccb6cae430d350fc71d911bdb8d6e7e5ae"
+        },
+        {
+          "bytes": 895,
+          "depth": 3,
+          "max_component_utf8_bytes": 25,
+          "path": "tools/godot/project_check.schema.json",
+          "relative_path_utf8_bytes": 37,
+          "sha256": "4e961fdef1959bd26238a2e8e84c40e2fcd858f98226472d0df3ddb19fe75a70"
+        }
+      ],
+      "manifest_hash": "5b12e955739a2a74e912307eebb2bd838ad0954e5c7724304fab6fde69197542",
+      "metrics": {
+        "archive_bytes": 0,
+        "file_count": 9,
+        "max_component_utf8_bytes": 25,
+        "max_path_depth": 4,
+        "max_relative_path_utf8_bytes": 44,
+        "max_single_file_bytes": 19530,
+        "total_uncompressed_bytes": 41518
+      },
+      "pack_id": "godot",
+      "source_root": "capability-packs/godot",
+      "version": "1.0.2"
+    }
+  ],
+  "source_scan_hash": "a1a1ae392db7748c99dce19d4233c8e844ee53111b285311e95c6df600249da7"
+}

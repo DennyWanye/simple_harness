@@ -1,0 +1,392 @@
+[
+  {
+    "window_id": "uow-promotion-after-run",
+    "injection_hook": "batch_boundary_after_promotion",
+    "operation_cases": ["react_promotion","start_admission","workflow_admission_consume"],
+    "durable_before": "no execution owner rows",
+    "durable_after": "run, complete continuation boundary, waiting event and delivery commit together",
+    "restart_actor": "react-recoverer",
+    "idempotency_key": "root:session:request:fault-promotion",
+    "expected_counts": {"run": 1, "boundary": 1, "decision": 1, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 1, "delivery": 1, "external_write": 0}
+  },
+  {
+    "window_id": "uow-promotion-after-boundary",
+    "injection_hook": "batch_boundary_after_continuation",
+    "operation_cases": ["react_promotion","start_admission","workflow_admission_consume"],
+    "durable_before": "no execution owner rows",
+    "durable_after": "run, complete continuation boundary, waiting event and delivery commit together",
+    "restart_actor": "react-recoverer",
+    "idempotency_key": "root:session:request:fault-promotion",
+    "expected_counts": {"run": 1, "boundary": 1, "decision": 1, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 1, "delivery": 1, "external_write": 0}
+  },
+  {
+    "window_id": "uow-promotion-after-event",
+    "injection_hook": "batch_boundary_after_waiting_event",
+    "operation_cases": ["react_promotion","start_admission","workflow_admission_consume"],
+    "durable_before": "no execution owner rows",
+    "durable_after": "run, complete continuation boundary, waiting event and delivery commit together",
+    "restart_actor": "react-recoverer",
+    "idempotency_key": "root:session:request:fault-promotion",
+    "expected_counts": {"run": 1, "boundary": 1, "decision": 1, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 1, "delivery": 1, "external_write": 0}
+  },
+  {
+    "window_id": "uow-promotion-before-commit",
+    "injection_hook": "batch_boundary_before_commit",
+    "operation_cases": ["react_promotion","start_admission","workflow_admission_consume"],
+    "durable_before": "no execution owner rows",
+    "durable_after": "run, complete continuation boundary, waiting event and delivery commit together",
+    "restart_actor": "react-recoverer",
+    "idempotency_key": "root:session:request:fault-promotion",
+    "expected_counts": {"run": 1, "boundary": 1, "decision": 1, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 1, "delivery": 1, "external_write": 0}
+  },
+  {
+    "window_id": "uow-decision-before-commit",
+    "injection_hook": "decision_resolve_before_commit",
+    "operation_cases": ["decision_boundary","resolve_admission"],
+    "durable_before": "open decision remains open",
+    "durable_after": "decision CAS is durable exactly once",
+    "restart_actor": "signal-recoverer",
+    "idempotency_key": "decision:fault-decision:nonce-1",
+    "expected_counts": {"run": 1, "boundary": 0, "decision": 1, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0}
+  },
+  {
+    "window_id": "uow-grant-before-commit",
+    "injection_hook": "grant_consume_before_commit",
+    "operation_cases": ["existing"],
+    "durable_before": "issued permission grant remains issued",
+    "durable_after": "grant CAS is consumed exactly once",
+    "restart_actor": "effect-worker",
+    "idempotency_key": "grant:fault-grant",
+    "expected_counts": {"run": 1, "boundary": 0, "decision": 1, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0}
+  },
+  {
+    "window_id": "uow-final-after-outbox",
+    "injection_hook": "finalize_after_outbox",
+    "operation_cases": ["terminal_delivery","admission_launch_unknown"],
+    "durable_before": "running run with no terminal event",
+    "durable_after": "terminal CAS, event and delivery commit together",
+    "restart_actor": "run-recoverer",
+    "idempotency_key": "terminal:fault-final",
+    "expected_counts": {"run": 1, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 1, "delivery": 1, "external_write": 0}
+  },
+  {
+    "window_id": "uow-final-before-commit",
+    "injection_hook": "finalize_before_commit",
+    "operation_cases": ["terminal_delivery","admission_launch_unknown"],
+    "durable_before": "running run with no terminal event",
+    "durable_after": "terminal CAS, event and delivery commit together",
+    "restart_actor": "run-recoverer",
+    "idempotency_key": "terminal:fault-final",
+    "expected_counts": {"run": 1, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 1, "delivery": 1, "external_write": 0}
+  },
+  {
+    "window_id": "uow-child-command-before-commit",
+    "injection_hook": "child_command_before_commit",
+    "operation_cases": ["existing"],
+    "durable_before": "parent exists without delegate command",
+    "durable_after": "one stable pending delegate command",
+    "restart_actor": "child-scheduler",
+    "idempotency_key": "child-command:fault-child",
+    "expected_counts": {"run": 1, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 1, "link": 0, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0}
+  },
+  {
+    "window_id": "uow-child-schedule-after-run",
+    "injection_hook": "child_schedule_after_run",
+    "operation_cases": ["existing"],
+    "durable_before": "leased command without child or link",
+    "durable_after": "child, structural link and scheduled command commit together",
+    "restart_actor": "child-scheduler",
+    "idempotency_key": "child-schedule:fault-child",
+    "expected_counts": {"run": 2, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 1, "link": 1, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0}
+  },
+  {
+    "window_id": "uow-child-schedule-before-commit",
+    "injection_hook": "child_schedule_before_commit",
+    "operation_cases": ["existing"],
+    "durable_before": "leased command without child or link",
+    "durable_after": "child, structural link and scheduled command commit together",
+    "restart_actor": "child-scheduler",
+    "idempotency_key": "child-schedule:fault-child",
+    "expected_counts": {"run": 2, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 1, "link": 1, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0}
+  },
+  {
+    "window_id": "uow-child-terminal-before-commit",
+    "injection_hook": "child_terminal_before_commit",
+    "operation_cases": ["existing"],
+    "durable_before": "terminal child without parent inbox signal",
+    "durable_after": "one stable terminal parent inbox signal",
+    "restart_actor": "parent-recoverer",
+    "idempotency_key": "child-terminal:fault-child",
+    "expected_counts": {"run": 2, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 1, "link": 1, "inbox": 2, "event": 1, "delivery": 0, "external_write": 0}
+  },
+  {
+    "window_id": "uow-parent-ack-before-commit",
+    "injection_hook": "child_signal_ack_before_commit",
+    "operation_cases": ["existing"],
+    "durable_before": "accepted signal and parent continuation are unchanged",
+    "durable_after": "parent boundary, event and signal ack commit together",
+    "restart_actor": "parent-recoverer",
+    "idempotency_key": "parent-ack:fault-child",
+    "expected_counts": {"run": 2, "boundary": 1, "decision": 0, "effect": 0, "attempt": 0, "child": 1, "link": 1, "inbox": 1, "event": 1, "delivery": 1, "external_write": 0}
+  },
+  {
+    "window_id": "team-claim-before-commit",
+    "injection_hook": "team_claim_before_commit",
+    "operation_cases": ["existing"],
+    "durable_before": "pending Team task without a claimant",
+    "durable_after": "the same Team task is claimed once",
+    "restart_actor": "team-child-reconciler",
+    "idempotency_key": "team:fault-team:task-1:1",
+    "expected_counts": {"run": 0, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0, "team_task": 1, "team_command": 0, "team_terminal_inbox": 0}
+  },
+  {
+    "window_id": "uow-decision-boundary-after-cas",
+    "injection_hook": "decision_resolve_after_cas",
+    "operation_cases": ["decision_boundary","resolve_admission"],
+    "durable_before": "open decision and suspended continuation remain unchanged",
+    "durable_after": "decision, continuation and resumed event commit together",
+    "restart_actor": "signal-recoverer",
+    "idempotency_key": "decision-boundary:fault-decision",
+    "expected_counts": {"run": 1, "boundary": 1, "decision": 1, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 1, "delivery": 1, "external_write": 0}
+  },
+  {
+    "window_id": "uow-decision-boundary-after-grant",
+    "injection_hook": "decision_resolve_after_grant",
+    "operation_cases": ["existing"],
+    "durable_before": "open permission decision and suspended continuation remain unchanged",
+    "durable_after": "decision, one-shot grant, continuation and resumed event commit together",
+    "restart_actor": "signal-recoverer",
+    "idempotency_key": "decision-boundary:fault-permission",
+    "expected_counts": {"run": 1, "boundary": 1, "decision": 1, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 1, "delivery": 1, "external_write": 0}
+  },
+  {
+    "window_id": "uow-decision-boundary-after-continuation",
+    "injection_hook": "decision_resolve_after_boundary",
+    "operation_cases": ["decision_boundary","resolve_admission"],
+    "durable_before": "open decision and suspended continuation remain unchanged",
+    "durable_after": "decision, continuation and resumed event commit together",
+    "restart_actor": "signal-recoverer",
+    "idempotency_key": "decision-boundary:fault-decision",
+    "expected_counts": {"run": 1, "boundary": 1, "decision": 1, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 1, "delivery": 1, "external_write": 0}
+  },
+  {
+    "window_id": "team-saga-after-task-claim",
+    "injection_hook": "team_saga_after_task_claim",
+    "operation_cases": ["existing"],
+    "durable_before": "pending Team task has no claim epoch or child command",
+    "durable_after": "claimed task and stable child command outbox commit together",
+    "restart_actor": "team-child-reconciler",
+    "idempotency_key": "team:fault-team:task-1:1",
+    "expected_counts": {"run": 0, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0, "team_task": 1, "team_command": 1, "team_terminal_inbox": 0}
+  },
+  {
+    "window_id": "team-saga-after-command-enqueue",
+    "injection_hook": "team_saga_after_command_enqueue",
+    "operation_cases": ["existing"],
+    "durable_before": "pending Team task has no claim epoch or child command",
+    "durable_after": "claimed task and stable child command outbox commit together",
+    "restart_actor": "team-child-reconciler",
+    "idempotency_key": "team:fault-team:task-1:1",
+    "expected_counts": {"run": 0, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0, "team_task": 1, "team_command": 1, "team_terminal_inbox": 0}
+  },
+  {
+    "window_id": "team-saga-before-domain-ack",
+    "injection_hook": "team_saga_before_domain_ack",
+    "operation_cases": ["existing"],
+    "durable_before": "generic child command exists while Team outbox remains pending",
+    "durable_after": "idempotent generic replay and Team domain ack converge",
+    "restart_actor": "team-child-reconciler",
+    "idempotency_key": "team:fault-team:task-1:1",
+    "expected_counts": {"run": 2, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 1, "link": 1, "inbox": 1, "event": 0, "delivery": 0, "external_write": 0, "team_task": 1, "team_command": 1, "team_terminal_inbox": 0}
+  },
+  {
+    "window_id": "team-saga-before-terminal-update",
+    "injection_hook": "team_saga_before_terminal_update",
+    "operation_cases": ["existing"],
+    "durable_before": "generic child terminal exists while Team task remains claimed",
+    "durable_after": "terminal operation inbox and Team task terminal update commit together",
+    "restart_actor": "team-child-reconciler",
+    "idempotency_key": "team:fault-team:task-1:1",
+    "expected_counts": {"run": 2, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 1, "link": 1, "inbox": 2, "event": 1, "delivery": 0, "external_write": 0, "team_task": 1, "team_command": 1, "team_terminal_inbox": 1}
+  },
+  {
+    "window_id": "uow-effect-claim-after-grant",
+    "injection_hook": "effect_claim_after_grant",
+    "operation_cases": ["effect_claim","claim_admission_launch"],
+    "durable_before": "issued grant with no execution effect or attempt",
+    "durable_after": "consumed grant, running effect and fenced attempt commit together",
+    "restart_actor": "effect-worker",
+    "idempotency_key": "effect-claim:effect-1",
+    "expected_counts": {"run": 1, "boundary": 0, "decision": 1, "effect": 1, "attempt": 1, "child": 0, "link": 0, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0}
+  },
+  {
+    "window_id": "uow-effect-claim-after-effect",
+    "injection_hook": "effect_claim_after_effect",
+    "operation_cases": ["effect_claim","claim_admission_launch"],
+    "durable_before": "issued grant with no execution effect or attempt",
+    "durable_after": "consumed grant, running effect and fenced attempt commit together",
+    "restart_actor": "effect-worker",
+    "idempotency_key": "effect-claim:effect-1",
+    "expected_counts": {"run": 1, "boundary": 0, "decision": 1, "effect": 1, "attempt": 1, "child": 0, "link": 0, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0}
+  },
+  {
+    "window_id": "uow-effect-claim-before-commit",
+    "injection_hook": "effect_claim_before_commit",
+    "operation_cases": ["effect_claim","claim_admission_launch"],
+    "durable_before": "issued grant with no execution effect or attempt",
+    "durable_after": "consumed grant, running effect and fenced attempt commit together",
+    "restart_actor": "effect-worker",
+    "idempotency_key": "effect-claim:effect-1",
+    "expected_counts": {"run": 1, "boundary": 0, "decision": 1, "effect": 1, "attempt": 1, "child": 0, "link": 0, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0}
+  },
+  {
+    "window_id": "uow-effect-settle-after-attempt",
+    "injection_hook": "effect_settle_after_attempt",
+    "operation_cases": ["existing"],
+    "durable_before": "external write may exist while effect and attempt remain running",
+    "durable_after": "attempt, effect link, continuation and event commit exactly once",
+    "restart_actor": "effect-reconciler",
+    "idempotency_key": "effect-settle:effect-1:attempt-1",
+    "expected_counts": {"run": 1, "boundary": 1, "decision": 1, "effect": 1, "attempt": 1, "child": 0, "link": 1, "inbox": 0, "event": 1, "delivery": 1, "external_write": 1}
+  },
+  {
+    "window_id": "uow-effect-settle-after-effect",
+    "injection_hook": "effect_settle_after_effect",
+    "operation_cases": ["existing"],
+    "durable_before": "external write may exist while effect and attempt remain running",
+    "durable_after": "attempt, effect link, continuation and event commit exactly once",
+    "restart_actor": "effect-reconciler",
+    "idempotency_key": "effect-settle:effect-1:attempt-1",
+    "expected_counts": {"run": 1, "boundary": 1, "decision": 1, "effect": 1, "attempt": 1, "child": 0, "link": 1, "inbox": 0, "event": 1, "delivery": 1, "external_write": 1}
+  },
+  {
+    "window_id": "uow-effect-settle-after-link",
+    "injection_hook": "effect_settle_after_link",
+    "operation_cases": ["existing"],
+    "durable_before": "external write may exist while effect and attempt remain running",
+    "durable_after": "attempt, effect link, continuation and event commit exactly once",
+    "restart_actor": "effect-reconciler",
+    "idempotency_key": "effect-settle:effect-1:attempt-1",
+    "expected_counts": {"run": 1, "boundary": 1, "decision": 1, "effect": 1, "attempt": 1, "child": 0, "link": 1, "inbox": 0, "event": 1, "delivery": 1, "external_write": 1}
+  },
+  {
+    "window_id": "uow-effect-settle-after-boundary",
+    "injection_hook": "effect_settle_after_boundary",
+    "operation_cases": ["existing"],
+    "durable_before": "external write may exist while effect and attempt remain running",
+    "durable_after": "attempt, effect link, continuation and event commit exactly once",
+    "restart_actor": "effect-reconciler",
+    "idempotency_key": "effect-settle:effect-1:attempt-1",
+    "expected_counts": {"run": 1, "boundary": 1, "decision": 1, "effect": 1, "attempt": 1, "child": 0, "link": 1, "inbox": 0, "event": 1, "delivery": 1, "external_write": 1}
+  },
+  {
+    "window_id": "uow-effect-settle-before-commit",
+    "injection_hook": "effect_settle_before_commit",
+    "operation_cases": ["existing"],
+    "durable_before": "external write may exist while effect and attempt remain running",
+    "durable_after": "attempt, effect link, continuation and event commit exactly once",
+    "restart_actor": "effect-reconciler",
+    "idempotency_key": "effect-settle:effect-1:attempt-1",
+    "expected_counts": {"run": 1, "boundary": 1, "decision": 1, "effect": 1, "attempt": 1, "child": 0, "link": 1, "inbox": 0, "event": 1, "delivery": 1, "external_write": 1}
+  },
+  {
+    "window_id": "uow-child-apply-after-boundary",
+    "injection_hook": "child_apply_after_boundary",
+    "operation_cases": ["existing"],
+    "durable_before": "pending child inbox and parent continuation remain unadvanced",
+    "durable_after": "parent continuation, event and inbox ack commit together",
+    "restart_actor": "parent-recoverer",
+    "idempotency_key": "child-apply:operation-child:accepted",
+    "expected_counts": {"run": 2, "boundary": 1, "decision": 0, "effect": 0, "attempt": 0, "child": 1, "link": 1, "inbox": 1, "event": 1, "delivery": 1, "external_write": 0}
+  },
+  {
+    "window_id": "uow-child-apply-after-event",
+    "injection_hook": "child_apply_after_event",
+    "operation_cases": ["existing"],
+    "durable_before": "pending child inbox and parent continuation remain unadvanced",
+    "durable_after": "parent continuation, event and inbox ack commit together",
+    "restart_actor": "parent-recoverer",
+    "idempotency_key": "child-apply:operation-child:accepted",
+    "expected_counts": {"run": 2, "boundary": 1, "decision": 0, "effect": 0, "attempt": 0, "child": 1, "link": 1, "inbox": 1, "event": 1, "delivery": 1, "external_write": 0}
+  },
+  {
+    "window_id": "uow-child-apply-before-commit",
+    "injection_hook": "child_apply_before_commit",
+    "operation_cases": ["existing"],
+    "durable_before": "pending child inbox and parent continuation remain unadvanced",
+    "durable_after": "parent continuation, event and inbox ack commit together",
+    "restart_actor": "parent-recoverer",
+    "idempotency_key": "child-apply:operation-child:accepted",
+    "expected_counts": {"run": 2, "boundary": 1, "decision": 0, "effect": 0, "attempt": 0, "child": 1, "link": 1, "inbox": 1, "event": 1, "delivery": 1, "external_write": 0}
+  },
+  {
+    "window_id": "uow-child-finalize-after-terminal",
+    "injection_hook": "child_finalize_after_terminal",
+    "operation_cases": ["existing"],
+    "durable_before": "acked child remains nonterminal and parent has no terminal inbox signal",
+    "durable_after": "child terminal CAS, terminal event and parent inbox signal commit together",
+    "restart_actor": "child-recoverer",
+    "idempotency_key": "child-finalize:operation-child:terminal",
+    "expected_counts": {"run": 2, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 1, "link": 1, "inbox": 2, "event": 1, "delivery": 0, "external_write": 0}
+  },
+  {
+    "window_id": "uow-child-finalize-after-parent-signal",
+    "injection_hook": "child_finalize_after_parent_signal",
+    "operation_cases": ["existing"],
+    "durable_before": "acked child remains nonterminal and parent has no terminal inbox signal",
+    "durable_after": "child terminal CAS, terminal event and parent inbox signal commit together",
+    "restart_actor": "child-recoverer",
+    "idempotency_key": "child-finalize:operation-child:terminal",
+    "expected_counts": {"run": 2, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 1, "link": 1, "inbox": 2, "event": 1, "delivery": 0, "external_write": 0}
+  },
+  {
+    "window_id": "uow-checkpoint-consume-decisions",
+    "injection_hook": "checkpoint_consume_decisions_after_write",
+    "operation_cases": ["existing"],
+    "durable_before": "resolved execution decision and no native checkpoint marker",
+    "durable_after": "native checkpoint marker and decision consumption commit together",
+    "restart_actor": "workflow-checkpoint-recoverer",
+    "idempotency_key": "checkpoint:consume-decisions",
+    "expected_counts": {"run": 1, "boundary": 0, "decision": 1, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0}
+  },
+  {
+    "window_id": "uow-checkpoint-open-decision",
+    "injection_hook": "checkpoint_open_decision_after_write",
+    "operation_cases": ["existing"],
+    "durable_before": "running execution and no native checkpoint marker",
+    "durable_after": "native checkpoint marker, waiting run and open decision commit together",
+    "restart_actor": "workflow-checkpoint-recoverer",
+    "idempotency_key": "checkpoint:open-decision",
+    "expected_counts": {"run": 1, "boundary": 0, "decision": 1, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0}
+  },
+  {
+    "window_id": "uow-checkpoint-append-event",
+    "injection_hook": "checkpoint_append_event_after_write",
+    "operation_cases": ["existing"],
+    "durable_before": "running execution with no event or native checkpoint marker",
+    "durable_after": "native checkpoint marker and canonical execution event commit together",
+    "restart_actor": "workflow-checkpoint-recoverer",
+    "idempotency_key": "checkpoint:append-event",
+    "expected_counts": {"run": 1, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 1, "delivery": 0, "external_write": 0}
+  },
+  {
+    "window_id": "uow-checkpoint-link-effects",
+    "injection_hook": "checkpoint_link_effects_after_write",
+    "operation_cases": ["existing"],
+    "durable_before": "committed execution effect without checkpoint link or native marker",
+    "durable_after": "native checkpoint marker and effect link commit together",
+    "restart_actor": "workflow-checkpoint-recoverer",
+    "idempotency_key": "checkpoint:link-effects",
+    "expected_counts": {"run": 1, "boundary": 0, "decision": 0, "effect": 1, "attempt": 0, "child": 0, "link": 1, "inbox": 0, "event": 0, "delivery": 0, "external_write": 0}
+  },
+  {
+    "window_id": "uow-checkpoint-finalize-run",
+    "injection_hook": "checkpoint_finalize_run_after_write",
+    "operation_cases": ["existing"],
+    "durable_before": "running execution without terminal event or native checkpoint marker",
+    "durable_after": "native checkpoint marker, terminal event and terminal CAS commit together",
+    "restart_actor": "workflow-checkpoint-recoverer",
+    "idempotency_key": "checkpoint:finalize-run",
+    "expected_counts": {"run": 1, "boundary": 0, "decision": 0, "effect": 0, "attempt": 0, "child": 0, "link": 0, "inbox": 0, "event": 1, "delivery": 0, "external_write": 0}
+  }
+]

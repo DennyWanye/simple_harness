@@ -1,0 +1,94 @@
+任务：给 DeskPet 的 ppt_create 加「模板填充模式」—— 载入用户提供的 .pptx 模板，用其 slide layout 加页并填充占位符(placeholder)，格式从模板继承(可编辑专业版)。仅改一个文件 + 加一个测试文件。这是业界 python-pptx 出好看 PPT 的标准做法。
+
+== 目标文件(唯一改) ==
+G:\projects\deskpet\backend\deskpet\tools\ppt_tools.py
+
+== 现状(已读源码) ==
+- ppt_create(outline, *, theme="minimal", title="", author="DeskPet", output_path=None, dry_run=False) 在 line 1434。现有「from-scratch 引擎」：blank_layout=prs.slide_layouts[6] 自己画所有形状(_RENDERERS 各 _render_xxx_v2)。返回 {"ok":True,"path","slide_count","theme","artifacts":[{kind:file,...}]} 或失败带 markdown_fallback。
+- SlideOutline(dataclass, line 88+) 字段: layout/title/subtitle/bullets[]/left[]/right[]/left_title/right_title/image_path/image_prompt/caption/quote/cite/chart/notes。
+- 已有 _autofill_image_prompts(slides)(line ~1505) —— 有 image_prompt 且无 image_path 的页批量生图回填(B-2)。
+- parse_outline(raw)->list[SlideOutline]、get_theme、render_markdown_fallback、_resolve_output_path 都可复用。
+- python-pptx 标准模板有 11 个 layout(任何规范 .pptx 模板都继承)，关键:
+  idx0 'Title Slide'(占位符 type CENTER_TITLE + SUBTITLE)
+  idx1 'Title and Content'(TITLE + OBJECT内容)
+  idx2 'Section Header'(TITLE + BODY)
+  idx3 'Two Content'(TITLE + OBJECT + OBJECT)
+  idx5 'Title Only'(TITLE)
+  idx8 'Picture with Caption'(TITLE + PICTURE + BODY)
+  占位符 type 枚举来自 pptx.enum.text 不对——是 ph.placeholder_format.type，值如 TITLE/CENTER_TITLE/SUBTITLE/BODY/OBJECT/PICTURE。
+
+== 改动 1：ppt_create 加 template 参数 ==
+- 签名加 *, template: Optional[str] = None（放 output_path 后、dry_run 前后均可，保持关键字参数）。
+- 语义：template 为 None → 走现有 from-scratch 引擎，行为 100% 不变(关键 BC)。
+  template 为一个存在的 .pptx 路径 → 走新「模板填充」路径。
+- dry_run 仍优先早返回(不受 template 影响)。
+- _autofill_image_prompts(slides) 在两条路径渲染前都要调(模板模式也支持 image_prompt)。
+
+== 改动 2：新增 _render_with_template(...) ==
+新增 def _render_with_template(slides, template_path, *, title, author, out_path) -> dict:
+- prs = _Presentation(template_path) 载入模板(模板自带 master/layout/theme/字体)。
+- 若模板自带示例 slide(len(prs.slides)>0)：删掉它们(只保留 master/layout)。删 slide 的稳妥写法:
+    xml_slides = prs.slides._sldIdLst; for sldId in list(xml_slides): xml_slides.remove(sldId)
+- 逐 SlideOutline：
+  1. 选 layout：_pick_template_layout(prs, so.layout)（见改动 3）。
+  2. slide = prs.slides.add_slide(layout)。
+  3. 填占位符(按 type，不按 idx，因 idx 跨模板会变)：
+     - 标题：找 type 为 TITLE 或 CENTER_TITLE 的占位符 → so.title。
+     - 副标题：找 SUBTITLE → so.subtitle(title 布局用)。
+     - 正文内容：找 BODY 或 OBJECT 占位符 → 填 bullets（多段，每 bullet 一段；用 tf=ph.text_frame，第一段 tf.text=bullets[0]，其余 tf.add_paragraph()）。two_column 时把 left/right 分别填到第 1/2 个 OBJECT 占位符(left_title/right_title 作为该段加粗首行可选)。section/quote 用 BODY 填 subtitle 或 quote+cite。
+     - 图片：找 PICTURE 占位符 → 若 so.image_path 是文件，用 ph.insert_picture(so.image_path)；caption 填到剩余 BODY。
+     - 若某类内容没有对应占位符就跳过(不崩)。
+  4. notes：so.notes → slide.notes_slide.notes_text_frame.text。
+- core_properties 设 title/author(同现有 from-scratch 路径)。
+- prs.save(out_path)。
+- 返回与现有成功结构一致：{"ok":True,"path":str(out_path),"slide_count":len(slides),"theme":"template","artifacts":[{"kind":"file","path":...,"mime":"...presentationml.presentation","title":Path(out_path).name}]}。
+- 整个函数包 try/except：任何异常 → log.warning + 返回 None（让 ppt_create 优雅回退到 from-scratch 引擎，用户仍拿到 deck）。
+
+== 改动 3：_pick_template_layout(prs, deskpet_layout) ==
+新增 helper，把 deskpet 的 layout 名映射到模板里的 slide layout 对象：
+- 映射表(deskpet layout -> 优先 layout 名关键词 + 回退标准 idx)：
+  title->("title slide", 0); section->("section", 2); bullet->("title and content",1);
+  two_column->("two content",3); image/image_full->("picture",8); quote->("section",2);
+  toc->("title and content",1); chart->("title and content",1); 其它->("title and content",1)。
+- 选择逻辑：先在 prs.slide_layouts 里按 layout.name.lower() 包含关键词找；找不到再用标准 idx(带边界 clamp：idx >= len(layouts) 时 clamp 到最后一个)；再兜底 prs.slide_layouts[0]。
+- 返回 layout 对象。
+
+== 改动 4：ppt_create 分发逻辑 ==
+- parse_outline 后、dry_run 早返回后、_HAS_PPTX 检查后：
+    _autofill_image_prompts(slides)
+    if template:
+        tpl = Path(template)
+        if tpl.is_file():
+            result = _render_with_template(slides, str(tpl), title=title, author=author, out_path=_resolve_output_path(output_path))
+            if result is not None:
+                return result
+            log.warning("template render failed, falling back to from-scratch engine")
+        else:
+            log.warning("template path not found: %s — falling back to from-scratch engine", template)
+    # 继续走现有 from-scratch 引擎(原样不动)
+- 注意 out_path 复用 _resolve_output_path；from-scratch 路径里也用同样 out_path，别重复解析两次导致不同文件名 —— 把 out_path 解析提前一次、两条路径共用。
+
+== 改动 5：_PPT_SCHEMA 描述加 template ==
+- _PPT_SCHEMA 的 properties 加 template 参数说明(可选，.pptx 模板路径，载模板用其布局填充、格式继承)。layout 描述补一句:模板模式下 layout 映射到模板的标准布局。
+
+== 硬约束(不可破) ==
+- 只改 ppt_tools.py 一个文件(+新增一个测试文件)。
+- template=None → 现有 from-scratch 引擎 100% 不变(BC，现有 -k ppt 全绿)。
+- 不改 SlideOutline 字段、不改现有 _render_xxx_v2、不改 ppt_create 现有返回结构。
+- 不加新第三方依赖。
+- 模板路径无效/渲染异常 → 优雅回退 from-scratch 引擎(绝不崩、绝不让用户拿不到 deck)。
+- 中文注释风格与现有一致。
+
+== 验收(必须自测) ==
+工作目录: G:\projects\deskpet\backend
+解释器: G:\projects\deskpet\backend\.venv\Scripts\python.exe
+1. BC 不破: .venv\Scripts\python.exe -m pytest -k ppt -q 全绿。
+2. 新增测试 tests/test_ppt_template_fill_a2.py，≥5 用例(用 python-pptx 默认模板当测试模板：先 from pptx import Presentation; Presentation().save(tmp_path/"tpl.pptx") 造一个标准 11-layout 模板)：
+   a. test_template_fills_title_and_bullets：outline=[{"layout":"title","title":"封面","subtitle":"副标题"},{"layout":"bullet","title":"要点","bullets":["A","B","C"]}]，ppt_create(outline, template=str(tpl))，断言 ok、path 存在、用 Presentation(path) 重新打开断言 slide0 标题文本含"封面"、slide1 有"要点"且正文含 A/B/C。
+   b. test_template_none_unchanged：同 outline 但 template=None，断言走 from-scratch(theme 字段=具体主题名而非"template"，slide_count 对)。
+   c. test_template_bad_path_falls_back：template="G:\\no\\such.pptx"，断言 ok=True(回退 from-scratch 仍出 deck)。
+   d. test_template_picture_placeholder：outline=[{"layout":"image","title":"图","image_path":<真实临时PNG>}]（用合法 1x1 PNG bytes:base64 iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==）；ppt_create(outline, template=str(tpl))，断言 ok 且重开 .pptx 后该页有图片 shape(shape.shape_type 含 PICTURE 或 has image)。
+   e. test_template_image_prompt_autofill：outline 带 image_prompt 无 image_path + monkeypatch deskpet.tools.image_tools.generate_images 返回真实临时PNG路径；ppt_create(outline, template=str(tpl))，断言 ok 且 generate_images 被调过(模板模式也支持自动生图)。
+3. 跑新测试: .venv\Scripts\python.exe -m pytest tests/test_ppt_template_fill_a2.py -q 全绿。
+
+完成后输出：改了哪些函数/行、_pick_template_layout 映射表、5 个测试 pass 结果、确认 template=None 时 from-scratch 引擎字节不变(BC)。

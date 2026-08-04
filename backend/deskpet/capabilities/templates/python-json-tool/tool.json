@@ -1,0 +1,6 @@
+{
+  "protocol": "deskpet-json-tool-v1",
+  "execution_profile": "brokered-effect-v1",
+  "entrypoint": ["python", "main.py"],
+  "allowed_effect_actions": ["rename_file"]
+}

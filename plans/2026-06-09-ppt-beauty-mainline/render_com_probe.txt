@@ -1,0 +1,11 @@
+pywin32: OK
+--- trying PowerPoint.Application ---
+  Dispatch FAILED: com_error: (-2147024703, 'OLE error 0x800700c1', None, None)
+--- trying Kwpp.Application ---
+  Dispatch OK: Kwpp.Application
+  Opened, slides=4
+  Export slide1 -> G:\projects\deskpet\.tmp\ppt-render-probe\Kwpp-slide1.png  ok=True size=52151
+--- trying KWPP.Application ---
+  Dispatch OK: KWPP.Application
+  Opened, slides=4
+  Export slide1 -> G:\projects\deskpet\.tmp\ppt-render-probe\KWPP-slide1.png  ok=True size=52151

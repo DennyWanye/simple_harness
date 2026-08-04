@@ -1,0 +1,10 @@
+{
+  "content_policy": "synthetic_text_only",
+  "fixture_id": "godot-recovery-v1",
+  "fixture_sha256": "4ac3e21ae650abbd8f5d09581c05eeeba6302d3b2de94abfa26dbd3c4a3cb9f9",
+  "generator_version": "harness-public-fixture/2",
+  "schema_version": 1,
+  "source_boundary": "harness_public_read_service",
+  "source_projection_sha256": "609d21604fcfdfd8cfcf6fb08bd26773bb48147ccbd0a034924693214900b40d",
+  "source_root_hash": "81299a5fc9a95e0594347b794e53fe6646008e8c77fd28ad2082e859adf9f53e"
+}

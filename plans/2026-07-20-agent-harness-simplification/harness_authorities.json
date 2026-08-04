@@ -1,0 +1,58 @@
+{
+  "baseline": {
+    "legacy_survivor_count": 0,
+    "presenter_converter_authority_count": 1,
+    "run_map_authority_count": 1,
+    "supervisor_task_authority_count": 0
+  },
+  "baseline_commit": "796905b9888c2659af78cec21de1ee96b46a2c51",
+  "items": [
+    {
+      "authority": "presenter_converter",
+      "callsites": [
+        "backend/deskpet/agent/run_presenter.py:RunPresenter.present_run_event:310"
+      ],
+      "kind": "converter",
+      "path": "backend/deskpet/agent/run_presenter.py",
+      "source_hash": "c80c28a7012989eece3e7d35754ef9aeffc1b00886301b518ed45344392ad165",
+      "symbol": "CanonicalRunEventPresentationAdapter.to_presentation_events",
+      "tables": []
+    },
+    {
+      "authority": "presenter_converter_contract",
+      "callsites": [
+        "backend/deskpet/agent/run_presenter.py:RunPresenter.present_run_event:310"
+      ],
+      "kind": "converter_contract",
+      "path": "backend/deskpet/agent/run_presenter.py",
+      "source_hash": "d7cd459b3343cb085708b268e91bf368e221c27ba06520965ed9246882c1594c",
+      "symbol": "RunEventPresentationAdapter.to_presentation_events",
+      "tables": []
+    },
+    {
+      "authority": "live_run_map",
+      "callsites": [],
+      "kind": "run_map",
+      "path": "backend/deskpet/harness/live_index.py",
+      "source_hash": "16099a1f6a834ab0cc7608964c2bbed5715a4b8810c55679c14b84de34a4198f",
+      "symbol": "BoundedLiveIndex._runs",
+      "tables": []
+    },
+    {
+      "authority": "run_task",
+      "callsites": [],
+      "kind": "task",
+      "path": "backend/deskpet/harness/live_index.py",
+      "source_hash": "c331c2334aeae84d5b3fff6ae73d3617e55c9453c11856c11e338483f0ab15f6",
+      "symbol": "LiveRun.task",
+      "tables": []
+    }
+  ],
+  "schema_version": 1,
+  "target": {
+    "max_legacy_survivor_count": 15,
+    "presenter_converter_authority_count": 1,
+    "run_map_authority_count": 1,
+    "supervisor_task_authority_count": 0
+  }
+}

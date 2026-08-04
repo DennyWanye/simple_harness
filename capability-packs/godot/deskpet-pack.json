@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "id": "godot",
+  "name": "Godot",
+  "version": "1.0.4",
+  "source": {
+    "type": "builtin",
+    "uri": "capability-packs/godot",
+    "revision": "repo-commit"
+  },
+  "compatibility": {
+    "deskpet": ">=0.6.0-beta.9",
+    "os": [
+      "windows"
+    ],
+    "architectures": [
+      "x86_64"
+    ],
+    "python": ">=3.11"
+  },
+  "entries": {
+    "skills": [
+      {
+        "path": "skills/godot/SKILL.md"
+      }
+    ],
+    "tools": [
+      {
+        "id": "detect",
+        "provider_name": "godot__detect",
+        "runtime": "deskpet-json-tool-v1",
+        "execution_profile": "native-adapter",
+        "input_views": [],
+        "entry": "tools/godot/main.py",
+        "schema": "tools/godot/detect.schema.json",
+        "healthcheck": "healthcheck"
+      },
+      {
+        "id": "project_check",
+        "provider_name": "godot__project_check",
+        "runtime": "deskpet-json-tool-v1",
+        "execution_profile": "native-adapter",
+        "input_views": [],
+        "entry": "tools/godot/main.py",
+        "schema": "tools/godot/project_check.schema.json",
+        "healthcheck": "healthcheck"
+      }
+    ]
+  },
+  "permissions": [
+    "filesystem_read",
+    "filesystem_write",
+    "process_execute"
+  ],
+  "effects": [
+    "read_only",
+    "staged_file",
+    "opaque_manual"
+  ],
+  "dependencies": {
+    "python": [],
+    "commands": [
+      {
+        "name": "godot",
+        "version": ">=4.0"
+      }
+    ]
+  },
+  "files": [
+    {
+      "path": "skills/godot/SKILL.md",
+      "sha256": "27f65a67ad51713498b8108e84d5d73e8b9cb06d9a6ab3463509b16a2d4461e0"
+    },
+    {
+      "path": "tests/fixtures/minimal_project/main.gd",
+      "sha256": "70d0b0632e32696cdcfabab0d04b67f6f949c46d7c1c0aba4c966682ba5d6649"
+    },
+    {
+      "path": "tests/fixtures/minimal_project/main.tscn",
+      "sha256": "f584a903683e455e3b2debe6e6cce1d725d8fab901b3d305e51a9d09bfea91fc"
+    },
+    {
+      "path": "tests/fixtures/minimal_project/project.godot",
+      "sha256": "34fbc1b413f14586fb28f8cc494593384476cd8585344c05cd033f63ef7d8ac5"
+    },
+    {
+      "path": "tests/test_godot_pack.py",
+      "sha256": "94cdae076ea71cda3a98458f1899c4c3971634ab0b10a5ee3860609bb2e31464"
+    },
+    {
+      "path": "tools/godot/detect.schema.json",
+      "sha256": "612452d911b017871b2f5e8ce8651ed0723bceb8a55af7b973e41982b115df47"
+    },
+    {
+      "path": "tools/godot/main.py",
+      "sha256": "8ae2d274cfd65187eee097a56010b7ccb6cae430d350fc71d911bdb8d6e7e5ae"
+    },
+    {
+      "path": "tools/godot/project_check.schema.json",
+      "sha256": "4e961fdef1959bd26238a2e8e84c40e2fcd858f98226472d0df3ddb19fe75a70"
+    }
+  ],
+  "uninstall": {
+    "stop_servers": true,
+    "remove_environment_when_unreferenced": true
+  }
+}

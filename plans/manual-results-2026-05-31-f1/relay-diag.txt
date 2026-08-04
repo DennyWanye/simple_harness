@@ -1,0 +1,49 @@
+﻿dns_chinzy=101.47.30.150
+llm_runtime.json={ "base_url": "https://chinzy.com/v1", "model": "gpt-5.5", "temperature": 0.7 }
+config: # 鎯崇敤浜戠灏辨敼 base_url + 璁剧幆澧冨彉閲?DESKPET_LLM_API_KEY銆?
+config: model = "gpt-5.5"
+config: base_url = "https://your-llm-relay.example.com/v1"
+config: # 褰?base_url 涓嶆槸 localhost 鏃讹紝BillingLedger 浼氭寜 daily_budget_cny 闄愰锛?
+config: # Fallback price for models not in [billing.pricing] (CNY per 1M tokens,
+config: # prompt+completion combined). Intentionally pessimistic so unknown models
+config: unknown_model_price_cny_per_m_tokens = 20.0
+config: # Per-1M-token price (CNY). Cover the models listed in [llm.cloud]; unknown
+config: # models fall back to `unknown_model_price_cny_per_m_tokens` above.
+config: ephemeral_subagent_model = "haiku"
+config: model = "large-v3-turbo"
+config: # P3-S1: subfolder under paths.model_root() containing the bundled
+config: # faster-whisper checkpoints. In dev mode resolves to backend/models/<this>;
+config: # under PyInstaller it resolves to <_MEIPASS>/models/<this>.
+config: model_dir = "faster-whisper-large-v3-turbo"
+config: model_dir = "cosyvoice2"  # P3-S1: subfolder under paths.model_root() (backend/models/ in dev, sys._MEIPASS/models/ frozen)
+config: # alias. Future: "cheap" routes to a smaller model (gpt-5-mini etc.) to
+config: # 璋冪敤锛岃蛋 llm_runtime.json 鐨?base_url+api_key锛堝悓 涓浆绔欑鐐癸級鐨?
+config: # model 缂虹渷 gpt-image-2锛涜鎹㈠埆鐨勫浘鍍忔ā鍨嬫敼杩欓噷鍗冲彲锛堢鐐逛笉鏀寔鏃?
+config: model = "gpt-image-2"
+config: embedding_model = "bge-m3"
+config: model_override = ""          # 鐣欑┖ = 鐢ㄤ富 LLM
+config: #   鍚庣画搴旀敼鎴?per-model map锛堝弬鑰?codex-rs/models-manager/src/model_info.rs锛夈€?
+config: # code-session-model-params (Strangler-Fig): code-mode sessions with no
+config: # explicit per-session model use this; pet/companion/supervisor keep
+config: # their own model (deepseek-v4-pro via the relay). "" = revert to legacy
+config: # shared model. the relay is OpenAI-compatible so only the wire model id
+config: code_model = "gpt-5.5"
+config: # Phase 1.1锛?026-05-15 context-1m-rearch锛夆€?ContextManager per-model 鍖栥€?
+config: #   鍐冲畾锛氬唴缃〃 鈫?%APPDATA%/deskpet/model_overrides.toml 鈫?椤圭洰
+config: #   per-model map銆備粎鍦?per-model 璺緞鍑洪棶棰橀渶蹇€熷洖婊氭椂璁?false銆?
+config: # 鍐呯疆妯″瀷琛ㄨ backend/llm/model_info.py::BUILTIN锛涚敤鎴?椤圭洰瑕嗙洊閫氳繃
+config: # D8 decision: haiku-class model for the LLM tier fallback.
+config: llm_classifier_model = "claude-haiku-4-5"
+config: # P4-S9: MCP (Model Context Protocol) client config. Each [[mcp.servers]]
+config: args = ["@modelcontextprotocol/server-filesystem", "%APPDATA%/deskpet/workspace"]
+config: # testing. Accessibility-tree based (no vision model needed; works
+config: # `main_model` is the default chat model; `classifier_model` is used by
+config: main_model = "claude-sonnet-4-5"
+config: classifier_model = "claude-haiku-4-5"
+config: # `<provider>:<model>`. Max 2 retries across providers (task 10.6).
+config: main_model = "anthropic:claude-sonnet-4-5"
+config: classifier_model = "anthropic:claude-haiku-4-5"
+config: default_model = "claude-sonnet-4-5"
+config: default_model = "gpt-4o"
+config: default_model = "gemini-1.5-pro"
+chinzy_via_proxy7890=FAIL 无法连接到远程服务器

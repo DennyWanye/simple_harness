@@ -1,0 +1,116 @@
+{
+  "fixtures": {
+    "godot_fail_once": {
+      "activation_rule": "Do not set DESKPET_CAPABILITY_E2E_CASE_ID for S-1..S-5. Restart only the isolated instance with this value for S-6.",
+      "environment": {
+        "DESKPET_CAPABILITY_E2E_CASE_ID": "UA-GODOT-FAIL-ONCE",
+        "DESKPET_DEV_MODE": "1",
+        "DESKPET_USER_DATA_DIR": "F:\\projects\\deskpet\\.e2e-universal-action\\userdata"
+      },
+      "fixture_id": "UA-GODOT-FAIL-ONCE",
+      "marker": "F:\\projects\\deskpet\\.e2e-universal-action\\userdata\\acceptance-fixtures\\ua-godot-fail-once\\headless-launch-consumed.json",
+      "marker_preexisting": false
+    },
+    "photos": {
+      "expected_policy": {
+        "name_format": "YYYYMMDD_HHMMSS.jpg",
+        "no_exif": "leave_unchanged_and_report",
+        "non_image": "leave_unchanged",
+        "repeat": "already_normalized_files_remain_stable"
+      },
+      "fixture_id": "UA-PHOTOS",
+      "input_dir": "F:\\projects\\deskpet\\.e2e-universal-action\\workspaces\\UA-PHOTOS 中文 空格\\input",
+      "input_files": [
+        {
+          "exif_datetime_original": "2024:01:02 03:04:05",
+          "expected_name": "20240102_030405.jpg",
+          "path": "F:\\projects\\deskpet\\.e2e-universal-action\\workspaces\\UA-PHOTOS 中文 空格\\input\\IMG_A.jpg",
+          "sha256": "c47ca53bd09b8040bf062380b63e3f485a240528e811e86214e129138a6f157c"
+        },
+        {
+          "exif_datetime_original": "2024:02:03 04:05:06",
+          "expected_name": "20240203_040506.jpg",
+          "path": "F:\\projects\\deskpet\\.e2e-universal-action\\workspaces\\UA-PHOTOS 中文 空格\\input\\IMG_B.jpg",
+          "sha256": "dc81b5607dcbdc45ca9e49e981e352f4348891573eba148136e260de03703955"
+        },
+        {
+          "exif_datetime_original": "2024:03:04 05:06:07",
+          "expected_name": "20240304_050607.jpg",
+          "path": "F:\\projects\\deskpet\\.e2e-universal-action\\workspaces\\UA-PHOTOS 中文 空格\\input\\IMG_C.jpg",
+          "sha256": "9fca298660e284d1cbea5887504993bcdb339b608c0a0cb581a3153cc740da49"
+        },
+        {
+          "exif_datetime_original": null,
+          "expected_name": "NO_EXIF.jpg",
+          "expected_policy": "leave_unchanged_and_report",
+          "path": "F:\\projects\\deskpet\\.e2e-universal-action\\workspaces\\UA-PHOTOS 中文 空格\\input\\NO_EXIF.jpg",
+          "sha256": "feb402e6b39c1f298d6c81bd55b5abaf4d17039892b942af97e17cc49c5cec2e"
+        },
+        {
+          "expected_policy": "leave_unchanged",
+          "kind": "non_image",
+          "path": "F:\\projects\\deskpet\\.e2e-universal-action\\workspaces\\UA-PHOTOS 中文 空格\\input\\说明.txt",
+          "sha256": "953018e8b1f6d8f8ebdc82440e4e2515783ca7513e8aba5f9c584ec6ccd43998"
+        }
+      ],
+      "invalid_input_dir": "F:\\projects\\deskpet\\.e2e-universal-action\\workspaces\\UA-PHOTOS 中文 空格\\invalid-input",
+      "invalid_input_files": [
+        {
+          "path": "F:\\projects\\deskpet\\.e2e-universal-action\\workspaces\\UA-PHOTOS 中文 空格\\invalid-input\\BROKEN.jpg",
+          "sha256": "aa68c5774fcb9f63e66670474da1ef801f016c307ac953a0680e07bad371fefa"
+        },
+        {
+          "path": "F:\\projects\\deskpet\\.e2e-universal-action\\workspaces\\UA-PHOTOS 中文 空格\\invalid-input\\must-not-change.txt",
+          "sha256": "191ef77e2f23debc2adb76adb8715a2f265baf71f7977ca08fbb7956cd83682c"
+        }
+      ],
+      "root": "F:\\projects\\deskpet\\.e2e-universal-action\\workspaces\\UA-PHOTOS 中文 空格"
+    },
+    "uac_wait": {
+      "completion_marker": "F:\\projects\\deskpet\\.e2e-universal-action\\workspaces\\UA-UAC-WAIT\\elevated-probe-completed.json",
+      "completion_marker_preexisting": false,
+      "elevated_probe": "F:\\projects\\deskpet\\.e2e-universal-action\\workspaces\\UA-UAC-WAIT\\uac-elevated-probe.ps1",
+      "elevated_probe_sha256": "ae641f2a4be2225d8018ec06e111f0772df0bd2a68cd67190386fbabfc2829d3",
+      "expected_allow_result": "marker_present_with_elevated_true",
+      "expected_reject_result": "marker_absent",
+      "fixture_id": "UA-UAC-WAIT",
+      "kind": "benign_signed_system_elevation_probe",
+      "launch_argv": [
+        "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "F:\\projects\\deskpet\\.e2e-universal-action\\workspaces\\UA-UAC-WAIT\\launch-uac-probe.ps1",
+        "-MarkerPath",
+        "F:\\projects\\deskpet\\.e2e-universal-action\\workspaces\\UA-UAC-WAIT\\elevated-probe-completed.json"
+      ],
+      "launcher": "F:\\projects\\deskpet\\.e2e-universal-action\\workspaces\\UA-UAC-WAIT\\launch-uac-probe.ps1",
+      "launcher_sha256": "eca13fb276e7cc6a9f4c8c184ee2985032b0cc8be274f1fc0ff50be1feaac775",
+      "safety": "The elevated process only writes the declared marker inside the isolated acceptance workspace.",
+      "signature": {
+        "signer": "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+        "status": "Valid"
+      },
+      "signed_executable": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "signed_executable_sha256": "3247bcfd60f6dd25f34cb74b5889ab10ef1b3ec72b4d4b3d95b5b25b534560b8"
+    },
+    "ultraforge_badhash": {
+      "canary": "F:\\projects\\deskpet\\.e2e-universal-action\\userdata\\acceptance-fixtures\\ua-ultraforge-badhash\\ultraforge-executed.canary",
+      "canary_preexisting": false,
+      "environment": {
+        "DESKPET_CAPABILITY_SOURCES_JSON": "{\"ultraforge\":{\"type\":\"local\",\"uri\":\"F:\\\\projects\\\\deskpet\\\\capability-packs\\\\fixtures\\\\ultraforge-badhash\",\"revision\":\"fixture-badhash-v1\"}}",
+        "DESKPET_ULTRAFORGE_CANARY": "F:\\projects\\deskpet\\.e2e-universal-action\\userdata\\acceptance-fixtures\\ua-ultraforge-badhash\\ultraforge-executed.canary"
+      },
+      "fixture_id": "UA-ULTRAFORGE-BADHASH",
+      "manifest": "F:\\projects\\deskpet\\capability-packs\\fixtures\\ultraforge-badhash\\deskpet-pack.json",
+      "manifest_sha256": "b2a2eeb2b48b79a4c6e93543cb7f0ae7645f9e24ed116e83e6c29deaac40e12e",
+      "root": "F:\\projects\\deskpet\\capability-packs\\fixtures\\ultraforge-badhash"
+    }
+  },
+  "prepared_at_utc": "2026-07-24T12:04:37.866236+00:00",
+  "repo_root": "F:\\projects\\deskpet",
+  "schema_version": 1,
+  "user_data_dir": "F:\\projects\\deskpet\\.e2e-universal-action\\userdata",
+  "workspace": "F:\\projects\\deskpet\\.e2e-universal-action\\workspaces"
+}

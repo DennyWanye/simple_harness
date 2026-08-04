@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "suite_id": "skill_v1",
+  "kind": "skill",
+  "cases": [
+    {
+      "case_id": "skill.memory_recall.summary",
+      "required": true,
+      "input": {
+        "text": "Summarize the desk notes I saved today.",
+        "fixture_id": "memory_recall.notes"
+      },
+      "assertions": [
+        {
+          "kind": "tool_called",
+          "tool_name": "memory_recall"
+        },
+        {
+          "kind": "response_contains_any",
+          "values": [
+            "summary",
+            "notes"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "skill.no_live_memory_fallback",
+      "required": true,
+      "input": {
+        "text": "Recall the frozen project preference.",
+        "fixture_id": "memory_recall.preference"
+      },
+      "assertions": [
+        {
+          "kind": "fixture_ref_preserved"
+        },
+        {
+          "kind": "live_owner_memory_not_accessed"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,300 @@
+{
+  "schema_version": 1,
+  "base_commit": "796905b9888c2659af78cec21de1ee96b46a2c51",
+  "baseline_total_loc": 33618,
+  "baseline_core_loc": 5725,
+  "baseline_kernel_loc": 820,
+  "final_core_limit": 5500,
+  "final_kernel_limit": 850,
+  "public_operations": [
+    "start",
+    "observe",
+    "signal",
+    "cancel",
+    "recover",
+    "close"
+  ],
+  "core_groups": [
+    "execution_core",
+    "harness_core"
+  ],
+  "core_roots": [
+    "backend/deskpet/execution/",
+    "backend/deskpet/harness/"
+  ],
+  "non_core_root_exceptions": [
+    {
+      "path": "backend/deskpet/harness/adapters/team.py",
+      "source_hash": "dc11451f0ade973522306ecfbd8a7e4298426713d7bcc7e2c07af7bcaa91a6ca",
+      "reason": "team adapter is counted by total LOC but is outside the frozen R4.5 audited core"
+    },
+    {
+      "path": "backend/deskpet/capabilities/package_limits.py",
+      "base_absent": true,
+      "source_hash": "eff81c0bcaf514f466de43b5fe840bbbfc3323131f2f50cb6e98355e983c9340",
+      "reason": "Capability package extraction limits are governed capability infrastructure outside harness and execution core"
+    },
+    {
+      "path": "backend/deskpet/companion/control_ingress.py",
+      "base_absent": true,
+      "source_hash": "ae73ce2f3807b8e623823de3dde05d2398e465aee15301f0c7bd0c028af5429d",
+      "reason": "trusted Companion control ingress is product authority outside harness and execution core"
+    },
+    {
+      "path": "backend/deskpet/companion/cutover.py",
+      "base_absent": true,
+      "source_hash": "c7fabc29e37844c6b045038bdf0bfbddf3accde94938ee0cdfec01749aa8056a",
+      "reason": "one-time Companion growth cutover orchestration is product migration infrastructure outside harness and execution core"
+    },
+    {
+      "path": "backend/deskpet/companion/cutover_production.py",
+      "base_absent": true,
+      "source_hash": "ca47cd4d8348c7dacf24220d76ca392ed9cb4b143ca0de840893d3f1441ee0aa",
+      "reason": "production Companion cutover adapters are product migration infrastructure outside harness and execution core"
+    },
+    {
+      "path": "backend/deskpet/companion/evaluation_read_tools.py",
+      "base_absent": true,
+      "source_hash": "854f9066c85e0f05f015a1d566a3285000577b728a43290a63ec3daf2b8f77db",
+      "reason": "frozen Companion evaluation readers are product growth infrastructure outside harness and execution core"
+    },
+    {
+      "path": "backend/deskpet/companion/notifications.py",
+      "base_absent": true,
+      "source_hash": "193c24abb0e81239d122e8337d9bf9e6b3f95f2a8dc852097ca072a871e9683e",
+      "reason": "Companion notification projection is product delivery infrastructure outside harness and execution core"
+    },
+    {
+      "path": "backend/deskpet/companion/production_pipeline.py",
+      "base_absent": true,
+      "source_hash": "704708e55aa8eff748d89d0d2aaa38b59e292e834e20eac5d0134950eb7a5616",
+      "reason": "Companion reflection, candidate, evaluation, and activation orchestration is product growth infrastructure outside harness and execution core"
+    },
+    {
+      "path": "backend/deskpet/companion/reminders.py",
+      "base_absent": true,
+      "source_hash": "99e1a8143b3f5aed3ab5ce8060242aa5f29580e516080fcd2001d5f03be9a886",
+      "reason": "durable Companion reminder authority is product growth infrastructure outside harness and execution core"
+    },
+    {
+      "path": "backend/deskpet/companion/runtime.py",
+      "base_absent": true,
+      "source_hash": "f902f0dd6dd9300102f02ab058049a98613618a855425919b97dff5107afdf85",
+      "reason": "Companion scheduler lifecycle is product growth runtime outside harness and execution core"
+    },
+    {
+      "path": "backend/deskpet/companion/skills.py",
+      "base_absent": true,
+      "source_hash": "9c3b0cf3eb8c981bbc4a34ea2e2c733915efcd608cfac3805ae6c25aecf9b192",
+      "reason": "managed Companion Skill snapshot contracts are product capability infrastructure outside harness and execution core"
+    },
+    {
+      "path": "backend/deskpet/agent/session_terminal_delivery.py",
+      "base_absent": true,
+      "source_hash": "2071d09242fca322cefb59345db60c6fb1267a1d035ee8c1f80c8eb5b877a7c1",
+      "reason": "session terminal projection is product conversation delivery infrastructure outside harness and execution core"
+    },
+    {
+      "path": "backend/deskpet/workflows/adapters/personal_runtime.py",
+      "base_absent": true,
+      "source_hash": "c13c0afb578c3989e903a3880a9f63f8ff79571fafa2cdd356605250060b60cb",
+      "reason": "Personal Workflow interpreter and effects are workflow product infrastructure outside harness and execution core"
+    },
+    {
+      "path": "backend/deskpet/workflows/store/execution_uow.py",
+      "source_hash": "9c6153067d4664f0f6e05d5d7b7f812cf0f0d534153d2a42546d7ff7dc03ce71",
+      "reason": "the shared execution persistence engine is counted by total LOC but is outside harness and execution core"
+    },
+    {
+      "path": "backend/deskpet/workflows/effects.py",
+      "source_hash": "46f11c6e0d7b3691d5b02575403efdcd1ca7c339dedf36a8ae58bfabf357f5e4",
+      "reason": "the shared prepared-effect serialization contract is counted by total LOC but is outside harness and execution core"
+    },
+    {
+      "path": "backend/deskpet/workflows/launcher.py",
+      "source_hash": "e040bf1500677c127dae0373c7db9b19f4d8a228eb346c66af810acd83fc14a9",
+      "reason": "the Native workflow launcher is shared infrastructure, while positive recovery-handshake additions are charged to Harness core"
+    },
+    {
+      "path": "backend/deskpet/tools/registry.py",
+      "source_hash": "15c1329da89a64e260482159861814fac256f4a03148bb13f0a12baeff695642",
+      "reason": "the shared tool registry owns permission-aware preparation and execution normalization outside harness and execution core"
+    }
+  ],
+  "deletion_budgets": [
+    {
+      "id": "execution_re_exports",
+      "deletion_loc": 65,
+      "sources": [
+        {
+          "path": "backend/deskpet/execution/__init__.py",
+          "symbol": "<module>",
+          "source_loc": 66,
+          "source_hash": "1c6657cc2641bbdc9c33f51de4c0e0339ef0906c5824926e15e1c92fccdb8d4d"
+        }
+      ]
+    },
+    {
+      "id": "route_profile_duplicate_contracts",
+      "deletion_loc": 38,
+      "sources": [
+        {
+          "path": "backend/deskpet/harness/router.py",
+          "symbol": "RouteProfile",
+          "source_loc": 8,
+          "source_hash": "2c586a55788a95f112f235bcf091633e4aa66caaf5f69f99d69b5b3ae6bb8ef3"
+        },
+        {
+          "path": "backend/deskpet/harness/router.py",
+          "symbol": "ClassifiedRoute",
+          "source_loc": 10,
+          "source_hash": "fb4b007de5014318fed28bd477384afba17cffddf35b3f13625bf31a22ef7e22"
+        },
+        {
+          "path": "backend/deskpet/harness/router.py",
+          "symbol": "RouteDecision",
+          "source_loc": 7,
+          "source_hash": "e7dba2f149378fe862da72ac40c8e7530c89bc50c65159066f76ebe4ce8d5140"
+        },
+        {
+          "path": "backend/deskpet/harness/profiles.py",
+          "symbol": "ProfileSpec",
+          "source_loc": 28,
+          "source_hash": "75d51662ac697e044cc576064fd5960421e1fae90c7b516abc43ea562a2fd101"
+        }
+      ]
+    },
+    {
+      "id": "child_pass_through",
+      "deletion_loc": 20,
+      "sources": [
+        {
+          "path": "backend/deskpet/harness/kernel.py",
+          "symbol": "KernelChildLauncher",
+          "source_loc": 16,
+          "source_hash": "812ed9faf6d4daeaf9a4a409b52d97e10456da4721e7640d649b5711656bac32"
+        },
+        {
+          "path": "backend/deskpet/harness/child_runs.py",
+          "symbol": "ChildLauncher",
+          "source_loc": 9,
+          "source_hash": "ece811ed22c77a8509da1081e3887fe15576c62eef16dcdf0b7a38fb613f6cf0"
+        }
+      ]
+    },
+    {
+      "id": "tool_pass_through",
+      "deletion_loc": 20,
+      "sources": [
+        {
+          "path": "backend/deskpet/harness/tool_executor.py",
+          "symbol": "PreparedCallRegistry",
+          "source_loc": 17,
+          "source_hash": "9d0d27e8e2078168df8e5c404299af3b4a2beca22ef380f571b701e70ecd021f"
+        },
+        {
+          "path": "backend/deskpet/harness/tool_executor.py",
+          "symbol": "UnifiedToolExecutor",
+          "source_loc": 115,
+          "source_hash": "8ac4f8dd856bf472e85ef64f2ea0249e339eda85a7fba9befa4024d1f5274c24"
+        }
+      ]
+    },
+    {
+      "id": "actor_construction",
+      "deletion_loc": 18,
+      "sources": [
+        {
+          "path": "backend/deskpet/harness/context.py",
+          "symbol": "HostContextFactory",
+          "source_loc": 90,
+          "source_hash": "da64837b2658cf8301e46a592718a9a951755d24680565baeb04bfc34906bbb2"
+        },
+        {
+          "path": "backend/deskpet/execution/contracts.py",
+          "symbol": "ActorContext",
+          "source_loc": 29,
+          "source_hash": "b945d5f82191a7d4591d112f66215342ea74530a464b06df2c5e1830ae08cf2f"
+        }
+      ]
+    },
+    {
+      "id": "kernel_launch_duplicate",
+      "deletion_loc": 38,
+      "sources": [
+        {
+          "path": "backend/deskpet/harness/kernel.py",
+          "symbol": "RunKernel._accept_precreated_child",
+          "source_loc": 48,
+          "source_hash": "3df508202ff0fcf9c399c6c134e415e84cb0d6b56fbd0e06bac81cb983163a54"
+        }
+      ]
+    },
+    {
+      "id": "single_supervisor",
+      "deletion_loc": 18,
+      "sources": [
+        {
+          "path": "backend/deskpet/harness/bootstrap.py",
+          "symbol": "HarnessRuntime",
+          "source_loc": 27,
+          "source_hash": "f491d8eedaa7a88b35fe5e58598ca662bfb8af2b61eb5bac9fda2272176465e8"
+        },
+        {
+          "path": "backend/deskpet/harness/recovery.py",
+          "symbol": "HarnessRecoveryCoordinator",
+          "source_loc": 71,
+          "source_hash": "95ff12e1044938d96e616ff27b8be1c10e2173f53eb790336ab32e89835a7d40"
+        }
+      ]
+    },
+    {
+      "id": "recovery_heartbeat",
+      "deletion_loc": 12,
+      "sources": [
+        {
+          "path": "backend/deskpet/harness/kernel.py",
+          "symbol": "RunKernel._deliver_child_signal",
+          "source_loc": 35,
+          "source_hash": "79b4cf0e81cb3303562f9bedab916eb20f56b39a5614aab902f0710b1a3e8641"
+        }
+      ]
+    },
+    {
+      "id": "venue_result_wrapper",
+      "deletion_loc": 14,
+      "sources": [
+        {
+          "path": "backend/deskpet/harness/adapters/venues.py",
+          "symbol": "ProductVenueRunResult",
+          "source_loc": 6,
+          "source_hash": "011a64986485f1d90632d52dd7225a61562e1327280324992e3c8b11b2cde42f"
+        },
+        {
+          "path": "backend/deskpet/harness/adapters/venues.py",
+          "symbol": "ProductVenueOpenResult",
+          "source_loc": 9,
+          "source_hash": "10bbe40ea580c58da89abdba4a90a51d739bda3042a95f45bdbd2f4e6d2381ff"
+        }
+      ]
+    },
+    {
+      "id": "diagnostics_duplicate_dto",
+      "deletion_loc": 12,
+      "sources": [
+        {
+          "path": "backend/deskpet/harness/bootstrap.py",
+          "symbol": "HarnessManifest",
+          "source_loc": 20,
+          "source_hash": "a4831ebe54d6ba0eb12d286bea4178491e601d85ba87825552f527d5dc65a52e"
+        },
+        {
+          "path": "backend/deskpet/harness/bootstrap.py",
+          "symbol": "HarnessHealth",
+          "source_loc": 17,
+          "source_hash": "ebfaf671f2dfae163acc7b6f914ea288d4e3e12c459d4ac6a6f88e19349da05b"
+        }
+      ]
+    }
+  ]
+}

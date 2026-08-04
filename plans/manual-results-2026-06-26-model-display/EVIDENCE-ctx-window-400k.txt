@@ -1,0 +1,20 @@
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=1000000 source=global
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=1000000 source=global
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=1000000 source=global
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=1000000 source=global
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=1000000 source=global
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=1000000 source=global
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=1000000 source=global
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=1000000 source=global
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=1000000 source=global
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=400000 source=builtin
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=400000 source=builtin
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=400000 source=builtin
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+rl='https://chinzy.com/v1/chat/completions' extracted_chars=0 response_message_keys=['role', 'content'] outgoing_histor
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:llm.model_info:model_context_resolved model=gpt-5.5 window=400000 source=builtin
+INFO:billing.ledger:event='billing_record' level='info' timestamp='2026-06-26T12:32:58.529659Z' provider='cloud' model=
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"

@@ -1,0 +1,32 @@
+Connected: http://tauri.localhost/
+
+
+── B1 excel-generate ──
+  close dialogs: {'closed': 0, 'dialogs_remaining': 0}
+  send: {'ok': True, 'value_sent': '用 excel_create 工具帮我做一个简单的开支统计 xlsx 文件，含日期、餐饮、交通、合计 4 列，3 行示例数据'}
+  [✗] B1 excel-generate                  FAIL    — no artifact in 90s; approvals=[]; tail=另外我刚刚尝试调用 excel_create 工具，但工具返回：skill not found: 'excel_create'，也就是当前环境里没有这个工具，没法直接用它生成 xlsx 文件，抱歉喵。
+
+
+── B2 doc-edit (新建) ──
+  close dialogs: {'closed': 0, 'dialogs_remaining': 0}
+  send: {'ok': True, 'value_sent': '用 doc_create 工具帮我新建一份事假请假条 docx 文件，含标题、称呼、正文、落款'}
+  [✗] B2 doc-edit (新建)                   FAIL    — no artifact in 90s; approvals=[]; tail=息
+现在是 23:30。
+
+另外我刚试着调用 doc_create 工具新建事假请假条，但工具返回：skill not found: 'doc_create'，也就是当前环境里没有这个工具，没法直接生成
+
+── B5 ppt-generate ──
+  close dialogs: {'closed': 0, 'dialogs_remaining': 0}
+  send: {'ok': True, 'value_sent': "用 ppt_create 工具帮我生成 pptx 文件，主题'DeskPet R3-1 测试报告'，4 页足够"}
+  [✗] B5 ppt-generate                    FAIL    — no artifact in 120s; approvals=[]; tail= 基础问答能力测试
+- 用户偏好与记忆调用测试
+- 文档 / PPT / 表格类生成能力测试
+- 工具异常处理测试
+- 多轮对话一致性测试
+
+第 3 页：测试结果
+- 对话响应：正常
+- 当前时间读取
+
+=== B-series Summary ===
+PASS: 0  FAIL: 3  PARTIAL: 0

@@ -1,0 +1,121 @@
+{
+  "effect_profiles": {
+    "evidence_candidate_extract": {
+      "effect_type": "research_llm",
+      "late_result_policy": "commit_or_hold_no_resend",
+      "max_attempts": 1,
+      "max_repair_rounds": 1,
+      "permission_policy_version": "research-readonly-v1",
+      "policy_id": "deep-research-v6-extraction-at-most-once",
+      "policy_version": "v1",
+      "profile_hash": "88ccb26203495fc9ca6e8ff3211b308d186d8301ff95a6df62101c90bf6a960c",
+      "profile_id": "rlp_88ccb26203495fc9ca6e8ff3",
+      "response_format_hash": "dc89783d978b70d7f16446e47f92e090d8f4f83ecc93aa373454e52f9ea4978c",
+      "role": "evidence_candidate_extract",
+      "schema_hash": "evidence-candidate-bundle-v1",
+      "schema_version": 1,
+      "tool_name": "research_llm_v2",
+      "tool_spec_version": "deep-research-v6-evidence-candidate-v1",
+      "workflow_version": "v6"
+    },
+    "evidence_inference_synthesize": {
+      "effect_type": "research_llm",
+      "late_result_policy": "commit_or_hold_no_resend",
+      "max_attempts": 1,
+      "max_repair_rounds": 1,
+      "permission_policy_version": "research-readonly-v1",
+      "policy_id": "deep-research-v6-inference-at-most-once",
+      "policy_version": "v1",
+      "profile_hash": "d90c6fc0375f84ed5d8e6080fc765a46dafe6b3ec1834c6dfc0905f790ce30e4",
+      "profile_id": "rlp_d90c6fc0375f84ed5d8e6080",
+      "response_format_hash": "06829396ef6c1ba0ba44c8e700bda5ed0e04eedb71f371f4ae35f3f5444316c9",
+      "role": "evidence_inference_synthesize",
+      "schema_hash": "inference-proposal-bundle-v1",
+      "schema_version": 1,
+      "tool_name": "research_llm_v2",
+      "tool_spec_version": "deep-research-v6-inference-proposal-v1",
+      "workflow_version": "v6"
+    },
+    "evidence_structured_repair": {
+      "effect_type": "research_llm",
+      "late_result_policy": "commit_or_hold_no_resend",
+      "max_attempts": 1,
+      "max_repair_rounds": 0,
+      "permission_policy_version": "research-readonly-v1",
+      "policy_id": "deep-research-v6-repair-at-most-once",
+      "policy_version": "v1",
+      "profile_hash": "ac06745d780885bc6bcf3490a8cdff65dbea4a153655df44da278cf774a70652",
+      "profile_id": "rlp_ac06745d780885bc6bcf3490",
+      "response_format_hash": "d26c755f2e6c156be5ad82681caac4797da10f76329fda19e3e8bd6c5cc4ec59",
+      "role": "evidence_structured_repair",
+      "schema_hash": "structured-repair-result-union-v1",
+      "schema_version": 1,
+      "tool_name": "research_llm_v2",
+      "tool_spec_version": "deep-research-v6-structured-repair-v1",
+      "workflow_version": "v6"
+    }
+  },
+  "fixture_schema_version": 1,
+  "identity_hashes": {
+    "implementation": "32f658773ac5bb54dd886d8c272fd68a1e0ab104c1d90f51f0b2c23aee4bb500",
+    "policy": "12fcc6cf52537474d912a07f25d180be62933a85c108d0bfe377736804859e21",
+    "prompt": "d259c2ddd3c5953aff960ebc8d1cd1d090592d9de8673840d9beb99b50ce1eee",
+    "state": "9c8e7ef278f4db69894805f734785555b8712c3afaad59e4281cc88c749d3907"
+  },
+  "manifest": {
+    "callable_source_hash": "ecfdda298b536c52ba205e367ed68f2cc0c773d36f63082a6c9ab6316a9d8074",
+    "definition_hash": "d858b268c571d57002d6667a6a59bc996e2ddd1cfac0ce356a711f35459100e0",
+    "dependency_lock_hash": "0082b2a5c7d7148fa54fb5d740520430e14bfebd56f2461c5bb7adda67ec4526",
+    "durability": "sync",
+    "implementation_bundle_hash": "32f658773ac5bb54dd886d8c272fd68a1e0ab104c1d90f51f0b2c23aee4bb500",
+    "max_supersteps": 16,
+    "policy_hash": "12fcc6cf52537474d912a07f25d180be62933a85c108d0bfe377736804859e21",
+    "prompt_hash": "d259c2ddd3c5953aff960ebc8d1cd1d090592d9de8673840d9beb99b50ce1eee",
+    "recursion_limit": 32,
+    "state_hash": "9c8e7ef278f4db69894805f734785555b8712c3afaad59e4281cc88c749d3907",
+    "state_schema_version": 6,
+    "tool_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "workflow_name": "deep_research",
+    "workflow_version": "v6"
+  },
+  "manifest_hash": "8e4a7ea4303ebb80b885c67febc5087c21efee244b952cd7635f01884a6c056b",
+  "prepared_calls": {
+    "evidence_candidate_extract": {
+      "args_hash": "7daa7216846e4560c4f7797c1ce0fa60bb0e6014a91ec6dc9dd0554209acf813",
+      "effect_type": "research_llm",
+      "final_params": {"max_output_tokens": 4096, "payload_ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "response_format_hash": "dc89783d978b70d7f16446e47f92e090d8f4f83ecc93aa373454e52f9ea4978c", "role": "evidence_candidate_extract"},
+      "input_blob_hashes": [],
+      "permission_policy_version": "research-readonly-v1",
+      "prepared_targets": [],
+      "schema_hash": "evidence-candidate-bundle-v1",
+      "stable_call_id": "1111111111111111111111111111111111111111111111111111111111111111",
+      "tool_name": "research_llm_v2",
+      "tool_spec_version": "deep-research-v6-evidence-candidate-v1"
+    },
+    "evidence_inference_synthesize": {
+      "args_hash": "1ac8557bf3ca0675d172d126b486e6fd4d59c559d25094848f3ba699862141b3",
+      "effect_type": "research_llm",
+      "final_params": {"max_output_tokens": 4096, "payload_ref": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "response_format_hash": "06829396ef6c1ba0ba44c8e700bda5ed0e04eedb71f371f4ae35f3f5444316c9", "role": "evidence_inference_synthesize"},
+      "input_blob_hashes": [],
+      "permission_policy_version": "research-readonly-v1",
+      "prepared_targets": [],
+      "schema_hash": "inference-proposal-bundle-v1",
+      "stable_call_id": "2222222222222222222222222222222222222222222222222222222222222222",
+      "tool_name": "research_llm_v2",
+      "tool_spec_version": "deep-research-v6-inference-proposal-v1"
+    },
+    "evidence_structured_repair": {
+      "args_hash": "67cc8cb21b479ebd3940937995f1ba9d6183d79229772e0c60cbf9cb7ee127c0",
+      "effect_type": "research_llm",
+      "final_params": {"max_output_tokens": 4096, "payload_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "response_format_hash": "d26c755f2e6c156be5ad82681caac4797da10f76329fda19e3e8bd6c5cc4ec59", "role": "evidence_structured_repair"},
+      "input_blob_hashes": [],
+      "permission_policy_version": "research-readonly-v1",
+      "prepared_targets": [],
+      "schema_hash": "structured-repair-result-union-v1",
+      "stable_call_id": "3333333333333333333333333333333333333333333333333333333333333333",
+      "tool_name": "research_llm_v2",
+      "tool_spec_version": "deep-research-v6-structured-repair-v1"
+    }
+  },
+  "release_version": "v6"
+}

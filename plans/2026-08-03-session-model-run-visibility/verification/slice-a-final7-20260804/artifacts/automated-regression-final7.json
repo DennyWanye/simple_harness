@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "tested_head": "03fc0782c6f7df4c12e4cf3c1318649e21dfd498",
+  "recorded_at": "2026-08-04T02:09:24.0285292+08:00",
+  "backend": {
+    "command": "expanded Context/Harness product suites; then smoke_session_model_run_visibility.py --backend-only",
+    "exit_code": 0,
+    "results": ["307 passed", "29 passed"],
+    "stdout": {"path": "final7-backend.out.log", "sha256": "2e85c2668664e524a28e6b661ba8522ef6d0644a6efb2db325b6e0f02f75dad4"}
+  },
+  "frontend": {
+    "command": "vitest MessageStreamPanel.workflow + HarnessInspectorPanel + harnessPublicSnapshotStore; tsc --noEmit; pnpm build",
+    "exit_code": 0,
+    "results": ["3 files / 36 tests passed", "TypeScript PASS", "Vite production build PASS"],
+    "stdout": {"path": "final7-frontend.out.log", "sha256": "11603fa46ea46a3845b6ef4216a338a62f9acb4d976f06b62170d8e8b749748d"},
+    "warnings": ["ineffective dynamic import", "chunk size warning"]
+  },
+  "independent_audit": {
+    "verdict": "PASS",
+    "engine": "fault_seam_analysis",
+    "results": ["124 passed", "no lineage or recovery blocker"]
+  }
+}

@@ -1,0 +1,57 @@
+任务：给 DeskPet PPT 模板填充补「模板选择/发现」wiring —— 让 agent 能按名字选 bundled 模板，并新建模板目录+说明。仅改 ppt_tools.py + 新建 ppt_templates/ 目录文件。
+
+== 背景 ==
+上一步(A-2)已给 ppt_create 加了 template 参数(传 .pptx 路径就用模板填充占位符)。现在补「模板按名字解析 + 可发现」，这样用户把模板丢进 bundled 目录后，agent 生成 PPT 能自动套用。
+
+== 目标文件 ==
+- 改：G:\projects\deskpet\backend\deskpet\tools\ppt_tools.py
+- 新建：G:\projects\deskpet\backend\deskpet\tools\ppt_templates\README.md
+- 新建测试：G:\projects\deskpet\backend\tests\test_ppt_template_resolve_a3.py
+不要碰任何其它文件(尤其不要碰 registry.py / image_tools.py / web_tools.py，另一个子代理在改)。
+
+== 现状(已读源码) ==
+- ppt_create(outline, *, theme, title, author, output_path, template=None, dry_run) 在 ~line 1706。template 现在只接受「存在的 .pptx 文件路径」，否则回退 from-scratch。
+- _render_with_template / _pick_template_layout 已实现。
+- _PPT_SCHEMA 是给 LLM 的工具 schema(properties 含 outline/theme/title/template 等)。
+
+== 改动 1：bundled 模板目录 + 名字解析 ==
+- 定义 bundled 模板目录：_TEMPLATES_DIR = Path(__file__).parent / "ppt_templates"。
+- 新增 def _list_bundled_templates() -> list[str]：返回 _TEMPLATES_DIR 下所有 *.pptx 的「不带扩展名的名字」列表(目录不存在/空 → 返回 [])。按名字排序。从不抛异常。
+- 新增 def _resolve_template_path(template: str|None) -> str|None：
+  * None/空 → None。
+  * 若 template 是存在的文件路径(Path(template).expanduser().is_file()) → 返回该绝对路径字符串(直接路径优先)。
+  * 否则当成 bundled 名字解析：去掉可能的 .pptx 后缀 → _TEMPLATES_DIR / f"{name}.pptx"，存在则返回其路径，否则 None。
+  * 从不抛异常(异常 → 返回 None)。
+
+== 改动 2：ppt_create 用解析器 ==
+- ppt_create 里现在的 `if template:` 分支改为先 `resolved = _resolve_template_path(template)`，用 resolved 走 _render_with_template；resolved 为 None → log.warning + 回退 from-scratch(原逻辑)。
+- 保持：template=None 时行为 100% 不变(根本不调解析、直接 from-scratch)。
+
+== 改动 3：_PPT_SCHEMA 让 LLM 可发现模板 ==
+- template 属性描述改成：可传 bundled 模板名(见下)或 .pptx 绝对路径；用模板能产出更专业/精美的可编辑 PPT，**用户要「正式/专业/精美」PPT 时优先用模板**。
+- 在描述里【动态】列出当前可用模板名：用 _list_bundled_templates() 的结果拼进 description(若为空则写「当前无 bundled 模板」)。注意 _PPT_SCHEMA 若是模块级 dict 字面量，改成在注册时(或一个 build 函数里)动态生成 description，保证列表反映目录实际内容。找到 _PPT_SCHEMA 的定义与 registry.register 调用处，最小改动实现动态 description(可加 def _build_ppt_schema() 返回带最新模板列表的 schema，注册时调它)。
+
+== 改动 4：新建 ppt_templates/README.md ==
+内容(中文)说明：
+- 这是 DeskPet 的 PPT 模板目录，放正规 .pptx 模板(必须有 slide master + layout + 占位符；不是图片/文本框自由堆的 deck)。
+- 文件名(不含扩展名)就是模板名，agent/用户用 ppt_create(template="名字") 选用。
+- 标准布局会被映射填充：title/section/bullet(Title and Content)/two_column(Two Content)/image(Picture with Caption)。
+- 放好后无需改代码，自动被 _list_bundled_templates 发现。
+(同时确保 ppt_templates/ 目录因有 README 而被 git 跟踪。)
+
+== 硬约束 ==
+- 只改 ppt_tools.py + 新建 ppt_templates/README.md + 新测试文件。
+- 不碰 registry.py / image_tools.py / web_tools.py / config.py。
+- template=None → from-scratch 引擎字节不变(BC)；现有 -k ppt 必须仍全绿。
+- 不加新依赖。所有新函数从不抛异常。中文注释风格一致。
+
+== 验收(必须自测) ==
+工作目录 G:\projects\deskpet\backend；解释器 .venv\Scripts\python.exe
+1. BC：.venv\Scripts\python.exe -m pytest -k ppt -q 全绿(应仍是 44 passed 量级)。
+2. 新测试 tests/test_ppt_template_resolve_a3.py ≥4 用例：
+   a. test_resolve_direct_path：传一个真实临时 .pptx 路径(Presentation().save(tmp)) → _resolve_template_path 返回该路径。
+   b. test_resolve_bundled_name：monkeypatch _TEMPLATES_DIR 指向 tmp_path，放一个 foo.pptx → _resolve_template_path("foo") 返回该文件；_list_bundled_templates() 含 "foo"。
+   c. test_resolve_unknown_returns_none：_resolve_template_path("不存在") → None。
+   d. test_ppt_create_uses_bundled_name：monkeypatch _TEMPLATES_DIR 指向 tmp_path 放标准模板，ppt_create(outline,[title/bullet], template="foo") → ok True 且产出 .pptx 存在(走了模板路径)。
+3. 跑新测试全绿。
+完成后输出：改了哪些函数、_resolve_template_path 逻辑、schema 动态 description 怎么做的、测试 pass 结果、确认 template=None BC。

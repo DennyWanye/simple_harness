@@ -1,0 +1,8 @@
+[launch] starting tauri:dev in \tauri-app
+cmd : 系统找不到指定的路径。
+所在位置 G:\projects\deskpet\plans\2026-06-21-deepresearch-subagent-fanout\exec\launch_tauri_dev.ps1:18 字符: 1
++ cmd /c "cd /d $ROOT\tauri-app && npm run tauri:dev" *>&1 | Tee-Object ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (系统找不到指定的路径。:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

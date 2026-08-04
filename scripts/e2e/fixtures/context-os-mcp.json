@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "context-os-e2e": {
+      "command": "backend/.venv/Scripts/python.exe",
+      "args": ["scripts/e2e/context_os_mcp_fixture.py"],
+      "env": {
+        "DESKPET_DEV_MODE": "1",
+        "DESKPET_CONTEXT_OS_E2E_DAEMON_URL": "http://127.0.0.1:18991"
+      }
+    }
+  }
+}

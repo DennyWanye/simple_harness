@@ -1,0 +1,2122 @@
+{
+  "base_commit": "4d38979e",
+  "counts_by_capability": {
+    "auto_resume": 5,
+    "context.system": 17,
+    "decision.permission": 9,
+    "persistence.delivery": 19,
+    "skill.codify": 9,
+    "text.assistant": 21,
+    "text.plan_cancel_error": 16,
+    "text.user_echo": 2,
+    "tool.lifecycle": 19,
+    "voice.presentation": 12,
+    "voice.transport": 12
+  },
+  "counts_by_kind": {
+    "cancel": 3,
+    "codify": 7,
+    "context_sink": 9,
+    "event_type": 41,
+    "file_sink": 1,
+    "permission_restore": 1,
+    "session_sink": 12,
+    "vector_sink": 5,
+    "waiter": 5,
+    "ws_send": 57
+  },
+  "inventory": [
+    {
+      "automatic_test": "test_voice_user_echo_and_final_are_observed",
+      "capability": "text.user_echo",
+      "error_cancel": "persistence failure is logged; run may continue",
+      "input_fields": [
+        "text",
+        "session_id",
+        "request_id",
+        "turn_id"
+      ],
+      "legacy_callsites": [
+        "backend/main.py:8816",
+        "backend/main.py:8820"
+      ],
+      "manual_case": "text and voice messages appear once in message panel",
+      "new_owner": "Product ingress / ProductTurnPreparer / RunPresenter",
+      "ordering": "reservation precedes product preparation; non-sentinel user persistence and echo precede assistant output",
+      "output_frames": [
+        "chat_v2_run_reserved",
+        "chat_v2_user_echo"
+      ],
+      "precondition": "turn ingress reservation or non-sentinel user echo",
+      "side_effects": [
+        "task scope reservation",
+        "SessionDB user message",
+        "vector enqueue",
+        "peer WS"
+      ],
+      "status": "FROZEN"
+    },
+    {
+      "automatic_test": "test_voice_user_echo_and_final_are_observed",
+      "capability": "text.assistant",
+      "error_cancel": "cancelled turns do not emit a success final",
+      "input_fields": [
+        "session_id",
+        "turn_id"
+      ],
+      "legacy_callsites": [
+        "backend/main.py:10008",
+        "backend/main.py:10010",
+        "backend/main.py:10011",
+        "backend/main.py:10567",
+        "backend/main.py:10576",
+        "backend/main.py:10577",
+        "backend/main.py:10591",
+        "backend/main.py:10591",
+        "backend/main.py:10729",
+        "backend/main.py:10738",
+        "backend/main.py:10739",
+        "backend/main.py:10794",
+        "backend/main.py:8888",
+        "backend/main.py:8896",
+        "backend/main.py:8897",
+        "backend/main.py:9588",
+        "backend/main.py:9599",
+        "backend/main.py:9600",
+        "backend/main.py:9679",
+        "backend/main.py:9688",
+        "backend/main.py:9689"
+      ],
+      "manual_case": "assistant reply streams and persists exactly once",
+      "new_owner": "RunPresenter.live / RunPresenter.durable",
+      "ordering": "deltas precede exactly one terminal projection",
+      "output_frames": [
+        "chat_v2_reasoning_activity",
+        "chat_v2_reasoning_summary",
+        "chat_v2_delta",
+        "chat_response",
+        "chat_v2_final"
+      ],
+      "precondition": "assistant delta or terminal event",
+      "side_effects": [
+        "SessionDB assistant message",
+        "vector enqueue",
+        "peer WS"
+      ],
+      "status": "FROZEN"
+    },
+    {
+      "automatic_test": "test_census_covers_required_product_capabilities",
+      "capability": "text.plan_cancel_error",
+      "error_cancel": "cancel is distinct from failure and clears waiter state",
+      "input_fields": [
+        "session_id",
+        "request_id",
+        "turn_id",
+        "mode"
+      ],
+      "legacy_callsites": [
+        "backend/main.py:10098",
+        "backend/main.py:10112",
+        "backend/main.py:10113",
+        "backend/main.py:10219",
+        "backend/main.py:10223",
+        "backend/main.py:10224",
+        "backend/main.py:10901",
+        "backend/main.py:10901",
+        "backend/main.py:11019",
+        "backend/main.py:11019",
+        "backend/pipeline/voice_pipeline.py:1159",
+        "backend/pipeline/voice_pipeline.py:1159",
+        "backend/pipeline/voice_pipeline.py:613",
+        "backend/pipeline/voice_pipeline.py:613",
+        "backend/pipeline/voice_pipeline.py:781",
+        "backend/pipeline/voice_pipeline.py:781"
+      ],
+      "manual_case": "approve/cancel plan and interrupt active turn",
+      "new_owner": "RunPresenter.domain",
+      "ordering": "plan precedes waiter; cancel/error closes the turn",
+      "output_frames": [
+        "chat_v2_plan",
+        "chat_v2_plan_cancelled",
+        "chat_v2_error"
+      ],
+      "precondition": "plan gate, cancellation, refusal, or run error",
+      "side_effects": [
+        "plan waiter",
+        "SessionActivity status",
+        "peer WS"
+      ],
+      "status": "FROZEN"
+    },
+    {
+      "automatic_test": "test_census_covers_required_product_capabilities",
+      "capability": "tool.lifecycle",
+      "error_cancel": "result ok/error follows the real typed outcome",
+      "input_fields": [
+        "session_id",
+        "capability_ref"
+      ],
+      "legacy_callsites": [
+        "backend/main.py:10610",
+        "backend/main.py:10620",
+        "backend/main.py:10621",
+        "backend/main.py:10622",
+        "backend/main.py:10631",
+        "backend/main.py:10632",
+        "backend/main.py:10645",
+        "backend/main.py:10678",
+        "backend/main.py:10688",
+        "backend/main.py:10689",
+        "backend/main.py:10690",
+        "backend/main.py:10700",
+        "backend/main.py:10701",
+        "backend/pipeline/voice_pipeline.py:1096",
+        "backend/pipeline/voice_pipeline.py:1105",
+        "backend/pipeline/voice_pipeline.py:1110",
+        "backend/pipeline/voice_pipeline.py:1126",
+        "backend/pipeline/voice_pipeline.py:1138",
+        "backend/pipeline/voice_pipeline.py:1143"
+      ],
+      "manual_case": "run one permitted and one denied tool",
+      "new_owner": "RunPresenter.domain",
+      "ordering": "tool start precedes exactly one matching result",
+      "output_frames": [
+        "tool_use_event",
+        "tool_call",
+        "tool_result"
+      ],
+      "precondition": "AgentLoop emits tool call/result",
+      "side_effects": [
+        "SessionDB tool call/result",
+        "permission gate"
+      ],
+      "status": "FROZEN"
+    },
+    {
+      "automatic_test": "test_auto_resume_injects_system_hint_and_emits_started",
+      "capability": "auto_resume",
+      "error_cancel": "budget exhaustion emits terminal exhausted event",
+      "input_fields": [
+        "session_id",
+        "turn_id"
+      ],
+      "legacy_callsites": [
+        "backend/main.py:10837",
+        "backend/main.py:10837",
+        "backend/main.py:5203",
+        "backend/main.py:5206",
+        "backend/main.py:5216"
+      ],
+      "manual_case": "force max-iteration recovery and observe follow-up",
+      "new_owner": "ProductTurnPreparer / RunPresenter",
+      "ordering": "audit and started event precede redispatch",
+      "output_frames": [
+        "auto_resume_started",
+        "auto_resume_exhausted",
+        "auto_resume_succeeded"
+      ],
+      "precondition": "recoverable failure and retry budget remains",
+      "side_effects": [
+        "system hint",
+        "SessionDB supervisor audit",
+        "redispatch"
+      ],
+      "status": "FROZEN"
+    },
+    {
+      "automatic_test": "test_voice_user_echo_and_final_are_observed",
+      "capability": "voice.transport",
+      "error_cancel": "barge-in cancels current run and TTS",
+      "input_fields": [
+        "text",
+        "session_id",
+        "venue"
+      ],
+      "legacy_callsites": [
+        "backend/pipeline/voice_pipeline.py:1085",
+        "backend/pipeline/voice_pipeline.py:1085",
+        "backend/pipeline/voice_pipeline.py:335",
+        "backend/pipeline/voice_pipeline.py:335",
+        "backend/pipeline/voice_pipeline.py:475",
+        "backend/pipeline/voice_pipeline.py:475",
+        "backend/pipeline/voice_pipeline.py:549",
+        "backend/pipeline/voice_pipeline.py:549",
+        "backend/pipeline/voice_pipeline.py:757",
+        "backend/pipeline/voice_pipeline.py:758",
+        "backend/pipeline/voice_pipeline.py:761",
+        "backend/pipeline/voice_pipeline.py:766"
+      ],
+      "manual_case": "speak from companion and verify peer session mapping",
+      "new_owner": "Voice venue adapter / RunPresenter",
+      "ordering": "user transcript precedes final; TTS is terminal-only",
+      "output_frames": [
+        "transcript",
+        "chat_v2_user_echo",
+        "chat_v2_final",
+        "run_event"
+      ],
+      "precondition": "voice venue active",
+      "side_effects": [
+        "peer/session remap",
+        "audio/control WS"
+      ],
+      "status": "FROZEN"
+    },
+    {
+      "automatic_test": "test_voice_tag_events_are_observed",
+      "capability": "voice.presentation",
+      "error_cancel": "control disconnect is best effort; speech interrupts TTS",
+      "input_fields": [
+        "text",
+        "venue"
+      ],
+      "legacy_callsites": [
+        "backend/pipeline/voice_pipeline.py:302",
+        "backend/pipeline/voice_pipeline.py:302",
+        "backend/pipeline/voice_pipeline.py:371",
+        "backend/pipeline/voice_pipeline.py:371",
+        "backend/pipeline/voice_pipeline.py:386",
+        "backend/pipeline/voice_pipeline.py:386",
+        "backend/pipeline/voice_pipeline.py:415",
+        "backend/pipeline/voice_pipeline.py:415",
+        "backend/pipeline/voice_pipeline.py:588",
+        "backend/pipeline/voice_pipeline.py:588",
+        "backend/pipeline/voice_pipeline.py:601",
+        "backend/pipeline/voice_pipeline.py:601"
+      ],
+      "manual_case": "voice reply drives emotion, action, lip sync and barge-in",
+      "new_owner": "Voice venue adapter",
+      "ordering": "tags are parsed before terminal-only TTS",
+      "output_frames": [
+        "emotion_change",
+        "action_trigger",
+        "lip_sync",
+        "tts_end",
+        "tts_barge_in",
+        "vad_event"
+      ],
+      "precondition": "voice text contains tags or TTS audio is active",
+      "side_effects": [
+        "Live2D emotion/action",
+        "lip sync",
+        "TTS"
+      ],
+      "status": "FROZEN"
+    },
+    {
+      "automatic_test": "test_census_freezes_turn_input_fields",
+      "capability": "context.system",
+      "error_cancel": "Context OS fails closed when required runtime is unavailable",
+      "input_fields": [
+        "memory_policy",
+        "explicit_new",
+        "attachment_blocks",
+        "provider_ref",
+        "capability_ref",
+        "workspace_ref"
+      ],
+      "legacy_callsites": [
+        "backend/main.py:10001",
+        "backend/main.py:10002",
+        "backend/main.py:10427",
+        "backend/main.py:10448",
+        "backend/main.py:10925",
+        "backend/main.py:10936",
+        "backend/main.py:10942",
+        "backend/main.py:10945",
+        "backend/main.py:10946",
+        "backend/main.py:8998",
+        "backend/main.py:9456",
+        "backend/main.py:9480",
+        "backend/main.py:9999",
+        "backend/pipeline/voice_pipeline.py:1031",
+        "backend/pipeline/voice_pipeline.py:1048",
+        "backend/pipeline/voice_pipeline.py:884",
+        "backend/pipeline/voice_pipeline.py:914"
+      ],
+      "manual_case": "attachments, explicit-new and Context OS survive migration",
+      "new_owner": "ProductTurnPreparer",
+      "ordering": "assemble and capability filtering precede LLM execution",
+      "output_frames": [
+        "context_compacted",
+        "$PipelineEvent.event_type"
+      ],
+      "precondition": "Context OS enabled",
+      "side_effects": [
+        "ContextAssembler",
+        "voice system fragment",
+        "scope store"
+      ],
+      "status": "FROZEN"
+    },
+    {
+      "automatic_test": "test_workflow_delivery_persists_before_publish",
+      "capability": "persistence.delivery",
+      "error_cancel": "failed workflows cannot publish completion artifacts",
+      "input_fields": [
+        "session_id",
+        "request_id",
+        "turn_id",
+        "workspace_ref"
+      ],
+      "legacy_callsites": [
+        "backend/deskpet/workflows/adapters/product_delivery.py:445",
+        "backend/deskpet/workflows/adapters/product_delivery.py:459",
+        "backend/deskpet/workflows/adapters/product_delivery.py:559",
+        "backend/main.py:10022",
+        "backend/main.py:10641",
+        "backend/main.py:10712",
+        "backend/main.py:10777",
+        "backend/main.py:10788",
+        "backend/main.py:3442",
+        "backend/main.py:3449",
+        "backend/main.py:8801",
+        "backend/main.py:8805",
+        "backend/main.py:8876",
+        "backend/main.py:8882",
+        "backend/main.py:9120",
+        "backend/pipeline/voice_pipeline.py:1197",
+        "backend/pipeline/voice_pipeline.py:1203",
+        "backend/pipeline/voice_pipeline.py:871",
+        "backend/pipeline/voice_pipeline.py:875"
+      ],
+      "manual_case": "workflow artifact persists and survives reconnect",
+      "new_owner": "RunPresenter.durable / existing delivery handlers",
+      "ordering": "durable projection precedes physical publish",
+      "output_frames": [
+        "tool_result",
+        "workflow artifact card"
+      ],
+      "precondition": "visible message, workflow artifact, receipt, or audit",
+      "side_effects": [
+        "SessionDB",
+        "vector",
+        "file/receipt",
+        "workflow publisher"
+      ],
+      "status": "FROZEN"
+    },
+    {
+      "automatic_test": "test_census_covers_required_product_capabilities",
+      "capability": "decision.permission",
+      "error_cancel": "timeout/disconnect denies or cancels safely",
+      "input_fields": [
+        "session_id",
+        "request_id",
+        "turn_id"
+      ],
+      "legacy_callsites": [
+        "backend/main.py:10183",
+        "backend/main.py:10190",
+        "backend/main.py:1151",
+        "backend/main.py:1158",
+        "backend/main.py:3449",
+        "backend/main.py:556",
+        "backend/pipeline/voice_pipeline.py:213",
+        "backend/pipeline/voice_pipeline.py:400",
+        "backend/pipeline/voice_pipeline.py:732"
+      ],
+      "manual_case": "restore auto-mode, approve/deny permission, resolve skill card",
+      "new_owner": "Kernel decision boundary / ProductTurnPreparer",
+      "ordering": "restore before requests; decision resolves one waiter",
+      "output_frames": [
+        "permission_request",
+        "skill_candidate_proposed"
+      ],
+      "precondition": "plan, permission, skill candidate, or cancel decision pending",
+      "side_effects": [
+        "waiter resolution",
+        "permission auto-mode restore",
+        "cancel cascade"
+      ],
+      "status": "FROZEN"
+    },
+    {
+      "automatic_test": "test_voice_codify_authority_is_absent",
+      "capability": "skill.codify",
+      "error_cancel": "no legacy callback or writer can be revived",
+      "input_fields": [
+        "session_id",
+        "venue"
+      ],
+      "legacy_callsites": [
+        "backend/main.py:10853",
+        "backend/main.py:10916",
+        "backend/main.py:1121",
+        "backend/main.py:1127",
+        "backend/main.py:1127",
+        "backend/pipeline/voice_pipeline.py:1153",
+        "backend/pipeline/voice_pipeline.py:1156",
+        "backend/pipeline/voice_pipeline.py:278",
+        "backend/pipeline/voice_pipeline.py:289"
+      ],
+      "manual_case": "Companion growth works without a legacy skill candidate card",
+      "new_owner": "retired; governed Companion evidence/reflection/candidate pipeline",
+      "ordering": "legacy producer is absent before Companion ingress opens",
+      "output_frames": [
+        "skill_candidate_proposed"
+      ],
+      "precondition": "retired at Companion authority cutover",
+      "side_effects": [
+        "candidate store",
+        "confirmation waiter"
+      ],
+      "status": "FROZEN"
+    }
+  ],
+  "item_count": 141,
+  "items": [
+    {
+      "callsite": "backend/deskpet/workflows/adapters/product_delivery.py:445",
+      "capability": "persistence.delivery",
+      "count": 1,
+      "detail": [
+        "self.session_db.append_message_if_epoch"
+      ],
+      "id": "beba647bdb26419196d0",
+      "kind": "session_sink",
+      "source_hash": "a8bb5fe28d920561075f2a5dccb5be57aa589a7d35fcefeda82847024f42c06a"
+    },
+    {
+      "callsite": "backend/deskpet/workflows/adapters/product_delivery.py:459",
+      "capability": "persistence.delivery",
+      "count": 1,
+      "detail": [
+        "self.session_db.append_message"
+      ],
+      "id": "dccbd1d9eab3a55d6314",
+      "kind": "session_sink",
+      "source_hash": "9e7a2215c30430f68a2ec022c929507d347efcc52895abea7a99b646d4dce3a3"
+    },
+    {
+      "callsite": "backend/deskpet/workflows/adapters/product_delivery.py:559",
+      "capability": "persistence.delivery",
+      "count": 1,
+      "detail": [
+        "self.receipt_store.append_once"
+      ],
+      "id": "75d5e44a8f7b141a15ac",
+      "kind": "file_sink",
+      "source_hash": "7ed3fe8206c5418d98835104b8cd9feea8ab43ce3174aba6a678dc8af86e6339"
+    },
+    {
+      "callsite": "backend/main.py:10001",
+      "capability": "context.system",
+      "count": 1,
+      "detail": [
+        "$PipelineEvent.event_type"
+      ],
+      "id": "cd19f2bb4484ca7ca977",
+      "kind": "ws_send",
+      "source_hash": "8aed9f309f70d0f91ff6eec920d32be281f790b5b8d355555a1fb57972bc1886"
+    },
+    {
+      "callsite": "backend/main.py:10002",
+      "capability": "context.system",
+      "count": 1,
+      "detail": [
+        "$PipelineEvent.event_type"
+      ],
+      "id": "ff676cabaf33cb6eb7fd",
+      "kind": "ws_send",
+      "source_hash": "a5507dfaf4b139992649773d53001fdf794f21a478bb1016fccca4edd9ffce2f"
+    },
+    {
+      "callsite": "backend/main.py:10008",
+      "capability": "text.assistant",
+      "count": 1,
+      "detail": [
+        "chat_v2_final"
+      ],
+      "id": "f87a8f914480e3f6b797",
+      "kind": "event_type",
+      "source_hash": "fe10195b009f91d98c7ecc28b276bba50dad7707f04dea785961c37387d0f47b"
+    },
+    {
+      "callsite": "backend/main.py:10010",
+      "capability": "text.assistant",
+      "count": 1,
+      "detail": [
+        "chat_v2_final"
+      ],
+      "id": "e95b58ba97a5502c8019",
+      "kind": "ws_send",
+      "source_hash": "2d1f39a37b6cdab66c20c13c6f7d363adcb6331bb20171efb41087ee84794e70"
+    },
+    {
+      "callsite": "backend/main.py:10011",
+      "capability": "text.assistant",
+      "count": 1,
+      "detail": [
+        "chat_v2_final"
+      ],
+      "id": "13413781867cc803a001",
+      "kind": "ws_send",
+      "source_hash": "380a9308cc8d70f967ec33abe75dd61e9715b58c7fa95e5062c66722aee60aac"
+    },
+    {
+      "callsite": "backend/main.py:10022",
+      "capability": "persistence.delivery",
+      "count": 1,
+      "detail": [
+        "_sdb.append_message"
+      ],
+      "id": "666f365bc02a3f6d489c",
+      "kind": "session_sink",
+      "source_hash": "73baa476d8c391e8d1fe6ee813fff00a2275737c6356533ea6042c3af69d386e"
+    },
+    {
+      "callsite": "backend/main.py:10098",
+      "capability": "text.plan_cancel_error",
+      "count": 1,
+      "detail": [
+        "chat_v2_plan"
+      ],
+      "id": "40c5f70b76112b26e98e",
+      "kind": "event_type",
+      "source_hash": "2aa54a32f6c56f5a3c6054ec119e0db32464440af1a012377102b364d3597a33"
+    },
+    {
+      "callsite": "backend/main.py:10112",
+      "capability": "text.plan_cancel_error",
+      "count": 1,
+      "detail": [
+        "chat_v2_plan"
+      ],
+      "id": "3228592e83bc7b057b2c",
+      "kind": "ws_send",
+      "source_hash": "e00966de7560b8498a70b82e542bb1a9270fa7324dd09b6569fbfdaff815fc29"
+    },
+    {
+      "callsite": "backend/main.py:10113",
+      "capability": "text.plan_cancel_error",
+      "count": 1,
+      "detail": [
+        "chat_v2_plan"
+      ],
+      "id": "94070dbafc3aa54be8e2",
+      "kind": "ws_send",
+      "source_hash": "e12587bbfd2cf38ef8b6264bfeb28a87f45dd3b9cc7593127b09bc430fc4fe80"
+    },
+    {
+      "callsite": "backend/main.py:10183",
+      "capability": "decision.permission",
+      "count": 1,
+      "detail": [
+        "asyncio.wait_for"
+      ],
+      "id": "3385d0c313445bbefba7",
+      "kind": "waiter",
+      "source_hash": "5a5e2cb6a0423741abb0c33d7e6d8db135e38742f76a7ac40c8efea9e2f345b4"
+    },
+    {
+      "callsite": "backend/main.py:10190",
+      "capability": "decision.permission",
+      "count": 1,
+      "detail": [
+        "_PLAN_CONFIRM_WAITERS.pop"
+      ],
+      "id": "c91c182dffb301148ca1",
+      "kind": "waiter",
+      "source_hash": "bcd2e4c3c5db90d298e60e0b5f9bcd4563e7b6621f4ced6af0cb13b3ed6ca0aa"
+    },
+    {
+      "callsite": "backend/main.py:10219",
+      "capability": "text.plan_cancel_error",
+      "count": 1,
+      "detail": [
+        "chat_v2_plan_cancelled"
+      ],
+      "id": "0aba1fe7b563d829b238",
+      "kind": "event_type",
+      "source_hash": "2c4d91f58732414008b9af0a44b6b16571653024a3bdd4266b924ab5e9982b50"
+    },
+    {
+      "callsite": "backend/main.py:10223",
+      "capability": "text.plan_cancel_error",
+      "count": 1,
+      "detail": [
+        "chat_v2_plan_cancelled"
+      ],
+      "id": "0f173165982021450337",
+      "kind": "ws_send",
+      "source_hash": "11b22ab094b04482fbf428ade68eb2ed29019d46a32a5763092171f37ed11fdc"
+    },
+    {
+      "callsite": "backend/main.py:10224",
+      "capability": "text.plan_cancel_error",
+      "count": 1,
+      "detail": [
+        "chat_v2_plan_cancelled"
+      ],
+      "id": "83f3f219aaed8026861b",
+      "kind": "ws_send",
+      "source_hash": "48c02b94cc2b96b17af90b2594cc5696a9363ba8b0a6853ca9ce6de65951adf9"
+    },
+    {
+      "callsite": "backend/main.py:10427",
+      "capability": "context.system",
+      "count": 1,
+      "detail": [
+        "_request_planner.prepare_initial"
+      ],
+      "id": "964daeedbcb50a376d50",
+      "kind": "context_sink",
+      "source_hash": "b411349e14d752e4e7c2319df3e0a548937ec4971f3e86c644cd40bdaf5fdee9"
+    },
+    {
+      "callsite": "backend/main.py:10448",
+      "capability": "context.system",
+      "count": 1,
+      "detail": [
+        "_scope_store.open"
+      ],
+      "id": "c00567ba3d53997abf63",
+      "kind": "context_sink",
+      "source_hash": "2baffe4a5aaad28467dc929631d5e923162071dfd7291b36c1c9dbbec2e76fa0"
+    },
+    {
+      "callsite": "backend/main.py:10567",
+      "capability": "text.assistant",
+      "count": 1,
+      "detail": [
+        "chat_v2_delta"
+      ],
+      "id": "8c09bd5fbec540635bff",
+      "kind": "event_type",
+      "source_hash": "0326cc5de7473d074c3db1cf94226cf062b8f8b8b15ade35998935c43d4cb59c"
+    },
+    {
+      "callsite": "backend/main.py:10576",
+      "capability": "text.assistant",
+      "count": 1,
+      "detail": [
+        "chat_v2_delta"
+      ],
+      "id": "47819375610acdfe5cbf",
+      "kind": "ws_send",
+      "source_hash": "cbab8799f5f5b499d44f879295b804e6309bd3369b4189a79dfacd4bb10c8ff8"
+    },
+    {
+      "callsite": "backend/main.py:10577",
+      "capability": "text.assistant",
+      "count": 1,
+      "detail": [
+        "chat_v2_delta"
+      ],
+      "id": "30037dd2e4a7411e038b",
+      "kind": "ws_send",
+      "source_hash": "e7dbdededcfad5c432f8fc7f194ce817356f14c914cd657242404708cced5a1a"
+    },
+    {
+      "callsite": "backend/main.py:10591",
+      "capability": "text.assistant",
+      "count": 1,
+      "detail": [
+        "chat_response"
+      ],
+      "id": "a762c689caf53429a231",
+      "kind": "event_type",
+      "source_hash": "eb40ece614f74d819ca088bf800dc828369ec3f490d17edfe85747891dd0fa6e"
+    },
+    {
+      "callsite": "backend/main.py:10591",
+      "capability": "text.assistant",
+      "count": 1,
+      "detail": [
+        "chat_response"
+      ],
+      "id": "75a3de7ff411054ff757",
+      "kind": "ws_send",
+      "source_hash": "1b0e066c017de0d01fd0ec9059881f2c5cd5cf243c24299fc127fb4d28980332"
+    },
+    {
+      "callsite": "backend/main.py:10610",
+      "capability": "tool.lifecycle",
+      "count": 1,
+      "detail": [
+        "tool_use_event"
+      ],
+      "id": "e376e42403ef4c10d7e2",
+      "kind": "event_type",
+      "source_hash": "f12bfc98f8fba295ee6983838ae9c9d5c83407146d0a2af83b87f3fc86d75cc1"
+    },
+    {
+      "callsite": "backend/main.py:10620",
+      "capability": "tool.lifecycle",
+      "count": 1,
+      "detail": [
+        "tool_use_event"
+      ],
+      "id": "ef9d2c4ca1ae561798b0",
+      "kind": "ws_send",
+      "source_hash": "4510800d7e029b49b7100ad8472c6f415c09c18510403eb42557627b6b8a3ecb"
+    },
+    {
+      "callsite": "backend/main.py:10621",
+      "capability": "tool.lifecycle",
+      "count": 1,
+      "detail": [
+        "tool_use_event"
+      ],
+      "id": "816821c9acdd07cc8085",
+      "kind": "ws_send",
+      "source_hash": "850faf272a497b31a4c2bbf1e40bf34fb4f055bf359e46a2f341765955b6e437"
+    },
+    {
+      "callsite": "backend/main.py:10622",
+      "capability": "tool.lifecycle",
+      "count": 1,
+      "detail": [
+        "tool_call"
+      ],
+      "id": "0566deaeafbb223403ea",
+      "kind": "event_type",
+      "source_hash": "543c2bfcea4a46e36e9cae7adc8d9f2e3a630f5ace134753275f99d2f485965f"
+    },
+    {
+      "callsite": "backend/main.py:10631",
+      "capability": "tool.lifecycle",
+      "count": 1,
+      "detail": [
+        "tool_call"
+      ],
+      "id": "9d3e6efa4066f66e7928",
+      "kind": "ws_send",
+      "source_hash": "e402622e704a34fe6d391a8446cdf79756eee6b5276b67df5eee74430601aa73"
+    },
+    {
+      "callsite": "backend/main.py:10632",
+      "capability": "tool.lifecycle",
+      "count": 1,
+      "detail": [
+        "tool_call"
+      ],
+      "id": "56dc3f0cfebacbabd9a9",
+      "kind": "ws_send",
+      "source_hash": "7dc9e8fdcad65de24cf371e9cc9e3f1737356b44f9a404ff755399923de98eb9"
+    },
+    {
+      "callsite": "backend/main.py:10641",
+      "capability": "persistence.delivery",
+      "count": 1,
+      "detail": [
+        "_sdb.append_message"
+      ],
+      "id": "5d3e06bb63127a0aa35d",
+      "kind": "session_sink",
+      "source_hash": "4c384bd8f8404c402c3029bbb3ddd4ff55ed5d2b7b26a6e4cfeb8a0e19e8302a"
+    },
+    {
+      "callsite": "backend/main.py:10645",
+      "capability": "tool.lifecycle",
+      "count": 1,
+      "detail": [
+        "function"
+      ],
+      "id": "baac06e490d9934b5a7d",
+      "kind": "event_type",
+      "source_hash": "57a43e13bb869d928640425989f639cc1646892218065b875b4cc3a757e971cc"
+    },
+    {
+      "callsite": "backend/main.py:10678",
+      "capability": "tool.lifecycle",
+      "count": 1,
+      "detail": [
+        "tool_use_event"
+      ],
+      "id": "422e6f5245dfa68c1554",
+      "kind": "event_type",
+      "source_hash": "8321e61a2663ce2b6b4d733aa1bbece8cbba8d9e4118c5b5000ad6536b8a20a7"
+    },
+    {
+      "callsite": "backend/main.py:10688",
+      "capability": "tool.lifecycle",
+      "count": 1,
+      "detail": [
+        "tool_use_event"
+      ],
+      "id": "e5ed150972790d882c76",
+      "kind": "ws_send",
+      "source_hash": "a5ebc71b65be13c7a0b86a8f5fe5bf09c64656538aa152216430f17c603c3bde"
+    },
+    {
+      "callsite": "backend/main.py:10689",
+      "capability": "tool.lifecycle",
+      "count": 1,
+      "detail": [
+        "tool_use_event"
+      ],
+      "id": "26c92a86ef140711a9e7",
+      "kind": "ws_send",
+      "source_hash": "8485426e80cf8c1fd8a5e033a3532b316169cb513f87fe4ff35730e265ec18c5"
+    },
+    {
+      "callsite": "backend/main.py:10690",
+      "capability": "tool.lifecycle",
+      "count": 1,
+      "detail": [
+        "tool_result"
+      ],
+      "id": "50c04c17e0db5568f9d7",
+      "kind": "event_type",
+      "source_hash": "f2ffe8bd752e9efedbe5c13f14ab850874e04c730d6c30f9f8445f4805e6c76d"
+    },
+    {
+      "callsite": "backend/main.py:10700",
+      "capability": "tool.lifecycle",
+      "count": 1,
+      "detail": [
+        "tool_result"
+      ],
+      "id": "22cd127f0035efd923fd",
+      "kind": "ws_send",
+      "source_hash": "eba22a867d7da87bbe67d4fa78d43534516bdcbe9e7811dd449b765f58a21f64"
+    },
+    {
+      "callsite": "backend/main.py:10701",
+      "capability": "tool.lifecycle",
+      "count": 1,
+      "detail": [
+        "tool_result"
+      ],
+      "id": "7c9b413df25b56e29347",
+      "kind": "ws_send",
+      "source_hash": "dc65b2f4eeb6ec8bb5358d8acdc47aa7de587f5c528f8f004866359976d032c8"
+    },
+    {
+      "callsite": "backend/main.py:10712",
+      "capability": "persistence.delivery",
+      "count": 1,
+      "detail": [
+        "_sdb.append_message"
+      ],
+      "id": "d1387697a1711d645091",
+      "kind": "session_sink",
+      "source_hash": "0419d7c9a5d4c312bf40e067ac3b70a66c9be6d9e2bde880de5387091a58a5c3"
+    },
+    {
+      "callsite": "backend/main.py:10729",
+      "capability": "text.assistant",
+      "count": 1,
+      "detail": [
+        "chat_v2_final"
+      ],
+      "id": "297124af22e96d98c386",
+      "kind": "event_type",
+      "source_hash": "f92a60c79ce048aa2a384b42774736385bdf7889c158ff299237d85b7cf0f49f"
+    },
+    {
+      "callsite": "backend/main.py:10738",
+      "capability": "text.assistant",
+      "count": 1,
+      "detail": [
+        "chat_v2_final"
+      ],
+      "id": "4279826e43cdd7fbf910",
+      "kind": "ws_send",
+      "source_hash": "f8179f7c9d5b8de9dd3ed4aa235f04bf4441e3b1667afb98d6c896ad33c515b0"
+    },
+    {
+      "callsite": "backend/main.py:10739",
+      "capability": "text.assistant",
+      "count": 1,
+      "detail": [
+        "chat_v2_final"
+      ],
+      "id": "737b491b039ad62755d7",
+      "kind": "ws_send",
+      "source_hash": "f8229783e521923d44433dd9b6a8a28ab4b719d1ff0f0c85f7aac482fabc3f80"
+    },
+    {
+      "callsite": "backend/main.py:10777",
+      "capability": "persistence.delivery",
+      "count": 1,
+      "detail": [
+        "_sdb.append_message"
+      ],
+      "id": "b0e6a216aa6ae3f16455",
+      "kind": "session_sink",
+      "source_hash": "e610f32f30fb886626e0301df9e5dbe95c5b6381bd74cd283e286382513c7f07"
+    },
+    {
+      "callsite": "backend/main.py:10788",
+      "capability": "persistence.delivery",
+      "count": 1,
+      "detail": [
+        "_vw.enqueue"
+      ],
+      "id": "65f6bfe86b7a5e4993ae",
+      "kind": "vector_sink",
+      "source_hash": "0cb95ee1aefea1ed30994359cdbefaece1a0e4addc9b8d511fe0bcaf7586aa75"
+    },
+    {
+      "callsite": "backend/main.py:10794",
+      "capability": "text.assistant",
+      "count": 1,
+      "detail": [
+        "chat_v2_final"
+      ],
+      "id": "cd57ea7af667bfc18568",
+      "kind": "event_type",
+      "source_hash": "e4483147c338b0ebcb0c5d019711d5cfd99feeac4525cc35a9f263209e2e849c"
+    },
+    {
+      "callsite": "backend/main.py:10837",
+      "capability": "auto_resume",
+      "count": 1,
+      "detail": [
+        "auto_resume_succeeded"
+      ],
+      "id": "aa7182194832f703e28e",
+      "kind": "event_type",
+      "source_hash": "c580e4feb8c9cca69b67740b4f07c596bf469d09e8bda631e5e2467be9c301ff"
+    },
+    {
+      "callsite": "backend/main.py:10837",
+      "capability": "auto_resume",
+      "count": 1,
+      "detail": [
+        "auto_resume_succeeded"
+      ],
+      "id": "aee16100f126d7ca521e",
+      "kind": "ws_send",
+      "source_hash": "756b4e54875f8cd4de7766733e476fe7bbf2014c93523a0e95d6857b4cd30331"
+    },
+    {
+      "callsite": "backend/main.py:10853",
+      "capability": "skill.codify",
+      "count": 1,
+      "detail": [
+        "_maybe_codify_skill"
+      ],
+      "id": "e35a480622627cc873e3",
+      "kind": "codify",
+      "source_hash": "53355b972c83f859e22692336349ab42027ccd285c0a3d7724baec53fef33e15"
+    },
+    {
+      "callsite": "backend/main.py:10901",
+      "capability": "text.plan_cancel_error",
+      "count": 1,
+      "detail": [
+        "chat_v2_error"
+      ],
+      "id": "7fb66a6e90247ce7bfd5",
+      "kind": "event_type",
+      "source_hash": "5ea28fb69c42bfebc200f757bf2739ca9569cca9e30e0b621ee3b4b8bfea5ba6"
+    },
+    {
+      "callsite": "backend/main.py:10901",
+      "capability": "text.plan_cancel_error",
+      "count": 1,
+      "detail": [
+        "chat_v2_error"
+      ],
+      "id": "e0dbae1fc51c6029f1bb",
+      "kind": "ws_send",
+      "source_hash": "aeec6eefca34f66343daf1d81e5360243812d964fc899dea8e87f0854ac32b40"
+    },
+    {
+      "callsite": "backend/main.py:10916",
+      "capability": "skill.codify",
+      "count": 1,
+      "detail": [
+        "_maybe_codify_skill"
+      ],
+      "id": "92dc6ecd8e805f3ee7f8",
+      "kind": "codify",
+      "source_hash": "53355b972c83f859e22692336349ab42027ccd285c0a3d7724baec53fef33e15"
+    },
+    {
+      "callsite": "backend/main.py:10925",
+      "capability": "context.system",
+      "count": 1,
+      "detail": [
+        "context_compacted"
+      ],
+      "id": "39796174d8e252d774c4",
+      "kind": "event_type",
+      "source_hash": "32c63f205c810ce271e7daa7f657bcab6210e436e3d1c1b5f776222a57e1073d"
+    },
+    {
+      "callsite": "backend/main.py:10936",
+      "capability": "context.system",
+      "count": 1,
+      "detail": [
+        "context_compacted"
+      ],
+      "id": "2ec75347a42a703e5f32",
+      "kind": "ws_send",
+      "source_hash": "1d5b778c29965c8ba8327a6948b105b4c6cf2d3f9803fd3f8e4051b20f38806e"
+    },
+    {
+      "callsite": "backend/main.py:10942",
+      "capability": "context.system",
+      "count": 1,
+      "detail": [
+        "$PipelineEvent.event_type"
+      ],
+      "id": "a500754e75d70aa322f1",
+      "kind": "event_type",
+      "source_hash": "1e62d72844b1400b7f66a48d360fa93e9d2f3680af7f36a95cbb320b8e3abe37"
+    },
+    {
+      "callsite": "backend/main.py:10945",
+      "capability": "context.system",
+      "count": 1,
+      "detail": [
+        "$PipelineEvent.event_type"
+      ],
+      "id": "9ceffb1df5e10cec60d4",
+      "kind": "ws_send",
+      "source_hash": "e1fbcfe37dea96abd711c750a2e86fe9201e2d562788f9395130700c262dd1ac"
+    },
+    {
+      "callsite": "backend/main.py:10946",
+      "capability": "context.system",
+      "count": 1,
+      "detail": [
+        "$PipelineEvent.event_type"
+      ],
+      "id": "c9398e156f98bc1edfe0",
+      "kind": "ws_send",
+      "source_hash": "a54d584bca7eed7529546639da911d9a2895aa863f97ad70ec1f57539eca5a33"
+    },
+    {
+      "callsite": "backend/main.py:11019",
+      "capability": "text.plan_cancel_error",
+      "count": 1,
+      "detail": [
+        "chat_v2_error"
+      ],
+      "id": "d973adfa1edb33dbaad4",
+      "kind": "event_type",
+      "source_hash": "092acf2c1aa14f48d04f48cfa7db4b20989692aaabc50aad156baad9f347d578"
+    },
+    {
+      "callsite": "backend/main.py:11019",
+      "capability": "text.plan_cancel_error",
+      "count": 1,
+      "detail": [
+        "chat_v2_error"
+      ],
+      "id": "2ba63979b82fc67c0656",
+      "kind": "ws_send",
+      "source_hash": "661224923848abf42b5992f8da41636b068f2d08a25b82981749ddddbc00878b"
+    },
+    {
+      "callsite": "backend/main.py:1121",
+      "capability": "skill.codify",
+      "count": 1,
+      "detail": [
+        "_codifier.propose"
+      ],
+      "id": "298a28cc8039afef4631",
+      "kind": "codify",
+      "source_hash": "fe423e2695b7129ef1d4e31c43c763a1b74be3eccc1c432c3048279be62f1569"
+    },
+    {
+      "callsite": "backend/main.py:1127",
+      "capability": "skill.codify",
+      "count": 1,
+      "detail": [
+        "skill_candidate_proposed"
+      ],
+      "id": "cb6401517eb4bbd1424a",
+      "kind": "event_type",
+      "source_hash": "3f8087cc268d372000ca3f6c6f19463b0ce04070577c493dc25871e3e8d2fadb"
+    },
+    {
+      "callsite": "backend/main.py:1127",
+      "capability": "skill.codify",
+      "count": 1,
+      "detail": [
+        "skill_candidate_proposed"
+      ],
+      "id": "5a7513515de8cb821b13",
+      "kind": "ws_send",
+      "source_hash": "168326b2bfd8d3bc90cd454a234ea9de633cff19a55af8aea247570c8dd31212"
+    },
+    {
+      "callsite": "backend/main.py:1151",
+      "capability": "decision.permission",
+      "count": 1,
+      "detail": [
+        "waiters.add"
+      ],
+      "id": "f09790e8b03265702378",
+      "kind": "waiter",
+      "source_hash": "b64af588c05111485568fc505c5792f0a827e360e103f7c5856a3eff3b89c7b4"
+    },
+    {
+      "callsite": "backend/main.py:1158",
+      "capability": "decision.permission",
+      "count": 1,
+      "detail": [
+        "_aio_sc.wait_for"
+      ],
+      "id": "745c42a48878538ffdaf",
+      "kind": "waiter",
+      "source_hash": "9b3952d91f556e281788f3c00137e39f350ffd9b06d9a6845346baa3e1da050a"
+    },
+    {
+      "callsite": "backend/main.py:3442",
+      "capability": "persistence.delivery",
+      "count": 1,
+      "detail": [
+        "tool_result"
+      ],
+      "id": "05d9284866c6335c7b53",
+      "kind": "event_type",
+      "source_hash": "421a6c7f4c9f2fe12aca6dd5225f09d4ed19dbf51f1441742abfb67a2a8be515"
+    },
+    {
+      "callsite": "backend/main.py:3449",
+      "capability": "decision.permission",
+      "count": 1,
+      "detail": [
+        "asyncio.wait_for"
+      ],
+      "id": "0009dcfe7bd2ba0f0552",
+      "kind": "waiter",
+      "source_hash": "eb5a168cc0fdabc1023f9872f7b17f82812cf89e13d1258f98edf665b09bc163"
+    },
+    {
+      "callsite": "backend/main.py:3449",
+      "capability": "persistence.delivery",
+      "count": 1,
+      "detail": [
+        "tool_result"
+      ],
+      "id": "d05b09dea0edc2606455",
+      "kind": "ws_send",
+      "source_hash": "155d7ce8ab4d61c98d656c68490df59e8bed71237db0e6265654f30314fa184a"
+    },
+    {
+      "callsite": "backend/main.py:5203",
+      "capability": "auto_resume",
+      "count": 1,
+      "detail": [
+        "auto_resume_exhausted",
+        "auto_resume_started"
+      ],
+      "id": "6cea4d3fdd8a0ca1be13",
+      "kind": "event_type",
+      "source_hash": "2edfbc18db3d73d91cd3c629d9f2ec2897742ee7da576e8e8a4a1a7c47fd6551"
+    },
+    {
+      "callsite": "backend/main.py:5206",
+      "capability": "auto_resume",
+      "count": 1,
+      "detail": [
+        "auto_resume_exhausted",
+        "auto_resume_started"
+      ],
+      "id": "4f2d2f4a751ae6b7aa8f",
+      "kind": "ws_send",
+      "source_hash": "b758cb3456e6cbb7ffc7b998c651ad1c000bc49d4233b88ac226d3f4613a2fe9"
+    },
+    {
+      "callsite": "backend/main.py:5216",
+      "capability": "auto_resume",
+      "count": 1,
+      "detail": [
+        "_sdb.append_supervisor_hint"
+      ],
+      "id": "f295ba87310bf37105a0",
+      "kind": "session_sink",
+      "source_hash": "38f5cc8ae49c62937104c4c6617e02f8524118b9ecaa48b9471ba03bce00d732"
+    },
+    {
+      "callsite": "backend/main.py:556",
+      "capability": "decision.permission",
+      "count": 1,
+      "detail": [
+        "permission_gate_v2.load_auto_mode"
+      ],
+      "id": "024a214d4f02b0e921ed",
+      "kind": "permission_restore",
+      "source_hash": "49ea45ba3557ff69df15989f30bf05adc9e58304097b904773c9eff17629ae4c"
+    },
+    {
+      "callsite": "backend/main.py:8801",
+      "capability": "persistence.delivery",
+      "count": 1,
+      "detail": [
+        "_sdb.append_message"
+      ],
+      "id": "b627332d82bd50873eaa",
+      "kind": "session_sink",
+      "source_hash": "87d56c1b5c932fb816a7a3d93d604c79997202ff4425dbeb7accf01a31a5a71e"
+    },
+    {
+      "callsite": "backend/main.py:8805",
+      "capability": "persistence.delivery",
+      "count": 1,
+      "detail": [
+        "_vw.enqueue"
+      ],
+      "id": "2de3c37f8d6d72c29f04",
+      "kind": "vector_sink",
+      "source_hash": "b8b0ceb9d0a668d2b892a255b011a802083c57ae9f8cb67a44526ca572b20f41"
+    },
+    {
+      "callsite": "backend/main.py:8816",
+      "capability": "text.user_echo",
+      "count": 1,
+      "detail": [
+        "chat_v2_user_echo"
+      ],
+      "id": "a9014bc7bcb489a7b680",
+      "kind": "event_type",
+      "source_hash": "1668e28d5fb4730ad84b3d41c419c96efa294361b0cb320a7cee90ffb13c40f7"
+    },
+    {
+      "callsite": "backend/main.py:8820",
+      "capability": "text.user_echo",
+      "count": 1,
+      "detail": [
+        "chat_v2_user_echo"
+      ],
+      "id": "7960ac1c05e478286850",
+      "kind": "ws_send",
+      "source_hash": "3bf551aabd8b31a40900ff641edd8739121bd0dde3939d3ac2c7e77fa7cf623e"
+    },
+    {
+      "callsite": "backend/main.py:8876",
+      "capability": "persistence.delivery",
+      "count": 1,
+      "detail": [
+        "_sdb.append_message"
+      ],
+      "id": "1df47fc7fc51e858bd35",
+      "kind": "session_sink",
+      "source_hash": "48a3105df98007be409837285ff74c2ab9ab7e4825cff37ca5d5b040e4480505"
+    },
+    {
+      "callsite": "backend/main.py:8882",
+      "capability": "persistence.delivery",
+      "count": 1,
+      "detail": [
+        "_vw.enqueue"
+      ],
+      "id": "4213dcb8b6dc22119d34",
+      "kind": "vector_sink",
+      "source_hash": "311d4eec316e44467fc131a91e1b57a8fba0917aafcfb2ab9d433c1c500fd558"
+    },
+    {
+      "callsite": "backend/main.py:8888",
+      "capability": "text.assistant",
+      "count": 1,
+      "detail": [
+        "chat_v2_final"
+      ],
+      "id": "9368be1c52b8ef4aa39e",
+      "kind": "event_type",
+      "source_hash": "25707ba2fdd6f615c131f5f2f02bd1ceb0ebced9287588b6c46749df75097193"
+    },
+    {
+      "callsite": "backend/main.py:8896",
+      "capability": "text.assistant",
+      "count": 1,
+      "detail": [
+        "chat_v2_final"
+      ],
+      "id": "37cb56c71370d58265ab",
+      "kind": "ws_send",
+      "source_hash": "fde755bbfa740bddaa038062d336d208451b4b32a0ede8eaff8c4fd1c54e448c"
+    },
+    {
+      "callsite": "backend/main.py:8897",
+      "capability": "text.assistant",
+      "count": 1,
+      "detail": [
+        "chat_v2_final"
+      ],
+      "id": "78c6ba03b7d504acd913",
+      "kind": "ws_send",
+      "source_hash": "fdb0d34be19534ddd1af40d6a2c482a7349a8f64fc648aee18adf3b0ffc76b3f"
+    },
+    {
+      "callsite": "backend/main.py:8998",
+      "capability": "context.system",
+      "count": 1,
+      "detail": [
+        "_assembler.assemble"
+      ],
+      "id": "ec47956fdbb7a1476b47",
+      "kind": "context_sink",
+      "source_hash": "1598641f1c5f9d974dff989ba3ef5892ee056714deb9d896de0e140af0498910"
+    },
+    {
+      "callsite": "backend/main.py:9120",
+      "capability": "persistence.delivery",
+      "count": 1,
+      "detail": [
+        "_sdb_for_audit.append_supervisor_hint"
+      ],
+      "id": "2951631b23c8b73be51e",
+      "kind": "session_sink",
+      "source_hash": "188c187b8ef31e3de4f143475edc811143b4c78b4e3a3a0d78b9536200264c1a"
+    },
+    {
+      "callsite": "backend/main.py:9456",
+      "capability": "context.system",
+      "count": 1,
+      "detail": [
+        "_code_planner.prepare_initial"
+      ],
+      "id": "bd00f844a1421ecbec74",
+      "kind": "context_sink",
+      "source_hash": "5482afdae428c55fdfc4a5c0040849aec4e645b2917e0ee6858ddbbe1d124b09"
+    },
+    {
+      "callsite": "backend/main.py:9480",
+      "capability": "context.system",
+      "count": 1,
+      "detail": [
+        "_code_scope_store.open"
+      ],
+      "id": "46ae50e900ac105f6c37",
+      "kind": "context_sink",
+      "source_hash": "6c82bea688ea8a70978fbdf20111d545a29de894f294571d26148b9c867eab55"
+    },
+    {
+      "callsite": "backend/main.py:9588",
+      "capability": "text.assistant",
+      "count": 1,
+      "detail": [
+        "chat_v2_final"
+      ],
+      "id": "cf3c902eb9c932e2de96",
+      "kind": "event_type",
+      "source_hash": "be1677459c5913db0419814934a6798933b50661f70d260c7798f8cd902e7670"
+    },
+    {
+      "callsite": "backend/main.py:9599",
+      "capability": "text.assistant",
+      "count": 1,
+      "detail": [
+        "chat_v2_final"
+      ],
+      "id": "a492c6883b5bc8fa283f",
+      "kind": "ws_send",
+      "source_hash": "a0231bbd310082184095562e7e5942fd95bc401879a3ffa06887f2f0b502813d"
+    },
+    {
+      "callsite": "backend/main.py:9600",
+      "capability": "text.assistant",
+      "count": 1,
+      "detail": [
+        "chat_v2_final"
+      ],
+      "id": "2a9748b24fefacdfceb8",
+      "kind": "ws_send",
+      "source_hash": "3159df427d488b814fe02fe053444d676d41c1cd8a0c17d63c547726c32a591f"
+    },
+    {
+      "callsite": "backend/main.py:9679",
+      "capability": "text.assistant",
+      "count": 1,
+      "detail": [
+        "chat_v2_final"
+      ],
+      "id": "6a6664ee0df78e978c39",
+      "kind": "event_type",
+      "source_hash": "372b26dc9970ef522a3a189d209d3a69c9b67dc9a2d8b3f814f85b4fb12bd0a5"
+    },
+    {
+      "callsite": "backend/main.py:9688",
+      "capability": "text.assistant",
+      "count": 1,
+      "detail": [
+        "chat_v2_final"
+      ],
+      "id": "3ab88b3f5db2e9e44927",
+      "kind": "ws_send",
+      "source_hash": "26a12ac2fa9c64ef8e14fe39a1969a401babd0e52e2097ce4d0760b479f039b7"
+    },
+    {
+      "callsite": "backend/main.py:9689",
+      "capability": "text.assistant",
+      "count": 1,
+      "detail": [
+        "chat_v2_final"
+      ],
+      "id": "e3438d3c983258800527",
+      "kind": "ws_send",
+      "source_hash": "3037c43e755d5db6bfab8ed07513c26209ca83692c826465db207bc645acad19"
+    },
+    {
+      "callsite": "backend/main.py:9999",
+      "capability": "context.system",
+      "count": 1,
+      "detail": [
+        "$PipelineEvent.event_type"
+      ],
+      "id": "1cfa99690992ea1e6d56",
+      "kind": "event_type",
+      "source_hash": "4dc6151c835d5611e10d8265b62f37500c461068537918cc6531dabf05a1abdf"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:1031",
+      "capability": "context.system",
+      "count": 1,
+      "detail": [
+        "planner.prepare_initial"
+      ],
+      "id": "238af867d4f0177f5b95",
+      "kind": "context_sink",
+      "source_hash": "e3552d6e47268d313f49e205784604bd823cf5c85a43b0baebdd3aa294c95346"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:1048",
+      "capability": "context.system",
+      "count": 1,
+      "detail": [
+        "scope_store.open"
+      ],
+      "id": "1555cbece11b4efa84e4",
+      "kind": "context_sink",
+      "source_hash": "4e1c92cd90f10bf0e9d237b7493c1addb8aed5469d85890e5101038a2a4bed6d"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:1085",
+      "capability": "voice.transport",
+      "count": 1,
+      "detail": [
+        "chat_response"
+      ],
+      "id": "c49233a86918ef3e34fd",
+      "kind": "event_type",
+      "source_hash": "053e32a417c0ec54f583a0387d3021e684f1112fde6a7567e9f9c729b1bf9b6b"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:1085",
+      "capability": "voice.transport",
+      "count": 1,
+      "detail": [
+        "chat_response"
+      ],
+      "id": "09bb73a34217a8305b20",
+      "kind": "ws_send",
+      "source_hash": "79d586619114efa1f69f1852fa0aed789f2e4dca7113d8d8afe71c3a53a2e043"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:1096",
+      "capability": "tool.lifecycle",
+      "count": 1,
+      "detail": [
+        "tool_call"
+      ],
+      "id": "ce9280c1860ac80cdb7d",
+      "kind": "event_type",
+      "source_hash": "639e3acac72c19233f290430f299ece53391d16ae4cd3240259ad5fb4762b143"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:1105",
+      "capability": "tool.lifecycle",
+      "count": 1,
+      "detail": [
+        "tool_call"
+      ],
+      "id": "643cf17759632c1d34b4",
+      "kind": "ws_send",
+      "source_hash": "a256e2afe68ade56fccaf16da3583a9066fae6d7341c6d9789ccb8c9adba0c41"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:1110",
+      "capability": "tool.lifecycle",
+      "count": 1,
+      "detail": [
+        "tool_call"
+      ],
+      "id": "c04043d518f786036ed0",
+      "kind": "ws_send",
+      "source_hash": "0025399ffedb0df02cb03b7fe78d6c82515c888df554bf4f2f7b664450868839"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:1126",
+      "capability": "tool.lifecycle",
+      "count": 1,
+      "detail": [
+        "tool_result"
+      ],
+      "id": "f60c5511fbc28bd74924",
+      "kind": "event_type",
+      "source_hash": "77c92a4ecd01722a3bc4a7b33e3bd068d4babd6ceee46d645012bed22d2c0eba"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:1138",
+      "capability": "tool.lifecycle",
+      "count": 1,
+      "detail": [
+        "tool_result"
+      ],
+      "id": "2cee3c23f062f4e54e95",
+      "kind": "ws_send",
+      "source_hash": "43c830176f831df338a97bf27b8ea7973b72c7fad6404128d667085e300f5ed2"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:1143",
+      "capability": "tool.lifecycle",
+      "count": 1,
+      "detail": [
+        "tool_result"
+      ],
+      "id": "9073a240e3d8ee73727b",
+      "kind": "ws_send",
+      "source_hash": "c3599cc353095120b36dababc3828ce58ae935310e86038351f18480cabb0e0e"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:1153",
+      "capability": "skill.codify",
+      "count": 1,
+      "detail": [
+        "self._maybe_codify_voice"
+      ],
+      "id": "eb6e57cef8ab370367bc",
+      "kind": "codify",
+      "source_hash": "137fc6f85284e0930b6b5ba6e541632f259e52cb7637a717c48132f1042f5ba6"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:1156",
+      "capability": "skill.codify",
+      "count": 1,
+      "detail": [
+        "self._maybe_codify_voice"
+      ],
+      "id": "0d558e84c779021b7724",
+      "kind": "codify",
+      "source_hash": "137fc6f85284e0930b6b5ba6e541632f259e52cb7637a717c48132f1042f5ba6"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:1159",
+      "capability": "text.plan_cancel_error",
+      "count": 1,
+      "detail": [
+        "chat_v2_error"
+      ],
+      "id": "05f05b88d38957c3aa42",
+      "kind": "event_type",
+      "source_hash": "1abaeaeb73eae0e62e1b6c439cf605344dd264b3cb3fa86bd4d1c42b4c178be1"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:1159",
+      "capability": "text.plan_cancel_error",
+      "count": 1,
+      "detail": [
+        "chat_v2_error"
+      ],
+      "id": "877cd940f3a43e53b76f",
+      "kind": "ws_send",
+      "source_hash": "af5e7c82066535886c0e319ea89cd93a090a4a45db905aee26ddd8d99147689c"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:1197",
+      "capability": "persistence.delivery",
+      "count": 1,
+      "detail": [
+        "sdb.append_message"
+      ],
+      "id": "14c55fa01c5d2b6cbd5e",
+      "kind": "session_sink",
+      "source_hash": "26496b7038606bb6f04ae7b706c486e2ecd147162f9546b4e367e9e03a35617f"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:1203",
+      "capability": "persistence.delivery",
+      "count": 1,
+      "detail": [
+        "vw.enqueue"
+      ],
+      "id": "2184660f008bf397d6ce",
+      "kind": "vector_sink",
+      "source_hash": "e5d8712bf96aaf7c0440053c5b81c1ee2f4f3a6cb4327ca1cabc149bce61dcc6"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:213",
+      "capability": "decision.permission",
+      "count": 1,
+      "detail": [
+        "task.cancel"
+      ],
+      "id": "afa7918b01339b95f6fc",
+      "kind": "cancel",
+      "source_hash": "ac9cd67055f9c8ce7e986e4bb89814531ef3ddb47a20a776009d935be446dc71"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:278",
+      "capability": "skill.codify",
+      "count": 1,
+      "detail": [
+        "self._codify_worker"
+      ],
+      "id": "de91a22f364db2d342c1",
+      "kind": "codify",
+      "source_hash": "b730f8ec609edc05ec4bae75221ad1bc0413af5b2b002b44fff2e1fa6c0dbbd3"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:289",
+      "capability": "skill.codify",
+      "count": 1,
+      "detail": [
+        "_maybe_codify_skill"
+      ],
+      "id": "4ccde84a2f3aaf2c8474",
+      "kind": "codify",
+      "source_hash": "6621735f9e02dbfd66d2b46134f0886e6750d53692d0881422ecc6b06dd3ef32"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:302",
+      "capability": "voice.presentation",
+      "count": 1,
+      "detail": [
+        "action_trigger",
+        "emotion_change"
+      ],
+      "id": "62b50d87ae1cb704d6a7",
+      "kind": "event_type",
+      "source_hash": "1c1a3231148d44799c087adbe2e9ab2781c79c21f5194d965c87271f2ac4a4d0"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:302",
+      "capability": "voice.presentation",
+      "count": 1,
+      "detail": [
+        "action_trigger",
+        "emotion_change"
+      ],
+      "id": "7d8a7c427deabf124633",
+      "kind": "ws_send",
+      "source_hash": "8c5ef1d619af69d6f2fc29755a787838c048160736819403466f53adaa60179f"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:335",
+      "capability": "voice.transport",
+      "count": 1,
+      "detail": [
+        "chat_v2_final",
+        "chat_v2_user_echo"
+      ],
+      "id": "584dcba866d78e7965b7",
+      "kind": "event_type",
+      "source_hash": "093d833da8b6a448be995b4189f46a060238590e4fab07c3d98dff9bfa5740ca"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:335",
+      "capability": "voice.transport",
+      "count": 1,
+      "detail": [
+        "chat_v2_final",
+        "chat_v2_user_echo"
+      ],
+      "id": "b62856e943affeea3a30",
+      "kind": "ws_send",
+      "source_hash": "21e40b8137e92eeabc6a1a8ee08049fcaec2877c24469b8348c445d5fd888f42"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:371",
+      "capability": "voice.presentation",
+      "count": 1,
+      "detail": [
+        "vad_event"
+      ],
+      "id": "cc69ea62dec3062acd69",
+      "kind": "event_type",
+      "source_hash": "f14f725c5e06570015c2dde6724becda458ad88794cbc77fc2aff17e69fab567"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:371",
+      "capability": "voice.presentation",
+      "count": 1,
+      "detail": [
+        "vad_event"
+      ],
+      "id": "38cf01b02f62bf94eb25",
+      "kind": "ws_send",
+      "source_hash": "0bc12a6b67080e1078c21b9c5ffcede051e264d577a46da705d04f825d963bfb"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:386",
+      "capability": "voice.presentation",
+      "count": 1,
+      "detail": [
+        "vad_event"
+      ],
+      "id": "3c969fe0fd905944e98d",
+      "kind": "event_type",
+      "source_hash": "8432c8325e048dab4e31da0b6306437bdf16d8852ac6d97614c3b6c26a017f8d"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:386",
+      "capability": "voice.presentation",
+      "count": 1,
+      "detail": [
+        "vad_event"
+      ],
+      "id": "f74df88ef36c0116c402",
+      "kind": "ws_send",
+      "source_hash": "7611c2f6fb55f0f37bafca17f41dae40314c44664239bc606e705efdddb44534"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:400",
+      "capability": "decision.permission",
+      "count": 1,
+      "detail": [
+        "prior.cancel"
+      ],
+      "id": "0316efe7e82c55a2ede3",
+      "kind": "cancel",
+      "source_hash": "8f0f7f8db015a21d3b26675bd54b94e6f10804037794bb9be6f5e818b450d09e"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:415",
+      "capability": "voice.presentation",
+      "count": 1,
+      "detail": [
+        "tts_barge_in"
+      ],
+      "id": "826c698fddcab2cead07",
+      "kind": "event_type",
+      "source_hash": "35fba57f762047777faddb66485d2a93a36089441bbebc7a8b2513cfebe35c00"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:415",
+      "capability": "voice.presentation",
+      "count": 1,
+      "detail": [
+        "tts_barge_in"
+      ],
+      "id": "36cd5d5c6c409741b581",
+      "kind": "ws_send",
+      "source_hash": "d0b41687b86083d31e7070b0b70edd19fa01a402a549b40332a68a40437e2a52"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:475",
+      "capability": "voice.transport",
+      "count": 1,
+      "detail": [
+        "transcript"
+      ],
+      "id": "0a0d824edce53fc6e6f7",
+      "kind": "event_type",
+      "source_hash": "1e92bcffd2b741f11497da27f767faf0517abb7f6d8d2884c0d5c413db077155"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:475",
+      "capability": "voice.transport",
+      "count": 1,
+      "detail": [
+        "transcript"
+      ],
+      "id": "7ddb7a71a14b5a9fd8bf",
+      "kind": "ws_send",
+      "source_hash": "9996abfefe644f2c6fa579da9113fb97ce3a278cc2626ddedb0967b09b724885"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:549",
+      "capability": "voice.transport",
+      "count": 1,
+      "detail": [
+        "transcript"
+      ],
+      "id": "25490a4ebc74548cc26a",
+      "kind": "event_type",
+      "source_hash": "1bb88a9b99811c88ffbb02c997252844c7e281b8f5ed427385b009ab154f935c"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:549",
+      "capability": "voice.transport",
+      "count": 1,
+      "detail": [
+        "transcript"
+      ],
+      "id": "e2510bfa83cc53944df4",
+      "kind": "ws_send",
+      "source_hash": "127578b834f9e97f088aaa6a2202c130aef520541ad9b39284ad33607ec088ed"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:588",
+      "capability": "voice.presentation",
+      "count": 1,
+      "detail": [
+        "lip_sync"
+      ],
+      "id": "7ad15061d750f8bba814",
+      "kind": "event_type",
+      "source_hash": "5bbe0d8b637449a50de78a20158117c1a5572a373537b4e98688994bf6c2e7bb"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:588",
+      "capability": "voice.presentation",
+      "count": 1,
+      "detail": [
+        "lip_sync"
+      ],
+      "id": "9115e1e56ca8a993ceb5",
+      "kind": "ws_send",
+      "source_hash": "d64e6bab9cb114bf2b6417c219ae936062744747b075e3fc7e005c778465d2b5"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:601",
+      "capability": "voice.presentation",
+      "count": 1,
+      "detail": [
+        "tts_end"
+      ],
+      "id": "f300506a6ab3c45fe8a6",
+      "kind": "event_type",
+      "source_hash": "39e5f9606efe22d95dd8be5c13acc8df21391d1bf48032f488f6f36cf49c916a"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:601",
+      "capability": "voice.presentation",
+      "count": 1,
+      "detail": [
+        "tts_end"
+      ],
+      "id": "68d01368267a44922362",
+      "kind": "ws_send",
+      "source_hash": "1c59c60e41a732bd097360d060903ff573835c98e59be5b2b933436f671f13e3"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:613",
+      "capability": "text.plan_cancel_error",
+      "count": 1,
+      "detail": [
+        "error"
+      ],
+      "id": "8e4f68d1732dceaa131a",
+      "kind": "event_type",
+      "source_hash": "73dab7eda66a785fa742c9aee1c68c54ca5e0e19f19b2a085c07ec3a7d4b643e"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:613",
+      "capability": "text.plan_cancel_error",
+      "count": 1,
+      "detail": [
+        "error"
+      ],
+      "id": "9e5200d94a010bb699c6",
+      "kind": "ws_send",
+      "source_hash": "4854be27ca9735fb7c27d88eecf3c756d0691f55755f98d401caf889032d01e0"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:732",
+      "capability": "decision.permission",
+      "count": 1,
+      "detail": [
+        "client.cancel"
+      ],
+      "id": "fd2b6da63a86e6fcda65",
+      "kind": "cancel",
+      "source_hash": "be15375f495f7d38e9bb7978809c4f76703fb909506fdfb8926f0dfebaab9abb"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:757",
+      "capability": "voice.transport",
+      "count": 1,
+      "detail": [
+        "run_event"
+      ],
+      "id": "b8c8cbcfd5cc26de1094",
+      "kind": "event_type",
+      "source_hash": "7f5c48951a0222025f714889540b74f413240f57f36c36c270637f942b143ea0"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:758",
+      "capability": "voice.transport",
+      "count": 1,
+      "detail": [
+        "run_event"
+      ],
+      "id": "788e68d5e25a0167e923",
+      "kind": "ws_send",
+      "source_hash": "3755713b13d04375962ff091a8807c549951f3e7869f82ea7c9f772e93e38d44"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:761",
+      "capability": "voice.transport",
+      "count": 1,
+      "detail": [
+        "run_event"
+      ],
+      "id": "66a8c0ae0eb542fdc6ca",
+      "kind": "ws_send",
+      "source_hash": "251a184ef06fb6d10ccb780a377c127e88db5bd7fb4ca4c28c9cd9a71c59a96f"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:766",
+      "capability": "voice.transport",
+      "count": 1,
+      "detail": [
+        "run_event"
+      ],
+      "id": "86a55634dd25e28c4f34",
+      "kind": "ws_send",
+      "source_hash": "7a3d4805a4228a27428b74baec059db67bc0b1d08d22529f0a97492a996c631e"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:781",
+      "capability": "text.plan_cancel_error",
+      "count": 1,
+      "detail": [
+        "error"
+      ],
+      "id": "006f0d86d1c6c343aae8",
+      "kind": "event_type",
+      "source_hash": "bf09b7b5ec6abf813fdcd4d4bbe0c39b1ffbae46d838b2e6d8cc7f716e8e6900"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:781",
+      "capability": "text.plan_cancel_error",
+      "count": 1,
+      "detail": [
+        "error"
+      ],
+      "id": "964970031f3161bd2054",
+      "kind": "ws_send",
+      "source_hash": "674547bd8c3b53b99a6b1b495b0cd0d9d21a9b5618824189826ea2988ce68654"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:871",
+      "capability": "persistence.delivery",
+      "count": 1,
+      "detail": [
+        "sdb.append_message"
+      ],
+      "id": "9cb493325cb68c09f6c0",
+      "kind": "session_sink",
+      "source_hash": "9da56f58ce03647a48bd2fe7f31971912fea38be07d47219718563911fb3a0b1"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:875",
+      "capability": "persistence.delivery",
+      "count": 1,
+      "detail": [
+        "vw.enqueue"
+      ],
+      "id": "374508257c77f8545385",
+      "kind": "vector_sink",
+      "source_hash": "becd65b07843c3011f63a178a62d64b6e9285d08596d38a02a5e39e3f1ec8bbc"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:884",
+      "capability": "context.system",
+      "count": 1,
+      "detail": [
+        "assembler.assemble"
+      ],
+      "id": "fa4a2ba2c7f57acb46cf",
+      "kind": "context_sink",
+      "source_hash": "de986d51e9ac9719cbaf69fcc52cf56dfedc30f135c1fe331fe7e24b21dda812"
+    },
+    {
+      "callsite": "backend/pipeline/voice_pipeline.py:914",
+      "capability": "context.system",
+      "count": 1,
+      "detail": [
+        "ContextFragment"
+      ],
+      "id": "819083c05029e31337b9",
+      "kind": "context_sink",
+      "source_hash": "792d8f5be3ecad5d22774fd48a2df738ca5f5e13c25eaa2ba08549768efc5e80"
+    }
+  ],
+  "required_capabilities": [
+    "text.user_echo",
+    "text.assistant",
+    "text.plan_cancel_error",
+    "tool.lifecycle",
+    "auto_resume",
+    "voice.transport",
+    "voice.presentation",
+    "context.system",
+    "persistence.delivery",
+    "decision.permission",
+    "skill.codify"
+  ],
+  "schema_version": 1,
+  "sources": [
+    {
+      "line_end": 11028,
+      "line_start": 8776,
+      "path": "backend/main.py",
+      "source_hash": "b8d81d470815c8e5875035b8f148a7b459f6867eba52570b7c40c5b275fc2523",
+      "symbol": "_run_chat"
+    },
+    {
+      "line_end": 1175,
+      "line_start": 1063,
+      "path": "backend/main.py",
+      "source_hash": "b5f4fba7be3e2e59a7d60f54905b4c740a8c186647a8b96cd843d45f0cb29dac",
+      "symbol": "_maybe_codify_skill"
+    },
+    {
+      "line_end": 3449,
+      "line_start": 3441,
+      "path": "backend/main.py",
+      "source_hash": "bfdb23f3607c5ec31013e8190cfc5e154bd8f77d423fb7cd266dd8619c7fe842",
+      "symbol": "_workflow_artifact_publisher"
+    },
+    {
+      "line_end": 5197,
+      "line_start": 5158,
+      "path": "backend/main.py",
+      "source_hash": "016451c523062f85367fe89ae8d7ae30d44f8c9eab0fc5e27afff81174885ebc",
+      "symbol": "_auto_resume_dispatch"
+    },
+    {
+      "line_end": 5208,
+      "line_start": 5200,
+      "path": "backend/main.py",
+      "source_hash": "b0ef7754c63bc7bad6ee41a3288f5d012901684a49ae68bf862f377da1e9ea66",
+      "symbol": "_auto_resume_emit"
+    },
+    {
+      "line_end": 5225,
+      "line_start": 5211,
+      "path": "backend/main.py",
+      "source_hash": "dc4b3ef569748c474c62a602ebfa6c5b82f31655550cd2b0f09f82462ac07445",
+      "symbol": "_auto_resume_audit"
+    },
+    {
+      "line_end": 1209,
+      "line_start": 122,
+      "path": "backend/pipeline/voice_pipeline.py",
+      "source_hash": "cf5af6edfd26f9e6e96b9999757e1339e3d9f6cbb415ce02887409933c333c03",
+      "symbol": "VoicePipeline"
+    },
+    {
+      "line_end": 339,
+      "line_start": 114,
+      "path": "backend/agent/auto_resume.py",
+      "source_hash": "83cc607f6bcf65942f4b11b2ebe401af9e6c4174abf1ef1862ed9866f7fbf648",
+      "symbol": "AutoResumeOrchestrator"
+    },
+    {
+      "line_end": 593,
+      "line_start": 326,
+      "path": "backend/deskpet/workflows/adapters/product_delivery.py",
+      "source_hash": "8922ab42515ac04e32857bc5f3c67cceb44b732420e85fbffc3091854db60afd",
+      "symbol": "ProductDeliveryAdapter"
+    }
+  ],
+  "turn_input_fields": [
+    "text",
+    "session_id",
+    "request_id",
+    "turn_id",
+    "venue",
+    "mode",
+    "memory_policy",
+    "explicit_new",
+    "attachment_blocks",
+    "provider_ref",
+    "capability_ref",
+    "workspace_ref"
+  ],
+  "unmapped_count": 0
+}

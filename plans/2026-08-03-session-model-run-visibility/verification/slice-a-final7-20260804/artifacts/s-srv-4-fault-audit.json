@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "source": "read-only state.db provider_workload_audit and workflow.db execution_runs",
+  "maintenance_faults": [
+    {
+      "stable_call_id": "a0547a0e6c3d11a6b832cba887a14ba1",
+      "workload_class": "system-maintenance",
+      "callsite_id": "provider.maintenance_probe",
+      "detached": true,
+      "session_id": null,
+      "root_run_id": null,
+      "status": "failed",
+      "error_class": "ProviderFaultInjectedError",
+      "injection_ref": "s4-final-maintenance-401-ref",
+      "injection_correlation_hash": "8e7c1257911d682a95d590719b9ffc25d52c55e4824a020f5d287b48e1e04f41"
+    },
+    {
+      "stable_call_id": "601f82e398f68f58d5aadd1000e300fd",
+      "workload_class": "system-maintenance",
+      "callsite_id": "provider.maintenance_probe",
+      "detached": true,
+      "session_id": null,
+      "root_run_id": null,
+      "status": "failed",
+      "error_class": "ProviderFaultInjectedError",
+      "injection_ref": "s4-final-maintenance-402-ref",
+      "injection_correlation_hash": "6a7968658fc7b77e3fa9c7b42e9e316d1689f092514312978d5408d022763f43"
+    }
+  ],
+  "user_roots": [
+    {
+      "scenario": "401-isolation",
+      "run_id": "e6acd3abbe85519ca1f6736329bb3aa3",
+      "session_id": "174da013-692a-4129-98a6-31f58c36648a",
+      "status": "completed",
+      "provider_id": "relay-cloud",
+      "model_id": "kimi-k3",
+      "evidence": "s-srv-4-401-independent-user-data.png"
+    },
+    {
+      "scenario": "402-isolation",
+      "run_id": "11dac2d13ae954ddae8c3cde9b3658cf",
+      "session_id": "d9884701-9825-41bc-b2c2-fa1e7edef792",
+      "status": "completed",
+      "provider_id": "relay-cloud",
+      "model_id": "kimi-k3",
+      "evidence": "s-srv-4-402-independent-user-data.png"
+    }
+  ],
+  "assertion": "detached maintenance 401 and 402 failures did not mutate or terminate the pinned Kimi session roots"
+}

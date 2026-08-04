@@ -1,0 +1,3686 @@
+{
+  "dynamic_evidence": {
+    "captured_commit": "69c6980ae7297997fdffd3c49770adbf0c7e5c80",
+    "complete": true,
+    "schema_version": 1,
+    "stacks": [
+      {
+        "legacy_frames": [
+          {
+            "path": "backend/main.py",
+            "qualname": "control_channel._run_chat"
+          }
+        ],
+        "stack_id": "text-chat"
+      },
+      {
+        "legacy_frames": [
+          {
+            "path": "backend/main.py",
+            "qualname": "control_channel._run_chat_with_timeout"
+          }
+        ],
+        "stack_id": "text-timeout"
+      },
+      {
+        "legacy_frames": [
+          {
+            "path": "backend/main.py",
+            "qualname": "lifespan._auto_resume_dispatch"
+          }
+        ],
+        "stack_id": "auto-resume"
+      },
+      {
+        "legacy_frames": [
+          {
+            "path": "backend/agent/legacy_agent_loop_tool_runtime.py",
+            "qualname": "LegacyAgentLoopToolRuntime.run_round"
+          }
+        ],
+        "stack_id": "agent-loop-tools"
+      },
+      {
+        "legacy_frames": [
+          {
+            "path": "backend/agent/legacy_subagent_bridge.py",
+            "qualname": "LegacySubagentBridge.drain"
+          }
+        ],
+        "stack_id": "subagent-bridge"
+      },
+      {
+        "legacy_frames": [
+          {
+            "path": "backend/pipeline/voice_pipeline.py",
+            "qualname": "VoicePipeline._run_legacy_chat_stream"
+          }
+        ],
+        "stack_id": "voice-chat"
+      },
+      {
+        "legacy_frames": [
+          {
+            "path": "backend/pipeline/voice_pipeline.py",
+            "qualname": "VoicePipeline._run_with_tools"
+          }
+        ],
+        "stack_id": "voice-tools"
+      },
+      {
+        "legacy_frames": [
+          {
+            "path": "backend/deskpet/agent/subagent_registry.py",
+            "qualname": "SubagentRegistry"
+          }
+        ],
+        "stack_id": "subagent-registry"
+      },
+      {
+        "legacy_frames": [
+          {
+            "path": "backend/main.py",
+            "qualname": "_maybe_codify_skill"
+          }
+        ],
+        "stack_id": "skill-codify"
+      },
+      {
+        "legacy_frames": [
+          {
+            "path": "backend/main.py",
+            "qualname": "_ppt_outline_propose"
+          }
+        ],
+        "stack_id": "ppt-outline"
+      },
+      {
+        "legacy_frames": [
+          {
+            "path": "backend/main.py",
+            "qualname": "_start_workflow_ppt_outline_resume"
+          }
+        ],
+        "stack_id": "ppt-resume"
+      },
+      {
+        "legacy_frames": [
+          {
+            "path": "backend/main.py",
+            "qualname": "_wire_ppt_pro_services_for_startup"
+          }
+        ],
+        "stack_id": "ppt-startup"
+      },
+      {
+        "legacy_frames": [
+          {
+            "path": "backend/deskpet/tools/ppt_tools.py",
+            "qualname": "_ppt_pro_orchestrate"
+          }
+        ],
+        "stack_id": "ppt-orchestrate"
+      },
+      {
+        "legacy_frames": [
+          {
+            "path": "backend/deskpet/tools/ppt_tools.py",
+            "qualname": "_handle_ppt_pro"
+          }
+        ],
+        "stack_id": "ppt-handler"
+      }
+    ]
+  },
+  "files": [
+    {
+      "git_blob": "2f62637d61e632b22184d88e3521a89479b0e564",
+      "path": "backend/agent/legacy_agent_loop_tool_runtime.py",
+      "source_hash": "1d8e5cf7fd38cb9a78152cb506e9267afb98f5b68080cf8074fe9fde74206be7"
+    },
+    {
+      "git_blob": "cd7461bb03c3b3b8530236e9510a17f5cfcf2457",
+      "path": "backend/agent/legacy_subagent_bridge.py",
+      "source_hash": "f150bc07ec03d3d558855bdf01dd994af12082e35062a218e706705689fce501"
+    },
+    {
+      "git_blob": "19febbb3dac4b281b2b5525aa72b98479638823b",
+      "path": "backend/deskpet/agent/subagent_registry.py",
+      "source_hash": "5218d6b0b9777eb11e7313e9661db564893662f97d738cca6a1c5aac62725ef4"
+    },
+    {
+      "git_blob": "73114a75e85fbaed9a4d4f8a38754f359ebb02da",
+      "path": "backend/deskpet/permissions/gate.py",
+      "source_hash": "782f019fd3f8437abd46dc55f619859594251fe72545d847b819f9ed21634e8f"
+    },
+    {
+      "git_blob": "ccf0d66721e9321829d47a81c47e299c282d1ea2",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "source_hash": "79bcaddb60caf5bedba127157b4ed1c49c7b466ffbc79868011ea54bd9ba44a2"
+    },
+    {
+      "git_blob": "ec0f33acefd93da14cf2310628a0aad306351bae",
+      "path": "backend/main.py",
+      "source_hash": "9e734e67cf15660652e1dc6ed4377174dcbe6108dd58882b8756fe986c5bac64"
+    },
+    {
+      "git_blob": "347f0e94e19747dd4510bb2b5b06222e7d582755",
+      "path": "backend/pipeline/voice_pipeline.py",
+      "source_hash": "18af357322e35aa9e83bf1204baaad02ab7f11be26f9f19aa3b6cf96ff0bf2da"
+    }
+  ],
+  "owner_count": 15,
+  "roots": [
+    {
+      "path": "backend/main.py",
+      "qualname": "control_channel._run_chat"
+    },
+    {
+      "path": "backend/main.py",
+      "qualname": "control_channel._run_chat_with_timeout"
+    },
+    {
+      "path": "backend/main.py",
+      "qualname": "lifespan._auto_resume_dispatch"
+    },
+    {
+      "path": "backend/agent/legacy_agent_loop_tool_runtime.py",
+      "qualname": "LegacyAgentLoopToolRuntime.run_round"
+    },
+    {
+      "path": "backend/agent/legacy_subagent_bridge.py",
+      "qualname": "LegacySubagentBridge.drain"
+    },
+    {
+      "path": "backend/pipeline/voice_pipeline.py",
+      "qualname": "VoicePipeline._run_legacy_chat_stream"
+    },
+    {
+      "path": "backend/pipeline/voice_pipeline.py",
+      "qualname": "VoicePipeline._run_with_tools"
+    },
+    {
+      "path": "backend/deskpet/agent/subagent_registry.py",
+      "qualname": "SubagentRegistry"
+    },
+    {
+      "path": "backend/main.py",
+      "qualname": "_maybe_codify_skill"
+    },
+    {
+      "path": "backend/main.py",
+      "qualname": "_ppt_outline_propose"
+    },
+    {
+      "path": "backend/main.py",
+      "qualname": "_start_workflow_ppt_outline_resume"
+    },
+    {
+      "path": "backend/main.py",
+      "qualname": "_wire_ppt_pro_services_for_startup"
+    },
+    {
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_ppt_pro_orchestrate"
+    },
+    {
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_handle_ppt_pro"
+    }
+  ],
+  "schema_version": 1,
+  "source_commit": "69c6980ae7297997fdffd3c49770adbf0c7e5c80",
+  "spans": [
+    {
+      "direct_callees": [
+        "isinstance",
+        "self._dispatch_tool_untraced",
+        "self._tool_completion_semantics",
+        "sorted",
+        "traced_call"
+      ],
+      "end_line": 747,
+      "kind": "AsyncFunctionDef",
+      "line": 719,
+      "normalized_ast_hash": "7324379d6f1085237f3394ef974e164b0c424bb83380aa392c472ea714d42253",
+      "path": "backend/agent/legacy_agent_loop_tool_runtime.py",
+      "qualname": "LegacyAgentLoopToolRuntime._dispatch_tool",
+      "root": false,
+      "source_hash": "5d3a24737cb9f598f19c675da52895870df5f89966b75dd2962ea6cc0f713677",
+      "statement_count": 2
+    },
+    {
+      "direct_callees": [
+        "_json.dumps",
+        "inspect.isawaitable",
+        "isinstance",
+        "len",
+        "logger.warning",
+        "loop.tools.dispatch",
+        "loop.tools.execute_tool",
+        "str",
+        "type"
+      ],
+      "end_line": 842,
+      "kind": "AsyncFunctionDef",
+      "line": 748,
+      "normalized_ast_hash": "a1733be379ee069d02ed62bbf7da14888c71a7e71386146c7ea7e7084b38ebd1",
+      "path": "backend/agent/legacy_agent_loop_tool_runtime.py",
+      "qualname": "LegacyAgentLoopToolRuntime._dispatch_tool_untraced",
+      "root": false,
+      "source_hash": "2a517d2788366b3cdf8a2d208efca69a5d6dfa4e7c611c146d51c2796df74ad7",
+      "statement_count": 26
+    },
+    {
+      "direct_callees": [
+        "all_specs",
+        "callable",
+        "get_spec",
+        "getattr"
+      ],
+      "end_line": 718,
+      "kind": "FunctionDef",
+      "line": 704,
+      "normalized_ast_hash": "47af248332cedae46d5656451faa5f349cfbe7bfc0a97de71581810345d942d9",
+      "path": "backend/agent/legacy_agent_loop_tool_runtime.py",
+      "qualname": "LegacyAgentLoopToolRuntime._tool_completion_semantics",
+      "root": false,
+      "source_hash": "270d07a7584d108bdbabca776d73b7f38f8f74258a2b4552b46fcd908681cdae",
+      "statement_count": 15
+    },
+    {
+      "direct_callees": [
+        "PreparedToolCapability",
+        "RuntimeError",
+        "_args_hash",
+        "_candidate.logical_schemas",
+        "_control.get",
+        "_inner.get",
+        "_json.dumps",
+        "_json_at.dumps",
+        "_json_at.loads",
+        "_json_flush.dumps",
+        "_json_sk.loads",
+        "_loop_api.AsyncHandoffEvent",
+        "_loop_api.ErrorEvent",
+        "_loop_api.FinalEvent",
+        "_loop_api.ToolBatchEvent",
+        "_loop_api.ToolCallEvent",
+        "_loop_api.ToolResultEvent",
+        "_loop_api._REPEAT_NUDGE_MSG.format",
+        "_loop_api._append_loop_control",
+        "_loop_api._append_loop_transcript",
+        "_loop_api._async_handoff_details",
+        "_loop_api._classify_tool_result",
+        "_loop_api._context_fragment_id",
+        "_loop_api._deepresearch_result_is_complete",
+        "_loop_api._extract_break_detail",
+        "_loop_api._inject_loop_user_request",
+        "_loop_api._latest_context_anchor",
+        "_loop_api._planned_generation_reserve",
+        "_outer.get",
+        "_sargs.get",
+        "_sargs_d.get",
+        "_scope_store.commit_prevalidated",
+        "_scope_store.get",
+        "_scope_store.lock_for",
+        "any",
+        "asyncio.gather",
+        "call_order.append",
+        "copy.deepcopy",
+        "current_tool_set.activate",
+        "dict",
+        "estimate_request_budget",
+        "getattr",
+        "int",
+        "isinstance",
+        "json.dumps",
+        "len",
+        "list",
+        "logger.info",
+        "logger.warning",
+        "loop._convergence_controller.evaluate",
+        "loop._ctx.config._resolved_model_info",
+        "loop._ctx.record_tool_result",
+        "loop._evidence_gate.is_investigative",
+        "loop._gate.allows_tool",
+        "loop._gate.record_final_answer",
+        "loop._gate.record_tool_call",
+        "loop._gate.summary",
+        "loop._persist_activation_tool_context_locked",
+        "loop._pipeline_event",
+        "loop._remount_skills",
+        "loop._skills_used_order.append",
+        "loop._skills_used_this_run.add",
+        "loop._tracer.record",
+        "loop._workflow_service.deliver_event_once",
+        "loop.activity_store.get",
+        "loop.tool_path_recorder.record_tool",
+        "loop.tools.validate_prepared_tool_set",
+        "next",
+        "prepare_openai_tool_payload",
+        "self._dispatch_tool",
+        "self._tool_completion_semantics",
+        "sig_window.get",
+        "str",
+        "tool_coros.append",
+        "traced_call",
+        "tuple",
+        "type",
+        "zip"
+      ],
+      "end_line": 703,
+      "kind": "AsyncFunctionDef",
+      "line": 33,
+      "normalized_ast_hash": "0c06b3a6d6a9ac1376e2ff7740d13878ab7fd8d2fdcb765c7e0f95f0df85b4f4",
+      "path": "backend/agent/legacy_agent_loop_tool_runtime.py",
+      "qualname": "LegacyAgentLoopToolRuntime.run_round",
+      "root": true,
+      "source_hash": "84637f0da3cbaabf8d700299ef79dbe3ceed6ed0c20f3433f357893acf18591e",
+      "statement_count": 210
+    },
+    {
+      "direct_callees": [
+        "_loop_api.SubagentCompletionEvent",
+        "_loop_api._append_loop_control",
+        "_loop_api._latest_context_anchor",
+        "events.append",
+        "last.get",
+        "queue.empty",
+        "queue.get_nowait",
+        "queue.put_nowait",
+        "tuple"
+      ],
+      "end_line": 58,
+      "kind": "FunctionDef",
+      "line": 10,
+      "normalized_ast_hash": "b2d8d24046a6bbc363d2e674d766d13edd63534df996c54e4135e32565cf1b86",
+      "path": "backend/agent/legacy_subagent_bridge.py",
+      "qualname": "LegacySubagentBridge.drain",
+      "root": true,
+      "source_hash": "08e48098b5f95eff4ad5a6e0d41c17894077d22d628579c6bd3c4ab45da5d526",
+      "statement_count": 16
+    },
+    {
+      "direct_callees": [],
+      "end_line": 107,
+      "kind": "ClassDef",
+      "line": 48,
+      "normalized_ast_hash": "4a40e0b4ab521b1d1a4b5b98d679e44af3d6ff4c4d7773375bfbc73f1e7a35ae",
+      "path": "backend/deskpet/agent/subagent_registry.py",
+      "qualname": "SubagentRegistry",
+      "root": true,
+      "source_hash": "38cfee4a5667a97bb9cbfa55d206d24d1e2c7e84c317a802806b270cd906edb1",
+      "statement_count": 48
+    },
+    {
+      "direct_callees": [],
+      "end_line": 52,
+      "kind": "owner",
+      "line": 52,
+      "normalized_ast_hash": "ba6e0a9ebf51e5a7d8d2ca3ed44b62d3d2b432e2588932b94fcc1246308eae84",
+      "path": "backend/deskpet/agent/subagent_registry.py",
+      "qualname": "SubagentRegistry._runs",
+      "root": true,
+      "source_hash": "82d3fe13aa7287d0f493925e26af964d0edc496f3675de8d6fc8f43f70ee030d",
+      "statement_count": 1
+    },
+    {
+      "direct_callees": [
+        "asyncio.Queue"
+      ],
+      "end_line": 53,
+      "kind": "owner",
+      "line": 53,
+      "normalized_ast_hash": "b2a144cdc6bca4183bd373254d01639b9d00dad8c862121bf7be12d02a6fe620",
+      "path": "backend/deskpet/agent/subagent_registry.py",
+      "qualname": "SubagentRegistry.completion_queue",
+      "root": true,
+      "source_hash": "14c92e0b53f5da3c332c8a57bdeeaaa555de77ce99dc212d3bdf884555ebf4a9",
+      "statement_count": 1
+    },
+    {
+      "direct_callees": [],
+      "end_line": 117,
+      "kind": "owner",
+      "line": 117,
+      "normalized_ast_hash": "36db2f6324969d3345dbccb1d5aa5ae88466de66a6540b62487a88ce50e20f90",
+      "path": "backend/deskpet/permissions/gate.py",
+      "qualname": "PermissionGate._pending",
+      "root": true,
+      "source_hash": "05e00abf586c0a37ae12064b209650f64f21790f4585e87fdba6b53e7a866a94",
+      "statement_count": 1
+    },
+    {
+      "direct_callees": [],
+      "end_line": 253,
+      "kind": "owner",
+      "line": 253,
+      "normalized_ast_hash": "ae0b0225fdeb90a7dc4529d77788acfe0866e1afea6b6823d1c87c6b7d56cbf8",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "<module>.Inches",
+      "root": false,
+      "source_hash": "5d9c00aa94bcf30cd084f87f3374f636dd782e6a044b6abf25dee5c5dd9b05e9",
+      "statement_count": 1
+    },
+    {
+      "direct_callees": [],
+      "end_line": 253,
+      "kind": "owner",
+      "line": 253,
+      "normalized_ast_hash": "ae0b0225fdeb90a7dc4529d77788acfe0866e1afea6b6823d1c87c6b7d56cbf8",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "<module>.Pt",
+      "root": false,
+      "source_hash": "5d9c00aa94bcf30cd084f87f3374f636dd782e6a044b6abf25dee5c5dd9b05e9",
+      "statement_count": 1
+    },
+    {
+      "direct_callees": [],
+      "end_line": 253,
+      "kind": "owner",
+      "line": 253,
+      "normalized_ast_hash": "ae0b0225fdeb90a7dc4529d77788acfe0866e1afea6b6823d1c87c6b7d56cbf8",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "<module>.RGBColor",
+      "root": false,
+      "source_hash": "5d9c00aa94bcf30cd084f87f3374f636dd782e6a044b6abf25dee5c5dd9b05e9",
+      "statement_count": 1
+    },
+    {
+      "direct_callees": [],
+      "end_line": 75,
+      "kind": "owner",
+      "line": 75,
+      "normalized_ast_hash": "7df954eb2a5083753ffb20f8a32c923639eebb9e58991f8b55c9a680a07c5d22",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "<module>._PPT_PRO_CTX",
+      "root": true,
+      "source_hash": "ae5b47ba6290455eca71c5058f1f73153df2130f9fbb8138f297e2c999ca858a",
+      "statement_count": 1
+    },
+    {
+      "direct_callees": [],
+      "end_line": 77,
+      "kind": "owner",
+      "line": 77,
+      "normalized_ast_hash": "5de118d01c7f619cfcec559c8c8734422f51256fadd7184c49698803c7b3b83b",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "<module>._PPT_PRO_RUNNING",
+      "root": true,
+      "source_hash": "bbe78ef6d94c3df0bcc436db110c1fecbf5f4aaaf2f06e5f6ca90c413608cd18",
+      "statement_count": 1
+    },
+    {
+      "direct_callees": [],
+      "end_line": 78,
+      "kind": "owner",
+      "line": 78,
+      "normalized_ast_hash": "216d871445a7a0df5d713e884e04166ec2bae0064e7ee043bdbf243f69d9e4d1",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "<module>._PPT_PRO_RUNNING_TOPIC",
+      "root": true,
+      "source_hash": "6c8bf8b63779923e1f529b8fd6deb6017f1356f6184c0fadc31b19478cc33c8c",
+      "statement_count": 1
+    },
+    {
+      "direct_callees": [
+        "set"
+      ],
+      "end_line": 76,
+      "kind": "owner",
+      "line": 76,
+      "normalized_ast_hash": "cd29b8fc3613d4b559172c5c8f304cc78099cd56f1639904d87de723c390f8f9",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "<module>._PPT_PRO_TASKS",
+      "root": true,
+      "source_hash": "f3f060450f2dd31dcce74a6faf3527eee1f4b0ecfa65e015d7e04e4f0ac4bf16",
+      "statement_count": 1
+    },
+    {
+      "direct_callees": [],
+      "end_line": 252,
+      "kind": "owner",
+      "line": 252,
+      "normalized_ast_hash": "d459e97db4ce1cb13f9900c789b5e8c8df7fc437d340eca8b127a2dc693bbda5",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "<module>._Presentation",
+      "root": false,
+      "source_hash": "3eec54776c7bc03be0c275bf5aa5eef7200f03eeff0d48ed2b24e5eb2c9eb2ae",
+      "statement_count": 1
+    },
+    {
+      "direct_callees": [
+        "field"
+      ],
+      "end_line": 442,
+      "kind": "ClassDef",
+      "line": 375,
+      "normalized_ast_hash": "b63449e9998a7c942a1731da4e0ccf917abf5fd3a4ea718599541e2fb5ad0558",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "SlideOutline",
+      "root": false,
+      "source_hash": "27653b1878db0cc4d500902f9587a374e540f892d8d57f21dfa3e618d9250a72",
+      "statement_count": 27
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.lower",
+        "<dynamic>.strip",
+        "SlideOutline",
+        "float",
+        "isinstance",
+        "log.debug",
+        "str"
+      ],
+      "end_line": 442,
+      "kind": "FunctionDef",
+      "line": 409,
+      "normalized_ast_hash": "da10ef89d53fc053932882c6e475128557c5522f797703aff153c5a8d21f7737",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "SlideOutline.normalize",
+      "root": false,
+      "source_hash": "f9e01d3371e306d85d05bed74c3441ac0a356489a40e4deba08236b183c0d655",
+      "statement_count": 7
+    },
+    {
+      "direct_callees": [
+        "Inches",
+        "_add_text"
+      ],
+      "end_line": 2267,
+      "kind": "FunctionDef",
+      "line": 2254,
+      "normalized_ast_hash": "841df79e5f9fa203e162bfc513595913db98f1754d626c972264cf21cd7e7aec",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_add_footer",
+      "root": false,
+      "source_hash": "01011f80a1d66904e805300b4a6baa8b4eca9157fb057e1dd8846e7869e961cc",
+      "statement_count": 4
+    },
+    {
+      "direct_callees": [
+        "_rgb",
+        "shape.fill.solid",
+        "shape.line.fill.background",
+        "slide.shapes.add_shape"
+      ],
+      "end_line": 957,
+      "kind": "FunctionDef",
+      "line": 939,
+      "normalized_ast_hash": "d42f4057ab4edd7f5dbb3973998b13ab909ed475111467f4b2801a786ab40896",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_add_shape",
+      "root": false,
+      "source_hash": "9756eb6c8d560e59e193ddf866760e3dd3f498edd1b91f31e21ba05feac7c6d6",
+      "statement_count": 8
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.get",
+        "Inches",
+        "Pt",
+        "_estimate_capacity",
+        "_fit_font_size",
+        "_rgb",
+        "_shorten",
+        "p.add_run",
+        "slide.shapes.add_textbox"
+      ],
+      "end_line": 1021,
+      "kind": "FunctionDef",
+      "line": 978,
+      "normalized_ast_hash": "56c78c0e6776cdf52c51d399bb97c393ff620ea3cbb3b5a48c47b21c867a46da",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_add_text",
+      "root": false,
+      "source_hash": "f0281d3bde8b2647dbdca90da9797a55b830a6d9dfb6c93130a52b6598796f35",
+      "statement_count": 21
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.strip",
+        "_iter_design_text_shapes",
+        "_shape_mostly_in_canvas",
+        "_shape_reading_key",
+        "_shape_text_len",
+        "_shape_text_max_pt",
+        "_txt.isdigit",
+        "decor.append",
+        "decor_nums.append",
+        "float",
+        "item.get",
+        "len",
+        "max",
+        "records.append",
+        "sorted"
+      ],
+      "end_line": 3422,
+      "kind": "FunctionDef",
+      "line": 3322,
+      "normalized_ast_hash": "8b254e51d791fd587ad47184bbeba6b162681e1b94e2aa93ed4aa2e4a56656e4",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_analyze_design_page",
+      "root": false,
+      "source_hash": "4fc0d94bf3ef4becbd9aee564fc2a92c95b2398f222a818467cb97db5105c162",
+      "statement_count": 32
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.lower",
+        "<dynamic>.strip",
+        "int",
+        "len",
+        "log.info",
+        "r.get",
+        "round",
+        "str"
+      ],
+      "end_line": 4609,
+      "kind": "FunctionDef",
+      "line": 4578,
+      "normalized_ast_hash": "b362c49eafe6b39faaffe79705aa68f75e72f65b37e2a5c008b5accf4afb5f01",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_apply_review_actions",
+      "root": false,
+      "source_hash": "a6ad8838998d9a818bad743de2ced56408e57122e1e939e1d60414edce5919f5",
+      "statement_count": 23
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.add",
+        "banned_pages.setdefault",
+        "int",
+        "len",
+        "log.info",
+        "r.get",
+        "round",
+        "set",
+        "str"
+      ],
+      "end_line": 4713,
+      "kind": "FunctionDef",
+      "line": 4679,
+      "normalized_ast_hash": "75d4b26046b15a9ca2754e8dc12778ffcb57c35709f1a36662aa884262a8cbf6",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_apply_review_actions_template",
+      "root": false,
+      "source_hash": "59d56dbb3538dd6b8dbeb14fc43a30651496c7fc7663f0036f2afc984e8058b5",
+      "statement_count": 22
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.lower",
+        "<dynamic>.strip",
+        "bool",
+        "enumerate",
+        "len",
+        "log.debug",
+        "str"
+      ],
+      "end_line": 2784,
+      "kind": "FunctionDef",
+      "line": 2754,
+      "normalized_ast_hash": "e4e472975a37b11db40d7cc36e87a0175e3756109fcc99879bd860ca6419ba25",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_assign_image_layouts",
+      "root": false,
+      "source_hash": "bcbb14f434badc2d7a0db6e525de255b3fddd381dbd492cd2cd9d81013fdc769",
+      "statement_count": 22
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.append",
+        "<dynamic>.strip",
+        "OrderedDict",
+        "_VARIANT_NEG_SPACE.get",
+        "_assign_image_layouts",
+        "_resolve_image_variant",
+        "enumerate",
+        "generate_images",
+        "groups.items",
+        "groups.setdefault",
+        "isinstance",
+        "log.debug",
+        "log.warning",
+        "result.get",
+        "str",
+        "zip"
+      ],
+      "end_line": 2827,
+      "kind": "FunctionDef",
+      "line": 2787,
+      "normalized_ast_hash": "83e20a4247a37b811e6431a6b798a5bfe3095298a6717be08dcb21daa28328df",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_autofill_image_prompts",
+      "root": false,
+      "source_hash": "55f3b50057d9852495318f96f903d23afcdc95b928971fc83306f26d8c24085b",
+      "statement_count": 27
+    },
+    {
+      "direct_callees": [
+        "_assign_image_layouts",
+        "_image_prompt_payload",
+        "_should_fallback",
+        "enumerate",
+        "generate_images",
+        "isinstance",
+        "log.debug",
+        "log.warning",
+        "res.get",
+        "res0.get",
+        "str"
+      ],
+      "end_line": 2907,
+      "kind": "FunctionDef",
+      "line": 2866,
+      "normalized_ast_hash": "af97827d822d444c0a1294d3294dfa34d3fbed19a69073923dc7590a773d490a",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_autofill_with_connectivity_gate",
+      "root": false,
+      "source_hash": "d02ce94dd7428831f0e7a274eedbcf033083f5ac9905abb4154a50ffa8d030b3",
+      "statement_count": 34
+    },
+    {
+      "direct_callees": [
+        "abs",
+        "min",
+        "page.get"
+      ],
+      "end_line": 3535,
+      "kind": "FunctionDef",
+      "line": 3521,
+      "normalized_ast_hash": "53123333011c8051d6db9c4a3be4fb235bf8eefca360a9b4cf852fccbc7d1543",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_best_design_content_page",
+      "root": false,
+      "source_hash": "f764ba5ee07a1e21e1022094372ca47f4919102c057ca564be359c766e19a454",
+      "statement_count": 5
+    },
+    {
+      "direct_callees": [
+        "feedback.strip",
+        "int",
+        "max",
+        "prev_md.strip",
+        "research_md.strip"
+      ],
+      "end_line": 784,
+      "kind": "FunctionDef",
+      "line": 742,
+      "normalized_ast_hash": "0215a4a3898a0a9ca8b54c1b8904e3acaca4f1c71f826b76f51913e86ed7d326",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_build_outline_prompt",
+      "root": false,
+      "source_hash": "1b95b33d9beec6fc0edebfc298ef6f7374b4d7407031675cfa26087b249067c9",
+      "statement_count": 10
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.lower",
+        "bool",
+        "isinstance",
+        "raw.get",
+        "val.strip"
+      ],
+      "end_line": 111,
+      "kind": "FunctionDef",
+      "line": 105,
+      "normalized_ast_hash": "64f34e99600dcc02ee39fc5daf0ab3cb6cc9a4aac6035553c4c61cb5dc2b01a2",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_cfg_bool",
+      "root": false,
+      "source_hash": "39cdaa11ee288a9563557bb8ea6b6e3532a7da25f9a1f79eb09bae4880497671",
+      "statement_count": 7
+    },
+    {
+      "direct_callees": [
+        "float",
+        "raw.get"
+      ],
+      "end_line": 125,
+      "kind": "FunctionDef",
+      "line": 121,
+      "normalized_ast_hash": "9e46eae196725756afba120f9ab59576cf0b0d404228894fae214342177ddf9b",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_cfg_float",
+      "root": false,
+      "source_hash": "ced2590906122ae7004748892947907f903a324aaff97cad146dab0813bca1ca",
+      "statement_count": 4
+    },
+    {
+      "direct_callees": [
+        "int",
+        "raw.get"
+      ],
+      "end_line": 118,
+      "kind": "FunctionDef",
+      "line": 114,
+      "normalized_ast_hash": "4d4f79ab96f4c887267783527e9a38b3aaf2ea4ac359a5225ae6be14a761c112",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_cfg_int",
+      "root": false,
+      "source_hash": "a74cc1e5b907519fc0ee043cb71063d561a1ca66ae63154ddd423e4510d328bf",
+      "statement_count": 4
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.strip",
+        "raw.get",
+        "str"
+      ],
+      "end_line": 130,
+      "kind": "FunctionDef",
+      "line": 128,
+      "normalized_ast_hash": "0dc1be7d517b5cd9eeae04551c8c0926b4021650b411ca18112006fa379833ba",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_cfg_str",
+      "root": false,
+      "source_hash": "4338816ea60f7381c521029db999c24353a7840db971eb09bad93c12f4843748",
+      "statement_count": 3
+    },
+    {
+      "direct_callees": [
+        "_set_text_keep_style",
+        "id",
+        "info.get"
+      ],
+      "end_line": 3518,
+      "kind": "FunctionDef",
+      "line": 3514,
+      "normalized_ast_hash": "1e27be6d20c42eb38ffa2d2bda047868347b602cc86c117086909f45b95f1ff1",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_clear_design_body_slots",
+      "root": false,
+      "source_hash": "c524411e19db49deacf4aa9bedf1a0877ec36750e0e71abaf8e3f85ad88c8458",
+      "statement_count": 5
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.lower",
+        "<dynamic>.strip",
+        "_cfg_int",
+        "_ppt_pro_cfg",
+        "args.get",
+        "bool",
+        "max",
+        "min",
+        "str"
+      ],
+      "end_line": 5339,
+      "kind": "FunctionDef",
+      "line": 5318,
+      "normalized_ast_hash": "c61d78334f3fa91cabf2de6d7af408da8d59ba7009db19af86d16d4d65e56b2a",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_coerce_ppt_pro_args",
+      "root": false,
+      "source_hash": "47cde0feea6de8f15e60080dfe22076de88eab4e26331778108ee2748059ca74",
+      "statement_count": 11
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.strip",
+        "os.environ.get"
+      ],
+      "end_line": 2838,
+      "kind": "FunctionDef",
+      "line": 2830,
+      "normalized_ast_hash": "0d62f6cbba163d50d5dcd3760a7593504893d759edd18cf1d2a4b98a2ea83ada",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_default_template",
+      "root": false,
+      "source_hash": "8750170e44fbd7a3d8d6cb477d7dbc2dbaddf2b9c3dfa1f5924f431599e28321",
+      "statement_count": 5
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.normalize",
+        "copy.deepcopy",
+        "degraded.append"
+      ],
+      "end_line": 2851,
+      "kind": "FunctionDef",
+      "line": 2841,
+      "normalized_ast_hash": "37a832db647af2e15110fdbad0d8c071e022e8c138bbc2a491c2c60412b1e050",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_degrade_to_template",
+      "root": false,
+      "source_hash": "c2cc380407536705b05796acef24cc9aba9102d8a4a2668afe62a4352f2e6aa5",
+      "statement_count": 11
+    },
+    {
+      "direct_callees": [
+        "_drive_free_bytes",
+        "int",
+        "max",
+        "str",
+        "user_data_dir"
+      ],
+      "end_line": 2956,
+      "kind": "FunctionDef",
+      "line": 2927,
+      "normalized_ast_hash": "147bb17e2f3fb860aa9c28ef621d37bf5ec22cf1cd96c4724fb9a6e09667421e",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_disk_preflight",
+      "root": false,
+      "source_hash": "cfe33f7d48681e52a3ded779ad746d3c0958bf3a201a54d42ca75e294bb0c4df",
+      "statement_count": 18
+    },
+    {
+      "direct_callees": [
+        "_build_outline_prompt",
+        "_fallback_minimal_outline",
+        "_outline_to_markdown",
+        "getattr",
+        "llm_call",
+        "parse_outline"
+      ],
+      "end_line": 739,
+      "kind": "AsyncFunctionDef",
+      "line": 713,
+      "normalized_ast_hash": "af8850531d85aa0b9be6a8d57ca394de2895fcb8f2d7e9c8117e553900d22172",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_draft_outline_from_research",
+      "root": false,
+      "source_hash": "179452a26c32891d12525c5c3e8359970c07d29d4d12920b74be7bb61b7c171a",
+      "statement_count": 10
+    },
+    {
+      "direct_callees": [
+        "range",
+        "shutil.disk_usage",
+        "str"
+      ],
+      "end_line": 2924,
+      "kind": "FunctionDef",
+      "line": 2910,
+      "normalized_ast_hash": "5216b97a0c89e449585241ea19db28a38c3ad7166630cbd565e690e7e474d7c0",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_drive_free_bytes",
+      "root": false,
+      "source_hash": "d380f1f682bb71f2d47ec62124ea30a0a22c7085dbca681f2598a7ac21c8bf73",
+      "statement_count": 11
+    },
+    {
+      "direct_callees": [
+        "prs.part.drop_rel",
+        "prs.slides._sldIdLst.remove",
+        "sld_id.get"
+      ],
+      "end_line": 4071,
+      "kind": "FunctionDef",
+      "line": 4060,
+      "normalized_ast_hash": "d032e440b5cf8226eb9947085e8762c6851999f819336f5f6a926e5b928d05ba",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_drop_slide_id",
+      "root": false,
+      "source_hash": "d6be39c3a7007e82ebfd1583f51b06e90b5265eec12d01e935111a9fad705f77",
+      "statement_count": 10
+    },
+    {
+      "direct_callees": [],
+      "end_line": 3627,
+      "kind": "FunctionDef",
+      "line": 3616,
+      "normalized_ast_hash": "b4c81afd5bb3ee98a0691b0606fc07368f43f9a9b2f4141110dd92cc9106c28f",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_enable_text_autofit",
+      "root": false,
+      "source_hash": "0be8f08e5f6cb7ba3eb60dbbda0b96e9d2a209d959392aed0fca1e0a5f6d4e58",
+      "statement_count": 8
+    },
+    {
+      "direct_callees": [
+        "RGBColor",
+        "getattr"
+      ],
+      "end_line": 3319,
+      "kind": "FunctionDef",
+      "line": 3302,
+      "normalized_ast_hash": "3a8b5caef12b611ef71240e778bb29fa8b671901b1812f9457e1fb7409c9c494",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_ensure_readable_text",
+      "root": false,
+      "source_hash": "4da7b8e7876876be191799cb49f843ea1e4409c1260fbf200c83685c4eb3ba83",
+      "statement_count": 16
+    },
+    {
+      "direct_callees": [
+        "int",
+        "max"
+      ],
+      "end_line": 922,
+      "kind": "FunctionDef",
+      "line": 917,
+      "normalized_ast_hash": "6ef0a7d73cf1dd6ea33c18145d466b199725150d020a57a2363d637333931f55",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_estimate_capacity",
+      "root": false,
+      "source_hash": "64c9d93b4d3852e6107a0e4c26161b37c0e10d98e4a7e35575f7d9f51e512739",
+      "statement_count": 6
+    },
+    {
+      "direct_callees": [
+        "SlideOutline",
+        "int",
+        "max",
+        "range",
+        "slides.append"
+      ],
+      "end_line": 844,
+      "kind": "FunctionDef",
+      "line": 814,
+      "normalized_ast_hash": "3eed00a72c59eafd60c0f0f10920e6806cdb545e0956d61edbad5ac676102c89",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_fallback_minimal_outline",
+      "root": false,
+      "source_hash": "3edd14dce8ccb772c318f06fa9033a0a4463aa009e8930672c64956e5b727ba5",
+      "statement_count": 7
+    },
+    {
+      "direct_callees": [
+        "Path",
+        "bundled.glob",
+        "sorted",
+        "str"
+      ],
+      "end_line": 3042,
+      "kind": "FunctionDef",
+      "line": 3033,
+      "normalized_ast_hash": "5e462c17f17c5402fe1888a4a5bc08ea661d12085d23c440fb0543fa099ae29a",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_fallback_template_path",
+      "root": false,
+      "source_hash": "71c55fb339066b0e5940648e31c3389cff56b588c5d5d27fc740cc9ef9b57d52",
+      "statement_count": 7
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.strip",
+        "_clear_design_body_slots",
+        "_enable_text_autofit",
+        "_set_text_keep_style",
+        "info.get",
+        "len",
+        "list",
+        "max",
+        "str",
+        "zip"
+      ],
+      "end_line": 3787,
+      "kind": "FunctionDef",
+      "line": 3768,
+      "normalized_ast_hash": "62027bacdd07adb9730371f73ba8ae1bf8f686e486223915e1eb3b38dc85774b",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_fill_design_bullets",
+      "root": false,
+      "source_hash": "da97f9a39506895f99365468803bb950c4f18f9a7087f0071df9805101573725",
+      "statement_count": 20
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.is_file",
+        "<dynamic>.lower",
+        "<dynamic>.strip",
+        "Path",
+        "_candidates.append",
+        "_clear_design_body_slots",
+        "_enable_text_autofit",
+        "_ensure_readable_text",
+        "_fill_design_bullets",
+        "_fit_text_to_shape",
+        "_insert_design_picture",
+        "_is_english_semantic_label",
+        "_iter_design_text_shapes",
+        "_keep_ids.add",
+        "_rects_overlap",
+        "_scale_shape_runs",
+        "_set_text_keep_style",
+        "_swap_design_picture",
+        "_sweep_residual_placeholders",
+        "_take_subtitle_from_decor",
+        "any",
+        "id",
+        "info.get",
+        "len",
+        "list",
+        "set",
+        "str",
+        "t.isdigit"
+      ],
+      "end_line": 4057,
+      "kind": "FunctionDef",
+      "line": 3900,
+      "normalized_ast_hash": "b9f64bbdbe2693d4ad7205943e7661567c749156b3e5d41fd1ece2cc099000cb",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_fill_design_page",
+      "root": false,
+      "source_hash": "23cb06e588501334cbb70fb01e0beaf11fd1b3a57fe4789b18dedcc8868f4b0f",
+      "statement_count": 105
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.strip",
+        "str",
+        "tf.add_paragraph"
+      ],
+      "end_line": 3202,
+      "kind": "FunctionDef",
+      "line": 3189,
+      "normalized_ast_hash": "9c4f6b351c12c7537c7a7eb4f4f59f4c11c98f2d0992884973abde309b6f3b2d",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_fill_placeholder_lines",
+      "root": false,
+      "source_hash": "c1effe2da6a9721693bc466d08114ad0e19181920e49a228358385477ad9995d",
+      "statement_count": 13
+    },
+    {
+      "direct_callees": [
+        "_rgb",
+        "fill.solid"
+      ],
+      "end_line": 914,
+      "kind": "FunctionDef",
+      "line": 908,
+      "normalized_ast_hash": "bc56ffd18581d728b2ae799441a098e5fa91ecda92c7d9c998076e29c92ea5f7",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_fill_slide_bg",
+      "root": false,
+      "source_hash": "ffb86de5805670b408408dd999a86aafb23367b85fd355f935bf908bf34d7f90",
+      "statement_count": 5
+    },
+    {
+      "direct_callees": [],
+      "end_line": 3542,
+      "kind": "FunctionDef",
+      "line": 3538,
+      "normalized_ast_hash": "4765e41c89c789e7e555a9aab920715f0818f12b6af51316e8803913eec441b8",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_first_unused_page",
+      "root": false,
+      "source_hash": "2c8d4d19693cb0fd3e0ed1f466a8ea412b47ced7d229f8b089bf37d365b9b679",
+      "statement_count": 5
+    },
+    {
+      "direct_callees": [
+        "float",
+        "int",
+        "len",
+        "max",
+        "min",
+        "sum"
+      ],
+      "end_line": 3299,
+      "kind": "FunctionDef",
+      "line": 3271,
+      "normalized_ast_hash": "d636949af07cb08b7e857c92b481970c702dcd8eee8fcf1a63186394a7051f2e",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_fit_font_pt",
+      "root": false,
+      "source_hash": "6d21f9538da3b2a9d5be7d434e40a6599de346cd5c89ba9075a2a23fe1b43731",
+      "statement_count": 21
+    },
+    {
+      "direct_callees": [
+        "_estimate_capacity",
+        "len",
+        "str"
+      ],
+      "end_line": 936,
+      "kind": "FunctionDef",
+      "line": 932,
+      "normalized_ast_hash": "cb668cf3e6c1b9e65e9f259b4266813627eab460a1dcd5ef90e53b613528edd9",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_fit_font_size",
+      "root": false,
+      "source_hash": "c44e1a162516707520a7c331ee177e86f2304e770c89a9d4a3372ee083bbb851",
+      "statement_count": 5
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.join",
+        "Pt",
+        "_est_height",
+        "_para_pt",
+        "float",
+        "int",
+        "len",
+        "list",
+        "log.debug",
+        "max",
+        "txt.strip"
+      ],
+      "end_line": 3689,
+      "kind": "FunctionDef",
+      "line": 3630,
+      "normalized_ast_hash": "02793cdb88a09f995a0f1aec48636f947a5504eb1a57035e4c6b6ad28f0468cb",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_fit_text_to_shape",
+      "root": false,
+      "source_hash": "b8b565533df49e2220e70e9cffa11434256650846db00105a196b3146275f704",
+      "statement_count": 45
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.join",
+        "_para_pt",
+        "float",
+        "int",
+        "len",
+        "max",
+        "txt.strip"
+      ],
+      "end_line": 3666,
+      "kind": "FunctionDef",
+      "line": 3657,
+      "normalized_ast_hash": "16156a0732f6cce60ee683356d4b44f95650e94c9f34bc8dec714774307be09e",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_fit_text_to_shape._est_height",
+      "root": false,
+      "source_hash": "2a6ce37de276fa6d25abf6e4a2ffce5f08bc599a4985e0e28f393a8a018c33c1",
+      "statement_count": 10
+    },
+    {
+      "direct_callees": [
+        "float"
+      ],
+      "end_line": 3655,
+      "kind": "FunctionDef",
+      "line": 3649,
+      "normalized_ast_hash": "d07e6276c5e79e7f3a76a262d79f8a59b8067ea1d1a083a032e0a144c7d8488c",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_fit_text_to_shape._para_pt",
+      "root": false,
+      "source_hash": "f856110e94f9900d573df2f22eab5e4d9d4682b6aa522adea70fb9466c688d15",
+      "statement_count": 7
+    },
+    {
+      "direct_callees": [],
+      "end_line": 198,
+      "kind": "FunctionDef",
+      "line": 193,
+      "normalized_ast_hash": "697d61d7825af531d12f46242fc4304260fe20b378c400bebe41bb841b08cf1d",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_get_ppt_renderer",
+      "root": false,
+      "source_hash": "74792e055d7ec003daa6f944febf976ae5fb9bb1acbd3e7d964c9f490d9cb549",
+      "statement_count": 6
+    },
+    {
+      "direct_callees": [
+        "_PPT_PRO_CTX.get",
+        "_PPT_PRO_RUNNING.get",
+        "_PPT_PRO_RUNNING_TOPIC.get",
+        "_PPT_PRO_TASKS.add",
+        "_coerce_ppt_pro_args",
+        "_notify",
+        "_ppt_pro_cancel",
+        "_ppt_pro_graph_enabled",
+        "_runner",
+        "_start_ppt_pro_graph",
+        "asyncio.create_task",
+        "cur.done",
+        "dict",
+        "legacy_execution_context",
+        "log.exception",
+        "task.add_done_callback",
+        "type"
+      ],
+      "end_line": 5425,
+      "kind": "AsyncFunctionDef",
+      "line": 5342,
+      "normalized_ast_hash": "42deeeb68b4225d9756f4d7f19686b9ab8a251e1df271a5d8afc7343d5fd1cd8",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_handle_ppt_pro",
+      "root": true,
+      "source_hash": "6379491c8b188b9f461f88b72b9d36e02d22e9d402ae74c31b7a7926774fb4a7",
+      "statement_count": 41
+    },
+    {
+      "direct_callees": [
+        "_PPT_PRO_RUNNING.get",
+        "_PPT_PRO_RUNNING.pop",
+        "_PPT_PRO_RUNNING_TOPIC.pop",
+        "_notify",
+        "_ppt_pro_orchestrate",
+        "asyncio.current_task",
+        "log.exception"
+      ],
+      "end_line": 5414,
+      "kind": "AsyncFunctionDef",
+      "line": 5395,
+      "normalized_ast_hash": "e96a0ffa1620f6701c6ffedde735dbb2ae522286d7afca911d32faa8737878d4",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_handle_ppt_pro._runner",
+      "root": false,
+      "source_hash": "29b146c94b2a7b5e69c4d6d963bcc280c7fbe8f145d3d1fa14e38e52e146f8b8",
+      "statement_count": 11
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.strip",
+        "_VARIANT_NEG_SPACE.get",
+        "_resolve_image_variant"
+      ],
+      "end_line": 2863,
+      "kind": "FunctionDef",
+      "line": 2858,
+      "normalized_ast_hash": "5ba568747a3788b8f9de0d35ef85e455e2ea2399cbad9f9e00dce767f4461697",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_image_prompt_payload",
+      "root": false,
+      "source_hash": "2c62c092c58a6e4e931430049066b1cea50288957cbacbb018ddff8ccdf96b4f",
+      "statement_count": 6
+    },
+    {
+      "direct_callees": [
+        "bool",
+        "os.environ.get"
+      ],
+      "end_line": 177,
+      "kind": "FunctionDef",
+      "line": 174,
+      "normalized_ast_hash": "8b33b66b4311ab3fdd95a8619bc17fcf26bb486af49148b0d843a3e6f9f09cdb",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_in_pytest",
+      "root": false,
+      "source_hash": "646e679c639789fc1b60d15556ec76ec170a6bd2d2868b689112eb7cf18208fb",
+      "statement_count": 2
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.insert_picture",
+        "<dynamic>.is_file",
+        "Path",
+        "_template_placeholders",
+        "log.debug",
+        "str"
+      ],
+      "end_line": 3801,
+      "kind": "FunctionDef",
+      "line": 3790,
+      "normalized_ast_hash": "751f9999afed6d85a4685ad0e258801d898b3ea375f9eb417c6cb7d98558898b",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_insert_design_picture",
+      "root": false,
+      "source_hash": "1465c233be9680a9fc395d6962c9ecf88c077872c1f492643a0a86a1e3ab9d30",
+      "statement_count": 10
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.lower",
+        "any"
+      ],
+      "end_line": 2251,
+      "kind": "FunctionDef",
+      "line": 2246,
+      "normalized_ast_hash": "37519dd627193b06fdf26391be7b90128d4d1cba997feac8055ce0a3356d76c0",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_is_conclusion_slide",
+      "root": false,
+      "source_hash": "52d52abb3250031231e9983899deaec03628e985beb391265ffca0f32ac0eacc",
+      "statement_count": 6
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.__name__.lower",
+        "<dynamic>.lower",
+        "any",
+        "getattr",
+        "int",
+        "str",
+        "type"
+      ],
+      "end_line": 637,
+      "kind": "FunctionDef",
+      "line": 599,
+      "normalized_ast_hash": "b91aac1d51344547c1fd61c269ac68346a8be973827a4a4ffa08aa696d55f097",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_is_config_or_auth_error",
+      "root": false,
+      "source_hash": "7449f6ecf28b6609b9ebaa563e257e2171032ad60a2de3b58561f995e2e71f8c",
+      "statement_count": 15
+    },
+    {
+      "direct_callees": [
+        "re.search",
+        "t.lower",
+        "text.strip"
+      ],
+      "end_line": 3765,
+      "kind": "FunctionDef",
+      "line": 3745,
+      "normalized_ast_hash": "5f324226c6d0d96517250a0209423bd3dfc11e6478a4b3e3c7c785482be0207b",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_is_english_semantic_label",
+      "root": false,
+      "source_hash": "075b6db16bb9f23c58f71a3a423dd03da01d715947f7d6509af708f829938e56",
+      "statement_count": 14
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.strip",
+        "_re_ppt.findall",
+        "_re_ppt.search",
+        "len",
+        "t.lower"
+      ],
+      "end_line": 3724,
+      "kind": "FunctionDef",
+      "line": 3704,
+      "normalized_ast_hash": "b0fc2118b481c2d2a751dc005a667af3a0e216f8ce52bbed649e8cd0e421f72e",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_is_residual_placeholder",
+      "root": false,
+      "source_hash": "fe8528724ff0c04820d8d52303668fdd180f896cdb4d2d41bf2949abead25937",
+      "statement_count": 14
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.strip",
+        "_iter_design_text_shapes",
+        "getattr"
+      ],
+      "end_line": 3214,
+      "kind": "FunctionDef",
+      "line": 3205,
+      "normalized_ast_hash": "ac458d8a9c619ac1ffe1df7b1020c68e916649d4497b19d74215c9d77c48ec7d",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_iter_design_text_shapes",
+      "root": false,
+      "source_hash": "00a15acd86b9f6fac5c9f9804e9244187e61675e9937cb3d9a0ace02810bd389",
+      "statement_count": 9
+    },
+    {
+      "direct_callees": [
+        "inspect.isawaitable"
+      ],
+      "end_line": 5058,
+      "kind": "AsyncFunctionDef",
+      "line": 5055,
+      "normalized_ast_hash": "cdcd5dc00e814f1e0770b8454069ebd82dcefcba9a786c3956d517aff16ed73f",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_maybe_await",
+      "root": false,
+      "source_hash": "df57b65ef9c32755109aa9b309191200ea70224e169bef40cd3ee56463083759",
+      "statement_count": 4
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.expanduser",
+        "<dynamic>.resolve",
+        "Path",
+        "_get_ppt_renderer",
+        "_in_pytest",
+        "_ppt_preview_render_enabled",
+        "artifacts.append",
+        "callable",
+        "enumerate",
+        "getattr",
+        "log.warning",
+        "pptx.with_suffix",
+        "render_fn",
+        "renderer.com_render_available",
+        "renderer.render_pptx_to_pngs",
+        "result.get",
+        "result.setdefault",
+        "str"
+      ],
+      "end_line": 234,
+      "kind": "FunctionDef",
+      "line": 201,
+      "normalized_ast_hash": "3ba74619b9c02164d90305a15b764c782307ace19ae08023f075fa1f888f3ddc",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_maybe_render_preview",
+      "root": false,
+      "source_hash": "a35d7d31d946292c19a3ca80b9579d44b3e7fe5a45690448dc73288dc0f450c9",
+      "statement_count": 22
+    },
+    {
+      "direct_callees": [
+        "_maybe_await",
+        "log.warning",
+        "notifier"
+      ],
+      "end_line": 5067,
+      "kind": "AsyncFunctionDef",
+      "line": 5061,
+      "normalized_ast_hash": "aa9bda2fcdd247d48727e02d2f0baf2823d98ace7982131311b2786b2d19ddd2",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_notify",
+      "root": false,
+      "source_hash": "e9ab8e149da9792420c5dad7ede765f01cff726e77a228c346db135ac9ab948d",
+      "statement_count": 6
+    },
+    {
+      "direct_callees": [
+        "Path",
+        "_of",
+        "bool",
+        "str"
+      ],
+      "end_line": 5052,
+      "kind": "FunctionDef",
+      "line": 5045,
+      "normalized_ast_hash": "7ff61c5985876f73f21b96701c10cfcd6eb5a581c122b9b8e93c1200b335c03c",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_open_image_file",
+      "root": false,
+      "source_hash": "a990a710f3a1d9b51f6533dba25daddcdb5a7c88a5b49629f299704a997ed98e",
+      "statement_count": 6
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.join",
+        "<dynamic>.strip",
+        "enumerate",
+        "len",
+        "lines.append"
+      ],
+      "end_line": 811,
+      "kind": "FunctionDef",
+      "line": 787,
+      "normalized_ast_hash": "6468e50c8422ca5a31a6d568e84384f008129b7cd2f5b72b9cfe09ea3d96bf48",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_outline_to_markdown",
+      "root": false,
+      "source_hash": "2f57ef86053dfb63813dd5a0ffdc66e52a7c949e28d714c1186c8b6f23c15d0c",
+      "statement_count": 25
+    },
+    {
+      "direct_callees": [
+        "info.get",
+        "int",
+        "len"
+      ],
+      "end_line": 3575,
+      "kind": "FunctionDef",
+      "line": 3545,
+      "normalized_ast_hash": "3c61d75af9eb263049ed42b3d0dd9c1af4a04f3f8e3dc791448530c572666f59",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_page_quality_score",
+      "root": false,
+      "source_hash": "bdbbe8d062f81affc8c50514ffe5ad09f568f58a400a33d76669aaf0cc5a99f6",
+      "statement_count": 21
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.lower",
+        "ValueError",
+        "kw.lower",
+        "len",
+        "list",
+        "mapping.get",
+        "max",
+        "min"
+      ],
+      "end_line": 3161,
+      "kind": "FunctionDef",
+      "line": 3124,
+      "normalized_ast_hash": "235ae09492c5f139da7511fe96787bd3f80a803165e0df8c1876536d2bb0d8ca",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_pick_template_layout",
+      "root": false,
+      "source_hash": "f67a2c6a167e8eeebaac02eacfc4c3309c7fec6d8e4cab09ea83ca60fd568e28",
+      "statement_count": 16
+    },
+    {
+      "direct_callees": [
+        "getattr",
+        "isinstance",
+        "merged.update",
+        "raw.get",
+        "standalone_config_section"
+      ],
+      "end_line": 102,
+      "kind": "FunctionDef",
+      "line": 81,
+      "normalized_ast_hash": "c776c81541f8a513c83d77454371ef86b95e67bda723821a37620e3027076056",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_ppt_config_section",
+      "root": false,
+      "source_hash": "013266fdf89e10047af24f857e781e08705a41daec30e87a87b49f11d26bf5ed",
+      "statement_count": 17
+    },
+    {
+      "direct_callees": [
+        "_cfg_bool",
+        "_ppt_config_section"
+      ],
+      "end_line": 185,
+      "kind": "FunctionDef",
+      "line": 180,
+      "normalized_ast_hash": "a82b9a7bc5b6dc09ce89e9f011c6a0cb75364aad454c0aa7746da309eb343da6",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_ppt_preview_render_enabled",
+      "root": false,
+      "source_hash": "950d3d29605b90c1cc1838497a1cfc788c86ca00fae363197002ed269d0ac7f7",
+      "statement_count": 5
+    },
+    {
+      "direct_callees": [
+        "_PPT_PRO_RUNNING.get",
+        "str",
+        "task.cancel",
+        "task.done"
+      ],
+      "end_line": 5147,
+      "kind": "FunctionDef",
+      "line": 5144,
+      "normalized_ast_hash": "5e0949f7c7b3f04a2ec1f6f1369272c94c7e9c3c3f556a572fb0ae8410204e78",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_ppt_pro_cancel",
+      "root": false,
+      "source_hash": "d9fb5a0083ced189123b4094f898e1ecccf0ef1ecf67d7dfce4af2c4b3df2701",
+      "statement_count": 4
+    },
+    {
+      "direct_callees": [
+        "SimpleNamespace",
+        "_cfg_bool",
+        "_cfg_float",
+        "_cfg_int",
+        "_cfg_str",
+        "_ppt_config_section"
+      ],
+      "end_line": 171,
+      "kind": "FunctionDef",
+      "line": 133,
+      "normalized_ast_hash": "3dcbd7f3d9247b752ca834a8a72bbc219766f094d2f42a9789f8410a1a105611",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_ppt_pro_cfg",
+      "root": false,
+      "source_hash": "96906e6c228bf4435250fdf9cf2e537483b014a5878b61225764d33263fdb2a2",
+      "statement_count": 16
+    },
+    {
+      "direct_callees": [
+        "_cfg_bool",
+        "standalone_config_section"
+      ],
+      "end_line": 5108,
+      "kind": "FunctionDef",
+      "line": 5099,
+      "normalized_ast_hash": "3477273233c461ebb0b3744717447b29b26ae7db2213a10aaa397025baebce8e",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_ppt_pro_graph_enabled",
+      "root": false,
+      "source_hash": "94492bfe1cce29c3c9166d9e256fa29b7a547bac8fa9da09b88b883ef6c2ab17",
+      "statement_count": 7
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.get",
+        "<dynamic>.lower",
+        "<dynamic>.strip",
+        "_draft_outline_from_research",
+        "_maybe_await",
+        "_notify",
+        "_outline_to_markdown",
+        "_ppt_pro_cfg",
+        "_ppt_pro_report_done",
+        "_render_pro",
+        "_research_topic_for_ppt",
+        "_resolve_default_llm_call",
+        "_run_blocking_call",
+        "_save_and_index_research",
+        "_sync_notify",
+        "asyncio.get_running_loop",
+        "asyncio.wait_for",
+        "bool",
+        "float",
+        "getattr",
+        "int",
+        "json.loads",
+        "len",
+        "log.exception",
+        "max",
+        "outline_propose",
+        "parse_outline",
+        "ppt_outline_store.get_outline",
+        "range",
+        "str",
+        "type"
+      ],
+      "end_line": 5315,
+      "kind": "AsyncFunctionDef",
+      "line": 5199,
+      "normalized_ast_hash": "9afe236bf782604eccb9a2ae30bd5b3acfc3326fff6b2a6b742fed3a54c88855",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_ppt_pro_orchestrate",
+      "root": true,
+      "source_hash": "8ff588e79c26776a18079e55075415094136e90ed0cdf9bc247ff4abe9c2e360",
+      "statement_count": 46
+    },
+    {
+      "direct_callees": [
+        "_PPT_PRO_CTX.get",
+        "_maybe_await",
+        "_notify",
+        "_open_image_file",
+        "artifact_pusher",
+        "list",
+        "log.warning",
+        "receipt_reporter",
+        "result.get",
+        "str"
+      ],
+      "end_line": 5196,
+      "kind": "AsyncFunctionDef",
+      "line": 5154,
+      "normalized_ast_hash": "854cdfd4a35d118651a09cee5531f3a231e215fb0135bd1bf875db1007b8d3ee",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_ppt_pro_report_done",
+      "root": false,
+      "source_hash": "ec72192189ae95e66eee7b5d8c653ab2973bf498b5e1b89a6bfdd1ebe9e7c846",
+      "statement_count": 30
+    },
+    {
+      "direct_callees": [
+        "_cfg_bool",
+        "_ppt_config_section"
+      ],
+      "end_line": 4575,
+      "kind": "FunctionDef",
+      "line": 4570,
+      "normalized_ast_hash": "f23f1090f6a652603ccbebbf3f3da599bfb105a63b797726491d8c3f6087ef0a",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_ppt_visual_review_enabled",
+      "root": false,
+      "source_hash": "4078ac33702dd86843bc6787b1a60a4d725bbbe61b702c9368ea91de361a53e1",
+      "statement_count": 5
+    },
+    {
+      "direct_callees": [
+        "int",
+        "max",
+        "min"
+      ],
+      "end_line": 3884,
+      "kind": "FunctionDef",
+      "line": 3868,
+      "normalized_ast_hash": "e3fee6b334a5110d551ae596b397a059ec6ce96aa5c12421ce813f12a978ebe5",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_rects_overlap",
+      "root": false,
+      "source_hash": "3d3e7282f00977a51e395c53690d7d2a2c4476ca2a3f60914164b5e57fef3807",
+      "statement_count": 15
+    },
+    {
+      "direct_callees": [
+        "Inches",
+        "_add_shape",
+        "_add_text",
+        "_fill_slide_bg",
+        "enumerate"
+      ],
+      "end_line": 2230,
+      "kind": "FunctionDef",
+      "line": 2187,
+      "normalized_ast_hash": "0e5a65ca414102d7a51b04cd0d92a7856404ec92c67ade137f233ca89d729066",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_render_conclusion_v2",
+      "root": false,
+      "source_hash": "7b72f565f412527eebf7cba08267005b7c3fa598b2898fabd6f68790cbf7acad",
+      "statement_count": 10
+    },
+    {
+      "direct_callees": [
+        "Path",
+        "_Presentation",
+        "_RENDERERS.get",
+        "_add_footer",
+        "_is_conclusion_slide",
+        "_render_conclusion_v2",
+        "enumerate",
+        "len",
+        "prs.save",
+        "prs.slides.add_slide",
+        "renderer",
+        "str"
+      ],
+      "end_line": 4567,
+      "kind": "FunctionDef",
+      "line": 4514,
+      "normalized_ast_hash": "0d1eb0a058c653660be98d98147f5c25bba0d7cf1a5898c3207d31ea384b65ef",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_render_fromscratch",
+      "root": false,
+      "source_hash": "dbcdb0bdbf353fcb372557721989dbbd1554538a757554c1aafdb8d6aa64a8c3",
+      "statement_count": 29
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.normalize",
+        "_autofill_with_connectivity_gate",
+        "_degrade_to_template",
+        "_disk_preflight",
+        "_fallback_template_path",
+        "asdict",
+        "copy.deepcopy",
+        "len",
+        "log.info",
+        "log.warning",
+        "notify",
+        "ppt_create",
+        "probe_image_reachable",
+        "result.get",
+        "sum"
+      ],
+      "end_line": 3030,
+      "kind": "FunctionDef",
+      "line": 2959,
+      "normalized_ast_hash": "c1de76492f5ab64f34e98d0665dd2148d96dec504a1553ca77ecdf99737ae386",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_render_pro",
+      "root": false,
+      "source_hash": "bc56ee0a16ee9e1b6daf89c837ae240b6c4baefc0a8590d8fc655b21c40cece2",
+      "statement_count": 31
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.get",
+        "Path",
+        "_Presentation",
+        "_analyze_design_page",
+        "_drop_slide_id",
+        "_fill_design_page",
+        "_page_quality_score",
+        "_select_design_page",
+        "enumerate",
+        "id",
+        "int",
+        "len",
+        "list",
+        "log.debug",
+        "log.warning",
+        "page_map.append",
+        "prs.save",
+        "selected.append",
+        "set",
+        "sorted",
+        "str",
+        "used.add",
+        "xml_slides.append"
+      ],
+      "end_line": 4163,
+      "kind": "FunctionDef",
+      "line": 4074,
+      "normalized_ast_hash": "c293234e8a43a63f2f76da2beae339489f109ceb35357deb3358dfe79b07be67",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_render_with_design_pages",
+      "root": false,
+      "source_hash": "7062a756d8561cfbedddb9bc64c86d4517e5438e662175b1638f6f2237149e85",
+      "statement_count": 51
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.insert_picture",
+        "<dynamic>.is_file",
+        "Path",
+        "_Presentation",
+        "_fill_placeholder_lines",
+        "_pick_template_layout",
+        "_set_placeholder_text",
+        "_template_placeholders",
+        "bool",
+        "len",
+        "list",
+        "log.debug",
+        "log.warning",
+        "prs.part.drop_rel",
+        "prs.save",
+        "prs.slides.add_slide",
+        "sldId.get",
+        "str",
+        "xml_slides.remove"
+      ],
+      "end_line": 4268,
+      "kind": "FunctionDef",
+      "line": 4166,
+      "normalized_ast_hash": "de4e600b7dc7198c2f476df1d202a42ded9609f5cde1b5e18ba3619c17594cc4",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_render_with_template",
+      "root": false,
+      "source_hash": "42d64d2f0a25080139e6e2a16f28ebd696a5257017304b8e5de11bf166c0a7b0",
+      "statement_count": 58
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.lower",
+        "<dynamic>.strip",
+        "_DEPTH_PRESETS.get",
+        "_is_config_or_auth_error",
+        "_run",
+        "asyncio.wait_for",
+        "log.warning"
+      ],
+      "end_line": 675,
+      "kind": "AsyncFunctionDef",
+      "line": 640,
+      "normalized_ast_hash": "f0ef444336da2c60e5965a44c6bb6e425513e9318136ac9b988e651db69564df",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_research_topic_for_ppt",
+      "root": false,
+      "source_hash": "b6907bbca100aaf510232a3384247f7e1a285c038a1aaf5be5d1e0cdebec8fcd",
+      "statement_count": 16
+    },
+    {
+      "direct_callees": [
+        "_resolve_default_llm_call",
+        "deepresearch"
+      ],
+      "end_line": 664,
+      "kind": "AsyncFunctionDef",
+      "line": 653,
+      "normalized_ast_hash": "d918e92da69f7a78bb4e549ff9dd19d1ffe00e8a2b7456ebe6b1e73f38fe3819",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_research_topic_for_ppt._run",
+      "root": false,
+      "source_hash": "0fc55aa27661d9f5d034445c3209e9ee775af38a53b6b16c38628d5493fb5455",
+      "statement_count": 3
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.lower",
+        "<dynamic>.strip",
+        "str"
+      ],
+      "end_line": 2013,
+      "kind": "FunctionDef",
+      "line": 2003,
+      "normalized_ast_hash": "3c65164b2eee3d79511ffe1ed0ccb25cefee0ddd8ac1c870fe2573c4f7723f12",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_resolve_image_variant",
+      "root": false,
+      "source_hash": "1496ff03d4e25c1ee7b2f164dff60221cb84a53b8733a25c4c95524341453e74",
+      "statement_count": 10
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.expanduser",
+        "<dynamic>.resolve",
+        "Path",
+        "int",
+        "output_dir",
+        "path.parent.mkdir",
+        "tempfile.gettempdir",
+        "time.time"
+      ],
+      "end_line": 4804,
+      "kind": "FunctionDef",
+      "line": 4790,
+      "normalized_ast_hash": "87b4286b2e4b2a7c55bec0a6fdb8a9a0670e22c081a96e096922bac26cfc0c2b",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_resolve_output_path",
+      "root": false,
+      "source_hash": "42ef0f10105dc4f20c354b52cd15cf81889cfc64280060b2ebaffbc2ac875bf7",
+      "statement_count": 11
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.strip",
+        "_resolve_template_path",
+        "_tpl.is_category",
+        "_tpl.pick_template_by_preview",
+        "str"
+      ],
+      "end_line": 3121,
+      "kind": "FunctionDef",
+      "line": 3103,
+      "normalized_ast_hash": "71030a124fc5537e0bb848cee86fb56def8b1ad10fc6a3328c07dcda9674c63f",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_resolve_template_for_render",
+      "root": false,
+      "source_hash": "6e151dcebda4a15a260c60e36bc3001bdd9e4fe6b3a38c078fabcf31fdd70e3f",
+      "statement_count": 12
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.endswith",
+        "<dynamic>.expanduser",
+        "<dynamic>.strip",
+        "Path",
+        "_tpl.template_library_root",
+        "_user_template_roots",
+        "direct.is_file",
+        "direct.resolve",
+        "hit.resolve",
+        "name.lower",
+        "next",
+        "p.is_file",
+        "root.rglob",
+        "roots.append",
+        "str"
+      ],
+      "end_line": 3100,
+      "kind": "FunctionDef",
+      "line": 3060,
+      "normalized_ast_hash": "8a52e0bbf7b0485f6d4dc401c26d840822a37aa1c978c2036bea3e4e9e735fea",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_resolve_template_path",
+      "root": false,
+      "source_hash": "ff5742040139117d7f5d7d061e2814e75a5f4f3c029dee89303112eb081b3ce4",
+      "statement_count": 28
+    },
+    {
+      "direct_callees": [
+        "RGBColor"
+      ],
+      "end_line": 905,
+      "kind": "FunctionDef",
+      "line": 904,
+      "normalized_ast_hash": "d8b0027322509b2540fbba05512ab9e9a0b1e1774c7619552140d4164a293e06",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_rgb",
+      "root": false,
+      "source_hash": "0088e35491b5d1100a1795224a90037d6ff688a37970fccee387ba306e81b06b",
+      "statement_count": 2
+    },
+    {
+      "direct_callees": [
+        "_maybe_await",
+        "run_blocking"
+      ],
+      "end_line": 5151,
+      "kind": "AsyncFunctionDef",
+      "line": 5150,
+      "normalized_ast_hash": "c7da12771c29d5e56c22767f0499d2357a9f75198945cf721ebb7f22e97b5654",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_run_blocking_call",
+      "root": false,
+      "source_hash": "b87691be161b8b5bdccb2fdbc8ca00c5ab5dd4af8da476e0916c61e77b14cabe",
+      "statement_count": 2
+    },
+    {
+      "direct_callees": [
+        "_save_report",
+        "_update",
+        "_update_deepresearch_index",
+        "asyncio.get_running_loop",
+        "asyncio.run",
+        "log.debug",
+        "loop.create_task",
+        "t.result",
+        "task.add_done_callback"
+      ],
+      "end_line": 710,
+      "kind": "FunctionDef",
+      "line": 678,
+      "normalized_ast_hash": "4f4f2abb8a3b7e02f28d605ab6d46646c24c2a720897d614ff70153b6737db80",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_save_and_index_research",
+      "root": false,
+      "source_hash": "05ab2c7a9b804ecb15a7faabe074b0ea0071629c2ace6b69a4e2bba186dc38c4",
+      "statement_count": 21
+    },
+    {
+      "direct_callees": [
+        "_update_deepresearch_index"
+      ],
+      "end_line": 691,
+      "kind": "AsyncFunctionDef",
+      "line": 690,
+      "normalized_ast_hash": "09e7bade8602318aaa9153ff6397e8df4cdf87efea759cda964f6cbf0d4091bd",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_save_and_index_research._update",
+      "root": false,
+      "source_hash": "dacd4aafc8c9860f20220f8b1c6dcb4f13c32692510528044d5912dd7917cf01",
+      "statement_count": 2
+    },
+    {
+      "direct_callees": [
+        "Pt",
+        "int",
+        "max"
+      ],
+      "end_line": 3897,
+      "kind": "FunctionDef",
+      "line": 3887,
+      "normalized_ast_hash": "23eddc6b595e7f2323699503490216b92a95a335197ca3cf2451e6ff46156a99",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_scale_shape_runs",
+      "root": false,
+      "source_hash": "7b853be97ecf3f51199d7d82253a67bdb5a027483c7f90b12cef98401d11a5b7",
+      "statement_count": 9
+    },
+    {
+      "direct_callees": [
+        "_best_design_content_page",
+        "_first_unused_page",
+        "len"
+      ],
+      "end_line": 3613,
+      "kind": "FunctionDef",
+      "line": 3578,
+      "normalized_ast_hash": "90cd6a1ea28b344c9d7b6c24742e536135bbab7cad279a25c9e92f6fe7be1cec",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_select_design_page",
+      "root": false,
+      "source_hash": "0796eac3cde7bcafe1a3bb6a1956584ca3a3e79ed73452d750261ed207c693fc",
+      "statement_count": 12
+    },
+    {
+      "direct_callees": [],
+      "end_line": 3186,
+      "kind": "FunctionDef",
+      "line": 3177,
+      "normalized_ast_hash": "fcef72b5e84b27b422d7cc16f961c603c53009a9b7180ade4ea2b8f46b54f6a8",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_set_placeholder_text",
+      "root": false,
+      "source_hash": "c428fa62084c154bc76857abbdaaee12bc0c9de228fb8f6a3bb477d8eb929374",
+      "statement_count": 8
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.join",
+        "<dynamic>.remove",
+        "<dynamic>.strip",
+        "Pt",
+        "_fit_font_pt",
+        "copy.deepcopy",
+        "float",
+        "int",
+        "list",
+        "new_p.iter",
+        "node.tag.endswith",
+        "round",
+        "run._r.getparent",
+        "str",
+        "tx_body.append",
+        "tx_body.remove"
+      ],
+      "end_line": 3484,
+      "kind": "FunctionDef",
+      "line": 3425,
+      "normalized_ast_hash": "bb97b641a44354274b8521f2dc1a9818e07c3ae7a31782a73917f005091d7856",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_set_text_keep_style",
+      "root": false,
+      "source_hash": "76842fb1978a6c611837d695bb0a9219b4c44ffe9fd8967d0440ad8cd383a001",
+      "statement_count": 45
+    },
+    {
+      "direct_callees": [
+        "int",
+        "max",
+        "min"
+      ],
+      "end_line": 3268,
+      "kind": "FunctionDef",
+      "line": 3253,
+      "normalized_ast_hash": "be49654bbe3b2f44557cbc09d21837708b8c438cac7f1edc4808190870cfba22",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_shape_mostly_in_canvas",
+      "root": false,
+      "source_hash": "b155b29d838d223f2088a9e9d78b473f4984c48ddc53f64174f42b4c03c5887d",
+      "statement_count": 13
+    },
+    {
+      "direct_callees": [
+        "int"
+      ],
+      "end_line": 3250,
+      "kind": "FunctionDef",
+      "line": 3246,
+      "normalized_ast_hash": "023c2e8dc0b712ec0e6a17430fd246843c7365b9769fdf4cfa9f8bbea7d8008c",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_shape_reading_key",
+      "root": false,
+      "source_hash": "99bee26cb885e9aebdd30232f48970879fe4fb6fac0ed06626e95d1dae615713",
+      "statement_count": 4
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.strip",
+        "len"
+      ],
+      "end_line": 3243,
+      "kind": "FunctionDef",
+      "line": 3239,
+      "normalized_ast_hash": "ab7a440e18ac845286fba03ca6cf0c04cacd252f9a9c1b8bbcdb22bde558625e",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_shape_text_len",
+      "root": false,
+      "source_hash": "bfb44024035aacede193d5a1ec8264f71482edc1def19e67e27883281d4d03f1",
+      "statement_count": 4
+    },
+    {
+      "direct_callees": [
+        "float",
+        "max"
+      ],
+      "end_line": 3236,
+      "kind": "FunctionDef",
+      "line": 3217,
+      "normalized_ast_hash": "e474774a61e78097380d812e9ba735e1e5b0dded952e837d598ef2a2ce24ef9a",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_shape_text_max_pt",
+      "root": false,
+      "source_hash": "bfd76c151b49a0af4f3eaedb10e3913cb19dfdc4259e23af4a6cca5966de2e23",
+      "statement_count": 17
+    },
+    {
+      "direct_callees": [
+        "int",
+        "max",
+        "min"
+      ],
+      "end_line": 3495,
+      "kind": "FunctionDef",
+      "line": 3487,
+      "normalized_ast_hash": "bc1039bfda3ba84b308d5418b6a52d43fcbe10310c1bd44ffa25d79fde84e32f",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_shapes_v_overlap",
+      "root": false,
+      "source_hash": "6e3ed8871456a1602817f2f3c51fa35be3deb8ad4d485818bdab06d325a6a81c",
+      "statement_count": 8
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.rstrip",
+        "<dynamic>.strip",
+        "len",
+        "max",
+        "str"
+      ],
+      "end_line": 929,
+      "kind": "FunctionDef",
+      "line": 925,
+      "normalized_ast_hash": "a7c8a752e91a61e03140c34a57f125808617e286741afc8b87844b83bc19a3b5",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_shorten",
+      "root": false,
+      "source_hash": "3393153ac5ebd2e2610aa9c1358d010be562497c5bc53415af9d5d8474d0ac62",
+      "statement_count": 5
+    },
+    {
+      "direct_callees": [
+        "res.get"
+      ],
+      "end_line": 2855,
+      "kind": "FunctionDef",
+      "line": 2854,
+      "normalized_ast_hash": "4a07d7ca0de4946f9604905bdcf7dc22e463bb7d10b0015945154c9e3237d586",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_should_fallback",
+      "root": false,
+      "source_hash": "12bb8b80d97cbb7b06a32d3a691671bf667d1bb64717ede1bba81c504219733e",
+      "statement_count": 2
+    },
+    {
+      "direct_callees": [
+        "ValueError",
+        "_coerce_ppt_pro_args",
+        "_maybe_await",
+        "dict",
+        "isinstance",
+        "result.get",
+        "starter",
+        "str"
+      ],
+      "end_line": 5141,
+      "kind": "AsyncFunctionDef",
+      "line": 5111,
+      "normalized_ast_hash": "fa3c7f8dc5b8fafcac851eba69de1c1a20980f4e3f7feae077f7d0c48167894d",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_start_ppt_pro_graph",
+      "root": false,
+      "source_hash": "e6422310ae4d91ef8ca9f5666affef7a25f6a5f73b82c755e4031c71c81db56f",
+      "statement_count": 8
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.get",
+        "<dynamic>.split",
+        "BytesIO",
+        "Image.new",
+        "Image.open",
+        "Path",
+        "best._element.findall",
+        "bg.paste",
+        "buf.getvalue",
+        "getattr",
+        "im.convert",
+        "im.save",
+        "int",
+        "log.debug",
+        "qn",
+        "slide.part.related_part",
+        "src.is_file",
+        "src.read_bytes",
+        "str"
+      ],
+      "end_line": 3865,
+      "kind": "FunctionDef",
+      "line": 3804,
+      "normalized_ast_hash": "f4d96b98361219ea5638e76c52365632f8bfa46251086390edbb6947fde8aefa",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_swap_design_picture",
+      "root": false,
+      "source_hash": "aadd4e1c4ffaf1bd45bf5ae2a71418948b1d433ea8fef7e5fceced6a4b322895",
+      "statement_count": 43
+    },
+    {
+      "direct_callees": [
+        "_is_residual_placeholder",
+        "_iter_design_text_shapes",
+        "_set_text_keep_style"
+      ],
+      "end_line": 3742,
+      "kind": "FunctionDef",
+      "line": 3727,
+      "normalized_ast_hash": "7a75fdfc585d57d0a8eec0f3be239125f325b2beced4fa68225f8854ad482c5a",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_sweep_residual_placeholders",
+      "root": false,
+      "source_hash": "208502d5f10e1a6372a855a90e37c9bdc381f5e68dd12924fe806ae37ed96af9",
+      "statement_count": 9
+    },
+    {
+      "direct_callees": [],
+      "end_line": 5077,
+      "kind": "FunctionDef",
+      "line": 5070,
+      "normalized_ast_hash": "a465e120b083fa5894eb7c079cf8dc576fcaff8a3d8627ffbacac3eae4d40c51",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_sync_notify",
+      "root": false,
+      "source_hash": "bddebe65aac6cdc89b4803cec45ab7b22f6e595dc3adc3142c894a933cb46ee3",
+      "statement_count": 6
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.remove",
+        "_shape_mostly_in_canvas",
+        "_shapes_v_overlap",
+        "info.get",
+        "int",
+        "list"
+      ],
+      "end_line": 3511,
+      "kind": "FunctionDef",
+      "line": 3498,
+      "normalized_ast_hash": "08a6392ad19fb69bf3a39697d134f8975c2e9bbba61c68143b9ad76c459b9b19",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_take_subtitle_from_decor",
+      "root": false,
+      "source_hash": "5adf0872bc22787273f4e325808c6d7eb9553843a1e8b09fc4de43f56e6c6cae",
+      "statement_count": 12
+    },
+    {
+      "direct_callees": [
+        "getattr",
+        "placeholders.append"
+      ],
+      "end_line": 3174,
+      "kind": "FunctionDef",
+      "line": 3164,
+      "normalized_ast_hash": "e12f7f9205b0d866ba6c35655e45c77bc4dfd91d54ca88ded96a78757e0ae517",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_template_placeholders",
+      "root": false,
+      "source_hash": "d31210feec87782f4b5cde0601d506c0ab9273ca28e5d5cebe7db65052dd1e51",
+      "statement_count": 10
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.strip",
+        "Path",
+        "env.split",
+        "os.environ.get",
+        "p.strip",
+        "r.is_dir"
+      ],
+      "end_line": 3057,
+      "kind": "FunctionDef",
+      "line": 3045,
+      "normalized_ast_hash": "c4dd7a306c696bc964213ec37c029641783ddd9490995bb6a1590e4e75dfbc5d",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_user_template_roots",
+      "root": false,
+      "source_hash": "19e2ac64aaf4ec709f7cc6f6c66822a57ac8b693d6ebcd562be8ae4ff12889f0",
+      "statement_count": 9
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.strip",
+        "<dynamic>.with_suffix",
+        "Path",
+        "_apply_review_actions",
+        "_get_ppt_renderer",
+        "_in_pytest",
+        "_ppt_visual_review_enabled",
+        "_render_fromscratch",
+        "any",
+        "callable",
+        "getattr",
+        "len",
+        "log.info",
+        "log.warning",
+        "r.get",
+        "range",
+        "render_fn",
+        "renderer.com_render_available",
+        "review_slides",
+        "rounds_meta.append",
+        "str",
+        "sum"
+      ],
+      "end_line": 4676,
+      "kind": "FunctionDef",
+      "line": 4612,
+      "normalized_ast_hash": "72a8373f059b8d688835953f227c07090e86613634d0cda989d5be33dbffbe6e",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_visual_review_loop",
+      "root": false,
+      "source_hash": "ba799a98aae3ee7413196cddadf3a8b49cbd50b5eb5d27d8178a4d58c6a550f8",
+      "statement_count": 37
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.strip",
+        "<dynamic>.with_suffix",
+        "Path",
+        "_apply_review_actions_template",
+        "_get_ppt_renderer",
+        "_in_pytest",
+        "_ppt_visual_review_enabled",
+        "_render_with_design_pages",
+        "callable",
+        "getattr",
+        "len",
+        "list",
+        "log.info",
+        "log.warning",
+        "new_result.get",
+        "r.get",
+        "range",
+        "render_fn",
+        "renderer.com_render_available",
+        "result.get",
+        "review_slides",
+        "rounds_meta.append",
+        "str",
+        "sum"
+      ],
+      "end_line": 4787,
+      "kind": "FunctionDef",
+      "line": 4716,
+      "normalized_ast_hash": "1c43e7c9a9dec26e889c3247c4dce91f154f0f19066cde29219bf2b4872e60cc",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "_visual_review_loop_template",
+      "root": false,
+      "source_hash": "d0d2d386d71915252e1c92dddad854e0788ba61d3e09c6b4f788c359fd7d1b58",
+      "statement_count": 41
+    },
+    {
+      "direct_callees": [
+        "_THEMES.get",
+        "name.lower"
+      ],
+      "end_line": 521,
+      "kind": "FunctionDef",
+      "line": 520,
+      "normalized_ast_hash": "74ba1565024c0db28526e3669b01d17b743bda688c003b786d68e4add0b28b2a",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "get_theme",
+      "root": false,
+      "source_hash": "44e4d2e8c3164a813b88ec134a04d454b842dd3719af11dc51e97ab5469c0514",
+      "statement_count": 2
+    },
+    {
+      "direct_callees": [
+        "SlideOutline",
+        "data.strip",
+        "isinstance",
+        "item.items",
+        "json.loads",
+        "out.append",
+        "so.normalize",
+        "text.endswith",
+        "text.find",
+        "text.rfind",
+        "text.startswith",
+        "text.strip"
+      ],
+      "end_line": 588,
+      "kind": "FunctionDef",
+      "line": 529,
+      "normalized_ast_hash": "a96a509c006ad036c1e29483a22ebcab74dc56dff1b54ecf3a15a3433ea1614d",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "parse_outline",
+      "root": false,
+      "source_hash": "0a1b4f9cea8df22c5cba3843229b801964217d64a4bfe2c19f29df673df4ec3c",
+      "statement_count": 41
+    },
+    {
+      "direct_callees": [
+        "_assign_image_layouts",
+        "_autofill_image_prompts",
+        "_default_template",
+        "_maybe_render_preview",
+        "_render_fromscratch",
+        "_render_with_design_pages",
+        "_render_with_template",
+        "_resolve_output_path",
+        "_resolve_template_for_render",
+        "_visual_review_loop",
+        "_visual_review_loop_template",
+        "any",
+        "get_theme",
+        "len",
+        "log.debug",
+        "log.warning",
+        "parse_outline",
+        "render_markdown_fallback"
+      ],
+      "end_line": 4424,
+      "kind": "FunctionDef",
+      "line": 4276,
+      "normalized_ast_hash": "d34f98f3f89bf63fb72676ab6d8de70d576c790d5a9cb8e76678eff7f16fdb74",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "ppt_create",
+      "root": false,
+      "source_hash": "337aa643d4fc0d2ea3d4b94c03b0c766d0d63921dae10ce29cd266aee5b98e0a",
+      "statement_count": 43
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.join",
+        "<dynamic>.strip",
+        "enumerate",
+        "lines.append"
+      ],
+      "end_line": 891,
+      "kind": "FunctionDef",
+      "line": 852,
+      "normalized_ast_hash": "998345a97c5ad238d842c423058230554ca36d212fa19e61add5c2ea4d84127c",
+      "path": "backend/deskpet/tools/ppt_tools.py",
+      "qualname": "render_markdown_fallback",
+      "root": false,
+      "source_hash": "7154e3c85e8b0df0479e0e1f0777ba614f9023fa83947ec18bbe1d9c77350b6d",
+      "statement_count": 34
+    },
+    {
+      "direct_callees": [],
+      "end_line": 1050,
+      "kind": "owner",
+      "line": 1050,
+      "normalized_ast_hash": "97c87023f72882c179c131df126ea735b6e910376ae2d194e26f5bfab1dcb75c",
+      "path": "backend/main.py",
+      "qualname": "<module>._PLAN_CONFIRM_WAITERS",
+      "root": true,
+      "source_hash": "378dd2c8b468efde1ca1e2015d74ee04233e28a7c81d5781e10ab102afbc497a",
+      "statement_count": 1
+    },
+    {
+      "direct_callees": [
+        "PPTOutlineWaiters"
+      ],
+      "end_line": 5368,
+      "kind": "owner",
+      "line": 5368,
+      "normalized_ast_hash": "4d38dac9ebbce24ed4c37796714f7698b91f3896b4817c469d1adf760837e32c",
+      "path": "backend/main.py",
+      "qualname": "<module>._PPT_OUTLINE_WAITERS",
+      "root": true,
+      "source_hash": "423897fd3e255b07b5a01787674ffff2bdbc8e272f7ad9abaf81574bbbcd5c62",
+      "statement_count": 1
+    },
+    {
+      "direct_callees": [
+        "_SCWaiters"
+      ],
+      "end_line": 1059,
+      "kind": "owner",
+      "line": 1059,
+      "normalized_ast_hash": "1fdbbc0b5c307ce6bb971dca4ad41fb1a4a73c4902e7eb134a0ef16cfcc0bda3",
+      "path": "backend/main.py",
+      "qualname": "<module>._SKILL_CANDIDATE_WAITERS",
+      "root": true,
+      "source_hash": "7fc5e81db73f14e3c0aa43a07e76f108103a1010afaf29b7be3e9476eb0481c7",
+      "statement_count": 1
+    },
+    {
+      "direct_callees": [],
+      "end_line": 6434,
+      "kind": "owner",
+      "line": 6434,
+      "normalized_ast_hash": "e3522d799d468c2869e3bdcb10232d354fb347c8dba17a5de8b302b3b70c524b",
+      "path": "backend/main.py",
+      "qualname": "<module>._auto_resume_redispatchers",
+      "root": true,
+      "source_hash": "640eeb622dab927c83e9c8258d00f1a8da44c19009a65cf4d4a20a9e3e9b3af1",
+      "statement_count": 1
+    },
+    {
+      "direct_callees": [],
+      "end_line": 6426,
+      "kind": "owner",
+      "line": 6426,
+      "normalized_ast_hash": "a5569d61913d5ada445bc67dfa58ed7ae7230f6605d308f446d105481e0e29e3",
+      "path": "backend/main.py",
+      "qualname": "<module>._chat_inflight",
+      "root": true,
+      "source_hash": "df7ff2ddb456e9cb6cca712cbff926bf89e7d841ee17a8be601d5139f0d2c8f1",
+      "statement_count": 1
+    },
+    {
+      "direct_callees": [],
+      "end_line": 619,
+      "kind": "owner",
+      "line": 619,
+      "normalized_ast_hash": "bd393dbc8a93e63244d7de83261c49e1456d4f95d1c6f429b196f3c67c7f1454",
+      "path": "backend/main.py",
+      "qualname": "<module>._clarify_pending",
+      "root": true,
+      "source_hash": "e06b8f03b00d29f5fd6761be47fea92f5b28185f2e0c2d867a4733b50d8eabdf",
+      "statement_count": 1
+    },
+    {
+      "direct_callees": [],
+      "end_line": 618,
+      "kind": "owner",
+      "line": 618,
+      "normalized_ast_hash": "febedf90d233c635b357b374790b5594dc7c24f2c64b2a16630532619ff73704",
+      "path": "backend/main.py",
+      "qualname": "<module>._permission_pending",
+      "root": true,
+      "source_hash": "a88b44496b844ebf1802d3d04c1adffb111cd0dbcaa0be5ce7f501dce3f4128a",
+      "statement_count": 1
+    },
+    {
+      "direct_callees": [],
+      "end_line": 6437,
+      "kind": "owner",
+      "line": 6437,
+      "normalized_ast_hash": "098b96d99be13e41edf137b088a78afa142169d7cce2b4b264d21f0a10b9f345",
+      "path": "backend/main.py",
+      "qualname": "<module>._pipelines",
+      "root": true,
+      "source_hash": "13672b38c459537f10e787c212fead8bcb30494bd4a3d68391bddbe5a6170da7",
+      "statement_count": 1
+    },
+    {
+      "direct_callees": [
+        "ContextFragment",
+        "ContextMessageMeta",
+        "any",
+        "bundle.fragments.append",
+        "enumerate",
+        "len",
+        "message.get",
+        "messages.insert",
+        "next",
+        "snapshot.to_protected_fragment",
+        "tag_message"
+      ],
+      "end_line": 1350,
+      "kind": "FunctionDef",
+      "line": 1309,
+      "normalized_ast_hash": "d5c0e99f83b4b49fc407a183a2ff5742d0d6ce0b29c0422b37d97e0b5282bd3d",
+      "path": "backend/main.py",
+      "qualname": "_attach_task_snapshot_to_request",
+      "root": false,
+      "source_hash": "b7c479dd8268c3f3f464d93060173544b63067c85b94909a93462e910a9b0972",
+      "statement_count": 12
+    },
+    {
+      "direct_callees": [
+        "_control_connections.items",
+        "_ws.send_json",
+        "list",
+        "logger.debug"
+      ],
+      "end_line": 5382,
+      "kind": "AsyncFunctionDef",
+      "line": 5376,
+      "normalized_ast_hash": "9e8f505388d37c00681b19c80e65de58025630a070cc88a2f76c881f316ec798",
+      "path": "backend/main.py",
+      "qualname": "_broadcast_control",
+      "root": false,
+      "source_hash": "94fef59fc066bde0146b609c359fc089ff9db8917a585d1f414b3468e8c24787",
+      "statement_count": 6
+    },
+    {
+      "direct_callees": [
+        "_chat_peer_groups.get",
+        "_control_connections.items",
+        "_initial_chat_peer_group",
+        "_peer_ws.send_json",
+        "asyncio.wait_for",
+        "isinstance",
+        "list",
+        "logger.debug",
+        "msg.get",
+        "payload.get",
+        "task_session_manager.peer_group"
+      ],
+      "end_line": 6362,
+      "kind": "AsyncFunctionDef",
+      "line": 6319,
+      "normalized_ast_hash": "edcc2f7b660de1199cba124a231e21dacb67b051c3bbba19a6617f4bf6db0a6a",
+      "path": "backend/main.py",
+      "qualname": "_broadcast_default_chat_peers",
+      "root": false,
+      "source_hash": "99a3e71d49e6807e025809496a3d49df3732a1193ab04306913b220d208c799e",
+      "statement_count": 21
+    },
+    {
+      "direct_callees": [
+        "OpenAICompatibleProvider",
+        "getattr",
+        "providers.append",
+        "registry.resolve_api_key",
+        "str"
+      ],
+      "end_line": 5899,
+      "kind": "FunctionDef",
+      "line": 5882,
+      "normalized_ast_hash": "2fee8cd0d180c599c3f1adcc4d9f09f586c730cee7c42c1a60f59cb069f0a18d",
+      "path": "backend/main.py",
+      "qualname": "_build_code_workflow_provider_chain",
+      "root": false,
+      "source_hash": "31bbdbeab0c3d2c7e4656823ddb151a4656d1e44c1f66a12c0e8e91a56d28a9a",
+      "statement_count": 9
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.get",
+        "GoalProjectionAdapter",
+        "ReceiptProjectionAdapter",
+        "TaskContextProjector",
+        "WorkflowProjectionAdapter",
+        "callable",
+        "getter",
+        "globals",
+        "services.get"
+      ],
+      "end_line": 1274,
+      "kind": "FunctionDef",
+      "line": 1223,
+      "normalized_ast_hash": "815ef1306841ae2642db1b6244d19bba81405f8f645999a98db18fcd7e999057",
+      "path": "backend/main.py",
+      "qualname": "_build_context_task_projector",
+      "root": false,
+      "source_hash": "7b5f3240fe3272e27919903532c2b3afbb747e3dceb4b05db983b99aad85206c",
+      "statement_count": 22
+    },
+    {
+      "direct_callees": [],
+      "end_line": 6163,
+      "kind": "FunctionDef",
+      "line": 6152,
+      "normalized_ast_hash": "6ca8bc48502700de7ea38e88707e5b7849ea54e333f8fbac11753386e8ce33b2",
+      "path": "backend/main.py",
+      "qualname": "_build_intent_hint",
+      "root": false,
+      "source_hash": "6466f10348a28352eacc685de6d85374b5ba3dbb9e45438c31afac064adce6f9",
+      "statement_count": 7
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.get",
+        "_load_llm_runtime_overrides",
+        "float",
+        "max",
+        "min"
+      ],
+      "end_line": 252,
+      "kind": "FunctionDef",
+      "line": 247,
+      "normalized_ast_hash": "99d711c5b331891731ef2de4f2ace56afa63c3fbce1002ab76acb236478d54f4",
+      "path": "backend/main.py",
+      "qualname": "_chat_turn_timeout_s",
+      "root": false,
+      "source_hash": "3092f971770d9628e1cff2d2c333bc097409e18ac1f3d310f9796a7db35908f0",
+      "statement_count": 5
+    },
+    {
+      "direct_callees": [
+        "getattr",
+        "str"
+      ],
+      "end_line": 1199,
+      "kind": "FunctionDef",
+      "line": 1196,
+      "normalized_ast_hash": "93089843f6ec3499ff7d810095e2c12520bf57328b88a8f5ac9532c54b00b4dd",
+      "path": "backend/main.py",
+      "qualname": "_configured_context_compaction_model",
+      "root": false,
+      "source_hash": "ddf516b0deaf49774fb507ba1b33ff8d57b811b52ac6ba844c52a00fbd2d77c4",
+      "statement_count": 4
+    },
+    {
+      "direct_callees": [
+        "_broadcast_default_chat_peers",
+        "_snapshot_context_usage_event",
+        "logger.debug",
+        "originator_ws.send_json"
+      ],
+      "end_line": 6136,
+      "kind": "AsyncFunctionDef",
+      "line": 6113,
+      "normalized_ast_hash": "502edde4466bdc120b9f5e7ab16b5b2b1346d78eecc3b711091252915fab61ac",
+      "path": "backend/main.py",
+      "qualname": "_emit_context_usage",
+      "root": false,
+      "source_hash": "c86a82f5e926aec533f5826d4e8ed29970f52febe748152e7bf2dcccfb8faa0f",
+      "statement_count": 11
+    },
+    {
+      "direct_callees": [
+        "task_session_manager.active_sid"
+      ],
+      "end_line": 5834,
+      "kind": "FunctionDef",
+      "line": 5831,
+      "normalized_ast_hash": "abe42056c4999687b6206a91a203f5ec9556897dc1935dca1147267ff629b71d",
+      "path": "backend/main.py",
+      "qualname": "_initial_chat_peer_group",
+      "root": false,
+      "source_hash": "8a8d39f344461b333da8355cf02bc519840d4844904c00be1b0578d4b8e6f527",
+      "statement_count": 4
+    },
+    {
+      "direct_callees": [
+        "LLM_RUNTIME_PATH.exists",
+        "LLM_RUNTIME_PATH.read_text",
+        "_json.loads",
+        "logger.warning"
+      ],
+      "end_line": 228,
+      "kind": "FunctionDef",
+      "line": 219,
+      "normalized_ast_hash": "ae120c8f9400803f4d398249414ed9f3e9022d3cef6e5916bd5dd1be617f48b0",
+      "path": "backend/main.py",
+      "qualname": "_load_llm_runtime_overrides",
+      "root": false,
+      "source_hash": "6c920a4178c54280a20dac50b0655f27666eebec643c5c7c14081f073f3cab24",
+      "statement_count": 9
+    },
+    {
+      "direct_callees": [],
+      "end_line": 837,
+      "kind": "FunctionDef",
+      "line": 782,
+      "normalized_ast_hash": "1096f4e9af562b3b88fe65ad19f591c7460b3290c1c94bf5a8f178f1fb966b92",
+      "path": "backend/main.py",
+      "qualname": "_make_str_llm_call",
+      "root": false,
+      "source_hash": "2527100e5be5803a10bc351f927c364e4484b17356e1cee53b1163e0262eff85",
+      "statement_count": 22
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.create_future",
+        "_SCodifier",
+        "_ag",
+        "_aio_sc.create_task",
+        "_aio_sc.get_event_loop",
+        "_aio_sc.wait_for",
+        "_await_candidate_decision",
+        "_cod.confirm",
+        "_codifier.propose",
+        "_gt_fn",
+        "_llm_for_codify.chat_with_fallback",
+        "_sc_candidate_store.fetch_pending",
+        "_sc_pending.get",
+        "_tp_rec.complete",
+        "_w.pop",
+        "callable",
+        "getattr",
+        "len",
+        "logger.debug",
+        "logger.info",
+        "provider_purpose_scope",
+        "service_context.get",
+        "waiters.add",
+        "ws.send_json"
+      ],
+      "end_line": 1182,
+      "kind": "AsyncFunctionDef",
+      "line": 1070,
+      "normalized_ast_hash": "05384e43dc16a664f3b99b8d2760bfae03b683b74a9ca165a3954d172f346d83",
+      "path": "backend/main.py",
+      "qualname": "_maybe_codify_skill",
+      "root": true,
+      "source_hash": "b5f4fba7be3e2e59a7d60f54905b4c740a8c186647a8b96cd843d45f0cb29dac",
+      "statement_count": 70
+    },
+    {
+      "direct_callees": [
+        "_aio_sc.wait_for",
+        "_cod.confirm",
+        "_w.pop",
+        "logger.debug",
+        "logger.info"
+      ],
+      "end_line": 1178,
+      "kind": "AsyncFunctionDef",
+      "line": 1160,
+      "normalized_ast_hash": "8a891c31c1de9ca932ffef94e14b62515b71b0c8858c26553f5d572690dbfa35",
+      "path": "backend/main.py",
+      "qualname": "_maybe_codify_skill._await_candidate_decision",
+      "root": false,
+      "source_hash": "40f23986d90af7a82222c502418a51ce42fe34860d7f9a0c32599ef447cd7598",
+      "statement_count": 10
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.strip",
+        "_broadcast_control",
+        "logger.warning",
+        "sdb.append_message",
+        "service_context.get",
+        "str",
+        "vw.enqueue"
+      ],
+      "end_line": 5653,
+      "kind": "AsyncFunctionDef",
+      "line": 5629,
+      "normalized_ast_hash": "d66c1d8de474bdfcf8245149b5b9bc68e73f6599f12b648a01b1467b2cc3fdef",
+      "path": "backend/main.py",
+      "qualname": "_ppt_notify_chat_bubble",
+      "root": false,
+      "source_hash": "66098ae36c24fc42999a9ae9df2ec3e7da9d44e3024f282049bd204e343fbe41",
+      "statement_count": 12
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.get",
+        "<dynamic>.lower",
+        "<dynamic>.strip",
+        "_PPT_OUTLINE_WAITERS.add",
+        "_PPT_OUTLINE_WAITERS.pop",
+        "_broadcast_control",
+        "_ppt_pro_cfg",
+        "asyncio.get_running_loop",
+        "asyncio.wait_for",
+        "bool",
+        "dict",
+        "float",
+        "getattr",
+        "int",
+        "list_history",
+        "logger.warning",
+        "loop.create_future",
+        "mark_status",
+        "save_outline",
+        "sdb.append_message",
+        "service_context.get",
+        "str",
+        "uuid.uuid4",
+        "vw.enqueue"
+      ],
+      "end_line": 5451,
+      "kind": "AsyncFunctionDef",
+      "line": 5385,
+      "normalized_ast_hash": "9117cb5c23a88777419b8fae24463b8be3da19fb25362b12a47b31a81112259a",
+      "path": "backend/main.py",
+      "qualname": "_ppt_outline_propose",
+      "root": true,
+      "source_hash": "b3c2509001553b6d447a5001bd065396ae9ad143d22df5575c1743b417c92706",
+      "statement_count": 29
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.project",
+        "<dynamic>.strip",
+        "TaskFact",
+        "_build_context_task_projector",
+        "str"
+      ],
+      "end_line": 1306,
+      "kind": "AsyncFunctionDef",
+      "line": 1277,
+      "normalized_ast_hash": "170d6915981e6209763ba92decf967caadee556617199cc1646ff5e1e8567958",
+      "path": "backend/main.py",
+      "qualname": "_project_initial_context_snapshot",
+      "root": false,
+      "source_hash": "5bca3462a8f17ee656e20867e089b1ebec1bab8797240cc60be459f790da5c82",
+      "statement_count": 5
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.strip",
+        "OpenAICompatibleProvider",
+        "getattr",
+        "logger.warning"
+      ],
+      "end_line": 913,
+      "kind": "FunctionDef",
+      "line": 872,
+      "normalized_ast_hash": "b030710bb4ffcdbc7510854829a8631132d689444fd25d0eed97d1a4c038a298",
+      "path": "backend/main.py",
+      "qualname": "_resolve_ephemeral_provider",
+      "root": false,
+      "source_hash": "3dd37760cbdb4dbbba43b8fe1a16b4cda86dca952641940be8e6179a1b23e6e3",
+      "statement_count": 15
+    },
+    {
+      "direct_callees": [
+        "_ppt_notify_chat_bubble",
+        "logger.warning",
+        "service.resolve_decision"
+      ],
+      "end_line": 5500,
+      "kind": "AsyncFunctionDef",
+      "line": 5486,
+      "normalized_ast_hash": "57e3018a89438a1ce3445f4fd0a374a92160511911d9fc8c1b0785e0546a92d0",
+      "path": "backend/main.py",
+      "qualname": "_resume_workflow_ppt_outline",
+      "root": false,
+      "source_hash": "24de81ed7dfe930ae8fcdb4a0753c070071386028e211edf52ef2f92bcf86187",
+      "statement_count": 5
+    },
+    {
+      "direct_callees": [],
+      "end_line": 5879,
+      "kind": "FunctionDef",
+      "line": 5876,
+      "normalized_ast_hash": "2a9220a8a26c444329356c1c3c82713767f2dc6da8d249819ea6e78e5e74d007",
+      "path": "backend/main.py",
+      "qualname": "_select_code_workflow_provider",
+      "root": false,
+      "source_hash": "45db10043124c124bb6c333ad388149a3b61647e1364086a4fe6bda5332ecfc4",
+      "statement_count": 3
+    },
+    {
+      "direct_callees": [
+        "_attempt_store.public_for_session",
+        "_candidates.append",
+        "_candidates.extend",
+        "_details.get",
+        "_latest_attempt.get",
+        "_resolve_model",
+        "attempt.get",
+        "float",
+        "getattr",
+        "int",
+        "isinstance",
+        "list",
+        "next",
+        "reversed",
+        "service_context.get",
+        "str",
+        "time.time",
+        "usage.get"
+      ],
+      "end_line": 6110,
+      "kind": "FunctionDef",
+      "line": 5989,
+      "normalized_ast_hash": "87ea0cb06e5206c27656f2770deea2f2a14636abf39e996eb3106ce1de9720dc",
+      "path": "backend/main.py",
+      "qualname": "_snapshot_context_usage_event",
+      "root": false,
+      "source_hash": "660ebd5827ef19d38deaede5cdf756ea1cfff0246d3f3c665ab41d4567f48522",
+      "statement_count": 68
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.get",
+        "_resume_workflow_ppt_outline",
+        "_workflow_ipc_background_tasks.add",
+        "asyncio.create_task",
+        "isinstance",
+        "item.prompt.get",
+        "len",
+        "next",
+        "oid.split",
+        "oid.startswith",
+        "service.human_store.list_open_decisions",
+        "service.run_store.get_run",
+        "service_context.get",
+        "str",
+        "task.add_done_callback"
+      ],
+      "end_line": 5533,
+      "kind": "AsyncFunctionDef",
+      "line": 5503,
+      "normalized_ast_hash": "7be7cc1080f8a29eed89e71f6671ed5027311e5a7050defd8c6a325446a9a316",
+      "path": "backend/main.py",
+      "qualname": "_start_workflow_ppt_outline_resume",
+      "root": true,
+      "source_hash": "fea862dfa9a776d91b7d7bc6d57629de8df298313b8269076eab770259214bbd",
+      "statement_count": 20
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.run_in_executor",
+        "PptRuntime",
+        "RuntimeError",
+        "WorkflowContext",
+        "_paths.user_data_dir",
+        "_workflow_research_tools._resolve_default_llm_call",
+        "asyncio.create_task",
+        "asyncio.get_running_loop",
+        "bool",
+        "delivery_state.get",
+        "getattr",
+        "int",
+        "launcher.launch",
+        "launcher.recover_pending",
+        "launcher.register_adapter",
+        "legacy_ports",
+        "payload.get",
+        "ppt_pro_initial_state",
+        "ppt_tools.set_ppt_pro_services",
+        "row.get",
+        "service_context.get",
+        "session_db.get_session_delivery_state",
+        "str",
+        "values.get",
+        "workflow_service.session_lock"
+      ],
+      "end_line": 5828,
+      "kind": "FunctionDef",
+      "line": 5729,
+      "normalized_ast_hash": "1c6d5dad476fa0829327139ffe04d16c38b2bea37104f115529cb75b48ec7692",
+      "path": "backend/main.py",
+      "qualname": "_wire_ppt_pro_services_for_startup",
+      "root": true,
+      "source_hash": "89999395cb71aabede752774cd53353b9a35444e801aa2b77329e73f5c430aa6",
+      "statement_count": 31
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.get",
+        "<dynamic>.warning",
+        "IterationTracer",
+        "RegexExtractor",
+        "RuntimeError",
+        "VerifyGate",
+        "_AgentLoop",
+        "_EE",
+        "_Path",
+        "_SCG",
+        "_agent_cfg.get",
+        "_build_context_task_projector",
+        "_build_pipeline_external_evaluator",
+        "_build_pipeline_verify_gate",
+        "_cfg_raw.get",
+        "_configured_context_compaction_model",
+        "_inspect_ephemeral_factory.signature",
+        "_log.getLogger",
+        "_make_str_llm_call",
+        "_paths.user_data_dir",
+        "_resolve_ephemeral_provider",
+        "_services.get",
+        "_verify_metric",
+        "bool",
+        "getattr",
+        "globals",
+        "int",
+        "isinstance",
+        "len",
+        "load_claim_patterns",
+        "logger.info",
+        "logger.warning",
+        "make_ephemeral_verifier",
+        "patterns_path.is_absolute",
+        "receipt_store_getter",
+        "service_context.get",
+        "str",
+        "uuid.uuid4"
+      ],
+      "end_line": 1749,
+      "kind": "FunctionDef",
+      "line": 1353,
+      "normalized_ast_hash": "7aaada1a96679514bad4b638c130d3c31918a6c2cd4a079ccb72274a020d70c5",
+      "path": "backend/main.py",
+      "qualname": "build_agent",
+      "root": false,
+      "source_hash": "cb6ca2bd06e1f3dcf30e0ea7ac76380fb0be5e78b62dd19c9bfc9f2b83e8cf24",
+      "statement_count": 137
+    },
+    {
+      "direct_callees": [
+        "_EE",
+        "_make_str_llm_call",
+        "_resolve_ephemeral_provider",
+        "getattr",
+        "logger.info",
+        "logger.warning",
+        "str"
+      ],
+      "end_line": 1628,
+      "kind": "FunctionDef",
+      "line": 1612,
+      "normalized_ast_hash": "22c5f86d0dfba54ff6496ae1c2180a2967bf2de093400a465d7fd100dfb497e5",
+      "path": "backend/main.py",
+      "qualname": "build_agent._build_pipeline_external_evaluator",
+      "root": false,
+      "source_hash": "2b3358b0a951821b36e22aa937131d195321af707c372b8d53eb55fb6bebd3e8",
+      "statement_count": 13
+    },
+    {
+      "direct_callees": [
+        "RegexExtractor",
+        "VerifyGate",
+        "_Path",
+        "_make_str_llm_call",
+        "_pf.is_absolute",
+        "_resolve_ephemeral_provider",
+        "getattr",
+        "load_claim_patterns",
+        "logger.warning",
+        "make_ephemeral_verifier",
+        "str"
+      ],
+      "end_line": 1610,
+      "kind": "FunctionDef",
+      "line": 1586,
+      "normalized_ast_hash": "699d7e3229956e70a51363d7930440281e13d32d7710b00aff440f27d4d76fb3",
+      "path": "backend/main.py",
+      "qualname": "build_agent._build_pipeline_verify_gate",
+      "root": false,
+      "source_hash": "f410a835eaacc841ed6daeb7f5834145a307fb9cef51ae9c521f0d40c25e915a",
+      "statement_count": 17
+    },
+    {
+      "direct_callees": [],
+      "end_line": 10273,
+      "kind": "FunctionDef",
+      "line": 10234,
+      "normalized_ast_hash": "8fc4f5c419913d426477100ddd7a63c8189b9e34a002a2faeaea3b322ac0fb9d",
+      "path": "backend/main.py",
+      "qualname": "control_channel._make_followup_cb",
+      "root": false,
+      "source_hash": "89299349363b6d33de0fefeda45a860f334a0d5a21abd17fc7d5262813f98be1",
+      "statement_count": 20
+    },
+    {
+      "direct_callees": [
+        "_make_followup_cb",
+        "_new_task.add_done_callback",
+        "_run_chat_with_timeout",
+        "asyncio.create_task"
+      ],
+      "end_line": 10222,
+      "kind": "AsyncFunctionDef",
+      "line": 10217,
+      "normalized_ast_hash": "255918e15299ccc955c1aa8324cbe99559f740c8f8db42839355758727cee7cf",
+      "path": "backend/main.py",
+      "qualname": "control_channel._redisp",
+      "root": false,
+      "source_hash": "4b5063f4df4b4b7cad38f72ed9916edd674cccda479fcdfe0d9d4049b610622c",
+      "statement_count": 4
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.encode",
+        "<dynamic>.endswith",
+        "<dynamic>.get",
+        "<dynamic>.hexdigest",
+        "<dynamic>.lower",
+        "<dynamic>.startswith",
+        "<dynamic>.strip",
+        "LegacyProductDomainSink",
+        "OpenAICompatibleProvider",
+        "PresentationState",
+        "ProductTurnPreparer",
+        "RunPresentationContext",
+        "RuntimeError",
+        "TurnInput",
+        "ValueError",
+        "_CodeChainShim",
+        "_CodeEligibility",
+        "_CodeExecutionContext",
+        "_CodeProposalPort",
+        "_CodeToolDispatchPort",
+        "_CodeToolIntent",
+        "_CtxMgr.for_session",
+        "_GateShim",
+        "_Shim",
+        "_ToolEligibilityContext",
+        "_WorkflowContext",
+        "_accepted.get",
+        "_agent.run",
+        "_agent_cfg.get",
+        "_attach_task_snapshot_to_request",
+        "_base_delivery.get",
+        "_broadcast_default_chat_peers",
+        "_build_code_workflow_provider_chain",
+        "_build_intent_hint",
+        "_cap_cfg.get",
+        "_cap_classify",
+        "_chain.append",
+        "_cmm.code_session_id",
+        "_cmm.is_enabled",
+        "_cmm.project_root",
+        "_code_capability_snapshot",
+        "_code_delivery.get",
+        "_code_initial_state",
+        "_code_mode_for_turn.get",
+        "_code_mode_for_turn.is_enabled",
+        "_code_planner.prepare_initial",
+        "_code_scope_store.open",
+        "_code_workflow_session_ref",
+        "_collect_chat_attachments",
+        "_collect_code_attachments",
+        "_comp_cfg.get",
+        "_ctx_mgr.config._resolved_model_info",
+        "_emit_context_usage",
+        "_hashlib.sha256",
+        "_held_session_locks.append",
+        "_im.get",
+        "_is_deep_research_request",
+        "_is_short_contextual_followup",
+        "_json.loads",
+        "_lock.acquire",
+        "_lock.locked",
+        "_lock.release",
+        "_msg.lower",
+        "_msgs.insert",
+        "_pref_im.match",
+        "_prep_chat_msgs",
+        "_project_initial_context_snapshot",
+        "_registry.resolve_api_key",
+        "_request_planner.prepare_initial",
+        "_resolve_chain",
+        "_resolve_code_chain",
+        "_resolve_code_model_info",
+        "_resolve_ws",
+        "_route_workflow_task",
+        "_run_presenter.finish_turn",
+        "_run_presenter.present",
+        "_run_presenter.present_domain",
+        "_sa_store.set_status",
+        "_scope_store.open",
+        "_sdb.append_message",
+        "_sdb.get_code_todos",
+        "_sdb.get_session_delivery_state",
+        "_select_code_workflow_provider",
+        "_session_ref.to_dict",
+        "_start_deepresearch",
+        "_started.get",
+        "_trusted_context_os_e2e_case",
+        "_turn_preparer.plan_decision",
+        "_turn_preparer.prepare_context",
+        "_turn_preparer.route_intent",
+        "_uuid_turn.uuid4",
+        "_verdict.render_text",
+        "_vw.enqueue",
+        "_workflow_launcher.launch",
+        "_workflow_service.session_lock",
+        "_ws.send_json",
+        "any",
+        "bool",
+        "build_agent",
+        "build_legacy_run_presenter",
+        "cm_local.code_session_id",
+        "config.raw.get",
+        "deskpet_tool_registry_v2.catalog_snapshot",
+        "deskpet_tool_registry_v2.list_tools",
+        "deskpet_tool_registry_v2.set_session_context",
+        "dict",
+        "float",
+        "getattr",
+        "hasattr",
+        "int",
+        "isinstance",
+        "item.get",
+        "item.to_dict",
+        "len",
+        "list",
+        "logger.debug",
+        "logger.info",
+        "logger.warning",
+        "max",
+        "min",
+        "os.environ.get",
+        "r.get",
+        "reversed",
+        "schema.get",
+        "service_context.get",
+        "sorted",
+        "str",
+        "time.time",
+        "tuple",
+        "type"
+      ],
+      "end_line": 10141,
+      "kind": "AsyncFunctionDef",
+      "line": 8783,
+      "normalized_ast_hash": "90a441d04e45ddfdf833070ed3726341c4bbf0269b6016ac8929f4a2a289cf8d",
+      "path": "backend/main.py",
+      "qualname": "control_channel._run_chat",
+      "root": true,
+      "source_hash": "70a2406df016661332af87256d8511e43ef42a51c3b725f8df9577e66e1262cc",
+      "statement_count": 361
+    },
+    {
+      "direct_callees": [
+        "_broadcast_default_chat_peers",
+        "_chat_turn_timeout_s",
+        "_g_ws.send_json",
+        "_run_chat",
+        "asyncio.wait_for",
+        "int",
+        "logger.warning",
+        "round"
+      ],
+      "end_line": 10194,
+      "kind": "AsyncFunctionDef",
+      "line": 10152,
+      "normalized_ast_hash": "18fd4d836aae9b273d585dff17ee3f58d8c1e294c3472d8e059eca0914e327da",
+      "path": "backend/main.py",
+      "qualname": "control_channel._run_chat_with_timeout",
+      "root": true,
+      "source_hash": "b24b13986051df31a299418945c969ac68d5971cb51bae4c558a3a37c7e6f5fc",
+      "statement_count": 11
+    },
+    {
+      "direct_callees": [
+        "_Hint2",
+        "_auto_resume_redispatchers.get",
+        "_content.startswith",
+        "_control_connections.get",
+        "_m.get",
+        "_nq2.push",
+        "_redisp",
+        "len",
+        "logger.debug",
+        "logger.warning",
+        "reversed",
+        "service_context.get"
+      ],
+      "end_line": 5204,
+      "kind": "AsyncFunctionDef",
+      "line": 5165,
+      "normalized_ast_hash": "9e2a8626c22fa590d1ef8bed34e9fe4d6ef4744b405ef16a9dc7f9ad95b7bb40",
+      "path": "backend/main.py",
+      "qualname": "lifespan._auto_resume_dispatch",
+      "root": true,
+      "source_hash": "c24601c394db2f51a8ad82a6ce1137e1341d421bfe94c9c1817c671b68f1146d",
+      "statement_count": 24
+    },
+    {
+      "direct_callees": [],
+      "end_line": 211,
+      "kind": "owner",
+      "line": 211,
+      "normalized_ast_hash": "47320d8d6f6b0e0b80a979dffbe2b18ed9a8194f0f9f58e0135e839e8a81f6e6",
+      "path": "backend/pipeline/voice_pipeline.py",
+      "qualname": "VoicePipeline._broadcast",
+      "root": false,
+      "source_hash": "c110e39654391a151d90988f49984c4da3792eebd2cc77fa5e617b61a44632b5",
+      "statement_count": 1
+    },
+    {
+      "direct_callees": [
+        "_maybe_codify_skill",
+        "logger.debug",
+        "str"
+      ],
+      "end_line": 293,
+      "kind": "AsyncFunctionDef",
+      "line": 281,
+      "normalized_ast_hash": "6577cd1602bec213c8270e68a2febfc820ca12d6ccb359a587a2408cfa8c954b",
+      "path": "backend/pipeline/voice_pipeline.py",
+      "qualname": "VoicePipeline._codify_worker",
+      "root": false,
+      "source_hash": "da9478262e2c5319bca0349ecdbd4c3dbc30045c51f3343b25bf55f61260641e",
+      "statement_count": 6
+    },
+    {
+      "direct_callees": [
+        "isinstance",
+        "output.append",
+        "self._emit_tag_event"
+      ],
+      "end_line": 317,
+      "kind": "AsyncFunctionDef",
+      "line": 308,
+      "normalized_ast_hash": "68569d720cbbef8bacfa000dd0bc0c74a2fb08552b81734111122c27cc6c66a7",
+      "path": "backend/pipeline/voice_pipeline.py",
+      "qualname": "VoicePipeline._consume_tag_items",
+      "root": false,
+      "source_hash": "f355b075c53fa311f26c914a1dd4dccf0ac62f6bad48c1395a1a92f37248144a",
+      "statement_count": 5
+    },
+    {
+      "direct_callees": [
+        "self.control_ws.send_json"
+      ],
+      "end_line": 306,
+      "kind": "AsyncFunctionDef",
+      "line": 295,
+      "normalized_ast_hash": "091f390681f4d10cca5d3f230ac0efd8291762c2d6128d7925e362d7dbaceeda",
+      "path": "backend/pipeline/voice_pipeline.py",
+      "qualname": "VoicePipeline._emit_tag_event",
+      "root": false,
+      "source_hash": "6de67b1eab1338aa6521b290d3668be05bdcd170867769ab43899a9078c99c40",
+      "statement_count": 8
+    },
+    {
+      "direct_callees": [
+        "asyncio.ensure_future",
+        "self._codify_tasks.add",
+        "self._codify_worker",
+        "task.add_done_callback"
+      ],
+      "end_line": 279,
+      "kind": "AsyncFunctionDef",
+      "line": 262,
+      "normalized_ast_hash": "324f610adc05ab7a57f2ad3ae2e1d20f2c203b6fad7c5778aaa3522cb76f5e71",
+      "path": "backend/pipeline/voice_pipeline.py",
+      "qualname": "VoicePipeline._maybe_codify_voice",
+      "root": false,
+      "source_hash": "9cbe71b7b216058f7dbbeecace4510991194cd4fde6f1c2f31751f3b96608254",
+      "statement_count": 8
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.join",
+        "StreamingTagParser",
+        "logger.info",
+        "parser.feed",
+        "parser.flush",
+        "provider_purpose_scope",
+        "self._consume_tag_items",
+        "self.agent.chat_stream",
+        "stage_timer"
+      ],
+      "end_line": 855,
+      "kind": "AsyncFunctionDef",
+      "line": 825,
+      "normalized_ast_hash": "ecd3868ce3f564c926176add134154592bfcc87e526c25035d92234e01798f86",
+      "path": "backend/pipeline/voice_pipeline.py",
+      "qualname": "VoicePipeline._run_legacy_chat_stream",
+      "root": true,
+      "source_hash": "ead0622cbc1fd2dd41db639ca25153d7c9f19fedb12aed787f1942569c3edc32",
+      "statement_count": 19
+    },
+    {
+      "direct_callees": [
+        "<dynamic>.get",
+        "<dynamic>.join",
+        "ContextFragment",
+        "RuntimeError",
+        "StreamingTagParser",
+        "ToolEligibilityContext",
+        "_AgentLoop",
+        "_CtxMgr.for_session",
+        "_Shim",
+        "_build_agent",
+        "_ctx",
+        "_ctx_mgr.config._resolved_model_info",
+        "_g",
+        "_raw.get",
+        "assembler.assemble",
+        "bool",
+        "bundle.build_messages",
+        "bundle.fragments.append",
+        "collect_attachment_budget",
+        "getattr",
+        "int",
+        "isinstance",
+        "json.dumps",
+        "logger.info",
+        "logger.warning",
+        "loop.run",
+        "max",
+        "min",
+        "parser.feed",
+        "parser.flush",
+        "planner.prepare_initial",
+        "project_public_tool_arguments",
+        "project_public_tool_result",
+        "sc.get",
+        "scope_store.open",
+        "sdb.append_message",
+        "self._broadcast",
+        "self._consume_tag_items",
+        "self._maybe_codify_voice",
+        "self.control_ws.send_json",
+        "stage_timer",
+        "str",
+        "type",
+        "uuid.uuid4",
+        "vw.enqueue"
+      ],
+      "end_line": 1231,
+      "kind": "AsyncFunctionDef",
+      "line": 857,
+      "normalized_ast_hash": "10ed8a0bdde2afabe4261a89dad7f92e77d7151b37731b28d00fc8a0dc3311a1",
+      "path": "backend/pipeline/voice_pipeline.py",
+      "qualname": "VoicePipeline._run_with_tools",
+      "root": true,
+      "source_hash": "65f3baabcc9a2dde8e402ee4f3d6036cc4a4e127f36e9607ece9bb2ba2a652f0",
+      "statement_count": 144
+    },
+    {
+      "direct_callees": [
+        "getattr",
+        "getter"
+      ],
+      "end_line": 893,
+      "kind": "FunctionDef",
+      "line": 889,
+      "normalized_ast_hash": "61c1d175fffa155749077c6b811035df0422b621498251001e0982732f1a056a",
+      "path": "backend/pipeline/voice_pipeline.py",
+      "qualname": "VoicePipeline._run_with_tools._ctx",
+      "root": false,
+      "source_hash": "de7ce0f75018e3dcf0b0a41e8cc3952c39d56abdcc3e42570daa6d5c7dfab7fa",
+      "statement_count": 5
+    },
+    {
+      "direct_callees": [
+        "sc.get"
+      ],
+      "end_line": 1010,
+      "kind": "FunctionDef",
+      "line": 1009,
+      "normalized_ast_hash": "e6d608791b23afdbb38c6b24e304b6ed79fba0d3c67cf9cbb60cb5f3b3e9c2f5",
+      "path": "backend/pipeline/voice_pipeline.py",
+      "qualname": "VoicePipeline._run_with_tools._g",
+      "root": false,
+      "source_hash": "4b5080345bd1ebdf9a6eed88d311360497ae186ef463a448dfb645688c19c286",
+      "statement_count": 2
+    }
+  ]
+}

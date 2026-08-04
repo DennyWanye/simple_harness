@@ -1,0 +1,30 @@
+Connected: http://tauri.localhost/
+
+[setup] winmcp foreground: hwnd=1314232
+
+── R3-1 ──
+  [✗] R3-1 winmcp 真发你好                                 FAIL    — focus failed: None
+
+── R3-2 ──
+  [✗] R3-2 toolbar 已连接 + FPS                           FAIL    — None
+
+── R3-3 ──
+  [✗] R3-3 winmcp 真发 skill 触发                          FAIL    — focus failed: None
+
+── R5-1 ──
+Traceback (most recent call last):
+  File "G:\projects\deskpet\plans\manual-results-2026-05-26-master\winmcp_full_suite.py", line 388, in <module>
+    asyncio.run(main())
+  File "C:\Users\24378\AppData\Local\Python\pythoncore-3.11-64\Lib\asyncio\runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\24378\AppData\Local\Python\pythoncore-3.11-64\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\24378\AppData\Local\Python\pythoncore-3.11-64\Lib\asyncio\base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "G:\projects\deskpet\plans\manual-results-2026-05-26-master\winmcp_full_suite.py", line 211, in main
+    if not foc.get("found"):
+           ^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'

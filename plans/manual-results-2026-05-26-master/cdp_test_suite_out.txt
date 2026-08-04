@@ -1,0 +1,25 @@
+Connected to pet main: http://tauri.localhost/
+
+  [✓] R3-2 toolbar 已连接 + FPS PASS — 无 service error
+     waiting up to 30s for skill response...
+  [~] R3-3 自然语言触发 skill    PARTIAL — LLM replied but no clear skill trigger: 。
+查看详细参数
+拒绝
+Esc
+本会话始终允许
+允许一次
+当然可以～给你做一个 2026年5月开支统计表，先包含「餐饮」和「交通」两类：
+
+| 日期 | 类别 | 项目说明 | 金额（元） | 备注 |
+||||:||
+| 5月1日 | 餐
+  [✓] R5-1 账户面板打开          PASS — email=True balance=True logout=True
+  [✓] TC-10 主输入栏面板互斥       PASS — panel 打开后主 chat-input 已隐藏
+  [✓] TC-10 关闭后恢复          PASS — 主 chat-input 恢复显示
+  [✓] TC-08 settings/模型 modal PASS — settings=True dialog=True
+  [~] TC-09 mic 切录音态       PARTIAL — click sent but no obvious state change: {'afterPressed': None, 'afterCls': ''}
+  [?] B5 ppt-generate      SKIP — 自然语言 LLM 路由 + 真生成 .pptx 时间长，单独跑
+
+=== Summary ===
+PASS: 5  FAIL: 0  PARTIAL: 2  SKIP: 1
+Output: G:\projects\deskpet\plans\manual-results-2026-05-26-master\cdp_test_results.json

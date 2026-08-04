@@ -1,0 +1,9 @@
+# Shell scripts must keep LF endings on Windows (else `#!/bin/bash` breaks on CI).
+*.sh text eol=lf
+
+# Capability manifests hash exact installed bytes. Keep every text asset in a
+# pack stable across Windows/Linux checkouts so integrity checks are portable.
+capability-packs/** text eol=lf
+
+# Public-read oracle fixtures are hashed byte-for-byte across Windows and CI.
+backend/tests/fixtures/harness_public_read/*.json text eol=lf

@@ -1,0 +1,49 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
+import { useEffect, useRef, useState, useCallback } from "react";
+import { AudioChannel, type AudioConnectionState } from "../ws/AudioChannel";
+import type { AudioMessage } from "../types/messages";
+
+export function useAudioChannel(
+  port: number = 8100,
+  secret: string = "",
+  enabled: boolean = false,
+) {
+  const channelRef = useRef<AudioChannel | null>(null);
+  const [state, setState] = useState<AudioConnectionState>("disconnected");
+  const [lastMessage, setLastMessage] = useState<AudioMessage | null>(null);
+
+  useEffect(() => {
+    if (!enabled) {
+      channelRef.current?.disconnect();
+      channelRef.current = null;
+      setState("disconnected");
+      setLastMessage(null);
+      return;
+    }
+
+    const channel = new AudioChannel(port, secret);
+    channelRef.current = channel;
+
+    const unsubState = channel.onStateChange(setState);
+    const unsubMsg = channel.onJson(setLastMessage);
+
+    channel.connect();
+
+    return () => {
+      unsubState();
+      unsubMsg();
+      channel.disconnect();
+      channelRef.current = null;
+    };
+  }, [port, secret, enabled]);
+
+  const sendAudio = useCallback((pcmData: ArrayBuffer) => {
+    channelRef.current?.sendAudio(pcmData);
+  }, []);
+
+  const getChannel = useCallback(() => channelRef.current, []);
+
+  return { state, lastMessage, sendAudio, getChannel };
+}

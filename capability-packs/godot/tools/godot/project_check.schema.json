@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deskpet.local/schemas/capability-packs/godot/project_check.schema.json",
+  "title": "Godot 4 headless project check",
+  "description": "Load a Godot project with the real headless editor and report parse, resource, and startup diagnostics.",
+  "type": "object",
+  "required": [
+    "project_path"
+  ],
+  "properties": {
+    "project_path": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Canonical task-authorized directory containing project.godot."
+    },
+    "godot_executable": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional exact Godot executable path previously returned by godot__detect."
+    },
+    "timeout_seconds": {
+      "type": "integer",
+      "minimum": 5,
+      "maximum": 300,
+      "default": 90
+    }
+  },
+  "additionalProperties": false
+}

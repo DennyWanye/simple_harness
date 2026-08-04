@@ -1,0 +1,24 @@
+Connected: http://tauri.localhost/
+
+[setup] winmcp foreground: hwnd=1314232
+
+── R3-1 ──
+Traceback (most recent call last):
+  File "G:\projects\deskpet\plans\manual-results-2026-05-26-master\winmcp_full_suite.py", line 388, in <module>
+    asyncio.run(main())
+  File "C:\Users\24378\AppData\Local\Python\pythoncore-3.11-64\Lib\asyncio\runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\24378\AppData\Local\Python\pythoncore-3.11-64\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\24378\AppData\Local\Python\pythoncore-3.11-64\Lib\asyncio\base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "G:\projects\deskpet\plans\manual-results-2026-05-26-master\winmcp_full_suite.py", line 159, in main
+    res = await winmcp_type_via_paste_and_submit(ws, "你好", 100)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\projects\deskpet\plans\manual-results-2026-05-26-master\winmcp_full_suite.py", line 124, in winmcp_type_via_paste_and_submit
+    if not foc.get("isActive"):
+           ^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'

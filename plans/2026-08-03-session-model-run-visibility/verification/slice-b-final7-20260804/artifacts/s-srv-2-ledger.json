@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "scenario_id": "S-SRV-2",
+  "session_id": "30d57304-0c60-452e-8ebf-de9a3eb6a258",
+  "history": {
+    "completed_user_assistant_pairs": 10,
+    "compaction_sample_id": "e60a98997476de277d818950b4a5ef7ea33719f0bf948270a08d4209d43bbcda",
+    "based_on_sample_id": "f32a8becf23db6fd4e7ed3acea7f61fdbbf2819e801bc9632392ea7936d02407",
+    "source_event_id": "context-compaction:30d57304-0c60-452e-8ebf-de9a3eb6a258:67786dfec89e54dfb00d48f5660cd322:1",
+    "tokens_before": 3453,
+    "tokens_after": 108,
+    "context_window": 32000,
+    "provider_id": "relay-cloud",
+    "model_id": "kimi-k3",
+    "binding_epoch": 1
+  },
+  "task": {
+    "root_run_id": "04999765753a5342aa9f7b4619b0fd38",
+    "child_run_id": "child-4c4aa2bff86494de5b042af56ae763c9",
+    "root_status": "completed",
+    "child_status": "completed",
+    "semantic_phases": 5,
+    "visible_tool_operations": 2,
+    "task_scope_id": "task-7a6b55999ff088df68917dd93ffcace5",
+    "workspace_root": "F:\\projects\\deskpet-e2e-scratch\\session-model-run-visibility",
+    "workspace_source": "user_path",
+    "binding_version": 2,
+    "root_provider": "relay-cloud",
+    "root_model": "kimi-k3",
+    "child_provider": "OpenAICompatibleAgentLLM",
+    "child_model": "kimi-k3",
+    "file_result": "calculator.py returns a + b",
+    "test_result": "1 passed in 0.00s"
+  },
+  "screenshot": {
+    "path": "s-srv-2-long-session-graph.jpg",
+    "sha256": "ad460a9c97c4fdf00a2f631bbab63e18f8236ba35bced930e2f16df42ed0bcce",
+    "size_bytes": 216631
+  }
+}

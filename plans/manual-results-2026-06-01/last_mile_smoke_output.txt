@@ -1,0 +1,26 @@
+[1mDeskPet last-mile acceptance smoke[0m
+  branch: [36mmaster[0m  commit: [36m0884c93[0m
+  repo:   [36mG:\projects\deskpet[0m
+
+[1m=== MR-0 zero-regression (VETO) ===[0m
+  [32m[PASS][0m MR-0 backend zero-regression (pytest) [1m[31m(VETO)[0m
+  [33m[SKIP][0m MR-0 vitest [1m[31m(VETO)[0m  -- npx missing
+  [32m[PASS][0m MR-0 cargo check [1m[31m(VETO)[0m
+
+[1m=== MR-8 fake-completion (VETO) ===[0m
+  [32m[PASS][0m MR-8 fake-completion capture (TG-9) [1m[31m(VETO)[0m
+
+[1m=== MR-13 file_exists outcome (VETO) ===[0m
+  [32m[PASS][0m MR-13 file_exists outcome verifier (TG-10) [1m[31m(VETO)[0m
+
+[1m=== MR-19 HMAC privacy + N1 (VETO) ===[0m
+  [32m[PASS][0m MR-19 HMAC privacy (TG-7+TG-8 + N1) [1m[31m(VETO)[0m
+
+[1m=== Stage-2 admission (N1/N2) ===[0m
+  [32m[PASS][0m Stage-2 admission (T9-12b + T9-14b)
+
+[1m=== Summary ===[0m
+  total: 7  [32mpass: 6[0m  [31mfail: 0[0m  [33mskip: 1[0m
+  report: [36mG:\projects\deskpet\plans\2026-05-23-tool-last-mile-upgrade\manual-results-2026-06-01T081541Z\acceptance.json[0m
+
+  [1m[32mDECISION: SHIP[0m — all checks passed.

@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "method": "windows-mcp Clipboard + SendKeys ^v + {ENTER}",
+  "cdp_role": "focus() only (no input simulation)",
+  "chat_input_value_after_paste": "你好",
+  "reply_keyword_found": "你好呀",
+  "body_tail": "消息\n你好呀～我在呢。\n发送\n开机启动\n28 FPS\n已连接",
+  "ts": "2026-05-31 00:02:49"
+}

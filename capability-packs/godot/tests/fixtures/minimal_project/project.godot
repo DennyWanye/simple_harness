@@ -1,0 +1,19 @@
+; Engine configuration file.
+; Minimal Godot 4 fixture used by the first-party adapter tests.
+
+config_version=5
+
+[application]
+
+config/name="DeskPet Godot Fixture"
+run/main_scene="res://main.tscn"
+
+[display]
+
+window/size/viewport_width=320
+window/size/viewport_height=180
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

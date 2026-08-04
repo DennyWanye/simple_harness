@@ -1,0 +1,12 @@
+{
+  "name": "smoke-final",
+  "root_pid": 22336,
+  "create_time_utc": "2026-07-25T12:01:12.8051776Z",
+  "command_line": "F:\\projects\\deskpet\\backend\\.venv\\Scripts\\python.exe scripts/acceptance/companion_growth_smoke.py",
+  "observed_process_count": 13,
+  "peak_private_bytes": 1099345920,
+  "released_private_bytes": 1099345920,
+  "result": "540 passed + 39 passed; DECISION: SHIP",
+  "survivor_count": 0,
+  "stdout": "smoke-final.out.log"
+}

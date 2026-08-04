@@ -1,0 +1,94 @@
+{
+  "schema_version": 3,
+  "captured_at": "2026-07-15T00:18:41.876730+00:00",
+  "query_schema_version": 1,
+  "thresholds": {
+    "support_rate": 0.6,
+    "published_factual_claims": 8,
+    "citations": 8,
+    "independent_domains": 4,
+    "body_bytes": 1500,
+    "mean_support_rate": 0.7,
+    "p95_elapsed_ms": 360000
+  },
+  "aggregate": {
+    "completed": 3,
+    "sample_size": 3,
+    "mean_support_rate": 1.0,
+    "p95_elapsed_ms": 66409,
+    "p95_method": "nearest-rank",
+    "policy_to_webgpu_attempted": true,
+    "decision": "PASS"
+  },
+  "runs": [
+    {
+      "category": "official_technical_docs",
+      "query_fingerprint": "dd298210dd5691b8",
+      "run_id": "904c4117c8a848aaa395df1792301185",
+      "workflow_version": "v3",
+      "status": "completed",
+      "elapsed_ms": 59065,
+      "support_rate": 1.0,
+      "published_factual_claims": 13,
+      "citations": 9,
+      "independent_domains": 6,
+      "body_bytes": 2175,
+      "provider_attempt_count": 30,
+      "provider_probe_count": 0,
+      "gate": {
+        "support_rate": true,
+        "published_factual_claims": true,
+        "citations": true,
+        "independent_domains": true,
+        "body_bytes": true
+      },
+      "successful": true
+    },
+    {
+      "category": "cn_policy_latest",
+      "query_fingerprint": "8b75c2ff48054be3",
+      "run_id": "6621f93a890e443eb0e5d69f10f0173c",
+      "workflow_version": "v3",
+      "status": "completed",
+      "elapsed_ms": 66409,
+      "support_rate": 1.0,
+      "published_factual_claims": 12,
+      "citations": 10,
+      "independent_domains": 7,
+      "body_bytes": 4143,
+      "provider_attempt_count": 22,
+      "provider_probe_count": 2,
+      "gate": {
+        "support_rate": true,
+        "published_factual_claims": true,
+        "citations": true,
+        "independent_domains": true,
+        "body_bytes": true
+      },
+      "successful": true
+    },
+    {
+      "category": "web_standard_dynamic",
+      "query_fingerprint": "ceb258441732f0f6",
+      "run_id": "bb09339bc2dc44dba8477e1ff44ec98a",
+      "workflow_version": "v3",
+      "status": "completed",
+      "elapsed_ms": 60055,
+      "support_rate": 1.0,
+      "published_factual_claims": 14,
+      "citations": 8,
+      "independent_domains": 8,
+      "body_bytes": 2442,
+      "provider_attempt_count": 22,
+      "provider_probe_count": 2,
+      "gate": {
+        "support_rate": true,
+        "published_factual_claims": true,
+        "citations": true,
+        "independent_domains": true,
+        "body_bytes": true
+      },
+      "successful": true
+    }
+  ]
+}

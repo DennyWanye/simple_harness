@@ -1,0 +1,6 @@
+# 4th confirmation — migration→wired via the REAL INSTALLED production shell (f:\deskpet\deskpet.exe) + source backend (2026-06-23)
+## Installed Rust shell honored DESKPET_BACKEND_DIR → ran SOURCE backend (my migration code):
+1:[backend_launch] Dev python=G:\projects\deskpet\backend\.venv\Scripts\python.exe backend_dir=G:\projects\deskpet\backend
+## Curator wired from the migrated userdata config (curation_nudge=true):
+63:INFO:__main__:event='oh4_curation_nudge_wired' level='info' timestamp='2026-06-23T08:40:08.373088Z' every_n=2 auto_learnings=True
+## NOTE: installed shell's auto-updater then launched an NSIS installer (DeskPet Setup) → killed WITHOUT installing (safety). No GUI chat possible via this path.

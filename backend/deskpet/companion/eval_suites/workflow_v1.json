@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "suite_id": "workflow_v1",
+  "kind": "workflow",
+  "cases": [
+    {
+      "case_id": "workflow.readonly_memory_step",
+      "required": true,
+      "input": {
+        "workflow_id": "companion-evaluation-memory-v1",
+        "fixture_id": "memory_recall.workflow"
+      },
+      "assertions": [
+        {
+          "kind": "step_completed",
+          "step_id": "recall"
+        },
+        {
+          "kind": "fixture_ref_preserved"
+        }
+      ]
+    },
+    {
+      "case_id": "workflow.build_drift_fail_closed",
+      "required": true,
+      "input": {
+        "workflow_id": "companion-evaluation-memory-v1",
+        "fixture_id": "memory_recall.workflow"
+      },
+      "assertions": [
+        {
+          "kind": "inconclusive_on_build_drift"
+        },
+        {
+          "kind": "live_owner_memory_not_accessed"
+        }
+      ]
+    }
+  ]
+}

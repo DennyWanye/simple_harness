@@ -1,0 +1,10 @@
+### V4 flag-OFF byte-level BC — pytest (flags default False) ###
+Command: pytest 17 subagent/agent_parallel/team suites
+Result: 158 passed in 5.63s (0 failures, diff=0)
+
+Key BC assertions:
+- test_subagent_config.py:11  assert f.subagent_driver is False  (flags default OFF)
+- test_agent_parallel_kinds.py:71  test_scheduler_none_is_bc (BC) — scheduler=None -> flat gather, no subagent_scheduled
+- test_byte_level_consistency.py — agent_parallel envelope {ok,result,error} byte-identical when flag off
+
+Live contrast: V1/V3/V5 scheduler fired ONLY because flags=ON. With flags OFF main.py passes scheduler=None (BC path).
