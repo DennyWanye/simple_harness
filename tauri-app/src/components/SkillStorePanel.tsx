@@ -45,10 +45,22 @@ interface AlertState {
   message: string;
 }
 
+/** 本面板只消费 send/onMessage —— 收窄类型以便页面宿主（SkillsView）传入
+ * 与 CapabilityCenterPanel 相同的 Pick 通道。既有全量 ControlChannel
+ * 调用点仍然兼容（结构子类型）。 */
+type SkillStoreChannel = Pick<ControlChannel, "send" | "onMessage">;
+
 interface Props {
   open: boolean;
-  channel: ControlChannel | null;
-  onClose: () => void;
+  channel: SkillStoreChannel | null;
+  /**
+   * 渲染形态（D5 宿主模式）：
+   * - "overlay"（默认）：fixed backdrop + 居中 modal（既有行为）；
+   * - "page"：工作台视图内嵌 —— 去 backdrop/fixed，填满内容区
+   *   （SkillsView 宿主，WB-6）。page 模式无关闭钮，onClose 可省略。
+   */
+  variant?: "overlay" | "page";
+  onClose?: () => void;
   /** Optional bridge back to the default Capability Center. */
   onOpenCapabilityCenter?: () => void;
 }
@@ -75,6 +87,7 @@ const TAB_LABEL: Record<Tab, string> = {
 export const SkillStorePanel: React.FC<Props> = ({
   open,
   channel,
+  variant = "overlay",
   onClose,
   onOpenCapabilityCenter,
 }) => {
@@ -257,36 +270,27 @@ export const SkillStorePanel: React.FC<Props> = ({
 
   if (!open) return null;
 
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(2,6,23,0.72)",
-        backdropFilter: "blur(2px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 9000,
-        animation: `bp-fade-in ${tokens.duration.base}ms ${tokens.easing.out}`,
-      }}
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="skill-store-title"
-    >
+  const isPage = variant === "page";
+
+  const container = (
       <div
-        style={{
-          ...surfaceModal,
-          width: 720,
-          maxWidth: "94vw",
-          maxHeight: "86vh",
-          display: "flex",
-          flexDirection: "column",
-          animation: `bp-pop-in ${tokens.duration.base}ms ${tokens.easing.out}`,
-          position: "relative",
-        }}
-        onClick={(e) => e.stopPropagation()}
+        role={isPage ? "region" : undefined}
+        aria-label={isPage ? "技能商店" : undefined}
+        style={
+          isPage
+            ? pageContainerStyle
+            : {
+                ...surfaceModal,
+                width: 720,
+                maxWidth: "94vw",
+                maxHeight: "86vh",
+                display: "flex",
+                flexDirection: "column",
+                animation: `bp-pop-in ${tokens.duration.base}ms ${tokens.easing.out}`,
+                position: "relative",
+              }
+        }
+        onClick={isPage ? undefined : (e) => e.stopPropagation()}
       >
         {/* Header */}
         <div
@@ -350,26 +354,28 @@ export const SkillStorePanel: React.FC<Props> = ({
               返回能力中心
             </button>
           ) : null}
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 32,
-              height: 32,
-              padding: 0,
-              borderRadius: 9,
-              background: dark.card,
-              border: `1px solid ${dark.border}`,
-              color: dark.textMuted,
-              cursor: "pointer",
-            }}
-            aria-label="关闭"
-          >
-            <Icon name="close" size={16} />
-          </button>
+          {!isPage && onClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 32,
+                height: 32,
+                padding: 0,
+                borderRadius: 9,
+                background: dark.card,
+                border: `1px solid ${dark.border}`,
+                color: dark.textMuted,
+                cursor: "pointer",
+              }}
+              aria-label="关闭"
+            >
+              <Icon name="close" size={16} />
+            </button>
+          ) : null}
         </div>
 
         {/* Tabs */}
@@ -475,8 +481,51 @@ export const SkillStorePanel: React.FC<Props> = ({
           />
         )}
       </div>
+  );
+
+  if (isPage) return container;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(2,6,23,0.72)",
+        backdropFilter: "blur(2px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 9000,
+        animation: `bp-fade-in ${tokens.duration.base}ms ${tokens.easing.out}`,
+      }}
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="skill-store-title"
+    >
+      {container}
     </div>
   );
+};
+
+/**
+ * page variant（D5 宿主模式）：无 fixed/backdrop，flex 填满工作台内容区。
+ * position:relative 保留 —— ConfirmModal 以 absolute inset 0 覆盖本容器。
+ * 背景交给 WorkbenchShell（dark.bgSolid），零新增硬编码色值（T15）。
+ */
+const pageContainerStyle: React.CSSProperties = {
+  flex: 1,
+  width: "100%",
+  height: "100%",
+  minWidth: 0,
+  minHeight: 0,
+  display: "flex",
+  flexDirection: "column",
+  overflow: "hidden",
+  position: "relative",
+  background: "transparent",
+  color: dark.text,
+  fontFamily: tokens.font.ui,
 };
 
 // ---------- Installed list ----------

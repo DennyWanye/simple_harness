@@ -251,6 +251,41 @@ describe("CapabilityCenterPanel", () => {
     expect(screen.queryByRole("dialog", { name: /授权/ })).toBeNull();
   });
 
+  it("page variant 内嵌渲染：无 dialog/backdrop/关闭钮，快照请求照发（WB-6）", () => {
+    const channel = new FakeCapabilityChannel();
+    render(
+      <CapabilityCenterPanel
+        open
+        variant="page"
+        channel={channel}
+        onOpenLegacySkillStore={vi.fn()}
+        initialCapabilities={capabilities}
+      />,
+    );
+
+    // 页面化：不再是模态浮层（D5 page 分支去 backdrop/fixed）。
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("presentation")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "关闭能力中心" }),
+    ).toBeNull();
+
+    // 填满内容区（非 fixed 定位 + 100% 宽高）。
+    const region = screen.getByRole("region", { name: "能力中心" });
+    expect(region.style.position).toBe("");
+    expect(region.style.width).toBe("100%");
+    expect(region.style.height).toBe("100%");
+
+    // 列表/详情与快照请求行为与 overlay 完全一致（能力不减）。
+    expect(screen.getByTestId("capability-list")).toBeTruthy();
+    expect(screen.getByTestId("capability-detail")).toBeTruthy();
+    expect(channel.sent.map((message) => message.type)).toEqual([
+      "capability_list",
+      "capability_operations_list",
+      "permission_auto_mode_get",
+    ]);
+  });
+
   it("keeps the legacy Skill Store reachable", () => {
     const openLegacy = vi.fn();
     const rendered = render(

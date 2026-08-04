@@ -35,7 +35,14 @@ const EMPTY_OPERATIONS: CapabilityOperation[] = [];
 interface Props {
   open: boolean;
   channel: CapabilityChannel | null;
-  onClose: () => void;
+  /**
+   * 渲染形态（D5 宿主模式）：
+   * - "overlay"（默认）：既有浮层 —— fixed backdrop + 居中 dialog；
+   * - "page"：工作台视图内嵌 —— 去 backdrop/fixed，填满内容区
+   *   （SkillsView 宿主，WB-6）。page 模式无关闭钮，onClose 可省略。
+   */
+  variant?: "overlay" | "page";
+  onClose?: () => void;
   onOpenLegacySkillStore: () => void;
   initialCapabilities?: CapabilityDescriptor[];
   initialOperations?: CapabilityOperation[];
@@ -77,6 +84,7 @@ function readCachedAuthorizationMode(): CapabilityAuthorizationMode {
 export function CapabilityCenterPanel({
   open,
   channel,
+  variant = "overlay",
   onClose,
   onOpenLegacySkillStore,
   initialCapabilities = EMPTY_CAPABILITIES,
@@ -200,19 +208,14 @@ export function CapabilityCenterPanel({
 
   if (!open) return null;
 
-  return (
-    <div
-      role="presentation"
-      style={backdropStyle}
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
+  const isPage = variant === "page";
+
+  const panel = (
       <section
-        role="dialog"
-        aria-modal="true"
+        role={isPage ? "region" : "dialog"}
+        aria-modal={isPage ? undefined : "true"}
         aria-label="能力中心"
-        style={panelStyle}
+        style={isPage ? pagePanelStyle : panelStyle}
       >
         <header style={headerStyle}>
           <div>
@@ -229,14 +232,16 @@ export function CapabilityCenterPanel({
             >
               打开旧 Skill Store
             </button>
-            <button
-              type="button"
-              aria-label="关闭能力中心"
-              onClick={onClose}
-              style={iconButtonStyle}
-            >
-              ×
-            </button>
+            {!isPage && onClose ? (
+              <button
+                type="button"
+                aria-label="关闭能力中心"
+                onClick={onClose}
+                style={iconButtonStyle}
+              >
+                ×
+              </button>
+            ) : null}
           </div>
         </header>
 
@@ -384,6 +389,19 @@ export function CapabilityCenterPanel({
           </main>
         )}
       </section>
+  );
+
+  if (isPage) return panel;
+
+  return (
+    <div
+      role="presentation"
+      style={backdropStyle}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose?.();
+      }}
+    >
+      {panel}
     </div>
   );
 }
@@ -578,6 +596,22 @@ const panelStyle: CSSProperties = {
   background: dark.bg,
   color: dark.text,
   boxShadow: "0 24px 70px rgba(0,0,0,0.48)",
+};
+/**
+ * page variant（D5 宿主模式）：无 fixed/backdrop，flex 填满工作台内容区；
+ * 背景交给 WorkbenchShell（dark.bgSolid），零新增硬编码色值（T15）。
+ */
+const pagePanelStyle: CSSProperties = {
+  flex: 1,
+  width: "100%",
+  height: "100%",
+  minWidth: 0,
+  minHeight: 0,
+  display: "flex",
+  flexDirection: "column",
+  overflow: "hidden",
+  background: "transparent",
+  color: dark.text,
 };
 const headerStyle: CSSProperties = {
   display: "flex",
