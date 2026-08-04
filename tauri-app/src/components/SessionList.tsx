@@ -37,6 +37,11 @@ import {
 /** 后端 default 会话（companion 主线程）。 */
 const DEFAULT_SID = "default";
 
+type IncomingCtrlMsg = {
+  type?: string;
+  payload?: { sessions?: unknown; session_id?: string; title?: string } & Record<string, unknown>;
+};
+
 export type SessionEntry = {
   session_id: string;
   turn_count: number;
@@ -73,7 +78,7 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
   // 监听后端 sessions_list_response / session_deleted / session_renamed；
   // 挂载时拉一次清单（原「面板打开时」语义 → 侧栏常驻改为 mount 时）。
   useEffect(() => {
-    const off = controlWS.on_message((msg: any) => {
+    const off = controlWS.on_message((msg: IncomingCtrlMsg) => {
       if (msg?.type === "sessions_list_response") {
         const arr = Array.isArray(msg?.payload?.sessions) ? msg.payload.sessions : [];
         setSessionList(arr);
@@ -110,7 +115,7 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
   // 上的 session_switched/task_session_started 及带 session_id 的消息
   // 驱动 activeSid 上抛；同时消解 newTopicPending。
   useEffect(() => {
-    return controlWS.on_message((msg: any) => {
+    return controlWS.on_message((msg: IncomingCtrlMsg) => {
       const p = msg?.payload || {};
       if (
         msg?.type === "session_switched" ||

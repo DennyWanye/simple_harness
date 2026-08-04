@@ -102,6 +102,11 @@ function workflowRetryError(message: string, code: string, definitive: boolean):
   return Object.assign(new Error(message), { code, definitive });
 }
 
+type IncomingCtrlMsg = {
+  type?: string;
+  payload?: { sessions?: unknown; session_id?: string; title?: string } & Record<string, unknown>;
+};
+
 export interface ChatViewProps {
   activeSid: string;
   /** App 下传的后端共享秘钥（空 = 后端未就绪，显示状态条）。 */
@@ -222,7 +227,7 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
   const [sessionMeta, setSessionMeta] = useState<
     Record<string, { title?: string; preview?: string }>
   >({});
-  useEffect(() => controlWS.on_message((msg: any) => {
+  useEffect(() => controlWS.on_message((msg: IncomingCtrlMsg) => {
     if (msg?.type === "sessions_list_response") {
       const arr = Array.isArray(msg?.payload?.sessions) ? msg.payload.sessions : [];
       const next: Record<string, { title?: string; preview?: string }> = {};
@@ -237,7 +242,7 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
       if (sid) {
         setSessionMeta((prev) => ({
           ...prev,
-          [sid]: { ...prev[sid], title: String(msg.payload.title ?? "") },
+          [sid]: { ...prev[sid], title: String(msg.payload?.title ?? "") },
         }));
       }
     }
@@ -337,6 +342,9 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
     ? `${companionOwner.profile_id}:${companionOwner.profile_generation}`
     : "";
   useEffect(() => {
+    // 迁移自 MessagePanelRoot（已退役）的原样逻辑：owner 变更时重置详情
+    // 选择。render 期调整模式的重构列入后续任务，此处保持行为等价。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDetailEvent(null);
   }, [companionOwnerKey]);
 
@@ -346,6 +354,8 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
       detailEvent,
       companionEvents,
     );
+    // 同上：MessagePanelRoot 原样迁移的选中派生逻辑，行为等价优先。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (current !== detailEvent) setDetailEvent(current);
   }, [companionEvents, detailEvent]);
 
@@ -614,13 +624,16 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
       const clean = forPet(m.text);
       if (clean) out.push({ role: "assistant", text: clean, ts });
     });
+    // provisional 条目排在全部已落库消息之后即可；用已有最大 ts 派生
+    // 纯函数时间基（渲染期不得调用 Date.now，react-hooks/purity）。
+    const provisionalBaseTs = (out.length ? out[out.length - 1].ts : 0) + 1;
     companionProvisional.forEach((text, index) => {
       const clean = forPet(text);
       if (clean) {
         out.push({
           role: "assistant",
           text: clean,
-          ts: Date.now() + index,
+          ts: provisionalBaseTs + index,
         });
       }
     });

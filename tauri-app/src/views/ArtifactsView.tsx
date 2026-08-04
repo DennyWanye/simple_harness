@@ -201,10 +201,12 @@ export const ArtifactsView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    setError(null);
+    // 不在 await 前同步 setState（react-hooks/set-state-in-effect）；
+    // 成功路径顺带清 error。
     try {
       const list = await invoke<ArtifactListEntry[]>("list_artifacts");
       setEntries(Array.isArray(list) ? list : []);
+      setError(null);
     } catch (e) {
       setEntries([]);
       setError(errorMessage(e));
@@ -212,6 +214,9 @@ export const ArtifactsView: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    // fetch-on-mount：refresh 的首个同步语句是 try/await，setState 全部
+    // 发生在 await 之后；规则的保守估计在此为误报，定点豁免。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
   }, [refresh]);
 

@@ -30,3 +30,7 @@ phase-3/4 收口时上述四命令重跑：任何新增 FAIL/error 即回归，�
   candidate_draft_receipts（v19→v20）、skill_pack_adapter 库存 hash。T16 收口按
   "不低于基线"判定：companion 回归以 9F/641P 为基线（007 净增 1 绿）。
 - pytest 需 `PYTHONPATH=<repo根>` 且 venv 已增量装 pytest 9.1.1 + pytest-asyncio 1.4.0。
+- **lint 存量债务（phase-4 门序首查如实登记）**：`npm run lint` 存量 166 errors / 42 个
+  fork 前既有文件（controlWs 35、SettingsProviders 18、App 16…），deskpet 时代未做过
+  lint 清理。本次改版新增/改造文件 lint 零错误（5 处新文件错误已修，3 处迁移模式定点
+  豁免带理由）。lint 门口径 = 零新增错误。
