@@ -105,11 +105,6 @@ pub fn run() {
             commands::app_exit,
             // P4-S22: native folder picker for Code mode entry.
             commands::open_directory_dialog,
-            // 2026-05-19: slim message panel as its own docked window.
-            commands::open_message_panel,
-            commands::close_message_panel,
-            commands::dock_message_panel,
-            commands::toggle_message_panel,
             // WI-01 (beta-100): first-run onboarding state.
             onboarding::onboarding_status,
             onboarding::onboarding_complete,
@@ -228,19 +223,19 @@ pub fn run() {
                 }
             }
             if let tauri::WindowEvent::Destroyed = event {
-                // Only the main pet's destroy means "quit the app";
-                // any other window is a non-event for the supervisor.
+                // Only the main window's destroy means "quit the app";
+                // any transient window (native dialogs, etc.) is a
+                // non-event for the supervisor.
                 if window.label() != "main" {
                     return;
                 }
                 if let Some(state) = window.try_state::<BackendProcess>() {
                     state.kill_child();
                 }
-                // 关闭桌宠主窗 = 退出整个 app。否则启动时一并创建的隐藏窗口
-                // message-panel 会让进程继续存活，python
-                // backend 也跟着不退（即便有 job object 也只在进程真正退出时
-                // 才触发清理），重开时撞 8100 端口占用。显式 exit → 进程结束
-                // → job object 关闭 → backend 被 OS 连带终止。
+                // 2026-08-04 Workbench 改版：应用只剩 main 一个窗口，
+                // 关主窗 = 退出整个 app。保留显式 exit(0)：确保进程立刻
+                // 结束 → job object 关闭 → python backend 被 OS 连带终止，
+                // 不给 8100 端口残留留任何窗口期。
                 window.app_handle().exit(0);
             }
         })

@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main and message-panel only; privileged Companion commands are additionally label/scope checked in Rust",
-  "windows": ["main", "message-panel"],
+  "description": "Main window only (Workbench, 2026-08-04); privileged Companion commands are additionally label/scope checked in Rust",
+  "windows": ["main"],
   "permissions": [
     "core:default",
     "opener:default",
