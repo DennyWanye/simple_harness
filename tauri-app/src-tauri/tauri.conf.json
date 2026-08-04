@@ -14,19 +14,17 @@
     "windows": [
       {
         "label": "main",
-        "title": "SimpleHarness",
-        "width": 500,
-        "height": 640,
-        "minWidth": 360,
-        "minHeight": 360,
-        "maxWidth": 1200,
-        "maxHeight": 1600,
-        "decorations": false,
-        "transparent": true,
+        "title": "Simple Harness",
+        "width": 1000,
+        "height": 700,
+        "minWidth": 800,
+        "minHeight": 560,
+        "decorations": true,
+        "transparent": false,
         "alwaysOnTop": false,
         "resizable": true,
-        "maximizable": false,
-        "skipTaskbar": true,
+        "maximizable": true,
+        "skipTaskbar": false,
         "center": true
       },
       {
@@ -47,8 +45,7 @@
     ],
     "security": {
       "csp": null
-    },
-    "macOSPrivateApi": true
+    }
   },
   "bundle": {
     "active": true,

@@ -15,9 +15,10 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 # P4-S21 #7: tray-icon feature is gated; without it tauri::tray module
 # doesn't exist and the system tray (Show/Hide/Quit menu) won't compile.
-# macos-private-api: 透明无边框窗在 macOS 上需要（tauri.conf.json 的
-# app.macOSPrivateApi=true 与此 feature 必须成对出现）。
-tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
+# 2026-08-04 Workbench UI 改版：主窗改普通窗口（decorations=true,
+# transparent=false），macos-private-api feature 与 tauri.conf.json 的
+# app.macOSPrivateApi 一并移除。
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
 # W5 (R17): self-update. pubkey configured in tauri.conf.json.
 tauri-plugin-updater = "2"
@@ -25,7 +26,6 @@ tauri-plugin-updater = "2"
 tauri-plugin-autostart = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-window-vibrancy = "0.6"
 # P2-1-S3: cloud LLM API key 持久化在 OS keychain。
 # 需要显式启用平台原生 backend (v3 不再默认启用任何 backend)。
 # 三平台 feature 互不干扰 —— 每个 cfg 只编译相关代码。

@@ -19,7 +19,7 @@
 //! 失败策略：读失败 → 用 tauri.conf.json 默认；写失败 → 静默忽略。
 //! 这个功能丢一次状态无所谓，不能因为 IO 错误炸应用。
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -40,8 +40,12 @@ pub struct WindowGeometry {
     pub y: Option<i32>,
 }
 
-const MIN_W: u32 = 240;
-const MIN_H: u32 = 360;
+// 2026-08-04 Workbench UI 改版（WB-1）：主窗最小尺寸随 tauri.conf.json
+// 提升为 800×560。旧值兼容语义维持现状——越界（含低于新 MIN 的旧记录，
+// 如改版前的 500×640）**拒绝返 None，回退 conf 默认**，不做 clamp。
+// 这是一次性的预期迁移代价（behavior-contract B8）。
+const MIN_W: u32 = 800;
+const MIN_H: u32 = 560;
 const MAX_W: u32 = 4000;
 const MAX_H: u32 = 4000;
 const DEBOUNCE_MS: u64 = 800;
@@ -52,14 +56,20 @@ fn geometry_file() -> Option<PathBuf> {
     Some(dir.join("window_geometry.json"))
 }
 
-pub fn load() -> Option<WindowGeometry> {
-    let path = geometry_file()?;
-    let s = std::fs::read_to_string(&path).ok()?;
+/// 从指定文件读取几何记录并做范围校验（`load` 的可测内核）。
+/// 越界（尺寸低于 MIN 或高于 MAX）→ None → 调用方回退 tauri.conf.json 默认。
+fn load_from(path: &Path) -> Option<WindowGeometry> {
+    let s = std::fs::read_to_string(path).ok()?;
     let g: WindowGeometry = serde_json::from_str(&s).ok()?;
     if g.width < MIN_W || g.height < MIN_H || g.width > MAX_W || g.height > MAX_H {
         return None;
     }
     Some(g)
+}
+
+pub fn load() -> Option<WindowGeometry> {
+    let path = geometry_file()?;
+    load_from(&path)
 }
 
 pub fn save(g: WindowGeometry) -> std::io::Result<()> {
@@ -212,10 +222,6 @@ struct DebouncerState {
     last_event_at: Option<Instant>,
     pending: Option<WindowGeometry>,
     timer_armed: bool,
-    /// 2026-06-03 跨 DPI 尺寸漂移修复：权威逻辑尺寸（pin）。首个 resize/move
-    /// 事件时从已保存(boot 恢复)的尺寸初始化；此后 resize/move 一律沿用此值，
-    /// 不再用 physical/scale 反算的尺寸覆盖它。详见 `pin_size`。
-    committed_size: Option<(u32, u32)>,
 }
 
 /// 防抖落盘。挂在 Tauri app state 上，单例。clone() 廉价（Arc）。
@@ -239,53 +245,23 @@ impl ResizeDebouncer {
     /// Resized → … 形成振荡（桌宠剧烈抖动 + 被 current_monitor 误判拽回主屏，
     /// 无法从主屏拖到副屏）。clamp 只在启动时 apply_saved_geometry 跑一次即可，
     /// 不在运行期 resize/drag 干预位置。
+    /// 2026-08-04 Workbench UI 改版（WB-10）：主窗现在是普通可缩放窗口，
+    /// 用户拖拽缩放的真实尺寸**必须**持久化——原"pin 尺寸"逻辑（针对
+    /// 无缩放入口的桌宠窗防跨 DPI 漂移）已删除，Resized 事件直接进 debouncer。
     pub fn on_resize(&self, win: &Window, physical: PhysicalSize<u32>) {
         eprintln!("[window_geometry] on_resize physical={}x{}", physical.width, physical.height);
         if let Some(g) = build_geometry(win, Some(physical)) {
-            // 跨 DPI 尺寸漂移修复：用 pin 住的权威逻辑尺寸，不让 DPI 变化改尺寸。
-            self.schedule_save(self.pin_size(g));
-        }
-    }
-
-    /// 2026-06-02: move 事件 → 持久化位置（桌宠记住用户放的显示器）。
-    /// 尺寸现读（拖动不改尺寸，但一并存以保持文件完整）。
-    pub fn on_move(&self, win: &Window) {
-        if let Some(g) = build_geometry(win, None) {
-            // 跨 DPI 尺寸漂移修复：move 路径同样 pin 尺寸（拖动只改位置不改尺寸）。
-            let g = self.pin_size(g);
-            eprintln!("[window_geometry] on_move pos=({:?},{:?}) size={}x{}", g.x, g.y, g.width, g.height);
             self.schedule_save(g);
         }
     }
 
-    /// 2026-06-03 跨 DPI 尺寸漂移修复（"拖几次只剩一半"根因）。
-    ///
-    /// `build_geometry` 用 `physical_size / scale_factor` 反算逻辑尺寸。跨不同 DPI
-    /// 显示器拖动时，Resized 携带的 physical（尤其窗口横跨两屏的瞬间）与
-    /// `scale_factor()` 不总是同拍 → 反算的逻辑尺寸有误差，经 resize+move 两条持久化
-    /// 路径反复写回、多次跨屏累积 → 逻辑尺寸单调漂移（实测 375×610 → 360×657）→
-    /// 窗口窄于角色 → 桌宠只显示一半。
-    ///
-    /// 本桌宠窗口**无用户改尺寸入口**（无边框拖拽 / 无缩放滑块；前端 resize 持久化
-    /// 已于 2026-05-31 删除）——逻辑尺寸理应 boot 后恒定。故 **pin 住**：首次事件以
-    /// 已保存(boot apply_saved_geometry 恢复)的尺寸为权威值，此后所有 resize/move 一律
-    /// 沿用，DPI 变化只让窗口物理尺寸自适应、绝不改持久化的逻辑尺寸。若将来加入真·
-    /// 缩放功能，应由该功能直接更新 `committed_size`（或走独立命令路径）。
-    fn pin_size(&self, mut g: WindowGeometry) -> WindowGeometry {
-        let mut st = self.state.lock().unwrap();
-        let (w, h) = match st.committed_size {
-            Some(s) => s,
-            None => {
-                let s = load()
-                    .map(|saved| (saved.width, saved.height))
-                    .unwrap_or((g.width, g.height));
-                st.committed_size = Some(s);
-                s
-            }
-        };
-        g.width = w;
-        g.height = h;
-        g
+    /// 2026-06-02: move 事件 → 持久化位置（记住用户放的显示器）。
+    /// 尺寸现读（拖动不改尺寸，但一并存以保持文件完整）。
+    pub fn on_move(&self, win: &Window) {
+        if let Some(g) = build_geometry(win, None) {
+            eprintln!("[window_geometry] on_move pos=({:?},{:?}) size={}x{}", g.x, g.y, g.width, g.height);
+            self.schedule_save(g);
+        }
     }
 
     fn schedule_save(&self, g: WindowGeometry) {
@@ -354,4 +330,73 @@ pub fn set_window_geometry(
     let (x, y) = load().map(|g| (g.x, g.y)).unwrap_or((None, None));
     save(WindowGeometry { width, height, x, y }).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write_geometry_file(name: &str, json: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "deskpet-window-geometry-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        std::fs::write(&path, json).unwrap();
+        path
+    }
+
+    /// WB-1/WB-10 迁移语义：改版前的旧记录（500×640 桌宠窗）低于新 MIN
+    /// (800×560) → **拒绝返 None**，启动回退 tauri.conf.json 默认。
+    /// 这是预期的一次性迁移行为（behavior-contract B8），不是 clamp。
+    #[test]
+    fn legacy_pet_size_below_new_min_is_rejected_falls_back_to_conf_default() {
+        let path = write_geometry_file(
+            "legacy-500x640.json",
+            r#"{"width":500,"height":640,"x":100,"y":100}"#,
+        );
+        assert!(load_from(&path).is_none());
+    }
+
+    #[test]
+    fn geometry_within_new_bounds_is_accepted() {
+        let path = write_geometry_file(
+            "valid-1000x700.json",
+            r#"{"width":1000,"height":700,"x":50,"y":60}"#,
+        );
+        let g = load_from(&path).expect("in-range geometry must load");
+        assert_eq!((g.width, g.height), (1000, 700));
+        assert_eq!((g.x, g.y), (Some(50), Some(60)));
+    }
+
+    /// 恰好等于新 MIN 的记录必须被接受（边界含端点）。
+    #[test]
+    fn geometry_exactly_at_new_min_is_accepted() {
+        let path = write_geometry_file(
+            "min-800x560.json",
+            r#"{"width":800,"height":560}"#,
+        );
+        let g = load_from(&path).expect("MIN boundary must be accepted");
+        assert_eq!((g.width, g.height), (MIN_W, MIN_H));
+        // 旧 {width,height} 文件无 x/y → serde default None（位置不恢复）。
+        assert_eq!((g.x, g.y), (None, None));
+    }
+
+    #[test]
+    fn geometry_above_max_is_rejected() {
+        let path = write_geometry_file(
+            "over-max.json",
+            r#"{"width":5000,"height":5000}"#,
+        );
+        assert!(load_from(&path).is_none());
+    }
+
+    #[test]
+    fn corrupt_or_missing_file_is_rejected() {
+        let path = write_geometry_file("corrupt.json", "not-json{");
+        assert!(load_from(&path).is_none());
+        let missing = std::env::temp_dir().join("deskpet-window-geometry-test-missing.json");
+        assert!(load_from(&missing).is_none());
+    }
 }

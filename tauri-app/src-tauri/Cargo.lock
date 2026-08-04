@@ -4125,7 +4125,6 @@ dependencies = [
  "tokio",
  "uuid",
  "webview2-com",
- "window-vibrancy",
  "windows",
 ]
 
