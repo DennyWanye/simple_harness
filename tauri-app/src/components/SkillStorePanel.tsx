@@ -34,6 +34,7 @@ import {
   inputStyle,
   surfaceModal,
   tabStyle,
+  backdropStyle,
 } from "../theme/components";
 import { tokens } from "../theme/tokens";
 
@@ -490,7 +491,7 @@ export const SkillStorePanel: React.FC<Props> = ({
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(2,6,23,0.72)",
+        background: backdropStyle.background,
         backdropFilter: "blur(2px)",
         display: "flex",
         alignItems: "center",
@@ -879,7 +880,7 @@ const ConfirmModal: React.FC<{
       style={{
         position: "absolute",
         inset: 0,
-        background: "rgba(2,6,23,0.72)",
+        background: backdropStyle.background,
         backdropFilter: "blur(3px)",
         display: "flex",
         alignItems: "center",

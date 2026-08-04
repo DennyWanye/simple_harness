@@ -1,0 +1,410 @@
+{
+  "run_id": "workbench-ui-20260805-r2",
+  "source_request_text": "好的， 我现在准备把live2D的部分去掉，只需要一个主页面就好，然后主页面上面有设置这样一个按钮。请你先和我讨论一下修改后续的页面UI样式，然后开始处理（后续经讨论定稿为：C 工作台方向/深色单主题/普通窗口/桌宠代码彻底删除；行为契约 B1-B13 用户于 2026-08-05 回复「确认」批准）；oracle 修正 WBUI-BC-01 经用户 2026-08-05「批准」（见 behavior_changes）",
+  "acceptance_file": "acceptance.md",
+  "behavior_contract_file": "plans/2026-08-04-workbench-ui/behavior-contract.md",
+  "behavior_contract_approval_sha256": "36f33adaf0942634a8ece1eec4a6f30d44dec73e1ef8704b29d983a57f2e09ae",
+  "baseline": {
+    "head": "cf48b94894f8178e0586c38b788b923218f6915b",
+    "dirty_patch_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "scenarios": [
+    {
+      "scenario_id": "WBUI-S01-window-form",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": [
+        "manual-mcp"
+      ],
+      "min_root_runs": 1,
+      "input_class": "deterministic-ui",
+      "cold_start": true,
+      "expected_run_created": false,
+      "testcase": "TC-WB-01",
+      "impact_paths": [
+        "tauri-app/src-tauri/tauri.conf.json",
+        "tauri-app/src-tauri/Cargo.toml",
+        "tauri-app/src-tauri/src/window_geometry.rs"
+      ]
+    },
+    {
+      "scenario_id": "WBUI-S02-single-window",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": [
+        "manual-mcp",
+        "script"
+      ],
+      "min_root_runs": 1,
+      "input_class": "deterministic-ui",
+      "cold_start": false,
+      "expected_run_created": false,
+      "testcase": "TC-WB-02",
+      "impact_paths": [
+        "tauri-app/src-tauri/tauri.conf.json",
+        "tauri-app/src-tauri/capabilities/default.json",
+        "tauri-app/src-tauri/src/commands.rs",
+        "tauri-app/src-tauri/src/lib.rs",
+        "tauri-app/src/main.tsx",
+        "tauri-app/src/App.tsx"
+      ]
+    },
+    {
+      "scenario_id": "WBUI-S03-layout-nav",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": [
+        "manual-mcp"
+      ],
+      "min_root_runs": 1,
+      "input_class": "deterministic-ui",
+      "cold_start": false,
+      "expected_run_created": true,
+      "testcase": "TC-WB-03",
+      "impact_paths": [
+        "tauri-app/src/components/WorkbenchShell.tsx",
+        "tauri-app/src/components/Sidebar.tsx",
+        "tauri-app/src/App.tsx",
+        "tauri-app/src/views/**"
+      ]
+    },
+    {
+      "scenario_id": "WBUI-S04-chat-companion",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": [
+        "manual-mcp",
+        "script"
+      ],
+      "min_root_runs": 1,
+      "input_class": "deterministic-ui-companion-recipe",
+      "cold_start": false,
+      "expected_run_created": true,
+      "testcase": "TC-WB-04",
+      "impact_paths": [
+        "tauri-app/src/views/ChatView.tsx",
+        "tauri-app/src/code-panel/controlWs.ts",
+        "tauri-app/src-tauri/src/webview_permissions.rs",
+        "backend/deskpet/companion/control_credentials.py",
+        "backend/deskpet/companion/control_ingress.py",
+        "backend/deskpet/companion/migrations/**",
+        "tauri-app/src/chat/**"
+      ]
+    },
+    {
+      "scenario_id": "WBUI-S05-session-list",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": [
+        "manual-mcp"
+      ],
+      "min_root_runs": 1,
+      "input_class": "deterministic-ui",
+      "cold_start": false,
+      "expected_run_created": true,
+      "testcase": "TC-WB-05",
+      "impact_paths": [
+        "tauri-app/src/components/SessionList.tsx",
+        "tauri-app/src/components/Sidebar.tsx",
+        "tauri-app/src/chat/**"
+      ]
+    },
+    {
+      "scenario_id": "WBUI-S06-skills-view",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": [
+        "manual-mcp"
+      ],
+      "min_root_runs": 1,
+      "input_class": "deterministic-ui",
+      "cold_start": false,
+      "expected_run_created": false,
+      "testcase": "TC-WB-06",
+      "impact_paths": [
+        "tauri-app/src/views/SkillsView.tsx",
+        "tauri-app/src/components/CapabilityCenterPanel.tsx",
+        "tauri-app/src/components/SkillStorePanel.tsx"
+      ]
+    },
+    {
+      "scenario_id": "WBUI-S07-artifacts-view",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": [
+        "manual-mcp"
+      ],
+      "min_root_runs": 1,
+      "input_class": "deterministic-ui-fixture",
+      "cold_start": false,
+      "expected_run_created": false,
+      "testcase": "TC-WB-07",
+      "impact_paths": [
+        "tauri-app/src/views/ArtifactsView.tsx",
+        "tauri-app/src-tauri/src/artifact_ops.rs"
+      ]
+    },
+    {
+      "scenario_id": "WBUI-S08-settings-view",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": [
+        "manual-mcp"
+      ],
+      "min_root_runs": 1,
+      "input_class": "deterministic-ui",
+      "cold_start": false,
+      "expected_run_created": false,
+      "testcase": "TC-WB-08",
+      "impact_paths": [
+        "tauri-app/src/views/SettingsView.tsx",
+        "tauri-app/src/components/SettingsPanel.tsx"
+      ]
+    },
+    {
+      "scenario_id": "WBUI-S09-pet-removal",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": [
+        "script"
+      ],
+      "min_root_runs": 1,
+      "input_class": "static-scan",
+      "cold_start": false,
+      "expected_run_created": false,
+      "testcase": "TC-WB-09"
+    },
+    {
+      "scenario_id": "WBUI-S10-geometry-memory",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": [
+        "manual-mcp",
+        "script"
+      ],
+      "min_root_runs": 1,
+      "input_class": "deterministic-ui-fixture",
+      "cold_start": true,
+      "expected_run_created": false,
+      "testcase": "TC-WB-10",
+      "impact_paths": [
+        "tauri-app/src-tauri/src/window_geometry.rs",
+        "tauri-app/src-tauri/src/lib.rs",
+        "tauri-app/src-tauri/tauri.conf.json"
+      ]
+    },
+    {
+      "scenario_id": "WBUI-S11-theme-vars",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": [
+        "script"
+      ],
+      "min_root_runs": 1,
+      "input_class": "static-scan",
+      "cold_start": false,
+      "expected_run_created": false,
+      "testcase": "TC-WB-11",
+      "impact_paths": [
+        "tauri-app/src/views/**",
+        "tauri-app/src/components/**"
+      ]
+    },
+    {
+      "scenario_id": "WBUI-S12-build-green",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": [
+        "script"
+      ],
+      "min_root_runs": 1,
+      "input_class": "build-test",
+      "cold_start": false,
+      "expected_run_created": false,
+      "testcase": "TC-WB-12"
+    },
+    {
+      "scenario_id": "WBUI-S13-backend-not-ready",
+      "required": true,
+      "ui": true,
+      "gate_type": "negative-safety",
+      "required_lanes": [
+        "manual-mcp"
+      ],
+      "min_root_runs": 1,
+      "input_class": "fault-injection",
+      "cold_start": true,
+      "expected_run_created": false,
+      "testcase": "TC-WB-13",
+      "impact_paths": [
+        "tauri-app/src/views/ChatView.tsx",
+        "tauri-app/src/code-panel/controlWs.ts",
+        "tauri-app/src/components/Sidebar.tsx"
+      ]
+    },
+    {
+      "scenario_id": "WBUI-S14-tray-menu",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": [
+        "manual-mcp"
+      ],
+      "min_root_runs": 1,
+      "input_class": "deterministic-ui",
+      "cold_start": false,
+      "expected_run_created": false,
+      "testcase": "TC-WB-14",
+      "impact_paths": [
+        "tauri-app/src-tauri/src/lib.rs"
+      ]
+    },
+    {
+      "scenario_id": "WBUI-S15-empty-states",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": [
+        "manual-mcp"
+      ],
+      "min_root_runs": 1,
+      "input_class": "deterministic-ui",
+      "cold_start": true,
+      "expected_run_created": true,
+      "testcase": "TC-WB-15",
+      "impact_paths": [
+        "tauri-app/src/components/SessionList.tsx",
+        "tauri-app/src/views/ArtifactsView.tsx"
+      ]
+    },
+    {
+      "scenario_id": "WBUI-S16-close-exit-paths",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": [
+        "manual-mcp"
+      ],
+      "min_root_runs": 1,
+      "input_class": "deterministic-ui",
+      "cold_start": true,
+      "expected_run_created": false,
+      "testcase": "TC-WB-16",
+      "impact_paths": [
+        "tauri-app/src-tauri/src/lib.rs",
+        "tauri-app/src-tauri/src/window_geometry.rs",
+        "tauri-app/src-tauri/tauri.conf.json"
+      ]
+    },
+    {
+      "scenario_id": "WBUI-S17-scale-long-text",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": [
+        "manual-mcp"
+      ],
+      "min_root_runs": 1,
+      "input_class": "deterministic-ui-fixture",
+      "cold_start": false,
+      "expected_run_created": false,
+      "testcase": "TC-WB-17",
+      "impact_paths": [
+        "tauri-app/src/components/SessionList.tsx",
+        "tauri-app/src/views/ArtifactsView.tsx",
+        "tauri-app/src/components/WorkbenchShell.tsx",
+        "tauri-app/src/components/Sidebar.tsx"
+      ]
+    },
+    {
+      "scenario_id": "WBUI-S18-session-delete-edge",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": [
+        "manual-mcp"
+      ],
+      "min_root_runs": 1,
+      "input_class": "deterministic-ui",
+      "cold_start": false,
+      "expected_run_created": true,
+      "testcase": "TC-WB-18",
+      "impact_paths": [
+        "tauri-app/src/components/SessionList.tsx",
+        "tauri-app/src/views/ChatView.tsx",
+        "tauri-app/src/chat/**"
+      ]
+    }
+  ],
+  "testcase_files": [
+    "testcase/workbench-ui/TC-WB-01-window-form.md",
+    "testcase/workbench-ui/TC-WB-02-single-window.md",
+    "testcase/workbench-ui/TC-WB-03-workbench-layout.md",
+    "testcase/workbench-ui/TC-WB-04-chat-roundtrip-companion.md",
+    "testcase/workbench-ui/TC-WB-05-session-list.md",
+    "testcase/workbench-ui/TC-WB-06-skills-view.md",
+    "testcase/workbench-ui/TC-WB-07-artifacts-view.md",
+    "testcase/workbench-ui/TC-WB-08-settings-view.md",
+    "testcase/workbench-ui/TC-WB-09-pet-code-removal.md",
+    "testcase/workbench-ui/TC-WB-10-window-geometry.md",
+    "testcase/workbench-ui/TC-WB-11-theme-variables.md",
+    "testcase/workbench-ui/TC-WB-12-tests-build-green.md",
+    "testcase/workbench-ui/TC-WB-13-error-state-backend-not-ready.md",
+    "testcase/workbench-ui/TC-WB-14-tray-menu.md",
+    "testcase/workbench-ui/TC-WB-15-empty-states.md",
+    "testcase/workbench-ui/TC-WB-16-close-exit-paths.md",
+    "testcase/workbench-ui/TC-WB-17-scale-long-text.md",
+    "testcase/workbench-ui/TC-WB-18-session-delete-edge.md",
+    "testcase/workbench-ui/index.md",
+    "plans/2026-08-04-workbench-ui/smoke-checklist.md",
+    "plans/2026-08-04-workbench-ui/upgrade-fixture.md",
+    "plans/2026-08-04-workbench-ui/oracle-clarifications.md"
+  ],
+  "executor_engine": "claude-fable-5",
+  "applicability": {
+    "input_sensitive": {
+      "value": false,
+      "decided_by": "user",
+      "rationale": "全部为确定性 UI（布局/导航/设置/列表）与既有聊天链路回归，无输出质量随输入语义变化的功能面（acceptance 判定，用户确认）"
+    },
+    "llm_payload_driven": {
+      "value": false,
+      "decided_by": "user",
+      "rationale": "不新增 LLM 输出驱动端侧状态机/卡片/流程的面；聊天回复仅 markdown 文本展示（既有能力）"
+    },
+    "stateful_init": {
+      "value": false,
+      "decided_by": "user",
+      "rationale": "不新增异步注册服务/远程配置/登录态依赖；dev 冷启动可用性由 S01/S10/S13/S15/S16 的冷 user-data 场景覆盖"
+    }
+  },
+  "behavior_changes": [
+    {
+      "behavior_change_id": "WBUI-BC-01",
+      "target": "testcase/workbench-ui/TC-WB-11-theme-variables.md",
+      "summary": "步骤1 主判据由『全 tauri-app/src 零色值字面量』收敛为与 acceptance WB-11 同口径的三段判定（新增文件零命中 + 改造组件 git diff 新增行零命中 + 存量不扫）。原口径超出 acceptance 范围，改版前基线即不可满足。",
+      "old_excerpt": "grep -rlnE '(#hex|rgba?|hsla?)' tauri-app/src ... | grep -v /theme/ → 零输出",
+      "new_excerpt": "(a) 新增文件清单零命中 (b) 改造组件 diff 新增行零命中 (c) 存量文件不扫（baseline.md 登记）",
+      "scope": "仅 TC-WB-11 步骤 1；步骤 1b/2/3 不变",
+      "approval": {
+        "approved_by": "user",
+        "message_text": "批准",
+        "message_sha256": "8cbe697b157364a5b13646285b38409dc53ec5287deeb7913493e65b275cd14d",
+        "approved_at": "2026-08-05",
+        "context": "编排者在 chat 中给出 exact old/new 与理由后，用户回复「批准」"
+      }
+    }
+  ]
+}

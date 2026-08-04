@@ -1,0 +1,3 @@
+credential-chain: 32 passed in 0.78s
+full-suite: .sssssssss.........（基线等值判定，9 红既有）
+VERDICT_FAIL

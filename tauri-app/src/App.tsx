@@ -906,7 +906,7 @@ function App() {
   // 占位（禁用 mic + tooltip）在 ChatView 输入栏旁（B9）。
 
   // T4：PetStateMachine tick / supervisor 气泡派生与选择回调、
-  // handleBubbleClickBackground（open_message_panel 最后前端调用点）
+  // handleBubbleClickBackground（原消息面板打开命令的最后前端调用点，随 WB-2 移除）
   // 随桌宠删除；supervisor_alert 的 store 缓存链路保留（见上方 switch）。
 
   // W3.3 (relay integration): identify the active adapter once. Memoised

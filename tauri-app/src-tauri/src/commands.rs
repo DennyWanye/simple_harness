@@ -204,8 +204,8 @@ mod tests {
 }
 
 // 2026-08-04 Workbench UI 改版（WB-2）：message-panel 独立窗口删除，
-// 其 4 个 Tauri command（open/close/dock/toggle_message_panel）与
-// dock_message_panel_impl / emit_panel_visibility 一并移除
+// 其 open/close/dock/toggle 四个面板命令与 dock 布局实现、
+// 可见性事件发射器一并移除
 //（acceptance「only-add 显式删除例外」）。
 
 /// Open a native folder picker and return the selected absolute path.

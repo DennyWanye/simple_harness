@@ -1,0 +1,13 @@
+step1: hits=1 non-comment=0
+  (comment-ok): tauri-app/src/test/_setup.ts: * 全局 per-test setup（原 pet-anim/__tests__/_setup.ts，T4 桌宠删除后迁此）。
+step2: hits=4 non-comment=0
+  (comment-ok): tauri-app/src/App.tsx:        // PetStateMachine 已删，仅保留 store 缓存链路。
+  (comment-ok): tauri-app/src/App.tsx:  // T4：PetStateMachine tick / supervisor 气泡派生与选择回调、
+  (comment-ok): tauri-app/src/stores/sessionsStore.ts: *   • `supervisor_alert` (latest, drives PetStateMachine)
+  (comment-ok): tauri-app/src/stores/sessionsStore.ts:  // pet's visual state (PetStateMachine) + tile severity colour.
+step3: ''
+step4: ''
+step5 hits: 0
+step6 hits: 0
+step7 tsc exit: 0
+VERDICT_PASS
