@@ -29,6 +29,7 @@ import React from "react";
 import { tokens } from "../theme/tokens";
 import { dark } from "../theme/components";
 import { Sidebar } from "./Sidebar";
+import type { SessionListProps } from "./SessionList";
 import { ChatView, type ChatViewProps } from "../views/ChatView";
 import { SkillsView, type SkillsViewProps } from "../views/SkillsView";
 import { ArtifactsView } from "../views/ArtifactsView";
@@ -47,6 +48,8 @@ export interface WorkbenchShellProps {
   chatProps: ChatViewProps;
   skillsProps: SkillsViewProps;
   settingsProps: SettingsViewProps;
+  /** T7（WB-5）：Sidebar「会话」展开区的会话列表 props。 */
+  sessionProps?: SessionListProps;
 }
 
 export const WorkbenchShell: React.FC<WorkbenchShellProps> = ({
@@ -57,6 +60,7 @@ export const WorkbenchShell: React.FC<WorkbenchShellProps> = ({
   chatProps,
   skillsProps,
   settingsProps,
+  sessionProps,
 }) => {
   return (
     <div
@@ -78,6 +82,7 @@ export const WorkbenchShell: React.FC<WorkbenchShellProps> = ({
         view={view}
         onViewChange={onViewChange}
         connectionState={connectionState}
+        sessionProps={sessionProps}
       />
 
       {/* 内容区 — flex:1 + min-width:0（防止子内容把布局撑破，WB-3

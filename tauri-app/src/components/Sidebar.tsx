@@ -19,6 +19,7 @@ import React from "react";
 import { tokens } from "../theme/tokens";
 import { dark } from "../theme/components";
 import type { WorkbenchView } from "./WorkbenchShell";
+import { SessionList, type SessionListProps } from "./SessionList";
 
 export const SIDEBAR_WIDTH = 240;
 
@@ -27,6 +28,8 @@ interface SidebarProps {
   onViewChange: (view: WorkbenchView) => void;
   /** 连接状态占位徽章文案（T13 迁入真实聚合逻辑前的简单直通）。 */
   connectionState?: "disconnected" | "connecting" | "connected";
+  /** T7（WB-5）：「会话」导航项展开区的会话列表 props。 */
+  sessionProps?: SessionListProps;
 }
 
 const NAV_ITEMS: ReadonlyArray<{
@@ -43,6 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   view,
   onViewChange,
   connectionState,
+  sessionProps,
 }) => {
   return (
     <nav
@@ -86,18 +90,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* 主导航 */}
       {NAV_ITEMS.map((item) => (
-        <NavButton
-          key={item.view}
-          icon={item.icon}
-          label={item.label}
-          active={view === item.view}
-          testId={`nav-${item.view}`}
-          onClick={() => onViewChange(item.view)}
-        />
+        <React.Fragment key={item.view}>
+          <NavButton
+            icon={item.icon}
+            label={item.label}
+            active={view === item.view}
+            testId={`nav-${item.view}`}
+            onClick={() => onViewChange(item.view)}
+          />
+          {/* T7（WB-5）：「会话」项展开区 — chat 视图激活时展开会话列表。 */}
+          {item.view === "chat" && view === "chat" && sessionProps && (
+            <div
+              data-testid="sidebar-session-area"
+              style={{
+                flex: 1,
+                minHeight: 0,
+                display: "flex",
+                flexDirection: "column",
+                paddingLeft: tokens.space.sm,
+              }}
+            >
+              <SessionList {...sessionProps} />
+            </div>
+          )}
+        </React.Fragment>
       ))}
 
-      {/* 弹性空隙 — 把设置与状态徽章推到底部 */}
-      <div style={{ flex: 1, minHeight: 0 }} />
+      {/* 弹性空隙 — 会话区未展开时把设置与状态徽章推到底部 */}
+      {!(view === "chat" && sessionProps) && (
+        <div style={{ flex: 1, minHeight: 0 }} />
+      )}
 
       {/* 底部：设置入口 + 连接状态徽章占位 */}
       <NavButton

@@ -1336,6 +1336,7 @@ function App() {
           ) : undefined
         }
         chatProps={{ activeSid, secret }}
+        sessionProps={{ activeSid, onSwitchSid: switchActiveSid }}
         skillsProps={{ channel: permissionChannel }}
         settingsProps={{
           getChannel: getControlChannel,
