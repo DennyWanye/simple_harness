@@ -9,7 +9,6 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 mod artifact_ops;
 mod backend_launch;
-mod click_through;
 mod commands;
 mod control_command_canonical;
 mod crash_reports;
@@ -53,7 +52,6 @@ pub fn run() {
         .manage(BackendProcess::new())
         .manage(window_geometry::ResizeDebouncer::new())
         .invoke_handler(tauri::generate_handler![
-            click_through::set_click_through,
             process_manager::start_backend,
             process_manager::stop_backend,
             process_manager::is_backend_running,
