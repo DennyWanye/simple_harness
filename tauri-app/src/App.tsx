@@ -513,47 +513,6 @@ function App() {
     },
     [ensureSession],
   );
-  // 2026-05-17 桌宠窗左侧常驻消息面板 —— 复用 MessageStreamPanel。
-  // 消息面板是**独立窗口**。点 ▶消息 = Rust toggle_message_panel
-  // （显↔隐，权威返回新可见态）。`leftPanelOpen` 由 Rust 发的
-  // `message-panel-visibility` 事件驱动（同时覆盖「面板自己的 ◀」），
-  // 用来在面板打开时隐藏桌宠底部 DialogBar（#1/#2）。面板首次打开
-  // 吸附在桌宠左侧；之后可自由拖动/缩放/全屏，桌宠移动不再强拽它
-  // 回来（#4：用户的手动摆放优先于自动吸附）。
-  const [leftPanelOpen, setLeftPanelOpen] = useState(false);
-  const togglePanel = useCallback((next: boolean) => {
-    // next is advisory; Rust is authoritative (it checks is_visible).
-    // The visibility event below syncs leftPanelOpen either way.
-    void next;
-    invoke("toggle_message_panel").catch((e: unknown) =>
-      console.warn("[Pet] message-panel toggle failed:", e),
-    );
-  }, []);
-
-  // Sync leftPanelOpen from the Rust visibility event — fires for the
-  // pet's ▶消息 toggle AND the panel window's own ◀ collapse, so the
-  // DialogBar hide/show is always correct.
-  useEffect(() => {
-    let cancelled = false;
-    let unlisten: (() => void) | undefined;
-    void (async () => {
-      try {
-        const ev = await import("@tauri-apps/api/event");
-        const off = await ev.listen<boolean>(
-          "message-panel-visibility",
-          (e) => setLeftPanelOpen(!!e.payload),
-        );
-        if (cancelled) off();
-        else unlisten = off;
-      } catch (e) {
-        console.warn("[Pet] visibility listen failed:", e);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      if (unlisten) unlisten();
-    };
-  }, []);
   // Recompute pet state on session change OR every 5s so age_penalty
   // grows even without new events.
   useEffect(() => {
@@ -2223,62 +2182,6 @@ function App() {
           </button>
         </div>
       )}
-      {/* 桌宠左缘常驻「▶ 消息」贴标：打开独立消息面板窗口（幂等——
-          已开就是再吸附一次）。面板关闭由它自己的 ◀ 负责，故这里不做
-          开/关切换，避免跨窗状态不同步。drag-region 内 button 会吞拖动
-          所以 stopPropagation。 */}
-      {(
-        <button
-          type="button"
-          onClick={() => togglePanel(true)}
-          onMouseDown={(e) => e.stopPropagation()}
-          title="显示消息面板"
-          aria-label="显示消息面板"
-          // 左边缘垂直居中的小贴标 —— 避开顶部工具栏(记忆/设置等)
-          // 与底部 DialogBar/输入条，不再遮挡「记忆」按钮。
-          style={{
-            position: "absolute",
-            top: "50%",
-            left: 0,
-            transform: "translateY(-50%)",
-            zIndex: 30,
-            display: "flex",
-            alignItems: "center",
-            gap: 5,
-            height: 34,
-            padding: "0 11px 0 9px",
-            background:
-              "linear-gradient(180deg, rgba(33,38,58,0.86) 0%, rgba(20,23,34,0.90) 100%)",
-            color: "#c7d2fe",
-            borderTop: "1px solid rgba(129,140,248,0.40)",
-            borderRight: "1px solid rgba(129,140,248,0.40)",
-            borderBottom: "1px solid rgba(129,140,248,0.40)",
-            borderLeft: "none",
-            borderTopRightRadius: 12,
-            borderBottomRightRadius: 12,
-            fontSize: 11.5,
-            fontWeight: 600,
-            letterSpacing: 0.3,
-            cursor: "pointer",
-            backdropFilter: "blur(16px) saturate(1.4)",
-            WebkitBackdropFilter: "blur(16px) saturate(1.4)",
-            boxShadow:
-              "3px 4px 16px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.07)",
-            transition: "padding 160ms ease, background 160ms ease",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.paddingRight = "15px";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.paddingRight = "11px";
-          }}
-        >
-          <Icon name="message" size={13} />
-          消息
-        </button>
-      )}
-      {/* 收起控件已回归 panel header 最左（清晰固定边缘）。中缝悬浮
-          tab 是糟糕交互（漂在消息内容上、还被裁），已移除。 */}
       <PetCanvas
         key={petModel.id}
         ref={liveRef}
@@ -2381,23 +2284,15 @@ function App() {
         }}
       />
 
-      {/* #2: 独立消息面板打开时，底部 DialogBar 隐藏（二者职责重叠，
-          避免双重显示）；面板关闭时回到桌宠+底栏形态。leftPanelOpen
-          由 Rust 可见性事件驱动，面板自己的 ◀ 也会同步。 */}
-      {!leftPanelOpen && (
-        <DialogBar
-          latestAssistant={
-            latestAssistant ? stripMarkdown(latestAssistant) : null
-          }
-        />
-      )}
+      <DialogBar
+        latestAssistant={
+          latestAssistant ? stripMarkdown(latestAssistant) : null
+        }
+      />
 
       {/* 用户消息 2s 小气泡 */}
       <UserBubble text={latestUserInput} visibleMs={2000} />
 
-      {/* 独立消息面板打开时，桌宠底部输入条（mic+输入框+发送）一并隐藏
-          —— 面板已自带同等输入能力，避免双输入入口并存。 */}
-      {!leftPanelOpen && (
       <div
         style={{
           position: "absolute",
@@ -2662,7 +2557,6 @@ function App() {
           );
         })()}
       </div>
-      )}
 
       {/* Toolbar — P4-S20-UI revamp: token-based, grouped, hover/focus states.
           P4-S21 #7: now includes a Quit (⏻) button so users don't need
