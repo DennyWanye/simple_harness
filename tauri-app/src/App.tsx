@@ -10,7 +10,6 @@ import { ContextBreakdownModal } from "./components/ContextBreakdownModal";
 import { ContextTracePanel } from "./components/ContextTracePanel";
 import { WorkbenchShell, type WorkbenchView } from "./components/WorkbenchShell";
 import { dark, bannerStyle } from "./theme/components";
-import { SlashDropdown, type SlashCommand } from "./code-panel/SlashDropdown";
 import { StartupOverlay, type BootState } from "./components/StartupOverlay";
 import { useBudgetToast } from "./hooks/useBudgetToast";
 import { useContextCompactedToast } from "./hooks/useContextCompactedToast";
@@ -30,7 +29,6 @@ import { ExternalWaitDialog } from "./components/ExternalWaitDialog";
 import { ApprovalCenterPanel } from "./components/ApprovalCenterPanel";
 import { ClarificationDialog } from "./components/ClarificationDialog";
 import { Toolbar } from "./components/Toolbar";
-import { Icon } from "./components/Icon";
 // WI-01/02 (beta-100): first-run onboarding wizard + in-app feedback.
 import { OnboardingWizard } from "./components/OnboardingWizard";
 import { FeedbackPanel } from "./components/FeedbackPanel";
@@ -45,10 +43,7 @@ import { useAutostart } from "./hooks/useAutostart";
 import { useBackendLifecycle } from "./hooks/useBackendLifecycle";
 import { useSessionsStore } from "./stores/sessionsStore";
 import { BACKEND_PORT } from "./backendPort";
-import {
-  VOICE_INPUT_ENABLED,
-  VOICE_UNAVAILABLE_MESSAGE,
-} from "./voiceAvailability";
+import { VOICE_INPUT_ENABLED } from "./voiceAvailability";
 // W3.3 (relay integration): lazy-mount the relay edition UI only when
 // the active adapter is RelayAuthAdapter. OSS default (`manual` /
 // `null` editions) never instantiates this component, so its presence
@@ -57,10 +52,6 @@ import { RelayAuthAdapter } from "./auth/RelayAuthAdapter";
 import { RelayEdition } from "./auth/RelayEdition";
 import { relayProviderRegistration } from "./auth/relayProviderRegistration";
 import { friendlyChatErrorMessage } from "./auth/relayErrorText";
-import {
-  isWorkflowLifecycleOnlyMessage,
-  workflowFinalAssistant,
-} from "./workflowFinalAssistant";
 
 const DEFAULT_SESSION_ID = "default";
 
@@ -69,12 +60,8 @@ function App() {
   // when the updater endpoint isn't reachable.
   useUpdateChecker();
 
-  const [chatText, setChatText] = useState("");
-  // #4 slash 命令面板（与 code-panel InputBar 同款；桌宠主输入框也支持 /命令 自动补全）
-  const chatInputRef = useRef<HTMLInputElement>(null);
-  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
-  const [slashOpen, setSlashOpen] = useState(false);
-  const [slashIdx, setSlashIdx] = useState(0);
+  // T8：App 自建输入条/slash 状态机删除 —— 输入统一走 ChatView 内嵌的
+  // code-panel InputBar（自带 SlashDropdown/ArgHintBar/输入历史）。
   const [activeSid, setActiveSid] = useState(DEFAULT_SESSION_ID);
   const activeSidRef = useRef(DEFAULT_SESSION_ID);
   // Track whether the backend is routing through cloud or local.
@@ -256,13 +243,8 @@ function App() {
 
   // Autostart toggle (enable run-on-login via plugin-autostart).
   const autostart = useAutostart();
-  const [messages, setMessages] = useState<
-    { role: "user" | "assistant"; text: string }[]
-  >([]);
-  // T4：messages 的读端（DialogBar 的 latestAssistant 派生）随桌宠删除
-  // 而消失；写端（大 switch 各分支）保留至 T8 收缩。void 引用过渡。
-  void messages;
-  const workflowFinalEventIdsRef = useRef(new Set<string>());
+  // T8：App 自建 messages 数组删除 —— 消息渲染统一由 sessionsStore →
+  // ChatView(MessageStreamPanel) 承担（单一权威读模型）。
   const [vadStatus, setVadStatus] = useState<
     "idle" | "listening" | "speaking" | "thinking"
   >("idle");
@@ -279,6 +261,16 @@ function App() {
     },
     [ensureSession],
   );
+  // T8：store.active_sid → App activeSid 单向纠偏（MessagePanelRoot 的
+  // storeActiveSid 同步 effect 随迁）。store 可能被 controlWs dispatch /
+  // SessionList 先行推进，App 指针跟上，视图 props 才不分叉。
+  const storeActiveSid = useSessionsStore((s) => s.active_sid);
+  useEffect(() => {
+    if (storeActiveSid && storeActiveSid !== activeSidRef.current) {
+      activeSidRef.current = storeActiveSid;
+      setActiveSid(storeActiveSid);
+    }
+  }, [storeActiveSid]);
   // 2026-05-31: 删除前端 resize → invoke("set_window_geometry") 兜底循环。
   // 该 useEffect 是"拉伸后自动缩小两次"的根因 —— set_window_geometry 命令
   // 内部调用 win.set_size(LogicalSize)，会再触发一次 WindowEvent::Resized，
@@ -499,36 +491,9 @@ function App() {
     };
   }, [state, getControlChannel]);
 
-  // 2026-05-18: 连接(或重连)后从 SessionDB 回灌 default 会话历史，
-  // 使左侧消息面板重启后也显示历史记录（后端 session_messages_load
-  // → session_messages_response，已在上面 lastMessage switch 处理）。
-  const historyLoadedRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (state !== "connected") {
-      historyLoadedRef.current.clear();
-      return;
-    }
-    if (historyLoadedRef.current.has(activeSid)) return;
-    const ch = getControlChannel();
-    if (!ch) return;
-    try {
-      ch.send({
-        type: "session_messages_load",
-        payload: { session_id: activeSid, limit: 200 },
-      });
-      // 2026-05-31 restore — pull cached context-usage on connect so the
-      // ring gauge in toolbar hydrates immediately.
-      try {
-        ch.send({
-          type: "context_usage_request",
-          payload: { session_id: activeSid },
-        });
-      } catch { /* best-effort */ }
-      historyLoadedRef.current.add(activeSid);
-    } catch (e) {
-      console.warn("[Pet] session_messages_load send failed:", e);
-    }
-  }, [state, getControlChannel, activeSid]);
+  // T8：App 侧 ControlChannel 历史回灌 effect 删除 —— 回灌四连发
+  // （消息/Run 投影/上下文/provider）统一由常挂载的 ChatView 经
+  // controlWS（chat_v2 实际通道）发起，避免双通道双份加载。
 
   // P4-S20: toggle to route chat through the new tool_use loop
   // P4-S20-LLM-Unified: chat 路径已统一 — backend `chat` 和 `chat_v2`
@@ -632,9 +597,10 @@ function App() {
     getChannel,
   } = useAudioChannel(BACKEND_PORT, secret, VOICE_INPUT_ENABLED);
 
-  // Audio recorder (microphone → PCM16 → backend)
-  const { isRecording, startRecording, stopRecording } =
-    useAudioRecorder(sendAudio);
+  // Audio recorder (microphone → PCM16 → backend)。T8：start/stop 的
+  // 调用点（toggleRecording）随底部输入条退役；isRecording 仍供
+  // Toolbar 状态徽章消费（T13 一并收走）。
+  const { isRecording } = useAudioRecorder(sendAudio);
 
   // Audio player — P2-2-M2 起走 PCM16 24kHz 流式播放（jitter buffer →
   // WebAudio 时间轴调度），不再需要等 tts_end 做整段 MP3 解码。
@@ -642,7 +608,6 @@ function App() {
     isPlaying,
     stop: stopPlayback,
     reset: resetPlaybackBuffer,
-    primeContext,
     bargeIn,
   } = useAudioPlayer(getChannel());
 
@@ -658,63 +623,29 @@ function App() {
         const nextSid = (lastMessage as any).payload?.new_sid;
         if (typeof nextSid === "string" && nextSid) {
           switchActiveSid(nextSid);
-          setMessages([]);
         }
         break;
       }
       case "chat_response":
         if (!isActivePayload) break;
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", text: (lastMessage as any).payload.text },
-        ]);
-        // Update route indicator based on which provider actually served.
+        // T8：消息气泡渲染归 ChatView（sessionsStore 读模型）；此处仅
+        // 保留路由指示灯（云端/本地）刷新。
         if ((lastMessage as any).payload.provider) {
           setRouteKind((lastMessage as any).payload.provider);
         }
         break;
       // T4：emotion_change / action_trigger 分支删除 —— 均为 Live2D
       // 角色驱动（桌宠删除例外清单）。
-      // P4-S20 chat_v2 stream events
-      case "tool_use_event": {
-        if (!isActivePayload) break;
-        const payload = (lastMessage as any).payload || {};
-        const kind = payload.kind || "";
-        const tool = payload.tool_name || "";
-        if (kind === "request") {
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "assistant",
-              text: `🔧 调用 ${tool}(${JSON.stringify(payload.params || {})})`,
-            },
-          ]);
-        } else if (kind === "result") {
-          const r = payload.result;
-          const ok = (r && typeof r === "object" && (r as any).ok === false) ? "❌" : "✅";
-          setMessages((prev) => [
-            ...prev,
-            { role: "assistant", text: `${ok} ${tool} 结果` },
-          ]);
-        }
-        break;
-      }
+      // T8：tool_use_event / chat_v2_user_echo / workflow_event /
+      // slash_command_result / session_messages_response 分支删除 ——
+      // 全部只喂 App 自建 messages 数组（已废）；对应能力由
+      // sessionsStore（controlWs dispatch 权威写入）→ ChatView 呈现。
       case "context_usage": {
         // 2026-05-31 restore — context-usage ring update from backend.
         const cu = (lastMessage as any).payload;
         if (cu?.session_id) {
           useSessionsStore.getState().ensure(cu.session_id);
           useSessionsStore.getState().upsert_context_usage(cu);
-        }
-        break;
-      }
-      case "chat_v2_user_echo": {
-        if (!isActivePayload) break;
-        // 2026-05-31 restore — multi-window sync: peer typed a user message.
-        // Backend skips originator so receiving means peer-origin → push.
-        const echoText = (lastMessage as any).payload?.text;
-        if (typeof echoText === "string" && echoText.length > 0) {
-          setMessages((prev) => [...prev, { role: "user", text: echoText }]);
         }
         break;
       }
@@ -777,32 +708,6 @@ function App() {
         }
         break;
       }
-      case "workflow_event": {
-        if (!isActivePayload) break;
-        const finalAssistant = workflowFinalAssistant(lastMessage);
-        if (!finalAssistant) break;
-        if (
-          finalAssistant.eventId &&
-          workflowFinalEventIdsRef.current.has(finalAssistant.eventId)
-        ) break;
-        if (finalAssistant.eventId) {
-          workflowFinalEventIdsRef.current.add(finalAssistant.eventId);
-        }
-        setMessages((prev) => {
-          const withoutCompletionPlaceholder = prev.filter(
-            (message, index) => !(
-              index === prev.length - 1 &&
-              message.role === "assistant" &&
-              message.text === "(完成)"
-            ),
-          );
-          return [
-            ...withoutCompletionPlaceholder,
-            { role: "assistant", text: finalAssistant.text },
-          ];
-        });
-        break;
-      }
       case "chat_v2_final": {
         if (!isActivePayload) break;
         const finalPayload = (lastMessage as any).payload || {};
@@ -819,25 +724,6 @@ function App() {
               inflight: false,
             });
         }
-        const finalText = finalPayload.text || "(完成)";
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            text: finalText,
-          },
-        ]);
-        break;
-      }
-      case "slash_command_result": {
-        // #4 slash 命令结果：渲染成一条 assistant 气泡（result.message）。
-        if (!isActivePayload) break;
-        const _r = (lastMessage as any).payload?.result || {};
-        const _cmd = (lastMessage as any).payload?.command || "";
-        const _msg =
-          (typeof _r.message === "string" && _r.message) ||
-          (_r.type === "error" ? `/${_cmd} 执行出错` : `/${_cmd} 已完成`);
-        setMessages((prev) => [...prev, { role: "assistant", text: String(_msg) }]);
         break;
       }
       case "session_messages_error":
@@ -855,28 +741,6 @@ function App() {
               "会话记录暂时无法确认是最新状态，请稍后重试。",
           ),
         );
-        break;
-      }
-      case "session_messages_response": {
-        // 2026-05-18: 重启/连接后从 SessionDB 回灌历史会话 → 左侧消息
-        // 面板显示历史记录（之前只有实时消息，重启即空）。只取
-        // user/assistant（tool 行非对话，streamChat 的 forPet 也会滤）；
-        // 这是权威近 200 条快照，直接替换 messages。
-        const p: any = (lastMessage as any).payload || {};
-        const targetSid = p.session_id;
-        if (targetSid && targetSid !== activeSidRef.current) break;
-        const rows: any[] = Array.isArray(p.messages) ? p.messages : [];
-        const hist = rows
-          .filter((r) =>
-            r &&
-            (r.role === "user" || r.role === "assistant") &&
-            !isWorkflowLifecycleOnlyMessage(r)
-          )
-          .map((r) => ({
-            role: r.role as "user" | "assistant",
-            text: String(r.text ?? ""),
-          }));
-        setMessages(hist);
         break;
       }
       case "chat_v2_error": {
@@ -984,15 +848,9 @@ function App() {
       }
 
       case "transcript":
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: audioMessage.payload.role,
-            text: audioMessage.payload.text,
-          },
-        ]);
-        // 语音链路只经由 audio 通道，不走 control 通道的 chat_response ——
-        // 这里复用 assistant transcript 上捎带的 provider 字段来刷新路由
+        // T8：自建 messages 数组已废——transcript 气泡渲染归 store→ChatView
+        // 链路。语音链路只经由 audio 通道，不走 control 通道的 chat_response
+        // —— 这里复用 assistant transcript 上捎带的 provider 字段来刷新路由
         // 指示灯的颜色（green=local / blue=cloud），否则纯语音用户会一直
         // 停在灰色 "connected"。
         if (
@@ -1023,110 +881,11 @@ function App() {
   // T4：lip_sync 订阅 effect 删除 —— 仅驱动桌宠口型（音频播放由
   // useAudioPlayer 独立消费二进制帧，不经此路径）。
 
-  const handleSend = () => {
-    if (!chatText.trim()) return;
-    setMessages((prev) => [...prev, { role: "user", text: chatText }]);
-    // P4-S21 #14: backend unified chat / chat_v2 — both route to tool_use
-    // AgentLoop. Always send via sendChatV2 (the toolbar toggle is gone).
-    const ch = getControlChannel();
-    const trimmed = chatText.trim();
-    if (trimmed.startsWith("/")) {
-      // #4 slash 命令：路由到 slash_command（后端直接 dispatch，不走 AgentLoop）。
-      const m = trimmed.slice(1).match(/^(\S+)\s*(.*)$/);
-      const cmd = m ? m[1] : "";
-      const args = m ? (m[2] ?? "") : "";
-      ch?.send({
-        type: "slash_command",
-        payload: { command: cmd, args, session_id: activeSidRef.current },
-      });
-    } else {
-      ch?.send({
-        type: "chat_v2",
-        payload: { text: chatText, session_id: activeSidRef.current },
-      });
-    }
-    setSlashOpen(false);
-    setChatText("");
-  };
-
-  // T4：handleNewTopic 死代码删除（主界面「新话题」按钮早已移除，
-  // 会话新建链路由 T7 SessionList 的 startNewTopic 承接）。
-
-  const handleSwitchDefault = useCallback(() => {
-    switchActiveSid(DEFAULT_SESSION_ID);
-    setMessages([]);
-  }, [switchActiveSid]);
-
-  // #4 slash：拉命令清单。后端在前端挂载时可能还没起来（boot 早期）→ fetch 失败静默，
-  // 由首次输入 "/" 按需重试（loadSlashCommands），避免"挂载只拉一次、失败后永远空"的坑。
-  const loadSlashCommands = useCallback(() => {
-    fetch(`http://127.0.0.1:${BACKEND_PORT}/api/commands/help`)
-      .then((r) => (r.ok ? r.json() : { commands: [] }))
-      .then((d) => {
-        const cs = Array.isArray(d?.commands) ? d.commands : [];
-        if (cs.length) setSlashCommands(cs);
-      })
-      .catch(() => {});
-  }, []);
-  useEffect(() => {
-    loadSlashCommands();
-  }, [loadSlashCommands]);
-
-  // 当前候选命令（仅在输入以 / 开头、且还没打空格进入参数阶段时显示）。
-  const slashCandidates = useMemo<SlashCommand[]>(() => {
-    if (!slashOpen || !chatText.startsWith("/")) return [];
-    const q = chatText.slice(1).split(/\s+/)[0] ?? "";
-    if (chatText.length > q.length + 1) return []; // 已输空格 → 进参数阶段，关候选
-    const lower = q.toLowerCase();
-    if (!lower) return slashCommands;
-    const prefix = slashCommands.filter((c) => c.name.toLowerCase().startsWith(lower));
-    const substr = slashCommands.filter(
-      (c) => !c.name.toLowerCase().startsWith(lower) && c.name.toLowerCase().includes(lower),
-    );
-    return [...prefix, ...substr];
-  }, [slashOpen, chatText, slashCommands]);
-
-  const acceptSlash = useCallback(
-    (idx: number) => {
-      const cmd = slashCandidates[idx];
-      if (!cmd) return;
-      setChatText(`/${cmd.name} `);
-      setSlashOpen(false);
-      setSlashIdx(0);
-      chatInputRef.current?.focus();
-    },
-    [slashCandidates],
-  );
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    // slash 候选打开时优先拦截方向键 / Tab / Enter / ESC（别让 Enter 直接发送）。
-    if (slashOpen && slashCandidates.length > 0) {
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSlashIdx((i) => (i + 1) % slashCandidates.length);
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSlashIdx((i) => (i - 1 + slashCandidates.length) % slashCandidates.length);
-        return;
-      }
-      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
-        e.preventDefault();
-        acceptSlash(slashIdx);
-        return;
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setSlashOpen(false);
-        return;
-      }
-    }
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
+  // T8：handleSend / handleSwitchDefault / slash 命令面板
+  // （loadSlashCommands/slashCandidates/acceptSlash/handleKeyDown）删除
+  // —— 发送与 slash 支持由 ChatView 内嵌 InputBar 全量承接
+  // （InputBar 自带 SlashDropdown/ArgHintBar/输入历史，无需迁移）。
+  // 回默认话题入口由 SessionList 的会话行承接（default 行常在）。
 
   // Barge-in: stop local playback + notify backend to cancel in-flight LLM/TTS.
   // Bound to a button (shown while TTS is playing) and to the Escape key.
@@ -1158,21 +917,8 @@ function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [isPlaying, handleInterrupt]);
 
-  const toggleRecording = async () => {
-    if (!VOICE_INPUT_ENABLED) return;
-    if (isRecording) {
-      stopRecording();
-      setVadStatus("idle");
-    } else {
-      // Warm up the AudioContext inside the user-gesture handler so Chrome's
-      // autoplay policy allows later `source.start()` to actually emit audio.
-      // Creating/resuming the context from a WebSocket onmessage callback
-      // instead leaves it "suspended" and playback is silent.
-      await primeContext();
-      startRecording();
-      setVadStatus("listening");
-    }
-  };
+  // T8：toggleRecording 删除 —— 主窗 mic 按钮随底部输入条退役；语音
+  // 占位（禁用 mic + tooltip）在 ChatView 输入栏旁（B9）。
 
   // T4：PetStateMachine tick / supervisor 气泡派生与选择回调、
   // handleBubbleClickBackground（open_message_panel 最后前端调用点）
@@ -1352,8 +1098,8 @@ function App() {
         }}
       />
 
-      {/* 过渡期（T4→T8 之间）：底部输入条 / Toolbar 等 absolute 覆盖层
-          以根 div 为定位上下文继续挂载，T8/T13 按 plan 收走。 */}
+      {/* 过渡期（T8→T13 之间）：Toolbar absolute 覆盖层以根 div 为定位
+          上下文继续挂载，T13 按 plan 收走（入口移侧栏）。 */}
 
       {/* P4-S20 — 权限请求弹窗（最高 zIndex） */}
       <PermissionPopup
@@ -1388,235 +1134,10 @@ function App() {
       {/* T6：CapabilityCenterPanel / SkillStorePanel 浮层挂载已拆除 ——
           页面化为 SkillsView（T10 实装；互跳本地化在视图内部）。 */}
 
-      <div
-        style={{
-          position: "absolute",
-          bottom: 8,
-          left: 8,
-          right: 8,
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          zIndex: 20,
-          background:
-            "linear-gradient(180deg, rgba(30,35,52,0.82) 0%, rgba(17,20,30,0.88) 100%)",
-          padding: "7px 9px",
-          borderRadius: 24,
-          border: "1px solid rgba(255,255,255,0.10)",
-          boxShadow:
-            "0 12px 36px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.08)",
-          backdropFilter: "blur(20px) saturate(1.5)",
-          WebkitBackdropFilter: "blur(20px) saturate(1.5)",
-        }}
-      >
-        {/* Mic button — pulses while recording */}
-        <button
-          data-testid="mic-button"
-          onClick={toggleRecording}
-          disabled={
-            !VOICE_INPUT_ENABLED ||
-            (audioState !== "connected" && state !== "connected")
-          }
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: "50%",
-            border: `1px solid ${
-              isRecording
-                ? "rgba(239,68,68,0.55)"
-                : vadStatus === "speaking"
-                  ? "rgba(245,158,11,0.55)"
-                  : "rgba(255,255,255,0.12)"
-            }`,
-            background: isRecording
-              ? "linear-gradient(180deg, #f87171, #ef4444)"
-              : vadStatus === "speaking"
-                ? "linear-gradient(180deg, #fbbf24, #f59e0b)"
-                : "rgba(255,255,255,0.07)",
-            color: isRecording || vadStatus === "speaking" ? "#fff" : "#cbd5e1",
-            cursor: "pointer",
-            animation: isRecording ? "pulse 1.5s infinite" : "none",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
-            boxShadow: isRecording
-              ? "0 0 14px rgba(239,68,68,0.5)"
-              : "none",
-            transition: "background 160ms ease, box-shadow 160ms ease",
-          }}
-          title={
-            !VOICE_INPUT_ENABLED
-              ? VOICE_UNAVAILABLE_MESSAGE
-              : isRecording
-                ? "停止录音"
-                : "按住录音"
-          }
-          aria-label={
-            !VOICE_INPUT_ENABLED
-              ? VOICE_UNAVAILABLE_MESSAGE
-              : isRecording
-                ? "停止录音"
-                : "按住录音"
-          }
-        >
-          <Icon
-            name={
-              !VOICE_INPUT_ENABLED
-                ? "mic-off"
-                : isRecording
-                  ? "stop"
-                  : "mic"
-            }
-            size={17}
-          />
-        </button>
+      {/* T8：底部输入条（mic/打断/回默认/SlashDropdown/input/发送）整体
+          退役 —— 输入统一走 ChatView 内嵌 InputBar；mic 禁用占位在
+          ChatView（B9）；打断入口保留 Esc 快捷键（handleInterrupt）。 */}
 
-        {/* Interrupt button — TTS playing */}
-        {isPlaying && (
-          <button
-            data-testid="interrupt-button"
-            onClick={handleInterrupt}
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: "50%",
-              border: "1px solid rgba(239,68,68,0.55)",
-              background: "linear-gradient(180deg, #ef4444, #dc2626)",
-              color: "white",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-              boxShadow: "0 0 14px rgba(239,68,68,0.45)",
-            }}
-            title="打断 (Esc)"
-          >
-            <Icon name="hand" size={17} />
-          </button>
-        )}
-
-        {/* 主界面「新话题」按钮已移除（仅保留左侧消息面板内的）。handleNewTopic 仍保留
-            供潜在调用 / 兼容；此处不再渲染。 */}
-
-        {activeSid !== DEFAULT_SESSION_ID && (
-          <button
-            type="button"
-            onClick={handleSwitchDefault}
-            title="回到默认话题"
-            aria-label="回到默认话题"
-            style={{
-              height: 36,
-              width: 36,
-              borderRadius: "50%",
-              border: "1px solid rgba(148,163,184,0.28)",
-              background: "rgba(255,255,255,0.07)",
-              color: "#cbd5e1",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-            }}
-          >
-            <Icon name="refresh" size={15} />
-          </button>
-        )}
-
-        {/* SlashDropdown 绝对定位浮在整条输入条上方（composer row 已是 position:absolute
-            作定位上下文）；input 回到直接 flex:1 子元素，撑满中间、不与发送按钮重叠。 */}
-        <SlashDropdown
-          candidates={slashCandidates}
-          selectedIdx={slashIdx}
-          onAccept={acceptSlash}
-        />
-        <input
-          ref={chatInputRef}
-          data-testid="chat-input"
-          className="bp-chat-input"
-          type="text"
-          value={chatText}
-          onChange={(e) => {
-            const v = e.target.value;
-            setChatText(v);
-            // #4 slash 状态机：/ 开头且还没打空格 → 开候选面板。
-            if (v.startsWith("/")) {
-              if (slashCommands.length === 0) loadSlashCommands(); // 按需重试（boot 早期失败兜底）
-              const firstWord = v.slice(1).split(/\s+/)[0] ?? "";
-              setSlashOpen(v.length <= firstWord.length + 1);
-              setSlashIdx(0);
-            } else {
-              setSlashOpen(false);
-            }
-          }}
-          onKeyDown={handleKeyDown}
-          placeholder={
-            state === "connected" ? "说点什么…" : "连接中…"
-          }
-          disabled={state !== "connected"}
-          style={{
-            flex: 1,
-            minWidth: 0,
-            height: 36,
-            padding: "0 15px",
-            borderRadius: 18,
-            border: "1px solid rgba(255,255,255,0.10)",
-            fontSize: 13,
-            background: "rgba(255,255,255,0.06)",
-            color: "#e8edf6",
-            outline: "none",
-            fontFamily: "inherit",
-            transition: "border-color 140ms ease, box-shadow 140ms ease, background 140ms ease",
-          }}
-        />
-        {(() => {
-          const active = state === "connected" && !!chatText.trim();
-          return (
-            <button
-              data-testid="send-button"
-              onClick={handleSend}
-              disabled={!active}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 5,
-                padding: "0 15px",
-                height: 36,
-                flexShrink: 0,
-                borderRadius: 18,
-                border: `1px solid ${active ? "rgba(96,165,250,0.6)" : "rgba(255,255,255,0.07)"}`,
-                background: active
-                  ? "linear-gradient(180deg, #4f93ff 0%, #2563eb 100%)"
-                  : "rgba(255,255,255,0.05)",
-                color: active ? "#fff" : "rgba(148,163,184,0.6)",
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: active ? "pointer" : "not-allowed",
-                boxShadow: active ? "0 4px 14px rgba(37,99,235,0.42)" : "none",
-                transition: "background 140ms ease, box-shadow 140ms ease, transform 120ms ease",
-              }}
-              onMouseEnter={(e) => {
-                if (active) {
-                  e.currentTarget.style.background =
-                    "linear-gradient(180deg, #60a5fa 0%, #1d4ed8 100%)";
-                  e.currentTarget.style.transform = "translateY(-1px)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (active) {
-                  e.currentTarget.style.background =
-                    "linear-gradient(180deg, #4f93ff 0%, #2563eb 100%)";
-                  e.currentTarget.style.transform = "translateY(0)";
-                }
-              }}
-            >
-              <Icon name="send" size={14} />
-              发送
-            </button>
-          );
-        })()}
-      </div>
 
       {/* Toolbar — P4-S20-UI revamp: token-based, grouped, hover/focus states.
           P4-S21 #7: now includes a Quit (⏻) button so users don't need
