@@ -10,9 +10,16 @@
 /// Privileged Companion IPC is scoped to a real Tauri window label.
 /// The renderer never supplies this label; the command receives an injected
 /// `WebviewWindow` and checks this table before signing.
+///
+/// 2026-08-04 Workbench UI 改版（WB-4 前置 / behavior-contract B5）：
+/// message-panel 窗口已并入主窗，companion_action 的合法窗口标签从
+/// "message-panel" 迁移为 "main"。同一迁移必须五处同步（本白名单 /
+/// Python ALLOWED_WINDOW_SCOPES / control_ingress expected_window_label /
+/// SQL CHECK 迁移 007 / 前端 controlWs 常量），缺一处即
+/// window_control_scope_denied 静默降级。
 pub fn authorize_window_control_scope(label: &str, scope: &str) -> Result<(), String> {
     match (label, scope) {
-        ("main", "identity_bind") | ("message-panel", "companion_action") => Ok(()),
+        ("main", "identity_bind") | ("main", "companion_action") => Ok(()),
         _ => Err(format!("window_control_scope_denied:{label}:{scope}")),
     }
 }
@@ -74,12 +81,15 @@ pub fn grant_media_permissions(_window: &tauri::WebviewWindow) -> tauri::Result<
 mod tests {
     use super::authorize_window_control_scope;
 
+    // 2026-08-04 Workbench 改版断言翻转：companion_action 迁 main，
+    // message-panel 窗口已删除（绑定 acceptance「only-add 显式删除例外」）。
     #[test]
     fn privileged_scopes_are_label_bound() {
         assert!(authorize_window_control_scope("main", "identity_bind").is_ok());
-        assert!(authorize_window_control_scope("message-panel", "companion_action").is_ok());
-        assert!(authorize_window_control_scope("main", "companion_action").is_err());
+        assert!(authorize_window_control_scope("main", "companion_action").is_ok());
+        assert!(authorize_window_control_scope("message-panel", "companion_action").is_err());
         assert!(authorize_window_control_scope("message-panel", "identity_bind").is_err());
         assert!(authorize_window_control_scope("code-panel", "companion_action").is_err());
+        assert!(authorize_window_control_scope("main", "general").is_err());
     }
 }

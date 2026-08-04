@@ -33,6 +33,22 @@ import type { CompanionEvent } from "../types/messages";
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 15000;
 
+// ─── 控制连接身份（2026-08-04 Workbench UI 改版，B5）───────────────
+// 聊天通道（本模块单例 WS）的显式身份声明。改版前由 route hash 推断
+// （#/message-panel → message-panel 窗身份）；message-panel 窗口删除后
+// 本模块只在主窗加载，身份固定为 main + companion_action。
+/** 聊天通道声明的 Tauri 窗口标签（与 Rust/Python 白名单五处同步）。 */
+const REQUESTED_LABEL = "main";
+/** 聊天通道声明的特权作用域（companion challenge 走此作用域）。 */
+const REQUESTED_SCOPE = "companion_action";
+/**
+ * 控制会话 sid。**历史命名保留**：字符串 "message-panel-main" 源自独立
+ * 消息面板窗时代，后端 main.py（:6459/:7295 一带的会话过滤/投影链路）与
+ * session/task_scope.py 硬编码映射此 sid → "default" 会话组。改名会抖动
+ * 整条后端投影链路（D1 决策：sid 不改，仅注释说明）。
+ */
+const CONTROL_SESSION_ID = "message-panel-main";
+
 function companionEventFrom(value: unknown): CompanionEvent | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const outer = value as Record<string, any>;
@@ -215,23 +231,14 @@ async function open_socket() {
     schedule_reconnect();
     return;
   }
-  // Use a distinct control session_id per window. The backend keys
-  // _control_connections by session_id; two connections on the same key
-  // kick each other out (1-second reconnect storm). Independent windows
-  // import this module, so derive an id from the route hash. Every
-  // chat_v2 we send still stamps payload.session_id explicitly, so this
-  // control id only matters for connection identity.
-  const _isMessagePanel =
-    typeof window !== "undefined" &&
-    window.location?.hash?.startsWith("#/message-panel");
-  const _ctrlSid = _isMessagePanel
-    ? "message-panel-main"
-    : "session-control-main";
-  const requestedLabel = _isMessagePanel ? "message-panel" : "main";
-  const requestedScope = _isMessagePanel ? "companion_action" : "general";
+  // 2026-08-04 Workbench UI 改版（B5）：message-panel 独立窗口已并入主窗，
+  // 原按 route hash 推断连接身份的逻辑删除，改为显式常量。本模块现在只在
+  // 主窗（label=main）加载，聊天通道固定声明 companion_action 作用域——
+  // 与 Rust webview_permissions 白名单、Python ALLOWED_WINDOW_SCOPES、
+  // control_ingress expected_window_label、SQL CHECK（迁移 007）五处同步。
   const url = `ws://127.0.0.1:${BACKEND_PORT}/ws/control?secret=${encodeURIComponent(
     secret,
-  )}&session_id=${_ctrlSid}&requested_window_label=${requestedLabel}&requested_scope=${requestedScope}`;
+  )}&session_id=${CONTROL_SESSION_ID}&requested_window_label=${REQUESTED_LABEL}&requested_scope=${REQUESTED_SCOPE}`;
   try {
     ws = new WebSocket(url);
     G.__deskpet_panel_ws__ = ws;

@@ -21,8 +21,12 @@ from .control_command_canonical import (
     parse_canonical_u64,
 )
 
+# 2026-08-04 Workbench UI 改版（behavior-contract B5）：message-panel 窗口
+# 并入主窗，companion_action 的合法窗口标签迁移为 "main"。五处同步迁移之一
+# （Rust webview_permissions 白名单 / 本白名单 / control_ingress
+# expected_window_label / SQL CHECK 迁移 007 / 前端 controlWs 常量）。
 ALLOWED_WINDOW_SCOPES = frozenset(
-    {("main", "identity_bind"), ("message-panel", "companion_action")}
+    {("main", "identity_bind"), ("main", "companion_action")}
 )
 
 

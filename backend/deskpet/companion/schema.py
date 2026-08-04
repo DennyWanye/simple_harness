@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .contracts import DETAIL_VISIBLE_TABLES
 
-COMPANION_SCHEMA_VERSION = 6
+COMPANION_SCHEMA_VERSION = 7
 MIGRATION_ROOT = Path(__file__).with_name("migrations")
 MIGRATION_RESOURCES = {
     1: MIGRATION_ROOT / "001_companion_v1.sql",
@@ -17,6 +17,9 @@ MIGRATION_RESOURCES = {
     4: MIGRATION_ROOT / "004_job_execution_wait_v4.sql",
     5: MIGRATION_ROOT / "005_preference_turn_decision_receipt_v5.sql",
     6: MIGRATION_ROOT / "006_safe_static_evaluation_v6.sql",
+    # 2026-08-04 Workbench UI 改版: companion_action 窗口标签迁 main
+    # (profile_control_leases CHECK 重建, behavior-contract B5)。
+    7: MIGRATION_ROOT / "007_companion_window_label_main_v7.sql",
 }
 
 CONTROL_PLANE_TABLES = frozenset(

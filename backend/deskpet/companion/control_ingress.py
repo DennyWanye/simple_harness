@@ -1245,7 +1245,9 @@ class CompanionControlIngress:
                 challenge=challenge,
                 command_kind=command_kind,
                 body=body,
-                expected_window_label="message-panel",
+                # 2026-08-04 Workbench 改版：companion_action 特权命令的
+                # 窗口标签随 message-panel 窗口移除迁移为 "main"（B5）。
+                expected_window_label="main",
                 expected_scope="companion_action",
                 binding_epoch=frozen.binding_epoch,
             )

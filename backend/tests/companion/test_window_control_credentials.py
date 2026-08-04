@@ -159,12 +159,15 @@ def test_python_verifies_shared_ed25519_golden_and_rejects_drift() -> None:
 
 
 def test_window_scope_matrix_is_fail_closed() -> None:
+    # 2026-08-04 Workbench 改版断言翻转：companion_action 迁 main，
+    # message-panel 窗口已删除（绑定 acceptance「only-add 显式删除例外」）。
     assert_window_scope("main", "identity_bind")
-    assert_window_scope("message-panel", "companion_action")
+    assert_window_scope("main", "companion_action")
     for label, scope in (
-        ("main", "companion_action"),
+        ("message-panel", "companion_action"),
         ("message-panel", "identity_bind"),
         ("code-panel", "companion_action"),
+        ("main", "general"),
     ):
         with pytest.raises(WindowControlCredentialError):
             assert_window_scope(label, scope)
@@ -300,7 +303,8 @@ async def test_two_window_leases_are_independent_and_main_reconnect_is_scoped(
     action_credential = _credential(
         private_key,
         action,
-        window_label="message-panel",
+        # Workbench 改版：companion_action 现由主窗（label=main）发起。
+        window_label="main",
         scope="companion_action",
         command_kind="companion_action_ready",
         binding_epoch=gate.freeze().binding_epoch,
@@ -375,14 +379,15 @@ async def test_two_window_leases_are_independent_and_main_reconnect_is_scoped(
             challenge=skipped_seq,
         )
     with store.read() as db:
+        # Workbench 改版后两条活动租约同为 label=main，按 scope 排序区分。
         active = db.execute(
             """SELECT window_label,scope,connection_id
                FROM profile_control_leases WHERE status='active'
-               ORDER BY window_label"""
+               ORDER BY scope"""
         ).fetchall()
         assert [(row["window_label"], row["scope"]) for row in active] == [
+            ("main", "companion_action"),
             ("main", "identity_bind"),
-            ("message-panel", "companion_action"),
         ]
         assert {row["connection_id"] for row in active} == {
             main_reconnect.connection_id,
@@ -434,10 +439,13 @@ async def test_wrong_scope_and_stale_binding_epoch_never_mutate(tmp_path) -> Non
     )
     snapshot = {"mode": "local", "user_id": None}
     body = {"auth_snapshot": snapshot}
+    # Workbench 改版：改用 ("main","companion_action")——仍在白名单内但与
+    # 本命令期望的 ("main","identity_bind") 不符，专测 scope 不匹配路径
+    # （而非白名单外拒绝，后者由 test_window_scope_matrix 覆盖）。
     wrong = _credential(
         private_key,
         challenge,
-        window_label="message-panel",
+        window_label="main",
         scope="companion_action",
         command_kind="companion_profile_bind",
         binding_epoch=challenge.binding_epoch,

@@ -84,6 +84,143 @@ def test_v1_upgrade_preserves_growth_dependencies_and_adds_memory_scope(
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
+def test_v6_upgrade_rewrites_companion_action_lease_label_to_main(
+    tmp_path,
+) -> None:
+    """007 迁移语义（Workbench 改版 B5）：
+
+    - 非 challenged 行的 window_label 'message-panel'→'main'（active 与
+      revoked 都改写，新 CHECK 覆盖所有非 challenged 行）；
+    - challenged 行标签保持 NULL（双臂 CHECK 的 challenged 臂原样保留）；
+    - requested_window_label 审计列不改写（保留历史原值）；
+    - 外键子表 profile_control_commands 引用保持完整，
+      foreign_key_check 零违例；
+    - 新 CHECK 拒绝 ('message-panel','companion_action') 的非 challenged 行。
+    """
+    path = tmp_path / "companion-v6.db"
+    from deskpet.companion.schema import MIGRATION_RESOURCES
+
+    with sqlite3.connect(path) as db:
+        # 迁移脚本引用 configure_connection 注册的 deskpet_sha256；
+        # 这里按 schema.configure_connection 同款注册（保持 FK OFF，
+        # 与 initialize_schema 的迁移包裹一致）。
+        import hashlib
+
+        db.create_function(
+            "deskpet_sha256",
+            1,
+            lambda value: hashlib.sha256(
+                str(value).encode("utf-8")
+            ).hexdigest(),
+            deterministic=True,
+        )
+        for version in range(1, 7):
+            db.executescript(
+                MIGRATION_RESOURCES[version].read_text(encoding="utf-8")
+            )
+        db.execute("PRAGMA user_version=6")
+        lease_sql = """INSERT INTO profile_control_leases(
+             device_scope,connection_id,requested_window_label,requested_scope,
+             window_label,scope,control_epoch,challenge_hash,last_seq,
+             backend_process_instance_id,issued_at,expires_at,revoked_at,
+             status,reason_code,schema_version
+           ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)"""
+        db.execute(
+            lease_sql,
+            ("dev", "conn-action", "message-panel", "companion_action",
+             "message-panel", "companion_action", 1, "hash-a", 1,
+             "proc", "t0", "t9", None, "active", "test"),
+        )
+        db.execute(
+            lease_sql,
+            ("dev", "conn-bind", "main", "identity_bind",
+             "main", "identity_bind", 2, "hash-b", 1,
+             "proc", "t0", "t9", None, "active", "test"),
+        )
+        db.execute(
+            lease_sql,
+            ("dev", "conn-challenged", "message-panel", "companion_action",
+             None, None, 3, "hash-c", 0,
+             "proc", "t0", "t9", None, "challenged", "test"),
+        )
+        db.execute(
+            lease_sql,
+            ("dev", "conn-revoked", "message-panel", "companion_action",
+             "message-panel", "companion_action", 4, "hash-d", 1,
+             "proc", "t0", "t1", "t1", "revoked", "test"),
+        )
+        db.execute(
+            """INSERT INTO profile_control_commands(
+                 device_scope,connection_id,request_seq,
+                 backend_process_instance_id,credential_nonce_hash,command_kind,
+                 canonical_schema,request_hash,binding_epoch,status,result_ref,
+                 result_hash,reason_code,schema_version,created_at,updated_at
+               ) VALUES ('dev','conn-action',1,'proc','nonce-hash',
+                         'companion_action_ready','control-command-canonical-v1',
+                         'req-hash',1,'claimed',NULL,NULL,'test',1,'t0','t0')"""
+        )
+        db.commit()
+
+    CompanionStore(path)
+
+    with sqlite3.connect(path) as db:
+        assert db.execute("PRAGMA user_version").fetchone() == (
+            COMPANION_SCHEMA_VERSION,
+        )
+        rows = {
+            str(row[0]): (row[1], row[2], row[3])
+            for row in db.execute(
+                """SELECT connection_id,window_label,scope,
+                          requested_window_label
+                   FROM profile_control_leases"""
+            )
+        }
+        # 非 challenged 行改写；requested_window_label 审计列保留原值。
+        assert rows["conn-action"] == ("main", "companion_action", "message-panel")
+        assert rows["conn-revoked"] == ("main", "companion_action", "message-panel")
+        # identity_bind 行不受影响。
+        assert rows["conn-bind"] == ("main", "identity_bind", "main")
+        # challenged 行照旧 NULL 标签。
+        assert rows["conn-challenged"] == (None, None, "message-panel")
+        # 外键子表引用完整（schema.py 迁移后也强制检查，这里显式复核）。
+        assert db.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert db.execute(
+            """SELECT COUNT(*) FROM profile_control_commands
+               WHERE device_scope='dev' AND connection_id='conn-action'"""
+        ).fetchone() == (1,)
+        # 部分唯一索引随重建存在。
+        assert db.execute(
+            """SELECT COUNT(*) FROM sqlite_master
+               WHERE type='index' AND name='uq_profile_control_active'"""
+        ).fetchone() == (1,)
+        # 新 CHECK：('message-panel','companion_action') 非 challenged 行被拒。
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute(
+                """INSERT INTO profile_control_leases(
+                     device_scope,connection_id,requested_window_label,
+                     requested_scope,window_label,scope,control_epoch,
+                     challenge_hash,last_seq,backend_process_instance_id,
+                     issued_at,expires_at,revoked_at,status,reason_code,
+                     schema_version
+                   ) VALUES ('dev','conn-reject','message-panel',
+                             'companion_action','message-panel',
+                             'companion_action',9,'hash-x',0,'proc',
+                             't0','t9',NULL,'active','test',1)"""
+            )
+        # 提升 challenged 行为 ('main','companion_action') 满足新约束
+        # （先按真实流程 revoke 旧 active 租约，避开 uq_profile_control_active）。
+        db.execute(
+            """UPDATE profile_control_leases
+               SET status='revoked',revoked_at='t2'
+               WHERE connection_id='conn-action'"""
+        )
+        db.execute(
+            """UPDATE profile_control_leases
+               SET window_label='main',scope='companion_action',status='active'
+               WHERE connection_id='conn-challenged'"""
+        )
+
+
 def test_schema_initialization_does_not_leave_database_locked(tmp_path) -> None:
     path = tmp_path / "companion-close.db"
     CompanionStore(path)
