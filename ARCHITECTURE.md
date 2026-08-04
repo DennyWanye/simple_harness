@@ -20,7 +20,7 @@
                          ▼
 ┌─────────────────────────────────────────────────────────────┐
 │             Frontend (React + Vite, tauri-app/src/)         │
-│  • Live2D 渲染（PixiJS v7 + pixi-live2d-display）            │
+│  • Sprite 渲染（自研 Canvas2D，petCharacter/pet-engine）      │
 │  • 对话 UI / 设置面板 / Code Panel                            │
 │  • Zustand stores：sessions / providers / pet state          │
 │  • WebSocket 连后端 control channel                          │
@@ -78,19 +78,20 @@ deskpet/
 │   ├── vite.config.ts        Vite 配置（HMR 端口 / 后端代理）
 │   ├── src/                  TypeScript / React 源码
 │   │   ├── App.tsx           顶层布局
-│   │   ├── components/       UI 组件（设置、对话、Live2D）
+│   │   ├── components/       UI 组件（设置、对话、PetCanvas）
 │   │   ├── auth/             登录适配（manual / relay 两套）
 │   │   ├── code-panel/       Code Panel（多 session 代码模式）
 │   │   ├── message-panel/    宠物左侧留言板
 │   │   ├── pet-anim/         动画状态机
+│   │   ├── pet-engine/       自研 sprite 引擎（参数字典 + .dpet 格式）
 │   │   ├── pet-state/        宠物状态 store
 │   │   └── stores/           Zustand stores
 │   ├── public/
-│   │   ├── lib/              live2dcubismcore.min.js（第三方专有）
-│   │   └── assets/live2d/    Hiyori / 其他模型
+│   │   └── assets/pet/       立绘 PNG（character.png，可选）
 │   └── src-tauri/            Rust 原生层
 │       ├── Cargo.toml        Rust 依赖
 │       ├── tauri.conf.json   Tauri 配置
+│       ├── tauri.windows.conf.json  Windows 专属覆盖（捆绑 PyInstaller 后端）
 │       └── src/              Rust 源码（IPC commands, secrets, device）
 │
 ├── scripts/                  开发 / OPS 脚本
@@ -99,6 +100,7 @@ deskpet/
 │   ├── acceptance/           验收脚本
 │   ├── e2e_*.py              端到端 smoke
 │   ├── dev-start.ps1         Win 启动脚本
+│   ├── setup.sh / dev.sh     mac/Linux 源码运行主路径（README 快速开始入口）
 │   └── setup_models.py       OSS 用户首次模型下载
 │
 ├── docs/                     技术 / 架构文档
@@ -162,11 +164,14 @@ OSS 用户走 `manual`；维护者带 relay 服务的用 `relay`。两套共享�
 - 用户 skills 在 `%APPData%\deskpet\skills\user\`（watchdog 监控热加载）
 - 每个 skill = `SKILL.md` (元数据 + prompt) + 可选 `script.py`
 
-### 6. CUDA-only（当前）
+### 6. 硬件分层（fork 后按平台自动选档）
 
-- ASR / embedding / TTS 都需要 GPU
-- 长期支持 CPU / AMD / Intel，但当前不在 baseline
-- 详见 [`HARDWARE_COMPROMISES.md`](./HARDWARE_COMPROMISES.md)
+- Windows + NVIDIA：CUDA fp16（原 baseline，行为不变；NVML 前置检查仅 Windows 生效）
+- macOS / 无卡机器：ASR `device`/`compute_type` = `"auto"` → CPU int8；
+  torch 走 PyPI 默认渠道（mac arm64 自带 MPS）
+- 语音链路当前禁用，规划走中转站 Realtime（不再依赖本地 ASR 权重）
+- 历史取舍详见 [`HARDWARE_COMPROMISES.md`](./HARDWARE_COMPROMISES.md)（其
+  CUDA-only 表述为 fork 前旧况）
 
 ---
 
@@ -190,7 +195,7 @@ OSS 用户走 `manual`；维护者带 relay 服务的用 `relay`。两套共享�
 | 加新 LLM Provider | `backend/llm/<provider>_adapter.py` |
 | 加新工具（被 LLM 调用） | `backend/deskpet/tools/<tool>.py` + 注册到 registry |
 | 加新内置 skill | `backend/deskpet/skills/builtin/<skill>/SKILL.md` |
-| 加新 Live2D 模型 | `tauri-app/public/assets/live2d/<model>/` + 改默认 |
+| 换桌宠立绘 | 放置 `tauri-app/public/assets/pet/character.png`（透明背景 PNG）|
 | 加新 UI 面板 | `tauri-app/src/components/<Panel>.tsx` + 接 store |
 | 加新 IPC command (Tauri) | `tauri-app/src-tauri/src/<feature>.rs` + 注册到 invoke handler |
 
@@ -205,4 +210,4 @@ OSS 用户走 `manual`；维护者带 relay 服务的用 `relay`。两套共享�
 
 ---
 
-*Last updated: 2026-07-10*
+*Last updated: 2026-08-04（simple_harness fork 校准）*

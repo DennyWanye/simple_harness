@@ -1,6 +1,17 @@
-# DeskPet UI 当前架构
+# Simple Harness UI 当前架构
 
-> 最后更新：2026-08-03
+> 最后更新：2026-08-04（simple_harness fork 后校准）
+
+## 0. Fork 后的渲染层现状（2026-08-04）
+
+- Live2D 全链路已移除（pixi.js / pixi-live2d-display / cubismcore / Hiyori 资产）。
+  角色由 `components/PetCanvas.tsx` 驱动 `pet-engine`（SpritePetEngine 参数字典）+
+  `components/petCharacter.ts`（立绘 PNG / 程序化角色 Canvas2D 绘制）+
+  `components/petTransform.ts`（pet-anim 参数 → 整体变换）渲染，经 toBlob→<img>
+  管线显示（WebView2 透明窗合成限制的历史产物，mac 上同样可用）。
+- 主窗仍为无边框透明桌宠窗（默认 500×640，min 360×360），mac 依赖 tauri `macos-private-api`。
+- ⚠️ 本节描述的桌宠渲染层已被「Workbench UI 改版」验收（acceptance.md WB-1..12）
+  列为删除对象：主窗将改普通工作台窗口、桌宠渲染全链路移除。改版落地后本节删除。
 
 ## 1. 主题事实
 

@@ -2,7 +2,8 @@
 
 Drop a transparent-background portrait PNG here named **`character.png`**
 and the pet renderer picks it up automatically on next load
-(`Live2DCanvas` → `startCanvas2D` → `loadSpriteImage('/assets/pet/character.png')`).
+(`PetCanvas.tsx` main effect loads `/assets/pet/character.png` inline;
+see `src/components/PetCanvas.tsx`).
 
 - If `character.png` is present → it's drawn via `drawSpriteCharacter`
   (fitted, centred, with float + breath motion).

@@ -1,4 +1,4 @@
-<!-- last-calibrated: 9b7fd640ccaae9cd75b79505e5d2c840246200d3 -->
+<!-- last-calibrated: 9e53bb7924a8b0a2a7a7b98799d6288da2c41914 -->
 # DeskPet Long-Running Agent Architecture Baseline
 
 > Last verified: 2026-08-03. The Harness `open/generation=1` owner remains the only
@@ -266,7 +266,7 @@ There are concrete contract gaps behind that summary: evaluators return incompat
 
 | Area | Current dependency/boundary |
 |---|---|
-| Desktop | Tauri/Rust, WebView2, React/TypeScript, Pixi/Live2D. |
+| Desktop | Tauri/Rust, WebView2(Win)/WKWebView(mac), React/TypeScript, 自研 sprite Canvas2D 渲染（Live2D 已于 fork 时移除）. |
 | Backend | Python asyncio/FastAPI/WebSocket adapters. |
 | Persistence | SQLite/aiosqlite, WAL, optional sqlite-vec. |
 | Models/audio | Torch/CUDA, BGE-M3, Silero, faster-whisper, CosyVoice/edge-TTS. |

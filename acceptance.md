@@ -317,3 +317,67 @@
 - 聚焦单元、契约、集成、故障注入、重启恢复与现有 Harness/Workflow/Session UI 回归全绿；每个用户可达入口完成最小 full-surface smoke。
 - Windows 原生桌宠执行真点击、真输入、截图，并用 backend 日志与 execution/state DB 作为辅助证据；不得使用 WebSocket 直注替代 required UI 场景。
 - 验证针对干净 HEAD；提交和远程状态可核对；`ARCHITECTURE/AGENT_HARNESS.md`、相关 Session/UI 架构事实源与 `ARCHITECTURE/PROJECT_STATUS.md` 在同一交付更新。
+
+# 验收标准：Workbench UI 改版（去桌宠、工作台化）
+
+> 2026-08-04 · 决策依据：用户选定 C 工作台方向 + 深色单主题；窗口改普通窗口；
+> 桌宠代码彻底删除。技术栈维持 Tauri 2（用户确认不迁 Electron）。
+
+## 范围
+
+- 包含：主窗形态改普通窗口；删除桌宠渲染/动画全链路；工作台布局（侧栏 + 四视图：
+  会话 Chat / 技能 Skills / 产物 Artifacts / 设置 Settings）；会话列表数据链路；
+  CSS 变量深色主题；message-panel 独立窗口合并进主窗。
+- 明确不包含：语音链路（后续走中转站 realtime，另立需求）；浅色主题（只留变量位）；
+  Windows 真机验证（无 Windows 机器，列为已知限制）；onboarding 向导重写（文案品牌
+  残留另立小需求）。
+- **FEATURE_POLICY only-add 的显式删除例外**（本需求的目的就是移除，逐条列出）：
+  桌宠角色渲染与动画（pet-anim/pet-engine/PetCanvas/petCharacter/petTransform）、
+  设置面板「桌宠形象」下拉（petModels）、点击穿透（click_through.rs）、
+  message-panel 独立窗口及其 4 个 Tauri command、FPS 徽章。除此之外任何现有功能不得减少。
+
+## 功能验收条款
+
+| ID | 功能点 | 验收条件（可验证） | 优先级 |
+|----|--------|-------------------|--------|
+| WB-1 | 窗口形态 | 主窗有系统标题栏、可拖拽缩放，默认 1000×700（min 800×560）、首启居中；出现在 Dock/任务栏（skipTaskbar=false）；transparent=false 且 macOSPrivateApi 移除 | 必须 |
+| WB-2 | 第二窗口移除 | tauri.conf 不再声明 message-panel 窗口；open/close/dock/toggle_message_panel 四个 command 及全部前端调用点删除；应用运行期只有一个窗口 | 必须 |
+| WB-3 | 工作台布局 | 左侧栏含 💬会话/🧩技能/📄产物 三个导航项 + 底部 ⚙️设置；点击切换右侧四个视图，当前项高亮；窗口缩放至 min 尺寸布局不破 | 必须 |
+| WB-4 | ChatView 消息链路 | 在新布局发送一条消息，后端真实往返并渲染回复（markdown 正常）；输入栏保留麦克风按钮为禁用占位（tooltip 说明语音待接入） | 必须 |
+| WB-5 | 会话列表 | 侧栏「会话」下展示历史会话（标题/时间倒序）；点击历史会话加载其消息记录；「新建会话」入口可用并真的开新会话 | 必须 |
+| WB-6 | SkillsView | 技能中心以页面呈现（非弹窗），能力列表渲染、详情/操作不回归 | 必须 |
+| WB-7 | ArtifactsView | 产物按时间倒序列出；卡片「打开」「在文件夹显示」动作可用 | 必须 |
+| WB-8 | SettingsView | 设置以页面呈现；除「桌宠形象」外原设置项逐项保留且可保存生效 | 必须 |
+| WB-9 | 桌宠代码删除 | pet-anim/、pet-engine/、PetCanvas、petCharacter、petTransform、petModels、PetStateMachine、public/assets/pet/、click_through.rs 全部移除；全仓无残留 import；`grep -ri "petcanvas\|pet-anim\|pet-engine" src` 零命中（注释除外） | 必须 |
+| WB-10 | 窗口几何记忆 | 调整窗口大小/位置后关闭重开，恢复上次几何；旧 window_geometry.json 兼容不崩 | 必须 |
+| WB-11 | 主题变量化 | 新增/改造组件的颜色全部走 CSS 变量；变量表集中单文件（深色值）；无新增硬编码十六进制色值进组件 | 必须 |
+| WB-12 | 测试与构建全绿 | 删除桌宠测试后 vitest 全绿；cargo test --lib 全绿；tsc+vite build 通过；mac 上 cargo check 零 error | 必须 |
+
+## 非功能 / 边界
+
+- 错误态：后端未就绪时 ChatView 显示连接状态与重试入口（沿用现有 bootstrap 错误处理，不回归）。
+- 数据兼容：既有会话/设置/密钥数据升级后不丢失（SessionDB、config.toml、keychain 均不动 schema）。
+- 空态：无历史会话时会话列表显示空态引导；无产物时 ArtifactsView 显示空态。
+- 性能：冷启动到窗口可交互不显著劣化（基线：当前 dev 启动）。
+- 兼容边界（如实声明）：Windows 侧 cfg(windows) 代码保持编译语义不变，但本轮无 Windows
+  真机/交叉编译验证，标记为已知限制随后续 Windows 会话补验。
+
+## 条件门适用性判定（gate manifest applicability 预declaration）
+
+- `input_sensitive: false` — 本需求全部为确定性 UI（布局/导航/设置/列表）与既有聊天链路的
+  回归验证；不新增"输出质量随输入语义变化"的功能面。WB-4 为单场景链路回归，不适用
+  MANUAL_SCENARIO_MATRIX 多类别门。判定人：Claude（用户确认 acceptance 即确认）。
+- `llm_payload_driven: false` — 不新增 LLM 输出驱动端侧状态机/卡片/流程的面；聊天回复
+  仅 markdown 文本展示（既有能力）。判定人：同上。
+- `stateful_init: false` — 不新增异步注册服务/远程配置/登录态依赖；dev 冷启动可用性由
+  WB-1..5 的真机验收覆盖。判定人：同上。
+
+## 测试场景矩阵
+
+确定性 UI，不适用（判定见上节 applicability；真人测试按 WB-1..10 逐条 AC 兑现表执行）。
+
+## 完成的定义（DoD 摘要）
+
+- WB-1 ~ WB-12 全部通过（真人 MCP 测试覆盖 WB-1..10 的 UI 面，脚本覆盖 WB-9/11/12）。
+- 无功能回归（only-add 例外清单之外）。
+- ARCHITECTURE/ 与 README 同步改版后的架构描述。

@@ -16,6 +16,11 @@
 **技术栈：** Tauri 2 + React（前端，sprite Canvas2D 渲染）· Python FastAPI +
 faster-whisper + Silero VAD + edge-tts + Ollama（后端）。
 
+## 架构文档
+
+模块级架构、项目状态与历史决策见 [`ARCHITECTURE/index.md`](./ARCHITECTURE/index.md)；
+部署层与目录布局概览见 [`ARCHITECTURE.md`](./ARCHITECTURE.md)。
+
 ## 快速开始（macOS / Linux，直接跑源码）
 
 不发安装包——像 OpenClaw 那样 clone 下来直接跑：
