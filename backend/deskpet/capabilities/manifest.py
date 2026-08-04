@@ -110,6 +110,15 @@ class PackManifestError(CapabilityContractError):
     """A stable, user-presentable package rejection."""
 
 
+class PackCompatibilityError(PackManifestError):
+    """Pack is valid but not for this OS/arch/python/DeskPet version.
+
+    区分于完整性/格式错误：兼容性不满足是"此平台不装它"的正常情况
+    （例如 windows-only 的 godot pack 在 macOS 上），调用方应跳过而非
+    让整个启动失败。
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class PackSource:
     type: str
@@ -269,7 +278,15 @@ class PackEnvironment:
             "linux": "linux",
             "darwin": "macos",
         }.get(sys.platform, sys.platform)
-        architecture = platform.machine().strip().lower().replace("amd64", "x86_64")
+        # 归一化架构别名：Windows 报 AMD64、macOS 报 arm64、Linux 报
+        # aarch64 —— pack 清单统一用 x86_64 / aarch64 两个规范名。
+        architecture = (
+            platform.machine()
+            .strip()
+            .lower()
+            .replace("amd64", "x86_64")
+            .replace("arm64", "aarch64")
+        )
         return cls(
             deskpet_version=deskpet_version,
             os=os_name,
@@ -847,29 +864,33 @@ def validate_compatibility(
             environment.deskpet_version, manifest.compatibility.deskpet
         )
     ):
-        raise PackManifestError(
+        raise PackCompatibilityError(
             "incompatible_deskpet",
             f"pack requires DeskPet {manifest.compatibility.deskpet}",
         )
     if environment.os not in manifest.compatibility.os:
-        raise PackManifestError(
+        raise PackCompatibilityError(
             "incompatible_os",
             f"pack supports {manifest.compatibility.os}, not {environment.os}",
         )
-    architecture = environment.architecture.lower().replace("amd64", "x86_64")
+    architecture = (
+        environment.architecture.lower()
+        .replace("amd64", "x86_64")
+        .replace("arm64", "aarch64")
+    )
     supported = {
-        item.lower().replace("amd64", "x86_64")
+        item.lower().replace("amd64", "x86_64").replace("arm64", "aarch64")
         for item in manifest.compatibility.architectures
     }
     if architecture not in supported:
-        raise PackManifestError(
+        raise PackCompatibilityError(
             "incompatible_architecture",
             f"pack supports {sorted(supported)}, not {architecture}",
         )
     if not _version_satisfies(
         environment.python_version, manifest.compatibility.python
     ):
-        raise PackManifestError(
+        raise PackCompatibilityError(
             "incompatible_python",
             f"pack requires Python {manifest.compatibility.python}",
         )

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import hashlib
 import inspect
 import json
@@ -86,6 +87,7 @@ from .manager import (
 from .manifest import (
     CommandDependency,
     PackEnvironment,
+    PackCompatibilityError,
     PackManifestError,
     PackValidationResult,
     ToolEntry,
@@ -2494,9 +2496,20 @@ class CapabilityPlatform:
             rehydrated = await self.manager.rehydrate_active_bindings()
             installed: list[CapabilityInstallResult] = []
             for pack_root in self.first_party_pack_roots:
-                validation = load_and_validate_pack(
-                    pack_root, environment=self.environment
-                )
+                try:
+                    validation = load_and_validate_pack(
+                        pack_root, environment=self.environment
+                    )
+                except PackCompatibilityError as exc:
+                    # 平台不兼容的 first-party pack（如 windows-only 的
+                    # godot）在别的平台上属正常情况：跳过并留日志，绝不
+                    # 让整个 capability runtime / 后端启动失败。
+                    logging.getLogger(__name__).info(
+                        "first_party_pack_skipped_incompatible pack=%s reason=%s",
+                        pack_root,
+                        exc,
+                    )
+                    continue
                 manifest = validation.manifest
                 if manifest.source.type != "builtin":
                     raise PackManifestError(
