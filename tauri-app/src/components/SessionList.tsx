@@ -24,7 +24,7 @@ import type { CSSProperties } from "react";
 
 import { tokens } from "../theme/tokens";
 import { dark } from "../theme/components";
-import { controlWS } from "../code-panel/controlWs";
+import { controlWS, CONTROL_SESSION_ID } from "../code-panel/controlWs";
 import { useSessionsStore } from "../stores/sessionsStore";
 import { ConfirmDialog } from "../code-panel/ConfirmDialog";
 import { createClientTurnIdentity } from "../ws/clientTurnIdentity";
@@ -138,7 +138,7 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
         msg?.type === "ppt_outline_proposed"
       ) {
         const payloadSid = typeof p.session_id === "string" ? p.session_id : "";
-        if (payloadSid && payloadSid !== DEFAULT_SID && payloadSid !== "message-panel-main") {
+        if (payloadSid && payloadSid !== DEFAULT_SID && payloadSid !== CONTROL_SESSION_ID) {
           nextSid = payloadSid;
         }
       }

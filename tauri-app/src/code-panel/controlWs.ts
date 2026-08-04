@@ -47,7 +47,7 @@ const REQUESTED_SCOPE = "companion_action";
  * session/task_scope.py 硬编码映射此 sid → "default" 会话组。改名会抖动
  * 整条后端投影链路（D1 决策：sid 不改，仅注释说明）。
  */
-const CONTROL_SESSION_ID = "message-panel-main";
+export const CONTROL_SESSION_ID = "message-panel-main";
 
 function companionEventFrom(value: unknown): CompanionEvent | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
