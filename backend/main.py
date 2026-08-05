@@ -10881,10 +10881,19 @@ async def control_channel(ws: WebSocket):
                         # identity gate is ready so waiting work cannot remain
                         # stranded until an unrelated durable event arrives.
                         if _trigger_harness_recovery_after_identity_bind():
+                            # 2026-08-05 fork 前既有 bug 修复：此处原引用局部变量
+                            # `payload`，但它在本 try 块更下方才赋值——recovery
+                            # 触发时即 UnboundLocalError，bind 被拒且前端无限
+                            # 重试（真机测试实锤）。改读 response 的 payload。
+                            _resp_payload = (
+                                response.get("payload", {})
+                                if isinstance(response, Mapping)
+                                else {}
+                            )
                             logger.info(
                                 "harness_recovery_triggered_identity_ready",
-                                profile_id=payload.get("profile_id"),
-                                profile_generation=payload.get(
+                                profile_id=_resp_payload.get("profile_id"),
+                                profile_generation=_resp_payload.get(
                                     "profile_generation"
                                 ),
                             )
