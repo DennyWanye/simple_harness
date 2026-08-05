@@ -97,8 +97,33 @@ struct ControlBootstrap<'a> {
     public_key_hex: &'a str,
 }
 
+/// 按 PID 杀进程（kill_child 的兜底路径，见 BackendProcess::child_pid）。
+fn kill_pid(pid: u32) {
+    #[cfg(unix)]
+    {
+        // SIGKILL：backend 退出路径不需要优雅关闭（无未落盘状态），
+        // 且此处已是应用退出的最后一步，不能再等。
+        unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };
+    }
+    #[cfg(windows)]
+    {
+        // Job Object 已保证连带回收；这里只做兜底，忽略失败。
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/PID", &pid.to_string()])
+            .output();
+    }
+}
+
 pub struct BackendProcess {
     child: Mutex<Option<Child>>,
+    /// 2026-08-05 真机发现（B13 违反）：supervisor 线程为了 wait() 会把
+    /// `child` handle take 走，于是 backend 活着的绝大多数时间里
+    /// `child` 都是 None——kill_child() 因此形同虚设。Windows 靠
+    /// Job Object 在进程退出时由内核连带回收，mac/Linux 的
+    /// `job_object::assign_to_global` 是 no-op，于是退出应用后 backend
+    /// 变成孤儿并继续占着 8100（正是 Job Object 当年要解决的问题）。
+    /// 记录 PID 作为独立于 handle 的兜底杀进程依据。
+    child_pid: Mutex<Option<u32>>,
     shared_secret: Mutex<Option<String>>,
     /// P3-S3: single source of truth for *how* to spawn the backend,
     /// replacing the old `python_path` + `backend_dir` string pair.
@@ -124,6 +149,7 @@ impl BackendProcess {
     pub fn new() -> Self {
         Self {
             child: Mutex::new(None),
+            child_pid: Mutex::new(None),
             shared_secret: Mutex::new(None),
             launch: Mutex::new(None),
             shutdown_requested: Arc::new(AtomicBool::new(false)),
@@ -150,6 +176,15 @@ impl BackendProcess {
         if let Ok(mut guard) = self.child.lock() {
             if let Some(mut child) = guard.take() {
                 let _ = child.kill();
+            }
+        }
+        // PID 兜底：handle 通常已被 supervisor 的 wait() take 走（见
+        // child_pid 字段注释），此时上面的分支什么都杀不掉。unix 上直接
+        // 按 PID 发 SIGKILL；Windows 保留 Job Object 作为主要保障，这里
+        // 的兜底同样无害。
+        if let Ok(mut guard) = self.child_pid.lock() {
+            if let Some(pid) = guard.take() {
+                kill_pid(pid);
             }
         }
         if let Ok(mut guard) = self.shared_secret.lock() {
@@ -489,6 +524,9 @@ pub async fn start_backend(
     *state.launch.lock().map_err(|e| e.to_string())? = Some(launch.clone());
     *state.shared_secret.lock().map_err(|e| e.to_string())? = Some(secret.clone());
     *state.control_signer.lock().map_err(|e| e.to_string())? = Some(signer);
+    if let Ok(mut guard) = state.child_pid.lock() {
+        *guard = Some(child.id());
+    }
     *state.child.lock().map_err(|e| e.to_string())? = Some(child);
     state.shutdown_requested.store(false, Ordering::SeqCst);
     state.restart_count.store(0, Ordering::SeqCst);

@@ -1,0 +1,23 @@
+TC-WB-16 退出路径矩阵（B13）— 真机实测
+
+【修复前（缺陷复现）】
+基线: app=79551 backend=79586 backend_parent=79551（父子关系确认）
+红钮退出后:   app=0 backend=1 port8100=1   ← 孤儿后端占端口
+托盘退出后:   app=0 backend=1 port8100=1   ← 同上（两条路径均中招）
+根因: process_manager.rs kill_child() 走 child.lock().take()，但 supervisor
+      线程为 wait() 已将 handle take 走（代码注释自承"99.99% 时间为 None"）；
+      Windows 由 Job Object(KILL_ON_JOB_CLOSE) 内核兜底，job_object.rs 的
+      #[cfg(not(windows))] 分支是 no-op → mac/Linux 无任何回收机制。
+
+【修复】commit: 见 fix(process): PID fallback kill
+      BackendProcess 新增 child_pid: Mutex<Option<u32>>，spawn 时记录；
+      kill_child() 在 handle 失效时按 PID 兜底（unix: libc::kill SIGKILL，
+      windows: taskkill /F 作为 Job Object 之外的第二保险）。
+
+【修复后（验证）】
+路径1 红钮:   基线 app=81802 backend=81850 parent=81802
+              退出后 app=0 backend=0 port8100=0   ✅
+路径2 托盘退出: 基线 app=1 backend=1
+              退出后 app=0 backend=0 port8100=0   ✅
+判定: 两条路径等价且完全清理（窗口+托盘+进程+后端+端口），符合 B13。
+      禁止分裂态未出现。

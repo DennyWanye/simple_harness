@@ -53,6 +53,11 @@ uuid = { version = "1", features = ["v4"] }
 # canonical SHA-256 hashing. Exact version is shared with the existing lock.
 ring = "=0.17.14"
 
+# 2026-08-05 B13 修复：mac/Linux 无 Job Object，应用退出时按 PID 兜底
+# SIGKILL 掉 backend 子进程（详见 process_manager::kill_pid）。
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [target.'cfg(windows)'.dependencies]
 # P3-S2: NVIDIA precheck (Windows only — macOS runs the CPU/MPS backend
 # tier with no NVML). Loaded via nvml.dll, bundled with every NVIDIA
