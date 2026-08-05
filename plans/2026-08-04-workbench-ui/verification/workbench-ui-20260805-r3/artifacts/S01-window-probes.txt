@@ -1,0 +1,21 @@
+=== TC-WB-01 步骤 2/4/5/6 程序化量测（AppleScript System Events）===
+initial pos=235,111 size=1000x701
+enlarged size=1300x856
+min-clamp size=800x560
+=== 屏幕分辨率 ===
+          Resolution: 2560 x 1664 Retina
+=== 步骤 3 Dock/切换器（进程级核对）===
+ simple-harness
+=== 步骤 7 静态核对 ===
+macOSPrivateApi-hits=1
+23:        "transparent": false,
+T0=2026-08-05T06:03:37Z T1=2026-08-05T06:03:39Z
+140:197: execution error: “System Events”遇到一个错误：不能获得“button 1 of window "Simple Harness" of application process "simple-harness" whose subrole = "AXZoomButton"”。无效的索引。 (-1719)
+buttons: close buttonfull screen buttonminimize button
+pre-zoom size=1000x700
+zoomed size=1000x700
+restored size=1000x700
+window minimized, un-minimizing via Dock reopen
+pre-fullscreen size=1000x700
+fullscreen=true
+after-exit size=1000x700
