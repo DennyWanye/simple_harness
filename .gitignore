@@ -237,3 +237,4 @@ plans/**/verification/**/auditor-input.json
 plans/**/verification/**/auditor-output.json
 plans/**/verification/**/.plan-test-gate.lock
 .superpowers/
+.testenv/
