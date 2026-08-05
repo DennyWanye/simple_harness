@@ -1,0 +1,4 @@
+credential-chain: 32 passed in 0.72s
+full(1): 9 failed, 641 passed, 10 skipped in 51.24s
+subok=1 fullok=1
+VERDICT_PASS

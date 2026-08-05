@@ -6,6 +6,5 @@ TSC_OK
 COVERAGE_OK
 BUILD_OK
 test result: ok. 79 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
-cargo-errors=0
-companion: 9 failed, 641 passed, 10 skipped in 51.97s（基线 9F/641P 为本机既有红，见 baseline.md）
+companion(1): 9 failed, 641 passed, 10 skipped in 51.40s
 VERDICT_PASS

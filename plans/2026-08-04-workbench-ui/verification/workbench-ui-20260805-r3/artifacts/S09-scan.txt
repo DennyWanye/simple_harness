@@ -1,0 +1,7 @@
+grep -riE "petcanvas|pet-anim|pet-engine" tauri-app/src -> 1 hits, 0 non-comment
+grep -riE "petcharacter|pettransform|petmodels|petstatemachine" tauri-app/src -> 4 hits, 0 non-comment
+for d in tauri-app/src/pet-anim tauri-app/src/pet- -> ''
+grep -rn "click_through" tauri-app/src-tauri/src | -> ''
+grep -rniE "petmodels" tauri-app/src || true -> ''
+tsc: 0
+VERDICT_PASS
