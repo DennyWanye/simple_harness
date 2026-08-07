@@ -39,3 +39,55 @@ S01 **没有**记 `blocked` run。这个阻塞是"等用户点一下"的临时�
 没有 BC-04，故报 `FROZEN_ORACLE_CHANGED`。**r8 自身不报**（init 在改动之后，
 BC-04 已登记）。r3–r7 都是已被取代的轮次（r6 有永久 root FAIL、r7 有 BLOCKED），
 待 r8 finalize 后用 `retire --superseded-by r8` 正当退役，该诊断随之消解。
+
+---
+
+# 更新（04:20）：出现第二个、更严重的症状 —— 应用起不来了
+
+## 现象（cold-A 与全新冷目录都一样，与钥匙串无关）
+`launch-app.sh` 后：
+- Rust 侧**跑到了**：日志有 `apply_saved_geometry: loaded 1260x840 logical pos=Some(420),Some(232)`
+  → `set_size OK` → `on_move` → `flushing ... saved OK`
+- 前端**加载了**：有 `[vite] (client)` 输出
+- 但 `[backend_launch]` **一行都没有**，`backend=0 port8100=0`
+- 前端只报 `get_shared_secret failed: No secret available (backend not started?)`
+  之后日志在 04:16:58 **彻底静默**
+- `count of windows` = **0**，全屏截图只有桌面壁纸
+- 第二次冷启动（`.testenv/cold-S01-r8`）症状完全相同 ⇒ **不是钥匙串导致的**
+
+## 已排除
+- 不是 gpu_check：`lib.rs:123` 的 NVIDIA 前置检查是 `#[cfg(target_os = "windows")]`，
+  macOS 不走，日志也无 `[setup] gpu_check failed`
+- 不是编译未完成：`Finished dev profile in 0.35s` = 无改动待编，二进制已含改动
+- 不是窗口跑到屏幕外：存盘几何物理 (420,232)+2520x1680 = 逻辑 (210,116)+1260x840，
+  正好贴合 1470x956 屏幕，`clamp_position_to_screen` 无需移动
+- 不是 launch-app.sh 的 env 丢了：DESKPET_USER_DATA_DIR / DESKPET_BACKEND_DIR /
+  DESKPET_DEV_MODE 都在
+
+## 关键线索：backend 是**前端**启动的，不是 Rust setup 启动的
+`tauri-app/src/App.tsx:130` → `core.invoke("start_backend")`；失败会走 :142
+`console.warn("[bootstrap] start_backend failed:", msg)`。
+日志里**既没有** `[backend_launch]`（Rust 侧 spawn 的打点）**也没有**
+`[bootstrap] start_backend failed`（前端侧失败打点）
+⇒ 前端 bootstrap 那段 effect **根本没执行到 invoke**，或执行了但两条打点都没落到这个日志。
+
+## 嫌疑与下一步（**未验证，不下结论**）
+自 `b68e958`（品牌修复）之后**从未成功启动过应用** —— r8 脚本道只跑构建/单测，
+没起过应用；最后一次成功启动是 r7 期间（b68e958 之前）。故 b68e958 是首要嫌疑。
+但我的改动只有字符串字面量（backend_launch.rs / gpu_check.rs / process_manager.rs
+各改对话框文案，前端改 UI 文案），**理论上不该影响启动路径**，所以不排除是
+环境/缓存问题或与本次改动无关的既有问题。
+
+**必须先做的对照实验**（在下结论前）：
+```
+git worktree add --detach <tmp> 33f6b5f^   # = b68e958^，品牌修复之前
+# 在该 worktree 起应用，看 [backend_launch] 是否出现、窗口是否可见
+```
+若基线正常而 b68e958 异常 → 是回归，逐文件二分定位；
+若基线同样异常 → 与品牌修复无关，是环境问题（Vite 缓存 / target 缓存 /
+node_modules / macOS 权限），按环境路线排查。
+
+## r8 现状
+脚本道 6/6 绿；真机道 0/15，**因应用起不来而无法推进**。
+仍未在账本记 blocked（理由同上：blocked 在 `compute_scenario_status` 里同样是
+永久粘性，会让 r8 步 r7 后尘永久收不了尾）。
