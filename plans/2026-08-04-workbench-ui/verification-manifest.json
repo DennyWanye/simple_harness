@@ -1,11 +1,11 @@
 {
-  "run_id": "workbench-ui-20260806-r5",
+  "run_id": "workbench-ui-20260807-r7",
   "source_request_text": "好的， 我现在准备把live2D的部分去掉，只需要一个主页面就好，然后主页面上面有设置这样一个按钮。请你先和我讨论一下修改后续的页面UI样式，然后开始处理（后续经讨论定稿为：C 工作台方向/深色单主题/普通窗口/桌宠代码彻底删除；行为契约 B1-B13 用户于 2026-08-05 回复「确认」批准）；oracle 修正 WBUI-BC-01 经用户 2026-08-05「批准」（见 behavior_changes）",
   "acceptance_file": "acceptance.md",
   "behavior_contract_file": "plans/2026-08-04-workbench-ui/behavior-contract.md",
   "behavior_contract_approval_sha256": "36f33adaf0942634a8ece1eec4a6f30d44dec73e1ef8704b29d983a57f2e09ae",
   "baseline": {
-    "head": "8c11ddfad6ec8084cced11da697a6bcfa44702aa",
+    "head": "cad272e",
     "dirty_patch_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
   "scenarios": [
@@ -461,7 +461,28 @@
         "approved_at": "2026-08-05",
         "context": "编排者给出 exact old/new 与理由后，用户以「批准」开头的消息批准（消息另含测试凭据，不записи入账，仅 hash 绑定）"
       }
+    },
+    {
+      "behavior_change_id": "WBUI-BC-03",
+      "target": "testcase/workbench-ui/TC-WB-04-chat-roundtrip-companion.md",
+      "summary": "步骤5③ canonical 触发判据修正：get_window_control_credential 已安全硬化为挑战-响应签名（必须携带服务端下发的 connectionId/controlEpoch/challenge/requestSeq/commandKind/requestHash/requestedScope），裸 invoke 被参数校验拒绝是硬化后的预期行为而非 scope 拒绝。新判据：真实控制链路 requested_scope=companion_action 被 accepted + 全程零 window_scope_denied + 裸 invoke 的参数校验拒绝信息原样入账。不放松产品行为断言。",
+      "old_excerpt": "③ canonical 触发：invoke get_window_control_credential 返回非 error 对象",
+      "new_excerpt": "③ companion_action WS accepted + 0 window_scope_denied + 裸 invoke 参数校验拒绝原样入账（安全硬化预期）",
+      "scope": "仅 TC-WB-04 步骤 5③；①②与其余步骤不变",
+      "approval": {
+        "approved_by": "user",
+        "message_text": "批准",
+        "message_sha256": "8cbe697b157364a5b13646285b38409dc53ec5287deeb7913493e65b275cd14d",
+        "approved_at": "2026-08-07",
+        "context": "编排者在 chat 给出 exact old/new 与硬化原因后，用户在选项界面选择「批准」"
+      }
     }
   ],
-  "notes": "r4：修正 r3 的 manifest 缺陷——(1) S09/S11/S12 为纯脚本场景，ui 由 true 改 false；(2) impact_paths 补齐后端生命周期文件（process_manager/lib/backend_launch/Cargo/main.py）映射到受其影响的 6 个场景，其余前端场景补 tauri-app/src/**；(3) 对着含 B13 修复的代码全量重跑。"
+  "notes": "r4：修正 r3 的 manifest 缺陷——(1) S09/S11/S12 为纯脚本场景，ui 由 true 改 false；(2) impact_paths 补齐后端生命周期文件（process_manager/lib/backend_launch/Cargo/main.py）映射到受其影响的 6 个场景，其余前端场景补 tauri-app/src/**；(3) 对着含 B13 修复的代码全量重跑。 | r6：r5 因 TESTED_RUNTIME_MISMATCH（测后改码）与记账缺陷（depends_on 按路径引用、缺 ui_action=primary、S02 证据被改）不可闭环；六缺陷修复以 9a19261 提交后，对干净基线全量重测。r5 将在 r6 SHIPPABLE 后经 CLI 退役。",
+  "related_run_dirs": [
+    "plans/2026-08-04-workbench-ui/verification/workbench-ui-20260805-r3",
+    "plans/2026-08-04-workbench-ui/verification/workbench-ui-20260805-r4",
+    "plans/2026-08-04-workbench-ui/verification/workbench-ui-20260806-r5",
+    "plans/2026-08-04-workbench-ui/verification/workbench-ui-20260807-r6"
+  ]
 }
