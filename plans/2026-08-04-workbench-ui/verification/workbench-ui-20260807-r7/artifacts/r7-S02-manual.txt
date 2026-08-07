@@ -1,0 +1,49 @@
+# S02 真机道 — message-panel 第二窗口彻底移除（TC-WB-02 / B2）
+执行：AI (manual-mcp / cliclick 真 HID + devtools 权威探针)；2026-08-07/08；relay dev
+基线：cad272e；用户数据 .testenv/cold-A
+
+## 步骤1 启动后默认视图
+应用启动 → 默认落在**聊天视图**，会话内容（消息流/输入栏/头部条）直接呈现在
+**主窗内容区**，全程未点击任何按钮、未弹出第二个窗口 ✓（r7-S02-01-default）
+
+## 步骤2 全 UI 搜索旧「▶ 消息」入口
+遍历侧栏（会话 / 技能中心 / 产物库 / 更多组四项 / 设置）、头部条（模型按钮 /
+工具按钮 / 上下文环 / sid 徽章）、四个视图正文与底部状态栏：
+**不存在任何"打开消息面板独立窗口"的入口** ✓
+
+## 步骤3 正常使用一轮后核对窗口数（两个观测面都要满足）
+使用轮次：四视图切换 ×12、发消息（S03 步骤6「切换压力验证」真往返）、
+打开设置、打开更多组三个浮层。
+
+观测面 A —— 可见窗口计数（osascript，注明盲区：只统计可见窗口）：
+  `tell application "System Events" to tell (first process whose name is
+   "simple-harness") to return (count of windows)` → **1**
+  本轮在四视图切换的每一步后各查一次，**恒为 1**（不含系统弹窗/文件对话框）✓
+
+观测面 B —— 权威计数（含隐藏 webview），devtools 控制台写死探针：
+  `window.__TAURI__.window.getAllWindows().then(w=>console.log(
+     "WINDOW_COUNT="+w.length+" labels="+w.map(x=>x.label).join(",")))`
+  实际输出：**`WINDOW_COUNT=1 labels=main`** ✓（r7-S02-probe）
+  注：Safari Web Inspector 不支持顶层 await，`(await …).length` 会抛
+  SyntaxError，故改 Promise 写法——两次尝试均留证。
+
+两个观测面同时满足 ⇒ 步骤3 通过 ✓
+
+## 步骤4-6 脚本核对（r7 script 道，同一轮同一指纹）
+见 artifacts/S02-script.txt（本轮 r7 script-lane 重跑，VERDICT_PASS）：
+  步骤4 `grep -n "message-panel" tauri.conf.json capabilities/default.json` → 零命中
+  步骤5 `grep -rniE "open_message_panel|close_message_panel|dock_message_panel|
+        toggle_message_panel" tauri-app/src tauri-app/src-tauri/src` → 零命中
+  步骤6 残留引用仅落在 behavior_change WBUI-BC-02 已批准的允许清单内
+        （controlWs 的历史命名常量 `message-panel-main`、注释、
+          webview_permissions.rs 中以 message-panel 为**被拒对象**的测试断言）
+
+## Run 创建负向断言（expected_run_created=false）
+本场景自身只做只读观察：切视图、查窗口计数、跑 devtools 只读探针、grep 源码。
+（步骤3 前置的"使用一轮"里那次发消息归属 S03，其 run 已在 S03/S05 记账。）
+硬证据（.testenv/cold-A/data/workflow.db，S02 核对完成后取）：
+  trace_runs 总数=**32**，最新 started_at = 2026-08-07 23:45:30（属 S05 步骤5）
+S02 自身的观察动作未新增任何 root run ⇒ 增量为 0 ✓
+
+判定：步骤 1–6 全部满足 → **S02 PASS**
+VERDICT_PASS

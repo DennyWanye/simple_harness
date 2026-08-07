@@ -1,0 +1,92 @@
+# S06 真机道 — SkillsView 技能中心页面化（TC-WB-06 / B6）
+执行：AI (manual-mcp / cliclick 真 HID)；2026-08-08；relay dev
+基线：cad272e；用户数据 .testenv/cold-A
+结论：**BLOCKED**（6 项判定清单中 4 项 PASS、1 项 PASS、判定项④⑤ 无法构造前置）
+
+## 步骤1 页面化（PASS）
+点侧栏「🧩技能中心」→ 能力中心以**页面**呈现：填满右侧内容区，
+**无背景遮罩、无浮层定位、无「关闭 ×」式弹窗交互**；切到别的导航项即离开，
+再切回来仍在该页。侧栏「技能中心」保持高亮态 ✓（r7-S06-01-page）
+
+## 步骤2 【判定项①】两个 tab 存在且可切换（PASS）
+页内 tab：**「能力 (150)」/「操作 (17)」**，互相点击可切换，内容区随之整体更换
+（能力 = 左列表右详情；操作 = 操作卡片流）✓
+（r7-S06-01-page / r7-S06-05-operations）
+
+## 步骤3 【判定项②】能力列表渲染（PASS）
+capabilities tab 列表非空，共 **150** 项，条目含名称 + 版本 + 来源
+（agent / agent_parallel / agent_reach_doctor / agent_reach_read / app_discover /
+ app_launch / ask_clarification / await_subagents …，均 `v1 · builtin`），
+含搜索框（名称、来源或 ID）与类别下拉（全部）。无渲染报错、无空白区块 ✓
+
+## 步骤4 【判定项③】能力详情打开（PASS）
+点条目 `agent` → 右侧详情面板正常展示：
+  类别=工具 / 版本=v1 / 来源=builtin / Scope=builtin /
+  健康=降级 · Instructional or currently unavailable for direct execution
+  以及描述 "Delegate one focused, self-contained task to a child run and return
+  its final result."
+详情为同页右栏，切换其他条目即整体替换，离开 tab 即回列表 ✓
+
+## 步骤5 【判定项④⑤⑥】operations tab 的 cancel / rollback / uninstall 入口
+### 现状（实测）
+「操作 (17)」全部是启动时的一方安装（backend log:
+`capability_platform_ready … first_party_installs=17 recovered_operations=0`），
+每张卡片形态一致：`已完成` / 100% / 安装·已发布 / 最近结果 Published /
+Verification Receipt 通过·manifest_and_integrity。
+**cancel / rollback / uninstall 三个入口均不可见** ✓（r7-S06-05-operations）
+
+### 根因（源码实证，非猜测）
+`backend/deskpet/capabilities/ui_projection.py:234-243`：
+```
+if cancellable and operation.status == "running":   available_actions.append("cancel")
+if retryable and operation.status in {"failed","cancelled"}: … "retry"
+if operation.status == "succeeded" and operation.pack_id:
+    if rollback_available:  … "rollback"
+    if uninstall_available: … "uninstall"
+```
+17 个操作全是 `succeeded`，且 rollback/uninstall 的 available 标志为假
+⇒ 三个入口**在当前数据下结构上不可能出现**。这不是 UI 丢了入口，是没有能让它们
+出现的操作对象。
+
+### 按用户裁决「造一个进行中操作再测」的尝试与失败原因
+经 SkillStore「市场」真机安装 `algorithmic-art`（点安装 → 二次确认「确认安装」）：
+- 安装**成功**：SkillStore「已安装」tab 出现该项且带**「卸载」按钮**
+  （r7-S06-installing）
+- 但「操作」tab **仍是 17**，未新增任何操作
+- 落盘实查：`.testenv/cold-A/skills/algorithmic-art`（**skills 子系统**）；
+  `.testenv/cold-A/capabilities/packs` 仍为 **17** 个（**capability pack 子系统**未变）
+⇒ **SkillStore 装的是 skill，不是 capability pack**，两者不是同一条链路，
+  故装技能无法产生 running 的 capability operation。
+
+### 因此
+- 【判定项⑥ uninstall 入口存在】：**PASS（用户裁决）**。在 SkillStore「已安装」中
+  确有「卸载」入口（r7-S06-installing 真机截图）。TC 步骤5 字面要求是"切到
+  operations tab 逐一核对"，该入口不在 operations tab 内；我未自行判定等价，
+  已升级用户。用户 2026-08-08 裁决：**「可以，算入口存在」**——按"入口存在
+  不回归"的实质口径判⑥达标。
+- 【判定项④ cancel】【判定项⑤ rollback】：**未能构造出前置**（需要一个 running
+  的 capability pack 操作 / 一个 rollback_available 为真的已安装 pack）。
+  本轮未找到可从 UI 触发 capability pack 安装的入口。
+
+## 步骤6 【判定项：旧 Skill Store 入口】（PASS）
+点页头右上「打开旧 Skill Store」→ SkillStore **在技能视图内切换呈现**：
+- 侧栏「技能中心」仍高亮，未弹独立窗口、**无浮层遮罩**
+- 页头变为「SkillStore / 技能商店」，tab 为 已安装 / 市场 / 通过 URL 安装
+- 右上有「返回能力中心」按钮，点击可正常返回能力中心（实测往返 3 次均正常）
+⇒ 入口可达、页内切换、可返回 ✓（r7-S06-06-skillstore / r7-S06-market）
+
+## 未做的事（如实声明）
+- 没有为了让入口出现而改数据库、改 projection 或放宽判据。
+- 没有把 SkillStore 的「卸载」按等价物直接顶替 operations tab 的 uninstall 入口。
+- 没有用"入口在代码里存在"替代真机可见性证据。
+
+## 用户裁决（2026-08-08）
+① uninstall 口径 → **「可以，算入口存在」**（⑥ 判 PASS，见上）
+② cancel/rollback 前置 → **「S06 就记 BLOCKED 先放着」**：不改 oracle、不改数据，
+   保持 BLOCKED，待其余场景跑完后连同 S06 一起做收尾决策。
+
+判定：判定项 ①②③⑥ + 步骤1 页面化 + 步骤6 旧 Store 入口 均 PASS；
+④cancel / ⑤rollback **前置不可得**（需一个 running 的 capability pack 操作，
+当前无 UI 路径可触发）
+→ **S06 BLOCKED**（不记 PASS，也不记 FAIL——UI 未丢功能，是测试前置构造不出来）
+VERDICT_BLOCKED

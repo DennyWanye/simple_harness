@@ -1,0 +1,76 @@
+# S07 真机道 — ArtifactsView 产物库（TC-WB-07 / B7）
+执行：AI (manual-mcp / cliclick 真 HID)；2026-08-07；relay dev
+基线：cad272e；用户数据 .testenv/cold-A
+
+## 前置1（canonical fixture，本轮补齐）
+TC 指定的三文件夹具此前未落实（前轮用的是 S17 的 35 个 report-NN.txt 规模夹具，
+那是规模场景的夹具、不是本场景的排序对照物）。本轮按 TC 原文补齐，
+在 `.testenv/cold-A/artifacts/`（= dev 的 `<user_data>/artifacts`）新建三个带扩展名
+文件并用 `touch -t` 错开 mtime：
+  report-a.txt  "S07 fixture A — oldest of the three"   38 B  2026-08-07 10:00
+  report-b.txt  "S07 fixture B — middle"                25 B  2026-08-07 11:00
+  report-c.txt  "S07 fixture C — newest of the three"   38 B  2026-08-07 12:00
+磁盘 `ls -lt` 首三项即 c → b → a。原 35 个 report-NN.txt 保留（mtime 8/5 16:38:31），
+故总数 38。
+
+## 前置2（消息流产物卡片对象）
+采用 TC 允许的第二分支「已有历史会话中带产物卡片的消息」：
+会话 `14e39412-bb58-448b-a547-9694ab5964d6`（空态恢复验证）内已有一轮真实产出任务
+（DB 实查 messages）：
+  user      「帮我在工作区创建一个文档 s07-card.md，内容写一行：产物卡片验证。」
+  assistant 「写好啦 ✅ …产物引用：已生成 artifact ref，卡片可以正常挂载 📎」
+
+## 步骤1 点侧栏「📄产物库」
+列表渲染为卡片，每项含**文件名 + 大小 + 修改时间 + 两个操作按钮**
+（「打开」/「在文件夹中显示」）；页头「任务生成的文件，按修改时间倒序 · 共 38 项」✓
+（r7-S07-01-list）
+
+## 步骤2 排序核对（对照已知 mtime）
+UI 首四项与磁盘完全一致，严格时间倒序：
+  report-c.txt  38 B · 2026/8/7 12:00:00
+  report-b.txt  25 B · 2026/8/7 11:00:00
+  report-a.txt  38 B · 2026/8/7 10:00:00
+  report-35.txt 20 B · 2026/8/5 16:38:31
+⇒ 最新修改在最上，与预置 mtime 逐项吻合 ✓
+
+## 步骤3 点 report-c.txt 的「打开」
+- **TextEdit 真实前台弹出**：`name of first process whose frontmost is true` → "TextEdit"
+- 打开的文档窗口名单含 `report-c.txt`
+- AppleScript 实读文档正文 = `S07 fixture C — newest of the three`，与预置一行文本一致 ✓
+- 卡片内回显绿色状态「已请求系统打开文件」
+（r7-S07-03-textedit；验证后已 close+quit TextEdit）
+
+## 步骤4 点 report-a.txt 的「在文件夹中显示」
+- **Finder 真实前台打开**：frontmost → "Finder"
+- `name of window 1` → `artifacts`（即该文件所在目录）
+- `name of item 1 of (get selection)` → **`report-a.txt`** ⇒ 不只是定位到目录，
+  而是**精确选中了该文件** ✓
+（r7-S07-04-finder）
+注：卡片状态行出现后会把下方卡片整体下移约 13pt，第一次按旧坐标点空——已按
+刷新后的截图重取坐标命中，记录在案。
+
+## 步骤5 回聊天视图核对消息流产物卡片仍在且可操作
+切到会话 14e39412 → 消息流内该轮任务的卡片**全部在位**，依次为：
+  ▶ tool_search    query=file_write        ✓ok + 118 行 · 点击展开
+  ▶ tool_describe  capability_id=builtin:file_write   ✓ok + 41 行 · 点击展开
+  ▶ tool_activate  capability_id=builtin:file_write describe_nonce=… schema_hash=…
+                                            ✓ok + 46 行 · 点击展开
+  ▶ file_write     content=产物卡片验证 path=…/.testenv/cold-A/work… mode=overwrite
+                                            ✓ok + 9 行 · 点击展开
+**可操作性实证**（不止"看得见"）：真点 file_write 卡片的「点击展开」→ 卡片展开
+渲染出结果 JSON：
+  {"error": null, "state": "success",
+   "value": {"bytes_written": 7, "mode": "overwrite", "path": "s07-card.md"}}
+⇒ B7 成立：消息流卡片未被移除、交互仍可用，产物库是**新增**的一面 ✓
+（r7-S07-05-card / r7-S07-05-expanded）
+
+## Run 创建负向断言（expected_run_created=false）
+本场景只做：切视图、点「打开」/「在文件夹中显示」、切会话、展开历史卡片——
+未发送任何消息、未触发技能或生成。
+硬证据（.testenv/cold-A/data/workflow.db，S07 全部步骤跑完后取）：
+  trace_runs 总数=32，最新 started_at = 2026-08-07 23:45:30
+该时间戳属于 **S05 步骤5** 的 kimi-k3 往返（run 1c8df1e2…），早于本场景开始
+⇒ S07 期间 root run 增量为 0 ✓
+
+判定：步骤 1–5 全部满足 → **S07 PASS**
+VERDICT_PASS

@@ -1,0 +1,21 @@
+# S02 真机半边 — message-panel 第二窗口彻底移除（TC-WB-02 步骤1-3）
+执行：AI (manual-mcp / cliclick HID + devtools 真机探针)；2026-08-07；relay dev，基线 9a19261
+注：本记录晚于 2026-08-07T19:58 的 re-attestation；脚本半边（步骤4/5/6，BC-02 口径）
+    见同 run 的 S02-script.txt（VERDICT_PASS）
+
+步骤1 启动进入默认视图（r6b-S02-default）：
+  聊天视图直接呈现在**主窗内容区**，无需点击任何按钮弹出第二个窗口 ✓
+步骤2 遍历 UI（侧栏三导航 + 底部设置 + 「更多」三入口 + 头部条）寻找旧「▶ 消息」类
+  打开消息面板独立窗口的入口：**不存在** ✓
+步骤3 正常使用一轮后双面核对窗口数：
+  (a) 可见窗口（osascript System Events count windows）：
+      启动后 = **1**；切四视图（技能中心→产物库→设置→会话）一轮后 = **1** ✓
+  (b) 盲区补枪（TC 指定：osascript 数不到隐藏 webview）——devtools 控制台真机执行
+      `window.__TAURI__.window.getAllWindows().then(w=>console.log("WINDOW_COUNT="+w.length+
+       " labels="+w.map(x=>x.label).join(",")))`
+      → 输出 **`WINDOW_COUNT=1 labels=main`** ✓（含隐藏 webview 的权威计数为 1，仅 main）
+      控制台可用性佐证：同会话先执行 `1+1` → `2`（r6b-S02-probe）
+      注：首次用顶层 await 写法报 SyntaxError（Safari devtools 不支持顶层 await），
+          改 Promise .then 写法后取得结果，两次尝试均留证。
+  两个观测面（可见计数 1 + 权威计数 1）都满足 ✓
+判定（步骤1-3 真机半边）：全部满足；合并脚本半边 4/5/6 全绿 → S02 PASS

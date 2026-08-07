@@ -1,0 +1,31 @@
+=== 步骤5：备份 + 写入旧桌宠记录 500x640 ===
+  备份 -> r6-S10-geom-backup.json: {"width":1200,"height":800,"x":600,"y":300}
+  teardown: app=0 backend=0 port=0
+  cat 确认: {"width":500,"height":640}
+=== 步骤6：启动 → 期望不崩溃、回退默认 1000x700（不是 clamp 到 800x560）===
+  geom=235 111 1000 701
+  LOG [window_geometry] apply_saved_geometry: load() returned None (no file or out of range)
+=== 步骤7：拖拽缩放一次 → 退出 → 重启，期望新几何正常写入并恢复 ===
+  拖后 geom=235 111 1120 761  file={"width":1120,"height":761,"x":470,"y":222}
+  teardown: app=0 backend=0 port=0
+  geom=235 111 1120 761
+  file={"width":1120,"height":761,"x":470,"y":222}
+=== 步骤8：对照分支 900x700（合法且高于 min）→ 期望被接受恢复，非默认 1000x700 ===
+  teardown: app=0 backend=0 port=0
+  cat 确认: {"width":900,"height":700}
+  geom=235 111 900 700
+  LOG [window_geometry] apply_saved_geometry: loaded 900x700 logical pos=None,None
+=== 步骤9：畸形 JSON（截断）→ 期望不崩溃、回默认 1000x700 ===
+  teardown: app=0 backend=0 port=0
+  cat 确认: {"width":500
+  geom=235 111 1000 701
+  LOG [window_geometry] apply_saved_geometry: load() returned None (no file or out of range)
+=== 步骤10：空文件 → 期望不崩溃、回默认 1000x700 ===
+  teardown: app=0 backend=0 port=0
+  cat 确认: [] size=0
+  geom=235 111 1000 701
+  LOG [window_geometry] apply_saved_geometry: load() returned None (no file or out of range)
+=== 步骤11：自清理（恢复步骤5备份）===
+  teardown: app=0 backend=0 port=0
+  已恢复: {"width":1200,"height":800,"x":600,"y":300}
+=== S10 fixture 完毕 ===

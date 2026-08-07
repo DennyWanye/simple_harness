@@ -1,0 +1,22 @@
+# S05 真机道 — 侧栏会话列表（TC-WB-05）
+执行：AI (manual-mcp / cliclick HID)；2026-08-07；relay dev，基线 9a19261，cold-A
+
+步骤1 倒序：列表 默认话题(6条,刚发消息)→#29→#28→…→#22 按时间倒序 ✓（r6-S05-list-initial）
+步骤2 打开旧会话#28：标记语句+回执#28 原文显示，sid 4ebb72d6，无混入 ✓（r6-S05-open28）
+步骤3 切另一会话#26：内容整体切换（回执#26，sid 49d639ba），无#28残留 ✓（r6-S05-open27）
+步骤4 新建会话：新空会话 f7ff676b（消息流为空）✓（r6-S05-newsession）
+  注：空会话未立即入侧栏——r5 修复合同即如此（SessionList.tsx 注释：后端清单
+  FROM messages GROUP BY session_id，存在条件=已有消息；首轮对话收尾触发 loadSessions）。
+  与 r5 判定口径一致，非缺陷。
+步骤5 新会话发「新建会话往返验证」：
+  - 首次发送走默认 sf-glm-5.2（无额度环境事实#2）→ 消息流出现显式失败
+    「provider_dispatch_unknown_after_handoff — failed」——非静默黑洞（r5 缺陷#2 修复旁证）
+  - 头部模型按钮切 kimi-k3（r6-S05-model-kimi）后重发 → 真实往返成功
+    「收到，新建会话往返验证成功 ✅」，run_id=3cafc342cb20593cabefac2c0975ce9a（harness_provider_scope_pinned），回复归属 f7ff676b ✓
+  - 会话以 4 条入列表顶「新建会话往返验证」✓ 新会话真实创建非复用（r6-S05-newmsg2）
+  - 切默认话题再切回：全部消息保留、归属正确 ✓（r6-S05-switchback）
+步骤6 能力不减抽查（对原#29 / 9832f903）：
+  - 重命名「S05重命名验证A」→ 列表即时更新（r6-S05-renamed）；切会话后名字保持
+    （r6-S05-rename-persist；删除确认框亦引用新名）✓
+  - 删除 → 确认框（r6-S05-delete-confirm）→ 条目消失、当前会话回落默认话题 ✓（r6-S05-deleted）
+判定：步骤1-6 全部满足 → S05 PASS

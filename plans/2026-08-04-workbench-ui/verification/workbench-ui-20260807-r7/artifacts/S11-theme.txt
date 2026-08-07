@@ -1,0 +1,15 @@
+1a:
+
+1b:
+
+html:
+
+counts new=0 diff=0 html=0
+VERDICT_PASS
+
+## Run 创建负向断言（expected_run_created=false）
+本项为 静态色值扫描（grep + git diff 644ab16..HEAD），全程未启动应用。
+不存在任何会话消息、技能触发或生成动作 ⇒ 结构上不可能产生 root Run。
+硬证据（.testenv/cold-A/data/workflow.db，r7 脚本道跑完后取）：
+  trace_runs 总数=29  最新 started_at=2026-08-07 22:08:45.348437
+最新 run 早于 r7 脚本道执行窗口 ⇒ 本场景 root run 增量为 0。

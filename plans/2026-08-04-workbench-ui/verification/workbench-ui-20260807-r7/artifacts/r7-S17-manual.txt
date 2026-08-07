@@ -1,0 +1,70 @@
+# S17 真机道 — 规模与长文本边界（TC-WB-17）
+执行：AI (manual-mcp / cliclick 真 HID + macos-mcp Scroll)；2026-08-07/08；relay dev
+基线：cad272e；用户数据 .testenv/cold-A
+
+## 前置造数（实查）
+会话：`select count(distinct session_id) from messages` → **30**
+长标题：`session_titles` 内 a382bd16-99b3-42f1-92e9-78806106f8e0 标题
+        `length(title)` = **120**（中英数字混排无空格，前轮经重命名入口设置）
+产物：`.testenv/cold-A/artifacts` **38** 个带扩展名文件
+      （report-a/b/c.txt mtime 8/7 10:00/11:00/12:00 + report-01…35.txt 8/5 16:38:30-31）
+
+## 步骤1 缩至 800×560，会话列表滚动到底 + 排序
+AX set size {800,560} → geom = **150 120 800 560**（命中 min）
+顶部（r7-S17-01-min-top）：新建会话往返验证(11c72e41) → 空态恢复验证(14e39412)
+  → 规模造数会话#28 → #27 …
+macos-mcp Scroll down ×30 @(240,320) 滚到底（r7-S17-01-min-bottom）：
+  … → 规模造数会话#03 → 规模造数会话#02 → **压力测试标题ABC12…**(a382bd16)
+末项 a382bd16 即 seed 基准最早的一个 ⇒ 首尾与已知创建顺序对照，时间倒序成立 ✓
+30+ 列表可滚动浏览到底 ✓
+
+## 步骤2 120 字符长标题条目
+显示为截断形式「压力测试标题ABC12…」：
+- 侧栏宽度不变（导航项 x/宽度与短标题状态一致，AX 实测导航按钮恒 158,* 223x36）
+- 其他条目未被挤出可视区（同屏仍可见 #03/#02 两条）
+- **无横向滚动条**
+⇒ 长标题被截断且不破坏布局 ✓
+
+## 步骤3 「新建会话」入口
+800×560 + 30 会话状态下，「+ 新建会话」固定在列表**上方**，未被列表吞掉，
+可见可点（r7-S17-01-min-top 顶部可见）✓
+
+## 步骤4 点击长标题会话加载
+点末项 a382bd16 → 正常加载：
+- ChatView 头部条标题截断为「压力测试...」+ sid `a382bd16-99b3-42f1-92…`，不破布局
+- 消息记录正常渲染：user「规模造数会话#01 标记语句」/ assistant「回执#01」，16h 前
+✓（r7-S17-04-longtitle）
+
+## 步骤5 产物视图规模与排序
+切「📄产物库」→ 页头「任务生成的文件，按修改时间倒序 · **共 38 项**」
+顶部（r7-S17-05-artifacts-top）：report-c(8/7 12:00:00) → report-b(11:00:00)
+  → report-a(10:00:00) → report-35(8/5 16:38:31)
+Scroll down ×45 滚到底（r7-S17-05-artifacts-bottom）：
+  … → report-04 → report-03 → report-02 → **report-01.txt(8/5 16:38:30)**
+首尾均与预置 mtime 对照吻合（末项比 report-35 早 1 秒）⇒ 30+ 可滚动 + mtime 倒序 ✓
+
+## 步骤6 800×560 下四视图完整切换
+会话→技能中心→产物库→设置 完整切换，另在 devtools 打开后又跑 **3 轮共 12 次**。
+- 每次切换后截图均为**完整渲染的目标视图**，无白屏、无卡死、无布局破坏
+  （r7-S17-06-{chat,skills,artifacts,settings} / r7-S17-06-cycle-end）
+- **控制台无新增报错**：Web Inspector Console 执行 Cmd+K 清空（标记
+  "Console cleared at 00:06:29"）后完成 12 次切换，控制台**零新增条目**
+  ✓（r7-S17-console-clean）
+  说明：清空前控制台内的报错全部是**启动期**条目（backend 未就绪时的
+  `get_shared_secret failed` / WebSocket `Could not connect to the server`
+  / `live cloud config update failed`），属冷启动竞态，非切换新增；本步骤只判
+  "新增"，故以清空后为准。
+**如实声明（未做到的部分）**：TC 写「每次切换流畅（无秒级卡死）」。我尝试用
+`time.time()` 夹住 cliclick 计时，但测到的只是我自己固定的 sleep（0.7s），
+**未对单次切换延迟做精确插桩**。本步骤的"无秒级卡死"结论来自逐次截图均为完整
+渲染视图这一观测，不是延迟测量值——不宣称有毫秒级数据。
+
+## Run 创建负向断言（expected_run_created=false）
+本场景只做：缩放窗口、滚动、切视图、点会话行、开 devtools 跑只读探针。
+未发送消息、未触发技能或生成。
+硬证据（.testenv/cold-A/data/workflow.db，S17 跑完后取）：
+  trace_runs 总数=**32**，最新 started_at = 2026-08-07 23:45:30
+该时间戳属 S05 步骤5 的 kimi-k3 往返，早于本场景开始 ⇒ S17 期间 root run 增量为 0 ✓
+
+判定：步骤 1–6 全部满足 → **S17 PASS**
+VERDICT_PASS

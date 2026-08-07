@@ -1,0 +1,38 @@
+# S01 真机道 — 主窗普通窗口形态（TC-WB-01）
+执行：AI (manual-mcp / cliclick HID + AX)；2026-08-07；relay dev，基线 9a19261
+前置：**全新隔离 user-data** `.testenv/cold-S01-r6`（rm -rf 后新建，首启冷数据）
+环境：**单显示器** 1470×956 逻辑点（Finder desktop bounds 实测）→ 居中判定有效
+注：本记录晚于 2026-08-07T19:58 的 re-attestation
+
+步骤1 冷启动主窗形态（r6b-S01-coldstart）：
+  - **系统标题栏存在**：mac 红/黄/绿三钮 + 标题「Simple Harness」✓
+  - 窗口内容**不透明**（深色实底，无桌面背景透出）✓
+  - **无任何桌宠角色立绘/动画** ✓
+  - 日志佐证：`apply_saved_geometry: load() returned None (no file or out of range)`
+    → 确认走的是冷数据首启路径
+步骤2 初始几何：geom = 235 111 1000 701
+  - 尺寸 1000×701 ≈ 默认 **1000×700**（1px 系统缩放取整误差）✓
+  - 居中（裁决第5条 ±10% 口径）：窗口中心 (735, 461.5)，屏幕中心 (735, 478)
+    → 横向偏差 0 px = 0%（≤10% 屏宽 147px）；纵向偏差 16.5 px = 1.7%（≤10% 屏高 95.6px）✓
+步骤3 Dock/Cmd+Tab：AX 实读 Dock list 1 含条目「simple-harness」✓
+  静态佐证 tauri.conf.json main 窗 skipTaskbar =（未声明→默认 false）→ 用户可见语义成立
+步骤4 移动与放大：
+  - 真实 HID 拖拽标题栏 (835,231)→(1035,335)：geom 235 111 → **435 215**（尺寸不变）✓
+  - AX 设 size {1300,900} → 实得 1235×845 > 默认 1000×700 → **无 max 限制卡住** ✓
+步骤5 最小尺寸钳制：强行 set size {400,300} → 实得 **800×560**，不能更小 ✓
+  静态佐证 minWidth/minHeight = 800/560
+步骤6 绿钮：click button 2 → 进入全屏（窗口铺满 1470×956，r6b-S01-fullscreen-onboarding）；
+  Esc 还原回 800×560 → **可最大化/还原**（maximizable 未声明→默认 true）✓
+步骤7 静态核对（脚本辅助，非判定主体）：
+  - `grep -c macOSPrivateApi tauri.conf.json` = **0** ✓ 零命中
+  - main 窗 transparent = **False** ✓；decorations = True；center = True
+判定：步骤1-6 全部满足 → S01 PASS
+
+## 判据外发现（不影响 S01 判定，属 WB-1 品牌面 / S15 onboarding 范围）
+全新 user-data 首启的 **onboarding 向导仍是旧品牌文案**：
+  标题「欢迎使用 DeskPet」，正文「DeskPet 是一只住在你桌面上的 AI 桌宠。它能陪你聊天、
+  记住你说过的事、帮你做 PPT、查资料，还能进入"代码模式"帮你写程序。」
+而标题栏已正确显示「Simple Harness」→ **品牌残留不一致**。
+S01 判据只管"无桌宠**立绘/动画**"（文字不含立绘，故 S01 仍 PASS），但该文案属
+TC-WB-15「含 StartupOverlay/onboarding 首启路径」的覆盖面，S15 执行时须一并判定。
+证据：r6b-S01-coldstart-win.png / r6b-S01-fullscreen-onboarding.png

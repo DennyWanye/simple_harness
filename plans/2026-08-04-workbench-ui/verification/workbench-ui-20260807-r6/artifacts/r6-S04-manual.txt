@@ -1,0 +1,28 @@
+# S04 真机道 — ChatView 消息真实往返 + companion 特权（TC-WB-04）
+执行：AI (manual-mcp / cliclick HID 真实点击+粘贴)；日期 2026-08-07（UTC 时间戳）
+环境：relay 模式 dev（session3.log），基线 9a19261，.testenv/cold-A，kimi-k3 主链路
+
+## 步骤1 真实往返
+- 坐标=(870,815)|动作=点击输入框聚焦（cliclick，focus-ok 预验证）|期望=获得焦点 → ✓
+- 动作=UTF-8 pbcopy + Cmd+V 粘贴「用 markdown 回复：一个二级标题、一个三项无序列表、一段行内代码。」→ 入框截图 r6-S04-typed
+- 坐标=(1293,815)|动作=点击「发送」|期望=真实出站
+- 结果：agent_provider_chain_resolved models=['kimi-k3'] → POST /v1/chat/completions 200 OK ×2
+  run_id=af1ba9622008558895e4c59185311f47（harness_provider_scope_pinned/unpinned 配对）
+  companion_ingress_semantic_settled session_id=default message_id=162 ✓ 非本地回显
+## 步骤2 markdown 渲染（截图 r6-S04-roundtrip-win.png）
+- 二级标题「Markdown 示例」标题样式 ✓；三项无序列表（第一/二/三项）圆点列表样式 ✓；
+  行内代码 print("hello") 代码片样式 ✓——均非裸字面文本
+## 步骤3 mic 占位
+- 图标为禁用态（斜杠麦克风，r6-S04-mic-hover-win.png）；点击无反应（r6-S04-mic-clicked-win.png 无任何状态变化）
+- tooltip（title 属性，devtools 实读）=「语音功能暂时关闭，后续将接入 Realtime」——与"语音待 Realtime 接入"语义等价 ✓
+## 步骤4 (a)层：script lane 已过（S04-script.txt：credential-chain 34 passed；companion 全套件基线等值）
+## 步骤5 (b)层（BC-03 修正判据，用户 2026-08-07 批准，见 manifest behavior_changes）
+- ② grep 命中（session3.log 原样行）：
+  INFO: 127.0.0.1:60621 - "WebSocket /ws/control?secret=***&session_id=message-panel-main&requested_window_label=main&requested_scope=companion_action" [accepted]
+  grep -c window_scope_denied session3.log = 0 ✓ 零 scope 降级
+- ③ 裸 invoke get_window_control_credential（devtools 真机执行，r6-S04-cred-invoke-win.png）→
+  "invalid args `connectionId` ... missing required key connectionId"——安全硬化后的参数校验拒绝（预期），非 scope 拒绝 ✓
+## 步骤5b 加分：会话中未自然出现确认卡片——按 TC 不判 FAIL，不记加分
+## 步骤6 头部条（r6-S04-roundtrip-win.png）
+- 会话标题「默认话题」✓ 模型按钮 kimi-k3 ✓ ContextRing（11%→12%）✓ Harness 巡检开关 ✓
+## 判定：步骤1-6 全部满足 → S04 PASS

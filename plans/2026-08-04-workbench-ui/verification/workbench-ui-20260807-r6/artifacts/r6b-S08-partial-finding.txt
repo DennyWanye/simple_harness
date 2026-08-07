@@ -1,0 +1,34 @@
+# S08 部分执行 + 一处待判定异常（2026-08-07，未记 PASS）
+
+## 已核对（步骤1-2 的分区核对表）
+① Provider/模型配置区（LLM Providers，含「+ 添加」入口与优先级说明）— 存在 ✓
+② Embedder 状态卡（BGE-M3 语义嵌入，Mock 模式徽章）— 存在 ✓
+③ 模型上下文卡（模型上下文窗口，400K / compaction 80% / 压缩阈值 / 压缩模型 / 两个保存按钮）— 存在 ✓
+④ 数据目录设置（当前生效路径 + 环境变量 + 默认路径 + 新路径 + 浏览/应用/恢复默认/刷新）— 存在 ✓
+⑤ Agent 有效执行预算（分钟，默认 15，范围 1-60）— 存在 ✓
+⑦ 自启开关（通用 → 开机自动启动）— 存在 ✓
+⑧「桌宠形象」区块 — **不存在** ✓（唯一预期消失项；源码 SettingsPanel.tsx:170 有 T11 删除注释佐证）
+另见：权限（Agent 全开模式）、关于与更新、危险区（完全卸载）
+步骤1 页面化：无 backdrop 遮罩、无浮层定位，内容区内嵌 ✓
+
+## ⚠️ 待判定异常：LLM Providers 列表为空
+现象：设置页 LLM Providers 区显示空态「请添加你的第一个 LLM provider」，
+      但同一环境 r5 的 S08 证据记录为「中转站·chinzy，relay 徽章，sf-glm-5.2 (+154)，
+      https://chinzy.com/v1，API Key 掩码，默认模型下拉 + 启用勾选 + 编辑 + 重置 key」。
+交叉事实：
+  - 后端 session2/3/4/5.log 每次启动均有
+    `relay_provider_ensured id=relay-cloud account_ref=cmoztk8nl... base_url=https://chinzy.com/v1 key_fp=3eb380b0`
+  - 聊天链路正常（kimi-k3 多次真实往返 200）
+  - .testenv/cold-A/config.toml 中**没有** `[[providers]]` 段（registry 的 TOML 持久化面）
+可能成因（未定论，需判定）：
+  (a) 本轮编排者失误：前两次启动误用 OSS 模式（`npm run dev` 而非 `dev:relay`），
+      relay adapter 缺席可能导致 registry 被 reconcile 清空 → 属测试环境损伤，非产品回归；
+  (b) 真实回归：relay 托管 provider 未持久化到 config.toml / 未进入设置页列表。
+判定影响：S08 判定项⑥「云端 API key 管理」以"分区存在"看结构成立，但以"relay provider 行 +
+      API Key 掩码 + 重置 key"看则当前不可见 → **本轮不记 PASS**，升级给用户决定。
+建议下一步：用全新 user-data 目录冷启动 relay 模式登录一次，看设置页是否出现 relay provider 行；
+      若出现 → 成因 (a)，cold-A 环境需修复后重测 S08；若仍不出现 → 成因 (b)，是真实缺陷。
+
+## 未执行
+步骤3-6（自启开关切换 + LaunchAgents plist 核对 + 重启持久化 + 反向清理）
+步骤7（数据兼容升级配方：git worktree 检出 644ab16 基线构建 + 同一 user-data 跨版本核对）

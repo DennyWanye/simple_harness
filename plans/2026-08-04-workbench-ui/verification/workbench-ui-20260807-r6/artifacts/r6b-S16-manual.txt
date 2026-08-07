@@ -1,0 +1,33 @@
+# S16 真机道 — 红钮与退出路径矩阵（TC-WB-16 / B13）
+执行：AI (manual-mcp / cliclick HID + AX 托盘)；2026-08-07；relay dev，基线 9a19261
+执行方式：dev 模式（按 TC「dev 模式豁免注」，启动后登记 dev 包装进程 PID 作对照；
+          实测三条路径退出后包装进程亦全部消失，故无需动用豁免）
+注：本记录晚于 2026-08-07T19:58 的 re-attestation
+
+## 核对命令（三项全零才算全清）
+  pgrep -f 'target/debug/simple-harness'      → 主进程
+  pgrep -f 'venv/bin/python main.py'          → backend
+  lsof -i :8100 -sTCP:LISTEN                  → 端口
+**执行缺陷更正（如实记录）**：首轮曾用 `pgrep -f 'backend/main.py'` 核对 backend，
+该 pattern **永远匹配不到**（真实 cmdline 是 `<repo>/backend/.venv/bin/python main.py`，
+cwd=backend/ 故参数只有 `main.py`）→ 首轮 "backend: 0" 属空断言。
+发现后用上面的正确 pattern **对三条路径逐一重跑复验**，本记录只采信复验结果。
+
+步骤1 几何锚点：AX 设 size {980,640} + position {320,180} → geom = 320 180 980 640 ✓
+       （r6b-S16-anchor）
+步骤2 路径A 标题栏红钮：app=0 backend=0 port8100=0，托盘进程消失（AX 查询报"不能获得
+       process simple-harness"）→ **完全退出，无分裂态** ✓
+步骤3 重启：geom = 320 180 980 640 = 锚点精确恢复 ✓
+       日志佐证 s16-b.log `apply_saved_geometry: loaded 980x640 logical pos=Some(640),Some(360)`
+步骤4 路径B Cmd+Q：app=0 backend=0 port8100=0 ✓
+       （此即 r5 修复的 RunEvent::Exit 兜底路径——Cmd+Q 不触发窗口 Destroyed，
+         修复前会遗留 backend 孤儿占 8100；本轮复验有效）
+步骤5 重启：geom = 320 180 980 640 精确恢复 ✓
+步骤6 路径C 托盘「退出 Simple Harness」：app=0 backend=0 port8100=0 ✓
+步骤7 重启：geom = 320 180 980 640 精确恢复；三条路径恢复结果**完全一致** ✓
+       （r6b-S16-restored3）
+步骤8 隐藏语义反证（托盘「隐藏主窗」）：
+       windows=0 但 app=1、backend=1（PID 28436，`.venv/bin/python main.py`）、
+       port8100=1（LISTEN）、tray=1 → **应用仍在运行，仅窗口隐藏** ✓
+       隐藏语义仅经托盘路径，红钮不承担隐藏语义（B13）✓
+判定：步骤2-7 三条路径均"完全退出 + 重启几何恢复"，步骤8 隐藏路径独立成立 → S16 PASS

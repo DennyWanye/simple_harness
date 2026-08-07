@@ -1,0 +1,25 @@
+# S18 真机道 — 会话删除边界（TC-WB-18）
+执行：AI (manual-mcp / cliclick HID)；2026-08-07；relay dev，基线 9a19261，cold-A（起始 31 会话）
+
+步骤1 删除"当前打开"的会话 A（f7ff676b「新建会话往返验证」，打开态）：
+- 确认框正确引用 A 的标题与 sid（r6-S18-A-confirm2）→ 点删除
+- 结果：无崩溃/白屏；UI 落到**确定态**：自动切到「默认话题」并显示 default 自身内容
+  （r6-S18-A-deleted：头部 default、消息为 default 的历史）；A 从列表消失 ✓
+  不存在"已删会话消息流残留" ✓
+步骤2 删后立即发「删后归属验证」：
+- 后端 companion_ingress_semantic_settled session_id=**default** message_id=173
+  → 未写入已删 sid f7ff676b ✓ 非黑洞（回复「收到，这条消息归属当前会话，验证正常。」）
+- 切走(#28)再切回 default 核对：消息与回复仍在 default ✓（r6-S18-step2-switchback）
+步骤3 红钮退出 + 重启（session4.log）：
+- 会话 A 未复活（列表无 f7ff676b）✓；步骤2 消息仍在 default（8 条）✓（r6-S18-step3-restarted）
+步骤4 依次删除余下所有会话直到最后一个：
+- 逐个真机点击 X→确认，30 个会话全部删除，每次均无崩溃 ✓
+  （DB 实查 count(DISTINCT session_id) 从 31 递减到 0）
+- 删除最后一个后侧栏回到**空态引导**：「暂无历史会话。点击上方「新建会话」开始第一段对话，
+  或直接在右侧输入框发消息。」——有引导文案，非空白/报错/无限 loading ✓（r6-S18-empty-final）
+- 判据外发现（不影响本用例判定，已由 r5 挂后台任务 task_74bf936a 跟踪）：
+  清空保留会话 default 后主消息面板仍渲染其已删消息（幽灵消息流），DB 侧 messages 已为 0。
+步骤5 从空态引导新建会话并发送「空态恢复验证」：
+- 新会话 14e39412 创建成功，kimi-k3 真实往返，回复正常（r6-S18-step5-final）
+- DB：14e39412 有 2 条消息，无其他残留 ✓ 空态可恢复、删除链路无持久污染
+判定：步骤1-5 全部满足 → S18 PASS

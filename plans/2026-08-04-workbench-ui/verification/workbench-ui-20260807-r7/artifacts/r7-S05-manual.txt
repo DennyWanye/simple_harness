@@ -1,0 +1,83 @@
+# S05 真机道 — 侧栏会话列表（TC-WB-05 / B3）
+执行：AI (manual-mcp / cliclick 真 HID + AX 实时读取)；2026-08-07；relay dev
+基线：cad272e；用户数据 .testenv/cold-A
+
+## 步骤1 列表结构与排序 —— 含本轮修复的时间列
+AX 直读侧栏（标题 / 条数 / **时间** / sid 四段俱全，时间倒序）：
+  新建会话往返验证          6 条   0s 前   bfa182fc-f370-4440-89b6-22de21adb962
+  空态恢复验证              16 条  3h 前   14e39412-bb58-448b-a547-9694ab5964d6
+  规模造数会话#28 标记语句   2 条   15h 前  7005b57f-1020-4011-8835-aebe7711f2f6
+  规模造数会话#27 标记语句   2 条   15h 前  583c6d63-2ce7-41ee-a4dc-75da2cb8995b
+  …（#26 → #20 依次 15h 前）
+0s 前 → 3h 前 → 15h 前 单调不增 ⇒ 时间倒序成立，且**每项含标题与时间** ✓
+
+**本项即本轮修复的验收点**：r6 复测发现该 oracle 项不达标——后端
+`list_sessions_with_preview` 一直返回 `last_message_at`、`SessionEntry` 类型也带着它、
+`sortedSessions` 也在用它排序，但 SessionList 行内只渲染 `{turn_count} 条` + sid，
+时间字段拿到手从未渲染；基线 ChatHistoryPanel 同样没有 ⇒ 非改版回归，是实现一直缺。
+用户裁决补实现（commit cad272e）：抽 `src/relativeTime.ts` 共用（消息气泡与会话行
+必须同一套「14h 前」口径），SessionList 渲染相对时间 + title 挂本地化绝对时间，
+MessageStreamPanel 改用共用实现。单测 +9 条（relativeTime 7 + SessionList 2）。
+本步骤即该修复在真机上的验收 ✓（r7-S02-01-default / 上方 AX 读数）
+
+## 步骤2 打开较旧会话
+点第 3 行 规模造数会话#28 → 头部标题切为「规模造数会话#28 标记语句」，
+消息流为该会话内容（标记语句 + 15h 前时戳），无其他会话内容混入 ✓
+（r7-S05-02-open28）
+
+## 步骤3 切另一会话
+点 规模造数会话#26 → 头部切为「规模造数会话#26 标记语句」，
+消息流整体替换，步骤2 的 #28 内容不残留 ✓（r7-S05-03-open26）
+
+## 步骤4 新建会话
+点「+ 新建会话」→ 新空会话 `11c72e41-f777-411d-aa9f-4c8708f9086e`，消息流为空 ✓
+（r7-S05-04-new）
+注：空会话未即时入侧栏——后端 `list_sessions_with_preview` 是
+`FROM messages GROUP BY session_id`，会话入清单的条件是已有消息；SessionList 在
+`chat_response`/`chat_v2_final` 后刷新清单（r5 修复合同）。与既定口径一致，非缺陷。
+
+## 步骤5 新会话发送并验证归属
+① 首发走新会话默认 sf-glm-5.2（本机无额度，环境事实）→ 消息流出现**显式失败气泡**
+   `provider_dispatch_unknown_after_handoff — failed`，非静默黑洞
+   （backend log 佐证：`402 Payment Required` / `account balance is insufficient`；
+     root run 8f5a98b126f855f8b4290b2158163df2）✓
+② 头部模型按钮切 kimi-k3（筛选框输入 kimi-k3 → 下拉唯一项 → 保存）后重发
+   → **真实往返成功**：「收到 ✅ 新建会话往返验证通过：我已在新会话中收到并回复
+     本条消息；上一轮 provider_dispatch_unknown_after_handoff 不影响本轮，
+     可以继续发下一步指令～」
+   root run **1c8df1e27b24545db141697ef6c20509**（session 11c72e41）✓
+③ 新会话以 4 条入列表**顶部**，与旧的 bfa182fc（6 条）**并存为两条独立条目**
+   ⇒ 真开了新会话，不是复用旧 sid ✓（r7-S05-05-roundtrip）
+④ 切走到 bfa182fc 再切回 → 头部 sid 仍是 `11c72e41-f777-411d-aa9f-4c8708f9086e`，
+   本会话消息全在、归属正确 ✓（r7-S05-05-switchback）
+
+## 步骤6 能力不减抽查（重命名 + 删除）
+重命名：对 bfa182fc 行点 ✎ → Cmd+A 全选 → 粘贴「S05重命名验证R7」→ Enter
+  → 列表该行即时更新为「S05重命名验证R7 / 6 条 14m 前 bfa182fc-f…」✓
+  （r7-S05-06-renamed）
+持久性：切到第 3 行（空态恢复验证）后再对该行点 × →
+  删除确认框引用的是**新名**：「确定要删除会话 S05重命名验证R7吗?
+  bfa182fc-f370-4440-89b6-22de21adb962」⇒ 切换会话后名字保持 ✓
+  （r7-S05-06-delconfirm）
+删除：点「删除」→ 条目从列表消失，AX 复读列表首三项为
+  新建会话往返验证(11c72e41) / 空态恢复验证 / 规模造数会话#28，bfa182fc 不再出现 ✓
+  （r7-S05-06-deleted）
+
+## Run 创建（expected_run_created=true）
+本场景确实创建了 root run，run_id_under_test = 1c8df1e27b24545db141697ef6c20509
+（session 11c72e41，kimi-k3 真往返）。
+如实备注：`trace_runs.status` 记为 `cancelled`——这是 harness 的终态记账口径，
+业务终态是**真实收到回复**（消息流可见），两者不冲突，不影响本场景判定。
+
+## 测量方法学更正（原观察结论作废）
+本轮曾两次记到「主窗消失但进程仍在」（app=1 / backend=1 / port8100=1，但
+`count of windows` = 0），当时按环境异常记录。**该结论已作废**：后续在 S06 又遇
+同一现象，这次未做任何干预、隔十几秒复查即 `windows=1` 自行恢复，且 backend log
+全程无任何关闭/隐藏记录。
+⇒ 真因是 **AX（System Events）在高频点击期间对该进程的窗口查询会瞬时失败**
+（表现为 `count of windows` 返回 0 或报「window 1 … 无效的索引」），窗口从未真正
+消失。前两次我点了托盘「显示主窗」，那只是恰好与自愈时间重合，不构成因果。
+**不构成产品缺陷**，是本轮驱动方式（AX 探针）的测量噪声；已记录以免后人误判。
+
+判定：步骤 1–6 全部满足 → **S05 PASS**
+VERDICT_PASS

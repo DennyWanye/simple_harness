@@ -1,0 +1,25 @@
+# S07 真机道 — 产物库视图（TC-WB-07）
+执行：AI (manual-mcp / cliclick HID)；2026-08-07；relay dev，基线 9a19261
+注：本记录晚于 2026-08-07T19:58 的 re-attestation
+
+前置：.testenv/cold-A/artifacts 35 个 report-NN.txt（内容各异，mtime 由 seed 脚本错开）
+
+步骤1 点击侧栏「📄产物库」：列表渲染为卡片，每项含文件名 + 大小 + 修改时间 + 两个操作按钮 ✓
+  （r6b-S07-view / r6b-S07-resume）
+步骤2 排序核对：标题「任务生成的文件，按修改时间倒序 · 共 35 项」；
+  首项 report-35.txt（2026/8/5 16:38:31），与磁盘 `ls -lt` 首项一致 → 倒序正确 ✓
+步骤3 点击 report-35.txt 的「打开」（坐标 530,308）：
+  - **TextEdit 真实前台弹出**（osascript frontmost 实测返回 "TextEdit"）✓
+  - 文件内容 `artifact content 35`（cat 核对，与预置一致）
+  - 卡片内回显绿色「已请求系统打开文件」（r6b-S07-resume）
+步骤4 点击「在文件夹中显示」（坐标 613,308）：
+  - **Finder 真实前台打开**（frontmost = "Finder"）✓
+  - 目标目录 = /Users/denny/projects/simple_harness/.testenv/cold-A/artifacts/
+    （AppleScript 实读 front window target），即该文件所在目录 ✓
+步骤5 消息流产物卡片（前置 2 采用"当轮真实任务"分支）：
+  - 在 kimi-k3 会话发「帮我在工作区创建一个文档 s07-card.md，内容写一行：产物卡片验证。」
+  - 真实产出文件：.testenv/cold-A/workspace/task-9792606c.../s07-card.md（19 B，磁盘实查）✓
+  - 消息流内**工具/产物卡片存在且可操作**：tool_search / tool_describe / tool_activate /
+    file_write 四张卡片各带 ✓ok 回执与「点击展开」交互，file_write 卡片显示 content 与
+    目标 path（r6b-S07-card）——B7 消息流卡片未被移除，产物库为新增面 ✓
+判定：步骤1-5 全部满足 → S07 PASS

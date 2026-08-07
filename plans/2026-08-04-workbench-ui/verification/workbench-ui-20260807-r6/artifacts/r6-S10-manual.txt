@@ -1,0 +1,83 @@
+# S10 真机道 — 窗口几何记忆与旧记录回退（TC-WB-10 / B8）
+执行：AI (manual-mcp / cliclick 真 HID 拖拽 + AX 托盘退出)；2026-08-07；relay dev，基线 9a19261
+用户数据隔离：DESKPET_USER_DATA_DIR=.testenv/cold-A
+路径替换（如实声明）：TC 步骤5 写死 dev 路径
+  `tauri-app/src-tauri/target/debug/userdata/window_geometry.json`；
+  本轮全程用 DESKPET_USER_DATA_DIR 隔离，故几何文件实际为
+  `.testenv/cold-A/window_geometry.json`——同一份 `paths::user_data_dir()` 产物，
+  语义等价，非绕过。
+注：本记录晚于 2026-08-07T19:58 的 re-attestation。
+
+## 方法学更正（如实记录，首轮测量作废）
+首次尝试步骤1 时 **Safari Web Inspector 仍停靠在窗口底部**。停靠状态下 webview
+inner_size 被压到 `1120x260`（逻辑），低于 MIN_H=560 →
+`build_geometry rejected: 1120x260 below MIN`（s02s10.log 连续 6 次），
+拖拽值**根本没落盘**，且 on_move 因同一原因静默丢弃。
+若不发现，会把"devtools 遮挡导致不持久化"误判成 B8 回归。
+→ 关闭 Inspector 后**全部重做**，本记录只采信 devtools 关闭后的测量。
+
+## 步骤1 真 HID 拖拽（cliclick dd/m/du，非程序化 set_size/set_position）
+  拖标题栏移动：(841,179)→(680,94)  ⇒ geom 281,165 → **120,80**
+    LOG `on_move pos=(Some(240),Some(160)) size=1120x740` → `saved OK`
+  拖右下角缩放：(1240,820)→(1320,880) ⇒ size 1120x740 → **1200x800**
+    LOG `Resized event size=2400x1600` → `on_resize` → `flushing 1200x800 pos=Some(240),Some(160)` → `saved OK`
+  落盘锚点 `{"width":1200,"height":800,"x":240,"y":160}`（尺寸=逻辑，位置=物理=逻辑×2）
+  ⇒ 拖拽手势被接受并真持久化（B8 修的就是拖拽值被丢弃）✓
+  证据：r6-S10-s1-dragged.png / r6-S10-geom-before-exit.json
+
+## 步骤2 托盘「退出 Simple Harness」退出（本用例退出路径写死为托盘）
+  AX 菜单实测项：显示主窗 / 隐藏主窗 / 退出 Simple Harness
+  退出后 app=0 backend=0 port8100=0 ⇒ 完全退出 ✓
+  证据：r6-S10-s2-traymenu.png
+
+## 步骤3 重启 → 期望恢复步骤1 几何
+  geom = **120 80 1200 800** = 锚点精确恢复 ✓（非默认 1000x700 居中 ⇒ 未 FAIL）
+  LOG `apply_saved_geometry: loaded 1200x800 logical pos=Some(240),Some(160)`
+       + `restoring position (240,160)`
+  证据：r6-S10-s3-restored.png / s10-restart1.log
+
+## 步骤4 只动位置：再拖移→退出→重启
+  拖标题栏 (720,94)→(900,164) ⇒ geom 120,80 → **300,150**（尺寸 1200x800 不变）
+    LOG `on_move pos=(Some(600),Some(300))` → `saved OK`
+  托盘退出：app=0 backend=0 port8100=0 ✓
+  重启 geom = **300 150 1200 800** ⇒ 位置同样被记忆恢复 ✓
+  LOG `apply_saved_geometry: loaded 1200x800 logical pos=Some(600),Some(300)`
+  证据：s10-restart2.log
+
+## 步骤5-11 B8 分支矩阵（原始输出见 r6-S10-fixture-raw.txt，脚本 s10-fixture.sh）
+  默认基准（tauri.conf.json main 窗）= 1000x700，minWidth/minHeight = 800/560。
+
+  步骤5 备份原文件 `{"width":1200,"height":800,"x":600,"y":300}` → 写入
+        `{"width":500,"height":640}`（旧桌宠时代记录），cat 确认 ✓
+  步骤6 启动 → **不崩溃**，geom = `235 111 1000 701` = **默认 1000x700**
+        （±1 为 AX outer 高 vs conf inner 高的取整差，落在"系统缩放取整误差"内）
+        LOG `apply_saved_geometry: load() returned None (no file or out of range)`
+        ⇒ 旧记录被**拒绝走默认**，**不是** clamp 到 800x560 ✓（B8 语义正确）
+  步骤7 拖拽缩放一次 → `1120x761`，file=`{"width":1120,"height":761,"x":470,"y":222}`
+        退出重启 → geom = `235 111 1120 761` 精确恢复
+        ⇒ 旧坏记录**不产生持久污染**，新几何正常写入 ✓
+  步骤8 **对照分支**：写 `{"width":900,"height":700}`（合法且高于 min）→ 启动
+        geom = `235 111 900 700`，LOG `apply_saved_geometry: loaded 900x700 logical pos=None,None`
+        ⇒ **被接受并恢复**，非默认 1000x700 ⇒ 与步骤6 的 500x640 被拒形成真分支对照，
+          证明回退逻辑不是"一律丢弃" ✓
+        （位置不作断言：预置记录只含尺寸，pos=None,None，与 TC 一致）
+  步骤9 截断 JSON `{"width":500` → **不崩溃**，geom = `235 111 1000 701` 回默认 ✓
+        LOG `load() returned None`
+  步骤10 空文件（size=0）→ **不崩溃**，geom = `235 111 1000 701` 回默认 ✓
+        LOG `load() returned None`
+  步骤11 自清理：恢复步骤5 备份 `{"width":1200,"height":800,"x":600,"y":300}` ✓
+  每次切换均经托盘退出并核验 app=0 backend=0 port8100=0（原始输出逐行可查）。
+
+## Run 创建负向断言（expected_run_created=false）
+  全程未在会话内发消息、未触发任何技能/生成；步骤1-11 只有窗口几何与进程生命周期操作。
+  硬证据（查 .testenv/cold-A/data/workflow.db，S10 全部步骤跑完后取）：
+    select count(*), max(started_at) from trace_runs
+      → 27 条，最新 started_at = **2026-08-07 21:05:15**
+    select max(created_at) from execution_run_active_budgets
+      → **2026-08-07 21:04:37**
+  S10 手工道起于 **21:45**（devtools 污染发现后的干净重做起于 21:58），
+  两个 run 表的最新时间戳均**早于**本场景开始 ⇒ 本场景期间 root run 增量为 0 ✓
+
+判定：步骤1-10 全部满足（拖拽被持久化、三次重启精确恢复、500x640 拒绝走默认而非
+clamp、900x700 对照被接受、截断/空文件均不崩溃）→ **S10 PASS**
+VERDICT_PASS

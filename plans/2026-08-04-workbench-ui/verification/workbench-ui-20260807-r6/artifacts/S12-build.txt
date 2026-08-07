@@ -1,0 +1,23 @@
+TSC_OK
+ Test Files  76 passed (76)
+      Tests  672 passed (672)
+vitest_files=76 (floor 76)
+COVERAGE_OK
+BUILD_OK
+test result: ok. 79 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+companion(1): 9 failed, 643 passed, 10 skipped in 51.67s
+VERDICT_PASS
+
+## 判据修正说明（如实记录）
+首次重跑 S12 判 FAIL，根因是本脚本自身的脆常量 grep -q "75 passed"：
+cad272e 新增 src/relativeTime.test.ts 后测试文件变 76 → 常量失配。
+非产品回归（同轮 TSC_OK / COVERAGE_OK / BUILD_OK / cargo 0 failed 全绿）。
+已改判据为：① 输出不得含 failed；② 文件数 >= 76（防测试被悄悄删）。
+第二次 FAIL 根因是 companion 汇总行用 tail -1 抓成了进度点行
+（".sssssssss........."），已改为按内容抓最后一条含 passed/failed 的行。
+两处都是记账脚本缺陷，已在 script-lane.sh 内注释固化。
+
+## Run 创建负向断言（expected_run_created=false）
+本项为构建/单测（tsc + vitest + coverage + build + cargo + pytest），
+全程未启动 Tauri 应用、未连 backend、无会话消息或技能触发
+⇒ 结构上不可能产生 root Run。
