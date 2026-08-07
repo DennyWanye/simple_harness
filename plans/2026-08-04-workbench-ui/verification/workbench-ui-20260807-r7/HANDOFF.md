@@ -182,3 +182,27 @@ TC-WB-13 步骤5 要求真往返，必然产生 root run，实测产生 `82dd9ee
 3. manifest 定稿：TC-WB-04 措辞 / S13 flag / impact_paths 补覆盖
 4. 全部提交 → **然后**才 `init r8`（顺序不可颠倒，r6 就是 init 后改 manifest 报废的）
 5. 脚本道一条命令 + 真机道 11 场景全量重跑
+
+### 冲突 1 的**再更正**（2026-08-08，推翻"补实现"前提）
+补查源码后确认：**没有实现要补，UI 无安装按钮是刻意设计**。
+- `backend/main.py:11477` 对 `capability_install` / `capability_activate` /
+  `capability_repair` **显式抛** `CapabilityCenterError("model_driven_action_required",
+  "Install, activation, and repair require the main agent to resolve a trusted
+  source or failure receipt.")` —— UI 只保留 uninstall / rollback / retry / cancel。
+- `capability_install` 是**已注册的 agent 工具**
+  （`backend/deskpet/capabilities/tools.py:653`，"Install and atomically activate a
+  capability pack."），参数 `source_type ∈ {builtin,local,configured,git}`（默认
+  `local`）+ 必填 `uri`，`permission_category="skill_install"`，`dangerous=True`。
+- 本地已有 17 个 pack 实体可作 local 源：
+  `.testenv/cold-A/capabilities/packs/<pack_id>/<version>/<hash>/deskpet-pack.json`
+
+⇒ ④cancel / ⑤rollback 的前置**可按设计路径正当构造**（不改数据、不放宽判据、
+   不加代码）：在对话里请 agent 调 `capability_install` 装一个本地 pack →
+   趁 `status=running` 点 cancel；再装一个新版本使 `rollback_available` 转真 →
+   点 rollback。
+
+⇒ **上一轮判"构造不出"是错的**：当时走的是 SkillStore 市场安装，那是 **skills
+   子系统**（落 `.testenv/cold-A/skills/`），与 **capability packs 子系统**
+   （`capabilities/packs/`）是两套东西，装了当然不进「操作」tab。
+
+⇒ r8 无需为 S06 改任何产品代码，直接按上述路径真机构造前置即可。
