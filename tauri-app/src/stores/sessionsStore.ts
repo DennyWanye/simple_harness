@@ -520,7 +520,12 @@ function history_reconciliation_key(message: Message): string | null {
 }
 
 function compatible_history_scope(left: Message, right: Message): boolean {
-  if (left.run_id && right.run_id && left.run_id !== right.run_id) return false;
+  // 两边都知道自己属于哪个 Run 时，Run 就是权威判据 —— 不要再拿
+  // task_scope_id 做相等比较：它们分属不同命名空间。后端把 user 行持久化成
+  // **回合**作用域（turn-*），而本地乐观副本带的是 Run 投影的任务作用域
+  // （task-*），两者永远不等 → 同一条消息被判成"不同作用域"而拒绝对账 →
+  // 切走再切回后用户气泡渲染两次（r5 S05 真机实测，DB 只有一行）。
+  if (left.run_id && right.run_id) return left.run_id === right.run_id;
   if (
     left.task_scope_id &&
     right.task_scope_id &&

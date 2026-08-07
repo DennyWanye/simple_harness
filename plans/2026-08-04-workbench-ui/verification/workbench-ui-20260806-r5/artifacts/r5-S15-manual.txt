@@ -1,0 +1,36 @@
+# S15 — 空态:无历史会话 / 无产物(TC-WB-15)
+执行:AI (manual-mcp / drive.sh 真实点击)
+日期:2026-08-06 09:05–09:15 UTC(session-s15.log)
+前置:**全新隔离目录** `.testenv/cold-S15-r5`(本轮新建空目录,非复用 r3 的 cold-S15
+——那个已带 onboarding_done,不满足"冷启动"前置)
+
+## 步骤 1:冷启动 → StartupOverlay / onboarding → 会话空态
+- 冷启动进入 onboarding 向导(2 步):「欢迎使用 DeskPet 🐾」→「本地记忆能力」,
+  可逐步走完,无卡死(r5-S15-firstboot-win.png / r5-S15-onboard2b-win.png)
+  - 注:onboarding 文案仍是 DeskPet 品牌残留——TC 明示另立需求,不在本用例判定面
+- **登录窗未出现**:钥匙串(机器级)已有 cold-A 时段登录下发的有效令牌,应用直接
+  复用并 已连接;与 HANDOFF 预期的"要走登录"不同,但 TC 未要求登录,判定不受影响。
+  凭据输入环节因此本轮无需用户参与。
+- 完成向导后:会话列表显示**空态引导**「暂无历史会话。点击上方新建会话…」,
+  非空白/报错/无限 loading ✓(r5-S15-after-onboard-win.png)→ **PASS**
+
+## 步骤 2:产物视图空态
+- 产物库显示「暂无产物」明确占位;`<user_data>/artifacts` 目录**不存在**,
+  不崩溃 = 空列表语义 ✓(r5-S15-artifacts-empty-win.png)→ **PASS**
+
+## 步骤 3:空态新建会话 + 发送
+- 经「新建会话」建首会话(1df29ae0-…),发送「S15空态验证…」
+- 消息真实经后端往返:默认模型 sf-glm-5.2-1M 账号无额度 → 402(环境事实#2),
+  UI 返回**明确失败反馈**(provider_dispatch_unknown…),非黑洞;user+assistant
+  两条均落库 cold-S15-r5/data/state.db
+- 列表转换:切走再切回后首个会话条目出现、空态引导消失(r5-S15-switchback-win.png)
+  ——**不重启即入列表**,空态→非空态转换成立 → **PASS**
+- 注(判据外发现):provider 失败的首条消息**不触发列表实时刷新**(需切一次视图);
+  成功回合的实时刷新已在同日 S18 步骤 5 证明(r5-S18-step5-roundtrip-win.png,
+  0s 内入列表顶)。差异隔离到 provider-failure 路径,另立跟踪。
+
+## 步骤 4:回产物视图
+- 仍「暂无产物」;artifacts 目录仍不存在,对账一致(发消息未凭空产生产物)
+  (r5-S15-artifacts-after-win.png)→ 一致 ✓
+
+## 判定:步骤 1–3 全部满足(步骤 4 亦一致)→ **S15 PASS**

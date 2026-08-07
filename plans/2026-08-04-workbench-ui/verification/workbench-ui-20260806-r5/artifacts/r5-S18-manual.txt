@@ -1,0 +1,45 @@
+# S18 — 会话删除边界(TC-WB-18 步骤 1-5)
+执行:AI (manual-mcp / drive.sh 真实坐标点击 + DB 落库断言)
+日期:2026-08-06 08:11–08:35 UTC(会话 session-restart2/3.log)
+前置:cold-A 30 会话在位(26 造数 + default/C/D/E),identity_ready 200
+
+## 步骤 1:删除当前打开的会话 A(规模造数会话#26,sid 7e60851e-ada8-…)
+- 打开 A(消息流显示 回执#26)→ 点 ✕ → 确认框正确显示**标题+完整 sid**(r5-S18-A-confirm-win.png)
+- 确认删除 → 无崩溃无白屏;UI 呈确定态:自动切到 默认话题(default);A 从列表消失(顶部变 #25)
+- DB:A 的 messages 0 行 ✓ → **PASS**(截图 r5-S18-A-deleted-win.png)
+
+## 步骤 2:删后立即发送「删后归属验证」
+- 消息落库 session_id=default(当前会话),assistant 真实往返回复(chat/completions 200)
+- 已删 sid 残留 0 行;切走(产物库)再切回,消息仍在 default ✓ → **PASS**
+- 截图 r5-S18-step2-sent-win.png / r5-S18-step2-switchback-win.png
+
+## 步骤 3:重启应用
+- 托盘退出全清 → 重启(session-restart3.log)
+- A 不复活(列表顶 #25);删后归属验证 及回复仍在 default(1m 前)✓ → **PASS**
+- 截图 r5-S18-step3-restarted-win.png
+
+## 步骤 4:依次删除余下所有会话(28 个,含长标题会话与保留会话 default)
+- 全程逐个 ✕→确认删除,**每次删除均无崩溃**;长标题(120字符)确认框正确展示完整标题+sid
+  (r5-S18-del-before-default-win.png)
+- 删除 default(当前打开、保留会话):列表移除;DB messages['default']=0 且
+  companion_session_owners.status 保持 **active**(未墓碑化)——缺陷 4 修复的核心语义生效 ✓
+- 删除最后一个(C)后:侧栏出现**空态引导文案**「暂无历史会话。点击上方新建会话…」,
+  非空白/报错/无限 loading ✓(r5-S18-empty2-win.png);DB distinct sid = 0
+- → **PASS**
+
+## 步骤 5:从空态新建会话并发送
+- 新建会话 → 新 uuid 空消息流(r5-S18-newsession-win.png)
+- 发送「空态恢复验证…」→ assistant 回复「空态恢复」(0s 前,chat/completions 200)
+- 新会话进列表顶部(2 条,sid 5292df12-…);DB 归属正确 ✓ → **PASS**
+- 截图 r5-S18-step5-roundtrip-win.png
+
+## 判定:步骤 1-5 全部满足 → **S18 PASS**
+
+--- 判据外发现(不影响本场景判定,另立跟踪)---
+删除**保留会话 default**(当前打开态)后,主面板停留在 default 的**幽灵视图**:
+仍渲染已删的旧消息(恢复/收到确认 4h前、删后归属验证 8m前),而 DB 该 sid 已 0 行;
+列表已无 default 入口,该幽灵视图持续到用户新建/切换会话才消失
+(r5-S18-default-deleted-win.png / r5-S18-empty2-win.png)。
+普通会话(步骤 1 的 A)删除**无**此问题(会自动切走)。疑与 sessionsStore 前端缓存
+未随保留会话清空而失效有关(与缺陷 3 的重复气泡同源方向)。建议:删除 default 后
+前端强制刷新当前视图(空会话态或空态引导)。

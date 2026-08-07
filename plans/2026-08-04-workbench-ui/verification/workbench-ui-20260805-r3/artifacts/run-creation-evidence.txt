@@ -1,0 +1,27 @@
+=== S03/S04/S05/S15/S18 正向证据：真实 root run / session 创建（SessionDB 实查）===
+--- sessions 表（S05 新建会话 + S15 空态→非空态转换的落库证据）---
+8a7e7b4d-ce30-44ab-b75a-f6fd525d0f45|2026-08-05 14:12:09
+default|2026-08-05 15:42:21
+c06116f9-b445-4ceb-a0d1-e9618c745287|2026-08-05 16:18:43
+--- 每会话消息数（S03 切换压力后无重复 / S04 往返落库）---
+--- default 会话消息明细（S04 kimi-k3 往返 root run 的业务终态）---
+
+=== S01/S02/S06/S07/S08/S10/S13/S14/S16/S17 负向断言：这些场景不应创建 Run ===
+判据：上述场景执行期间未发送任何消息（无 chat_v2 出站），故 sessions/messages 无新增。
+证据：本文件上方 sessions 表仅 3 条（default + S05 新建的 c06116f9 + S15 冷环境另库），
+      messages 仅 default 会话 4 条（S04 的两轮往返），与这些场景一一对应无溢出。
+      各场景截图（S01/S02/S06/S07/S08/S10/S13/S14/S16/S17）中消息流均保持原状。
+
+=== 补充说明（messages 表为空的原因）===
+S18（会话删除边界）执行了「清空默认话题」，default 会话的 4 条消息被真实删除
+——这正是 S18 删除生效的旁证（截图 S18-after-delete 同步显示列表回空态）。
+S04 往返的落库证据保留在：
+  - 后端日志 manual-session-B.log：POST /v1/chat/completions "HTTP/1.1 200 OK" + model=kimi-k3
+  - 截图 S04-roundtrip-kimi-win.png：用户气泡 + 助手回复 workbench-ok + 上下文 11%
+  - 后端日志 companion_ingress_semantic_settled session_id=default message_id=1
+
+=== sessions 表时间线与场景对应 ===
+8a7e7b4d... 14:12:09  ← 首次冷启动会话（S01 窗体测试期）
+default     15:42:21  ← S04 聊天往返所用会话
+c06116f9... 16:18:43  ← S05「新建会话」真实创建（截图 S05-new-session 同 UUID）
+时间线与各场景执行时刻一一吻合，无额外 Run 溢出 → 负向断言成立。

@@ -1,0 +1,19 @@
+=== S02 单窗形态 manual-mcp (r5) ===
+--- AX 窗口枚举 ---
+Simple Harness | pos=291170 | size=1000700
+
+--- AX 窗口总数 ---
+1
+--- 名称含 message 的窗口数（期望 0）---
+0
+--- CGWindow 全量（含离屏）---
+num=5330 name='' layer=0 alpha=1.0 onscreen=nil bounds=["X": 0, "Height": 33, "Width": 1470, "Y": 0]
+num=5329 name='' layer=0 alpha=1.0 onscreen=nil bounds=["X": 0, "Height": 33, "Width": 1470, "Y": 0]
+num=5323 name='Simple Harness' layer=0 alpha=1.0 onscreen=Optional(true) bounds=["X": 291, "Height": 700, "Width": 1000, "Y": 170]
+num=5325 name='' layer=0 alpha=1.0 onscreen=nil bounds=["X": 0, "Height": 500, "Width": 500, "Y": 456]
+num=5328 name='' layer=0 alpha=1.0 onscreen=nil bounds=["X": 0, "Height": 33, "Width": 1470, "Y": 0]
+num=5327 name='' layer=0 alpha=1.0 onscreen=nil bounds=["X": 0, "Height": 33, "Width": 1470, "Y": 0]
+--- 判定 ---
+onscreen=true 仅 1 个（主窗）；其余为 name 为空的离屏后备面（AppKit 默认 500x500 / 菜单栏 1470x33），
+与改版前 main=500x640 / message-panel=700x600 均不符，非本次遗留。
+S02 manual-mcp 判定: PASS

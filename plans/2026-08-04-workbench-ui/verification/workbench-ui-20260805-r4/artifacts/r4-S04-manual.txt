@@ -1,0 +1,39 @@
+=== S04(b) companion 特权链 真机取证 (r4) ===
+--- 控制连接建立行 (grep companion_action) ---
+INFO:     127.0.0.1:60010 - "WebSocket /ws/control?secret=5e35540270da7af3e2108a41bc17b2e0&session_id=message-panel-main&requested_window_label=main&requested_scope=companion_action" [accepted]
+--- window_scope_denied 命中数 (期望 0) ---
+0
+--- message-panel 残留命中数 (期望 0) ---
+2
+--- identity_bind / profile 就绪 ---
+INFO:     127.0.0.1:60008 - "WebSocket /ws/control?secret=5e35540270da7af3e2108a41bc17b2e0&session_id=default&requested_window_label=main&requested_scope=identity_bind" [accepted]
+INFO:__main__:event='harness_recovery_triggered_identity_ready' level='info' timestamp='2026-08-05T20:47:32.064291Z' profile_id='relay_2ec0ae7233b2c99caa452c4f40a783cd' profile_generation=1
+--- LLM 真往返 (kimi-k3) ---
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+--- message-panel 2 处命中的原文(确认是否只是历史 sid 字符串) ---
+INFO:     127.0.0.1:60010 - "WebSocket /ws/control?secret=5e35540270da7af3e2108a41bc17b2e0&session_id=message-panel-main&requested_window_label=main&requested_scope=companion_action" [accepted]
+INFO:__main__:event='control channel connected' level='info' timestamp='2026-08-05T20:47:18.059537Z' session_id='message-panel-main'
+
+--- canonical 触发 (oracle #9 第 (b) 层后半，消除 vacuous pass) ---
+在主窗 devtools 控制台执行：
+  window.__TAURI__.core.invoke("get_window_control_credential",{connectionId:"r4-probe",
+    controlEpoch:"1",challenge:"probe",requestSeq:"1",commandKind:"companion_profile_bind",
+    requestHash:"0000...0000"(64位小写hex),requestedScope:"companion_action"})
+返回（截屏 r4-S04-cred2-win.png 原文）：
+  CRED_OK::{"backendProcessInstanceId":"5557ab58-4451-4d1d-8d44-80ff3dcf4ed8",
+            "connectionId":"r4-probe","controlEpoch":"1","windowLabel":"main",
+            "scope":"companion_action","challengeHash":"ba9c736f19e7f60b7f6764a..."}
+
+判定依据：process_manager.rs:769 的 get_window_control_credential 第一行即
+authorize_window_control_scope(&label,&scope)，拒绝时返回
+'window_control_scope_denied:{label}:{scope}' 并立即短路。本次返回的是已签发凭据
+且凭据体内 windowLabel=main / scope=companion_action —— 证明 Rust 白名单对
+(main, companion_action) 放行，且签名确实以 main 标签完成。
+
+对照负例：webview_permissions.rs:22 白名单只允许 (main,identity_bind) 与
+(main,companion_action)，其余全拒；message-panel 被拒有 Rust 单测覆盖（脚本道 S02）。
+
+S04 manual-mcp 判定: PASS
+  (a) 主往返：kimi-k3 POST /v1/chat/completions 200，UI 渲染回复「收到确认」，ContextRing 0%→11%
+  (b) 特权链：companion_action 控制连接以 window_label=main 建立；window_scope_denied=0；
+      凭据签发实测成功（windowLabel=main, scope=companion_action）

@@ -872,3 +872,74 @@ async def test_task12_route_outbox_claim_retry_and_settle_are_attempt_fenced(
     )["status"] == "delivered"
     assert await store.claim_companion_projection_route_outbox("worker-c", 60) is None
     await store.close()
+
+
+@pytest.mark.asyncio
+async def test_reserved_default_session_survives_clear_and_self_heals(
+    tmp_path: Path,
+) -> None:
+    """保留会话 default 是应用的兜底目标：清空它不能把它退役。
+
+    r5 真机实测的缺陷：删除当前会话后前端必然回落到 default，而 default 一旦
+    被当普通会话墓碑化，之后 bind_session_owner_if_absent 永远抛
+    companion_session_owner_tombstoned —— 用户被丢进一个发什么都被拒的会话，
+    且错误显示为误导性的 companion_identity_not_ready。
+    """
+    store = SessionDB(tmp_path / "state.db")
+    owner = TrustedCompanionOwner("profile-a", 1, 1)
+    await store.initialize()
+
+    # 1) 清空保留会话后仍可重新绑定（属主保持 active，只推进 scope_version）
+    await store.ensure_session("default")
+    bound = await store.bind_session_owner_if_absent("default", owner)
+    await store.append_message("default", "user", "会被清掉的内容")
+    await store.clear("default")
+    rebound = await store.bind_session_owner_if_absent("default", owner)
+    assert rebound["status"] == "active"
+    assert rebound["scope_version"] > bound["scope_version"]
+
+    # 2) 普通会话语义不变：清空即退役，不可再绑定
+    await store.ensure_session("ordinary")
+    await store.bind_session_owner_if_absent("ordinary", owner)
+    await store.clear("ordinary")
+    with pytest.raises(RuntimeError, match="owner_tombstoned"):
+        await store.bind_session_owner_if_absent("ordinary", owner)
+
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_pre_existing_tombstoned_default_is_repaired_on_bind(
+    tmp_path: Path,
+) -> None:
+    """存量自愈：本次修复之前留下的墓碑化 default 必须能恢复可用。
+
+    触发器 companion_session_owner_no_reactivate 禁止 UPDATE 复活，所以走
+    "删旧行 + 重新插入"；此时 default 的消息早已被 clear 清空，没有历史被复活。
+    """
+    db_path = tmp_path / "state.db"
+    store = SessionDB(db_path)
+    owner = TrustedCompanionOwner("profile-a", 1, 1)
+    await store.initialize()
+    await store.ensure_session("default")
+    await store.bind_session_owner_if_absent("default", owner)
+    await store.close()
+
+    # 模拟旧版本留下的状态：属主行被墓碑化
+    with sqlite3.connect(db_path) as db:
+        db.execute(
+            "UPDATE companion_session_owners SET status='tombstoned'"
+            " WHERE session_id='default'"
+        )
+        db.commit()
+
+    store = SessionDB(db_path)
+    await store.initialize()
+    healed = await store.bind_session_owner_if_absent("default", owner)
+    assert healed["status"] == "active"
+    with sqlite3.connect(db_path) as db:
+        rows = db.execute(
+            "SELECT status FROM companion_session_owners WHERE session_id='default'"
+        ).fetchall()
+    assert rows == [("active",)]
+    await store.close()

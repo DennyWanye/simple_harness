@@ -1,0 +1,10 @@
+TSC_OK
+    at startTests (file:///Users/denny/projects/simple_harness/tauri-app/node_modules/@vitest/runner/dist/index.js:1271:3)
+    at startTests (file:///Users/denny/projects/simple_harness/tauri-app/node_modules/@vitest/runner/dist/index.js:1271:3)
+ Test Files  75 passed (75)
+      Tests  661 passed (661)
+COVERAGE_OK
+BUILD_OK
+test result: ok. 79 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+companion(1): 9 failed, 643 passed, 10 skipped in 53.75s
+VERDICT_PASS

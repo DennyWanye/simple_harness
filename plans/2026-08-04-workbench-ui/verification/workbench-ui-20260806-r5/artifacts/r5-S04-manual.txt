@@ -1,0 +1,28 @@
+=== S04 chat+companion manual-mcp (r5) ===
+--- (a) 主往返：kimi-k3 ---
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 402 Payment Required"
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:__main__:event='chat_v2_final_send_completed sid=%s request_id=%s chars=%d' level='info' timestamp='2026-08-06T00:54:44.166062Z' positional_args=('e30fea60-6c71
+UI：用户气泡「r5-S04真机验证：请只回复四个字——收到确认」→ 助手气泡「收到确认」（截图 r5-S04-roundtrip-win.png）
+
+--- (b) 特权链：控制连接身份 ---
+INFO:     127.0.0.1:50386 - "WebSocket /ws/control?secret=52d97fbf395aa06c7473894bbbefc9ff&session_id=message-panel-main&requested_window_label=main&requested_scope=companion_action" [accepted]
+window_scope_denied 命中数（期望 0）: 0
+message-panel 命中（应仅历史 sid 字符串）:
+INFO:     127.0.0.1:50386 - "WebSocket /ws/control?secret=52d97fbf395aa06c7473894bbbefc9ff&session_id=message-panel-main&requested_window_label=main&requested_scope=companion_action" [accept
+INFO:__main__:event='control channel connected' level='info' timestamp='2026-08-06T00:49:54.721299Z' session_id='message-panel-main'
+
+--- 环境事实 ---
+402 Payment Required 为反思后台链路 sf-glm-5.2 无额度，kimi-k3 主链路 200，不影响断言。
+
+--- (b) canonical 触发（oracle #9，消除 vacuous pass）---
+主窗 devtools 控制台执行 get_window_control_credential(requestedScope=companion_action)，返回：
+  CRED_OK::{"backendProcessInstanceId":"f7858076-67a3-4d8a-9566-42f808af43ff","connectionId":"r5-probe",
+            "controlEpoch":"1","windowLabel":"main","scope":"companion_action",
+            "challengeHash":"ba9c736f19e7f60b7f6764adb0b7908c0a2b394e09b"}
+判定依据：process_manager.rs 的该 command 第一行即 authorize_window_control_scope(&label,&scope)，
+拒绝时返回 window_control_scope_denied:{label}:{scope} 并短路。本次返回已签发凭据且体内
+windowLabel=main / scope=companion_action → Rust 白名单对 (main, companion_action) 放行。
+截图：r5-S04-cred-win.png
+
+S04 manual-mcp 判定: PASS

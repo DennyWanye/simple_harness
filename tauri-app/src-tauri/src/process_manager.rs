@@ -343,6 +343,24 @@ fn spawn_once(
         cmd.env("DESKPET_CLOUD_API_KEY", key);
     }
 
+    // relay access_token 同样由我们注入，后端不要自己去读钥匙串。
+    // 原先 control_ingress.py 直接 keyring.get_password("deskpet-relay",
+    // "access_token") 调 /v1/me —— 该钥匙串项是本应用写的，每次令牌刷新重写都会
+    // 把 ACL 重置成只信任写入方，于是后端那个 python 解释器每次都要重新弹框要
+    // 系统密码（"始终允许"存不住；uv 装的 python 又是 adhoc 签名，白名单本就不稳）。
+    // 改由本进程读（读自己创建的项不弹框）后经 env 交给后端，彻底消灭弹窗。
+    match crate::secrets::get_relay_access_token() {
+        Ok(Some(token)) if !token.trim().is_empty() => {
+            cmd.env("DESKPET_RELAY_ACCESS_TOKEN", token);
+        }
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!(
+                "[process_manager] warning: could not read relay access token from keychain: {e}"
+            );
+        }
+    }
+
     let signer = BackendControlSigner::generate()?;
     let mut child = cmd
         .spawn()
@@ -598,6 +616,14 @@ fn install_supervisor(app: AppHandle, launch: BackendLaunch) {
                 Ok((new_child, new_secret, new_signer)) => {
                     if let Ok(mut guard) = state.shared_secret.lock() {
                         *guard = Some(new_secret.clone());
+                    }
+                    // 2026-08-06 r5 S13 后续真机发现：respawn 只换了
+                    // child handle，child_pid 仍是第一代 PID——kill_child
+                    // 的 PID 兜底于是杀的是已死进程，respawn 代在应用
+                    // 退出后变孤儿（8100 残留）。respawn 必须同步刷新
+                    // PID 兜底记录。
+                    if let Ok(mut guard) = state.child_pid.lock() {
+                        *guard = Some(new_child.id());
                     }
                     if let Ok(mut guard) = state.child.lock() {
                         *guard = Some(new_child);

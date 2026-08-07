@@ -1,0 +1,9 @@
+=== S16 路径B Cmd+Q 孤儿 backend 证据 2026-08-06T08:28:48Z ===
+Cmd+Q 于 08:27:54Z 发出(keystroke q using command down,应用当时前台)
+app 进程数=0 托盘=0(应用已退)
+18595 /Users/denny/projects/simple_harness/backend/.venv/bin/python main.py
+  PID  PPID STARTED
+18595     1 Thu Aug  6 16:27:44 2026    
+COMMAND     PID  USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+python3.1 18595 denny   28u  IPv4 0x8998fcff3b1642a1      0t0  TCP 127.0.0.1:8100 (LISTEN)
+→ backend PPID=1 孤儿,8100 仍占用:分裂态,TC-WB-16 判 FAIL

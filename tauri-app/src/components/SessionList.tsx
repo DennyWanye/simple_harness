@@ -137,6 +137,14 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
         msg?.type === "tool_result" ||
         msg?.type === "ppt_outline_proposed"
       ) {
+        // 一轮对话收尾后必须再刷一次清单。后端 list_sessions_with_preview 是
+        // "FROM messages GROUP BY session_id" —— 会话在清单里的存在条件是
+        // **已有消息**，而上面 session_switched 的刷新时刻新会话还是空的，
+        // 必然拉不到它。少了这一次刷新，新建的会话在本次运行内永远不进侧栏，
+        // 切走就再也回不去（r4 S05 真机实测）。顺带让 preview/条数/时间保持新鲜。
+        if (msg?.type === "chat_response" || msg?.type === "chat_v2_final") {
+          loadSessions();
+        }
         const payloadSid = typeof p.session_id === "string" ? p.session_id : "";
         if (payloadSid && payloadSid !== DEFAULT_SID && payloadSid !== CONTROL_SESSION_ID) {
           nextSid = payloadSid;

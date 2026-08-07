@@ -1,0 +1,11 @@
+=== r4 S01 窗体矩阵（对含 B13 修复的构建重跑）===
+initial 337171 1000700
+enlarged 1133785
+min-clamp 800560
+restored 1000700
+buttons close buttonfull screen buttonminimize button
+--- Dock 可见 ---
+ simple-harness
+--- 静态核对 ---
+0
+23:        "transparent": false,

@@ -1,0 +1,47 @@
+# S16 — 红钮与退出路径矩阵(TC-WB-16 / B13)
+执行:AI (manual-mcp / cliclick 真实点击 + AX 托盘动作 + keystroke Cmd+Q)
+日期:2026-08-06 08:26–08:52 UTC
+进程核对口径:app=pgrep target/debug/simple-harness;backend=pgrep .venv/bin/python main.py;
+port=lsof :8100 LISTEN;tray=System Events 进程计数。dev 包装进程(npm/tauri/vite,
+PID 见 r5-S16-wrapper-pids.txt / r5-S16r-wrapper-pids.txt)按 TC 豁免注登记——实测
+三条路径退出时包装进程也全部随之退出,豁免未实际用到。
+
+## 首跑(修复前)—— 抓到缺陷,FAIL 已入账
+- 锚点:176 194 1152 762(拖拽建立,r5-S16-anchor-win.png)
+- 路径 A 红钮(15,14 真实点击):app/backend/8100/托盘全 0 ✓;重启几何精确恢复 ✓
+- 路径 B Cmd+Q:app 退、托盘消失,**但 backend 孤儿存活(PID 18595,PPID=1),
+  8100 仍 LISTEN,+10s 不回收** → 分裂态 = **FAIL**(r5-S16-cmdq-orphan.txt)
+- 根因:红钮走 WindowEvent::Destroyed→kill_child,托盘 quit 显式 kill_child,
+  而 Cmd+Q 走 macOS app terminate,不触发 main Destroyed,无人杀 backend
+  (B13 修复只覆盖红钮/托盘两条 UI 路径,与 HANDOFF 待办#2 的 unix 外部 kill 同根)
+
+## 修复
+- tauri-app/src-tauri/src/lib.rs:.run(context) 改 .build(context).run(回调),
+  在 RunEvent::Exit(Cmd+Q / exit(0) / 托盘 quit 的统一必经点)兜底 kill_child;
+  原 Destroyed/托盘显式 kill 保留为先行路径。cargo check 干净。
+- 判别力:修复前后用同一探针(Cmd+Q 后 pgrep backend + lsof 8100 + 10s 复查),
+  红(FAIL 证据 r5-S16-cmdq-orphan.txt)→ 绿(下方复跑),红绿两条都在台账。
+
+## 复跑(修复后,Rust 重编译 + 钥匙串重授权由用户完成)
+- 新锚点:280 194 1152 762(拖拽建立,r5-S16r-anchor-win.png)
+- 路径 A 红钮(08:48:55Z):app=0 backend=0 port=0 tray=0 ✓ → 重启 geom=280 194 1152 762 精确恢复 ✓
+- 路径 B Cmd+Q(08:49:27Z):app=0 backend=0 port=0 tray=0,**+10s 复查仍 0** ✓
+  → 重启 geom=280 194 1152 762 精确恢复 ✓
+- 路径 C 托盘退出(08:50:05Z):app=0 backend=0 port=0 tray=0 ✓
+  → 重启 geom=280 194 1152 762 精确恢复 ✓(r5-S16r-final-restore-win.png)
+- 三条路径恢复结果一致(逐值相同)✓
+- 步骤 8 隐藏语义反证:托盘「隐藏主窗」→ 窗口数 0 但 app PID 21943 存活、
+  托盘图标在(=1)、backend 存活(=1)——隐藏仅经托盘路径,红钮不承担隐藏语义 ✓
+
+## 判定:复跑步骤 2–7 三条路径全部「完全退出 + 重启几何恢复」且步骤 8 成立 → **S16 PASS(修复后)**
+
+## 补充(2026-08-06 09:04Z):respawn 代孤儿缺陷 + 修复(B13 家族第二漏洞)
+- S13 跑完后发现:supervisor **respawn 的** backend(gen2)在托盘退出后成孤儿
+  (PID 23203,PPID=1,8100 残留)——S16 三路径全绿时 backend 均为原始 child,
+  没覆盖"崩溃重启后再退出"这条组合路径。
+- 根因:install_supervisor 的 respawn 分支只更新 child/secret/signer,
+  **不更新 child_pid**;kill_child 的 PID 兜底杀的是已死的第一代 PID。
+- 修复:process_manager.rs respawn 分支同步 `child_pid = new_child.id()`。
+- 判别力验证(r5-respawn-pid-fix-verify.txt):启动→杀 gen1(23849)→
+  supervisor respawn gen2(23977)→托盘退出→app=0 backend=0 port=0,
+  gen2 确认死亡。修复前同一探针产出孤儿(红),修复后全清(绿)。

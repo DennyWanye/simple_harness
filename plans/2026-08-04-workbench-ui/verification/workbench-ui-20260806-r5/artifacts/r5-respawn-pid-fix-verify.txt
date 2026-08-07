@@ -1,0 +1,4 @@
+=== respawn 后托盘退出核对(修复后)2026-08-06T09:04:01Z ===
+gen2 was PID 23977 (respawn-confirmed after killing gen1 23849)
+app=0 backend=0 port=0
+gen2-23977-dead

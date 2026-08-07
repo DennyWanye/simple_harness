@@ -1180,6 +1180,23 @@ function dispatch(msg: any) {
       const taskScopeId = String(p.task_scope_id || "").trim();
       const requestId = String(p.request_id || "").trim();
       store.clear_companion_provisional(runId);
+      // 这一轮失败了：若它就是本会话正在等待的 root turn，必须解除等待。
+      // pending_root_request_id 原先只在 chat_v2_run_reserved/started 里清，
+      // 而 Run 预约之前就夭折的拒绝（companion_identity_not_ready、只读会话等）
+      // 走不到那里 → 该字段永远挂着 → InputBar 的 shouldDefer 恒真 → 此后每条
+      // 消息只 push 到本地流、根本不 send，永久停在「等待 Agent 读取…」。
+      // 实测：r4 S18 删除当前会话后自动切到 default，default 正是被这样卡死的。
+      // requestId 缺失时（老后端/未覆盖的拒绝分支）按会话级兜底清除——一轮 root
+      // turn 失败后继续把后续消息挂起，没有任何可用语义。
+      {
+        const pending = store.sessions[sid]?.pending_root_request_id;
+        if (pending && (!requestId || pending === requestId)) {
+          store.upsert(sid, {
+            pending_root_request_id: undefined,
+            pending_root_turn_id: undefined,
+          });
+        }
+      }
       const current = store.sessions[sid];
       const continuationError = Boolean(
         requestId &&
@@ -1247,6 +1264,33 @@ function dispatch(msg: any) {
           inflight: false,
           active_run_id: null,
         });
+      }
+      // Run 预约前就夭折时没有 runId，上面那条按 run_id 收尾 deferred 消息的
+      // 分支走不到（continuationError 分支同样走不到）。这些消息挂的是"等 root
+      // run 出生"，而 root turn 已经失败，不落到 failed 就会永久停在
+      // 「等待 Agent 读取…」。放在 if/else 之外，两条路径都覆盖。
+      if (!runId) {
+        const latest = useSessionsStore.getState().sessions[sid];
+        const stuck = latest?.messages.some(
+          (message) =>
+            message.deferred_send || message.continuation_status === "waiting",
+        );
+        if (latest && stuck) {
+          store.set_messages(
+            sid,
+            latest.messages.map((message) =>
+              message.deferred_send ||
+              message.continuation_status === "waiting"
+                ? {
+                    ...message,
+                    deferred_send: false,
+                    continuation_status: "failed",
+                    continuation_error: txt,
+                  }
+                : message,
+            ),
+          );
+        }
       }
       break;
     }

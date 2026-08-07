@@ -369,6 +369,61 @@ describe("ws.dispatch chat final dedupe", () => {
     expect(session.run_projections["run-active"].status).toBe("running");
   });
 
+  // r4 S18 回归：Run 被预约之前就夭折的 root turn（companion_identity_not_ready、
+  // 只读会话等）不会产生 run_id，原实现只在 chat_v2_run_reserved/started 里清
+  // pending_root_request_id → 该字段永远挂着 → InputBar 的 shouldDefer 恒真 →
+  // 此后每条消息只 push 到本地流、根本不 send，永久停在「等待 Agent 读取…」。
+  it("root turn 在 Run 预约前失败时解除会话挂起（不留永久「等待 Agent 读取」）", () => {
+    useSessionsStore.getState().upsert("default", {
+      pending_root_request_id: "request-root",
+      pending_root_turn_id: "turn-root",
+    });
+    useSessionsStore.getState().push_message("default", {
+      role: "user",
+      text: "身份未就绪时发出的第一条",
+      request_id: "request-root",
+      continuation_status: "waiting",
+      deferred_send: true,
+    });
+
+    __test_dispatch({
+      type: "chat_v2_error",
+      payload: {
+        session_id: "default",
+        request_id: "request-root",
+        error: "companion_identity_not_ready",
+        code: "companion_identity_not_ready",
+      },
+    });
+
+    const session = useSessionsStore.getState().sessions.default;
+    expect(session.pending_root_request_id).toBeUndefined();
+    expect(session.pending_root_turn_id).toBeUndefined();
+    const stuck = session.messages.find(
+      (message) => message.request_id === "request-root",
+    );
+    expect(stuck?.continuation_status).toBe("failed");
+    expect(stuck?.deferred_send).toBeFalsy();
+  });
+
+  // 后端老版本/未覆盖的拒绝分支可能不回传 request_id —— 仍必须按会话级兜底解挂，
+  // 否则同样卡死。
+  it("chat_v2_error 缺 request_id 时按会话兜底解除挂起", () => {
+    useSessionsStore.getState().upsert("default", {
+      pending_root_request_id: "request-root-2",
+      pending_root_turn_id: "turn-root-2",
+    });
+
+    __test_dispatch({
+      type: "chat_v2_error",
+      payload: { session_id: "default", error: "companion_session_read_only" },
+    });
+
+    expect(
+      useSessionsStore.getState().sessions.default.pending_root_request_id,
+    ).toBeUndefined();
+  });
+
   it("activates and creates the backend-selected session after a session switch", () => {
     __test_dispatch({
       type: "session_switched",

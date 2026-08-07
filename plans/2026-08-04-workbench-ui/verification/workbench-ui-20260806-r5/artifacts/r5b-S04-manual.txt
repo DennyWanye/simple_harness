@@ -1,0 +1,26 @@
+=== S04 chat+companion manual-mcp (r5 复跑, 三处修复后) ===
+--- (a) 主往返 kimi-k3 ---
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:__main__:event='chat_v2_final_send_completed sid=%s request_id=%s chars=%d' level='info' timestamp='2026-08-06T04:31:10.124048Z' positional_args=('default'
+UI：用户「r5复跑S04：请只回复四个字——收到确认」→ 助手「收到确认」（r5b-S04-roundtrip-win.png）
+附带：同一会话内两轮消息各出现一次，无重复气泡（消息去重修复现场确认）。
+
+--- (b) 控制连接身份 ---
+INFO:     127.0.0.1:53526 - "WebSocket /ws/control?secret=2c0daee13d87dd6214dd30812b259d4d&session_id=message-panel-main&requested_window_label=main&requested_scope=companion_action" [accepted]
+window_scope_denied 命中数（期望 0）: 0
+message-panel 命中（应仅历史 sid 字符串 message-panel-main）:
+INFO:     127.0.0.1:53526 - "WebSocket /ws/control?secret=2c0daee13d87dd6214dd30812b259d4d&session_id=message-panel-main&requested_window_label=main&requested_scope=companion_action" [a
+INFO:__main__:event='control channel connected' level='info' timestamp='2026-08-06T04:17:37.985346Z' session_id='message-panel-main'
+
+--- (b) canonical 触发（oracle #9）---
+主窗 devtools 执行 get_window_control_credential(requestedScope=companion_action)：
+  CRED_OK::{"backendProcessInstanceId":"f54cc190-5dcc-4a08-9e9c-edd53b4bcabd",
+            "connectionId":"r5b-probe","controlEpoch":"1","windowLabel":"main",
+            "scope":"companion_action","challengeHash":"ba9c736f19e7f60b7f6764adb0b7908c0a2b394e09"}
+该 command 第一行即 authorize_window_control_scope(&label,&scope)，拒绝时返回
+window_control_scope_denied:{label}:{scope} 并短路；本次返回已签发凭据且体内
+windowLabel=main / scope=companion_action → 白名单对 (main, companion_action) 放行。
+截图 r5b-S04-cred-win.png
+
+S04 manual-mcp 判定: PASS

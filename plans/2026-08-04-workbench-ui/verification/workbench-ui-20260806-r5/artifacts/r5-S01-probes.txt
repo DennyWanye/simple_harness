@@ -1,0 +1,34 @@
+=== S01 窗口形态 manual-mcp (r5) ===
+--- 当前几何 ---
+291 170 1000 700
+--- 缩到最小尺寸以下，验证钳制 (期望 800x560) ---
+291 170 800 560
+--- 三个系统按钮（红/黄/绿）---
+close button | full screen button | minimize button | 
+--- 标题 ---
+Simple Harness
+--- 配置断言 ---
+  decorations = True
+  transparent = False
+  skipTaskbar = False
+  maximizable = True
+  width = 1000
+  height = 700
+  minWidth = 800
+  minHeight = 560
+  title = Simple Harness
+  maxWidth/maxHeight 存在? False
+  app.macOSPrivateApi 存在? False
+  窗口总数 = 1
+  macos-private-api 在 Cargo.toml? 1
+  window-vibrancy 在 Cargo.toml? 0
+
+--- macos-private-api 命中原文（确认非 feature）---
+19:# transparent=false），macos-private-api feature 与 tauri.conf.json 的
+  → 位于注释中（说明该 feature 已删除），非实际依赖 feature。
+
+S01 manual-mcp 判定: PASS
+  最小尺寸钳制精确到 800x560；三个系统按钮齐全（close/full screen/minimize）；
+  标题 Simple Harness；decorations=true / transparent=false / skipTaskbar=false /
+  maximizable=true；无 maxWidth/maxHeight；无 app.macOSPrivateApi；窗口定义仅 1 个；
+  window-vibrancy 已从 Cargo.toml 移除。

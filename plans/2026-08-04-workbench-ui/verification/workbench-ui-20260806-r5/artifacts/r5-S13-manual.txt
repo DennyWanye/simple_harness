@@ -1,0 +1,41 @@
+# S13 — 错误态:后端未就绪(TC-WB-13 / negative-safety)
+执行:AI (manual-mcp / drive.sh 真实点击 + 真杀 backend 进程,无任何前端 mock)
+日期:2026-08-06 08:51–08:58 UTC(session-s16r-d.log)
+构造手段(TC 前置手段 b 变体,如实记录):SIGKILL backend 进程;因 supervisor
+~2s 自动 respawn,持续不可用态用 kill 循环压制(0.4s 间隔,08:52:18Z 起 ~2 分钟),
+把 supervisor 逼到放弃,得到稳定降级态。
+
+## 步骤 1:降级态提示 + 重试入口
+- 压制期:全屏「启动失败」模态——"Backend supervisor gave up after repeated crashes.
+  请打开日志目录排查。" + 重试/打开日志目录/退出 三入口(r5-S13-degraded-win.png)
+- 瞬断期(单次 kill,+4s):ChatView 顶部红色**连接状态条**「聊天通道已断开,
+  消息暂时无法发送。」+ **重试**按钮(r5-S13-recovered-win.png / r5-S13-step2-down-head.png)
+- 两种降级态都非静默空白,均有重试入口 → **PASS**
+
+## 步骤 2:断连期发送
+- 模态期:输入栏被模态遮蔽 = 输入不可达(禁用分支)
+- 红条期实测:发送「断连期发送测试」→ 状态条明示「消息暂时无法发送」,消息进前端队列
+  (dev 日志可见 "socket not open; queueing message for flush on reconnect"),
+  重连后 flush 到**正确会话**(default)并获回复「收到,发送正常」
+- 无"看似成功但黑洞"的静默失败:有明确反馈 + 消息不丢 → **PASS**
+
+## 步骤 3:侧栏徽章
+- 断连期徽章 = **未连接**(最差态),与 ChatView 状态条口径一致;无"徽章绿但拒发"分叉
+  (r5-S13-recovered-win.png 左下角)→ **PASS**
+
+## 步骤 4:压制期点「重试」
+- 08:53:21Z 点模态「重试」→ 触发**真实**重启尝试(backend spawn 后被压制杀掉),
+  回落错误态,错误信息更新为 "Backend exited without printing SHARED_SECRET";
+  无崩溃、无白屏(r5-S13-retry-suppressed-win.png)→ **PASS**
+
+## 步骤 5:恢复后端 + 重试
+- 08:54:15Z 停止压制 → 点「重试」→ +4s 8100 重新 LISTEN,模态消失
+- 点状态条「重试」→ 状态条消失、徽章转**已连接**(r5-S13-badge.png)
+- 发送「S13恢复验证」→ assistant 回复「恢复正常」,chat/completions 200,DB 归属 default ✓
+- → **PASS**
+
+## 步骤 6:恢复后四视图轮巡
+- 会话(消息流含恢复后往返)/ 技能中心(能力 150 项渲染)/ 产物库(35 项)/ 设置(表单正常)
+- 无错误态残留(r5-S13-cycle-*-win.png / r5-S13-cycle-artifacts2-win.png)→ **PASS**
+
+## 判定:步骤 1、3、4、5 全部满足(2、6 亦过)→ **S13 PASS**

@@ -1,0 +1,16 @@
+=== S03 四视图十轮切换 (r5) ===
+round 1 done
+round 2 done
+round 3 done
+round 4 done
+round 5 done
+round 6 done
+round 7 done
+round 8 done
+round 9 done
+round 10 done
+
+十轮四视图切换（会话→技能中心→产物库→设置）全部完成，无卡死/白屏；
+结束后回到会话视图，布局完好，侧栏列表正确（default 2条 / D 2条 / C 6条）。
+附带确认：default 会话的用户气泡未重复（消息去重修复的现场验证）。
+S03 manual-mcp 判定: PASS

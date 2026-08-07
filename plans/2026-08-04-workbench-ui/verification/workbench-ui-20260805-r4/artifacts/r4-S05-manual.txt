@@ -1,0 +1,43 @@
+=== S05 侧栏会话列表 manual-mcp (r4) — 判定: FAIL ===
+
+【复现步骤（全部真机点击）】
+1. 会话 A（c06116f9-b445-4ceb-a0d1-e9618c745287）发消息 → kimi-k3 回复「收到确认」。
+2. 点侧栏「+ 新建会话」→ 新会话 B（2b413f2b-dce6-4dbf-b5f3-76be29efe851）诞生。
+3. 在 B 里发「S05会话B标记语句」→ kimi-k3 回复「乙号」。真往返成功。
+4. 此时侧栏「会话」区**只列出 A**，B 不在列表里（截图 r4-S05-sessionB-win.png）。
+5. 点 A 切回去 → A 的消息正确加载（「收到确认」6m 前），但**列表仍只有 A**，
+   B 依旧不出现（截图 r4-S05-switch-to-A-win.png）→ B 在本次运行内**无法从侧栏再进入**。
+6. 数据层核对：state.db messages 里两个会话各 2 条，均已落库：
+     2b413f2b-dce6-4dbf-b5f3-76be29efe851  2  2026-08-06 04:55:36
+     c06116f9-b445-4ceb-a0d1-e9618c745287  2  2026-08-06 04:50:26
+   → 不是持久化问题。
+7. 未改任何代码重启应用 → 两个会话都出现，时间倒序正确（B 在上、A 在下，各「2 条」）
+   （截图 r4-S05-after-restart-win.png）→ 后端 sessions_list 契约与排序均正常。
+
+【根因】
+后端 SessionDB.list_sessions_with_preview()（backend/deskpet/memory/session_db.py）是
+"SELECT ... FROM messages m GROUP BY m.session_id ORDER BY MAX(m.created_at) DESC" ——
+**会话在清单里的存在条件是"已有消息"**。
+前端 SessionList.tsx 只在两处调用 loadSessions()：
+  (a) mount 时（useEffect 初始化）；
+  (b) 收到 session_switched / task_session_started 时（:130，注释写"新会话诞生 → 刷新清单"）。
+(b) 的时刻恰恰是新会话**还没有任何消息**的时刻 → 后端清单必然不含它；
+此后首轮消息落库时没有任何 loadSessions() 触发点（侧栏内点击切换走的是本地
+onSwitchSid，不产生 session_switched）→ 新会话在本次运行内永远不进列表。
+
+【对 TC-WB-05 的影响】
+- 步骤 4「会话列表出现新条目并位于顶部」→ 不满足。
+- 步骤 5「切回旧会话再切回来」→ 无法通过 UI 完成（B 不可点）。
+- 步骤 1/2/3/6（排序、加载、隔离、重命名删除）在重启后的列表上均正常。
+判定：步骤 4、5 不满足 → FAIL。
+
+【与旧实现的差异（为何是改版引入）】
+改版前会话清单是 header 下拉，"面板打开时"拉取（MessagePanelRoot），用户每次展开都拿到
+新鲜清单；T7 把它列表化为侧栏常驻组件后，"每次展开都刷新"这个隐式刷新点消失了，
+只剩 mount + 诞生两处，恰好都早于首条消息落库。
+
+=== 修复后真机复验 (同一 r4 环境, 代码已改 → 正式入账须走 r5) ===
+新建会话 C = e30fea60-6c71-4ce8-a85e-f5df4ddd8f31，发「S05会话C标记语句」→ kimi-k3 回「丙号」。
+**未重启**，侧栏立即出现 C 且位于列表顶部、高亮为当前会话、显示「2 条」；
+排序 C(e30fea60) > B(2b413f2b) > A(c06116f9) 时间倒序正确。
+截图：r4-S05-fix-verify-win.png

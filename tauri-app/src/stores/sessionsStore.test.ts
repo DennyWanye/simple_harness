@@ -643,6 +643,83 @@ describe("workflow progress reducer (AC-23)", () => {
     expect(messages.some((message) => message.id === "run-a-event-1")).toBe(false);
   });
 
+  // r5 S05 真机回归：后端把 user 行持久化成回合作用域（turn-*），本地乐观副本
+  // 带的是 Run 投影的任务作用域（task-*）。原实现拿这两个 id 做相等比较 → 同一条
+  // 消息被判成"不同作用域"、拒绝对账 → 切走再切回后用户气泡渲染两次（DB 只有一行）。
+  // 两边都有 run_id 时，Run 才是权威判据。
+  it("同一 Run 内 turn-/task- 作用域不一致也应对账掉本地副本", () => {
+    const sid = "history-scope-namespace";
+    const store = useSessionsStore.getState();
+    store.ensure(sid);
+    store.push_message(sid, {
+      role: "user",
+      text: "真机验证：请只回复四个字",
+      run_id: "run-77c7",
+      task_scope_id: "task-9782ba82",
+    });
+
+    store.merge_history_messages(
+      sid,
+      [
+        {
+          id: "34",
+          role: "user",
+          text: "真机验证：请只回复四个字",
+          run_id: "run-77c7",
+          task_scope_id: "turn-be06a2ed",
+          ts: 1000,
+        },
+        {
+          id: "35",
+          role: "assistant",
+          text: "收到确认",
+          run_id: "run-77c7",
+          task_scope_id: "task-9782ba82",
+          ts: 1001,
+        },
+      ] as never,
+      [],
+    );
+
+    const messages = useSessionsStore.getState().sessions[sid].messages;
+    expect(messages.filter((message) => message.role === "user")).toHaveLength(1);
+    expect(messages.find((message) => message.role === "user")?.id).toBe("34");
+  });
+
+  // 反向保护：run_id 不同 = 真的是两条不同消息，不能因为文本相同就合并。
+  it("run_id 不同的同文本消息保持两条", () => {
+    const sid = "history-scope-distinct-runs";
+    const store = useSessionsStore.getState();
+    store.ensure(sid);
+    store.push_message(sid, {
+      role: "user",
+      text: "重复文本",
+      run_id: "run-a",
+      task_scope_id: "task-a",
+    });
+
+    store.merge_history_messages(
+      sid,
+      [
+        {
+          id: "90",
+          role: "user",
+          text: "重复文本",
+          run_id: "run-b",
+          task_scope_id: "turn-b",
+          ts: 2000,
+        },
+      ] as never,
+      [],
+    );
+
+    expect(
+      useSessionsStore.getState().sessions[sid].messages.filter(
+        (message) => message.role === "user",
+      ),
+    ).toHaveLength(2);
+  });
+
   it("replaces temporary live chat and tool rows with durable history one-for-one", () => {
     const sid = "history-live-reconcile";
     const store = useSessionsStore.getState();

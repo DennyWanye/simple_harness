@@ -1,0 +1,9 @@
+=== S14 托盘菜单 (r4) ===
+-- 步骤1：托盘图标位置 x=908 y=4 w=36 h=24 (menu bar 2 / status menu) --
+-- 菜单项枚举 --
+[显示主窗] enabled=true
+[隐藏主窗] enabled=true
+[退出 Simple Harness] enabled=true
+
+-- 旧文案检查（应全部为 0）--
+旧文案命中数=0

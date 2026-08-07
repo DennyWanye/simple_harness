@@ -1,0 +1,3 @@
+76800 npm exec tauri dev --config {"build":{"beforeDevCommand":"npm run dev:relay"}} OSLogRateLimit=64 MallocNanoZone=0 USER=denny COMMAND_MODE=unix2003 __CFBundleIdentifier=com.anthropic.claudefordesktop
+76813 node /Users/denny/projects/simple_harness/tauri-app/node_modules/.bin/tauri dev --config {"build":{"beforeDevCommand":"npm run dev:relay"}}
+76973 node /Users/denny/projects/simple_harness/tauri-app/node_modules/.bin/vite --mode relay

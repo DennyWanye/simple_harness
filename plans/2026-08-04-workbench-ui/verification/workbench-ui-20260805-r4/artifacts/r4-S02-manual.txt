@@ -1,0 +1,34 @@
+=== S02 manual-mcp: 单窗形态 (r4) ===
+-- AX 窗口枚举 --
+Simple Harness | pos=337171 | size=1000700
+
+-- AX 窗口总数 --
+1
+-- 是否存在 message-panel 窗口(应为0) --
+0
+-- CGWindow 层枚举(所有属于本进程的窗口, 含非 AX) --
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+ModuleNotFoundError: No module named 'Quartz'
+-- CGWindow 层枚举(retry: 用 swift, 覆盖非 AX 窗口) --
+owner=simple-harness name= layer=0 bounds=["Width": 500, "Height": 500, "Y": 456, "X": 0]
+owner=simple-harness name= layer=0 bounds=["Width": 1470, "Height": 33, "Y": 0, "X": 0]
+owner=simple-harness name= layer=0 bounds=["Width": 1470, "Height": 33, "Y": 0, "X": 0]
+owner=simple-harness name= layer=0 bounds=["Width": 1470, "Height": 33, "Y": 0, "X": 0]
+owner=simple-harness name= layer=0 bounds=["Width": 1470, "Height": 33, "Y": 0, "X": 0]
+owner=simple-harness name=Simple Harness layer=0 bounds=["Width": 1000, "Height": 700, "Y": 171, "X": 337]
+-- CGWindow 明细 (alpha/onscreen) --
+num=4564 name='' layer=0 alpha=1.0 onscreen=nil bounds=["Width": 500, "X": 0, "Y": 456, "Height": 500]
+num=4562 name='' layer=0 alpha=1.0 onscreen=nil bounds=["Width": 1470, "X": 0, "Y": 0, "Height": 33]
+num=4561 name='' layer=0 alpha=1.0 onscreen=nil bounds=["Width": 1470, "X": 0, "Y": 0, "Height": 33]
+num=4560 name='' layer=0 alpha=1.0 onscreen=nil bounds=["Width": 1470, "X": 0, "Y": 0, "Height": 33]
+num=4559 name='' layer=0 alpha=1.0 onscreen=nil bounds=["Width": 1470, "X": 0, "Y": 0, "Height": 33]
+num=4558 name='Simple Harness' layer=0 alpha=1.0 onscreen=Optional(true) bounds=["Width": 1000, "X": 337, "Y": 171, "Height": 700]
+
+-- 判定 --
+onscreen=true 的窗口只有 1 个: 'Simple Harness' 1000x700 @337,171
+其余 5 个 num=4559..4564 全部 onscreen=nil(离屏后备面), name 为空, 不可寻址
+排除其为遗留 message-panel: 改版前(644ab16) main=500x640 / message-panel=700x600,
+均不等于离屏面的 500x500 与 1470x33 —— 500x500 是 AppKit NSWindow 默认内容尺寸,
+1470x33 是菜单栏高度面。故非本次改动遗留。
+S02 manual-mcp 判定: PASS

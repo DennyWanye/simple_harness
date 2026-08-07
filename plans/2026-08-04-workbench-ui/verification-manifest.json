@@ -1,11 +1,11 @@
 {
-  "run_id": "workbench-ui-20260805-r3",
+  "run_id": "workbench-ui-20260806-r5",
   "source_request_text": "好的， 我现在准备把live2D的部分去掉，只需要一个主页面就好，然后主页面上面有设置这样一个按钮。请你先和我讨论一下修改后续的页面UI样式，然后开始处理（后续经讨论定稿为：C 工作台方向/深色单主题/普通窗口/桌宠代码彻底删除；行为契约 B1-B13 用户于 2026-08-05 回复「确认」批准）；oracle 修正 WBUI-BC-01 经用户 2026-08-05「批准」（见 behavior_changes）",
   "acceptance_file": "acceptance.md",
   "behavior_contract_file": "plans/2026-08-04-workbench-ui/behavior-contract.md",
   "behavior_contract_approval_sha256": "36f33adaf0942634a8ece1eec4a6f30d44dec73e1ef8704b29d983a57f2e09ae",
   "baseline": {
-    "head": "9bb4b2af051f47cb34e7bb698e239b8af6615f19",
+    "head": "8c11ddfad6ec8084cced11da697a6bcfa44702aa",
     "dirty_patch_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
   "scenarios": [
@@ -23,9 +23,14 @@
       "expected_run_created": false,
       "testcase": "TC-WB-01",
       "impact_paths": [
-        "tauri-app/src-tauri/tauri.conf.json",
+        "backend/main.py",
+        "tauri-app/src-tauri/Cargo.lock",
         "tauri-app/src-tauri/Cargo.toml",
-        "tauri-app/src-tauri/src/window_geometry.rs"
+        "tauri-app/src-tauri/src/backend_launch.rs",
+        "tauri-app/src-tauri/src/lib.rs",
+        "tauri-app/src-tauri/src/process_manager.rs",
+        "tauri-app/src-tauri/src/window_geometry.rs",
+        "tauri-app/src-tauri/tauri.conf.json"
       ]
     },
     {
@@ -43,12 +48,13 @@
       "expected_run_created": false,
       "testcase": "TC-WB-02",
       "impact_paths": [
-        "tauri-app/src-tauri/tauri.conf.json",
         "tauri-app/src-tauri/capabilities/default.json",
         "tauri-app/src-tauri/src/commands.rs",
         "tauri-app/src-tauri/src/lib.rs",
-        "tauri-app/src/main.tsx",
-        "tauri-app/src/App.tsx"
+        "tauri-app/src-tauri/tauri.conf.json",
+        "tauri-app/src/**",
+        "tauri-app/src/App.tsx",
+        "tauri-app/src/main.tsx"
       ]
     },
     {
@@ -65,9 +71,10 @@
       "expected_run_created": true,
       "testcase": "TC-WB-03",
       "impact_paths": [
-        "tauri-app/src/components/WorkbenchShell.tsx",
-        "tauri-app/src/components/Sidebar.tsx",
+        "tauri-app/src/**",
         "tauri-app/src/App.tsx",
+        "tauri-app/src/components/Sidebar.tsx",
+        "tauri-app/src/components/WorkbenchShell.tsx",
         "tauri-app/src/views/**"
       ]
     },
@@ -86,13 +93,19 @@
       "expected_run_created": true,
       "testcase": "TC-WB-04",
       "impact_paths": [
-        "tauri-app/src/views/ChatView.tsx",
-        "tauri-app/src/code-panel/controlWs.ts",
-        "tauri-app/src-tauri/src/webview_permissions.rs",
         "backend/deskpet/companion/control_credentials.py",
         "backend/deskpet/companion/control_ingress.py",
         "backend/deskpet/companion/migrations/**",
-        "tauri-app/src/chat/**"
+        "backend/main.py",
+        "tauri-app/src-tauri/Cargo.lock",
+        "tauri-app/src-tauri/Cargo.toml",
+        "tauri-app/src-tauri/src/backend_launch.rs",
+        "tauri-app/src-tauri/src/lib.rs",
+        "tauri-app/src-tauri/src/process_manager.rs",
+        "tauri-app/src-tauri/src/webview_permissions.rs",
+        "tauri-app/src/chat/**",
+        "tauri-app/src/code-panel/controlWs.ts",
+        "tauri-app/src/views/ChatView.tsx"
       ]
     },
     {
@@ -109,9 +122,10 @@
       "expected_run_created": true,
       "testcase": "TC-WB-05",
       "impact_paths": [
+        "tauri-app/src/**",
+        "tauri-app/src/chat/**",
         "tauri-app/src/components/SessionList.tsx",
-        "tauri-app/src/components/Sidebar.tsx",
-        "tauri-app/src/chat/**"
+        "tauri-app/src/components/Sidebar.tsx"
       ]
     },
     {
@@ -128,9 +142,10 @@
       "expected_run_created": false,
       "testcase": "TC-WB-06",
       "impact_paths": [
-        "tauri-app/src/views/SkillsView.tsx",
+        "tauri-app/src/**",
         "tauri-app/src/components/CapabilityCenterPanel.tsx",
-        "tauri-app/src/components/SkillStorePanel.tsx"
+        "tauri-app/src/components/SkillStorePanel.tsx",
+        "tauri-app/src/views/SkillsView.tsx"
       ]
     },
     {
@@ -147,8 +162,9 @@
       "expected_run_created": false,
       "testcase": "TC-WB-07",
       "impact_paths": [
-        "tauri-app/src/views/ArtifactsView.tsx",
-        "tauri-app/src-tauri/src/artifact_ops.rs"
+        "tauri-app/src-tauri/src/artifact_ops.rs",
+        "tauri-app/src/**",
+        "tauri-app/src/views/ArtifactsView.tsx"
       ]
     },
     {
@@ -165,14 +181,15 @@
       "expected_run_created": false,
       "testcase": "TC-WB-08",
       "impact_paths": [
-        "tauri-app/src/views/SettingsView.tsx",
-        "tauri-app/src/components/SettingsPanel.tsx"
+        "tauri-app/src/**",
+        "tauri-app/src/components/SettingsPanel.tsx",
+        "tauri-app/src/views/SettingsView.tsx"
       ]
     },
     {
       "scenario_id": "WBUI-S09-pet-removal",
       "required": true,
-      "ui": true,
+      "ui": false,
       "gate_type": "positive-value",
       "required_lanes": [
         "script"
@@ -198,15 +215,20 @@
       "expected_run_created": false,
       "testcase": "TC-WB-10",
       "impact_paths": [
-        "tauri-app/src-tauri/src/window_geometry.rs",
+        "backend/main.py",
+        "tauri-app/src-tauri/Cargo.lock",
+        "tauri-app/src-tauri/Cargo.toml",
+        "tauri-app/src-tauri/src/backend_launch.rs",
         "tauri-app/src-tauri/src/lib.rs",
+        "tauri-app/src-tauri/src/process_manager.rs",
+        "tauri-app/src-tauri/src/window_geometry.rs",
         "tauri-app/src-tauri/tauri.conf.json"
       ]
     },
     {
       "scenario_id": "WBUI-S11-theme-vars",
       "required": true,
-      "ui": true,
+      "ui": false,
       "gate_type": "positive-value",
       "required_lanes": [
         "script"
@@ -217,14 +239,15 @@
       "expected_run_created": false,
       "testcase": "TC-WB-11",
       "impact_paths": [
-        "tauri-app/src/views/**",
-        "tauri-app/src/components/**"
+        "tauri-app/src/**",
+        "tauri-app/src/components/**",
+        "tauri-app/src/views/**"
       ]
     },
     {
       "scenario_id": "WBUI-S12-build-green",
       "required": true,
-      "ui": true,
+      "ui": false,
       "gate_type": "positive-value",
       "required_lanes": [
         "script"
@@ -249,9 +272,15 @@
       "expected_run_created": false,
       "testcase": "TC-WB-13",
       "impact_paths": [
-        "tauri-app/src/views/ChatView.tsx",
+        "backend/main.py",
+        "tauri-app/src-tauri/Cargo.lock",
+        "tauri-app/src-tauri/Cargo.toml",
+        "tauri-app/src-tauri/src/backend_launch.rs",
+        "tauri-app/src-tauri/src/lib.rs",
+        "tauri-app/src-tauri/src/process_manager.rs",
         "tauri-app/src/code-panel/controlWs.ts",
-        "tauri-app/src/components/Sidebar.tsx"
+        "tauri-app/src/components/Sidebar.tsx",
+        "tauri-app/src/views/ChatView.tsx"
       ]
     },
     {
@@ -268,7 +297,12 @@
       "expected_run_created": false,
       "testcase": "TC-WB-14",
       "impact_paths": [
-        "tauri-app/src-tauri/src/lib.rs"
+        "backend/main.py",
+        "tauri-app/src-tauri/Cargo.lock",
+        "tauri-app/src-tauri/Cargo.toml",
+        "tauri-app/src-tauri/src/backend_launch.rs",
+        "tauri-app/src-tauri/src/lib.rs",
+        "tauri-app/src-tauri/src/process_manager.rs"
       ]
     },
     {
@@ -285,6 +319,7 @@
       "expected_run_created": true,
       "testcase": "TC-WB-15",
       "impact_paths": [
+        "tauri-app/src/**",
         "tauri-app/src/components/SessionList.tsx",
         "tauri-app/src/views/ArtifactsView.tsx"
       ]
@@ -303,7 +338,12 @@
       "expected_run_created": false,
       "testcase": "TC-WB-16",
       "impact_paths": [
+        "backend/main.py",
+        "tauri-app/src-tauri/Cargo.lock",
+        "tauri-app/src-tauri/Cargo.toml",
+        "tauri-app/src-tauri/src/backend_launch.rs",
         "tauri-app/src-tauri/src/lib.rs",
+        "tauri-app/src-tauri/src/process_manager.rs",
         "tauri-app/src-tauri/src/window_geometry.rs",
         "tauri-app/src-tauri/tauri.conf.json"
       ]
@@ -322,10 +362,11 @@
       "expected_run_created": false,
       "testcase": "TC-WB-17",
       "impact_paths": [
+        "tauri-app/src/**",
         "tauri-app/src/components/SessionList.tsx",
-        "tauri-app/src/views/ArtifactsView.tsx",
+        "tauri-app/src/components/Sidebar.tsx",
         "tauri-app/src/components/WorkbenchShell.tsx",
-        "tauri-app/src/components/Sidebar.tsx"
+        "tauri-app/src/views/ArtifactsView.tsx"
       ]
     },
     {
@@ -342,9 +383,10 @@
       "expected_run_created": true,
       "testcase": "TC-WB-18",
       "impact_paths": [
+        "tauri-app/src/**",
+        "tauri-app/src/chat/**",
         "tauri-app/src/components/SessionList.tsx",
-        "tauri-app/src/views/ChatView.tsx",
-        "tauri-app/src/chat/**"
+        "tauri-app/src/views/ChatView.tsx"
       ]
     }
   ],
@@ -420,5 +462,6 @@
         "context": "编排者给出 exact old/new 与理由后，用户以「批准」开头的消息批准（消息另含测试凭据，不записи入账，仅 hash 绑定）"
       }
     }
-  ]
+  ],
+  "notes": "r4：修正 r3 的 manifest 缺陷——(1) S09/S11/S12 为纯脚本场景，ui 由 true 改 false；(2) impact_paths 补齐后端生命周期文件（process_manager/lib/backend_launch/Cargo/main.py）映射到受其影响的 6 个场景，其余前端场景补 tauri-app/src/**；(3) 对着含 B13 修复的代码全量重跑。"
 }

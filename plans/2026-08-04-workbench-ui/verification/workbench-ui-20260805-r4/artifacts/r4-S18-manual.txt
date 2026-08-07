@@ -1,0 +1,36 @@
+=== S18 会话删除边界 manual-mcp (r4) — 判定: FAIL（步骤 2）===
+
+步骤 1 —— PASS
+  打开会话 A(c06116f9) → 侧栏点 × → 确认框正确显示标题与完整 sid → 点「删除」。
+  结果：无崩溃、无白屏；A 从列表消失；应用自动切到 default（deleteSession 既定分支：
+  sid===activeSid && sid!==DEFAULT_SID → switchToDefault）；无"已删会话消息流残留"。
+  后端 log: event='session_deleted' sid='c06116f9-b445-4ceb-a0d1-e9618c745287'
+  DB 核对：messages 里 c06116f9 全部行已删除。
+  截图：r4-S18-open-A-win.png / r4-S18-delete-confirm-win.png / r4-S18-after-delete-win.png
+
+步骤 2 —— FAIL（黑洞）
+  删除后立即在当前会话(default)发「删后归属验证：请只回复两个字——归属」。
+  现象：气泡下方状态永久停在「等待 Agent 读取…」；后端 session.log 在 session_deleted
+  之后**一行新日志都没有**；state.db messages 无任何新行。消息既没写进已删的 A，
+  也没写进任何会话 —— 落入黑洞。TC-WB-18 步骤 2 明确判定"写入已删 sid 或黑洞 = FAIL"。
+
+判别实验（排除"发送动作本身失效"）
+  切到正常会话 C(e30fea60) 发「判别实验：请只回复两个字——正常」→
+  POST /v1/chat/completions 200、chat_v2_final sid=e30fea60、messages 从 2 条变 4 条。
+  → 发送链路本身正常；**卡死的是 default 会话**。
+
+根因线索
+  「等待 Agent 读取…」来自 MessageStreamPanel.tsx:771 的 continuationStatus 分支
+  （bound→"✓ Agent 已读取" / failed→"未能加入当前任务" / 其余→"等待 Agent 读取…"）。
+  即：前端把这条消息当作**注入到某个运行中 Agent 任务的 continuation**，而不是新一轮对话。
+  本次运行早些时候 default 会话上有两次
+  event='companion_chat_blocked_identity_not_ready' session_id='default'（身份尚未就绪时
+  发出的消息被拒），推测那次被拒的 turn 把 default 的 run 状态留在了非终态 →
+  此后 default 上的每条消息都被路由成 continuation 注入一个永远不会读取它的 run →
+  会话被永久卡死。
+
+影响面
+  删除"当前打开的会话"后应用必然落到 default；若 default 已被上述方式卡死，
+  用户在删除后立刻发的消息会静默消失，且没有任何错误提示。
+  尚未确认该缺陷是本次改版引入还是既存（continuation 路由逻辑随 T8 从 message-panel 迁移）。
+  待办：复现最小路径（冷启动 → 身份就绪前发一条 → 身份就绪后再发）确认因果，再定归属与修法。

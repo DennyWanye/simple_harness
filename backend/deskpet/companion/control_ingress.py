@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -903,6 +904,16 @@ class RegistryRelayAuthSnapshotProvider:
 
     @staticmethod
     def _read_access_token() -> str | None:
+        # Preferred source: the token the Tauri shell injected at spawn time
+        # (``process_manager.rs``). The shell owns the ``deskpet-relay``
+        # keychain item, so reading it there is prompt-free; reading it *here*
+        # is not — every token refresh rewrites the item and resets its ACL,
+        # so this interpreter gets a fresh macOS authorization prompt each
+        # time ("Always Allow" cannot stick across a rewrite). Keychain
+        # access stays as the fallback for shells that predate the env var.
+        env_token = os.environ.get("DESKPET_RELAY_ACCESS_TOKEN", "").strip()
+        if env_token:
+            return env_token
         # keyring-rs writes the Windows generic credential under the exact
         # target ``{username}.{service}``.  Prefer that authoritative slot on
         # Windows: Python keyring may expose a second, stale credential for

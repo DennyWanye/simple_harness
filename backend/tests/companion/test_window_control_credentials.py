@@ -629,6 +629,7 @@ def test_relay_access_token_reads_exact_rust_windows_credential_target(
         CRED_TYPE_GENERIC=1,
         CredRead=cred_read,
     )
+    monkeypatch.delenv("DESKPET_RELAY_ACCESS_TOKEN", raising=False)
     monkeypatch.setitem(sys.modules, "keyring", fake_keyring)
     monkeypatch.setitem(sys.modules, "win32cred", fake_win32cred)
 
@@ -637,3 +638,49 @@ def test_relay_access_token_reads_exact_rust_windows_credential_target(
         == "trusted-access"
     )
     assert calls == [("access_token.deskpet-relay", 1)]
+
+
+def test_relay_access_token_prefers_shell_injected_env(monkeypatch) -> None:
+    """Tauri 注入的 env 优先于任何钥匙串读取。
+
+    后端自己读 ``deskpet-relay`` 钥匙串项会在 macOS 上反复弹系统授权框：
+    每次令牌刷新都会重写该项并把 ACL 重置成只信任写入方（Tauri），所以
+    「始终允许」存不住。改由 Tauri（该项的创建者，读取免弹框）读出后经
+    env 交给后端。此测试锁住优先级——env 存在时**绝不**回落到钥匙串。
+    """
+
+    def _boom(*_args, **_kwargs):  # pragma: no cover - 触发即失败
+        raise AssertionError("keychain must not be touched when env is set")
+
+    monkeypatch.setitem(
+        sys.modules, "keyring", types.SimpleNamespace(get_password=_boom)
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "win32cred",
+        types.SimpleNamespace(CRED_TYPE_GENERIC=1, CredRead=_boom),
+    )
+    monkeypatch.setenv("DESKPET_RELAY_ACCESS_TOKEN", "  shell-injected  ")
+
+    assert (
+        RegistryRelayAuthSnapshotProvider._read_access_token()
+        == "shell-injected"
+    )
+
+
+def test_relay_access_token_falls_back_when_env_blank(monkeypatch) -> None:
+    """env 为空/空白视为未注入，仍走钥匙串回落（老版本外壳兼容）。"""
+    monkeypatch.setenv("DESKPET_RELAY_ACCESS_TOKEN", "   ")
+    monkeypatch.setitem(
+        sys.modules,
+        "keyring",
+        types.SimpleNamespace(
+            get_password=lambda _service, _account: "from-keychain"
+        ),
+    )
+    monkeypatch.delitem(sys.modules, "win32cred", raising=False)
+
+    assert (
+        RegistryRelayAuthSnapshotProvider._read_access_token()
+        == "from-keychain"
+    )

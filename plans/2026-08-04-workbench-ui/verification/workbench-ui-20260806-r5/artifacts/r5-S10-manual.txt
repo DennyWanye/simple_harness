@@ -1,0 +1,36 @@
+# S10 真机半边 — 窗口几何记忆(TC-WB-10 步骤 1-4)
+执行:AI (manual-mcp / cliclick HID 级真实拖拽 + AX 托盘退出)
+日期:2026-08-06(UTC 时间戳)
+前置:脚本半边(window_geometry 单测,步骤 5-11 B8 回退矩阵)已于本轮先行通过,见 S10-geometry.txt
+
+## 步骤 1:拖拽缩放 + 移动(真实手势,非程序化 setFrame)
+- 初始 geom:291 170 800 560(最小尺寸态)
+- 声明:动作=cliclick 拖拽右下角 (1089,728)→(1441,930)|期望=窗口放大
+  结果:geom → 291 170 1152 762 ✓(05:51:03Z)
+- 声明:动作=cliclick 拖拽标题栏 (700,182)→(529,102)|期望=窗口移动
+  第一次尝试期间用户切换 Space 干扰,AX 暂盲(环境事实#4),窗口未动;
+  激活应用回到其 Space 后重试同一拖拽 → geom → 120 90 1152 762 ✓
+- 锚点A:120 90 1152 762(r5-S10-anchor-geom.txt / r5-S10-anchor-win.png)
+
+## 步骤 2:托盘「退出 Simple Harness」
+- 声明:动作=托盘菜单 AXPress 退出项|期望=完全退出
+- 结果(08:05:13Z):pgrep app/backend 零命中、8100 无 LISTEN、dev 包装进程(npm/tauri/vite)同步退出 ✓
+
+## 步骤 3:重启核对恢复
+- 重启命令:npm exec tauri dev(DESKPET_USER_DATA_DIR=.testenv/cold-A,DESKPET_BACKEND_DIR=worktree backend)
+- 新进程 PID 15701(16:05:33 CST 起,session-restart1.log)
+- geom = 120 90 1152 762 = 锚点A 精确恢复(非默认 1000×700 居中)✓
+- 截图:r5-S10-restored1-win.png
+- 注:此次启动 /v1/me 401(令牌过期,环境事实#3,非缺陷)→ 经「更多→账户」面板刷新后在步骤 4 重启中恢复
+
+## 步骤 4:仅移动 → 托盘退出 → 重启
+- 声明:动作=拖拽标题栏 (700,102)→(1000,252)|期望=仅位置变
+  结果:geom → 420 240 1152 762 ✓(尺寸不变)
+- 锚点B:420 240 1152 762(r5-S10-anchor2-geom.txt / r5-S10-anchor2-win.png)
+- 托盘退出:app-gone / port-free 全清 ✓
+- 重启(session-restart2.log):geom = 420 240 1152 762 = 锚点B 精确恢复 ✓
+- 且 /v1/me 200 + harness_recovery_triggered_identity_ready(08:08:37Z)— 令牌刷新链路验证 ✓
+- 截图:r5-S10-restored2-win.png
+
+## 判定:步骤 1-4 全部满足,脚本半边(5-11)已过 → S10 整场 PASS
+误差:0px(两轮锚点均逐值精确恢复)

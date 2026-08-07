@@ -12931,14 +12931,42 @@ async def control_channel(ws: WebSocket):
                         create_if_absent=True,
                     )
                 except Exception as _identity_exc:  # noqa: BLE001
+                    # request_id 必须回传：这一轮在 Run 被预约之前就夭折了，
+                    # 前端的 pending_root_request_id 只能靠它认领并清除。少了
+                    # 它，该会话此后每条消息都会被判成 "等待 root run" 而永远
+                    # 不发出去 —— 会话被静默卡死（r4 S18 实测 default 会话）。
+                    # 这个 try 覆盖的不只是身份门：_bind_companion_inbox_route
+                    # 的属主围栏错误（owner_tombstoned / rebind_forbidden 等）
+                    # 也会落到这里。原实现一律报 companion_identity_not_ready，
+                    # 把"会话属主坏了"说成"身份没就绪"，排查时会被带偏很远
+                    # （r5 真机实测：default 被墓碑化后一直显示身份未就绪）。
+                    # 真实原因放进 detail，code 仍保持稳定供前端分支。
+                    _identity_detail = str(
+                        getattr(_identity_exc, "code", "")
+                        or _identity_exc
+                        or type(_identity_exc).__name__
+                    )
                     await ws.send_json(
                         {
                             "type": "chat_v2_error",
                             "payload": {
                                 "error": "companion_identity_not_ready",
                                 "code": "companion_identity_not_ready",
+                                "detail": _identity_detail,
                                 "retryable": True,
                                 "session_id": _msg_sid,
+                                "request_id": str(
+                                    _payload.get("request_id")
+                                    or raw.get("request_id")
+                                    or ""
+                                )
+                                or None,
+                                "turn_id": str(
+                                    _payload.get("turn_id")
+                                    or raw.get("turn_id")
+                                    or ""
+                                )
+                                or None,
                             },
                         }
                     )
@@ -12946,6 +12974,9 @@ async def control_channel(ws: WebSocket):
                         "companion_chat_blocked_identity_not_ready",
                         session_id=_msg_sid,
                         error=type(_identity_exc).__name__,
+                        # 只记异常类名会把所有属主围栏错误压成 'RuntimeError'，
+                        # 日志里看不出到底是身份没就绪还是会话属主坏了。
+                        detail=_identity_detail,
                     )
                     continue
                 if not _companion_route_bound:
@@ -12959,6 +12990,8 @@ async def control_channel(ws: WebSocket):
                         if _scope_decision.created
                         else "companion_session_read_only"
                     )
+                    # 同上：Run 预约前夭折的一轮必须带 request_id 回去，
+                    # 否则前端 pending_root_request_id 永远挂着。
                     await ws.send_json(
                         {
                             "type": "chat_v2_error",
@@ -12967,6 +13000,18 @@ async def control_channel(ws: WebSocket):
                                 "code": _route_code,
                                 "retryable": bool(_scope_decision.created),
                                 "session_id": _msg_sid,
+                                "request_id": str(
+                                    _payload.get("request_id")
+                                    or raw.get("request_id")
+                                    or ""
+                                )
+                                or None,
+                                "turn_id": str(
+                                    _payload.get("turn_id")
+                                    or raw.get("turn_id")
+                                    or ""
+                                )
+                                or None,
                             },
                         }
                     )

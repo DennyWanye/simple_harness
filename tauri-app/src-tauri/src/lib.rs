@@ -241,6 +241,18 @@ pub fn run() {
                 window.app_handle().exit(0);
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        // 2026-08-06 r5 S16：Cmd+Q（macOS app terminate）不触发 main 窗口
+        // Destroyed，红钮/托盘之外的第三条退出路径会把 backend 留成孤儿
+        // （PPID=1，8100 继续 LISTEN）。RunEvent::Exit 是所有退出路径
+        // （Cmd+Q / exit(0) / 托盘 quit）的统一必经点，在这里兜底
+        // kill_child；Destroyed/托盘里的显式 kill 保留作先行路径。
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                if let Some(state) = app_handle.try_state::<BackendProcess>() {
+                    state.kill_child();
+                }
+            }
+        });
 }

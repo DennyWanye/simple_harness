@@ -164,6 +164,14 @@ def normalize_message_projection(
     return projection, visibility
 
 
+#: 保留会话 id：companion 主线程，同时是应用的兜底会话——删除当前会话后
+#: 前端必然回落到它。它与用户自建会话的生命周期语义不同：删除它等于"清空内容"，
+#: 而不是"退役这个会话"。若按普通会话墓碑化其属主行，`bind_session_owner_if_absent`
+#: 之后会一直抛 companion_session_owner_tombstoned，兜底目标就**永久不可用**
+#: （r5 真机实测：删过一次 default 之后，任何删除当前会话的操作都会把用户丢进
+#: 一个发什么都被拒的会话里，且报的是误导性的 companion_identity_not_ready）。
+RESERVED_DEFAULT_SESSION_ID = "default"
+
 # SQLITE_BUSY retry 参数（3.3 要求）
 _MAX_RETRIES = 5
 _BASE_DELAY_MS = 100
@@ -931,8 +939,23 @@ class SessionDB:
                             await db.rollback()
                             raise RuntimeError("companion_session_owner_rebind_forbidden")
                         if str(row[4]) != "active":
-                            await db.rollback()
-                            raise RuntimeError("companion_session_owner_tombstoned")
+                            if sid != RESERVED_DEFAULT_SESSION_ID:
+                                await db.rollback()
+                                raise RuntimeError(
+                                    "companion_session_owner_tombstoned"
+                                )
+                            # 保留会话的存量自愈：早于本次修复的版本会把 default
+                            # 当普通会话墓碑化，之后它永远绑不上（兜底目标死锁）。
+                            # 触发器禁止 UPDATE 复活，但删掉旧行后重新插入是合法的，
+                            # 且 clear() 早已把它的消息清空——没有历史被"复活"。
+                            await db.execute(
+                                "DELETE FROM companion_session_owners"
+                                " WHERE session_id=?",
+                                (sid,),
+                            )
+                            # 落到下方的新建绑定路径（不要走"返回既有行"分支）。
+                            row = None
+                    if row is not None:
                         await db.commit()
                         return {
                             "session_id": sid,
@@ -3618,16 +3641,67 @@ class SessionDB:
                     )
                     epoch_row = await cursor.fetchone()
                     await cursor.close()
-                    await self._tombstone_companion_route(
-                        db,
-                        session_id=session_id,
-                        new_epoch=int(epoch_row[0]),
-                        reason="deleted",
-                        now=time.time(),
-                    )
+                    if session_id == RESERVED_DEFAULT_SESSION_ID:
+                        # 保留会话只清内容、不退役：仍推进 scope_version 把陈旧
+                        # 投影围栏掉，但属主行保持 active，之后还能重新绑定。
+                        await self._advance_reserved_session_scope(
+                            db,
+                            session_id=session_id,
+                            new_epoch=int(epoch_row[0]),
+                            now=time.time(),
+                        )
+                    else:
+                        await self._tombstone_companion_route(
+                            db,
+                            session_id=session_id,
+                            new_epoch=int(epoch_row[0]),
+                            reason="deleted",
+                            now=time.time(),
+                        )
                     await db.commit()
 
         await self._with_retry(_do)
+
+    async def _advance_reserved_session_scope(
+        self,
+        db: aiosqlite.Connection,
+        *,
+        session_id: str,
+        new_epoch: int,
+        now: float,
+    ) -> None:
+        """清空保留会话：推进读作用域与路由 epoch，但不退役属主/路由。"""
+
+        cursor = await db.execute(
+            """SELECT profile_id,profile_generation,status
+               FROM companion_session_owners WHERE session_id=?""",
+            (session_id,),
+        )
+        owner = await cursor.fetchone()
+        await cursor.close()
+        if owner is None or str(owner[2]) != "active":
+            return
+        profile_id = str(owner[0])
+        profile_generation = int(owner[1])
+        await db.execute(
+            """UPDATE companion_session_owners
+               SET scope_version=scope_version+1,updated_at=?
+               WHERE session_id=? AND status='active'""",
+            (now, session_id),
+        )
+        await db.execute(
+            """UPDATE companion_owner_scope_versions
+               SET scope_version=scope_version+1,updated_at=?
+               WHERE profile_id=? AND profile_generation=?""",
+            (now, profile_id, profile_generation),
+        )
+        await db.execute(
+            """UPDATE companion_projection_routes
+               SET target_epoch=?,updated_at=?
+               WHERE profile_id=? AND profile_generation=?
+                 AND target_session_id=? AND status='active'""",
+            (int(new_epoch), now, profile_id, profile_generation, session_id),
+        )
 
     # ---- S14 admin surface --------------------------------------------
 

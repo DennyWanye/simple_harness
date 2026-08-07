@@ -1,0 +1,27 @@
+=== 三处修复的真机复验（r5 launch#4）===
+
+【修复 A】新建会话不进侧栏列表（改版引入）
+  见 r5-S05-manual.txt 步骤 4：新建会话未重启即出现在列表顶部。
+
+【修复 B】root turn 预约前失败导致会话被 continuation 路由永久卡死
+  r5 launch#2 实测：身份未就绪时发出的第二条消息**真的送达后端**并拿到明确
+  拒绝（后端日志有对应 companion_chat_blocked_identity_not_ready 行），
+  而不是像修复前那样静默停在「等待 Agent 读取…」、后端零日志。
+
+【修复 C】default 会话被墓碑化后永久不可用（既存缺陷）
+  修复前 DB 状态：companion_session_owners: default | tombstoned | scope_version=2
+  （r3 S18「依次删除余下所有会话」把兜底会话也删了）。
+  launch#4 在 default 里发「default自愈验证：请只回复两个字——恢复」：
+    POST https://chinzy.com/v1/chat/completions "HTTP/1.1 200 OK"
+    event='chat_v2_final_send_completed' sid='default'
+  修复后 DB 状态：default | active | scope_version=1（删旧行重插，非 UPDATE 复活）
+  → 存量损坏数据自愈成功，兜底会话恢复可用。
+  截图 r5-default-healed-win.png
+
+【修复 D】误导性错误码
+  属主围栏错误（owner_tombstoned / rebind_forbidden 等）此前一律显示为
+  companion_identity_not_ready 且日志只记 error='RuntimeError'；现已在
+  chat_v2_error 的 payload.detail 与日志 detail 字段透出真实原因。
+
+--- 环境事实 ---
+402 Payment Required 仍为反思后台链路 sf-glm-5.2 无额度，kimi-k3 主链路全程 200。

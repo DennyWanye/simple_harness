@@ -15,6 +15,10 @@ import { SessionList } from "./SessionList";
 import { controlWS } from "../code-panel/controlWs";
 
 vi.mock("../code-panel/controlWs", () => ({
+  // 占位值即可：被测逻辑只用它做"不是控制通道自己的 sid"这一层排除判断，
+  // 不依赖具体字符串。真实常量的值由 controlWs.ts 独家持有（D1 历史命名），
+  // 这里刻意不复刻，避免同一字符串散落到第二个文件。
+  CONTROL_SESSION_ID: "control-channel-sid",
   controlWS: {
     send: vi.fn(() => true),
     send_command: vi.fn(() => true),
@@ -139,5 +143,28 @@ describe("SessionList（WB-5）", () => {
     expect(
       (screen.getByTestId("session-new-topic") as HTMLButtonElement).disabled,
     ).toBe(false);
+  });
+
+  // r4 S05 真机回归：后端 list_sessions_with_preview 以「已有消息」为会话进清单的
+  // 条件，而 session_switched 触发的那次刷新时新会话还是空的，必然拉不到它。
+  // 首轮消息收尾（chat_v2_final / chat_response）必须再刷一次，否则新建的会话
+  // 在本次运行内永远不进侧栏、切走就回不去。
+  it("一轮对话收尾后重新拉清单（新会话首条消息落库后才进得了列表）", () => {
+    render(<SessionList activeSid="default" onSwitchSid={vi.fn()} />);
+    emit({ type: "session_switched", payload: { new_sid: "s-born" } });
+
+    vi.mocked(controlWS.send).mockClear();
+    emit({ type: "chat_v2_final", payload: { session_id: "s-born" } });
+    expect(controlWS.send).toHaveBeenCalledWith({ type: "sessions_list" });
+
+    vi.mocked(controlWS.send).mockClear();
+    emit({ type: "chat_response", payload: { session_id: "s-born" } });
+    expect(controlWS.send).toHaveBeenCalledWith({ type: "sessions_list" });
+
+    // 中间态事件不应造成清单抖动（每个 token/工具事件都刷会打爆控制通道）。
+    vi.mocked(controlWS.send).mockClear();
+    emit({ type: "tool_call", payload: { session_id: "s-born" } });
+    emit({ type: "tool_result", payload: { session_id: "s-born" } });
+    expect(controlWS.send).not.toHaveBeenCalledWith({ type: "sessions_list" });
   });
 });
