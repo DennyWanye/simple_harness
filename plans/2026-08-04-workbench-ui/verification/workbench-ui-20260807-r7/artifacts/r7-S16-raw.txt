@@ -1,0 +1,28 @@
+=== 步骤1 几何锚点（真 HID 拖拽）===
+99:107: execution error: “System Events”遇到一个错误：不能获得“process 1 whose name = "simple-harness"”。无效的索引。 (-1719)
+  起始 geom=   
+99:107: execution error: “System Events”遇到一个错误：不能获得“process 1 whose name = "simple-harness"”。无效的索引。 (-1719)
+  锚点 geom=   
+FRONT_FAIL(front=WeChat)
+  几何文件={"width":1260,"height":840,"x":520,"y":340}
+=== 步骤2 路径A 标题栏红钮 ===
+  [路径A 红钮] app=0 backend=0 port8100=0 进程存在=0
+=== 步骤3 重启 ===
+  重启 geom=260 170 1260 840
+  锚点对照: [   ]
+=== 步骤4 路径B Cmd+Q ===
+  [路径B Cmd+Q] app=0 backend=0 port8100=0 进程存在=0
+=== 步骤5 重启 ===
+  重启 geom=260 170 1260 840
+  锚点对照: [   ]
+=== 步骤6 路径C 托盘退出 ===
+  [路径C 托盘退出] app=0 backend=0 port8100=0 进程存在=0
+=== 步骤7 重启 ===
+  重启 geom=260 170 1260 840
+  锚点对照: [   ]
+=== 步骤8 隐藏语义反证（托盘「隐藏主窗」）===
+  windows=0 app=1 backend=1 port8100=1
+  托盘菜单项存在=1
+  → 恢复主窗
+  恢复后 geom=210 116 1260 840
+=== S16 矩阵完毕 ===

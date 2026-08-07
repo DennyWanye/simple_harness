@@ -1,0 +1,43 @@
+# S14 真机道 — 托盘菜单三项（TC-WB-14 / B10）
+执行：AI (manual-mcp / cliclick 真 HID 点托盘 + AX 读菜单)；2026-08-08；relay dev
+基线：cad272e；用户数据 .testenv/cold-A
+
+## 步骤1 点托盘图标，核对三项与旧文案
+托盘图标 AX 位置 @863,4（menu bar item 1 of menu bar 2），真 HID 点击 @881,16 弹出菜单。
+AX 实读菜单项（`name of every menu item`）：
+  **显示主窗, 隐藏主窗, 退出 Simple Harness**  —— 恰好三项 ✓
+旧文案扫描：对同一份菜单项名做 `grep -cE '桌宠|DeskPet'` → **0 处命中** ✓
+  （即「显示桌宠」「隐藏桌宠」「退出 DeskPet」均不存在）
+证据：r7-S14-01-traymenu.png
+
+## 步骤2 主窗可见时点「隐藏主窗」
+隐藏前：视图=会话，geom = 210 116 1260 840
+点击后：**windows=0**，但 **app=1**、**托盘菜单项=1**
+⇒ 主窗不在屏幕上，但**未被销毁**：应用仍在运行、托盘图标仍在 ✓
+
+## 步骤3 点「显示主窗」
+点击后：**windows=1**，geom = **210 116 1260 840**（与隐藏前**逐位一致**），
+头部条显示「默认话题」，视图状态未丢 ✓
+说明（如实）：隐藏前那次头部条 AX 读数返回空串（AX 瞬时读取失败，本轮已知噪声），
+故"内容一致"的判定以**几何逐位一致 + 显示后视图/会话正确渲染**为准，
+不宣称做了隐藏前后的头部文本逐字比对。
+证据：r7-S14-03-shown.png
+
+## 步骤4 点「退出 Simple Harness」
+退出前实测（确认非空跑）：app=**1** backend=**1** port8100=**1**
+退出后：**app=0 / backend=0 / port8100=0 / 进程数=0**
+⇒ 窗口关闭 + 托盘图标消失 + 主进程退出 + backend 无孤儿 + 8100 无 LISTEN ✓
+核对命令：
+  pgrep -f 'target/debug/simple-harness' ; pgrep -f 'venv/bin/python main.py'
+  lsof -nP -iTCP:8100 -sTCP:LISTEN
+  osascript … count of (every process whose name is "simple-harness")
+注：backend 核对用的是 `venv/bin/python main.py`——`backend/main.py` 这个 pattern
+**永远匹配不到**（真实 cmdline 的 cwd 是 backend/，参数只有 main.py），前轮踩过。
+
+## Run 创建负向断言（expected_run_created=false）
+全程只有托盘菜单交互与进程生命周期操作，未发消息、未触发技能或生成。
+硬证据（.testenv/cold-A/data/workflow.db，步骤4 后取）：trace_runs 总数=**32**，
+最新 started_at = 2026-08-07 23:45:30（属 S05 步骤5），早于本场景 ⇒ 增量为 0 ✓
+
+判定：步骤 1–4 全部满足，无任何旧文案残留 → **S14 PASS**
+VERDICT_PASS

@@ -1,0 +1,71 @@
+# S01 真机道 — 主窗普通窗口形态（TC-WB-01 / B1）
+执行：AI (manual-mcp / cliclick 真 HID + AX)；2026-08-08；relay dev（dev 方式，已记录）
+基线：cad272e
+前置：**全新隔离 user-data**：`rm -rf .testenv/cold-S01-r7` 后以
+`DESKPET_USER_DATA_DIR=$ROOT/.testenv/cold-S01-r7` 冷启动（首启居中断言依赖冷数据）
+环境：**单显示器**（`system_profiler SPDisplaysDataType | grep -c 'Resolution:'` = 1）
+      → 按裁决第 5 条执行居中判定（非多显示器的"只记录不断言"分支）
+屏幕：`bounds of window of desktop` = 0,0,1470,956
+
+## 步骤1 普通窗口形态
+- **系统标题栏存在**，AX 实读 window 1 的按钮 subrole：
+  `AXCloseButton, AXFullScreenButton, AXMinimizeButton` ⇒ mac 三钮俱全 ✓
+- 窗口内容**不透明**，无桌面背景透出（截图可见纯深色内容区）✓
+- **无任何桌宠角色立绘/动画**（内容区是工作台 UI + onboarding 向导）✓
+证据：r7-S01-01-coldstart.png
+
+## 步骤2 初始位置与尺寸（单显示器，执行居中判定）
+geom = **235 111 1000 701**
+- 尺寸 1000×701 = 默认 **1000×700**（+1 为 AX outer 高 vs conf inner 高的取整差，
+  落在"系统缩放取整误差"内）✓
+- 居中判定（口径：窗口几何中心落在屏幕中心 ±10% 内）：
+    窗口中心 = (235+1000/2, 111+701/2) = **(735, 461.5)**
+    屏幕中心 = (1470/2, 956/2)        = **(735, 478)**
+    横向偏差 = 0 px = 屏宽的 **0.0%**（阈值 ≤10%）✓
+    纵向偏差 = 16.5 px = 屏高的 **1.7%**（阈值 ≤10%）✓
+  ⇒ 居中成立 ✓
+
+## 步骤3 Dock / Cmd+Tab 可见（skipTaskbar=false 语义）
+- Dock 列表实查命中 **1**（`UI element of list 1 of process "Dock"` 内含 Simple Harness）✓
+- 进程为普通可切换应用（AXTitle = "SimpleHarness"，非 accessory/后台型）✓
+
+## 步骤4 拖拽移动与缩放，可超过默认尺寸
+真 HID 拖右下角外扩：1000×701 → **1100×740** ⇒ 可放大超过默认 1000×700，
+无 max 限制卡住 ✓（拖标题栏移动在 S10/S16 已多次实证，同一窗体）
+
+## 步骤5 持续内缩到不能再小
+真 HID 拖右下角内收到底：最终停在 **800×560** ⇒ 与 tauri.conf.json 的
+minWidth/minHeight (800/560) 完全一致，不能更小 ✓
+
+## 步骤6 最大化/还原（maximizable）
+**平台语义偏差（如实记录，非缺陷）**：本窗口绿钮的 AX subrole 是
+**AXFullScreenButton**（不是 AXZoomButton）——这是 macOS 的默认约定：绿钮=全屏。
+两种能力分别实证：
+- **全屏**：按 AXFullScreenButton → geom 变为全屏态；Cmd+Ctrl+F 退出 →
+  **精确还原 235 111 1100 740** ✓
+- **最大化(zoom)**：Window 菜单 → **Zoom** → geom = **0 33 1470 923**
+  （填满菜单栏以下整屏）；再次 Zoom → **精确还原 235 111 1100 740** ✓
+  （Option+绿钮 在本构建下无效，已实测并记录）
+⇒ TC 该步要判的性质「窗口可最大化/还原（maximizable）」**成立** ✓；
+  差异仅在于触发控件是 Window→Zoom 而非绿钮直接点击，属 macOS 平台约定。
+证据：r7-S01-06-fullscreen.png / r7-S01-06-zoomed.png
+
+## 步骤7 静态核对（脚本辅助，非判定主体）
+- `grep -c 'macOSPrivateApi' tauri-app/src-tauri/tauri.conf.json` → **0** ✓
+- `grep -n '"transparent"' …` → 第 23 行 `"transparent": false` ✓
+
+## 附带发现（不属本场景判定项，归 S15 口径）
+冷启动 onboarding 首屏仍是**旧品牌文案**：
+  「**欢迎使用 DeskPet**」/「DeskPet 是一只住在你桌面上的 AI 桌宠。它能陪你聊天、
+   记住你说过的事、帮你做 PPT、查资料，还能进入"代码模式"帮你写程序。」
+而标题栏已正确显示 **Simple Harness**。这是本轮找到的第 3 处 DeskPet 残留
+（另两处：S03 的反馈弹窗正文、r6 记录的 onboarding）。归 S15 处理。
+
+## Run 创建负向断言（expected_run_created=false）
+全程只有冷启动与窗口形态操作（拖拽/缩放/全屏/zoom），未发消息、未触发技能。
+本场景使用**独立的全新 user-data** `.testenv/cold-S01-r7`，其
+`data/workflow.db` 为首启新建，无任何历史 run；本场景期间亦未产生 root run ✓
+
+判定：步骤 1–6 全部满足（形态/居中/默认尺寸/min 尺寸/Dock 可见/不透明/可最大化还原）
+→ **S01 PASS**
+VERDICT_PASS
