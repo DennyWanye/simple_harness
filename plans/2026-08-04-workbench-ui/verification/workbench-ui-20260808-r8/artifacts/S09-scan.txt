@@ -1,0 +1,13 @@
+grep -riE "petcanvas|pet-anim|pet-engine" tauri-app/src -> 1 hits, 0 non-comment
+grep -riE "petcharacter|pettransform|petmodels|petstatemachine" tauri-app/src -> 4 hits, 0 non-comment
+for d in tauri-app/src/pet-anim tauri-app/src/pet- -> ''
+grep -rn "click_through" tauri-app/src-tauri/src | -> ''
+grep -rniE "petmodels" tauri-app/src || true -> ''
+tsc: 0
+VERDICT_PASS
+
+## Run 创建负向断言（expected_run_created=false）
+本项为 静态代码扫描（grep/tsc），全程未启动应用 ⇒ 结构上不可能产生 root Run。
+硬证据（.testenv/cold-A/data/workflow.db，r8 脚本道跑完后取）：
+  trace_runs 总数=32  最新 started_at=2026-08-07 23:45:30.809008
+最新 run 早于 r8 脚本道执行窗口 ⇒ 本场景 root run 增量为 0。

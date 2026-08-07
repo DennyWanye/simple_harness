@@ -1,0 +1,18 @@
+step4(0):
+
+step5(0):
+
+step6 hits:
+tauri-app/src/stores/harnessPublicSnapshotStore.test.ts:161:      // T9（workbench-ui）：message-panel/ 退役 —— 巡检面板迁 chat/，
+tauri-app/src/code-panel/controlWs.ts:38:// （#/message-panel → message-panel 窗身份）；message-panel 窗口删除后
+tauri-app/src/code-panel/controlWs.ts:45: * 控制会话 sid。**历史命名保留**：字符串 "message-panel-main" 源自独立
+tauri-app/src/code-panel/controlWs.ts:50:export const CONTROL_SESSION_ID = "message-panel-main";
+tauri-app/src/code-panel/controlWs.ts:234:  // 2026-08-04 Workbench UI 改版（B5）：message-panel 独立窗口已并入主窗，
+tauri-app/src-tauri/src/commands.rs:206:// 2026-08-04 Workbench UI 改版（WB-2）：message-panel 独立窗口删除，
+tauri-app/src-tauri/src/webview_permissions.rs:15:/// message-panel 窗口已并入主窗，companion_action 的合法窗口标签从
+tauri-app/src-tauri/src/webview_permissions.rs:16:/// "message-panel" 迁移为 "main"。同一迁移必须五处同步（本白名单 /
+tauri-app/src-tauri/src/webview_permissions.rs:85:    // message-panel 窗口已删除（绑定 acceptance「only-add 显式删除例外」）。
+tauri-app/src-tauri/src/webview_permissions.rs:90:        assert!(authorize_window_control_scope("message-panel", "companion_action").is_err());
+tauri-app/src-tauri/src/webview_permissions.rs:91:        assert!(authorize_window_control_scope("message-panel", "identity_bind").is_err());
+step6-disallowed=0
+VERDICT_PASS
