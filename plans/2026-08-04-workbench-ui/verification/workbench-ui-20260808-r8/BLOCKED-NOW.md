@@ -91,3 +91,49 @@ node_modules / macOS 权限），按环境路线排查。
 脚本道 6/6 绿；真机道 0/15，**因应用起不来而无法推进**。
 仍未在账本记 blocked（理由同上：blocked 在 `compute_scenario_status` 里同样是
 永久粘性，会让 r8 步 r7 后尘永久收不了尾）。
+
+---
+
+# 更正（04:27）：屏幕处于锁定状态 —— 上面"怀疑 b68e958 回归"很可能是错的
+
+## 实测
+```
+ioreg -n Root -d1 -a | grep -A1 CGSSessionScreenIsLocked
+  → <true/>
+```
+**现在（04:27）屏幕是锁着的**，而三次失败启动发生在 04:09–04:23。
+
+（注：`CGSSessionScreenLockedTime` **不是 Unix epoch**，按 epoch 换算得到未来时间
+05:14，属误读，不能用它推锁屏时刻。此处只采信"当前已锁"这一可靠事实。）
+
+## 锁屏可以解释全部症状，无需假设代码回归
+- 全屏截图只有壁纸、**连 Chrome 等其它应用窗口都没有** —— 锁屏时 WindowServer
+  不合成用户窗口，这条之前被我忽略了，它才是最关键的线索
+- `count of windows` = 0 —— 同上，AX 在锁屏下取不到窗口
+- 钥匙串弹窗"未经授权自己消失" —— 会话锁定时系统会撤下该弹窗
+- **WebView 被挂起 → `App.tsx` 的 bootstrap effect 从未执行 → 没有
+  `invoke("start_backend")` → 既没有 `[backend_launch]` 也没有
+  `[bootstrap] start_backend failed`** —— 这正是之前想不通的那一点
+- Rust 侧的 window_geometry 打点照常输出 —— 那段在 setup 里跑，不依赖 WebView
+
+## 结论修正
+**撤回**"`b68e958` 品牌修复是首要嫌疑"。当时的推理是"自 b68e958 后从未成功启动过"，
+但那段时间恰好也是机器进入锁屏的时间窗，两者混淆了。**不要**据此去二分排查
+b68e958，会白白浪费时间去找一个可能不存在的回归。
+
+## 决定性验证（需要用户）
+1. **解锁屏幕**（这一步 AI 做不了）
+2. 重跑 `artifacts/launch-app.sh`，观察：
+   - `[backend_launch] Dev python=... backend_dir=...` 是否出现
+   - `backend=1 port8100=1`、`drive.sh geom` 是否返回有效几何
+3. 若正常 → 之前三次失败纯属锁屏，r8 真机道直接继续，**无需任何代码改动**
+4. 若仍异常 → 那时才回到 b68e958 对照实验（`git worktree add --detach <tmp> 33f6b5f^`）
+
+## 附带教训（值得写进驱动纪律）
+真机 UI 测试前**必须先断言屏幕未锁**，否则所有 AX 查询、截图、窗口计数全是
+无效观测，而且失败形态酷似"应用起不来"，极易误判成代码回归。
+建议加进 `drive.sh` 的前置硬闸：
+```
+ioreg -n Root -d1 -a | grep -q "CGSSessionScreenIsLocked" && \
+  { echo "SCREEN_LOCKED: 观测无效，先解锁" >&2; exit 3; }
+```
