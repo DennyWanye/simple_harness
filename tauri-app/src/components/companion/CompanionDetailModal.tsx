@@ -112,7 +112,7 @@ export function CompanionDetailModal({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="桌宠成长详情"
+      aria-label="伙伴成长详情"
       data-testid="companion-detail-modal"
       style={overlayStyle}
     >

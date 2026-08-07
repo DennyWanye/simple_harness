@@ -129,7 +129,7 @@ function OnboardingWizardImpl({
 
   return (
     <div data-testid="onboarding-wizard" style={overlayStyle}>
-      <div style={cardStyle} role="dialog" aria-label="DeskPet 初次设置">
+      <div style={cardStyle} role="dialog" aria-label="Simple Harness 初次设置">
         {/* Step indicator — one dot per step in the active edition's list */}
         <div style={stepBarStyle}>
           {steps.map((s, n) => (
@@ -146,10 +146,10 @@ function OnboardingWizardImpl({
 
         {currentStep?.id === "welcome" && (
           <div data-testid="onboarding-step-welcome">
-            <h2 style={titleStyle}>欢迎使用 DeskPet 🐾</h2>
+            <h2 style={titleStyle}>欢迎使用 Simple Harness</h2>
             <p style={bodyStyle}>
-              DeskPet 是一只住在你桌面上的 AI 桌宠。它能陪你聊天、记住你说过的事、
-              帮你做 PPT、查资料，还能进入"代码模式"帮你写程序。
+              Simple Harness 是一个住在你桌面上的 AI 工作台。它能陪你聊天、记住你
+              说过的事、帮你做 PPT、查资料，还能进入"代码模式"帮你写程序。
             </p>
             <p style={bodyStyle}>很快就能开始 —— 整个过程不到 1 分钟。</p>
           </div>
@@ -159,7 +159,7 @@ function OnboardingWizardImpl({
           <div data-testid="onboarding-step-connectModel">
             <h2 style={titleStyle}>接入大模型</h2>
             <p style={bodyStyle}>
-              DeskPet 的"大脑"需要一个大语言模型。填入你的服务地址、模型名和密钥，
+              Simple Harness 的"大脑"需要一个大语言模型。填入你的服务地址、模型名和密钥，
               点"测试连接"验证后即可继续。
             </p>
             <label style={labelStyle}>
@@ -229,14 +229,14 @@ function OnboardingWizardImpl({
           <div data-testid="onboarding-step-ready">
             <h2 style={titleStyle}>本地记忆能力</h2>
             <p style={bodyStyle}>
-              DeskPet 会在后台下载一个本地记忆模型 (BGE-M3，约 286MB)，
+              Simple Harness 会在后台下载一个本地记忆模型 (BGE-M3，约 286MB)，
               用来记住你和它的对话。
             </p>
             <p style={bodyStyle}>
               下载完成前，记忆功能会以"轻量模式"运行 —— 不影响聊天，
               只是长期记忆会稍弱一些。下载完成后自动切换，无需任何操作。
             </p>
-            <p style={bodyStyle}>一切就绪，开始和 DeskPet 玩吧！</p>
+            <p style={bodyStyle}>一切就绪，开始用 Simple Harness 干活吧！</p>
           </div>
         )}
 

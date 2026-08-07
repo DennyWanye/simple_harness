@@ -57,7 +57,7 @@ pub enum ResolveError {
 pub fn format_user_message(err: &ResolveError) -> String {
     match err {
         ResolveError::NoBackendFound { tried } => format!(
-            "DeskPet 找不到 Python backend。\n\n\
+            "Simple Harness 找不到 Python backend。\n\n\
              尝试过的位置：\n{}\n\n\
              如果你是开发者，请设置 DESKPET_BACKEND_DIR 环境变量指向仓库的 backend/ 目录，\
              或把代码检出到 CARGO_MANIFEST_DIR/../../backend。\n\
@@ -70,7 +70,7 @@ pub fn format_user_message(err: &ResolveError) -> String {
             p.display(),
         ),
         ResolveError::BundleExeMissing(p) => format!(
-            "DeskPet 安装损坏：找不到 backend 可执行文件。\n\n\
+            "Simple Harness 安装损坏：找不到 backend 可执行文件。\n\n\
              期望位置：\n{}\n\n\
              请卸载后重新安装。",
             p.display(),

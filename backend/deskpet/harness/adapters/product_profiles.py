@@ -48,7 +48,7 @@ def _workflow_payload(kind: str, blob_root: str):
             "full_page_images": (
                 False if editable_required else full_page_images
             ),
-            "title": str(payload.get("title") or topic), "author": str(payload.get("author") or "DeskPet"),
+            "title": str(payload.get("title") or topic), "author": str(payload.get("author") or "Simple Harness"),
             "output_path": payload.get("output_path"),
             "blob_root": str(payload.get("blob_root") or blob_root),
         }

@@ -214,7 +214,7 @@ async def main() -> int:
         outline,
         theme="minimal",
         title=topic,
-        author="DeskPet",
+        author="Simple Harness",
         output_path=str(out_path),
     )
     print(f"\nppt_create → {result}")

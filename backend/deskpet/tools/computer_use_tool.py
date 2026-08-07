@@ -216,7 +216,7 @@ _SCHEMA_CAPTURE: dict[str, Any] = {
     "name": "screen_capture",
     "description": (
         "Take a screenshot of the primary screen for visual inspection "
-        "of a desktop app under test. Saves a PNG into the DeskPet "
+        "of a desktop app under test. Saves a PNG into the Simple Harness "
         "workspace and ALSO returns it base64-encoded so you (a "
         "vision-capable model) can look at it directly. Use this before "
         "every click to confirm UI state."

@@ -87,7 +87,7 @@ export function ModelDownloadBanner({ getChannel }: Props) {
     <div style={bannerStyle} data-testid="model-download-banner">
       {state === "error" ? (
         <div style={{ color: "#fecaca" }}>
-          ⚠ 模型下载失败：{payload.error || "未知错误"}。请检查网络后重启 DeskPet 重试。
+          ⚠ 模型下载失败：{payload.error || "未知错误"}。请检查网络后重启 Simple Harness 重试。
         </div>
       ) : (
         <>

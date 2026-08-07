@@ -307,7 +307,7 @@ export function MessageStreamPanel({
   return (
     <div
       role="region"
-      aria-label="桌宠消息流"
+      aria-label="消息流"
       data-testid="msgstream-panel"
       style={embedded ? embeddedWrapperStyle : wrapperStyle}
     >

@@ -287,7 +287,7 @@ def _iter_glob_matches(
 _SCHEMA_READ: dict[str, Any] = {
     "name": "file_read",
     "description": (
-        "Read a UTF-8 text file from the DeskPet workspace. Supports "
+        "Read a UTF-8 text file from the Simple Harness workspace. Supports "
         "line offset + limit for large files. Returns content + lines_read."
     ),
     "parameters": {

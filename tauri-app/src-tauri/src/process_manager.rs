@@ -232,7 +232,7 @@ fn check_port_free(port: u16) -> Result<(), String> {
         }
         Err(e) => Err(format!(
             "端口 {port} 已被其它程序占用（错误：{e}）。\n\
-             请关闭其它 DeskPet 实例或占用该端口的程序后重试。"
+             请关闭其它 Simple Harness 实例或占用该端口的程序后重试。"
         )),
     }
 }

@@ -365,7 +365,7 @@ _TIER_TO_CATEGORY: dict[str, str] = {
 _MEMORY_WRITE_SCHEMA: dict[str, Any] = {
     "name": "memory_write",
     "description": (
-        "Persist a fact / observation to DeskPet long-term memory. "
+        "Persist a fact / observation to Simple Harness long-term memory. "
         "Use when the user shares a preference, name, project detail, "
         "or any fact worth recalling later."
     ),
@@ -394,7 +394,7 @@ _MEMORY_WRITE_SCHEMA: dict[str, Any] = {
                 "type": "boolean",
                 "default": False,
                 "description": (
-                    "Pin this memory so DeskPet never lets it decay/forget. "
+                    "Pin this memory so Simple Harness never lets it decay/forget. "
                     "Set true when the user explicitly says to ALWAYS remember "
                     "or never forget (e.g. \"记住/别忘了/永远记住 ...\"). "
                     "Pinned facts skip the daily decay sweep."
@@ -423,7 +423,7 @@ _MEMORY_READ_SCHEMA: dict[str, Any] = {
 _MEMORY_SEARCH_SCHEMA: dict[str, Any] = {
     "name": "memory_search",
     "description": (
-        "Search DeskPet memory by free-text query. Returns up to top_k "
+        "Search Simple Harness memory by free-text query. Returns up to top_k "
         "matching facts (LIKE-based; future EnhancedRetriever upgrade)."
     ),
     "parameters": {

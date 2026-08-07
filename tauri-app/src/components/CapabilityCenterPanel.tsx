@@ -202,7 +202,7 @@ export function CapabilityCenterPanel({
     setNotice(
       authorizationMode === "auto"
         ? "已按 Auto 模式直接提交；操作卡会保留授权审计状态。"
-        : "请求已提交；若需要敏感权限，DeskPet 会按 Manual 模式确认。",
+        : "请求已提交；若需要敏感权限，Simple Harness 会按 Manual 模式确认。",
     );
   };
 
@@ -455,7 +455,7 @@ function CapabilityDetail({
         >
           <h4 style={{ margin: 0 }}>清单详情</h4>
           <dl style={detailGridStyle}>
-            <dt>兼容 DeskPet</dt>
+            <dt>兼容 Simple Harness</dt>
             <dd>{capability.manifest.compatibility.deskpet}</dd>
             <dt>操作系统</dt>
             <dd>{capability.manifest.compatibility.os.join("、") || "未声明"}</dd>

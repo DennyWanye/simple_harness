@@ -1726,7 +1726,7 @@ def _render_title_v2(slide, outline: SlideOutline, theme: Theme) -> None:
             align="left",
         )
     _add_text(
-        slide, "DeskPet",
+        slide, "Simple Harness",
         left=Inches(0.66), top=Inches(4.82),
         width=Inches(1.6), height=Inches(0.28),
         font_size=11, bold=True,
@@ -4641,7 +4641,7 @@ def ppt_create(
     *,
     theme: str = "minimal",
     title: str = "",
-    author: str = "DeskPet",
+    author: str = "Simple Harness",
     output_path: Optional[str] = None,
     template: Optional[str] = None,
     dry_run: bool = False,
@@ -5212,7 +5212,7 @@ _PPT_SCHEMA = {
         "— bullets are cues, not scripts.\n"
         "两种视觉风格(二选一,别混用):\n"
         "① AI 整页生图(最惊艳,适合'用AI配图/惊艳/视觉冲击/封面海报感'的需求): "
-        "每页 layout='image_full' + 写一段英文 image_prompt,DeskPet 会用 "
+        "每页 layout='image_full' + 写一段英文 image_prompt,Simple Harness 会用 "
         "AI 出图生成电影感全屏背景图铺满整页、标题压在底部暗带。"
         "这种模式【不要】传 template 参数。每张图约 1~2 分钟,4 页请耐心等。\n"
         "② 模板填充(可编辑/正式商务): 传 template=模板名,用模板的设计页填文字。"
@@ -5247,7 +5247,7 @@ _PPT_SCHEMA = {
                 "default": "minimal",
             },
             "title": {"type": "string", "description": "Document title (core properties)."},
-            "author": {"type": "string", "description": "Author name. Defaults to DeskPet."},
+            "author": {"type": "string", "description": "Author name. Defaults to Simple Harness."},
             "output_path": {
                 "type": "string",
                 "description": "Absolute output path. Defaults to a temp file.",
@@ -5255,7 +5255,7 @@ _PPT_SCHEMA = {
             "template": {
                 "type": "string",
                 "description": (
-                    "Optional .pptx template path. When provided and valid, DeskPet "
+                    "Optional .pptx template path. When provided and valid, Simple Harness "
                     "loads it, adds slides from its layouts, fills placeholders, and "
                     "inherits editable formatting from the template."
                 ),
@@ -5363,7 +5363,7 @@ def _handle_ppt_create(
     kwargs = dict(
         theme=str(args.get("theme") or "minimal"),
         title=str(args.get("title") or ""),
-        author=str(args.get("author") or "DeskPet"),
+        author=str(args.get("author") or "Simple Harness"),
         output_path=(str(args["output_path"]) if args.get("output_path") else None),
         template=(str(args["template"]) if args.get("template") else None),
         dry_run=bool(args.get("dry_run", False)),
@@ -5515,7 +5515,7 @@ def _coerce_ppt_pro_args(args: dict[str, Any]) -> dict[str, Any]:
             False if editable_required else full_page_images
         ),
         "title": str(args.get("title") or topic),
-        "author": str(args.get("author") or "DeskPet"),
+        "author": str(args.get("author") or "Simple Harness"),
         "output_path": str(args["output_path"]) if args.get("output_path") else None,
     }
 
@@ -5588,7 +5588,7 @@ _PPT_PRO_SCHEMA = {
                 "description": "True uses AI full-slide images when reachable; false uses templates.",
             },
             "title": {"type": "string"},
-            "author": {"type": "string", "default": "DeskPet"},
+            "author": {"type": "string", "default": "Simple Harness"},
             "output_path": {
                 "type": "string",
                 "description": "Optional absolute output .pptx path.",

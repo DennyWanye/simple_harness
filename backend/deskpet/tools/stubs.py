@@ -62,7 +62,7 @@ def _maybe_register(
 _MEMORY_WRITE_SCHEMA: dict[str, Any] = {
     "name": "memory_write",
     "description": (
-        "Persist a fact / observation to DeskPet long-term memory. "
+        "Persist a fact / observation to Simple Harness long-term memory. "
         "(Pending T3.1 schema migration to FactsStore.)"
     ),
     "parameters": {

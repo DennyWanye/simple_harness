@@ -69,7 +69,7 @@ export function CompanionCard({
       }}
     >
       <div style={{ fontSize: 12, color: "#a5b4fc", marginBottom: 8 }}>
-        桌宠成长 · {notification.kind}
+        伙伴成长 · {notification.kind}
       </div>
       <div style={{ display: "grid", gap: 7, fontSize: 13, lineHeight: 1.55 }}>
         {event.tombstone ? (

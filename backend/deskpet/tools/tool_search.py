@@ -30,7 +30,7 @@ from .capabilities import ToolCapabilityBridgeService
 _SCHEMA: dict[str, Any] = {
     "name": "tool_search",
     "description": (
-        "Search the complete DeskPet tool registry by keyword. Use this when "
+        "Search the complete Simple Harness tool registry by keyword. Use this when "
         "you need a capability that isn't in your current toolset (e.g. file "
         "ops, web fetch, todo management). Returns matching tools' schemas; "
         "invoke them directly on the next turn."

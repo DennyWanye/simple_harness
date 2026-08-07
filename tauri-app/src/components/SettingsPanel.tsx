@@ -393,7 +393,7 @@ function UpdateSection() {
         <div style={statusStyle}>
           正在下载并安装{pct !== null ? ` … ${pct}%` : "…"}
           <div style={{ marginTop: 6, color: dark.textMuted, fontSize: 11.5 }}>
-            安装时 DeskPet 会自动关闭，请稍候它重新启动。
+            安装时 Simple Harness 会自动关闭，请稍候它重新启动。
           </div>
         </div>
       )}
@@ -533,7 +533,7 @@ function AutoModeToggle({
       </label>
       <p style={{ fontSize: 11, color: dark.textMuted, margin: 0, lineHeight: 1.5 }}>
         开启后，读写文件、运行命令、联网、技能安装等 Agent 工具权限会直接放行；
-        能力安装/生成卡片会标记“Auto 已授权”以便审计，不再弹 DeskPet 授权窗口。
+        能力安装/生成卡片会标记“Auto 已授权”以便审计，不再弹 Simple Harness 授权窗口。
         关闭后恢复逐项确认。这个开关不等于 Windows 管理员权限，也不会绕过系统级限制。
       </p>
       {err && <span style={{ color: "#fca5a5", fontSize: 11 }}>{err}</span>}
@@ -674,7 +674,7 @@ function DangerZoneSection() {
     const confirmed = window.confirm(
       `即将删除：${scope}\n\n` +
         "这将清除所有聊天历史、云端账号设置、预算记录和日志，无法撤销。\n" +
-        "删除完成后 DeskPet 将自动退出。\n\n确认继续？",
+        "删除完成后 Simple Harness 将自动退出。\n\n确认继续？",
     );
     if (!confirmed) return;
 
@@ -831,7 +831,7 @@ function DataDirSection() {
         (moveData
           ? `并将现有数据（约 ${sizeStr}）从\n${setting.effective}\n复制并删除原位置文件。\n\n`
           : "（不移动现有数据 — 旧目录保留，新目录从空开始）\n\n") +
-        "DeskPet 需要重启才能完全生效。继续？",
+        "Simple Harness 需要重启才能完全生效。继续？",
     );
     if (!confirmed) return;
 
@@ -852,11 +852,11 @@ function DataDirSection() {
           dst: target,
         });
         setOpMsg(
-          `已保存并移动 ${formatMb(moved)} 数据。请重启 DeskPet 让所有进程读到新路径。`,
+          `已保存并移动 ${formatMb(moved)} 数据。请重启 Simple Harness 让所有进程读到新路径。`,
         );
       } else {
         setOpMsg(
-          "已保存。下次启动时 DeskPet 会从新路径读写。",
+          "已保存。下次启动时 Simple Harness 会从新路径读写。",
         );
       }
     } catch (e) {
@@ -890,7 +890,7 @@ function DataDirSection() {
         );
         setSetting(updated);
         setNewPath(updated.effective);
-        setOpMsg("已切回默认目录设置。请重启 DeskPet 生效。");
+        setOpMsg("已切回默认目录设置。请重启 Simple Harness 生效。");
       } else {
         setOpErr("无法识别默认目录（%AppData% 未设置？）");
       }
@@ -924,7 +924,7 @@ function DataDirSection() {
     <section style={sectionStyle}>
       <h3 style={h3Style}>数据目录</h3>
       <p style={hintStyle}>
-        DeskPet 的聊天历史、配置、SQLite 数据库和设备 ID 都保存在这里。
+        Simple Harness 的聊天历史、配置、SQLite 数据库和设备 ID 都保存在这里。
         如果 C 盘空间紧张，可以搬到其他磁盘。
       </p>
 

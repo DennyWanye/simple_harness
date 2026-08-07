@@ -7270,7 +7270,7 @@ def _configure_ppt_workflow_adapter(launcher):
             editable_required=bool(values.get("editable_required", True)),
             full_page_images=bool(values.get("full_page_images", False)),
             title=str(values.get("title") or values["topic"]),
-            author=str(values.get("author") or "DeskPet"),
+            author=str(values.get("author") or "Simple Harness"),
             output_path=values.get("output_path"),
             blob_root=str(values.get("blob_root") or ""),
         )

@@ -359,7 +359,7 @@ def register_orchestration_controls(registry: Any, profiles: ProfileRegistry) ->
                 "name": EXTERNAL_ACTION_WAIT,
                 "description": (
                     "Pause the current action when progress requires an external "
-                    "user step that DeskPet cannot perform, such as accepting a "
+                    "user step that Simple Harness cannot perform, such as accepting a "
                     "Windows UAC prompt, signing in, or supplying content in a "
                     "third-party application. The host resumes this exact call and "
                     "Attempt after the user reports the step was handled. Treat "

@@ -108,7 +108,7 @@ function FeedbackPanelImpl({
         </div>
 
         <p style={hintStyle}>
-          描述你遇到的问题，DeskPet 会打包诊断信息（崩溃记录 + 最近日志 +
+          描述你遇到的问题，Simple Harness 会打包诊断信息（崩溃记录 + 最近日志 +
           匿名使用计数）。<strong>诊断包不含你的 API 密钥</strong>。
         </p>
 
@@ -116,7 +116,7 @@ function FeedbackPanelImpl({
           data-testid="feedback-note"
           style={textareaStyle}
           value={note}
-          placeholder="例如：点击设置保存后桌宠没反应，重启也没用…（至少 10 个字）"
+          placeholder="例如：点击设置保存后没反应，重启也没用…（至少 10 个字）"
           rows={5}
           onChange={(e) => setNote(e.target.value)}
         />

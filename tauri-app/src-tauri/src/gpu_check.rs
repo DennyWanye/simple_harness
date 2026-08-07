@@ -50,7 +50,7 @@ pub struct GpuInfo {
 pub fn format_user_message(err: &GpuCheckError) -> String {
     match err {
         GpuCheckError::NvmlInitFailed(detail) => format!(
-            "DeskPet 需要 NVIDIA GPU 才能运行。\n\n\
+            "Simple Harness 需要 NVIDIA GPU 才能运行。\n\n\
              无法初始化 NVIDIA 驱动 (NVML)，请确认：\n\
              • 机器上有 NVIDIA 显卡\n\
              • 已安装最新版 NVIDIA 驱动并重启\n\n\
@@ -58,14 +58,14 @@ pub fn format_user_message(err: &GpuCheckError) -> String {
              [技术细节] {detail}"
         ),
         GpuCheckError::NoDevices => {
-            "DeskPet 需要 NVIDIA GPU 才能运行。\n\n\
+            "Simple Harness 需要 NVIDIA GPU 才能运行。\n\n\
              NVIDIA 驱动已装，但没有检测到任何 NVIDIA 显卡。\n\
              请确认显卡已正确连接、未被外接坞禁用。\n\n\
              详细故障排查见 docs/PACKAGING.md#硬件前置检查"
                 .to_string()
         }
         GpuCheckError::DeviceQueryFailed(detail) => format!(
-            "DeskPet 需要 NVIDIA GPU 才能运行。\n\n\
+            "Simple Harness 需要 NVIDIA GPU 才能运行。\n\n\
              检测到 NVIDIA 显卡但查询失败，可能驱动已损坏。\n\
              请尝试重装最新版 NVIDIA 驱动。\n\n\
              [技术细节] {detail}"
