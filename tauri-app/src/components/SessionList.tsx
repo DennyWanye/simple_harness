@@ -33,9 +33,11 @@ import {
   normalizeTopicTitle,
   topicDisplayLabel,
 } from "../chat/topicTitle";
+import { formatRelativeSec } from "../relativeTime";
 
 /** 后端 default 会话（companion 主线程）。 */
 const DEFAULT_SID = "default";
+
 
 type IncomingCtrlMsg = {
   type?: string;
@@ -335,6 +337,7 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
             session_id: s.session_id,
           });
           const isEditing = editingSid === s.session_id;
+          const age = formatRelativeSec(s.last_message_at);
           return (
             <div
               key={s.session_id}
@@ -429,6 +432,14 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
                       }}
                     >
                       <span style={{ flexShrink: 0 }}>{s.turn_count} 条</span>
+                      {age && (
+                        <span
+                          style={{ flexShrink: 0 }}
+                          title={new Date(s.last_message_at * 1000).toLocaleString()}
+                        >
+                          {age}
+                        </span>
+                      )}
                       <span
                         title="Session ID，可选中复制"
                         onClick={(e) => e.stopPropagation()}

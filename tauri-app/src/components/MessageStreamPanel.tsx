@@ -53,6 +53,7 @@ import {
   type WorkflowTaskTrace,
 } from "./AgentActivityMessage";
 import { CompanionCard } from "./companion/CompanionCard";
+import { formatRelativeMs } from "../relativeTime";
 import type { CompanionEvent, PublicRunSnapshotV3 } from "../types/messages";
 import type { ProjectDirectoryRequest } from "../types/skillPlatform";
 import {
@@ -1135,13 +1136,9 @@ function pillButton(color: string, border: string): CSSProperties {
   };
 }
 
-function format_relative(ts: number, now: number = Date.now()): string {
-  const delta_s = Math.max(0, Math.round((now - ts) / 1000));
-  if (delta_s < 60) return `${delta_s}s 前`;
-  if (delta_s < 3600) return `${Math.round(delta_s / 60)}m 前`;
-  if (delta_s < 86400) return `${Math.round(delta_s / 3600)}h 前`;
-  return `${Math.round(delta_s / 86400)}d 前`;
-}
+// 实现已抽到 ../relativeTime（会话列表行也要同一套 "14h 前" 口径）。
+// 保留本地别名，免动下面 5 个调用点。
+const format_relative = formatRelativeMs;
 
 // ----------------------------------------------------------------------
 // Style constants

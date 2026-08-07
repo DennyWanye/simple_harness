@@ -93,6 +93,41 @@ describe("SessionList（WB-5）", () => {
     expect(screen.queryByTestId("session-list-empty")).toBeNull();
   });
 
+  /**
+   * TC-WB-05 步骤1 要求条目含「标题（或首句摘要）**与时间**」。r6 真机复测发现
+   * 后端 last_message_at 一直下发、排序也在用，但行内从没渲染出来 —— 这条测试
+   * 钉住修复后的行为，防止再被摘掉。
+   */
+  it("会话行渲染相对时间（TC-WB-05 步骤1）", () => {
+    // 用真实时钟相对构造：小时/天粒度不会因用例跑的这几毫秒翻档，
+    // 比 setSystemTime 少一层 fake timers 依赖。
+    const nowSec = Date.now() / 1000;
+    render(<SessionList activeSid="default" onSwitchSid={() => {}} />);
+    emit({
+      type: "sessions_list_response",
+      payload: {
+        sessions: [
+          { ...SESSIONS[1], last_message_at: nowSec - 14 * 3600 },
+          { ...SESSIONS[0], last_message_at: nowSec - 3 * 86400 },
+        ],
+      },
+    });
+
+    expect(screen.getByText("14h 前")).toBeTruthy();
+    expect(screen.getByText("3d 前")).toBeTruthy();
+  });
+
+  it("last_message_at 缺失时不渲染时间块（不出现 1970 噪声）", () => {
+    render(<SessionList activeSid="default" onSwitchSid={() => {}} />);
+    emit({
+      type: "sessions_list_response",
+      payload: { sessions: [{ ...SESSIONS[1], last_message_at: 0 }] },
+    });
+
+    expect(screen.getByTestId("session-row-s-newer")).toBeTruthy();
+    expect(screen.queryByText(/前$/)).toBeNull();
+  });
+
   it("点击会话行触发 onSwitchSid 回调", () => {
     const onSwitch = vi.fn();
     render(<SessionList activeSid="default" onSwitchSid={onSwitch} />);
