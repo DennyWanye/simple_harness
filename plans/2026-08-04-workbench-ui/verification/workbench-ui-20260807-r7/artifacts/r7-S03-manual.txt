@@ -68,3 +68,14 @@ y 坐标随之变化。用上一张截图算坐标连点必然错位——实测
 
 判定：步骤 1–6 全部满足 → **S03 PASS**
 VERDICT_PASS
+
+## Run 创建（expected_run_created=true，补记）
+步骤6 末尾在会话 bfa182fc 发送「切换压力验证」并真实往返成功
+（回复：「已切换，以当前这条请求为准 ✅ …」）。
+DB 实查 `.testenv/cold-A/data/workflow.db` trace_runs：
+  run_id = **40ae4cd9c5145e68881a407c5f6e84a0**
+  session_id = bfa182fc-f370-4440-89b6-22de21adb962
+  started_at = 2026-08-07 23:36:17
+即本场景 run_id_under_test。
+备注：`trace_runs.status` 记为 `cancelled` 是 harness 的终态记账口径，
+业务终态是真实收到回复（消息流可见、截图为证），两者不冲突。
