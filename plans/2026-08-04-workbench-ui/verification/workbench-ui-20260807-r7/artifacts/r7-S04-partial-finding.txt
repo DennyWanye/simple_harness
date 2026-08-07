@@ -1,0 +1,44 @@
+# S04 真机道 — 部分执行记录 + 判据冲突（TC-WB-04 / B4 B5 B9）
+执行：AI (manual-mcp)；2026-08-08；relay dev；基线 cad272e
+状态：**未完成，本文件不作 PASS 依据**。仅登记已取得的结果与一处判据冲突。
+
+## 已完成：步骤4 (a) 层 —— companion 凭据链单测
+命令：`cd backend && PYTHONPATH=<repo> .venv/bin/python -m pytest tests/companion/ -q`
+本轮**两次独立执行**结果一致：**9 failed, 643 passed, 10 skipped**
+失败清单（原样入账）：
+  tests/companion/test_candidate_draft_receipts.py::
+    test_existing_v19_database_upgrades_to_material_snapshot_v20
+  tests/companion/test_performance.py::
+    test_product_venue_transaction_trace_uses_one_full_durability_lane
+      [final] [tool_batch_1_new_goal] [tool_batch_3_new_goal]
+      [tool_batch_1_existing_goal] [tool_batch_3_existing_goal] [retry] [fallback]   （7 个参数化）
+  tests/companion/test_skill_pack_adapter.py::
+    test_shipped_skill_inventory_is_exact_and_hash_validated
+
+## ⚠ 判据冲突（需用户裁决，未自行取舍）
+**同一条命令，两个用例给出互相矛盾的期望**：
+- **TC-WB-04 步骤4** 写：「pytest **全绿（0 failed）**——companion 凭据链白名单/
+  迁移断言层通过」。按字面，本轮 9 failed ⇒ 步骤4 **不达标**。
+- **TC-WB-12 / S12** 的判据却把「**9 failed, 643 passed**」当作**基线等值**验收，
+  且 S12 已据此在 r7 判 PASS（脚本道 VERDICT_PASS）。
+
+两者不可能同时成立：要么这 9 个是已知基线失败、S04 步骤4 的"全绿"措辞需修正为
+"与基线等值"；要么这 9 个是真回归、S12 的基线等值判据需收紧。
+我**没有**替你选其中一个——两条路都会改判据，而改 oracle 必须在下一轮 init
+之前定稿。
+
+补充观察（供判断，非结论）：失败集中在 `test_performance`（7 个参数化的
+durability lane 计数断言）、一个 v19→v20 数据库升级断言、一个 shipped skill
+清单哈希断言——**看起来更像与本次 Workbench UI 改版无关的既有失败**，但我未做
+`git stash` / 基线 checkout 的对照实验来证实，所以不下结论。
+
+## 未完成的步骤（下轮继续）
+- 步骤1-2：发送「用 markdown 回复：一个二级标题、一个三项无序列表、一段行内代码。」
+  并核对 markdown 渲染（标题/列表/行内代码样式，非裸字面文本）
+- 步骤3：mic 按钮禁用态 + tooltip 文案
+- 步骤5 (b) 层：真机 scope 取证 —— `dev.sh 2>&1 | tee /tmp/wb04-dev.log` 启动，
+  `grep -aE "companion_action" /tmp/wb04-dev.log` 须有命中且含 scope=companion_action，
+  `grep -c "window_scope_denied"` 须为 0；再在 devtools 执行
+  `await window.__TAURI__.core.invoke("get_window_control_credential")` 须返回非 error
+- 步骤6：头部条（标题/模型按钮/ContextRing/Harness 巡检开关）能力核对
+- run_id_under_test（expected_run_created=true）待步骤1 产生
