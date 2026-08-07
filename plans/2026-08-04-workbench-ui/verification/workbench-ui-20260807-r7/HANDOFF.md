@@ -133,3 +133,52 @@ BLOCKED：S06
 
 若开 r8，这些全部作废重跑；脚本道一条 `artifacts/script-lane.sh` 即可，
 真机道是主要成本（本轮 11 个真机场景约占绝大部分工时）。
+
+---
+
+## 五、2026-08-08 用户裁决（r8 开轮前定稿清单）
+
+### 冲突 3 — **已用证据解决**（本轮补做了文档里说"未做"的对照实验）
+`git worktree add --detach <tmp> 644ab16` 检出改版前基线，同一解释器跑同一条命令：
+  基线 644ab16 → **9 failed, 640 passed, 10 skipped**
+  当前 cad272e → **9 failed, 643 passed, 10 skipped**
+失败用例 ID **逐条完全一致**；passed 640→643 是改版新增的 3 个测试全过。
+⇒ 这 9 个是**与改版无关的既有基线失败**，不是回归。
+⇒ 裁定：**S12 的「基线等值」判据成立**；**TC-WB-04 步骤4「全绿(0 failed)」是措辞
+   错误**（该标准在基线上同样达不到），r8 前改为「与基线等值（9 failed / 643 passed）」。
+
+### 冲突 2 — S13 `expected_run_created`
+TC-WB-13 步骤5 要求真往返，必然产生 root run，实测产生 `82dd9ee294165d6c955b2777948df613`。
+⇒ manifest 的 `false` 是写错，r8 前改为 **true**（不是给证据打 negative_assertion）。
+
+### 冲突 1 — S06 ④cancel/⑤rollback：**用户裁决＝先补实现再测**
+不降级判据、不造数据凑判据。先查清「为什么没有从 UI 触发 capability pack
+安装/回滚的路径」（是漏做还是设计如此），**补上入口**，再真机测 ④⑤。
+
+### 新发现（文档原先没有）— impact_paths 覆盖漏洞
+`impact_paths` 只覆盖 `tauri-app/src/**`，**不覆盖 `tauri-app/src-tauri/**` 与
+`backend/**`**。改这两处会因"未被任何 impact_paths 覆盖"触发 fail-closed **全量
+18 复测**。r8 前补齐覆盖，否则以后每改一次后端就是全量。
+
+### 品牌残留修复范围（用户选 A+B+C+LLM 提示词）
+全仓 `DeskPet` 共 7763 处，其中绝大多数**不能动**（D 类）。要改的：
+- **A 前端渲染文案 26 处**（`tauri-app/src/**.tsx`）：OnboardingWizard 5 处最刺眼
+  （「欢迎使用 DeskPet 🐾」「一只住在你桌面上的 AI 桌宠」「开始和 DeskPet 玩吧」）、
+  SettingsPanel 4 处、FeedbackPanel / CapabilityCenterPanel / ModelDownloadBanner /
+  ExternalWaitDialog
+- **B Rust 故障对话框 5 处**：`backend_launch.rs` 2、`gpu_check.rs` 3
+  （另注：`gpu_check.rs` 写死"需要 NVIDIA GPU"，在 Mac 上本身是遗留问题）
+- **C 后端 9 处 ppt `author` 默认值**（会写进用户 .pptx 文件属性）+ **23 处 LLM
+  系统提示/工具描述**（`supervisor.py`、memory_tools、tool_search 等）。改完须重跑
+  companion 套件确认无提示词依赖（基线 9 failed / 643 passed）。
+- **D 绝对不动**：Python 包名 `backend/deskpet/`、`DESKPET_*` 环境变量、
+  `deskpet-backend` 可执行名、`~/DeskPet/DeepResearch` 路径、`X-DeskPet-*` HTTP 头、
+  relay 设备名 `DeskPet/<os>`、注释里的「桌宠」。动这些是重构，会砸掉 keychain 键、
+  既有用户数据目录和 relay 契约。
+
+### r8 执行顺序（用户裁决＝全套执行）
+1. 补 capability pack 安装/回滚 UI 入口（冲突 1）
+2. 品牌修复 A+B+C
+3. manifest 定稿：TC-WB-04 措辞 / S13 flag / impact_paths 补覆盖
+4. 全部提交 → **然后**才 `init r8`（顺序不可颠倒，r6 就是 init 后改 manifest 报废的）
+5. 脚本道一条命令 + 真机道 11 场景全量重跑

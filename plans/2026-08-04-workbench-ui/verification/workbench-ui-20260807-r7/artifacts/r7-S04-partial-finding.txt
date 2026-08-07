@@ -42,3 +42,16 @@ durability lane 计数断言）、一个 v19→v20 数据库升级断言、一�
   `await window.__TAURI__.core.invoke("get_window_control_credential")` 须返回非 error
 - 步骤6：头部条（标题/模型按钮/ContextRing/Harness 巡检开关）能力核对
 - run_id_under_test（expected_run_created=true）待步骤1 产生
+
+## 判据冲突的裁定证据（2026-08-08 补做对照实验）
+用 `git worktree add --detach <tmp> 644ab16` 检出**改版前基线**，用同一解释器跑
+同一条命令 `pytest tests/companion/ -q`：
+  基线 644ab16 → **9 failed, 640 passed, 10 skipped**
+  当前 cad272e → **9 failed, 643 passed, 10 skipped**
+失败用例 ID **逐条完全一致**（test_candidate_draft_receipts v19→v20 升级 1 个、
+test_performance durability lane 参数化 7 个、test_skill_pack_adapter 清单哈希 1 个）。
+passed 从 640 → 643 是改版新增的 3 个测试，全部通过。
+⇒ 这 9 个是**与 Workbench 改版无关的既有基线失败**，不是回归。
+⇒ **S12 的「基线等值」判据成立**；**TC-WB-04 步骤4 的「全绿(0 failed)」属措辞错误**
+   （该标准在基线上同样达不到），应修正为「与基线等值（9 failed/643 passed）」。
+   此为 oracle 修正，必须在下一轮 init **之前**定稿。
