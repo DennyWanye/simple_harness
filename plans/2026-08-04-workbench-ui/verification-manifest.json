@@ -1,11 +1,11 @@
 {
-  "run_id": "workbench-ui-20260807-r7",
+  "run_id": "workbench-ui-20260808-r8",
   "source_request_text": "好的， 我现在准备把live2D的部分去掉，只需要一个主页面就好，然后主页面上面有设置这样一个按钮。请你先和我讨论一下修改后续的页面UI样式，然后开始处理（后续经讨论定稿为：C 工作台方向/深色单主题/普通窗口/桌宠代码彻底删除；行为契约 B1-B13 用户于 2026-08-05 回复「确认」批准）；oracle 修正 WBUI-BC-01 经用户 2026-08-05「批准」（见 behavior_changes）",
   "acceptance_file": "acceptance.md",
   "behavior_contract_file": "plans/2026-08-04-workbench-ui/behavior-contract.md",
   "behavior_contract_approval_sha256": "36f33adaf0942634a8ece1eec4a6f30d44dec73e1ef8704b29d983a57f2e09ae",
   "baseline": {
-    "head": "cad272e",
+    "head": "b68e958",
     "dirty_patch_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
   "scenarios": [
@@ -24,6 +24,7 @@
       "testcase": "TC-WB-01",
       "impact_paths": [
         "backend/main.py",
+        "tauri-app/src-tauri/**",
         "tauri-app/src-tauri/Cargo.lock",
         "tauri-app/src-tauri/Cargo.toml",
         "tauri-app/src-tauri/src/backend_launch.rs",
@@ -48,6 +49,7 @@
       "expected_run_created": false,
       "testcase": "TC-WB-02",
       "impact_paths": [
+        "tauri-app/src-tauri/**",
         "tauri-app/src-tauri/capabilities/default.json",
         "tauri-app/src-tauri/src/commands.rs",
         "tauri-app/src-tauri/src/lib.rs",
@@ -198,7 +200,8 @@
       "input_class": "static-scan",
       "cold_start": false,
       "expected_run_created": false,
-      "testcase": "TC-WB-09"
+      "testcase": "TC-WB-09",
+      "impact_paths": []
     },
     {
       "scenario_id": "WBUI-S10-geometry-memory",
@@ -216,6 +219,7 @@
       "testcase": "TC-WB-10",
       "impact_paths": [
         "backend/main.py",
+        "tauri-app/src-tauri/**",
         "tauri-app/src-tauri/Cargo.lock",
         "tauri-app/src-tauri/Cargo.toml",
         "tauri-app/src-tauri/src/backend_launch.rs",
@@ -256,7 +260,11 @@
       "input_class": "build-test",
       "cold_start": false,
       "expected_run_created": false,
-      "testcase": "TC-WB-12"
+      "testcase": "TC-WB-12",
+      "impact_paths": [
+        "backend/**",
+        "tauri-app/**"
+      ]
     },
     {
       "scenario_id": "WBUI-S13-backend-not-ready",
@@ -269,10 +277,11 @@
       "min_root_runs": 1,
       "input_class": "fault-injection",
       "cold_start": true,
-      "expected_run_created": false,
+      "expected_run_created": true,
       "testcase": "TC-WB-13",
       "impact_paths": [
         "backend/main.py",
+        "tauri-app/src-tauri/**",
         "tauri-app/src-tauri/Cargo.lock",
         "tauri-app/src-tauri/Cargo.toml",
         "tauri-app/src-tauri/src/backend_launch.rs",
@@ -298,6 +307,7 @@
       "testcase": "TC-WB-14",
       "impact_paths": [
         "backend/main.py",
+        "tauri-app/src-tauri/**",
         "tauri-app/src-tauri/Cargo.lock",
         "tauri-app/src-tauri/Cargo.toml",
         "tauri-app/src-tauri/src/backend_launch.rs",
@@ -339,6 +349,7 @@
       "testcase": "TC-WB-16",
       "impact_paths": [
         "backend/main.py",
+        "tauri-app/src-tauri/**",
         "tauri-app/src-tauri/Cargo.lock",
         "tauri-app/src-tauri/Cargo.toml",
         "tauri-app/src-tauri/src/backend_launch.rs",
@@ -476,6 +487,51 @@
         "approved_at": "2026-08-07",
         "context": "编排者在 chat 给出 exact old/new 与硬化原因后，用户在选项界面选择「批准」"
       }
+    },
+    {
+      "behavior_change_id": "WBUI-BC-04",
+      "target": "testcase/workbench-ui/TC-WB-04-chat-roundtrip-companion.md",
+      "summary": "步骤4 判据由『pytest 全绿(0 failed)』收敛为『与基线等值(9 failed/643 passed)』。原口径与 TC-WB-12/S12 的基线等值判据直接矛盾，且在改版前基线上同样不可满足。",
+      "old_excerpt": "pytest **全绿**（0 failed）——companion 凭据链白名单/迁移断言层通过。",
+      "new_excerpt": "与**基线等值**：9 failed, 643 passed，且失败集合与改版前基线 644ab16 逐条一致。",
+      "scope": "仅 TC-WB-04 步骤 4；其余步骤不变",
+      "evidence": "git worktree add --detach <tmp> 644ab16 后同一解释器跑同一条命令：基线 9 failed/640 passed/10 skipped，失败用例 ID 与当前逐条一致（test_candidate_draft_receipts v19→v20 1 个、test_performance durability lane 参数化 7 个、test_skill_pack_adapter 清单哈希 1 个）；passed 640→643 为改版新增 3 个测试全过。",
+      "approval": {
+        "approved_by": "user",
+        "message_text": "选择3",
+        "message_sha256": "d325fe37b5f59c427248eb1c8a505c4859a2a44c95f21f1243fb4073b9411f82",
+        "approved_at": "2026-08-08"
+      }
+    },
+    {
+      "behavior_change_id": "WBUI-BC-05",
+      "target": "plans/2026-08-04-workbench-ui/verification-manifest.json (WBUI-S13-backend-not-ready.expected_run_created)",
+      "summary": "S13 expected_run_created 由 false 改为 true。TC-WB-13 步骤5 明写要发消息并真实往返成功，真往返必然产生 root run。",
+      "old_excerpt": "expected_run_created: false",
+      "new_excerpt": "expected_run_created: true",
+      "scope": "仅 S13 的 run 创建声明；判定步骤不变",
+      "evidence": "r7 真机实测步骤5 产生 root run 82dd9ee294165d6c955b2777948df613。原 false 会逼测试者要么给证据打 negative_assertion（谎称没创建 run），要么跳过步骤5。",
+      "approval": {
+        "approved_by": "user",
+        "message_text": "选择3",
+        "message_sha256": "d325fe37b5f59c427248eb1c8a505c4859a2a44c95f21f1243fb4073b9411f82",
+        "approved_at": "2026-08-08"
+      }
+    },
+    {
+      "behavior_change_id": "WBUI-BC-06",
+      "target": "plans/2026-08-04-workbench-ui/verification-manifest.json (scenarios[].impact_paths)",
+      "summary": "impact_paths 补覆盖：S12 加 tauri-app/** + backend/** 兜底；S01/S02/S10/S13/S14/S16 加 tauri-app/src-tauri/**。",
+      "old_excerpt": "逐文件列举，未覆盖 gpu_check.rs / device.rs / window_geometry.rs 及整个 backend/ 树",
+      "new_excerpt": "S12 兜底通配 tauri-app/** + backend/**；六个 Rust 依赖场景改用 src-tauri/** 通配",
+      "scope": "仅 impact_paths 映射；判定标准与场景集合不变",
+      "evidence": "改上述未覆盖文件会因『未被任何 impact_paths 覆盖』触发 fail-closed 全量 18 复测（r6 实测过一次）。S12 是构建门（tsc+vitest+build+cargo+pytest），语义上确实依赖全部源码，由它兜底最贴合事实。",
+      "approval": {
+        "approved_by": "user",
+        "message_text": "选择3",
+        "message_sha256": "d325fe37b5f59c427248eb1c8a505c4859a2a44c95f21f1243fb4073b9411f82",
+        "approved_at": "2026-08-08"
+      }
     }
   ],
   "notes": "r4：修正 r3 的 manifest 缺陷——(1) S09/S11/S12 为纯脚本场景，ui 由 true 改 false；(2) impact_paths 补齐后端生命周期文件（process_manager/lib/backend_launch/Cargo/main.py）映射到受其影响的 6 个场景，其余前端场景补 tauri-app/src/**；(3) 对着含 B13 修复的代码全量重跑。 | r6：r5 因 TESTED_RUNTIME_MISMATCH（测后改码）与记账缺陷（depends_on 按路径引用、缺 ui_action=primary、S02 证据被改）不可闭环；六缺陷修复以 9a19261 提交后，对干净基线全量重测。r5 将在 r6 SHIPPABLE 后经 CLI 退役。",
@@ -483,6 +539,7 @@
     "plans/2026-08-04-workbench-ui/verification/workbench-ui-20260805-r3",
     "plans/2026-08-04-workbench-ui/verification/workbench-ui-20260805-r4",
     "plans/2026-08-04-workbench-ui/verification/workbench-ui-20260806-r5",
-    "plans/2026-08-04-workbench-ui/verification/workbench-ui-20260807-r6"
+    "plans/2026-08-04-workbench-ui/verification/workbench-ui-20260807-r6",
+    "plans/2026-08-04-workbench-ui/verification/workbench-ui-20260807-r7"
   ]
 }
