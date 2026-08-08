@@ -1,0 +1,36 @@
+# r9 / WBUI-S01-window-form / TC-WB-01 —— 真机手工道（冷启动）
+profile：全新 .testenv/cold-S01-r9（rm -rf 后首启）；构建 HEAD=fb4fb6f
+launch：launch-cold-s01-r9.sh（tauri dev + DESKPET_BACKEND_DIR 指工作树）
+日志：r9-s01-cold.log（首启）/ r9-s01-cold2.log（AUTH-01 缺陷后重启，见下）
+
+## 步骤1 普通窗口形态
+截图 r9-S01-01-coldstart-win.png：系统标题栏三钮在位、内容完全不透明、
+无任何桌宠立绘/动画（onboarding 卡片正常显示）。判定：过
+
+## 步骤2 初始几何（单显示器 1470×956）
+AX 实测 geom = 235,111 1000×701：
+  尺寸 1000×701 ≈ 默认 1000×700（±1 取整误差）✔
+  居中：窗心 (735,461.5) vs 屏心 (735,478)——横偏 0%、纵偏 1.7%，均 ≤±10% ✔
+判定：过
+
+## 步骤3 Dock / Cmd+Tab 可见
+System Events「background only = false」进程清单包含 simple-harness ⇒ 用户可见应用语义成立。判定：过
+
+## 步骤4 拖动与放大（真 HID 拖拽，cliclick dd/dm/du）
+拖标题栏：235,111 → 295,211（接受移动）✔
+拖右下角放大：1000×701 → 1093×745（可超过默认尺寸，无 max 卡住）✔ 判定：过
+
+## 步骤5 缩到最小
+向左上拖右下角至极限 → **精确停在 800×560**（AX 实测），不能更小。判定：过
+
+## 步骤6 最大化/还原（Option+点击绿钮 zoom，避免全屏空间）
+zoom → 0,33 1470×923（工作区最大化）✔；再次 Option+点击 → 还原 295,211 800×560 ✔。判定：过
+
+## 步骤7 静态核对（辅助）
+grep macOSPrivateApi tauri.conf.json → 0 命中 ✔；"transparent": false（main 窗）✔。
+
+## 总判定：步骤 1-6 全过 ⇒ **PASS**
+
+## Run 创建负向断言（expected_run_created=false）
+本场景纯窗口形态操作，无消息发送。执行窗口内该 profile 的 workflow.db 尚不存在
+trace_runs 增量（首启只有 onboarding，S15 步骤3 的消息在本场景步骤全部完成之后）。
