@@ -137,3 +137,20 @@ b68e958，会白白浪费时间去找一个可能不存在的回归。
 ioreg -n Root -d1 -a | grep -q "CGSSessionScreenIsLocked" && \
   { echo "SCREEN_LOCKED: 观测无效，先解锁" >&2; exit 3; }
 ```
+
+---
+
+# 已解除（08:10）：解锁后一次通过，确认无代码回归
+
+解锁屏幕后重跑 `artifacts/launch-app.sh`：
+- 锁屏硬闸放行（不再 exit 3）
+- **`[backend_launch] Dev python=.../backend/.venv/bin/python backend_dir=.../backend`
+  于第 27s 出现**
+- backend 第 15s 就绪：`app=1 backend=1 port8100=1`
+- `drive.sh geom` → `210 116 1260 840`（有效几何，exit 0）
+
+⇒ 04:09–04:23 那三次"应用起不来"**全部是锁屏导致的假象**，
+   `b68e958`（品牌修复）**确认无回归**，未改一行代码即恢复正常。
+⇒ 上面"更正（04:27）"的判断得到实测证实；本文件的阻塞状态到此解除。
+
+r8 真机道从 S01 开始正式推进。
