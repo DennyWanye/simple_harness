@@ -1,0 +1,48 @@
+# r9 / WBUI-S02-single-window / TC-WB-02 —— 真机手工道（步骤1-3）
+执行人：AI（真 HID：cliclick + AX 实时坐标 + Web Inspector 权威探针）
+被测构建：HEAD=1404fda  会话日志：r9-session-3.log  profile：.testenv/cold-A
+脚本道（步骤4-6）见 r9-S02-script.txt，单独入账。
+
+## 步骤1 默认视图
+应用默认停在**聊天视图**，Harness 观察内容（会话列表 + 消息流 + 输入栏）
+**直接呈现在主窗内容区**，无需点任何按钮弹第二个窗口。
+截图 r9-S02-01-default-win.png
+判定：过
+
+## 步骤2 全 UI 搜寻旧「▶ 消息」类入口
+逐视图 AX 全量 dump 后按关键词计数（'▶ 消息' / '打开消息面板' / '消息面板'）：
+  技能中心视图  命中=0
+  产物库视图    命中=0
+  设置视图      命中=0
+  会话视图      命中=0
+四个视图 + 侧栏 + 头部均无"打开消息面板独立窗口"入口。
+判定：过
+
+## 步骤3 双观测面窗口计数
+本 app 进程（r9-session-3）内已完成用例要求的"正常使用一轮"：
+  · 四视图完整切换（本步骤2 逐视图扫描时即完成，另 S03 步骤6 做过 20 轮）
+  · 发过消息（S05 步骤5「新建会话往返验证」、S07 前置的 excel 生成任务）
+  · 打开过设置（S08 步骤1-6、S03 步骤2）
+(a) 可见窗口计数（osascript，只统计可见窗口）：
+    tell application "System Events" to count windows of (first process whose name is "simple-harness")
+    → **1**（四视图切换后复读仍为 1；取证结束再读一次仍为 1）
+(b) 盲区补枪 —— devtools 权威探针（含隐藏 webview）：
+    右键消息区 →「Inspect Element」开 Web Inspector → Console 执行
+      window.__TAURI__.window.getAllWindows().then(w=>console.log(
+        "WINDOW_COUNT="+w.length+" labels="+w.map(x=>x.label).join(",")))
+    控制台输出：**WINDOW_COUNT=1 labels=main**
+    截图 r9-S02-02-probe-console.png（控制台原样，含输入行与返回的 Promise pending 行）
+    注：用 .then() 而非顶层 await —— Safari devtools 顶层 await 会抛 SyntaxError（沿用 r8 记录的坑）。
+两个观测面都满足（可见 1 且含隐藏 webview 的权威计数 1，label 只有 main）
+取证后已关闭 Web Inspector，窗口恢复 (60,60) 800x822（AX 复核）。
+判定：过
+
+判定（手工道 步骤1-3）：全部满足；合并脚本道 步骤4-6 全过 → **S02 PASS**
+
+## Run 创建负向断言（expected_run_created=false）
+本场景全程只做：视图观察、AX 关键词扫描、开关 Web Inspector、控制台**只读**探针
+（getAllWindows 不产生任何后端调用）；**未发送任何消息**、未触发技能或生成。
+硬证据（.testenv/cold-A/data/workflow.db）：
+  本场景起点前 trace_runs = 152（S05 步骤5 的 ac514dca… 之后未再增长）
+  本场景结束后复读 trace_runs = **152**，增量 **0**
+⇒ 结构上与实测都成立：S02 步骤期间 root run 增量为 0。

@@ -1,0 +1,52 @@
+# r9 S02 脚本道（TC-WB-02 步骤4-6）  2026-08-09T01:26:08+08:00  HEAD=1404fda
+
+## 步骤4 配置面：tauri.conf.json / capabilities/default.json
+$ grep -n "message-panel" tauri-app/src-tauri/tauri.conf.json tauri-app/src-tauri/capabilities/default.json
+HITS=0（grep 无任何输出；下方"对照"行证明两个文件确实存在且非空，不是空扫产生的假阴性）
+（对照：两个文件确实存在且非空 →       73 /       25 行）
+（capabilities windows 声明：）
+5:  "windows": ["main"],
+6-  "permissions": [
+7-    "core:default",
+8-    "opener:default",
+
+## 步骤5 command 面：四个 Tauri command 及前端调用点
+$ grep -rniE "open_message_panel|close_message_panel|dock_message_panel|toggle_message_panel" tauri-app/src tauri-app/src-tauri/src
+HITS=0
+
+## 步骤6 残留引用（含白名单判定）
+$ grep -rn "message-panel\|message_panel" tauri-app/src tauri-app/src-tauri/src
+HITS=11
+tauri-app/src/stores/harnessPublicSnapshotStore.test.ts:161:      // T9（workbench-ui）：message-panel/ 退役 —— 巡检面板迁 chat/，
+tauri-app/src/code-panel/controlWs.ts:38:// （#/message-panel → message-panel 窗身份）；message-panel 窗口删除后
+tauri-app/src/code-panel/controlWs.ts:45: * 控制会话 sid。**历史命名保留**：字符串 "message-panel-main" 源自独立
+tauri-app/src/code-panel/controlWs.ts:50:export const CONTROL_SESSION_ID = "message-panel-main";
+tauri-app/src/code-panel/controlWs.ts:234:  // 2026-08-04 Workbench UI 改版（B5）：message-panel 独立窗口已并入主窗，
+tauri-app/src-tauri/src/commands.rs:206:// 2026-08-04 Workbench UI 改版（WB-2）：message-panel 独立窗口删除，
+tauri-app/src-tauri/src/webview_permissions.rs:15:/// message-panel 窗口已并入主窗，companion_action 的合法窗口标签从
+tauri-app/src-tauri/src/webview_permissions.rs:16:/// "message-panel" 迁移为 "main"。同一迁移必须五处同步（本白名单 /
+tauri-app/src-tauri/src/webview_permissions.rs:85:    // message-panel 窗口已删除（绑定 acceptance「only-add 显式删除例外」）。
+tauri-app/src-tauri/src/webview_permissions.rs:90:        assert!(authorize_window_control_scope("message-panel", "companion_action").is_err());
+tauri-app/src-tauri/src/webview_permissions.rs:91:        assert!(authorize_window_control_scope("message-panel", "identity_bind").is_err());
+
+## 步骤6 逐条白名单核验（11/11 全部命中白名单，零违规）
+白名单（WBUI-BC-02，用户已批准）三类：① 控制会话 sid 常量 message-panel-main（历史命名）
+② 注释 ③ webview_permissions.rs 中以 message-panel 为**被拒对象**的测试断言。
+  1  harnessPublicSnapshotStore.test.ts:161  注释（T9 退役说明）              → ② 注释
+  2  controlWs.ts:38                          注释（窗身份历史说明）           → ② 注释
+  3  controlWs.ts:45                          注释（历史命名保留说明）         → ② 注释
+  4  controlWs.ts:50   export const CONTROL_SESSION_ID = "message-panel-main"; → ① sid 常量
+  5  controlWs.ts:234                         注释（B5 并入主窗说明）          → ② 注释
+  6  commands.rs:206                          注释（WB-2 删除说明）            → ② 注释
+  7  webview_permissions.rs:15                注释（迁移说明）                 → ② 注释
+  8  webview_permissions.rs:16                注释（五处同步说明）             → ② 注释
+  9  webview_permissions.rs:85                注释（only-add 删除例外说明）    → ② 注释
+ 10  webview_permissions.rs:90  assert!(authorize_window_control_scope("message-panel","companion_action").is_err()) → ③ 被拒断言
+ 11  webview_permissions.rs:91  assert!(authorize_window_control_scope("message-panel","identity_bind").is_err())    → ③ 被拒断言
+无一处是活的窗口创建/打开/停靠代码 ⇒ 零违规。
+
+## 判定（脚本道 步骤4-6）
+步骤4 配置面 0 命中 + capabilities windows 仅 ["main"] ✔
+步骤5 四个 command 及调用点 0 命中 ✔
+步骤6 11 处残留全部落在已批准白名单内 ✔
+VERDICT_PASS（脚本半边）
