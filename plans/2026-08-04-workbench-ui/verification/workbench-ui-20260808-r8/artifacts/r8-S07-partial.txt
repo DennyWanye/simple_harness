@@ -61,3 +61,57 @@
   - 若该历史消息未挂载产物卡，按 TC 前置 2 的另一条路径：在聊天中真跑一次
     会产生产物卡片的任务，记录所用消息与产生的卡片，再验步骤5
   - 步骤 1-4 已通过，无需重跑（除非期间有 impact_paths 覆盖的代码改动）
+
+---
+
+# 步骤5 续跑结果（08:4x）：查明**真缺陷**，S07 仍不判 PASS
+
+## 前置2 已按 TC 第一条路径落实（真跑产物任务）
+历史消息路径先被排除：会话 14e39412 的 `file_write` 结果是
+`{"error":null,"state":"success","value":{"bytes_written":7,...}}`，**无 artifacts 字段**
+⇒ 该消息本就不会挂产物卡，滚到消息流底部确认下方无任何卡片。
+
+改按 TC 前置2 第一条路径，在聊天中真跑一次会产生产物的任务：
+  发送「用 excel 工具生成 s07-artifact.xlsx，只要一行：名称=产物卡片验证」
+  → `excel_create` 首次 failed、重试 **ok**，助手回「表格已生成 ✅」
+  → 磁盘实证：`.testenv/cold-A/OutPut/Excel/excel_create-14e39412-...-excel_create_6.xlsx`
+     （5024 B，2026-08-08 08:42）——**产物真实落盘** ✓
+
+## 缺陷：后端产出了 artifacts，前端提取不到 → 消息流产物卡片**不渲染**
+展开 `ok ← excel_create` 的结果 JSON（截图 r8-S07-05-expanded 原样可见）：
+```
+{"error": null, "state": "success",
+ "value": {"artifacts": [{"kind": "file",
+                          "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                          "path": "/Users/.../OutPut/Excel/excel_create-....xlsx",
+                          "title": "excel_create-....xlsx"}],
+           "ok": true, "path": "...", "sheet_count": 1}}
+```
+⇒ 后端**确实产出 artifacts 数组**（`excel_tools.py:416` 等处构造）。
+
+但 `tauri-app/src/code-panel/ArtifactCard.tsx:510` 的 `extractArtifactsFromResult`
+只识别两种形状：
+  ① 顶层 `obj.artifacts`
+  ② `obj.result` 是字符串，解析后取 `inner.artifacts`
+**实际形状 `obj.value.artifacts` 两条都不匹配** → 返回 `[]` → 不渲染 ArtifactCard。
+
+真机实证：展开前后消息流中**均无任何产物卡片**，只有 tool-result 折叠卡。
+
+## 判定
+TC-WB-07 步骤5 要求「消息流内**产物卡片**存在且可操作」，且明写
+「步骤5 消息流卡片消失记 **FAIL**（功能减少）」。
+本轮已按 TC 落实前置2（产物真实生成），但产物卡片**确实不渲染**。
+
+**未自行判 FAIL 也未判 PASS**——因为这可能是：
+  (a) 前端 extract 少认一种信封形状 = 真回归（B7「消息流卡片不动」被破坏）
+  (b) 该信封形状本就是改版后新引入的，属"两边都需对齐"的契约漂移
+两者修法不同（改前端 extract vs 改后端信封），且都会触及 impact_paths 覆盖的
+代码，需用户裁决后再动。**不拿 tool-result 卡片顶替产物卡片。**
+
+## 建议的最小修法（供裁决参考，未实施）
+在 `extractArtifactsFromResult` 增加第三种形状：
+```ts
+if (obj.value && Array.isArray(obj.value.artifacts)) return obj.value.artifacts;
+```
+改前需确认后端信封契约（`backend/deskpet/tools/artifact.py:317` 的
+`envelope["artifacts"]` 与 registry 包装后的实际落点是否一致）。
