@@ -115,3 +115,36 @@ if (obj.value && Array.isArray(obj.value.artifacts)) return obj.value.artifacts;
 ```
 改前需确认后端信封契约（`backend/deskpet/tools/artifact.py:317` 的
 `envelope["artifacts"]` 与 registry 包装后的实际落点是否一致）。
+
+## 补充排查（08:5x）：三个 last-mile 开关全 ON，仍不渲染 → 排除"功能没开"
+
+`.testenv/cold-A/config.toml` §[tools.last_mile] 实读：
+  artifact_envelope      = **true**   （D1 后端信封加 artifacts[]）
+  frontend_artifact_card = **true**   （D2 前端 ArtifactCard 新卡片）
+  tauri_artifact_ops     = **true**   （D3 打开/在文件夹显示/复制路径/另存为）
+⇒ **不是"last_mile 未实装/未开启"**，三个开关都开着。
+
+后端信封的构造点（`registry.py:2641-2659`）产出的形状是：
+  `envelope = {"ok": True, "result": <result JSON 字符串>, "error": None}`
+  flag ON 且能推断出 path/url 时，再 `envelope["artifacts"] = [...]`（**顶层**）
+这个顶层形状**正好命中**前端 `extractArtifactsFromResult` 的第①条分支。
+
+但真机实测前端拿到的是 **`{"error":null,"state":"success","value":{"artifacts":[...]}}`**
+—— 键名是 `error/state/value`，**不是** `ok/result/error`。
+⇒ 前端看到的结果**不是** registry.execute_tool 那个信封，而是另一层（更内层的
+   工具原始返回）。信封那层要么没套上，要么在传到前端前被替换/解包了。
+
+## 收窄后的结论
+缺陷不在"没开功能"，而在**链路某处的形状不一致**：
+后端信封契约（`ok/result/error` + 顶层 artifacts）与前端实际收到的
+（`error/state/value` + `value.artifacts`）**对不上**。
+这属于项目 CLAUDE.md 记的「跨层契约漂移」类问题（feedback_cross_layer_contract）。
+
+**仍不下判定**，因为定位到底是哪一层还需要继续追（候选：
+`harness/drivers/react.py` 的结果投影、`ui_projection`、或 chat 消息落库时的
+序列化），而这已超出 S07 单场景的范围，且修法会触及 impact_paths 覆盖的代码。
+
+## 给裁决用的三个选项
+(A) 本轮追到底并修 → 会作废 tauri-app/src/** 或 backend/** 覆盖的那批场景
+(B) 记为独立缺陷（跨层契约漂移），S07 判 FAIL 并如实说明，r8 带着这个 FAIL 收尾
+(C) 记为独立缺陷，S07 暂不判定，先跑完其余场景再统一处理
