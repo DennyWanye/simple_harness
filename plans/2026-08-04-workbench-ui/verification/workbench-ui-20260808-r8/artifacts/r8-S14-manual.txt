@@ -1,0 +1,33 @@
+# TC-WB-14 托盘菜单三项（B10）真机执行记录（r8，2026-08-08 15:1x +0800）
+# 驱动：System Events 对 status item（menu bar 2）真点击；HEAD=05f72ec
+# app=launch-app.sh identity-probe（cold-A 用户目录，dev 模式）
+
+步骤1 动作=click menu bar item 1 of menu bar 2 → 枚举菜单项|期望=三项且无旧文案
+  → AppleScript 返回：「显示主窗, 隐藏主窗, 退出 Simple Harness」
+  → 恰好三项 ✅；无「显示桌宠/隐藏桌宠/退出 DeskPet」旧文案 ✅
+
+步骤2 动作=点击「隐藏主窗」|期望=窗口隐藏、应用仍运行、托盘仍在
+  → count windows = 0（窗口隐藏）
+  → pgrep target/debug/simple-harness = 1（进程在）
+  → menu bar 2 状态项 count = 1（托盘图标在）✅
+
+步骤3 动作=点击「显示主窗」|期望=窗口重现、状态未丢
+  → count windows = 1；截图 r8-S14-03-shown-again-win.png：仍在「能力中心」视图
+    （隐藏前所在视图），会话/视图状态未丢 ✅
+
+步骤4 动作=点击「退出 Simple Harness」|期望=完全退出无残留
+  → 退出前登记 dev 包装 PID（豁免对照）：80561 npm-exec-tauri / 80574 tauri dev / 80736 vite
+  → 退出后核对：app=0 backend=0 port8100=0；
+    System Events count process "simple-harness" = 0（托盘图标随进程消失）✅
+  → 主进程与 backend 零残留、8100 无 LISTEN ✅
+
+负向断言（本场景声明不创建 Run）：
+  → 应用日志 identity-probe.log 全程 run_created/run_started 事件计数 = 0
+  → cold-A workflow.db execution_runs 计 28 条、max(created_at)=1786149708
+    （≈2026-08-04 预置期），今日执行窗口（2026-08-08 06:53Z 启动起）新增 0 条；
+    workflow_runs=0；companion_run_bindings=0
+  ⇒ 托盘三项全程未创建任何 root Run ✅
+
+判定：四步全部满足，无旧文案残留 → PASS
+环境注：relay 身份未恢复（companion_profile_bind 拒绝循环持续）；本用例不依赖
+  chat/relay 链路，窗口/托盘/进程语义不受其影响。

@@ -1,0 +1,41 @@
+# TC-WB-06 SkillsView 真机执行记录（r8 第二段，2026-08-08 15:0x +0800）
+# 驱动：drive.sh/ax.sh/nav.sh 真 HID 点击；app=launch-app.sh identity-probe（cold-A 用户目录）
+# HEAD=05f72ec（含 S03 布局修复 + S07 契约修复）
+# ⚠️ 本记录是过程证据；本段未记 record-run（判定项④⑤⑥未能闭合，见末尾）
+
+步骤1 坐标=(191,748)|动作=点击侧栏「技能中心」|期望=页面呈现无遮罩
+  → 截图 r8-S06-01-skills-page-win.png：能力中心填满内容区，无 backdrop/浮层/×，
+    页面化成立 ✅（判定：步骤1）
+
+步骤2 坐标=(441,241)/(363,241)|动作=操作 tab ↔ 能力 tab 互切|期望=内容随切换变化
+  → 操作 tab：AX 出现 skill-windows-path-debug 安装·已发布·已完成 100% 等操作卡片
+  → 切回能力 tab：AX 恢复 150 条能力行（AXCheckBox×150）+ 搜索框/类别筛选
+  → 互切成立 ✅（判定项①）
+
+步骤3 动作=观察能力列表|期望=非空正常渲染
+  → AXCheckBox×150 全部在 AX 树，首条 agent v1·builtin + 降级徽章，无空白/报错 ✅（判定项②）
+
+步骤4 坐标=(501,471)|动作=点击第2行 agent_parallel|期望=详情打开
+  → 详情面板标题从 agent 切为 agent_parallel（截图 r8-S06-04-detail-parallel-win.png）；
+    点回第1行详情复原。页面变体中列表恒在右侧详情并列 ✅（判定项③）
+
+步骤6 坐标=(1260,139)|动作=点击「打开旧 Skill Store」|期望=入口可达、视图内切换非弹窗
+  → 截图 r8-S06-06-skillstore-win.png：SkillStore 面包屑+技能商店标题，视图内呈现，
+    无独立浮层遮罩；「返回能力中心」按钮在位，点击后回到能力中心 ✅（判定项：旧入口）
+
+步骤5 判定项④⑤⑥（操作 tab cancel/rollback/uninstall 三入口）——本段无法闭合：
+  尝试1：AX 全量 dump 操作 tab（/tmp/ax-s06-ops.txt，292 行，17 张操作卡全量在树）
+    → 无任何 取消/回滚/卸载 文案或按钮。
+  尝试2：源码核对 CapabilityOperationCard.tsx:237（入口由 operation.available_actions 驱动）
+    + backend ui_projection.py:234-243（cancel 仅 status=running；rollback/uninstall 仅
+    succeeded 且有 pack 绑定）→ 当前 17 个 first-party 安装操作均无绑定 ⇒ 后端投影为空，
+    UI 无从渲染。数据态问题，非 UI 回归。
+  尝试3：经旧 SkillStore 市场真装 canvas-design（确认弹层→确认安装→已安装列表出现，
+    截图 r8-S06-05a/05b）→ legacy 技能管线**不产生** capability operation，操作 tab 无新卡。
+  结论：需要一个 running 或带 pack 绑定的 succeeded 操作才能让三入口现形；
+    生成此类操作依赖 capability-pack 安装/生成链路（chat 或 relay 身份）。
+    待 relay 恢复后与 S03/S04 同批闭合。**不据源码推断记 PASS**。
+
+附注环境观察：本段后半侧栏徽章 已连接→未连接 翻转；backend 日志
+  companion_profile_bind code='window_credential_required' rechallenge=True 连环拒绝
+  （relay 身份未恢复的已知环境态，07:06:57Z 仍在持续）。
