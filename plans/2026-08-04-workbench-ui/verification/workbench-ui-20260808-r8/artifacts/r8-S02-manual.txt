@@ -40,3 +40,43 @@
 
 判定：步骤 1–6 全部满足 → **S02 PASS**
 VERDICT_PASS
+
+## 重跑（attestation 2026-08-08T15:58:42+0800 后，16:53–17:00 本地）
+
+前置修复：关闭验证员遗留的 localhost:5173 浏览器标签（见 r8-probe-storm-fix.md），
+window_credential_required 拒绝风暴停止，聊天链路恢复。基线 HEAD=6539b0a（与
+attestation 指纹一致，仅 plans/ 证据文档变动）。
+
+环境：killall.sh 清场（app=0 backend=0 port8100=0 vite=0，剩余匹配进程为系统
+AppleCentauri* 驱动误匹配）→ launch-app.sh s02-rerun 冷启动，用户数据 .testenv/cold-A。
+
+步骤1 冷启动默认视图 = 聊天视图（截图 r8-S02-rerun-01-default：会话列表 +
+  「默认话题」消息流 + 输入栏直接在主窗内容区），无需任何按钮弹二窗 ✓
+步骤2+3 正常使用一轮真实点击遍历：技能中心(r8-S02-rerun-02-skills) →
+  产物库(r8-S02-rerun-03-artifacts) → 更多展开(r8-S02-rerun-04-more) →
+  设置(r8-S02-rerun-05-settings) → 回会话视图**真实发送消息**
+  「S02 复测消息：请回复两个字——就绪」→ 回包「就绪」渲染
+  (r8-S02-rerun-06-chatsent，run_id=d4bf5fdb68fb5006a8e17ca8503c051e)。
+  全程各视图均无「▶ 消息」类第二窗口入口 ✓
+步骤3 双观测面窗口计数：
+  (a) osascript count windows = **1**（发消息后、开 Inspector 时两次读取均 1）✓
+  (b) devtools 权威探针：右键消息区(r8-S02-rerun-07b-ctxmenu) → Inspect Element
+      → Console 清空后执行 getAllWindows 探针，输出
+      **`WINDOW_COUNT=1 labels=main`**（截图 r8-S02-rerun-10-probe，
+      Console cleared at 16:59:42 后唯一输出行）✓
+  取证后关闭 Inspector，UI 恢复（r8-S02-rerun-11-final）✓
+步骤4 grep tauri.conf.json + capabilities/default.json message-panel：**零命中** ✓
+步骤5 grep 四个 message_panel command（前端+rust）：**零命中** ✓
+步骤6 残留引用核对：命中仅 WBUI-BC-02 允许清单内项——controlWs sid 常量
+  "message-panel-main" 与注释、webview_permissions.rs 以 message-panel 为
+  被拒对象的断言(:90,:91)与注释、commands.rs:206 注释、
+  harnessPublicSnapshotStore.test.ts:161 注释。无越界命中 ✓
+
+Run 创建核对（expected_run_created=false 的如实说明）：
+  trace_runs 场景前=39（storm 探针后）→ 场景后=**40**，增量 +1 =
+  d4bf5fdb...（started_at=1786179414 ≈ 16:56:54 本地）即**冻结 testcase 步骤3
+  自身要求的"发一条消息"**所产生的 root run，属测试动作预期产物；
+  窗口管理行为本身零 run 创建。除此之外无任何新增 run。
+
+判定：步骤 1–6 全部满足 → **S02 PASS（重跑）**
+VERDICT_PASS

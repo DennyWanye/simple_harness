@@ -124,3 +124,36 @@ launch-app.sh 起 Tauri（自带唯一 vite + 自 spawn backend）：
     ① 预先写 FAIL → root FAIL 永久粘性，直接废掉 r8（r6 的原路）；
     ② 预先写 blocked → blocked 同样永久粘性（r7 的原路）。
   待身份恢复后补完步骤6 后半，再连同缺陷1一并裁决。
+
+## 重跑（attestation 2026-08-08T15:58:42+0800 后，17:05–17:15 本地）——全六步
+
+前置：① 缺陷 WBUI-DEF-S03-01 已修（05f72ec，CapabilityCenterPanel 网格
+minmax(0,1fr) 化）；② 聊天堵点已解除（r8-probe-storm-fix.md：真凶为验证员
+遗留的 5173 浏览器标签触发 window_credential_required 拒绝风暴，关闭即恢复，
+非 relay/钥匙串问题——旧记录中 trusted_relay_identity_unavailable 为早前实例
+另一症状，本实例日志 0 条该码）。环境：S02 重跑同一冷启动实例（s02-rerun.log），
+本实例日志 companion_control_rejected 计数 = **0**。
+
+步骤1 侧栏三导航项（会话/技能中心/产物库）+ 底部设置入口 ✓
+  （截图 r8-S03-rr-step1-sidebar，窗口 1000×700）
+步骤2 会话→技能→产物→设置逐项点击，当前项蓝框高亮与非当前项差异明确，
+  主窗内页面切换、无新窗无遮罩 ✓（r8-S03-rr-step2-skills/-artifacts/-settings）
+步骤3 设置切回会话：消息流保留（收到/通了/就绪 气泡均在）✓
+  （r8-S03-rr-step3-chatback）
+步骤4 真实拖拽缩至 min 800×560（dd:/dm: 外角拖入，geom 确认 60 60 800 560），
+  四视图重切：无横向滚动条、导航项不重叠、主要控件可见可点 ✓
+  （r8-S03-rr-step4-min-chat/-skills/-artifacts/-settings；技能中心健康文案
+  完整换行不截切——DEF-S03-01 修复在真机再次确认）
+步骤5 更多组逐一点击：记忆(icon2)→「记忆管理」面板开+关 ✓
+  (r8-S03-rr-step5-icon2)；Trace(icon3)→「ContextTrace」面板开+关 ✓
+  (r8-S03-rr-step5-icon3)；反馈(icon4)→「反馈问题」对话框开+关 ✓
+  (r8-S03-rr-step5-icon4, r8-S03-rr-step5-closed)；侧栏底部「已连接」徽章在 ✓
+步骤6 快速循环切换 **40 次（10 轮×4 视图，09:12:40Z–09:12:52Z，12 秒）**，
+  回聊天视图真实发送「切换压力验证」→ 回复「收到，切换正常，随时待命」
+  **仅渲染一次**（r8-S03-rr-step6-reply）；会话列表无重复条目；
+  run_id_under_test=**d59ab9cb3ec15cf89ed067983ea1eb42**；
+  devtools 控制台自 16:59:42 清空后**零新增报错**（r8-S03-rr-step6-console2，
+  "Console opened at 17:14:10" 上方空白，仅存 S02 探针输出）✓
+
+判定：步骤 1–6 全部满足 → **S03 PASS（重跑，含此前被阻塞的步骤6 后半）**
+VERDICT_PASS
