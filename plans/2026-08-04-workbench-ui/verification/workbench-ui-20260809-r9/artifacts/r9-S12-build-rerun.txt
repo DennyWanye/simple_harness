@@ -1,0 +1,43 @@
+# r9 S12 build-green（rerun @ fb4fb6f，store.py 修复后）started=2026-08-09T02:19:58+08:00
+## tsc
+tsc_exit=0
+## vitest
+
+ Test Files  76 passed (76)
+      Tests  673 passed (673)
+   Start at  02:19:58
+   Duration  5.39s (transform 1.68s, setup 567ms, collect 8.92s, tests 4.54s, environment 16.84s, prepare 2.83s)
+
+vitest_done
+## build
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+build_exit=0
+## cargo test
+test result: ok. 79 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+cargo_test_done
+## cargo check
+warning: `simple-harness` (lib) generated 10 warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.86s
+cargo_check_exit=0
+## backend capabilities pytest（本次改动就在这里，加测）
+FAILED tests/capabilities/test_universal_action_fixture_preparer.py::test_preparer_is_idempotent_until_a_fixture_is_contaminated
+FAILED tests/capabilities/test_universal_action_fixture_preparer.py::test_preparer_rejects_photo_outputs_or_stale_user_data
+4 failed, 259 passed in 9.44s
+# ended=2026-08-09T02:20:23+08:00
+
+## 判定
+tsc=0 / vitest 76 files 673 tests 全过 / build=0 / cargo test 79 pass / cargo check=0
+⇒ 步骤1-5 全过 VERDICT_PASS
+加测 backend capabilities pytest：259 passed / 4 failed——4 个失败与首轮完全同集合
+（godot 平台不兼容 1 + universal_action_fixture_preparer 3），经 git stash 对照证明
+与本次 store.py 修复无关，属既存基线债务（已单列任务追踪），不并入本判定。
+
+## Run 创建负向断言（expected_run_created=false）
+构建/单测全程未启动被测应用 ⇒ 结构上不可能产生 root Run。
+（DB 基准与 S09 rerun 同一窗口：trace_runs=152，最新 2026-08-09 01:19:54，
+均早于本 rerun 执行窗口 02:19 起）

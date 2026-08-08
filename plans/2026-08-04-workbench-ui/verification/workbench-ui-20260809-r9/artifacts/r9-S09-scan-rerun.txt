@@ -1,0 +1,25 @@
+# r9 S09 pet-removal 静态扫描（rerun @ fb4fb6f，store.py 修复后）  2026-08-09T02:19:53+08:00
+## grep -riE "petcanvas|pet-anim|pet-engine" tauri-app/src
+tauri-app/src/test/_setup.ts: * 全局 per-test setup（原 pet-anim/__tests__/_setup.ts，T4 桌宠删除后迁此）。
+hits=1
+## grep -riE "petcharacter|pettransform|petmodels|petstatemachine" tauri-app/src
+tauri-app/src/App.tsx:        // PetStateMachine 已删，仅保留 store 缓存链路。
+tauri-app/src/App.tsx:  // T4：PetStateMachine tick / supervisor 气泡派生与选择回调、
+tauri-app/src/stores/sessionsStore.ts: *   • `supervisor_alert` (latest, drives PetStateMachine)
+tauri-app/src/stores/sessionsStore.ts:  // pet's visual state (PetStateMachine) + tile severity colour.
+hits=4
+## pet-* dirs
+(eval):10: no matches found: tauri-app/src/pet-*
+(none)
+## click_through
+(none)
+## live2d/cubism
+4
+## backend 侧（本次 re-attest 触发原因是 backend 改动，一并扫）
+backend_hits=0
+
+## 判定：命中全为注释/历史说明（与首轮一致），无活代码引用。VERDICT_PASS
+
+## Run 创建负向断言（expected_run_created=false）
+静态扫描未启动应用 ⇒ 结构上不可能产生 root Run。
+trace_runs 总数=152  最新=2026-08-09 01:19:54
