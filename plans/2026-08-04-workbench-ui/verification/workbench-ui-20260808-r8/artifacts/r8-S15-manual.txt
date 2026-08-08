@@ -31,3 +31,9 @@
 
 判定：步骤 1–3 全部满足（步骤4 对账亦一致）→ **S15 PASS**
 VERDICT_PASS
+
+## 证据文件覆写披露
+本文件此前存放 r8 早段（2026-08-08 08:26）的一次 S15 执行记录；该记录因
+15:58:42 attestation（.claude/launch.json 未映射→全量复测）已失效，需按本轮
+全新隔离 user-data 重跑。重跑时本文件被整体覆写，旧 attach 条目经
+`attach-evidence --replace` 转入 superseded_evidence，如实披露以免与账本对不上。
