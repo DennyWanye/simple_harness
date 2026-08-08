@@ -84,3 +84,16 @@ idempotency_key 是内容哈希（pack id + 版本 + manifest hash），**与路
 - 基线 worktree `/tmp/wbui-baseline`（保留，供修复后复验；用完删）
 - fixture 目录 `/tmp/wbui-upgrade-fixture-userdata`（保留，它就是复现用例本身）
 - 主 profile `.testenv/cold-A` **未受影响**（路径没变过）
+
+---
+
+## 状态更新（2026-08-09）：已修复并真机复验
+
+修复：`backend/deskpet/capabilities/store.py` `_operation_identity_request_json()` ——
+身份比对对 builtin 来源归一化掉 source.uri（方案2，与 idempotency_key 口径对齐）。
+回归测试：`backend/tests/capabilities/test_pack_store.py` 新增 2 例（换路径重放不冲突 /
+git 换 uri 仍冲突 / builtin 其他字段变仍冲突）。
+真机复验：同一 fixture 目录，修复后 8100 t+10s 绑定、17 个包全部重放命中、
+真实往返成功（kimi-k3「升级成功」）。证据见 r9-S08-manual.txt 步骤7 段落。
+遗留（未在本次修复内做，已单列）：first-party 安装失败仍会掀翻整个 lifespan——
+降级为"该能力不可用+告警"属加固项，风险面大，不混入本缺陷修复。

@@ -1832,6 +1832,28 @@ def _version_from_row(row: Mapping[str, Any]) -> CapabilityVersionRecord:
     )
 
 
+def _operation_identity_request_json(request: Mapping[str, JsonValue]) -> str:
+    """Canonical request JSON as used for operation-identity comparison.
+
+    WBUI-DEF-S08-02: builtin (first-party) packs ship inside the app install
+    directory, so their `source.uri` is an absolute path that changes whenever
+    the app runs from a different location (dev worktree vs installed bundle,
+    moved .app, user-data dir carried to another machine).  The idempotency
+    key is a content hash (id+version+manifest hash) and deliberately ignores
+    the path — but the stored request used to participate verbatim, so the
+    same logical install replayed from a new install path raised
+    operation_idempotency_conflict inside lifespan and the backend never
+    bound its port.  Align the two: for builtin sources the uri is a runtime
+    resolution detail, not identity.  Non-builtin sources (git, archives…)
+    keep the uri — there it IS the identity of what was installed.
+    """
+    normalized = dict(request)
+    source = normalized.get("source")
+    if isinstance(source, Mapping) and source.get("type") == "builtin":
+        normalized["source"] = {**source, "uri": None}
+    return canonical_json(normalized)
+
+
 def _operation_from_row(row: Mapping[str, Any]) -> CapabilityOperationRecord:
     request = _json_object(str(row["request_json"]))
     if request is None:  # pragma: no cover - NOT NULL in schema
@@ -5456,7 +5478,8 @@ class CapabilityStore:
                 record.operation_id != operation_id
                 or record.idempotency_key != idempotency_key
                 or record.kind != kind
-                or canonical_json(dict(record.request)) != request_json
+                or _operation_identity_request_json(record.request)
+                != _operation_identity_request_json(request)
                 or record.root_run_id != root_run_id
                 or not pack_identity_matches
                 or record.requested_scope != requested_scope

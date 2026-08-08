@@ -225,3 +225,116 @@ async def test_policy_and_task_grant_share_the_execution_database(tmp_path) -> N
     assert await store.get_task_grant("grant-1") == grant
     assert await store.revoke_task_grant("grant-1")
     assert await store.get_task_grant("grant-1") is None
+
+
+@pytest.mark.asyncio
+async def test_builtin_install_replay_ignores_source_uri(tmp_path) -> None:
+    """WBUI-DEF-S08-02 回归：builtin 包的 source.uri 是安装路径，不是操作身份。
+
+    同一个 user-data 目录先后被两个安装路径不同的构建打开时，first-party
+    install 的重放必须命中原记录（幂等键是内容哈希，与路径无关）；修复前
+    request_json 逐字节参与身份比对，路径一变整个 lifespan 就抛
+    operation_idempotency_conflict，后端永远起不来。
+    """
+    path = await initialize_capability_database(tmp_path / "workflow.db")
+    store = CapabilityStore(path, clock=lambda: 100.0)
+
+    def install_request(uri: str) -> dict:
+        return {
+            "source": {
+                "type": "builtin",
+                "uri": uri,
+                "revision": "shipped-v1",
+                "subdirectory": None,
+            },
+            "scope": "builtin",
+            "scope_key": "builtin",
+            "generated": False,
+            "expected_pack_id": "skill-doc-edit",
+            "parent_version": None,
+            "parent_manifest_hash": None,
+            "derived_from_receipt_ref": None,
+        }
+
+    first = await store.create_operation(
+        operation_id="op-builtin-1",
+        idempotency_key="first-party:skill-doc-edit:0.1.0:abc123",
+        kind="install",
+        request=install_request("/tmp/old-install-location/packs/skill-doc-edit"),
+        pack_id="skill-doc-edit",
+        requested_scope="builtin",
+        requested_scope_key="builtin",
+    )
+
+    # 换一个安装路径重放：必须返回原记录，而不是 conflict。
+    replay = await store.create_operation(
+        operation_id="op-builtin-1",
+        idempotency_key="first-party:skill-doc-edit:0.1.0:abc123",
+        kind="install",
+        request=install_request("/opt/new-install-location/packs/skill-doc-edit"),
+        pack_id="skill-doc-edit",
+        requested_scope="builtin",
+        requested_scope_key="builtin",
+    )
+    assert replay.operation_id == first.operation_id
+    assert replay.request == first.request  # 落库的仍是首次请求原文
+
+    # 但 builtin 请求的其他字段变了仍然要 conflict——归一化只豁免 uri。
+    mutated = install_request("/opt/new-install-location/packs/skill-doc-edit")
+    mutated["generated"] = True
+    with pytest.raises(CapabilityStoreConflict) as caught:
+        await store.create_operation(
+            operation_id="op-builtin-1",
+            idempotency_key="first-party:skill-doc-edit:0.1.0:abc123",
+            kind="install",
+            request=mutated,
+            pack_id="skill-doc-edit",
+            requested_scope="builtin",
+            requested_scope_key="builtin",
+        )
+    assert caught.value.code == "operation_idempotency_conflict"
+
+
+@pytest.mark.asyncio
+async def test_non_builtin_install_uri_still_part_of_identity(tmp_path) -> None:
+    """git 等外部来源的 uri 就是"装的是什么"，换 uri 必须仍然 conflict。"""
+    path = await initialize_capability_database(tmp_path / "workflow.db")
+    store = CapabilityStore(path, clock=lambda: 100.0)
+
+    def git_request(uri: str) -> dict:
+        return {
+            "source": {
+                "type": "git",
+                "uri": uri,
+                "revision": "main",
+                "subdirectory": None,
+            },
+            "scope": "user",
+            "scope_key": "default",
+            "generated": False,
+            "expected_pack_id": "community-pack",
+            "parent_version": None,
+            "parent_manifest_hash": None,
+            "derived_from_receipt_ref": None,
+        }
+
+    await store.create_operation(
+        operation_id="op-git-1",
+        idempotency_key="user-install-1",
+        kind="install",
+        request=git_request("https://example.com/a/pack.git"),
+        pack_id="community-pack",
+        requested_scope="user",
+        requested_scope_key="default",
+    )
+    with pytest.raises(CapabilityStoreConflict) as caught:
+        await store.create_operation(
+            operation_id="op-git-1",
+            idempotency_key="user-install-1",
+            kind="install",
+            request=git_request("https://example.com/b/pack.git"),
+            pack_id="community-pack",
+            requested_scope="user",
+            requested_scope_key="default",
+        )
+    assert caught.value.code == "operation_idempotency_conflict"

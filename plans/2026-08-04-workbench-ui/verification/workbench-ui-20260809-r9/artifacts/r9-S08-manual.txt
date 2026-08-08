@@ -89,3 +89,41 @@ r9 会重蹈 r8 覆辙。故保持 NOT_RUN，等用户授权后一次性跑完�
 解锁方式（二选一，都需要用户本人）：
   A. 重跑基线时在钥匙串弹窗里输密码并选「始终允许」（一次即可，后续不再弹）
   B. 用 Keychain Access 手动把 /tmp/wbui-baseline 的构建加入 deskpet-relay 条目的信任列表
+
+## 步骤7 重启（第二次执行，基线路线放弃后）
+用户裁决：基线（644ab16）前端有 Token Relay 登录墙（AI 不代输凭据），放弃基线造数路线，
+改用**新版打开旧版已写数据**的收窄口径。覆盖面如实声明：
+  已覆盖：config.toml（38KB, relay-cloud endpoint）/ 4 个 DB（schema v29）/
+          17 个 first-party 能力安装记录 —— 全部由**基线构建的后端**真实写入
+  未覆盖：旧版 UI 造的会话与消息（被登录墙挡住，未造出）
+
+### 第一次尝试暴露真缺陷 WBUI-DEF-S08-02（附件 r9-S08-step7-defect.md）
+新版打开旧版目录 → 后端 lifespan 抛 CapabilityStoreConflict → 8100 持续不绑定
+（轮询 30s listen=0）→ 前端永远「未连接/正在恢复身份…」。
+根因：capability 操作幂等复用检查里 request.source.uri 存**绝对安装路径**并参与身份比对，
+而 idempotency_key 是内容哈希与路径无关——口径不一致。
+
+### 修复（同轮内完成）
+backend/deskpet/capabilities/store.py: 新增 _operation_identity_request_json()，
+身份比对时对 source.type=="builtin" 的请求把 uri 归一化为 None（builtin 包随应用走，
+安装路径不是身份）；git 等外部来源 uri 保留（那是真实身份）。落库仍存原文。
+回归测试 2 个（backend/tests/capabilities/test_pack_store.py）：
+  · builtin 换路径重放 → 命中原记录不冲突；其他字段变了仍冲突
+  · git 来源换 uri → 仍冲突
+capabilities 套件 259 passed / 4 failed——4 个失败经 git stash 对照确认**无本修复也同样失败**
+（godot 平台不兼容 + universal_action_fixture_preparer 既存债务），与本修复无关。
+
+### 修复后真机复验（全部实测）
+  · 8100 在 t+10s 绑定（修复前 100s 不绑）；日志 CapabilityStoreConflict 零命中
+  · capability_platform_ready first_party_installs=17 —— 17 个包全部重放命中，零新建零冲突
+  · UI「已连接」，输入框「输入消息，Enter 发送…」（身份就绪），截图 r9-S08-step7-fixed-ui-win.png
+  · 设置页 Provider 区完整渲染旧版写的 relay 配置（中转站·chinzy/relay 徽标/API Key 掩码/
+    默认模型/启用/编辑/重置 key），截图 r9-S08-step7-settings-win.png
+  · 密钥可用双证：① sf-glm-5.2-1M 发消息 → HTTP 402 余额不足（**鉴权已通过**，key 有效，
+    败在账务；key 无效应为 401）② 切 kimi-k3 重发 → 真实往返成功，回复「升级成功」，
+    截图 r9-S08-step7-roundtrip2-win.png（会话 4 条：2 问 + 1 错误卡 + 1 成功回复）
+  · 期间踩到 IME 拦截英文输入（"kimi"→拼音候选），按既定 workaround 改剪贴板粘贴，如实记录
+
+### 步骤7 判定
+provider 在位 ✔ / 密钥可用（真往返）✔ / DB+能力记录兼容 ✔ / 会话消息迁移＝未覆盖（如实声明）
+在收窄口径下判**过**；发现并修复的 WBUI-DEF-S08-02 单列缺陷记录。
