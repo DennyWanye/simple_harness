@@ -1,0 +1,51 @@
+# TC-WB-17 规模与长文本边界真机执行记录（r8，2026-08-08 15:2x–15:3x +0800）
+# 驱动：drive.sh/ax.sh/nav.sh 真 HID + Web Inspector；HEAD=75eea00（S03/S07 修复已含）
+# app=launch-app.sh s17-run（cold-A）；relay 身份仍降级（known env，本用例不发消息）
+
+前置造数：
+  - 会话：cold-A state.db 既有 37 会话（≥30，TC 允许既有数据）+ 本轮 UI 新建 1 个
+  - 长标题：UI 重命名入口（首行重命名图标(333,306)→重命名话题输入框→Cmd+A→
+    粘贴 120 字符无空格中英数混排→Enter）设置成功
+  - 产物：脚本预置 30 个 report-*.txt 于 cold-A/artifacts，touch -t 错开 mtime
+    （TC 允许脚本造数）；目录共 38 个文件
+
+步骤1 窗口 800×560（程序化设窗，与 r8 S03 先例一致；本 TC 考布局非拖拽持久化）
+  → AX 树 30 行会话全量在树（视口外行 y 至 1696，列表可滚动浏览到底部）
+  → 排序时间倒序：头部 7h前 → 16h前 → 1d前…；尾部两行均 1d前（最旧沉底）；
+    规模造数会话#28 在 #27 上方（创建序对照一致）✅
+  → 截图 r8-S17-01-min-sessions-win.png
+
+步骤2 120 字符长标题条目：侧栏行宽约束 134×18（AX 实测），省略号截断，
+  不撑宽侧栏、无横向滚动条（截图核对）✅
+
+步骤3 「+ 新建会话」入口 (76,185) 215×31 在 800×560 视口内可见；真点击后
+  主区切至新会话（默认话题头部）——可见可点、不被 30+ 列表吞掉 ✅
+
+步骤4 点击长标题会话（22 条真实消息）→ 正常加载消息流（表格已生成等历史消息
+  完整渲染），ChatView 头部显示「压力测试标题A...」截断不破布局
+  → 截图 r8-S17-04-longtitle-loaded-win.png ✅
+
+步骤5 产物视图：38 个 report-* 渲染；显示顺序 vs 文件系统 mtime 倒序
+  diff 对照：TOP10-ORDER-MATCH + TAIL5-ORDER-MATCH（超出 TC 抽查首尾要求）
+  → 截图 r8-S17-05-artifacts-win.png ✅
+
+步骤6 800×560 四视图切换一轮（会话→技能→产物→设置）：
+  (a) 无 inspector 轮：每步 nav 后 AX 立即响应、视图内容随切换变化，设置页
+      渲染（设置标题+LLM Providers 区）；无白屏/秒级卡死
+      → 截图 r8-S17-06-settings-win.png、r8-S17-06-skills-min-win.png
+  (b) 控制台核对：右键→Inspect Element（停靠）→Console。清空前 backlog 仅
+      启动窗口期/身份降级的连接类报错（WS Could not connect / get_shared_secret
+      timing / cloud config POST——均带 boot 时间戳，非切换产生）。
+      15:33:08 清空后再切 会话/产物 等视图 → 控制台零新增（截图
+      r8-S17-06-console-win.png / r8-S17-06-console-after-win.png /
+      r8-S17-06-final-console-win.png）。设置视图切换发生在清空前的 (a) 轮，
+      其若有报错必在 backlog 中——backlog 无任何渲染/组件类报错。
+  (c) inspector 停靠会压缩视口（已知坑）：核对完立即关闭，关闭后 geom 仍
+      800×560、侧栏列表恢复正常 ✅
+  综合：一轮切换流畅、无布局破坏、无切换新增报错 ✅
+
+负向断言（声明不创建 Run）：本用例未发送任何消息（relay 身份降级，输入未触碰）；
+  UI 新建会话仅建 session 不建 Run——workflow.db execution_runs 恒 28 条
+  （与 S14/S16 基线一致，无新增）✅
+
+判定：步骤 1–6 全部满足 → PASS
