@@ -21,9 +21,10 @@ relay 身份失效仍未恢复：backend 持续 `companion_profile_bind` 拒绝�
   未记任何 S06 结论。
 
 ## 待跑清单（按依赖分组）
-- 不依赖 relay、下一段可直接跑：S10（需先解决 cliclick 角落拖拽不触发 resize 的
-  问题——本机 WKWebView 窗口边缘拖拽两次未生效，考虑先 m: 悬停让 resize 光标出现
-  再 dd，或用底边/右边中点）、S17（重 fixture：30 会话+120 字符标题+30 产物）、
+- 不依赖 relay、下一段可直接跑：S10（⚠️ cliclick 合成拖拽在本机对 resize 不生效：
+  m:/dm:、窗内 1px/窗外 4px 起手、慢速小步共 4 法全败，而窗口移动拖拽正常，
+  tauri.conf resizable:true 无误。下一段换 computer-use MCP 的 left_click_drag
+  原生实现，或请用户手拖一次作为锚点后由 AI 接管退出/重启断言）、S17（重 fixture：30 会话+120 字符标题+30 产物）、
   S01/S02/S15 重跑（TESTED_RUNTIME_MISMATCH 作废；注意 S02 步骤3 与 S15 需发消息
   ⇒ 其实也卡 relay）
 - 依赖 relay：S03（全量重跑）、S04、S05、S07、S08（步骤7 provider 往返）、
