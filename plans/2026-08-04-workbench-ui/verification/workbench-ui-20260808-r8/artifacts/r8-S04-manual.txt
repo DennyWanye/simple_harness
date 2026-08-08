@@ -1,0 +1,55 @@
+# S04 真机道 — ChatView 消息真实往返 + companion 特权动作（TC-WB-04 / B4+B5+B9）
+执行：AI (manual-mcp / cliclick 真 HID + devtools)；2026-08-08 17:16–17:19 本地
+基线：HEAD=aa68a42（代码指纹同 attestation 2026-08-08T15:58:42+0800，仅 plans/ 证据变动）
+实例：S02 重跑同一冷启动（launch-app.sh s02-rerun，.testenv/cold-A，日志 s02-rerun.log）
+前置：聊天堵点已解除（r8-probe-storm-fix.md）；本实例日志 companion_control_rejected=0
+
+## 步骤1 真实往返
+  输入栏剪贴板粘贴「用 markdown 回复：一个二级标题、一个三项无序列表、一段行内代码。」
+  → 点击发送按钮（真坐标 766,562）→ 后端真实往返：
+  run_id_under_test=**b705e0a27cc5509380a25cfce7e3457d**
+  （react_loop harness_provider_scope_pinned，s02-rerun.log）→ 助手回复渲染 ✓
+
+## 步骤2 markdown 渲染
+  截图 r8-S04-rr-01-markdown：「验证结果」渲染为标题样式（大号粗体），
+  三项无序列表带圆点列表样式，行内代码 `excel_create(sheet="S07验证")`
+  为代码框样式——无裸 #/-/反引号字面文本 ✓
+
+## 步骤3 麦克风占位（B9）
+  输入栏右下麦克风按钮存在，图标带斜杠禁用态；悬停 tooltip=
+  「语音功能暂时关闭，后续将接入 Realtime」（截图 r8-S04-rr-02-mic-tooltip）；
+  真实点击后无任何反应（r8-S04-rr-03-micclick 与点击前一致，无录音态/弹窗）✓
+
+## 步骤4 (a) 层：companion 凭据链单测（基线等值判据，2026-08-08 判据修正版）
+  repo 根执行 backend/.venv/bin/python -m pytest backend/tests/companion/ -q
+  → **9 failed, 643 passed, 10 skipped**，失败集合与基线 644ab16 逐条一致：
+  test_candidate_draft_receipts v19→v20 ×1、test_performance durability lane
+  参数化 ×7（final/tool_batch_1_new_goal/tool_batch_3_new_goal/
+  tool_batch_1_existing_goal/tool_batch_3_existing_goal/retry/fallback）、
+  test_skill_pack_adapter 清单哈希 ×1 ⇒ 与基线等值 ✓
+
+## 步骤5 (b) 层：真机连接 scope 证据
+  ② grep -aE companion_action s02-rerun.log 命中（原样入账）：
+     INFO: 127.0.0.1:63570 - "WebSocket /ws/control?secret=fb8173…&session_id=
+     message-panel-main&requested_window_label=main&requested_scope=
+     companion_action" [accepted]
+     → 含 requested_scope=companion_action 且 [accepted]；
+     grep -ac window_scope_denied = **0**；无 scope 降级记录 ✓
+  ③ canonical 触发：真机 devtools Console（清空于 17:18:42）执行
+     invoke("get_window_control_credential", {connectionId:"r8-probe",…,
+     requestedScope:"companion_action"}) → 返回非 error：
+     CRED_OK::{"backendProcessInstanceId":"5ae99c34-fd3d-44da-8337-efb7527e3e90",
+     "connectionId":"r8-probe","controlEpoch":"1","windowLabel":"main",
+     "scope":"companion_action","challengeHash":"ba9c736f19e7f60b7f6764adb0b7908c…",
+     "requestSeq":"1","commandKind":"companion_profile_bind",…}
+     （截图 r8-S04-rr-04-cred）——凭据签发成功，(main, companion_action) 白名单放行 ✓
+
+## 步骤5b 加分：本会话未自然出现 companion 确认卡片（不判 FAIL，per oracle）
+
+## 步骤6 聊天头部条
+  r8-S04-rr-01-markdown 头部：会话标题「默认话题」、default 会话链 chip、
+  模型按钮 kimi-k3（带编辑笔）、工具（扳手）、Harness 巡检开关、ContextRing 12%
+  全部可达 ✓
+
+判定：步骤 1–3 + 4(a) + 5(b) 全部满足 → **S04 PASS**
+VERDICT_PASS
