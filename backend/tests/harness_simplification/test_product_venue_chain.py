@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import replace
 from types import MappingProxyType
 from types import SimpleNamespace
@@ -1040,8 +1041,57 @@ async def test_canonical_event_adapter_redacts_tools_and_preserves_failure_statu
     assert "private query" not in str(ws.frames)
     assert tool_result["payload"]["ok"] is False
     assert tool_result["payload"]["status"] == "failed"
-    assert tool_result["payload"]["result"] == '{"result_kind": "web_search", "status": "completed", "item_count": 0}'
+    # item_count=1：presenter 现按 D1 契约把 outcome.value（registry 信封）
+    # 作为 result 投影，web 摘要能看到 value 里的 1 条 results；泄漏
+    # {state,value,error} 包装的旧行为会让这里永远数出 0。
+    assert tool_result["payload"]["result"] == '{"result_kind": "web_search", "status": "completed", "item_count": 1}'
     assert "secret.example" not in str(ws.frames)
+
+
+@pytest.mark.asyncio
+async def test_canonical_tool_outcome_presents_registry_envelope_with_artifacts(tmp_path) -> None:
+    """S07 回归（WBUI r8）：tool.outcome 的 result 必须是 registry 信封本体，
+    artifacts 在顶层 —— 前端 extractArtifactsFromResult 只认这个形状。"""
+    session_db = SessionDB(tmp_path / "projection.db")
+    await session_db.initialize()
+    ws, vector = _WS(), _Vector()
+    context, _peers = _presentation_context(ws, session_db, vector)
+    presenter = build_product_run_presenter()
+    adapter = CanonicalRunEventPresentationAdapter()
+    state = PresentationState()
+
+    envelope = {
+        "ok": True,
+        "result": "{}",
+        "artifacts": [{"kind": "file", "path": "/tmp/out/x.pptx", "title": "x.pptx"}],
+    }
+    succeeded = RunEvent(
+        event_id="event-artifact",
+        run_id="run-artifact",
+        root_run_id="run-artifact",
+        session_id="text-session",
+        durable_seq=3,
+        candidate=RunEventCandidate(
+            event_key="tool-artifact",
+            kind="tool.outcome",
+            status=OutcomeStatus.SUCCEEDED,
+            driver_kind="react",
+            correlation={"call_id": "call-artifact"},
+            payload={
+                "tool_name": "ppt_create",
+                "outcome": {"state": "success", "value": envelope, "error": None},
+            },
+        ),
+        created_at=3.0,
+    )
+
+    await presenter.present_run_event(succeeded, adapter, context, state)
+
+    tool_result = next(frame for frame in ws.frames if frame["type"] == "tool_result")
+    assert tool_result["payload"]["ok"] is True
+    projected = json.loads(tool_result["payload"]["result"])
+    assert projected["artifacts"] == envelope["artifacts"]
+    assert "state" not in projected and "value" not in projected
 
 
 @pytest.mark.parametrize(

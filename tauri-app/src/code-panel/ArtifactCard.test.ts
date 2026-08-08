@@ -64,6 +64,22 @@ describe("extractArtifactsFromResult — envelope 解析", () => {
     expect(got[0].preview).toBe("## md");
   });
 
+  // S07 历史兼容：presenter 曾泄漏 NormalizedToolOutcome 包装，
+  // 旧会话持久化行仍是 {state, value: {artifacts}} 形状
+  it("extracts artifacts from legacy {state,value:{artifacts}} wrapper rows", () => {
+    const r = JSON.stringify({
+      state: "success",
+      error: null,
+      value: {
+        ok: true,
+        artifacts: [{ kind: "file", path: "/tmp/out/x.pptx", title: "x.pptx" }],
+      },
+    });
+    const got = extractArtifactsFromResult(r);
+    expect(got).toHaveLength(1);
+    expect(got[0].path).toBe("/tmp/out/x.pptx");
+  });
+
   it("returns [] on malformed JSON", () => {
     expect(extractArtifactsFromResult("not json {{{")).toEqual([]);
   });

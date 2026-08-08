@@ -515,6 +515,16 @@ export function extractArtifactsFromResult(resultRaw: string): ToolArtifact[] {
       if (Array.isArray(obj.artifacts)) {
         return obj.artifacts as ToolArtifact[];
       }
+      // 兼容历史行：presenter 曾泄漏 NormalizedToolOutcome 包装
+      // {state, value: {artifacts}}，已持久化的旧会话仍是这个形状
+      const outcomeValue = (obj as { value?: unknown }).value;
+      if (
+        outcomeValue &&
+        typeof outcomeValue === "object" &&
+        Array.isArray((outcomeValue as { artifacts?: unknown }).artifacts)
+      ) {
+        return (outcomeValue as { artifacts: ToolArtifact[] }).artifacts;
+      }
       // 兜底：从工具自身的 result.artifacts 嵌套（dry_run 等场景）
       if (typeof obj.result === "string") {
         try {

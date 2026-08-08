@@ -123,11 +123,17 @@ class CanonicalRunEventPresentationAdapter:
         if candidate.kind == 'tool.outcome':
             outcome = payload.get('outcome')
             normalized = dict(outcome) if isinstance(outcome, Mapping) else {'value': outcome}
+            # D1 契约（plans/2026-05-23-tool-last-mile-upgrade）：UI 帧与持久化行
+            # 携带的是 registry 信封（artifacts 在顶层）。NormalizedToolOutcome 的
+            # {state,value,error} 包装是 harness 内部形状，不外泄；失败且无 value
+            # 时保留完整包装，error 信息才不丢。
+            outcome_value = normalized.get('value')
+            envelope = outcome_value if outcome_value is not None else normalized
             tool_name = str(payload.get('tool_name') or correlation.get('tool_name') or '')
             return (ToolResultEvent(
                 tool_call_id=str(correlation.get('call_id') or ''),
                 tool_name=tool_name,
-                result=json.dumps(normalized, ensure_ascii=False),
+                result=json.dumps(envelope, ensure_ascii=False),
                 outcome_status=candidate.status.value,
                 outcome_error=error,
                 iteration=iteration,
