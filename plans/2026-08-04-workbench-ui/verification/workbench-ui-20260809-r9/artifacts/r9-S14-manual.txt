@@ -1,0 +1,32 @@
+# r9 / WBUI-S14-tray-menu / TC-WB-14 —— 真机手工道
+驱动：System Events 对 menu bar 2 status item 真点击（同 r8 已验证方法）；构建 HEAD=fb4fb6f
+会话日志：r9-c-hot2.log
+
+## 步骤1 托盘菜单三项
+click menu bar item 1 of menu bar 2 → 枚举 menu items 返回恰好三项：
+  显示主窗 / 隐藏主窗 / 退出 Simple Harness
+无「显示桌宠」「隐藏桌宠」「退出 DeskPet」旧文案（枚举全集即证明，非抽样）。
+截图 r9-S14-01-tray-menu.png（本轮早前拍摄）。判定：过
+
+## 步骤2 隐藏主窗
+点击「隐藏主窗」→ 实测：windows count=0（主窗不在屏），app 进程=1、backend=1（未销毁），
+menu bar 2 状态项 count=1（托盘图标仍在）。判定：过
+
+## 步骤3 显示主窗
+点击「显示主窗」→ windows count=1，截图 r9-S14-02-reshown-win.png：会话「空态恢复末验」
+消息流原样（4 条）、附着的 devtools 连 console 历史都未丢——隐藏/显示为纯可见性切换，
+状态零丢失。判定：过
+
+## 步骤4 退出 Simple Harness
+点击「退出 Simple Harness」→ 进程退出后实测：
+  app=0  backend=0（**无孤儿 backend**，坑#1 场景不复现）  port8100=0（监听释放）
+  托盘：System Events 查询报"process simple-harness 不存在"（图标随进程消失，预期）
+判定：过
+
+## 总判定
+四步全过、零旧文案 ⇒ **PASS**
+
+## Run 创建负向断言（expected_run_created=false）
+本场景仅托盘显隐/退出操作，无消息发送 ⇒ 不应创建 Run。
+硬证据：步骤2-4 执行窗口（02:55 后）无新 trace_runs——最新仍为
+4c51c0af9adc5eaeafbcea4b32960320（02:47:50，属 S04）。

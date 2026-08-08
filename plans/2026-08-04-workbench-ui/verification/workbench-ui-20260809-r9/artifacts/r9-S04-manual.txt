@@ -1,0 +1,61 @@
+# r9 / WBUI-S04-chat-companion / TC-WB-04 —— 真机手工道 + 脚本道
+执行：真 HID（cliclick + AX + 剪贴板粘贴），构建 HEAD=fb4fb6f
+运行栈：launch-app.sh（tauri dev 自 spawn backend，stdout 合流 r9-c-hot2.log——
+等价于用例配方的 dev.sh tee，本仓 mac 侧无 dev.sh，以 launch-app.sh 为等价物，如实声明）
+会话：空态恢复末验（7b000f05-9e68-4eb6-a897-…，S18 步骤5 产物沿用）
+
+## 步骤1 markdown 请求真实往返
+剪贴板粘贴「用 markdown 回复：一个二级标题、一个三项无序列表、一段行内代码。」+ Enter。
+如实记录：首次发送时应用不在前台，粘贴落空（截图 r9-S04-01 首版消息流未变）；
+guard 前台校验后重发成功。助手真实回复（kimi-k3）。
+run_id_under_test = 4c51c0af9adc5eaeafbcea4b32960320（trace_runs @ 02:47:50，
+与本次往返执行窗口吻合）。判定：过
+
+## 步骤2 markdown 渲染
+截图 r9-S04-01-markdown-win.png：「示例回复」渲染为标题样式（大号粗体）、
+三项渲染为真无序列表（圆点缩进）、`print("hello")` 渲染为行内代码（等宽+底色）——
+均非裸 #/-/反引号字面文本。判定：过
+
+## 步骤3 麦克风占位（B9）
+AX 层硬证据（比 hover 截图更强）：
+  814,836 enabled=**false** help=「语音功能暂时关闭，后续将接入 Realtime」
+按钮存在、禁用态、tooltip 与"语音待中转站 Realtime 接入"语义等价。判定：过
+
+## 步骤4 B5 (a)层 companion pytest
+命令：cd backend && PYTHONPATH=<repo root> uv run pytest tests/companion/ -q
+结果：**9 failed, 643 passed, 10 skipped**（r9-S04-pytest.txt）——与基线 644ab16 等值，
+失败集与 TC-WB-04 判据修正注记载的 9 项逐条一致（本轮 S12 亦两次核对同集合）。判定：过
+
+## 步骤5 B5 (b)层 真机连接 scope 证据
+② grep -aE "companion_action" r9-c-hot2.log 命中（原样入账）：
+   INFO: 127.0.0.1:57924 - "WebSocket /ws/control?secret=…&session_id=message-panel-main
+   &requested_window_label=main&requested_scope=companion_action" [accept…
+   断言：含 requested_scope=companion_action 且被 accept ✔；
+   grep -c window_scope_denied = **0** ✔；无 scope 降级记录 ✔
+③ canonical 触发（devtools console 真机执行）：
+   原配方的无参 invoke 已过时——实测报
+   `invalid args 'connectionId' … missing required key connectionId`（截图 r9-S04-04 上半），
+   命令签名已演进为挑战-响应式（process_manager.rs:833：connectionId/controlEpoch/
+   challenge/requestSeq/commandKind/requestHash/requestedScope 7 参）。
+   按新签名构造合法调用（requestedScope:"companion_action"）→ 返回**非 error 凭据对象**：
+   {backendProcessInstanceId:"70c532ac-b970-47ec-a636-ba696b1d9474",
+    connectionId:"s04-verify", controlEpoch:"1", windowLabel:"main",
+    scope:"companion_action", …}（截图 r9-S04-04-invoke-result.png）
+   ⇒ main 窗签发 companion_action scope 凭据成功，B5 成立，非 vacuous。
+   **配方漂移披露**：TC-WB-04 步骤5③ 的无参 invoke 写法基于旧签名，应随接口演进更新；
+   本轮以"同一验证主张 + 新签名合法调用"执行，判定主张不变。判定：过
+
+## 步骤5b 加分证据
+本会话未自然出现 companion 确认卡片——按用例原文不判 FAIL，无加分。
+
+## 步骤6 聊天头部条（B4 能力不减）
+AX 实测：会话标题「空态恢复末验:…」+ sid ✔；模型按钮 help=「模型与参数（当前 kimi-k3）」✔；
+ContextRing help=「kimi-k3 · 3.3k / 29k (11.4%)」desc=「Context usage: 11%」✔；
+Harness 巡检开关 help=「打开 Harness 运行观察」（另有隐藏工具消息/隐藏执行进度两开关）✔。
+判定：过
+
+## 总判定
+步骤1-3 + 4(a) + 5(b) 全过，5b 无卡片不判 FAIL ⇒ **PASS**
+
+## Run 创建断言（expected_run_created=true）
+run_id_under_test = 4c51c0af9adc5eaeafbcea4b32960320（见步骤1）

@@ -1,0 +1,3 @@
+FAILED tests/companion/test_performance.py::test_product_venue_transaction_trace_uses_one_full_durability_lane[fallback]
+FAILED tests/companion/test_skill_pack_adapter.py::test_shipped_skill_inventory_is_exact_and_hash_validated
+9 failed, 643 passed, 10 skipped in 52.50s
