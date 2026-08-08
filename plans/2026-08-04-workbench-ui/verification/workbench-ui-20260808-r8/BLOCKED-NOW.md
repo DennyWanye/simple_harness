@@ -19,22 +19,19 @@ relay 身份拒绝循环的**真实杀伤面**已实测确认（probe-send.log +
 - S03 布局溢出 → 05f72ec（隐式 grid 轨道 min-content 下限；浏览器道复测 0 溢出）
   ⚠️ 浏览器道仅诊断证据，不作场景判定（本项目是 Tauri 桌面应用）。
 
-## 本段新增真机结论（fea8c11 已落账）
-- S14 托盘三项：root run PASS（负向断言含 execution_runs 零新增）
-- S16 退出路径矩阵：root run PASS（三路径全清退出+几何锚点恢复一致+隐藏反证）
-- S06：步骤1/2/3/4/6 真机全过（证据 r8-S06-manual.txt），判定项④⑤⑥被数据态卡住：
-  操作 tab 三入口 = 后端 available_actions 投影（cancel 仅 running；rollback/uninstall
-  仅带 pack 绑定 succeeded）；现 17 op 无绑定，legacy SkillStore 安装不产生 op。
-  闭合路径：待 relay 恢复后经 capability-pack 安装/生成链路造一个可操作 op。
-  未记任何 S06 结论。
+## 已闭合场景（16:40 状态，全部晚于 15:58:42 attestation 的重跑 PASS）
+S01（冷启七步）/ S09 / S10（11步全套）/ S11 / S12（基线等值）/ S14 / S16 / S17
+——8 场景 record-run PASS 且从 check-only 诊断中清零。
+注意教训：re-attest 必须在改码后、跑场景前执行（详见全局知识库
+plan-test-reattest-ordering.md）；本轮因次序失误付了 8 场景重跑的代价，已还清。
 
-## 待跑清单（按依赖分组）
-- ✅ S10/S14/S16/S17 已真机 PASS 落账（本段完成）。cliclick resize 已破案：
-  按下后要用 dm:（非 m:）且向外拖；min 尺寸向内拖必然无效。该环境受限项作废。
-- S01/S02/S15 重跑（TESTED_RUNTIME_MISMATCH 作废；S02 步骤3 与 S15 需发消息 ⇒ 也卡 relay）
-- 依赖 relay：S03（全量重跑）、S04、S05、S07、S08（步骤7 provider 往返）、
-  S13（步骤5 真实往返）、S18、S06 判定项④⑤⑥
-- 其余：S09/S11/S12 脚本道已绿但需按 impact 复核是否重跑
+## 剩余 10 场景 = r8 全部剩余诊断，全部硬依赖聊天链路
+S02（步骤3发消息+devtools探针）/ S03（步骤6后半）/ S04 / S05 / S06（判定项④⑤⑥
+需 capability-pack 造 op）/ S07（步骤5 消息流产物卡片）/ S08（步骤7 provider 往返）
+/ S13（步骤5 真实往返）/ S15 / S18。
+16:1x 实测已确认：LLM 链路可用（探针往返成功、excel 真产出文件），但身份拒绝
+循环每 ~30s 踢 WS ⇒ 结果帧丢失（产物卡片帧实测丢失 + Cannot call send once
+close 横幅）、发送窗口间歇失效 ⇒ 无法产出未污染判定。等 relay 恢复后一次跑完。
 
 ## 环境/驱动备忘（新增坑）
 - cliclick 拖拽移动窗口 OK；角落 resize 拖拽不生效（两次实测）——S10 步骤1 硬需
