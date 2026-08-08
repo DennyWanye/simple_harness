@@ -1,0 +1,21 @@
+# S10 步骤5-10 几何文件注入系列  2026-08-09T03:31:01+08:00
+文件: /Users/denny/projects/simple_harness/.testenv/cold-S01-r9/window_geometry.json（DESKPET_USER_DATA_DIR 覆盖下的等价路径，用例写死的 target/debug/userdata 为未覆盖时的缺省——如实披露）
+备份: /tmp/geom-backup.json = {"width":1123,"height":710,"x":440,"y":492}
+
+## 步骤5-6: 写入 {"width":500,"height":640}（低于 min 800x560）
+写入后: {"width":500,"height":640}
+启动结果 geom: 235 111 1000 701
+
+## 步骤7: 拖拽一次→退出→重启恢复（在下一步手工做，此处占位）
+
+## 步骤8: 写入 {"width":900,"height":700}（合法高于 min）
+写入后: {"width":900,"height":700}
+启动结果 geom: 235 111 900 700
+
+## 步骤9: 截断 JSON {"width":500
+写入后: {"width":500
+启动结果 geom: 235 111 1000 701
+
+## 步骤10: 空文件
+写入后: [empty, 0 bytes]
+启动结果 geom: 235 111 1000 701

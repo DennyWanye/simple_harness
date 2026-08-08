@@ -1,0 +1,40 @@
+# r9 / WBUI-S13-backend-not-ready / TC-WB-13 —— 真机手工道（negative-safety）
+profile：cold-S01-r9；构建 HEAD=fb4fb6f；日志 r9-s10-restart1.log / r9-s13-final.log
+构造手段（记录）：b) 连杀 backend 6 次耗尽 supervisor 重启预算（5次/60s）+ c) TCP 占位 8100
+
+## 步骤1 错误态呈现 + 重试入口
+supervisor 放弃后弹「启动失败」modal：错误正文 + 重试 / 打开日志目录 / 退出 三入口
+（截图 r9-S13-01-errorstate-win.png），非静默空白。判定：过
+
+## 步骤2 不可黑洞发送
+modal 全屏遮罩期间输入框不可达（结构上不可能黑洞发送）；恢复过程中身份未就绪时
+输入框禁用（placeholder「正在恢复身份…」实测粘贴被拒不入流）。判定：过
+
+## 步骤3 侧栏徽章最差态（补证：AX 读值，非目测）
+轻量重构造：单杀 backend 一次，AX 轮询侧栏徽章：
+  t+1s「未连接」 t+3s「未连接」 → supervisor 自动拉回 → t+4s 起「已连接」
+徽章与连接实况一致（杀后立即最差态，恢复即转好），无「徽章绿但拒发」分叉。判定：过
+
+## 步骤4 不可用状态下点重试
+端口仍被占时点「重试」→ supervisor 真实重启 backend → 撞占用 → 回落错误态，
+错误正文**升级为精确诊断**「端口 8100 已被其它程序占用（Address already in use
+(os error 48)）」（截图 r9-S13-02-retry-fallback-win.png），无崩溃无白屏。判定：过
+
+## 步骤5 恢复后端 → 重试 → 连接恢复 → 真往返
+释放端口占位 → 点重试 → backend 正常绑定 8100 → modal 消失、工作台恢复、
+「已连接」、历史消息在（截图 r9-S13-03-recovered-win.png）。
+**途中第二次复现 WBUI-DEF-AUTH-01**（如实入账，见该缺陷文档更新）：supervisor 拉起的
+新 backend 进程读到的 keyring token 已过期（S15 那次 refresh 后约 50 分钟）→
+companion_profile_bind 401 循环 → 输入框停「正在恢复身份…」。经账户面板触发前端
+refresh + 重启应用后绑定成功（/v1/me 200 @ t+8s）。
+恢复后发送「恢复后往返验证…」→ 真实往返回复「恢复」（截图 r9-S13-05-roundtrip2-win.png）。
+判定：过（AUTH-01 为独立既存缺陷，单列不并入本场景判定）
+
+## 步骤6 四视图回归
+技能中心/产物库/设置/会话 各切一轮，无错误态残留（截图 r9-S13-06-views-ok-win.png）。判定：过
+
+## 总判定：判定项步骤 1/3/4/5 全部满足 ⇒ **PASS**
+
+## Run 创建负向断言（expected_run_created=false）
+错误态构造与恢复操作本身不发消息；步骤5 的验证往返为恢复证据（该 profile 新增 1 条
+trace_run，属"恢复后功能可用"的证明，非错误态场景步骤产生的意外 run——如实披露）。

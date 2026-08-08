@@ -1,0 +1,34 @@
+# r9 / WBUI-S16-close-exit-paths / TC-WB-16 —— 真机手工道（B13 退出路径矩阵）
+profile：cold-S01-r9；构建 HEAD=fb4fb6f；方式=dev（tauri dev）
+核对命令与豁免注：dev 包装进程（npm/node tauri dev、vite、MCP 子进程）随 tauri dev
+生命周期管理；实测各退出路径连 vite 都一并回收（vite=0），核对以四指标为准：
+  app（target/debug/simple-harness）/ backend（venv python main.py）/ port8100 LISTEN / vite
+
+## 作废披露
+首次尝试用单脚本批量跑全矩阵，因 shell cwd 重置导致 drive.sh 解析失败、红钮点击
+用空坐标落空、pgrep 匹配到脚本自身文本——该输出整体作废（文件已删除，不作任何证据）。
+以下为逐步重跑的有效实测。
+
+## 步骤1 锚点
+真 HID 拖标题栏 → 锚点 = 120,286 1000×701（位置非默认；默认为 235,111）。
+
+## 步骤2-3 路径A：标题栏红钮
+红钮点击（abs 136,302）→ **app=0 backend=0 port=0 vite=0** 全清，无分裂态。
+重启 → geom = 120 286 1000 701 —— 锚点逐位恢复。判定：过
+
+## 步骤4-5 路径B：Cmd+Q
+keystroke q+cmd → **app=0 backend=0 port=0 vite=0** 全清。
+重启 → 120 286 1000 701 逐位恢复。判定：过
+
+## 步骤6-7 路径C：托盘「退出 Simple Harness」
+托盘菜单项点击 → **app=0 backend=0 port=0 vite=0** 全清。
+重启 → 120 286 1000 701 逐位恢复；三条路径恢复结果一致。判定：过
+
+## 步骤8 隐藏语义反证
+托盘「隐藏主窗」→ 窗口=0 而 **app=1 backend=1 托盘=1** —— 应用仍运行。
+隐藏仅经托盘路径；红钮不承担隐藏语义（步骤2 红钮=完全退出已证）。判定：过
+
+## 总判定：三路径全部「完全退出+几何恢复」+ 隐藏独立成立 ⇒ **PASS**
+
+## Run 创建负向断言（expected_run_created=false）
+纯窗口生命周期操作，无消息发送 ⇒ 无 root Run 增量。

@@ -29,3 +29,13 @@ backend/deskpet/companion/control_ingress.py:992 一带：`_access_token_provide
 ## 与 WBUI-DEF-COMP-01 的关系
 独立缺陷。COMP-01 是 default 会话 owner 纪元遗留（绑定成功后的会话级问题）；
 本缺陷是绑定本身完成不了（token 生命周期问题）。
+
+---
+
+## 复现记录 #2（2026-08-09 04:07，S13 执行中）——触发面升级
+
+supervisor 拉起的新 backend 进程（非用户手动重启）同样读到过期 token（距 S15 那次
+refresh 约 50 分钟）→ 401 循环 → 前端「正在恢复身份…」。
+⇒ 触发面不限于"用户重启应用"：**supervisor 自动恢复 backend 也会触发**。
+结合 token TTL ≈ 1 小时量级：任何 backend 进程更替 + 前端近期无 relay 请求 = 必卡。
+严重度由"低概率边缘"上调为"常规使用可遇"。恢复仍需 账户面板触发 refresh + 重启应用。
