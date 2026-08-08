@@ -93,3 +93,20 @@ S01 的全部断言（窗体形态/几何/Dock/拖拽缩放/静态配置）只�
 判定：步骤 1–6 全部满足（标题栏/居中/默认尺寸/min 尺寸/Dock 可见/不透明/
 可最大化还原），步骤 7 静态核对通过 → **S01 PASS**
 VERDICT_PASS
+
+## 重跑（16:2x–16:3x，attestation 15:58:42 之后——re-attest 次序失误的补救重测）
+前置：rm -rf .testenv/cold-S01-r8 后冷启动（launch-cold-s01.sh，pid=539）
+步骤1 三钮 AX 实证：AXCloseButton/AXFullScreenButton/AXMinimizeButton；标题
+  「Simple Harness」；截图 r8-S01-rerun-coldstart（onboarding 新文案在位）✅
+步骤2 初始几何 (235,111,1000,701) ≈ 默认 1000×700 居中（与首轮同值，居中偏差
+  0/16.5 ≤ ±10% 口径）✅
+步骤3 lsappinfo 含 simple-harness（Dock/Cmd+Tab 注册）✅
+步骤4 真拖拽移动 (235,111)→(60,206) 尺寸不变；右下角真拖拽放大 1000×701→1081×732
+  （可超默认无 max 卡）✅
+步骤5 连续内拖到最小停在 800×560 = tauri.conf min ✅
+步骤6 绿钮真点击 → 全屏（截图 r8-S01-rerun-fullscreen：内容铺满 1470×956 无标题栏；
+  AX 过渡态曾报 1470×33，判定采信截图）；Ctrl+Cmd+F 退出 → 精确还原 (60,60,800,560) ✅
+步骤7 macOSPrivateApi 零命中 ✅
+负向断言：冷数据首启无消息发送；本场景 user-data 隔离（cold-S01-r8），
+  execution_runs 基线（cold-A）不受影响恒 30 ✅
+判定：步骤 1–7 全部满足 → PASS（本条 run 晚于 attestation）

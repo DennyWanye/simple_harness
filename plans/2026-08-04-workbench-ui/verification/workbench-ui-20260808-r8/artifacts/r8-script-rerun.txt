@@ -1,0 +1,40 @@
+# S09/S11/S12 脚本道重跑（16:0x–16:1x，attestation 15:58:42 之后）
+# 背景：re-attest 次序失误触发全量复测；本文件为三个脚本场景的补救重测证据。
+# HEAD=f0942f2（与早晨脚本道跑时相比行为文件无差——重跑结果应与早晨等值）
+
+## S09 桌宠代码全删（TC-WB-09 步骤1-7）
+step1 grep petcanvas|pet-anim|pet-engine → 1 命中，为注释（test/_setup.ts 块注释
+  "原 pet-anim/__tests__/_setup.ts"）→ 0 非注释命中 ✅（与早晨 "1 hits, 0 non-comment" 等值）
+step2 grep petcharacter|pettransform|petmodels|petstatemachine → 4 命中全为 // 或 * 注释
+  （App.tsx×2、sessionsStore.ts×2）→ 0 非注释 ✅（早晨 "4 hits, 0 non-comment" 等值）
+step3/4 八个目录/文件存在性检查 → 无任何 EXISTS 输出 ✅
+step5 click_through → 0 命中 ✅；step6 petmodels → 0 命中 ✅
+step7 tsc --noEmit → TSC_OK（S12 重跑套件内完成）✅
+判定：PASS
+
+## S11 主题 CSS 变量（TC-WB-11 步骤1/1b/2-3，WBUI-BC-01 口径）
+(a) 新增文件色值扫描（views/WorkbenchShell/Sidebar/SessionList/ui.tsx，排除 .test.）
+  → a-count: 0 ✅
+(b) 改造组件 644ab16..HEAD diff 新增行色值扫描（SettingsPanel/CapabilityCenterPanel/
+  SkillStorePanel，含本轮 S03 修复新增行）→ 0 命中 ✅
+(1b) tauri-app 全 HTML（排 node_modules/dist/target）→ 0 文件命中 ✅
+判定：PASS（本轮 S03 布局修复未引入任何硬编码色值）
+
+## S12 测试与构建全绿（TC-WB-12 步骤1-6，基线等值口径同早晨）
+step3 tsc --noEmit → TSC_OK ✅
+step1 vitest run → 76 files / 673 tests 全过（15:48 同 HEAD 已全量验证；16:08 重跑
+  Duration 5.20s 完成无 failed）✅
+step4 npm run build → BUILD_OK ✅
+step2 cargo test --lib → 79 passed 0 failed ✅
+step5 cargo check → exit=0，error 计数 0 ✅
+step6 companion pytest（仓库根 backend/.venv python -m pytest backend/tests/companion/）
+  → 9 failed, 643 passed, 10 skipped —— 与早晨基线逐字等值（9 失败为既有旁证项，
+  TC 规定单独立项不并入 WB-12 结论）✅
+  注：`cd backend && uv run pytest tests/companion/` 形式在当前树报 1 collection error
+  （test_runtime_shutdown.py 用 backend. 前缀绝对导入，须从仓库根跑）——执行目录
+  差异，非本轮回归；从仓库根执行与早晨结果完全一致。
+判定：PASS（步骤7 冷启动对照沿用早晨"基线等值"口径，未重测）
+
+## 负向断言（三场景均声明不创建 Run）
+静态扫描/构建/单测全程未启动应用 ⇒ 结构上不可能产生 root Run；
+cold-A workflow.db execution_runs 恒 30（16:1x 聊天探针后基线，零新增）✅

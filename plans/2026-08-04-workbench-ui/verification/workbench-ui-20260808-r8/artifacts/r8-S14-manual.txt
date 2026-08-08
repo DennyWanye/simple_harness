@@ -31,3 +31,12 @@
 判定：四步全部满足，无旧文案残留 → PASS
 环境注：relay 身份未恢复（companion_profile_bind 拒绝循环持续）；本用例不依赖
   chat/relay 链路，窗口/托盘/进程语义不受其影响。
+
+## 重跑（16:2x，attestation 15:58:42 之后——re-attest 次序失误的补救重测）
+步骤1 托盘枚举：「显示主窗, 隐藏主窗, 退出 Simple Harness」恰三项无旧文案 ✅
+步骤2 隐藏：win=0 app=1 tray=1 ✅
+步骤3 显示：win=1（截图 r8-S14-rerun 略，同首轮）✅
+步骤4 托盘退出：app=0 backend=0 port=0 tray=0 全清 ✅
+负向断言：execution_runs 重跑前后恒 30（28→30 的增量来自 16:1x 两次聊天探针
+  ——链路探针与 excel 任务各建 1 个 root run，先于本重跑；托盘操作期间零新增）✅
+判定：四步满足 → PASS（本条 run 晚于 15:58:42 attestation）
