@@ -7,6 +7,17 @@
       "runtimeArgs": ["run", "dev"],
       "port": 5173,
       "cwd": "tauri-app"
+    },
+    {
+      "name": "backend-dev",
+      "runtimeExecutable": "/Users/denny/projects/simple_harness/backend/.venv/bin/python",
+      "runtimeArgs": ["main.py"],
+      "port": 8100,
+      "cwd": "backend",
+      "env": {
+        "DESKPET_DEV_MODE": "1",
+        "DESKPET_BACKEND_PORT": "8100"
+      }
     }
   ]
 }

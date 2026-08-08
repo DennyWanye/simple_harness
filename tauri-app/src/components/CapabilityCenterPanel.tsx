@@ -326,7 +326,15 @@ export function CapabilityCenterPanel({
 
               <div
                 data-testid="capability-list"
-                style={{ display: "grid", gap: 7, overflowY: "auto" }}
+                style={{
+                  display: "grid",
+                  // minmax(0,1fr)：隐式轨道默认以行内 nowrap 文本的
+                  // min-content 为下限，min 尺寸(800×560)下会撑破列宽
+                  // 出横向滚动条（WBUI-DEF-S03-01）
+                  gridTemplateColumns: "minmax(0, 1fr)",
+                  gap: 7,
+                  overflowY: "auto",
+                }}
               >
                 {visibleCapabilities.map((capability) => (
                   <button
@@ -417,7 +425,12 @@ function CapabilityDetail({
   ) => void;
 }) {
   return (
-    <article data-testid="capability-detail" style={{ display: "grid", gap: 14 }}>
+    // 同 WBUI-DEF-S03-01：轨道钉死 minmax(0,1fr)，否则明细 dl 的
+    // min-content(≈192px) 在 min 尺寸下顶破详情列，健康文案逐行硬裁
+    <article
+      data-testid="capability-detail"
+      style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 14 }}
+    >
       <header>
         <h3 style={{ margin: 0 }}>{capability.name}</h3>
         <p style={{ ...subtitleStyle, marginTop: 5 }}>
@@ -668,7 +681,9 @@ const bodyGridStyle: CSSProperties = {
   minHeight: 0,
   flex: 1,
   display: "grid",
-  gridTemplateColumns: "minmax(250px, 0.38fr) minmax(0, 0.62fr)",
+  // 左列下限 200px：250px 会在 min 窗口(800×560)把详情值列挤到 ~47px，
+  // CJK/长词被逐字断行。列表行自带 ellipsis，200px 仍可读。
+  gridTemplateColumns: "minmax(200px, 0.38fr) minmax(0, 0.62fr)",
   gap: 0,
   marginTop: 8,
   borderTop: `1px solid ${dark.hairline}`,
@@ -693,6 +708,8 @@ const operationListStyle: CSSProperties = {
   flex: 1,
   minHeight: 0,
   display: "grid",
+  // 与能力列表同类：钉死轨道下限，防操作卡片长 token 在 min 尺寸下撑宽
+  gridTemplateColumns: "minmax(0, 1fr)",
   alignContent: "start",
   gap: 10,
   overflowY: "auto",
@@ -748,10 +765,13 @@ const listMetaStyle: CSSProperties = {
 };
 const detailGridStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "72px 1fr",
+  // 1fr 的隐式 min 是 auto（= 值列最长单词宽）；min 尺寸下改用
+  // minmax(0,1fr) 让值列可收窄，配合 overflowWrap 断长 token
+  gridTemplateColumns: "72px minmax(0, 1fr)",
   gap: "9px 12px",
   margin: 0,
   fontSize: 12,
+  overflowWrap: "anywhere",
 };
 const manifestValueStyle: CSSProperties = {
   marginTop: 3,
