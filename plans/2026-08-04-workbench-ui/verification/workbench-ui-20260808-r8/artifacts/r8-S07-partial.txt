@@ -1,0 +1,63 @@
+# S07 真机道 — ArtifactsView 产物库（TC-WB-07 / B7）
+执行：AI (manual-mcp / cliclick 真 HID)；2026-08-08 08:4x；relay dev
+基线：b68e958；用户数据 .testenv/cold-A（backend 经 ps eww 确认属该目录）
+状态：**步骤 1-4 已验证通过；步骤 5 未完成 → 本文件不作 PASS 依据**
+
+## 前置 canonical fixture 核对（磁盘实况）
+  report-a.txt  mtime=2026-08-07 10:00:00  内容="S07 fixture A — oldest of the three"
+  report-b.txt  mtime=2026-08-07 11:00:00  内容="S07 fixture B — middle"
+  report-c.txt  mtime=2026-08-07 12:00:00  内容="S07 fixture C — newest of the three"
+  三者为全目录最新，其后是 report-35..01（2026-08-05 16:38:31），共 38 个文件
+  ⇒ 完全符合 TC 前置 1（带扩展名、mtime 错开、a 最旧 c 最新）✓
+
+## 步骤1 列表渲染（PASS）
+  截图 r8-S07-01-list：每项为卡片，含**文件名 + 大小 + 修改时间 + 操作按钮**
+  （「打开」/「在文件夹中显示」）。页头「产物库 / 任务生成的文件，按修改时间倒序
+  · 共 **38 项**」——与磁盘 38 个文件一致 ✓
+
+## 步骤2 排序核对（PASS）
+  UI 实际顺序（自上而下）：
+    report-c.txt  38 B · 2026/8/7 12:00:00
+    report-b.txt  25 B · 2026/8/7 11:00:00
+    report-a.txt  38 B · 2026/8/7 10:00:00
+    report-35.txt 20 B · 2026/8/5 16:38:31
+    report-34 / report-33 / report-32 ...
+  与预置三个已知 mtime **逐条对照一致**，严格时间倒序 ✓
+
+## 步骤3 「打开」→ 系统默认程序（PASS）
+  点 report-c.txt 卡片的「打开」后：
+    前台应用 = **TextEdit**
+    front document 名称 = **report-c.txt**
+    front document 文本 = **"S07 fixture C — newest of the three"**
+  ⇒ 用系统默认程序打开且内容为预置文本 ✓
+  卡片下方出现绿色状态行「已请求系统打开文件」（该行会把后续卡片下推，
+  首次点 report-a 因此点空——已如实记录并按新坐标重点）。
+
+## 步骤4 「在文件夹中显示」→ Finder 选中（PASS）
+  点 report-a.txt 卡片的「在文件夹中显示」后：
+    前台应用 = **Finder**
+    window 1 target = **/Users/denny/projects/simple_harness/.testenv/cold-A/artifacts/**
+    Finder selection 第一项 = **report-a.txt**
+  ⇒ 不只是定位到目录，而是**精确选中该文件** ✓
+
+## 步骤5 消息流产物卡片（**未完成**）
+  已做：DB 查到会话 14e39412（空态恢复验证）有一条生成 `s07-card.md` 的助手消息，
+  切过去后消息流可见完整工具轨迹（tool_search → tool_describe → tool_activate →
+  file_write）与助手文本「写好啦 ✅ 文件：s07-card.md（工作区根目录）/ 内容：
+  产物卡片验证（一行）/ 产物引用：已生成 artifact ref，卡片可以正常挂载」。
+  点击展开 `ok ← file_write` 后显示
+    {"error": null, "state": "success",
+     "value": {"bytes_written": 7, "mode": "overwrite", "path": "s07-card.md"}}
+  ⇒ **工具结果卡片存在且可操作**（可展开/收起）。
+
+  **未确证的部分（不下判定）**：TC 步骤5 要的是「消息流内**产物卡片**存在且可操作」，
+  指的应是 ArtifactCard 组件（`extractArtifactsFromResult` 产出的产物卡）。
+  本轮只确证了 tool-result 卡片可操作，**未确证独立 ArtifactCard 的渲染与可操作性**
+  （未滚动核对该消息下方是否另有产物卡、未验证其按钮）。
+  不把 tool-result 卡片当作产物卡片顶替 —— 那是两个组件，顶替就是绕过。
+
+## 下轮续跑清单
+  - 滚动到该助手消息下方，确认是否渲染 ArtifactCard；若有，验其操作可用
+  - 若该历史消息未挂载产物卡，按 TC 前置 2 的另一条路径：在聊天中真跑一次
+    会产生产物卡片的任务，记录所用消息与产生的卡片，再验步骤5
+  - 步骤 1-4 已通过，无需重跑（除非期间有 impact_paths 覆盖的代码改动）
