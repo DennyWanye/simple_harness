@@ -55,18 +55,23 @@ launch-app.sh 起 Tauri（自带唯一 vite + 自 spawn backend）：
   **对照**：同一字段在 1260×840 下完整显示为一行
     「降级 · Instructional or currently unavailable for direct execution.」（r8-S03-02-skills）
     ⇒ 仅 min 尺寸暴露，是响应式断点问题，非内容问题。
-  **根因**（读源码定位，非猜测）：
-    `tauri-app/src/components/CapabilityCenterPanel.tsx:589`
-      面板容器 `width: "min(920px, 96vw)"`
-      —— `96vw` 量的是**整个 webview 视口（含侧栏）**，不是内容区。
-      窗宽 800 时 96vw = 768；而内容区 = 800 − 侧栏(约 235) ≈ 565。
-      768 > 565 ⇒ 面板比它所在的容器宽约 200px ⇒ 横向溢出 + 裁切。
-      大窗口（1260）时内容区约 1025 > 920，故 920 生效、不溢出，问题被掩盖。
-    叠加因素 `:671` 详情两栏 `gridTemplateColumns: "minmax(250px, 0.38fr) minmax(0, 0.62fr)"`
-      左列 250px 硬下限进一步挤压右列。
-  **修法（未实施）**：容器宽度改用百分比/`100%` + `max-width: 920px`，
-    或把 `96vw` 换成相对内容区的度量（如容器自身 `min(920px, 100%)`）。
-  **判定影响**：本条直接违反步骤4「无横向滚动条 / 内容区主要控件可见可点」。
+  **根因：尚未定位（前一版本本文件写的 `:589 min(920px,96vw)` 是错的，已更正）**
+    ⚠️ 更正说明：`min(920px, 96vw)` 位于 `panelStyle`（`:588`），只服务
+      **overlay 变体**（旧 Skill Store 弹窗）。工作台内的技能中心走的是
+      **page 变体** `pagePanelStyle`（`:604`）——`width:100%` + `minWidth:0`，
+      与 vw 无关（`:211 isPage` / `:218` 按 variant 选样式）。
+      故改 `:589` 对本缺陷**毫无作用**，下一轮不要照此线索动手。
+    候选（**均未验证，不得据此直接改**）：
+      a) `bodyGridStyle`（`:667`）`gridTemplateColumns: "minmax(250px, 0.38fr) minmax(0, 0.62fr)"`
+         左列 250px 硬下限，窄容器下挤压右列；
+      b) `detailPaneStyle`（`:685`）只设了 `overflowY:auto`，未处理 overflowX；
+      c) `detailGridStyle`（`:750`）`"72px 1fr"` 内层子项的 min-content 撑宽。
+    **下一步该怎么定根因**（别再读样式猜）：min 尺寸下开 devtools，
+      自外向内逐层量 `scrollWidth` vs `clientWidth`，第一个 scrollWidth>clientWidth
+      的元素就是溢出源；同时量被裁那段文字所在节点的实际盒宽。
+      注意 devtools 停靠会压缩 inner_size（S10 踩过），量完即关。
+  **判定影响**：症状本身两次独立复现、位置一致，确实违反步骤4
+    「无横向滚动条 / 内容区主要控件可见可点」——**缺陷成立，只是根因待定**。
 
 ## 步骤5 「更多」组三个入口逐一开关（r8-S03-13 ~ r8-S03-21）
   展开「更多」后为 4 个 27×27 图标（AX 实测绝对坐标 230/261/292/323,849）。
