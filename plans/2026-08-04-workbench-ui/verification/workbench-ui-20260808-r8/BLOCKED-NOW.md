@@ -1,9 +1,17 @@
 # r8 当前阻塞与续跑状态（2026-08-08 15:3x +0800 刷新，HEAD=fea8c11）
 
-## 唯一硬阻塞（需用户，AI 不代办）
-relay 身份失效仍未恢复：backend 持续 `companion_profile_bind` 拒绝循环
-（`window_credential_required` rechallenge / `trusted_relay_identity_unavailable`，
-最后确认 07:06Z）。前端输入框「正在恢复身份…」禁用，控制 WS 徽章间歇「未连接」。
+## 唯一硬阻塞（需用户，AI 不代办）——16:0x 实测后根因修正
+relay 身份拒绝循环的**真实杀伤面**已实测确认（probe-send.log + r8-S07-card-*.png）：
+- LLM 链路本身**可用**：探针消息真实往返成功（「收到」）；excel_create 真产出
+  OutPut/Excel/excel_create-default-excel_create_0.xlsx
+- 但 `companion_profile_bind` 拒绝循环（window_credential_required rechallenge /
+  trusted_relay_identity_unavailable）导致**控制 WS 连接约每 30 秒被踢**：
+  ① 发送窗口间歇失效（「消息发送失败：控制通道未连接」实测复现）
+  ② 长任务结果帧丢失（excel 工具结果/产物卡片永未到达前端，后端报
+     Cannot call "send" once a close message has been sent — RuntimeError 横幅）
+  ③ 输入框启动期「正在恢复身份…」几秒后降级放行（有迷惑性，能打字但通道不稳）
+⇒ 所有聊天依赖场景（S03/S04/S05/S07/S08/S13/S18、S02/S15 重跑、S06 尾项）在此
+环境下**无法产出未污染的判定证据**（r7 即死于此类污染），维持等待。
 **恢复方式：用户在钥匙串弹窗点「始终允许」+输密码，或重新登录 relay。**
 
 ## 两个缺陷已修复并提交（等真机重跑闭环）
