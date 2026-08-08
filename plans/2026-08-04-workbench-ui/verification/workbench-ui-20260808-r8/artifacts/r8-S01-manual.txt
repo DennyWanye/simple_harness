@@ -1,0 +1,95 @@
+# S01 真机道 — 主窗普通窗口形态（TC-WB-01 / B1）
+执行：AI (manual-mcp / cliclick 真 HID + AX)；2026-08-08 08:1x；relay dev
+基线：b68e958（含品牌修复 44 处）；**全新隔离 user-data**：.testenv/cold-S01-r8
+（跑前 rm -rf 确认不存在，满足 TC「冷数据首启」前置）
+单显示器：1470×956 逻辑；启动方式 dev（`artifacts/launch-cold-s01.sh`，
+tauri dev + beforeDevCommand=npm run dev:relay）
+
+## 前置：锁屏硬闸已放行
+本轮之前三次启动失败均为**锁屏假象**（详见 BLOCKED-NOW.md）。解锁后启动正常：
+  `[backend_launch] Dev python=.../backend/.venv/bin/python backend_dir=.../backend`
+  第 9s 出现 ⇒ 观测有效。
+
+## 执行缺陷更正（如实记录，首轮作废重跑）
+**首轮的 backend 不是本场景的 backend。** 首轮报 `app=1 backend=1 port8100=1`，
+但那个 backend（PID 62989）是**上一次 `r8-unlocked` 启动遗留的孤儿**——当时
+`pkill` 只杀了 `tauri dev` 与 `target/debug/simple-harness`，**没杀 Python
+backend**（项目 CLAUDE.md 坑 #1）。它仍占着 8100 并服务 `cold-A` 目录，
+导致本场景 app 走完 onboarding 后弹出「启动失败：端口 8100 已被其它程序占用
+(os error 48)」。
+S01 的全部断言（窗体形态/几何/Dock/拖拽缩放/静态配置）只依赖 Tauri 外壳，
+不受 backend 归属影响；但为免存疑，**已连孤儿 backend 一并清干净后整轮重跑**，
+本记录只采信重跑结果。
+重跑环境实证：`pkill` 后 app=0 backend=0 port=0 vite=0；新 backend PID 64276
+经 `ps eww` 读到 `DESKPET_USER_DATA_DIR=.../.testenv/cold-S01-r8`，且 `lsof`
+显示其打开的是 `cold-S01-r8/data/workflow.db` ⇒ **确属本场景目录**。
+
+## 步骤1 普通窗口形态
+  截图 r8-S01-01-coldstart：
+  - **系统标题栏 + mac 红黄绿三钮**齐全（AX 实证：AXCloseButton@68,68 /
+    AXMinimizeButton@91,68 / AXFullScreenButton@114,68）✓
+  - 标题栏文字 **「Simple Harness」** ✓
+  - 窗口内容**不透明**（深色背景，无桌面透出）✓
+  - **无任何桌宠角色立绘/动画** ✓
+  **附带真机验收（品牌修复 b68e958）**：onboarding 欢迎页现为
+    「欢迎使用 Simple Harness」
+    「Simple Harness 是一个住在你桌面上的 AI 工作台。它能陪你聊天、记住你说过的
+      事、帮你做 PPT、查资料，还能进入"代码模式"帮你写程序。」
+  旧文案「欢迎使用 DeskPet 🐾」「一只住在你桌面上的 AI 桌宠」已消失 ✓
+
+## 步骤2 初始几何（单显示器，做居中断言）
+  geom = **235 111 1000 701**
+  - 尺寸 1000×701 ≈ 默认 **1000×700**（+1 为 AX outer 高 vs conf inner 高取整差）✓
+  - 居中（裁决第 5 条 ±10% 口径）：
+      窗口中心 (235+500, 111+350.5) = (735, 461.5)
+      屏幕中心 (1470/2, 956/2)     = (735, 478)
+      横向偏差 |735-735| = **0**    ≤ 147.0 (屏宽 10%) ✓
+      纵向偏差 |461.5-478| = **16.5** ≤ 95.6 (屏高 10%) ✓
+  ⇒ 落在 ±10% 区域内，PASS
+
+## 步骤3 Dock / Cmd+Tab 可见（skipTaskbar=false 语义）
+  三个观测面一致：
+  - `System Events` 可见应用进程列表 → 含 `simple-harness` ✓
+  - **Dock 条目**（`process "Dock" → UI element of list 1`）→ 含 `simple-harness` ✓
+  - `lsappinfo list` → `75) "simple-harness" ASN:0x0-0xe8ae8a: (in front)`
+    已注册为前台应用（regular 激活策略，才会进 Dock/Cmd+Tab）✓
+
+## 步骤4 拖拽移动 + 拖拽缩放（可超默认尺寸）
+  真 HID（cliclick dd/m/du，非程序化 set_position/set_size）：
+  - 拖标题栏：geom (235,111) → **(60,206)**，尺寸 1000×701 不变 ✓
+  - 拖右下角放大：1000×701 → **1130×750**
+    ⇒ **可放大超过 1000×700，无 max 限制卡住** ✓
+
+## 步骤5 持续内拖到最小
+  已知陷阱（首轮踩过并如实记录）：若窗口右下角压在屏幕底边（屏高 956），
+  抓不到缩放柄，尺寸纹丝不动。
+  做法：先把窗口移到 (60,60) 让右下角完全在屏内，再连续内拖：
+  geom = **60 60 800 560**，继续拖动不再变小
+  ⇒ 最小停在 **800×560**，与 tauri.conf.json minWidth/minHeight 一致 ✓
+
+## 步骤6 绿钮最大化 / 还原
+  绿钮在本窗口的 AX 子角色是 **AXFullScreenButton**（macOS 默认语义）。
+  - AX `click` 无效（实测三次，尺寸不变）→ 改真 HID `cliclick c:121,75`
+  - 点击后：geom 宽度变 **1470**（占满屏宽），标题栏自动隐藏，进入全屏
+    （截图 r8-S01-06-fullscreen：内容铺满、无标题栏）✓
+  - 全屏下标题栏隐藏，第二次点 (121,75) 落到菜单栏（如实记录）；
+    改用 **Ctrl+Cmd+F** 退出全屏 → geom **精确还原回 60 60 800 560** ✓
+  ⇒ 最大化/还原双向可用（maximizable）✓
+
+## 步骤7 静态核对（脚本辅助，非判定主体）
+  `grep -n "macOSPrivateApi" tauri-app/src-tauri/tauri.conf.json` → **零命中** ✓
+  main 窗 `"transparent": false`（tauri.conf.json:23），`decorations: true` ✓
+
+## Run 创建负向断言（expected_run_created=false）
+  全程只做窗口形态操作（拖拽/缩放/最大化/静态 grep），停在 onboarding 欢迎页，
+  **未完成登录、未进入主界面、未发送任何消息、未触发技能或生成**
+  ⇒ 结构上不可能产生 root Run。
+  硬证据：本场景用全新隔离目录 `.testenv/cold-S01-r8`（跑前 rm -rf），
+  跑完后实查 `.testenv/cold-S01-r8/data/workflow.db`：
+    `select count(*) from trace_runs`     → **0**
+    `select count(*) from execution_runs` → **0**
+  ⇒ root run 增量为 0。
+
+判定：步骤 1–6 全部满足（标题栏/居中/默认尺寸/min 尺寸/Dock 可见/不透明/
+可最大化还原），步骤 7 静态核对通过 → **S01 PASS**
+VERDICT_PASS
