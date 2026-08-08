@@ -1,0 +1,28 @@
+# S13 真机道 — 后端未就绪时 ChatView 状态条与重试（TC-WB-13 / 非功能错误态）
+执行：AI (manual-mcp / cliclick 真 HID + 进程控制)；2026-08-08 22:10–22:38 本地
+实例：s08-restart（b57d582 修复版后端，relay 身份）
+构造手段（记录）：手段 b+c 组合——SIGKILL 后端 python 进程耗尽 supervisor
+  重启预算（MAX_RESTARTS_PER_WINDOW=5/60s，process_manager.rs:44）；
+  再用真实 TCP 占位脚本持有 127.0.0.1:8100 阻止 respawn 绑定。禁止 mock 前端态。
+
+步骤1 后端不可用停在聊天视图：出现**全屏错误态对话框**「启动失败」+
+  "Backend supervisor gave up after repeated crashes. 请打开日志目录排查."
+  + **重试/打开日志目录/退出** 三入口（非静默空白）✓（r8-S13-rr-02-disconnected）
+步骤2 发送尝试：错误态对话框覆盖整个内容区，输入栏被遮蔽不可达 =
+  **输入被禁用**（无"看似成功的黑洞发送"）✓
+步骤3 侧栏底部连接徽章：**未连接**（与错误态对话框口径一致，无"徽章绿但拒发"
+  分叉）✓（r8-S13-rr-02 徽章 AXStaticText=未连接）
+步骤4 保持后端不可用（端口 8100 被占位脚本持有）点重试：徽章短暂进入**连接中**
+  → backend spawn 因端口占用绑定失败 → **回落错误态「启动失败」**，
+  后端进程数=0，**无崩溃无白屏**✓（r8-S13-rr-05-retry-failback：徽章连接中 +
+  modal 启动失败并存的回落瞬间）
+步骤5 恢复后端（kill 占位脚本释放 8100）再点重试：+3s 内**徽章转已连接、
+  错误态对话框消失、backend=1**（RECOVERED）✓；随后真实发送
+  「S13恢复后验证：请只回复四个字——已恢复。」→ 助手回复「已恢复」，
+  run_id_under_test=**b1e783606458580984f56c646155a2c4**（r8-S13-rr-07-roundtrip）✓
+步骤6 回归：恢复后循环切换 技能中心→产物库→设置→会话 四视图，
+  各视图正常渲染、徽章保持已连接、无错误态残留 ✓（r8-S13-rr-08-regression）
+
+判定：步骤 1、3、4、5 全部满足 → **S13 PASS**
+run_id_under_test=b1e783606458580984f56c646155a2c4（步骤5 恢复后往返创建的 root run）
+VERDICT_PASS
