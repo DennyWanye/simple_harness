@@ -1,0 +1,96 @@
+# r9 / WBUI-S07-artifacts-view / TC-WB-07 —— 真机手工道
+执行人：AI（真 HID：cliclick + AX 实时坐标 + AppleScript 读 TextEdit/Finder 真实状态）
+被测构建：HEAD=1591735  会话日志：r9-session-3.log  profile：.testenv/cold-A
+
+## 前置1 canonical fixture（已在位，未改动）
+  .testenv/cold-A/artifacts/report-a.txt  2026-08-08 09:00:00  21B  "S07 fixture A oldest"
+  .testenv/cold-A/artifacts/report-b.txt  2026-08-08 10:00:00  21B  "S07 fixture B middle"
+  .testenv/cold-A/artifacts/report-c.txt  2026-08-08 11:00:00  21B  "S07 fixture C newest"
+  mtime 已错开（a 最旧、c 最新），均带 .txt 扩展名 ⇒ 步骤3「打开」有确定的系统默认程序
+
+## 步骤1 点侧栏「产物库」
+rel=(119,183)→abs(179,243)。内容区渲染「产物库 / 任务生成的文件，按修改时间倒序 · 共 38 项」，
+每项为卡片：文件名 + 大小 + 修改时间 + 「打开」「在文件夹中显示」两个按钮。
+截图 r9-S07-01-list-win.png
+判定：过
+
+## 步骤2 排序核对（与三个已知 mtime 对照）
+AX 实读（非肉眼）：
+  report-c.txt 352,197 ← 2026/8/8 11:00:00  365,221
+  report-b.txt 352,304 ← 2026/8/8 10:00:00  365,328
+  report-a.txt 352,411 ← 2026/8/8 09:00:00  365,435
+y 坐标 197 < 304 < 411（越靠上越前），时间 11:00 > 10:00 > 09:00
+⇒ 严格按修改时间**倒序**，与预置 mtime 一一对应。
+判定：过
+
+## 步骤3 点 report-c.txt 的「打开」
+rel=(292,196)→abs(352,256)。
+系统侧核对（AppleScript 读真实应用状态，不是看截图猜）：
+  frontmost process = **TextEdit**
+  tell application "TextEdit" to get name of every document → **report-c.txt**
+  tell application "TextEdit" to get text of front document → **S07 fixture C newest**
+文本与预置内容逐字一致 ⇒ 确实是系统默认程序打开了该文件本身。
+截图 r9-S07-02-textedit-open.png（仅裁 TextEdit 窗口）
+取证后已 close document + quit TextEdit。
+判定：过
+
+## 步骤4 点 report-a.txt 的「在文件夹中显示」
+第一次点击 rel=(375,410) **落空**——如实记录原因：步骤3 之后 report-c 卡片多长出一行
+绿色状态「已请求系统打开文件」，把下方卡片整体顶下约 53px，旧坐标失效。
+按新布局重取 rel=(375,433)→abs(435,493) 后生效。
+系统侧核对：
+  frontmost process = **Finder**
+  tell application "Finder" to get name of item 1 of (get selection) → **report-a.txt**
+  POSIX path of selection → /Users/denny/projects/simple_harness/.testenv/cold-A/artifacts/report-a.txt
+截图 r9-S07-04-finder-reveal.png：artifacts 目录已打开，report-a.txt 行**高亮选中**（蓝条）
+判定：过
+
+## 前置2 + 步骤5 消息流产物卡片
+### 前置2 只能走主路径（fallback 已不可用）——如实说明
+用例前置2 给了两条路：① 现场跑一次会产生产物卡片的真实任务；② 用历史会话里已有的卡片。
+r8 当时走的是 ②（会话 de93b56c 的 excel_create 卡片）。本轮查 DB：
+  sqlite3 .testenv/cold-A/data/state.db "select session_id,count(*) from messages group by session_id;"
+  → 只剩 **1** 个会话 fd925269-22e9-41e4-bbe3-5e1530fea16a
+de93b56c 已不存在（推测为 r8 跑 S18 会话删除边界时清掉）⇒ ② 无对象，只能走 ①。
+
+### 现场生成
+在会话 fd925269 发送：「请生成一个 Excel 文件，文件名 s07-card.xlsx，里面只要一行表头：
+场景,结果，和一行数据：S07,PASS。生成完直接给我文件就行。」
+观察到的真实过程（原样记录，不修饰）：
+  · 第一次 excel_create 写到 workspace 目录 → **failed**（消息流有红色 failed 折叠块）
+  · 应用自行改写到默认输出目录 OutPut/Excel/ 重试 → 成功
+  · 助手在回复里主动说明了「你指定的 s07-card.xlsx 那个目录没有写入授权，所以文件存到了
+    默认输出目录，文件名是自动生成的」
+  这是应用自带的降级/兜底行为，不是本场景缺陷；文件名与请求不同也由助手如实告知。
+
+### 步骤5 卡片存在且可操作
+卡片渲染（截图 r9-S07-05-artifact-card-win.png）：
+  标题「excel_create 已生成文件」+ 8s 前
+  文件名 excel_create-fd925269-22e9-41e4-bbe3-5e1530fea16a-excel_create_1.xlsx
+  MIME  application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+  四个按钮：打开 / 在文件夹中显示 / 复制路径 / 另存为
+**可操作性实证**（不是"看见按钮就算"）：
+  先把剪贴板置哨兵值 SENTINEL-r9-S07-1786209152（pbpaste 确认）
+  点「复制路径」rel=(475,439)→abs(535,499)
+  再读剪贴板 → /Users/denny/projects/simple_harness/.testenv/cold-A/OutPut/Excel/
+                excel_create-fd925269-22e9-41e4-bbe3-5e1530fea16a-excel_create_1.xlsx
+  哨兵值被真实路径顶掉 ⇒ 按钮真的执行了动作。
+**产物真实性**：解包该 xlsx 读 sheet1.xml，单元格为
+  A1=场景 B1=结果 / A2=S07 B2=PASS（dimension A1:B2），与请求内容一致 ⇒ 不是空壳文件。
+⇒ B7 成立：消息流卡片仍在且可操作，产物库是新增入口而非替代。
+判定：过
+
+## ⚠ 需用户裁决：manifest 的 expected_run_created 与用例前置冲突
+manifest 给 S07 标的是 **expected_run_created: false**，
+但用例前置2 的路径①（现场跑真实任务）**必然**产生 root run。
+本轮实测时间线（trace_runs 计数）：
+  步骤1–4（01:05–01:09）      ：147 → 147   增量 0
+  前置2 现场生成（01:10–01:11）：147 → **150** 增量 3（run_id 3b338fcaef…，三条同 run 的记录）
+  步骤5 观察（01:11–01:12）    ：150 → 150   增量 0
+即：**场景的 5 个步骤本身一个 run 都没造**，增量全部来自"前置"。
+r8 因为走了路径②（复用历史会话）所以 false 成立；本轮 fallback 已不存在，只能走路径①。
+这属于 manifest 字段与用例前置的口径冲突，我不自行改 manifest，也不隐瞒增量，
+如实登记并交用户裁决：要么 S07 的 expected_run_created 改为条件性/true，
+要么在 profile 里长期保留一个带产物卡片的历史会话供路径②使用。
+
+判定：步骤 1–5 全部满足 → **S07 PASS**
