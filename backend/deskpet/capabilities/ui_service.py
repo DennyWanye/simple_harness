@@ -151,28 +151,51 @@ class CapabilityCenterService:
         if intent is None:
             return None
         target = _binding_from_projection(intent.old_binding)
-        published = _binding_from_projection(intent.new_binding)
+        # 发布侧写入的 new_binding 投影不携带 binding_id/generation（只有
+        # expected_generation，提交后实际 generation = expected_generation+1），
+        # 不能走 _binding_from_projection 的整体解析，否则回滚入口结构性不可达。
+        new_binding: Mapping[str, Any] = intent.new_binding or {}
+        published_capability = str(new_binding.get("capability_id") or "")
+        published_scope = str(new_binding.get("scope") or "")
+        published_scope_key = str(new_binding.get("scope_key") or "")
+        published_version = str(new_binding.get("version") or "")
+        published_hash = str(new_binding.get("manifest_hash") or "")
+        published_generation: int | None
+        try:
+            if new_binding.get("generation") is not None:
+                published_generation = int(new_binding["generation"])
+            elif new_binding.get("expected_generation") is not None:
+                published_generation = int(new_binding["expected_generation"]) + 1
+            else:
+                published_generation = None
+        except (TypeError, ValueError):
+            published_generation = None
         if (
             target is None
-            or published is None
+            or not published_capability
+            or not published_version
+            or not published_hash
             or not target.active
             or target.scope == "builtin"
-            or target.capability_id != published.capability_id
-            or target.scope != published.scope
-            or target.scope_key != published.scope_key
+            or target.capability_id != published_capability
+            or target.scope != published_scope
+            or target.scope_key != published_scope_key
         ):
             return None
         current = await self.store.get_binding(
-            published.scope,
-            published.scope_key,
-            published.capability_id,
+            published_scope,
+            published_scope_key,
+            published_capability,
         )
         if (
             current is None
             or not current.active
-            or current.version != published.version
-            or current.manifest_hash != published.manifest_hash
-            or current.generation != published.generation
+            or current.version != published_version
+            or current.manifest_hash != published_hash
+            or (
+                published_generation is not None
+                and current.generation != published_generation
+            )
         ):
             return None
         version = await self.store.get_version(

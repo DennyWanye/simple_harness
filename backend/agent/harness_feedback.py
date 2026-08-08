@@ -156,7 +156,7 @@ def prepare_external_tool_feedback(
         if item_id in applied:
             continue
         if gate is not None:
-            gate.record_tool_call(item["name"], args=item["args"])
+            gate.record_tool_call(str(item.get("name") or ""), args=item.get("args"))
         applied.add(item_id)
     loop._harness_feedback_commands = applied
     if gate is not None:
@@ -171,14 +171,17 @@ def prepare_external_tool_feedback(
     for item in mutable:
         if item.get("role") != "tool" or item.get("tool_call_id") not in call_ids:
             continue
+        # provider 历史里的 tool 消息不保证带 "name"（实测长会话/重放路径缺失，
+        # 裸下标会让整轮 run 以 KeyError 失败）——缺失时降级为空名。
+        tool_name = str(item.get("name") or "")
         item["content"], blocks = _extract_visual_attachment(
-            tool_name=str(item["name"]),
+            tool_name=tool_name,
             content=str(item["content"]),
             call_id=str(item["tool_call_id"]),
         )
         visual_blocks.extend(blocks)
         item["content"], _ = loop._ctx.record_tool_result(
-            tool_name=str(item["name"]), result=str(item["content"])
+            tool_name=tool_name, result=str(item["content"])
         )
     if visual_blocks:
         mutable.append({"role": "user", "content": visual_blocks})

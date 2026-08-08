@@ -1,0 +1,19 @@
+== vitest ==
+      Tests  673 passed (673)
+   Start at  20:32:44
+   Duration  5.05s (transform 1.59s, setup 433ms, collect 8.59s, tests 4.09s, environment 15.66s, prepare 2.67s)
+
+== tsc ==
+tsc_exit=0
+== build ==
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 145ms
+build_exit=0
+== cargo test ==
+
+test result: ok. 79 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+== cargo check ==
+exit=0
+0
