@@ -17,3 +17,17 @@ test result: ok. 79 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 == cargo check ==
 exit=0
 0
+
+== backend suites（修复 b57d582 后，repo 根执行）==
+companion:   backend/.venv/bin/python -m pytest backend/tests/companion/ -q
+  → 9 failed, 643 passed, 10 skipped —— 失败集合与基线 644ab16 逐条一致（基线等值 ✓）
+capabilities: backend/.venv/bin/python -m pytest backend/tests/capabilities/ -q
+  → 4 failed, 257 passed —— 修复前后失败集合完全相同（test_capability_platform godot
+    detector ×1 + test_universal_action_fixture_preparer ×3，均为既有失败，与
+    ui_service/harness_feedback 无关）
+
+== 结论 ==
+步骤1 vitest 673 passed ✓ 步骤2 cargo test 79 passed 0 failed ✓
+步骤3 tsc 0 error ✓ 步骤4 npm build 成功 ✓ 步骤5 cargo check exit=0 且 0 error ✓
+步骤6 companion 基线等值 ✓
+→ S12 PASS（b57d582 修复后复测）
