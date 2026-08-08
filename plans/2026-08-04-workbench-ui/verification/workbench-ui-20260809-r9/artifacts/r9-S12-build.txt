@@ -1,0 +1,83 @@
+# r9 S12 build-green  started=2026-08-09T00:11:00+08:00
+## tsc
+tsc_exit=0
+## vitest
+ ✓ src/sessionModelMessages.test.ts (2 tests) 2ms
+ ✓ src/theme/darkTheme.test.ts (3 tests) 2ms
+ ✓ src/stores/companionSelectors.test.tsx (1 test) 26ms
+ ✓ src/code-panel/__tests__/PlanCard.test.tsx (2 tests) 78ms
+(node:71926) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/auth/relayConfig.test.ts (3 tests) 2ms
+(node:71925) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/chat/sessionHydration.test.ts (1 test) 3ms
+(node:71927) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/components/companion/actionProjection.test.ts (1 test) 2ms
+(node:71928) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:71933) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/hooks/useAudioChannel.test.tsx (1 test) 7ms
+ ✓ src/code-panel/SubagentProgressPanel.test.ts (2 tests) 2ms
+
+ Test Files  76 passed (76)
+      Tests  673 passed (673)
+   Start at  00:11:00
+   Duration  5.35s (transform 1.64s, setup 408ms, collect 9.10s, tests 4.51s, environment 16.60s, prepare 2.70s)
+
+vitest_pipe_done
+## build
+dist/assets/App-ulKjXmpV.js               1,143.61 kB │ gzip: 375.67 kB
+
+✓ built in 147ms
+[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+build_exit=0
+## cargo test
+test process_manager::tests::startup_error_round_trip ... ok
+test result: ok. 79 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+cargo_test_done
+## cargo check
+
+warning: `simple-harness` (lib) generated 10 warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.07s
+cargo_check_exit=0
+# ended=2026-08-09T00:11:16+08:00
+
+## 步骤 6（旁证，非 WB-12 判定主体）backend companion pytest
+命令：cd backend && PYTHONPATH=<repo root> uv run pytest tests/companion/ -q
+结果：**9 failed, 643 passed, 10 skipped in 51.23s**（完整输出见 r9-S12-pytest.txt）
+失败集与 r8 完全一致（test_candidate_draft_receipts v19→v20 升级 1 项、
+test_performance durability_lane 7 项参数化、test_skill_pack_adapter 清单哈希 1 项），
+均为 fork 前既存基线债务，与 workbench-ui 改版无因果关系。
+按 TC-WB-12 原文：「失败时单独立项，不并入 WB-12 结论但阻断 DoD」——
+故 **不并入本场景判定**，但作为 DoD 阻断项单独登记。
+注：首次执行踩到 `ModuleNotFoundError: No module named 'backend'`（cd backend 后
+仓库根不在 sys.path），已改为注入 PYTHONPATH=<repo root> 后复跑，如实记录。
+
+## 步骤 7（非功能·性能，独立结论，不并入 WB-12）
+本轮未执行冷启动对照计时（需 644ab16 基线 worktree 双次预热计时）。
+按 TC-WB-12 原文步骤 7「独立结论，不并入 WB-12」，不影响本场景判定；
+如实标注为本轮未覆盖。
+
+## 判定
+步骤 1 vitest：76 files / 673 tests 全过，0 failed ✔
+步骤 2 cargo test：79 passed / 0 failed ✔
+步骤 3 tsc --noEmit：exit=0，零 error ✔
+步骤 4 npm run build：exit=0，产物生成 ✔
+步骤 5 cargo check：exit=0，零 error ✔
+步骤 1–5 全过 ⇒ VERDICT_PASS
+（步骤 6 失败项与步骤 7 未覆盖项按 oracle 原文均不并入本判定，已分别披露）
+
+## Run 创建负向断言（expected_run_created=false）
+本项为构建/单测（tsc+vitest+build+cargo+pytest），全程未启动被测应用 ⇒ 结构上不可能产生 root Run。
+硬证据（.testenv/cold-A/data/workflow.db）：
+  trace_runs 总数=146  最新 started_at=2026-08-08 23:15:18（属 r8 会话）
+最新 run 早于 r9 脚本道执行窗口（2026-08-09 00:11 起）⇒ 本场景 root run 增量为 0。

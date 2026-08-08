@@ -1,0 +1,49 @@
+# r9 S08 步骤2 核对表 —— 改版前/后 SettingsPanel 分区级 diff（权威快照口径）
+命令：
+  git show 644ab16:tauri-app/src/components/SettingsPanel.tsx | grep -nE '<h3'
+  grep -nE '<h3' tauri-app/src/components/SettingsPanel.tsx
+
+## 改版前（644ab16）分区
+  桌宠形象 / LLM Providers / 模型状态 / 权限 / 关于与更新 / 危险区 / 数据目录
+
+## 改版后（HEAD=1591735）分区
+  通用 / LLM Providers / 模型状态 / 权限 / 关于与更新 / 危险区 / 数据目录
+
+## 差异
+  - 移除：桌宠形象（**唯一**移除项，正是核对表⑧的预期消失项）
+  + 新增：通用（承载「开机自动启动」开关 —— 行为契约 B12 从 Toolbar 迁入，核对表⑦）
+  其余 6 个分区一一对应，无缺失。
+
+## 核对表逐项（配合截图 r9-S08-02/04/05/06）
+  ① Provider/模型配置区（SettingsProviders）  ✔ 见 r9-S08-02：中转站·chinzy + relay 徽标
+  ② Embedder 状态卡                          ✔ 见 r9-S08-02/05：BGE-M3 语义嵌入（Mock 模式）
+  ③ 模型上下文卡                              ✔ 见 r9-S08-02/05：模型上下文窗口 gpt-5.5 / 400K
+  ④ 数据目录设置                              ✔ 见 r9-S08-04/06：当前生效/环境变量/默认路径 + 新路径 + 应用
+  ⑤ Agent 有效执行预算                        ✔ 见 r9-S08-05：Agent 有效执行预算（分钟）= 15
+  ⑥ 云端 API key 管理                         ✔ 见 r9-S08-02：provider 行内 `API Key: ********` + 「编辑」+「重置 key」
+       口径说明（如实披露）：⑥ 在**改版前基线里同样不是独立分区**，
+       云端 key 一直由 LLM Providers 分区内的 provider 行承载（掩码显示 + 编辑 + 重置）。
+       上面的分区级 diff 证明该承载面在改版前后都存在且未被削减，故判在位。
+  ⑦ 自启开关（改版后新迁入）                   ✔ 见 r9-S08-02：通用 › 开机自动启动
+  ⑧ 「桌宠形象」区块                           ✘ 不存在（预期）——分区 diff 显示为唯一移除项
+
+步骤2 结论：①–⑦ 逐项在位，⑧ 已消失 ⇒ 步骤2 过。
+167:          <h3 style={h3Style}>桌宠形象</h3>
+196:          <h3 style={h3Style}>LLM Providers</h3>
+206:          <h3 style={h3Style}>模型状态</h3>
+214:          <h3 style={h3Style}>权限</h3>
+348:      <h3 style={h3Style}>关于与更新</h3>
+670:      <h3 style={{ ...h3Style, color: "#fca5a5" }}>危险区</h3>
+883:        <h3 style={h3Style}>数据目录</h3>
+893:        <h3 style={h3Style}>数据目录</h3>
+901:      <h3 style={h3Style}>数据目录</h3>
+---- HEAD ----
+176:            <h3 style={h3Style}>通用</h3>
+203:          <h3 style={h3Style}>LLM Providers</h3>
+213:          <h3 style={h3Style}>模型状态</h3>
+221:          <h3 style={h3Style}>权限</h3>
+372:      <h3 style={h3Style}>关于与更新</h3>
+694:      <h3 style={{ ...h3Style, color: "#fca5a5" }}>危险区</h3>
+907:        <h3 style={h3Style}>数据目录</h3>
+917:        <h3 style={h3Style}>数据目录</h3>
+925:      <h3 style={h3Style}>数据目录</h3>

@@ -1,5 +1,5 @@
 {
-  "run_id": "workbench-ui-20260808-r8",
+  "run_id": "workbench-ui-20260809-r9",
   "source_request_text": "好的， 我现在准备把live2D的部分去掉，只需要一个主页面就好，然后主页面上面有设置这样一个按钮。请你先和我讨论一下修改后续的页面UI样式，然后开始处理（后续经讨论定稿为：C 工作台方向/深色单主题/普通窗口/桌宠代码彻底删除；行为契约 B1-B13 用户于 2026-08-05 回复「确认」批准）；oracle 修正 WBUI-BC-01 经用户 2026-08-05「批准」（见 behavior_changes）",
   "acceptance_file": "acceptance.md",
   "behavior_contract_file": "plans/2026-08-04-workbench-ui/behavior-contract.md",
@@ -540,6 +540,7 @@
     "plans/2026-08-04-workbench-ui/verification/workbench-ui-20260805-r4",
     "plans/2026-08-04-workbench-ui/verification/workbench-ui-20260806-r5",
     "plans/2026-08-04-workbench-ui/verification/workbench-ui-20260807-r6",
-    "plans/2026-08-04-workbench-ui/verification/workbench-ui-20260807-r7"
+    "plans/2026-08-04-workbench-ui/verification/workbench-ui-20260807-r7",
+    "plans/2026-08-04-workbench-ui/verification/workbench-ui-20260808-r8"
   ]
 }

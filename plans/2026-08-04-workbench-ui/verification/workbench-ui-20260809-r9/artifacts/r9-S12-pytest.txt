@@ -1,0 +1,20 @@
+E         
+E         Omitting 6 identical items, use -vv to show
+E         Differing items:
+E         {'file-organize': ('6d55fd86025ef1b7686d7374744f50519af2e79e08891cf8c68c99584058b33d', '358da032713fabbfb7ac859106d9c4c5c881b756baa49e87ac8920fa3b8224b0')} != {'file-organize': ('6980e509fb80c6d6d2896b52d4574245153b612b7343317e158530387928691f', 'b4161e88250ea960ccd1fe7f840c7aa0f1ae3ec5496f3bc605d81c455b72eeb4')}
+E         {'summarize-day': ('226811b0bac61ddef5663d46f39f8ee795fc5a2710b82f8196b96d94c9f8138e', '80f4f15a9eed81a034f875c25a816579e69f4bb851fe855dca3aedc93c419340')} != {'summarize-day': ('ebfa762eebe587d0e2de71c4...
+E         
+E         ...Full output truncated (11 lines hidden), use '-vv' to show
+
+tests/companion/test_skill_pack_adapter.py:66: AssertionError
+=========================== short test summary info ============================
+FAILED tests/companion/test_candidate_draft_receipts.py::test_existing_v19_database_upgrades_to_material_snapshot_v20
+FAILED tests/companion/test_performance.py::test_product_venue_transaction_trace_uses_one_full_durability_lane[final]
+FAILED tests/companion/test_performance.py::test_product_venue_transaction_trace_uses_one_full_durability_lane[tool_batch_1_new_goal]
+FAILED tests/companion/test_performance.py::test_product_venue_transaction_trace_uses_one_full_durability_lane[tool_batch_3_new_goal]
+FAILED tests/companion/test_performance.py::test_product_venue_transaction_trace_uses_one_full_durability_lane[tool_batch_1_existing_goal]
+FAILED tests/companion/test_performance.py::test_product_venue_transaction_trace_uses_one_full_durability_lane[tool_batch_3_existing_goal]
+FAILED tests/companion/test_performance.py::test_product_venue_transaction_trace_uses_one_full_durability_lane[retry]
+FAILED tests/companion/test_performance.py::test_product_venue_transaction_trace_uses_one_full_durability_lane[fallback]
+FAILED tests/companion/test_skill_pack_adapter.py::test_shipped_skill_inventory_is_exact_and_hash_validated
+9 failed, 643 passed, 10 skipped in 51.23s

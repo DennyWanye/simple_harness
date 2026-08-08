@@ -1,0 +1,66 @@
+# r9 / WBUI-S08-settings-view / TC-WB-08 —— 真机手工道
+执行人：AI（真 HID：cliclick 点击 + macos-mcp 滚轮 + AX 实时取坐标）
+被测构建：HEAD=1591735（含 WBUI-DEF-S08-01 修复）
+运行栈：tauri dev（自 spawn backend），日志确认
+  [backend_launch] Dev python=.../backend/.venv/bin/python backend_dir=.../backend
+  ⇒ 跑的是工作树源码，不是旧 frozen exe
+profile：DESKPET_USER_DATA_DIR=.testenv/cold-A
+会话日志：r9-session.log（步骤1-4）/ r9-session-2.log（步骤5-6 重启后）
+
+## 前置：r8 缺陷 WBUI-DEF-S08-01 复验
+r8 本场景 FAIL 的现象是「设置页 LLM Providers 区永久空白」。
+根因（已更正过一次，见 r8-S08-manual.txt 的「根因更正」段）：
+SettingsProviders 的 hydrate effect 只在挂载瞬间发一次 list 请求，而
+useWebSocket 的 getChannel 是 useCallback(…, []) 永久稳定引用 ⇒ effect 不会重跑；
+socket 若在挂载时尚未 connected，请求就永远发不出去（叠加 lastMessage 单槽
+被同批其他控制消息覆盖）。修复：挂载时发 + 每次 (re)connect 再发，并直接从
+channel 订阅回包，不走单槽 lastMessage。
+本轮为**冷启动全新进程**（非 HMR 残留）验证，见截图 r9-S08-02-settings-win.png。
+
+## 步骤1 点击侧栏「⚙️设置」
+坐标 rel=(119,768) → abs=(179,828)（AX 实时探针：设置按钮 68,810 223x36）
+结果：内容区以**页面**渲染设置（左侧栏仍在、无 backdrop 遮罩、无浮层定位），
+      顶部为「⚙ 设置」标题栏。截图 r9-S08-02-settings-win.png
+判定：过
+
+## 步骤2 分区核对表（①–⑦ 在位 / ⑧ 消失）
+逐项证据与口径见 r9-S08-sections-diff.txt（含改版前后 <h3> 分区级 diff）。
+结论：①–⑦ 逐项在位，⑧「桌宠形象」为唯一移除分区。
+判定：过
+
+## 步骤3 自启开关可切换
+坐标 rel=(271,166) → abs=(331,226)（AX：AXCheckBox 322,217 508x18，value=0）
+点击后 AX 复查：AXCheckBox value 0 → **1**。截图 r9-S08-07-autostart-on-win.png
+判定：过
+
+## 步骤4 canonical 保存生效项（自启开关）——系统侧核对
+观察面选定：`~/Library/LaunchAgents`（mac 侧等价于用例里的 plist 观察面）
+  切换前：3 个条目（com.google.GoogleUpdater.wake / keystone.agent / keystone.xpcservice）
+  切换后：4 个条目，**新增 `SimpleHarness.plist`**
+plist 内容（原样入账）：
+  Label=SimpleHarness
+  ProgramArguments=[/Users/denny/projects/simple_harness/tauri-app/src-tauri/target/debug/simple-harness]
+  RunAtLoad=true
+⇒ 不是"仅 UI 态"，系统侧真实生效。判定：过
+
+## 步骤5 完全退出并重启，回到设置页
+操作：killall.sh 彻底清场（app=0 backend=0 port8100=0 vite=0）→ launch-app.sh r9-session-2
+重启后再次点击「设置」（rel=(119,768)），AX 复查：AXCheckBox value=**1**（保持步骤4 的 ON）
+截图 r9-S08-08-after-restart-win.png
+判定：过（持久化成立）
+
+## 步骤6 切回原值并反向核对（清理步）
+点击 rel=(271,166) → AX 复查 value 1 → **0**
+系统侧：`~/Library/LaunchAgents` 回到 3 个条目，`SimpleHarness.plist` **已移除**
+截图 r9-S08-09-autostart-off-win.png
+判定：过（自清理完成，环境已还原）
+
+## 步骤7 数据兼容·升级配方 —— 本轮尚未执行
+需 `git worktree add /tmp/wbui-baseline 644ab16` 检出改版前基线并完成一次构建，
+再以共享 DESKPET_USER_DATA_DIR 造数（1 provider + 1 密钥 + 2 会话），
+最后用改版构建以同一目录启动核对。基线构建耗时较长，已在后台启动，
+**本步骤未完成前不记录本场景 root run**（TC-WB-08 判定要求步骤 1–5、7 全过才 PASS）。
+
+## 当前进度小结
+步骤 1/2/3/4/5/6 = 过；步骤 7 = 未执行（阻塞在基线构建）。
+本场景**尚未**判 PASS，不入账 root run。

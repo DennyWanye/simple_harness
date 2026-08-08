@@ -1,0 +1,44 @@
+# r9 S11 theme-vars（按 TC-WB-11 原口径执行）  2026-08-09T00:12:33+08:00
+HEAD=1591735  基线=644ab16
+
+## 步骤1(a) 新增文件零命中
+\$ grep -rnE RE tauri-app/src/views WorkbenchShell.tsx Sidebar.tsx SessionList.tsx ui.tsx | grep -vE "\.test\."
+OUT_LINES=0
+（存在性自检：扫描根确实存在 → views_OK Shell_OK Sidebar_OK SessionList_OK ui_OK）
+（非空对照：同正则扫 views 下任一文件的总行数=1878，说明扫描根非空）
+
+## 步骤1(b) 改造组件新增行零命中
+diff_total_lines=684  （非零说明 diff 确实取到内容，不是空 pathspec）
+OUT_LINES=0
+
+## 步骤1b tauri-app 全 HTML（排除构建产物）
+OUT_LINES=0
+（扫描根非空对照：找到 html 文件数=1）
+
+## 步骤2 新增组件定位辅助扫描
+OUT_LINES=2
+tauri-app/src/components/WorkbenchShell.test.tsx:31:// jsdom 把 hex 色值规格化为 rgb() — 断言前统一转换（色值仍单源自
+tauri-app/src/components/WorkbenchShell.test.tsx:35:  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+
+## 步骤3 改造组件新增行（SettingsPanel + CapabilityCenterPanel）
+OUT_LINES=0
+
+## 判定
+步骤1(a)=0、1(b)=0、1b(HTML)=0、步骤3=0 → 主判据全过。
+步骤2 原样命令输出 2 行，**如实披露**：两行都落在 `WorkbenchShell.test.tsx`
+（测试辅助函数，把 hex 规格化成 rgb() 好做断言），不是产品代码里的硬编码色值；
+主判据 1(a) 的口径本身就带 `grep -vE '\.test\.'` 把测试文件排除，步骤2 只是
+"定位辅助"且未复制该过滤器，所以这 2 行属口径差异而非违规命中。产品文件零命中。
+VERDICT_PASS
+
+## 反空扫自检（防止"扫描根不存在→0 命中→假 PASS"）
+- 扫描根存在性：views/ + WorkbenchShell/Sidebar/SessionList/ui.tsx 全部 OK
+- 扫描根非空：views 下源码合计 1878 行；html 找到 1 个文件
+- git diff 非空：改造组件 diff 共 684 行
+以上三项非零 ⇒ 0 命中是真实结论，不是空集合产生的假阴性。
+
+## Run 创建负向断言（expected_run_created=false）
+本项为静态代码扫描（grep/find/git diff），全程未启动应用 ⇒ 结构上不可能产生 root Run。
+硬证据（.testenv/cold-A/data/workflow.db，r9 脚本道执行窗口前后取）：
+  trace_runs 总数=146  最新 started_at=2026-08-08 23:15:18（属 r8 会话）
+最新 run 早于 r9 脚本道执行窗口（2026-08-09 00:11 起）⇒ 本场景 root run 增量为 0。

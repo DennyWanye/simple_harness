@@ -1,0 +1,32 @@
+# r9 S09 pet-removal 静态扫描  2026-08-09T00:11:08+08:00
+grep -riE "petcanvas|pet-anim|pet-engine" tauri-app/src -> 1 hits
+tauri-app/src/test/_setup.ts: * 全局 per-test setup（原 pet-anim/__tests__/_setup.ts，T4 桌宠删除后迁此）。
+grep -riE "petcharacter|pettransform|petmodels|petstatemachine" tauri-app/src -> 4 hits
+tauri-app/src/App.tsx:        // PetStateMachine 已删，仅保留 store 缓存链路。
+tauri-app/src/App.tsx:  // T4：PetStateMachine tick / supervisor 气泡派生与选择回调、
+tauri-app/src/stores/sessionsStore.ts: *   • `supervisor_alert` (latest, drives PetStateMachine)
+tauri-app/src/stores/sessionsStore.ts:  // pet's visual state (PetStateMachine) + tile severity colour.
+--- dirs ---
+(eval):12: no matches found: tauri-app/src/pet-*
+(no pet-* dirs)
+--- click_through ---
+(none)
+--- live2d ---
+tauri-app/src/main.tsx:41:// which caused duplicate Live2D PixiJS canvases, double WebSocket
+tauri-app/src/App.tsx:629:      // T4：emotion_change / action_trigger 分支删除 —— 均为 Live2D
+tauri-app/src/types/messages.ts:559:// [emotion:xxx] or [action:xxx] tags. Frontend drives Live2D accordingly.
+tauri-app/src/components/SettingsPanel.tsx:30:// S5 (live2d-rewrite): HiyoriMotionTuner deleted with the Hiyori assets / Live2D SDK.
+
+## 判定
+- pet-anim / pet-engine / PetCanvas：源码目录已不存在（`tauri-app/src/pet-*` 无匹配）
+- 5 处命中全部是注释/历史说明（_setup.ts 迁移说明、App.tsx "已删" 注释、
+  sessionsStore 文档注释、SettingsPanel 删除说明），无一处是活代码引用
+- click_through：src-tauri/src 零命中（桌宠穿透窗口能力已随桌宠一并移除）
+- Live2D/Cubism：4 处命中同样全为注释/类型文档，无 SDK 引用、无 canvas 挂载
+VERDICT_PASS
+
+## Run 创建负向断言（expected_run_created=false）
+本项为静态代码扫描（grep/ls），全程未启动应用 ⇒ 结构上不可能产生 root Run。
+硬证据（.testenv/cold-A/data/workflow.db）：
+  trace_runs 总数=146  最新 started_at=2026-08-08 23:15:18（属 r8 会话）
+最新 run 早于 r9 脚本道执行窗口（2026-08-09 00:11 起）⇒ 本场景 root run 增量为 0。
