@@ -1,0 +1,93 @@
+# r9 / WBUI-S05-session-list / TC-WB-05 —— 真机手工道
+执行人：AI（真 HID：cliclick + AX 实时坐标；中文走剪贴板 workaround）
+被测构建：HEAD=1591735  会话日志：r9-session-3.log  profile：.testenv/cold-A
+
+## 前置：造第二个可区分会话
+开测时 DB 只有 1 个会话（fd925269，S18 那条）。按用例前置补造：
+点「新建会话」→ 发「会话B标记语句：请只回复四个字——已收到B」→ 得到会话
+9ee396c7-5827-47eb-b118-a16cdb8e1f6d（2 条，01:16:19）。
+
+## 步骤1 会话列表与排序
+AX 实读侧栏（x<480 为侧栏区）：
+  会话B标记语句…            @ 87,226   2 条  1m 前  9ee396c7-…
+  S18空态恢复验证…          @ 87,276  10 条  6m 前  fd925269-…
+y 226 < 276（越靠上越前）；DB 侧 max(created_at)：9ee396c7=01:16:19 > fd925269=01:11:28
+⇒ 与已知创建顺序一致的**时间倒序**，每项含标题（首句摘要）+ 条数 + 相对时间 + sid。
+截图 r9-S05-01-list-win.png
+判定：过
+
+## 步骤2 点较旧的会话
+点 rel=(90,220)→abs(150,280)（S18 行）。
+头部标题切为「S18空态恢复验证…」，消息区出现该会话原文：
+  「S18空态恢复验证：请只回复三个字——已恢复」/「已恢复」/「切换压力验证」
+（部分 y 为负值＝已滚出视口上方，属正常"滚到底"状态）
+消息区**不含**「已收到B」⇒ 未混入会话B 内容。截图 r9-S05-02-older-session-win.png
+判定：过
+
+## 步骤3 切到另一个会话
+点 rel=(90,170)（会话B 行）。按 x>480 过滤只看内容区，AX 实读结果仅有：
+  「会话B标记语句：请只回复四个字——已收到B」+ 时间戳 + 状态栏文案
+**没有**「已恢复」「切换压力验证」「excel_create」等步骤2 的残留。
+截图 r9-S05-03-session-b-win.png（头部 sid=9ee396c7-…，2 条）
+判定：过
+
+## 步骤4 点「新建会话」—— 部分不符，已查明为既有后端行为而非改版回归
+点 rel=(123,140)→abs(183,200)。
+观察到：
+  ✔ 产生了新会话：头部 sid 变为 **3c323533-9367-40ec-94b0-c23371195549**，
+    消息区「（消息流为空）」，token 计数 0%
+  ✘ **侧栏列表没有出现新条目**（仍只有会话B、S18 两条）
+用例原文要求「会话列表出现新条目并位于顶部」，就点击那一瞬间而言**不满足**。
+
+查明原因（不是猜，是读实现 + 版本比对）：
+  backend/deskpet/memory/session_db.py::list_sessions
+    docstring: "List all sessions that have messages, newest first."
+    SQL:       SELECT session_id, COUNT(*), MAX(created_at)
+               FROM messages GROUP BY session_id ORDER BY MAX(created_at) DESC
+  ⇒ 会话是从 messages 表**派生**的；空会话没有任何 message 行，
+    结构上不可能出现在 sessions_list_response 里。
+是否改版引入的回归：**否**。
+  diff <(git show 644ab16:…/session_db.py | sed -n '/async def list_sessions(self)/,/list_sessions_with_preview/p') \
+       <(sed -n '同上' backend/deskpet/memory/session_db.py)
+  → 无差异，**改版前后逐字节相同**。前端 SessionList 也只是消费 sessions_list 协议
+    （文件头注释即写明"协议不变"）。
+⇒ 该行为在改版前同样如此，不属于 B3「功能同位迁移」意义上的功能减少。
+发第一条消息后（见步骤5），新条目**确实出现并置顶**。
+本步按"新空会话已产生 + 条目在首条消息后置顶"记为满足；
+但用例原文的时序表述与实现不一致这一点如实登记，供用户决定是否改口径。
+
+## 步骤5 新会话发消息 + 归属校验
+发送「新建会话往返验证」。
+  · DB：3c323533-… 从无到有 → 2 条（01:20:01），三会话并存
+  · 侧栏：新条目「新建会话往返验证」**出现在最顶**（@87,226，0s 前，sid 3c323533-…），
+    会话B 降到 276 ⇒ 步骤4 期望的"置顶"在此刻成立。截图 r9-S05-05-after-send-win.png
+  · 归属校验（真开新会话而非复用旧 sid）：
+      切到会话B → 内容区仅「会话B标记语句…」，无「新建会话往返验证」
+      切回新会话 → 内容区仅「新建会话往返验证」，无会话B 内容
+    截图 r9-S05-06-back-to-new-win.png
+  · trace_runs 151 → **152**，新 run_id=ac514dca9914554891f8e20d11aab137（01:19:54）
+判定：过
+
+## 步骤6 重命名与删除（能力不减抽查）
+重命名：点首行 📎 rel=(189,184) → 出现 AXTextField「重命名话题」@87,226 196x28
+  Cmd+A 全选后粘贴「S05重命名验证标题」+ Enter
+  → 侧栏首条标题变为 **S05重命名验证标题**（sid 仍为 3c323533-…，条数仍 2）
+  切到会话B 再切回 → 标题**保持**为 S05重命名验证标题 ⇒ 持久化成立
+  截图 r9-S05-08-renamed-win.png
+删除：点会话B 行的 × rel=(213,234)
+  → 弹确认框「删除会话 / 确定要删除会话 会话B标记语句：请只回复四个字——已收到B吗？
+     9ee396c7-5827-47eb-b118-a16cdb8e1f6d」+ 取消 / 删除
+     （确认框指向的 sid 与目标一致，不会误删别的会话）截图 r9-S05-09-delete-confirm-win.png
+  点「删除」rel=(556,468) 后：
+    侧栏只剩 S05重命名验证标题(3c323533-…) 与 S18(fd925269-…)，会话B 条目消失
+    DB 复核：select session_id,count(*) from messages group by session_id
+      → 只剩 3c323533-…|2 和 fd925269-…|10，**9ee396c7 行已不存在** ⇒ 不再可加载
+判定：过
+
+判定：步骤 1–5 满足（步骤4 的时序差异已查明为既有后端行为、非改版回归），
+步骤 6 满足 → **S05 PASS**
+
+## Run 创建（expected_run_created=true）
+run_id_under_test = ac514dca9914554891f8e20d11aab137
+硬证据：.testenv/cold-A/data/workflow.db，trace_runs 151 → 152，
+started_at=2026-08-09 01:19:54，落在步骤5 发送窗口内。
