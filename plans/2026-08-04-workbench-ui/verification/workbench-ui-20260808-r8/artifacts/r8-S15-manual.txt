@@ -1,65 +1,33 @@
-# S15 真机道 — 空态：无历史会话 / 无产物（TC-WB-15）
-执行：AI (manual-mcp / cliclick 真 HID + AX)；2026-08-08 08:2x；relay dev
-基线：b68e958；**全新隔离 user-data**：.testenv/cold-S15-r8（跑前 rm -rf）
-前置合规：**未手工删库模拟空态**，是真冷启动零会话零产物。
+# S15 真机道 — 空态：无历史会话 / 无产物（TC-WB-15 / 非功能空态）
+执行：AI (manual-mcp / cliclick 真 HID)；2026-08-08 23:16–23:30 本地
+基线：b57d582；**全新隔离 user-data**：.testenv/s15-fresh（rm -rf 后 mkdir，启动前
+  文件数=0，未手工删库模拟）；DESKPET_USER_DATA_DIR 指向该目录冷启动。
+说明：relay token 存 OS keyring（RelayAuthAdapter.ts:37-39 slot deskpet-relay/*），
+  跨 user-data 共享，故全新 profile 自动恢复登录态，onboarding 不卡登录墙。
 
-## 环境实证（不重蹈 S01 首轮的孤儿 backend 覆辙）
-先跑 `artifacts/killall.sh` → `app=0 backend=0 port8100=0 vite=0`（含 Python backend）。
-本轮 backend 经 `ps eww` 读到
-  `DESKPET_USER_DATA_DIR=/Users/denny/projects/simple_harness/.testenv/cold-S15-r8`
-⇒ **确属本场景目录**，非上一轮遗留。
-`[backend_launch]` 第 9s 出现；app=1 backend=1 port8100=1。
+步骤1 首启路径：StartupOverlay 正常 → **onboarding 向导正常出现**（relay 版两步：
+  ①「欢迎使用 Simple Harness」②「本地记忆能力」，含跳过/上一步/完成），
+  真实点击「下一步」→「完成」走完，向导关闭无卡死 ✓
+  （r8-S15-rr-01-firstrun / r8-S15-rr-02-step2）
+  完成后会话区显示**空态引导**：「暂无历史会话。点击上方「新建会话」开始第一段
+  对话，或直接在右侧输入框发消息。」——非空白/非报错/非无限 loading ✓
+  （r8-S15-rr-05-session-empty）
+步骤2 产物库空态：点侧栏「产物库」→ 头部「产物库 / 任务生成的文件，按修改时间
+  倒序」+ 正文**「暂无产物」**；此时 .testenv/s15-fresh/artifacts **目录不存在**
+  （ls 计数 0）⇒ 目录缺失时返回空列表语义、**不崩** ✓（r8-S15-rr-06-artifacts-empty）
+步骤3 空态引导新建会话并发消息：点「+ 新建会话」→ 空会话
+  （sid=487266bc-c1b8-4d2b-b735-d575b3f87cd5）→ 发送
+  「S15空态验证：请只回复两个字——就绪」。
+  首次失败：provider_dispatch_unknown_after_handoff（后端日志 LLM HTTP 402
+  "account balance is insufficient" —— **新 profile 默认模型 sf-glm-5.2 该模型
+  无余额**，属环境/配额，非 UI 缺陷）；经头部模型按钮真实切到 **kimi-k3** 并保存后
+  重发 → 助手回复「就绪」，**真实往返成功**
+  run_id_under_test=**e4711e749b6b560682cb98ddba5a5c3a**；
+  **会话空态消失、列表出现首个会话条目**（"S15空态验证…" 4 条）✓
+  （r8-S15-rr-09-roundtrip）
+步骤4 切回产物视图：仍为**空态「暂无产物」**；与 `<user_data>/artifacts` 实际内容
+  对账一致（该目录仍不存在，ls 计数 0）⇒ 发消息未凭空产生产物 ✓
+  （r8-S15-rr-10-artifacts-after）
 
-## 步骤1 首启路径 + 会话空态引导
-  StartupOverlay 与 onboarding 向导**正常出现且可走完**（relay 版 2 步：
-  welcome → 本地记忆能力），点「下一步」→「完成」全程无卡死、无报错 ✓
-  完成后侧栏「会话」区显示**空态引导**（截图 r8-S15-03-sessions-empty）：
-    「暂无历史会话。点击上方「新建会话」开始第一段对话，或直接在右侧输入框发消息。」
-  ⇒ 有文案引导，**非空白区域、非报错、非无限 loading** ✓
-  底部连接徽章「● 已连接」✓
-
-  附带真机验收（品牌修复 b68e958）：onboarding 两页文案均已是新品牌
-  「欢迎使用 Simple Harness」/「Simple Harness 是一个住在你桌面上的 AI 工作台」/
-  「Simple Harness 会在后台下载一个本地记忆模型 (BGE-M3，约 286MB)」/
-  「一切就绪，开始用 Simple Harness 干活吧！」——旧 DeskPet 文案全部消失。
-  （按 TC 注，onboarding 品牌残留不在本用例判定面，此处仅作旁证记录。）
-
-## 步骤2 产物库空态
-  点侧栏「📄产物库」（nav.sh 按 AX 实时坐标）→ 截图 r8-S15-04-artifacts-empty：
-    页头「产物库 / 任务生成的文件，按修改时间倒序」
-    虚线占位框内：**「暂无产物」**
-      副文案「任务生成的文件会出现在这里；消息流中的产物卡片不受影响。」
-  ⇒ 明确空态文案 + 占位，**非空白、非报错** ✓
-  **目录不存在语义**：实查 `ls .testenv/cold-S15-r8/artifacts` →
-    `No such file or directory`，即 artifacts 目录**根本不存在**，
-    UI 未崩、正常返回空列表语义 ✓（恰好覆盖 TC 该条）
-
-## 步骤3 从空态引导新建会话并发消息
-  前置：默认模型 `sf-glm-5.2` 无额度，先经头部模型按钮切 **kimi-k3 · Moonshot**
-  （对话框显示「当前生效: kimi-k3」，截图 r8-S15-model-picked）后保存。
-  发送「空态验证：这是首个会话的第一条消息」→ **真实往返成功**：
-    「收到～空态验证通过：首个会话的第一条消息已到达，当前工作区为空。
-      接下来想让我做点什么？」
-  转换结果（截图 r8-S15-05-first-session）：
-  - 侧栏**空态引导消失** ✓
-  - 列表出现**首个会话条目**「默认话题 / 2 条 0s 前 default」并高亮为当前会话 ✓
-  ⇒ 空态 → 非空态转换正确 ✓
-  （条目上的「0s 前」即本轮新增的时间列，cad272e 修复的现场旁证）
-
-## 步骤4 切回产物视图对账
-  仍为**空态**「暂无产物」（截图 r8-S15-06-artifacts-after）
-  磁盘对账：`ls .testenv/cold-S15-r8/artifacts` → 仍 `No such file or directory`
-  ⇒ 该消息**未产生真实产物**，UI 空态与磁盘实况一致（TC 允许的两种结果之一）✓
-
-## Run 创建（expected_run_created=true）
-  步骤3 真往返产生 root run，DB 实查 `.testenv/cold-S15-r8/data/workflow.db`：
-    run_id = **eefa5932ea8d5ac59e8b64a45e4ab1b5**
-    session_id = default
-    started_at = 2026-08-08 08:26:13
-  即本场景 run_id_under_test。
-  备注：`trace_runs.status` 记为 `cancelled` 是 harness 终态记账口径，
-  业务终态是真实收到回复（消息流可见、截图为证），两者不冲突。
-
-判定：步骤 1–3 全部满足（onboarding 走通 + 会话空态引导 + 产物库空态 +
-空态→非空态转换正确），步骤 4 对账一致 → **S15 PASS**
+判定：步骤 1–3 全部满足（步骤4 对账亦一致）→ **S15 PASS**
 VERDICT_PASS

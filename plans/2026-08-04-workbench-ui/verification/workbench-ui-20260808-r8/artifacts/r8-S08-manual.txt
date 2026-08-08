@@ -1,0 +1,51 @@
+# S08 真机道 — SettingsView 设置页面化与逐项保留（TC-WB-08 / B6+B12）
+执行：AI (manual-mcp / cliclick 真 HID)；2026-08-08 22:00–22:20 本地
+实例：s06-final / s08-restart（b57d582 修复版后端，relay 身份 /v1/me 200）
+用户裁决：2026-08-08 用户选 **方案 B**——判定项⑥缺口记为已知缺陷，
+  **S08 判 FAIL**，本轮不修（修改会再次触发 attestation 复测）。
+
+步骤1 页面化 ✓：设置以**页面**呈现于内容区（顶部「⚙ 设置」标题条 + 内容随内容区
+  滚动），**无 backdrop 遮罩、无浮层定位**（r8-S08-rr-01-settings）
+
+步骤2 分区核对表（权威快照对照）：
+  ① Provider/模型配置区（LLM Providers，含「+ 添加」与优先级说明）— **存在** ✓
+  ② Embedder 状态卡（BGE-M3 语义嵌入 + Mock 模式徽章 + 刷新）— **存在** ✓
+  ③ 模型上下文卡（模型上下文窗口 400K / compaction 80% / 来源链 / 压缩阈值 /
+     压缩模型 / 保存到全局 / 保存压缩模型）— **存在** ✓
+  ④ 数据目录设置（当前生效 + 环境变量 + 默认路径 + 新路径 + 浏览/应用/恢复默认/
+     刷新 + 同时移动数据勾选）— **存在** ✓（r8-S08-rr-02-mid）
+  ⑤ Agent 有效执行预算（分钟，15，范围 1-60）— **存在** ✓
+  ⑥ 云端 API key 管理 — **缺口（本场景 FAIL 归因）**：见下「缺陷」
+  ⑦ 自启开关（通用 → 开机自动启动 + 说明）— **存在** ✓
+  ⑧「桌宠形象」区块 — **不存在** ✓（唯一预期消失项）
+  另见：权限（Agent 全开模式）、关于与更新（v0.1.0 + 检查更新）、危险区（完全卸载）
+
+步骤3 自启开关可切换 ✓：AXCheckBox 值 0→1 真实点击生效
+步骤4 canonical 保存生效项（自启开关）✓：切 ON 后系统侧核对
+  `ls ~/Library/LaunchAgents` 出现 **SimpleHarness.plist**（实测观察面=plist，
+  原样入账，见 r8-S08-plist-on.txt）——非仅 UI 态
+步骤5 重启持久化 ✓：killall → launch-app(s08-restart) → 设置页自启开关
+  仍为 **1（ON）**，状态保持
+步骤6 反向清理 ✓：切回 OFF → `ls ~/Library/LaunchAgents | grep -i harness`
+  **无命中**（plist 已移除），自清理完成
+
+## 缺陷 WBUI-DEF-S08-01：设置页「云端 API key 管理」relay 托管项两侧都不显示
+现象：relay 已登录（后端每次启动 relay_provider_ensured id=relay-cloud
+  account_ref=… base_url=https://chinzy.com/v1 key_fp=…，聊天 kimi-k3 真实往返正常），
+  但设置页 LLM Providers 区显示空态「请添加你的第一个 LLM provider」，
+  无 relay 行、无 API Key 掩码、无「重置 key」（r8-S08-rr-04-providers2）。
+根因（源码核对，非环境问题）：
+  - 前端：`SettingsProviders.tsx:602` — `if (!relayAdapter || RELAY_MANAGED_PROVIDER)
+    { setRelayProviders([]); return; }`，而 `relayConfig.ts:34` 的
+    `RELAY_MANAGED_PROVIDER = true` ⇒ WI-3 起**主动关闭**前端 relay 虚拟行，
+    注释称改由后端 registry 提供真实 `relay-cloud` 行（WI-4 补 readonly 徽章）。
+  - 后端：`settings_providers_list_request` 返回 `_reg.list_providers()`
+    （main.py:12588），而 `backend/llm/registry.py:122` 的 list_providers 仅返回
+    `ad.available()` 的适配器名 —— relay 托管项不在该 registry 列表中。
+  ⇒ 前端虚拟行已退役、后端 registry 行未落地，**判定项⑥两侧都不显示**，
+    属 WI-3→WI-4 迁移未完成的跨层缺口（r6 挂起未决异常的确切根因）。
+影响：设置页无法查看/重置云端 key；不影响聊天链路（provider 由 relay 直供）。
+
+判定：步骤 1、2（①②③④⑤⑦⑧）、3、4、5、6 满足，
+  **判定项⑥ 不满足 → 按 oracle「缺任一项即 FAIL」→ S08 FAIL**（用户方案 B）
+VERDICT_FAIL
