@@ -49,3 +49,25 @@
 判定：步骤 1、2（①②③④⑤⑦⑧）、3、4、5、6 满足，
   **判定项⑥ 不满足 → 按 oracle「缺任一项即 FAIL」→ S08 FAIL**（用户方案 B）
 VERDICT_FAIL
+
+## 根因更正（2026-08-09，用户选方案1 修复时查实）
+此前本文件记的根因（"RELAY_MANAGED_PROVIDER=true 退役虚拟行 + 后端
+list_providers 只返回 available() 不含 relay"）**是错的**，据实更正：
+  - 后端 `LLMProviderRegistry.list_providers()`（provider_registry.py:847）返回
+    **全部** entries；relay-cloud 已持久化在 `<user_data>/config.toml`
+    `[[llm.endpoints]]`（id=relay-cloud, enabled=true, source=relay,
+    config_revision=104）——**数据一直在**，不是后端不给。
+  - 我此前查的是另一个同名类 `backend/llm/registry.py:list_providers()`
+    （返回 list[str]、按 available() 过滤），与设置页链路无关，属看错文件。
+真实根因：前端 `SettingsProviders.tsx` 的 hydrate effect 只在**挂载瞬间**发一次
+  `settings_providers_list_request`，deps 为 `[getChannel]` 而 getChannel 是
+  `useCallback(..., [])` 恒稳引用 ⇒ 若挂载时通道未连接（或回复被 `lastMessage`
+  单槽在同一 React 批次里被其它控制流量覆盖），列表**永久为空**且无任何重试。
+修复（本次）：改为挂载即请求 + 订阅 `onStateChange` 每次 (重)连接再请求 +
+  直接经 `onMessage` 读取列表回包（不再依赖单槽 lastMessage）；对不实现订阅 API
+  的旧/桩通道用可选链降级为挂载单发。
+真机验证（修复后重启 s08-fix-verify）：设置页 LLM Providers 出现
+  **中转站·chinzy + relay 徽章 + sf-glm-5.2 (+154) + https://chinzy.com/v1 +
+  API Key: ******** + 默认模型下拉 + 启用勾选 + 编辑 + 重置 key**
+  ⇒ 判定项⑥「云端 API key 管理」完整（截图 r8-S08-fix-verified）。
+本轮 r8 的 S08 FAIL 结论不因此更改（FAIL 永久粘性）；S08 复跑在 r9 进行。

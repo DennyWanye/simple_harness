@@ -581,12 +581,38 @@ export function SettingsProviders({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  // Hydrate from backend on mount.
+  // Hydrate from backend. WBUI-DEF-S08-01: a mount-only request left the
+  // list permanently empty whenever the socket was not yet connected at
+  // mount (and the `lastMessage` single slot can drop the reply when other
+  // control traffic lands in the same React batch). Request on mount AND on
+  // every (re)connect, and read the reply off the channel directly.
   useEffect(() => {
     const ch = getChannel();
-    if (ch && ch.state === "connected") {
-      ch.send(buildListRequestMessage());
-    }
+    if (!ch) return;
+    const request = () => ch.send(buildListRequestMessage());
+    if (ch.state === "connected") request();
+    // Older/stubbed channels may not expose the subscription API; degrade to
+    // the mount-only request rather than throwing inside the effect.
+    const offState = ch.onStateChange?.((s) => {
+      if (s === "connected") request();
+    });
+    const offMsg = ch.onMessage?.((incoming) => {
+      const msg = incoming as unknown as { type?: string; payload?: any };
+      if (
+        msg.type !== "settings_providers_list_response" &&
+        msg.type !== "providers_changed" &&
+        msg.type !== "settings_providers_reordered"
+      ) {
+        return;
+      }
+      if (!Array.isArray(msg.payload?.providers)) return;
+      setProviders(msg.payload.providers as Provider[]);
+      setError(null);
+    });
+    return () => {
+      offState?.();
+      offMsg?.();
+    };
   }, [getChannel]);
 
   // 2026-05-26: 订阅 relay adapter 的 providers-updated 事件，把中转站
