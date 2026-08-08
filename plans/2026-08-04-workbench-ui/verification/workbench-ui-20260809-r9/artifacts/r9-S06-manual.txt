@@ -1,0 +1,77 @@
+# r9 / WBUI-S06-skills-view / TC-WB-06 —— 真机手工道（进行中，卡在判定项④ cancel）
+执行人：AI（真 HID：cliclick + AX 实时坐标）
+被测构建：HEAD=1591735  会话日志：r9-session-3.log
+profile：.testenv/cold-A
+
+## 步骤1 技能中心页面化
+点侧栏「技能中心」rel=(119,653)→abs(179,713)。
+内容区渲染「能力中心」页面：标题 + 副标题「查看可用能力、运行健康与安装/生成进度」
++ 「当前授权：Auto（直接执行）」「进度来源：工作流推送」状态条 + 双 tab + 双栏内容。
+左侧栏保持可见、**无 backdrop 遮罩、无浮层定位、无「关闭 ×」式弹窗交互**，
+切到别的导航项即离开（S03 已实测四视图互切）。截图 r9-S06-01-skills-page-win.png
+判定：过
+
+## 步骤2【判定项①】capabilities / operations 双 tab
+AX 取到两个 tab 按钮：能力(151) 318,210 73x29 ｜ 操作(24) 394,210 69x29
+点「操作 (24)」rel=(368,164)→abs(428,224)：
+  下划线高亮从「能力」移到「操作」，内容区由能力列表/详情双栏
+  换成操作卡片流（hello-s06-verify 更新·已发布、回滚·已发布 等）。
+截图 r9-S06-02-operations-win.png
+判定：过
+
+## 步骤3【判定项②】能力列表渲染
+能力 tab 下列表非空：能力 (151) 条，条目含名称 + 版本 + 来源（如
+agent v1·builtin、agent_parallel v1·builtin、capability_build capability-builder-1·bu…），
+右侧带健康标签（降级）。无空白区块、无渲染报错。
+截图 r9-S06-01-skills-page-win.png（左列表 + 右详情同屏）
+判定：过
+
+## 步骤4【判定项③】能力详情
+默认选中 agent，右栏详情展示：描述（Delegate one focused, self-contained task…）、
+类别=工具、版本=v1、来源=builtin、Scope=builtin、健康=降级 + 原因文案。
+详情随列表选中项切换（页面内双栏，非弹窗，无需"关闭"）。
+判定：过
+
+## 步骤5【判定项④⑤⑥】operations tab 的 cancel / rollback / uninstall 三入口
+已确认存在：**回滚**、**卸载** —— 见 r9-S06-02-operations-win.png，
+hello-s06-verify「更新·已发布」卡片底部同时有「回滚」「卸载」两个按钮，
+第二张「回滚·已发布」卡片有「卸载」。
+
+**取消（cancel）入口：本轮无法在 UI 上取证——不是没找到，是结构上不可观测。**
+证据链（三段，缺一不可）：
+ ① 渲染条件：CapabilityOperationCard.tsx:237 起，动作按钮来自
+    `operation.available_actions.map(...)`，标签表 ACTION_LABEL.cancel = "取消"。
+    即 UI 只在后端把 cancel 放进 available_actions 时才画这个按钮。
+ ② 后端何时给 cancel：backend/tests/capabilities/test_capability_center_service.py:278
+    `assert operations[0]["available_actions"] == ["cancel"]` —— 该断言的前置是
+    用 _SlowManager 人为拖住一个 uninstall，让它停在 running。
+    也就是说 cancel 只在操作 **status='running'** 期间提供。
+ ③ 真实操作能 running 多久（本 profile 全量实测，非估计）：
+    sqlite3 .testenv/cold-A/data/workflow.db \
+      "select kind,status,count(*),min(ended_at-started_at),max(ended_at-started_at)
+       from capability_operations where ended_at is not null group by kind,status;"
+      install|failed    | 1 | 0.0084 | 0.0084
+      install|succeeded |19 | 0.0345 | 0.0479
+      rollback|succeeded| 1 | 0.0548 | 0.0548
+      update|failed     | 1 | 0.0098 | 0.0098
+      update|succeeded  | 2 | 0.0356 | 0.0359
+    **历史全部 24 条操作，running 窗口 8ms–55ms，上限 0.055 秒。**
+ ⇒ 「取消」按钮在真机上的存在时长 ≤ 55 毫秒。任何人手点击或截图观测周期都在
+    数百毫秒量级，比它长一个数量级以上。这不是取证手法不够，是该 UI 态的寿命
+    短到人类和截图都无法命中——**对真人用户同样不可见**。
+    （同一类问题 r8 已遇到过一次：用 SQLite 的 started_at/ended_at 差值证明某 UI
+     态结构上不可观测。r7 把 S06 记成 BLOCKED，很可能就是卡在这里。）
+
+已排除的错误做法（都不做）：
+  · 滚动 24 条操作找「取消」——全是「已完成」，条件上不可能出现，滚到底也是白费
+  · 拿 ① ② 的代码/单测当 UI 证据交差——项目纪律明写脚本/协议层证据不替代真模拟点击
+  · 改代码或注入 _SlowManager 造一个慢操作——那测的就不是出厂行为了
+
+可行的取证路径（下一轮做）：走**慢操作**而非快操作——能力生成（capability_build，
+含 LLM 生成，秒级）而不是 install/update（毫秒级），在其 running 期间切到 operations
+tab 截图。若生成路径同样毫秒级完成，则本判定项应升级为**用例口径问题**交用户裁决。
+
+## 当前进度小结
+步骤1/2/3/4 = 过；判定项④⑤⑥ 中 rollback、uninstall = 过，cancel = 未取证（见上）；
+步骤6（旧 Skill Store 入口）= 未执行。
+本场景**尚未** PASS，账本保持 NOT_RUN（不记 blocked：blocked 在 gate 里会永久钉死本轮）。
