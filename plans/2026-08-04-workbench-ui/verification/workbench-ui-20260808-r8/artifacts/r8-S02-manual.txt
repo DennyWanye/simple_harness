@@ -1,0 +1,42 @@
+# S02 真机道 — message-panel 第二窗口彻底移除（TC-WB-02 / B2）
+执行：AI (manual-mcp / cliclick 真 HID + devtools 探针)；2026-08-08 08:3x；relay dev
+基线：b68e958；用户数据 .testenv/cold-A（backend 经 ps eww 确认属该目录）
+环境：先跑 killall.sh → app=0 backend=0 port8100=0 vite=0，再启动，避免孤儿 backend
+
+## 步骤1 默认视图
+  启动后默认即**聊天视图**，Harness 观察内容**直接呈现在主窗内容区**
+  （截图 r8-S02-01-default：左侧会话列表 + 右侧「默认话题」消息流 + 底部输入栏）
+  **不需要点击任何按钮弹出第二个窗口** ✓
+
+## 步骤2 全 UI 遍历找旧「▶ 消息」入口
+  侧栏（会话 / 技能中心 / 产物库 / 更多 / 设置）、头部条（default / kimi-k3 /
+  工具 / ContextRing）、消息区、输入栏——**均不存在「打开消息面板独立窗口」入口** ✓
+
+## 步骤3 双观测面窗口计数
+  (a) 可见窗口计数（osascript count windows）：**1**
+      —— 启动后、开 devtools 时、关 devtools 后三次读取恒为 1 ✓
+  (b) **盲区补枪：devtools 权威探针**（含隐藏 webview）
+      右键消息区 →「Inspect Element」开 Web Inspector → Console 执行：
+        window.__TAURI__.window.getAllWindows().then(w=>console.log(
+          "WINDOW_COUNT="+w.length+" labels="+w.map(x=>x.label).join(",")))
+      控制台输出：**`WINDOW_COUNT=1 labels=main`**
+      （截图 r8-S02-probe-console，控制台原样可见）✓
+      注：用 .then() 而非顶层 await——Safari devtools 顶层 await 会抛 SyntaxError。
+  ⇒ 两个观测面都满足（可见 1 且含隐藏 webview 的权威计数 1，label 只有 main）✓
+  取证后已关闭 Web Inspector，UI 恢复正常（截图 r8-S02-final）。
+
+## 步骤4/5/6 脚本核对
+  已由 r8 脚本道 `artifacts/script-lane.sh` 覆盖并单独入账（S02 script 半边 PASS）：
+  - tauri.conf.json / capabilities/default.json 的 message-panel 零命中
+  - open/close/dock/toggle_message_panel 四个 command 及前端调用点零命中
+  - 残留引用仅剩 WBUI-BC-02 已批准的允许清单项
+
+## Run 创建负向断言（expected_run_created=false）
+  全程只做视图观察、右键开关 devtools、控制台只读探针；**未发送任何消息**、
+  未触发技能或生成 ⇒ 结构上不可能产生 root Run。
+  硬证据（.testenv/cold-A/data/workflow.db，本场景跑完后取）：
+    trace_runs 总数=32  最新 started_at=2026-08-07 23:45:30.809008
+  最新 run 早于本场景执行窗口（本场景起于 08:30）⇒ root run 增量为 0。
+
+判定：步骤 1–6 全部满足 → **S02 PASS**
+VERDICT_PASS
