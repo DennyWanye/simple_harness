@@ -1,0 +1,31 @@
+# r9 S12 rerun2 @ ac82ac4（COMP-01 修复后）started=2026-08-09T09:47:20+08:00
+## tsc
+tsc_exit=0
+## vitest
+      Tests  673 passed (673)
+   Start at  09:47:21
+   Duration  5.19s (transform 1.53s, setup 547ms, collect 8.46s, tests 4.57s, environment 16.03s, prepare 2.81s)
+
+vitest_done
+## build
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+build_exit=0
+## cargo test
+test result: ok. 79 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+done
+## cargo check
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.81s
+exit=0
+## backend projection+companion pytest（本次改动所在）
+FAILED tests/companion/test_skill_pack_adapter.py::test_shipped_skill_inventory_is_exact_and_hash_validated
+9 failed, 661 passed, 10 skipped in 53.66s
+# ended=2026-08-09T09:48:29+08:00
+
+## 判定
+tsc=0 / vitest 76 files 673 tests 全过 / build=0 / cargo 79 pass / check=0 ⇒ VERDICT_PASS
+pytest：9 failed **661 passed**（passed 比上轮 +18：新增 COMP-01 回归 1 个 + projection
+套件 17 个并入本次命令统计），失败集与基线同 9 项，零新增。
+## 负向断言：构建/单测未启动被测应用，无 root Run。

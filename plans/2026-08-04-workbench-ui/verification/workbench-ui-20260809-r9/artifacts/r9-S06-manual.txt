@@ -75,3 +75,49 @@ tab 截图。若生成路径同样毫秒级完成，则本判定项应升级为*
 步骤1/2/3/4 = 过；判定项④⑤⑥ 中 rollback、uninstall = 过，cancel = 未取证（见上）；
 步骤6（旧 Skill Store 入口）= 未执行。
 本场景**尚未** PASS，账本保持 NOT_RUN（不记 blocked：blocked 在 gate 里会永久钉死本轮）。
+
+═══════════════════════════════════════════════════════
+## 续测（2026-08-09，用户裁决后）：判定项④ cancel 路1→路2 + 步骤6 补全
+
+### 路1 实测（用户裁决"先试路1"）——失败，证据如下
+让 pet 真实调用 capability_build 生成新技能（hello-cancel-probe），期望产生秒级
+running 操作以观测 cancel 入口：
+  · LLM 确实先后调用了 capability_search + capability_build（backend 日志
+    p5s2_tool_call_args_dump name='capability_build' @ 01:53:35）
+  · 但 builder 在 admit 阶段抛 CapabilityBuildError
+    （backend/deskpet/capabilities/builder.py:979 extract_search_attestation）
+    → driver_runtime_failed，宿主 run d382736cb4f7 整体失败
+  · capability_operations 零新增（最新记录仍为 21:43 的 hello-s06-verify）
+  · 能力中心里 capability_build 健康标注="降级 · Instructional or currently
+    unavailable for direct execution"（截图 r9-S06-01-skillcenter-win.png 右栏同款标注体系）
+⇒ 本环境**唯一的慢操作路径不可用**，加上此前实测 24 条本地操作生命周期 8-55ms，
+  running 态在本环境结构上不可制造。路1 客观不可行。
+（builder admit 崩溃本身单列缺陷 WBUI-DEF-BUILD-01，见 r9-S06-defect-BUILD-01.md）
+
+### 路2 落地（用户预批准，approval 已入账 kind=scope-reduction hash=1c0cc2838bbf…）
+判定项④「cancel 入口存在」以三层证据替代真机可见性取证：
+  1. 后端投影逻辑：backend/deskpet/capabilities/ui_projection.py:235-236
+     `if cancellable and operation.status == "running": available_actions.append("cancel")`
+     ——cancel 动作在 running 态被投影给前端
+  2. 前端渲染逻辑：tauri-app/src/components/CapabilityOperationCard.tsx:237-243
+     available_actions.map(...) 渲染动作按钮（含「取消」文案映射 :44 cancel:"取消"）
+  3. **可执行的存在性证明**：前端单测 CapabilityOperationCard.test.tsx
+     以 available_actions:["cancel","retry","rollback","uninstall"] 渲染卡片，
+     断言「取消」按钮真渲染、可点击、onAction 收到 "cancel"——vitest 全绿（673 tests，
+     本轮 S12 rerun2 实跑）。
+结论：cancel 入口存在且条件正确；本环境无法产生满足其渲染条件的状态属环境限制，
+不构成功能缺失。判定项④：**过（路2 口径）**
+
+### 步骤6【判定项：旧 Skill Store 入口】真机补全
+点击「打开旧 Skill Store」→ SkillStore 在**技能视图内切换**呈现（侧栏保持在位、
+非弹窗、无浮层遮罩），显示已安装技能列表（algorithmic-art / canvas-design）+
+市场/URL 安装 tab（截图 r9-S06-05-oldstore-win.png）→ 点「返回能力中心」→
+回到能力中心 151 能力列表（截图 r9-S06-06-backfromstore-win.png）。判定：过
+
+## 总判定
+步骤1 页面化 ✔ + 6 项判定清单全过（①双tab ②列表 ③详情 ④cancel[路2口径]
+⑤rollback ⑥uninstall + 旧 Skill Store 入口）⇒ **PASS**
+
+## Run 创建断言（expected_run_created=?）
+路1 尝试产生了 1 个真实 root run（d382736cb4f7，driver_runtime_failed 收场）——
+这是取证操作的副产物，如实入账为 run_id_under_test。
