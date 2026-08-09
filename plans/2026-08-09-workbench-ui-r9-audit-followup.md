@@ -126,3 +126,30 @@ backend 缓存过期 relay token 不重读，未绑定 profile 永久卡「正�
 
 修完任何一项 → facts 变更 → `AUDITOR_INPUT_STALE` → **必须重新冻结 auditor-input 并重审**。
 重审只核上轮断点与新改动，但补完动了任何输入就要重来。
+
+---
+
+## 八、追加发现（2026-08-09，登录改造途中）：S12 的 tsc 证据是 vacuous 的
+
+**事实**：`tauri-app/tsconfig.json` 是 solution 式配置（`"files": []` + project references）。
+裸跑 `npx tsc --noEmit` **一个文件都不检查，永远 exit 0**。
+
+**实证**：删掉 18 个 relay 源文件、留下 13 处断掉的 import 后，
+`npx tsc --noEmit` 仍报 0 错误；换 `npx tsc -b --noEmit` 立刻列出全部 13 个。
+
+**影响**：
+- r9 的 S12 判定项「tsc --noEmit exit=0 零 error」用的就是这条空命令（首轮 + 两次 rerun 全中招）
+  ⇒ **该证据作废，须用 `tsc -b --noEmit` 重跑**。r8 及更早轮次大概率同样中招。
+- 全局 hook `~/.claude/hooks/post-edit-typecheck.sh` 改 `.ts` 后自动跑的也是这条空命令
+  ⇒ 从未拦下过任何类型错误，须同步修正。
+- 顺带暴露一个**存量类型错误**（非本次改造引入）：
+  `src/components/SettingsProviders.tsx(638,41): error TS7006: Parameter 'e' implicitly has an 'any' type`
+
+**性质**：与审计员抓的 S06「只有代码行+单测」同类——但更糟，这是**假绿灯**而非弱证据。
+
+**待办**（用户裁决：登录改造优先，本项改造完统一处理）：
+1. `package.json` 加 `"typecheck": "tsc -b --noEmit"`，所有用例/脚本改用它
+2. 修 `post-edit-typecheck.sh`
+3. 修 TC-WB-12 步骤 3 的命令原文（走 behavior_change）
+4. S12 证据标作废并重跑
+5. 修掉那个存量 TS7006
