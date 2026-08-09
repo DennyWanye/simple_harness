@@ -30,7 +30,7 @@ from deskpet.companion.control_credentials import (
 from deskpet.companion.control_ingress import (
     CompanionControlIngress,
     CompanionControlIngressError,
-    RegistryRelayAuthSnapshotProvider,
+    LocalAuthSnapshotProvider,
 )
 from deskpet.companion.identity import ProfileBindingCoordinator
 from deskpet.companion.identity_gate import IdentityReadyGate
@@ -473,16 +473,18 @@ async def test_wrong_scope_and_stale_binding_epoch_never_mutate(tmp_path) -> Non
 
 
 @pytest.mark.asyncio
-async def test_renderer_forged_relay_user_is_rejected_by_trusted_snapshot(
+async def test_renderer_forged_auth_snapshot_is_rejected_by_trusted_snapshot(
     tmp_path,
 ) -> None:
+    """renderer 自报的身份永远不作数——只认 trusted provider 的快照。
+
+    2026-08-09：relay 移除后 trusted provider 恒返回 local。renderer 若
+    伪造一个 relay 身份（或任何与 trusted 快照不符的内容），必须被拒且
+    零副作用；这条安全属性与身份来源无关，因此保留并改写。
+    """
     private_key, store, gate, ingress = _ingress(tmp_path)
 
-    class TrustedRelay:
-        async def current_snapshot(self):
-            return {"mode": "relay", "user_id": "relay-real"}
-
-    ingress.trusted_auth_provider = TrustedRelay()
+    ingress.trusted_auth_provider = LocalAuthSnapshotProvider()
     challenge = ingress.open_challenge(
         requested_window_label="main", requested_scope="identity_bind"
     )
@@ -496,7 +498,7 @@ async def test_renderer_forged_relay_user_is_rejected_by_trusted_snapshot(
         command_kind="companion_profile_bind",
         binding_epoch=challenge.binding_epoch,
         body=body,
-        nonce="forged-relay-user",
+        nonce="forged-auth-snapshot",
     )
     with pytest.raises(
         CompanionControlIngressError, match="auth_snapshot_mismatch"
@@ -523,164 +525,22 @@ async def test_renderer_forged_relay_user_is_rejected_by_trusted_snapshot(
 
 
 @pytest.mark.asyncio
-async def test_trusted_relay_me_uses_access_token_not_provider_device_key() -> None:
-    class Entry:
-        enabled = True
-        account_ref = "acct-a"
-        base_url = "https://relay.example/v1"
+async def test_local_auth_snapshot_is_constant_and_needs_no_remote_call() -> None:
+    """LocalAuthSnapshotProvider 恒返回 local，且不依赖任何远端/keychain。
 
-    class Registry:
-        def get_entry(self, provider_id):
-            assert provider_id == "relay-cloud"
-            return Entry()
-
-        def resolve_api_key(self, _provider_id):
-            raise AssertionError("device key must not be used for /v1/me")
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        assert request.headers["Authorization"] == "Bearer access-token"
-        assert str(request.url) == "https://relay.example/v1/me"
-        return httpx.Response(200, json={"id": "relay-real"})
-
-    provider = RegistryRelayAuthSnapshotProvider(
-        lambda: Registry(),
-        access_token_provider=lambda: "access-token",
-        transport=httpx.MockTransport(handler),
-    )
-    assert await provider.current_snapshot() == {
-        "mode": "relay",
-        "user_id": "relay-real",
-    }
-
-    missing = RegistryRelayAuthSnapshotProvider(
-        lambda: Registry(), access_token_provider=lambda: None
-    )
-    with pytest.raises(
-        CompanionControlIngressError,
-        match="trusted_relay_access_token_missing",
-    ) as caught:
-        await missing.current_snapshot()
-    assert caught.value.rechallenge is False
-
-
-@pytest.mark.asyncio
-async def test_trusted_relay_identity_is_independent_of_llm_enabled_flag() -> None:
-    class Entry:
-        enabled = False
-        account_ref = "acct-a"
-        base_url = "https://relay.example/v1"
-
-    class Registry:
-        def get_entry(self, provider_id):
-            assert provider_id == "relay-cloud"
-            return Entry()
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        assert request.headers["Authorization"] == "Bearer access-token"
-        return httpx.Response(200, json={"id": "relay-real"})
-
-    provider = RegistryRelayAuthSnapshotProvider(
-        lambda: Registry(),
-        access_token_provider=lambda: "access-token",
-        transport=httpx.MockTransport(handler),
-    )
-    assert await provider.current_snapshot() == {
-        "mode": "relay",
-        "user_id": "relay-real",
-    }
-
-
-@pytest.mark.asyncio
-async def test_trusted_relay_logout_uses_cleared_account_binding() -> None:
-    class LoggedOutEntry:
-        enabled = False
-        account_ref = ""
-        base_url = "https://relay.example/v1"
-
-    class Registry:
-        def get_entry(self, _provider_id):
-            return LoggedOutEntry()
-
-    provider = RegistryRelayAuthSnapshotProvider(
-        lambda: Registry(),
-        access_token_provider=lambda: (_ for _ in ()).throw(
-            AssertionError("logged-out identity must not read relay token")
-        ),
-    )
-    assert await provider.current_snapshot() == {
-        "mode": "local",
-        "user_id": None,
-    }
-
-
-def test_relay_access_token_reads_exact_rust_windows_credential_target(
-    monkeypatch,
-) -> None:
-    fake_keyring = types.SimpleNamespace(
-        get_password=lambda _service, _account: "stale-python-keyring-token"
-    )
-    calls: list[tuple[str, int]] = []
-
-    def cred_read(target: str, credential_type: int):
-        calls.append((target, credential_type))
-        return {"CredentialBlob": "trusted-access".encode("utf-16-le")}
-
-    fake_win32cred = types.SimpleNamespace(
-        CRED_TYPE_GENERIC=1,
-        CredRead=cred_read,
-    )
-    monkeypatch.delenv("DESKPET_RELAY_ACCESS_TOKEN", raising=False)
-    monkeypatch.setitem(sys.modules, "keyring", fake_keyring)
-    monkeypatch.setitem(sys.modules, "win32cred", fake_win32cred)
-
-    assert (
-        RegistryRelayAuthSnapshotProvider._read_access_token()
-        == "trusted-access"
-    )
-    assert calls == [("access_token.deskpet-relay", 1)]
-
-
-def test_relay_access_token_prefers_shell_injected_env(monkeypatch) -> None:
-    """Tauri 注入的 env 优先于任何钥匙串读取。
-
-    后端自己读 ``deskpet-relay`` 钥匙串项会在 macOS 上反复弹系统授权框：
-    每次令牌刷新都会重写该项并把 ACL 重置成只信任写入方（Tauri），所以
-    「始终允许」存不住。改由 Tauri（该项的创建者，读取免弹框）读出后经
-    env 交给后端。此测试锁住优先级——env 存在时**绝不**回落到钥匙串。
+    这是 WBUI-DEF-AUTH-01 的结构性回归门：旧的
+    RegistryRelayAuthSnapshotProvider 读 OS keychain 的 relay token 再调
+    /v1/me，token 过期即永久卡「正在恢复身份…」。新实现没有任何 I/O，
+    因此不存在"过期后不重读"这一类失败。若将来有人再给它接远端依赖，
+    这条测试会因为需要 mock transport 而立刻变红。
     """
+    provider = LocalAuthSnapshotProvider()
+    for _ in range(3):
+        assert await provider.current_snapshot() == {
+            "mode": "local",
+            "user_id": None,
+        }
+    # 构造器不接受任何依赖注入——没有 registry / token / transport 可传。
+    with pytest.raises(TypeError):
+        LocalAuthSnapshotProvider(lambda: None)  # type: ignore[call-arg]
 
-    def _boom(*_args, **_kwargs):  # pragma: no cover - 触发即失败
-        raise AssertionError("keychain must not be touched when env is set")
-
-    monkeypatch.setitem(
-        sys.modules, "keyring", types.SimpleNamespace(get_password=_boom)
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "win32cred",
-        types.SimpleNamespace(CRED_TYPE_GENERIC=1, CredRead=_boom),
-    )
-    monkeypatch.setenv("DESKPET_RELAY_ACCESS_TOKEN", "  shell-injected  ")
-
-    assert (
-        RegistryRelayAuthSnapshotProvider._read_access_token()
-        == "shell-injected"
-    )
-
-
-def test_relay_access_token_falls_back_when_env_blank(monkeypatch) -> None:
-    """env 为空/空白视为未注入，仍走钥匙串回落（老版本外壳兼容）。"""
-    monkeypatch.setenv("DESKPET_RELAY_ACCESS_TOKEN", "   ")
-    monkeypatch.setitem(
-        sys.modules,
-        "keyring",
-        types.SimpleNamespace(
-            get_password=lambda _service, _account: "from-keychain"
-        ),
-    )
-    monkeypatch.delitem(sys.modules, "win32cred", raising=False)
-
-    assert (
-        RegistryRelayAuthSnapshotProvider._read_access_token()
-        == "from-keychain"
-    )

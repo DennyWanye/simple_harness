@@ -10,9 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
-from urllib.parse import urlsplit
 
-import httpx
 
 from .control_command_canonical import (
     CanonicalCommandError,
@@ -27,7 +25,6 @@ from .identity import (
     HumanIdentity,
     ProfileBindingCoordinator,
     load_or_create_local_identity,
-    relay_human_identity,
 )
 from .identity_gate import IdentityReadyGate
 
@@ -886,123 +883,26 @@ class TrustedAuthSnapshotProvider(Protocol):
     async def current_snapshot(self) -> Mapping[str, Any]: ...
 
 
-class RegistryRelayAuthSnapshotProvider:
-    """Resolve the current account through the relay, never renderer claims."""
+class LocalAuthSnapshotProvider:
+    """恒定返回本地身份快照。
 
-    def __init__(
-        self,
-        registry_provider,
-        *,
-        access_token_provider=None,
-        transport: httpx.AsyncBaseTransport | None = None,
-    ) -> None:
-        self._registry_provider = registry_provider
-        self._access_token_provider = (
-            access_token_provider or self._read_access_token
-        )
-        self._transport = transport
+    2026-08-09：relay 托管登录整套移除，取代原
+    ``RegistryRelayAuthSnapshotProvider``（读 OS keychain 的 relay
+    access_token → 调 ``/v1/me`` 换 user_id）。
 
-    @staticmethod
-    def _read_access_token() -> str | None:
-        # Preferred source: the token the Tauri shell injected at spawn time
-        # (``process_manager.rs``). The shell owns the ``deskpet-relay``
-        # keychain item, so reading it there is prompt-free; reading it *here*
-        # is not — every token refresh rewrites the item and resets its ACL,
-        # so this interpreter gets a fresh macOS authorization prompt each
-        # time ("Always Allow" cannot stick across a rewrite). Keychain
-        # access stays as the fallback for shells that predate the env var.
-        env_token = os.environ.get("DESKPET_RELAY_ACCESS_TOKEN", "").strip()
-        if env_token:
-            return env_token
-        # keyring-rs writes the Windows generic credential under the exact
-        # target ``{username}.{service}``.  Prefer that authoritative slot on
-        # Windows: Python keyring may expose a second, stale credential for
-        # the same logical service/account pair.
-        try:
-            import win32cred  # type: ignore[import-untyped]
+    那条路径正是 WBUI-DEF-AUTH-01 的病灶：backend 在进程生命周期内缓存
+    token，token 过期后既不重读 keychain 也不触发刷新，未绑定过的 profile
+    会永久卡在「正在恢复身份…」且无 UI 恢复入口——supervisor 自动重启
+    backend 同样触发。身份改为纯本地派生后，该缺陷在结构上消失：
+    没有远端 token，就没有过期与刷新。
 
-            credential = win32cred.CredRead(
-                "access_token.deskpet-relay",
-                win32cred.CRED_TYPE_GENERIC,
-            )
-            blob = credential.get("CredentialBlob")
-            if isinstance(blob, bytes):
-                try:
-                    return blob.decode("utf-16-le")
-                except UnicodeDecodeError:
-                    return blob.decode("utf-8")
-            if isinstance(blob, str) and blob:
-                return blob
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            import keyring
-
-            value = keyring.get_password(
-                "deskpet-relay", "access_token"
-            )
-            if value:
-                return value
-        except Exception:  # noqa: BLE001
-            pass
-        return None
+    "账户"概念随 relay 一并退役——用户身份就是这台机器上的本地 profile
+    （``load_or_create_local_identity(user_data_dir)``，见
+    ``validate_auth_snapshot``）。
+    """
 
     async def current_snapshot(self) -> Mapping[str, Any]:
-        registry = self._registry_provider()
-        entry = (
-            registry.get_entry("relay-cloud")
-            if registry is not None
-            else None
-        )
-        # LLM routing preference is not authentication state. A signed-in
-        # user may disable the relay model while keeping the relay account
-        # bound; identity must still resolve through the trusted access token.
-        # ``relay_logout`` clears account_ref, which is the durable signal that
-        # the managed account is no longer bound.
-        if entry is None or not str(getattr(entry, "account_ref", "")).strip():
-            return {"mode": "local", "user_id": None}
-        # The provider/device key is only for model traffic. /v1/me must use
-        # the relay access-token slot that AuthAdapter itself restores.
-        access_token = self._access_token_provider()
-        if not access_token:
-            raise CompanionControlIngressError(
-                "trusted_relay_access_token_missing",
-                rechallenge=False,
-            )
-        parsed = urlsplit(str(entry.base_url))
-        if not parsed.scheme or not parsed.netloc:
-            raise CompanionControlIngressError("trusted_relay_url_invalid")
-        me_url = f"{parsed.scheme}://{parsed.netloc}/v1/me"
-        try:
-            async with httpx.AsyncClient(
-                timeout=10.0,
-                trust_env=False,
-                transport=self._transport,
-            ) as client:
-                response = await client.get(
-                    me_url,
-                    headers={
-                        "Authorization": f"Bearer {access_token}"
-                    },
-                )
-                response.raise_for_status()
-                value = response.json()
-        except Exception as exc:  # noqa: BLE001
-            raise CompanionControlIngressError(
-                "trusted_relay_identity_unavailable",
-                rechallenge=False,
-            ) from exc
-        if isinstance(value, Mapping) and isinstance(
-            value.get("data"), Mapping
-        ):
-            value = value["data"]
-        user_id = value.get("id") if isinstance(value, Mapping) else None
-        if not isinstance(user_id, str) or not user_id.strip():
-            raise CompanionControlIngressError(
-                "trusted_relay_identity_invalid",
-                rechallenge=False,
-            )
-        return {"mode": "relay", "user_id": user_id}
+        return {"mode": "local", "user_id": None}
 
 
 def validate_auth_snapshot(
@@ -1012,10 +912,8 @@ def validate_auth_snapshot(
 
     mode = snapshot.get("mode")
     user_id = snapshot.get("user_id")
-    if mode == "relay":
-        if not isinstance(user_id, str) or not user_id.strip():
-            raise CompanionControlIngressError("relay_auth_snapshot_invalid")
-        return relay_human_identity(user_id)
+    # 2026-08-09：relay 模式移除，只剩 local。保留 mode 字段与校验是为了
+    # 让"快照形状不对"仍然显式失败，而不是静默按 local 处理。
     if mode == "local":
         if user_id is not None:
             raise CompanionControlIngressError("local_auth_snapshot_invalid")

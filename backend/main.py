@@ -394,7 +394,6 @@ from llm.provider_registry import (
     ProviderMutationConflict,
     _migrate_legacy_provider_config,
 )
-from llm.relay_provider_ops import ensure_relay_provider, relay_logout
 
 # Provider authority is created only after state.db migrations complete in
 # lifespan. Importing main must never make a pre-migration registry usable.
@@ -862,16 +861,27 @@ except Exception as _exc:  # noqa: BLE001 — research 仍可回退 config 重�
 
 # ─── superpowers Layer 1A/1B 决策2：plan-confirm 硬门 ────────────────
 # 任务计划确认统一由 Harness durable admission decision 处理。
-def _resolve_relay_registry_provider():
-    """Return the current relay provider from the provider registry."""
+def _resolve_primary_registry_provider():
+    """Return the highest-priority enabled provider from the registry.
+
+    2026-08-09：原 `_resolve_relay_registry_provider` 只认写死的 relay-cloud
+    条目。relay 托管登录移除后，provider 一律由用户手动配置（baseUrl +
+    apiKey），"当前该用哪个"就等于 registry 链的头部——与主聊天链路
+    (`get_chain()`) 同一口径，避免图片/研究链路各自为政选出不同的 provider。
+    """
     try:
         _reg = service_context.get("provider_registry")
         if _reg is None:
             return None
-        from llm.relay_provider_ops import RELAY_PROVIDER_ID
-
-        _entry = _reg.get_entry(RELAY_PROVIDER_ID)
-        if _entry is None or not bool(getattr(_entry, "enabled", False)):
+        try:
+            _chain = _reg.get_chain()
+        except Exception:  # NoProviderConfiguredError 等 —— 没配就是没配
+            return None
+        if not _chain:
+            return None
+        _primary_id = str(_chain[0].get("id") or "")
+        _entry = _reg.get_entry(_primary_id) if _primary_id else None
+        if _entry is None:
             return None
         _api_key = _reg.resolve_api_key(_entry.id)
         if not _api_key:
@@ -882,10 +892,9 @@ def _resolve_relay_registry_provider():
             model=_entry.model,
             temperature=getattr(_entry, "temperature", 0.7),
             sanitize_inline_cot_dsml=_sanitize_cot_dsml,
-            is_relay=(getattr(_entry, "source", "") == "relay"),
         )
     except Exception as _exc:  # noqa: BLE001
-        logger.debug("research_relay_provider_resolve_skipped", error=str(_exc))
+        logger.debug("primary_provider_resolve_skipped", error=str(_exc))
     return None
 
 
@@ -895,7 +904,7 @@ def _refresh_image_endpoint_resolver() -> None:
         from deskpet.tools import image_tools as _image_tools
 
         def _resolver() -> tuple[str | None, str | None] | None:
-            _provider = _resolve_relay_registry_provider()
+            _provider = _resolve_primary_registry_provider()
             if _provider is None:
                 return None
             return (
@@ -914,7 +923,7 @@ def _refresh_research_live_llm(provider=None) -> None:
     try:
         from deskpet.tools import research_tools as _research_tools
 
-        _provider = provider or _resolve_relay_registry_provider() or local_llm
+        _provider = provider or _resolve_primary_registry_provider() or local_llm
         _research_tools.set_live_llm_call(
             _make_str_llm_call(_provider, max_tokens=4096, purpose="research")
         )
@@ -1000,7 +1009,7 @@ async def _initialize_growth_authority() -> None:
     )
     from deskpet.companion.control_ingress import (
         CompanionControlIngress,
-        RegistryRelayAuthSnapshotProvider,
+        LocalAuthSnapshotProvider,
     )
     from deskpet.companion.identity import (
         ProfileBindingCoordinator,
@@ -1440,9 +1449,7 @@ async def _initialize_growth_authority() -> None:
             identity_gate=identity_gate,
             verifier=verifier,
             user_data_dir=str(_paths.user_data_dir()),
-            trusted_auth_provider=RegistryRelayAuthSnapshotProvider(
-                lambda: service_context.get("provider_registry")
-            ),
+            trusted_auth_provider=LocalAuthSnapshotProvider(),
         )
         service_context.register(
             "window_control_credential_verifier", verifier
@@ -12543,8 +12550,6 @@ async def control_channel(ws: WebSocket):
                 "settings_providers_update",
                 "settings_providers_remove",
                 "settings_providers_reorder",
-                "settings_providers_ensure",
-                "settings_providers_relay_logout",
             ):
                 # P5-S2 multi-provider-management Phase 2:
                 # CRUD + reorder against LLMProviderRegistry. Mutations
@@ -12622,38 +12627,6 @@ async def control_channel(ws: WebSocket):
                             "payload": {"provider": entry.to_public_dict()},
                         })
                         await _broadcast_providers_changed()
-
-                elif msg_type == "settings_providers_ensure":
-                    # WI-2: decision logic lives in llm.relay_provider_ops
-                    # (unit-testable without importing main.py). Returns an
-                    # error payload or None on success.
-                    # WI-6 kill-switch: reject when the backend feature flag is
-                    # OFF (primary gate is the frontend RELAY_MANAGED_PROVIDER,
-                    # which decides whether to send this at all).
-                    if not config.features.relay_managed_provider:
-                        await ws.send_json({
-                            "type": "settings_providers_error",
-                            "payload": {
-                                "reason": "relay_managed_disabled",
-                                "detail": "relay_managed_provider feature off",
-                            },
-                        })
-                    else:
-                        _payload = raw.get("payload", {}) or {}
-                        _err = await ensure_relay_provider(_reg, _payload)
-                        if _err is not None:
-                            await ws.send_json({
-                                "type": "settings_providers_error",
-                                "payload": _err,
-                            })
-                        else:
-                            _refresh_research_live_llm()
-                            await _broadcast_providers_changed()
-
-                elif msg_type == "settings_providers_relay_logout":
-                    await relay_logout(_reg)
-                    _refresh_research_live_llm()
-                    await _broadcast_providers_changed()
 
                 elif msg_type == "settings_providers_update":
                     _pid = _payload.get("id")
