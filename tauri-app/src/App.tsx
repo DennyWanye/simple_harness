@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { V2_CLIENT_VERSION } from "./ws/ControlChannel";
 void V2_CLIENT_VERSION; // silence unused import (re-exported for diagnostics later)
 import { MemoryPanel } from "./components/MemoryPanel";
@@ -41,16 +41,29 @@ import { useBackendLifecycle } from "./hooks/useBackendLifecycle";
 import { useSessionsStore } from "./stores/sessionsStore";
 import { BACKEND_PORT } from "./backendPort";
 import { VOICE_INPUT_ENABLED } from "./voiceAvailability";
-// W3.3 (relay integration): lazy-mount the relay edition UI only when
-// the active adapter is RelayAuthAdapter. OSS default (`manual` /
-// `null` editions) never instantiates this component, so its presence
-// here is a zero-cost import at build time and a no-op at runtime.
-import { RelayAuthAdapter } from "./auth/RelayAuthAdapter";
-import { RelayEdition } from "./auth/RelayEdition";
-import { relayProviderRegistration } from "./auth/relayProviderRegistration";
-import { friendlyChatErrorMessage } from "./auth/relayErrorText";
+// 2026-08-09：relay（托管账号登录）整套移除。产品只有手动 provider
+// 一条路径（baseUrl + apiKey），身份走本地 profile。
 
 const DEFAULT_SESSION_ID = "default";
+
+/**
+ * 聊天错误文案 —— 直接呈现后端送来的原文。
+ *
+ * 取代原 `friendlyChatErrorMessage`（relayErrorText，随 relay 一并移除）：
+ * 那层把 relay 的 error_class（余额不足 / key 失效）翻成中文引导语，
+ * 而手动 provider 是用户自填 baseUrl，**原始错误比任何转译都更有助于定位**
+ * （401 是 key 错、404 是 baseUrl 路径错、超时是网络），不再做语义包装。
+ */
+function chatErrorMessage(p: {
+  error?: unknown;
+  detail?: unknown;
+  reason?: unknown;
+}): string {
+  for (const v of [p.error, p.detail, p.reason]) {
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return "请求失败（后端未提供错误详情）";
+}
 
 function App() {
   // W5 (R17): silent self-update on startup. No-op under dev-browser or
@@ -290,27 +303,9 @@ function App() {
     let challenge: IdentityChallenge | null = null;
     let bindInFlight = false;
     let rebindPending = false;
-    let restoreRetryTimer: ReturnType<typeof setTimeout> | null = null;
-    let restoreRetryAttempts = 0;
     let bindRetryTimer: ReturnType<typeof setTimeout> | null = null;
     let bindRetryAttempts = 0;
     let disposed = false;
-    let relayLogoutObserved = false;
-
-    const scheduleRelayRestoreRetry = () => {
-      if (
-        disposed ||
-        restoreRetryTimer !== null ||
-        restoreRetryAttempts >= 40
-      ) {
-        return;
-      }
-      restoreRetryAttempts += 1;
-      restoreRetryTimer = setTimeout(() => {
-        restoreRetryTimer = null;
-        void sendCurrentIdentity();
-      }, 500);
-    };
 
     const scheduleTransientBindRetry = () => {
       if (
@@ -338,22 +333,6 @@ function App() {
         return;
       }
       const currentUser = adapter.currentUser();
-      // Relay restoration is asynchronous. Binding the local profile during
-      // that gap would briefly expose the wrong human's Companion state.
-      if (
-        adapter.id === "relay" &&
-        currentUser === null &&
-        !relayLogoutObserved
-      ) {
-        rebindPending = true;
-        scheduleRelayRestoreRetry();
-        return;
-      }
-      restoreRetryAttempts = 0;
-      if (restoreRetryTimer !== null) {
-        clearTimeout(restoreRetryTimer);
-        restoreRetryTimer = null;
-      }
       bindInFlight = true;
       rebindPending = false;
       try {
@@ -432,11 +411,6 @@ function App() {
           clearTimeout(bindRetryTimer);
           bindRetryTimer = null;
         }
-        restoreRetryAttempts = 0;
-        if (restoreRetryTimer !== null) {
-          clearTimeout(restoreRetryTimer);
-          restoreRetryTimer = null;
-        }
         if (rebindPending) void sendCurrentIdentity();
       } else if (message.type === "companion_control_rechallenge") {
         challenge = null;
@@ -463,23 +437,16 @@ function App() {
     }
     const offAuth = adapter.onEvent((event) => {
       if (event.type === "login" || event.type === "logout") {
-        relayLogoutObserved = event.type === "logout";
         bindRetryAttempts = 0;
         if (bindRetryTimer !== null) {
           clearTimeout(bindRetryTimer);
           bindRetryTimer = null;
-        }
-        restoreRetryAttempts = 0;
-        if (restoreRetryTimer !== null) {
-          clearTimeout(restoreRetryTimer);
-          restoreRetryTimer = null;
         }
         void sendCurrentIdentity();
       }
     });
     return () => {
       disposed = true;
-      if (restoreRetryTimer !== null) clearTimeout(restoreRetryTimer);
       if (bindRetryTimer !== null) clearTimeout(bindRetryTimer);
       offMessage();
       offAuth();
@@ -750,22 +717,14 @@ function App() {
             });
         }
         // P4-S22 fix: render whatever the backend sent — `error`
-        // (catch-all path), `detail` (AgentLoop ErrorEvent), or
-        // `reason`. WI-R5: a relay `error_class` (insufficient_balance /
-        // relay_key_invalid) is translated into a friendly Chinese
-        // message via friendlyChatErrorMessage instead of a raw HTTP
-        // error string.
-        const msg = friendlyChatErrorMessage(p);
+        // (catch-all path), `detail` (AgentLoop ErrorEvent), or `reason`.
+        // 2026-08-09：relay error_class 的中文翻译层随 relay 移除；
+        // 手动 provider 的错误直接呈现后端原文（用户自己配的 baseUrl，
+        // 原始错误比任何转译都更有助于定位）。
+        const msg = chatErrorMessage(p);
         // Surface in the top error banner（T4 起以 WorkbenchShell 顶部
         // 横幅形态渲染，bannerStyle("error")）。
         setPetError(msg);
-        // WI-3: key 失效 → registration.recover（force 重铸 + 镜像进
-        // registry，带 60s/≥2 次熔断防死循环）。取代旧 relayProviderBridge
-        // 旁路（后者仅在 relay_managed_provider flag OFF 时回退，WI-6）。
-        // insufficient_balance 只显示充值提示，不触发重签/重登引导。
-        if (p.error_class === "relay_key_invalid" && relayAdapter) {
-          void relayProviderRegistration.recover(relayAdapter);
-        }
         break;
       }
       case "supervisor_alert": {
@@ -909,88 +868,6 @@ function App() {
   // handleBubbleClickBackground（原消息面板打开命令的最后前端调用点，随 WB-2 移除）
   // 随桌宠删除；supervisor_alert 的 store 缓存链路保留（见上方 switch）。
 
-  // W3.3 (relay integration): identify the active adapter once. Memoised
-  // by the auth/index.ts singleton, so re-renders are free. We only
-  // mount the relay UI when the adapter is concrete RelayAuthAdapter —
-  // OSS default returns a ManualAuthAdapter and `relayAdapter` is null,
-  // so the JSX guard below is dead code in that build.
-  const relayAdapter = useMemo(() => {
-    const a = getAuthAdapter();
-    return a instanceof RelayAuthAdapter ? a : null;
-  }, []);
-
-  // 2026-05-26: 账户面板触发器 — RelayEdition mount 时把 setShowAccount
-  // 写入 .current；Toolbar 的 onAccount 通过这个 ref 触发。pill 视觉挪
-  // 进 Toolbar 后两边解耦，RelayEdition 只管 modal。
-  const openAccountRef = useRef<(() => void) | null>(null);
-
-  // WI-R3: in relay edition the forced login modal must come BEFORE the
-  // onboarding wizard. Track auth state so the wizard is gated on it.
-  // Non-relay editions: no adapter → `relayAuthed` stays true → wizard
-  // shows normally (zero behaviour change).
-  const [relayAuthed, setRelayAuthed] = useState(
-    relayAdapter ? relayAdapter.isAuthenticated() : true,
-  );
-  useEffect(() => {
-    if (!relayAdapter) return;
-    setRelayAuthed(relayAdapter.isAuthenticated());
-    // WI-3: mirror the relay device key into the backend provider
-    // registry (so relay shows up as a normal, managed provider). attach
-    // injects the control channel (resolved lazily per send) + the pet
-    // error toast for the recover circuit-breaker. `login` (also emitted
-    // by restoreSession / dev auto-login) triggers the ensure mirror;
-    // `logout` tears down the local key so account A's long-lived key is
-    // never reused by a subsequently logged-in account B. Manual edition
-    // (relayAdapter === null) returns early above → never attached (inert).
-    relayProviderRegistration.attach(getControlChannel, setPetError);
-    if (relayAdapter.isAuthenticated()) {
-      // Already authed at mount (restore/auto-login fired before we
-      // subscribed). Idempotent: inflight + lastEnsured cache make a
-      // duplicate login a no-op.
-      void relayProviderRegistration.ensure(relayAdapter, "login");
-    }
-    return relayAdapter.onEvent((e) => {
-      if (e.type === "login") {
-        setRelayAuthed(true);
-        void relayProviderRegistration.ensure(relayAdapter, "login");
-      }
-      if (e.type === "logout") {
-        setRelayAuthed(false);
-        relayProviderRegistration.onLogout();
-        getControlChannel()?.send({
-          type: "settings_providers_relay_logout",
-        });
-      }
-    });
-  }, [relayAdapter]);
-
-  // WI-3 cold-start race fix: on a fresh launch the relay `login` event
-  // (restoreSession / dev auto-login) can fire BEFORE the control WS is
-  // connected, so the first ensure aborts at "no channel". Re-fire ensure
-  // when the ws transitions to "connected" (idempotent: lastEnsured cache
-  // makes a duplicate a no-op). Without this, 收编 silently never happens
-  // on a real user's cold start (it only worked under HMR because the
-  // channel was already up).
-  useEffect(() => {
-    if (!relayAdapter || state !== "connected") return;
-    if (relayAdapter.isAuthenticated()) {
-      void relayProviderRegistration.ensure(relayAdapter, "login");
-    }
-  }, [state, relayAdapter]);
-
-  // WI-3 (B-C2 self-heal): backend signals the local relay key is gone
-  // (keychain cleared / never minted) via settings_providers_error
-  // {reason:key_missing}. Re-mint via recover (force). The recover
-  // circuit-breaker (60s/≥2) stops a runaway loop if it keeps failing.
-  useEffect(() => {
-    if (!relayAdapter || !lastMessage) return;
-    if ((lastMessage as { type?: string }).type !== "settings_providers_error")
-      return;
-    const p = (lastMessage as { payload?: Record<string, unknown> }).payload ?? {};
-    if (p.reason === "key_missing" && p.provider_id === "relay-cloud") {
-      void relayProviderRegistration.recover(relayAdapter);
-    }
-  }, [lastMessage, relayAdapter]);
 
   return (
     <div
@@ -1004,12 +881,6 @@ function App() {
         overflow: "hidden",
       }}
     >
-      {/* W3.3: relay-edition UI lives entirely under this single
-          conditional. Manual / null editions render zero relay nodes
-          and pay zero runtime cost beyond one instanceof check above. */}
-      {relayAdapter && (
-        <RelayEdition adapter={relayAdapter} openAccountRef={openAccountRef} />
-      )}
 
       {/* T6 — 工作台壳：Sidebar 240px + 内容区。view state 在 App 层
           （D2），视图 props 走显式合同（见 WorkbenchShell 文件头）。
@@ -1073,17 +944,12 @@ function App() {
           onMemory: () => setMemoryOpen(true),
           onTrace: () => setTraceOpen(true),
           onFeedback: () => setFeedbackOpen(true),
-          onAccount:
-            relayAdapter && relayAuthed
-              ? () => openAccountRef.current?.()
-              : undefined,
         }}
         skillsProps={{ channel: permissionChannel }}
         settingsProps={{
           getChannel: getControlChannel,
           lastMessage,
           secret,
-          relayAdapter,
           onConfigChanged: () => setRouteKind(null),
           autostart: {
             ready: autostart.ready,
@@ -1224,9 +1090,8 @@ function App() {
           reuses the existing update_cloud_config IPC — a successful
           test also persists the config, so the user isn't asked to
           save separately. */}
-      {onboardingNeeded && relayAuthed && (
+      {onboardingNeeded && (
         <OnboardingWizard
-          edition={relayAdapter ? "relay" : "manual"}
           onTestConnection={async (cfg) => {
             try {
               const r = await updateCloudConfig("", {

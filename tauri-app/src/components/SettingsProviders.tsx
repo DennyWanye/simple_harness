@@ -36,91 +36,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { AddProviderModal, type ProviderDraft } from "./AddProviderModal";
 import type { ControlChannel } from "../ws/ControlChannel";
 import type { IncomingMessage } from "../types/messages";
-import type { RelayAuthAdapter } from "../auth/RelayAuthAdapter";
-import type { Provider as RelayProvider } from "../auth/types";
-import { RELAY_MANAGED_PROVIDER } from "../auth/relayConfig";
 import { dark } from "../theme/components";
-import {
-  relayProviderRegistration,
-  type EnsureFailReason,
-} from "../auth/relayProviderRegistration";
-
-// ---- Reset-key button UI state --------------------------------------------
-// Per-provider transient feedback for the relay "🔄 重置 key" action so the
-// click is never silent: in-flight (disabled + spinner), then success/error.
-type ResetUiState = { status: "pending" | "ok" | "error"; message?: string };
-
-/** Map a registration failure reason to an actionable, user-facing message. */
-function resetFailText(reason: EnsureFailReason): string {
-  switch (reason) {
-    case "not_logged_in":
-      return "请先登录中转站账户";
-    case "no_channel":
-      return "后端未连接，请稍候重试";
-    case "no_device_key":
-    case "empty_models":
-      return "中转站未签发新 key（登录可能已失效），请重新登录";
-    case "repeated_failure":
-      return "key 反复失效，请重新登录或检查账户余额";
-    case "error":
-      return "重置出错，请稍候重试";
-    default:
-      return "重置失败";
-  }
-}
-
-// ---- Relay-edition virtual providers --------------------------------------
-//
-// 2026-05-26: 用户登录中转站后，把 relay 下发的 provider 作为只读虚拟项
-// 显示在列表里（跟手动加的 provider 视觉一致）。relay 的 tsk_xxx key 不
-// 落 LLMProviderRegistry（避免明文存到 settings.json），所以我们不通过
-// `settings_providers_add` 真注册，而是在前端 merge 一条虚拟 Provider，
-// 渲染时禁用编辑/拖拽/删除并加"中转站"徽章。
-
-/** id 前缀 — 用来在 ordered list 里识别 relay 虚拟项。 */
-export const RELAY_PROVIDER_ID_PREFIX = "__relay__:";
-
-/** 把 auth 层的 Provider 转成 SettingsProviders 显示用的 Provider。 */
-export function relayProviderToDisplay(rp: RelayProvider): Provider {
-  const models = (rp.models ?? []).map((m) => m.id);
-  return {
-    id: `${RELAY_PROVIDER_ID_PREFIX}${rp.id}`,
-    source: "relay",
-    name: rp.name + " · 中转站",
-    base_url: rp.base_url,
-    models,
-    default_model: models[0] ?? null,
-    model: models[0] ?? "",
-    // relay 虚拟项 key 永远显示为 ******** (sentinel)
-    api_key: REDACTED_API_KEY,
-    // priority 最低数 = 排最前；用 -1 保证 relay 项总在第一位
-    priority: typeof rp.priority === "number" ? rp.priority - 1000 : -1,
-    enabled: true,
-  };
-}
-
-/** 把中转站下发的多条 relay provider 合并成**单个** "chinzy" 虚拟项显示。
- *
- * 中转站登录后会下发两条同源 provider —— OpenAI 协议入口（/v1）和 Anthropic
- * 原生协议入口（/anthropic/v1）。但 OpenAI /v1 入口的模型目录已经**包含全部
- * 模型（含 Claude 系）**，Anthropic /anthropic/v1 只是冗余的原生协议入口，
- * deskpet 默认走 /v1。为减少"两个一样的中转站"的困惑，列表里只显示一条
- * 合并后的 "chinzy"（优先用 /v1 入口，模型最全）。 */
-export function relayListToChinzy(list: RelayProvider[]): Provider[] {
-  if (!list || list.length === 0) return [];
-  // 优先 OpenAI /v1 入口（含全部模型）；找不到则退第一个。
-  const primary =
-    list.find(
-      (p) => p.base_url.includes("/v1") && !p.base_url.includes("/anthropic"),
-    ) ?? list[0];
-  const disp = relayProviderToDisplay(primary);
-  return [{ ...disp, name: "chinzy · 中转站" }];
-}
-
-/** 判断某个 Provider 是不是 relay 管理项。 */
-export function isRelayProvider(p: Pick<Provider, "source">): boolean {
-  return p.source === "relay";
-}
 
 // ---- Domain types ---------------------------------------------------------
 
@@ -354,9 +270,6 @@ export const __test_dispatch_provider_event = dispatchProviderEvent;
 interface SettingsProvidersProps {
   getChannel: () => ControlChannel | null;
   lastMessage: IncomingMessage | null;
-  /** 2026-05-26: 可选的 relay adapter — 有时把中转站 providers 作为
-   * 只读虚拟项 merge 进列表。OSS / manual 编辑 = null → 行为零回归。 */
-  relayAdapter?: RelayAuthAdapter | null;
 }
 
 interface SortableRowProps {
@@ -365,8 +278,6 @@ interface SortableRowProps {
   onDefaultModelChange(id: string, default_model: string): void;
   onDelete(id: string): void;
   onEdit(provider: Provider): void;
-  onResetKey(id: string): void;
-  resetState?: ResetUiState;
 }
 
 function SortableRow({
@@ -375,10 +286,7 @@ function SortableRow({
   onDefaultModelChange,
   onDelete,
   onEdit,
-  onResetKey,
-  resetState,
 }: SortableRowProps) {
-  const relayManaged = isRelayProvider(provider);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: provider.id, disabled: false });
   const style: React.CSSProperties = {
@@ -434,24 +342,6 @@ function SortableRow({
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{provider.name}</span>
-            {relayManaged && (
-              <span
-                data-testid="provider-relay-badge"
-                style={{
-                  fontSize: 10,
-                  padding: "1px 6px",
-                  borderRadius: 4,
-                  background: "linear-gradient(180deg,#dbeafe,#bfdbfe)",
-                  color: "#1d4ed8",
-                  border: "1px solid #93c5fd",
-                  fontWeight: 600,
-                  whiteSpace: "nowrap",
-                }}
-                title="此 provider 来自中转站登录账户，由账户系统自动管理"
-              >
-                relay
-              </span>
-            )}
           </div>
           <div style={{ color: dark.textMuted, fontSize: 11, overflowWrap: "anywhere" }}>
             {provider.default_model || provider.model || (provider.models && provider.models[0]) || "(no model)"}
@@ -466,7 +356,7 @@ function SortableRow({
         </div>
       </div>
       <div style={actionsRow}>
-        {relayManaged && provider.models.length > 0 && (
+        {provider.models.length > 0 && (
           <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
             默认
             <select
@@ -501,49 +391,15 @@ function SortableRow({
         >
           编辑
         </button>
-        {relayManaged ? (
-          <button
-            type="button"
-            onClick={() => onResetKey(provider.id)}
-            disabled={resetState?.status === "pending"}
-            aria-busy={resetState?.status === "pending"}
-            style={{
-              ...rowBtn,
-              color: "#1d4ed8",
-              opacity: resetState?.status === "pending" ? 0.6 : 1,
-              cursor: resetState?.status === "pending" ? "progress" : "pointer",
-            }}
-            data-testid={`provider-reset-key-btn-${provider.id}`}
-            title="重新向中转站申请并写入本机 provider key"
-          >
-            {resetState?.status === "pending" ? "⏳ 重置中…" : "🔄 重置 key"}
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => onDelete(provider.id)}
-            style={{ ...rowBtn, color: "#b91c1c" }}
-            data-testid={`provider-delete-btn-${provider.id}`}
-          >
-            删除
-          </button>
-        )}
-      </div>
-      {relayManaged && resetState && resetState.status !== "pending" && resetState.message && (
-        <div
-          role="status"
-          aria-live="polite"
-          data-testid={`provider-reset-status-${provider.id}`}
-          style={{
-            marginTop: 4,
-            fontSize: 11,
-            color: resetState.status === "ok" ? "#15803d" : "#b91c1c",
-          }}
+        <button
+          type="button"
+          onClick={() => onDelete(provider.id)}
+          style={{ ...rowBtn, color: "#b91c1c" }}
+          data-testid={`provider-delete-btn-${provider.id}`}
         >
-          {resetState.status === "ok" ? "✅ " : "⚠️ "}
-          {resetState.message}
-        </div>
-      )}
+          删除
+        </button>
+      </div>
     </li>
   );
 }
@@ -551,20 +407,13 @@ function SortableRow({
 export function SettingsProviders({
   getChannel,
   lastMessage,
-  relayAdapter,
 }: SettingsProvidersProps) {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Provider | null>(null);
-  // 2026-05-26: relay 虚拟 providers — 来自 RelayAuthAdapter 的 in-memory
-  // cache，不进 backend LLMProviderRegistry（避免 tsk_xxx key 明文落盘）。
-  const [relayProviders, setRelayProviders] = useState<Provider[]>([]);
-  // Per-provider "🔄 重置 key" feedback (pending / ok / error). See handleResetKey.
-  const [resetUi, setResetUi] = useState<Record<string, ResetUiState>>({});
   // Re-entrancy guard independent of React state (button-disable already
   // prevents double-clicks; this also blocks programmatic / racy re-entry).
-  const resettingRef = useRef<Set<string>>(new Set());
   // Auto-clear timers per provider; cleared on unmount so we never setState
   // after the component is gone.
   const resetTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -615,38 +464,6 @@ export function SettingsProviders({
     };
   }, [getChannel]);
 
-  // 2026-05-26: 订阅 relay adapter 的 providers-updated 事件，把中转站
-  // 下发的 provider 当作只读虚拟项 merge 进列表。无 adapter（OSS 默认）
-  // → relayProviders 保持空 → 行为零回归。
-  useEffect(() => {
-    // WI-3: in managed mode the relay account is collected into the
-    // backend registry as a real `relay-cloud` provider (shown via the
-    // normal registry list), so the legacy frontend-only virtual
-    // "chinzy" row + its extra `/v1/providers` fetch are retired.
-    // (WI-4 will add the relay-managed readonly badge to that registry
-    // row.) Flag OFF → legacy virtual row (BC).
-    if (!relayAdapter || RELAY_MANAGED_PROVIDER) {
-      setRelayProviders([]);
-      return;
-    }
-    const apply = (list: RelayProvider[]) => {
-      // 多条同源 relay（OpenAI /v1 + Anthropic /anthropic/v1）合并成单个 "chinzy"。
-      setRelayProviders(relayListToChinzy(list));
-    };
-    // 退订器先订阅事件流，再用 cached 拉一次（避免 listProviders 异步期间
-    // 错过事件）
-    const unsub = relayAdapter.onEvent((e) => {
-      if (e.type === "providers-updated") apply(e.providers);
-      if (e.type === "logout") setRelayProviders([]);
-    });
-    void relayAdapter
-      .listProviders()
-      .then(apply)
-      .catch(() => {
-        /* 静默 — bridge 已经处理错误并显示红 banner */
-      });
-    return unsub;
-  }, [relayAdapter]);
 
   // Listen for inbound provider events on the shared lastMessage prop.
   useEffect(() => {
@@ -672,11 +489,10 @@ export function SettingsProviders({
     }
   }, [lastMessage]);
 
-  // 2026-05-26: 合并 backend registry + relay 虚拟项 — relay 在前
-  // (因为它的 priority 是 -1000 起，sort 排首位)，再走 sort 排序。
+  // 2026-08-09: relay 虚拟项已移除 — 列表只来自 backend registry。
   const ordered = useMemo(
-    () => sortProvidersForDisplay([...relayProviders, ...providers]),
-    [providers, relayProviders],
+    () => sortProvidersForDisplay(providers),
+    [providers],
   );
   const ordered_ids = useMemo(() => ordered.map((p) => p.id), [ordered]);
 
@@ -745,75 +561,23 @@ export function SettingsProviders({
     [providers, send],
   );
 
-  const handleResetKey = useCallback(
-    async (id: string) => {
-      // Boundary: no relay session → can't rotate; tell the user.
-      if (!relayAdapter) {
-        setResetUi((s) => ({
-          ...s,
-          [id]: { status: "error", message: "请先登录中转站账户" },
-        }));
-        return;
-      }
-      // Boundary: re-entrancy. Button is disabled while pending, but guard
-      // against any racy / programmatic double-trigger too.
-      if (resettingRef.current.has(id)) return;
-      resettingRef.current.add(id);
-
-      // Clear any lingering auto-clear timer + show the in-flight state.
-      if (resetTimersRef.current[id]) {
-        clearTimeout(resetTimersRef.current[id]);
-        delete resetTimersRef.current[id];
-      }
-      setResetUi((s) => ({ ...s, [id]: { status: "pending" } }));
-
-      let next: ResetUiState;
-      try {
-        const result = await relayProviderRegistration.recover(relayAdapter);
-        next = result.ok
-          ? { status: "ok", message: "key 已重置" }
-          : { status: "error", message: resetFailText(result.reason) };
-      } catch {
-        next = { status: "error", message: "重置出错，请稍候重试" };
-      } finally {
-        resettingRef.current.delete(id);
-      }
-
-      // Boundary: component may have unmounted during the await.
-      if (!mountedRef.current) return;
-      setResetUi((s) => ({ ...s, [id]: next }));
-      // Auto-clear the transient feedback after a few seconds.
-      resetTimersRef.current[id] = setTimeout(() => {
-        delete resetTimersRef.current[id];
-        if (!mountedRef.current) return;
-        setResetUi((s) => {
-          const copy = { ...s };
-          delete copy[id];
-          return copy;
-        });
-      }, 4500);
-    },
-    [relayAdapter],
-  );
 
   const handleSaveDraft = useCallback(
     (draft: ProviderDraft, editing: Provider | null) => {
       const models = draft.models.map((m) => m.trim()).filter(Boolean);
       const default_model = draft.default_model.trim() || models[0] || "";
       if (editing) {
-        // relay-managed provider 由登录自动铸 key；编辑弹窗只允许改默认模型/启用。
-        const patch: Record<string, unknown> = isRelayProvider(editing)
-          ? { default_model }
-          : {
-              name: draft.name,
-              base_url: draft.base_url,
-              models,
-              default_model,
-            };
-        if (!isRelayProvider(editing) && draft.api_key && draft.api_key.trim().length > 0) {
+        // 2026-08-09: 所有 provider 一视同仁 —— baseUrl / apiKey / 默认模型 / 启用 全可改。
+        const patch: Record<string, unknown> = {
+          name: draft.name,
+          base_url: draft.base_url,
+          models: draft.models,
+          default_model: draft.default_model,
+        };
+        if (draft.api_key && draft.api_key.trim().length > 0) {
           patch.api_key = draft.api_key.trim();
         }
-        if (isRelayProvider(editing) && typeof draft.enabled === "boolean") {
+        if (typeof draft.enabled === "boolean") {
           patch.enabled = draft.enabled;
         }
         send({
@@ -932,8 +696,6 @@ export function SettingsProviders({
                     setEditTarget(prov);
                     setAddOpen(true);
                   }}
-                  onResetKey={handleResetKey}
-                  resetState={resetUi[p.id]}
                 />
               ))}
             </ul>

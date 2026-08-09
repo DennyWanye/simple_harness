@@ -31,11 +31,18 @@ beforeEach(() => {
 // ----------------------------------------------------------------------
 
 describe("T4-1/T4-2/T4-5 · stepsForEdition", () => {
-  it("relay edition → 2 steps, no connectModel", () => {
-    const steps = stepsForEdition("relay");
-    expect(steps).toHaveLength(2);
-    expect(steps.map((s) => s.id)).toEqual(["welcome", "ready"]);
-    expect(steps.some((s) => s.id === "connectModel")).toBe(false);
+  // 2026-08-09：relay 版（登录自动配模型、跳过 connectModel）已移除。
+  // edition 形参保留但不再分支——任何实参都必须拿到完整三步，
+  // 这条断言就是防止将来有人再偷偷加回"跳过手填模型"的捷径。
+  it("edition 形参不再分支 —— 任何值都返回完整三步", () => {
+    for (const e of ["relay", "null", "whatever", undefined]) {
+      const steps = stepsForEdition(e);
+      expect(steps.map((s) => s.id)).toEqual([
+        "welcome",
+        "connectModel",
+        "ready",
+      ]);
+    }
   });
 
   it("manual edition → 3 steps incl. connectModel (regression)", () => {
@@ -55,11 +62,6 @@ describe("T4-1/T4-2/T4-5 · stepsForEdition", () => {
 
 describe("T4-3/T4-4/T4-6 · nextStepAllowed (array + index)", () => {
   const manual = stepsForEdition("manual");
-  const relay = stepsForEdition("relay");
-
-  it("T4-3: relay welcome step always advances (no test gate)", () => {
-    expect(nextStepAllowed(relay, 0, "idle")).toBe(true);
-  });
 
   it("T4-4: manual connectModel step blocked until test ok", () => {
     expect(nextStepAllowed(manual, 1, "idle")).toBe(false);
@@ -72,13 +74,12 @@ describe("T4-3/T4-4/T4-6 · nextStepAllowed (array + index)", () => {
     expect(nextStepAllowed(manual, 0, "idle")).toBe(true);
   });
 
-  it("T4-6: last step has no next — both editions", () => {
+  it("T4-6: last step has no next", () => {
     expect(nextStepAllowed(manual, 2, "ok")).toBe(false);
-    expect(nextStepAllowed(relay, 1, "ok")).toBe(false);
   });
 
   it("out-of-range index → false", () => {
-    expect(nextStepAllowed(relay, 9, "ok")).toBe(false);
+    expect(nextStepAllowed(manual, 9, "ok")).toBe(false);
   });
 });
 

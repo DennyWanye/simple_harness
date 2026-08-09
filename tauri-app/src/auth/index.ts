@@ -16,13 +16,13 @@
  *
  * 切换：构建期通过 Vite import.meta.env.VITE_AUTH_EDITION 决定。
  *   - "null"   → NullAuthAdapter
- *   - "manual" → ManualAuthAdapter (默认)
- *   - "relay"  → 闭源仓库提供，本 OSS 仓库不含
+ *   - "manual" → ManualAuthAdapter (默认，且是唯一的产品路径)
+ *
+ * 2026-08-09：relay（托管账号登录）整套移除。产品只支持用户手动填写
+ * LLM provider（baseUrl + apiKey），身份走本地 profile。
  */
 export { NullAuthAdapter } from "./NullAuthAdapter";
 export { ManualAuthAdapter } from "./ManualAuthAdapter";
-export { RelayAuthAdapter } from "./RelayAuthAdapter";
-export { RelayApiError, type RelayErrorCode } from "./RelayApiError";
 export {
   type AuthAdapter,
   type AuthEdition,
@@ -39,7 +39,6 @@ export {
 import { type AuthAdapter, type AuthEdition } from "./types";
 import { ManualAuthAdapter } from "./ManualAuthAdapter";
 import { NullAuthAdapter } from "./NullAuthAdapter";
-import { RelayAuthAdapter } from "./RelayAuthAdapter";
 
 let _instance: AuthAdapter | null = null;
 
@@ -61,19 +60,6 @@ export function buildAdapter(edition: AuthEdition): AuthAdapter {
       return new NullAuthAdapter();
     case "manual":
       return new ManualAuthAdapter();
-    case "relay": {
-      // W2: Relay 实现已并入主线（Week 2 of relay integration plan）。
-      // 后续分仓时这一行会从 paid 仓库的 monkey-patch 接管；目前
-      // OSS 仓也带，方便在主仓里写测试 + 联调。
-      //
-      // 2026-05-30 bug fix：RelayAuthAdapter 的 DEFAULT_BASE_URL 是 OSS
-      // placeholder ("https://your-llm-relay.example.com")，dev/prod 必须
-      // 用 VITE_RELAY_BASE_URL env 注入真实 URL。后端用 chinzy.com 但前端
-      // 直接 new 拿到 placeholder → 登录直接 DNS 失败显示"网络连接失败"。
-      const baseUrl = (import.meta as { env?: Record<string, string | undefined> })
-        .env?.VITE_RELAY_BASE_URL;
-      return baseUrl ? new RelayAuthAdapter({ baseUrl }) : new RelayAuthAdapter();
-    }
     default: {
       const _exhaust: never = edition;
       throw new Error(`Unknown AuthEdition: ${String(_exhaust)}`);

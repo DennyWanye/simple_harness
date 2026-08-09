@@ -11,7 +11,6 @@ import {
   ManualAuthAdapter,
   NotSupportedError,
   NullAuthAdapter,
-  RelayAuthAdapter,
   _resetAuthAdapterForTests,
   buildAdapter,
   getAuthAdapter,
@@ -115,16 +114,6 @@ describe("buildAdapter() factory", () => {
     const a = buildAdapter("manual");
     expect(a.id).toBe("manual");
     expect(a).toBeInstanceOf(ManualAuthAdapter);
-  });
-
-  it("maps 'relay' → RelayAuthAdapter (W2: now bundled)", () => {
-    // Before W2 the OSS build fell back to Manual + a console warning.
-    // Now the adapter is bundled in the main repo for development; the
-    // closed-source paid split is deferred. Once the split lands, this
-    // assertion will need to flip back for the OSS-only build target.
-    const a = buildAdapter("relay");
-    expect(a.id).toBe("relay");
-    expect(a).toBeInstanceOf(RelayAuthAdapter);
   });
 
   it("T1-4: unknown edition throws (exhaustive guard)", () => {

@@ -160,5 +160,10 @@ export interface AuthAdapter {
   onEvent(handler: (e: AuthEvent) => void): () => void;
 }
 
-/** Build-time edition selector — paid build sets this to "relay". */
-export type AuthEdition = "null" | "manual" | "relay";
+/**
+ * Build-time edition selector.
+ *
+ * 2026-08-09：`"relay"`（托管账号登录）已移除——产品只支持用户手动填写
+ * LLM provider（baseUrl + apiKey）。保留 `"null"` 供测试/启动占位使用。
+ */
+export type AuthEdition = "null" | "manual";

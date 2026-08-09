@@ -46,9 +46,6 @@ interface SettingsPanelProps {
   lastMessage: IncomingMessage | null;
   secret: string;
   onConfigChanged?: () => void;
-  /** 2026-05-26: relay adapter（如果是 relay edition）— 让
-   * SettingsProviders 把中转站 provider 作为只读虚拟项显示。 */
-  relayAdapter?: import("../auth/RelayAuthAdapter").RelayAuthAdapter | null;
   /** T11 (workbench-ui, D5 宿主模式)：
    * - "overlay"（默认）= 原浮层形态（backdrop + 居中模态）；
    * - "page" = 工作台 SettingsView 页面宿主 —— 去 backdrop/fixed，
@@ -115,7 +112,6 @@ export function SettingsPanel({
   onClose,
   getChannel,
   lastMessage,
-  relayAdapter,
   variant = "overlay",
   autostart,
 }: SettingsPanelProps) {
@@ -204,7 +200,6 @@ export function SettingsPanel({
           <SettingsProviders
             getChannel={getChannel}
             lastMessage={lastMessage}
-            relayAdapter={relayAdapter}
           />
         </section>
 

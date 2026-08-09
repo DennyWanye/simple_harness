@@ -17,7 +17,7 @@
  *   ChatView      ← { activeSid, secret }
  *   SkillsView    ← { channel: permissionChannel }（互跳 state 本地化）
  *   ArtifactsView ← 无 App props（invoke 自足）
- *   SettingsView  ← { getChannel, lastMessage, secret, relayAdapter,
+ *   SettingsView  ← { getChannel, lastMessage, secret,
  *                     onConfigChanged, autostart }（六项，autostart 为
  *                     第 7 轮补入，供 T11 自启开关落位）
  *

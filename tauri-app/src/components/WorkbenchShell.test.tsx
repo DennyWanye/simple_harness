@@ -56,7 +56,6 @@ function Harness({ initial = "chat" as WorkbenchView }) {
         getChannel: () => null,
         lastMessage: null,
         secret: "",
-        relayAdapter: null,
         onConfigChanged: () => undefined,
         autostart: { ready: false, enabled: false, toggle: () => undefined },
       }}
@@ -159,7 +158,6 @@ describe("WorkbenchShell 紧凑尺寸样式（WB-3 min 800×560）", () => {
           getChannel: () => null,
           lastMessage: null,
           secret: "",
-          relayAdapter: null,
           autostart: { ready: false, enabled: false, toggle: () => undefined },
         }}
       />,
@@ -198,7 +196,6 @@ describe("Sidebar T13 — 「更多」入口与连接徽章聚合（WB-3）", ()
           getChannel: () => null,
           lastMessage: null,
           secret: "",
-          relayAdapter: null,
           autostart: { ready: false, enabled: false, toggle: () => undefined },
         }}
       />,

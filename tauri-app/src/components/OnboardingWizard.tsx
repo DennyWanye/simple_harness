@@ -4,15 +4,11 @@
 /**
  * WI-01 (beta-100) — first-run onboarding wizard.
  *
- * WI-R3 (relay edition) — the step list is now **data-driven** instead
- * of a hard-coded `1 | 2 | 3`. `stepsForEdition()` returns the ordered
- * step list for the active build edition:
+ * 步骤列表是**数据驱动**的（而非硬编码 `1 | 2 | 3`）：
+ * `stepsForEdition()` 返回 [welcome, connectModel, ready] 三步。
  *
- *   - manual / null edition → [welcome, connectModel, ready]  (3 steps,
- *     byte-identical to the original WI-01 behaviour)
- *   - relay edition         → [welcome, ready]                (2 steps —
- *     the LLM is auto-configured by login, so there is no "手填模型"
- *     step; see RelayAuthAdapter / relayProviderBridge)
+ * 2026-08-09：relay 版（登录后自动配置模型、跳过 connectModel）已移除——
+ * 产品只有手填 provider 一条路径，connectModel 步骤恒定存在。
  *
  * Step-dot rendering, prev/next navigation and `nextStepAllowed` all key
  * off the array + the current index — adding/removing a step never again
@@ -34,8 +30,7 @@ export interface OnboardingConfig {
 }
 
 export interface OnboardingWizardProps {
-  /** Test (and persist) the LLM connection. Resolves ok=false on failure.
-   *  Unused in relay edition (no connectModel step). */
+  /** Test (and persist) the LLM connection. Resolves ok=false on failure. */
   onTestConnection: (
     cfg: OnboardingConfig,
   ) => Promise<{ ok: boolean; error?: string }>;
@@ -57,13 +52,10 @@ export interface OnboardingStepDef {
 }
 
 /**
- * Ordered step list for an edition. relay edition drops `connectModel`
- * (login auto-configures the model). Pure — unit-testable.
+ * Ordered step list. 保留 edition 形参以免惊动调用方签名与既有单测；
+ * 2026-08-09 起只有一条路径，恒返回三步。Pure — unit-testable.
  */
-export function stepsForEdition(edition?: string): OnboardingStepDef[] {
-  if (edition === "relay") {
-    return [{ id: "welcome" }, { id: "ready" }];
-  }
+export function stepsForEdition(_edition?: string): OnboardingStepDef[] {
   return [{ id: "welcome" }, { id: "connectModel" }, { id: "ready" }];
 }
 

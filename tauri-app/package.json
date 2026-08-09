@@ -5,9 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:relay": "vite --mode relay",
     "build": "tsc -b && vite build",
-    "build:relay": "tsc -b && vite build --mode relay",
+    "typecheck": "tsc -b --noEmit",
     "lint": "eslint .",
     "preview": "vite preview",
     "tauri": "tauri",
