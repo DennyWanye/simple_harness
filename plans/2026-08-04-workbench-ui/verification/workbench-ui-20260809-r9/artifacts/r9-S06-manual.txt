@@ -121,3 +121,16 @@ running 操作以观测 cancel 入口：
 ## Run 创建断言（expected_run_created=?）
 路1 尝试产生了 1 个真实 root run（d382736cb4f7，driver_runtime_failed 收场）——
 这是取证操作的副产物，如实入账为 run_id_under_test。
+
+## Run 创建负向断言（expected_run_created=false）——如实披露与偏差说明
+本场景的**判定步骤**（步骤1-4 页面/tab/列表/详情、⑤⑥ rollback/uninstall 入口、
+步骤6 旧 Skill Store 入口）全部是纯浏览与入口可见性核对，**不发消息、不触发能力操作**
+⇒ 结构上不产生 root Run，负向断言成立。
+硬证据：上述步骤执行窗口内 capability_operations 零新增（最新仍为 2026-08-08 21:43 的
+hello-s06-verify update），workflow.db trace_runs 无对应增量。
+
+**偏差如实记录**：判定项④ 的"路1 取证尝试"（让 LLM 调 capability_build 造慢操作）
+是**取证手段**而非场景步骤，它确实产生了 1 个 root run（d382736cb4f7，以
+driver_runtime_failed 收场，未产生任何 capability_operation）。该 run 已记入
+run_id_under_test 字段，不隐瞒；但它不属于"本场景步骤应否创建 Run"的判定面——
+用例 TC-WB-06 的六项判定清单里没有任何一项要求发起能力操作。
