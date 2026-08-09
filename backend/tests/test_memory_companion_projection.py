@@ -943,3 +943,41 @@ async def test_pre_existing_tombstoned_default_is_repaired_on_bind(
         ).fetchall()
     assert rows == [("active",)]
     await store.close()
+
+
+@pytest.mark.asyncio
+async def test_default_session_owner_epoch_takeover(tmp_path: Path) -> None:
+    """WBUI-DEF-COMP-01 回归：profile 纪元迁移后 default 会话必须能被同一身份的
+    新纪元接管，即使已有历史消息；普通会话与纪元回退仍硬拒绝。"""
+    store = SessionDB(tmp_path / "state.db")
+    old = TrustedCompanionOwner("profile-a", 1, 1)
+    new = TrustedCompanionOwner("profile-a", 1, 3)
+    await store.initialize()
+
+    # default 停在旧纪元且已有消息（COMP-01 实测现场：epoch=1 行 + 被拒消息入流）
+    await store.ensure_session("default")
+    await store.bind_session_owner_if_absent("default", old)
+    await store.append_message("default", "user", "老纪元时期的消息")
+
+    bound = await store.bind_session_owner_if_absent("default", new)
+    assert bound["binding_epoch"] == 3
+    assert bound["status"] == "active"
+    # 幂等重放稳定
+    replay = await store.bind_session_owner_if_absent("default", new)
+    assert replay["binding_epoch"] == 3
+
+    # 纪元回退（旧进程用旧参数来绑）仍拒绝——防降级劫持
+    with pytest.raises(RuntimeError, match="rebind_forbidden"):
+        await store.bind_session_owner_if_absent("default", old)
+
+    # 普通会话同场景不享受自愈
+    await store.ensure_session("ordinary")
+    await store.bind_session_owner_if_absent("ordinary", old)
+    with pytest.raises(RuntimeError, match="rebind_forbidden"):
+        await store.bind_session_owner_if_absent("ordinary", new)
+
+    # 身份本体不同（换 profile_id）的 default 也拒绝
+    stranger = TrustedCompanionOwner("profile-b", 1, 4)
+    with pytest.raises(RuntimeError, match="rebind_forbidden"):
+        await store.bind_session_owner_if_absent("default", stranger)
+    await store.close()

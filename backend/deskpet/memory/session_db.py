@@ -929,6 +929,7 @@ class SessionDB:
                     )
                     row = await cursor.fetchone()
                     await cursor.close()
+                    default_epoch_takeover = False
                     if row is not None:
                         if (
                             str(row[0]) != owner.owner_kind
@@ -936,9 +937,34 @@ class SessionDB:
                             or int(row[2]) != owner.profile_generation
                             or int(row[3]) != owner.binding_epoch
                         ):
-                            await db.rollback()
-                            raise RuntimeError("companion_session_owner_rebind_forbidden")
-                        if str(row[4]) != "active":
+                            # WBUI-DEF-COMP-01：profile 纪元迁移（如 legacy↔relay
+                            # 切换）只影响新会话的绑定参数，保留会话 default 的
+                            # owner 行会永远停在旧纪元——之后每条进 default 的消息
+                            # 都在这里被拒，且无 UI 恢复入口。对 default 做窄自愈：
+                            # 仅当身份本体相同（owner_kind+profile_id 一致）且纪元/
+                            # 世代只进不退时，删旧行落到重绑路径（触发器禁 UPDATE，
+                            # DELETE+INSERT 是既有 tombstoned 自愈同款合法通道）。
+                            # 普通会话与身份不同/纪元回退的情况维持硬拒绝。
+                            if (
+                                sid == RESERVED_DEFAULT_SESSION_ID
+                                and str(row[0]) == owner.owner_kind
+                                and str(row[1]) == owner.profile_id
+                                and int(row[2]) <= owner.profile_generation
+                                and int(row[3]) <= owner.binding_epoch
+                            ):
+                                await db.execute(
+                                    "DELETE FROM companion_session_owners"
+                                    " WHERE session_id=?",
+                                    (sid,),
+                                )
+                                default_epoch_takeover = True
+                                row = None
+                            else:
+                                await db.rollback()
+                                raise RuntimeError(
+                                    "companion_session_owner_rebind_forbidden"
+                                )
+                        if row is not None and str(row[4]) != "active":
                             if sid != RESERVED_DEFAULT_SESSION_ID:
                                 await db.rollback()
                                 raise RuntimeError(
@@ -981,7 +1007,9 @@ class SessionDB:
                     )
                     message_count = int((await cursor.fetchone())[0])
                     await cursor.close()
-                    if message_count:
+                    # default 纪元接管时旧消息属于同一 profile_id 的历史，不是
+                    # "陌生 legacy 会话被抢注"——放行；其余路径维持零消息约束。
+                    if message_count and not default_epoch_takeover:
                         await db.rollback()
                         raise RuntimeError("companion_legacy_session_cannot_be_claimed")
                     await db.execute(
