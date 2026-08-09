@@ -239,17 +239,12 @@ fn check_port_free(port: u16) -> Result<(), String> {
 
 /// Select the credential injected into the backend process.
 ///
-/// Relay login owns the rotating `tsk_*` device-key slot.  The legacy
-/// cloud slot may contain an older key that was valid before the most recent
-/// rotation, so it is fallback-only.  Keeping this selection pure makes the
-/// precedence independently testable without touching the real keychain.
-fn select_backend_api_key(
-    relay_device_key: Option<String>,
-    legacy_cloud_key: Option<String>,
-) -> Option<String> {
-    relay_device_key
-        .filter(|value| !value.trim().is_empty())
-        .or_else(|| legacy_cloud_key.filter(|value| !value.trim().is_empty()))
+/// 2026-08-09：relay 移除前这里是"轮转的 relay device key 优先、legacy cloud 槽
+/// 兜底"的二选一。现在只剩 legacy cloud 槽，但保留这个纯函数——空白串必须当作
+/// "没有 key"，否则一个残留的 `export DESKPET_CLOUD_API_KEY=""` 会被后端当成
+/// 有效凭据（backend/tests/test_cloud_api_key_resolve.py 钉的就是这条）。
+fn select_backend_api_key(legacy_cloud_key: Option<String>) -> Option<String> {
+    legacy_cloud_key.filter(|value| !value.trim().is_empty())
 }
 
 fn spawn_once(
@@ -317,19 +312,11 @@ fn spawn_once(
         cmd.creation_flags(0x08000000);
     }
 
-    // Relay device keys rotate. Prefer that authoritative slot so every
-    // long-lived Python component is constructed with the current key at
-    // startup; the legacy cloud slot remains a fallback for manual installs.
-    // Never log either credential value.
-    let relay_key = match crate::secrets::get_relay_device_key() {
-        Ok(value) => value,
-        Err(e) => {
-            eprintln!(
-                "[process_manager] warning: could not read relay device key from keychain: {e}"
-            );
-            None
-        }
-    };
+    // 2026-08-09：原先这里先读 relay 的 device key（轮转槽），legacy cloud 槽
+    // 只作兜底。relay 移除后只剩后者。**顺带修掉一个真机可见的缺陷**：读
+    // `deskpet-relay` 命名空间会让 macOS 弹「请输入登录钥匙串的密码」授权框
+    // （每次 spawn backend 都弹，实测一进技能中心就撞上）。
+    // Never log the credential value.
     let legacy_key = match crate::secrets::get_cloud_api_key() {
         Ok(value) => value,
         Err(e) => {
@@ -339,27 +326,10 @@ fn spawn_once(
             None
         }
     };
-    if let Some(key) = select_backend_api_key(relay_key, legacy_key) {
+    if let Some(key) = select_backend_api_key(legacy_key) {
         cmd.env("DESKPET_CLOUD_API_KEY", key);
     }
 
-    // relay access_token 同样由我们注入，后端不要自己去读钥匙串。
-    // 原先 control_ingress.py 直接 keyring.get_password("deskpet-relay",
-    // "access_token") 调 /v1/me —— 该钥匙串项是本应用写的，每次令牌刷新重写都会
-    // 把 ACL 重置成只信任写入方，于是后端那个 python 解释器每次都要重新弹框要
-    // 系统密码（"始终允许"存不住；uv 装的 python 又是 adhoc 签名，白名单本就不稳）。
-    // 改由本进程读（读自己创建的项不弹框）后经 env 交给后端，彻底消灭弹窗。
-    match crate::secrets::get_relay_access_token() {
-        Ok(Some(token)) if !token.trim().is_empty() => {
-            cmd.env("DESKPET_RELAY_ACCESS_TOKEN", token);
-        }
-        Ok(_) => {}
-        Err(e) => {
-            eprintln!(
-                "[process_manager] warning: could not read relay access token from keychain: {e}"
-            );
-        }
-    }
 
     let signer = BackendControlSigner::generate()?;
     let mut child = cmd
@@ -750,21 +720,17 @@ mod tests {
         assert!(bp.startup_error.lock().unwrap().is_none());
     }
 
+    // 2026-08-09：原先两条用例钉的是"relay 槽优先、legacy 兜底"的二选一优先级。
+    // relay 槽已随托管登录移除，优先级不复存在；保留的语义只剩"空白视同没有"。
     #[test]
-    fn backend_api_key_prefers_relay_device_slot() {
+    fn backend_api_key_treats_blank_as_absent() {
         assert_eq!(
-            select_backend_api_key(Some("relay-current".into()), Some("legacy-stale".into())),
-            Some("relay-current".into())
-        );
-    }
-
-    #[test]
-    fn backend_api_key_falls_back_to_nonempty_legacy_slot() {
-        assert_eq!(
-            select_backend_api_key(Some("  ".into()), Some("legacy-current".into())),
+            select_backend_api_key(Some("legacy-current".into())),
             Some("legacy-current".into())
         );
-        assert_eq!(select_backend_api_key(None, None), None);
+        assert_eq!(select_backend_api_key(Some("  ".into())), None);
+        assert_eq!(select_backend_api_key(Some("".into())), None);
+        assert_eq!(select_backend_api_key(None), None);
     }
 
     #[test]

@@ -26,50 +26,15 @@ use keyring::Entry;
 const SERVICE: &str = "deskpet-cloud-llm";
 const USERNAME: &str = "default";
 
-// W2 (relay integration): separate service namespace for relay-station
-// credentials. Three independent slots so login/logout can clear all
-// three atomically without touching the legacy cloud-LLM key.
-const RELAY_SERVICE: &str = "deskpet-relay";
-const RELAY_ACCESS: &str = "access_token";
-const RELAY_REFRESH: &str = "refresh_token";
-const RELAY_DEVICE_KEY: &str = "device_key";
+// 2026-08-09：relay（托管账号登录）整套移除，其 `deskpet-relay` 钥匙串命名空间
+// 与三个槽位（access_token / refresh_token / device_key）随之删除。
+// 保留读取它们的代价是实打实的：process_manager 每次 spawn backend 都去读，
+// macOS 会为此弹「请输入登录钥匙串密码」授权框（真机实测）。
 
 fn entry() -> Result<Entry, String> {
     Entry::new(SERVICE, USERNAME).map_err(|e| format!("keyring entry init failed: {e}"))
 }
 
-fn relay_entry(slot: &str) -> Result<Entry, String> {
-    Entry::new(RELAY_SERVICE, slot)
-        .map_err(|e| format!("relay keyring entry init failed ({slot}): {e}"))
-}
-
-/// Generic get/set/delete helpers parameterised by slot. Kept inline rather
-/// than turning into a public trait — three slots is below the threshold
-/// where abstraction pays for itself.
-fn relay_set(slot: &str, value: &str) -> Result<(), String> {
-    if value.trim().is_empty() {
-        return Err(format!("relay {slot} must not be empty"));
-    }
-    relay_entry(slot)?
-        .set_password(value)
-        .map_err(|e| format!("relay set {slot}: {e}"))
-}
-
-fn relay_get(slot: &str) -> Result<Option<String>, String> {
-    match relay_entry(slot)?.get_password() {
-        Ok(v) => Ok(Some(v)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(format!("relay get {slot}: {e}")),
-    }
-}
-
-fn relay_delete(slot: &str) -> Result<(), String> {
-    match relay_entry(slot)?.delete_credential() {
-        Ok(_) => Ok(()),
-        Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(format!("relay delete {slot}: {e}")),
-    }
-}
 
 #[tauri::command]
 pub fn set_cloud_api_key(key: String) -> Result<(), String> {
@@ -106,88 +71,6 @@ pub fn has_cloud_api_key() -> Result<bool, String> {
     Ok(get_cloud_api_key()?.is_some())
 }
 
-// ──────────────────────────────────────────────────────────────
-// W2: relay-station credential slots
-//
-// Three independent slots (access_token / refresh_token / device_key)
-// — never combined into one JSON blob because the OS credential
-// manager is the security boundary, and we want a granular audit
-// trail. The frontend `RelayAuthAdapter` is the sole caller and
-// invokes these IPC commands directly.
-//
-// Empty-string rejection mirrors the legacy `set_cloud_api_key`
-// behaviour: keyring backends on some platforms tolerate empty
-// secrets, but we treat them as a programmer error.
-// ──────────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub fn set_relay_access_token(token: String) -> Result<(), String> {
-    relay_set(RELAY_ACCESS, &token)
-}
-
-#[tauri::command]
-pub fn get_relay_access_token() -> Result<Option<String>, String> {
-    relay_get(RELAY_ACCESS)
-}
-
-#[tauri::command]
-pub fn delete_relay_access_token() -> Result<(), String> {
-    relay_delete(RELAY_ACCESS)
-}
-
-#[tauri::command]
-pub fn set_relay_refresh_token(token: String) -> Result<(), String> {
-    relay_set(RELAY_REFRESH, &token)
-}
-
-#[tauri::command]
-pub fn get_relay_refresh_token() -> Result<Option<String>, String> {
-    relay_get(RELAY_REFRESH)
-}
-
-#[tauri::command]
-pub fn delete_relay_refresh_token() -> Result<(), String> {
-    relay_delete(RELAY_REFRESH)
-}
-
-#[tauri::command]
-pub fn set_relay_device_key(key: String) -> Result<(), String> {
-    relay_set(RELAY_DEVICE_KEY, &key)
-}
-
-#[tauri::command]
-pub fn get_relay_device_key() -> Result<Option<String>, String> {
-    relay_get(RELAY_DEVICE_KEY)
-}
-
-#[tauri::command]
-pub fn delete_relay_device_key() -> Result<(), String> {
-    relay_delete(RELAY_DEVICE_KEY)
-}
-
-/// One-shot logout helper: clear all three slots in a single IPC call so
-/// the frontend doesn't need to chain three awaits. Any individual
-/// delete failure is captured but the others still run — best-effort
-/// cleanup so we don't leave one stale slot behind because another
-/// platform-specific edge case failed first.
-#[tauri::command]
-pub fn clear_all_relay_secrets() -> Result<(), String> {
-    let mut errs: Vec<String> = Vec::new();
-    if let Err(e) = relay_delete(RELAY_ACCESS) {
-        errs.push(e);
-    }
-    if let Err(e) = relay_delete(RELAY_REFRESH) {
-        errs.push(e);
-    }
-    if let Err(e) = relay_delete(RELAY_DEVICE_KEY) {
-        errs.push(e);
-    }
-    if errs.is_empty() {
-        Ok(())
-    } else {
-        Err(errs.join("; "))
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -216,33 +99,29 @@ mod tests {
         assert_eq!(USERNAME, "default");
     }
 
-    // ── W2: relay credential slot canaries ─────────────────────
-    //
-    // Same rationale as the legacy cloud-LLM canary above: renaming
-    // either the service or any slot string without a migration would
-    // strand every existing user's relay session and force them to
-    // re-login. If you genuinely need to rename, add a fallback read
-    // path against the old strings first, ship one release, then drop.
-
+    // 2026-08-09：原先这里有三条 relay 槽位 canary（服务名/槽名/空值守卫）。
+    // relay 整套移除后它们没有被测对象了；改为以"缺席"形式钉住——
+    // 本模块不得再出现 `deskpet-relay` 命名空间。它一旦回来，
+    // process_manager 就会在 spawn backend 时再次触发 macOS 钥匙串授权弹框
+    // （真机实测：一进技能中心就弹「请输入登录钥匙串的密码」）。
     #[test]
-    fn relay_service_constant_is_stable() {
-        assert_eq!(RELAY_SERVICE, "deskpet-relay");
-    }
-
-    #[test]
-    fn relay_slot_constants_are_stable() {
-        assert_eq!(RELAY_ACCESS, "access_token");
-        assert_eq!(RELAY_REFRESH, "refresh_token");
-        assert_eq!(RELAY_DEVICE_KEY, "device_key");
-    }
-
-    #[test]
-    fn relay_set_rejects_empty_token() {
-        // Same defensive guard as set_cloud_api_key; protects us against
-        // a UI bug accidentally writing an empty string after a network
-        // error left the response body unparsed.
-        assert!(set_relay_access_token("".into()).is_err());
-        assert!(set_relay_refresh_token("   ".into()).is_err());
-        assert!(set_relay_device_key("\t\n".into()).is_err());
+    fn relay_keychain_namespace_is_gone() {
+        let source = include_str!("secrets.rs");
+        // needle 运行时拼接：写成字面量的话，这行断言本身就会被自己匹配到。
+        let needle = format!("deskpet{}relay", "-");
+        for line in source.lines() {
+            // 只在**代码**里找，注释里的历史说明不算。
+            if line.trim_start().starts_with("//") {
+                continue;
+            }
+            // 跳过本用例自身构造 needle 的那两行。
+            if line.contains("needle") {
+                continue;
+            }
+            assert!(
+                !line.contains(&needle),
+                "relay 钥匙串命名空间不得复活: {line}"
+            );
+        }
     }
 }

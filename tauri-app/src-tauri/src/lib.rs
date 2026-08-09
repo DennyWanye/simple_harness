@@ -82,20 +82,8 @@ pub fn run() {
             secrets::get_cloud_api_key,
             secrets::delete_cloud_api_key,
             secrets::has_cloud_api_key,
-            // W2 (relay integration): per-credential slots for the
-            // closed-source RelayAuthAdapter. OSS build still registers
-            // them — they're harmless if no UI ever invokes them.
-            secrets::set_relay_access_token,
-            secrets::get_relay_access_token,
-            secrets::delete_relay_access_token,
-            secrets::set_relay_refresh_token,
-            secrets::get_relay_refresh_token,
-            secrets::delete_relay_refresh_token,
-            secrets::set_relay_device_key,
-            secrets::get_relay_device_key,
-            secrets::delete_relay_device_key,
-            secrets::clear_all_relay_secrets,
-            // W2: stable device id for the relay's X-Device-Id header.
+            // 2026-08-09：relay 的十个凭据槽 IPC 命令随托管登录一并移除。
+            // 设备 id 保留——它不只服务 relay，诊断包与遥测也用它标识安装实例。
             device::get_or_create_device_id,
             device::get_default_device_name,
             // P4-S21 #1: HTTP proxy from frontend to backend, bypasses
