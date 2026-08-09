@@ -270,7 +270,7 @@ There are concrete contract gaps behind that summary: evaluators return incompat
 | Backend | Python asyncio/FastAPI/WebSocket adapters. |
 | Persistence | SQLite/aiosqlite, WAL, optional sqlite-vec. |
 | Models/audio | Torch/CUDA, BGE-M3, Silero, faster-whisper, CosyVoice/edge-TTS. |
-| LLM/secrets | OpenAI-compatible provider registry, relay, OS keychain and per-session resolution. |
+| LLM/secrets | OpenAI-compatible provider registry (user-supplied baseUrl + apiKey), OS keychain and per-session resolution. 2026-08-09: the hosted-account relay path was removed entirely. |
 | Research/browser | Search providers, Scrapling/trafilatura, browser-use/Chromium or system Edge CDP, optional Jina/direct-source adapters. |
 | PPT/Office | python-pptx, image generation provider, LibreOffice plus WPS/Office COM rendering on Windows. |
 | Extensions | MCP subprocess/client integration and filesystem-based skills. |

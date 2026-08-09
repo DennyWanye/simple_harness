@@ -35,10 +35,6 @@ import {
 } from "../chat/topicTitle";
 import { formatRelativeSec } from "../relativeTime";
 
-/** 后端 default 会话（companion 主线程）。 */
-const DEFAULT_SID = "default";
-
-
 type IncomingCtrlMsg = {
   type?: string;
   payload?: { sessions?: unknown; session_id?: string; title?: string } & Record<string, unknown>;
@@ -148,7 +144,7 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
           loadSessions();
         }
         const payloadSid = typeof p.session_id === "string" ? p.session_id : "";
-        if (payloadSid && payloadSid !== DEFAULT_SID && payloadSid !== CONTROL_SESSION_ID) {
+        if (payloadSid && payloadSid !== CONTROL_SESSION_ID) {
           nextSid = payloadSid;
         }
       }
@@ -159,10 +155,6 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
       onSwitchSid(nextSid);
     });
   }, [loadSessions, onSwitchSid]);
-
-  const switchToDefault = useCallback(() => {
-    onSwitchSid(DEFAULT_SID);
-  }, [onSwitchSid]);
 
   const switchToSession = useCallback((sid: string) => {
     onSwitchSid(sid);
@@ -184,22 +176,32 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
     });
     if (sent) return;
     setNewTopicPending(false);
-    useSessionsStore.getState().push_message(activeSid, {
-      role: "error",
-      text: "新话题创建失败：控制通道未连接，请稍后重试。",
-    });
+    // 空态（activeSid === ""）没有会话可承载错误气泡；往空 key 里 push
+    // 会在 store 里凭空造出一条 id 为 "" 的幽灵会话。
+    if (activeSid) {
+      useSessionsStore.getState().push_message(activeSid, {
+        role: "error",
+        text: "新话题创建失败：控制通道未连接，请稍后重试。",
+      });
+    }
   }, [activeSid, companionIdentityReady, newTopicPending]);
 
   const deleteSession = useCallback(
     (sid: string) => {
       controlWS.send({ type: "session_delete", payload: { session_id: sid } });
-      // 乐观移除 + 若删的是当前会话则切回 default。
+      // 乐观移除。删掉当前会话后不再有保留会话可回落：改为落到剩下的最近一条，
+      // 一条不剩就进空态（activeSid = ""）—— 空态下在输入框直接发消息会由
+      // InputBar 走「新建会话再投递」，不复活任何固定 sid。
       setSessionList((prev) => prev.filter((s) => s.session_id !== sid));
-      if (sid === activeSid && sid !== DEFAULT_SID) {
-        switchToDefault();
+      if (sid === activeSid) {
+        // 副作用留在 updater 之外：StrictMode 会重复调用 state updater。
+        const fallback = [...sessionList]
+          .filter((s) => s.session_id !== sid)
+          .sort((a, b) => (b.last_message_at || 0) - (a.last_message_at || 0))[0];
+        onSwitchSid(fallback?.session_id ?? "");
       }
     },
-    [activeSid, switchToDefault],
+    [activeSid, onSwitchSid, sessionList],
   );
 
   // ── 重命名话题 ───────────────────────────────────────────────────
@@ -328,10 +330,8 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
         )}
         {sortedSessions.map((s) => {
           const selected = s.session_id === activeSid;
-          const isDefault = s.session_id === DEFAULT_SID;
-          const autoLabel = isDefault ? "默认话题" : s.preview || s.session_id;
+          const autoLabel = s.preview || s.session_id;
           const label = topicDisplayLabel({
-            isDefault,
             title: s.title,
             preview: s.preview,
             session_id: s.session_id,
@@ -478,7 +478,7 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
                       e.stopPropagation();
                       setPendingDelete(s);
                     }}
-                    title={isDefault ? "清空默认话题" : "删除该会话"}
+                    title="删除该会话"
                     aria-label="删除该会话"
                     data-testid={`session-delete-btn-${s.session_id}`}
                     style={rowIconBtnStyle}
@@ -494,12 +494,11 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
 
       {pendingDelete && (
         <ConfirmDialog
-          title={pendingDelete.session_id === DEFAULT_SID ? "清空默认话题" : "删除会话"}
+          title="删除会话"
           message={
             <>
-              确定要{pendingDelete.session_id === DEFAULT_SID ? "清空" : "删除"}会话{" "}
+              确定要删除会话{" "}
               <strong>{topicDisplayLabel({
-                isDefault: pendingDelete.session_id === DEFAULT_SID,
                 title: pendingDelete.title,
                 preview: pendingDelete.preview,
                 session_id: pendingDelete.session_id,
@@ -511,7 +510,7 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
               </span>
             </>
           }
-          confirm_label={pendingDelete.session_id === DEFAULT_SID ? "清空" : "删除"}
+          confirm_label="删除"
           cancel_label="取消"
           variant="danger"
           onCancel={() => setPendingDelete(null)}

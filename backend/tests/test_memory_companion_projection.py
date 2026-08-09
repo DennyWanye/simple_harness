@@ -875,47 +875,36 @@ async def test_task12_route_outbox_claim_retry_and_settle_are_attempt_fenced(
 
 
 @pytest.mark.asyncio
-async def test_reserved_default_session_survives_clear_and_self_heals(
-    tmp_path: Path,
-) -> None:
-    """保留会话 default 是应用的兜底目标：清空它不能把它退役。
+async def test_session_lifecycle_has_no_reserved_id(tmp_path: Path) -> None:
+    """会话生命周期同构 —— `"default"` 只是一个普通字符串 id，无任何特权。
 
-    r5 真机实测的缺陷：删除当前会话后前端必然回落到 default，而 default 一旦
-    被当普通会话墓碑化，之后 bind_session_owner_if_absent 永远抛
-    companion_session_owner_tombstoned —— 用户被丢进一个发什么都被拒的会话，
-    且错误显示为误导性的 companion_identity_not_ready。
+    2026-08-09 之前 `"default"` 是保留会话（应用兜底目标），换来三处特判：
+    clear 只清内容不退役、墓碑化自愈、纪元接管自愈。保留会话移除后本测试反过来
+    钉住"没有特权"：拿曾经的保留 id 和一个普通 id 跑同一组动作，行为必须逐字相同。
     """
     store = SessionDB(tmp_path / "state.db")
     owner = TrustedCompanionOwner("profile-a", 1, 1)
     await store.initialize()
 
-    # 1) 清空保留会话后仍可重新绑定（属主保持 active，只推进 scope_version）
-    await store.ensure_session("default")
-    bound = await store.bind_session_owner_if_absent("default", owner)
-    await store.append_message("default", "user", "会被清掉的内容")
-    await store.clear("default")
-    rebound = await store.bind_session_owner_if_absent("default", owner)
-    assert rebound["status"] == "active"
-    assert rebound["scope_version"] > bound["scope_version"]
-
-    # 2) 普通会话语义不变：清空即退役，不可再绑定
-    await store.ensure_session("ordinary")
-    await store.bind_session_owner_if_absent("ordinary", owner)
-    await store.clear("ordinary")
-    with pytest.raises(RuntimeError, match="owner_tombstoned"):
-        await store.bind_session_owner_if_absent("ordinary", owner)
+    for sid in ("default", "ordinary"):
+        await store.ensure_session(sid)
+        await store.bind_session_owner_if_absent(sid, owner)
+        await store.append_message(sid, "user", "会被清掉的内容")
+        await store.clear(sid)
+        # 清空即退役：属主墓碑化，且不存在任何"复活"通道。
+        with pytest.raises(RuntimeError, match="owner_tombstoned"):
+            await store.bind_session_owner_if_absent(sid, owner)
 
     await store.close()
 
 
 @pytest.mark.asyncio
-async def test_pre_existing_tombstoned_default_is_repaired_on_bind(
-    tmp_path: Path,
-) -> None:
-    """存量自愈：本次修复之前留下的墓碑化 default 必须能恢复可用。
+async def test_tombstoned_owner_is_never_resurrected(tmp_path: Path) -> None:
+    """墓碑化属主永不复活 —— 曾经的保留 id 也不例外。
 
-    触发器 companion_session_owner_no_reactivate 禁止 UPDATE 复活，所以走
-    "删旧行 + 重新插入"；此时 default 的消息早已被 clear 清空，没有历史被复活。
+    旧版本对 `"default"` 有一条"删旧行 + 重新插入"的自愈通道（绕过触发器
+    companion_session_owner_no_reactivate 的 UPDATE 禁令）。该通道已随保留会话删除，
+    这里直接构造墓碑状态验证它不再存在。
     """
     db_path = tmp_path / "state.db"
     store = SessionDB(db_path)
@@ -925,7 +914,6 @@ async def test_pre_existing_tombstoned_default_is_repaired_on_bind(
     await store.bind_session_owner_if_absent("default", owner)
     await store.close()
 
-    # 模拟旧版本留下的状态：属主行被墓碑化
     with sqlite3.connect(db_path) as db:
         db.execute(
             "UPDATE companion_session_owners SET status='tombstoned'"
@@ -935,49 +923,84 @@ async def test_pre_existing_tombstoned_default_is_repaired_on_bind(
 
     store = SessionDB(db_path)
     await store.initialize()
-    healed = await store.bind_session_owner_if_absent("default", owner)
-    assert healed["status"] == "active"
+    with pytest.raises(RuntimeError, match="owner_tombstoned"):
+        await store.bind_session_owner_if_absent("default", owner)
     with sqlite3.connect(db_path) as db:
         rows = db.execute(
             "SELECT status FROM companion_session_owners WHERE session_id='default'"
         ).fetchall()
-    assert rows == [("active",)]
+    assert rows == [("tombstoned",)]
     await store.close()
 
 
 @pytest.mark.asyncio
-async def test_default_session_owner_epoch_takeover(tmp_path: Path) -> None:
-    """WBUI-DEF-COMP-01 回归：profile 纪元迁移后 default 会话必须能被同一身份的
-    新纪元接管，即使已有历史消息；普通会话与纪元回退仍硬拒绝。"""
+async def test_owner_rebind_is_forbidden_for_every_session_id(tmp_path: Path) -> None:
+    """改绑一律硬拒 —— 纪元前进、纪元回退、换身份，对任何 sid 都一样。
+
+    WBUI-DEF-COMP-01 的病灶是"保留会话 owner 停在旧纪元 ⇒ 消息永拒"，当时的修法是
+    给 `"default"` 开一条纪元接管自愈。缺陷的成因（relay↔local 身份迁移会推进
+    binding_epoch）已随托管登录移除而消失：本地身份的 profile_id 恒为
+    `legacy_local_profile`，`changed_owner` 恒 False，纪元不再前进。自愈通道因此
+    连同保留会话一起删掉，本测试钉住"不留任何改绑后门"。
+    """
     store = SessionDB(tmp_path / "state.db")
     old = TrustedCompanionOwner("profile-a", 1, 1)
     new = TrustedCompanionOwner("profile-a", 1, 3)
+    stranger = TrustedCompanionOwner("profile-b", 1, 4)
     await store.initialize()
 
-    # default 停在旧纪元且已有消息（COMP-01 实测现场：epoch=1 行 + 被拒消息入流）
-    await store.ensure_session("default")
-    await store.bind_session_owner_if_absent("default", old)
-    await store.append_message("default", "user", "老纪元时期的消息")
+    for sid in ("default", "ordinary"):
+        await store.ensure_session(sid)
+        bound = await store.bind_session_owner_if_absent(sid, old)
+        assert bound["binding_epoch"] == 1
+        # 幂等重放（同参数）仍然稳定返回既有行
+        assert (await store.bind_session_owner_if_absent(sid, old))["binding_epoch"] == 1
+        for other in (new, stranger):
+            with pytest.raises(RuntimeError, match="rebind_forbidden"):
+                await store.bind_session_owner_if_absent(sid, other)
 
-    bound = await store.bind_session_owner_if_absent("default", new)
-    assert bound["binding_epoch"] == 3
-    assert bound["status"] == "active"
-    # 幂等重放稳定
-    replay = await store.bind_session_owner_if_absent("default", new)
-    assert replay["binding_epoch"] == 3
+    await store.close()
 
-    # 纪元回退（旧进程用旧参数来绑）仍拒绝——防降级劫持
-    with pytest.raises(RuntimeError, match="rebind_forbidden"):
-        await store.bind_session_owner_if_absent("default", old)
 
-    # 普通会话同场景不享受自愈
-    await store.ensure_session("ordinary")
-    await store.bind_session_owner_if_absent("ordinary", old)
-    with pytest.raises(RuntimeError, match="rebind_forbidden"):
-        await store.bind_session_owner_if_absent("ordinary", new)
+@pytest.mark.asyncio
+async def test_delete_all_sessions_then_start_fresh(tmp_path: Path) -> None:
+    """删光所有会话 → 空态 → 新建并投递，全程不需要任何兜底会话。
 
-    # 身份本体不同（换 profile_id）的 default 也拒绝
-    stranger = TrustedCompanionOwner("profile-b", 1, 4)
-    with pytest.raises(RuntimeError, match="rebind_forbidden"):
-        await store.bind_session_owner_if_absent("default", stranger)
+    这是取消保留会话后风险最高的一条路径：以前删掉当前会话必然回落到 `default`，
+    而 `default` 的路由**从不**被墓碑化，所以"路由墓碑化之后还能不能重新指过去"
+    这一步在旧实现里其实没被真正走过。现在每次删除都会墓碑化路由，本测试完整走一遍
+    删当前会话 → 回落 → 再新建 → 删光 → 空态后新建投递。
+    """
+    store = SessionDB(tmp_path / "state.db")
+    owner = TrustedCompanionOwner("legacy_local_profile", 1, 1)
+    await store.initialize()
+
+    async def open_session(sid: str) -> None:
+        await store.ensure_session(sid)
+        await store.bind_session_owner_if_absent(sid, owner)
+        await store.set_companion_default_route(
+            owner.profile_id, owner.profile_generation, owner.binding_epoch, sid
+        )
+
+    for sid in ("s1", "s2"):
+        await open_session(sid)
+        await store.append_message(sid, "user", "hi")
+
+    # 删掉当前会话（路由随之墓碑化）后回落到剩下的一条 —— 路由必须能重指。
+    await store.clear("s2")
+    await store.set_companion_default_route(
+        owner.profile_id, owner.profile_generation, owner.binding_epoch, "s1"
+    )
+    await open_session("s3")
+
+    # 删光 → 空态。此时库里没有任何 active 会话可用作兜底。
+    await store.clear("s1")
+    await store.clear("s3")
+
+    # 空态直发：新建 uuid 会话并投递，消息必须真的落进去。
+    await open_session("s4")
+    await store.append_message("s4", "user", "空态直发的第一句")
+    turns = await store.list_turns("s4")
+    assert [t.content for t in turns] == ["空态直发的第一句"]
+
     await store.close()

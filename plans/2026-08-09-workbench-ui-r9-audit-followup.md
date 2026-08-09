@@ -39,21 +39,30 @@
 
 **处理**：走上述三条路径之一取真机 cancel 证据；确实全部不可行再重新申请口径变更。
 
-### F3. WBUI-DEF-AUTH-01 —— 实质影响 WB-4
+### F3. WBUI-DEF-AUTH-01 —— ✅ 已由登录改造结构性消除（2026-08-09）
 
-backend 缓存过期 relay token 不重读，未绑定 profile 永久卡「正在恢复身份…」，
-无提示无恢复入口。已自升级为"常规使用可遇"（supervisor 自动重启也触发）。
-审计判定：**有条件破坏 WB-4** —— 只在全新/未绑定 profile 触发，而 WB-4 全部证据
-恰好跑在已绑定的 cold-A 上。整体可用性"断在首次安装路径"。
+原症状：backend 缓存过期 relay token 不重读，未绑定 profile 永久卡「正在恢复身份…」，
+无提示无恢复入口。审计判定「有条件破坏 WB-4」——只在全新/未绑定 profile 触发，
+而 WB-4 全部证据恰好跑在已绑定的 cold-A 上。
 
-**注**：登录方式改造（手动 baseUrl+apiKey）落地后，relay token 生命周期问题可能
-整体消失 —— 届时本项应重新评估而非照搬修复。
+**处理结果**：不是"修好了"，是**病灶本体被删掉了**。手动 provider 改造的阶段 3 把
+`RegistryRelayAuthSnapshotProvider`（读 OS keychain 的 relay access_token → 调
+`/v1/me` 换 user_id）整体换成零 I/O 的 `LocalAuthSnapshotProvider`。
+**没有远端 token，就没有过期与刷新**，该缺陷在结构上不再可能发生。
+已加结构性回归门 `test_local_auth_snapshot_is_constant_and_needs_no_remote_call`
+（断言构造器不接受任何依赖注入，防止远端调用被悄悄接回）。
 
-### F4. `ARCHITECTURE/PROJECT_STATUS.md` 未同步（违反 DoD 硬约束）
+⚠️ 重审时须注意：这改变了 WB-4 的**被测对象**，不是补了一份证据。
+WB-4 若要重判，应针对新的本地身份路径重跑，不能沿用旧的 relay 期证据。
 
-- 最后更新仍是 2026-08-04
-- 第 945 / 984 行还把「透明桌宠壳」「装回 Live2D」当**当前事实**，与本次交付直接矛盾
-- CLAUDE.md 的 ARCHITECTURE 更新纪律是 HARD 约束："改了代码/跑过测试但没更新 = 任务未完成"
+### F4. `ARCHITECTURE/PROJECT_STATUS.md` 未同步 —— ✅ 已修（2026-08-09）
+
+- 「最后更新」推到 2026-08-09
+- 第 945 行「透明桌宠壳」→ 更正为 Workbench 单窗工作台
+- 第 984 行「装回 Live2D」→ 更正为**已移除**（实证：`tauri-app/src` 里 Live2D
+  只剩三处历史注释，SDK/Hiyori 资产/形象下拉/HiyoriMotionTuner 全无）
+- relay 登录集成行 → 改为「登录方式：手动 provider（relay 已下线）」
+- 追加 2026-08-09 里程碑（relay 下线 + default 会话下线 + tsc 假绿灯纠正）
 
 ---
 
@@ -114,8 +123,8 @@ backend 缓存过期 relay token 不重读，未绑定 profile 永久卡「正�
 |---|---|---|
 | WBUI-DEF-S08-01 | 已修 `1591735` | provider 列表挂载瞬发请求丢失 |
 | WBUI-DEF-S08-02 | 已修 `fb4fb6f` | 能力操作身份含绝对路径，换安装路径后端永久起不来 |
-| WBUI-DEF-COMP-01 | 已修 `ac82ac4` | default 会话 owner 纪元遗留，消息永拒 |
-| WBUI-DEF-AUTH-01 | **未修** | 见 F3 |
+| WBUI-DEF-COMP-01 | 已修 `ac82ac4`，**修复已于 2026-08-09 回撤** | default 会话 owner 纪元遗留，消息永拒。保留会话取消后载体消失，且成因（relay↔local 身份迁移推进 binding_epoch）随 relay 下线而不复存在，故自愈分支一并删除，改为「改绑一律硬拒」的同构语义 |
+| WBUI-DEF-AUTH-01 | ✅ **结构性消除** `2e8c7b2` | 病灶（relay token 缓存）随托管登录整体删除，见 F3 |
 | WBUI-DEF-BUILD-01 | **未修** | capability_build 崩溃掀翻整轮对话；审计判为**范围外**（纯 builder.py + runtime.py，不破坏任何 WB-x） |
 | capability init 加固 | **未做** | first-party 安装失败不应掀翻 lifespan（已 spawn_task） |
 | backend companion pytest 9 failed | **未修** | fork 前既存债务，阻断 DoD（已 spawn_task） |

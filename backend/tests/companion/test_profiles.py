@@ -12,7 +12,6 @@ from deskpet.companion.identity import (
     HumanIdentity,
     ProfileBindingCoordinator,
     load_or_create_local_identity,
-    relay_human_identity,
 )
 from deskpet.companion.identity_gate import (
     CompanionIdentityNotReady,
@@ -25,24 +24,27 @@ from deskpet.companion.runtime import CompanionRuntime, ForegroundActivityGate
 from deskpet.companion.store import CompanionStore
 
 
-def test_relay_identity_is_stable_namespaced_and_never_raw() -> None:
-    first = relay_human_identity("relay-user-123")
-    second = relay_human_identity("relay-user-123")
-    other = relay_human_identity("relay-user-456")
-    assert first == second
-    assert first != other
-    assert "relay-user-123" not in first.profile_id
-    assert "relay-user-123" not in first.identity_namespace_hash
+def test_relay_identity_source_is_gone() -> None:
+    """2026-08-09：托管登录（relay）身份来源已移除，只剩本地身份。
+
+    以"缺席"形式钉住，防止 relay 命名空间被悄悄接回——它一旦回来，
+    profile_id 就会随登录态在 relay_*／legacy_local_profile 之间跳变，
+    重新推进 binding_epoch，也就重新打开 WBUI-DEF-COMP-01 的成因。
+    """
+    import deskpet.companion.identity as identity_mod
+
+    assert not hasattr(identity_mod, "relay_human_identity")
+    assert "relay_human_identity" not in identity_mod.__all__
+    with pytest.raises(ValueError, match="unsupported identity namespace"):
+        identity_mod._namespaced_hash("relay", "relay-user-123")
 
 
-def test_local_identity_survives_restart_without_merging_relay(tmp_path) -> None:
+def test_local_identity_survives_restart(tmp_path) -> None:
     first = load_or_create_local_identity(tmp_path)
     second = load_or_create_local_identity(tmp_path)
     assert first == second
     assert first.profile_id == "legacy_local_profile"
-    assert first.identity_namespace_hash != relay_human_identity(
-        first.identity_namespace_hash
-    ).identity_namespace_hash
+    assert first.identity_kind == "local"
     raw = json.loads(
         (tmp_path / "companion-local-identity.json").read_text(encoding="utf-8")
     )

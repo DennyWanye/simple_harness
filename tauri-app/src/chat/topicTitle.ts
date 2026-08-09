@@ -17,14 +17,15 @@ export function normalizeTopicTitle(raw: string): string {
 }
 
 /** Display label for a session row: a non-empty custom title wins, else the
- * auto preview (or the default-topic label / session id). */
+ * auto preview, else the raw session id.
+ *
+ * 2026-08-09：原先还有一个 `isDefault` 分支给保留会话显示「默认话题」。保留会话
+ * 已移除（会话一律用户新建），所有会话取名规则同构。 */
 export function topicDisplayLabel(args: {
-  isDefault: boolean;
   title?: string;
   preview?: string;
   session_id: string;
 }): string {
   const custom = (args.title || "").trim();
-  const auto = args.isDefault ? "默认话题" : args.preview || args.session_id;
-  return custom || auto;
+  return custom || args.preview || args.session_id;
 }

@@ -133,6 +133,23 @@ function deepResearchV5Stage(
   }, runId);
 }
 
+describe("启动初态（保留会话移除后）", () => {
+  it("零会话、无选中会话 —— 不预置 default", () => {
+    const initial = useSessionsStore.getInitialState();
+    expect(initial.sessions).toEqual({});
+    expect(initial.active_sid).toBe("");
+  });
+
+  it("删掉最后一条会话落到空态而非回落固定 sid", () => {
+    useSessionsStore.setState({ active_sid: "", sessions: {} });
+    useSessionsStore.getState().ensure("s-1");
+    useSessionsStore.getState().set_active("s-1");
+    useSessionsStore.getState().remove("s-1");
+    expect(useSessionsStore.getState().active_sid).toBe("");
+    expect(useSessionsStore.getState().sessions).toEqual({});
+  });
+});
+
 describe("legacy skill candidate removal", () => {
   it("does not preserve a legacy bare-candidate confirmation across history reload", () => {
     useSessionsStore.setState({

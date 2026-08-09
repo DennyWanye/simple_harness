@@ -156,7 +156,32 @@ export function InputBar({
     if (disabled) return;
     const t = text.trim();
     if (!t) return;
-    if (!sid) return;
+    if (!sid) {
+      // 空态直发（保留会话 `default` 移除后的唯一入口）：没有当前会话时，
+      // 让后端在同一条 chat_v2 里新建会话再投递 —— `new_session: true` 走
+      // task_session_manager 派一个 uuid sid，随后回推 session_switched
+      // （SessionList 据此切过去）+ chat_v2_user_echo（用户气泡落进新会话）。
+      // 所以这里**不做**本地乐观 push：没有 sid 可写，且会与回声重复。
+      // 发送失败时保留输入框内容，避免用户白打一段字。
+      const identity = createClientTurnIdentity();
+      const sent = controlWS.send({
+        type: "chat_v2",
+        payload: {
+          text: t,
+          session_id: "",
+          new_session: true,
+          request_id: identity.request_id,
+          turn_id: identity.turn_id,
+        },
+      });
+      if (!sent) return;
+      pushHistory(t);
+      setHistoryIdx(null);
+      set_text("");
+      setDropdownOpen(false);
+      setArgHintCmd(null);
+      return;
+    }
     pushHistory(t);
     setHistoryIdx(null);
     set_text("");

@@ -272,9 +272,9 @@ async function open_socket() {
     // P4-S23 F5 fix: rehydrate chat history for every known session
     // from SessionDB. Without this, refreshing the panel wipes the
     // user's scrollback even though the messages are persisted.
-    // We pull the panel's "default" session AND any code-* sessions
-    // already in the store. Backend dedupes by session_id.
-    const known_sids = new Set<string>([sid, "default"]);
+    // 2026-08-09：原先这里额外硬拉一次保留会话 "default"。保留会话已移除，
+    // 只回灌 store 里真实存在的会话（空态时一条都不发）。
+    const known_sids = new Set<string>(sid ? [sid] : []);
     for (const k of Object.keys(store.sessions)) known_sids.add(k);
     for (const target of known_sids) {
       ws?.send(JSON.stringify({

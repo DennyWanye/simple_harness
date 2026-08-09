@@ -39,7 +39,7 @@ function emit(msg: unknown) {
 
 const SESSIONS = [
   {
-    session_id: "default",
+    session_id: "s-older",
     turn_count: 4,
     last_message_at: 100,
     preview: "旧的默认话题",
@@ -70,7 +70,7 @@ describe("SessionList（WB-5）", () => {
   afterEach(cleanup);
 
   it("挂载即拉取清单；空清单显示空态引导", () => {
-    render(<SessionList activeSid="default" onSwitchSid={() => {}} />);
+    render(<SessionList activeSid="s-older" onSwitchSid={() => {}} />);
     expect(controlWS.send).toHaveBeenCalledWith({ type: "sessions_list" });
 
     emit({ type: "sessions_list_response", payload: { sessions: [] } });
@@ -80,16 +80,17 @@ describe("SessionList（WB-5）", () => {
   });
 
   it("渲染会话列表：自定义标题优先、时间倒序", () => {
-    render(<SessionList activeSid="default" onSwitchSid={() => {}} />);
+    render(<SessionList activeSid="s-older" onSwitchSid={() => {}} />);
     emit({ type: "sessions_list_response", payload: { sessions: SESSIONS } });
 
     const rows = screen
       .getAllByTestId(/^session-row-/)
       .map((el) => el.getAttribute("data-testid"));
-    // last_message_at 倒序：s-newer(200) 在 default(100) 之前。
-    expect(rows).toEqual(["session-row-s-newer", "session-row-default"]);
+    // last_message_at 倒序：s-newer(200) 在 s-older(100) 之前。
+    expect(rows).toEqual(["session-row-s-newer", "session-row-s-older"]);
     expect(screen.getByText("我的标题")).toBeTruthy();
-    expect(screen.getByText("默认话题")).toBeTruthy();
+    // 无自定义标题 → 回落到 preview（不再有「默认话题」这种特权标签）。
+    expect(screen.getByText("旧的默认话题")).toBeTruthy();
     expect(screen.queryByTestId("session-list-empty")).toBeNull();
   });
 
@@ -102,7 +103,7 @@ describe("SessionList（WB-5）", () => {
     // 用真实时钟相对构造：小时/天粒度不会因用例跑的这几毫秒翻档，
     // 比 setSystemTime 少一层 fake timers 依赖。
     const nowSec = Date.now() / 1000;
-    render(<SessionList activeSid="default" onSwitchSid={() => {}} />);
+    render(<SessionList activeSid="s-older" onSwitchSid={() => {}} />);
     emit({
       type: "sessions_list_response",
       payload: {
@@ -118,7 +119,7 @@ describe("SessionList（WB-5）", () => {
   });
 
   it("last_message_at 缺失时不渲染时间块（不出现 1970 噪声）", () => {
-    render(<SessionList activeSid="default" onSwitchSid={() => {}} />);
+    render(<SessionList activeSid="s-older" onSwitchSid={() => {}} />);
     emit({
       type: "sessions_list_response",
       payload: { sessions: [{ ...SESSIONS[1], last_message_at: 0 }] },
@@ -130,7 +131,7 @@ describe("SessionList（WB-5）", () => {
 
   it("点击会话行触发 onSwitchSid 回调", () => {
     const onSwitch = vi.fn();
-    render(<SessionList activeSid="default" onSwitchSid={onSwitch} />);
+    render(<SessionList activeSid="s-older" onSwitchSid={onSwitch} />);
     emit({ type: "sessions_list_response", payload: { sessions: SESSIONS } });
 
     fireEvent.click(screen.getByTestId("session-switch-s-newer"));
@@ -138,7 +139,7 @@ describe("SessionList（WB-5）", () => {
   });
 
   it("身份就绪后「新建会话」发 chat_v2+new_session 包（shape 校验）", () => {
-    render(<SessionList activeSid="default" onSwitchSid={() => {}} />);
+    render(<SessionList activeSid="s-older" onSwitchSid={() => {}} />);
 
     // 身份未就绪 → 按钮禁用，点击不发包。
     const btn = screen.getByTestId("session-new-topic") as HTMLButtonElement;
@@ -152,7 +153,7 @@ describe("SessionList（WB-5）", () => {
     expect(controlWS.send).toHaveBeenCalledWith({
       type: "chat_v2",
       payload: expect.objectContaining({
-        session_id: "default",
+        session_id: "s-older",
         new_session: true,
         text: "",
         request_id: expect.any(String),
@@ -165,7 +166,7 @@ describe("SessionList（WB-5）", () => {
 
   it("session_switched 消解 pending、刷新清单并上抛新 sid", () => {
     const onSwitch = vi.fn();
-    render(<SessionList activeSid="default" onSwitchSid={onSwitch} />);
+    render(<SessionList activeSid="s-older" onSwitchSid={onSwitch} />);
     emit({ type: "companion_identity_status", payload: { ready: true } });
     fireEvent.click(screen.getByTestId("session-new-topic"));
 
@@ -185,7 +186,7 @@ describe("SessionList（WB-5）", () => {
   // 首轮消息收尾（chat_v2_final / chat_response）必须再刷一次，否则新建的会话
   // 在本次运行内永远不进侧栏、切走就回不去。
   it("一轮对话收尾后重新拉清单（新会话首条消息落库后才进得了列表）", () => {
-    render(<SessionList activeSid="default" onSwitchSid={vi.fn()} />);
+    render(<SessionList activeSid="s-older" onSwitchSid={vi.fn()} />);
     emit({ type: "session_switched", payload: { new_sid: "s-born" } });
 
     vi.mocked(controlWS.send).mockClear();

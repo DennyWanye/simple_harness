@@ -89,7 +89,6 @@ import {
   type ProjectDirectoryRequestsBySession,
 } from "../chat/projectDirectoryState";
 
-const DEFAULT_SID = "default"; // companion 主线程（历史命名）
 const EMPTY_COMPANION_EVENTS: CompanionEvent[] = [];
 
 type WorkflowRetryDeferred = {
@@ -248,12 +247,15 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
     }
   }), []);
   const activeMeta = sessionMeta[activeSid];
-  const activeTitle = topicDisplayLabel({
-    isDefault: activeSid === DEFAULT_SID,
-    title: activeMeta?.title,
-    preview: activeMeta?.preview,
-    session_id: activeSid,
-  });
+  // 空态（无会话）时 topicDisplayLabel 会退回空串，标题栏就成了一片空白 ——
+  // 给一句明确的引导，告诉用户直接打字就能开始。
+  const activeTitle = activeSid
+    ? topicDisplayLabel({
+        title: activeMeta?.title,
+        preview: activeMeta?.preview,
+        session_id: activeSid,
+      })
+    : "新对话（直接输入即可开始）";
 
   // ── companion 身份 / 目录确认 / 投影刷新监听（MessagePanelRoot 随迁）──
   useEffect(() => controlWS.on_message((raw: unknown) => {
@@ -302,11 +304,15 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
     } else if (shouldRefreshCompanionProjection(message)) {
       // A detail fence may legitimately advance after the card was projected.
       // Refresh the durable projection instead of disabling the whole view.
-      const sid = useSessionsStore.getState().active_sid || DEFAULT_SID;
-      controlWS.send({
-        type: "session_messages_load",
-        payload: { session_id: sid, limit: 200 },
-      });
+      // 空态（无会话）没有可刷新的投影，直接跳过——保留会话移除后
+      // 不再有可兜底的固定 sid。
+      const sid = useSessionsStore.getState().active_sid;
+      if (sid) {
+        controlWS.send({
+          type: "session_messages_load",
+          payload: { session_id: sid, limit: 200 },
+        });
+      }
     }
   }), []);
 

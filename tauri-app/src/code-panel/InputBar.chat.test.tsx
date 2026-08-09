@@ -88,6 +88,54 @@ describe("InputBar chat send", () => {
     );
   });
 
+  // 2026-08-09 保留会话移除后的空态入口：没有任何会话时在输入框直接发消息，
+  // 必须让后端**新建**一个会话再投递，而不是复活固定 sid。
+  it("空态发送走 new_session，不复活任何固定 sid", () => {
+    useSessionsStore.setState({ active_sid: "", sessions: {} });
+    render(<InputBar placeholder="chat" />);
+
+    const input = screen.getByPlaceholderText("chat");
+    fireEvent.change(input, { target: { value: "第一句话" } });
+    fireEvent.keyDown(input, {
+      key: "Enter",
+      shiftKey: false,
+      nativeEvent: { isComposing: false },
+    });
+
+    expect(controlWS.send).toHaveBeenCalledWith({
+      type: "chat_v2",
+      payload: expect.objectContaining({
+        text: "第一句话",
+        session_id: "",
+        new_session: true,
+        request_id: expect.any(String),
+        turn_id: expect.any(String),
+      }),
+    });
+    // 没有 sid 可写：本地不做乐观 push（用户气泡由后端 chat_v2_user_echo
+    // 带着新 sid 回推），store 里也不能凭空长出会话。
+    expect(useSessionsStore.getState().sessions).toEqual({});
+    expect((input as HTMLTextAreaElement).value).toBe("");
+  });
+
+  it("空态发送失败时保留输入内容", () => {
+    vi.mocked(controlWS.send).mockReturnValue(false);
+    useSessionsStore.setState({ active_sid: "", sessions: {} });
+    render(<InputBar placeholder="chat" />);
+
+    const input = screen.getByPlaceholderText("chat") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "别弄丢我" } });
+    fireEvent.keyDown(input, {
+      key: "Enter",
+      shiftKey: false,
+      nativeEvent: { isComposing: false },
+    });
+
+    // 空态没有会话可承载错误气泡，只能靠"不清空输入框"保证消息不丢。
+    expect(input.value).toBe("别弄丢我");
+    expect(useSessionsStore.getState().sessions).toEqual({});
+  });
+
   it("clears thinking when the control channel rejects the send", () => {
     vi.mocked(controlWS.send).mockReturnValue(false);
     render(<InputBar sessionId="default" placeholder="chat" />);

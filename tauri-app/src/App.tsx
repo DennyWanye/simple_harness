@@ -44,7 +44,14 @@ import { VOICE_INPUT_ENABLED } from "./voiceAvailability";
 // 2026-08-09：relay（托管账号登录）整套移除。产品只有手动 provider
 // 一条路径（baseUrl + apiKey），身份走本地 profile。
 
-const DEFAULT_SESSION_ID = "default";
+/**
+ * 空态 sid —— 没有任何会话被选中。
+ *
+ * 2026-08-09：保留会话 `"default"` 移除后，应用启动时不再预置任何会话；
+ * activeSid 从空串起步，直到用户新建会话，或在输入框直接发消息
+ * （InputBar 会带 `new_session: true` 让后端新建 uuid 会话再投递）。
+ */
+const NO_ACTIVE_SESSION = "";
 
 /**
  * 聊天错误文案 —— 直接呈现后端送来的原文。
@@ -72,8 +79,8 @@ function App() {
 
   // T8：App 自建输入条/slash 状态机删除 —— 输入统一走 ChatView 内嵌的
   // code-panel InputBar（自带 SlashDropdown/ArgHintBar/输入历史）。
-  const [activeSid, setActiveSid] = useState(DEFAULT_SESSION_ID);
-  const activeSidRef = useRef(DEFAULT_SESSION_ID);
+  const [activeSid, setActiveSid] = useState(NO_ACTIVE_SESSION);
+  const activeSidRef = useRef(NO_ACTIVE_SESSION);
   // Track whether the backend is routing through cloud or local.
   // "cloud" | "local" | null (unknown)
   const [routeKind, setRouteKind] = useState<"cloud" | "local" | null>(null);
@@ -262,8 +269,12 @@ function App() {
   const ensureSession = useSessionsStore((s) => s.ensure);
   const switchActiveSid = useCallback(
     (sid: string) => {
-      ensureSession(sid);
-      useSessionsStore.getState().set_active(sid);
+      // 空串 = 回到空态（删光会话后）。不要 ensure/set_active 一个空 key，
+      // 否则 store 里会多出一条 id 为 "" 的幽灵会话。
+      if (sid) {
+        ensureSession(sid);
+        useSessionsStore.getState().set_active(sid);
+      }
       activeSidRef.current = sid;
       setActiveSid(sid);
     },

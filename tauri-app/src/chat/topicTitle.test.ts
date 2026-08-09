@@ -38,7 +38,6 @@ describe("topicDisplayLabel", () => {
   it("custom title wins over preview", () => {
     expect(
       topicDisplayLabel({
-        isDefault: false,
         title: "我的话题",
         preview: "晚安",
         session_id: "task-1",
@@ -48,14 +47,13 @@ describe("topicDisplayLabel", () => {
 
   it("falls back to preview when no custom title", () => {
     expect(
-      topicDisplayLabel({ isDefault: false, preview: "晚安", session_id: "task-1" }),
+      topicDisplayLabel({ preview: "晚安", session_id: "task-1" }),
     ).toBe("晚安");
   });
 
   it("whitespace-only title is ignored (falls back)", () => {
     expect(
       topicDisplayLabel({
-        isDefault: false,
         title: "   ",
         preview: "晚安",
         session_id: "task-1",
@@ -65,19 +63,11 @@ describe("topicDisplayLabel", () => {
 
   it("falls back to session_id when neither title nor preview", () => {
     expect(
-      topicDisplayLabel({ isDefault: false, preview: "", session_id: "task-9" }),
+      topicDisplayLabel({ preview: "", session_id: "task-9" }),
     ).toBe("task-9");
   });
 
-  it("default topic shows 默认话题 when unnamed", () => {
-    expect(topicDisplayLabel({ isDefault: true, session_id: "default" })).toBe(
-      "默认话题",
-    );
-  });
-
-  it("default topic can still be given a custom name", () => {
-    expect(
-      topicDisplayLabel({ isDefault: true, title: "主线", session_id: "default" }),
-    ).toBe("主线");
+  it("曾经的保留 id 不再有特殊标签（无 title/preview 时退回 sid）", () => {
+    expect(topicDisplayLabel({ session_id: "default" })).toBe("default");
   });
 });

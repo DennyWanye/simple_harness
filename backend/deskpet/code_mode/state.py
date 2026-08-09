@@ -3,15 +3,17 @@
 
 """Per-base-session Code mode state.
 
-A user normally lives in ``session_id="default"`` for chat. When they
-enter Code mode we **don't** rename their session — the chat history
-should stay intact under "default". Instead we derive a sibling
-session id (``"code-<sha[:8]>"``) keyed on the project root path, and
-route Code mode chat / tool calls through that.
+A user lives in whichever chat session is currently active. When they
+enter Code mode we **don't** rename that session — its chat history
+should stay intact. Instead we derive a sibling session id
+(``"code-<sha[:8]>"``) keyed on the project root path, and route Code
+mode chat / tool calls through that.
+
+(2026-08-09: this used to say the chat session is always ``"default"``.
+保留会话已移除——会话一律用户新建，base session 就是当时的活跃 sid。)
 
 This way:
-- Companion-mode chat history under "default" stays clean (no code
-  spam).
+- The originating chat session stays clean (no code spam).
 - Each project gets its own conversation memory; opening the same
   project root next week recovers the prior thread.
 - L3 (BGE-M3 vector recall) can still cross-fertilise — the embedder

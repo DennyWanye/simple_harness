@@ -25,7 +25,9 @@ class HumanIdentity:
 
 
 def _namespaced_hash(namespace: str, stable_id: str) -> str:
-    if namespace not in {"relay", "local"}:
+    # 2026-08-09：`relay` 命名空间随托管登录一并移除，只剩本地身份。命名空间前缀
+    # 保留在摘要里——它是既有 profile 的哈希输入，去掉会让存量身份全部重算。
+    if namespace not in {"local"}:
         raise ValueError("unsupported identity namespace")
     value = stable_id.strip()
     if not value:
@@ -36,15 +38,6 @@ def _namespaced_hash(namespace: str, stable_id: str) -> str:
         + b"\0"
         + value.encode("utf-8")
     ).hexdigest()
-
-
-def relay_human_identity(auth_user_id: str) -> HumanIdentity:
-    digest = _namespaced_hash("relay", auth_user_id)
-    return HumanIdentity(
-        profile_id=f"relay_{digest[:32]}",
-        identity_namespace_hash=digest,
-        identity_kind="relay",
-    )
 
 
 def load_or_create_local_identity(user_data_dir: str | Path) -> HumanIdentity:
@@ -349,5 +342,4 @@ __all__ = [
     "ProfileBindingCoordinator",
     "ReadyOwnerProjection",
     "load_or_create_local_identity",
-    "relay_human_identity",
 ]

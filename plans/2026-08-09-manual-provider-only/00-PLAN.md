@@ -61,14 +61,41 @@
 - `control_ingress.py`：删除 relay 身份分支（`/v1/me` 调用），只保留 local
 - `settings_providers_relay_logout` 消息移除
 
-### 阶段 4：取消 default 会话
+### 阶段 4：取消 default 会话 ✅ 已完成
 - backend：删除 `RESERVED_DEFAULT_SESSION_ID` 及四处特判；
   `bind_session_owner_if_absent` 里为 COMP-01 加的 default 自愈分支**一并删除**
-  （载体没了，自愈无意义）；`clear` 对所有会话统一走"退役"语义
+  （载体没了，自愈无意义）；`clear` 对所有会话统一走"退役"语义；
+  `_advance_reserved_session_scope` helper 随之删除（无调用方）
 - 前端：`App.tsx` / `SessionList.tsx` / `ChatView.tsx` / `sessionsStore.ts`
-  去掉 `DEFAULT_SESSION_ID` 常量与相关分支；`activeSid` 初值改为 `null`
+  去掉 `DEFAULT_SESSION_ID` 常量与相关分支；`activeSid` 初值改为 `""`（空态）
 - 会话列表为空时：ChatView 显示空态，引导「新建会话」
 - 删除确认弹窗去掉「清空默认话题/清空」分支，统一「删除会话/删除」
+
+**实现口径修正（相对原计划）**：
+
+1. **空态发送不走 `session_create` 两步**，而是**一步** `chat_v2` 带
+   `new_session: true` + `session_id: ""`。理由：后端 `_resolve_chat_task_scope`
+   在 `explicit_new` 时本来就派 uuid 新 sid，随后回推 `session_switched`
+   （侧栏据此切过去）+ `chat_v2_user_echo`（用户气泡落进新会话）。
+   两步方案要多一次往返、还得自己处理"建好了但消息没发出去"的中间态。
+   已实测：从未绑定的 base sid 继承 provider binding 是干净 no-op，不抛异常。
+2. **`activeSid` 用 `""` 而非 `null`**：`SessionListProps.activeSid` / `ChatViewProps`
+   全链路签名是 `string`，改 `null` 要动十几处类型；`""` 同样是明确的空态哨兵。
+3. **删当前会话后落到剩下最近的一条**，一条不剩才进空态 —— 比直接进空态少一次
+   用户动作，且不复活任何固定 sid。
+4. **顺带清掉的 default 残留**（原计划未列）：
+   - `topicDisplayLabel` 的 `isDefault` 参数与「默认话题」标签
+   - `pet_focus_sid` 排除 `"default"` 的分支（桌宠聚焦评分）
+   - `controlWs.ts` 重连回灌时硬拉一次 `"default"` 会话
+   - `main.py` todo_write 的 `session_id_resolver=lambda: "default"`
+     → 改 `None`，拿不到身份就明确报错，不写进幽灵会话
+   - `identity.py` 的 `relay_human_identity` + `relay` 命名空间（阶段 3 后已无调用方）
+
+**已知保留（不属于本次范围，属"同名不同物"）**：
+`task_scope.py` 的 `_initial_peer_group` 把 `{"default", "message-panel-main"}`
+映射到名为 `"default"` 的**广播组**，以及 `ControlChannel.ts` 身份桥接
+socket 的 `session_id=default` **传输参数**。二者都不是会话，不建库行、
+不进侧栏；仅是内部分组/连接注册键。改名有回归面而无行为收益。
 
 ### 阶段 5：验证
 - `npx tsc --noEmit` + `npx vitest run` + `cargo test` + `cargo check`
@@ -99,8 +126,10 @@
 **A（已采纳）**：**自动新建一个会话再发送**。符合"所有会话都新建"——新建的是真会话
 （uuid sid），不是保留的 `default`；现有空态文案「或直接在右侧输入框发消息」的承诺保留。
 
-⇒ 落到实现：`activeSid` 初值为 `null`；发送时若 `activeSid == null` 则先走
-`session_create` 拿到新 sid，再把消息投递到该 sid。**不得**复活任何固定 sid。
+⇒ 落到实现（阶段 4 实际口径）：`activeSid` 初值为 `""`；发送时若 `activeSid` 为空，
+InputBar 发一条 `chat_v2 { session_id: "", new_session: true, text }`，由后端派
+uuid 新 sid 并回推 `session_switched` + `chat_v2_user_echo`。**不得**复活任何固定 sid。
+（原写的"先 `session_create` 再投递"两步方案改为一步，理由见阶段 4 的实现口径修正。）
 
 ---
 

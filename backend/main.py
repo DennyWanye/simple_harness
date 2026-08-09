@@ -3478,7 +3478,11 @@ try:
 
             _todo_handler, _todo_schema = _build_todo_write_tool(
                 session_db=_session_db,
-                session_id_resolver=lambda: "default",
+                # 2026-08-09：保留会话移除后没有"当前会话"的全局兜底了。生产路径
+                # 一律由 ToolExecutionContext 带 session_id 进来（优先级高于本
+                # resolver）；拿不到就返回 None 让工具明确报 session identity
+                # unavailable，而不是把 todo 写进一个不存在的 `default` 会话。
+                session_id_resolver=lambda: None,
                 broadcaster=_todo_broadcaster,
             )
 

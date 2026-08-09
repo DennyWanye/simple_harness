@@ -164,13 +164,12 @@ def normalize_message_projection(
     return projection, visibility
 
 
-#: 保留会话 id：companion 主线程，同时是应用的兜底会话——删除当前会话后
-#: 前端必然回落到它。它与用户自建会话的生命周期语义不同：删除它等于"清空内容"，
-#: 而不是"退役这个会话"。若按普通会话墓碑化其属主行，`bind_session_owner_if_absent`
-#: 之后会一直抛 companion_session_owner_tombstoned，兜底目标就**永久不可用**
-#: （r5 真机实测：删过一次 default 之后，任何删除当前会话的操作都会把用户丢进
-#: 一个发什么都被拒的会话里，且报的是误导性的 companion_identity_not_ready）。
-RESERVED_DEFAULT_SESSION_ID = "default"
+# 2026-08-09：保留会话 `default` 整套移除。原先它是"应用的兜底会话"——删除当前
+# 会话后前端必然回落到它，因此不能按普通会话退役，代价是三处生命周期特判
+# （clear 只清内容不退役 / 墓碑化自愈 / 纪元接管自愈，后者即 WBUI-DEF-COMP-01）。
+# 现在所有会话一律用户新建、生命周期同构：没有兜底目标，就没有"必须永远可复活的
+# 会话"，上述特判连同其缺陷面一并消失。空态由前端负责：无会话时发消息走
+# `chat_v2 { session_id: "", new_session: true }`，由 task_scope 派一个 uuid 新会话。
 
 # SQLITE_BUSY retry 参数（3.3 要求）
 _MAX_RETRIES = 5
@@ -929,59 +928,25 @@ class SessionDB:
                     )
                     row = await cursor.fetchone()
                     await cursor.close()
-                    default_epoch_takeover = False
                     if row is not None:
+                        # 属主一经绑定即不可改绑：身份本体或纪元任一不符都硬拒。
+                        # （2026-08-09 前对保留会话 `default` 有两处自愈例外——
+                        # 纪元接管与墓碑复活。保留会话已移除，会话一律新建，
+                        # 不再需要"永远可复活"的兜底目标，例外随之删除。）
                         if (
                             str(row[0]) != owner.owner_kind
                             or str(row[1]) != owner.profile_id
                             or int(row[2]) != owner.profile_generation
                             or int(row[3]) != owner.binding_epoch
                         ):
-                            # WBUI-DEF-COMP-01：profile 纪元迁移（如 legacy↔relay
-                            # 切换）只影响新会话的绑定参数，保留会话 default 的
-                            # owner 行会永远停在旧纪元——之后每条进 default 的消息
-                            # 都在这里被拒，且无 UI 恢复入口。对 default 做窄自愈：
-                            # 仅当身份本体相同（owner_kind+profile_id 一致）且纪元/
-                            # 世代只进不退时，删旧行落到重绑路径（触发器禁 UPDATE，
-                            # DELETE+INSERT 是既有 tombstoned 自愈同款合法通道）。
-                            # 普通会话与身份不同/纪元回退的情况维持硬拒绝。
-                            if (
-                                sid == RESERVED_DEFAULT_SESSION_ID
-                                and str(row[0]) == owner.owner_kind
-                                and str(row[1]) == owner.profile_id
-                                and int(row[2]) <= owner.profile_generation
-                                and int(row[3]) <= owner.binding_epoch
-                            ):
-                                await db.execute(
-                                    "DELETE FROM companion_session_owners"
-                                    " WHERE session_id=?",
-                                    (sid,),
-                                )
-                                default_epoch_takeover = True
-                                row = None
-                            else:
-                                await db.rollback()
-                                raise RuntimeError(
-                                    "companion_session_owner_rebind_forbidden"
-                                )
-                        if row is not None and str(row[4]) != "active":
-                            if sid != RESERVED_DEFAULT_SESSION_ID:
-                                await db.rollback()
-                                raise RuntimeError(
-                                    "companion_session_owner_tombstoned"
-                                )
-                            # 保留会话的存量自愈：早于本次修复的版本会把 default
-                            # 当普通会话墓碑化，之后它永远绑不上（兜底目标死锁）。
-                            # 触发器禁止 UPDATE 复活，但删掉旧行后重新插入是合法的，
-                            # 且 clear() 早已把它的消息清空——没有历史被"复活"。
-                            await db.execute(
-                                "DELETE FROM companion_session_owners"
-                                " WHERE session_id=?",
-                                (sid,),
+                            await db.rollback()
+                            raise RuntimeError(
+                                "companion_session_owner_rebind_forbidden"
                             )
-                            # 落到下方的新建绑定路径（不要走"返回既有行"分支）。
-                            row = None
-                    if row is not None:
+                        if str(row[4]) != "active":
+                            await db.rollback()
+                            raise RuntimeError("companion_session_owner_tombstoned")
+                        # 参数完全一致的幂等重放：返回既有行。
                         await db.commit()
                         return {
                             "session_id": sid,
@@ -1007,9 +972,7 @@ class SessionDB:
                     )
                     message_count = int((await cursor.fetchone())[0])
                     await cursor.close()
-                    # default 纪元接管时旧消息属于同一 profile_id 的历史，不是
-                    # "陌生 legacy 会话被抢注"——放行；其余路径维持零消息约束。
-                    if message_count and not default_epoch_takeover:
+                    if message_count:
                         await db.rollback()
                         raise RuntimeError("companion_legacy_session_cannot_be_claimed")
                     await db.execute(
@@ -3669,67 +3632,18 @@ class SessionDB:
                     )
                     epoch_row = await cursor.fetchone()
                     await cursor.close()
-                    if session_id == RESERVED_DEFAULT_SESSION_ID:
-                        # 保留会话只清内容、不退役：仍推进 scope_version 把陈旧
-                        # 投影围栏掉，但属主行保持 active，之后还能重新绑定。
-                        await self._advance_reserved_session_scope(
-                            db,
-                            session_id=session_id,
-                            new_epoch=int(epoch_row[0]),
-                            now=time.time(),
-                        )
-                    else:
-                        await self._tombstone_companion_route(
-                            db,
-                            session_id=session_id,
-                            new_epoch=int(epoch_row[0]),
-                            reason="deleted",
-                            now=time.time(),
-                        )
+                    # 所有会话同构退役：清空即墓碑化路由与属主，不再有"只清内容
+                    # 不退役"的保留会话分支（会话一律用户新建，删完就是删完）。
+                    await self._tombstone_companion_route(
+                        db,
+                        session_id=session_id,
+                        new_epoch=int(epoch_row[0]),
+                        reason="deleted",
+                        now=time.time(),
+                    )
                     await db.commit()
 
         await self._with_retry(_do)
-
-    async def _advance_reserved_session_scope(
-        self,
-        db: aiosqlite.Connection,
-        *,
-        session_id: str,
-        new_epoch: int,
-        now: float,
-    ) -> None:
-        """清空保留会话：推进读作用域与路由 epoch，但不退役属主/路由。"""
-
-        cursor = await db.execute(
-            """SELECT profile_id,profile_generation,status
-               FROM companion_session_owners WHERE session_id=?""",
-            (session_id,),
-        )
-        owner = await cursor.fetchone()
-        await cursor.close()
-        if owner is None or str(owner[2]) != "active":
-            return
-        profile_id = str(owner[0])
-        profile_generation = int(owner[1])
-        await db.execute(
-            """UPDATE companion_session_owners
-               SET scope_version=scope_version+1,updated_at=?
-               WHERE session_id=? AND status='active'""",
-            (now, session_id),
-        )
-        await db.execute(
-            """UPDATE companion_owner_scope_versions
-               SET scope_version=scope_version+1,updated_at=?
-               WHERE profile_id=? AND profile_generation=?""",
-            (now, profile_id, profile_generation),
-        )
-        await db.execute(
-            """UPDATE companion_projection_routes
-               SET target_epoch=?,updated_at=?
-               WHERE profile_id=? AND profile_generation=?
-                 AND target_session_id=? AND status='active'""",
-            (int(new_epoch), now, profile_id, profile_generation, session_id),
-        )
 
     # ---- S14 admin surface --------------------------------------------
 

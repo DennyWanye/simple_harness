@@ -1561,8 +1561,10 @@ const blank_session = (sid: string): SessionState => ({
 });
 
 export const useSessionsStore = create<SessionsStore>((set) => ({
-  active_sid: "default",
-  sessions: { default: blank_session("default") },
+  // 2026-08-09：不再预置保留会话 `default`。启动时零会话、无选中会话；
+  // 首个会话由用户新建，或由输入框空态直发（chat_v2 + new_session）产生。
+  active_sid: "",
+  sessions: {},
   companion_owner: null,
   companion_provisional_streams: {},
   inflight_count: 0,
@@ -2256,9 +2258,11 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
       if (!state.sessions[sid]) return state;
       const next = { ...state.sessions };
       delete next[sid];
+      // 删掉当前会话就落到剩下的任意一条；一条不剩即空态（""），
+      // 不再回落到保留会话。
       const active =
         state.active_sid === sid
-          ? Object.keys(next)[0] ?? "default"
+          ? Object.keys(next)[0] ?? ""
           : state.active_sid;
       return { sessions: next, active_sid: active };
     });
@@ -2468,8 +2472,8 @@ export function severity_score(s: SessionState, now: number = Date.now()): numbe
  * null if the store has no sessions to evaluate. A session is eligible
  * when it has task metadata, an active run, or a supervisor alert.
  *
- * The companion "default" sid is still excluded so the pet doesn't
- * focus itself when an alert targets the chitchat channel. */
+ * 2026-08-09：原先这里排除保留会话 `"default"`（免得桌宠为闲聊频道自我聚焦）。
+ * 保留会话已移除，所有会话同构参与评分。 */
 export function pet_focus_sid(
   sessions: Record<string, SessionState>,
   now: number = Date.now(),
@@ -2477,9 +2481,7 @@ export function pet_focus_sid(
   let best_sid: string | null = null;
   let best_score = -1;
   for (const [sid, s] of Object.entries(sessions)) {
-    // The companion sid is never eligible. Any durable task metadata,
-    // active run, or supervisor alert qualifies another session.
-    if (sid === "default") continue;
+    // Any durable task metadata, active run, or supervisor alert qualifies.
     const has_task_meta = !!(s.project_root || s.active_run_id);
     const has_active_alert = !!s.supervisor_alert;
     if (!has_task_meta && !has_active_alert) continue;
