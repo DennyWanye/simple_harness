@@ -3965,6 +3965,19 @@ async def lifespan(app: FastAPI):
         await _session_db.initialize()
         _migrate_legacy_provider_config(_CONFIG_PATH)
         _provider_registry = LLMProviderRegistry(_CONFIG_PATH)
+        # 2026-08-09：把 llm_runtime.json 的手填配置同步成一条 registry provider。
+        #
+        # onboarding 与设置页写的是 llm_runtime.json（用户可直接编辑，明文是有意
+        # 为之），而跑 agent 的 harness 只认 registry chain。relay 时代由登录桥
+        # 负责填 registry，relay 移除后这条链断了——表现为"填了 provider，聊天却
+        # 报 no LLM provider configured"（真机实测）。
+        # 放在启动而不只放在 /config/cloud 的原因：存量用户已经填过了，不该被迫
+        # 重走一遍 onboarding 才能把配置补进 registry。
+        # 只在 registry 为空时补，绝不覆盖用户在设置页管理的多 provider 配置。
+        try:
+            await _seed_registry_from_runtime_overrides(_provider_registry)
+        except Exception as _seed_exc:  # noqa: BLE001 - 补种失败不阻断启动
+            logger.warning("provider_registry_seed_failed error=%s", str(_seed_exc)[:200])
         await _session_db.reconcile_provider_bindings(
             {
                 entry["id"]: (
@@ -9406,8 +9419,8 @@ def _is_companion_history_session_id(
 ) -> bool:
     """Return whether a session id should be shown in the message panel list."""
     sid = (session_id or "").strip()
-    if sid == "default":
-        return True
+    # 2026-08-09：原先这里为保留会话 `default` 开了一条白名单。保留会话已移除，
+    # 会话 id 一律是 uuid（或存量 `task-` 前缀），不再需要该特例。
     # Legacy task ids remain visible so old history can still be renamed,
     # copied, or deleted. Newly generated task sessions are opaque UUIDs.
     if sid.startswith("task-"):
@@ -9420,7 +9433,7 @@ def _is_companion_history_session_id(
 
 
 # 2026-05-28 — per-session context-usage snapshot for the frontend Claude-Code-
-# style ring gauge. Keyed by chat session_id (e.g. "default", "code-XXX").
+# style ring gauge. Keyed by chat session_id (uuid，或 "code-XXX")。
 # Updated on every successful LLM turn; pushed via ``context_usage`` ws event.
 _session_context_state: dict[str, dict[str, Any]] = {}
 
@@ -10196,6 +10209,50 @@ class CloudConfigRequest(BaseModel):
         return v
 
 
+async def _seed_registry_from_runtime_overrides(registry) -> None:
+    """registry 为空时，用 llm_runtime.json 的手填配置补一条 provider。
+
+    只在**完全为空**时补：用户一旦在设置页管理了多个 provider，registry 就是
+    权威，不能被这份单 endpoint 的遗留配置覆盖。
+    """
+    if registry is None or registry.list_providers():
+        return
+    overrides = _load_llm_runtime_overrides()
+    base_url = str(overrides.get("base_url") or "").strip()
+    model = str(overrides.get("model") or "").strip()
+    api_key = str(overrides.get("api_key") or "").strip()
+    if not base_url or not model or not api_key:
+        # 三者缺一就不补：add_provider 强制要求 api_key，半成品条目只会让
+        # 链路以更难懂的方式失败。
+        return
+    await registry.add_provider(
+        {
+            "id": "primary",
+            "name": _provider_display_name(base_url, "primary"),
+            "base_url": base_url,
+            "models": [model],
+            "default_model": model,
+            "api_key": api_key,
+            "enabled": True,
+            "priority": 1,
+            "source": "user",
+        }
+    )
+    logger.info(
+        "provider_registry_seeded_from_runtime base_url=%s model=%s", base_url, model
+    )
+
+
+def _provider_display_name(base_url: str, fallback: str) -> str:
+    """从 base_url 取主机名做 provider 显示名，取不到就回退到 id。"""
+    from urllib.parse import urlsplit
+
+    try:
+        return urlsplit(base_url).hostname or fallback
+    except Exception:  # noqa: BLE001 - 显示名不值得让配置写入失败
+        return fallback
+
+
 @app.post("/config/cloud")
 async def update_cloud_config(body: CloudConfigRequest, request: Request):
     """P4-S20-LLM-Unified: hot-swap the unified LLM provider.
@@ -10299,6 +10356,49 @@ async def update_cloud_config(body: CloudConfigRequest, request: Request):
         body.base_url, body.model,
         # api_key intentionally NOT logged
     )
+
+    # 2026-08-09：把同一份配置 upsert 进 provider registry。
+    #
+    # 为什么必须做：onboarding 的「测试连接」走的就是本接口，而它以前只写
+    # llm_runtime.json + 热替换 local_llm。真正跑 agent 的 harness 读的是
+    # registry（`get_chain()`），两条路互不相通——relay 时代由登录桥把 registry
+    # 填好所以没暴露；relay 移除后没人填，于是"用户在 onboarding 填了 provider，
+    # 聊天却报 no LLM provider configured"（2026-08-09 真机实测）。
+    # 这里补上唯一的写入方，让手填 provider 真正成为产品的单一路径。
+    # llm_runtime.json 照旧保留（用户可直接改，明文是有意为之）。
+    _upsert_reg = service_context.get("provider_registry")
+    if _upsert_reg is not None and body.base_url:
+        _pid = "primary"
+        _fields = {
+            "id": _pid,
+            "name": _provider_display_name(body.base_url, _pid),
+            "base_url": body.base_url,
+            "models": [body.model] if body.model else [],
+            "default_model": body.model or "",
+            "api_key": resolved_key or "",
+            "enabled": True,
+            "priority": 1,
+            "source": "user",
+        }
+        try:
+            if _upsert_reg.get_entry(_pid) is None:
+                await _upsert_reg.add_provider(_fields)
+                logger.info("provider_registry_upsert_added id=%s", _pid)
+            else:
+                _patch = {k: v for k, v in _fields.items() if k != "id"}
+                if not _patch.get("api_key"):
+                    _patch.pop("api_key", None)
+                await _upsert_reg.update_provider(_pid, **_patch)
+                logger.info("provider_registry_upsert_updated id=%s", _pid)
+        except Exception as _upsert_exc:  # noqa: BLE001
+            # 注册失败不该让"测试连接"整体失败——热替换的 local_llm 已生效，
+            # 用户仍能看到连接结果；但要显式记录，否则聊天会以
+            # "no LLM provider configured" 的形式二次暴露且难以溯源。
+            logger.warning(
+                "provider_registry_upsert_failed id=%s error=%s",
+                _pid,
+                str(_upsert_exc)[:200],
+            )
 
     return {
         "ok": True,
@@ -12999,11 +13099,21 @@ async def control_channel(ws: WebSocket):
                     continue
                 if _scope_decision.created:
                     try:
+                        # 2026-08-09：这里原先直接引用局部名 `session_db`——它只在
+                        # `session_provider_get/set` 两个分支里被赋值，而 Python 的
+                        # 函数作用域让它在整个 control_channel 里都是局部名。以前不炸
+                        # 是因为 ChatView 挂载必发 session_provider_get 把它绑上；
+                        # 取消保留会话后空态 activeSid="" ⇒ hydration 直接 return ⇒
+                        # 该消息永不发出 ⇒ 空态直发新建会话时 UnboundLocalError
+                        # （真机实测）。改为每次从 service_context 取，不依赖执行顺序。
+                        _inherit_sdb = service_context.get("session_db")
+                        if _inherit_sdb is None:
+                            raise RuntimeError("session_db_unavailable")
                         _inherited_model_binding = (
                             await service_context.get(
                                 "provider_registry"
                             ).inherit_session_binding(
-                                session_db,
+                                _inherit_sdb,
                                 source_session_id=_base_msg_sid,
                                 target_session_id=_msg_sid,
                                 expected_binding_epoch=0,

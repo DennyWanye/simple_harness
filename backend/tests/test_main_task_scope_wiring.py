@@ -441,7 +441,8 @@ def test_main_chat_scope_helper_keeps_default_bc(monkeypatch):
 def test_main_history_filter_includes_uuid_and_legacy_task_only():
     import main
 
-    assert main._is_companion_history_session_id("default") is True
+    # 2026-08-09：保留会话移除后 "default" 不再是合法会话 id，也不该再进清单。
+    assert main._is_companion_history_session_id("default") is False
     assert main._is_companion_history_session_id(SID1) is True
     assert main._is_companion_history_session_id("task-default-22") is True
     assert main._is_companion_history_session_id("code-abc") is False

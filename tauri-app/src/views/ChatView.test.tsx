@@ -14,6 +14,7 @@ import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ChatView } from "./ChatView";
+import { useSessionsStore } from "../stores/sessionsStore";
 import { controlWS } from "../code-panel/controlWs";
 import { VOICE_UNAVAILABLE_MESSAGE } from "../voiceAvailability";
 
@@ -76,6 +77,23 @@ describe("ChatView（WB-4）", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+  });
+
+  // 2026-08-09 真机冷启动回归：取消保留会话 `default` 后，首启时
+  // store 里零会话、activeSid 为空串。当时 messages 的兜底写成
+  // `?? []`——selector 每次渲染都造新数组，zustand 按引用比较判定快照恒变化，
+  // ChatView 无限重渲，React 报 Maximum update depth exceeded，
+  // 连带 backend 都没能 spawn。兜底改成模块级常量后修复。
+  // 本用例以前抓不到，因为所有 ChatView 测试都传了一个**存在的** sid。
+  it("空态（零会话 + activeSid 为空）能稳定渲染，不触发无限重渲", () => {
+    useSessionsStore.setState({ active_sid: "", sessions: {} });
+    expect(() => render(<ChatView activeSid="" secret="s3cret" />)).not.toThrow();
+    // 空态没有会话可回灌，不应发出任何 hydration 包。
+    const hydration = vi
+      .mocked(controlWS.send)
+      .mock.calls.map(([m]) => (m as { type: string }).type)
+      .filter((t) => t === "session_messages_load");
+    expect(hydration).toEqual([]);
   });
 
   it("挂载即按会话发 hydration 四连发（消息/投影/上下文/provider）", () => {

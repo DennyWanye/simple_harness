@@ -42,7 +42,8 @@ import { dark } from "../theme/components";
 
 export interface Provider {
   id: string;
-  source?: "user" | "relay";
+  /** 2026-08-09：relay 来源已移除，provider 一律用户自建。 */
+  source?: "user";
   account_ref?: string;
   name: string;
   base_url: string;

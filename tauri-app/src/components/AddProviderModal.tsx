@@ -23,7 +23,8 @@ import { dark } from "../theme/components";
 
 export interface ProviderDraft {
   id: string;
-  source?: "user" | "relay";
+  /** 2026-08-09：relay 来源已移除，provider 一律用户自建。 */
+  source?: "user";
   account_ref?: string;
   name: string;
   base_url: string;
@@ -248,7 +249,6 @@ export function AddProviderModal({
   }, [probedModels]);
 
   const isEditing = editing !== null;
-  const isRelayEditing = isEditing && draft.source === "relay";
   const validation = useMemo(
     () => validateProviderDraft(draft, { editing: isEditing }),
     [draft, isEditing],
@@ -332,7 +332,6 @@ export function AddProviderModal({
           <span>name</span>
           <input
             data-testid="provider-name-input"
-            disabled={isRelayEditing}
             value={draft.name}
             onChange={(e) => setDraft({ ...draft, name: e.target.value })}
             placeholder="DeepSeek via My Relay"
@@ -347,7 +346,6 @@ export function AddProviderModal({
           <span>base_url</span>
           <input
             data-testid="provider-base-url-input"
-            disabled={isRelayEditing}
             value={draft.base_url}
             onChange={(e) => setDraft({ ...draft, base_url: e.target.value })}
             placeholder="https://your-llm-relay.example.com/v1"
@@ -386,7 +384,7 @@ export function AddProviderModal({
                   onProbeModels(draft.base_url, draft.api_key);
                 }
               }}
-              disabled={isRelayEditing || !canProbe || probing}
+              disabled={!canProbe || probing}
               style={probeBtn}
               title="向 base_url/models 拉取支持的模型列表"
               data-testid="provider-probe-models-button"
@@ -442,12 +440,11 @@ export function AddProviderModal({
                   <button
                     type="button"
                     onClick={() => removeModel(m)}
-                    disabled={isRelayEditing}
                     style={{
                       background: "transparent",
                       border: "none",
                       color: "#b91c1c",
-                      cursor: isRelayEditing ? "not-allowed" : "pointer",
+                      cursor: "pointer",
                       fontSize: 11,
                     }}
                     aria-label={`删除 ${m}`}
@@ -459,7 +456,6 @@ export function AddProviderModal({
             </div>
               <div style={{ display: "flex", gap: 4 }}>
                 <input
-                  disabled={isRelayEditing}
                   value={newModel}
                   onChange={(e) => setNewModel(e.target.value)}
                   onKeyDown={(e) => {
@@ -475,7 +471,7 @@ export function AddProviderModal({
                 <button
                   type="button"
                   onClick={addModel}
-                  disabled={isRelayEditing || !newModel.trim()}
+                  disabled={!newModel.trim()}
                   style={smallAddBtn}
                   data-testid="provider-add-model-button"
                 >
@@ -497,7 +493,6 @@ export function AddProviderModal({
           <input
             data-testid="provider-api-key-input"
             type="password"
-            disabled={isRelayEditing}
             value={draft.api_key}
             onChange={(e) => setDraft({ ...draft, api_key: e.target.value })}
             placeholder={isEditing ? "(已配置)" : "sk-..."}
@@ -507,14 +502,11 @@ export function AddProviderModal({
           {submitted && validation.errors.api_key && (
             <span style={errStyle}>{validation.errors.api_key}</span>
           )}
-          {isRelayEditing && (
-            <span style={{ fontSize: 11, color: dark.textMuted }}>
-              由登录自动铸，点「重置 key」刷新。
-            </span>
-          )}
         </label>
 
-        {isRelayEditing && (
+        {/* 2026-08-09：「启用」开关原先只对 relay provider 显示，relay 移除后
+            改为编辑既有 provider 时一律可见（新建的默认就是启用）。 */}
+        {isEditing && (
           <label style={{ ...fieldStyle, display: "flex", flexDirection: "row", alignItems: "center", gap: 6 }}>
             <input
               type="checkbox"

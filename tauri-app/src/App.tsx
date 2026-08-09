@@ -343,14 +343,13 @@ function App() {
         rebindPending = true;
         return;
       }
-      const currentUser = adapter.currentUser();
       bindInFlight = true;
       rebindPending = false;
       try {
-        const command = await buildIdentityBind(
-          challenge,
-          currentUser,
-        );
+        // 2026-08-09：不再按 adapter.currentUser() 分流身份来源。
+        // ManualAuthAdapter 恒返回本地占位用户，旧逻辑据此声明 mode=relay，
+        // 与后端 local 权威冲突导致身份永久绑不上（真机实测）。
+        const command = await buildIdentityBind(challenge);
         const sent = channel.send({
           type: command.kind,
           payload: {

@@ -141,3 +141,49 @@ uuid 新 sid 并回推 `session_switched` + `chat_v2_user_echo`。**不得**复�
 | `default` 特判删除后既有会话绑定失效 | 用户已确认老会话全删，不做迁移 |
 | relay 文件被非 auth 模块引用 | 删除前先 grep 反向引用，逐个断开 |
 | 审计遗留项 r9 仍 FAIL | 本改造**不替代** r9 收尾；F1/F2 仍需单独处理，但 F3(AUTH-01) 预期随本改造消失 |
+
+---
+
+## 阶段 5 验证结果（2026-08-09 真机）
+
+九项验收 **全部通过**。证据在 `verification/artifacts/`（截图 p5-01…p5-17 + `phase5-cold.log`）。
+
+| # | 验收项 | 结果 | 证据 |
+|---|---|---|---|
+| 1 | 冷启动无登录墙 | ✅ | p5-01：出现的是 onboarding 欢迎页，非登录窗 |
+| 2 | Provider 区初始为空、引导添加 | ✅ | p5-06：onboarding 第 2 步即 baseUrl+model+key 表单 |
+| 3 | 从 baseUrl 探测模型 | ✅ | `GET https://www.chinzy.com/v1/models 200 OK` |
+| 4 | 真实 LLM 往返 | ✅ | `POST .../v1/chat/completions 200 OK`；p5-14 回复「手动provider通」 |
+| 5 | 会话列表初始为空、无 `default` | ✅ | p5-08；空态直发新建 uuid 会话 `94d4012d-…` |
+| 6 | 删除会话无「清空默认话题」分支 | ✅ | p5-15：弹窗为「删除会话」/「取消·删除」 |
+| 7 | relay 只剩注释无活代码 | ✅ | 三处活代码已清（见下） |
+| 8 | tsc / vitest / cargo 全绿 | ✅ | `tsc -b` 干净、553 passed、cargo check 0 error |
+| 9 | 重启后 provider 与会话保持 | ✅ | p5-17：`registry ids=['primary']`、会话与删除均保持 |
+
+### 真机抓到 5 个缺陷（单测全绿但真机崩），均已修 + 补非空洞回归
+
+| # | 症状 | 根因 | 归属 |
+|---|---|---|---|
+| 1 | backend 起不来，React 树打爆 | ChatView `messages` 兜底写成 `?? []`，zustand 按引用比对 ⇒ 快照恒变 ⇒ 无限重渲 | 阶段 4 引入 |
+| 2 | 输入框永久「正在恢复身份…」 | `ManualAuthAdapter` 恒返回占位用户 ⇒ 前端仍声明 `mode:"relay"` ⇒ 后端 local 权威判 `auth_snapshot_mismatch` | 阶段 3 漏改 |
+| 3 | 聊天打到错误 provider（402） | 出厂 `config.toml` 仍带 `relay-cloud` endpoint（priority 1） | 阶段 3 漏删 |
+| 4 | 空态直发 `UnboundLocalError` | `session_db` 只在 `session_provider_get/set` 分支赋值；空态不发 hydration ⇒ 该名从未绑定 | 既存潜伏，被阶段 4 空态引爆 |
+| 5 | `no LLM provider configured` | onboarding 写 `llm_runtime.json`，聊天链路只认 provider registry，两条路不通 | relay 移除后断链 |
+
+缺陷 5 的修法：启动时 `_seed_registry_from_runtime_overrides`（registry 为空才补，不覆盖用户多 provider 配置）
++ `/config/cloud` 写入时同步 upsert。`llm_runtime.json` 保留明文（用户决策：便于手改）。
+
+### 过程中值得记的三件事
+
+1. **`_recover_orphaned_endpoints` 让"全新 profile"从来不干净** —— 它会从默认 user data 目录
+   （`~/Library/Application Support/deskpet`）把 endpoint 复制进测试 profile，删一次回来一次。
+   真冷启动测试必须用 `DESKPET_CONFIG` 绕开（launch-cold.sh 已固化）。
+2. **一条测试把 bug 钉死了** —— `companionIdentityBridge.test.ts` 断言 `mode:"relay"`，
+   是 relay 时代写的；阶段 2/3 删 relay 时没动它，于是它一路绿着掩护缺陷 2。
+3. **helper 插到了 `@app.post` 装饰器和处理函数之间** —— 路由套错函数，10 条既有测试转 422。
+   baseline 逐条 diff 当场抓到；只看"有没有失败"会漏。
+
+### 已知既存债务（非本次引入）
+
+- `tests/test_p5s2_ipc_providers.py` 从第 4 个用例起全部挂死，须 `--ignore` 才能跑完整链；
+  在改造前的 `729f981` 上同样挂（已开卡片跟踪）。

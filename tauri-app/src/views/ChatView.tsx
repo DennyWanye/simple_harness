@@ -35,6 +35,7 @@ import {
   useSessionsStore,
   collect_inbox,
   type InboxItem,
+  type Message,
   type WorkflowV5ControlAction,
 } from "../stores/sessionsStore";
 import { forPet } from "../petText";
@@ -90,6 +91,14 @@ import {
 } from "../chat/projectDirectoryState";
 
 const EMPTY_COMPANION_EVENTS: CompanionEvent[] = [];
+/** 空态兜底必须是**模块级常量**，不能写成 `?? []`。
+ *
+ * zustand 用引用相等判断快照是否变化：selector 里现造的 `[]` 每次渲染都是新对象
+ * ⇒ 快照恒"变化" ⇒ 无限重渲（React 报 Maximum update depth exceeded）。
+ * 保留会话 `default` 还在时这条路走不到（`sessions["default"]` 恒存在，取到的是
+ * blank_session 里那个稳定数组）；取消保留会话后 `sessions[""]` 为 undefined，
+ * 兜底分支第一次真正生效，2026-08-09 真机冷启动当场打爆 ChatView。 */
+const EMPTY_MESSAGES: Message[] = [];
 
 type WorkflowRetryDeferred = {
   promise: Promise<{ run_id: string }>;
@@ -129,7 +138,9 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
   const workflowRetryDeferreds = useRef(new Map<string, WorkflowRetryDeferred>());
 
   const sessions = useSessionsStore((s) => s.sessions);
-  const messages = useSessionsStore((s) => s.sessions[activeSid]?.messages ?? []);
+  const messages = useSessionsStore(
+    (s) => s.sessions[activeSid]?.messages ?? EMPTY_MESSAGES,
+  );
   const companionEvents = useSessionsStore(
     (s) => s.sessions[activeSid]?.companion_events ?? EMPTY_COMPANION_EVENTS,
   );

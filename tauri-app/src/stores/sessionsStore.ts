@@ -636,7 +636,8 @@ function workflowErrorText(value: unknown): string | undefined {
         const text = item[key] as string;
         const friendly: Record<string, string> = {
           "provider:insufficient_balance": "模型服务余额不足，请充值或切换模型后重试。",
-          "provider:relay_key_invalid": "模型服务登录凭据已失效，请重新登录后重试。",
+          // 2026-08-09：托管登录移除后没有"重新登录"这回事，改为指向设置页改 key。
+          "provider:relay_key_invalid": "模型服务密钥无效，请在「设置 → LLM Provider」更新 apiKey 后重试。",
           "provider:empty_api_key": "没有可用的模型服务凭据，请登录或配置 API Key。",
         };
         return friendly[text] ?? text;
