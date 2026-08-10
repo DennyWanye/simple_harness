@@ -7,7 +7,7 @@
 |---|---|---|
 | 1 | `cd tauri-app && npx vitest run` | **过**：退出码 0，输出无 `failed`（删除桌宠测试后全绿；skip 需逐条列出理由入账）。 |
 | 2 | `cd tauri-app/src-tauri && cargo test --lib` | **过**：退出码 0，`test result: ok`，0 failed。 |
-| 3 | `cd tauri-app && npx tsc --noEmit` | **过**：退出码 0，零 error。 |
+| 3 | `cd tauri-app && npm run typecheck`（= `tsc -b --noEmit`） | **过**：退出码 0，零 error。 |
 | 4 | `cd tauri-app && npm run build` | **过**：退出码 0（vite build 产物生成）。 |
 | 5 | 分两步避免管道吞退出码：`cd tauri-app/src-tauri && cargo check > /tmp/wb12-cargo-check.log 2>&1; echo "exit=$?"; grep -c "^error" /tmp/wb12-cargo-check.log; true`（或等价 `set -o pipefail` 后再用 tee） | **过**：`exit=0` 且 error 计数为 0（mac）——退出码以 cargo check 本身为准，不被 tee/grep 掩盖。 |
 | 6 | （plan T16 扩围旁证，非 WB-12 判定主体）`cd backend && uv run pytest tests/companion/ -q` | **过**：全绿——companion 白名单/SQL 迁移 007 回归；失败时单独立项，不并入 WB-12 结论但阻断 DoD。 |

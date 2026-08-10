@@ -1,5 +1,12 @@
 # 2026-08-09 workbench-ui r9 独立审计 FAIL —— 遗留项
 
+> ⚠️ **2026-08-09 更新：r9 已退役**，见
+> [`verification/workbench-ui-20260809-r9/RETIRED.md`](../plans/2026-08-04-workbench-ui/verification/workbench-ui-20260809-r9/RETIRED.md)。
+> 退役原因：审计冻结后落了 4 个 breaking change，被测对象本身已变（43 改 / 20 删）。
+> 本文件的结论仍然有效，作为 **r10 的输入**保留；其中：
+> - **F1 已退役**（数据兼容前提被用户裁决作废；且审计员推断的"卡在登录墙"经实测不成立）
+> - **F2 仍欠证据**，原样带入 r10
+
 > 来源：opus-5 独立 full-audit（executor=claude-fable-5，独立性成立）
 > 审计产物：`plans/2026-08-04-workbench-ui/verification/workbench-ui-20260809-r9/auditor-{input,output}.json`（gitignored，已入账锁 hash）
 > 结论：**VERDICT: FAIL**，完成度 9.5/12 必须 AC = 79%。机器门 18/18 绿但验收未通过。
