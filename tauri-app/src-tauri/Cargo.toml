@@ -25,7 +25,7 @@ tauri-plugin-updater = "2"
 tauri-plugin-autostart = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-window-vibrancy = "0.6"
+window-vibrancy = "0.8"
 # P2-1-S3: cloud LLM API key 持久化在 OS keychain。
 # 需要显式启用平台原生 backend (v3 不再默认启用任何 backend)。
 # 三平台 feature 互不干扰 —— 每个 cfg 只编译相关代码。
@@ -57,12 +57,12 @@ ring = "=0.17.14"
 # P3-S2: NVIDIA precheck (Windows only — macOS runs the CPU/MPS backend
 # tier with no NVML). Loaded via nvml.dll, bundled with every NVIDIA
 # driver, no CUDA Toolkit needed.
-nvml-wrapper = "0.10"
-webview2-com = "0.38"
+nvml-wrapper = "0.12"
+webview2-com = "0.39"
 # 孤儿进程修复：用 Job Object(KILL_ON_JOB_CLOSE) 把 python backend 绑定到
 # deskpet.exe 生命周期，进程退出即连带终止 backend，杜绝 8100 端口残留。
 # 版本对齐 webview2-com 传递引入的 windows 0.61，cargo 统一编译不增负担。
-windows = { version = "0.61", features = [
+windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Security",
     "Win32_System_JobObjects",
