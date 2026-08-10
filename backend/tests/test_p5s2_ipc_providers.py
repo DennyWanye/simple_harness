@@ -144,6 +144,29 @@ def fresh_registry(tmp_path: Path, monkeypatch):
         service_context.provider_registry = old_reg
 
 
+@pytest.fixture
+def routing_ready():
+    """Open the v23 provider-routing ingress gate.
+
+    ``session_set_provider`` / ``session_set_model`` are fail-closed: they
+    reject with ``provider_routing_initializing`` unless
+    ``service_context.provider_routing_readiness`` is a latch that has been
+    marked ready. Production does that in ``lifespan``, which a bare
+    ``TestClient(app)`` (no ``with``) never runs — so tests must supply it.
+    """
+    from llm.resolution import ProviderRoutingReadiness
+
+    readiness = ProviderRoutingReadiness()
+    readiness.mark_ready()
+
+    old = service_context.get("provider_routing_readiness")
+    service_context.register("provider_routing_readiness", readiness)
+    try:
+        yield readiness
+    finally:
+        service_context.register("provider_routing_readiness", old)
+
+
 @pytest_asyncio.fixture
 async def fresh_session_db(tmp_path: Path):
     """Per-test isolated SessionDB. Replaces service_context.session_db
@@ -220,6 +243,32 @@ def _expect_identity(reg: LLMProviderRegistry, pid: str) -> dict:
         "expected_incarnation_id": entry.incarnation_id,
         "expected_config_revision": entry.config_revision,
     }
+
+
+async def _binding_expectations(
+    sdb: SessionDB,
+    session_id: str,
+    *,
+    reg: LLMProviderRegistry | None = None,
+    provider_id: str | None = None,
+) -> dict:
+    """Optimistic-concurrency fields for `session_set_provider/_model`.
+
+    `expected_binding_epoch` is always required. Pinning the provider's
+    identity too is required only when the resulting binding names a
+    provider — see the `new_provider_id and ...` guard in the handler.
+    """
+    authority = await sdb.get_session_provider_binding_authority(session_id)
+    out: dict[str, Any] = {
+        "expected_binding_epoch": int(authority["binding_epoch"]),
+    }
+    if provider_id:
+        assert reg is not None
+        entry = reg.get_entry(provider_id)
+        assert entry is not None, f"provider {provider_id!r} not seeded"
+        out["expected_provider_incarnation_id"] = entry.incarnation_id
+        out["expected_provider_config_revision"] = entry.config_revision
+    return out
 
 
 def _expect_versions(reg: LLMProviderRegistry) -> dict:
@@ -417,16 +466,44 @@ def test_update_api_key_writes_keychain(fresh_registry):
 
 @pytest.mark.asyncio
 async def test_remove_cleanup(fresh_registry, fresh_session_db):
-    """remove provider → keychain entry + code_session_provider rows clear."""
+    """remove provider → registry entry + keychain secret gone, but the
+    per-session binding rows SURVIVE as tombstones.
+
+    v23 (`session-model-run-visibility`) deliberately dropped the old
+    `clear_bindings_for_provider()` cascade: a binding records the
+    provider's `incarnation_id`, so a re-added provider with the same id
+    gets a fresh incarnation and the stale binding is detected and
+    fail-closed ("原模型已不可用，请重新选择") instead of being silently
+    reused. Cascading the delete would erase exactly the evidence that
+    makes that ABA detection possible — so "cleanup" here means secrets
+    and registry state only. `test_session_provider_authority_v23.py`
+    guards main.py against the cascade coming back.
+    """
     reg, kc, _cfg = fresh_registry
     sdb = fresh_session_db
 
     await reg.add_provider(_seed_provider_args(pid="relay", api_key="sk-1"))
     await reg.add_provider(_seed_provider_args(pid="openrouter", api_key="sk-2", priority=2))
-    # Two sessions bound to "relay", one to "openrouter".
-    await sdb.set_session_provider_binding("sid-a", "relay", None)
-    await sdb.set_session_provider_binding("sid-b", "relay", "alt-model")
-    await sdb.set_session_provider_binding("sid-c", "openrouter", None)
+    relay_entry = reg.get_entry("relay")
+
+    # Two sessions bound to "relay", one to "openrouter" — bound through the
+    # registry (the production path) so the rows carry provider identity.
+    for sid, pid, model in (
+        ("sid-a", "relay", None),
+        ("sid-b", "relay", "m"),
+        ("sid-c", "openrouter", None),
+    ):
+        entry = reg.get_entry(pid)
+        await reg.set_session_binding(
+            sdb,
+            session_id=sid,
+            provider_id=pid,
+            preferred_model=model,
+            model_params=None,
+            expected_binding_epoch=0,  # never bound before → epoch 0
+            expected_incarnation_id=entry.incarnation_id,
+            expected_config_revision=entry.config_revision,
+        )
 
     assert kc[("deskpet", "provider.relay")] == "sk-1"
 
@@ -454,11 +531,20 @@ async def test_remove_cleanup(fresh_registry, fresh_session_db):
     # 2) Keychain entry for the relay gone.
     assert ("deskpet", "provider.relay") not in kc
 
-    # 3) SessionDB: sid-a / sid-b cleared; sid-c untouched.
-    assert (await sdb.get_session_provider_binding("sid-a"))["provider_id"] is None
-    assert (await sdb.get_session_provider_binding("sid-b"))["provider_id"] is None
+    # 3) SessionDB: the relay bindings SURVIVE, still carrying the now-dead
+    #    provider's incarnation — that's what makes them detectably stale
+    #    rather than silently re-bindable to a same-id replacement.
+    for sid in ("sid-a", "sid-b"):
+        authority = await sdb.get_session_provider_binding_authority(sid)
+        assert authority["provider_id"] == "relay", sid
+        assert authority["provider_incarnation_id"] == relay_entry.incarnation_id, sid
+        # ...and the registry can no longer resolve it → stale, fail-closed.
+        assert reg.get_entry(authority["provider_id"]) is None
+
+    # 4) The unrelated binding is untouched and still resolvable.
     binding_c = await sdb.get_session_provider_binding("sid-c")
     assert binding_c["provider_id"] == "openrouter"
+    assert reg.get_entry("openrouter") is not None
 
 
 # ---------- 2.7 reorder — incomplete set ----------------------------------
@@ -534,10 +620,14 @@ def test_providers_changed_broadcasts_to_all_conns(fresh_registry):
 
 
 @pytest.mark.asyncio
-async def test_set_provider_binding_persists(fresh_registry, fresh_session_db):
+async def test_set_provider_binding_persists(
+    fresh_registry, fresh_session_db, routing_ready
+):
     reg, _kc, _cfg = fresh_registry
     sdb = fresh_session_db
     await reg.add_provider(_seed_provider_args(pid="relay", api_key="sk"))
+    entry = reg.get_entry("relay")
+    before = await sdb.get_session_provider_binding_authority("vpn-tunnel")
 
     client = TestClient(app)
     cm, ws = _ws_open(client)
@@ -545,19 +635,30 @@ async def test_set_provider_binding_persists(fresh_registry, fresh_session_db):
         ws.send_json(
             {
                 "type": "session_set_provider",
-                "payload": {"session_id": "vpn-tunnel", "provider_id": "relay"},
+                "payload": {
+                    "session_id": "vpn-tunnel",
+                    "provider_id": "relay",
+                    **await _binding_expectations(
+                        sdb, "vpn-tunnel", reg=reg, provider_id="relay"
+                    ),
+                },
             }
         )
         resp = _drain_until(ws, "session_provider_set")
     finally:
         cm.__exit__(None, None, None)
 
+    # The response IS the committed authority snapshot, not a partial echo.
     assert resp["payload"] == {
         "session_id": "vpn-tunnel",
         "provider_id": "relay",
         "preferred_model": None,
         "model_params": None,
+        "provider_incarnation_id": entry.incarnation_id,
+        "provider_config_revision": entry.config_revision,
+        "binding_epoch": resp["payload"]["binding_epoch"],
     }
+    assert resp["payload"]["binding_epoch"] > int(before["binding_epoch"])
     # DB row written.
     binding = await sdb.get_session_provider_binding("vpn-tunnel")
     assert binding == {
@@ -568,7 +669,9 @@ async def test_set_provider_binding_persists(fresh_registry, fresh_session_db):
 
 
 @pytest.mark.asyncio
-async def test_set_provider_null_clears_binding(fresh_registry, fresh_session_db):
+async def test_set_provider_null_clears_binding(
+    fresh_registry, fresh_session_db, routing_ready
+):
     reg, _kc, _cfg = fresh_registry
     sdb = fresh_session_db
     await reg.add_provider(_seed_provider_args(pid="relay", api_key="sk"))
@@ -580,7 +683,12 @@ async def test_set_provider_null_clears_binding(fresh_registry, fresh_session_db
         ws.send_json(
             {
                 "type": "session_set_provider",
-                "payload": {"session_id": "vpn-tunnel", "provider_id": None},
+                "payload": {
+                    "session_id": "vpn-tunnel",
+                    "provider_id": None,
+                    # Clearing names no provider → epoch alone is pinned.
+                    **await _binding_expectations(sdb, "vpn-tunnel"),
+                },
             }
         )
         resp = _drain_until(ws, "session_provider_set")
@@ -592,6 +700,9 @@ async def test_set_provider_null_clears_binding(fresh_registry, fresh_session_db
         "provider_id": None,
         "preferred_model": None,
         "model_params": None,
+        "provider_incarnation_id": None,
+        "provider_config_revision": None,
+        "binding_epoch": resp["payload"]["binding_epoch"],
     }
     binding = await sdb.get_session_provider_binding("vpn-tunnel")
     assert binding == {
@@ -605,7 +716,9 @@ async def test_set_provider_null_clears_binding(fresh_registry, fresh_session_db
 
 
 @pytest.mark.asyncio
-async def test_set_model_alone_keeps_chain_global(fresh_registry, fresh_session_db):
+async def test_set_model_alone_keeps_chain_global(
+    fresh_registry, fresh_session_db, routing_ready
+):
     """User sets preferred_model on an unbound session: provider_id stays
     None (still global chain), but preferred_model is recorded."""
     reg, _kc, _cfg = fresh_registry
@@ -618,7 +731,11 @@ async def test_set_model_alone_keeps_chain_global(fresh_registry, fresh_session_
         ws.send_json(
             {
                 "type": "session_set_model",
-                "payload": {"session_id": "vpn-tunnel", "model": "gpt-4o-mini"},
+                "payload": {
+                    "session_id": "vpn-tunnel",
+                    "model": "gpt-4o-mini",
+                    **await _binding_expectations(sdb, "vpn-tunnel"),
+                },
             }
         )
         resp = _drain_until(ws, "session_model_set")
@@ -630,6 +747,9 @@ async def test_set_model_alone_keeps_chain_global(fresh_registry, fresh_session_
         "provider_id": None,
         "preferred_model": "gpt-4o-mini",
         "model_params": None,  # legacy {session_id,model} → provider defaults
+        "provider_incarnation_id": None,
+        "provider_config_revision": None,
+        "binding_epoch": resp["payload"]["binding_epoch"],
     }
     binding = await sdb.get_session_provider_binding("vpn-tunnel")
     assert binding == {
@@ -643,7 +763,9 @@ async def test_set_model_alone_keeps_chain_global(fresh_registry, fresh_session_
 
 
 @pytest.mark.asyncio
-async def test_set_model_with_params_round_trip(fresh_registry, fresh_session_db):
+async def test_set_model_with_params_round_trip(
+    fresh_registry, fresh_session_db, routing_ready
+):
     """Cursor picker sends {session_id, model, params}; backend persists
     and echoes model_params."""
     reg, _kc, _cfg = fresh_registry
@@ -666,6 +788,7 @@ async def test_set_model_with_params_round_trip(fresh_registry, fresh_session_db
                     "session_id": "task:proj-x",
                     "model": "gpt-5.5",
                     "params": params,
+                    **await _binding_expectations(sdb, "task:proj-x"),
                 },
             }
         )
@@ -678,6 +801,9 @@ async def test_set_model_with_params_round_trip(fresh_registry, fresh_session_db
         "provider_id": None,
         "preferred_model": "gpt-5.5",
         "model_params": params,
+        "provider_incarnation_id": None,
+        "provider_config_revision": None,
+        "binding_epoch": resp["payload"]["binding_epoch"],
     }
     binding = await sdb.get_session_provider_binding("task:proj-x")
     assert binding == {
