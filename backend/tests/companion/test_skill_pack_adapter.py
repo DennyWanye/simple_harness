@@ -34,23 +34,47 @@ EXPECTED_SKILLS = {
     "translate-doc", "verify-deskpet", "weather-report", "web-read",
     "windows-path-debug",
 }
+# 2026-08-09 刷新：本 golden 停在 `0fcffcf` 之前，17 条里有 11 条陈旧。
+#
+# 成因：`0fcffcf`（2026-08-04「backend boots on macOS」）发现 11 个 pack manifest
+# 带着**在另一台开发机上、按更早的文件字节**生成的 sha256，按当前字节重新生成了
+# 它们；但本测试的期望值没跟着更新，于是从那天起一直红着。
+#
+# 刷新前独立核验过（不是"把实际值抄进来让它变绿"）：
+#   逐个读 capability-packs/skill-*/deskpet-pack.json 的 files[].sha256，
+#   与该文件实际字节的 sha256 比对 —— **17 个 pack 全部一致**。
+#   即 pack 自身是自洽的，唯一停在旧值的就是这里。
+#
+# 重新生成方式（改动 pack 内容后照做）：
+#   cd backend && PYTHONPATH=<repo>:$PWD .venv/bin/python -c "
+#   from paths import first_party_capability_pack_roots
+#   from deskpet.companion.skills import inventory_first_party_skill_packs
+#   import sys; sys.path.insert(0,'.')
+#   from tests.companion.test_skill_pack_adapter import ENV
+#   for i in sorted(inventory_first_party_skill_packs(
+#           first_party_capability_pack_roots(), environment=ENV),
+#           key=lambda x: x.skill_id):
+#       print(f'    \"{i.skill_id}\": (\"{i.manifest_hash}\", \"{i.content_hash}\"),')"
+#
+# ⚠️ 刷新前务必先确认 pack 的 manifest 与文件字节自洽——否则等于把一次真实的
+# 内容漂移洗白成"预期值"，这条 golden 就白设了。
 EXPECTED_IDENTITIES = {
     "deep-research": ("e28da8dd2dfb25f7d08e42b0c391cad1736e8d2ee2b1317bf0e73f0ce3959ea6", "f8d66c4075cd0e280a9ae3f606dd4608072a32fedd0fb6e4b49df3865fc87a2e"),
-    "doc-edit": ("0ddc047d8340d6d47fe79479704b94ff9b6c4101b509c9e2c998e715258c7649", "e2f3af05b2fa52522169b9bab4848e9a4987a48a993f5f89476b78d8adb17f44"),
-    "excel-generate": ("1852b97510049db2c63daaa06f70b854b0ab521dd0a66037922e7f2d0e0a401b", "919c5cc01be833cf56baddf3e6f6fa64c362140e825ae12b3490a3ac2c9bab48"),
-    "file-organize": ("6980e509fb80c6d6d2896b52d4574245153b612b7343317e158530387928691f", "b4161e88250ea960ccd1fe7f840c7aa0f1ae3ec5496f3bc605d81c455b72eeb4"),
-    "pdf-export": ("3cc9ce2d97b54e7f78cb17a2990b86e48a3b319123c99804c4bb80dca8a346d3", "171f7dfb67bcd14667812f60a04c115d06f4dfbfe5fae3b4b47c5bd151e9c310"),
-    "ppt-generate": ("ec9a77349b41978c4942ef7e83d36545be6a05f4c16e7793dd4e79d497d5a504", "40e7743248d5a96e4cd79d7e513bce7dbf42df5ba80ccbfb47451f1cf8bda37c"),
+    "doc-edit": ("587163cbb2e9ebb1d56b59e77fbc9f3e5c471b452efdb75a6dc4b32f016709f1", "7dcd9a134e5cab267a82d46e83082ea7ea25408f5cbda6fa01ac149cf246bdee"),
+    "excel-generate": ("a6ad4054c7e2da1b0c3e9ad860908d7754c97f3d3140ace735627402a9c5e125", "e48681682e28ece259abec1b0d8b2166cf3c545eb6020ef8f16056bc5ddeffd4"),
+    "file-organize": ("6d55fd86025ef1b7686d7374744f50519af2e79e08891cf8c68c99584058b33d", "358da032713fabbfb7ac859106d9c4c5c881b756baa49e87ac8920fa3b8224b0"),
+    "pdf-export": ("6eb1aad80c80e86a6fcdf43bc7da152667d2b8d06d7028cadb6990eae2d2a669", "9ef96ee041864bb6e897dd429203d3b0147b3ba288539319696a607b10e51563"),
+    "ppt-generate": ("743f8da5d2bd2bc749fb228d51fa3f80390991d20c2dc3a37a34ab99e24194fa", "1c098280314a101b90f90227b8a37e2ebf69a94de02f3f7ba10462d543650d8d"),
     "ppt-tips": ("94b70fb13d466393425b9aa7b92cb6a7e3fd3df05d00bfc12a9f2143e7d20d7b", "8820771a49d623ba29018106e329898f49dd0657b84852c1073e9b9e3efb58b2"),
-    "recall-yesterday": ("12cb33891b418f852dffc969575797a068e5240efbe2a95d9e8992cd951b2e82", "05d373cb42e5b70367685d2cf254c814978a7eb87d6e11612ff5dfc91b18c2e7"),
+    "recall-yesterday": ("244847fb26364d965f0c52fbbdd10fb4974449fc90d0834fecb1d3872904f6b5", "0da6adbacfaf61a0b21df01e9c371562ae0387aba6f5e381e75f58014b220637"),
     "run-deskpet": ("572c8bc221f14c93b1dc3bbd004be2c9a7cd80b51e0cd110d8367ccbce6e7038", "2a789ff646f189421bdae03b88e53de0ef4fe257f433e811b27cccb471162b2e"),
-    "screenshot-ocr": ("95be9f635e96ad7be531d86d76b42700268f8b256dbbaa6626b25572ae9825b1", "aa12029b45ca03a67722450fc8750b0e2774343c1847aad8a9feb3a5d767d3fc"),
+    "screenshot-ocr": ("4fd64f9e19da9913488983afaf52025f3f097403bb0167d453655648705e2809", "0f77af2560233962827e315c115b2b636c68a91b0a7aaaf04795bb7053473255"),
     "source-check": ("2f88bf09ec7eae26bce949ad1009ae142f7a5dc3d923a94ae05378d5099593fc", "cbad6c32fbbcbac747b982b59e21f4c1dfc1551947450a80900aac32f75037cc"),
-    "summarize-day": ("ebfa762eebe587d0e2de71c461c4507f27b27d09ea9edf04aed377817a218a31", "d14055ef19d25abd86af410a7084b952cb2a003b05fd90a5c517d6e5cd901240"),
-    "translate-doc": ("57f864c06b00d5ce583baa22f0c7384465d56b9e97bbff16b5900bc0ccf6ef59", "2518517a192e4667dae1c8cdc574788f007e005615611a80fd384c7b34a5e739"),
+    "summarize-day": ("226811b0bac61ddef5663d46f39f8ee795fc5a2710b82f8196b96d94c9f8138e", "80f4f15a9eed81a034f875c25a816579e69f4bb851fe855dca3aedc93c419340"),
+    "translate-doc": ("fe364ff884bb213aebb73bde9a29033f42ac3a85ce09b85d664b5d065f6b5d64", "bd2bb330f2992c91a79ad24a24bbcc105b82075124e00a3922b79838df489e35"),
     "verify-deskpet": ("c327f8188bfa833ffec906575e4da5b7db4b53ce6769d823800748ad32994de9", "db0ab801f184d6f5c9bf6211470dcfdfcca29bc2138201d5dc6ac477d0fb9b88"),
-    "weather-report": ("a55dafd6652307a1d4652a35a7d950f417880a0ece79aaf9c2ae2bda3298c009", "6cdfafa0ce5e28b7ba1012d34447f9e3043e305fec5553319e9be35b5bca8530"),
-    "web-read": ("ceb1ceac24485115e581ac0b7a3355d07adfed231f70861dc0362695b99365bf", "2d56e5703f40c4bb11a401692a0165eb7c8a88c9ea6b39a49af67c200a0a7f2f"),
+    "weather-report": ("6da299da0a0200ca3e501cf1495fdfcbd7109cdd9f9274997517b7cf0298b986", "ab1561167cc282e051332aa3ac7704127c53aaefbc5068ba34c7e09381ef2ff7"),
+    "web-read": ("e2441eb26082bd1178b7304578a176262f5af8f9180465b86604d24f8fe672ee", "a49a8e2b5af9381ee3af2b9d2b5db9486cf7cb933c67941f21c5fdb34026e1b3"),
     "windows-path-debug": ("f5342ddd6750ef6af89f6901b48a14b56166caa5b1d4a2839d94c9779bc7791b", "ef3ef2c5d51aac257e4d835aa3fc5e4d19bb98bf01731230e61340c0c7ecbe8a"),
 }
 

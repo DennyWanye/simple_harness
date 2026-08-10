@@ -436,25 +436,59 @@ async def test_existing_v19_database_upgrades_to_material_snapshot_v20(
     await initialize_workflow_db(path)
     with sqlite3.connect(path) as db:
         # Reconstruct a real v19 boundary even when the current schema has
-        # later migrations.  Keeping v21/v22 objects while only rewinding
+        # later migrations.  Keeping post-v19 objects while only rewinding
         # user_version would create an impossible mixed-version database and
-        # make the v21 DDL collide before this test can verify the v20 upgrade.
-        for trigger in (
+        # make the replayed DDL collide before this test can verify the v20
+        # upgrade.
+        #
+        # ⚠️ 维护义务（2026-08-09 补）：**每新增一个迁移，都要把它创建的对象
+        # 加进下面两张表**。原清单只覆盖到 v22，v23 起新增的 5 张表与若干触发器
+        # 没跟上，于是重放到 v22→v23 时撞 `table ... already exists`——这条用例
+        # 从那次迁移落地起就一直红着。删表会连带删掉它自己的索引与触发器，
+        # 所以这里只需列出「表」和「建在既有表上的独立触发器」。
+        post_v19_triggers = (
+            # v20
+            "execution_candidate_draft_materials_immutable_update",
+            "execution_candidate_draft_materials_immutable_delete",
+            # v21
             "execution_profile_ticket_personal_identity_immutable",
             "execution_profile_ticket_personal_fields_consistent_insert",
             "execution_profile_ticket_personal_fields_consistent_update",
             "execution_skill_scope_activations_immutable_update",
             "execution_skill_scope_activations_immutable_delete",
+            # v22
             "execution_run_context_owner_identity_insert",
             "execution_run_context_owner_identity_immutable",
-        ):
+            # v23 / v24
+            "execution_provider_invocation_audit_immutable_update",
+            "execution_provider_invocation_audit_immutable_delete",
+            "execution_provider_invocation_input_immutable_update",
+            "execution_provider_invocation_input_immutable_delete",
+            # v26 / v27 / v28（建在既有表上，不随建表回收）
+            "execution_task_work_identity_immutable",
+            "execution_task_workspace_rebind_guard",
+            "execution_root_active_budget_insert",
+            "execution_root_active_budget_status",
+        )
+        post_v19_tables = (
+            "execution_candidate_draft_materials",          # v20
+            "execution_skill_scope_activations",            # v21
+            "execution_provider_invocation_audits",         # v23
+            "execution_provider_invocation_inputs",         # v24
+            "execution_provider_action_batches_v25",        # v25
+            "execution_run_active_budgets",                 # v27
+            "execution_run_tool_presentation_specs",        # v29
+            "execution_tool_public_projections",            # v29
+            "execution_run_block_signals",                  # v29
+        )
+        for trigger in post_v19_triggers:
             db.execute(f"DROP TRIGGER IF EXISTS {trigger}")
         db.execute(
             "DROP INDEX IF EXISTS "
             "idx_execution_profile_ticket_personal_selection_once"
         )
-        db.execute("DROP TABLE IF EXISTS execution_skill_scope_activations")
-        db.execute("DROP TABLE execution_candidate_draft_materials")
+        for table in post_v19_tables:
+            db.execute(f"DROP TABLE IF EXISTS {table}")
         db.execute("DELETE FROM workflow_schema_migrations WHERE version>=20")
         db.execute("PRAGMA user_version=19")
         db.commit()

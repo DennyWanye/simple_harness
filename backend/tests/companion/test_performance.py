@@ -552,7 +552,16 @@ async def test_product_venue_transaction_trace_uses_one_full_durability_lane(
                 ORDER BY name"""
             ).fetchall()
         assert [row[1] for row in databases] == ["main"]
+        # 这条断言钉的是"provider 调用存储只有这几张表"——防的是意外增表 /
+        # 误挂 attached database。2026-08-09 补齐 v23、v24 两张：原清单停在
+        # v22，_migrate_v22_to_v23_provider_invocation_audits 与
+        # _migrate_v23_to_v24_provider_invocation_inputs 落地后未同步，
+        # 这 7 个参数化用例从那时起一直红着。
+        # 新增迁移若再加 execution_provider_invocation* 表，这里要一并更新
+        # ——**先确认那张表是有意新增的**，否则等于把意外增表洗白成预期。
         assert provider_tables == [
+            ("execution_provider_invocation_audits",),   # v23
+            ("execution_provider_invocation_inputs",),   # v24
             ("execution_provider_invocation_outcomes",),
             ("execution_provider_invocations",),
         ]

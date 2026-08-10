@@ -22,12 +22,20 @@ Wire format (recap):
 
 Error path: any validation/registry error → ``settings_providers_error
 { reason, detail }``, registry unchanged, NO ``providers_changed``.
+
+Mutations (update / remove / reorder) carry the optimistic-concurrency
+identity introduced by ``session-provider-authority`` v23:
+``expected_incarnation_id`` + ``expected_config_revision`` (per provider),
+or ``expected_versions`` for reorder. Omitting them is a ``missing_field``
+error, not a mutation — see ``_expect_identity`` below.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
+import anyio
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
@@ -40,9 +48,44 @@ from deskpet.memory.session_db import SessionDB
 # ---------- helpers --------------------------------------------------------
 
 
+#: Every ws read in this module is bounded by this. A frame that never
+#: arrives must fail the test in seconds, not wedge the whole run.
+_RECV_TIMEOUT_S = 5.0
+
+
+def _recv_json(ws, timeout: float = _RECV_TIMEOUT_S) -> dict[str, Any]:
+    """``ws.receive_json()`` with a hard timeout.
+
+    Starlette's ``WebSocketTestSession.receive`` is
+    ``portal.call(self._send_rx.receive)`` — an unbounded block. If the
+    backend sends fewer frames than a test expects (e.g. a single
+    ``settings_providers_error`` where the test wanted response +
+    broadcast), the whole pytest process hangs forever and the backend
+    regression chain never finishes. We await the same receive inside the
+    session's own portal under ``anyio.fail_after`` so a missing frame
+    becomes a fast, readable assertion failure instead.
+    """
+
+    async def _await_frame():
+        with anyio.fail_after(timeout):
+            return await ws._send_rx.receive()
+
+    try:
+        message = ws.portal.call(_await_frame)
+    except TimeoutError as exc:  # anyio.fail_after raises builtin TimeoutError
+        raise AssertionError(
+            f"no ws frame received within {timeout}s — backend sent fewer "
+            "frames than this test expects (protocol drift?)"
+        ) from exc
+    ws._raise_on_close(message)
+    if "text" in message:
+        return json.loads(message["text"])
+    return json.loads(message["bytes"].decode("utf-8"))
+
+
 def _drain_startup(ws) -> None:
     """Drain the `startup_status` frame the control ws sends first."""
-    msg = ws.receive_json()
+    msg = _recv_json(ws)
     assert msg["type"] == "startup_status", msg
 
 
@@ -53,7 +96,7 @@ def _drain_until(ws, target_type: str, max_frames: int = 8) -> dict[str, Any]:
     here we just return the matched frame; broadcast tests use a separate
     helper that records every frame."""
     for _ in range(max_frames):
-        msg = ws.receive_json()
+        msg = _recv_json(ws)
         if msg.get("type") == target_type:
             return msg
     raise AssertionError(f"never received {target_type!r} after {max_frames} frames")
@@ -62,7 +105,7 @@ def _drain_until(ws, target_type: str, max_frames: int = 8) -> dict[str, Any]:
 def _collect_frames(ws, count: int) -> list[dict[str, Any]]:
     """Read exactly `count` frames (used when we want to assert both
     response + broadcast in one shot)."""
-    return [ws.receive_json() for _ in range(count)]
+    return [_recv_json(ws) for _ in range(count)]
 
 
 @pytest.fixture
@@ -159,9 +202,35 @@ def _seed_provider(reg: LLMProviderRegistry, **kw) -> None:
     """
     import asyncio
 
-    asyncio.new_event_loop().run_until_complete(
-        reg.add_provider(_seed_provider_args(**kw))
-    )
+    asyncio.run(reg.add_provider(_seed_provider_args(**kw)))
+
+
+def _expect_identity(reg: LLMProviderRegistry, pid: str) -> dict:
+    """Optimistic-concurrency fields the update/remove handlers require.
+
+    The v23 `session-provider-authority` protocol refuses any mutation
+    that doesn't pin the provider's current (incarnation_id,
+    config_revision); the frontend reads them off the provider row it
+    rendered (see `SettingsProviders.tsx`). Re-read after every mutation —
+    `update_provider` bumps `config_revision`.
+    """
+    entry = reg.get_entry(pid)
+    assert entry is not None, f"provider {pid!r} not seeded"
+    return {
+        "expected_incarnation_id": entry.incarnation_id,
+        "expected_config_revision": entry.config_revision,
+    }
+
+
+def _expect_versions(reg: LLMProviderRegistry) -> dict:
+    """`expected_versions` map for reorder: every provider, pinned."""
+    return {
+        entry.id: {
+            "incarnation_id": entry.incarnation_id,
+            "config_revision": entry.config_revision,
+        }
+        for entry in (reg.get_entry(p["id"]) for p in reg.list_providers())
+    }
 
 
 # ---------- 2.1 settings_providers_list_request ----------------------------
@@ -273,7 +342,11 @@ def test_update_partial_patch(fresh_registry):
         ws.send_json(
             {
                 "type": "settings_providers_update",
-                "payload": {"id": "relay", "patch": {"priority": 5}},
+                "payload": {
+                    "id": "relay",
+                    "patch": {"priority": 5},
+                    **_expect_identity(reg, "relay"),
+                },
             }
         )
         # Expect: settings_providers_updated + providers_changed
@@ -310,17 +383,26 @@ def test_update_api_key_writes_keychain(fresh_registry):
         ws.send_json(
             {
                 "type": "settings_providers_update",
-                "payload": {"id": "relay", "patch": {"name": "Renamed"}},
+                "payload": {
+                    "id": "relay",
+                    "patch": {"name": "Renamed"},
+                    **_expect_identity(reg, "relay"),
+                },
             }
         )
         _collect_frames(ws, 2)  # updated + providers_changed
         assert kc[("deskpet", "provider.relay")] == "sk-original"
 
-        # 2) Update WITH api_key — keychain updated.
+        # 2) Update WITH api_key — keychain updated. Re-pin: the first
+        #    update bumped config_revision.
         ws.send_json(
             {
                 "type": "settings_providers_update",
-                "payload": {"id": "relay", "patch": {"api_key": "sk-new"}},
+                "payload": {
+                    "id": "relay",
+                    "patch": {"api_key": "sk-new"},
+                    **_expect_identity(reg, "relay"),
+                },
             }
         )
         _collect_frames(ws, 2)
@@ -354,7 +436,7 @@ async def test_remove_cleanup(fresh_registry, fresh_session_db):
         ws.send_json(
             {
                 "type": "settings_providers_remove",
-                "payload": {"id": "relay"},
+                "payload": {"id": "relay", **_expect_identity(reg, "relay")},
             }
         )
         # removed + providers_changed
@@ -394,7 +476,10 @@ def test_reorder_validates_complete_set(fresh_registry):
         ws.send_json(
             {
                 "type": "settings_providers_reorder",
-                "payload": {"ordered_ids": ["b", "a"]},  # 'c' missing!
+                "payload": {
+                    "ordered_ids": ["b", "a"],  # 'c' missing!
+                    "expected_versions": _expect_versions(reg),
+                },
             }
         )
         err = _drain_until(ws, "settings_providers_error")
@@ -423,7 +508,11 @@ def test_providers_changed_broadcasts_to_all_conns(fresh_registry):
         ws1.send_json(
             {
                 "type": "settings_providers_update",
-                "payload": {"id": "seed", "patch": {"priority": 9}},
+                "payload": {
+                    "id": "seed",
+                    "patch": {"priority": 9},
+                    **_expect_identity(reg, "seed"),
+                },
             }
         )
         # ws1 should see {updated, providers_changed}; ws2 sees only
