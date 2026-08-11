@@ -391,7 +391,11 @@ def _capability_for(*, event_types: set[str], call: str, symbol: str) -> str | N
         return "voice.presentation"
     if any(value in joined for value in ("transcript", "run_event")):
         return "voice.transport"
-    if "context_compacted" in joined or "$PipelineEvent.event_type" in joined:
+    if (
+        "context_compacted" in joined
+        or "context_usage" in joined
+        or "$PipelineEvent.event_type" in joined
+    ):
         return "context.system"
     if "skill_candidate_proposed" in joined:
         return "skill.codify"

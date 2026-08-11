@@ -5,7 +5,7 @@
  * Workbench 侧栏（T6/T7/T13，WB-3/WB-5/WB-11）。
  *
  * 结构：Logo → 三个主导航项（💬会话 / 🧩技能中心 / 📄产物库，会话项
- * 带 SessionList 展开区）→ 「更多」折叠组（记忆/Trace/反馈/账户，
+ * 带 SessionList 展开区）→ 「更多」折叠组（记忆/Trace/反馈，
  * T13 自 Toolbar 迁入，点击行为=原浮层打开，能力不减）→ 底部 ⚙️设置 +
  * 连接状态徽章。
  *
@@ -39,8 +39,6 @@ export interface SidebarMoreActions {
   onMemory: () => void;
   onTrace: () => void;
   onFeedback: () => void;
-  /** relay edition 账户设置；OSS 默认 undefined 不渲染。 */
-  onAccount?: () => void;
 }
 
 interface SidebarProps {
@@ -52,7 +50,7 @@ interface SidebarProps {
   sessionProps?: SessionListProps;
   /** 路由指示（chat_response/transcript 捎带 provider）— cloud/local。 */
   routeKind?: RouteKind;
-  /** T13：「更多」折叠组入口（记忆/Trace/反馈/账户）。 */
+  /** T13：「更多」折叠组入口（记忆/Trace/反馈）。 */
   moreActions?: SidebarMoreActions;
 }
 
@@ -184,7 +182,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div style={{ flex: 1, minHeight: 0 }} />
       )}
 
-      {/* T13：「更多」折叠组 — 记忆/Trace/反馈/账户（原 Toolbar 入口，
+      {/* T13：「更多」折叠组 — 记忆/Trace/反馈（原 Toolbar 入口，
           点击行为=原浮层打开，能力不减；icon+tooltip 与原 Toolbar 同构）。 */}
       {moreActions && (
         <div style={{ flexShrink: 0 }}>
@@ -226,14 +224,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 padding: `0 ${tokens.space.md}px ${tokens.space.xs}px`,
               }}
             >
-              {moreActions.onAccount && (
-                <IconButton
-                  title="账户设置"
-                  testId="relay-account-pill"
-                  icon="user"
-                  onClick={moreActions.onAccount}
-                />
-              )}
               <IconButton
                 title="记忆管理"
                 testId="memory-toggle"

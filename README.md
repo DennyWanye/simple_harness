@@ -44,13 +44,17 @@ cd simple_harness
 前置依赖：Node ≥ 20、Rust 工具链、[uv](https://docs.astral.sh/uv/)；
 Linux 另需 Tauri 系统库（webkit2gtk 等，`setup.sh` 检测不到会给出安装命令）。
 
-> Windows 付费版（relay edition）构建仍可用 `npm run dev:relay` /
-> `npm run build:relay`，详见 `docs/legacy-deskpet-README.md`。
+> hosted-account relay 已于 2026-08-09 退役；当前只保留用户配置 provider 与
+> 本地 profile 身份路径，不存在账户登录、注册或登出入口。历史 DeskPet 构建说明不代表
+> 当前可用产品入口。
 
 ## 与 DeskPet 的差异清单（Workbench 改版后现状）
 
 - 删除（fork 期）：Live2D 全链路——`live2dcubismcore`/`pixi-live2d-display`/`pixi.js`
-  依赖、cubismcore 运行时、`assets/live2d/` 模型、`licenses/LIVE2D-*.md`。
+  依赖与锁记录、cubismcore 运行时、`assets/live2d/` 模型、表情/动作消息链、
+  `licenses/LIVE2D-*.md`。
+- 删除（账户退役）：前端 AuthAdapter/Login/Register scaffold、侧栏账户入口、旧 relay
+  key 同步与安装版登录诊断脚本；本地 identity_bind 与手动 Provider 配置保留。
 - 删除（Workbench 改版）：桌宠渲染与动画全部子系统（pet-anim/pet-engine/
   PetCanvas/petCharacter/petTransform/.dpet 格式）、message-panel 第二窗口、
   点击穿透、FPS 徽章、桌宠形象选择。

@@ -10,8 +10,8 @@ The cloud mascot in `deskpet-cloud.svg` is a hand-written temporary
 placeholder decided in V6 §3.1 (D0-1). It exists because:
 
 - The previous `icon.png` was a solid red square (visible bug).
-- The Live2D Hiyori sample in `public/assets/live2d/` is a Live2D Inc.
-  licensed asset and cannot be used in distributed branding.
+- The retired third-party character sample could not be used in distributed
+  branding.
 - No in-house brand assets exist yet.
 
 A future slice should replace this with a designer-produced icon.

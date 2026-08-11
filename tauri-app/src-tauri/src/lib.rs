@@ -20,7 +20,6 @@ mod job_object;
 mod onboarding;
 mod paths;
 mod process_manager;
-mod secrets;
 mod user_data;
 mod webview_permissions;
 mod window_geometry;
@@ -76,12 +75,11 @@ pub fn run() {
             user_data::get_data_dir_setting,
             user_data::set_data_dir_preference,
             user_data::move_data_dir_contents,
-            // P2-1-S3: cloud LLM API key commands; UI invokes these from
-            // SettingsPanel.
-            secrets::set_cloud_api_key,
-            secrets::get_cloud_api_key,
-            secrets::delete_cloud_api_key,
-            secrets::has_cloud_api_key,
+            // The retired single-key Keychain commands are deliberately not
+            // exposed to the renderer. Current API keys are managed by the
+            // backend multi-provider registry; keeping the old read command
+            // callable would allow a stale UI path to trigger a macOS
+            // Keychain authorization dialog again.
             // 2026-08-09：relay 的十个凭据槽 IPC 命令随托管登录一并移除。
             // 设备 id 保留——它不只服务 relay，诊断包与遥测也用它标识安装实例。
             device::get_or_create_device_id,
@@ -243,4 +241,16 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod retired_keychain_tests {
+    #[test]
+    fn legacy_single_key_module_and_commands_stay_retired() {
+        let source = include_str!("lib.rs");
+        let module_declaration = ["mod", " secrets", ";"].concat();
+        let command_prefix = ["secrets", "::"].concat();
+        assert!(!source.contains(&module_declaration));
+        assert!(!source.contains(&command_prefix));
+    }
 }

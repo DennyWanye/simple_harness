@@ -14,9 +14,8 @@ export interface IdentityChallenge {
 export interface CompanionIdentityBind {
   kind: "companion_profile_bind";
   auth_snapshot: {
-    /** 2026-08-09：relay 托管登录移除后只剩 local 一种身份来源。
-     *  字段保留是为了让"快照形状不对"仍显式失败（后端 validate_auth_snapshot
-     *  对未知 mode 抛 auth_snapshot_mode_invalid），而不是静默按 local 处理。 */
+    /** Local profile is the sole identity source. The explicit mode keeps
+     * malformed snapshots fail-closed at the backend validation boundary. */
     mode: "local";
     user_id: null;
   };
@@ -42,13 +41,8 @@ export function identityBindRetryDelayMs(attempt: number): number {
 /**
  * 构造 companion_profile_bind 命令。
  *
- * 2026-08-09 修复（真机冷启动实测）：原实现按「adapter.currentUser() 是否为空」
- * 二选一 —— 非空就声明 `mode: "relay"`。而 `ManualAuthAdapter.currentUser()`
- * **恒返回一个本地占位用户** `{id:"local"}`，于是手动 provider 模式下每次绑定都
- * 声明 relay；后端权威已是 local ⇒ `auth_snapshot_mismatch` 永久拒绝，输入框
- * 一直卡在「正在恢复身份…」，每 30s 重试一次且无恢复入口。
- *
- * relay 已整体移除，身份只可能来自本地 profile，这里直接恒定声明 local。
+ * Hosted account authentication no longer exists. Bind the signed local
+ * profile directly so frontend identity cannot diverge from backend authority.
  */
 export async function buildIdentityBind(
   challenge: IdentityChallenge,

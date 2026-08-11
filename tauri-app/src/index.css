@@ -1,13 +1,13 @@
-/* Desktop Pet — fully transparent app shell + P4-S20-UI design system. */
+/* Simple Harness Workbench shell + P4-S20-UI design system. */
 
 html, body, #root {
   margin: 0;
   padding: 0;
-  background: transparent !important;
+  background: #0f1218;
   overflow: hidden;
   width: 100%;
   height: 100%;
-  /* Block accidental text selection on the (mostly transparent) shell.
+  /* Block accidental text selection on the application shell.
      Without this, double-clicking the empty area selects every absolute-
      positioned child within the click radius — and the ::selection rule
      below paints them all in semi-transparent blue, which looks like

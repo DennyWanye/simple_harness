@@ -53,6 +53,10 @@ const RESTART_WINDOW_SECS: u64 = 60;
 /// the time it takes the child to actually exit.
 const RESTART_COOLDOWN_MS: u64 = 2_000;
 
+fn reserve_restart_attempt(counter: &AtomicU32) -> bool {
+    counter.fetch_add(1, Ordering::SeqCst) + 1 <= MAX_RESTARTS_PER_WINDOW
+}
+
 struct BackendControlSigner {
     backend_process_instance_id: String,
     pkcs8: Vec<u8>,
@@ -215,11 +219,11 @@ impl BackendProcess {
 /// Shared logic between the initial `start_backend` command and the
 /// supervisor's respawn path.
 ///
-/// P2-1-S3: before spawning we peek at the OS keychain via `secrets::`
-/// and, if a cloud LLM API key is configured, inject it as
-/// `DESKPET_CLOUD_API_KEY` so `backend/main.py::_resolve_cloud_api_key`
-/// can find it. When nothing is saved the backend logs "cloud disabled"
-/// and carries on local-only — that's the documented first-launch flow.
+/// Provider credentials are resolved by the backend provider registry. The
+/// launcher deliberately does not read the retired single-key credential
+/// slot: doing so makes macOS show a Keychain authorization dialog on every
+/// backend spawn. An explicitly supplied `DESKPET_CLOUD_API_KEY` remains
+/// inherited by `Command` for development/backward-compatibility use.
 /// P3-S8: quick precheck that 8100 is free. Returning Err early here
 /// swaps the generic "Backend exited without printing SHARED_SECRET"
 /// failure for the far more actionable "端口已被占用". We bind+drop on
@@ -235,16 +239,6 @@ fn check_port_free(port: u16) -> Result<(), String> {
              请关闭其它 Simple Harness 实例或占用该端口的程序后重试。"
         )),
     }
-}
-
-/// Select the credential injected into the backend process.
-///
-/// 2026-08-09：relay 移除前这里是"轮转的 relay device key 优先、legacy cloud 槽
-/// 兜底"的二选一。现在只剩 legacy cloud 槽，但保留这个纯函数——空白串必须当作
-/// "没有 key"，否则一个残留的 `export DESKPET_CLOUD_API_KEY=""` 会被后端当成
-/// 有效凭据（backend/tests/test_cloud_api_key_resolve.py 钉的就是这条）。
-fn select_backend_api_key(legacy_cloud_key: Option<String>) -> Option<String> {
-    legacy_cloud_key.filter(|value| !value.trim().is_empty())
 }
 
 fn spawn_once(
@@ -311,25 +305,6 @@ fn spawn_once(
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000);
     }
-
-    // 2026-08-09：原先这里先读 relay 的 device key（轮转槽），legacy cloud 槽
-    // 只作兜底。relay 移除后只剩后者。**顺带修掉一个真机可见的缺陷**：读
-    // `deskpet-relay` 命名空间会让 macOS 弹「请输入登录钥匙串的密码」授权框
-    // （每次 spawn backend 都弹，实测一进技能中心就撞上）。
-    // Never log the credential value.
-    let legacy_key = match crate::secrets::get_cloud_api_key() {
-        Ok(value) => value,
-        Err(e) => {
-            eprintln!(
-                "[process_manager] warning: could not read cloud API key from keychain: {e}"
-            );
-            None
-        }
-    };
-    if let Some(key) = select_backend_api_key(legacy_key) {
-        cmd.env("DESKPET_CLOUD_API_KEY", key);
-    }
-
 
     let signer = BackendControlSigner::generate()?;
     let mut child = cmd
@@ -564,63 +539,60 @@ fn install_supervisor(app: AppHandle, launch: BackendLaunch) {
             };
             let _ = app.emit("backend-crashed", reason);
 
-            // Restart budget: if we've crashed too many times in the
-            // sliding window, give up and let the user manually retry.
-            let count = state.restart_count.fetch_add(1, Ordering::SeqCst) + 1;
-            if count > MAX_RESTARTS_PER_WINDOW {
-                // 清空 secret —— 之后前端再 invoke start_backend 时
-                // 幂等检查要能让它真的去 spawn 一个新 backend（手动自愈）。
-                if let Ok(mut guard) = state.shared_secret.lock() {
-                    *guard = None;
-                }
-                let _ = app.emit("backend-dead", "restart budget exhausted");
-                return;
-            }
-
-            std::thread::sleep(Duration::from_millis(RESTART_COOLDOWN_MS));
-
-            // Respawn.
-            let started = Instant::now();
-            let spawn_result = spawn_once(&launch);
-            match spawn_result {
-                Ok((new_child, new_secret, new_signer)) => {
-                    if let Ok(mut guard) = state.shared_secret.lock() {
-                        *guard = Some(new_secret.clone());
-                    }
-                    // 2026-08-06 r5 S13 后续真机发现：respawn 只换了
-                    // child handle，child_pid 仍是第一代 PID——kill_child
-                    // 的 PID 兜底于是杀的是已死进程，respawn 代在应用
-                    // 退出后变孤儿（8100 残留）。respawn 必须同步刷新
-                    // PID 兜底记录。
-                    if let Ok(mut guard) = state.child_pid.lock() {
-                        *guard = Some(new_child.id());
-                    }
-                    if let Ok(mut guard) = state.child.lock() {
-                        *guard = Some(new_child);
-                    }
-                    if let Ok(mut guard) = state.control_signer.lock() {
-                        *guard = Some(new_signer);
-                    }
-                    let _ = app.emit("backend-restarted", new_secret);
-
-                    // If the previous life lasted longer than the
-                    // restart window, zero the counter — a sporadic
-                    // crash months apart shouldn't accumulate.
-                    if started.elapsed() > Duration::from_secs(RESTART_WINDOW_SECS) {
-                        state.restart_count.store(0, Ordering::SeqCst);
-                    }
-                }
-                Err(e) => {
-                    // 同样的道理：respawn 失败等于这一生的 backend 到此
-                    // 为止了，secret 得清掉好让后续手动重启能真的 spawn。
+            // A transient pre-spawn failure (most notably the backend port
+            // still being released) consumes the same bounded restart budget
+            // as a child crash, but must not permanently stop the supervisor
+            // after the first attempt.
+            loop {
+                if !reserve_restart_attempt(&state.restart_count) {
                     if let Ok(mut guard) = state.shared_secret.lock() {
                         *guard = None;
                     }
                     if let Ok(mut guard) = state.control_signer.lock() {
                         *guard = None;
                     }
-                    let _ = app.emit("backend-dead", format!("respawn failed: {e}"));
+                    let _ = app.emit("backend-dead", "restart budget exhausted");
                     return;
+                }
+
+                std::thread::sleep(Duration::from_millis(RESTART_COOLDOWN_MS));
+
+                let started = Instant::now();
+                match spawn_once(&launch) {
+                    Ok((new_child, new_secret, new_signer)) => {
+                        if let Ok(mut guard) = state.shared_secret.lock() {
+                            *guard = Some(new_secret.clone());
+                        }
+                        if let Ok(mut guard) = state.child_pid.lock() {
+                            *guard = Some(new_child.id());
+                        }
+                        if let Ok(mut guard) = state.child.lock() {
+                            *guard = Some(new_child);
+                        }
+                        if let Ok(mut guard) = state.control_signer.lock() {
+                            *guard = Some(new_signer);
+                        }
+                        state.set_startup_error(None);
+                        let _ = app.emit("backend-restarted", new_secret);
+
+                        if started.elapsed() > Duration::from_secs(RESTART_WINDOW_SECS) {
+                            state.restart_count.store(0, Ordering::SeqCst);
+                        }
+                        break;
+                    }
+                    Err(e) => {
+                        if let Ok(mut guard) = state.shared_secret.lock() {
+                            *guard = None;
+                        }
+                        if let Ok(mut guard) = state.control_signer.lock() {
+                            *guard = None;
+                        }
+                        state.set_startup_error(Some(e.clone()));
+                        let _ = app.emit(
+                            "backend-crashed",
+                            format!("respawn failed: {e}; retrying"),
+                        );
+                    }
                 }
             }
         }
@@ -720,17 +692,29 @@ mod tests {
         assert!(bp.startup_error.lock().unwrap().is_none());
     }
 
-    // 2026-08-09：原先两条用例钉的是"relay 槽优先、legacy 兜底"的二选一优先级。
-    // relay 槽已随托管登录移除，优先级不复存在；保留的语义只剩"空白视同没有"。
     #[test]
-    fn backend_api_key_treats_blank_as_absent() {
+    fn restart_attempt_budget_counts_spawn_failures_and_is_bounded() {
+        let counter = AtomicU32::new(0);
+        for expected in 1..=MAX_RESTARTS_PER_WINDOW {
+            assert!(reserve_restart_attempt(&counter));
+            assert_eq!(counter.load(Ordering::SeqCst), expected);
+        }
+        assert!(!reserve_restart_attempt(&counter));
         assert_eq!(
-            select_backend_api_key(Some("legacy-current".into())),
-            Some("legacy-current".into())
+            counter.load(Ordering::SeqCst),
+            MAX_RESTARTS_PER_WINDOW + 1
         );
-        assert_eq!(select_backend_api_key(Some("  ".into())), None);
-        assert_eq!(select_backend_api_key(Some("".into())), None);
-        assert_eq!(select_backend_api_key(None), None);
+    }
+
+    #[test]
+    fn backend_spawn_does_not_read_legacy_single_key_slot() {
+        let source = include_str!("process_manager.rs");
+        // Build the needle at runtime so the canary does not match itself.
+        let legacy_reader = ["crate::secrets::get_", "cloud_api_key()"].concat();
+        assert!(
+            !source.contains(&legacy_reader),
+            "backend spawn must leave provider credential resolution to the backend registry"
+        );
     }
 
     #[test]

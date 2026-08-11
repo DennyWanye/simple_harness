@@ -12,7 +12,6 @@ import { dark, bannerStyle } from "./theme/components";
 import { StartupOverlay, type BootState } from "./components/StartupOverlay";
 import { useBudgetToast } from "./hooks/useBudgetToast";
 import { useContextCompactedToast } from "./hooks/useContextCompactedToast";
-import { getAuthAdapter } from "./auth";
 import {
   buildIdentityBind,
   identityBindRetryDelayMs,
@@ -298,7 +297,7 @@ function App() {
   // 持久化已由 Rust 端 ResizeDebouncer（lib.rs WindowEvent::Resized 钩子）
   // 独家负责，不需要前端冗余写盘。
 
-  // Control channel (text chat + interrupt + emotion/action events)
+  // Control channel (text chat + interrupt)
   const { state, lastMessage, getChannel: getControlChannel } =
     useControlChannel(BACKEND_PORT, secret);
 
@@ -310,7 +309,6 @@ function App() {
     const channel = getControlChannel();
     if (!channel) return;
 
-    const adapter = getAuthAdapter();
     let challenge: IdentityChallenge | null = null;
     let bindInFlight = false;
     let rebindPending = false;
@@ -346,9 +344,8 @@ function App() {
       bindInFlight = true;
       rebindPending = false;
       try {
-        // 2026-08-09：不再按 adapter.currentUser() 分流身份来源。
-        // ManualAuthAdapter 恒返回本地占位用户，旧逻辑据此声明 mode=relay，
-        // 与后端 local 权威冲突导致身份永久绑不上（真机实测）。
+        // Hosted account auth has been removed. The only identity authority is
+        // the signed local profile snapshot produced by buildIdentityBind().
         const command = await buildIdentityBind(challenge);
         const sent = channel.send({
           type: command.kind,
@@ -427,10 +424,9 @@ function App() {
         bindInFlight = false;
         rebindPending = true;
       } else if (message.type === "companion_control_error") {
-        // Trusted auth may be temporarily unavailable even though the Rust
-        // credential itself was valid. Keep the current challenge, stop the
-        // in-flight latch, and retry only when the AuthAdapter reports a real
-        // login/logout transition instead of spinning a rechallenge loop.
+        // The local identity authority may be temporarily unavailable even
+        // though the Rust credential itself was valid. Keep the challenge and
+        // retry transient failures with a bounded backoff.
         bindInFlight = false;
         rebindPending = true;
         if (isTransientIdentityBindError(payload.code)) {
@@ -445,21 +441,10 @@ function App() {
     if (pendingIdentityChallenge) {
       handleIdentityMessage(pendingIdentityChallenge);
     }
-    const offAuth = adapter.onEvent((event) => {
-      if (event.type === "login" || event.type === "logout") {
-        bindRetryAttempts = 0;
-        if (bindRetryTimer !== null) {
-          clearTimeout(bindRetryTimer);
-          bindRetryTimer = null;
-        }
-        void sendCurrentIdentity();
-      }
-    });
     return () => {
       disposed = true;
       if (bindRetryTimer !== null) clearTimeout(bindRetryTimer);
       offMessage();
-      offAuth();
     };
   }, [state, getControlChannel]);
 
@@ -603,8 +588,6 @@ function App() {
           setRouteKind((lastMessage as any).payload.provider);
         }
         break;
-      // T4：emotion_change / action_trigger 分支删除 —— 均为 Live2D
-      // 角色驱动（桌宠删除例外清单）。
       // T8：tool_use_event / chat_v2_user_echo / workflow_event /
       // slash_command_result / session_messages_response 分支删除 ——
       // 全部只喂 App 自建 messages 数组（已废）；对应能力由

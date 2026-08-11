@@ -32,16 +32,13 @@ window.__deskpet_metrics_emit = (event: string, payload: Record<string, unknown>
 // E2E 能真触发 / 命令 autocomplete 状态机（无需 Tauri invoke 创 session）.
 const isSlashTest = window.location.hash.startsWith('#/slashtest');
 
-// Pet shell and message panel stay fully transparent — the panel paints its
-// own dark glass card so its rounded corners show the desktop.
-document.body.style.backgroundColor = 'transparent';
-document.documentElement.style.backgroundColor = 'transparent';
+// The Workbench is an opaque desktop window. Paint a deterministic background
+// before React mounts so cold startup never flashes a transparent shell.
+document.body.style.backgroundColor = '#0f1218';
+document.documentElement.style.backgroundColor = '#0f1218';
 
-// StrictMode intentionally disabled: it double-mounts effects in dev,
-// which caused duplicate Live2D PixiJS canvases, double WebSocket
-// connections, and repeated Silero-VAD model loads. This is a native
-// desktop pet with heavy init cost — the dev-time bug detection
-// StrictMode offers isn't worth the resource duplication.
+// StrictMode intentionally stays disabled because duplicate effect mounts open
+// duplicate WebSocket connections and repeat heavyweight media initialization.
 const root = createRoot(document.getElementById('root')!);
 
 if (isSlashTest) {

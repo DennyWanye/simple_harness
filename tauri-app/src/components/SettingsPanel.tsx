@@ -2,18 +2,11 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * P2-1-S3: SettingsPanel —— 云端账号 / 路由策略 / 今日使用（占位）。
+ * SettingsPanel —— Provider、数据目录、Agent 预算、自启与只读状态卡。
  *
- * Three sections, all controlled-input. Save flow:
- *   1. If user typed a new apiKey, invoke Rust `set_cloud_api_key` (keyring).
- *   2. Persist strategy / budget to backend config: deferred — S6 owns the
- *      backend-side strategy switching, S8 owns the daily-budget ledger.
- *      For S3 we just keep them in component state so the UI is honest
- *      about what works right now.
- *
- * 测试连接 path uses the control WS (already authenticated via shared
- * secret) so the apiKey never touches an HTTP endpoint and never lands
- * in a network log.
+ * Provider rows are owned by SettingsProviders and persisted through the
+ * backend registry. This component has no account-login or renderer Keychain
+ * path; the control channel carries provider operations to the backend.
  *
  * The 今日使用 section reads from `fetchDailyBudget`, which round-trips
  * through the control WS to the BillingLedger (S8). The DailyBudgetStatus
@@ -27,7 +20,6 @@ import { ModelContextCard } from "./ModelContextCard";
 import { SettingsProviders } from "./SettingsProviders";
 import { formatUpdaterError } from "./updaterError";
 import { dark } from "../theme/components";
-// S5 (live2d-rewrite): HiyoriMotionTuner deleted with the Hiyori assets / Live2D SDK.
 import type {
   DailyBudgetStatus,
   IncomingMessage,

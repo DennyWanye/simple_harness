@@ -303,32 +303,6 @@ async def tc_01_2():
     }
 
 
-async def tc_11_4():
-    """TC-11.4 — runtime import of auth scaffold confirms zero-regression."""
-    t = find_targets()
-    async with Cdp(t["pet"]["webSocketDebuggerUrl"], "pet") as pet:
-        result = await pet.evaluate(
-            r"""import('/src/auth/index.ts').then(m => ({
-              hasGetAuthAdapter: typeof m.getAuthAdapter === 'function',
-              hasManual: typeof m.ManualAuthAdapter === 'function',
-              hasNull: typeof m.NullAuthAdapter === 'function',
-              adapterId: m.getAuthAdapter().id,
-              isAuth: m.getAuthAdapter().isAuthenticated(),
-              user: m.getAuthAdapter().currentUser(),
-            }))""",
-            await_promise=True,
-        )
-        print(f"[TC-11.4] auth scaffold:", result)
-    return {
-        "passed": result["hasGetAuthAdapter"]
-                  and result["hasManual"]
-                  and result["hasNull"]
-                  and result["adapterId"] == "manual"
-                  and result["isAuth"] is True,
-        **result,
-    }
-
-
 async def tc_07_2():
     """TC-07.2 — open ChangeModelModal + verify it appears."""
     t = find_targets()
@@ -379,7 +353,6 @@ REGISTRY = {
     "TC-04.1": tc_04_1,
     "TC-07.2": tc_07_2,
     "TC-01.2": tc_01_2,
-    "TC-11.4": tc_11_4,
 }
 
 

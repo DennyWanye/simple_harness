@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Iterable, Mapping
+from collections.abc import AsyncIterator, Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -21,7 +21,6 @@ from deskpet.tools.public_projection import (
 )
 from observability.metrics import stage_timer
 from pipeline.barge_in_filter import BargeInFilter
-from pipeline.tag_parser import StreamingTagParser, TagEvent
 
 if TYPE_CHECKING:
     from agent.providers.base import AgentProvider
@@ -142,9 +141,8 @@ class VoicePipeline:
     Manages the voice processing flow for a single WebSocket session.
 
     Audio in → VAD detects speech segments → ASR transcribes →
-    Agent generates reply (streaming, with emotion/action tag extraction) →
-    TTS synthesizes → audio streamed back + lip-sync / emotion /
-    action params sent to control channel.
+    Agent generates reply (streaming) → TTS synthesizes → audio streamed back
+    and lip-sync parameters sent to the control channel.
 
     Lifecycle: one instance per audio WebSocket connection.
     """
@@ -258,30 +256,6 @@ class VoicePipeline:
         if version is not None:
             signal["version"] = version
         return await handle.signal(MappingProxyType(signal))
-
-    async def _emit_tag_event(self, evt: TagEvent) -> None:
-        """Forward emotion/action tag to control channel for Live2D driving."""
-        if not self.control_ws:
-            return
-        msg_type = "emotion_change" if evt.kind == "emotion" else "action_trigger"
-        try:
-            await self.control_ws.send_json({
-                "type": msg_type,
-                "payload": {"value": evt.value},
-            })
-        except Exception:
-            pass  # control channel may have disconnected
-
-    async def _consume_tag_items(
-        self,
-        items: Iterable[str | TagEvent],
-        output: list[str],
-    ) -> None:
-        for item in items:
-            if isinstance(item, str):
-                output.append(item)
-            else:
-                await self._emit_tag_event(item)
 
     async def _broadcast_chat_v2(
         self,
@@ -679,12 +653,7 @@ class VoicePipeline:
                         if streamed_text and terminal_text in {"", streamed_text}
                         else [terminal_text]
                     )
-                    parser = StreamingTagParser()
-                    clean: list[str] = []
-                    for chunk in chunks:
-                        await self._consume_tag_items(parser.feed(chunk), clean)
-                    await self._consume_tag_items(parser.flush(), clean)
-                    final_text = "".join(clean)
+                    final_text = "".join(chunks)
                 elif status in _FAILURE_STATUSES:
                     await self._emit_terminal_run_error(event, audio_ws)
                 else:

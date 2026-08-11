@@ -5,6 +5,30 @@ All notable changes to DeskPet are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Simple Harness Workbench
+
+- Replaced the transparent desktop-pet shell and secondary message window with one resizable
+  Workbench window containing Chat, Skills, Artifacts, and Settings views.
+- Added persistent window geometry, session sidebar management, macOS autostart integration,
+  Workbench theme auditing, and updated tray branding.
+- Fixed macOS npx MCP provenance discovery (`~/.npm`) and now withhold MCP tools whose execution
+  build identity cannot be proven.
+- Fixed backend supervision so a transient port collision during respawn is retried within the
+  existing five-attempt budget instead of permanently stopping after the first failure.
+- Removed the retired single-key Keychain module, renderer IPC/binding, and Rust `keyring`
+  dependency. Provider credentials are resolved by the backend registry, so normal macOS startup
+  and Settings navigation no longer need a Keychain authorization prompt; an explicitly supplied
+  development API-key environment variable remains inheritable.
+- Removed the remaining hosted-account auth scaffold, login/register lifecycle events, optional
+  account sidebar entry, and obsolete relay-login diagnostic scripts. Local signed profile binding
+  and manual Provider onboarding remain.
+- Removed stale Live2D/Pixi packages from the pnpm lockfile, retired emotion/action control frames
+  and voice tag parsing, and made the HTML/CSS pre-mount shell consistently opaque.
+- Verified a real `kimi-k3` (Moonshot) ChatView round trip with HTTP 200. The r13 ledger reached the
+  formal pre-audit gate but was not finalized after independent review found primary-evidence gaps;
+  r14 is re-running the affected settings, geometry, runtime-disconnect, session-delete, and
+  cold-start cases.
+
 ## [Unreleased] — P4-S20 skill platform v1
 
 **General-purpose AI assistant + extensible skill marketplace.**

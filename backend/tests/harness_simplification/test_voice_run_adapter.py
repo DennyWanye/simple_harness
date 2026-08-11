@@ -333,8 +333,8 @@ async def test_voice_catalog_is_not_misreported_as_proposed_tools() -> None:
 
 
 @pytest.mark.asyncio
-async def test_streaming_tags_drive_live2d_but_never_reach_transcript_or_tts() -> None:
-    raw = "Hello [emotion:happy] [action:wave]friend"
+async def test_streaming_final_reaches_transcript_and_tts_once() -> None:
+    raw = "Hello friend"
 
     async def script(run_id: str, session_id: str, _: _RunClient) -> AsyncIterator[_Event]:
         yield _event(
@@ -343,7 +343,7 @@ async def test_streaming_tags_drive_live2d_but_never_reach_transcript_or_tts() -
             1,
             "assistant_delta",
             "succeeded",
-            payload={"delta": "Hello [emo", "provider": "cloud"},
+            payload={"delta": "Hello ", "provider": "cloud"},
         )
         yield _event(
             run_id,
@@ -351,7 +351,7 @@ async def test_streaming_tags_drive_live2d_but_never_reach_transcript_or_tts() -
             2,
             "assistant_delta",
             "succeeded",
-            payload={"delta": "tion:happy] [action:wa"},
+            payload={"delta": "fri"},
         )
         yield _event(
             run_id,
@@ -359,7 +359,7 @@ async def test_streaming_tags_drive_live2d_but_never_reach_transcript_or_tts() -
             3,
             "assistant_delta",
             "succeeded",
-            payload={"delta": "ve]friend"},
+            payload={"delta": "end"},
         )
         yield _event(
             run_id,
@@ -377,9 +377,8 @@ async def test_streaming_tags_drive_live2d_but_never_reach_transcript_or_tts() -
 
     result = await pipe._process_utterance(b"pcm", audio)
 
-    assert result == "Hello  friend"
-    assert tts.texts == ["Hello  friend"]
-    assert all("[emotion:" not in text and "[action:" not in text for text in tts.texts)
+    assert result == raw
+    assert tts.texts == [raw]
     assistant = [
         frame["payload"]
         for frame in audio.json_frames
@@ -387,19 +386,9 @@ async def test_streaming_tags_drive_live2d_but_never_reach_transcript_or_tts() -
         and frame["payload"].get("role") == "assistant"
     ]
     assert assistant == [
-        {"text": "Hello  friend", "role": "assistant", "provider": "cloud"}
+        {"text": raw, "role": "assistant", "provider": "cloud"}
     ]
-    assert {frame["type"] for frame in control.json_frames} >= {
-        "emotion_change",
-        "action_trigger",
-        "lip_sync",
-    }
-    assert next(
-        frame for frame in control.json_frames if frame["type"] == "emotion_change"
-    )["payload"] == {"value": "happy"}
-    assert next(
-        frame for frame in control.json_frames if frame["type"] == "action_trigger"
-    )["payload"] == {"value": "wave"}
+    assert {frame["type"] for frame in control.json_frames} >= {"lip_sync"}
     assert next(
         frame for frame in control.json_frames if frame["type"] == "lip_sync"
     )["payload"]["amplitude"] == pytest.approx(1.0)

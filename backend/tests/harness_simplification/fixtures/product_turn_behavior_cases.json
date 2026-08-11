@@ -30,11 +30,6 @@
   "permission_restore": {
     "enabled": true
   },
-  "streaming_tags": {
-    "action": "wave",
-    "emotion": "happy",
-    "spoken_text": "Hello world"
-  },
   "route_decisions": [
     {
       "confidence": 0.98,
@@ -102,20 +97,6 @@
         "text": "world"
       },
       "type": "chat_v2_final"
-    }
-  ],
-  "voice_tags": [
-    {
-      "payload": {
-        "value": "happy"
-      },
-      "type": "emotion_change"
-    },
-    {
-      "payload": {
-        "value": "wave"
-      },
-      "type": "action_trigger"
     }
   ],
   "workflow_delivery": {

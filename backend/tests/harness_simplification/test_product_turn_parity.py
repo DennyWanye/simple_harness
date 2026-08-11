@@ -29,7 +29,6 @@ from deskpet.tools.capabilities import (
 )
 from deskpet.tools.registry import ToolRegistry
 from deskpet.workflows.adapters.product_delivery import ProductDeliveryAdapter
-from pipeline.tag_parser import StreamingTagParser, TagEvent
 from pipeline.voice_pipeline import VoicePipeline
 
 
@@ -365,30 +364,6 @@ async def test_voice_user_echo_and_final_are_observed() -> None:
 
     assert [frame for _, frame in calls] == expected
     assert all(originator is control for originator, _ in calls)
-
-
-@pytest.mark.asyncio
-async def test_voice_tag_events_are_observed() -> None:
-    expected = _fixture(BEHAVIOR_PATH)["voice_tags"]
-    control = _RecordingWS()
-    voice = _voice(control_ws=control)
-    await voice._emit_tag_event(TagEvent(kind="emotion", value="happy"))
-    await voice._emit_tag_event(TagEvent(kind="action", value="wave"))
-    assert control.frames == expected
-
-
-def test_streaming_tags_are_removed_from_spoken_text_and_observed() -> None:
-    expected = _fixture(BEHAVIOR_PATH)["streaming_tags"]
-    parser = StreamingTagParser()
-    output = list(parser.feed("Hello [emotion:happy]wor"))
-    output.extend(parser.feed("ld[action:wave]"))
-    output.extend(parser.flush())
-    assert "".join(item for item in output if isinstance(item, str)) == expected["spoken_text"]
-    tags = [item for item in output if isinstance(item, TagEvent)]
-    assert [(item.kind, item.value) for item in tags] == [
-        ("emotion", expected["emotion"]),
-        ("action", expected["action"]),
-    ]
 
 
 def test_voice_codify_authority_is_absent() -> None:
