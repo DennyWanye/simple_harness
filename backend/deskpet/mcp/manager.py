@@ -515,6 +515,19 @@ class MCPManager:
 
         # Inject each tool into the registry.
         tools = getattr(tools_result, "tools", []) or []
+        if (
+            self._registry is not None
+            and runtime.execution_build_material is None
+        ):
+            runtime.tool_names = []
+            logger.warning(
+                "mcp_server_build_identity_unavailable",
+                server=runtime.name,
+                transport=transport,
+                discovered_tool_count=len(tools),
+                note="tools withheld from durable registry",
+            )
+            return
         registered: list[str] = []
         for tool in tools:
             qualified = f"mcp_{runtime.name}_{_tool_name(tool)}"
@@ -876,12 +889,19 @@ def _resolve_npx_package_artifacts(
     if parsed is None:
         return ()
     package_name, requested = parsed
-    cache_root = Path(
-        os.environ.get(
-            "npm_config_cache",
-            str(Path(os.environ.get("LOCALAPPDATA", "")) / "npm-cache"),
-        )
+    configured_cache = (
+        os.environ.get("npm_config_cache")
+        or os.environ.get("NPM_CONFIG_CACHE")
     )
+    if configured_cache:
+        cache_root = Path(configured_cache)
+    else:
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        cache_root = (
+            Path(local_app_data) / "npm-cache"
+            if local_app_data
+            else Path.home() / ".npm"
+        )
     package_relative = Path(*package_name.split("/"))
     candidates = list(
         cache_root.glob(

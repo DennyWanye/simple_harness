@@ -36,8 +36,100 @@ from typing import Any
 import pytest
 
 from deskpet.mcp import manager as mcp_manager_mod
-from deskpet.mcp.manager import MCPManager, _BACKOFF_SCHEDULE
+from deskpet.mcp.manager import (
+    MCPManager,
+    _BACKOFF_SCHEDULE,
+    _resolve_npx_package_artifacts,
+)
 from deskpet.tools.registry import ToolRegistry
+
+
+_ORIGINAL_MCP_BUILD_MATERIAL_RESOLVER = (
+    mcp_manager_mod._resolve_mcp_execution_build_material
+)
+
+
+def _write_fake_npx_package(cache_root: Path) -> None:
+    package_dir = (
+        cache_root
+        / "_npx"
+        / "fixture-cache"
+        / "node_modules"
+        / "@modelcontextprotocol"
+        / "server-filesystem"
+    )
+    package_dir.mkdir(parents=True)
+    (package_dir / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "@modelcontextprotocol/server-filesystem",
+                "version": "1.2.3",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (package_dir / "index.js").write_text("export {};\n", encoding="utf-8")
+
+
+def test_npx_build_identity_uses_posix_default_cache(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("npm_config_cache", raising=False)
+    monkeypatch.delenv("NPM_CONFIG_CACHE", raising=False)
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    monkeypatch.setattr(mcp_manager_mod.Path, "home", lambda: tmp_path)
+    _write_fake_npx_package(tmp_path / ".npm")
+    artifacts = _resolve_npx_package_artifacts(
+        ["@modelcontextprotocol/server-filesystem", "/tmp/workspace"]
+    )
+    assert artifacts
+    assert artifacts[0][0] == (
+        "server-package:@modelcontextprotocol/server-filesystem@1.2.3"
+    )
+
+
+@pytest.mark.parametrize("cache_env", ["npm_config_cache", "NPM_CONFIG_CACHE"])
+def test_npx_build_identity_honors_explicit_cache_override(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    cache_env: str,
+) -> None:
+    monkeypatch.delenv("npm_config_cache", raising=False)
+    monkeypatch.delenv("NPM_CONFIG_CACHE", raising=False)
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    cache_root = tmp_path / cache_env
+    monkeypatch.setenv(cache_env, str(cache_root))
+    _write_fake_npx_package(cache_root)
+
+    artifacts = _resolve_npx_package_artifacts(
+        ["@modelcontextprotocol/server-filesystem", "/tmp/workspace"]
+    )
+
+    assert artifacts
+    assert artifacts[0][0] == (
+        "server-package:@modelcontextprotocol/server-filesystem@1.2.3"
+    )
+
+
+def test_npx_build_identity_uses_windows_local_app_data_cache(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("npm_config_cache", raising=False)
+    monkeypatch.delenv("NPM_CONFIG_CACHE", raising=False)
+    local_app_data = tmp_path / "LocalAppData"
+    monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
+    _write_fake_npx_package(local_app_data / "npm-cache")
+
+    artifacts = _resolve_npx_package_artifacts(
+        ["@modelcontextprotocol/server-filesystem", "C:\\workspace"]
+    )
+
+    assert artifacts
+    assert artifacts[0][0] == (
+        "server-package:@modelcontextprotocol/server-filesystem@1.2.3"
+    )
 
 
 # --------------------------------------------------------------------
@@ -212,6 +304,17 @@ def _build_fake_env(
         mcp_manager_mod, "StdioServerParameters", _FakeStdioParams
     )
     monkeypatch.setattr(mcp_manager_mod, "ClientSession", _fake_client_session)
+    fake_material = mcp_manager_mod._McpExecutionBuildMaterial(
+        provider="mcp-stdio",
+        build_digest="a" * 64,
+        sources_manifest_hash="b" * 64,
+        artifacts=(("fixture-mcp-server", "c" * 64),),
+    )
+    monkeypatch.setattr(
+        mcp_manager_mod,
+        "_resolve_mcp_execution_build_material",
+        lambda _name, _config: fake_material,
+    )
     _FakeSession.instances.clear()
 
 
@@ -736,6 +839,11 @@ async def test_stdio_tool_freezes_host_execution_build_identity(
         monkeypatch,
         default_script={"tools": [_FakeTool("echo")]},
     )
+    monkeypatch.setattr(
+        mcp_manager_mod,
+        "_resolve_mcp_execution_build_material",
+        _ORIGINAL_MCP_BUILD_MATERIAL_RESOLVER,
+    )
     executable = tmp_path / "server.exe"
     executable.write_bytes(b"stable fake MCP executable")
     monkeypatch.setattr(
@@ -771,5 +879,42 @@ async def test_stdio_tool_freezes_host_execution_build_identity(
             path == "server-launcher:server.exe"
             for path, _digest in spec.execution_build_identity.artifacts
         )
+    finally:
+        await mgr.stop()
+
+
+@pytest.mark.asyncio
+async def test_server_without_build_identity_does_not_pollute_registry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _build_fake_env(
+        monkeypatch,
+        default_script={"tools": [_FakeTool("echo")]},
+    )
+    monkeypatch.setattr(
+        mcp_manager_mod,
+        "_resolve_mcp_execution_build_material",
+        lambda _name, _config: None,
+    )
+    registry = ToolRegistry()
+    mgr = MCPManager(
+        {
+            "enabled": True,
+            "servers": [
+                {
+                    "name": "srv",
+                    "enabled": True,
+                    "transport": "stdio",
+                    "command": "unresolved-server",
+                    "args": [],
+                }
+            ],
+        },
+        registry,
+    )
+    await mgr.start()
+    try:
+        assert mgr.server_state()["srv"] == "running"
+        assert registry.get("mcp_srv_echo") is None
     finally:
         await mgr.stop()
