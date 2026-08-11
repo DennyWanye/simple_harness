@@ -58,6 +58,17 @@ impact mapping 重新计算 fresh-run 集合，不能沿用 r13 的“18 项均 
 处理原则：恢复确切历史对象，或把所需 legacy source 作为带哈希的只读 fixture 入库；不得把
 base commit 静默改指一个不等价提交，也不得删除 fail-closed 校验来换绿灯。
 
+**2026-08-11 已修复**：从本机 `~/projects/deskpet` fetch 回确切对象
+`4d38979ec9d965afdef32243fe6492e1627eb8ec`，挂在保活 ref `refs/legacy-parity/base`
+（旁支历史 1348 commits，与 main 无共同祖先，不随 main push）。census fixture 重建后
+与冻结版逐字节一致，证明对象精确；mapping fixture 因近期重构导致 current callsite 行号
+漂移，已用 `scripts/acceptance/harness_parity_census.py --write --write-mapping` 重生成并
+提交。`test_product_turn_parity.py` 14 项全过。
+
+跨机器恢复命令（新 clone 上跑 parity 测试前执行一次）：
+`git fetch <deskpet-repo> 4d38979ec9d965afdef32243fe6492e1627eb8ec:refs/legacy-parity/base`。
+若 deskpet 仓库将来不可得，届时再落地"legacy source 只读 fixture 入库"方案。
+
 ## F4 — 临时性能基线 worktree 未收口
 
 `/private/tmp/wbui-r14-perf.mvedXE/baseline` 仍停在 detached `644ab16`，包含：
@@ -71,9 +82,15 @@ base commit 静默改指一个不等价提交，也不得删除 fail-closed 校�
 
 ## F5 — 未跟踪验证证据体积过大
 
-r10～r13 四个未跟踪 verification 目录合计约 `917 MiB / 648 files`，包含大量跨轮复制的
-截图与日志。不得直接 `git add -A`：应先做凭据/隐私扫描、去重并决定使用 Git LFS、外部归档，
-或只提交 manifest、receipt、auditor output 与最小 primary evidence。现阶段保留原文件，未删除。
+r10～r13 四个未跟踪 verification 目录合计约 `917 MiB / 648 files`（2026-08-11 复测实际
+占用 `3.6 GiB`），包含大量跨轮复制的截图与日志。不得直接 `git add -A`：应先做凭据/隐私
+扫描、去重并决定使用 Git LFS、外部归档，或只提交 manifest、receipt、auditor output 与最小
+primary evidence。
+
+**2026-08-11 用户定调**：证据全部留在本地不入库，`.gitignore` 已挡住
+`plans/2026-08-04-workbench-ui/verification/` 与各轮 `verification-manifest-r*.json`。
+后续计划：搭建自动归档到局域网 NAS 的流程（rsync/定时同步，归档前完成凭据/隐私扫描），
+落地前证据仅存在于本机工作区，注意不要误删。
 
 ## F6 — pnpm 11 构建脚本审批影响标准命令
 
@@ -83,6 +100,12 @@ r10～r13 四个未跟踪 verification 目录合计约 `917 MiB / 648 files`，�
 
 后续应采用项目级 pnpm 构建依赖白名单或受控 `approve-builds` 配置，并在干净安装环境复跑；
 不要关闭全局 pnpm 安全策略。
+
+**2026-08-11 已修复**：`tauri-app/pnpm-workspace.yaml` 原有占位符
+`allowBuilds: esbuild: "set this to true or false"`（无效值导致审批一直挂起），改为
+`esbuild: true` 项目级白名单。复跑 `pnpm run typecheck`（tsc 通过）与
+`pnpm test`（Vitest 67 files / 533 passed）均绿，esbuild postinstall 正常执行。
+全局 pnpm 安全策略未动。
 
 ## 建议恢复顺序
 
