@@ -335,10 +335,11 @@ provider launch、tool dispatch、terminal commit 与 delivery 都读取同一 e
 
 MCP host entry 只有在 DeskPet adapter、真实 stdio launcher 或 npx 已安装 package bundle、
 package lock 和 launch/config identity 都能冻结成 `ExecutionBuildIdentity` 时，才能进入
-durable Run catalog。无法证明来源的 MCP tool 仍可留在发现面，但会在 Run capture 前
-fail closed。主消息页 E2E 已验证 filesystem/playwright MCP 的 package 与 launcher digest
-进入 `capability_run_catalog_snapshot_entries.host_build_identity`，不会再因缺 build
-identity 阻断普通问答。
+生产 Registry 与 durable Run catalog。2026-08-11 起，无法证明来源的 MCP tool 在连接阶段
+即 fail closed 并从生产 Registry 隐藏，不能再污染普通问答的 prepared tool set；macOS npx
+缓存缺省路径按 `~/.npm` 解析（环境变量与 Windows `LOCALAPPDATA/npm-cache` 仍优先）。聚焦
+回归 `21 passed`，真实 Tauri 已确认 filesystem/playwright 均取得 build identity，原
+`prepared_tool_build_identity_missing` 不再出现。
 
 ## Task 11 已完成的持久 Reminder、草稿与外部确认恢复
 

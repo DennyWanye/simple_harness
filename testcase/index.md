@@ -12,9 +12,9 @@
 > **2026-07-18 v6 完成复验**：DeepResearch v6 已成为默认新 run 路由；Computer Use 真测覆盖 2024 国家统计局 exact 三次、2019 partial、generate-now 双击单 command 和重启/history，基础模型当时切换为 `deepseek-v4-pro` 1M。后端 815、前端 822、Rust 73 及 tsc/build/check 全绿。
 > **2026-07-20 v7 简化编排与文件交付**：新 run 默认 v7；Tokio 真机 run 显示 4 个真实子方向及逐项状态，重试原位更新且不重复为第 5 行。标准报告文件卡的打开、另存为、在文件夹中显示、复制路径均经真实点击；报告继续保存到既有 `DeepResearch` 目录，重启后历史投影保持唯一。该轮唯一 required 场景与 AC-1～AC-11 PASS；多类别矩阵为后续候选。
 >
-> **最后更新**: 2026-08-05（+ **Workbench UI 改版**验收用例组 `workbench-ui/` 已登记：
-> WB-1～12 + 错误态/空态/托盘 B10/几何回退 B8/companion B5，black-box oracle 于实现前定稿，
-> 状态 DRAFT 待执行；mac 真机 MCP，非 windows-mcp）
+> **最后更新**: 2026-08-11（+ **Workbench UI 改版**验收用例组 `workbench-ui/` 已定稿：
+> WB-1～12 + 错误态/空态/托盘 B10/几何回退 B8/companion B5；TC-WB-08 已补齐可编辑设置的可逆持久化闭环并区分只读状态卡。
+> 当前待 r14 按新 testcase lock 复验；r13 仅保留为历史证据。mac 真机 MCP，非 windows-mcp）
 > **历史更新**: 2026-07-26（Companion 长期成长手测已登记；S-6/S-7 自动化 PASS，
 > S-1 真实主消息 ingress 已执行但被 Relay 402 余额不足阻断，其余真人场景未执行）
 > **历史更新**: 2026-07-24（单主 Session 通用行动/能力包用例已 FROZEN 并进入
@@ -29,7 +29,7 @@
 
 | 文档 | 被测功能 / 范围 | 测试目的 | 用例数 | 是否需 windows-mcp |
 |---|---|---|---|---|
-| [workbench-ui/index.md](./workbench-ui/index.md) | **Workbench UI 改版（去桌宠、工作台化）**：主窗普通化、message-panel 移除、侧栏四视图（Chat/Skills/Artifacts/Settings）、会话列表迁位、companion 特权迁 main 窗（B5）、几何记忆与旧记录回退（B8）、托盘三项（B10）、桌宠代码全删、主题变量化、构建全绿。 | 按 acceptance WB-1～WB-12 + 非功能（错误态/空态/数据兼容）逐条可判定验收；WB-1..10 真机 MCP 手测，WB-9/11/12 脚本判定；gate manifest 草案见 `plans/2026-08-04-workbench-ui/gate-manifest-draft.md`；QA 第 1 轮缺口已回填（+红钮退出矩阵 B13/规模边界/删除边界，裁决 8–10）。 | 18（TC-WB-01～18；15 真机 + 3 脚本） | **否**（本轮 mac 真机 MCP；Windows 无真机验证，acceptance 列为已知限制随后续补验）。状态：DRAFT，待实现落地后执行 |
+| [workbench-ui/index.md](./workbench-ui/index.md) | **Workbench UI 改版（去桌宠、工作台化）**：主窗普通化、message-panel 移除、侧栏四视图（Chat/Skills/Artifacts/Settings）、会话列表迁位、companion 特权迁 main 窗（B5）、几何记忆与旧记录回退（B8）、托盘三项（B10）、设置可编辑项持久化/恢复与只读卡边界、桌宠代码全删、主题变量化、构建全绿。 | 按 acceptance WB-1～WB-12 + 非功能（错误态/空态/性能）验收；旧数据迁移经用户裁决退役。WB-1..10 真机 MCP 手测，WB-9/11/12 脚本判定；r13 仅作历史证据，最终结果待 r14 按新 testcase lock 复验。 | 18（TC-WB-01～18；15 真机 + 3 脚本） | **否**（本轮 mac 真机 MCP；Windows 无真机验证，acceptance 列为已知限制随后续补验）。状态：**用例已定稿，待 r14 复验** |
 | [2026-08-03-session-model-run-visibility/manual-test.md](./2026-08-03-session-model-run-visibility/manual-test.md) | **Session 模型一致性与 Agent 运行可见性**：Kimi 冷路径、≥10 轮多步骤任务、子任务失败后接管、后台 401/402 隔离、双 Session 停止与晚到事件。 | 验证 Session/root 冻结模型、Context Usage、公开读取模型、语义阶段图、紧凑脱敏工具详情与 terminal fence 在真实桌宠 UI 中一致。 | 5 required 场景 + 自动化回归入口 | **是，FROZEN / EXECUTED PASS（2026-08-03）** |
 | [2026-07-24-human-anchored-companion-growth/manual-test.md](./2026-07-24-human-anchored-companion-growth/manual-test.md) | **Companion 人类锚定长期成长**：明确纠正、三次隐式行为晋升、主动提醒/引用草稿、一次性例外、高风险零发送、新能力 genesis 与 builtin override 回滚。 | 验证真实主消息能沿唯一 Harness 形成证据→reflection→candidate→独立评测→Manager receipt→owner binding，并保持权限、跨 profile、重启、遗忘和回滚边界。 | 6 required 真人场景 + 2 自动化场景 | **是，PARTIAL/BLOCKED**：S-6/S-7 PASS；S-1 ingress 已真点但 provider HTTP 402；其余未执行 |
 | [2026-07-24-universal-action-capability-platform/manual-test.md](./2026-07-24-universal-action-capability-platform/manual-test.md) | **单主 Session 通用 Agent + 可执行能力包 + 自动自建/修复**：Manual/Auto、能力中心、Godot/Blender/Web 三类真实正向任务、损坏包拒绝、照片工具自建、首次失败重规划、三并行 root 与精确取消。 | 验证普通自然语言能完成“发现/安装/生成能力→跨工具执行→真实应用验证→失败后同模型续做”，且不恢复 Code 模式/正则 Driver 路由；覆盖 AC-1～AC-33 与 S-1～S-6。 | 2 value smoke + 7 边界 + 6 required | **是，FROZEN；挑战审计已通过，正在执行 full-audit** |

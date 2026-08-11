@@ -11,7 +11,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │              Tauri Shell (Rust, src-tauri/)                 │
-│  • 原生窗口（透明 / always-on-top / 可拖动）                  │
+│  • 普通原生工作台窗口（系统标题栏 / 可缩放 / 可拖动）          │
 │  • OS keychain 适配（DPAPI / Keychain / libsecret）          │
 │  • 系统托盘 + 自启 + 自动更新                                 │
 │  • 子进程：拉起 Python 后端                                   │
@@ -22,7 +22,7 @@
 │             Frontend (React + Vite, tauri-app/src/)         │
 │  • Workbench 工作台 UI（侧栏 + 会话/技能/产物/设置四视图）    │
 │  • 对话 UI / 设置面板 / Code Panel                            │
-│  • Zustand stores：sessions / providers / pet state          │
+│  • Zustand stores：sessions / providers / workbench state    │
 │  • WebSocket 连后端 control channel                          │
 └────────────────────────┬────────────────────────────────────┘
                          │ HTTP / WS (端口 8100)
@@ -81,7 +81,7 @@ deskpet/
 │   │   ├── components/       UI 组件（WorkbenchShell/Sidebar/SessionList/设置）
 │   │   ├── views/            四视图（Chat/Skills/Artifacts/Settings）
 │   │   ├── chat/             会话公共件（hydration/巡检面板/目录确认）
-│   │   ├── auth/             登录适配（manual / relay 两套）
+│   │   ├── auth/             本地身份签名与窗口控制凭据（无账户登录）
 │   │   ├── code-panel/       Code Panel + controlWs + InputBar
 │   │   └── stores/           Zustand stores
 │   ├── public/               静态资源

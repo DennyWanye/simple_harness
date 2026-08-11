@@ -9,12 +9,12 @@
 | 2 | 经**托盘「退出 Simple Harness」**退出应用（本用例退出路径写死为托盘退出；红钮/Cmd+Q 路径的几何恢复归 TC-WB-16 矩阵）。 | 应用完全退出。 |
 | 3 | 重新启动。 | 窗口恢复到步骤 1 的尺寸与位置（±系统缩放取整误差；对照截图）。**恢复成默认 1000×700 居中 = FAIL**（说明拖拽值仍被丢弃）。 |
 | 4 | 再重复一次"拖拽移动→退出→重启"（只动位置不动尺寸）。 | 位置同样被记忆恢复。 |
-| 5 | **B8 专门步骤（旧记录回退；路径与内容按裁决第 6 条写死）**：退出应用。dev 模式下几何文件固定为 `tauri-app/src-tauri/target/debug/userdata/window_geometry.json`；备份原文件（如有）后写入旧桌宠时代记录：`echo '{"width":500,"height":640}' > tauri-app/src-tauri/target/debug/userdata/window_geometry.json` | `cat` 确认文件内容为 `{"width":500,"height":640}`。 |
+| 5 | **B8 专门步骤（旧记录回退）**：退出应用；先从本轮 launcher 的 `DESKPET_USER_DATA_DIR` 确认 `<user_data>`，未设置时才使用 dev 默认 `tauri-app/src-tauri/target/debug/userdata`。备份 `<user_data>/window_geometry.json`（如有），再写入 `{"width":500,"height":640}`。 | `cat <user_data>/window_geometry.json` 确认为该内容；证据须同时记录本轮 `<user_data>` 绝对路径，禁止写到未被当前进程使用的目录。 |
 | 6 | 启动应用。 | **不崩溃、正常启动**；因 500×640 低于新 min 800×560，旧记录被拒绝，窗口回退为**默认 1000×700**（不是被 clamp 到 800×560——回退语义是"拒绝走默认"）。 |
 | 7 | 拖拽缩放一次后退出再重启。 | 新几何被正常写入并恢复（旧坏记录不产生持久污染）。 |
-| 8 | **对照分支（证明"低于 min 回退"真被命中而非一律回默认）**：退出后写入**合法且高于 min** 的旧记录：`echo '{"width":900,"height":700}' > tauri-app/src-tauri/target/debug/userdata/window_geometry.json`，启动。 | 900×700 记录被**接受并恢复**（窗口约 900×700，非默认 1000×700；**位置不作断言**——预置记录只含尺寸）——与步骤 6 的 500×640 被拒形成分支对照；若 900×700 也回默认则回退逻辑是"一律丢弃"，FAIL。 |
-| 9 | **畸形 JSON 第一枪（截断）**：退出后写入截断内容：`printf '{"width":500' > tauri-app/src-tauri/target/debug/userdata/window_geometry.json`，启动。 | **不崩溃**，正常启动，窗口回默认 1000×700。 |
-| 10 | **畸形 JSON 第二枪（空文件）**：退出后置空：`: > tauri-app/src-tauri/target/debug/userdata/window_geometry.json`，启动。 | **不崩溃**，正常启动，窗口回默认 1000×700。 |
+| 8 | **对照分支（证明"低于 min 回退"真被命中而非一律回默认）**：退出后向同一 `<user_data>/window_geometry.json` 写入**合法且高于 min** 的 `{"width":900,"height":700}`，启动。 | 900×700 记录被**接受并恢复**（允许标题栏/缩放造成 ±2px 取整误差，且绝不能回默认 1000×700；**位置不作断言**）——与步骤 6 的 500×640 被拒形成分支对照。 |
+| 9 | **畸形 JSON 第一枪（截断）**：退出后向同一文件写入截断内容 `{"width":500`，启动。 | **不崩溃**，正常启动，窗口回默认约 1000×700（允许 ±2px 取整误差）。 |
+| 10 | **畸形 JSON 第二枪（空文件）**：退出后置空同一文件，启动。 | **不崩溃**，正常启动，窗口回默认约 1000×700（允许 ±2px 取整误差）。 |
 | 11 | 恢复步骤 5 的备份或删除测试改写（自清理）。 | — |
 
 判定：步骤 1–10 全部满足才 PASS；步骤 6 崩溃或 clamp 到 800×560、步骤 8 误拒、步骤 9/10 崩溃均 FAIL。

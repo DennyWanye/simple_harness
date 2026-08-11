@@ -266,7 +266,7 @@ There are concrete contract gaps behind that summary: evaluators return incompat
 
 | Area | Current dependency/boundary |
 |---|---|
-| Desktop | Tauri/Rust, WebView2(Win)/WKWebView(mac), React/TypeScript, 自研 sprite Canvas2D 渲染（Live2D 已于 fork 时移除）. |
+| Desktop | Tauri/Rust, WebView2(Win)/WKWebView(mac), React/TypeScript，单窗 Workbench（Chat/Skills/Artifacts/Settings）；桌宠 sprite/Canvas2D 与 Live2D 渲染均已退休。 |
 | Backend | Python asyncio/FastAPI/WebSocket adapters. |
 | Persistence | SQLite/aiosqlite, WAL, optional sqlite-vec. |
 | Models/audio | Torch/CUDA, BGE-M3, Silero, faster-whisper, CosyVoice/edge-TTS. |

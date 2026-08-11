@@ -1,7 +1,8 @@
 # 升级造数配方（upgrade fixture）— Workbench UI 改版
 
 > 依据：oracle-clarifications.md 裁决第 10 条（E2/E3 基线锚点配方）。
-> 消费方：TC-WB-08 步骤 7（数据兼容）、TC-WB-12 步骤 7（冷启动基线锚点）。
+> 消费方：仅 TC-WB-12 步骤 7（冷启动基线锚点）。TC-WB-08 步骤 7 的旧数据升级
+> 验证已于 2026-08-09 经用户裁决退役，下文第三、四节仅保留历史，不得作为当前发布结论。
 > 基线 commit：**644ab16**（改版前）。共享测试目录下文以 `$FIX` 指代（执行时取绝对路径，如
 > `/tmp/wbui-upgrade-fixture-userdata`，全程不得混用其他 user-data）。
 
@@ -22,7 +23,7 @@ cd /tmp/wbui-baseline
 - 记录秒数，写入 `plans/2026-08-04-workbench-ui/baseline.md` 补记行（格式：
   `冷启动基线（644ab16，预热后第二次启动）：<N>s @ <机器/日期>`）。
 
-## 三、造数（在基线构建内，TC-WB-08 步骤 7 ②）
+## 三、历史：旧数据造数（已退役，不执行）
 
 以共享 user-data 启动基线构建：
 
@@ -39,7 +40,7 @@ DESKPET_USER_DATA_DIR=$FIX ./dev.sh   # 以仓库实际 dev 启动命令为准
 
 造数完成后快照留证：`ls -la $FIX` 与 `$FIX/config.toml` 的 endpoints 行（脱敏）入账。
 
-## 四、改版构建同 env 核对（TC-WB-08 步骤 7 ③）
+## 四、历史：改版构建同 env 核对（已退役，不执行）
 
 回到改版后工作区（主 worktree / HEAD）：
 

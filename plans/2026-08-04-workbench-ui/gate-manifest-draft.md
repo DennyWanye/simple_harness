@@ -11,27 +11,27 @@
 | scenario_id | 用例 | required | ui | gate_type | required_lanes | min_root_runs | input_class | cold_start | expected_run_created |
 |---|---|---|---|---|---|---|---|---|---|
 | WBUI-S01-window-form | TC-WB-01 | true | true | positive-value | [manual-mcp] | 1 | deterministic-ui | **true**（首启居中需冷 user-data） | false |
-| WBUI-S02-single-window | TC-WB-02 | true | true | positive-value | [manual-mcp, script] | 1 | deterministic-ui | false | false |
+| WBUI-S02-single-window | TC-WB-02 | true | true | positive-value | [manual-mcp, script] | 1 | deterministic-ui（步骤 3 发出一条真实消息） | false | **true** |
 | WBUI-S03-layout-nav | TC-WB-03 | true | true | positive-value | [manual-mcp] | 1 | deterministic-ui | false | true（步骤 6 切换压力后一次真实往返） |
-| WBUI-S04-chat-companion | TC-WB-04 | true | true | positive-value | [manual-mcp, script] | 1 | deterministic-ui（固定消息文本；B5 按裁决第 7/9 条两层配方：(a) `cd backend && uv run pytest tests/companion/ -q` 全绿 + (b) dev.sh stdout 捕获文件 grep companion_action 命中行原样入账（含 scope=companion_action、零 window_scope_denied）+ devtools `invoke("get_window_control_credential")` 非 error；真实卡片确认为加分非必需） | false | **true**（真实消息往返创建 run） |
+| WBUI-S04-chat-companion | TC-WB-04 | true | true | positive-value | [manual-mcp, script] | 1 | deterministic-ui（固定消息文本；B5 两层配方：(a) `cd backend && PYTHONPATH=.. uv run pytest tests/companion/ -q` 全绿 + (b) `./scripts/dev.sh` 日志中 companion_action accepted、零 window_scope_denied；裸 `get_window_control_credential` 被参数校验拒绝是安全硬化后的预期） | false | **true**（真实消息往返创建 run） |
 | WBUI-S05-session-list | TC-WB-05 | true | true | positive-value | [manual-mcp] | 1 | deterministic-ui | false | true（新建会话内一条真实往返） |
 | WBUI-S06-skills-view | TC-WB-06 | true | true | positive-value | [manual-mcp] | 1 | deterministic-ui | false | false |
-| WBUI-S07-artifacts-view | TC-WB-07 | true | true | positive-value | [manual-mcp] | 1 | deterministic-ui（预置文件 fixture） | false | false |
+| WBUI-S07-artifacts-view | TC-WB-07 | true | true | positive-value | [manual-mcp] | 1 | deterministic-ui（前置消息真实创建文档产物） | false | **true** |
 | WBUI-S08-settings-view | TC-WB-08 | true | true | positive-value | [manual-mcp] | 1 | deterministic-ui | false | false |
 | WBUI-S09-pet-removal | TC-WB-09 | true | false | positive-value | [script] | 1 | static-scan | false | false |
 | WBUI-S10-geometry-memory | TC-WB-10 | true | true | positive-value | [manual-mcp, script] | 1 | deterministic-ui（B8 步骤含文件 fixture） | **true**（重启恢复 + 旧记录回退） | false |
 | WBUI-S11-theme-vars | TC-WB-11 | true | false | positive-value | [script] | 1 | static-scan | false | false |
 | WBUI-S12-build-green | TC-WB-12 | true | false | positive-value | [script] | 1 | build-test | false | false |
-| WBUI-S13-backend-not-ready | TC-WB-13 | true | true | **negative-safety** | [manual-mcp] | 1 | fault-injection（进程级，非 mock 前端） | **true**（后端未就绪即启动态） | false |
+| WBUI-S13-backend-not-ready | TC-WB-13 | true | true | **negative-safety** | [manual-mcp] | 1 | fault-injection（Tauri supervisor 进程级，非 mock 前端；恢复也走 supervisor） | **true**（后端未就绪即启动态） | **true**（恢复后真实往返） |
 | WBUI-S14-tray-menu | TC-WB-14 | true | true | positive-value | [manual-mcp] | 1 | deterministic-ui | false | false |
 | WBUI-S15-empty-states | TC-WB-15 | true | true | positive-value | [manual-mcp] | 1 | deterministic-ui | **true**（零会话/零产物需冷 user-data） | true（步骤 3 空态转非空态的一次真实往返） |
 | WBUI-S16-close-exit-paths | TC-WB-16 | true | true | positive-value | [manual-mcp] | 1 | deterministic-ui（B13：红钮/Cmd+Q/托盘三路径退出矩阵 + 进程/端口核对） | **true**（每条路径退出后重启验几何恢复） | false |
-| WBUI-S17-scale-long-text | TC-WB-17 | true | true | positive-value | [manual-mcp] | 1 | deterministic-ui（fixture：≥30 会话含 120 字符无空格长标题 + ≥30 产物；800×560） | false | false |
+| WBUI-S17-scale-long-text | TC-WB-17 | true | true | positive-value | [manual-mcp] | 1 | deterministic-ui（fixture：≥30 会话含 80 字符无空格长标题 + ≥30 产物；800×560） | false | false |
 | WBUI-S18-session-delete-edge | TC-WB-18 | true | true | positive-value | [manual-mcp] | 1 | deterministic-ui（删当前打开会话/删后归属/删至空态） | false | true（步骤 2/5 各一次真实往返验证归属） |
 
 说明：
 - `min_root_runs=1` 全表统一（确定性 UI，无多样本需求）。
-- `expected_run_created`：**以矩阵字段为准**（true 的场景其用例步骤含真实消息往返：S03/S04/S05/S15/S18）；字段为 false 的场景不得以"顺手发消息"制造 run 计数噪声。
+- `expected_run_created`：**以矩阵字段为准**（true 的场景其用例步骤含真实消息往返：S02/S03/S04/S05/S07/S13/S15/S18）；字段为 false 的场景不得以"顺手发消息"制造 run 计数噪声。
 - lanes 命名沿用现有惯例语义：`manual-mcp` = 真机 MCP 真坐标点击 + 截图；`script` = 可复跑命令、输出入账。
 
 ## impact_paths 映射草案

@@ -9,7 +9,7 @@
 | 1 | 在聊天视图输入栏用真实键入/剪贴板粘贴：`用 markdown 回复：一个二级标题、一个三项无序列表、一段行内代码。` 并点击发送。 | 消息出现在消息流；后端**真实往返**（非本地回显）：收到助手回复。 |
 | 2 | 检查回复渲染。 | markdown 正常渲染：二级标题为标题样式、无序列表为列表样式、行内代码为代码样式（非裸 `#`/`-`/反引号字面文本）。 |
 | 3 | 观察输入栏旁的麦克风按钮；悬停查看 tooltip。 | 麦克风按钮存在且为**禁用态**（不可点击/点击无反应）；tooltip 说明语音待接入（如"语音输入待中转站 Realtime 接入"语义等价文案）。 |
-| 4 | **B5 专门步骤·第 (a) 层（裁决第 7 条，凭据链单测层）**：`cd backend && uv run pytest tests/companion/ -q` | 与**基线等值**：`9 failed, 643 passed`，且失败集合与改版前基线 `644ab16` **逐条一致**（见下方注）——companion 凭据链白名单/迁移断言层通过。 |
+| 4 | **B5 专门步骤·第 (a) 层（裁决第 7 条，凭据链单测层）**：`cd backend && PYTHONPATH=.. uv run pytest tests/companion/ -q` | **全绿**：退出码 0、0 failed；skip 逐项可解释。本轮基线为 `647 passed, 10 skipped`。旧 `9 failed` 集合已由提交 `75dc3eb` 修复，不再把历史失败当作通过条件。 |
 
 > **步骤 4 判据修正（2026-08-08，r7 实证）**：本步骤原写「pytest **全绿**（0 failed）」，
 > 与 TC-WB-12 / S12 把「9 failed, 643 passed」当基线等值验收的判据直接矛盾。
@@ -20,7 +20,9 @@
 > passed 640→643 是改版新增的 3 个测试全部通过。
 > ⇒ 这 9 个是**与本改版无关的既有基线失败**，「全绿」标准在基线上同样达不到，
 > 属措辞错误，故收敛为「与基线等值」。此 9 个失败另行作为既有缺陷跟踪，不在本改版验收范围。
-| 5 | **B5 专门步骤·第 (b) 层（真机连接 scope 证据；取证配方=裁决第 9 条）**：① 以 `dev.sh 2>&1 | tee /tmp/wb04-dev.log` 方式启动（dev.sh 终端 stdout 已合流后端 uvicorn 日志），等应用启动完成、进入聊天视图；② 执行 `grep -aE "companion_action" /tmp/wb04-dev.log` 检索连接建立行；③ **canonical 触发**：真机打开 devtools 控制台（withGlobalTauri 已开启），执行一次 `await window.__TAURI__.core.invoke("get_window_control_credential")`，记录返回值。 | ② 的 grep **有命中**，把实际命中行**原样入账**并断言：含 `scope=companion_action`（字段样式以实测行为准，入账即判定）且捕获文件中**零** `window_scope_denied`（`grep -c "window_scope_denied" /tmp/wb04-dev.log` 为 0）、零 scope 降级记录；③ 的 invoke 返回**非 error 对象**（凭据签发成功）——消除 vacuous pass。零命中或任一 denied/降级即 FAIL。 |
+>
+> 2026-08-11：上述 9 项历史失败现已全部修复，当前 release gate 恢复为步骤 4 的全绿判据。
+| 5 | **B5 专门步骤·第 (b) 层（真机连接 scope 证据；behavior_change `WBUI-BC-03`）**：① 以 `./scripts/dev.sh 2>&1 | tee /tmp/wb04-dev.log` 启动，等应用完成启动并进入聊天视图；② `grep -aE "companion_action" /tmp/wb04-dev.log` 检索连接建立行；③ 真机打开 devtools，执行一次裸 `await window.__TAURI__.core.invoke("get_window_control_credential")` 并记录返回。 | ② 必须命中真实 `requested_scope=companion_action` 连接接受记录，且日志中零 `window_scope_denied`、零 scope 降级；③ 因挑战响应接口已安全硬化，裸 invoke **应被参数校验拒绝**，错误须指向缺少 `connectionId/controlEpoch/challenge/requestSeq/commandKind/requestHash/requestedScope` 等签名材料，而不是 scope denied。 |
 | 5b | **加分证据（非必需，裁决第 7 条）**：若会话中自然出现 companion 确认卡片，点击确认并观察结果。 | 卡片在主窗内出现且确认后动作端到端成功、无 scope denied——记为加分证据；未出现卡片**不判 FAIL**。 |
 | 6 | 检查聊天头部条。 | 当前会话标题、模型按钮、ContextRing、Harness 巡检开关在 ChatView 头部条可达（B4 能力不减）。 |
 

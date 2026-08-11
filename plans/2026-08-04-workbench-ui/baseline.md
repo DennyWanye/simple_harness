@@ -34,3 +34,28 @@ phase-3/4 收口时上述四命令重跑：任何新增 FAIL/error 即回归，�
   fork 前既有文件（controlWs 35、SettingsProviders 18、App 16…），deskpet 时代未做过
   lint 清理。本次改版新增/改造文件 lint 零错误（5 处新文件错误已修，3 处迁移模式定点
   豁免带理由）。lint 门口径 = 零新增错误。
+
+## 当前续跑基线（2026-08-11，r14 实质审计修正）
+
+- HEAD：`19c01d8153a73b1773e67da3e4c9b6afbb572d75`
+- 前端：`npm test` → 68 files / 553 tests PASS。
+- TypeScript：`npm run typecheck` → PASS。
+- Vite：`npm run build` → PASS；仅保留既有 chunk size warning。
+- Rust：`cargo test --lib` → 74 passed；`cargo check` → PASS，仅保留既有 dead-code warning。
+  本轮随模块删除移除 4 条已退役 keychain 旧测试，并新增 1 条模块/IPC 不得复活 canary，
+  因而相对 77 净减 3；当前权威输出为 74/0 failed。
+- MCP manager：`uv run pytest tests/test_deskpet_mcp_manager.py -q` → 21 passed，覆盖
+  POSIX `~/.npm`、Windows `LOCALAPPDATA/npm-cache`、大小写 cache env override，以及
+  execution build identity 不可证明时不向 durable registry 暴露工具。
+- Companion：`PYTHONPATH=/Users/denny/projects/simple_harness uv run pytest tests/companion/ -q`
+  → 647 passed / 10 skipped。若从 `backend/` 直接运行但未设置 `PYTHONPATH`，会在收集阶段
+  报 `ModuleNotFoundError: backend`；这是命令环境错误，不是产品回归。
+- lint：`npm run lint` → 151 errors / 4 warnings，仍为存量债务口径；相较 2026-08-05
+  的 166 errors 未恶化。本轮任何新增 lint error 仍阻断交付。
+- 真实 Provider：隔离 profile 选择 `kimi-k3`（Moonshot），真实出站
+  `POST https://chinzy.com/v1/chat/completions` 返回 HTTP 200，ChatView 收到
+  `KIMI3_OK`；此前 r12/r13 文档中的 HTTP 402 已不是当前事实。
+- 冷启动性能（TC-WB-12 步骤 7）：基线 worktree 已固定为
+  `/private/tmp/wbui-r14-perf.mvedXE/baseline` @ `644ab16`。两侧均需预热后测第二次
+  启动；最终原始起止值、可点击终点截图与 `current <= baseline + 3s` 结论待受保护的
+  macOS 钥匙串旧提示由用户点「拒绝」后补记，当前不得判 PASS。
