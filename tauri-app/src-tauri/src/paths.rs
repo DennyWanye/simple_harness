@@ -11,7 +11,7 @@
 //! refuses to start** (that's precisely when the user most needs it).
 //!
 //! Priority (per env var):
-//!   user_data_dir  → `$DESKPET_USER_DATA` || `%AppData%\deskpet`
+//!   user_data_dir  → explicit env || stable preference || portable || `%AppData%\deskpet`
 //!   user_log_dir   → `$DESKPET_USER_LOG`  || `<user_data>\logs`
 //!   user_models_dir → `$DESKPET_MODEL_ROOT` || `%LocalAppData%\deskpet\models`
 //!
@@ -22,6 +22,10 @@
 use std::path::{Path, PathBuf};
 
 pub type EnvLookup<'a> = &'a dyn Fn(&str) -> Option<String>;
+
+const USER_DATA_PREFERENCE_ENV: &str = "DESKPET_USER_DATA_PREFERENCE_FILE";
+const USER_DATA_PREFERENCE_DIR: &str = "simple-harness-bootstrap";
+const USER_DATA_PREFERENCE_FILE: &str = "user-data-dir";
 
 #[derive(Debug, Clone)]
 pub struct BaseDirs {
@@ -126,7 +130,48 @@ fn portable_userdata_dir() -> Option<PathBuf> {
     None
 }
 
-pub fn user_data_dir_with(base: &BaseDirs, env_lookup: EnvLookup<'_>) -> Option<PathBuf> {
+fn user_data_preference_path_with(
+    base: &BaseDirs,
+    env_lookup: EnvLookup<'_>,
+) -> Option<PathBuf> {
+    if let Some(v) = env_lookup(USER_DATA_PREFERENCE_ENV).filter(|s| !s.is_empty()) {
+        return Some(PathBuf::from(v));
+    }
+    base.app_data
+        .as_ref()
+        .map(|p| p.join(USER_DATA_PREFERENCE_DIR).join(USER_DATA_PREFERENCE_FILE))
+}
+
+fn read_user_data_preference_with(
+    base: &BaseDirs,
+    env_lookup: EnvLookup<'_>,
+) -> Option<String> {
+    let path = user_data_preference_path_with(base, env_lookup)?;
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+pub fn user_data_dir_with_preference(
+    base: &BaseDirs,
+    env_lookup: EnvLookup<'_>,
+    preference: Option<&str>,
+) -> Option<PathBuf> {
+    user_data_dir_with_candidates(
+        base,
+        env_lookup,
+        preference,
+        portable_userdata_dir(),
+    )
+}
+
+fn user_data_dir_with_candidates(
+    base: &BaseDirs,
+    env_lookup: EnvLookup<'_>,
+    preference: Option<&str>,
+    portable: Option<PathBuf>,
+) -> Option<PathBuf> {
     // 1. DESKPET_USER_DATA_DIR — 与 Python backend/paths.py 统一的 env 名
     //    (历史 bug: Rust 读 DESKPET_USER_DATA、Python 读 DESKPET_USER_DATA_DIR,
     //    名字不一致 → device_id/onboarding 和 config/db 落到不同目录)。
@@ -137,12 +182,23 @@ pub fn user_data_dir_with(base: &BaseDirs, env_lookup: EnvLookup<'_>) -> Option<
     if let Some(v) = env_lookup("DESKPET_USER_DATA").filter(|s| !s.is_empty()) {
         return Some(PathBuf::from(v));
     }
-    // 3. portable: frozen 安装时 <install>/userdata(与 Python portable 一致)。
-    if let Some(p) = portable_userdata_dir() {
+    // 3. 跨平台稳定偏好。偏好文件放在用户数据目录之外，目录迁移时不会把
+    //    指向新目录的指针一起搬走。
+    if let Some(v) = preference.filter(|s| !s.trim().is_empty()) {
+        return Some(PathBuf::from(v.trim()));
+    }
+    // 4. portable: frozen 安装时 <install>/userdata(与 Python portable 一致)。
+    //    稳定偏好优先，否则 debug 目录里残留的 target/debug/userdata 会把
+    //    用户在设置页明确选择的新目录静默压回旧路径。
+    if let Some(p) = portable {
         return Some(p);
     }
-    // 4. classic: %AppData%\deskpet。
+    // 5. classic: %AppData%\deskpet。
     base.app_data.as_ref().map(|p| p.join("deskpet"))
+}
+
+pub fn user_data_dir_with(base: &BaseDirs, env_lookup: EnvLookup<'_>) -> Option<PathBuf> {
+    user_data_dir_with_preference(base, env_lookup, None)
 }
 
 pub fn user_log_dir_with(base: &BaseDirs, env_lookup: EnvLookup<'_>) -> Option<PathBuf> {
@@ -171,7 +227,27 @@ pub fn user_models_dir_with(base: &BaseDirs, env_lookup: EnvLookup<'_>) -> Optio
 fn real_env(k: &str) -> Option<String> { std::env::var(k).ok() }
 
 pub fn user_data_dir() -> Option<PathBuf> {
-    user_data_dir_with(&BaseDirs::from_env(), &real_env)
+    let base = BaseDirs::from_env();
+    let preference = read_user_data_preference_with(&base, &real_env);
+    user_data_dir_with_preference(&base, &real_env, preference.as_deref())
+}
+
+pub fn user_data_preference() -> Option<String> {
+    read_user_data_preference_with(&BaseDirs::from_env(), &real_env)
+}
+
+pub fn write_user_data_preference(value: &Path) -> std::io::Result<()> {
+    let base = BaseDirs::from_env();
+    let path = user_data_preference_path_with(&base, &real_env)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "app data unavailable"))?;
+    write_user_data_preference_at(&path, value)
+}
+
+fn write_user_data_preference_at(path: &Path, value: &Path) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, value.to_string_lossy().as_bytes())
 }
 
 pub fn user_log_dir() -> Option<PathBuf> {
@@ -225,6 +301,19 @@ mod tests {
     }
 
     #[test]
+    fn user_data_preference_write_is_stable_and_trim_safe() {
+        let root = std::env::temp_dir().join(format!(
+            "simple-harness-paths-test-{}",
+            std::process::id()
+        ));
+        let preference_file = root.join("bootstrap").join("user-data-dir");
+        let chosen = root.join("chosen-data");
+        write_user_data_preference_at(&preference_file, &chosen).unwrap();
+        assert_eq!(std::fs::read_to_string(&preference_file).unwrap(), chosen.to_string_lossy());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn user_data_dir_env_override_wins() {
         let env = env_map(&[("DESKPET_USER_DATA", "D:/custom/deskpet")]);
         let out = user_data_dir_with(&base_win(), &env).unwrap();
@@ -273,6 +362,43 @@ mod tests {
         let env = env_map(&[("DESKPET_USER_DATA", "")]);
         let out = user_data_dir_with(&base_win(), &env).unwrap();
         assert_eq!(out, PathBuf::from("C:/Users/U/AppData/Roaming/deskpet"));
+    }
+
+    #[test]
+    fn user_data_dir_uses_stable_preference_after_env_and_portable() {
+        let env = env_empty();
+        let out = user_data_dir_with_preference(
+            &base_win(),
+            &env,
+            Some("F:/simple-harness-test-profile"),
+        )
+        .unwrap();
+        assert_eq!(out, PathBuf::from("F:/simple-harness-test-profile"));
+    }
+
+    #[test]
+    fn explicit_dir_env_wins_over_stable_preference() {
+        let env = env_map(&[("DESKPET_USER_DATA_DIR", "D:/externally-pinned")]);
+        let out = user_data_dir_with_preference(
+            &base_win(),
+            &env,
+            Some("F:/saved-preference"),
+        )
+        .unwrap();
+        assert_eq!(out, PathBuf::from("D:/externally-pinned"));
+    }
+
+    #[test]
+    fn stable_preference_wins_over_portable_candidate() {
+        let env = env_empty();
+        let out = user_data_dir_with_candidates(
+            &base_win(),
+            &env,
+            Some("F:/saved-preference"),
+            Some(PathBuf::from("C:/debug/userdata")),
+        )
+        .unwrap();
+        assert_eq!(out, PathBuf::from("F:/saved-preference"));
     }
 
     #[test]

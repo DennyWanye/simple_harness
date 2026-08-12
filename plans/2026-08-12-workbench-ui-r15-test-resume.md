@@ -46,34 +46,36 @@
 - `artifacts/r15-S05-04-new-roundtrip.png`
 - `artifacts/r15-S18-05-after-batch10.jpeg`（包含 S05 重命名会话的真实 UI 删除结果）
 
-### S08 / TC-WB-08 — FAIL（可逆子链已清理）
+### S07 / TC-WB-07 — PASS（修复后复测）
 
-已通过的子链：
+生产 Harness 的 `execute_prepared` 路径现与旧 `execute_tool` 路径一致生成 artifact envelope；
+相对路径只在可信的当前 Run workspace 内解析为绝对路径，原工具结果不被伪改。Tauri 文件动作
+白名单增加 `<user_data>/workspace/`，没有放宽到任意磁盘路径。
 
-1. 设置以内容区页面呈现，没有 backdrop/浮层；Provider、模型状态、预算、数据目录、自启等
-   主要能力可见，桌宠形象区不存在。
-2. 通过真实 UI 新增一次性 `wb08-reversible-fixture`，地址为本机拒绝端口、模型为
-   `wb08-test-model`；dummy key 在 secure field 与卡片均只显示掩码。停用后完全重启，fixture、
-   模型、默认模型、停用态均保持。
-3. 通过真实 UI 删除 fixture，离开设置再返回后仍不存在；原中转站顺序、启用态、模型未改变。
-4. 自启原值为关闭，系统观察面无对应 LaunchAgent。打开后 UI=1，系统生成
-   `/Users/denny/Library/LaunchAgents/SimpleHarness.plist` 且 `RunAtLoad=true`；重启后两者仍一致。
-   恢复关闭后 UI=0、plist 消失，最终重启仍无残留。
+Kimi3 真链路创建 `wb07-artifact-proof-2.txt` 后，消息流出现真实 ArtifactCard；点击“打开”由
+TextEdit 显示精确内容 `absolute artifact path verified`，点击“在文件夹中显示”由 Finder 选中
+目标文件。SessionDB 对应 tool message 为 `projection_kind=artifact_card`，路径为当前 workspace
+内绝对路径。
 
-阻断整体 PASS 的实测偏差：
+证据：
 
-1. testcase 将“模型上下文卡”定义为只读且不得有保存表单，但实际页面包含“压缩触发阈值”
-   输入以及“保存到全局 / 保存压缩模型”按钮，步骤 2–3 与冻结口径冲突。
-2. Provider 的删除按钮立即删除，没有出现 testcase 步骤 6 要求的确认动作。
-3. Agent 有效执行预算原值 15。键盘改为 16 后输入框一度显示 16，但离开设置再返回以及重启
-   后均回到 15，未完成后端持久化，步骤 7–8 FAIL。最终原值 15 已恢复。
-4. 数据目录 D 为 `.testenv/r15-main`，专用空目录 D' 为 `/private/tmp/wb08-data.XToEVR`，并明确
-   取消“同时移动现有数据”。UI 提示“下次启动从新路径读写”，但重启日志和 UI 当前生效均仍为
-   D，D' 未生效。实现核对同时显示 macOS 持久化仍为 TBD，且旧变量
-   `DESKPET_USER_DATA` 被优先级更高的 `DESKPET_USER_DATA_DIR` 覆盖。步骤 9–11 FAIL。
+- `verification/workbench-ui-20260812-fixes/artifacts/S07-real-chat-artifact-card.jpeg`
+- `verification/workbench-ui-20260812-fixes/artifacts/S07-artifact-opened-in-textedit.jpeg`
+- `verification/workbench-ui-20260812-fixes/artifacts/S07-artifact-show-in-finder.jpeg`
 
-最终状态：fixture 不存在、预算=15、数据目录=D、自启=关闭、LaunchAgent 不存在；D' 已在应用
-退出后移入废纸篓，可恢复。S08 以真实偏差判 FAIL，不以最终无残留冒充 PASS。
+### S08 / TC-WB-08 — PASS（修复后复测）
+
+初测暴露的删除确认、预算请求关联、macOS 数据目录持久化与模型上下文卡口径均已修复并复测：
+
+1. Provider/模型/API key、数据目录、Agent 预算、自启为可编辑项；Embedder 为只读状态卡；
+   模型上下文卡保留压缩阈值与压缩模型编辑能力，用例已同步实际产品边界。
+2. 一次性 Provider 的新增、停用、完全重启保持和删除均通过；删除前出现明确确认对话框，
+   dummy key 始终掩码，最终 fixture 无残留。
+3. Agent 预算通过带 `request_id` 的请求/响应持久化，15→16 后离开页面和完全重启仍为 16，
+   恢复 15 后再次重启保持 15。
+4. 数据目录页同时展示“当前生效目录”和“下次启动目录”。选择专用 D' 后当前仍诚实显示 D、
+   下次显示 D'；完全重启后 D' 成为当前目录。恢复 D 后再次重启，当前/下次均回到 D。
+5. 自启打开后 LaunchAgent `RunAtLoad=true`，重启保持；恢复关闭后 plist 消失且最终无残留。
 
 证据：
 
@@ -87,6 +89,9 @@
 - `artifacts/r15-S08-08-autostart-restored.jpeg`
 - `artifacts/r15-S08-09-final-clean-state.jpeg`
 - 对应 `r15-S08-*.log`
+- `verification/workbench-ui-20260812-fixes/artifacts/S08-final-restored-settings.jpeg`
+- `verification/workbench-ui-20260812-fixes/artifacts/S08-next-launch-directory-honest-state.jpeg`
+- `verification/workbench-ui-20260812-fixes/artifacts/S08-next-launch-directory-restored.jpeg`
 
 ### S10 / TC-WB-10 — PARTIAL（步骤 5–10 PASS）
 
@@ -115,35 +120,39 @@
 - `artifacts/r15-S10-10-empty-fallback.png`
 - 对应 `r15-S10-*.log`
 
-### S12 / TC-WB-12 — PARTIAL
+### S12 / TC-WB-12 — PASS（步骤 7 经用户批准移除）
 
 旧报告中 Rust 的三个 TCP 测试失败已在当前环境重跑消除：
 
-- `cargo test --lib`：`74 passed / 0 failed`；
-- companion：`647 passed / 10 skipped / 0 failed`。
+- `npm test`：`71 files / 539 passed / 0 failed`；
+- `cargo test --lib`：`79 passed / 0 failed`；
+- `npm run typecheck`、`npm run build`、`cargo check`：退出码 0；
+- companion：`647 passed / 10 skipped / 0 failed`（51.35 秒）。
 
 证据：
 
 - `artifacts/r15-S12-step2-cargo-test-rerun.log`
 - `artifacts/r15-S12-step6-companion-rerun.log`
 
-步骤 7 的 `644ab16` 与当前改版侧预热后二次冷启动性能对照仍未执行，不能判整项 PASS。
+2026-08-12 用户明确批准忽略步骤 7；该性能对照不执行、不阻断交付，且不得再次启动带
+Live2D 的 `644ab16` 历史基线。旧基线进程已退出，8100/5173 无残留监听。
 
-### S13 / TC-WB-13 — FAIL
+### S13 / TC-WB-13 — PASS（修复后复测）
 
 复现方式：精确终止由当前 Tauri 启动的 backend，并用空 listener 占用 8100，阻止 supervisor
 立即拉起新 backend；未 mock 前端状态。
 
-观察结果：
+修复后观察结果：
 
-- 短暂断连阶段，ChatView 显示“聊天通道已断开”与重试按钮，侧栏徽章为“未连接”；
-- supervisor 快速自愈时可恢复连接并真实发送；
-- 持续端口占用时，最终出现全屏“启动失败 / 端口 8100 已被其它程序占用”模态，遮住整个
-  Workbench。AX 后方虽仍存在 ChatView，但用户无法操作输入和 ChatView 重试。
-- 故障保持时点模态重试不会崩溃；释放 8100 后再次重试，backend 恢复，四视图可正常切换。
+- 运行期 backend 持续不可用时不再切到全屏启动失败遮罩；Workbench 保持可见。
+- 顶部运行时故障横幅说明 backend 不可用并提供重试；ChatView 状态条显示断连，侧栏徽章按
+  identity/chat 两链最差态显示“未连接”，输入/发送 fail closed，不吞消息。
+- 连接 secret 尚未读取或空 listener 接受 TCP 但不完成 WebSocket 握手时，前端均有有界失败，
+  不会永久停在 connecting。
+- 故障保持时点击重试不崩；释放 8100 后点击重试恢复，四视图均可切换。
+- 恢复后使用 Kimi3 真发送“请只回复：S13 恢复成功”，HTTP 200，消息流收到精确回复。
 
-该全屏模态不能替代 testcase 要求的“Workbench 可见运行期断连、发送不黑洞、ChatView 重试”。
-因此本轮如实判 FAIL。
+该结果闭合了 Workbench 可见运行期断连、侧栏最差态、发送不黑洞、重试恢复和真模型往返。
 
 证据：
 
@@ -152,6 +161,8 @@
 - `artifacts/r15-S13-03-recovered.png`
 - `artifacts/r15-app-cu.log`
 - `artifacts/r15-vite-cu.log`
+- `verification/workbench-ui-20260812-fixes/artifacts/S13-runtime-backend-unavailable.jpeg`
+- `verification/workbench-ui-20260812-fixes/artifacts/S13-recovered-kimi3-roundtrip.jpeg`
 
 ### S17 / TC-WB-17 — PASS
 
@@ -209,25 +220,37 @@
 - `artifacts/r15-S18-app.log`
 - `artifacts/r15-S18-restart-app.log`
 
+### S16 / TC-WB-16 — PARTIAL（路径 A/B PASS）
+
+- 路径 A 红钮：真实点击 macOS 红色关闭钮后，Simple Harness 主进程、backend 进程和 8100
+  LISTEN 均为零残留；重启恢复 1100×750、位置 (400,200)。
+- 路径 B Cmd+Q：真实键盘退出后同样全清；再次启动恢复同一几何。
+- 路径 C 托盘退出及步骤 8 托盘隐藏仍无法执行：Computer Use 对 SystemUIServer/ControlCenter
+  均 timeout，`Control+F8` 未聚焦状态项，`Fn+Control+F8` 又被执行器判为不支持。没有用代码
+  审计或红钮结果冒充托盘真点击。
+
+证据：
+
+- `verification/workbench-ui-20260812-fixes/artifacts/S16-geometry-anchor-before-red-close.jpeg`
+- `verification/workbench-ui-20260812-fixes/artifacts/S16-red-close-restart-geometry.jpeg`
+- `verification/workbench-ui-20260812-fixes/artifacts/S16-cmdq-restart-geometry.jpeg`
+
 ## 仍未完成或受阻
 
-- **S08**：已执行并明确 FAIL；需修复只读卡契约、Provider 删除确认、预算持久化与 macOS
-  数据目录切换后重测。
 - **S10**：步骤 1–4 的托盘退出/重启几何链未执行。
-- **S13**：已明确 FAIL，需产品修复后重测。
 - **S14**：Computer Use 无法附着 SystemUIServer 状态项，托盘三项与显隐/退出尚未新测。
-- **S16**：依赖红钮、Cmd+Q、托盘三条退出矩阵；托盘路径仍未新测。
-- **S12 step 7**：baseline/current 冷启动性能对照仍缺。
+- **S16**：红钮和 Cmd+Q 已 PASS；托盘退出与托盘隐藏仍未真测，所以整体保持 PARTIAL。
+- **S12 step 7**：用户已批准移除，不再是未完成项。
 
 ## 额外发现
 
-`npm run tauri:build -- --debug` 当前被 Tauri 版本检查直接阻断：
+Tauri JS API/CLI 已固定为与 Rust crate 匹配的 `2.10.1`，此前版本漂移阻断已消除：
 
 ```text
-tauri (v2.10.3) : @tauri-apps/api (v2.11.1)
+@tauri-apps/api 2.10.1 / @tauri-apps/cli 2.10.1
 ```
 
-本轮没有改依赖。UI 真测使用当前 `target/debug/simple-harness` 的哈希一致临时 `.app` 包装，
+UI 真测使用当前 `target/debug/simple-harness` 与 bundle 内主程序 SHA-256 一致的当前 `.app`，
 配单一 Vite 实例与源码 backend；没有使用旧 bundle 冒充当前代码。
 
 ## 收尾状态
@@ -239,4 +262,4 @@ tauri (v2.10.3) : @tauri-apps/api (v2.11.1)
 - S18 删除了 r15 测试 profile 内原有的全部测试会话，并按用例从空态新建 1 个验证会话；
   不涉及生产 profile。
 - 未覆盖用户已有的 `baseline.md` 修改与 `tauri-app/vite.config.ts.bak`。
-- 未提交、未 push。
+- 本轮产品修复、最新测试事实与架构状态在同一次交付提交；不 push，除非用户明确要求。

@@ -1,6 +1,6 @@
 # Simple Harness UI 当前架构
 
-> 最后更新：2026-08-11（Workbench r14 实质审计修正）
+> 最后更新：2026-08-12（Workbench r15 修复后真机复测）
 
 ## 0. Workbench 工作台架构（2026-08-05 改版落地）
 
@@ -47,6 +47,16 @@ DeskPet 的用户界面现在以暗色为默认外观。主窗口背景、功能
 - 标题栏展示的当前模型来自 Session 持久化绑定。新话题继承来源 Session 的模型与参数，
   历史会话和应用重启通过独立 hydration 请求重新加载绑定，不再短暂或永久回退到 Provider
   默认模型。
+- 设置页的数据目录分成“当前生效目录”与“下次启动目录”两个事实：Rust 端把偏好写入稳定的
+  bootstrap pointer，下一次进程启动再切换，不会在当前进程中伪装已生效；外部
+  `DESKPET_USER_DATA_DIR` 固定目录时明确拒绝 UI 改写。Agent 预算请求带 `request_id`，避免
+  页面初始化读取响应与用户保存响应串台；Provider 删除必须经过确认对话框。
+- 运行期 backend 不可用时，普通 Workbench 不再被启动失败全屏遮罩替换；App 保留主界面并
+  显示 `RuntimeBackendBanner`，ChatView 和侧栏仍按两条控制连接的最差态 fail closed。空 secret
+  与半开 WebSocket 握手均有有界失败和显式重试入口。
+- 生产 Harness 的 prepared tool 结果会在 last-mile 开关启用时生成 artifact envelope；消息持久化
+  标记 `artifact_card`，前端卡片动作只接受 Tauri 白名单内路径。第一方 file tool 的当前 Run
+  workspace 纳入白名单，但没有开放任意文件系统路径。
 
 ## 3. 边界
 
@@ -66,22 +76,23 @@ DeskPet 的用户界面现在以暗色为默认外观。主窗口背景、功能
 
 ## 4. 验证状态
 
-- 当前自动化：Vitest `533 passed`（账户 AuthAdapter 脚手架及对应无效测试删除后）；
-  Rust `74 passed`（移除 5 条已退役 keychain 旧测试并
-  新增 1 条“模块/IPC 不得复活”回归后净减 4）；companion `647 passed / 10 skipped`；MCP manager
-  `21 passed`；语音/身份绑定聚焦后端 `14 passed`；TypeScript、Vite build、`cargo check`
-  均 PASS。
+- 当前自动化：Vitest `539 passed`；Rust `79 passed`；companion `647 passed / 10 skipped`，以
+  `backend/.venv/bin/python -m pytest backend/tests/companion -q` 从仓库根执行；TypeScript、
+  Vite production build、`cargo check` 均 PASS。旧的 `cd backend && uv run pytest
+  tests/companion/ -q` 会因 package root 不在 `sys.path` 收集失败，不再作为有效入口。
 - Workbench 主题验收已固化为
   `python3 scripts/acceptance/workbench_ui_theme_audit.py`，扫描 11 个工作台自有文件，
   当前零字面量 hex 色值。
 - 当前源码 Windows 真机：设置页显示“Agent 有效执行预算”及暂停说明；临时设为 1 分钟后，
   Godot 项目目录选择卡片等待超过 2 分钟仍保持“需要你确认”，验收后已恢复 15 分钟。
 - 当前源码 macOS 实机：普通单窗 Workbench 在 800×560 下完成 30 会话、80 字符长标题、
-  30 产物与四视图切换；设置页自启开关经 Cmd+Q 重启保持，关闭后 LaunchAgent 清除。
-  当前 Provider 固定 `kimi-k3`（Moonshot），真实出站到兼容接口返回 HTTP 200，ChatView
-  收到 `KIMI3_OK`；此前 r12 的 HTTP 402 已失效。r13 虽达到形式上的
-  `READY_FOR_AUDIT`，但独立实质审计发现设置持久化、几何异常分支、运行期断连、删除即时态
-  与冷启动性能证据缺口，因此未 finalize，正由 r14 重新冻结并补测。
+  30 产物与四视图切换；会话删除即时态/重启/删至零/空态新建全部通过。设置页 Provider、
+  预算、数据目录、自启均完成修改→重启保持→恢复原值→无残留闭环。Kimi3 真链路创建文件后，
+  ArtifactCard 的打开与 Finder 定位均通过；运行期 backend 故障恢复后，Kimi3 HTTP 200 并收到
+  `S13 恢复成功`。红钮与 Cmd+Q 两条退出路径均全清 backend/8100 并恢复窗口几何。
+- macOS 托盘仍是本轮唯一 UI 能力阻断：Computer Use 无法附着 SystemUIServer/ControlCenter，
+  因此 TC-WB-10 步骤 1～4、TC-WB-14 与 TC-WB-16 托盘路径不得判 PASS。TC-WB-12 步骤 7
+  冷启动旧基线对照已由用户在 2026-08-12 明确移除，不再启动带 Live2D 的历史提交。
 - 已退役的单钥匙 Keychain 模块、renderer IPC/TypeScript binding 与 Rust `keyring` 依赖均已
   移除；Tauri launcher 不会在 backend spawn 时读取任何 legacy 单钥匙槽。Provider 凭据由
   backend registry 按需解析，避免 macOS 启动或打开设置页弹 Keychain 授权框。显式开发环境

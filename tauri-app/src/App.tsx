@@ -10,6 +10,7 @@ import { ContextTracePanel } from "./components/ContextTracePanel";
 import { WorkbenchShell, type WorkbenchView } from "./components/WorkbenchShell";
 import { dark, bannerStyle } from "./theme/components";
 import { StartupOverlay, type BootState } from "./components/StartupOverlay";
+import { RuntimeBackendBanner } from "./components/RuntimeBackendBanner";
 import { useBudgetToast } from "./hooks/useBudgetToast";
 import { useContextCompactedToast } from "./hooks/useContextCompactedToast";
 import {
@@ -36,7 +37,7 @@ import { useAudioChannel } from "./hooks/useAudioChannel";
 import { useAudioPlayer } from "./hooks/useAudioPlayer";
 import { useUpdateChecker } from "./hooks/useUpdateChecker";
 import { useAutostart } from "./hooks/useAutostart";
-import { useBackendLifecycle } from "./hooks/useBackendLifecycle";
+import { useBackendLifecycle, type Lifecycle } from "./hooks/useBackendLifecycle";
 import { useSessionsStore } from "./stores/sessionsStore";
 import { BACKEND_PORT } from "./backendPort";
 import { VOICE_INPUT_ENABLED } from "./voiceAvailability";
@@ -93,6 +94,10 @@ function App() {
   const [bootState, setBootState] = useState<BootState>("starting");
   const [bootError, setBootError] = useState<string | null>(null);
   const [bootAttempt, setBootAttempt] = useState(0);
+  // Runtime supervisor exhaustion is not an initial boot failure. Keep the
+  // workbench mounted so ChatView and Sidebar can expose their disconnected
+  // states and recovery controls instead of covering them with StartupOverlay.
+  const [runtimeBackendError, setRuntimeBackendError] = useState<string | null>(null);
 
   // Poll the Rust side for the shared secret. Pure polling — no side
   // effects on the backend process. Safe to replay on HMR, F5, and the
@@ -159,6 +164,21 @@ function App() {
       } catch (e) {
         const msg = typeof e === "string" ? e : (e as Error)?.message ?? String(e);
         console.warn("[bootstrap] start_backend failed:", msg);
+        // A dev hot-reload or a duplicate WebView bootstrap can race with an
+        // already-running child. If Rust has published a secret, that child
+        // belongs to this process and is authoritative; recover instead of
+        // turning a stale port-precheck error into a full-screen failure.
+        try {
+          const existingSecret = await core.invoke<string>("get_shared_secret");
+          if (existingSecret) {
+            setSecret(existingSecret);
+            setBootError(null);
+            setBootState("ready");
+            return;
+          }
+        } catch {
+          // No owned child is ready. Continue to the actionable boot error.
+        }
         // Also peek at Rust's cached error (richer if spawn_once tripped
         // port-in-use or SHARED_SECRET timeout) — prefer that message.
         try {
@@ -171,6 +191,30 @@ function App() {
       }
     })();
   }, [bootAttempt]);
+
+  // Last-resort reconciliation for dev WebView/HMR state: a failed overlay
+  // must not outlive a backend that this same Tauri process already owns.
+  useEffect(() => {
+    if (bootState !== "failed") return;
+    let cancelled = false;
+    void (async () => {
+      const core = await import("@tauri-apps/api/core").catch(() => null);
+      if (!core) return;
+      try {
+        const existingSecret = await core.invoke<string>("get_shared_secret");
+        if (!cancelled && existingSecret) {
+          setSecret(existingSecret);
+          setBootError(null);
+          setBootState("ready");
+        }
+      } catch {
+        // The failure is real; preserve the actionable overlay.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [bootState]);
 
   // P3-S8 — handlers bound to the startup error card buttons.
   const handleBootRetry = useCallback(async () => {
@@ -198,6 +242,25 @@ function App() {
       console.warn("[bootstrap] open_log_dir failed:", e);
     }
   }, []);
+
+  const handleRuntimeBackendRetry = useCallback(async () => {
+    setRuntimeBackendError(null);
+    const core = await import("@tauri-apps/api/core").catch(() => null);
+    if (!core) {
+      void refreshSecret();
+      return;
+    }
+    try {
+      await core.invoke("clear_startup_error").catch(() => undefined);
+      const nextSecret = await core.invoke<string>("start_backend");
+      if (!nextSecret) throw new Error("Backend returned an empty SHARED_SECRET");
+      setSecret(nextSecret);
+      void refreshSecret();
+    } catch (e) {
+      const msg = typeof e === "string" ? e : (e as Error)?.message ?? String(e);
+      setRuntimeBackendError(msg);
+    }
+  }, [refreshSecret]);
 
   const handleBootExit = useCallback(async () => {
     // P4-S21 #7: prefer the dedicated `app_exit` Rust command so the
@@ -230,15 +293,18 @@ function App() {
   // S12: react to supervisor events — on crash, clear the secret so any
   // active WebSockets see a reconnect cue; on restarted, poll for the
   // new secret and let the WS hooks re-handshake.
-  useBackendLifecycle((kind) => {
+  const handleBackendLifecycle = useCallback((kind: Lifecycle) => {
     if (kind === "crashed") {
       setSecret("");
     } else if (kind === "restarted") {
+      setRuntimeBackendError(null);
       void refreshSecret();
     } else if (kind === "dead") {
       console.warn("[backend] supervisor gave up — manual restart required");
-      // Re-surface as a startup error so the user gets the same dialog
-      // affordances (retry / open log dir) without having to re-invoke.
+      setSecret("");
+      // Runtime recovery stays inside the workbench. ChatView remains visible
+      // with its disconnected status/retry and Sidebar keeps the worst-state
+      // badge instead of being hidden behind the initial-boot overlay.
       (async () => {
         const core = await import("@tauri-apps/api/core").catch(() => null);
         let msg =
@@ -251,11 +317,11 @@ function App() {
             /* ignore */
           }
         }
-        setBootError(msg);
-        setBootState("failed");
+        setRuntimeBackendError(msg);
       })();
     }
-  });
+  }, [refreshSecret]);
+  useBackendLifecycle(handleBackendLifecycle);
 
   // Autostart toggle (enable run-on-login via plugin-autostart).
   const autostart = useAutostart();
@@ -883,7 +949,14 @@ function App() {
         onViewChange={setView}
         connectionState={state}
         banner={
-          petError ? (
+          runtimeBackendError ? (
+            <RuntimeBackendBanner
+              message={runtimeBackendError}
+              onRetry={() => void handleRuntimeBackendRetry()}
+              onOpenLogDir={() => void handleBootOpenLog()}
+              onDismiss={() => setRuntimeBackendError(null)}
+            />
+          ) : petError ? (
             // T4 搬迁：原桌宠列顶部错误条 → WorkbenchShell 顶部横幅插槽
             // （bannerStyle("error")，主题单源；用户手动 ✕ 关闭不自动消失）。
             <div

@@ -188,6 +188,11 @@ pub struct DataDirSetting {
     /// Value of `DESKPET_USER_DATA` as read from the env at startup.
     /// `None` if unset/empty.
     pub env_override: Option<String>,
+    /// Cross-platform preference stored outside the movable data root.
+    pub preference: Option<String>,
+    /// True when an external launcher env var has higher priority than the
+    /// persisted preference. The UI must not claim a restart will switch.
+    pub externally_pinned: bool,
     /// Whether the effective path currently exists.
     pub effective_exists: bool,
     /// Total size of the effective path in bytes — UI shows this as
@@ -198,9 +203,15 @@ pub struct DataDirSetting {
 
 #[command]
 pub fn get_data_dir_setting() -> Result<DataDirSetting, String> {
-    let env_override = std::env::var("DESKPET_USER_DATA")
+    let canonical_env = std::env::var("DESKPET_USER_DATA_DIR")
         .ok()
         .filter(|s| !s.is_empty());
+    let legacy_env = std::env::var("DESKPET_USER_DATA")
+        .ok()
+        .filter(|s| !s.is_empty());
+    let env_override = canonical_env.clone().or_else(|| legacy_env.clone());
+    let externally_pinned = canonical_env.is_some() || cfg!(not(windows)) && legacy_env.is_some();
+    let preference = paths::user_data_preference();
     let default = paths::BaseDirs::from_env()
         .app_data
         .map(|p| p.join("deskpet").to_string_lossy().to_string());
@@ -216,6 +227,8 @@ pub fn get_data_dir_setting() -> Result<DataDirSetting, String> {
         effective: effective_path.to_string_lossy().to_string(),
         default,
         env_override,
+        preference,
+        externally_pinned,
         effective_exists,
         effective_size_bytes,
     })
@@ -264,11 +277,28 @@ pub fn set_data_dir_preference(new_path: String) -> Result<DataDirSetting, Strin
     let path = validate_target_path(&new_path)?;
     let path_str = path.to_string_lossy().to_string();
 
+    if std::env::var("DESKPET_USER_DATA_DIR").ok().filter(|s| !s.is_empty()).is_some() {
+        return Err(
+            "当前数据目录由启动环境 DESKPET_USER_DATA_DIR 固定；请移除该外部设置后再切换"
+                .to_string(),
+        );
+    }
+    #[cfg(not(windows))]
+    if std::env::var("DESKPET_USER_DATA").ok().filter(|s| !s.is_empty()).is_some() {
+        return Err(
+            "当前数据目录由启动环境 DESKPET_USER_DATA 固定；请移除该外部设置后再切换"
+                .to_string(),
+        );
+    }
+
     // Ensure the target directory exists. If it doesn't, create it
     // here so the next deskpet launch doesn't fall back to %AppData%
     // because the override path is missing.
     std::fs::create_dir_all(&path)
         .map_err(|e| format!("无法创建目标目录 {}: {e}", path.display()))?;
+
+    paths::write_user_data_preference(&path)
+        .map_err(|e| format!("写入数据目录偏好失败：{e}"))?;
 
     // Persist via PowerShell. The single-quoted string literal prevents
     // PowerShell expansion; `validate_target_path` rejects characters
@@ -296,17 +326,12 @@ pub fn set_data_dir_preference(new_path: String) -> Result<DataDirSetting, Strin
         }
     }
     #[cfg(not(target_os = "windows"))]
-    {
-        // macOS/Linux path TBD when those builds ship — for now the
-        // command simply succeeds at validation and creates the dir.
-        // Future: append `export DESKPET_USER_DATA=...` to a shell
-        // profile file under the user's discretion.
-        let _ = path_str; // silence unused warning
-    }
+    let _ = path_str;
 
     // Update the current process so subsequent IPC calls observe the
     // new override immediately (the change otherwise wouldn't take
     // effect until restart since std::env reads at process start).
+    #[cfg(target_os = "windows")]
     std::env::set_var("DESKPET_USER_DATA", &path_str);
 
     get_data_dir_setting()

@@ -11,6 +11,7 @@ import { useSessionsStore } from "../stores/sessionsStore";
 import {
   __test_dispatch,
   __test_reset_companion_identity_status,
+  CONNECT_TIMEOUT_MS,
   controlWS,
 } from "./controlWs";
 
@@ -39,6 +40,11 @@ function resetStore() {
 
 describe("ws.dispatch chat final dedupe", () => {
   beforeEach(resetStore);
+
+  it("reports disconnected while the backend shared secret is unavailable", async () => {
+    await vi.waitFor(() => expect(controlWS.state()).toBe("disconnected"));
+    expect(CONNECT_TIMEOUT_MS).toBe(5000);
+  });
 
   it("does not append a duplicate assistant bubble when chat_response already showed the final text", () => {
     __test_dispatch({

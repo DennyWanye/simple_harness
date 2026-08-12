@@ -11677,6 +11677,7 @@ async def control_channel(ws: WebSocket):
                 logger.info("chat_turn_timeout_set minutes=%d", _mins)
                 await ws.send_json({
                     "type": "chat_turn_timeout_response",
+                    "request_id": raw.get("request_id"),
                     "payload": {"minutes": _mins},
                 })
 
@@ -11690,6 +11691,7 @@ async def control_channel(ws: WebSocket):
                     _cur = 15
                 await ws.send_json({
                     "type": "chat_turn_timeout_response",
+                    "request_id": raw.get("request_id"),
                     "payload": {"minutes": max(1, min(60, _cur))},
                 })
 

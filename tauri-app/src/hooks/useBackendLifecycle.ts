@@ -19,7 +19,7 @@
  */
 import { useEffect } from "react";
 
-type Lifecycle = "crashed" | "restarted" | "dead";
+export type Lifecycle = "crashed" | "restarted" | "dead";
 
 export function useBackendLifecycle(
   onEvent: (kind: Lifecycle, payload: string) => void,

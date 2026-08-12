@@ -1,6 +1,7 @@
 # 2026-08-11 Workbench UI r14 follow-up
 
-> 状态：生产代码收口已提交；r14 手工 E2E、性能证据与独立审计尚未完成。
+> 状态：r15 产品修复、自动化和可执行真机 E2E 已收口；macOS 托盘真点击仍受 Computer Use
+> 能力阻断，plan-test/gate 按用户要求继续暂停。
 > 约束：用户要求暂时不使用 plan-test，因此本文件只记录事实与后续顺序，不执行 gate。
 > 本地 `main` 锚点：`1283998`（MCP provenance fail-closed）与 `6032a50`
 >（Live2D/账户认证残留退役）。尚未推送远端。
@@ -131,11 +132,38 @@ backend 8100 均可正常监听。仍缺的是 TC-WB-10/14/16 托盘路径，以
 完整自动化通过后补托盘/退出/性能真机证据。实现或 testcase 发生变化后，应保留 r15 为历史
 记录；将来用户恢复 plan-test 时开干净的新轮次，不把旧证据包装成最终验收。
 
+## F8 — r15 修复后复测与剩余托盘阻断（2026-08-12）
+
+已完成并有当前 macOS 真 UI 证据：
+
+- **S07 PASS**：生产 `execute_prepared` 补齐 artifact envelope，消息流真实渲染 ArtifactCard；
+  “打开”由 TextEdit 显示精确内容，“在文件夹中显示”由 Finder 选中目标文件。
+- **S08 PASS**：Provider 删除确认、预算 request/response 关联、macOS 稳定数据目录偏好与
+  “当前/下次启动”诚实状态全部修复；Provider、预算、数据目录、自启均完成修改、重启、恢复和
+  无残留闭环。
+- **S13 PASS**：运行期 backend 故障保持在 Workbench 内，横幅/ChatView/侧栏最差态一致，
+  发送 fail closed、重试可用；恢复后 Kimi3 HTTP 200 并精确回复 `S13 恢复成功`。
+- **S16 路径 A/B PASS**：红钮与 Cmd+Q 后主进程、backend、8100 均零残留，两次重启均恢复
+  1100×750、位置 (400,200)。
+- 自动化：Vitest `539 passed`、Rust `79 passed`、companion `647 passed / 10 skipped`，
+  TypeScript、Vite build、`cargo check` 均绿；
+  companion 应从仓库根目录用 `backend/.venv/bin/python -m pytest backend/tests/companion -q`
+  执行。旧文档中的 `cd backend && uv run pytest tests/companion/ -q` 会因包根不在
+  `sys.path` 于收集阶段报 `ModuleNotFoundError: backend`，需后续统一修正文档入口。
+
+仍未闭环：
+
+- **S10** 步骤 1～4、**S14** 全项、**S16** 路径 C 与隐藏反证都要求真实点击 macOS 托盘。
+  Computer Use 对 `SystemUIServer` 与 `ControlCenter` 附着均 timeout；键盘状态菜单路径也不可用。
+  自动化/源码审计不能替代这组真点击，故保持 PARTIAL/BLOCKED。
+- **TC-WB-12 步骤 7** 已由用户在 2026-08-12 明确批准移除：不再执行、不阻断交付，禁止
+  再次启动带 Live2D 的 `644ab16` 历史基线。
+- plan-test skill 仍按用户要求暂停；没有创建/修改 gate ledger，也不宣称机器门 READY。
+
 ## 建议恢复顺序
 
-1. 提交本轮 r15 续测事实与本 follow-up，不纳入本地 verification 大文件。
-2. 修复 Tauri 版本兼容、TC-WB-08、TC-WB-13 与 TC-WB-07。
-3. 跑全量自动化并补 TC-WB-10/12/14/16 与受影响场景的真机证据。
-4. 全部通过后同步 `ARCHITECTURE/` 与 `PROJECT_STATUS.md`。
-5. 仅在用户明确恢复 plan-test 后，新开干净轮次完成机器门与独立审计。
-6. 只有用户明确要求时才 push 远端 `main`。
+1. 在能真实操作 macOS 状态栏的会话中补 TC-WB-10 步骤 1～4、TC-WB-14、TC-WB-16
+   路径 C/隐藏反证；不得用静态审计替代。
+2. 托盘结果完成后更新本报告与 `ARCHITECTURE/`；若仍失败，记录可复现的产品偏差。
+3. 仅在用户明确恢复 plan-test 后，新开干净轮次完成机器门与独立审计。
+4. 只有用户明确要求时才 push 远端 `main`。

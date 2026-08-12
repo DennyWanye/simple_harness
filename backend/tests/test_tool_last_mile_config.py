@@ -65,9 +65,9 @@ def test_t1_1_no_tools_section_all_defaults(tmp_path):
     # last_mile defaults
     lm = tools.last_mile
     assert isinstance(lm, ToolsLastMileConfig)
-    assert lm.artifact_envelope is False
-    assert lm.frontend_artifact_card is False
-    assert lm.tauri_artifact_ops is False
+    assert lm.artifact_envelope is True
+    assert lm.frontend_artifact_card is True
+    assert lm.tauri_artifact_ops is True
     assert lm.default_artifact_dir == ""
     assert lm.outline_preview_default is False
     assert lm.artifact_dir_retention_days == 30

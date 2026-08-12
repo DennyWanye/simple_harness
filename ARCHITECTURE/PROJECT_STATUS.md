@@ -1,6 +1,25 @@
 # DeskPet — 全局项目状态与架构完成度
 
-> **最后更新**：2026-08-09
+> **最后更新**：2026-08-12
+
+## 2026-08-12 里程碑：Workbench last-mile、设置与运行期恢复修复完成；托盘真测待外部入口
+
+- **ArtifactCard last-mile 已闭环**：生产 `execute_prepared` 生成 artifact envelope，SessionDB
+  记录 `artifact_card` 投影；相对路径只在当前可信 workspace 内解析。Tauri 白名单新增
+  `<user_data>/workspace/`。macOS 真机由 Kimi3 创建文件，TextEdit 打开与 Finder 定位均 PASS。
+- **设置持久化已闭环**：Provider 删除确认、Agent 预算 request-id 关联、macOS 稳定数据目录
+  bootstrap pointer、“当前/下次启动目录”诚实展示均落地；Provider、预算、目录、自启完成真 UI
+  修改、完全重启、恢复和无残留验证。
+- **运行期 backend 故障留在 Workbench 内**：新增运行时故障横幅；空 secret 与半开 WebSocket
+  握手有界失败，ChatView/侧栏显示最差态，发送 fail closed、重试恢复。故障释放后 Kimi3
+  HTTP 200 并精确回复 `S13 恢复成功`。
+- **本轮验证**：Vitest `539 passed`、Rust `79 passed`、companion
+  `647 passed / 10 skipped`、TypeScript、Vite build、`cargo check` 均绿；红钮与 Cmd+Q
+  两条退出路径主进程/backend/8100 全清，重启几何一致。
+- **未完成边界**：Computer Use 无法附着 macOS SystemUIServer/ControlCenter，故
+  TC-WB-10 托盘步骤、TC-WB-14、TC-WB-16 托盘退出/隐藏仍保持 PARTIAL/BLOCKED，不以代码审计
+  冒充真人点击。TC-WB-12 步骤 7 已由用户明确移除，禁止再次启动带 Live2D 的历史基线。
+- 本轮继续遵守用户要求：暂不使用 plan-test skill，不写 gate ledger，不宣称机器门 READY。
 
 ## 2026-08-09 里程碑：登录方式改为手动 provider，relay 与 default 会话双双下线
 

@@ -12,7 +12,7 @@
  * through the control WS to the BillingLedger (S8). The DailyBudgetStatus
  * contract (snake_case fields) is frozen in types/messages.ts.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Icon } from "./Icon";
 import { EmbedderStatusCard } from "./EmbedderStatusCard";
@@ -64,9 +64,21 @@ export function clampChatTurnTimeoutMinutes(minutes: number): number {
   );
 }
 
-export function buildChatTurnTimeoutSetMessage(minutes: number) {
+export function buildChatTurnTimeoutGetMessage(requestId: string) {
+  return {
+    type: "chat_turn_timeout_get",
+    request_id: requestId,
+    payload: {},
+  };
+}
+
+export function buildChatTurnTimeoutSetMessage(
+  minutes: number,
+  requestId?: string,
+) {
   return {
     type: "chat_turn_timeout_set",
+    ...(requestId ? { request_id: requestId } : {}),
     payload: { minutes: clampChatTurnTimeoutMinutes(minutes) },
   };
 }
@@ -535,13 +547,19 @@ function AutoModeToggle({
 // but the backend now counts only durable active execution intervals. This
 // asks for the persisted value and sends clamped updates immediately.
 // ----------------------------------------------------------------------
-function ChatTurnTimeoutSetting({
+export function ChatTurnTimeoutSetting({
   getChannel,
 }: { getChannel: () => ControlChannel | null }) {
-  const [turnTimeoutMin, setTurnTimeoutMin] = useState<number>(
-    CHAT_TURN_TIMEOUT_DEFAULT_MINUTES,
-  );
+  const [turnTimeoutMin, setTurnTimeoutMin] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [status, setStatus] = useState("正在读取…");
+  const requestSeqRef = useRef(0);
+  const activeRequestRef = useRef<string | null>(null);
+
+  const nextRequestId = useCallback((kind: "get" | "set") => {
+    requestSeqRef.current += 1;
+    return `chat-turn-timeout-${kind}-${requestSeqRef.current}`;
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -551,7 +569,12 @@ function ChatTurnTimeoutSetting({
 
     const requestCurrentValue = (ch: ControlChannel) => {
       try {
-        ch.send({ type: "chat_turn_timeout_get", payload: {} });
+        const requestId = nextRequestId("get");
+        activeRequestRef.current = requestId;
+        setStatus("正在读取…");
+        if (!ch.send(buildChatTurnTimeoutGetMessage(requestId))) {
+          throw new Error("控制通道尚未连接");
+        }
       } catch {
         /* retry on reconnect or next mount */
       }
@@ -567,8 +590,17 @@ function ChatTurnTimeoutSetting({
 
       unsubMessage = ch.onMessage((msg: IncomingMessage) => {
         if (msg.type !== "chat_turn_timeout_response") return;
+        if (
+          msg.request_id &&
+          activeRequestRef.current &&
+          msg.request_id !== activeRequestRef.current
+        ) {
+          return;
+        }
+        activeRequestRef.current = null;
         setTurnTimeoutMin(clampChatTurnTimeoutMinutes(msg.payload.minutes));
         setErr(null);
+        setStatus("已与后端同步");
       });
       unsubState = ch.onStateChange((state) => {
         if (state === "connected") requestCurrentValue(ch);
@@ -584,22 +616,28 @@ function ChatTurnTimeoutSetting({
       unsubMessage?.();
       unsubState?.();
     };
-  }, [getChannel]);
+  }, [getChannel, nextRequestId]);
 
   const onChange = useCallback(
     (raw: string) => {
       setErr(null);
       const next = clampChatTurnTimeoutMinutes(Number(raw));
       setTurnTimeoutMin(next);
+      setStatus("保存中…");
       try {
         const ch = getChannel();
         if (!ch) throw new Error("控制通道未连接");
-        ch.send(buildChatTurnTimeoutSetMessage(next));
+        const requestId = nextRequestId("set");
+        activeRequestRef.current = requestId;
+        if (!ch.send(buildChatTurnTimeoutSetMessage(next, requestId))) {
+          throw new Error("控制通道未连接");
+        }
       } catch (e) {
         setErr(String(e));
+        setStatus("保存失败");
       }
     },
-    [getChannel],
+    [getChannel, nextRequestId],
   );
 
   return (
@@ -616,7 +654,9 @@ function ChatTurnTimeoutSetting({
         min={CHAT_TURN_TIMEOUT_MIN_MINUTES}
         max={CHAT_TURN_TIMEOUT_MAX_MINUTES}
         step={1}
-        value={turnTimeoutMin}
+        value={turnTimeoutMin ?? ""}
+        disabled={turnTimeoutMin === null}
+        placeholder="读取中"
         onChange={(e) => onChange(e.target.value)}
         style={{
           width: 120,
@@ -633,6 +673,12 @@ function ChatTurnTimeoutSetting({
       <p style={hintStyle}>
         只累计 Agent、模型和工具实际工作的时间；等待你确认、选择文件夹或完成外部操作时暂停。默认 15 分钟，范围 1-60。
       </p>
+      <span
+        data-testid="chat-turn-timeout-status"
+        style={{ color: dark.textMuted, fontSize: 11 }}
+      >
+        {status}
+      </span>
       {err && <span style={{ color: "#fca5a5", fontSize: 11 }}>{err}</span>}
     </div>
   );
@@ -733,9 +779,9 @@ function DangerZoneSection() {
 // 2026-05-21 — 数据目录设置.
 //
 // Lets the user relocate %AppData%\deskpet to a roomier drive
-// without leaving the app. Persistence is via the user-level
-// `DESKPET_USER_DATA` env var, which `paths::user_data_dir()` reads
-// on every startup (see src-tauri/src/paths.rs §57).
+// without leaving the app. Persistence uses a small bootstrap preference
+// outside the movable data root; explicit launcher env vars remain
+// higher-priority and are surfaced as externally pinned.
 //
 // Why a separate section vs. nesting under DangerZone: the relocate
 // flow is reversible (you can always set the var back) so it doesn't
@@ -744,12 +790,36 @@ function DangerZoneSection() {
 // "I clicked the wrong button and now my chat history moved" is a
 // crap user experience even if it's not technically dangerous.
 // ----------------------------------------------------------------------
-interface DataDirSetting {
+export interface DataDirSetting {
   effective: string;
   default: string | null;
   env_override: string | null;
+  preference: string | null;
+  externally_pinned: boolean;
   effective_exists: boolean;
   effective_size_bytes: number;
+}
+
+/**
+ * Saving the bootstrap preference does not relocate the running backend.
+ * Keep the current-process facts stable until the application restarts and
+ * only surface the newly persisted next-launch preference.
+ */
+export function withNextLaunchDataDirPreference(
+  current: DataDirSetting,
+  updated: DataDirSetting,
+): DataDirSetting {
+  return {
+    ...current,
+    preference: updated.preference,
+  };
+}
+
+export function isDataDirPreferenceNoop(
+  current: DataDirSetting,
+  target: string,
+): boolean {
+  return current.effective === target && current.preference === target;
 }
 
 function formatMb(bytes: number): string {
@@ -803,12 +873,18 @@ function DataDirSection() {
     setOpErr(null);
     setOpMsg(null);
     if (!setting) return;
+    if (setting.externally_pinned) {
+      setOpErr(
+        "当前目录由启动环境变量固定；请移除 DESKPET_USER_DATA_DIR/DESKPET_USER_DATA 后重启，再从这里切换。",
+      );
+      return;
+    }
     const target = newPath.trim();
     if (!target) {
       setOpErr("请先选择或输入新路径");
       return;
     }
-    if (target === setting.effective) {
+    if (isDataDirPreferenceNoop(setting, target)) {
       setOpErr("新路径与当前路径相同，无需修改");
       return;
     }
@@ -825,13 +901,13 @@ function DataDirSection() {
     setBusy(true);
     try {
       const core = await import("@tauri-apps/api/core");
-      // Set the env var first so even if the move fails halfway,
-      // the next launch sees the new target and at worst boots empty.
+      // Persist the bootstrap pointer first so the next launch resolves the
+      // same target before the backend is spawned.
       const updated = await core.invoke<DataDirSetting>(
         "set_data_dir_preference",
         { newPath: target },
       );
-      setSetting(updated);
+      setSetting(withNextLaunchDataDirPreference(setting, updated));
 
       if (moveData && setting.effective_exists && setting.effective !== target) {
         const moved = await core.invoke<number>("move_data_dir_contents", {
@@ -855,8 +931,14 @@ function DataDirSection() {
 
   const handleReset = useCallback(async () => {
     if (!setting) return;
+    if (setting.externally_pinned) {
+      setOpErr(
+        "当前目录由启动环境变量固定，应用内不能覆盖；请先移除外部环境变量。",
+      );
+      return;
+    }
     const confirmed = window.confirm(
-      "将清除 DESKPET_USER_DATA 环境变量，下次启动 DeskPet 会回到默认目录 " +
+      "将数据目录偏好切回默认路径 " +
         "（%AppData%\\deskpet）。\n\n" +
         "注意：现有数据不会被自动搬回去 —— 你需要手动移动，或先在上方填入默认路径并勾选「移动」。\n\n继续？",
     );
@@ -866,17 +948,14 @@ function DataDirSection() {
     setOpMsg(null);
     try {
       const core = await import("@tauri-apps/api/core");
-      // Setting to the default path effectively "resets" — we just
-      // write the same value `%AppData%\deskpet` would expand to,
-      // so the env var stays consistent. Simpler than adding a
-      // dedicated "clear env var" command.
+      // Persist the platform default as the next-launch preference.
       if (setting.default) {
         const updated = await core.invoke<DataDirSetting>(
           "set_data_dir_preference",
           { newPath: setting.default },
         );
-        setSetting(updated);
-        setNewPath(updated.effective);
+        setSetting(withNextLaunchDataDirPreference(setting, updated));
+        setNewPath(setting.default);
         setOpMsg("已切回默认目录设置。请重启 Simple Harness 生效。");
       } else {
         setOpErr("无法识别默认目录（%AppData% 未设置？）");
@@ -939,11 +1018,24 @@ function DataDirSection() {
           )}
         </div>
 
+        <div style={{ color: dark.textMuted }}>已保存偏好</div>
+        <div style={{ fontFamily: "monospace" }}>
+          {setting.preference ?? (
+            <span style={{ color: dark.textFaint }}>(未设置)</span>
+          )}
+        </div>
+
         <div style={{ color: dark.textMuted }}>默认路径</div>
         <div style={{ fontFamily: "monospace", color: dark.textMuted }}>
           {setting.default ?? "—"}
         </div>
       </div>
+
+      {setting.externally_pinned && (
+        <div role="status" style={{ ...statusStyle, color: "#fde68a" }}>
+          当前目录由启动环境变量固定。为避免显示“已保存”但重启仍被覆盖，应用内切换已禁用。
+        </div>
+      )}
 
       <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
         <label style={{ fontSize: 12, color: dark.textMuted }}>新路径</label>
@@ -952,7 +1044,7 @@ function DataDirSection() {
             type="text"
             value={newPath}
             onChange={(e) => setNewPath(e.target.value)}
-            disabled={busy}
+            disabled={busy || setting.externally_pinned}
             placeholder="F:\deskpet\data"
             style={{
               flex: 1,
@@ -970,7 +1062,7 @@ function DataDirSection() {
           <button
             type="button"
             onClick={handlePickDir}
-            disabled={busy}
+            disabled={busy || setting.externally_pinned}
             style={btnStyle}
           >
             浏览…
@@ -989,7 +1081,7 @@ function DataDirSection() {
             type="checkbox"
             checked={moveData}
             onChange={(e) => setMoveData(e.target.checked)}
-            disabled={busy}
+            disabled={busy || setting.externally_pinned}
           />
           <span>同时移动现有数据到新位置（推荐）</span>
         </label>
@@ -999,7 +1091,7 @@ function DataDirSection() {
         <button
           type="button"
           onClick={handleApply}
-          disabled={busy}
+          disabled={busy || setting.externally_pinned}
           style={{
             ...btnStyle,
             background: "#2563eb",
@@ -1013,7 +1105,7 @@ function DataDirSection() {
         <button
           type="button"
           onClick={handleReset}
-          disabled={busy}
+          disabled={busy || setting.externally_pinned}
           style={btnStyle}
           data-testid="data-dir-reset"
         >

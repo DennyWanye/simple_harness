@@ -19,8 +19,9 @@
 //!   6. final compare: `final.starts_with(allowed_root)`
 //!
 //! Allowed roots (whitelist): `<user_data>/artifacts/`, `<user_data>/downloads/`,
-//! `<user_data>/OutPut/` (the user-visible Office/export output tree), and
-//! the runtime `DeepResearch/` report directory.
+//! `<user_data>/OutPut/` (the user-visible Office/export output tree),
+//! `<user_data>/workspace/` (per-run files created by first-party file tools),
+//! and the runtime `DeepResearch/` report directory.
 //! `<user_data>` resolution via [`crate::paths::user_data_dir`].
 //!
 //! See PRD §3 D3 + TDD §B TG-4 T4-1~T4-10.
@@ -56,7 +57,7 @@ impl From<ArtifactError> for String {
 // ─── Path canonicalization + whitelist ───────────────────────
 
 /// Allowed subtree names under `<user_data>` for artifact actions.
-const ALLOWED_SUBDIRS: &[&str] = &["artifacts", "downloads", "OutPut"];
+const ALLOWED_SUBDIRS: &[&str] = &["artifacts", "downloads", "OutPut", "workspace"];
 
 /// Return the list of allowed root paths (canonicalized).
 fn allowed_roots() -> Vec<PathBuf> {
@@ -455,6 +456,30 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
 
         assert!(result.is_ok(), "OutPut artifacts should be allowed: {result:?}");
+    }
+
+    #[test]
+    fn task_workspace_artifact_is_allowed_for_first_party_file_tools() {
+        let _guard = env_test_lock();
+        let base = std::env::temp_dir().join(format!(
+            "deskpet-artifact-workspace-root-test-{}",
+            std::process::id()
+        ));
+        let task_dir = base.join("workspace").join("task-proof");
+        std::fs::create_dir_all(&task_dir).unwrap();
+        let proof = task_dir.join("proof.txt");
+        std::fs::write(&proof, b"proof").unwrap();
+
+        let prev = std::env::var_os("DESKPET_USER_DATA_DIR");
+        std::env::set_var("DESKPET_USER_DATA_DIR", &base);
+        let result = canonicalize_for_artifact(proof.to_str().unwrap());
+        match prev {
+            Some(v) => std::env::set_var("DESKPET_USER_DATA_DIR", v),
+            None => std::env::remove_var("DESKPET_USER_DATA_DIR"),
+        }
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert!(result.is_ok(), "workspace artifacts should be allowed: {result:?}");
     }
 
     #[test]

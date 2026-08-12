@@ -34,6 +34,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 import { AddProviderModal, type ProviderDraft } from "./AddProviderModal";
+import { ConfirmDialog } from "../code-panel/ConfirmDialog";
 import type { ControlChannel } from "../ws/ControlChannel";
 import type { IncomingMessage } from "../types/messages";
 import { dark } from "../theme/components";
@@ -413,6 +414,7 @@ export function SettingsProviders({
   const [error, setError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Provider | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Provider | null>(null);
   // Re-entrancy guard independent of React state (button-disable already
   // prevents double-clicks; this also blocks programmatic / racy re-entry).
   // Auto-clear timers per provider; cleared on unmount so we never setState
@@ -554,13 +556,17 @@ export function SettingsProviders({
 
   const handleDelete = useCallback(
     (id: string) => {
-      if (!window.confirm(`确认删除 provider "${id}"？`)) return;
-      send(
-        buildRemoveMessage(id, providers.find((provider) => provider.id === id)),
-      );
+      const provider = providers.find((item) => item.id === id);
+      if (provider) setDeleteTarget(provider);
     },
-    [providers, send],
+    [providers],
   );
+
+  const confirmDelete = useCallback(() => {
+    if (!deleteTarget) return;
+    send(buildRemoveMessage(deleteTarget.id, deleteTarget));
+    setDeleteTarget(null);
+  }, [deleteTarget, send]);
 
 
   const handleSaveDraft = useCallback(
@@ -718,6 +724,21 @@ export function SettingsProviders({
           probedModels={probedModels}
           probeError={probeError}
           probing={probing}
+        />
+      )}
+      {deleteTarget && (
+        <ConfirmDialog
+          title="删除 Provider"
+          message={
+            <>
+              确定要删除 Provider <strong>{deleteTarget.name}</strong>（{deleteTarget.id}）吗？
+              此操作只删除该 Provider，不会修改其它 Provider 的顺序、模型或凭据。
+            </>
+          }
+          confirm_label="删除"
+          variant="danger"
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteTarget(null)}
         />
       )}
     </div>

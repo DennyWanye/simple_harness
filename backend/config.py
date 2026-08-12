@@ -323,13 +323,14 @@ class ConfigError(ValueError):
 class ToolsLastMileConfig:
     """``[tools.last_mile]`` — D1-D4 / D9 flag。
 
-    全 False / 默认值时与现状字节级一致（PRD §3 D10 末段 + TG-12 T12-1）：
+    显式全 False 时与旧路径字节级一致（PRD §3 D10 末段 + TG-12 T12-1）：
       - ``artifact_envelope=False`` 时 tool_result 不得 emit ``artifacts`` 键。
       - ``frontend_artifact_card=False`` 时 MessageBubble DOM 树未变化。
     """
-    artifact_envelope: bool = False         # D1 信封包装
-    frontend_artifact_card: bool = False    # D2 前端新卡片
-    tauri_artifact_ops: bool = False        # D3 Tauri shell 桥
+    # 测试阶段已完成能力出厂即开；显式 false 仍保留兼容/诊断路径。
+    artifact_envelope: bool = True          # D1 信封包装
+    frontend_artifact_card: bool = True     # D2 前端新卡片
+    tauri_artifact_ops: bool = True         # D3 Tauri shell 桥
     default_artifact_dir: str = ""          # D4 空 = 走旧 tempdir
     outline_preview_default: bool = False   # D9 PPT outline 预览
     artifact_dir_retention_days: int = 30

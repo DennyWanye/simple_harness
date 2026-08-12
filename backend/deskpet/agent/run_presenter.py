@@ -570,10 +570,26 @@ async def _present_tool_result(event: AgentEvent, context: RunPresentationContex
     except Exception:
         parsed = event.result
     public_result = project_public_tool_result(event.tool_name, parsed)
+    last_mile = getattr(getattr(context.config, 'tools', None), 'last_mile', None)
+    artifact_cards_enabled = bool(
+        getattr(last_mile, 'artifact_envelope', False)
+        and getattr(last_mile, 'frontend_artifact_card', False)
+    )
+    artifacts = (
+        list(public_result.get('artifacts') or [])
+        if artifact_cards_enabled and isinstance(public_result, Mapping)
+        else []
+    )
+    if not artifact_cards_enabled and isinstance(public_result, Mapping) and 'artifacts' in public_result:
+        public_result = dict(public_result)
+        public_result.pop('artifacts', None)
     public_text = public_result if isinstance(public_result, str) else json.dumps(public_result, ensure_ascii=False)
     await _send_both(context, {'type': 'tool_use_event', 'payload': _task_payload(context, {'kind': 'result', 'tool_name': event.tool_name, 'result': public_text, 'turn': event.iteration})})
     ok = event.outcome_status == 'succeeded'
-    result_frame = {'type': 'tool_result', 'payload': _task_payload(context, {'tool': event.tool_name, 'ok': ok, 'result': public_text, 'turn': event.iteration})}
+    result_payload = {'tool': event.tool_name, 'ok': ok, 'result': public_text, 'turn': event.iteration}
+    if artifacts:
+        result_payload['artifacts'] = artifacts
+    result_frame = {'type': 'tool_result', 'payload': _task_payload(context, result_payload)}
     if not ok:
         result_frame['payload']['status'] = event.outcome_status
     if event.outcome_error is not None:
@@ -581,7 +597,19 @@ async def _present_tool_result(event: AgentEvent, context: RunPresentationContex
     await _send_both(context, result_frame)
     if context.session_db is not None:
         try:
-            await context.session_db.append_message(session_id=context.session_id, role='tool', content=event.result if isinstance(event.result, str) else json.dumps(event.result, ensure_ascii=False), tool_call_id=event.tool_call_id or '', **_message_scope_kwargs(context))
+            artifact_projection = (
+                {'projection_kind': 'artifact_card', 'skip_embed': True}
+                if artifacts
+                else {}
+            )
+            await context.session_db.append_message(
+                session_id=context.session_id,
+                role='tool',
+                content=public_text,
+                tool_call_id=event.tool_call_id or '',
+                **artifact_projection,
+                **_message_scope_kwargs(context),
+            )
         except Exception as exc:
             logger.warning('chat_persist_tool_result_failed', error=str(exc))
 

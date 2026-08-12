@@ -119,6 +119,11 @@ fn kill_pid(pid: u32) {
 }
 
 pub struct BackendProcess {
+    /// Serialize overlapping frontend start requests. React StrictMode can
+    /// invoke the bootstrap effect twice before the first Python process has
+    /// published its secret; without this gate both calls pass the empty-
+    /// secret check and the second one reports our own port as occupied.
+    start_gate: tokio::sync::Mutex<()>,
     child: Mutex<Option<Child>>,
     /// 2026-08-05 真机发现（B13 违反）：supervisor 线程为了 wait() 会把
     /// `child` handle take 走，于是 backend 活着的绝大多数时间里
@@ -152,6 +157,7 @@ pub struct BackendProcess {
 impl BackendProcess {
     pub fn new() -> Self {
         Self {
+            start_gate: tokio::sync::Mutex::new(()),
             child: Mutex::new(None),
             child_pid: Mutex::new(None),
             shared_secret: Mutex::new(None),
@@ -419,6 +425,16 @@ pub async fn start_backend(
     app: AppHandle,
     state: State<'_, BackendProcess>,
 ) -> Result<String, String> {
+    // Single-flight the whole resolve/check/spawn/secret publication window.
+    // A concurrent StrictMode/HMR caller waits here, then observes the secret
+    // written by the first caller and returns it through the idempotent path.
+    let _start_guard = state.start_gate.lock().await;
+
+    eprintln!(
+        "[backend_launch] start_backend acquired gate secret_present={}",
+        state.shared_secret_clone().is_some()
+    );
+
     // P3-S3: Rust now resolves the backend path itself. Frontend no
     // longer passes python_path / backend_dir — those hardcoded values
     // were dev-box-only. See `backend_launch::resolve` for priority.
@@ -459,6 +475,7 @@ pub async fn start_backend(
     {
         let secret_guard = state.shared_secret.lock().map_err(|e| e.to_string())?;
         if let Some(existing) = secret_guard.as_ref() {
+            eprintln!("[backend_launch] reusing running backend");
             return Ok(existing.clone());
         }
     }

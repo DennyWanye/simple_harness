@@ -32,6 +32,7 @@ import type { CompanionEvent } from "../types/messages";
 
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 15000;
+export const CONNECT_TIMEOUT_MS = 5000;
 
 // ─── 控制连接身份（2026-08-04 Workbench UI 改版，B5）───────────────
 // 聊天通道（本模块单例 WS）的显式身份声明。改版前由 route hash 推断
@@ -156,6 +157,13 @@ const G = globalThis as unknown as GlobalWS;
 let ws: WebSocket | null = G.__deskpet_panel_ws__ ?? null;
 let reconnect_timer: number | null = null;
 let reconnect_attempt = 0;
+let connect_timeout: number | null = null;
+
+function clear_connect_timeout() {
+  if (connect_timeout == null) return;
+  globalThis.clearTimeout(connect_timeout);
+  connect_timeout = null;
+}
 
 type Listener = (msg: any) => void;
 const listeners: Set<Listener> = G.__deskpet_panel_listeners__ ?? new Set<Listener>();
@@ -224,10 +232,15 @@ async function open_socket() {
     secret = await invoke<string>("get_shared_secret");
   } catch (e) {
     console.warn("[session-control] get_shared_secret failed:", e);
+    current_state = "disconnected";
     schedule_reconnect();
     return;
   }
   if (!secret) {
+    // A missing secret means the backend is not ready. Do not leave the
+    // visible ChatView/sidebar stuck in the transient "connecting" state
+    // for the entire exponential-backoff interval.
+    current_state = "disconnected";
     schedule_reconnect();
     return;
   }
@@ -247,7 +260,19 @@ async function open_socket() {
     schedule_reconnect();
     return;
   }
+  const connectingSocket = ws;
+  clear_connect_timeout();
+  connect_timeout = globalThis.setTimeout(() => {
+    connect_timeout = null;
+    if (ws !== connectingSocket || connectingSocket.readyState !== WebSocket.CONNECTING) {
+      return;
+    }
+    console.warn("[session-control] websocket handshake timed out");
+    current_state = "disconnected";
+    connectingSocket.close();
+  }, CONNECT_TIMEOUT_MS) as unknown as number;
   ws.onopen = () => {
+    clear_connect_timeout();
     reconnect_attempt = 0;
     current_state = "connected";
     // A provisional stream is meaningful only on the socket that delivered
@@ -354,6 +379,7 @@ async function open_socket() {
     });
   };
   ws.onclose = () => {
+    clear_connect_timeout();
     current_state = "disconnected";
     companionActionInFlight = false;
     useSessionsStore.getState().clear_companion_provisional();

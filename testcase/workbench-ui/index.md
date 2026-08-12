@@ -1,9 +1,12 @@
 # Workbench UI 改版 — 验收测试用例组
 
-> 状态：**用例已定稿，待 r14 复验**（TC-WB-08 持久化覆盖于 2026-08-11 补强；既有 r13 仅作历史证据，不再代表本版 testcase lock）
+> 状态：**r15 修复后续测进行中**（2026-08-12：S07/S08/S13 已修复并真机 PASS，S16
+> 红钮/Cmd+Q PASS；S10/S14/S16 托盘路径仍受 Computer Use 无法附着 SystemUIServer 阻断；
+> TC-WB-12 步骤 7 经用户批准移除。r13 仅作历史证据。）
 > 对应验收：acceptance.md「Workbench UI 改版（去桌宠、工作台化）」WB-1～WB-12 + 非功能条款
 > 对应计划：`plans/2026-08-04-workbench-ui/plan.md` ｜ 行为契约：`plans/2026-08-04-workbench-ui/behavior-contract.md`
-> 最近历史 manifest：`plans/2026-08-04-workbench-ui/verification-manifest-r13.json` ｜ r14 须按本版用例重新冻结 testcase lock ｜ 冒烟清单：`plans/2026-08-04-workbench-ui/smoke-checklist.md`
+> 最近历史 manifest：`plans/2026-08-04-workbench-ui/verification-manifest-r13.json` ｜ plan-test
+> 当前按用户要求暂停，未创建新 gate ledger ｜ 冒烟清单：`plans/2026-08-04-workbench-ui/smoke-checklist.md`
 > 纪律：本组按 black-box 可观察行为判定；UI 用例（manual_required: true）须真机 MCP 真坐标点击 + 截图留证，backend/系统观察面只作 UI 操作后的持久化对账，禁止 WS 直注/脚本回放代替 UI 输入；WB-9/11/12 为脚本可判，命令输出原样入账。
 
 ## 用例清单
@@ -49,7 +52,7 @@
 | 非功能·空态 | TC-WB-15、TC-WB-18(步骤4) | |
 | 非功能·数据边界 | TC-WB-08(已退役项) | 产品不承诺 644ab16 旧会话/provider/relay key 迁移；旧数据删除，不作为本轮验收对象。当前版本设置持久化由步骤 4–16 与 WB-8 覆盖。 |
 | 行为契约 B13 | TC-WB-16 | 红钮=完全退出（裁决第 8 条） |
-| 非功能·冷启动性能 | TC-WB-12（步骤 7） | 阈值 ±3s（裁决第 4 条量化） |
+| 非功能·冷启动性能 | TC-WB-12（步骤 7） | **2026-08-12 用户裁决移除**；不再启动 `644ab16` 历史基线，不阻断本轮交付 |
 
 ## 覆盖矩阵（用例 → AC）
 
@@ -79,7 +82,8 @@
 1. **WB-6「详情/操作不回归」** — 已裁决（裁决第 1 条、behavior_change WBUI-BC-13）：两 tab 切换 / 列表渲染 / 详情打开 / operations 条件可见性对账 / 条件渲染自动化 / 旧 Skill Store 入口可达，已写入 TC-WB-06；默认态不强制三按钮常显。
 2. **WB-8「原设置项逐项保留」** — 已裁决（裁决第 2 条）：7 类能力核对表（Provider/模型及其中的 API key 管理、Embedder 状态卡、模型上下文卡、数据目录、执行预算、自启开关）+「桌宠形象」为唯一预期消失项，已写入 TC-WB-08 步骤 2；步骤 3–16 另锁定只读卡边界及四类可编辑设置的可逆持久化闭环。
 3. **WB-11「变量表集中单文件」** — 已裁决（裁决第 3 条）：双文件 token 体系合法；判据改为「色值字面量只允许出现在 theme/ 目录内」，已写入 TC-WB-11 步骤 1（主判据）。
-4. **非功能·性能「冷启动不显著劣化」** — 已裁决（裁决第 4 条）：阈值写死 ±3s，已写入 TC-WB-12 步骤 7。
+4. **非功能·性能「冷启动不显著劣化」** — 2026-08-12 用户新裁决：本轮移除 TC-WB-12
+   步骤 7，不再启动 `644ab16` 历史基线，不阻断交付；原 ±3s 口径仅保留为历史记录。
 5. **WB-1「首启居中」** — 已裁决（裁决第 5 条）：单显示器手工判定，窗口几何中心落在屏幕中心 ±10% 区域内即 PASS；多显示器仅记录不断言。已写入 TC-WB-01 步骤 2。
 6. **WB-10 旧几何文件位置** — 已裁决（裁决第 6 条）：写入本轮实际 `<user_data>/window_geometry.json`；`DESKPET_USER_DATA_DIR` 优先，未设置才使用 dev 默认目录。已写入 TC-WB-10 步骤 5。
 7. **B5 canonical 触发配方** — 已裁决（裁决第 7 条 + 第 9 条取证配方）：(a) Companion pytest 全绿；(b) `./scripts/dev.sh` 静态日志含 companion_action accepted、零 scope denied，且裸 credential invoke 因缺少挑战响应参数被校验拒绝。真实卡片确认为加分非必需。
@@ -88,4 +92,5 @@
 
 8. **红钮语义（B13）** — 裁决第 8 条：红钮=完全退出（等价托盘退出，沿用 Destroyed→exit(0) 防 8100 孤儿设计）。落 TC-WB-16 全用例。
 9. **B5 取证配方** — 裁决第 9 条：落 TC-WB-04 步骤 5 与 smoke 第 8 项（见上第 7 条）。
-10. **冷启动基线锚点** — 裁决第 10 条仍用于 TC-WB-12 步骤 7（644ab16 与改版侧均预热后测第二次启动）；旧数据升级造数部分经用户裁决退役。
+10. **冷启动基线锚点** — 2026-08-12 用户新裁决取代旧裁决：TC-WB-12 步骤 7 已移除，
+    禁止为本轮再次启动 `644ab16` 的带 Live2D 历史基线。

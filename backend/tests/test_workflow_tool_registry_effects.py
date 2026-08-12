@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import replace
+from pathlib import Path
 from types import MappingProxyType
+from types import SimpleNamespace
 
 import pytest
 
 from deskpet.tools import registry as module_registry
+from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.tools.registry import ToolRegistry, _normalize_with_parser, _schema_hash
 from deskpet.workflows import EffectKind
 from deskpet.workflows.effects import ToolOutcomeState
@@ -113,6 +116,76 @@ async def test_graph_staged_file_legacy_path_result_is_explicit_success() -> Non
     assert registry.get("write_file").outcome_parser_id == "artifact_envelope_v1"
     assert outcome.state is ToolOutcomeState.SUCCESS
     assert outcome.value["path"] == "C:/workspace/result.txt"
+
+
+@pytest.mark.asyncio
+async def test_graph_staged_file_prepared_path_gets_enabled_artifact_envelope() -> None:
+    registry = ToolRegistry()
+    registry.register(
+        "write_file",
+        "os",
+        _schema("write_file"),
+        lambda args, task_id: json.dumps(
+            {"path": "C:/workspace/result.txt", "bytes_written": 7}
+        ),
+        permission_category="write_file",
+    )
+    registry.set_tools_config_provider(
+        lambda: SimpleNamespace(
+            last_mile=SimpleNamespace(artifact_envelope=True)
+        )
+    )
+    prepared = registry.prepare_call(
+        "write_file", {"value": "content"}, "session", "stable-write"
+    )
+
+    outcome = await registry.execute_prepared(prepared, effect_id="effect-write")
+
+    assert outcome.state is ToolOutcomeState.SUCCESS
+    assert outcome.value["ok"] is True
+    assert outcome.value["artifacts"][0]["path"] == "C:/workspace/result.txt"
+    assert json.loads(outcome.value["result"])["bytes_written"] == 7
+
+
+def test_prepared_relative_artifact_path_is_resolved_for_ui_actions(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "result.txt"
+    output.write_text("ready", encoding="utf-8")
+    registry = ToolRegistry()
+    registry.register(
+        "file_write",
+        "file",
+        _schema("file_write"),
+        lambda args, task_id: json.dumps({"path": "result.txt", "bytes_written": 5}),
+        permission_category="write_file",
+    )
+    registry.set_tools_config_provider(
+        lambda: SimpleNamespace(last_mile=SimpleNamespace(artifact_envelope=True))
+    )
+    context = ToolExecutionContext(
+        scope_id="scope",
+        session_id="session",
+        request_id="request",
+        root_run_id="root-run",
+        turn_id="turn",
+        workspace=str(tmp_path),
+        capability_hash="capability-hash",
+        scope_hash="scope-hash",
+        run_id="run",
+        call_id="stable-write-relative",
+        effect_id="effect-write-relative",
+        trace_id="trace",
+    )
+
+    envelope = registry._prepared_artifact_envelope(
+        registry.get("file_write"),
+        json.dumps({"path": "result.txt", "bytes_written": 5}),
+        context,
+    )
+
+    assert envelope["artifacts"][0]["path"] == str(output)
+    assert json.loads(envelope["result"])["path"] == "result.txt"
 
 
 def test_shell_timeout_envelope_is_a_structured_failure() -> None:

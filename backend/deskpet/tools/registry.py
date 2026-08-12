@@ -3066,6 +3066,84 @@ class ToolRegistry:
             )
         return outcome
 
+    def _prepared_artifact_envelope(
+        self,
+        spec: ToolSpec,
+        raw: Any,
+        execution_context: ToolExecutionContext | None = None,
+    ) -> Any:
+        """Apply D1 to the durable prepared-execution path.
+
+        ``execute_tool`` historically added the last-mile envelope, while the
+        production Harness calls ``execute_prepared`` directly. That split
+        left successful file outcomes with only ``{path: ...}``, so the
+        presenter had no ``artifacts`` list to project into an ArtifactCard.
+        Keep the flag-OFF byte shape unchanged and wrap only artifact parsers.
+        """
+        if spec.outcome_parser_id != "artifact_envelope_v1":
+            return raw
+        if self._tools_config_provider is None:
+            return raw
+        try:
+            cfg = self._tools_config_provider()
+            enabled = bool(
+                getattr(getattr(cfg, "last_mile", None), "artifact_envelope", False)
+            )
+        except Exception as exc:  # noqa: BLE001 - config cannot break dispatch
+            logger.warning(
+                "tools_config_provider raised in prepared artifact %r: %s",
+                spec.name,
+                exc,
+            )
+            return raw
+        if not enabled:
+            return raw
+
+        payload = _result_payload(raw)
+        if isinstance(payload, Mapping) and (
+            payload.get("ok") is False or payload.get("error")
+        ):
+            return raw
+        if isinstance(payload, Mapping) and isinstance(payload.get("artifacts"), list):
+            return raw
+        try:
+            result_text = raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False)
+            from deskpet.tools.artifact import maybe_add_artifacts
+
+            envelope = maybe_add_artifacts(
+                envelope={"ok": True, "result": result_text, "error": None},
+                tool_name=spec.name,
+                enable=True,
+            )
+            workspace_value = (
+                execution_context.write_scope_root or execution_context.workspace
+                if execution_context is not None
+                else None
+            )
+            workspace_root = (
+                Path(workspace_value).resolve()
+                if workspace_value
+                else None
+            )
+            artifacts = envelope.get("artifacts")
+            if workspace_root is not None and isinstance(artifacts, list):
+                for artifact in artifacts:
+                    if not isinstance(artifact, dict) or not artifact.get("path"):
+                        continue
+                    artifact_path = Path(str(artifact["path"]))
+                    if artifact_path.is_absolute():
+                        continue
+                    try:
+                        resolved = (workspace_root / artifact_path).resolve(strict=True)
+                        resolved.relative_to(workspace_root)
+                    except (OSError, ValueError):
+                        continue
+                    artifact["path"] = str(resolved)
+            return envelope if envelope.get("artifacts") else raw
+        except Exception as exc:  # noqa: BLE001 - preserve the valid tool outcome
+            logger.warning("prepared artifact envelope failed for %r: %s", spec.name, exc)
+            return raw
+
     @staticmethod
     def _grant_value(grant: object, key: str) -> Any:
         if isinstance(grant, Mapping):
@@ -3650,6 +3728,7 @@ class ToolRegistry:
                     raise
 
             raw = await invoke() if not _inspect.iscoroutinefunction(spec.context_handler or spec.handler) else await asyncio.wait_for(invoke(), timeout=spec.timeout_seconds)
+            raw = self._prepared_artifact_envelope(spec, raw, execution_context)
             outcome = self._normalize_result(spec, raw)
             if self._tool_completion_latch is not None and execution_context is not None:
                 await self._tool_completion_latch.hold_completed_outcome(

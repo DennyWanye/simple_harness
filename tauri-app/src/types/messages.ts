@@ -37,6 +37,7 @@ export interface BudgetStatusMessage {
 
 export interface ChatTurnTimeoutResponse {
   type: "chat_turn_timeout_response";
+  request_id?: string;
   payload: { minutes: number };
 }
 

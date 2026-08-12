@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import ast
+import json
 from dataclasses import fields
 from pathlib import Path
 from types import MappingProxyType
@@ -1237,6 +1238,53 @@ async def test_presenter_does_not_duplicate_tool_lifecycle_as_progress() -> None
         message.get("projection_kind") != "workflow_progress"
         for message in db.messages
     )
+
+
+@pytest.mark.asyncio
+async def test_presenter_projects_enabled_artifact_to_live_and_durable_card() -> None:
+    ws, db = _WS(), _SessionDB()
+    context, _seen = _run_context(ws, db)
+    context.config.tools = SimpleNamespace(
+        last_mile=SimpleNamespace(
+            artifact_envelope=True,
+            frontend_artifact_card=True,
+        )
+    )
+    context.run_id = "run-artifact-ui"
+    presenter, state = build_product_run_presenter(), PresentationState()
+    envelope = {
+        "ok": True,
+        "result": '{"path":"report.txt"}',
+        "error": None,
+        "artifacts": [
+            {"kind": "file", "path": "report.txt", "title": "report.txt"}
+        ],
+    }
+
+    await presenter.present(
+        ToolResultEvent(
+            tool_call_id="call-artifact-ui",
+            tool_name="write_file",
+            result=json.dumps(envelope),
+            iteration=1,
+        ),
+        context,
+        state,
+    )
+
+    frame = next(item for item in ws.frames if item["type"] == "tool_result")
+    assert frame["payload"]["artifacts"][0]["path"] == "report.txt"
+    assert db.messages == [
+        {
+            "session_id": "session-r2",
+            "role": "tool",
+            "content": json.dumps(envelope, ensure_ascii=False),
+            "tool_call_id": "call-artifact-ui",
+            "projection_kind": "artifact_card",
+            "skip_embed": True,
+            "root_run_id": "run-artifact-ui",
+        }
+    ]
 
 
 @pytest.mark.asyncio
