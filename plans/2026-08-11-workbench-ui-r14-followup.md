@@ -1,7 +1,7 @@
 # 2026-08-11 Workbench UI r14 follow-up
 
-> 状态：r15 产品修复、自动化和可执行真机 E2E 已收口；macOS 托盘真点击仍受 Computer Use
-> 能力阻断，plan-test/gate 按用户要求继续暂停。
+> 状态：r15 产品修复、自动化与真机 E2E 已收口；macOS 托盘由用户现场手测确认，退出终态和
+> 重启几何已独立对账。plan-test/gate 按用户要求继续暂停。
 > 约束：用户要求暂时不使用 plan-test，因此本文件只记录事实与后续顺序，不执行 gate。
 > 本地 `main` 锚点：`1283998`（MCP provenance fail-closed）与 `6032a50`
 >（Live2D/账户认证残留退役）。尚未推送远端。
@@ -125,14 +125,14 @@ plan-test，没有创建或修改 gate ledger；以下是代码锚点 `7415f76` 
 - **TC-WB-07 BLOCKED**：消息流 `artifact_card` 的最后一公里投影仍未完成，不能只翻 flag。
 
 续测同时推翻了旧的“当前环境禁止 localhost 监听”结论：本机 IPv4/IPv6、Vite 5173 与
-backend 8100 均可正常监听。仍缺的是 TC-WB-10/14/16 托盘路径，以及 TC-WB-12 步骤 7
-同机冷启动性能对照，不再按统一沙箱阻断处理。
+backend 8100 均可正常监听。此阶段当时仍缺 TC-WB-10/14/16 托盘路径与 TC-WB-12 步骤 7
+同机冷启动性能对照；其后状态以 F8 为准，不再按统一沙箱阻断处理。
 
-修复顺序：先锁定兼容的 Tauri JS/Rust 版本并恢复 debug bundle；再修 TC-WB-08、13、07；
-完整自动化通过后补托盘/退出/性能真机证据。实现或 testcase 发生变化后，应保留 r15 为历史
-记录；将来用户恢复 plan-test 时开干净的新轮次，不把旧证据包装成最终验收。
+该阶段修复顺序为：先锁定兼容的 Tauri JS/Rust 版本并恢复 debug bundle；再修 TC-WB-08、
+13、07；完整自动化后补退出真机证据。实际收口结果见 F8；实现或 testcase 发生变化后，应
+保留 r15 为历史记录，将来用户恢复 plan-test 时开干净的新轮次，不把旧证据包装成最终验收。
 
-## F8 — r15 修复后复测与剩余托盘阻断（2026-08-12）
+## F8 — r15 修复后复测与托盘收口（2026-08-12）
 
 已完成并有当前 macOS 真 UI 证据：
 
@@ -145,25 +145,24 @@ backend 8100 均可正常监听。仍缺的是 TC-WB-10/14/16 托盘路径，以
   发送 fail closed、重试可用；恢复后 Kimi3 HTTP 200 并精确回复 `S13 恢复成功`。
 - **S16 路径 A/B PASS**：红钮与 Cmd+Q 后主进程、backend、8100 均零残留，两次重启均恢复
   1100×750、位置 (400,200)。
+- **S10/S14/S16 托盘路径 PASS**：用户在当前 macOS 打包版现场确认三项托盘文案、隐藏/显示、
+  托盘退出、非默认几何退出后恢复均正常；托盘退出后独立检查主进程/backend/8100 零残留，
+  当前版本重启日志与 1100×750 截图确认几何恢复。托盘 UI 动作来源明确记为用户现场手测，
+  未伪造 Computer Use 菜单截图。
 - 自动化：Vitest `539 passed`、Rust `79 passed`、companion `647 passed / 10 skipped`，
   TypeScript、Vite build、`cargo check` 均绿；
   companion 应从仓库根目录用 `backend/.venv/bin/python -m pytest backend/tests/companion -q`
   执行。旧文档中的 `cd backend && uv run pytest tests/companion/ -q` 会因包根不在
   `sys.path` 于收集阶段报 `ModuleNotFoundError: backend`，需后续统一修正文档入口。
 
-仍未闭环：
+剩余边界：
 
-- **S10** 步骤 1～4、**S14** 全项、**S16** 路径 C 与隐藏反证都要求真实点击 macOS 托盘。
-  Computer Use 对 `SystemUIServer` 与 `ControlCenter` 附着均 timeout；键盘状态菜单路径也不可用。
-  自动化/源码审计不能替代这组真点击，故保持 PARTIAL/BLOCKED。
 - **TC-WB-12 步骤 7** 已由用户在 2026-08-12 明确批准移除：不再执行、不阻断交付，禁止
   再次启动带 Live2D 的 `644ab16` 历史基线。
 - plan-test skill 仍按用户要求暂停；没有创建/修改 gate ledger，也不宣称机器门 READY。
 
 ## 建议恢复顺序
 
-1. 在能真实操作 macOS 状态栏的会话中补 TC-WB-10 步骤 1～4、TC-WB-14、TC-WB-16
-   路径 C/隐藏反证；不得用静态审计替代。
-2. 托盘结果完成后更新本报告与 `ARCHITECTURE/`；若仍失败，记录可复现的产品偏差。
-3. 仅在用户明确恢复 plan-test 后，新开干净轮次完成机器门与独立审计。
-4. 只有用户明确要求时才 push 远端 `main`。
+1. 产品/testcase 层的 r15 手测已收口；保留本地证据与用户现场确认来源说明。
+2. 仅在用户明确恢复 plan-test 后，新开干净轮次完成机器门与独立审计。
+3. 只有用户明确要求时才 push 远端 `main`。

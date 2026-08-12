@@ -90,9 +90,11 @@ DeskPet 的用户界面现在以暗色为默认外观。主窗口背景、功能
   预算、数据目录、自启均完成修改→重启保持→恢复原值→无残留闭环。Kimi3 真链路创建文件后，
   ArtifactCard 的打开与 Finder 定位均通过；运行期 backend 故障恢复后，Kimi3 HTTP 200 并收到
   `S13 恢复成功`。红钮与 Cmd+Q 两条退出路径均全清 backend/8100 并恢复窗口几何。
-- macOS 托盘仍是本轮唯一 UI 能力阻断：Computer Use 无法附着 SystemUIServer/ControlCenter，
-  因此 TC-WB-10 步骤 1～4、TC-WB-14 与 TC-WB-16 托盘路径不得判 PASS。TC-WB-12 步骤 7
-  冷启动旧基线对照已由用户在 2026-08-12 明确移除，不再启动带 Live2D 的历史提交。
+- macOS 托盘已由用户在当前打包版现场确认：三项文案、隐藏/显示、托盘退出与非默认几何重启
+  恢复均 PASS；托盘退出后独立检查主进程/backend/8100 零残留，当前版本重启日志与
+  1100×750 截图确认几何恢复。托盘 UI 动作证据来源明确为用户现场手测，不伪造 Computer Use
+  菜单截图。TC-WB-12 步骤 7 冷启动旧基线对照已由用户在 2026-08-12 明确移除，不再启动带
+  Live2D 的历史提交。
 - 已退役的单钥匙 Keychain 模块、renderer IPC/TypeScript binding 与 Rust `keyring` 依赖均已
   移除；Tauri launcher 不会在 backend spawn 时读取任何 legacy 单钥匙槽。Provider 凭据由
   backend registry 按需解析，避免 macOS 启动或打开设置页弹 Keychain 授权框。显式开发环境

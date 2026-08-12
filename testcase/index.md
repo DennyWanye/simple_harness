@@ -14,8 +14,9 @@
 >
 > **最后更新**: 2026-08-12（+ **Workbench UI 改版** r15 修复后续测：
 > WB-1～12 + 错误态/空态/托盘 B10/几何回退 B8/companion B5；TC-WB-08 已补齐可编辑设置的可逆持久化闭环并区分只读状态卡。
-> S07/S08/S13 已修复并真机 PASS，S16 红钮/Cmd+Q PASS；S10/S14/S16 托盘路径仍受
-> Computer Use 无法附着 SystemUIServer 阻断。TC-WB-12 步骤 7 经用户批准移除；r13 仅保留为历史证据。mac 真机 MCP，非 windows-mcp）
+> S07/S08/S13 已修复并真机 PASS；S10/S14/S16 托盘路径由用户在当前 macOS 打包版现场确认
+> PASS，退出终态和重启几何已独立对账。TC-WB-12 步骤 7 经用户批准移除；产品/testcase 层
+> 18 个场景已收口，plan-test gate 仍暂停；r13 仅保留为历史证据。mac 真机，非 windows-mcp）
 > **历史更新**: 2026-07-26（Companion 长期成长手测已登记；S-6/S-7 自动化 PASS，
 > S-1 真实主消息 ingress 已执行但被 Relay 402 余额不足阻断，其余真人场景未执行）
 > **历史更新**: 2026-07-24（单主 Session 通用行动/能力包用例已 FROZEN 并进入
@@ -30,7 +31,7 @@
 
 | 文档 | 被测功能 / 范围 | 测试目的 | 用例数 | 是否需 windows-mcp |
 |---|---|---|---|---|
-| [workbench-ui/index.md](./workbench-ui/index.md) | **Workbench UI 改版（去桌宠、工作台化）**：主窗普通化、message-panel 移除、侧栏四视图（Chat/Skills/Artifacts/Settings）、会话列表迁位、companion 特权迁 main 窗（B5）、几何记忆与旧记录回退（B8）、托盘三项（B10）、设置可编辑项持久化/恢复与只读卡边界、桌宠代码全删、主题变量化、构建全绿。 | 按 acceptance WB-1～WB-12 + 非功能（错误态/空态）验收；旧数据迁移及 TC-WB-12 冷启动对照均经用户裁决退役。WB-1..10 真机 MCP 手测，WB-9/11/12 脚本判定；r13 仅作历史证据。 | 18（TC-WB-01～18；15 真机 + 3 脚本） | **否**（本轮 mac 真机 MCP；Windows 无真机验证，acceptance 列为已知限制随后续补验）。状态：**r15 续测中；仅托盘路径仍受工具阻断** |
+| [workbench-ui/index.md](./workbench-ui/index.md) | **Workbench UI 改版（去桌宠、工作台化）**：主窗普通化、message-panel 移除、侧栏四视图（Chat/Skills/Artifacts/Settings）、会话列表迁位、companion 特权迁 main 窗（B5）、几何记忆与旧记录回退（B8）、托盘三项（B10）、设置可编辑项持久化/恢复与只读卡边界、桌宠代码全删、主题变量化、构建全绿。 | 按 acceptance WB-1～WB-12 + 非功能（错误态/空态）验收；旧数据迁移及 TC-WB-12 冷启动对照均经用户裁决退役。WB-1..10 真机手测，WB-9/11/12 脚本判定；r13 仅作历史证据。 | 18（TC-WB-01～18；15 真机 + 3 脚本） | **否**（本轮 mac 真机；Windows 无真机验证，acceptance 列为已知限制随后续补验）。状态：**r15 产品/testcase 层已收口；plan-test gate 按用户要求暂停** |
 | [2026-08-03-session-model-run-visibility/manual-test.md](./2026-08-03-session-model-run-visibility/manual-test.md) | **Session 模型一致性与 Agent 运行可见性**：Kimi 冷路径、≥10 轮多步骤任务、子任务失败后接管、后台 401/402 隔离、双 Session 停止与晚到事件。 | 验证 Session/root 冻结模型、Context Usage、公开读取模型、语义阶段图、紧凑脱敏工具详情与 terminal fence 在真实桌宠 UI 中一致。 | 5 required 场景 + 自动化回归入口 | **是，FROZEN / EXECUTED PASS（2026-08-03）** |
 | [2026-07-24-human-anchored-companion-growth/manual-test.md](./2026-07-24-human-anchored-companion-growth/manual-test.md) | **Companion 人类锚定长期成长**：明确纠正、三次隐式行为晋升、主动提醒/引用草稿、一次性例外、高风险零发送、新能力 genesis 与 builtin override 回滚。 | 验证真实主消息能沿唯一 Harness 形成证据→reflection→candidate→独立评测→Manager receipt→owner binding，并保持权限、跨 profile、重启、遗忘和回滚边界。 | 6 required 真人场景 + 2 自动化场景 | **是，PARTIAL/BLOCKED**：S-6/S-7 PASS；S-1 ingress 已真点但 provider HTTP 402；其余未执行 |
 | [2026-07-24-universal-action-capability-platform/manual-test.md](./2026-07-24-universal-action-capability-platform/manual-test.md) | **单主 Session 通用 Agent + 可执行能力包 + 自动自建/修复**：Manual/Auto、能力中心、Godot/Blender/Web 三类真实正向任务、损坏包拒绝、照片工具自建、首次失败重规划、三并行 root 与精确取消。 | 验证普通自然语言能完成“发现/安装/生成能力→跨工具执行→真实应用验证→失败后同模型续做”，且不恢复 Code 模式/正则 Driver 路由；覆盖 AC-1～AC-33 与 S-1～S-6。 | 2 value smoke + 7 边界 + 6 required | **是，FROZEN；挑战审计已通过，正在执行 full-audit** |

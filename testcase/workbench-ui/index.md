@@ -1,8 +1,8 @@
 # Workbench UI 改版 — 验收测试用例组
 
-> 状态：**r15 修复后续测进行中**（2026-08-12：S07/S08/S13 已修复并真机 PASS，S16
-> 红钮/Cmd+Q PASS；S10/S14/S16 托盘路径仍受 Computer Use 无法附着 SystemUIServer 阻断；
-> TC-WB-12 步骤 7 经用户批准移除。r13 仅作历史证据。）
+> 状态：**r15 产品/testcase 层已收口**（2026-08-12：S07/S08/S13 已修复并真机 PASS；
+> S10/S14/S16 托盘路径由用户在当前 macOS 打包版现场确认 PASS，退出终态与重启几何已独立
+> 对账；TC-WB-12 步骤 7 经用户批准移除。plan-test gate 仍按用户要求暂停，r13 仅作历史证据。）
 > 对应验收：acceptance.md「Workbench UI 改版（去桌宠、工作台化）」WB-1～WB-12 + 非功能条款
 > 对应计划：`plans/2026-08-04-workbench-ui/plan.md` ｜ 行为契约：`plans/2026-08-04-workbench-ui/behavior-contract.md`
 > 最近历史 manifest：`plans/2026-08-04-workbench-ui/verification-manifest-r13.json` ｜ plan-test

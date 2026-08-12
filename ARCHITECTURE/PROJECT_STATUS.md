@@ -2,7 +2,7 @@
 
 > **最后更新**：2026-08-12
 
-## 2026-08-12 里程碑：Workbench last-mile、设置与运行期恢复修复完成；托盘真测待外部入口
+## 2026-08-12 里程碑：Workbench last-mile、设置、恢复与托盘真测全部收口
 
 - **ArtifactCard last-mile 已闭环**：生产 `execute_prepared` 生成 artifact envelope，SessionDB
   记录 `artifact_card` 投影；相对路径只在当前可信 workspace 内解析。Tauri 白名单新增
@@ -14,11 +14,11 @@
   握手有界失败，ChatView/侧栏显示最差态，发送 fail closed、重试恢复。故障释放后 Kimi3
   HTTP 200 并精确回复 `S13 恢复成功`。
 - **本轮验证**：Vitest `539 passed`、Rust `79 passed`、companion
-  `647 passed / 10 skipped`、TypeScript、Vite build、`cargo check` 均绿；红钮与 Cmd+Q
-  两条退出路径主进程/backend/8100 全清，重启几何一致。
-- **未完成边界**：Computer Use 无法附着 macOS SystemUIServer/ControlCenter，故
-  TC-WB-10 托盘步骤、TC-WB-14、TC-WB-16 托盘退出/隐藏仍保持 PARTIAL/BLOCKED，不以代码审计
-  冒充真人点击。TC-WB-12 步骤 7 已由用户明确移除，禁止再次启动带 Live2D 的历史基线。
+  `647 passed / 10 skipped`、TypeScript、Vite build、`cargo check` 均绿；红钮、Cmd+Q 与托盘
+  三条退出路径主进程/backend/8100 全清，重启几何一致。托盘三项文案与隐藏/显示由用户在当前
+  macOS 打包版现场确认，退出终态和 1100×750 几何恢复由独立检查、启动日志与截图交叉验证。
+- **剩余边界**：产品/testcase 层的 18 个场景已收口；TC-WB-12 步骤 7 已由用户明确移除，禁止
+  再次启动带 Live2D 的历史基线。plan-test gate 仍暂停，不宣称机器门 READY。
 - 本轮继续遵守用户要求：暂不使用 plan-test skill，不写 gate ledger，不宣称机器门 READY。
 
 ## 2026-08-09 里程碑：登录方式改为手动 provider，relay 与 default 会话双双下线

@@ -93,7 +93,7 @@ TextEdit 显示精确内容 `absolute artifact path verified`，点击“在文�
 - `verification/workbench-ui-20260812-fixes/artifacts/S08-next-launch-directory-honest-state.jpeg`
 - `verification/workbench-ui-20260812-fixes/artifacts/S08-next-launch-directory-restored.jpeg`
 
-### S10 / TC-WB-10 — PARTIAL（步骤 5–10 PASS）
+### S10 / TC-WB-10 — PASS
 
 真实 user-data：`/Users/denny/projects/simple_harness/.testenv/r15-main`。
 
@@ -107,8 +107,11 @@ TextEdit 显示精确内容 `absolute artifact path verified`，点击“在文�
 - 写入 0 字节空文件：不崩，回默认 1000×701。
 - 结束后恢复测试前的 1100×750 几何文件。
 
-未完成：步骤 1–4 写死托盘退出路径；本轮 Computer Use 无法附着 macOS SystemUIServer
-状态项，不能用红钮退出冒充托盘退出。故 S10 整体仍为 PARTIAL。
+步骤 1–4 于 2026-08-12 由用户在当前 macOS 打包版现场完成并确认通过：非默认几何下经托盘
+「退出 Simple Harness」完全退出，重新启动后继续恢复 `1100×750 @ (400,200)`。退出后独立
+对账确认主进程、backend 与 8100 LISTEN 全部为零；随后由当前代码重新启动，启动日志明确
+`loaded 1100x750 logical pos=Some(400),Some(200)`，Computer Use 截图像素为 1100×750。
+结合上述现场真点击确认、系统对账与步骤 5–10 的既有实测，S10 全部 PASS。
 
 主要证据：
 
@@ -119,6 +122,7 @@ TextEdit 显示精确内容 `absolute artifact path verified`，点击“在文�
 - `artifacts/r15-S10-09-truncated-fallback.png`
 - `artifacts/r15-S10-10-empty-fallback.png`
 - 对应 `r15-S10-*.log`
+- `verification/workbench-ui-20260812-fixes/artifacts/S16-user-tray-exit-restart-geometry.jpeg`
 
 ### S12 / TC-WB-12 — PASS（步骤 7 经用户批准移除）
 
@@ -220,27 +224,38 @@ Live2D 的 `644ab16` 历史基线。旧基线进程已退出，8100/5173 无残�
 - `artifacts/r15-S18-app.log`
 - `artifacts/r15-S18-restart-app.log`
 
-### S16 / TC-WB-16 — PARTIAL（路径 A/B PASS）
+### S14 / TC-WB-14 — PASS（用户现场真机确认）
+
+2026-08-12 用户在当前 macOS 打包版现场完成托盘四步并明确确认通过：托盘菜单为
+「显示主窗」「隐藏主窗」「退出 Simple Harness」三项；隐藏后应用仍运行且托盘仍在；显示后
+主窗与原内容恢复；托盘退出后图标消失。退出后的独立系统对账确认主进程、backend 与 8100
+LISTEN 均为零残留。该项不伪造 Computer Use 菜单截图，UI 动作证据来源明确登记为用户现场
+手测确认，退出终态由进程/端口检查交叉验证。
+
+### S16 / TC-WB-16 — PASS
 
 - 路径 A 红钮：真实点击 macOS 红色关闭钮后，Simple Harness 主进程、backend 进程和 8100
   LISTEN 均为零残留；重启恢复 1100×750、位置 (400,200)。
 - 路径 B Cmd+Q：真实键盘退出后同样全清；再次启动恢复同一几何。
-- 路径 C 托盘退出及步骤 8 托盘隐藏仍无法执行：Computer Use 对 SystemUIServer/ControlCenter
-  均 timeout，`Control+F8` 未聚焦状态项，`Fn+Control+F8` 又被执行器判为不支持。没有用代码
-  审计或红钮结果冒充托盘真点击。
+- 路径 C 托盘退出与步骤 8 隐藏反证由用户在当前 macOS 打包版现场完成并明确确认通过。
+  托盘退出后独立检查主进程、backend 与 8100 LISTEN 均为零；随后重启日志恢复
+  `1100×750 @ (400,200)`，Computer Use 截图像素为 1100×750。隐藏路径则保持应用运行并可由
+  托盘「显示主窗」恢复，证明隐藏语义独立于三条完全退出路径。
 
 证据：
 
 - `verification/workbench-ui-20260812-fixes/artifacts/S16-geometry-anchor-before-red-close.jpeg`
 - `verification/workbench-ui-20260812-fixes/artifacts/S16-red-close-restart-geometry.jpeg`
 - `verification/workbench-ui-20260812-fixes/artifacts/S16-cmdq-restart-geometry.jpeg`
+- `verification/workbench-ui-20260812-fixes/artifacts/S16-user-tray-exit-restart-geometry.jpeg`
 
-## 仍未完成或受阻
+## 未完成边界
 
-- **S10**：步骤 1–4 的托盘退出/重启几何链未执行。
-- **S14**：Computer Use 无法附着 SystemUIServer 状态项，托盘三项与显隐/退出尚未新测。
-- **S16**：红钮和 Cmd+Q 已 PASS；托盘退出与托盘隐藏仍未真测，所以整体保持 PARTIAL。
+- **S10/S14/S16**：均已闭环；其中托盘 UI 动作为用户现场真机手测确认，退出终态与重启几何由
+  独立进程/端口检查、启动日志和当前版本截图交叉验证。
 - **S12 step 7**：用户已批准移除，不再是未完成项。
+- **plan-test gate**：仍按用户要求暂停；未创建/修改 r15 ledger，不宣称机器门 READY。产品与
+  testcase 层的 18 个场景现均已达到 PASS 或经明确批准退役的终态。
 
 ## 额外发现
 
