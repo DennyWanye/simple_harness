@@ -222,3 +222,29 @@ async def test_cancelled_llm_call_closes_child_root_and_run(tmp_path) -> None:
     assert all(row["status"] != SpanStatus.RUNNING for row in spans)
     assert next(row for row in spans if row["kind"] == SpanKind.LLM)["status"] == SpanStatus.CANCELLED
     assert next(row for row in spans if row["name"] == "agent_loop.run")["status"] == SpanStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_consumer_close_after_final_keeps_trace_completed(tmp_path) -> None:
+    trace_path = tmp_path / "workflow.db"
+    loop = AgentLoop(
+        llm_registry=ScriptedLLM([_final_response()]),
+        tool_registry=SyncTools(),
+        trace_store=TraceStore(trace_path),
+        max_iterations=2,
+    )
+    stream = loop.run(
+        [{"role": "user", "content": "finish"}],
+        session_id="session-final-close",
+        context_request_id="request-final-close",
+    )
+    while True:
+        event = await anext(stream)
+        if isinstance(event, FinalEvent):
+            break
+    await stream.aclose()
+
+    run, spans = _trace_rows(trace_path)
+    assert run["request_id"] == "request-final-close"
+    assert run["status"] == SpanStatus.OK
+    assert next(row for row in spans if row["name"] == "agent_loop.run")["status"] == SpanStatus.OK

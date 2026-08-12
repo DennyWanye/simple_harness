@@ -3324,12 +3324,8 @@ class ToolRegistry:
         self._prepared_execution_metadata[effect_id] = {
             "outcome_status": status.value
         }
-        if self._receipt_store_provider is None or started_at is None:
-            return
         try:
-            from datetime import datetime, timezone
             from deskpet.tools.artifact import extract_artifacts_from_result, sha256_file_async
-            from deskpet.tools.receipt_store import emit_receipt
 
             encoded = json.dumps(outcome.to_dict()["value"], ensure_ascii=False, default=str)
             artifacts = extract_artifacts_from_result(tool_name=prepared.tool_name, result_json=encoded)
@@ -3343,9 +3339,22 @@ class ToolRegistry:
                         json.dumps(artifact.to_dict(), sort_keys=True, default=str).encode("utf-8")
                     ).hexdigest()
                 refs.append(digest)
+            if refs:
+                self._prepared_execution_metadata[effect_id]["artifact_refs"] = list(
+                    dict.fromkeys(refs)
+                )
+
+            # Artifact identity is part of the authoritative effect even when
+            # ReceiptStore is disabled.  A missing receipt must not erase a
+            # successfully registered ArtifactCard from execution_events.
+            if self._receipt_store_provider is None or started_at is None:
+                return
             store = self._receipt_store_provider()
             if store is None:
                 return
+            from datetime import datetime, timezone
+            from deskpet.tools.receipt_store import emit_receipt
+
             accepted = status is OutcomeStatus.ACCEPTED
             receipt = emit_receipt(
                 store, tool_name=prepared.tool_name,
@@ -3362,7 +3371,8 @@ class ToolRegistry:
                 node_execution_id=prepared.stable_call_id, effect_id=effect_id,
             )
             self._prepared_execution_metadata[effect_id].update({
-                "receipt_ref": receipt.receipt_id, "artifact_refs": refs,
+                "receipt_ref": receipt.receipt_id,
+                "artifact_refs": list(dict.fromkeys(refs)),
                 "evidence_verified": bool(receipt.receipt_id),
             })
         except Exception as exc:  # noqa: BLE001 - observability cannot break dispatch

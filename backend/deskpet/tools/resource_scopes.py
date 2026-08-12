@@ -86,6 +86,35 @@ def list_directory_scope(
     return (_filesystem(_required_text(args, "path"), "list", "read"),)
 
 
+def register_artifacts_scope(
+    args: Mapping[str, Any], context: ToolExecutionContext
+) -> tuple[ResourceSelector, ...]:
+    paths = args.get("paths")
+    if not isinstance(paths, list) or not paths:
+        raise ValueError("paths must be a non-empty array")
+    if len(paths) > 50:
+        raise ValueError("paths exceeds the 50 item limit")
+    root_value = context.workspace or context.write_scope_root
+    if not root_value:
+        raise ValueError("selected project workspace is required")
+    root = Path(root_value).expanduser().resolve(strict=True)
+    if not root.is_dir():
+        raise ValueError("selected project workspace must be an existing directory")
+    selectors: list[ResourceSelector] = []
+    for value in paths:
+        raw = _required_text({"path": value}, "path")
+        path = Path(raw).expanduser()
+        candidate = (path if path.is_absolute() else root / path).resolve(strict=True)
+        try:
+            candidate.relative_to(root)
+        except ValueError as exc:
+            raise ValueError("artifact path must stay inside the selected workspace") from exc
+        if not candidate.is_file():
+            raise ValueError("artifact path must name an existing file")
+        selectors.append(ResourceSelector.filesystem(candidate, "read"))
+    return tuple(selectors)
+
+
 def move_file_scope(
     args: Mapping[str, Any], context: ToolExecutionContext
 ) -> tuple[ResourceSelector, ...]:
@@ -267,6 +296,7 @@ __all__ = [
     "download_file_scope",
     "edit_file_scope",
     "list_directory_scope",
+    "register_artifacts_scope",
     "move_file_scope",
     "process_start_scope",
     "process_stop_scope",

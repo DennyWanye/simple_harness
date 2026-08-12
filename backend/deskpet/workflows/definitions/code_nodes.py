@@ -60,6 +60,11 @@ _TEST_EXECUTION_REQUEST = re.compile(
     r")",
     re.IGNORECASE,
 )
+_EXPLICIT_TEST_EXECUTION_REQUEST = re.compile(
+    r"(?:\bpytest\b|\brun\s+(?:the\s+)?tests?\b|"
+    r"运行.{0,12}测试|执行.{0,12}测试)",
+    re.IGNORECASE,
+)
 _WRITE_EXECUTION_REQUEST = re.compile(
     r"(?:"
     r"\b(?:copy|create|fix|repair|modify|update|write|edit|implement)\b|"
@@ -793,19 +798,19 @@ def _execution_obligations(request: str) -> tuple[bool, bool]:
     makes a correct read-only answer loop until its proposal budget or model
     context is exhausted.  Remove only the matched negative write clauses,
     then keep the existing fail-closed checks for any positive action that
-    remains.  A request with no positive write action also inherits the
-    deterministic ingress router's read-only decision, which prevents generic
-    reporting words such as ``确认`` from becoming a shell/test obligation.
+    remains.  A request with no positive write action only keeps an explicit
+    test obligation.  This prevents generic reporting words such as ``确认``
+    from becoming a shell/test obligation without consulting the retired
+    semantic ingress router from a new durable task.
     """
 
     positive_request = _NEGATED_WRITE_EXECUTION_REQUEST.sub(" ", request)
     requires_write = bool(_WRITE_EXECUTION_REQUEST.search(positive_request))
     requires_test = bool(_TEST_EXECUTION_REQUEST.search(positive_request))
-    if not requires_write:
-        from ..routing import WorkflowRoute, route_task
-
-        if route_task(request, workspace_context=True).route is WorkflowRoute.REACT:
-            requires_test = False
+    if not requires_write and not _EXPLICIT_TEST_EXECUTION_REQUEST.search(
+        positive_request
+    ):
+        requires_test = False
     return requires_write, requires_test
 
 

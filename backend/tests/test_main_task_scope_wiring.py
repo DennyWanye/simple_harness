@@ -626,6 +626,56 @@ async def test_product_host_exposes_durable_profiles_but_hides_legacy_starters(
     assert "ppt_pro" not in host.available_capabilities
 
 
+@pytest.mark.asyncio
+async def test_cancel_run_does_not_require_provider_or_workspace(
+    monkeypatch,
+) -> None:
+    import main
+
+    issued: dict[str, object] = {}
+    cancelled: list[tuple[object, object, str]] = []
+    host = SimpleNamespace(session_id="session-1")
+
+    async def issue_host(session_id: str, **kwargs):
+        issued.update({"session_id": session_id, **kwargs})
+        return host, None, (), None
+
+    async def cancel(ref, actor, reason):
+        cancelled.append((ref, actor, reason))
+        return SimpleNamespace(cancelled=False, status="failed")
+
+    monkeypatch.setattr(main, "_harness_accepting", True)
+    monkeypatch.setattr(
+        main,
+        "_harness_runtime",
+        SimpleNamespace(run_client=SimpleNamespace(cancel=cancel)),
+    )
+    monkeypatch.setattr(main, "_issue_product_harness_host", issue_host)
+    monkeypatch.setattr(main.service_context, "get", lambda _name: None)
+
+    assert await main._cancel_product_harness_run(
+        "session-1",
+        "run-terminal",
+        reason="user_interrupt",
+    )
+    assert issued == {
+        "session_id": "session-1",
+        "workspace": None,
+        "allow_provider_unavailable": True,
+        "allow_workspace_unavailable": True,
+    }
+    assert cancelled == [
+        (
+            {
+                "run_id": "run-terminal",
+                "expected_session_id": "session-1",
+            },
+            host,
+            "user_interrupt",
+        )
+    ]
+
+
 def test_selected_project_directory_uses_native_parent_and_safe_child(tmp_path):
     import main
 

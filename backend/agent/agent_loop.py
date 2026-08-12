@@ -1919,7 +1919,7 @@ class AgentLoop:
                 session_id=session_id,
                 task_id=tid,
                 parent_context=trace_context,
-                request_id=trace_request_id,
+                request_id=trace_request_id or context_request_id or tid,
                 turn_id=trace_turn_id,
                 message_count=len(messages),
             )
@@ -1952,6 +1952,7 @@ class AgentLoop:
         )
         terminal_status: str = SpanStatus.OK
         terminal_error: BaseException | dict[str, str] | None = None
+        terminal_event_seen = False
         try:
             while True:
                 try:
@@ -1965,14 +1966,27 @@ class AgentLoop:
                         "reason": event.reason,
                         "detail": event.detail,
                     }
+                    terminal_event_seen = True
+                elif isinstance(event, FinalEvent):
+                    terminal_event_seen = True
                 yield event
         except asyncio.CancelledError as exc:
-            terminal_status = SpanStatus.CANCELLED
-            terminal_error = exc
+            terminal_status = (
+                SpanStatus.OK if terminal_event_seen else SpanStatus.CANCELLED
+            )
+            terminal_error = None if terminal_event_seen else {
+                "type": type(exc).__name__,
+                "reason": "consumer_cancelled_before_terminal",
+            }
             raise
         except GeneratorExit as exc:
-            terminal_status = SpanStatus.CANCELLED
-            terminal_error = exc
+            terminal_status = (
+                SpanStatus.OK if terminal_event_seen else SpanStatus.CANCELLED
+            )
+            terminal_error = None if terminal_event_seen else {
+                "type": type(exc).__name__,
+                "reason": "consumer_closed_before_terminal",
+            }
             raise
         except BaseException as exc:
             terminal_status = SpanStatus.ERROR

@@ -124,6 +124,45 @@ def test_shell_scope_names_real_shell_cwd_and_opaque_system_change(
     assert selectors["system_change"].access == ("execute",)
 
 
+def test_register_artifacts_scope_is_read_only_and_workspace_relative(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "reports" / "final.md"
+    output.parent.mkdir()
+    output.write_text("ready", encoding="utf-8")
+    registry = ToolRegistry()
+    register_os_tools(registry)
+
+    prepared = _prepared(
+        registry,
+        "register_artifacts",
+        {"paths": ["reports/final.md"]},
+        tmp_path,
+    )
+
+    assert len(prepared.resource_selectors) == 1
+    selector = prepared.resource_selectors[0]
+    assert selector.canonical_value == canonical_filesystem_path(output)
+    assert selector.access == ("read",)
+
+
+def test_register_artifacts_scope_rejects_workspace_escape(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("private", encoding="utf-8")
+    registry = ToolRegistry()
+    register_os_tools(registry)
+
+    with pytest.raises(ValueError, match="inside the selected workspace"):
+        _prepared(
+            registry,
+            "register_artifacts",
+            {"paths": [str(outside)]},
+            workspace,
+        )
+
+
 def test_shell_scope_defaults_to_trusted_workspace(tmp_path: Path) -> None:
     registry = ToolRegistry()
     register_os_tools(registry)

@@ -59,10 +59,18 @@ async def _effect_context(
 
 
 class _JournaledRegistry:
-    def __init__(self, policy: EffectPolicy, *, fail: bool = False) -> None:
+    def __init__(
+        self,
+        policy: EffectPolicy,
+        *,
+        fail: bool = False,
+        execution_metadata: dict[str, object] | None = None,
+    ) -> None:
         self.spec = SimpleNamespace(effect_policy=policy)
         self.fail = fail
         self.calls: list[str] = []
+        self.execution_metadata = dict(execution_metadata or {})
+        self.acknowledged: list[str] = []
 
     def get(self, _name: str) -> object:
         return self.spec
@@ -81,6 +89,12 @@ class _JournaledRegistry:
         return NormalizedToolOutcome.success(
             {"path": prepared.final_params.get("path"), "effect_id": effect_id}
         )
+
+    def take_prepared_execution_metadata(self, _effect_id: str) -> dict[str, object]:
+        return dict(self.execution_metadata)
+
+    def acknowledge_prepared_effect(self, effect_id: str) -> None:
+        self.acknowledged.append(effect_id)
 
 
 @pytest.mark.asyncio
@@ -142,6 +156,79 @@ async def test_code_execute_prepared_reuses_journaled_committed_result(
     record = await context.journal.get(effect_id)
     assert record is not None and record.status.value == "committed"
     json.dumps(first, allow_nan=False)
+
+
+@pytest.mark.asyncio
+async def test_code_effect_commits_registry_artifact_identity_atomically(
+    tmp_path: Path,
+) -> None:
+    context, run_id = await _effect_context(
+        tmp_path / "workflow.db",
+        workflow_name="durable_task",
+        node_id="tool_execution",
+        key="artifact-identity",
+    )
+    digest = "a" * 64
+    prepared = PreparedToolCall.prepare(
+        tool_name="register_artifacts",
+        stable_call_id="call-artifacts",
+        final_params={"paths": ["REPORT.md"]},
+        tool_spec_version="v1",
+        schema_hash="schema-register-artifacts-v1",
+        permission_policy_version="permission-v1",
+        effect_type="idempotent_read",
+    )
+    registry = _JournaledRegistry(
+        EffectPolicy(
+            "deskpet:register-artifacts",
+            "v1",
+            EffectKind.IDEMPOTENT_READ,
+        ),
+        execution_metadata={
+            "receipt_ref": "receipt-artifacts",
+            "artifact_refs": [digest],
+        },
+    )
+    registry.execute_prepared = lambda *args, **kwargs: _async_value(
+        NormalizedToolOutcome.success(
+            {
+                "ok": True,
+                "artifacts": [
+                    {
+                        "kind": "file",
+                        "path": str(tmp_path / "REPORT.md"),
+                        "title": "REPORT.md",
+                        "sha256": digest,
+                    }
+                ],
+            }
+        )
+    )
+    port = ToolDispatchPort(
+        registry,
+        session_id="session-1",
+        effect_context=context,
+        workflow_name="durable_task",
+    )
+
+    result = await port.dispatch(
+        [prepared],
+        workflow_step_id="step-deliver",
+        prior_results={},
+        authorizations={},
+    )
+
+    effect_id = str(result["call-artifacts"]["effect_id"])
+    record = await context.journal.get(effect_id)
+    assert record is not None
+    assert record.run_id == run_id
+    assert record.receipt_ref == "receipt-artifacts"
+    assert record.artifact_refs == (digest,)
+    assert registry.acknowledged == [effect_id]
+
+
+async def _async_value(value):
+    return value
 
 
 @pytest.mark.asyncio

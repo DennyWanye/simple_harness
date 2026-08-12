@@ -130,6 +130,17 @@ export function buildWorkflowTaskTraces(
     if (snapshot.aggregate_outcome.status === "failed") return "failed";
     return "completed";
   };
+  const settleOpenStepStatus = (status: string): string => {
+    if (
+      aggregateActive ||
+      !["pending", "prepared", "accepted", "running", "waiting", "unknown"].includes(status)
+    ) {
+      return status;
+    }
+    if (snapshot.aggregate_outcome.status === "cancelled") return "cancelled";
+    if (snapshot.aggregate_outcome.status === "failed") return "failed";
+    return "completed";
+  };
   const toolsByPhase = new Map<string, WorkflowTaskTool[]>();
   const seenTools = new Set<string>();
   for (const publicTool of snapshot.tool_public_views) {
@@ -157,7 +168,7 @@ export function buildWorkflowTaskTraces(
     id: phase.phase_id,
     index,
     title: phase.title,
-    status: phase.status,
+    status: settleOpenStepStatus(phase.status),
     current: aggregateActive && phase.phase_id === currentPhase?.phase_id,
     messages: messagesByPhase.get(phase.phase_id) ?? [],
     tools: (toolsByPhase.get(phase.phase_id) ?? []).sort((left, right) =>
@@ -168,7 +179,7 @@ export function buildWorkflowTaskTraces(
     ).values()].map((step, stepIndex) => ({
       id: step.workflow_step_id,
       label: step.label ?? `步骤 ${(step.step_index ?? stepIndex) + 1}`,
-      status: step.status ?? "unknown",
+      status: settleOpenStepStatus(step.status ?? "unknown"),
       current: aggregateActive && (
         ["running", "waiting"].includes(step.status ?? "") ||
         (phase.current_step != null && step.step_index === phase.current_step)

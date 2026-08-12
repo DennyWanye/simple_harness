@@ -1,6 +1,6 @@
 # Simple Harness UI 当前架构
 
-> 最后更新：2026-08-12（Workbench r15 修复后真机复测）
+> 最后更新：2026-08-13（Harness 复杂任务可靠性真机复测）
 
 ## 0. Workbench 工作台架构（2026-08-05 改版落地）
 
@@ -51,12 +51,27 @@ DeskPet 的用户界面现在以暗色为默认外观。主窗口背景、功能
   bootstrap pointer，下一次进程启动再切换，不会在当前进程中伪装已生效；外部
   `DESKPET_USER_DATA_DIR` 固定目录时明确拒绝 UI 改写。Agent 预算请求带 `request_id`，避免
   页面初始化读取响应与用户保存响应串台；Provider 删除必须经过确认对话框。
+- 模型选择器连接后请求 Provider 的实时 `/models` 目录；成功结果既用于当次下拉列表，也经
+  Provider Registry 原子刷新 `config.toml` 的模型缓存。缓存用于重启/网络失败 fallback，不会
+  自动改变用户选择的默认模型，也不会因为目录同步让现有会话绑定失效。
+- 模型身份提示由已解析的当前 Session Provider 生成 task-scoped Persona fragment；平台级
+  cache-stable Persona 中的占位符不会暴露给模型。当前源码重启后，真实 UI 的精确模型询问
+  回复 `kimi-k3`，后台同一 Run 也记录 `model=kimi-k3` 与 HTTP 200。
 - 运行期 backend 不可用时，普通 Workbench 不再被启动失败全屏遮罩替换；App 保留主界面并
   显示 `RuntimeBackendBanner`，ChatView 和侧栏仍按两条控制连接的最差态 fail closed。空 secret
   与半开 WebSocket 握手均有有界失败和显式重试入口。
 - 生产 Harness 的 prepared tool 结果会在 last-mile 开关启用时生成 artifact envelope；消息持久化
   标记 `artifact_card`，前端卡片动作只接受 Tauri 白名单内路径。第一方 file tool 的当前 Run
-  workspace 纳入白名单，但没有开放任意文件系统路径。
+  workspace 纳入白名单，但没有开放任意文件系统路径。已有文件可通过只读
+  `register_artifacts` 进入同一标准信封，无需创建旁路 JSON 或改动原文件。
+- 权限弹窗只有 ChatView 一个生产订阅者；App 根层不再重复订阅同一 control channel。
+  队列以 `decision_id`（旧事件回退 `request_id`）去重，成功回复后的 identity 进入有界 replay
+  fence，因此同一已处理请求不会因服务端重放再次弹出。停止仍发送 Run interrupt，拒绝当前
+  decision；取消 Host 的签发不要求 Provider/模型或 workspace 继续可用，所以失败 Run 上的停止
+  不会因重复 provider preflight 把聊天连接击穿。应用退出时未终态 durable Run 保留给下次启动
+  恢复，不伪装成已完成。点击“拒绝”会持久化 `decision=deny/status=denied`；生产 Driver 把对应
+  control outcome 结算为 `authorization_denied`，不会再准备 delegate 或创建 child。当前 macOS
+  真机 root `996390c79f1b5c03967f7f42dc408f29` 已验证界面、数据库与事件流三者一致。
 
 ## 3. 边界
 
@@ -76,10 +91,13 @@ DeskPet 的用户界面现在以暗色为默认外观。主窗口背景、功能
 
 ## 4. 验证状态
 
-- 当前自动化：Vitest `539 passed`；Rust `79 passed`；companion `647 passed / 10 skipped`，以
+- 当前自动化：Vitest `540 passed`；Rust `79 passed`；companion `647 passed / 10 skipped`，以
   `backend/.venv/bin/python -m pytest backend/tests/companion -q` 从仓库根执行；TypeScript、
   Vite production build、`cargo check` 均 PASS。旧的 `cd backend && uv run pytest
   tests/companion/ -q` 会因 package root 不在 `sys.path` 收集失败，不再作为有效入口。
+- 本轮 Harness 可靠性聚焦回归 `256 passed / 2 skipped`：覆盖既有文件 artifact 登记、
+  ReceiptStore 缺席时的 refs 保留、分块 append、跨平台文件名、prepared effect、last-mile 与
+  runtime recovery；前端全量 Vitest、TypeScript 与 Vite production build 均 PASS。
 - Workbench 主题验收已固化为
   `python3 scripts/acceptance/workbench_ui_theme_audit.py`，扫描 11 个工作台自有文件，
   当前零字面量 hex 色值。
@@ -90,6 +108,30 @@ DeskPet 的用户界面现在以暗色为默认外观。主窗口背景、功能
   预算、数据目录、自启均完成修改→重启保持→恢复原值→无残留闭环。Kimi3 真链路创建文件后，
   ArtifactCard 的打开与 Finder 定位均通过；运行期 backend 故障恢复后，Kimi3 HTTP 200 并收到
   `S13 恢复成功`。红钮与 Cmd+Q 两条退出路径均全清 backend/8100 并恢复窗口几何。
+- 当前源码 K3 复杂任务 Run `04a477a3fbbb5e3eb2045e6b11006b55` 通过真 UI 创建并登记
+  `harness-k3-artifact-check.txt`：只出现一次 `write_file` 权限确认，`register_artifacts`
+  不弹写权限；两张 ArtifactCard 的 TextEdit 打开与 Finder 定位均通过，文件内容与 SHA-256
+  对账一致。模型身份修复后的独立 Run `97f01117fd50506fbe10da0444577fbd` 在界面回复
+  `kimi-k3`，与后台出站模型一致。
+- fresh profile `.testenv/harness-reliability-20260813` 的真实复杂任务首个 child
+  `caf7d550a7705da89cba6b731b9d1c4c`、child `child-2ec4cceeec4df4bb19531561ab0e1e31`
+  已闭环：原生目录选择、一次 workflow 权限确认、7 项 unittest、CLI、自检、一次
+  `register_artifacts`、5 张 ArtifactCard、9/9 completed 和空闲终态均可见。授权后约 1.2 秒
+  状态从弹窗直接恢复“工具执行中”，未再残留“等待授权”。内部工具循环曾重复投影 5/9→6/9；
+  当前后端按公开 node/attempt 去重，同 attempt 不再用私有 task id 制造重复阶段，相关回归
+  `76 passed`。但该 root 随后误派两个验证 child，故不能把首个 child 的成功扩大成 root 一次收敛。
+  后续 fresh profile root `f0a514f061cb56cebaa498a4a1447b24` 已用单一 durable child 真测
+  双算法计算与三次 shell 回执，最终 `count=467/sum=234168/MATCH=True`，只有一个 child、零 verify
+  nudge、零追加 spawn。终态观察面也已按 aggregate terminal 收束历史 running phase，显示
+  “结果/记录已结束”；授权等待新增安全关联日志。历史取消态现在还会用父 root 的 terminal Session
+  projection 收束 child workflow 卡，并合并同源 public trace；真机重启后只显示一张
+  “已取消 / 6/9 / 67% / 耗时未记录”卡。父 root 终态仅收束仍未终结的 child 卡；child 消息已有
+  明确终态时优先显示自身结果。Session `782f283d-0ac0-4016-b979-e6f79e7582f6` 重启复验中，首个
+  child 保持“已完成”，第二个 provider failure child 正确显示“失败 / 5/9”，不再被父 root 的
+  completed 覆盖。
+- ProjectDirectoryCard 按所选路径识别平台分隔符：POSIX/macOS 使用 `/`，Windows 使用 `\`，并
+  正确处理 `/` 根目录。macOS 真 UI 通过原生 Open sheet 选择 Desktop 后，确认卡显示
+  `/Users/denny/Desktop/harness-path-test`；测试未点击创建，磁盘确认目标目录不存在。
 - macOS 托盘已由用户在当前打包版现场确认：三项文案、隐藏/显示、托盘退出与非默认几何重启
   恢复均 PASS；托盘退出后独立检查主进程/backend/8100 零残留，当前版本重启日志与
   1100×750 截图确认几何恢复。托盘 UI 动作证据来源明确为用户现场手测，不伪造 Computer Use

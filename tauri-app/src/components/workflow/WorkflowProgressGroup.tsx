@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 
 import type {
   Message,
+  TaskRunProjectionState,
+  TaskRunProjectionStatus,
   WorkflowProgressStatus,
   WorkflowV5ControlAction,
 } from "../../stores/sessionsStore";
@@ -29,6 +31,8 @@ export interface WorkflowProgressGroupProps {
     operation: CapabilityOperation,
   ) => void;
   taskTrace?: WorkflowTaskTrace;
+  runProjectionStatus?: TaskRunProjectionStatus;
+  runProjection?: TaskRunProjectionState;
 }
 
 type TimelineStatus = "success" | "running" | "waiting" | "degraded" | "failed" | "cancelled";
@@ -210,6 +214,8 @@ export function WorkflowProgressGroup({
   capabilityOperation,
   onCapabilityOperationAction,
   taskTrace,
+  runProjectionStatus,
+  runProjection,
 }: WorkflowProgressGroupProps) {
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
   const [now, setNow] = useState(() => Date.now());
@@ -225,10 +231,28 @@ export function WorkflowProgressGroup({
     : taskTrace && ["running", "waiting", "completed", "failed", "cancelled"].includes(taskTrace.status)
       ? taskTrace.status as WorkflowProgressStatus
       : undefined;
+  const terminalRunProjectionStatus: WorkflowProgressStatus | undefined =
+    runProjectionStatus === "completed" ||
+    runProjectionStatus === "failed" ||
+    runProjectionStatus === "cancelled"
+      ? runProjectionStatus
+      : undefined;
+  const terminalSummaryStatus: WorkflowProgressStatus | undefined =
+    summary?.workflow_status === "completed" ||
+    summary?.workflow_status === "failed" ||
+    summary?.workflow_status === "cancelled"
+      ? summary.workflow_status
+      : undefined;
   // The public Run projection is the authoritative read model. Legacy
   // workflow summaries may remain on the message stream after the Root has
-  // already recovered or reached a terminal state.
-  const status = taskStatus ?? summary?.workflow_status ??
+  // already recovered or reached a terminal state. After an app restart the
+  // detailed public snapshot may not be loaded yet, so the Session's canonical
+  // terminal Run projection is the fail-safe fallback.
+  const status = terminalSummaryStatus ?? (
+    taskStatus && ["completed", "failed", "cancelled"].includes(taskStatus)
+      ? taskStatus
+      : terminalRunProjectionStatus
+  ) ?? taskStatus ?? summary?.workflow_status ??
     (fallback?.workflow_stage_id === "finalize" ? "completed" : "running");
   const tone = STATUS_TONES[status];
   const isDeepResearch = orderedStages.length > 0 || ["v2", "v3", "v4", "v5", "v6", "v7"].includes(summary?.workflow_version || "");
@@ -283,15 +307,26 @@ export function WorkflowProgressGroup({
   const timestamps = [summary, ...orderedStages]
     .map((message) => message?.ts)
     .filter((ts): ts is number => typeof ts === "number" && Number.isFinite(ts));
-  const startedAt = taskTrace?.startedAt ?? summary?.workflow_started_at ?? (
+  const startedAt = taskTrace?.startedAt ?? runProjection?.started_at ?? summary?.workflow_started_at ?? (
     timestamps.length > 0 ? Math.min(...timestamps) : 0
   );
-  const endedAt = taskTrace?.endedAt ?? Math.max(...timestamps, startedAt);
+  const endedAt = taskTrace?.endedAt ?? (
+    terminalRunProjectionStatus ? runProjection?.last_activity : undefined
+  ) ?? Math.max(...timestamps, startedAt);
   const recordedElapsed = summary?.workflow_elapsed_ms ?? Math.max(0, endedAt - startedAt);
-  const stableWallElapsed = typeof summary?.workflow_started_at === "number"
+  const stableWallElapsed = runProjection != null ||
+    typeof summary?.workflow_started_at === "number"
     ? Math.max(0, (status === "running" || status === "waiting" ? now : endedAt) - startedAt)
     : 0;
   const elapsedMs = Math.max(recordedElapsed, stableWallElapsed);
+  const elapsedKnown = status === "running" || status === "waiting" ||
+    taskTrace?.endedAt != null ||
+    (summary?.workflow_elapsed_ms ?? 0) > 0 ||
+    (runProjection != null && runProjection.last_activity > runProjection.started_at) ||
+    timestamps.length > 1;
+  const elapsedLabel = elapsedKnown
+    ? `已用时 ${formatDuration(elapsedMs)}`
+    : "耗时未记录";
   const name = summary?.workflow_name || fallback?.workflow_name ||
     (taskTrace ? "Agent 执行过程" : "深度调研");
   const currentStage = summary?.workflow_error || summary?.workflow_stage || fallback?.workflow_stage || "等待总体进度";
@@ -390,7 +425,7 @@ export function WorkflowProgressGroup({
           <strong style={{ color: "#e8edf6", fontSize: 12.5 }}>{name}</strong>
           <span style={{ color: tone.accent, fontSize: 10.5 }}>{tone.label}</span>
           <span style={{ marginLeft: "auto", color: "#7f8a99", fontSize: 10.5 }}>
-            已用时 {formatDuration(elapsedMs)}
+            {elapsedLabel}
           </span>
         </div>
         <DurableTaskSteps trace={taskTrace} />
@@ -439,10 +474,10 @@ export function WorkflowProgressGroup({
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={percent}
-          aria-valuetext={`${tone.label}，${currentStage}，${completed}/${total}，已用时 ${formatDuration(elapsedMs)}`}
+          aria-valuetext={`${tone.label}，${currentStage}，${completed}/${total}，${elapsedLabel}`}
           style={{ color: "#7f8a99", fontSize: 10.5 }}
         >
-          {completed}/{total} · 已用时 {formatDuration(elapsedMs)} · {percent}%
+          {completed}/{total} · {elapsedLabel} · {percent}%
         </span>
       </div>
     );
@@ -478,7 +513,7 @@ export function WorkflowProgressGroup({
         <div
           role="progressbar" aria-label={`${name}进度`} aria-valuemin={0} aria-valuemax={100}
           aria-valuenow={percent}
-          aria-valuetext={`${tone.label}，${currentStage}，${completed}/${total}，已用时 ${formatDuration(elapsedMs)}`}
+          aria-valuetext={`${tone.label}，${currentStage}，${completed}/${total}，${elapsedLabel}`}
           style={progressTrackStyle}
         >
           <div style={{
@@ -487,7 +522,7 @@ export function WorkflowProgressGroup({
           }} />
         </div>
         <div style={footerStyle}>
-          <span>{completed}/{total} · 已用时 {formatDuration(elapsedMs)}</span>
+          <span>{completed}/{total} · {elapsedLabel}</span>
           {summary?.workflow_delivery ? (
             <span data-testid="workflow-delivery-status">
               {DELIVERY_LABELS[summary.workflow_delivery.status]}

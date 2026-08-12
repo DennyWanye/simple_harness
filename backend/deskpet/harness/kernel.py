@@ -94,6 +94,34 @@ from .user_continuations import UserContinuationCoordinator
 
 logger = logging.getLogger(__name__)
 
+_NEGATIVE_DECISION_VALUES = frozenset({
+    "cancel",
+    "cancelled",
+    "deny",
+    "denied",
+    "reject",
+    "rejected",
+})
+
+
+def decision_response_allows(response: Mapping[str, object]) -> bool:
+    """Normalize product decision payloads without treating ``deny`` as allow.
+
+    Explicit boolean fields remain authoritative. Text decisions are
+    case-insensitive and cover both the workflow vocabulary (reject/cancel)
+    and the permission UI vocabulary (deny). Other decision kinds, such as
+    clarification answers, preserve the historical default-to-resume behavior.
+    """
+
+    if "allow" in response:
+        return bool(response["allow"])
+    if "approved" in response:
+        return bool(response["approved"])
+    verdict = str(
+        response.get("decision", response.get("resolution", "")) or ""
+    ).strip().casefold()
+    return verdict not in _NEGATIVE_DECISION_VALUES
+
 def root_run_identity(session_id: str, request_id: str, turn_id: str) -> tuple[str, RunRef]:
     key = root_idempotency_key(session_id, request_id, turn_id)
     return key, RunRef(uuid.uuid5(uuid.NAMESPACE_URL, f"deskpet:{key}").hex, session_id)
@@ -1138,8 +1166,7 @@ class RunKernel:
             )
             request = current.request
             response = dict(signal.response)
-            verdict = response.get("decision", response.get("resolution"))
-            allow = bool(response.get("allow", response.get("approved", verdict not in {"cancel", "cancelled", "reject", "rejected"})))
+            allow = decision_response_allows(response)
             admission = self._admission_from(
                 await self._uow.load_continuation(record.run_id)
             )

@@ -146,9 +146,39 @@ describe("HarnessInspectorPanel public run view", () => {
       ok: true,
       snapshot: snapshot("completed_with_recovery"),
     });
-    expect(screen.getByText("子任务遇到问题，主 Agent 已接管并完成")).toBeTruthy();
+    expect(screen.getAllByText("子任务遇到问题，主 Agent 已接管并完成").length).toBeGreaterThan(0);
     act(() => vi.advanceTimersByTime(5_000));
     expect(view.sendCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not present a stale running phase as current after the Root completed", () => {
+    vi.useFakeTimers();
+    const view = setup({ ...runProjection, status: "completed", inflight: false });
+    act(() => vi.runOnlyPendingTimers());
+    const requestId = view.sendCommand.mock.calls[0][0].request_id;
+    const terminal = snapshot("completed");
+    terminal.semantic_phases[0].status = "running";
+    terminal.semantic_phases[0].workflow_steps = [{
+      workflow_step_id: "tool_execution",
+      label: "执行命令",
+      status: "running",
+      step_index: 0,
+      step_total: 1,
+    }];
+    view.emit({
+      type: "harness_inspector_snapshot_response",
+      request_id: requestId,
+      ok: true,
+      snapshot: terminal,
+    });
+
+    expect(screen.getAllByText("任务已完成").length).toBeGreaterThan(0);
+    expect(screen.getByText("步骤记录")).toBeTruthy();
+    expect(screen.queryByText("当前：创建项目")).toBeNull();
+    expect(screen.queryByText("当前 2/4 步")).toBeNull();
+    expect(screen.getByText("记录已结束")).toBeTruthy();
+    expect(screen.getByText("结果")).toBeTruthy();
+    expect(screen.getAllByText("已完成").length).toBeGreaterThan(0);
   });
 
   it("folds repeated workflow-step state updates before rendering the shared trace", () => {

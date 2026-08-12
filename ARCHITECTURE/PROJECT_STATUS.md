@@ -1,22 +1,126 @@
 # DeskPet — 全局项目状态与架构完成度
 
-> **最后更新**：2026-08-12
+> **最后更新**：2026-08-13
 
 ## 2026-08-12 里程碑：Workbench last-mile、设置、恢复与托盘真测全部收口
 
-- **ArtifactCard last-mile 已闭环**：生产 `execute_prepared` 生成 artifact envelope，SessionDB
-  记录 `artifact_card` 投影；相对路径只在当前可信 workspace 内解析。Tauri 白名单新增
-  `<user_data>/workspace/`。macOS 真机由 Kimi3 创建文件，TextEdit 打开与 Finder 定位均 PASS。
+- **ArtifactCard last-mile 的 root 与 child 自动桥接已实现**：生产 `execute_prepared` 生成
+  artifact envelope，SessionDB 记录根 Run 的 `artifact_card` 投影；相对路径只在当前可信
+  workspace 内解析。当前源码把 prepared receipt/artifact metadata 与 durable effect completion
+  原子提交并在提交后 ack；child 完成事务会验证 artifacts/refs/SHA-256、发出
+  `workflow.artifact_card` delivery event，并把 artifacts/refs 放进 parent terminal signal。Tauri
+  白名单包含 `<user_data>/workspace/`。历史 macOS 根 Run 的 TextEdit/Finder 打开定位均 PASS；
+  fresh-profile child `child-2ec4cceeec4df4bb19531561ab0e1e31` 已真机投影五张 ArtifactCard，
+  DB artifact event 与 parent terminal signal 的 5 个 refs 和本地 SHA 精确一致，E2E 已闭环。
+- **复杂任务交付链补强**：新增只读 `register_artifacts`，可把可信 workspace 内已经存在的文件
+  直接登记为标准 artifact envelope（路径、大小、SHA-256），不创建旁路 JSON、不复制或改写
+  原文件；未启用 ReceiptStore 时 artifact refs 仍进入 prepared execution metadata。跨平台
+  basename 同时修正了 macOS/Linux 上 Windows 路径卡片标题显示完整路径的问题。
+- **长参数与权限等待补强**：`write_file` 真实支持 `mode=append` 的 ≤3000 字符分块写入，
+  `run_shell` schema 拒绝超长命令并引导文件正文走分块工具。权限请求只由 ChatView 订阅，按
+  decision identity 去重并阻止已处理事件重放，消除同一 decision 多弹窗导致“停止后仍继续问”的
+  前端根因；提交 live decision 后会把仍等待授权的 root projection/session 推进为 `running`，
+  清除已处理 decision，且不覆盖 durable terminal。相邻前端回归 `37 passed`、TypeScript PASS。
+  失败 Run 的停止 Host 不再依赖可用 Provider/workspace，避免重复 preflight 击穿 control
+  WebSocket；durable Run 的进程退出恢复语义保持不变。
 - **设置持久化已闭环**：Provider 删除确认、Agent 预算 request-id 关联、macOS 稳定数据目录
   bootstrap pointer、“当前/下次启动目录”诚实展示均落地；Provider、预算、目录、自启完成真 UI
   修改、完全重启、恢复和无残留验证。
 - **运行期 backend 故障留在 Workbench 内**：新增运行时故障横幅；空 secret 与半开 WebSocket
   握手有界失败，ChatView/侧栏显示最差态，发送 fail closed、重试恢复。故障释放后 Kimi3
   HTTP 200 并精确回复 `S13 恢复成功`。
-- **本轮验证**：Vitest `539 passed`、Rust `79 passed`、companion
+- **本轮验证**：Vitest `540 passed`、Rust `79 passed`、companion
   `647 passed / 10 skipped`、TypeScript、Vite build、`cargo check` 均绿；红钮、Cmd+Q 与托盘
   三条退出路径主进程/backend/8100 全清，重启几何一致。托盘三项文案与隐藏/显示由用户在当前
   macOS 打包版现场确认，退出终态和 1100×750 几何恢复由独立检查、启动日志与截图交叉验证。
+- **本轮新增代码回归**：Harness/ToolRegistry/Artifact/last-mile/recovery 聚焦套件
+  `256 passed / 2 skipped`，取消/恢复相邻套件另有 `40 passed / 4 xfailed`；前端全量
+  `540 passed`，TypeScript、Vite production build 与当前源码 Tauri debug app 构建 PASS。
+- **复杂任务可靠性与日志补强（当前源码，真机主链 PASS）**：工作区未选择只投影为 retryable tool
+  outcome，不再击穿 control WebSocket；实时 socket/peer/final/context-usage 各自尽力投影，durable
+  SessionDB 结果不被断线反向改写；final 后 trace 关闭记 OK。backend/stdlb 与 structlog 统一为
+  单行 JSON，日志路径统一遵循 `DESKPET_USER_LOG_DIR`/portable/user-data 解析，20 MiB × 5 轮换；
+  两类日志在 JSON 渲染前共用字段级与文本级脱敏，关联 ID/阶段/耗时继续保留，回归 `12 passed`；
+  macOS/Linux diagnostic archive/reveal 已补平台原生命令。相关 workflow/effect/ReAct/
+  RunPresenter/trace/observability 聚焦重跑 `231 passed`；但 Python 全量仍有 `79 failed`（同时
+  `7473 passed / 48 skipped / 4 xfailed`），因此不宣称全量基线绿色。
+- **fresh-profile 复杂任务首轮：核心执行 PASS、terminal FAIL、根因已修**：真实 Workbench UI
+  使用 `kimi-k3` 选择隔离 workspace，control WebSocket 保持连接，child
+  `child-1a1c22e7a629b36c0c04f262af4b7f53` 完成分块写入、17 项 unittest、CLI、自检与一次
+  `register_artifacts`；独立复跑为 `17/17 PASS`，5 文件 SHA 和四项指标全部匹配。但 terminal
+  将 `write_file` 的 `sha256=null` provisional envelope 误当最终 artifact，9/9 后报
+  `workflow_engine:frontier_failure`，父 Run 又重复尝试委派。现已排除非登记的 provisional
+  envelope，并为 `register_artifacts` 保持 refs/digest 精确相等；相邻回归 `102 passed`。同时
+  真机再次确认 UI 后台执行时长期显示“等待授权”、进度停在 5/9→6/9；这些问题在第二轮得到
+  真机/账本闭环，详下一项。
+- **fresh-profile 复杂任务第二轮：child/产物 PASS，root 收敛 FAIL；第三轮已修复闭环**：root `caf7d550a7705da89cba6b731b9d1c4c`、child
+  `child-2ec4cceeec4df4bb19531561ab0e1e31` 使用 `kimi-k3`，原生选择隔离目录后只确认一次
+  workflow 权限；约 1.2 秒恢复“工具执行中”，最终 9/9 completed、五张 ArtifactCard、空闲。
+  真实生成 5 文件，独立 `7/7 unittest PASS`、CLI/JSON 为 `count=10/sum=55`；执行 child 只有一个
+  `register_artifacts`，artifact event 与该 child 已投递 parent terminal signal 均携带同一 5 个 SHA。
+  同一 attempt 内重复 5/9→6/9 的私有工具循环已改为按公开 node/attempt 去重；路由提交早期失败
+  的日志不再以未赋值 frontier 覆盖原异常，进度/engine/log 相邻回归 `76 passed`。但该 root 在首个
+  child 成功后仍因 spawn scoped evidence UNKNOWN 误触发 verify gate，并追加两个失败验证 child，故
+  root 收敛不能判 PASS。当前源码改为按 spawn ticket/command/terminal signal/audit 的精确 lineage
+  投影 child committed receipts；第三轮 fresh Run `f0a514f061cb56cebaa498a4a1447b24` 只有
+  `child-0abd7fb98c3faf61504a7f96085c493f`，三次真实 shell 分别枚举、容斥与显式交叉核验，结果
+  `count=467/sum=234168/MATCH=True`，root/child completed，零 verify nudge、零第二次 spawn。
+- **Harness 终态观察与授权日志补强**：真机发现 root 已 completed 时，语义 phase 的历史 running
+  状态仍让观察面显示“正在委派/4/5”。当前前端以 aggregate terminal 收束未结 phase/substep/tool，
+  运行图终态显示“结果/记录已结束”，不再标当前进行中；backend 在权限/澄清/目录/外部等待事件
+  发出时写 `harness_blocking_ui_event_emitted`，只记录 event/session/run/request/tool 关联字段，不记录
+  敏感 params。后端聚焦 `239 passed`、前端聚焦 `69 passed`、TypeScript 与 Vite build PASS。
+- **workflow_spawn 拒绝语义已真机闭环**：旧 root `074bf4d51e545627ae188d623cafde89`
+  在 UI 点击拒绝后虽然 decision 已是 `denied`，仍错误发出 delegate 并创建 child，根因是
+  `control_delegate` 的 deny outcome 结算后仍无条件 `_prepare_control_event()`。当前 Kernel 覆盖
+  `deny/denied` 归一化，ReAct Driver 对已结算 control outcome fail closed；修复后 root
+  `996390c79f1b5c03967f7f42dc408f29` 的 decision=`denied`、child=0、ticket=0、无
+  `child_accepted`，最终界面明确显示 `authorization_denied` 且未创建 durable child。扩大后端回归
+  `328 passed`。相邻的历史取消投影缺口也已关闭：前端用父 root 的 terminal Session projection
+  收束 child workflow 卡并合并同源 public trace；重启后会话 `5ec83cb7-51d8-46a8-a7ed-c13de60fcf59`
+  只保留一张“已取消 / 6/9 / 67%”卡，缺少可靠计时时显示“耗时未记录”，不再显示“进行中”或
+  重复终态卡。前端相关回归 `57 passed`，TypeScript 与 debug bundle build PASS。
+- **失败 child 收敛与终态展示补强**：ReAct Driver 只对 durable terminal=`failed` 的
+  `workflow_spawn` child 记录有界脱敏 objective 签名；语义相近的再次委派在 launch ticket 前
+  阻断，首次反馈模型、第二次以 `delegate_convergence_exhausted` 停止，实质不同的 child 放行。
+  前端同时修正 Root-only Session projection 的优先级：child 消息自身终态优先，Root 终态只收束
+  陈旧 running/waiting 卡。真实 Session `782f283d-0ac0-4016-b979-e6f79e7582f6` 重启后，completed
+  child 与 `workflow_node:llm_proposal:provider_failure` failed child 分别显示“已完成”和
+  “失败 / 5/9”。后端扩大回归 `332 passed`；前端聚焦 `44 passed`、TypeScript 与 debug bundle
+  build PASS。扩大套件曾暴露 replay 测试在 UOW close 前未 drain parent child-signal owner；按生产
+  shutdown 顺序补齐后，同一 `332` 项退出零 pending-task/closed-database 告警。
+- **macOS 项目目录确认文案已修复**：ProjectDirectoryCard 不再硬编码反斜杠，POSIX/macOS 用
+  `/`、Windows 用 `\`，并覆盖根目录。真实 Open sheet 选择 Desktop 后显示
+  `/Users/denny/Desktop/harness-path-test`，未创建该目录；证据保存在隔离测试 profile。
+- **当前源码 macOS 真 UI 复验**：历史 Kimi Session 曾因 catalog 不再包含该绑定而在 provider
+  preflight 失败；旧取消路径会再次解析缺失模型并使聊天断线。修复后真点击“停止”，界面从
+  “工具执行中”回到“空闲”，左下角保持“已连接”，后端没有
+  `SessionProviderUnavailable`/ASGI 异常。目录恢复后，当前源码以 `kimi-k3` 完成 Run
+  `04a477a3fbbb5e3eb2045e6b11006b55`：真实 UI 触发 `write_file` → 单次权限确认 →
+  `register_artifacts`，两张 ArtifactCard 均能用 TextEdit 打开并在 Finder 定位；文件为 14 B，
+  SHA-256 `c96a2f4aec81c7e0d4ddaceb068ecaf030477e1c273bd4ab70ca1fe9197c4706`。
+- **Provider 实时模型目录持久化**：`models_list` 成功取得 `/models` 后，把去重目录原子写回
+  对应 Provider 的 `config.toml` 缓存；写入前复核 incarnation/revision/base URL，相同目录不
+  重写，且缓存刷新不改变 Provider identity。显式默认模型若不在 live 目录则拒绝持久化而不
+  静默换模。Provider/IPC/Session authority 聚焦回归 `88 passed`；r11 隔离测试配置已从实时
+  HTTP 200 目录写入 155 个模型并确认包含 `kimi-k3`，测试 Provider 默认模型单独设为
+  `kimi-k3`。
+- **运行时模型身份不再泄漏占位符**：平台级 Persona 继续使用稳定占位值维持 prompt cache，
+  但每个任务另注入受保护的 task-scoped runtime model fragment；TurnPreparer 使用已解析的
+  Session Provider，而非全局默认 Provider。重启当前源码后，真实 UI 询问实际模型精确 ID，
+  界面回复 `kimi-k3`；同一次 Run `97f01117fd50506fbe10da0444577fbd` 的后台日志确认
+  `model=kimi-k3` 且 `/v1/chat/completions` HTTP 200。
+- **Kimi K3 历史复杂工程烟测核心 PASS；当前 fresh E2E 经第三轮闭环**：root
+  `cb74467c06f35eaebdf7bfe316b9fff8` 与 child
+  `child-4dad77bbfafec0b8428852dde382d9eb` 完成项目目录确认、durable workflow、分块写入、真实
+  unittest/CLI 和结果自检；独立复跑 `9/9 OK`，四个关键指标精确匹配。child 内一次
+  `register_artifacts` 的 outcome 含 5 个正确文件/哈希，但旧 child `artifact_refs_json=[]`；根 Run
+  `1bf5014d7ee55573ba2a797c391032ef` 补偿登记后 5 张 ArtifactCard 正常。当前源码已修 child
+  metadata/effect/terminal/delivery 原子桥接，以及目录前置和关闭 WebSocket 的恢复边界；当前
+  第二轮已确认 child/Artifact 主链，但 root 误派验证 child；第三轮已用精确 child receipt 回传确认
+  单 child 一次收敛。旧 r15 profile 还观察到
+  恢复历史 Run 时因 ToolSpec catalog 漂移反复抛
+  `ToolCatalogMutationError`，已作为独立 followup，不与新 profile 的能力验证混为一谈。
 - **剩余边界**：产品/testcase 层的 18 个场景已收口；TC-WB-12 步骤 7 已由用户明确移除，禁止
   再次启动带 Live2D 的历史基线。plan-test gate 仍暂停，不宣称机器门 READY。
 - 本轮继续遵守用户要求：暂不使用 plan-test skill，不写 gate ledger，不宣称机器门 READY。

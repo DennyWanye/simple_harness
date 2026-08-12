@@ -23,13 +23,20 @@ import asyncio
 import hashlib
 import json
 import logging
-import os
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, Literal, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _portable_basename(value: str) -> str:
+    """Return a filename for either POSIX or Windows paths on any host OS."""
+
+    if "\\" in value:
+        return PureWindowsPath(value).name
+    return Path(value).name
 
 
 # ─── 常量 ─────────────────────────────────────────────────────
@@ -138,7 +145,7 @@ class ToolArtifact:
         # 默认 title — basename(path) / url / "untitled"
         if not self.title:
             if self.path:
-                self.title = os.path.basename(self.path) or "untitled"
+                self.title = _portable_basename(self.path) or "untitled"
             elif self.url:
                 self.title = self.url
             else:

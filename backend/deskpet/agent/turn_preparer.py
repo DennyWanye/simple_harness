@@ -445,8 +445,12 @@ class ProductTurnPreparer:
         assembler = services.get('context_assembler')
         if assembler is not None and getattr(assembler, 'enabled', True):
             try:
-                persona_model = getattr(local_llm, 'model', 'unknown')
-                persona_base = getattr(local_llm, 'base_url', '')
+                # ``provider`` is the already resolved and Session-bound
+                # provider for this exact product turn. ``local_llm`` is only
+                # a global fallback and can name a different default model.
+                persona_provider = provider or local_llm
+                persona_model = getattr(persona_provider, 'model', 'unknown')
+                persona_base = getattr(persona_provider, 'base_url', '')
                 skill_config: dict[str, Any] = {}
                 try:
                     disclosure = config.skills.auto_disclosure

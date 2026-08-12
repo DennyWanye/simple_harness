@@ -457,8 +457,28 @@ async def _domain_plan_confirmation(command: ProductDomainCommand, sink: Product
     return False
 
 async def _send_both(context: RunPresentationContext, frame: dict[str, Any]) -> None:
-    await context.websocket.send_json(frame)
-    await context.broadcast(context.websocket, frame)
+    try:
+        await context.websocket.send_json(frame)
+    except Exception as exc:  # live transport is not the durable authority
+        logger.warning(
+            "run_presenter_live_delivery_failed",
+            session_id=context.session_id,
+            run_id=context.run_id,
+            request_id=context.request_id,
+            frame_type=str(frame.get("type") or ""),
+            error_type=type(exc).__name__,
+        )
+    try:
+        await context.broadcast(context.websocket, frame)
+    except Exception as exc:
+        logger.warning(
+            "run_presenter_broadcast_failed",
+            session_id=context.session_id,
+            run_id=context.run_id,
+            request_id=context.request_id,
+            frame_type=str(frame.get("type") or ""),
+            error_type=type(exc).__name__,
+        )
 
 def _task_payload(
     context: RunPresentationContext,
@@ -533,7 +553,7 @@ async def _present_assistant(event: AgentEvent, context: RunPresentationContext,
     if event.content:
         state.public_content_by_iteration[event.iteration] = event.content
     if event.content and event.tool_calls:
-        await context.websocket.send_json({'type': 'chat_response', 'payload': _task_payload(context, {'text': event.content, 'provider': 'v2'})})
+        await _send_both(context, {'type': 'chat_response', 'payload': _task_payload(context, {'text': event.content, 'provider': 'v2'})})
 
 async def _present_tool_call(event: AgentEvent, context: RunPresentationContext, state: PresentationState) -> None:
     assert isinstance(event, ToolCallEvent)
@@ -628,18 +648,36 @@ async def _present_final(event: AgentEvent, context: RunPresentationContext, sta
                 await context.vector_worker.enqueue(message_id, state.final_text)
         except Exception as exc:
             logger.warning('chat_persist_assistant_failed', error=str(exc))
-    await context.send_final(context.websocket, {'type': 'chat_v2_final', 'payload': _task_payload(context, {'text': state.final_text, 'iterations': event.iteration, 'replace_all_provisional': True})}, session_id=context.session_id, request_id=context.request_id)
-    await context.emit_context_usage(
-        context.websocket,
-        context.session_id,
-        provider_chain=context.provider_chain,
-        fallback_provider=context.fallback_provider,
-        root_run_id=context.run_id,
-        request_id=context.request_id,
-        binding_epoch=context.provider_binding_epoch,
-        frozen_provider_id=context.provider_binding_provider_id,
-        frozen_model_id=context.provider_binding_model_id,
-    )
+    try:
+        await context.send_final(context.websocket, {'type': 'chat_v2_final', 'payload': _task_payload(context, {'text': state.final_text, 'iterations': event.iteration, 'replace_all_provisional': True})}, session_id=context.session_id, request_id=context.request_id)
+    except Exception as exc:  # durable assistant message is already committed above
+        logger.warning(
+            "run_presenter_final_delivery_failed",
+            session_id=context.session_id,
+            run_id=context.run_id,
+            request_id=context.request_id,
+            error_type=type(exc).__name__,
+        )
+    try:
+        await context.emit_context_usage(
+            context.websocket,
+            context.session_id,
+            provider_chain=context.provider_chain,
+            fallback_provider=context.fallback_provider,
+            root_run_id=context.run_id,
+            request_id=context.request_id,
+            binding_epoch=context.provider_binding_epoch,
+            frozen_provider_id=context.provider_binding_provider_id,
+            frozen_model_id=context.provider_binding_model_id,
+        )
+    except Exception as exc:
+        logger.warning(
+            "run_presenter_context_usage_delivery_failed",
+            session_id=context.session_id,
+            run_id=context.run_id,
+            request_id=context.request_id,
+            error_type=type(exc).__name__,
+        )
     try:
         activity = context.services.get('session_activity')
         if activity is not None:
@@ -661,7 +699,7 @@ async def _present_error(event: AgentEvent, context: RunPresentationContext, sta
     except Exception as exc:
         logger.debug('auto_resume_handle_failed', sid=context.session_id, error=str(exc))
     if not handled:
-        await context.websocket.send_json({'type': 'chat_v2_error', 'payload': _task_payload(context, {'reason': event.reason, 'detail': event.detail, 'error_class': event.error_class or '', 'retract_all_provisional': True})})
+        await _send_both(context, {'type': 'chat_v2_error', 'payload': _task_payload(context, {'reason': event.reason, 'detail': event.detail, 'error_class': event.error_class or '', 'retract_all_provisional': True})})
 
 async def _present_compacted(event: AgentEvent, context: RunPresentationContext, state: PresentationState) -> None:
     assert isinstance(event, ContextCompactedEvent)
@@ -737,6 +775,24 @@ async def _present_compacted(event: AgentEvent, context: RunPresentationContext,
 async def _present_pipeline(event: AgentEvent, context: RunPresentationContext, state: PresentationState) -> None:
     assert isinstance(event, PipelineEvent)
     frame = {'type': event.type, 'payload': _task_payload(context, event.payload)}
+    if event.type in {
+        'permission_request',
+        'clarification_request',
+        'external_wait_request',
+        'project_directory_request',
+    }:
+        logger.info(
+            'harness_blocking_ui_event_emitted',
+            event_type=event.type,
+            session_id=context.session_id,
+            run_id=context.run_id,
+            request_id=str(
+                event.payload.get('request_id')
+                or event.payload.get('decision_id')
+                or ''
+            ),
+            tool_name=str(event.payload.get('tool_name') or ''),
+        )
     try:
         await _send_both(context, frame)
     except Exception as exc:

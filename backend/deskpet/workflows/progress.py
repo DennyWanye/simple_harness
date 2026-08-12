@@ -864,9 +864,8 @@ class WorkflowProgressReporter:
                 else (
                     (
                         f"progress:{identity.workflow_version}:durable_task:"
-                        f"{identity.node_id}:task:"
-                        f"{hashlib.sha256(identity.task_id.encode('utf-8')).hexdigest()[:16]}:"
-                        f"attempt:{identity.attempt}:{normalized_transition}"
+                        f"{identity.node_id}:attempt:{identity.attempt}:"
+                        f"{normalized_transition}"
                     )
                     if identity.workflow_name == "durable_task"
                     else (

@@ -20,10 +20,8 @@ import {
   type IdentityChallenge,
 } from "./auth/companionIdentityBridge";
 import { useControlChannel } from "./hooks/useWebSocket";
-import { usePermissionRequests } from "./hooks/usePermissionRequests";
 import { useExternalWaitRequests } from "./hooks/useExternalWaitRequests";
 import { useClarificationRequests } from "./hooks/useClarificationRequests";
-import { PermissionPopup } from "./components/PermissionPopup";
 import { ExternalWaitDialog } from "./components/ExternalWaitDialog";
 import { ApprovalCenterPanel } from "./components/ApprovalCenterPanel";
 import { ClarificationDialog } from "./components/ClarificationDialog";
@@ -597,13 +595,11 @@ function App() {
   }, [ctxToast]);
   useContextCompactedToast(getControlChannel, showCtxToast);
 
-  // P4-S20 Wave 1c — permission popup IPC wiring. Runs only when the
-  // control channel is open; backend sends `permission_request`, hook
-  // queues them and shows one at a time. ESC denies.
+  // The permission popup has one owner: ChatView.  App keeps the shared
+  // channel for settings/skills and the distinct external-wait surfaces,
+  // but must not subscribe to permission_request a second time.
   const permissionChannel =
     state === "connected" ? getControlChannel() : null;
-  const { current: permissionCurrent, resolve: resolvePermission } =
-    usePermissionRequests(permissionChannel);
   const { current: externalWaitCurrent, complete: completeExternalWait } =
     useExternalWaitRequests(permissionChannel);
   const { current: clarificationCurrent, resolve: resolveClarification } =
@@ -1025,20 +1021,6 @@ function App() {
         }}
       />
 
-      {/* P4-S20 — 权限请求弹窗（最高 zIndex） */}
-      <PermissionPopup
-        request={permissionCurrent}
-        onResolve={resolvePermission}
-        onStopRun={(runId) => {
-          permissionChannel?.send({
-            type: "chat_v2_interrupt",
-            payload: {
-              session_id: activeSidRef.current,
-              run_id: runId,
-            },
-          });
-        }}
-      />
       <ExternalWaitDialog
         request={externalWaitCurrent}
         onComplete={completeExternalWait}

@@ -14,7 +14,11 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: invokeMock,
 }));
 
-import type { Message, WorkflowProgressStatus } from "../stores/sessionsStore";
+import type {
+  Message,
+  TaskRunProjectionState,
+  WorkflowProgressStatus,
+} from "../stores/sessionsStore";
 import type { HarnessInspectorSnapshot, PublicRunSnapshotV3 } from "../types/messages";
 import { MessageStreamPanel, type ChatStreamMessage } from "./MessageStreamPanel";
 
@@ -74,6 +78,7 @@ function panel(
     retryKey: string,
   ) => Promise<{ run_id: string; accepted?: boolean }>,
   agentSnapshot?: unknown,
+  runProjections?: Record<string, TaskRunProjectionState>,
 ) {
   return (
     <MessageStreamPanel
@@ -89,6 +94,7 @@ function panel(
       onChoice={() => undefined}
       onWorkflowRetry={onWorkflowRetry}
       agentSnapshot={agentSnapshot}
+      runProjections={runProjections}
     />
   );
 }
@@ -257,6 +263,109 @@ describe("WorkflowProgressRow (AC-23)", () => {
     rendered.rerender(panel([progress("waiting")]));
     expect(screen.getAllByTestId("workflow-progress-run-ui")).toHaveLength(1);
     expect(screen.getByTestId("workflow-progress-run-ui").getAttribute("data-status")).toBe("waiting");
+  });
+
+  it("settles a stale running summary from the terminal Session Run projection", () => {
+    render(panel(
+      [progress("running")],
+      undefined,
+      undefined,
+      {
+        "run-ui": {
+          run_id: "run-ui",
+          task_scope_id: "scope-ui",
+          version: 4,
+          status: "cancelled",
+          inflight: false,
+          ui_state: "open",
+          started_at: 1,
+          last_activity: 1,
+        },
+      },
+    ));
+
+    const card = screen.getByTestId("workflow-progress-run-ui");
+    expect(card.getAttribute("data-status")).toBe("cancelled");
+    expect(card.textContent).toContain("已取消");
+    expect(card.textContent).toContain("耗时未记录");
+    expect(card.textContent).not.toContain("进行中");
+  });
+
+  it("settles a child workflow card from its terminal parent Run projection", () => {
+    const child = progress("running");
+    child.message.workflow_run_id = "child-ui";
+    child.message.run_id = "root-ui";
+    render(panel(
+      [child],
+      undefined,
+      undefined,
+      {
+        "root-ui": {
+          run_id: "root-ui",
+          task_scope_id: "scope-ui",
+          version: 5,
+          status: "cancelled",
+          inflight: false,
+          ui_state: "open",
+          started_at: 1,
+          last_activity: 2,
+        },
+      },
+    ));
+
+    const card = screen.getByTestId("workflow-progress-child-ui");
+    expect(card.getAttribute("data-status")).toBe("cancelled");
+    expect(card.textContent).toContain("已取消");
+    expect(card.textContent).not.toContain("进行中");
+  });
+
+  it("keeps a child's failed terminal summary when only its completed parent projection is loaded", () => {
+    const child = progress("failed");
+    child.message.workflow_run_id = "child-ui";
+    child.message.run_id = "root-ui";
+    render(panel(
+      [child],
+      undefined,
+      undefined,
+      {
+        "root-ui": {
+          run_id: "root-ui",
+          task_scope_id: "scope-root-ui",
+          version: 7,
+          status: "completed",
+          inflight: false,
+          ui_state: "open",
+          started_at: 1,
+          last_activity: 3,
+        },
+      },
+    ));
+
+    const card = screen.getByTestId("workflow-progress-child-ui");
+    expect(card.getAttribute("data-status")).toBe("failed");
+    expect(card.textContent).toContain("失败");
+    expect(card.textContent).not.toContain("已完成");
+  });
+
+  it("merges a child workflow card into the parent public task trace", () => {
+    const child = progress("running");
+    child.message.workflow_run_id = "child-ui";
+    child.message.run_id = "run-ui";
+    const snapshot = publicSnapshot();
+    snapshot.aggregate_outcome = {
+      ...snapshot.aggregate_outcome,
+      status: "cancelled",
+      explanation_code: "user_interrupt",
+    };
+    snapshot.projection_complete = true;
+
+    render(panel([child], undefined, snapshot));
+
+    expect(screen.getAllByTestId(/^workflow-progress-/)).toHaveLength(1);
+    const card = screen.getByTestId("workflow-progress-child-ui");
+    expect(card.getAttribute("data-status")).toBe("cancelled");
+    expect(card.textContent).toContain("1/2 步");
+    expect(card.textContent).not.toContain("进行中");
   });
 
   it("does not let a legacy raw child Run overwrite workflow card authority", () => {
@@ -513,6 +622,50 @@ describe("PublicProgressRow", () => {
       "apocalypse-demo",
     );
     expect(screen.getByText("Agent 已收到位置，正在继续现有项目。")).toBeTruthy();
+  });
+
+  it("joins a new project name with the native macOS path separator", async () => {
+    invokeMock.mockResolvedValueOnce("/Users/denny/projects");
+    render(
+      <MessageStreamPanel
+        embedded
+        filter="all"
+        chatMessages={[]}
+        warnings={[]}
+        errors={[]}
+        onSetFilter={() => undefined}
+        onDismiss={() => undefined}
+        onDismissAll={() => undefined}
+        onJumpToSession={() => undefined}
+        onChoice={() => undefined}
+        projectDirectoryRequest={{
+          session_id: "default",
+          run_id: "root-project",
+          request_id: "decision-project",
+          decision_id: "decision-project",
+          nonce: "nonce-project",
+          version: 0,
+          title: "选择项目保存位置",
+          required_action: "请选择项目保存到哪个文件夹下面",
+          wait_kind: "user_content",
+          wait_ref: "external-wait:project",
+          project_name: "Harness Demo",
+          folder_name: "harness-demo",
+          project_kind: "Web app",
+          directory_mode: "create_new",
+          received_at: 1000,
+        }}
+        onProjectDirectoryConfirm={() => true}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "选择文件夹" }));
+    await waitFor(() => {
+      expect(
+        screen.getByText(/将创建到：\/Users\/denny\/projects\/harness-demo/),
+      ).toBeTruthy();
+    });
+    expect(screen.queryByText(/projects\\harness-demo/)).toBeNull();
   });
 
   it("restores a confirmed parent directory after reconnect", () => {

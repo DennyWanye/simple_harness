@@ -374,6 +374,9 @@ async def test_event_trigger_advances_every_bounded_lane_without_resident_task()
             self.recovery_run_ids.append(tuple(run_ids))
             return ()
 
+        async def read_run(self, run_id: str):
+            return SimpleNamespace(run_id=run_id, status=RunStatus.RUNNING)
+
     class Effects:
         def ready_run_ids(self) -> frozenset[str]:
             return frozenset({"late-run"})
@@ -441,7 +444,9 @@ async def test_effect_ready_recovery_does_not_wait_for_or_cancel_live_owner() ->
     owner = asyncio.create_task(release.wait(), name="live-provider-owner")
     actor = _host("session-live").actor(root_run_id="run-live")
     record = SimpleNamespace(
-        run_id="run-live", context=SimpleNamespace(actor=lambda: actor)
+        run_id="run-live",
+        status=RunStatus.RUNNING,
+        context=SimpleNamespace(actor=lambda: actor),
     )
     active = SimpleNamespace(task=owner, recovery_deferred_until=0.0)
 
@@ -452,6 +457,10 @@ async def test_effect_ready_recovery_does_not_wait_for_or_cancel_live_owner() ->
             return self._runs.get(run_id)
 
     class Uow:
+        async def read_run(self, run_id: str):
+            assert run_id == record.run_id
+            return record
+
         async def list_recoverable(self, **kwargs):
             return (record,)
 

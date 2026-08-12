@@ -145,6 +145,42 @@ describe("public Agent activity projection", () => {
     });
   });
 
+  it("settles stale running phases and substeps when the Root is completed", () => {
+    const value = snapshot({
+      aggregate_outcome: {
+        status: "completed",
+        explanation_code: "root_completed",
+        evidence_refs: ["root:final"],
+        child_warnings: [],
+      },
+      semantic_phases: [{
+        ...snapshot().semantic_phases[0],
+        status: "running",
+        workflow_steps: [{
+          workflow_step_id: "tool_execution",
+          label: "执行命令",
+          status: "running",
+          step_index: 0,
+          step_total: 1,
+        }],
+      }],
+      tool_public_views: [{
+        ...snapshot().tool_public_views[0],
+        status: "running",
+      }],
+    });
+
+    const [trace] = buildWorkflowTaskTraces(value);
+
+    expect(trace.steps[0]).toMatchObject({ status: "completed", current: false });
+    expect(trace.steps[0].substeps[0]).toMatchObject({ status: "completed", current: false });
+    expect(trace.steps[0].tools[0]).toMatchObject({ status: "completed", ok: true });
+    render(<DurableTaskSteps trace={trace} />);
+    expect(screen.getByText("1/1 步")).toBeTruthy();
+    expect(screen.getByText("步骤记录")).toBeTruthy();
+    expect(screen.queryByText(/当前：/)).toBeNull();
+  });
+
   it("deduplicates repeated workflow steps across snapshot, trace, and rendered DOM", () => {
     const value = snapshot({
       aggregate_outcome: {

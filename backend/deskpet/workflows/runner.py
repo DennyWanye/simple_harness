@@ -751,6 +751,14 @@ class WorkflowRunner:
                     }:
                         return self._result_from_row(current)
                     raise
+                logger.exception(
+                    "workflow_native_execute_failed run_id=%s workflow=%s@%s "
+                    "error_type=%s",
+                    run_id,
+                    row["workflow_name"],
+                    row["workflow_version"],
+                    type(exc).__name__,
+                )
                 current = await self._require_run(run_id)
                 current_status = WorkflowRunStatus(current["status"])
                 if current_status in {WorkflowRunStatus.CANCEL_REQUESTED, WorkflowRunStatus.CANCELLING}:

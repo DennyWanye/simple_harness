@@ -285,6 +285,43 @@ def _expect_versions(reg: LLMProviderRegistry) -> dict:
 # ---------- 2.1 settings_providers_list_request ----------------------------
 
 
+def test_models_list_persists_successful_live_catalog(fresh_registry, monkeypatch):
+    """GET /models feeds both the picker response and config.toml cache."""
+    from llm import model_catalog
+
+    reg, _kc, cfg = fresh_registry
+    _seed_provider(
+        reg,
+        pid="relay-cloud",
+        base_url="https://relay.example.com/v1",
+        model="sf-glm-5.2",
+        api_key="sk-live",
+    )
+
+    async def _fake_fetch(base_url: str, api_key: str, *, timeout: float = 8.0):
+        assert base_url == "https://relay.example.com/v1"
+        assert api_key == "sk-live"
+        return ["sf-glm-5.2", "kimi-k3"]
+
+    monkeypatch.setattr(model_catalog, "fetch_models", _fake_fetch)
+
+    client = TestClient(app)
+    cm, ws = _ws_open(client)
+    try:
+        ws.send_json({"type": "models_list"})
+        response = _drain_until(ws, "models_list_response")
+    finally:
+        cm.__exit__(None, None, None)
+
+    assert response["payload"]["source"] == "live"
+    assert [row["id"] for row in response["payload"]["models"]] == [
+        "sf-glm-5.2",
+        "kimi-k3",
+    ]
+    assert reg.get_entry("relay-cloud").models == ["sf-glm-5.2", "kimi-k3"]
+    assert "kimi-k3" in cfg.read_text(encoding="utf-8")
+
+
 def test_list_request_returns_sanitized(fresh_registry):
     """2.1: list_response carries api_key=******** for every entry."""
     reg, _kc, _cfg = fresh_registry

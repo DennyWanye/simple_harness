@@ -14,6 +14,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useSessionsStore } from "../stores/sessionsStore";
 import type {
   PermissionRequest,
   PermissionResponse,
@@ -27,12 +28,19 @@ type PermissionChannel = {
   on_message?: (listener: (message: unknown) => void) => () => void;
 };
 
+function permissionIdentity(
+  payload: Pick<PermissionRequest["payload"], "decision_id" | "request_id">,
+): string {
+  return String(payload.decision_id || payload.request_id || "").trim();
+}
+
 export function usePermissionRequests(channel: PermissionChannel | null) {
   const [current, setCurrent] = useState<
     PermissionRequest["payload"] | null
   >(null);
   const currentRef = useRef<PermissionRequest["payload"] | null>(null);
   const queueRef = useRef<PermissionRequest["payload"][]>([]);
+  const resolvedRef = useRef<Set<string>>(new Set());
 
   const showNext = useCallback(() => {
     const next = queueRef.current.shift();
@@ -41,9 +49,11 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
   }, []);
 
   const enqueue = useCallback((payload: PermissionRequest["payload"]) => {
+    const identity = permissionIdentity(payload);
+    if (!identity || resolvedRef.current.has(identity)) return;
     if (
-      currentRef.current?.request_id === payload.request_id ||
-      queueRef.current.some((item) => item.request_id === payload.request_id)
+      (currentRef.current && permissionIdentity(currentRef.current) === identity) ||
+      queueRef.current.some((item) => permissionIdentity(item) === identity)
     ) {
       return;
     }
@@ -115,7 +125,41 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
             : {}),
         },
       };
-      channel.send(reply as unknown as { type: string; payload?: Record<string, unknown> });
+      const sent = channel.send(
+        reply as unknown as { type: string; payload?: Record<string, unknown> },
+      );
+      if (!sent) return;
+      const sessionId = String(current.session_id || "").trim();
+      const runId = String(current.run_id || "").trim();
+      if (sessionId && runId) {
+        const store = useSessionsStore.getState();
+        store.upsert_run_projection(sessionId, runId, {
+          status: "running",
+          inflight: true,
+        });
+        // upsert_run_projection preserves terminal authority.  Only clear the
+        // permission pill when this decision actually resumed a live Run;
+        // a late response must not reopen an already terminal session.
+        if (
+          useSessionsStore.getState().sessions[sessionId]?.run_projections?.[
+            runId
+          ]?.status === "running"
+        ) {
+          useSessionsStore.getState().upsert(sessionId, {
+            status: "running",
+            inflight: true,
+          });
+        }
+      }
+      const identity = permissionIdentity(current);
+      if (identity) {
+        resolvedRef.current.add(identity);
+        // A session can run for days; keep this replay fence bounded.
+        if (resolvedRef.current.size > 512) {
+          const oldest = resolvedRef.current.values().next().value;
+          if (oldest) resolvedRef.current.delete(oldest);
+        }
+      }
       showNext();
     },
     [current, channel, showNext]

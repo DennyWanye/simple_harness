@@ -53,6 +53,9 @@ from pathlib import Path as _Path
 
 import structlog
 import uvicorn
+from logging.handlers import RotatingFileHandler
+import paths as _paths
+from observability.log_redaction import redact_log_event
 from deskpet.session.task_scope import (
     TaskScopeDecision,
     task_session_manager,
@@ -65,14 +68,30 @@ from deskpet.session.task_scope import (
 # events (asr_result / vad / lip_sync) without bouncing through the
 # supervisor. structlog defaults to using stdlib logging under the hood,
 # so configuring the root handler is enough.
-_log_dir = _Path(__file__).parent.parent / "logs"
-_log_dir.mkdir(exist_ok=True)
+_log_dir = _paths.user_log_dir()
+_log_dir.mkdir(parents=True, exist_ok=True)
 _log_file = _log_dir / "backend.log"
-_file_handler = logging.FileHandler(_log_file, encoding="utf-8")
-_file_handler.setFormatter(
-    logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+_file_handler = RotatingFileHandler(
+    _log_file,
+    maxBytes=20 * 1024 * 1024,
+    backupCount=5,
+    encoding="utf-8",
 )
 _stream_handler = logging.StreamHandler()
+_foreign_pre_chain = [
+    structlog.contextvars.merge_contextvars,
+    structlog.stdlib.add_logger_name,
+    structlog.stdlib.add_log_level,
+    structlog.stdlib.PositionalArgumentsFormatter(),
+    redact_log_event,
+    structlog.processors.TimeStamper(fmt="iso"),
+]
+_json_log_formatter = structlog.stdlib.ProcessorFormatter(
+    processor=structlog.processors.JSONRenderer(sort_keys=True),
+    foreign_pre_chain=_foreign_pre_chain,
+)
+_file_handler.setFormatter(_json_log_formatter)
+_stream_handler.setFormatter(_json_log_formatter)
 logging.basicConfig(
     level=logging.INFO,
     handlers=[_stream_handler, _file_handler],
@@ -83,12 +102,13 @@ logging.basicConfig(
 # stdlib logging so the FileHandler above actually receives events.
 structlog.configure(
     processors=[
-        structlog.processors.add_log_level,
+        structlog.contextvars.merge_contextvars,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        redact_log_event,
         structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.KeyValueRenderer(
-            key_order=["event", "level", "timestamp"],
-            sort_keys=False,
-        ),
+        structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
     ],
     logger_factory=structlog.stdlib.LoggerFactory(),
     wrapper_class=structlog.stdlib.BoundLogger,
@@ -104,7 +124,6 @@ from config import (
     resolve_config_path,
     resolve_deep_research_workflow_version,
 )
-import paths as _paths
 from context import ServiceContext
 from deskpet.agent.product_domain_sink import LegacyProductDomainSink
 from deskpet.agent.run_presenter import (
@@ -8226,6 +8245,12 @@ async def _cancel_product_harness_run(
     host, _provider, _chain, _snapshot = await _issue_product_harness_host(
         session_id,
         workspace=None,
+        # Cancellation authenticates the persisted Run through session,
+        # principal and auth epoch.  It must remain available when the bound
+        # provider/model was removed or the configured workspace disappeared;
+        # otherwise a user cannot stop exactly the broken Run that needs it.
+        allow_provider_unavailable=True,
+        allow_workspace_unavailable=True,
     )
     await _harness_runtime.run_client.cancel(
         {"run_id": run_id, "expected_session_id": session_id},
@@ -12443,6 +12468,32 @@ async def control_channel(ws: WebSocket):
                             if _live:
                                 _model_ids = _live
                                 _source = "live"
+                                # A successful live catalog is also the
+                                # durable fallback for the next restart or a
+                                # later /models outage. Persist only if the
+                                # Provider still has the exact identity and
+                                # endpoint used for this fetch; the registry
+                                # method is idempotent and does not invalidate
+                                # Session bindings for a cache-only refresh.
+                                try:
+                                    await _reg.cache_discovered_models(
+                                        _pid0,
+                                        _live,
+                                        expected_incarnation_id=str(
+                                            getattr(_entry0, "incarnation_id", "") or ""
+                                        ),
+                                        expected_config_revision=int(
+                                            getattr(_entry0, "config_revision", 0) or 0
+                                        ),
+                                        expected_base_url=_base_url,
+                                    )
+                                except Exception as _cache_exc:  # noqa: BLE001
+                                    logger.warning(
+                                        "provider_catalog_cache_refresh_failed "
+                                        "provider=%s error=%s",
+                                        _pid0,
+                                        str(_cache_exc)[:200],
+                                    )
                             elif _cfg_models:
                                 _model_ids = _cfg_models
                                 _source = "config"

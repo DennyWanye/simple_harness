@@ -60,6 +60,7 @@ from deskpet.harness.kernel import (
     RegisteredDriver,
     RunKernel,
     RunRequest,
+    decision_response_allows,
     kernel_public_operations,
 )
 from deskpet.harness.ports import (
@@ -89,6 +90,27 @@ from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.tools.registry import PreparedToolCallStale, ToolRegistry
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
 from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall
+
+
+@pytest.mark.parametrize(
+    ("response", "expected"),
+    [
+        ({"decision": "deny"}, False),
+        ({"decision": "DENIED"}, False),
+        ({"decision": "reject"}, False),
+        ({"resolution": "cancelled"}, False),
+        ({"decision": "allow"}, True),
+        ({"decision": "allow_session"}, True),
+        ({"allow": False, "decision": "allow"}, False),
+        ({"approved": False, "decision": "allow"}, False),
+        ({"answer": "no"}, True),
+    ],
+)
+def test_decision_response_allows_permission_and_workflow_vocabularies(
+    response,
+    expected,
+) -> None:
+    assert decision_response_allows(response) is expected
 
 
 class ChildReconciler(_HarnessReconciler):
@@ -2575,6 +2597,9 @@ async def test_scheduled_child_replay_uses_authoritative_terminal_row(tmp_path) 
     assert (await fresh.get_child_command(command.operation_id)).status.value == "acked"
     assert driver.starts == 1
     assert kernel._live.get(command.child_run_id) is None
+    assert await kernel._drain_active(1.0)
+    await fresh.close()
+    await uow.close()
 
 
 @pytest.mark.asyncio
@@ -2820,6 +2845,7 @@ async def test_child_provider_fault_persists_failure_and_parent_recovers(
         "recovery_reason": "child_provider_failure",
     }
     assert await fault_script.active_injection_count() == 0
+    assert await kernel._drain_active(1.0)
     await uow.close()
 
 
@@ -3116,6 +3142,7 @@ async def test_composed_agent_loop_child_fault_binds_identity_and_parent_recover
         "recovery_reason": "child_provider_failure",
     }
     assert await fault_script.active_injection_count() == 0
+    assert await kernel._drain_active(1.0)
     await uow.close()
 
 

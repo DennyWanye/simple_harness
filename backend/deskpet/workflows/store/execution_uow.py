@@ -1770,6 +1770,122 @@ class SqliteExecutionUnitOfWork:
                 now=now,
             )
             execution = await self._workflow_execution_run_tx(db, run_id)
+        artifact_items: list[dict[str, Any]] = []
+        artifact_refs: list[str] = []
+        if (
+            terminal_status == "completed"
+            and str(run["workflow_name"] or "") == "durable_task"
+        ):
+            effect_rows = await (
+                await db.execute(
+                    """SELECT effect_id,prepared_json,outcome_json,artifact_refs_json
+                    FROM workflow_effects
+                    WHERE run_id=? AND status='committed'
+                    AND artifact_refs_json!='[]'
+                    ORDER BY ended_at,effect_id""",
+                    (run_id,),
+                )
+            ).fetchall()
+            seen_artifacts: set[tuple[str, str]] = set()
+            for effect_row in effect_rows:
+                try:
+                    refs = [
+                        str(item)
+                        for item in json.loads(str(effect_row["artifact_refs_json"]))
+                    ]
+                    outcome_payload = json.loads(str(effect_row["outcome_json"]))
+                    prepared_payload = json.loads(str(effect_row["prepared_json"]))
+                except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                    raise CheckpointExecutionError(
+                        "artifact_effect_invalid",
+                        "committed workflow artifact metadata is not valid JSON",
+                    ) from exc
+                tool_name = (
+                    str(prepared_payload.get("tool_name") or "")
+                    if isinstance(prepared_payload, Mapping)
+                    else ""
+                )
+                value = (
+                    outcome_payload.get("value")
+                    if isinstance(outcome_payload, Mapping)
+                    else None
+                )
+                raw_artifacts = (
+                    value.get("artifacts")
+                    if isinstance(value, Mapping)
+                    else None
+                )
+                if refs and not isinstance(raw_artifacts, list):
+                    if tool_name == "register_artifacts":
+                        raise CheckpointExecutionError(
+                            "artifact_effect_payload_missing",
+                            "register_artifacts refs require an artifacts outcome envelope",
+                        )
+                    # Some workflow effects own input/dependency blobs. They
+                    # are durable evidence, not user-facing output artifacts.
+                    continue
+                registered_digests: set[str] = set()
+                for raw_artifact in raw_artifacts or ():
+                    if not isinstance(raw_artifact, Mapping):
+                        raise CheckpointExecutionError(
+                            "artifact_effect_payload_invalid",
+                            "workflow artifact entries must be objects",
+                        )
+                    item = copy.deepcopy(dict(raw_artifact))
+                    digest = str(item.get("sha256") or "").strip()
+                    path = str(item.get("path") or "").strip()
+                    if not digest:
+                        if tool_name == "register_artifacts":
+                            raise CheckpointExecutionError(
+                                "artifact_effect_payload_invalid",
+                                "register_artifacts entries require a sha256 digest",
+                            )
+                        # write_file and other producer tools may publish a
+                        # provisional UI envelope while the receipt digest is
+                        # owned only by prepared metadata.  It is not a final
+                        # registered artifact and must not poison terminal
+                        # aggregation.
+                        continue
+                    if digest not in refs:
+                        raise CheckpointExecutionError(
+                            "artifact_effect_ref_mismatch",
+                            "workflow artifact digest is absent from its committed refs",
+                        )
+                    registered_digests.add(digest)
+                    if digest not in artifact_refs:
+                        artifact_refs.append(digest)
+                    identity = (digest, path)
+                    if identity not in seen_artifacts:
+                        seen_artifacts.add(identity)
+                        artifact_items.append(item)
+                if tool_name == "register_artifacts" and set(refs) != registered_digests:
+                    raise CheckpointExecutionError(
+                        "artifact_effect_ref_mismatch",
+                        "register_artifacts refs and artifact digests must match exactly",
+                    )
+            if artifact_items:
+                await self._append_workflow_event_tx(
+                    db,
+                    run=run,
+                    intent={
+                        "intent_id": f"{run_id}:registered-artifacts",
+                        "event_key": "workflow:registered-artifacts",
+                        "event_type": "workflow.artifact_card",
+                        "channel": "artifact",
+                        "payload": {
+                            "kind": "artifact_card",
+                            "status": "completed",
+                            "tool": "register_artifacts",
+                            "text": (
+                                f"Registered {len(artifact_items)} workflow "
+                                "artifact(s)."
+                            ),
+                            "artifacts": artifact_items,
+                            "artifact_refs": artifact_refs,
+                        },
+                    },
+                    now=now,
+                )
         child_command = await (
             await db.execute(
                 """SELECT operation_id FROM execution_child_commands
@@ -1783,6 +1899,8 @@ class SqliteExecutionUnitOfWork:
             "terminal_event_id": terminal_event_id,
             "error": copy.deepcopy(terminal_error),
             "recovery_action": recovery_action,
+            "artifacts": artifact_items,
+            "artifact_refs": artifact_refs,
         }
         for event_kind, value_key in (
             ("workflow.final_assistant", "final_assistant"),
@@ -8976,7 +9094,16 @@ class SqliteExecutionUnitOfWork:
         self,
         context: EvidenceContext,
     ) -> EvidenceSelection:
-        """Project an exact successful effect without creating another ledger."""
+        """Project exact completion evidence without creating another ledger.
+
+        A normal tool call resolves to its own settled execution effect.  An
+        attached ``workflow_spawn`` is different: the parent control call is
+        completed by a durable child terminal signal, while the actual tool
+        effects live in ``workflow_effects`` under that child Run.  Resolve
+        that lineage only when every durable identity agrees and the child's
+        workflow audit explicitly passed.  This keeps the query fail-closed
+        without discarding the receipts that prove delegated work.
+        """
 
         # execution_effects currently has no explicit target/resource digest.
         # An effect fingerprint is a different identity and must not substitute.
@@ -8994,31 +9121,148 @@ class SqliteExecutionUnitOfWork:
                     (context.effect_id,),
                 )
             ).fetchone()
-        if row is None:
-            return UNKNOWN_EVIDENCE
-        expected = (context.run_id, context.turn_id, context.call_id, context.effect_id)
-        actual = (
-            str(row["run_id"]),
-            str(row["turn_id"]),
-            str(row["call_id"]),
-            str(row["effect_id"]),
-        )
-        artifacts = tuple(str(item) for item in json.loads(str(row["artifact_refs_json"])))
-        receipt_ref = str(row["receipt_ref"] or "")
+            if row is not None:
+                expected = (
+                    context.run_id,
+                    context.turn_id,
+                    context.call_id,
+                    context.effect_id,
+                )
+                actual = (
+                    str(row["run_id"]),
+                    str(row["turn_id"]),
+                    str(row["call_id"]),
+                    str(row["effect_id"]),
+                )
+                artifacts = tuple(
+                    str(item)
+                    for item in json.loads(str(row["artifact_refs_json"]))
+                )
+                receipt_ref = str(row["receipt_ref"] or "")
+                if (
+                    actual != expected
+                    or str(row["status"]) != "succeeded"
+                    or not receipt_ref
+                    or (
+                        context.artifact_ref is not None
+                        and context.artifact_ref not in artifacts
+                    )
+                ):
+                    return UNKNOWN_EVIDENCE
+                record = CompletionEvidence(
+                    context=context,
+                    tool_name=str(row["tool_name"]),
+                    receipt_ref=receipt_ref,
+                    artifact_refs=artifacts,
+                )
+                return EvidenceSelection(status="matched", records=(record,))
+
+            expected_effect_id = hashlib.sha256(
+                f"effect|{context.run_id}|{context.call_id}".encode("utf-8")
+            ).hexdigest()
+            if context.effect_id != expected_effect_id:
+                return UNKNOWN_EVIDENCE
+
+            lineage = await (
+                await db.execute(
+                    """SELECT parent.turn_id,child.run_id AS child_run_id,
+                    child.status AS child_status,
+                    child.terminal_event_id,signal.payload_json
+                    FROM execution_profile_launch_tickets AS ticket
+                    JOIN execution_runs AS parent
+                      ON parent.run_id=ticket.parent_run_id
+                    JOIN execution_child_commands AS command
+                      ON command.parent_run_id=ticket.parent_run_id
+                     AND command.command_id=ticket.child_command_id
+                     AND command.child_run_id=ticket.child_run_id
+                    JOIN execution_child_signal_inbox AS signal
+                      ON signal.operation_id=command.operation_id
+                     AND signal.kind='terminal'
+                    JOIN execution_runs AS child
+                      ON child.run_id=ticket.child_run_id
+                    WHERE ticket.parent_run_id=?
+                      AND ticket.spawn_call_id=?
+                      AND ticket.state='consumed'
+                      AND command.status='acked'
+                      AND signal.delivered_at IS NOT NULL""",
+                    (context.run_id, context.call_id),
+                )
+            ).fetchone()
+            if (
+                lineage is None
+                or str(lineage["turn_id"]) != context.turn_id
+                or str(lineage["child_status"]) != "completed"
+                or not str(lineage["terminal_event_id"] or "")
+            ):
+                return UNKNOWN_EVIDENCE
+            try:
+                terminal = json.loads(str(lineage["payload_json"]))
+                value = terminal.get("value")
+                if not isinstance(value, Mapping):
+                    return UNKNOWN_EVIDENCE
+                workflow_report = value.get("workflow_report")
+                audit = (
+                    workflow_report.get("audit")
+                    if isinstance(workflow_report, Mapping)
+                    else None
+                )
+                if (
+                    terminal.get("status") != "completed"
+                    or value.get("status") != "completed"
+                    or value.get("run_id") != str(lineage["child_run_id"])
+                    or value.get("terminal_event_id")
+                    != str(lineage["terminal_event_id"])
+                    or not isinstance(audit, Mapping)
+                    or audit.get("passed") is not True
+                ):
+                    return UNKNOWN_EVIDENCE
+            except (TypeError, ValueError, json.JSONDecodeError):
+                return UNKNOWN_EVIDENCE
+
+            effect_rows = await (
+                await db.execute(
+                    """SELECT prepared_json,receipt_ref,artifact_refs_json
+                    FROM workflow_effects
+                    WHERE run_id=? AND status='committed'
+                      AND receipt_ref IS NOT NULL AND receipt_ref<>''
+                    ORDER BY started_at,effect_id""",
+                    (str(lineage["child_run_id"]),),
+                )
+            ).fetchall()
+
+        records: list[CompletionEvidence] = []
+        all_artifacts: set[str] = set()
+        for effect in effect_rows:
+            try:
+                prepared = json.loads(str(effect["prepared_json"]))
+                tool_name = str(prepared.get("tool_name") or "").strip()
+                artifacts = tuple(
+                    str(item)
+                    for item in json.loads(str(effect["artifact_refs_json"]))
+                )
+            except (TypeError, ValueError, json.JSONDecodeError):
+                return UNKNOWN_EVIDENCE
+            receipt_ref = str(effect["receipt_ref"] or "").strip()
+            if not tool_name or not receipt_ref:
+                return UNKNOWN_EVIDENCE
+            all_artifacts.update(artifacts)
+            records.append(
+                CompletionEvidence(
+                    context=context,
+                    tool_name=tool_name,
+                    receipt_ref=receipt_ref,
+                    artifact_refs=artifacts,
+                )
+            )
         if (
-            actual != expected
-            or str(row["status"]) != "succeeded"
-            or not receipt_ref
-            or (context.artifact_ref is not None and context.artifact_ref not in artifacts)
+            not records
+            or (
+                context.artifact_ref is not None
+                and context.artifact_ref not in all_artifacts
+            )
         ):
             return UNKNOWN_EVIDENCE
-        record = CompletionEvidence(
-            context=context,
-            tool_name=str(row["tool_name"]),
-            receipt_ref=receipt_ref,
-            artifact_refs=artifacts,
-        )
-        return EvidenceSelection(status="matched", records=(record,))
+        return EvidenceSelection(status="matched", records=tuple(records))
 
     async def read_effect_outcome(
         self, *, run_id: str, call_id: str, effect_id: str, args_hash: str,

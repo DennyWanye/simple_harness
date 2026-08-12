@@ -69,6 +69,7 @@
     {"handler_id":"core.process_wait.v1","tool_name":"process_wait","authority_phase":"both","lifecycle":"active","artifacts":["backend/deskpet/tools/os_tools/process_tools.py"]},
     {"handler_id":"core.project_directory_select.v1","tool_name":"project_directory_select","authority_phase":"both","lifecycle":"active","artifacts":["backend/deskpet/tools/orchestration_controls.py"]},
     {"handler_id":"core.read_file.v1","tool_name":"read_file","authority_phase":"both","lifecycle":"active","artifacts":["backend/deskpet/tools/os_tools/read_file.py"]},
+    {"handler_id":"core.register_artifacts.v1","tool_name":"register_artifacts","authority_phase":"both","lifecycle":"active","artifacts":["backend/deskpet/tools/os_tools/register_artifacts.py"]},
     {"handler_id":"core.run_browser_task.v1","tool_name":"run_browser_task","authority_phase":"both","lifecycle":"active","artifacts":["backend/deskpet/tools/browser_use_tool.py"]},
     {"handler_id":"core.run_shell.v1","tool_name":"run_shell","authority_phase":"both","lifecycle":"active","artifacts":["backend/deskpet/tools/os_tools/run_shell.py"]},
     {"handler_id":"core.scrapling_fetch.v1","tool_name":"scrapling_fetch","authority_phase":"both","lifecycle":"active","artifacts":["backend/deskpet/tools/scrapling_tools.py"]},

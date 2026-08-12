@@ -1195,6 +1195,36 @@ async def test_presenter_projects_public_reasoning_summary_without_raw_cot() -> 
 
 
 @pytest.mark.asyncio
+async def test_presenter_logs_blocking_ui_wait_without_sensitive_params(capsys) -> None:
+    ws, db = _WS(), _SessionDB()
+    context, _seen = _run_context(ws, db)
+    context.run_id = "run-permission"
+    presenter, state = build_product_run_presenter(), PresentationState()
+
+    await presenter.present(
+        PipelineEvent(
+            type="permission_request",
+            payload={
+                "request_id": "decision-1",
+                "tool_name": "workflow_spawn",
+                "params": {"api_key": "must-not-be-logged"},
+            },
+            iteration=1,
+        ),
+        context,
+        state,
+    )
+
+    assert ws.frames[0]["type"] == "permission_request"
+    output = capsys.readouterr().out
+    assert "harness_blocking_ui_event_emitted" in output
+    assert "event_type=permission_request" in output
+    assert "run_id=run-permission" in output
+    assert "request_id=decision-1" in output
+    assert "must-not-be-logged" not in output
+
+
+@pytest.mark.asyncio
 async def test_presenter_does_not_duplicate_tool_lifecycle_as_progress() -> None:
     ws, db = _WS(), _SessionDB()
     context, _seen = _run_context(ws, db)
@@ -1330,6 +1360,7 @@ async def test_presenter_tool_result_handoff_error_compaction_and_activity_golde
         "tool_use_event",
         "tool_result",
         "chat_v2_final",
+        "chat_v2_error",
     ]
     assert db.messages == [
         {
@@ -1346,6 +1377,54 @@ async def test_presenter_tool_result_handoff_error_compaction_and_activity_golde
         "bump",
         "error",
     ]
+
+
+@pytest.mark.asyncio
+async def test_presenter_closed_websocket_does_not_break_durable_error_projection() -> None:
+    class ClosedWS(_WS):
+        async def send_json(self, frame: dict[str, Any]) -> None:
+            del frame
+            raise RuntimeError("Cannot call send once a close message has been sent")
+
+    ws, db, activity = ClosedWS(), _SessionDB(), _Activity()
+    context, seen = _run_context(ws, db, activity=activity)
+    presenter, state = build_product_run_presenter(), PresentationState()
+
+    await presenter.present(
+        ErrorEvent(
+            reason="workspace_selection_required",
+            detail="select a project directory",
+            error_class="WorkspaceSelectionRequired",
+        ),
+        context,
+        state,
+    )
+
+    assert [frame["type"] for frame in seen["peers"]] == ["chat_v2_error"]
+    assert activity.calls[-1][0] == "error"
+
+
+@pytest.mark.asyncio
+async def test_presenter_closed_websocket_does_not_break_durable_final_projection() -> None:
+    class ClosedWS(_WS):
+        async def send_json(self, frame: dict[str, Any]) -> None:
+            del frame
+            raise RuntimeError("Cannot call send once a close message has been sent")
+
+    ws, db, activity = ClosedWS(), _SessionDB(), _Activity()
+    context, seen = _run_context(ws, db, activity=activity)
+
+    async def emit_usage(_ws: Any, _sid: str, **_kwargs: Any) -> None:
+        raise RuntimeError("usage socket is closed")
+
+    context.emit_context_usage = emit_usage
+    presenter, state = build_product_run_presenter(), PresentationState()
+
+    await presenter.present(FinalEvent(content="durable answer"), context, state)
+
+    assert db.messages[-1]["role"] == "assistant"
+    assert db.messages[-1]["content"] == "durable answer"
+    assert activity.calls[-1][0] == "status"
 
 
 @pytest.mark.asyncio

@@ -5,6 +5,7 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { usePermissionRequests } from "./usePermissionRequests";
+import { useSessionsStore } from "../stores/sessionsStore";
 
 class FakePanelChannel {
   readonly sent: Array<{ type: string; payload?: Record<string, unknown> }> = [];
@@ -76,5 +77,77 @@ describe("usePermissionRequests", () => {
       },
     });
     expect(result.current.current?.request_id).toBe("request-2");
+  });
+
+  it("uses decision identity and never reopens a resolved replay", () => {
+    const channel = new FakePanelChannel();
+    const { result } = renderHook(() => usePermissionRequests(channel));
+    const first = {
+      request_id: "root-request",
+      decision_id: "decision-1",
+      category: "shell",
+      summary: "first",
+      params: {},
+      default_action: "prompt",
+      dangerous: false,
+      session_id: "session-1",
+      run_id: "run-1",
+    };
+    const second = {
+      ...first,
+      decision_id: "decision-2",
+      summary: "second",
+    };
+
+    act(() => {
+      channel.emit({ type: "permission_request", payload: first });
+      channel.emit({ type: "permission_request", payload: second });
+    });
+    expect(result.current.current?.decision_id).toBe("decision-1");
+
+    act(() => result.current.resolve("deny"));
+    expect(result.current.current?.decision_id).toBe("decision-2");
+
+    act(() => {
+      channel.emit({ type: "permission_request", payload: first });
+    });
+    expect(result.current.current?.decision_id).toBe("decision-2");
+  });
+
+  it("clears the permission pill when a live Run decision is sent", () => {
+    const channel = new FakePanelChannel();
+    const store = useSessionsStore.getState();
+    store.upsert_run_projection("session-resume", "run-resume", {
+      status: "waiting",
+      inflight: false,
+    });
+    store.upsert("session-resume", { status: "permission", inflight: false });
+    const { result } = renderHook(() => usePermissionRequests(channel));
+
+    act(() => {
+      channel.emit({
+        type: "permission_request",
+        payload: {
+          request_id: "request-resume",
+          decision_id: "decision-resume",
+          category: "shell",
+          summary: "start child",
+          params: {},
+          default_action: "prompt",
+          dangerous: false,
+          session_id: "session-resume",
+          run_id: "run-resume",
+        },
+      });
+    });
+    act(() => result.current.resolve("allow"));
+
+    expect(useSessionsStore.getState().sessions["session-resume"]).toMatchObject({
+      status: "running",
+      inflight: true,
+      run_projections: {
+        "run-resume": { status: "running", inflight: true },
+      },
+    });
   });
 });

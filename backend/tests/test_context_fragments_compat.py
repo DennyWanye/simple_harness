@@ -100,10 +100,12 @@ async def test_persona_context_os_splits_stable_identity_and_workspace() -> None
         )
     )
     assert slice_.text_content == ""
-    assert [f.lifetime for f in slice_.fragments] == ["platform", "task"]
+    assert [f.lifetime for f in slice_.fragments] == ["platform", "task", "task"]
     assert "volatile" not in str(slice_.fragments[0].content)
     assert "secret-host" not in str(slice_.fragments[0].content)
-    assert slice_.fragments[1].content == "[当前工作区]\nF:/work"
+    assert "volatile" in str(slice_.fragments[1].content)
+    assert "secret-host" in str(slice_.fragments[1].content)
+    assert slice_.fragments[2].content == "[当前工作区]\nF:/work"
 
 
 @pytest.mark.asyncio

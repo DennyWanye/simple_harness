@@ -1,6 +1,6 @@
 # DeskPet Agent Harness 架构
 
-> 最后更新：2026-08-04
+> 最后更新：2026-08-13
 > 范围：单主 Session、请求生命周期、模型驱动 Profile 选择、运行状态、能力执行、
 > 失败重规划、服务装配与子任务。
 
@@ -72,6 +72,18 @@ SQLite 写事务中复制来源 Session 的 `provider_id / preferred_model / mod
 同时冻结有序的 `provider_id + model_id` 精确绑定，`workflow_spawn` child 直接继承该绑定，
 不再从运行中的可变 Provider Registry 默认模型二次解析；只保存 provider id 的历史 Run
 继续走兼容解析，保证旧 checkpoint 可恢复。
+
+Provider 的可选模型目录以成功的 `GET <base_url>/models` 实时响应为主事实源。每次模型选择器
+取得非空 live 目录后，Registry 会在重新核对 provider incarnation、config revision 与
+base URL 后，把去重目录原子写回 `config.toml` 的 `models`，作为重启或后续网络失败时的缓存；
+相同目录不重复写盘，缓存刷新不递增 config revision，因而不会仅为目录同步使 Session binding
+stale。若 live 目录缺少用户明确设置的 `default_model`，只展示本次 live 结果而不落盘，也绝不
+静默改用其它默认模型。默认模型仍是独立的用户选择，不由目录刷新决定。
+
+Persona 的平台片段继续使用稳定的 model/base URL 占位符，避免动态 Provider 身份破坏
+Context OS 的跨请求缓存；真实 Provider 身份则由 `TurnPreparer` 已解析的 Session Provider
+生成独立、受保护的 task-scoped fragment。该片段对模型明确给出精确 model id 与 endpoint，
+不会回退读取全局 `local_llm`，也不会把 `runtime-model` 占位符当成真实身份回答用户。
 
 Session/root 模型 authority 现在覆盖主调用与全部已登记附属 LLM callsite。调用点必须提交
 `ProviderWorkloadContext(workload_class, callsite_id, purpose, session_id, root_run_id,
@@ -437,6 +449,136 @@ system selector 精确绑定 `root_run_id + catalog_generation + profile_key`；
 时使用可信 `ToolExecutionContext.workspace`，相对 cwd 也从该 workspace 解析；启用写范围
 时 cwd 不能逃逸。Shell 的 `HOME` 同步绑定 effective cwd，`~/...` 不会再在 backend
 进程目录下生成字面量 `~` 文件夹。
+
+现有文件的交付不再要求模型伪造 `artifact-card.json` 或 receipt。只读
+`register_artifacts(paths)` 只接受当前可信 workspace 内真实存在的文件，准备阶段与执行阶段
+都会拒绝目录、越界路径和 symlink escape；成功后返回包含绝对路径、大小与 SHA-256 的标准
+`artifacts[]` 信封。`ToolRegistry` 即使未装配 ReceiptStore，也会把 artifact refs 保留到
+prepared execution metadata，供 durable effect / Session ArtifactCard 投影使用；该工具不会
+复制、移动、创建或改写文件。Windows 路径的标题提取使用跨平台 basename，不会在 macOS/Linux
+卡片上显示完整 `C:\\...` 路径。
+
+2026-08-12 的当前源码 macOS 真机 Run `04a477a3fbbb5e3eb2045e6b11006b55` 已覆盖完整链路：
+`kimi-k3` 先调用 `write_file` 创建 14 B 文件，用户只确认一次写权限，随后只读
+`register_artifacts` 登记同一文件；两个 effect 均成功并投影 ArtifactCard，TextEdit 打开与
+Finder 定位均通过，SHA-256 为
+`c96a2f4aec81c7e0d4ddaceb068ecaf030477e1c273bd4ab70ca1fe9197c4706`。运行时模型身份修复后，
+独立 Run `97f01117fd50506fbe10da0444577fbd` 的界面回复与后台出站均为 `kimi-k3`，HTTP 200。
+
+复杂任务的核心执行链已由 macOS 真机 root `cb74467c06f35eaebdf7bfe316b9fff8`、child
+`child-4dad77bbfafec0b8428852dde382d9eb` 验证：Kimi K3 能选择 `workflow.durable_task`、分块写入
+分析器与 9 项 unittest、运行测试和 CLI、核对 Decimal 汇总并完成 child。独立复跑仍为
+`9/9 OK`，输出为 `valid_count=10`、`invalid_count=3`、`grand_total=400.00`、
+`top_category=Travel`。该次真测暴露的 child artifact bridge 已在当前源码修复：工具执行器把
+prepared metadata 中的 receipt/artifact refs 与 effect completion 在同一事务提交，完成后才
+ack metadata；durable task 终结事务重新核对 outcome、真实 refs 与 SHA-256，生成
+`workflow.artifact_card` delivery event，并把同一 artifacts/refs 带入 parent terminal signal。
+只有 input/dependency refs、只有 refs 没有标准 artifact envelope，都会 fail closed，避免把输入
+误报成交付物。2026-08-13 fresh-profile 真机首轮进一步抓出：`write_file` 的 provisional UI
+envelope 可有 `sha256=null`，digest 仅由 prepared metadata 持有；旧聚合错误地把这些分块中间
+产物当最终登记产物，导致真正 5 文件 `register_artifacts` 成功后 terminal 仍报
+`workflow_engine:frontier_failure`。当前聚合只接受具备非空 SHA 且与 refs 对齐的标准 artifact；
+非 `register_artifacts` 的 provisional envelope 被排除，`register_artifacts` 本身仍要求 refs 与
+digest 精确相等并 fail closed。历史根 Run `1bf5014d7ee55573ba2a797c391032ef` 的补偿登记仍只作为
+旧缺口证据，不再是当前源码的预期路径。
+
+同次真测还确认目录前置失败不能击穿控制通道：首次 root
+`4acdb330974b5a9f806fe6675597abe1` 未先完成 `project_directory_select` 就调用
+`workflow_spawn`，旧实现让 `project_workspace_selection_required` 以未捕获 `ValueError` 击穿
+ASGI/control WebSocket。当前 ReAct Driver 只捕获这一明确前置错误，把它持久化为 retryable tool
+outcome 并恢复模型执行，供模型调用 `project_directory_select`；其它 `ValueError` 不被吞掉。
+RunPresenter 同时把 live socket 与 peer broadcast 分开尽力投影，final/error 的 durable SessionDB
+写入先于实时发送，关闭的旧 WebSocket 不再反向污染任务终态。Agent trace 在 final 后收到生成器
+关闭时记录 OK；只在尚未产出终态时记录 CANCELLED。fresh-profile 首轮已真机确认目录选择后
+control WebSocket 保持“已连接”，Run 能自动继续并启动 child；同时再次复现 child 后台持续
+`run_shell/write_file` 时进度停在 5/9→6/9、底部长期误显“等待授权”，说明现有 reducer 自动化
+没有覆盖实际跨 root/child 状态源。当前权限 hook 在提交 live decision 后会把仍处于
+`awaiting_permission` 的 root projection/session 乐观推进为 `running` 并清除 stale decision；若
+durable projection 已进入终态则不覆盖。hook 与 WebSocket 相邻回归 `37 passed`，TypeScript
+检查通过。第二个 fresh profile 真机点击“允许一次”后约 1.2 秒即恢复“工具执行中”，证明
+root/child 授权状态条修复生效。该 Run 还揭示同一 attempt 内每个私有工具回合会重复持久化
+5/9→6/9；当前 durable-task 公开事件身份已改为 node/attempt/transition，同一 attempt 内不再按
+私有 task id 重复投影，原始路由异常日志也不会读取未赋值 frontier；相邻回归 `76 passed`。
+目录确认文案在 macOS 仍把最后一段显示为反斜杠，属于非阻断展示问题。
+
+2026-08-12 当前修复的自动化证据：相关 workflow/effect/ReAct/RunPresenter/trace/observability
+聚焦重跑 `231 passed`；terminal provisional-artifact 回归及相邻模块追加 `102 passed`；授权
+状态 hook 与 WebSocket 相邻回归 `37 passed`；前端 `540 passed`、TypeScript 与
+Vite build PASS；Rust `79 passed` 与 `cargo check` PASS。Python 全量仍为
+`7473 passed / 48 skipped / 4 xfailed / 79 failed`，失败包含 macOS 上的 Windows-only 用例、
+路径/fixture/authority 基线漂移等，不能把聚焦绿色等同于全量绿色。
+
+2026-08-13 第二轮 fresh-profile Kimi K3 复杂任务的 **child 执行/产物交付 PASS，但 root 收敛 FAIL**：root
+`caf7d550a7705da89cba6b731b9d1c4c`、child `child-2ec4cceeec4df4bb19531561ab0e1e31`
+在隔离目录创建 5 个文件，真实运行 7 项 unittest 与 CLI，终态 `completed/error=null`；界面显示
+9/9、五张 ArtifactCard 与“空闲”。该执行 child 只有一个 `register_artifacts` effect，artifact
+event 与其已投递 parent terminal signal 均携带同一 5 个 refs；独立重跑 `7/7 PASS`、
+`count=10/sum=55`，本地 SHA 与登记 refs 精确相等。先前 provisional envelope 导致的
+`frontier_failure` 未再出现。但 root 在 child 返回后因 `workflow_spawn` 自身没有 parent
+`execution_effects` 行，把 child 内已提交 receipt 错判为 UNKNOWN，触发 verify-gate nudge，随后又派出
+`child-33b7…`、`child-3913…` 两个验证 child（均 provider failure）。因此该 root 实际共有三个
+child，第一个执行 child 的产物链成功不能作为整个 root 的收敛结论。
+
+当前 `ExecutionUnitOfWork.lookup_completion_evidence()` 仅在 spawn call id、ticket、acked child
+command、已投递 terminal signal、terminal event id、child completed 与 `audit.passed=true` 全部精确
+对齐时，才把该 child 的 committed workflow effects 投影回 parent scoped evidence；任一关联不符仍
+UNKNOWN，不使用同会话全局 receipt。第三个 fresh profile 真机 Run
+`f0a514f061cb56cebaa498a4a1447b24` 只生成 child
+`child-0abd7fb98c3faf61504a7f96085c493f`：child 真实执行三次 `run_shell`，暴力枚举与容斥公式均得
+`count=467/sum=234168`，显式交叉核验 `MATCH: True`；root/child 均 completed，日志无
+`verify_gate_nudge_injected`、无第二次 `workflow_spawn`。由此单 child 执行、receipt 回传与 root
+一次收敛主链才完整 PASS。相关后端聚焦回归 `239 passed`。
+
+同一真测还发现 terminal root 的语义 phase 可保留历史 `running`，导致观察面同时显示
+“completed”与“正在委派/4/5”。前端现以 aggregate terminal 为最高优先级，将未结的 phase/substep/tool
+收束为 completed/failed/cancelled，终态不再标“当前”；权限请求投影时后端新增
+`harness_blocking_ui_event_emitted` 生命周期日志（只记关联 ID/类型/工具名，不记 params）。相关前端
+回归 `69 passed`、TypeScript/Vite build PASS。
+
+权限拒绝按 fail-closed 语义贯穿 Kernel 与 ReAct control delegate。`decision=deny/denied` 与
+`reject/rejected/cancel/cancelled` 均归一为不允许；显式 `allow/approved` 布尔值优先。更关键的是，
+`workflow_spawn` 的 permission outcome 一旦以 `authorization_denied` 结算，Driver 不得再次调用
+`prepare_control`，也不得发出 delegate command。真机旧 Run `074bf4d51e545627ae188d623cafde89`
+曾记录 `decision_status=denied` 却在同秒生成 `child-a27a142c676cd2096debb6b484f5444d`，暴露了这一
+调度旁路；当前源码复验 root `996390c79f1b5c03967f7f42dc408f29` 在 UI 点击“拒绝”后决策为
+`denied`，延迟复查仍为 `child_count=0`、`ticket_count=0`，事件仅有 waiting/resumed/final，界面
+明确回复 `authorization_denied` 且未创建 durable child。相关后端扩大回归 `328 passed`。
+
+历史消息的 workflow 卡以 parent `root_run_id` 查找 terminal Session projection；若 child summary
+仍缓存为 running，父 root 的 completed/failed/cancelled 会覆盖显示，并与同源 public task trace
+合并为一张卡。没有可信开始/结束时间时显示“耗时未记录”，不再把缺失计时伪装为“0 秒”。真机在
+重启后重开 Session `5ec83cb7-51d8-46a8-a7ed-c13de60fcf59`，只见一张
+“已取消 / 6/9 / 67% / 耗时未记录”卡；相关前端回归 `57 passed`，TypeScript 与 debug bundle
+build PASS。
+
+Session 的 task projection 只持久化 Root Run，因此父终态只能收束仍为 running/waiting 的旧 child
+卡；child 消息自身的 completed/failed/cancelled 是该卡的权威终态，不能被父 root 的 aggregate
+终态覆盖。真实 Session `782f283d-0ac0-4016-b979-e6f79e7582f6` 中，父 root completed、首个 child
+completed、第二个 child 因 `workflow_node:llm_proposal:provider_failure` failed；修复前第二张卡被
+错误显示为绿色“已完成”，修复后重启恢复为“失败 / 5/9”，第一张卡仍为“已完成”。
+
+跨 provider 回合的重复失败委派也有独立 convergence guard：只在 durable child terminal signal
+明确为 failed 时记录有界、不可逆还原的 objective 签名（Profile + 归一化 token/CJK bigram hash，
+不记录原 objective）；后续语义相近的 `workflow_spawn` 在签发 launch ticket 前被拒绝。第一次拒绝
+作为结构化反馈回灌模型，第二次同类拒绝以 `delegate_convergence_exhausted` 诚实终止；Profile 不同
+或目标实质不同的合法 child 不受影响。该分支由 ReAct Driver 聚焦与扩大回归覆盖；真机 Run 中首个
+child 的业务回答写“失败”但 durable terminal 实为 completed，因此不会被错误当作失败样本。
+
+日志 JSON 出口现在对 stdlib 与 structlog 共用同一个最终脱敏处理器：按字段递归隐藏
+authorization/API key/token/password/secret/cookie/device key，并对消息内的 credential、JWT、
+邮箱、手机号和卡号形态做文本脱敏；`request_id/run_id/node_id/elapsed_ms` 等关联字段原样保留。
+脱敏与现有 observability 回归 `12 passed`，诊断包原有 Provider 元数据脱敏继续保留。
+
+长文本写入使用 `write_file(mode="write" | "append")` 的有界分块合同：每次最多 3000 字符，
+首块创建/显式覆盖，后续块按字节追加并返回累计大小。`run_shell.command` schema 限制为 2000
+字符并明确禁止用 heredoc 携带整份文件正文，避免 provider streaming 中的超长 JSON 参数被截断。
+这属于调用可靠性边界，不改变 Shell 的执行权限模型。
+
+用户停止 Run 的控制路径不依赖一个仍然可用的 Provider 或 workspace。取消 Host 只使用已经
+持久化的 Session/principal/auth epoch 对目标 Run 做授权，因此 `_cancel_product_harness_run`
+会显式允许 provider/workspace unavailable；否则一个因模型绑定缺失而失败的 Run 会在点击
+“停止”时再次触发同一 preflight，并把 control WebSocket 击穿。终态 Run 的 cancel 仍走 Kernel
+幂等回执，不会把 failed 伪装成 cancelled，也不会重新启动 provider。
 
 GUI 游戏验证使用同一工具注册表中的 `window_list / window_focus / window_capture /
 window_key`。先由 `window_list` 返回 `pid + creation_time + hwnd`，后续操作必须带回这组

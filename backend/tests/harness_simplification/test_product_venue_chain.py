@@ -211,6 +211,12 @@ def _config() -> SimpleNamespace:
                 per_skill_max_tokens=50,
             )
         ),
+        tools=SimpleNamespace(
+            last_mile=SimpleNamespace(
+                artifact_envelope=True,
+                frontend_artifact_card=True,
+            )
+        ),
     )
 
 

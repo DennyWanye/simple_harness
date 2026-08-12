@@ -13,6 +13,8 @@ import time
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, AsyncIterator, Mapping, Protocol, Sequence, runtime_checkable
 
+import structlog
+
 from .contracts import JsonValue, NodeExecutionIdentity, StatePatch, WorkflowContext, WorkflowState, canonical_json, validate_json_value
 from .control import ExecutionControl, WorkflowSuspended, bind_execution_control
 from .errors import InvalidStatePatch, StateMergeConflict, WorkflowErrorCode, WorkflowNodeError
@@ -33,6 +35,8 @@ if TYPE_CHECKING:
 CHECKPOINT_TYPE = "deskpet-native-json-v1"
 ENGINE_KIND = "deskpet-native"
 SNAPSHOT_VERSION = 1
+
+logger = structlog.get_logger(__name__)
 
 
 class _CommitUncertain(RuntimeError):
@@ -387,6 +391,7 @@ class NativeWorkflowExecutable:
             patches, consumed = await self._run_frontier_tasks(
                 execution, context, config, responses
             )
+            next_frontier_for_log: list[str] = []
             try:
                 ordered_writes = [(task.node_id, patches[task.task_id]) for task in sorted(snapshot.frontier, key=lambda item: item.task_id)]
                 delta = self.workflow.merge_patches(ordered_writes)
@@ -394,6 +399,7 @@ class NativeWorkflowExecutable:
                 frontier, completed, firings = await self._next_frontier(
                     snapshot, state, context, execution.route_selections, config
                 )
+                next_frontier_for_log = [task.node_id for task in frontier]
                 terminal_status, terminal_error, recovery_action = self._terminal_projection(
                     state, frontier
                 )
@@ -509,7 +515,15 @@ class NativeWorkflowExecutable:
                 error = exc if isinstance(exc, WorkflowNodeError) else WorkflowNodeError(code=WorkflowErrorCode.INVALID_STATE, message_ref=f"workflow_engine:{exc.code}")
                 await self.store.commit_engine_failure(operation_id=_hash(run_id, snapshot.checkpoint_id, "engine_failure"), expected_head=snapshot.checkpoint_id, frontier=snapshot.frontier, error=error, configurable=config)
                 raise error
-            except Exception:
+            except Exception as exc:
+                logger.exception(
+                    "workflow_frontier_commit_failed",
+                    run_id=run_id,
+                    checkpoint_id=snapshot.checkpoint_id,
+                    frontier=[task.node_id for task in snapshot.frontier],
+                    next_frontier=next_frontier_for_log,
+                    error_type=type(exc).__name__,
+                )
                 error = WorkflowNodeError(code=WorkflowErrorCode.INVALID_STATE, message_ref="workflow_engine:frontier_failure")
                 await self.store.commit_engine_failure(operation_id=_hash(run_id, snapshot.checkpoint_id, "engine_failure"), expected_head=snapshot.checkpoint_id, frontier=snapshot.frontier, error=error, configurable=config)
                 raise error from None

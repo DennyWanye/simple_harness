@@ -224,20 +224,38 @@ export function HarnessInspectorPanel({
 
   useEffect(() => onSnapshot?.(snapshot), [onSnapshot, snapshot]);
 
+  const aggregateActive = snapshot ? ["running", "waiting", "unknown"].includes(
+    snapshot.aggregate_outcome.status,
+  ) : false;
+  const settlePhaseStatus = useCallback((status: string): string => {
+    if (
+      aggregateActive ||
+      !["pending", "prepared", "accepted", "running", "waiting", "unknown"].includes(status)
+    ) {
+      return status;
+    }
+    if (snapshot?.aggregate_outcome.status === "cancelled") return "cancelled";
+    if (snapshot?.aggregate_outcome.status === "failed") return "failed";
+    return "completed";
+  }, [aggregateActive, snapshot?.aggregate_outcome.status]);
   const nodes = useMemo(() => snapshot?.semantic_phases.map((phase) => ({
     id: phase.phase_id,
     taxonomy: phase.taxonomy,
     title: phase.title,
     summary: phase.total_steps
-      ? `当前 ${phase.current_step == null ? 0 : phase.current_step + 1}/${phase.total_steps} 步`
+      ? aggregateActive
+        ? `当前 ${phase.current_step == null ? 0 : phase.current_step + 1}/${phase.total_steps} 步`
+        : "记录已结束"
       : phase.tool_refs.length > 0
         ? `${phase.tool_refs.length} 个工具操作`
         : "查看这一步的执行记录",
-    status: phase.status,
-  })) ?? [], [snapshot]);
-  const currentPhase = snapshot?.semantic_phases.find((phase) =>
-    ["running", "waiting", "failed", "cancelled"].includes(phase.status),
-  ) ?? snapshot?.semantic_phases.at(-1) ?? null;
+    status: settlePhaseStatus(phase.status),
+  })) ?? [], [aggregateActive, settlePhaseStatus, snapshot]);
+  const currentPhase = aggregateActive
+    ? snapshot?.semantic_phases.find((phase) =>
+      ["running", "waiting"].includes(phase.status),
+    ) ?? snapshot?.semantic_phases.at(-1) ?? null
+    : null;
   const trace = useMemo(() => snapshot ? buildWorkflowTaskTraces(snapshot)[0] : undefined, [snapshot]);
 
   if (!open) return null;

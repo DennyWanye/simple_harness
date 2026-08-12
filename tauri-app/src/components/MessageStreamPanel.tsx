@@ -37,7 +37,12 @@ import { invoke } from "@tauri-apps/api/core";
 // 娑堟伅娴佹粴鍔ㄤ綅缃寔涔呴敭(杩涘叆娑堟伅鐣岄潰鎭㈠涓婃浣嶇疆,瑙佷笅 useLayoutEffect)銆?
 const MSGSTREAM_SCROLL_KEY = "deskpet.msgstream.scroll.v1";
 
-import type { InboxItem, Message, WorkflowV5ControlAction } from "../stores/sessionsStore";
+import type {
+  InboxItem,
+  Message,
+  TaskRunProjectionState,
+  WorkflowV5ControlAction,
+} from "../stores/sessionsStore";
 // 瀛愪唬鐞嗗苟鍙戣繘搴﹀崱鐗囷紙娣辫壊鍙樹綋锛屼笌鏈潰鏉跨幓鐠冩嫙鎬佷竴鑷达級銆俽uns 绌烘椂鑷覆鏌?null锛?
 // Shared control WS dispatches subagent_progress into subagentStore.
 import { SubagentProgressPanel } from "../code-panel/SubagentProgressPanel";
@@ -152,6 +157,7 @@ export interface MessageStreamPanelProps {
   ) => Promise<{ run_id: string; accepted?: boolean }>;
   sessionId?: string;
   selectedRunId?: string | null;
+  runProjections?: Record<string, TaskRunProjectionState>;
   /** @deprecated Test-only compatibility seam. Production uses the shared store. */
   agentSnapshot?: unknown;
   projectDirectoryRequest?: ProjectDirectoryRequest["payload"] | null;
@@ -183,6 +189,8 @@ type StreamRow =
       summary?: Message;
       stages: Message[];
       taskTrace?: WorkflowTaskTrace;
+      runProjectionStatus?: TaskRunProjectionState["status"];
+      runProjection?: TaskRunProjectionState;
       key: string;
     }
   | {
@@ -220,6 +228,7 @@ export function MessageStreamPanel({
   onWorkflowRetry,
   sessionId = "",
   selectedRunId = null,
+  runProjections = {},
   agentSnapshot: injectedSnapshot,
   projectDirectoryRequest = null,
   projectDirectoryError = null,
@@ -239,6 +248,7 @@ export function MessageStreamPanel({
       filter,
       agentSnapshot,
       projectDirectoryRequest,
+      runProjections,
     ),
     [
       chatMessages,
@@ -248,6 +258,7 @@ export function MessageStreamPanel({
       filter,
       agentSnapshot,
       projectDirectoryRequest,
+      runProjections,
     ],
   );
   const tailKey = rows[rows.length - 1]?.key;
@@ -360,6 +371,8 @@ export function MessageStreamPanel({
                 summary={r.summary}
                 stages={r.stages}
                 taskTrace={r.taskTrace}
+                runProjectionStatus={r.runProjectionStatus}
+                runProjection={r.runProjection}
                 onWorkflowRetry={onWorkflowRetry}
               />
             ) : (
@@ -393,6 +406,7 @@ function buildRows(
   filter: StreamFilter,
   agentSnapshot: PublicRunSnapshotV3 | null = null,
   projectDirectoryRequest: ProjectDirectoryRequest["payload"] | null = null,
+  runProjections: Record<string, TaskRunProjectionState> = {},
 ): StreamRow[] {
   const rows: StreamRow[] = [];
   if (filter === "all" || filter === "chat") {
@@ -402,6 +416,7 @@ function buildRows(
     const taskTraceByRun = new Map(
       taskTraces.map((trace) => [trace.runId, trace]),
     );
+    const consumedTaskTraceRunIds = new Set<string>();
     companionEvents.forEach((event) => {
       const parsed = event.occurred_at ? Date.parse(event.occurred_at) : NaN;
       rows.push({
@@ -452,6 +467,27 @@ function buildRows(
         const group = groups.get(runId);
         if (group && !emitted.has(runId) && index === group.anchor) {
           emitted.add(runId);
+          const rootRunId = String(
+            group.summary?.run_id || group.stages[0]?.run_id || runId,
+          ).trim();
+          const taskTrace = taskTraceByRun.get(runId) ??
+            taskTraceByRun.get(rootRunId);
+          const childRunProjection = runProjections[runId];
+          const rootRunProjection = runProjections[rootRunId];
+          const childHasTerminalProjection = childRunProjection != null &&
+            ["completed", "failed", "cancelled"].includes(childRunProjection.status);
+          const rootHasTerminalProjection = rootRunProjection != null &&
+            ["completed", "failed", "cancelled"].includes(rootRunProjection.status);
+          // A workflow card describes the child Run, so its own durable terminal
+          // outcome must win over the Root's aggregate outcome. The Root remains
+          // a fallback for legacy child summaries that are still marked running
+          // after the overall task has already settled.
+          const runProjection = childHasTerminalProjection
+            ? childRunProjection
+            : rootHasTerminalProjection
+              ? rootRunProjection
+              : childRunProjection ?? rootRunProjection;
+          if (taskTrace) consumedTaskTraceRunIds.add(taskTrace.runId);
           rows.push({
             kind: "workflow_group",
             ts: group.ts,
@@ -464,7 +500,9 @@ function buildRows(
                 String(b.workflow_event_id || b.id),
               ),
             ),
-            taskTrace: taskTraceByRun.get(runId),
+            taskTrace,
+            runProjectionStatus: runProjection?.status,
+            runProjection,
             key: `workflow_group:${runId}`,
           });
         } else if (!group) {
@@ -485,7 +523,9 @@ function buildRows(
       });
     });
     for (const trace of taskTraces) {
-      if (emitted.has(trace.runId)) continue;
+      if (emitted.has(trace.runId) || consumedTaskTraceRunIds.has(trace.runId)) {
+        continue;
+      }
       emitted.add(trace.runId);
       rows.push({
         kind: "workflow_group",
@@ -493,6 +533,8 @@ function buildRows(
         runId: trace.runId,
         stages: [],
         taskTrace: trace,
+        runProjectionStatus: runProjections[trace.runId]?.status,
+        runProjection: runProjections[trace.runId],
         key: `workflow_group:${trace.runId}`,
       });
     }
@@ -794,10 +836,19 @@ function ProjectDirectoryCard({
     if (error) setSubmitted(false);
   }, [error]);
   const usesExistingProject = request.directory_mode === "use_existing";
+  const trimmedParent = parent.trim();
+  const displayParent =
+    trimmedParent.length > 1
+      ? trimmedParent.replace(/[\\/]+$/, "")
+      : trimmedParent;
+  const pathSeparator =
+    trimmedParent.includes("\\") && !trimmedParent.includes("/") ? "\\" : "/";
   const finalPath = parent
     ? usesExistingProject
-      ? parent.replace(/[\\/]+$/, "")
-      : `${parent.replace(/[\\/]+$/, "")}\\${folderName.trim()}`
+      ? displayParent
+      : displayParent === "/"
+        ? `/${folderName.trim()}`
+        : `${displayParent}${pathSeparator}${folderName.trim()}`
     : "";
 
   const chooseParent = async () => {

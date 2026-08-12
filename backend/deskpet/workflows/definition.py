@@ -865,6 +865,13 @@ class CompiledWorkflow:
         except WorkflowNodeError:
             raise
         except Exception as exc:
+            logger.exception(
+                "workflow_node_failed workflow=%s@%s node_id=%s error_type=%s",
+                self.definition.name,
+                self.definition.version,
+                node_id,
+                type(exc).__name__,
+            )
             code = (
                 WorkflowErrorCode.INVALID_STATE
                 if isinstance(exc, (InvalidStatePatch, StateMergeConflict))

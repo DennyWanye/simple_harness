@@ -1,11 +1,11 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""write_file tool — `write_file(path, content, overwrite=False)`.
+"""write_file tool — create, replace, or append one bounded text chunk.
 
 Permission category: ``write_file``. Creates parent directories
 automatically. Refuses to overwrite an existing file unless
-``overwrite=True``.
+``overwrite=True``. ``mode='append'`` appends without replacing prior bytes.
 
 P5-S2 Phase 0: error responses now include ``ok: false`` + ``hint``
 + ``examples``. Legacy ``error`` strings preserved for back-compat.
@@ -55,6 +55,7 @@ def _notify_workspace(*, session_id: str, path: str, content: str | None) -> Non
 _EXAMPLES = [
     {"path": "./notes/today.md", "content": "# Today\n- ..."},
     {"path": "main.go", "content": "package main\n"},
+    {"path": "main.go", "content": "func main() {}\n", "mode": "append"},
     {"path": "existing.txt", "content": "new", "overwrite": True},
 ]
 
@@ -78,7 +79,15 @@ def write_file(
 ) -> str:
     path = args.get("path", "")
     overwrite = bool(args.get("overwrite", False))
+    mode = str(args.get("mode") or "write").strip().lower()
     context = legacy_execution_context(args, task_id, execution_context)
+
+    if mode not in {"write", "append"}:
+        return _err(
+            "invalid mode",
+            "write_file mode must be 'write' or 'append'.",
+            mode=mode,
+        )
 
     # OpenSpec §D3 — companion session write-scope。chat handler 给陪伴
     # session 经 ToolRegistry.set_session_context 注入 ``_write_scope_root``；
@@ -102,7 +111,7 @@ def write_file(
             "write_file 必须同时提供 path 和 content 两个字段。你这次只发了 "
             f"{_received_keys}，缺少 path。请重新生成完整的 tool_call，确保 "
             "arguments JSON 同时包含 path（目标文件路径）和 content（文件内容）。"
-            "如果你想追加而不是覆盖现有文件，请改用 edit_file 工具。",
+            "如果你想追加而不是覆盖现有文件，请传 mode='append'。",
             received_keys=_received_keys,
         )
     # P5-S2 Phase 0 fix: require content key explicitly. Defaulting to
@@ -135,17 +144,17 @@ def write_file(
     # The error envelope is classified `permanent_tool_error` by the
     # agent loop, which short-circuits the iteration — no wasted LLM
     # round-trip generating another doomed 7KB args.
-    _CONTENT_HARD_CAP = 4096
+    _CONTENT_HARD_CAP = 3000
     if len(content) > _CONTENT_HARD_CAP:
         return _err(
             "content too long",
             f"content 长度 {len(content)} > {_CONTENT_HARD_CAP} 字符上限。"
-            "超过 4KB 的单次 write_file 在流式输出中 JSON 转义失败率很高，"
+            "超过 3KB 的单次 write_file 在流式输出中 JSON 转义失败率很高，"
             "我已拒绝以避免浪费一轮 LLM 调用。请改用以下模式：\n"
-            "  1. 第一次：write_file(path=..., content=<前 ≤4KB 部分>, mode='write')\n"
+            "  1. 第一次：write_file(path=..., content=<前 ≤3KB 部分>, mode='write')\n"
             "  2. 后续：write_file(path=..., content=<下一段>, mode='append')\n"
             "  3. 重复 append 直到完成。\n"
-            "三个 3KB 的调用比一个 9KB 的调用快、稳、便宜。",
+            "多个 ≤3KB 的调用比一个超长调用更稳定。",
             content_length=len(content),
             limit=_CONTENT_HARD_CAP,
             suggested_chunks=max(1, (len(content) + _CONTENT_HARD_CAP - 1) // _CONTENT_HARD_CAP),
@@ -153,19 +162,23 @@ def write_file(
         )
 
     p = Path(path)
-    if p.exists() and not overwrite:
+    if mode == "write" and p.exists() and not overwrite:
         return _err(
             "FileExistsError",
             f"{path} 已存在。如要覆盖请加 overwrite: true，"
-            "或改用 edit_file 做增量修改（更安全，不会丢老内容）。",
+            "、传 mode='append' 追加，或改用 edit_file 做精确修改。",
             path=path,
-            alternatives=["pass overwrite=true", "use edit_file"],
+            alternatives=["pass overwrite=true", "pass mode=append", "use edit_file"],
         )
 
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
         data = content.encode("utf-8")
-        p.write_bytes(data)
+        if mode == "append":
+            with p.open("ab") as stream:
+                stream.write(data)
+        else:
+            p.write_bytes(data)
     except OSError as exc:
         return _err(
             f"OSError: {exc}",
@@ -180,6 +193,11 @@ def write_file(
         session_id=context.session_id, path=path, content=content,
     )
     return json.dumps(
-        {"path": str(p.resolve()), "bytes_written": len(data)},
+        {
+            "path": str(p.resolve()),
+            "bytes_written": len(data),
+            "total_size_bytes": p.stat().st_size,
+            "mode": mode,
+        },
         ensure_ascii=False,
     )

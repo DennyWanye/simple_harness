@@ -73,7 +73,7 @@ export function HarnessRunGraph({
 }: Props) {
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const foundCurrent = nodes.findIndex((node) => node.id === currentNodeId);
-  const currentIndex = foundCurrent < 0 ? 0 : foundCurrent;
+  const currentIndex = foundCurrent < 0 ? Math.max(0, nodes.length - 1) : foundCurrent;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -101,7 +101,7 @@ export function HarnessRunGraph({
       </header>
 
       <div className="harness-run-graph__now" aria-live="polite">
-        <span>当前</span>
+        <span>{currentNodeId ? "当前" : "结果"}</span>
         <strong>{headline}</strong>
         {subline && <small>{subline}</small>}
       </div>

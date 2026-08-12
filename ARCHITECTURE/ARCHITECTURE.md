@@ -1,14 +1,14 @@
 <!-- last-calibrated: 9e53bb7924a8b0a2a7a7b98799d6288da2c41914 -->
 # DeskPet Long-Running Agent Architecture Baseline
 
-> Last verified: 2026-08-03. The Harness `open/generation=1` owner remains the only
+> Last verified: 2026-08-13. The Harness `open/generation=1` owner remains the only
 > production execution owner. DeskPet has one main Session with multiple isolated top-level
 > Runs; there is no Code/normal mode split. Every ordinary top-level Run is fixed to
 > `agent.general`; the model chooses optional child Profiles through `workflow_spawn`, and a
 > durable one-shot ticket binds the child Driver. DeepResearch new-run default remains immutable
 > v7; historical v1-v6 runs remain registered for recovery and compatibility reads.
 
-> Current observability fact: workflow-node `started_at`/`ended_at`/status/attempt are durable in `workflow_node_attempts`, node `duration_ms` is durable in `trace_spans`, and `deepresearch_stage_timing` is a diagnostic mirror. V7 additionally logs privacy-safe child id/attempt/status/reason/source count/duration; page content and full prompts are excluded.
+> Current observability fact: workflow-node `started_at`/`ended_at`/status/attempt are durable in `workflow_node_attempts`, node `duration_ms` is durable in `trace_spans`, and `deepresearch_stage_timing` is a diagnostic mirror. Backend stdlib and structlog now share one JSON-lines formatter and one resolved user log directory; the rotating text log is diagnostic evidence, not the durable workflow authority. V7 additionally logs privacy-safe child id/attempt/status/reason/source count/duration; page content and full prompts are excluded.
 
 > Calibration map: §3 is explicitly retained as the pre-durable persistence baseline; §4.2/§4.3 and §5-§10 retain historical problem/design context. The header, §4.1, §11 and §13-§17 are current-calibrated production facts. DeepResearch detail lives in [`SEARCH_GATEWAY_DEEPRESEARCH.md`](SEARCH_GATEWAY_DEEPRESEARCH.md).
 
@@ -241,14 +241,31 @@ This is useful resilience, but the recovery unit is a chat run. There is no pers
 
 Current observability is split across several systems:
 
-1. `IterationTracer` writes optional JSONL events keyed by task/session.
-2. `MetricsSink` writes privacy-safe whitelisted counters to `metrics.jsonl`.
-3. `ContextAssembler` keeps a 50-record in-memory decisions ring exposed by `ContextTracePanel`.
-4. Prometheus exposes a small set of operational metrics such as LLM TTFT.
-5. Individual workflows emit their own coverage, timings, logs, artifacts and receipts.
-6. Structlog/log files, crash reports and supervisor audit records provide additional diagnostics.
+1. `workflow.db` and SessionDB hold authoritative run/node/effect/event/delivery facts; node attempts and
+   trace spans keep status, timing and parent-child identity across restart.
+2. `IterationTracer` writes optional JSONL events keyed by task/session.
+3. `MetricsSink` writes privacy-safe whitelisted counters to `metrics.jsonl`.
+4. `ContextAssembler` keeps a 50-record in-memory decisions ring exposed by `ContextTracePanel`.
+5. Prometheus exposes a small set of operational metrics such as LLM TTFT.
+6. Individual workflows emit their own coverage, timings, logs, artifacts and receipts.
+7. Python stdlib logs and structlog events share one JSON-lines formatter. The active file is
+   `<resolved-user-log-dir>/backend.log`, honoring `DESKPET_USER_LOG_DIR`, portable mode and the selected
+   user-data directory; it rotates at 20 MiB with five backups. Both logging paths cross one final redaction
+   processor: sensitive field names are replaced recursively and credentials/keys/JWT/email/phone/card-like
+   values embedded in messages are removed, while correlation fields remain intact. A third-party stdlib
+   record and a native structlog record were both parsed as JSON in the current smoke check; redaction and
+   observability regression is `12 passed`.
+8. Tauri diagnostics collect/reveal the same user-data log directory and use native archive/reveal commands
+   on Windows, macOS and Linux.
 
-The iteration tracer is currently disabled unless an unconfigured `[agent].iteration_trace_enabled` key is added; `[context.assembler].trace_enabled` controls a different feature. Its construction also uses a generated task id and empty session id, so correlation with the production AgentLoop run is unreliable. Context Trace is a global process-local ring rather than a persisted, session-filtered trace.
+The durable workflow ledger can answer which node/effect failed, on which attempt, with which terminal status
+and artifact/delivery outcome. The redacted JSON log can correlate many live failures by `session_id`, `run_id`,
+`request_id`, event and exception type; node handlers now log the original exception instead of leaving only a
+collapsed `workflow_node:...:permanent` reason. It still cannot guarantee that every legacy/third-party log line
+contains all correlation fields, and the diagnostic bundle does not yet synthesize a one-click run timeline,
+invariant report or replay package. The iteration tracer is disabled unless an unconfigured
+`[agent].iteration_trace_enabled` key is added; `[context.assembler].trace_enabled` controls a different
+feature. Context Trace remains a global process-local ring rather than a persisted, session-filtered trace.
 
 Current quality checks are runtime gates rather than an evaluation platform:
 
@@ -258,9 +275,16 @@ Current quality checks are runtime gates rather than an evaluation platform:
 - PPT visual review evaluates rendered slides.
 - Existing scripts/tests provide domain-specific regression checks.
 
-Missing platform concepts are a common trace/span schema, parent-child trees, persisted run index, checkpoint links, read-only replay, forked replay, evaluator records, datasets and version comparison.
+Remaining platform concepts include a fully common trace/span schema across legacy paths, read-only/forked
+replay, evaluator records, datasets and version comparison. Parent-child workflow identity, persisted run/node
+indexes and artifact delivery facts now exist for the durable Harness path, but are not yet exposed as one
+complete diagnostic product.
 
-There are concrete contract gaps behind that summary: evaluators return incompatible tuple/dataclass/dict shapes; some evaluator event names and score fields are not accepted by the metrics whitelist; and the diagnostic bundle does not include trace/checkpoint/evaluation summaries. These must be unified without weakening the existing privacy boundary of anonymous metrics.
+There are concrete contract gaps behind that summary: evaluators return incompatible tuple/dataclass/dict
+shapes; some evaluator event names and score fields are not accepted by the metrics whitelist; universal secret
+redaction and required correlation fields are not enforced at every logging callsite; and the diagnostic bundle
+does not include trace/checkpoint/evaluation summaries. These must be unified without weakening the existing
+privacy boundary of anonymous metrics.
 
 ## 8. External And Platform Dependencies
 

@@ -803,6 +803,77 @@ class LLMProviderRegistry:
                 self._refresh_legacy_secret_alias(provider_id, str(api_key))
         return entry
 
+    async def cache_discovered_models(
+        self,
+        provider_id: str,
+        models: list[str],
+        *,
+        expected_incarnation_id: str,
+        expected_config_revision: int,
+        expected_base_url: str,
+    ) -> bool:
+        """Persist one successful ``GET /models`` result as fallback cache.
+
+        The live endpoint remains the runtime source of truth. This method
+        only refreshes the durable fallback used after a later network
+        failure or restart, so it deliberately does *not* bump
+        ``config_revision`` and invalidate otherwise healthy Session
+        bindings. Provider identity and endpoint are rechecked under the
+        mutation lock so a response fetched from an old endpoint can never be
+        written into a concurrently edited Provider.
+
+        An explicit default model is never changed implicitly. If the live
+        response omits it, persistence is skipped and the caller may still
+        display the live catalog; silently switching the Provider default
+        would be a behavioral change, not a cache refresh.
+        """
+
+        normalized = list(
+            dict.fromkeys(
+                str(model).strip()
+                for model in models
+                if isinstance(model, str) and str(model).strip()
+            )
+        )
+        if not normalized:
+            return False
+
+        async with self._mutation_lock:
+            idx = self._find_index(provider_id)
+            if idx is None:
+                return False
+            current = self._entries[idx]
+            if (
+                current.incarnation_id != expected_incarnation_id
+                or current.config_revision != expected_config_revision
+                or current.base_url.rstrip("/") != expected_base_url.rstrip("/")
+            ):
+                return False
+            if current.default_model and current.default_model not in normalized:
+                logger.warning(
+                    "provider catalog cache not persisted: default model missing "
+                    "provider=%s default=%s",
+                    provider_id,
+                    current.default_model,
+                )
+                return False
+            if current.models == normalized:
+                return False
+
+            entry = copy.deepcopy(current)
+            entry.models = normalized
+            candidate = copy.deepcopy(self._entries)
+            candidate[idx] = entry
+            self._persist_entries_to_toml(candidate)
+            self._entries = candidate
+
+        logger.info(
+            "provider catalog cache refreshed provider=%s models=%d",
+            provider_id,
+            len(normalized),
+        )
+        return True
+
     # ───────── public readers ─────────
 
     async def ensure_provider(self, fields: dict[str, Any]) -> ProviderEntry:

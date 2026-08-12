@@ -637,6 +637,90 @@ async def test_ensure_updates_base_url_models(empty_toml: Path, fake_keyring):
 
 
 @pytest.mark.asyncio
+async def test_cache_discovered_models_persists_without_invalidating_bindings(
+    empty_toml: Path,
+    fake_keyring,
+):
+    """A successful /models result becomes the restart fallback cache."""
+    from llm.provider_registry import LLMProviderRegistry
+
+    reg = LLMProviderRegistry(empty_toml)
+    await reg.add_provider(
+        _make_provider_kwargs(
+            id="relay-cloud",
+            base_url="https://relay.example.com/v1",
+            models=["sf-glm-5.2"],
+            default_model="sf-glm-5.2",
+        )
+    )
+    before = reg.get_entry("relay-cloud")
+    assert before is not None
+
+    changed = await reg.cache_discovered_models(
+        "relay-cloud",
+        ["sf-glm-5.2", "kimi-k3", "kimi-k3", "  gpt-5.5  "],
+        expected_incarnation_id=before.incarnation_id,
+        expected_config_revision=before.config_revision,
+        expected_base_url=before.base_url,
+    )
+
+    assert changed is True
+    current = reg.get_entry("relay-cloud")
+    assert current is not None
+    assert current.models == ["sf-glm-5.2", "kimi-k3", "gpt-5.5"]
+    assert current.default_model == "sf-glm-5.2"
+    assert current.config_revision == before.config_revision
+    reloaded = LLMProviderRegistry(empty_toml).get_entry("relay-cloud")
+    assert reloaded is not None
+    assert reloaded.models == current.models
+    assert reloaded.default_model == "sf-glm-5.2"
+
+    # Idempotent refreshes do not rewrite the file.
+    mtime = empty_toml.stat().st_mtime_ns
+    changed_again = await reg.cache_discovered_models(
+        "relay-cloud",
+        list(current.models),
+        expected_incarnation_id=current.incarnation_id,
+        expected_config_revision=current.config_revision,
+        expected_base_url=current.base_url,
+    )
+    assert changed_again is False
+    assert empty_toml.stat().st_mtime_ns == mtime
+
+
+@pytest.mark.asyncio
+async def test_cache_discovered_models_never_changes_missing_default(
+    empty_toml: Path,
+    fake_keyring,
+):
+    """Catalog refresh must not silently replace an explicit default model."""
+    from llm.provider_registry import LLMProviderRegistry
+
+    reg = LLMProviderRegistry(empty_toml)
+    await reg.add_provider(
+        _make_provider_kwargs(
+            id="relay-cloud",
+            models=["kimi-k3"],
+            default_model="kimi-k3",
+        )
+    )
+    before = reg.get_entry("relay-cloud")
+    assert before is not None
+
+    changed = await reg.cache_discovered_models(
+        "relay-cloud",
+        ["gpt-5.5"],
+        expected_incarnation_id=before.incarnation_id,
+        expected_config_revision=before.config_revision,
+        expected_base_url=before.base_url,
+    )
+
+    assert changed is False
+    assert reg.get_entry("relay-cloud").models == ["kimi-k3"]
+    assert reg.get_entry("relay-cloud").default_model == "kimi-k3"
+
+
+@pytest.mark.asyncio
 async def test_normalize_priorities_unique(empty_toml: Path, fake_keyring):
     """_normalize_priorities rewrites stable priority order to 1..N."""
     from llm.provider_registry import LLMProviderRegistry

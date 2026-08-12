@@ -21,6 +21,7 @@ from .download_tools import download_file, resolve_download_resources
 from .edit_file import edit_file
 from .list_directory import list_directory
 from .move_file import move_file, resolve_move_file_resources
+from .register_artifacts import register_artifacts
 from .process_tools import (
     process_list,
     process_start,
@@ -43,6 +44,7 @@ __all__ = [
     "edit_file",
     "list_directory",
     "move_file",
+    "register_artifacts",
     "process_list",
     "process_start",
     "process_stop",

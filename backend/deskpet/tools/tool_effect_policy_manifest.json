@@ -65,6 +65,7 @@
     {"handler_id":"core.process_wait.v1","tool_name":"process_wait","effect_class":"read_only","idempotency":"idempotent","target_normalizer_version":"none"},
     {"handler_id":"core.project_directory_select.v1","tool_name":"project_directory_select","effect_class":"read_only","idempotency":"idempotent","target_normalizer_version":"none"},
     {"handler_id":"core.read_file.v1","tool_name":"read_file","effect_class":"read_only","idempotency":"idempotent","target_normalizer_version":"v1"},
+    {"handler_id":"core.register_artifacts.v1","tool_name":"register_artifacts","effect_class":"read_only","idempotency":"idempotent","target_normalizer_version":"v1"},
     {"handler_id":"core.run_browser_task.v1","tool_name":"run_browser_task","effect_class":"unknown","idempotency":"non_idempotent","target_normalizer_version":"v1"},
     {"handler_id":"core.run_shell.v1","tool_name":"run_shell","effect_class":"unknown","idempotency":"non_idempotent","target_normalizer_version":"v1"},
     {"handler_id":"core.scrapling_fetch.v1","tool_name":"scrapling_fetch","effect_class":"read_only","idempotency":"idempotent","target_normalizer_version":"none"},

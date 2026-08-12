@@ -5,7 +5,9 @@ import copy
 import hashlib
 import json
 import logging
+import re
 import time
+import unicodedata
 from dataclasses import replace
 from types import MappingProxyType, SimpleNamespace
 from typing import Any, AsyncIterator, Mapping
@@ -103,6 +105,25 @@ from .react_loop import (
 
 
 class ReActDriver:
+
+    _DELEGATE_OBJECTIVE_HISTORY_LIMIT = 8
+    _DELEGATE_CONVERGENCE_REJECTION_LIMIT = 2
+    _DELEGATE_OBJECTIVE_STOPWORDS = frozenset(
+        {
+            "a",
+            "an",
+            "and",
+            "child",
+            "delegate",
+            "durable",
+            "please",
+            "task",
+            "the",
+            "to",
+            "use",
+            "workflow",
+        }
+    )
 
     def __init__(
         self,
@@ -445,6 +466,132 @@ class ReActDriver:
                 separators=(",", ":"),
             ).encode("utf-8")
         ).hexdigest()
+
+    @classmethod
+    def _delegate_objective_signature(
+        cls,
+        call: PreparedToolCall,
+        *,
+        route_hint: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Return a privacy-preserving signature for normal workflow delegates.
+
+        Provider call ids and exact argument hashes are intentionally unsuitable
+        here: a fallback provider can paraphrase the same failed objective and
+        thereby create another child.  We retain only hashes of normalized words
+        and CJK bigrams, bounded in the continuation state, so convergence can be
+        checked without persisting another copy of the prompt text.
+        """
+
+        if call.tool_name != "workflow_spawn":
+            return None
+        args = call.arguments_json()
+        objective = str(args.get("objective") or "").strip()
+        profile_key = str(
+            route_hint or args.get("profile_key") or ""
+        ).strip()
+        if not objective or not profile_key:
+            return None
+        normalized = unicodedata.normalize("NFKC", objective).casefold()
+        words = {
+            word
+            for word in re.findall(r"[a-z0-9]+", normalized)
+            if word not in cls._DELEGATE_OBJECTIVE_STOPWORDS
+        }
+        cjk_tokens: set[str] = set()
+        for sequence in re.findall(r"[\u3400-\u9fff]+", normalized):
+            cleaned = sequence
+            for boilerplate in (
+                "请",
+                "使用",
+                "派生",
+                "一个",
+                "持久子任务",
+                "耐久子任务",
+                "子工作流",
+                "工作流",
+            ):
+                cleaned = cleaned.replace(boilerplate, "")
+            if len(cleaned) == 1:
+                cjk_tokens.add(cleaned)
+            else:
+                cjk_tokens.update(
+                    cleaned[index : index + 2]
+                    for index in range(len(cleaned) - 1)
+                )
+        tokens = {f"w:{item}" for item in words} | {
+            f"c:{item}" for item in cjk_tokens
+        }
+        if not tokens:
+            tokens = {"n:" + re.sub(r"\s+", " ", normalized).strip()}
+        token_hashes = tuple(
+            sorted(
+                hashlib.sha256(token.encode("utf-8")).hexdigest()
+                for token in tokens
+            )
+        )
+        normalized_text = re.sub(r"\s+", " ", normalized).strip()
+        return {
+            "profile_key": profile_key,
+            "objective_hash": hashlib.sha256(
+                normalized_text.encode("utf-8")
+            ).hexdigest(),
+            "token_hashes": list(token_hashes),
+        }
+
+    @staticmethod
+    def _delegate_objectives_match(
+        current: Mapping[str, Any], previous: Mapping[str, Any]
+    ) -> bool:
+        if str(current.get("profile_key") or "") != str(
+            previous.get("profile_key") or ""
+        ):
+            return False
+        if current.get("objective_hash") == previous.get("objective_hash"):
+            return True
+        current_tokens = {
+            str(item) for item in current.get("token_hashes", ()) if str(item)
+        }
+        previous_tokens = {
+            str(item) for item in previous.get("token_hashes", ()) if str(item)
+        }
+        if not current_tokens or not previous_tokens:
+            return False
+        shared = len(current_tokens & previous_tokens)
+        union = len(current_tokens | previous_tokens)
+        smaller = min(len(current_tokens), len(previous_tokens))
+        larger = max(len(current_tokens), len(previous_tokens))
+        return (
+            shared / union >= 0.72
+            or (
+                shared >= 2
+                and shared / smaller >= 0.85
+                and shared / larger >= 0.55
+            )
+        )
+
+    @classmethod
+    def _matching_failed_delegate(
+        cls, boundary: ReactCommandBoundary
+    ) -> tuple[dict[str, Any], dict[str, Any]] | None:
+        if len(boundary.pending_calls) != 1:
+            return None
+        current = cls._delegate_objective_signature(boundary.pending_calls[0])
+        if current is None:
+            return None
+        for raw in reversed(
+            tuple(
+                boundary.completion_state.get(
+                    "failed_delegate_objectives", ()
+                )
+            )
+        ):
+            if not isinstance(raw, Mapping):
+                continue
+            previous = dict(raw)
+            if cls._delegate_objectives_match(current, previous):
+                return current, previous
+        return None
 
     @staticmethod
     def _provider_call_record_id(run_id: str, provider_call_id: str) -> str:
@@ -1732,16 +1879,126 @@ class ReActDriver:
         boundary: ReactCommandBoundary,
         *,
         recovery_lease: RecoveryLease | None = None,
-    ) -> tuple[ReactCommandBoundary, DriverEvent]:
+    ) -> tuple[ReactCommandBoundary, DriverEvent | None]:
         if boundary.command_kind != "control_delegate" or len(boundary.pending_calls) != 1:
             raise ValueError("control delegate boundary is malformed")
         if boundary.pending_delegate is not None:
             return boundary, boundary.pending_delegate
         if boundary.pending_decision is not None:
             return boundary, boundary.pending_decision
-        control = await self._collaborator.prepare_control(
-            boundary.to_start(), boundary.pending_calls[0]
-        )
+        if boundary.outcomes[0] is not None:
+            # A resolved permission denial (or another authoritative control
+            # outcome) must never be re-prepared as a delegate command.
+            return boundary, None
+        duplicate = self._matching_failed_delegate(boundary)
+        if duplicate is not None:
+            current, previous = duplicate
+            failed = NormalizedToolOutcome.failure(
+                "duplicate_failed_delegation",
+                (
+                    "a child for a materially equivalent objective already "
+                    "failed; do not spawn another child for the same work. "
+                    "Use the existing failure evidence, choose a materially "
+                    "different objective, or finish with an honest partial/"
+                    "failure response"
+                ),
+                value={
+                    "matched_failed_child_run_id": str(
+                        previous.get("child_run_id") or ""
+                    ),
+                    "profile_key": str(current["profile_key"]),
+                },
+            )
+            updated = boundary.with_outcomes(
+                {0: failed},
+                {0: OutcomeStatus.FAILED},
+                {
+                    0: {
+                        "error_code": "duplicate_failed_delegation",
+                        "retryable": False,
+                        "matched_failed_child_run_id": str(
+                            previous.get("child_run_id") or ""
+                        ),
+                    }
+                },
+            )
+            state = copy.deepcopy(dict(updated.completion_state))
+            rejections = int(
+                state.get("delegate_convergence_rejections") or 0
+            ) + 1
+            state["delegate_convergence_rejections"] = rejections
+            state["last_delegate_convergence_rejection"] = {
+                "profile_key": str(current["profile_key"]),
+                "objective_hash": str(current["objective_hash"]),
+                "matched_failed_child_run_id": str(
+                    previous.get("child_run_id") or ""
+                ),
+            }
+            if rejections >= self._DELEGATE_CONVERGENCE_REJECTION_LIMIT:
+                state["agent_loop_terminal_error"] = json.dumps(
+                    {
+                        "code": "delegate_convergence_exhausted",
+                        "message": (
+                            "provider repeatedly proposed a materially "
+                            "equivalent delegate after its child failed"
+                        ),
+                        "matched_failed_child_run_id": str(
+                            previous.get("child_run_id") or ""
+                        ),
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            updated = replace(
+                updated,
+                completion_state=state,
+                version=boundary.version + 1,
+            )
+            await self._save_progress(
+                updated, recovery_lease=recovery_lease
+            )
+            return updated, None
+        try:
+            control = await self._collaborator.prepare_control(
+                boundary.to_start(), boundary.pending_calls[0]
+            )
+        except ValueError as exc:
+            message = str(exc)
+            if "project_workspace_selection_required" not in message:
+                raise
+            failed = NormalizedToolOutcome.failure(
+                "project_workspace_selection_required",
+                (
+                    "Select the project directory with "
+                    "project_directory_select, wait for the user confirmation, "
+                    "then retry this same workflow_spawn."
+                ),
+            )
+            updated = boundary.with_outcomes(
+                {0: failed},
+                {0: OutcomeStatus.FAILED},
+                {
+                    0: {
+                        "error_code": "project_workspace_selection_required",
+                        "retryable": True,
+                        "required_tool": "project_directory_select",
+                    }
+                },
+            )
+            state = copy.deepcopy(dict(updated.completion_state))
+            state["last_control_precondition"] = {
+                "code": "project_workspace_selection_required",
+                "retryable": True,
+            }
+            updated = replace(
+                updated,
+                completion_state=state,
+                version=boundary.version + 1,
+            )
+            await self._save_progress(
+                updated, recovery_lease=recovery_lease
+            )
+            return updated, None
         if control.run_id != boundary.run_id:
             raise ValueError("control event run binding mismatch")
         updated = replace(
@@ -1900,9 +2157,15 @@ class ReActDriver:
                     ):
                         yield candidate
                     return
-                _, delegate = await self._prepare_control_event(
+                boundary, delegate = await self._prepare_control_event(
                     boundary, recovery_lease=recovery_lease
                 )
+                if delegate is None:
+                    async for candidate in self._resume_completed(
+                        boundary, recovery_lease=recovery_lease
+                    ):
+                        yield candidate
+                    return
                 yield delegate
                 return
             elif isinstance(emission, ReactToolBatch):
@@ -4195,6 +4458,29 @@ class ReActDriver:
             detached.pop(signal.command_id, None)
         state['detached_children'] = detached
         terminal_status = str(getattr(signal, 'status', 'accepted'))
+        if (
+            signal.kind == "child_terminal"
+            and terminal_status == "failed"
+            and command is not None
+            and boundary.pending_calls
+        ):
+            signature = self._delegate_objective_signature(
+                boundary.pending_calls[0], route_hint=command.route_hint
+            )
+            if signature is not None:
+                history = [
+                    dict(item)
+                    for item in state.get("failed_delegate_objectives", ())
+                    if isinstance(item, Mapping)
+                ]
+                signature.update(
+                    child_run_id=signal.child_run_id,
+                    command_id=signal.command_id,
+                )
+                history.append(signature)
+                state["failed_delegate_objectives"] = history[
+                    -self._DELEGATE_OBJECTIVE_HISTORY_LIMIT :
+                ]
         capability_retry = None
         if (
             signal.kind == "child_terminal"
@@ -5104,8 +5390,15 @@ class ReActDriver:
                 return
             if permission_decision:
                 if boundary.command_kind == "control_delegate":
-                    _, delegate = await self._prepare_control_event(boundary)
-                    yield delegate
+                    if durable_signal.allow:
+                        boundary, delegate = await self._prepare_control_event(
+                            boundary
+                        )
+                        if delegate is not None:
+                            yield delegate
+                            return
+                    async for candidate in self._resume_completed(boundary):
+                        yield candidate
                     return
                 async for candidate in self._continue_after_tool_progress(
                     boundary
@@ -5247,9 +5540,15 @@ class ReActDriver:
                 boundary.command_kind == "control_delegate"
                 and boundary.provider_execution_indexes
             ):
-                _, delegate = await self._prepare_control_event(
+                boundary, delegate = await self._prepare_control_event(
                     boundary, recovery_lease=recovery_lease
                 )
+                if delegate is None:
+                    async for candidate in self._resume_completed(
+                        boundary, recovery_lease=recovery_lease
+                    ):
+                        yield candidate
+                    return
                 yield delegate
                 return
             async for candidate in self._continue_after_tool_progress(

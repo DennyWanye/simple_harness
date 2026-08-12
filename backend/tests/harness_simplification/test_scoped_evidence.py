@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from dataclasses import replace
 from datetime import datetime, timezone
 
@@ -55,6 +56,18 @@ def _context() -> EvidenceContext:
     )
 
 
+def _delegated_context() -> EvidenceContext:
+    call_id = "workflow_spawn_1"
+    return EvidenceContext(
+        run_id="run-new",
+        turn_id="turn-2",
+        call_id=call_id,
+        effect_id=hashlib.sha256(
+            f"effect|run-new|{call_id}".encode("utf-8")
+        ).hexdigest(),
+    )
+
+
 async def _ledger(tmp_path) -> SqliteExecutionUnitOfWork:
     path = tmp_path / "workflow.db"
     uow = SqliteExecutionUnitOfWork(path)
@@ -77,6 +90,107 @@ async def _ledger(tmp_path) -> SqliteExecutionUnitOfWork:
                 json.dumps(["artifact://deck/1"]), 1, 1.0, 1.0, 1.0,
             ),
         )
+        await db.commit()
+    return uow
+
+
+async def _delegated_ledger(tmp_path) -> SqliteExecutionUnitOfWork:
+    uow = await _ledger(tmp_path)
+    child = RunCreate(
+        run_id="child-1",
+        idempotency_key="delegate:run-new:workflow_spawn_1",
+        context=RunContext(
+            session_id="session-new",
+            root_run_id="run-new",
+            parent_run_id="run-new",
+            request_id="request-child",
+            turn_id="turn-child",
+            venue="text",
+            workspace={},
+            capability_hash=CAPABILITY_HASH,
+            provider_plan={"model": "fixture"},
+            trace_id="trace-child",
+            principal_id="principal",
+            auth_epoch=1,
+        ),
+        payload_fingerprint=fingerprint_json({"text": "verify files"}),
+        capability_fingerprint=CAPABILITY_HASH,
+        driver_kind="workflow",
+        profile_key="workflow.durable_task",
+        persistence_level=PersistenceLevel.DURABLE,
+    )
+    await uow.create(child)
+    terminal_payload = {
+        "status": "completed",
+        "value": {
+            "run_id": "child-1",
+            "status": "completed",
+            "terminal_event_id": "child-terminal",
+            "workflow_report": {"audit": {"passed": True}},
+        },
+    }
+    async with aiosqlite.connect(tmp_path / "workflow.db") as db:
+        await db.execute(
+            """UPDATE execution_runs SET status='completed',
+            terminal_event_id='child-terminal',ended_at=2.0,updated_at=2.0
+            WHERE run_id='child-1'"""
+        )
+        await db.execute(
+            """INSERT INTO execution_profile_launch_tickets(
+            ticket_ref,schema_version,parent_run_id,root_run_id,task_scope_id,
+            attempt_id,provider_turn_id,profile_key,driver_kind,
+            profile_catalog_generation,capability_snapshot_ref,task_grant_ref,
+            spawn_call_id,request_fingerprint,state,child_command_id,
+            child_run_id,ticket_version,created_at,updated_at,consumed_at
+            ) VALUES(?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                "ticket-1", "run-new", "run-new", "scope-1", "attempt-1",
+                "provider-turn-1", "workflow.durable_task", "workflow", 1,
+                "snapshot-1", "grant-1", "workflow_spawn_1", "a" * 64,
+                "consumed", "delegate-1", "child-1", 1, 1.0, 1.0, 1.0,
+            ),
+        )
+        await db.execute(
+            """INSERT INTO execution_child_commands(
+            operation_id,schema_version,parent_run_id,command_id,child_run_id,
+            profile_key,join_policy,capability_snapshot_ref,
+            capability_subset_json,child_request_json,child_spec_json,
+            intent_fingerprint,status,attempts,created_at,updated_at,ack_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                "operation-1", 1, "run-new", "delegate-1", "child-1",
+                "workflow.durable_task", "attached", "snapshot-1", "[]",
+                "{}", "{}", "b" * 64, "acked", 1, 1.0, 1.0, 1.0,
+            ),
+        )
+        await db.execute(
+            """INSERT INTO execution_child_signal_inbox(
+            signal_id,schema_version,operation_id,parent_run_id,command_id,
+            child_run_id,kind,payload_json,attempts,created_at,updated_at,
+            delivered_at) VALUES(?,1,?,?,?,?, 'terminal',?,1,?,?,?)""",
+            (
+                "signal-1", "operation-1", "run-new", "delegate-1",
+                "child-1", json.dumps(terminal_payload), 1.0, 1.0, 1.0,
+            ),
+        )
+        for index, tool_name in enumerate(("write_file", "run_shell", "register_artifacts")):
+            await db.execute(
+                """INSERT INTO workflow_effects(
+                effect_id,run_id,node_execution_id,effect_fingerprint,
+                effect_type,policy_json,args_hash,status,prepared_json,
+                outcome_json,receipt_ref,artifact_refs_json,lease_epoch,
+                started_at,updated_at,ended_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    f"child-effect-{index}", "child-1", f"node-{index}",
+                    f"fingerprint-{index}", "idempotent_read", "{}",
+                    f"args-{index}", "committed",
+                    json.dumps({"tool_name": tool_name}), "{}",
+                    f"receipt-{index}",
+                    json.dumps(["artifact://result/1"] if tool_name == "register_artifacts" else []),
+                    1, float(index + 1), float(index + 1), float(index + 1),
+                ),
+            )
         await db.commit()
     return uow
 
@@ -119,6 +233,62 @@ async def test_uow_is_the_read_only_evidence_resolver_and_exact_context_passes(t
     assert selection.status == "matched"
     assert outcome.passed is True
     assert outcome.evidence_status == "matched"
+
+
+@pytest.mark.asyncio
+async def test_attached_completed_child_projects_its_committed_effect_receipts(tmp_path):
+    resolver = await _delegated_ledger(tmp_path)
+    context = _delegated_context()
+
+    selection = await resolver.lookup_completion_evidence(context)
+
+    assert selection.status == "matched"
+    assert [record.tool_name for record in selection.records] == [
+        "write_file",
+        "run_shell",
+        "register_artifacts",
+    ]
+    assert all(record.context == context for record in selection.records)
+    gate = VerifyGate(
+        extractor=RegexExtractor([
+            ClaimPattern(
+                id="tests-passed",
+                regex=r"tests passed",
+                artifact_kind="test",
+                tool_hint=["run_shell"],
+            )
+        ]),
+        mode="strict",
+    )
+    assert gate.check(
+        assistant_text="tests passed",
+        ledger=[],
+        scoped_evidence=selection,
+    ).passed is True
+
+
+@pytest.mark.asyncio
+async def test_attached_child_evidence_requires_explicit_passed_audit(tmp_path):
+    resolver = await _delegated_ledger(tmp_path)
+    async with aiosqlite.connect(tmp_path / "workflow.db") as db:
+        row = await (
+            await db.execute(
+                "SELECT payload_json FROM execution_child_signal_inbox "
+                "WHERE signal_id='signal-1'"
+            )
+        ).fetchone()
+        payload = json.loads(str(row[0]))
+        payload["value"]["workflow_report"]["audit"]["passed"] = False
+        await db.execute(
+            "UPDATE execution_child_signal_inbox SET payload_json=? "
+            "WHERE signal_id='signal-1'",
+            (json.dumps(payload),),
+        )
+        await db.commit()
+
+    assert (
+        await resolver.lookup_completion_evidence(_delegated_context())
+    ).status == "unknown"
 
 
 @pytest.mark.asyncio

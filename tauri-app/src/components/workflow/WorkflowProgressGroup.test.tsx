@@ -136,6 +136,41 @@ describe("WorkflowProgressGroup", () => {
     expect(progress.textContent).not.toContain("进行中");
   });
 
+  it("uses a terminal Session Run projection when the public snapshot is not hydrated", () => {
+    render(
+      <WorkflowProgressGroup
+        runId="run-cancelled-after-restart"
+        summary={summary({
+          workflow_run_id: "run-cancelled-after-restart",
+          workflow_status: "running",
+          workflow_completed_count: 6,
+          workflow_total: 9,
+        })}
+        stages={[]}
+        runProjectionStatus="cancelled"
+        runProjection={{
+          run_id: "run-cancelled-after-restart",
+          task_scope_id: "scope-cancelled",
+          version: 4,
+          status: "cancelled",
+          inflight: false,
+          ui_state: "open",
+          started_at: 1_000,
+          last_activity: 89_000,
+        }}
+      />,
+    );
+
+    const progress = screen.getByTestId(
+      "workflow-progress-run-cancelled-after-restart",
+    );
+    expect(progress.getAttribute("data-status")).toBe("cancelled");
+    expect(progress.textContent).toContain("已取消");
+    expect(progress.textContent).toContain("67%");
+    expect(progress.textContent).toContain("1 分 28 秒");
+    expect(progress.textContent).not.toContain("进行中");
+  });
+
   it("renders a capability operation projected by the existing workflow stream", () => {
     const onAction = vi.fn();
     render(

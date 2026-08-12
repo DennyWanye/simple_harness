@@ -218,9 +218,11 @@ async def test_durable_task_progress_scopes_repeated_nodes_by_safe_task_identity
     second_event_id = await reporter.report(second, "started")
     duplicate_second_id = await reporter.report(second, "started")
 
-    assert first_event_id == "event-1"
-    assert second_event_id == duplicate_second_id == "event-2"
-    assert len(service.outbox.events) == 2
+    # The private durable-task graph alternates llm_proposal/tool_execution
+    # for each tool batch.  Public progress represents the stage, not those
+    # private task instances, so one attempt emits each stage only once.
+    assert first_event_id == second_event_id == duplicate_second_id == "event-1"
+    assert len(service.outbox.events) == 1
     serialized_keys = repr(tuple(service.outbox.events))
     assert "private-task-a" not in serialized_keys
     assert "private-task-b" not in serialized_keys

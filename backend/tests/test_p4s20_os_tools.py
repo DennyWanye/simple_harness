@@ -104,6 +104,41 @@ def test_write_file_overwrite_flag(tmp_dir: Path) -> None:
     assert p.read_text(encoding="utf-8") == "new"
 
 
+def test_write_file_append_preserves_existing_content(tmp_dir: Path) -> None:
+    p = tmp_dir / "chunked.txt"
+    p.write_text("part-1\n", encoding="utf-8")
+
+    out = json.loads(
+        write_file(
+            {"path": str(p), "content": "part-2\n", "mode": "append"},
+            "",
+        )
+    )
+
+    assert out == {
+        "path": str(p.resolve()),
+        "bytes_written": 7,
+        "total_size_bytes": 14,
+        "mode": "append",
+    }
+    assert p.read_text(encoding="utf-8") == "part-1\npart-2\n"
+
+
+def test_write_file_rejects_invalid_mode_without_mutation(tmp_dir: Path) -> None:
+    p = tmp_dir / "mode.txt"
+    p.write_text("unchanged", encoding="utf-8")
+
+    out = json.loads(
+        write_file(
+            {"path": str(p), "content": "bad", "mode": "replace-all"},
+            "",
+        )
+    )
+
+    assert out["error"] == "invalid mode"
+    assert p.read_text(encoding="utf-8") == "unchanged"
+
+
 # ---------------------------------------------------------------------
 # edit_file
 # ---------------------------------------------------------------------

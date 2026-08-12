@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sqlite3
 from dataclasses import dataclass, replace
 
@@ -119,7 +120,7 @@ def _stack(path, *, adapter=None):
     registry = WorkflowRegistry()
     for name, version in (
         *(("deep_research", f"v{number}") for number in range(1, 8)),
-        ("ppt", "v1"), ("code", "v1"),
+        ("ppt", "v1"), ("code", "v1"), ("durable_task", "v1"),
     ):
         manifest = _manifest(name, version)
         registry.register(_Workflow(manifest), executable=_Executable(manifest))
@@ -843,7 +844,7 @@ async def test_checkpoint_workflow_child_terminal_enqueues_parent_signal_atomica
         delivery_session_id=child_spec.context.session_id,
         request_id=child_spec.context.request_id,
         turn_id=child_spec.context.turn_id,
-        workflow_name="code",
+        workflow_name="durable_task",
         workflow_version="v1",
         capability_snapshot={},
         start_payload={"task": "finish the child workflow"},
@@ -859,7 +860,7 @@ async def test_checkpoint_workflow_child_terminal_enqueues_parent_signal_atomica
     )
     state = {
         "schema_version": 1,
-        "workflow_name": "code",
+        "workflow_name": "durable_task",
         "workflow_version": "v1",
         "thread_id": prepared.thread_id,
         "run_id": prepared.run_id,
@@ -874,6 +875,97 @@ async def test_checkpoint_workflow_child_terminal_enqueues_parent_signal_atomica
         [],
         operation_id="workflow-child-genesis",
     )
+    artifact_digest = "b" * 64
+    provisional_digest = "c" * 64
+    artifact_path = tmp_path / "REPORT.md"
+    artifact_path.write_text("done", encoding="utf-8")
+    db = sqlite3.connect(path)
+    try:
+        db.execute(
+            """INSERT INTO workflow_effects(
+            effect_id,run_id,node_execution_id,effect_fingerprint,effect_type,
+            policy_json,args_hash,status,prepared_json,outcome_json,receipt_ref,
+            artifact_refs_json,lease_epoch,started_at,updated_at,ended_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                "effect-provisional-write",
+                prepared.run_id,
+                "node-write",
+                "fingerprint-write",
+                "idempotent_write",
+                '{"kind":"idempotent_write","policy_id":"test","version":"v1"}',
+                "args-write",
+                "committed",
+                json.dumps({"tool_name": "write_file"}),
+                json.dumps(
+                    {
+                        "state": "success",
+                        "value": {
+                            "ok": True,
+                            "artifacts": [
+                                {
+                                    "kind": "file",
+                                    "path": str(artifact_path),
+                                    "title": "REPORT.md",
+                                    "sha256": None,
+                                }
+                            ],
+                        },
+                        "error": None,
+                    }
+                ),
+                "receipt-write",
+                json.dumps([provisional_digest]),
+                fence.lease_epoch,
+                0.5,
+                0.5,
+                0.5,
+            ),
+        )
+        db.execute(
+            """INSERT INTO workflow_effects(
+            effect_id,run_id,node_execution_id,effect_fingerprint,effect_type,
+            policy_json,args_hash,status,prepared_json,outcome_json,receipt_ref,
+            artifact_refs_json,lease_epoch,started_at,updated_at,ended_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                "effect-artifacts",
+                prepared.run_id,
+                "node-artifacts",
+                "fingerprint-artifacts",
+                "idempotent_read",
+                '{"kind":"idempotent_read","policy_id":"test","version":"v1"}',
+                "args-artifacts",
+                "committed",
+                json.dumps({"tool_name": "register_artifacts"}),
+                json.dumps(
+                    {
+                        "state": "success",
+                        "value": {
+                            "ok": True,
+                            "artifacts": [
+                                {
+                                    "kind": "file",
+                                    "path": str(artifact_path),
+                                    "title": "REPORT.md",
+                                    "sha256": artifact_digest,
+                                }
+                            ],
+                        },
+                        "error": None,
+                    }
+                ),
+                "receipt-artifacts",
+                json.dumps([artifact_digest]),
+                fence.lease_epoch,
+                1.0,
+                1.0,
+                1.0,
+            ),
+        )
+        db.commit()
+    finally:
+        db.close()
     await saver.commit_frontier(
         fence,
         genesis["checkpoint_id"],
@@ -914,6 +1006,30 @@ async def test_checkpoint_workflow_child_terminal_enqueues_parent_signal_atomica
     assert value["run_id"] == child_spec.run_id
     assert value["status"] == "completed"
     assert value["final_assistant"]["text"] == "child finished"
+    assert tuple(value["artifact_refs"]) == (artifact_digest,)
+    assert value["artifacts"][0]["path"] == str(artifact_path)
+
+    db = sqlite3.connect(path)
+    try:
+        artifact_event = db.execute(
+            """SELECT artifact_refs_json FROM execution_events
+            WHERE run_id=? AND kind='workflow.artifact_card'""",
+            (prepared.run_id,),
+        ).fetchone()
+        assert artifact_event is not None
+        assert json.loads(artifact_event[0]) == [artifact_digest]
+        sinks = {
+            row[0]
+            for row in db.execute(
+                """SELECT sink_kind FROM execution_deliveries
+                WHERE event_id=(SELECT event_id FROM execution_events
+                    WHERE run_id=? AND kind='workflow.artifact_card')""",
+                (prepared.run_id,),
+            )
+        }
+        assert sinks == {"artifact", "websocket"}
+    finally:
+        db.close()
 
     replay = await saver.commit_frontier(
         fence,

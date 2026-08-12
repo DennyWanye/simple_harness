@@ -199,30 +199,56 @@ pub fn build_diagnostic_bundle(
     )
     .map_err(|e| format!("write meta.json failed: {e}"))?;
 
-    // --- zip via PowerShell Compress-Archive (no new Rust dep) -------
+    // --- archive with the platform-native tool (no new Rust dep) ------
     let zip_path = std::env::temp_dir().join(format!("deskpet-feedback-{ts}.zip"));
     let zip_str = zip_path.to_string_lossy().to_string();
-    let staging_glob = format!("{}\\*", staging.to_string_lossy());
-    let ps = format!(
-        "Compress-Archive -Path '{}' -DestinationPath '{}' -Force",
-        staging_glob, zip_str,
-    );
-    let output = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &ps])
-        .output()
-        .map_err(|e| format!("compress failed to spawn: {e}"))?;
+    #[cfg(target_os = "windows")]
+    let output = {
+        let staging_glob = format!("{}\\*", staging.to_string_lossy());
+        let ps = format!(
+            "Compress-Archive -Path '{}' -DestinationPath '{}' -Force",
+            staging_glob, zip_str,
+        );
+        std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &ps])
+            .output()
+    };
+    #[cfg(target_os = "macos")]
+    let output = std::process::Command::new("ditto")
+        .args(["-c", "-k", "--sequesterRsrc", "--keepParent"])
+        .arg(&staging)
+        .arg(&zip_path)
+        .output();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let output = std::process::Command::new("zip")
+        .current_dir(&staging)
+        .args(["-q", "-r"])
+        .arg(&zip_path)
+        .arg(".")
+        .output();
+    let output = output.map_err(|e| format!("compress failed to spawn: {e}"))?;
     if !output.status.success() {
         return Err(format!(
-            "Compress-Archive failed: {}",
+            "diagnostic archive failed: {}",
             String::from_utf8_lossy(&output.stderr)
         ));
     }
 
     let size = dir_file_size(&zip_path);
 
-    // Reveal in Explorer (best-effort — failure here doesn't fail the cmd)
+    // Reveal in the native file manager (best-effort).
+    #[cfg(target_os = "windows")]
     let _ = std::process::Command::new("explorer")
         .args(["/select,", &zip_str])
+        .spawn();
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open")
+        .arg("-R")
+        .arg(&zip_path)
+        .spawn();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let _ = std::process::Command::new("xdg-open")
+        .arg(zip_path.parent().unwrap_or_else(|| Path::new("/tmp")))
         .spawn();
 
     Ok(DiagnosticBundle {

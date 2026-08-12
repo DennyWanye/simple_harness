@@ -927,6 +927,7 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
               companionEvents={companionEvents}
               sessionId={activeSid}
               selectedRunId={selectedRunId}
+              runProjections={runProjectionMap}
               projectDirectoryRequest={projectDirectoryRequest}
               projectDirectoryError={projectDirectoryError}
               onProjectDirectoryConfirm={confirmProjectDirectory}

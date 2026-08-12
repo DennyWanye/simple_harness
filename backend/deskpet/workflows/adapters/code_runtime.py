@@ -1227,6 +1227,14 @@ class ToolDispatchPort:
                 authorization=authorization,
             )
             outcome = _normalize_registry_outcome(raw)
+            metadata_reader = getattr(
+                self.tool_registry, "take_prepared_execution_metadata", None
+            )
+            execution_metadata = (
+                dict(metadata_reader(effect_id))
+                if callable(metadata_reader)
+                else {}
+            )
             if outcome.state is ToolOutcomeState.SUCCESS:
                 for target in prepared.prepared_targets:
                     evidence = _target_evidence(target.final_path)
@@ -1258,6 +1266,15 @@ class ToolDispatchPort:
                 context.fence,
                 effect_id,
                 outcome,
+                receipt_ref=(
+                    str(execution_metadata.get("receipt_ref") or "").strip()
+                    or None
+                ),
+                artifact_refs=tuple(
+                    str(item)
+                    for item in execution_metadata.get("artifact_refs", ())
+                    if str(item).strip()
+                ),
             )
         except BaseException as exc:
             await context.journal.mark_uncertain(
@@ -1268,6 +1285,9 @@ class ToolDispatchPort:
             raise
         if committed.outcome is None:
             raise EffectStateConflict(f"effect {effect_id} committed without an outcome")
+        acknowledge = getattr(self.tool_registry, "acknowledge_prepared_effect", None)
+        if callable(acknowledge):
+            acknowledge(effect_id)
         return effect_id, committed.outcome
 
     @staticmethod

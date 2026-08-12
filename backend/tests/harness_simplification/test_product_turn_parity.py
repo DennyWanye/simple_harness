@@ -115,7 +115,7 @@ def test_current_run_reservation_and_reasoning_frames_are_classified() -> None:
         (
             "backend/deskpet/agent/run_presenter.py",
             "validate_presenter_dual_send_helper",
-            "    await context.broadcast(context.websocket, frame)\n",
+            "        await context.broadcast(context.websocket, frame)\n",
         ),
         (
             "backend/deskpet/agent/product_domain_sink.py",
@@ -130,8 +130,13 @@ def test_dual_send_helpers_fail_closed_when_peer_broadcast_is_deleted(
     module = _load_census_module()
     source = (ROOT / path).read_text(encoding="utf-8")
     assert removed in source
+    replacement = (
+        "        pass\n"
+        if validator == "validate_presenter_dual_send_helper"
+        else ""
+    )
     with pytest.raises(RuntimeError, match="peer broadcast"):
-        getattr(module, validator)(source.replace(removed, "", 1))
+        getattr(module, validator)(source.replace(removed, replacement, 1))
 
 
 def test_census_covers_required_product_capabilities() -> None:

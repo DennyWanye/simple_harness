@@ -806,6 +806,70 @@ async def test_driver_preserves_first_token_fallback_and_only_emits_terminal_can
 
 
 @pytest.mark.asyncio
+async def test_workspace_precondition_failure_returns_to_model_without_killing_run(
+    tmp_path,
+):
+    call = prepared_call(
+        tool_name="workflow_spawn",
+        model_args={
+            "profile_key": "workflow.durable_task",
+            "objective": "create a project",
+        },
+        call_id="spawn-without-project-directory",
+        effect_id="effect-spawn-without-project-directory",
+        capability_hash=CAPABILITY_HASH,
+        scope_hash=SCOPE_HASH,
+    )
+
+    class Collaborator(ScriptedCollaborator):
+        async def prepare_control(self, request, prepared):
+            del request, prepared
+            raise ValueError(
+                "project_workspace_selection_required: call "
+                "project_directory_select first"
+            )
+
+    collaborator = Collaborator(
+        [
+            ReactControlBatch(
+                "control-workspace-precondition",
+                call,
+                _context(call),
+                (
+                    {
+                        "role": "assistant",
+                        "tool_calls": [{"id": call.stable_call_id}],
+                    },
+                ),
+            )
+        ],
+        resumes=[[ReactFinal("I will ask for the project directory first.")]],
+    )
+    driver, store, _ = await _driver(tmp_path, collaborator)
+
+    events = await _collect(driver.start(_request()))
+
+    assert events[-1] == DriverTerminalCandidate(
+        "run-react",
+        "completed",
+        "I will ask for the project directory first.",
+    )
+    assert len(collaborator.resume_inputs) == 1
+    response = collaborator.resume_inputs[0][1]
+    assert response["type"] == "tool_outcomes"
+    boundary = collaborator.resume_inputs[0][0]
+    assert boundary.outcomes[0].error["code"] == (
+        "project_workspace_selection_required"
+    )
+    persisted = await store.load_continuation("run-react")
+    assert persisted is not None
+    persisted_boundary = ReactCommandBoundary.from_record(persisted)
+    assert persisted_boundary.outcomes[0].error["code"] == (
+        "project_workspace_selection_required"
+    )
+
+
+@pytest.mark.asyncio
 async def test_decision_boundary_survives_new_driver_and_keeps_session(tmp_path):
     decision = OpenDecision(
         run_id="run-react",
@@ -900,6 +964,82 @@ async def test_permission_batch_waits_for_durable_grant_before_execution(tmp_pat
     assert command.kind == "execute_tools"
     assert command.grant_refs[0].grant_id
     assert command.grant_refs[0].decision_nonce == decision.nonce
+
+
+@pytest.mark.asyncio
+async def test_denied_control_permission_never_prepares_delegate(tmp_path):
+    call = prepared_call(
+        tool_name="workflow_spawn",
+        model_args={
+            "profile_key": "workflow.durable_task",
+            "objective": "return READY",
+        },
+        call_id="denied-workflow-spawn",
+        effect_id="effect-denied-workflow-spawn",
+        capability_hash=CAPABILITY_HASH,
+        scope_hash=SCOPE_HASH,
+        requires_authorization=True,
+        recoverable_effect=True,
+    )
+
+    class Collaborator(ScriptedCollaborator):
+        async def prepare_control(self, request, prepared):
+            del request, prepared
+            raise AssertionError("denied workflow_spawn must not be prepared")
+
+    collaborator = Collaborator(
+        [
+            ReactControlBatch(
+                "control-denied-workflow-spawn",
+                call,
+                _context(call),
+                (
+                    {
+                        "role": "assistant",
+                        "tool_calls": [{"id": call.stable_call_id}],
+                    },
+                ),
+            )
+        ],
+        resumes=[[ReactFinal("permission denial handled")]],
+    )
+    driver, store, _ = await _driver(tmp_path, collaborator)
+
+    decision = (await _collect(driver.start(_request())))[0]
+    response = {"decision": "deny"}
+    durable_signal = replace(
+        _durable_signal(decision, response),
+        allow=False,
+    )
+    resumed = await _collect(
+        driver.signal_decision_atomically(
+            DecisionSignal(
+                "run-react",
+                decision.decision_id,
+                response,
+                nonce=decision.nonce,
+                version=0,
+            ),
+            durable_signal,
+            _actor(),
+        )
+    )
+
+    assert [item.kind for item in resumed] == ["persisted_event", "terminal"]
+    assert resumed[-1] == DriverTerminalCandidate(
+        "run-react", "completed", "permission denial handled"
+    )
+    boundary, resume_signal = collaborator.resume_inputs[0]
+    assert resume_signal["type"] == "tool_outcomes"
+    assert boundary.pending_delegate is None
+    assert boundary.outcomes[0].error == {
+        "code": "authorization_denied",
+        "message": "authorization denied",
+    }
+    stored = await store.load_continuation("run-react")
+    assert stored is not None
+    persisted = ReactCommandBoundary.from_record(stored)
+    assert persisted.pending_delegate is None
 
 
 @pytest.mark.asyncio
@@ -2425,6 +2565,285 @@ async def test_rejected_control_replan_does_not_launch_another_child(
     assert persisted.pending_delegate is None
     assert persisted.outcomes[0] is not None
     assert persisted.outcomes[0].error["code"] == "replan_required"
+
+
+def _workflow_spawn_call(
+    objective: str, *, call_id: str = "workflow-spawn-call"
+) -> PreparedToolCall:
+    return prepared_call(
+        tool_name="workflow_spawn",
+        model_args={
+            "profile_key": "workflow.durable_task",
+            "objective": objective,
+            "catalog_generation": 1,
+        },
+        call_id=call_id,
+        effect_id=f"effect-{call_id}",
+        capability_hash=CAPABILITY_HASH,
+        scope_hash=SCOPE_HASH,
+    )
+
+
+@pytest.mark.asyncio
+async def test_failed_child_objective_blocks_paraphrased_redelegation_before_ticket(
+    tmp_path,
+):
+    prior = _workflow_spawn_call(
+        "Count every Python file in the repository and report the total",
+        call_id="failed-workflow-spawn",
+    )
+    repeated = _workflow_spawn_call(
+        "Please report the total after counting every Python file in the repository",
+        call_id="repeated-workflow-spawn",
+    )
+
+    class Collaborator(ScriptedCollaborator):
+        async def prepare_control(self, request, prepared):
+            del request, prepared
+            raise AssertionError("duplicate objective must be rejected before ticket issue")
+
+    collaborator = Collaborator(
+        [
+            ReactControlBatch(
+                "control-repeated-objective",
+                repeated,
+                _context(repeated),
+                (
+                    {
+                        "role": "assistant",
+                        "tool_calls": [{"id": repeated.stable_call_id}],
+                    },
+                ),
+            )
+        ],
+        resumes=[[ReactFinal("reported the existing child failure honestly")]],
+    )
+    driver, store, _ = await _driver(tmp_path, collaborator)
+    signature = driver._delegate_objective_signature(
+        prior, route_hint="workflow.durable_task"
+    )
+    assert signature is not None
+    signature.update(child_run_id="child-failed", command_id="delegate-failed")
+    request = replace(
+        _request(),
+        completion_state={
+            "stop_reason": None,
+            "failed_delegate_objectives": [signature],
+        },
+    )
+
+    candidates = await _collect(driver.start(request))
+
+    assert candidates == [
+        DriverTerminalCandidate(
+            "run-react",
+            "completed",
+            "reported the existing child failure honestly",
+        )
+    ]
+    persisted = ReactCommandBoundary.from_record(
+        await store.load_continuation("run-react")
+    )
+    assert persisted.pending_delegate is None
+    assert persisted.outcomes[0] is not None
+    assert persisted.outcomes[0].error["code"] == (
+        "duplicate_failed_delegation"
+    )
+    assert persisted.completion_state["delegate_convergence_rejections"] == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_child_objective_allows_materially_distinct_delegate(
+    tmp_path,
+):
+    prior = _workflow_spawn_call(
+        "Count every Python file in the repository",
+        call_id="failed-count-spawn",
+    )
+    distinct = _workflow_spawn_call(
+        "Generate a release-notes document from the changelog",
+        call_id="distinct-release-spawn",
+    )
+    command = DelegateRun(
+        run_id="run-react",
+        command_id="delegate-distinct",
+        child_request={"task": "generate release notes"},
+        route_hint="workflow.durable_task",
+        capability_subset=("read",),
+        attachment_policy=AttachmentPolicy.ATTACHED,
+        join_policy=JoinPolicy.JOIN_BEFORE_FINAL,
+    )
+
+    class Collaborator(ScriptedCollaborator):
+        async def prepare_control(self, request, prepared):
+            del request
+            assert prepared == distinct
+            return command
+
+    collaborator = Collaborator(
+        [
+            ReactControlBatch(
+                "control-distinct",
+                distinct,
+                _context(distinct),
+                (
+                    {
+                        "role": "assistant",
+                        "tool_calls": [{"id": distinct.stable_call_id}],
+                    },
+                ),
+            )
+        ]
+    )
+    driver, _, _ = await _driver(tmp_path, collaborator)
+    signature = driver._delegate_objective_signature(
+        prior, route_hint="workflow.durable_task"
+    )
+    assert signature is not None
+    signature.update(child_run_id="child-failed", command_id="delegate-failed")
+
+    candidates = await _collect(
+        driver.start(
+            replace(
+                _request(),
+                completion_state={
+                    "stop_reason": None,
+                    "failed_delegate_objectives": [signature],
+                },
+            )
+        )
+    )
+
+    assert candidates == [command]
+
+
+@pytest.mark.asyncio
+async def test_second_paraphrased_redelegation_exhausts_convergence_budget(
+    tmp_path,
+):
+    prior = _workflow_spawn_call(
+        "Count every Python file in the repository and report the total",
+        call_id="failed-budget-spawn",
+    )
+    repeated = _workflow_spawn_call(
+        "Report the total by counting every Python file in this repository",
+        call_id="second-repeated-spawn",
+    )
+    collaborator = ScriptedCollaborator(
+        [
+            ReactControlBatch(
+                "control-second-repeated",
+                repeated,
+                _context(repeated),
+                (
+                    {
+                        "role": "assistant",
+                        "tool_calls": [{"id": repeated.stable_call_id}],
+                    },
+                ),
+            )
+        ],
+        resumes=[[ReactFinal("must not resume after budget exhaustion")]],
+    )
+    driver, _, _ = await _driver(tmp_path, collaborator)
+    signature = driver._delegate_objective_signature(
+        prior, route_hint="workflow.durable_task"
+    )
+    assert signature is not None
+    signature.update(child_run_id="child-failed", command_id="delegate-failed")
+
+    candidates = await _collect(
+        driver.start(
+            replace(
+                _request(),
+                completion_state={
+                    "stop_reason": None,
+                    "failed_delegate_objectives": [signature],
+                    "delegate_convergence_rejections": 1,
+                },
+            )
+        )
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].kind == "terminal"
+    assert candidates[0].status == "failed"
+    assert "delegate_convergence_exhausted" in str(candidates[0].error)
+    assert collaborator.resume_inputs == []
+
+
+@pytest.mark.asyncio
+async def test_failed_workflow_child_records_bounded_objective_signature(
+    tmp_path,
+):
+    call = _workflow_spawn_call(
+        "Count every Python file and report the total",
+        call_id="record-failed-objective",
+    )
+    command = DelegateRun(
+        run_id="run-react",
+        command_id="delegate-record-failure",
+        child_request={"task": "count Python files"},
+        route_hint="workflow.durable_task",
+        capability_subset=("read",),
+        attachment_policy=AttachmentPolicy.ATTACHED,
+        join_policy=JoinPolicy.JOIN_BEFORE_FINAL,
+    )
+
+    class Collaborator(ScriptedCollaborator):
+        async def prepare_control(self, request, prepared):
+            del request
+            assert prepared == call
+            return command
+
+    collaborator = Collaborator(
+        [
+            ReactControlBatch(
+                "control-record-failure",
+                call,
+                _context(call),
+                (
+                    {
+                        "role": "assistant",
+                        "tool_calls": [{"id": call.stable_call_id}],
+                    },
+                ),
+            )
+        ],
+        resumes=[[ReactFinal("child failed; no retry claimed")]],
+    )
+    driver, store, _ = await _driver(tmp_path, collaborator)
+    assert await _collect(driver.start(_request())) == [command]
+    coordinator, committed, accepted = await _schedule_child(store, command)
+    await _collect(driver.signal(accepted))
+    await store.finalize_child_and_enqueue_parent_signal(
+        committed.operation_id,
+        expected_version=1,
+        terminal_status="failed",
+        event=RunEventCandidate(
+            event_key="workflow-child-failed",
+            kind="run.failed",
+            status="failed",
+            driver_kind="react",
+        ),
+        value={"error": "provider_failure"},
+    )
+    terminal = (await _pending(coordinator, "run-react"))[0]
+
+    candidates = await _collect(driver.signal(terminal))
+
+    assert candidates[-1] == DriverTerminalCandidate(
+        "run-react", "completed", "child failed; no retry claimed"
+    )
+    persisted = ReactCommandBoundary.from_record(
+        await store.load_continuation("run-react")
+    )
+    history = persisted.completion_state["failed_delegate_objectives"]
+    assert len(history) == 1
+    assert history[0]["profile_key"] == "workflow.durable_task"
+    assert history[0]["child_run_id"] == terminal.child_run_id
+    assert "objective" not in history[0]
+    assert history[0]["token_hashes"]
 
 
 @pytest.mark.asyncio

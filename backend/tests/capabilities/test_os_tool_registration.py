@@ -9,6 +9,7 @@ def test_new_os_primitives_are_registered_default_on() -> None:
     register_os_tools(registry)
     expected = {
         "move_file",
+        "register_artifacts",
         "process_list",
         "process_start",
         "process_wait",
@@ -22,3 +23,4 @@ def test_new_os_primitives_are_registered_default_on() -> None:
     assert registry.get("process_start").dangerous is True
     assert registry.get("move_file").concurrency_safe is False
     assert registry.get("download_file").permission_category == "network"
+    assert registry.get("register_artifacts").permission_category == "read_file"

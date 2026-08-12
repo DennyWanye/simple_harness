@@ -18,6 +18,7 @@ from .download_tools import download_file
 from .edit_file import edit_file
 from .list_directory import list_directory
 from .move_file import move_file
+from .register_artifacts import register_artifacts
 from .process_tools import process_list, process_start, process_stop, process_wait
 from .read_file import read_file
 from .run_shell import run_shell
@@ -29,6 +30,7 @@ from ..resource_scopes import (
     download_file_scope,
     edit_file_scope,
     list_directory_scope,
+    register_artifacts_scope,
     move_file_scope,
     process_start_scope,
     process_stop_scope,
@@ -83,18 +85,24 @@ def register_os_tools(registry) -> None:  # type: ignore[no-untyped-def]
         schema=_schema(
             "write_file",
             "Create a new file. Refuses to overwrite unless overwrite=true. Creates parent dirs. "
-            "IMPORTANT: content is HARD-CAPPED at 4096 characters per call (G3 reliability fix). "
+            "IMPORTANT: content is HARD-CAPPED at 3000 characters per call. "
             "For longer files, split into multiple calls: first call with content=<part 1>, "
-            "then subsequent calls with mode='append' for each chunk. Calls over 4KB are "
+            "then subsequent calls with mode='append' for each chunk. Calls over 3KB are "
             "rejected before execution to avoid streaming JSON-escape failures.",
             {
                 "path": {"type": "string", "description": "Absolute file path"},
                 "content": {
                     "type": "string",
-                    "description": "File content. MAX 4096 chars per call — split longer files into append-mode chunks.",
-                    "maxLength": 4096,
+                    "description": "File content. MAX 3000 chars per call — split longer files into append-mode chunks.",
+                    "maxLength": 3000,
                 },
                 "overwrite": {"type": "boolean", "default": False},
+                "mode": {
+                    "type": "string",
+                    "enum": ["write", "append"],
+                    "default": "write",
+                    "description": "Use append for every chunk after the first; append never replaces existing bytes.",
+                },
             },
             ["path", "content"],
         ),
@@ -151,6 +159,33 @@ def register_os_tools(registry) -> None:  # type: ignore[no-untyped-def]
     )
 
     registry.register(
+        name="register_artifacts",
+        toolset="os",
+        schema=_schema(
+            "register_artifacts",
+            "Register existing files inside the selected project as formal Harness artifacts. "
+            "This is read-only: it never creates, copies, moves, or modifies files. Use this "
+            "when the user asks to deliver files that already exist; do not fabricate an "
+            "artifact-card JSON or receipt file.",
+            {
+                "paths": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "items": {"type": "string"},
+                    "description": "Existing file paths, absolute or relative to the selected project directory.",
+                },
+            },
+            ["paths"],
+        ),
+        handler=register_artifacts,
+        context_handler=bind_context_handler(register_artifacts),
+        permission_category="read_file",
+        resource_scope_resolver=register_artifacts_scope,
+        resource_scope_resolver_id="builtin:os:register_artifacts",
+    )
+
+    registry.register(
         name="run_shell",
         toolset="os",
         schema=_schema(
@@ -168,7 +203,11 @@ def register_os_tools(registry) -> None:  # type: ignore[no-untyped-def]
                 "permission first."
             ),
             {
-                "command": {"type": "string"},
+                "command": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "description": "Shell command, maximum 2000 characters. Never embed whole file bodies or heredocs here; use write_file with mode=append in chunks.",
+                },
                 "cwd": {"type": "string"},
                 "timeout": {"type": "integer", "default": 30},
             },
