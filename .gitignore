@@ -8,6 +8,8 @@ __pycache__/
 build/
 .DS_Store
 Thumbs.db
+# Local editor/manual backup copies are disposable and must not enter commits.
+*.bak
 *.log
 crash_reports/
 logs/
