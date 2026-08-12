@@ -124,3 +124,25 @@ DeskPet 的 LLM 调用走 中转站（默认 gpt-5.5）。用户首次启动时�
 - **每个 case**：Snapshot/Screenshot → 真坐标点击/真输入 → 截图 → 日志判定；动作前 declare `坐标=(x,y)|动作=|期望=`；失败 retry ≥3 次不同 workaround 才能标"环境受限"；跳过须等用户确认。
 
 **记住**：用户要的不是"PASS 数量"，是"真 E2E 证据"。绕过得来的 PASS 是负价值。
+
+---
+
+## 🗄️ 测试证据存储纪律（HARD — 用户 2026-08-13 定调）
+
+**从现在起，新产生的测试原始证据不得提交或上传到 Git。** Git 只保存可审阅的文字结论、
+测试命令、PASS/FAIL/BLOCKED 状态、关联 Run/scenario ID、证据相对索引和 SHA-256；原始文件留在
+本机，后续统一迁移到用户的局域网 NAS。
+
+- 新测试默认把截图、录屏、音频、原始日志、数据库、receipt、diagnostic archive、AX snapshot
+  和大型机器生成报告写入仓库根目录的 `.local-test-evidence/<YYYY-MM-DD>/<scenario-or-run>/`。
+- `.local-test-evidence/` 永久 Git ignore；不得用 `git add -f`、修改 ignore 规则或复制到另一个
+  可跟踪目录的方式绕过。
+- 旧工具若仍输出到 `plans/**/verification/**/artifacts/`、`manual-results-*/screenshots|logs|recordings`
+  等历史路径，原始产物同样保持 ignored；允许提交其中手写的小型结论 Markdown，但不得内嵌
+  base64、截图或原始长日志。
+- 证据可能含账号、Provider 响应、文件路径、会话内容或设备信息；本地保存前仍须遵守凭据脱敏，
+  禁止保存密码、API key、cookie、token、二维码或其他认证材料。
+- NAS 迁移尚未配置。未来接入时按“项目 / 日期 / scenario-or-run”保留相对结构，迁移前做隐私扫描，
+  复制后逐文件核对 SHA-256；只有 NAS 副本验证完整后，才允许删除本地原件。
+- 已经存在于 Git 历史的旧证据不在日常提交中重写历史；若以后需要清理历史体积，必须单独制定
+  Git history/LFS 迁移方案并取得用户确认。

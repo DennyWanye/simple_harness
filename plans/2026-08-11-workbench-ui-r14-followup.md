@@ -93,6 +93,13 @@ primary evidence。
 后续计划：搭建自动归档到局域网 NAS 的流程（rsync/定时同步，归档前完成凭据/隐私扫描），
 落地前证据仅存在于本机工作区，注意不要误删。
 
+**2026-08-13 扩展为项目级长期规则**：后续所有测试的原始证据均不得上传 Git，不再局限于
+Workbench verification。新证据统一落到 `.local-test-evidence/<日期>/<scenario-or-run>/`；Git
+只提交文字结论、命令、状态、Run/scenario ID、相对索引与 SHA-256。历史工具目录的 artifacts、
+screenshots、logs、recordings 也由通用 ignore 规则覆盖。NAS 路径尚未配置；未来归档必须先做
+凭据/隐私扫描，复制后逐文件校验 SHA-256，确认 NAS 副本完整后才可删除本地原件。旧 Git 历史
+中的证据暂不改写，若要瘦身另开经用户批准的 history/LFS 迁移任务。
+
 ## F6 — pnpm 11 构建脚本审批影响标准命令
 
 `pnpm run typecheck` / `pnpm test` 在依赖状态检查阶段触发安装，并因
