@@ -107,11 +107,35 @@ primary evidence。
 `pnpm test`（Vitest 67 files / 533 passed）均绿，esbuild postinstall 正常执行。
 全局 pnpm 安全策略未动。
 
+## F7 — r15 续测后的真实产品缺陷与已闭环场景（2026-08-12）
+
+续测事实详见 `plans/2026-08-12-workbench-ui-r15-test-resume.md`。本轮仍按用户要求暂停
+plan-test，没有创建或修改 gate ledger；以下是代码锚点 `7415f76` 上的真实 UI 结果：
+
+- **TC-WB-05 PASS**：会话 A/B/C 隔离、新会话真往返、重命名保持与删除均已完成。
+- **TC-WB-17 PASS**：800×560、30 会话/30 产物、80 字符标题与四视图切换通过。
+- **TC-WB-18 PASS**：当前会话删除即时切换、删除后归属、重启不复活、删至零空态、空态
+  新建真往返全部通过。
+- **TC-WB-08 FAIL**：Provider 新增/停用/重启/清理和 macOS 自启开关链通过，但 Provider 删除
+  无确认、Agent 预算无法稳定持久化、macOS 数据目录重启不生效，且 testcase 把实际包含
+  压缩配置编辑能力的模型上下文卡整体误标为只读。
+- **TC-WB-13 FAIL**：运行期 backend 持续不可用时，`StartupOverlay` 全屏遮住 Workbench，无法
+  满足 ChatView 状态条、发送明确失败、侧栏最差态与运行期重试的冻结口径。
+- **TC-WB-07 BLOCKED**：消息流 `artifact_card` 的最后一公里投影仍未完成，不能只翻 flag。
+
+续测同时推翻了旧的“当前环境禁止 localhost 监听”结论：本机 IPv4/IPv6、Vite 5173 与
+backend 8100 均可正常监听。仍缺的是 TC-WB-10/14/16 托盘路径，以及 TC-WB-12 步骤 7
+同机冷启动性能对照，不再按统一沙箱阻断处理。
+
+修复顺序：先锁定兼容的 Tauri JS/Rust 版本并恢复 debug bundle；再修 TC-WB-08、13、07；
+完整自动化通过后补托盘/退出/性能真机证据。实现或 testcase 发生变化后，应保留 r15 为历史
+记录；将来用户恢复 plan-test 时开干净的新轮次，不把旧证据包装成最终验收。
+
 ## 建议恢复顺序
 
-1. 决定 r10～r13 大体积证据的存储策略并完成敏感信息扫描。
-2. 修复 legacy parity census 的历史 source 可复跑性。
-3. 一次性提交当前 acceptance/testcase/architecture 修订，冻结最终 oracle。
-4. 重新生成有效 r14/r15 manifest，按真实 impact 集合执行缺失的手工 E2E 与性能对照。
-5. 机器门通过后做独立实质审计；PASS 后生成 receipt，再提交验证结果。
+1. 提交本轮 r15 续测事实与本 follow-up，不纳入本地 verification 大文件。
+2. 修复 Tauri 版本兼容、TC-WB-08、TC-WB-13 与 TC-WB-07。
+3. 跑全量自动化并补 TC-WB-10/12/14/16 与受影响场景的真机证据。
+4. 全部通过后同步 `ARCHITECTURE/` 与 `PROJECT_STATUS.md`。
+5. 仅在用户明确恢复 plan-test 后，新开干净轮次完成机器门与独立审计。
 6. 只有用户明确要求时才 push 远端 `main`。
