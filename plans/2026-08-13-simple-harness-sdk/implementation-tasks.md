@@ -706,6 +706,29 @@
     lease必须拒绝，只有`commit_fork`可消费，避免重写已提交checkpoint。
     fault label是稳定的`workflow:<method>:before_<table>_write/after_<table>_write/after_commit`，实现必须对
     该method实际写到的每张authority table枚举label，不允许只有一个笼统fault点。
+    `RecoveryCandidate` 是SDK recovery policy的immutable read authority，exact fields为
+    `(run_id, run_version, status, runtime_lease_owner?, runtime_lease_epoch?,
+    runtime_lease_expires_at?, workflow_lease_namespace?, workflow_lease_owner?,
+    workflow_lease_epoch?, workflow_lease_expires_at?, run_fence_owner?,
+    run_fence_runtime_lease_epoch?, run_fence_epoch?, run_fence_state?, checkpoint_head?)`。
+    owner/epoch/expiry 必须成组全有或全无；workflow namespace不得用
+    `namespace != runtime LIMIT 1` 猜测，必须从该Run的durable start/admission snapshot取pinned
+    workflow namespace并读取精确row。RunFence四元组同样全有或全无。
+    `list_candidates`/`read_recovery_snapshot` 只返回真实row snapshot，不接收 `now`、不判定
+    expired/live、不内置quarantine/retry policy；SDK Runner/recovery必须用同一注入的
+    Unix epoch `now` 按下述顺序分类。`commit_recovery_outcome` 必须对上述全部
+    snapshot字段和expected head做同一transaction CAS；任一owner/epoch/expiry/state/namespace
+    漂移都零写conflict，Port不得在SQL中代替SDK先做过期分类。
+    `list_candidates` 的枚举authority固定为 `runs.driver_kind='workflow'` 且state非
+    `completed|failed|cancelled|reserved_fork` 的全部Run，以`run_id` 升序做stable keyset
+    pagination：`snapshot_cursor` 是上页最后一个`run_id`，下页只取`run_id > cursor`；
+    每页返回不超过100条，`next_cursor` 只在还有后续row时返回该页最后
+    `run_id`。实现必须以Run为主表、对pinned start/admission identity、Runtime lease、精确
+    workflow namespace lease、RunFence和checkpoint head做LEFT JOIN/等价nullable read；缺任一row
+    仍必须枚举并由nullable group表示。禁止按expiry、lease/fence state、head是否存在、
+    manifest/implementation可用性、已有recovery outcome或实现者认定的“可恢复”状态
+    预过滤；这些均属于SDK policy。分页期间live renew/takeover/head推进可导致后续
+    `commit_recovery_outcome` 全snapshot CAS conflict，但不得使该Run从枚举集消失。
   1. `RegisteredWorkflow.materialize(...)` 必须从canonical `WorkflowExecutionPorts` materialize真实
      `NativeWorkflowExecutable` + `SqliteNativeCheckpointStore`，store/checkpoint adapter/UoW 的
      `transaction_owner` 必须同一object identity；禁止注册或缓存预绑定 executable、fake checkpointer、
@@ -773,7 +796,8 @@
      提供durable read/CAS primitives，不能把分类策略回调给consumer。每一类用真实SQLite并发/fault/reopen
      证明exact receipt replay、异payload零写和quarantine后零执行。决策顺序与CAS tuple固定为：
      `(a)` RUNNING且Runtime/Workflow lease过期：CAS `(run state/version, runtime owner+epoch+expiry,
-     workflow owner+epoch+expiry, run-fence epoch, expected head)` 到 RETRYABLE+recoverable receipt；
+     workflow namespace+owner+epoch+expiry, run-fence owner+runtime epoch+fence epoch+state,
+     expected head)` 到 RETRYABLE+recoverable receipt；
      `(b)` cancel_requested/cancelling先按第4项收敛；`(c)` 任一active未过期owner则只读skip；
      `(d)` manifest/implementation/descriptor/hash不匹配则BLOCKED `graph_version_unavailable`；
      `(e)` 非active Run的missing/stale head只允许从同run+namespace、最高committed revision CAS repair；

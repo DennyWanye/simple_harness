@@ -552,4 +552,19 @@ model，只能在响应后发现 mismatch，已经无法满足调用前 hard-cap
 - authority修订第三轮独立狭挑战：`PASS`，`NEW_CRITICAL_FINDINGS=0`。同commit双源
   hash、真实AST method/function inventory、terminal lease-clear、原184 hash不变与T0.6 gate
   owner已形成可执行闭包，affected Runner authority relocation可恢复实现。
+- 执行期B2 audit发现 `RecoveryCandidate` 只携epoch，不携owner/expiry/fence state，且
+  workflow lease用`namespace != runtime LIMIT 1`猜测；SDK policy因而无法区分expired/live
+  owner或对H16冻结全CAS tuple，只能把分类偷塞回UoW。已扩展typed immutable
+  candidate为runtime/workflow owner+epoch+expiry、pinned workflow namespace、RunFence
+  owner+runtime epoch+fence epoch+state与head；read Port不接`now`不做policy，SDK用统一注入
+  epoch分类，mutation对全snapshot同tx CAS。
+- RecoveryCandidate修订第一轮独立狭挑战：`FAIL`，`NEW_CRITICAL_FINDINGS=1`：
+  candidate本身已足以关闭renew/takeover/head竞态，但`list_candidates` 未冻结精确
+  枚举集/join/排序/cursor，实现可用INNER JOIN漏掉缺lease/fence/head的损坏Run，
+  等价于把policy下沉到Port。已冻结全部非terminal、非reserved-fork workflow Run、
+  `run_id` stable keyset/100条页、pinned namespace与所有authority nullable LEFT JOIN；禁止按
+  expiry/state/head/manifest/outcome/“可恢复”预过滤。
+- RecoveryCandidate修订第二轮独立狭挑战：`PASS`，
+  `NEW_CRITICAL_FINDINGS=0`。exact枚举集、keyset cursor、pinned namespace、nullable authority
+  snapshot、SDK分类责任与全snapshot CAS已形成可执行闭包，affected recovery line可恢复。
 - 性质：这是未发布SDK的首版语义完整性修正，不涉及历史Run兼容或数据迁移。
