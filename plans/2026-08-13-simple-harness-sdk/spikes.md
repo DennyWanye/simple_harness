@@ -534,4 +534,22 @@ model，只能在响应后发现 mismatch，已经无法满足调用前 hard-cap
   precreated Runtime authority reclaim、SDK保留的official cancel coordinator，以及前六轮的typed lifecycle Ports、
   lease/fence、cancel convergence、start/genesis、resume binding、recovery matrix、fork saga与risk snapshot均形成
   可执行闭包。affected T4.1 production可恢复；完成后仍须通过真实SQLite并发/fault/reopen完成度审计。
+- 执行期 implementation audit 发现一处计划自相矛盾：T4.1仍要求 Runner必填独立
+  `lease`/拥有 lease orchestration，但 H16 已禁止第四套clock并将WorkflowLease冻结为Runtime lease
+  projection。独立复审 `FAIL`，`NEW_CRITICAL_FINDINGS=1`。已明确 H16 覆盖旧constructor：删除
+  Runner `lease` 参数，退役 `WorkflowLeasePort.acquire/renew/release`，仅保留runtime epoch必填的
+  immutable `WorkflowLease`，原source行为迁到canonical `WorkflowLifecyclePort`。
+- authority修订第一轮独立狭挑战：`FAIL`，`NEW_CRITICAL_FINDINGS=1`：把不存在于frozen source
+  的SDK草稿 `WorkflowLeasePort` 误称为旧source symbol，无法进入184-entry disposition或建立真实
+  approved transform。已改为精确锁定frozen `WorkflowRunner` 内部 `LeaseManager` 到canonical
+  lifecycle的behavior-preserving authority relocation，新增 `workflow-runner-h16-transform.json`且不改
+  原184 hash；未发布草稿Protocol单独记为 `unshipped_sdk_draft_delete`。
+- authority修订第二轮独立狭挑战：`FAIL`，`NEW_CRITICAL_FINDINGS=1`：receipt只锁定
+  `runner.py`，却声称迁移未冻结 `lease.py` 中的行为，且误写了实际不存在的
+  `LeaseManager.release`。已补充同commit的 `lease.py` path/SHA-256，锁定真实
+  `claim/run_with_heartbeat/_heartbeat_loop/transition_run` inventory，并把释放语义改为
+  `transition_run` 的terminal lease-clear。
+- authority修订第三轮独立狭挑战：`PASS`，`NEW_CRITICAL_FINDINGS=0`。同commit双源
+  hash、真实AST method/function inventory、terminal lease-clear、原184 hash不变与T0.6 gate
+  owner已形成可执行闭包，affected Runner authority relocation可恢复实现。
 - 性质：这是未发布SDK的首版语义完整性修正，不涉及历史Run兼容或数据迁移。

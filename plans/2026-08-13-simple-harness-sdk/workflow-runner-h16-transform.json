@@ -1,0 +1,64 @@
+{
+  "schema_version": 2,
+  "classification": "required_conformance_authority_relocation",
+  "behavior_change": false,
+  "source_commit": "122ec55989f8a77e023aeb44ba1b4dae1b694269",
+  "source_files": [
+    {
+      "path": "backend/deskpet/workflows/runner.py",
+      "sha256": "11b4230b96166f07d849f487d9243dccc6085fa2b480e260555d7d107e27ba51",
+      "required_inventory": ["WorkflowRunner", "WorkflowRunner.__init__"]
+    },
+    {
+      "path": "backend/deskpet/workflows/lease.py",
+      "sha256": "c973acd0c95e3c0a76eef24c797418f9322197d95d0dcc2c963863e28c9b2573",
+      "required_inventory": [
+        "LeaseManager",
+        "LeaseManager.claim",
+        "LeaseManager.run_with_heartbeat",
+        "LeaseManager._heartbeat_loop",
+        "transition_run"
+      ]
+    }
+  ],
+  "source_symbol": "WorkflowRunner",
+  "existing_disposition_target": "simple_harness.workflow.runner.WorkflowRunner",
+  "acceptance_basis": ["SR-1", "SR-2", "SR-6", "SDK-AC-5", "SDK-AC-7", "SDK-AC-8"],
+  "reason": "Preserve the frozen WorkflowRunner lease claim, heartbeat, lease-loss, and stale-writer behavior while enforcing the accepted single durable SDK authority.",
+  "source_behavior_mapping": [
+    {
+      "source": "WorkflowRunner.__init__ constructs LeaseManager",
+      "target": "WorkflowRunner receives canonical WorkflowExecutionPorts.lifecycle",
+      "invariant": "No consumer-owned or hidden second lease mutation authority exists."
+    },
+    {
+      "source": "LeaseManager.claim",
+      "target": "WorkflowLifecyclePort.claim_activation or bind_activation",
+      "invariant": "Run owner, runtime epoch, RunFence, and workflow projection are acquired or bound atomically."
+    },
+    {
+      "source": "LeaseManager.run_with_heartbeat",
+      "target": "WorkflowLifecyclePort.renew_activation plus SDK Runner or Kernel heartbeat",
+      "invariant": "Lease loss cancels and isolates the old task; later stale writes and handoffs are rejected."
+    },
+    {
+      "source": "transition_run terminal transition clears lease_owner, lease_expires_at, and heartbeat_at",
+      "target": "WorkflowLifecyclePort.release_activation or terminal transaction release",
+      "invariant": "Runtime lease, workflow projection, and RunFence converge in one canonical transaction."
+    }
+  ],
+  "unshipped_sdk_draft": {
+    "symbol": "simple_harness.workflow.lease.WorkflowLeasePort",
+    "disposition": "unshipped_sdk_draft_delete",
+    "source_symbol": false,
+    "reason": "The draft Protocol was introduced during SDK execution and is not present in the frozen product source inventory."
+  },
+  "required_gates": [
+    "original 184-entry disposition hash remains unchanged",
+    "WorkflowRunner public signature has no lease parameter",
+    "simple_harness public surface has no WorkflowLeasePort",
+    "WorkflowLease.runtime_lease_epoch is required",
+    "runner.py and lease.py source hashes and exact method/function inventories match",
+    "claim, heartbeat, lease-loss, terminal lease-clear, precreated projection, and stale-writer behavior tests pass"
+  ]
+}

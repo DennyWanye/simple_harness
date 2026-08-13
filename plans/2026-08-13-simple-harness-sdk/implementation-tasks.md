@@ -62,6 +62,33 @@
   forbidden survivor golden FAIL；不得重新生成或改变原184 inventory hash。
 - 依赖：T0.4；必须在T4.1/T4.3提交前GREEN。
 
+### T0.6 — 冻结 WorkflowRunner H16 authority relocation receipt [AC-5, AC-8]
+
+- 文件：`workflow-runner-h16-transform.json`、
+  `$PRODUCT_REPO/scripts/acceptance/{verify_sdk_oracles,build_sdk_symbol_disposition}.py`、对应golden tests。
+- 原因：H16将 frozen `backend/deskpet/workflows/runner.py::WorkflowRunner` 内部 `LeaseManager`
+  claim/heartbeat/lease-loss 及 `transition_run` terminal lease-clear 行为迁到 canonical
+  `WorkflowLifecyclePort`，以保留单一durable authority；
+  同时执行期曾产生一个未发布的SDK草稿 `WorkflowLeasePort`，它不是frozen source symbol，
+  不能伪造或改写原184-symbol disposition。
+- 冻结：保持原184-entry/hash不变；supplemental receipt同时锁定同一source commit下
+  `backend/deskpet/workflows/runner.py` SHA-256
+  `11b4230b96166f07d849f487d9243dccc6085fa2b480e260555d7d107e27ba51`
+  与 `backend/deskpet/workflows/lease.py` SHA-256
+  `c973acd0c95e3c0a76eef24c797418f9322197d95d0dcc2c963863e28c9b2573`，
+  `WorkflowRunner -> simple_harness.workflow.runner.WorkflowRunner` 已有target，并精确记录
+  `WorkflowRunner.__init__`、`LeaseManager.claim/run_with_heartbeat/_heartbeat_loop`、`transition_run`
+  的真实method/function inventory 到
+  `WorkflowLifecyclePort.claim_activation|bind_activation|renew_activation|release_activation` 的行为等价映射。
+  这是冻结验收要求的authority relocation，不改变claim/heartbeat/lease-loss/zero-stale-write
+  行为，不属于放宽black-box oracle。未发布的 `WorkflowLeasePort` 标记为
+  `unshipped_sdk_draft_delete`，不进source-symbol disposition。
+- gate：验证两个source path/hash与上述真实method/function AST inventory、target、receipt exact
+  mapping、Runner public signature无 `lease`、SDK无public
+  `WorkflowLeasePort`、`WorkflowLease.runtime_lease_epoch` 必填，并执行heartbeat、lease-loss、
+  precreated Kernel projection与stale-writer零写source-equivalence tests。
+- 依赖：T0.5；必须在H16/T4.1提交前GREEN，不得修改原184 inventory hash。
+
 ## S1 — contracts / Provider / Tool
 
 ### T1.1 — 冻结 JSON、identity、message/event/error public API [AC-1, AC-2]
@@ -549,8 +576,9 @@
   必须接收 checkpointer 已打开的 transaction handle，并与对应 checkpoint/head/decision/effect/finalize
   写入同一个 commit/rollback boundary；adapter 不得 commit、不得另开 connection、不得持有 hidden
   concrete store。逐 write-point fault 后 close/reopen 必须全回滚或全提交，不能出现 checkpoint 与
-  execution ledger 分叉。`WorkflowRunner.__init__` 必填
-  registry/checkpoint/lease/recovery/trace/`WorkflowExecutionPorts`，不再另收一份 UoW；canonical UoW
+  execution ledger 分叉。H16 的三 authority lifecycle 裁决显式覆盖旧 source constructor：
+  `WorkflowRunner.__init__` 必填 registry/checkpoint/recovery/trace/`WorkflowExecutionPorts`，删除独立
+  `lease` 参数，不再另收一份 UoW；canonical UoW
   只取 `execution_ports.unit_of_work`。checkpoint authority 必须一次性
   `bind_execution_adapter(execution_ports.checkpoint)`，并暴露进程内 opaque `transaction_owner`；adapter
   的 `transaction_owner` 必须用 object identity 与 checkpoint authority相同，否则构造时零写拒绝。
@@ -560,7 +588,7 @@
   retry/loop/HITL/quarantine/replay语义。contracts/definition/recovery/replay/runner/control/
   execution_ports 的 frozen target symbol 必须全部存在且由 API snapshot/symbol disposition gate校验。
   `CompiledWorkflow` 继续拥有 definition-derived pure graph operations：node/route lookup、patch validation与
-  reducer merge、edge/join/activation/cycle budget计算；`WorkflowRunner` 只拥有registry/lease/admission/
+  reducer merge、edge/join/activation/cycle budget计算；`WorkflowRunner` 只拥有registry/admission/
   recovery orchestration，materialize一个T4.3 `NativeWorkflowExecutable` 后委托执行，禁止自己成为第二个
   node task/frontier/retry/HITL state-machine owner。Runner与Native的delegation protocol/API snapshot必须
   明确，product cutover gate扫描并禁止SDK外第二个 Workflow state-machine owner。
@@ -614,6 +642,17 @@
     `WorkflowTransaction`，显式接收expected version/head/lease/`now`与stable operation/receipt id；Port只做
     durable read/CAS，策略仍由SDK Runner/recovery/replay拥有。API snapshot + structural Host fake必须实现全部
     public methods；禁止 `getattr`、concrete SQLite、consumer callback policy或hidden fallback。
+    H16 同时是对 frozen `backend/deskpet/workflows/runner.py::WorkflowRunner` constructor/internal
+    `LeaseManager` 以及 `backend/deskpet/workflows/lease.py::transition_run` terminal lease-clear
+    行为的authority relocation，由 `workflow-runner-h16-transform.json` 补充冻结：
+    保留 public immutable `WorkflowLease` value，其 `runtime_lease_epoch` 必填且不可为
+    `None`；将原行为唯一映射为
+    `WorkflowLifecyclePort.claim_activation/bind_activation/renew_activation/release_activation`。Runner、Host fake
+    与 consumer 均不得注入或持有第四套 lease mutation authority。API snapshot 必须断言
+    Runner signature 无 `lease`、SDK public surface 无 `WorkflowLeasePort`，且全部 workflow lease mutation
+    只能通过 canonical lifecycle。`WorkflowLeasePort` 是未发布SDK的执行期草稿，直接删除并
+    记录为 `unshipped_sdk_draft_delete`；它不是frozen source symbol，不进入也不改写
+    `source-symbol-disposition.json`。
     typed fields/invariants也属于public snapshot：`StartAdmissionReceipt(request_id, request_key,
     request_fingerprint, run_id, phase, version, claim_owner?, activation?, serialized_outcome?)`且
     `StartPhase=ADMITTED|CLAIMED|RUNNING|SETTLED`；`ResumeAdmissionRequest(receipt_id, run_id,
