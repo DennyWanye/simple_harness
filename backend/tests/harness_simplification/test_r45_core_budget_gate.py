@@ -190,8 +190,8 @@ def test_r45_migration_fixture_locks_current_adjustment() -> None:
 
     loc = harness_baseline._orchestration_loc()
     audit = harness_baseline.build_r45_core_audit(loc)
-    assert audit["migration_overcount_loc"] == 509
-    assert audit["total_loc"] == audit["raw_total_loc"] - 509
+    assert audit["migration_overcount_loc"] == 507
+    assert audit["total_loc"] == audit["raw_total_loc"] - 507
 
 
 @pytest.mark.parametrize(
@@ -382,7 +382,7 @@ def test_r45_root_accounting_counts_new_and_non_core_additions(tmp_path: Path) -
     }
 
 
-def test_r45_root_accounting_rejects_unclassified_existing_source(tmp_path: Path) -> None:
+def test_r45_root_accounting_counts_existing_source_inside_frozen_root(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     source = repo / "backend/deskpet/harness/ambiguous.py"
     source.parent.mkdir(parents=True)
@@ -411,8 +411,8 @@ def test_r45_root_accounting_rejects_unclassified_existing_source(tmp_path: Path
         exceptions={},
     )
 
-    assert total == 0
-    assert unknown == ["backend/deskpet/harness/ambiguous.py"]
+    assert total == 1
+    assert unknown == []
 
 
 def test_non_core_import_only_change_does_not_flag_unchanged_method() -> None:

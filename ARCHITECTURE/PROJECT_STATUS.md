@@ -2,6 +2,27 @@
 
 > **最后更新**：2026-08-13
 
+## 2026-08-13 里程碑：Harness 历史 fixture 与结构债务全部收口
+
+- **历史 source commit 恢复为耐久 Git 锚点**：从原始仓库恢复 R0/R4.5/R5.5/R6 四个冻结
+  commit，并分别建立 `harness-r0-rollback`、`harness-r45-base`、`harness-r55-source`、
+  `harness-r6-source` 标签。基线工具先验证标签精确指向冻结 commit，再跨历史迁移执行
+  tree-to-tree 核算，不再错误要求旧 commit 必须是当前 HEAD 祖先；R6 cutover fixture 恢复可跑。
+- **结构预算通过且 authority 不变**：`RunKernel` 的 terminal lifecycle、`AgentLoop` 的 tool
+  context persistence、`ReActDriver` 的 failure recovery/capability retry 分别抽成 leaf mixin；不新增
+  owner、数据库或事务通道。当前 `RunKernel=1,281` 行、`AgentLoop class=3,727` 行、
+  `react.py=5,138` 行，满足 `<=1,300 / <=3,800 / <=5,200`。当前 construction 账本为 raw
+  `167,836`、adjusted `167,329`、core `28,486`、unknown `0`、公开操作 6 项；历史 R4.5/R5.5
+  final 数值只保留为旧里程碑，不冒充当前扩展后的预算。
+- **parity 与 authority 闭环**：产品 turn mapping 重算后 `141/141`、unmapped `0`；冻结 source
+  hash/capability 映射不变。authority enforce-target 为 DML `1`、UoW starters `57`、run map `1`、
+  supervisor task `0`、presenter `1`、legacy `0`。旧 Live2D/CDP runner 已删除，原始测试证据仍只
+  保存在 gitignored 本地目录，等待 NAS 归档。
+- **当前验证**：历史/预算/parity `80 passed`，ReAct 聚焦 `114 passed`，Kernel 聚焦
+  `118 passed`，AgentLoop 聚焦 `31 passed`；完整 Harness 为
+  `920 passed / 4 xfailed / 0 failed`，上一里程碑的 14 个意外失败全部关闭。4 个 xfail 为明确
+  登记的预期红用例。冷启动性能仍按用户决定跳过，Realtime 继续关闭，plan-test gate 继续暂停。
+
 ## 2026-08-13 里程碑：Execution 单一写入 authority 收口
 
 - **第二个 `execution_runs` 写入者已删除**：原生 `WorkflowRunStore.claim()` 通过无 SQL 的

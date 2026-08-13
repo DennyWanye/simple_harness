@@ -37,7 +37,7 @@
     {
       "path": "backend/deskpet/companion/control_ingress.py",
       "base_absent": true,
-      "source_hash": "ae73ce2f3807b8e623823de3dde05d2398e465aee15301f0c7bd0c028af5429d",
+      "source_hash": "aeecf4516d3f778e4cd2197a0df018e89ce43585f66e7af1d93e589ff52a2598",
       "reason": "trusted Companion control ingress is product authority outside harness and execution core"
     },
     {
@@ -91,7 +91,7 @@
     {
       "path": "backend/deskpet/agent/session_terminal_delivery.py",
       "base_absent": true,
-      "source_hash": "2071d09242fca322cefb59345db60c6fb1267a1d035ee8c1f80c8eb5b877a7c1",
+      "source_hash": "92d6e08dd092ada0bce10f5d236de3afe4d1ae0a180ccb96ccbd0a90d0fff128",
       "reason": "session terminal projection is product conversation delivery infrastructure outside harness and execution core"
     },
     {

@@ -28,6 +28,13 @@ def test_locked_manifests_reproduce_both_approved_totals() -> None:
     assert rollback["expected_total_loc"] == 33_228
 
 
+def test_historical_fixture_refs_are_fetchable_and_exact() -> None:
+    assert (
+        harness_baseline.verify_historical_base_refs()
+        == harness_baseline.HISTORICAL_BASE_REFS
+    )
+
+
 def test_manifest_drift_fails_closed(tmp_path: Path) -> None:
     manifest = json.loads(harness_baseline.PHASE0_MANIFEST.read_text(encoding="utf-8"))
     manifest["files"][0]["loc"] += 1

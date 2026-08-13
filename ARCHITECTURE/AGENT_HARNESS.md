@@ -230,6 +230,12 @@ flowchart TB
 | `RunPresenter` | 把统一事件转换为产品消息 | 决定任务状态 |
 | `HarnessReconciler` | 启动时清空 durable 积压；有新事件时短暂处理 child、恢复、晚到 effect 与 delivery | 常驻轮询或建立第二个 Run owner |
 
+三个体积较大的 owner 现在把内聚职责下沉到无独立状态、无独立持久化 authority 的 leaf mixin：
+`RunKernel` 的终态结算/清理由 `KernelTerminalLifecycle` 承载，`AgentLoop` 的 attempt/activation
+上下文落盘由 `ToolContextPersistenceMixin` 承载，`ReActDriver` 的失败事实持久化与 Host 能力修复
+重试由 `ReactFailureRecoveryMixin` 承载。它们只通过宿主已有的 UoW、registry 和 live boundary
+工作，不创建第二个 Run owner、事务入口或执行通道；六个 Kernel 公开操作和外部导入路径不变。
+
 产品入口的 `open()` 现在只是协调者，不再把所有准备工作堆在一个函数里：
 
 1. `ProductTurnIdentityResolver` 校验 Session/request/turn，固定 root Run、task scope 和 workspace。
@@ -1202,6 +1208,29 @@ tuple、set、非字符串 key 或非有限浮点仍由严格 validator 拒绝�
 
 ## 验证状态
 
+### 2026-08-13 Harness 历史基线与结构预算收口
+
+历史 R0/R4.5/R5.5/R6 fixture 不再依赖“这些 commit 必须仍是当前 HEAD 的祖先”这一错误假设。
+四个精确 source commit 已恢复为可 fetch 的耐久标签：`harness-r0-rollback`、
+`harness-r45-base`、`harness-r55-source`、`harness-r6-source`；账本先校验标签必须精确指向冻结
+commit，再允许跨历史迁移做 tree-to-tree 比较。R6 cutover fixture 与历史 source-backed 测试
+重新可执行。产品 turn parity mapping 由当前源码重算后仍为 `141/141`、unmapped `0`；变化只来自
+调用点行号/派生 identity，冻结 source hash 与 capability 对应关系没有变化。
+
+结构拆分保持单一执行 authority：`RunKernel` 为 1,281 行，`AgentLoop` class AST 为 3,727 行，
+`react.py` 为 5,138 行，分别满足当前 `<=1,300 / <=3,800 / <=5,200` 边界。当前 Harness
+construction 账本为 raw `167,836`、migration-adjusted `167,329`、core `28,486`、Kernel
+`1,281`，六个公开操作、unknown classification `0`、deletion budget `255`，全部通过当前
+`harness_boundary_construction` 门。R4.5/R5.5 的旧 final 数值仍作为历史里程碑保留，不冒充
+适用于后来扩展产品能力的当前预算。
+
+当前验证结果：历史/预算/parity 聚焦 `80 passed`，ReAct 失败恢复与模块边界 `114 passed`，
+Kernel 聚焦 `118 passed`，AgentLoop 持久化聚焦 `31 passed`；authority enforce-target 仍为
+execution DML `1`、UoW transaction starter `57`、live run map `1`、supervisor task `0`、
+presenter `1`、legacy survivor `0`。完整 `backend/tests/harness_simplification` 为
+`920 passed / 4 xfailed / 0 failed`，此前 14 个意外失败全部关闭。4 个 xfail 是明确登记的
+预期红用例。本轮按用户决定不执行冷启动性能对照；Realtime 继续关闭。
+
 ### 2026-08-13 Execution 单一写入 authority 收口
 
 `WorkflowRunStore.claim()` 不再直接更新 `execution_runs`，通用 Run 的 running 同步改由
@@ -1210,14 +1239,13 @@ tuple、set、非字符串 key 或非有限浮点仍由严格 validator 拒绝�
 `execution_runs` status/version 同时保持原值。authority 审计同时修正局部只读 SELECT 的误报，
 并支持 macOS/Linux 与 Windows 的 bundled Git 布局。
 
-当前验证结果：Workflow/authority 聚焦 `48 passed`；
+该阶段验证结果：Workflow/authority 聚焦 `48 passed`；
 `harness_authority_audit.py --check --enforce-target` 为 PASS，机器事实为 execution DML
 authority `1`、UoW transaction starter `57`、live run map `1`、supervisor task `0`、presenter
 `1`、legacy survivor `0`；可靠性门禁后端 `58 passed`、前端 `14 passed`，最终
-`HARNESS_RELIABILITY: PASS`。Harness 扩大套件为
-`905 passed / 14 failed / 4 xfailed`，比修复前少 2 个失败；剩余为 AgentLoop/ReAct 两项代码
-体积预算、parity fixture 漂移、十项不可达历史 Git 锚点与一项 R6 旧 cutover fixture，不能宣称
-完整 Harness 全绿。本轮按用户决定不执行冷启动性能对照；Realtime 继续关闭。
+`HARNESS_RELIABILITY: PASS`。当时扩大套件仍为
+`905 passed / 14 failed / 4 xfailed`；这些历史/结构阻断已由上方最新里程碑关闭，不能继续把该
+旧结果当成当前状态。本轮按用户决定不执行冷启动性能对照；Realtime 继续关闭。
 
 ### 2026-08-13 崩溃恢复可靠性门禁
 

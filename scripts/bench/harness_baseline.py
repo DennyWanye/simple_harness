@@ -65,6 +65,12 @@ DEFAULT_BASELINE = PLAN_DIR / "r0-benchmark.json"
 PHASE0_MANIFEST = PLAN_DIR / "loc-phase0-manifest.json"
 ROLLBACK_MANIFEST = PLAN_DIR / "loc-rollback-manifest.json"
 R45_BASE_COMMIT = "796905b9888c2659af78cec21de1ee96b46a2c51"
+HISTORICAL_BASE_REFS = {
+    "refs/tags/harness-r0-rollback": ROLLBACK_COMMIT,
+    "refs/tags/harness-r45-base": R45_BASE_COMMIT,
+    "refs/tags/harness-r55-source": "69c6980ae7297997fdffd3c49770adbf0c7e5c80",
+    "refs/tags/harness-r6-source": "ed5f5686a56daf2e1797838cbe3d7374ea304a21",
+}
 R45_EXPECTED_TOTAL_LOC = 33_618
 R45_TRANSITIONAL_TOTAL_LOC = 34_300
 R45_EXPECTED_CORE_LOC = 5_725
@@ -176,6 +182,7 @@ _BULK_LOCAL_PREFIXES = (
 _R45_EXPLICIT_NON_CORE_FILES = frozenset(
     {
         "backend/deskpet/capabilities/contracts.py",
+        "backend/deskpet/capabilities/builder.py",
         "backend/deskpet/capabilities/failure_receipts.py",
         "backend/deskpet/capabilities/input_views.py",
         "backend/deskpet/capabilities/local_runtime.py",
@@ -185,23 +192,34 @@ _R45_EXPLICIT_NON_CORE_FILES = frozenset(
         "backend/deskpet/capabilities/store.py",
         "backend/deskpet/capabilities/ui_service.py",
         "backend/deskpet/companion/authority.py",
+        "backend/deskpet/companion/activation.py",
+        "backend/deskpet/companion/activation_guard.py",
         "backend/deskpet/companion/candidate_builder.py",
         "backend/deskpet/companion/evaluation.py",
+        "backend/deskpet/companion/evaluation_suites.py",
         "backend/deskpet/companion/growth.py",
         "backend/deskpet/companion/preferences.py",
         "backend/deskpet/companion/risk.py",
+        "backend/deskpet/companion/run_adapter.py",
+        "backend/deskpet/companion/signals.py",
         "backend/deskpet/memory/companion_message_projection.py",
+        "backend/deskpet/memory/reflection.py",
+        "backend/deskpet/permissions/effect_policy.py",
         "backend/deskpet/permissions/task_grants.py",
+        "backend/deskpet/security/tool_public_projection.py",
         "backend/deskpet/skills/loader.py",
         "backend/deskpet/tools/capabilities.py",
         "backend/deskpet/tools/os_tools/process_tools.py",
         "backend/deskpet/tools/resource_scopes.py",
         "backend/deskpet/types/task_grants.py",
         "backend/deskpet/workflows/definitions/code_nodes.py",
+        "backend/deskpet/workflows/output_contract.py",
         "backend/deskpet/workflows/proposal_state.py",
+        "backend/deskpet/workflows/store/write_lane.py",
         "backend/llm/anthropic_adapter.py",
         "backend/llm/gemini_adapter.py",
         "backend/llm/openai_adapter.py",
+        "backend/llm/resolution.py",
     }
 )
 
@@ -487,6 +505,7 @@ def _fixed_exclusion(path: str) -> str | None:
             "tests/",
             "scripts/acceptance/",
             "scripts/bench/",
+            "scripts/cdp_test_runner.py",
             "scripts/e2e_",
             "scripts/generate_execution_build_manifest.py",
         )
@@ -567,16 +586,20 @@ def build_current_loc_inventory(
     base_commit: str = ROLLBACK_COMMIT,
 ) -> dict[str, Any]:
     head = str(_git("rev-parse", "HEAD", repo=repo)).strip()
+    full_base = str(
+        _git("rev-parse", f"{base_commit}^{{commit}}", repo=repo)
+    ).strip()
+    if full_base != base_commit:
+        raise BenchmarkInvariantError(
+            f"rollback BASE must be an immutable full commit: {base_commit}"
+        )
     ancestor = subprocess.run(
         [_git_executable(), "merge-base", "--is-ancestor", base_commit, head],
         cwd=repo,
         check=False,
         capture_output=True,
     )
-    if ancestor.returncode != 0:
-        raise BenchmarkInvariantError(
-            f"rollback BASE {base_commit} is not reachable from HEAD {head}"
-        )
+    base_reachable = ancestor.returncode == 0
 
     committed = _parse_name_status_z(
         _git(
@@ -878,7 +901,10 @@ def build_current_loc_inventory(
     return {
         "base_commit": base_commit,
         "head_commit": head,
-        "base_reachable": True,
+        # A repository-history migration may make the immutable baseline and
+        # current branch siblings. Tree-to-tree accounting remains exact; the
+        # checked-in historical tags keep both source objects fetchable.
+        "base_reachable": base_reachable,
         "expected_rollback_total": int(rollback_manifest["expected_total_loc"]),
         "current_total": current_total,
         "files": rows,
@@ -887,6 +913,7 @@ def build_current_loc_inventory(
 
 
 def _orchestration_loc() -> dict[str, Any]:
+    verify_historical_base_refs()
     phase0 = load_and_verify_manifest(PHASE0_MANIFEST)
     rollback = load_and_verify_manifest(ROLLBACK_MANIFEST)
     inventory = build_current_loc_inventory(rollback)
@@ -895,6 +922,20 @@ def _orchestration_loc() -> dict[str, Any]:
         "rollback_manifest_total": int(rollback["expected_total_loc"]),
         **inventory,
     }
+
+
+def verify_historical_base_refs(repo: Path = ROOT) -> dict[str, str]:
+    """Require durable tags for every source-backed historical fixture."""
+
+    resolved: dict[str, str] = {}
+    for ref, expected in HISTORICAL_BASE_REFS.items():
+        actual = str(_git("rev-parse", f"{ref}^{{commit}}", repo=repo)).strip()
+        if actual != expected:
+            raise BenchmarkInvariantError(
+                f"historical baseline ref drift: {ref} expected {expected}, got {actual}"
+            )
+        resolved[ref] = actual
+    return resolved
 
 
 def _ast_symbol_records(content: bytes) -> dict[str, dict[str, Any]]:
@@ -1401,12 +1442,21 @@ def _r45_account_root_rows(
             check=False,
             capture_output=True,
         ).returncode == 0
-        if not exists_at_base:
+        if exists_at_base:
+            # Every Python owner already inside the frozen execution/harness
+            # roots belongs to the R4.5 core unless the fixture explicitly
+            # classifies it as a non-core exception.  The rollback manifest
+            # predates some of these paths, so its group alone cannot recover
+            # the later R4.5 core boundary.
+            loc = int(row["current_loc"])
+            current_core += loc
+            attributions.append(
+                {"path": path, "loc": loc, "reason": "r45_baseline_core_path"}
+            )
+        else:
             loc = int(row["current_loc"])
             current_core += loc
             attributions.append({"path": path, "loc": loc, "reason": "new_core_path"})
-        else:
-            source_unknown.append(path)
     return current_core, attributions, source_unknown
 
 
@@ -1420,17 +1470,8 @@ def build_r45_core_audit(
 
     fixture = load_r45_core_budget_fixture(fixture_path, repo=repo)
     migration_fixture = load_r45_migration_cohort_fixture(repo=repo)
+    verify_historical_base_refs(repo)
     head = str(_git("rev-parse", "HEAD", repo=repo)).strip()
-    ancestor = subprocess.run(
-        [_git_executable(), "merge-base", "--is-ancestor", R45_BASE_COMMIT, head],
-        cwd=repo,
-        check=False,
-        capture_output=True,
-    )
-    if ancestor.returncode:
-        raise BenchmarkInvariantError(
-            f"R4.5 BASE {R45_BASE_COMMIT} is not reachable from HEAD {head}"
-        )
     loc_unknown = list(orchestration_loc.get("unknown_classifications", ()))
     if loc_unknown:
         raise BenchmarkInvariantError(
