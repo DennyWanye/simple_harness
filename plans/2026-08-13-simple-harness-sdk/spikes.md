@@ -207,3 +207,46 @@ model，只能在响应后发现 mismatch，已经无法满足调用前 hard-cap
 | H6 | PASS（当前行为 GREEN / coupling RED 均已复现） | 每个 extraction Slice 重跑 clean-wheel import 与 frozen behavior oracle |
 | H7 | PASS（12-case integrated source oracle） | T3.0 建 SDK RED，T3.3 必须用新五 Port 转 GREEN |
 | H8 | PASS（首次、重启及并发异配置均在 transport 前拒绝） | T1.2 official target 同源 + T2.4 unique logical call 与 durable config CAS 回归 |
+
+## H9 — child signal durable claim authority（执行期静态闭包审计）
+
+- 触发：T3.2 开工时核对 clean schema v1，发现 `child_signals` 虽有
+  `pending/claimed/acked`，但没有 `claimed_by/claimed_at/claim_expires_at`，T2.3 也没有
+  `claim_child_signal` CAS；仅凭状态或内存 owner 无法覆盖 claim 后崩溃/reopen。
+- 结论：在未发布 schema v1 内补完整 durable signal claim lease；持久化 owner/timestamps/
+  独立 `claim_epoch`，每次 first claim/reclaim 原子递增 epoch，ack 同时 CAS owner+epoch
+  并保存可验证 receipt 身份。每个 parent 只能 claim oldest non-acked head；head 未过期时
+  不得跳到后续 signal。T3.2 只消费该 UoW authority。
+- 性质：这是 plan/schema closure 缺口，不是历史 Run migration；SDK 尚未发布，因此修正 initial
+  schema v1，不新增兼容 migration。
+- 狭挑战迭代 1：`FAIL`，2 个 critical（未冻结 durable claim epoch/ack receipt；未冻结
+  FIFO head eligibility）。上述契约与回归矩阵已补入 T2.3/T3.2，待第二轮独立挑战。
+- 狭挑战迭代 2：`FAIL`，1 个 critical（ack 与 parent progress 未冻结为单一原子
+  command）。已修订为 `ack_child_signal_and_commit_parent_progress`，在同一
+  `BEGIN IMMEDIATE` 内完成 signal CAS + continuation/event/payload + unique receipt，并补逐
+  write-point crash/reopen matrix。
+- 狭挑战迭代 3：`PASS`，`NEW_CRITICAL_FINDINGS=0`。
+
+## H10 — ReAct termination durable checkpoint（执行期静态闭包审计）
+
+- 触发：T3.3 的 standalone ReAct 实现将 `turns/tool_calls/repeat/started_at` 只保存在
+  进程内；T2.4 cost 可恢复，其他四个 hard gate 在重启后归零，且 turn RequestId
+  可重用。T3.1 原 `ContextPort.load/append` 也没有 revision/append receipt，普通 context
+  message 不能代替 termination authority。
+- 结论：复用 clean schema v1 的 `workflow_checkpoints` + `workflow_leases`，用
+  `react.termination.v1` namespace 持久化计数、wall epoch、phase 和当前 side-effect identity。
+  所有转移须校验 owner/lease_epoch/version；在物理出站前 reserve，恢复时只用稳定
+  ID 读取/reconcile durable ledger。Context append 增加 durable revision + append receipt，保证
+  provider/tool 结果重放写入幂等。跨重启 wall budget 用 Unix epoch；clock 倒退时 fail
+  closed，不用跨进程不可比的 monotonic origin。详细 phase/CAS/fault matrix 已补入
+  T3.1/T3.3。
+- 狭挑战迭代 1 补充发现：`ContextPort.append` 若只有 revision CAS，旧 owner 会在
+  lease epoch 接管后竞速写入。修订为 append 必填 current `ExecutionLease`，并在同一
+  SQLite transaction 校验 active owner+epoch+expiry；回归覆盖 stale owner 携带尚新 revision 仍拒绝。
+- 狭挑战迭代 2：`FAIL`，1 个 critical（未持久化 repeat key，且 batch 可能只消耗
+  一次 Tool budget）。已冻结 `tool_calls_reserved_total + repeat_key + repeat_streak`，
+  repeat key 为 tool name + canonical args SHA-256；按 batch call order 全量模拟后一次 CAS，
+  任一超限则零 effect prepare。
+- 狭挑战迭代 3：`PASS`，`NEW_CRITICAL_FINDINGS=0`。
+- 性质：这是未发布 SDK schema v1 的 runtime closure，不是历史 Run 兼容处理。
+- 狭挑战迭代 1：待执行。

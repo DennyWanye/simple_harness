@@ -111,9 +111,25 @@
 
 - 文件：同 T2.2 + `execution/contracts/children.py`。
 - 函数：`claim_profile_launch_and_commit_child`, `finalize_child_and_enqueue_parent_signal`,
-  `ack_child_signal`；移除 ticketless command public method。
+  `claim_next_child_signal`, `ack_child_signal_and_commit_parent_progress`；移除 ticketless command
+  public method。`child_signals`
+  schema v1 必须持久化 `claimed_by/claimed_at/claim_expires_at/claim_epoch`；每次 first claim/reclaim
+  都在同一 CAS transaction 中递增 `claim_epoch`，并在 `ChildSignalRecord` 返回 owner/epoch/expiry。
+  `claim_next_child_signal(parent_run_id, owner_id, now, lease_seconds)` 的唯一 eligibility 是该
+  parent 中按 `(created_at, signal_id)` 排序的 oldest non-acked head：head 若被未过期 owner
+  claim 则返回 `None`，禁止跳过它处理后续 pending signal；head pending/过期才可
+  first claim/reclaim。`ack_child_signal_and_commit_parent_progress` 必须在单一
+  `BEGIN IMMEDIATE` transaction 内同时 CAS `state=claimed + claimed_by + claim_epoch`、
+  写入 parent continuation/event/payload 并落 durable ack receipt；continuation/event/receipt 均用稳定
+  identity 唯一约束。after-commit 重试只有在同一 owner/epoch 且
+  continuation/event/payload/receipt 身份一致时返回原 outcome，任一异同拒绝；
+  不存在先 ack 后写 parent progress 或先写 progress 后 ack 的 public path。
 - tests：`test_atomic_child_launch.py`, `test_atomic_child_terminal_signal.py`,
-  `test_ticket_generation.py`；duplicate/stale/reused ticket。
+  `test_ticket_generation.py`；duplicate/stale/reused ticket；signal claim 并发唯一 owner、claim 后崩溃
+  reopen、未过期不可偷取、过期 reclaim 且 epoch 递增、旧 owner/epoch ack 拒绝、
+  ack after-commit 同 receipt 幂等/异 receipt 拒绝；两个 signal 在并发、崩溃和 reopen 下都不得
+  跳过未过期的 FIFO head；signal CAS、continuation、event、payload、receipt 每个
+  write point 前后 fault injection + reopen，只允许全部提交或全部回滚。
 - 依赖：T2.2。
 
 ### T2.4 — Provider invocation ledger 与 budget authority [AC-3, AC-5]
@@ -166,7 +182,13 @@
   另一个执行 attached child terminal -> parent signal -> root terminal -> delivery。开始 T3.1 时测试因
   SDK runtime未实现而 RED；T3.3 完成前必须 GREEN，不能用单组件 tests代替。
 - tests：current source 12-case seam matrix必须先保持 GREEN；SDK `test_full_runtime_seam.py` 的 RED
-  reason只能是 missing planned public symbol，不能是 fixture/import错误。
+  reason只能是 missing planned public symbol，不能是 fixture/import错误。测试侧必须用
+  temp SQLite 和可观测 fake 五 Ports 驱动真实 public API；case name/预期标签不得
+  传入生产实现，禁止 `conformance_case`/静态字典自证后门。调用顺序必须来自
+  test-owned spy，terminal/ledger/context/child signal/outbox 必须查真实 Runtime/SQLite；
+  restart case 必须 close Runtime/DB、同路径重建并 reconcile，直接断言物理调用数、
+  稳定 ID 和 no-replay。T3.0 首个字符串 oracle commit 仅是中间 RED checkpoint，
+  不得作为 T3 通过依据。
 - 依赖：T2.6、T1.2–T1.3；是 T3.1/T3.3 的前置 gate。
 
 ### T3.1 — Kernel lifecycle closure [AC-5, AC-6]
@@ -175,7 +197,16 @@
 - API：`build_runtime(uow, profiles, drivers, ports, root_profile_key="agent.general")` 不接受 classifier；
   `Runtime.start/close`、`RunClient.start/query/signal/cancel`。
 - 改法：移植 atomic start/activation、single owner/recovery lease、terminal lifecycle；root key const
-  校验；`tool_catalog_stale` 走一次 permanent terminal。
+  校验；`tool_catalog_stale` 走一次 permanent terminal。`ContextPort` 冻结为 durable
+  `load -> ContextSnapshot(revision, messages)` 与
+  `append(run_id, execution_lease, expected_revision, append_id, entries) -> ContextSnapshot`；
+  `append_id + payload`
+  重试幂等，同 ID 异 payload 或 stale revision 拒绝，SDK conformance 提供 close/reopen 后
+  仍保持 revision/receipt 的 SQLite 实现；官方 SQLite Context 使用
+  `workflow_checkpoints` 的 `react.context.v1` namespace 持久化 snapshot 与 append receipt，
+  每次 append 在同一 transaction 中校验 `workflow_leases` 的 active
+  owner+epoch+expiry；旧 owner 在新 epoch 接管后即使 revision 尚未变也必须拒绝，
+  不增加第二个内存 authority。
 - tests：`test_kernel_start.py`, `test_fixed_root.py`, `test_start_recovery.py`,
   `test_catalog_stale_terminal.py`。
 - 依赖：T3.0、T2.2、T2.6。
@@ -185,17 +216,42 @@
 - 文件：`runtime/{child_runs,child_signal_runtime,user_continuations,reconciler,runtime}.py`。
 - 改法：child 入口只接 `ProfileLaunchTicketRef`；恢复 lease/epoch；parent signal/continuation FIFO；
   startup reconciliation顺序 provider -> effects -> child signals -> deliveries -> recoverable Run。
+  `ChildSignalRuntime` 只能消费 T2.3 durable head-of-line signal claim lease，处理成功后
+  用记录中的相同 owner/claim_epoch ack；crash/reopen 保留 claim 并等 lease 到期 reclaim，
+  未过期 head 不得被后续 signal 超越，禁止进程内 list/lock 作为 authority。
 - tests：`test_root_two_children.py`, `test_child_restart.py`, `test_continuation_restart.py`,
   `test_startup_reconcile_order.py`。
 - 依赖：T2.3–T2.6、T3.1。
 
 ### T3.3 — ReAct Driver / termination budgets [AC-3..6]
 
-- 文件：`runtime/drivers/{react,react_loop}.py`, `runtime/{context,termination}.py`。
+- 文件：`runtime/drivers/{react,react_loop}.py`,
+  `runtime/{context,termination,react_checkpoint}.py`，以及 T2.2 SQLite UoW 的 checkpoint CAS。
 - 改法：把现 `AgentLoop` state machine改用 Context/Provider/Tool/Authorization/Trace Ports；Provider
   每 turn 只经 T2.4 coordinator；Tool只经 T2.5；max turns/calls/wall/cost/repeat hard gates写代码。
+  `workflow_checkpoints` 的 `react.termination.v1` namespace 是唯一 durable termination authority，
+  checkpoint 包含 version/lease_epoch、Unix epoch wall-clock `started_at/last_observed_at`、
+  `provider_turns_reserved_total/tool_calls_reserved_total/repeat_key/repeat_streak`、
+  phase 及当前 provider request/tool batch 稳定身份。每个 Provider 轮次在出站前先用
+  owner+lease_epoch+expected_version CAS 到 `provider_reserved` 并递增 turn，RequestId 只由
+  `(run_id, durable turn ordinal)` 派生；每个 Tool batch 在 prepare 任何 effect 前，
+  按 Provider response 中的 call order 对每个 call 逐个模拟预算，`repeat_key` 冻结为
+  `tool name + SHA-256(canonical JSON arguments)`。只有整个 batch 都不超限时才用一次
+  CAS 原子写入新 total/key/streak 并进入 `tools_reserved`；任一 call 超限则
+  checkpoint/effect/handler 全部零变化。恢复时必须先用同一
+  request/effect identity 读取或 reconcile T2.4/T2.5 ledger，完成后用 T3.1 的稳定
+  `append_id` 幂等写 context，再 CAS 到下一 phase；`unknown` 禁止分配新 turn/effect。
+  崩溃可保守地消耗已 reserve 的 budget，但绝不得重置、重用 RequestId 或额外物理调用。
+  wall-clock 不得使用跨进程不可比的 monotonic origin；若 injected epoch clock 比
+  durable `last_observed_at` 倒退，则 fail closed 为 wall-clock termination，禁止通过调钟绕过上限。
 - tests：`test_react_no_tool.py`, `test_react_tool_roundtrip.py`, `test_react_budgets.py`,
-  `test_react_cancel.py`, `test_react_crash.py`。
+  `test_react_cancel.py`, `test_react_crash.py`；在 provider reserve/handoff/completed/context append 前后
+  和 tool batch reserve/每个 result append 前后 fault injection，close/reopen 后计数不归零、
+  RequestId/effect ID 不变、已 completed 不额外 transport/handler、unknown 不重放；虚拟 wall
+  epoch 跨 reopen 触发硬上限，stale owner/lease_epoch/checkpoint version 全部拒绝；
+  旧 owner 在 lease epoch 接管后携带尚新 context revision 进行 append 也必须零写入拒绝；
+  同 batch 多个相同/不同 signature、跨 batch 同 signature、reserve 后 crash/reopen，
+  并断言任一 call 超 max Tool/repeat 时 effect/handler 为 0。
 - 依赖：T1.2–T1.3、T2.4–T2.5、T3.1。
 
 ### T3.4 — SDK runtime conformance surface [AC-4, AC-5, AC-8]
