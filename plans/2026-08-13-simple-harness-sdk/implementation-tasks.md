@@ -601,6 +601,234 @@
   并覆盖完整 `WorkflowManifest` hashes、SCC/cycle budget、recursion/superstep、channel writer/reducer、
   tool/prompt/policy/callable-source validation、runner start/resume/cancel/recover/precreated paths，禁止用
   仅能通过新写happy tests的小引擎替代。
+- H16 lifecycle/recovery/replay closure（本任务完成门，不能以A-slice/Native GREEN替代）：
+  - public authority surface先冻结：`execution_ports.py` 新增 immutable typed
+    `WorkflowActivation(execution_lease: ExecutionLease, run_fence: RunFenceLease,
+    workflow_lease: WorkflowLease)`、`StartAdmissionRequest/Receipt/Mode/Phase`、
+    `ResumeAdmissionRequest/Receipt/Phase/CommitBinding`、`CancelWorkflowRequest/Outcome/CancelConvergenceLease`、
+    `ForkRequest/ForkReceipt/ForkPhase/ForkWriteLease`、`DangerousEffectObservation/Confirmation`、
+    `RecoveryCandidate/RecoveryOutcome`；新增 required Protocol
+    `WorkflowLifecyclePort`、`WorkflowRecoveryStorePort`、`WorkflowReplayPort`，并作为
+    `WorkflowExecutionPorts(unit_of_work, checkpoint, lifecycle, recovery, replay)` 必填字段。五个authority的
+    `transaction_owner` 必须与canonical UoW object identity一致。每个mutation method第一参均为现有仍open的
+    `WorkflowTransaction`，显式接收expected version/head/lease/`now`与stable operation/receipt id；Port只做
+    durable read/CAS，策略仍由SDK Runner/recovery/replay拥有。API snapshot + structural Host fake必须实现全部
+    public methods；禁止 `getattr`、concrete SQLite、consumer callback policy或hidden fallback。
+    typed fields/invariants也属于public snapshot：`StartAdmissionReceipt(request_id, request_key,
+    request_fingerprint, run_id, phase, version, claim_owner?, activation?, serialized_outcome?)`且
+    `StartPhase=ADMITTED|CLAIMED|RUNNING|SETTLED`；`ResumeAdmissionRequest(receipt_id, run_id,
+    expected_run_version, expected_checkpoint_head, pending_interrupts[(id,payload_hash)], responses,
+    responses_hash)`；`ResumeAdmissionReceipt`保存request全部immutable identity、phase/version、claim
+    owner+epoch/expiry、activation与serialized outcome；`CancelWorkflowRequest(cancel_id, run_id, reason,
+    expected_generation)`/`CancelWorkflowOutcome(cancel_id,generation,phase,blocker_ids,terminal?)`；
+    `ForkRequest(fork_id,fingerprint,source_run_id,source_namespace,source_checkpoint_id,source_run_version,
+    source_head,engine/manifest/implementation/schema hashes,canonical patch,dangerous_confirmation?)`，
+    `ForkReceipt`保存完整request identity、stable child run/trace/checkpoint IDs、phase/version/claim与outcome。
+    所有hash由SDK从typed content重算，caller supplied值只可constant-compare。
+    `WorkflowLifecyclePort` exact mutation surface为
+    `admit_start_standalone(transaction, request, *, now, fault?) -> StartAdmissionReceipt`、
+    `admit_start_precreated(transaction, request, execution_lease, run_fence, expected_generic_run_version,
+    *, now, ttl_seconds, fault?) -> StartAdmissionReceipt`、
+    `claim_activation(transaction, run_id, expected_run_version, owner_id, *, now, ttl_seconds, fault?) ->
+    WorkflowActivation`、`bind_activation(transaction, run_id, expected_run_version, execution_lease, run_fence,
+    *, now, ttl_seconds, fault?) -> WorkflowActivation`、`renew_activation(transaction, activation, *, now,
+    ttl_seconds, fault?) -> WorkflowActivation`、`release_activation(transaction, activation, expected_run_version,
+    outcome, *, now, fault?)`、`request_cancel(transaction, request, expected_run_version, activation?, *, now,
+    fault?) -> CancelWorkflowOutcome`、
+    `admit_resume(transaction, request, *, now, fault?) -> ResumeAdmissionReceipt`、
+    `claim_resume_standalone(transaction, receipt_id, expected_receipt_version, owner_id, *, now, ttl_seconds,
+    fault?) -> ResumeAdmissionReceipt`、
+    `claim_resume_precreated(transaction, receipt_id, expected_receipt_version, execution_lease, run_fence,
+    *, now, ttl_seconds, fault?) -> ResumeAdmissionReceipt`、
+    `settle_resume(transaction, binding, activation, committed_checkpoint, outcome, *, now, fault?) ->
+    ResumeAdmissionReceipt`、
+    `claim_cancel_convergence(transaction, cancel_id, expected_generation, owner_id, *, now, ttl_seconds,
+    fault?) -> CancelConvergenceLease`、
+    `settle_cancel_convergence(transaction, cancel_lease, resolution_snapshot, terminal_checkpoint,
+    terminal_event, deliveries, *, now, fault?) -> CancelWorkflowOutcome`；所有
+    receipt-first方法以same id+same canonical payload返回原outcome、same id+different payload conflict。
+    `WorkflowRecoveryStorePort`只提供`list_candidates(snapshot_cursor) -> (candidates,next_cursor)`,
+    `read_recovery_snapshot(run_id) -> RecoverySnapshot`,
+    `commit_recovery_outcome(transaction, candidate, expected_snapshot, outcome, *, now, fault?)`与
+    `claim_resolved_recovery(transaction, blocker_id, expected_resolution_version, owner_id, *, now,
+    ttl_seconds, fault?) -> RecoveryClaim`；`WorkflowReplayPort` exact surface为
+    `read_fork(fork_id) -> ForkReceipt?`、
+    `prepare_fork(transaction, request, expected_source_snapshot, *, now, fault?) -> ForkReceipt`、
+    `claim_fork(transaction, fork_id, expected_receipt_version, owner_id, *, now, ttl_seconds, fault?) ->
+    ForkWriteLease`、
+    `checkpoint_fork(transaction, fork_lease, expected_target_head, checkpoint_operation_id, checkpoint,
+    *, now, fault?) -> ForkReceipt`、
+    `commit_fork(transaction, fork_lease, expected_receipt_version, *, now, fault?) -> ForkReceipt`、
+    `rollback_fork(transaction, fork_lease, expected_receipt_version, reason, *, now, fault?) -> ForkReceipt`、
+    `list_orphaned_forks(snapshot_cursor, *, now) -> (receipts,next_cursor)`。read/list返回immutable snapshot+
+    version token；mutation CAS包括receipt phase/version、claim owner/epoch/expiry及source/target expected head。
+    `claim_fork`允许PREPARED、expired CLAIMED，以及expired CHECKPOINTED；后者返回
+    `ForkWriteLease(mode="commit_only")`且绑定receipt中已写checkpoint id/hash，`checkpoint_fork`见commit-only
+    lease必须拒绝，只有`commit_fork`可消费，避免重写已提交checkpoint。
+    fault label是稳定的`workflow:<method>:before_<table>_write/after_<table>_write/after_commit`，实现必须对
+    该method实际写到的每张authority table枚举label，不允许只有一个笼统fault点。
+  1. `RegisteredWorkflow.materialize(...)` 必须从canonical `WorkflowExecutionPorts` materialize真实
+     `NativeWorkflowExecutable` + `SqliteNativeCheckpointStore`，store/checkpoint adapter/UoW 的
+     `transaction_owner` 必须同一object identity；禁止注册或缓存预绑定 executable、fake checkpointer、
+     global authority-bound executable。registry只可缓存immutable definition/factory metadata，每次Run按当轮
+     Ports重新materialize。compiled graph必须用真实SQLite close/reopen运行通过。
+  2. Runner所有 `start/resume/recover/precreated` 执行统一进入一个 `_execute` authority path：先以注入时钟
+     claim/validate绑定后的`WorkflowActivation`，取得并持续heartbeat，沿Native/checkpoint/effect/terminal逐层显式传递
+     owner+epoch fence；lease loss取消/隔离旧task且后续零写。WAITING、terminal、failure、cancel出口必须按各自
+     durable outcome release/失效lease，不得绕过统一入口或由Host做pre-check。precreated入口必须从T4.2
+     `DriverInvocation`显式传入原始`ExecutionLease + RunFenceLease`；`WorkflowLifecyclePort.bind_activation(
+     transaction, run_id, execution_lease, run_fence, *, now, ttl_seconds)`同事务验证三者run/owner/runtime epoch、
+     Runtime namespace/expiry与current run-fence row，派生/renew同owner+runtime epoch的`WorkflowLease`。独立
+     `start/run`则只能调用`claim_activation(...)`让canonical Port在同事务取得Runtime lease、RunFence和派生
+     WorkflowLease；禁止Runner自行claim第二套owner。每个checkpoint/effect pre-handoff/terminal都校验三份
+     current row；post-handoff settlement仍按H11 ledger identity例外、不得第二次出站。
+     WorkflowLease不是可独立漂移的第四个clock：它是Runtime lease的checkpoint namespace投影，owner、
+     `runtime_lease_epoch`、expiry必须等于ExecutionLease；`renew_activation`在一个transaction同时renew两行，
+     任一失败整体回滚。precreated mode不启动第二个workflow heartbeat：T3 Kernel仍是唯一Runtime heartbeat owner，
+     T2.2 `renew_runtime_lease`/release SQL在存在workflow projection时必须同transaction renew/release matching
+     projection；standalone mode才由Runner调用`renew_activation`。因此不存在Runtime续租成功而Workflow单独过期
+     的合法状态，fault在任一row write都会全回滚。Provider coordinator/Provider handoff UoW与
+     `EffectExecutor.execute`/Tool handoff UoW public
+     API增加`workflow_lease: WorkflowLease | None`；generic ReAct可传None，但durable run driver_kind/profile为
+     workflow时SQLite同一handoff transaction强制非None并验证run/owner/runtime epoch/workflow epoch/expiry、
+     current RunFence三方关系，缺失/过期零transport/handler。Workflow context effect/provider adapter必须显式
+     携immutable activation调用，禁止hidden mutable closure。补仅WorkflowLease expiry/mismatch而Runtime lease+
+     RunFence仍active的零physical regression。
+  3. precreated path必须经Port化 `_require_precreated` 从durable execution authority验证generic Run与
+     workflow Run同一ID、driver kind、trace identity、lease owner/epoch；terminal则由
+     `_assert_precreated_terminal` 验证workflow terminal checkpoint与generic terminal/event/delivery在同一
+     transaction收敛。caller参数、内存对象或事后查询不能替代该绑定。
+     precreated `run/resume`不得接收裸`owner_id`；必须接收当次`DriverInvocation`的typed
+     `ExecutionLease + RunFenceLease`并走`bind_activation/claim_resume_precreated`。wrong owner、expired/old
+     Runtime epoch、同owner旧RunFence或另一run的lease在admission/claim阶段零receipt、零checkpoint、零effect。
+     start同样区分`StartMode.STANDALONE|PRECREATED`：precreated Runtime在Workflow Driver前已创建并激活generic
+     Run，故只能调用`admit_start_precreated`，在同transaction验证现有generic Run/start snapshot/version及typed
+     leases，同时创建workflow receipt/row与projection lease，直接落CLAIMED；不得再创建reserved generic Run，
+     不存在admission后再bind窗口，standalone scanner也不得claim PRECREATED receipt。
+  4. cancel是durable状态机：`lifecycle.request_cancel(transaction, request, expected_run_version,
+     activation?, now)`先原子落 `cancel_requested`，同时release/increment current Runtime lease、RunFence与派生
+     WorkflowLease，使任一旧writer三方epoch校验失败；已prepared/handed-off/
+     unknown/late effect必须按现有effect reconciliation收敛为 `CANCELLING`/`BLOCKED` 或最终
+     `CANCELLED`，禁止把未知物理结果伪报取消完成。precreated generic terminal event/delivery也必须与最终
+     workflow cancel checkpoint同事务；逐write fault/reopen不得双terminal或漏delivery。
+     cancel receipt带单调`cancel_generation`。若存在UNKNOWN/handed-off blocker，startup/late-resolution wake只能
+     `claim_cancel_convergence`取得`CancelConvergenceLease(run_id,generation,owner_id,epoch,expires_at)`；该authority
+     只允许observe/reconcile已有ledger与`settle_cancel_convergence`，所有node执行、Provider/Tool prepare/handoff
+     及普通checkpoint方法见cancel状态或此authority均拒绝。late resolution绑定generation唤醒；settle同事务
+     验证blocker全部resolved、写terminal cancel checkpoint+generic terminal/event/deliveries、释放cancel lease。
+     ADMITTED/CLAIMED cancel claim逐write fault/reopen、expired claimant接管与exact receipt replay均须覆盖。
+     这条同时修订T3 `runtime/kernel.py`与T4.2 Workflow Driver public seam，不能只改Workflow内部：新增typed
+     `DriverCancellationCoordinator.cancel(run, start_snapshot, *, reason, now, recovery) -> DriverCancelOutcome`。
+     official `driver_kind="workflow"`是SDK保留key，coordinator只由SDK exact
+     `WorkflowRuntimeDriver`实现并在Runtime内部随verified official driver factory注册，绑定T4.2 pinned
+     implementation fingerprint；Host不能在`RuntimePorts`传入/覆盖/删除该key，构造时发现重复、自声明同key、
+     subclass/错误implementation identity立即零写拒绝。Host extension registry只允许非官方driver key。
+     Workflow profile注册缺SDK-owned coordinator fail closed。Kernel `_cancel_run`、startup
+     `recover`、`_drive`的pre-cancel/`CancelledError`以及`_terminalize_cancelled`遇durable
+     `driver_kind="workflow"`时一律委托该coordinator，绝不直接写generic CANCELLED；coordinator返回terminal时
+     Kernel还要从UoW验证terminal event关联同cancel-generation receipt，未terminal则保持CANCELLING/BLOCKED。
+     generic fallback只允许明确非workflow driver。补live cancel、CANCEL_REQUESTED进程重启、UNKNOWN late
+     completed三条真实Kernel trace，断言generic terminal只能由`settle_cancel_convergence` transaction产生。
+  5. recovery orchestration属于SDK而非Host：固定startup扫描顺序、状态分类、manifest/implementation/hash/
+     checkpoint-head验证与可修复head CAS、quarantine原因、Provider/Tool uncertainty policy。Recovery Port只
+     提供durable read/CAS primitives，不能把分类策略回调给consumer。每一类用真实SQLite并发/fault/reopen
+     证明exact receipt replay、异payload零写和quarantine后零执行。决策顺序与CAS tuple固定为：
+     `(a)` RUNNING且Runtime/Workflow lease过期：CAS `(run state/version, runtime owner+epoch+expiry,
+     workflow owner+epoch+expiry, run-fence epoch, expected head)` 到 RETRYABLE+recoverable receipt；
+     `(b)` cancel_requested/cancelling先按第4项收敛；`(c)` 任一active未过期owner则只读skip；
+     `(d)` manifest/implementation/descriptor/hash不匹配则BLOCKED `graph_version_unavailable`；
+     `(e)` 非active Run的missing/stale head只允许从同run+namespace、最高committed revision CAS repair；
+     `(f)` 读取/identity/hash/schema失败则保存canonical quarantine record并BLOCKED `checkpoint_corrupt`；
+     `(g)` Provider/Tool handed_off/unknown优先进入已有resolution blocker，`still_unknown`保持WAITING且不可自旋/
+     replay，completed/confirmed_not_started按H13 resolution epoch唤醒；`(h)` succeeded_pending最后标记
+     `resume_pending_checkpoint`。每个outcome固定`previous_status/status/action/reason/receipt_id`；mutation CAS都绑定
+     status+run version+两类lease epoch+expected head。补双scanner、scanner-vs-live Runner、late reconciliation
+     交错，旧scanner不得回退新head或quarantine active Run。
+  6. replay/fork必须只用canonical `WorkflowExecutionPorts`，并验证指定历史checkpoint的run owner、namespace、
+     engine version、manifest/implementation hash、pending results/fanout、interrupt decisions、state/schema/type
+     compatibility。危险确认不是bool：`DangerousEffectObservation(effect_id, kind, state, ledger_version,
+     request_hash, handoff_attempt)`按effect_id canonical排序；`DangerousEffectConfirmation(scope,
+     observations, digest)`由SDK重算digest。prepare同事务重读ancestor effect集合/版本并constant-compare；集合/
+     状态/version变化必须conflict并要求重新确认，digest进入request fingerprint。`checkpoint_fork`和
+     `commit_fork`（含commit-only reclaim）也必须在各自transaction重读相同source effect scope并比较receipt
+     digest；若变化则原子把仍未公开的fork标`ROLLED_BACK(reason=effect_snapshot_changed)`并保留tombstone/
+     reserved child不可执行，调用者须用新observation+confirmation创建新fork request，不能复用旧确认或公开旧
+     checkpoint。fork使用durable prepare saga，
+     稳定派生child run/trace/checkpoint IDs；
+     after-prepare、checkpoint write前后、after-commit响应丢失的close/reopen都只能返回同child或整体回滚，
+     不能生成第二child/trace或重放ancestor物理effect。`ForkPhase = PREPARED | CLAIMED | CHECKPOINTED |
+     COMMITTED | ROLLED_BACK`，receipt保存request fingerprint、source run/namespace/head/version/hashes、stable child
+     identities、phase/version/claim owner+epoch/outcome。`replay.prepare_fork(...)`原子写request receipt+child generic/
+     workflow reservation；`claim_fork(...)`只CAS PREPARED或expired CLAIMED；`checkpoint_fork(...)`携operation id、
+     source/target expected head与active activation，CAS CLAIMED->CHECKPOINTED；`commit_fork(...)`原子公开child并
+     CAS COMMITTED。startup orphan scanner按expired claim接管；只有尚未公开且无checkpoint的permanent invalid
+     prepare，或第6项最终risk snapshot变化且child始终reserved未公开，才可ROLLBACK并永久保留tombstone。
+     exact retry逐phase读receipt返回/接管同一child，并发worker只能一个claim winner。
+     `claim_fork`返回的`ForkWriteLease(fork_id,target_run_id,owner_id,claim_epoch,expires_at,
+     expected_receipt_version)`是唯一目标checkpoint写authority；它不是source activation，source terminal也可fork。
+     `checkpoint_fork`只校验reserved child+fork lease+target empty/expected head；COMMITTED前child generic/workflow
+     rows标`reserved_fork`，Runtime/normal recovery扫描必须排除，不能claim/execute/deliver。checkpoint write
+     after-commit响应丢失后receipt-first返回同CHECKPOINTED；lease过期可被双scanner中唯一winner以commit-only
+     reclaim并公开同一child，不能重写checkpoint或生成第二child。
+  7. start admission必须是同一transaction的request-key receipt：`StartAdmissionRequest` exact canonical字段为
+     `request_key, mode, session_id, request_id, turn_id, profile_key, driver_kind="workflow",
+     tool_catalog_generation, workflow_name/version, requested_run_id?, requested_trace_id?, requested_thread_id?,
+     checkpoint_namespace, manifest_hash, implementation_hash, state_schema_version, terminal projection descriptor+
+     request-factory hashes, start_input, capability_snapshot`。`start_input`是唯一caller state authority，先按
+     compiled schema/limits canonical validate/freeze；SDK纯函数从它+全部pinned manifest/descriptor/capability/
+     identity字段生成唯一immutable `StartSnapshot`，caller不得同时提交另一份snapshot。precreated Runtime已有
+     start snapshot时，admission重算并constant-compare全部字段后才bind，mismatch零写。SDK从snapshot内部重算
+     `capability_hash`，caller supplied hash若保留必须constant-compare。key与上述canonical payload hash相同只读返回同一
+     run，key相同但任一payload字段变化fail closed；首次写同时冻结capability hash、start snapshot、manifest+
+     implementation hashes、schema、trace/thread identities。覆盖并发双start、逐write fault、after-commit与
+     close/reopen；禁止 `del request_key/capability_hash/trace_id` 或随机重建identity。
+     `profile_key/driver_kind/tool_catalog_generation`只能来自T4.2 verified launch ticket/DriverInvocation并进入
+     request fingerprint，不能从Host callback或事后snapshot猜测。start receipt使用`StartPhase`：standalone
+     admission同事务写ADMITTED+reserved run，claim只可CAS到CLAIMED；precreated admission按第3项原子落CLAIMED。
+     `SqliteNativeCheckpointStore.ensure_genesis`必须在其canonical transaction同时写genesis operation/head并CAS
+     receipt CLAIMED->RUNNING，故RUNNING蕴含genesis receipt+head存在；禁止claim直接标RUNNING。startup scanner枚举ADMITTED与
+     expired CLAIMED，按request receipt接管同一run；RUNNING/SETTLED exact retry返回相同run/outcome。覆盖
+     admit after-commit且caller永不重试、genesis每个before/after write与after-commit，scanner仍启动同一run且
+     不生成第二identity；无head的CLAIMED可恢复，无genesis的RUNNING视为不可能并fail closed quarantine。
+     requested run/trace/thread id缺省时不在admission前生成随机值：SDK从canonical request fingerprint用固定
+     namespace+domain separator确定性派生三者，并将resolved identities写receipt/start snapshot；若caller显式
+     给值则该值进入fingerprint。并发exact start与after-commit reopen必须得到相同三identity。
+  8. resume不是单一bool receipt而是versioned state machine：`ResumePhase = ADMITTED | CLAIMED | RETRY_WAIT |
+     SETTLED`。
+     `admit_resume(transaction, request, expected_run_version, expected_checkpoint_head, now)`以
+     `(run_id, WAITING revision, canonical pending interrupt ids+payload hashes, canonical responses hash)`原子写
+     ADMITTED receipt，并保存responses、target revision、request fingerprint；异revision/interrupt/response零写
+     conflict。standalone走`claim_resume_standalone`，在同事务CAS ADMITTED或expired CLAIMED并取得新
+     `WorkflowActivation`；precreated必须走`claim_resume_precreated`并携DriverInvocation原始typed
+     ExecutionLease+RunFence，bind exact current rows后写同owner/epoch activation；两者并发均仅一个winner。
+     `settle_resume(...)`与WAITING/terminal checkpoint outcome同transaction写SETTLED+serialized outcome。
+     exact retry遇SETTLED只读返回原结果；ADMITTED由caller或startup recovery claimant首次执行；CLAIMED且owner
+     active返回typed `IN_PROGRESS`，claim过期才由新owner接管。crash recovery后的首次执行允许继续，但所有物理
+     effect仍经既有ledger stable identity去重；禁止笼统把ADMITTED当最终outcome或让Run永久stranded。
+     Runner构造`ResumeCommitBinding(receipt_id, expected_receipt_version, target_run_revision,
+     request_fingerprint)`并作为必填参数传入`NativeWorkflowExecutable.resume`；Native把binding沿drive传到第一次
+     合法`commit_frontier`/interrupt/terminal commit，`SqliteNativeCheckpointStore`在同一open canonical
+     transaction调用`lifecycle.settle_resume`，使decision consume、new head/outcome与receipt SETTLED同生共死。
+     WAITING、terminal、非terminal advance都保存deterministic status/head/serialized outcome；Native resume
+     返回后Runner不得第二transaction补settle。补每个checkpoint write前后/after-commit response-loss断言
+     receipt与head永不分叉。
+     binding不是只覆盖frontier happy path：Native所有会结束本次resume attempt的durable出口——`commit_retry`、
+     task/node permanent failure、`commit_engine_failure`/max-supersteps、interrupt WAITING、frontier ADVANCED、
+     terminal——都必须把同一binding传给store transaction并原子settle为deterministic
+     `RETRYABLE|FAILED|WAITING|ADVANCED|TERMINAL` outcome+operation/head。仅`commit_task_result`等必然继续到下一
+     durable出口的中间write可保持CLAIMED。`commit_retry`是唯一不直接SETTLED的出口：它同transaction把receipt
+     CAS到RETRY_WAIT，保存immutable原responses+hash、decision ids、retry operation id/attempt、next_attempt_at与
+     checkpoint head，并release当前activation。到期前exact caller只读返回typed IN_PROGRESS；startup/due scanner
+     只允许一个claimant CAS RETRY_WAIT->CLAIMED，复用receipt内同一responses调用Native resume，decision与effect仍
+     由既有operation/ledger receipt去重；再次retry更新同receipt attempt/next time。只有随后WAITING/ADVANCED/
+     FAILED/TERMINAL durable出口才SETTLED。每种出口逐table before/after-write、after-commit reopen，加到期双claimant
+     后receipt/head/failure或retry schedule一致，handler/node与decision/effect不重复执行。
+     RETRY_WAIT保留原StartMode：standalone scanner走`claim_resume_standalone`；precreated只能先由Runtime recovery
+     取得同run的typed ExecutionLease+RunFence，再走`claim_resume_precreated`，不得用scanner自声明owner或第二套
+     workflow-only activation。
+  H16 tests必须直接证明registry无bound authority cache、漏传/错owner store构造零写、heartbeat lease loss、
+  precreated identity mismatch、cancel unknown convergence、repair/quarantine、fork dangerous confirmation、start
+  并发幂等和resume CAS；所有关键命令含before/after write与after-commit fault、关闭数据库并以同路径重开。
 - 依赖：T2.1–T2.5。
 
 ### T4.2 — Profile catalog / orchestration control / launch ticket [AC-6]

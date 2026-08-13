@@ -477,3 +477,61 @@ model，只能在响应后发现 mismatch，已经无法满足调用前 hard-cap
   owner；supplemental errors oracle与source完全一致。实现fault matrix另须验证projection prepare/read/consume
   继承active lease+expected-head fence、terminal/cancelled stale writer拒绝，以及blob ref wire/ownership/existence。
 - 状态：定稿，T0.5 GREEN后T4.1/T4.3可恢复完整机械迁移。
+
+## H16 — Workflow lifecycle / recovery / replay authority closure（执行期审计）
+
+- 触发：T4 A-slice与Native engine GREEN后，对T4.1未提交Runner/recovery/replay逐源方法审计发现：草稿仍
+  `del request_key/capability_hash/trace_id`，没有统一claim/heartbeat/fenced `_execute`，precreated与cancel
+  没有generic execution同事务收敛；recovery只是把策略交给Port；replay丢弃
+  `confirm_dangerous_effects`且没有durable fork prepare saga。若按此提交，Host仍需重写admission、lease、
+  recovery、cancel与fork语义，违反用户确认的完整Workflow SDK边界。
+- A2结论：affected T4.1 Runner/recovery/replay production与commit停止；A-slice/Native已通过的独立提交不回退。
+  允许保留源审计、RED tests与未提交骨架，禁止以Host pre-check、fake/prebound executable、global bound cache、
+  随机ID或事后补写ledger绕过。T4.1新增八项完成门：真实Native checkpointer/canonical owner、统一lease
+  lifecycle、precreated identity+terminal convergence、durable cancel、SDK-owned recovery/quarantine、完整
+  replay/fork saga、atomic start request receipt、atomic resume admission receipt。精确API/故障矩阵见
+  `implementation-tasks.md` T4.1 H16段。
+- 第一轮独立狭挑战：`FAIL`，`NEW_CRITICAL_FINDINGS=7`：H16文字没有分配typed lifecycle/recovery/replay
+  Port surface；Runtime `ExecutionLease+RunFence` 与WorkflowLease未绑定；resume admission后claim前crash会
+  stranded；fork没有可执行phase/CAS/reconciler；danger confirmation未绑定ancestor effect snapshot；recovery
+  precedence/CAS read-set未冻结；start canonical payload与capability hash重算未冻结。已补required
+  `WorkflowExecutionPorts` authority surface与transaction-owner同源、三lease activation、cancel共同失效、完整
+  recovery decision matrix、typed dangerous confirmation、versioned fork saga、exact start schema与
+  `ADMITTED/CLAIMED/SETTLED` resume state machine，待第二轮挑战。只有挑战到
+  `NEW_CRITICAL_FINDINGS=0 / PASS`才恢复affected production；实现后还要以真实SQLite close/reopen、并发与
+  write-point fault matrix做第二次完成度审计。
+- 第二轮独立狭挑战：`FAIL`，`NEW_CRITICAL_FINDINGS=6`：部分Port method/typed fields仍以省略号表达；
+  WorkflowLease未进入Provider/Tool handoff CAS；cancel失效全部authority后没有cancel-only convergence
+  claimant；start admission可成为never-claimed orphan；precreated resume仍可self-declare owner；fork target
+  write authority不明确。已逐method冻结完整signature/receipt fields；WorkflowLease改为Runtime lease的同事务
+  投影并扩Provider/Tool workflow handoff校验；新增cancel-generation专用convergence lease；start四phase与startup
+  reclaim；precreated resume显式绑定DriverInvocation leases；fork claim返回只可写reserved child checkpoint的
+  `ForkWriteLease`，COMMITTED前Runtime不可见，待第三轮挑战。
+- 第三轮独立狭挑战：`FAIL`，`NEW_CRITICAL_FINDINGS=4`：precreated Runtime与Workflow heartbeat仍可能分裂；
+  CHECKPOINTED fork崩溃后无法reclaim commit；start缺省trace/thread identity生成不确定；`initial_state`与
+  `start_snapshot`形成双authority。已冻结precreated仅Kernel heartbeat且Runtime renew/release同tx维护Workflow
+  projection；expired CHECKPOINTED可签发绑定原checkpoint的commit-only fork lease；缺省run/trace/thread从
+  canonical request fingerprint确定性派生；caller只提供validated `start_input`，SDK生成唯一StartSnapshot，
+  precreated snapshot必须重算完全一致，待第四轮挑战。
+- 第四轮独立狭挑战：`FAIL`，`NEW_CRITICAL_FINDINGS=5`：precreated start admission仍可能被standalone scanner
+  抢占；start claim可在genesis前标RUNNING；resume SETTLED仍可能在Native checkpoint后第二transaction补写；
+  request漏profile/driver/catalog generation；danger effect只在fork prepare检查。已拆
+  STANDALONE/PRECREATED admission，后者同tx验证DriverInvocation authority并直接CLAIMED；CLAIMED->RUNNING
+  只由Native genesis transaction推进；`ResumeCommitBinding`进入Native checkpoint transaction原子SETTLED；
+  补profile/driver/catalog字段；checkpoint/commit（含commit-only）复核effect digest，变化时旧reserved fork
+  tombstone ROLLED_BACK并要求新confirmation/request，待第五轮挑战。
+- 第五轮独立狭挑战：`FAIL`，`NEW_CRITICAL_FINDINGS=2`：T3 Runtime Kernel仍会绕过Workflow cancel
+  convergence直接generic terminalize；ResumeCommitBinding未覆盖retry/failure/engine-failure/max-step durable
+  出口。已新增SDK-owned driver cancellation coordinator registry，并冻结Kernel live/recover/drive/cancelled各分支对
+  workflow只能委托、generic terminal需cancel receipt证明；binding扩至所有结束resume attempt的durable出口并与
+  retry/failure/head同事务SETTLED，待第六轮挑战。
+- 第六轮独立狭挑战：`FAIL`，`NEW_CRITICAL_FINDINGS=2`：retry若直接SETTLED会丢失后续重跑pure interrupt node
+  所需durable responses；把cancel coordinator放Host registry又允许consumer替换SDK恢复策略。已新增
+  `RETRY_WAIT` receipt phase保存responses/decision/retry schedule并由due scanner唯一claim，最终durable出口才
+  SETTLED；official workflow driver key与cancel coordinator由SDK exact factory/fingerprint内部绑定，Host只能注册
+  非官方extension key且覆盖保留key构造零写拒绝，待第七轮挑战。
+- 第七轮独立狭挑战：`PASS`，`NEW_CRITICAL_FINDINGS=0`。`RETRY_WAIT` durable response continuation、
+  precreated Runtime authority reclaim、SDK保留的official cancel coordinator，以及前六轮的typed lifecycle Ports、
+  lease/fence、cancel convergence、start/genesis、resume binding、recovery matrix、fork saga与risk snapshot均形成
+  可执行闭包。affected T4.1 production可恢复；完成后仍须通过真实SQLite并发/fault/reopen完成度审计。
+- 性质：这是未发布SDK的首版语义完整性修正，不涉及历史Run兼容或数据迁移。
