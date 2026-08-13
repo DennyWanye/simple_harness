@@ -33,6 +33,7 @@ LOCK_PATH = PLAN_DIR / "testcase-lock.json"
 BC_PATH = PLAN_DIR / "behavior-changes/BC-SDK-IMPORTS.json"
 SOURCE_REQUEST_PATH = PLAN_DIR / "source-request.md"
 SUPPLEMENTAL_PATH = PLAN_DIR / "workflow-errors-supplemental-oracle.json"
+RUNNER_TRANSFORM_PATH = PLAN_DIR / "workflow-runner-h16-transform.json"
 ALLOWED_RETIREMENT_REASONS = frozenset(
     {"legacy_router", "ticketless_child", "personal_preselection_matcher"}
 )
@@ -227,6 +228,7 @@ def verify_repository(
     receipt_path: Path | None = None,
     replacement_root: Path | None = None,
     supplemental_path: Path = SUPPLEMENTAL_PATH,
+    runner_transform_path: Path = RUNNER_TRANSFORM_PATH,
     sdk_root: Path | None = None,
     final_product_root: Path | None = None,
 ) -> dict[str, Any]:
@@ -305,12 +307,22 @@ def verify_repository(
         )
     except symbol_gate.SymbolDispositionError as exc:
         raise OracleInvariantError(exc.code, exc.detail) from exc
+    try:
+        runner_transform = symbol_gate.validate_runner_authority_transform(
+            repo,
+            transform_path=runner_transform_path,
+            expected_source_commit=source_commit,
+            sdk_root=sdk_root,
+        )
+    except symbol_gate.SymbolDispositionError as exc:
+        raise OracleInvariantError(exc.code, exc.detail) from exc
     return {
         "status": "PASS",
         "behavior_change_id": "BC-SDK-IMPORTS",
         "source_commit": source_commit,
         "files": results,
         "supplemental": supplemental,
+        "runner_transform": runner_transform,
     }
 
 
@@ -323,6 +335,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--receipt", type=Path)
     parser.add_argument("--replacement-root", type=Path)
     parser.add_argument("--supplemental", type=Path, default=SUPPLEMENTAL_PATH)
+    parser.add_argument("--runner-transform", type=Path, default=RUNNER_TRANSFORM_PATH)
     parser.add_argument(
         "--sdk-root",
         type=Path,
@@ -346,6 +359,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.replacement_root
             else None,
             supplemental_path=args.supplemental.resolve(),
+            runner_transform_path=args.runner_transform.resolve(),
             sdk_root=args.sdk_root.resolve() if args.sdk_root else None,
             final_product_root=(
                 args.final_product_root.resolve() if args.final_product_root else None
@@ -364,7 +378,9 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(
             f"SDK_ORACLES_PASS files={len(report['files'])} "
-            f"supplemental={report['supplemental']['entries']} bc=BC-SDK-IMPORTS"
+            f"supplemental={report['supplemental']['entries']} "
+            f"runner_transform={report['runner_transform']['source_inventory']} "
+            "bc=BC-SDK-IMPORTS"
         )
     return 0
 

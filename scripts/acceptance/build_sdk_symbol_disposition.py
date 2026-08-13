@@ -17,6 +17,7 @@ PLAN_DIR = ROOT / "plans/2026-08-13-simple-harness-sdk"
 FROZEN_PATH = PLAN_DIR / "cutover-symbols.json"
 DISPOSITION_PATH = PLAN_DIR / "source-symbol-disposition.json"
 SUPPLEMENTAL_PATH = PLAN_DIR / "workflow-errors-supplemental-oracle.json"
+RUNNER_TRANSFORM_PATH = PLAN_DIR / "workflow-runner-h16-transform.json"
 SUPPLEMENTAL_SOURCE_COMMIT = "122ec55989f8a77e023aeb44ba1b4dae1b694269"
 SUPPLEMENTAL_SOURCE_PATH = "backend/deskpet/workflows/errors.py"
 SUPPLEMENTAL_SOURCE_SHA256 = (
@@ -39,6 +40,41 @@ SUPPLEMENTAL_TARGETS = {
         "WorkflowNodeError",
     )
 }
+RUNNER_TRANSFORM_SOURCE_COMMIT = "122ec55989f8a77e023aeb44ba1b4dae1b694269"
+RUNNER_TRANSFORM_SOURCE_FILES = {
+    "backend/deskpet/workflows/runner.py": {
+        "sha256": "11b4230b96166f07d849f487d9243dccc6085fa2b480e260555d7d107e27ba51",
+        "required_inventory": {"WorkflowRunner", "WorkflowRunner.__init__"},
+    },
+    "backend/deskpet/workflows/lease.py": {
+        "sha256": "c973acd0c95e3c0a76eef24c797418f9322197d95d0dcc2c963863e28c9b2573",
+        "required_inventory": {
+            "LeaseManager",
+            "LeaseManager.claim",
+            "LeaseManager.run_with_heartbeat",
+            "LeaseManager._heartbeat_loop",
+            "transition_run",
+        },
+    },
+}
+RUNNER_TRANSFORM_MAPPING = (
+    (
+        "WorkflowRunner.__init__ constructs LeaseManager",
+        "WorkflowRunner receives canonical WorkflowExecutionPorts.lifecycle",
+    ),
+    (
+        "LeaseManager.claim",
+        "WorkflowLifecyclePort.claim_activation or bind_activation",
+    ),
+    (
+        "LeaseManager.run_with_heartbeat",
+        "WorkflowLifecyclePort.renew_activation plus SDK Runner or Kernel heartbeat",
+    ),
+    (
+        "transition_run terminal transition clears lease_owner, lease_expires_at, and heartbeat_at",
+        "WorkflowLifecyclePort.release_activation or terminal transaction release",
+    ),
+)
 ALLOWED_DISPOSITIONS = frozenset(
     {"sdk_public", "sdk_private", "product_adapter", "product_owned", "retire"}
 )
@@ -82,6 +118,23 @@ def _defined_public_symbols(source: bytes, *, filename: str) -> set[str]:
             for target in targets:
                 if isinstance(target, ast.Name) and not target.id.startswith("_"):
                     names.add(target.id)
+    return names
+
+
+def _qualified_callable_inventory(source: bytes, *, filename: str) -> set[str]:
+    try:
+        tree = ast.parse(source, filename=filename)
+    except (SyntaxError, ValueError) as exc:
+        raise SymbolDispositionError("SOURCE_DRIFT", f"{filename}: {exc}") from exc
+    names: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.ClassDef):
+            names.add(node.name)
+            for child in node.body:
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    names.add(f"{node.name}.{child.name}")
     return names
 
 
@@ -234,6 +287,204 @@ def validate_supplemental_oracle(
         "entries": len(normalized),
         "sdk_targets": len(normalized) if sdk_root is not None else None,
         "forbidden_survivors": 0 if final_product_root is not None else None,
+    }
+
+
+def _assert_runner_sdk_transform(sdk_root: Path) -> None:
+    runner_path = sdk_root / "src/simple_harness/workflow/runner.py"
+    lease_path = sdk_root / "src/simple_harness/workflow/lease.py"
+    if not runner_path.is_file() or not lease_path.is_file():
+        raise SymbolDispositionError(
+            "MISSING_SDK_TARGET", "workflow runner/lease transform targets"
+        )
+    runner_tree = ast.parse(runner_path.read_bytes(), filename=str(runner_path))
+    runner_class = next(
+        (
+            node
+            for node in runner_tree.body
+            if isinstance(node, ast.ClassDef) and node.name == "WorkflowRunner"
+        ),
+        None,
+    )
+    init = (
+        next(
+            (
+                node
+                for node in runner_class.body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == "__init__"
+            ),
+            None,
+        )
+        if runner_class is not None
+        else None
+    )
+    if init is None:
+        raise SymbolDispositionError("MISSING_SDK_TARGET", "WorkflowRunner.__init__")
+    parameter_names = {
+        arg.arg
+        for arg in (*init.args.posonlyargs, *init.args.args, *init.args.kwonlyargs)
+    }
+    if "lease" in parameter_names:
+        raise SymbolDispositionError(
+            "AUTHORITY_RELOCATION_DRIFT", "WorkflowRunner.__init__ retains lease"
+        )
+
+    lease_tree = ast.parse(lease_path.read_bytes(), filename=str(lease_path))
+    workflow_lease = next(
+        (
+            node
+            for node in lease_tree.body
+            if isinstance(node, ast.ClassDef) and node.name == "WorkflowLease"
+        ),
+        None,
+    )
+    runtime_epoch = (
+        next(
+            (
+                node
+                for node in workflow_lease.body
+                if isinstance(node, ast.AnnAssign)
+                and isinstance(node.target, ast.Name)
+                and node.target.id == "runtime_lease_epoch"
+            ),
+            None,
+        )
+        if workflow_lease is not None
+        else None
+    )
+    if runtime_epoch is None or runtime_epoch.value is not None:
+        raise SymbolDispositionError(
+            "AUTHORITY_RELOCATION_DRIFT",
+            "WorkflowLease.runtime_lease_epoch must be required",
+        )
+    for path in sorted((sdk_root / "src/simple_harness").rglob("*.py")):
+        tree = ast.parse(path.read_bytes(), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and node.name == "WorkflowLeasePort":
+                raise SymbolDispositionError(
+                    "AUTHORITY_RELOCATION_DRIFT",
+                    "WorkflowLeasePort definition survives",
+                )
+            if isinstance(node, (ast.Import, ast.ImportFrom)) and any(
+                alias.name == "WorkflowLeasePort" for alias in node.names
+            ):
+                raise SymbolDispositionError(
+                    "AUTHORITY_RELOCATION_DRIFT", "WorkflowLeasePort import survives"
+                )
+
+
+def validate_runner_authority_transform(
+    repo: Path,
+    *,
+    transform_path: Path = RUNNER_TRANSFORM_PATH,
+    expected_source_commit: str | None = None,
+    sdk_root: Path | None = None,
+) -> dict[str, Any]:
+    """Validate the additive H16 authority-relocation receipt without changing 184."""
+
+    receipt = _load_json(transform_path)
+    if receipt.get("schema_version") != 2:
+        raise SymbolDispositionError("SYMBOL_CONFIG_INVALID", "runner transform schema")
+    if receipt.get("classification") != "required_conformance_authority_relocation":
+        raise SymbolDispositionError("SYMBOL_CONFIG_INVALID", "runner classification")
+    if receipt.get("behavior_change") is not False:
+        raise SymbolDispositionError("SYMBOL_CONFIG_INVALID", "runner behavior_change")
+    source_commit = receipt.get("source_commit")
+    if source_commit != RUNNER_TRANSFORM_SOURCE_COMMIT or (
+        expected_source_commit is not None and source_commit != expected_source_commit
+    ):
+        raise SymbolDispositionError("SOURCE_DRIFT", "runner transform source_commit")
+    if (
+        receipt.get("source_symbol") != "WorkflowRunner"
+        or receipt.get("existing_disposition_target")
+        != "simple_harness.workflow.runner.WorkflowRunner"
+    ):
+        raise SymbolDispositionError("SYMBOL_CONFIG_INVALID", "runner transform target")
+
+    raw_files = receipt.get("source_files")
+    if not isinstance(raw_files, list):
+        raise SymbolDispositionError("SYMBOL_CONFIG_INVALID", "runner source_files")
+    normalized_files: dict[str, dict[str, object]] = {}
+    for raw in raw_files:
+        if not isinstance(raw, dict) or set(raw) != {
+            "path",
+            "sha256",
+            "required_inventory",
+        }:
+            raise SymbolDispositionError("SYMBOL_CONFIG_INVALID", "runner source file")
+        path = raw.get("path")
+        sha256 = raw.get("sha256")
+        inventory = raw.get("required_inventory")
+        if (
+            not isinstance(path, str)
+            or not isinstance(sha256, str)
+            or not isinstance(inventory, list)
+            or not all(isinstance(item, str) for item in inventory)
+        ):
+            raise SymbolDispositionError("SYMBOL_CONFIG_INVALID", "runner source file")
+        if path in normalized_files:
+            raise SymbolDispositionError(
+                "SYMBOL_CONFIG_INVALID", "duplicate runner source"
+            )
+        normalized_files[path] = {"sha256": sha256, "inventory": set(inventory)}
+    expected_files = {
+        path: {"sha256": spec["sha256"], "inventory": spec["required_inventory"]}
+        for path, spec in RUNNER_TRANSFORM_SOURCE_FILES.items()
+    }
+    if normalized_files != expected_files:
+        raise SymbolDispositionError("SOURCE_DRIFT", "runner source receipt mismatch")
+    for path, spec in RUNNER_TRANSFORM_SOURCE_FILES.items():
+        baseline = _git_show(repo, RUNNER_TRANSFORM_SOURCE_COMMIT, path)
+        current = repo / path
+        if (
+            _sha256(baseline) != spec["sha256"]
+            or not current.is_file()
+            or _sha256(current.read_bytes()) != spec["sha256"]
+        ):
+            raise SymbolDispositionError("SOURCE_DRIFT", path)
+        inventory = _qualified_callable_inventory(
+            baseline, filename=f"{RUNNER_TRANSFORM_SOURCE_COMMIT}:{path}"
+        )
+        required = spec["required_inventory"]
+        assert isinstance(required, set)
+        if not required <= inventory:
+            raise SymbolDispositionError(
+                "SYMBOL_INVENTORY_DRIFT",
+                f"{path}: missing {sorted(required - inventory)}",
+            )
+
+    mapping = receipt.get("source_behavior_mapping")
+    if (
+        not isinstance(mapping, list)
+        or tuple(
+            (item.get("source"), item.get("target"))
+            for item in mapping
+            if isinstance(item, dict)
+        )
+        != RUNNER_TRANSFORM_MAPPING
+        or len(mapping) != len(RUNNER_TRANSFORM_MAPPING)
+    ):
+        raise SymbolDispositionError(
+            "SYMBOL_CONFIG_INVALID", "runner transform mapping"
+        )
+    draft = receipt.get("unshipped_sdk_draft")
+    if not isinstance(draft, dict) or (
+        draft.get("symbol") != "simple_harness.workflow.lease.WorkflowLeasePort"
+        or draft.get("disposition") != "unshipped_sdk_draft_delete"
+        or draft.get("source_symbol") is not False
+    ):
+        raise SymbolDispositionError("SYMBOL_CONFIG_INVALID", "runner draft deletion")
+    if sdk_root is not None:
+        _assert_runner_sdk_transform(sdk_root)
+    return {
+        "source_commit": RUNNER_TRANSFORM_SOURCE_COMMIT,
+        "source_files": len(RUNNER_TRANSFORM_SOURCE_FILES),
+        "source_inventory": sum(
+            len(spec["required_inventory"])
+            for spec in RUNNER_TRANSFORM_SOURCE_FILES.values()
+        ),
+        "sdk_target": sdk_root is not None,
     }
 
 
@@ -416,6 +667,7 @@ def verify_repository(
     frozen_path: Path = FROZEN_PATH,
     disposition_path: Path = DISPOSITION_PATH,
     supplemental_path: Path = SUPPLEMENTAL_PATH,
+    runner_transform_path: Path = RUNNER_TRANSFORM_PATH,
     sdk_root: Path | None = None,
     final_product_root: Path | None = None,
 ) -> dict[str, Any]:
@@ -440,10 +692,21 @@ def verify_repository(
         sdk_root=sdk_root,
         final_product_root=final_product_root,
     )
+    runner_transform = validate_runner_authority_transform(
+        repo,
+        transform_path=runner_transform_path,
+        expected_source_commit=frozen.get("source_commit"),
+        sdk_root=sdk_root,
+    )
     if final_product_root is not None:
         assert_no_forbidden_survivors(final_product_root, frozen)
         report["forbidden_survivors"] = 0
-    return {"status": "PASS", **report, "supplemental": supplemental}
+    return {
+        "status": "PASS",
+        **report,
+        "supplemental": supplemental,
+        "runner_transform": runner_transform,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -452,6 +715,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--frozen", type=Path, default=FROZEN_PATH)
     parser.add_argument("--disposition", type=Path, default=DISPOSITION_PATH)
     parser.add_argument("--supplemental", type=Path, default=SUPPLEMENTAL_PATH)
+    parser.add_argument("--runner-transform", type=Path, default=RUNNER_TRANSFORM_PATH)
     parser.add_argument(
         "--sdk-root",
         type=Path,
@@ -470,6 +734,7 @@ def main(argv: list[str] | None = None) -> int:
             frozen_path=args.frozen.resolve(),
             disposition_path=args.disposition.resolve(),
             supplemental_path=args.supplemental.resolve(),
+            runner_transform_path=args.runner_transform.resolve(),
             sdk_root=args.sdk_root.resolve() if args.sdk_root else None,
             final_product_root=(
                 args.final_product_root.resolve() if args.final_product_root else None
@@ -489,7 +754,8 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"SDK_SYMBOL_DISPOSITION_PASS entries={report['entries']} "
             f"sha256={report['disposition_sha256']} "
-            f"supplemental={report['supplemental']['entries']}"
+            f"supplemental={report['supplemental']['entries']} "
+            f"runner_transform={report['runner_transform']['source_inventory']}"
         )
     return 0
 

@@ -40,6 +40,17 @@ def _supplemental_copy(tmp_path: Path, mutate=None) -> Path:
     return path
 
 
+def _runner_transform_copy(tmp_path: Path, mutate=None) -> Path:
+    value = json.loads(
+        (PLAN_DIR / "workflow-runner-h16-transform.json").read_text(encoding="utf-8")
+    )
+    if mutate is not None:
+        mutate(value)
+    path = tmp_path / "runner-transform.json"
+    path.write_text(json.dumps(value), encoding="utf-8")
+    return path
+
+
 def _sdk_root(tmp_path: Path, source: str | None = None) -> Path:
     root = tmp_path / "sdk"
     target = root / "src/simple_harness/workflow/errors.py"
@@ -48,6 +59,20 @@ def _sdk_root(tmp_path: Path, source: str | None = None) -> Path:
         source
         if source is not None
         else (ROOT / "backend/deskpet/workflows/errors.py").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (root / "src/simple_harness/workflow/runner.py").write_text(
+        "class WorkflowRunner:\n"
+        "    def __init__(self, registry, checkpoint, recovery, trace, execution_ports): pass\n",
+        encoding="utf-8",
+    )
+    (root / "src/simple_harness/workflow/lease.py").write_text(
+        "from dataclasses import dataclass\n"
+        "@dataclass\n"
+        "class WorkflowLease:\n"
+        "    run_id: str\n"
+        "    runtime_lease_epoch: int\n"
+        "    namespace: str = 'native'\n",
         encoding="utf-8",
     )
     return root
@@ -74,11 +99,18 @@ def test_frozen_oracle_and_symbol_golden_files_pass() -> None:
         "sdk_targets": None,
         "forbidden_survivors": None,
     }
+    assert oracle_report["runner_transform"] == {
+        "source_commit": "122ec55989f8a77e023aeb44ba1b4dae1b694269",
+        "source_files": 2,
+        "source_inventory": 7,
+        "sdk_target": False,
+    }
     assert symbol_report == {
         "status": "PASS",
         "entries": 184,
         "disposition_sha256": "6e1d9a0d4efb85956fad184a432cd2d59b139454b00c64ecd2c5dbf5fd739fe4",
         "supplemental": oracle_report["supplemental"],
+        "runner_transform": oracle_report["runner_transform"],
     }
 
 
@@ -204,6 +236,66 @@ def test_supplemental_gates_validate_all_sdk_targets_when_root_is_supplied(
     assert symbol_report["supplemental"]["sdk_targets"] == 12
     assert oracle_report["supplemental"]["sdk_targets"] == 12
     assert symbol_report["supplemental"]["forbidden_survivors"] == 0
+    assert symbol_report["runner_transform"]["sdk_target"] is True
+    assert oracle_report["runner_transform"]["sdk_target"] is True
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda value: value["source_files"][1].__setitem__("sha256", "0" * 64),
+        lambda value: value["source_files"][1]["required_inventory"].pop(),
+        lambda value: value["source_behavior_mapping"][3].__setitem__(
+            "source", "LeaseManager.release"
+        ),
+    ],
+)
+def test_runner_transform_rejects_source_inventory_or_mapping_drift(
+    tmp_path: Path, mutation
+) -> None:
+    transform = _runner_transform_copy(tmp_path, mutation)
+
+    with pytest.raises(symbols.SymbolDispositionError) as caught:
+        symbols.validate_runner_authority_transform(ROOT, transform_path=transform)
+
+    assert caught.value.code in {"SOURCE_DRIFT", "SYMBOL_CONFIG_INVALID"}
+
+
+@pytest.mark.parametrize(
+    "runner_source,lease_source",
+    [
+        (
+            "class WorkflowRunner:\n    def __init__(self, lease): pass\n",
+            "class WorkflowLease:\n    runtime_lease_epoch: int\n",
+        ),
+        (
+            "class WorkflowRunner:\n    def __init__(self): pass\n",
+            "class WorkflowLease:\n    runtime_lease_epoch: int = 1\n",
+        ),
+        (
+            "class WorkflowRunner:\n    def __init__(self): pass\n",
+            (
+                "class WorkflowLease:\n    runtime_lease_epoch: int\n"
+                "class WorkflowLeasePort: pass\n"
+            ),
+        ),
+    ],
+)
+def test_runner_transform_rejects_sdk_authority_drift(
+    tmp_path: Path, runner_source: str, lease_source: str
+) -> None:
+    sdk_root = _sdk_root(tmp_path)
+    (sdk_root / "src/simple_harness/workflow/runner.py").write_text(
+        runner_source, encoding="utf-8"
+    )
+    (sdk_root / "src/simple_harness/workflow/lease.py").write_text(
+        lease_source, encoding="utf-8"
+    )
+
+    with pytest.raises(symbols.SymbolDispositionError) as caught:
+        symbols.validate_runner_authority_transform(ROOT, sdk_root=sdk_root)
+
+    assert caught.value.code == "AUTHORITY_RELOCATION_DRIFT"
 
 
 @pytest.mark.parametrize("field", ["source_commit", "source_sha256"])
